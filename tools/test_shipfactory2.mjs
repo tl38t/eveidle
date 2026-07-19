@@ -1,4 +1,4 @@
-import { buildShip, COLORS, HULL_PRESETS } from "../js/render3d/shipfactory2/ShipFactory2.js";
+import { buildShip, COLORS } from "../js/render3d/shipfactory2/ShipFactory2.js";
 import * as THREE from "three";
 
 const specs = [

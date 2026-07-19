@@ -1,13 +1,15 @@
-// ShipContext.js — Phase 2 共享数据中心
+// ShipContext.js — Phase 2 共享数据中心（Phase 3 起亦为 Profile 的唯一注入点）
 //
 // Commit 1：把原 ShipFactory2 中的临时 ctx 正式化为模块（字段/材质与原 ctx 一致，Generator 接口不变）。
-// Commit 2（本提交）：新增 C 组表面数学 radiusAt / normalAt / sampleHullSurface（消除 Ribbon/Armor
-//           重复的本地 R(z)），并扩展 B 组 bounds（采纳建议二：aabb/sphere/length/maxRadius/center）。
+// Commit 2：新增 C 组表面数学 radiusAt / normalAt / sampleHullSurface，并扩展 B 组 bounds。
+// Commit 3：删除一切 preset 概念——s/L/length/scale/hullProfile 全部由 this.profile.hull 派生；
+//           ShipContext 不再知道 "Preset" 这个词（对齐 AI Rules §18 不可变 / §19 Generator 禁读配置）。
 //
 // 依赖方向（单向，无环）：ShipContext → Utils / Materials / ShipProfile；ShipContext 不依赖任何 Generator。
+//   注意：ShipContext 是 Generator 与配置之间的【唯一】桥梁——Generator 只读 ctx.profile，绝不直接读配置。
 import * as THREE from "three";
 import { COLORS, material, glowMat } from "./Materials.js";
-import { resolvePalette, HULL_PRESETS, hullRadiusAt } from "./Utils.js";
+import { resolvePalette, hullRadiusAt } from "./Utils.js";
 import { buildProfile } from "./ShipProfile.js";
 
 // ── E 组：确定性随机（Commit 4，为 Phase 7 可复现做准备）──
@@ -33,19 +35,11 @@ export class ShipContext {
     this.spec = spec;
     this.role = spec.role || (String(spec.hull || "").startsWith("enemy") ? "enemy" : "player");
     this.family = spec.family || "shield";
-
-    // B 组：几何描述（由 hull 档位一次性派生）
-    this.preset = HULL_PRESETS[spec.hull] || HULL_PRESETS.frigate;
-    this.hullProfile = this.preset;                 // 别名，后续 Generator 可改用此名
-    this.palette = resolvePalette(spec, this.role);
-    this.s = this.preset.scale;
-    this.scale = this.s;                            // 别名
-    this.L = this.preset.len * this.s;
-    this.length = this.L;                           // 别名
     this.hybrid = !!spec.hybrid;
     this.shipName = spec.id || spec.hull || "ship";
 
-    // E 组：确定性随机（seed 缺省由 shipName 派生，保证"不传 seed 也能跑，传同 seed 必同船"）
+    // E 组：确定性随机（提前：seed 由 shipName 派生，保证"不传 seed 也能跑，传同 seed 必同船"）。
+    //       必须在 A 组 profile 之前，因为 buildProfile 需要 ctx.scope('ship').random。
     this.seed = spec.seed != null ? spec.seed : hashStr(this.shipName);
     const seedNum = typeof this.seed === "string" ? hashStr(this.seed) : this.seed;
     this._rng = mulberry32(seedNum >>> 0);
@@ -55,6 +49,14 @@ export class ShipContext {
     //       注意：Spear 全部为标量 → buildProfile 不消费 rng → 与旧 HULL_PRESETS 逐位一致（几何零变化）。
     const anchor = spec.anchor || "Spear";
     this.profile = buildProfile({ anchor, shipClass: spec.hull, rng: this.scope("ship").random });
+
+    // B 组：几何描述（Phase 3 Commit 3：全部由 profile.hull 派生，ShipContext 不再持有任何 preset 概念）。
+    this.palette = resolvePalette(spec, this.role);
+    this.hullProfile = this.profile.hull;          // 别名：供 radiusAt / _buildBounds 及部分 Generator 读取
+    this.s = this.profile.hull.scale;
+    this.scale = this.s;                            // 别名
+    this.L = this.profile.hull.len * this.s;
+    this.length = this.L;                           // 别名
 
     // D 组：共享材质（一次构建，跨 Generator 复用，满足 AI Rules §11 复用材质）
     const accentPalette = spec.accentFaction && COLORS[spec.accentFaction] ? COLORS[spec.accentFaction] : null;

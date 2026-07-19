@@ -222,6 +222,12 @@ Future ship classes should only change profile parameters.
 
 未来不同舰船等级只需修改参数即可。
 
+> 🟡 **状态：进行中（2026-07-19）** — 按 4 次提交节奏推进（详见 `SHIPPROFILE_DESIGN.md` / `SHIP_STYLE_SYSTEM.md`）：
+> - ✅ Commit 1：新增 `ShipProfile.js`（整舰 DNA，Anchor 系统 + buildProfile，零视觉变化）
+> - ✅ Commit 2：ShipContext 持有 `ctx.profile` + HullGenerator 改读 `ctx.profile.hull`（含 Profile Consistency Test）
+> - ✅ Commit 3：完成 Profile 化（ShipContext 不再有 preset 概念；Weapon/Engine Generator 改读 `ctx.profile.hull`；删除 `HULL_PRESETS`；新增 Dependency Check 护栏）。几何指纹与基线逐项一致（视觉零变化）
+> - ⬜ Commit 4：新增 5~10 个 Style Anchor（Needle/Blade/Hammer/Organic/Industrial…），验证「同 Anchor + 不同 Seed → 不同但风格一致」
+
 ---
 
 ## Phase 4

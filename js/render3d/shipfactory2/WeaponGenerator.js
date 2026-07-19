@@ -120,7 +120,8 @@ function addShieldBubble(group, radius, color = SHIELD_COLOR) {
 }
 
 export function generateWeapons(ctx) {
-  const { preset, s, L, palette, spec, hybrid } = ctx;
+  const { profile, s, L, palette, spec, hybrid } = ctx;
+  const hull = profile.hull;
   const g = new THREE.Group();
   g.name = "weapons";
 
@@ -128,29 +129,29 @@ export function generateWeapons(ctx) {
   addNoseSpikes(g, s, L, palette);
 
   // ② 巨型结构环 + 环内浮游炮（数量 = 高槽数）
-  const ringR = (preset.ringRadius || 3.0) * s;
-  const ringCannons = spec.highSlots != null ? spec.highSlots : (preset.mounts || 6);
+  const ringR = (hull.ringRadius || 3.0) * s;
+  const ringCannons = spec.highSlots != null ? spec.highSlots : (hull.mounts || 6);
   addHaloRing(g, L, s, palette, ringR, spec, ringCannons);
 
   // ③ 激光挂点（按舰级布局）
-  const m = preset.mounts, big = (preset.body === "fortress");
+  const m = hull.mounts, big = (hull.body === "fortress");
   const slots = [];
   const getWingTip = () => {
-    const wx = 0.5 * s + preset.wingSpan * s * Math.cos(0.42);
-    const wz = -0.1 * L + preset.wingSpan * s * Math.sin(0.42);
+    const wx = 0.5 * s + hull.wingSpan * s * Math.cos(0.42);
+    const wz = -0.1 * L + hull.wingSpan * s * Math.sin(0.42);
     return [wx, wz];
   };
   const [wingTipX, wingTipZ] = getWingTip();
-  if (preset.body === "dagger") {
+  if (hull.body === "dagger") {
     slots.push([-wingTipX, 0.0, wingTipZ], [wingTipX, 0.0, wingTipZ]);
-  } else if (preset.body === "gunboat") {
+  } else if (hull.body === "gunboat") {
     slots.push([0, 0.1 * s, -L * 0.44], [-0.45 * s, 0.04 * s, -L * 0.38], [0.45 * s, 0.04 * s, -L * 0.38]);
-  } else if (preset.body === "cruiser") {
-    const wm = 0.5 * s + preset.wingSpan * s * 0.5 * Math.cos(0.42);
-    const wz = -0.1 * L + preset.wingSpan * s * 0.5 * Math.sin(0.42);
+  } else if (hull.body === "cruiser") {
+    const wm = 0.5 * s + hull.wingSpan * s * 0.5 * Math.cos(0.42);
+    const wz = -0.1 * L + hull.wingSpan * s * 0.5 * Math.sin(0.42);
     slots.push([-wm, 0.0, wz], [-wingTipX, 0.0, wingTipZ], [wm, 0.0, wz], [wingTipX, 0.0, wingTipZ]);
-  } else if (preset.body === "fortress") {
-    const sx = preset.mid * s * 1.3 + 0.8 * s;
+  } else if (hull.body === "fortress") {
+    const sx = hull.mid * s * 1.3 + 0.8 * s;
     slots.push([-sx, 0.08 * s, 0.04 * L], [sx, 0.08 * s, 0.04 * L],
       [-wingTipX, 0.0, wingTipZ], [wingTipX, 0.0, wingTipZ], [0, 0.12 * s, -L * 0.48]);
   }

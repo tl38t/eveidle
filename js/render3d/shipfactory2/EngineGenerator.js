@@ -17,13 +17,14 @@ function addEngine(group, x, y, z, radius, palette, length = 1.6) {
 }
 
 export function generateEngines(ctx) {
-  const { preset, s, L, hybrid, palette } = ctx;
+  const { profile, s, L, hybrid, palette } = ctx;
+  const hull = profile.hull;
   const g = new THREE.Group();
   g.name = "engines";
 
   let ex;
-  if (preset.body === "gunboat") ex = [-0.9 * s, 0.9 * s];
-  else if (preset.engines === 3) ex = [-0.65 * s, 0, 0.65 * s];
+  if (hull.body === "gunboat") ex = [-0.9 * s, 0.9 * s];
+  else if (hull.engines === 3) ex = [-0.65 * s, 0, 0.65 * s];
   else ex = [-0.5 * s, 0.5 * s];
 
   for (const exx of ex)

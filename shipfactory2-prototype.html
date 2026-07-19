@@ -42,7 +42,7 @@
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-    import { buildShip, COLORS, HULL_PRESETS } from "./js/render3d/shipfactory2/ShipFactory2.js?v=2026-07-19phase2";
+    import { buildShip, COLORS } from "./js/render3d/shipfactory2/ShipFactory2.js?v=2026-07-19phase3";
 
     const app = document.getElementById("app");
     const scene = new THREE.Scene();
@@ -98,8 +98,9 @@
     const gap = 5;
     for (const def of LINE) {
       const ship = buildShip(def.spec);
-      const p = HULL_PRESETS[def.spec.hull] || HULL_PRESETS.frigate;
-      const L = p.len * p.scale;
+      ship.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(ship);
+      const L = box.max.z - box.min.z;            // 船体实际 Z 长度（不再依赖 HULL_PRESETS）
       ship.position.x = cursor + L / 2;
       ship.rotation.y = -0.45;
       cursor += L + gap;

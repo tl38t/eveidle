@@ -14,7 +14,7 @@
 //   Materials.js        调色板与材质工厂
 import * as THREE from "three";
 import { COLORS } from "./Materials.js";
-import { HULL_PRESETS } from "./Utils.js";
+import { SHIP_CLASSES } from "./ShipProfile.js";
 import { createShipContext } from "./ShipContext.js";
 import { generateHull } from "./HullGenerator.js";
 import { generateRibbons } from "./RibbonGenerator.js";
@@ -53,4 +53,4 @@ export function buildShip(spec = {}) {
 }
 
 // 透出便于原型页/外部直接取用
-export { COLORS, HULL_PRESETS };
+export { COLORS, SHIP_CLASSES };

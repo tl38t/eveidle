@@ -1,17 +1,9 @@
-// Utils.js — 船体预设与几何/数学工具
+// Utils.js — 几何/数学工具
 // 拆分自 ShipFactory.js（v2.9）：纯函数、无副作用，供各 Generator 复用。
+// 注意（Phase 3 Commit 3）：船体形状配置已迁移至 ShipProfile.js（Anchor 系统），
+//   本文件不再持有任何预设/配置数据，只保留纯几何工具，避免 Generator 误依赖配置（AI Rules §19）。
 import * as THREE from "three";
 import { COLORS } from "./Materials.js";
-
-// ── 船体预设 ──
-// 每个 hull 有本质不同的船体架构（body plan）：
-//   frigate=匕首 / destroyer=炮艇 / cruiser=指挥巡洋 / battleship=分段堡垒
-export const HULL_PRESETS = {
-  frigate:    { len: 7.0,  noseFat: 0.26, mid: 0.42, tail: 0.14, engines: 2, mounts: 2, scale: 1.0,  body: "dagger",    wingSpan: 2.2, ringRadius: 2.2 },
-  destroyer:  { len: 9.0,  noseFat: 0.32, mid: 0.52, tail: 0.18, engines: 2, mounts: 3, scale: 1.15, body: "gunboat",   wingSpan: 2.8, ringRadius: 2.8 },
-  cruiser:    { len: 11.0, noseFat: 0.42, mid: 0.76, tail: 0.26, engines: 3, mounts: 4, scale: 1.4,  body: "cruiser",   wingSpan: 3.4, ringRadius: 3.6 },
-  battleship: { len: 14.0, noseFat: 0.50, mid: 1.00, tail: 0.34, engines: 3, mounts: 5, scale: 1.75, body: "fortress",  wingSpan: 4.2, ringRadius: 4.6 }
-};
 
 // 给定轴向位置 z ∈ [-L/2, L/2]，返回船体在该处的剖面半径（与 latheHull 同一组控制点）
 export function hullRadiusAt(z, fatR, midR, tailR, L) {
