@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVE放置：新伊甸纪元</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="./css/base.css">
+<link rel="stylesheet" href="./css/panels.css">
+<link rel="stylesheet" href="./css/combat.css">
+<link rel="stylesheet" href="./css/components.css">
+</head>
+<body>
+
+<!-- ===== 顶部状态栏 ===== -->
+<header class="topbar">
+  <span class="brand"><i class="fa-solid fa-anchor"></i> EVE放置 · 新伊甸</span>
+  <span class="current-activity" id="current-activity">⛏ 采矿 Lv.86 · 进行中</span>
+  <div class="resources">
+    <div class="res-item">
+      <i class="fa-solid fa-coins res-icon isk-icon"></i>
+      <span class="res-label">ISK</span>
+      <span class="res-value isk">12,500,000</span>
+    </div>
+    <div class="res-item">
+      <i class="fa-solid fa-medal res-icon lp-icon"></i>
+      <span class="res-label">LP</span>
+      <span class="res-value lp">3,400</span>
+    </div>
+    <div class="res-item cargo-item">
+      <i class="fa-solid fa-boxes-stacked res-icon cargo-icon"></i>
+      <span class="res-label">仓库</span>
+      <span class="res-value" id="cargo-text">0 / 1,100</span>
+      <div class="cargo-bar">
+        <div class="cargo-fill" id="cargo-fill" style="width: 0%;"></div>
+      </div>
+    </div>
+  </div>
+  <div class="ore-quick">
+    <span class="ore-icon">凡晶石 × 2,340</span>
+    <span class="ore-icon">灼烧岩 × 1,050</span>
+    <span class="ore-icon">三钛合金 × 4,800</span>
+    <span class="ore-icon">类银超金属 × 890</span>
+  </div>
+</header>
+
+<!-- ===== 主体 ===== -->
+<div class="main-container">
+
+  <!-- ===== 侧边栏 ===== -->
+  <aside class="sidebar">
+    <div class="nav-item active">
+      <span class="nav-icon"><i class="fa-regular fa-compass"></i></span> 技能总览
+    </div>
+    <div class="nav-item" data-page="blueprints">
+      <span class="nav-icon"><i class="fa-solid fa-scroll"></i></span> 蓝图商店
+    </div>
+    <div class="nav-item" data-page="cargo">
+      <span class="nav-icon"><i class="fa-solid fa-warehouse"></i></span> 仓库 <span class="nav-lv" data-lv="cargoManagement">Lv.1</span>
+    </div>
+    <div class="nav-item" data-page="hangar">
+      <span class="nav-icon"><i class="fa-solid fa-ship"></i></span> 船坞
+    </div>
+    <div class="nav-item" data-page="queue">
+      <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> 动作队列
+    </div>
+    <div class="nav-item" data-page="statistics">
+      <span class="nav-icon"><i class="fa-solid fa-chart-column"></i></span> 统计档案
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" data-skill="mining">
+      <span class="nav-icon"><i class="fa-solid fa-gem"></i></span> 采矿 <span class="nav-lv" data-lv="mining">Lv.86</span>
+    </div>
+    <div class="nav-item" data-skill="gasHarvesting">
+      <span class="nav-icon"><i class="fa-solid fa-wind"></i></span> 气体采集 <span class="nav-lv" data-lv="gasHarvesting">Lv.1</span>
+    </div>
+    <div class="nav-item" data-page="planetary">
+      <span class="nav-icon"><i class="fa-solid fa-globe"></i></span> 行星开发 <span class="nav-lv" data-lv="planetaryIndustry">Lv.1</span>
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" data-skill="refining">
+      <span class="nav-icon"><i class="fa-solid fa-fire"></i></span> 冶炼 <span class="nav-lv" data-lv="refining">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="shipEngineering">
+      <span class="nav-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span> 舰船工程 <span class="nav-lv" data-lv="shipEngineering">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="equipmentEngineering">
+      <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span> 装备工程 <span class="nav-lv" data-lv="equipmentEngineering">Lv.1</span>
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item combat-nav-toggle" data-skill="combat" data-combat-toggle aria-expanded="false">
+      <span class="nav-icon"><i class="fa-solid fa-crosshairs"></i></span> 战斗 <span class="nav-lv" data-lv="combat">Lv.1</span><span class="combat-nav-chevron"><i class="fa-solid fa-chevron-down"></i></span>
+    </div>
+    <div class="combat-skill-group" id="combat-skill-group" aria-hidden="true">
+    <div class="nav-item" data-skill="combat" data-lv-skill="laserOps">
+      <span class="nav-icon"><i class="fa-solid fa-bolt"></i></span> 激光操作 <span class="nav-lv" data-lv="laserOps">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="cannonOps">
+      <span class="nav-icon"><i class="fa-solid fa-gun"></i></span> 炮台操作 <span class="nav-lv" data-lv="cannonOps">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="missileOperations">
+      <span class="nav-icon"><i class="fa-solid fa-rocket"></i></span> 导弹操作 <span class="nav-lv" data-lv="missileOperations">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="targeting">
+      <span class="nav-icon"><i class="fa-solid fa-eye"></i></span> 锁定速度 <span class="nav-lv" data-lv="targeting">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="shieldOperation">
+      <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> 护盾操作 <span class="nav-lv" data-lv="shieldOperation">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="armorReinforcement">
+      <span class="nav-icon"><i class="fa-solid fa-gear"></i></span> 装甲加固 <span class="nav-lv" data-lv="armorReinforcement">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="hullEngineering">
+      <span class="nav-icon"><i class="fa-solid fa-wrench"></i></span> 结构工程 <span class="nav-lv" data-lv="hullEngineering">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="piloting">
+      <span class="nav-icon"><i class="fa-solid fa-plane"></i></span> 操船 <span class="nav-lv" data-lv="piloting">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="capacitorManagement">
+      <span class="nav-icon"><i class="fa-solid fa-bolt-lightning"></i></span> 电容管理 <span class="nav-lv" data-lv="capacitorManagement">Lv.1</span>
+    </div>
+    <div class="nav-item" data-skill="combat" data-lv-skill="defense">
+      <span class="nav-icon"><i class="fa-solid fa-hammer"></i></span> 防御 <span class="nav-lv" data-lv="defense">Lv.1</span>
+    </div>
+    </div>
+    <div class="nav-divider"></div>
+    <div class="nav-item" data-page="save">
+      <span class="nav-icon"><i class="fa-solid fa-floppy-disk"></i></span> 存档管理
+    </div>
+    <div class="nav-item" data-page="settings">
+      <span class="nav-icon"><i class="fa-solid fa-wrench"></i></span> 设置
+    </div>
+  </aside>
+
+  <!-- ===== 主内容区 ===== -->
+  <section class="content">
+
+    <!-- 当前技能 -->
+    <div class="panel skill-current">
+      <div class="panel-header">
+        <span class="panel-title" id="skill-panel-title">⛏ 采矿</span>
+        <span class="panel-status-label" id="skill-panel-status">待命</span>
+      </div>
+      <div class="panel-body">
+        <div class="skill-info">
+          <span class="skill-name">采矿</span>
+          <span class="skill-level">等级 <span class="lv-num">34</span></span>
+          <span class="skill-area">区域：干焦岩带</span>
+          <span class="skill-output">产出：超新星诺克石 ×12 / 次</span>
+        </div>
+        <div class="exp-row mt-4">
+          <span class="exp-label">经验</span>
+          <div class="progress-bar">
+            <div class="fill exp" style="width: 67%;"></div>
+          </div>
+          <span class="exp-value">12,340 / 18,400</span>
+        </div>
+        <!-- 采矿区域选择 -->
+        <div class="mining-area-select" id="mining-area-select" style="display:none;">
+          <div class="mining-mode-tabs" aria-label="采矿区域类型">
+            <button class="mining-mode-tab active" data-mode="normal"><i class="fa-solid fa-mountain"></i> 普通矿带</button>
+            <button class="mining-mode-tab" data-mode="moon"><i class="fa-solid fa-moon"></i> 月球矿带</button>
+          </div>
+          <div class="mining-target-scroll"><div class="mining-target-strip" id="mining-target-strip"></div></div>
+          <div class="mining-target-requirement" id="mining-target-requirement"></div>
+        </div>
+        <!-- 采矿效率 + 进度 -->
+        <div class="mining-stats" id="mining-stats" style="display:none;">
+          <div class="mining-efficiency">
+            <span class="me-label">采集效率：</span>
+            <span class="me-value" id="me-value">2.72</span>
+          </div>
+          <div class="mining-progress-row">
+            <span class="mp-label">采集进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-mining" width="560" height="24"></canvas>
+            <span class="mp-eta" id="mp-eta">~0.0s</span>
+          </div>
+        </div>
+        <!-- 冶炼区域选择 -->
+        <div class="mining-area-select smelting-area-select" id="smelting-area-select" style="display:none;">
+          <span class="area-label">冶炼目标：</span>
+          <div class="area-dropdown">
+            <button class="area-dropbtn" id="smelting-dropbtn">三钛合金 ▾</button>
+            <div class="area-dropdown-content" id="smelting-dropdown-content"></div>
+          </div>
+        </div>
+        <!-- 冶炼效率 + 进度 -->
+        <div class="mining-stats smelting-stats" id="smelting-stats" style="display:none;">
+          <div class="mining-efficiency">
+            <span class="me-label">冶炼效率：</span>
+            <span class="me-value" id="smelting-eff-value">1.02</span>
+          </div>
+          <div class="smelting-info-row">
+            <span class="me-label">每次产出：</span>
+            <span id="smelting-output-qty" style="color:#e8d8a0;font-weight:600;">1</span>
+          </div>
+          <div class="mining-progress-row">
+            <span class="mp-label">冶炼进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-smelting" width="560" height="24"></canvas>
+            <span class="mp-eta" id="smelting-eta">~0.0s</span>
+          </div>
+        </div>
+        <!-- 气体采集区域选择 -->
+        <div class="mining-area-select gas-area-select" id="gas-area-select" style="display:none;">
+          <span class="area-label">气体目标：</span>
+          <div class="area-dropdown">
+            <button class="area-dropbtn" id="gas-dropbtn">粗制富勒烯 ▾</button>
+            <div class="area-dropdown-content" id="gas-dropdown-content"></div>
+          </div>
+        </div>
+        <!-- 气体采集效率 + 进度 -->
+        <div class="mining-stats gas-stats" id="gas-stats" style="display:none;">
+          <div class="mining-efficiency">
+            <span class="me-label">采集效率：</span>
+            <span class="me-value" id="gas-eff-value">1.02</span>
+          </div>
+          <div class="mining-progress-row">
+            <span class="mp-label">采集进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-gas" width="560" height="24"></canvas>
+            <span class="mp-eta" id="gas-eta">~0.0s</span>
+          </div>
+        </div>
+        <div class="skill-actions mt-8">
+          <button class="btn danger" id="btn-stop">停止</button>
+          <button class="btn" id="btn-switch-skill">切换技能</button>
+          <button class="btn primary" id="btn-start-mine" style="display:none;">▶ 开始采矿</button>
+          <button class="btn primary" id="btn-start-smelt" style="display:none;">▶ 开始冶炼</button>
+          <button class="btn primary" id="btn-start-gas" style="display:none;">▶ 开始气体采集</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 行星面板 -->
+    <div class="panel planetary-panel" id="planetary-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">🪐 行星开发</span>
+        <span id="planetary-header-info">等级 1 · 槽位 0 / 1</span>
+      </div>
+      <div class="panel-body">
+        <div class="exp-row" style="margin-bottom:10px;">
+          <span class="exp-label">行星开发</span>
+          <div class="progress-bar">
+            <div class="fill exp" id="planetary-exp-fill" style="width:0%;"></div>
+          </div>
+          <span class="exp-value" id="planetary-exp-value">0 / 100</span>
+        </div>
+        <div style="margin-bottom:10px; display:flex; align-items:center; gap:12px;">
+          <button class="btn primary" id="btn-deploy-planet">🪐 部署新行星</button>
+          <span class="text-muted" style="font-size:12px;" id="planetary-slot-info">可用槽位：0 / 1</span>
+        </div>
+        <div class="planet-grid" id="planet-grid"></div>
+        <div id="planet-empty-msg" class="cargo-empty" style="display:none;">尚未部署任何行星，点击上方按钮部署</div>
+      </div>
+    </div>
+
+    <!-- 动作队列面板 -->
+    <div class="panel" id="queue-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">📋 动作队列</span>
+        <span class="text-muted" id="queue-status-text">空闲</span>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
+          <button class="btn primary" id="btn-start-queue">▶ 开始队列</button>
+          <button class="btn" id="btn-stop-queue">⏹ 停止</button>
+          <button class="btn" id="btn-clear-queue">🗑 清空</button>
+          <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#8899aa; margin-left:auto;">
+            <input type="checkbox" id="queue-loop-check"> 循环
+          </label>
+        </div>
+        <div id="queue-list" style="max-height:400px; overflow-y:auto;">
+          <div style="text-align:center; color:#4a5a6a; padding:20px; font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 舰船工程面板 -->
+    <div class="panel" id="shipeng-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">🚀 舰船工程</span>
+        <span class="text-muted" id="shipeng-header-status">待命</span>
+      </div>
+      <div class="panel-body">
+        <!-- 效率 + 经验条 -->
+        <div class="exp-row" style="margin-bottom:10px;">
+          <span class="exp-label">舰船工程</span>
+          <div class="progress-bar">
+            <div class="fill exp" id="shipeng-exp-fill" style="width:0%;"></div>
+          </div>
+          <span class="exp-value" id="shipeng-exp-value">0 / 100</span>
+        </div>
+        <div class="mining-efficiency">
+          <span class="me-label">制造效率：</span>
+          <span class="me-value" id="shipeng-eff-value" title="效率 = 1 × (1 + 舰船工程Lv × 0.02)">1.02x</span>
+        </div>
+
+        <!-- 部件制造 -->
+        <div class="shipeng-section">
+          <h4>🔩 部件制造</h4>
+          <div class="ship-synth-controls">
+            <span class="ss-label">选择部件：</span>
+            <div class="area-dropdown" id="shipcomp-dropdown">
+              <button class="area-dropbtn" id="shipcomp-dropbtn">综合舰体组件 ▾</button>
+              <div class="area-dropdown-content" id="shipcomp-dropdown-content"></div>
+            </div>
+            <button class="btn primary" id="btn-start-shipcomp">▶ 开始制造</button>
+          </div>
+          <div class="ship-cost-list" id="shipcomp-cost"></div>
+          <div class="ship-progress-row" id="shipcomp-progress-row" style="display:none;">
+            <span class="sp-label">制造进度</span>
+            <canvas class="skill-canvas-bar" id="bar-shipcomp" width="560" height="24"></canvas>
+            <span class="mp-eta" id="shipcomp-eta">0s</span>
+          </div>
+          <div class="ship-comp-grid" id="ship-comp-inventory"></div>
+        </div>
+
+        <!-- 舰船合成 -->
+        <div class="shipeng-section">
+          <h4>⚓ 舰船合成</h4>
+          <div class="ship-synth-controls">
+            <span class="ss-label">选择舰船：</span>
+            <div class="area-dropdown" id="shipasm-dropdown">
+              <button class="area-dropbtn" id="shipasm-dropbtn">裂谷级 ▾</button>
+              <div class="area-dropdown-content" id="shipasm-dropdown-content"></div>
+            </div>
+            <button class="btn primary" id="btn-start-shipasm">⚓ 合成</button>
+          </div>
+          <div class="ship-cost-list" id="shipasm-cost"></div>
+          <div class="ship-progress-row" id="shipasm-progress-row" style="display:none;">
+            <span class="sp-label">合成进度</span>
+            <canvas class="skill-canvas-bar" id="bar-shipasm" width="560" height="24"></canvas>
+            <span class="mp-eta" id="shipasm-eta">0s</span>
+          </div>
+          <!-- 舰船属性展示 -->
+          <div id="ship-attr-display" style="margin-top:8px;"></div>
+          <!-- 已有舰船 -->
+          <div style="margin-top:8px; font-size:12px; color:#8899aa;">已有舰船：</div>
+          <div id="ship-inventory-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 装备工程面板 -->
+    <div class="panel" id="equipeng-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">🔧 装备工程</span>
+        <span id="equipeng-status-text">待命</span>
+      </div>
+      <div class="panel-body">
+        <div class="skill-info equipeng-info">
+          <span class="skill-name">装备工程</span>
+          <span class="skill-level">等级 <span class="lv-num" id="equipeng-lv-num">1</span></span>
+          <span class="skill-output" id="equipeng-eff-display">效率：1.00x</span>
+        </div>
+        <div class="exp-row mt-4">
+          <span class="exp-label">经验</span>
+          <div class="progress-bar"><div class="fill exp" id="equipeng-exp-fill" style="width:0%"></div></div>
+          <span class="exp-value" id="equipeng-exp-value">0 / 83</span>
+        </div>
+        <div class="equipeng-queue-summary" id="equipeng-queue-summary">制造队列 0 / 20</div>
+        <div class="equipeng-category-tabs" id="equipeng-category-tabs" role="tablist" aria-label="装备工程分类"></div>
+        <div class="equipeng-workspace">
+          <section class="equipeng-catalog">
+            <div class="equipeng-catalog-header">
+              <div><strong id="equipeng-category-title">工业采集</strong><span id="equipeng-category-count">0 个配方</span></div>
+              <label class="equipeng-search"><i class="fa-solid fa-magnifying-glass"></i><input id="equipeng-search-input" type="search" placeholder="搜索当前分类" autocomplete="off"></label>
+            </div>
+            <div class="equipeng-recipe-grid" id="equipeng-recipe-grid"></div>
+          </section>
+          <aside class="equipeng-detail">
+            <div class="equipeng-detail-header">
+              <strong id="equipeng-detail-title">T1采矿激光器</strong>
+              <span id="equipeng-detail-tier" class="equipeng-tier-badge">T1</span>
+            </div>
+            <div class="equipeng-detail-body" id="equipeng-detail-body"></div>
+            <div class="ship-progress-row equipeng-detail-progress" id="equipeng-progress-row" style="display:none;">
+              <span class="sp-label">制造进度</span>
+              <canvas class="skill-canvas-bar" id="bar-equipeng" width="420" height="24"></canvas>
+              <span class="mp-eta" id="equipeng-eta">0s</span>
+            </div>
+            <div class="equipeng-detail-actions">
+              <button class="btn danger" id="btn-stop-equipeng" style="display:none;">■ 停止制造</button>
+              <button class="btn primary" id="btn-start-equipeng">▶ 开始制造</button>
+            </div>
+          </aside>
+        </div>
+      </div>
+    </div>
+
+    <!-- 战斗面板 -->
+    <div class="panel combat-panel" id="combat-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">⚔ 战斗行动</span>
+        <span id="combat-header-info" class="text-muted">待命</span>
+      </div>
+      <div class="panel-body">
+        <div class="combat-mode-tabs" id="combat-mode-tabs">
+          <button class="combat-mode-tab active" data-combat-mode="belt"><i class="fa-solid fa-meteor"></i> 海盗星带</button>
+          <button class="combat-mode-tab" data-combat-mode="deathspace"><i class="fa-solid fa-dungeon"></i> 死亡空间</button>
+        </div>
+        <div class="deathspace-selector-panel" id="deathspace-selector-panel" style="display:none;">
+          <div class="deathspace-intro"><strong>DED 6/10</strong><span id="deathspace-intro-text">进入即消耗1枚通行密钥；失败或主动撤离均不返还。</span></div>
+          <div class="deathspace-tier-tabs" id="deathspace-tier-tabs"></div>
+          <div class="deathspace-grid" id="deathspace-grid"></div>
+        </div>
+        <div class="combat-header-row">
+          <div class="combat-zone-selector" id="combat-zone-selector">
+            <span class="area-label">星带：</span>
+            <div class="area-dropdown" id="combat-zone-dropdown">
+              <button class="area-dropbtn" id="combat-zone-dropbtn">天使前哨站 ▾</button>
+              <div class="area-dropdown-content" id="combat-zone-dropdown-content"></div>
+            </div>
+          </div>
+          <div class="combat-engagement-group">
+            <span class="combat-wave">第 <span class="cw-num" id="combat-wave-num">1</span>/<span id="combat-wave-max">20</span> 波 · <span id="combat-clear-label">已肃清</span> <span id="combat-clear-count">0</span></span>
+            <button class="btn danger combat-engagement-btn" id="btn-stop-combat" style="display:none;">■ 停止战斗</button>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 开始战斗</button>
+          </div>
+        </div>
+
+        <!-- 战术战场：左我 右敌，待命时敌方保持扫描占位 -->
+        <div class="combat-arena">
+          <div class="combat-player-side">
+            <div class="combat-side-kicker">PILOT VESSEL</div>
+            <div class="combat-side-name" id="combat-player-ship">裂谷级</div>
+            <div class="health-bars health-bars-sm" id="combat-player-bars"></div>
+            <div class="combat-side-image" id="combat-player-image">
+              <div class="combat-ship-placeholder"><span>🚀</span></div>
+            </div>
+            <div class="combat-side-stats" id="combat-player-stats">武器伤害:— · 航速:—</div>
+          </div>
+
+          <div class="combat-lock-column">
+            <div class="combat-lock-reticle"><span></span></div>
+            <div class="combat-lock-state" id="combat-lock-state">等待目标</div>
+          </div>
+
+          <div class="combat-enemy-side" id="combat-enemy-section">
+            <div class="combat-side-kicker">HOSTILE FORMATION</div>
+            <div class="combat-enemy-formation" id="combat-enemy-formation"></div>
+            <div class="combat-target-caption" id="combat-target-caption">LOCKED TARGET</div>
+            <div class="combat-side-name cst-enemy" id="combat-enemy-name">—</div>
+            <div class="combat-side-type" id="combat-enemy-type"></div>
+            <div class="health-bars health-bars-sm" id="combat-enemy-bars"></div>
+            <div class="combat-side-image" id="combat-enemy-image">
+              <div class="combat-ship-placeholder"><span>👾</span></div>
+            </div>
+            <div class="combat-side-stats" id="combat-enemy-stats">威胁等级:— · 基础伤害:—</div>
+          </div>
+        </div>
+
+        <div class="combat-telemetry-row">
+          <div class="combat-resource-row" id="combat-resource-row">
+            <span class="combat-telemetry-label">舰船补给</span>
+            <span>⛽ 燃料 <b id="combat-fuel-val">0</b></span>
+            <span>🔫 激光弹 <b id="combat-ammo-laser">0</b></span>
+            <span>🚀 导弹 <b id="combat-ammo-missile">0</b></span>
+            <span>💣 炮台弹 <b id="combat-ammo-cannon">0</b></span>
+          </div>
+          <div class="combat-skill-row" id="combat-skill-row">
+            <span class="combat-telemetry-label">舰长数据</span>
+            战斗等级 <b id="combat-cl-val">0</b> · 激光 Lv.<span id="combat-laser-lv">1</span> · 炮台 Lv.<span id="combat-cannon-lv">1</span> · 导弹 Lv.<span id="combat-missile-lv">1</span> · 锁定 Lv.<span id="combat-target-lv">1</span>
+          </div>
+        </div>
+
+        <!-- EVE 风格舰船控制台：左控制、中环带、右装备 -->
+        <div class="combat-command-console">
+          <div class="combat-control-bank">
+            <div class="combat-console-title">已安装武器</div>
+            <div class="combat-weapon-row" id="combat-weapon-row"></div>
+            <div class="combat-console-title repair-title">维修系统</div>
+            <div class="repair-row" id="combat-repair-row"></div>
+          </div>
+
+          <div class="combat-ring-module">
+            <svg class="combat-health-ring" viewBox="0 0 180 180" aria-label="舰船环带生命值">
+              <circle class="ring-track" cx="90" cy="90" r="72"></circle>
+              <circle class="ring-value ring-shield" id="combat-ring-shield" cx="90" cy="90" r="72"></circle>
+              <circle class="ring-track" cx="90" cy="90" r="61"></circle>
+              <circle class="ring-value ring-armor" id="combat-ring-armor" cx="90" cy="90" r="61"></circle>
+              <circle class="ring-track" cx="90" cy="90" r="50"></circle>
+              <circle class="ring-value ring-structure" id="combat-ring-structure" cx="90" cy="90" r="50"></circle>
+            </svg>
+            <div class="combat-ring-core">
+              <span class="ring-ship-icon">◈</span>
+              <strong id="combat-ring-ship">裂谷级</strong>
+              <span id="combat-ring-wave">待命</span>
+            </div>
+            <div class="combat-ring-legend" id="combat-ring-legend"></div>
+          </div>
+
+          <div class="combat-equipment-rack">
+            <div class="combat-console-title">当前舰船装备</div>
+            <div class="combat-equipment-grid" id="combat-equipment-grid"></div>
+          </div>
+        </div>
+
+        <div class="combat-rewards" id="combat-rewards" style="display:none;"></div>
+        <div id="combat-fx-layer" style="position:absolute;inset:0;pointer-events:none;z-index:10;"></div>
+      </div>
+    </div>
+
+    <!-- 船坞面板 -->
+    <div class="panel hangar-panel" id="hangar-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">🚢 船坞</span>
+        <span id="hangar-header-info" class="text-muted">已拥有 0 艘舰船</span>
+      </div>
+      <div class="panel-body">
+        <div class="hangar-ship-grid" id="hangar-ship-grid"></div>
+        <div class="hangar-empty" id="hangar-empty">船坞空空如也，制造舰船后在此装备</div>
+      </div>
+    </div>
+
+    <!-- 蓝图商店面板 -->
+    <div class="panel blueprintstore-panel" id="blueprintstore-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">📜 蓝图商店</span>
+        <span id="blueprintstore-balance">可用 ISK：0 · LP：0</span>
+      </div>
+      <div class="panel-body">
+        <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
+        <div class="blueprintstore-tabs" id="blueprintstore-tabs"></div>
+        <div class="lpstore-grid" id="blueprintstore-grid"></div>
+      </div>
+    </div>
+
+    <!-- 仓库面板 -->
+    <div class="panel cargo-panel" id="cargo-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">📦 仓库</span>
+        <span id="cargo-capacity-text">容量：0 / 1,100</span>
+      </div>
+      <div class="panel-body">
+        <div class="cargo-tabs" id="cargo-tabs">
+          <span class="cargo-tab active" data-filter="all">全部</span>
+          <span class="cargo-tab" data-filter="ore">矿石</span>
+          <span class="cargo-tab" data-filter="mineral">矿物</span>
+          <span class="cargo-tab" data-filter="planetary">行星产物</span>
+          <span class="cargo-tab" data-filter="gases">气体</span>
+          <span class="cargo-tab" data-filter="moon">月矿</span>
+          <span class="cargo-tab" data-filter="special">特殊物资</span>
+          <span class="cargo-tab" data-filter="consumable">消耗品</span>
+          <span class="cargo-tab" data-filter="equipment">舰船/装备</span>
+        </div>
+        <div class="cargo-list" id="cargo-list">    </div>
+    <div class="cargo-actions">
+      <button class="btn" id="btn-sort-cargo">🗂 整理仓库</button>
+    </div>
+  </div>
+</div>
+
+    <!-- 存档管理面板 -->
+    <div class="panel save-panel" id="save-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">💾 存档管理</span>
+        <span id="save-status" class="text-muted">就绪</span>
+      </div>
+      <div class="panel-body">
+        <div class="save-actions">
+          <button class="btn" id="btn-save-game">💾 保存游戏</button>
+          <button class="btn" id="btn-export-save">📥 导出存档</button>
+          <button class="btn" id="btn-import-save">📤 导入存档</button>
+          <input type="file" id="import-file-input" accept=".json" style="display:none;">
+        </div>
+        <div class="save-info" id="save-info" style="margin-top:12px;font-size:12px;color:#6a7a8e;"></div>
+      </div>
+    </div>
+
+    <!-- ===== 设置面板 ===== -->
+    <div class="panel settings-panel" id="settings-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-wrench"></i> 设置</span>
+        <span id="setting-enhancement-status" class="text-muted">已开启</span>
+      </div>
+      <div class="panel-body">
+        <div class="settings-section">
+          <div class="settings-section-title">操作确认</div>
+          <label class="setting-row" for="setting-enhancement-confirm">
+            <span class="setting-copy"><strong>舰船强化确认提示</strong><small>开启时，强化已有等级的舰船会先提示失败清零风险；关闭后点击强化将直接执行。</small></span>
+            <span class="setting-switch"><input type="checkbox" id="setting-enhancement-confirm" checked><span class="setting-switch-track"></span></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== 统计档案 ===== -->
+    <div class="panel statistics-panel" id="statistics-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-chart-column"></i> 统计档案</span>
+        <span class="text-muted">只读 · 从统计系统启用后累计</span>
+      </div>
+      <div class="panel-body" id="statistics-content"></div>
+    </div>
+
+  
+<!-- ===== 舰船装备环带弹窗 ===== -->
+<div class="equip-modal-overlay" id="equipOrbitModal">
+  <div class="equip-ship-modal">
+    <button class="equip-modal-close" id="equipOrbitClose">✕</button>
+    <div class="modal-title" id="equipOrbitTitle">裂谷级</div>
+    <div class="modal-sub" id="equipOrbitSub">T1 护卫舰</div>
+    <div class="orbit-wrapper" id="equipOrbitWrapper">
+      <svg viewBox="0 0 500 500" id="equipOrbitSvg"></svg>
+      <div class="equip-select-panel" id="equipSelectPanel">
+        <div class="esp-title" id="equipSelectTitle">高槽 · 选择装备</div>
+        <div id="equipSelectOptions"></div>
+      </div>
+    </div>
+    <div class="equip-library">
+      <div class="el-title">📦 已装配装备</div>
+      <div class="el-items" id="equipLibrary"></div>
+    </div>
+    <div class="ship-stats" id="equipOrbitStats">
+      <div class="stat"><div class="stat-label">护盾</div><div class="stat-value shield" id="orbitStatShield">—</div></div>
+      <div class="stat"><div class="stat-label">装甲</div><div class="stat-value armor" id="orbitStatArmor">—</div></div>
+      <div class="stat"><div class="stat-label">结构</div><div class="stat-value hull" id="orbitStatHull">—</div></div>
+      <div class="stat"><div class="stat-label">速度</div><div class="stat-value speed" id="orbitStatSpeed">—</div></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn primary" id="equipResetBtn">🗑 清空全部</button>
+      <button class="btn" id="equipDoneBtn">✓ 完成</button>
+    </div>
+  </div>
+</div>
+</section>
+</div>
+
+<!-- ===== 底部状态栏 ===== -->
+<footer class="footer-bar">
+  <span>高安区域 · 离线安全无限制</span>
+  <span>最后存档：2026-07-04 14:30:00</span>
+</footer>
+
+<!-- ===== 部署行星弹窗 ===== -->
+<div class="modal-overlay hidden" id="deploy-modal">
+  <div class="modal-box">
+    <h3>🪐 部署行星 <span class="modal-close" id="modal-close">✕</span></h3>
+    <div id="deploy-options"></div>
+    <div style="margin-top:8px;font-size:11px;color:#4a5a6a;">
+      部署消耗：ISK + 三钛合金（测试阶段 0 ISK / 1 三钛）
+    </div>
+  </div>
+</div>
+
+<!-- ===== 执行确认弹窗 ===== -->
+<div class="modal-overlay hidden" id="action-modal">
+  <div class="modal-box">
+    <h3 id="action-modal-title">开始执行 <span class="modal-close" id="action-modal-close">✕</span></h3>
+    <div class="action-info" id="action-modal-info"></div>
+    <div class="action-resources" id="action-modal-resources"></div>
+    <div class="action-input-row">
+      <label for="action-batch-count">执行</label>
+      <input type="number" id="action-batch-count" value="1" min="1" max="1">
+      <label for="action-batch-count">次</label>
+      <button class="btn" id="action-batch-infinity" style="font-size:13px; padding:4px 10px;">∞ 无限</button>
+      <span class="ai-max" id="action-batch-max"></span>
+    </div>
+    <div class="action-summary" id="action-modal-summary"></div>
+    <div class="modal-actions">
+      <button class="btn" id="action-modal-cancel">取消</button>
+      <button class="btn" id="action-modal-queue">📋 加入队列</button>
+      <button class="btn primary" id="action-modal-confirm">确认</button>
+    </div>
+  </div>
+</div>
+
+  <script defer src="./js/core/runtime.js"></script>
+  <script defer src="./js/core/events.js"></script>
+  <script defer src="./js/ui/error-boundary.js"></script>
+  <script defer src="./js/data/base.js"></script>
+  <script defer src="./js/data/planets.js"></script>
+  <script defer src="./js/data/ships.js"></script>
+  <script defer src="./js/data/combat.js"></script>
+  <script defer src="./js/data/equipment.js"></script>
+  <script defer src="./js/data/ammunition.js"></script>
+  <script defer src="./js/core/state.js"></script>
+  <script defer src="./js/core/statistics.js"></script>
+  <script defer src="./js/systems/production.js"></script>
+  <script defer src="./js/core/resources.js"></script>
+  <script defer src="./js/systems/manufacturing.js"></script>
+  <script defer src="./js/systems/ship-enhancement.js"></script>
+  <script defer src="./js/systems/planetary.js"></script>
+  <script defer src="./js/ui/action-modal.js"></script>
+  <script defer src="./js/core/queue.js"></script>
+  <script defer src="./js/systems/combat.js"></script>
+  <script defer src="./js/core/combat-modifiers.js"></script>
+  <script defer src="./js/core/selectors.js"></script>
+  <script defer src="./js/core/actions.js"></script>
+  <script defer src="./js/ui/shell-render.js"></script>
+  <script defer src="./js/ui/manufacturing-render.js"></script>
+  <script defer src="./js/ui/combat-render.js"></script>
+  <script defer src="./js/ui/planetary-render.js"></script>
+  <script defer src="./js/core/tick.js"></script>
+  <script defer src="./js/core/offline.js"></script>
+  <script defer src="./js/ui/render.js"></script>
+  <script defer src="./js/core/persistence.js"></script>
+</body>
+</html>

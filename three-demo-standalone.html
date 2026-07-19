@@ -1,0 +1,789 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVE IDLE · 3D 舰船方案演示</title>
+  <meta name="description" content="战斗、装配与船坞截图三种舰船展示方式的 Three.js 原型。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <style>
+:root {
+  color-scheme: dark;
+  --bg: #070a0f;
+  --panel: rgba(13, 19, 28, 0.9);
+  --panel-2: rgba(19, 27, 38, 0.86);
+  --line: rgba(131, 158, 187, 0.2);
+  --line-strong: rgba(88, 191, 255, 0.45);
+  --text: #dce7f1;
+  --muted: #728397;
+  --gold: #d6a84a;
+  --cyan: #42bcff;
+  --red: #ff665e;
+}
+
+* { box-sizing: border-box; }
+html, body { min-height: 100%; }
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: "Rajdhani", "Segoe UI", "Microsoft YaHei", sans-serif;
+  background:
+    radial-gradient(circle at 18% 12%, rgba(32, 77, 119, 0.18), transparent 27rem),
+    radial-gradient(circle at 83% 68%, rgba(93, 38, 27, 0.12), transparent 32rem),
+    linear-gradient(rgba(255,255,255,.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.018) 1px, transparent 1px),
+    var(--bg);
+  background-size: auto, auto, 42px 42px, 42px 42px, auto;
+}
+
+button, a { font: inherit; }
+button { color: inherit; }
+.page-shell { width: min(1440px, 100%); min-height: 100vh; margin: 0 auto; padding: 28px 34px 18px; }
+
+.demo-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; margin-bottom: 24px; }
+.back-link { display: inline-block; margin-bottom: 20px; color: #7f91a4; text-decoration: none; font-weight: 700; letter-spacing: .04em; }
+.back-link:hover { color: var(--cyan); }
+.eyebrow { color: var(--gold); font-family: "Orbitron", sans-serif; font-size: 10px; letter-spacing: .24em; }
+h1, h2 { margin: 7px 0 6px; font-family: "Orbitron", sans-serif; letter-spacing: .035em; }
+h1 { font-size: clamp(25px, 3vw, 42px); font-weight: 600; }
+h2 { font-size: clamp(20px, 2.2vw, 30px); }
+.demo-header p, .hangar-heading p { margin: 0; color: var(--muted); font-size: 16px; }
+
+.system-readout { min-width: 230px; display: flex; align-items: center; gap: 12px; padding: 12px 15px; border: 1px solid var(--line); background: rgba(8, 13, 20, .75); }
+.system-readout div { display: grid; gap: 3px; }
+.system-readout strong { color: #a9bfd2; font-size: 13px; letter-spacing: .06em; }
+.system-readout small { color: #546679; }
+.pulse-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cyan); box-shadow: 0 0 0 5px rgba(66,188,255,.09), 0 0 16px var(--cyan); animation: pulse 1.8s ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .45; transform: scale(.82); } }
+
+.mode-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-bottom: 0; }
+.mode-tab { cursor: pointer; border: 0; border-right: 1px solid var(--line); padding: 14px 18px; background: rgba(10,16,24,.72); color: #718396; text-align: left; text-transform: uppercase; letter-spacing: .08em; font-weight: 700; transition: .2s ease; }
+.mode-tab:last-child { border-right: 0; }
+.mode-tab span { margin-right: 12px; color: #3e4e5f; font-family: "Orbitron", sans-serif; font-size: 10px; }
+.mode-tab:hover { color: #bdcbd8; background: rgba(20,30,42,.8); }
+.mode-tab.is-active { color: #e9f5ff; background: linear-gradient(180deg, rgba(35,57,76,.8), rgba(16,25,36,.9)); box-shadow: inset 0 2px 0 var(--cyan); }
+.mode-tab.is-active span { color: var(--cyan); }
+
+.demo-stage { min-height: 610px; border: 1px solid var(--line); background: rgba(6,10,15,.74); box-shadow: 0 24px 80px rgba(0,0,0,.36); }
+.mode-panel { min-height: 608px; }
+.battle-frame, .fitting-viewer { position: relative; overflow: hidden; background: radial-gradient(circle at center, #13243a 0%, #080d15 65%, #05070b 100%); }
+.battle-frame { height: 535px; }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+
+.corner { position: absolute; width: 25px; height: 25px; opacity: .65; pointer-events: none; }
+.corner-tl { top: 12px; left: 12px; border-top: 1px solid var(--cyan); border-left: 1px solid var(--cyan); }
+.corner-tr { top: 12px; right: 12px; border-top: 1px solid var(--cyan); border-right: 1px solid var(--cyan); }
+.corner-bl { bottom: 12px; left: 12px; border-bottom: 1px solid var(--cyan); border-left: 1px solid var(--cyan); }
+.corner-br { bottom: 12px; right: 12px; border-bottom: 1px solid var(--cyan); border-right: 1px solid var(--cyan); }
+
+.combat-card { position: absolute; top: 24px; width: min(310px, 31vw); padding: 13px 15px; border: 1px solid var(--line); background: linear-gradient(110deg, rgba(8,14,22,.92), rgba(17,28,42,.76)); backdrop-filter: blur(8px); }
+.player-card { left: 24px; border-left: 2px solid var(--cyan); }
+.enemy-card { right: 24px; border-right: 2px solid var(--red); }
+.combat-card-title { display: flex; align-items: center; gap: 7px; font-family: "Orbitron", sans-serif; font-size: 12px; font-weight: 700; }
+.combat-card-title small { margin-left: auto; color: #5f7082; font-family: "Rajdhani", sans-serif; letter-spacing: .08em; }
+.ally-mark, .enemy-mark { width: 7px; height: 7px; transform: rotate(45deg); background: var(--cyan); box-shadow: 0 0 8px var(--cyan); }
+.enemy-mark { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.bar-label { display: flex; justify-content: space-between; margin-top: 11px; color: #728497; font-size: 11px; }
+.bar-label strong { color: #b8c9d9; }
+.stat-bar { height: 4px; margin-top: 4px; background: #1b2632; }
+.stat-bar i { display: block; height: 100%; }
+.shield-bar { width: 100%; background: linear-gradient(90deg, #2576ce, #5dc9ff); box-shadow: 0 0 9px rgba(67,185,255,.65); }
+.enemy-bar { width: 79%; background: linear-gradient(90deg, #a93030, #ff6d5b); box-shadow: 0 0 9px rgba(255,75,67,.5); }
+.combat-stats { display: flex; justify-content: space-between; margin-top: 9px; color: #65788b; font-size: 11px; }
+.battle-message { position: absolute; bottom: 27px; left: 50%; transform: translateX(-50%); padding: 7px 18px; border: 1px solid rgba(66,188,255,.25); background: rgba(6,12,19,.8); color: #8ea7bb; font-size: 12px; letter-spacing: .08em; white-space: nowrap; }
+.viewport-label { position: absolute; right: 24px; bottom: 24px; color: rgba(116,143,165,.42); font-family: "Orbitron", sans-serif; font-size: 8px; letter-spacing: .16em; }
+
+.panel-notes { height: 73px; display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 13px 18px; border-top: 1px solid var(--line); background: rgba(12,18,27,.92); }
+.panel-notes div { display: grid; gap: 2px; }
+.panel-notes strong { color: #c7d6e2; }
+.panel-notes span { color: var(--muted); font-size: 13px; }
+
+.utility-button, .primary-button { cursor: pointer; border: 1px solid #2e4254; background: #111b26; padding: 9px 14px; color: #92a9bb; font-weight: 700; letter-spacing: .04em; transition: .18s ease; }
+.utility-button:hover { border-color: var(--cyan); color: #dff4ff; }
+.primary-button { border-color: #367ba8; background: linear-gradient(180deg, #194669, #12334d); color: #d8f2ff; }
+.primary-button:hover { filter: brightness(1.15); }
+
+.fitting-layout { min-height: 608px; display: grid; grid-template-columns: minmax(0, 1fr) 365px; }
+.fitting-viewer { min-height: 608px; border-right: 1px solid var(--line); }
+.drag-hint { position: absolute; bottom: 21px; left: 50%; transform: translateX(-50%); color: rgba(160,190,213,.57); font-size: 12px; letter-spacing: .08em; white-space: nowrap; pointer-events: none; }
+.ship-designation { position: absolute; top: 27px; left: 28px; display: grid; pointer-events: none; }
+.ship-designation span { color: var(--cyan); font-family: "Orbitron", sans-serif; font-size: 9px; letter-spacing: .18em; }
+.ship-designation strong { font-family: "Orbitron", sans-serif; font-size: 22px; letter-spacing: .05em; }
+.ship-designation small { color: var(--muted); }
+
+.fitting-console { display: flex; flex-direction: column; padding: 25px; background: linear-gradient(145deg, rgba(18,27,39,.98), rgba(9,14,21,.98)); }
+.console-heading { display: flex; justify-content: space-between; align-items: center; padding-bottom: 15px; border-bottom: 1px solid var(--line); }
+.console-heading span { font-family: "Orbitron", sans-serif; font-weight: 700; }
+.console-heading small { color: #516477; letter-spacing: .12em; }
+.slot-group { display: grid; gap: 8px; margin-top: 22px; }
+.slot-group > label { margin-bottom: 2px; color: #607589; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; }
+.slot-button { cursor: pointer; display: grid; grid-template-columns: 34px 1fr auto; align-items: center; gap: 10px; width: 100%; padding: 11px; border: 1px solid #263646; background: rgba(13,21,30,.86); text-align: left; transition: .18s ease; }
+.slot-button:hover { border-color: #42647f; transform: translateX(-2px); }
+.slot-button.is-selected { border-color: rgba(66,188,255,.62); background: linear-gradient(90deg, rgba(28,74,104,.52), rgba(13,22,32,.9)); box-shadow: inset 2px 0 0 var(--cyan); }
+.slot-button span { display: grid; gap: 2px; }
+.slot-button strong { color: #b9cad8; font-size: 13px; }
+.slot-button small { color: #586b7d; }
+.slot-button b { color: #71879a; }
+.slot-icon { display: grid; place-items: center; width: 30px; height: 30px; border: 1px solid #344c61; background: #0d1822; color: var(--cyan); font-style: normal; }
+.missile-icon { color: #eaa04b; }.cannon-icon { color: #c3d1db; }
+
+.ship-stats { display: grid; grid-template-columns: repeat(2,1fr); gap: 1px; margin-top: 20px; background: var(--line); border: 1px solid var(--line); }
+.ship-stats div { display: grid; padding: 10px 12px; background: #0e1620; }
+.ship-stats span { color: #5f7386; font-size: 10px; text-transform: uppercase; }
+.ship-stats strong { color: #d1e3ee; font-family: "Orbitron", sans-serif; font-size: 14px; }
+.console-actions { display: grid; gap: 8px; margin-top: auto; }
+
+.hangar-heading { display: flex; justify-content: space-between; align-items: flex-end; gap: 30px; padding: 34px 34px 24px; }
+.hangar-heading p { max-width: 520px; text-align: right; }
+.hangar-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; padding: 8px 34px 28px; }
+.hangar-card { overflow: hidden; border: 1px solid var(--line); background: #0c131c; transition: .2s ease; }
+.hangar-card:hover, .hangar-card.is-selected { transform: translateY(-3px); border-color: rgba(66,188,255,.48); box-shadow: 0 15px 35px rgba(0,0,0,.28); }
+.thumb-frame { position: relative; aspect-ratio: 1.55; overflow: hidden; background: radial-gradient(circle, #182c42, #070b10); }
+.thumb-frame::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 40px rgba(0,0,0,.42); pointer-events: none; }
+.thumb-frame img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.thumb-frame > span { position: absolute; z-index: 1; left: 11px; top: 10px; padding: 3px 7px; background: rgba(4,8,13,.75); color: #8ba0b2; font-size: 10px; letter-spacing: .08em; }
+.hangar-card-body { display: flex; align-items: center; justify-content: space-between; padding: 13px 14px; }
+.hangar-card-body div { display: grid; }
+.hangar-card-body strong { color: #d3e0ea; font-family: "Orbitron", sans-serif; font-size: 13px; }
+.hangar-card-body small { color: #5d7082; }
+.hangar-card-body > b { padding: 3px 8px; border: 1px solid #2c4457; color: #7290a6; font-size: 10px; }
+.hangar-card.is-selected .hangar-card-body > b { border-color: #357ba6; color: var(--cyan); }
+.thumbnail-readout { display: flex; align-items: baseline; gap: 12px; margin: 0 34px; padding: 15px 18px; border: 1px solid var(--line); background: rgba(13,20,29,.8); }
+.thumbnail-readout span { color: var(--gold); font-size: 11px; letter-spacing: .1em; }
+.thumbnail-readout strong { color: #a8bbc9; }
+.thumbnail-readout small { margin-left: auto; color: #536678; }
+
+.demo-footer { display: flex; justify-content: space-between; padding: 13px 3px 0; color: #405264; font-size: 11px; letter-spacing: .08em; }
+.demo-footer span:last-child { display: flex; align-items: center; gap: 7px; }
+.demo-footer i { width: 6px; height: 6px; border-radius: 50%; background: #4ed890; box-shadow: 0 0 7px #4ed890; }
+
+@media (max-width: 900px) {
+  .page-shell { padding: 18px 14px; }
+  .demo-header { align-items: flex-start; flex-direction: column; }
+  .system-readout { width: 100%; }
+  .combat-card { width: calc(50% - 35px); }
+  .fitting-layout { grid-template-columns: 1fr; }
+  .fitting-viewer { min-height: 440px; border-right: 0; border-bottom: 1px solid var(--line); }
+  .fitting-console { min-height: 500px; }
+  .hangar-heading { align-items: flex-start; flex-direction: column; }
+  .hangar-heading p { text-align: left; }
+  .hangar-grid { grid-template-columns: 1fr; }
+  .thumbnail-readout { align-items: flex-start; flex-direction: column; }
+  .thumbnail-readout small { margin-left: 0; }
+}
+
+@media (max-width: 600px) {
+  .mode-tab { padding: 12px 8px; text-align: center; font-size: 12px; }
+  .mode-tab span { display: none; }
+  .demo-stage, .mode-panel { min-height: 540px; }
+  .battle-frame { height: 485px; }
+  .combat-card { top: 16px; width: calc(50% - 22px); padding: 9px; }
+  .player-card { left: 12px; }.enemy-card { right: 12px; }
+  .combat-card-title small, .combat-stats { display: none; }
+  .battle-message { max-width: 86%; overflow: hidden; text-overflow: ellipsis; }
+  .panel-notes { height: auto; align-items: flex-start; flex-direction: column; }
+  .hangar-heading, .hangar-grid { padding-left: 18px; padding-right: 18px; }
+  .thumbnail-readout { margin-left: 18px; margin-right: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+}
+
+</style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="demo-header">
+      <div>
+        <span class="back-link">EVE IDLE · 独立演示</span>
+        <div class="eyebrow">SHIP VISUALIZATION PROTOTYPE</div>
+        <h1>舰船 3D 混合展示演示</h1>
+        <p>战斗与装配使用实时模型，船坞列表使用同一模型生成的静态截图。</p>
+      </div>
+      <div class="system-readout" aria-label="演示运行状态">
+        <span class="pulse-dot"></span>
+        <div><strong id="system-status">3D 引擎初始化中</strong><small id="perf-readout">等待渲染器</small></div>
+      </div>
+    </header>
+
+    <nav class="mode-tabs" aria-label="演示模式">
+      <button class="mode-tab is-active" data-mode="battle" type="button">
+        <span>01</span> 战斗画面
+      </button>
+      <button class="mode-tab" data-mode="fitting" type="button">
+        <span>02</span> 装备界面
+      </button>
+      <button class="mode-tab" data-mode="hangar" type="button">
+        <span>03</span> 船坞截图
+      </button>
+    </nav>
+
+    <main class="demo-stage">
+      <section class="mode-panel is-active" data-panel="battle">
+        <div class="battle-frame">
+          <canvas id="battle-canvas" aria-label="两艘舰船的实时三维战斗演示"></canvas>
+          <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+          <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+
+          <article class="combat-card player-card">
+            <div class="combat-card-title"><span class="ally-mark"></span> 黄隼级 <small>护卫舰</small></div>
+            <div class="bar-label"><span>护盾</span><strong>300 / 300</strong></div>
+            <div class="stat-bar"><i class="shield-bar"></i></div>
+            <div class="combat-stats"><span>激光炮 × 2</span><span>航速 280</span></div>
+          </article>
+
+          <article class="combat-card enemy-card">
+            <div class="combat-card-title"><span class="enemy-mark"></span> 赤潮掠袭者 <small>敌对</small></div>
+            <div class="bar-label"><span>结构</span><strong>174 / 220</strong></div>
+            <div class="stat-bar"><i class="enemy-bar"></i></div>
+            <div class="combat-stats"><span>自动火炮 × 2</span><span>距离 8.4 km</span></div>
+          </article>
+
+          <div class="battle-message" id="battle-message">自动交战中 · 舰船模型实时渲染</div>
+          <div class="viewport-label">REAL-TIME VIEW · 45 FPS CAP</div>
+        </div>
+        <div class="panel-notes">
+          <div><strong>实时战斗</strong><span>漂浮、转向、推进器和炮火由模型动画表现。</span></div>
+          <button class="utility-button" id="power-toggle" type="button">切换低功耗 30 FPS</button>
+        </div>
+      </section>
+
+      <section class="mode-panel" data-panel="fitting" hidden>
+        <div class="fitting-layout">
+          <div class="fitting-viewer">
+            <canvas id="fitting-canvas" aria-label="可以旋转查看的三维舰船模型"></canvas>
+            <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+            <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+            <div class="drag-hint">拖动旋转 · 滚轮缩放 · 双击复位</div>
+            <div class="ship-designation"><span>F-01</span><strong>黄隼级</strong><small>轻型护盾护卫舰</small></div>
+          </div>
+
+          <aside class="fitting-console">
+            <div class="console-heading"><span>装配预览</span><small>FITTING LOADOUT</small></div>
+            <div class="slot-group">
+              <label>高能槽位</label>
+              <button class="slot-button is-selected" type="button" data-weapon="laser">
+                <i class="slot-icon laser-icon">✦</i><span><strong>脉冲激光炮</strong><small>炮塔外形实时替换</small></span><b>×2</b>
+              </button>
+              <button class="slot-button" type="button" data-weapon="missile">
+                <i class="slot-icon missile-icon">▰</i><span><strong>轻型导弹架</strong><small>双联发射舱</small></span><b>×2</b>
+              </button>
+              <button class="slot-button" type="button" data-weapon="cannon">
+                <i class="slot-icon cannon-icon">●</i><span><strong>自动火炮</strong><small>短管动能炮塔</small></span><b>×2</b>
+              </button>
+            </div>
+            <div class="ship-stats">
+              <div><span>护盾</span><strong>300</strong></div>
+              <div><span>装甲</span><strong>100</strong></div>
+              <div><span>结构</span><strong>100</strong></div>
+              <div><span>预估 DPS</span><strong id="dps-value">24.8</strong></div>
+            </div>
+            <div class="console-actions">
+              <button class="primary-button" id="spin-toggle" type="button">暂停自动旋转</button>
+              <button class="utility-button" id="snapshot-button" type="button">保存当前截图</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="mode-panel" data-panel="hangar" hidden>
+        <div class="hangar-heading">
+          <div><span class="eyebrow">STATIC THUMBNAILS</span><h2>船坞列表只加载截图</h2></div>
+          <p>以下图片在页面初始化时由同一套 3D 模型生成一次，之后作为普通图片显示，不再消耗持续渲染性能。</p>
+        </div>
+        <div class="hangar-grid" id="hangar-grid">
+          <article class="hangar-card is-selected" data-thumb="gold">
+            <div class="thumb-frame"><img alt="黄隼级标准船坞截图"><span>T1 · 护卫舰</span></div>
+            <div class="hangar-card-body"><div><strong>黄隼级</strong><small>护盾 · 激光</small></div><b>在役</b></div>
+          </article>
+          <article class="hangar-card" data-thumb="red">
+            <div class="thumb-frame"><img alt="赤潮级标准船坞截图"><span>T1 · 驱逐舰</span></div>
+            <div class="hangar-card-body"><div><strong>赤潮级</strong><small>装甲 · 导弹</small></div><b>船坞</b></div>
+          </article>
+          <article class="hangar-card" data-thumb="blue">
+            <div class="thumb-frame"><img alt="苍穹级标准船坞截图"><span>T2 · 巡洋舰</span></div>
+            <div class="hangar-card-body"><div><strong>苍穹级</strong><small>结构 · 火炮</small></div><b>船坞</b></div>
+          </article>
+        </div>
+        <div class="thumbnail-readout"><span>截图模式</span><strong id="thumb-status">正在生成静态缩略图…</strong><small>生成完成后：0 个持续 WebGL 渲染循环</small></div>
+      </section>
+    </main>
+
+    <footer class="demo-footer">
+      <span>程序化低多边形原型 · 无外部舰船模型文件</span>
+      <span><i></i> WebGL 2 / Three.js</span>
+    </footer>
+  </div>
+  <noscript>此演示需要启用 JavaScript，并需要联网加载 Three.js。</noscript>
+  <script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+const COLORS = {
+  gold: { hull: 0x8f702c, dark: 0x202830, glow: 0x2aaee8, accent: 0xc7a14b, steel: 0x58636b },
+  red:  { hull: 0x71322f, dark: 0x261f23, glow: 0xe66b42, accent: 0xa64b3e, steel: 0x625b5b },
+  blue: { hull: 0x334f66, dark: 0x1b252e, glow: 0x45c5df, accent: 0x567e95, steel: 0x5d6c73 }
+};
+
+const clock = new THREE.Clock();
+let activeMode = "battle";
+let frameCap = 45;
+let lastFrame = 0;
+let autoSpin = true;
+let fittingWeapon = "laser";
+
+const statusEl = document.getElementById("system-status");
+const perfEl = document.getElementById("perf-readout");
+const battleMessage = document.getElementById("battle-message");
+
+function material(color, metalness = 0.72, roughness = 0.34, emissive = 0x000000, intensity = 0) {
+  return new THREE.MeshStandardMaterial({ color, metalness, roughness, emissive, emissiveIntensity: intensity, flatShading: true });
+}
+
+function addPart(group, geometry, mat, position, rotation = [0, 0, 0], scale = [1, 1, 1], outline = false) {
+  const mesh = new THREE.Mesh(geometry, mat);
+  mesh.position.set(...position);
+  mesh.rotation.set(...rotation);
+  mesh.scale.set(...scale);
+  mesh.castShadow = false;
+  mesh.receiveShadow = false;
+  if (outline) {
+    const edges = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry, 24),
+      new THREE.LineBasicMaterial({ color: 0x080d12, transparent: true, opacity: 0.42 })
+    );
+    mesh.add(edges);
+  }
+  group.add(mesh);
+  return mesh;
+}
+
+function chamferedHull(length, frontWidth, rearWidth, frontHeight, rearHeight, chamfer = 0.16) {
+  const ring = (width, height, z) => {
+    const c = Math.min(chamfer, width * 0.22, height * 0.32);
+    const x = width / 2;
+    const y = height / 2;
+    return [
+      [-x + c, -y, z], [x - c, -y, z], [x, -y + c, z], [x, y - c, z],
+      [x - c, y, z], [-x + c, y, z], [-x, y - c, z], [-x, -y + c, z]
+    ];
+  };
+  const vertices = [...ring(frontWidth, frontHeight, -length / 2), ...ring(rearWidth, rearHeight, length / 2)].flat();
+  const indices = [];
+  for (let i = 1; i < 7; i++) indices.push(0, i, i + 1, 8, 8 + i + 1, 8 + i);
+  for (let i = 0; i < 8; i++) {
+    const n = (i + 1) % 8;
+    indices.push(i, 8 + i, 8 + n, i, 8 + n, n);
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.setIndex(indices);
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
+function addEngine(group, x, y, z, radius, palette, length = 1.7) {
+  const casing = material(palette.dark, 0.94, 0.3);
+  const steel = material(palette.steel, 0.9, 0.27);
+  const glow = material(0x0c2632, 0.35, 0.28, palette.glow, 1.35);
+  addPart(group, new THREE.CylinderGeometry(radius * 0.86, radius, length, 12), casing,
+    [x, y, z], [Math.PI / 2, 0, 0]);
+  addPart(group, new THREE.CylinderGeometry(radius * 1.03, radius * 1.03, 0.18, 12), steel,
+    [x, y, z + length * 0.5], [Math.PI / 2, 0, 0]);
+  addPart(group, new THREE.CylinderGeometry(radius * 0.68, radius * 0.68, 0.05, 16), glow,
+    [x, y, z + length * 0.5 + 0.11], [Math.PI / 2, 0, 0], [1, 1, 1], false);
+  const exhaustMaterial = new THREE.MeshBasicMaterial({
+    color: palette.glow, transparent: true, opacity: 0.18,
+    blending: THREE.AdditiveBlending, depthWrite: false
+  });
+  const exhaust = addPart(group, new THREE.ConeGeometry(radius * 0.56, 1.45, 12, 1, true), exhaustMaterial,
+    [x, y, z + length * 0.5 + 0.78], [Math.PI / 2, 0, 0], [1, 1, 1], false);
+  exhaust.name = "exhaust";
+}
+
+function addAntenna(group, x, y, z, height, steelMat, glowMat) {
+  addPart(group, new THREE.CylinderGeometry(0.025, 0.045, height, 8), steelMat,
+    [x, y + height / 2, z], [0, 0, 0], [1, 1, 1], false);
+  addPart(group, new THREE.SphereGeometry(0.065, 8, 6), glowMat,
+    [x, y + height, z], [0, 0, 0], [1, 1, 1], false);
+}
+
+function makeStarField(count = 700, radius = 42) {
+  const points = [];
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    const r = radius * (0.72 + Math.random() * 0.28);
+    points.push(r * Math.sin(phi) * Math.cos(theta), r * Math.cos(phi), r * Math.sin(phi) * Math.sin(theta));
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(points, 3));
+  return new THREE.Points(geometry, new THREE.PointsMaterial({ color: 0x9fc9e5, size: 0.055, transparent: true, opacity: 0.72 }));
+}
+
+function createWeapon(group, type, side, palette) {
+  const weapon = new THREE.Group();
+  weapon.name = `weapon-${side}`;
+  const x = side * 1.7;
+  const darkMat = material(palette.dark, 0.9, 0.3);
+  const steelMat = material(palette.steel, 0.92, 0.25);
+  const glowMat = material(0x102630, 0.35, 0.25, palette.glow, 1.25);
+
+  if (type === "missile") {
+    addPart(weapon, chamferedHull(1.28, 0.6, 0.76, 0.48, 0.58, 0.1), darkMat, [x, 0.56, -0.62]);
+    for (let ix = -1; ix <= 1; ix += 2) {
+      for (let iy = -1; iy <= 1; iy += 2) {
+        addPart(weapon, new THREE.CylinderGeometry(0.075, 0.075, 0.12, 10), glowMat,
+          [x + ix * 0.15, 0.56 + iy * 0.12, -1.28], [Math.PI / 2, 0, 0], [1, 1, 1], false);
+      }
+    }
+  } else {
+    const barrelLength = type === "cannon" ? 1.14 : 1.48;
+    const barrelRadius = type === "cannon" ? 0.085 : 0.055;
+    addPart(weapon, new THREE.CylinderGeometry(0.26, 0.34, 0.32, 10), darkMat,
+      [x, 0.53, -0.44], [0, 0, 0]);
+    addPart(weapon, new THREE.BoxGeometry(0.52, 0.2, 0.55), steelMat, [x, 0.76, -0.54]);
+    for (const barrelOffset of [-0.11, 0.11]) {
+      addPart(weapon, new THREE.CylinderGeometry(barrelRadius, barrelRadius * 1.06, barrelLength, 8),
+        steelMat, [x + barrelOffset, 0.76, -1.28], [Math.PI / 2, 0, 0]);
+      if (type === "laser") {
+        addPart(weapon, new THREE.CylinderGeometry(0.07, 0.07, 0.09, 10), glowMat,
+          [x + barrelOffset, 0.76, -2.03], [Math.PI / 2, 0, 0], [1, 1, 1], false);
+      }
+    }
+  }
+  group.add(weapon);
+}
+
+function createShip({ palette = COLORS.gold, weapon = "laser", scale = 1, heavy = false } = {}) {
+  const ship = new THREE.Group();
+  ship.userData.weapon = weapon;
+  const hullMat = material(palette.hull, 0.82, 0.42);
+  const darkMat = material(palette.dark, 0.92, 0.36);
+  const accentMat = material(palette.accent, 0.72, 0.38);
+  const steelMat = material(palette.steel, 0.94, 0.3);
+  const glassMat = material(0x09171f, 0.42, 0.2, palette.glow, 0.65);
+  const glowMat = material(0x0d222b, 0.3, 0.22, palette.glow, 1.18);
+
+  // Long armored spine and tapered prow establish a spacecraft silhouette rather than a car-like body.
+  addPart(ship, chamferedHull(5.2, 1.08, 2.2, 0.62, 1.16, 0.19), darkMat, [0, -0.04, -0.2], [0, 0, 0], [1, 1, 1], true);
+  addPart(ship, chamferedHull(3.2, 0.26, 1.38, 0.22, 0.72, 0.08), hullMat, [-0.12, 0.02, -3.82], [0, 0, 0], [1, 1, 1], true);
+  addPart(ship, chamferedHull(2.6, 1.46, 2.1, 0.3, 0.42, 0.12), hullMat, [0.08, 0.64, -0.42], [0, 0, 0], [1, 1, 1], true);
+  addPart(ship, chamferedHull(1.68, 0.82, 1.2, 0.32, 0.44, 0.1), glassMat, [-0.22, 0.9, -1.15], [0, 0, 0], [1, 1, 1], true);
+
+  // Layered armor plates, with deliberately imperfect symmetry.
+  addPart(ship, chamferedHull(2.75, 0.82, 1.2, 0.16, 0.24, 0.06), accentMat, [-0.5, 0.86, 0.78], [0, 0, 0], [1, 1, 1], true);
+  addPart(ship, chamferedHull(2.3, 0.58, 0.92, 0.12, 0.19, 0.05), hullMat, [0.74, 0.72, 0.88], [0, 0, 0], [1, 1, 1], true);
+  addPart(ship, chamferedHull(1.9, 1.38, 1.68, 0.2, 0.3, 0.08), steelMat, [0.02, -0.67, 0.96]);
+
+  // Side trusses and utility booms create the dense industrial construction language.
+  for (const side of [-1, 1]) {
+    const asymmetry = side < 0 ? 1.14 : 0.9;
+    addPart(ship, chamferedHull(3.45, 0.62 * asymmetry, 0.92 * asymmetry, 0.36, 0.58, 0.1),
+      side < 0 ? hullMat : darkMat, [side * 1.48, -0.08, 0.48], [0, side * 0.065, side * 0.025], [1, 1, 1], true);
+    addPart(ship, new THREE.BoxGeometry(1.18 * asymmetry, 0.12, 0.18), steelMat,
+      [side * 1.0, -0.08, -0.58], [0, 0, side * 0.18]);
+    addPart(ship, new THREE.BoxGeometry(1.38 * asymmetry, 0.1, 0.16), steelMat,
+      [side * 1.08, -0.14, 0.72], [0, 0, side * -0.14]);
+    addPart(ship, new THREE.BoxGeometry(0.11, 0.1, 2.28), glowMat,
+      [side * (1.42 + (side < 0 ? 0.12 : 0)), 0.31, 0.42], [0, side * 0.065, 0], [1, 1, 1], false);
+    createWeapon(ship, weapon, side, palette);
+  }
+
+  // Uneven engine cluster: three drives on port, two on starboard, one central auxiliary drive.
+  addEngine(ship, -1.9, -0.18, 2.15, 0.5, palette, 1.92);
+  addEngine(ship, -1.15, -0.48, 2.35, 0.37, palette, 1.56);
+  addEngine(ship, -2.34, 0.34, 2.28, 0.3, palette, 1.46);
+  addEngine(ship, 1.72, -0.12, 2.18, 0.46, palette, 1.82);
+  addEngine(ship, 1.12, 0.42, 2.36, 0.31, palette, 1.42);
+  addEngine(ship, 0.18, -0.38, 2.54, 0.29, palette, 1.34);
+
+  // Hull ribs, maintenance boxes, sensor mast and identification lights.
+  for (let i = 0; i < 5; i++) {
+    const z = -0.35 + i * 0.55;
+    addPart(ship, new THREE.BoxGeometry(1.55, 0.07, 0.09), steelMat,
+      [-0.05, 0.68 + i * 0.018, z], [0, 0, 0], [1, 1, 1], false);
+  }
+  for (let i = 0; i < 4; i++) {
+    addPart(ship, new THREE.BoxGeometry(0.22, 0.2, 0.38), i % 2 ? darkMat : steelMat,
+      [0.88, 0.39, -0.2 + i * 0.62], [0, 0, 0]);
+  }
+  addPart(ship, new THREE.CylinderGeometry(0.24, 0.34, 0.3, 10), darkMat, [0.38, 1.03, 0.18]);
+  addAntenna(ship, 0.38, 1.17, 0.18, 0.8, steelMat, glowMat);
+  addAntenna(ship, -0.18, 0.98, 0.44, 0.52, steelMat, glowMat);
+  addPart(ship, new THREE.SphereGeometry(0.08, 8, 6), glowMat, [-0.7, 0.72, -2.48], [0, 0, 0], [1, 1, 1], false);
+  addPart(ship, new THREE.SphereGeometry(0.06, 8, 6), glowMat, [0.62, 0.58, -2.12], [0, 0, 0], [1, 1, 1], false);
+
+  if (heavy) {
+    addPart(ship, chamferedHull(2.2, 2.8, 3.45, 0.2, 0.34, 0.08), darkMat, [0, -0.46, 1.15], [0, 0, 0], [1, 1, 1], true);
+    addPart(ship, chamferedHull(1.35, 0.72, 1.05, 0.68, 0.78, 0.12), accentMat, [-0.44, 0.55, 1.38], [0, 0, 0], [1, 1, 1], true);
+    addPart(ship, new THREE.BoxGeometry(3.7, 0.12, 0.16), steelMat, [0, -0.22, 1.82], [0, 0, 0.04]);
+  }
+
+  ship.scale.setScalar(scale * (heavy ? 1.08 : 1));
+  ship.rotation.x = 0.055;
+  return ship;
+}
+
+function createRenderer(canvas, preserveDrawingBuffer = false) {
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, powerPreference: "high-performance", preserveDrawingBuffer });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.92;
+  return renderer;
+}
+
+function addLighting(scene, warm = false) {
+  scene.add(new THREE.HemisphereLight(0x86b9d8, 0x11171e, 1.05));
+  const key = new THREE.DirectionalLight(warm ? 0xffc07d : 0xdcecff, 3.15);
+  key.position.set(-6, 9, 5);
+  scene.add(key);
+  const rim = new THREE.PointLight(warm ? 0xff4b35 : 0x2fb9ff, 10, 24, 2);
+  rim.position.set(7, 1, -5);
+  scene.add(rim);
+}
+
+function resizeRenderer(renderer, camera) {
+  const canvas = renderer.domElement;
+  const width = Math.max(1, canvas.clientWidth);
+  const height = Math.max(1, canvas.clientHeight);
+  const pixelRatio = renderer.getPixelRatio();
+  if (canvas.width !== Math.floor(width * pixelRatio) || canvas.height !== Math.floor(height * pixelRatio)) {
+    renderer.setSize(width, height, false);
+    camera.aspect = width / height;
+    camera.updateProjectionMatrix();
+  }
+}
+
+// Battle viewer
+const battleCanvas = document.getElementById("battle-canvas");
+const battleRenderer = createRenderer(battleCanvas);
+const battleScene = new THREE.Scene();
+const battleCamera = new THREE.PerspectiveCamera(36, 1, 0.1, 100);
+battleCamera.position.set(0, 7.4, 16.5);
+battleCamera.lookAt(0, 0, 0);
+addLighting(battleScene);
+battleScene.add(makeStarField());
+
+const playerShip = createShip({ palette: COLORS.gold, weapon: "laser", scale: 0.78 });
+playerShip.position.set(-3.1, -0.75, 0.7);
+playerShip.rotation.set(0.1, -0.34, -0.06);
+battleScene.add(playerShip);
+
+const enemyShip = createShip({ palette: COLORS.red, weapon: "cannon", scale: 0.69, heavy: true });
+enemyShip.position.set(3.25, 1.05, -1.5);
+enemyShip.rotation.set(-0.03, 2.72, 0.09);
+battleScene.add(enemyShip);
+
+const projectileMat = new THREE.MeshBasicMaterial({ color: 0x61d7ff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending });
+const projectiles = [];
+for (let i = 0; i < 4; i++) {
+  const pulse = new THREE.Mesh(new THREE.SphereGeometry(0.08, 10, 8), projectileMat.clone());
+  pulse.scale.z = 8;
+  pulse.visible = false;
+  battleScene.add(pulse);
+  projectiles.push({ mesh: pulse, life: -i * 0.32, offset: i % 2 ? 0.3 : -0.3 });
+}
+
+function updateBattle(time, delta) {
+  playerShip.position.y = -0.72 + Math.sin(time * 1.35) * 0.11;
+  playerShip.rotation.z = -0.06 + Math.sin(time * 0.8) * 0.018;
+  enemyShip.position.y = 1.05 + Math.sin(time * 1.1 + 2) * 0.1;
+  enemyShip.rotation.z = 0.09 + Math.sin(time * 0.72) * 0.022;
+  for (const ship of [playerShip, enemyShip]) {
+    ship.traverse((part) => {
+      if (part.name === "exhaust") {
+        part.scale.y = 0.85 + Math.sin(time * 17 + part.position.x) * 0.18;
+        part.material.opacity = 0.25 + Math.random() * 0.12;
+      }
+    });
+  }
+  for (const projectile of projectiles) {
+    projectile.life += delta;
+    if (projectile.life > 1.6) projectile.life = 0;
+    const p = projectile.life / 1.6;
+    projectile.mesh.visible = p > 0.08 && p < 0.92;
+    projectile.mesh.position.lerpVectors(
+      new THREE.Vector3(-2.1, -0.3 + projectile.offset, -1.0),
+      new THREE.Vector3(2.4, 0.75 + projectile.offset, -1.5),
+      Math.max(0, Math.min(1, p))
+    );
+    projectile.mesh.material.opacity = Math.sin(Math.min(1, p) * Math.PI);
+  }
+}
+
+// Fitting viewer
+const fittingCanvas = document.getElementById("fitting-canvas");
+const fittingRenderer = createRenderer(fittingCanvas, true);
+const fittingScene = new THREE.Scene();
+const fittingCamera = new THREE.PerspectiveCamera(34, 1, 0.1, 100);
+fittingCamera.position.set(10.5, 6.4, -15.4);
+addLighting(fittingScene);
+fittingScene.add(makeStarField(460, 36));
+const fittingRoot = new THREE.Group();
+fittingScene.add(fittingRoot);
+let fittingShip = createShip({ palette: COLORS.gold, weapon: fittingWeapon, scale: 1 });
+fittingRoot.add(fittingShip);
+
+const controls = new OrbitControls(fittingCamera, fittingCanvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.075;
+controls.enablePan = false;
+controls.minDistance = 10;
+controls.maxDistance = 28;
+controls.target.set(0, 0, 0);
+controls.update();
+
+function resetFittingCamera() {
+  fittingCamera.position.set(10.5, 6.4, -15.4);
+  controls.target.set(0, 0, 0);
+  controls.update();
+}
+fittingCanvas.addEventListener("dblclick", resetFittingCamera);
+
+function replaceFittingShip(weapon) {
+  fittingRoot.remove(fittingShip);
+  fittingShip.traverse((item) => {
+    if (item.geometry) item.geometry.dispose();
+    if (item.material) item.material.dispose();
+  });
+  fittingShip = createShip({ palette: COLORS.gold, weapon, scale: 1 });
+  fittingRoot.add(fittingShip);
+}
+
+document.querySelectorAll("[data-weapon]").forEach((button) => {
+  button.addEventListener("click", () => {
+    fittingWeapon = button.dataset.weapon;
+    document.querySelectorAll("[data-weapon]").forEach((item) => item.classList.toggle("is-selected", item === button));
+    replaceFittingShip(fittingWeapon);
+    document.getElementById("dps-value").textContent = ({ laser: "24.8", missile: "21.2", cannon: "27.6" })[fittingWeapon];
+  });
+});
+
+document.getElementById("spin-toggle").addEventListener("click", (event) => {
+  autoSpin = !autoSpin;
+  event.currentTarget.textContent = autoSpin ? "暂停自动旋转" : "恢复自动旋转";
+});
+
+document.getElementById("snapshot-button").addEventListener("click", () => {
+  resizeRenderer(fittingRenderer, fittingCamera);
+  fittingRenderer.render(fittingScene, fittingCamera);
+  const anchor = document.createElement("a");
+  anchor.download = `huangsun-${fittingWeapon}.png`;
+  anchor.href = fittingCanvas.toDataURL("image/png");
+  anchor.click();
+});
+
+// Static hangar thumbnails, generated once from the same ship builder.
+function generateThumbnails() {
+  const canvas = document.createElement("canvas");
+  const renderer = createRenderer(canvas, true);
+  renderer.setPixelRatio(1);
+  renderer.setSize(640, 400, false);
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x09101a);
+  const camera = new THREE.PerspectiveCamera(30, 640 / 400, 0.1, 100);
+  camera.position.set(7.2, 4.4, -10.7);
+  camera.lookAt(0, 0, 0);
+  addLighting(scene);
+  scene.add(makeStarField(260, 36));
+
+  const variants = [
+    { key: "gold", palette: COLORS.gold, weapon: "laser", scale: 0.92, heavy: false },
+    { key: "red", palette: COLORS.red, weapon: "missile", scale: 0.94, heavy: true },
+    { key: "blue", palette: COLORS.blue, weapon: "cannon", scale: 1.02, heavy: true }
+  ];
+
+  for (const variant of variants) {
+    const ship = createShip(variant);
+    ship.rotation.set(0.12, -0.47, -0.06);
+    scene.add(ship);
+    renderer.render(scene, camera);
+    const image = document.querySelector(`[data-thumb="${variant.key}"] img`);
+    image.src = canvas.toDataURL("image/webp", 0.84);
+    scene.remove(ship);
+    ship.traverse((item) => {
+      if (item.geometry) item.geometry.dispose();
+      if (item.material) item.material.dispose();
+    });
+  }
+
+  renderer.dispose();
+  renderer.forceContextLoss();
+  document.getElementById("thumb-status").textContent = "3 张 WebP 已生成并转为普通图片";
+}
+
+// Mode switching and frame policy.
+document.querySelectorAll("[data-mode]").forEach((button) => {
+  button.addEventListener("click", () => {
+    activeMode = button.dataset.mode;
+    document.querySelectorAll("[data-mode]").forEach((item) => item.classList.toggle("is-active", item === button));
+    document.querySelectorAll("[data-panel]").forEach((panel) => {
+      const active = panel.dataset.panel === activeMode;
+      panel.classList.toggle("is-active", active);
+      panel.hidden = !active;
+    });
+    statusEl.textContent = activeMode === "hangar" ? "静态截图模式" : "实时 3D 正常运行";
+  });
+});
+
+document.getElementById("power-toggle").addEventListener("click", (event) => {
+  frameCap = frameCap === 45 ? 30 : 45;
+  event.currentTarget.textContent = frameCap === 30 ? "恢复平衡模式 45 FPS" : "切换低功耗 30 FPS";
+  battleMessage.textContent = `自动交战中 · 已限制为 ${frameCap} FPS`;
+});
+
+function animate(nowMs) {
+  requestAnimationFrame(animate);
+  if (document.hidden) return;
+  const interval = 1000 / frameCap;
+  if (nowMs - lastFrame < interval) return;
+  const delta = Math.min(0.05, (nowMs - lastFrame) / 1000 || 0.016);
+  lastFrame = nowMs - ((nowMs - lastFrame) % interval);
+  const time = clock.getElapsedTime();
+
+  if (activeMode === "battle") {
+    resizeRenderer(battleRenderer, battleCamera);
+    updateBattle(time, delta);
+    battleRenderer.render(battleScene, battleCamera);
+    perfEl.textContent = `${battleRenderer.info.render.calls} DRAW CALLS · ${frameCap} FPS 上限`;
+  } else if (activeMode === "fitting") {
+    resizeRenderer(fittingRenderer, fittingCamera);
+    if (autoSpin && !controls.state) fittingRoot.rotation.y += delta * 0.22;
+    fittingShip.position.y = Math.sin(time * 1.1) * 0.05;
+    fittingShip.traverse((part) => {
+      if (part.name === "exhaust") part.material.opacity = 0.25 + Math.sin(time * 14) * 0.06;
+    });
+    controls.update();
+    fittingRenderer.render(fittingScene, fittingCamera);
+    perfEl.textContent = `${fittingRenderer.info.render.calls} DRAW CALLS · 可交互模型`;
+  } else {
+    perfEl.textContent = "0 个持续渲染循环 · 普通图片列表";
+  }
+}
+
+try {
+  generateThumbnails();
+  statusEl.textContent = "实时 3D 正常运行";
+  requestAnimationFrame(animate);
+} catch (error) {
+  statusEl.textContent = "此设备无法启动 WebGL 演示";
+  perfEl.textContent = error.message;
+  console.error(error);
+}
+
+</script>
+</body>
+</html>

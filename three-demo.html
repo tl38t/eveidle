@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EVE IDLE · 3D 舰船方案演示</title>
+  <meta name="description" content="战斗、装配与船坞截图三种舰船展示方式的 Three.js 原型。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/three-demo.css">
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="demo-header">
+      <div>
+        <a class="back-link" href="./index.html">← 返回游戏</a>
+        <div class="eyebrow">SHIP VISUALIZATION PROTOTYPE</div>
+        <h1>舰船 3D 混合展示演示</h1>
+        <p>战斗与装配使用实时模型，船坞列表使用同一模型生成的静态截图。</p>
+      </div>
+      <div class="system-readout" aria-label="演示运行状态">
+        <span class="pulse-dot"></span>
+        <div><strong id="system-status">3D 引擎初始化中</strong><small id="perf-readout">等待渲染器</small></div>
+      </div>
+    </header>
+
+    <nav class="mode-tabs" aria-label="演示模式">
+      <button class="mode-tab is-active" data-mode="battle" type="button">
+        <span>01</span> 战斗画面
+      </button>
+      <button class="mode-tab" data-mode="fitting" type="button">
+        <span>02</span> 装备界面
+      </button>
+      <button class="mode-tab" data-mode="hangar" type="button">
+        <span>03</span> 船坞截图
+      </button>
+    </nav>
+
+    <main class="demo-stage">
+      <section class="mode-panel is-active" data-panel="battle">
+        <div class="battle-frame">
+          <canvas id="battle-canvas" aria-label="两艘舰船的实时三维战斗演示"></canvas>
+          <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+          <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+
+          <article class="combat-card player-card">
+            <div class="combat-card-title"><span class="ally-mark"></span> 黄隼级 <small>护卫舰</small></div>
+            <div class="bar-label"><span>护盾</span><strong>300 / 300</strong></div>
+            <div class="stat-bar"><i class="shield-bar"></i></div>
+            <div class="combat-stats"><span>激光炮 × 2</span><span>航速 280</span></div>
+          </article>
+
+          <article class="combat-card enemy-card">
+            <div class="combat-card-title"><span class="enemy-mark"></span> 赤潮掠袭者 <small>敌对</small></div>
+            <div class="bar-label"><span>结构</span><strong>174 / 220</strong></div>
+            <div class="stat-bar"><i class="enemy-bar"></i></div>
+            <div class="combat-stats"><span>自动火炮 × 2</span><span>距离 8.4 km</span></div>
+          </article>
+
+          <div class="battle-message" id="battle-message">自动交战中 · 舰船模型实时渲染</div>
+          <div class="viewport-label">REAL-TIME VIEW · 45 FPS CAP</div>
+        </div>
+        <div class="panel-notes">
+          <div><strong>实时战斗</strong><span>漂浮、转向、推进器和炮火由模型动画表现。</span></div>
+          <button class="utility-button" id="power-toggle" type="button">切换低功耗 30 FPS</button>
+        </div>
+      </section>
+
+      <section class="mode-panel" data-panel="fitting" hidden>
+        <div class="fitting-layout">
+          <div class="fitting-viewer">
+            <canvas id="fitting-canvas" aria-label="可以旋转查看的三维舰船模型"></canvas>
+            <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+            <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+            <div class="drag-hint">拖动旋转 · 滚轮缩放 · 双击复位</div>
+            <div class="ship-designation"><span>F-01</span><strong>黄隼级</strong><small>轻型护盾护卫舰</small></div>
+          </div>
+
+          <aside class="fitting-console">
+            <div class="console-heading"><span>装配预览</span><small>FITTING LOADOUT</small></div>
+            <div class="slot-group">
+              <label>高能槽位</label>
+              <button class="slot-button is-selected" type="button" data-weapon="laser">
+                <i class="slot-icon laser-icon">✦</i><span><strong>脉冲激光炮</strong><small>炮塔外形实时替换</small></span><b>×2</b>
+              </button>
+              <button class="slot-button" type="button" data-weapon="missile">
+                <i class="slot-icon missile-icon">▰</i><span><strong>轻型导弹架</strong><small>双联发射舱</small></span><b>×2</b>
+              </button>
+              <button class="slot-button" type="button" data-weapon="cannon">
+                <i class="slot-icon cannon-icon">●</i><span><strong>自动火炮</strong><small>短管动能炮塔</small></span><b>×2</b>
+              </button>
+            </div>
+            <div class="ship-stats">
+              <div><span>护盾</span><strong>300</strong></div>
+              <div><span>装甲</span><strong>100</strong></div>
+              <div><span>结构</span><strong>100</strong></div>
+              <div><span>预估 DPS</span><strong id="dps-value">24.8</strong></div>
+            </div>
+            <div class="console-actions">
+              <button class="primary-button" id="spin-toggle" type="button">暂停自动旋转</button>
+              <button class="utility-button" id="snapshot-button" type="button">保存当前截图</button>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <section class="mode-panel" data-panel="hangar" hidden>
+        <div class="hangar-heading">
+          <div><span class="eyebrow">STATIC THUMBNAILS</span><h2>船坞列表只加载截图</h2></div>
+          <p>以下图片在页面初始化时由同一套 3D 模型生成一次，之后作为普通图片显示，不再消耗持续渲染性能。</p>
+        </div>
+        <div class="hangar-grid" id="hangar-grid">
+          <article class="hangar-card is-selected" data-thumb="gold">
+            <div class="thumb-frame"><img alt="黄隼级标准船坞截图"><span>T1 · 护卫舰</span></div>
+            <div class="hangar-card-body"><div><strong>黄隼级</strong><small>护盾 · 激光</small></div><b>在役</b></div>
+          </article>
+          <article class="hangar-card" data-thumb="red">
+            <div class="thumb-frame"><img alt="赤潮级标准船坞截图"><span>T1 · 驱逐舰</span></div>
+            <div class="hangar-card-body"><div><strong>赤潮级</strong><small>装甲 · 导弹</small></div><b>船坞</b></div>
+          </article>
+          <article class="hangar-card" data-thumb="blue">
+            <div class="thumb-frame"><img alt="苍穹级标准船坞截图"><span>T2 · 巡洋舰</span></div>
+            <div class="hangar-card-body"><div><strong>苍穹级</strong><small>结构 · 火炮</small></div><b>船坞</b></div>
+          </article>
+        </div>
+        <div class="thumbnail-readout"><span>截图模式</span><strong id="thumb-status">正在生成静态缩略图…</strong><small>生成完成后：0 个持续 WebGL 渲染循环</small></div>
+      </section>
+    </main>
+
+    <footer class="demo-footer">
+      <span>程序化低多边形原型 · 无外部舰船模型文件</span>
+      <span><i></i> WebGL 2 / Three.js</span>
+    </footer>
+  </div>
+  <noscript>此演示需要启用 JavaScript。</noscript>
+  <script type="module" src="./js/three-demo.js"></script>
+</body>
+</html>

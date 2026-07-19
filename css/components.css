@@ -1,0 +1,457 @@
+/* ===== 经验条 ===== */
+  .exp-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+
+  .exp-row .exp-label {
+    color: #6a7a8e;
+    flex-shrink: 0;
+  }
+
+  .exp-row .progress-bar {
+    flex: 1;
+    margin-top: 0;
+  }
+
+  .exp-row .exp-value {
+    color: #5da8d4;
+    flex-shrink: 0;
+  }
+
+  /* ===== 页脚 ===== */
+  .footer-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 16px;
+    background: #0c1018;
+    border-top: 1px solid #1a2434;
+    font-size: 10px;
+    color: #4a5a6a;
+    flex-shrink: 0;
+    min-height: 24px;
+  }
+
+  /* ===== 微调 ===== */
+  .text-muted    { color: #6a7a8e; }
+  .text-warning  { color: #d4a843; }
+  .text-danger   { color: #d94a4a; }
+  .text-success  { color: #7ac87a; }
+  .text-info     { color: #5da8d4; }
+  .mt-4          { margin-top: 4px; }
+  .mt-8          { margin-top: 8px; }
+  .gap-8         { gap: 8px; }
+
+  /* ===== 采矿区域选择 ===== */
+  .mining-area-select {
+    display: flex; align-items: center; gap: 8px;
+    margin-top: 8px; font-size: 12px;
+  }
+  #mining-area-select { display: block; }
+  .mining-mode-tabs {
+    display: grid; grid-template-columns: repeat(2, minmax(130px, 1fr));
+    overflow: hidden; margin-bottom: 9px; border: 1px solid #243448; border-radius: 4px;
+    background: #0c131c;
+  }
+  .mining-mode-tab {
+    height: 40px; border: 0; border-right: 1px solid #243448;
+    color: #788b9e; background: #151e2a; font-family: var(--font-tech); font-size:14px; font-weight:700;
+    letter-spacing:.12em; cursor: pointer;
+    transition: color .15s, background .15s, box-shadow .15s;
+  }
+  .mining-mode-tab:last-child { border-right: 0; }
+  .mining-mode-tab:hover { color: #c4d0da; background: #192635; }
+  .mining-mode-tab.active { color: #e0f3ff; background: linear-gradient(180deg,#315f8c,#244b70); box-shadow: inset 0 -3px #67bce8; }
+  .mining-mode-tab i { margin-right: 6px; }
+  .mining-target-scroll { overflow-x: auto; padding-bottom: 4px; scrollbar-color: #31465c #0b1119; }
+  .mining-target-strip { display: flex; flex-wrap: nowrap; gap: 8px; min-width: max-content; }
+  .mining-target-card {
+    position: relative; flex: 1 0 150px; width: 150px; min-height: 188px; padding: 11px 9px 10px;
+    display: flex; flex-direction: column; align-items: center; gap: 6px; overflow: hidden;
+    color: #aebac5; background: linear-gradient(155deg,#172230,#101720); border: 1px solid #26374a;
+    border-radius: 5px; font-family:var(--font-ui); font-size:12px; cursor: pointer; transition: transform .15s,border-color .15s,box-shadow .15s;
+  }
+  .mining-target-card:hover { transform: translateY(-1px); border-color: #4d6d88; }
+  .mining-target-card.selected { border-color: #d4a843; box-shadow: inset 0 0 0 1px rgba(212,168,67,.12),0 0 13px rgba(212,168,67,.14); }
+  .mining-target-card.running::after { content:"运行中"; position:absolute; top:7px; right:-25px; width:86px; transform:rotate(35deg); color:#dcffe2; background:#28573b; font-size:11px; line-height:19px; }
+  .mining-target-card.locked { opacity:.58; filter:saturate(.45); cursor:default; }
+  .mining-target-card.locked:hover { transform:none; border-color:#26374a; }
+  .mining-target-name {
+    color:#edf3f8; font-family:var(--font-tech); font-size:17px; font-weight:700;
+    letter-spacing:.16em; text-shadow:0 0 10px rgba(141,204,238,.12);
+  }
+  .mining-target-visual {
+    width:78px; height:78px; display:grid; place-items:center; color:var(--ore-color);
+    background:radial-gradient(circle, color-mix(in srgb,var(--ore-color) 16%,transparent), transparent 68%);
+    font-size:54px; text-shadow:0 0 18px color-mix(in srgb,var(--ore-color) 42%,transparent);
+  }
+  .mining-target-visual i { transform:rotate(-8deg); }
+  .mining-target-meta {
+    color:#b7c7d5; font-family:'Rajdhani', 'Bahnschrift', sans-serif; font-size:14px; font-weight:600;
+    line-height:1.4; letter-spacing:.02em; font-variant-numeric:tabular-nums; white-space:nowrap;
+  }
+  .mining-target-state {
+    margin-top:auto; color:#86d3f7; font-family:var(--font-tech); font-size:14px;
+    line-height:1.4; font-weight:700; letter-spacing:.14em; text-shadow:0 0 9px rgba(121,201,242,.16);
+  }
+  .mining-target-card.selected .mining-target-state { color:#f0c85d; }
+  .mining-target-card.locked .mining-target-state { color:#ef8b8b; }
+  .mining-target-requirement {
+    margin-top:7px; min-height:21px; font-family:var(--font-tech); font-size:13px;
+    font-weight:600; line-height:1.45; letter-spacing:.07em;
+  }
+  .mining-target-requirement.ready { color:#8ddd98; }
+  .mining-target-requirement.blocked { color:#ee8383; }
+  .area-label { color: #6a7a8e; flex-shrink: 0; }
+  .area-dropdown { position: relative; display: inline-block; }
+  .area-dropbtn {
+    padding: 4px 12px; font-size: 12px; font-family: inherit;
+    background: #151d28; color: #e8d8a0; border: 1px solid #2a3545;
+    border-radius: 3px; cursor: default; min-width: 130px; text-align: left;
+  }
+  .area-dropbtn:hover { border-color: #4a90d9; }
+  .area-dropdown-content {
+    display: none; position: absolute; top: 100%; left: 0;     z-index: 100;
+    background: #111820; border: 1px solid #2a3545; border-radius: 3px;
+    min-width: 180px; max-height: 210px; overflow-y: auto; margin-top: 2px;
+  }
+  .area-dropdown-content.show { display: block; }
+  .area-dropdown-content .area-option {
+    padding: 5px 12px; font-size: 12px; color: #8899aa; cursor: default;
+    border-bottom: 1px solid #1a2434; white-space: nowrap;
+  }
+  .area-dropdown-content .area-option:hover { background: #1c2735; color: #c8d0d8; }
+  .area-dropdown-content .area-option.selected { color: #d4a843; }
+  .area-dropdown-content .area-option.locked { color: #3a4a5a; font-style: italic; }
+  .area-dropdown-content .area-option .area-req { font-size: 10px; color: #4a5a6a; margin-left: 8px; }
+
+  /* ===== 仓库面板 ===== */
+  .cargo-panel { flex: 1; display: flex; flex-direction: column; }
+  .cargo-tabs {
+    display: flex; gap: 4px; flex-wrap: wrap;
+    margin-bottom: 12px; padding-bottom: 8px;
+    border-bottom: 1px solid #1a2535;
+  }
+  .cargo-tab {
+    padding: 4px 12px; font-size: 12px; color: #6a7a8e;
+    border: 1px solid #1e2a38; border-radius: 3px;
+    cursor: default; transition: all 0.15s;
+  }
+  .cargo-tab:hover { color: #bcc5d0; border-color: #3a4a5a; }
+  .cargo-tab.active { color: #d4a843; border-color: #d4a843; background: #1a1a10; }
+
+  .cargo-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 6px; overflow-y: auto; flex: 1;
+    align-content: start;
+  }
+  .cargo-item {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px; background: #0f141e;
+    border: 1px solid #1a2535; border-radius: 3px;
+    font-size: 12px;
+  }
+  .cargo-item .ci-icon { font-size: 16px; flex-shrink: 0; }
+  .cargo-item .ci-content { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .cargo-item .ci-name { color: #c8d0d8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cargo-item .ci-qty  { color: #e8d8a0; font-weight: 600; flex-shrink: 0; }
+  .cargo-item .ci-details { color: #6a7a8e; font-size: 10px; line-height: 1.25; white-space: normal; }
+  .cargo-item.equipment-item { align-items: flex-start; min-height: 48px; }
+  .cargo-item.equipment-item .ci-qty { padding-top: 1px; }
+  .cargo-item.empty { opacity: 0.3; }
+
+  /* ===== 采矿效率与进度 ===== */
+  .mining-stats { margin-top: 8px; font-size: 12px; }
+  .mining-efficiency {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  }
+  .me-label { color: #6a7a8e; }
+  .me-value { color: #4db8b8; font-weight: 700; font-size: 14px; cursor: help; border-bottom: 1px dotted #4db8b8; }
+  .mining-progress-row {
+    display: flex; align-items: center; gap: 8px; min-width: 0;
+  }
+  .mp-label { color: #6a7a8e; flex-shrink: 0; }
+  .mp-eta { color: #8899aa; flex-shrink: 0; font-size: 11px; min-width: 48px; }
+  .fill.mining-progress-fill { background: #a0c860; }
+  .skill-canvas-bar {
+    flex: 1 1 0;
+    width: auto;
+    min-width: 0;
+    max-width: 100%;
+    height: 24px;
+    border-radius: 6px;
+    display: block;
+  }
+
+  .cargo-actions { margin-top: 10px; }
+  .cargo-empty { text-align: center; color: #4a5a6a; padding: 30px; font-size: 13px; }
+
+
+  /* ===== 舰船装备环带弹窗 ===== */
+  .equip-modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); backdrop-filter: blur(6px); z-index: 10000; display: none; align-items: center; justify-content: center; }
+  .equip-modal-overlay.active { display: flex; }
+  .equip-ship-modal { background: radial-gradient(ellipse at 50% 30%, #0f1a2a, #080b10 80%); border: 1px solid rgba(212, 168, 67, 0.2); border-radius: 16px; padding: 28px 32px 24px; max-width: 720px; width: 100%; max-height: 90vh; overflow-y: auto; box-shadow: 0 0 80px rgba(0, 0, 0, 0.8); position: relative; animation: equipSlideUp 0.3s ease-out; }
+  @keyframes equipSlideUp { from { opacity: 0; transform: translateY(30px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  .equip-modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; color: #6a7a8e; font-size: 22px; cursor: pointer; transition: all 0.2s; font-family: inherit; }
+  .equip-modal-close:hover { color: #d94a4a; transform: rotate(90deg); }
+  .orbit-wrapper { width: 100%; max-width: 460px; margin: 0 auto; aspect-ratio: 1/1; position: relative; }
+  .orbit-wrapper svg { width: 100%; height: 100%; display: block; }
+  .slot-segment { cursor: pointer; transition: filter 0.2s; }
+  .slot-segment:hover { filter: brightness(1.3) drop-shadow(0 0 16px rgba(212,168,67,0.15)); }
+  .slot-segment.disabled { cursor: default; opacity: 0.25; pointer-events: none; }
+  .slot-segment.disabled:hover { filter: none; }
+  .slot-segment .slot-bg { stroke-width: 1.5; }
+  .slot-segment .slot-bg-active { stroke-width: 1.5; }
+  .slot-segment .slot-label { font-size: 7px; font-weight: 600; font-family: 'Rajdhani', sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; fill: rgba(255,255,255,0.3); letter-spacing: 0.3px; }
+  .slot-segment .slot-icon { pointer-events: none; font-size: 16px; text-anchor: middle; dominant-baseline: central; }
+  .slot-segment .equip-name { font-size: 5.5px; font-weight: 600; font-family: 'Rajdhani', sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; fill: #5da8d4; letter-spacing: 0.3px; }
+  .slot-segment .empty-text { font-size: 5.5px; font-family: 'Rajdhani', sans-serif; text-anchor: middle; dominant-baseline: central; pointer-events: none; fill: rgba(255,255,255,0.15); }
+  .slot-segment.high .slot-bg { fill: rgba(217,74,74,0.12); stroke: rgba(217,74,74,0.06); }
+  .slot-segment.high .slot-bg-active { fill: rgba(217,74,74,0.30); stroke: rgba(217,74,74,0.15); }
+  .slot-segment.high .slot-icon { fill: rgba(217,74,74,0.7); }
+  .slot-segment.mid .slot-bg { fill: rgba(93,168,212,0.12); stroke: rgba(93,168,212,0.06); }
+  .slot-segment.mid .slot-bg-active { fill: rgba(93,168,212,0.30); stroke: rgba(93,168,212,0.15); }
+  .slot-segment.mid .slot-icon { fill: rgba(93,168,212,0.7); }
+  .slot-segment.low .slot-bg { fill: rgba(212,168,67,0.12); stroke: rgba(212,168,67,0.06); }
+  .slot-segment.low .slot-bg-active { fill: rgba(212,168,67,0.30); stroke: rgba(212,168,67,0.15); }
+  .slot-segment.low .slot-icon { fill: rgba(212,168,67,0.7); }
+  .slot-segment.rig .slot-bg { fill: rgba(120,100,160,0.12); stroke: rgba(120,100,160,0.06); }
+  .slot-segment.rig .slot-bg-active { fill: rgba(120,100,160,0.30); stroke: rgba(120,100,160,0.15); }
+  .slot-segment.rig .slot-icon { fill: rgba(160,140,200,0.7); }
+  .orbit-ring-glow { fill: none; stroke: rgba(74,144,217,0.02); stroke-width: 14; filter: blur(8px); }
+  .orbit-ring-outer, .orbit-ring-inner { fill: none; stroke: rgba(74,144,217,0.04); stroke-width: 1; }
+  .ship-center-group { pointer-events: none; }
+  .ship-center-group .ship-icon { font-size: 48px; animation: float 3s ease-in-out infinite; }
+  .ship-center-group .ship-glow { fill: rgba(74,144,217,0.04); }
+  @keyframes float { 0%,100%{transform:translateY(0)}50%{transform:translateY(-4px)} }
+  .equip-select-panel { position: absolute; background: rgba(10,18,30,0.95); border: 1px solid rgba(212,168,67,0.3); border-radius: 10px; padding: 14px 16px; min-width: 180px; max-width: 220px; box-shadow: 0 8px 40px rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 50; display: none; pointer-events: auto; }
+  .equip-select-panel.active { display: block; }
+  .equip-select-panel .esp-title { font-size: 11px; font-weight: 600; color: #d4a843; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid rgba(26,37,53,0.3); padding-bottom: 6px; margin-bottom: 8px; }
+  .equip-select-panel .equip-option { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 4px; cursor: pointer; transition: background 0.15s; font-size: 12px; color: #bcc5d0; }
+  .equip-select-panel .equip-option:hover { background: rgba(212,168,67,0.08); }
+  .equip-select-panel .equip-option .eq-icon { font-size: 18px; width: 28px; text-align: center; flex-shrink: 0; }
+  .equip-select-panel .equip-option .eq-name { flex: 1; }
+  .equip-select-panel .equip-option.empty-option { color: #4a5a6a; font-style: italic; }
+  .equip-select-panel .equip-option.empty-option:hover { background: rgba(74,74,74,0.1); }
+  .equip-library { margin-top: 12px; padding: 10px 12px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid rgba(26,37,53,0.1); }
+  .equip-library .el-title { font-size: 10px; color: #4a5a6a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
+  .equip-library .el-items { display: flex; gap: 6px; flex-wrap: wrap; }
+  .equip-library .el-item { font-size: 11px; color: #6a7a8e; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 3px; border: 1px solid rgba(26,37,53,0.1); }
+
+  .ship-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; padding: 10px 14px; background: rgba(0, 0, 0, 0.3); border-radius: 8px; border: 1px solid rgba(26,37,53,0.15); }
+  .ship-stats .stat { text-align: center; }
+  .ship-stats .stat .stat-label { font-size: 9px; text-transform: uppercase; color: #4a5a6a; letter-spacing: 0.5px; }
+  .ship-stats .stat .stat-value { font-family: 'Orbitron', sans-serif; font-size: 14px; font-weight: 700; color: #c8d0d8; }
+  .ship-stats .stat .stat-value.shield { color: #4a90d9; }
+  .ship-stats .stat .stat-value.armor  { color: #d4a843; }
+  .ship-stats .stat .stat-value.hull   { color: #d94a4a; }
+  .ship-stats .stat .stat-value.speed  { color: #7ac87a; }
+
+  .modal-actions { display: flex; gap: 10px; justify-content: center; margin-top: 14px; padding-top: 14px; border-top: 1px solid rgba(26,37,53,0.15); }
+  .modal-actions .btn { padding: 5px 20px; border-radius: 4px; border: 1px solid rgba(42,53,69,0.3); background: rgba(21,29,40,0.4); color: #bcc5d0; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 12px; cursor: pointer; transition: all 0.25s; }
+  .modal-actions .btn:hover { background: rgba(30,42,58,0.6); transform: translateY(-1px); }
+  .modal-actions .btn.primary { background: rgba(26,42,32,0.4); border-color: rgba(58,90,58,0.3); color: #7ac87a; }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: rgba(12, 16, 24, 0.3); }
+  ::-webkit-scrollbar-thumb { background: rgba(30, 42, 56, 0.5); border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(42, 58, 74, 0.6); }
+
+  /* ===== 离线结算提示 ===== */
+  .offline-toast {
+    position: fixed; top: 50px; left: 50%; transform: translateX(-50%);
+    background: #0d1118; border: 1px solid #d4a843; border-radius: 6px;
+    padding: 10px 20px; z-index: 9999; font-size: 13px;
+    color: #d4a843; box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+    animation: toastFadeIn 0.3s ease-out, toastFadeOut 0.5s ease-in 3.5s forwards;
+    pointer-events: none;
+  }
+  @keyframes toastFadeIn  { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+  @keyframes toastFadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+  /* ===== 部署弹窗模态 ===== */
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.65); z-index: 8000;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal-box {
+    background: #0d1118; border: 1px solid #2a3545; border-radius: 6px;
+    padding: 16px 20px; width: 420px; max-height: 70vh; overflow-y: auto;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.6);
+  }
+  .modal-box h3 {
+    font-size: 16px; color: #d4a843; margin-bottom: 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .modal-box h3 .modal-close {
+    cursor: default; font-size: 18px; color: #6a7a8e;
+    background: none; border: none;
+  }
+  .modal-box h3 .modal-close:hover { color: #d94a4a; }
+  .deploy-option {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 8px 10px; border: 1px solid #1e2a38; border-radius: 4px;
+    margin-bottom: 6px; font-size: 12px;
+  }
+  .deploy-option.locked { opacity: 0.4; }
+  .deploy-option .do-info { display: flex; flex-direction: column; gap: 2px; }
+  .deploy-option .do-name { color: #c8d0d8; font-weight: 600; }
+  .deploy-option .do-detail { color: #6a7a8e; font-size: 11px; }
+  .deploy-option .do-cost { color: #8899aa; font-size: 11px; text-align: right; }
+
+  /* ===== 舰船工程面板 ===== */
+  .shipeng-section { margin-bottom: 14px; }
+  .shipeng-section h4 { font-size: 13px; color: #c8d0d8; margin-bottom: 6px; border-bottom: 1px solid #1a2535; padding-bottom: 4px; }
+  .blueprint-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px; }
+  .blueprint-card { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: #0f141e; border: 1px solid #1e2a38; border-radius: 4px; font-size: 12px; }
+  .blueprint-card.owned { border-color: #3a5a3a; background: #0f1a10; }
+  .blueprint-card .bp-info { display: flex; flex-direction: column; gap: 2px; }
+  .blueprint-card .bp-name { color: #e8d8a0; font-weight: 600; }
+  .blueprint-card .bp-cost { color: #6a7a8e; font-size: 11px; }
+  .blueprint-card .bp-owned { color: #7ac87a; font-size: 11px; }
+  .bp-buy-btn { padding: 3px 10px; font-size: 11px; border: 1px solid #d4a843; border-radius: 3px; background: #1a1a10; color: #d4a843; cursor: default; font-family: inherit; }
+  .bp-buy-btn:hover { background: #2a2a10; }
+  .bp-buy-btn:disabled { border-color: #2a3545; color: #4a5a6a; background: #0f141e; cursor: default; }
+  .ship-comp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 4px; margin-top: 6px; }
+  .ship-comp-item { padding: 6px 10px; background: #0f141e; border: 1px solid #1a2535; border-radius: 3px; font-size: 11px; display: flex; align-items: center; gap: 4px; }
+  .ship-comp-item .sci-name { color: #8899aa; flex: 1; }
+  .ship-comp-item .sci-qty { color: #e8d8a0; font-weight: 600; }
+  .ship-comp-item .sci-qty.zero { color: #3a4a5a; }
+  .ship-synth-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+  .ship-attr-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
+  .ship-attr-item { padding: 4px 6px; background: #0f141e; border: 1px solid #1a2535; border-radius: 3px; font-size: 11px; text-align: center; }
+  .ship-attr-item .sa-label { color: #6a7a8e; display: block; font-size: 10px; }
+  .ship-attr-item .sa-value { color: #c8d0d8; font-weight: 600; }
+  .ship-attr-bonus { font-size: 11px; color: #6a7a8e; margin-top: 4px; }
+  .ship-attr-bonus span { color: #7ac87a; }
+  .ship-inv-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #0f141e; border: 1px solid #1e2a38; border-radius: 3px; font-size: 12px; margin-top: 4px; }
+  .ship-inv-item .si-name { color: #e8d8a0; font-weight: 600; }
+  .ship-inv-item .si-qty { color: #8899aa; }
+  .ship-inv-item .si-hp { color: #6a7a8e; font-size: 11px; margin-left: auto; }
+  .ship-progress-row { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-width: 0; }
+  .ship-progress-row .sp-label { color: #6a7a8e; flex-shrink: 0; font-size: 12px; }
+  .fill.ship-progress-fill { background: #a080c0; }
+  .ship-cost-list { font-size: 11px; color: #8899aa; margin-top: 4px; }
+  .ship-cost-list .enough { color: #7ac87a; }
+  .ship-cost-list .short { color: #d94a4a; }
+
+  /* ===== 执行确认弹窗 ===== */
+  #action-modal .modal-box { width: 400px; }
+  #action-modal .action-info { font-size: 13px; margin-bottom: 12px; }
+  #action-modal .action-info .ai-row { margin-bottom: 4px; color: #bcc5d0; }
+  #action-modal .action-info .ai-label { color: #6a7a8e; }
+  #action-modal .action-info .ai-value { color: #c8d0d8; }
+  #action-modal .action-resources { margin: 8px 0; font-size: 12px; }
+  #action-modal .action-resources .ar-row { margin-bottom: 3px; color: #bcc5d0; }
+  #action-modal .action-input-row { display: flex; align-items: center; gap: 10px; margin: 12px 0; }
+  #action-modal .action-input-row label { color: #8899aa; font-size: 13px; white-space: nowrap; }
+  #action-modal .action-input-row input { width: 80px; padding: 4px 8px; background: #0f141e; border: 1px solid #2a3545; border-radius: 3px; color: #e8d8a0; font-size: 14px; font-family: inherit; text-align: center; }
+  #action-modal .action-input-row .ai-max { color: #6a7a8e; font-size: 11px; }
+  #action-modal .action-summary { font-size: 12px; color: #8899aa; margin-bottom: 10px; }
+  #action-modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+  /* ===== 队列面板 ===== */
+  .queue-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: #0f141e; border: 1px solid #1e2a38; border-radius: 4px; margin-bottom: 4px; font-size: 12px; }
+  .queue-item.active { border-color: #3a5a3a; background: #0f1a10; }
+  .queue-item .qi-idx { color: #6a7a8e; min-width: 18px; text-align: right; }
+  .queue-item .qi-icon { font-size: 14px; }
+  .queue-item .qi-info { flex: 1; display: flex; flex-direction: column; gap: 2px; }
+  .queue-item .qi-name { color: #c8d0d8; font-weight: 600; }
+  .queue-item .qi-detail { color: #6a7a8e; font-size: 11px; }
+  .queue-item .qi-status { font-size: 11px; padding: 2px 6px; border-radius: 3px; white-space: nowrap; }
+  .qi-status.running { background: #1a2a20; color: #7ac87a; }
+  .qi-status.waiting { color: #4a5a6a; }
+  .queue-item .qi-actions { display: flex; gap: 4px; }
+  .queue-item .qi-btn { background: none; border: 1px solid #2a3545; border-radius: 3px; color: #6a7a8e; font-size: 11px; padding: 2px 6px; cursor: default; font-family: inherit; }
+  .queue-item .qi-btn:hover { color: #d94a4a; border-color: #d94a4a; }
+  .act-tag { display: inline-block; padding: 2px 8px; margin: 2px; border: 1px solid #2a3545; border-radius: 3px; font-size: 11px; color: #4a5a6a; background: rgba(21,29,40,0.5); cursor: default; transition: all 0.2s; }
+  .act-tag:hover { border-color: #5da8d4; color: #8899aa; }
+  .act-tag.on { color: #d4a843; border-color: #d4a843; background: rgba(212,168,67,0.12); }
+  .hsh-equipped { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(212,168,67,0.15); color: #d4a843; margin-right: 3px; }
+
+  /* ===== 舰船强化 ===== */
+  .hangar-ship-grid { display: grid; gap: 10px; }
+  .hangar-ship-card { padding: 12px; border: 1px solid #1e2a38; border-radius: 6px; background: #0d131c; }
+  .hangar-ship-card.equipped { border-color: #665528; }
+  .hangar-ship-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .hsh-name { color: #e8d8a0; font-size: 15px; font-weight: 700; }
+  .hsh-tier { color: #718499; font-size: 11px; }
+  .enhance-level { padding: 2px 8px; border: 1px solid #3f6f91; border-radius: 12px; color: #73c9ff; background: rgba(55,126,170,.12); font-size: 12px; font-weight: 700; }
+  .enhance-level.milestone-next { border-color: #d4a843; color: #f0c45b; box-shadow: 0 0 10px rgba(212,168,67,.18); }
+  .hangar-ship-stats { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+  .hss-item { min-width: 72px; padding: 5px 8px; background: #101925; border: 1px solid #1b2a3a; border-radius: 3px; }
+  .hss-label { display: block; color: #607286; font-size: 10px; }
+  .hss-val { color: #d6e0e9; font-size: 12px; font-weight: 700; }
+  .hangar-ship-bonuses { margin-top: 7px; color: #75879a; font-size: 11px; }
+  .hangar-enhancement { margin-top: 10px; padding: 10px; border: 1px solid #26384a; border-radius: 5px; background: linear-gradient(135deg, rgba(21,37,52,.8), rgba(12,19,28,.9)); }
+  .hangar-enhancement.milestone { border-color: #705d2b; background: linear-gradient(135deg, rgba(53,43,20,.45), rgba(12,19,28,.9)); }
+  .enhance-summary { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .enhance-summary strong { color: #73c9ff; font-size: 13px; }
+  .enhance-summary span, .enhance-next { color: #9aaabd; font-size: 11px; }
+  .enhance-next { margin-top: 3px; color: #d0af5a; }
+  .enhance-materials { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .enhance-material { padding: 3px 6px; border: 1px solid #31506a; border-radius: 3px; color: #8fc8e8; font-size: 10px; }
+  .enhance-material.short { color: #d96d6d; border-color: #633838; }
+  .enhance-roll { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 8px; color: #7d8fa3; font-size: 11px; }
+  .enhance-roll b { color: #e8d8a0; }
+  .enhance-btn { margin-left: auto; border-color: #477e9f; color: #8fd5ff; }
+  .enhance-btn:disabled { border-color: #283440; color: #53606d; }
+  .hangar-ship-actions { margin-top: 9px; }
+
+  /* ===== 设置 ===== */
+  .settings-section { max-width: 760px; border: 1px solid #223243; border-radius: 6px; background: #0d141e; overflow: hidden; }
+  .settings-section-title { padding: 9px 12px; border-bottom: 1px solid #1c2a39; color: #7990a6; font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+  .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 14px 16px; cursor: pointer; }
+  .setting-row:hover { background: rgba(69, 125, 162, .06); }
+  .setting-copy { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+  .setting-copy strong { color: #d4dde6; font-size: 14px; }
+  .setting-copy small { color: #728397; font-size: 11px; line-height: 1.55; }
+  .setting-switch { position: relative; width: 46px; height: 24px; flex: 0 0 46px; }
+  .setting-switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .setting-switch-track { position: absolute; inset: 0; border: 1px solid #344659; border-radius: 12px; background: #17212d; transition: .18s ease; }
+  .setting-switch-track::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #68798a; transition: .18s ease; }
+  .setting-switch input:checked + .setting-switch-track { border-color: #4a91b8; background: rgba(54, 139, 184, .25); box-shadow: 0 0 10px rgba(72, 164, 211, .12); }
+  .setting-switch input:checked + .setting-switch-track::after { left: 25px; background: #78cdf8; box-shadow: 0 0 7px rgba(120, 205, 248, .45); }
+  .setting-switch input:focus-visible + .setting-switch-track { outline: 2px solid #d4a843; outline-offset: 2px; }
+
+  /* ===== 统计档案 ===== */
+  .statistics-note { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 9px 12px; border: 1px solid #26394b; border-radius: 5px; color: #7890a7; background: rgba(32, 66, 91, .14); font-size: 11px; }
+  .statistics-note i { color: #5da8d4; }
+  .statistics-summary-grid { display: grid; grid-template-columns: repeat(4, minmax(190px, 1fr)); gap: 10px; }
+  .statistics-summary-card, .statistics-detail-card { border: 1px solid #213244; border-radius: 6px; background: linear-gradient(145deg, rgba(16,26,38,.96), rgba(10,17,26,.96)); overflow: hidden; }
+  .statistics-summary-card.combat { border-color: #4b332d; }
+  .statistics-summary-card.enhancement { border-color: #314c63; }
+  .statistics-card-title { display: flex; align-items: center; gap: 8px; padding: 9px 11px; border-bottom: 1px solid #1d2c3b; color: #9fb0c1; font-size: 12px; font-weight: 700; }
+  .statistics-card-title i { width: 15px; color: #5da8d4; text-align: center; }
+  .statistics-metric-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .statistics-metric { min-width: 0; padding: 9px 11px; border-right: 1px solid rgba(31,47,63,.55); border-bottom: 1px solid rgba(31,47,63,.55); }
+  .statistics-metric span { display: block; color: #61758a; font-size: 10px; }
+  .statistics-metric strong { display: block; margin-top: 3px; overflow: hidden; color: #dbe4ec; font: 700 15px/1.2 Bahnschrift, Orbitron, sans-serif; text-overflow: ellipsis; }
+  .statistics-detail-grid { display: grid; grid-template-columns: repeat(3, minmax(230px, 1fr)); gap: 10px; margin-top: 10px; }
+  .statistics-ranking { max-height: 245px; overflow: auto; }
+  .statistics-rank-row { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 10px; border-bottom: 1px solid rgba(29,44,59,.62); font-size: 11px; }
+  .statistics-rank { width: 18px; color: #50657a; text-align: center; }
+  .statistics-rank-name { flex: 1; min-width: 0; overflow: hidden; color: #90a2b5; text-overflow: ellipsis; white-space: nowrap; }
+  .statistics-rank-row strong { color: #d5c588; font: 700 12px Bahnschrift, Orbitron, sans-serif; }
+  .statistics-empty { padding: 22px 12px; color: #465a6d; font-size: 11px; text-align: center; }
+  @media (max-width: 1100px) { .statistics-summary-grid { grid-template-columns: repeat(2, minmax(190px, 1fr)); } .statistics-detail-grid { grid-template-columns: repeat(2, minmax(220px, 1fr)); } }
+  @media (max-width: 620px) { .statistics-summary-grid, .statistics-detail-grid { grid-template-columns: 1fr; } }
+
+  /* ===== 运行错误边界 ===== */
+  .runtime-error-boundary { position: fixed; right: 16px; bottom: 16px; z-index: 20000; width: min(460px, calc(100vw - 32px)); padding: 14px; background: rgba(28, 12, 14, 0.98); border: 1px solid #d94a4a; border-radius: 8px; box-shadow: 0 12px 40px rgba(0,0,0,0.75), 0 0 24px rgba(217,74,74,0.16); color: #d7c7c9; font-size: 12px; }
+  .runtime-error-boundary.hidden { display: none; }
+  .reb-header { display: flex; align-items: center; justify-content: space-between; color: #ff8b8b; font-size: 14px; font-weight: 700; }
+  .reb-header button { border: 0; background: transparent; color: #9d777b; font-size: 20px; cursor: pointer; }
+  .reb-message { margin-top: 8px; color: #f1d8da; overflow-wrap: anywhere; }
+  .reb-meta { margin-top: 5px; color: #ad8589; line-height: 1.45; }
+  .runtime-error-boundary details { margin-top: 8px; color: #ad8589; }
+  .runtime-error-boundary pre { max-height: 150px; overflow: auto; white-space: pre-wrap; color: #bd9da0; font: 10px/1.45 Consolas, monospace; }
+  .reb-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .reb-actions button { padding: 5px 10px; border: 1px solid #7e3b42; border-radius: 4px; background: #32171a; color: #f0b7bc; cursor: pointer; font-family: inherit; }

@@ -1,0 +1,155 @@
+const MINING_AREAS = [
+  { name: "凡晶石带",   ore: "凡晶石", mode:"normal", level: 1,  baseTime: 20,  baseXP: 10,  color:"#b5a37d" },
+  { name: "灼烧岩带",   ore: "灼烧岩", mode:"normal", level: 10, baseTime: 40,  baseXP: 30,  color:"#b66b47" },
+  { name: "水硼砂带",   ore: "水硼砂", mode:"normal", level: 20, baseTime: 70,  baseXP: 70,  color:"#79b4ca" },
+  { name: "斜长岩带",   ore: "斜长岩", mode:"normal", level: 40, baseTime: 120, baseXP: 140, color:"#8f95ad" },
+  { name: "干焦岩带",   ore: "干焦岩", mode:"normal", level: 55, baseTime: 180, baseXP: 230, color:"#b56b3f" },
+  { name: "灰岩带",     ore: "灰岩",   mode:"normal", level: 70, baseTime: 260, baseXP: 370, color:"#8d9aa2" },
+  { name: "艾克诺岩带", ore: "艾克诺岩", mode:"normal", level: 85, baseTime: 380, baseXP: 580, color:"#56bba8" }
+];
+
+const MOON_MINING_AREAS = [
+  { name:"镓月岩带", ore:"镓", mode:"moon", level:20, baseTime:120, baseXP:100, color:"#67c9dc" },
+  { name:"铂月岩带", ore:"铂", mode:"moon", level:20, baseTime:120, baseXP:100, color:"#d8e1e8" },
+  { name:"铪月岩带", ore:"铪", mode:"moon", level:40, baseTime:240, baseXP:240, color:"#72a7ee" },
+  { name:"锇月岩带", ore:"锇", mode:"moon", level:40, baseTime:240, baseXP:240, color:"#ad8ade" },
+  { name:"钷月岩带", ore:"钷", mode:"moon", level:55, baseTime:420, baseXP:450, color:"#ef777c" },
+  { name:"铷月岩带", ore:"铷", mode:"moon", level:70, baseTime:720, baseXP:870, color:"#dfad58" }
+];
+const ALL_MINING_AREAS = [...MINING_AREAS, ...MOON_MINING_AREAS];
+
+function getCargoUsed() {
+  return getCargoUsedFromState(gameState);
+}
+function getCargoCapacity() {
+  return 10000000;  // 测试阶段：一千万容量
+}
+function isCargoFull() {
+  return getCargoUsed() >= getCargoCapacity();
+}
+
+const ITEM_CATEGORIES = {
+  ore:       ["凡晶石","灼烧岩","水硼砂","斜长岩","干焦岩","灰岩","艾克诺岩"],
+  mineral:   ["三钛合金","类银超金属","类晶体胶矿","同位聚合体","超新星诺克石","基腹断岩","超噬矿","莫尔石"],
+  planetary: ["重金属","稀有气体","同位素","行星内核产物","等离子体","生物质","磁场聚合物"],
+  gases:      ["粗制富勒烯","氦同位素","稳定富勒烯","氢同位素","高纯富勒烯","聚合气体","超纯聚合气体"],
+  moon:       ["镓","铂","铪","锇","钷","铷"],
+  consumable: ["燃料单元","激光晶体弹药","导弹","炮台弹药","纳米维修膏"],
+  special: COMBAT_SPECIAL_MATERIALS.slice(),
+  equipment: SHIP_COMPONENT_RECIPES.map(recipe => recipe.name)
+};
+ITEM_CATEGORIES.equipment.push(...Object.values(EQUIPMENT_DB).map(equipment => equipment.name));
+const ITEM_ICONS = {
+  "凡晶石":"🪨","灼烧岩":"🪨","水硼砂":"🪨","斜长岩":"🪨","干焦岩":"🪨","灰岩":"🪨","艾克诺岩":"💎","莫尔石":"💠",
+  "三钛合金":"🧱","类银超金属":"🧱","类晶体胶矿":"🧱","同位聚合体":"🧱","超新星诺克石":"🧱","基腹断岩":"🧱","超噬矿":"🧱",
+  "重金属":"🪨","稀有气体":"💨","同位素":"❄️","行星内核产物":"🌋","等离子体":"🌌","生物质":"🌿","磁场聚合物":"🧲",
+  "粗制富勒烯":"☁️","氦同位素":"☁️","稳定富勒烯":"☁️","氢同位素":"☁️","高纯富勒烯":"☁️","聚合气体":"☁️","超纯聚合气体":"☁️",
+  "镓":"🌙","铂":"🌙","铪":"🌙","锇":"🌙","钷":"🌙","铷":"🌙",
+   "晶体弹药":"💥","纳米维修膏":"🧴","跃迁燃料":"⛽",
+   "燃料单元":"⛽","激光晶体弹药":"🔫","导弹":"🚀","炮台弹药":"💣",
+  "船体骨架":"🏗️","推进系统":"⚙️","核心系统":"🔮","护盾发生器":"🛡️","装甲镀层":"🔩","武器挂架":"🔧","外置货舱":"📦","工业挂架":"🏗️","T1采矿激光器":"🔴","T1气云采集器":"🟢","T1无人机控制单元":"🤖","小型护盾扩展":"🛡️","T1采矿提升器":"⬆️","T1采气提升器":"⬆️",
+  "小型激光炮 I":"⚡","轻型导弹发射器 I":"🚀","小型射弹炮 I":"💥","小型护盾回充器 I":"🛡️","小型装甲维修器 I":"🔧","小型结构修理器 I":"⚒️"
+};
+for (const material of STAR_BELT_DATA_MATERIALS) {
+  ITEM_ICONS[material] = material.startsWith("天使") ? "🟠" : material.startsWith("血袭者") ? "🔴" : "🟢";
+}
+for (const material of DEATHSPACE_TICKET_MATERIALS) ITEM_ICONS[material] = "🎫";
+for (const material of DEATHSPACE_LOOT_MATERIALS) ITEM_ICONS[material] = material.includes("协议") ? "📜" : "💠";
+SHIP_COMPONENT_RECIPES.forEach(recipe => {
+  if (recipe.id.includes("integrated_hull")) ITEM_ICONS[recipe.name] = "🏗️";
+  else if (recipe.id.includes("power_core")) ITEM_ICONS[recipe.name] = "⚙️";
+  else ITEM_ICONS[recipe.name] = "🔧";
+});
+
+function xpForLevel(lv) { return Math.floor(100 * Math.pow(1.1, lv - 1)); }
+
+function checkLevelUpFromState(state, skillKey, eventMeta) {
+  const s = state.skills[skillKey];
+  while (s.lvl < 99) {
+    const need = xpForLevel(s.lvl + 1);
+    if (s.xp < need) break;
+    s.xp -= need;
+    const previousLevel = s.lvl;
+    s.lvl++;
+    GameEvents.emit("skill:levelUp", { skill:skillKey, previousLevel, level:s.lvl }, eventMeta);
+  }
+}
+
+function addSkillXpToState(state, skillKey, amount, eventMeta) {
+  if (!state || !state.skills || !state.skills[skillKey]) return 0;
+  const gained = Math.max(0, Number(amount) || 0);
+  state.skills[skillKey].xp = (Number(state.skills[skillKey].xp) || 0) + gained;
+  checkLevelUpFromState(state, skillKey, eventMeta);
+  state._dirty = true;
+  return gained;
+}
+
+function checkLevelUp(skillKey, eventMeta) {
+  return checkLevelUpFromState(gameState, skillKey, eventMeta);
+}
+
+function getMiningAreaByName(name) { return ALL_MINING_AREAS.find(a => a.name === name || a.ore === name) || null; }
+function getMiningArea() { return getMiningAreaByName(gameState.currentAction.area) || MINING_AREAS[0]; }
+function getRunningMiningArea() { return getMiningAreaByName(gameState.currentAction.startedArea || gameState.currentAction.area) || MINING_AREAS[0]; }
+function getMiningAreasForMode(mode) { return mode === "moon" ? MOON_MINING_AREAS : MINING_AREAS; }
+function getBestMiningArea(mode) {
+  const areas = getMiningAreasForMode(mode || "normal"); const lv = gameState.skills.mining.lvl;
+  let best = areas[0]; for (const area of areas) { if (lv >= area.level) best = area; else break; } return best;
+}
+
+const SMELTING_RECIPES = [
+  { name: "凡晶石带",   consumeOre: "凡晶石", outputMineral: "三钛合金",     level: 1,  baseTime: 20,  baseOutput: 1, baseXP: 10  },
+  { name: "灼烧岩带",   consumeOre: "灼烧岩", outputMineral: "类银超金属",   level: 10, baseTime: 40,  baseOutput: 1, baseXP: 30  },
+  { name: "水硼砂带",   consumeOre: "水硼砂", outputMineral: "类晶体胶矿",   level: 20, baseTime: 70,  baseOutput: 1, baseXP: 70  },
+  { name: "斜长岩带",   consumeOre: "斜长岩", outputMineral: "同位聚合体",   level: 40, baseTime: 120, baseOutput: 1, baseXP: 140 },
+  { name: "干焦岩带",   consumeOre: "干焦岩", outputMineral: "超新星诺克石", level: 55, baseTime: 180, baseOutput: 1, baseXP: 230 },
+  { name: "灰岩带",     consumeOre: "灰岩",   outputMineral: "基腹断岩",     level: 70, baseTime: 260, baseOutput: 1, baseXP: 370 },
+  { name: "艾克诺岩带", consumeOre: "艾克诺岩", outputMineral: "超噬矿",     level: 85, baseTime: 380, baseOutput: 1, baseXP: 580 }
+];
+
+// ---- 气体采集区域配置表 ----
+const GAS_AREAS = [
+  { name: "富勒烯云团",     gas: "粗制富勒烯",   level: 1,  baseTime: 30,  baseXP: 10  },
+  { name: "氦同位素云团",   gas: "氦同位素",     level: 10, baseTime: 60,  baseXP: 40  },
+  { name: "稳定富勒烯云团", gas: "稳定富勒烯",   level: 20, baseTime: 100, baseXP: 80  },
+  { name: "氢同位素云团",   gas: "氢同位素",     level: 40, baseTime: 150, baseXP: 140 },
+  { name: "高纯富勒烯云团", gas: "高纯富勒烯",   level: 55, baseTime: 220, baseXP: 220 },
+  { name: "聚合气体云团",   gas: "聚合气体",     level: 70, baseTime: 320, baseXP: 350 },
+  { name: "超纯聚合气体云团", gas: "超纯聚合气体", level: 85, baseTime: 450, baseXP: 520 }
+];
+
+function getAssignedShip(actionKey) { const ship = getAssignedShipInstance(actionKey); return ship ? getShipConfig(ship.shipId) : null; }
+function getAssignedShipFitting(actionKey) { const ship = getAssignedShipInstance(actionKey); return ship ? getShipFitting(ship.instanceId) : createEmptyFitting(); }
+function getActiveIndustrialShip() {
+  const id = gameState.activeIndustrialShip;
+  if (!id || !INDUSTRIAL_SHIPS || !INDUSTRIAL_SHIPS[id]) return null;
+  return INDUSTRIAL_SHIPS[id];
+}
+
+function getProductionEfficiencyBreakdown(actionKey) {
+  const display = getProductionEfficiencyState(gameState, actionKey);
+  return { ...display, lvl:display.level, ship:display.ship ? getShipConfigById(display.ship.id) : null };
+}
+
+function getProductionEfficiencyTooltip(actionKey, targetName, baseTime) {
+  return buildProductionEfficiencyTooltip(getProductionEfficiencyState(gameState, actionKey), targetName, baseTime);
+}
+
+function getMiningEfficiency() { return getProductionEfficiencyBreakdown("mining").total; }
+function getSmeltingEfficiency() { return getSmeltingDisplayState(gameState, Date.now()).efficiency; }
+function getGasEfficiency() { return getProductionEfficiencyBreakdown("gasHarvesting").total; }
+function getShipEngineeringEfficiency() { const lvl = gameState.skills.shipEngineering.lvl; return 1 * (1 + lvl * 0.02); }
+
+function getGasArea() { const name = gameState.currentAction.gasArea; return GAS_AREAS.find(a => a.name === name) || GAS_AREAS[0]; }
+function getBestGasArea() { const lv = gameState.skills.gasHarvesting.lvl; let best = GAS_AREAS[0]; for (const a of GAS_AREAS) { if (lv >= a.level) best = a; else break; } return best; }
+
+function getSmeltingRecipe() { const name = gameState.currentAction.smeltingArea; return SMELTING_RECIPES.find(r => r.name === name) || SMELTING_RECIPES[0]; }
+function hasMoonMiningEquipment() {
+  return getMoonMiningAccessState(gameState).hasEquipment;
+}
+function canMineArea(area) {
+  return getMiningRequirementState(gameState, area).available;
+}
+function getMiningRequirementText(area) {
+  return getMiningRequirementState(gameState, area).text;
+}

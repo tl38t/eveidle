@@ -1,0 +1,461 @@
+/* ===== 装备工程面板 ===== */
+  #equipeng-panel { overflow: visible; }
+  #equipeng-panel .panel-body { position: relative; }
+  #equipeng-panel .equipeng-info { padding-right: 130px; }
+  .equipeng-queue-summary {
+    position: absolute; top: 13px; right: 18px;
+    min-width: 112px; padding: 5px 10px; text-align: center;
+    color: #8899aa; background: #121d2a; border: 1px solid #263a4e; border-radius: 4px;
+    font-size: 11px;
+  }
+  .equipeng-category-tabs {
+    display: grid; grid-template-columns: repeat(6, minmax(100px, 1fr));
+    margin-top: 12px; overflow-x: auto;
+    background: #0b1119; border: 1px solid #1f2d3c; border-radius: 4px 4px 0 0;
+  }
+  .equipeng-category-tab {
+    min-width: 100px; height: 44px; padding: 0 10px;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+    color: #708196; background: #141d29; border: 0; border-right: 1px solid #0a0f16;
+    font: 600 12px 'Rajdhani', "Microsoft YaHei", sans-serif;
+    cursor: pointer; transition: color .15s, background .15s, box-shadow .15s;
+  }
+  .equipeng-category-tab:last-child { border-right: 0; }
+  .equipeng-category-tab:hover { color: #c8d0d8; background: #192534; }
+  .equipeng-category-tab.active {
+    color: #d9f1ff; background: linear-gradient(180deg, #2e5f8d, #244c71);
+    box-shadow: inset 0 -3px #69c0ed;
+  }
+  .equipeng-category-tab i { font-size: 11px; opacity: .9; }
+  .equipeng-workspace {
+    display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(310px, .95fr);
+    gap: 10px; margin-top: 10px;
+  }
+  .equipeng-catalog, .equipeng-detail {
+    min-width: 0; background: #0b1119; border: 1px solid #1f2d3c; border-radius: 4px;
+  }
+  .equipeng-catalog { padding: 12px; }
+  .equipeng-catalog-header {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    margin-bottom: 12px;
+  }
+  .equipeng-catalog-header strong { color: #e8d8a0; font-size: 13px; }
+  .equipeng-catalog-header strong + span { margin-left: 16px; color: #6a7a8e; font-size: 11px; }
+  .equipeng-search {
+    width: min(240px, 40%); display: flex; align-items: center; gap: 7px;
+    padding: 0 10px; background: #101a26; border: 1px solid #26394b; border-radius: 4px;
+    color: #52677c;
+  }
+  .equipeng-search input {
+    min-width: 0; width: 100%; height: 30px; border: 0; outline: 0;
+    color: #bcc5d0; background: transparent; font: 12px inherit;
+  }
+  .equipeng-search input::placeholder { color: #526174; }
+  .equipeng-recipe-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(205px, 1fr));
+    gap: 10px; align-content: start;
+  }
+  .equipeng-recipe-card {
+    min-width: 0; min-height: 178px; padding: 0;
+    display: flex; flex-direction: column; align-items: stretch;
+    color: #bcc5d0; background: linear-gradient(145deg, #162130, #101822 58%);
+    border: 1px solid #24374a; border-radius: 5px; overflow: hidden;
+    font: 12px 'Rajdhani', "Microsoft YaHei", sans-serif;
+    text-align: left; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s;
+  }
+  .equipeng-recipe-card:hover { transform: translateY(-1px); border-color: #466580; }
+  .equipeng-recipe-card.selected {
+    border-color: #d4a843; box-shadow: 0 0 14px rgba(212,168,67,.2), inset 0 0 0 1px rgba(212,168,67,.12);
+  }
+  .equipeng-recipe-card.locked { opacity: .38; filter: saturate(.35); cursor: default; }
+  .equipeng-recipe-card.locked:hover { transform: none; border-color: #24374a; }
+  .equipeng-card-top, .equipeng-card-bottom {
+    display: flex; align-items: center; justify-content: space-between; gap: 6px;
+    padding: 6px 9px; color: #609ec4; background: rgba(23,36,52,.72); font-size: 9px;
+  }
+  .equipeng-card-top .can-build { color: #7ac87a; }
+  .equipeng-card-top .level-locked { color: #d36a6a; }
+  .equipeng-card-icon {
+    height: 66px; display: grid; place-items: center; color: #60c7ef;
+    font-size: 38px; text-shadow: 0 0 22px rgba(72,181,228,.2);
+  }
+  .equipeng-recipe-card.selected .equipeng-card-icon { color: #e9b341; text-shadow: 0 0 22px rgba(212,168,67,.25); }
+  .equipeng-recipe-card > strong {
+    padding: 0 12px; color: #d6dce3; font-size: 13px; text-align: center;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .equipeng-card-attributes {
+    height: 32px; padding: 4px 10px 7px; color: #6f8294; font-size: 10px;
+    text-align: center; line-height: 1.35; overflow: hidden;
+  }
+  .equipeng-card-bottom { margin-top: auto; color: #718497; border-top: 1px solid #223243; background: rgba(12,19,28,.7); }
+  .equipeng-card-bottom span:last-child { color: #8facbe; }
+  .equipeng-empty { grid-column: 1 / -1; padding: 56px 20px; color: #4a5a6a; text-align: center; }
+  .equipeng-detail { display: flex; flex-direction: column; }
+  .equipeng-detail-header {
+    min-height: 48px; display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 10px 14px; background: #101e2b; border-bottom: 1px solid #203348;
+  }
+  .equipeng-detail-header strong { color: #e8d8a0; font-size: 15px; }
+  .equipeng-tier-badge {
+    min-width: 50px; padding: 3px 9px; border-radius: 14px; text-align: center;
+    color: #5db7e8; background: #163d58; font-size: 10px;
+  }
+  .equipeng-detail-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .equipeng-detail-section { display: flex; flex-direction: column; gap: 7px; }
+  .equipeng-detail-label { color: #627589; font-size: 10px; }
+  .equipeng-attribute-list, .equipeng-manufacture-summary {
+    padding: 9px 11px; background: #101a25; border: 1px solid #213347; border-radius: 4px;
+    display: flex; flex-direction: column; gap: 5px; color: #b7c2cd; font-size: 11px;
+  }
+  .equipeng-material-list { display: flex; flex-direction: column; gap: 5px; }
+  .equipeng-material {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 10px;
+    padding: 7px 9px; background: #101a25; border: 1px solid #213347; border-radius: 4px;
+    color: #aebbc7; font-size: 11px;
+  }
+  .equipeng-material span { min-width: 0; display: flex; align-items: center; gap: 7px; }
+  .equipeng-material i { color: #8294a7; }
+  .equipeng-material strong { color: #e8d8a0; }
+  .equipeng-material small { color: #7ac87a; }
+  .equipeng-material.short { border-color: rgba(217,74,74,.35); }
+  .equipeng-material.short small { color: #d94a4a; }
+  .equipeng-manufacture-summary { color: #8193a5; line-height: 1.45; }
+  .equipeng-running-note {
+    padding: 8px 10px; color: #70bce6; background: rgba(28,73,101,.3);
+    border: 1px solid rgba(81,154,197,.35); border-radius: 4px; font-size: 10px; line-height: 1.4;
+  }
+  .equipeng-running-note i { margin-right: 6px; }
+  .equipeng-detail-progress { margin: auto 14px 0; padding-top: 10px; border-top: 1px solid #1e2d3d; }
+  .equipeng-detail-actions { display: flex; gap: 8px; padding: 12px 14px 14px; }
+  .equipeng-detail-actions .btn { flex: 1; min-height: 38px; }
+  .equipeng-detail-actions .btn:disabled { opacity: .35; pointer-events: none; }
+  .equip-output-name {
+    color: #4db8b8;
+    font-weight: 700;
+    cursor: help;
+    border-bottom: 1px dotted #4db8b8;
+  }
+
+  @media (max-width: 1120px) {
+    .equipeng-workspace { grid-template-columns: 1fr; }
+    .equipeng-category-tabs { grid-template-columns: repeat(6, minmax(120px, 1fr)); }
+    .equipeng-recipe-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+  }
+  @media (max-width: 700px) {
+    #equipeng-panel .equipeng-info { padding-right: 0; }
+    .equipeng-queue-summary { position: static; margin-top: 8px; }
+    .equipeng-catalog-header { align-items: stretch; flex-direction: column; }
+    .equipeng-search { width: 100%; }
+    .equipeng-recipe-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ===== LP商店 ===== */
+  .blueprintstore-panel { flex-shrink: 0; }
+  .blueprintstore-tabs {
+    display: grid; grid-template-columns: repeat(7, minmax(110px, 1fr));
+    margin-bottom: 12px; overflow-x: auto; background: #0b1119;
+    border: 1px solid #1f2d3c; border-radius: 4px;
+  }
+  .blueprintstore-tab {
+    min-width: 110px; height: 46px; padding: 0 9px; border: 0; border-right: 1px solid #0a0f16;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    color: #73869a; background: #141d29; font: 600 12px 'Rajdhani', "Microsoft YaHei", sans-serif;
+    cursor: pointer;
+  }
+  .blueprintstore-tab:last-child { border-right: 0; }
+  .blueprintstore-tab:hover { color: #d0d8e0; background: #192534; }
+  .blueprintstore-tab.active { color: #fff0bd; background: linear-gradient(180deg,#675323,#443714); box-shadow: inset 0 -3px #e1b847; }
+  .blueprintstore-tab small { color: inherit; opacity: .65; }
+  .lpstore-intro { margin-bottom: 12px; color: #6a7a8e; font-size: 12px; }
+  .lpstore-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
+  .lpstore-card { display: grid; grid-template-columns: 58px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 14px; background: linear-gradient(145deg,#152131,#0e1620); border: 1px solid #263a4e; border-radius: 5px; }
+  .lpstore-card-icon { width: 58px; height: 58px; display: grid; place-items: center; color: #d4a843; background: rgba(212,168,67,.08); border: 1px solid rgba(212,168,67,.2); border-radius: 50%; font-size: 24px; }
+  .lpstore-card-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .lpstore-card-info strong { color: #e8d8a0; font-size: 13px; }
+  .lpstore-card-info span { color: #8394a6; font-size: 10px; line-height: 1.4; }
+  .lpstore-card-info small { color: #5da8d4; }
+  .blueprint-preview-card { align-items: start; }
+  .blueprint-preview-card .lpstore-card-icon { margin-top: 3px; }
+  .blueprint-product { display: flex; align-items: center; gap: 8px; margin: 2px 0 5px; }
+  .blueprint-product span { padding: 2px 6px; color: #68b9e5; background: rgba(56,140,190,.13); border: 1px solid rgba(80,165,215,.22); border-radius: 3px; font-size: 9px; }
+  .blueprint-product b { color: #d8e1e9; font-size: 12px; }
+  .blueprint-preview-lines { display: flex; flex-direction: column; gap: 4px; margin-bottom: 4px; }
+  .blueprint-preview-lines > div { display: grid; grid-template-columns: 34px minmax(0,1fr); gap: 7px; align-items: start; }
+  .blueprint-preview-lines > div > span { color: #5f85a1; font-size: 9px; }
+  .blueprint-preview-lines p { margin: 0; color: #8e9ead; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
+  .lpstore-card.owned { border-color: #36563d; background: linear-gradient(145deg,#13251b,#0e1813); }
+  .lpstore-card.owned .lpstore-card-icon { color: #77c982; border-color: rgba(119,201,130,.25); background: rgba(119,201,130,.08); }
+  .lpstore-buy:disabled { opacity: .35; pointer-events: none; }
+  @media (max-width:700px) {
+    .lpstore-grid { grid-template-columns:1fr; }
+    .lpstore-card { grid-template-columns:48px minmax(0,1fr); }
+    .lpstore-buy { grid-column:1 / -1; }
+  }
+
+  .panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: #111820;
+    border-bottom: 1px solid #1a2535;
+    font-size: 12px;
+    font-weight: 600;
+    color: #8899aa;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .panel-header .panel-title {
+    color: #c8d0d8;
+    font-size: 13px;
+  }
+
+  .panel-body {
+    padding: 14px 18px;
+  }
+
+  /* ===== 当前技能面板 ===== */
+  .skill-current .skill-info {
+    display: flex;
+    align-items: baseline;
+    gap: 18px;
+    flex-wrap: wrap;
+  }
+
+  .skill-current .skill-name {
+    font-size: 18px;
+    font-weight: 700;
+    color: #e8d8a0;
+  }
+
+  .skill-current .skill-level {
+    font-size: 13px;
+    color: #6a7a8e;
+  }
+
+  .skill-current .skill-level .lv-num {
+    color: #4db8b8;
+    font-weight: 700;
+    font-size: 16px;
+  }
+
+  .skill-current .skill-area {
+    font-size: 13px;
+    color: #8899aa;
+  }
+
+  .skill-current .skill-output {
+    font-size: 13px;
+    color: #7a9a6a;
+  }
+
+  .skill-current .skill-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn {
+    padding: 5px 16px;
+    border-radius: 4px;
+    border: 1px solid rgba(42, 53, 69, 0.6);
+    background: rgba(21, 29, 40, 0.6);
+    color: #bcc5d0;
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
+    font-size: 12px;
+    cursor: default;
+    transition: all 0.25s ease;
+    letter-spacing: 0.3px;
+    backdrop-filter: blur(2px);
+  }
+
+  .btn:hover {
+    background: rgba(30, 40, 55, 0.7);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  }
+  .btn:active { transform: translateY(0); }
+
+  .btn.primary {
+    background: rgba(26, 42, 32, 0.6);
+    border-color: rgba(58, 90, 58, 0.5);
+    color: #7ac87a;
+  }
+  .btn.primary:hover {
+    background: rgba(34, 58, 42, 0.7);
+    border-color: rgba(90, 140, 90, 0.5);
+    box-shadow: 0 0 25px rgba(122, 200, 122, 0.08);
+  }
+
+  .btn.danger {
+    background: rgba(42, 26, 26, 0.6);
+    border-color: rgba(90, 58, 58, 0.5);
+    color: #d94a4a;
+  }
+  .btn.danger:hover {
+    background: rgba(58, 34, 34, 0.7);
+    border-color: rgba(140, 90, 90, 0.5);
+    box-shadow: 0 0 25px rgba(217, 74, 74, 0.08);
+  }
+
+  .btn.secondary {
+    background: rgba(20, 30, 50, 0.5);
+    border-color: rgba(42, 60, 90, 0.4);
+    color: #5da8d4;
+  }
+  .btn.secondary:hover {
+    background: rgba(30, 45, 65, 0.6);
+    border-color: rgba(70, 100, 140, 0.5);
+  }
+
+  .btn.warning {
+    background: rgba(42, 32, 16, 0.5);
+    border-color: rgba(90, 70, 40, 0.5);
+    color: #d4a843;
+  }
+  .btn.warning:hover {
+    background: rgba(58, 45, 22, 0.6);
+    border-color: rgba(140, 110, 60, 0.5);
+  }
+
+  /* ===== 进度条通用 ===== */
+  .progress-bar {
+    height: 8px;
+    background: rgba(26, 35, 48, 0.6);
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+    margin-top: 4px;
+  }
+
+  .progress-bar .fill {
+    height: 100%;
+    border-radius: 4px;
+    position: relative;
+    overflow: hidden;
+  }
+  .progress-bar .fill::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; width: 200%; height: 100%;
+    background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.10) 30%, rgba(255,255,255,0.20) 50%, rgba(255,255,255,0.10) 70%, transparent 100%);
+    animation: shimmer 2.5s ease-in-out infinite;
+    transform: skewX(-20deg);
+  }
+  @keyframes shimmer {
+    0%   { transform: skewX(-20deg) translateX(-150%); }
+    100% { transform: skewX(-20deg) translateX(150%); }
+  }
+  @keyframes gradientMove {
+    0%, 100% { background-position: 0% 50%; }
+    50%      { background-position: 100% 50%; }
+  }
+
+  .progress-bar .fill.shield { background: linear-gradient(90deg, #3a7ab0, #5a9ad0, #3a7ab0); background-size: 200% 100%; animation: gradientMove 3s ease-in-out infinite; }
+  .progress-bar .fill.armor  { background: linear-gradient(90deg, #b09030, #d4b050, #b09030); background-size: 200% 100%; animation: gradientMove 3s ease-in-out infinite; }
+  .progress-bar .fill.hull   { background: linear-gradient(90deg, #b04030, #d06050, #b04030); background-size: 200% 100%; animation: gradientMove 3s ease-in-out infinite; }
+  .progress-bar .fill.exp    { background: linear-gradient(90deg, #5da8d4, #7ac8f0, #5da8d4); background-size: 200% 100%; animation: gradientMove 3s ease-in-out infinite; }
+
+  /* ===== 行星面板 ===== */
+  .planet-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+  }
+
+  .planet-card {
+    background: #0f141e;
+    border: 1px solid #1e2a38;
+    border-radius: 5px;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .planet-card.expired { opacity: 0.5; border-color: #3a2a2a; }
+
+  .planet-card .planet-header {
+    display: flex; align-items: center; gap: 8px;
+  }
+  .planet-card .planet-icon { font-size: 22px; }
+  .planet-card .planet-canvas { width: 60px; height: 60px; border-radius: 50%; flex-shrink: 0; }
+  .planet-card .planet-name { font-size: 14px; font-weight: 600; color: #c8d0d8; }
+  .planet-card .planet-status {
+    margin-left: auto; font-size: 10px; padding: 2px 8px;
+    border-radius: 3px; font-weight: 600;
+  }
+  .planet-status.running  { background: #1a2a20; color: #7ac87a; border: 1px solid #3a5a3a; }
+  .planet-status.full     { background: #2a2a10; color: #d4a843; border: 1px solid #5a5a3a; }
+  .planet-status.expired  { background: #2a1a1a; color: #d94a4a; border: 1px solid #5a3a3a; }
+
+  .planet-card .planet-output {
+    font-size: 12px; color: #6a7a8e;
+    display: flex; align-items: center; gap: 4px;
+  }
+  .planet-card .planet-output .po-name { color: #e8d8a0; font-weight: 600; }
+  .planet-card .planet-output .po-icon { font-size: 14px; }
+
+  .planet-storage-row { font-size: 11px; display: flex; align-items: center; gap: 8px; }
+  .planet-storage-row .ps-label { color: #6a7a8e; width: 32px; flex-shrink: 0; }
+  .planet-storage-row .progress-bar { flex: 1; margin-top: 0; height: 6px; }
+  .planet-storage-row .fill.planet-storage-fill { background: #c0a050; }
+  .planet-storage-row .ps-value { color: #8899aa; flex-shrink: 0; min-width: 60px; text-align: right; }
+
+  .planet-prod-row { font-size: 11px; display: flex; align-items: center; gap: 8px; }
+  .planet-prod-row .ps-label { color: #6a7a8e; width: 32px; flex-shrink: 0; }
+  .planet-prod-row .progress-bar { flex: 1; margin-top: 0; height: 6px; }
+  .planet-prod-row .fill.planet-prod-fill { background: #a0c860; }
+  .planet-prod-row .ps-value { color: #a0c860; flex-shrink: 0; min-width: 48px; text-align: right; font-size: 10px; }
+
+  .planet-time-row { font-size: 11px; display: flex; align-items: center; gap: 8px; }
+  .planet-time-row .pt-label { color: #6a7a8e; width: 32px; flex-shrink: 0; }
+  .planet-time-row .progress-bar { flex: 1; margin-top: 0; height: 6px; }
+  .planet-time-row .fill.planet-time-fill { background: #5da8d4; }
+  .planet-time-row .fill.planet-time-fill.warn { background: #d94a4a; }
+  .planet-time-row .pt-value { color: #8899aa; flex-shrink: 0; min-width: 48px; text-align: right; font-size: 10px; }
+
+  .planet-card .planet-actions {
+    display: flex; gap: 6px; margin-top: 2px;
+  }
+  .planet-card .planet-actions .btn {
+    font-size: 11px; padding: 3px 10px;
+  }
+  .btn-collect {
+    margin-top: 4px;
+    padding: 2px 10px;
+    border: 1px solid #3a5a3a;
+    border-radius: 3px;
+    background: #1a2a20;
+    color: #7ac87a;
+    font-size: 11px;
+    cursor: default;
+    font-family: inherit;
+  }
+  .btn-collect:hover { background: #243a2a; }
+  .btn-redeploy {
+    padding: 2px 10px;
+    border: 1px solid #5a5a3a;
+    border-radius: 3px;
+    background: #2a2a10;
+    color: #d4a843;
+    font-size: 11px;
+    cursor: default;
+    font-family: inherit;
+  }
+  .btn-redeploy:hover { background: #3a3a18; }
+  .btn-remove-planet {
+    margin-left: auto;
+    padding: 2px 10px;
+    border: 1px solid #63342f;
+    border-radius: 3px;
+    background: #251312;
+    color: #c86b61;
+    font-size: 11px;
+    cursor: default;
+    font-family: inherit;
+  }
+  .btn-remove-planet:hover { background: #381b18; color: #e0887e; }
