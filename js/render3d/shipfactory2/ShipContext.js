@@ -4,10 +4,11 @@
 // Commit 2（本提交）：新增 C 组表面数学 radiusAt / normalAt / sampleHullSurface（消除 Ribbon/Armor
 //           重复的本地 R(z)），并扩展 B 组 bounds（采纳建议二：aabb/sphere/length/maxRadius/center）。
 //
-// 依赖方向（单向，无环）：ShipContext → Utils / Materials；ShipContext 不依赖任何 Generator。
+// 依赖方向（单向，无环）：ShipContext → Utils / Materials / ShipProfile；ShipContext 不依赖任何 Generator。
 import * as THREE from "three";
 import { COLORS, material, glowMat } from "./Materials.js";
 import { resolvePalette, HULL_PRESETS, hullRadiusAt } from "./Utils.js";
+import { buildProfile } from "./ShipProfile.js";
 
 // ── E 组：确定性随机（Commit 4，为 Phase 7 可复现做准备）──
 function hashStr(str) {
@@ -48,6 +49,12 @@ export class ShipContext {
     this.seed = spec.seed != null ? spec.seed : hashStr(this.shipName);
     const seedNum = typeof this.seed === "string" ? hashStr(this.seed) : this.seed;
     this._rng = mulberry32(seedNum >>> 0);
+
+    // A 组：整舰 DNA（Phase 3）。由 Anchor(风格) + shipClass(档位) + rng(Seed 变异) 解析为只读 ShipProfile。
+    //       anchor 缺省 "Spear"（shield 家族）；Phase 6 起由 RaceStyle.resolve() 决定，不再硬编码于此。
+    //       注意：Spear 全部为标量 → buildProfile 不消费 rng → 与旧 HULL_PRESETS 逐位一致（几何零变化）。
+    const anchor = spec.anchor || "Spear";
+    this.profile = buildProfile({ anchor, shipClass: spec.hull, rng: this.scope("ship").random });
 
     // D 组：共享材质（一次构建，跨 Generator 复用，满足 AI Rules §11 复用材质）
     const accentPalette = spec.accentFaction && COLORS[spec.accentFaction] ? COLORS[spec.accentFaction] : null;
