@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVE IDLE · ShipFactory2 验证（模块化重构）</title>
+  <style>
+    :root { color-scheme: dark; --bg:#080608; --text:#e8e4dc; --muted:#9a9086; --cyan:#2ab8f5; --gold:#e8c87a; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+      font-family:"Rajdhani","Segoe UI","Microsoft YaHei",sans-serif; overflow:hidden; }
+    #app { position:fixed; inset:0; }
+    .hud { position:fixed; top:16px; left:16px; pointer-events:none; max-width:62%; }
+    .hud h1 { margin:0; font-size:18px; letter-spacing:1px; color:var(--cyan); }
+    .hud p { margin:4px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
+    .legend { position:fixed; bottom:16px; left:16px; font-size:12px; color:var(--muted); }
+    .legend b { color:var(--cyan); }
+    .tag { position:fixed; transform:translate(-50%,-100%); font-size:12px; padding:3px 9px;
+      border:1px solid rgba(42,184,245,.25); border-radius:6px; background:rgba(8,12,18,.88);
+      white-space:nowrap; text-align:center; line-height:1.35; }
+    .tag .t { color:var(--cyan); font-weight:600; }
+    .tag .s { color:var(--muted); font-size:11px; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="hud">
+    <h1>ShipFactory2 · 模块化验证</h1>
+    <p>同一套护盾激光线 5 舰（裂谷→雷光→疾风混血→曙光→曜光），由重构后的 <b>shipfactory2/</b> 模块化工厂生成。<br>结构：Hull / Ribbon / Armor / Engine / Weapon 五个 Generator + Utils + Materials，ShipFactory2 仅编排。拖拽旋转，滚轮缩放。</p>
+  </div>
+  <div class="legend">调色板：<b>player_shield</b>（圣教金甲/青蓝发光）；疾风级 <b>hybrid:true</b> 叠加红色武装</div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+    import { buildShip, COLORS, HULL_PRESETS } from "./js/render3d/shipfactory2/ShipFactory2.js?v=2026-07-19phase2";
+
+    const app = document.getElementById("app");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080608);
+    scene.fog = new THREE.FogExp2(0x080608, 0.005);
+
+    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+    camera.position.set(0, 22, 78);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    app.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0, 0);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    scene.add(new THREE.HemisphereLight(0xc9b8a8, 0x0e0808, 0.40));
+    const key = new THREE.DirectionalLight(0xfff4ea, 1.7);
+    key.position.set(10, 18, 14); scene.add(key);
+    const rim = new THREE.DirectionalLight(0xffd0b0, 0.7);
+    rim.position.set(-12, 8, -14); scene.add(rim);
+    const cyanFill = new THREE.PointLight(COLORS.player_shield.glow, 70, 140);
+    cyanFill.position.set(0, 5, 16); scene.add(cyanFill);
+
+    (function makeStarField(count = 900, radius = 130) {
+      const pts = [];
+      for (let i = 0; i < count; i++) {
+        const t = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1), r = radius * (0.7 + Math.random() * 0.3);
+        pts.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xdcc8b8, size: 0.12, transparent: true, opacity: 0.65 })));
+    })();
+
+    const LINE = [
+      { id:"rifter",    name:"裂谷级",  tag:"T1 护卫 · 高槽2",  spec:{ id:"rifter",    line:"player_shield", family:"shield", hull:"frigate",    weapon:"laser", highSlots:2 } },
+      { id:"raylight",  name:"雷光级",  tag:"T1 驱逐 · 高槽3",  spec:{ id:"raylight",  line:"player_shield", family:"shield", hull:"destroyer",  weapon:"laser", highSlots:3 } },
+      { id:"gale",      name:"疾风级",  tag:"混血驱逐 · 高槽3", spec:{ id:"gale",      line:"player_shield", family:"shield", hull:"destroyer",  weapon:"laser", hybrid:true, highSlots:3 } },
+      { id:"dawnlight", name:"曙光级",  tag:"T1 巡洋 · 高槽4",  spec:{ id:"dawnlight", line:"player_shield", family:"shield", hull:"cruiser",    weapon:"laser", highSlots:4 } },
+      { id:"sunlance",  name:"曜光级",  tag:"T1 战列 · 高槽5",  spec:{ id:"sunlance", line:"player_shield", family:"shield", hull:"battleship", weapon:"laser", highSlots:5 } }
+    ];
+
+    const ships = [];
+    let cursor = 0;
+    const gap = 5;
+    for (const def of LINE) {
+      const ship = buildShip(def.spec);
+      const p = HULL_PRESETS[def.spec.hull] || HULL_PRESETS.frigate;
+      const L = p.len * p.scale;
+      ship.position.x = cursor + L / 2;
+      ship.rotation.y = -0.45;
+      cursor += L + gap;
+      scene.add(ship);
+      ships.push({ ship, def });
+    }
+    const center = cursor / 2;
+    for (const { ship } of ships) ship.position.x -= center;
+
+    const updaters = [];
+    for (const { ship, def } of ships) {
+      const el = document.createElement("div");
+      el.className = "tag";
+      el.innerHTML = `<div class="t">${def.name}</div><div class="s">${def.tag}</div>`;
+      document.body.appendChild(el);
+      const wp = new THREE.Vector3();
+      updaters.push(() => {
+        ship.getWorldPosition(wp);
+        wp.y += (def.spec.hull === "battleship" ? 14 : def.spec.hull === "cruiser" ? 11 : 8);
+        wp.project(camera);
+        el.style.left = (wp.x * 0.5 + 0.5) * innerWidth + "px";
+        el.style.top = (-wp.y * 0.5 + 0.5) * innerHeight + "px";
+        el.style.display = wp.z < 1 ? "block" : "none";
+      });
+    }
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      for (const { ship } of ships) {
+        ship.rotation.y += 0.003;
+        const sh = ship.userData.shield;
+        if (sh) {
+          const pulse = 0.5 + 0.5 * Math.sin(t * 1.4);
+          sh.material.opacity = 0.05 + 0.05 * pulse;
+          sh.children[0].material.opacity = 0.13 + 0.12 * pulse;
+          sh.scale.setScalar(1 + 0.012 * pulse);
+        }
+        const fl = ship.userData.floaters;
+        if (fl) for (const f of fl) {
+          f.grp.position.y = f.base.y + Math.sin(t * 1.6 + f.phase) * f.ampY;
+          f.grp.position.z = f.base.z + Math.sin(t * 1.1 + f.phase) * f.ampZ;
+        }
+      }
+      controls.update();
+      updaters.forEach(u => u());
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
