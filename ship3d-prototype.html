@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EVE IDLE · 舰船 3D 原型（ShipFactory 演示）</title>
+  <style>
+    :root { color-scheme: dark; --bg:#070a0f; --text:#dce7f1; --muted:#728397; --gold:#d6a84a; --cyan:#2ab8f5; --red:#ff665e; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+      font-family:"Rajdhani","Segoe UI","Microsoft YaHei",sans-serif; overflow:hidden; }
+    #app { position:fixed; inset:0; }
+    .hud { position:fixed; top:16px; left:16px; pointer-events:none; }
+    .hud h1 { margin:0; font-size:18px; letter-spacing:1px; }
+    .hud p { margin:4px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
+    .legend { position:fixed; bottom:16px; left:16px; font-size:13px; color:var(--muted); }
+    .legend b.gold { color:var(--gold); } .legend b.cyan { color:var(--cyan); } .legend b.red { color:var(--red); }
+    .tag { position:fixed; transform:translate(-50%,-100%); font-size:12px; padding:2px 8px;
+      border:1px solid rgba(131,158,187,.25); border-radius:6px; background:rgba(13,19,28,.8); white-space:nowrap; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="hud">
+    <h1>SHIP FACTORY · 舰船 3D 原型</h1>
+    <p>同一套程序化引擎，由 shipSpec 驱动玩家/敌人舰船：<b class="gold">圣教金甲 + 青蓝辉光</b> 玩家系 与 <b class="red">天使红</b> 敌人系。<br>巨型结构环 + 环内浮游炮 + 刻入船体的发光缝 + 护盾辉光。拖拽旋转，滚轮缩放。</p>
+  </div>
+  <div class="legend">左侧 <b class="gold">裂谷级（玩家·frigate）</b> ｜ 右侧 <b class="red">天使侦查舰（敌人·cruiser）</b> ｜ 辉光 <b class="cyan">青蓝</b></div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+    import { buildShip, COLORS, HULL_PRESETS } from "./js/render3d/ShipFactory.js?v=2026-07-19i";
+
+    const app = document.getElementById("app");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070a0f);
+    scene.fog = new THREE.FogExp2(0x070a0f, 0.010);
+
+    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
+    camera.position.set(0, 9, 40);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    app.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.5;
+    controls.target.set(0, 1, 0);
+
+    // 环境反射（金属质感来源）
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    // 灯光：半球光打底 + 主方向光 + 玩家青/敌人红两盏点光染色
+    scene.add(new THREE.HemisphereLight(0x9fc9e5, 0x0a0e14, 0.55));
+    const dir = new THREE.DirectionalLight(0xffffff, 1.3);
+    dir.position.set(8, 14, 10);
+    scene.add(dir);
+    const pCyan = new THREE.PointLight(COLORS.player_shield.glow, 90, 80); pCyan.position.set(-14, 4, 8); scene.add(pCyan);
+    const pRed = new THREE.PointLight(COLORS.angel.glow, 110, 80); pRed.position.set(14, 4, 8); scene.add(pRed);
+
+    // 星空
+    (function makeStarField(count = 800, radius = 120) {
+      const pts = [];
+      for (let i = 0; i < count; i++) {
+        const t = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1), r = radius * (0.7 + Math.random() * 0.3);
+        pts.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9fc9e5, size: 0.1, transparent: true, opacity: 0.7 })));
+    })();
+
+    // —— 核心：用 spec 造两艘船（玩家 vs 敌人，不同舰级架构 + 不同调色板）——
+    const player = buildShip({ id: "rift_class", line: "player_shield", family: "shield", hull: "frigate", weapon: "laser", highSlots: 2 });
+    player.position.set(-10, 0, 0);
+    player.rotation.y = -0.5;
+    scene.add(player);
+
+    const enemy = buildShip({ id: "angel_recon", line: "angel", family: "shield", hull: "cruiser", weapon: "missile", highSlots: 4 });
+    enemy.position.set(10, 0, 0);
+    enemy.rotation.y = 0.5;
+    scene.add(enemy);
+
+    const ships = [
+      { ship: player, name: "裂谷级 · 玩家", color: "#d6a84a", hull: "frigate" },
+      { ship: enemy,  name: "天使侦查舰 · 敌人", color: "#ff665e", hull: "cruiser" }
+    ];
+
+    // 浮标签
+    const updaters = [];
+    for (const d of ships) {
+      const el = document.createElement("div");
+      el.className = "tag"; el.textContent = d.name; el.style.color = d.color;
+      document.body.appendChild(el);
+      const wp = new THREE.Vector3();
+      updaters.push(() => {
+        d.ship.getWorldPosition(wp);
+        wp.y += (d.hull === "battleship" ? 14 : d.hull === "cruiser" ? 11 : 8);
+        wp.project(camera);
+        el.style.left = (wp.x * 0.5 + 0.5) * innerWidth + "px";
+        el.style.top = (-wp.y * 0.5 + 0.5) * innerHeight + "px";
+        el.style.display = wp.z < 1 ? "block" : "none";
+      });
+    }
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      for (const d of ships) {
+        const sh = d.ship.userData.shield;
+        if (sh) {
+          const pulse = 0.5 + 0.5 * Math.sin(t * 1.4 + (d.hull === "cruiser" ? 1.0 : 0));
+          sh.material.opacity = 0.05 + 0.05 * pulse;
+          sh.children[0].material.opacity = 0.13 + 0.12 * pulse;
+          sh.scale.setScalar(1 + 0.012 * pulse);
+        }
+        const fl = d.ship.userData.floaters;
+        if (fl) for (const f of fl) {
+          f.grp.position.y = f.base.y + Math.sin(t * 1.6 + f.phase) * f.ampY;
+          f.grp.position.z = f.base.z + Math.sin(t * 1.1 + f.phase) * f.ampZ;
+        }
+      }
+      controls.update();
+      updaters.forEach(u => u());
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>
