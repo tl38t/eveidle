@@ -1,13 +1,13 @@
-// ShipContext.js — Phase 2 共享数据中心（基础框架）
+// ShipContext.js — Phase 2 共享数据中心
 //
-// Commit 1（本提交）：仅把原 ShipFactory2.js 中的"临时 ctx 对象"正式化为一个模块。
-//   字段名与构造行为与原 ctx 完全一致 —— 五个 Generator 接口不变，视觉 100% 不变。
-//   本文件采用 class，便于后续提交逐步挂载方法（radiusAt / normalAt / sampleHullSurface /
-//   bounds / seed / random / scope），无需改动 Generator 的调用方式。
+// Commit 1：把原 ShipFactory2 中的临时 ctx 正式化为模块（字段/材质与原 ctx 一致，Generator 接口不变）。
+// Commit 2（本提交）：新增 C 组表面数学 radiusAt / normalAt / sampleHullSurface（消除 Ribbon/Armor
+//           重复的本地 R(z)），并扩展 B 组 bounds（采纳建议二：aabb/sphere/length/maxRadius/center）。
 //
 // 依赖方向（单向，无环）：ShipContext → Utils / Materials；ShipContext 不依赖任何 Generator。
+import * as THREE from "three";
 import { COLORS, material, glowMat } from "./Materials.js";
-import { resolvePalette, HULL_PRESETS } from "./Utils.js";
+import { resolvePalette, HULL_PRESETS, hullRadiusAt } from "./Utils.js";
 
 export class ShipContext {
   constructor(spec = {}) {
@@ -34,10 +34,46 @@ export class ShipContext {
     this.accentMat = material(accentColor, 0.82, 0.28, this.hybrid ? COLORS.angel.glow : this.palette.glow, this.hybrid ? 0.5 : 0.3);
     this.steelMat = material(this.palette.steel, 0.93, 0.26);
     this.glassMat = material(this.palette.dark, 0.35, 0.15, this.hybrid ? COLORS.angel.glow : this.palette.glow, 0.9);
+
+    // B 组：扩展包围信息（采纳建议二：aabb / sphere / length / maxRadius / center，供相机/Validator/LOD 复用）
+    this._buildBounds();
+  }
+
+  // ── C 组：表面数学（单一事实源，消除 Ribbon/Armor 重复的本地 R(z)）──
+  // 轴向位置 z -> 船体剖面半径。与原 hullRadiusAt(z, noseFat*s, mid*s, tail*s, L) 完全等价。
+  radiusAt(z) {
+    return hullRadiusAt(z, this.hullProfile.noseFat * this.s, this.hullProfile.mid * this.s, this.hullProfile.tail * this.s, this.L);
+  }
+
+  // 外法线（径向单位向量混入轴向导数 -dR/dz）。数值微分，足够贴附精度。
+  normalAt(z, angle) {
+    const r = this.radiusAt(z);
+    const dz = 1e-3;
+    const dr = (this.radiusAt(z + dz) - r) / dz;
+    return new THREE.Vector3(Math.sin(angle), Math.cos(angle), -dr).normalize();
+  }
+
+  // 从 Hull 表面采样一个点（采纳建议一：改名 sampleHullSurface，避免与 Shield/Ring/Engine/Armor 各自 surface 混淆）
+  sampleHullSurface(z, angle, offset = 0) {
+    const r = this.radiusAt(z) + offset;
+    return new THREE.Vector3(r * Math.sin(angle), r * Math.cos(angle), z);
+  }
+
+  _buildBounds() {
+    const hullR = Math.max(this.hullProfile.noseFat, this.hullProfile.mid, this.hullProfile.tail) * this.s;
+    const ringR = (this.hullProfile.ringRadius || 3) * this.s;
+    const maxRadius = Math.max(hullR, ringR);
+    this.bounds = {
+      aabb: { min: new THREE.Vector3(-maxRadius, -maxRadius, -this.L * 0.5), max: new THREE.Vector3(maxRadius, maxRadius, this.L * 0.5) },
+      sphere: { center: new THREE.Vector3(0, 0, 0), radius: maxRadius },
+      length: this.L,
+      maxRadius,
+      center: new THREE.Vector3(0, 0, 0)
+    };
   }
 }
 
-// 工厂函数：ShipFactory2 调用入口（与 class 二选一，工厂更轻）
+// 工厂函数：ShipFactory2 调用入口
 export function createShipContext(spec) {
   return new ShipContext(spec);
 }
