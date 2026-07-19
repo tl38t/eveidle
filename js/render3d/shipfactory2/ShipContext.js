@@ -9,6 +9,24 @@ import * as THREE from "three";
 import { COLORS, material, glowMat } from "./Materials.js";
 import { resolvePalette, HULL_PRESETS, hullRadiusAt } from "./Utils.js";
 
+// ── E 组：确定性随机（Commit 4，为 Phase 7 可复现做准备）──
+function hashStr(str) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return h >>> 0;
+}
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
 export class ShipContext {
   constructor(spec = {}) {
     this.spec = spec;
@@ -25,6 +43,11 @@ export class ShipContext {
     this.length = this.L;                           // 别名
     this.hybrid = !!spec.hybrid;
     this.shipName = spec.id || spec.hull || "ship";
+
+    // E 组：确定性随机（seed 缺省由 shipName 派生，保证"不传 seed 也能跑，传同 seed 必同船"）
+    this.seed = spec.seed != null ? spec.seed : hashStr(this.shipName);
+    const seedNum = typeof this.seed === "string" ? hashStr(this.seed) : this.seed;
+    this._rng = mulberry32(seedNum >>> 0);
 
     // D 组：共享材质（一次构建，跨 Generator 复用，满足 AI Rules §11 复用材质）
     const accentPalette = spec.accentFaction && COLORS[spec.accentFaction] ? COLORS[spec.accentFaction] : null;
@@ -70,6 +93,19 @@ export class ShipContext {
       maxRadius,
       center: new THREE.Vector3(0, 0, 0)
     };
+  }
+
+  // 主种子流：[0,1)
+  random() {
+    return this._rng();
+  }
+
+  // 按 Generator 名派生隔离的确定性子流（避免调用顺序串扰，仍完全可复现）
+  scope(name) {
+    const base = typeof this.seed === "string" ? hashStr(this.seed) : this.seed;
+    const s = (base ^ hashStr(name)) >>> 0;
+    const r = mulberry32(s);
+    return { random: () => r() };
   }
 }
 
