@@ -34,7 +34,7 @@
   <div id="app"></div>
   <div class="hud">
     <h1>ShipFactory2 · 模块化验证</h1>
-    <p>同一套护盾激光线 5 舰（裂谷→雷光→疾风混血→曙光→曜光），由重构后的 <b>shipfactory2/</b> 模块化工厂生成。<br>结构：Hull / Ribbon / Armor / Engine / Weapon 五个 Generator + Utils + Materials，ShipFactory2 仅编排。拖拽旋转，滚轮缩放。</p>
+    <p>同一套护盾激光线 5 舰（裂谷→雷光→疾风混血→曙光→曜光），由重构后的 <b>shipfactory2/</b> 模块化工厂生成。<br>结构：Hull / Ribbon / Armor / Engine / Weapon 五个 Generator + Utils + Materials，ShipFactory2 仅编排。<br><b>下方第二行</b>：Needle 锚点 × 3 个不同 seed，演示「同锚点 → 风格一致但几何不同」（Phase 3 Commit 4）。拖拽旋转，滚轮缩放。</p>
   </div>
   <div class="legend">调色板：<b>player_shield</b>（圣教金甲/青蓝发光）；疾风级 <b>hybrid:true</b> 叠加红色武装</div>
 
@@ -42,7 +42,7 @@
     import * as THREE from "three";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
-    import { buildShip, COLORS } from "./js/render3d/shipfactory2/ShipFactory2.js?v=2026-07-19phase3";
+    import { buildShip, COLORS } from "./js/render3d/shipfactory2/ShipFactory2.js?v=2026-07-20phase3c4";
 
     const app = document.getElementById("app");
     const scene = new THREE.Scene();
@@ -50,7 +50,7 @@
     scene.fog = new THREE.FogExp2(0x080608, 0.005);
 
     const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 500);
-    camera.position.set(0, 22, 78);
+    camera.position.set(0, 28, 96);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(innerWidth, innerHeight);
@@ -109,6 +109,31 @@
     }
     const center = cursor / 2;
     for (const { ship } of ships) ship.position.x -= center;
+
+    // ── 第二行：Needle 锚点 × 3 个 seed，演示「同锚点 + 不同 seed → 风格一致但几何不同」(Phase 3 Commit 4) ──
+    // Needle 是区间锚点：buildProfile 会用 rng 在区间内 lerp，所以同锚点不同 seed 产出明显不同的舰体。
+    const VAR_LINE = [
+      { id:"needle-A", name:"Needle·α", tag:"Needle / frigate / seed=A", spec:{ id:"needle-A", line:"player_shield", family:"shield", hull:"frigate", weapon:"laser", highSlots:2, anchor:"Needle", seed:"needle-alpha" } },
+      { id:"needle-B", name:"Needle·β", tag:"Needle / frigate / seed=B", spec:{ id:"needle-B", line:"player_shield", family:"shield", hull:"frigate", weapon:"laser", highSlots:2, anchor:"Needle", seed:"needle-bravo" } },
+      { id:"needle-C", name:"Needle·γ", tag:"Needle / frigate / seed=C", spec:{ id:"needle-C", line:"player_shield", family:"shield", hull:"frigate", weapon:"laser", highSlots:2, anchor:"Needle", seed:"needle-charlie" } },
+    ];
+    const row2Z = -22;                                  // 第二行 Z 位置（主行后方）
+    let cursor2 = 0;
+    for (const def of VAR_LINE) {
+      const ship = buildShip(def.spec);
+      ship.updateMatrixWorld(true);
+      const box = new THREE.Box3().setFromObject(ship);
+      const L = box.max.z - box.min.z;
+      ship.position.set(cursor2 + L / 2, 0, row2Z);
+      ship.rotation.y = -0.45;
+      cursor2 += L + gap;
+      scene.add(ship);
+      ships.push({ ship, def });
+    }
+    const center2 = cursor2 / 2;
+    for (let i = ships.length - VAR_LINE.length; i < ships.length; i++) {
+      ships[i].ship.position.x -= center2;
+    }
 
     const updaters = [];
     for (const { ship, def } of ships) {
