@@ -517,6 +517,47 @@ ShipProfile = 不可变。
 
 ---
 
+# 19. Generator Configuration Access
+# 19. Generator 配置访问
+
+Generators MUST NOT import or read configuration / preset files directly (HULL_PRESETS, ANCHORS, CONFIG, etc.).
+
+Generator 禁止直接 import 或读取配置文件 / 预设（HULL_PRESETS、ANCHORS、CONFIG 等）。
+
+All design parameters must flow through ShipContext, especially `ctx.profile`.
+
+所有设计参数必须通过 ShipContext 传递，尤其是 `ctx.profile`。
+
+Allowed data sources for a Generator:
+
+Generator 唯一允许读取的数据源：
+
+- `ctx.profile` — the ship DNA (read-only, see §18)
+- `ctx.profile` — 整舰 DNA（只读，见 §18）
+- `ctx.materials` — shared materials (see §6)
+- `ctx.materials` — 共享材质（见 §6）
+- `ctx.bounds` — shared bounding info
+- `ctx.bounds` — 共享包围信息
+- `ctx.random()` / `ctx.scope(name)` — deterministic RNG (Phase 2)
+- `ctx.random()` / `ctx.scope(name)` — 确定性随机（Phase 2）
+- `ctx.<runtime fields>` — geometry / identity already resolved by ShipContext
+- `ctx.<运行时字段>` — 已由 ShipContext 解析好的几何 / 身份数据
+
+Forbidden:
+
+禁止：
+
+```js
+import { HULL_PRESETS } from "./Utils.js";   // ✗ Generator 不应直接依赖配置
+const preset = HULL_PRESETS[class];           // ✗ 应通过 ctx.profile 获取
+```
+
+Why: this keeps Generators as pure geometry executors. The moment a Generator reads a config file, the data flow `Game Spec → Style Resolver → ShipProfile → ShipContext → Generators → Mesh` develops a bypass, and style / race changes can no longer be made in a single place.
+
+原因：这保证 Generator 是真正的「纯几何执行器」。一旦 Generator 直接读配置，数据链路 `Game Spec → Style Resolver → ShipProfile → ShipContext → Generators → Mesh` 就会出现旁路，风格 / 种族的修改也就无法再在单一位置完成。
+
+---
+
 End of document.
 
 文档结束。
