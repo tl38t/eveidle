@@ -484,6 +484,39 @@ Every new feature should move the project closer to this vision.
 
 ---
 
+# 18. ShipProfile Immutability
+# 18. ShipProfile 不可变
+
+ShipProfile is read-only data. It describes what a ship should look like (its DNA).
+
+ShipProfile 是只读数据，描述"这艘船应该长什么样"（它的 DNA）。
+
+Generators MUST NOT modify `ctx.profile` (or any of its nested fields such as `ctx.profile.hull`).
+
+Generator 禁止修改 `ctx.profile`（以及其任何嵌套字段，例如 `ctx.profile.hull`）。
+
+Forbidden example:
+
+禁止示例：
+
+```js
+ctx.profile.hull.widthRatio *= 1.2;   // ✗ 一旦出现，Generator 执行顺序就会影响结果
+```
+
+If a generator needs different values, it must derive a new local copy instead of mutating the shared profile.
+
+如果 Generator 需要不同的数值，应复制出一份新的局部数据，而不是修改共享的 Profile。
+
+Why: a mutable profile makes generation order-dependent and non-reproducible. Immutability guarantees that the same `(profile, seed)` always yields the same ship regardless of which generator runs first.
+
+原因：可变的 Profile 会让生成结果依赖 Generator 的执行顺序、破坏可复现性。只读保证同一 `(profile, seed)` 无论哪个 Generator 先跑都产出同一艘船。
+
+ShipProfile = Immutable.
+
+ShipProfile = 不可变。
+
+---
+
 End of document.
 
 文档结束。
