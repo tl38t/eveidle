@@ -26,6 +26,7 @@ const GENERATORS = [
   "GrooveGenerator.js",
   "HeatSinkGenerator.js",
   "HatchGenerator.js",
+  "VentGenerator.js",
   "RibbonGenerator.js",
   "EngineGenerator.js",
   "WeaponGenerator.js",

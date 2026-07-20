@@ -16,7 +16,9 @@ const ui = {
   runtimeDetail: byId("runtime-detail"), designation: byId("ship-designation"), seedLabel: byId("ship-seed-label"),
   vertices: byId("vertex-count"), triangles: byId("triangle-count"), meshes: byId("mesh-count"),
   buildTime: byId("build-time"), fingerprint: byId("geometry-fingerprint"),
-  fingerprintDetail: byId("fingerprint-detail"), profile: byId("profile-output"), viewport: byId("viewport")
+  fingerprintDetail: byId("fingerprint-detail"), profile: byId("profile-output"), viewport: byId("viewport"),
+  surfPanels: byId("surf-panels"), surfGrooves: byId("surf-grooves"),
+  surfHeatSinks: byId("surf-heatsinks"), surfHatches: byId("surf-hatches"), surfVents: byId("surf-vents")
 };
 function addOptions(select, values) {
   for (const value of values) { const option = document.createElement("option"); option.value = value; option.textContent = value; select.appendChild(option); }
@@ -70,6 +72,17 @@ function metricsOf(ship) {
   });
   result.triangles = Math.round(result.triangles); return result;
 }
+function surfaceDetailsOf(ship) {
+  const counts = { panels: 0, grooves: 0, heatSinks: 0, hatches: 0, vents: 0 };
+  for (const child of ship.children) {
+    if (!child.isGroup) continue;
+    let meshCount = 0;
+    child.traverse((o) => { if (o.isMesh) meshCount++; });
+    const key = child.name;
+    if (key in counts) counts[key] = meshCount;
+  }
+  return counts;
+}
 
 function mix(hash, value) {
   for (let shift = 0; shift < 32; shift += 8) { hash ^= (value >>> shift) & 255; hash = Math.imul(hash, 0x01000193); }
@@ -116,6 +129,7 @@ function buildFrom(item, remember = true) {
     const context = createShipContext(spec); const profile = context.profile; disposeContext(context);
     const started = performance.now(); const ship = buildShip(spec); const elapsed = performance.now() - started;
     const metrics = metricsOf(ship); const fingerprint = fingerprintOf(ship, metrics);
+    const surfaces = surfaceDetailsOf(ship);
     ship.rotation.x = -0.08; ship.rotation.y = -0.42;
     if (activeShip) { scene.remove(activeShip); disposeObject(activeShip); }
     activeShip = ship; scene.add(ship); fitCamera(ship);
@@ -127,6 +141,11 @@ function buildFrom(item, remember = true) {
     const size = new THREE.Box3().setFromObject(ship).getSize(new THREE.Vector3());
     ui.fingerprint.textContent = fingerprint;
     ui.fingerprintDetail.textContent = "bbox " + size.x.toFixed(2) + " × " + size.y.toFixed(2) + " × " + size.z.toFixed(2);
+    ui.surfPanels.textContent = surfaces.panels;
+    ui.surfGrooves.textContent = surfaces.grooves;
+    ui.surfHeatSinks.textContent = surfaces.heatSinks;
+    ui.surfHatches.textContent = surfaces.hatches;
+    ui.surfVents.textContent = surfaces.vents;
     ui.profile.textContent = JSON.stringify(profile, null, 2);
     if (remember) storeHistory(item); updateHistory();
     setStatus("ready", metrics.meshes + " meshes · " + fingerprint);
