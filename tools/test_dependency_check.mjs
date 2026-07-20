@@ -21,9 +21,10 @@ const GEN_DIR = join(__dirname, "..", "js", "render3d", "shipfactory2");
 // 受检的 Generator 列表（纯几何执行器，禁止 import 配置 / 读 preset）
 const GENERATORS = [
   "HullGenerator.js",
-  "RibbonGenerator.js",
   "ArmorGenerator.js",
   "PanelGenerator.js",
+  "GrooveGenerator.js",
+  "RibbonGenerator.js",
   "EngineGenerator.js",
   "WeaponGenerator.js",
 ];

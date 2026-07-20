@@ -6,9 +6,10 @@
 //   ShipFactory2.js     （本文件：编排入口）
 //   ShipContext.js      共享数据中心（Phase 2 起：身份/几何/外观/随机/输出注册表）
 //   HullGenerator.js    基础船体
-//   RibbonGenerator.js  发光缝
+//   RibbonGenerator.js  发光能源缝
 //   ArmorGenerator.js   航行灯 + 上层建筑
 //   PanelGenerator.js   贴合表面装甲板（Phase 4 Commit 1 从 Armor 拆出）
+//   GrooveGenerator.js  机械刻槽（Phase 4 Commit 2，Fake Groove）
 //   EngineGenerator.js  引擎舱
 //   WeaponGenerator.js  武器/护盾（鼻刺 + 结构环 + 浮游炮 + 激光挂点 + 护盾层）
 //   Utils.js            预设与几何工具
@@ -18,9 +19,10 @@ import { COLORS } from "./Materials.js";
 import { SHIP_CLASSES } from "./ShipProfile.js";
 import { createShipContext } from "./ShipContext.js";
 import { generateHull } from "./HullGenerator.js";
-import { generateRibbons } from "./RibbonGenerator.js";
 import { generateArmor } from "./ArmorGenerator.js";
 import { generatePanels } from "./PanelGenerator.js";
+import { generateGrooves } from "./GrooveGenerator.js";
+import { generateRibbons } from "./RibbonGenerator.js";
 import { generateEngines } from "./EngineGenerator.js";
 import { generateWeapons } from "./WeaponGenerator.js";
 
@@ -33,11 +35,13 @@ export function buildShip(spec = {}) {
   ship.userData = { spec: ctx.spec, role: ctx.role, family: ctx.family, palette: ctx.palette };
 
   // ── 依次组装各子系统（每个返回独立 THREE.Group）──
+  // 编排顺序：结构层（Hull/Armor/Panel/Groove）→ 能源层（Ribbon）→ 功能层（Weapons/Engines）
   const parts = [
     generateHull(ctx),
-    generateRibbons(ctx),
     generateArmor(ctx),
     generatePanels(ctx),
+    generateGrooves(ctx),
+    generateRibbons(ctx),
     generateWeapons(ctx),
     generateEngines(ctx)
   ];
