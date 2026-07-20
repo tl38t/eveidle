@@ -1,5 +1,9 @@
 // EngineGenerator.js — 引擎舱与尾焰
 // 职责：返回包含「引擎舱（按舰级布局）+ 尾焰辉光」的 THREE.Group。
+//
+// Phase 4 Commit 3：引擎位置由 ShipFactory2（Anchor Bus）从 profile 预计算，
+//   通过 ctx._engineHeatPoints 统一注入，EngineGenerator 不再内部推导。
+//   同时将 heatPoints 写入 group.userData.heatPoints 作为声明。
 import * as THREE from "three";
 import { addPart, material, glowMat, COLORS, additiveGlowMaterial } from "./Materials.js";
 
@@ -17,18 +21,17 @@ function addEngine(group, x, y, z, radius, palette, length = 1.6) {
 }
 
 export function generateEngines(ctx) {
-  const { profile, s, L, hybrid, palette } = ctx;
-  const hull = profile.hull;
+  const { hybrid, palette, _engineHeatPoints } = ctx;
+
   const g = new THREE.Group();
   g.name = "engines";
 
-  let ex;
-  if (hull.body === "gunboat") ex = [-0.9 * s, 0.9 * s];
-  else if (hull.engines === 3) ex = [-0.65 * s, 0, 0.65 * s];
-  else ex = [-0.5 * s, 0.5 * s];
+  // Phase 4 Commit 3：引擎位置来自 ShipFactory2 Anchor Bus，不再内部推导。
+  const heatPoints = _engineHeatPoints || [];
+  g.userData.heatPoints = heatPoints;
 
-  for (const exx of ex)
-    addEngine(g, exx, -0.08 * s, L * 0.5, 0.24 * s, hybrid ? COLORS.angel : palette);
+  for (const hp of heatPoints)
+    addEngine(g, hp.x, hp.y, hp.z, hp.radius, hybrid ? COLORS.angel : palette);
 
   return g;
 }

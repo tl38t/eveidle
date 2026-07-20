@@ -5,7 +5,7 @@
 //   本轻量版先覆盖四道结构检查，零依赖、秒级运行。
 //
 // 检查项：
-//   ① 组件存在性 — ship 必须包含 hull / ribbons / armor / panels / weapons / engines 六个子 Group
+//   ① 组件存在性 — ship 必须包含 hull/ribbons/armor/panels/heatSinks/hatches/weapons/engines 八个子 Group
 //   ② 对称性     — X 轴镜像，统计 +X / -X 顶点数偏差（偏差 > 15% 则 FAIL）
 //   ③ 比例合理性 — bbox 三维度在 [0.5, 50] 范围内，且最长轴 / 最短轴 < 12
 //   ④ 子组件包围 — 每个子 Group 的 bbox 必须与 ship 整体 bbox 有交集（无完全脱离的悬浮组件）
@@ -23,7 +23,7 @@ const SPECS = [
   { id: "sunlance",  line: "player_shield", family: "shield", hull: "battleship", weapon: "laser", highSlots: 5 }
 ];
 
-const REQUIRED_GROUPS = ["hull", "ribbons", "armor", "panels", "weapons", "engines"];
+const REQUIRED_GROUPS = ["hull", "ribbons", "armor", "panels", "heatSinks", "hatches", "weapons", "engines"];
 
 function computeBBox(obj) {
   const box = new THREE.Box3().setFromObject(obj);

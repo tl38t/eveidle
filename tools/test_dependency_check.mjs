@@ -24,6 +24,8 @@ const GENERATORS = [
   "ArmorGenerator.js",
   "PanelGenerator.js",
   "GrooveGenerator.js",
+  "HeatSinkGenerator.js",
+  "HatchGenerator.js",
   "RibbonGenerator.js",
   "EngineGenerator.js",
   "WeaponGenerator.js",
