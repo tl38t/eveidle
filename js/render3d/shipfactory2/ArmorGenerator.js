@@ -1,5 +1,6 @@
-// ArmorGenerator.js — 表面装甲细节与舰级专属上层建筑
-// 职责：返回包含「贴合表面的装甲板 + 航行灯 + 各舰级专属架构(dagger/gunboat/cruiser/fortress) + 混血红色武装」的 THREE.Group。
+// ArmorGenerator.js — 航行灯与舰级专属上层建筑
+// 职责：返回包含「航行灯 + 各舰级专属架构(dagger/gunboat/cruiser/fortress) + 混血红色武装」的 THREE.Group。
+// （Phase 4 Commit 1：贴合表面的装甲板已拆分至 PanelGenerator.js，本文件只保留上层建筑与灯饰。）
 // （Commit 2：删除本地 R(z) 与 Utils.preset_mid，统一走 ctx.radiusAt / ctx.hullProfile.mid）
 import * as THREE from "three";
 import { rbox, material, glowMat, addPart, COLORS } from "./Materials.js";
@@ -64,24 +65,7 @@ export function generateArmor(ctx) {
   const g = new THREE.Group();
   g.name = "armor";
 
-  // ① 贴合表面的装甲板（扁平圆角板，沿法线贴附，钢色；尺寸按局部半径封顶，不随 s 膨胀）
-  const plateMat = material(palette.steel, 0.95, 0.24);
-  const plateZones = [-0.05 * L, 0.18 * L];
-  for (const z of plateZones) {
-    const r = ctx.radiusAt(z) * 0.99;
-    const localR = ctx.radiusAt(z);
-    for (const side of [-1, 1]) {
-      const phi = side * 0.62;
-      const w = Math.min(0.32 * s, localR * 0.42);
-      const h = Math.min(0.22 * s, localR * 0.30);
-      const t = 0.042 * s;
-      const plate = rbox(w, t, h, 0.015 * s, plateMat, [r * Math.sin(phi), r * Math.cos(phi), z]);
-      plate.rotation.z = -phi; // 薄面贴合径向法线
-      g.add(plate);
-    }
-  }
-
-  // ② 航行灯（翼尖/鼻/尾的微小辉光点）
+  // ① 航行灯（翼尖/鼻/尾的微小辉光点）
   const nav = glowMat({ glow: palette.glow }, 2.6);
   const navPts = [
     [-0.5 * s + ctx.hullProfile.wingSpan * s * 0.45 * Math.cos(0.42), 0, -0.1 * L + ctx.hullProfile.wingSpan * s * 0.45 * Math.sin(0.42) + 0.4 * s],
@@ -94,7 +78,7 @@ export function generateArmor(ctx) {
     g.add(m);
   }
 
-  // ③ 各舰级专属架构
+  // ② 各舰级专属架构
   if (ctx.hullProfile.body === "dagger") buildDaggerExtras(g, s, L, palette, accentMat, spec, mid);
   else if (ctx.hullProfile.body === "gunboat") buildGunboatExtras(g, s, L, palette, accentMat, spec, mid);
   else if (ctx.hullProfile.body === "cruiser") buildCruiserExtras(g, s, L, palette, accentMat, spec, mid);

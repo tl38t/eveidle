@@ -23,6 +23,7 @@ const GENERATORS = [
   "HullGenerator.js",
   "RibbonGenerator.js",
   "ArmorGenerator.js",
+  "PanelGenerator.js",
   "EngineGenerator.js",
   "WeaponGenerator.js",
 ];

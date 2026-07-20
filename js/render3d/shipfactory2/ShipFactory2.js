@@ -7,7 +7,8 @@
 //   ShipContext.js      共享数据中心（Phase 2 起：身份/几何/外观/随机/输出注册表）
 //   HullGenerator.js    基础船体
 //   RibbonGenerator.js  发光缝
-//   ArmorGenerator.js   装甲细节 + 上层建筑
+//   ArmorGenerator.js   航行灯 + 上层建筑
+//   PanelGenerator.js   贴合表面装甲板（Phase 4 Commit 1 从 Armor 拆出）
 //   EngineGenerator.js  引擎舱
 //   WeaponGenerator.js  武器/护盾（鼻刺 + 结构环 + 浮游炮 + 激光挂点 + 护盾层）
 //   Utils.js            预设与几何工具
@@ -19,6 +20,7 @@ import { createShipContext } from "./ShipContext.js";
 import { generateHull } from "./HullGenerator.js";
 import { generateRibbons } from "./RibbonGenerator.js";
 import { generateArmor } from "./ArmorGenerator.js";
+import { generatePanels } from "./PanelGenerator.js";
 import { generateEngines } from "./EngineGenerator.js";
 import { generateWeapons } from "./WeaponGenerator.js";
 
@@ -35,6 +37,7 @@ export function buildShip(spec = {}) {
     generateHull(ctx),
     generateRibbons(ctx),
     generateArmor(ctx),
+    generatePanels(ctx),
     generateWeapons(ctx),
     generateEngines(ctx)
   ];
