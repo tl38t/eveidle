@@ -3,10 +3,10 @@
 // 顶点由 ctx.sampleHullSurface 生成在船体表面，天然贴面、不悬空、不穿模。
 // （Commit 2：删除本地 R(z)，统一走 ctx.radiusAt / ctx.sampleHullSurface）
 import * as THREE from "three";
-import { glowMat } from "./Materials.js";
+import { MaterialFactory } from "./MaterialFactory.js";
 
 // 单条发光缝：沿 phi 角方向、宽度 ±dphi 的带状三角网格
-function addSeamRibbon(group, phi, dphi, ctx, L, palette, intensity = 2.2) {
+function addSeamRibbon(group, phi, dphi, ctx, L, intensity = 2.2) {
   const N = 28;
   const z0 = -0.46 * L, z1 = 0.46 * L;
   const pos = [], idx = [];
@@ -25,7 +25,7 @@ function addSeamRibbon(group, phi, dphi, ctx, L, palette, intensity = 2.2) {
   geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
-  const mat = glowMat({ glow: palette.glow }, intensity);
+  const mat = MaterialFactory.getGlow("ribbon", ctx, intensity);
   mat.polygonOffset = true;            // 防止与船体 z 冲突闪烁
   mat.polygonOffsetFactor = -2;
   mat.polygonOffsetUnits = -2;
@@ -34,13 +34,13 @@ function addSeamRibbon(group, phi, dphi, ctx, L, palette, intensity = 2.2) {
 }
 
 export function generateRibbons(ctx) {
-  const { L, palette } = ctx;
+  const { L } = ctx;
   const g = new THREE.Group();
   g.name = "ribbons";
 
   const seamAngles = [0, 0.95, -0.95]; // 0=背脊中线，±=两舷
   const seamHalfW = 0.038;             // 发光缝半角宽（弧度）→ 世界宽度 = 2·dphi·R(z)，随船体自动等比
-  for (const phi of seamAngles) addSeamRibbon(g, phi, seamHalfW, ctx, L, palette, 2.2);
+  for (const phi of seamAngles) addSeamRibbon(g, phi, seamHalfW, ctx, L, 2.2);
 
   return g;
 }

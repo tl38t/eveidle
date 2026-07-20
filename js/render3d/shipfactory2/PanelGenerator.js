@@ -11,18 +11,29 @@
 // 不依赖任何配置文件（AI Rules §19），只读 ctx。
 // 材质统一走 Materials.js（AI Rules §6）。
 import * as THREE from "three";
-import { rbox, material } from "./Materials.js";
+import { rbox } from "./Materials.js";
+import { MaterialFactory } from "./MaterialFactory.js";
 
 export function generatePanels(ctx) {
-  const { s, L, palette } = ctx;
+  const { s, L } = ctx;
 
   const g = new THREE.Group();
   g.name = "panels";
   g.userData.panelInfos = [];
 
   // 贴合表面的装甲板（扁平圆角板，沿法线贴附，钢色；尺寸按局部半径封顶，不随 s 膨胀）
-  const plateMat = material(palette.steel, 0.95, 0.24);
-  const plateZones = [-0.05 * L, 0.18 * L];
+  const plateMat = MaterialFactory.get("panelPlate", ctx);
+
+  // Phase 5 C3-A：panelDensity 控制面板行数
+  const basePanelCount = 4; // 2 zones × 2 sides
+  const targetCount = Math.max(2, Math.round(basePanelCount * ctx.style.panelDensity));
+  const zoneCount = Math.ceil(targetCount / 2);
+  const plateZones = [];
+  const zStart = -0.05 * L, zEnd = 0.18 * L;
+  for (let i = 0; i < zoneCount; i++) {
+    plateZones.push(zStart + (zEnd - zStart) * i / Math.max(1, zoneCount - 1));
+  }
+
   for (const z of plateZones) {
     const r = ctx.radiusAt(z) * 0.99;
     const localR = ctx.radiusAt(z);

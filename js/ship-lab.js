@@ -56,7 +56,7 @@ function normalizeSeed(raw) {
 }
 function readControls() { return { anchor: ui.anchor.value, race: ui.race.value, shipClass: ui.shipClass.value, seed: normalizeSeed(ui.seed.value) }; }
 function applyControls(item) { ui.anchor.value = item.anchor; ui.race.value = item.race; ui.shipClass.value = item.shipClass; ui.seed.value = String(item.seed); }
-function makeSpec(item) { return { id: "ship-lab-" + item.anchor + "-" + item.shipClass, anchor: item.anchor, race: item.race, line: item.race, hull: item.shipClass, seed: item.seed, family: ANCHORS[item.anchor]?.family || "shield", weapon: "laser" }; }
+function makeSpec(item) { return { id: "ship-lab-" + item.anchor + "-" + item.shipClass, anchor: item.anchor, race: item.race, line: item.race, hull: item.shipClass, seed: item.seed, faction: item.race, family: ANCHORS[item.anchor]?.family || "shield", weapon: "laser" }; }
 
 function disposeObject(root) {
   const geometries = new Set(); const materials = new Set();

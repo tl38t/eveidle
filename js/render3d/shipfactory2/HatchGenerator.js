@@ -11,19 +11,27 @@
 // 第一版实现：稍小的暗色矩形，贴合 panel 表面。
 //   遵循 AI Rules §5/§6/§19。
 import * as THREE from "three";
-import { rbox, material } from "./Materials.js";
+import { rbox } from "./Materials.js";
+import { MaterialFactory } from "./MaterialFactory.js";
 
 export function generateHatches(ctx) {
-  const { s, palette, _panelInfos } = ctx;
+  const { s, _panelInfos } = ctx;
   const rng = ctx.scope("hatch").random;
 
   const g = new THREE.Group();
   g.name = "hatches";
 
-  const hatchMat = material(palette.dark, 0.94, 0.28);
+  const hatchMat = MaterialFactory.get("hatchDoor", ctx);
 
   const panelInfos = _panelInfos || [];
+
+  // Phase 5 C3-A：hatchDensity 控制舱门出现概率
+  const hatchChance = 0.7 * ctx.style.hatchDensity;
+
   for (const pi of panelInfos) {
+    // ── 舱门出现概率检查 ──
+    if (rng() >= hatchChance) continue;
+
     // ── 舱门尺寸：面板的 40%~55%，体现"人类尺度" ──
     const hw = pi.w * 0.42;
     const hd = pi.d * 0.55;
@@ -46,7 +54,7 @@ export function generateHatches(ctx) {
       const handleH = 0.008 * s;
       const handleD = hd * 0.15;
       const handle = rbox(handleW, handleH, handleD, 0.003 * s,
-        material(palette.steel, 0.90, 0.30),
+        MaterialFactory.get("hatchHandle", ctx),
         [pi.x + ox * (off + ht), pi.y + oy * (off + ht), pi.z + hd * 0.2]);
       handle.rotation.z = -pi.phi;
       g.add(handle);

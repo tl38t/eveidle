@@ -11,6 +11,8 @@ import * as THREE from "three";
 import { COLORS, material, glowMat } from "./Materials.js";
 import { resolvePalette, hullRadiusAt } from "./Utils.js";
 import { buildProfile } from "./ShipProfile.js";
+import { resolveStyle } from "./ShipStyleProfile.js";
+import { resolveCivilization } from "./civilization/CivilizationProfile.js";
 
 // ── E 组：确定性随机（Commit 4，为 Phase 7 可复现做准备）──
 function hashStr(str) {
@@ -58,6 +60,20 @@ export class ShipContext {
     this.L = this.profile.hull.len * this.s;
     this.length = this.L;                           // 别名
 
+    // S 组：Style 容器（Phase 5 C2：由 ShipStyleProfile 解析为完整设计哲学参数）
+    // ctx.style 是只读 StyleProfile，包含 panelDensity / grooveDensity / heatDensity / ventDensity /
+    // hatchDensity / symmetry / exposedMechanics / curveSmoothness / edgeRadius / variation / armorThickness
+    // 及 surfaceLanguage / displayName / faction 等元数据。
+    // C2 阶段 Generator 尚未消费这些参数（C3 起）；材质仍由 ctx.palette 决定。
+    // resolveStyle 规则：海盗 faction 优先 → 否则根据 family（来自 Anchor）→ 兜底 player_shield。
+    this.style = resolveStyle(this.family, spec.faction);
+
+    // CIV 组：文明视觉规范（Phase 5 Rework — Civilization Identity Layer）
+    // ctx.civ 是只读 CivilizationProfile，包含 hullType + hullParams（驱动 CivilizationModifier）。
+    // 注意：如果已有 faction，用 faction；否则根据 family 推出 player_xxx。
+    const civFaction = spec.faction || `player_${this.family}`;
+    this.civ = resolveCivilization(spec.faction, this.family);
+
     // D 组：共享材质（一次构建，跨 Generator 复用，满足 AI Rules §11 复用材质）
     const accentPalette = spec.accentFaction && COLORS[spec.accentFaction] ? COLORS[spec.accentFaction] : null;
     const accentColor = accentPalette ? accentPalette.glow : this.palette.accent;
@@ -72,9 +88,11 @@ export class ShipContext {
   }
 
   // ── C 组：表面数学（单一事实源，消除 Ribbon/Armor 重复的本地 R(z)）──
-  // 轴向位置 z -> 船体剖面半径。与原 hullRadiusAt(z, noseFat*s, mid*s, tail*s, L) 完全等价。
+  // 轴向位置 z -> 船体剖面半径。
+  // 注意：半径不乘 s——latheHull(L, noseFat, mid, tail) 用的也是未缩放值，
+  //       只有 L（长度）被缩放。此处必须与 latheHull 一致，否则能量线/刻槽/散热片会浮离船体。
   radiusAt(z) {
-    return hullRadiusAt(z, this.hullProfile.noseFat * this.s, this.hullProfile.mid * this.s, this.hullProfile.tail * this.s, this.L);
+    return hullRadiusAt(z, this.hullProfile.noseFat, this.hullProfile.mid, this.hullProfile.tail, this.L);
   }
 
   // 外法线（径向单位向量混入轴向导数 -dR/dz）。数值微分，足够贴附精度。

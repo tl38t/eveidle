@@ -18,19 +18,19 @@
 //
 // 不依赖任何配置文件（AI Rules §19），只读 ctx。
 import * as THREE from "three";
-import { material } from "./Materials.js";
+import { MaterialFactory } from "./MaterialFactory.js";
 
 // 按舰级推导 groove 数量（frigate 少 / battleship 多）
 const BODY_GROOVES = { dagger: 3, gunboat: 5, cruiser: 7, fortress: 9 };
 
 export function generateGrooves(ctx) {
-  const { L, palette } = ctx;
+  const { L } = ctx;
   const hull = ctx.profile.hull;
   const g = new THREE.Group();
   g.name = "grooves";
 
   // 暗色金属材质：emissive=0, roughness=0.8, metalness 低（视觉凹陷感）
-  const grooveMat = material(palette.dark, 0.35, 0.80);
+  const grooveMat = MaterialFactory.get("groove", ctx);
   grooveMat.polygonOffset = true;          // 防止与船体 z 冲突
   grooveMat.polygonOffsetFactor = -1;
   grooveMat.polygonOffsetUnits = -1;
@@ -40,7 +40,9 @@ export function generateGrooves(ctx) {
   const rng = ctx.scope("groove").random;
 
   // ── Groove 角度分布（对称，顶部必有一条）──
-  const count = BODY_GROOVES[hull.body] || 5;
+  // Phase 5 C3-A：grooveDensity 控制刻槽数量
+  const baseCount = BODY_GROOVES[hull.body] || 5;
+  const count = Math.max(2, Math.round(baseCount * ctx.style.grooveDensity));
   const angles = [0]; // 顶部中线
   for (let i = 0; i < Math.floor(count / 2); i++) {
     const a = 0.35 + rng() * 0.85; // 0.35~1.20 弧度

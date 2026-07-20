@@ -2,9 +2,8 @@
 // 仅负责组织调用，自身不含生成逻辑；所有生成由各 Generator 模块完成。
 // 对外 API 与旧版 ShipFactory 保持一致：buildShip(options) -> THREE.Group。
 //
-// Phase 4 Commit 4：完成 Surface Functional Layer 闭环。
-//   新增 ctx._ventPoints，VentGenerator 消费。
-//   Phase 4 架构冻结：Hull → Armor → Panel → Groove → HeatSink → Hatch → Vent → Ribbon → Weapon → Engine。
+// Phase 5 Rework：Civilization Identity Layer。
+//   HullGenerator（Shield 基线）→ CivilizationModifier（六族 hull 语言）→ ArmorGenerator → ...
 //
 // 目录结构：
 //   ShipFactory2.js      （本文件：编排入口 + Anchor Bus）
@@ -26,8 +25,10 @@ import { COLORS } from "./Materials.js";
 import { SHIP_CLASSES } from "./ShipProfile.js";
 import { createShipContext } from "./ShipContext.js";
 import { generateHull } from "./HullGenerator.js";
+import { applyCivilization } from "./civilization/CivilizationModifier.js";
 import { generateArmor } from "./ArmorGenerator.js";
 import { generatePanels } from "./PanelGenerator.js";
+
 import { generateGrooves } from "./GrooveGenerator.js";
 import { generateHeatSinks } from "./HeatSinkGenerator.js";
 import { generateHatches } from "./HatchGenerator.js";
@@ -62,9 +63,9 @@ export function buildShip(spec = {}) {
   for (const hp of ctx._engineHeatPoints) {
     const ventZ = hp.z - 0.13 * ctx.L;  // 引擎前方
     const hullR = ctx.radiusAt(ventZ);
-    // 顶面 vent（冷却进气）
+    // 顶面 vent（冷却进气）—— 贴 hull 表面 + 微量偏移防 z-fighting
     ventPoints.push({
-      x: hp.x, y: hullR * 0.86, z: ventZ,
+      x: hp.x, y: hullR + 0.004 * ctx.s, z: ventZ,
       nx: 0, ny: 1, nz: 0,
       size: hp.radius * 1.6
     });
@@ -72,8 +73,8 @@ export function buildShip(spec = {}) {
     if (Math.abs(hp.x) > 0.01) {
       const sign = hp.x > 0 ? 1 : -1;
       ventPoints.push({
-        x: hp.x + sign * hullR * 0.12,
-        y: hullR * 0.45, z: ventZ,
+        x: hp.x + sign * (hullR + 0.008 * ctx.s),
+        y: hullR * 0.35, z: ventZ,
         nx: sign, ny: 0, nz: 0,
         size: hp.radius * 1.1
       });
@@ -85,9 +86,9 @@ export function buildShip(spec = {}) {
   for (const bvz of bodyVentZones) {
     const hullR = ctx.radiusAt(bvz);
     if (hullR < 0.15 * ctx.s) continue; // 太细的截面跳过
-    // 顶面中段 vent
+    // 顶面中段 vent — 贴 hull 表面
     ventPoints.push({
-      x: 0, y: hullR * 0.84, z: bvz,
+      x: 0, y: hullR + 0.004 * ctx.s, z: bvz,
       nx: 0, ny: 1, nz: 0,
       size: hullR * 1.0
     });
@@ -105,7 +106,9 @@ export function buildShip(spec = {}) {
   const parts = [];
 
   // 结构层
-  parts.push(generateHull(ctx));
+  const hullGroup = generateHull(ctx);
+  const civGroup = applyCivilization(hullGroup, ctx);
+  parts.push(civGroup);
   parts.push(generateArmor(ctx));
 
   // Panel：产出 panelInfos Anchor 供 HatchGenerator 消费
