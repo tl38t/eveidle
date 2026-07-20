@@ -1,0 +1,84 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Independent ShipFactory2 development laboratory" />
+  <title>EVE IDLE - Ship Laboratory</title>
+  <link rel="stylesheet" href="./css/ship-lab.css" />
+  <script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  } }
+  </script>
+</head>
+<body>
+  <main class="lab-shell">
+    <header class="lab-header">
+      <div>
+        <p class="eyebrow">SHIPFACTORY2 / DEVELOPMENT ENVIRONMENT</p>
+        <h1>Ship Laboratory</h1>
+        <p class="subtitle">Procedural ship generation, inspection, and algorithm comparison</p>
+      </div>
+      <div class="runtime-status" aria-live="polite">
+        <span class="status-dot"></span>
+        <div><strong id="runtime-label">LAB ONLINE</strong><small id="runtime-detail">Waiting for first build</small></div>
+      </div>
+    </header>
+
+    <section class="lab-workspace">
+      <aside class="control-panel panel-frame" aria-label="Ship generation controls">
+        <div class="panel-heading"><span>01</span><div><h2>Generation</h2><p>Ship DNA inputs</p></div></div>
+        <form id="ship-controls" class="control-form">
+          <label class="field"><span>Anchor</span><select id="anchor-input" name="anchor"></select><small>Geometry and silhouette anchor</small></label>
+          <label class="field"><span>Race</span><select id="race-input" name="race"></select><small>Uses the current line palette</small></label>
+          <label class="field"><span>Class</span><select id="class-input" name="shipClass"></select><small>Hull size and structure tier</small></label>
+          <label class="field"><span>Seed</span><input id="seed-input" name="seed" type="text" inputmode="numeric" autocomplete="off" value="20260719" /><small>Number or string; identical seeds reproduce</small></label>
+          <div class="action-grid">
+            <button class="button button-primary" type="submit">Generate</button>
+            <button class="button" id="random-seed-button" type="button">Random Seed</button>
+          </div>
+          <div class="history-controls" aria-label="Generation history">
+            <button class="button button-compact" id="previous-button" type="button">&larr; Previous</button>
+            <span id="history-position">0 / 0</span>
+            <button class="button button-compact" id="next-button" type="button">Next &rarr;</button>
+          </div>
+        </form>
+        <div class="phase-note"><span>RACE STYLE STATUS</span><p>Phase 6 is pending. Race currently changes the palette, not Anchor geometry.</p></div>
+      </aside>
+
+      <section class="viewport-panel panel-frame" aria-label="3D ship preview">
+        <div id="viewport" class="viewport">
+          <div class="viewport-meta"><span id="ship-designation">SPEAR / FRIGATE</span><small id="ship-seed-label">SEED 20260719</small></div>
+          <div class="axis-readout" aria-hidden="true"><i class="axis-x"></i>X<i class="axis-y"></i>Y<i class="axis-z"></i>Z</div>
+          <div class="viewport-hint">Drag to orbit · Wheel to zoom · Right drag to pan</div>
+          <div class="corner corner-tl"></div><div class="corner corner-tr"></div>
+          <div class="corner corner-bl"></div><div class="corner corner-br"></div>
+        </div>
+      </section>
+
+      <aside class="diagnostics-panel panel-frame" aria-label="Ship diagnostics">
+        <div class="panel-heading"><span>02</span><div><h2>Diagnostics</h2><p>Live build telemetry</p></div></div>
+        <div class="metric-grid">
+          <div class="metric"><span>Vertices</span><strong id="vertex-count">--</strong></div>
+          <div class="metric"><span>Triangles</span><strong id="triangle-count">--</strong></div>
+          <div class="metric"><span>Build Time</span><strong id="build-time">--</strong></div>
+          <div class="metric"><span>Meshes</span><strong id="mesh-count">--</strong></div>
+        </div>
+        <section class="fingerprint-block">
+          <div class="section-label"><span>Geometry Fingerprint</span><small>world-space / FNV-1a</small></div>
+          <code id="geometry-fingerprint">SF2--------</code><p id="fingerprint-detail">Waiting for geometry</p>
+        </section>
+        <section class="profile-block">
+          <div class="section-label"><span>ShipProfile</span><small>immutable DNA</small></div>
+          <pre id="profile-output" tabindex="0">{}</pre>
+        </section>
+      </aside>
+    </section>
+
+    <footer class="lab-footer"><span>SHIP LAB v0.1 · SHIPFACTORY2 DEVELOPMENT TOOL</span><span>Independent from game runtime · No game state writes</span></footer>
+  </main>
+  <script type="module" src="./js/ship-lab.js"></script>
+</body>
+</html>
