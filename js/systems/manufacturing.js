@@ -224,3 +224,69 @@ function applyEquipEngOutput(recipe, cycles) {
     ResourceRegistry.add(gameState, "probe:" + output.itemId, total);
   }
 }
+
+/* ================================================================
+   增强剂制造核心 — Phase 2A
+   独立技能 boosterEngineering；配方 durationMs 固定 180000（Phase 2B 才消耗）；
+   制造 time 受技能效率加速；产物走 booster: 命名空间（→ state.boosters.inventory）。
+   仅制造与库存；不实装六槽装备、计时消耗与效果。
+   ================================================================ */
+
+function getBoosterEfficiency() {
+  const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
+  return 1 + lvl * 0.02;
+}
+
+function getSelectedBoosterRecipe() {
+  return getBoosterRecipe(gameState.currentAction.boosterRecipeTarget || "mining_lubricant_n") || BOOSTER_RECIPES[0];
+}
+
+function getRunningBoosterRecipe() {
+  return getBoosterRecipe(gameState.currentAction.startedBoosterRecipeTarget || gameState.currentAction.boosterRecipeTarget || "mining_lubricant_n") || null;
+}
+
+function isBoosterRecipeUnlocked(recipe) {
+  if (!recipe) return false;
+  const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
+  return lvl >= recipe.level;
+}
+
+// 单一材料约束下的最大可制造瓶数（不占货舱：产物入 boosters.inventory）。
+function getBoosterMaxCyclesFromState(state, recipe) {
+  if (!recipe || !recipe.cost) return 0;
+  let cycles = Infinity;
+  for (const [reference, qty] of Object.entries(recipe.cost)) {
+    const need = Math.max(1, Number(qty) || 1);
+    cycles = Math.min(cycles, Math.floor(ResourceRegistry.getMaterialStock(state, reference) / need));
+  }
+  return Number.isFinite(cycles) ? Math.max(0, cycles) : 0;
+}
+
+function getBoosterMaxCycles(recipe) {
+  return getBoosterMaxCyclesFromState(gameState, recipe);
+}
+
+function hasEnoughBoosterInputs(recipe, cycles) {
+  const count = Math.max(1, Number(cycles) || 1);
+  return ResourceRegistry.canAffordCost(gameState, recipe.cost, count);
+}
+
+function deductBoosterInputs(recipe, cycles) {
+  const count = Math.max(1, Number(cycles) || 1);
+  if (!hasEnoughBoosterInputs(recipe, count)) return false;
+  return ResourceRegistry.spendCost(gameState, recipe.cost, count);
+}
+
+function applyBoosterOutput(recipe, cycles) {
+  const count = Math.max(1, Number(cycles) || 1);
+  ResourceRegistry.add(gameState, recipe.output.itemId, recipe.output.qty * count);
+}
+
+function getBoosterCategoryRecipes(categoryId, qualityFilter) {
+  return BOOSTER_RECIPES.filter(recipe => {
+    const series = BOOSTER_SERIES[recipe.series];
+    if (!series || series.category !== categoryId) return false;
+    if (qualityFilter && qualityFilter !== "all" && recipe.quality !== qualityFilter) return false;
+    return true;
+  });
+}

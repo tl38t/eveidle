@@ -191,6 +191,27 @@ function gameTick() {
     }
     if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
     if (gameState.skills.archaeology.xp > 0) checkLevelUp("archaeology");
+    } else if (key === "boosterEngineering") {
+      // 增强剂制造（Phase 2A）：每完成 1 瓶原子扣料 + 入库 + 加 XP；单件事件 quantity=1。
+      const recipe = getRunningBoosterRecipe();
+      if (!recipe) { resetActionProgress(); gameState.currentAction.active = false; updateUI(); return; }
+      if (!isBoosterRecipeUnlocked(recipe)) { stopOrSkip(); updateUI(); return; }
+      if (!hasEnoughBoosterInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
+      const eff = getBoosterEfficiency(); const actualTime = recipe.time / eff;
+      gameState.currentAction.refDuration = actualTime;
+      const now = Date.now(); const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+      gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
+      while (gameState.currentAction.progress >= actualTime) {
+        if (!hasEnoughBoosterInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
+        gameState.currentAction.progress -= actualTime;
+        deductBoosterInputs(recipe, 1);
+        applyBoosterOutput(recipe, 1);
+        s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
+        GameEvents.emit("booster:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, series:recipe.series, quality:recipe.quality, quantity:1, xpGained:recipe.xp, offline:false }, { offline:false });
+        if (completeQueuedActionCycle()) { updateUI(); break; }
+      }
+      if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
+      if (s.xp > 0) checkLevelUp("boosterEngineering");
     }
   }
 

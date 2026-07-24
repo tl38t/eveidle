@@ -11,6 +11,11 @@ const GameEventContracts = (() => {
     "refining:completed": { required:["recipe", "inputId", "outputId", "inputQuantity", "outputQuantity", "cycles", "xp"], numbers:["inputQuantity", "outputQuantity", "cycles", "xp"] },
     "gas:completed": { required:["area", "resourceId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
     "planetary:completed": { required:["deploymentId", "planetType", "resourceId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
+    "planetary:deployed": { required:["deploymentId", "planetType", "constructionISK", "constructionResources"], numbers:["constructionISK"] },
+    "planetary:renewed": { required:["deploymentId", "planetType", "maintenanceISK", "expiresAt"], numbers:["maintenanceISK", "expiresAt"] },
+    "planetary:expired": { required:["deploymentId", "planetType", "expiredAt"], numbers:["expiredAt"] },
+    "planetary:collected": { required:["deploymentId", "planetType", "resourceId", "quantity"], numbers:["quantity"] },
+    "planetary:demolished": { required:["deploymentId", "planetType", "refundedISK", "refundedResources"], numbers:["refundedISK"] },
     "manufacturing:completed": { required:["branch", "recipeId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
     "combat:enemyDefeated": { required:["zoneId", "faction", "enemyId", "enemyKind", "isk", "xp"], numbers:["isk", "xp"] },
     "combat:waveCleared": { required:["zoneId", "wave"], numbers:["wave"] },
@@ -36,7 +41,11 @@ const GameEventContracts = (() => {
     "archaeology:artifactSold": { required:["artifactId", "quantity", "isk"], numbers:["quantity", "isk"] },
     "archaeology:artifactRedeemed": { required:["artifactId", "quantity", "lp"], numbers:["quantity", "lp"] },
     "archaeology:artifactsSold": { required:["quantity", "totalIsk"], numbers:["quantity", "totalIsk"] },
-    "archaeology:artifactsRedeemed": { required:["quantity", "totalLp"], numbers:["quantity", "totalLp"] }
+    "archaeology:artifactsRedeemed": { required:["quantity", "totalLp"], numbers:["quantity", "totalLp"] },
+    // 增强剂系统 Phase 2A（§7 事件契约）
+    "combat:tacticalMaterialDropped": { required:["zoneId", "deathspaceId", "enemyId", "enemyKind", "materialId", "materialName", "tier", "quantity", "securityLayer"], numbers:["quantity"], nullable:["deathspaceId"] },
+    "booster:manufactured": { required:["recipeId", "itemId", "series", "quality", "quantity", "xpGained", "offline"], numbers:["quantity", "xpGained"] },
+    "boosters:manufactured": { required:["recipeId", "itemId", "quantity", "totalXp", "offline"], numbers:["quantity", "totalXp"] }
   });
 
   function cloneValue(value) {
@@ -55,9 +64,15 @@ const GameEventContracts = (() => {
     const definition = definitions[type];
     if (!definition) return { valid:true, registered:false, errors:[] };
     const errors = [];
+    const nullable = definition.nullable || [];
     for (const key of definition.required || []) {
       const value = payload[key];
-      if (value === undefined || value === null || value === "") errors.push("缺少字段 " + key);
+      if (nullable.includes(key)) {
+        // 契约必须包含该字段，但允许显式 null（如普通星带的 deathspaceId）
+        if (value === undefined || value === "") errors.push("缺少字段 " + key);
+      } else if (value === undefined || value === null || value === "") {
+        errors.push("缺少字段 " + key);
+      }
     }
     for (const key of definition.numbers || []) {
       if (!Number.isFinite(Number(payload[key])) || Number(payload[key]) < 0) errors.push("字段 " + key + " 必须是非负数");

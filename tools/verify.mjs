@@ -11,7 +11,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 37) throw new Error(`预期 37 个脚本，实际 ${scriptSources.length}`); // 37 = 36 + enhancement-chance.js（共用成功率层 2026-07-24）
+if (scriptSources.length !== 39) throw new Error(`预期 39 个脚本，实际 ${scriptSources.length}`); // 39 = 37 + boosters.js + booster-render.js（增强剂系统 Phase 2A 2026-07-24）
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -205,7 +205,7 @@ const originalPlanetarySkillForEventTest = sandbox.gameState.skills.planetaryInd
 const statisticsBeforePlanetaryEvent = JSON.parse(JSON.stringify(sandbox.gameState.statistics));
 const planetaryEventNow = 2000000100000;
 sandbox.gameState.planetary = { nextId:2, deployments:[{
-  id:"planet_verify_event", type:"lava", deployedAt:planetaryEventNow - 10000, duration:86400,
+  id:"planet_verify_event", planetType:"lava", deployedAt:planetaryEventNow - 10000, duration:86400,
   storage:0, lastTick:planetaryEventNow - 10000, progress:5, active:true
 }] };
 sandbox.gameState.skills.planetaryIndustry = { lvl:1, xp:0 };
@@ -540,7 +540,7 @@ if (!planetDataSource || /document\.|CanvasRenderingContext2D|function _drawPlan
 const planetaryViewState = JSON.parse(JSON.stringify(sandbox.gameState));
 planetaryViewState.skills.planetaryIndustry = { lvl:1, xp:7 };
 planetaryViewState.planetary = { nextId:2, deployments:[{
-  id:"planet_1", type:"lava", deployedAt:selectorNow - 5000, duration:86400,
+  id:"planet_1", planetType:"lava", deployedAt:selectorNow - 5000, duration:86400,
   storage:2, lastTick:selectorNow - 3000, progress:1, active:true
 }] };
 const planetaryViewBefore = JSON.stringify(planetaryViewState);
@@ -562,31 +562,140 @@ if (!expiredPlanetDisplay.expired || expiredPlanetDisplay.active || JSON.stringi
 const planetaryActionState = JSON.parse(JSON.stringify(sandbox.gameState));
 planetaryActionState.skills.planetaryIndustry = { lvl:1, xp:0 };
 planetaryActionState.planetary = { deployments:[], nextId:1 };
-planetaryActionState.resources.minerals["三钛合金"] = 10;
+planetaryActionState.resources.isk = 500000;
+planetaryActionState.resources.minerals["三钛合金"] = 100;
 const lockedPlanetBefore = JSON.stringify(planetaryActionState);
 const lockedPlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/deploy", planetType:"ice" }, selectorNow);
 if (lockedPlanetAction.changed || lockedPlanetAction.reason !== "level-locked" || JSON.stringify(planetaryActionState) !== lockedPlanetBefore) {
   throw new Error("行星部署动作允许越级部署或失败时修改了状态");
 }
+// 建设材料不足时原子拒绝（三钛不足）
+planetaryActionState.resources.minerals["三钛合金"] = 50;
+const poorTritBefore = JSON.stringify(planetaryActionState);
+const poorTritAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/deploy", planetType:"lava" }, selectorNow);
+if (poorTritAction.changed || poorTritAction.reason !== "insufficient-tritanium" || JSON.stringify(planetaryActionState) !== poorTritBefore) {
+  throw new Error("三钛不足时行星建设没有原子拒绝");
+}
+planetaryActionState.resources.minerals["三钛合金"] = 100;
+// 成功建设熔岩行星：扣 138000 ISK + 100 三钛，立即运行中，字段用 planetType，并发布 planetary:deployed
+let deployedEvent = null;
+const unsubDeployed = sandbox.GameEvents.on("planetary:deployed", event => { deployedEvent = event; });
 const deployPlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/deploy", planetType:"lava" }, selectorNow);
+unsubDeployed();
 const deployedPlanet = planetaryActionState.planetary.deployments[0];
-if (!deployPlanetAction.changed || deployedPlanet.id !== "planet_1" || deployedPlanet.deployedAt !== selectorNow ||
-    planetaryActionState.resources.minerals["三钛合金"] !== 9 || Object.hasOwn(deployedPlanet, "_scrollOffset")) {
-  throw new Error("行星部署动作没有正确扣费、创建部署或仍将Canvas状态写入存档");
+if (!deployPlanetAction.changed || deployedPlanet.id !== "planet_1" || deployedPlanet.planetType !== "lava" ||
+    Object.hasOwn(deployedPlanet, "type") || deployedPlanet.deployedAt !== selectorNow || deployedPlanet.duration !== 86400 ||
+    !deployedPlanet.active || planetaryActionState.resources.isk !== 362000 || planetaryActionState.resources.minerals["三钛合金"] !== 0 ||
+    Object.hasOwn(deployedPlanet, "_scrollOffset") || !deployedEvent || deployedEvent.payload.constructionISK !== 138000 ||
+    deployedEvent.payload.constructionResources["mineral:三钛合金"] !== 100) {
+  throw new Error("行星建设动作没有正确扣费、创建 planetType 部署或发布 planetary:deployed 事件");
 }
 deployedPlanet.storage = 5;
 const cargoUsedBeforePlanetCollect = sandbox.getCargoUsedFromState(planetaryActionState);
 const collectPlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/collect", id:deployedPlanet.id, cargoCapacity:cargoUsedBeforePlanetCollect + 3 }, selectorNow);
-const removeStoredPlanet = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/remove", id:deployedPlanet.id }, selectorNow);
-const redeployPlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/redeploy", id:deployedPlanet.id }, selectorNow + 5000);
-if (!collectPlanetAction.changed || collectPlanetAction.quantity !== 3 || deployedPlanet.storage !== 2 ||
-    removeStoredPlanet.changed || removeStoredPlanet.reason !== "storage-not-empty" || !redeployPlanetAction.changed ||
-    deployedPlanet.deployedAt !== selectorNow + 5000 || deployedPlanet.progress !== 0 || !deployedPlanet.active) {
-  throw new Error("行星收取、非空撤除锁或续期动作状态异常");
+if (!collectPlanetAction.changed || collectPlanetAction.quantity !== 3 || deployedPlanet.storage !== 2) {
+  throw new Error("行星收取动作数量或库存异常");
 }
+// 非空库存禁止拆除
+const demolishStoredPlanet = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/demolish", id:deployedPlanet.id }, selectorNow);
+if (demolishStoredPlanet.changed || demolishStoredPlanet.reason !== "storage-not-empty" || planetaryActionState.planetary.deployments.length !== 1) {
+  throw new Error("非空库存行星被错误拆除");
+}
+// 运行中重复续期返回 already-active，且不扣费
+const iskBeforeAlreadyActive = planetaryActionState.resources.isk;
+const renewRunning = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/renew", id:deployedPlanet.id }, selectorNow + 1000);
+if (renewRunning.changed || renewRunning.reason !== "already-active" || planetaryActionState.resources.isk !== iskBeforeAlreadyActive) {
+  throw new Error("运行中行星重复续期没有返回 already-active 或错误扣费");
+}
+// 到期后续期：只扣 maintenanceCostISK（46000），保留 storage，重置周期，发布 planetary:renewed，不扣三钛
+deployedPlanet.active = false;
+const iskBeforeRenew = planetaryActionState.resources.isk;
+const tritBeforeRenew = planetaryActionState.resources.minerals["三钛合金"];
+let renewedEvent = null;
+const unsubRenewed = sandbox.GameEvents.on("planetary:renewed", event => { renewedEvent = event; });
+const renewExpired = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/renew", id:deployedPlanet.id }, selectorNow + 5000);
+unsubRenewed();
+if (!renewExpired.changed || planetaryActionState.resources.isk !== iskBeforeRenew - 46000 ||
+    planetaryActionState.resources.minerals["三钛合金"] !== tritBeforeRenew || deployedPlanet.deployedAt !== selectorNow + 5000 ||
+    deployedPlanet.progress !== 0 || !deployedPlanet.active || deployedPlanet.storage !== 2 || deployedPlanet.duration !== 86400 ||
+    !renewedEvent || renewedEvent.payload.maintenanceISK !== 46000) {
+  throw new Error("行星续期没有只扣 ISK、保留库存、重置周期或发布 planetary:renewed 事件");
+}
+// 空库存拆除：删除部署、不返还任何资源、发布 planetary:demolished(refundedISK=0)
 deployedPlanet.storage = 0;
-const removePlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/remove", id:deployedPlanet.id }, selectorNow);
-if (!removePlanetAction.changed || planetaryActionState.planetary.deployments.length !== 0) throw new Error("空库存行星无法通过动作层撤除");
+let demolishedEvent = null;
+const unsubDemolished = sandbox.GameEvents.on("planetary:demolished", event => { demolishedEvent = event; });
+const demolishPlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/demolish", id:deployedPlanet.id }, selectorNow);
+unsubDemolished();
+if (!demolishPlanetAction.changed || planetaryActionState.planetary.deployments.length !== 0 ||
+    !demolishedEvent || demolishedEvent.payload.refundedISK !== 0 || Object.keys(demolishedEvent.payload.refundedResources).length !== 0) {
+  throw new Error("空库存行星无法拆除或拆除返还了资源");
+}
+
+// ---- 行星经济数据驱动哨兵（Phase 1：无升级 / 六费用精确值 / 24h / 续期只扣 ISK / 拆除不返还）----
+const planetTypes = vm.runInContext("PLANET_TYPES", sandbox);
+const expectedPlanetEconomy = {
+  lava:      { isk:138000,  trit:100,  maint:46000 },
+  gas:       { isk:138000,  trit:100,  maint:46000 },
+  ice:       { isk:249000,  trit:150,  maint:83000 },
+  plasma:    { isk:714000,  trit:300,  maint:238000 },
+  temperate: { isk:1914000, trit:500,  maint:638000 },
+  storm:     { isk:4899000, trit:1000, maint:1633000 }
+};
+if (!Array.isArray(planetTypes) || planetTypes.length !== 6) throw new Error("行星类型数量必须为 6");
+for (const config of planetTypes) {
+  const expected = expectedPlanetEconomy[config.id];
+  if (!expected) throw new Error(`未知行星类型：${config.id}`);
+  if (Object.hasOwn(config, "costISK") || Object.hasOwn(config, "costTrit")) throw new Error(`行星 ${config.id} 仍保留占位字段 costISK/costTrit`);
+  if (!config.constructionCost || Number(config.constructionCost.isk) !== expected.isk) throw new Error(`行星 ${config.id} 建设 ISK 不符：期望 ${expected.isk}`);
+  if (Number(config.constructionCost.resources["mineral:三钛合金"]) !== expected.trit) throw new Error(`行星 ${config.id} 建设三钛不符：期望 ${expected.trit}`);
+  if (Number(config.maintenanceCostISK) !== expected.maint) throw new Error(`行星 ${config.id} 维护 ISK 不符：期望 ${expected.maint}`);
+  if (Number(config.maintenanceDuration) !== 86400) throw new Error(`行星 ${config.id} 维护周期必须为 86400`);
+  if (/upgrade|upgradeCost|升级/i.test(JSON.stringify(config))) throw new Error(`行星 ${config.id} 混入了升级字段`);
+}
+// 选 B：旧动作名彻底移除；新动作路由存在；无升级系统；续期不读 constructionCost；拆除不返还
+const planetaryRenderSource = scripts[scriptSources.indexOf("./js/ui/planetary-render.js")];
+if (/planetary\/redeploy|planetary\/remove/.test(actionsSource)) throw new Error("actions.js 仍保留旧行星动作 redeploy/remove");
+if (/planetary\/redeploy|planetary\/remove/.test(planetaryRenderSource)) throw new Error("planetary-render.js 仍派发旧行星动作 redeploy/remove");
+if (!/planetary\/renew/.test(actionsSource) || !/planetary\/demolish/.test(actionsSource)) throw new Error("actions.js 缺少 renew/demolish 动作路由");
+if (/planetary\/upgrade|planetaryUpgrade|upgradePlanet/.test(actionsSource + planetaryRenderSource + planetaryCoreSource + planetDataSource)) throw new Error("引入了行星升级系统");
+if (/data-action="upgrade"|升级行星|planet-upgrade|upgrade-planet/.test(planetaryRenderSource + html)) throw new Error("行星 UI 引入了升级按钮");
+{
+  const renewMatch = /renew\(state, id, now\) \{[\s\S]*?\n  \},/.exec(actionsSource);
+  if (!renewMatch) throw new Error("未能定位 renew 动作实现");
+  if (/constructionCost/.test(renewMatch[0])) throw new Error("续期路径读取了 constructionCost（应只扣 maintenanceCostISK）");
+  if (!/maintenanceCostISK/.test(renewMatch[0])) throw new Error("续期路径没有读取 maintenanceCostISK");
+}
+{
+  const demolishMatch = /demolish\(state, id\) \{[\s\S]*?\r?\n  }\r?\n\};/.exec(actionsSource);
+  if (!demolishMatch) throw new Error("未能定位 demolish 动作实现");
+  if (/ResourceRegistry\.add/.test(demolishMatch[0])) throw new Error("拆除路径向玩家返还了资源");
+  if (!/refundedISK:0/.test(demolishMatch[0]) || !/refundedResources:\{\}/.test(demolishMatch[0])) throw new Error("拆除事件没有声明零返还");
+}
+// audit-planetary.mjs 存在且调用真实行星系统
+const auditPlanetaryPath = path.resolve(root, "tools/audit-planetary.mjs");
+if (!fs.existsSync(auditPlanetaryPath)) throw new Error("缺少 tools/audit-planetary.mjs");
+const auditPlanetarySource = fs.readFileSync(auditPlanetaryPath, "utf8");
+if (!/dispatchGameAction|PlanetaryStateActions/.test(auditPlanetarySource) || !/planetaryTick/.test(auditPlanetarySource) ||
+    !/settleOfflinePlanets/.test(auditPlanetarySource) || !/normalizePlanetaryState/.test(auditPlanetarySource)) {
+  throw new Error("audit-planetary.mjs 没有调用真实行星 Action / 在线 tick / 离线结算 / 迁移");
+}
+
+// 增强剂系统 Phase 2A：audit-boosters.mjs 存在且调用真实系统
+const auditBoosterPath = path.resolve(root, "tools/audit-boosters.mjs");
+if (!fs.existsSync(auditBoosterPath)) throw new Error("缺少 tools/audit-boosters.mjs");
+const auditBoosterSource = fs.readFileSync(auditBoosterPath, "utf8");
+if (!/dispatchGameAction|BoosterStateActions/.test(auditBoosterSource) || !/gameTick/.test(auditBoosterSource) ||
+    !/applyOfflineGains/.test(auditBoosterSource) || !/migrateBoosterState/.test(auditBoosterSource)) {
+  throw new Error("audit-boosters.mjs 没有调用真实增强剂 Action / 在线 tick / 离线结算 / 迁移");
+}
+// 无 Phase 2B 行为：六槽装备/计时/效果函数与动作路由不得存在
+{
+  const boosterSurfaces = actionsSource + selectorsSource + manufacturingSource + resourcesSource;
+  if (/booster\/equip|booster\/unequip/.test(boosterSurfaces)) throw new Error("actions.js 引入了 Phase 2B 六槽装备动作");
+  if (/equipBooster|unequipBooster|applyBoosterEffect|consumeBooster|startBoosterTimer|getActiveBoosterEffects/.test(boosterSurfaces)) throw new Error("存在 Phase 2B 增强剂装备/计时/效果函数");
+  if (/BoosterStateActions\.equip|BoosterStateActions\.unequip/.test(boosterSurfaces)) throw new Error("BoosterStateActions 存在六槽 equip/unequip 方法");
+}
 
 // 最终外壳迁移：生产、战斗、行星和队列核心均不得再包含DOM或页面渲染。
 const productionCoreSource = scripts[scriptSources.indexOf("./js/systems/production.js")];
@@ -699,17 +808,17 @@ if (!queueAddA.changed || !queueMerge.changed || !queueMerge.merged || !queueAdd
 }
 
 sandbox.gameState.planetary.deployments = [{
-  id: 99, type: "lava", deployedAt: Date.now() - 5000, duration: 3600,
+  id: 99, planetType: "lava", deployedAt: Date.now() - 5000, duration: 3600,
   active: true, storage: 1, progress: 2, lastTick: Date.now()
 }];
 sandbox.renderPlanetaryPage();
 sandbox.updatePlanetaryLiveUI();
 sandbox.updateCombatLiveUI();
-if (sandbox.removePlanet(99) || sandbox.gameState.planetary.deployments.length !== 1) {
+if (sandbox.demolishPlanet(99) || sandbox.gameState.planetary.deployments.length !== 1) {
   throw new Error("行星仍有库存时可以被撤除");
 }
 sandbox.gameState.planetary.deployments[0].storage = 0;
-if (!sandbox.removePlanet(99) || sandbox.gameState.planetary.deployments.length !== 0) {
+if (!sandbox.demolishPlanet(99) || sandbox.gameState.planetary.deployments.length !== 0) {
   throw new Error("空库存行星无法撤除或槽位没有释放");
 }
 

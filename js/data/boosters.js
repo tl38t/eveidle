@@ -1,0 +1,192 @@
+/* ================================================================
+   增强剂系统数据层 — Phase 2A
+   普通 <script> 全局加载（非 ES Module）。
+   数据严格来自 BOOSTER_SYSTEM_IMPLEMENTATION_PLAN.md §4 表 A / B / C，
+   逐条静态声明 30 件增强剂与配方，禁止运行时程序化隐藏。
+
+   本阶段（Phase 2A）范围：数据 / 制造 / 库存。
+   不实装：六槽装备操作、180 秒计时消耗、效果应用。
+   ================================================================ */
+
+// 每瓶持续时间（硬规则，Phase 2B 才消耗；本阶段仅作为元数据固化）。
+const BOOSTER_DURATION_MS = 180000;
+
+// 三品质（普通 / 精工 / 传奇），后缀 n / r / l。
+const BOOSTER_QUALITIES = Object.freeze({
+  n: { id:"n", name:"普通" },
+  r: { id:"r", name:"精工" },
+  l: { id:"l", name:"传奇" }
+});
+
+// 10 系列（§2）。category 用于 UI 分类标签：mining / archaeology / combatWeapon / combatRepair。
+const BOOSTER_SERIES = Object.freeze({
+  mining_lubricant:{ id:"mining_lubricant", name:"纳米采掘润滑剂", category:"mining",        slot:"miningSpeed",      effectType:"miningSpeed" },
+  ore_resonance:   { id:"ore_resonance",    name:"富矿共振催化剂", category:"mining",        slot:"miningYield",      effectType:"doubleMineral" },
+  relic_solver:    { id:"relic_solver",     name:"遗迹解析液",     category:"archaeology",   slot:"archaeologySpeed", effectType:"archaeologySpeed" },
+  artifact_tracer: { id:"artifact_tracer",  name:"文物示踪剂",     category:"archaeology",   slot:"archaeologyRare",  effectType:"rareShift" },
+  laser_coolant:   { id:"laser_coolant",    name:"激光炮冷却剂",   category:"combatWeapon",  slot:"combatWeapon",     effectType:"damageMultiplier", weaponType:"laser" },
+  missile_catalyst:{ id:"missile_catalyst", name:"导弹燃烧催化剂", category:"combatWeapon",  slot:"combatWeapon",     effectType:"damageMultiplier", weaponType:"missile" },
+  cannon_booster:  { id:"cannon_booster",   name:"火炮增压药",     category:"combatWeapon",  slot:"combatWeapon",     effectType:"damageMultiplier", weaponType:"cannon" },
+  shield_recharge: { id:"shield_recharge",  name:"护盾回充液",     category:"combatRepair",  slot:"combatRepair",     effectType:"repairAmount", repairTarget:"shield" },
+  armor_nano:      { id:"armor_nano",       name:"装甲纳米修复剂", category:"combatRepair",  slot:"combatRepair",     effectType:"repairAmount", repairTarget:"armor" },
+  structure_gel:   { id:"structure_gel",    name:"结构再生胶",     category:"combatRepair",  slot:"combatRepair",     effectType:"repairAmount", repairTarget:"structure" }
+});
+
+const BOOSTER_CATEGORY_META = Object.freeze([
+  { id:"mining",       name:"采矿" },
+  { id:"archaeology",  name:"考古" },
+  { id:"combatWeapon", name:"战斗武器" },
+  { id:"combatRepair", name:"战斗维修" }
+]);
+
+// 高频战斗掉落材料 5 档（§7）。securityLayer 映射到 COMBAT_FORMATION_POOLS 的层级键。
+const TACTICAL_MATERIALS = Object.freeze([
+  { id:"战术残液",       name:"战术残液",       tier:"T1", securityLayer:"highsec",  unlockLevel:1 },
+  { id:"活性战术凝胶",   name:"活性战术凝胶",   tier:"T2", securityLayer:"bordersec", unlockLevel:20 },
+  { id:"高能战术萃取物", name:"高能战术萃取物", tier:"T3", securityLayer:"lowsec",   unlockLevel:40 },
+  { id:"极化战术介质",   name:"极化战术介质",   tier:"T4", securityLayer:"deepsec",  unlockLevel:60 },
+  { id:"深层适应性样本", name:"深层适应性样本", tier:"T5", securityLayer:"nullsec",  unlockLevel:80 }
+]);
+
+// 星带安全层 → 战术材料（deepnull 复用 T5，高级不掉低级）。§6.4 / §7.1。
+const TACTICAL_MATERIAL_BY_LAYER = Object.freeze({
+  highsec:"战术残液",
+  bordersec:"活性战术凝胶",
+  lowsec:"高能战术萃取物",
+  deepsec:"极化战术介质",
+  nullsec:"深层适应性样本",
+  deepnull:"深层适应性样本"
+});
+
+/* ----------------------------------------------------------------
+   30 条增强剂唯一事实来源（§4 表 A/B/C 逐字段静态声明）。
+   字段顺序：[series, quality, level, time, xp,
+             planetName, planetQty, secondKey, secondQty,
+             effectType, effectValue, slot]
+   - planet 恒为 planetary:<产物名>，数量 planetQty。
+   - secondKey 为完整资源键（special:<战术材料> 或 gas:<气体名>）。
+   - outputQty 恒为 1，durationMs 恒为 180000。
+   ---------------------------------------------------------------- */
+const BOOSTER_DEFS = [
+  // ---- 普通档（解锁 1/4/7/10/13/16/20/24/28/32）----
+  ["mining_lubricant","n", 1,18,  5,"重金属",2,"special:战术残液",2,"miningSpeed",0.08,"miningSpeed"],
+  ["shield_recharge","n",  4,18,  6,"稀有气体",2,"gas:粗制富勒烯",1,"repairAmount",0.10,"combatRepair"],
+  ["ore_resonance","n",    7,19,  7,"重金属",2,"special:战术残液",2,"doubleMineral",0.10,"miningYield"],
+  ["laser_coolant","n",   10,19,  8,"稀有气体",2,"gas:氦同位素",1,"damageMultiplier",0.06,"combatWeapon"],
+  ["relic_solver","n",    13,20,  9,"稀有气体",2,"special:战术残液",2,"archaeologySpeed",-0.08,"archaeologySpeed"],
+  ["armor_nano","n",      16,20, 10,"稀有气体",2,"gas:氦同位素",1,"repairAmount",0.10,"combatRepair"],
+  ["missile_catalyst","n",20,21, 11,"同位素",2,"gas:稳定富勒烯",1,"damageMultiplier",0.06,"combatWeapon"],
+  ["artifact_tracer","n", 24,21, 12,"同位素",2,"special:战术残液",2,"rareShift",1.25,"archaeologyRare"],
+  ["cannon_booster","n",  28,22, 13,"同位素",2,"gas:稳定富勒烯",1,"damageMultiplier",0.06,"combatWeapon"],
+  ["structure_gel","n",   32,22, 14,"同位素",2,"gas:稳定富勒烯",1,"repairAmount",0.10,"combatRepair"],
+  // ---- 精工档（解锁 35/39/43/47/51/55/59/63/67/71）----
+  ["mining_lubricant","r",35,56, 50,"同位素",3,"special:活性战术凝胶",4,"miningSpeed",0.18,"miningSpeed"],
+  ["shield_recharge","r", 39,58, 53,"稀有气体",3,"gas:稳定富勒烯",2,"repairAmount",0.25,"combatRepair"],
+  ["ore_resonance","r",   43,60, 56,"等离子体",3,"special:高能战术萃取物",4,"doubleMineral",0.20,"miningYield"],
+  ["laser_coolant","r",   47,62, 59,"等离子体",3,"gas:氢同位素",2,"damageMultiplier",0.14,"combatWeapon"],
+  ["relic_solver","r",    51,64, 62,"等离子体",3,"special:高能战术萃取物",4,"archaeologySpeed",-0.16,"archaeologySpeed"],
+  ["armor_nano","r",      55,66, 65,"等离子体",3,"gas:高纯富勒烯",2,"repairAmount",0.25,"combatRepair"],
+  ["missile_catalyst","r",59,68, 68,"等离子体",3,"gas:高纯富勒烯",2,"damageMultiplier",0.14,"combatWeapon"],
+  ["artifact_tracer","r", 63,70, 71,"生物质",3,"special:极化战术介质",4,"rareShift",1.60,"archaeologyRare"],
+  ["cannon_booster","r",  67,72, 74,"等离子体",3,"gas:高纯富勒烯",2,"damageMultiplier",0.14,"combatWeapon"],
+  ["structure_gel","r",   71,74, 77,"生物质",3,"special:极化战术介质",4,"repairAmount",0.25,"combatRepair"],
+  // ---- 传奇档（解锁 60/64/68/72/76/80/84/88/92/96）----
+  ["mining_lubricant","l",60,128,306,"生物质",5,"special:极化战术介质",7,"miningSpeed",0.30,"miningSpeed"],
+  ["shield_recharge","l", 64,131,315,"生物质",5,"gas:高纯富勒烯",3,"repairAmount",0.45,"combatRepair"],
+  ["ore_resonance","l",   68,135,326,"等离子体",5,"special:极化战术介质",7,"doubleMineral",0.30,"miningYield"],
+  ["laser_coolant","l",   72,138,335,"生物质",5,"gas:聚合气体",3,"damageMultiplier",0.24,"combatWeapon"],
+  ["relic_solver","l",    76,142,346,"生物质",5,"special:极化战术介质",7,"archaeologySpeed",-0.25,"archaeologySpeed"],
+  ["armor_nano","l",      80,146,356,"磁场聚合物",5,"gas:聚合气体",3,"repairAmount",0.45,"combatRepair"],
+  ["missile_catalyst","l",84,149,365,"磁场聚合物",5,"gas:聚合气体",3,"damageMultiplier",0.24,"combatWeapon"],
+  ["artifact_tracer","l", 88,153,376,"磁场聚合物",5,"special:深层适应性样本",7,"rareShift",2.20,"archaeologyRare"],
+  ["cannon_booster","l",  92,156,385,"磁场聚合物",5,"gas:超纯聚合气体",3,"damageMultiplier",0.24,"combatWeapon"],
+  ["structure_gel","l",   96,160,396,"磁场聚合物",5,"gas:超纯聚合气体",3,"repairAmount",0.45,"combatRepair"]
+];
+
+// 由唯一事实来源展开为 BOOSTER_ITEMS（map）与 BOOSTER_RECIPES（array），二者一一对应 30 条。
+const BOOSTER_ITEMS = {};
+const BOOSTER_RECIPES = [];
+(function buildBoosterTables() {
+  for (const def of BOOSTER_DEFS) {
+    const [seriesKey, qualityKey, level, time, xp, planetName, planetQty, secondKey, secondQty, effectType, effectValue, slot] = def;
+    const series = BOOSTER_SERIES[seriesKey];
+    const quality = BOOSTER_QUALITIES[qualityKey];
+    const id = seriesKey + "_" + qualityKey;               // 例：mining_lubricant_n
+    const itemId = "booster:" + id;                          // 资源命名空间键
+    const name = series.name + "·" + quality.name;
+    const item = {
+      id,
+      itemId,
+      name,
+      series:seriesKey,
+      seriesName:series.name,
+      category:series.category,
+      quality:qualityKey,
+      qualityName:quality.name,
+      level,
+      durationMs:BOOSTER_DURATION_MS,
+      slot,
+      effectType,
+      effectValue,
+      weaponType:series.weaponType || null,
+      repairTarget:series.repairTarget || null,
+      description:name + "：" + describeBoosterEffect(effectType, effectValue)
+    };
+    BOOSTER_ITEMS[id] = item;
+    BOOSTER_RECIPES.push({
+      id,
+      itemId,
+      series:seriesKey,
+      quality:qualityKey,
+      level,
+      time,
+      xp,
+      cost:{
+        ["planetary:" + planetName]:planetQty,
+        [secondKey]:secondQty
+      },
+      output:{ type:"booster", itemId, qty:1 },
+      durationMs:BOOSTER_DURATION_MS,
+      effect:{ type:effectType, value:effectValue, slot }
+    });
+  }
+})();
+
+function describeBoosterEffect(effectType, value) {
+  switch (effectType) {
+    case "miningSpeed":       return "采矿速度 +" + Math.round(value * 100) + "%";
+    case "doubleMineral":     return "矿物翻倍概率 " + Math.round(value * 100) + "%";
+    case "archaeologySpeed":  return "考古周期 " + Math.round(value * 100) + "%";
+    case "rareShift":         return "稀有发现 ×" + value.toFixed(2);
+    case "damageMultiplier":  return "武器伤害 +" + Math.round(value * 100) + "%";
+    case "repairAmount":      return "维修量 +" + Math.round(value * 100) + "%";
+    default:                  return effectType + " " + value;
+  }
+}
+
+const BOOSTER_SLOTS = Object.freeze(["miningSpeed", "miningYield", "archaeologySpeed", "archaeologyRare", "combatWeapon", "combatRepair"]);
+
+function getBoosterItem(id) {
+  if (!id) return null;
+  const key = String(id).startsWith("booster:") ? String(id).slice("booster:".length) : String(id);
+  return BOOSTER_ITEMS[key] || null;
+}
+
+function getBoosterRecipe(id) {
+  if (!id) return null;
+  const key = String(id).startsWith("booster:") ? String(id).slice("booster:".length) : String(id);
+  return BOOSTER_RECIPES.find(recipe => recipe.id === key) || null;
+}
+
+// 显式挂 window（普通 script 全局加载约定）。
+window.BOOSTER_DURATION_MS = BOOSTER_DURATION_MS;
+window.BOOSTER_QUALITIES = BOOSTER_QUALITIES;
+window.BOOSTER_SERIES = BOOSTER_SERIES;
+window.BOOSTER_CATEGORY_META = BOOSTER_CATEGORY_META;
+window.BOOSTER_ITEMS = BOOSTER_ITEMS;
+window.BOOSTER_RECIPES = BOOSTER_RECIPES;
+window.BOOSTER_SLOTS = BOOSTER_SLOTS;
+window.TACTICAL_MATERIALS = TACTICAL_MATERIALS;
+window.TACTICAL_MATERIAL_BY_LAYER = TACTICAL_MATERIAL_BY_LAYER;
+window.getBoosterItem = getBoosterItem;
+window.getBoosterRecipe = getBoosterRecipe;

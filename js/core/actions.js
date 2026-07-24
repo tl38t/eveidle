@@ -211,6 +211,82 @@ const ManufacturingStateActions = {
   }
 };
 
+// 增强剂制造 Action 层 — Phase 2A（§5）。
+// selectCategory / selectQualityFilter / selectRecipe 只改用户选择状态，绝不触碰
+// startedBoosterRecipeTarget —— 制造中切换筛选或配方不改变正在制造的产物。
+const BoosterStateActions = {
+  selectCategory(state, categoryId) {
+    if (!BOOSTER_CATEGORY_META.some(meta => meta.id === categoryId)) return { changed:false, reason:"unknown-category" };
+    const action = state.currentAction;
+    action.boosterCategory = categoryId;
+    // 目标若不在当前类别（+品质筛选）可见集合内，落到第一个可见配方（优先已解锁）。
+    const filtered = getBoosterCategoryRecipes(categoryId, action.boosterQualityFilter || "all");
+    const current = getBoosterRecipe(action.boosterRecipeTarget);
+    if (!current || !filtered.some(recipe => recipe.id === current.id)) {
+      const next = filtered.find(recipe => isBoosterRecipeUnlocked(recipe)) || filtered[0];
+      if (next) action.boosterRecipeTarget = next.id;
+    }
+    state._dirty = true;
+    return { changed:true, categoryId };
+  },
+
+  selectQualityFilter(state, quality) {
+    if (!["all", "n", "r", "l"].includes(quality)) return { changed:false, reason:"unknown-quality" };
+    const action = state.currentAction;
+    action.boosterQualityFilter = quality;
+    const filtered = getBoosterCategoryRecipes(action.boosterCategory || "mining", quality);
+    const current = getBoosterRecipe(action.boosterRecipeTarget);
+    if (!current || !filtered.some(recipe => recipe.id === current.id)) {
+      const next = filtered.find(recipe => isBoosterRecipeUnlocked(recipe)) || filtered[0];
+      if (next) action.boosterRecipeTarget = next.id;
+    }
+    state._dirty = true;
+    return { changed:true, quality };
+  },
+
+  selectRecipe(state, recipeId) {
+    const recipe = getBoosterRecipe(recipeId);
+    if (!recipe) return { changed:false, reason:"unknown-recipe" };
+    const action = state.currentAction;
+    action.boosterRecipeTarget = recipe.id;
+    const series = BOOSTER_SERIES[recipe.series];
+    if (series) action.boosterCategory = series.category;
+    state._dirty = true;
+    return { changed:true, recipe };
+  },
+
+  startManufacturing(state, now) {
+    const recipe = getBoosterRecipe(state.currentAction.boosterRecipeTarget) || BOOSTER_RECIPES[0];
+    if (!recipe) return { changed:false, reason:"unknown-recipe" };
+    if (!isBoosterRecipeUnlocked(recipe)) return { changed:false, reason:"level-locked" };
+    if (!hasEnoughBoosterInputs(recipe, 1)) return { changed:false, reason:"insufficient-materials" };
+    Object.assign(state.currentAction, {
+      skill:"boosterEngineering",
+      active:true,
+      startedBoosterRecipeTarget:recipe.id,
+      boosterRecipeTarget:recipe.id,
+      progress:0,
+      lastProgressUpdate:now,
+      batchRemaining:0
+    });
+    state._dirty = true;
+    return { changed:true, recipe };
+  },
+
+  stopManufacturing(state, now) {
+    const action = state.currentAction;
+    if (!action.active || action.skill !== "boosterEngineering") return { changed:false, reason:"not-manufacturing" };
+    // 清除运行锁定，但保留用户选择（boosterRecipeTarget/category/quality）。
+    action.startedBoosterRecipeTarget = "";
+    action.progress = 0;
+    action.lastProgressUpdate = now;
+    action.active = false;
+    action.batchRemaining = 0;
+    state._dirty = true;
+    return { changed:true };
+  }
+};
+
 const CombatStateActions = {
   selectMode(state, mode) {
     if (mode !== "belt" && mode !== "deathspace") return { changed:false, reason:"unknown-mode" };
@@ -431,24 +507,33 @@ const CombatStateActions = {
 };
 
 const PlanetaryStateActions = {
-  deploy(state, type, now) {
-    const config = PLANET_TYPES.find(planet => planet.type === type);
+  // 首次布置：扣完整 constructionCost（ISK + 三钛），立即运行中；无等级/升级。
+  deploy(state, planetType, now) {
+    const config = PLANET_TYPES.find(planet => planet.id === planetType);
     if (!config) return { changed:false, reason:"unknown-planet" };
     const capacity = getPlanetaryCapacityState(state);
     if (capacity.level < config.level) return { changed:false, reason:"level-locked", level:config.level };
     if (capacity.usedSlots >= capacity.slots) return { changed:false, reason:"no-slots" };
-    if (ResourceRegistry.get(state, "currency:isk") < config.costISK) return { changed:false, reason:"insufficient-isk" };
-    const tritanium = ResourceRegistry.get(state, "mineral:三钛合金");
-    if (tritanium < config.costTrit) return { changed:false, reason:"insufficient-tritanium" };
-    ResourceRegistry.spend(state, "currency:isk", config.costISK);
-    ResourceRegistry.spend(state, "mineral:三钛合金", config.costTrit);
+    const constructionISK = Number(config.constructionCost && config.constructionCost.isk) || 0;
+    const constructionResources = (config.constructionCost && config.constructionCost.resources) || {};
+    if (ResourceRegistry.get(state, "currency:isk") < constructionISK) return { changed:false, reason:"insufficient-isk" };
+    for (const [resourceId, amount] of Object.entries(constructionResources)) {
+      if (ResourceRegistry.get(state, resourceId) < amount) return { changed:false, reason:"insufficient-tritanium", resourceId };
+    }
+    // 原子扣费：ISK + 全部建设材料
+    ResourceRegistry.spend(state, "currency:isk", constructionISK);
+    for (const [resourceId, amount] of Object.entries(constructionResources)) ResourceRegistry.spend(state, resourceId, amount);
     if (!state.planetary) state.planetary = { deployments:[], nextId:1 };
     if (!Array.isArray(state.planetary.deployments)) state.planetary.deployments = [];
     const nextId = Number(state.planetary.nextId) || 1;
-    const deployment = { id:"planet_" + nextId, type:config.type, deployedAt:now, duration:86400, storage:0, lastTick:now, progress:0, active:true };
+    const duration = Number(config.maintenanceDuration) || 86400;
+    const deployment = { id:"planet_" + nextId, planetType:config.id, deployedAt:now, duration, storage:0, lastTick:now, progress:0, active:true };
     state.planetary.nextId = nextId + 1;
     state.planetary.deployments.push(deployment);
     state._dirty = true;
+    if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:deployed", {
+      deploymentId:deployment.id, planetType:config.id, constructionISK, constructionResources:{ ...constructionResources }
+    });
     return { changed:true, deployment, config };
   },
 
@@ -459,36 +544,53 @@ const PlanetaryStateActions = {
     const freeCargo = Math.max(0, (Number(cargoCapacity) || 10000000) - getCargoUsedFromState(state));
     const quantity = Math.min(Number(deployment.storage) || 0, freeCargo);
     if (quantity <= 0) return { changed:false, reason:"cargo-full" };
-    const config = PLANET_TYPES.find(planet => planet.type === deployment.type);
+    const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
     const output = config ? config.output : "未知产物";
-    ResourceRegistry.add(state, "planetary:" + output, quantity);
+    const resourceId = "planetary:" + output;
+    ResourceRegistry.add(state, resourceId, quantity);
     deployment.storage -= quantity;
     state._dirty = true;
+    if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:collected", {
+      deploymentId:deployment.id, planetType:deployment.planetType, quantity, resourceId
+    });
     return { changed:true, quantity, output };
   },
 
-  redeploy(state, id, now) {
+  // 续期：仅当已到期（active=false 或时间超期）且 ISK 足够；只扣 maintenanceCostISK，保留 storage；运行中重复续期返回 already-active。
+  renew(state, id, now) {
     const deployment = state.planetary && state.planetary.deployments.find(item => item.id === id);
     if (!deployment) return { changed:false, reason:"unknown-deployment" };
-    const config = PLANET_TYPES.find(planet => planet.type === deployment.type);
+    const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
     if (!config) return { changed:false, reason:"unknown-planet" };
-    if (ResourceRegistry.get(state, "currency:isk") < config.costISK) return { changed:false, reason:"insufficient-isk" };
-    const tritanium = ResourceRegistry.get(state, "mineral:三钛合金");
-    if (tritanium < config.costTrit) return { changed:false, reason:"insufficient-tritanium" };
-    ResourceRegistry.spend(state, "currency:isk", config.costISK);
-    ResourceRegistry.spend(state, "mineral:三钛合金", config.costTrit);
-    Object.assign(deployment, { deployedAt:now, lastTick:now, progress:0, active:true });
+    const deployedAt = Number(deployment.deployedAt) || 0;
+    const duration = Number(deployment.duration) || 86400;
+    const timeExpired = (now - deployedAt) / 1000 >= duration;
+    const running = Boolean(deployment.active) && !timeExpired;
+    if (running) return { changed:false, reason:"already-active" };
+    const maintenanceISK = Number(config.maintenanceCostISK) || 0;
+    if (ResourceRegistry.get(state, "currency:isk") < maintenanceISK) return { changed:false, reason:"insufficient-isk" };
+    ResourceRegistry.spend(state, "currency:isk", maintenanceISK);
+    const newDuration = Number(config.maintenanceDuration) || 86400;
+    Object.assign(deployment, { deployedAt:now, lastTick:now, progress:0, duration:newDuration, active:true });
     state._dirty = true;
+    const expiresAt = now + newDuration * 1000;
+    if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:renewed", {
+      deploymentId:deployment.id, planetType:deployment.planetType, maintenanceISK, expiresAt
+    });
     return { changed:true, deployment, config };
   },
 
-  remove(state, id) {
+  // 主动拆除：storage 必须为 0（原子拒绝），删除 deployment 且不返还任何资源。
+  demolish(state, id) {
     const deployments = state.planetary && state.planetary.deployments;
     const index = Array.isArray(deployments) ? deployments.findIndex(item => item.id === id) : -1;
     if (index < 0) return { changed:false, reason:"unknown-deployment" };
-    if ((Number(deployments[index].storage) || 0) > 0) return { changed:false, reason:"storage-not-empty" };
+    if ((Number(deployments[index].storage) || 0) !== 0) return { changed:false, reason:"storage-not-empty" };
     const removed = deployments.splice(index, 1)[0];
     state._dirty = true;
+    if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:demolished", {
+      deploymentId:removed.id, planetType:removed.planetType, refundedISK:0, refundedResources:{}
+    });
     return { changed:true, removed };
   }
 };
@@ -1005,6 +1107,11 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "manufacturing/selectEquipmentRecipe") return ManufacturingStateActions.selectEquipmentRecipe(state, action.recipeId);
   if (action.type === "manufacturing/selectEquipEngRigFilter") return ManufacturingStateActions.selectEquipEngRigFilter(state, action);
   if (action.type === "manufacturing/stop") return ManufacturingStateActions.stop(state, actionTime);
+  if (action.type === "booster/selectCategory") return BoosterStateActions.selectCategory(state, action.categoryId);
+  if (action.type === "booster/selectQualityFilter") return BoosterStateActions.selectQualityFilter(state, action.quality);
+  if (action.type === "booster/selectRecipe") return BoosterStateActions.selectRecipe(state, action.recipeId);
+  if (action.type === "booster/startManufacturing") return BoosterStateActions.startManufacturing(state, actionTime);
+  if (action.type === "booster/stopManufacturing") return BoosterStateActions.stopManufacturing(state, actionTime);
   if (action.type === "combat/selectMode") return CombatStateActions.selectMode(state, action.mode);
   if (action.type === "combat/selectTargetingMode") return CombatStateActions.selectTargetingMode(state, action.mode);
   if (action.type === "combat/selectZone") return CombatStateActions.selectZone(state, action.zoneId);
@@ -1017,8 +1124,8 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "combat/finishRecovery") return CombatStateActions.finishRecovery(state, actionTime);
   if (action.type === "planetary/deploy") return PlanetaryStateActions.deploy(state, action.planetType, actionTime);
   if (action.type === "planetary/collect") return PlanetaryStateActions.collect(state, action.id, action.cargoCapacity);
-  if (action.type === "planetary/redeploy") return PlanetaryStateActions.redeploy(state, action.id, actionTime);
-  if (action.type === "planetary/remove") return PlanetaryStateActions.remove(state, action.id);
+  if (action.type === "planetary/renew") return PlanetaryStateActions.renew(state, action.id, actionTime);
+  if (action.type === "planetary/demolish") return PlanetaryStateActions.demolish(state, action.id);
   if (action.type === "shell/buyLPItem") return ShellStateActions.buyLPItem(state, action.equipmentId);
   if (action.type === "hangar/toggleAssignment") return ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime);
   if (action.type === "hangar/equipCombatShip") return ShellStateActions.equipCombatShip(state, action.instanceId, actionTime);

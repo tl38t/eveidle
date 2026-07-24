@@ -47,7 +47,12 @@ const gameState = {
     batchRemaining: 0,
     startedArea: "",
     startedSmeltingArea: "",
-    startedGasArea: ""
+    startedGasArea: "",
+    // 增强剂系统 Phase 2A：boosterRecipeTarget = 当前选中配方；startedBoosterRecipeTarget = 运行中锁定配方（切换选择不改产物）
+    boosterRecipeTarget: "mining_lubricant_n",
+    boosterCategory: "mining",
+    boosterQualityFilter: "all",
+    startedBoosterRecipeTarget: ""
   },
 
   planetary: {
@@ -82,6 +87,20 @@ const gameState = {
   },
 
   equipment: { inventory: [], instances: [], nextInstanceId: 1 },
+
+  // 增强剂系统 Phase 2A：inventory 启用（可堆叠库存）；active 六槽仅初始化/迁移/保存，本阶段不装备、不计时、不应用效果，始终 null。
+  boosters: {
+    inventory: {},
+    active: {
+      miningSpeed: null,
+      miningYield: null,
+      archaeologySpeed: null,
+      archaeologyRare: null,
+      combatWeapon: null,
+      combatRepair: null
+    },
+    lastTick: Date.now()
+  },
 
   upgrades: {},
   ownedBlueprints: [],
@@ -209,6 +228,7 @@ const SKILL_LABEL = {
   mining: "采矿", refining: "冶炼", gasHarvesting: "气体采集",
   shipEngineering: "舰船工程", equipmentEngineering: "装备工程",
   rigEngineering: "改装件工程",
+  boosterEngineering: "增强剂制造",
   reverseEngineering: "逆向工程",
   archaeology: "考古",
   combat: "战斗"

@@ -17,12 +17,12 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "queue-panel", "combat-panel", "hangar-panel", "blueprintstore-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "blueprintstore-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#blueprintstore-panel)')];
+  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#booster-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#blueprintstore-panel)')];
 }
 
 function renderCombatSkillGroup() {

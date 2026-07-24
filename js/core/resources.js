@@ -17,7 +17,9 @@ const RESOURCE_NAMESPACE_CONFIG = Object.freeze({
   probe:{ kind:"pool", pool:"probes" },
   artifact:{ kind:"pool", pool:"artifacts" },
   calibration:{ kind:"pool", pool:"calibrations", material:true },
-  consumable:{ kind:"scalar" }
+  consumable:{ kind:"scalar" },
+  // 增强剂系统 Phase 2A：booster 库存不属于 state.resources，而是 state.boosters.inventory（见 getPoolContainer 特判）。
+  booster:{ kind:"pool", pool:"boosterInventory", material:false }
 });
 
 const MATERIAL_NAMESPACE_ORDER = Object.freeze(["mineral", "ore", "planetary", "gas", "moon", "special"]);
@@ -67,23 +69,44 @@ const ResourceRegistry = (() => {
 
   function getResources(state) { return state && state.resources ? state.resources : null; }
 
+  // 解析 pool 型资源的容器对象。booster 命名空间特判：容器为 state.boosters.inventory，其余走 state.resources[pool]。
+  function getPoolContainer(state, definition, createIfMissing) {
+    if (!state || !definition || !definition.pool) return null;
+    if (definition.namespace === "booster") {
+      if (!state.boosters || typeof state.boosters !== "object") { if (!createIfMissing) return null; state.boosters = {}; }
+      if (!state.boosters.inventory || typeof state.boosters.inventory !== "object") { if (!createIfMissing) return null; state.boosters.inventory = {}; }
+      return state.boosters.inventory;
+    }
+    const resources = getResources(state);
+    if (!resources) return null;
+    if (!resources[definition.pool] || typeof resources[definition.pool] !== "object") { if (!createIfMissing) return null; resources[definition.pool] = {}; }
+    return resources[definition.pool];
+  }
+
   function get(state, id) {
     const definition = getDefinition(id);
+    if (!definition) return 0;
+    if (definition.pool) {
+      const container = getPoolContainer(state, definition, false);
+      return container ? Number(container[definition.key]) || 0 : 0;
+    }
     const resources = getResources(state);
-    if (!definition || !resources) return 0;
-    if (definition.pool) return Number(resources[definition.pool] && resources[definition.pool][definition.key]) || 0;
-    return Number(resources[definition.scalarKey]) || 0;
+    return resources ? Number(resources[definition.scalarKey]) || 0 : 0;
   }
 
   function set(state, id, quantity) {
     const definition = getDefinition(id);
-    const resources = getResources(state);
-    if (!definition || !resources) return false;
+    if (!definition) return false;
     const value = Math.max(0, Number(quantity) || 0);
     if (definition.pool) {
-      if (!resources[definition.pool] || typeof resources[definition.pool] !== "object") resources[definition.pool] = {};
-      resources[definition.pool][definition.key] = value;
-    } else resources[definition.scalarKey] = value;
+      const container = getPoolContainer(state, definition, true);
+      if (!container) return false;
+      container[definition.key] = value;
+    } else {
+      const resources = getResources(state);
+      if (!resources) return false;
+      resources[definition.scalarKey] = value;
+    }
     state._dirty = true;
     return true;
   }
@@ -242,5 +265,14 @@ if (typeof ARCHAEOLOGY_ARTIFACTS !== "undefined") {
   for (const artifact of ARCHAEOLOGY_ARTIFACTS) {
     const namespace = artifact.category === "calibration" ? "calibration" : "artifact";
     ResourceRegistry.register({ namespace, key:artifact.id, name:artifact.name, category:artifact.category === "calibration" ? "calibration" : "artifact" });
+  }
+}
+
+// 增强剂系统 Phase 2A：30 件增强剂登记（booster.js 已先于本文件加载）。
+// booster 命名空间为 pool 型，容器特判为 state.boosters.inventory；material:false 表示不参与配方材料名称聚合。
+if (typeof BOOSTER_ITEMS !== "undefined") {
+  for (const key of Object.keys(BOOSTER_ITEMS)) {
+    const item = BOOSTER_ITEMS[key];
+    ResourceRegistry.register({ namespace:"booster", key, name:item.name, category:"booster" });
   }
 }

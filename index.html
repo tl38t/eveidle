@@ -93,6 +93,9 @@
     <div class="nav-item" data-skill="equipmentEngineering">
       <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span> 装备工程 <span class="nav-lv" data-lv="equipmentEngineering">Lv.1</span>
     </div>
+    <div class="nav-item" data-skill="boosterEngineering">
+      <span class="nav-icon"><i class="fa-solid fa-syringe"></i></span> 增强剂制造 <span class="nav-lv" data-lv="boosterEngineering">Lv.1</span>
+    </div>
     <div class="nav-divider"></div>
     <div class="nav-item combat-nav-toggle" data-skill="combat" data-combat-toggle aria-expanded="false">
       <span class="nav-icon"><i class="fa-solid fa-crosshairs"></i></span> 战斗 <span class="nav-lv" data-lv="combat">Lv.1</span><span class="combat-nav-chevron"><i class="fa-solid fa-chevron-down"></i></span>
@@ -407,6 +410,59 @@
       </div>
     </div>
 
+    <!-- 增强剂制造面板（Phase 2A：制造 + 库存；六槽装备/计时/效果为 Phase 2B） -->
+    <div class="panel" id="booster-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">💉 增强剂制造</span>
+        <span id="booster-status-text">待命</span>
+      </div>
+      <div class="panel-body">
+        <div class="skill-info equipeng-info">
+          <span class="skill-name">增强剂制造</span>
+          <span class="skill-level">等级 <span class="lv-num" id="booster-lv-num">1</span></span>
+          <span class="skill-output" id="booster-eff-display">效率：1.00x</span>
+        </div>
+        <div class="exp-row mt-4">
+          <span class="exp-label">经验</span>
+          <div class="progress-bar"><div class="fill exp" id="booster-exp-fill" style="width:0%"></div></div>
+          <span class="exp-value" id="booster-exp-value">0 / 110</span>
+        </div>
+        <div class="booster-phase-note" id="booster-phase-note" style="margin:8px 0;padding:6px 10px;border-radius:6px;font-size:12px;color:#f0c27b;background:rgba(240,194,123,.10);border:1px solid rgba(240,194,123,.25);">
+          <i class="fa-solid fa-circle-info"></i> 增强剂使用与自动补充将在下一阶段开放；当前可制造并囤积增强剂（每瓶持续 180 秒，暂不消耗）。
+        </div>
+        <div class="equipeng-category-tabs" id="booster-category-tabs" role="tablist" aria-label="增强剂分类"></div>
+        <div class="equipeng-rig-filters" id="booster-quality-filters" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;"></div>
+        <div class="equipeng-workspace">
+          <section class="equipeng-catalog">
+            <div class="equipeng-catalog-header">
+              <div><strong id="booster-category-title">采矿</strong><span id="booster-category-count">0 个配方</span></div>
+            </div>
+            <div class="equipeng-recipe-grid" id="booster-recipe-grid"></div>
+          </section>
+          <aside class="equipeng-detail">
+            <div class="equipeng-detail-header">
+              <strong id="booster-detail-title">纳米采掘润滑剂·普通</strong>
+              <span id="booster-detail-tier" class="equipeng-tier-badge">普通</span>
+            </div>
+            <div class="equipeng-detail-body" id="booster-detail-body"></div>
+            <div class="ship-progress-row equipeng-detail-progress" id="booster-progress-row" style="display:none;">
+              <span class="sp-label">制造进度</span>
+              <canvas class="skill-canvas-bar" id="bar-booster" width="420" height="24"></canvas>
+              <span class="mp-eta" id="booster-eta">0s</span>
+            </div>
+            <div class="equipeng-detail-actions">
+              <button class="btn danger" id="btn-stop-booster" style="display:none;">■ 停止制造</button>
+              <button class="btn primary" id="btn-start-booster">▶ 开始制造</button>
+            </div>
+          </aside>
+        </div>
+        <section class="booster-inventory" style="margin-top:14px;">
+          <div class="equipeng-catalog-header"><div><strong>增强剂库存</strong><span id="booster-inventory-count">0 种</span></div></div>
+          <div class="equipeng-recipe-grid" id="booster-inventory-grid"></div>
+        </section>
+      </div>
+    </div>
+
     <!-- 战斗面板 -->
     <div class="panel combat-panel" id="combat-panel" style="display:none;">
       <div class="panel-header">
@@ -673,7 +729,7 @@
     <h3>🪐 部署行星 <span class="modal-close" id="modal-close">✕</span></h3>
     <div id="deploy-options"></div>
     <div style="margin-top:8px;font-size:11px;color:#4a5a6a;">
-      部署消耗：ISK + 三钛合金（测试阶段 0 ISK / 1 三钛）
+      首次建设消耗 ISK + 三钛合金；维护期统一 24 小时。到期后停产，可支付 ISK 续期（续期不再消耗三钛）；主动拆除不返还任何资源。
     </div>
   </div>
 </div>
@@ -706,6 +762,7 @@
   <script defer src="./js/data/base.js"></script>
   <script defer src="./js/data/planets.js"></script>
   <script defer src="./js/data/ships.js"></script>
+  <script defer src="./js/data/boosters.js"></script>
   <script defer src="./js/data/combat.js"></script>
   <script defer src="./js/data/equipment.js"></script>
   <script defer src="./js/data/ammunition.js"></script>
@@ -733,6 +790,7 @@
   <script defer src="./js/ui/combat-render.js"></script>
   <script defer src="./js/ui/planetary-render.js"></script>
   <script defer src="./js/ui/archaeology-render.js"></script>
+  <script defer src="./js/ui/booster-render.js"></script>
   <script defer src="./js/core/tick.js"></script>
   <script defer src="./js/core/offline.js"></script>
   <script defer src="./js/ui/render.js"></script>

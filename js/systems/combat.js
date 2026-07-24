@@ -337,6 +337,36 @@ function rollDeathspaceLeaderLoot(site, wave, coreRandomValue, protocolRandomVal
   return drops;
 }
 
+// 增强剂系统 Phase 2A（§7）：战术材料掉落，对所有 kind 开放（普通/精英/Boss）。
+// 本函数仅做纯计算，不改动 gameState、不发送事件；发奖与事件由 resolveCombatEnemyDefeat 负责。
+// 层级由 zone.formationPool 映射（死亡空间复用其 sourceZone 的 formationPool）。
+//   普通怪：70% × 1；精英：100% × 2~3（期望 2.5）；Boss：100% × 6~10（期望 8）。
+// rng 可注入（默认 Math.random）；审计以固定序列核验概率边界。
+function rollTacticalMaterialDrop(zone, enemyKind, randomFn) {
+  if (!zone) return null;
+  const layer = zone.formationPool;
+  const materialId = (typeof TACTICAL_MATERIAL_BY_LAYER !== "undefined") ? TACTICAL_MATERIAL_BY_LAYER[layer] : null;
+  if (!materialId) return null;
+  const rng = typeof randomFn === "function" ? randomFn : Math.random;
+  let qty = 0;
+  if (enemyKind === "boss") {
+    qty = 6 + Math.floor(rng() * 5);          // 6..10
+  } else if (enemyKind === "elite") {
+    qty = 2 + Math.floor(rng() * 2);          // 2..3
+  } else {
+    qty = rng() < 0.70 ? 1 : 0;               // 普通怪 70% × 1
+  }
+  if (qty <= 0) return null;
+  const meta = (typeof TACTICAL_MATERIALS !== "undefined") ? TACTICAL_MATERIALS.find(m => m.id === materialId) : null;
+  return {
+    materialId,
+    materialName: meta ? meta.name : materialId,
+    tier: meta ? meta.tier : null,
+    quantity: qty,
+    securityLayer: layer
+  };
+}
+
 function applyLayeredCombatDamage(hp, amount) {
   let remaining = Math.max(0, amount);
   const dealt = { shield:0, armor:0, structure:0 };
@@ -367,13 +397,34 @@ function resolveCombatEnemyDefeat(enemy, zone) {
   if (ticketDrop) c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty;
   const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave) : [];
   for (const drop of deathspaceDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
-  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...deathspaceDrops].filter(Boolean);
-  if (specialDrops.length > 0) c.lastSpecialLoot = specialDrops.map(drop => drop.material + " ×" + drop.qty).join(" · ");
+  // 增强剂系统 Phase 2A：战术材料掉落（星带与死亡空间同规则，对所有 kind 开放）。
+  // 纯函数 rollTacticalMaterialDrop 仅计算；此处负责发奖、事件与展示。
+  const tacticalDrop = rollTacticalMaterialDrop(zone, enemy.kind);
+  let tacticalEvent = null;
+  if (tacticalDrop) {
+    ResourceRegistry.add(gameState, "special:" + tacticalDrop.materialId, tacticalDrop.quantity);
+    tacticalEvent = {
+      zoneId: zone.id,
+      deathspaceId: deathspace ? deathspace.id : null,
+      enemyId: enemy.id,
+      enemyKind: enemy.kind,
+      materialId: tacticalDrop.materialId,
+      materialName: tacticalDrop.materialName,
+      tier: tacticalDrop.tier,
+      quantity: tacticalDrop.quantity,
+      securityLayer: tacticalDrop.securityLayer
+    };
+    GameEvents.emit("combat:tacticalMaterialDropped", tacticalEvent);
+    c.lastLoot += " · " + tacticalDrop.materialId + " ×" + tacticalDrop.quantity;
+  }
+  const fmtDrop = d => ((d && d.materialId !== undefined ? d.materialId : (d && d.material)) + " ×" + (d && d.quantity !== undefined ? d.quantity : (d && d.qty)));
+  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...deathspaceDrops, tacticalDrop].filter(Boolean);
+  if (specialDrops.length > 0) c.lastSpecialLoot = specialDrops.map(fmtDrop).join(" · ");
   c.totalKills++;
   if (enemy.kind === "elite") c.runEliteKills = (c.runEliteKills || 0) + 1;
   syncCurrentCombatTarget(c);
-  GameEvents.emit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops });
-  return { isk, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops };
+  GameEvents.emit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent });
+  return { isk, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent };
 }
 
 function resolveDeathspaceWaveVictory(site, zone) {

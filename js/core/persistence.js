@@ -538,6 +538,148 @@ function migrateDeathspaceState() {
   gameState.combat.targetingMode = normalizeCapitalTargetingMode(gameState.combat.targetingMode);
 }
 
+// ================================================================
+//  增强剂系统 Phase 2A 幂等迁移（autoLoad 与 importData 共用）
+//   - 补齐 boosterEngineering 技能（默认 Lv.1）
+//   - 初始化/规范化 gameState.boosters { inventory, active(六槽), lastTick }
+//   - 已有合法库存不清空；仅清理 NaN/负数/非整数；六槽在 Phase 2A 恒为 null
+//   - currentAction 制造目标字段幂等回填（boosterRecipeTarget/boosterCategory/
+//     boosterQualityFilter/startedBoosterRecipeTarget）
+//   - 幂等：连续两次调用结果一致
+// ================================================================
+function migrateBoosterState() {
+  if (!gameState.skills || typeof gameState.skills !== "object") gameState.skills = {};
+  if (!gameState.skills.boosterEngineering || typeof gameState.skills.boosterEngineering !== "object") {
+    gameState.skills.boosterEngineering = { lvl: 1, xp: 0 };
+  } else {
+    const s = gameState.skills.boosterEngineering;
+    if (!Number.isFinite(Number(s.lvl)) || Number(s.lvl) < 1) s.lvl = 1;
+    if (!Number.isFinite(Number(s.xp)) || Number(s.xp) < 0) s.xp = 0;
+  }
+  const SLOTS = (typeof BOOSTER_SLOTS !== "undefined" && Array.isArray(BOOSTER_SLOTS))
+    ? BOOSTER_SLOTS
+    : ["miningSpeed", "miningYield", "archaeologySpeed", "archaeologyRare", "combatWeapon", "combatRepair"];
+  if (!gameState.boosters || typeof gameState.boosters !== "object") {
+    gameState.boosters = { inventory: {}, active: {}, lastTick: Date.now() };
+  }
+  const b = gameState.boosters;
+  if (!b.inventory || typeof b.inventory !== "object") b.inventory = {};
+  if (!b.active || typeof b.active !== "object") b.active = {};
+  // 规范化库存：裸 id 为权威键；旧版 booster: 前缀键就地剥离前缀归一化，
+  // 不与裸 id 形成双键；合法正整数保留，NaN/负数/零/非整数丢弃（正常库存不清空）。
+  for (const key of Object.keys(b.inventory)) {
+    const normKey = (typeof key === "string" && key.startsWith("booster:")) ? key.slice("booster:".length) : key;
+    const qty = Math.floor(Number(b.inventory[key]));
+    if (!Number.isFinite(qty) || qty <= 0) { delete b.inventory[key]; continue; }
+    if (normKey !== key) {
+      delete b.inventory[key];                                  // 剥离前缀，避免遗留 booster: 旧键
+      const prev = Math.floor(Number(b.inventory[normKey] || 0));
+      b.inventory[normKey] = Math.max(qty, prev > 0 ? prev : qty);  // 与可能并存的裸 id 合并取大，不形成双键
+    } else {
+      b.inventory[key] = qty;
+    }
+  }
+  // 六槽（Phase 2A 恒为 null）：补齐缺失槽位、清空任何遗留值、丢弃非法槽键。
+  for (const slot of SLOTS) b.active[slot] = null;
+  for (const key of Object.keys(b.active)) { if (!SLOTS.includes(key)) delete b.active[key]; }
+  if (!Number.isFinite(Number(b.lastTick)) || Number(b.lastTick) <= 0) b.lastTick = Date.now();
+  // currentAction 制造目标字段幂等回填。
+  if (gameState.currentAction && typeof gameState.currentAction === "object") {
+    const a = gameState.currentAction;
+    const recipeValid = (typeof getBoosterRecipe === "function") && getBoosterRecipe(a.boosterRecipeTarget);
+    if (!recipeValid) a.boosterRecipeTarget = "mining_lubricant_n";
+    const recipe = (typeof getBoosterRecipe === "function") ? getBoosterRecipe(a.boosterRecipeTarget) : null;
+    if (!a.boosterCategory && recipe && typeof BOOSTER_SERIES !== "undefined") {
+      a.boosterCategory = (BOOSTER_SERIES[recipe.series] || {}).category || "mining";
+    }
+    if (!a.boosterCategory) a.boosterCategory = "mining";
+    if (!["all", "n", "r", "l"].includes(a.boosterQualityFilter)) a.boosterQualityFilter = "all";
+    if (a.startedBoosterRecipeTarget === undefined) {
+      a.startedBoosterRecipeTarget = (a.active && a.skill === "boosterEngineering") ? a.boosterRecipeTarget : "";
+    }
+  }
+  gameState._dirty = true;
+}
+window.migrateBoosterState = migrateBoosterState;
+
+// ================================================================
+//  行星部署幂等规范化（autoLoad 与 importData 共用）
+//  设计：
+//   - 旧 planetaryDeployments 容器内容必须完整迁移到 planetary.deployments
+//     （不丢弃玩家旧基地、不追收 ISK/三钛、不重复创建、不改 storage/类型/id）
+//   - 旧字段 type → planetType（迁移后删除 type）；capacity 旧字段不进入新 deployment（但仍保留 storage）
+//   - 安全回填 duration/progress/storage/deployedAt/lastTick（不改动已有有效值）
+//   - 字段迁移阶段（finalizeExpiry:false）：保留显式 active 值，绝不因“当前时间超期”提前把 active=true 改成 false
+//     （否则离线结算会跳过该部署，丢失最后一段收益）
+//   - 最终化阶段（finalizeExpiry:true）：对仍 active 且已超期者置 false（离线结算已先行处理，此处为安全网）
+//   - 幂等：连续两次调用结果一致；旧+新容器共存时按 id 去重合并（同 id 优先保留新版）
+//  调用约定（与 autoLoad / importData 顺序一致）：
+//    normalizePlanetaryState(state, { now, finalizeExpiry:false })  // 字段迁移（读档/导入第一步）
+//    ... calculateOfflineGains() ...                                  // 离线结算（在 finalizeExpiry 之前完成）
+//    normalizePlanetaryState(state, { now, finalizeExpiry:true })    // 最终化
+// ================================================================
+function normalizePlanetaryState(state, opts) {
+  if (!state || typeof state !== "object") return;
+  const options = (opts && typeof opts === "object") ? opts : {};
+  const finalizeExpiry = options.finalizeExpiry === true;
+  const now = Number(options.now) || Date.now();
+  if (!state.planetary || typeof state.planetary !== "object") state.planetary = { deployments:[], nextId:1 };
+  if (!Array.isArray(state.planetary.deployments)) state.planetary.deployments = [];
+  if (!Number.isFinite(Number(state.planetary.nextId))) state.planetary.nextId = 1;
+
+  // 旧容器 planetaryDeployments → 新容器 planetary.deployments 的内容迁移（去重合并）
+  if (state.planetaryDeployments && Array.isArray(state.planetaryDeployments)) {
+    const existingIds = new Set(state.planetary.deployments.map(d => d && d.id));
+    state.planetaryDeployments.forEach((old, idx) => {
+      if (!old || typeof old !== "object") return;
+      const planetType = old.planetType !== undefined ? old.planetType : old.type;
+      if (planetType === undefined) return; // 无法识别行星类型，跳过（保守）
+      const duration = Number(old.duration) > 0 ? Number(old.duration) : 86400;
+      const deployedAt = Number(old.deployedAt) > 0 ? Number(old.deployedAt)
+        : (Number(old.timeDeployed) > 0 ? Number(old.timeDeployed) : 0);
+      if (!(deployedAt > 0)) return; // 无法定位时间，跳过（保守）
+      let id = old.id;
+      if (id === undefined || id === null || String(id).length === 0) {
+        id = "planet_legacy_" + idx; // 稳定 id（按旧数组索引，二次迁移不漂移）
+      }
+      if (existingIds.has(id)) return; // 同 id 优先保留新版，不重复迁移
+      const storage = (Number(old.storage) >= 0 && Number.isFinite(Number(old.storage))) ? Number(old.storage) : 0;
+      const progress = (Number(old.progress) >= 0 && Number.isFinite(Number(old.progress))) ? Number(old.progress) : 0;
+      const lastTick = Number(old.lastTick) > 0 ? Number(old.lastTick) : deployedAt;
+      const timeExpired = (now - deployedAt) / 1000 >= duration;
+      const active = old.active === undefined ? !timeExpired : Boolean(old.active);
+      state.planetary.deployments.push({
+        id, planetType, deployedAt, duration,
+        storage, progress, lastTick, active
+      });
+      existingIds.add(id);
+    });
+  }
+
+  // 逐部署字段规范化 + active 处理
+  let maxPlanetNum = 0;
+  for (const dep of state.planetary.deployments) {
+    if (!dep || typeof dep !== "object") continue;
+    if (dep.planetType === undefined && dep.type !== undefined) dep.planetType = dep.type;
+    if (dep.type !== undefined) delete dep.type; // capacity 旧字段不复制；不处理 capacity
+    if (dep.planetType === undefined) continue;
+    if (!(Number(dep.duration) > 0)) dep.duration = 86400;
+    if (dep.progress === undefined || !Number.isFinite(Number(dep.progress)) || Number(dep.progress) < 0) dep.progress = 0;
+    if (dep.storage === undefined || !Number.isFinite(Number(dep.storage)) || Number(dep.storage) < 0) dep.storage = 0;
+    if (!(Number(dep.deployedAt) > 0)) dep.deployedAt = now;
+    if (!(Number(dep.lastTick) > 0)) dep.lastTick = dep.deployedAt; // 安全回填：不产生追溯离线收益
+    const timeExpired = (now - Number(dep.deployedAt)) / 1000 >= Number(dep.duration);
+    if (dep.active === undefined) dep.active = !timeExpired;
+    // 字段迁移阶段不提前关闭 active=true 的部署；最终化阶段再强制过期一致性
+    if (finalizeExpiry && dep.active && timeExpired) dep.active = false;
+    const match = /planet_(\d+)/.exec(String(dep.id || ""));
+    if (match) maxPlanetNum = Math.max(maxPlanetNum, Number(match[1]));
+  }
+  const nextId = Number(state.planetary.nextId) || 0;
+  state.planetary.nextId = Math.max(nextId, maxPlanetNum + 1, 1);
+}
+window.normalizePlanetaryState = normalizePlanetaryState;
+
 const SaveManager = {
   adapter: LocalStorageAdapter,
   save() { gameState.lastSaveTime = Date.now(); gameState._dirty = false; const ok = this.adapter.save(gameState); this._updateStatus(ok ? "已保存 " + new Date().toLocaleTimeString() : "保存失败"); document.getElementById("footer-save") && (document.getElementById("footer-save").textContent = "存档：" + new Date().toLocaleTimeString()); return ok; },
@@ -560,10 +702,16 @@ const SaveManager = {
       migrateAmmunitionEngineeringState();
       migrateMoonMiningState();
       migrateDeathspaceState();
+      migrateBoosterState();
       // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
       finalizeEquipmentStateAfterLegacyMigrations(gameState);
+      // 行星规范化（与 autoLoad 同一路径，幂等）；必须在离线结算之前
+      normalizePlanetaryState(gameState);
+      delete gameState.planetaryDeployments;
       // 离线结算必须在规范化之后
       if (typeof calculateOfflineGains === "function") calculateOfflineGains();
+      // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
+      normalizePlanetaryState(gameState, { finalizeExpiry:true });
       gameState._dirty = false;
       gameState.currentAction.progress = 0;
       gameState.currentAction.lastProgressUpdate = Date.now();
@@ -589,17 +737,8 @@ window.addEventListener("beforeunload", () => SaveManager.save());
 (function autoLoad() {
   const restored = SaveManager.load();
   if (restored) {
-    // 迁移旧版 planetaryDeployments → 新版 planetary.deployments
-    if (gameState.planetaryDeployments && !gameState.planetary) {
-      gameState.planetary = { deployments: [], nextId: 1 };
-    }
-    if (!gameState.planetary) gameState.planetary = { deployments: [], nextId: 1 };
-    if (!gameState.planetary.deployments) gameState.planetary.deployments = [];
-    if (!gameState.planetary.nextId) gameState.planetary.nextId = gameState.planetary.deployments.length + 1;
-    // 旧存档迁移：补充 progress 字段
-    for (const dep of gameState.planetary.deployments) {
-      if (dep.progress === undefined) dep.progress = 0;
-    }
+    // 行星部署幂等规范化（旧 planetaryDeployments 迁移、字段回填、到期规范化、type→planetType）
+    normalizePlanetaryState(gameState);
     // 旧存档迁移：气体采集技能和配置
     if (!gameState.skills.gasHarvesting) gameState.skills.gasHarvesting = { lvl: 1, xp: 0 };
     // 旧 gunnery 迁移到新拆分技能
@@ -670,11 +809,14 @@ window.addEventListener("beforeunload", () => SaveManager.save());
   migrateAmmunitionEngineeringState();
   migrateMoonMiningState();
   migrateDeathspaceState();
+  migrateBoosterState();
   // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
   finalizeEquipmentStateAfterLegacyMigrations(gameState);
-  if (restored) calculateOfflineGains();
+    if (restored) calculateOfflineGains();
   ensureUserSettingsState(gameState);
   ensureStatisticsState(gameState);
+  // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
+  normalizePlanetaryState(gameState, { finalizeExpiry:true });
   // 清理旧字段
   delete gameState.planetaryDeployments;
 })();

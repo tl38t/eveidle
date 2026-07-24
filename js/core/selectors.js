@@ -740,6 +740,140 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   };
 }
 
+/* ================================================================
+   增强剂制造纯显示态 — Phase 2A（§九）
+   制造页只消费此状态：技能信息 / 分类标签 / 品质筛选 / 配方卡片 /
+   制造控制 / 库存区。不含六槽装备、计时消耗、效果应用（Phase 2B）。
+   ================================================================ */
+function getBoosterManufacturingDisplayState(state, now) {
+  const action = state.currentAction;
+  const skill = state.skills.boosterEngineering || { lvl:1, xp:0 };
+  const level = Number(skill.lvl) || 1;
+  const xp = Number(skill.xp) || 0;
+  const xpRequired = xpForLevel(level + 1);
+  const efficiency = 1 + level * 0.02;
+
+  // 分类与品质筛选（用户选择；运行中切换不改变正在制造的产物）。
+  const categoryId = (BOOSTER_CATEGORY_META.find(c => c.id === action.boosterCategory) || BOOSTER_CATEGORY_META[0]).id;
+  const qualityFilter = ["all", "n", "r", "l"].includes(action.boosterQualityFilter) ? action.boosterQualityFilter : "all";
+
+  const isRunning = Boolean(action.active && action.skill === "boosterEngineering");
+  const selectedRecipe = getBoosterRecipe(action.boosterRecipeTarget) || BOOSTER_RECIPES[0];
+  const runningRecipe = getBoosterRecipe(action.startedBoosterRecipeTarget || action.boosterRecipeTarget) || selectedRecipe;
+  const progress = isRunning
+    ? getProgressDisplayState(action, "boosterEngineering", runningRecipe.time / efficiency, now)
+    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:selectedRecipe.time / efficiency };
+
+  const inventory = (state.boosters && state.boosters.inventory) || {};
+
+  const filteredRecipes = BOOSTER_RECIPES.filter(recipe => {
+    const series = BOOSTER_SERIES[recipe.series];
+    if (!series || series.category !== categoryId) return false;
+    if (qualityFilter !== "all" && recipe.quality !== qualityFilter) return false;
+    return true;
+  });
+
+  const recipes = filteredRecipes.map(recipe => {
+    const item = BOOSTER_ITEMS[recipe.id] || {};
+    const isUnlocked = level >= recipe.level;
+    const materialRows = Object.entries(recipe.cost || {}).map(([reference, quantity]) => {
+      const required = Math.max(1, Number(quantity) || 1);
+      const stock = ResourceRegistry.getMaterialStock(state, reference);
+      return { reference, displayName:getResourceDisplayName(reference), required, stock, enough:stock >= required };
+    });
+    const hasMaterials = materialRows.every(row => row.enough);
+    // 库存按裸 id 键存于 state.boosters.inventory（ResourceRegistry 命名空间去前缀），经 ResourceRegistry.get 统一寻址
+    const owned = Number(ResourceRegistry.get(state, recipe.itemId) || 0) || 0;
+    let lockedReason = "";
+    if (!isUnlocked) lockedReason = "需要增强剂制造 Lv." + recipe.level;
+    else if (!hasMaterials) lockedReason = "材料不足";
+    return {
+      id:recipe.id,
+      itemId:recipe.itemId,
+      displayName:item.name || recipe.id,
+      seriesName:item.seriesName || "",
+      qualityName:item.qualityName || "",
+      category:item.category || categoryId,
+      level:recipe.level,
+      xp:recipe.xp,
+      time:recipe.time,
+      effectiveTime:recipe.time / efficiency,
+      durationSeconds:Math.round((recipe.durationMs || BOOSTER_DURATION_MS) / 1000),
+      effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(recipe.effect.type, recipe.effect.value) : "",
+      materialRows,
+      required:materialRows.reduce((sum, row) => sum + row.required, 0),
+      owned,
+      stock:owned,
+      isUnlocked,
+      hasMaterials,
+      canManufacture:isUnlocked && hasMaterials,
+      lockedReason,
+      selected:recipe.id === selectedRecipe.id,
+      running:isRunning && recipe.id === runningRecipe.id
+    };
+  });
+
+  // 库存卡片：所有已拥有增强剂（跨分类展示），按中文名排序。
+  const inventoryCards = Object.keys(inventory)
+    .map(key => {
+      const item = getBoosterItem(key);
+      const qty = Number(inventory[key] || 0) || 0;
+      if (!item || qty <= 0) return null;
+      return {
+        itemId:item.itemId,
+        id:item.id,
+        displayName:item.name,
+        seriesName:item.seriesName,
+        qualityName:item.qualityName,
+        category:item.category,
+        quantity:qty,
+        durationSeconds:Math.round((item.durationMs || BOOSTER_DURATION_MS) / 1000),
+        effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue) : ""
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.displayName.localeCompare(b.displayName, "zh-Hans-CN"));
+
+  const selectedCard = recipes.find(r => r.selected) || null;
+  let statusText;
+  if (isRunning) {
+    const runItem = BOOSTER_ITEMS[runningRecipe.id];
+    statusText = "正在制造：" + (runItem ? runItem.name : runningRecipe.id) + "（" + progress.percent + "%）";
+  } else if (selectedCard && !selectedCard.canManufacture) {
+    statusText = selectedCard.lockedReason || "待命";
+  } else {
+    statusText = "待命";
+  }
+
+  return {
+    kind:"boosterEngineering",
+    skill:"boosterEngineering",
+    level,
+    xp,
+    xpRequired,
+    xpPercent:Math.min(100, Math.floor(xp / xpRequired * 100)),
+    efficiency,
+    isRunning,
+    status:isRunning ? "进行中" : "待命",
+    statusText,
+    progress,
+    progressPercent:progress.percent,
+    remainingSeconds:progress.etaSeconds,
+    category:categoryId,
+    categories:BOOSTER_CATEGORY_META.map(c => ({ id:c.id, name:c.name, selected:c.id === categoryId })),
+    qualityFilter,
+    qualityFilters:[{ id:"all", name:"全部" }, { id:"n", name:"普通" }, { id:"r", name:"精工" }, { id:"l", name:"传奇" }]
+      .map(q => ({ ...q, selected:q.id === qualityFilter })),
+    selectedRecipeId:selectedRecipe.id,
+    runningRecipeId:isRunning ? runningRecipe.id : null,
+    selectedRecipe:selectedCard,
+    canStart:Boolean(selectedCard && selectedCard.canManufacture),
+    recipes,
+    inventoryCards,
+    phaseNote:"增强剂使用与自动补充将在下一阶段开放"
+  };
+}
+
 function getCombatSkillLevelFromState(state, key) {
   return Number(state && state.skills && state.skills[key] && state.skills[key].lvl) || 1;
 }
@@ -1042,36 +1176,45 @@ function getPlanetaryCapacityState(state) {
 }
 
 function getPlanetOutputIntervalFromState(state, type) {
-  const config = PLANET_TYPES.find(planet => planet.type === type);
+  const config = PLANET_TYPES.find(planet => planet.id === type);
   const level = getPlanetaryCapacityState(state).level;
   return config ? config.interval / (1 + level * 0.02) : 10;
 }
 
+// 纯显示态：只消费不修改。三状态 running / expired（deployment 一定存在，未布置态由 deployOptions 表达）。
 function getPlanetDeploymentDisplayState(state, deployment, now) {
-  const config = PLANET_TYPES.find(planet => planet.type === deployment.type) || null;
+  const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType) || null;
   const capacity = getPlanetaryCapacityState(state);
   const duration = Number(deployment.duration) || 86400;
   const deployedAt = Number(deployment.deployedAt) || now;
   const elapsed = Math.max(0, (now - deployedAt) / 1000);
   const remaining = Math.max(0, duration - elapsed);
-  const expired = remaining <= 0;
+  const timeExpired = remaining <= 0;
+  // 已到期 = 时间超期 或 active 标志已被置为 false
+  const expired = timeExpired || !deployment.active;
   const storage = Number(deployment.storage) || 0;
   const full = storage >= capacity.storageMax;
-  const active = Boolean(deployment.active && !expired);
-  const interval = getPlanetOutputIntervalFromState(state, deployment.type);
+  const active = Boolean(deployment.active) && !timeExpired;
+  const runState = active ? "running" : "expired";
+  const interval = getPlanetOutputIntervalFromState(state, deployment.planetType);
   const sinceTick = active && !full ? Math.max(0, (now - (Number(deployment.lastTick) || now)) / 1000) : 0;
   const displayProgress = active && !full ? Math.min(interval, (Number(deployment.progress) || 0) + sinceTick) : Number(deployment.progress) || 0;
   const hours = Math.floor(remaining / 3600);
   const minutes = Math.floor((remaining % 3600) / 60);
-  const statusClass = expired ? "expired" : full ? "full" : active ? "running" : "expired";
-  const statusText = expired ? "已过期" : full ? "满仓停产" : active ? "运行中" : "已停止";
+  const statusClass = expired ? "expired" : full ? "full" : "running";
+  const statusText = expired ? "已到期 · 停止生产" : full ? "满仓停产" : "运行中";
+  const renewCost = config ? Number(config.maintenanceCostISK) || 0 : 0;
+  const isk = ResourceRegistry.get(state, "currency:isk");
+  const enoughIskForRenew = isk >= renewCost;
   return {
     id:deployment.id,
-    type:deployment.type,
-    name:config ? config.name : deployment.type,
+    type:deployment.planetType,
+    planetType:deployment.planetType,
+    name:config ? config.name : deployment.planetType,
     icon:config ? config.icon : "🪐",
     output:config ? config.output : "未知产物",
     outputIcon:config ? ITEM_ICONS[config.output] || "📦" : "📦",
+    state:runState,
     active,
     expired,
     full,
@@ -1090,9 +1233,14 @@ function getPlanetDeploymentDisplayState(state, deployment, now) {
     remaining,
     timePercent:Math.min(100, Math.floor(elapsed / duration * 100)),
     timeWarning:remaining < 3600,
-    timeLeftText:expired ? "已过期" : hours > 0 ? `剩余 ${hours}h${minutes}m` : `剩余 ${minutes}m`,
+    timeLeftText:expired ? "已到期" : hours > 0 ? `剩余 ${hours}h${minutes}m` : `剩余 ${minutes}m`,
+    renewCost,
+    enoughIskForRenew,
+    showRenew:expired,
+    canRenew:expired && enoughIskForRenew,
     canCollect:storage > 0,
-    canRemove:storage <= 0
+    canDemolish:storage === 0,
+    canRemove:storage === 0
   };
 }
 
@@ -1109,14 +1257,28 @@ function getPlanetaryDisplayState(state, now, cargoCapacity) {
     canDeploy:capacity.usedSlots < capacity.slots,
     cargo:{ used:usedCargo, capacity:totalCargo, free:Math.max(0, totalCargo - usedCargo) },
     deployments:deployments.map(deployment => getPlanetDeploymentDisplayState(state, deployment, now)),
-    deployOptions:PLANET_TYPES.map(config => ({
-      ...config,
-      interval:getPlanetOutputIntervalFromState(state, config.type),
-      unlocked:capacity.level >= config.level,
-      enoughIsk:isk >= config.costISK,
-      enoughTrit:tritanium >= config.costTrit,
-      canDeploy:capacity.usedSlots < capacity.slots && capacity.level >= config.level && isk >= config.costISK && tritanium >= config.costTrit
-    }))
+    deployOptions:PLANET_TYPES.map(config => {
+      const constructionISK = Number(config.constructionCost && config.constructionCost.isk) || 0;
+      const constructionTrit = Number(config.constructionCost && config.constructionCost.resources && config.constructionCost.resources["mineral:三钛合金"]) || 0;
+      const maintenanceCostISK = Number(config.maintenanceCostISK) || 0;
+      return {
+        id:config.id,
+        type:config.id,
+        name:config.name,
+        icon:config.icon,
+        output:config.output,
+        level:config.level,
+        interval:getPlanetOutputIntervalFromState(state, config.id),
+        constructionISK,
+        constructionTrit,
+        maintenanceCostISK,
+        renewCost:maintenanceCostISK,
+        unlocked:capacity.level >= config.level,
+        enoughIsk:isk >= constructionISK,
+        enoughTrit:tritanium >= constructionTrit,
+        canDeploy:capacity.usedSlots < capacity.slots && capacity.level >= config.level && isk >= constructionISK && tritanium >= constructionTrit
+      };
+    })
   };
 }
 
@@ -1701,7 +1863,7 @@ function getStatisticsDisplayState(state) {
 
 function getNavigationDisplayState(page, view) {
   const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel" };
-  const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", combat:"combat-panel" };
+  const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", combat:"combat-panel" };
   const selectedPage = page || "skill";
   const selectedView = view || "mining";
   return {

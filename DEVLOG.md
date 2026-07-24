@@ -2,6 +2,33 @@
 
 > 2026-07-12 及以前的历史记录保留在根目录 `DEVLOG.md`。本文件仅记录 `eveidle-modular` 拆分版后续开发，根目录原始文件继续作为回滚基线。
 
+## 2026-07-24
+
+### 行星开发 Phase 1：旧档迁移与到期结算缺陷返修
+
+- **缺陷一（旧档吞档）**：`normalizePlanetaryState` 原实现遇到旧 `planetaryDeployments` 只建空容器不复制内容即删除旧数组，会永久丢失玩家旧基地。返修为完整迁移：`type`→`planetType`、`timeDeployed`→`deployedAt`、storage/progress/显式 active 原样保留、缺失 id 稳定分配 `planet_legacy_${idx}`、`capacity` 不进入新结构、新旧容器共存时按 id 去重合并（同 id 优先新版、缺失追加）、`nextId` 单调、迁移成功后才由调用方删除旧容器；不追收 ISK/三钛、深比较幂等。
+- **缺陷二（离线收益丢失）**：原顺序 normalize（超期即置 active=false）→ calculateOfflineGains（跳过 inactive）会丢掉 [lastSave, expiresAt] 收益。`normalizePlanetaryState(state, opts)` 两阶段化：`finalizeExpiry:false` 仅字段迁移绝不提前关停，`finalizeExpiry:true` 在离线结算后做到期最终化；`autoLoad` 与 `importData` 统一为「迁移 → calculateOfflineGains → 最终化」。
+- **缺陷三（在线最后段丢失）**：`planetaryTick` 原先 `now>=expiresAt` 直接 continue，丢弃 lastTick→expiresAt 最后一段。新增在线/离线共用纯函数 `computePlanetarySettlement`（夹紧 [deployedAt, expiresAt]、满仓丢弃残留进度、lastTick 不回退），tick 改为先结算 activeEnd=min(now, expiresAt) 再关停 + 单次 expired；`settleOfflinePlanets` 同步改用该纯函数。附带修复纯函数初版 durationMs 双重乘 1000 导致到期夹紧失效的缺陷（audit 区 U 抓获）。
+- 验收：`tools/audit-planetary.mjs` 删除「遗留容器只建不复制」错误断言，新增 ZA~ZH 八区（旧容器完整迁移/新旧去重合并/重复迁移幂等/离线跨到期精确产出 61 周期/autoLoad 顺序/importData 一致/在线晚到 tick 最后段 10 周期/防重复），经 `autoLoadOrder`/`importDataOrder` 集成入口按生产一致顺序真实驱动 `calculateOfflineGains`。**34 区 200 断言全 PASS**。13 条正式回归全 EXIT 0（第 12/13 条为 `simulate-destroyer-belts.mjs --assert-mixed-battleship` / `--assert-nullsec`，第 12 条首跑偶发段错误 139 复跑 0，属已知环境问题）。
+- 边界：未实装增强剂、未改行星费用/产量/interval/技能公式、未增基地升级、未碰 `js/render3d/**`、未 commit/push。
+
+### 增强剂系统 Phase 2A：数据/制造/在线离线/UI/审计实装
+
+- 实装增强剂系统 Phase 2A（仅制造侧，不含六槽装备/计时/效果——留待 Phase 2B）：`js/data/boosters.js` 30 配方/10 系列/3 品质/5 档战术材料/6 槽定义；`js/data/base.js` 新增 `boosterEngineering` 技能（Lv.1 起）；`js/core/state.js` 初始化 `gameState.boosters={inventory,active(六槽恒 null),lastTick}`；`js/core/persistence.js` 新增 `migrateBoosterState` 幂等迁移（补字段/清 NaN·负·零库存/六槽恒 null，双路接入 autoLoad/importData）；`js/core/resources.js` 注册 `booster:` 命名空间（pool 特判 `state.boosters.inventory`）；`js/systems/manufacturing.js` 增制造分支（效率 1+lvl*0.02、单瓶产出、XP、连续制造、材料不足安全停止）；`js/core/tick.js` 在线、`js/core/offline.js` 离线共用单瓶语义；`js/core/events.js` 新增 `booster:manufactured` / `boosters:manufactured`（批量） / `combat:tacticalMaterialDropped` 三契约；`combat.js` 战斗掉落 5 档战术材料。
+- UI：`js/ui/booster-render.js` 分类/品质筛选、配方网格、详情、库存卡片（中文名排序）、事件绑定；`js/ui/shell-render.js` 注册 `booster-panel`、`js/ui/render.js` 接入 updateUI/renderLoop、`index.html` 侧边栏「增强剂制造」+ 脚本（共 39 个）；纯显示态 `getBoosterManufacturingDisplayState` 全部字段建模。
+- 经济规则锁定：每瓶持续 180s（`BOOSTER_DURATION_MS=180000`）仅作数据常量，Phase 2A 不计时/不应用效果；解锁等级 普通 Lv.1/4/7/10/13/16/20/24/28/32 → 精工 Lv.35/39/43/47/51/55/59/63/67/71 → 传奇 Lv.60/64/68/72/76/80/84/88/92/96；配方成本=行星产物+战术材料/气体，各 2 项。
+- 验收：`tools/audit-boosters.mjs` 新建 A~ZB 共 28 区 658 断言全 PASS（数据30条/材料5档/技能/制造/在线离线一致/事件契约/迁移幂等/显示态/无Phase2B行为）；`tools/verify.mjs` 脚本数断言更新为 39、新增 audit-boosters 存在且调用真实系统哨兵、源级无 Phase 2B 行为检查，与行星哨兵同跑全 EXIT 0。
+- 边界：不实装六槽装备/计时扣除/效果应用；不修改行星 Phase1 费用/Action/迁移/到期结算；不修改采矿/考古/武器伤害/维修数值；不修改星带敌人强度/掉落池/LP/势力数据；不触碰 `js/render3d/**`；未 commit/push。
+
+### 行星开发 Phase 1：开发规则实装
+
+- 实装行星开发 Phase 1（仅开发规则，不含增强剂/行星基地升级）：`js/data/planets.js` 六行星正式费用结构与 `id` 重命名（原 `type`）；`js/core/actions.js` 四 Action（`deploy`/`collect`/`renew`/`demolish`）重写 + dispatch 路由；`js/core/events.js` 新增 5 个行星事件契约；`js/systems/planetary.js` 与 `js/core/offline.js` 字段重命名 + 到期单次 `planetary:expired`；`js/core/selectors.js` 三状态显示态；`js/core/persistence.js` 新增 `normalizePlanetaryState` 旧档迁移（双路接入 autoLoad/importData）；`js/ui/planetary-render.js` 三态卡片 + renew/demolish 处理器；`index.html` 部署弹窗注释更新。
+- 经济规则锁定：首次建设与重建均消耗 ISK + 三钛合金；续期只消耗 ISK（不再消耗三钛）；维护周期统一 24h（86400s）；到期后停产且不自动续期，需手动支付 ISK 续期并保留库存；主动拆除需先清空库存且**不返还任何资源**。
+- 槽位固定最多 5 颗；六类行星随行星开发等级 Lv.1/1/20/40/60/80 解锁。旧动作名 `redeploy`/`remove` 彻底移除，新增 `renew`/`demolish` 路由；全工程无升级系统、无升级按钮、无占位 `costISK`/`costTrit` 字段。
+- 旧档迁移：`normalizePlanetaryState` 幂等规范化（容器迁移、`type`→`planetType`、补 duration/lastTick/progress/storage、active 规范化、nextId 校正），安全回填 lastTick 不产生离线收益；autoLoad 内联迁移块替换为该调用，importData 迁移后接离线结算。
+- 验收：`tools/verify.mjs` 新增数据驱动哨兵（六费用精确值、24h、无升级字段、旧动作已移除、新路由存在、续期不读 constructionCost、拆除零返还）+ 修复旧 `type` 字段与集成块旧 API；`tools/audit-planetary.mjs` 新建 A~Z 共 26 区 176 断言全 PASS。全 12 条回归（verify / audit-planetary / audit-industrial-productivity / audit-equipment-enhancement / audit-ship-enhancement / audit-rigs / audit-archaeology-system / audit-archaeology-ships / simulate-archaeology-user-flow / calculate-ship-production-times --verify 与 --audit-mixed-battleship / simulate-destroyer-belts）全部 EXIT 0。
+- 增强剂（乙类 Buff）与行星基地升级按计划留待后续阶段，本阶段未实装；未修改任何已批准改装件数值、成功率公式、或 `js/render3d/**`。
+
 ## 2026-07-19
 
 ### 独立蓝图商店与首批混血驱逐舰

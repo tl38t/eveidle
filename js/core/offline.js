@@ -25,7 +25,7 @@ function showOfflineToast(seconds, gains) {
   const timeStr = min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
   const labels = {
     mining: "⛏ 采矿", refining: "🔥 冶炼", gasHarvesting: "☁️ 气体",
-    equipmentEngineering: "🔧 装备工程",
+    equipmentEngineering: "🔧 装备工程", boosterEngineering: "💉 增强剂制造",
     shipEngineering: "🚀 舰船工程", planetaryIndustry: "🪐 行星"
   };
   const detail = Object.entries(labels)
@@ -160,6 +160,22 @@ function getOfflineActionDescriptor() {
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
         emitOfflineGameEvent("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:cycles * recipe.output.qty, cycles, xp:cycles * recipe.xp });
         if (recipe.slot === "rig") emitOfflineGameEvent("rig:manufactured", { rigId:recipe.output.itemId, quantity:cycles * recipe.output.qty });
+      }
+    };
+  }
+
+  if (key === "boosterEngineering") {
+    // 增强剂离线制造（Phase 2A）：每瓶独立产 1；受离线时间/材料限制；不占货舱；
+    // 与在线同秒数产量一致；不消耗 180 秒、不应用效果；批量事件另发 boosters:manufactured。
+    const recipe = getRunningBoosterRecipe(); if (!recipe) return null;
+    return {
+      key, duration: recipe.time / getBoosterEfficiency(),
+      maxCycles: () => isBoosterRecipeUnlocked(recipe) ? getBoosterMaxCyclesFromState(gameState, recipe) : 0,
+      apply(cycles, gains) {
+        deductBoosterInputs(recipe, cycles);
+        applyBoosterOutput(recipe, cycles);
+        addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
+        emitOfflineGameEvent("boosters:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, quantity:cycles * recipe.output.qty, totalXp:cycles * recipe.xp, offline:true });
       }
     };
   }
@@ -332,36 +348,50 @@ function settleOfflinePlanets(seconds, gains) {
   const now = Date.now(); const offlineStart = now - seconds * 1000;
   const storageMax = getPlanetStorageMax();
   for (const deployment of gameState.planetary.deployments) {
-    if (!deployment.active) continue;
-    const deployedAt = deployment.deployedAt || offlineStart;
-    const expiresAt = deployedAt + (deployment.duration || 86400) * 1000;
-    const activeStart = Math.max(offlineStart, deployedAt);
-    const activeEnd = Math.min(now, expiresAt);
-    const activeSeconds = Math.max(0, (activeEnd - activeStart) / 1000);
-    const interval = getPlanetOutputInterval(deployment.type);
-    const totalProgress = (deployment.progress || 0) + activeSeconds;
-    let cycles = Math.floor(totalProgress / interval);
-    cycles = Math.min(cycles, Math.max(0, storageMax - deployment.storage));
-    if (cycles > 0) {
-      deployment.storage += cycles;
-      deployment.progress = deployment.storage >= storageMax ? 0 : totalProgress - cycles * interval;
-      gameState.skills.planetaryIndustry.xp += cycles;
-      gains.planetaryIndustry += cycles;
+    if (!deployment.active) continue; // 已到期：跳过，且不重复触发 expired
+    const interval = getPlanetOutputInterval(deployment.planetType);
+    const deployedAt = Number(deployment.deployedAt) || 0;
+    const durationMs = (Number(deployment.duration) > 0 ? Number(deployment.duration) : 86400) * 1000;
+
+    // 离线区间从离线起点（= now - 离线秒数，受 MAX_OFFLINE_SECONDS 上限约束）起算，
+    // 与在线共用同一结算纯函数；夹紧到 [deployedAt, expiresAt]
+    const res = computePlanetarySettlement({
+      fromTime: offlineStart,
+      toTime: now,
+      progress: deployment.progress,
+      storage: deployment.storage,
+      interval,
+      storageMax,
+      deployedAt,
+      durationMs
+    });
+    deployment.progress = res.progress;
+    deployment.storage = res.storage;
+    deployment.lastTick = res.endSettled; // = min(now, expiresAt)，不越过到期点
+    if (res.cycles > 0) {
+      gameState.skills.planetaryIndustry.xp += res.cycles;
+      gains.planetaryIndustry += res.cycles;
       gameState._dirty = true;
-      const config = PLANET_TYPES.find(planet => planet.type === deployment.type);
+      const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
       emitOfflineGameEvent("planetary:completed", {
         deploymentId:deployment.id,
-        planetType:deployment.type,
-        resourceId:"planetary:" + (config ? config.output : deployment.type),
-        quantity:cycles,
-        cycles,
-        xp:cycles
+        planetType:deployment.planetType,
+        resourceId:"planetary:" + (config ? config.output : deployment.planetType),
+        quantity:res.cycles,
+        cycles:res.cycles,
+        xp:res.cycles
       });
-    } else if (deployment.storage < storageMax) {
-      deployment.progress = totalProgress;
     }
-    deployment.lastTick = now;
-    if (now >= expiresAt) deployment.active = false;
+    const expiresAt = deployedAt + durationMs;
+    // 离线只结算到到期时刻；到期精确停产、只触发一次 expired（online tick 会在 !active 处跳过，不重复）
+    if (now >= expiresAt) {
+      deployment.active = false;
+      emitOfflineGameEvent("planetary:expired", {
+        deploymentId:deployment.id,
+        planetType:deployment.planetType,
+        expiredAt:expiresAt
+      });
+    }
   }
   if (gains.planetaryIndustry > 0) {
     checkLevelUp("planetaryIndustry", {
@@ -376,7 +406,7 @@ function applyOfflineGains(rawSeconds, context) {
   const seconds = Math.min(Math.max(0, rawSeconds || 0), MAX_OFFLINE_SECONDS);
   const gains = {
     mining: 0, refining: 0, shipEngineering: 0, gasHarvesting: 0,
-    equipmentEngineering: 0, planetaryIndustry: 0
+    equipmentEngineering: 0, boosterEngineering: 0, planetaryIndustry: 0
   };
   if (seconds <= 5) return gains;
   const previousBatch = _offlineEventBatch;

@@ -22,6 +22,7 @@ const SKILL_DESC = {
   combat: "由最高攻击技能与最高防御技能共同决定，解锁更高安全等级星带",
   drones: "（占位）无人机伤害加成",
   equipmentEngineering: "制造舰船装备、燃料与各类弹药",
+  boosterEngineering: "制造采矿、考古与战斗增强剂（提升等级加快制造速度）",
   rigEngineering: "制造舰船改装件",
   reverseEngineering: "（占位）解析残骸获取蓝图碎片"
 };
@@ -220,6 +221,10 @@ function updateUI(now) {
       const eep = document.getElementById("equipeng-panel"); if (eep) eep.style.display = "";
       const sc = document.querySelector('.skill-current'); if (sc) sc.style.display = "none";
       renderEquipEngPage();
+    } else if (viewKey === "boosterEngineering") {
+      const bp = document.getElementById("booster-panel"); if (bp) bp.style.display = "";
+      const sc = document.querySelector('.skill-current'); if (sc) sc.style.display = "none";
+      renderBoosterPage(renderTime);
     } else if (viewKey === "combat") {
       const combatPanel = document.getElementById("combat-panel");
       if (combatPanel) combatPanel.style.display = "";
@@ -346,6 +351,10 @@ let _lastPlanetFrame = 0;
     else if (currentPage === "skill" && currentView === key && key === "equipmentEngineering") {
       drawSkillBar(document.getElementById("bar-equipeng"), pct, "purple");
       const e = document.getElementById("equipeng-eta"); if (e) e.textContent = eta;
+    }
+    else if (currentPage === "skill" && currentView === key && key === "boosterEngineering") {
+      drawSkillBar(document.getElementById("bar-booster"), pct, "purple");
+      const e = document.getElementById("booster-eta"); if (e) e.textContent = eta;
     }
   }
 

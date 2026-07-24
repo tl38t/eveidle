@@ -54,13 +54,19 @@ function formatCompact(number) {
 const planetVisualOffsets = new Map();
 
 function renderPlanetaryCard(card) {
-  return `<div class="planet-card${card.expired ? " expired" : ""}" id="planet-card-${card.id}">
+  // 续期按钮：仅在已到期时可点（且 ISK 足够）；运行中禁用（不可反复续期）。已到期只显示 ISK 续期费，不显示三钛。
+  const renewBtn = card.showRenew
+    ? `<button class="btn-redeploy planet-renew-btn" data-action="renew" data-id="${card.id}" ${card.canRenew ? "" : 'disabled style="opacity:.4;"'} title="支付 ISK 续期 24 小时">🔄 续期 (ISK ${formatCompact(card.renewCost)})</button>`
+    : `<button class="btn-redeploy planet-renew-btn" data-action="renew" data-id="${card.id}" disabled style="opacity:.4;" title="运行中无需续期（续期费 ISK ${formatCompact(card.renewCost)}）">🔄 续期</button>`;
+  // 拆除按钮：storage≠0 时禁用（禁止静默销毁库存）
+  const demolishBtn = `<button class="btn-remove-planet planet-remove-btn" data-action="demolish" data-id="${card.id}" ${card.canDemolish ? "" : 'disabled style="opacity:.4;" title="请先收取行星库存再拆除"'}>✕ 拆除</button>`;
+  return `<div class="planet-card${card.expired ? " expired" : ""}" id="planet-card-${card.id}" data-expired="${card.expired ? 1 : 0}">
     <div class="planet-header"><canvas class="planet-canvas" id="pcanvas-${card.id}" width="60" height="60"></canvas><span class="planet-name">${card.name}</span><span class="planet-status ${card.statusClass}" id="planet-status-${card.id}">${card.statusText}</span></div>
     <div class="planet-output"><span>产物：</span><span class="po-icon">${card.outputIcon}</span><span class="po-name">${card.output}</span></div>
     <div class="planet-storage-row"><span class="ps-label">库存</span><div class="progress-bar"><div class="fill planet-storage-fill" id="planet-storage-fill-${card.id}" style="width:${card.storagePercent}%;"></div></div><span class="ps-value" id="planet-storage-value-${card.id}">${card.storage} / ${card.storageMax}</span></div>
     <div class="planet-prod-row" id="planet-prod-row-${card.id}"${card.showOutputProgress ? "" : ' style="display:none;"'}><span class="ps-label">产出</span><div class="progress-bar"><div class="fill planet-prod-fill" id="planet-prod-${card.id}" style="width:${card.outputPercent}%;"></div></div><span class="ps-value" id="planet-eta-${card.id}">~${card.outputEta.toFixed(1)}s</span></div>
     <div class="planet-time-row"><span class="pt-label">周期</span><div class="progress-bar"><div class="fill planet-time-fill${card.timeWarning ? " warn" : ""}" id="planet-time-fill-${card.id}" style="width:${card.timePercent}%;"></div></div><span class="pt-value" id="planet-time-value-${card.id}">${card.timeLeftText}</span></div>
-    <div class="planet-actions"><button class="btn primary planet-collect-btn" data-action="collect" data-id="${card.id}" ${card.canCollect ? "" : 'disabled style="opacity:.4;"'}>📥 收取</button><button class="btn-redeploy planet-redeploy-btn" data-action="redeploy" data-id="${card.id}">🔄 续期</button><button class="btn-remove-planet planet-remove-btn" data-action="remove" data-id="${card.id}">✕ 撤除</button></div>
+    <div class="planet-actions"><button class="btn primary planet-collect-btn" data-action="collect" data-id="${card.id}" ${card.canCollect ? "" : 'disabled style="opacity:.4;"'}>📥 收取</button>${renewBtn}${demolishBtn}</div>
   </div>`;
 }
 
@@ -93,6 +99,8 @@ function updatePlanetaryLiveUI(now) {
   const deploy = document.getElementById("btn-deploy-planet"); if (deploy) deploy.style.display = display.canDeploy ? "" : "none";
   for (const card of display.deployments) {
     const element = document.getElementById("planet-card-" + card.id); if (!element) return renderPlanetaryPage(renderTime);
+    // 运行 ↔ 到期 状态切换时按钮集合会变（续期按钮显隐/文案），强制整卡重绘保证正确
+    if (element.dataset.expired !== (card.expired ? "1" : "0")) return renderPlanetaryPage(renderTime);
     element.classList.toggle("expired", card.expired);
     const status = document.getElementById("planet-status-" + card.id); if (status) { status.className = "planet-status " + card.statusClass; status.textContent = card.statusText; }
     const storageFill = document.getElementById("planet-storage-fill-" + card.id); if (storageFill) storageFill.style.width = card.storagePercent + "%";
@@ -101,6 +109,8 @@ function updatePlanetaryLiveUI(now) {
     const timeFill = document.getElementById("planet-time-fill-" + card.id); if (timeFill) { timeFill.style.width = card.timePercent + "%"; timeFill.className = "fill planet-time-fill" + (card.timeWarning ? " warn" : ""); }
     const timeValue = document.getElementById("planet-time-value-" + card.id); if (timeValue) timeValue.textContent = card.timeLeftText;
     const collect = element.querySelector('[data-action="collect"]'); if (collect) { collect.disabled = !card.canCollect; collect.style.opacity = card.canCollect ? "" : "0.4"; }
+    const renew = element.querySelector('[data-action="renew"]'); if (renew && card.showRenew) { renew.disabled = !card.canRenew; renew.style.opacity = card.canRenew ? "" : "0.4"; }
+    const demolish = element.querySelector('[data-action="demolish"]'); if (demolish) { demolish.disabled = !card.canDemolish; demolish.style.opacity = card.canDemolish ? "" : "0.4"; }
   }
   return display;
 }
@@ -118,7 +128,7 @@ function updatePlanetaryAnimationFrame(frameTime, elapsedFrames) {
 }
 
 function planetaryActionMessage(result) {
-  const messages = { "level-locked":"需要行星开发 Lv." + (result.level || 1), "no-slots":"没有空余槽位！", "insufficient-isk":"ISK 不足！", "insufficient-tritanium":"三钛合金不足！", "cargo-full":"主仓库空间不足！", "storage-not-empty":"请先收取行星库存，再撤除该行星。" };
+  const messages = { "level-locked":"需要行星开发 Lv." + (result.level || 1), "no-slots":"没有空余槽位！", "insufficient-isk":"ISK 不足！", "insufficient-tritanium":"三钛合金不足！", "cargo-full":"主仓库空间不足！", "storage-not-empty":"请先收取行星库存，再拆除该行星。", "already-active":"该行星仍在运行中，无需续期。", "empty":"没有可收取的库存。" };
   return messages[result.reason] || "操作失败";
 }
 
@@ -135,19 +145,19 @@ function collectPlanet(id) {
   return result.changed;
 }
 
-function redeployPlanet(id) {
-  const result = dispatchGameAction(gameState, { type:"planetary/redeploy", id }, Date.now());
+function renewPlanet(id) {
+  const result = dispatchGameAction(gameState, { type:"planetary/renew", id }, Date.now());
   if (!result.changed) { alert(planetaryActionMessage(result)); return false; }
   renderPlanetaryPage(); return true;
 }
 
-function removePlanet(id) {
+function demolishPlanet(id) {
   const deployment = gameState.planetary.deployments.find(item => item.id === id);
   if (!deployment) return false;
-  if ((deployment.storage || 0) > 0) { alert("请先收取行星库存，再撤除该行星。"); return false; }
-  const config = PLANET_TYPES.find(planet => planet.type === deployment.type);
-  if (!confirm(`确定撤除${config ? config.name : "该行星"}吗？部署费用不会返还。`)) return false;
-  const result = dispatchGameAction(gameState, { type:"planetary/remove", id }, Date.now());
+  if ((deployment.storage || 0) > 0) { alert("请先收取行星库存，再拆除该行星。"); return false; }
+  const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
+  if (!confirm(`确定永久拆除${config ? config.name : "该行星"}吗？\n\n· 建设投入（ISK + 三钛合金）不会返还\n· 已到期停产的行星拆除同样不返还\n· 若日后重建，需再次支付全额建设费用`)) return false;
+  const result = dispatchGameAction(gameState, { type:"planetary/demolish", id }, Date.now());
   if (result.changed) { planetVisualOffsets.delete(id); renderPlanetaryPage(); }
   return result.changed;
 }
@@ -156,7 +166,7 @@ function showDeployModal() {
   const overlay = document.getElementById("deploy-modal"); const options = document.getElementById("deploy-options");
   if (!overlay || !options) return;
   const display = getPlanetaryDisplayState(gameState, Date.now(), getCargoCapacity());
-  options.innerHTML = display.deployOptions.map(option => `<div class="deploy-option${option.unlocked ? "" : " locked"}"><div class="do-info"><span class="do-name">${option.icon} ${option.name}</span><span class="do-detail">产出：${option.output} · 间隔 ${option.interval.toFixed(1)}s</span></div><div class="do-cost">${option.unlocked ? `ISK ${option.costISK} · 三钛 ${option.costTrit}<br><button class="btn primary" style="margin-top:4px;font-size:11px;" data-type="${option.type}">部署</button>` : `🔒 需 Lv.${option.level}`}</div></div>`).join("");
+  options.innerHTML = display.deployOptions.map(option => `<div class="deploy-option${option.unlocked ? "" : " locked"}"><div class="do-info"><span class="do-name">${option.icon} ${option.name}</span><span class="do-detail">产出：${option.output} · 间隔 ${option.interval.toFixed(1)}s · 维护 ISK ${formatCompact(option.maintenanceCostISK)}/24h</span></div><div class="do-cost">${option.unlocked ? `建设 ISK ${formatCompact(option.constructionISK)} · 三钛 ${option.constructionTrit}<br><button class="btn primary" style="margin-top:4px;font-size:11px;" data-type="${option.type}">建设</button>` : `🔒 需 Lv.${option.level}`}</div></div>`).join("");
   overlay.classList.remove("hidden");
 }
 
@@ -399,7 +409,7 @@ function _drawPlanetSphere(canvas, type, scrollOffset) {
   const grid = document.getElementById("planet-grid"); if (grid) grid.addEventListener("click", event => {
     const button = event.target.closest("[data-action]"); if (!button) return;
     if (button.dataset.action === "collect") collectPlanet(button.dataset.id);
-    else if (button.dataset.action === "redeploy") redeployPlanet(button.dataset.id);
-    else if (button.dataset.action === "remove") removePlanet(button.dataset.id);
+    else if (button.dataset.action === "renew") renewPlanet(button.dataset.id);
+    else if (button.dataset.action === "demolish") demolishPlanet(button.dataset.id);
   });
 })();

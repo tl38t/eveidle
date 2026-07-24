@@ -13,7 +13,7 @@ const ORE_TO_MINERAL = {
   "艾克诺岩": { mineral: "超噬矿",       level: 85 }
 };
 
-// ---- 18 个技能初始状态 ----
+// ---- 技能初始状态 ----
 const INITIAL_SKILLS = {
   mining:                  { lvl: 1, xp: 0 },
   planetaryIndustry:       { lvl: 1, xp: 0 },
@@ -22,6 +22,7 @@ const INITIAL_SKILLS = {
   shipEngineering:         { lvl: 1, xp: 0 },
   equipmentEngineering:    { lvl: 1, xp: 0 },
   rigEngineering:          { lvl: 1, xp: 0 },
+  boosterEngineering:      { lvl: 1, xp: 0 }, // 增强剂系统 Phase 2A：增强剂制造独立技能，默认 Lv.1
   reverseEngineering:      { lvl: 1, xp: 0 },
   cargoManagement:         { lvl: 1, xp: 0 },
   // 战斗攻击技能（三系独立）
