@@ -18,6 +18,7 @@
 //   RibbonGenerator.js    发光能源缝
 //   WeaponGenerator.js    武器/护盾
 //   EngineGenerator.js    引擎舱 + heatPoints Anchor
+//   HeroStructureGenerator.js  大船专属结构（舰桥塔/桅阵/外挂舱/脊甲，仅巡洋/战列）
 //   Utils.js              几何工具
 //   Materials.js          调色板与材质工厂
 import * as THREE from "three";
@@ -27,6 +28,7 @@ import { createShipContext } from "./ShipContext.js";
 import { generateHull } from "./HullGenerator.js";
 import { applyCivilization } from "./civilization/CivilizationModifier.js";
 import { generateArmor } from "./ArmorGenerator.js";
+import { generateArmorBlocks } from "./ArmorBlockGenerator.js";
 import { generatePanels } from "./PanelGenerator.js";
 
 import { generateGrooves } from "./GrooveGenerator.js";
@@ -34,25 +36,50 @@ import { generateHeatSinks } from "./HeatSinkGenerator.js";
 import { generateHatches } from "./HatchGenerator.js";
 import { generateVents } from "./VentGenerator.js";
 import { generateRibbons } from "./RibbonGenerator.js";
+import { generateBloodVeins } from "./BloodVeinGenerator.js";
+import { generateAngelVeins } from "./AngelVeinGenerator.js";   // 战列舰血袭者专属血祭纹路
 import { generateWeapons } from "./WeaponGenerator.js";
 import { generateEngines } from "./EngineGenerator.js";
+import { generateHeroStructures } from "./HeroStructureGenerator.js";
+import { generateSensors } from "./SensorGenerator.js";        // P5 大型组件：传感器阵列
+import { generateDroneBay } from "./DroneBayGenerator.js";     // P5 大型组件：无人机机库
+import { generateFunctionalMounts } from "./FunctionalMountGenerator.js"; // 功能舰签名挂载（采矿臂/采气采集器/扫描阵列/探针）
 
 export function buildShip(spec = {}) {
   const ctx = createShipContext(spec);
 
   // ── Anchor Bus：预计算引擎位置（Phase 4 Commit 3）──
   const hull = ctx.profile.hull;
-  let engineXs;
-  if (hull.body === "gunboat") engineXs = [-0.9 * ctx.s, 0.9 * ctx.s];
-  else if (hull.engines === 3) engineXs = [-0.65 * ctx.s, 0, 0.65 * ctx.s];
-  else engineXs = [-0.5 * ctx.s, 0.5 * ctx.s];
+  if (ctx.civ && ctx.civ.hullType === "frame") {
+    // Structure 棱柱尾：三引擎三角簇（品字形），同轴于船体中心线（y=0），落在尾部开放框架环内。
+    // 原单引擎对大船显小；改成「三个一捆」后整体推进器组明显更大，且呼应骨架外露语言。
+    // 尾环半径与 SkeletalHull 一致：baseR*frameExp(0.85)*尾部收缩减率(约0.45)*1.12 ≈ baseR*0.43
+    const baseR = ctx.hullProfile.mid * ctx.s * 0.95;   // 与 SkeletalHull.baseR 一致
+    const tailRingR = baseR * 0.43;                     // ≈ SkeletalHull 尾部外框环半径
+    const d = tailRingR * 0.52;                          // 三角簇顶点到中心距离
+    const er = tailRingR * 0.42;                          // 单个引擎半径（簇外接≈d+er<tailRingR）
+    const ez = ctx.L * 0.47;                             // 对齐尾环(z=0.46L)略靠前
+    // 品字形：上1 + 下2（y 轴向上为正）
+    const tri = [[0, d], [-d * 0.87, -d * 0.5], [d * 0.87, -d * 0.5]];
+    ctx._engineHeatPoints = tri.map(([px, py]) => ({
+      x: px,
+      y: py,                                             // 同轴于中心线，三引擎在尾环内品字排布
+      z: ez,
+      radius: er
+    }));
+  } else {
+    let engineXs;
+    if (hull.body === "gunboat") engineXs = [-0.9 * ctx.s, 0.9 * ctx.s];
+    else if (hull.engines === 3) engineXs = [-0.65 * ctx.s, 0, 0.65 * ctx.s];
+    else engineXs = [-0.5 * ctx.s, 0.5 * ctx.s];
 
-  ctx._engineHeatPoints = engineXs.map(ex => ({
-    x: ex,
-    y: -0.08 * ctx.s,
-    z: ctx.L * 0.5,
-    radius: 0.24 * ctx.s
-  }));
+    ctx._engineHeatPoints = engineXs.map(ex => ({
+      x: ex,
+      y: -0.08 * ctx.s,
+      z: ctx.L * 0.5,
+      radius: 0.24 * ctx.s
+    }));
+  }
 
   // ── Anchor Bus：预计算通风/冷却格栅位置（Phase 4 Commit 4）──
   // Vent 依附引擎热区（冷却进出）和船体中段（压力管理）。
@@ -101,38 +128,79 @@ export function buildShip(spec = {}) {
   ship.userData = { spec: ctx.spec, role: ctx.role, family: ctx.family, palette: ctx.palette };
 
   // ── 依次组装各子系统 ──
-  // Phase 4 完成版编排顺序（结构层 → 机械层 → 能源层 → 功能层）：
-  //   Hull → Armor → Panel → Groove → HeatSink → Hatch → Vent → Ribbon → Weapon → Engine
+  // Phase 5 Rework 编排顺序（结构层 → 机械层 → 能源层 → 功能层）：
+  //   Hull → Civ → Armor → ArmorBlock → Panel → Groove → HeatSink → Hatch → Vent → Ribbon → Weapon → Engine
+  //   ArmorBlockGenerator 仅 Player Armor 路线生成（其他族返回空 Group）
+  //   Sansha（modular）= 笼子+立方体 主体，启用：武器（顶点炮塔）/ 护盾泡 /
+  //     面板（笼面五边形板）/ 能量线（核心→笼供能束）/ P5 大型组件（sensors/droneBay，贴笼面）
+  //     禁用：Armor / ArmorBlock / Groove / HeatSink / Hatch / Vent / Engine / Hero / 血脉纹路
+  //   功能舰（industrial / archaeology）= 自定义功能船体 + 自绘表面细节 + 签名挂载；
+  //     与 modular 同范式禁用依赖 lathe 包络的 surface generator（会浮空/被体腔吸收），
+  //     并禁用 Sensors/DroneBay（同样依赖 lathe 表面采样），改由 FunctionalMountGenerator 提供识别度。
+  const isModularShip = ctx.civ && ctx.civ.hullType === "modular";
+  const isUtilityShip = ctx.civ && (ctx.civ.hullType === "industrial" || ctx.civ.hullType === "archaeology");
   const parts = [];
 
   // 结构层
   const hullGroup = generateHull(ctx);
   const civGroup = applyCivilization(hullGroup, ctx);
   parts.push(civGroup);
-  parts.push(generateArmor(ctx));
 
-  // Panel：产出 panelInfos Anchor 供 HatchGenerator 消费
-  const panelGroup = generatePanels(ctx);
-  parts.push(panelGroup);
-  if (panelGroup.userData && panelGroup.userData.panelInfos) {
-    ctx._panelInfos = panelGroup.userData.panelInfos;
+  if (!isModularShip && !isUtilityShip) {
+    parts.push(generateArmor(ctx));
+    parts.push(generateArmorBlocks(ctx));   // Phase 5 Rework：External Armor Blocks（仅 Armor 路线）
+  }
+
+  // Panel：产出 panelInfos Anchor 供 HatchGenerator 消费（sansha 分支 = 笼面五边形板）。
+  //   功能舰自绘装甲板（IndustrialHull/ArchaeologyHull），跳过通用 Panel（其默认路径依赖 lathe 包络）。
+  if (!isUtilityShip) {
+    const panelGroup = generatePanels(ctx);
+    parts.push(panelGroup);
+    if (panelGroup.userData && panelGroup.userData.panelInfos) {
+      ctx._panelInfos = panelGroup.userData.panelInfos;
+    }
   }
 
   // 机械层（Surface Functional Layer — Phase 4 完整）
-  parts.push(generateGrooves(ctx));
-  parts.push(generateHeatSinks(ctx));
-  parts.push(generateHatches(ctx));
-  parts.push(generateVents(ctx));   // Phase 4 Commit 4 新增
+  if (!isModularShip && !isUtilityShip) parts.push(generateGrooves(ctx));
+  if (!isModularShip && !isUtilityShip) parts.push(generateHeatSinks(ctx));
+  if (!isModularShip && !isUtilityShip) {
+    parts.push(generateHatches(ctx));
+    parts.push(generateVents(ctx));   // Phase 4 Commit 4 新增
+  }
 
   // 能源层
-  parts.push(generateRibbons(ctx));
+  if (!isUtilityShip) parts.push(generateRibbons(ctx));         // sansha 分支 = 核心→笼子供能束
+  if (!isModularShip && !isUtilityShip) {
+    parts.push(generateBloodVeins(ctx));   // 战列舰血袭者专属血祭纹路（hero 元素）
+    parts.push(generateAngelVeins(ctx));   // 巡洋/战列 Angel 冰蓝脉纹（hero 元素）
+  }
 
-  // 功能层
+  // 功能层（护盾泡对所有舰种统一；战斗炮塔仅六族生成，功能舰由 FunctionalMountGenerator 提供挂载）
   parts.push(generateWeapons(ctx));
 
-  // Engine：从 ctx._engineHeatPoints 读取引擎位置
-  const engineGroup = generateEngines(ctx);
-  parts.push(engineGroup);
+  if (!isModularShip) {
+    // Engine：从 ctx._engineHeatPoints 读取引擎位置（功能舰走默认引擎分支）
+    parts.push(generateEngines(ctx));
+
+    if (!isUtilityShip) {
+      // 大船专属结构层（仅巡洋/战列生成舰桥塔/桅阵/外挂舱/脊甲）
+      parts.push(generateHeroStructures(ctx));
+    }
+  }
+
+  // ── P5 大型组件（六族通用，Anchor Bus 挂载；严格 X 镜像对称）──
+  //   sensors / droneBay 均消费 hull 表面采样（sansha 用笼面），
+  //   不依赖 Engine/Panel 等上游 Anchor，故对所有种族统一启用。
+  //   （radar / commArray 已于 2026-07-23 移除——视觉不佳，用户决定删除）
+  //   功能舰禁用（依赖 lathe 表面采样会浮空），改由 FunctionalMountGenerator 提供扫描阵列/探针/采矿臂。
+  if (!isUtilityShip) {
+    parts.push(generateSensors(ctx));
+    parts.push(generateDroneBay(ctx));
+  } else {
+    // 功能舰签名挂载（采矿激光臂 / 采气采集器 / 指挥天线 / 扫描阵列 / 探针发射舱）
+    parts.push(generateFunctionalMounts(ctx));
+  }
 
   for (const part of parts) ship.add(part);
 

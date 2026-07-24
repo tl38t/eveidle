@@ -26,15 +26,17 @@ export function generateHatches(ctx) {
   const panelInfos = _panelInfos || [];
 
   // Phase 5 C3-A：hatchDensity 控制舱门出现概率
-  const hatchChance = 0.7 * ctx.style.hatchDensity;
+  // Phase 5 Rework：hatchSize 控制舱门尺寸倍率（Armor=2.0 巨大入口）
+  const hatchChance = Math.min(1.0, 0.7 * ctx.style.hatchDensity); // clamp 防止 >1.0
+  const sizeMul = ctx.style.hatchSize || 1.0;
 
   for (const pi of panelInfos) {
     // ── 舱门出现概率检查 ──
     if (rng() >= hatchChance) continue;
 
-    // ── 舱门尺寸：面板的 40%~55%，体现"人类尺度" ──
-    const hw = pi.w * 0.42;
-    const hd = pi.d * 0.55;
+    // ── 舱门尺寸：面板的 40%~55%，体现"人类尺度"（Armor 用 sizeMul 放大）──
+    const hw = pi.w * 0.42 * sizeMul;
+    const hd = pi.d * 0.55 * sizeMul;
     const ht = 0.018 * s; // 薄，略凸出面板表面
 
     // ── 向外偏移：沿面板法线方向 ──

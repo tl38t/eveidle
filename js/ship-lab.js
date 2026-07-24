@@ -39,8 +39,7 @@ const key = new THREE.DirectionalLight(0xfff1d7, 2.4); key.position.set(12, 18, 
 const rim = new THREE.DirectionalLight(0x58bfff, 1.5); rim.position.set(-12, 5, -14); scene.add(rim);
 const accent = new THREE.PointLight(0x48c2ff, 55, 100); accent.position.set(0, 6, 10); scene.add(accent);
 
-const grid = new THREE.GridHelper(80, 40, 0x24516b, 0x142735); grid.material.transparent = true; grid.material.opacity = 0.28;
-grid.rotation.x = Math.PI / 2; grid.position.z = 7; scene.add(grid);
+// GridHelper 已移除（旋转后竖直穿过舰船中心，视觉干扰）
 const starData = [];
 for (let i = 0; i < 650; i++) {
   const a = Math.random() * Math.PI * 2; const p = Math.acos(2 * Math.random() - 1); const r = 72 + Math.random() * 28;
@@ -56,7 +55,10 @@ function normalizeSeed(raw) {
 }
 function readControls() { return { anchor: ui.anchor.value, race: ui.race.value, shipClass: ui.shipClass.value, seed: normalizeSeed(ui.seed.value) }; }
 function applyControls(item) { ui.anchor.value = item.anchor; ui.race.value = item.race; ui.shipClass.value = item.shipClass; ui.seed.value = String(item.seed); }
-function makeSpec(item) { return { id: "ship-lab-" + item.anchor + "-" + item.shipClass, anchor: item.anchor, race: item.race, line: item.race, hull: item.shipClass, seed: item.seed, faction: item.race, family: ANCHORS[item.anchor]?.family || "shield", weapon: "laser" }; }
+function makeSpec(item) {
+  const deckStyle = new URLSearchParams(location.search).get("deck") || "full";
+  return { id: "ship-lab-" + item.anchor + "-" + item.shipClass, anchor: item.anchor, race: item.race, line: item.race, hull: item.shipClass, seed: item.seed, faction: item.race, family: ANCHORS[item.anchor]?.family || "shield", weapon: "laser", deckStyle };
+}
 
 function disposeObject(root) {
   const geometries = new Set(); const materials = new Set();

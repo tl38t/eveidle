@@ -15,6 +15,12 @@ const ENEMY_DATABASE = {
       siege_battleship:{ name:"天使攻城战列舰", level:60, kind:"normal", icon:"👹", hp:{shield:5400,armor:2160,structure:1350}, hit:170,dodge:45,baseDamage:930, iskDrop:2000,xpDrop:120 },
       marauder_battleship:{ name:"天使掠袭战列舰", level:65, kind:"elite", icon:"👹", hp:{shield:12420,armor:4860,structure:2700}, hit:210,dodge:60,baseDamage:1395, iskDrop:6000,xpDrop:360 },
       war_master:{ name:"天使战争主宰", level:70, kind:"boss", icon:"👺", hp:{shield:42120,armor:1890,structure:810}, hit:270,dodge:70,baseDamage:2970, iskDrop:16000,xpDrop:1080 }
+      , frontier_capital:{ name:"天使边疆旗舰", level:80, kind:"normal", icon:"👹", hp:{shield:15000,armor:6000,structure:3750}, hit:310,dodge:65,baseDamage:1800, iskDrop:4000,xpDrop:200 }
+      , domination_capital:{ name:"天使统治旗舰", level:85, kind:"elite", icon:"👹", hp:{shield:34500,armor:13500,structure:7500}, hit:350,dodge:75,baseDamage:2700, iskDrop:12000,xpDrop:600 }
+      , outer_reach_overseer:{ name:"天使外环督军", level:90, kind:"boss", icon:"👺", hp:{shield:117000,armor:5250,structure:2250}, hit:400,dodge:85,baseDamage:5700, iskDrop:32000,xpDrop:1800 }
+      , abyssal_supercapital:{ name:"天使深渊超级旗舰", level:90, kind:"normal", icon:"👹", hp:{shield:27000,armor:10800,structure:6750}, hit:380,dodge:75,baseDamage:2900, iskDrop:8000,xpDrop:320 }
+      , seraph_supercapital:{ name:"天使炽天超级旗舰", level:95, kind:"elite", icon:"👹", hp:{shield:62100,armor:24300,structure:13500}, hit:425,dodge:85,baseDamage:4350, iskDrop:24000,xpDrop:960 }
+      , deep_domain_overlord:{ name:"天使深域战争领主", level:99, kind:"boss", icon:"👺", hp:{shield:210600,armor:9450,structure:4050}, hit:480,dodge:95,baseDamage:9000, iskDrop:64000,xpDrop:2880 }
     }
   },
   blood: {
@@ -32,6 +38,12 @@ const ENEMY_DATABASE = {
       iron_battleship:{ name:"血袭者铁血战列舰", level:60, kind:"normal", icon:"🧛", hp:{shield:2106,armor:5265,structure:1317}, hit:180,dodge:40,baseDamage:840, iskDrop:2000,xpDrop:120 },
       apostle_battleship:{ name:"血袭者使徒战列舰", level:65, kind:"elite", icon:"🧛", hp:{shield:4740,armor:12111,structure:2634}, hit:220,dodge:55,baseDamage:1260, iskDrop:6000,xpDrop:360 },
       blood_sovereign:{ name:"血袭者鲜血君王", level:70, kind:"boss", icon:"🧛‍♂️", hp:{shield:1842,armor:41067,structure:789}, hit:280,dodge:65,baseDamage:2570, iskDrop:16000,xpDrop:1080 }
+      , covenant_capital:{ name:"血袭者盟约旗舰", level:80, kind:"normal", icon:"🧛", hp:{shield:5850,armor:14625,structure:3656}, hit:320,dodge:60,baseDamage:1620, iskDrop:4000,xpDrop:200 }
+      , apostolic_capital:{ name:"血袭者使徒旗舰", level:85, kind:"elite", icon:"🧛", hp:{shield:13163,armor:33638,structure:7313}, hit:360,dodge:70,baseDamage:2430, iskDrop:12000,xpDrop:600 }
+      , outer_reliquary_overseer:{ name:"血袭者外环圣主", level:90, kind:"boss", icon:"🧛‍♂️", hp:{shield:5119,armor:114075,structure:2194}, hit:410,dodge:80,baseDamage:5130, iskDrop:32000,xpDrop:1800 }
+      , abyssal_blood_supercapital:{ name:"血袭者深渊超级旗舰", level:90, kind:"normal", icon:"🧛", hp:{shield:10530,armor:26325,structure:6581}, hit:390,dodge:70,baseDamage:2610, iskDrop:8000,xpDrop:320 }
+      , crimson_supercapital:{ name:"血袭者深红超级旗舰", level:95, kind:"elite", icon:"🧛", hp:{shield:23693,armor:60548,structure:13163}, hit:435,dodge:80,baseDamage:3915, iskDrop:24000,xpDrop:960 }
+      , deep_reliquary_overlord:{ name:"血袭者深域大君", level:99, kind:"boss", icon:"🧛‍♂️", hp:{shield:9214,armor:205335,structure:3949}, hit:490,dodge:90,baseDamage:8100, iskDrop:64000,xpDrop:2880 }
     }
   },
   sansha: {
@@ -49,6 +61,12 @@ const ENEMY_DATABASE = {
       command_battleship:{ name:"萨沙指令战列舰", level:60, kind:"normal", icon:"🤖", hp:{shield:2160,armor:1350,structure:5400}, hit:160,dodge:50,baseDamage:750, iskDrop:2000,xpDrop:120 },
       domination_battleship:{ name:"萨沙统治战列舰", level:65, kind:"elite", icon:"🤖", hp:{shield:4860,armor:2700,structure:12420}, hit:200,dodge:65,baseDamage:1125, iskDrop:6000,xpDrop:360 },
       matrix_overlord:{ name:"萨沙矩阵领主", level:70, kind:"boss", icon:"👾", hp:{shield:1890,armor:810,structure:42120}, hit:260,dodge:75,baseDamage:2550, iskDrop:16000,xpDrop:1080 }
+      , nexus_capital:{ name:"萨沙枢纽旗舰", level:80, kind:"normal", icon:"🤖", hp:{shield:6000,armor:3750,structure:15000}, hit:300,dodge:70,baseDamage:1440, iskDrop:4000,xpDrop:200 }
+      , dominion_capital:{ name:"萨沙支配旗舰", level:85, kind:"elite", icon:"🤖", hp:{shield:13500,armor:7500,structure:34500}, hit:340,dodge:80,baseDamage:2160, iskDrop:12000,xpDrop:600 }
+      , outer_array_overseer:{ name:"萨沙外环主脑", level:90, kind:"boss", icon:"👾", hp:{shield:5250,armor:2250,structure:117000}, hit:390,dodge:90,baseDamage:4560, iskDrop:32000,xpDrop:1800 }
+      , abyssal_nexus_supercapital:{ name:"萨沙深渊超级旗舰", level:90, kind:"normal", icon:"🤖", hp:{shield:10800,armor:6750,structure:27000}, hit:370,dodge:80,baseDamage:2320, iskDrop:8000,xpDrop:320 }
+      , ascendant_supercapital:{ name:"萨沙升格超级旗舰", level:95, kind:"elite", icon:"🤖", hp:{shield:24300,armor:13500,structure:62100}, hit:415,dodge:90,baseDamage:3480, iskDrop:24000,xpDrop:960 }
+      , deep_nexus_overlord:{ name:"萨沙深域主宰", level:99, kind:"boss", icon:"👾", hp:{shield:9450,armor:4050,structure:210600}, hit:470,dodge:100,baseDamage:7200, iskDrop:64000,xpDrop:2880 }
     }
   }
 };
@@ -85,6 +103,18 @@ const COMBAT_FORMATION_POOLS = {
     { id:"3_normal", normal:3, elite:0, chance:0.30 },
     { id:"2_normal_1_elite", normal:2, elite:1, chance:0.30 },
     { id:"3_normal_1_elite", normal:3, elite:1, chance:0.20 }
+  ],
+  nullsec: [
+    { id:"2_normal", normal:2, elite:0, chance:0.15 },
+    { id:"3_normal", normal:3, elite:0, chance:0.25 },
+    { id:"2_normal_1_elite", normal:2, elite:1, chance:0.35 },
+    { id:"3_normal_1_elite", normal:3, elite:1, chance:0.25 }
+  ],
+  deepnull: [
+    { id:"2_normal", normal:2, elite:0, chance:0.10 },
+    { id:"3_normal", normal:3, elite:0, chance:0.20 },
+    { id:"2_normal_1_elite", normal:2, elite:1, chance:0.35 },
+    { id:"3_normal_1_elite", normal:3, elite:1, chance:0.35 }
   ]
 };
 
@@ -101,7 +131,24 @@ const COMBAT_ZONES = [
   { id:"angel_warfront", name:"天使破阵战场", faction:"angel", secLevel:"0.2-0.1", level:60, requiredCL:55, icon:"👹", enemyPool:{normal:["siege_battleship"],elite:["marauder_battleship"],boss:["war_master"]}, formationPool:"deepsec", bossEscortCount:1, maxWave:20, clearLp:15, iskMulti:2.5, fuelMult:1.6, encryptedDataMaterial:"天使高级加密数据", encryptedDataChances:{elite:0.03,boss:0.08} },
   { id:"blood_iron_basilica", name:"血袭者铁血圣殿", faction:"blood", secLevel:"0.2-0.1", level:60, requiredCL:55, icon:"🧛", enemyPool:{normal:["iron_battleship"],elite:["apostle_battleship"],boss:["blood_sovereign"]}, formationPool:"deepsec", bossEscortCount:1, maxWave:20, clearLp:15, iskMulti:2.5, fuelMult:1.6, encryptedDataMaterial:"血袭者高级加密数据", encryptedDataChances:{elite:0.03,boss:0.08} },
   { id:"sansha_command_matrix", name:"萨沙统御矩阵", faction:"sansha", secLevel:"0.2-0.1", level:60, requiredCL:55, icon:"🤖", enemyPool:{normal:["command_battleship"],elite:["domination_battleship"],boss:["matrix_overlord"]}, formationPool:"deepsec", bossEscortCount:1, maxWave:20, clearLp:15, iskMulti:2.5, fuelMult:1.6, encryptedDataMaterial:"萨沙高级加密数据", encryptedDataChances:{elite:0.03,boss:0.08} }
+  , { id:"angel_outer_reach", name:"天使外环侵袭区", faction:"angel", secLevel:"0.0外环", level:80, requiredCL:80, icon:"👹", enemyPool:{normal:["frontier_capital"],elite:["domination_capital"],boss:["outer_reach_overseer"]}, formationPool:"nullsec", bossEscortCount:1, maxWave:20, clearLp:25, iskMulti:3.0, fuelMult:1.9, encryptedDataDisabled:true, specialDrops:[{resourceId:"mineral:莫尔石",material:"莫尔石",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"blood_outer_reliquary", name:"血袭者外环圣库", faction:"blood", secLevel:"0.0外环", level:80, requiredCL:80, icon:"🧛", enemyPool:{normal:["covenant_capital"],elite:["apostolic_capital"],boss:["outer_reliquary_overseer"]}, formationPool:"nullsec", bossEscortCount:1, maxWave:20, clearLp:25, iskMulti:3.0, fuelMult:1.9, encryptedDataDisabled:true, specialDrops:[{resourceId:"mineral:莫尔石",material:"莫尔石",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"sansha_outer_array", name:"萨沙外环同化阵列", faction:"sansha", secLevel:"0.0外环", level:80, requiredCL:80, icon:"🤖", enemyPool:{normal:["nexus_capital"],elite:["dominion_capital"],boss:["outer_array_overseer"]}, formationPool:"nullsec", bossEscortCount:1, maxWave:20, clearLp:25, iskMulti:3.0, fuelMult:1.9, encryptedDataDisabled:true, specialDrops:[{resourceId:"mineral:莫尔石",material:"莫尔石",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"angel_deep_domain", name:"天使深域王庭", faction:"angel", secLevel:"0.0深层", level:90, requiredCL:90, icon:"👹", enemyPool:{normal:["abyssal_supercapital"],elite:["seraph_supercapital"],boss:["deep_domain_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:2.2, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:天穹深层舰船数据",material:"天穹深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"blood_deep_reliquary", name:"血袭者深域圣殿", faction:"blood", secLevel:"0.0深层", level:90, requiredCL:90, icon:"🧛", enemyPool:{normal:["abyssal_blood_supercapital"],elite:["crimson_supercapital"],boss:["deep_reliquary_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:2.2, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:重垒深层舰船数据",material:"重垒深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"sansha_deep_nexus", name:"萨沙深域主脑", faction:"sansha", secLevel:"0.0深层", level:90, requiredCL:90, icon:"🤖", enemyPool:{normal:["abyssal_nexus_supercapital"],elite:["ascendant_supercapital"],boss:["deep_nexus_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:2.2, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:裂界深层舰船数据",material:"裂界深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}] }
 ];
+
+
+const ENDGAME_COMBAT_ZONE_BALANCE = Object.freeze({
+  angel_outer_reach:Object.freeze({hp:1.728,damage:0.709,boss:Object.freeze({hp:1.18,damage:1.18})}),
+  blood_outer_reliquary:Object.freeze({hp:1.24,damage:0.76935,boss:Object.freeze({hp:0.88,damage:0.95})}),
+  sansha_outer_array:Object.freeze({hp:1.528,damage:0.69462,boss:Object.freeze({hp:1.05,damage:1.05})}),
+  angel_deep_domain:Object.freeze({hp:1.32275,damage:0.55125,boss:Object.freeze({hp:1.087,damage:1.087})}),
+  blood_deep_reliquary:Object.freeze({hp:1.0871,damage:0.5247,boss:Object.freeze({hp:1.045,damage:1.045})}),
+  sansha_deep_nexus:Object.freeze({hp:1.02544,damage:0.48825,boss:Object.freeze({hp:1.07,damage:1.07})})
+});
+for (const zone of COMBAT_ZONES) zone.enemyBalance = ENDGAME_COMBAT_ZONE_BALANCE[zone.id] || null;
 
 const STAR_BELT_DATA_MATERIALS = [...new Set(COMBAT_ZONES.map(zone => zone.encryptedDataMaterial).filter(Boolean))];
 
@@ -259,7 +306,8 @@ const DEATHSPACE_DATABASE = [
 
 const DEATHSPACE_TICKET_MATERIALS = DEATHSPACE_DATABASE.map(site => site.ticketMaterial);
 const DEATHSPACE_LOOT_MATERIALS = DEATHSPACE_DATABASE.flatMap(site => [site.coreMaterial, site.protocolMaterial]);
-const COMBAT_SPECIAL_MATERIALS = [...STAR_BELT_DATA_MATERIALS, ...DEATHSPACE_TICKET_MATERIALS, ...DEATHSPACE_LOOT_MATERIALS];
+const SUPERCAPITAL_DATA_MATERIALS = ["天穹深层舰船数据", "重垒深层舰船数据", "裂界深层舰船数据"];
+const COMBAT_SPECIAL_MATERIALS = [...STAR_BELT_DATA_MATERIALS, ...DEATHSPACE_TICKET_MATERIALS, ...DEATHSPACE_LOOT_MATERIALS, ...SUPERCAPITAL_DATA_MATERIALS];
 
 // 势力装备只通过装备工程制造；战斗仅掉落对应加密数据。
 const FACTION_ENCRYPTED_DATA_DROPS = {

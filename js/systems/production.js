@@ -55,6 +55,7 @@ for (const material of STAR_BELT_DATA_MATERIALS) {
 }
 for (const material of DEATHSPACE_TICKET_MATERIALS) ITEM_ICONS[material] = "🎫";
 for (const material of DEATHSPACE_LOOT_MATERIALS) ITEM_ICONS[material] = material.includes("协议") ? "📜" : "💠";
+for (const material of SUPERCAPITAL_DATA_MATERIALS) ITEM_ICONS[material] = "🧬";
 SHIP_COMPONENT_RECIPES.forEach(recipe => {
   if (recipe.id.includes("integrated_hull")) ITEM_ICONS[recipe.name] = "🏗️";
   else if (recipe.id.includes("power_core")) ITEM_ICONS[recipe.name] = "⚙️";

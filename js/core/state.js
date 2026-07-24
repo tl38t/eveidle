@@ -14,7 +14,10 @@ const gameState = {
     repairPaste: 0,
     warpFuel: 1,
     fuel: 1000,
-    ammunition: { laser: 500, missile: 500, cannon: 500 }
+    ammunition: { laser: 500, missile: 500, cannon: 500 },
+    probes: {},
+    artifacts: {},
+    calibrations: {}
   },
 
   skills: JSON.parse(JSON.stringify(INITIAL_SKILLS)),
@@ -34,6 +37,8 @@ const gameState = {
     gasArea: "富勒烯云团",
     equipEngTarget: "t1_mining_laser",
     equipEngCategory: "industry",
+    equipEngRigSub: "combat",
+    equipEngRigTier: "all",
     startedEquipEngTarget: "",
     shipCompTarget: "integrated_hull",
     startedShipCompTarget: "",
@@ -59,7 +64,24 @@ const gameState = {
   activeIndustrialShip: null,
   shipAssignments: {},
 
-  equipment: { inventory: [] },
+  archaeology: {
+    activeSiteId: null,
+    activeProbeId: "core_probe_i",
+    progress: 0,
+    startedSiteId: null,
+    startedProbeId: null,
+    shipHp: {},
+    repairUntil: 0,
+    repairInstanceId: null,
+    interferenceUntil: 0,
+    // 确定性燃料节省累计器（见 RIG_SYSTEM_IMPLEMENTATION_PLAN 3.6）：
+    // 把每次行动被取整丢弃的小数燃料节省攒起来，攒满 1 点就少扣 1 燃料。
+    // 恒有限、归一化到 [0,1)；仅在完整重置游戏时清零。
+    fuelSavingRemainder: 0,
+    log: []
+  },
+
+  equipment: { inventory: [], instances: [], nextInstanceId: 1 },
 
   upgrades: {},
   ownedBlueprints: [],
@@ -70,6 +92,7 @@ const gameState = {
     zone: "angel_outpost",
     deathspaceId: "angel_ded_6_10",
     deathspaceTier: 6,
+    targetingMode: "formation",
     viewDeathspaceId: "angel_ded_6_10",
     viewDeathspaceTier: 6,
     deathspaceClears: {},
@@ -187,5 +210,6 @@ const SKILL_LABEL = {
   shipEngineering: "舰船工程", equipmentEngineering: "装备工程",
   rigEngineering: "改装件工程",
   reverseEngineering: "逆向工程",
+  archaeology: "考古",
   combat: "战斗"
 };

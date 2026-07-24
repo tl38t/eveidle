@@ -17,12 +17,12 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "planetary-panel", "shipeng-panel", "equipeng-panel", "queue-panel", "combat-panel", "hangar-panel", "blueprintstore-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "queue-panel", "combat-panel", "hangar-panel", "blueprintstore-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#planetary-panel):not(#shipeng-panel):not(#equipeng-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#blueprintstore-panel)')];
+  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#blueprintstore-panel)')];
 }
 
 function renderCombatSkillGroup() {
@@ -56,6 +56,7 @@ function renderCurrentNavigation() {
   else if (navigation.page === "settings") renderSettingsPage();
   else if (navigation.page === "statistics") renderStatisticsPage();
   else if (navigation.page === "planetary") renderPlanetaryPage();
+  else if (navigation.page === "archaeology") renderArchaeologyPage();
   else if (navigation.page === "queue") renderQueuePanel();
   else if (navigation.page === "combat") renderCombatPanel();
   else if (navigation.page === "hangar") renderHangarPanel();
@@ -79,7 +80,52 @@ function renderCargoPage(filter) {
   const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = "容量：" + display.used.toLocaleString() + " / " + display.capacity.toLocaleString();
   document.querySelectorAll(".cargo-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.filter === display.filter));
   const list = document.getElementById("cargo-list"); if (!list) return display;
+  list.style.display = "";
   list.innerHTML = display.items.length ? display.items.map(item => `<div class="cargo-item${item.details ? " equipment-item" : ""}"${item.details ? ` title="${item.name}\n${item.details}"` : ""}><span class="ci-icon">${item.icon}</span><span class="ci-content"><span class="ci-name">${item.name}</span>${item.details ? `<span class="ci-details">${item.details}</span>` : ""}</span><span class="ci-qty">${item.quantity.toLocaleString()}</span></div>`).join("") : `<div class="cargo-empty">${display.emptyText}</div>`;
+  renderEquipmentEnhancementList(display.filter === "equipment");
+  return display;
+}
+
+function renderEquipmentEnhancementList(visible) {
+  const panel = document.getElementById("equipment-enhancement-list"); if (!panel) return;
+  if (!visible) { panel.style.display = "none"; panel.innerHTML = ""; return; }
+  panel.style.display = "";
+  const display = getEquipmentEnhancementListDisplayState(gameState);
+  if (!display.entries.length) {
+    panel.innerHTML = `<div class="cargo-empty">暂无可强化装备（制造或获取装备后将显示于此）</div>`;
+    return;
+  }
+  const cardHtml = entry => {
+    const instanceBlocks = entry.instanceCards.map(inst => {
+      const cost = inst.costRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.name} ${r.need}<small>(${r.stock})</small></span>`).join("");
+      const extra = inst.extraRows.length ? `<div class="enh-extra">${inst.extraRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.label} ×${r.need}<small>(${r.have})</small></span>`).join("")}</div>` : "";
+      const milestoneTag = inst.isMilestone ? `<span class="enh-tag milestone">里程碑 Lv.${inst.level + 1}</span>` : "";
+      return `<div class="enh-instance">
+        <div class="enh-instance-head"><span class="enh-level">+${inst.level}</span><span class="enh-bonus">当前加成 +${inst.bonusPercent}%</span><span class="enh-preview">升级 → +${inst.previewBonusPercent}%</span>${milestoneTag}</div>
+        <div class="enh-row"><span class="enh-label">成功率</span><span class="enh-success" title="基础${Math.round(inst.successBreakdown.base*100)}% · 技能加成+${Math.round(inst.successBreakdown.skillBonus*1000)/10}% · 强化惩罚−${Math.round(inst.successBreakdown.levelPenalty*1000)/10}% · 最终${inst.successPercent}%">${inst.successPercent}%</span></div>
+        <div class="enh-costs">${cost}${extra}</div>
+        <button class="btn primary enh-btn" data-enhance-target="${String(inst.instanceId)}" ${inst.canEnhance ? "" : "disabled"}>强化此件 (Lv.${inst.level} → ${inst.level + 1})</button>
+      </div>`;
+    }).join("");
+    const stackBlock = entry.stack ? (() => {
+      const disp = entry.stack;
+      const cost = disp.costRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.name} ${r.need}<small>(${r.stock})</small></span>`).join("");
+      const extra = disp.extraRows.length ? `<div class="enh-extra">${disp.extraRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.label} ×${r.need}<small>(${r.have})</small></span>`).join("")}</div>` : "";
+      const milestoneTag = disp.isMilestone ? `<span class="enh-tag milestone">里程碑 Lv.1</span>` : "";
+      return `<div class="enh-instance enh-stack">
+        <div class="enh-instance-head"><span class="enh-level">库存新品 ×${disp.count}</span><span class="enh-preview">强化后 +${disp.previewBonusPercent}%</span>${milestoneTag}</div>
+        <div class="enh-row"><span class="enh-label">成功率</span><span class="enh-success" title="基础${Math.round(disp.successBreakdown.base*100)}% · 技能加成+${Math.round(disp.successBreakdown.skillBonus*1000)/10}% · 强化惩罚−${Math.round(disp.successBreakdown.levelPenalty*1000)/10}% · 最终${disp.successPercent}%">${disp.successPercent}%</span></div>
+        <div class="enh-costs">${cost}${extra}</div>
+        <button class="btn primary enh-btn" data-enhance-target="${encodeURIComponent(disp.targetRef)}" ${disp.canEnhance ? "" : "disabled"}>强化一件 (+0 → +1)</button>
+      </div>`;
+    })() : "";
+    const installedBlock = entry.installed.length ? `<div class="enh-installed">${entry.installed.map(inst => `<span class="enh-installed-line">🔒 已安装至 ${inst.shipName} (+${inst.level}) · 需先卸载</span>`).join("")}</div>` : "";
+    return `<div class="enh-card">
+      <div class="enh-card-head"><span class="enh-icon">${entry.icon}</span><span class="enh-name">${entry.name}</span><span class="enh-cat">${entry.categoryLabel}</span></div>
+      ${instanceBlocks}${stackBlock}${installedBlock}
+    </div>`;
+  };
+  panel.innerHTML = display.entries.map(cardHtml).join("");
   return display;
 }
 
@@ -150,14 +196,23 @@ function buyBlueprintStoreItem(itemId, kind) {
 }
 
 function getHangarBonusText(bonuses) {
-  const names = { shieldCapacity:"+护盾", armorCapacity:"+装甲", structureCapacity:"+结构", laserDamage:"+激光伤", missileDamage:"+导弹伤", cannonDamage:"+炮台伤", capacitorRecharge:"+电容", targetingSpeed:"+锁定", speed:"+速度", miningLaserEfficiency:"+采矿器效能", gasLaserEfficiency:"+采气器效能", smeltingEfficiency:"+冶炼效率", miningEfficiency:"+采矿效率", gasEfficiency:"+采气效率" };
-  return Object.entries(bonuses || {}).map(([key, value]) => (names[key] || key) + " " + Math.round(value * 100) + "%").join(" · ");
+  const names = { shieldCapacity:"+护盾", armorCapacity:"+装甲", structureCapacity:"+结构", laserDamage:"+激光伤", missileDamage:"+导弹伤", cannonDamage:"+炮台伤", capacitorRecharge:"+电容", targetingSpeed:"+锁定", speed:"+速度", miningLaserEfficiency:"+采矿器效能", gasLaserEfficiency:"+采气器效能", fleetMiningSpeed:"+舰队采矿速度", smeltingSpeed:"+冶炼速度", miningEfficiency:"+采矿效率", gasEfficiency:"+采气效率" };
+  return Object.entries(bonuses || {}).map(([key, value]) => {
+    // 考古船加成为绝对数值 / 固定减免，不能按百分比乘 100 显示。
+    if (key === "archaeologyScanStrength") return "扫描强度 " + value;
+    if (key === "archaeologyFailureDamageReduction") return "失败反噬减免 " + Math.round(value * 100) + "%";
+    return (names[key] || key) + " " + Math.round(value * 100) + "%";
+  }).join(" · ");
 }
 
 function getEnhancementBonusText(enhancement) {
   if (!enhancement || !enhancement.available) return "该舰船暂无强化部件";
   if (enhancement.role === "combat") {
     return "生命 +" + (enhancement.hpBonus * 100).toFixed(1) + "% · 武器伤害 +" + (enhancement.damageBonus * 100).toFixed(2) + "%";
+  }
+  if (enhancement.role === "archaeology") {
+    return "生命 +" + (enhancement.hpBonus * 100).toFixed(1) + "% · 扫描强度 +" + (enhancement.scanBonus * 100).toFixed(1) +
+      "%（" + enhancement.scanStrengthBase + "→" + enhancement.scanStrength + "） · 失败反噬减免 " + Math.round(enhancement.failureReduction * 100) + "%（固定）";
   }
   const label = enhancement.role === "gas" ? "采气效率" : enhancement.role === "industry-dual" ? "采矿/采气效率" : "采矿效率";
   return label + " +" + (enhancement.industryBonus * 100).toFixed(1) + "%";
@@ -167,6 +222,9 @@ function getEnhancementNextText(enhancement) {
   if (!enhancement || !enhancement.available) return "";
   if (enhancement.role === "combat") {
     return "下一级：生命 +" + (enhancement.nextHpGain * 100).toFixed(1) + "% · 武器伤害 +" + (enhancement.nextDamageGain * 100).toFixed(2) + "%";
+  }
+  if (enhancement.role === "archaeology") {
+    return "下一级：生命 +" + (enhancement.nextHpGain * 100).toFixed(1) + "% · 扫描强度 +" + (enhancement.nextScanGain * 100).toFixed(1) + "%";
   }
   return "下一级：最终采集效率 +" + (enhancement.nextIndustryGain * 100).toFixed(1) + "%";
 }
@@ -180,14 +238,14 @@ function renderHangarPanel() {
   if (empty) empty.style.display = "none";
   grid.innerHTML = display.ships.map(ship => {
     if (ship.unknown) return "";
-    const assignments = ship.assignments.map(item => `<button class="act-tag${item.active ? " on" : ""}" data-ship-action="${item.actionKey}" data-sid="${ship.instanceId}" ${item.locked ? "disabled" : ""}>${item.name}</button>`).join("");
+    const assignments = ship.assignments.map(item => `<button class="act-tag${item.active ? " on" : ""}${item.locked ? " unavailable" : ""}" data-ship-action="${item.actionKey}" data-sid="${ship.instanceId}" title="${item.lockedReason || (item.active ? "当前唯一任务，点击解除" : "分配至此任务")}" ${item.locked ? "disabled" : ""}>${item.name}</button>`).join("");
     const bonuses = getHangarBonusText(ship.bonuses);
     const enhancement = ship.enhancement;
     const materials = enhancement.materials.map(item => `<span class="enhance-material${item.enough ? "" : " short"}">${item.name} ${item.stock}/${item.quantity}</span>`).join("");
     const enhanceDisabled = enhancement.canEnhance ? "" : "disabled";
     const enhanceLabel = enhancement.busy ? "执行任务中" : enhancement.available ? "强化至 +" + (enhancement.level + 1) : "暂不可强化";
     return `<div class="hangar-ship-card${ship.assignedActions.length ? " equipped" : ""}">
-      <div class="hangar-ship-header"><span class="hsh-icon">${ship.industrial ? "🏭" : "🚀"}</span><span class="hsh-name">${ship.name}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier} ${ship.typeName}</span><span class="hsh-tier">${ship.industrial ? "🏭 工业" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
+      <div class="hangar-ship-header"><span class="hsh-icon">${ship.archaeology ? "🛰️" : ship.industrial ? "🏭" : "🚀"}</span><span class="hsh-name">${ship.name}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier} ${ship.typeName}</span><span class="hsh-tier">${ship.archaeology ? "🛰️ 考古" : ship.industrial ? "🏭 工业" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
       <div class="hangar-ship-stats"><span class="hss-item"><span class="hss-label">护盾</span><span class="hss-val">${ship.hp.shield}</span></span><span class="hss-item"><span class="hss-label">装甲</span><span class="hss-val">${ship.hp.armor}</span></span><span class="hss-item"><span class="hss-label">结构</span><span class="hss-val">${ship.hp.structure}</span></span><span class="hss-item"><span class="hss-label">闪避</span><span class="hss-val">${ship.dodge}</span></span><span class="hss-item"><span class="hss-label">速度</span><span class="hss-val">${ship.speed}</span></span></div>
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
       <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}</div><div class="enhance-roll"><span>成功率 <b>${enhancement.chancePercent}%</b></span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div></div>
@@ -201,7 +259,14 @@ function enhanceShipFromHangar(instanceId) {
   const ship = display.ships.find(item => item.instanceId === instanceId);
   if (!ship || !ship.enhancement || !ship.enhancement.available) return false;
   const confirmationEnabled = getSettingsDisplayState(gameState).confirmShipEnhancement;
-  if (confirmationEnabled && ship.enhancement.level > 0 && !window.confirm("强化失败会使 " + ship.name + " 从 +" + ship.enhancement.level + " 清零，仍要继续吗？")) return false;
+  if (confirmationEnabled) {
+    const costLines = (ship.enhancement.materials || []).map(m => m.name + "×" + m.quantity).join("、");
+    const tip = "强化 " + ship.name + "：+" + ship.enhancement.level + " → +" + (ship.enhancement.level + 1) +
+      "\n成功率：" + ship.enhancement.chancePercent + "%" +
+      "\n消耗部件：" + costLines +
+      "\n失败消耗部件、等级保持 +" + ship.enhancement.level + "、0 XP。确认执行强化？";
+    if (!window.confirm(tip)) return false;
+  }
   const result = dispatchGameAction(gameState, { type:"hangar/enhanceShip", instanceId }, Date.now());
   if (!result.changed) {
     const messages = { "insufficient-components":"强化部件不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
@@ -210,8 +275,49 @@ function enhanceShipFromHangar(instanceId) {
   }
   showToast(result.success
     ? result.config.name + " 强化成功：+" + result.fromLevel + " → +" + result.toLevel + "，获得 " + result.xp + " 经验"
-    : result.config.name + " 强化失败：+" + result.fromLevel + " → +0，获得 " + result.xp + " 经验");
+    : result.config.name + " 强化失败，等级保持 +" + result.fromLevel + "，本次部件已消耗");
   renderHangarPanel();
+  renderCombatPanel();
+  updateUI();
+  return true;
+}
+
+function enhanceEquipmentFromWarehouse(targetRef) {
+  if (!targetRef) return false;
+  const resolved = resolveEquipmentReference(gameState, targetRef);
+  if (!resolved) { showToast("装备不存在"); return false; }
+  const definition = resolved.definition;
+  const fromLevel = resolved.enhancementLevel;
+  const engLevel = Number(gameState.skills && gameState.skills.equipmentEngineering && gameState.skills.equipmentEngineering.lvl) || 1;
+  const preview = getEquipmentEnhancementDisplayState(definition, fromLevel, engLevel);
+  const confirmationEnabled = getSettingsDisplayState(gameState).confirmShipEnhancement;
+  if (confirmationEnabled) {
+    const materialLines = Object.entries(preview.cost).map(([mineral, qty]) => `${mineral}×${qty}`).join("、");
+    const extraLines = [];
+    if (preview.extra.sameTypeItemId) extraLines.push("同型号 +0 装备×1");
+    if (preview.extra.core) extraLines.push(preview.extra.core + "×1");
+    if (preview.extra.protocol) extraLines.push(preview.extra.protocol + "×1");
+    const fullList = [materialLines, ...extraLines].filter(Boolean).join(" + ");
+    const tip = `强化 ${definition.name}：+${fromLevel} → +${fromLevel + 1}\n成功率：${Math.round(preview.success * 1000) / 10}%\n消耗材料：${fullList || "无"}\n失败仅消耗材料，等级保持 +${fromLevel}，不会回退或降级。\n确认执行强化？`;
+    if (!window.confirm(tip)) return false;
+  }
+  const result = dispatchGameAction(gameState, { type:"equipment/enhance", targetRef }, Date.now());
+  if (!result.changed) {
+    const messages = {
+      "insufficient-minerals":"精炼矿物不足",
+      "missing-donor":"缺少同型号 +0 装备",
+      "insufficient-core":"缺少对应核心",
+      "insufficient-protocol":"缺少对应协议",
+      "equipment-installed":"装备已安装，需先卸载",
+      "unknown-equipment":"装备不存在"
+    };
+    showToast(messages[result.reason] || "强化失败");
+    return false;
+  }
+  showToast(result.success
+    ? `${definition.name} 强化成功：+${result.fromLevel} → +${result.toLevel}，获得 ${result.xp} 经验`
+    : `强化失败，等级保持 +${result.fromLevel}，本次材料已消耗`);
+  renderCargoPage("equipment");
   renderCombatPanel();
   updateUI();
   return true;
@@ -260,7 +366,8 @@ function closeEquipOrbit() {
 function buildOrbit() {
   const display = getShipFittingDisplayState(gameState, orbitShipId); const svg = document.getElementById("equipOrbitSvg");
   if (!display || !svg) return;
-  const namespace = "http://www.w3.org/2000/svg", center = 250, radius = 180, segment = Math.PI * 2 / 27;
+  // 分段角度按显示态槽位真实数量计算（8高+8中+8低+动态 rig 容量），不硬编码 27
+  const namespace = "http://www.w3.org/2000/svg", center = 250, radius = 180, segment = Math.PI * 2 / display.orbitSlots.length;
   svg.innerHTML = "";
   for (const ring of [180, 210, 150]) { const circle = document.createElementNS(namespace, "circle"); circle.setAttribute("cx", center); circle.setAttribute("cy", center); circle.setAttribute("r", ring); circle.setAttribute("class", ring === 180 ? "orbit-ring-glow" : ring === 210 ? "orbit-ring-outer" : "orbit-ring-inner"); svg.appendChild(circle); }
   display.orbitSlots.forEach(slot => {
@@ -281,8 +388,22 @@ function openOrbitSelect(index) {
   const panel = document.getElementById("equipSelectPanel"), options = document.getElementById("equipSelectOptions"), title = document.getElementById("equipSelectTitle");
   if (!panel || !options) return;
   if (title) title.textContent = ORBIT_TYPE_NAMES[slot.type] + " · 选择装备";
-  const available = display.inventoryBySlot[slot.type] || [];
-  options.innerHTML = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>' + available.map(item => `<button class="equip-option" data-equip="${item.id}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}</span></button>`).join("");
+  // rig 槽候选按槽位取（替换场景排除当前槽的同组判定，允许同系列升级）；其余槽仍按类型取
+  const available = slot.type === "rig"
+    ? ((display.rigCandidates && display.rigCandidates[slot.slotIndex]) || [])
+    : (display.inventoryBySlot[slot.type] || []);
+  if (slot.type === "rig") {
+    // 改装件槽：拆卸即销毁（不返还库存）。占用槽提供"销毁"按钮；替换=旧件销毁+新件安装。
+    const destroyButton = slot.equipmentId
+      ? '<button class="equip-option empty-option" data-rig-destroy="1"><span class="eq-icon">🗑</span><span class="eq-name">销毁改装件（不返还）</span></button>'
+      : "";
+    const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁，同类改装件不能重复安装</div>';
+    options.innerHTML = hint + destroyButton + (available.length
+      ? available.map(item => `<button class="equip-option" data-equip="${item.id}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.isInstance ? " +" + item.enhancementLevel : ""}</span></button>`).join("")
+      : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
+  } else {
+    options.innerHTML = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>' + available.map(item => `<button class="equip-option" data-equip="${item.id}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.isInstance ? " +" + item.enhancementLevel : ""}</span></button>`).join("");
+  }
   panel.style.left = "auto"; panel.style.right = "-10px"; panel.style.top = "50%"; panel.style.transform = "translateY(-50%)"; panel.classList.add("active");
 }
 
@@ -345,16 +466,49 @@ function addCurrentToQueue() {
     if (assignment) {
       const result = dispatchGameAction(gameState, { type:"hangar/toggleAssignment", instanceId:assignment.dataset.sid, actionKey:assignment.dataset.shipAction }, Date.now());
       if (!result.changed && result.reason === "repairing") showToast("舰船自动维修中，暂时不能更换战斗舰");
+      else if (!result.changed && result.reason === "unsupported-mining") showToast("该舰船没有采矿岗位");
+      else if (!result.changed && result.reason === "unsupported-gas") showToast("该舰船没有采气岗位");
+      else if (!result.changed && result.reason === "unsupported-refining") showToast("只有工业支援舰可以承担冶炼岗位");
+      else if (!result.changed && result.reason === "unsupported-task") showToast("该任务不需要分配舰船岗位");
+      else if (!result.changed && result.reason === "ship-active") showToast("舰船正在执行任务，停止当前任务后才能重新分配");
       if (result.changed) { renderHangarPanel(); renderCombatPanel(); }
       return;
     }
     const fitting = event.target.closest("[data-open-fitting]"); if (fitting) openEquipOrbit(fitting.dataset.openFitting);
   });
+  const enhPanel = document.getElementById("equipment-enhancement-list"); if (enhPanel) enhPanel.addEventListener("click", event => {
+    const btn = event.target.closest("[data-enhance-target]");
+    if (btn && !btn.disabled) enhanceEquipmentFromWarehouse(decodeURIComponent(btn.dataset.enhanceTarget));
+  });
   const fittingOptions = document.getElementById("equipSelectOptions"); if (fittingOptions) fittingOptions.addEventListener("click", event => {
-    const option = event.target.closest("[data-equip]"); if (!option || orbitSelectedIndex === null) return;
+    const option = event.target.closest("[data-equip],[data-rig-destroy]"); if (!option || orbitSelectedIndex === null) return;
     const display = getShipFittingDisplayState(gameState, orbitShipId); const slot = display && display.orbitSlots.find(item => item.index === orbitSelectedIndex); if (!slot) return;
-    const result = dispatchGameAction(gameState, { type:"hangar/setFittingSlot", instanceId:orbitShipId, slot:slot.type, slotIndex:slot.slotIndex, equipmentId:option.dataset.equip || null }, Date.now());
-    if (!result.changed && result.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");
+    let result;
+    if (slot.type === "rig") {
+      // 改装件槽：销毁 / 替换 / 安装均走专属 Action（事件契约 rig:destroyed / rig:replaced / rig:fitted）
+      if (option.dataset.rigDestroy) {
+        if (!confirm("确定销毁「" + (slot.name || "该改装件") + "」吗？\n\n⚠ 改装件拆卸即销毁，不会返还仓库，此操作不可撤销！")) return;
+        result = dispatchGameAction(gameState, { type:"hangar/destroyFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex }, Date.now());
+      } else if (slot.equipmentId) {
+        const newName = (EQUIPMENT_DB[option.dataset.equip] || {}).name || option.dataset.equip;
+        if (!confirm("确定用「" + newName + "」替换「" + (slot.name || "当前改装件") + "」吗？\n\n⚠ 被替换的旧改装件将被销毁，不会返还仓库，此操作不可撤销！")) return;
+        result = dispatchGameAction(gameState, { type:"hangar/replaceFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now());
+      } else {
+        result = dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now());
+      }
+      if (!result.changed && result.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");
+      else if (!result.changed && result.reason === "same-stack-group-exists") showToast("同类改装件已安装，不能重复安装");
+      else if (!result.changed && result.reason === "slot-occupied") showToast("该改装槽已被占用");
+      else if (!result.changed && result.reason === "equipment-unavailable") showToast("仓库中没有该改装件");
+      else if (!result.changed && result.reason) showToast("操作失败：" + result.reason);
+    } else {
+      result = dispatchGameAction(gameState, { type:"hangar/setFittingSlot", instanceId:orbitShipId, slot:slot.type, slotIndex:slot.slotIndex, equipmentId:option.dataset.equip || null }, Date.now());
+      if (!result.changed && result.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");
+      else if (!result.changed && result.reason === "incompatible-equipment") showToast("该装备只能安装在旗舰或超级旗舰上");
+      else if (!result.changed && result.reason === "equipment-unavailable") showToast("该装备不存在或已被使用");
+      else if (!result.changed && result.reason === "equipment-installed") showToast("该装备已安装在其他舰船上");
+      else if (!result.changed && result.reason) showToast("操作失败：" + result.reason);
+    }
     const panel = document.getElementById("equipSelectPanel"); if (panel) panel.classList.remove("active");
     buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel();
   });
@@ -362,7 +516,19 @@ function addCurrentToQueue() {
   const orbitDone = document.getElementById("equipDoneBtn"); if (orbitDone) orbitDone.addEventListener("click", closeEquipOrbit);
   const orbitModal = document.getElementById("equipOrbitModal"); if (orbitModal) orbitModal.addEventListener("click", event => { if (event.target === orbitModal) closeEquipOrbit(); });
   const orbitReset = document.getElementById("equipResetBtn"); if (orbitReset) orbitReset.addEventListener("click", () => {
-    if (!orbitShipId || !confirm("确定清空所有装备吗？")) return;
+    if (!orbitShipId) return;
+    // 从真实显示态读取已装改装件，逐件列出即将销毁的名称（同名合并计数）。
+    // 此确认为破坏性操作专用，使用原生 confirm，不受设置中的强化提示开关控制。
+    const display = getShipFittingDisplayState(gameState, orbitShipId); if (!display) return;
+    const fittedRigNames = display.orbitSlots.filter(slot => slot.type === "rig" && slot.equipmentId).map(slot => slot.name || slot.equipmentId);
+    let message = "确定清空所有装备吗？\n\n普通装备将返还仓库（保留为未安装实例）。";
+    if (fittedRigNames.length) {
+      const counts = new Map();
+      for (const name of fittedRigNames) counts.set(name, (counts.get(name) || 0) + 1);
+      const lines = [...counts.entries()].map(([name, count]) => "  · " + name + (count > 1 ? " ×" + count : ""));
+      message += "\n\n⚠ 以下改装件将被永久销毁（不返还）：\n" + lines.join("\n");
+    }
+    if (!confirm(message)) return;
     const result = dispatchGameAction(gameState, { type:"hangar/resetFitting", instanceId:orbitShipId }, Date.now());
     if (result.changed) { buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel(); }
   });

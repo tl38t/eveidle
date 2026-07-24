@@ -1,0 +1,244 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>EVE IDLE · ShipFactory2 功能舰验证（工业 / 考古）</title>
+  <style>
+    :root { color-scheme: dark; --bg:#06080a; --text:#e8e4dc; --muted:#9a9086; --amber:#ffae3b; --teal:#57e0c8; --steel:#8a8076; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+      font-family:"Rajdhani","Segoe UI","Microsoft YaHei",sans-serif; overflow:hidden; }
+    #app { position:fixed; inset:0; }
+    .hud { position:fixed; top:16px; left:16px; pointer-events:none; max-width:64%; }
+    .hud h1 { margin:0; font-size:18px; letter-spacing:1px; color:var(--amber); }
+    .hud p { margin:4px 0 0; color:var(--muted); font-size:13px; line-height:1.5; }
+    .hud .ind { color:var(--teal); }
+    .legend { position:fixed; bottom:16px; left:16px; font-size:12px; color:var(--muted); }
+    .legend b.a { color:var(--amber); } .legend b.t { color:var(--teal); }
+    .tag { position:fixed; transform:translate(-50%,-100%); font-size:12px; padding:3px 9px;
+      border:1px solid rgba(255,174,59,.25); border-radius:6px; background:rgba(8,12,18,.88);
+      white-space:nowrap; text-align:center; line-height:1.35; }
+    .tag .t { color:var(--amber); font-weight:600; }
+    .tag .s { color:var(--muted); font-size:11px; }
+    .rowlabel { position:fixed; transform:translate(-50%,-50%); font-size:13px; font-weight:600;
+      letter-spacing:1px; padding:2px 10px; border-radius:4px; background:rgba(8,12,18,.7);
+      white-space:nowrap; }
+    .rowlabel.ind { color:var(--amber); border:1px solid rgba(255,174,59,.3); }
+    .rowlabel.arc { color:var(--teal); border:1px solid rgba(87,224,200,.3); }
+    #error-panel { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+      max-width:80%; max-height:70%; overflow:auto; background:rgba(20,8,8,.96);
+      border:1px solid rgba(255,80,80,.4); border-radius:8px; padding:16px 20px;
+      font-family:monospace; font-size:13px; line-height:1.5; display:none; z-index:100; }
+    #error-panel .title { color:#ff6a5a; font-weight:bold; margin-bottom:8px; }
+    #error-panel .stack { color:#e8a098; white-space:pre-wrap; }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div class="hud">
+    <h1>ShipFactory2 · 功能舰验证</h1>
+    <p>工业舰（<b style="color:var(--amber)">ORE 风</b>：宽厚货舱 / 采矿臂 / 采气采集器 / 支援指挥）+ 考古舰（<b class="ind">探索风</b>：流线飞镖 / 扫描阵列 / 探针发射舱）<br>
+    参考 EVE Online：ORE 工业线 vs 探索扫描线。门控禁用通用 surface generator，自绘功能挂载（FunctionalMountGenerator）。</p>
+  </div>
+  <div class="legend">调色板：<b class="a">industrial</b>（枪铁灰 / 琥珀辉光 / 警示黄）；<b class="t">archaeology</b>（深青灰 / 青绿辉光 / 钛青）</div>
+  <div id="error-panel"></div>
+
+  <script type="module">
+    const THREE = await import("three");
+    const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+    const { RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js");
+
+    const { buildShip } = await import("./js/render3d/shipfactory2/ShipFactory2.js?v=" + Date.now());
+
+    const app = document.getElementById("app");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x06080a);
+    scene.fog = new THREE.FogExp2(0x06080a, 0.0042);
+
+    const camera = new THREE.PerspectiveCamera(42, innerWidth / innerHeight, 0.1, 600);
+    camera.position.set(0, 34, 112);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    app.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.target.set(0, 0, 0);
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    scene.add(new THREE.HemisphereLight(0xc9d8e0, 0x08100c, 0.42));
+    const key = new THREE.DirectionalLight(0xfff4ea, 1.7);
+    key.position.set(10, 18, 14); scene.add(key);
+    const rim = new THREE.DirectionalLight(0xbfe8ff, 0.7);
+    rim.position.set(-12, 8, -14); scene.add(rim);
+
+    (function makeStarField(count = 900, radius = 160) {
+      const pts = [];
+      for (let i = 0; i < count; i++) {
+        const t = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1), r = radius * (0.7 + Math.random() * 0.3);
+        pts.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xdcc8b8, size: 0.12, transparent: true, opacity: 0.65 })));
+    })();
+
+    // ── 定义分组（每行一类设计语言）──
+    // 工业：mining / gas / support；考古：scan。每类取 护卫 / 巡洋 / 旗舰 三档展示缩放。
+    const GROUPS = [
+      { kind:"ind", title:"工业 · 采矿", cls:"ind", ships:[
+        { name:"采矿·护卫", tag:"mining / frigate",   spec:{ id:"ind-min-fig",  faction:"industrial", function:"mining",  hull:"frigate",    seed:20260719 } },
+        { name:"采矿·巡洋", tag:"mining / cruiser",   spec:{ id:"ind-min-cru",  faction:"industrial", function:"mining",  hull:"cruiser",    seed:20260719 } },
+        { name:"采矿·旗舰", tag:"mining / capital",   spec:{ id:"ind-min-cap",  faction:"industrial", function:"mining",  hull:"capital",    seed:20260719 } },
+      ]},
+      { kind:"ind", title:"工业 · 采气", cls:"ind", ships:[
+        { name:"采气·护卫", tag:"gas / frigate",      spec:{ id:"ind-gas-fig",  faction:"industrial", function:"gas",     hull:"frigate",    seed:20260719 } },
+        { name:"采气·巡洋", tag:"gas / cruiser",      spec:{ id:"ind-gas-cru",  faction:"industrial", function:"gas",     hull:"cruiser",    seed:20260719 } },
+        { name:"采气·旗舰", tag:"gas / capital",      spec:{ id:"ind-gas-cap",  faction:"industrial", function:"gas",     hull:"capital",    seed:20260719 } },
+      ]},
+      { kind:"ind", title:"工业 · 支援", cls:"ind", ships:[
+        { name:"支援·护卫", tag:"support / frigate",  spec:{ id:"ind-sup-fig",  faction:"industrial", function:"support", hull:"frigate",    seed:20260719 } },
+        { name:"支援·巡洋", tag:"support / cruiser",  spec:{ id:"ind-sup-cru",  faction:"industrial", function:"support", hull:"cruiser",    seed:20260719 } },
+        { name:"支援·旗舰", tag:"support / capital",  spec:{ id:"ind-sup-cap",  faction:"industrial", function:"support", hull:"capital",    seed:20260719 } },
+      ]},
+      { kind:"arc", title:"考古 · 扫描", cls:"arc", ships:[
+        { name:"扫描·护卫", tag:"scan / frigate",     spec:{ id:"arc-scn-fig",  faction:"archaeology", hull:"frigate",    seed:20260719 } },
+        { name:"扫描·巡洋", tag:"scan / cruiser",     spec:{ id:"arc-scn-cru",  faction:"archaeology", hull:"cruiser",    seed:20260719 } },
+        { name:"扫描·旗舰", tag:"scan / capital",     spec:{ id:"arc-scn-cap",  faction:"archaeology", hull:"capital",    seed:20260719 } },
+      ]},
+    ];
+
+    const ships = [];   // { ship, def, yLift }
+    const gap = 8;
+    const ROW_GAP = 30; // 行间距（沿 z）
+
+    function showError(def, err) {
+      console.error(`[ERROR] ${def.name}:`, err);
+      const panel = document.getElementById("error-panel");
+      panel.style.display = "block";
+      panel.innerHTML = `<div class="title">⚠ ${def.name} 生成失败</div><div class="stack">${err.message}\n\n${err.stack || ""}</div>`;
+    }
+
+    // 逐行布局：每行沿 x 居中，沿 z 分行
+    GROUPS.forEach((group, gi) => {
+      const z = (gi - (GROUPS.length - 1) / 2) * ROW_GAP;
+      let cursor = 0;
+      const rowShips = [];
+      for (const def of group.ships) {
+        try {
+          const ship = buildShip(def.spec);
+          ship.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(ship);
+          const L = box.max.z - box.min.z;
+          const H = box.max.y - box.min.y;
+          ship.position.x = cursor + L / 2;
+          ship.position.z = z;
+          ship.position.y = -H / 2;          // 以底面为基准，避免悬空
+          ship.rotation.y = -0.5;
+          cursor += L + gap;
+          scene.add(ship);
+          const yLift = H / 2 + 6;
+          rowShips.push(ship);
+          ships.push({ ship, def, yLift });
+        } catch (err) {
+          showError(def, err);
+          cursor += 14 + gap; // 失败也推进，避免重叠
+        }
+      }
+      const center = cursor / 2;
+      for (const sh of rowShips) sh.position.x -= center;
+
+      // 行标题（固定在行后方的世界坐标 -> 屏幕）
+      const label = document.createElement("div");
+      label.className = "rowlabel " + group.cls;
+      label.textContent = group.title;
+      document.body.appendChild(label);
+      const labelPos = new THREE.Vector3(0, 8, z - ROW_GAP * 0.46);
+      ships.push({ isLabel: true, el: label, pos: labelPos });
+    });
+
+    // 舰船浮标
+    const tagUpdaters = [];
+    for (const entry of ships) {
+      if (entry.isLabel) continue;
+      const { ship, def, yLift } = entry;
+      const el = document.createElement("div");
+      el.className = "tag";
+      el.innerHTML = `<div class="t">${def.name}</div><div class="s">${def.tag}</div>`;
+      document.body.appendChild(el);
+      const wp = new THREE.Vector3();
+      tagUpdaters.push(() => {
+        ship.getWorldPosition(wp);
+        wp.y += yLift;
+        wp.project(camera);
+        el.style.left = (wp.x * 0.5 + 0.5) * innerWidth + "px";
+        el.style.top = (-wp.y * 0.5 + 0.5) * innerHeight + "px";
+        el.style.display = wp.z < 1 ? "block" : "none";
+      });
+    }
+
+    const labelUpdaters = [];
+    for (const entry of ships) {
+      if (!entry.isLabel) continue;
+      const wp = new THREE.Vector3();
+      labelUpdaters.push(() => {
+        wp.copy(entry.pos).project(camera);
+        entry.el.style.left = (wp.x * 0.5 + 0.5) * innerWidth + "px";
+        entry.el.style.top = (-wp.y * 0.5 + 0.5) * innerHeight + "px";
+        entry.el.style.display = wp.z < 1 ? "block" : "none";
+      });
+    }
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      for (const entry of ships) {
+        if (entry.isLabel) continue;
+        const { ship } = entry;
+        ship.rotation.y += 0.003;
+        const sh = ship.userData.shield;
+        if (sh) {
+          const pulse = 0.5 + 0.5 * Math.sin(t * 1.4);
+          sh.material.opacity = 0.05 + 0.05 * pulse;
+          if (sh.children[0]) sh.children[0].material.opacity = 0.13 + 0.12 * pulse;
+          sh.scale.setScalar(1 + 0.012 * pulse);
+        }
+        const fl = ship.userData.floaters;
+        if (fl) for (const f of fl) {
+          f.grp.position.y = f.base.y + Math.sin(t * 1.6 + f.phase) * f.ampY;
+          f.grp.position.z = f.base.z + Math.sin(t * 1.1 + f.phase) * f.ampZ;
+        }
+      }
+      controls.update();
+      tagUpdaters.forEach(u => u());
+      labelUpdaters.forEach(u => u());
+      renderer.render(scene, camera);
+    }
+    animate();
+  </script>
+</body>
+</html>

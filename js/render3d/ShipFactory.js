@@ -22,7 +22,7 @@ export const COLORS = {
   player_shield:    { hull: 0x8f702c, dark: 0x161b22, glow: 0x2ab8f5, accent: 0xe0b24c, steel: 0x58636b },
   player_armor:     { hull: 0xcfc6bd, dark: 0x2a2620, glow: 0xff9a5a, accent: 0xb08968, steel: 0x8a8076 },
   player_structure: { hull: 0xd2d6cf, dark: 0x222820, glow: 0x9affc0, accent: 0x7fae8a, steel: 0x808a82 },
-  angel:            { hull: 0x5a1f1f, dark: 0x16110f, glow: 0xff4030, accent: 0x7a2a22, steel: 0x5a3a3a },
+  angel:            { hull: 0x1f3a5c, dark: 0x0e1622, glow: 0x6fd0ff, accent: 0x5a86b0, steel: 0x3a4a5a },
   blood:            { hull: 0x4a1530, dark: 0x160c12, glow: 0xff3a6e, accent: 0x6a2440, steel: 0x5a3a4a },
   sansha:           { hull: 0x14403a, dark: 0x101a18, glow: 0x36e0a0, accent: 0x2a1840, steel: 0x2a4a44 }
 };

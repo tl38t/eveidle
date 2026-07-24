@@ -86,11 +86,15 @@ export function generateArmor(ctx) {
   }
 
   // ② 各舰级专属架构（Phase 5 C4-A：t = armorThickness factor）
-  if (ctx.hullProfile.body === "dagger") buildDaggerExtras(g, s, L, accentMat, spec, mid, ctx, t);
-  else if (ctx.hullProfile.body === "gunboat") buildGunboatExtras(g, s, L, accentMat, spec, mid, ctx, t);
-  else if (ctx.hullProfile.body === "cruiser") buildCruiserExtras(g, s, L, accentMat, spec, mid, ctx, t);
-  else if (ctx.hullProfile.body === "fortress") buildFortressExtras(g, s, L, accentMat, mid, ctx, t);
-  if (hybrid) buildHybridExtras(g, s, L, mid, ctx, t);
+  //   结构船（frame）跳过实心上层建筑盒子（城郭/脊甲板等），保持桁架通透，仅保留航行灯
+  const isFrame = ctx.civ && ctx.civ.hullType === "frame";
+  if (!isFrame) {
+    if (ctx.hullProfile.body === "dagger") buildDaggerExtras(g, s, L, accentMat, spec, mid, ctx, t);
+    else if (ctx.hullProfile.body === "gunboat") buildGunboatExtras(g, s, L, accentMat, spec, mid, ctx, t);
+    else if (ctx.hullProfile.body === "cruiser") buildCruiserExtras(g, s, L, accentMat, spec, mid, ctx, t);
+    else if (ctx.hullProfile.body === "fortress") buildFortressExtras(g, s, L, accentMat, mid, ctx, t);
+    if (hybrid) buildHybridExtras(g, s, L, mid, ctx, t);
+  }
 
   return g;
 }

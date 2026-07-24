@@ -9,9 +9,17 @@ export const COLORS = {
   player_shield:    { hull: 0x8f702c, dark: 0x161b22, glow: 0x2ab8f5, accent: 0xe0b24c, steel: 0x58636b },
   player_armor:     { hull: 0xcfc6bd, dark: 0x2a2620, glow: 0xff9a5a, accent: 0xb08968, steel: 0x8a8076 },
   player_structure: { hull: 0xd2d6cf, dark: 0x222820, glow: 0x9affc0, accent: 0x7fae8a, steel: 0x808a82 },
-  angel:            { hull: 0x5a1f1f, dark: 0x16110f, glow: 0xff4030, accent: 0x7a2a22, steel: 0x5a3a3a },
-  blood:            { hull: 0x4a1530, dark: 0x160c12, glow: 0xff3a6e, accent: 0x6a2440, steel: 0x5a3a4a },
-  sansha:           { hull: 0x14403a, dark: 0x101a18, glow: 0x36e0a0, accent: 0x2a1840, steel: 0x2a4a44 }
+  angel:            { hull: 0xf8f4ea, dark: 0x3a3028, glow: 0xffd54f, accent: 0xc9a84c, steel: 0x9a9078 },
+  blood:            { hull: 0x4a1530, dark: 0x160c12, glow: 0xc01530, accent: 0x6a2440, steel: 0x5a3a4a },
+  sansha:           { hull: 0x14403a, dark: 0x101a18, glow: 0x36e0a0, accent: 0x2a1840, steel: 0x2a4a44 },
+  // 工业舰（采矿/采气/工业支援/工业旗舰）：ORE 风格——枪铁灰舰体 + 琥珀矿晶辉光 + 警示黄。
+  industrial:       { hull: 0x9aa0a6, dark: 0x23262b, glow: 0xffae3b, accent: 0xd9c44a, steel: 0x6b7178 },
+  // 工业·采气：青灰冷调舰体 + 青绿辉光 + 警示黄（与采矿同 hull，不同色板）。
+  industrial_gas:   { hull: 0x5a7a82, dark: 0x1a2e33, glow: 0x57e0c8, accent: 0xd9c44a, steel: 0x5a7278 },
+  // 工业·支援（海豚级）：ORE 工业经典橄榄绿 + 深暗钢灰 + 警示黄（多模块拼装感）
+  industrial_support: { hull: 0x4a5a2a, dark: 0x1e1f1c, glow: 0xffae3b, accent: 0xd9c44a, steel: 0x3a4028 },
+  // 考古/探索舰：扫描风格——深青灰舰体 + 青绿扫描辉光 + 钛青强调。
+  archaeology:      { hull: 0x3a4a52, dark: 0x18222b, glow: 0x57e0c8, accent: 0x7fd9c0, steel: 0x5d6c73 }
 };
 // 旧别名兼容（早期原型页曾用 COLORS.gold / COLORS.red / COLORS.blue）
 COLORS.gold = COLORS.player_shield;
@@ -36,7 +44,7 @@ export function glowMat(palette, intensity = 1.5) {
 }
 
 // 圆角盒（RoundedBoxGeometry 封装），直接定位旋转
-export function rbox(w, h, d, r, mat, pos, rot = [0, 0, 0], s = [1, 1, 1]) {
+export function rbox(w, h, d, r, mat, pos = [0, 0, 0], rot = [0, 0, 0], s = [1, 1, 1]) {
   const g = new RoundedBoxGeometry(w, h, d, 2, Math.min(r, Math.min(w, h, d) / 2 - 1e-3));
   const m = new THREE.Mesh(g, mat);
   m.position.set(...pos); m.rotation.set(...rot); m.scale.set(...s);
@@ -57,4 +65,27 @@ export function additiveGlowMaterial(color, opacity, side = THREE.FrontSide) {
     color, transparent: true, opacity,
     blending: THREE.AdditiveBlending, side, depthWrite: false
   });
+}
+
+// ── 边缘描边（背面描边法 / inverted hull）──
+// 给箱体类构件（装甲块等）添加深色棱线轮廓，强化"厚重工业"轮廓感。
+// 用 BackSide 翻面箱体套在原 mesh 外（略大），边缘露出暗色形成勾边。
+// 比 LineSegments 可靠：WebGL 中 LineBasicMaterial.linewidth 被限制为 1px，远处不可见。
+const _outlineMatCache = new Map();
+function _getOutlineMaterial(color) {
+  if (!_outlineMatCache.has(color)) {
+    _outlineMatCache.set(color, new THREE.MeshBasicMaterial({
+      color, side: THREE.BackSide, depthWrite: false, fog: false
+    }));
+  }
+  return _outlineMatCache.get(color);
+}
+
+// scale: 描边箱体相对原 mesh 的放大倍率（1.05 = 边缘露出 2.5%）
+export function addEdgeOutline(mesh, color = 0x2a2620, opacity = 0.75, thresholdAngle = 50) {
+  const expand = 1.04 + (opacity - 0.75) * 0.12; // opacity 0.75→1.04, 1.0→1.07
+  const outline = new THREE.Mesh(mesh.geometry, _getOutlineMaterial(color));
+  outline.scale.multiplyScalar(expand);
+  mesh.add(outline);
+  return mesh;
 }

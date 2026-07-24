@@ -459,3 +459,89 @@
     font-family: inherit;
   }
   .btn-remove-planet:hover { background: #381b18; color: #e0887e; }
+
+/* ===== 考古面板 ===== */
+.archaeology-ship-info {
+  background: rgba(8,12,20,.5); border: 1px solid #2a3a4a; border-radius: 6px;
+  padding: 10px 14px; margin-bottom: 12px;
+}
+.archaeology-ship-header { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+.archaeology-ship-name { font-weight:700; color:#e8d8a0; font-size:14px; }
+.archaeology-ship-type { font-size:11px; color:#6a7a8e; }
+.archaeology-hp-row { display:flex; align-items:center; font-size:11px; gap:4px; }
+.archaeology-hp-row .ahp-label { width:36px; color:#8899aa; text-align:right; }
+.archaeology-hp-row .ahp-value { width:70px; text-align:right; font-weight:600; }
+.archaeology-no-ship {
+  background: rgba(8,12,20,.5); border: 1px dashed #4a3a2a; border-radius: 6px;
+  padding: 12px; text-align:center; margin-bottom:12px;
+}
+.archaeology-no-ship span { display:block; color:#d4a843; font-weight:600; margin-bottom:4px; }
+.archaeology-no-ship small { color:#6a7a8e; }
+
+.archaeology-section-title {
+  font-size:13px; font-weight:700; color:#8899aa; margin:14px 0 8px;
+}
+.archaeology-tier-group { margin-bottom:10px; }
+.archaeology-tier-label {
+  font-size:11px; font-weight:600; color:#4a5a6a; margin-bottom:4px;
+  letter-spacing:1px;
+}
+.archaeology-site-grid {
+  display:grid; grid-template-columns:repeat(3,1fr); gap:6px;
+}
+.archaeology-site-card {
+  background:rgba(8,12,20,.6); border:1px solid #1a2a3a; border-radius:5px;
+  padding:8px 10px; cursor:pointer; text-align:left; transition:all .2s;
+  font-family:inherit; color:inherit; width:100%;
+}
+.archaeology-site-card:hover:not(:disabled) { border-color:#4ac87a; background:rgba(8,20,12,.6); }
+.archaeology-site-card.selected { border-color:#d4a843; background:rgba(20,15,8,.7); }
+.archaeology-site-card.locked { opacity:.4; cursor:default; }
+.archaeology-site-card .asc-name { display:block; font-weight:700; color:#c8d8e8; font-size:12px; margin-bottom:3px; }
+.archaeology-site-card .asc-meta { display:block; font-size:10px; color:#6a7a8e; }
+.archaeology-site-card .asc-detail { display:flex; gap:8px; margin-top:4px; font-size:10px; color:#4a5a6a; flex-wrap:wrap; }
+.archaeology-site-card .asc-state { display:block; font-size:10px; color:#4ac87a; margin-top:3px; }
+.archaeology-site-card.locked .asc-state { color:#c86b61; }
+.archaeology-site-card.selected .asc-state { color:#d4a843; }
+
+.archaeology-probe-row { display:flex; gap:6px; margin-bottom:12px; }
+.archaeology-probe-card {
+  flex:1; background:rgba(8,12,20,.6); border:1px solid #1a2a3a; border-radius:5px;
+  padding:8px; cursor:pointer; transition:all .2s;
+  font-family:inherit; color:inherit;
+}
+.archaeology-probe-card:hover:not(:disabled) { border-color:#4ac87a; }
+.archaeology-probe-card.selected { border-color:#d4a843; background:rgba(20,15,8,.7); }
+.archaeology-probe-card.locked { opacity:.4; cursor:default; }
+.archaeology-probe-card .apc-name { display:block; font-weight:700; font-size:12px; color:#c8d8e8; }
+.archaeology-probe-card .apc-bonus { font-size:11px; color:#4ac87a; }
+.archaeology-probe-card .apc-stock { font-size:10px; color:#6a7a8e; display:block; }
+.archaeology-probe-card .apc-level { font-size:9px; color:#4a5a6a; display:block; }
+
+.archaeology-controls { display:flex; gap:8px; margin:10px 0; }
+.archaeology-progress { margin:10px 0; }
+.archaeology-progress-header { display:flex; justify-content:space-between; font-size:11px; color:#8899aa; margin-bottom:4px; }
+
+.archaeology-artifacts { margin-top:14px; }
+.archaeology-artifact-header { display:flex; gap:6px; margin-bottom:8px; }
+.archaeology-artifact-grid { display:flex; flex-direction:column; gap:4px; }
+.archaeology-artifact-card {
+  display:flex; align-items:center; gap:8px; padding:6px 10px;
+  background:rgba(8,12,20,.5); border:1px solid #1a2a3a; border-radius:4px;
+  font-size:12px;
+}
+.archaeology-artifact-card .aac-name { flex:1; color:#c8d8e8; font-weight:600; }
+.archaeology-artifact-card .aac-tier { color:#4a5a6a; font-size:10px; }
+.archaeology-artifact-card .aac-count { color:#d4a843; font-weight:600; min-width:30px; text-align:right; }
+.archaeology-artifact-card .aac-value { color:#6a7a8e; font-size:10px; min-width:80px; text-align:right; }
+.archaeology-cal-note { font-size:10px; color:#4a5a6a; }
+
+.archaeology-log { margin-top:14px; }
+.archaeology-log-list { max-height:200px; overflow-y:auto; }
+.archaeology-log-entry {
+  padding:3px 0; font-size:11px; border-bottom:1px solid #0a1018;
+  display:flex; gap:6px;
+}
+.archaeology-log-entry .ale-icon { width:16px; text-align:center; }
+.archaeology-log-entry .ale-site { color:#8899aa; }
+.archaeology-log-entry .ale-detail { color:#6a7a8e; }

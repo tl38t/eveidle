@@ -120,8 +120,8 @@ export function generateVents(ctx) {
       g.add(frame);
 
       // ── Slits：弧形金属条，浮在 frame 上表面 ──
-      // Phase 5 C3-A：ventDensity 控制格栅密度
-      const baseSlits = 5 + Math.floor(rng() * 4);
+      // Phase 5 C3-A：ventDensity 控制格栅密度；Phase 5 大船区分：slit 基数随舰级递增
+      const baseSlits = 4 + ctx.classTier * 2 + Math.floor(rng() * 3);
       const slitCount = Math.max(2, Math.round(baseSlits * ctx.style.ventDensity));
       const slitD = vd * 0.10;
       const slitT = ft * 0.55;
@@ -153,10 +153,10 @@ export function generateVents(ctx) {
         bar.rotation.z = rotZ;
         g.add(bar);
       }
-      // side slits — Phase 5 C3-A：ventDensity
+      // side slits — Phase 5 C3-A：ventDensity；Phase 5 大船区分：slit 基数随舰级递增
       const innerW = vw - bt * 2;
       const innerD = vd - bt * 2;
-      const baseSc = 5 + Math.floor(rng() * 4);
+      const baseSc = 4 + ctx.classTier * 2 + Math.floor(rng() * 3);
       const sc = Math.max(2, Math.round(baseSc * ctx.style.ventDensity));
       const slitW = innerW * 0.90;
       const slitD = innerD * 0.10;

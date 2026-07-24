@@ -15,6 +15,8 @@ import * as THREE from "three";
 import { rbox } from "./Materials.js";
 import { MaterialFactory } from "./MaterialFactory.js";
 
+// Sansha（modular）不使用散热片——核心由能量线直接供能，热管理由笼体结构承担。
+
 export function generateHeatSinks(ctx) {
   const { s, L, _engineHeatPoints } = ctx;
   const rng = ctx.scope("heatSink").random;
@@ -45,10 +47,13 @@ export function generateHeatSinks(ctx) {
 
     // ── 散热鳍片：基板上方的薄垂直板 ──
     // Phase 5 C3-A：heatDensity 控制鳍片数量
-    const baseFins = 4 + Math.floor(rng() * 2); // 4~5 片
+    // Phase 5 Rework：heatExposure 控制鳍片高度（Armor=0.3 半隐藏，装甲缝里的鳍片）
+    // Phase 5 大船区分：鳍片基数随舰级递增（frigate 3~4 → battleship 6~7）
+    const exposure = ctx.style.heatExposure || 1.0;
+    const baseFins = 3 + ctx.classTier + Math.floor(rng() * 2);
     const finCount = Math.max(2, Math.round(baseFins * ctx.style.heatDensity));
     const finT = 0.012 * s;                     // 鳍片厚度
-    const finH = hp.radius * 0.38;              // 鳍片高度（背离船体）
+    const finH = hp.radius * 0.38 * exposure;   // 鳍片高度（背离船体）—— Armor 半隐藏
     const finSpan = bd * 0.75;                  // 鳍片分布范围（Z 方向）
     const step = finSpan / (finCount - 1);
 

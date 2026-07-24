@@ -33,14 +33,80 @@ function addSeamRibbon(group, phi, dphi, ctx, L, intensity = 2.2) {
   group.add(new THREE.Mesh(geo, mat));
 }
 
+// ── Sansha 路线（modular）：核心→笼子的发光供能束 ──
+// 表现「立方体核心为笼子供能」：锥形渐细发光柱，从核心表面射向笼子锚点。
+// 数量随舰级：护卫 4（四面体对称）→ 驱逐 8（立方对称）→ 巡洋 12（面心）→ 战列 20（全顶点）。
+function generateSanshaBeams(ctx, g) {
+  const dims = ctx._sanshaDims;
+  const { cageR, coreR, verts, faceDirs, faceInset } = dims;
+  const tier = ctx.classTier;
+  const UP = new THREE.Vector3(0, 1, 0);
+
+  const intensity = 2.0 * (ctx.style.ribbonIntensity || 1.0);
+  const mat = MaterialFactory.getGlow("ribbon", ctx, intensity);
+
+  // 目标方向 → 最接近的笼顶点
+  const nearest = (x, y, z) => {
+    const d = new THREE.Vector3(x, y, z).normalize();
+    let best = verts[0], bd = -2;
+    for (const v of verts) {
+      const t = v.clone().normalize().dot(d);
+      if (t > bd) { bd = t; best = v; }
+    }
+    return best;
+  };
+
+  let targets;
+  if (tier === 0) {
+    // 四面体对称：立方顶点的交替 4 个
+    targets = [[1, 1, 1], [1, -1, -1], [-1, 1, -1], [-1, -1, 1]].map(d => nearest(d[0], d[1], d[2]));
+  } else if (tier === 1) {
+    // 立方对称：8 个立方顶点
+    targets = [];
+    for (const x of [-1, 1]) for (const y of [-1, 1]) for (const z of [-1, 1]) targets.push(nearest(x, y, z));
+  } else if (tier === 2) {
+    // 12 个面中心
+    targets = faceDirs.map(d => d.clone().multiplyScalar(faceInset));
+  } else {
+    // 全部 20 个顶点
+    targets = verts;
+  }
+
+  const rBot = cageR * 0.016, rTop = cageR * 0.007;   // 核心端粗、笼端细
+  for (const t of targets) {
+    const dir = t.clone().normalize();
+    const start = dir.clone().multiplyScalar(coreR * 0.45);   // 从核心表面附近射出
+    const end = t.clone().multiplyScalar(0.96);               // 略缩进笼内侧
+    const len = end.distanceTo(start);
+    const mid = start.clone().add(end).multiplyScalar(0.5);
+
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, len, 6, 1), mat);
+    beam.position.copy(mid);
+    beam.quaternion.setFromUnitVectors(UP, dir);
+    g.add(beam);
+  }
+  return g;
+}
+
 export function generateRibbons(ctx) {
   const { L } = ctx;
   const g = new THREE.Group();
   g.name = "ribbons";
 
-  const seamAngles = [0, 0.95, -0.95]; // 0=背脊中线，±=两舷
+  // Sansha：能量线 = 核心→笼子的供能束，不走曲面 Ribbon 路径
+  if (ctx.civ && ctx.civ.hullType === "modular" && ctx._sanshaDims) {
+    return generateSanshaBeams(ctx, g);
+  }
+
+  // Phase 5 Rework：ribbonIntensity 控制能量线强度（Armor=0.5 暗淡——重甲少发光）
+  const intensity = 2.2 * (ctx.style.ribbonIntensity || 1.0);
+  // Phase 5 大船区分：发光缝数量随舰级递增（frigate 3 → battleship 9 条），大船更"通电"
+  const seamAngles = [0, 0.95, -0.95];
+  if (ctx.classTier >= 1) seamAngles.push(0.55, -0.55);
+  if (ctx.classTier >= 2) seamAngles.push(1.45, -1.45);
+  if (ctx.classTier >= 3) seamAngles.push(1.85, -1.85);
   const seamHalfW = 0.038;             // 发光缝半角宽（弧度）→ 世界宽度 = 2·dphi·R(z)，随船体自动等比
-  for (const phi of seamAngles) addSeamRibbon(g, phi, seamHalfW, ctx, L, 2.2);
+  for (const phi of seamAngles) addSeamRibbon(g, phi, seamHalfW, ctx, L, intensity);
 
   return g;
 }

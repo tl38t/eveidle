@@ -48,7 +48,8 @@ function gameTick() {
       const recipe = SMELTING_RECIPES.find(r => r.name === recipeName) || SMELTING_RECIPES[0]; if (!recipe) return;
       const stock = ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
       if (stock < 1) { stopOrSkip(); updateUI(); return; }
-      const eff = getSmeltingEfficiency(); const actualTime = recipe.baseTime / eff;
+      const smeltingState = getSmeltingDisplayState(gameState, Date.now());
+      const eff = smeltingState.efficiency; const actualTime = recipe.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now();
       const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
@@ -56,7 +57,7 @@ function gameTick() {
       while (gameState.currentAction.progress >= actualTime) {
         if (ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre) < 1) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime; ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, 1);
-        const output = Math.max(1, Math.floor(recipe.baseOutput * eff));
+        const output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
         ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, output);
         s.xp += recipe.baseXP; gameState._dirty = true; actionCompleted = true;
         GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:1, outputQuantity:output, xp:recipe.baseXP }, { offline:false });
@@ -97,6 +98,7 @@ function gameTick() {
         applyEquipEngOutput(recipe, 1);
         s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
         GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, xp:recipe.xp }, { offline:false });
+        if (recipe.slot === "rig") GameEvents.emit("rig:manufactured", { rigId:recipe.output.itemId, quantity:recipe.output.qty }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
@@ -140,9 +142,55 @@ function gameTick() {
           GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) { updateUI(); break; }
         }
-        if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
-        if (s.xp > 0) checkLevelUp("shipEngineering");
+      if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
+      if (s.xp > 0) checkLevelUp("shipEngineering");
       }
+    } else if (key === "archaeology") {
+    const arch = gameState.archaeology;
+    const site = getArchaeologySite(arch.startedSiteId);
+    if (!site) { resetActionProgress(); gameState.currentAction.active = false; updateUI(); return; }
+    const instanceId = gameState.shipAssignments && gameState.shipAssignments.archaeology;
+    const instance = instanceId ? getShipInstanceFromState(gameState, instanceId) : null;
+    if (!instance) { stopOrSkip(); updateUI(); return; }
+    const now = Date.now();
+    // 维修完成：恢复满血并继续
+    if (arch.repairUntil && arch.repairUntil <= now) {
+      if (arch.repairInstanceId) {
+        resetArchaeologyShipHp(gameState, arch.repairInstanceId);
+        GameEvents.emit("archaeology:repairCompleted", { instanceId:arch.repairInstanceId }, { offline:false });
+      }
+      arch.repairUntil = 0; arch.repairInstanceId = null;
+    }
+    // 维修中：暂停并清空进度
+    if (arch.repairUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
+    // 信号干扰中：暂停并清空进度
+    if (arch.interferenceUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
+
+    const actualTime = site.time;
+    gameState.currentAction.refDuration = actualTime;
+    const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+    gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
+    while (gameState.currentAction.progress >= actualTime) {
+      gameState.currentAction.progress -= actualTime;
+      const result = resolveArchaeologyCycle(gameState, now, undefined);
+      if (!result || result.reason === "insufficient") { stopOrSkip(); updateUI(); return; }
+      if (result.success) {
+        arch.log.push({ time:now, site:site.name, success:true, artifacts:result.found.map(a => a.name) });
+      } else {
+        if (result.destroyed) {
+          arch.log.push({ time:now, site:site.name, success:false, destroyed:true, backlash:result.backlash });
+        } else {
+          const rigMods = (typeof getRigModifiers === "function" && instance) ? (getRigModifiers(gameState, instance) || {}) : {};
+          const interferenceSeconds = getArchaeologyInterferenceSeconds(site, rigMods.archaeologyInterferenceReduction);
+          arch.interferenceUntil = now + interferenceSeconds * 1000;
+          arch.log.push({ time:now, site:site.name, success:false, backlash:result.backlash });
+        }
+      }
+      gameState._dirty = true;
+      if (completeQueuedActionCycle()) { updateUI(); break; }
+    }
+    if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
+    if (gameState.skills.archaeology.xp > 0) checkLevelUp("archaeology");
     }
   }
 

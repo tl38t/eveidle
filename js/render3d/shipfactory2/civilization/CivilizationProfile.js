@@ -58,17 +58,21 @@ export const CIVILIZATIONS = {
     }
   },
 
-  // ── 2. Player Armor：移动堡垒 ──
-  //    厚壳 box hull + 外挂装甲块裙边
+  // ── 2. Player Armor：移动堡垒（Fortress Engineering）──
+  //    不是穿着装甲的船，是被推进器推动的太空堡垒。
+  //    宽厚短稳的箱体 + 外挂巨型装甲块。
   player_armor: {
     id:          "player_armor",
     displayName: "Player Armor",
     hullType:    "box",
     hullParams: {
-      widthMul:         1.35,      // 宽体 —— 坦克感
+      widthMul:         1.25,      // 宽体 —— 坦克感（widthBias）
+      lengthMul:        0.9,       // 短稳 —— 不细长（lengthBias）
+      mass:             1.5,       // 质量感（视觉厚重）
+      volume:           1.3,       // 体积感
       noseShape:        "flat",    // 平头
       midStyle:         "stepped", // 台阶式中段
-      armorBlocks:      true,      // 外挂装甲块 ⬛
+      armorBlocks:      true,      // 外挂装甲块 ⬛（ArmorBlockGenerator 消费）
       armorBlockSize:   0.75,
       frameExposed:     0.15,      // 几乎不暴露骨架
       reactorExternal:  false,
@@ -159,6 +163,50 @@ export const CIVILIZATIONS = {
       moduleGap:         0.06,      // 固定间隙
       asymmetry:         0,
       organicBulge:      0,
+    }
+  },
+
+  // ── 7. Industrial / ORE：功能工业舰 ──
+  //    宽厚货舱体 + 棱角装甲 + 外露机械；采矿激光臂 / 采气采集器为签名挂载。
+  industrial: {
+    id:          "industrial",
+    displayName: "Industrial / ORE",
+    hullType:    "industrial",
+    hullParams: {
+      widthMul:         1.35,      // 宽体——货舱感
+      lengthMul:        0.95,
+      mass:             1.4,
+      noseShape:        "flat",    // 平头货舱
+      midStyle:         "box",     // 方正中段
+      armorBlocks:      false,
+      frameExposed:     0.1,
+      reactorExternal:  false,
+      pipeDensity:       0.4,
+      moduleRepeat:      0,
+      asymmetry:         0,
+      organicBulge:      0,
+    }
+  },
+
+  // ── 8. Archaeology / Explorer：探索扫描舰 ──
+  //    流线体 + 脊背传感器桅 + 侧向扫描翼；扫描阵列 / 探针发射舱为签名挂载。
+  archaeology: {
+    id:          "archaeology",
+    displayName: "Archaeology / Explorer",
+    hullType:    "archaeology",
+    hullParams: {
+      widthMul:         0.95,
+      noseShape:        "sharp",
+      midStyle:         "smooth",  // 流线中段
+      armorBlocks:      false,
+      frameExposed:     0,
+      reactorExternal:  false,
+      pipeDensity:       0,
+      moduleRepeat:      0,
+      asymmetry:         0,
+      organicBulge:      0,
+      scanWings:         true,     // 侧向扫描翼
+      probeNacelles:     true,     // 探针发射舱
     }
   },
 };

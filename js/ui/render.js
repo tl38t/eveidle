@@ -22,7 +22,7 @@ const SKILL_DESC = {
   combat: "由最高攻击技能与最高防御技能共同决定，解锁更高安全等级星带",
   drones: "（占位）无人机伤害加成",
   equipmentEngineering: "制造舰船装备、燃料与各类弹药",
-  rigEngineering: "（占位）制造舰船改装件",
+  rigEngineering: "制造舰船改装件",
   reverseEngineering: "（占位）解析残骸获取蓝图碎片"
 };
 
@@ -81,6 +81,10 @@ function renderMiningDisplay(display, areaEl, outEl) {
   const start = document.getElementById("btn-start-mine"); if (start) start.title = display.canStart ? "" : display.requirement.text;
   setProductionControls(display, start);
   const efficiency = document.getElementById("me-value"); if (efficiency) { efficiency.textContent = display.efficiency.total.toFixed(2); efficiency.title = display.efficiencyTooltip; }
+  const fleetSupport = document.getElementById("mining-fleet-support");
+  const fleetSupportRow = document.getElementById("mining-fleet-support-row");
+  if (fleetSupport) fleetSupport.textContent = display.efficiency.fleetSupportBonus > 0 ? display.efficiency.fleetSupportShip.name + " · 最终速度 +" + (display.efficiency.fleetSupportBonus * 100).toFixed(0) + "%" : "未启用";
+  if (fleetSupportRow) fleetSupportRow.classList.toggle("active", display.efficiency.fleetSupportBonus > 0);
   drawSkillBar(document.getElementById("bar-mining"), display.progress.percent, "green");
   const eta = document.getElementById("mp-eta"); if (eta) eta.textContent = display.progress.etaText;
 }
@@ -95,9 +99,13 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   const efficiency = document.getElementById("smelting-eff-value");
   if (efficiency) {
     efficiency.textContent = display.efficiency.toFixed(2);
-    efficiency.title = "1 × (1 + " + display.level + " × 0.02)" + (display.shipBonus > 0 ? " × (1 + " + (display.shipBonus * 100).toFixed(0) + "%)" : "") + " = " + display.efficiency.toFixed(2) + (display.ship ? "\n工业舰：" + display.ship.name + " (+" + (display.shipBonus * 100).toFixed(0) + "%)" : "") + "\n\n基础时间：" + display.current.baseTime + "s\n实际时间：" + display.actualTime.toFixed(1) + "s";
+    efficiency.title = "技能速度：1 × (1 + " + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" + (display.shipBonus > 0 ? "\n舰船冶炼加速：" + display.ship.name + " +" + (display.shipBonus * 100).toFixed(0) + "%" : "\n舰船冶炼加速：无") + "\n最终速度：" + display.efficiency.toFixed(2) + "x\n\n基础时间：" + display.current.baseTime + "s\n实际时间：" + display.actualTime.toFixed(1) + "s\n产量只受冶炼技能影响，舰船只缩短时间";
   }
   const output = document.getElementById("smelting-output-qty"); if (output) output.textContent = display.output;
+  const support = document.getElementById("smelting-ship-support"); if (support) support.textContent = display.shipBonus > 0 ? display.ship.name + " · 速度 +" + (display.shipBonus * 100).toFixed(0) + "%" : "未分配";
+  const cycleTimes = document.getElementById("smelting-cycle-times");
+  if (cycleTimes) cycleTimes.textContent = display.current.baseTime.toFixed(1) + "s → " + display.actualTime.toFixed(1) + "s";
+  const outputNote = document.getElementById("smelting-output-note"); if (outputNote) outputNote.textContent = "支援舰只缩短冶炼周期，单次仍产出 " + display.output;
   setProductionControls(display, document.getElementById("btn-start-smelt"));
   drawSkillBar(document.getElementById("bar-smelting"), display.progress.percent, "gold");
   const eta = document.getElementById("smelting-eta"); if (eta) eta.textContent = display.progress.etaText;

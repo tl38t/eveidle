@@ -2,13 +2,16 @@
    舰船强化 — 纯规则与数值层
 
    强化等级保存在舰船实例上；本文件不写 gameState、不操作 DOM。
+   成功率委托 enhancement-chance.js 共用边际递减公式（2026-07-24）。
    ================================================================ */
 
 const SHIP_ENHANCEMENT_TIERS = Object.freeze([
   Object.freeze({ level:1, componentIds:Object.freeze(["integrated_hull", "power_core", "functional_system"]) }),
   Object.freeze({ level:15, componentIds:Object.freeze(["destroyer_integrated_hull", "destroyer_power_core", "destroyer_functional_system"]) }),
   Object.freeze({ level:35, componentIds:Object.freeze(["cruiser_integrated_hull", "cruiser_power_core", "cruiser_functional_system"]) }),
-  Object.freeze({ level:55, componentIds:Object.freeze(["battleship_integrated_hull", "battleship_power_core", "battleship_functional_system"]) })
+  Object.freeze({ level:55, componentIds:Object.freeze(["battleship_integrated_hull", "battleship_power_core", "battleship_functional_system"]) }),
+  Object.freeze({ level:80, componentIds:Object.freeze(["capital_integrated_hull", "capital_power_core", "capital_functional_system"]) }),
+  Object.freeze({ level:90, componentIds:Object.freeze(["supercapital_integrated_hull", "supercapital_power_core", "supercapital_functional_system"]) })
 ]);
 
 function normalizeShipEnhancementLevel(value) {
@@ -23,6 +26,8 @@ function getShipManufacturingLevel(shipConfig) {
   if (type.includes("battleship")) return 55;
   if (type.includes("cruiser")) return 35;
   if (type.includes("destroyer")) return 15;
+  if (type === "supercapital") return 90;
+  if (type === "capital" || type === "industrial_capital" || type === "archaeology_capital") return 80;
   if (type.includes("frigate")) return 1;
   return null;
 }
@@ -36,8 +41,13 @@ function isIndustrialShipConfig(shipConfig) {
   return Boolean(shipConfig && typeof INDUSTRIAL_SHIPS !== "undefined" && INDUSTRIAL_SHIPS[shipConfig.id]);
 }
 
+function isArchaeologyShipConfig(shipConfig) {
+  return Boolean(shipConfig && typeof ARCHAEOLOGY_SHIPS !== "undefined" && ARCHAEOLOGY_SHIPS[shipConfig.id]);
+}
+
 function getShipEnhancementRole(shipConfig) {
   if (!shipConfig) return "unknown";
+  if (isArchaeologyShipConfig(shipConfig)) return "archaeology";
   if (!isIndustrialShipConfig(shipConfig)) return "combat";
   const bonuses = shipConfig.bonuses || {};
   if (bonuses.miningLaserEfficiency && bonuses.gasLaserEfficiency) return "industry-dual";
@@ -61,10 +71,11 @@ function getShipEnhancementBaseXp(shipConfig) {
 }
 
 function getShipEnhancementSuccessChance(shipEngineeringLevel, manufacturingLevel, currentLevel) {
-  const skillLevel = Math.max(1, Number(shipEngineeringLevel) || 1);
-  const threshold = Math.max(1, Number(manufacturingLevel) || 1);
-  const enhancement = normalizeShipEnhancementLevel(currentLevel);
-  return Math.max(0.05, Math.min(0.95, 0.50 + 0.02 * (skillLevel - threshold) - 0.01 * enhancement));
+  return getEnhancementChance(shipEngineeringLevel, manufacturingLevel, currentLevel);
+}
+
+function getShipEnhancementSuccessBreakdown(shipEngineeringLevel, manufacturingLevel, currentLevel) {
+  return getEnhancementChanceBreakdown(shipEngineeringLevel, manufacturingLevel, currentLevel);
 }
 
 function getShipEnhancementSuccessXp(shipConfig, currentLevel) {
@@ -73,7 +84,7 @@ function getShipEnhancementSuccessXp(shipConfig, currentLevel) {
 }
 
 function getShipEnhancementFailureXp(shipConfig) {
-  return Math.round(getShipEnhancementBaseXp(shipConfig) * 0.5);
+  return 0; // 2026-07-24：失败 0 XP（与装备强化一致）
 }
 
 function getShipEnhancementBonuses(shipConfig, enhancementLevel) {
@@ -87,6 +98,18 @@ function getShipEnhancementBonuses(shipConfig, enhancementLevel) {
       hpMultiplier:1 + blocks * 0.05 + remainder * 0.005,
       damageMultiplier:1 + blocks * 0.025 + remainder * 0.0025,
       industryMultiplier:1
+    };
+  }
+  if (role === "archaeology") {
+    // 考古船可参与战斗，但舰船强化只成长生命与扫描，不增加战斗伤害。
+    // damageMultiplier / industryMultiplier 恒为 1（安全中性），避免战斗选择器拿到 undefined/NaN。
+    const growth = 1 + blocks * 0.05 + remainder * 0.005;
+    return {
+      role,
+      hpMultiplier:growth,
+      damageMultiplier:1,
+      industryMultiplier:1,
+      archaeologyScanMultiplier:growth
     };
   }
   return {
@@ -110,6 +133,7 @@ window.ShipEnhancement = Object.freeze({
   getCost:getShipEnhancementCost,
   getBaseXp:getShipEnhancementBaseXp,
   getSuccessChance:getShipEnhancementSuccessChance,
+  getSuccessBreakdown:getShipEnhancementSuccessBreakdown,
   getSuccessXp:getShipEnhancementSuccessXp,
   getFailureXp:getShipEnhancementFailureXp,
   getBonuses:getShipEnhancementBonuses,

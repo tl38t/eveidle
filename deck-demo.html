@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>结构船甲板样式演示 · Deck Style Demo</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; background: #05080c; color: #cdd6e0;
+      font-family: -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; overflow: hidden; }
+    #viewport { position: absolute; inset: 0; }
+    .bar { position: absolute; top: 16px; left: 50%; transform: translateX(-50%);
+      display: flex; gap: 10px; padding: 10px 12px; border-radius: 12px;
+      background: rgba(12,18,26,0.82); border: 1px solid rgba(120,160,200,0.18);
+      backdrop-filter: blur(8px); z-index: 10; }
+    .bar button { cursor: pointer; border: 1px solid rgba(120,160,200,0.25);
+      background: rgba(30,42,56,0.9); color: #cdd6e0; padding: 9px 14px; border-radius: 9px;
+      font-size: 13px; transition: all .15s ease; }
+    .bar button:hover { border-color: #58bfff; color: #fff; }
+    .bar button.active { background: #1d6fd0; border-color: #58bfff; color: #fff; font-weight: 600; }
+    .hint { position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      font-size: 12px; color: #7d8a99; z-index: 10; }
+    .title { position: absolute; top: 16px; left: 18px; z-index: 10; }
+    .title h1 { margin: 0; font-size: 15px; letter-spacing: .04em; color: #dbe4ee; }
+    .title small { color: #6f7d8c; font-size: 11px; }
+  </style>
+  <script type="importmap">
+  { "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+  } }
+  </script>
+</head>
+<body>
+  <div class="title">
+    <h1>结构船装甲壳包覆演示</h1>
+    <small>player_structure / battleship · 分段弧形圆筒壳 · 暗装甲色 · 点按钮切换包覆程度</small>
+  </div>
+  <div class="bar">
+    <button data-deck="half" class="active">① 半包（顶+底弧，侧透）</button>
+    <button data-deck="most">② 大半包（留细侧缝）</button>
+    <button data-deck="full">③ 整圈圆筒</button>
+  </div>
+  <div id="viewport"></div>
+  <div class="hint">拖拽旋转 · 滚轮缩放 · 右键平移</div>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+    import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+    import { buildShip, COLORS } from "./js/render3d/shipfactory2/ShipFactory2.js";
+
+    const viewport = document.getElementById("viewport");
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x05080c);
+    scene.fog = new THREE.FogExp2(0x05080c, 0.006);
+    const camera = new THREE.PerspectiveCamera(38, 1, 0.1, 1000);
+    camera.position.set(17, 12, 28);
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.05;
+    viewport.prepend(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true; controls.dampingFactor = 0.055;
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+    scene.add(new THREE.HemisphereLight(0xb8d9ef, 0x100c0a, 0.5));
+    const key = new THREE.DirectionalLight(0xfff1d7, 2.4); key.position.set(12, 18, 10); scene.add(key);
+    const rim = new THREE.DirectionalLight(0x58bfff, 1.5); rim.position.set(-12, 5, -14); scene.add(rim);
+    const accent = new THREE.PointLight(0x48c2ff, 55, 100); accent.position.set(0, 6, 10); scene.add(accent);
+
+    // 星空背景
+    const starData = [];
+    for (let i = 0; i < 650; i++) {
+      const a = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1), r = 72 + Math.random() * 28;
+      starData.push(r * Math.sin(p) * Math.cos(a), r * Math.cos(p), r * Math.sin(p) * Math.sin(a));
+    }
+    const starGeometry = new THREE.BufferGeometry();
+    starGeometry.setAttribute("position", new THREE.Float32BufferAttribute(starData, 3));
+    scene.add(new THREE.Points(starGeometry, new THREE.PointsMaterial({ color: 0xa8c4d4, size: 0.1, transparent: true, opacity: 0.5 })));
+
+    let activeShip = null;
+    function disposeObject(root) {
+      const geometries = new Set(), materials = new Set();
+      root?.traverse((o) => {
+        if (o.geometry) geometries.add(o.geometry);
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of list) if (m) materials.add(m);
+      });
+      geometries.forEach(g => g.dispose()); materials.forEach(m => m.dispose());
+    }
+    function fitCamera(ship) {
+      const sphere = new THREE.Box3().setFromObject(ship).getBoundingSphere(new THREE.Sphere());
+      const radius = Math.max(sphere.radius, 1);
+      const distance = radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2)) * 1.15;
+      controls.target.copy(sphere.center);
+      camera.position.copy(sphere.center).add(new THREE.Vector3(0.65, 0.42, 1).normalize().multiplyScalar(distance));
+      camera.near = Math.max(0.05, distance / 100); camera.far = Math.max(500, distance * 12);
+      camera.updateProjectionMatrix(); controls.update();
+    }
+    function build(deckStyle) {
+      const spec = {
+        id: "deck-demo-" + deckStyle, anchor: "fortress", race: "player_structure",
+        line: "player_structure", hull: "battleship", seed: "deckdemo",
+        faction: "player_structure", family: "structure", weapon: "laser", deckStyle
+      };
+      try {
+        const ship = buildShip(spec);
+        ship.rotation.x = -0.08; ship.rotation.y = -0.42;
+        if (activeShip) { scene.remove(activeShip); disposeObject(activeShip); }
+        activeShip = ship; scene.add(ship); fitCamera(ship);
+        accent.color.set(COLORS[spec.race]?.glow ?? 0x48c2ff);
+      } catch (e) { console.error(e); }
+    }
+
+    // 按钮切换
+    const buttons = document.querySelectorAll(".bar button");
+    buttons.forEach(btn => btn.addEventListener("click", () => {
+      buttons.forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      build(btn.dataset.deck);
+    }));
+
+    function resize() {
+      const w = viewport.clientWidth, h = viewport.clientHeight;
+      if (!w || !h) return;
+      renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    }
+    new ResizeObserver(resize).observe(viewport); resize();
+
+    function animate() {
+      requestAnimationFrame(animate);
+      controls.update(); renderer.render(scene, camera);
+    }
+    build("half"); animate();
+  </script>
+</body>
+</html>

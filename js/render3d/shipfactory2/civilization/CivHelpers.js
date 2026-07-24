@@ -1,18 +1,9 @@
 // CivHelpers.js — 共享几何元素（spine / bridge / wings）
 // 供所有 civ hull generator 复用，避免复制 HullGenerator 的公共元素。
 import * as THREE from "three";
-import { rbox } from "../Materials.js";
 
-// ── 中央脊线饰条 ──
-export function buildSpine(ctx, g, yOffsetMul = 0.92, lengthMul = 0.72) {
-  const { s, L } = ctx;
-  const midR = ctx.hullProfile.mid * s;
-  g.add(rbox(
-    L * lengthMul, 0.036 * s, 0.07 * s, 0.018 * s,
-    ctx.darkMat,
-    [0, midR * yOffsetMul, -0.02 * L]
-  ));
-}
+// ── 中央脊线饰条（已移除：近黑脊线在俯视图中显示为横穿船体的黑条，用户要求删除脊线）──
+export function buildSpine() { /* no-op: 脊线饰条已移除，保留签名避免破坏 5 处调用方 import */ }
 
 // ── 舰桥窗 ──
 export function buildBridge(ctx, g) {

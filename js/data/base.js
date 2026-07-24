@@ -38,5 +38,6 @@ const INITIAL_SKILLS = {
   piloting:                { lvl: 1, xp: 0 },
   capacitorManagement:     { lvl: 1, xp: 0 },
   drones:                  { lvl: 1, xp: 0 },
-  combat:                  { lvl: 1, xp: 0 } // 旧存档兼容字段；界面战斗等级由六项战斗技能实时计算
+  combat:                  { lvl: 1, xp: 0 }, // 旧存档兼容字段；界面战斗等级由六项战斗技能实时计算
+  archaeology:             { lvl: 1, xp: 0 }  // 考古系统第二阶段：扫描遗迹、解析文物
 };

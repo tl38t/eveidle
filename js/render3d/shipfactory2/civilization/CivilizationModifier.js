@@ -19,6 +19,8 @@ import { generateSkeletalHull } from "./SkeletalHull.js";
 import { generateOrganicHull } from "./OrganicHull.js";
 import { generateOverloadedHull } from "./OverloadedHull.js";
 import { generateModularHull } from "./ModularHull.js";
+import { generateIndustrialHull } from "./IndustrialHull.js";
+import { generateArchaeologyHull } from "./ArchaeologyHull.js";
 
 const GENERATORS = {
   box:        generateFortressHull,
@@ -26,6 +28,8 @@ const GENERATORS = {
   organic:    generateOrganicHull,
   overloaded: generateOverloadedHull,
   modular:    generateModularHull,
+  industrial: generateIndustrialHull,
+  archaeology: generateArchaeologyHull,
 };
 
 /**

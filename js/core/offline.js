@@ -83,7 +83,8 @@ function getOfflineActionDescriptor() {
     const recipeName = action.startedSmeltingArea || action.smeltingArea;
     const recipe = SMELTING_RECIPES.find(r => r.name === recipeName || r.outputMineral === recipeName) || SMELTING_RECIPES[0];
     if (!recipe) return null;
-    const eff = getSmeltingEfficiency(); const output = Math.max(1, Math.floor(recipe.baseOutput * eff));
+    const smeltingState = getSmeltingDisplayState(gameState, Date.now());
+    const eff = smeltingState.efficiency; const output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
     return {
       key, duration: recipe.baseTime / eff,
       maxCycles() {
@@ -158,6 +159,39 @@ function getOfflineActionDescriptor() {
         applyEquipEngOutput(recipe, cycles);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
         emitOfflineGameEvent("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:cycles * recipe.output.qty, cycles, xp:cycles * recipe.xp });
+        if (recipe.slot === "rig") emitOfflineGameEvent("rig:manufactured", { rigId:recipe.output.itemId, quantity:cycles * recipe.output.qty });
+      }
+    };
+  }
+
+  if (key === "archaeology") {
+    const arch = gameState.archaeology;
+    const site = getArchaeologySite(arch.startedSiteId || arch.activeSiteId);
+    if (!site) return null;
+    const probeId = arch.startedProbeId || arch.activeProbeId;
+    const instanceId = gameState.shipAssignments && gameState.shipAssignments.archaeology;
+    const instance = instanceId ? getShipInstanceFromState(gameState, instanceId) : null;
+    if (!instance) return null;
+    return {
+      key, duration: site.time,
+      maxCycles() {
+        const probeStock = ResourceRegistry.get(gameState, "probe:" + probeId);
+        const fuelStock = ResourceRegistry.get(gameState, "consumable:fuel");
+        // 用唯一计算层的长期平均燃料作为除数（含船体 fuelEfficiency + 改装件减免），
+        // 保证在线/离线可负担次数一致；apply 循环内每次仍以真实累计器结算并在不足时中断。
+        const fuelState = getArchaeologyFuelCostState(gameState, site, instance);
+        const perCycle = Math.max(1, fuelState.averageFuelPerCycle);
+        return Math.max(0, Math.min(probeStock, Math.floor(fuelStock / perCycle) + 2));
+      },
+      apply(cycles, gains) {
+        let done = 0;
+        for (let i = 0; i < cycles; i++) {
+          const result = resolveArchaeologyCycle(gameState, Date.now(), "offline");
+          if (!result || result.reason === "insufficient") break;
+          done++;
+          if (gameState.archaeology.repairUntil) break; // 舰船损毁，停止离线挖掘
+        }
+        gains[key] += done;
       }
     };
   }

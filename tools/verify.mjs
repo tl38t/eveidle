@@ -11,8 +11,17 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 30) throw new Error(`预期 30 个脚本，实际 ${scriptSources.length}`);
+if (scriptSources.length !== 37) throw new Error(`预期 37 个脚本，实际 ${scriptSources.length}`); // 37 = 36 + enhancement-chance.js（共用成功率层 2026-07-24）
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
+
+// 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
+{
+  const prodIdx = scriptSources.findIndex(s => s.includes("production.js"));
+  const enhIdx = scriptSources.findIndex(s => s.includes("equipment-enhancement.js"));
+  if (prodIdx < 0) throw new Error("未找到 production.js 脚本引用");
+  if (enhIdx < 0) throw new Error("未找到 equipment-enhancement.js 脚本引用");
+  if (prodIdx >= enhIdx) throw new Error(`脚本顺序错误：production.js (idx=${prodIdx}) 必须早于 equipment-enhancement.js (idx=${enhIdx})`);
+}
 
 for (const source of localSources) {
   const target = path.resolve(root, source.replace(/^\.\//, ""));
@@ -646,7 +655,14 @@ if (cargoDisplay.filter !== "mineral" || cargoDisplay.items.find(item => item.na
 }
 
 const shellActionState = JSON.parse(JSON.stringify(shellViewState));
-const shellShip = shellActionState.inventory.ships[0];
+// 采矿职责须由具备采矿加成的工业/采矿舰承担（getShipAssignmentRestriction 规则，
+// 要求 bonuses.miningLaserEfficiency>0）。默认测试库存不含此类舰船，这里显式注入
+// 一艘 miner_frigate（冲锋者级，miningLaserEfficiency=1.0）作为船坞/装配测试舰。
+let shellShip = shellActionState.inventory.ships.find(s => s.shipId === "miner_frigate");
+if (!shellShip) {
+  shellShip = sandbox.createShipInstance("miner_frigate");
+  shellActionState.inventory.ships.push(shellShip);
+}
 shellShip.fitted = { high:["t1_small_laser"], mid:[], low:[], rig:[] };
 shellActionState.equipment.inventory = ["t1_light_missile_launcher"];
 const assignmentAction = sandbox.dispatchGameAction(shellActionState, { type:"hangar/toggleAssignment", instanceId:shellShip.instanceId, actionKey:"mining" }, selectorNow);
@@ -660,7 +676,7 @@ const settingsAction = sandbox.dispatchGameAction(shellActionState, { type:"sett
 const combatSkillsAction = sandbox.dispatchGameAction(shellActionState, { type:"settings/toggleCombatSkills" }, selectorNow);
 if (!assignmentAction.changed || shellActionState.shipAssignments.mining !== shellShip.instanceId || !fittingAction.changed || !resetFittingAction.changed ||
     Object.values(shellShip.fitted).flat().filter(Boolean).length !== 0 || !shellActionState.equipment.inventory.includes("t1_small_laser") ||
-    !shellActionState.equipment.inventory.includes("t1_light_missile_launcher") || !lpPurchaseAction.changed || shellActionState.resources.lp !== 0 ||
+    !shellActionState.equipment.instances.some(i => i.itemId === "t1_light_missile_launcher" && !i.installedOn) || !lpPurchaseAction.changed || shellActionState.resources.lp !== 0 ||
     !shellActionState.ownedBlueprints.includes(lpBlueprintKey) || !settingsAction.changed || settingsAction.enabled !== false ||
     shellActionState.settings.confirmShipEnhancement !== false || !combatSkillsAction.changed || !combatSkillsAction.expanded ||
     shellActionState.settings.combatSkillsExpanded !== true || !shellActionState._dirty) {
@@ -707,29 +723,46 @@ const expectedShipMaterials = {
   raylight: { "三钛合金":281, "类银超金属":76, "重金属":27, "稀有气体":30, "类晶体胶矿":6 },
   spearfalcon: { "三钛合金":281, "类银超金属":76, "重金属":27, "稀有气体":30, "类晶体胶矿":6 },
   swiftblade: { "三钛合金":281, "类银超金属":76, "重金属":27, "稀有气体":30, "类晶体胶矿":6 },
+  miner_destroyer: { "三钛合金":281, "类银超金属":76, "重金属":27, "稀有气体":30, "类晶体胶矿":6 },
+  gas_destroyer: { "三钛合金":281, "类银超金属":76, "重金属":27, "稀有气体":30, "类晶体胶矿":6 },
   gale: { "三钛合金":370, "类银超金属":100, "重金属":36, "稀有气体":39, "类晶体胶矿":8 },
   bloodthorn: { "三钛合金":370, "类银超金属":100, "重金属":36, "稀有气体":39, "类晶体胶矿":8 },
   umbra: { "三钛合金":370, "类银超金属":100, "重金属":36, "稀有气体":39, "类晶体胶矿":8 },
   dawnlight: { "三钛合金":367, "类银超金属":96, "同位聚合体":38, "同位素":24, "重金属":36, "类晶体胶矿":15, "稀有气体":36 },
   warfalcon: { "三钛合金":367, "类银超金属":96, "同位聚合体":38, "同位素":24, "重金属":36, "类晶体胶矿":15, "稀有气体":36 },
   stormblade: { "三钛合金":367, "类银超金属":96, "同位聚合体":38, "同位素":24, "重金属":36, "类晶体胶矿":15, "稀有气体":36 },
+  miner_cruiser: { "三钛合金":367, "类银超金属":96, "同位聚合体":38, "同位素":24, "重金属":36, "类晶体胶矿":15, "稀有气体":36 },
+  gas_cruiser: { "三钛合金":367, "类银超金属":96, "同位聚合体":38, "同位素":24, "重金属":36, "类晶体胶矿":15, "稀有气体":36 },
+  dolphin: { "三钛合金":370, "类银超金属":98, "同位聚合体":38, "同位素":24, "重金属":32, "类晶体胶矿":12, "稀有气体":40 },
+  thunder: { "三钛合金":440, "类银超金属":118, "同位聚合体":46, "同位素":30, "重金属":40, "类晶体胶矿":15, "稀有气体":44 },
+  crimson: { "三钛合金":440, "类银超金属":118, "同位聚合体":46, "同位素":30, "重金属":40, "类晶体胶矿":15, "稀有气体":44 },
+  nether: { "三钛合金":440, "类银超金属":118, "同位聚合体":46, "同位素":30, "重金属":40, "类晶体胶矿":15, "稀有气体":44 },
   sunlance: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
   fortfalcon: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
-  thunderblade: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 }
+  thunderblade: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
+  miner_battleship: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
+  gas_battleship: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
+  dawnbreaker: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
+  crimson_bastion: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
+  spectre_frame: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 },
+  heron: { "三钛合金":164, "类银超金属":26, "重金属":18, "稀有气体":18 },
+  tracer: { "三钛合金":281, "类银超金属":76, "重金属":27, "稀有气体":30, "类晶体胶矿":6 },
+  starmap: { "三钛合金":367, "类银超金属":96, "同位聚合体":38, "同位素":24, "重金属":36, "类晶体胶矿":15, "稀有气体":36 },
+  farscope: { "三钛合金":430, "同位聚合体":223, "超新星诺克石":215, "同位素":30, "重金属":66, "等离子体":95, "稀有气体":60 }
 };
 const shipAssemblyRecipes = vm.runInContext("SHIP_ASSEMBLY_RECIPES", sandbox);
 const shipComponentRecipes = vm.runInContext("SHIP_COMPONENT_RECIPES", sandbox);
-for (const recipe of shipAssemblyRecipes) {
+for (const recipe of shipAssemblyRecipes.filter(item => item.level <= 60)) {
   if (!recipe.componentCost || recipe.extraCost || recipe.comps || recipe.compCount) {
     throw new Error(`${recipe.name}仍使用旧式统一部件字段`);
   }
   const componentTotal = Object.values(recipe.componentCost).reduce((sum, count) => sum + count, 0);
-  const expectedTotal = recipe.level === 55 ? 16 : recipe.level === 35 || recipe.level === 20 ? 13 : recipe.level === 15 ? 10 : 6;
+  const expectedTotal = recipe.id === "dolphin" ? 14 : recipe.level === 60 || recipe.level === 55 || recipe.level === 40 ? 16 : recipe.level === 35 || recipe.level === 20 ? 13 : recipe.level === 15 ? 10 : 6;
   if (componentTotal !== expectedTotal) throw new Error(`${recipe.name}部件总数不是${expectedTotal}`);
   const materials = {};
   for (const [componentId, count] of Object.entries(recipe.componentCost)) {
     const component = shipComponentRecipes.find(item => item.id === componentId);
-    const expectedComponentLevel = recipe.level === 20 ? 15 : recipe.level;
+    const expectedComponentLevel = recipe.level === 20 ? 15 : recipe.level === 40 ? 35 : recipe.level === 60 ? 55 : recipe.level;
     if (!component || component.level !== expectedComponentLevel) throw new Error(`${recipe.name}包含不存在或舰级不匹配的部件`);
     for (const [material, quantity] of Object.entries(component.cost)) {
       materials[material] = (materials[material] || 0) + quantity * count;
@@ -744,6 +777,42 @@ for (const recipe of shipAssemblyRecipes.filter(item => item.level === 20)) {
   const dataCost = Object.entries(recipe.materialCost || {}).find(([material]) => material.endsWith("低级加密数据"));
   if (!dataCost || dataCost[1] !== 15 || recipe.materialCost["镓"] !== 10 || recipe.materialCost["铂"] !== 8) {
     throw new Error(`${recipe.name}没有执行四分之三套势力装的数据与月矿成本`);
+  }
+}
+
+// 旗舰（Lv.80）与超级旗舰（Lv.90）采用独立校验：部件总数、档位、莫尔石依赖（旗舰禁耗莫尔石，
+// 超级旗舰恰耗52份）、深层舰船数据（各60份）与旗舰固有特性。不从 expectedShipMaterials 走整船材料比对。
+const capitalRecipeExpectations = {
+  firmament:{ level:80, total:26, trait:"deflection_shield" },
+  heavy_bastion:{ level:80, total:26, trait:"reactive_armor" },
+  riftbreaker:{ level:80, total:26, trait:"structure_overdrive" },
+  orca:{ level:80, total:28, industrial:true },
+  starcrown:{ level:90, total:52, trait:"deflection_shield", data:"天穹深层舰船数据" },
+  eternal_fortress:{ level:90, total:52, trait:"reactive_armor", data:"重垒深层舰船数据" },
+  arbiter:{ level:90, total:52, trait:"structure_overdrive", data:"裂界深层舰船数据" }
+};
+const starterShips = vm.runInContext("STARTER_SHIPS", sandbox);
+for (const [shipId, expectation] of Object.entries(capitalRecipeExpectations)) {
+  const recipe = shipAssemblyRecipes.find(item => item.id === shipId);
+  if (!recipe || recipe.level !== expectation.level) throw new Error(`${shipId}缺少对应旗舰制造配方`);
+  const componentTotal = Object.values(recipe.componentCost).reduce((sum, count) => sum + count, 0);
+  if (componentTotal !== expectation.total) throw new Error(`${recipe.name}部件总数不是${expectation.total}`);
+  const fullMaterialCost = { ...(recipe.materialCost || {}) };
+  for (const componentId of Object.keys(recipe.componentCost)) {
+    const component = shipComponentRecipes.find(item => item.id === componentId);
+    if (!component || component.level !== expectation.level) throw new Error(`${recipe.name}使用了错误档位的强化部件`);
+    const count = recipe.componentCost[componentId];
+    for (const [material, quantity] of Object.entries(component.cost || {})) {
+      fullMaterialCost[material] = (fullMaterialCost[material] || 0) + quantity * count;
+    }
+  }
+  const morphiteCost = fullMaterialCost["莫尔石"] || 0;
+  if (expectation.level === 80 && morphiteCost !== 0) throw new Error(`${recipe.name}错误依赖旗舰进入0.0后才能取得的莫尔石`);
+  if (expectation.level === 90 && morphiteCost !== 52) throw new Error(`${recipe.name}莫尔石总需求不是52份`);
+  if (expectation.data && recipe.materialCost[expectation.data] !== 60) throw new Error(`${recipe.name}没有消耗60份对应深层舰船数据`);
+  if (!expectation.industrial) {
+    const ship = starterShips[shipId];
+    if (!ship || ship.capitalTrait.id !== expectation.trait) throw new Error(`${recipe.name}缺少对应旗舰固有特性`);
   }
 }
 
@@ -812,21 +881,21 @@ for (const equipment of Object.values(buildEquipment).filter(item => [35, 55].in
   }
 }
 const destroyerAssemblies = shipAssemblyRecipes.filter(recipe => recipe.level === 15);
-if (destroyerAssemblies.length !== 3 || destroyerAssemblies.some(recipe => recipe.requiresBlueprint !== false)) {
-  throw new Error("三艘驱逐舰没有按Lv.15、免蓝图规则加入舰船工程");
+if (destroyerAssemblies.length !== 6 || destroyerAssemblies.some(recipe => recipe.requiresBlueprint !== false)) {
+  throw new Error("Lv.15 免蓝图配方应为 6 艘（5 战斗/工业驱逐舰 + 考古追迹级）");
 }
 if (!destroyerAssemblies.every(recipe => sandbox.canUseShipAssemblyRecipe(recipe))) {
   throw new Error("免蓝图驱逐舰仍被蓝图门槛阻止组装");
 }
 const cruiserAssemblies = shipAssemblyRecipes.filter(recipe => recipe.level === 35);
-if (cruiserAssemblies.length !== 3 || cruiserAssemblies.some(recipe => recipe.requiresBlueprint !== false) ||
+if (cruiserAssemblies.length !== 7 || cruiserAssemblies.some(recipe => recipe.requiresBlueprint !== false) ||
     !cruiserAssemblies.every(recipe => sandbox.canUseShipAssemblyRecipe(recipe))) {
-  throw new Error("三艘巡洋舰没有按Lv.35、26部件、免蓝图规则加入舰船工程");
+  throw new Error("Lv.35 免蓝图配方应为 7 艘（6 战斗/工业巡洋舰 + 考古星图级）");
 }
 const battleshipAssemblies = shipAssemblyRecipes.filter(recipe => recipe.level === 55);
-if (battleshipAssemblies.length !== 3 || battleshipAssemblies.some(recipe => recipe.requiresBlueprint !== false) ||
+if (battleshipAssemblies.length !== 6 || battleshipAssemblies.some(recipe => recipe.requiresBlueprint !== false) ||
     !battleshipAssemblies.every(recipe => sandbox.canUseShipAssemblyRecipe(recipe))) {
-  throw new Error("三艘战列舰没有按Lv.55、33部件、免蓝图规则加入舰船工程");
+  throw new Error("Lv.55 免蓝图配方应为 6 艘（5 战斗/工业战列舰 + 考古远镜级）");
 }
 const rifterAssembly = shipAssemblyRecipes.find(recipe => recipe.id === "rifter");
 for (const [componentId, count] of Object.entries(rifterAssembly.componentCost)) {
@@ -930,7 +999,7 @@ if (sandbox.gameState.equipment.inventory.length !== factionEquipmentBefore + 1 
 
 // 装备工程分类不再单列势力标签；高级采集装备完整进入工业采集，LP商品不混入制造配方。
 const equipEngCategories = vm.runInContext("EQUIPMENT_ENGINEERING_CATEGORIES.map(category => category.id)", sandbox);
-if (equipEngCategories.length !== 6 || equipEngCategories.includes("faction")) {
+if (equipEngCategories.length !== 9 || equipEngCategories.includes("faction")) { // 9 = 8 + rigs（改装件系统 2026-07-22）
   throw new Error("装备工程仍然存在独立势力标签，或基础分类数量不正确");
 }
 for (const equipmentId of [
@@ -1031,8 +1100,8 @@ for (const pair of beltEquipmentPairs) {
 
 const blueprintCatalog = vm.runInContext("getBlueprintStoreCatalogItems()", sandbox);
 const blueprintCategories = vm.runInContext("BLUEPRINT_STORE_CATEGORIES", sandbox);
-if (blueprintCatalog.length !== 64 || blueprintCategories.length !== 7 ||
-    blueprintCatalog.filter(item => item.category === "ships").length !== 8 ||
+if (blueprintCatalog.length !== 74 || blueprintCategories.length !== 7 ||
+    blueprintCatalog.filter(item => item.category === "ships").length !== 18 ||
     blueprintCatalog.filter(item => item.category === "alliance").length !== 4 ||
     blueprintCatalog.filter(item => item.category === "faction").length !== 4 ||
     [2, 3, 4, 6].some(tier => blueprintCatalog.filter(item => item.category === `deathspace-${tier}`).length !== 12)) {
@@ -1177,8 +1246,9 @@ const expectedBeltDataByZone = {
   angel_hunting_ground:"天使中级加密数据", blood_cathedral:"血袭者中级加密数据", sansha_nexus:"萨沙中级加密数据",
   angel_warfront:"天使高级加密数据", blood_iron_basilica:"血袭者高级加密数据", sansha_command_matrix:"萨沙高级加密数据"
 };
-if (combatZones.some(zone => zone.encryptedDataMaterial !== expectedBeltDataByZone[zone.id]) ||
-    new Set(combatZones.map(zone => zone.encryptedDataMaterial)).size !== combatZones.length) {
+const encryptedDataZones = combatZones.filter(zone => !zone.encryptedDataDisabled);
+if (encryptedDataZones.some(zone => zone.encryptedDataMaterial !== expectedBeltDataByZone[zone.id]) ||
+    new Set(encryptedDataZones.map(zone => zone.encryptedDataMaterial)).size !== encryptedDataZones.length) {
   throw new Error("星带加密数据没有按势力与安全等级完全隔离");
 }
 const specialResourcesBeforeMigration = { ...sandbox.gameState.resources.special };
@@ -1916,7 +1986,7 @@ sandbox.gameState.queue = originalQueue;
 sandbox.gameState.resources.minerals = originalMinerals;
 sandbox.gameState.resources.ammunition = originalAmmo;
 
-// 舰船强化：三部件、线性成功率、失败清零、里程碑收益与工业最终乘区。
+// 舰船强化：三部件、共用边际成功率、失败等级保持、里程碑收益与工业最终乘区。
 const enhancementComponents = vm.runInContext("SHIP_COMPONENT_RECIPES", sandbox);
 for (const level of [1, 15, 35, 55]) {
   const recipes = enhancementComponents.filter(recipe => recipe.level === level);
@@ -1930,10 +2000,10 @@ for (const [level, expectedXp] of expectedEnhancementSetXp) {
 const near = (actual, expected, epsilon = 1e-9) => Math.abs(actual - expected) <= epsilon;
 if (!near(sandbox.getShipEnhancementSuccessChance(1, 1, 0), 0.50) ||
     !near(sandbox.getShipEnhancementSuccessChance(11, 1, 0), 0.70) ||
-    !near(sandbox.getShipEnhancementSuccessChance(11, 1, 5), 0.65) ||
+    !near(sandbox.getShipEnhancementSuccessChance(11, 1, 5), 0.625) ||
     !near(sandbox.getShipEnhancementSuccessChance(1, 55, 1000), 0.05) ||
-    !near(sandbox.getShipEnhancementSuccessChance(99, 1, 0), 0.95)) {
-  throw new Error("舰船强化成功率没有保持门槛50%、技能线性和5%～95%边界");
+    !near(sandbox.getShipEnhancementSuccessChance(99, 1, 0), 0.80)) {
+  throw new Error("舰船强化成功率没有保持共用边际递减公式的边界（5%～80%、门槛50%、技能加成最高30%）");
 }
 const rifterConfig = sandbox.getShipConfigById("rifter");
 const minerConfig = sandbox.getShipConfigById("miner_frigate");
@@ -1961,9 +2031,9 @@ if (!enhancementSuccess.changed || !enhancementSuccess.success || enhancementShi
 enhancementShip.enhancementLevel = 4;
 const xpBeforeFailure = enhancementState.skills.shipEngineering.xp;
 const enhancementFailure = sandbox.dispatchGameAction(enhancementState, { type:"hangar/enhanceShip", instanceId:enhancementShip.instanceId, randomValue:0.99 }, selectorNow);
-if (!enhancementFailure.changed || enhancementFailure.success || enhancementShip.enhancementLevel !== 0 || enhancementFailure.xp !== 22 ||
-    enhancementState.skills.shipEngineering.xp - xpBeforeFailure !== 22) {
-  throw new Error("强化失败没有直接清零或结算0→1成功经验的一半");
+if (!enhancementFailure.changed || enhancementFailure.success || enhancementShip.enhancementLevel !== 4 || enhancementFailure.xp !== 0 ||
+    enhancementState.skills.shipEngineering.xp - xpBeforeFailure !== 0) {
+  throw new Error("强化失败没有保持等级、消耗部件、或结算0 XP");
 }
 
 const industrialState = JSON.parse(JSON.stringify(sandbox.gameState));
@@ -2097,5 +2167,289 @@ for (const source of ["./index.html", ...localSources, "./images/ships/裂谷级
   await response.arrayBuffer();
 }
 await new Promise((resolve) => server.close(resolve));
+
+// ============================================================
+// Lv.80 旗舰基础战斗装备与 0.0 强度校准 — 专项校验
+// 覆盖：六件装备数据/配方/无莫尔石/舰体限制、三族 AOE、动作拒装、制造可见、AOE 击杀结算
+// ============================================================
+function assertFlagship(condition, message) {
+  if (!condition) throw new Error("旗舰装备校验失败：" + message);
+}
+const G = (name) => vm.runInContext(name, sandbox);
+const ED = G("EQUIPMENT_DB");
+const SS = G("STARTER_SHIPS");
+const IS = G("INDUSTRIAL_SHIPS");
+const ER = G("EQUIPMENT_RECIPES");
+const SCR = G("SHIP_COMPONENT_RECIPES");
+const SAR = G("SHIP_ASSEMBLY_RECIPES");
+const CZ = G("COMBAT_ZONES");
+const canFit = G("canFitEquipmentOnShip");
+const dispatch = G("dispatchGameAction");
+const CapitalCombat = G("CapitalCombat");
+const getLiving = G("getLivingCombatEnemies");
+const resolveDefeat = G("resolveCombatEnemyDefeat");
+const ResourceRegistry = G("ResourceRegistry");
+const FLAGSHIP_IDS = ["t1_capital_laser","t1_capital_missile_array","t1_capital_cannon","t1_capital_shield_array","t1_capital_armor_array","t1_capital_structure_array"];
+const EXPECTED = {
+  t1_capital_laser:{ slot:"high", level:80, time:180, xp:130, combat:{ kind:"weapon", weaponType:"laser", baseDamage:600, baseHit:100, fuelCost:15, ammoCost:1 }, aoe:{ mode:"next", maxTargets:1, multiplier:0.30 } },
+  t1_capital_missile_array:{ slot:"high", level:80, time:180, xp:130, combat:{ kind:"weapon", weaponType:"missile", baseDamage:500, baseHit:130, fuelCost:5, ammoCost:1 }, aoe:{ mode:"all", multiplier:0.12 } },
+  t1_capital_cannon:{ slot:"high", level:80, time:180, xp:130, combat:{ kind:"weapon", weaponType:"cannon", baseDamage:400, baseHit:80, fuelCost:10, ammoCost:1 }, aoe:{ mode:"next", maxTargets:2, multiplier:0.15 } },
+  t1_capital_shield_array:{ slot:"mid", level:80, time:160, xp:110, combat:{ kind:"repair", target:"shield", amount:150, fuelCost:5 } },
+  t1_capital_armor_array:{ slot:"low", level:80, time:160, xp:110, combat:{ kind:"repair", target:"armor", amount:100, fuelCost:5 } },
+  t1_capital_structure_array:{ slot:"low", level:80, time:160, xp:110, combat:{ kind:"repair", target:"structure", amount:50, fuelCost:15 } }
+};
+for (const id of FLAGSHIP_IDS) {
+  const eq = ED[id];
+  assertFlagship(eq, "缺少装备定义 " + id);
+  const exp = EXPECTED[id];
+  assertFlagship(eq.slot === exp.slot && eq.level === exp.level && eq.time === exp.time && eq.xp === exp.xp, id + " 槽位/等级/时间/经验不符");
+  assertFlagship(!eq.requiresBlueprint, id + " 不应需要蓝图");
+  assertFlagship(Array.isArray(eq.shipTypes) && eq.shipTypes.length === 2 && eq.shipTypes.includes("capital") && eq.shipTypes.includes("supercapital"), id + " 舰体限制应为 [capital, supercapital]");
+  assertFlagship(eq.combat && eq.combat.kind === exp.combat.kind, id + " 战斗类型不符");
+  for (const key of ["weaponType","baseDamage","baseHit","fuelCost","ammoCost","target","amount"]) {
+    if (exp.combat[key] === undefined) continue;
+    assertFlagship(eq.combat[key] === exp.combat[key], id + " 战斗属性 " + key + " 不符（实际 " + eq.combat[key] + " 期望 " + exp.combat[key] + "）");
+  }
+  if (exp.aoe) {
+    assertFlagship(eq.combat.aoe && eq.combat.aoe.mode === exp.aoe.mode && Math.abs(eq.combat.aoe.multiplier - exp.aoe.multiplier) < 1e-9 && (exp.aoe.maxTargets === undefined || eq.combat.aoe.maxTargets === exp.aoe.maxTargets), id + " AOE 配置不符");
+  }
+}
+// 合法材料集合仅从真实资源产出源建立，禁止「先把装备/配方材料塞进集合再校验」的自证循环。
+// 真实来源：冶炼产出矿物(SMELTING_RECIPES.outputMineral)、气体(GAS_AREAS.gas)、
+// 行星产物(PLANET_TYPES.output)，以及月矿基础资源（镓/铂/铪/锇/钷/铷，不属于上述派生来源，显式纳入）。
+const knownMaterials = new Set();
+for (const r of buildRefiningRecipes) if (r.outputMineral) knownMaterials.add(r.outputMineral);
+for (const g of buildGasAreas) if (g.gas) knownMaterials.add(g.gas);
+for (const p of buildPlanetTypes) if (p.output) knownMaterials.add(p.output);
+for (const m of ["镓", "铂", "铪", "锇", "钷", "铷"]) knownMaterials.add(m);
+for (const id of FLAGSHIP_IDS) {
+  const eq = ED[id];
+  for (const m of Object.keys(eq.cost || {})) {
+    assertFlagship(m !== "莫尔石" && m !== "mineral:莫尔石", id + " 配方不得含莫尔石");
+    assertFlagship(knownMaterials.has(m), id + " 配方含未知资源 " + m);
+  }
+}
+const bsCfg = SS.sunlance, indCapCfg = IS.orca, capCfg = SS.firmament, supCfg = SS.starcrown;
+assertFlagship(bsCfg.type === "battleship" && indCapCfg.type === "industrial_capital" && capCfg.type === "capital" && supCfg.type === "supercapital", "测试用舰体类型假设失效");
+for (const id of FLAGSHIP_IDS) {
+  const eq = ED[id];
+  assertFlagship(canFit(eq, bsCfg) === false, id + " 不应可装于战列舰");
+  assertFlagship(canFit(eq, indCapCfg) === false, id + " 不应可装于工业旗舰");
+  assertFlagship(canFit(eq, capCfg) === true, id + " 应可装于旗舰");
+  assertFlagship(canFit(eq, supCfg) === true, id + " 应可装于超级旗舰");
+}
+const gs = JSON.parse(JSON.stringify(G("gameState")));
+gs.inventory.ships.push({ instanceId:"bs_test", shipId:"sunlance", fitted:{ high:[], mid:[], low:[], rig:[] } });
+gs.equipment = gs.equipment || { inventory:[] };
+if (!Array.isArray(gs.equipment.inventory)) gs.equipment.inventory = [];
+gs.equipment.inventory = ["t1_capital_laser"];
+const reject = dispatch(gs, { type:"hangar/setFittingSlot", instanceId:"bs_test", slot:"high", slotIndex:0, equipmentId:"t1_capital_laser" }, Date.now());
+assertFlagship(reject.changed === false && reject.reason === "incompatible-equipment", "战列舰安装旗舰装备应被动作层拒绝，实际 " + JSON.stringify(reject));
+const recipeIds = new Set(ER.map(r => r.id));
+for (const id of FLAGSHIP_IDS) assertFlagship(recipeIds.has(id), id + " 未出现在制造配方表");
+const capWeapons = ER.filter(r => ["t1_capital_laser","t1_capital_missile_array","t1_capital_cannon"].includes(r.id));
+assertFlagship(capWeapons.length === 3 && capWeapons.every(r => r.category === "weapons"), "旗舰武器应归入 weapons 分类并可见");
+function aoeEnemy(key, hp) { return { id:"aoe_"+key, type:key, kind:"normal", name:key, hp:{ shield:0, armor:0, structure:hp }, maxHp:{ shield:0, armor:0, structure:hp }, hit:10, dodge:10, baseDamage:1, iskDrop:100, xpDrop:10, defeated:false, rewarded:false }; }
+const primary = aoeEnemy("primary", 1000), e1 = aoeEnemy("e1", 100), e2 = aoeEnemy("e2", 100), e3 = aoeEnemy("e3", 100);
+const group = [primary, e1, e2, e3];
+const laserT = CapitalCombat.getAreaDamageTargets(group, primary, { mode:"next", maxTargets:1, multiplier:0.30 });
+assertFlagship(laserT.length === 1 && laserT[0].enemy === e1 && Math.abs(laserT[0].multiplier - 0.30) < 1e-9, "聚焦激光炮 AOE 应命中下一目标 30%");
+const missileT = CapitalCombat.getAreaDamageTargets(group, primary, { mode:"all", multiplier:0.12 });
+assertFlagship(missileT.length === 3 && missileT.every(t => Math.abs(t.multiplier - 0.12) < 1e-9), "巡航导弹阵列 AOE 应命中其他全部目标 12%");
+const cannonT = CapitalCombat.getAreaDamageTargets(group, primary, { mode:"next", maxTargets:2, multiplier:0.15 });
+assertFlagship(cannonT.length === 2 && cannonT[0].enemy === e1 && cannonT[1].enemy === e2 && cannonT.every(t => Math.abs(t.multiplier - 0.15) < 1e-9), "攻城射弹炮 AOE 应命中最多两个其他目标 15%");
+e2.defeated = true;
+const cannonT2 = CapitalCombat.getAreaDamageTargets(group, primary, { mode:"next", maxTargets:2, multiplier:0.15 });
+assertFlagship(cannonT2.length === 2 && cannonT2[0].enemy === e1 && cannonT2[1].enemy === e3, "AOE 应排除已死亡目标并命中其余存活目标（最多 maxTargets）");
+const liveState = G("gameState");
+liveState.combat = liveState.combat || {};
+const deadEnemy = aoeEnemy("dead", 0); deadEnemy.defeated = true;
+liveState.combat.enemies = [ aoeEnemy("alive", 100), deadEnemy ];
+const livingNow = getLiving(liveState.combat);
+assertFlagship(livingNow.length === 1 && livingNow[0].id === "aoe_alive", "已死亡敌舰不应再参与攻击");
+const outerZone = CZ.find(z => z.secLevel === "0.0外环") || CZ[0];
+const beforeIsk = ResourceRegistry.get(liveState, "currency:isk");
+const victim = aoeEnemy("aoe_victim", 10); victim.defeated = true; victim.rewarded = false;
+const reward = resolveDefeat(victim, outerZone);
+assertFlagship(victim.rewarded === true, "AOE 击杀应标记为已结算");
+assertFlagship(typeof reward.isk === "number" && reward.isk > 0, "AOE 击杀应结算 ISK");
+assertFlagship(ResourceRegistry.get(liveState, "currency:isk") > beforeIsk, "AOE 击杀的 ISK 应入账");
+console.log("旗舰装备专项校验通过：六件 Lv.80 装备数据/配方/无莫尔石/舰体限制、三族 AOE、动作拒装、制造可见、AOE 击杀结算均符合预期");
+
+// ── Lv.60 混血战列舰专项校验：锁定最终属性，任何误改都必须失败 ──
+{
+  const starter = G("STARTER_SHIPS");
+  const recipes = G("SHIP_ASSEMBLY_RECIPES");
+  const blueprints = G("SHIP_BLUEPRINTS");
+  const mixedSpec = [
+    {
+      id: "dawnbreaker", name: "破晓级", regularId: "sunlance",
+      hp: { shield: 3300, armor: 510, structure: 510 }, dodge: 13,
+      bonuses: { shieldCapacity: 0.30, laserDamage: 0.25, hitBonus: 20 },
+      dataMat: "天使高级加密数据", sourceZoneId: "angel_warfront"
+    },
+    {
+      id: "crimson_bastion", name: "赤垒级", regularId: "fortfalcon",
+      hp: { shield: 660, armor: 3000, structure: 660 }, dodge: 8,
+      bonuses: { armorCapacity: 0.30, missileDamage: 0.25, armorRepair: 0.50, hitBonus: 20 },
+      dataMat: "血袭者高级加密数据", sourceZoneId: "blood_iron_basilica"
+    },
+    {
+      id: "spectre_frame", name: "幽构级", regularId: "thunderblade",
+      hp: { shield: 460, armor: 460, structure: 3400 }, dodge: 5,
+      bonuses: { structureCapacity: 0.30, cannonDamage: 0.25, speed: 0.15, structureRepair: 2.00, hitBonus: 20 },
+      dataMat: "萨沙高级加密数据", sourceZoneId: "sansha_command_matrix"
+    }
+  ];
+  const assertMixed = (cond, msg) => { if (!cond) throw new Error("混血战列舰专项校验失败：" + msg); };
+  for (const spec of mixedSpec) {
+    const ship = starter[spec.id];
+    assertMixed(ship, `${spec.id} 未出现在 STARTER_SHIPS`);
+    assertMixed(ship.tier === "混血", `${spec.id} tier 应为 混血，实际 ${ship.tier}`);
+    assertMixed(ship.type === "battleship", `${spec.id} type 应为 battleship，实际 ${ship.type}`);
+    assertMixed(ship.totalHp === 4320, `${spec.id} totalHp 应为 4320，实际 ${ship.totalHp}`);
+    assertMixed(ship.hp.shield === spec.hp.shield && ship.hp.armor === spec.hp.armor && ship.hp.structure === spec.hp.structure,
+      `${spec.id} HP 应为 ${JSON.stringify(spec.hp)}，实际 ${JSON.stringify(ship.hp)}`);
+    assertMixed(ship.dodge === spec.dodge, `${spec.id} dodge 应为 ${spec.dodge}，实际 ${ship.dodge}`);
+    assertMixed(ship.unlock && ship.unlock.type === "blueprint", `${spec.id} unlock.type 应为 blueprint，实际 ${ship.unlock && ship.unlock.type}`);
+    assertMixed(ship.unlock.costLP === 150, `${spec.id} unlock.costLP 应为 150，实际 ${ship.unlock && ship.unlock.costLP}`);
+    assertMixed(ship.unlock.level === 60, `${spec.id} unlock.level 应为 60，实际 ${ship.unlock && ship.unlock.level}`);
+    const reg = starter[spec.regularId];
+    assertMixed(reg, `对照常规战列舰 ${spec.regularId} 缺失`);
+    for (const key of ["speed", "targeting", "fuelEfficiency"]) {
+      assertMixed(ship[key] === reg[key], `${spec.id}.${key} 应与 ${spec.regularId} 一致（${reg[key]}），实际 ${ship[key]}`);
+    }
+    assertMixed(ship.capacitor.capacity === reg.capacitor.capacity && ship.capacitor.rechargeRate === reg.capacitor.rechargeRate,
+      `${spec.id} capacitor 应与 ${spec.regularId} 一致，实际 ${JSON.stringify(ship.capacitor)}`);
+    assertMixed(JSON.stringify(ship.slots) === JSON.stringify(reg.slots),
+      `${spec.id} slots 应与 ${spec.regularId} 一致（${JSON.stringify(reg.slots)}），实际 ${JSON.stringify(ship.slots)}`);
+    assertMixed(JSON.stringify(ship.bonuses) === JSON.stringify(spec.bonuses),
+      `${spec.id} bonuses 应为 ${JSON.stringify(spec.bonuses)}，实际 ${JSON.stringify(ship.bonuses)}`);
+    const recipe = recipes.find(r => r.id === spec.id);
+    assertMixed(recipe, `${spec.id} 未出现在 SHIP_ASSEMBLY_RECIPES`);
+    assertMixed(recipe.level === 60, `${spec.id} 配方 level 应为 60，实际 ${recipe.level}`);
+    assertMixed(recipe.time === 120, `${spec.id} 配方 time 应为 120，实际 ${recipe.time}`);
+    assertMixed(recipe.xp === 200, `${spec.id} 配方 xp 应为 200，实际 ${recipe.xp}`);
+    assertMixed(JSON.stringify(recipe.componentCost) === JSON.stringify({ battleship_integrated_hull: 6, battleship_power_core: 5, battleship_functional_system: 5 }),
+      `${spec.id} 部件应为 6/5/5，实际 ${JSON.stringify(recipe.componentCost)}`);
+    assertMixed(recipe.materialCost["钷"] === 20, `${spec.id} 钷应为 20，实际 ${recipe.materialCost["钷"]}`);
+    assertMixed(recipe.materialCost["铷"] === 16, `${spec.id} 铷应为 16，实际 ${recipe.materialCost["铷"]}`);
+    assertMixed(recipe.materialCost[spec.dataMat] === 45, `${spec.id} ${spec.dataMat} 应为 45，实际 ${recipe.materialCost[spec.dataMat]}`);
+    const bp = blueprints.find(b => b.id === spec.id);
+    assertMixed(bp, `${spec.id} 未出现在 SHIP_BLUEPRINTS`);
+    assertMixed(bp.costLP === 150, `${spec.id} 蓝图 costLP 应为 150，实际 ${bp.costLP}`);
+    assertMixed(bp.level === 60, `${spec.id} 蓝图 level 应为 60，实际 ${bp.level}`);
+    assertMixed(bp.sourceZoneId === spec.sourceZoneId, `${spec.id} 蓝图 sourceZoneId 应为 ${spec.sourceZoneId}，实际 ${bp.sourceZoneId}`);
+  }
+  console.log("混血战列舰专项校验通过：三舰 tier/type/解锁/总生命/精确HP/闪避/框架一致/舰体加成/命中/配方/蓝图均锁定");
+}
+
+// ── 工业舰与逆戟鲸专项防回归校验 ──
+{
+  const assertIndustrial = (cond, msg) => { if (!cond) throw new Error("工业舰校验失败：" + msg); };
+  const industrialShips = G("INDUSTRIAL_SHIPS");
+  const assemblyRecipes = G("SHIP_ASSEMBLY_RECIPES");
+  const componentRecipes = G("SHIP_COMPONENT_RECIPES");
+  const starterShips = G("STARTER_SHIPS");
+  const expectedIds = ["miner_frigate","gas_frigate","miner_destroyer","gas_destroyer","miner_cruiser","gas_cruiser","dolphin","miner_battleship","gas_battleship","orca"];
+  assertIndustrial(industrialShips && Object.keys(industrialShips).length === 10, `INDUSTRIAL_SHIPS 必须精确 10 艘，实际 ${industrialShips ? Object.keys(industrialShips).length : 0}`);
+  for (const id of expectedIds) assertIndustrial(industrialShips[id], `INDUSTRIAL_SHIPS 缺少 ${id}`);
+  for (const id of Object.keys(industrialShips)) assertIndustrial(expectedIds.includes(id), `INDUSTRIAL_SHIPS 含预期外舰船 ${id}`);
+  const orca = industrialShips.orca;
+  assertIndustrial(orca.type === "industrial_capital", "逆戟鲸 type 应为 industrial_capital");
+  assertIndustrial(orca.unlock && orca.unlock.type === "shipEngineering" && orca.unlock.level === 80, "逆戟鲸解锁应为 shipEngineering/Lv.80");
+  assertIndustrial(orca.bonuses && orca.bonuses.miningLaserEfficiency === 2.8, "逆戟鲸 miningLaserEfficiency 应为 2.8");
+  assertIndustrial(orca.bonuses && orca.bonuses.gasLaserEfficiency === 2.8, "逆戟鲸 gasLaserEfficiency 应为 2.8");
+  assertIndustrial(orca.bonuses && orca.bonuses.fleetMiningSpeed === 0.20, "逆戟鲸 fleetMiningSpeed 应为 0.20");
+  assertIndustrial(orca.bonuses && orca.bonuses.smeltingSpeed === 0.30, "逆戟鲸 smeltingSpeed 应为 0.30");
+  const orcaRecipe = assemblyRecipes.find(r => r.id === "orca");
+  assertIndustrial(orcaRecipe, "逆戟鲸缺少整船制造配方");
+  assertIndustrial(orcaRecipe.requiresBlueprint === false, "逆戟鲸配方 requiresBlueprint 应为 false");
+  assertIndustrial(orcaRecipe.time === 320, `逆戟鲸组装 time 应为 320，实际 ${orcaRecipe.time}`);
+  assertIndustrial(orcaRecipe.xp === 500, `逆戟鲸组装 xp 应为 500，实际 ${orcaRecipe.xp}`);
+  const cc = orcaRecipe.componentCost || {};
+  const ccSum = (cc.capital_integrated_hull || 0) + (cc.capital_power_core || 0) + (cc.capital_functional_system || 0);
+  assertIndustrial(cc.capital_integrated_hull === 10 && cc.capital_power_core === 8 && cc.capital_functional_system === 10, "逆戟鲸部件应为 10/8/10");
+  assertIndustrial(ccSum === 28, `逆戟鲸部件总数应为 28，实际 ${ccSum}`);
+  const forbidden = new Set(["莫尔石"]);
+  const allOrcaMaterials = {};
+  for (const [compId, count] of Object.entries(cc)) {
+    const comp = componentRecipes.find(c => c.id === compId);
+    assertIndustrial(comp, `逆戟鲸部件 ${compId} 缺少部件配方`);
+    for (const [mat, qty] of Object.entries(comp.cost || {})) allOrcaMaterials[mat] = (allOrcaMaterials[mat] || 0) + qty * count;
+  }
+  for (const mat of Object.keys(orcaRecipe.materialCost || {})) allOrcaMaterials[mat] = (allOrcaMaterials[mat] || 0) + (orcaRecipe.materialCost[mat] || 0);
+  for (const mat of Object.keys(allOrcaMaterials)) {
+    assertIndustrial(!forbidden.has(mat), `逆戟鲸配方不得消耗莫尔石（含 ${mat}）`);
+    assertIndustrial(!mat.includes("深层"), `逆戟鲸配方不得消耗深层舰船数据（含 ${mat}）`);
+    assertIndustrial(!mat.includes("考古"), `逆戟鲸配方不得消耗考古材料（含 ${mat}）`);
+  }
+  // 旗舰战斗装备仍不得安装到逆戟鲸（复用 canFit，工业旗舰类型已覆盖）
+  for (const id of FLAGSHIP_IDS) assertIndustrial(canFit(ED[id], orca) === false, id + " 不应可装于逆戟鲸");
+  // 逆戟鲸不得进入旗舰/超级旗舰 0.0 战斗平衡测试配置：既不在 STARTER_SHIPS 战斗名册，也不属 capital/supercapital 类型
+  assertIndustrial(starterShips.orca === undefined, "逆戟鲸不得进入 STARTER_SHIPS 战斗名册（否则会被资本战斗平衡选取）");
+  assertIndustrial(orca.type !== "capital" && orca.type !== "supercapital", "逆戟鲸类型不得为 capital/supercapital，避免进入 0.0 战斗平衡配置");
+  console.log("工业舰与逆戟鲸专项校验通过：10 舰/type=industrial_capital/解锁 shipEngineering Lv.80/双 2.8/支援 0.20/冶炼 0.30/配方免蓝图 10-8-10 总 28/time320/xp500/禁莫尔石深层考古/旗舰装备禁装/不进战斗平衡");
+}
+
+// ── 考古船第一阶段专项防回归校验 ──
+{
+  const assertArch = (cond, msg) => { if (!cond) throw new Error("考古船校验失败：" + msg); };
+  const archShips = G("ARCHAEOLOGY_SHIPS");
+  const assemblyRecipes = G("SHIP_ASSEMBLY_RECIPES");
+  const componentRecipes = G("SHIP_COMPONENT_RECIPES");
+  const blueprints = G("SHIP_BLUEPRINTS");
+  const starterShips = G("STARTER_SHIPS");
+  const industrialShips = G("INDUSTRIAL_SHIPS");
+  const getShipConfigById = G("getShipConfigById");
+  const getShipConfig = G("getShipConfig");
+  const expectedIds = ["heron","tracer","starmap","farscope","illuminator"];
+  const expectedUnlockLevel = { heron:1, tracer:15, starmap:35, farscope:55, illuminator:80 };
+  const expectedRecipe = {
+    heron:      { level:1,  time:30,  xp:30,  reqBP:true,  total:6  },
+    tracer:     { level:15, time:45,  xp:60,  reqBP:false, total:10 },
+    starmap:    { level:35, time:70,  xp:100, reqBP:false, total:13 },
+    farscope:   { level:55, time:100, xp:160, reqBP:false, total:16 },
+    illuminator:{ level:80, time:320, xp:500, reqBP:false, total:28 }
+  };
+
+  assertArch(archShips && Object.keys(archShips).length === 5, `ARCHAEOLOGY_SHIPS 必须精确 5 艘，实际 ${archShips ? Object.keys(archShips).length : 0}`);
+  for (const id of expectedIds) {
+    assertArch(archShips[id], `ARCHAEOLOGY_SHIPS 缺少 ${id}`);
+    assertArch(archShips[id].unlock && archShips[id].unlock.level === expectedUnlockLevel[id], `${id} 解锁等级应为 ${expectedUnlockLevel[id]}`);
+    assertArch(getShipConfigById(id) === archShips[id], `getShipConfigById(${id}) 必须解析到 ARCHAEOLOGY_SHIPS`);
+    assertArch(starterShips[id] === undefined, `${id} 不得进入 STARTER_SHIPS`);
+    assertArch(industrialShips[id] === undefined, `${id} 不得进入 INDUSTRIAL_SHIPS`);
+    assertArch(getShipConfig(id) === archShips[id], `${id} 战斗解析器必须能解析 ARCHAEOLOGY_SHIPS（考古舰可参战）`);
+  }
+  for (const id of Object.keys(archShips)) assertArch(expectedIds.includes(id), `ARCHAEOLOGY_SHIPS 含预期外舰船 ${id}`);
+
+  for (const id of expectedIds) {
+    const recipe = assemblyRecipes.find(r => r.id === id);
+    const exp = expectedRecipe[id];
+    assertArch(recipe, `${id} 缺少整船制造配方`);
+    assertArch(recipe.level === exp.level, `${id} 配方 level 应为 ${exp.level}`);
+    assertArch(recipe.time === exp.time, `${id} 配方 time 应为 ${exp.time}`);
+    assertArch(recipe.xp === exp.xp, `${id} 配方 xp 应为 ${exp.xp}`);
+    const effReq = !recipe || recipe.requiresBlueprint !== false;
+    assertArch(effReq === exp.reqBP, `${id} 配方 needsBlueprint 应为 ${exp.reqBP}`);
+    const cc = recipe.componentCost || {};
+    const ccSum = Object.values(cc).reduce((a, b) => a + b, 0);
+    assertArch(ccSum === exp.total, `${id} 部件总数应为 ${exp.total}，实际 ${ccSum}`);
+    for (const compId of Object.keys(cc)) assertArch(componentRecipes.find(c => c.id === compId), `${id} 部件 ${compId} 缺少部件配方`);
+    assertArch(recipe.materialCost === undefined, `${id} 配方不得含 materialCost（禁考古/月矿/阵营/深层数据）`);
+  }
+
+  const heronBp = blueprints.find(b => b.id === "heron");
+  assertArch(heronBp && heronBp.costISK === 50000 && heronBp.level === 1 && heronBp.shipId === "heron", "苍鹭级必须存在 50000 ISK / Lv.1 永久蓝图");
+  for (const id of ["tracer","starmap","farscope","illuminator"]) assertArch(!blueprints.find(b => b.id === id), `${id} 不得存在蓝图`);
+
+  // 工业舰数量不受影响（第一阶段仅新增考古表，未改动工业舰）
+  assertArch(industrialShips && Object.keys(industrialShips).length === 10, `INDUSTRIAL_SHIPS 必须保持 10 艘，实际 ${industrialShips ? Object.keys(industrialShips).length : 0}`);
+  // 启明级（archaeology_capital）不得安装 6 件旗舰战斗装备
+  for (const fid of FLAGSHIP_IDS) assertArch(canFit(ED[fid], archShips.illuminator) === false, fid + " 不应可装于启明级");
+
+  console.log("考古船第一阶段校验通过：5 舰/解锁等级 1·15·35·55·80/统一解析/不进 STARTER·INDUSTRIAL 数据表、可由战斗解析器正确解析并参战/5 配方 level-time-xp-免蓝图(仅苍鹭)-部件总数 6·10·13·16·28-禁 materialCost/苍鹭 50000 ISK 蓝图·余者无蓝图/工业仍 10 舰/启明级禁装旗舰装备");
+}
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);

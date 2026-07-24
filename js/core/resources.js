@@ -14,6 +14,9 @@ const RESOURCE_NAMESPACE_CONFIG = Object.freeze({
   special:{ kind:"pool", pool:"special", material:true },
   component:{ kind:"pool", pool:"shipComponents" },
   ammo:{ kind:"pool", pool:"ammunition" },
+  probe:{ kind:"pool", pool:"probes" },
+  artifact:{ kind:"pool", pool:"artifacts" },
+  calibration:{ kind:"pool", pool:"calibrations", material:true },
   consumable:{ kind:"scalar" }
 });
 
@@ -138,6 +141,19 @@ const ResourceRegistry = (() => {
     return true;
   }
 
+  function getResourceDisplayName(id) {
+    if (typeof id !== "string" || !id) return id;
+    // 已注册定义（含懒注册）优先；懒注册 fallback 的 name===key 时视为"无名称"，回退原始键
+    const parsed = parseId(id);
+    if (!parsed) {
+      // 非 namespace:key 形式（如直接中文名"三钛合金"），原样返回
+      return id;
+    }
+    const definition = definitions.has(id) ? definitions.get(id) : getDefinition(id);
+    if (definition && definition.name && definition.name !== definition.key) return definition.name;
+    return id;
+  }
+
   function listDefinitions(namespace) {
     return [...definitions.values()].filter(definition => !namespace || definition.namespace === namespace);
   }
@@ -159,8 +175,11 @@ const ResourceRegistry = (() => {
     const namespaces = ["ore", "mineral", "planetary", "gas", "moon", "special", "component"];
     const stackables = namespaces.reduce((total, namespace) =>
       total + listStateEntries(state, namespace).reduce((sum, entry) => sum + entry.quantity, 0), 0);
-    const equipment = state && state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory.length : 0;
-    return stackables + equipment;
+    const equipmentStrings = state && state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory.length : 0;
+    const equipmentInstances = state && state.equipment && Array.isArray(state.equipment.instances)
+      ? state.equipment.instances.filter(instance => !instance.installedOn).length
+      : 0;
+    return stackables + equipmentStrings + equipmentInstances;
   }
 
   return {
@@ -177,11 +196,19 @@ const ResourceRegistry = (() => {
     canAffordCost,
     spendMaterial,
     spendCost,
+    getResourceDisplayName,
     listDefinitions,
     listStateEntries,
     getCargoTotal
   };
 })();
+window.ResourceRegistry = ResourceRegistry;
+
+/* 统一资源名称解析：namespace:key → 中文显示名；解析失败回退原始键 */
+function getResourceDisplayName(resourceKey) {
+  return ResourceRegistry.getResourceDisplayName(resourceKey);
+}
+window.getResourceDisplayName = getResourceDisplayName;
 
 function registerLegacyResourceCategory(namespace, names, category) {
   for (const name of names || []) ResourceRegistry.register({ namespace, key:name, name, category });
@@ -205,4 +232,15 @@ ResourceRegistry.register({ namespace:"ammo", key:"cannon", name:"炮台弹药",
 
 for (const recipe of SHIP_COMPONENT_RECIPES) {
   ResourceRegistry.register({ namespace:"component", key:recipe.id, name:recipe.name, category:"equipment" });
+}
+
+// 考古探针 / 文物 / 校准材料 资源登记（考古.js 已先于本文件加载，故 ARCHAEOLOGY_PROBES / ARCHAEOLOGY_ARTIFACTS 已就绪）
+if (typeof ARCHAEOLOGY_PROBES !== "undefined") {
+  for (const probe of ARCHAEOLOGY_PROBES) ResourceRegistry.register({ namespace:"probe", key:probe.id, name:probe.name, category:"probes" });
+}
+if (typeof ARCHAEOLOGY_ARTIFACTS !== "undefined") {
+  for (const artifact of ARCHAEOLOGY_ARTIFACTS) {
+    const namespace = artifact.category === "calibration" ? "calibration" : "artifact";
+    ResourceRegistry.register({ namespace, key:artifact.id, name:artifact.name, category:artifact.category === "calibration" ? "calibration" : "artifact" });
+  }
 }

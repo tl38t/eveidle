@@ -1,0 +1,410 @@
+{
+  "resources": {
+    "isk": 1000000,
+    "lp": 0,
+    "ores": {},
+    "minerals": {
+      "三钛合金": 5000,
+      "类银超金属": 5000,
+      "类晶体胶矿": 5000,
+      "同位聚合体": 5000,
+      "超新星诺克石": 5000,
+      "铷": 5000
+    },
+    "planetary": {},
+    "ammunition": {
+      "laser": 500,
+      "missile": 500,
+      "cannon": 500
+    },
+    "gases": {},
+    "moonOres": {
+      "镓": 0,
+      "铂": 0,
+      "铪": 0,
+      "锇": 0,
+      "钷": 0,
+      "铷": 0
+    },
+    "special": {
+      "天使初级加密数据": 0,
+      "血袭者初级加密数据": 0,
+      "萨沙初级加密数据": 0,
+      "天使低级加密数据": 0,
+      "血袭者低级加密数据": 0,
+      "萨沙低级加密数据": 0,
+      "天使中级加密数据": 0,
+      "血袭者中级加密数据": 0,
+      "萨沙中级加密数据": 0,
+      "天使高级加密数据": 0,
+      "血袭者高级加密数据": 0,
+      "萨沙高级加密数据": 0,
+      "天使秘密补给站通行密钥": 0,
+      "血袭者仪式地窖通行密钥": 0,
+      "萨沙控制哨所通行密钥": 0,
+      "天使劫掠者船坞通行密钥": 0,
+      "血袭者献祭圣所通行密钥": 0,
+      "萨沙同步节点通行密钥": 0,
+      "天使舰队集结区通行密钥": 0,
+      "血袭者深红修道院通行密钥": 0,
+      "萨沙同化中枢通行密钥": 0,
+      "天使军事复合体通行密钥": 0,
+      "血袭者海军造船厂通行密钥": 0,
+      "萨沙战争设施通行密钥": 0,
+      "吉斯特试制校准核心": 0,
+      "吉斯特试制协议": 0,
+      "科尔普斯试制校准核心": 0,
+      "科尔普斯试制协议": 0,
+      "森屠斯试制校准核心": 0,
+      "森屠斯试制协议": 0,
+      "吉斯特强化校准核心": 0,
+      "吉斯特强化协议": 0,
+      "科尔普斯强化校准核心": 0,
+      "科尔普斯强化协议": 0,
+      "森屠斯强化校准核心": 0,
+      "森屠斯强化协议": 0,
+      "吉斯特精锐校准核心": 0,
+      "吉斯特精锐协议": 0,
+      "科尔普斯精锐校准核心": 0,
+      "科尔普斯精锐协议": 0,
+      "森屠斯精锐校准核心": 0,
+      "森屠斯精锐协议": 0,
+      "吉斯特A型校准核心": 0,
+      "吉斯特改良协议": 0,
+      "科尔普斯A型校准核心": 0,
+      "科尔普斯改良协议": 0,
+      "森屠斯A型校准核心": 0,
+      "森屠斯改良协议": 0,
+      "天穹深层舰船数据": 0,
+      "重垒深层舰船数据": 0,
+      "裂界深层舰船数据": 0
+    },
+    "shipComponents": {},
+    "repairPaste": 0,
+    "warpFuel": 1,
+    "fuel": 1000,
+    "probes": {},
+    "artifacts": {},
+    "calibrations": {
+      "art_i_calib": 50,
+      "art_ii_calib": 50,
+      "art_iii_calib": 50,
+      "art_iv_calib": 50,
+      "art_v_calib": 50
+    }
+  },
+  "skills": {
+    "mining": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "planetaryIndustry": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "refining": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "gasHarvesting": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "shipEngineering": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "equipmentEngineering": {
+      "lvl": 80,
+      "xp": 0
+    },
+    "rigEngineering": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "reverseEngineering": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "cargoManagement": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "laserOps": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "cannonOps": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "missileOperations": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "defense": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "shieldOperation": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "armorReinforcement": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "hullEngineering": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "targeting": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "piloting": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "capacitorManagement": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "drones": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "combat": {
+      "lvl": 1,
+      "xp": 0
+    },
+    "archaeology": {
+      "lvl": 1,
+      "xp": 0
+    }
+  },
+  "currentAction": {
+    "skill": "mining",
+    "area": "凡晶石带",
+    "miningMode": "normal",
+    "normalMiningArea": "凡晶石带",
+    "moonMiningArea": "镓月岩带",
+    "startTime": 1784806787231,
+    "active": false,
+    "progress": 0,
+    "lastProgressUpdate": 1784806787231,
+    "refDuration": 1,
+    "smeltingArea": "凡晶石带",
+    "gasArea": "富勒烯云团",
+    "equipEngTarget": "t1_mining_laser",
+    "equipEngCategory": "rigs",
+    "equipEngRigSub": "combat",
+    "equipEngRigTier": "all",
+    "startedEquipEngTarget": "",
+    "shipCompTarget": "integrated_hull",
+    "startedShipCompTarget": "",
+    "shipAsmTarget": "rifter",
+    "startedShipAsmTarget": "",
+    "batchRemaining": 0,
+    "startedArea": "",
+    "startedSmeltingArea": "",
+    "startedGasArea": ""
+  },
+  "planetary": {
+    "deployments": [],
+    "nextId": 1
+  },
+  "inventory": {
+    "ships": [
+      {
+        "shipId": "illuminator",
+        "instanceId": "ship_1784806787246_sbaupe",
+        "builtAt": 1784806787246,
+        "fitted": {
+          "high": [],
+          "mid": [],
+          "low": [],
+          "rig": []
+        },
+        "enhancementLevel": 0
+      },
+      {
+        "shipId": "rifter",
+        "instanceId": "ship_1784806787246_ehibil",
+        "builtAt": 1784806787246,
+        "fitted": {
+          "high": [],
+          "mid": [],
+          "low": [],
+          "rig": []
+        },
+        "enhancementLevel": 0
+      },
+      {
+        "shipId": "miner_frigate",
+        "instanceId": "ship_1784806787246_charger",
+        "builtAt": 1784806787246,
+        "fitted": {
+          "high": [],
+          "mid": [],
+          "low": [],
+          "rig": []
+        },
+        "enhancementLevel": 0
+      }
+    ],
+    "equipment": [],
+    "rigs": []
+  },
+  "activeIndustrialShip": null,
+  "shipAssignments": {},
+  "archaeology": {
+    "activeSiteId": null,
+    "activeProbeId": "core_probe_i",
+    "progress": 0,
+    "startedSiteId": null,
+    "startedProbeId": null,
+    "shipHp": {},
+    "repairUntil": 0,
+    "repairInstanceId": null,
+    "interferenceUntil": 0,
+    "fuelSavingRemainder": 0,
+    "log": []
+  },
+  "equipment": {
+    "inventory": [
+      "rig_shield_capacity_i",
+      "rig_shield_capacity_ii",
+      "rig_armor_capacity_i",
+      "rig_archaeology_fuel_i",
+      "t1_small_laser"
+    ],
+    "instances": [
+      {
+        "instanceId": "eq_1",
+        "itemId": "t1_small_laser",
+        "enhancementLevel": 0,
+        "installedOn": null
+      }
+    ],
+    "nextInstanceId": 2
+  },
+  "upgrades": {},
+  "ownedBlueprints": [],
+  "combat": {
+    "mode": "belt",
+    "viewMode": "belt",
+    "zone": "angel_outpost",
+    "deathspaceId": "angel_ded_6_10",
+    "deathspaceTier": 6,
+    "targetingMode": "formation",
+    "viewDeathspaceId": "angel_ded_6_10",
+    "viewDeathspaceTier": 6,
+    "deathspaceClears": {},
+    "weapon": "laser",
+    "hp": {
+      "shield": 300,
+      "armor": 100,
+      "structure": 100
+    },
+    "maxHp": {
+      "shield": 300,
+      "armor": 100,
+      "structure": 100
+    },
+    "enemies": [],
+    "currentEnemy": null,
+    "wave": 1,
+    "zoneClears": {},
+    "runEliteKills": 0,
+    "currentFormation": "",
+    "totalKills": 0,
+    "lastLoot": "",
+    "lastSpecialLoot": "",
+    "lastEnemyVolley": null,
+    "active": false,
+    "repairUntil": 0,
+    "destroyedShip": null,
+    "lastStatus": ""
+  },
+  "settings": {
+    "confirmShipEnhancement": true,
+    "combatSkillsExpanded": false
+  },
+  "migrations": {
+    "shipComponentsV2": true,
+    "combatBeltsV2": true,
+    "combatBeltsV3": true,
+    "combatBeltsV4": true,
+    "combatEquipmentV1": true,
+    "equipmentInstancesV1": true
+  },
+  "queue": {
+    "items": [],
+    "config": {
+      "maxSize": 20,
+      "loopMode": false,
+      "skipOnFail": true
+    },
+    "status": {
+      "activeIndex": -1,
+      "isRunning": false,
+      "completedCount": 0,
+      "failCount": 0
+    }
+  },
+  "_dirty": true,
+  "lastActiveTime": 1784806787231,
+  "lastSaveTime": 1784806787246,
+  "statistics": {
+    "version": 1,
+    "totals": {
+      "events": 0,
+      "miningCycles": 0,
+      "minedUnits": 0,
+      "refiningCycles": 0,
+      "refinedUnits": 0,
+      "gasCycles": 0,
+      "gasUnits": 0,
+      "planetaryCycles": 0,
+      "planetaryUnits": 0,
+      "manufacturingCycles": 0,
+      "manufacturedUnits": 0,
+      "shipsBuilt": 0,
+      "enemyKills": 0,
+      "eliteKills": 0,
+      "bossKills": 0,
+      "wavesCleared": 0,
+      "zonesCleared": 0,
+      "deathspaceWavesCleared": 0,
+      "deathspacesCleared": 0,
+      "shipsDestroyed": 0,
+      "skillLevelsGained": 0,
+      "enhancementAttempts": 0,
+      "enhancementSuccesses": 0,
+      "enhancementFailures": 0,
+      "enhancementComponentsSpent": 0,
+      "highestEnhancementLevel": 0
+    },
+    "activity": {
+      "onlineEvents": 0,
+      "offlineEvents": 0,
+      "onlineCycles": 0,
+      "offlineCycles": 0
+    },
+    "production": {
+      "gathered": {},
+      "refined": {},
+      "manufactured": {}
+    },
+    "combat": {
+      "factionKills": {},
+      "zoneKills": {},
+      "zoneClears": {},
+      "deathspaceClears": {}
+    },
+    "eventLedger": {
+      "processedEventIds": []
+    }
+  }
+}

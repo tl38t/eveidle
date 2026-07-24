@@ -196,6 +196,7 @@ function getEquipEngOutputText(recipe) {
     return "产出：" + recipe.name + " ×" + output.qty + "（" + slotName + "）";
   }
   if (output.type === "fuel") return "产出：⛽燃料 +" + output.qty;
+  if (output.type === "probe") return "产出：🛰 探针 " + (EQUIPMENT_DB[output.itemId] ? EQUIPMENT_DB[output.itemId].name : output.itemId) + " ×" + output.qty;
   const ammoName = output.weapon === "laser" ? "激光弹药" : output.weapon === "missile" ? "导弹" : "炮台弹药";
   return "产出：" + ammoName + " +" + output.qty;
 }
@@ -219,5 +220,7 @@ function applyEquipEngOutput(recipe, cycles) {
     ResourceRegistry.add(gameState, "consumable:fuel", total);
   } else if (output.type === "ammo") {
     ResourceRegistry.add(gameState, "ammo:" + output.weapon, total);
+  } else if (output.type === "probe") {
+    ResourceRegistry.add(gameState, "probe:" + output.itemId, total);
   }
 }

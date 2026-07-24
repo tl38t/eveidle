@@ -40,6 +40,18 @@ function migrateShipAndEquipmentState() {
     if (ship) gameState.shipAssignments[actionKey] = ship.instanceId;
     else delete gameState.shipAssignments[actionKey];
   }
+  const activeAssignment = gameState.currentAction && gameState.currentAction.active ? gameState.currentAction.skill : null;
+  const assignmentOrder = [...new Set([activeAssignment, "combat", ...Object.keys(gameState.shipAssignments)].filter(Boolean))];
+  const assignedInstances = new Set();
+  for (const actionKey of assignmentOrder) {
+    const instanceId = gameState.shipAssignments[actionKey];
+    if (!instanceId) continue;
+    const ship = getShipInstance(instanceId);
+    const config = ship ? getShipConfig(ship.shipId) : null;
+    const unsupportedAssignment = getShipAssignmentRestriction(config, actionKey, false);
+    if (unsupportedAssignment || assignedInstances.has(instanceId)) delete gameState.shipAssignments[actionKey];
+    else assignedInstances.add(instanceId);
+  }
   if (gameState.combat && gameState.combat.activeShip) {
     const activeShip = getShipInstance(gameState.combat.activeShip);
     gameState.combat.activeShip = activeShip ? activeShip.instanceId : null;
@@ -177,7 +189,11 @@ function migrateCombatEquipmentState() {
     const ship = getShipConfig(instance.shipId);
     if (!defaults || !ship) continue;
     instance.fitted = normalizeFitting(instance.fitted);
-    const installed = Object.values(instance.fitted).flat().filter(Boolean).map(id => EQUIPMENT_DB[id]).filter(Boolean);
+    // 兼容旧 itemId 字符串与新 eq_* 实例引用：统一经 resolveEquipmentReference 解析出装备定义。
+    const installed = Object.values(instance.fitted).flat().filter(Boolean)
+      .map(ref => resolveEquipmentReference(gameState, ref))
+      .filter(Boolean)
+      .map(resolved => resolved.definition);
 
     const installDefault = (equipmentId) => {
       const equipment = EQUIPMENT_DB[equipmentId];
@@ -202,6 +218,223 @@ function migrateCombatEquipmentState() {
   }
   gameState.migrations.combatEquipmentV1 = true;
   gameState._dirty = true;
+}
+
+// 确定性分配唯一装备实例 ID（不使用 Date.now / 随机，保证存档往返一致）。
+function allocateEquipmentInstanceId(state) {
+  if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+  if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
+  if (!Number.isFinite(Number(state.equipment.nextInstanceId))) state.equipment.nextInstanceId = 1;
+  let instanceId;
+  let guard = 0;
+  do {
+    instanceId = "eq_" + state.equipment.nextInstanceId;
+    state.equipment.nextInstanceId = (Number(state.equipment.nextInstanceId) || 0) + 1;
+    guard++;
+  } while (state.equipment.instances.some(instance => instance.instanceId === instanceId) && guard < 100000);
+  return instanceId;
+}
+
+// 一次性迁移：将舰船 fitted 中的装备字符串（itemId）转换为装备实例 instanceId（双池）。
+// 关键：fitted 中的 itemId 本身就代表一件已安装的装备，不得从 inventory 删除同型号备用件。
+function migrateEquipmentInstancesV1(state) {
+  if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+  if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
+  if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
+  if (state.migrations && state.migrations.equipmentInstancesV1) return;
+  const ships = state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
+  for (const shipInstance of ships) {
+    if (!shipInstance || !shipInstance.fitted) { if (shipInstance) shipInstance.fitted = { high:[], mid:[], low:[], rig:[] }; continue; }
+    for (const slot of ["high", "mid", "low", "rig"]) {
+      if (!Array.isArray(shipInstance.fitted[slot])) shipInstance.fitted[slot] = [];
+      for (let i = 0; i < shipInstance.fitted[slot].length; i++) {
+        const ref = shipInstance.fitted[slot][i];
+        if (!ref) continue;
+        if (isEquipmentInstanceId(state, ref)) continue; // 已是实例
+        const equipmentId = ref; // 旧式字符串：这件装备本身就代表已安装的那一件
+        if (!EQUIPMENT_DB[equipmentId]) { shipInstance.fitted[slot][i] = null; continue; } // 非法引用清空
+        // 直接为 fitted 所代表的装备创建实例，不查询、不 splice inventory
+        const instanceId = allocateEquipmentInstanceId(state);
+        state.equipment.instances.push({ instanceId, itemId:equipmentId, enhancementLevel:0, installedOn:shipInstance.instanceId });
+        shipInstance.fitted[slot][i] = instanceId;
+      }
+    }
+  }
+  state.migrations = state.migrations || {};
+  state.migrations.equipmentInstancesV1 = true;
+  state._dirty = true;
+}
+
+// 每次读档的规范化修复（幂等）：重建 installedOn、补全/去重/清理实例与库存、绝不静默删除合法实例。
+function normalizeEquipmentState(state) {
+  if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+  if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
+  if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
+  if (!Number.isFinite(Number(state.equipment.nextInstanceId))) state.equipment.nextInstanceId = 1;
+
+  const ships = state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
+
+  // Pre-pass：将 numeric instanceId 统一为 eq_N 字符串（兼容旧存档数字 ID 与浏览器 data-* 字符串化）
+  const numericIdMap = new Map();
+  for (const inst of state.equipment.instances) {
+    if (typeof inst.instanceId === "number") {
+      const newId = allocateEquipmentInstanceId(state);
+      numericIdMap.set(inst.instanceId, newId);
+      inst.instanceId = newId;
+    }
+  }
+  for (const ship of ships) {
+    for (const slot of ["high", "mid", "low", "rig"]) {
+      if (!Array.isArray(ship.fitted[slot])) continue;
+      for (let i = 0; i < ship.fitted[slot].length; i++) {
+        const ref = ship.fitted[slot][i];
+        if (typeof ref === "number" && numericIdMap.has(ref)) {
+          ship.fitted[slot][i] = numericIdMap.get(ref);
+        }
+      }
+    }
+  }
+
+  // 第一遍：遍历 fitted，收集所有被引用的 instanceId，并将旧式字符串转为实例。
+  // 对重复引用同一 instanceId 的多槽位：只保留第一次引用，后续清空（不得凭空复制已安装装备）。
+  const referencedInstanceIds = new Set();
+  const seenFittedInstanceIds = new Set();
+  const referencedByShip = new Map();
+
+  for (const shipInstance of ships) {
+    if (!shipInstance) continue;
+    if (!shipInstance.fitted) shipInstance.fitted = { high:[], mid:[], low:[], rig:[] };
+    for (const slot of ["high", "mid", "low", "rig"]) {
+      if (!Array.isArray(shipInstance.fitted[slot])) shipInstance.fitted[slot] = [];
+      for (let i = 0; i < shipInstance.fitted[slot].length; i++) {
+        const ref = shipInstance.fitted[slot][i];
+        if (!ref) continue;
+        if (isEquipmentInstanceId(state, ref)) {
+          if (seenFittedInstanceIds.has(ref)) {
+            // 同一 instanceId 被多个槽位引用：只保留第一个，其余清空（不复制已安装装备）
+            shipInstance.fitted[slot][i] = null;
+            continue;
+          }
+          seenFittedInstanceIds.add(ref);
+          referencedInstanceIds.add(ref);
+          referencedByShip.set(ref, shipInstance.instanceId);
+          continue;
+        }
+        const equipmentId = ref; // 旧式字符串
+        if (!EQUIPMENT_DB[equipmentId]) { shipInstance.fitted[slot][i] = null; continue; } // 非法引用清空
+        // 为 fitted 中的旧式字符串创建实例（不消耗 inventory）
+        const instanceId = allocateEquipmentInstanceId(state);
+        state.equipment.instances.push({ instanceId, itemId:equipmentId, enhancementLevel:0, installedOn:shipInstance.instanceId });
+        shipInstance.fitted[slot][i] = instanceId;
+        seenFittedInstanceIds.add(instanceId);
+        referencedInstanceIds.add(instanceId);
+        referencedByShip.set(instanceId, shipInstance.instanceId);
+      }
+    }
+  }
+
+  // 第二遍：处理实例列表——修复缺失/重复 ID，绝不静默删除合法 itemId 的实例。
+  const validInstances = [];
+  const takenIds = new Set(referencedInstanceIds); // 已被 fitted 引用的 ID 先占位
+
+  for (const inst of state.equipment.instances) {
+    if (!inst || typeof inst !== "object") continue;
+    if (!EQUIPMENT_DB[inst.itemId]) continue; // 非法 itemId 的实例才允许移除（边界：无法恢复的非法对象）
+    // 改装件防复制：rig 实例只应在被 fitted 引用时存在。未被引用的游离 rig 实例（拆卸即销毁的语义下不应产生，
+    // 仅可能来自损坏/篡改存档）一律丢弃——不归还、不保留，杜绝免费再装配的复制漏洞。
+    if (EQUIPMENT_DB[inst.itemId].slot === "rig" && !referencedInstanceIds.has(inst.instanceId)) continue;
+
+    let finalId = inst.instanceId;
+
+    if (!finalId) {
+      // 缺少 instanceId：分配新 ID
+      finalId = allocateEquipmentInstanceId(state);
+    } else if (takenIds.has(finalId) && !referencedInstanceIds.has(finalId)) {
+      // ID 与已引用的实例重复，但当前实例不是被引用的那个：重新分配
+      finalId = allocateEquipmentInstanceId(state);
+    } else if (takenIds.has(finalId) && referencedInstanceIds.has(finalId)) {
+      // 这个实例是被 fitted 引用的，保留原 ID
+      // 但如果 takenIds 已被之前的实例占用（同一 ID 的第一个实例），则需要重新分配
+      // 通过 referencedInstanceIds 判断：如果已在 validInstances 中用过了这个 ID，则重新分配
+      const alreadyUsed = validInstances.some(v => v.instanceId === finalId);
+      if (alreadyUsed) {
+        finalId = allocateEquipmentInstanceId(state);
+      }
+    }
+
+    takenIds.add(finalId);
+    validInstances.push({
+      instanceId: finalId,
+      itemId: inst.itemId,
+      enhancementLevel: Math.max(0, Math.floor(Number(inst.enhancementLevel) || 0)),
+      installedOn: referencedInstanceIds.has(finalId) ? (referencedByShip.get(finalId) || null) : null
+    });
+  }
+
+  state.equipment.instances = validInstances;
+
+  // 清理 inventory：只保留合法的 itemId 字符串
+  state.equipment.inventory = state.equipment.inventory.filter(id => typeof id === "string" && Boolean(EQUIPMENT_DB[id]));
+
+  // 修复 nextInstanceId：确保大于所有现有 eq_N
+  for (const inst of state.equipment.instances) {
+    const num = Number(String(inst.instanceId).replace(/^eq_/, ""));
+    if (Number.isFinite(num) && num >= state.equipment.nextInstanceId) state.equipment.nextInstanceId = num + 1;
+  }
+  state._dirty = true;
+}
+
+// 考古系统状态迁移（幂等）：确保技能、资源池、考古状态、舰船分配齐全并清理遗留锁。
+function migrateArchaeologyState() {
+  if (!gameState.skills) gameState.skills = {};
+  if (!gameState.skills.archaeology) gameState.skills.archaeology = { lvl: 1, xp: 0 };
+  if (!gameState.resources) gameState.resources = {};
+  for (const pool of ["probes", "artifacts", "calibrations"]) {
+    if (!gameState.resources[pool] || typeof gameState.resources[pool] !== "object") gameState.resources[pool] = {};
+  }
+  if (!gameState.archaeology || typeof gameState.archaeology !== "object") {
+    gameState.archaeology = { activeSiteId:null, activeProbeId:"core_probe_i", progress:0, startedSiteId:null, startedProbeId:null, shipHp:{}, repairUntil:0, repairInstanceId:null, interferenceUntil:0, fuelSavingRemainder:0, log:[] };
+  }
+  const arch = gameState.archaeology;
+  arch.activeSiteId = arch.activeSiteId || null;
+  arch.activeProbeId = (typeof getArchaeologyProbe === "function" && getArchaeologyProbe(arch.activeProbeId)) ? arch.activeProbeId : "core_probe_i";
+  arch.startedSiteId = arch.startedSiteId || null;
+  arch.startedProbeId = arch.startedProbeId || null;
+  arch.shipHp = arch.shipHp && typeof arch.shipHp === "object" ? arch.shipHp : {};
+  arch.repairUntil = Number(arch.repairUntil) || 0;
+  arch.repairInstanceId = arch.repairInstanceId || null;
+  arch.log = Array.isArray(arch.log) ? arch.log : [];
+  arch.interferenceUntil = Number(arch.interferenceUntil) || 0;
+  // 燃料节省累计器：旧存档回填 0；恒有限并归一化到 [0,1)（幂等）。
+  // 仅在完整重置游戏时清零；停止行动/切遗迹/切船/装卸改装件都不清零，故放在 currentAction 复位块之外。
+  {
+    const rawRem = Number(arch.fuelSavingRemainder);
+    arch.fuelSavingRemainder = (Number.isFinite(rawRem) && rawRem > 0) ? (rawRem - Math.floor(rawRem)) : 0;
+  }
+  if (!gameState.currentAction || gameState.currentAction.skill !== "archaeology") {
+    arch.startedSiteId = null; arch.startedProbeId = null; arch.interferenceUntil = 0;
+  }
+  if (!gameState.shipAssignments) gameState.shipAssignments = {};
+  const aId = gameState.shipAssignments.archaeology;
+  if (aId) {
+    const inst = getShipInstanceFromState(gameState, aId);
+    const cfg = inst ? getShipConfigById(inst.shipId) : null;
+    if (!cfg || !ARCHAEOLOGY_SHIP_TYPES.includes(cfg.type)) delete gameState.shipAssignments.archaeology;
+  }
+  gameState._dirty = true;
+}
+
+// 共享收尾：在所有旧版迁移完成后，执行装备实例迁移与规范化。
+// 调用顺序必须为：migrateShipAndEquipmentState → migrateShipComponentState → migrateCombatEquipmentState →
+//                migrateEquipmentInstancesV1 → normalizeEquipmentState → migrateArchaeologyState
+// 自动读档、新游戏初始化、手动导入三条路径都必须执行此函数。
+function finalizeEquipmentStateAfterLegacyMigrations(state) {
+  migrateShipAndEquipmentState();
+  migrateShipComponentState();
+  migrateCombatEquipmentState();
+  migrateEquipmentInstancesV1(state);
+  normalizeEquipmentState(state);
+  migrateArchaeologyState();
 }
 
 function migrateAmmunitionEngineeringState() {
@@ -302,6 +535,7 @@ function migrateDeathspaceState() {
   gameState.combat.viewDeathspaceTier = viewedSite.dedTier;
   if (!gameState.combat.deathspaceClears || typeof gameState.combat.deathspaceClears !== "object") gameState.combat.deathspaceClears = {};
   if (typeof gameState.combat.lastSpecialLoot !== "string") gameState.combat.lastSpecialLoot = "";
+  gameState.combat.targetingMode = normalizeCapitalTargetingMode(gameState.combat.targetingMode);
 }
 
 const SaveManager = {
@@ -309,10 +543,45 @@ const SaveManager = {
   save() { gameState.lastSaveTime = Date.now(); gameState._dirty = false; const ok = this.adapter.save(gameState); this._updateStatus(ok ? "已保存 " + new Date().toLocaleTimeString() : "保存失败"); document.getElementById("footer-save") && (document.getElementById("footer-save").textContent = "存档：" + new Date().toLocaleTimeString()); return ok; },
   load() { const data = this.adapter.load(); if (data) { gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } return false; },
   exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "EVE_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
-  importData(jsonString) { try { const data = this.adapter.import(jsonString); if (!data || !data.skills) throw new Error("无效存档"); gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; ensureUserSettingsState(gameState); ensureStatisticsState(gameState); if (!data.migrations || !data.migrations.combatEquipmentV1) { if (!gameState.migrations) gameState.migrations = {}; delete gameState.migrations.combatEquipmentV1; } migrateAmmunitionEngineeringState(); migrateMoonMiningState(); migrateDeathspaceState(); migrateShipAndEquipmentState(); migrateShipComponentState(); migrateCombatEquipmentState(); gameState._dirty = false; gameState.currentAction.progress = 0; gameState.currentAction.lastProgressUpdate = Date.now(); window.gameState = gameState; currentPage = "skill"; switchPage("skill"); this._updateStatus("存档已导入，共 " + JSON.stringify(data).length + " 字节"); updateUI(); return true; } catch (e) { alert("导入失败：存档格式无效"); return false; } },
+  importData(jsonString) {
+    try {
+      const data = this.adapter.import(jsonString);
+      if (!data || !data.skills) throw new Error("无效存档");
+      gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null;
+      Object.assign(gameState, data);
+      if (!Object.hasOwn(data, "settings")) gameState.settings = {};
+      ensureUserSettingsState(gameState);
+      ensureStatisticsState(gameState);
+      // 装备迁移标志管理：不得无条件删除现代存档已有的迁移标志。
+      // 一次性迁移（migrateCombatEquipmentState / migrateEquipmentInstancesV1）各自带有幂等守卫，
+      // 仅当存档确实缺少对应标志时才运行；normalizeEquipmentState 每次导入都必须执行。
+      if (!gameState.migrations) gameState.migrations = {};
+      // 旧版技能/资源迁移
+      migrateAmmunitionEngineeringState();
+      migrateMoonMiningState();
+      migrateDeathspaceState();
+      // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
+      finalizeEquipmentStateAfterLegacyMigrations(gameState);
+      // 离线结算必须在规范化之后
+      if (typeof calculateOfflineGains === "function") calculateOfflineGains();
+      gameState._dirty = false;
+      gameState.currentAction.progress = 0;
+      gameState.currentAction.lastProgressUpdate = Date.now();
+      window.gameState = gameState;
+      currentPage = "skill";
+      switchPage("skill");
+      this._updateStatus("存档已导入，共 " + JSON.stringify(data).length + " 字节");
+      updateUI();
+      return true;
+    } catch (e) {
+      alert("导入失败：存档格式无效");
+      return false;
+    }
+  },
   setAdapter(newAdapter) { this.adapter = newAdapter; },
   _updateStatus(msg) { const el = document.getElementById("save-status"); if (el) el.textContent = msg; const info = document.getElementById("save-info"); if (info) info.textContent = msg; }
 };
+window.SaveManager = SaveManager;
 
 setInterval(() => { if (gameState._dirty) SaveManager.save(); }, 5000);
 window.addEventListener("beforeunload", () => SaveManager.save());
@@ -397,14 +666,13 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     gameState.currentAction.lastProgressUpdate = Date.now();
     gameState.currentAction.startTime = Date.now();
     SaveManager._updateStatus("存档已恢复");
-    calculateOfflineGains();
   }
   migrateAmmunitionEngineeringState();
   migrateMoonMiningState();
   migrateDeathspaceState();
-  migrateShipAndEquipmentState();
-  migrateShipComponentState();
-  migrateCombatEquipmentState();
+  // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
+  finalizeEquipmentStateAfterLegacyMigrations(gameState);
+  if (restored) calculateOfflineGains();
   ensureUserSettingsState(gameState);
   ensureStatisticsState(gameState);
   // 清理旧字段

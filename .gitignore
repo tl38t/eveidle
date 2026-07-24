@@ -5,3 +5,6 @@ package.json
 
 # 项目记忆（个人/会话级，非源码）
 .workbuddy/
+
+# 本地回归日志
+logs/

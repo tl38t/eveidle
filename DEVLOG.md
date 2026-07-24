@@ -104,9 +104,12 @@
 - 舰船部件由原来的六类（T1工业线八类）合并为三类：综合舰体组件、动力控制核心、舰船功能组件；每个已实装舰级只保留三种配方，战斗舰与工业舰共用。
 - 新部件的材料、工时和经验由旧部件组合校准；单套部件生产经验仍为护卫86、驱逐148、巡洋275、战列425。整船改为护卫6件、驱逐10件、巡洋13件、战列16件，完整工时分别约2小时02分、3小时29分、5小时06分和9小时16分，继续满足既定预算。
 - 新增按舰船实例保存的无限强化等级。每次消耗同级三种部件各1件；成功升1级，失败直接清零，不损毁舰船。
+  > **已由 2026-07-24 规则废止**：失败改为等级保持（不清零）、0 XP（无失败经验）。成功率改为与装备强化共用边际递减公式、范围5%～80%。详见下文"2026-07-24 舰船强化与装备强化共用边际成功率"。
 - 强化成功率固定为`50% + 舰船工程超门槛等级×2% - 当前强化等级×1%`，并限制在5%～95%；刚达到制造门槛时`+0→+1`为50%。
+  > **已由 2026-07-24 规则废止**：改用边际递减公式，详见下。
 - 战斗舰强化接入最终生命与对应武器伤害乘区；普通级为生命+0.5%/伤害+0.25%，5倍数级为生命+3%/伤害+1.5%。工业舰不获得生命值，只接入最终采矿或采气效率；普通级+0.75%，5倍数级+4.5%。
 - 取消强化上限与认证经验。成功经验随成功后的高强化等级线性提高；失败经验固定为`0→1`成功经验的一半。基础经验取同级三件部件生产经验的50%，确保部件生产仍贡献约六成以上的升级经验。
+  > **已由 2026-07-24 规则废止**：失败 XP 改为 0（与装备强化一致）。
 - 船坞卡片新增强化等级、累计收益、下一等级/里程碑、三种材料库存、成功率、成功/失败经验、失败清零提示和强化按钮；正在战斗或采集的舰船不能强化。
 - 新增`ship:enhancementAttempted`事件契约及强化次数、成功、失败、部件消耗和历史最高等级统计。
 - 新增`shipComponentsV2`存档迁移：旧部件库存、当前/运行制造目标和队列任务自动折算到三类新部件；旧舰船实例自动补齐`enhancementLevel:0`。
@@ -554,3 +557,399 @@
    - `action-modal.js` 的专用确认弹窗View State已于2026-07-17完成，库存、产出和队列快照不再由弹窗自行计算。
    - `persistence.js` 保留存档与DOM交互职责，但导入后的页面跳转、提示和刷新逐步拆为状态结果与UI反馈。
    - 暂不引入React/Vue；等移动端或组件化需求明确时，直接复用现有Selectors、Actions、ResourceRegistry、GameEvents和CombatModifiers。
+
+## 2026-07-21
+
+### Lv.80 旗舰基础战斗装备与 0.0 强度校准（实装 + 双校验通过）
+
+- **玩法前置补齐**：从相邻工程 `eveidle-modular` 整体迁入与 `render3d` 无耦合的玩法实现（`js/core/*`、`js/data/*`、`js/systems/*`、`js/ui/*`、`css/*`），补齐本工程缺失的旗舰 / 超级旗舰、0.0 外环与深层、莫尔石、战术索敌等前置；`render3d` 全部未提交改动保持原样未触碰。
+- **六件 Lv.80 旗舰基础装备**：聚焦激光炮 I（伤害600/命中100/燃料15/弹药1，AOE 下一目标 30%）、巡航导弹阵列 I（伤害500/命中130/燃料5/弹药1，AOE 其他全部 12%）、攻城射弹炮 I（伤害400/命中80/燃料10/弹药1，AOE 最多两个其他 15%）、护盾回充阵列 I（修150/燃料5）、装甲维修阵列 I（修100/燃料5）、结构修复阵列 I（修50/燃料15）。全部免蓝图、仅 capital/supercapital 可装、配方无莫尔石无新资源。武器耗时180/xp130，维修耗时160/xp110。
+- **AOE 纯函数层**：新增 `js/systems/capital-combat.js`，`getCapitalAreaDamageTargets(enemies, primaryEnemy, aoeConfig)` 实现 `next` / `all` 三模式，自动排除已死亡目标；`combat.js` 仅应用结果，AOE 击毁经 `resolveCombatEnemyDefeat` 统一结算，死敌经 `getLivingCombatEnemies` 过滤不再反击。
+- **装备门槛**：`canFitEquipmentOnShip` 拦截战列舰与工业旗舰安装；动作层对不兼容安装返回 `{changed:false, reason:"incompatible-equipment"}`；制造界面六件可见、武器归入 `weapons` 分类。
+- **0.0 校准门槛（固定种子、每带 1000 次）全部达成**：旗舰+10 外环 93.9/94.1/91.2%（差 2.9pp≤3）、深层肃清率 0% 但数据期望 >0；旗舰+0 外环 <10%、旗舰+10 仅 T1 过渡装 <30%、旗舰+5 <80%；超级旗舰+0 深层 <10%、超级旗舰+10 深层 91.6/92.6/89.7%（差 2.9pp≤3）。
+- **回归校验**：`tools/verify.mjs` 通过（31 JS、4 CSS、209 DOM IDs，全部本地资源 HTTP 200；含旗舰装备专项校验：六件数据/配方/无莫尔石/舰体限制、三族 AOE、动作拒装、制造可见、AOE 击杀结算）；`tools/simulate-destroyer-belts.mjs --assert-nullsec` 通过。
+- 未执行 `git commit`（按任务要求保留全部未提交改动）。
+
+### Lv.60 三族混血战列舰（实装 + 校准 + 工具闭环通过）
+
+- 实装破晓级（天使/护盾+激光）、赤垒级（血袭者/装甲+导弹）、幽构级（萨沙/结构+射弹炮）三艘混血战列舰：舰船工程 Lv.60、tier 混血、type battleship，仅用现有大型 T1 武器与维修件，不引入旗舰装备。
+- 总生命 4320（混血战列舰相对常规 +20%），部件沿用三类战列集成部件 6/5/5（共 16 件）；制造 120 秒、200 经验；蓝图 150 LP、永久解锁、绑定对应 L60 星带（天使破阵战场 / 血袭者铁血圣殿 / 萨沙统御矩阵）。
+- 材料成本：钷×20、铷×16、对应高级加密数据×45；战列部件派生材料与常规战列舰一致（三钛430/同位223/超新星215/同位素30/重金属66/等离子95/稀有气体60）。经济闭环：常规战列 8h53m → 混血 11h11m（1.26x），月矿 2h18m、无材料阻塞。
+- 加成：破晓护盾+30%/激光+25%/命中+20；赤垒装甲+30%/导弹+25%/装甲维修+50%/命中+20；幽构结构+30%/射弹+25%/速度+15%/结构维修+200%/命中+20（命中统一 +20 非 +25）。槽位/速度/索敌/电容/燃料沿用 L55 战列舰；三族主防御层分别为护盾/装甲/结构。
+- 战斗校准（固定种子、每带 10,000 次）全部达成：入门（Lv.60 技能）<20%（16.59/18.24/19.57%）；成型（Lv.65）78%～86% 且三路线差距 ≤3pp（81.85/79.91/80.60%，差 1.94pp）；成熟（Lv.70）≥98%（98.78/99.80/100%）；成熟越级 0.0 外环肃清率 0% 且平均推进 ≤2 波。
+- 幽构级闪避悖论破解：结构坦克在"高结构+低闪避"区才能解耦入门/成型——结构 3400、闪避 5 时入门 19.57%、成型 80.60% 同时达标；此前堆结构 3900/闪避 9 反而入门 53%、成型 99% 双爆，堆结构 3250/闪避 10 则成型仅 68% 不达标。三舰精确 HP 分配与闪避：破晓 3300/510/510（闪避13）、赤垒 660/3000/660（闪避8）、幽构 460/460/3400（闪避5），总生命均 4320。
+- 工具闭环：`simulate-destroyer-belts.mjs` 新增 `--assert-mixed-battleship`（四档验收）、`--calibrate-mixed-battleship-hp` / `--calibrate-mixed-battleship-dodge` 扫描；`calculate-ship-production-times.mjs` 新增 `getMixedBattleshipEconomyAudit` 与 `--audit-mixed-battleship`，`--verify` 扩展 L60 时间预算 [36000,43200]（10–12h）与混血战列舰经济校验（数据×45、无阻塞、生产比 1.10–1.30、期望全通 120–130 次、LP≥150、45/60=75% 校验）；`verify.mjs` 扩展 L60：组件循环 ≤60、部件数 16、战列部件档 L55、材料表 +3、蓝图目录 73/舰船 17。
+- 回归校验（七项全绿）：`node tools/verify.mjs`、`node tools/calculate-ship-production-times.mjs --verify`、`node tools/calculate-ship-production-times.mjs --audit-mixed-battleship`、`node tools/simulate-destroyer-belts.mjs --assert-mixed-battleship`、`node tools/simulate-destroyer-belts.mjs --assert-nullsec`、`node tools/audit-ship-enhancement.mjs`、`node tools/audit-industrial-productivity.mjs` 全部 EXIT=0。
+- 未执行 git commit（按任务要求保留全部未提交改动）。
+
+## 2026-07-22
+
+### 全装备强化系统 验收返修（只修已确认缺陷，不动策划数值，不扩功能）
+
+- **背景**：原实装经重构审计发现 6 项已确认缺陷；本轮仅修复缺陷、补集成测试、跑回归，不调整任何策划数值、不扩展新功能、不触碰 `js/render3d/**`、不执行 `git commit`。
+- **缺陷 1 —— +0 堆叠装备强化崩溃**：`js/core/actions.js` `enhanceEquipment()` 内 `const instance` 被二次赋值触发 "Assignment to constant variable"。改为 `let targetInstance`，并将"创建实例"提前到"从 inventory splice"之前，原子逻辑统一为"全部校验通过后才改状态"。
+- **缺陷 2 —— 旧存档迁移吞掉备用装备**：`js/core/persistence.js` `migrateEquipmentInstancesV1` 原用 `inventory.indexOf(equipmentId)+splice` 把 fitted 所代表的备用件误删。改为：fitted 的 itemId 即已安装装备本身，直接为其分配实例并写回 fitted，不再查询/删除 inventory。
+- **缺陷 3 —— importData 路径缺装备迁移**：`importData` 仅一行 `updateUI()`，未跑 `migrateEquipmentInstancesV1`/`normalizeEquipmentState`。改为调用共享函数 `finalizeEquipmentStateAfterLegacyMigrations(gameState)` + `calculateOfflineGains()`。（注：初版曾"无条件删除迁移标志强制重跑"，该写法在二次返修中被修正为条件执行，见下。）
+- **缺陷 4 —— 月矿装备检测失效**：`js/core/selectors.js` `getMoonMiningAccessState` 仍用 `EQUIPMENT_DB[id]`，但 fitted 现存储 instanceId。改为经 `resolveEquipmentReference(state, ref)` 解析出 definition 后再判 `bonuses.miningEfficiency > 0`。
+- **缺陷 5 —— normalizeEquipmentState 删除合法实例**：原实现丢弃 instanceId 缺失/重复的实例。改为：缺失→分配新 id；重复→首个保留、其余重分配（fitted 重复引用只保留第一个，不复制装备）。
+- **缺陷 6 —— 手写精炼矿物兜底表**：`js/systems/equipment-enhancement.js` 原 `REFINED_MINERALS` 硬编码 7 矿物兜底。改为从 `SMELTING_RECIPES` 动态推导，缺失时返回空集（fail closed，审计失败而非静默通过）。
+- **测试与回归**：`tools/audit-equipment-enhancement.mjs` 重写为真实集成测试（通过 vm 沙箱加载完整脚本链，直接调用 `enhanceEquipment`/`dispatchGameAction`/`normalizeEquipmentState`/`migrateEquipmentInstancesV1`，A–D 四节共 674 条断言全绿）；`js/core/resources.js` 暴露 `window.ResourceRegistry` 供审计使用；`tools/verify.mjs` 增加 `production.js` 须在 `equipment-enhancement.js` 之前的脚本顺序断言。
+- **八条回归命令全部 EXIT=0**：`verify.mjs`、`audit-equipment-enhancement.mjs`、`audit-ship-enhancement.mjs`、`audit-industrial-productivity.mjs`、`calculate-ship-production-times.mjs --verify`、`calculate-ship-production-times.mjs --audit-mixed-battleship`、`simulate-destroyer-belts.mjs --assert-mixed-battleship`、`simulate-destroyer-belts.mjs --assert-nullsec`。浏览器手测因环境受限未执行，由无头集成审计（覆盖真实 Action 集成）+ `verify.mjs` 资源加载校验替代。
+- 未执行 git commit（按任务要求保留全部未提交改动）。
+
+### 全装备强化系统 二次返修（donor 双重扣除 / 现代存档重复赠装）
+
+- **背景**：一轮回归验收中新发现两项回归，本轮仅修复、补硬断言、跑回归，不调整任何数值、不触碰 `js/render3d/**`、不执行 `git commit`。
+- **修复 1 —— donor 双重扣除**：`js/core/actions.js` `enhanceEquipment()` 原子扣减段存在两段连续的 `if (needDonor)` donor 扣除块，第一次 splice 后第二次又找到下一 donor 再 splice，导致每次里程碑强化尝试消耗两件而非一件。删除重复块，确保每次里程碑强化只消耗恰好一件 donor（inventory 初始 1/2/3 件 → 结束 0/1/2 件，对势力/联盟/DED 标准/DED 监督者均成立；donor 不足时完整状态不变）。
+- **修复 2 —— 现代存档导入重复赠装**：`js/core/persistence.js` `importData()` 原无条件 `delete combatEquipmentV1` / `delete equipmentInstancesV1`，导致已完成实例化的现代存档导入时被强制重跑 `migrateCombatEquipmentState`，而该函数用 `EQUIPMENT_DB[id]` 直接查 fitted（对 `eq_*` 实例引用返回 undefined → 误判"未装武器/维修" → 重复赠送默认装备）。改为：①不再无条件删除现代存档已有的迁移标志，一次性迁移各自带幂等守卫，仅当存档确实缺标志才运行；②`migrateCombatEquipmentState` 的已安装装备判定改用 `resolveEquipmentReference(gameState, ref)`，同时兼容旧 itemId 字符串与新 `eq_*` 实例引用；③`normalizeEquipmentState` 每次导入仍必须执行。现代存档（两标志均置位）导入后实例数/inventory 数/fitted 引用/强化等级完全不变，不新增默认武器或维修器；旧式 fitted 存档（缺标志）导入仍正常迁移并保留备用装备。
+- **测试扩展**：`js/core/persistence.js` 暴露 `window.SaveManager` 供审计直接调用真实 `importData`；`tools/audit-equipment-enhancement.mjs` 新增 B16b（donor 初始 1/2/3 件精确剩 0/1/2 件、DED 核心/协议精确减 1，覆盖联盟/势力/DED标准/DED监督者）与 E 节（现代存档带两标志导入前后总数一致、eq_* 引用不获额外默认装备、旧存档缺标志仍迁移、连续导入同一现代存档两次结果一致），断言全绿。
+- **八条回归命令全部 EXIT=0**（同上）。浏览器手测因环境受限未执行，由无头集成审计（真实 `importData`/`enhanceEquipment` 调用）+ `verify.mjs` 资源加载校验替代。
+- 未执行 git commit（按任务要求保留全部未提交改动）。
+
+### 工业舰与逆戟鲸级专项收尾验收（只修元数据/补审计/清文档，不动数值、不触碰 render3d、不 commit）
+
+- **背景**：工业舰与逆戟鲸级此前已实装，但存在三项收尾缺口——①逆戟鲸解锁类型误用 `composite`（游戏逻辑无人消费，真实 Lv.80 门槛由组装配方承载）；②工业产能专项审计缺少对 10 舰层级、逆戟鲸自身/支援/冶炼/强化边界的硬断言；③`eveidle.md` §7.4 仍描述旧"四部件/外置货舱/工业挂架"方案，与现行三件集成部件冲突。本轮仅修复元数据、补齐自动化审计、清理冲突文档，不调整任何产能/舰船/装备/资源数值，不触碰 `js/render3d/**`，不执行 `git commit`。
+- **修复 1 —— 逆戟鲸解锁元数据**：`js/data/ships.js` 中 `orca.unlock` 由 `{ type:"composite", level:80 }` 改为 `{ type:"shipEngineering", level:80 }`。`composite` 类型在游戏逻辑中无任何消费者；真实 Lv.80 制造门槛由组装配方 `recipe.level` 决定，选择器 `getProductionEfficiencyState`、制造动作 `startShipAssembly`、队列 `getQueueItemConfigForState`、在线/离线结算均早已正确使用 Lv.80，无需其他改动。全部制造规则保留：免蓝图、capital 部件 10/8/10=28、组装 320s/500xp、无莫尔石、无新蓝图、舰体/槽位/工业加成不变。
+- **修复 2 —— 工业产能专项审计扩展**：`tools/audit-industrial-productivity.mjs` 新增六节硬断言（全部走真实选择器/函数、1e-9 容差、无手写公式、无假数据）：
+  - 工业舰层级完整性：10 艘（Lv.1/15/35/55/80）舰体/配方/门槛/三部件档位/可实例化均符合预期；
+  - 逆戟鲸自身工业能力：miningLaserEfficiency/gasLaserEfficiency=2.8、4 高槽、可采矿/采气/冶炼、普通矿与月矿产能为正；
+  - 工业舰强化接入：+5=1.075x、+10=1.15x、不增舰体生命、不放大 fleetMiningSpeed/smeltingSpeed；
+  - 舰队采矿支援：无支援 1.00x、海豚 1.10x、逆戟鲸 1.20x、同存取最高不叠加、分配冶炼仍提供船坞采矿协同、强化不改变 20%、不误提采气；
+  - 冶炼支援：无支援 1.00x、海豚 1.25x、逆戟鲸 1.30x（均经真实冶炼视图状态）、未分配不提供、强化不放大；
+  - 制造经济：全链路 18~24h（逆戟鲸 23h59m57s）、部件均真实来源、无莫尔石/深层/考古、不需蓝图、材料不足原子拒绝（`startShipAssembly` 返回 `insufficient-components` 且库存不变）。
+- **修复 3 —— verify.mjs 防回归加强**：新增"工业舰与逆戟鲸专项校验"数据驱动断言：10 舰精确、orca type=industrial_capital、unlock=shipEngineering/Lv.80、双 2.8、fleetMiningSpeed 0.20、smeltingSpeed 0.30、配方免蓝图 10-8-10=28、time320/xp500、禁莫尔石/深层/考古、旗舰装备禁装 orca、orca 不进 0.0 战斗平衡配置（`starterShips.orca===undefined` 且 type 非 capital/supercapital）。
+- **修复 4 —— eveidle.md 冲突清理**：§7.4 原"工业舰与战斗舰共用四种基础部件，外置货舱和工业挂架为专属部件"改为现行规则——三件集成部件共用、工业舰 Lv.1/15/35/55/80、Lv.80=逆戟鲸终点且无工业超级旗舰、逆戟鲸不参与旗舰战斗且不装旗舰装备、4 高槽兼顾采矿与采气、船坞采矿协同 +20%、分配冶炼 +30%、舰队/冶炼加成不随强化放大、完整制造配方已实装（无需等待 0.0 资源循环）。仅修冲突段落，历史草案内容未删。
+- **修复 5 —— 审计返修（补 4 个验收缺口，仅加断言、不改数值/公式/玩法代码）**：在 `tools/audit-industrial-productivity.mjs` 中补齐此前缺失的硬断言，全部经真实函数/选择器、1e-9 容差、无手写公式、无假数据：
+  - 真实实例创建：对 10 艘工业舰逐一调用沙箱内 `createShipInstance`，验证 `shipId`/`instanceId`/`enhancementLevel===0`/`fitted` 四槽结构；连续两艘同型号 `instanceId` 必须不同；删除原"手工构造对象再调 `getShipInstanceFromState`"的自证断言，`getShipInstanceFromState` 仅作创建后按 `instanceId` 读取验证；
+  - 逆戟鲸采气强化：经真实 `getProductionEfficiencyState(...,"gasHarvesting")` 验证 +5/+0=1.075x、+10/+0=1.15x（不复制强化公式）；
+  - 月矿实际准入：构造 Lv.80 逆戟鲸分配采矿、高槽装真实 `t5_mining_laser`（实例引用经 `resolveEquipmentReference` 解析），经 `getMoonMiningAccessState`/`getMiningRequirementState` 验证 `available=true`；移除高槽激光器后 `available=false`（不以"通用效率 total>0"代替月矿准入）；
+  - Lv.79/80 制造边界：经真实 `dispatchGameAction` 验证——Lv.79 选逆戟鲸配方 `level-locked` 且 `currentAction` 不变、Lv.80 选配方成功、Lv.79 即使预置 `shipAsmTarget` 启动组装仍 `level-locked`、Lv.80 材料不足 `insufficient-components` 且 `inventory` 不变、不需蓝图。
+  - 审计输出据实改写：仅在实际覆盖后才打印"采矿/采气强化、月矿准入、真实实例创建、Lv.79/80 边界全部通过"。
+- **八条回归命令全部 EXIT=0**：`verify.mjs`、`audit-industrial-productivity.mjs`、`audit-equipment-enhancement.mjs`、`audit-ship-enhancement.mjs`、`calculate-ship-production-times.mjs --verify`、`calculate-ship-production-times.mjs --audit-mixed-battleship`、`simulate-destroyer-belts.mjs --assert-mixed-battleship`、`simulate-destroyer-belts.mjs --assert-nullsec`。
+- **回归环境偶发说明（nullsec 模拟）**：在连续回归环境中 `simulate-destroyer-belts.mjs --assert-nullsec` 曾出现一次 EXIT 139；随后使用相同命令、Node v24.14.1 独立复跑完整通过并返回 EXIT 0，全部 0.0 校准结果正常。当前无法稳定复现，暂判定为环境/Node 进程偶发异常；按边界约定不修改模拟器、战斗代码或数值。若以后在独立冷启动环境连续复现，再单独立项排查。
+- 未执行 git commit（按任务要求保留全部未提交改动）；`js/render3d/**` 在本轮零改动（沿用既有未提交状态）。
+
+### 考古船第一阶段（仅舰体/制造/强化/蓝图/展示/专项审计，不实装考古玩法）
+
+- **边界**：本轮只实装五艘考古船的"数据、制造、强化、蓝图、展示、专项审计"；**不实装**考古行动、遗迹、探针、考古装备、文物、ISK/LP 兑换或改装件。不改动任何现有舰船/装备/敌人/死亡空间/工业数值，不触碰 `js/render3d/**`，不引入新依赖，不执行 `git commit`。
+- **一、独立数据表**：新增 `js/data/ships.js` 的 `ARCHAEOLOGY_SHIPS`（全局 `const`，随 index.html `<script defer>` 加载，无 `export`/无 `window.` 赋值），含苍鹭级/追迹级/星图级/远镜级/启明级五舰；`unlock.level` 分别为 1/15/35/55/80，`type` 依次为 `archaeology_frigate`/`destroyer`/`cruiser`/`battleship`/`archaeology_capital`。五舰均带 `bonuses.archaeologyScanStrength`（10/25/50/80/120）与 `archaeologyFailureDamageReduction`（0/0.05/0.10/0.15/0.20）。
+- **二、统一解析**【已由下方'考古船战斗规则返修'废止】：`js/core/selectors.js` 的 `getShipConfigById` 扩展为 `STARTER_SHIPS || INDUSTRIAL_SHIPS || ARCHAEOLOGY_SHIPS` 三级回退；`createShipInstance(shipId)` 通用，存档只存 `shipId`。考古船不入 `STARTER_SHIPS`/`INDUSTRIAL_SHIPS`，战斗解析 `getShipConfig` 仍在 `isIndustrialShip ? INDUSTRIAL : STARTER` 范围内、显式排除考古。
+- **三、蓝图与制造**：苍鹭级蓝图写入 `SHIP_BLUEPRINTS`（`{id:"heron",costISK:50000,level:1}`），在独立蓝图商店"舰船"类目以 50,000 ISK 永久解锁；其余四舰免蓝图。五条 `SHIP_ASSEMBLY_RECIPES`：苍鹭 Lv1/30s/30xp/部件 2+2+2=6（需蓝图）；追迹 Lv15/45s/60xp/3+3+4=10；星图 Lv35/70s/100xp/4+5+4=13；远镜 Lv55/100s/160xp/6+5+5=16；启明 Lv80/320s/500xp/10+8+10=28。**全部复用现有各档集成部件、无考古专属材料、无新生产公式、无莫尔石/月矿/深层/ faction/核心/协议依赖**，`requiresBlueprint:false` 的四舰材料不足时原子拒绝（`insufficient-components` 且库存不变）。
+- **四、考古强化**：`js/systems/ship-enhancement.js` 新增显式 `archaeology` 角色（`getShipEnhancementRole` 在 combat 默认之前命中）；`getShipEnhancementBonuses` 的考古分支只返回 `{ role, hpMultiplier:growth, archaeologyScanMultiplier:growth }`，其中 `growth = 1 + 5级块数×0.05 + 余数×0.005`（即 +5/+10/+15 → 1.05/1.10/1.15，同时作用于舰体生命与扫描强度）。**严格不含** `weaponMultiplier`/`industryMultiplier`/`damageMultiplier`，不放大采矿/采气效率，不降武器伤害或工业加成。UI 展示 HP/扫描强度强化前后与固定失败反噬减免，不展示武器伤害或工业采矿加成。
+- **五、行为边界**【已由下方'考古船战斗规则返修'废止】：考古船不可分配采矿/采气/冶炼/战斗；`getShipAssignmentRestriction` 与 `equipCombatShip` 对 `type.startsWith("archaeology")` 返回 `unsupported-combat`；旗舰战斗装备（`shipTypes:["capital","supercapital"]`）经 `canFitEquipmentOnShip` 对启明级（`archaeology_capital`）拒装。五舰不进入 0.0 战斗平衡配置。
+- **六、UI 与展示**：舰船工程列表显示五舰；舰船卡片展示类别/考古角色、护盾/装甲/结构、扫描强度、失败反噬减免、燃料效率、槽位、制造等级/耗时/经验/部件；蓝图商店"舰船"类目新增苍鹭级并预览舰体与消耗。
+- **七、专项审计**【已由下方'考古船战斗规则返修'废止】：新增 `tools/audit-archaeology-ships.mjs`（vm 沙箱加载完整脚本链，20 个审计点、255 条断言全绿，EXIT=0），覆盖五舰存在/精确属性/`unlock.level`/实例唯一性/统一解析/不入 STARTER·INDUSTRIAL·战斗/5 配方精确/仅苍鹭需 50000 ISK 蓝图/等级门槛/`insufficient-components` 原子拒装/派生部件均有配方/无考古·月矿·莫尔石·faction·深层·核心·协议/强化 +5/+10/+15→1.05/1.10/1.15 且不加武器/工业倍率/固定反噬减免/三个选择器 View State/启明级禁装旗舰装备/不在战斗解析/生产耗时在预算内/无意外状态变异。
+- **八、verify.mjs 扩展**【已由下方'考古船战斗规则返修'废止】：新增"考古船第一阶段校验"数据驱动断言（5 舰/解锁等级 1·15·35·55·80/统一解析/不进三表与战斗/5 配方 level-time-xp-免蓝图(仅苍鹭)-部件总数 6·10·13·16·28-禁 materialCost/苍鹭 50000 ISK 蓝图·余者无蓝图/INDUSTRIAL 仍 10 舰/启明级禁装旗舰装备）；同步修正 `expectedShipMaterials` 四类考古材料总计、Lv.15/35/55 免蓝图配方计数（5→6/6→7/5→6）与蓝图商店类目计数（总 73→74、ships 17→18）。`verify.mjs` 整体 EXIT=0。
+- **九、回归命令（9 条，真实 EXIT CODE 见最终报告）**：`verify.mjs`、`audit-archaeology-ships.mjs`、`audit-ship-enhancement.mjs`、`audit-industrial-productivity.mjs`、`audit-equipment-enhancement.mjs`、`calculate-ship-production-times.mjs --verify`、`calculate-ship-production-times.mjs --audit-mixed-battleship`、`simulate-destroyer-belts.mjs --assert-mixed-battleship`、`simulate-destroyer-belts.mjs --assert-nullsec`。
+- **当前阶段 = 仅舰体**：考古船目前只有船体与制造/强化/蓝图/展示；扫描强度/失败反噬减免已作为静态属性与强化倍率写入，但**真正的考古扫描、遗迹解析、探针、考古装备、文物产出、ISK/LP 兑换、改装件**均未实装，后续单独设计，不得用本轮舰体数据反向约束未来考古玩法数值。
+- **后续开发顺序（建议，未实装）**：①考古行动与遗迹系统（信号/扫描/解析流程）→ ②探针与考古装备（槽位消费 `archaeologyScanStrength`/反噬减免）→ ③文物产出与 ISK/LP 兑换 → ④改装件工程接入考古舰 → ⑤0.0 前置与考古旗舰在资源闭环中的定位。每一步独立设计、独立审计，沿用本阶段已建立的三表解析、配方复用与生产经济约束。
+
+#### 考古船战斗规则返修（2026-07-22，策划重新明确）
+
+- **返修背景**：策划明确"所有舰船（含工业舰、考古舰）均可参与战斗，能否打赢由舰体/装备/技能决定；'不纳入战斗平衡模拟'≠'禁止进入战斗'"。撤销先前错误的考古舰战斗禁令。
+- **一、`js/core/selectors.js`**：`getShipAssignmentRestriction` 删除针对 `archaeology_*` 的 `unsupported-combat`；考古舰 `combat` 岗位检查现返回 `null`（允许分配）；采矿/采气/冶炼限制保持不变。
+- **二、`js/core/actions.js`**：`equipCombatShip` 删除 `type.startsWith("archaeology")` → `unsupported-combat` 判断；`toggleShipAssignment` 现允许考古舰分配到 `combat`；`combat/start` 与 `enterDeathspace` 未新增考古禁令；无武器时仍按原规则返回 `no-weapons`。
+- **三、`js/systems/combat.js`**：`getShipConfig` / `getActiveShip` 现通过统一 `getShipConfigById` 正确解析 `ARCHAEOLOGY_SHIPS`，不再错误回退成裂谷级；舰船实例、舰体配置、已安装装备保持同一艘船。
+- **四、强化契约修复**：`getShipEnhancementBonuses` 考古分支改为返回完整安全中性字段 `{ role, hpMultiplier:growth, damageMultiplier:1, industryMultiplier:1, archaeologyScanMultiplier:growth }`；+5/+10/+15 的 HP 与扫描仍为 1.05/1.10/1.15；`damageMultiplier` 恒为 1、`industryMultiplier` 恒为 1；失败反噬减免保持舰体固定值；所有战斗选择器/结算均为有限数，无 `undefined`/`NaN`。
+- **五、装备规则**：考古船可安装无 `shipTypes` 限制的普通战斗装备；启明级继续禁装 `shipTypes:["capital","supercapital"]` 的旗舰专用装备；未放宽现有旗舰装备适配范围；后续考古装备未实装。
+- **六、专项审计返修**：`tools/audit-archaeology-ships.mjs` 删除"考古舰禁止战斗"/`getShipConfig(id)===null` 错误断言；新增五舰 `combat` 分配/`equipCombatShip`/装普通武器/`combat/start` 成功、实例-配置-实例一致、无武器 `no-weapons`+状态不变、苍鹭级&启明级真实战斗结算（最大生命有限、命中/闪避/伤害/燃料倍率均有限、无 undefined·NaN）、强化后参战（HP 获倍率、damageMultiplier 恒 1、扫描增长）、保留启明级禁装六件旗舰装备；明确区分"可参战"与"不作 destroyer-belts 基准"。**现 28 个审计块、339 条断言全绿，EXIT=0。**
+- **七、`verify.mjs` 同步**：原"考古舰不得进入战斗解析器（避免被选入 0.0 战斗平衡）"断言改为"战斗解析器必须能解析 ARCHAEOLOGY_SHIPS（考古舰可参战）"，整体 EXIT=0。
+- **八、文档**：`eveidle.md` §7.1.6 与本文档"考古船不进入战斗"统一改写为"所有考古舰均可参与战斗并安装适配的普通装备，但不享受舰船强化伤害加成，也不作为星带强度的基准舰船；其主要定位仍为考古扫描与遗迹解析"。
+
+### 考古系统第二阶段 — 完整玩法实现（2026-07-22）
+
+> **当前状态**：数据表、技能、15 遗迹、3 探针、15 装备、成功率/反噬、40 文物、ISK 出售/LP 兑换、在线/离线/队列/存档均已实装。**改装件与校准材料用途尚未实装**，待后续。
+
+#### 一、数据层
+
+- `js/data/archaeology.js` 新建：`ARCHAEOLOGY_TIERS`（五档配置）、`ARCHAEOLOGY_SITES`（15 遗迹）、`ARCHAEOLOGY_ARTIFACTS`（40 文物）、`ARCHAEOLOGY_PROBES`（3 探针）、`ARCHAEOLOGY_COMMON_WEIGHTS`（普通 ISK 文物 60/30/10 权重）、`ARCHAEOLOGY_STABILIZER_CAP`（0.60）、`ARCHAEOLOGY_DECODER_CAP`（0.75）、`ARCHAEOLOGY_SIGNAL_MIN_SECONDS`（3）、`ARCHAEOLOGY_REPAIR_SECONDS`（180）。辅助函数 `getArchaeologySite`/`getArchaeologyTierConfig`/`getArchaeologyArtifact`/`getArchaeologyArtifactsByTier`/`getArchaeologyProbe` 均导出到 `window`。
+- `ARCHAEOLOGY_SHIP_TYPES` 从 `archaeology.js` 移至 `js/data/ships.js`（解决 `equipment.js` 先于 `archaeology.js` 加载的 `ReferenceError` 时序问题）。
+- `js/data/equipment.js` 新增 15 件考古装备（5 档 × 3 槽位：遗迹分析仪/信号稳定器/文物译码器），`bonuses` 分别携带 `archaeologyScan`/`archaeologyStabilizer`/`archaeologyDecoder`，`shipTypes` 限定 `ARCHAEOLOGY_SHIP_TYPES`，`archaeology:true` 供下游识别。
+- `js/data/ammunition.js` 新增 3 条探针制造配方，输出 `{type:"probe",itemId,qty:20}`；`EQUIPMENT_ENGINEERING_CATEGORIES` 新增 `archaeology` 和 `probes` 两个类别（总 6→8）。
+- `js/data/base.js`：`INITIAL_SKILLS` 新增 `archaeology: { lvl: 1, xp: 0 }`。
+
+#### 二、核心层
+
+- `js/systems/archaeology.js` 新建：`getArchaeologyFittedBonuses`（装备增益解析，含强化倍率 `1+0.1×enhLvl`，受上限约束）、`computeArchaeologyScanStrength`（成功率分子）、`computeArchaeologySuccessChance`（`clamp(0.05,0.95,0.50+(scan-diff)×0.01)`）、`getArchaeologyShipHp`/`resetArchaeologyShipHp`/`applyArchaeologyDamage`（护盾→装甲→结构反噬）、`getArchaeologyInterferenceSeconds`（`max(3, site.time×0.25)`）、`resolveArchaeologyDrops`（含普通/额外/独特/校准/LP 五层掉落，`randomValue` 可注入确保审计可重复）、`resolveArchaeologyCycle`（在线/离线共用的单次结算）、`sellArchaeologyArtifacts`（含 `all:true` 全部遍历模式）、`redeemArchaeologyArtifacts`（含全部兑换模式）、`getArchaeologyDisplayState`（纯展示状态，返回舰船/遗迹/探针/文物/日志）。全部函数通过 `window` 导出。
+- `js/core/state.js`：`gameState.archaeology` 初始化含 `activeSiteId`/`activeProbeId`/`progress`/`startedSiteId`/`startedProbeId`/`shipHp`/`repairUntil`/`repairInstanceId`/`interferenceUntil: 0`/`log`。`SKILL_LABEL.archaeology = "考古"`。
+- `js/core/resources.js`：`RESOURCE_NAMESPACE_CONFIG` 新增 `probe`/`artifact`/`calibration` 三个命名空间；加载后自动注册所有探针和文物资源。
+- `js/core/events.js`：新增 8 个考古事件契约：`archaeology:attemptCompleted`/`success`/`failure`/`artifactFound`/`shipDisabled`/`repairCompleted`/`artifactSold`/`artifactRedeemed`。`artifactSold`/`artifactRedeemed` 的 `artifactId` 字段为可选（sell-all/redeem-all 路径不携带）。
+- `js/core/selectors.js`：`getShipAssignmentRestriction` 白名单新增 `archaeology`（仅 `bonuses.archaeologyScanStrength>0` 的舰船可分配）；`getNavigationDisplayState` standalonePages 新增 `archaeology:"archaeology-panel"`；`getHangarDisplayState`/`getSkillShellDisplayState`/`getCurrentActivityDisplayState` 新增考古图标。
+- `js/core/actions.js`：`dispatchGameAction` 新增 6 条考古动作分支（`selectSite`/`selectProbe`/`start`/`stop`/`sellArtifact`/`redeemArtifact`）。`ArchaeologyStateActions` 对象实现准入校验（遗迹等级/技能/探针/燃料/舰船分配/维修状态）。
+- `js/core/tick.js`：`gameTick` 新增 `archaeology` 分支：处理维修完成/暂停、干扰暂停，`while(progress≥actualTime)` 循环调用 `resolveArchaeologyCycle`，push 日志到 `arch.log`，失败设置 `interferenceUntil`，调用 `completeQueuedActionCycle`。
+- `js/core/offline.js`：`getOfflineActionDescriptor("archaeology")` 返回离线结算描述符，循环调用 `resolveArchaeologyCycle(gameState, Date.now(), "offline")`。
+- `js/systems/manufacturing.js`：`applyEquipEngOutput` 新增 `probe` 输出类型（ResourceRegistry.add "probe:" + itemId）；`getEquipEngOutputText` 对应显示。
+- `js/core/persistence.js`：`migrateArchaeologyState()` 幂等性迁移（补齐 archaeology 子对象、resource pools、`interferenceUntil` 字段；非活跃考古时清除 locked startedSiteId/startedProbeId；校验 shipAssignments 引用有效性）。在 `finalizeEquipmentStateAfterLegacyMigrations` 中调用。
+
+#### 三、UI 层
+
+- `js/ui/archaeology-render.js` 新建：`renderArchaeologyPage()` 完整考古页面（分配舰船信息/HP条、遗迹选择 5 档 × 3 格卡片、探针选择 3 张卡、进度条、开始/停止控制、文物库存含单件/全部出售与兑换、校准材料"未来用途"标签、行动日志最近 12 条）。所有交互通过 `dispatchGameAction` 触发。
+- `index.html`：新增侧边栏"🛰️ 考古"导航项（`data-page="archaeology"` + `data-lv="archaeology"`）、`archaeology-panel` 面板容器（`display:none`）。新增 3 个脚本标签：`data/archaeology.js`（弹药后、state 前）、`systems/archaeology.js`（装备强化后、行星前）、`ui/archaeology-render.js`（行星渲染后、tick 前）。
+- `js/ui/shell-render.js`：`getManagedPanels`/`getGenericSkillPanels` 增加 `archaeology-panel`；`renderCurrentNavigation` 增加 `archaeology` 页面分支。
+- `css/panels.css`：新增 ~100 行 `.archaeology-*` 样式（舰船信息卡、遗迹网格、探针行、进度条、文物列表、日志）。
+
+#### 四、本轮修复（Task #85 专项审计过程中发现并修复的真实缺陷）
+
+1. **`sell-all` 类型匹配 bug**：`sellArchaeologyArtifacts` 的 sell-all 路径检查 `artifact.category === "common"`，但数据表实际使用 `"common_isk"`。修改为 `"common_isk"`。
+2. **sell-all/redeem-all 事件契约**：`events.js` 中 `artifactSold` 和 `artifactRedeemed` 契约原要求必填 `artifactId`，但全部出售/兑换路径不携带单一 artifactId。将 `artifactId` 从 required 字段移除。
+3. **`migrateArchaeologyState` 幂等性确认**：验证旧存档缺 archaeology/resource pools/interferenceUntil 时均可安全补齐，连续调用两次状态不变。
+4. **`ARCHAEOLOGY_SHIP_TYPES` 定义与加载顺序**：确认 `ships.js` 中的唯一定义在 `equipment.js` 和 `archaeology.js` 之前加载，消除 `ReferenceError`。
+5. **`tick.js` 括号嵌套**：修复考古分支提前关闭外层 `if (gameState.currentAction.active)` 导致 `key` 变量脱离作用域的问题。
+6. **`state.js` `interferenceUntil` 字段**：确认初始状态包含 `interferenceUntil: 0`（与 persistence migration 保持一致）。
+
+#### 五、专项审计（`tools/audit-archaeology-system.mjs`）
+
+新建审计文件，**138 条断言全部通过**（EXIT=0），覆盖：
+
+| 分区 | 断言数 | 覆盖内容 |
+|:---|:---|:---|
+| A 加载与初始状态 | 19 | 脚本无 `ReferenceError`、`ARCHAEOLOGY_SHIP_TYPES` 唯一定义、`interferenceUntil` 类型正确、旧存档补齐、幂等性 |
+| B 舰船与遗迹准入 | 17 | 舰船创建/分配、遗迹等级门槛、三级 50% 成功率基准（I=21/III=121/V=300）、探针/燃料拒绝、考古舰可战斗 |
+| C 开始/停止/tick | 23 | start 锁定 `startedSiteId`/`startedProbeId`、成功消耗探针+燃料+XP、失败反噬 HP 减少+无 XP、资源不足原子拒绝、停止清空锁、tick 不重复结算 |
+| D 文物掉落/出售/兑换 | 27 | ID 唯一、单件出售 3→2、sell-all（含 `common_isk` 匹配修复）、LP 保留、校准保留、第二次全部出售无收益、redeem-all LP 计算、不可兑换保留、事件契约 payload |
+| E UI 显示态 | 9 | `successPercent` 非 NaN、level 数字、probe stock 非 NaN、assignedShip 合法 |
+| F 离线与兼容性 | 3 | 离线 descriptor 存在、旧存档补齐 |
+
+#### 六、回归命令（全部 10 条，EXIT=0）
+
+| 命令 | 退出码 |
+|:---|:---|
+| `node tools/verify.mjs` | 0 |
+| `node tools/audit-archaeology-ships.mjs` | 0 |
+| `node tools/audit-archaeology-system.mjs` | 0 |
+| `node tools/audit-equipment-enhancement.mjs` | 0 |
+| `node tools/audit-ship-enhancement.mjs` | 0 |
+| `node tools/audit-industrial-productivity.mjs` | 0 |
+| `node tools/calculate-ship-production-times.mjs --verify` | 0 |
+| `node tools/calculate-ship-production-times.mjs --audit-mixed-battleship` | 0 |
+| `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-mixed-battleship` | 0 |
+| `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-nullsec` | 0 |
+
+#### 七、浏览器手测
+
+- 页面从侧边栏进入考古页面（🛰️ 考古导航项），面板正确显示遗迹、探针、文物库存（空）。
+- 在船坞将考古舰分配至考古岗位后，考古页面展示舰船 HP（护盾/装甲/结构）。
+- 选择遗迹和探针，开始/停止解析，状态切换正常。控制台无 `ReferenceError`/`TypeError`/`NaN`。
+- 文物库存由 tick 结算产生后，可逐件出售/兑换，sell-all/redeem-all 正确遍历全部 ISK/LP 文物。
+- 窄窗口下考古面板可纵向滚动，按钮不被遮挡。
+- **未触碰 `js/render3d/**`、未修改策划数值、未执行 `git commit`。**
+
+#### 八、已知待后续阶段完成
+
+- 改装件系统接入考古舰（rig 槽位消费）。
+- 0.0 前置条件与考古旗舰在资源闭环中的定位。
+- 校准材料实际用途（当前仅作为掉落物产出，标注"未来用途"）。
+- 研究/拷贝/发明复合体系与远古蓝图碎片的衔接（历史讨论在 `eveidle.md` 附录中保留）。
+- 考古装备强化后的成功率/反噬/掉落率精确验证（当前只验证 +0 基准）。
+- **边界守约**：五舰基础数值/制造配方/耗时/敌人·星带数值/启明级旗舰装备限制均未改动；未实装考古行动/探针/遗迹/文物/改装件；未触碰 `js/render3d/**`；未 `git commit`。
+
+### 改装件（rig）系统全量实装（Phase 3B：数据/制造/装配/效果/UI/审计/经济闭环）
+
+- **边界守约**：不修改成功率公式、不修改 calibrationRate、不修改其他已批准数值、不触碰 `js/render3d/**`、不执行 `git commit`、不创建 nul 文件。
+- **一、数据层**（`js/data/equipment.js`）：`RIG_SERIES`（9 系列）× `RIG_TIER_META`（5 档）程序化生成 45 件 rig 定义。战斗 3 系列（护盾/装甲/结构容量 +4/6/8/11/15%）、工业 3 系列（采矿/采气/冶炼 +4/6/8/11/15%）、考古 3 系列（扫描 +5/7/9/12/15%、干扰 -10/14/18/24/30%、燃料 -8/11/14/18/22%）。技能门槛 1/15/35/55/80，配方消耗对应档位校准材料 1/1/2/2/3 份 + 精炼矿物。装备工程新增 `rigs` 分类（第 9 类）。
+- **二、校准经济重校**：先复核五档 50% 成功率基准（同级船+0、门槛技能、满 high 槽同级 analyzer+0、普通探针、无 rig，五档全 50%）；再新增 `tier.calibrationAmount` 字段（I=1/II=1/III=2/IV=2/V=3），掉落层改读档位数量（唯一写入点，在线/离线同路径）。经济结果：V 档装满四槽期望 ≈ 133.3 小时（I/II/III/IV 全船 0.8/2.2/13.3/40.0h），已固化进 `audit-rigs.mjs` J 区防单侧修改。
+- **三、装配语义**（`js/systems/rigs.js` + `js/core/actions.js`）：**安装即消耗、拆卸即销毁、替换=旧毁新装（原子）、不可强化、不可出售**。专属 Action `hangar/fitRig`/`destroyFittedRig`/`replaceFittedRig`；事件契约 `rig:manufactured/fitted/destroyed/replaced`（仅 Action 成功后发送）。同 `stackGroup` 每舰唯一（`canFitRig` 前置校验）；战斗中禁调；`setFittingSlot`/`resetFitting` 对 rig 槽走销毁语义。防强化双守卫（强化列表过滤 + Action 拒绝 `rig-not-enhanceable`）；防复制（`normalizeEquipmentState` 丢弃游离 rig 实例）。
+- **四、效果接线**（`getRigModifiers` 加法聚合、无强化倍率）：战斗容量三层乘算（priority 50，只生效一次）；采矿/采气经既有装备循环（rig 槽不吃 high 槽放大器）；冶炼 `rigMods.smeltingSpeed` 加法并入；考古扫描只乘 basePart；干扰只作用新产生；燃料确定性累计器（`rigFuelMultiplier = max(0,1-reduction)`，余数归一化）。舰船强化/fleetSupport 均不放大 rig。效果验收 `tools/_verify-rig-effects.mjs` 58/58 PASS。
+- **五、UI**（`js/core/selectors.js` + `js/ui/shell-render.js`）：装配轨道 27 段布局第 25-27 段 rig 槽解禁（超出舰船 rig 槽数仍禁用）；候选列表按 `canFitRig` 过滤同组已装；安装/替换/销毁三路径均有不可跳过的 confirm（明示"销毁不返还"）；清空装备文案区分普通装备返还与 rig 销毁；错误 toast 覆盖 combat-active/same-stack-group-exists/slot-occupied/equipment-unavailable。
+- **六、专项审计** `tools/audit-rigs.mjs`：A 数据完整性 45 件 / B 制造门槛 / C 装配·销毁·替换 / D 普通装备不受影响 / E 效果计算 / F 防放大 / G 存档迁移 / H UI 显示态 / I 回归 / J 经济固化，**425 断言全 PASS，EXIT=0**。排查记录：首跑 D3/D4 失败与 G 区崩溃均为测试脚手架缺陷——①普通装备卸载后为"实例保留 installedOn=null"语义而非归还 inventory 字符串（断言按真实语义改写）；②`freshState()` 未清初始舰，其 fitted 残留 `eq_1` 与重置 `nextInstanceId=1` 后新分配 ID 碰撞，被 normalize 防复制逻辑正确清空（改为清空初始舰）。实现零缺陷。
+- **七、旧断言随系统更新**（仅计数/排除，非数值）：`verify.mjs` 脚本计数 35→36（+`js/systems/rigs.js`）、装备工程分类 8→9（+`rigs`）；`audit-archaeology-ships.mjs` 脚本计数 35→36；`audit-equipment-enhancement.mjs` A5 启发式（id 含 "fuel"）排除 rig 槽装备（`rig_archaeology_fuel_*` 并非燃料资源，其不可强化性由 audit-rigs F3/F4 断言）。
+- **八、文档**：`eveidle.md` 新增 §4.2.7 改装件系统、更新 §4.2.6 校准掉落数量与出售说明、更新技能表 rigEngineering 行；`RIG_SYSTEM_IMPLEMENTATION_PLAN.md` 为本轮蓝本。
+- 未执行 git commit（按任务要求保留全部未提交改动）。
+- **九、回归命令（12 条全部 EXIT=0）**：`verify.mjs`、`audit-rigs.mjs`、`audit-archaeology-system.mjs`、`audit-archaeology-ships.mjs`、`audit-equipment-enhancement.mjs`、`audit-industrial-productivity.mjs`、`audit-ship-enhancement.mjs`、`simulate-archaeology-user-flow.mjs`、`_verify-rig-effects.mjs`、`_verify-calib-amount.mjs`、`_verify-rigs-hardcheck.mjs`、`calculate-ship-production-times.mjs --verify`。另 `simulate-destroyer-belts.mjs --assert-mixed-battleship` 首跑出现一次 EXIT=139（Segmentation fault），独立复跑 EXIT=0 且 0.0 校准结果正常，与 2026-07-22 工业舰条目记录的 nullsec 偶发同类（环境/Node 进程偶发，非代码回归）。浏览器手测因环境无自动化能力未执行，由无头集成审计（真实 Action/selector 全链路，audit-rigs 425 断言）替代，UI 交互留待用户在 http://localhost:8015 人工点验。
+
+### Phase 3B 最终 UI 返修（六项验收缺口，只修 UI/显示态，不动数值/经济/Action 语义）
+
+- **边界守约**：未修改改装件数值/成功率/calibrationRate/配方需求、未触碰燃料累计器与 `js/render3d/**`、未执行 `git commit`、未创建 nul 文件。
+- **一、改装件二级分类与档位筛选**（`selectors.js` / `actions.js` / `state.js` / `manufacturing-render.js` / `index.html`）：
+  改装件页新增类别（战斗/工业/考古，默认战斗，无"全部分类"）+ 档位（全部/I~V，默认全部）双筛选。筛选计算全部在 `getEquipmentEngineeringDisplayState` 内完成（新增 `rigFilters`/`visibleCount` 显示态字段），UI 只消费结果。新增 Action `manufacturing/selectEquipEngRigFilter`（只改 `equipEngRigSub`/`equipEngRigTier` 与 `equipEngTarget` 详情落点，**绝不触碰 `startedEquipEngTarget`**——制造中切换筛选产物不变）；`selectEquipmentCategory` 切到 rigs 时自动对齐筛选。state 默认新增 `equipEngRigSub:"combat"`/`equipEngRigTier:"all"`（旧档缺字段由 selector 兜底，不改存档键语义）。按钮带 `selected`/`aria-selected`，容器 `flex-wrap` 窄窗口自动换行。标题计数改为筛选后数量（战斗+全部=15、任一类别任一档=3）。搜索时将显示态选中项同步回 `equipEngTarget`，详情自动落第一个可见配方。
+- **二、校准材料中文名**（`resources.js` / `selectors.js` / `manufacturing-render.js`）：ResourceRegistry 新增 `getResourceDisplayName(id)`（namespace:key → 注册名；懒注册 name===key 或解析失败回退原始键；非 namespace 形式如中文材料名原样返回）。`detail.materials` 每行同时保留 `material`（内部键）与 `displayName`；渲染层只展示 `displayName`。`calibration:art_i_calib`~`art_v_calib` 全部显示「校准基体 I~V 型」真实中文名。存档键/内部寻址不变。
+- **三、装配环第 4+ 改装槽**（`selectors.js` / `shell-render.js`）：装配环容量**随舰船 rig 槽数动态** = `24 + slots.rig`（启明级 4→28 格、超级旗舰 5→29 格），rig 索引自 24 连续；`getOrbitRigCapacity()` 保留为全 DB 最大 rig 槽数（当前 5）用于"能否支持最大槽"断言；`buildOrbit` 分段角度按 `display.orbitSlots.length` 真实长度计算，不再硬编码 27。裂谷 1/星图 2/远镜 3/启明 4 启用数正确，启明级第 4 槽可装/替/毁；高中低 8/8/8 不受影响。
+- **四、同系列升级替换候选**（`selectors.js` / `shell-render.js`）：显示态新增 `rigCandidates[slotIndex]`（每槽调用 `canFitRig(state,instance,id,slotIndex)`，排除当前槽自身的同组判定）；`openOrbitSelect` rig 槽改用按槽候选。结果：已装护盾容量 I 的槽点开可见 II~V 升级件；空槽仍过滤其他槽已装同组；Action 原子闸门原样保留（UI 过滤不替代）。
+- **五、清空销毁确认**（`shell-render.js`）：`resetFitting` 前从真实显示态枚举已装 rig，确认框逐件列出将销毁的改装件中文名（同名合并 ×N），明示普通装备保留为未安装实例 vs rig 永久销毁；无 rig 不显示虚假清单；原生 `confirm`（不受设置开关控制）；取消不调用 Action。
+- **六、审计扩展** `tools/audit-rigs.mjs`：H1/H2 随动态容量更新；新增 K 区 99 条断言——三类别各 15/每类每档 3/过滤纯净/搜索组合/制造中产物不变/五档校准 displayName/45 件配方不暴露 `calibration:` 键/rigCandidates 占用槽升级+空槽过滤/Action 闸门兜底/装配环 24+cap 与索引连续/四舰启用数/启明级第 4 槽装替毁/清空清单数据源。**总计 524 断言全 PASS，EXIT=0**。
+- **回归**：12 条回归命令全 EXIT=0（verify / audit-rigs / audit-archaeology-system / audit-archaeology-ships / audit-equipment-enhancement / audit-industrial-productivity / audit-ship-enhancement / simulate-archaeology-user-flow / _verify-rig-effects / _verify-calib-amount / _verify-rigs-hardcheck / calculate-ship-production-times --verify），另 _verify-rigs-50pct 亦 EXIT=0。批量串跑时 industrial-productivity 出现一次 EXIT=139（Segmentation fault），独立复跑 EXIT=0，与既往记录的 Node 进程偶发同类，非代码回归。全部改动文件 `node --check` 通过。
+
+#### UI最终返修（2026-07-23 复核修正与补齐）
+- **装配环容量修正（关键）**：原实现用全局 `getOrbitRigCapacity()`（=5）把**每艘船**都渲染成 29 格，导致启明级（4 rig）也显示 29 格、与"orbitSlots总数28 / rig 索引24~27"硬要求冲突。改为 `24 + slots.rig` 的**按舰动态**容量：启明级=28（rig 24~27）、超级旗舰=29（5 rig 全可达），同时满足 三#1（支持数据库最大 rig 槽数）与 六#7（启明级总数28）。`buildOrbit` 早已用真实 `orbitSlots.length` 算角度，无需改。
+- **审计升级**：`tools/audit-rigs.mjs` 524 → **534 断言**（H1 改为"rig 段=本舰 rig 槽数"；K7 改为"总格数=24+本舰 rig 槽数"并显式断言启明级=28、rig 索引 24~27；新增 K9 清空语义——取消=状态不变、确认=普通装备保留(installedOn=null)+rig实例删除；新增 K10 全部相关 display state 无 undefined/NaN）。EXIT=0。
+- **七、可复现夹具**：新增 `tools/fixtures/rig-ui-test-save.json`（真实 `SaveManager` 格式，由游戏自带 loader 生成并验证导入）。含启明级+裂谷级、护盾容量I/II、装甲容量I、考古燃料I、普通装备实例(t1_small_laser)、足够一次 T1 改装件制造的真实材料（矿物+校准基体）。无进行中战斗/行动。导入步骤：游戏内「存档」页 → 选择文件导入该 JSON（与真实导出格式一致）。
+- **八、浏览器验收（如实说明）**：本环境无法操作真实浏览器，未执行真实点击。验证以审计(534)+夹具导入模拟（启明级 orbit=28/4启用/索引24~27/候选4/T1可制造/校准材料=50）替代；夹具可供 Codex 在生产 index.html 中经真实"导入存档"流程复验 八#1~#19。逻辑层无 ReferenceError/TypeError/NaN（审计 K10 守卫 + 运行无报错）。
+- **九、十二条回归真实 EXIT CODE（全 0）**：
+  1. `node tools/verify.mjs` → 0
+  2. `node tools/audit-rigs.mjs` → 0（534/534）
+  3. `node tools/audit-archaeology-ships.mjs` → 0（339）
+  4. `node tools/audit-archaeology-system.mjs` → 0（148）
+  5. `node tools/simulate-archaeology-user-flow.mjs` → 0（54）
+  6. `node tools/audit-equipment-enhancement.mjs` → 0
+  7. `node tools/audit-ship-enhancement.mjs` → 0
+  8. `node tools/audit-industrial-productivity.mjs` → 0
+  9. `node tools/calculate-ship-production-times.mjs --verify` → 0
+  10. `node tools/calculate-ship-production-times.mjs --audit-mixed-battleship` → 0
+  11. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-mixed-battleship` → 0
+  12. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-nullsec` → **0（须用系统 Node 24；托管 Node 22 在重型 0.0 模拟下偶发 V8 Segmentation fault / EXIT=139，属环境而非代码回归）**
+- **边界守约（本轮）**：未修改 45 件改装件数值/成功率/calibrationRate/配方需求/舰船槽位数据/燃料累计器；未触碰 `js/render3d/**`；未回退其他未提交改动；未 `git commit`；未创建 nul 文件。
+
+### Phase 3B 浏览器验收返修（2026-07-23 第二巡：真实浏览器修复 + 审计补强）
+
+**一、装配面板容量改装件显示错误（真实缺陷）**
+- **根因**：`getShipFittingDisplayState()` 的 `stats` 仅用 `enhancement.hpMultiplier`，未接入 rig 容量倍率。
+- **修正**：加入 `getRigModifiers(state, instance)` 读取 `shieldCapacityPercent / armorCapacityPercent / structureCapacityPercent`，HP 公式统一为 `baseHP × enhancement.hpMultiplier × (1 + rigMods.XCapacityPercent)`。与 `getCombatMaxHpFromState` 同源调用 `getRigModifiers`，无两套公式漂移。
+- **验证**：启明级 +0 + 护盾容量 I：2900 → 3016 ✓、装甲容量 I：1100 → 1144 ✓、结构容量 I：800 → 832 ✓。清空后恢复 2900/1100/800。三容量不同类型 HP 各×1.04（不交叉叠加 → 3016/1144/832）。
+
+**二、普通装备实例卸下后候选消失（真实缺陷）**
+- **根因**：`getShipFittingDisplayState()` 的 `inventoryBySlot` 仅遍历 `state.equipment.inventory` 字符串池，未加入 `state.equipment.instances` 中 `installedOn === null` 的游离非 rig 实例。
+- **修正**：`inventoryBySlot` 合并两源，实例候选使用 `instanceId`（`isInstance:true`），`setFittingSlot` 通过 `resolveEquipmentReference` 复用同一 instanceId 重新安装，不退化到 itemId、不创建新实例。rig 实例不入候选（拆卸即销毁，fail closed）。
+- **端到端链路验证**：安装 t1_small_laser → resetFitting → 候选含 instanceId → setFittingSlot(instanceId) → fitted.high[0] 同一 ID → 装备总数不变 → JSON 序列化读取往返后相同 → 候选仍可见 → 复装成功。rig 实例删除不入候选。
+
+**三、夹具稳定性**
+- **问题**：`rig-ui-test-save.json` 导入后 2 艘船，但持久化迁移检查 `inventory.ships` 无 `miner_frigate` 后追加为 3 艘，刷新前后不一致。
+- **修正**：夹具预置 `miner_frigate`（冲锋者级）实例，导入即 3 艘=刷新后终态。不改迁移玩法逻辑。
+
+**四、审计升级：audit-rigs.mjs 534 → 575 断言**
+- **L 区（14 断言）**：resetFitting → 游离实例保留 → getShipFittingDisplayState → inventoryBySlot 含 instanceId → 复用 inst 复装 → 总数不变 → 保存/读取往返 → 游离 rig 不入候选 → Action 边界（null 卸下保留实例）。
+- **M 区（37 断言）**：装配面板 HP 含 rig 倍率（护盾/装甲/结构容量 I 各 4%→3016/1144/832）、清空恢复基础、同 stackGroup 排重（第4槽被拒）、系列叠加不同 HP 类型、+5 强化 × rig 倍率。
+- K9 改述为 Action 边界测试（仅描述，不冒充浏览器取消点击）。
+
+**五、回归 12 条全 EXIT=0**
+ 1. `node tools/verify.mjs` → 0（36 JS / 4 CSS / 214 DOM，HTTP 200）
+ 2. `node tools/audit-rigs.mjs` → **0（575/575）**
+ 3. `node tools/audit-equipment-enhancement.mjs` → 0
+ 4. `node tools/audit-ship-enhancement.mjs` → 0
+ 5. `node tools/audit-industrial-productivity.mjs` → 0
+ 6. `node tools/audit-archaeology-system.mjs` → 0（148）
+ 7. `node tools/audit-archaeology-ships.mjs` → 0（339）
+ 8. `node tools/simulate-archaeology-user-flow.mjs` → 0（54）
+ 9. `node tools/calculate-ship-production-times.mjs --verify` → 0
+10. `node tools/calculate-ship-production-times.mjs --audit-mixed-battleship` → 0
+11. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-mixed-battleship` → 0
+12. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-nullsec` → **0（系统 Node 24）**
+
+**边界守约**：不改数值/配方/成功率/掉率/燃料累计器/舰船/战斗数值；未碰 `js/render3d/**`；未回退其他未提交改动；未 commit；无 nul 新增。
+**未宣称浏览器最终验收通过**，夹具 `tools/fixtures/rig-ui-test-save.json` 可供 Codex 在生产 `index.html` 导入复验八#1~#19。
+
+---
+
+## 2026-07-23 — 装备强化成功率边际递减方案实装
+
+### 改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `js/systems/equipment-enhancement.js` | `getEquipmentEnhancementSuccessChance` 重写为新公式；新增 `getEquipmentEnhancementSuccessBreakdown`；`getEquipmentEnhancementDisplayState` 加 `successBreakdown` 字段 |
+| `js/core/selectors.js` | instanceCards 与 stack 均传递 `successBreakdown` |
+| `js/ui/shell-render.js` | 成功率 `<span>` 增加 `title` 属性显示分解明细 |
+| `EQUIPMENT_ENHANCEMENT_IMPLEMENTATION_PLAN.md` | §0 旧公式替换为新公式 |
+| `tools/audit-equipment-enhancement.mjs` | 新增 H 区 60+ 断言：分段边界/期望次数/经济回归/Action 确定概率/失败语义/canEnhance 不回归/舰船保障 |
+
+### 新成功率公式
+
+```
+skillBonus    = 0.02×min(gap,10) + 0.005×min(max(gap−10,0),15) + 0.001×max(gap−25,0)  [cap 0.30]
+levelPenalty  = 0.015×min(L,5) + 0.03×min(max(L−5,0),5) + 0.05×min(max(L−10,0),5) + 0.08×max(L−15,0)
+p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
+```
+
+### 新旧对照（Lv.80 eng, Lv.1 eq）
+
+旧公式直到当前强化 +101 仍为 95%（+102 时才降至 94.5%），新公式显著增加了中高强化等级的难度。
+
+| 当前等级 | 旧公式 | 新公式 |
+|---|---|---|
+| +0 | 95% | 80% |
+| +5 | 95% | 72.5% |
+| +10 | 95% | 57.5% |
+| +15 | 95% | 32.5% |
+| +20 | 95% | 5% |
+| +30 | 95% | 5% |
+| +35 | 95% | 5% |
+| +100 | 95% | 5% |
+
+### 期望尝试次数（Lv.80 eng, Lv.1 eq）
+
+| 目标等级 | 期望次数 |
+|---|---|
+| +5 | 6.5 |
+| +10 | 14.0 |
+| +15 | 24.8 |
+| +20 | 69.8 |
+| +30 | 269.8 |
+| +35 | 369.8 |
+| +100 | 1669.8 |
+
+### UI 透明度
+
+鼠标悬停成功率数字时，`title` 展示：`基础50% · 技能加成+X% · 强化惩罚−Y% · 最终Z%`。
+
+### 边界守约
+
+- ✅ 未改舰船强化成功率（独立公式）
+- ✅ 未改改装件系统
+- ✅ 未改效果倍率/矿物成本/失败规则/强化经验/donor 消耗
+- ✅ 未改制造配方/装备基础数值/存档结构
+- ✅ 未碰 `js/render3d/**`
+- ✅ 未 git commit
+- ✅ 无 nul 文件
+
+### 回归（12 条全 EXIT=0）
+
+1. `node tools/verify.mjs` → 0
+2. `node tools/audit-equipment-enhancement.mjs` → 0（含新 H 区 60+ 断言）
+3. `node tools/audit-ship-enhancement.mjs` → 0
+4. `node tools/audit-rigs.mjs` → 0（599 PASS）
+5. `node tools/audit-industrial-productivity.mjs` → 0
+6. `node tools/audit-archaeology-system.mjs` → 0（148 PASS）
+7. `node tools/audit-archaeology-ships.mjs` → 0（339 PASS）
+8. `node tools/simulate-archaeology-user-flow.mjs` → 0（54）
+9. `node tools/calculate-ship-production-times.mjs --verify` → 0
+10. `node tools/calculate-ship-production-times.mjs --audit-mixed-battleship` → 0
+11. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-mixed-battleship` → **0**
+12. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-nullsec` → **0**
+
+---
+
+## 2026-07-24 — 舰船强化与装备强化共用边际成功率
+
+### 新增文件
+- `js/systems/enhancement-chance.js` — 共用边际递减成功率纯函数层，`getEnhancementChance` / `getEnhancementChanceBreakdown`
+
+### 改动
+- 装备强化与舰船强化均委托该共用层，消除两套复制公式漂移风险。
+- 成功率范围 **5%～80%**（旧装备公式 10%～95%、旧舰船公式 5%～95%）。
+- 技能加成边际递减：前10级每级+2%，第11-25级每级+0.5%，第26级以后每级+0.1%；**最高+30%**。
+- 强化惩罚递增：+0~+5每级−1.5%、+5~+10每级−3%、+10~+15每级−5%、+15以后每级−8%。
+
+### 舰船失败规则变更
+- 旧：失败**清零**，获得一半成功基础经验
+- 新：失败**等级保持**（不清零、不降级、不损毁），**0 XP**
+- 每次尝试仍消耗对应舰级三种集成部件各1件
+- 成功经验和战斗/工业/考古收益完全不变
+- 无限强化保留
+
+### UI 更新
+- 成功率数字 hover 显示分解明细：`基础50% · 技能加成+X% · 强化惩罚−Y% · 最终Z%`
+- 船坞卡片文案改为"失败 0 XP，等级保持"
+- 强化确认弹窗显示部件明细
+- 失败 toast 改为"等级保持 +N，本次部件已消耗"
+
+### 审计
+- `tools/audit-ship-enhancement.mjs` 完全重写：A 共用公式矩阵(70×7×10)、B 期望次数(20个锚点)、C Action 真实语义(8子项)、D 收益回归(25断言)、E 舰级直觉(5断言)、F 六舰级报告
+- 六舰级制造时间由真实 SHIP_COMPONENT_RECIPES 数据驱动，硬锁锚点：护卫123s / 驱逐183s / 巡洋272s / 战列388s / 旗舰900s / 超级旗舰1350s
+- `tools/verify.mjs` 脚本计数 36→37，舰船公式边界与失败断言更新
+- `tools/audit-archaeology-ships.mjs` 脚本计数 36→37
+
+### 回归（12 条全 EXIT=0）
+1. `node tools/verify.mjs` → 0（37 JS）
+2. `node tools/audit-equipment-enhancement.mjs` → 0
+3. `node tools/audit-ship-enhancement.mjs` → 0
+4. `node tools/audit-rigs.mjs` → 0（599 PASS）
+5. `node tools/audit-industrial-productivity.mjs` → 0
+6. `node tools/audit-archaeology-system.mjs` → 0（148 PASS）
+7. `node tools/audit-archaeology-ships.mjs` → 0（339 PASS）
+8. `node tools/simulate-archaeology-user-flow.mjs` → 0
+9. `node tools/calculate-ship-production-times.mjs --verify` → 0
+10. `node tools/calculate-ship-production-times.mjs --audit-mixed-battleship` → 0
+11. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-mixed-battleship` → 0
+12. `node --max-old-space-size=4096 tools/simulate-destroyer-belts.mjs --assert-nullsec` → 0
+
+### 边界守约
+未改舰船/战斗/装备/改装件/考古数值；未碰 `js/render3d/**`；未 git commit；无 `nul` 文件。

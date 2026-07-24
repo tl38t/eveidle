@@ -121,6 +121,20 @@ export const ANCHORS = {
       destroyer:  { len: [9.0, 9.8], noseFat: [0.36, 0.44], mid: [0.58, 0.70], tail: [0.24, 0.30], scale: [1.17, 1.25], engines: 2, mounts: 3, wingSpan: [2.8, 3.2], ringRadius: [2.8, 3.2], body: "gunboat",  radialSegments: 6, widthRatio: [0.70, 0.82], twist: 0, asymmetry: 0 },
       cruiser:    { len: [11.0, 11.8], noseFat: [0.44, 0.52], mid: [0.82, 0.96], tail: [0.30, 0.36], scale: [1.42, 1.50], engines: 3, mounts: 4, wingSpan: [3.4, 3.8], ringRadius: [3.6, 4.0], body: "cruiser",  radialSegments: 6, widthRatio: [0.70, 0.82], twist: 0, asymmetry: 0 },
       battleship: { len: [14.0, 14.8], noseFat: [0.52, 0.60], mid: [1.06, 1.20], tail: [0.36, 0.44], scale: [1.77, 1.87], engines: 3, mounts: 5, wingSpan: [4.2, 4.6], ringRadius: [4.6, 5.0], body: "fortress", radialSegments: 6, widthRatio: [0.70, 0.82], twist: 0, asymmetry: 0 },
+      capital:     { len: [18.0, 19.5], noseFat: [0.60, 0.70], mid: [1.40, 1.60], tail: [0.46, 0.54], scale: [2.30, 2.50], engines: 4, mounts: 6, wingSpan: [5.4, 6.0], ringRadius: [6.0, 6.6], body: "fortress", radialSegments: 6, widthRatio: [0.72, 0.84], twist: 0, asymmetry: 0 },
+    }
+  },
+
+  // Archaeology 考古/探索 —— 流线、尖锐、低机械暴露。传感器桅 + 扫描翼为签名。
+  Archaeology: {
+    id: "Archaeology",
+    family: "shield",
+    perClass: {
+      frigate:    { len: [7.2, 7.8], noseFat: [0.18, 0.24], mid: [0.36, 0.44], tail: [0.12, 0.16], scale: [0.95, 1.03], engines: 2, mounts: 2, wingSpan: [2.0, 2.4], ringRadius: [2.0, 2.4], body: "dagger",   radialSegments: 20, widthRatio: [0.78, 0.90], twist: [0, 0.05], asymmetry: 0 },
+      destroyer:  { len: [9.2, 9.9], noseFat: [0.22, 0.28], mid: [0.44, 0.54], tail: [0.14, 0.18], scale: [1.12, 1.20], engines: 2, mounts: 3, wingSpan: [2.6, 3.0], ringRadius: [2.6, 3.0], body: "gunboat",  radialSegments: 20, widthRatio: [0.78, 0.90], twist: [0, 0.05], asymmetry: 0 },
+      cruiser:    { len: [11.2, 11.9], noseFat: [0.28, 0.34], mid: [0.62, 0.74], tail: [0.18, 0.22], scale: [1.37, 1.45], engines: 3, mounts: 4, wingSpan: [3.2, 3.6], ringRadius: [3.4, 3.8], body: "cruiser",  radialSegments: 20, widthRatio: [0.78, 0.90], twist: [0, 0.05], asymmetry: 0 },
+      battleship: { len: [14.2, 14.9], noseFat: [0.34, 0.40], mid: [0.82, 0.94], tail: [0.22, 0.28], scale: [1.72, 1.82], engines: 3, mounts: 5, wingSpan: [4.0, 4.4], ringRadius: [4.4, 4.8], body: "fortress", radialSegments: 20, widthRatio: [0.78, 0.90], twist: [0, 0.05], asymmetry: 0 },
+      capital:    { len: [18.0, 19.5], noseFat: [0.42, 0.48], mid: [1.05, 1.20], tail: [0.28, 0.34], scale: [2.30, 2.50], engines: 4, mounts: 6, wingSpan: [5.0, 5.6], ringRadius: [5.6, 6.2], body: "fortress", radialSegments: 20, widthRatio: [0.80, 0.92], twist: [0, 0.05], asymmetry: 0 },
     }
   },
 

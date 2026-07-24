@@ -11,7 +11,7 @@ function getActiveCombatShipInstance() {
 const COMBAT_RECOVERY_MS = 180000;
 
 function getInstalledCombatModules() {
-  return getInstalledCombatModulesFromState(gameState).map(module => ({ id:module.id, equipment:EQUIPMENT_DB[module.id], slot:module.slot }));
+  return getInstalledCombatModulesFromState(gameState).map(module => ({ id:module.id, itemId:module.itemId, instance:module.instance, enhancementLevel:module.enhancementLevel, multiplier:module.multiplier, equipment:EQUIPMENT_DB[module.itemId], slot:module.slot }));
 }
 
 function getInstalledCombatWeapons() {
@@ -53,7 +53,7 @@ function beginCombatRecovery() {
   return result.changed;
 }
 
-const SHIP_TYPE_NAMES = { frigate:"护卫舰", destroyer:"驱逐舰", cruiser:"巡洋舰", battleship:"战列舰", industrial_frigate:"工业护卫舰", industrial_destroyer:"工业驱逐舰", industrial_cruiser:"工业巡洋舰", industrial_capital:"工业旗舰" };
+const SHIP_TYPE_NAMES = { frigate:"护卫舰", destroyer:"驱逐舰", cruiser:"巡洋舰", battleship:"战列舰", capital:"旗舰", supercapital:"超级旗舰", industrial_frigate:"工业护卫舰", industrial_destroyer:"工业驱逐舰", industrial_cruiser:"工业巡洋舰", industrial_support:"工业支援舰", industrial_battleship:"大型工业舰", industrial_capital:"工业旗舰", archaeology_frigate:"考古护卫舰", archaeology_destroyer:"考古驱逐舰", archaeology_cruiser:"考古巡洋舰", archaeology_battleship:"考古战列舰", archaeology_capital:"考古旗舰" };
 
 function isIndustrialShip(shipId) {
   return INDUSTRIAL_SHIPS && INDUSTRIAL_SHIPS[shipId] !== undefined;
@@ -61,7 +61,8 @@ function isIndustrialShip(shipId) {
 
 function getShipConfig(shipId) {
   if (isIndustrialShip(shipId)) return INDUSTRIAL_SHIPS[shipId];
-  return STARTER_SHIPS[shipId] || null;
+  const resolved = getShipConfigById(shipId);
+  return resolved || STARTER_SHIPS[shipId] || null;
 }
 
 function getActiveShip() {
@@ -137,7 +138,8 @@ function getLivingCombatEnemies(combat) {
 
 function syncCurrentCombatTarget(combat) {
   const c = combat || gameState.combat;
-  c.currentEnemy = getLivingCombatEnemies(c)[0] || null;
+  const ship = getActiveShip();
+  c.currentEnemy = selectCapitalCombatTarget(getLivingCombatEnemies(c), c.targetingMode, ship);
   return c.currentEnemy;
 }
 
@@ -170,11 +172,16 @@ function createCombatEnemy(zone, kind, randomFn) {
   const enemyKey = getRandomCombatEnemyKey(zone, kind, randomFn);
   const tpl = faction && faction.types[enemyKey];
   if (!tpl) return null;
+  const balance = zone.enemyBalance || {};
+  const kindBalance = balance[kind] || {};
+  const hpScale = (Number(balance.hp) || 1) * (Number(kindBalance.hp) || 1);
+  const damageScale = (Number(balance.damage) || 1) * (Number(kindBalance.damage) || 1);
+  const scaledHp = Object.fromEntries(Object.entries(tpl.hp).map(([layer, value]) => [layer, Math.max(1, Math.round(value * hpScale))]));
   return {
     id:"enemy_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
     type:enemyKey, kind:tpl.kind || kind, name:tpl.name, icon:tpl.icon,
-    hp:{...tpl.hp}, maxHp:{...tpl.hp},
-    level:tpl.level, hit:tpl.hit, dodge:tpl.dodge, baseDamage:tpl.baseDamage || 1,
+    hp:{...scaledHp}, maxHp:{...scaledHp},
+    level:tpl.level, hit:tpl.hit, dodge:tpl.dodge, baseDamage:Math.max(1, Math.round((tpl.baseDamage || 1) * damageScale)),
     iskDrop:tpl.iskDrop, xpDrop:tpl.xpDrop, image:tpl.image,
     defeated:false, rewarded:false
   };
@@ -269,6 +276,7 @@ function spawnCombatEnemy(randomFn) {
 }
 
 function rollFactionEncryptedDataDrop(factionId, enemyKind, randomValue, zone) {
+  if (zone && zone.encryptedDataDisabled) return null;
   if (enemyKind !== "elite" && enemyKind !== "boss") return null;
   const drop = FACTION_ENCRYPTED_DATA_DROPS[factionId];
   if (!drop) return null;
@@ -280,6 +288,23 @@ function rollFactionEncryptedDataDrop(factionId, enemyKind, randomValue, zone) {
   const material = zone && zone.encryptedDataMaterial ? zone.encryptedDataMaterial : drop.material;
   ResourceRegistry.add(gameState, "special:" + material, drop.qty);
   return { material, qty:drop.qty };
+}
+
+function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues) {
+  if (!zone || !Array.isArray(zone.specialDrops) || (enemyKind !== "elite" && enemyKind !== "boss")) return [];
+  const values = Array.isArray(randomValues) ? randomValues : [];
+  const drops = [];
+  for (let index = 0; index < zone.specialDrops.length; index++) {
+    const config = zone.specialDrops[index];
+    const chance = config && config.chances ? Number(config.chances[enemyKind]) || 0 : 0;
+    const roll = values[index] !== undefined ? values[index] :
+      typeof randomValues === "number" ? randomValues : Math.random();
+    if (!config || !config.resourceId || roll >= chance) continue;
+    const qty = Math.max(1, Number(config.qty) || 1);
+    ResourceRegistry.add(gameState, config.resourceId, qty);
+    drops.push({ material:config.material || config.resourceId.split(":").slice(1).join(":"), resourceId:config.resourceId, qty, rarity:enemyKind === "boss" ? "guaranteedBoss" : "rare" });
+  }
+  return drops;
 }
 
 function rollDeathspaceTicketDrop(zone, enemyKind, randomValue) {
@@ -336,17 +361,19 @@ function resolveCombatEnemyDefeat(enemy, zone) {
   const deathspace = c.mode === "deathspace" ? getDeathspaceById(c.deathspaceId) : null;
   const dataDrop = deathspace ? null : rollFactionEncryptedDataDrop(zone.faction, enemy.kind, undefined, zone);
   if (dataDrop) c.lastLoot += " · " + dataDrop.material + " ×" + dataDrop.qty;
+  const zoneSpecialDrops = deathspace ? [] : rollCombatZoneSpecialDrops(zone, enemy.kind);
+  for (const drop of zoneSpecialDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
   const ticketDrop = deathspace ? null : rollDeathspaceTicketDrop(zone, enemy.kind);
   if (ticketDrop) c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty;
   const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave) : [];
   for (const drop of deathspaceDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
-  const specialDrops = [ticketDrop, ...deathspaceDrops].filter(Boolean);
+  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...deathspaceDrops].filter(Boolean);
   if (specialDrops.length > 0) c.lastSpecialLoot = specialDrops.map(drop => drop.material + " ×" + drop.qty).join(" · ");
   c.totalKills++;
   if (enemy.kind === "elite") c.runEliteKills = (c.runEliteKills || 0) + 1;
   syncCurrentCombatTarget(c);
-  GameEvents.emit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, ticketDrop, deathspaceDrops });
-  return { isk, dataDrop, ticketDrop, deathspaceDrops };
+  GameEvents.emit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops });
+  return { isk, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops };
 }
 
 function resolveDeathspaceWaveVictory(site, zone) {
@@ -462,8 +489,13 @@ function combatTick() {
       if (weapon.counterType === "shield" && enemy.hp.shield > 0) counterMult = 1.25;
       else if (weapon.counterType === "armor" && enemy.hp.shield <= 0 && enemy.hp.armor > 0) counterMult = 1.25;
       else if (weapon.counterType === "structure" && enemy.hp.shield <= 0 && enemy.hp.armor <= 0 && enemy.hp.structure > 0) counterMult = 1.25;
-      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage, counterMult * dmgMult);
+      const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
+      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1), counterMult * dmgMult * traitMultiplier);
       applyLayeredCombatDamage(enemy.hp, damage);
+      for (const areaTarget of getCapitalAreaDamageTargets(c.enemies, enemy, combat.aoe)) {
+        const areaDamage = Math.max(1, Math.round(damage * areaTarget.multiplier));
+        applyLayeredCombatDamage(areaTarget.enemy.hp, areaDamage);
+      }
       playAttackFX(true, combat.weaponType, damage);
       const weaponSkill = gameState.skills[weapon.skillKey];
       if (weaponSkill) { weaponSkill.xp += 2; checkLevelUp(weapon.skillKey); }
@@ -479,17 +511,25 @@ function combatTick() {
     c.lastStatus = "弹药不足，整轮武器未能开火";
   }
 
-  // 玩家先手击毁敌舰时，敌舰本轮不再反击。
-  if (enemy.hp.structure <= 0) {
-    resolveCombatEnemyDefeat(enemy, zone);
+  // 玩家先手与AOE击毁的所有敌舰均立即结算，本轮不再反击。
+  for (const defeated of c.enemies.filter(item => item && !item.rewarded && item.hp && item.hp.structure <= 0)) {
+    resolveCombatEnemyDefeat(defeated, zone);
   }
 
   // --- 所有存活敌人依照编队顺序逐一行动 ---
   const playerDodge = calcPlayerDodge(ship);
-  const enemyVolley = { attackers:0, totalDamage:0, hits:[] };
+  const capitalTrait = getCapitalCombatTrait(ship);
+  const enemyVolley = { attackers:0, totalDamage:0, mitigatedDamage:0, armorRestored:0, traitName:capitalTrait ? capitalTrait.name : "", hits:[] };
+  let shieldHitsUsed = 0;
+  let armorDamageTaken = 0;
   for (const attacker of getLivingCombatEnemies(c)) {
-    const enemyDmg = calcCombatDamage(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0);
+    const rawEnemyDamage = calcCombatDamage(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0);
+    const mitigation = applyCapitalShieldMitigation(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
+    if (mitigation.shieldHitUsed) shieldHitsUsed++;
+    const enemyDmg = Math.max(0, Math.round(mitigation.damage));
     const damageTaken = applyLayeredCombatDamage(c.hp, enemyDmg);
+    armorDamageTaken += damageTaken.armor;
+    enemyVolley.mitigatedDamage += Math.round(mitigation.mitigated);
     const actualDamage = damageTaken.shield + damageTaken.armor + damageTaken.structure;
     const attackOrder = enemyVolley.attackers;
     enemyVolley.attackers++;
@@ -509,6 +549,12 @@ function combatTick() {
     }
   }
   c.lastEnemyVolley = enemyVolley;
+  const reactiveArmorRepair = getCapitalReactiveArmorRepair(ship, armorDamageTaken, c.maxHp.armor);
+  if (reactiveArmorRepair > 0 && c.hp.armor < c.maxHp.armor) {
+    const restored = Math.min(reactiveArmorRepair, c.maxHp.armor - c.hp.armor);
+    c.hp.armor += restored;
+    enemyVolley.armorRestored = restored;
+  }
 
   // --- 维修：只读取舰船实际安装的维修装备 ---
   for (const module of repairers) {
@@ -516,7 +562,7 @@ function combatTick() {
     const repFuelCost = Math.max(1, Math.round((rep.fuelCost || 1) * calcFuelMult(zone)));
     if (ResourceRegistry.get(gameState, "consumable:fuel") < repFuelCost) continue;
     if (c.hp[rep.target] < c.maxHp[rep.target]) {
-      const healAmount = Math.round(rep.amount * calcRepairMult(rep.target));
+      const healAmount = Math.round(rep.amount * (module.multiplier || 1) * calcRepairMult(rep.target));
       c.hp[rep.target] = Math.min(c.maxHp[rep.target], c.hp[rep.target] + healAmount);
       ResourceRegistry.spend(gameState, "consumable:fuel", repFuelCost);
       // 防御经验

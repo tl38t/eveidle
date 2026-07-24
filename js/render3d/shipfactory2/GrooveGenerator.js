@@ -52,7 +52,7 @@ export function generateGrooves(ctx) {
   // ── 每条 groove：沿 z 轴的 Ribbon Mesh，贴合表面 ──
   const N = 24;
   const z0 = -0.42 * L, z1 = 0.42 * L;
-  const halfW = 0.022; // 半角宽（比发光缝稍宽 → 视觉凹陷感更强）
+  const halfW = 0.022 * (ctx.style.grooveWidth || 1.0); // Armor 用 1.8x 宽拼接缝
 
   for (const phi of angles) {
     const pos = [], idx = [];

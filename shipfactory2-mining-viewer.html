@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <title>EVE IDLE · ShipFactory2 采矿船设计语言查看器</title>
+  <style>
+    :root { color-scheme: dark; --bg:#06080a; --panel:#0d1116; --line:rgba(255,174,59,.22);
+      --text:#e8e4dc; --muted:#9a9086; --amber:#ffae3b; --steel:#8a8076; }
+    * { box-sizing: border-box; }
+    html, body { margin:0; height:100%; background:var(--bg); color:var(--text);
+      font-family:"Rajdhani","Segoe UI","Microsoft YaHei",sans-serif; overflow:hidden; }
+    #app { position:fixed; inset:0; }
+    /* 侧栏 */
+    #panel { position:fixed; top:0; right:0; width:340px; height:100%; background:rgba(13,17,22,.92);
+      border-left:1px solid var(--line); padding:18px 18px 24px; overflow-y:auto; backdrop-filter:blur(6px); }
+    #panel h1 { margin:0 0 2px; font-size:19px; letter-spacing:1px; color:var(--amber); }
+    #panel .sub { color:var(--muted); font-size:12px; margin-bottom:16px; line-height:1.5; }
+    .ctl { margin-bottom:14px; }
+    .ctl label { display:block; font-size:12px; color:var(--muted); letter-spacing:.5px; margin-bottom:5px; text-transform:uppercase; }
+    .ctl .row { display:flex; gap:8px; }
+    select, input[type=text] { flex:1; background:#11161c; color:var(--text); border:1px solid #2a323b;
+      border-radius:6px; padding:8px 10px; font-size:14px; font-family:inherit; outline:none; }
+    select:focus, input:focus { border-color:var(--amber); }
+    button { background:#1a212a; color:var(--text); border:1px solid #2a323b; border-radius:6px;
+      padding:8px 12px; font-size:13px; cursor:pointer; font-family:inherit; white-space:nowrap; }
+    button:hover { border-color:var(--amber); color:var(--amber); }
+    .toggle { display:flex; align-items:center; gap:8px; font-size:13px; color:var(--text); cursor:pointer; }
+    .toggle input { width:16px; height:16px; accent-color:var(--amber); }
+    hr { border:none; border-top:1px solid #1c232b; margin:16px 0; }
+
+    .lang h2 { font-size:13px; color:var(--amber); letter-spacing:1px; margin:0 0 8px; text-transform:uppercase; }
+    .lang .block { margin-bottom:12px; }
+    .lang .block .k { font-size:12px; color:var(--muted); margin-bottom:3px; }
+    .lang .block .v { font-size:13px; line-height:1.55; color:#d6cfc4; }
+    .palette { display:flex; gap:8px; margin-top:4px; }
+    .sw { flex:1; text-align:center; }
+    .sw .chip { height:34px; border-radius:6px; border:1px solid rgba(255,255,255,.08); }
+    .sw .lab { font-size:10px; color:var(--muted); margin-top:4px; }
+    .stats { display:grid; grid-template-columns:1fr 1fr; gap:8px 12px; font-size:12px; }
+    .stats .s-k { color:var(--muted); }
+    .stats .s-v { color:var(--text); font-weight:600; }
+    #err { position:fixed; left:50%; top:50%; transform:translate(-50%,-50%); max-width:70%;
+      background:rgba(20,8,8,.96); border:1px solid rgba(255,80,80,.4); border-radius:8px;
+      padding:14px 18px; font-family:monospace; font-size:13px; display:none; z-index:50; }
+    .hint { position:fixed; left:16px; bottom:14px; font-size:12px; color:var(--muted); }
+    .hint b { color:var(--amber); }
+  </style>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="app"></div>
+  <div id="err"></div>
+  <div class="hint">拖拽旋转 · 滚轮缩放 · 右键平移 &nbsp;|&nbsp; 当前：<b id="hint-name">采矿船</b></div>
+
+  <div id="panel">
+    <h1 id="p-title">采矿船 · 设计语言</h1>
+    <div class="sub" id="p-sub">工业舰（ORE 风）：宽厚货舱体 + 前向采矿臂。参考 EVE Online 的 ORE 工业线。</div>
+
+    <div class="ctl">
+      <label>功能舰类型</label>
+      <div class="row">
+        <select id="sel-type">
+          <option value="mining" selected>工业 · 采矿</option>
+          <option value="gas">工业 · 采气</option>
+          <option value="support">工业 · 支援</option>
+          <option value="scan">考古 · 扫描</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <label>舰级</label>
+      <div class="row">
+        <select id="sel-tier">
+          <option value="frigate">护卫舰 Frigate</option>
+          <option value="destroyer">驱逐舰 Destroyer</option>
+          <option value="cruiser" selected>巡洋舰 Cruiser</option>
+          <option value="battleship">战列舰 Battleship</option>
+          <option value="capital">旗舰 Capital</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <label>Seed（可复现）</label>
+      <div class="row">
+        <input type="text" id="inp-seed" value="20260719" />
+        <button id="btn-rand">随机</button>
+      </div>
+    </div>
+
+    <div class="ctl">
+      <label class="toggle"><input type="checkbox" id="chk-rot" checked /> 自动旋转</label>
+    </div>
+
+    <hr />
+    <div class="lang" id="lang-box"><!-- 由 JS 填充 --></div>
+
+    <hr />
+    <div class="stats" id="stats-box"><!-- 由 JS 填充 --></div>
+  </div>
+
+  <script type="module">
+    const THREE = await import("three");
+    const { OrbitControls } = await import("three/addons/controls/OrbitControls.js");
+    const { RoomEnvironment } = await import("three/addons/environments/RoomEnvironment.js");
+    const { buildShip } = await import("./js/render3d/shipfactory2/ShipFactory2.js?v=" + Date.now());
+
+    const app = document.getElementById("app");
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x06080a);
+    scene.fog = new THREE.FogExp2(0x06080a, 0.0038);
+
+    const camera = new THREE.PerspectiveCamera(42, (innerWidth - 340) / innerHeight, 0.1, 800);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth - 340, innerHeight);
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.08;
+    app.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+
+    scene.add(new THREE.HemisphereLight(0xc9d8e0, 0x08100c, 0.42));
+    const key = new THREE.DirectionalLight(0xfff4ea, 1.7); key.position.set(10, 18, 14); scene.add(key);
+    const rim = new THREE.DirectionalLight(0xbfe8ff, 0.7); rim.position.set(-12, 8, -14); scene.add(rim);
+
+    (function stars(count = 900, radius = 200) {
+      const pts = [];
+      for (let i = 0; i < count; i++) {
+        const t = Math.random() * Math.PI * 2, p = Math.acos(2 * Math.random() - 1), r = radius * (0.7 + Math.random() * 0.3);
+        pts.push(r * Math.sin(p) * Math.cos(t), r * Math.cos(p), r * Math.sin(p) * Math.sin(t));
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+      scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xdcc8b8, size: 0.12, transparent: true, opacity: 0.6 })));
+    })();
+
+    // ── 设计语言文案（按类型）──
+    const LANG = {
+      mining: {
+        title: "采矿船 · 设计语言", faction: "industrial",
+        sub: "工业舰（ORE 风）：宽厚货舱体 + 前向采矿臂。参考 EVE Online 的 ORE 工业线。",
+        palette: [ ["#9aa0a6","枪铁灰"], ["#ffae3b","琥珀辉光"], ["#d9c44a","警示黄"] ],
+        hull: "宽厚货舱主箱 + 平头楔形船首 + 装甲板拼贴（含零星暗缝，像焊接舱壁）+ 警示黄黑条；侧挂货舱荚（X 镜像）、尾部引擎块、顶部舰桥、冷却鳍。整体刻意「矮胖」，与战斗舰修长形成对比。",
+        mount: "采矿臂：前向细长锥形激光发射器（外管 + 琥珀发光核心 + 炮口辉光环）。数量随舰级 2→6，严格 X 镜像对称。",
+      },
+      gas: {
+        title: "采气船 · 设计语言", faction: "industrial",
+        sub: "工业舰（ORE 风）：宽厚货舱体 + 前向采气发射器（青绿辉光）。参考 EVE Online 的 ORE 工业线。",
+        palette: [ ["#5a7a82","青灰舰体"], ["#57e0c8","青绿辉光"], ["#d9c44a","警示黄"] ],
+        hull: "同采矿船船体（共用 IndustrialHull），但舰体改为青灰冷调色板，区别于采矿的暖枪铁灰。",
+        mount: "采气发射器：与采矿同造型（外管 + 发光核心 + 炮口环），但辉光为青绿而非琥珀。数量随舰级 2→6，严格 X 镜像。",
+      },
+      support: {
+        title: "支援船 · 设计语言", faction: "industrial",
+        sub: "工业支援舰（海豚级）：舰队协调 + 冶炼加成。参考 EVE 的 Dolphin ORE 工业支援线。",
+        palette: [ ["#4a5a2a","ORE 橄榄绿"], ["#ffae3b","琥珀辉光"], ["#d9c44a","警示黄"] ],
+        hull: "橄榄绿舰体（ORE 工业经典色）+ 多模块拼装：两侧大幅散热板向外伸出 + 前下挂工程舱（空中机库感） + 顶部加强指挥塔。整体「工业综合体」气质。",
+        mount: "指挥天线阵列：3 根高低不同的桅杆呈扇形展开，顶部各带信号球（舰队协调感）。2 根采集臂（与采矿同造型，琥珀辉光）。",
+      },
+      scan: {
+        title: "考古扫描船 · 设计语言", faction: "archaeology",
+        sub: "考古舰（探索风）：低矮流线飞镖 + 扫描阵列 + 探针发射舱。参考 EVE 探索/扫描线。",
+        palette: [ ["#3a4a52","深青灰"], ["#57e0c8","青绿辉光"], ["#7fd9c0","钛青"] ],
+        hull: "CapsuleGeometry 拉伸后垂直压扁，低矮飞镖；尖锐鼻锥；脊背传感器桅（Cylinder）+ 顶部发光扫描碟（Torus 辉光环）；侧向扫描翼（后掠 + 发光条）；机身辉光条。",
+        mount: "扫描阵列：前向 scan pylon（主「武器」即探测器）。尾部探针发射舱（probe nacelle）仅巡洋+ 出现。严格 X 镜像。",
+      },
+    };
+
+    let current = null;       // 当前 ship group
+    let autoRotate = true;
+    const clock = new THREE.Clock();
+
+    function updateTierOptions() {
+      const type = document.getElementById("sel-type").value;
+      const sel = document.getElementById("sel-tier");
+      // 支援只有海豚级（巡洋一档），其他类型全 5 档
+      if (type === "support") {
+        sel.innerHTML = '<option value="cruiser" selected>巡洋舰 Cruiser</option>';
+      } else {
+        sel.innerHTML =
+          '<option value="frigate">护卫舰 Frigate</option>' +
+          '<option value="destroyer">驱逐舰 Destroyer</option>' +
+          '<option value="cruiser" selected>巡洋舰 Cruiser</option>' +
+          '<option value="battleship">战列舰 Battleship</option>' +
+          '<option value="capital">旗舰 Capital</option>';
+      }
+    }
+
+    function parseSeed(s) { const n = parseInt(s, 10); return Number.isFinite(n) ? n : 20260719; }
+
+    function buildSpec() {
+      const type = document.getElementById("sel-type").value;
+      const tier = document.getElementById("sel-tier").value;
+      const seed = parseSeed(document.getElementById("inp-seed").value);
+      const faction = (type === "scan") ? "archaeology" : "industrial";
+      const spec = { id: `viewer-${type}-${tier}-${seed}`, faction, hull: tier, seed };
+      if (type !== "scan") spec.function = type;
+      return { spec, type, tier };
+    }
+
+    function disposeShip(group) {
+      group.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const m = Array.isArray(o.material) ? o.material : [o.material];
+          m.forEach(x => x.dispose && x.dispose());
+        }
+      });
+    }
+
+    function rebuild() {
+      const errEl = document.getElementById("err");
+      errEl.style.display = "none";
+      const { spec, type, tier } = buildSpec();
+      try {
+        if (current) { scene.remove(current); disposeShip(current); }
+        const ship = buildShip(spec);
+        ship.updateMatrixWorld(true);
+        // 居中 + 落地
+        const box = new THREE.Box3().setFromObject(ship);
+        const center = box.getCenter(new THREE.Vector3());
+        const size = box.getSize(new THREE.Vector3());
+        ship.position.x -= center.x; ship.position.z -= center.z;
+        ship.position.y -= box.min.y;
+        scene.add(ship);
+        current = ship;
+
+        // 相机取景
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const dist = maxDim * 1.9 + 14;
+        controls.target.set(0, size.y * 0.05, 0);
+        camera.position.set(0, size.y * 0.35 + 6, dist);
+        controls.update();
+
+        updateLang(type);
+        updateStats(ship, size);
+        document.getElementById("hint-name").textContent = LANG[type].title.replace(" · 设计语言", "");
+      } catch (e) {
+        console.error(e);
+        errEl.style.display = "block";
+        errEl.textContent = `[${type}/${tier}] 生成失败：\n${e.message}\n\n${e.stack || ""}`;
+      }
+    }
+
+    function updateLang(type) {
+      const L = LANG[type];
+      document.getElementById("p-title").textContent = L.title;
+      document.getElementById("p-sub").textContent = L.sub;
+      const pal = L.palette.map(([c, n]) =>
+        `<div class="sw"><div class="chip" style="background:${c}"></div><div class="lab">${n}</div></div>`).join("");
+      document.getElementById("lang-box").innerHTML = `
+        <h2>设计语言拆解</h2>
+        <div class="block"><div class="k">船体语言</div><div class="v">${L.hull}</div></div>
+        <div class="block"><div class="k">功能挂载</div><div class="v">${L.mount}</div></div>
+        <div class="block"><div class="k">配色</div><div class="palette">${pal}</div></div>`;
+    }
+
+    function updateStats(ship, size) {
+      let meshes = 0, parts = 0;
+      ship.traverse(o => { if (o.isMesh) { meshes++; if (o.userData.part) parts++; } });
+      const fmt = v => v.toFixed(2);
+      let shieldR = "—";
+      if (ship.userData.shield) {
+        const sb = new THREE.Box3().setFromObject(ship.userData.shield);
+        shieldR = (sb.getSize(new THREE.Vector3()).x / 2).toFixed(1) + "∅";
+      }
+      document.getElementById("stats-box").innerHTML = `
+        <div class="s-k">舰体尺寸 (X/Y/Z)</div><div class="s-v">${fmt(size.x)} / ${fmt(size.y)} / ${fmt(size.z)}</div>
+        <div class="s-k">网格数 (mesh)</div><div class="s-v">${meshes}</div>
+        <div class="s-k">护盾泡直径</div><div class="s-v">${shieldR}</div>
+        <div class="s-k">标注部件</div><div class="s-v">${parts}</div>`;
+    }
+
+    // 事件
+    document.getElementById("sel-type").addEventListener("change", () => {
+      updateTierOptions();
+      rebuild();
+    });
+    document.getElementById("sel-tier").addEventListener("change", rebuild);
+    document.getElementById("inp-seed").addEventListener("change", rebuild);
+    document.getElementById("btn-rand").addEventListener("click", () => {
+      document.getElementById("inp-seed").value = Math.floor(Math.random() * 1e7);
+      rebuild();
+    });
+    document.getElementById("chk-rot").addEventListener("change", e => { autoRotate = e.target.checked; });
+
+    addEventListener("resize", () => {
+      const w = innerWidth - 340, h = innerHeight;
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+      renderer.setSize(w, h);
+    });
+
+    function animate() {
+      requestAnimationFrame(animate);
+      const t = clock.getElapsedTime();
+      if (current) {
+        if (autoRotate) current.rotation.y += 0.0035;
+        const sh = current.userData.shield;
+        if (sh) {
+          const pulse = 0.5 + 0.5 * Math.sin(t * 1.4);
+          sh.material.opacity = 0.05 + 0.05 * pulse;
+          if (sh.children[0]) sh.children[0].material.opacity = 0.13 + 0.12 * pulse;
+          sh.scale.setScalar(1 + 0.012 * pulse);
+        }
+        // 闪烁红色信标（beacon_red，工业警告灯）
+        current.traverse(o => {
+          if (o.isMesh && o.name === "beacon_red") {
+            const blink = 0.5 + 0.5 * Math.sin(t * 4);
+            o.material.opacity = 0.2 + 0.8 * blink;
+            const s = 0.7 + 0.3 * blink;
+            o.scale.set(s, s, s);
+          }
+        });
+      }
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    updateTierOptions();
+    rebuild();
+    animate();
+  </script>
+</body>
+</html>

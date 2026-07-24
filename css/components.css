@@ -165,6 +165,39 @@
   .cargo-item.equipment-item .ci-qty { padding-top: 1px; }
   .cargo-item.empty { opacity: 0.3; }
 
+  /* ===== 装备强化面板 ===== */
+  .equipment-enhancement-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 8px; overflow-y: auto; flex: 1;
+    align-content: start;
+  }
+  .enh-card { background: #0f141e; border: 1px solid #1a2535; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+  .enh-card-head { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #1a2535; padding-bottom: 5px; }
+  .enh-card-head .enh-icon { font-size: 16px; }
+  .enh-card-head .enh-name { color: #c8d0d8; font-weight: 600; flex: 1; font-size: 13px; }
+  .enh-card-head .enh-cat { font-size: 10px; color: #6a7a8e; border: 1px solid #273b4d; border-radius: 3px; padding: 1px 5px; }
+  .enh-instance { background: #131a26; border: 1px solid #1f2b3a; border-radius: 3px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+  .enh-instance-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .enh-level { color: #d4a843; font-weight: 700; }
+  .enh-bonus { color: #4db8b8; font-size: 11px; }
+  .enh-preview { color: #6a7a8e; font-size: 11px; }
+  .enh-tag.milestone { color: #e57a7a; font-size: 10px; border: 1px solid #5a2a2a; background: #2a1515; border-radius: 3px; padding: 1px 5px; }
+  .enh-row { display: flex; gap: 8px; font-size: 11px; }
+  .enh-row .enh-label { color: #6a7a8e; }
+  .enh-row .enh-success { color: #6fb86f; font-weight: 600; }
+  .enh-costs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .enh-cost { font-size: 10px; color: #8aa0b8; background: #0f1822; border: 1px solid #1f2b3a; border-radius: 3px; padding: 2px 6px; }
+  .enh-cost small { color: #6a7a8e; }
+  .enh-cost.insufficient { color: #e57a7a; border-color: #5a2a2a; }
+  .enh-extra { margin-top: 2px; }
+  .enh-btn { margin-top: 4px; font-size: 12px; padding: 4px 8px; }
+  .enh-stack { background: #10161f; }
+  .enh-installed { display: flex; flex-direction: column; gap: 2px; }
+  .enh-installed-line { color: #6a7a8e; font-size: 10px; }
+  .equipment-enhancement-list .cargo-empty { grid-column: 1 / -1; color: #6a7a8e; padding: 24px; text-align: center; }
+
+
   /* ===== 采矿效率与进度 ===== */
   .mining-stats { margin-top: 8px; font-size: 12px; }
   .mining-efficiency {
@@ -172,6 +205,12 @@
   }
   .me-label { color: #6a7a8e; }
   .me-value { color: #4db8b8; font-weight: 700; font-size: 14px; cursor: help; border-bottom: 1px dotted #4db8b8; }
+  .industrial-support-row { display: flex; align-items: center; gap: 8px; width: fit-content; margin: 2px 0 8px; padding: 5px 9px; border: 1px solid #273b4d; border-radius: 4px; color: #708398; background: rgba(24,43,58,.46); }
+  .industrial-support-row strong { color: #6a7a8e; font-size: 12px; }
+  .industrial-support-row.active { border-color: #39779a; background: rgba(31,87,119,.18); }
+  .industrial-support-row.active strong { color: #75cff8; }
+  .industrial-support-note { margin: 3px 0 8px; color: #61758a; font-size: 10px; }
+  #smelting-cycle-times { color: #9dcce5; font-weight: 600; }
   .mining-progress-row {
     display: flex; align-items: center; gap: 8px; min-width: 0;
   }
@@ -375,6 +414,8 @@
   .act-tag:hover { border-color: #5da8d4; color: #8899aa; }
   .act-tag.on { color: #d4a843; border-color: #d4a843; background: rgba(212,168,67,0.12); }
   .hsh-equipped { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(212,168,67,0.15); color: #d4a843; margin-right: 3px; }
+  .act-tag:disabled { border-color: #202b36; color: #3d4a57; background: rgba(12,18,25,.55); cursor: not-allowed; opacity: .62; }
+  .act-tag:disabled:hover { border-color: #202b36; color: #3d4a57; }
 
   /* ===== 舰船强化 ===== */
   .hangar-ship-grid { display: grid; gap: 10px; }

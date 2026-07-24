@@ -80,6 +80,9 @@
     <div class="nav-item" data-page="planetary">
       <span class="nav-icon"><i class="fa-solid fa-globe"></i></span> 行星开发 <span class="nav-lv" data-lv="planetaryIndustry">Lv.1</span>
     </div>
+    <div class="nav-item" data-page="archaeology">
+      <span class="nav-icon"><i class="fa-solid fa-satellite"></i></span> 考古 <span class="nav-lv" data-lv="archaeology">Lv.1</span>
+    </div>
     <div class="nav-divider"></div>
     <div class="nav-item" data-skill="refining">
       <span class="nav-icon"><i class="fa-solid fa-fire"></i></span> 冶炼 <span class="nav-lv" data-lv="refining">Lv.1</span>
@@ -173,6 +176,10 @@
             <span class="me-label">采集效率：</span>
             <span class="me-value" id="me-value">2.72</span>
           </div>
+          <div class="industrial-support-row" id="mining-fleet-support-row">
+            <span>舰队协同</span>
+            <strong id="mining-fleet-support">未启用</strong>
+          </div>
           <div class="mining-progress-row">
             <span class="mp-label">采集进度：</span>
             <canvas class="skill-canvas-bar" id="bar-mining" width="560" height="24"></canvas>
@@ -197,6 +204,15 @@
             <span class="me-label">每次产出：</span>
             <span id="smelting-output-qty" style="color:#e8d8a0;font-weight:600;">1</span>
           </div>
+          <div class="smelting-info-row">
+            <span class="me-label">冶炼舰：</span>
+            <span id="smelting-ship-support" style="color:#71c7ec;font-weight:600;">未分配</span>
+          </div>
+          <div class="smelting-info-row">
+            <span class="me-label">周期：</span>
+            <span id="smelting-cycle-times">20.0s → 20.0s</span>
+          </div>
+          <div class="industrial-support-note" id="smelting-output-note">支援舰只缩短冶炼周期，不增加单次产量</div>
           <div class="mining-progress-row">
             <span class="mp-label">冶炼进度：</span>
             <canvas class="skill-canvas-bar" id="bar-smelting" width="560" height="24"></canvas>
@@ -362,6 +378,7 @@
         </div>
         <div class="equipeng-queue-summary" id="equipeng-queue-summary">制造队列 0 / 20</div>
         <div class="equipeng-category-tabs" id="equipeng-category-tabs" role="tablist" aria-label="装备工程分类"></div>
+        <div class="equipeng-rig-filters" id="equipeng-rig-filters" style="display:none;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;"></div>
         <div class="equipeng-workspace">
           <section class="equipeng-catalog">
             <div class="equipeng-catalog-header">
@@ -413,6 +430,11 @@
               <button class="area-dropbtn" id="combat-zone-dropbtn">天使前哨站 ▾</button>
               <div class="area-dropdown-content" id="combat-zone-dropdown-content"></div>
             </div>
+          </div>
+          <div class="capital-targeting-control" id="capital-targeting-control" style="display:none;">
+            <label for="capital-targeting-select"><i class="fa-solid fa-crosshairs"></i> 战术索敌</label>
+            <select id="capital-targeting-select" aria-label="旗舰战术索敌模式"></select>
+            <span id="capital-trait-summary" class="capital-trait-summary"></span>
           </div>
           <div class="combat-engagement-group">
             <span class="combat-wave">第 <span class="cw-num" id="combat-wave-num">1</span>/<span id="combat-wave-max">20</span> 波 · <span id="combat-clear-label">已肃清</span> <span id="combat-clear-count">0</span></span>
@@ -503,6 +525,15 @@
       </div>
     </div>
 
+    <!-- 考古面板 -->
+    <div class="panel archaeology-panel" id="archaeology-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">🛰️ 考古行动</span>
+        <span class="text-muted" id="archaeology-header-status">待命</span>
+      </div>
+      <div class="panel-body" id="archaeology-body"></div>
+    </div>
+
     <!-- 船坞面板 -->
     <div class="panel hangar-panel" id="hangar-panel" style="display:none;">
       <div class="panel-header">
@@ -547,6 +578,7 @@
           <span class="cargo-tab" data-filter="equipment">舰船/装备</span>
         </div>
         <div class="cargo-list" id="cargo-list">    </div>
+        <div class="equipment-enhancement-list" id="equipment-enhancement-list" style="display:none;"></div>
     <div class="cargo-actions">
       <button class="btn" id="btn-sort-cargo">🗂 整理仓库</button>
     </div>
@@ -580,7 +612,7 @@
         <div class="settings-section">
           <div class="settings-section-title">操作确认</div>
           <label class="setting-row" for="setting-enhancement-confirm">
-            <span class="setting-copy"><strong>舰船强化确认提示</strong><small>开启时，强化已有等级的舰船会先提示失败清零风险；关闭后点击强化将直接执行。</small></span>
+            <span class="setting-copy"><strong>强化操作确认提示</strong><small>开启时，执行舰船或装备强化前显示成功率、失败规则与材料消耗；关闭后点击强化将直接执行。</small></span>
             <span class="setting-switch"><input type="checkbox" id="setting-enhancement-confirm" checked><span class="setting-switch-track"></span></span>
           </label>
         </div>
@@ -677,15 +709,21 @@
   <script defer src="./js/data/combat.js"></script>
   <script defer src="./js/data/equipment.js"></script>
   <script defer src="./js/data/ammunition.js"></script>
+  <script defer src="./js/data/archaeology.js"></script>
   <script defer src="./js/core/state.js"></script>
   <script defer src="./js/core/statistics.js"></script>
   <script defer src="./js/systems/production.js"></script>
   <script defer src="./js/core/resources.js"></script>
   <script defer src="./js/systems/manufacturing.js"></script>
+  <script defer src="./js/systems/enhancement-chance.js"></script>
   <script defer src="./js/systems/ship-enhancement.js"></script>
+  <script defer src="./js/systems/equipment-enhancement.js"></script>
+  <script defer src="./js/systems/rigs.js"></script>
+  <script defer src="./js/systems/archaeology.js"></script>
   <script defer src="./js/systems/planetary.js"></script>
   <script defer src="./js/ui/action-modal.js"></script>
   <script defer src="./js/core/queue.js"></script>
+  <script defer src="./js/systems/capital-combat.js"></script>
   <script defer src="./js/systems/combat.js"></script>
   <script defer src="./js/core/combat-modifiers.js"></script>
   <script defer src="./js/core/selectors.js"></script>
@@ -694,6 +732,7 @@
   <script defer src="./js/ui/manufacturing-render.js"></script>
   <script defer src="./js/ui/combat-render.js"></script>
   <script defer src="./js/ui/planetary-render.js"></script>
+  <script defer src="./js/ui/archaeology-render.js"></script>
   <script defer src="./js/core/tick.js"></script>
   <script defer src="./js/core/offline.js"></script>
   <script defer src="./js/ui/render.js"></script>

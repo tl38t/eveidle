@@ -14,6 +14,23 @@ import { buildProfile } from "./ShipProfile.js";
 import { resolveStyle } from "./ShipStyleProfile.js";
 import { resolveCivilization } from "./civilization/CivilizationProfile.js";
 
+// 舰级 → 档位序号（0~3，capital=4）。与 SHIP_CLASSES 顺序一致，供 classTier 推导。
+// capital 档用于工业/考古旗舰（orca / illuminator）以及（未来）战斗旗舰；supercapital 暂映射到 capital。
+const SHIP_CLASS_TIERS = { frigate: 0, destroyer: 1, cruiser: 2, battleship: 3, capital: 4 };
+
+// 功能舰 shipClass 归一化：数据里的 type 带功能前缀（industrial_frigate / archaeology_capital / ...），
+// 需剥掉前缀得到基础档位，否则 buildProfile 取不到 perClass 且 classTier 全部兜底成 0（护卫舰尺寸）。
+// 返回用于 buildProfile 与 classTier 的基础档位名。
+function normalizeShipClass(hull) {
+  if (!hull) return "frigate";
+  if (SHIP_CLASS_TIERS[hull] != null) return hull;                 // 精确命中（frigate/capital/...）
+  const base = String(hull).replace(/^(industrial_|archaeology_|player_)/, "");
+  if (SHIP_CLASS_TIERS[base] != null) return base;                // 剥离前缀后命中
+  if (base === "support") return "cruiser";                       // 工业支援（dolphin）≈ 巡洋尺寸
+  if (base === "supercapital") return "capital";                  // 超级旗舰暂复用 capital 桶
+  return "frigate";
+}
+
 // ── E 组：确定性随机（Commit 4，为 Phase 7 可复现做准备）──
 function hashStr(str) {
   let h = 2166136261 >>> 0;
@@ -40,6 +57,14 @@ export class ShipContext {
     this.hybrid = !!spec.hybrid;
     this.shipName = spec.id || spec.hull || "ship";
 
+    // 功能舰锚点：工业→Industrial、考古→Archaeology（按 faction 选定专属 hull 形状）；
+    // 战斗舰沿用 spec.anchor（Ship Lab 选定的 Spear/Needle/Blade/...），缺省 Spear。
+    const faction = spec.faction;
+    const anchorByFaction = faction === "industrial" ? "Industrial"
+      : faction === "archaeology" ? "Archaeology"
+      : null;
+    const anchor = spec.anchor || anchorByFaction || "Spear";
+
     // E 组：确定性随机（提前：seed 由 shipName 派生，保证"不传 seed 也能跑，传同 seed 必同船"）。
     //       必须在 A 组 profile 之前，因为 buildProfile 需要 ctx.scope('ship').random。
     this.seed = spec.seed != null ? spec.seed : hashStr(this.shipName);
@@ -47,10 +72,10 @@ export class ShipContext {
     this._rng = mulberry32(seedNum >>> 0);
 
     // A 组：整舰 DNA（Phase 3）。由 Anchor(风格) + shipClass(档位) + rng(Seed 变异) 解析为只读 ShipProfile。
-    //       anchor 缺省 "Spear"（shield 家族）；Phase 6 起由 RaceStyle.resolve() 决定，不再硬编码于此。
+    //       anchor 已按 faction 选定（工业/考古专属，战斗沿用 Ship Lab 选择或 Spear）。
+    //       shipClass 经归一化（剥离 industrial_/archaeology_ 前缀、capital 档），确保取对 perClass 且档位正确。
     //       注意：Spear 全部为标量 → buildProfile 不消费 rng → 与旧 HULL_PRESETS 逐位一致（几何零变化）。
-    const anchor = spec.anchor || "Spear";
-    this.profile = buildProfile({ anchor, shipClass: spec.hull, rng: this.scope("ship").random });
+    this.profile = buildProfile({ anchor, shipClass: normalizeShipClass(spec.hull), rng: this.scope("ship").random });
 
     // B 组：几何描述（Phase 3 Commit 3：全部由 profile.hull 派生，ShipContext 不再持有任何 preset 概念）。
     this.palette = resolvePalette(spec, this.role);
@@ -59,6 +84,10 @@ export class ShipContext {
     this.scale = this.s;                            // 别名
     this.L = this.profile.hull.len * this.s;
     this.length = this.L;                           // 别名
+
+    // 舰级档位（0=frigate, 1=destroyer, 2=cruiser, 3=battleship）。
+    // 供 Generator 做"细节密度 / 专属结构随舰级递增"——让大船不只是"放大版小船"的核心开关。
+    this.classTier = SHIP_CLASS_TIERS[this.profile.shipClass] ?? 0;
 
     // S 组：Style 容器（Phase 5 C2：由 ShipStyleProfile 解析为完整设计哲学参数）
     // ctx.style 是只读 StyleProfile，包含 panelDensity / grooveDensity / heatDensity / ventDensity /

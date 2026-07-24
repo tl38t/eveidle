@@ -100,6 +100,15 @@ function renderCombatPanel(now) {
   const deathspaceGrid = document.getElementById("deathspace-grid");
   if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${site.ticketMaterial} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} LP · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} LP · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${site.coreMaterial} · 📜 ${site.protocolMaterial} 2%</small></button>`).join("");
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
+  const targetingControl = document.getElementById("capital-targeting-control");
+  const targetingSelect = document.getElementById("capital-targeting-select");
+  const traitSummary = document.getElementById("capital-trait-summary");
+  if (targetingControl) targetingControl.style.display = display.targeting.supported ? "" : "none";
+  if (targetingSelect && display.targeting.supported) {
+    targetingSelect.innerHTML = display.targeting.options.map(option => `<option value="${option.id}"${option.id === display.targeting.mode ? " selected" : ""}>${option.name}</option>`).join("");
+    targetingSelect.disabled = display.active;
+  }
+  if (traitSummary) { traitSummary.textContent = display.targeting.trait ? display.targeting.trait.name + " · " + display.targeting.trait.description : ""; traitSummary.title = traitSummary.textContent; }
   const zoneContent = document.getElementById("combat-zone-dropdown-content");
   if (zoneContent) zoneContent.innerHTML = display.zones.map(zone => `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span></div>`).join("");
   const playerImage = document.getElementById("combat-player-image"); if (playerImage) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
@@ -300,6 +309,15 @@ function playEnemyAttackFX(enemyIndex, attackOrder, dmg) {
       content.classList.remove("show"); renderCombatPanel();
     });
   }
+  const targetingSelect = document.getElementById("capital-targeting-select");
+  if (targetingSelect) targetingSelect.addEventListener("change", () => {
+    const result = dispatchGameAction(gameState, { type:"combat/selectTargetingMode", mode:targetingSelect.value }, Date.now());
+    if (!result.changed && result.reason === "combat-active") showToast("交战中不能切换战术索敌模式");
+    else if (!result.changed && result.reason === "capital-only") showToast("只有旗舰与超级旗舰可以使用战术索敌");
+    renderCombatPanel();
+  });
+
+
   const start = document.getElementById("btn-start-combat"); if (start) start.addEventListener("click", startCombatEncounter);
   const stop = document.getElementById("btn-stop-combat"); if (stop) stop.addEventListener("click", stopCombatEncounter);
 })();

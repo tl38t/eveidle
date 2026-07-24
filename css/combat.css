@@ -598,6 +598,41 @@
     justify-content: flex-end;
     gap: 9px;
   }
+  .capital-targeting-control {
+    display: grid;
+    grid-template-columns: auto minmax(150px, 190px);
+    align-items: center;
+    gap: 4px 8px;
+    margin: 0 12px;
+  }
+  .capital-targeting-control label {
+    color: #7fccec;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+  }
+  .capital-targeting-control select {
+    min-height: 32px;
+    padding: 5px 28px 5px 9px;
+    color: #d8efff;
+    border: 1px solid #315f79;
+    border-radius: 4px;
+    background: #101b28;
+  }
+  .capital-targeting-control select:disabled {
+    opacity: 0.65;
+    cursor: not-allowed;
+  }
+  .capital-trait-summary {
+    grid-column: 1 / -1;
+    max-width: 330px;
+    overflow: hidden;
+    color: #a6b8c8;
+    font-size: 10px;
+    line-height: 1.35;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .combat-engagement-btn {
     min-width: 126px;
     padding: 8px 16px;

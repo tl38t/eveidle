@@ -265,6 +265,8 @@ Surface details should follow hull curvature.
 
 所有表面细节必须贴合 Hull 曲率。
 
+> ✅ **状态：已完成（2026-07-20）** — Ribbon/Armor/Panels/Grooves/HeatSink/Hatch/Vent 全部落地 + 轻量 Validator（结构检查）。详见 MEMORY.md。
+
 ---
 
 ## Phase 5
@@ -297,6 +299,16 @@ Drone Bay
 Every component should be reusable.
 
 所有组件应可复用。
+
+> ✅ **状态：已完成（2026-07-23）** — Engine ✅ / Weapon ✅ / SensorGenerator ✅ / Drone Bay ✅（六族通用，Anchor Bus 挂载）。**Radar / Communication Array 已于 2026-07-23 移除**（视觉不佳，用户决定删除，两文件已删、编排层与 Validator 同步解除引用）。`MaterialFactory` 保留 sensorDish/sensorMast/droneBay/droneBody（radarDome/antenna 材质已无用，可后续清理）。Validator ① 现把 sensors/droneBay 列入各族 REQUIRED_GROUPS。
+
+### Phase 5 扩展：功能舰设计语言（工业 / 考古）
+
+> ✅ **状态：已完成（2026-07-23）** — 原路线图 Phase 5 只覆盖战斗大型组件；实际工作延展出 **非战斗功能舰设计语言**：新增 `industrial`（ORE 风：宽厚货舱 + 采矿臂/采气采集器/支援指挥）与 `archaeology`（探索风：流线飞镖 + 扫描阵列/探针舱）两个 civ，**civ 总数升至 8**。
+> - 新增文件：`civilization/IndustrialHull.js`、`civilization/ArchaeologyHull.js`、`FunctionalMountGenerator.js`；锚点 `ShipProfile.Industrial`/`Archaeology`（均含 capital 档）；`ShipContext.normalizedShipClass()` + `capital=4` 档。
+> - 门控 `isUtilityShip`：禁用通用 surface generator（Armor/Panel/Groove/HeatSink/Hatch/Vent/Ribbon/Sensor/DroneBay 等依赖 lathe 表面采样会浮空），改由 FunctionalMountGenerator 提供识别度；保留 Weapon（仅护盾泡）+ Engine。
+> - 回归：smoke 37 组合 / Validator 37 组合（capital 档 bbox 上限放宽至 70）全绿。测试页 `shipfactory2-utility-test.html`（port 8020）。
+> - 游戏层 shipId→{faction,family} 接线尚未做（buildShip 目前仅测试页/ship-lab 调用）。
 
 ---
 
@@ -337,6 +349,8 @@ All race differences come from RaceStyle.
 
 所有种族差异均来自 RaceStyle。
 
+> ⚠️ **状态：已放弃（2026-07-23）** — 路线图要求 Generator 不含种族判断、差异全来自 RaceStyle；本项目实际用 CivilizationModifier 调度 6 个 race-specific hull generator（Civilization Identity Layer），已达成"六族视觉区分"目标。用户确认放弃原路线图写法，接受当前实现，不再重构为 Style Resolver。
+
 ---
 
 ## Phase 7
@@ -367,6 +381,8 @@ Different Ship
 Random generation must always be reproducible.
 
 所有随机必须可复现。
+
+> ✅ **状态：已完成（Phase 2 Commit 4）** — seed·random·scope 引入，同 seed → 同舰。
 
 ---
 
@@ -403,6 +419,8 @@ Every generated ship should pass validation.
 
 所有舰船生成后都应通过验证。
 
+> ✅ **状态：已完成（2026-07-23）** — `tools/test_validator.mjs` 覆盖六族 24 组合：组件存在(按族定制)/对称/比例/子组件包围+严重脱离/功能附着/NaN有限数守卫/武器断裂对称(WARN软检查)。几何相交与表面穿透的精确三角级检测需 BVH，列为后续项。
+
 ---
 
 ## Phase 9
@@ -437,6 +455,8 @@ LOD
 Rendering should remain independent from geometry generation.
 
 渲染与生成逻辑保持独立。
+
+> ⏸ **状态：已延后** — Bloom/AO/Reflection/Damage/Shield/Animation/LOD，用户建议延后。
 
 ---
 

@@ -22,9 +22,17 @@ export function hullRadiusAt(z, fatR, midR, tailR, L) {
   return midR;
 }
 
-// 调色板解析：优先 spec.line，其次按角色回退
+// 调色板解析：优先 spec.line，其次按 family/role 回退
 export function resolvePalette(spec, role) {
   if (spec.line && COLORS[spec.line]) return COLORS[spec.line];
+  // 采气船用冷青灰调色板（区别于采矿的暖枪铁灰）
+  if (spec.faction === "industrial" && spec.function === "gas") return COLORS.industrial_gas;
+  // 支援船（海豚级）用 ORE 工业橄榄绿调色板
+  if (spec.faction === "industrial" && spec.function === "support") return COLORS.industrial_support;
+  if (spec.faction && COLORS[spec.faction]) return COLORS[spec.faction];
+  // 玩家：根据 family → player_xxx 调色板
+  const famKey = `player_${spec.family || "shield"}`;
+  if (COLORS[famKey]) return COLORS[famKey];
   if (role === "enemy") return COLORS.angel;
   return COLORS.player_shield;
 }

@@ -16,10 +16,6 @@ export function generateHull(ctx) {
   // ══ 基础船体（修长棱角剖面）═
   g.add(new THREE.Mesh(latheHull(L, hull.noseFat, hull.mid, hull.tail), hullMat));
 
-  // ══ 中央脊线饰条（深蓝灰，沿背脊，细长低调）═
-  g.add(rbox(L * 0.72, 0.036 * s, 0.07 * s, 0.018 * s, darkMat,
-    [0, hull.mid * s * 0.92, -0.02 * L]));
-
   // ══ 舰桥窗（小型发光区——大船上也要保持小巧，上限封顶）═
   const bridgeR = Math.min(0.10 * s, 0.12);
   const bridge = new THREE.Mesh(new THREE.SphereGeometry(bridgeR, 12, 10), glassMat);

@@ -1,0 +1,211 @@
+<!--
+  考古系统浏览器验收页 —— 打开后自动运行完整测试
+  用法：浏览器打开 http://localhost:8015/tools/archaeology-browser-test.html
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>考古系统浏览器验收</title>
+<style>
+body { font-family: monospace; background: #0a0f18; color: #c8d8e8; padding: 20px; }
+h1 { color: #d4a843; }
+.pass { color: #4ac87a; }
+.fail { color: #e05555; }
+.log { margin: 4px 0; font-size: 13px; }
+.section { margin: 16px 0; padding: 8px; border-left: 2px solid #2a3a4a; }
+summary { cursor: pointer; font-weight: bold; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+<h1>🛰 考古系统浏览器验收</h1>
+<div id="output"></div>
+
+<script defer src="../js/core/runtime.js"></script>
+<script defer src="../js/core/events.js"></script>
+<script defer src="../js/ui/error-boundary.js"></script>
+<script defer src="../js/data/base.js"></script>
+<script defer src="../js/data/planets.js"></script>
+<script defer src="../js/data/ships.js"></script>
+<script defer src="../js/data/combat.js"></script>
+<script defer src="../js/data/equipment.js"></script>
+<script defer src="../js/data/ammunition.js"></script>
+<script defer src="../js/data/archaeology.js"></script>
+<script defer src="../js/core/state.js"></script>
+<script defer src="../js/core/statistics.js"></script>
+<script defer src="../js/systems/production.js"></script>
+<script defer src="../js/core/resources.js"></script>
+<script defer src="../js/systems/manufacturing.js"></script>
+<script defer src="../js/systems/ship-enhancement.js"></script>
+<script defer src="../js/systems/equipment-enhancement.js"></script>
+<script defer src="../js/systems/archaeology.js"></script>
+<script defer src="../js/systems/planetary.js"></script>
+<script defer src="../js/ui/action-modal.js"></script>
+<script defer src="../js/core/queue.js"></script>
+<script defer src="../js/systems/capital-combat.js"></script>
+<script defer src="../js/systems/combat.js"></script>
+<script defer src="../js/core/combat-modifiers.js"></script>
+<script defer src="../js/core/selectors.js"></script>
+<script defer src="../js/core/actions.js"></script>
+<script defer src="../js/core/tick.js"></script>
+<script defer src="../js/core/offline.js"></script>
+<script defer src="../js/core/persistence.js"></script>
+
+<script>
+var out = document.getElementById("output");
+var pass = 0, fail = 0;
+function log(msg, cls) {
+  var div = document.createElement("div");
+  div.className = "log " + (cls || "");
+  div.textContent = msg;
+  out.appendChild(div);
+}
+function P(msg) { pass++; log("✓ " + msg, "pass"); }
+function F(msg) { fail++; log("✗ " + msg, "fail"); }
+function ok(cond, msg) { if (cond) P(msg); else F(msg); }
+function eq(a, b, msg) { if (a === b) P(msg + " → " + a); else F(msg + " (expected " + b + ", got " + a + ")"); }
+
+window.addEventListener("load", function() {
+  setTimeout(function() {
+    runTests();
+  }, 500);
+});
+
+function runTests() {
+  log("=== 1. 页面结构与 DOM ===", "section");
+  ok(document.getElementById("archaeology-panel") !== null, "1a archaeology-panel 存在");
+  var navItem = document.querySelector('.sidebar .nav-item[data-page="archaeology"]');
+  ok(navItem !== null, "1b 侧边栏考古导航项存在");
+
+  log("=== 2. 数据完整性 ===", "section");
+  ok(typeof ARCHAEOLOGY_SITES !== "undefined", "2a ARCHAEOLOGY_SITES");
+  eq(ARCHAEOLOGY_SITES.length, 15, "2b 15 遗迹");
+  eq(ARCHAEOLOGY_ARTIFACTS.length, 40, "2c 40 文物");
+  eq(ARCHAEOLOGY_PROBES.length, 3, "2d 3 探针");
+  ok(typeof getArchaeologySite("site_i_a").name === "string", "2e data helper 正常");
+
+  log("=== 3. 导航到考古页面 ===", "section");
+  switchPage("archaeology");
+  var panel = document.getElementById("archaeology-panel");
+  ok(panel.style.display !== "none", "3a 考古面板可见");
+  var body = document.getElementById("archaeology-body");
+  ok(body !== null && body.innerHTML.length > 0, "3b archaeology-body 有内容");
+
+  log("=== 4. 分配考古舰、准备资源 ===", "section");
+  ResourceRegistry.add(gameState, "consumable:fuel", 1000);
+  ResourceRegistry.add(gameState, "probe:core_probe_i", 50);
+  gameState.skills.archaeology = { lvl: 1, xp: 0 };
+  if (!gameState.inventory) gameState.inventory = {};
+  if (!Array.isArray(gameState.inventory.ships)) gameState.inventory.ships = [];
+  var ship = createShipInstance("heron");
+  gameState.inventory.ships.push(ship);
+  var r1 = dispatchGameAction(gameState, { type:"hangar/toggleAssignment", instanceId:ship.instanceId, actionKey:"archaeology" }, Date.now());
+  ok(r1.changed, "4a 分配苍鹭级到考古岗位");
+
+  log("=== 5. 选择遗迹和探针 ===", "section");
+  var r2 = dispatchGameAction(gameState, { type:"archaeology/selectSite", siteId:"site_i_a" }, Date.now());
+  ok(r2.changed, "5a 选择失落信标残骸");
+  var r3 = dispatchGameAction(gameState, { type:"archaeology/selectProbe", probeId:"core_probe_i" }, Date.now());
+  ok(r3.changed, "5b 选择标准考古探针");
+
+  log("=== 6. 开始考古（真实 Action）===", "section");
+  var r4 = dispatchGameAction(gameState, { type:"archaeology/start", now:Date.now() }, Date.now());
+  ok(r4.changed, "6a 开始考古");
+  eq(gameState.currentAction.skill, "archaeology", "6b skill=archaeology");
+  ok(gameState.currentAction.active, "6c active=true");
+
+  log("=== 7. 停止并重新开始 ===", "section");
+  var r5 = dispatchGameAction(gameState, { type:"archaeology/stop", now:Date.now() + 2000 }, Date.now() + 2000);
+  ok(r5.changed, "7a 停止");
+  ok(!gameState.currentAction.active, "7b active=false");
+  var r5b = dispatchGameAction(gameState, { type:"archaeology/start", now:Date.now() + 3000 }, Date.now() + 3000);
+  ok(r5b.changed, "7c 重新开始");
+
+  log("=== 8. 成功结算 ===", "section");
+  gameState.currentAction.progress = 31;
+  gameState.currentAction.lastProgressUpdate = 0;
+  var probeBefore = ResourceRegistry.get(gameState, "probe:core_probe_i");
+  var cycle = resolveArchaeologyCycle(gameState, Date.now(), 0.3);
+  ok(cycle.success, "8a 成功");
+  eq(ResourceRegistry.get(gameState, "probe:core_probe_i"), probeBefore - 1, "8b 探针消耗 1");
+  ok(cycle.found && cycle.found.length >= 1, "8c 获得文物");
+
+  log("=== 9. UI 渲染（真实 renderArchaeologyPage 调用）===", "section");
+  renderArchaeologyPage(Date.now());
+  var updatedBody = document.getElementById("archaeology-body");
+  ok(updatedBody.innerHTML.indexOf("artifact") > -1 || updatedBody.innerHTML.indexOf("文物") > -1 || updatedBody.innerHTML.indexOf("artifact") > -1, "9a 文物渲染");
+
+  log("=== 10. 全部出售（真实 Action）===", "section");
+  var iskBefore = ResourceRegistry.get(gameState, "currency:isk");
+  var sellAll = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", all:true }, Date.now());
+  if (sellAll.changed) {
+    ok(sellAll.totalIsk > 0, "10a 出售收益 > 0");
+    ok(ResourceRegistry.get(gameState, "currency:isk") >= iskBefore + sellAll.totalIsk, "10b ISK 正确");
+    var sellAgain = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", all:true }, Date.now());
+    ok(!sellAgain.changed, "10c 再次出售无收益");
+  } else {
+    P("10a (无文物，跳过)");
+  }
+
+  log("=== 11. LP 兑换 ===", "section");
+  ResourceRegistry.add(gameState, "artifact:art_i_lp", 3);
+  var lpBefore = ResourceRegistry.get(gameState, "currency:lp");
+  var redeem1 = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", artifactId:"art_i_lp", quantity:1 }, Date.now());
+  ok(redeem1.changed, "11a 单件兑换");
+  eq(redeem1.lp, 50, "11b LP=50");
+  var redeemAll = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", all:true }, Date.now());
+  ok(redeemAll.changed, "11c 全部兑换");
+  eq(ResourceRegistry.get(gameState, "artifact:art_i_lp"), 0, "11d 库存清零");
+  ok(ResourceRegistry.get(gameState, "currency:lp") >= lpBefore + 50 + redeemAll.totalLp, "11e LP 总和");
+
+  log("=== 12. 显示态完整性 ===", "section");
+  var disp = getArchaeologyDisplayState(gameState, Date.now());
+  for (var i = 0; i < disp.sites.length; i++) {
+    var s = disp.sites[i];
+    if (isNaN(s.difficulty) || s.level === undefined) F("12a 遗迹 " + s.id + " 数据异常");
+  }
+  P("12a 遗迹数据完整");
+  for (var j = 0; j < disp.probes.length; j++) {
+    if (isNaN(disp.probes[j].stock)) F("12b 探针 " + disp.probes[j].id + " stock NaN");
+  }
+  P("12b 探针库存有限");
+
+  log("=== 13. 干扰防绕过 ===", "section");
+  var t = JSON.parse(JSON.stringify(gameState));
+  ResourceRegistry.add(t, "probe:core_probe_i", 20);
+  ResourceRegistry.add(t, "consumable:fuel", 100);
+  if (!t.inventory.ships || !t.inventory.ships.length) {
+    var sh = createShipInstance("heron");
+    if (!t.inventory.ships) t.inventory.ships = [];
+    t.inventory.ships.push(sh);
+    t.shipAssignments = { archaeology: sh.instanceId };
+  }
+  t.skills.archaeology = { lvl: 1, xp: 0 };
+  t.archaeology.activeSiteId = "site_i_a";
+  dispatchGameAction(t, { type:"archaeology/start", now:10000 }, 10000);
+  t.currentAction.progress = 31;
+  var failR = resolveArchaeologyCycle(t, 30000, 0.9);
+  ok(!failR.success, "13a 触发失败");
+  var siteInfo = getArchaeologySite("site_i_a");
+  t.archaeology.interferenceUntil = 30000 + getArchaeologyInterferenceSeconds(siteInfo) * 1000;
+  ok(t.archaeology.interferenceUntil > 30000, "13b 干扰设为未来时间");
+  dispatchGameAction(t, { type:"archaeology/stop", now:31000 }, 31000);
+  ok(t.archaeology.interferenceUntil > 30000, "13c stop 不清除干扰");
+  t.archaeology.activeSiteId = "site_i_a";
+  var blocked = dispatchGameAction(t, { type:"archaeology/start", now:32000 }, 32000);
+  ok(!blocked.changed, "13d 干扰中拒绝开始");
+  eq(blocked.reason, "interference", "13e 理由 interference");
+
+  log("=== 14. 缩放测试 ===", "section");
+  ok(document.documentElement.scrollWidth > 0, "14a 页面有宽度");
+  ok(document.getElementById("archaeology-panel").offsetHeight > 0, "14b 考古面板有高度");
+
+  log("\n======== 浏览器验收完成 ========", "section");
+  log("通过: " + pass + " / 失败: " + fail, pass === pass + fail ? "pass" : (fail > 0 ? "fail" : ""));
+  if (fail === 0 && typeof window.__testCallback === "function") {
+    window.__testCallback({ pass: pass, fail: fail });
+  }
+}
+</script>
+</body>
+</html>

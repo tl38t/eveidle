@@ -19,9 +19,24 @@ const GameEventContracts = (() => {
     "combat:deathspaceCleared": { required:["deathspaceId", "name", "lp", "clearCount"], numbers:["lp", "clearCount"] },
     "ship:destroyed": { required:["shipId", "repairSeconds"], numbers:["repairSeconds"] },
     "ship:enhancementAttempted": { required:["shipId", "instanceId", "fromLevel", "toLevel", "chance", "success", "xp"], numbers:["fromLevel", "toLevel", "chance", "xp"] },
+    "equipment:enhancementAttempted": { required:["instanceId", "itemId", "category", "fromLevel", "toLevel", "chance", "success", "xp"], numbers:["fromLevel", "toLevel", "chance", "xp"] },
+    "rig:manufactured": { required:["rigId", "quantity"], numbers:["quantity"] },
+    "rig:fitted": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
+    "rig:destroyed": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
+    "rig:replaced": { required:["oldRigId", "newRigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
     "skill:levelUp": { required:["skill", "previousLevel", "level"], numbers:["previousLevel", "level"] },
     "action:progressReset": { required:["skill"] },
-    "combat:event": { required:["type"] }
+    "combat:event": { required:["type"] },
+    "archaeology:attemptCompleted": { required:["siteId", "tier", "success", "successChance"], numbers:["successChance"] },
+    "archaeology:success": { required:["siteId", "tier", "xp"], numbers:["xp"] },
+    "archaeology:failure": { required:["siteId", "tier", "backlashDamage"], numbers:["backlashDamage"] },
+    "archaeology:artifactFound": { required:["artifactId", "category", "tier"], numbers:["iskValue", "lpValue"] },
+    "archaeology:shipDisabled": { required:["instanceId", "repairSeconds"], numbers:["repairSeconds"] },
+    "archaeology:repairCompleted": { required:["instanceId"], numbers:[] },
+    "archaeology:artifactSold": { required:["artifactId", "quantity", "isk"], numbers:["quantity", "isk"] },
+    "archaeology:artifactRedeemed": { required:["artifactId", "quantity", "lp"], numbers:["quantity", "lp"] },
+    "archaeology:artifactsSold": { required:["quantity", "totalIsk"], numbers:["quantity", "totalIsk"] },
+    "archaeology:artifactsRedeemed": { required:["quantity", "totalLp"], numbers:["quantity", "totalLp"] }
   });
 
   function cloneValue(value) {
