@@ -11,8 +11,14 @@ function getPlanetMaxSlots() {
   return getPlanetaryCapacityState(gameState).maxSlots;
 }
 
-function getPlanetStorageMax() {
-  return getPlanetaryCapacityState(gameState).storageMax;
+function getPlanetStorageMax(planetType) {
+  if (planetType) {
+    return getPlanetStorageMaxFromState(gameState, planetType);
+  }
+  // 无类型时取第一个部署（兼容旧调，实际调用应传入类型）
+  const deployments = gameState.planetary && Array.isArray(gameState.planetary.deployments) ? gameState.planetary.deployments : [];
+  if (deployments.length > 0) return getPlanetStorageMaxFromState(gameState, deployments[0].planetType);
+  return getPlanetStorageMaxFromState(gameState, "lava");
 }
 
 function getPlanetOutputInterval(type) {
@@ -49,12 +55,12 @@ function planetaryTick(tickNow) {
   const deployments = gameState.planetary && Array.isArray(gameState.planetary.deployments) ? gameState.planetary.deployments : [];
   if (!deployments.length) return false;
   const now = Number(tickNow) || Date.now();
-  const storageMax = getPlanetStorageMax();
   let changed = false;
 
   for (const deployment of deployments) {
     if (!deployment.active) continue; // 已到期：跳过，且不重复触发 expired
     const interval = getPlanetOutputInterval(deployment.planetType);
+    const storageMax = getPlanetStorageMax(deployment.planetType);
     const deployedAt = Number(deployment.deployedAt) || 0;
     const durationMs = (Number(deployment.duration) > 0 ? Number(deployment.duration) : 86400) * 1000;
     const expiresAt = deployedAt + durationMs;

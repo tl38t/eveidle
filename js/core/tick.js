@@ -19,6 +19,13 @@ function stopOrSkip() {
 }
 
 function gameTick() {
+  // 增强剂在线计时：必须在 gameTick 顶部调用，确保 lastTick 每个 tick 都推进。
+  // 无论后续分支是否提前 return，lastTick 都已更新，恢复后不会追扣停止期间的时间。
+  // 增强剂在本 tick 效果结算前处理到正确时间点，不能耗尽后仍多享受整轮效果。
+  if (typeof tickBoosterTimers === "function") {
+    tickBoosterTimers(gameState, Date.now());
+  }
+
   updateCombatRecovery();
   let actionCompleted = false;
   if (gameState.currentAction.active) {
@@ -29,16 +36,30 @@ function gameTick() {
     else if (key === "mining") {
       const area = getRunningMiningArea(); if (!area) return;
       if (!canMineArea(area)) { stopOrSkip(); updateUI(); return; }
-      const eff = getMiningEfficiency(); const actualTime = area.baseTime / eff;
+      const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState) : null;
+      const boosterSpeed = (boosterEff && boosterEff.miningSpeedMultiplier) || 1;
+      const eff = getMiningEfficiency() * boosterSpeed;
+      const actualTime = area.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now();
       const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         gameState.currentAction.progress -= actualTime;
-        ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, 1);
+        // 计算本次产量：基础 1 + 双倍矿物概率翻倍
+        var quantity = 1;
+        if (boosterEff && boosterEff.doubleMineralChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleMineralChance)) {
+          quantity = 2;
+        }
+        // *** FIX 4: 双倍不得突破货舱硬上限 ***
+        if (quantity > 1) {
+          const cargoSpace = Math.max(0, (typeof getCargoCapacity === "function" ? getCargoCapacity() : Infinity) - (typeof getCargoUsed === "function" ? getCargoUsed() : 0));
+          if (quantity > cargoSpace) quantity = Math.max(1, cargoSpace);
+        }
+        ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity);
+        // XP 始终只加一次（双倍不影响 XP）
         s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId:(area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity:1, xp:area.baseXP }, { offline:false });
+        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId:(area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity:quantity, xp:area.baseXP }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
@@ -166,7 +187,8 @@ function gameTick() {
     // 信号干扰中：暂停并清空进度
     if (arch.interferenceUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
 
-    const actualTime = site.time;
+    const archSpeedEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).archaeologySpeedMultiplier : 1;
+    const actualTime = site.time * archSpeedEff;
     gameState.currentAction.refDuration = actualTime;
     const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
     gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;

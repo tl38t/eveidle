@@ -1,6 +1,6 @@
 # 增强剂系统实现方案（BOOSTER_SYSTEM_IMPLEMENTATION_PLAN.md）
 
-> 状态：Phase 2A（数据/制造/在线离线/UI/审计）已于 2026-07-24 实装；本文档其余章节（含 §3.2 六槽、§10.3、§10.4 离线结算等）为 Phase 2B 设计蓝图，尚未实装。
+> 状态：Phase 2A（数据/制造/在线离线/UI/审计）已于 2026-07-24 实装。Phase 2B（六槽装备、180秒计时、自动续瓶、六类效果、在线/离线结算、UI、1300+审计）已于 2026-07-24 实装。
 > 2026-07-24 制定、第三轮返修：基于 `js/data/base.js`、`js/systems/production.js`、`js/systems/manufacturing.js`、`js/core/resources.js`、`js/core/offline.js`、`js/data/combat.js`、`js/systems/combat.js`、`js/data/archaeology.js`、`js/systems/archaeology.js`、`js/data/planets.js`、`js/systems/planetary.js`、`js/core/tick.js`、`js/data/ships.js` 的完整审计。
 > 第三轮返修重点：30 张配方行星材料解锁错误修正与双列解锁校验（任务一）、文物示踪剂改相对倍率并补五档概率表（任务二）、Z 方案经验重校准（删 X/Y，任务三）、气体消耗改 1/2/3 并重算供需（任务四）、行星经济影子价格审计（任务五）、清理过期矛盾文案（任务七）。仍只改文档、不进代码实装。
 > 第四轮最终收口（2026-07-24）：恢复传奇解锁等级为 60/64/68/72/76/80/84/88/92/96（逐系列原始映射，禁止为匹配材料移动等级）；按恢复后等级重排 30 配方材料（传奇 Lv60~76 禁用 Lv80 磁场聚合物 / T5 / Lv85 超纯）；重算经验（Z 方案 scale=0.9）使 Lv35/60/80/96 全落带；补充五档气体成熟配置审计；行星规则 14 条正式定案、清除冲突待确认。仍只改文档、不进代码实装、不碰 js/render3d/、不 commit、不 push。
@@ -12,11 +12,29 @@
 ### Phase 2A — 已实装
 - 数据层：`js/data/boosters.js` 30 配方 / 10 系列 / 3 品质 / 5 档战术材料 / 6 槽定义；`boosterEngineering` 技能 Lv.1 起。
 - 制造：单瓶语义、在线（`tick.js`）与离线（`offline.js`）同源；效率 `1+lvl*0.02`；材料不足安全停止、连续自动下一瓶；XP 沿用 `xpForLevel` 曲线。
-- 状态与迁移：`gameState.boosters={inventory,active(六槽恒 null),lastTick}`；`migrateBoosterState` 幂等（补字段、清 NaN/负/零库存、六槽恒 null），双路接入 autoLoad/importData。
+- 状态与迁移：`gameState.boosters={inventory,active(六槽恒 null),lastTick}`；`migrateBoosterState` 幂等（补字段、清 NaN/负/零库存、保留合六槽），双路接入 autoLoad/importData。
 - 资源寻址：`ResourceRegistry` 注册 `booster:` 命名空间（pool 特判 `state.boosters.inventory`，按裸 id 存储，经 `definition.key` 解析）。
 - 事件：`booster:manufactured`（每瓶）、`boosters:manufactured`（离线批量）、`combat:tacticalMaterialDropped`。
-- UI：「增强剂制造」独立页面（分类/品质筛选、配方网格、详情、库存卡片），纯显示态 `getBoosterManufacturingDisplayState`；`index.html` 共 39 个脚本。
-- 审计：`tools/audit-boosters.mjs` 28 区 658 断言全 PASS；`tools/verify.mjs` 含脚本数/真实系统/无 Phase 2B 行为哨兵。
+- UI：「增强剂制造」独立页面（分类/品质筛选、配方网格、详情、库存卡片），纯显示态 `getBoosterManufacturingDisplayState`；`index.html` 共 40 个脚本。
+- 审计：`tools/audit-boosters.mjs` 38 区 1157 断言全 PASS；`tools/verify.mjs` 含脚本数/真实系统/Phase 2B 行为确认。
+
+### Phase 2B — 已实装（2026-07-24）
+- **统一纯函数层** `js/systems/boosters.js`：`getBoosterEffectState`/`calculateBoosterTimeConsumption`/`applyBoosterTimeConsumption`/`tickBoosterTimers`/`settleOfflineBoosters`/`getBoosterDisplayState`/`canEquipBooster`/`normalizeActiveBoosterEntry`/`getActionBoosterSlots`。
+- **六槽生命周期**：`booster/equip`（空槽装瓶、扣1、180s）、`booster/replace`（先验新库存、原瓶作废）、`booster/unequip`（剩余时间作废、不返还）。同 itemId 重复点击 `already-equipped`，同系列异槽 `series-conflict`。
+- **自动续瓶**：当前瓶耗尽时精确扣 1 续加 180000ms；库存足持续自动补充；不足时清空槽发 `depleted`。
+- **在线计时**：每个 gameTick 独立推进对应行动槽（采矿→miningSpeed+miningYield、考古→archaeologySpeed+archaeologyRare、战斗→combatWeapon+combatRepair），行动停止冻结、不扣时间。179999/180000/180001 边界正确。
+- **离线结算**：`settleOfflineBoosters` 只结算采矿/考古实际运行秒数；战斗不结算。在线/离线跨瓶消耗等价。
+- **事件契约**：`booster:equipped`/`activated`/`consumed`/`autoRefilled`/`depleted`/`unequipped`/`replaced` 全部注册，状态修改成功后发出。
+- **六类效果**：
+  - 纳米采掘润滑剂：采矿效率 `×miningSpeedMultiplier`
+  - 富矿共振催化剂：每次采矿 roll `doubleMineralChance` 概率双倍
+  - 遗迹解析液：考古周期 `×archaeologySpeedMultiplier`
+  - 文物示踪剂：uniqueRate `×rareShiftMultiplier`，上限 0.99
+  - 激光/导弹/火炮隔离注入 `weaponDamageMultiplier[weaponType]`
+  - 护盾/装甲/结构隔离注入 `repairMultiplier[repairTarget]`
+- **迁移升级**：保留合法 `{itemId,remainingMs}`；裸 ID 统一含 `booster:` 前缀；非法/NaN/负值清空；旧 Phase 2A null 兼容；连续迁移幂等。
+- **UI**：隐藏"下一阶段开放"提示；新增"已装载增强剂"区域（三组六槽，显示中文名/品质/效果/剩余/库存/生效状态）。
+- **审计 1157 断言**：38 区 A~ZL 全 PASS（新增 ZI~ZL 共 50 断言覆盖装备操作、时间边界、效果聚合、迁移保留）。
 
 ### Phase 2B — 设计完成，未实装（详见本文档相关章节）
 - 六槽装备/卸载（§3.2 `BoosterStateActions.equip/unequip`，Phase 2A 已预留 `active` 六槽恒 null）。

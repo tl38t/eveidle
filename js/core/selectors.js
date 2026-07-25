@@ -870,7 +870,6 @@ function getBoosterManufacturingDisplayState(state, now) {
     canStart:Boolean(selectedCard && selectedCard.canManufacture),
     recipes,
     inventoryCards,
-    phaseNote:"增强剂使用与自动补充将在下一阶段开放"
   };
 }
 
@@ -1170,9 +1169,16 @@ function getPlanetaryCapacityState(state) {
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     usedSlots:deployments.length,
     slots:Math.min(5, 1 + Math.floor(level / 10)),
-    maxSlots:5,
-    storageMax:100 + level * 5
+    maxSlots:5
   };
+}
+
+// 按行星类型计算本地仓储上限 = 当前效率下连续生产 6 小时的产量
+// storageMax = ceil(21600 / getPlanetOutputIntervalFromState(state, planetType))
+// 填满时间在 21600s 至 21600 + interval 之间
+function getPlanetStorageMaxFromState(state, planetType) {
+  const interval = getPlanetOutputIntervalFromState(state, planetType);
+  return Math.ceil(21600 / interval);
 }
 
 function getPlanetOutputIntervalFromState(state, type) {
@@ -1193,7 +1199,8 @@ function getPlanetDeploymentDisplayState(state, deployment, now) {
   // 已到期 = 时间超期 或 active 标志已被置为 false
   const expired = timeExpired || !deployment.active;
   const storage = Number(deployment.storage) || 0;
-  const full = storage >= capacity.storageMax;
+  const storageMax = getPlanetStorageMaxFromState(state, deployment.planetType);
+  const full = storage >= storageMax;
   const active = Boolean(deployment.active) && !timeExpired;
   const runState = active ? "running" : "expired";
   const interval = getPlanetOutputIntervalFromState(state, deployment.planetType);
@@ -1221,8 +1228,8 @@ function getPlanetDeploymentDisplayState(state, deployment, now) {
     statusClass,
     statusText,
     storage,
-    storageMax:capacity.storageMax,
-    storagePercent:Math.min(100, Math.floor(storage / capacity.storageMax * 100)),
+    storageMax,
+    storagePercent:Math.min(100, Math.floor(storage / storageMax * 100)),
     interval,
     outputProgress:displayProgress,
     outputPercent:Math.min(100, Math.floor(displayProgress / interval * 100)),

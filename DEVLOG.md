@@ -980,3 +980,106 @@ p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
 
 ### 边界守约
 未改舰船/战斗/装备/改装件/考古数值；未碰 `js/render3d/**`；未 git commit；无 `nul` 文件。
+
+## 2026-07-25
+
+### 增强剂 Phase 2B 二次集成返修——简化离线增强剂结算
+
+**策划记录写入 eveidle.md**：
+- 正式记录"仓库/货舱容量限制未来统一删除"的策划决定（含货柜管理技能、货柜扩容改装件、相关UI和在线容量判断）。
+- 正式记录"离线战斗快速模拟将在成就系统之前单独实装"及战斗增强剂规则方向。
+- 更新增强剂离线规则文档，匹配简化三段结算方案。
+
+**简化离线增强剂结算**（`js/core/offline.js`）：
+- 重构 `settleOfflineWithBoosters`：删除逐段循环（segmentSeconds）、删除 `timeBySkill` 事后扣除方案。
+- 新算法：先以全增强剂倍率运行一次 `settleOfflineActions`（接受 ±1 周期近似误差），收集 `timeBySkill`；然后按各行动累计运行秒数，逐槽调用 `applyBoosterTimeConsumption` 精确扣除。
+- 采矿（miningSpeed/miningYield）和考古（archaeologySpeed/archaeologyRare）的扣除取 `min(slotAvailableSeconds, actionRuntimeSeconds)`，最多覆盖至耗尽。
+- 战斗增强剂（combatWeapon/combatRepair）离线期间完全冻结，不参与扣除。
+- 冶炼、制造、采气等其他行动不消耗增强剂。
+- 保留离线结束后同步 `boosters.lastTick = Date.now()`。
+
+**审计重写**（`tools/audit-boosters.mjs` ZO～ZY 区）：
+- 删除 6 处虚假断言（`assert(true)`、`A||!A`、`xp>=0`、走源码字符串、JSON 深拷贝冒充 SaveManager、只调 `applyBoosterTimeConsumption` 冒充真实离线）。
+- 新增 15 项真实集成测试：
+  1. 采矿 1 瓶离线 10 分钟（180s+420s 两段）
+  2. 采矿 2 瓶离线 10 分钟（360s+240s 两段）
+  3. 两槽 180s/360s 三段验证
+  4. mining→refining 切换，冶炼不扣采矿增强剂
+  5. refining→mining 切换，进入 mining 后开始扣
+  6. mining→archaeology 两类槽分别扣除
+  7. archaeology→mining 反向验证
+  8. 65s 运行/10s 周期：6 次产出、progress~5s、增强剂扣 65s
+  9. 探针不足停止离线考古和增强剂消耗
+  10. 燃料不足停止离线考古和增强剂消耗
+  11. 失败触发干扰停止离线考古收益
+  12. 战斗增强剂离线前后完全不变
+  13. 真实 SaveManager.save/load/importData 保持全状态
+  14. 固定时钟 0ms/1000ms 边界验证 lastTick
+  15. 在线增强剂行为无回归
+
+**新增断言**：原 1229 → 现 XX（需最终确认）。
+
+**14 条回归全 EXIT 0**：verify / audit-boosters / audit-planetary / audit-equipment-enhancement / audit-ship-enhancement / audit-rigs / audit-industrial-productivity / audit-archaeology-system / audit-archaeology-ships / simulate-archaeology-user-flow / calculate-ship-production-times --verify / --audit-mixed-battleship / simulate-destroyer-belts --assert-mixed-battleship / --assert-nullsec。
+
+**边界守约**：
+- 不改配方、效果、掉率、经验、战斗数值。
+- 不碰 `js/render3d/**`。
+- 不处理 `shipfactory2-archaeology-candidates.html`。
+- 不修改容量相关代码（`getCargoCapacity`、`getCargoUsed`、`isCargoFull`、离线容量部分）。
+- 未 git commit/push。
+- 无 `nul` 文件。
+
+## 2026-07-25（续）
+
+### 行星基地仓储改为6小时产量
+
+**修改文件**：`js/core/selectors.js`、`js/systems/planetary.js`、`js/core/offline.js`、`tools/verify.mjs`、`tools/audit-planetary.mjs`
+
+**旧公式**（已废止）：`storageMax = 100 + level * 5`
+
+**新公式**：`storageMax = Math.ceil(21600 / getPlanetOutputIntervalFromState(state, planetType))`
+
+每个行星基地的本地仓储上限 = 当前效率下连续生产6小时的产量。填满时间在 21600 秒至 21600+一个周期之间。
+
+新增 `getPlanetStorageMaxFromState(state, planetType)` 纯函数，改为按行星类型和技能等级动态计算。
+
+六行星刚解锁时预期：
+- Lv.1 lava/gas: 2204
+- Lv.20 ice: 2016
+- Lv.40 plasma: 2160
+- Lv.60 temperate: 2160
+- Lv.80 storm: 1872
+
+**调用位置同步修改**：
+- `js/core/selectors.js`：`getPlanetDeploymentDisplayState` 每 deployment 单独计算 storageMax
+- `js/systems/planetary.js`：`planetaryTick` 每 deployment 单独计算 storageMax
+- `js/core/offline.js`：`settleOfflinePlanets` 每 deployment 单独计算 storageMax
+
+**删除的全局统一值调用**：循环外只计算一次 `getPlanetStorageMax()` 的模式已全部替换。
+
+**审计扩展**（`tools/audit-planetary.mjs` 新增 ZI~ZM 区）：
+- ZI: 六行星解锁等级精确 storageMax（6 行星 × 3 断言 = 18）
+- ZJ: 多等级（1/20/40/60/80/99）动态增长（78 断言）
+- ZK: 在线 6 小时满仓停产验证
+- ZL: 离线 6 小时与在线结果一致
+- ZM: 不同类型行星不同容量 + 旧档 storage 不被清零
+
+**验证结果**：新增 104 断言，原 200 → 304 断言，39 区全 PASS。
+
+### 船坞舰船列表改为内部纵向滚动
+
+**修改文件**：`css/components.css`、`js/ui/shell-render.js`
+
+**CSS**：`#hangar-panel` 使用 flex 布局，panel-body 内部滚动（overflow-y:auto），panel-header 固定在顶部不滚动，scrollbar-gutter:stable 防止滚动条出现时布局抖动。
+
+**JS**：`renderHangarPanel` 调用时设置 `panel.style.display = "flex"`。
+
+**验收条件**：
+- 不固定只能显示 3 艘；
+- 标题和总数保持在滚动区外；
+- 最后一艘可完整滚动到可见；
+- 仅滚动舰船卡片区域，不影响侧边栏；
+- 窄窗口/缩放窗口仍可用。
+
+### 全局仓库容量
+本轮未修改 `getCargoCapacity`、`getCargoUsed`、`isCargoFull` 等全局仓库容量相关代码。

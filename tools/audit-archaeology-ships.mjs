@@ -12,7 +12,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
 const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((m) => m[1]);
-if (scriptSources.length !== 39) throw new Error(`预期 39 个脚本，实际 ${scriptSources.length}`); // 39 = 37 + boosters.js + booster-render.js（增强剂系统 Phase 2A 2026-07-24）
+if (scriptSources.length !== 40) throw new Error(`预期 40 个脚本，实际 ${scriptSources.length}`); // 40 = 38 + boosters.js + booster-render.js + systems/boosters.js（增强剂系统 Phase 2B 2026-07-24）
 
 // ---- 与 verify.mjs 一致的 DOM / 环境桩 ----
 function MockCanvasContext() {}

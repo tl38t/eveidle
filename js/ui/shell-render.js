@@ -230,6 +230,8 @@ function getEnhancementNextText(enhancement) {
 }
 
 function renderHangarPanel() {
+  const panel = document.getElementById("hangar-panel");
+  if (panel) panel.style.display = "flex";
   const display = getHangarDisplayState(gameState, Date.now());
   const info = document.getElementById("hangar-header-info"); if (info) info.textContent = "已拥有 " + display.count + " 艘舰船";
   const grid = document.getElementById("hangar-ship-grid"); const empty = document.getElementById("hangar-empty");

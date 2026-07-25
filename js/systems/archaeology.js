@@ -146,8 +146,11 @@ function resolveArchaeologyDrops(state, site, tier, fitted, rng, now) {
     if (extra) { ResourceRegistry.add(state, "artifact:" + extra.id, 1); found.push(extra); }
   }
 
-  // 3) 独特文物（每档固定概率，不受译码器影响）
-  if (rng() < tier.uniqueRate && uniques.length) {
+  // 3) 独特文物（每档固定概率 × 增强剂稀有率倍率，上限 0.99；不受译码器影响）
+  const rareShift = (typeof getBoosterEffectState === "function" && typeof getBoosterArchaeologyEffectiveUniqueRate === "function")
+    ? getBoosterArchaeologyEffectiveUniqueRate(tier.uniqueRate, getBoosterEffectState(state).rareShiftMultiplier)
+    : tier.uniqueRate;
+  if (rng() < rareShift && uniques.length) {
     const unique = uniques[Math.floor(rng() * uniques.length) % uniques.length];
     ResourceRegistry.add(state, "artifact:" + unique.id, 1); found.push(unique);
   }

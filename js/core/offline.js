@@ -68,13 +68,27 @@ function getOfflineActionDescriptor() {
     const areaName = action.startedArea || action.area;
     const area = getMiningAreaByName(areaName) || MINING_AREAS[0];
     if (!area || !canMineArea(area)) return null;
+    const miningEff = getMiningEfficiency();
+    const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState) : null;
+    const speedMult = (boosterEff && boosterEff.miningSpeedMultiplier) || 1;
+    const doubleChance = (boosterEff && boosterEff.doubleMineralChance) || 0;
     return {
-      key, duration: area.baseTime / getMiningEfficiency(),
+      key, duration: area.baseTime / (miningEff * speedMult),
       maxCycles: () => Math.max(0, getCargoCapacity() - getCargoUsed()),
       apply(cycles, gains) {
-        ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, cycles);
+        let totalOre = cycles;
+        if (doubleChance > 0) {
+          for (let i = 0; i < cycles; i++) {
+            if ((typeof rollDoubleMineral === "function") && rollDoubleMineral(doubleChance)) totalOre++;
+          }
+        }
+        // 双倍不得突破货舱硬上限
+        const cargoSpace = Math.max(0, getCargoCapacity() - getCargoUsed());
+        if (totalOre > cargoSpace) totalOre = cargoSpace;
+        ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, totalOre);
+        // XP 始终按实际采集次数计算（双倍不增加 XP）
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
-        emitOfflineGameEvent("mining:completed", { area:area.name, mode:area.mode, resourceId:(area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity:cycles, cycles, xp:cycles * area.baseXP });
+        emitOfflineGameEvent("mining:completed", { area:area.name, mode:area.mode, resourceId:(area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity:totalOre, cycles, xp:cycles * area.baseXP });
       }
     };
   }
@@ -188,8 +202,9 @@ function getOfflineActionDescriptor() {
     const instanceId = gameState.shipAssignments && gameState.shipAssignments.archaeology;
     const instance = instanceId ? getShipInstanceFromState(gameState, instanceId) : null;
     if (!instance) return null;
+    const archSpeedEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).archaeologySpeedMultiplier : 1;
     return {
-      key, duration: site.time,
+      key, duration: site.time * archSpeedEff,
       maxCycles() {
         const probeStock = ResourceRegistry.get(gameState, "probe:" + probeId);
         const fuelStock = ResourceRegistry.get(gameState, "consumable:fuel");
@@ -298,19 +313,61 @@ function settleOfflineActions(seconds, gains) {
 
   let remaining = seconds;
   let guard = 0;
+  const timeBySkill = (arguments.length >= 4 && typeof arguments[3] === "object") ? arguments[3] : null;
+  const now = Date.now();
+  const DUR = typeof BOOSTER_DURATION_MS === "number" ? BOOSTER_DURATION_MS : 180000;
+
   while (remaining > 0.0001 && gameState.currentAction.active && guard++ < 10000) {
     const descriptor = getOfflineActionDescriptor();
     if (!descriptor || !Number.isFinite(descriptor.duration) || descriptor.duration <= 0) break;
+    const currentSkill = gameState.currentAction.skill;
+
+    // --- Booster segmentation ---
+    // For mining/archaeology, cap this batch to the minimum available time
+    // among the two relevant booster slots. When a slot depletes, the next
+    // loop iteration re-reads the updated (depleted) booster state via
+    // getOfflineActionDescriptor, naturally splitting the timeline.
+    let boosterLimitSec = Infinity;
+    let relevantSlots = [];
+    if (currentSkill === "mining" || currentSkill === "archaeology") {
+      if (typeof getActionBoosterSlots === "function") {
+        relevantSlots = getActionBoosterSlots(currentSkill);
+      }
+      if (typeof getActiveBoosterState === "function") {
+        const active = getActiveBoosterState(gameState);
+        for (const slot of relevantSlots) {
+          const entry = active[slot];
+          if (entry && entry.itemId && Number(entry.remainingMs) > 0) {
+            const invCount = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, entry.itemId) : 0;
+            const availMs = Number(entry.remainingMs) + Math.max(0, Math.floor(invCount)) * DUR;
+            const availSec = availMs / 1000;
+            if (availSec < boosterLimitSec) boosterLimitSec = availSec;
+          }
+        }
+      }
+    }
 
     const progress = Math.max(0, Number(gameState.currentAction.progress) || 0);
     const timeToFirst = Math.max(0, descriptor.duration - progress);
-    if (remaining < timeToFirst) {
-      gameState.currentAction.progress = progress + remaining;
-      remaining = 0;
+    const maxTime = Math.min(remaining, boosterLimitSec);
+
+    if (maxTime < timeToFirst) {
+      // Cannot complete one cycle within time/booster limit.
+      const partialTime = maxTime;
+      gameState.currentAction.progress = progress + partialTime;
+      if (timeBySkill) timeBySkill[currentSkill] = (timeBySkill[currentSkill] || 0) + partialTime;
+      remaining -= partialTime;
+      if (partialTime > 0 && relevantSlots.length > 0 && typeof applyBoosterTimeConsumption === "function") {
+        const consumedMs = Math.ceil(partialTime * 1000);
+        for (const slot of relevantSlots) {
+          applyBoosterTimeConsumption(gameState, slot, consumedMs, now, { offline:true });
+        }
+      }
+      if (remaining > 0.0001) continue;
       break;
     }
 
-    const cyclesByTime = 1 + Math.floor((remaining - timeToFirst) / descriptor.duration);
+    const cyclesByTime = 1 + Math.floor((maxTime - timeToFirst) / descriptor.duration);
     const batchRemaining = gameState.currentAction.batchRemaining;
     const batchLimit = batchRemaining > 0 ? batchRemaining : Infinity;
     const possibleCycles = Math.max(0, descriptor.maxCycles());
@@ -324,8 +381,19 @@ function settleOfflineActions(seconds, gains) {
 
     descriptor.apply(cycles, gains);
     gameState._dirty = true;
-    remaining -= timeToFirst + Math.max(0, cycles - 1) * descriptor.duration;
+    const cycleTime = timeToFirst + Math.max(0, cycles - 1) * descriptor.duration;
+    remaining -= cycleTime;
+    if (timeBySkill) timeBySkill[currentSkill] = (timeBySkill[currentSkill] || 0) + cycleTime;
     gameState.currentAction.progress = 0;
+
+    // Consume booster time: mining/archaeology only.
+    // Combat boosters frozen offline; refining/gas/manufacturing don't consume.
+    if (cycleTime > 0 && relevantSlots.length > 0 && typeof applyBoosterTimeConsumption === "function") {
+      const consumedMs = Math.ceil(cycleTime * 1000);
+      for (const slot of relevantSlots) {
+        applyBoosterTimeConsumption(gameState, slot, consumedMs, now, { offline:true });
+      }
+    }
 
     if (completeOfflineQueueCycles(cycles)) {
       if (gameState.currentAction.active) continue;
@@ -338,18 +406,27 @@ function settleOfflineActions(seconds, gains) {
       break;
     }
 
+    // If significant remaining time, continue looping for the next segment
+    // (e.g., after a booster-limited batch, the depleted-booster descriptor
+    // will be used in the next iteration for the base rate).
+    if (remaining >= descriptor.duration) {
+      gameState.currentAction.progress = 0;
+      continue;
+    }
+
     gameState.currentAction.progress = Math.min(remaining, descriptor.duration);
     remaining = 0;
   }
+  return seconds - remaining;
 }
 
 function settleOfflinePlanets(seconds, gains) {
   if (!gameState.planetary || !Array.isArray(gameState.planetary.deployments)) return;
   const now = Date.now(); const offlineStart = now - seconds * 1000;
-  const storageMax = getPlanetStorageMax();
   for (const deployment of gameState.planetary.deployments) {
     if (!deployment.active) continue; // 已到期：跳过，且不重复触发 expired
     const interval = getPlanetOutputInterval(deployment.planetType);
+    const storageMax = getPlanetStorageMax(deployment.planetType);
     const deployedAt = Number(deployment.deployedAt) || 0;
     const durationMs = (Number(deployment.duration) > 0 ? Number(deployment.duration) : 86400) * 1000;
 
@@ -402,6 +479,14 @@ function settleOfflinePlanets(seconds, gains) {
   }
 }
 
+// Booster segmentation is handled directly inside settleOfflineActions:
+// for mining/archaeology, each loop iteration caps the batch time to the
+// minimum available time among the two relevant booster slots. When a slot
+// depletes, the next iteration re-reads the updated state via
+// getOfflineActionDescriptor, naturally splitting the timeline.
+// Combat boosters are frozen offline; refining/gas/manufacturing don't
+// consume non-combat slots.
+
 function applyOfflineGains(rawSeconds, context) {
   const seconds = Math.min(Math.max(0, rawSeconds || 0), MAX_OFFLINE_SECONDS);
   const gains = {
@@ -415,10 +500,16 @@ function applyOfflineGains(rawSeconds, context) {
     : "offline_" + Math.round(Date.now() - seconds * 1000).toString(36) + "_" + Date.now().toString(36);
   _offlineEventBatch = { runId, sequence:0 };
   try {
-    settleOfflineActions(seconds, gains);
+    const timeBySkill = {};
+    settleOfflineActions(seconds, gains, undefined, timeBySkill);
+    gameState._auditTimeBySkill = timeBySkill;
     settleOfflinePlanets(seconds, gains);
   } finally {
     _offlineEventBatch = previousBatch;
+  }
+  // 同步 boosters.lastTick，防止首次在线 gameTick 追扣旧离线时间
+  if (gameState.boosters) {
+    gameState.boosters.lastTick = Date.now();
   }
   return gains;
 }

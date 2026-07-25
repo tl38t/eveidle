@@ -284,6 +284,91 @@ const BoosterStateActions = {
     action.batchRemaining = 0;
     state._dirty = true;
     return { changed:true };
+  },
+
+  // --- 增强剂 Phase 2B：六槽生命周期 ---
+
+  equip(state, slot, itemId) {
+    if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) return { changed:false, reason:"invalid-slot" };
+    const item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
+    if (!item) return { changed:false, reason:"unknown-item" };
+    if (item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
+    const active = state.boosters && state.boosters.active;
+    if (!active) return { changed:false, reason:"no-state" };
+    const existing = active[slot];
+    // 同一 itemId 已经在槽 → 已装备
+    if (existing && existing.itemId === item.itemId) return { changed:false, reason:"already-equipped" };
+    // 槽已被不同 item 占用 → 需用 replace
+    if (existing) return { changed:false, reason:"slot-occupied" };
+    // 库存校验
+    const inv = ResourceRegistry.get(state, item.itemId);
+    if (!(inv >= 1)) return { changed:false, reason:"insufficient-inventory" };
+    // 同系列冲突
+    for (const s of BOOSTER_SLOTS) {
+      const e = active[s];
+      if (!e || s === slot) continue;
+      const existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
+      if (existingItem && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
+    }
+    // 原子提交
+    ResourceRegistry.spend(state, item.itemId, 1);
+    active[slot] = { itemId: item.itemId, remainingMs: BOOSTER_DURATION_MS };
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("booster:equipped", { slot, itemId:item.itemId }, { source:"booster-equip" });
+      GameEvents.emit("booster:activated", { slot, itemId:item.itemId, remainingMs:BOOSTER_DURATION_MS }, { source:"booster-equip" });
+    }
+    return { changed:true, slot, itemId:item.itemId };
+  },
+
+  unequip(state, slot) {
+    if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) return { changed:false, reason:"invalid-slot" };
+    const active = state.boosters && state.boosters.active;
+    if (!active) return { changed:false, reason:"no-state" };
+    const entry = active[slot];
+    if (!entry) return { changed:false, reason:"empty-slot" };
+    const itemId = entry.itemId;
+    // 作废剩余时间、不返还瓶子
+    active[slot] = null;
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("booster:unequipped", { slot, itemId }, { source:"booster-unequip" });
+    }
+    return { changed:true, slot, itemId };
+  },
+
+  replace(state, slot, itemId) {
+    if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) return { changed:false, reason:"invalid-slot" };
+    const item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
+    if (!item) return { changed:false, reason:"unknown-item" };
+    if (item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
+    const active = state.boosters && state.boosters.active;
+    if (!active) return { changed:false, reason:"no-state" };
+    const existing = active[slot];
+    if (!existing) return { changed:false, reason:"empty-slot" }; // 空槽用 equip
+    if (existing.itemId === item.itemId) return { changed:false, reason:"already-equipped" };
+    // 先校验新库存（原子拒绝），原槽完全不変
+    const inv = ResourceRegistry.get(state, item.itemId);
+    if (!(inv >= 1)) return { changed:false, reason:"insufficient-inventory" };
+    // 同系列冲突
+    for (const s of BOOSTER_SLOTS) {
+      const e = active[s];
+      if (!e || s === slot) continue;
+      const existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
+      if (existingItem && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
+    }
+    const oldItemId = existing.itemId;
+    // 原子提交
+    ResourceRegistry.spend(state, item.itemId, 1);
+    active[slot] = { itemId: item.itemId, remainingMs: BOOSTER_DURATION_MS };
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("booster:unequipped", { slot, itemId:oldItemId }, { source:"booster-replace" });
+      GameEvents.emit("booster:replaced", { slot, oldItemId, newItemId:item.itemId }, { source:"booster-replace" });
+      GameEvents.emit("booster:equipped", { slot, itemId:item.itemId }, { source:"booster-replace" });
+      GameEvents.emit("booster:activated", { slot, itemId:item.itemId, remainingMs:BOOSTER_DURATION_MS }, { source:"booster-replace" });
+    }
+    return { changed:true, slot, oldItemId, newItemId:item.itemId };
   }
 };
 
@@ -1112,6 +1197,9 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "booster/selectRecipe") return BoosterStateActions.selectRecipe(state, action.recipeId);
   if (action.type === "booster/startManufacturing") return BoosterStateActions.startManufacturing(state, actionTime);
   if (action.type === "booster/stopManufacturing") return BoosterStateActions.stopManufacturing(state, actionTime);
+  if (action.type === "booster/equip") return BoosterStateActions.equip(state, action.slot, action.itemId);
+  if (action.type === "booster/unequip") return BoosterStateActions.unequip(state, action.slot);
+  if (action.type === "booster/replace") return BoosterStateActions.replace(state, action.slot, action.itemId);
   if (action.type === "combat/selectMode") return CombatStateActions.selectMode(state, action.mode);
   if (action.type === "combat/selectTargetingMode") return CombatStateActions.selectTargetingMode(state, action.mode);
   if (action.type === "combat/selectZone") return CombatStateActions.selectZone(state, action.zoneId);

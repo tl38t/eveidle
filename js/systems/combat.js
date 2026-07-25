@@ -541,7 +541,9 @@ function combatTick() {
       else if (weapon.counterType === "armor" && enemy.hp.shield <= 0 && enemy.hp.armor > 0) counterMult = 1.25;
       else if (weapon.counterType === "structure" && enemy.hp.shield <= 0 && enemy.hp.armor <= 0 && enemy.hp.structure > 0) counterMult = 1.25;
       const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
-      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1), counterMult * dmgMult * traitMultiplier);
+      const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).weaponDamageMultiplier : null;
+      const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
+      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier);
       applyLayeredCombatDamage(enemy.hp, damage);
       for (const areaTarget of getCapitalAreaDamageTargets(c.enemies, enemy, combat.aoe)) {
         const areaDamage = Math.max(1, Math.round(damage * areaTarget.multiplier));
@@ -608,12 +610,14 @@ function combatTick() {
   }
 
   // --- 维修：只读取舰船实际安装的维修装备 ---
+  const boosterRep = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).repairMultiplier : null;
   for (const module of repairers) {
     const rep = module.equipment.combat;
     const repFuelCost = Math.max(1, Math.round((rep.fuelCost || 1) * calcFuelMult(zone)));
     if (ResourceRegistry.get(gameState, "consumable:fuel") < repFuelCost) continue;
     if (c.hp[rep.target] < c.maxHp[rep.target]) {
-      const healAmount = Math.round(rep.amount * (module.multiplier || 1) * calcRepairMult(rep.target));
+      const repMult = (boosterRep && boosterRep[rep.target]) ? boosterRep[rep.target] : 1;
+      const healAmount = Math.round(rep.amount * (module.multiplier || 1) * calcRepairMult(rep.target) * repMult);
       c.hp[rep.target] = Math.min(c.maxHp[rep.target], c.hp[rep.target] + healAmount);
       ResourceRegistry.spend(gameState, "consumable:fuel", repFuelCost);
       // 防御经验

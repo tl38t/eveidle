@@ -11,7 +11,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 39) throw new Error(`预期 39 个脚本，实际 ${scriptSources.length}`); // 39 = 37 + boosters.js + booster-render.js（增强剂系统 Phase 2A 2026-07-24）
+if (scriptSources.length !== 40) throw new Error(`预期 40 个脚本，实际 ${scriptSources.length}`); // 40 = 38 + boosters.js + booster-render.js + systems/boosters.js（增强剂系统 Phase 2B 2026-07-24）
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -547,10 +547,14 @@ const planetaryViewBefore = JSON.stringify(planetaryViewState);
 const planetaryDisplay = sandbox.getPlanetaryDisplayState(planetaryViewState, selectorNow, 10000000);
 if (JSON.stringify(planetaryViewState) !== planetaryViewBefore) throw new Error("行星View State修改了输入状态");
 const planetaryCard = planetaryDisplay.deployments[0];
-if (planetaryDisplay.level !== 1 || planetaryDisplay.slots !== 1 || planetaryDisplay.storageMax !== 105 ||
+if (planetaryDisplay.level !== 1 || planetaryDisplay.slots !== 1 ||
     planetaryCard.output !== "重金属" || planetaryCard.outputProgress !== 4 || planetaryCard.outputPercent !== 40 ||
     planetaryCard.storage !== 2 || !planetaryCard.active || planetaryCard.statusText !== "运行中" || !planetaryDisplay.deployOptions[0].unlocked) {
   throw new Error("行星View State没有正确表达技能、槽位、库存、产出进度或部署选项");
+}
+// Lv.1 lava: interval = 10/(1+0.02) ≈ 9.804, storageMax = ceil(21600/9.804) ≈ 2204
+if (planetaryCard.storageMax < 2000) {
+  throw new Error("行星仓储上限应约为6小时产量，≥2000（得" + planetaryCard.storageMax + "）");
 }
 planetaryViewState.planetary.deployments[0].deployedAt = selectorNow - 90000000;
 const expiredPlanetBefore = JSON.stringify(planetaryViewState);
@@ -689,12 +693,21 @@ if (!/dispatchGameAction|BoosterStateActions/.test(auditBoosterSource) || !/game
     !/applyOfflineGains/.test(auditBoosterSource) || !/migrateBoosterState/.test(auditBoosterSource)) {
   throw new Error("audit-boosters.mjs 没有调用真实增强剂 Action / 在线 tick / 离线结算 / 迁移");
 }
-// 无 Phase 2B 行为：六槽装备/计时/效果函数与动作路由不得存在
+// Phase 2B 行为确认：六槽装备动作路由必须存在
 {
-  const boosterSurfaces = actionsSource + selectorsSource + manufacturingSource + resourcesSource;
-  if (/booster\/equip|booster\/unequip/.test(boosterSurfaces)) throw new Error("actions.js 引入了 Phase 2B 六槽装备动作");
-  if (/equipBooster|unequipBooster|applyBoosterEffect|consumeBooster|startBoosterTimer|getActiveBoosterEffects/.test(boosterSurfaces)) throw new Error("存在 Phase 2B 增强剂装备/计时/效果函数");
-  if (/BoosterStateActions\.equip|BoosterStateActions\.unequip/.test(boosterSurfaces)) throw new Error("BoosterStateActions 存在六槽 equip/unequip 方法");
+  const boosterSurfaces = actionsSource;
+  if (!/booster\/equip/.test(boosterSurfaces) || !/booster\/unequip/.test(boosterSurfaces) || !/booster\/replace/.test(boosterSurfaces)) {
+    throw new Error("actions.js 缺少 Phase 2B 六槽装备动作路由 (booster/equip / unequip / replace)");
+  }
+  if (!/BoosterStateActions\.equip/.test(boosterSurfaces) || !/BoosterStateActions\.unequip/.test(boosterSurfaces)) {
+    throw new Error("BoosterStateActions 缺少六槽 equip/unequip 方法");
+  }
+  // 确认 booster effect 层存在
+  const boostersIdx = scriptSources.indexOf("./js/systems/boosters.js");
+  const boostersSource = boostersIdx >= 0 ? (scripts[boostersIdx] || "") : "";
+  if (!/getBoosterEffectState/.test(boosterSurfaces + selectorsSource + boostersSource)) {
+    throw new Error("缺少 getBoosterEffectState（Phase 2B 效果层未加载）");
+  }
 }
 
 // 最终外壳迁移：生产、战斗、行星和队列核心均不得再包含DOM或页面渲染。

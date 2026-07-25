@@ -418,6 +418,9 @@
   .act-tag:disabled:hover { border-color: #202b36; color: #3d4a57; }
 
   /* ===== 舰船强化 ===== */
+  #hangar-panel { flex: 1; min-height: 0; flex-direction: column; }
+  #hangar-panel > .panel-header { flex: 0 0 auto; }
+  #hangar-panel > .panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-gutter: stable; }
   .hangar-ship-grid { display: grid; gap: 10px; }
   .hangar-ship-card { padding: 12px; border: 1px solid #1e2a38; border-radius: 6px; background: #0d131c; }
   .hangar-ship-card.equipped { border-color: #665528; }

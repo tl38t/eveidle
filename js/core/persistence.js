@@ -579,8 +579,27 @@ function migrateBoosterState() {
       b.inventory[key] = qty;
     }
   }
-  // 六槽（Phase 2A 恒为 null）：补齐缺失槽位、清空任何遗留值、丢弃非法槽键。
-  for (const slot of SLOTS) b.active[slot] = null;
+  // 六槽（Phase 2B）：保留合法 {itemId,remainingMs}；非法项清空，不赠送或退还瓶子。
+  // itemId 统一为裸 ID，remainingMs 必须有限 >0，item 必须存在且 slot 与当前槽一致。
+  for (const slot of SLOTS) {
+    const entry = b.active[slot];
+    if (!entry) continue; // null 已合法，保留
+    if (typeof entry !== "object") { b.active[slot] = null; continue; }
+    // itemId 归一化（booster: 前缀 → 裸 id）
+    let rawId = entry.itemId;
+    if (typeof rawId === "string" && rawId.startsWith("booster:")) rawId = rawId.slice("booster:".length);
+    const item = (typeof getBoosterItem === "function") ? getBoosterItem(rawId) : null;
+    if (!item || item.slot !== slot) { b.active[slot] = null; continue; }
+    const remainingMs = Number(entry.remainingMs);
+    if (!Number.isFinite(remainingMs) || remainingMs <= 0) { b.active[slot] = null; continue; }
+    // 存储完整 itemId（含 booster: 前缀），供 ResourceRegistry 寻址
+    b.active[slot] = { itemId:item.itemId, remainingMs };
+  }
+  // 补齐缺失的槽为 null
+  for (const slot of SLOTS) {
+    if (b.active[slot] === undefined) b.active[slot] = null;
+  }
+  // 丢弃非法槽键
   for (const key of Object.keys(b.active)) { if (!SLOTS.includes(key)) delete b.active[key]; }
   if (!Number.isFinite(Number(b.lastTick)) || Number(b.lastTick) <= 0) b.lastTick = Date.now();
   // currentAction 制造目标字段幂等回填。

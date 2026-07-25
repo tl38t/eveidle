@@ -45,7 +45,15 @@ const GameEventContracts = (() => {
     // 增强剂系统 Phase 2A（§7 事件契约）
     "combat:tacticalMaterialDropped": { required:["zoneId", "deathspaceId", "enemyId", "enemyKind", "materialId", "materialName", "tier", "quantity", "securityLayer"], numbers:["quantity"], nullable:["deathspaceId"] },
     "booster:manufactured": { required:["recipeId", "itemId", "series", "quality", "quantity", "xpGained", "offline"], numbers:["quantity", "xpGained"] },
-    "boosters:manufactured": { required:["recipeId", "itemId", "quantity", "totalXp", "offline"], numbers:["quantity", "totalXp"] }
+    "boosters:manufactured": { required:["recipeId", "itemId", "quantity", "totalXp", "offline"], numbers:["quantity", "totalXp"] },
+    // 增强剂系统 Phase 2B：六槽生命周期事件
+    "booster:equipped": { required:["slot", "itemId"], numbers:[] },
+    "booster:activated": { required:["slot", "itemId", "remainingMs"], numbers:["remainingMs"] },
+    "booster:consumed": { required:["slot", "itemId"], numbers:[] },
+    "booster:autoRefilled": { required:["slot", "itemId", "fromInventory"], numbers:["fromInventory"] },
+    "booster:depleted": { required:["slot"], numbers:[] },
+    "booster:unequipped": { required:["slot", "itemId"], numbers:[] },
+    "booster:replaced": { required:["slot", "oldItemId", "newItemId"], numbers:[] }
   });
 
   function cloneValue(value) {

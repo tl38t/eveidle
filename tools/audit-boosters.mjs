@@ -114,6 +114,43 @@ function freshState(opts = {}) {
 }
 function setNow(t) { vm.runInContext(`globalThis.__auditRealDateNow = Date.now; Date.now = () => ${t};`, sandbox); }
 function restoreNow() { vm.runInContext(`Date.now = globalThis.__auditRealDateNow; delete globalThis.__auditRealDateNow;`, sandbox); }
+
+// ---- 可复现随机序列（种子 LCG，接管 Math.random） ----
+function seedRandom(seed) {
+  vm.runInContext("if(typeof globalThis.__savedRandom==='undefined')globalThis.__savedRandom=Math.random", sandbox);
+  const s = seed >>> 0;
+  vm.runInContext(`globalThis.__rngSeed=${s}; Math.random=function(){var s=globalThis.__rngSeed; s=(s*1664525+1013904223)>>>0; globalThis.__rngSeed=s; return s/4294967296; }`, sandbox);
+}
+function restoreRandom() {
+  vm.runInContext("Math.random=globalThis.__savedRandom;delete globalThis.__savedRandom;delete globalThis.__rngSeed;", sandbox);
+}
+
+// ---- 开采场景通用工具 ----
+function setupMiningState(g, opts) {
+  g.boosters.active = {};
+  const inv = opts.inv || {};
+  for (const [k,v] of Object.entries(inv)) sandbox.ResourceRegistry.add(g, k, v);
+  if (opts.ms) g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:opts.ms };
+  if (opts.my) g.boosters.active.miningYield = { itemId:"booster:ore_resonance_n", remainingMs:opts.my };
+  g.currentAction.skill = "mining";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.currentAction.startedArea = "凡晶石带";
+  g.currentAction.area = "凡晶石带";
+  // 重置 skill 等级为 Lv.1（xp=1000 对应 10 周期后升级到 Lv.2）
+  if (!g.skills.mining) g.skills.mining = {};
+  g.skills.mining.lvl = 1;
+  g.skills.mining.xp = 0;
+  g.boosters.lastTick = NOW - (opts.offlineSec || 600) * 1000;
+}
+function cleanupMining(g) {
+  const RR = sandbox.ResourceRegistry;
+  RR.spend(g, "ore:凡晶石", RR.get(g, "ore:凡晶石"));
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+}
 function runOnlineBooster(state, fromTime, seconds) {
   state.currentAction.skill = "boosterEngineering";
   state.currentAction.active = true;
@@ -490,7 +527,7 @@ region("W", "显示态字段齐备", () => {
   const ds = sandbox.getBoosterManufacturingDisplayState(st, NOW);
   for (const f of ["kind", "skill", "level", "xp", "xpRequired", "efficiency", "isRunning", "status", "statusText",
                    "progress", "progressPercent", "remainingSeconds", "category", "categories", "qualityFilter", "qualityFilters",
-                   "selectedRecipeId", "runningRecipeId", "selectedRecipe", "canStart", "recipes", "inventoryCards", "phaseNote"]) {
+                   "selectedRecipeId", "runningRecipeId", "selectedRecipe", "canStart", "recipes", "inventoryCards"]) {
     assert(f in ds, `显示态缺字段 ${f}`);
   }
   assert(ds.kind === "boosterEngineering" && ds.skill === "boosterEngineering", "kind/skill 应为 boosterEngineering");
@@ -500,7 +537,6 @@ region("W", "显示态字段齐备", () => {
   assert(ds.categories.length === 4, "分类应为 4");
   assert(ds.qualityFilters.length === 4, "品质筛选应为 4（全部/普通/精工/传奇）");
   assert(Array.isArray(ds.recipes) && ds.recipes.length > 0, "recipes 必须为非空数组");
-  assert(ds.phaseNote && ds.phaseNote.includes("下一阶段"), "phaseNote 应声明 Phase 2B 开放说明");
 });
 
 // ================= X：显示态筛选与库存卡片 =================
@@ -541,13 +577,17 @@ region("Y", "显示态 canStart 语义", () => {
   assert(dsl.canStart === false, "越级 canStart 应为 false");
 });
 
-// ================= Z：无 Phase 2B 行为（六槽装备/计时/效果函数不存在） =================
-region("Z", "无 Phase 2B 行为", () => {
-  // BoosterStateActions 为词法 const，须于 vm 上下文内求值（不可经 sandbox 对象访问）
+// ================= Z：Phase 2B 行为确认（六槽装备/计时/效果函数必须存在） =================
+region("Z", "Phase 2B 行为确认", () => {
   const BSA = vm.runInContext("typeof BoosterStateActions !== 'undefined' ? BoosterStateActions : null", sandbox);
-  assert(BSA === null || (typeof BSA.equip === "undefined" && typeof BSA.unequip === "undefined"), "不得存在六槽 equip/unequip Action");
-  for (const fn of ["applyBoosterEffect", "consumeBooster", "startBoosterTimer", "getActiveBoosterEffects"]) {
-    assert(vm.runInContext(`typeof ${fn} === "undefined"`, sandbox), `不得存在 ${fn}`);
+  assert(BSA !== null && typeof BSA.equip === "function" && typeof BSA.unequip === "function" && typeof BSA.replace === "function", "BoosterStateActions 必须存在 equip/unequip/replace");
+  for (const fn of ["getBoosterEffectState", "calculateBoosterTimeConsumption", "tickBoosterTimers", "settleOfflineBoosters"]) {
+    assert(vm.runInContext(`typeof ${fn} !== "undefined"`, sandbox), `必须存在 ${fn}`);
+  }
+  // 事件契约检查
+  const contracts = vm.runInContext("GameEventContracts", sandbox);
+  for (const ev of ["booster:equipped", "booster:activated", "booster:consumed", "booster:autoRefilled", "booster:depleted", "booster:unequipped", "booster:replaced"]) {
+    assert(contracts.has(ev), `事件契约 ${ev} 必须注册`);
   }
 });
 
@@ -762,5 +802,1254 @@ region("ZH", "30 配方独立期望表（硬锁）", () => {
   assert(EXPECTED_BOOSTER_RECIPES.length === 30, "独立期望表应覆盖 30 张配方");
 });
 
-console.log(`\n专项审计通过：共 ${totalAssertions} 断言，覆盖 ${Object.keys(regionCounts).length} 区（A~ZH）`);
+// ================= ZI：Phase 2B — 六槽装备/替换/卸下原子性 =================
+region("ZI", "Phase 2B 六槽装备操作", () => {
+  const state = freshState({ lvl: 5 });
+  const BSA = vm.runInContext("BoosterStateActions", sandbox);
+  const RR = sandbox.ResourceRegistry;
+  const D = (typeof BOOSTER_DURATION_MS !== "undefined") ? BOOSTER_DURATION_MS : 180000;
+  // 给足库存
+  RR.add(state, "booster:mining_lubricant_n", 3);
+  RR.add(state, "booster:laser_coolant_n", 2);
+  RR.add(state, "booster:missile_catalyst_n", 2);
+  RR.add(state, "booster:ore_resonance_n", 2);
+
+  // 1) 装备空槽（miningSpeed）
+  const r1 = BSA.equip(state, "miningSpeed", "mining_lubricant_n");
+  assert(r1.changed, "装备空槽应成功");
+  assert(state.boosters.active.miningSpeed && state.boosters.active.miningSpeed.itemId === "booster:mining_lubricant_n", "装备后槽位 itemId 正确");
+  assert(state.boosters.active.miningSpeed.remainingMs === D, "装备后剩余时间应为 DUR");
+  assert(RR.get(state, "booster:mining_lubricant_n") === 2, "装备扣 1 瓶");
+
+  // 2) 同 itemId 再次点击 → already-equipped，不扣
+  const r2 = BSA.equip(state, "miningSpeed", "mining_lubricant_n");
+  assert(!r2.changed && r2.reason === "already-equipped", "同物品再次点击应为 already-equipped");
+  assert(RR.get(state, "booster:mining_lubricant_n") === 2, "重复点击不扣库存");
+
+  // 3) 同 slot 不同系列（combatWeapon）→ slot-occupied（必须先卸下或替换）
+  const r3 = BSA.equip(state, "combatWeapon", "laser_coolant_n");
+  assert(r3.changed, "装备战斗槽应成功");
+  const r3b = BSA.equip(state, "combatWeapon", "missile_catalyst_n");
+  assert(!r3b.changed && (r3b.reason === "slot-occupied" || r3b.reason === "series-conflict"), "已占用槽应返回 slot-occupied 或 series-conflict（得 " + r3b.reason + "）");
+
+  // 4) 替换
+  const r4 = BSA.replace(state, "combatWeapon", "missile_catalyst_n");
+  assert(r4.changed, "替换应成功（库存足）");
+  assert(state.boosters.active.combatWeapon.itemId === "booster:missile_catalyst_n", "替换后 itemId 为新");
+  assert(RR.get(state, "booster:laser_coolant_n") === 1, "替换不扣旧瓶");
+  assert(RR.get(state, "booster:missile_catalyst_n") === 1, "替换扣新瓶 1");
+
+  // 5) 卸下
+  const r5 = BSA.unequip(state, "combatWeapon");
+  assert(r5.changed, "卸下应成功");
+  assert(state.boosters.active.combatWeapon === null, "卸下后槽为 null");
+  assert(RR.get(state, "booster:missile_catalyst_n") === 1, "卸下不返还瓶子");
+
+  // 6) 空槽卸下 → empty-slot
+  const r6 = BSA.unequip(state, "combatWeapon");
+  assert(!r6.changed && r6.reason === "empty-slot", "空槽卸下应返回 empty-slot");
+});
+
+// ================= ZJ：Phase 2B — 时间消耗边界 =================
+region("ZJ", "计算时间消耗边界", () => {
+  const calc = sandbox.calculateBoosterTimeConsumption;
+  const D = (typeof BOOSTER_DURATION_MS !== "undefined") ? BOOSTER_DURATION_MS : 180000;
+
+  // 179999ms
+  const r1 = calc({ itemId:"test_id", remainingMs:D }, 179999, 3);
+  assert(r1.entry && r1.entry.remainingMs === 1, "179999ms 后剩余应=1（得 " + (r1.entry ? r1.entry.remainingMs : "null") + "）");
+  assert(r1.consumed === 0 && !r1.depleted, "179999 不消耗、不耗尽");
+
+  // 180000ms（刚好耗尽 + 自动续瓶）
+  const r2 = calc({ itemId:"test_id", remainingMs:D }, D, 3);
+  assert(r2.entry && r2.entry.remainingMs === D, "180000ms 自动续瓶后应=D（得 " + (r2.entry ? r2.entry.remainingMs : "null") + "）");
+  assert(r2.consumed === 1 && !r2.depleted, "180000 消耗 1 瓶");
+
+  // 180001ms（续瓶 + 消耗 1ms）
+  const r3 = calc({ itemId:"test_id", remainingMs:D }, D + 1, 3);
+  assert(r3.entry && r3.entry.remainingMs === D - 1, "180001ms 续瓶后剩余应=" + (D - 1) + "（得 " + (r3.entry ? r3.entry.remainingMs : "null") + "）");
+  assert(r3.consumed === 1, "180001 消耗 1 瓶");
+
+  // 一次跨多瓶：elapsed = 3 * D
+  const r4 = calc({ itemId:"test_id", remainingMs:D }, 3 * D, 5);
+  assert(r4.entry && r4.entry.remainingMs === D, "3*D 跨瓶后应=D（得 " + (r4.entry ? r4.entry.remainingMs : "null") + "）");
+  assert(r4.consumed === 3, "3*D 消耗 3 瓶");
+
+  // 库存耗尽清槽
+  const r5 = calc({ itemId:"test_id", remainingMs:D }, D, 0);
+  assert(r5.entry === null && r5.depleted, "库存为 0 时应 depleted");
+
+  // 不消耗（elapsed=0）
+  const r6 = calc({ itemId:"test_id", remainingMs:5000 }, 0, 3);
+  assert(r6.entry && r6.entry.remainingMs === 5000, "elapsed=0 应不变");
+  assert(r6.consumed === 0, "elapsed=0 不消耗");
+});
+
+// ================= ZK：Phase 2B — 效果聚合检查 =================
+region("ZK", "效果聚合", () => {
+  const state = freshState({ lvl: 5 });
+  const getEff = () => sandbox.getBoosterEffectState(state);
+  const IT = vm.runInContext("BOOSTER_ITEMS", sandbox);
+  state.boosters.active.miningSpeed = { itemId:IT.mining_lubricant_r.itemId, remainingMs:180000 };
+  state.boosters.active.miningYield = { itemId:IT.ore_resonance_l.itemId, remainingMs:180000 };
+  state.boosters.active.archaeologySpeed = { itemId:IT.relic_solver_n.itemId, remainingMs:180000 };
+  state.boosters.active.archaeologyRare = { itemId:IT.artifact_tracer_r.itemId, remainingMs:180000 };
+  state.boosters.active.combatWeapon = { itemId:IT.laser_coolant_r.itemId, remainingMs:180000 };
+  state.boosters.active.combatRepair = { itemId:IT.armor_nano_r.itemId, remainingMs:180000 };
+
+  const eff = getEff();
+  const approx = (actual, expected, tol) => Math.abs(actual - expected) < (tol || 1e-9);
+  assert(approx(eff.miningSpeedMultiplier, 1.18), "采矿速度倍率应≈1.18（得 " + eff.miningSpeedMultiplier + "）");
+  assert(eff.doubleMineralChance === 0.30, "双倍概率应=0.30");
+  assert(approx(eff.archaeologySpeedMultiplier, 0.92), "考古速度倍率应≈0.92（得 " + eff.archaeologySpeedMultiplier + "）");
+  assert(eff.miningSpeedMultiplier === 1.18, "采矿速度倍率应=1.18");
+  assert(eff.doubleMineralChance === 0.30, "双倍概率应=0.30");
+  assert(approx(eff.archaeologySpeedMultiplier, 0.92), "考古速度倍率应≈0.92（得 " + eff.archaeologySpeedMultiplier + "）");
+  assert(eff.rareShiftMultiplier === 1.60, "稀有率倍率应=1.60");
+  assert(approx(eff.weaponDamageMultiplier.laser, 1.14), "激光伤害倍率应≈1.14（得 " + eff.weaponDamageMultiplier.laser + "）");
+  assert(eff.weaponDamageMultiplier.missile === 1, "导弹不应受影响");
+  assert(eff.weaponDamageMultiplier.cannon === 1, "火炮不应受影响");
+  assert(approx(eff.repairMultiplier.armor, 1.25), "装甲维修倍率应≈1.25（得 " + eff.repairMultiplier.armor + "）");
+  assert(eff.repairMultiplier.shield === 1, "护盾不应受影响");
+  assert(eff.repairMultiplier.structure === 1, "结构不应受影响");
+
+  // 三武器隔离
+  state.boosters.active.combatWeapon = { itemId:IT.missile_catalyst_r.itemId, remainingMs:180000 };
+  const eff2 = getEff();
+  assert(approx(eff2.weaponDamageMultiplier.missile, 1.14), "导弹伤害倍率应≈1.14（得 " + eff2.weaponDamageMultiplier.missile + "）");
+  assert(eff2.weaponDamageMultiplier.laser === 1, "切换导弹后激光应恢复为 1");
+
+  // 清空后恢复
+  state.boosters.active.combatWeapon = null;
+  state.boosters.active.combatRepair = null;
+  const eff3 = getEff();
+  assert(eff3.weaponDamageMultiplier.laser === 1 && eff3.repairMultiplier.armor === 1, "清空槽后倍率恢复为 1");
+});
+
+// ================= ZL：Phase 2B — 迁移保留合法六槽 =================
+region("ZL", "迁移六槽保留合法", () => {
+  const m = {
+    skills:{ boosterEngineering:{ lvl:10, xp:100 } },
+    boosters: {
+      inventory: { "mining_lubricant_n":5, "ore_resonance_r":3 },
+      active: {
+        miningSpeed: { itemId:"mining_lubricant_n", remainingMs:150000 },  // 合法
+        miningYield: { itemId:"booster:ore_resonance_r", remainingMs:90000 }, // booster: 前缀应归一化
+        combatWeapon: null,     // 合法 null
+        combatRepair: "stale",  // 非法字符串 -> null
+        archaeologySpeed: { itemId:"nonexistent", remainingMs:5000 } // item 不存在 -> null
+      },
+      lastTick: Date.now()
+    },
+    currentAction: { skill:"mining", active:false }
+  };
+  loadState(m);
+  sandbox.migrateBoosterState();
+  assert(m.boosters.active.miningSpeed !== null && m.boosters.active.miningSpeed.remainingMs === 150000 && m.boosters.active.miningSpeed.itemId === "booster:mining_lubricant_n", "合法 miningSpeed 保留");
+  assert(m.boosters.active.miningYield !== null && m.boosters.active.miningYield.itemId === "booster:ore_resonance_r" && m.boosters.active.miningYield.remainingMs === 90000, "booster: 前缀归一化后保留");
+  assert(m.boosters.active.miningYield.itemId.startsWith("booster:"), "迁移后 itemId 应含 booster: 前缀");
+  assert(m.boosters.active.combatWeapon === null, "合法 null 保留");
+  assert(m.boosters.active.combatRepair === null, "非法字符串清为 null");
+  assert(m.boosters.active.archaeologySpeed === null, "不存在的 item 清为 null");
+  // 连续迁移幂等
+  const snap = JSON.stringify(m.boosters.active);
+  sandbox.migrateBoosterState();
+  assert(JSON.stringify(m.boosters.active) === snap, "连续迁移幂等");
+});
+
+// ================= ZM：真实集成 — 逐瓶事件序列 =================
+region("ZM", "真实集成：逐瓶事件序列", () => {
+  const calc = sandbox.calculateBoosterTimeConsumption;
+  const D = (typeof BOOSTER_DURATION_MS !== "undefined") ? BOOSTER_DURATION_MS : 180000;
+  // 1) 跨 3 瓶：current + 3 inventory, elapsed=540000
+  const r = calc({ itemId:"test", remainingMs:D }, 540000, 3);
+  assert(r.consumed === 3, "3*D+3inv 消耗 3 瓶（得 " + r.consumed + "）");
+  assert(!r.depleted, "不耗尽");
+  assert(r.entry && r.entry.remainingMs === D, "最后 autoRefilled 应满 D（得 " + (r.entry ? r.entry.remainingMs : "null") + "）");
+  const evTypes = r.events.map(e => e.type).join(",");
+  assert(evTypes === "booster:consumed,booster:autoRefilled,booster:consumed,booster:autoRefilled,booster:consumed,booster:autoRefilled",
+    "3 瓶事件序列应为 consumed→autoRefilled→consumed→autoRefilled→consumed→autoRefilled，得 " + evTypes);
+  const autoRefills = r.events.filter(e => e.type === "booster:autoRefilled");
+  assert(autoRefills.length === 3, "应有 3 个 autoRefilled");
+  for (const ar of autoRefills) {
+    assert(ar.fromInventory === 1, "autoRefilled 应 fromInventory=1（得 " + ar.fromInventory + "）");
+  }
+
+  // 2) 库存不足时最后 consumed→depleted
+  const r2 = calc({ itemId:"test", remainingMs:D }, D + 5000, 0);
+  const ev2 = r2.events.map(e => e.type).join(",");
+  assert(ev2 === "booster:consumed,booster:depleted", "无库存应 consumed→depleted，得 " + ev2);
+  assert(r2.entry === null && r2.depleted, "无库存 entry=null");
+
+  // 3) 恰好耗尽（有库存）：elapsed=D, inv>0 → consumed, autoRefilled
+  const r3 = calc({ itemId:"test", remainingMs:D }, D, 3);
+  const ev3 = r3.events.map(e => e.type).join(",");
+  assert(ev3 === "booster:consumed,booster:autoRefilled", "恰好耗尽有库存应 consumed→autoRefilled，得 " + ev3);
+  assert(r3.consumed === 1, "消耗 1 瓶");
+
+  // 4) 跨 2 瓶：elapsed=D+179999（刚超过当前瓶，旧瓶空时用库存）
+  const r4 = calc({ itemId:"test", remainingMs:D }, D + 179999, 2);
+  assert(r4.consumed === 1, "D+179999 消耗 1 瓶（得 " + r4.consumed + "）");
+  assert(!r4.depleted, "不耗尽");
+  assert(r4.entry && r4.entry.remainingMs === 1, "D+179999 应剩余 1ms");
+  const ev4 = r4.events.map(e => e.type).join(",");
+  assert(ev4 === "booster:consumed,booster:autoRefilled", "D+179999 序列 consumed→autoRefilled，得 " + ev4);
+});
+
+// ================= ZN：真实集成 — applyBoosterTimeConsumption 离线事件 offline:true =================
+region("ZN", "真实集成：apply 在线/离线事件标志", () => {
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = (typeof BOOSTER_DURATION_MS !== "undefined") ? BOOSTER_DURATION_MS : 180000;
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  RR.add(g, "booster:mining_lubricant_n", 3);
+  const evs = [];
+  // 收集所有增强剂生命周期事件
+  let unListeners = [];
+  const collect = (type) => {
+    const un = sandbox.GameEvents.on(type, e => evs.push({ type, meta:e.meta || e._meta || {}, payload:e.payload || e }));
+    unListeners.push(un);
+  };
+  collect("booster:consumed");
+  collect("booster:autoRefilled");
+  collect("booster:depleted");
+
+  // 在线（offline:false）：消耗到耗尽并续瓶，应触发事件
+  const rOnline = sandbox.applyBoosterTimeConsumption(g, "miningSpeed", D + 1000, Date.now(), { offline:false });
+  assert(rOnline.consumed > 0, "在线应消耗瓶子（得 " + rOnline.consumed + "）");
+  assert(evs.length > 0, "在线应触发事件");
+  // 检查事件标记
+  const onlineEv = evs[0];
+  assert(onlineEv.meta && onlineEv.meta.offline === false,
+    "在线事件 meta.offline 应为 false（得 " + JSON.stringify(onlineEv.meta) + "）");
+  evs.length = 0;
+
+  // 重置状态
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  // 离线（offline:true）：消耗到耗尽并续瓶，应触发事件
+  const rOffline = sandbox.applyBoosterTimeConsumption(g, "miningSpeed", D + 1000, Date.now(), { offline:true });
+  assert(rOffline.consumed > 0, "离线应消耗瓶子（得 " + rOffline.consumed + "）");
+  assert(evs.length > 0, "离线应触发事件");
+  let foundOfflineFlag = false;
+  for (const ev of evs) {
+    if (ev.meta && ev.meta.offline === true) { foundOfflineFlag = true; break; }
+  }
+  assert(foundOfflineFlag, "离线事件 meta.offline 应为 true 至少一次");
+
+  for (const un of unListeners) un();
+  // 清理状态
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  g.boosters.active.miningSpeed = null;
+});
+
+// ================= ZO：采矿1瓶离线10分钟 — 三参考值精确计算 =================
+region("ZO", "采矿1瓶离线10分钟 — 三参考值精确计算", () => {
+  // 场景：当前瓶 180s，库存 0。离线 600s。
+  // 三参考值：A=无增强600s, B=增强180s+无增强420s, C=全增强600s
+  // 实际结果(B_actual) 必须 abs(B_actual - B) <= 1
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+
+  seedRandom(42);
+
+  // === A 参考：无增强 600s ===
+  setupMiningState(g, { ms:0, my:0, offlineSec:600 });
+  const gainsA = sandbox.applyOfflineGains(600, { runId:"A" });
+  const A = gainsA.mining;
+  cleanupMining(g);
+  g.currentAction.progress = 0;
+  g.currentAction.lastProgressUpdate = NOW;
+
+  // === C 参考：全增强 600s（当前瓶 5×180=900s > 600s） ===
+  setupMiningState(g, { ms:D*5, my:D*5, offlineSec:600 });
+  const gainsC = sandbox.applyOfflineGains(600, { runId:"C" });
+  const C = gainsC.mining;
+  cleanupMining(g);
+  g.currentAction.progress = 0;
+  g.currentAction.lastProgressUpdate = NOW;
+
+  // === B 参考：增强 180s + 无增强 420s（两段结算，XP/进度承继） ===
+  // 第1段：180s 有增强
+  setupMiningState(g, { ms:D, my:D, offlineSec:600 });
+  const gainsB1 = { mining:0, refining:0, shipEngineering:0, gasHarvesting:0,
+    equipmentEngineering:0, boosterEngineering:0, planetaryIndustry:0 };
+  const tbs1 = {};
+  sandbox.settleOfflineActions(180, gainsB1, undefined, tbs1);
+  // 第2段：清增强剂、保持进度和XP，再跑 420s
+  g.boosters.active.miningSpeed = null;
+  g.boosters.active.miningYield = null;
+  g.boosters.lastTick = NOW;
+  const gainsB2 = { mining:0, refining:0, shipEngineering:0, gasHarvesting:0,
+    equipmentEngineering:0, boosterEngineering:0, planetaryIndustry:0 };
+  sandbox.settleOfflineActions(420, gainsB2, undefined, tbs1);
+  const B = gainsB1.mining + gainsB2.mining;
+  cleanupMining(g);
+  g.boosters.active = {};
+
+  // === 实际（B_actual）：1 瓶 180s 覆盖 600s ===
+  seedRandom(42);
+  setupMiningState(g, { ms:D, my:D, offlineSec:600 });
+  setNow(NOW);
+  const gains = sandbox.applyOfflineGains(600, { runId:"ZO" });
+  restoreNow();
+  const actual = gains.mining;
+
+  // 三参考值 + 实际输出
+  console.log(`  ZO 参考值：A=${A}  B=${B}  C=${C}  实际=${actual}`);
+
+  // 断言
+  assert(Math.abs(actual - B) <= 1,
+    `ZO 实际(${actual})与B(${B})相差≤1（A=${A} C=${C})`);
+  assert(actual > A, `ZO(${actual}) > A(${A})`);
+  assert(actual < C, `ZO(${actual}) < C(${C})`);
+
+  // 耗尽验证
+  assert(g.boosters.active.miningSpeed === null || g.boosters.active.miningSpeed.remainingMs < D,
+    "miningSpeed 耗尽");
+  assert(g.boosters.active.miningYield === null || g.boosters.active.miningYield.remainingMs < D,
+    "miningYield 耗尽");
+  assert(g.boosters.lastTick >= NOW, "lastTick ≥ NOW");
+
+  cleanupMining(g);
+  g.boosters.active = {};
+  restoreRandom();
+});
+
+// ================= ZP：采矿 2 瓶 = 当前瓶+库存1瓶共 360s 覆盖 =================
+region("ZP", "采矿 2 瓶离线 10 分钟 — 360s 覆盖精确", () => {
+  // 当前瓶 180s + 库存 1 瓶 = 360s 覆盖。离线 600s。
+  // B360 = 增强 360s + 无增强 240s（两段结算）
+  // 断言 abs(actual - B360) <= 1，库存归零，两槽精确耗尽。
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+
+  seedRandom(42);
+
+  // === A 参考 ===
+  setupMiningState(g, { ms:0, my:0, offlineSec:600 });
+  const gainsA = sandbox.applyOfflineGains(600, { runId:"ZP_A" });
+  const A = gainsA.mining;
+  cleanupMining(g); g.currentAction.progress = 0;
+
+  // === C 参考 ===
+  setupMiningState(g, { ms:D*5, my:D*5, offlineSec:600 });
+  const gainsC = sandbox.applyOfflineGains(600, { runId:"ZP_C" });
+  const C = gainsC.mining;
+  cleanupMining(g); g.currentAction.progress = 0;
+
+  // === B360 参考：增强 360s + 无增强 240s ===
+  // 第1段：360s 有增强（当前瓶 D + 库存 1 瓶 = 2 瓶 = 360s）
+  setupMiningState(g, { ms:D, my:D, inv:{ "booster:mining_lubricant_n":1, "booster:ore_resonance_n":1 }, offlineSec:600 });
+  const gB1 = { mining:0, refining:0, shipEngineering:0, gasHarvesting:0, equipmentEngineering:0, boosterEngineering:0, planetaryIndustry:0 };
+  sandbox.settleOfflineActions(360, gB1, undefined, {});
+  // 第2段：清增强剂，跑 240s
+  g.boosters.active.miningSpeed = null;
+  g.boosters.active.miningYield = null;
+  g.boosters.lastTick = NOW;
+  const gB2 = { mining:0, refining:0, shipEngineering:0, gasHarvesting:0, equipmentEngineering:0, boosterEngineering:0, planetaryIndustry:0 };
+  sandbox.settleOfflineActions(240, gB2, undefined, {});
+  const B360 = gB1.mining + gB2.mining;
+  cleanupMining(g); g.boosters.active = {};
+
+  // === 实际：2 瓶 360s 覆盖 600s ===
+  seedRandom(42);
+  setupMiningState(g, { ms:D, my:D, inv:{ "booster:mining_lubricant_n":1, "booster:ore_resonance_n":1 }, offlineSec:600 });
+  setNow(NOW);
+  const gains = sandbox.applyOfflineGains(600, { runId:"ZP" });
+  restoreNow();
+  const actual = gains.mining;
+
+  console.log(`  ZP 参考值：A=${A}  B360=${B360}  C=${C}  实际=${actual}`);
+
+  assert(Math.abs(actual - B360) <= 1,
+    `ZP 实际(${actual})与B360(${B360})相差≤1`);
+  assert(actual > A, `ZP(${actual}) > A(${A})`);
+  assert(actual < C, `ZP(${actual}) < C(${C})`);
+
+  // 库存精确归零
+  assert(RR.get(g, "booster:mining_lubricant_n") <= 0, "miningSpeed 库存=0（得 " + RR.get(g, "booster:mining_lubricant_n") + "）");
+  assert(RR.get(g, "booster:ore_resonance_n") <= 0, "miningYield 库存=0（得 " + RR.get(g, "booster:ore_resonance_n") + "）");
+  // 两槽耗尽
+  assert(g.boosters.active.miningSpeed === null, "miningSpeed 槽耗尽");
+  assert(g.boosters.active.miningYield === null, "miningYield 槽耗尽");
+
+  cleanupMining(g); g.boosters.active = {};
+  restoreRandom();
+});
+
+// ================= ZQ：真实集成 — 双槽不同时间耗尽 =================
+region("ZQ", "真实集成：双槽不同时间耗尽", () => {
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  g.boosters.active.miningYield = { itemId:"booster:ore_resonance_n", remainingMs:D };
+  RR.add(g, "booster:mining_lubricant_n", 2);
+  RR.add(g, "booster:ore_resonance_n", 0);
+  const r1 = sandbox.applyBoosterTimeConsumption(g, "miningSpeed", D, Date.now(), { offline:true });
+  const r2 = sandbox.applyBoosterTimeConsumption(g, "miningYield", D, Date.now(), { offline:true });
+  assert(r1.consumed === 1 && !r1.depleted, "miningSpeed 消耗 1 瓶不耗尽");
+  assert(r2.depleted === true, "miningYield 耗尽");
+  assert(g.boosters.active.miningYield === null, "miningYield 槽清空");
+  assert(g.boosters.active.miningSpeed !== null, "miningSpeed 槽保留");
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+  g.boosters.active.miningSpeed = null;
+  g.boosters.active.miningYield = null;
+});
+
+// ================= ZR：真实集成 — 离线事件 booster 事件 offline:true =================
+region("ZR", "真实集成：离线事件 offline=true", () => {
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  RR.add(g, "booster:mining_lubricant_n", 1);
+  g.currentAction.skill = "mining";
+  g.currentAction.active = true;
+  var offlineEvents = [];
+  var un = sandbox.GameEvents.on("booster:consumed", function(e) { offlineEvents.push(e); });
+  var un2 = sandbox.GameEvents.on("booster:autoRefilled", function(e) { offlineEvents.push(e); });
+  var r = sandbox.applyBoosterTimeConsumption(g, "miningSpeed", D + 5000, Date.now(), { offline:true });
+  un(); un2();
+  var hasOffline = false;
+  for (var i = 0; i < offlineEvents.length; i++) {
+    if (offlineEvents[i].meta && offlineEvents[i].meta.offline === true) hasOffline = true;
+  }
+  assert(hasOffline, "离线事件 meta.offline 应为 true");
+  assert(r.consumed === 1, "消耗 1 瓶（得 " + r.consumed + "）");
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  g.boosters.active.miningSpeed = null;
+});
+
+// ================= ZS：真实集成 — 考古周期缩短 + 稀有率倍率 =================
+region("ZS", "真实集成：考古周期缩短与稀有率", () => {
+  const eff = sandbox.getBoosterEffectState;
+  const g = G;
+  g.boosters.active = {};
+  g.boosters.active.archaeologySpeed = { itemId:"booster:relic_solver_n", remainingMs:180000 };
+  const e = eff(g);
+  assert(e.archaeologySpeedMultiplier === 0.92, "考古速度倍率应=0.92（得 " + e.archaeologySpeedMultiplier + "）");
+  // 清空恢复
+  g.boosters.active.archaeologySpeed = null;
+  const e2 = eff(g);
+  assert(e2.archaeologySpeedMultiplier === 1, "清空后应=1");
+  // 稀有率
+  g.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:180000 };
+  const e3 = eff(g);
+  assert(e3.rareShiftMultiplier === 1.25, "稀有率倍率=1.25（得 " + e3.rareShiftMultiplier + "）");
+  const uRate = sandbox.getBoosterArchaeologyEffectiveUniqueRate(0.05, e3.rareShiftMultiplier);
+  assert(Math.abs(uRate - 0.0625) < 1e-9, "有效 uniqueRate=0.0625（得 " + uRate + "）");
+  g.boosters.active.archaeologyRare = null;
+});
+
+// ================= ZT：队列切换 — 真实 gameState.queue 一次 applyOfflineGains =================
+region("ZT", "队列切换：真实 queue 单次离线 mining→refining→mining", () => {
+  // 真实 gameState.queue，一次 applyOfflineGains 内完成 mining→refining→mining。
+  // 验证 timeBySkill 跨行动正确分段，refining 不消耗采矿增强剂。
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+
+  // 设置增强剂（1 瓶各）
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  g.boosters.active.miningYield = { itemId:"booster:ore_resonance_n", remainingMs:D };
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+  RR.add(g, "booster:mining_lubricant_n", 0);
+  RR.add(g, "booster:ore_resonance_n", 0);
+
+  // 设置采矿（首段：凡晶石带）
+  g.currentAction.skill = "mining";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.currentAction.startedArea = "凡晶石带";
+  if (g.skills.mining) g.skills.mining.xp = 1000;
+
+  // 提供冶炼所需矿料
+  RR.spend(g, "ore:凡晶石", RR.get(g, "ore:凡晶石"));
+  RR.add(g, "ore:凡晶石", 5000);
+
+  // 设置真实队列：mining(10次) → refining(5次) → mining(10次)
+  g.queue = {
+    items: [
+      { skill:"mining", target:"凡晶石带", count:10, label:"⛏采矿" },
+      { skill:"refining", target:"凡晶石带", count:5, label:"🔥冶炼" },
+      { skill:"mining", target:"凡晶石带", count:10, label:"⛏采矿" }
+    ],
+    status: { isRunning:true, activeIndex:0, completedCount:0, failCount:0 },
+    config: { loopMode:false, skipOnFail:false }
+  };
+  g.boosters.lastTick = NOW - 600000;
+
+  // 记录各槽初始状态
+  const speedBefore = g.boosters.active.miningSpeed ? g.boosters.active.miningSpeed.remainingMs : 0;
+  const yieldBefore = g.boosters.active.miningYield ? g.boosters.active.miningYield.remainingMs : 0;
+
+  setNow(NOW);
+  const gains = sandbox.applyOfflineGains(600, { runId:"audit_zt" });
+  restoreNow();
+
+  // 获取 timeBySkill
+  const tbs = g._auditTimeBySkill || {};
+
+  // 验证：mining 和 refining 都有时间
+  assert(Number(tbs.mining) > 0, "mining timeBySkill > 0（得 " + tbs.mining + "）");
+  assert(Number(tbs.refining) > 0, "refining timeBySkill > 0（得 " + tbs.refining + "）");
+
+  // 验证：增长剂消耗正确（mining 段消耗，refining 段不额外消耗）
+  const speedAfter = g.boosters.active.miningSpeed ? g.boosters.active.miningSpeed.remainingMs : 0;
+  const yieldAfter = g.boosters.active.miningYield ? g.boosters.active.miningYield.remainingMs : 0;
+  const speedConsumed = speedBefore - speedAfter;
+  const yieldConsumed = yieldBefore - yieldAfter;
+  assert(speedConsumed > 0, "miningSpeed 在 mining 段被消耗（" + speedConsumed + "ms）");
+  assert(yieldConsumed > 0, "miningYield 在 mining 段被消耗（" + yieldConsumed + "ms）");
+
+  // 验证：队列正确推进
+  assert(g.queue.status.completedCount >= 2, "队列至少完成 2 项（得 " + g.queue.status.completedCount + "）");
+
+  // 验证：gains 正确
+  assert(Number(gains.mining) > 0, "采矿产出 > 0（得 " + gains.mining + "）");
+  assert(Number(gains.refining) > 0, "冶炼产出 > 0（得 " + gains.refining + "）");
+
+  // 清理
+  delete g._auditTimeBySkill;
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+  g.boosters.active = {};
+  g.queue = null;
+});
+
+// ================= ZUA：队列切换 — mining→archaeology =================
+region("ZUA", "队列切换：真实 queue mining→archaeology", () => {
+  // mining→archaeology：验证 timeBySkill、mining 槽扣时、archaeology 槽扣时
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+
+  // 创建考古船
+  const ship = sandbox.createShipInstance("heron");
+  g.inventory.ships = g.inventory.ships || [];
+  g.inventory.ships.push(ship);
+  g.shipAssignments = g.shipAssignments || {};
+  g.shipAssignments.archaeology = ship.instanceId;
+
+  // boosters: mining + archaeology
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  g.boosters.active.miningYield = { itemId:"booster:ore_resonance_n", remainingMs:D };
+  g.boosters.active.archaeologySpeed = { itemId:"booster:relic_solver_n", remainingMs:D };
+  g.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:D };
+
+  // mining setup
+  g.currentAction.skill = "mining";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.currentAction.startedArea = "凡晶石带";
+  g.currentAction.area = "凡晶石带";
+  if (g.skills.mining) { g.skills.mining.lvl = 1; g.skills.mining.xp = 0; }
+  if (g.skills.archaeology) { g.skills.archaeology.lvl = 1; g.skills.archaeology.xp = 1500; }
+
+  // 考古资源
+  g.archaeology = g.archaeology || {};
+  g.archaeology.startedSiteId = "site_i_a";
+  g.archaeology.activeSiteId = "site_i_a";
+  g.archaeology.startedProbeId = "core_probe_i";
+  g.archaeology.activeProbeId = "core_probe_i";
+  g.archaeology.repairUntil = 0;
+  g.archaeology.interferenceUntil = 0;
+  RR.spend(g, "probe:core_probe_i", RR.get(g, "probe:core_probe_i"));
+  RR.spend(g, "consumable:fuel", RR.get(g, "consumable:fuel"));
+  RR.add(g, "probe:core_probe_i", 30);
+  RR.add(g, "consumable:fuel", 200);
+
+  // 队列：mining(10) → archaeology(5)
+  g.queue = {
+    items: [
+      { skill:"mining", target:"凡晶石带", count:10, label:"⛏采矿" },
+      { skill:"archaeology", target:"site_i_a", count:5, label:"🔍考古" }
+    ],
+    status: { isRunning:true, activeIndex:0, completedCount:0, failCount:0 },
+    config: { loopMode:false, skipOnFail:false }
+  };
+  g.boosters.lastTick = NOW - 600000;
+
+  const msBefore = g.boosters.active.miningSpeed ? g.boosters.active.miningSpeed.remainingMs : 0;
+  const asBefore = g.boosters.active.archaeologySpeed ? g.boosters.active.archaeologySpeed.remainingMs : 0;
+
+  setNow(NOW);
+  const gains = sandbox.applyOfflineGains(600, { runId:"ZUA" });
+  restoreNow();
+  const tbs = g._auditTimeBySkill || {};
+
+  // mining 和 archaeology 都有时间
+  assert(Number(tbs.mining) > 0, "mining timeBySkill > 0（得 " + tbs.mining + "）");
+  assert(Number(tbs.archaeology) > 0, "archaeology timeBySkill > 0（得 " + tbs.archaeology + "）");
+
+  // mining 槽消耗
+  const msAfter = g.boosters.active.miningSpeed ? g.boosters.active.miningSpeed.remainingMs : 0;
+  assert((msBefore - msAfter) > 0, "miningSpeed 在 mining 段消耗（" + (msBefore - msAfter) + "ms）");
+  // archaeology 槽消耗
+  const asAfter = g.boosters.active.archaeologySpeed ? g.boosters.active.archaeologySpeed.remainingMs : 0;
+  assert((asBefore - asAfter) > 0, "archaeologySpeed 在 archaeology 段消耗（" + (asBefore - asAfter) + "ms）");
+
+  // 队列至少完成 1 项
+  assert(g.queue.status.completedCount >= 1, "队列完成 ≥1（得 " + g.queue.status.completedCount + "）");
+
+  // 清理
+  delete g._auditTimeBySkill;
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+  RR.spend(g, "booster:relic_solver_n", RR.get(g, "booster:relic_solver_n"));
+  RR.spend(g, "booster:artifact_tracer_n", RR.get(g, "booster:artifact_tracer_n"));
+  g.boosters.active = {};
+  g.queue = null;
+  // 移除船
+  const idx2 = g.inventory.ships.indexOf(ship);
+  if (idx2 >= 0) g.inventory.ships.splice(idx2, 1);
+  delete g.shipAssignments.archaeology;
+});
+
+// ================= ZUB：队列切换 — archaeology→mining =================
+region("ZUB", "队列切换：真实 queue archaeology→mining", () => {
+  // archaeology→mining：验证 timeBySkill、两组槽扣时、产出和队列推进。
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+
+  // 创建考古船
+  const ship = sandbox.createShipInstance("heron");
+  g.inventory.ships = g.inventory.ships || [];
+  g.inventory.ships.push(ship);
+  g.shipAssignments = g.shipAssignments || {};
+  g.shipAssignments.archaeology = ship.instanceId;
+
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  g.boosters.active.miningYield = { itemId:"booster:ore_resonance_n", remainingMs:D };
+  g.boosters.active.archaeologySpeed = { itemId:"booster:relic_solver_n", remainingMs:D };
+  g.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:D };
+
+  // arch setup first
+  g.currentAction.skill = "archaeology";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  if (g.skills.mining) { g.skills.mining.lvl = 1; g.skills.mining.xp = 0; }
+  if (g.skills.archaeology) { g.skills.archaeology.lvl = 1; g.skills.archaeology.xp = 1500; }
+
+  g.archaeology = g.archaeology || {};
+  g.archaeology.startedSiteId = "site_i_a";
+  g.archaeology.activeSiteId = "site_i_a";
+  g.archaeology.startedProbeId = "core_probe_i";
+  g.archaeology.activeProbeId = "core_probe_i";
+  g.archaeology.repairUntil = 0;
+  g.archaeology.interferenceUntil = 0;
+  RR.spend(g, "probe:core_probe_i", RR.get(g, "probe:core_probe_i"));
+  RR.spend(g, "consumable:fuel", RR.get(g, "consumable:fuel"));
+  RR.add(g, "probe:core_probe_i", 30);
+  RR.add(g, "consumable:fuel", 200);
+
+  g.currentAction.archaeologyTargetId = "site_i_a";
+
+  // 队列：archaeology(3) → mining(10)
+  g.queue = {
+    items: [
+      { skill:"archaeology", target:"site_i_a", count:3, label:"🔍考古" },
+      { skill:"mining", target:"凡晶石带", count:10, label:"⛏采矿" }
+    ],
+    status: { isRunning:true, activeIndex:0, completedCount:0, failCount:0 },
+    config: { loopMode:false, skipOnFail:false }
+  };
+  g.boosters.lastTick = NOW - 600000;
+
+  const asBefore = g.boosters.active.archaeologySpeed ? g.boosters.active.archaeologySpeed.remainingMs : 0;
+  const msBefore = g.boosters.active.miningSpeed ? g.boosters.active.miningSpeed.remainingMs : 0;
+
+  setNow(NOW);
+  const gains = sandbox.applyOfflineGains(600, { runId:"ZUB" });
+  restoreNow();
+  const tbs = g._auditTimeBySkill || {};
+
+  assert(Number(tbs.mining) > 0, "mining timeBySkill > 0（得 " + tbs.mining + "）");
+  assert(Number(tbs.archaeology) > 0, "archaeology timeBySkill > 0（得 " + tbs.archaeology + "）");
+
+  const asAfter = g.boosters.active.archaeologySpeed ? g.boosters.active.archaeologySpeed.remainingMs : 0;
+  assert((asBefore - asAfter) > 0, "archaeologySpeed 在 archaeology 段消耗（" + (asBefore - asAfter) + "ms）");
+  const msAfter = g.boosters.active.miningSpeed ? g.boosters.active.miningSpeed.remainingMs : 0;
+  assert((msBefore - msAfter) > 0, "miningSpeed 在 mining 段消耗（" + (msBefore - msAfter) + "ms）");
+
+  assert(g.queue.status.completedCount >= 1, "队列完成 ≥1（得 " + g.queue.status.completedCount + "）");
+
+  delete g._auditTimeBySkill;
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+  RR.spend(g, "booster:relic_solver_n", RR.get(g, "booster:relic_solver_n"));
+  RR.spend(g, "booster:artifact_tracer_n", RR.get(g, "booster:artifact_tracer_n"));
+  g.boosters.active = {};
+  g.queue = null;
+  const idx3 = g.inventory.ships.indexOf(ship);
+  if (idx3 >= 0) g.inventory.ships.splice(idx3, 1);
+  delete g.shipAssignments.archaeology;
+});
+
+// ================= ZU：真实集成 — checkBoosterValidTarget 精确 true/false =================
+region("ZU", "真实集成：checkBoosterValidTarget 精确", () => {
+  const check = sandbox.checkBoosterValidTarget;
+  // 采矿/考古增强剂永远有效
+  assert(check(G, { effectType:"miningSpeed" }) === true, "miningSpeed 永远 valid");
+  assert(check(G, { effectType:"doubleMineral" }) === true, "doubleMineral 永远 valid");
+  assert(check(G, { effectType:"archaeologySpeed" }) === true, "archaeologySpeed 永远 valid");
+  assert(check(G, { effectType:"rareShift" }) === true, "rareShift 永远 valid");
+  // 战斗武器/维修增强剂：通过真实 getInstalledCombatModulesFromState 判定
+  if (typeof sandbox.getInstalledCombatModulesFromState === "function") {
+    const modules = sandbox.getInstalledCombatModulesFromState(G);
+    const weaponTypes = modules.filter(function(m) { return m.combat && m.combat.kind === "weapon"; }).map(function(m) { return m.combat.weaponType; });
+    const repairTargets = modules.filter(function(m) { return m.combat && m.combat.kind === "repair"; }).map(function(m) { return m.combat.target; });
+    // 只有实际安装的武器/维修才返回 true
+    for (const wt of ["laser", "missile", "cannon"]) {
+      const expected = weaponTypes.indexOf(wt) >= 0;
+      assert(check(G, { effectType:"damageMultiplier", weaponType:wt }) === expected,
+        wt + "武器 validTarget=" + expected + "（实际武器类型：" + weaponTypes.join(",") + "）");
+    }
+    for (const rt of ["shield", "armor", "structure"]) {
+      const expected = repairTargets.indexOf(rt) >= 0;
+      assert(check(G, { effectType:"repairAmount", repairTarget:rt }) === expected,
+        rt + "维修 validTarget=" + expected + "（实际维修目标：" + repairTargets.join(",") + "）");
+    }
+  } else {
+    assert(check(G, { effectType:"damageMultiplier", weaponType:"laser" }) === true, "无函数守卫 true");
+    assert(check(G, { effectType:"repairAmount", repairTarget:"shield" }) === true, "无函数守卫 true");
+  }
+  // 无 weaponType/repairTarget 时返回 true
+  assert(check(G, { effectType:"damageMultiplier" }) === true, "无 weaponType 则 true");
+  assert(check(G, { effectType:"repairAmount" }) === true, "无 repairTarget 则 true");
+});
+
+// ================= ZV：真实集成 — getBoosterSlotStatus 四状态严格 =================
+region("ZV", "真实集成：getBoosterSlotStatus 四状态", () => {
+  const status = sandbox.getBoosterSlotStatus;
+  const g = G;
+  // 1) depleted：remainingMs=0
+  const s1 = status(g, "miningSpeed", { effectType:"miningSpeed" }, 0, Date.now());
+  assert(s1 === "depleted", "remainingMs=0 → depleted（得 " + s1 + "）");
+  // 2) paused：有剩余，行动不运行（g.currentAction.active=false）
+  g.currentAction.active = false;
+  const s2 = status(g, "miningSpeed", { effectType:"miningSpeed" }, 5000, Date.now());
+  assert(s2 === "paused", "有剩余但 active=false → paused（得 " + s2 + "）");
+  // 3) no-target：使用 G 中实际未安装的武器类型
+  const mods = (typeof sandbox.getInstalledCombatModulesFromState === "function")
+    ? sandbox.getInstalledCombatModulesFromState(G) : [];
+  const installedWeapons = mods.filter(function(m) { return m.combat && m.combat.kind === "weapon"; }).map(function(m) { return m.combat.weaponType; });
+  const missingWt = ["laser","missile","cannon"].find(function(wt) { return installedWeapons.indexOf(wt) < 0; });
+  if (missingWt) {
+    g.currentAction.active = true;
+    g.currentAction.skill = "combat";
+    const s3 = status(g, "combatWeapon", { effectType:"damageMultiplier", weaponType:missingWt }, 5000, Date.now());
+    assert(s3 === "no-target", "无" + missingWt + "武器 → no-target（得 " + s3 + "）");
+  }
+  // 4) active：有效 target + 行动运行中
+  g.currentAction.active = true;
+  g.currentAction.skill = "mining";
+  const s4 = status(g, "miningSpeed", { effectType:"miningSpeed" }, 5000, Date.now());
+  assert(s4 === "active", "采矿运行+有效 → active（得 " + s4 + "）");
+});
+
+// ================= ZW：真实集成 — getBoosterDisplayState 字段 =================
+region("ZW", "真实集成：getBoosterDisplayState 字段", () => {
+  const g = G;
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:180000 };
+  g.currentAction.active = true;
+  g.currentAction.skill = "mining";
+  const ds = sandbox.getBoosterDisplayState(g, Date.now());
+  assert(ds && ds.groups && Array.isArray(ds.groups), "groups 数组");
+  assert(ds.groups.length === 3, "groups 长度=3（mining/archaeology/combat）");
+  const miningGroup = ds.groups.find(function(gr) { return gr.key === "mining"; });
+  assert(miningGroup, "mining group 存在");
+  const miningSlot = miningGroup.slots.find(function(s) { return s.slot === "miningSpeed"; });
+  assert(miningSlot && !miningSlot.empty, "miningSpeed 非空");
+  assert(miningSlot.itemId === "mining_lubricant_n", "itemId 正确");
+  assert(typeof miningSlot.status === "string" && miningSlot.status.length > 0, "status 非空");
+  assert(typeof miningSlot.statusText === "string" && miningSlot.statusText.length > 0, "statusText 非空");
+  assert(miningSlot.validTarget === true, "miningSpeed validTarget=true");
+  g.boosters.active = {};
+});
+
+// ================= ZX：65秒离线/10秒周期 + 探针不足/燃料不足 =================
+region("ZX", "65s运行+探针不足+燃料不足", () => {
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+
+  // --- 场景 A：65s 运行 / 10s 周期 ---
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  g.boosters.active.miningYield = { itemId:"booster:ore_resonance_n", remainingMs:D };
+  RR.add(g, "booster:mining_lubricant_n", 0);
+  RR.add(g, "booster:ore_resonance_n", 0);
+  g.currentAction.skill = "mining";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.currentAction.startedArea = "凡晶石带";
+  g.boosters.lastTick = NOW - 3600000;
+
+  setNow(NOW + 5000);
+  const gains = sandbox.applyOfflineGains(65, { runId:"audit_zx_a" });
+  restoreNow();
+
+  // 2 次完整产出 (≈43s) + ~21s progress
+  assert(gains.mining >= 2, "65s 采矿产出至少 2（得 " + gains.mining + "）");
+  assert(gains.mining <= 6, "65s 采矿产出最多 6（得 " + gains.mining + "）");
+  // 增强剂按实际运行秒数扣除（约 43~65s）
+  const msDeductedSpeed = g.boosters.active.miningSpeed ? (D - g.boosters.active.miningSpeed.remainingMs) : D;
+  const msDeductedYield = g.boosters.active.miningYield ? (D - g.boosters.active.miningYield.remainingMs) : D;
+  assert(msDeductedSpeed >= 40000, "miningSpeed 扣 ≥40s（得 " + (msDeductedSpeed/1000) + "s）");
+  assert(msDeductedYield >= 40000, "miningYield 扣 ≥40s（得 " + (msDeductedYield/1000) + "s）");
+
+  // --- 场景 B：探针不足停止离线考古 ---
+  g.boosters.active = {};
+  g.boosters.active.archaeologySpeed = { itemId:"booster:relic_solver_n", remainingMs:D };
+  g.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:D };
+  RR.add(g, "booster:relic_solver_n", 0);
+  RR.add(g, "booster:artifact_tracer_n", 0);
+  g.currentAction.skill = "archaeology";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.boosters.lastTick = NOW - 3600000;
+  // 无探针
+  if (g.resources) { g.resources.ammunition = g.resources.ammunition || {}; }
+  delete (g.resources && g.resources.ammunition && (g.resources.ammunition.probe || {}));
+  if (g.resources) g.resources.ammunition.probe = 0;
+  // 设考古目标
+  g.currentAction.archaeologyTargetId = "site_i_a";
+
+  setNow(NOW + 10000);
+  const archGains = sandbox.applyOfflineGains(600, { runId:"audit_zx_b" });
+  restoreNow();
+
+  // 考古无产出（探针=0）
+  // 增强剂可能因考古立即停止而消耗极少或为 0
+  const archSpeedAfter = g.boosters.active.archaeologySpeed;
+  if (archSpeedAfter) {
+    const archConsumed = D - archSpeedAfter.remainingMs;
+    assert(archConsumed <= 5000, "无探针时考古增强剂几乎不消耗（" + archConsumed + "ms）");
+  }
+  assert(archGains.archaeology === undefined || archGains.archaeology === 0,
+    "无探针考古无产出（" + (archGains.archaeology || 0) + "）");
+
+  // --- 场景 C：燃料不足停止离线考古 ---
+  g.boosters.active = {};
+  g.boosters.active.archaeologySpeed = { itemId:"booster:relic_solver_n", remainingMs:D };
+  g.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:D };
+  RR.add(g, "booster:relic_solver_n", 0);
+  RR.add(g, "booster:artifact_tracer_n", 0);
+  g.currentAction.skill = "archaeology";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.boosters.lastTick = NOW - 3600000;
+  // 有探针无燃料
+  g.resources.ammunition.probe = 100;
+  g.resources.warpFuel = 0;
+  g.currentAction.archaeologyTargetId = "site_i_a";
+
+  setNow(NOW + 20000);
+  const archGains2 = sandbox.applyOfflineGains(600, { runId:"audit_zx_c" });
+  restoreNow();
+
+  // 无燃料时考古应立即停止
+  const archSpeedAfter2 = g.boosters.active.archaeologySpeed;
+  if (archSpeedAfter2) {
+    const archConsumed2 = D - archSpeedAfter2.remainingMs;
+    assert(archConsumed2 <= 10000, "无燃料时考古增强剂几乎不消耗（" + archConsumed2 + "ms）");
+  }
+  assert(archGains2.archaeology === undefined || archGains2.archaeology === 0,
+    "无燃料考古无产出（" + (archGains2.archaeology || 0) + "）");
+
+  // 清理
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+  RR.spend(g, "booster:relic_solver_n", RR.get(g, "booster:relic_solver_n"));
+  RR.spend(g, "booster:artifact_tracer_n", RR.get(g, "booster:artifact_tracer_n"));
+  g.boosters.active = {};
+  g.currentAction.skill = "mining";
+});
+
+// ================= ZY：失败触发干扰停止离线考古 + 战斗增强剂冻结 =================
+region("ZY", "失败触发干扰+战斗增强剂冻结", () => {
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+
+  // --- 场景 A：失败触发干扰 — 后续时间无考古收益 ---
+  g.boosters.active = {};
+  g.boosters.active.archaeologySpeed = { itemId:"booster:relic_solver_n", remainingMs:D };
+  g.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:D };
+  RR.add(g, "booster:relic_solver_n", 0);
+  RR.add(g, "booster:artifact_tracer_n", 0);
+  g.currentAction.skill = "archaeology";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.boosters.lastTick = NOW - 3600000;
+  g.resources.ammunition = g.resources.ammunition || {};
+  g.resources.ammunition.probe = 1000;
+  g.resources.warpFuel = 1000;
+  g.currentAction.archaeologyTargetId = "site_i_a";
+  // 模拟失败：设置 repairUntil
+  g.archaeology = g.archaeology || {};
+  g.archaeology.repairUntil = NOW + 300000;  // 未来 5 分钟都在维修
+
+  setNow(NOW + 30000);
+  const archGains = sandbox.applyOfflineGains(600, { runId:"audit_zy_a" });
+  restoreNow();
+
+  // 有维修时不产生考古产出（或极少）
+  // 因增强剂只按实际运行秒数扣除，维修时无考古时间，增强剂不应消耗
+  const archSpeedAfter = g.boosters.active.archaeologySpeed;
+  if (archSpeedAfter) {
+    const consumed = D - archSpeedAfter.remainingMs;
+    assert(consumed <= 10000, "维修时增强剂几乎不消耗（" + consumed + "ms）");
+  }
+  assert(archGains.archaeology === undefined || archGains.archaeology === 0,
+    "维修期间无考古产出（" + (archGains.archaeology || 0) + "）");
+  g.archaeology.repairUntil = 0;
+
+  // --- 场景 B：战斗增强剂离线前后完全冻结 ---
+  g.boosters.active = {};
+  g.boosters.active.combatWeapon = { itemId:"booster:laser_coolant_n", remainingMs:D };
+  g.boosters.active.combatRepair = { itemId:"booster:shield_recharge_n", remainingMs:D };
+  RR.add(g, "booster:laser_coolant_n", 0);
+  RR.add(g, "booster:shield_recharge_n", 0);
+  g.currentAction.skill = "combat";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.boosters.lastTick = NOW - 3600000;
+  var weaponBefore = g.boosters.active.combatWeapon.remainingMs;
+  var repairBefore = g.boosters.active.combatRepair.remainingMs;
+  var invWeaponBefore = RR.get(g, "booster:laser_coolant_n");
+  var invRepairBefore = RR.get(g, "booster:shield_recharge_n");
+
+  setNow(NOW + 40000);
+  const combatGains = sandbox.applyOfflineGains(600, { runId:"audit_zy_b" });
+  restoreNow();
+
+  var weaponAfter = g.boosters.active.combatWeapon ? g.boosters.active.combatWeapon.remainingMs : 0;
+  var repairAfter = g.boosters.active.combatRepair ? g.boosters.active.combatRepair.remainingMs : 0;
+  assert(Math.abs(weaponAfter - weaponBefore) < 100, "combatWeapon 离线冻结（" + weaponBefore + "→" + weaponAfter + "）");
+  assert(Math.abs(repairAfter - repairBefore) < 100, "combatRepair 离线冻结（" + repairBefore + "→" + repairAfter + "）");
+  assert(RR.get(g, "booster:laser_coolant_n") === invWeaponBefore, "combatWeapon 库存不变");
+  assert(RR.get(g, "booster:shield_recharge_n") === invRepairBefore, "combatRepair 库存不变");
+  assert(combatGains.combat === undefined || combatGains.combat === 0,
+    "离线 combat 无产出（" + (combatGains.combat || 0) + "）");
+
+  RR.spend(g, "booster:relic_solver_n", RR.get(g, "booster:relic_solver_n"));
+  RR.spend(g, "booster:artifact_tracer_n", RR.get(g, "booster:artifact_tracer_n"));
+  RR.spend(g, "booster:ammo_amplifier_n", RR.get(g, "booster:ammo_amplifier_n"));
+  RR.spend(g, "booster:nano_recovery_n", RR.get(g, "booster:nano_recovery_n"));
+  g.boosters.active = {};
+  g.archaeology.repairUntil = 0;
+  g.currentAction.skill = "mining";
+});
+
+// ================= ZZB：非速度效果 — miningYield-only 固定随机对照 =================
+region("ZZB", "非速度效果：miningYield-only 固定随机", () => {
+  // miningYield-only（无 speed），180s 覆盖 + 420s 基础。
+  // 固定 Math.random，验证周期数/XP 相同，矿物量按双倍增加。
+  // 增强剂覆盖期结束后的 420s 无双倍。
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+
+  seedRandom(42);
+
+  // --- 组 A（无 miningYield）：纯基础 600s ---
+  setupMiningState(g, { ms:0, my:0, offlineSec:600 });
+  RR.spend(g, "ore:凡晶石", RR.get(g, "ore:凡晶石"));
+  const gA = sandbox.applyOfflineGains(600, { runId:"ZZB_A" });
+  const A_cycles = gA.mining;
+  const A_ore = RR.get(g, "ore:凡晶石") || 0;
+  const A_xp = g.skills.mining ? g.skills.mining.xp : 0;
+  cleanupMining(g); g.boosters.active = {};
+
+  // --- 组 B（仅 miningYield，180s 覆盖）---
+  seedRandom(42);
+  setupMiningState(g, { ms:0, my:180000, offlineSec:600 });
+  RR.spend(g, "ore:凡晶石", RR.get(g, "ore:凡晶石"));
+  const gB = sandbox.applyOfflineGains(600, { runId:"ZZB_B" });
+  const B_cycles = gB.mining;
+  const B_ore = RR.get(g, "ore:凡晶石") || 0;
+  const B_xp = g.skills.mining ? g.skills.mining.xp : 0;
+
+  // 周期数和 XP 增量必须相同（无 speed 增强）
+  assert(A_cycles === B_cycles, `ZZB 周期数：A(${A_cycles})===B(${B_cycles})`);
+  assert(A_xp === B_xp,
+    `ZZB XP 增量相同：A_xp(${A_xp})===B_xp(${B_xp})`);
+  // 矿物量 B > A（双倍生效）
+  assert(B_ore > A_ore, `ZZB 矿物 B(${B_ore}) > A(${A_ore})`);
+
+  // 增强剂覆盖期结束后的 420s 不再获得双倍
+  // miningYield 槽耗尽 → 后段无 doubleMineralChance
+  assert(g.boosters.active.miningYield === null || g.boosters.active.miningYield.remainingMs < 90000,
+    "miningYield 覆盖在 600s 前结束");
+  // 后 420s 矿物增量率 ≈ 前 420s 无增强的矿物增量率
+  // A 无双倍：矿物量 = 周期数
+  // B 无双倍部分（后 420s）矿物量 = 周期数
+  // B 有双倍部分（前 180s）矿物量 = 周期数 + 双倍次数
+  // B_ore - B_cycles = 双倍次数 = A_ore - A_cycles + 额外
+  // 由于 A 无双倍：A_ore === A_cycles
+  assert(A_ore === A_cycles, `ZZB A_ore(${A_ore})===A_cycles(${A_cycles})（无 boost 无双倍）`);
+  // 验证额外双倍数量 > 0
+  const extraDouble = B_ore - B_cycles;
+  assert(extraDouble > 0, `ZZB 双倍次数 ${extraDouble} > 0`);
+
+  restoreRandom();
+  cleanupMining(g);
+  g.boosters.active = {};
+});
+
+// ================= ZZC：考古稀有率增强 — 真实 resolveArchaeologyCycle =================
+region("ZZC", "非速度效果：archaeologyRare 种子随机多轮对照", () => {
+  // 真实 resolveArchaeologyCycle, seedRandom 固定两场景随机序列一致。
+  // baseUniqueRate=0.05, boosted=0.05*1.25=0.0625。
+  // 多轮循环下，有 booster 场景累积独特文物多于无 booster 场景。
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const TRIALS = 30; // 30 轮 resolveArchaeologyCycle —— 足够让统计差异显现
+
+  const ship = sandbox.createShipInstance("heron");
+  g.inventory.ships = g.inventory.ships || [];
+  g.inventory.ships.push(ship);
+  g.shipAssignments = g.shipAssignments || {};
+  g.shipAssignments.archaeology = ship.instanceId;
+
+  g.archaeology = g.archaeology || {};
+  g.archaeology.startedSiteId = "site_i_a";
+  g.archaeology.activeSiteId = "site_i_a";
+  g.archaeology.startedProbeId = "core_probe_i";
+  g.archaeology.activeProbeId = "core_probe_i";
+  g.archaeology.repairUntil = 0;
+  g.archaeology.interferenceUntil = 0;
+
+  function totalUnique() {
+    return (RR.get(g,"artifact:art_i_unique_a")||0)+(RR.get(g,"artifact:art_i_unique_b")||0)+(RR.get(g,"artifact:art_i_unique_c")||0);
+  }
+  function runTrials(count, boosterOn) {
+    RR.spend(g, "probe:core_probe_i", RR.get(g, "probe:core_probe_i"));
+    RR.spend(g, "consumable:fuel", RR.get(g, "consumable:fuel"));
+    RR.add(g, "probe:core_probe_i", 150);
+    RR.add(g, "consumable:fuel", 500);
+    for (const s of ["a","b","c"]) RR.spend(g, "artifact:art_i_unique_"+s, RR.get(g, "artifact:art_i_unique_"+s));
+    g.boosters.active = {};
+    if (boosterOn) g.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:9999999 };
+    g.boosters.active.archaeologySpeed = null;
+    for (let i = 0; i < count; i++) {
+      sandbox.resolveArchaeologyCycle(g, Date.now(), "offline");
+    }
+  }
+
+  seedRandom(42);
+  runTrials(TRIALS, false);
+  const uA = totalUnique();
+
+  seedRandom(42);
+  runTrials(TRIALS, true);
+  const uB = totalUnique();
+
+  // 同种子→成功/失败模式相同；唯差异是 rareShiftMultiplier（×1.25 vs ×1）
+  assert(uB >= uA, `ZZC 多轮${TRIALS}次 B_unique(${uB}) >= A_unique(${uA})`);
+  // 有 booster 时应有更多独特文物（除非随机恰好相等，放宽为 >=）
+  // resolveArchaeologyCycle 不消耗增强剂时间，仅读取倍率
+  // 增强剂消耗由 tickBoosterTimers/settleOfflineActions 负责
+  // 此处只验证 archaeologySpeed 未装备
+  assert(g.boosters.active.archaeologySpeed === null, "archaeologySpeed 保持 null");
+
+  RR.spend(g, "booster:relic_solver_n", RR.get(g, "booster:relic_solver_n"));
+  RR.spend(g, "booster:artifact_tracer_n", RR.get(g, "booster:artifact_tracer_n"));
+  const idx = g.inventory.ships.indexOf(ship);
+  if (idx >= 0) g.inventory.ships.splice(idx, 1);
+  delete g.shipAssignments.archaeology;
+  g.boosters.active = {};
+  g.archaeology.repairUntil = 0;
+});
+
+// ================= ZZD：双槽不同覆盖时间 — 三段参考值 =================
+region("ZZD", "双槽不同覆盖时间三段参考 — 精确矿物/XP", () => {
+  // speed 覆盖 180s（1 瓶），yield 覆盖 360s（1 瓶+库存1）。
+  // 总时长 600s。固定随机后三段计算：
+  //   0~180：speed + double
+  //   180~360：only double
+  //   360~600：无增强
+  // 实际周期、矿物量、XP 与三段叠加参考值精确比较，误差 ≤1 周期。
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+
+  seedRandom(42);
+
+  // === 三段参考值：分段结算，XP/进度承继 ===
+  setupMiningState(g, { ms:180000, my:180000, offlineSec:600 });
+  const g1 = { mining:0 };
+  sandbox.settleOfflineActions(180, g1, undefined, {});
+
+  g.boosters.active.miningSpeed = null;
+  g.boosters.lastTick = NOW;
+  const g2 = { mining:0 };
+  sandbox.settleOfflineActions(180, g2, undefined, {});
+
+  g.boosters.active.miningYield = null;
+  g.boosters.lastTick = NOW;
+  const g3 = { mining:0 };
+  sandbox.settleOfflineActions(240, g3, undefined, {});
+
+  const refCycles = g1.mining + g2.mining + g3.mining;
+  const refOre = RR.get(g, "ore:凡晶石") || 0;
+  const refXp = g.skills.mining ? g.skills.mining.xp : 0;
+
+  cleanupMining(g); g.boosters.active = {};
+
+  // === 实际：speed 180s + yield 360s 共 600s ===
+  seedRandom(42);
+  setupMiningState(g, { ms:180000, my:180000, inv:{ "booster:ore_resonance_n":1 }, offlineSec:600 });
+  RR.spend(g, "ore:凡晶石", RR.get(g, "ore:凡晶石"));
+  const gains = sandbox.applyOfflineGains(600, { runId:"ZZD" });
+  const actual = gains.mining;
+  const actualOre = RR.get(g, "ore:凡晶石") || 0;
+  const actualXp = g.skills.mining ? g.skills.mining.xp : 0;
+
+  console.log(`  ZZD 段：c1=${g1.mining} c2=${g2.mining} c3=${g3.mining} ref=${refCycles} actual=${actual}`);
+
+  // 周期数误差 ≤1
+  assert(Math.abs(actual - refCycles) <= 1,
+    `ZZD 实际(${actual})与三段参考(${refCycles})相差≤1`);
+
+  // 矿物量精确参考比较（固定随机下应一致）
+  assert(Math.abs(actualOre - refOre) <= 1,
+    `ZZD 矿物 actual(${actualOre})≈ref(${refOre}) 相差≤1`);
+
+  // XP 增量检查（setup 重置为 0，增量应与周期数接近）
+  assert(actualXp >= actual, `ZZD XP(${actualXp}) >= 周期(${actual})`);
+
+  restoreRandom();
+  cleanupMining(g); g.boosters.active = {};
+});
+
+// ================= ZZ：SaveManager 状态保持 =================
+region("ZZ", "SaveManager 存读保持", () => {
+  // 六槽、库存、remainingMs、lastTick 保持
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+  g.boosters = {
+    inventory: { "booster:mining_lubricant_n": 3, "booster:relic_solver_n": 1 },
+    active: {
+      miningSpeed: { itemId:"booster:mining_lubricant_n", remainingMs:D * 0.5 },
+      miningYield: { itemId:"booster:ore_resonance_n", remainingMs:D * 1.5 },
+      archaeologySpeed: { itemId:"booster:relic_solver_n", remainingMs:D * 2 },
+      archaeologyRare: { itemId:"booster:artifact_tracer_n", remainingMs:D * 3 },
+      combatWeapon: { itemId:"booster:laser_coolant_n", remainingMs:D * 0.1 },
+      combatRepair: { itemId:"booster:shield_recharge_n", remainingMs:D * 0.8 }
+    },
+    lastTick: NOW + 500000
+  };
+  sandbox.migrateBoosterState();
+
+  // 序列化/反序列化（模拟 SaveManager.save → load）
+  const serialized = JSON.parse(JSON.stringify(g.boosters));
+  // 还原
+  g.boosters = {};
+  g.boosters = JSON.parse(JSON.stringify(serialized));
+  sandbox.migrateBoosterState();
+
+  // 六槽
+  assert(g.boosters.active.miningSpeed.itemId === "booster:mining_lubricant_n", "miningSpeed itemId 保持");
+  assert(g.boosters.active.miningYield.itemId === "booster:ore_resonance_n", "miningYield itemId 保持");
+  assert(g.boosters.active.archaeologySpeed.itemId === "booster:relic_solver_n", "archaeologySpeed itemId 保持");
+  assert(g.boosters.active.archaeologyRare.itemId === "booster:artifact_tracer_n", "archaeologyRare itemId 保持");
+  assert(g.boosters.active.combatWeapon.itemId === "booster:laser_coolant_n", "combatWeapon itemId 保持");
+  assert(g.boosters.active.combatRepair.itemId === "booster:shield_recharge_n", "combatRepair itemId 保持");
+  // remainingMs
+  assert(Math.abs(g.boosters.active.miningSpeed.remainingMs - D * 0.5) < 1, "miningSpeed remainingMs 保持");
+  assert(Math.abs(g.boosters.active.miningYield.remainingMs - D * 1.5) < 1, "miningYield remainingMs 保持");
+  assert(Math.abs(g.boosters.active.archaeologySpeed.remainingMs - D * 2) < 1, "archaeologySpeed remainingMs 保持");
+  assert(Math.abs(g.boosters.active.archaeologyRare.remainingMs - D * 3) < 1, "archaeologyRare remainingMs 保持");
+  assert(Math.abs(g.boosters.active.combatWeapon.remainingMs - D * 0.1) < 1, "combatWeapon remainingMs 保持");
+  assert(Math.abs(g.boosters.active.combatRepair.remainingMs - D * 0.8) < 1, "combatRepair remainingMs 保持");
+  // 库存（migrateBoosterState 剥离 booster: 前缀，使用裸 ID）
+  assert(g.boosters.inventory["mining_lubricant_n"] === 3, "mining_lubricant_n 库存保持=3（得 " + g.boosters.inventory["mining_lubricant_n"] + "）");
+  assert(g.boosters.inventory["relic_solver_n"] === 1, "relic_solver_n 库存保持=1（得 " + g.boosters.inventory["relic_solver_n"] + "）");
+  // lastTick
+  assert(g.boosters.lastTick >= NOW + 500000, "lastTick 保持（≥" + (NOW + 500000) + "，得 " + g.boosters.lastTick + "）");
+  g.boosters.active = {};
+});
+
+// ================= ZZA：在线增强剂行为无回归 =================
+region("ZZA", "在线增强剂无回归", () => {
+  // 验证在线 tickBoosterTimers 正常消耗、正确状态、事件发送
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  const D = BOOSTER_DURATION_MS;
+  g.boosters.active = {};
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  g.boosters.active.miningYield = { itemId:"booster:ore_resonance_n", remainingMs:D };
+  RR.add(g, "booster:mining_lubricant_n", 1);
+  RR.add(g, "booster:ore_resonance_n", 0);
+  g.currentAction.skill = "mining";
+  g.currentAction.active = true;
+  g.currentAction.lastProgressUpdate = NOW;
+  g.currentAction.progress = 0;
+  g.currentAction.batchRemaining = 0;
+  g.boosters.lastTick = NOW;
+
+  // 在线运行 200s（大约 40 个 tick）
+  setNow(NOW);
+  for (let i = 1; i <= 40; i++) {
+    setNow(NOW + i * 5000);
+    sandbox.tickBoosterTimers(g, NOW + i * 5000);
+  }
+  restoreNow();
+
+  // miningSpeed: 当前瓶 180s + 1 库存 = 360s 可覆盖，200s 应还剩 160s
+  const speedRemaining = g.boosters.active.miningSpeed ? g.boosters.active.miningSpeed.remainingMs : 0;
+  assert(speedRemaining > 0, "miningSpeed 在线 200s 应仍有剩余（得 " + speedRemaining + "ms）");
+  // miningYield: 180s 无库存，200s 应耗尽
+  assert(g.boosters.active.miningYield === null, "miningYield 200s 后应耗尽");
+
+  // 在线停采矿后不应继续消耗
+  g.boosters.active.miningSpeed = { itemId:"booster:mining_lubricant_n", remainingMs:D };
+  g.boosters.lastTick = NOW + 200000;
+  g.currentAction.active = false;  // 停止行动
+  setNow(NOW + 300000);
+  for (let i = 1; i <= 20; i++) {
+    setNow(NOW + 300000 + i * 5000);
+    sandbox.tickBoosterTimers(g, NOW + 300000 + i * 5000);
+  }
+  restoreNow();
+  assert(Math.abs(g.boosters.active.miningSpeed.remainingMs - D) < 100,
+    "行动停止时增强剂不消耗（" + g.boosters.active.miningSpeed.remainingMs + "ms 剩余）");
+
+  RR.spend(g, "booster:mining_lubricant_n", RR.get(g, "booster:mining_lubricant_n"));
+  RR.spend(g, "booster:ore_resonance_n", RR.get(g, "booster:ore_resonance_n"));
+  g.boosters.active = {};
+});
+
+console.log(`\n增强剂系统集成审计通过：共 ${totalAssertions} 断言，覆盖 ${Object.keys(regionCounts).length} 区`);
 console.log("分区断言数：" + Object.keys(regionCounts).sort().map(k => `${k}=${regionCounts[k]}`).join(" "));

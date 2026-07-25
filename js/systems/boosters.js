@@ -1,0 +1,493 @@
+/* ================================================================
+   增强剂系统 Phase 2B — 统一纯函数层
+   放在所有效果消费者之前加载（index.html 中紧跟 js/data/boosters.js）。
+   ================================================================ */
+
+/* ----------------------------------------------------------------
+   基础查询
+   ---------------------------------------------------------------- */
+function getBoosterItemFromState(state, id) {
+  if (!id) return null;
+  const key = String(id).startsWith("booster:") ? String(id).slice("booster:".length) : String(id);
+  return (typeof getBoosterItem === "function") ? getBoosterItem(key) : null;
+}
+
+function getActiveBoosterState(state) {
+  return (state && state.boosters && state.boosters.active) || {};
+}
+
+function normalizeActiveBoosterEntry(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  const itemId = entry.itemId;
+  if (typeof itemId !== "string") return null;
+  const item = getBoosterItemFromState(null, itemId);
+  if (!item) return null;
+  const remainingMs = Number(entry.remainingMs);
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return null;
+  return { itemId, remainingMs };
+}
+
+/* ----------------------------------------------------------------
+   六个槽 → 行动映射
+   ---------------------------------------------------------------- */
+function getActionBoosterSlots(actionKey) {
+  switch (actionKey) {
+    case "mining": return ["miningSpeed", "miningYield"];
+    case "archaeology": return ["archaeologySpeed", "archaeologyRare"];
+    case "combat": return ["combatWeapon", "combatRepair"];
+    default: return [];
+  }
+}
+
+/* ----------------------------------------------------------------
+   装备校验（只用 inventory 检查，不修改状态）
+   ---------------------------------------------------------------- */
+function canEquipBooster(state, slot, itemId) {
+  if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) {
+    return { ok:false, reason:"invalid-slot" };
+  }
+  const item = getBoosterItemFromState(state, itemId);
+  if (!item) return { ok:false, reason:"unknown-item" };
+  if (item.slot !== slot) return { ok:false, reason:"slot-mismatch" };
+  const inv = ResourceRegistry.get(state, item.itemId);
+  if (!(inv >= 1)) return { ok:false, reason:"insufficient-inventory" };
+  // 同系列不同品质互斥（不测试期同时装备两个同系列）
+  const active = getActiveBoosterState(state);
+  for (const s of BOOSTER_SLOTS) {
+    const e = active[s];
+    if (!e) continue;
+    const existing = getBoosterItemFromState(state, e.itemId);
+    if (existing && existing.series === item.series && s !== slot) {
+      return { ok:false, reason:"series-conflict" };
+    }
+  }
+  return { ok:true };
+}
+
+/* ----------------------------------------------------------------
+   有效目标检测：通过真实已安装装备判断
+   ---------------------------------------------------------------- */
+function checkBoosterValidTarget(state, item) {
+  if (!item) return true;
+  // 采矿 / 考古增强剂永远有有效目标
+  if (item.effectType === "miningSpeed" || item.effectType === "doubleMineral" ||
+      item.effectType === "archaeologySpeed" || item.effectType === "rareShift") {
+    return true;
+  }
+  // 战斗武器增强剂：需当前舰船有对应武器类型
+  if (item.effectType === "damageMultiplier") {
+    if (!item.weaponType) return true;
+    if (typeof getInstalledCombatModulesFromState !== "function") return true;
+    const modules = getInstalledCombatModulesFromState(state);
+    return modules.some(function(m) {
+      return m && m.combat && m.combat.kind === "weapon" && m.combat.weaponType === item.weaponType;
+    });
+  }
+  // 战斗维修增强剂：需当前舰船有对应主动维修器
+  if (item.effectType === "repairAmount") {
+    if (!item.repairTarget) return true;
+    if (typeof getInstalledCombatModulesFromState !== "function") return true;
+    const modules = getInstalledCombatModulesFromState(state);
+    return modules.some(function(m) {
+      return m && m.combat && m.combat.kind === "repair" && m.combat.target === item.repairTarget;
+    });
+  }
+  return true;
+}
+
+/* ----------------------------------------------------------------
+   时间消耗纯计算（不修改任何状态）
+   逐瓶事件：每瓶分别触发 consumed → autoRefilled，最后无库存时 consumed → depleted。
+   返回值：{ entry: {itemId, remainingMs} | null, consumed:number, depleted:boolean, events:array }
+   events 元素含 type 和可选 fromInventory（autoRefilled 时为 1）。
+   ---------------------------------------------------------------- */
+function calculateBoosterTimeConsumption(entry, elapsedMs, invCount) {
+  if (!entry || typeof entry !== "object" || !entry.itemId) {
+    return { entry:null, consumed:0, depleted:false, events:[] };
+  }
+  if (!(elapsedMs > 0)) {
+    return { entry:{ itemId:entry.itemId, remainingMs:entry.remainingMs || 0 }, consumed:0, depleted:false, events:[] };
+  }
+  var DUR = typeof BOOSTER_DURATION_MS === "number" ? BOOSTER_DURATION_MS : 180000;
+  var itemId = entry.itemId;
+  var remaining = Number(entry.remainingMs);
+  if (!Number.isFinite(remaining) || remaining <= 0) remaining = 0;
+  var inv = Math.max(0, Math.floor(Number(invCount) || 0));
+
+  // 当前瓶未耗尽
+  if (elapsedMs < remaining) {
+    return { entry:{ itemId:itemId, remainingMs:remaining - elapsedMs }, consumed:0, depleted:false, events:[] };
+  }
+
+  // 当前瓶耗尽
+  var events = [{ type:"booster:consumed" }];
+  var need = elapsedMs - remaining;  // 当前瓶耗尽后仍需覆盖的时间
+  var consumed = 0;
+
+  // 逐瓶从库存补充
+  while (need > 0) {
+    if (inv <= 0) {
+      // 库存耗尽
+      events.push({ type:"booster:depleted" });
+      return { entry:null, consumed:consumed, depleted:true, events:events };
+    }
+    inv--;
+    consumed++;
+
+    if (need >= DUR) {
+      // 这瓶也被完整消耗
+      events.push({ type:"booster:autoRefilled", fromInventory:1 });
+      events.push({ type:"booster:consumed" });
+      need -= DUR;
+    } else {
+      // 这瓶覆盖剩余时间
+      events.push({ type:"booster:autoRefilled", fromInventory:1 });
+      var newRemaining = DUR - need;
+      return { entry:{ itemId:itemId, remainingMs:newRemaining }, consumed:consumed, depleted:false, events:events };
+    }
+  }
+
+  // need == 0：当前瓶恰好耗尽，无需更多时间
+  // 尝试自动续瓶（如果有库存）
+  if (inv > 0) {
+    inv--;
+    consumed++;
+    events.push({ type:"booster:autoRefilled", fromInventory:1 });
+    return { entry:{ itemId:itemId, remainingMs:DUR }, consumed:consumed, depleted:false, events:events };
+  }
+  // 无库存可续
+  events.push({ type:"booster:depleted" });
+  return { entry:null, consumed:consumed, depleted:true, events:events };
+}
+
+/* ----------------------------------------------------------------
+   时间消耗应用（修改状态 + 发出事件）
+   opts.offline: 离线结算时为 true，事件带 offline:true
+   ---------------------------------------------------------------- */
+function applyBoosterTimeConsumption(state, slot, elapsedMs, now, opts) {
+  var active = getActiveBoosterState(state);
+  var entry = active[slot];
+  if (!entry || !entry.itemId) return { consumed:0, depleted:false, events:[] };
+  var itemId = entry.itemId;
+  var inv = ResourceRegistry.get(state, itemId);
+  var result = calculateBoosterTimeConsumption(entry, elapsedMs, inv);
+  var offline = !!(opts && opts.offline);
+
+  // 应用状态变更
+  if (result.consumed > 0) {
+    ResourceRegistry.spend(state, itemId, result.consumed);
+  }
+  if (result.depleted) {
+    active[slot] = null;
+  } else if (result.entry) {
+    active[slot] = {
+      itemId: result.entry.itemId,
+      remainingMs: result.entry.remainingMs
+    };
+  } else {
+    active[slot] = null;
+  }
+  state._dirty = true;
+
+  // 发出事件（填充 slot 等上下文字段）
+  var emitted = [];
+  for (var i = 0; i < result.events.length; i++) {
+    var ev = result.events[i];
+    var payload;
+    switch (ev.type) {
+      case "booster:consumed":
+        payload = { slot:slot, itemId:itemId };
+        break;
+      case "booster:autoRefilled":
+        payload = { slot:slot, itemId:itemId, fromInventory:1 };
+        break;
+      case "booster:depleted":
+        payload = { slot:slot, itemId:itemId };
+        break;
+      default:
+        continue;
+    }
+    if (typeof GameEvents !== "undefined") {
+      var eventObj = GameEvents.emit(ev.type, payload, {
+        offline:offline,
+        source: offline ? "offline-booster" : "booster-timer"
+      });
+      emitted.push(eventObj);
+    }
+  }
+  return { consumed:result.consumed, depleted:result.depleted, events:emitted };
+}
+
+/* ----------------------------------------------------------------
+   在线计时：每 gameTick 调用，推进六槽时间
+   必须在 gameTick 顶部调用，确保 lastTick 每个 tick 都推进。
+   ---------------------------------------------------------------- */
+function tickBoosterTimers(state, now) {
+  var boosters = state.boosters;
+  if (!boosters) return;
+  var lastTick = Number(boosters.lastTick) || now;
+  var elapsed = now - lastTick;
+  if (!(elapsed > 0)) { boosters.lastTick = now; return; }
+  if (elapsed > 60000) elapsed = 60000; // 安全夹紧（正常在线 tick ≈1s）
+
+  var action = state.currentAction;
+  var running = (action && action.active) ? action.skill : null;
+
+  var runMining = false, runArch = false, runCombat = false;
+
+  if (running === "mining") {
+    var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;
+    var canMine = area && (typeof canMineArea === "function") && canMineArea(area);
+    runMining = canMine && !((typeof isCargoFull === "function") && isCargoFull());
+  } else if (running === "archaeology") {
+    var arch = state.archaeology;
+    if (arch) {
+      runArch = (!arch.repairUntil || arch.repairUntil <= now) &&
+                (!arch.interferenceUntil || arch.interferenceUntil <= now);
+    }
+  } else if (running === "combat") {
+    runCombat = Boolean(state.combat && state.combat.active);
+  }
+
+  if (runMining) {
+    applyBoosterTimeConsumption(state, "miningSpeed", elapsed, now);
+    applyBoosterTimeConsumption(state, "miningYield", elapsed, now);
+  }
+  if (runArch) {
+    applyBoosterTimeConsumption(state, "archaeologySpeed", elapsed, now);
+    applyBoosterTimeConsumption(state, "archaeologyRare", elapsed, now);
+  }
+  if (runCombat) {
+    applyBoosterTimeConsumption(state, "combatWeapon", elapsed, now);
+    applyBoosterTimeConsumption(state, "combatRepair", elapsed, now);
+  }
+
+  // 无论是否消耗，lastTick 必须推进（防止恢复后追扣）
+  boosters.lastTick = now;
+}
+
+/* ----------------------------------------------------------------
+   效果聚合（纯函数，读取 state.boosters.active 合成乘区）
+   返回：
+     miningSpeedMultiplier    number
+     doubleMineralChance      number
+     archaeologySpeedMultiplier number
+     rareShiftMultiplier      number
+     weaponDamageMultiplier   { laser, missile, cannon }
+     repairMultiplier         { shield, armor, structure }
+     activeEntries            { [slot]: { itemId, name, quality, effectType, effectValue, remainingMs } }
+   ---------------------------------------------------------------- */
+function getBoosterEffectState(state) {
+  var active = getActiveBoosterState(state);
+  var eff = {
+    miningSpeedMultiplier: 1,
+    doubleMineralChance: 0,
+    archaeologySpeedMultiplier: 1,
+    rareShiftMultiplier: 1,
+    weaponDamageMultiplier: { laser:1, missile:1, cannon:1 },
+    repairMultiplier: { shield:1, armor:1, structure:1 },
+    activeEntries: {}
+  };
+  var slots = (Array.isArray(BOOSTER_SLOTS) ? BOOSTER_SLOTS : []);
+  for (var i = 0; i < slots.length; i++) {
+    var slot = slots[i];
+    var entry = active[slot];
+    if (!entry || !entry.itemId) continue;
+    var item = getBoosterItemFromState(null, entry.itemId);
+    if (!item) continue;
+    var remainingMs = Number(entry.remainingMs);
+    if (!(remainingMs > 0)) continue;
+    eff.activeEntries[slot] = {
+      itemId: item.id,
+      name: item.name,
+      quality: item.quality,
+      effectType: item.effectType,
+      effectValue: item.effectValue,
+      remainingMs: remainingMs
+    };
+    switch (item.effectType) {
+      case "miningSpeed":
+        eff.miningSpeedMultiplier *= (1 + Number(item.effectValue));
+        break;
+      case "doubleMineral": {
+        var val = Number(item.effectValue) || 0;
+        if (val > eff.doubleMineralChance) eff.doubleMineralChance = val;
+        break;
+      }
+      case "archaeologySpeed":
+        eff.archaeologySpeedMultiplier *= (1 + Number(item.effectValue));
+        break;
+      case "rareShift":
+        eff.rareShiftMultiplier *= Number(item.effectValue) || 1;
+        break;
+      case "damageMultiplier":
+        if (item.weaponType && item.weaponType in eff.weaponDamageMultiplier) {
+          eff.weaponDamageMultiplier[item.weaponType] *= (1 + Number(item.effectValue));
+        }
+        break;
+      case "repairAmount":
+        if (item.repairTarget && item.repairTarget in eff.repairMultiplier) {
+          eff.repairMultiplier[item.repairTarget] *= (1 + Number(item.effectValue));
+        }
+        break;
+    }
+  }
+  return eff;
+}
+
+/* ----------------------------------------------------------------
+   纯函数：双倍矿物一次性骰子
+   返回 true/false；不修改任何状态
+   ---------------------------------------------------------------- */
+function rollDoubleMineral(chance, randomFn) {
+  if (!(chance > 0)) return false;
+  var rng = typeof randomFn === "function" ? randomFn : Math.random;
+  return rng() < chance;
+}
+
+/* ----------------------------------------------------------------
+   纯函数：考古稀有率（相对倍率×baseUniqueRate，上限 0.99）
+   ---------------------------------------------------------------- */
+function getBoosterArchaeologyEffectiveUniqueRate(baseUniqueRate, rareShiftMultiplier) {
+  var mult = Number(rareShiftMultiplier);
+  if (!(mult > 0)) return baseUniqueRate;
+  return Math.min(0.99, baseUniqueRate * mult);
+}
+
+/* ----------------------------------------------------------------
+   槽位状态判定（用于 UI 显示）
+   返回："active" | "paused" | "no-target" | "depleted"
+   ---------------------------------------------------------------- */
+function getBoosterSlotStatus(state, slot, item, remainingMs, now) {
+  if (!(remainingMs > 0)) return "depleted";
+  // 检查有效目标
+  if (!checkBoosterValidTarget(state, item)) return "no-target";
+  // 检查行动是否运行且本槽相关
+  var action = state.currentAction;
+  var running = action && action.active ? action.skill : null;
+  var relevantSlots = getActionBoosterSlots(running);
+  if (!relevantSlots.indexOf || relevantSlots.indexOf(slot) < 0) return "paused";
+  // 行动运行中，检查是否暂停
+  if (running === "mining") {
+    var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;
+    var canMine = area && (typeof canMineArea === "function") && canMineArea(area);
+    if (!canMine || ((typeof isCargoFull === "function") && isCargoFull())) return "paused";
+  } else if (running === "archaeology") {
+    var arch = state.archaeology;
+    if (arch && ((arch.repairUntil && arch.repairUntil > now) || (arch.interferenceUntil && arch.interferenceUntil > now))) return "paused";
+  } else if (running === "combat") {
+    if (!state.combat || !state.combat.active) return "paused";
+  }
+  return "active";
+}
+
+/* ----------------------------------------------------------------
+   显示态（UI 消费）
+   ---------------------------------------------------------------- */
+function getBoosterDisplayState(state, now) {
+  var active = getActiveBoosterState(state);
+  var effect = getBoosterEffectState(state);
+  var groups = {
+    mining:   { label:"采矿",   slots:["miningSpeed","miningYield"] },
+    archaeology: { label:"考古", slots:["archaeologySpeed","archaeologyRare"] },
+    combat:   { label:"战斗",   slots:["combatWeapon","combatRepair"] }
+  };
+  var result = { effect:effect, activeSlots:{}, groups:[] };
+  for (var groupKey in groups) {
+    var group = groups[groupKey];
+    var items = group.slots.map(function(slot) {
+      var entry = active[slot];
+      var display = { slot:slot, empty:true };
+      if (entry && entry.itemId) {
+        var item = getBoosterItemFromState(null, entry.itemId);
+        if (item) {
+          var remainingMs = Number(entry.remainingMs) || 0;
+          var inv = (typeof ResourceRegistry !== "undefined")
+            ? ResourceRegistry.get(state, item.itemId) : 0;
+          var remainingSec = Math.ceil(remainingMs / 1000);
+          var mm = Math.floor(remainingSec / 60);
+          var ss = remainingSec % 60;
+          var status = getBoosterSlotStatus(state, slot, item, remainingMs, now || Date.now());
+          display = {
+            slot:slot, empty:false,
+            itemId: item.id,
+            name: item.name,
+            quality: item.quality,
+            qualityName: item.qualityName || "",
+            effectText: (typeof describeBoosterEffect === "function")
+              ? describeBoosterEffect(item.effectType, item.effectValue) : "",
+            remainingMs: remainingMs,
+            remainingText: (remainingMs > 0) ? (mm + ":" + String(ss).padStart(2, "0")) : "耗尽",
+            inventory: inv,
+            active: status === "active",
+            status: status,
+            statusText: {
+              "active": "生效中",
+              "paused": "已装载 · 行动暂停",
+              "no-target": "已装载 · 当前配置无有效目标",
+              "depleted": "已耗尽"
+            }[status] || "已耗尽",
+            effectType: item.effectType,
+            effectValue: item.effectValue,
+            weaponType: item.weaponType || null,
+            repairTarget: item.repairTarget || null,
+            validTarget: checkBoosterValidTarget(state, item)
+          };
+        }
+      }
+      return display;
+    });
+    result.groups.push({ key:groupKey, label:group.label, slots:items });
+  }
+  return result;
+}
+
+/* ----------------------------------------------------------------
+   离线分段结算辅助：获取某槽增强剂的总剩余秒数（当前瓶 + 库存）
+   ---------------------------------------------------------------- */
+function getBoosterTotalRemainingSeconds(state, slot) {
+  var entry = getActiveBoosterState(state)[slot];
+  if (!entry || !entry.itemId) return 0;
+  var inv = ResourceRegistry.get(state, entry.itemId);
+  var DUR_S = (typeof BOOSTER_DURATION_MS === "number" ? BOOSTER_DURATION_MS : 180000) / 1000;
+  var remainingS = (Number(entry.remainingMs) || 0) / 1000;
+  return remainingS + Math.max(0, Math.floor(inv)) * DUR_S;
+}
+
+/* ----------------------------------------------------------------
+   离线结算（分段）
+   将离线时间按增强剂耗尽点分段，每段用当前效果结算行动，
+   再扣增强剂时间。库存耗尽后剩余时间按无增强剂倍率结算。
+   elapsedMs = 离线期间该行动实际运行的毫秒数
+   skillKey = "mining" | "archaeology" | null（combat 不结算）
+   注意：此函数仅扣增强剂时间，不结算行动（行动结算由 offline.js 负责）
+   ---------------------------------------------------------------- */
+function settleOfflineBoosters(state, elapsedMs, skillKey) {
+  var slots = getActionBoosterSlots(skillKey);
+  if (!slots.length || !(elapsedMs > 0)) return false;
+  for (var i = 0; i < slots.length; i++) {
+    applyBoosterTimeConsumption(state, slots[i], elapsedMs, Date.now(), { offline:true });
+  }
+  if (state.boosters) state.boosters.lastTick = Date.now();
+  return true;
+}
+
+/* ----------------------------------------------------------------
+   挂 window（普通 script 全局加载约定）
+   ---------------------------------------------------------------- */
+window.getBoosterItemFromState = getBoosterItemFromState;
+window.getActiveBoosterState = getActiveBoosterState;
+window.normalizeActiveBoosterEntry = normalizeActiveBoosterEntry;
+window.getActionBoosterSlots = getActionBoosterSlots;
+window.canEquipBooster = canEquipBooster;
+window.checkBoosterValidTarget = checkBoosterValidTarget;
+window.calculateBoosterTimeConsumption = calculateBoosterTimeConsumption;
+window.applyBoosterTimeConsumption = applyBoosterTimeConsumption;
+window.tickBoosterTimers = tickBoosterTimers;
+window.getBoosterEffectState = getBoosterEffectState;
+window.rollDoubleMineral = rollDoubleMineral;
+window.getBoosterArchaeologyEffectiveUniqueRate = getBoosterArchaeologyEffectiveUniqueRate;
+window.getBoosterDisplayState = getBoosterDisplayState;
+window.getBoosterSlotStatus = getBoosterSlotStatus;
+window.getBoosterTotalRemainingSeconds = getBoosterTotalRemainingSeconds;
+window.settleOfflineBoosters = settleOfflineBoosters;

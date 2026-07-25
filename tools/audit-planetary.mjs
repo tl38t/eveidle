@@ -585,5 +585,112 @@ region("ZH", "防重复结算与事件", () => {
   assert(expiredEvents.length === 1, "离线到期只应触发一次 expired");
 });
 
+// ================= ZI：storageMax = ceil(21600 / interval) 精确验证 =================
+region("ZI", "六行星解锁等级 storageMax 精确值", () => {
+  // Lv.1 lava/gas, Lv.20 ice, Lv.40 plasma, Lv.60 temperate, Lv.80 storm
+  const tests = [
+    { level:1, type:"lava",      expected:2204 },
+    { level:1, type:"gas",       expected:2204 },
+    { level:20, type:"ice",      expected:2016 },
+    { level:40, type:"plasma",   expected:2160 },
+    { level:60, type:"temperate",expected:2160 },
+    { level:80, type:"storm",    expected:1872 }
+  ];
+  for (const t of tests) {
+    const g = sandbox.gameState;
+    g.skills.planetaryIndustry = { lvl:t.level, xp:0 };
+    const sm = sandbox.getPlanetStorageMaxFromState(g, t.type);
+    assert(sm === t.expected, `Lv.${t.level} ${t.type} storageMax=${t.expected}（得 ${sm}）`);
+    const interval = sandbox.getPlanetOutputIntervalFromState(g, t.type);
+    assert(sm * interval >= 21600, `${t.type} storageMax×interval≥21600（${sm}×${interval}=${sm*interval}）`);
+    assert(sm * interval < 21600 + interval, `${t.type} storageMax×interval<21600+interval（${sm}×${interval}=${sm*interval}，上限=${21600+interval}）`);
+  }
+});
+
+// ================= ZJ：多等级 storageMax 验证 =================
+region("ZJ", "多等级 storageMax 动态增长", () => {
+  const g = sandbox.gameState;
+  for (const level of [1, 20, 40, 60, 80, 99]) {
+    g.skills.planetaryIndustry = { lvl:level, xp:0 };
+    for (const type of ["lava", "gas", "ice", "plasma", "temperate", "storm"]) {
+      if (level < getPlanetTypeLevel(type)) continue; // 未解锁不验证
+      const sm = sandbox.getPlanetStorageMaxFromState(g, type);
+      const interval = sandbox.getPlanetOutputIntervalFromState(g, type);
+      assert(sm * interval >= 21600 - 1e-9, "Lv." + level + " " + type + " storageMax*interval>=21600（"+sm+"*"+interval+"="+(sm*interval)+"）");
+      assert(sm * interval < 21600 + interval + 1e-9, "Lv." + level + " " + type + " storageMax*interval<21600+interval（"+sm+"*"+interval+"="+(sm*interval)+"，上限="+(21600+interval)+"）");
+      assert(Number.isInteger(sm) && sm > 0, `Lv.${level} ${type} storageMax=${sm} 为正整数`);
+    }
+  }
+});
+
+// Helper for above
+function getPlanetTypeLevel(type) {
+  const cfg = PLANET_TYPES.find(p => p.id === type);
+  return cfg ? cfg.level : 99;
+}
+// ================= ZK：在线 6 小时刚好满仓 =================
+region("ZK", "在线 6 小时满仓停产", () => {
+  const g = sandbox.gameState;
+  g.skills.planetaryIndustry = { lvl:1, xp:0 };
+  const interval = sandbox.getPlanetOutputInterval("lava");
+  const storageMax = sandbox.getPlanetStorageMaxFromState(g, "lava");
+  // 从满仓状态开始（storage=storageMax），6 小时后应满仓且停滞
+  setGlobalPlanet({ id:"planet_1", planetType:"lava", deployedAt:NOW - 20000, duration:9999999, storage:storageMax - 1, lastTick:NOW - 15000, progress:0, active:true });
+  const now = NOW;
+  sandbox.planetaryTick(now);
+  const dep = sandbox.gameState.planetary.deployments[0];
+  assert(dep.storage === storageMax, `6 小时后满仓（${dep.storage} / ${storageMax}）`);
+  // 再 tick 不应突破 storageMax
+  sandbox.planetaryTick(now + 10000);
+  const dep2 = sandbox.gameState.planetary.deployments[0];
+  assert(dep2.storage === storageMax, "满仓后不再增产");
+  // 收取后恢复
+  const dispatch = sandbox.dispatchGameAction;
+  dispatch(g, { type:"planetary/collect", id:"planet_1", cargoCapacity:10000000 }, now + 20000);
+  // 采集后 storage 应减少
+  const dep3 = sandbox.gameState.planetary.deployments[0];
+  assert(dep3.storage < storageMax, "收取后 storage 减少（" + dep3.storage + " < " + storageMax + "）");
+});
+
+// ================= ZL：离线 6 小时与在线一致 =================
+region("ZL", "离线 6 小时与在线结果一致", () => {
+  const g = sandbox.gameState;
+  g.skills.planetaryIndustry = { lvl:1, xp:0 };
+  const storageMax = sandbox.getPlanetStorageMaxFromState(g, "lava");
+  // 固定时钟
+  vm.runInContext('globalThis.__auditRealDateNow = Date.now; Date.now = () => ' + NOW + ';', sandbox);
+  // 离线 6 小时
+  setGlobalPlanet({ id:"planet_1", planetType:"lava", deployedAt:NOW - 21620000, duration:9999999, storage:0, lastTick:NOW - 21620000, progress:0, active:true });
+  const gains = { planetaryIndustry:0 };
+  sandbox.settleOfflinePlanets(21610, gains); // 略超 6 小时
+  const dep = sandbox.gameState.planetary.deployments[0];
+  assert(dep.storage === storageMax, `离线 6 小时满仓（${dep.storage} / ${storageMax}）`);
+  assert(gains.planetaryIndustry === storageMax, `离线产出 ${storageMax} 周期（得 ${gains.planetaryIndustry}）`);
+
+  // 在线相同条件（使用固定时钟的同一个 now）
+  setGlobalPlanet({ id:"planet_1", planetType:"lava", deployedAt:NOW - 21620000, duration:9999999, storage:0, lastTick:NOW - 21620000, progress:0, active:true });
+  sandbox.planetaryTick(NOW + 21610000); // 6h+1s
+  const dep2 = sandbox.gameState.planetary.deployments[0];
+  assert(dep2.storage === storageMax, `在线 6 小时满仓（${dep2.storage} / ${storageMax}）`);
+  vm.runInContext('Date.now = globalThis.__auditRealDateNow; delete globalThis.__auditRealDateNow;', sandbox);
+});
+
+// ================= ZM：不同类型行星不同容量验证 =================
+region("ZM", "不同类型行星不同容量", () => {
+  const g = sandbox.gameState;
+  g.skills.planetaryIndustry = { lvl:80, xp:0 };
+  const smLava = sandbox.getPlanetStorageMaxFromState(g, "lava");
+  const smStorm = sandbox.getPlanetStorageMaxFromState(g, "storm");
+  assert(smLava !== smStorm, "lava 与 storm storageMax 不同（${smLava} vs ${smStorm}）");
+  // 旧档原有 storage 不被清零
+  g.planetary = { nextId:2, deployments:[
+    { id:"planet_1", planetType:"lava", deployedAt:NOW - 1000, duration:86400, storage:50000, lastTick:NOW - 100, progress:0, active:true }
+  ] };
+  // 满仓时 storage 不应被 reduce
+  sandbox.planetaryTick(NOW);
+  const dep = g.planetary.deployments[0];
+  assert(dep.storage === 50000, "旧档 storage 不被清零（${dep.storage}）");
+});
+
 console.log(`\n专项审计通过：共 ${totalAssertions} 断言，覆盖 ${Object.keys(regionCounts).length} 区（A~Z）`);
 console.log("分区断言数：" + Object.keys(regionCounts).sort().map(k => `${k}=${regionCounts[k]}`).join(" "));
