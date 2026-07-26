@@ -1,6 +1,7 @@
 <!--
-  考古系统浏览器验收页 —— 打开后自动运行完整测试
-  用法：浏览器打开 http://localhost:8015/tools/archaeology-browser-test.html
+  考古系统浏览器验收页（iframe 模式）
+  通过 iframe 加载真实 index.html，在 iframe.contentWindow 中操作真实游戏代码和 DOM。
+  用法：浏览器打开 http://localhost:PORT/tools/archaeology-browser-test.html（PORT 来自 serve 本地的端口）
 -->
 <!DOCTYPE html>
 <html lang="zh-CN">
@@ -10,202 +11,263 @@
 <style>
 body { font-family: monospace; background: #0a0f18; color: #c8d8e8; padding: 20px; }
 h1 { color: #d4a843; }
+h2 { color: #8ac8ff; font-size: 14px; margin-top: 20px; }
 .pass { color: #4ac87a; }
 .fail { color: #e05555; }
 .log { margin: 4px 0; font-size: 13px; }
 .section { margin: 16px 0; padding: 8px; border-left: 2px solid #2a3a4a; }
+#frame-box { border: 1px solid #2a3a4a; margin: 12px 0; }
+#frame-box iframe { width: 100%; height: 600px; border: none; background: #0a0f18; }
 summary { cursor: pointer; font-weight: bold; margin-bottom: 8px; }
+.btn { background:#1a2a3a; color:#c8d8e8; border:1px solid #2a3a4a; padding:4px 12px; cursor:pointer; margin:4px; border-radius:3px; }
+.btn:hover { background:#2a3a4a; }
 </style>
 </head>
 <body>
 <h1>🛰 考古系统浏览器验收</h1>
+<p style="color:#6a7a8e;font-size:13px;">通过 iframe 加载真实 index.html，测试全链路</p>
+<button class="btn" onclick="runAll()">▶ 运行全部测试</button>
+<button class="btn" onclick="clearLog()">清空日志</button>
+<div id="frame-box"><iframe id="game-frame" src="../index.html"></iframe></div>
 <div id="output"></div>
-
-<script defer src="../js/core/runtime.js"></script>
-<script defer src="../js/core/events.js"></script>
-<script defer src="../js/ui/error-boundary.js"></script>
-<script defer src="../js/data/base.js"></script>
-<script defer src="../js/data/planets.js"></script>
-<script defer src="../js/data/ships.js"></script>
-<script defer src="../js/data/combat.js"></script>
-<script defer src="../js/data/equipment.js"></script>
-<script defer src="../js/data/ammunition.js"></script>
-<script defer src="../js/data/archaeology.js"></script>
-<script defer src="../js/core/state.js"></script>
-<script defer src="../js/core/statistics.js"></script>
-<script defer src="../js/systems/production.js"></script>
-<script defer src="../js/core/resources.js"></script>
-<script defer src="../js/systems/manufacturing.js"></script>
-<script defer src="../js/systems/ship-enhancement.js"></script>
-<script defer src="../js/systems/equipment-enhancement.js"></script>
-<script defer src="../js/systems/archaeology.js"></script>
-<script defer src="../js/systems/planetary.js"></script>
-<script defer src="../js/ui/action-modal.js"></script>
-<script defer src="../js/core/queue.js"></script>
-<script defer src="../js/systems/capital-combat.js"></script>
-<script defer src="../js/systems/combat.js"></script>
-<script defer src="../js/core/combat-modifiers.js"></script>
-<script defer src="../js/core/selectors.js"></script>
-<script defer src="../js/core/actions.js"></script>
-<script defer src="../js/core/tick.js"></script>
-<script defer src="../js/core/offline.js"></script>
-<script defer src="../js/core/persistence.js"></script>
 
 <script>
 var out = document.getElementById("output");
-var pass = 0, fail = 0;
-function log(msg, cls) {
-  var div = document.createElement("div");
-  div.className = "log " + (cls || "");
-  div.textContent = msg;
-  out.appendChild(div);
-}
-function P(msg) { pass++; log("✓ " + msg, "pass"); }
-function F(msg) { fail++; log("✗ " + msg, "fail"); }
-function ok(cond, msg) { if (cond) P(msg); else F(msg); }
-function eq(a, b, msg) { if (a === b) P(msg + " → " + a); else F(msg + " (expected " + b + ", got " + a + ")"); }
+var pass = 0, fail = 0, total = 0;
+var tests = [];
 
-window.addEventListener("load", function() {
-  setTimeout(function() {
-    runTests();
-  }, 500);
+function log(msg, cls) { var d = document.createElement("div"); d.className = "log " + (cls || ""); d.textContent = msg; out.appendChild(d); }
+function clearLog() { out.innerHTML = ""; pass = 0; fail = 0; total = 0; }
+
+function test(name, fn) {
+  tests.push(function(win) {
+    try {
+      var result = fn(win);
+      if (result === true || result === undefined) { pass++; log("✅ " + name, "pass"); }
+      else { fail++; log("❌ " + name + " → " + result, "fail"); }
+    } catch(e) {
+      fail++; log("❌ " + name + " → 异常: " + e.message, "fail");
+    }
+    total++;
+  });
+}
+
+function runAll() {
+  clearLog();
+  var iframe = document.getElementById("game-frame");
+  var win = iframe.contentWindow;
+  if (!win || !win.gameState) { log("⏳ iframe 未加载完成，等待..."); setTimeout(function(){runAll();}, 500); return; }
+  log("=== " + tests.length + " 项测试 ===", "section");
+  for (var i = 0; i < tests.length; i++) tests[i](win);
+  log("\n==== 结果: " + pass + "/" + total + " 通过, " + fail + " 失败 ===", "section");
+}
+
+// ========== 测试用例 ==========
+
+test("iframe 加载完成且 gameState 存在", function(win) {
+  return win.gameState && typeof win.gameState === "object" ? true : "gameState 不存在";
 });
 
-function runTests() {
-  log("=== 1. 页面结构与 DOM ===", "section");
-  ok(document.getElementById("archaeology-panel") !== null, "1a archaeology-panel 存在");
-  var navItem = document.querySelector('.sidebar .nav-item[data-page="archaeology"]');
-  ok(navItem !== null, "1b 侧边栏考古导航项存在");
+test("ARCHAEOLOGY_SITES 15 条", function(win) {
+  return win.ARCHAEOLOGY_SITES && win.ARCHAEOLOGY_SITES.length === 15 ? true : "ARCHAEOLOGY_SITES.length=" + (win.ARCHAEOLOGY_SITES ? win.ARCHAEOLOGY_SITES.length : "undef");
+});
 
-  log("=== 2. 数据完整性 ===", "section");
-  ok(typeof ARCHAEOLOGY_SITES !== "undefined", "2a ARCHAEOLOGY_SITES");
-  eq(ARCHAEOLOGY_SITES.length, 15, "2b 15 遗迹");
-  eq(ARCHAEOLOGY_ARTIFACTS.length, 40, "2c 40 文物");
-  eq(ARCHAEOLOGY_PROBES.length, 3, "2d 3 探针");
-  ok(typeof getArchaeologySite("site_i_a").name === "string", "2e data helper 正常");
+test("archaeology-panel 存在 HTML", function(win) {
+  return win.document.getElementById("archaeology-panel") !== null ? true : "panel 不存在";
+});
 
-  log("=== 3. 导航到考古页面 ===", "section");
-  switchPage("archaeology");
-  var panel = document.getElementById("archaeology-panel");
-  ok(panel.style.display !== "none", "3a 考古面板可见");
-  var body = document.getElementById("archaeology-body");
-  ok(body !== null && body.innerHTML.length > 0, "3b archaeology-body 有内容");
+test("导航到考古页面", function(win) {
+  win.switchPage("archaeology");
+  var panel = win.document.getElementById("archaeology-panel");
+  return panel && panel.style.display !== "none" ? true : "panel 不可见";
+});
 
-  log("=== 4. 分配考古舰、准备资源 ===", "section");
-  ResourceRegistry.add(gameState, "consumable:fuel", 1000);
-  ResourceRegistry.add(gameState, "probe:core_probe_i", 50);
-  gameState.skills.archaeology = { lvl: 1, xp: 0 };
-  if (!gameState.inventory) gameState.inventory = {};
-  if (!Array.isArray(gameState.inventory.ships)) gameState.inventory.ships = [];
-  var ship = createShipInstance("heron");
-  gameState.inventory.ships.push(ship);
-  var r1 = dispatchGameAction(gameState, { type:"hangar/toggleAssignment", instanceId:ship.instanceId, actionKey:"archaeology" }, Date.now());
-  ok(r1.changed, "4a 分配苍鹭级到考古岗位");
+test("分配考古舰", function(win) {
+  var G = win.gameState, RR = win.ResourceRegistry, r;
+  RR.add(G, "consumable:fuel", 500);
+  RR.add(G, "probe:core_probe_i", 50);
+  if (!G.skills.archaeology) G.skills.archaeology = { lvl:1, xp:0 };
+  if (!G.inventory.ships) G.inventory.ships = [];
+  var ship = win.createShipInstance("heron");
+  G.inventory.ships.push(ship);
+  r = win.dispatchGameAction(G, { type:"hangar/toggleAssignment", instanceId:ship.instanceId, actionKey:"archaeology" }, Date.now());
+  return r.changed ? true : "分配失败: " + r.reason;
+});
 
-  log("=== 5. 选择遗迹和探针 ===", "section");
-  var r2 = dispatchGameAction(gameState, { type:"archaeology/selectSite", siteId:"site_i_a" }, Date.now());
-  ok(r2.changed, "5a 选择失落信标残骸");
-  var r3 = dispatchGameAction(gameState, { type:"archaeology/selectProbe", probeId:"core_probe_i" }, Date.now());
-  ok(r3.changed, "5b 选择标准考古探针");
+test("选择遗迹", function(win) {
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/selectSite", siteId:"site_i_a" }, Date.now());
+  return r.changed ? true : "选择失败: " + r.reason;
+});
 
-  log("=== 6. 开始考古（真实 Action）===", "section");
-  var r4 = dispatchGameAction(gameState, { type:"archaeology/start", now:Date.now() }, Date.now());
-  ok(r4.changed, "6a 开始考古");
-  eq(gameState.currentAction.skill, "archaeology", "6b skill=archaeology");
-  ok(gameState.currentAction.active, "6c active=true");
+test("选择探针", function(win) {
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/selectProbe", probeId:"core_probe_i" }, Date.now());
+  return r.changed ? true : "选择失败: " + r.reason;
+});
 
-  log("=== 7. 停止并重新开始 ===", "section");
-  var r5 = dispatchGameAction(gameState, { type:"archaeology/stop", now:Date.now() + 2000 }, Date.now() + 2000);
-  ok(r5.changed, "7a 停止");
-  ok(!gameState.currentAction.active, "7b active=false");
-  var r5b = dispatchGameAction(gameState, { type:"archaeology/start", now:Date.now() + 3000 }, Date.now() + 3000);
-  ok(r5b.changed, "7c 重新开始");
+test("开始解析 → 真实 Action", function(win) {
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/start" }, Date.now());
+  return r.changed ? true : "开始失败: " + r.reason;
+});
 
-  log("=== 8. 成功结算 ===", "section");
-  gameState.currentAction.progress = 31;
-  gameState.currentAction.lastProgressUpdate = 0;
-  var probeBefore = ResourceRegistry.get(gameState, "probe:core_probe_i");
-  var cycle = resolveArchaeologyCycle(gameState, Date.now(), 0.3);
-  ok(cycle.success, "8a 成功");
-  eq(ResourceRegistry.get(gameState, "probe:core_probe_i"), probeBefore - 1, "8b 探针消耗 1");
-  ok(cycle.found && cycle.found.length >= 1, "8c 获得文物");
+test("开始后 skill=archaeology, active=true", function(win) {
+  var a = win.gameState.currentAction;
+  return a.skill === "archaeology" && a.active ? true : "skill=" + a.skill + " active=" + a.active;
+});
 
-  log("=== 9. UI 渲染（真实 renderArchaeologyPage 调用）===", "section");
-  renderArchaeologyPage(Date.now());
-  var updatedBody = document.getElementById("archaeology-body");
-  ok(updatedBody.innerHTML.indexOf("artifact") > -1 || updatedBody.innerHTML.indexOf("文物") > -1 || updatedBody.innerHTML.indexOf("artifact") > -1, "9a 文物渲染");
+test("开始后 lastProgressUpdate 有效", function(win) {
+  return win.gameState.currentAction.lastProgressUpdate > 0 ? true : "lastProgressUpdate=" + win.gameState.currentAction.lastProgressUpdate;
+});
 
-  log("=== 10. 全部出售（真实 Action）===", "section");
-  var iskBefore = ResourceRegistry.get(gameState, "currency:isk");
-  var sellAll = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", all:true }, Date.now());
-  if (sellAll.changed) {
-    ok(sellAll.totalIsk > 0, "10a 出售收益 > 0");
-    ok(ResourceRegistry.get(gameState, "currency:isk") >= iskBefore + sellAll.totalIsk, "10b ISK 正确");
-    var sellAgain = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", all:true }, Date.now());
-    ok(!sellAgain.changed, "10c 再次出售无收益");
-  } else {
-    P("10a (无文物，跳过)");
-  }
+test("运行中不能切换遗迹", function(win) {
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/selectSite", siteId:"site_i_b" }, Date.now());
+  return r.changed === false && r.reason === "action-running" ? true : "不应成功切换: " + (r.changed ? "changed" : r.reason);
+});
 
-  log("=== 11. LP 兑换 ===", "section");
-  ResourceRegistry.add(gameState, "artifact:art_i_lp", 3);
-  var lpBefore = ResourceRegistry.get(gameState, "currency:lp");
-  var redeem1 = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", artifactId:"art_i_lp", quantity:1 }, Date.now());
-  ok(redeem1.changed, "11a 单件兑换");
-  eq(redeem1.lp, 50, "11b LP=50");
-  var redeemAll = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", all:true }, Date.now());
-  ok(redeemAll.changed, "11c 全部兑换");
-  eq(ResourceRegistry.get(gameState, "artifact:art_i_lp"), 0, "11d 库存清零");
-  ok(ResourceRegistry.get(gameState, "currency:lp") >= lpBefore + 50 + redeemAll.totalLp, "11e LP 总和");
+test("运行中不能切换探针", function(win) {
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/selectProbe", probeId:"enhanced_probe_ii" }, Date.now());
+  return r.changed === false && r.reason === "action-running" ? true : "不应成功切换: " + (r.changed ? "changed" : r.reason);
+});
 
-  log("=== 12. 显示态完整性 ===", "section");
-  var disp = getArchaeologyDisplayState(gameState, Date.now());
+test("停止解析", function(win) {
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/stop" }, Date.now() + 2000);
+  return r.changed && !win.gameState.currentAction.active ? true : "stop 失败: " + (!r.changed ? r.reason : "active=" + win.gameState.currentAction.active);
+});
+
+test("停止后 startedSiteId 清空", function(win) {
+  return win.gameState.archaeology.startedSiteId === null ? true : "startedSiteId=" + win.gameState.archaeology.startedSiteId;
+});
+
+test("停止后可切换遗迹", function(win) {
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/selectSite", siteId:"site_i_b" }, Date.now());
+  return r.changed ? true : "切换失败: " + r.reason;
+});
+
+test("停止后再开始", function(win) {
+  // 切回原遗迹
+  win.dispatchGameAction(win.gameState, { type:"archaeology/selectSite", siteId:"site_i_a" }, Date.now());
+  var r = win.dispatchGameAction(win.gameState, { type:"archaeology/start" }, Date.now() + 3000);
+  return r.changed ? true : "再开始失败: " + r.reason;
+});
+
+test("缺探针时不能开始", function(win) {
+  var G = JSON.parse(JSON.stringify(win.gameState));
+  G.archaeology = JSON.parse(JSON.stringify(win.gameState.archaeology));
+  G.currentAction = JSON.parse(JSON.stringify(win.gameState.currentAction));
+  G.shipAssignments = { archaeology: G.inventory.ships[0] && G.inventory.ships[0].instanceId };
+  G.archaeology.activeSiteId = "site_i_a";
+  G.archaeology.activeProbeId = "core_probe_i";
+  win.ResourceRegistry.spend(G, "probe:core_probe_i", win.ResourceRegistry.get(G, "probe:core_probe_i"));
+  if (!G.skills) G.skills = {};
+  G.skills.archaeology = { lvl:1, xp:0 };
+  var r = win.dispatchGameAction(G, { type:"archaeology/start" }, Date.now());
+  return r.changed === false ? true : "缺探针不应成功: " + (r.changed ? "changed" : r.reason);
+});
+
+test("缺燃料时不能开始", function(win) {
+  var G = JSON.parse(JSON.stringify(win.gameState));
+  G.archaeology = JSON.parse(JSON.stringify(win.gameState.archaeology));
+  G.currentAction = JSON.parse(JSON.stringify(win.gameState.currentAction));
+  G.shipAssignments = { archaeology: G.inventory.ships[0] && G.inventory.ships[0].instanceId };
+  G.archaeology.activeSiteId = "site_i_a";
+  G.archaeology.activeProbeId = "core_probe_i";
+  win.ResourceRegistry.add(G, "probe:core_probe_i", 10);
+  win.ResourceRegistry.spend(G, "consumable:fuel", win.ResourceRegistry.get(G, "consumable:fuel"));
+  if (!G.skills) G.skills = {};
+  G.skills.archaeology = { lvl:1, xp:0 };
+  var r = win.dispatchGameAction(G, { type:"archaeology/start" }, Date.now());
+  return r.changed === false ? true : "缺燃料不应成功: " + (r.changed ? "changed" : r.reason);
+});
+
+test("稀有率无增强时不显示增强", function(win) {
+  var disp = win.getArchaeologyDisplayState(win.gameState, Date.now());
   for (var i = 0; i < disp.sites.length; i++) {
-    var s = disp.sites[i];
-    if (isNaN(s.difficulty) || s.level === undefined) F("12a 遗迹 " + s.id + " 数据异常");
+    var d = disp.sites[i].drops;
+    if (d && Number(d.unique.ratePct) !== Number(d.unique.boostedPct)) {
+      return "site " + disp.sites[i].id + " ratePct=" + d.unique.ratePct + " boostedPct=" + d.unique.boostedPct + " (应相等, 无 booster)";
+    }
   }
-  P("12a 遗迹数据完整");
-  for (var j = 0; j < disp.probes.length; j++) {
-    if (isNaN(disp.probes[j].stock)) F("12b 探针 " + disp.probes[j].id + " stock NaN");
-  }
-  P("12b 探针库存有限");
+  return true;
+});
 
-  log("=== 13. 干扰防绕过 ===", "section");
-  var t = JSON.parse(JSON.stringify(gameState));
-  ResourceRegistry.add(t, "probe:core_probe_i", 20);
-  ResourceRegistry.add(t, "consumable:fuel", 100);
-  if (!t.inventory.ships || !t.inventory.ships.length) {
-    var sh = createShipInstance("heron");
-    if (!t.inventory.ships) t.inventory.ships = [];
-    t.inventory.ships.push(sh);
-    t.shipAssignments = { archaeology: sh.instanceId };
-  }
-  t.skills.archaeology = { lvl: 1, xp: 0 };
-  t.archaeology.activeSiteId = "site_i_a";
-  dispatchGameAction(t, { type:"archaeology/start", now:10000 }, 10000);
-  t.currentAction.progress = 31;
-  var failR = resolveArchaeologyCycle(t, 30000, 0.9);
-  ok(!failR.success, "13a 触发失败");
-  var siteInfo = getArchaeologySite("site_i_a");
-  t.archaeology.interferenceUntil = 30000 + getArchaeologyInterferenceSeconds(siteInfo) * 1000;
-  ok(t.archaeology.interferenceUntil > 30000, "13b 干扰设为未来时间");
-  dispatchGameAction(t, { type:"archaeology/stop", now:31000 }, 31000);
-  ok(t.archaeology.interferenceUntil > 30000, "13c stop 不清除干扰");
-  t.archaeology.activeSiteId = "site_i_a";
-  var blocked = dispatchGameAction(t, { type:"archaeology/start", now:32000 }, 32000);
-  ok(!blocked.changed, "13d 干扰中拒绝开始");
-  eq(blocked.reason, "interference", "13e 理由 interference");
+test("装载 rare 增强剂后概率提升", function(win) {
+  var G = win.gameState;
+  G.boosters.active = G.boosters.active || {};
+  G.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:180000 };
+  var disp = win.getArchaeologyDisplayState(G, Date.now());
+  var site0 = disp.sites[0];
+  var boosted = Number(site0.drops.unique.boostedPct);
+  var base = Number(site0.drops.unique.ratePct);
+  // 清除避免污染后续测试
+  G.boosters.active.archaeologyRare = null;
+  return boosted > base ? true : "boosted(" + boosted + ") <= base(" + base + ")";
+});
 
-  log("=== 14. 缩放测试 ===", "section");
-  ok(document.documentElement.scrollWidth > 0, "14a 页面有宽度");
-  ok(document.getElementById("archaeology-panel").offsetHeight > 0, "14b 考古面板有高度");
+test("bar-archaeology canvas 存在（页面切换到考古时创建）", function(win) {
+  win.switchPage("archaeology");
+  var canvas = win.document.getElementById("bar-archaeology");
+  return canvas !== null ? true : "bar-archaeology canvas 不存在";
+});
 
-  log("\n======== 浏览器验收完成 ========", "section");
-  log("通过: " + pass + " / 失败: " + fail, pass === pass + fail ? "pass" : (fail > 0 ? "fail" : ""));
-  if (fail === 0 && typeof window.__testCallback === "function") {
-    window.__testCallback({ pass: pass, fail: fail });
-  }
-}
+test("确认弹窗存在", function(win) {
+  var modal = win.document.getElementById("action-modal");
+  return modal !== null ? true : "action-modal 不存在";
+});
+
+test("bar-archaeology 是 canvas", function(win) {
+  var canvas = win.document.getElementById("bar-archaeology");
+  return canvas && canvas.tagName === "CANVAS" ? true : "不是 canvas 元素";
+});
+
+test("queue/add + queue/start 考古完整路径", function(win) {
+  var G = win.gameState;
+  var RR = win.ResourceRegistry;
+  // 先停止当前行动
+  if (G.currentAction.active) win.dispatchGameAction(G, { type:"archaeology/stop" }, Date.now());
+  // 确保资源充足
+  RR.spend(G, "probe:core_probe_i", RR.get(G, "probe:core_probe_i"));
+  RR.spend(G, "consumable:fuel", RR.get(G, "consumable:fuel"));
+  RR.add(G, "probe:core_probe_i", 50);
+  RR.add(G, "consumable:fuel", 500);
+  // 设置考古岗位
+  var ship = win.createShipInstance("heron");
+  if (!Array.isArray(G.inventory.ships)) G.inventory.ships = [];
+  G.inventory.ships.push(ship);
+  G.shipAssignments = G.shipAssignments || {};
+  G.shipAssignments.archaeology = ship.instanceId;
+  // 选择遗迹和探针
+  G.archaeology.activeSiteId = "site_i_a";
+  G.archaeology.activeProbeId = "core_probe_i";
+  // 通过队列系统启动
+  var qr = win.dispatchGameAction(G, { type:"queue/add", item:{ skill:"archaeology", target:"site_i_a", label:"site_i_a", count:1 }, front:true }, Date.now());
+  if (!qr.changed) return "queue/add 失败: " + qr.reason;
+  var sr = win.dispatchGameAction(G, { type:"queue/start" }, Date.now());
+  return sr.changed && G.currentAction.active && G.currentAction.skill === "archaeology" ? true : "队列考古启动失败: " + (sr.reason || "active=" + G.currentAction.active + " skill=" + G.currentAction.skill);
+});
+
+test("增强剂制造按钮触发的行动确认弹窗", function(win) {
+  // 设置资源和默认配方
+  var G = win.gameState;
+  var RR = win.ResourceRegistry;
+  RR.add(G, "planetary:重金属", 100);
+  RR.add(G, "special:战术残液", 100);
+  G.currentAction.boosterRecipeTarget = "mining_lubricant_n";
+  // 验证条件
+  var disp = win.getBoosterManufacturingDisplayState(G, Date.now());
+  if (!disp) return "getBoosterManufacturingDisplayState 返回 null";
+  return disp.canStart ? true : "canStart=false, 需检查材料是否足够";
+});
+
+test("考古周期时间含增强剂倍率", function(win) {
+  var G = win.gameState;
+  var disp = win.getArchaeologyDisplayState(G, Date.now());
+  var confirmDisp = win.getActionConfirmationDisplayState(G, "archaeology", Date.now());
+  // 无增强剂时 duration = site.time * 1
+  var site = disp.sites.find(s => s.id === "site_i_a");
+  return site && Math.abs(confirmDisp.duration - site.time) < 0.01 ? true : "duration=" + confirmDisp.duration + " != site.time=" + (site ? site.time : "undef");
+});
+
+// ========== 初始自动运行 ==========
+window.addEventListener("load", function() { setTimeout(runAll, 1000); });
 </script>
 </body>
 </html>

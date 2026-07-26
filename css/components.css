@@ -205,6 +205,7 @@
   }
   .me-label { color: #6a7a8e; }
   .me-value { color: #4db8b8; font-weight: 700; font-size: 14px; cursor: help; border-bottom: 1px dotted #4db8b8; }
+  .me-logistics { color: #8a9bb0; font-size: 12px; margin-left: 8px; white-space: nowrap; }
   .industrial-support-row { display: flex; align-items: center; gap: 8px; width: fit-content; margin: 2px 0 8px; padding: 5px 9px; border: 1px solid #273b4d; border-radius: 4px; color: #708398; background: rgba(24,43,58,.46); }
   .industrial-support-row strong { color: #6a7a8e; font-size: 12px; }
   .industrial-support-row.active { border-color: #39779a; background: rgba(31,87,119,.18); }

@@ -12,6 +12,46 @@
 <link rel="stylesheet" href="./css/panels.css">
 <link rel="stylesheet" href="./css/combat.css">
 <link rel="stylesheet" href="./css/components.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "./js/vendor/three.module.js",
+    "three/addons/": "./js/vendor/addons/"
+  }
+}
+</script>
+<script type="module" src="./js/ui/ship3d.js?v=5"></script>
+<style id="ship3d-style">
+  .ship3d-canvas { display:block; width:100%; height:100%; }
+  #manufacturing-3d-canvas { width:100%; height:340px; margin-top:8px; border-radius:8px; background:#070d14; }
+  .hangar-ship-thumb { width:100%; height:120px; object-fit:contain; background:#070d14; border-radius:6px; cursor:pointer; display:block; }
+  #hangar-3d-popup { position:fixed; inset:0; background:rgba(4,8,14,.82); display:none; align-items:center; justify-content:center; z-index:2000; }
+  #hangar-3d-popup.open { display:flex; }
+  #hangar-3d-popup .popup-box { width:min(720px,92vw); height:min(560px,86vh); background:#0a121e; border:1px solid #1d2c3c; border-radius:12px; position:relative; overflow:hidden; }
+  #hangar-3d-popup canvas { width:100%; height:100%; display:block; }
+  #hangar-3d-popup .popup-close { position:absolute; top:8px; right:14px; color:#cfe; cursor:pointer; font-size:24px; z-index:3; line-height:1; }
+  #hangar-3d-popup .popup-name { position:absolute; left:16px; top:12px; color:#cfe; font-weight:600; z-index:3; text-shadow:0 1px 4px #000; }
+
+  /* 战斗 3D 弹窗（点开看大图 + 敌方/我方属性），复用船坞弹窗样式 */
+  #combat-3d-popup { position:fixed; inset:0; background:rgba(4,8,14,.82); display:none; align-items:center; justify-content:center; z-index:2100; }
+  #combat-3d-popup.open { display:flex; }
+  #combat-3d-popup .popup-box { width:min(760px,94vw); height:min(600px,88vh); background:#0a121e; border:1px solid #1d2c3c; border-radius:12px; position:relative; overflow:hidden; }
+  #combat-3d-popup canvas { width:100%; height:100%; display:block; }
+  #combat-3d-popup .popup-close { position:absolute; top:8px; right:14px; color:#cfe; cursor:pointer; font-size:24px; z-index:5; line-height:1; }
+  #combat-3d-popup .popup-name { position:absolute; left:16px; top:12px; color:#cfe; font-weight:600; z-index:5; text-shadow:0 1px 4px #000; }
+  #combat-3d-popup .popup-attrs { position:absolute; left:0; right:0; bottom:0; padding:12px 16px 14px; background:linear-gradient(180deg, rgba(10,18,30,0) 0%, rgba(8,14,24,.9) 40%, rgba(8,14,24,.96) 100%); z-index:4; color:#bfe; font-size:13px; }
+  #combat-3d-popup .popup-attrs .c3d-attr-title { font-weight:600; color:#dff; margin-bottom:6px; font-size:14px; }
+  #combat-3d-popup .popup-attrs .c3d-attr-grid { display:flex; flex-wrap:wrap; gap:6px 18px; margin-bottom:8px; }
+  #combat-3d-popup .popup-attrs .c3d-attr-grid div { display:flex; gap:6px; align-items:baseline; }
+  #combat-3d-popup .popup-attrs .c3d-attr-grid span { color:#7fa; opacity:.8; }
+  #combat-3d-popup .popup-attrs .c3d-attr-grid b { color:#eafff4; font-weight:600; }
+  #combat-3d-popup .popup-attrs .c3d-attr-bars .health-bar-row { margin:3px 0; font-size:12px; }
+  /* 战斗侧 3D 图可点击提示 */
+  .combat-side-image { position:relative; cursor:pointer; }
+  .combat-side-image::after { content:"🔍 点击查看"; position:absolute; right:8px; bottom:8px; padding:2px 8px; font-size:11px; color:#cfe; background:rgba(6,12,20,.66); border:1px solid rgba(80,140,180,.4); border-radius:10px; pointer-events:none; opacity:0; transition:opacity .15s; z-index:2; }
+  .combat-side-image:hover::after { opacity:1; }
+  .combat-3d-note { font-size:10px; color:#5a6a7a; text-align:center; margin-top:2px; }
+</style>
 </head>
 <body>
 
@@ -63,6 +103,9 @@
     </div>
     <div class="nav-item" data-page="hangar">
       <span class="nav-icon"><i class="fa-solid fa-ship"></i></span> 船坞
+    </div>
+    <div class="nav-item" data-page="station">
+      <span class="nav-icon"><i class="fa-regular fa-building"></i></span> 空间站
     </div>
     <div class="nav-item" data-page="queue">
       <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> 动作队列
@@ -178,6 +221,7 @@
           <div class="mining-efficiency">
             <span class="me-label">采集效率：</span>
             <span class="me-value" id="me-value">2.72</span>
+            <span class="me-logistics" id="mining-logistics"></span>
           </div>
           <div class="industrial-support-row" id="mining-fleet-support-row">
             <span>舰队协同</span>
@@ -235,6 +279,7 @@
           <div class="mining-efficiency">
             <span class="me-label">采集效率：</span>
             <span class="me-value" id="gas-eff-value">1.02</span>
+            <span class="me-logistics" id="gas-logistics"></span>
           </div>
           <div class="mining-progress-row">
             <span class="mp-label">采集进度：</span>
@@ -269,6 +314,7 @@
         <div style="margin-bottom:10px; display:flex; align-items:center; gap:12px;">
           <button class="btn primary" id="btn-deploy-planet">🪐 部署新行星</button>
           <span class="text-muted" style="font-size:12px;" id="planetary-slot-info">可用槽位：0 / 1</span>
+          <span class="me-logistics" id="planetary-logistics"></span>
         </div>
         <div class="planet-grid" id="planet-grid"></div>
         <div id="planet-empty-msg" class="cargo-empty" style="display:none;">尚未部署任何行星，点击上方按钮部署</div>
@@ -314,6 +360,7 @@
         <div class="mining-efficiency">
           <span class="me-label">制造效率：</span>
           <span class="me-value" id="shipeng-eff-value" title="效率 = 1 × (1 + 舰船工程Lv × 0.02)">1.02x</span>
+          <span class="me-logistics" id="shipeng-speed-breakdown"></span>
         </div>
 
         <!-- 部件制造 -->
@@ -355,6 +402,7 @@
           </div>
           <!-- 舰船属性展示 -->
           <div id="ship-attr-display" style="margin-top:8px;"></div>
+          <canvas id="manufacturing-3d-canvas" class="ship3d-canvas"></canvas>
           <!-- 已有舰船 -->
           <div style="margin-top:8px; font-size:12px; color:#8899aa;">已有舰船：</div>
           <div id="ship-inventory-list"></div>
@@ -373,6 +421,7 @@
           <span class="skill-name">装备工程</span>
           <span class="skill-level">等级 <span class="lv-num" id="equipeng-lv-num">1</span></span>
           <span class="skill-output" id="equipeng-eff-display">效率：1.00x</span>
+          <span class="me-logistics" id="equipeng-logistics"></span>
         </div>
         <div class="exp-row mt-4">
           <span class="exp-label">经验</span>
@@ -421,6 +470,7 @@
           <span class="skill-name">增强剂制造</span>
           <span class="skill-level">等级 <span class="lv-num" id="booster-lv-num">1</span></span>
           <span class="skill-output" id="booster-eff-display">效率：1.00x</span>
+          <span class="me-logistics" id="booster-logistics"></span>
         </div>
         <div class="exp-row mt-4">
           <span class="exp-label">经验</span>
@@ -502,6 +552,11 @@
             <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 开始战斗</button>
           </div>
         </div>
+
+        <details class="combat-drop-preview" id="combat-drop-preview-wrap" open>
+          <summary>🎁 掉落预览 <span class="drop-preview-zone" id="combat-drop-preview-zone"></span></summary>
+          <div class="combat-drop-preview-body" id="combat-drop-preview"></div>
+        </details>
 
         <!-- 战术战场：左我 右敌，待命时敌方保持扫描占位 -->
         <div class="combat-arena">
@@ -590,6 +645,7 @@
       <div class="panel-header">
         <span class="panel-title">🛰️ 考古行动</span>
         <span class="text-muted" id="archaeology-header-status">待命</span>
+        <span class="me-logistics" id="archaeology-logistics"></span>
       </div>
       <div class="panel-body" id="archaeology-body"></div>
     </div>
@@ -616,6 +672,62 @@
         <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
         <div class="blueprintstore-tabs" id="blueprintstore-tabs"></div>
         <div class="lpstore-grid" id="blueprintstore-grid"></div>
+      </div>
+    </div>
+
+    <!-- 空间站面板 -->
+    <div class="panel station-panel" id="station-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">🏢 空间站管理</span>
+        <span id="station-status" class="text-muted"></span>
+      </div>
+      <div class="panel-body">
+        <!-- A. 总览 -->
+        <div class="station-section">
+          <h3>空间站总览</h3>
+          <div class="station-overview">
+            <span id="station-body-name">未建立</span>
+            <span id="station-body-level">Lv.0</span>
+            <span id="station-logistics-summary"></span>
+          </div>
+          <div class="station-construction">
+            <div class="progress-bar"><div class="fill" id="station-construction-fill" style="width:0%"></div></div>
+            <span id="station-construction-text">就绪</span>
+            <div id="station-upgrade-cost" class="station-cost-rows"></div>
+            <button class="btn primary" id="btn-station-upgrade-body">升级</button>
+          </div>
+        </div>
+        <!-- B. 维护 -->
+        <div class="station-section">
+          <h3>维护燃料</h3>
+          <div>维护点数：<span id="station-maintenance-points">0</span></div>
+          <div>燃料：<span id="station-fuel-remaining">0</span></div>
+          <div>预计剩余：<span id="station-fuel-remaining-ms">-</span></div>
+          <div class="station-fuel-notes">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
+          <button class="btn primary" id="btn-station-refill">一键补给</button>
+        </div>
+        <!-- C. 建筑 -->
+        <div class="station-section">
+          <h3>附属建筑</h3>
+          <div id="station-buildings-grid" class="station-buildings-grid"></div>
+        </div>
+        <!-- D. 自动线 -->
+        <div class="station-section">
+          <h3>自动生产线</h3>
+          <div id="station-auto-lines"></div>
+        </div>
+        <!-- E. 效果 -->
+        <div class="station-section">
+          <h3>当前效果</h3>
+          <div id="station-effects-list"></div>
+        </div>
+        <!-- F. 军团 -->
+        <div class="station-section">
+          <h3>军团 DLC 预留</h3>
+          <div>名称：<span id="station-corp-name">未成立</span></div>
+          <div>成立时间：<span id="station-corp-founded">-</span></div>
+          <div id="station-corp-dlc">DLC 预留</div>
+        </div>
       </div>
     </div>
 
@@ -783,6 +895,7 @@
   <script defer src="./js/systems/rigs.js"></script>
   <script defer src="./js/systems/archaeology.js"></script>
   <script defer src="./js/systems/planetary.js"></script>
+  <script defer src="./js/systems/station.js"></script>
   <script defer src="./js/ui/action-modal.js"></script>
   <script defer src="./js/core/queue.js"></script>
   <script defer src="./js/systems/capital-combat.js"></script>
@@ -790,15 +903,32 @@
   <script defer src="./js/core/combat-modifiers.js"></script>
   <script defer src="./js/core/selectors.js"></script>
   <script defer src="./js/core/actions.js"></script>
-  <script defer src="./js/ui/shell-render.js"></script>
-  <script defer src="./js/ui/manufacturing-render.js"></script>
-  <script defer src="./js/ui/combat-render.js"></script>
+  <script defer src="./js/ui/shell-render.js?v=4"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=2"></script>
+  <script defer src="./js/ui/combat-render.js?v=9"></script>
   <script defer src="./js/ui/planetary-render.js"></script>
   <script defer src="./js/ui/archaeology-render.js"></script>
   <script defer src="./js/ui/booster-render.js"></script>
+  <script defer src="./js/ui/station-render.js"></script>
   <script defer src="./js/core/tick.js"></script>
   <script defer src="./js/core/offline.js"></script>
   <script defer src="./js/ui/render.js"></script>
   <script defer src="./js/core/persistence.js"></script>
+  <div id="hangar-3d-popup">
+    <div class="popup-box">
+      <span class="popup-close" id="hangar-3d-popup-close">×</span>
+      <div class="popup-name" id="hangar-3d-popup-name"></div>
+      <canvas id="hangar-3d-popup-canvas" class="ship3d-canvas"></canvas>
+    </div>
+  </div>
+
+  <div id="combat-3d-popup">
+    <div class="popup-box">
+      <span class="popup-close" id="combat-3d-popup-close">×</span>
+      <div class="popup-name" id="combat-3d-popup-name"></div>
+      <canvas id="combat-3d-popup-canvas" class="ship3d-canvas"></canvas>
+      <div class="popup-attrs" id="combat-3d-popup-attrs"></div>
+    </div>
+  </div>
 </body>
 </html>

@@ -38,6 +38,14 @@ export function material(color, metalness = 0.88, roughness = 0.30, emissive = 0
   });
 }
 
+// 集中式 MeshStandardMaterial 构造器（Task 9：旗舰船体材质集中）。
+// 用于需要 transparent/opacity/side 等扩展参数、简写 material() 无法表达的一次性材质，
+// 让 Generator 不再直接 new THREE.MeshStandardMaterial（满足 AI Rules §6 材质集中）。
+// 每次返回全新实例（无缓存）——不引入跨舰全局材质缓存，符合本轮边界。
+export function stdMaterial(opts) {
+  return new THREE.MeshStandardMaterial(opts);
+}
+
 // 发光材质：暗底 + 强自发光，用于发光缝 / 节点 / 引擎口等
 export function glowMat(palette, intensity = 1.5) {
   return material(0x1a0c10, 0.25, 0.20, palette.glow, intensity, 1.6);
@@ -74,9 +82,12 @@ export function additiveGlowMaterial(color, opacity, side = THREE.FrontSide) {
 const _outlineMatCache = new Map();
 function _getOutlineMaterial(color) {
   if (!_outlineMatCache.has(color)) {
-    _outlineMatCache.set(color, new THREE.MeshBasicMaterial({
+    const mat = new THREE.MeshBasicMaterial({
       color, side: THREE.BackSide, depthWrite: false, fog: false
-    }));
+    });
+    // Task 8：跨舰复用的共享描边材质——标记为共享，disposeObject 单舰销毁时不得释放。
+    mat.userData.ship3dShared = true;
+    _outlineMatCache.set(color, mat);
   }
   return _outlineMatCache.get(color);
 }

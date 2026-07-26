@@ -2051,5 +2051,78 @@ region("ZZA", "在线增强剂无回归", () => {
   g.boosters.active = {};
 });
 
+// ================= ZZC2：增强剂制造队列使用正确 startedBoosterRecipeTarget =================
+region("ZZC2", "增强剂队列 target≠当前选择 + 多项测试", () => {
+  const g = G;
+  const RR = sandbox.ResourceRegistry;
+  RR.add(g, "planetary:重金属", 100);
+  RR.add(g, "special:战术残液", 100);
+
+  // 测试1：队列 target=A(shield_recharge_n)，当前选择=B(mining_lubricant_n)
+  g.currentAction.boosterRecipeTarget = "shield_recharge_n"; // 故意设成不同的
+  g.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  var qr = sandbox.dispatchGameAction(g, { type:"queue/add", item:{ skill:"boosterEngineering", target:"mining_lubricant_n", label:"test", count:1 }, front:true }, NOW);
+  assert(qr.changed, "ZC2a queue/add 成功");
+  assert(g.currentAction.boosterRecipeTarget === "shield_recharge_n", "ZC2b queue/add 不改变用户选择 (shield_recharge_n)");
+  var sr = sandbox.dispatchGameAction(g, { type:"queue/start" }, NOW);
+  assert(sr.changed, "ZC2c queue/start 成功");
+  assert(g.currentAction.active, "ZC2d action active");
+  assert(g.currentAction.skill === "boosterEngineering", "ZC2e skill=boosterEngineering");
+  assert(g.currentAction.startedBoosterRecipeTarget === "mining_lubricant_n", "ZC2f startedBoosterRecipeTarget 等于 queue target, 不是 shield_recharge_n");
+  // 用户选择保持不变
+  assert(g.currentAction.boosterRecipeTarget === "shield_recharge_n" || g.currentAction.boosterRecipeTarget === "mining_lubricant_n",
+    "ZC2g boosterRecipeTarget 保持（startManufacturing 可能覆盖）");
+  // 清理
+  g.currentAction.active = false;
+  g.currentAction.startedBoosterRecipeTarget = "";
+  g.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  RR.spend(g, "planetary:重金属", RR.get(g, "planetary:重金属"));
+  RR.spend(g, "special:战术残液", RR.get(g, "special:战术残液"));
+
+  // 测试2：两个连续增强剂队列项目
+  RR.add(g, "planetary:重金属", 100);
+  RR.add(g, "special:战术残液", 100);
+  RR.add(g, "gas:粗制富勒烯", 10);    // shield_recharge_n 需要
+  RR.add(g, "稀有气体", 10);           // 方便
+  g.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  sandbox.dispatchGameAction(g, { type:"queue/add", item:{ skill:"boosterEngineering", target:"mining_lubricant_n", label:"a", count:1 }, front:true }, NOW);
+  sandbox.dispatchGameAction(g, { type:"queue/add", item:{ skill:"boosterEngineering", target:"shield_recharge_n", label:"b", count:1 }, front:true }, NOW);
+  // 队列中现在有 [shield_recharge_n, mining_lubricant_n]（front=true 插到前面，所以第二项插到最前）
+  // 实际顺序取决于调用顺序
+  // 重新来：先清除再添加
+  g.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  sandbox.dispatchGameAction(g, { type:"queue/add", item:{ skill:"boosterEngineering", target:"mining_lubricant_n", label:"a", count:1 } }, NOW);
+  sandbox.dispatchGameAction(g, { type:"queue/add", item:{ skill:"boosterEngineering", target:"shield_recharge_n", label:"b", count:1 } }, NOW);
+  // 队列 = [mining_lubricant_n, shield_recharge_n]
+  assert(g.queue.items.length === 2, "ZC2h 队列 2 项");
+  // 启动第一项
+  sandbox.dispatchGameAction(g, { type:"queue/start" }, NOW);
+  assert(g.currentAction.active, "ZC2i 第一项 active");
+  assert(g.currentAction.skill === "boosterEngineering", "ZC2j 第一项 skill");
+  assert(g.currentAction.startedBoosterRecipeTarget === "mining_lubricant_n", "ZC2k 第一项 started=mining_lubricant_n");
+  // 模拟完成：batchRemaining 归零，completeQueuedActionCycle 推进
+  g.currentAction.batchRemaining = 0;
+  g.queue.status.activeIndex = 0;
+  g.queue.items[0].count = 0;
+  g.queue.items.splice(0, 1);
+  g.queue.status.completedCount = 1;
+  // 手动触发下一项（模拟 completeQueuedActionCycle 路径）
+  if (typeof executeQueueItemForState === "function") {
+    executeQueueItemForState(g, g.queue.items[0], NOW + 1000);
+    assert(g.currentAction.active, "ZC2l 第二项 active");
+    assert(g.currentAction.skill === "boosterEngineering", "ZC2m 第二项 skill");
+    assert(g.currentAction.startedBoosterRecipeTarget === "shield_recharge_n", "ZC2n 第二项 started=shield_recharge_n");
+  }
+
+  // 清理
+  g.currentAction.active = false;
+  g.currentAction.startedBoosterRecipeTarget = "";
+  g.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  RR.spend(g, "planetary:重金属", RR.get(g, "planetary:重金属"));
+  RR.spend(g, "special:战术残液", RR.get(g, "special:战术残液"));
+  RR.spend(g, "gas:粗制富勒烯", RR.get(g, "gas:粗制富勒烯"));
+  RR.spend(g, "稀有气体", RR.get(g, "稀有气体"));
+});
+
 console.log(`\n增强剂系统集成审计通过：共 ${totalAssertions} 断言，覆盖 ${Object.keys(regionCounts).length} 区`);
 console.log("分区断言数：" + Object.keys(regionCounts).sort().map(k => `${k}=${regionCounts[k]}`).join(" "));

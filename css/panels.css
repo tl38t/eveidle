@@ -1,7 +1,33 @@
 /* ===== 装备工程面板 ===== */
   #equipeng-panel { overflow: visible; }
+  #archaeology-panel { overflow: visible; }
   #equipeng-panel .panel-body { position: relative; }
   #equipeng-panel .equipeng-info { padding-right: 130px; }
+  /* ===== 空间站面板（Phase 3C-8）===== */
+  .station-panel .panel-body { max-height: none; overflow-y: visible; }
+  .station-section { margin-bottom: 20px; padding: 12px; background: rgba(20,40,55,0.5); border-radius: 6px; }
+  .station-section h3 { margin: 0 0 10px; font-size: 14px; color: #8ab4d6; }
+  .station-overview { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 0; }
+  .station-buildings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
+  .station-building-card { background: rgba(30,55,75,0.6); border: 1px solid #2a4a5e; border-radius: 6px; padding: 10px; }
+  .sbc-header { font-size: 13px; margin-bottom: 4px; color: #b0d0e8; }
+  .sbc-effect { font-size: 12px; color: #7a9ab0; margin-bottom: 2px; }
+  .sbc-next { font-size: 11px; color: #5a8aaa; margin-bottom: 4px; }
+  .sbc-cost { font-size: 11px; margin: 4px 0; }
+  .station-al-card { background: rgba(30,55,75,0.6); border: 1px solid #2a4a5e; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
+  .sal-header { font-size: 13px; color: #b0d0e8; margin-bottom: 4px; }
+  .sal-mult { font-size: 11px; color: #5a8aaa; }
+  .sal-select select { background: #1a3345; color: #b0d0e8; border: 1px solid #2a4a5e; border-radius: 4px; padding: 3px 6px; margin: 4px 0; width: 100%; }
+  .sal-targets { font-size: 11px; color: #7a9ab0; }
+  .sal-status { font-size: 12px; color: #8ab4d6; margin: 2px 0; }
+  .sal-progress { font-size: 11px; color: #5a8aaa; }
+  .station-effect-line { font-size: 12px; padding: 3px 6px; margin: 2px 0; border-radius: 4px; }
+  .effect-active { color: #7ab87a; background: rgba(40,100,40,0.2); }
+  .effect-inactive { color: #b07a7a; background: rgba(100,40,40,0.2); }
+  .effect-shipyard-exception { color: #b8b87a; background: rgba(100,100,40,0.2); }
+  .cost-enough { color: #7ab87a; }
+  .cost-short { color: #b07a7a; }
+  .station-cost-rows { font-size: 11px; color: #8a9ab0; margin: 4px 0; }
   .equipeng-queue-summary {
     position: absolute; top: 13px; right: 18px;
     min-width: 112px; padding: 5px 10px; text-align: center;
@@ -498,8 +524,15 @@
 .archaeology-site-card.selected { border-color:#d4a843; background:rgba(20,15,8,.7); }
 .archaeology-site-card.locked { opacity:.4; cursor:default; }
 .archaeology-site-card .asc-name { display:block; font-weight:700; color:#c8d8e8; font-size:12px; margin-bottom:3px; }
+.archaeology-site-card .asc-profile { display:block; font-size:10px; color:#8ac8ff; }
 .archaeology-site-card .asc-meta { display:block; font-size:10px; color:#6a7a8e; }
 .archaeology-site-card .asc-detail { display:flex; gap:8px; margin-top:4px; font-size:10px; color:#4a5a6a; flex-wrap:wrap; }
+.archaeology-site-card .asc-drops { display:flex; flex-direction:column; gap:2px; margin-top:5px; font-size:9px; color:#5a6a7e; line-height:1.5; text-align:left; }
+.archaeology-site-card .asc-drops .ad-line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.archaeology-site-card .asc-drops .ad-icon { display:inline-block; width:14px; text-align:center; }
+.archaeology-site-card .asc-drops .ad-boost { color:#4ac87a; font-size:8px; }
+.archaeology-site-card .asc-meta .asc-base { color:#4a5a6a; font-size:9px; }
+.archaeology-site-card .asc-drops .ad-expected { color:#d4a843; font-weight:600; margin-top:2px; border-top:1px solid rgba(212,168,67,.15); padding-top:2px; }
 .archaeology-site-card .asc-state { display:block; font-size:10px; color:#4ac87a; margin-top:3px; }
 .archaeology-site-card.locked .asc-state { color:#c86b61; }
 .archaeology-site-card.selected .asc-state { color:#d4a843; }

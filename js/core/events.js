@@ -22,6 +22,9 @@ const GameEventContracts = (() => {
     "combat:zoneCleared": { required:["zoneId", "name", "lp", "clearCount"], numbers:["lp", "clearCount"] },
     "combat:deathspaceWaveCleared": { required:["deathspaceId", "zoneId", "wave", "lp"], numbers:["wave", "lp"] },
     "combat:deathspaceCleared": { required:["deathspaceId", "name", "lp", "clearCount"], numbers:["lp", "clearCount"] },
+    // 维修后自动恢复（Phase 3D 修正）：无论普通星带/死亡空间重创，维修后都返回来源普通星带第 1 波。
+    // zoneId=返回星带；defeatedMode(belt|deathspace)/deathspaceId 仅供日志/UI，deathspaceId 可为 null。
+    "combat:resumedAfterRepair": { required:["zoneId", "defeatedMode"], numbers:[] },
     "ship:destroyed": { required:["shipId", "repairSeconds"], numbers:["repairSeconds"] },
     "ship:enhancementAttempted": { required:["shipId", "instanceId", "fromLevel", "toLevel", "chance", "success", "xp"], numbers:["fromLevel", "toLevel", "chance", "xp"] },
     "equipment:enhancementAttempted": { required:["instanceId", "itemId", "category", "fromLevel", "toLevel", "chance", "success", "xp"], numbers:["fromLevel", "toLevel", "chance", "xp"] },
@@ -38,6 +41,8 @@ const GameEventContracts = (() => {
     "archaeology:artifactFound": { required:["artifactId", "category", "tier"], numbers:["iskValue", "lpValue"] },
     "archaeology:shipDisabled": { required:["instanceId", "repairSeconds"], numbers:["repairSeconds"] },
     "archaeology:repairCompleted": { required:["instanceId"], numbers:[] },
+    // 维修后自动恢复（Phase 3D）：维修完成后自动续跑被打断的考古行动
+    "archaeology:resumedAfterRepair": { required:["siteId"], numbers:[] },
     "archaeology:artifactSold": { required:["artifactId", "quantity", "isk"], numbers:["quantity", "isk"] },
     "archaeology:artifactRedeemed": { required:["artifactId", "quantity", "lp"], numbers:["quantity", "lp"] },
     "archaeology:artifactsSold": { required:["quantity", "totalIsk"], numbers:["quantity", "totalIsk"] },
@@ -53,7 +58,27 @@ const GameEventContracts = (() => {
     "booster:autoRefilled": { required:["slot", "itemId", "fromInventory"], numbers:["fromInventory"] },
     "booster:depleted": { required:["slot"], numbers:[] },
     "booster:unequipped": { required:["slot", "itemId"], numbers:[] },
-    "booster:replaced": { required:["slot", "oldItemId", "newItemId"], numbers:[] }
+    "booster:replaced": { required:["slot", "oldItemId", "newItemId"], numbers:[] },
+    // 军团与空间站系统 Phase 3C-2：三级本体建设队列事件契约（在线/离线语义一致）
+    // fromLevel 允许 0（Lv.0→Lv.1），startedAt 允许 0（测试注入），故均以非负数校验
+    "station:constructionStarted": { required:["kind", "fromLevel", "targetLevel", "startedAt", "completesAt", "durationMs"], numbers:["fromLevel", "targetLevel", "startedAt", "completesAt", "durationMs"] },
+    "station:constructionCompleted": { required:["kind", "fromLevel", "targetLevel", "startedAt", "completesAt"], numbers:["fromLevel", "targetLevel", "startedAt", "completesAt"] },
+    "station:bodyUpgraded": { required:["fromLevel", "toLevel", "startedAt", "completesAt"], numbers:["fromLevel", "toLevel", "startedAt", "completesAt"] },
+    // 军团与空间站系统 Phase 3C-4：八附属建筑施工事件契约
+    "station:buildingUpgraded": { required:["buildingId", "fromLevel", "toLevel", "startedAt", "completesAt"], numbers:["fromLevel", "toLevel", "startedAt", "completesAt"] },
+    // 资源调度中心：勘探指令额外产出（不增 XP）
+    "station:dispatchBonus": { required:["kind", "resourceId", "quantity", "counter", "threshold"], numbers:["quantity", "counter", "threshold"] },
+    // 军团与空间站系统 Phase 3C-5：三条自动线事件
+    "station:autoLineStarted": { required:["lineId", "targetId"], numbers:[] },
+    "station:autoLineStopped": { required:["lineId", "targetId", "reason", "quantity", "xp", "offline"], numbers:["quantity", "xp"] },
+    "station:autoLineCompleted": { required:["lineId", "targetId", "quantity", "xp", "offline", "cycles"], numbers:["quantity", "xp", "cycles"] },
+    // 军团与空间站系统 Phase 3C-6：维护燃料、考古实验室、作战指挥中心、舰船船坞
+    "station:maintenanceRefilled": { required:["points", "fuelSpent", "fuelRemaining", "remainingMs"], numbers:["points", "fuelSpent", "fuelRemaining", "remainingMs"] },
+    "station:maintenanceLow": { required:["fuelRemaining", "remainingMs"], numbers:["fuelRemaining", "remainingMs"] },
+    "station:maintenanceDepleted": { required:["fuelRemaining"], numbers:["fuelRemaining"] },
+    "station:archaeologyBonusTriggered": { required:["siteId", "tier", "artifactId", "baseUniqueRate", "tracerMultiplier", "labMultiplier", "effectiveRate"], numbers:["baseUniqueRate", "tracerMultiplier", "labMultiplier", "effectiveRate"] },
+    "station:combatXpBoosted": { required:["skillId", "baseXp", "multiplier", "actualXp"], numbers:["baseXp", "multiplier", "actualXp"] },
+    "station:shipyardMaterialsSaved": { required:["recipeId", "savings"], numbers:[] }
   });
 
   function cloneValue(value) {

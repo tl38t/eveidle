@@ -171,6 +171,11 @@ function renderBoosterInventory(display) {
 function renderBoosterPage(now) {
   var display = getBoosterManufacturingDisplayState(gameState, Number(now) || Date.now());
   var efficiency = document.getElementById("booster-eff-display"); if (efficiency) efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
+  var bsLog = document.getElementById("booster-logistics");
+  if (bsLog) {
+    var lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    bsLog.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2);
+  }
   var level = document.getElementById("booster-lv-num"); if (level) level.textContent = display.level;
   var xp = document.getElementById("booster-exp-value"); if (xp) xp.textContent = Math.floor(display.xp).toLocaleString() + " / " + display.xpRequired.toLocaleString();
   var fill = document.getElementById("booster-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
@@ -217,11 +222,7 @@ function renderBoosterPage(now) {
   });
   // 开始制造
   var start = document.getElementById("btn-start-booster");
-  if (start) start.addEventListener("click", function() {
-    var result = dispatchGameAction(gameState, { type:"booster/startManufacturing" }, Date.now());
-    if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
-    else { showBoosterToast(result.reason || "无法开始制造", true); }
-  });
+  if (start) start.addEventListener("click", function() { showActionConfirm("boosterEngineering"); });
   // 停止制造
   var stop = document.getElementById("btn-stop-booster");
   if (stop) stop.addEventListener("click", function() {

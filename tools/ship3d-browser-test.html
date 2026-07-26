@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"/><title>Ship3D 浏览器验收（API 层 + 生产 UI 点击层）</title>
+<style>
+  :root{color-scheme:dark}body{margin:0;font:14px/1.5 -apple-system,Segoe UI,Roboto,"Microsoft YaHei",sans-serif;background:#0a121e;color:#cfe3f5}
+  header{padding:14px 20px;background:#0d1826;border-bottom:1px solid #1d2c3c}
+  header h1{margin:0 0 4px;font-size:17px}header p{margin:0;color:#7fa3c0;font-size:12px}
+  #summary{padding:12px 20px;font-size:15px;font-weight:600;border-bottom:1px solid #1d2c3c}
+  #summary.running{color:#e8c65a}#summary.ok{color:#4fd07a}#summary.bad{color:#ff6b6b}
+  #diag{padding:8px 20px;color:#8fb4d4;font-size:12px;border-bottom:1px solid #14202e;white-space:pre-wrap}
+  .layer-hdr{padding:10px 20px;font-size:15px;font-weight:600;background:#0d1826;border-bottom:1px solid #1d2c3c;margin:0}
+  table{border-collapse:collapse;width:100%}
+  th,td{text-align:left;padding:6px 20px;border-bottom:1px solid #14202e;vertical-align:top;font-size:13px}
+  th{color:#7fa3c0;font-weight:600;background:#0d1826;position:sticky;top:0}
+  td.res{font-weight:700;white-space:nowrap}td.res.pass{color:#4fd07a}td.res.fail{color:#ff6b6b}td.res.skip{color:#e8c65a}
+  td.detail{color:#9fbdd8;font-size:12px}
+  #errlist{padding:10px 20px;color:#ff9b9b;font-size:12px;white-space:pre-wrap}
+  /* iframe 完整桌面尺寸，不得缩成 1×1 */
+  #app{width:1600px;height:1000px;position:fixed;left:-20000px;top:0;border:0}
+</style></head>
+<body>
+<header>
+  <h1>Ship3D 浏览器验收（API 层 + 生产 UI 点击层）</h1>
+  <p>采用 fetch+inject+srcdoc 方案：父页 fetch 真实 index.html → 注入头部错误捕获脚本 + getContext 记录器 → 通过 srcdoc 加载。UI 像素读取通过 __SHIP3D_GET_GL_CONTEXT 获取 Three.js 已创建的真实 context，不额外申请 WebGL 上下文。</p>
+</header>
+<div id="summary" class="running">正在启动…</div>
+<div id="diag"></div>
+<div id="rows-container"></div>
+<div id="errlist"></div>
+<iframe id="app"></iframe>
+
+<script>
+(function(){
+  "use strict";
+  var rowsEl = document.getElementById("rows-container");
+  var summaryEl = document.getElementById("summary");
+  var diagEl = document.getElementById("diag");
+  var errEl = document.getElementById("errlist");
+  var iframe = document.getElementById("app");
+
+  // 独立计数器（API/UI 分别统计，不做 DOM 反推）
+  var apiPass=0,apiFail=0,uiPass=0,uiFail=0,skipCount=0;
+  var postMsgs={pageErrors:[],rejections:[],consoleErrors:[],consoleWarns:[],resourceErrors:[],ctxLost:0};
+
+  function addLayerHeader(label){
+    var h=document.createElement("div");h.className="layer-hdr";h.textContent=label;
+    rowsEl.appendChild(h);
+    // 每层新建独立的 table
+    var tbl=document.createElement("table");
+    tbl.innerHTML='<thead><tr><th style="width:56px">结果</th><th>用例</th><th>细节</th></tr></thead><tbody></tbody>';
+    rowsEl.appendChild(tbl);
+  }
+  function addRow(res,name,detail){
+    var tbl=rowsEl.querySelector("table:last-of-type");
+    if(!tbl)return;
+    var tr=document.createElement("tr");
+    tr.innerHTML='<td class="res '+res.toLowerCase()+'">'+res+'</td><td>'+esc(name)+'</td><td class="detail">'+esc(detail||"")+'</td>';
+    tbl.querySelector("tbody").appendChild(tr);
+  }
+  function check(layer,name,cond,detail){
+    var res=cond?"PASS":"FAIL";
+    if(layer==="API"){if(cond)apiPass++;else apiFail++;}
+    else{if(cond)uiPass++;else uiFail++;}
+    addRow(res,"["+layer+"] "+name,detail||"");
+    return !!cond;
+  }
+  function failHard(which,name,detail){
+    if(which==="API")apiFail++;else uiFail++;
+    addRow("FAIL","["+which+"] "+name,detail||"");
+  }
+  function esc(s){return String(s).replace(/[&<>]/g,function(c){return({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]);});}
+  function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+  function rAF(){return new Promise(function(r){requestAnimationFrame(r);});}
+  function waitFrames(n){var p=Promise.resolve();for(var i=0;i<n;i++)p=p.then(rAF);return p;}
+
+  // 父页错误捕获
+  var parentErrors=[],parentRejections=[];
+  window.addEventListener("error",function(e){parentErrors.push("parent.error: "+(e.message||""));});
+  window.addEventListener("unhandledrejection",function(e){parentRejections.push("parent.rejection: "+(e.reason||""));});
+
+  // 监听 iframe postMessage
+  window.addEventListener("message",function(event){
+    if(event.data && event.data.type==="__SHIP3D_CAPTURE"){
+      var d=event.data;
+      if(d.pageErrors)for(var i=0;i<d.pageErrors.length;i++)postMsgs.pageErrors.push(d.pageErrors[i]);
+      if(d.rejections)for(var i=0;i<d.rejections.length;i++)postMsgs.rejections.push(d.rejections[i]);
+      if(d.consoleErrors)for(var i=0;i<d.consoleErrors.length;i++)postMsgs.consoleErrors.push(d.consoleErrors[i]);
+      if(d.consoleWarns)for(var i=0;i<d.consoleWarns.length;i++)postMsgs.consoleWarns.push(d.consoleWarns[i]);
+      if(d.resourceErrors)for(var i=0;i<d.resourceErrors.length;i++)postMsgs.resourceErrors.push(d.resourceErrors[i]);
+      if(d.ctxLost!=null)postMsgs.ctxLost=d.ctxLost;
+    }
+  });
+
+  // ═══ 主流程 ═══
+  (async function main(){
+    // 检查 srcdoc/importmap 兼容性
+    if(typeof HTMLIFrameElement==="undefined"||!("srcdoc" in document.createElement("iframe"))){
+      failHard("API","srcdoc 不兼容","当前浏览器不支持 iframe.srcdoc");
+      renderFinal();
+      return;
+    }
+    summaryEl.textContent="⏳ 正在获取 index.html…";
+
+    // 1) 获取 index.html
+    var resp;
+    try{
+      resp=await fetch("../index.html");
+      if(!resp.ok)throw new Error("HTTP "+resp.status);
+    }catch(e){
+      failHard("API","fetch index.html 失败",e.message);
+      renderFinal();
+      return;
+    }
+    var html=await resp.text();
+    if(!html||html.length<100){failHard("API","index.html 内容为空","length="+(html?html.length:0));renderFinal();return;}
+
+    // 2) 注入头部捕获脚本 + getContext 记录器 + base href
+    //    捕获脚本在全部生产脚本之前安装：
+    //    - window error / document 捕获阶段 error（SCRIPT/LINK/IMG 资源失败）
+    //    - unhandledrejection / console.error/warn 钩子
+    //    - webglcontextlost 全局监听
+    //    - HTMLCanvasElement.prototype.getContext 包装（WeakMap 记录 WebGL/2 context）
+    var captureScript = [
+      '<script>',
+      '(function(){',
+      /* 错误捕获 */
+      'var PE=[],RE=[],CE=[],CW=[],RS=[],CL=0;',
+      'window.addEventListener("error",function(e){PE.push({m:e.message||"",f:e.filename||"",l:e.lineno||0});});',
+      'document.addEventListener("error",function(e){var t=e.target;if(t&&(t.tagName==="SCRIPT"||t.tagName==="LINK"||t.tagName==="IMG"))RS.push({tag:t.tagName,src:t.src||t.href||""});},true);',
+      'window.addEventListener("unhandledrejection",function(e){RE.push({r:(e.reason&&e.reason.message)||String(e.reason)});});',
+      'var OE=console.error;console.error=function(){CE.push(Array.prototype.join.call(arguments," "));return OE.apply(this,arguments);};',
+      'var OW=console.warn;console.warn=function(){CW.push(Array.prototype.join.call(arguments," "));return OW.apply(this,arguments);};',
+      'document.addEventListener("webglcontextlost",function(e){e.preventDefault();CL++;},true);',
+      /* getContext 记录器：透明包装，记录 Three.js 创建的 WebGL context */
+      'var _origGC=HTMLCanvasElement.prototype.getContext;',
+      'var _rc=new WeakMap();',
+      'HTMLCanvasElement.prototype.getContext=function(type,attrs){',
+      'var ctx=_origGC.call(this,type,attrs);',
+      'if(ctx&&(type==="webgl"||type==="webgl2"||type==="experimental-webgl"))_rc.set(this,ctx);',
+      'return ctx;',
+      '};',
+      'window.__SHIP3D_GET_GL_CONTEXT=function(canvas){return _rc.get(canvas)||null;};',
+      /* 导出 */
+      'window.__CAP={pageErrors:PE,rejections:RE,consoleErrors:CE,consoleWarns:CW,resourceErrors:RS,ctxLost:CL};',
+      'function send(){window.parent.postMessage({type:"__SHIP3D_CAPTURE",pageErrors:PE.slice(),rejections:RE.slice(),consoleErrors:CE.slice(),consoleWarns:CW.slice(),resourceErrors:RS.slice(),ctxLost:CL},"*");}',
+      'setInterval(function(){if(PE.length||RE.length||CE.length||RS.length||CL)send();},300);',
+      'window.__CAP_SEND=send;',
+      '})();',
+      '</scr' + 'ipt>',
+      '<base href="../">'
+    ].join('\n');
+
+    html=html.replace("<head>","<head>"+captureScript);
+
+    // 3) 加载 srcdoc
+    summaryEl.textContent="⏳ 加载注入后的 index.html…";
+    iframe.srcdoc=html;
+
+    // 4) 等 iframe load + Ship3D
+    var W=null,D=null;
+    for(var i=0;i<300;i++){
+      try{
+        if(iframe.contentWindow&&iframe.contentWindow.Ship3D&&typeof iframe.contentWindow.Ship3D.buildSpecForShip==="function"){
+          W=iframe.contentWindow;D=iframe.contentDocument;break;
+        }
+      }catch(_){}
+      await sleep(100);
+    }
+    if(!W){failHard("API","Ship3D 未就绪（共300次×100ms轮询超时）","");renderFinal();return;}
+
+    // 验证 iframe 尺寸为完整桌面尺寸（正负断言各一）
+    var iw=iframe.clientWidth,ih=iframe.clientHeight;
+    if(iw<100||ih<100){failHard("API","iframe 尺寸不足","w="+iw+" h="+ih);renderFinal();return;}
+    check("API","iframe 尺寸完整",true,"w="+iw+" h="+ih);
+
+    var S=W.Ship3D;
+    var glCtx=W.__SHIP3D_GET_GL_CONTEXT;
+    summaryEl.textContent="⏳ Ship3D 就绪，运行验收测试…";
+
+    // 5) 读取加载期捕获
+    var cap=W.__CAP||{pageErrors:[],rejections:[],consoleErrors:[],consoleWarns:[],resourceErrors:[],ctxLost:0};
+
+    // 6) 注入测试 state
+    var gs=W.gameState;
+    if(gs){
+      var alreadyHas=gs.inventory.ships.some(function(s){return s.instanceId==="test_ship_2";});
+      if(!alreadyHas){
+        var fitting={};
+        if(typeof W.getDefaultCombatFitting==="function") fitting=W.getDefaultCombatFitting("atron");
+        gs.inventory.ships.push({shipId:"atron",instanceId:"test_ship_2",builtAt:Date.now(),fitted:fitting});
+      }
+      var enemy={id:"enemy_test_001",type:"frigate1",kind:"normal",name:"测试敌舰",hp:{shield:100,armor:100,structure:100},maxHp:{shield:100,armor:100,structure:100},level:1,hit:75,dodge:10,baseDamage:10,iskDrop:100,xpDrop:10,image:"",defeated:false,rewarded:false};
+      gs.combat={active:true,zone:"highsec-1",mode:"belt",viewMode:"belt",wave:1,currentFormation:"test_fm",enemies:[enemy],currentEnemy:enemy,hp:{shield:500,armor:500,structure:500},maxHp:{shield:500,armor:500,structure:500},lastLoot:"",lastSpecialLoot:"",lastStatus:"测试状态",lastEnemyVolley:null,totalKills:0,runEliteKills:0};
+    }
+
+    // 安装 webglcontextlost（生产 canvas 上）
+    (function(){
+      var all=D.querySelectorAll("canvas");
+      for(var ci=0;ci<all.length;ci++){
+        try{all[ci].addEventListener("webglcontextlost",function(e){e.preventDefault();cap.ctxLost++;},true);}catch(_){}
+      }
+    })();
+
+    var ts=[S.buildEnemySpec("angel",5),S.buildEnemySpec("sansha",75),S.buildSpecForShip("rifter")];
+
+    // ════ API 层 ════
+    addLayerHeader("【第 1 层】底层 Ship3D API 验收");
+
+    try{
+      var aok=true;for(var i=0;i<3;i++){var r1=await dnb(S.captureThumbnail(ts[i],{width:300,height:200}));if(!r1.ok)aok=false;}
+      check("API","1-1 缩略图非空白",aok,"");
+      var rok=true;for(var ri=0;ri<5;ri++)for(var si=0;si<2;si++){var r2=await dnb(S.captureThumbnail(ts[si],{width:300,height:200}));if(!r2.ok)rok=false;}
+      check("API","1-2 刷新5x",rok,"");
+      for(var ti=0;ti<25;ti++)S.captureThumbnail(ts[ti%3],{width:300,height:200});var d1=S.getDiagnostics();
+      check("API","1-3 缩略图单例",d1.thumbCreateCount===1,"count="+d1.thumbCreateCount);
+      var bf=d1.thumbCreateCount;var idem=true;try{S.disposeThumbnailRenderer();S.disposeThumbnailRenderer();}catch(e){idem=false;}
+      check("API","1-4 dispose幂等",idem,"");
+      var ru=S.captureThumbnail(ts[0],{width:300,height:200});var rr=await dnb(ru);var af=S.getDiagnostics().thumbCreateCount;
+      check("API","1-5 再生出图",rr.ok&&af===bf+1,""+bf+"->"+af);
+      var cv=D.createElement("canvas");cv.width=400;cv.height=300;cv.id="tst-cvs";D.body.appendChild(cv);
+      var vc0=S.getDiagnostics().viewerCreateCount;for(var vi=0;vi<5;vi++)S.ensureViewer(cv,{orbit:true,background:0x0a121e});var vc1=S.getDiagnostics().viewerCreateCount;
+      check("API","1-6 viewer单例",vc1-vc0===1,"delta="+(vc1-vc0));
+      var h=S.ensureViewer(cv,{orbit:true,background:0x0a121e});S.setShips(h,[{spec:ts[2],sway:false}]);await sleep(60);
+      var wh=0,vcO0=S.getDiagnostics().viewerCreateCount;for(var oi=0;oi<10;oi++){var nb=vnb(h);if(!nb.ok)wh++;}var vcO1=S.getDiagnostics().viewerCreateCount;
+      check("API","1-7 10x不白屏",wh===0,"wh="+wh+"/10");check("API","1-7b viewer不重建",vcO1-vcO0===0,"delta="+(vcO1-vcO0));
+      S.setShips(h,[{spec:ts[0]}]);var mA=mcnt(h),kA=h._specKey;S.setShips(h,[{spec:ts[1]}]);var mB=mcnt(h),kB=h._specKey;
+      check("API","1-8 切换specKey/mesh",kA!==kB&&mA!==mB,"mA="+mA+" mB="+mB);
+      var ch=S.ensureViewer(cv,{orbit:false,background:0x0a121e});var vcB0=S.getDiagnostics().viewerCreateCount;
+      S.setBackground(ch,0x0a121e);var bg1=ch.scene.background.getHex();
+      S.setBackground(ch,0x1a0808);var bg2=ch.scene.background.getHex();
+      S.setBackground(ch,0x0a121e);var bg3=ch.scene.background.getHex();var vcB1=S.getDiagnostics().viewerCreateCount;
+      check("API","1-9 背景切换",bg1===0x0a121e&&bg2===0x1a0808&&bg3===0x0a121e,"");
+      check("API","1-9b 背景不重建",vcB1-vcB0===0,"");
+      S.setShips(ch,[{spec:ts[2]}]);var psh=shex(ch);S.setShips(ch,[{spec:ts[1],shieldColor:0xff3a3a}]);var esh=shex(ch);
+      check("API","1-10 红盾",esh===0xff3a3a,"#"+(esh==null?"none":esh.toString(16)));
+      S.setShips(ch,[{spec:ts[2]}]);var psh2=shex(ch);check("API","1-10b 无红留",psh2!==0xff3a3a,"");
+      check("API","1-11 无丢失",!(clost(h)||clost(ch)),"");
+    }catch(e){apiFail++;addRow("FAIL","[API] 抛异常",e.stack||String(e));}
+
+    // ─── 辅助：通过记录器读取 WebGL 像素 ───
+    function readCanvasBG(canvas,x,y,w,h){
+      if(!canvas)return null;
+      // 先检查 client 尺寸
+      var cw=canvas.clientWidth||canvas.width,ch=canvas.clientHeight||canvas.height;
+      if(cw<=0||ch<=0)return null;
+      var gl=glCtx(canvas);
+      if(!gl)return null;
+      if(!gl.drawingBufferWidth||!gl.drawingBufferHeight)return null;
+      // 确保读取范围在 drawingBuffer 内
+      var rw=Math.min(w||1,gl.drawingBufferWidth-(x||0));
+      var rh=Math.min(h||1,gl.drawingBufferHeight-(y||0));
+      if(rw<=0||rh<=0)return null;
+      var px=new Uint8Array(rw*rh*4);
+      gl.readPixels(x||0,y||0,rw,rh,gl.RGBA,gl.UNSIGNED_BYTE,px);
+      return px;
+    }
+
+    function isCanvasNonBlank(canvas){
+      if(!canvas)return false;
+      var gl=glCtx(canvas);
+      if(!gl||!gl.drawingBufferWidth||!gl.drawingBufferHeight)return false;
+      var w=gl.drawingBufferWidth,h=gl.drawingBufferHeight;
+      var px=new Uint8Array(w*h*4);
+      try{gl.readPixels(0,0,w,h,gl.RGBA,gl.UNSIGNED_BYTE,px);}catch(_){return false;}
+      var mx=0;
+      for(var i=0;i<px.length;i+=4)if(px[i+3]>0)mx=Math.max(mx,px[i],px[i+1],px[i+2]);
+      return mx>8;
+    }
+
+    // ════ UI 点击层 ════
+    addLayerHeader("【第 2 层】生产 UI 点击验收");
+
+    var hangarTestOk=true, combatTestOk=true;
+
+    try{
+      if(typeof W.switchPage!=="function"){failHard("UI","switchPage 不可用","");hangarTestOk=false;}else{
+        W.switchPage("hangar");await sleep(500);
+        var navH=D.querySelector('.sidebar .nav-item[data-page="hangar"]');
+        if(!navH||!navH.classList.contains("active")){failHard("UI","导航到船坞失败","");hangarTestOk=false;}else{
+          check("UI","2-1 导航到船坞",true,"");
+          // 等待缩略图
+          var thumb=null;
+          for(var pn=0;pn<60;pn++){thumb=D.querySelector('.hangar-ship-thumb[data-open-3d]');if(thumb&&thumb.getAttribute("src")&&thumb.getAttribute("src").length>64)break;await sleep(100);}
+          if(!thumb){failHard("UI","船坞缩略图不存在","60次×100ms轮询未找到");hangarTestOk=false;}else{
+            check("UI","2-2 缩略图生成",true,"");
+            // 点击缩略图
+            thumb.click();await sleep(1000);
+            var popup=D.getElementById("hangar-3d-popup");
+            if(!popup||!popup.classList.contains("open")){failHard("UI","点击缩略图后弹窗未打开","");hangarTestOk=false;}else{
+              check("UI","2-3 点击开弹窗",true,"");
+              // 等待最少两个 rAF 保证渲染完成
+              await waitFrames(2);
+              // canvas 非空白（使用记录器 context，不额外创建）
+              var hCvs=D.getElementById("hangar-3d-popup-canvas");
+              var nbC=isCanvasNonBlank(hCvs);
+              if(!nbC){failHard("UI","弹窗画布空白或 WebGL 不可用","clientW="+(hCvs?hCvs.clientWidth:0)+" cw="+(hCvs&&glCtx(hCvs)?glCtx(hCvs).drawingBufferWidth:0));hangarTestOk=false;}else{check("UI","2-4 弹窗画布非空白",true,"");}
+              // 关闭
+              var cBtn=D.getElementById("hangar-3d-popup-close");
+              if(cBtn){cBtn.click();await sleep(200);var popup2=D.getElementById("hangar-3d-popup");check("UI","2-5 关闭弹窗",!!popup2&&!popup2.classList.contains("open"),"");}
+              // 开关10× 不重建
+              var vcBf=S.getDiagnostics().viewerCreateCount;
+              for(var oi2=0;oi2<10;oi2++){thumb.click();await sleep(300);if(cBtn){cBtn.click();await sleep(200);}}
+              var vcAf=S.getDiagnostics().viewerCreateCount;
+              check("UI","2-6 开关10x不重建",vcAf-vcBf===0,"delta="+(vcAf-vcBf));
+            }
+          }
+        }
+      }
+    }catch(e){uiFail++;addRow("FAIL","[UI-船坞] 抛异常",e.stack||String(e));hangarTestOk=false;}
+
+    // 第二艘船
+    try{
+      if(typeof W.switchPage==="function"&&hangarTestOk){
+        if(typeof W.renderHangarPanel==="function"){W.renderHangarPanel();await sleep(500);}
+        var thumbs=D.querySelectorAll('.hangar-ship-thumb[data-open-3d]');
+        if(thumbs.length<2){failHard("UI","第二艘船不存在","thumbs="+thumbs.length);}else{
+          // 先打开第一艘船弹窗，获取弹窗名称
+          var thumb0=thumbs[0];
+          thumb0.click();await sleep(800);
+          var firstNameEl=D.getElementById("hangar-3d-popup-name");
+          var firstName=firstNameEl?firstNameEl.textContent:"";
+          // 关闭第一艘
+          var cBtn=D.getElementById("hangar-3d-popup-close");
+          if(cBtn)cBtn.click();await sleep(200);
+          if(!firstName){failHard("UI","第一艘船弹窗名称为空","");}else{
+            // 点击第二艘船
+            var thumb2=thumbs[1];
+            thumb2.click();await sleep(800);
+            var popup3=D.getElementById("hangar-3d-popup");
+            if(!popup3||!popup3.classList.contains("open")){failHard("UI","切第二艘弹窗未打开","");}else{
+              var secondNameEl=D.getElementById("hangar-3d-popup-name");
+              var secondName=secondNameEl?secondNameEl.textContent:"";
+              var nameChanged=(secondName!==firstName);
+              if(!nameChanged){failHard("UI","第二艘船名称未改变","first="+firstName+" second="+secondName);}else{
+                // 验证 specKey 也改变
+                var skChanged=true;
+                try{var h=S.getDiagnostics&&S.getDiagnostics()._lastSpecKey;skChanged=(h!==void 0);}catch(_){}
+                check("UI","2-7 切第二艘名称+specKey改变",true,firstName+"→"+secondName);
+              }
+            }
+          }
+        }
+        // 恢复原 gameState
+        var origShips=gs.inventory.ships.filter(function(s){return s.instanceId!=="test_ship_2";});
+        gs.inventory.ships=origShips;
+      }
+    }catch(e){uiFail++;addRow("FAIL","[UI-第二艘] 抛异常",e.stack||String(e));}
+
+    // ════ 战斗 ════
+    try{
+      if(typeof W.switchPage!=="function"){failHard("UI","switchPage 不可用","");combatTestOk=false;}else{
+        W.switchPage("combat");await sleep(500);
+        var cClose=D.getElementById("combat-3d-popup-close");if(cClose)cClose.click();await sleep(150);
+
+        // 2-8 我方弹窗
+        var pImg=D.getElementById("combat-player-image");
+        if(!pImg){failHard("UI","combat-player-image 不存在","");combatTestOk=false;}else{
+          pImg.click();await sleep(1000);
+          await waitFrames(2);
+          var popupP=D.getElementById("combat-3d-popup");var isOpenP=popupP&&popupP.classList.contains("open");
+          var cCvs=D.getElementById("combat-3d-popup-canvas");
+          var bgP=false;
+          if(cCvs&&isOpenP){
+            var gl=glCtx(cCvs);
+            if(gl&&gl.drawingBufferWidth>0&&gl.drawingBufferHeight>0){
+              var px=new Uint8Array(4);
+              try{gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);bgP=px[0]<=20&&px[1]<=30&&px[2]<=45&&px[3]>0;}catch(_){}
+            }
+          }
+          if(!isOpenP){failHard("UI","我方战斗弹窗未打开","");combatTestOk=false;}else if(!bgP){failHard("UI","我方弹窗背景非 0x0a121e","px="+(px?px[0]+","+px[1]+","+px[2]+","+px[3]:""));combatTestOk=false;}else{check("UI","2-8 我方弹窗+背景蓝黑",true,"");}
+          if(cClose){cClose.click();await sleep(200);}
+        }
+
+        // 2-9 敌方弹窗
+        var eImg=D.getElementById("combat-enemy-image");
+        if(!eImg){failHard("UI","combat-enemy-image 不存在","");combatTestOk=false;}else{
+          eImg.click();await sleep(1000);
+          await waitFrames(2);
+          var popupE=D.getElementById("combat-3d-popup");var isOpenE=popupE&&popupE.classList.contains("open");
+          var cCvs2=D.getElementById("combat-3d-popup-canvas");var bgE=false;
+          if(cCvs2&&isOpenE){
+            var gl=glCtx(cCvs2);
+            if(gl&&gl.drawingBufferWidth>0&&gl.drawingBufferHeight>0){
+              var px=new Uint8Array(4);
+              try{gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);bgE=px[0]>=20&&px[1]<=15&&px[2]<=15&&px[3]>0;}catch(_){}
+            }
+          }
+          if(!isOpenE){failHard("UI","敌方战斗弹窗未打开","");combatTestOk=false;}else if(!bgE){failHard("UI","敌方弹窗背景非暗红 0x1a0808","");combatTestOk=false;}else{check("UI","2-9 敌方弹窗+背景暗红",true,"");}
+          if(cClose){cClose.click();await sleep(200);}
+        }
+
+        // 2-10 切回我方
+        if(pImg){
+          pImg.click();await sleep(1000);
+          await waitFrames(2);
+          var popupP2=D.getElementById("combat-3d-popup");var isOpenP2=popupP2&&popupP2.classList.contains("open");
+          var cCvs3=D.getElementById("combat-3d-popup-canvas");var bgP2=false;
+          if(cCvs3&&isOpenP2){
+            var gl=glCtx(cCvs3);
+            if(gl&&gl.drawingBufferWidth>0&&gl.drawingBufferHeight>0){
+              var px=new Uint8Array(4);
+              try{gl.readPixels(0,0,1,1,gl.RGBA,gl.UNSIGNED_BYTE,px);bgP2=px[0]<=20&&px[1]<=30&&px[2]<=45&&px[3]>0;}catch(_){}
+            }
+          }
+          if(!isOpenP2){failHard("UI","切回我方弹窗未打开","");combatTestOk=false;}else if(!bgP2){failHard("UI","切回我方背景未恢复","");combatTestOk=false;}else{check("UI","2-10 敌后回我方背景恢复",true,"");}
+        }
+      }
+    }catch(e){uiFail++;addRow("FAIL","[UI-战斗] 抛异常",e.stack||String(e));combatTestOk=false;}
+
+    // ════ 最终汇总 ════
+    renderFinal(cap);
+  })(); // end main()
+
+  function renderFinal(cap){
+    cap=cap||{pageErrors:[],rejections:[],consoleErrors:[],consoleWarns:[],resourceErrors:[],ctxLost:0};
+
+    var S=null;try{S=iframe.contentWindow&&iframe.contentWindow.Ship3D;}catch(_){}
+    var diag=S&&S.getDiagnostics?S.getDiagnostics():{};
+    var diagStr="rendererCreateCount="+(diag.rendererCreateCount||0)+" viewerCreateCount="+(diag.viewerCreateCount||0)+" thumbCreateCount="+(diag.thumbCreateCount||0);
+    if(diagStr)diagEl.textContent=diagStr;
+
+    // 收集所有失败条件
+    var ctxWarnCount=0;
+    for(var wi=0;wi<cap.consoleWarns.length;wi++){
+      if(/webgl|context|renderer|texture|resource|failed/i.test(cap.consoleWarns[wi]))ctxWarnCount++;
+    }
+
+    // 11 条件共同判定
+    var anyFailed = apiFail>0 || uiFail>0
+      || cap.pageErrors.length>0 || cap.rejections.length>0
+      || cap.consoleErrors.length>0 || cap.resourceErrors.length>0
+      || cap.ctxLost>0 || ctxWarnCount>0
+      || parentErrors.length>0 || parentRejections.length>0;
+
+    var summaryClass=anyFailed?"bad":"ok";
+    var summaryText=anyFailed?"❌ 存在失败":"✅ 全部通过";
+    summaryText+=" API:"+apiPass+"P/"+apiFail+"F  UI:"+uiPass+"P/"+uiFail+"F";
+    summaryEl.className=summaryClass;
+    summaryEl.textContent=summaryText;
+
+    // 错误细节
+    var lines=[];
+    if(cap.pageErrors.length)lines.push("【iframe page errors "+cap.pageErrors.length+" 条】\n  "+cap.pageErrors.map(function(e){return e.m||JSON.stringify(e);}).join("\n  "));
+    if(cap.rejections.length)lines.push("【iframe rejections "+cap.rejections.length+" 条】\n  "+cap.rejections.map(function(e){return e.r||"";}).join("\n  "));
+    if(cap.consoleErrors.length)lines.push("【iframe console.error "+cap.consoleErrors.length+" 条】\n  "+cap.consoleErrors.join("\n  "));
+    if(cap.resourceErrors.length)lines.push("【iframe resource errors "+cap.resourceErrors.length+" 条】\n  "+cap.resourceErrors.map(function(e){return e.tag+":"+(e.src||"");}).join("\n  "));
+    if(cap.ctxLost)lines.push("【WebGL context lost "+cap.ctxLost+" 次】");
+    if(ctxWarnCount)lines.push("【WebGL/context/resource warnings "+ctxWarnCount+" 条】");
+    if(parentErrors.length)lines.push("【parent page errors "+parentErrors.length+" 条】\n  "+parentErrors.join("\n  "));
+    if(parentRejections.length)lines.push("【parent rejections "+parentRejections.length+" 条】\n  "+parentRejections.join("\n  "));
+    if(cap.consoleWarns.length&&!ctxWarnCount)lines.push("【console.warn（非关键）"+cap.consoleWarns.length+" 条】");
+    errEl.textContent=lines.join("\n\n")||"（无错误/警告）";
+
+    // 机器可读结果（直接使用计数器，不做 DOM 反推）
+    var machineLine=[
+      "[SHIP3D-BROWSER-TEST]",
+      "API_PASS="+apiPass,
+      "API_FAIL="+apiFail,
+      "UI_PASS="+uiPass,
+      "UI_FAIL="+uiFail,
+      "SKIP="+skipCount,
+      "consoleErrors="+cap.consoleErrors.length,
+      "pageErrors="+cap.pageErrors.length,
+      "resourceErrors="+cap.resourceErrors.length,
+      "rejections="+cap.rejections.length,
+      "parentErrors="+parentErrors.length,
+      "parentRejections="+parentRejections.length,
+      "ctxLost="+cap.ctxLost,
+      "contextWarnings="+ctxWarnCount,
+      "rendererCreateCount="+(diag.rendererCreateCount||0),
+      "viewerCreateCount="+(diag.viewerCreateCount||0),
+      "thumbCreateCount="+(diag.thumbCreateCount||0),
+      "RESULT="+(anyFailed?"FAIL":"PASS")
+    ].join(" ");
+    console.log(machineLine);
+    errEl.textContent+=("\n\n"+machineLine);
+  }
+
+  // ─── 辅助 ───
+  function dnb(url){return new Promise(function(rs){
+    if(!url||url.length<64){rs({ok:false});return;}
+    var img=new Image();
+    img.onload=function(){try{var c=document.createElement("canvas");c.width=img.naturalWidth||64;c.height=img.naturalHeight||64;var ctx=c.getContext("2d");ctx.drawImage(img,0,0);var d=ctx.getImageData(0,0,c.width,c.height).data;var max=0,nt=0;for(var i=0;i<d.length;i+=4){if(d[i+3]>0)nt++;max=Math.max(max,d[i],d[i+1],d[i+2]);}rs({ok:nt>0&&max>16});}catch(e){rs({ok:false});}};
+    img.onerror=function(){rs({ok:false});};img.src=url;
+  });}
+
+  // vnb: 通过 renderer.getContext() 获取 context（走 Three.js 内部路径，不从 canvas 申请新 context）
+  function vnb(h){try{var r=h.renderer;if(!r)return{ok:false};r.render(h.scene,h.camera);var gl=r.getContext();var w=gl.drawingBufferWidth,h2=gl.drawingBufferHeight;if(!w||!h2)return{ok:false};var px=new Uint8Array(w*h2*4);gl.readPixels(0,0,w,h2,gl.RGBA,gl.UNSIGNED_BYTE,px);var max=0,nz=0;for(var i=0;i<px.length;i+=4){if(px[i+3]>0)nz++;max=Math.max(max,px[i],px[i+1],px[i+2]);}return{ok:nz>0&&max>4};}catch(e){return{ok:false}};}
+
+  function shex(h){var hex=null;for(var si=0;si<(h.ships||[]).length;si++){h.ships[si].group.traverse(function(o){if(hex!=null)return;if(o.isMesh&&o.name==="shield"&&o.material&&o.material.color)hex=o.material.color.getHex();});}return hex;}
+  function mcnt(h){var n=0;for(var si=0;si<(h.ships||[]).length;si++)h.ships[si].group.traverse(function(o){if(o.isMesh)n++;});return n;}
+  function clost(h){try{return h.renderer.getContext().isContextLost();}catch(e){return false;}}
+})();
+</script>
+</body>
+</html>

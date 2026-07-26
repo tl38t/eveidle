@@ -1,0 +1,434 @@
+<!--
+  空间站系统浏览器验收页（Phase 3C-8）
+  通过 iframe 加载真实 index.html，在 iframe.contentWindow 中操作真实游戏代码和 DOM。
+  用法：浏览器打开 http://localhost:PORT/tools/station-browser-test.html（PORT 来自 serve 本地的端口）
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>空间站浏览器验收</title>
+<style>
+body { font-family: monospace; background: #0a0f18; color: #c8d8e8; padding: 20px; }
+h1 { color: #d4a843; }
+h2 { color: #8ac8ff; font-size: 14px; margin-top: 20px; }
+.pass { color: #4ac87a; }
+.fail { color: #e05555; }
+.warn { color: #d4a843; }
+.log { margin: 4px 0; font-size: 13px; }
+.section { margin: 16px 0; padding: 8px; border-left: 2px solid #2a3a4a; }
+#frame-box { border: 1px solid #2a3a4a; margin: 12px 0; }
+#frame-box iframe { width: 100%; height: 800px; border: none; background: #0a0f18; }
+summary { cursor: pointer; font-weight: bold; margin-bottom: 8px; }
+.btn { background:#1a2a3a; color:#c8d8e8; border:1px solid #2a3a4a; padding:4px 12px; cursor:pointer; margin:4px; border-radius:3px; }
+.btn:hover { background:#2a3a4a; }
+</style>
+</head>
+<body>
+<h1>🛸 空间站浏览器验收（Phase 3C-8）</h1>
+<p style="color:#6a7a8e;font-size:13px;">通过 iframe 加载真实 index.html，测试全链路</p>
+<button class="btn" onclick="runAll()">▶ 运行全部测试</button>
+<button class="btn" onclick="clearLog()">清空日志</button>
+<div id="frame-box"><iframe id="game-frame" src="../index.html"></iframe></div>
+<div id="output"></div>
+
+<script>
+var out = document.getElementById("output");
+var pass = 0, fail = 0, skip = 0, total = 0;
+var consoleErrors = 0, pageErrors = 0, rejections = 0, resourceErrors = 0;
+var tests = [];
+
+function log(msg, cls) { var d = document.createElement("div"); d.className = "log " + (cls || ""); d.textContent = msg; out.appendChild(d); }
+function clearLog() {
+  out.innerHTML = ""; pass = 0; fail = 0; skip = 0; total = 0;
+  consoleErrors = 0; pageErrors = 0; rejections = 0; resourceErrors = 0;
+}
+
+function test(name, fn) {
+  tests.push(function(win) {
+    try {
+      var result = fn(win);
+      if (result === true || result === undefined) { pass++; log("✅ " + name, "pass"); }
+      else { fail++; log("❌ " + name + " → " + result, "fail"); }
+    } catch(e) {
+      fail++; log("❌ " + name + " → 异常: " + e.message + (e.stack ? " at " + e.stack.split("\n")[1] : ""), "fail");
+    }
+    total++;
+  });
+}
+
+function runAll() {
+  clearLog();
+  var iframe = document.getElementById("game-frame");
+  var win = iframe.contentWindow;
+  if (!win || !win.gameState) { log("⏳ iframe 未加载完成，等待..."); setTimeout(function(){runAll();}, 500); return; }
+  log("=== " + tests.length + " 项测试 ===", "section");
+  // 收集控制台/页面/资源错误
+  var origOnError = win.onerror;
+  win.onerror = function(msg, url, line) { pageErrors++; return false; };
+  var origOnRejection = win.onunhandledrejection;
+  win.onunhandledrejection = function() { rejections++; };
+  // 劫持 console.error
+  var origConsoleError = win.console.error;
+  win.console.error = function() { consoleErrors++; origConsoleError.apply(win, arguments); };
+  for (var i = 0; i < tests.length; i++) tests[i](win);
+  // 恢复钩子
+  win.onerror = origOnError;
+  win.onunhandledrejection = origOnRejection;
+  win.console.error = origConsoleError;
+  log("", "section");
+  log("控制台错误: " + consoleErrors + " 页面错误: " + pageErrors + " 未捕获rejection: " + rejections + " 资源错误: " + resourceErrors, "");
+  log("==== 结果: PASS=" + pass + " FAIL=" + fail + " SKIP=" + skip + " 总共=" + total + " ====", "section");
+  if (fail === 0 && skip === 0 && consoleErrors === 0 && pageErrors === 0 && rejections === 0 && resourceErrors === 0) {
+    log("★★★★★ RESULT=PASS ★★★★★", "pass");
+  } else {
+    log("RESULT=FAIL", "fail");
+    if (skip > 0) log("  SKIP 必须为 0", "warn");
+  }
+}
+
+// ========== 辅助函数 ==========
+
+function G(win) { return win.gameState; }
+
+function setupBasicStation(win) {
+  var g = win.gameState;
+  // 升级本体到 Lv.3
+  while (g.station.bodyLevel < 3) {
+    win.dispatchGameAction(g, { type: "station/startBodyConstruction" }, Date.now() - 3600000);
+    g.station.construction.completesAt = Date.now() - 1000;
+    win.completeStationConstruction(g, { offline: false });
+  }
+  g.station.bodyLevel = 3;
+  g.station.construction = null;
+  // 加钱加材料
+  var RR = win.ResourceRegistry;
+  RR.set(g, "currency:isk", 1000000000);
+  RR.set(g, "mineral:三钛合金", 500000);
+  RR.set(g, "mineral:类银超金属", 100000);
+  RR.set(g, "mineral:类晶体胶矿", 100000);
+  RR.set(g, "mineral:同位聚合体", 100000);
+  RR.set(g, "mineral:超新星诺克石", 100000);
+  RR.set(g, "mineral:基腹断岩", 100000);
+  RR.set(g, "mineral:超噬矿", 100000);
+  RR.set(g, "consumable:fuel", 5000000);
+  // 维护燃料
+  if (!g.station.maintenance) g.station.maintenance = { tier: "standard", fuelRemaining: 500000, lastTick: Date.now() };
+  else g.station.maintenance.fuelRemaining = 500000;
+  g.station.maintenance.lastTick = Date.now();
+  // 加技能
+  if (!g.skills.refining) g.skills.refining = { lvl: 80, xp: 0 };
+  else g.skills.refining.lvl = 80;
+  if (!g.skills.equipmentEngineering) g.skills.equipmentEngineering = { lvl: 80, xp: 0 };
+  else g.skills.equipmentEngineering.lvl = 80;
+  if (!g.skills.boosterEngineering) g.skills.boosterEngineering = { lvl: 80, xp: 0 };
+  else g.skills.boosterEngineering.lvl = 80;
+  if (!g.skills.shipEngineering) g.skills.shipEngineering = { lvl: 80, xp: 0 };
+  else g.skills.shipEngineering.lvl = 80;
+  // 重置自动线
+  g.station.autoLines = {
+    smelting: { enabled: false, operatorId: null, selectedTargetId: null, startedTargetId: null, progress: 0, lastTick: 0, stoppedReason: null },
+    equipment: { enabled: false, operatorId: null, selectedTargetId: null, startedTargetId: null, progress: 0, lastTick: 0, stoppedReason: null },
+    booster: { enabled: false, operatorId: null, selectedTargetId: null, startedTargetId: null, progress: 0, lastTick: 0, stoppedReason: null }
+  };
+  // 重置建筑
+  for (var id of ["resource_dispatch","planetary_control","smelting_refinery","equipment_factory","booster_factory","archaeology_lab","combat_command","shipyard"]) {
+    g.station.buildings[id] = 0;
+  }
+  g.station.construction = null;
+}
+
+function buildAllLv2(win) {
+  var g = win.gameState;
+  for (var id of ["resource_dispatch","planetary_control","smelting_refinery","equipment_factory","booster_factory","archaeology_lab","combat_command","shipyard"]) {
+    g.station.buildings[id] = 2;
+  }
+}
+
+function getDisplay(win) {
+  return win.getStationPageDisplayState(win.gameState, Date.now());
+}
+
+function hasNaN(obj, path) {
+  if (obj === undefined) return path + "=undefined";
+  if (obj === null) return null;
+  if (typeof obj === "number") {
+    if (!Number.isFinite(obj)) return path + "=" + obj;
+    return null;
+  }
+  if (typeof obj === "object") {
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length; i++) {
+        var r = hasNaN(obj[i], path + "[" + i + "]");
+        if (r) return r;
+      }
+      return null;
+    }
+    if (obj !== null) {
+      for (var k in obj) {
+        if (obj.hasOwnProperty(k)) {
+          var r = hasNaN(obj[k], path + "." + k);
+          if (r) return r;
+        }
+      }
+    }
+    return null;
+  }
+  return null;
+}
+
+// ========== 测试用例 ==========
+
+// ---- A区: 基本存在性 ----
+test("iframe 加载完成且 gameState 存在", function(win) {
+  return win.gameState && typeof win.gameState === "object" ? true : "gameState 不存在";
+});
+
+test("station 系统已加载", function(win) {
+  return typeof win.getStationPageDisplayState === "function" ? true : "getStationPageDisplayState 不存在";
+});
+
+test("getStationPageDisplayState 不抛异常", function(win) {
+  try {
+    var d = getDisplay(win);
+    return d ? true : "返回 null";
+  } catch(e) { return "抛异常: " + e.message; }
+});
+
+// ---- B区: 本体建设 ----
+test("本体建设 Lv.1", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  g.station.bodyLevel = 0;
+  g.station.construction = null;
+  var r = win.dispatchGameAction(g, { type: "station/startBodyConstruction" }, Date.now());
+  return r.changed ? true : "startBodyConstruction 返回 changed=false, reason=" + r.reason;
+});
+
+test("重复建设本体原子拒绝", function(win) {
+  var g = G(win);
+  var r = win.dispatchGameAction(g, { type: "station/startBodyConstruction" }, Date.now());
+  return r.changed === false ? true : "重复建设应拒绝, 返回 " + JSON.stringify(r);
+});
+
+// ---- C区: 建筑 ----
+test("建筑升级 smelting_refinery Lv.1", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  g.station.buildings.smelting_refinery = 0;
+  g.station.construction = null;
+  var r = win.dispatchGameAction(g, { type: "station/startBuildingConstruction", buildingId: "smelting_refinery" }, Date.now());
+  return r.changed ? true : "建筑升级返回 changed=false, reason=" + r.reason;
+});
+
+test("建筑等级 ≤ 本体等级", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  g.station.bodyLevel = 1;
+  g.station.buildings.smelting_refinery = 1; // 等于本体 level
+  g.station.construction = null;
+  var r = win.dispatchGameAction(g, { type: "station/startBuildingConstruction", buildingId: "smelting_refinery" }, Date.now());
+  return r.changed === false && r.reason === "body-level-cap" ? true : "应 body-level-cap, 返回 " + JSON.stringify(r);
+});
+
+// ---- D区: 维护 ----
+test("维护补给 canRefill", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  g.station.maintenance.fuelRemaining = 100; // 极少，需要补给
+  var refillState = win.getStationRefillMaintenanceState(g);
+  return refillState.canRefill ? true : "应可以补给, 返回 " + JSON.stringify(refillState);
+});
+
+test("一键补给执行", function(win) {
+  var g = G(win);
+  g.station.maintenance.fuelRemaining = 100;
+  g.station.maintenance.lastTick = Date.now() - 10000;
+  var r = win.dispatchGameAction(g, { type: "station/refillMaintenance" }, Date.now());
+  return r.changed ? true : "补给失败, reason=" + r.reason;
+});
+
+// ---- E区: 显示态 ----
+test("8 建筑内容非空", function(win) {
+  setupBasicStation(win);
+  buildAllLv2(win);
+  var d = getDisplay(win);
+  if (!d || !Array.isArray(d.buildings)) return "buildings 非数组";
+  if (d.buildings.length !== 8) return "buildings.length=" + d.buildings.length;
+  for (var i = 0; i < d.buildings.length; i++) {
+    if (!d.buildings[i].name || d.buildings[i].name === "") return "buildings[" + i + "].name 为空";
+    if (!d.buildings[i].effectText || d.buildings[i].effectText === "") return "buildings[" + i + "].effectText 为空";
+  }
+  return true;
+});
+
+test("3 自动线目标非空", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  g.station.buildings.smelting_refinery = 2;
+  g.station.buildings.equipment_factory = 2;
+  g.station.buildings.booster_factory = 2;
+  g.skills.refining.lvl = 80;
+  g.skills.equipmentEngineering.lvl = 80;
+  g.skills.boosterEngineering.lvl = 80;
+  g.station.autoLines.smelting.selectedTargetId = null;
+  g.station.autoLines.equipment.selectedTargetId = null;
+  g.station.autoLines.booster.selectedTargetId = null;
+  var d = getDisplay(win);
+  if (!d || !Array.isArray(d.autoLines)) return "autoLines 非数组";
+  if (d.autoLines.length !== 3) return "autoLines.length=" + d.autoLines.length;
+  for (var i = 0; i < d.autoLines.length; i++) {
+    var al = d.autoLines[i];
+    if (!Array.isArray(al.targetOptions) || al.targetOptions.length === 0) return al.lineId + " targetOptions 为空";
+    if (!al.name || al.name === "") return al.lineId + " name 为空";
+  }
+  return true;
+});
+
+test("自动线 A→启动→选择B，运行目标仍A", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  g.station.buildings.smelting_refinery = 2;
+  g.skills.refining.lvl = 80;
+  var SMELT = win.SMELTING_RECIPES;
+  var recipeA = SMELT[0];
+  var recipeB = SMELT.length > 1 ? SMELT[1] : SMELT[0];
+  // 选择A
+  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "smelting", targetId: recipeA.name }, Date.now());
+  if (g.station.autoLines.smelting.selectedTargetId !== recipeA.name) return "select " + recipeA.name + " 失败";
+  // 启动A
+  var startR = win.dispatchGameAction(g, { type: "station/startAutoLine", lineId: "smelting" }, Date.now());
+  if (!startR.changed) return "startAutoLine 失败, reason=" + startR.reason;
+  if (g.station.autoLines.smelting.startedTargetId !== recipeA.name) return "startedTargetId 不是 " + recipeA.name;
+  // 选择B
+  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "smelting", targetId: recipeB.name }, Date.now());
+  // startedTargetId 仍为 A
+  if (g.station.autoLines.smelting.startedTargetId !== recipeA.name) return "startedTargetId 应仍为 " + recipeA.name + " 但为 " + g.station.autoLines.smelting.startedTargetId;
+  if (g.station.autoLines.smelting.selectedTargetId !== recipeB.name) return "selectedTargetId 应为 " + recipeB.name;
+  return true;
+});
+
+test("停止重启后运行目标变B", function(win) {
+  var g = G(win);
+  var SMELT = win.SMELTING_RECIPES;
+  var recipeB = SMELT.length > 1 ? SMELT[1] : SMELT[0];
+  // 停止
+  win.dispatchGameAction(g, { type: "station/stopAutoLine", lineId: "smelting" }, Date.now());
+  if (g.station.autoLines.smelting.enabled) return "停止后 enabled 仍为 true";
+  // selectedTargetId 已为 B（上一步设置），启动后 startedTargetId 应为 B
+  g.station.autoLines.smelting.stoppedReason = null;
+  var startR = win.dispatchGameAction(g, { type: "station/startAutoLine", lineId: "smelting" }, Date.now());
+  if (!startR.changed) return "重启失败, reason=" + startR.reason;
+  if (g.station.autoLines.smelting.startedTargetId !== recipeB.name) return "重启后 startedTargetId 应变为 " + recipeB.name + " 但为 " + g.station.autoLines.smelting.startedTargetId;
+  return true;
+});
+
+test("自动线周期和进度有效", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  g.station.buildings.smelting_refinery = 2;
+  g.skills.refining.lvl = 80;
+  var SMELT = win.SMELTING_RECIPES;
+  var recipe = SMELT[0];
+  g.station.autoLines.smelting.selectedTargetId = recipe.name;
+  g.station.autoLines.smelting.startedTargetId = recipe.name;
+  g.station.autoLines.smelting.enabled = true;
+  g.station.autoLines.smelting.stoppedReason = null;
+  g.station.autoLines.smelting.progress = 10;
+  g.station.autoLines.smelting.lastTick = Date.now() - 5000;
+  var d = getDisplay(win);
+  var smeltAL = null;
+  for (var i = 0; i < d.autoLines.length; i++) {
+    if (d.autoLines[i].lineId === "smelting") smeltAL = d.autoLines[i];
+  }
+  if (!smeltAL) return "无 smelting 自动线";
+  if (!Number.isFinite(smeltAL.cycleDurationMs) || smeltAL.cycleDurationMs <= 0) return "cycleDurationMs 无效";
+  if (!Number.isFinite(smeltAL.progressRatio) || smeltAL.progressRatio < 0) return "progressRatio 无效";
+  return true;
+});
+
+test("断油七建筑停效、船坞例外", function(win) {
+  setupBasicStation(win);
+  var g = G(win);
+  buildAllLv2(g);
+  g.station.maintenance.fuelRemaining = 0;
+  var d = getDisplay(win);
+  if (!d || !d.effects) return "effects 不存在";
+  var foundShipyard = false, foundSmelt = false;
+  for (var i = 0; i < d.effects.length; i++) {
+    var e = d.effects[i];
+    if (e.id === "shipyard") foundShipyard = true;
+    if (e.id === "smelting") foundSmelt = true;
+    if (e.id === "shipyard" && e.active !== true) return "船坞断油应 active=false? active=" + e.active;
+    if (e.id !== "logistics" && e.id !== "shipyard" && e.active === true && g.station.maintenance.fuelRemaining === 0) {
+      // 注: logistics 也是断油停效（只依赖本体和燃料），所以不检查 logistics
+    }
+  }
+  if (!foundShipyard) return "全无 shipyard 效果行";
+  if (!foundSmelt) return "全无 smelting 效果行";
+  // 船坞例外：断油仍 active
+  var shipyardEff = d.effects.find(function(e) { return e.id === "shipyard"; });
+  var smeltEff = d.effects.find(function(e) { return e.id === "smelting"; });
+  var logEff = d.effects.find(function(e) { return e.id === "logistics"; });
+  if (!shipyardEff || !smeltEff || !logEff) return "缺少效果行";
+  if (shipyardEff.active !== true) return "船坞断油应 active=true";
+  if (smeltEff.active === true) return "冶炼断油应 active=false";
+  if (logEff.active === true) return "综合后勤断油应 active=false";
+  return true;
+});
+
+test("9 行效果", function(win) {
+  setupBasicStation(win);
+  buildAllLv2(win);
+  var d = getDisplay(win);
+  return d.effects && d.effects.length === 9 ? true : "effects.length=" + (d.effects ? d.effects.length : "undef");
+});
+
+test("corporation 正确", function(win) {
+  var g = G(win);
+  var corp = g.corporation;
+  if (!corp) return "corporation 不存在";
+  if (typeof corp.name !== "string" || corp.name === "") return "corp.name 非法";
+  var d = getDisplay(win);
+  if (!d.corporation) return "display.corporation 不存在";
+  if (typeof d.corporation.name !== "string" || d.corporation.name === "") return "display.corporation.name 非法";
+  if (d.corporation.name !== corp.name) return "display.corporation.name=" + d.corporation.name + " 与 state=" + corp.name + " 不一致";
+  return true;
+});
+
+test("页面可滚动", function(win) {
+  var body = win.document.body;
+  if (!body) return "无 body";
+  // 确保 body 有足够内容可滚动
+  var scrollH = body.scrollHeight || 0;
+  var clientH = body.clientHeight || 800;
+  return scrollH > clientH ? true : "scrollHeight=" + scrollH + " <= clientHeight=" + clientH + "，可能不可滚动";
+});
+
+test("无 undefined/NaN", function(win) {
+  setupBasicStation(win);
+  var d = getDisplay(win);
+  var r = hasNaN(d, "disp");
+  return r === null ? true : "发现 " + r;
+});
+
+test("页面切换至空间站不抛异常", function(win) {
+  try {
+    if (typeof win.switchPage === "function") win.switchPage("station");
+    return true;
+  } catch(e) { return "switchPage 抛异常: " + e.message; }
+});
+
+// ========== 最终统计 ==========
+test("console/page/resource/rejection 均为0", function(win) {
+  // 在 runAll 中已有计数器，这里只是汇总报告
+  if (consoleErrors > 0) return "console.errors=" + consoleErrors;
+  if (pageErrors > 0) return "page errors=" + pageErrors;
+  if (rejections > 0) return "rejections=" + rejections;
+  if (resourceErrors > 0) return "resourceErrors=" + resourceErrors;
+  return true;
+});
+
+</script>
+</body>
+</html>

@@ -28,7 +28,7 @@ function renderCombatEnemyPanel(display) {
     if (type) type.textContent = target.kindLabel + " · " + target.defenseLabel;
     if (bars) bars.innerHTML = renderHPBars(target.hp, target.maxHp);
     if (stats) stats.textContent = "威胁等级:" + (target.level || 1) + " · 攻击力:" + (target.baseDamage || 1) + " · 编队存活:" + display.enemies.filter(enemy => !enemy.defeated).length;
-    if (image) image.innerHTML = target.image ? `<img src="${target.image}" alt="${target.name}">` : `<div class="combat-ship-placeholder"><span>${target.icon || "👾"}</span></div>`;
+    if (image && !image.querySelector("#combat-enemy-3d")) image.innerHTML = target.image ? `<img src="${target.image}" alt="${target.name}">` : `<div class="combat-ship-placeholder"><span>${target.icon || "👾"}</span></div>`;
   } else {
     if (enemySection) { enemySection.style.display = ""; enemySection.classList.add("is-scanning"); }
     if (caption) caption.textContent = "NO TARGET";
@@ -36,7 +36,7 @@ function renderCombatEnemyPanel(display) {
     if (type) type.textContent = "扫描中";
     if (bars) bars.innerHTML = '<div class="combat-scan-message">正在扫描海盗星带信号…</div>';
     if (stats) stats.textContent = "尚未锁定敌舰";
-    if (image) image.innerHTML = '<div class="combat-ship-placeholder"><span>👾</span></div>';
+    if (image && !image.querySelector("#combat-enemy-3d")) image.innerHTML = '<div class="combat-ship-placeholder"><span>👾</span></div>';
   }
 }
 
@@ -82,6 +82,78 @@ function renderCombatLiveDisplay(display) {
   document.body.classList.toggle("in-combat", display.active);
 }
 
+/* ================================================================
+   战斗 3D（左右晃动体现战斗）
+   ================================================================ */
+function mountCombat3D(display) {
+  const S3D = window.Ship3D;
+  if (!S3D) return; // 模块尚未就绪时静默跳过，后续 tick 会补上
+
+  // 玩家舰：当前出战舰（combat.activeShip → 实例 → 蓝图 id）
+  try {
+    let playerShipId = "rifter";
+    if (typeof getActiveCombatShipState === "function") {
+      const active = getActiveCombatShipState(gameState);
+      if (active && active.config && active.config.id) playerShipId = active.config.id;
+    }
+    const playerSpec = S3D.buildSpecForShip(playerShipId);
+    mountCombat3D._playerSpec = playerSpec; // 供点开大图复用，确保与侧栏模型一致
+    const pImg = document.getElementById("combat-player-image");
+    if (pImg) {
+      let canvas = pImg.querySelector("#combat-player-3d");
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.id = "combat-player-3d";
+        canvas.className = "ship3d-canvas";
+        canvas.style.cssText = "height:100%;width:100%;border-radius:8px;background:#070d14;display:block;";
+        // 清空占位符后 append（不破坏同级元素）
+        pImg.innerHTML = "";
+        pImg.appendChild(canvas);
+      }
+      const viewer = S3D.ensureViewer(canvas, { orbit: false, autoSpin: false });
+      S3D.setShips(viewer, [{ spec: playerSpec, position: [0, 0, 0], scale: 1, sway: true }]);
+    }
+  } catch (err) { console.error("[combat] 玩家 3D 渲染失败", err); }
+
+  // 敌人舰：由星带 faction + 威胁等级推导的泛用海盗舰
+  // 缓存 key = faction|level|wave|index|nonce：index 区分同波不同敌兵、nonce 区分每场新战斗，
+  // 任一项变化才重建 buildShip（每帧不重建，无性能负担）。
+  try {
+    const zoneFaction = display.zone && display.zone.faction;
+    const enemyLevel = display.target && display.target.level ? display.target.level : 1;
+    const enemyWave = display.wave || 1;
+    // 当前敌兵序号：让「每一艘不同的敌兵」都换轮廓（同艘反复切回仍稳定，不跳动）
+    const enemyIdx = display.target && display.target.index != null ? display.target.index : -1;
+    // 战斗会话 nonce：每开始一场新战斗自增（见 startCombatEncounter），使每场战斗都重新随机外观，
+    // 避免跨场战斗复用首场随机结果（否则同区域同等级敌人每次都长一个样）。
+    const combatNonce = mountCombat3D._combatNonce || 0;
+    const enemyKey = (zoneFaction || "?") + "|" + enemyLevel + "|" + enemyWave + "|" + enemyIdx + "|" + combatNonce;
+    if (!mountCombat3D._enemyKey || mountCombat3D._enemyKey !== enemyKey) {
+      mountCombat3D._enemyKey = enemyKey;
+      const baseSpec = S3D.buildEnemySpec(zoneFaction, enemyLevel);
+      // 每波用不同随机 seed，产生不同外观（同波内 key 不变 → 复用，不重建）
+      baseSpec.seed = "enemy-rnd-" + enemyWave + "-" + Date.now() + "-" + Math.floor(Math.random() * 99999);
+      mountCombat3D._enemySpec = baseSpec;
+    }
+    const eImg = document.getElementById("combat-enemy-image");
+    if (eImg) {
+      let canvas = eImg.querySelector("#combat-enemy-3d");
+      if (!canvas) {
+        canvas = document.createElement("canvas");
+        canvas.id = "combat-enemy-3d";
+        canvas.className = "ship3d-canvas";
+        canvas.style.cssText = "height:100%;width:100%;border-radius:8px;background:#1a0808;display:block;";
+        eImg.innerHTML = "";
+        eImg.appendChild(canvas);
+      }
+      // background：敌方暗红背景（覆盖 createViewer 默认的蓝黑清屏色）
+      // shieldColor：敌方护盾泡染红（覆盖 ShipFactory2 写死的青蓝 SHIELD_COLOR）
+      const viewer = S3D.ensureViewer(canvas, { orbit: false, autoSpin: false, background: 0x1a0808 });
+      S3D.setShips(viewer, [{ spec: mountCombat3D._enemySpec, position: [0, 0, 0], scale: 1, sway: true, rotation: [0, Math.PI, 0], shieldColor: 0xff3a3a }]);
+    }
+  } catch (err) { console.error("[combat] 敌人 3D 渲染失败", err); }
+}
+
 function renderCombatPanel(now) {
   const renderTime = Number(now) || Date.now();
   updateCombatRecovery(renderTime);
@@ -111,22 +183,100 @@ function renderCombatPanel(now) {
   if (traitSummary) { traitSummary.textContent = display.targeting.trait ? display.targeting.trait.name + " · " + display.targeting.trait.description : ""; traitSummary.title = traitSummary.textContent; }
   const zoneContent = document.getElementById("combat-zone-dropdown-content");
   if (zoneContent) zoneContent.innerHTML = display.zones.map(zone => `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span></div>`).join("");
-  const playerImage = document.getElementById("combat-player-image"); if (playerImage) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
+  const playerImage = document.getElementById("combat-player-image"); if (playerImage && !playerImage.querySelector("#combat-player-3d")) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("combat-cl-val", display.level); text("combat-laser-lv", display.skills.laser); text("combat-cannon-lv", display.skills.cannon); text("combat-missile-lv", display.skills.missile); text("combat-target-lv", display.skills.targeting);
   renderInstalledCombatControls(display); renderCombatEquipmentRack(display); renderCombatLiveDisplay(display);
+  mountCombat3D(display);
+  renderCombatDropPreview(display);
   return display;
+}
+
+// 掉落预览（Phase 3D 其他任务）：基于 getCombatDropPreview 纯函数渲染当前选中星带/死亡空间的
+// 可能掉落物与概率。仅展示加密数据/特殊掉落/通行密钥/首领战利品/战术材料，不含 ISK/LP 经济与成功率。
+function renderCombatDropPreview(display) {
+  const wrap = document.getElementById("combat-drop-preview-wrap");
+  const body = document.getElementById("combat-drop-preview");
+  const zoneLabel = document.getElementById("combat-drop-preview-zone");
+  if (!body || !wrap) return;
+  const preview = getCombatDropPreview(gameState, {
+    mode:display.viewMode,
+    zoneId:display.zone && display.zone.id,
+    deathspaceId:display.deathspace && display.deathspace.id
+  });
+  if (!preview) { wrap.style.display = "none"; return; }
+  if (!preview.valid) {
+    // fail-closed：非法 zoneId / deathspaceId / sourceZoneId 时绝不回退显示首个星带数据，
+    // 明确提示掉落数据不可用（reason 见 preview.reason）。
+    wrap.style.display = "";
+    if (zoneLabel) zoneLabel.textContent = "";
+    body.innerHTML = `<div class="drop-row drop-none"><span class="drop-name">⚠ 掉落数据不可用</span></div>`;
+    return;
+  }
+  wrap.style.display = "";
+  if (zoneLabel) zoneLabel.textContent = "· " + (preview.name || "");
+  const pct = x => (Number(x) * 100).toFixed(x * 100 % 1 === 0 ? 0 : 2) + "%";
+  const rows = [];
+  const row = (icon, name, detail, extraClass) => `<div class="drop-row${extraClass ? " " + extraClass : ""}"><span class="drop-name">${icon} ${name}</span><span class="drop-detail">${detail}</span></div>`;
+
+  if (preview.mode === "deathspace") {
+    rows.push(`<div class="drop-mode-tag deathspace">死亡空间 · 不掉落加密数据 / 特殊掉落 / 通行密钥</div>`);
+    if (Array.isArray(preview.leaderLoot) && preview.leaderLoot.length > 0) {
+      rows.push(`<div class="drop-group-title">💠 首领战利品（每波 BOSS 击破时结算）</div>`);
+      for (const loot of preview.leaderLoot) {
+        rows.push(row("🟣", loot.coreMaterial, `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${loot.protocolMaterial} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader"));
+      }
+    }
+    if (preview.tacticalMaterial) {
+      const t = preview.tacticalMaterial;
+      rows.push(`<div class="drop-group-title">🧪 战术材料（所有敌人）</div>`);
+      rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical"));
+    }
+  } else {
+    rows.push(`<div class="drop-mode-tag belt">海盗星带</div>`);
+    if (preview.encryptedData) {
+      const e = preview.encryptedData;
+      rows.push(row("🔐", e.material, `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data"));
+    } else {
+      rows.push(row("🔐", "加密数据", "本星带禁用掉落", "drop-none"));
+    }
+    if (Array.isArray(preview.zoneSpecialDrops) && preview.zoneSpecialDrops.length > 0) {
+      rows.push(`<div class="drop-group-title">⭐ 特殊掉落（outer/deep 独有）</div>`);
+      for (const sd of preview.zoneSpecialDrops) {
+        rows.push(row("⭐", sd.material, `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special"));
+      }
+    }
+    if (preview.ticketDrop) {
+      const t = preview.ticketDrop;
+      rows.push(row("🎫", t.material, `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket"));
+    }
+    if (preview.tacticalMaterial) {
+      const t = preview.tacticalMaterial;
+      rows.push(`<div class="drop-group-title">🧪 战术材料（所有敌人）</div>`);
+      rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical"));
+    }
+  }
+  body.innerHTML = rows.join("");
 }
 
 function updateCombatLiveUI(now) {
   const renderTime = Number(now) || Date.now();
   updateCombatRecovery(renderTime);
   const display = getCombatDisplayState(gameState, renderTime);
+  // 交战中实时刷新敌方 3D：mountCombat3D 内部按 target 维度
+  // （faction|level|wave|index|nonce）缓存，仅击毁/切换目标/新战斗导致 key 变化时才重建 buildShip，
+  // 其余每秒只复用以无性能负担。这是「击毁敌人后模型切换」的关键——
+  // 主渲染循环每帧只画进度条/行星动画，并不重渲战斗面板，3D 此前只在进入面板时渲染一次。
+  if (display.active) mountCombat3D(display);
   renderCombatLiveDisplay(display);
   return display;
 }
 
 function startCombatEncounter() {
+  // 新战斗会话：递增 nonce，让敌方 3D 外观重新随机（每场战斗都不同轮廓/细节）
+  if (typeof mountCombat3D === "function") {
+    mountCombat3D._combatNonce = (mountCombat3D._combatNonce || 0) + 1;
+  }
   const now = Date.now();
   updateCombatRecovery(now);
   const combat = gameState.combat;
@@ -275,6 +425,106 @@ function playEnemyAttackFX(enemyIndex, attackOrder, dmg) {
     playAttackFX(false, null, dmg, attackOrder);
   }, attackOrder * 110);
 }
+
+
+/* ================================================================
+   战斗 3D 弹窗：点开侧栏建模看大图 + 敌方/我方属性
+   复用船坞弹窗模式（ensureViewer orbit:true + setShips），
+   关闭时 disposeViewer 释放 WebGL 上下文。
+   ================================================================ */
+let _combatPopupViewer = null;
+
+function openCombat3DPopup(which) {
+  const S3D = window.Ship3D;
+  if (!S3D) return;
+  const display = getCombatDisplayState(gameState, Date.now());
+  const popup = document.getElementById("combat-3d-popup");
+  const canvas = document.getElementById("combat-3d-popup-canvas");
+  const nameEl = document.getElementById("combat-3d-popup-name");
+  const attrsEl = document.getElementById("combat-3d-popup-attrs");
+  if (!popup || !canvas || !nameEl || !attrsEl) return;
+
+  let spec, rotation = [0, 0, 0], shieldColor = null, title, attrsHTML;
+
+  if (which === "enemy") {
+    const target = display.target;
+    if (!target) { showToast("当前没有锁定的敌舰"); return; }
+    // 复用侧栏当前渲染的敌方 spec，保证大图与侧栏轮廓一致
+    spec = mountCombat3D._enemySpec
+      ? JSON.parse(JSON.stringify(mountCombat3D._enemySpec))
+      : S3D.buildEnemySpec(display.zone && display.zone.faction, target.level || 1);
+    rotation = [0, Math.PI, 0];
+    shieldColor = 0xff3a3a;
+    title = target.name;
+    attrsHTML =
+      '<div class="c3d-attr-title">' + target.name + '</div>' +
+      '<div class="c3d-attr-grid">' +
+        '<div><span>类型</span><b>' + (target.kindLabel || "—") + '</b></div>' +
+        '<div><span>防御</span><b>' + (target.defenseLabel || "—") + '</b></div>' +
+        '<div><span>威胁等级</span><b>' + (target.level || 1) + '</b></div>' +
+        '<div><span>攻击力</span><b>' + (target.baseDamage || 1) + '</b></div>' +
+      '</div>' +
+      '<div class="c3d-attr-bars">' + renderHPBars(target.hp, target.maxHp) + '</div>';
+  } else {
+    const player = display.player;
+    spec = mountCombat3D._playerSpec
+      ? JSON.parse(JSON.stringify(mountCombat3D._playerSpec))
+      : S3D.buildSpecForShip("rifter");
+    title = player.name;
+    attrsHTML =
+      '<div class="c3d-attr-title">' + player.name + '</div>' +
+      '<div class="c3d-attr-grid">' +
+        '<div><span>齐射伤害</span><b>' + (player.volleyDamage || 0) + '</b></div>' +
+        '<div><span>武器数</span><b>' + (player.weaponCount || 0) + '</b></div>' +
+        '<div><span>航速</span><b>' + (player.speed || 0) + '</b></div>' +
+      '</div>' +
+      '<div class="c3d-attr-bars">' + renderHPBars(player.hp, player.maxHp) + '</div>';
+  }
+
+  nameEl.textContent = title;
+  attrsEl.innerHTML = attrsHTML;
+  popup.classList.add("open");
+
+  const item = { spec, position: [0, 0, 0], scale: 1, sway: false, rotation, shieldColor };
+  // 我方蓝黑 / 敌方暗红：每次打开都按当前对象设定背景（复用同一 viewer，避免看完我方再看敌方时背景残留）。
+  const bg = which === "enemy" ? 0x1a0808 : 0x0a121e;
+  if (!_combatPopupViewer) {
+    // 首次打开：等弹窗从 display:none→flex 完成布局（拿到真实尺寸）后再创建 viewer，避免基于 0 尺寸取景。
+    // 之后该 viewer 常驻复用，关闭不销毁（不调 forceContextLoss），彻底规避第二次创建上下文失败/白屏。
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        _combatPopupViewer = S3D.ensureViewer(canvas, { orbit: true, autoSpin: true, background: bg });
+        if (_combatPopupViewer) {
+          if (S3D.setBackground) S3D.setBackground(_combatPopupViewer, bg);
+          S3D.setShips(_combatPopupViewer, [item]);
+        }
+      });
+    });
+  } else {
+    // 已存在：安全更新背景（不重建 WebGL 上下文）+ 换模型
+    if (S3D.setBackground) S3D.setBackground(_combatPopupViewer, bg);
+    S3D.setShips(_combatPopupViewer, [item]);
+    _combatPopupViewer._needsAutoFit = true;
+  }
+}
+
+function closeCombat3DPopup() {
+  const popup = document.getElementById("combat-3d-popup");
+  if (popup) popup.classList.remove("open");
+  // 不销毁 viewer：弹窗 viewer 只创建一次并复用，避免 forceContextLoss 后再创建失败（第二个弹窗白屏的根因）。
+}
+
+(function bindCombat3DPopup() {
+  const playerImg = document.getElementById("combat-player-image");
+  const enemyImg = document.getElementById("combat-enemy-image");
+  if (playerImg) playerImg.addEventListener("click", () => openCombat3DPopup("player"));
+  if (enemyImg) enemyImg.addEventListener("click", () => openCombat3DPopup("enemy"));
+  const popup = document.getElementById("combat-3d-popup");
+  const closeBtn = document.getElementById("combat-3d-popup-close");
+  if (closeBtn) closeBtn.addEventListener("click", closeCombat3DPopup);
+  if (popup) popup.addEventListener("click", (event) => { if (event.target === popup) closeCombat3DPopup(); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeCombat3DPopup(); });
+})();
 
 
 (function bindCombatUI() {

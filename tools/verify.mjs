@@ -7,11 +7,12 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((match) => match[1]);
+// 归一化：去掉 ?v= 缓存串（UI 脚本用 ?v=2 破缓存），否则本地文件读取 ENOENT
+const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 40) throw new Error(`预期 40 个脚本，实际 ${scriptSources.length}`); // 40 = 38 + boosters.js + booster-render.js + systems/boosters.js（增强剂系统 Phase 2B 2026-07-24）
+if (scriptSources.length !== 42) throw new Error(`预期 42 个脚本，实际 ${scriptSources.length}`); // 42 = 41 + js/ui/station-render.js（Phase 3C-8 空间站 UI）
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -37,6 +38,19 @@ if (!/\.combat-panel\s*\{[^}]*flex:\s*0\s+0\s+auto/s.test(combatCss)) {
   throw new Error("战斗面板没有阻止 flex 压缩，长内容在小窗口中仍可能被裁切而无法滚动");
 }
 
+// 页面滚动布局结构哨兵（非浏览器行为测试，仅为 CSS 规则存在性检查）
+const baseCss = fs.readFileSync(path.join(root, "css", "base.css"), "utf8");
+if (!/\.content\s*\{[^}]*min-height:\s*0[^}]*overflow-y:\s*auto/s.test(baseCss)) {
+  throw new Error(".content 缺少 min-height:0 或 overflow-y:auto，无法作为主滚动容器");
+}
+if (!/\.content\s*>\s*\.panel:not\(#hangar-panel\):not\(#cargo-panel\)\s*\{[^}]*flex:\s*0\s+0\s+auto[^}]*min-height:\s*min-content/s.test(baseCss)) {
+  throw new Error(".content > .panel 缺少 flex:0 0 auto / min-height:min-content，面板会 flex 压缩裁切内容");
+}
+const componentsCss = fs.readFileSync(path.join(root, "css", "components.css"), "utf8");
+if (!/#hangar-panel\s*>\s*\.panel-body\s*\{[^}]*overflow-y:\s*auto/s.test(componentsCss)) {
+  throw new Error("#hangar-panel > .panel-body 缺少 overflow-y:auto，船坞列表内部滚动可能丢失");
+}
+
 const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
 const literalIdReferences = new Set(
   scripts.flatMap((script) => [...script.matchAll(/getElementById\(["']([^"']+)["']\)/g)].map((match) => match[1]))
@@ -44,10 +58,31 @@ const literalIdReferences = new Set(
 const optionalIds = new Set([
   "combat-player-section", "footer-save",
   "runtime-error-boundary", "runtime-error-dismiss", "runtime-error-resume", "runtime-error-reload",
-  "runtime-error-message", "runtime-error-meta", "runtime-error-stack"
+  "runtime-error-message", "runtime-error-meta", "runtime-error-stack",
+  // 动态创建的 ID：bar-archaeology 由 archaeology-render.js 运行时创建 canvas
+  "bar-archaeology"
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
+
+// bar-archaeology 是动态创建 ID，verify 必须在源码中确认它被创建且有 null 守卫
+const barArchSourceCheck = scripts.some(src => src.includes('id="bar-archaeology"'));
+if (!barArchSourceCheck) throw new Error("没有脚本创建 id=\"bar-archaeology\"（期望 archaeology-render.js 创建）");
+// render.js 中对 bar-archaeology 的 getElementById 调用必须有 null 守卫
+const barArchGetEl = scripts.filter(src => src.includes('getElementById("bar-archaeology")'));
+for (const src of barArchGetEl) {
+  // 检查附近有 guard：typeof drawSkillBar === "function" 或 document.getElementById 非 null 判断
+  const lines = src.split("\n");
+  let foundGuard = false;
+  for (const line of lines) {
+    if (line.includes('getElementById("bar-archaeology")')) {
+      // 同一行或附近行有 guard 模式
+      const nearby = lines.slice(Math.max(0, lines.indexOf(line) - 3), Math.min(lines.length, lines.indexOf(line) + 3)).join(" ");
+      if (nearby.includes("typeof drawSkillBar") || nearby.includes("if (")) foundGuard = true;
+    }
+  }
+  if (!foundGuard) throw new Error('getElementById("bar-archaeology") 调用没有 null 守卫');
+}
 
 function MockCanvasContext() {}
 const noop = () => {};

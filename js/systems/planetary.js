@@ -92,6 +92,11 @@ function planetaryTick(tickNow) {
         xp:res.cycles
       }, { offline:false });
     }
+    // 行星管控中心 Lv.1+：自动收取（装满即收，移入库存并清零本地仓储，不自动续期）
+    if (typeof applyStationAutoCollect === "function") {
+      const collected = applyStationAutoCollect(gameState, deployment, storageMax, false);
+      if (collected > 0) changed = true;
+    }
 
     // 2) 结算后再判定到期：仅当 now 真正越过 expiresAt 才置 false 并触发一次 expired
     if (now >= expiresAt) {

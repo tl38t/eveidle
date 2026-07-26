@@ -75,6 +75,12 @@ function renderPlanetaryPage(now) {
   const display = getPlanetaryDisplayState(gameState, renderTime, getCargoCapacity());
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("planetary-header-info", `等级 ${display.level} · 槽位 ${display.usedSlots} / ${display.slots}`);
+  const logText = document.getElementById("planetary-logistics");
+  if (logText) {
+    const sl = display.stationLogistics || {};
+    var lm = sl.multiplier || 1;
+    logText.textContent = (sl.bodyLevel > 0 && sl.operational) ? "空间站后勤 " + sl.text : "空间站后勤：未生效（" + (sl.text || "未建立") + "）";
+  }
   text("planetary-exp-value", display.xp.toLocaleString() + " / " + display.xpNeeded.toLocaleString());
   text("planetary-slot-info", `可用槽位：${display.usedSlots} / ${display.slots}`);
   const fill = document.getElementById("planetary-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";

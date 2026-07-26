@@ -26,6 +26,9 @@ function gameTick() {
     tickBoosterTimers(gameState, Date.now());
   }
 
+  // 空间站维护燃料（Phase 3C-6）：必须在所有可能消费空间站效果的行动之前扣除
+  if (typeof settleStationMaintenance === "function") settleStationMaintenance(gameState, Date.now(), false);
+
   updateCombatRecovery();
   let actionCompleted = false;
   if (gameState.currentAction.active) {
@@ -46,20 +49,30 @@ function gameTick() {
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         gameState.currentAction.progress -= actualTime;
+        const resourceId = (area.mode === "moon" ? "moon:" : "ore:") + area.ore;
         // 计算本次产量：基础 1 + 双倍矿物概率翻倍
         var quantity = 1;
         if (boosterEff && boosterEff.doubleMineralChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleMineralChance)) {
           quantity = 2;
+        }
+        // 资源调度中心：勘探指令额外产出（不增 XP）
+        let dispatchBonus = 0;
+        if (typeof recordStationDispatchAction === "function") {
+          dispatchBonus = recordStationDispatchAction(gameState, "mining", 1);
+          if (dispatchBonus > 0) quantity += dispatchBonus;
         }
         // *** FIX 4: 双倍不得突破货舱硬上限 ***
         if (quantity > 1) {
           const cargoSpace = Math.max(0, (typeof getCargoCapacity === "function" ? getCargoCapacity() : Infinity) - (typeof getCargoUsed === "function" ? getCargoUsed() : 0));
           if (quantity > cargoSpace) quantity = Math.max(1, cargoSpace);
         }
-        ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity);
+        ResourceRegistry.add(gameState, resourceId, quantity);
         // XP 始终只加一次（双倍不影响 XP）
         s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId:(area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity:quantity, xp:area.baseXP }, { offline:false });
+        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
+        if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
+          GameEvents.emit("station:dispatchBonus", { kind:"mining", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.miningCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });
+        }
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
@@ -96,9 +109,19 @@ function gameTick() {
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         gameState.currentAction.progress -= actualTime;
-        ResourceRegistry.add(gameState, "gas:" + area.gas, 1);
+        const resourceId = "gas:" + area.gas;
+        let quantity = 1;
+        let dispatchBonus = 0;
+        if (typeof recordStationDispatchAction === "function") {
+          dispatchBonus = recordStationDispatchAction(gameState, "gas", 1);
+          if (dispatchBonus > 0) quantity += dispatchBonus;
+        }
+        ResourceRegistry.add(gameState, resourceId, quantity);
         s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("gas:completed", { area:area.name, resourceId:"gas:" + area.gas, quantity:1, xp:area.baseXP }, { offline:false });
+        GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
+        if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
+          GameEvents.emit("station:dispatchBonus", { kind:"gas", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.gasCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });
+        }
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
@@ -130,7 +153,7 @@ function gameTick() {
         const recipe = getRunningShipCompRecipe(); if (!recipe) { resetActionProgress(); gameState.currentAction.active = false; updateUI(); return; }
         if (isCargoFull()) { stopOrSkip(); updateUI(); return; }
         if (!hasEnoughMats(recipe.cost)) { stopOrSkip(); updateUI(); return; }
-        const eff = getShipEngineeringEfficiency(); const actualTime = recipe.time / eff;
+        const actualTime = getShipEngineeringCycleDuration(gameState, recipe); // 唯一周期公式（技能×船坞）
         gameState.currentAction.refDuration = actualTime;
         const now = Date.now(); const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
         gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
@@ -149,7 +172,7 @@ function gameTick() {
         const recipe = getRunningShipAsmRecipe(); if (!recipe) { resetActionProgress(); gameState.currentAction.active = false; updateUI(); return; }
         if (!hasEnoughShipAssemblyComponents(recipe)) { stopOrSkip(); updateUI(); return; }
         if (isCargoFull()) { stopOrSkip(); updateUI(); return; }
-        const eff = getShipEngineeringEfficiency(); const actualTime = recipe.time / eff;
+        const actualTime = getShipEngineeringCycleDuration(gameState, recipe); // 唯一周期公式（技能×船坞）
         gameState.currentAction.refDuration = actualTime;
         const now = Date.now(); const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
         gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
@@ -181,6 +204,16 @@ function gameTick() {
         GameEvents.emit("archaeology:repairCompleted", { instanceId:arch.repairInstanceId }, { offline:false });
       }
       arch.repairUntil = 0; arch.repairInstanceId = null;
+      // 维修后自动恢复（Phase 3D）：重新校验条件/资源；不足则安全停止（不抛错），充足则清标记续跑。
+      if (gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "archaeology") {
+        const chk = (typeof canStartArchaeology === "function") ? canStartArchaeology(gameState, now) : { ok:true };
+        if (!chk.ok) {
+          gameState.resumeAfterRepair = null;
+          stopOrSkip(); updateUI(); return;
+        }
+        gameState.resumeAfterRepair = null;
+        GameEvents.emit("archaeology:resumedAfterRepair", { siteId:arch.startedSiteId }, { offline:false });
+      }
     }
     // 维修中：暂停并清空进度
     if (arch.repairUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
@@ -188,7 +221,8 @@ function gameTick() {
     if (arch.interferenceUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
 
     const archSpeedEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).archaeologySpeedMultiplier : 1;
-    const actualTime = site.time * archSpeedEff;
+    const archLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
+    const actualTime = site.time * archSpeedEff / archLogisticsMult;
     gameState.currentAction.refDuration = actualTime;
     const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
     gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
@@ -201,6 +235,13 @@ function gameTick() {
       } else {
         if (result.destroyed) {
           arch.log.push({ time:now, site:site.name, success:false, destroyed:true, backlash:result.backlash });
+          // 维修后自动恢复（Phase 3D）：记录被打断的考古 run，供维修完成后重新校验续跑。
+          gameState.resumeAfterRepair = {
+            type:"archaeology",
+            siteId:arch.startedSiteId,
+            probeId:arch.startedProbeId,
+            shipInstanceId:arch.repairInstanceId
+          };
         } else {
           const rigMods = (typeof getRigModifiers === "function" && instance) ? (getRigModifiers(gameState, instance) || {}) : {};
           const interferenceSeconds = getArchaeologyInterferenceSeconds(site, rigMods.archaeologyInterferenceReduction);
@@ -239,6 +280,12 @@ function gameTick() {
 
   // 行星产出（独立于主动技能，始终运行）
   planetaryTick();
+
+  // 空间站本体建设（Phase 3C-2）：独立于 currentAction，断油/维护/停止均不暂停；到期恰好完成一次
+  if (typeof completeStationConstruction === "function") completeStationConstruction(gameState, { offline: false });
+
+  // 空间站自动线（Phase 3C-5）：独立于 currentAction，每条线自跟踪时间
+  if (typeof processAutoLines === "function") processAutoLines(gameState, Date.now(), false);
 
   gameState.lastActiveTime = Date.now();
   updateLiveUI();

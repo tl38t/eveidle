@@ -107,6 +107,13 @@ const routeByFaction = {
   sansha:{ shipId:"swiftblade", weaponId:"t1_small_cannon", repairId:"t1_structure_repairer", layer:"structure", repairSlots:3 }
 };
 
+// T1 新手护卫舰：rifter(盾/激光)/kestrel(甲/导弹)/atron(结构/火炮)，各2高槽
+const starterFrigateRouteByFaction = {
+  angel:{ shipId:"rifter", weaponId:"t1_small_laser", repairId:"t1_shield_booster", layer:"shield", repairSlots:2 },
+  blood:{ shipId:"kestrel", weaponId:"t1_light_missile_launcher", repairId:"t1_armor_repairer", layer:"armor", repairSlots:1 },
+  sansha:{ shipId:"atron", weaponId:"t1_small_cannon", repairId:"t1_structure_repairer", layer:"structure", repairSlots:1 }
+};
+
 const mixedDestroyerRouteByFaction = {
   angel:{ shipId:"gale", weaponId:"t1_small_laser", repairId:"t1_shield_booster", layer:"shield", repairSlots:3 },
   blood:{ shipId:"bloodthorn", weaponId:"t1_light_missile_launcher", repairId:"t1_armor_repairer", layer:"armor", repairSlots:3 },
@@ -179,13 +186,14 @@ function simulateRun(zone, skills, random, routes) {
   let fuelUsed = 0;
   let ammoUsed = 0;
   const kills = { normal:0, elite:0, boss:0 };
+  let totalIsk = 0;   // 审计字段：累计 ISK
   const rewardedEnemies = new WeakSet();
 
   for (let wave = 1; wave <= zone.maxWave; wave++) {
     const waveEnemies = spawnWave(zone, wave, random);
     let rounds = 0;
     while (waveEnemies.some(enemy => enemy.hp.structure > 0)) {
-      if (++rounds > 5000) return { cleared:false, waves:wave - 1, totalRounds, fuelUsed, ammoUsed, kills };
+      if (++rounds > 5000) return { cleared:false, waves:wave - 1, totalRounds, fuelUsed, ammoUsed, kills, totalIsk };
       totalRounds++;
       fuelUsed += weaponFuelPerModule * ship.slots.high;
       ammoUsed += (weapon.ammoCost || 1) * ship.slots.high;
@@ -205,6 +213,7 @@ function simulateRun(zone, skills, random, routes) {
       for (const defeated of waveEnemies.filter(enemy => enemy.hp.structure <= 0 && !rewardedEnemies.has(enemy))) {
         const defeatedKind = defeated.kind || "normal";
         kills[defeatedKind] = (kills[defeatedKind] || 0) + 1;
+        totalIsk += Math.round((defeated.iskDrop || 0) * zone.iskMulti);
         rewardedEnemies.add(defeated);
       }
       let shieldHitsUsed = 0;
@@ -215,7 +224,7 @@ function simulateRun(zone, skills, random, routes) {
         if (mitigation.shieldHitUsed) shieldHitsUsed++;
         const dealt = applyDamage(hp, Math.round(mitigation.damage));
         armorDamageTaken += dealt.armor;
-        if (hp.structure <= 0) return { cleared:false, waves:wave - 1, totalRounds, fuelUsed, ammoUsed, kills };
+        if (hp.structure <= 0) return { cleared:false, waves:wave - 1, totalRounds, fuelUsed, ammoUsed, kills, totalIsk };
       }
       const reactiveRepair = capitalRules.getReactiveArmorRepair(ship, armorDamageTaken, maxHp.armor);
       if (reactiveRepair > 0 && hp.armor < maxHp.armor) {
@@ -229,7 +238,7 @@ function simulateRun(zone, skills, random, routes) {
       }
     }
   }
-  return { cleared:true, waves:zone.maxWave, totalRounds, fuelUsed, ammoUsed, kills };
+  return { cleared:true, waves:zone.maxWave, totalRounds, fuelUsed, ammoUsed, kills, totalIsk };
 }
 
 function runProfile(name, profileZones, skills, runs, seedBase, routes) {
@@ -283,7 +292,121 @@ function runProfile(name, profileZones, skills, runs, seedBase, routes) {
   return summaries;
 }
 
+function runProfileEcon(name, profileZones, skills, runs, seedBase, routes) {
+  console.log(`\n--- ${name}（每条星带 ${runs.toLocaleString()} 次）---`);
+  const results = [];
+  let economies = "";
+  for (let zi = 0; zi < profileZones.length; zi++) {
+    const zone = profileZones[zi];
+    let clears = 0, failures = 0;
+    let totalActiveSeconds = 0, totalIsk = 0, totalLp = 0, totalTactMat = 0;
+    let totalNormal = 0, totalElite = 0, totalBoss = 0;
+    let clearIskSum = 0, clearRoundsSum = 0;
+
+    for (let run = 0; run < runs; run++) {
+      const r = simulateRun(zone, skills, seededRandom(seedBase + zi * runs + run), routes);
+      totalActiveSeconds += r.totalRounds;
+      totalIsk += r.totalIsk || 0;
+      totalNormal += r.kills.normal || 0;
+      totalElite += r.kills.elite || 0;
+      totalBoss += r.kills.boss || 0;
+      // 战术材料：每次出击按真实击杀计算期望值
+      const tactMatThisRun = (r.kills.normal || 0) * 0.7 * 1
+        + (r.kills.elite || 0) * 1.0 * 2.5
+        + (r.kills.boss || 0) * 1.0 * 8;
+      totalTactMat += tactMatThisRun;
+      if (r.cleared) {
+        clears++;
+        totalLp += zone.clearLp;
+        clearIskSum += r.totalIsk || 0;
+        clearRoundsSum += r.totalRounds;
+      } else {
+        failures++;
+      }
+    }
+
+    const cr = clears / runs;
+    const fr = failures / runs;
+    const avgActiveSec = totalActiveSeconds / runs;
+
+    // ---------- 双口径每小时收益 ----------
+    // 口径1：纯战斗时间
+    const iskPerActiveHour = totalActiveSeconds > 0 ? totalIsk / totalActiveSeconds * 3600 : 0;
+    const lpPerActiveHour = totalActiveSeconds > 0 ? totalLp / totalActiveSeconds * 3600 : 0;
+    const tactMatPerActiveHour = totalActiveSeconds > 0 ? totalTactMat / totalActiveSeconds * 3600 : 0;
+
+    // 口径2：计入失败维修墙钟（失败局每次+180秒修船）
+    const totalWallSeconds = totalActiveSeconds + failures * 180;
+    const iskPerWallHour = totalWallSeconds > 0 ? totalIsk / totalWallSeconds * 3600 : 0;
+    const lpPerWallHour = totalWallSeconds > 0 ? totalLp / totalWallSeconds * 3600 : 0;
+    const tactMatPerWallHour = totalWallSeconds > 0 ? totalTactMat / totalWallSeconds * 3600 : 0;
+
+    // 成功局描述字段
+    const avgClearRounds = clears > 0 ? clearRoundsSum / clears : 0;
+    const avgClearIsk = clears > 0 ? clearIskSum / clears : 0;
+
+    // ---------- 守卫断言（真实断言，不是注释）----------
+    const asserts = [];
+
+    // totalActiveSeconds === results.reduce(sum totalRounds)
+    // 已在累加循环中保证，此处冗余验证：
+    // （已在前面 totalActiveSeconds += r.totalRounds，不额外存数组以省内存）
+
+    // failures === runs - clears
+    const computedFailures = runs - clears;
+    if (failures !== computedFailures) asserts.push(`failures(${failures}) !== runs(${runs})-clears(${clears})=${computedFailures}`);
+
+    // totalLp === clears * zone.clearLp
+    const expectedLp = clears * zone.clearLp;
+    if (totalLp !== expectedLp) asserts.push(`totalLp(${totalLp}) !== clears(${clears})*clearLp(${zone.clearLp})=${expectedLp}`);
+
+    // totalWallSeconds === totalActiveSeconds + failures * 180
+    if (totalWallSeconds !== totalActiveSeconds + failures * 180) asserts.push("totalWallSeconds mismatch");
+
+    // a) 0%肃清但击杀过敌人时ISK/h必须>0
+    if (cr === 0 && totalNormal + totalElite + totalBoss > 0 && iskPerActiveHour <= 0) asserts.push("0%肃清有击杀ISK/h应为正");
+    // b) 0%肃清时LP/h必须=0
+    if (cr === 0 && lpPerActiveHour > 0) asserts.push("0%肃清LP/h应为0");
+    // c) 有失败时墙钟收益必须小于主动收益
+    if (failures > 0) {
+      if (iskPerWallHour >= iskPerActiveHour && iskPerActiveHour > 0) asserts.push("有失败墙钟ISK/h应<主动");
+      if (lpPerWallHour >= lpPerActiveHour && lpPerActiveHour > 0) asserts.push("有失败墙钟LP/h应<主动");
+    }
+    // d) 100%肃清时两种口径一致
+    if (failures === 0) {
+      if (Math.abs(iskPerWallHour - iskPerActiveHour) > 0.01) asserts.push("100%肃清时双口径ISK/h应一致");
+    }
+
+    if (asserts.length > 0) {
+      for (const a of asserts) console.error("  守卫断言失败:", a);
+      process.exitCode = 1;
+    }
+
+    const killN = totalNormal / runs, killE = totalElite / runs, killB = totalBoss / runs;
+    results.push({
+      zoneName: zone.name, secLevel: zone.secLevel,
+      clearRate: cr, avgClearRounds: Math.round(avgClearRounds), avgClearIsk: Math.round(avgClearIsk),
+      avgActiveSec: Math.round(avgActiveSec),
+      killsPerAttempt: { normal:killN, elite:killE, boss:killB },
+      tactMatPerAttempt: totalTactMat / runs,
+      allIsk: totalIsk / runs, clearLp: zone.clearLp,
+      iskPerActiveHour, lpPerActiveHour, tactMatPerActiveHour,
+      iskPerWallHour, lpPerWallHour, tactMatPerWallHour
+    });
+
+    economies += `${zone.name}  | 肃清率${(cr*100).toFixed(1)}% 失败率${(fr*100).toFixed(1)}%` +
+      ` | 主动${Math.round(avgActiveSec)}s/局` +
+      ` | ISK/局=${Math.round(totalIsk/runs)}` +
+      ` | 击杀N=${killN.toFixed(1)} E=${killE.toFixed(1)} B=${killB.toFixed(1)}\n` +
+      `  主动时间: ISK/h≈${Math.round(iskPerActiveHour).toLocaleString()}  LP/h≈${lpPerActiveHour.toFixed(1)}  战术材料/h≈${tactMatPerActiveHour.toFixed(1)}\n` +
+      `  墙钟(含维修): ISK/h≈${Math.round(iskPerWallHour).toLocaleString()}  LP/h≈${lpPerWallHour.toFixed(1)}  战术材料/h≈${tactMatPerWallHour.toFixed(1)}\n`;
+  }
+  console.log(economies);
+  return results;
+}
+
 const assertMixed = process.argv.includes("--assert-mixed");
+const auditEconomy = process.argv.includes("--audit-economy");
 const mixedOnly = process.argv.includes("--mixed-only") || assertMixed;
 const calibrateMixed = process.argv.includes("--calibrate-mixed");
 const calibrateMixedDodge = process.argv.includes("--calibrate-mixed-dodge");
@@ -481,7 +604,7 @@ if (nullsecOnly) {
     if (failures.length) throw new Error("混血驱逐舰目标校验失败：\n- " + failures.join("\n- "));
     console.log("\n目标校验通过：成型混血驱逐舰三路线为78%～86%，差距不超过3个百分点；成熟配置稳定同级且不能替代巡洋舰。");
   }
-} else if (!process.argv.includes("--battleship-only")) {
+} else if (!process.argv.includes("--battleship-only") && !auditEconomy) {
   runProfile("零技能全装驱逐舰回测当前高安", highsecZones, { weapon:1, targeting:1, piloting:1, defense:1, shield:1, armor:1, structure:1 }, 5000, 20250715);
   runProfile("入门驱逐舰配置", zones, { weapon:15, targeting:10, piloting:10, defense:15, shield:15, armor:15, structure:15 }, 10000, 20260715);
   runProfile("成熟驱逐舰配置", zones, { weapon:25, targeting:20, piloting:20, defense:25, shield:25, armor:25, structure:25 }, 10000, 20270715);
@@ -489,8 +612,44 @@ if (nullsecOnly) {
   runProfile("入门巡洋舰配置", lowsecZones, { weapon:35, targeting:25, piloting:25, defense:35, shield:35, armor:35, structure:35 }, 10000, 20290715, cruiserRouteByFaction);
   runProfile("成熟巡洋舰配置", lowsecZones, { weapon:45, targeting:40, piloting:40, defense:45, shield:45, armor:45, structure:45 }, 10000, 20300715, cruiserRouteByFaction);
 }
-if (!nullsecOnly && !mixedOnly && !mixedCruiserOnly && !calibrateMixed && !calibrateMixedDodge && !calibrateMixedCruiserDodge && !calibrateMixedCruiserHp && !auditMixedCruiserLoot) {
+if (!nullsecOnly && !mixedOnly && !mixedCruiserOnly && !mixedBattleshipOnly && !calibrateMixedBattleshipHp && !calibrateMixedBattleshipDodge && !calibrateMixed && !calibrateMixedDodge && !calibrateMixedCruiserDodge && !calibrateMixedCruiserHp && !auditMixedCruiserLoot && !auditEconomy) {
   runProfile("零技能全装战列舰回测0.4～0.3", lowsecZones, { weapon:1, targeting:1, piloting:1, defense:1, shield:1, armor:1, structure:1, capacitor:1 }, 5000, 20310715, battleshipRouteByFaction);
   runProfile("入门战列舰配置", deepsecZones, { weapon:55, targeting:45, piloting:45, defense:55, shield:55, armor:55, structure:55, capacitor:55 }, 10000, 20320715, battleshipRouteByFaction);
   runProfile("成熟战列舰配置", deepsecZones, { weapon:65, targeting:60, piloting:60, defense:65, shield:65, armor:65, structure:65, capacitor:65 }, 10000, 20330715, battleshipRouteByFaction);
+}
+
+// ---- 战斗经济审计模式 ----
+if (auditEconomy) {
+  const auditRuns = getNumericArg("--runs", 5000);
+  const skills = level => ({ weapon:level, targeting:level, piloting:level, defense:level, shield:level, armor:level, structure:level, capacitor:level });
+
+  // ===== T1 highsec =====
+  console.log("\n===== T1 高安（highsec — 新手护卫舰） =====");
+  runProfileEcon("①同级成型: rifter/kestrel/atron(技能15)", highsecZones, skills(15), auditRuns, 20990720, starterFrigateRouteByFaction);
+  runProfileEcon("②稳定刷取: rifter/kestrel/atron(技能25)", highsecZones, skills(25), auditRuns, 20990730, starterFrigateRouteByFaction);
+  runProfileEcon("③高一级回刷: 驱逐舰raylight等(技能20)", highsecZones, skills(20), auditRuns, 20990740, routeByFaction);
+
+  // ===== T2 bordersec =====
+  console.log("\n===== T2 边境（bordersec 0.7-0.5） =====");
+  runProfileEcon("①同级成型: 混血驱逐舰(技能25)", zones, skills(25), auditRuns, 20990820, mixedDestroyerRouteByFaction);
+  runProfileEcon("②稳定刷取: 混血驱逐舰(技能30)", zones, skills(30), auditRuns, 20990830, mixedDestroyerRouteByFaction);
+  runProfileEcon("③高一级回刷: 常规巡洋舰(技能40)", zones, skills(40), auditRuns, 20990840, cruiserRouteByFaction);
+
+  // ===== T3 lowsec =====
+  console.log("\n===== T3 低安（lowsec 0.4-0.3） =====");
+  runProfileEcon("①同级成型: 混血巡洋舰(技能45)", lowsecZones, skills(45), auditRuns, 20990920, mixedCruiserRouteByFaction);
+  runProfileEcon("②稳定刷取: 混血巡洋舰(技能50)", lowsecZones, skills(50), auditRuns, 20990930, mixedCruiserRouteByFaction);
+  runProfileEcon("③高一级回刷: 常规战列舰(技能60)", lowsecZones, skills(60), auditRuns, 20990940, battleshipRouteByFaction);
+
+  // ===== T4 deepsec =====
+  console.log("\n===== T4 深层（deepsec 0.2-0.1） =====");
+  runProfileEcon("①同级成型: 混血战列舰(技能65)", deepsecZones, skills(65), auditRuns, 20991020, mixedBattleshipRouteByFaction);
+  runProfileEcon("②稳定刷取: 混血战列舰(技能70)", deepsecZones, skills(70), auditRuns, 20991030, mixedBattleshipRouteByFaction);
+  runProfileEcon("③高一级回刷: 旗舰+0(技能80)", deepsecZones, skills(80), auditRuns, 20991040, getCapitalRoutes(0, false));
+
+  // ===== T5 nullsec 外环 =====
+  console.log("\n===== T5 0.0 外环（nullsec outer） =====");
+  runProfileEcon("①同级成型: 旗舰+5(技能85)", outerNullsecZones, skills(85), auditRuns, 20991120, getCapitalRoutes(5, false));
+  runProfileEcon("②稳定刷取: 旗舰+10(技能90)", outerNullsecZones, skills(90), auditRuns, 20991130, getCapitalRoutes(10, false));
+  runProfileEcon("③高一级回刷: 超旗+5(技能95)", outerNullsecZones, skills(95), auditRuns, 20991140, getCapitalRoutes(5, true));
 }

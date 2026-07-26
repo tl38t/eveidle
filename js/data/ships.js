@@ -601,3 +601,14 @@ const ARCHAEOLOGY_SHIPS = {
     unlock: { type: "shipEngineering", level: 80 }
   }
 };
+
+// 暴露给 3D 外观层（js/ui/ship3d.js，ES module）读取。仅挂到 window，不改原有经典脚本语义。
+if (typeof window !== "undefined") {
+  window.SHIP_DATA = {
+    STARTER_SHIPS,
+    INDUSTRIAL_SHIPS,
+    ARCHAEOLOGY_SHIPS,
+    SHIP_BLUEPRINTS,
+    SHIP_ASSEMBLY_RECIPES
+  };
+}

@@ -14,9 +14,12 @@ import { buildProfile } from "./ShipProfile.js";
 import { resolveStyle } from "./ShipStyleProfile.js";
 import { resolveCivilization } from "./civilization/CivilizationProfile.js";
 
-// 舰级 → 档位序号（0~3，capital=4）。与 SHIP_CLASSES 顺序一致，供 classTier 推导。
-// capital 档用于工业/考古旗舰（orca / illuminator）以及（未来）战斗旗舰；supercapital 暂映射到 capital。
-const SHIP_CLASS_TIERS = { frigate: 0, destroyer: 1, cruiser: 2, battleship: 3, capital: 4 };
+// 舰级 → 档位序号（0~5）。与 SHIP_CLASSES 顺序一致，供 classTier 推导。
+// capital=4 用于工业/考古旗舰（orca / illuminator）及战斗旗舰；supercapital=5 为超级旗舰独立档位。
+// 注意：新增 supercapital:5 后，所有以 classTier 作数组索引的 Generator 必须审计越界
+//       —— "低级四档细节数组"（长度 4，索引 0~3）须显式 Math.min(classTier, 3) 钳制；
+//          "随舰级递增"的武器/面板数量应改读 ctx.profile.hull.mounts 或 spec.highSlots。
+const SHIP_CLASS_TIERS = { frigate: 0, destroyer: 1, cruiser: 2, battleship: 3, capital: 4, supercapital: 5 };
 
 // 功能舰 shipClass 归一化：数据里的 type 带功能前缀（industrial_frigate / archaeology_capital / ...），
 // 需剥掉前缀得到基础档位，否则 buildProfile 取不到 perClass 且 classTier 全部兜底成 0（护卫舰尺寸）。
@@ -27,7 +30,8 @@ function normalizeShipClass(hull) {
   const base = String(hull).replace(/^(industrial_|archaeology_|player_)/, "");
   if (SHIP_CLASS_TIERS[base] != null) return base;                // 剥离前缀后命中
   if (base === "support") return "cruiser";                       // 工业支援（dolphin）≈ 巡洋尺寸
-  if (base === "supercapital") return "capital";                  // 超级旗舰暂复用 capital 桶
+  // supercapital 现为独立档位：SHIP_CLASS_TIERS 已包含 supercapital，故上面第 26 行精确命中即返回；
+  // 若带前缀（player_supercapital 等）则由第 28 行剥前缀后命中。此处无需再兜底到 capital。
   return "frigate";
 }
 
@@ -85,8 +89,10 @@ export class ShipContext {
     this.L = this.profile.hull.len * this.s;
     this.length = this.L;                           // 别名
 
-    // 舰级档位（0=frigate, 1=destroyer, 2=cruiser, 3=battleship）。
+    // 舰级档位（0=frigate,1=destroyer,2=cruiser,3=battleship,4=capital,5=supercapital）。
     // 供 Generator 做"细节密度 / 专属结构随舰级递增"——让大船不只是"放大版小船"的核心开关。
+    // 越界警戒：任何以 classTier 作定长数组（尤其长度 4 的"四档细节表"）索引的 Generator，
+    //          在 capital(4)/supercapital(5) 下都会取到 undefined，必须显式 Math.min(classTier,3) 钳制。
     this.classTier = SHIP_CLASS_TIERS[this.profile.shipClass] ?? 0;
 
     // S 组：Style 容器（Phase 5 C2：由 ShipStyleProfile 解析为完整设计哲学参数）

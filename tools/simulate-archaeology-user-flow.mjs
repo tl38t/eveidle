@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(m => m[1]);
+const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(m => m[1].replace(/\?.*$/, "").replace(/^\.\//, ""));
 
 const noop = () => {};
 function MockCanvasContext() {}
@@ -71,7 +71,7 @@ console.log("\n--- 3. 选择遗迹和探针 ---");
 console.log("\n--- 4. 开始考古 ---");
 {
   gs.skills.archaeology = { lvl: 1, xp: 0 };
-  const r = ctx.dispatchGameAction(gs, { type: "archaeology/start", now: Date.now() }, Date.now());
+  const r = ctx.dispatchGameAction(gs, { type: "archaeology/start" }, Date.now());
   ok(r.changed, "4a 开始考古");
   eq(gs.currentAction.skill, "archaeology", "4b skill=archaeology");
   ok(gs.currentAction.active, "4c active=true");
@@ -80,10 +80,10 @@ console.log("\n--- 4. 开始考古 ---");
 // ====== 5. 停止并重新开始 ======
 console.log("\n--- 5. 停止并重新开始 ---");
 {
-  const r = ctx.dispatchGameAction(gs, { type: "archaeology/stop", now: Date.now() + 2000 }, Date.now() + 2000);
+  const r = ctx.dispatchGameAction(gs, { type: "archaeology/stop" }, Date.now() + 2000);
   ok(r.changed, "5a 停止");
   ok(!gs.currentAction.active, "5b active=false");
-  const r2 = ctx.dispatchGameAction(gs, { type: "archaeology/start", now: Date.now() + 3000 }, Date.now() + 3000);
+  const r2 = ctx.dispatchGameAction(gs, { type: "archaeology/start" }, Date.now() + 3000);
   ok(r2.changed, "5c 重新开始");
 }
 
@@ -193,7 +193,7 @@ console.log("\n--- 13. 干扰防绕过 ---");
   }
   tState.skills.archaeology = { lvl: 1, xp: 0 };
   tState.archaeology.activeSiteId = "site_i_a";
-  ctx.dispatchGameAction(tState, { type: "archaeology/start", now: 10000 }, 10000);
+  ctx.dispatchGameAction(tState, { type: "archaeology/start" }, 10000);
   tState.currentAction.progress = 31;
   const failR = ctx.resolveArchaeologyCycle(tState, 30000, 0.9);
   ok(!failR.success, "13a 触发失败");
@@ -202,16 +202,16 @@ console.log("\n--- 13. 干扰防绕过 ---");
   tState.archaeology.interferenceUntil = 30000 + ctx.getArchaeologyInterferenceSeconds(site) * 1000;
   ok(tState.archaeology.interferenceUntil > 30000, "13b 干扰设置为未来时间");
   // 停止不消除干扰
-  ctx.dispatchGameAction(tState, { type: "archaeology/stop", now: 31000 }, 31000);
+  ctx.dispatchGameAction(tState, { type: "archaeology/stop" }, 31000);
   ok(tState.archaeology.interferenceUntil > 30000, "13c stop 保留干扰");
   // 干扰期间 start 被拒
   tState.archaeology.activeSiteId = "site_i_a";
-  const blocked = ctx.dispatchGameAction(tState, { type: "archaeology/start", now: 32000 }, 32000);
+  const blocked = ctx.dispatchGameAction(tState, { type: "archaeology/start" }, 32000);
   ok(!blocked.changed, "13d 干扰中 start 被拒");
   eq(blocked.reason, "interference", "13e 理由 interference");
   // 时间到期后可开始
   tState.archaeology.interferenceUntil = 0;
-  const allowed = ctx.dispatchGameAction(tState, { type: "archaeology/start", now: 999999 }, 999999);
+  const allowed = ctx.dispatchGameAction(tState, { type: "archaeology/start" }, 999999);
   ok(allowed.changed, "13f 到期后可重新开始");
 }
 

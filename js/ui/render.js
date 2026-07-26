@@ -84,6 +84,12 @@ function renderMiningDisplay(display, areaEl, outEl) {
   const efficiency = document.getElementById("me-value"); if (efficiency) { efficiency.textContent = display.efficiency.total.toFixed(2); efficiency.title = display.efficiencyTooltip; }
   const fleetSupport = document.getElementById("mining-fleet-support");
   const fleetSupportRow = document.getElementById("mining-fleet-support-row");
+  const logText = document.getElementById("mining-logistics");
+  if (logText) {
+    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    if (lm > 1) logText.textContent = "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）";
+    else logText.textContent = "后勤 ×1.00" + (gameState.station && gameState.station.bodyLevel > 0 ? "（燃料不足）" : "（未建立）");
+  }
   if (fleetSupport) fleetSupport.textContent = display.efficiency.fleetSupportBonus > 0 ? display.efficiency.fleetSupportShip.name + " · 最终速度 +" + (display.efficiency.fleetSupportBonus * 100).toFixed(0) + "%" : "未启用";
   if (fleetSupportRow) fleetSupportRow.classList.toggle("active", display.efficiency.fleetSupportBonus > 0);
   drawSkillBar(document.getElementById("bar-mining"), display.progress.percent, "green");
@@ -100,7 +106,7 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   const efficiency = document.getElementById("smelting-eff-value");
   if (efficiency) {
     efficiency.textContent = display.efficiency.toFixed(2);
-    efficiency.title = "技能速度：1 × (1 + " + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" + (display.shipBonus > 0 ? "\n舰船冶炼加速：" + display.ship.name + " +" + (display.shipBonus * 100).toFixed(0) + "%" : "\n舰船冶炼加速：无") + "\n最终速度：" + display.efficiency.toFixed(2) + "x\n\n基础时间：" + display.current.baseTime + "s\n实际时间：" + display.actualTime.toFixed(1) + "s\n产量只受冶炼技能影响，舰船只缩短时间";
+    efficiency.title = "技能速度：1 × (1 + " + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" + (display.shipBonus > 0 ? "\n舰船冶炼加速：" + display.ship.name + " +" + (display.shipBonus * 100).toFixed(0) + "%" : "\n舰船冶炼加速：无") + "\n空间站综合后勤：×" + (display.stationLogistics ? display.stationLogistics.multiplier : 1).toFixed(2) + "（" + (display.stationLogistics ? display.stationLogistics.text : "未建立") + "）" + "\n最终速度：" + display.efficiency.toFixed(2) + "x\n\n基础时间：" + display.current.baseTime + "s\n实际时间：" + display.actualTime.toFixed(1) + "s\n产量只受冶炼技能影响，舰船只缩短时间";
   }
   const output = document.getElementById("smelting-output-qty"); if (output) output.textContent = display.output;
   const support = document.getElementById("smelting-ship-support"); if (support) support.textContent = display.shipBonus > 0 ? display.ship.name + " · 速度 +" + (display.shipBonus * 100).toFixed(0) + "%" : "未分配";
@@ -119,6 +125,11 @@ function renderGasDisplay(display, areaEl, outEl) {
   const stats = document.getElementById("gas-stats"); if (stats) stats.style.display = "block";
   const dropdown = document.getElementById("gas-dropbtn"); if (dropdown) dropdown.textContent = display.current.gas + " ▾";
   const efficiency = document.getElementById("gas-eff-value"); if (efficiency) { efficiency.textContent = display.efficiency.total.toFixed(2); efficiency.title = display.efficiencyTooltip; }
+  const gasLogText = document.getElementById("gas-logistics");
+  if (gasLogText) {
+    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    gasLogText.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×1.00" + ((display.station && display.station.bodyLevel > 0) ? "（燃料不足）" : "（未建立）");
+  }
   setProductionControls(display, document.getElementById("btn-start-gas"));
   drawSkillBar(document.getElementById("bar-gas"), display.progress.percent, "green");
   const eta = document.getElementById("gas-eta"); if (eta) eta.textContent = display.progress.etaText;
@@ -355,6 +366,9 @@ let _lastPlanetFrame = 0;
     else if (currentPage === "skill" && currentView === key && key === "boosterEngineering") {
       drawSkillBar(document.getElementById("bar-booster"), pct, "purple");
       const e = document.getElementById("booster-eta"); if (e) e.textContent = eta;
+    }
+    else if (currentPage === "archaeology" && key === "archaeology") {
+      drawSkillBar(document.getElementById("bar-archaeology"), pct, "green");
     }
   }
 

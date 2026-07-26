@@ -37,20 +37,44 @@ function getMaxShipAssemblyCycles(recipe) {
   return getShipAssemblyMaxCyclesFromState(gameState, recipe);
 }
 
+// 带船坞节省的舰船组装材料校验（用量 quote 计算需要的实际数量）
 function hasEnoughShipAssemblyComponents(recipe, cycles) {
   const multiplier = cycles || 1;
+  if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
+    const quote = getShipyardProductionQuote(gameState, recipe, multiplier);
+    for (const [ref, qty] of Object.entries(quote.payable)) {
+      // materialCost 键为纯材料名，须按名聚合校验（component:xxx 仍走精确读）
+      if (ResourceRegistry.getByRef(gameState, ref) < qty) return false;
+    }
+    return true;
+  }
+  // 无节省时的旧路径
   const hasComponents = Object.entries(getShipAssemblyComponentCost(recipe)).every(([id, count]) =>
     ResourceRegistry.get(gameState, "component:" + id) >= count * multiplier
   );
   return hasComponents && ResourceRegistry.canAffordCost(gameState, recipe.materialCost || {}, multiplier);
 }
 
+// 带船坞节省的舰船组装材料扣除
 function deductShipAssemblyComponents(recipe, cycles) {
   const multiplier = cycles || 1;
+  if (typeof getShipyardProductionQuote === "function" && typeof commitShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
+    const quote = getShipyardProductionQuote(gameState, recipe, multiplier);
+    const result = commitShipyardProductionQuote(gameState, quote);
+    if (result.changed !== true) return false;
+    if (quote.totalSaved > 0) {
+      if (typeof GameEvents !== "undefined") {
+        GameEvents.emit("station:shipyardMaterialsSaved", { recipeId:recipe.id, cycles:multiplier, savings:quote.saved, totalSaved:quote.totalSaved }, { source:"station" });
+      }
+    }
+    return true;
+  }
+  // 无节省时的旧路径
   for (const [id, count] of Object.entries(getShipAssemblyComponentCost(recipe))) {
     ResourceRegistry.spend(gameState, "component:" + id, count * multiplier);
   }
   ResourceRegistry.spendCost(gameState, recipe.materialCost || {}, multiplier);
+  return true;
 }
 
 function hasBlueprint(shipId) {
@@ -110,7 +134,9 @@ function getRunningEquipEngRecipe() {
 }
 
 function getEquipEngEfficiency() {
-  return 1 + gameState.skills.equipmentEngineering.lvl * 0.02;
+  const skillMult = 1 + gameState.skills.equipmentEngineering.lvl * 0.02;
+  const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
+  return skillMult * stationMult;
 }
 
 function getEquipEngCategoryDefinition(categoryId) {
@@ -234,7 +260,9 @@ function applyEquipEngOutput(recipe, cycles) {
 
 function getBoosterEfficiency() {
   const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
-  return 1 + lvl * 0.02;
+  const skillMult = 1 + lvl * 0.02;
+  const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
+  return skillMult * stationMult;
 }
 
 function getSelectedBoosterRecipe() {

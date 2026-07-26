@@ -29,7 +29,7 @@ vm.createContext(sandbox);
 
 // 加载全部脚本（与 index.html 相同顺序）
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(m => m[1]);
+const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(m => m[1].replace(/\?.*$/, ""));
 for (const src of scriptSources) {
   const code = fs.readFileSync(path.resolve(root, src.replace(/^\.\//, "")), "utf8");
   vm.runInContext(code, sandbox, { filename:src });

@@ -22,7 +22,7 @@ function buildManta(ctx) {
   // 菱形钻石盘 + 细尾（stingray）：峰偏前(tp)，盘后缘(td)后收成细尾干
   const tp = 0.30, td = 0.60;
   const Wof = (z) => {
-    const t = (z - zN) / (zT - zN);
+    const t = Math.min(1, Math.max(0, (z - zN) / (zT - zN))); // 钳制到 [0,1]：高舰级 droneBay 采样 z 可能越出鳐鱼头尾，负数底数幂会 → NaN
     let w;
     if (t <= tp) {
       w = 0.06 + 0.94 * Math.pow(t / tp, 0.78);          // 前缘斜边：头尖 → 翼尖
@@ -37,7 +37,7 @@ function buildManta(ctx) {
   };
   // 盘中央厚、向尾渐薄
   const Hof = (z) => {
-    const t = (z - zN) / (zT - zN);
+    const t = Math.min(1, Math.max(0, (z - zN) / (zT - zN)));
     const body = Math.exp(-Math.pow((t - 0.28) / 0.42, 2));
     return Hmax * (0.12 + 0.88 * body);
   };

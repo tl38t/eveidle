@@ -201,7 +201,7 @@
   /* ---- 图片占位 ---- */
   .combat-side-image {
     width: 210px;
-    height: 150px;
+    height: 230px;
     background: rgba(255,255,255,0.03);
     border: 1px dashed #2a3545;
     border-radius: 4px;
@@ -209,6 +209,7 @@
     align-items: center;
     justify-content: center;
     margin-bottom: 6px;
+    overflow: hidden;
   }
   .combat-ship-placeholder {
     font-size: 36px;
@@ -836,3 +837,39 @@
     .combat-engagement-btn { min-width: 142px; }
     .combat-skill-row { width: 100%; padding: 7px 0 0; border-left: 0; border-top: 1px solid rgba(91,113,132,0.25); }
   }
+
+  /* ===== 战斗掉落预览（Phase 3D 其他任务） ===== */
+  .combat-drop-preview {
+    margin: 4px 0 12px;
+    border: 1px solid #2c3e52;
+    border-radius: 8px;
+    background: linear-gradient(180deg, rgba(13,21,32,0.9), rgba(10,16,24,0.92));
+    overflow: hidden;
+  }
+  .combat-drop-preview > summary {
+    cursor: pointer;
+    list-style: none;
+    padding: 9px 12px;
+    font-weight: 700;
+    color: #cfe6f7;
+    background: #111d2b;
+    user-select: none;
+  }
+  .combat-drop-preview > summary::-webkit-details-marker { display: none; }
+  .combat-drop-preview > summary::before { content: "▸"; margin-right: 6px; color: #54bce8; transition: transform .15s; }
+  .combat-drop-preview[open] > summary::before { content: "▾"; }
+  .combat-drop-preview-zone { font-weight: 500; color: #8fa6bd; font-size: 0.9em; }
+  .combat-drop-preview-body { padding: 8px 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+  .drop-mode-tag { padding: 3px 8px; border-radius: 5px; font-size: 0.82em; font-weight: 700; align-self: flex-start; }
+  .drop-mode-tag.belt { background: rgba(80,40,10,0.4); color: #f0b27a; }
+  .drop-mode-tag.deathspace { background: rgba(60,20,80,0.4); color: #d3a0f0; }
+  .drop-group-title { margin-top: 6px; font-size: 0.82em; font-weight: 700; color: #7fd4a8; border-top: 1px dashed rgba(127,212,168,0.25); padding-top: 5px; }
+  .drop-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 0.9em; padding: 2px 0; }
+  .drop-name { color: #e6f1fb; font-weight: 600; white-space: nowrap; }
+  .drop-detail { color: #9fb3c8; text-align: right; font-size: 0.92em; }
+  .drop-row.drop-none .drop-name, .drop-row.drop-none .drop-detail { color: #7a8896; font-style: italic; }
+  .drop-row.drop-data .drop-name { color: #7cc4ff; }
+  .drop-row.drop-special .drop-name { color: #ffd470; }
+  .drop-row.drop-ticket .drop-name { color: #b58cff; }
+  .drop-row.drop-leader .drop-name { color: #ff9ed6; }
+  .drop-row.drop-tactical .drop-name { color: #79e0c4; }

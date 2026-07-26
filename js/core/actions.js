@@ -23,6 +23,7 @@ const ProductionStateActions = {
     if (!area) return { changed:false, reason:"unknown-area" };
     if ((state.skills.mining.lvl || 1) < area.level) return { changed:false, reason:"level-locked" };
     const action = state.currentAction;
+    const prevArea = action.area;
     action.area = area.name;
     action.miningMode = area.mode;
     if (area.mode === "moon") action.moonMiningArea = area.name;
@@ -31,6 +32,8 @@ const ProductionStateActions = {
       action.progress = 0;
       action.lastProgressUpdate = now;
     }
+    // 切换矿带时清空资源调度中心已累计的采矿次数（仅当矿带真正改变）
+    if (area.name !== prevArea && typeof resetStationDispatchCounters === "function") resetStationDispatchCounters(state, "mining");
     state._dirty = true;
     return { changed:true, area };
   },
@@ -69,11 +72,14 @@ const ProductionStateActions = {
     if (!area) return { changed:false, reason:"unknown-area" };
     if ((state.skills.gasHarvesting.lvl || 1) < area.level) return { changed:false, reason:"level-locked" };
     const action = state.currentAction;
+    const prevArea = action.gasArea;
     action.gasArea = area.name;
     if (!action.active || action.skill !== "gasHarvesting") {
       action.progress = 0;
       action.lastProgressUpdate = now;
     }
+    // 切换气体带时清空资源调度中心已累计的采气次数（仅当气体带真正改变）
+    if (area.name !== prevArea && typeof resetStationDispatchCounters === "function") resetStationDispatchCounters(state, "gas");
     state._dirty = true;
     return { changed:true, area };
   }
@@ -117,6 +123,8 @@ const ManufacturingStateActions = {
   startShipComponent(state, now) {
     const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === state.currentAction.shipCompTarget) || SHIP_COMPONENT_RECIPES[0];
     if ((state.skills.shipEngineering.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    // 船坞等级门槛
+    if (typeof canManufactureAtShipyard === "function" && !canManufactureAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
     Object.assign(state.currentAction, {
       skill:"shipEngineering",
       active:true,
@@ -134,6 +142,8 @@ const ManufacturingStateActions = {
     const hasBlueprint = recipe.requiresBlueprint === false || (state.ownedBlueprints || []).includes(recipe.shipId);
     if (!hasBlueprint) return { changed:false, reason:"blueprint-locked" };
     if ((state.skills.shipEngineering.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    // 船坞等级门槛
+    if (typeof canAssembleAtShipyard === "function" && !canAssembleAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
     if (getShipAssemblyMaxCyclesFromState(state, recipe) < 1) return { changed:false, reason:"insufficient-components" };
     Object.assign(state.currentAction, {
       skill:"shipEngineering",
@@ -255,8 +265,8 @@ const BoosterStateActions = {
     return { changed:true, recipe };
   },
 
-  startManufacturing(state, now) {
-    const recipe = getBoosterRecipe(state.currentAction.boosterRecipeTarget) || BOOSTER_RECIPES[0];
+  startManufacturing(state, now, recipeId) {
+    const recipe = recipeId ? getBoosterRecipe(recipeId) : (getBoosterRecipe(state.currentAction.boosterRecipeTarget) || BOOSTER_RECIPES[0]);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
     if (!isBoosterRecipeUnlocked(recipe)) return { changed:false, reason:"level-locked" };
     if (!hasEnoughBoosterInputs(recipe, 1)) return { changed:false, reason:"insufficient-materials" };
@@ -504,6 +514,7 @@ const CombatStateActions = {
     state.combat.active = true;
     state.combat.lastStatus = "";
     state.combat.lastEnemyVolley = null;
+    state.resumeAfterRepair = null; // 手动/自动重新出击：清除待恢复标记
     state._dirty = true;
     return { changed:true };
   },
@@ -533,7 +544,10 @@ const CombatStateActions = {
   },
 
   stop(state) {
-    if (!state.combat.active && !(state.currentAction.active && state.currentAction.skill === "combat")) return { changed:false, reason:"not-active" };
+    // 玩家主动停止：即便当前处于维修中（combat 非活跃、无战斗行动），只要存在待恢复标记，
+    // 也允许停止以取消"维修完成后自动出击"。这是策划要求（重创后可主动放弃自动返回）。
+    const hasPendingResume = Boolean(state.resumeAfterRepair && state.resumeAfterRepair.type === "combat");
+    if (!state.combat.active && !(state.currentAction.active && state.currentAction.skill === "combat") && !hasPendingResume) return { changed:false, reason:"not-active" };
     const maxHp = getCombatMaxHpFromState(state);
     const abandonedDeathspace = state.combat.mode === "deathspace";
     state.currentAction.active = false;
@@ -552,14 +566,33 @@ const CombatStateActions = {
       lastStatus:abandonedDeathspace ? "已撤离死亡空间，通行密钥不返还" : "",
       lastEnemyVolley:null
     });
+    state.resumeAfterRepair = null; // 玩家主动停止：取消待恢复（含维修中取消自动出击）
     state._dirty = true;
-    return { changed:true, abandonedDeathspace };
+    return { changed:true, abandonedDeathspace, cancelledResume:hasPendingResume };
   },
 
   beginRecovery(state, now) {
     const activeShip = getActiveCombatShipState(state);
     const failedDeathspace = state.combat.mode === "deathspace";
+    const destroyedShipId = activeShip.instance ? activeShip.instance.instanceId : null;
+    const failedDeathspaceId = failedDeathspace ? (state.combat.deathspaceId || null) : null;
+    // 维修后自动恢复（Phase 3D 修正）：重创即本轮失败并清零遭遇；无论普通星带还是死亡空间，
+    // 维修完成后都只返回普通星带、从第 1 波开始全新一轮，死亡空间永不续跑、密钥不返还。
+    // returnZoneId = 维修后自动进入的普通星带。死亡空间取来源 sourceZoneId（enterDeathspace 时
+    // combat.zone 已存 sourceZoneId，此处优先查库以确保权威）；defeatedMode/deathspaceId 仅供日志/UI/事件。
+    let returnZoneId = state.combat.zone || null;
+    if (failedDeathspace) {
+      const site = DEATHSPACE_DATABASE.find(item => item.id === failedDeathspaceId);
+      if (site) returnZoneId = site.sourceZoneId;
+    }
     state.currentAction.active = false;
+    state.resumeAfterRepair = {
+      type:"combat",
+      returnZoneId,
+      defeatedMode:failedDeathspace ? "deathspace" : "belt",
+      deathspaceId:failedDeathspaceId,
+      shipInstanceId:destroyedShipId
+    };
     Object.assign(state.combat, {
       active:false,
       enemies:[],
@@ -570,11 +603,13 @@ const CombatStateActions = {
       currentFormation:"",
       lastEnemyVolley:null,
       repairUntil:now + 180000,
-      destroyedShip:activeShip.instance ? activeShip.instance.instanceId : null,
-      lastStatus:failedDeathspace ? "死亡空间攻略失败，通行密钥不返还；舰船自动维修中" : "舰船损毁，自动维修中"
+      destroyedShip:destroyedShipId,
+      lastStatus:failedDeathspace
+        ? "攻略失败，密钥不返还；维修完成后返回来源星带。"
+        : "本轮肃清失败，维修完成后返回该星带。"
     });
     state._dirty = true;
-    return { changed:true, repairUntil:state.combat.repairUntil, failedDeathspace };
+    return { changed:true, repairUntil:state.combat.repairUntil, failedDeathspace, returnZoneId };
   },
 
   finishRecovery(state, now) {
@@ -694,6 +729,10 @@ function getQueueItemConfigForState(item) {
     else { config.shipSubAction = "component"; config.shipCompTarget = "integrated_hull"; }
   } else if (skill === "equipmentEngineering") {
     config.equipEngTarget = EQUIPMENT_ENGINEERING_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target)?.id || "t1_mining_laser";
+  } else if (skill === "archaeology") {
+    config.archaeologyTarget = item.target;
+  } else if (skill === "boosterEngineering") {
+    config.boosterTarget = item.target;
   }
   return config;
 }
@@ -712,6 +751,97 @@ function applyQueueConfigToState(state, config, now) {
   if (config.shipCompTarget) { action.shipCompTarget = config.shipCompTarget; action.startedShipCompTarget = config.shipCompTarget; }
   if (config.shipAsmTarget) { action.shipAsmTarget = config.shipAsmTarget; action.startedShipAsmTarget = config.shipAsmTarget; }
   if (config.equipEngTarget) { action.equipEngTarget = config.equipEngTarget; action.startedEquipEngTarget = config.equipEngTarget; }
+  if (config.archaeologyTarget) {
+    action.archaeologyTarget = config.archaeologyTarget;
+    action.startedArchaeologyTarget = config.archaeologyTarget;
+    state.archaeology.startedSiteId = config.archaeologyTarget;
+    state.archaeology.activeSiteId = config.archaeologyTarget;
+    state.archaeology.startedProbeId = state.archaeology.activeProbeId;
+  }
+  if (config.boosterTarget) {
+    action.boosterTarget = config.boosterTarget;
+    action.startedBoosterRecipeTarget = config.boosterTarget;
+    action.boosterRecipeTarget = config.boosterTarget;
+  }
+}
+
+// ---- 共享校验函数：考古启动校验（三个入口共用） ----
+// 只做校验和原因返回，不修改 state。
+function canStartArchaeology(state, now) {
+  const arch = state.archaeology;
+  const site = getArchaeologySite(arch.activeSiteId);
+  if (!site) return { ok:false, reason:"no-site" };
+  if ((state.skills.archaeology.lvl || 1) < site.level) return { ok:false, reason:"level-locked" };
+  if (arch.repairUntil > now) return { ok:false, reason:"repairing" };
+  if (arch.interferenceUntil > now) return { ok:false, reason:"interference" };
+  const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
+  const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
+  const config = instance ? getShipConfigById(instance.shipId) : null;
+  if (!config || !ARCHAEOLOGY_SHIP_TYPES.includes(config.type)) return { ok:false, reason:"no-archaeology-ship" };
+  const probeId = arch.activeProbeId;
+  if (ResourceRegistry.get(state, "probe:" + probeId) < 1) return { ok:false, reason:"insufficient-probe" };
+  const fuelState = getArchaeologyFuelCostState(state, site, instance);
+  if (ResourceRegistry.get(state, "consumable:fuel") < fuelState.chargedFuel) return { ok:false, reason:"insufficient-fuel" };
+  return { ok:true, site, instance, probeId, fuelState };
+}
+
+// ---- 统一队列项目启动函数：所有后续项目必须经此入口 ----
+function executeQueueItemForState(state, item, now) {
+  const skill = item.skill;
+  const queue = state.queue;
+  if (!queue || !item) return { changed:false, reason:"no-item" };
+
+  // 先保存当前 user 选择（archeology activeSiteId/probeId, booster recipeTarget）以免被覆盖
+  if (skill === "archaeology") {
+    // 设置目标遗迹供 canStartArchaeology / ArchaeologyStateActions.start 读取
+    if (item.target) {
+      const siteObj = getArchaeologySite(item.target);
+      if (siteObj) state.archaeology.activeSiteId = item.target;
+      // activeProbeId 需提前设好，让共享校验读到正确的探针
+      if (!state.archaeology.activeProbeId) state.archaeology.activeProbeId = "core_probe_i";
+    }
+    const result = ArchaeologyStateActions.start(state, now);
+    if (!result.changed) {
+      // 校验失败：failCount++、跳过此项、不污染 currentAction
+      queue.status.failCount = (Number(queue.status.failCount) || 0) + 1;
+      queue.items.splice(queue.status.activeIndex, 1);
+      if (queue.items.length) {
+        queue.status.activeIndex = Math.min(queue.status.activeIndex, queue.items.length - 1);
+        // 下一项仍走统一入口
+        return executeQueueItemForState(state, queue.items[queue.status.activeIndex], now);
+      }
+      queue.status.isRunning = false; queue.status.activeIndex = -1; queue.status.completedCount = 0;
+      state.currentAction.active = false; state.currentAction.batchRemaining = 0;
+      state._dirty = true;
+      return { changed:false, reason:result.reason };
+    }
+    state._dirty = true;
+    return { changed:true, skill:"archaeology" };
+  }
+
+  if (skill === "boosterEngineering") {
+    const recipeId = item.target;
+    const result = BoosterStateActions.startManufacturing(state, now, recipeId);
+    if (!result.changed) {
+      queue.status.failCount = (Number(queue.status.failCount) || 0) + 1;
+      queue.items.splice(queue.status.activeIndex, 1);
+      if (queue.items.length) {
+        queue.status.activeIndex = Math.min(queue.status.activeIndex, queue.items.length - 1);
+        return executeQueueItemForState(state, queue.items[queue.status.activeIndex], now);
+      }
+      queue.status.isRunning = false; queue.status.activeIndex = -1; queue.status.completedCount = 0;
+      state.currentAction.active = false; state.currentAction.batchRemaining = 0;
+      state._dirty = true;
+      return { changed:false, reason:result.reason };
+    }
+    state._dirty = true;
+    return { changed:true, skill:"boosterEngineering" };
+  }
+
+  // 常规技能
+  applyQueueConfigToState(state, getQueueItemConfigForState(item), now);
+  state._dirty = true;
+  return { changed:true, skill:state.currentAction.skill };
 }
 
 const ShellStateActions = {
@@ -1036,9 +1166,12 @@ const ShellStateActions = {
     const queue = state.queue;
     if (!queue.items.length) return { changed:false, reason:"empty" };
     queue.status = { ...queue.status, isRunning:true, activeIndex:0, completedCount:0, failCount:0 };
-    applyQueueConfigToState(state, getQueueItemConfigForState(queue.items[0]), now);
-    state._dirty = true;
-    return { changed:true, skill:state.currentAction.skill };
+    const result = executeQueueItemForState(state, queue.items[0], now);
+    if (!result.changed && result.reason && !result.skill) {
+      // queueStart 自身失败（无队列项目等）
+      return result;
+    }
+    return { changed:result.changed, skill:result.skill || state.currentAction.skill };
   },
 
   queueStop(state, now) {
@@ -1174,6 +1307,154 @@ function enhanceEquipment(state, targetRef, randomValue) {
   return { changed:true, instanceId:targetInstance.instanceId, itemId:targetItemId, fromLevel, toLevel, success, xp, cost:display.cost, extra:display.extra, isMilestone:display.isMilestone };
 }
 
+/* ================================================================
+   空间站 Action 层（Phase 3C-5）
+   所有 UI 和未来入口必须通过 Action，不允许直接改状态。
+   ================================================================ */
+const StationStateActions = {
+  // 选择自动线目标（只改 selectedTargetId，不触及 startedTargetId/运行状态）
+  selectAutoLineTarget(state, lineId, targetId) {
+    if (!AUTO_LINE_IDS.includes(lineId)) return { changed:false, reason:"unknown-line" };
+    const s = state.station;
+    if (!s || !s.autoLines || !s.autoLines[lineId]) return { changed:false, reason:"no-state" };
+    const line = s.autoLines[lineId];
+    // 目标为空则清空选择
+    if (!targetId) {
+      line.selectedTargetId = null;
+      state._dirty = true;
+      return { changed:true, lineId, targetId:null };
+    }
+    // 验证 targetId 属于对应配方池
+    let recipe;
+    if (lineId === "smelting") recipe = SMELTING_RECIPES.find(r => r.name === targetId);
+    else if (lineId === "equipment") recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === targetId);
+    else if (lineId === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
+    if (!recipe) return { changed:false, reason:"unknown-recipe" };
+    // 运行时允许修改 selectedTargetId（但不能改变 startedTargetId）
+    line.selectedTargetId = targetId;
+    state._dirty = true;
+    return { changed:true, lineId, targetId };
+  },
+
+  // 启动自动线
+  startAutoLine(state, lineId, nowOverride) {
+    if (!AUTO_LINE_IDS.includes(lineId)) return { changed:false, reason:"unknown-line" };
+    const s = state.station;
+    if (!s || !s.autoLines || !s.autoLines[lineId]) return { changed:false, reason:"no-state" };
+    const line = s.autoLines[lineId];
+
+    // 必须在运行状态的线才能启动（不管 enabled、clear stoppedReason）
+    const buildingLevel = (typeof getStationBuildingLevel === "function")
+      ? getStationBuildingLevel(state, AUTO_LINE_CONFIG[lineId].buildingId) : 0;
+    if (buildingLevel < 1) return { changed:false, reason:"building-required" };
+
+    const targetId = line.selectedTargetId;
+    if (!targetId) return { changed:false, reason:"no-target-selected" };
+
+    // 检查配方合法（不同线使用不同配方池）
+    let recipe;
+    if (lineId === "smelting") recipe = SMELTING_RECIPES.find(r => r.name === targetId);
+    else if (lineId === "equipment") recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === targetId);
+    else if (lineId === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
+
+    if (!recipe) return { changed:false, reason:"unknown-recipe" };
+
+    // 检查配方等级门槛
+    const eeLvl = (lineId === "equipment") ? (Number(state.skills.equipmentEngineering && state.skills.equipmentEngineering.lvl) || 1) : 99;
+    const bLvl = (lineId === "booster") ? (Number(state.skills.boosterEngineering && state.skills.boosterEngineering.lvl) || 1) : 99;
+    const sLvl = (lineId === "smelting") ? (Number(state.skills.refining && state.skills.refining.lvl) || 1) : 99;
+    const levelCheck = (lineId === "equipment") ? (eeLvl < recipe.level) : (lineId === "booster") ? (bLvl < recipe.level) : (lineId === "smelting") ? (sLvl < recipe.level) : false;
+    if (levelCheck) return { changed:false, reason:"level-locked" };
+
+    // 如果正在运行另一个目标，拒绝
+    if (line.enabled && line.startedTargetId && line.startedTargetId !== targetId) {
+      return { changed:false, reason:"different-target-running" };
+    }
+
+    // 如果已经运行相同目标且处于运行中，幂等
+    if (line.enabled && line.startedTargetId === targetId && !line.stoppedReason) {
+      return { changed:true, lineId, targetId, alreadyRunning:true };
+    }
+
+    // 启动
+    const now = Number.isFinite(Number(nowOverride)) ? Number(nowOverride) : Date.now();
+    line.enabled = true;
+    line.startedTargetId = targetId;
+    line.selectedTargetId = targetId;
+    line.stoppedReason = null;
+    line.progress = 0;
+    line.lastTick = now;
+    state._dirty = true;
+
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("station:autoLineStarted", { lineId, targetId }, { source:"station", offline:false });
+    }
+
+    return { changed:true, lineId, targetId, startedAt:now };
+  },
+
+  // 停止自动线
+  stopAutoLine(state, lineId, nowOverride) {
+    if (!AUTO_LINE_IDS.includes(lineId)) return { changed:false, reason:"unknown-line" };
+    const s = state.station;
+    if (!s || !s.autoLines || !s.autoLines[lineId]) return { changed:false, reason:"no-state" };
+    const line = s.autoLines[lineId];
+    if (!line.enabled && !line.startedTargetId) return { changed:false, reason:"not-running" };
+
+    const targetId = line.startedTargetId || line.selectedTargetId;
+    line.enabled = false;
+    line.stoppedReason = "user-stopped";
+    line.progress = 0;
+    state._dirty = true;
+
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("station:autoLineStopped", {
+        lineId, targetId, reason:"user-stopped",
+        quantity:0, xp:0, offline:false
+      }, { source:"station", offline:false });
+    }
+
+    return { changed:true, lineId, targetId };
+  },
+
+  // 一键补给维护燃料
+  refillMaintenance(state, nowOverride) {
+    if (typeof getStationRefillMaintenanceState !== "function") return { changed:false, reason:"not-available" };
+    const info = getStationRefillMaintenanceState(state);
+    if (!info.canRefill) return { changed:false, reason:info.reason, points:info.points, fuelRemaining:info.fuel };
+    const cost = Math.ceil(info.targetFuel - info.fuel);
+    const fuelStock = ResourceRegistry.get(state, "consumable:fuel");
+    if (fuelStock < cost) return { changed:false, reason:"insufficient-fuel", fuelCost:cost, fuelStock };
+    ResourceRegistry.spend(state, "consumable:fuel", cost);
+    const m = state.station.maintenance;
+    m.fuelRemaining = info.targetFuel;
+    const now = Number.isFinite(Number(nowOverride)) ? Number(nowOverride) : Date.now();
+    m.lastTick = now;
+    m.lowFuelNotified = false;
+    m.depletedNotified = false;
+    state._dirty = true;
+    const remainingMs = info.targetFuel / getStationFuelBurnRatePerMs(info.points);
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("station:maintenanceRefilled", { points:info.points, fuelSpent:cost, fuelRemaining:info.targetFuel, remainingMs }, { source:"station", offline:false });
+    }
+    return { changed:true, points:info.points, fuelSpent:cost, fuelRemaining:info.targetFuel, remainingMs };
+  },
+
+  // 建设本体
+  startBodyConstruction(state, nowOverride) {
+    if (typeof startStationBodyConstruction !== "function") return { changed:false, reason:"not-available" };
+    const now = Number.isFinite(Number(nowOverride)) ? Number(nowOverride) : Date.now();
+    return startStationBodyConstruction(state, now);
+  },
+
+  // 建设附属建筑
+  startBuildingConstruction(state, buildingId, nowOverride) {
+    if (typeof startStationBuildingConstruction !== "function") return { changed:false, reason:"not-available" };
+    const now = Number.isFinite(Number(nowOverride)) ? Number(nowOverride) : Date.now();
+    return startStationBuildingConstruction(state, buildingId, now);
+  }
+};
+
 function dispatchGameAction(state, action, now) {
   if (!state || !action || typeof action.type !== "string") return { changed:false, reason:"invalid-action" };
   const actionTime = Number(now) || Date.now();
@@ -1236,10 +1517,17 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "queue/setLoop") return ShellStateActions.queueSetLoop(state, action.enabled);
   if (action.type === "archaeology/selectSite") return ArchaeologyStateActions.selectSite(state, action.siteId);
   if (action.type === "archaeology/selectProbe") return ArchaeologyStateActions.selectProbe(state, action.probeId);
-  if (action.type === "archaeology/start") return ArchaeologyStateActions.start(state, action.now);
-  if (action.type === "archaeology/stop") return ArchaeologyStateActions.stop(state, action.now);
+  if (action.type === "archaeology/start") return ArchaeologyStateActions.start(state, actionTime);
+  if (action.type === "archaeology/stop") return ArchaeologyStateActions.stop(state, actionTime);
   if (action.type === "archaeology/sellArtifact") return ArchaeologyStateActions.sellArtifact(state, action.artifactId, action.quantity, action.all);
   if (action.type === "archaeology/redeemArtifact") return ArchaeologyStateActions.redeemArtifact(state, action.artifactId, action.quantity, action.all);
+  // 空间站 Phase 3C-5：自动线 Action
+  if (action.type === "station/selectAutoLineTarget") return StationStateActions.selectAutoLineTarget(state, action.lineId, action.targetId);
+  if (action.type === "station/startAutoLine") return StationStateActions.startAutoLine(state, action.lineId, actionTime);
+  if (action.type === "station/stopAutoLine") return StationStateActions.stopAutoLine(state, action.lineId, actionTime);
+  if (action.type === "station/refillMaintenance") return StationStateActions.refillMaintenance(state, actionTime);
+  if (action.type === "station/startBodyConstruction") return StationStateActions.startBodyConstruction(state, actionTime);
+  if (action.type === "station/startBuildingConstruction") return StationStateActions.startBuildingConstruction(state, action.buildingId, actionTime);
   return { changed:false, reason:"unknown-action" };
 }
 
@@ -1247,6 +1535,7 @@ const ArchaeologyStateActions = {
   selectSite(state, siteId) {
     const site = getArchaeologySite(siteId);
     if (!site) return { changed:false, reason:"unknown-site" };
+    if (state.currentAction.active && state.currentAction.skill === "archaeology") return { changed:false, reason:"action-running" };
     if ((state.skills.archaeology.lvl || 1) < site.level) return { changed:false, reason:"level-locked" };
     state.archaeology.activeSiteId = site.id;
     state._dirty = true;
@@ -1255,33 +1544,25 @@ const ArchaeologyStateActions = {
   selectProbe(state, probeId) {
     const probe = getArchaeologyProbe(probeId);
     if (!probe) return { changed:false, reason:"unknown-probe" };
+    if (state.currentAction.active && state.currentAction.skill === "archaeology") return { changed:false, reason:"action-running" };
     if ((state.skills.archaeology.lvl || 1) < probe.level) return { changed:false, reason:"level-locked" };
     state.archaeology.activeProbeId = probe.id;
     state._dirty = true;
     return { changed:true, probe };
   },
   start(state, now) {
+    const check = canStartArchaeology(state, now);
+    if (!check.ok) return { changed:false, reason:check.reason };
     const arch = state.archaeology;
-    const site = getArchaeologySite(arch.activeSiteId);
-    if (!site) return { changed:false, reason:"no-site" };
-    if ((state.skills.archaeology.lvl || 1) < site.level) return { changed:false, reason:"level-locked" };
-    if (arch.repairUntil > now) return { changed:false, reason:"repairing" };
-    if (arch.interferenceUntil > now) return { changed:false, reason:"interference" };
-    const probeId = arch.activeProbeId;
-    if (ResourceRegistry.get(state, "probe:" + probeId) < 1) return { changed:false, reason:"insufficient-probe" };
-    if (ResourceRegistry.get(state, "consumable:fuel") < site.fuel) return { changed:false, reason:"insufficient-fuel" };
-    const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
-    const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
-    const config = instance ? getShipConfigById(instance.shipId) : null;
-    if (!config || !ARCHAEOLOGY_SHIP_TYPES.includes(config.type)) return { changed:false, reason:"no-archaeology-ship" };
     Object.assign(state.currentAction, {
       skill:"archaeology", active:true, progress:0,
-      lastProgressUpdate:now, startedSiteId:site.id, startedProbeId:probeId
+      lastProgressUpdate:now, startedSiteId:check.site.id, startedProbeId:check.probeId
     });
-    arch.startedSiteId = site.id;
-    arch.startedProbeId = probeId;
+    arch.startedSiteId = check.site.id;
+    arch.startedProbeId = check.probeId;
+    state.resumeAfterRepair = null; // 新开考古：清除待恢复标记
     state._dirty = true;
-    return { changed:true, site };
+    return { changed:true, site:check.site };
   },
   stop(state, now) {
     const action = state.currentAction;
@@ -1291,6 +1572,7 @@ const ArchaeologyStateActions = {
     action.active = false;
     state.archaeology.startedSiteId = null;
     state.archaeology.startedProbeId = null;
+    state.resumeAfterRepair = null; // 玩家主动停止考古：取消待恢复
     state._dirty = true;
     return { changed:true };
   },
@@ -1305,3 +1587,6 @@ const ArchaeologyStateActions = {
     return result;
   }
 };
+
+window.canStartArchaeology = canStartArchaeology;
+window.executeQueueItemForState = executeQueueItemForState;

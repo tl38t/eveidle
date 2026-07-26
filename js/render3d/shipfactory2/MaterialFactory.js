@@ -54,6 +54,8 @@ function getHazardStripeTexture() {
   _hazardTex = new THREE.CanvasTexture(c);
   _hazardTex.wrapS = _hazardTex.wrapT = THREE.RepeatWrapping;
   _hazardTex.repeat.set(1, 1);   // 每面只铺 4 条粗纹，清晰可辨
+  // Task 8：跨舰复用的共享单例纹理——标记为共享，disposeObject 释放本舰材质时不得释放此 map。
+  _hazardTex.userData.ship3dShared = true;
   return _hazardTex;
 }
 

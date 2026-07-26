@@ -367,6 +367,12 @@ for (const mat of Object.keys(orcaMaterials)) {
 const orcaTime = calculateShipProductionTime(orcaRecipe);
 assertIndustrial(orcaTime.totalSeconds >= 18 * 3600 && orcaTime.totalSeconds <= 24 * 3600, `逆戟鲸生产全链路应在 18~24h，实际 ${orcaTime.totalSeconds}s（约 ${Math.floor(orcaTime.totalSeconds / 3600)}h${Math.floor(orcaTime.totalSeconds % 3600 / 60)}m）`);
 const asmState = JSON.parse(JSON.stringify(sandbox.gameState));
+// 船坞 Lv.2 解锁旗舰总装
+asmState.station.bodyLevel = 3;
+asmState.station.buildings = asmState.station.buildings || {};
+asmState.station.buildings.shipyard = 2;
+asmState.station.maintenance = asmState.station.maintenance || {};
+asmState.station.maintenance.fuelRemaining = 500000;
 asmState.skills.shipEngineering = { lvl:90, xp:0 };
 asmState.ownedBlueprints = [];
 asmState.inventory.ships = [];
@@ -386,6 +392,14 @@ function makeAssemblyState(level) {
   s.ownedBlueprints = [];
   s.inventory.ships = [];
   s.currentAction = Object.assign({}, s.currentAction, { skill:"shipEngineering", shipSubAction:"assembly", shipAsmTarget:null, active:false, progress:0 });
+  // 船坞 Lv.2 解锁旗舰/工业旗舰组装
+  if (!s.station) s.station = {};
+  if (!s.station.autoLines) s.station.autoLines = {};
+  s.station.bodyLevel = 3;
+  if (!s.station.buildings) s.station.buildings = {};
+  s.station.buildings.shipyard = 2;
+  if (!s.station.maintenance) s.station.maintenance = { fuelRemaining:500000, lastTick:Date.now() };
+  else s.station.maintenance.fuelRemaining = 500000;
   return s;
 }
 const lv79 = makeAssemblyState(79);

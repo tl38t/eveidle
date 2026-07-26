@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
-const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((m) => m[1]);
-if (scriptSources.length !== 40) throw new Error(`预期 40 个脚本，实际 ${scriptSources.length}`); // 40 = 38 + boosters.js + booster-render.js + systems/boosters.js（增强剂系统 Phase 2B 2026-07-24）
+const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((m) => m[1].replace(/\?.*$/, "").replace(/^\.\//, ""));
+if (scriptSources.length !== 41) throw new Error(`预期 41 个脚本，实际 ${scriptSources.length}`); // 41 = 39 + boosters.js + booster-render.js + systems/boosters.js（增强剂系统 Phase 2B 2026-07-24）+ systems/station.js（空间站 Phase 3C）
 
 // ---- 与 verify.mjs 一致的 DOM / 环境桩 ----
 function MockCanvasContext() {}

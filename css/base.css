@@ -247,6 +247,23 @@
   .panel.skill-current { overflow: visible; }
   #ammoeng-panel { overflow: visible; }
 
+  /* ===== 主流滚动容器修正 =====
+   *
+   * 根因：.panel 默认 flex-shrink:1 + overflow:hidden，
+   * 长面板被压缩到视口高度，内容裁切，.content 的 scrollHeight 不变，页面无滚动。
+   *
+   * 修复：对由 .content 负责滚动的顶级面板，禁止 flex 收缩，
+   * 让面板自然展开至完整内容高度，.content 的 overflow-y:auto 生效。
+   *
+   * 排除已有内部滚动布局的例外：
+   *   #hangar-panel — flex:1; min-height:0; 内 panel-body overflow-y:auto
+   *   #cargo-panel  — 仓库列表内部滚动
+   */
+  .content > .panel:not(#hangar-panel):not(#cargo-panel) {
+    flex: 0 0 auto;
+    min-height: min-content;
+  }
+
   /* ===== 移动端布局 ===== */
   @media (max-width: 720px) {
     .topbar {

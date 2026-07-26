@@ -421,6 +421,25 @@ function migrateArchaeologyState() {
     const cfg = inst ? getShipConfigById(inst.shipId) : null;
     if (!cfg || !ARCHAEOLOGY_SHIP_TYPES.includes(cfg.type)) delete gameState.shipAssignments.archaeology;
   }
+  // 维修后自动恢复（Phase 3D 修正）幂等迁移：旧存档回填 null；结构非法一律归 null（fail-closed）。
+  // 战斗标记严格校验：returnZoneId 必须是合法 COMBAT_ZONES；defeatedMode 仅允许 belt/deathspace；
+  // deathspace 模式必须携带合法 deathspaceId。任何一项不满足即 fail-closed 为 null。
+  // 旧结构（含 zoneId/mode 字段的 3D 初版标记）缺少 returnZoneId，自然被判非法归零。
+  {
+    const r = gameState.resumeAfterRepair;
+    if (r === undefined || r === null) {
+      gameState.resumeAfterRepair = null;
+    } else if (r && typeof r === "object" && r.type === "combat") {
+      const zoneOk = (typeof COMBAT_ZONES !== "undefined") && COMBAT_ZONES.some(z => z.id === r.returnZoneId);
+      const modeOk = r.defeatedMode === "belt" || r.defeatedMode === "deathspace";
+      const dsOk = r.defeatedMode === "deathspace"
+        ? ((typeof DEATHSPACE_DATABASE !== "undefined") && DEATHSPACE_DATABASE.some(d => d.id === r.deathspaceId))
+        : true;
+      if (!zoneOk || !modeOk || !dsOk) gameState.resumeAfterRepair = null;
+    } else if (!(r && typeof r === "object" && r.type === "archaeology")) {
+      gameState.resumeAfterRepair = null;
+    }
+  }
   gameState._dirty = true;
 }
 
@@ -622,6 +641,182 @@ function migrateBoosterState() {
 window.migrateBoosterState = migrateBoosterState;
 
 // ================================================================
+//  军团与空间站系统 Phase 3C-1：存档外壳 + 幂等迁移
+//   - 补齐 station / corporation 最小结构（不触碰玩家舰船/装备/资源/技能/蓝图）
+//   - 旧存档无 station → 初始化空壳（bodyLevel 0、buildings 全 0、maintenance 默认）
+//   - bodyLevel / buildings[id] 为 NaN/负数/越界 → 归 0
+//   - buildings 含未知 ID → 丢弃
+//   - construction.cost 未支付 → 不补偿、不重复扣；仅保留 paid===true 的合法结构
+//   - 幂等：连续两次调用结果一致
+//  迁移契约见策划文档第八节 8.2（A 区审计：tools/audit-station-migration.mjs）
+// ================================================================
+function createDefaultStation() {
+  return {
+    version: 1,
+    bodyLevel: 0,
+    construction: null,
+    buildings: Object.fromEntries(STATION_BUILDING_IDS.map(id => [id, 0])),
+    dispatch: { miningCount: 0, gasCount: 0 },
+    maintenance: { fuelRemaining: 0, lastTick: 0, lowFuelNotified: false, depletedNotified: false },
+    autoLines: {
+      smelting:    { enabled:false, operatorId:null, selectedTargetId:null, startedTargetId:null, progress:0, lastTick:0, stoppedReason:null },
+      equipment:   { enabled:false, operatorId:null, selectedTargetId:null, startedTargetId:null, progress:0, lastTick:0, stoppedReason:null },
+      booster:     { enabled:false, operatorId:null, selectedTargetId:null, startedTargetId:null, progress:0, lastTick:0, stoppedReason:null }
+    },
+    shipyard: { unlockedFlagship:false, unlockedSupercapital:false, savingsLedger:{} },
+    dlc: { npcWorkers:false, combatWings:false }
+  };
+}
+
+function createDefaultCorporation() {
+  return {
+    version: 1,
+    name: "",
+    foundedAt: 0,
+    dlc: { npcWorkers:false, combatWings:false }
+  };
+}
+
+// construction 合法性判定（迁移契约，见策划第八节 8.2 + Phase 3C-2 建设队列结构）：
+//  - paid !== true → 非法（未支付一律清除、不补偿、不重复扣）
+//  - 新结构（Phase 3C-2 起）：kind/targetLevel/startedAt/completesAt/durationMs
+//      · kind 必须为 body/building；targetLevel 1~3；时间戳损坏（completesAt<=startedAt/NaN）→ 非法清除
+//  - 旧结构（Phase 3C-1 遗留）：type/level（兼容保留，供旧存档与 A 区迁移审计不放宽）
+function isValidPaidConstruction(c) {
+  if (!c || typeof c !== "object" || c.paid !== true) return false;
+  // 新结构：kind 语义（三级本体建设队列）
+  if (typeof c.kind === "string") {
+    if (c.kind !== "body" && c.kind !== "building") return false;
+    const targetLevel = Math.floor(Number(c.targetLevel));
+    if (!Number.isFinite(targetLevel) || targetLevel < 1 || targetLevel > 3) return false;
+    const startedAt = Number(c.startedAt);
+    const completesAt = Number(c.completesAt);
+    const durationMs = Number(c.durationMs);
+    if (!Number.isFinite(startedAt) || startedAt < 0) return false;
+    if (!Number.isFinite(completesAt) || completesAt <= startedAt) return false;
+    if (!Number.isFinite(durationMs) || durationMs <= 0) return false;
+    return true;
+  }
+  // 旧结构：type/level（Phase 3C-1 遗留兼容）
+  if (typeof c.type === "string") {
+    if (c.type !== "body" && c.type !== "building") return false;
+    const lvl = Math.floor(Number(c.level));
+    if (!Number.isFinite(lvl) || lvl < 1) return false;
+    return true;
+  }
+  return false;
+}
+window.isValidPaidConstruction = isValidPaidConstruction;
+
+function normalizeStationState(state) {
+  if (!state || typeof state !== "object") return;
+  if (!state.station || typeof state.station !== "object") {
+    state.station = createDefaultStation();
+  }
+  const s = state.station;
+  if (!Number.isFinite(Number(s.version)) || Number(s.version) < 1) s.version = 1;
+
+  // bodyLevel：越界/NaN/负数 → 0（合法范围 0~3）
+  const bl = Math.floor(Number(s.bodyLevel));
+  s.bodyLevel = (Number.isFinite(bl) && bl >= 0 && bl <= 3) ? bl : 0;
+
+  // buildings：仅保留已知 ID，越界/NaN → 0，未知 ID → 丢弃
+  const cleaned = {};
+  const rawBuildings = (s.buildings && typeof s.buildings === "object") ? s.buildings : {};
+  for (const id of STATION_BUILDING_IDS) {
+    const lvl = Math.floor(Number(rawBuildings[id]));
+    cleaned[id] = (Number.isFinite(lvl) && lvl >= 0 && lvl <= 3) ? lvl : 0;
+  }
+  s.buildings = cleaned;
+
+  // construction：仅保留 paid===true 的合法结构；否则清空（不补偿、不重复扣、幂等）
+  s.construction = isValidPaidConstruction(s.construction) ? s.construction : null;
+
+  // maintenance：通用燃料（周期消耗，断油停效）
+  // fuelRemaining fail-closed：NaN / 负数 / Infinity / 非法值一律归 0（Infinity 会绕过 `||0`，必须显式 isFinite 守卫）
+  if (!s.maintenance || typeof s.maintenance !== "object") s.maintenance = {};
+  const rawFuel = Number(s.maintenance.fuelRemaining);
+  s.maintenance.fuelRemaining = (Number.isFinite(rawFuel) && rawFuel > 0) ? rawFuel : 0;
+  s.maintenance.lastTick = Number.isFinite(Number(s.maintenance.lastTick)) ? Number(s.maintenance.lastTick) : 0;
+  s.maintenance.lowFuelNotified = Boolean(s.maintenance.lowFuelNotified);
+  s.maintenance.depletedNotified = Boolean(s.maintenance.depletedNotified);
+
+  // autoLines：三条自动线，operatorId 仅允许 null（首版恒 null）
+  // selectedTargetId/startedTargetId: null 或字符串
+  // progress: 有限非负; lastTick: 有限; stoppedReason: null 或字符串
+  if (!s.autoLines || typeof s.autoLines !== "object") s.autoLines = {};
+  for (const key of ["smelting", "equipment", "booster"]) {
+    if (!s.autoLines[key] || typeof s.autoLines[key] !== "object") s.autoLines[key] = {};
+    s.autoLines[key].enabled = Boolean(s.autoLines[key].enabled);
+    s.autoLines[key].operatorId = null; // Phase 3C 首版无 NPC 操作员
+    const rawSel = s.autoLines[key].selectedTargetId;
+    s.autoLines[key].selectedTargetId = (rawSel === null || typeof rawSel === "string") ? rawSel : null;
+    const rawStart = s.autoLines[key].startedTargetId;
+    s.autoLines[key].startedTargetId = (rawStart === null || typeof rawStart === "string") ? rawStart : null;
+    const rawProg = Number(s.autoLines[key].progress);
+    s.autoLines[key].progress = (Number.isFinite(rawProg) && rawProg > 0) ? rawProg : 0;
+    s.autoLines[key].lastTick = Number.isFinite(Number(s.autoLines[key].lastTick)) ? Number(s.autoLines[key].lastTick) : 0;
+    const rawStop = s.autoLines[key].stoppedReason;
+    s.autoLines[key].stoppedReason = (rawStop === null || typeof rawStop === "string") ? rawStop : null;
+  }
+
+  // shipyard：材料节省余数，限制在 [0,1)；只保留合法资源 key
+  if (!s.shipyard || typeof s.shipyard !== "object") s.shipyard = {};
+  s.shipyard.unlockedFlagship = Boolean(s.shipyard.unlockedFlagship);
+  s.shipyard.unlockedSupercapital = Boolean(s.shipyard.unlockedSupercapital);
+  if (!s.shipyard.savingsLedger || typeof s.shipyard.savingsLedger !== "object") s.shipyard.savingsLedger = {};
+  for (const [key, val] of Object.entries(s.shipyard.savingsLedger)) {
+    // 只保留可规范化的资源 key（必须是命名空间:资源名 或 component:xxx 格式）
+    const isValidKey = typeof key === "string" && key.length > 0 && (
+      key.startsWith("component:") || key.startsWith("mineral:") ||
+      key.startsWith("planetary:") || key.startsWith("moon:") ||
+      key.startsWith("gas:") || key.startsWith("special:") ||
+      key.startsWith("ore:") || key.startsWith("consumable:")
+    );
+    if (!isValidKey) { delete s.shipyard.savingsLedger[key]; continue; }
+    const n = Number(val);
+    s.shipyard.savingsLedger[key] = Number.isFinite(n) ? Math.max(0, Math.min(0.999999, n)) : 0;
+  }
+
+  // dlc 接口占位（首版恒 false）
+  if (!s.dlc || typeof s.dlc !== "object") s.dlc = {};
+  s.dlc.npcWorkers = Boolean(s.dlc.npcWorkers);
+  s.dlc.combatWings = Boolean(s.dlc.combatWings);
+
+  // dispatch：资源调度中心勘探指令计数器（miningCount / gasCount 非负整数，缺省归零）
+  if (!s.dispatch || typeof s.dispatch !== "object") s.dispatch = {};
+  const rawMining = Number(s.dispatch.miningCount);
+  const rawGas = Number(s.dispatch.gasCount);
+  s.dispatch.miningCount = (Number.isFinite(rawMining) && rawMining > 0) ? Math.floor(rawMining) : 0;
+  s.dispatch.gasCount = (Number.isFinite(rawGas) && rawGas > 0) ? Math.floor(rawGas) : 0;
+
+  state._dirty = true;
+}
+
+function normalizeCorporationState(state) {
+  if (!state || typeof state !== "object") return;
+  if (!state.corporation || typeof state.corporation !== "object") {
+    state.corporation = createDefaultCorporation();
+  }
+  const c = state.corporation;
+  if (!Number.isFinite(Number(c.version)) || Number(c.version) < 1) c.version = 1;
+  if (typeof c.name !== "string") c.name = "";
+  c.foundedAt = Number.isFinite(Number(c.foundedAt)) ? Number(c.foundedAt) : 0;
+  if (!c.dlc || typeof c.dlc !== "object") c.dlc = {};
+  c.dlc.npcWorkers = Boolean(c.dlc.npcWorkers);
+  c.dlc.combatWings = Boolean(c.dlc.combatWings);
+  state._dirty = true;
+}
+
+function migrateStationCorporationState() {
+  normalizeStationState(gameState);
+  normalizeCorporationState(gameState);
+}
+window.normalizeStationState = normalizeStationState;
+window.normalizeCorporationState = normalizeCorporationState;
+window.migrateStationCorporationState = migrateStationCorporationState;
+
+// ================================================================
 //  行星部署幂等规范化（autoLoad 与 importData 共用）
 //  设计：
 //   - 旧 planetaryDeployments 容器内容必须完整迁移到 planetary.deployments
@@ -724,6 +919,8 @@ const SaveManager = {
       migrateBoosterState();
       // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
       finalizeEquipmentStateAfterLegacyMigrations(gameState);
+      // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移
+      migrateStationCorporationState();
       // 行星规范化（与 autoLoad 同一路径，幂等）；必须在离线结算之前
       normalizePlanetaryState(gameState);
       delete gameState.planetaryDeployments;
@@ -834,6 +1031,8 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     if (restored) calculateOfflineGains();
   ensureUserSettingsState(gameState);
   ensureStatisticsState(gameState);
+  // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移（新游戏/旧存档共用）
+  migrateStationCorporationState();
   // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
   normalizePlanetaryState(gameState, { finalizeExpiry:true });
   // 清理旧字段

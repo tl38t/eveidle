@@ -236,7 +236,8 @@ function getProductionEfficiencyState(state, actionKey) {
     enhancementLevel:assigned.instance ? normalizeShipEnhancementLevel(assigned.instance.enhancementLevel) : 0,
     fleetSupportBonus:fleetSupport.bonus,
     fleetSupportShip:fleetSupport.ship,
-    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus)
+    stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
+    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state)
   };
 }
 
@@ -262,7 +263,11 @@ function buildProductionEfficiencyTooltip(display, targetName, baseTime) {
   lines.push("装备小计：采集效率 +" + (display.primaryBonus * 100).toFixed(1) + "% / 高槽强化 +" + (display.equipmentAmplifier * 100).toFixed(1) + "%");
   if (display.enhancementLevel > 0) lines.push("舰船强化：+" + display.enhancementLevel + "，最终采集效率 ×" + display.enhancementMultiplier.toFixed(3));
   if (display.fleetSupportBonus > 0) lines.push("舰队采矿协同：" + display.fleetSupportShip.name + " +" + (display.fleetSupportBonus * 100).toFixed(0) + "%（只取最高值）");
-  lines.push("最终效率：" + display.skillMultiplier.toFixed(2) + " × " + (1 + display.primaryBonus).toFixed(3) + " × " + (1 + display.secondaryBonus).toFixed(3) + " × " + display.enhancementMultiplier.toFixed(3) + " × " + (1 + display.fleetSupportBonus).toFixed(3) + " = " + display.total.toFixed(2) + "x");
+  const logMult = display.stationLogisticsMultiplier || 1;
+  if (logMult > 1) lines.push("空间站综合后勤：×" + logMult.toFixed(2) + "（+" + Math.round((logMult - 1) * 100) + "%）");
+  else if (logMult < 1) lines.push("空间站综合后勤：×" + logMult.toFixed(2));
+  else lines.push("空间站综合后勤：×1.00（未生效）");
+  lines.push("最终效率：" + display.skillMultiplier.toFixed(2) + " × " + (1 + display.primaryBonus).toFixed(3) + " × " + (1 + display.secondaryBonus).toFixed(3) + " × " + display.enhancementMultiplier.toFixed(3) + " × " + (1 + display.fleetSupportBonus).toFixed(3) + " × " + logMult.toFixed(3) + " = " + display.total.toFixed(2) + "x");
   lines.push("", "当前目标：" + targetName, "基础时间：" + baseTime + "s", "实际时间：" + (baseTime / display.total).toFixed(1) + "s");
   return lines.join("\n");
 }
@@ -327,6 +332,8 @@ function getMiningDisplayState(state, now) {
     level,
     efficiency,
     efficiencyTooltip:buildProductionEfficiencyTooltip(efficiency, current.ore, current.baseTime),
+    stationLogisticsMultiplier:efficiency.stationLogisticsMultiplier,
+    stationLogisticsBonusRate:efficiency.stationLogisticsMultiplier > 1 ? (efficiency.stationLogisticsMultiplier - 1) : 0,
     actualTime:current.baseTime / efficiency.total,
     progress,
     targetChanged,
@@ -355,7 +362,8 @@ function getSmeltingDisplayState(state, now) {
     ? getRigModifiers(state, assigned.instance) : {};
   const rigBonus = rigMods.smeltingSpeed || 0;
   const skillEfficiency = 1 + level * 0.02;
-  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus);
+  const stationLogisticsMultiplier = getStationLogisticsMultiplier(state);
+  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier;
   const progress = getProgressDisplayState(action, "refining", running.baseTime / efficiency, now);
   const targetChanged = progress.active && current.name !== running.name;
   const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
@@ -367,6 +375,8 @@ function getSmeltingDisplayState(state, now) {
     level,
     skillEfficiency,
     efficiency,
+    stationLogisticsMultiplier,
+    stationLogisticsBonusRate: stationLogisticsMultiplier - 1,
     ship:assigned.config ? { id:assigned.config.id, name:assigned.config.name } : null,
     shipBonus,
     rigBonus,
@@ -398,6 +408,8 @@ function getGasDisplayState(state, now) {
     level,
     efficiency,
     efficiencyTooltip:buildProductionEfficiencyTooltip(efficiency, current.gas, current.baseTime),
+    stationLogisticsMultiplier:efficiency.stationLogisticsMultiplier,
+    stationLogisticsBonusRate:efficiency.stationLogisticsMultiplier > 1 ? (efficiency.stationLogisticsMultiplier - 1) : 0,
     actualTime:current.baseTime / efficiency.total,
     progress,
     targetChanged,
@@ -413,6 +425,24 @@ function getMaterialStockFromState(state, material) {
 }
 
 function getShipAssemblyMaxCyclesFromState(state, recipe) {
+  // 船坞节省路径：通过 quote 计算可负担周期
+  if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(state) > 0) {
+    // 二分查找最大可负担 cycles
+    let low = 0, high = 100000;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      const quote = getShipyardProductionQuote(state, recipe, mid);
+      let affordable = true;
+      for (const [ref, qty] of Object.entries(quote.payable)) {
+        // materialCost 键为纯材料名，须按名聚合校验（component:xxx 仍走精确读）
+        if (ResourceRegistry.getByRef(state, ref) < qty) { affordable = false; break; }
+      }
+      if (affordable) low = mid;
+      else high = mid - 1;
+    }
+    return low;
+  }
+  // 无节省旧路径
   let max = Infinity;
   for (const [componentId, count] of Object.entries(getShipAssemblyComponentCost(recipe))) {
     max = Math.min(max, Math.floor(ResourceRegistry.get(state, "component:" + componentId) / count));
@@ -514,7 +544,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     const display = getShipEngineeringDisplayState(state, now);
     const recipe = display.currentComponent;
     result.title = icons.shipComp + " " + recipe.name;
-    result.duration = recipe.time / display.efficiency;
+    result.duration = display.componentActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = display.componentMaterials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, quantity:item.quantity, stock:item.stock, enough:item.enough }));
     result.maxCount = Math.max(1, result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999));
     result.unlimited = false;
@@ -527,7 +557,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     const recipe = display.currentAssembly;
     const option = display.assemblyOptions.find(item => item.id === recipe.id);
     result.title = icons.shipAsm + " " + recipe.name;
-    result.duration = recipe.time / display.efficiency;
+    result.duration = display.assemblyActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = [
       ...display.assemblyComponents.map(item => ({ resourceId:"component:" + item.id, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
       ...display.assemblyMaterials.map(item => ({ resourceId:item.material, name:item.material, quantity:item.quantity, stock:item.stock, enough:item.enough }))
@@ -538,6 +568,65 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.canOpen = Boolean(option && option.unlocked);
     result.blockedText = !option || display.level < recipe.level ? "需要舰船工程等级 Lv." + recipe.level : option.hasRequiredBlueprint ? "" : "缺少舰船蓝图";
     result.queue = { skill:"shipEngineering", target:recipe.name, label:recipe.name };
+  } else if (target === "archaeology") {
+    const archDisplay = getArchaeologyDisplayState(state, now);
+    const arch = archDisplay.archaeology;
+    const site = archDisplay.sites.find(s => s.id === (arch.active ? (arch.startedSiteId || arch.activeSiteId) : arch.activeSiteId));
+    // 共用 canStartArchaeology 校验确保与 Action 层一致
+    let canOpen = false, blockedText = "";
+    if (!archDisplay.assignedShip || !archDisplay.assignedShip.archaeology) {
+      blockedText = "未分配考古舰船";
+    } else if (arch.repairing) {
+      blockedText = "舰船维修中";
+    } else if (arch.interference) {
+      blockedText = "信号干扰中";
+    } else if (!site || site.locked) {
+      blockedText = "请先选择遗迹";
+    } else if (typeof canStartArchaeology === "function") {
+      // 走真实校验（含燃料/探针）
+      const check = canStartArchaeology(state, now);
+      canOpen = check.ok;
+      if (!canOpen) blockedText = (check.reason === "insufficient-probe" ? "探针不足"
+        : check.reason === "insufficient-fuel" ? "燃料不足"
+        : check.reason === "level-locked" ? "考古等级不足"
+        : check.reason === "no-site" ? "请先选择遗迹"
+        : check.reason === "no-archaeology-ship" ? "未分配考古舰船"
+        : check.reason === "repairing" ? "舰船维修中"
+        : check.reason === "interference" ? "信号干扰中"
+        : "无法开始");
+    } else {
+      canOpen = Boolean(site && !arch.repairing && !arch.interference);
+    }
+    result.title = "🔍 " + (SKILL_LABEL.archaeology || "考古");
+    // 实际周期时间含 archaeologySpeed 增强剂倍率 ÷ 空间站综合后勤倍率
+    const archSpeedEff = (typeof getBoosterEffectState === "function")
+      ? (getBoosterEffectState(state).archaeologySpeedMultiplier || 1) : 1;
+    const archLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(state)) : 1;
+    result.duration = site ? site.time * archSpeedEff / archLogisticsMult : 1;
+    result.canOpen = canOpen;
+    result.blockedText = canOpen ? "" : blockedText;
+    result.queue = site ? { skill:"archaeology", target:site.id, label:site.name } : null;
+  } else if (target === "boosterEngineering") {
+    const display = getBoosterManufacturingDisplayState(state, now);
+    const recipe = display.selectedRecipe;
+    result.title = "💉 " + (SKILL_LABEL.boosterEngineering || "增强剂制造");
+    if (recipe) result.duration = recipe.time / display.efficiency;
+    // getBoosterManufacturingDisplayState 不返回 selectedRecipeCosts/detail/maxCount/blockedReason
+    // recipe 是 card 对象（displayName 而非 name, 无 .output），使用 materialRows 构建 requirements
+    if (recipe && Array.isArray(recipe.materialRows) && recipe.materialRows.length) {
+      result.requirements = recipe.materialRows.map(row => ({
+        resourceId:row.reference, name:row.displayName || row.reference,
+        quantity:row.required, stock:row.stock, enough:row.enough
+      }));
+    } else {
+      result.requirements = [];
+    }
+    result.maxCount = 999999;
+    result.unlimited = true;
+    result.canOpen = display.canStart;
+    result.blockedText = display.canStart ? "" : (recipe ? ("材料不足或 Lv." + recipe.level + " 解锁") : "请先选择配方");
+    result.outputText = recipe ? recipe.displayName + "×1" : "";
+    result.queue = recipe ? { skill:"boosterEngineering", target:recipe.id, label:recipe.displayName } : null;
   } else {
     result.canOpen = false;
     result.blockedText = "未知行动";
@@ -547,6 +636,29 @@ function getActionConfirmationDisplayState(state, target, now) {
   return result;
 }
 
+// ---- Phase 3C-6 第八轮：舰船工程唯一周期公式（在线 tick / 离线 offline / 显示态共用）----
+// duration = recipe.time / skillMultiplier / shipyardMultiplier
+// skillMultiplier = 1 + shipEngineering.lvl × 0.02；shipyardMultiplier = getShipyardSpeedMultiplier(state)（断油仍生效）
+// fail closed：任一倍率非有限正数回退 ×1；base 非有限正数回退 1，绝不产生 NaN/Infinity
+// 注意：只含速度倍率，材料节省率（getShipyardSavingRate）绝不混入此公式
+function getShipEngineeringSpeedBreakdown(state) {
+  const lvl = state && state.skills && state.skills.shipEngineering ? Number(state.skills.shipEngineering.lvl) : NaN;
+  let skillMultiplier = 1 + lvl * 0.02;
+  if (!Number.isFinite(skillMultiplier) || skillMultiplier <= 0) skillMultiplier = 1;
+  let shipyardMultiplier = (typeof getShipyardSpeedMultiplier === "function") ? Number(getShipyardSpeedMultiplier(state)) : 1;
+  if (!Number.isFinite(shipyardMultiplier) || shipyardMultiplier <= 0) shipyardMultiplier = 1;
+  let stationLogisticsMultiplier = (typeof getStationLogisticsMultiplier === "function") ? Number(getStationLogisticsMultiplier(state)) : 1;
+  if (!Number.isFinite(stationLogisticsMultiplier) || stationLogisticsMultiplier <= 0) stationLogisticsMultiplier = 1;
+  return { skillMultiplier, shipyardMultiplier, stationLogisticsMultiplier, totalSpeedMultiplier: skillMultiplier * shipyardMultiplier * stationLogisticsMultiplier };
+}
+
+function getShipEngineeringCycleDuration(state, recipe) {
+  let base = recipe ? Number(recipe.time) : NaN;
+  if (!Number.isFinite(base) || base <= 0) base = 1;
+  const speed = getShipEngineeringSpeedBreakdown(state);
+  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier;
+}
+
 function getShipEngineeringDisplayState(state, now) {
   const action = state.currentAction;
   const skill = state.skills.shipEngineering || { lvl:1, xp:0 };
@@ -554,6 +666,7 @@ function getShipEngineeringDisplayState(state, now) {
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
   const efficiency = 1 + level * 0.02;
+  const speed = getShipEngineeringSpeedBreakdown(state);
   const currentComponent = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === action.shipCompTarget) || SHIP_COMPONENT_RECIPES[0];
   const runningComponent = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === (action.startedShipCompTarget || action.shipCompTarget)) || currentComponent;
   const currentAssembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === action.shipAsmTarget) || SHIP_ASSEMBLY_RECIPES[0];
@@ -561,12 +674,17 @@ function getShipEngineeringDisplayState(state, now) {
   const active = Boolean(action.active && action.skill === "shipEngineering");
   const componentActive = active && action.shipSubAction === "component";
   const assemblyActive = active && action.shipSubAction === "assembly";
+  // 唯一周期公式：显示态（进度条/ETA/弹窗）与在线 tick、离线 descriptor 完全一致
+  const componentActualTime = getShipEngineeringCycleDuration(state, currentComponent);
+  const assemblyActualTime = getShipEngineeringCycleDuration(state, currentAssembly);
+  const runningComponentDuration = getShipEngineeringCycleDuration(state, runningComponent);
+  const runningAssemblyDuration = getShipEngineeringCycleDuration(state, runningAssembly);
   const componentProgress = componentActive
-    ? getProgressDisplayState(action, "shipEngineering", runningComponent.time / efficiency, now)
-    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningComponent.time / efficiency };
+    ? getProgressDisplayState(action, "shipEngineering", runningComponentDuration, now)
+    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningComponentDuration };
   const assemblyProgress = assemblyActive
-    ? getProgressDisplayState(action, "shipEngineering", runningAssembly.time / efficiency, now)
-    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningAssembly.time / efficiency };
+    ? getProgressDisplayState(action, "shipEngineering", runningAssemblyDuration, now)
+    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningAssemblyDuration };
   const ownedBlueprints = new Set(state.ownedBlueprints || []);
   const componentInventory = Object.fromEntries(ResourceRegistry.listStateEntries(state, "component").map(entry => [entry.definition.key, entry.quantity]));
   const selectedShip = getShipConfigById(currentAssembly.shipId);
@@ -580,6 +698,12 @@ function getShipEngineeringDisplayState(state, now) {
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     efficiency,
+    skillMultiplier:speed.skillMultiplier,
+    shipyardMultiplier:speed.shipyardMultiplier,
+    stationLogisticsMultiplier:speed.stationLogisticsMultiplier,
+    totalSpeedMultiplier:speed.totalSpeedMultiplier,
+    componentActualTime,
+    assemblyActualTime,
     active,
     status:active ? "进行中" : "待命",
     componentActive,
@@ -632,7 +756,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const level = Number(skill.lvl) || 1;
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
-  const efficiency = 1 + level * 0.02;
+  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state);
   const requestedRecipe = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
   const savedCategory = EQUIPMENT_ENGINEERING_CATEGORIES.find(category => category.id === action.equipEngCategory);
   const category = savedCategory || getEquipEngCategoryDefinition(requestedRecipe.category);
@@ -680,6 +804,8 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     efficiency,
+    stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
+    stationLogisticsBonusRate: getStationLogisticsMultiplier(state) - 1,
     active,
     status:active ? "进行中" : "待命",
     progress,
@@ -751,7 +877,7 @@ function getBoosterManufacturingDisplayState(state, now) {
   const level = Number(skill.lvl) || 1;
   const xp = Number(skill.xp) || 0;
   const xpRequired = xpForLevel(level + 1);
-  const efficiency = 1 + level * 0.02;
+  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state);
 
   // 分类与品质筛选（用户选择；运行中切换不改变正在制造的产物）。
   const categoryId = (BOOSTER_CATEGORY_META.find(c => c.id === action.boosterCategory) || BOOSTER_CATEGORY_META[0]).id;
@@ -853,6 +979,8 @@ function getBoosterManufacturingDisplayState(state, now) {
     xpRequired,
     xpPercent:Math.min(100, Math.floor(xp / xpRequired * 100)),
     efficiency,
+    stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
+    stationLogisticsBonusRate: getStationLogisticsMultiplier(state) - 1,
     isRunning,
     status:isRunning ? "进行中" : "待命",
     statusText,
@@ -1105,7 +1233,9 @@ function getCombatDisplayState(state, now) {
     deathspaceTier,
     active:Boolean(combat.active),
     browsingDuringCombat:Boolean(combat.active && viewMode !== encounterMode),
-    headerText:recoveryRemaining > 0 ? "维修中 · " + recoveryRemaining + "s" : combat.active && target ? (encounterMode === "deathspace" ? "▶ 死亡空间攻略中" : "▶ 交战中") : "待命",
+    headerText:recoveryRemaining > 0
+      ? ((state.resumeAfterRepair && state.resumeAfterRepair.type === "combat" ? "自动维修中 · 完成后返回战斗 · " : "维修中 · ") + recoveryRemaining + "s")
+      : combat.active && target ? (encounterMode === "deathspace" ? "▶ 死亡空间攻略中" : "▶ 交战中") : "待命",
     wave:Number(combat.wave) || 1,
     maxWave,
     clearCount:clears,
@@ -1156,6 +1286,44 @@ function getCombatDisplayState(state, now) {
   };
 }
 
+// 战斗/死亡空间掉落预览（Phase 3D 其他任务）：
+// 纯函数——只读生产掉落配置（systems/combat.js 的 get*DropConfig 系列），不改动全局状态、不调用发奖/事件。
+// 与生产掉落结算（roll* 系列）同源：roll* 与预览均消费同一组纯配置函数，概率/材料/数量单一事实来源。
+// 字段：加密数据 / 星带特殊掉落 / 通行密钥 / 死亡空间首领战利品 / 战术材料。
+// 注意：生产结算中，死亡空间模式不掉落加密数据/特殊掉落/通行密钥，仅掉落首领战利品 + 战术材料。
+// 返回值不含 ISK/LP 经济与成功率模拟（用户明确要求排除）。
+// fail-closed：非法 zoneId / 死亡空间 / 来源星带一律返回 {valid:false, reason}，不回退首个星带。
+function getCombatDropPreview(state, options) {
+  const opts = options || {};
+  const mode = opts.mode === "deathspace" ? "deathspace" : "belt";
+
+  if (mode === "deathspace") {
+    const site = getDeathspaceById(opts.deathspaceId);
+    if (!site) return { mode: "deathspace", valid: false, reason: "unknown-deathspace" };
+    const sourceZone = COMBAT_ZONES.find(item => item.id === site.sourceZoneId);
+    if (!sourceZone) return { mode: "deathspace", valid: false, reason: "unknown-source-zone" };
+    return {
+      mode: "deathspace", valid: true,
+      deathspaceId: site.id, name: site.name, faction: site.faction,
+      sourceZoneId: sourceZone.id, sourceZoneName: sourceZone.name,
+      encryptedData: null, zoneSpecialDrops: null, ticketDrop: null,
+      leaderLoot: getDeathspaceLeaderLootConfigs(site),
+      tacticalMaterial: getTacticalMaterialDropConfig(sourceZone)
+    };
+  }
+
+  const zone = COMBAT_ZONES.find(item => item.id === opts.zoneId);
+  if (!zone) return { mode: "belt", valid: false, reason: "unknown-zone" };
+  return {
+    mode: "belt", valid: true,
+    zoneId: zone.id, name: zone.name, faction: zone.faction,
+    encryptedData: getEncryptedDataDropConfig(zone),
+    zoneSpecialDrops: getCombatZoneSpecialDropConfigs(zone),
+    ticketDrop: getDeathspaceTicketDropConfig(zone),
+    tacticalMaterial: getTacticalMaterialDropConfig(zone)
+  };
+}
+
 function getPlanetaryCapacityState(state) {
   const skill = state.skills.planetaryIndustry || { lvl:1, xp:0 };
   const level = Number(skill.lvl) || 1;
@@ -1168,7 +1336,7 @@ function getPlanetaryCapacityState(state) {
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     usedSlots:deployments.length,
-    slots:Math.min(5, 1 + Math.floor(level / 10)),
+    slots:Math.min(5, 1 + Math.floor(level / 10) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0)),
     maxSlots:5
   };
 }
@@ -1184,7 +1352,8 @@ function getPlanetStorageMaxFromState(state, planetType) {
 function getPlanetOutputIntervalFromState(state, type) {
   const config = PLANET_TYPES.find(planet => planet.id === type);
   const level = getPlanetaryCapacityState(state).level;
-  return config ? config.interval / (1 + level * 0.02) : 10;
+  const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(state)) : 1;
+  return config ? config.interval / (1 + level * 0.02) / stationMult : 10;
 }
 
 // 纯显示态：只消费不修改。三状态 running / expired（deployment 一定存在，未布置态由 deployOptions 表达）。

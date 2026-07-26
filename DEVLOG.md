@@ -2,6 +2,404 @@
 
 > 2026-07-12 及以前的历史记录保留在根目录 `DEVLOG.md`。本文件仅记录 `eveidle-modular` 拆分版后续开发，根目录原始文件继续作为回滚基线。
 
+## 2026-07-26 — 页面滚动布局修复：修复面板内容被 flex 压缩裁切
+
+### 根因
+布局链 `body(overflow:hidden) → .main-container(overflow:hidden) → .content(overflow-y:auto) → .panel(flex-shrink:1 + overflow:hidden)` 中，`.panel` 默认 `flex-shrink:1` 使长面板被压缩到视口高度，再由 `overflow:hidden` 裁切溢出内容，`.content` 的 `scrollHeight` 始终等于 `clientHeight`。真实数据：
+- booster-panel: clientHeight=621, scrollHeight=2201, overflow:hidden → 裁切
+- shipeng-panel: clientHeight=621, scrollHeight=917 → 裁切
+- statistics-panel: clientHeight=621, scrollHeight=661 → 裁切
+考古（`#equipeng-panel`/`#archaeology-panel`）因已有 `overflow:visible` 豁免此问题。
+
+### 修复（css/base.css）
+- 新增规则：`.content > .panel:not(#hangar-panel):not(#cargo-panel) { flex: 0 0 auto; min-height: min-content; }`
+- 被裁切的 3 页面修复后：面板自然展开至完整内容高度，`.content overflow-y:auto` 生效，页面可纵向滚动。
+- 例外保留：`#hangar-panel`（`flex:1; min-height:0` + `.panel-body { overflow-y:auto }` 内部滚动）和 `#cargo-panel`（仓库列表内部滚动）不变。
+- 弹窗（`max-height:70vh; overflow-y:auto`）、侧边栏（独立 `overflow-y:auto`）、body/main-container 的 `overflow:hidden` 均保持不变。
+
+### verify.mjs 结构哨兵
+新增 3 条 CSS 规则存在性检查：`.content` 须有 `min-height:0; overflow-y:auto`、普通面板须不可收缩（`flex:0 0 auto; min-height:min-content`）、hangar 内部滚动保留。
+
+### 浏览器验收页（tools/page-scroll-browser-test.html）
+新建 iframe 验收页，加载真实 index.html，覆盖：
+- **9 类面板**：增强剂/舰船工程/统计档案/行星开发(多基地注入)/战斗(掉落预览展开)/考古/装备工程/船坞(内部滚动保持)/仓库(内部滚动保持)
+- **弹窗**：打开关闭后滚动仍可用
+- **动态内容增长**：注入增强剂库存/多行星基地/多艘舰船后验证滚动依旧出现
+- **3 viewport**：1280×720（基准）、900×600（窄窗口）、390×700（手机）
+- 验证：panel.scrollHeight > panel.clientHeight、content.scrollHeight > content.clientHeight、content.scrollTop 可增加、底部内容可达
+
+### 回归（8 条全 EXIT=0）
+- verify.mjs → EXIT=0（含新 CSS 哨兵）
+- audit-boosters 1296/0、audit-planetary 304/0、audit-archaeology-system 178/0、audit-combat-drop-preview 785/0、audit-industrial-productivity、audit-station 1130/0
+- git diff --check → EXIT=0
+
+### 边界
+只改 `css/base.css`（+ 布局注释 + 1 条 CSS 规则）、`tools/verify.mjs`（+3 结构哨兵）、`tools/page-scroll-browser-test.html`（新建）。未修改任何游戏数据、玩法逻辑或经济数值；未触碰 `js/render3d/**`、ship-lab、候选页面、空间站并行改动；未 commit/push。
+
+---
+
+## 2026-07-26 — Phase 3C-7 UI 收尾：8 类生产页面显示空间站综合后勤
+
+### 显示态字段
+所有相关 display state 统一提供 `stationLogisticsMultiplier` / `stationLogisticsBonusRate` / `stationLogisticsActive` / `stationLogisticsText`（依页面不同，顶层或通过 `efficiency` 子对象）。
+- `buildProductionEfficiencyTooltip` 增加 "空间站综合后勤：×1.03（+3%）" 行。
+- `getSmeltingDisplayState` 工具提示增加后勤行。
+- 考古 `site` 对象增加 `archLogisticsMult`。
+
+### 接入页面
+1. **采矿/月矿**：`render.js`，效率旁显示 "后勤 ×1.03（+3%）"，tooltip 含后勤行。
+2. **采气**：同采矿。
+3. **冶炼**：tooltip 含 "空间站综合后勤：×1.03（+3%）"。
+4. **装备/rig 制造**：`manufacturing-render.js`，效率旁显示后勤。
+5. **增强剂制造**：`booster-render.js`，效率旁显示后勤。
+6. **舰船部件/总装**：`manufacturing-render.js`，完整速度分解 "技能 ×2.98 · 船坞 ×1.30 · 后勤 ×1.03 · 最终 ×3.99"。
+7. **行星开发**：`planetary-render.js`，头部显示 "空间站后勤 +3%"。
+8. **考古**：`archaeology-render.js`，遗迹卡显示 "后勤 ×1.03"，头部显示后勤状态。
+
+### 文案规则
+- bodyLevel=0：空间站后勤：未建立
+- bodyLevel=1/2/3 有燃料：空间站综合后勤：+1% / +2% / +3%
+- 已建立但断油：后勤 ×1.00（燃料不足）
+
+### 验证
+audit-station 1131/0、verify 259 DOM IDs、industrial-productivity、planetary、boosters、archaeology-system 全部 EXIT=0；git diff --check 通过。未修改任何游戏数值/配方/掉落。**Phase 3C-7 完成。**
+
+---
+
+## 2026-07-26 — Phase 3C-8 最终收尾：统一空间站页面显示态
+
+### 一、修复 `getStationPageDisplayState` 运行时错误
+
+`alConfigs.map` 的 return 对象错误引用未定义的 `al` 变量（`al.selectedTargetId`、`al.running`、`al.canStart`、`al.canStop` 等），导致 `getStationPageDisplayState(gameState, Date.now())` 抛 ReferenceError。
+
+**修复**：改用 `cfg`、`lineData`、`targets`、`selectedTarget`、`startedTarget`、`matchedRecipe`、`progressVal`、`cycleDurationSec`、`remainingSec`、`baseDisplay = getStationAutoLineDisplayState(state, cfg.lineId)` 等真实变量构建返回对象，移除全部 `al.*` 引用。返回字段包括：`lineId`、`name`、`buildingId`、`selectedTargetId`、`startedTargetId`、`running`、`targetOptions`、`buildingMultiplier`、`logisticsMultiplier`、`effectiveMultiplier`、`cycleDurationMs`、`progressRatio`、`remainingMs`、`canStart`、`canStop`、`blockedReason`、`stoppedReason`、`stoppedText`。
+
+### 二、共用 `getStationAutoLineCycleDuration`
+
+抽取 `processAutoLines` 中三条线的周期计算为共用函数 `getStationAutoLineCycleDuration(state, lineId, recipe)`：
+- 冶炼：`recipe.baseTime / ((1 + shipBonus + rigBonus) × buildingMult × logisticsMult)`
+- 装备/增强剂：`recipe.time / (buildingMult × logisticsMult)`
+- UI 显示与 processAutoLines 同源，禁止公式漂移
+
+### 三、八建筑 effectText/nextEffectText
+
+`getStationBuildingDisplayState` 新增 `effectText`/`nextEffectText` 字段，八建筑各级效果：
+- 资源调度中心：勘探指令阈值 20/14/10
+- 行星管控中心：自动收取·槽位+0/+1/+2（Lv.1 +0）
+- 冶炼/装备/增强剂制造厂：自动线 ×1.00/×1.15/×1.30
+- 考古实验室：独特文物 ×1.00/×1.05/×1.10/×1.15
+- 作战指挥中心：战斗XP ×1.00/×1.10/×1.20/×1.30
+- 舰船船坞：速度×1.00/×1.05/×1.15/×1.30·节省0%/3%/6%/10%
+
+`effectRows` 固定 9 行。综合后勤仅依赖本体等级和燃料，不依赖资源调度中心。已建船坞断油仍生效。
+
+### 四、O 区显示态审计（14 条）
+
+`tools/audit-station.mjs` 新增 O1~O11：
+- O1 不抛异常、O2 8 建筑、O3 3 自动线、O4 targetOptions 非空、O5 effectRows 恰 9
+- O6 建筑 effectText 非空、O7 无 undefined/NaN/Infinity
+- O8 stateA/stateB 成本库存隔离、O9 corporation 正确
+- O10 断油船坞例外、O11 冶炼周期含全部倍率
+
+### 五、浏览器验收页
+
+新建 `tools/station-browser-test.html`（17 条），覆盖：
+- 本体建设与重复建设原子拒绝、建筑升级及本体等级限制
+- 维护补给、8 建筑内容非空、3 自动线目标非空
+- 自动线 A→启动→选择B，运行目标仍A；停止重启后目标变B
+- 自动线周期和进度有效、断油七建筑停效/船坞例外
+- 9 行效果、corporation 正确、页面可滚动、无 undefined/NaN
+- console/page/resource/rejection 均为 0
+
+### 验证
+
+```
+node --check js/systems/station.js          → EXIT=0
+node --check js/ui/station-render.js         → EXIT=0
+node tools/audit-station.mjs                 → PASS=1145 FAIL=0 (×2)
+node tools/audit-station-migration.mjs       → PASS=32 FAIL=0
+node tools/verify.mjs                        → 42 JS/4 CSS/278 DOM IDs, EXIT=0
+node tools/audit-planetary.mjs               → PASS=304 FAIL=0
+node tools/audit-industrial-productivity.mjs → EXIT=0
+node tools/audit-boosters.mjs                → PASS=1296 FAIL=0
+node tools/audit-archaeology-system.mjs      → PASS=178 FAIL=0
+node tools/audit-rigs.mjs                    → PASS=599 FAIL=0
+git diff --check                             → EXIT=0
+```
+
+**Phase 3C-8 完成。`audit-station.mjs` 1145/0。全量 12 条验证 EXIT=0。浏览器 RESULT=PASS。**
+
+---
+
+## 2026-07-26 — Phase 3C-7 空间站综合后勤倍率：独立速度乘区
+
+### 背景
+第八轮 1056/0 收口后发现第七轮离线船坞速度遗漏未算最终收口，但第八轮只统一了舰船工程的 skill×shipyard 公式。综合后勤倍率（本体 Lv.1=+1%/Lv.2=+2%/Lv.3=+3%）此前仅定义 bodyLevel 并预留注释，未接入任何生产路径。
+
+### 实现
+- **唯一函数** `getStationLogisticsMultiplier(state)`（station.js L1321）：Lv.0=×1 / Lv.1=×1.01 / Lv.2=×1.02 / Lv.3=×1.03，断油=×1，非法 bodyLevel / NaN / Infinity fail-closed×1。配套 `getStationLogisticsDisplayState` 暴露 bodyLevel/bodyName/operational/bonusRate/multiplier/disabledReason。
+- **同步到 `getStationBuildingEffectsDisplayState`** 暴露 `stationLogisticsMultiplier`。
+
+### 接入 9 条生产路径
+1. **采矿 / 月矿**：`getProductionEfficiencyState("mining").total` 乘 logistics
+2. **采气**：`getProductionEfficiencyState("gasHarvesting").total` 乘 logistics
+3. **冶炼**：`getSmeltingDisplayState().efficiency` 乘 logistics
+4. **行星**：`getPlanetOutputIntervalFromState` interval 除以 logistics
+5. **装备与 rig**：`getEquipEngEfficiency()` 乘 logistics（manufacturing.js + selectors.js 显示态）
+6. **增强剂**：`getBoosterEfficiency()` 乘 logistics（manufacturing.js + selectors.js 显示态）
+7. **舰船部件与总装**：`getShipEngineeringCycleDuration` 除以 logistics（第八轮统一公式升级为 skill×shipyard×logistics）
+8. **考古**：tick 在线 `/logistics`、offline 描述符 `/logistics`、显示态 `actualCycleTime/1.03`
+9. **三条自动线**：`processAutoLines` 中 `buildingMultiplier * stationLogisticsMultiplier`
+
+### 显示态
+各页面暴露 `stationLogisticsMultiplier` / `stationLogisticsBonusRate`；tooltip 概念到位，断油显示 `disabledReason="no-fuel"`。
+
+### 离线分段
+`settleOfflineTimeline` 按燃料耗尽段自然适配 logistics：有油段用 1.01~1.03，无油段恢复 1.00。本阶段无修改离线分段逻辑。
+
+### 审计 N 区（N1~N12）
+- N1 getter：Lv.0/1/2/3 + 断油 + 非法 fail-closed + display state
+- N2 采矿：在线周期、断油恢复
+- N3 采气：同
+- N4 冶炼：efficiency 含 logistics + 单周期产出不变
+- N5 行星：interval 精确除以 1.03 + 断油恢复 + storageMax 同步
+- N6 装备：getEquipEngEfficiency 含 logistics + 断油恢复
+- N7 增强剂：getBoosterEfficiency 含 logistics + 断油恢复
+- N8 舰船：Lv.3 有油 2.98×1.03×1.30 / Lv.3 断油 2.98×1×1.30 / 显示态一致
+- N9 考古：周期公式 site.time×booster/1.03 + 成功率/掉率不变
+- N10 自动线：有油运行、断油闸门暂停
+- N11 无 25% 上限：总倍率 3.99 > 1.25，周期 = 配方/3.99（非截断值）
+- N12 排除项：ISK、节省率、战斗 XP getter 不因 bodyLevel 改变
+
+### 审计计数
+audit-station.mjs **1056 → 1111**（N 区 55 新断言），连续两次 PASS=1111 FAIL=0。
+
+### 回归 26 条命令全 EXIT=0
+1-7: `--check` 7 文件全过；8-9: audit-station×2(1111/0)；10: migration(32/0)；11: verify.mjs(41JS/4CSS/252DOM)；12: industrial；13: planetary；14: boosters(1296/0)；15: archaeology-system；16: archaeology-ships；17: equipment-enhancement；18: ship-enhancement；19: rigs(599/0)；20: calc --verify；21: calc --mixed-battleship(8G)；22-23: simulate-destroyer-belts(8G 两条)；24: ship3d；25: smoke；26: git diff --check。
+
+### 边界
+- 未进入 3C-8；不碰 render3d/ship-lab/NUL；不修改策划数值/配方/经济；不改增强剂离线算法；不改船坞节省账本；不 git commit/push。
+
+## 2026-07-26 — Phase 3D 战斗掉落与恢复收尾：掉落预览防漂移 + 战斗重创最终定案 + 考古经济审计 15 行 + 全回归
+
+### 背景
+本轮三组收尾工作（掉落配置/战斗恢复文辞/考古经济审计）和一个全回归验证，均在 Phase 3D 和 3C-6 收口后进行，不涉及新的 Phase 启动。
+
+### Part 2 — 非法 ID fallback → fail-closed（js/systems/combat.js、js/ui/combat-render.js）
+- 原 `COMBAT_ZONES.find(...) || COMBAT_ZONES[0]` 回退首个星带 → 改为 `{mode:"belt",valid:false,reason:"unknown-zone"}`（belt）；deathspace 非法 sourceZoneId → `{mode:"deathspace",valid:false,reason:"unknown-source-zone"}`。
+- UI 侧：`valid:false` 时显示 "⚠ 掉落数据不可用"，绝不回退显示首个星带数据。
+- 审计新增 10 断言（785/785）：非法 zoneId/空 zoneId/非法 sourceZoneId 各 fail-closed + reason 检查。
+
+### Part 3 — 掉落概率配置提取为纯函数（js/systems/combat.js）
+- 新增 5 个只读配置函数：`getTacticalMaterialDropConfig` / `getEncryptedDataDropConfig` / `getCombatZoneSpecialDropConfigs` / `getDeathspaceTicketDropConfig` / `getDeathspaceLeaderLootConfigs`。
+- `roll*` 生产函数和 `getCombatDropPreview` 预览均调用同一配置函数。无数值改动。
+- `encryptedDataChances` 覆盖用 `!= null` 而非 `||`，保留合法 0 概率。
+- 审计新增 0-probability 边界测试（elite:0 boss:0 配置 → 返回 0 而非被 base 覆盖）。
+
+### Part 4 — 战斗维修后返回文案精确化（js/core/actions.js）
+- `beginRecovery` 的 `lastStatus` 按策划最终定案：belt "本轮肃清失败，维修完成后返回该星带。"；deathspace "攻略失败，密钥不返还；维修完成后返回来源星带。"
+- `tryResumeCombatAfterRepair` 已在上轮修正符合定案（死亡空间绝不调用 `enterDeathspace`、不清密钥、返回 `returnZoneId` belt 第 1 波）。
+- `tools/audit-resume-after-repair.mjs` 55/55 PASS EXIT=0 不变。
+
+### Part 6 — 考古经济审计完整 15 行（tools/audit-archaeology-economy.mjs）
+- 从 5 行（仅 salvage）升级为 15 行：5 档 (I-V) × 3 档案 (salvage/research/treasure)。
+- `runCycles(site, seed)` 取 site 对象迭代 15 个遗迹；固定种子连续模拟。
+- 新增 `getArchaeologyDisplayState` 纯预览交叉验证：ISK ≤3% 偏差、uniqueCount ≤15% 或 abs≤20 偏差。
+- 结果 184/184 PASS EXIT=0。
+- `AUDIT_ARCHAEOLOGY_ECONOMY_REPORT.md` 更新 v3：15 行经济表 + 档案乘数表 + 标记旧提案为历史。
+
+### Part 7 — 全回归（15 条命令，14 条 EXIT=0）
+- 1–11：全部 EXIT=0 ✅（--check ×3、audit-combat-drop-preview 785/785、audit-resume-after-repair 55/55、audit-archaeology-relics、audit-archaeology-economy 184/184、audit-archaeology-system、simulate-archaeology-user-flow、audit-boosters、verify）
+- 12：`--audit-economy --runs 5000` → **EXIT=1**（原生段错误，T5 旗舰配置，不加载 combat.js，纯环境限制）
+- 13：`--assert-mixed-battleship` 8GB → **EXIT=0** ✅
+- 14：`--assert-nullsec` 8GB → **EXIT=0** ✅
+- 15：`git diff --check` → **EXIT=0** ✅（仅 CRLF 警告）
+
+### 边界
+未修改任何游戏数值；未触碰 `js/render3d/**`、ship-lab、候选页面、NUL；未 commit/push。
+
+---
+
+## 2026-07-26 — Phase 3C-6 第八轮定点返修：统一舰船船坞在线/离线/显示态速度倍率
+
+### 背景（真实缺陷）
+第七轮 998/0 只收口了"节省"，**离线与显示态的船坞速度倍率被遗漏，998/0 不作为最终收口**。修复前三条路径公式分歧（以船舶工程 Lv.99 eff=2.98、船坞 Lv.3 为例，部件 integrated_hull time=63s、总装 rifter time=30s）：
+- 在线（tick.js）：`recipe.time / eff / getShipyardSpeedMultiplier` → 部件 16.262s / 总装 7.744s（正确）
+- 离线（offline.js getOfflineActionDescriptor）：`recipe.time / eff` → 部件 21.141s / 总装 10.067s（**缺船坞倍率**）
+- 显示态（selectors.js getShipEngineeringDisplayState 进度/ETA/弹窗）：`recipe.time / efficiency` → 同离线 21.141s / 10.067s（**缺船坞倍率**）
+先在 audit-station 写入 J9~J12 复现测试，修复前运行 **PASS=1025 FAIL=31**（离线 Lv.3 总装 900s 仅 89 周期而非 116、在线 50 vs 离线 38 等），证明缺陷真实存在。
+
+### 唯一周期公式（js/core/selectors.js）
+新增共用纯函数（displayState 之前，全入口共用）：
+- `getShipEngineeringSpeedBreakdown(state)`：`skillMultiplier = 1 + lvl×0.02`、`shipyardMultiplier = getShipyardSpeedMultiplier(state)`，两者非有限正数一律 fail-closed 回退 ×1（无 NaN/Infinity）。
+- `getShipEngineeringCycleDuration(state, recipe)`：`duration = recipe.time / skillMultiplier / shipyardMultiplier`（base 非法回退 1）。
+
+接线 8 个入口：tick.js 在线部件/在线总装 ×2、offline.js 离线部件/总装 descriptor.duration ×2、selectors.js componentProgress/assemblyProgress ×2、确认弹窗 shipComp/shipAsm duration ×2。显示态新增暴露 `skillMultiplier`/`shipyardMultiplier`/`totalSpeedMultiplier`/`componentActualTime`/`assemblyActualTime`（不混入材料节省率）。船坞 Lv.0/1/2/3 部件实际 21.141/20.134/18.383/16.262s，总装 10.067/9.588/8.754/7.744s；断油 shipyardMultiplier 仍 1.30。
+
+### 审计（tools/audit-station.mjs，998 → **1056**，新增 58 断言）
+- **J9** 部件四级速度：每级验证共用函数==参考公式、在线恰产 1、离线 600s==floor(600/dur)，Lv.3/Lv.0 比≈1.30（在线+离线）。
+- **J10** 总装离线 Lv.0 vs Lv.3（900s）：`floor(elapsed/adjustedDuration)`＝89/116，比≈1.30。
+- **J11** 在线 50 周期 vs 离线同实际秒数（387.7s）：周期差≤1（50/50）、XP/消耗/节省/ledger 全一致、totalSaved>0、ledger 非空。
+- **J12** 显示态：5 字段有限正数、断油仍 1.30、Lv.0 纯技能时间、Lv.0/Lv.3 比=1.30、弹窗 duration==共用周期、损坏等级 fail-closed 回退 ×1。
+- **J13** getByRef/spendByRef 直接行为：`component:xxx` 精确读写、纯名"镓"读扣 `moon:镓`、"天使低级加密数据"读扣 `special:`、未知 ns:key/未知纯名安全失败不误扣、数量不足不部分扣除。
+- 同步修正旧测试 J5/J6/J6b/G5 的 `perCycle = time/eff` → `time/eff/getShipyardSpeedMultiplier`（离线秒数参考必须含船坞倍率，符合"禁未含 syMult 的 perCycle 反推"）。
+- **连跑两次均 PASS=1056 FAIL=0**。
+
+### 回归（15 条全 EXIT=0）
+node --check station/tick/offline/selectors ×4、audit-station ×2、audit-station-migration(32/0)、tools/verify.mjs、audit-industrial-productivity、calculate-ship --verify、calculate-ship --audit-mixed-battleship(8G)、audit-boosters(1296/0)、audit-planetary、audit-rigs(599/0)、git diff --check。
+
+### 边界
+未改配方时间/材料/XP/成功率/船坞 1.05/1.15/1.30 与节省 3/6/10%；未碰 render3d/**、ship-lab、候选/demo 页面、NUL；未 commit/push；**Phase 3C-7 仍未开始**。
+
+## 2026-07-26 — Phase 3D 战斗恢复规则修正：重创即失败，维修后统一返回普通星带
+
+### 背景
+上一版 Phase 3D 对死亡空间"记录但不续跑"，且保留了普通星带剩余敌人/波次的设想不符合最终策划。本次按策划纠正为：**重创即本次 run 立即失败并清零遭遇进度；无论普通星带还是死亡空间，维修完成后都只返回普通星带、从第 1 波开始全新一轮肃清；死亡空间永不续原副本、通行密钥不返还也不再扣。**
+
+### 修改
+- **恢复标记结构（actions.js `beginRecovery`）**：改为 `{type:"combat",returnZoneId,defeatedMode:"belt"|"deathspace",deathspaceId,shipInstanceId}`。死亡空间用 `sourceZoneId` 作 `returnZoneId`；`defeatedMode`/`deathspaceId` 仅供日志/UI/事件；不保存 enemies/wave 快照。既有清空 enemies/currentFormation/wave→1/totalKills/runEliteKills 行为**保留不变**。lastStatus 改为策划文案。
+- **恢复语义（combat.js `tryResumeCombatAfterRepair`）**：删除死亡空间早退分支；无论 belt/deathspace 都清死亡空间残留（mode=belt、deathspaceId="")、回 `returnZoneId` 生成第 1 波、经既有 `combat/start` Action 续跑。**绝不调用 `enterDeathspace`、不检查或扣除密钥**；非法 `returnZoneId` 安全停止；事件 payload 增 `defeatedMode`/`deathspaceId`。
+- **主动停止（actions.js `stop`）**：放宽守卫——维修中（combat 非活跃）若存在待恢复标记也允许 stop 以取消自动出击，返回 `cancelledResume`。
+- **迁移收紧（persistence.js）**：combat 标记严格 fail-closed（`returnZoneId∈COMBAT_ZONES`、`defeatedMode∈{belt,deathspace}`、deathspace 须携合法 `deathspaceId`），旧结构缺 `returnZoneId` 归 null。
+- **事件契约（events.js）**：`combat:resumedAfterRepair` required 增 `defeatedMode`（`deathspaceId` 可为 null 不列 required）。
+- **UI（selectors.js）**：维修中且有待恢复标记时 headerText 显示"自动维修中 · 完成后返回战斗"。
+- **文档**：eveidle.md / PROJECT_HANDOFF.md 将"死亡空间不续跑"改为"死亡空间不续原副本；维修完成后自动返回来源普通星带"；Phase 4A 离线战斗登记同语义。
+
+### 审计
+- `tools/audit-resume-after-repair.mjs` 重写：**55/55 全 PASS，EXIT=0**，全经生产入口（`dispatchGameAction`/`combatTick`/`migrateArchaeologyState`）。
+  - A 迁移 fail-closed（13，含旧结构归零）；B 普通星带重创+维修恢复（14，清零/不回收 ISK/不发 LP/返回同 zone 第 1 波）；C 死亡空间重创+维修恢复（11，密钥不返还且不再扣/返回 sourceZone/mode=belt/不重进副本）；D 主动停止取消返回（6）；E 非法 returnZoneId 安全停止（5，不扣资源）；F 源码自检含"恢复函数不含 enterDeathspace"静态确认（5）。
+
+### 修改文件
+`js/core/actions.js`、`js/systems/combat.js`、`js/core/persistence.js`、`js/core/events.js`、`js/core/selectors.js`、`tools/audit-resume-after-repair.mjs`（重写）、`eveidle.md`、`DEVLOG.md`、`PROJECT_HANDOFF.md`。
+
+### 边界
+未修改任何数值；未触碰 `js/render3d/**`；未 commit/push。
+
+## 2026-07-26 — Phase 3C-6 第六轮定点返修：审计升级为真实业务入口精确断言
+
+### 目标
+把 `tools/audit-station.mjs` 从"函数存在/宽区间"升级为"真实业务入口产生精确结果"，只修剩余缺陷，不重写已正确部分。
+
+### 核心修复（js/core/offline.js）
+- `settleOfflineTimeline`（约 688-784 行）改为**动态 while 分段**：每段循环内重新计算下一边界（燃料耗尽点/施工完成点），无油段同样调用 `processAutoLines`（自动线内部因断油自然暂停、进度保留）并推进 `maintenance.lastTick`，断油补油后不追扣。
+
+### 审计升级（tools/audit-station.mjs，第七轮收口后 998 断言全 PASS）
+
+> 第七轮最终收口（2026-07-26）：G2 改为**统一离线 10h 断油对比**（A fuel=0 → 周期 0；B 精确 1h → 180；C 完整 10h → 1800；精确断言 A===0 / |B-180|≤1 / |C-1800|≤1 / A<B<C / |C-10×B|≤2，三组矿耗/矿物产出/XP/autoLine.lastTick/enabled/startedTarget 严格联动）。J 区船坞节省升级为**真实 Lv.3（savingRate 0.10）验证**：J4 在线 10 周期(每部件实付 18/省 2，saved 事件 2 次)、J5 离线批量 50(实省===quote.saved，totalSaved=30)、J6 在线100vs离线100 完整快照一致(非零初始余数 0.37/0.61/0.37，每部件省 20，savedQty 60)、**新增 J6b materialCost 配方 gale**(在线40vs离线40，镓/铂/加密数据实省 40/32/60，savedQty 184)。发现并修复**真实缺陷**：materialCost 生成纯材料名 ref（如"镓"），而 `commit/hasEnough/maxCycles` 用 `ResourceRegistry.get/spend(ref)`（需 `namespace:key`），对纯名返回/扣 0 库存 → 节省路径判"无材料"，materialCost 配方完全无法组装/节省。修复：`js/core/resources.js` 新增 `getByRef/spendByRef`（parseId 命中走 get/spend，否则按名 getMaterialStock/spendMaterial），`js/systems/station.js`(canAfford/commit 3 处)、`js/systems/manufacturing.js`(hasEnough)、`js/core/selectors.js`(maxCycles 二分) 共四处切换。因游戏代码变动跑完整正式回归全 EXIT=0。
+
+**（以下为第六轮 955 断言历史记录，J 区/G 区已被第七轮取代）**
+
+- **G 区（离线燃料分段）**：G1 用真实冶炼配方"凡晶石带"精确断言（cycleTime=20s、10h 离线仅 1h 有油 → expectedCycles=floor(3600/20)=180，误差≤1；oreConsumed===cycles、mineralProduced===cycles×2、xp===cycles×10）；G2 A/B/C 快照（0h=0 / 1h≈180 / 10h≈1800 线性）；G2b 断油补油不追扣（progress 残值<20s）；G3 断油 dispatch 计数/奖励/事件全部严格不变；G4 真实 `applyOfflineGains` 行星断油不自动收取（有油对照收取，storage 用真实 `getPlanetStorageMaxFromState`）；G5 船坞断油仍产出（speedMult=1.30 生效）。
+- **H 区（考古实验室）**：真实 `resolveArchaeologyDrops`（site_iii_b + ARCHAEOLOGY_TIERS.III）+ 固定 rng 序列，覆盖非实验室归因/实验室归因恰一次 `station:archaeologyBonusTriggered`/不掉落/校准/LP/断油 labMult=1；H7 `resolveArchaeologyCycle` 入口。
+- **I 区（作战指挥中心）**：I2 十项白名单逐项真实 `addStationModifiedCombatXp`（技能设 lvl:99 防升级扣 XP，delta===100×1.30 且 boost 事件恰一次）；I3 四项非白名单无加成；I4 断油无加成；I5 **真实 combatTick 一回合**（`hangar/setFittingSlot` 真实装配武器、敌血下降、燃料/弹药消耗、laserOps +2×1.30 / targeting +1×1.30、boost 事件≥2）。
+- **J 区（舰船船坞）**：J4 在线 gameTick 单次组装（rifter 真实 SHIP_ASSEMBLY_RECIPES，shipCount/xp/部件精确）；J5 离线 `applyOfflineGains` 批量 50 次；J6 **100 次在线逐次 vs 离线批量 100 次状态一致**（ships/xp/部件/余数账本/事件数）；J7 Lv.3 commit 失败原子拒绝（不创建舰船/不加 XP/不消费 progress）；J8 余数账本守恒。
+- **K 区（迁移 fail-closed）**：删除手写归一化，全部走真实 `normalizeStationState`/`migrateStationCorporationState`；K10 幂等 + 玩家数据深比较不变；K11 **真实 `SaveManager.importData` 路径**（损坏存档 JSON：bodyLevel=42→0、fuel=-500→0、lastTick="corrupt"→0、buildings 越界→cap、savingsLedger≥1→0.999999、未知 key 删除、construction 未支付→null）。
+
+### 审计 harness 关键技术
+- 顶层 `const`（COMBAT_ZONES/SMELTING_RECIPES/PLANET_TYPES/ENEMY_DATABASE 等）不挂 sandbox 全局，新增 `evalIn(expr)=vm.runInContext(expr,sandbox)` 在 vm 上下文内取真实数据；SHIP_ASSEMBLY_RECIPES 经 `window.SHIP_DATA`。
+- combatTick 依赖的 UI 函数（updateLiveUI/playAttackFX/playEnemyAttackFX 等）注入 no-op 桩（定义于被排除的 js/ui/*）。
+- 被测技能设 lvl:99 防 `checkLevelUpFromState` 升级扣 XP 污染精确断言；离线时长偏置须 < 单周期（+2s）防多结算一周期；G4 行星 storage 用真实上限防撑爆货舱污染后续用例。
+
+### 边界
+未进入 3C-7；未触碰 `js/render3d/**`；未修改任何策划数值/配方/XP；未 commit/push。
+
+## 2026-07-26 — Phase 3D：维修后自动恢复（含 Phase 4A 登记）
+
+> ⚠ **本条战斗部分已被上方"Phase 3D 战斗恢复规则修正"取代**：死亡空间不再"不续跑"，而是维修后返回来源普通星带第 1 波；恢复标记结构改为 `{returnZoneId,defeatedMode,deathspaceId,...}`；审计升级为 55 断言。考古部分仍有效。
+
+### 目标
+舰船因考古反噬 / 战斗损毁进入 180s 维修后，维修完成自动续跑被打断的行动，玩家无需手动重开。
+
+### 实装
+- **状态字段（state.js）**：`gameState.resumeAfterRepair`（默认 `null`），置于 `archaeology` 之前。记录 `{type:"archaeology",siteId,probeId,shipInstanceId}` 或 `{type:"combat",zoneId,mode:"zone"|"deathspace",shipInstanceId}`。
+- **幂等迁移（persistence.js `migrateArchaeologyState`）**：旧存档回填 `null`；结构非法（非 archaeology/combat 对象）一律归 `null`（fail-closed）；`null` 保持不变。
+- **Action 记录/清除（actions.js）**：
+  - `CombatStateActions.beginRecovery` 记录 combat 标记（`mode` 如实记 zone/deathspace）；
+  - `combat/start`、`combat/stop`、`archaeology/start`、`archaeology/stop` 一律清 `null`（玩家主动操作取消自动恢复）。
+- **在线考古（tick.js）**：维修完成后重调 `canStartArchaeology`——充足则清标记续跑 + 发 `archaeology:resumedAfterRepair`，不足则安全停止（`stopOrSkip`）；击毁时记录标记。
+- **在线战斗（combat.js）**：`combatTick` 检测 `hadRepair` 转 0 后调 `tryResumeCombatAfterRepair`——普通星带经既有 `combat/start` Action 续跑 + 发 `combat:resumedAfterRepair`；**死亡空间不续跑**（通行密钥已消耗，仅一次性清标记）；无效前提安全停止不抛错。
+- **离线考古**：由 `settleByTime` 时间预算自然续跑，无需独立标记。
+- **事件契约（events.js）**：注册 `archaeology:resumedAfterRepair`（required siteId）、`combat:resumedAfterRepair`（required zoneId）。
+
+### Phase 4A（未实装，登记）
+**离线战斗自动恢复**未实现——离线期间战斗损毁后不自动续跑下一轮。登记为后续 Phase 4A：需扩展 `settleOfflineActions` 的 combat 分支，处理离线维修墙钟 + 通行密钥 / 波次状态恢复。
+
+### 审计
+- `tools/audit-resume-after-repair.mjs`：**42/42 全 PASS，EXIT=0**。全部经生产入口驱动（`dispatchGameAction` / `gameTick` / `combatTick` / `migrateArchaeologyState`），非源码字符串比对。
+  - A 迁移 fail-closed（9）；B Action 记录/清除（10）；C 在线考古 gameTick 续跑/安全停止/击毁记录（10）；D 在线战斗 combatTick 星带续跑/死亡空间不续跑/无效前提安全停止（8）；E 源码自检确认真实生产入口（5）。
+
+### 修改文件
+`js/core/state.js`、`js/core/persistence.js`、`js/core/actions.js`、`js/systems/combat.js`、`js/core/tick.js`、`js/core/events.js`、`tools/audit-resume-after-repair.mjs`（新增）。
+
+## 2026-07-26 — Phase 3C-5：三条自动线实装完成
+
+### 冶炼/装备/增强剂三条后台自动线
+
+- **核心逻辑（station.js）**：
+  - `processSmeltingAutoLine`：使用真实 SMELTING_RECIPES，效率=(1+shipBonus+rigBonus)×buildingMultiplier（不乘 refining 等级速度），产出量仍用 skillEfficiency
+  - `processEquipmentAutoLine`：使用真实 EQUIPMENT_ENGINEERING_RECIPES，cycleTime=recipe.time/buildingMultiplier（不乘 equipmentEngineering 等级速度），检查配方等级门槛，处理 inputEquipment 势力/DED 装备
+  - `processBoosterAutoLine`：使用真实 BOOSTER_RECIPES，cycleTime=recipe.time/buildingMultiplier（不乘 boosterEngineering 等级速度），每周期 1 瓶
+  - `processAutoLines`：统一入口，在线/离线共用，按各自 lastTick 计算 elapsedMs
+- **速度倍率**：Lv.0→0（不可启动）、Lv.1→×1.00、Lv.2→×1.15、Lv.3→×1.30
+- **Action 层**：`station/selectAutoLineTarget`、`station/startAutoLine`、`station/stopAutoLine` 三个 Action，均走 `dispatchGameAction`
+- **事件**：`station:autoLineStarted`、`station:autoLineStopped`、`station:autoLineCompleted` 三个契约事件
+- **tick/offline 接线**：gameTick 尾部 + applyOfflineGains 尾部各调用一次 `processAutoLines(state, Date.now(), offline)`
+- **审计 658 断言全 PASS**：新增 E 区 18 类自动线测试（Lv.0 拒绝、倍率精确、不乘技能、三条并行、互不污染、真实扣料产出、势力装备扣除、单瓶增强剂、材料不足原子停止、目标锁定、在线离线一致性、保存不重复结算、operatorId 恒 null）
+
+### 边界确认
+- 未实装维护系统（Phase 3C-3 已取消）
+- 未实装 Phase 3C-6/7/8
+- 未接本体综合后勤加成
+- 未修改配方/经验/材料/生产数值
+- 未触碰 js/render3d/** 或候选页面
+- 未实装维护系统（Phase 3C-3 已取消）→ 已在 Phase 3C-6 恢复
+
+## 2026-07-26 — Phase 3C-6：维护燃料 + 考古实验室 + 作战指挥中心 + 舰船船坞
+
+### 维护燃料系统
+- 恢复维护燃料系统（策划从未取消）
+- 使用通用燃料 `consumable:fuel`，每点每周 1500 燃料
+- 维护点数 = bodyLevel + 七座非船坞建筑等级之和
+- 满配 24 点 = 每周 36000 燃料
+- 一键补给至七天容量，>24h 剩余拒绝
+- 低油/耗尽事件精确一次，fuelRemaining 浮点精确
+- 船坞为断油唯一例外
+
+### 离线时间轴分段
+- `settleOfflineTimeline` 在 `applyOfflineGains` 内统一调用，按燃料耗尽/施工完成分时间轴
+- 每段分别：settleOfflineActions → settleOfflinePlanets → processAutoLines → 扣燃料 → 施工完成
+- 有油段非船坞效果生效，无油段自动线暂停/进度保留/不追扣
+- 离线行星自动收取由 settleOfflinePlanets 内 `applyStationAutoCollect` 处理
+
+### 在线顺序
+- gameTick: tickBoosterTimers → settleStationMaintenance → updateCombatRecovery → 行动处理 → planetaryTick → construction → autoLines
+
+### 考古实验室
+- `resolveArchaeologyDrops` 独特率公式: `min(0.99, baseRate × tracerMultiplier × labMultiplier)`
+- 单随机数同时决定 dropped 和 labCaused
+- 触发事件 `station:archaeologyBonusTriggered`
+- 断油时 labMultiplier=1
+
+### 作战指挥中心
+- 10 技能白名单（capacitorManagement/laserOps/cannonOps/missileOperations/targeting/shieldOperation/armorReinforcement/hullEngineering/piloting/defense）
+- 非白名单技能无加成
+- 倍率 Lv.0=1.0 / Lv.1=1.10 / Lv.2=1.20 / Lv.3=1.30
+- 断油恢复 ×1
+
+### 舰船船坞
+- 速度 Lv.0=1.00 / Lv.1=1.05 / Lv.2=1.15 / Lv.3=1.30（独立乘区，不影响 shipEngineering 技能）
+- 材料节省 Lv.1=3% / Lv.2=6% / Lv.3=10%（仅总装 componentCost+materialCost）
+- 确定性余数账本 `station.shipyard.materialRemainders`，quote+commit 两阶段原子
+- capital 部件/总装需 Lv.2，supercapital 需 Lv.3，常规舰始终可造
+- `station:shipyardMaterialsSaved` 事件在真实在线/离线总装完成派发
+- 断油仍有效
+
+### 文档同步与审计
+- 维护文案纠正：未被取消，使用通用燃料
+- 审计 PASS=784 FAIL=0（A-E:726 + F-K:58）
+- 完整 UI 留到 Phase 3C-8
+- 保留全部并行未提交改动
+
 ## 2026-07-24
 
 ### 行星开发 Phase 1：旧档迁移与到期结算缺陷返修

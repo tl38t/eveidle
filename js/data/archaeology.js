@@ -1,16 +1,8 @@
 /* ================================================================
    考古系统第二阶段 — 静态数据表
-
-   设计约束（详见 Phase 2 规格）：
-   1. 难度值已预校准：同档船 + 解锁等级技能 + 0 强化 + 满槽同档装备
-      + core_probe_i 时，成功率恰好 50%。
-   2. 反噬伤害已预校准：参考配置（0 强化、满槽同档稳定器）下可连续承受
-      24–26 次失败，第 25 次附近结构归零。
-   3. 五档匀速：每档 3 个遗迹（LP 倍率 0.8 / 1.0 / 1.3），共用该档难度/时长/燃料/经验。
    ================================================================ */
 
 // ---- 考古舰船类型（仅考古舰可装备考古装备，定义在 ships.js 中，此处仅引用） ----
-// const ARCHAEOLOGY_SHIP_TYPES = ["archaeology_frigate", ...]; — 已移至 js/data/ships.js
 
 // ---- 五档掉落/经济配置 ----
 const ARCHAEOLOGY_TIERS = Object.freeze({
@@ -21,28 +13,35 @@ const ARCHAEOLOGY_TIERS = Object.freeze({
   V:   { tier:"V",   level:80, ship:"illuminator", difficulty:300, time:300, fuel:35, xp:2000, commonISK:[18000, 27000, 36000], uniqueISK:[90000, 135000, 180000], lpValue:2500, calibrationRate:0.005,  calibrationAmount:3, uniqueRate:0.002, lpBase:0.0020, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:7800 }
 });
 
-// ---- 15 个遗迹（5 档 × 3 变体） ----
+// ---- 三类遗迹 profile 定义 ----
+// 每档三个遗迹分别使用：salvage(安全打捞) / research(科研) / treasure(危险秘藏)
+// 通过 getSiteEffectiveProfile 计算实际反噬/权重/倍率
+const SITE_PROFILES = Object.freeze({
+  salvage:  Object.freeze({ type:"salvage",  label:"安全打捞", desc:"低风险稳收普通文物",
+    backlashMultiplier:0.70, commonWeights:[0.45,0.35,0.20], calibrationMultiplier:0.5, uniqueMultiplier:0.5, lpMultiplier:0.5 }),
+  research: Object.freeze({ type:"research", label:"科研遗迹", desc:"校准材料概率最高",
+    backlashMultiplier:1.0,  commonWeights:[0.60,0.30,0.10], calibrationMultiplier:2.0, uniqueMultiplier:1.0, lpMultiplier:1.0 }),
+  treasure: Object.freeze({ type:"treasure", label:"危险秘藏", desc:"高风险高回报独特与LP",
+    backlashMultiplier:1.40, commonWeights:[0.70,0.20,0.10], calibrationMultiplier:0.5, uniqueMultiplier:2.0, lpMultiplier:2.0 })
+});
+
+// ---- 15 个遗迹（5 档 × 3 变体） — lpMultiplier统一为1.0（profile提供绝对倍率）----
 const ARCHAEOLOGY_SITES = Object.freeze([
-  // Tier I — 难度 21，反噬 18
-  { id:"site_i_a", tier:"I", name:"失落信标残骸", level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:0.8, backlashDamage:18 },
-  { id:"site_i_b", tier:"I", name:"远古殖民舱",   level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.0, backlashDamage:18 },
-  { id:"site_i_c", tier:"I", name:"漂流货柜群",   level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.3, backlashDamage:18 },
-  // Tier II — 难度 64，反噬 34
-  { id:"site_ii_a", tier:"II", name:"破碎巡防站", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:0.8, backlashDamage:34 },
-  { id:"site_ii_b", tier:"II", name:"废弃采矿平台", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.0, backlashDamage:34 },
-  { id:"site_ii_c", tier:"II", name:"星图中继塔", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.3, backlashDamage:34 },
-  // Tier III — 难度 121，反噬 70
-  { id:"site_iii_a", tier:"III", name:"沉睡战列残骸", level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:0.8, backlashDamage:70 },
-  { id:"site_iii_b", tier:"III", name:"湮灭实验室",   level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.0, backlashDamage:70 },
-  { id:"site_iii_c", tier:"III", name:"深空方尖碑",   level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.3, backlashDamage:70 },
-  // Tier IV — 难度 207，反噬 149
-  { id:"site_iv_a", tier:"IV", name:"湮灭旗舰坟场", level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:0.8, backlashDamage:149 },
-  { id:"site_iv_b", tier:"IV", name:"虚空研究所",   level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.0, backlashDamage:149 },
-  { id:"site_iv_c", tier:"IV", name:"远古跃迁枢纽", level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.3, backlashDamage:149 },
-  // Tier V — 难度 300，反噬 343
-  { id:"site_v_a", tier:"V", name:"失落文明圣殿", level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:0.8, backlashDamage:343 },
-  { id:"site_v_b", tier:"V", name:"湮灭母舰核心", level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.0, backlashDamage:343 },
-  { id:"site_v_c", tier:"V", name:"深渊观测站",   level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.3, backlashDamage:343 }
+  { id:"site_i_a", tier:"I", profile:"salvage",  name:"失落信标残骸", level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.0, backlashDamage:18 },
+  { id:"site_i_b", tier:"I", profile:"research", name:"远古殖民舱",   level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.0, backlashDamage:18 },
+  { id:"site_i_c", tier:"I", profile:"treasure", name:"漂流货柜群",   level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.0, backlashDamage:18 },
+  { id:"site_ii_a", tier:"II", profile:"salvage",  name:"破碎巡防站", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.0, backlashDamage:34 },
+  { id:"site_ii_b", tier:"II", profile:"research", name:"废弃采矿平台", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.0, backlashDamage:34 },
+  { id:"site_ii_c", tier:"II", profile:"treasure", name:"星图中继塔", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.0, backlashDamage:34 },
+  { id:"site_iii_a", tier:"III", profile:"salvage",  name:"沉睡战列残骸", level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.0, backlashDamage:70 },
+  { id:"site_iii_b", tier:"III", profile:"research", name:"湮灭实验室",   level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.0, backlashDamage:70 },
+  { id:"site_iii_c", tier:"III", profile:"treasure", name:"深空方尖碑",   level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.0, backlashDamage:70 },
+  { id:"site_iv_a", tier:"IV", profile:"salvage",  name:"湮灭旗舰坟场", level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.0, backlashDamage:149 },
+  { id:"site_iv_b", tier:"IV", profile:"research", name:"虚空研究所",   level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.0, backlashDamage:149 },
+  { id:"site_iv_c", tier:"IV", profile:"treasure", name:"远古跃迁枢纽", level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.0, backlashDamage:149 },
+  { id:"site_v_a", tier:"V", profile:"salvage",  name:"失落文明圣殿", level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.0, backlashDamage:343 },
+  { id:"site_v_b", tier:"V", profile:"research", name:"湮灭母舰核心", level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.0, backlashDamage:343 },
+  { id:"site_v_c", tier:"V", profile:"treasure", name:"深渊观测站",   level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.0, backlashDamage:343 }
 ]);
 
 function getArchaeologySite(siteId) {
@@ -50,6 +49,22 @@ function getArchaeologySite(siteId) {
 }
 function getArchaeologyTierConfig(tier) {
   return ARCHAEOLOGY_TIERS[tier] || null;
+}
+function getArchaeologyProfile(profileId) {
+  return SITE_PROFILES[profileId] || null;
+}
+function getSiteEffectiveProfile(site, tier) {
+  if (!site || !tier) return null;
+  const profile = SITE_PROFILES[site.profile];
+  if (!profile) return null;
+  return {
+    type: profile.type, label: profile.label, desc: profile.desc,
+    backlashMultiplier: profile.backlashMultiplier,
+    commonWeights: profile.commonWeights,
+    effectiveCalibrationRate: Math.min(0.99, tier.calibrationRate * profile.calibrationMultiplier),
+    effectiveUniqueRate: Math.min(0.99, tier.uniqueRate * profile.uniqueMultiplier),
+    effectiveLpMultiplier: profile.lpMultiplier    // 绝对倍率，不再乘 site.lpMultiplier
+  };
 }
 
 // ---- 40 种考古产物（每档 8 件：3 普通 ISK + 3 独特 + 1 LP + 1 校准材料） ----
@@ -137,6 +152,7 @@ window.ARCHAEOLOGY_TIERS = ARCHAEOLOGY_TIERS;
 window.ARCHAEOLOGY_SITES = ARCHAEOLOGY_SITES;
 window.ARCHAEOLOGY_ARTIFACTS = ARCHAEOLOGY_ARTIFACTS;
 window.ARCHAEOLOGY_PROBES = ARCHAEOLOGY_PROBES;
+window.SITE_PROFILES = SITE_PROFILES;
 window.ARCHAEOLOGY_COMMON_WEIGHTS = ARCHAEOLOGY_COMMON_WEIGHTS;
 window.ARCHAEOLOGY_STABILIZER_CAP = ARCHAEOLOGY_STABILIZER_CAP;
 window.ARCHAEOLOGY_DECODER_CAP = ARCHAEOLOGY_DECODER_CAP;
@@ -144,6 +160,8 @@ window.ARCHAEOLOGY_SIGNAL_MIN_SECONDS = ARCHAEOLOGY_SIGNAL_MIN_SECONDS;
 window.ARCHAEOLOGY_REPAIR_SECONDS = ARCHAEOLOGY_REPAIR_SECONDS;
 window.getArchaeologySite = getArchaeologySite;
 window.getArchaeologyTierConfig = getArchaeologyTierConfig;
+window.getArchaeologyProfile = getArchaeologyProfile;
+window.getSiteEffectiveProfile = getSiteEffectiveProfile;
 window.getArchaeologyArtifact = getArchaeologyArtifact;
 window.getArchaeologyArtifactsByTier = getArchaeologyArtifactsByTier;
 window.getArchaeologyProbe = getArchaeologyProbe;

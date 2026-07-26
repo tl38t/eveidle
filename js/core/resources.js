@@ -164,6 +164,16 @@ const ResourceRegistry = (() => {
     return true;
   }
 
+  // 按 ref 形态自动解析：namespace:key（如 component:integrated_hull）走精确 get/spend；
+  // 纯材料名（如 "镓"/"天使低级加密数据"，跨命名空间按名聚合）走 getMaterialStock/spendMaterial。
+  // 供船坞节省 quote/commit 使用：materialCost 键为纯名称，componentCost 键被前缀为 component:。
+  function getByRef(state, ref) {
+    return parseId(ref) ? get(state, ref) : getMaterialStock(state, ref);
+  }
+  function spendByRef(state, ref, quantity) {
+    return parseId(ref) ? spend(state, ref, quantity) : spendMaterial(state, ref, quantity);
+  }
+
   function getResourceDisplayName(id) {
     if (typeof id !== "string" || !id) return id;
     // 已注册定义（含懒注册）优先；懒注册 fallback 的 name===key 时视为"无名称"，回退原始键
@@ -219,6 +229,8 @@ const ResourceRegistry = (() => {
     canAffordCost,
     spendMaterial,
     spendCost,
+    getByRef,
+    spendByRef,
     getResourceDisplayName,
     listDefinitions,
     listStateEntries,

@@ -109,9 +109,37 @@ function renderShipAttributes(ship) {
   </div><div class="ship-attr-bonus">加成：<span>${bonuses}</span></div>${trait}<div style="font-size:11px;color:#6a7a8e;margin-top:2px;">槽位：高${ship.slots.high} · 中${ship.slots.mid} · 低${ship.slots.low} · 改装${ship.slots.rig}${fuelText}</div>`;
 }
 
+/* ================================================================
+   舰船工程 3D（可拖拽查看器）
+   ================================================================ */
+function mountManufacturing3D(display) {
+  const S3D = window.Ship3D;
+  if (!S3D) return;
+  const canvas = document.getElementById("manufacturing-3d-canvas");
+  if (!canvas) return;
+  const ship = display && display.selectedShip;
+  if (!ship || !ship.id) return;
+  try {
+    const spec = S3D.buildSpecForShip(ship.id);
+    const viewer = S3D.ensureViewer(canvas, { orbit: true, autoSpin: true });
+    S3D.setShips(viewer, [{ spec, position: [0, 0, 0], scale: 1, sway: false }]);
+  } catch (err) { console.error("[manufacturing] 3D 渲染失败", err); }
+}
+
 function renderShipEngineeringPage(now) {
   const display = getShipEngineeringDisplayState(gameState, Number(now) || Date.now());
   const efficiency = document.getElementById("shipeng-eff-value"); if (efficiency) efficiency.textContent = display.efficiency.toFixed(2) + "x";
+  const speedInfo = document.getElementById("shipeng-speed-breakdown");
+  if (speedInfo) {
+    const sm = display.skillMultiplier || display.efficiency;
+    const ym = display.shipyardMultiplier || 1;
+    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    const total = display.totalSpeedMultiplier || (sm * ym * lm);
+    const parts = ["技能 ×" + sm.toFixed(2), "船坞 ×" + ym.toFixed(2)];
+    const logPart = (sl.bodyLevel > 0 && sl.operational) ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2) + "（" + (sl.text || "未建立") + "）";
+    parts.push(logPart);
+    speedInfo.textContent = parts.join(" · ") + " · 最终 ×" + total.toFixed(2);
+  }
   const fill = document.getElementById("shipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   const xp = document.getElementById("shipeng-exp-value"); if (xp) xp.textContent = display.xp.toLocaleString() + " / " + display.xpNeeded.toLocaleString();
   const status = document.getElementById("shipeng-header-status"); if (status) status.textContent = display.status;
@@ -122,6 +150,7 @@ function renderShipEngineeringPage(now) {
   renderShipAsmCost(display);
   renderShipInventory(display);
   renderShipAttributes(display.selectedShip);
+  mountManufacturing3D(display);
   const componentRow = document.getElementById("shipcomp-progress-row"); if (componentRow) componentRow.style.display = display.componentActive ? "" : "none";
   const assemblyRow = document.getElementById("shipasm-progress-row"); if (assemblyRow) assemblyRow.style.display = display.assemblyActive ? "" : "none";
   drawSkillBar(document.getElementById("bar-shipcomp"), display.componentProgress.percent, "purple");
@@ -181,6 +210,11 @@ function renderEquipEngDetail(display) {
 function renderEquipEngPage(now) {
   const display = getEquipmentEngineeringDisplayState(gameState, Number(now) || Date.now(), equipEngSearchTerm);
   const efficiency = document.getElementById("equipeng-eff-display"); if (efficiency) efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
+  const eqLog = document.getElementById("equipeng-logistics");
+  if (eqLog) {
+    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    eqLog.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2);
+  }
   const level = document.getElementById("equipeng-lv-num"); if (level) level.textContent = display.level;
   const xp = document.getElementById("equipeng-exp-value"); if (xp) xp.textContent = Math.floor(display.xp).toLocaleString() + " / " + display.xpNeeded.toLocaleString();
   const fill = document.getElementById("equipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";

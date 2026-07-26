@@ -60,7 +60,19 @@ function renderCurrentNavigation() {
   else if (navigation.page === "queue") renderQueuePanel();
   else if (navigation.page === "combat") renderCombatPanel();
   else if (navigation.page === "hangar") renderHangarPanel();
+  else if (navigation.page === "station") { const p = document.getElementById("station-panel"); if (p) p.style.display = ""; renderStationPage(); }
   else if (navigation.page === "blueprints" || navigation.page === "lpstore") renderBlueprintStore();
+
+  // 3D 层（ES module）通常晚于本函数首次执行才就绪：若尚未加载，
+  // 注册一次性监听，待 ship3d:ready 后重渲当前页，补上 3D 内容。
+  if (!window.Ship3D && !renderCurrentNavigation._ship3dPending) {
+    renderCurrentNavigation._ship3dPending = true;
+    window.addEventListener("ship3d:ready", function onReady() {
+      window.removeEventListener("ship3d:ready", onReady);
+      renderCurrentNavigation._ship3dPending = false;
+      renderCurrentNavigation();
+    }, { once: true });
+  }
 }
 
 function switchPage(page) {
@@ -229,6 +241,69 @@ function getEnhancementNextText(enhancement) {
   return "下一级：最终采集效率 +" + (enhancement.nextIndustryGain * 100).toFixed(1) + "%";
 }
 
+/* ================================================================
+   船坞 3D（静态截图列表 + 点击弹出可拖拽查看器）
+   ================================================================ */
+const _hangarThumbCache = new Map();
+let _hangarPopupViewer = null;
+
+function getHangarThumb(shipId) {
+  const S3D = window.Ship3D;
+  if (!S3D) return null;
+  if (_hangarThumbCache.has(shipId)) return _hangarThumbCache.get(shipId);
+  let url = null;
+  try {
+    const spec = S3D.buildSpecForShip(shipId);
+    url = S3D.captureThumbnail(spec, { width: 300, height: 180 });
+  } catch (e) { console.error("[hangar] 3D 截图失败", shipId, e); }
+  if (url) _hangarThumbCache.set(shipId, url); // 仅缓存成功结果，未就绪时下次重试
+  return url;
+}
+
+function openHangar3DPopup(instanceId) {
+  const S3D = window.Ship3D;
+  if (!S3D) return;
+  const display = getHangarDisplayState(gameState, Date.now());
+  const ship = display.ships.find(item => item.instanceId === instanceId);
+  if (!ship) return;
+  const popup = document.getElementById("hangar-3d-popup");
+  const canvas = document.getElementById("hangar-3d-popup-canvas");
+  const nameEl = document.getElementById("hangar-3d-popup-name");
+  if (!popup || !canvas) return;
+  nameEl.textContent = ship.name;
+  popup.classList.add("open");
+  const spec = S3D.buildSpecForShip(ship.shipId);
+  if (!_hangarPopupViewer) {
+    // 首次打开：等布局完成再创建 viewer；之后常驻复用，关闭不销毁，避免 forceContextLoss 后再创建失败/白屏。
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        _hangarPopupViewer = S3D.ensureViewer(canvas, { orbit: true, autoSpin: true });
+        if (_hangarPopupViewer) S3D.setShips(_hangarPopupViewer, [{ spec, position: [0, 0, 0], scale: 1, sway: false }]);
+      });
+    });
+  } else {
+    S3D.setShips(_hangarPopupViewer, [{ spec, position: [0, 0, 0], scale: 1, sway: false }]);
+    _hangarPopupViewer._needsAutoFit = true;
+  }
+}
+
+function closeHangar3DPopup() {
+  const popup = document.getElementById("hangar-3d-popup");
+  if (popup) popup.classList.remove("open");
+  // 不销毁 viewer：复用，避免 forceContextLoss 后再创建失败（第二个弹窗白屏的根因）。
+}
+
+(function bindHangar3D() {
+  document.addEventListener("click", (event) => {
+    const thumb = event.target.closest("[data-open-3d]");
+    if (thumb) { openHangar3DPopup(thumb.getAttribute("data-open-3d")); }
+  });
+  const popup = document.getElementById("hangar-3d-popup");
+  const closeBtn = document.getElementById("hangar-3d-popup-close");
+  if (closeBtn) closeBtn.addEventListener("click", closeHangar3DPopup);
+  if (popup) popup.addEventListener("click", (event) => { if (event.target === popup) closeHangar3DPopup(); });
+})();
+
 function renderHangarPanel() {
   const panel = document.getElementById("hangar-panel");
   if (panel) panel.style.display = "flex";
@@ -246,7 +321,9 @@ function renderHangarPanel() {
     const materials = enhancement.materials.map(item => `<span class="enhance-material${item.enough ? "" : " short"}">${item.name} ${item.stock}/${item.quantity}</span>`).join("");
     const enhanceDisabled = enhancement.canEnhance ? "" : "disabled";
     const enhanceLabel = enhancement.busy ? "执行任务中" : enhancement.available ? "强化至 +" + (enhancement.level + 1) : "暂不可强化";
-    return `<div class="hangar-ship-card${ship.assignedActions.length ? " equipped" : ""}">
+    const thumbUrl = getHangarThumb(ship.shipId);
+    const thumbHtml = thumbUrl ? `<img class="hangar-ship-thumb" data-open-3d="${ship.instanceId}" src="${thumbUrl}" alt="${ship.name}" title="点击查看 3D 模型">` : "";
+    return `<div class="hangar-ship-card${ship.assignedActions.length ? " equipped" : ""}">${thumbHtml}
       <div class="hangar-ship-header"><span class="hsh-icon">${ship.archaeology ? "🛰️" : ship.industrial ? "🏭" : "🚀"}</span><span class="hsh-name">${ship.name}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier} ${ship.typeName}</span><span class="hsh-tier">${ship.archaeology ? "🛰️ 考古" : ship.industrial ? "🏭 工业" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
       <div class="hangar-ship-stats"><span class="hss-item"><span class="hss-label">护盾</span><span class="hss-val">${ship.hp.shield}</span></span><span class="hss-item"><span class="hss-label">装甲</span><span class="hss-val">${ship.hp.armor}</span></span><span class="hss-item"><span class="hss-label">结构</span><span class="hss-val">${ship.hp.structure}</span></span><span class="hss-item"><span class="hss-label">闪避</span><span class="hss-val">${ship.dodge}</span></span><span class="hss-item"><span class="hss-label">速度</span><span class="hss-val">${ship.speed}</span></span></div>
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
@@ -438,6 +515,8 @@ function addCurrentToQueue() {
   else if (skill === "gasHarvesting") { const area = getGasArea(); target = area.gas; label = area.gas; }
   else if (skill === "shipEngineering") { const recipe = gameState.currentAction.shipSubAction === "assembly" ? getShipAsmRecipe() : getShipCompRecipe(); target = recipe.name; label = recipe.name; }
   else if (skill === "equipmentEngineering") { const recipe = getEquipEngRecipe(); target = recipe.id; label = recipe.name; }
+  else if (skill === "archaeology") { const arch = gameState.archaeology; const site = arch.activeSiteId; if (site) { target = site; label = getArchaeologySite(site)?.name || site; } }
+  else if (skill === "boosterEngineering") { const recipe = gameState.currentAction.boosterRecipeTarget; const item = getBoosterItem(recipe); if (item) { target = recipe; label = item.name; } }
   if (!target) return false;
   const changed = addToQueue(skill, target, label); if (changed) showToast("已加入队列：" + getQueueSkillLabel(skill) + " · " + label);
   return changed;

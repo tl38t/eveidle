@@ -197,8 +197,8 @@ export function buildShip(spec = {}) {
   if (!isUtilityShip) {
     parts.push(generateSensors(ctx));
     parts.push(generateDroneBay(ctx));
-  } else {
-    // 功能舰签名挂载（采矿激光臂 / 采气采集器 / 指挥天线 / 扫描阵列 / 探针发射舱）
+  } else if (ctx.civ && ctx.civ.hullType === "industrial") {
+    // 工业舰签名挂载（采矿激光臂 / 采气采集器 / 指挥天线）
     parts.push(generateFunctionalMounts(ctx));
   }
 

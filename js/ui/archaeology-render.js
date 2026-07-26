@@ -10,13 +10,25 @@ function renderArchaeologyPage(now) {
   if (!body) return;
 
   const arch = display.archaeology;
+  const logText = document.getElementById("archaeology-logistics");
+  if (logText) {
+    const sl = display.stationLogistics || {};
+    logText.textContent = (sl.bodyLevel > 0 && sl.operational) ? "后勤 " + sl.text : "后勤未生效（" + (sl.text || "未建立") + "）";
+  }
+  const activeSiteId = arch.active ? (arch.startedSiteId || arch.activeSiteId) : arch.activeSiteId;
   const ship = display.assignedShip;
+
+  // 周期时间格式化：整数不带小数，含加速时保留 1 位
+  const fmtTime = t => Number.isFinite(t) ? (Number.isInteger(t) ? String(t) : t.toFixed(1)) : "0";
 
   // ---- 状态行 ----
   let statusText = "待命";
   if (arch.repairing) statusText = "🔧 自动维修中 " + arch.repairRemaining + "s";
   else if (arch.interference) statusText = "⚠ 信号干扰 " + arch.interferenceRemaining + "s";
-  else if (arch.active) statusText = "🛰️ 解析中 · " + (arch.activeSiteId || "");
+  else if (arch.active) {
+    const runningSite = display.sites.find(s => s.id === activeSiteId);
+    statusText = "🛰️ 解析中 · " + (runningSite ? runningSite.name : activeSiteId || "");
+  }
   if (status) status.textContent = statusText;
 
   // ---- 分配舰船 ----
@@ -46,16 +58,25 @@ function renderArchaeologyPage(now) {
     const cards = sites.map(site => `
       <button class="archaeology-site-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}"
         data-site-id="${site.id}"
-        ${site.locked || arch.repairing ? "disabled" : ""}>
+        ${site.locked || arch.repairing || arch.active ? "disabled" : ""}>
         <span class="asc-name">${site.name}</span>
-        <span class="asc-meta">Lv.${site.level} · ${site.time}s · ⛽${site.fuel}</span>
+        <span class="asc-profile">${site.profile && site.profile.label ? "🏷️ " + site.profile.label : ""}</span>
+        <span class="asc-meta">Lv.${site.level} · ⏱${fmtTime(site.actualCycleTime)}s/次${site.archSpeedEff && site.archSpeedEff !== 1 ? ` <span class="asc-base">增强剂 ×${site.archSpeedEff.toFixed(2)}</span>` : ""}${site.archLogisticsMult && site.archLogisticsMult > 1 ? ` <span class="asc-base">后勤 ×${site.archLogisticsMult.toFixed(2)}</span>` : ""}${site.archSpeedEff && site.archSpeedEff !== 1 || (site.archLogisticsMult && site.archLogisticsMult > 1) ? ` <span class="asc-base">(基础${site.time}s)</span>` : ""} · ⛽${site.fuel}</span>
         <span class="asc-detail">
           <span>难度 ${site.difficulty}</span>
           <span>成功率 ${site.successPercent}%</span>
-          <span>反噬 ${site.backlashDamage}</span>
-          <span>LP ×${site.lpMultiplier}</span>
+          <span>反噬 ${site.effectiveBacklash || site.backlashDamage}</span>
+          <span>LP ×${site.preview ? site.preview.effectiveLpMultiplier : site.lpMultiplier}</span>
         </span>
-        <span class="asc-state">${site.locked ? `需考古 Lv.${site.level}` : site.selected ? "已选择" : "可解析"}</span>
+        ${site.drops ? `
+        <span class="asc-drops">
+          <span class="ad-line"><span class="ad-icon">📜</span> ${site.drops.common.text}${site.preview ? " · 译码器+" + site.preview.decoderPct + "%" : ""}</span>
+          <span class="ad-line"><span class="ad-icon">🔬</span> 独特文物 ${site.drops.unique.ratePct}%${site.drops.unique.ratePct !== site.drops.unique.boostedPct ? ` <span class="ad-boost">(增强 +${(site.drops.unique.boostedPct - site.drops.unique.ratePct).toFixed(1)}%)</span>` : ""}</span>
+          <span class="ad-line"><span class="ad-icon">🎖</span> LP 文物 ${site.drops.lp.ratePct}%${site.drops.lp.item ? " · " + site.drops.lp.item.lpValue + " LP" : ""}</span>
+          <span class="ad-line"><span class="ad-icon">🔧</span> 校准材料 ${site.drops.calibration.ratePct}% · ×${site.drops.calibration.amount}</span>
+          ${site.preview ? `<span class="ad-line ad-expected"><span class="ad-icon">📈</span> 单次期望 ${Math.round(site.preview.expectedIskPerCycle).toLocaleString()} ISK · ${site.preview.expectedLpPerCycle.toFixed(2)} LP · ${site.preview.expectedCalibPerCycle.toFixed(2)} 校准</span>` : ""}
+        </span>` : ""}
+        <span class="asc-state">${site.runningTarget ? "解析中" : site.levelLocked ? `需考古 Lv.${site.level}` : site.actionLocked ? "行动中不可切换" : site.selected ? "已选择" : "可解析"}</span>
       </button>
     `).join("");
     return `<div class="archaeology-tier-group">
@@ -68,7 +89,7 @@ function renderArchaeologyPage(now) {
   const probeSection = display.probes.map(probe => `
     <button class="archaeology-probe-card${probe.selected ? " selected" : ""}${probe.locked ? " locked" : ""}"
       data-probe-id="${probe.id}"
-      ${probe.locked || arch.repairing ? "disabled" : ""}>
+      ${probe.locked || arch.repairing || arch.active ? "disabled" : ""}>
       <span class="apc-name">${probe.name}</span>
       <span class="apc-bonus">扫描 +${probe.scanBonus}</span>
       <span class="apc-stock">库存 ${probe.stock}</span>
@@ -76,22 +97,20 @@ function renderArchaeologyPage(now) {
     </button>
   `).join("");
 
-  // ---- 进度条 ----
-  const activeSite = display.sites.find(s => s.id === arch.activeSiteId);
+  // ---- 进度条（与采矿共用 drawSkillBar） ----
+  const activeSite = display.sites.find(s => s.id === activeSiteId);
   const progressSection = arch.active ? `
     <div class="archaeology-progress">
       <div class="archaeology-progress-header">
         <span>解析 ${activeSite ? activeSite.name : arch.activeSiteId}</span>
-        <span>${activeSite ? activeSite.time + "s / 次" : ""}</span>
+        <span>${activeSite ? fmtTime(activeSite.actualCycleTime) + "s / 次" : ""}</span>
       </div>
-      <div class="progress-bar" style="height:8px;">
-        <div class="fill" style="width:${arch.progress}%; background:linear-gradient(90deg,#4ac87a,#7ae89a);"></div>
-      </div>
+      <canvas class="skill-canvas-bar" id="bar-archaeology" width="560" height="24"></canvas>
     </div>
   ` : "";
 
   // ---- 控制按钮 ----
-  const canStart = ship && display.canAssign && !arch.repairing && !arch.interference && arch.activeSiteId;
+  const canStart = ship && display.canAssign && !arch.repairing && !arch.interference && !arch.active && activeSiteId;
   const controls = `
     <div class="archaeology-controls">
       <button class="btn danger" id="archaeology-btn-stop" ${arch.active ? "" : 'style="display:none;"'}>■ 停止解析</button>
@@ -206,22 +225,7 @@ function bindArchaeologyEvents(body) {
   // 开始/停止
   const startBtn = body.querySelector("#archaeology-btn-start");
   const stopBtn = body.querySelector("#archaeology-btn-stop");
-  if (startBtn) startBtn.addEventListener("click", () => {
-    const result = dispatchGameAction(gameState, { type:"archaeology/start" }, Date.now());
-    if (result.changed) { showToast("开始解析遗迹"); renderArchaeologyPage(); updateUI(); }
-    else {
-      const reasons = {
-        "no-assigned-ship":"未分配考古舰船",
-        "repairing":"舰船维修中",
-        "interference":"信号干扰中",
-        "no-site":"请先选择遗迹",
-        "no-probe":"探针不足",
-        "no-fuel":"燃料不足",
-        "level-too-low":"考古等级不足"
-      };
-      showToast(reasons[result.reason] || "无法开始考古行动");
-    }
-  });
+  if (startBtn) startBtn.addEventListener("click", () => { hideActionConfirm(); showActionConfirm("archaeology"); });
   if (stopBtn) stopBtn.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"archaeology/stop" }, Date.now());
     if (result.changed) { showToast("已停止考古行动"); renderArchaeologyPage(); updateUI(); }

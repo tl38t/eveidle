@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(m => m[1]);
+const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(m => m[1].replace(/\?.*$/, ""));
 
 // ========= 沙箱 =========
 const noop = () => {};
@@ -229,14 +229,14 @@ function makeTestState(shipId, skillLvl, analyzerIds, siteTier) {
   denyState.archaeology.activeSiteId = "site_i_a";
   // 无探针
   sandbox.ResourceRegistry.set(denyState, "probe:core_probe_i", 0);
-  const noProbe = sandbox.dispatchGameAction(denyState, { type: "archaeology/start", now: 0 }, 0);
+  const noProbe = sandbox.dispatchGameAction(denyState, { type: "archaeology/start" }, 0);
   ok(!noProbe.changed, "B4a 无探针被拒");
   eq(noProbe.reason, "insufficient-probe", "B4b 理由 insufficient-probe");
 
   // 有探针无燃料
   sandbox.ResourceRegistry.add(denyState, "probe:core_probe_i", 10);
   sandbox.ResourceRegistry.set(denyState, "consumable:fuel", 0);
-  const noFuel = sandbox.dispatchGameAction(denyState, { type: "archaeology/start", now: 0 }, 0);
+  const noFuel = sandbox.dispatchGameAction(denyState, { type: "archaeology/start" }, 0);
   ok(!noFuel.changed, "B4c 无燃料被拒");
 }
 
@@ -257,7 +257,7 @@ console.log("\n=== C. 开始、停止与 tick ===");
 {
   const tState = makeTestState("heron", 1, [], "I");
   tState.archaeology.activeSiteId = "site_i_a";
-  const startR = sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: 1000 }, 1000);
+  const startR = sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 1000);
   ok(startR.changed, "C1a start 成功");
   eq(tState.currentAction.skill, "archaeology", "C1b currentAction.skill=archaeology");
   ok(tState.currentAction.active, "C1c active=true");
@@ -270,7 +270,7 @@ console.log("\n=== C. 开始、停止与 tick ===");
 {
   const tState = makeTestState("heron", 1, ["archaeo_analyzer_i", "archaeo_analyzer_i"], "I");
   tState.archaeology.activeSiteId = "site_i_a";
-  sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: 0 }, 0);
+  sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 0);
 
   // 推进时间到完成一次
   const probeBefore = sandbox.ResourceRegistry.get(tState, "probe:core_probe_i");
@@ -293,7 +293,7 @@ console.log("\n=== C. 开始、停止与 tick ===");
 {
   const tState = makeTestState("heron", 1, [], "I");
   tState.archaeology.activeSiteId = "site_i_a";
-  sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: 0 }, 0);
+  sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 0);
 
   const xpBefore = tState.skills.archaeology.xp;
   const hp = sandbox.getArchaeologyShipHp(tState, tState.shipAssignments.archaeology);
@@ -324,8 +324,8 @@ console.log("\n=== C. 开始、停止与 tick ===");
 {
   const tState = makeTestState("heron", 1, [], "I");
   tState.archaeology.activeSiteId = "site_i_a";
-  sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: 0 }, 0);
-  const stopR = sandbox.dispatchGameAction(tState, { type: "archaeology/stop", now: 1000 }, 1000);
+  sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 0);
+  const stopR = sandbox.dispatchGameAction(tState, { type: "archaeology/stop" }, 1000);
   ok(stopR.changed, "C5a stop 成功");
   eq(tState.archaeology.startedSiteId, null, "C5b startedSiteId 清空");
   eq(tState.archaeology.startedProbeId, null, "C5c startedProbeId 清空");
@@ -338,7 +338,7 @@ console.log("\n=== C. 开始、停止与 tick ===");
   tState.archaeology.activeSiteId = "site_i_a";
   const now = 30000;
   // 触发失败
-  sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: 0 }, 0);
+  sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 0);
   tState.currentAction.progress = 31;
   tState.currentAction.lastProgressUpdate = 0;
   const failResult = sandbox.resolveArchaeologyCycle(tState, now, 0.9);
@@ -348,11 +348,11 @@ console.log("\n=== C. 开始、停止与 tick ===");
   tState.archaeology.interferenceUntil = now + sandbox.getArchaeologyInterferenceSeconds(site) * 1000;
   ok(tState.archaeology.interferenceUntil > now, "C5g interferenceUntil 设为未来时间");
   // 停止后 interferenceUntil 必须保留
-  sandbox.dispatchGameAction(tState, { type: "archaeology/stop", now: now + 1000 }, now + 1000);
+  sandbox.dispatchGameAction(tState, { type: "archaeology/stop" }, now + 1000);
   ok(tState.archaeology.interferenceUntil > now, "C5h stop 不清除 interferenceUntil");
   // 干扰期间 start 被拒绝
   tState.archaeology.activeSiteId = "site_i_a";
-  const blocked = sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: now + 2000 }, now + 2000);
+  const blocked = sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, now + 2000);
   ok(!blocked.changed, "C5i 干扰中 start 被拒绝");
   eq(blocked.reason, "interference", "C5j 理由 interference");
   // 探针/燃料未被 start 消耗（但失败时已消耗 1）
@@ -360,7 +360,7 @@ console.log("\n=== C. 开始、停止与 tick ===");
   eq(probeStock, 50 - 1, "C5k 仅消耗 1 根探针（失败时消耗）");
   // 时间到期后可以重新开始
   tState.archaeology.interferenceUntil = 0;
-  const allowed = sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: 999999 }, 999999);
+  const allowed = sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 999999);
   ok(allowed.changed, "C5l 时间到期后可以重新开始");
 }
 
@@ -368,7 +368,7 @@ console.log("\n=== C. 开始、停止与 tick ===");
 {
   const tState = makeTestState("heron", 1, [], "I");
   tState.archaeology.activeSiteId = "site_i_a";
-  sandbox.dispatchGameAction(tState, { type: "archaeology/start", now: 0 }, 0);
+  sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 0);
   tState.currentAction.progress = 0; // 未达到阈值
   const preProbe = sandbox.ResourceRegistry.get(tState, "probe:core_probe_i");
   // gameTick progress 不满 30 秒不触发
@@ -527,7 +527,7 @@ console.log("\n=== F. 离线与兼容性 ===");
 {
   const offlineState = makeTestState("heron", 1, [], "I");
   offlineState.archaeology.activeSiteId = "site_i_a";
-  sandbox.dispatchGameAction(offlineState, { type: "archaeology/start", now: 0 }, 0);
+  sandbox.dispatchGameAction(offlineState, { type: "archaeology/start" }, 0);
 
   const desc = sandbox.getOfflineActionDescriptor("archaeology");
   if (desc) {
@@ -541,8 +541,143 @@ console.log("\n=== F. 离线与兼容性 ===");
 
 // F2: 旧存档补齐（已验证在 A4）
 
+// G: 运行中 selectSite/selectProbe 返回 action-running
+{
+  const tState = makeTestState("heron", 1, ["archaeo_analyzer_i", "archaeo_analyzer_i"], "I");
+  tState.archaeology.activeSiteId = "site_i_a";
+  sandbox.dispatchGameAction(tState, { type: "archaeology/start" }, 0);
+  ok(tState.currentAction.active, "G1 行动已激活");
+  const sr = sandbox.dispatchGameAction(tState, { type: "archaeology/selectSite", siteId:"site_i_b" }, 1000);
+  eq(sr.changed, false, "G2 运行中 selectSite changed=false");
+  eq(sr.reason, "action-running", "G3 运行中 selectSite reason=" + sr.reason);
+  const pr = sandbox.dispatchGameAction(tState, { type: "archaeology/selectProbe", probeId:"enhanced_probe_ii" }, 1000);
+  eq(pr.changed, false, "G4 运行中 selectProbe changed=false");
+  eq(pr.reason, "action-running", "G5 运行中 selectProbe reason=" + pr.reason);
+  // 停止后可切换
+  sandbox.dispatchGameAction(tState, { type: "archaeology/stop" }, 2000);
+  eq(tState.currentAction.active, false, "G6 停止后 active=false");
+  const sr2 = sandbox.dispatchGameAction(tState, { type: "archaeology/selectSite", siteId:"site_i_b" }, 3000);
+  eq(sr2.changed, true, "G7 停止后 selectSite 成功");
+}
+
+// H: 稀有率预览 — 无增强 / 普通 / 精工 / 传奇四档（精确值比较）
+{
+  const tState = makeTestState("heron", 1, ["archaeo_analyzer_i", "archaeo_analyzer_i"], "I");
+  tState.archaeology.activeSiteId = "site_i_a";
+  const tierI = sandbox.ARCHAEOLOGY_TIERS.I;
+  const baseUniqueRate = tierI.uniqueRate; // 0.01
+  const baseRatePct = Number((baseUniqueRate * 100).toFixed(1));
+
+  // 无 booster
+  const disp = sandbox.getArchaeologyDisplayState(tState, Date.now());
+  const site0 = disp.sites.find(s => s.id === "site_i_b"); // research: uniqueMultiplier=1.0
+  const boosted = Number(site0.drops.unique.boostedPct);
+  ok(boosted === baseRatePct, "H1 无增强 boostedPct(" + boosted + ")===base(" + baseRatePct + ")");
+  // 无增强时 UI 不显示增强文案（ratePct===boostedPct）
+  ok(site0.drops.unique.ratePct === site0.drops.unique.boostedPct, "H1b 无增强时 ratePct===boostedPct");
+
+  // 普通 *1.25
+  tState.boosters.active = tState.boosters.active || {};
+  tState.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_n", remainingMs:180000 };
+  const disp2 = sandbox.getArchaeologyDisplayState(tState, Date.now());
+  const siteB = disp2.sites.find(s => s.id === "site_i_b");
+  const boostedN = Number(siteB.drops.unique.boostedPct);
+  const expectedN = sandbox.getBoosterArchaeologyEffectiveUniqueRate(baseUniqueRate, 1.25);
+  const expectedNPct = Number((Math.min(0.99, expectedN) * 100).toFixed(1));
+  ok(boostedN === expectedNPct, "H2 普通 boostedPct(" + boostedN + "%)===expected(" + expectedNPct + "%)");
+
+  // 精工 *1.60
+  tState.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_r", remainingMs:180000 };
+  const disp3 = sandbox.getArchaeologyDisplayState(tState, Date.now());
+  const siteR = disp3.sites.find(s => s.id === "site_i_b");
+  const boostedR = Number(siteR.drops.unique.boostedPct);
+  const expectedR = sandbox.getBoosterArchaeologyEffectiveUniqueRate(baseUniqueRate, 1.60);
+  ok(Math.abs(boostedR / 100 - expectedR) < 0.0001, "H3 精工 boostedPct(" + boostedR + "%)≈expected(" + (expectedR*100).toFixed(4) + "%)");
+
+  // 传奇 *2.20
+  tState.boosters.active.archaeologyRare = { itemId:"booster:artifact_tracer_l", remainingMs:180000 };
+  const disp4 = sandbox.getArchaeologyDisplayState(tState, Date.now());
+  const siteL = disp4.sites.find(s => s.id === "site_i_b");
+  const boostedL = Number(siteL.drops.unique.boostedPct);
+  const expectedL = sandbox.getBoosterArchaeologyEffectiveUniqueRate(baseUniqueRate, 2.20);
+  ok(Math.abs(boostedL / 100 - expectedL) < 0.0001, "H4 传奇 boostedPct(" + boostedL + "%)≈expected(" + (expectedL*100).toFixed(4) + "%)");
+
+  delete tState.boosters.active.archaeologyRare;
+}
+
+// I: queue/add + queue/start 考古完整路径
+{
+  const tState = makeTestState("heron", 1, ["archaeo_analyzer_i", "archaeo_analyzer_i"], "I");
+  tState.archaeology.activeSiteId = "site_i_a";
+  tState.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  // 通过队列启动
+  const qr = sandbox.dispatchGameAction(tState, { type:"queue/add", item:{ skill:"archaeology", target:"site_i_a", label:"test", count:1 }, front:true }, Date.now());
+  ok(qr.changed, "I1 queue/add 成功 (changed=" + qr.changed + ")");
+  const sr = sandbox.dispatchGameAction(tState, { type:"queue/start" }, Date.now());
+  ok(sr.changed, "I2 queue/start 成功 (changed=" + sr.changed + ")");
+  ok(tState.currentAction.active, "I3 queue/start 后 action active");
+  eq(tState.currentAction.skill, "archaeology", "I4 skill=archaeology");
+  ok(tState.archaeology.startedSiteId === "site_i_a", "I5 startedSiteId 正确");
+  ok(tState.archaeology.startedProbeId === "core_probe_i", "I6 startedProbeId 正确");
+}
+
+// J: 缺探针/缺燃料时队列原子拒绝（前后快照比较）
+{
+  // 缺燃料
+  const tState = makeTestState("heron", 1, ["archaeo_analyzer_i", "archaeo_analyzer_i"], "I");
+  tState.archaeology.activeSiteId = "site_i_a";
+  const RR = sandbox.ResourceRegistry;
+  const fuelBefore = RR.get(tState, "consumable:fuel");
+  const probeBefore = RR.get(tState, "probe:core_probe_i");
+  const actionBefore = JSON.parse(JSON.stringify(tState.currentAction));
+  const startedSiteBefore = tState.archaeology.startedSiteId;
+  const startedProbeBefore = tState.archaeology.startedProbeId;
+  RR.spend(tState, "consumable:fuel", fuelBefore); // 清空燃料（用全部库存）
+  // 确保探针足够
+  RR.add(tState, "probe:core_probe_i", 10 - probeBefore);
+  tState.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  sandbox.dispatchGameAction(tState, { type:"queue/add", item:{ skill:"archaeology", target:"site_i_a", label:"test", count:1 }, front:true }, Date.now());
+  const sr = sandbox.dispatchGameAction(tState, { type:"queue/start" }, Date.now());
+  eq(sr.changed, false, "J1 缺燃料 queue/start changed=false");
+  eq(sr.reason, "insufficient-fuel", "J2 缺燃料 reason=" + sr.reason);
+  eq(tState.currentAction.active, false, "J3 缺燃料 action.active=false");
+  eq(tState.archaeology.startedSiteId, startedSiteBefore, "J4 缺燃料 startedSiteId 未污染");
+  eq(tState.archaeology.startedProbeId, startedProbeBefore, "J5 缺燃料 startedProbeId 未污染");
+  eq(RR.get(tState, "probe:core_probe_i"), 10, "J6 缺燃料探针未消耗");
+  eq(RR.get(tState, "consumable:fuel"), 0, "J7 燃料仍为 0");
+
+  // 缺探针
+  const tState2 = makeTestState("heron", 1, ["archaeo_analyzer_i", "archaeo_analyzer_i"], "I");
+  tState2.archaeology.activeSiteId = "site_i_a";
+  RR.spend(tState2, "probe:core_probe_i", RR.get(tState2, "probe:core_probe_i")); // 清空探针
+  RR.add(tState2, "consumable:fuel", 100); // 燃料充足
+  const probeBefore2 = RR.get(tState2, "probe:core_probe_i");
+  const fuelBefore2 = RR.get(tState2, "consumable:fuel");
+  tState2.queue = { items:[], status:{ isRunning:false, activeIndex:-1, completedCount:0, failCount:0 }, config:{ maxSize:20, loopMode:false } };
+  sandbox.dispatchGameAction(tState2, { type:"queue/add", item:{ skill:"archaeology", target:"site_i_a", label:"test", count:1 }, front:true }, Date.now());
+  const sr2 = sandbox.dispatchGameAction(tState2, { type:"queue/start" }, Date.now());
+  eq(sr2.changed, false, "J8 缺探针 queue/start changed=false");
+  eq(sr2.reason, "insufficient-probe", "J9 缺探针 reason=" + sr2.reason);
+  eq(tState2.currentAction.active, false, "J10 缺探针 action.active=false");
+  eq(RR.get(tState2, "probe:core_probe_i"), probeBefore2, "J11 探针未消耗 (0)");
+  eq(RR.get(tState2, "consumable:fuel"), fuelBefore2, "J12 燃料未消耗");
+}
+
 // ========= 结果汇总 =========
 console.log("\n========================================");
 console.log(`审计断言: ${assertions}  通过: ${pass}  失败: ${fail}`);
 console.log("========================================");
+
+// 源码哨兵：禁止再次出现 ArchaeologyStateActions.start/stop(state, action.now)
+const actionSource = fs.readFileSync(path.join(root, "js/core/actions.js"), "utf8");
+const badStart = "ArchaeologyStateActions.start(state, action.now)";
+const badStop = "ArchaeologyStateActions.stop(state, action.now)";
+if (actionSource.includes(badStart)) {
+  fail++; console.error(`  FAIL 源码哨兵: actions.js 含 '${badStart}'`);
+} else { pass++; }
+if (actionSource.includes(badStop)) {
+  fail++; console.error(`  FAIL 源码哨兵: actions.js 含 '${badStop}'`);
+} else { pass++; }
+assertions += 2;
+
 process.exit(fail > 0 ? 1 : 0);

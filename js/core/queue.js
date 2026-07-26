@@ -4,7 +4,7 @@
    ================================================================ */
 
 function getQueueSkillLabel(skill) {
-  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程" };
+  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", archaeology:"🔍考古", boosterEngineering:"💉增强剂" };
   return labels[skill] || skill;
 }
 
@@ -89,6 +89,12 @@ function executeQueueItem(index) {
   const queue = gameState.queue;
   if (index < 0 || index >= queue.items.length) {
     if (queue.config.loopMode && queue.items.length > 0) {
+      // 循环模式：受失败保护，防止无限同步递归
+      if ((Number(queue.status.failCount) || 0) > queue.items.length * 10) {
+        queue.status.isRunning = false; queue.status.activeIndex = -1;
+        resetActionProgress(); gameState.currentAction.active = false; gameState.currentAction.batchRemaining = 0;
+        return false;
+      }
       queue.status.activeIndex = 0; queue.status.completedCount++; executeQueueItem(0);
     } else {
       queue.status.isRunning = false; queue.status.activeIndex = -1;
@@ -97,7 +103,12 @@ function executeQueueItem(index) {
     return false;
   }
   queue.status.activeIndex = index;
-  applyQueueItemConfig(queueItemConfig(queue.items[index]));
+  // 所有项目经统一入口执行
+  if (typeof executeQueueItemForState === "function") {
+    executeQueueItemForState(gameState, queue.items[index], Date.now());
+  } else {
+    applyQueueItemConfig(queueItemConfig(queue.items[index]));
+  }
   gameState._dirty = true;
   return true;
 }

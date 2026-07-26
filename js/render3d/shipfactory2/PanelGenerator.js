@@ -158,7 +158,11 @@ function generateSanshaPanels(ctx, g, plateMat) {
     [[1, PHI, 0], [-1, PHI, 0]],
     [[1, -PHI, 0], [-1, -PHI, 0]],
   ];
-  const pairCount = [1, 2, 3, 4][tier];
+  // 【classTier 消费点 · 面对数】显式钳制到最多 4 对（detailTier = min(tier,3)）。
+  //   原因：facePairOrder 只在十二面体笼上定义了 4 组严格 x 镜像的面对（前侧/后侧/上/下），
+  //         再多没有对称面可放。旧写法 [1,2,3,4][tier] 在 tier=4(capital)/5(supercapital) 越界为
+  //         undefined → for(pi<undefined) 不执行 → Sansha 旗舰 0 面板。capital/supercapital 复用最大 4 对设计。
+  const pairCount = [1, 2, 3, 4][Math.min(tier, 3)];
 
   // 目标方向 → 最接近的真实面法向
   const nearestFace = (x, y, z) => {

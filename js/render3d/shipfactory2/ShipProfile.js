@@ -52,6 +52,8 @@ export const ANCHORS = {
       destroyer:  { len: 9.0,  noseFat: 0.32, mid: 0.52, tail: 0.18, scale: 1.15, engines: 2, mounts: 3, wingSpan: 2.8, ringRadius: 2.8, body: "gunboat",  radialSegments: 8, widthRatio: 1.0, twist: 0, asymmetry: 0 },
       cruiser:    { len: 11.0, noseFat: 0.42, mid: 0.76, tail: 0.26, scale: 1.4,  engines: 3, mounts: 4, wingSpan: 3.4, ringRadius: 3.6, body: "cruiser",  radialSegments: 8, widthRatio: 1.0, twist: 0, asymmetry: 0 },
       battleship: { len: 14.0, noseFat: 0.50, mid: 1.00, tail: 0.34, scale: 1.75, engines: 3, mounts: 5, wingSpan: 4.2, ringRadius: 4.6, body: "fortress", radialSegments: 8, widthRatio: 1.0, twist: 0, asymmetry: 0 },
+      capital:    { len: 18.0, noseFat: 0.60, mid: 1.40, tail: 0.42, scale: 2.40, engines: 4, mounts: 6, wingSpan: 5.4, ringRadius: 6.0, body: "fortress", radialSegments: 8, widthRatio: 1.0, twist: 0, asymmetry: 0 },
+      supercapital:{ len: 22.0, noseFat: 0.65, mid: 1.80, tail: 0.50, scale: 3.00, engines: 6, mounts: 7, wingSpan: 6.6, ringRadius: 7.4, body: "fortress", radialSegments: 8, widthRatio: 1.0, twist: 0, asymmetry: 0 },
     }
   },
 
@@ -85,6 +87,8 @@ export const ANCHORS = {
       destroyer:  { len: [8.8, 9.6], noseFat: [0.32, 0.40], mid: [0.58, 0.70], tail: [0.20, 0.26], scale: [1.15, 1.23], engines: 2, mounts: 3, wingSpan: [3.0, 3.4], ringRadius: [3.0, 3.4], body: "gunboat",  radialSegments: 6, widthRatio: [0.65, 0.78], twist: 0, asymmetry: 0 },
       cruiser:    { len: [10.8, 11.6], noseFat: [0.40, 0.48], mid: [0.82, 0.96], tail: [0.26, 0.32], scale: [1.40, 1.48], engines: 3, mounts: 4, wingSpan: [3.6, 4.0], ringRadius: [3.8, 4.2], body: "cruiser",  radialSegments: 6, widthRatio: [0.65, 0.78], twist: 0, asymmetry: 0 },
       battleship: { len: [13.8, 14.6], noseFat: [0.48, 0.56], mid: [1.04, 1.18], tail: [0.32, 0.40], scale: [1.73, 1.83], engines: 3, mounts: 5, wingSpan: [4.4, 4.8], ringRadius: [4.6, 5.0], body: "fortress", radialSegments: 6, widthRatio: [0.65, 0.78], twist: 0, asymmetry: 0 },
+      capital:    { len: [18.0, 19.5], noseFat: [0.56, 0.64], mid: [1.35, 1.55], tail: [0.40, 0.48], scale: [2.30, 2.50], engines: 4, mounts: 6, wingSpan: [5.4, 6.0], ringRadius: [6.0, 6.6], body: "fortress", radialSegments: 6, widthRatio: [0.65, 0.78], twist: 0, asymmetry: 0 },
+      supercapital:{ len: [22.0, 24.0], noseFat: [0.62, 0.72], mid: [1.70, 1.95], tail: [0.46, 0.56], scale: [2.90, 3.20], engines: 6, mounts: 7, wingSpan: [6.6, 7.4], ringRadius: [7.4, 8.2], body: "fortress", radialSegments: 6, widthRatio: [0.65, 0.78], twist: 0, asymmetry: 0 },
     }
   },
 
@@ -109,6 +113,8 @@ export const ANCHORS = {
       destroyer:  { len: [9.0, 9.8], noseFat: [0.34, 0.42], mid: [0.54, 0.66], tail: [0.22, 0.28], scale: [1.15, 1.23], engines: 2, mounts: 3, wingSpan: [2.8, 3.2], ringRadius: [2.8, 3.2], body: "gunboat",  radialSegments: 24, widthRatio: [0.95, 1.05], twist: [0, 0.06], asymmetry: 0 },
       cruiser:    { len: [11.0, 11.8], noseFat: [0.42, 0.50], mid: [0.78, 0.92], tail: [0.28, 0.34], scale: [1.40, 1.48], engines: 3, mounts: 4, wingSpan: [3.4, 3.8], ringRadius: [3.6, 4.0], body: "cruiser",  radialSegments: 24, widthRatio: [0.95, 1.05], twist: [0, 0.06], asymmetry: 0 },
       battleship: { len: [14.0, 14.8], noseFat: [0.50, 0.58], mid: [1.02, 1.16], tail: [0.34, 0.42], scale: [1.75, 1.85], engines: 3, mounts: 5, wingSpan: [4.2, 4.6], ringRadius: [4.6, 5.0], body: "fortress", radialSegments: 24, widthRatio: [0.95, 1.05], twist: [0, 0.06], asymmetry: 0 },
+      capital:    { len: [18.0, 19.5], noseFat: [0.58, 0.66], mid: [1.35, 1.55], tail: [0.42, 0.50], scale: [2.35, 2.55], engines: 4, mounts: 6, wingSpan: [5.2, 5.8], ringRadius: [5.8, 6.4], body: "fortress", radialSegments: 24, widthRatio: [0.95, 1.05], twist: [0, 0.06], asymmetry: 0 },
+      supercapital:{ len: [22.0, 24.0], noseFat: [0.62, 0.72], mid: [1.70, 1.95], tail: [0.48, 0.58], scale: [2.90, 3.20], engines: 6, mounts: 7, wingSpan: [6.4, 7.0], ringRadius: [7.0, 7.8], body: "fortress", radialSegments: 24, widthRatio: [0.95, 1.05], twist: [0, 0.06], asymmetry: 0 },
     }
   },
 
@@ -171,6 +177,23 @@ function resolveField(v, rng) {
 
 const DEFAULT_CLASS = "frigate";
 
+// 档位从高到低的降级顺序（与 SHIP_CLASSES 一致，反向）。
+const CLASS_FALLBACK_ORDER = ["supercapital", "capital", "battleship", "cruiser", "destroyer", "frigate"];
+
+// 在锚点 A 的 perClass 里为 shipClass 找到最合适的形状：
+//   精确命中优先；否则从请求档位起沿"更低档位"方向找到第一个已定义的档位（优雅降级）。
+function resolveShapeForClass(A, shipClass) {
+  if (A.perClass[shipClass]) return A.perClass[shipClass];
+  const startIdx = CLASS_FALLBACK_ORDER.indexOf(shipClass);
+  // 若 shipClass 未知（不在顺序表里），从最低档 frigate 兜底。
+  const from = startIdx >= 0 ? startIdx : CLASS_FALLBACK_ORDER.length - 1;
+  for (let i = from; i < CLASS_FALLBACK_ORDER.length; i++) {
+    const cls = CLASS_FALLBACK_ORDER[i];
+    if (A.perClass[cls]) return A.perClass[cls];
+  }
+  return A.perClass[DEFAULT_CLASS] || A.perClass.frigate;
+}
+
 // 冻结递归：产出的 ShipProfile 为只读（对齐 §18 Immutable，硬性防止 Generator 误改）。
 function deepFreeze(obj) {
   Object.keys(obj).forEach((k) => {
@@ -189,7 +212,11 @@ function deepFreeze(obj) {
 //             注意：Spear 全为标量 → 不消费 rng → 结果与 rng 无关（保证迁移零变化）。
 export function buildProfile({ anchor = "Spear", shipClass = DEFAULT_CLASS, rng = Math.random } = {}) {
   const A = ANCHORS[anchor] || ANCHORS.Spear;
-  const shape = A.perClass[shipClass] || A.perClass[DEFAULT_CLASS];
+  // 优雅降级：并非所有锚点都定义了全部档位（如 Needle/Hammer/Broken/Lotus 仅到 battleship、
+  //   Archaeology 仅到 capital）。若请求档位缺失，须回退到"最近的更低档位"而非直接跌到 frigate，
+  //   否则 capital/supercapital 会拿到护卫舰船体却带 classTier=4/5 的细节（大小与细节不匹配）。
+  //   （敌舰锚点是随机的，capital/supercapital 敌人可能落到没有该档位的锚点 → 此降级为必需的正确性保证。）
+  const shape = resolveShapeForClass(A, shipClass);
 
   const hull = {};
   for (const key of Object.keys(shape)) {
@@ -212,4 +239,4 @@ export function buildProfile({ anchor = "Spear", shipClass = DEFAULT_CLASS, rng 
 }
 
 // hull 档位名 → 供外部（ShipContext）校验/枚举
-export const SHIP_CLASSES = ["frigate", "destroyer", "cruiser", "battleship"];
+export const SHIP_CLASSES = ["frigate", "destroyer", "cruiser", "battleship", "capital", "supercapital"];

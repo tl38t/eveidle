@@ -1,3 +1,16 @@
+// 军团与空间站系统（Phase 3C）：八建筑稳定 ID，供存档迁移与后续 phase 复用。
+// 顺序与策划文档第三节一致；具体效果在 3C-2 之后逐步实装。
+const STATION_BUILDING_IDS = [
+  "resource_dispatch",  // 资源调度中心
+  "planetary_control",  // 行星管控中心
+  "smelting_refinery",  // 冶炼精炼厂
+  "equipment_factory",  // 装备制造厂
+  "booster_factory",    // 增强剂制造厂
+  "archaeology_lab",    // 考古实验室
+  "combat_command",     // 作战指挥中心
+  "shipyard"            // 舰船船坞
+];
+
 // ---- gameState 主状态对象 ----
 const gameState = {
   resources: {
@@ -69,6 +82,13 @@ const gameState = {
   activeIndustrialShip: null,
   shipAssignments: {},
 
+  // 维修后自动恢复原行动（Phase 3D）：舰船在考古重创 / 战斗损毁进入维修时记录被打断的行动，
+  // 维修完成后据此自动续跑。null = 无需恢复。结构：
+  //   考古 { type:"archaeology", siteId, probeId, shipInstanceId }
+  //   战斗 { type:"combat", zoneId, mode:"zone"|"deathspace", shipInstanceId }
+  // 离线考古由 settleByTime 直接跨维修续跑，不依赖本字段；离线战斗尚未实装（Phase 4A）。
+  resumeAfterRepair: null,
+
   archaeology: {
     activeSiteId: null,
     activeProbeId: "core_probe_i",
@@ -100,6 +120,28 @@ const gameState = {
       combatRepair: null
     },
     lastTick: Date.now()
+  },
+
+  station: {
+    version: 1,
+    bodyLevel: 0,
+    construction: null,
+    buildings: Object.fromEntries(STATION_BUILDING_IDS.map(id => [id, 0])),
+    maintenance: { tier: "standard", fuelRemaining: 0, lastRefillAt: 0 },
+    autoLines: {
+      smelting:    { enabled:false, operatorId:null },
+      equipment:   { enabled:false, operatorId:null },
+      booster:     { enabled:false, operatorId:null }
+    },
+    shipyard: { unlockedFlagship:false, unlockedSupercapital:false, savingsLedger:{} },
+    dlc: { npcWorkers:false, combatWings:false }
+  },
+
+  corporation: {
+    version: 1,
+    name: "",
+    foundedAt: 0,
+    dlc: { npcWorkers:false, combatWings:false }
   },
 
   upgrades: {},

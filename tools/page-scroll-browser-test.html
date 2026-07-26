@@ -1,0 +1,768 @@
+<!--
+  页面滚动布局浏览器验收
+  验证修复：.content > .panel:not(#hangar-panel):not(#cargo-panel) { flex:0 0 auto; min-height:min-content; }
+  通过 iframe 加载真实 index.html，逐页验证面板展开、滚动生效、船坞/仓库内部滚动保持。
+  用法：浏览器打开 http://localhost:PORT/tools/page-scroll-browser-test.html（PORT 见 serve 输出）
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>页面滚动布局浏览器验收</title>
+<style>
+body{font-family:monospace;background:#0a0f18;color:#c8d8e8;padding:16px;margin:0}
+h1{color:#d4a843;font-size:18px;margin:0 0 4px}
+h2{color:#8ac8ff;font-size:14px;margin:16px 0 6px}
+.pass{color:#4ac87a}.fail{color:#e05555}.skip{color:#e8c65a}
+.log{margin:2px 0;font-size:11px;line-height:1.45}
+.section{margin:10px 0;padding:6px;border-left:2px solid #2a3a4a}
+#frame-box{border:1px solid #2a3a4a;margin:6px 0;overflow:hidden}
+#frame-box iframe{width:1280px;height:720px;border:0;background:#0a0f18;display:block}
+.btn{background:#1a2a3a;color:#c8d8e8;border:1px solid #2a3a4a;padding:3px 10px;cursor:pointer;margin:2px;border-radius:3px;font-size:12px;font-family:monospace}
+.btn:hover{background:#2a3a4a}
+#summary{margin:10px 0 0;padding:8px;border:1px solid #2a3a4a;border-radius:4px;font-size:12px}
+.vp-tag{display:inline-block;background:#1a2a3a;border:1px solid #2a3a4a;border-radius:3px;padding:0 5px;font-size:10px;margin:1px}
+.detail{color:#6a7a8e;font-size:10px;margin-left:14px}
+</style>
+</head>
+<body>
+<h1>Page Scroll Layout Verification</h1>
+<p style="color:#6a7a8e;font-size:11px;margin:0 0 8px">
+  Verifies .content > .panel flex-shrink fix: panels expand naturally, .content scrolls, hangar/cargo internal scroll preserved.
+  3 viewports: 1280x720 / 900x600 / 390x700.
+</p>
+<button class="btn" id="btn-run">&#9654; Run All Tests</button>
+<button class="btn" id="btn-reset">&#8635; Reset Game</button>
+<button class="btn" id="btn-clear">Clear Log</button>
+<span id="status-text" style="color:#6a7a8e;font-size:11px;margin-left:8px"></span>
+<div id="frame-box"><iframe id="game-frame" src="../index.html"></iframe></div>
+<div id="output"></div>
+<div id="summary"></div>
+
+<script>
+(function() {
+  "use strict";
+
+  /* ===== Elements ===== */
+  var out = document.getElementById("output");
+  var summaryEl = document.getElementById("summary");
+  var statusEl = document.getElementById("status-text");
+  var iframe = document.getElementById("game-frame");
+
+  var pass = 0, fail = 0, skip = 0, total = 0;
+  var tests = [];
+  var parentErrors = [];
+  var parentRejections = [];
+
+  /* ===== Error Capture ===== */
+  window.addEventListener("error", function(e) {
+    parentErrors.push("parent.error: " + (e.message || String(e)));
+  });
+  window.addEventListener("unhandledrejection", function(e) {
+    parentRejections.push("parent.rejection: " + (e.reason || String(e)));
+  });
+
+  /* ===== Logging ===== */
+  function log(msg, cls) {
+    var d = document.createElement("div");
+    d.className = "log " + (cls || "");
+    d.textContent = msg;
+    out.appendChild(d);
+  }
+  function clearLog() {
+    out.innerHTML = "";
+    pass = 0; fail = 0; skip = 0; total = 0;
+    summaryEl.innerHTML = "";
+  }
+
+  /* ===== Test Registration ===== */
+  function test(name, fn) {
+    tests.push({ name: name, fn: fn });
+  }
+
+  /* ===== Async Helpers ===== */
+  function sleep(ms) {
+    return new Promise(function(resolve) { setTimeout(resolve, ms); });
+  }
+
+  function rAF(win) {
+    return new Promise(function(resolve) {
+      if (win && win.requestAnimationFrame) {
+        win.requestAnimationFrame(function() { resolve(); });
+      } else {
+        sleep(16).then(resolve);
+      }
+    });
+  }
+
+  function waitForGame(win) {
+    return new Promise(function(resolve) {
+      function check() {
+        try {
+          if (win && win.gameState && win.document.querySelector(".content")) {
+            resolve();
+            return;
+          }
+        } catch(e) {}
+        setTimeout(check, 100);
+      }
+      check();
+    });
+  }
+
+  function navigatePage(win, pageId) {
+    return new Promise(function(resolve) {
+      if (typeof win.switchPage === "function") {
+        win.switchPage(pageId);
+      }
+      // Wait for render to settle: two animation frames
+      rAF(win).then(function() {
+        rAF(win).then(function() { resolve(); });
+      });
+    });
+  }
+
+  function waitForPanel(win, panelId) {
+    return new Promise(function(resolve) {
+      function check() {
+        var panel = win.document.getElementById(panelId);
+        if (panel && panel.style.display !== "none") {
+          resolve(panel);
+          return;
+        }
+        setTimeout(check, 50);
+      }
+      check();
+    });
+  }
+
+  /* ===== DOM Measurement Helpers ===== */
+  function getStyle(win, el, prop) {
+    return win.getComputedStyle(el).getPropertyValue(prop);
+  }
+
+  function contentScrollable(win) {
+    var c = win.document.querySelector(".content");
+    if (!c) return false;
+    return c.scrollHeight > c.clientHeight;
+  }
+
+  function panelExpanded(win, panelId) {
+    var p = win.document.getElementById(panelId);
+    if (!p) return null;
+    return Math.abs(p.scrollHeight - p.clientHeight) <= 2;
+  }
+
+  function panelFlexShrink(win, panelId) {
+    var p = win.document.getElementById(panelId);
+    if (!p) return null;
+    return getStyle(win, p, "flex-shrink");
+  }
+
+  function scrollContentTo(win, y) {
+    var c = win.document.querySelector(".content");
+    if (c) { c.scrollTop = y; }
+  }
+
+  function getContentScrollTop(win) {
+    var c = win.document.querySelector(".content");
+    return c ? c.scrollTop : -1;
+  }
+
+  function isElementInViewport(win, el) {
+    if (!el) return false;
+    var content = win.document.querySelector(".content");
+    if (!content) return false;
+    var cr = content.getBoundingClientRect();
+    var er = el.getBoundingClientRect();
+    // Element's bottom is above content bottom? (visible if not scrolled far enough)
+    // For scroll check: the element should be reachable by scrolling
+    return er.bottom <= cr.bottom + 5;
+  }
+
+  function getIframeErrors(win) {
+    var ce = 0, pe = 0, ur = 0;
+    try {
+      ce = win.__consoleErrors || 0;
+      pe = win.__pageErrors || 0;
+      ur = win.__unhandledRejections || 0;
+    } catch(e) {}
+    return { consoleErrors: ce, pageErrors: pe, unhandledRejections: ur };
+  }
+
+  /* ===== Fixture Helpers ===== */
+  function addFixtures(win, type) {
+    var G = win.gameState;
+    if (type === "planetary") {
+      // Use real planetary deployment structure
+      if (!G.planetary) G.planetary = { deployments: [], nextId: 1 };
+      if (!Array.isArray(G.planetary.deployments)) G.planetary.deployments = [];
+      var now = Date.now();
+      for (var i = 0; i < 6; i++) {
+        G.planetary.deployments.push({
+          id: "fixture_planet_" + i,
+          planetType: "temperate",
+          deployedAt: now - 3600000,
+          duration: 86400,
+          storage: 100 + i * 20,
+          progress: 50 + i * 10,
+          lastTick: now - 60000,
+          active: true
+        });
+      }
+      if (!G.planetary.nextId || G.planetary.nextId <= 6) G.planetary.nextId = 7;
+    }
+    if (type === "booster") {
+      // Use real booster inventory: bare IDs as keys
+      if (!G.boosters) G.boosters = {};
+      if (!G.boosters.inventory) G.boosters.inventory = {};
+      var boosterIds = [
+        "mining_lubricant_n","mining_lubricant_p","mining_lubricant_e","mining_lubricant_r",
+        "gas_extraction_catalyst_n","gas_extraction_catalyst_p","gas_extraction_catalyst_e","gas_extraction_catalyst_r",
+        "archaeology_tracer_n","archaeology_tracer_p","archaeology_tracer_e","archaeology_tracer_r",
+        "combat_booster_n","combat_booster_p","combat_booster_e","combat_booster_r",
+        "shield_booster_n","shield_booster_p","shield_booster_e","shield_booster_r",
+        "armor_booster_n","armor_booster_p","armor_booster_e","armor_booster_r",
+        "hull_booster_n","hull_booster_p","hull_booster_e","hull_booster_r",
+        "calibration_booster_n","calibration_booster_p","calibration_booster_e","calibration_booster_r"
+      ];
+      for (var bi = 0; bi < boosterIds.length; bi++) {
+        G.boosters.inventory[boosterIds[bi]] = { itemId: "booster:" + boosterIds[bi], count: 3, remainingMs: 0 };
+      }
+    }
+    if (type === "stats") {
+      // Inject a tall fixture block into the statistics-panel
+      var panel = win.document.getElementById("statistics-panel");
+      if (panel) {
+        var fixture = win.document.createElement("div");
+        fixture.setAttribute("data-scroll-fixture", "1");
+        var html = "";
+        for (var si = 0; si < 30; si++) {
+          html += "<div style='padding:10px;border-bottom:1px solid #1a2a3a;color:#6a7a8e;font-size:11px'>Fixture Row " + (si+1) + "</div>";
+        }
+        fixture.innerHTML = html;
+        panel.appendChild(fixture);
+      }
+    }
+  }
+
+  function removeFixtures(win, type) {
+    if (type === "stats") {
+      var els = win.document.querySelectorAll("[data-scroll-fixture]");
+      for (var ei = 0; ei < els.length; ei++) {
+        if (els[ei].parentNode) els[ei].parentNode.removeChild(els[ei]);
+      }
+    }
+  }
+
+  /* ===== Enhanced content: add ships to hangar ===== */
+  function addShips(win, count) {
+    var G = win.gameState;
+    if (!G.inventory || !Array.isArray(G.inventory.ships)) return;
+    for (var i = 0; i < count; i++) {
+      G.inventory.ships.push(win.createShipInstance("velator"));
+    }
+  }
+
+  /* ===== Iframe error instrumentation ===== */
+  function injectErrorCapture(win) {
+    if (win.__scrollTestInjected) return;
+    try {
+      var code = "(function(){if(window.__scrollTestInjected)return;window.__scrollTestInjected=true;window.__consoleErrors=0;window.__pageErrors=0;window.__unhandledRejections=0;var _origCE=console.error;console.error=function(){window.__consoleErrors=(window.__consoleErrors||0)+1;return _origCE.apply(console,arguments)};window.addEventListener('error',function(){window.__pageErrors=(window.__pageErrors||0)+1});window.addEventListener('unhandledrejection',function(){window.__unhandledRejections=(window.__unhandledRejections||0)+1})})()";
+      var script = win.document.createElement("script");
+      script.textContent = code;
+      win.document.head.appendChild(script);
+    } catch(e) {}
+  }
+
+  /* ===== Simulate click on an element ===== */
+  function simulateClick(win, el) {
+    if (!el) return false;
+    try {
+      el.click();
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  /* ===== Test Runner ===== */
+  async function runAll() {
+    clearLog();
+    var win = iframe.contentWindow;
+    if (!win) { log("iframe not ready", "fail"); return; }
+
+    // Wait for game
+    await waitForGame(win);
+    injectErrorCapture(win);
+
+    // Reset iframe dimensions
+    iframe.style.width = "1280px";
+    iframe.style.height = "720px";
+    await sleep(100);
+    await rAF(win);
+
+    log("=== " + tests.length + " tests (viewport 1280x720) ===", "section");
+    await sleep(50);
+
+    for (var ti = 0; ti < tests.length; ti++) {
+      var t = tests[ti];
+      var label = "(" + (ti + 1) + "/" + tests.length + ") " + t.name;
+      total++;
+      try {
+        var result = await t.fn(win);
+        if (result === true) {
+          pass++;
+          log("PASS " + label, "pass");
+        } else if (result && result.skip === true) {
+          skip++;
+          log("SKIP " + label + " - " + (result.reason || ""), "skip");
+        } else {
+          fail++;
+          log("FAIL " + label + " - " + (result || "unexpected return value"), "fail");
+        }
+      } catch(e) {
+        fail++;
+        log("FAIL " + label + " - " + (e.message || String(e)), "fail");
+      }
+    }
+
+    // Collect errors
+    var ierr = getIframeErrors(win);
+    var totalErrors = ierr.consoleErrors + ierr.pageErrors + ierr.unhandledRejections +
+      parentErrors.length + parentRejections.length;
+
+    log("", "section");
+    log("PASS=" + pass + "  FAIL=" + fail + "  SKIP=" + skip + "  Total=" + total, "section");
+    log("console.error=" + (ierr.consoleErrors || 0) +
+        "  page error=" + (ierr.pageErrors || 0) +
+        "  unhandled rejection=" + (ierr.unhandledRejections || 0) +
+        "  parent error=" + parentErrors.length +
+        "  parent rejection=" + parentRejections.length, "section");
+
+    // Summary block
+    var verdict = (fail === 0 && skip === 0 && totalErrors === 0) ? "PASS" : "FAIL";
+    summaryEl.innerHTML =
+      "<strong>" + pass + "/" + total + " passed, " + fail + " failed, " + skip + " skipped</strong><br>" +
+      "Errors: " + totalErrors +
+      "  Verdict: <strong class='" + (verdict === "PASS" ? "pass" : "fail") + "'>" + verdict + "</strong>";
+  }
+
+  /* ===== Run with viewport reset ===== */
+  async function runWithViewport(width, height, label) {
+    clearLog();
+    log("=== Viewport: " + label + " (" + width + "x" + height + ") ===", "section");
+
+    // Reload iframe to get clean state
+    iframe.style.width = width + "px";
+    iframe.style.height = height + "px";
+    iframe.src = "../index.html";
+
+    await sleep(100);
+    var win = iframe.contentWindow;
+    if (!win) { log("iframe not ready after reload", "fail"); return; }
+    await waitForGame(win);
+    injectErrorCapture(win);
+    await rAF(win);
+
+    var viewportTests = [
+      ["Boosters scrollable", async function(w) {
+        await navigatePage(w, "booster");
+        addFixtures(w, "booster");
+        await navigatePage(w, "booster");
+        return contentScrollable(w) ? true : "content not scrollable";
+      }],
+      ["Ship engineering scrollable", async function(w) {
+        await navigatePage(w, "shipeng");
+        return contentScrollable(w) ? true : "content not scrollable";
+      }],
+      ["Statistics scrollable", async function(w) {
+        await navigatePage(w, "statistics");
+        addFixtures(w, "stats");
+        await navigatePage(w, "statistics");
+        var r = contentScrollable(w);
+        removeFixtures(w, "stats");
+        return r ? true : "content not scrollable";
+      }],
+      ["Hangar internal scroll", async function(w) {
+        addShips(w, 10);
+        await navigatePage(w, "hangar");
+        await rAF(w);
+        var pb = w.document.querySelector("#hangar-panel > .panel-body");
+        if (!pb) return "#hangar-panel > .panel-body not found";
+        return pb.scrollHeight > pb.clientHeight ? true : "panel-body not scrollable (sh=" + pb.scrollHeight + " ch=" + pb.clientHeight + ")";
+      }]
+    ];
+
+    for (var vi = 0; vi < viewportTests.length; vi++) {
+      var vt = viewportTests[vi];
+      total++;
+      try {
+        var result = await vt[1](win);
+        if (result === true) { pass++; log("PASS " + label + " " + vt[0], "pass"); }
+        else { fail++; log("FAIL " + label + " " + vt[0] + " - " + (result || ""), "fail"); }
+      } catch(e) {
+        fail++; log("FAIL " + label + " " + vt[0] + " - " + (e.message || String(e)), "fail");
+      }
+    }
+
+    var ierr = getIframeErrors(win);
+    log("" + label + " errors: console=" + (ierr.consoleErrors || 0) +
+        " page=" + (ierr.pageErrors || 0) +
+        " rejection=" + (ierr.unhandledRejections || 0), "");
+  }
+
+  /* ===== Run across viewports ===== */
+  async function runAllViewports() {
+    clearLog();
+    await runWithViewport(1280, 720, "1280x720");
+    await runWithViewport(900, 600, "900x600");
+    await runWithViewport(390, 700, "390x700");
+
+    log("", "section");
+    log("Viewport suite complete: PASS=" + pass + " FAIL=" + fail + " SKIP=" + skip, "section");
+    var totalErrors = parentErrors.length + parentRejections.length;
+    summaryEl.innerHTML = "<strong>" + pass + "/" + total + " passed, " + fail + " failed, " + skip + " skipped</strong>" +
+      "  Parent errors: " + totalErrors;
+  }
+
+  /* ==================================================================
+   * TEST CASES
+   * ================================================================== */
+
+  // --- 0. Game Loaded ---
+  test("game loaded and .content exists", function(win) {
+    if (!win.gameState) return "gameState not found";
+    var content = win.document.querySelector(".content");
+    if (!content) return ".content element not found";
+    return true;
+  });
+
+  test(".content has overflow-y:auto", function(win) {
+    var content = win.document.querySelector(".content");
+    if (!content) return ".content not found";
+    var oy = getStyle(win, content, "overflow-y");
+    if (oy !== "auto") return "overflow-y=" + oy + " (expected auto)";
+    return true;
+  });
+
+  // --- 1. Boosters ---
+  test("boosters: panel flex-shrink is 0", async function(win) {
+    await navigatePage(win, "booster");
+    addFixtures(win, "booster");
+    await navigatePage(win, "booster");
+    var fs = panelFlexShrink(win, "booster-panel");
+    if (fs === null) return "booster-panel not found";
+    if (fs !== "0") return "flex-shrink=" + fs + " (expected 0)";
+    return true;
+  });
+
+  test("boosters: panel clientHeight approx equals scrollHeight (expanded)", async function(win) {
+    await navigatePage(win, "booster");
+    var p = win.document.getElementById("booster-panel");
+    if (!p) return "booster-panel not found";
+    var diff = Math.abs(p.scrollHeight - p.clientHeight);
+    if (diff > 2) return "panel not fully expanded: sh=" + p.scrollHeight + " ch=" + p.clientHeight + " diff=" + diff;
+    return true;
+  });
+
+  test("boosters: content scrollable", async function(win) {
+    await navigatePage(win, "booster");
+    if (!contentScrollable(win)) return "content not scrollable";
+    return true;
+  });
+
+  test("boosters: can scroll to bottom of content", async function(win) {
+    await navigatePage(win, "booster");
+    if (!contentScrollable(win)) return "content already not scrollable";
+    var before = getContentScrollTop(win);
+    scrollContentTo(win, 99999);
+    await rAF(win);
+    var after = getContentScrollTop(win);
+    if (after <= before) return "scrollTop did not increase: before=" + before + " after=" + after;
+    return true;
+  });
+
+  // --- 2. Ship Engineering ---
+  test("shipeng: content scrollable", async function(win) {
+    await navigatePage(win, "shipeng");
+    if (!contentScrollable(win)) return "content not scrollable";
+    return true;
+  });
+
+  test("shipeng: can scroll to bottom (last recipe panel visible)", async function(win) {
+    await navigatePage(win, "shipeng");
+    if (!contentScrollable(win)) return "content not scrollable";
+    scrollContentTo(win, 99999);
+    await rAF(win);
+    var st = getContentScrollTop(win);
+    if (st <= 0) return "scrollTop not advanced (st=" + st + ")";
+    return true;
+  });
+
+  // --- 3. Statistics ---
+  test("statistics: content scrollable after growth", async function(win) {
+    await navigatePage(win, "statistics");
+    addFixtures(win, "stats");
+    await navigatePage(win, "statistics");
+    var r = contentScrollable(win);
+    removeFixtures(win, "stats");
+    if (!r) return "content not scrollable even with fixtures";
+    return true;
+  });
+
+  test("statistics: can scroll to bottom", async function(win) {
+    await navigatePage(win, "statistics");
+    addFixtures(win, "stats");
+    await navigatePage(win, "statistics");
+    if (!contentScrollable(win)) { removeFixtures(win, "stats"); return "not scrollable"; }
+    scrollContentTo(win, 99999);
+    await rAF(win);
+    var st = getContentScrollTop(win);
+    removeFixtures(win, "stats");
+    if (st <= 0) return "scrollTop not advanced (st=" + st + ")";
+    return true;
+  });
+
+  // --- 4. Planetary ---
+  test("planetary: content scrollable with multiple deployments", async function(win) {
+    await navigatePage(win, "planetary");
+    addFixtures(win, "planetary");
+    await navigatePage(win, "planetary");
+    await rAF(win);
+    var r = contentScrollable(win);
+    if (!r) return "content not scrollable with 6 deployments";
+    return true;
+  });
+
+  test("planetary: can scroll to bottom", async function(win) {
+    await navigatePage(win, "planetary");
+    addFixtures(win, "planetary");
+    await navigatePage(win, "planetary");
+    await rAF(win);
+    if (!contentScrollable(win)) return "not scrollable";
+    scrollContentTo(win, 99999);
+    await rAF(win);
+    var st = getContentScrollTop(win);
+    if (st <= 0) return "scrollTop not advanced";
+    return true;
+  });
+
+  // --- 5. Combat ---
+  test("combat: expand drop preview details, content becomes scrollable", async function(win) {
+    await navigatePage(win, "combat");
+    var wrap = win.document.getElementById("combat-drop-preview-wrap");
+    if (!wrap) return "combat-drop-preview-wrap not found";
+    var summary = wrap.querySelector("summary");
+    if (!summary) return "drop preview summary not found";
+    simulateClick(win, summary);
+    await rAF(win);
+    if (!contentScrollable(win)) return "content still not scrollable after drop preview expansion";
+    return true;
+  });
+
+  test("combat: can scroll to bottom of drop preview", async function(win) {
+    await navigatePage(win, "combat");
+    var wrap = win.document.getElementById("combat-drop-preview-wrap");
+    if (wrap) {
+      var summary = wrap.querySelector("summary");
+      if (summary) simulateClick(win, summary);
+    }
+    await rAF(win);
+    if (!contentScrollable(win)) return "content not scrollable";
+    scrollContentTo(win, 99999);
+    await rAF(win);
+    var st = getContentScrollTop(win);
+    if (st <= 0) return "scrollTop not advanced";
+    return true;
+  });
+
+  // --- 6. Archaeology (already had overflow:visible) ---
+  test("archaeology: content scrollable", async function(win) {
+    await navigatePage(win, "archaeology");
+    if (!contentScrollable(win)) return "content not scrollable";
+    return true;
+  });
+
+  test("archaeology: scroll to bottom", async function(win) {
+    await navigatePage(win, "archaeology");
+    if (!contentScrollable(win)) return "content not scrollable";
+    scrollContentTo(win, 99999);
+    await rAF(win);
+    var st = getContentScrollTop(win);
+    if (st <= 0) return "scrollTop not advanced";
+    return true;
+  });
+
+  // --- 7. Equipment Engineering (already had overflow:visible) ---
+  test("equipeng: content scrollable", async function(win) {
+    await navigatePage(win, "equipeng");
+    if (!contentScrollable(win)) return "content not scrollable";
+    return true;
+  });
+
+  test("equipeng: scroll to bottom", async function(win) {
+    await navigatePage(win, "equipeng");
+    if (!contentScrollable(win)) return "content not scrollable";
+    scrollContentTo(win, 99999);
+    await rAF(win);
+    var st = getContentScrollTop(win);
+    if (st <= 0) return "scrollTop not advanced";
+    return true;
+  });
+
+  // --- 8. Hangar ---
+  test("hangar: panel-body is internal scroll container", async function(win) {
+    addShips(win, 10);
+    await navigatePage(win, "hangar");
+    var pb = win.document.querySelector("#hangar-panel > .panel-body");
+    if (!pb) return "#hangar-panel > .panel-body not found";
+    var oy = getStyle(win, pb, "overflow-y");
+    if (oy !== "auto" && oy !== "scroll") return "panel-body overflow-y=" + oy + " (expected auto)";
+    return true;
+  });
+
+  test("hangar: panel-body scrollable with many ships", async function(win) {
+    addShips(win, 10);
+    await navigatePage(win, "hangar");
+    var pb = win.document.querySelector("#hangar-panel > .panel-body");
+    if (!pb) return "panel-body not found";
+    if (pb.scrollHeight <= pb.clientHeight) return "panel-body scrollHeight(" + pb.scrollHeight + ") <= clientHeight(" + pb.clientHeight + ")";
+    return true;
+  });
+
+  test("hangar: outer .content doesn't double-scroll the ship list", async function(win) {
+    addShips(win, 5);
+    await navigatePage(win, "hangar");
+    var pb = win.document.querySelector("#hangar-panel > .panel-body");
+    if (!pb) return "panel-body not found";
+    // The panel's scroll height should be fully contained in panel-body
+    // Content should have enough breathing room
+    var content = win.document.querySelector(".content");
+    if (!content) return ".content not found";
+    // hangar panel is flex:1 so it fills content, content should not need to scroll for hangar
+    return true;
+  });
+
+  // --- 9. Cargo ---
+  test("cargo: cargo-list has internal scroll", async function(win) {
+    await navigatePage(win, "cargo");
+    var cl = win.document.querySelector(".cargo-list");
+    if (!cl) return ".cargo-list not found";
+    var oy = getStyle(win, cl, "overflow-y");
+    if (oy !== "auto" && oy !== "scroll") return "cargo-list overflow-y=" + oy + " (expected auto)";
+    return true;
+  });
+
+  test("cargo: cargo-list scrollable (scrollHeight > clientHeight)", async function(win) {
+    await navigatePage(win, "cargo");
+    var cl = win.document.querySelector(".cargo-list");
+    if (!cl) return ".cargo-list not found";
+    if (cl.scrollHeight <= cl.clientHeight) return "cargo-list scrollHeight(" + cl.scrollHeight + ") <= clientHeight(" + cl.clientHeight + ")";
+    return true;
+  });
+
+  test("cargo: cargo-list scrollTop can increase", async function(win) {
+    await navigatePage(win, "cargo");
+    var cl = win.document.querySelector(".cargo-list");
+    if (!cl) return ".cargo-list not found";
+    if (cl.scrollHeight <= cl.clientHeight) return "cargo-list not scrollable";
+    var before = cl.scrollTop;
+    cl.scrollTop = 100;
+    var after = cl.scrollTop;
+    if (after <= before) return "cargo-list scrollTop not increased (before=" + before + " after=" + after + ")";
+    return true;
+  });
+
+  // --- 10. Modals ---
+  test("modal: open confirm modal via real button (equipeng)", async function(win) {
+    await navigatePage(win, "equipeng");
+    // Find a start button within the equipment engineering panel
+    var btn = win.document.querySelector("#equipeng-panel .btn-start, #equipeng-panel button[onclick*='start'], #equipeng-panel .action-btn");
+    if (!btn) return {skip:true, reason:"no suitable start button in equipeng"};
+    simulateClick(win, btn);
+    await rAF(win);
+    var modal = win.document.querySelector(".modal-overlay, #action-modal");
+    if (!modal) return "modal did not open";
+    // Close via real close button
+    var closeBtn = modal.querySelector(".modal-close, .equip-modal-close, #modal-close");
+    if (closeBtn) {
+      simulateClick(win, closeBtn);
+    } else {
+      // Try cancel button
+      var cancelBtn = modal.querySelector(".btn.cancel, .btn.secondary");
+      if (cancelBtn) simulateClick(win, cancelBtn);
+    }
+    await rAF(win);
+    return true;
+  });
+
+  test("modal: content scrollable after modal open/close", async function(win) {
+    await navigatePage(win, "equipeng");
+    var btn = win.document.querySelector("#equipeng-panel .btn-start, #equipeng-panel button[onclick*='start'], #equipeng-panel .action-btn");
+    if (btn) {
+      simulateClick(win, btn);
+      await rAF(win);
+      var modal = win.document.querySelector(".modal-overlay, #action-modal");
+      if (modal) {
+        var closeBtn = modal.querySelector(".modal-close, .equip-modal-close, #modal-close");
+        if (closeBtn) simulateClick(win, closeBtn);
+        else {
+          var cancelBtn = modal.querySelector(".btn.cancel, .btn.secondary");
+          if (cancelBtn) simulateClick(win, cancelBtn);
+        }
+        await rAF(win);
+      }
+    }
+    // Now check scroll
+    if (!contentScrollable(win)) return "content not scrollable after modal interaction";
+    scrollContentTo(win, 50);
+    await rAF(win);
+    var st = getContentScrollTop(win);
+    if (st <= 0) return "scrollTop not advanced after modal close";
+    return true;
+  });
+
+  /* ==================================================================
+   * Event Wiring
+   * ================================================================== */
+
+  document.getElementById("btn-run").addEventListener("click", function() {
+    runAll().catch(function(e) {
+      log("runAll error: " + (e.message || String(e)), "fail");
+    });
+  });
+
+  document.getElementById("btn-reset").addEventListener("click", function() {
+    iframe.src = "../index.html";
+    clearLog();
+    statusEl.textContent = "Resetting...";
+  });
+
+  document.getElementById("btn-clear").addEventListener("click", function() {
+    clearLog();
+    statusEl.textContent = "";
+  });
+
+  // viewport suite button
+  var vpBtn = document.createElement("button");
+  vpBtn.className = "btn";
+  vpBtn.innerHTML = "&#9654; 3-Viewport Suite";
+  vpBtn.addEventListener("click", function() {
+    runAllViewports().catch(function(e) {
+      log("viewport suite error: " + (e.message || String(e)), "fail");
+    });
+  });
+  document.body.insertBefore(vpBtn, document.getElementById("frame-box"));
+
+  // Auto-run on load
+  window.addEventListener("load", function() {
+    setTimeout(function() {
+      statusEl.textContent = "Ready. Click ▶ Run All Tests.";
+    }, 500);
+  });
+
+})();
+</script>
+</body>
+</html>

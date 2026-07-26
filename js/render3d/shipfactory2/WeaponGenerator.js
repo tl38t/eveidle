@@ -503,34 +503,34 @@ function addBloodMissiles(group, s, L, ctx) {
 function addAngelWeapons(group, s, L, ctx) {
   const tier = ctx.classTier;
   const { sampleHullSurface, normalAt } = ctx;
-  const count = [2, 3, 4, 5][tier];               // 对齐 ships.js 高槽数
+  // 【classTier 消费点 · 数量】改为读真实挂点数（profile.hull.mounts / spec.highSlots），不再用 [2,3,4,5][tier]。
+  //   原因：旧写法在 tier=4(capital)/5(supercapital) 越界为 undefined → placed+2<=undefined 恒 false → 天使旗舰 0 武器。
+  //   hull.mounts 在护卫~战列恰为 2/3/4/5（与旧固定表逐一致 → 战列及以下数量/外观零变化），capital=6 / supercapital=7。
+  const mounts = ctx.spec && ctx.spec.highSlots != null ? ctx.spec.highSlots : (ctx.profile.hull.mounts || 2);
+  const count = Math.max(2, Math.round(mounts));
+  // 【classTier 消费点 · 尺寸】eye 半径随 tier 连续增长（非定长数组，无越界风险）→ 保留 tier，让旗舰眼球更大更醒目。
   const orbR = 0.14 * s * (1 + 0.30 * tier);   // 球体半径（随舰级涨）
   const orbitOff = orbR * 2.8;                   // 远离船体的轨道半径（放宽）
   const UP = new THREE.Vector3(0, 1, 0);
 
-  // 前/上方向成对（所有舰级均有）
-  const upperDefs = [
-    { z: -0.20 * L, a: 0.62 },
-  ];
-  // 侧舷成对（仅巡洋/战列）
-  const sideDefs = [
-    { z: -0.08 * L, a: 1.45 },
+  // 对称成对定义（按优先级，x 自动镜像成对）。前两对 = 旧 upperDefs/sideDefs，保证战列及以下逐位一致；
+  //   后两对仅在 capital/supercapital 因 count(6/7) 增大时被消费 → 旗舰生成 6/7 颗眼球炮，且严格左右对称。
+  const pairDefs = [
+    { z: -0.20 * L, a: 0.62 },   // 前上（所有舰级）
+    { z: -0.08 * L, a: 1.45 },   // 侧舷（巡洋+；下方 tier>=2 门槛保持不变）
+    { z:  0.06 * L, a: 1.02 },   // 后上（capital+ 扩展）
+    { z: -0.14 * L, a: 2.10 },   // 后下侧（supercapital 扩展）
   ];
   const slots = [];
   let placed = 0;
-  // 始终取前上 1 对
-  if (placed + 2 <= count) {
-    const pd = upperDefs[0];
+  for (let i = 0; i < pairDefs.length && placed + 2 <= count; i++) {
+    // 侧舷及之后的对沿用旧门槛：巡洋及以上（tier>=2）才出现，避免小船凭空多炮（保持战列及以下外观）。
+    if (i >= 1 && tier < 2) break;
+    const pd = pairDefs[i];
     slots.push({ z: pd.z, angle: pd.a }, { z: pd.z, angle: -pd.a });
     placed += 2;
   }
-  // 巡洋及以上追加侧舷 1 对
-  if (tier >= 2 && placed + 2 <= count) {
-    const pd = sideDefs[0];
-    slots.push({ z: pd.z, angle: pd.a }, { z: pd.z, angle: -pd.a });
-    placed += 2;
-  }
-  // 奇数补顶部中线
+  // 奇数补顶部中线（x=0，仍对称）
   if (placed < count) slots.push({ z: -0.22 * L, angle: 0 });
 
   const goldMat = MaterialFactory.getGlow("ribbon", ctx, 2.6);
@@ -587,7 +587,7 @@ function addSanshaWeapons(group, s, L, ctx) {
   const dims = ctx._sanshaDims;
   if (!dims) return;
   const tier = ctx.classTier;
-  const count = [2, 3, 4, 5][tier];
+  const count = [2, 3, 4, 5][Math.min(tier, 3)];   // 钳到 5（sansha 武器只定义到战列 5 炮塔，capital/supercapital 复用最大值）
   const { cageR, verts } = dims;
   const turretSize = cageR * (0.15 + 0.02 * tier);
   const UP = new THREE.Vector3(0, 1, 0);

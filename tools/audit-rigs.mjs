@@ -15,7 +15,8 @@ const html = readFileSync(join(ROOT, "index.html"), "utf8");
 const scripts = [];
 const re = /<script\s+defer\s+src="([^"]+)"/g;
 let m;
-while ((m = re.exec(html))) scripts.push(m[1]);
+// 归一化脚本路径：去掉 ./ 前缀与 ?v= 查询串（否则与 UI_EXCLUDE 比对失败并 readFileSync ENOENT）
+while ((m = re.exec(html))) scripts.push(m[1].replace(/\?.*$/, "").replace(/^\.\//, ""));
 const UI_EXCLUDE = [
   "js/ui/error-boundary.js","js/ui/action-modal.js","js/ui/shell-render.js",
   "js/ui/manufacturing-render.js","js/ui/combat-render.js","js/ui/planetary-render.js",
