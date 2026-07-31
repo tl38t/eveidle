@@ -19,9 +19,16 @@ const GameEventContracts = (() => {
     "manufacturing:completed": { required:["branch", "recipeId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
     "combat:enemyDefeated": { required:["zoneId", "faction", "enemyId", "enemyKind", "isk", "xp"], numbers:["isk", "xp"] },
     "combat:waveCleared": { required:["zoneId", "wave"], numbers:["wave"] },
-    "combat:zoneCleared": { required:["zoneId", "name", "lp", "clearCount"], numbers:["lp", "clearCount"] },
+    // Batch C-11：升级 combat:zoneCleared 契约——wave（通关时波次，required+numbers）、
+    // weaponTypes（本次通关期间实际开火过的武器类型数组，required；数组非数字故不入 numbers）。
+    // Batch C-12：追加 damageTaken（全程累计实际承伤，required+numbers）。
+    "combat:zoneCleared": { required:["zoneId", "name", "lp", "clearCount", "wave", "weaponTypes", "damageTaken"], numbers:["lp", "clearCount", "wave", "damageTaken"] },
     "combat:deathspaceWaveCleared": { required:["deathspaceId", "zoneId", "wave", "lp"], numbers:["wave", "lp"] },
+    // Batch C-12：死亡空间进入事件——严格在 enterDeathspace 成功完成后 emit 一次。
+    "combat:deathspaceEntered": { required:["deathspaceId", "zoneId", "faction", "tier"], numbers:["tier"] },
     "combat:deathspaceCleared": { required:["deathspaceId", "name", "lp", "clearCount"], numbers:["lp", "clearCount"] },
+    // Batch C-12：每次玩家真实齐射结算后 emit 实际伤害（amount 为本次三层合计，runTotal 为单场累计）。
+    "combat:damageDealt": { required:["zoneId", "mode", "amount", "runTotal"], numbers:["amount", "runTotal"] },
     // 维修后自动恢复（Phase 3D 修正）：无论普通星带/死亡空间重创，维修后都返回来源普通星带第 1 波。
     // zoneId=返回星带；defeatedMode(belt|deathspace)/deathspaceId 仅供日志/UI，deathspaceId 可为 null。
     "combat:resumedAfterRepair": { required:["zoneId", "defeatedMode"], numbers:[] },
@@ -78,7 +85,36 @@ const GameEventContracts = (() => {
     "station:maintenanceDepleted": { required:["fuelRemaining"], numbers:["fuelRemaining"] },
     "station:archaeologyBonusTriggered": { required:["siteId", "tier", "artifactId", "baseUniqueRate", "tracerMultiplier", "labMultiplier", "effectiveRate"], numbers:["baseUniqueRate", "tracerMultiplier", "labMultiplier", "effectiveRate"] },
     "station:combatXpBoosted": { required:["skillId", "baseXp", "multiplier", "actualXp"], numbers:["baseXp", "multiplier", "actualXp"] },
-    "station:shipyardMaterialsSaved": { required:["recipeId", "savings"], numbers:[] }
+    "station:shipyardMaterialsSaved": { required:["recipeId", "savings"], numbers:[] },
+    // 研究系统（批次 C）：每完成一个研究步骤严格 emit 一次；payload 契约 {techId, level}
+    "research:stepCompleted": { required:["techId", "level"], numbers:["level"] },
+    // 离线结算（Batch C-9）：applyOfflineGains 在真实 settleOfflineTimeline 成功完成后严格 emit 一次；
+    // rawSeconds = 原始离线秒数（未封顶），settledSeconds = 实际结算秒数（0..86400），均为非负有限 number。
+    // calculateOfflineGains / forceOfflineTest / 直接 applyOfflineGains 共用这一唯一入口；结算异常不发射。
+    "offline:settlementCompleted": { required:["rawSeconds", "settledSeconds"], numbers:["rawSeconds", "settledSeconds"] },
+    // 成就系统（Batch B）：首次解锁严格 emit 一次；payload 只含 {achievementId, unlockedAt}；
+    // meta.timestamp 精确等于 unlockedAt，meta.source = "achievement-system"。
+    // 平台无关，是未来 Steam Adapter 的唯一挂钩点（本批不实现 Adapter）。
+    "achievement:unlocked": { required:["achievementId", "unlockedAt"], numbers:["unlockedAt"] },
+    // 蓝图首次获得（Batch C-10A1）：仅在 ownedBlueprints 首次成功写入后严格 emit 一次；
+    // payload 精确 {ownershipKey, blueprintKind, productId}；ownershipKey 为权威归属键
+    // （舰船 = shipId，装备 = "equipment:" + equipmentId），blueprintKind ∈ {"ship","equipment"}，
+    // productId 为产品标识（舰船 = shipId，装备 = equipmentId）；
+    // meta.timestamp = acquiredAt（合法 number 否则 Date.now()），source = "blueprint-store"，offline = false。
+    "blueprint:acquired": { required:["ownershipKey", "blueprintKind", "productId"], numbers:[] },
+    // Batch C-13：统一资源变动事件（ResourceRegistry.set 真实成功变更后 emit 一次；add/spend 经 set 自然得到一次）
+    "resource:changed": { required:["resourceId", "previousValue", "value", "delta"], numbers:["previousValue", "value", "delta"] },
+    // Batch C-13：未安装装备/库存变动（buyLPItem 普通装备购买成功分支 emit；蓝图分支不发）
+    "inventory:changed": { required:["kind", "itemId", "delta"], numbers:["delta"] },
+    // Batch C-14A：在线会话时间片。唯一入口为 tick.js 的模块运行期私有锚点（不写入存档）：
+    // 首个 gameTick 只建锚点不发射；此后每 tick 发射一次真实经过秒数（保留小数）。
+    // payload 严格 {seconds}；meta.timestamp 为绝对时刻，source="online-session"，offline=false。
+    // 页面重新加载会重建锚点，因此关闭游戏期间的时间绝不会被计入。
+    "session:onlineElapsed": { required:["seconds"], numbers:["seconds"] },
+    // Batch C-14A：动作队列真实新增一项（ShellStateActions.queueAdd 在数组写入完成后 emit 一次）。
+    // 相同项目合并 count（items.length 未增长）/ 队列已满 / 蓝图未解锁等失败路径一律不发。
+    // size 为写入后的真实 queue.items.length，maxSize 为队列容量上限。
+    "queue:itemAdded": { required:["itemId", "size", "maxSize"], numbers:["size", "maxSize"] }
   });
 
   function cloneValue(value) {

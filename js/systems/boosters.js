@@ -238,7 +238,7 @@ function tickBoosterTimers(state, now) {
   if (running === "mining") {
     var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;
     var canMine = area && (typeof canMineArea === "function") && canMineArea(area);
-    runMining = canMine && !((typeof isCargoFull === "function") && isCargoFull());
+    runMining = canMine;
   } else if (running === "archaeology") {
     var arch = state.archaeology;
     if (arch) {
@@ -371,7 +371,7 @@ function getBoosterSlotStatus(state, slot, item, remainingMs, now) {
   if (running === "mining") {
     var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;
     var canMine = area && (typeof canMineArea === "function") && canMineArea(area);
-    if (!canMine || ((typeof isCargoFull === "function") && isCargoFull())) return "paused";
+    if (!canMine) return "paused";
   } else if (running === "archaeology") {
     var arch = state.archaeology;
     if (arch && ((arch.repairUntil && arch.repairUntil > now) || (arch.interferenceUntil && arch.interferenceUntil > now))) return "paused";

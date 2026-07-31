@@ -4,10 +4,12 @@
 // 真实脚本 VM 沙箱加载全部游戏逻辑，不伪造状态、不绕过真实迁移函数。
 // ================================================================
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
-const ROOT = "c:/Users/10195/Documents/EVE IDLE/EVEIDLE-WORKBUDDY";
+// 动态解析项目根目录（与其他审计脚本一致），不写死盘符或用户名
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const html = readFileSync(join(ROOT, "index.html"), "utf8");
 const scripts = [];
 const re = /<script\s+defer\s+src="([^"]+)"/g;

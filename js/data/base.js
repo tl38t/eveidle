@@ -24,7 +24,6 @@ const INITIAL_SKILLS = {
   rigEngineering:          { lvl: 1, xp: 0 },
   boosterEngineering:      { lvl: 1, xp: 0 }, // 增强剂系统 Phase 2A：增强剂制造独立技能，默认 Lv.1
   reverseEngineering:      { lvl: 1, xp: 0 },
-  cargoManagement:         { lvl: 1, xp: 0 },
   // 战斗攻击技能（三系独立）
   laserOps:                { lvl: 1, xp: 0 },
   cannonOps:               { lvl: 1, xp: 0 },

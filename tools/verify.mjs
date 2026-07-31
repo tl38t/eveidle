@@ -12,7 +12,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 42) throw new Error(`预期 42 个脚本，实际 ${scriptSources.length}`); // 42 = 41 + js/ui/station-render.js（Phase 3C-8 空间站 UI）
+if (scriptSources.length !== 49) throw new Error(`预期 49 个脚本，实际 ${scriptSources.length}`); // 49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js）
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -22,6 +22,61 @@ if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${st
   if (prodIdx < 0) throw new Error("未找到 production.js 脚本引用");
   if (enhIdx < 0) throw new Error("未找到 equipment-enhancement.js 脚本引用");
   if (prodIdx >= enhIdx) throw new Error(`脚本顺序错误：production.js (idx=${prodIdx}) 必须早于 equipment-enhancement.js (idx=${enhIdx})`);
+}
+
+// 断言：研究系统批次 B 脚本依赖顺序（缺失或顺序错误必须抛错 EXIT 1）
+// data/research.js → core/research-state.js → core/state.js → systems/research.js → persistence.js / tick.js / offline.js
+{
+  const idxOf = (suffix) => scriptSources.findIndex(s => s.endsWith(suffix));
+  const researchData = idxOf("js/data/research.js");
+  const researchState = idxOf("js/core/research-state.js");
+  const coreState = idxOf("js/core/state.js");
+  const researchSystem = idxOf("js/systems/research.js");
+  const persistence = idxOf("js/core/persistence.js");
+  const tick = idxOf("js/core/tick.js");
+  const offline = idxOf("js/core/offline.js");
+  const required = { "js/data/research.js": researchData, "js/core/research-state.js": researchState, "js/core/state.js": coreState, "js/systems/research.js": researchSystem, "js/core/persistence.js": persistence, "js/core/tick.js": tick, "js/core/offline.js": offline };
+  for (const [name, idx] of Object.entries(required)) {
+    if (idx < 0) throw new Error(`未找到脚本引用：${name}`);
+  }
+  if (researchData >= researchState) throw new Error(`脚本顺序错误：js/data/research.js (idx=${researchData}) 必须早于 js/core/research-state.js (idx=${researchState})`);
+  if (researchState >= coreState) throw new Error(`脚本顺序错误：js/core/research-state.js (idx=${researchState}) 必须早于 js/core/state.js (idx=${coreState})`);
+  if (coreState >= researchSystem) throw new Error(`脚本顺序错误：js/core/state.js (idx=${coreState}) 必须早于 js/systems/research.js (idx=${researchSystem})`);
+  if (researchSystem >= persistence) throw new Error(`脚本顺序错误：js/systems/research.js (idx=${researchSystem}) 必须早于 js/core/persistence.js (idx=${persistence})`);
+  if (researchSystem >= tick) throw new Error(`脚本顺序错误：js/systems/research.js (idx=${researchSystem}) 必须早于 js/core/tick.js (idx=${tick})`);
+  if (researchSystem >= offline) throw new Error(`脚本顺序错误：js/systems/research.js (idx=${researchSystem}) 必须早于 js/core/offline.js (idx=${offline})`);
+}
+
+// 断言：成就系统 Batch B + C-1 + C-2 脚本依赖顺序（真实索引断言，缺失或顺序错误必须抛错 EXIT 1）
+// events.js < data/achievements.js < data/achievement-rules.js < core/achievement-state.js
+//   < core/state.js < core/statistics.js < systems/achievements.js < systems/production.js < persistence.js
+// C-2 关键：statistics.js 必须先于 systems/achievements.js 注册通配符消费者，
+// 生产成就消费者才能在 GameStatistics 累计之后读到更新后的统计。
+{
+  const idxOf = (suffix) => scriptSources.findIndex(s => s.endsWith(suffix));
+  const eventsIdx = idxOf("js/core/events.js");
+  const achData = idxOf("js/data/achievements.js");
+  const achRules = idxOf("js/data/achievement-rules.js");
+  const achState = idxOf("js/core/achievement-state.js");
+  const coreState = idxOf("js/core/state.js");
+  const statistics = idxOf("js/core/statistics.js");
+  const achSystem = idxOf("js/systems/achievements.js");
+  const production = idxOf("js/systems/production.js");
+  const persistence = idxOf("js/core/persistence.js");
+  const required = { "js/core/events.js": eventsIdx, "js/data/achievements.js": achData, "js/data/achievement-rules.js": achRules, "js/core/achievement-state.js": achState, "js/core/state.js": coreState, "js/core/statistics.js": statistics, "js/systems/achievements.js": achSystem, "js/systems/production.js": production, "js/core/persistence.js": persistence };
+  for (const [name, idx] of Object.entries(required)) {
+    if (idx < 0) throw new Error(`未找到脚本引用：${name}`);
+  }
+  if (eventsIdx >= achData) throw new Error(`脚本顺序错误：js/core/events.js (idx=${eventsIdx}) 必须早于 js/data/achievements.js (idx=${achData})`);
+  if (achData >= achRules) throw new Error(`脚本顺序错误：js/data/achievements.js (idx=${achData}) 必须早于 js/data/achievement-rules.js (idx=${achRules})`);
+  if (achRules >= achState) throw new Error(`脚本顺序错误：js/data/achievement-rules.js (idx=${achRules}) 必须早于 js/core/achievement-state.js (idx=${achState})`);
+  if (achState >= coreState) throw new Error(`脚本顺序错误：js/core/achievement-state.js (idx=${achState}) 必须早于 js/core/state.js (idx=${coreState})`);
+  if (coreState >= statistics) throw new Error(`脚本顺序错误：js/core/state.js (idx=${coreState}) 必须早于 js/core/statistics.js (idx=${statistics})`);
+  if (statistics >= achSystem) throw new Error(`脚本顺序错误：js/core/statistics.js (idx=${statistics}) 必须早于 js/systems/achievements.js (idx=${achSystem})`);
+  if (coreState >= achSystem) throw new Error(`脚本顺序错误：js/core/state.js (idx=${coreState}) 必须早于 js/systems/achievements.js (idx=${achSystem})`);
+  if (achSystem >= production) throw new Error(`脚本顺序错误：js/systems/achievements.js (idx=${achSystem}) 必须早于 js/systems/production.js (idx=${production})`);
+  if (achSystem >= persistence) throw new Error(`脚本顺序错误：js/systems/achievements.js (idx=${achSystem}) 必须早于 js/core/persistence.js (idx=${persistence})`);
+  if (production >= persistence) throw new Error(`脚本顺序错误：js/systems/production.js (idx=${production}) 必须早于 js/core/persistence.js (idx=${persistence})`);
 }
 
 for (const source of localSources) {
@@ -64,6 +119,11 @@ const optionalIds = new Set([
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
+
+// DOM ID 基线：285 = 277 + 成就系统 Batch D 成就页 8 个 ID
+// （achievements-panel / -summary-count / -summary-percent / -progress-fill /
+//   -tier-counts / -category-tabs / -status-tabs / -grid）
+if (htmlIds.size !== 285) throw new Error(`预期 285 个 DOM ID，实际 ${htmlIds.size}`);
 
 // bar-archaeology 是动态创建 ID，verify 必须在源码中确认它被创建且有 null 守卫
 const barArchSourceCheck = scripts.some(src => src.includes('id="bar-archaeology"'));
@@ -216,10 +276,23 @@ if (invalidContractEvent.valid || !invalidContractEvent.registered || invalidCon
 }
 const emittedEventTypes = new Set(scripts.flatMap(source => [
   ...[...source.matchAll(/GameEvents\.emit\(["']([^"']+)["']/g)].map(match => match[1]),
+  // 局部别名发布点（如 research.js / achievements.js 的 `const GE = ...GameEvents; GE.emit(...)`）
+  ...[...source.matchAll(/\bGE\.emit\(\s*["']([^"']+)["']/g)].map(match => match[1]),
   ...[...source.matchAll(/emitOfflineGameEvent\(["']([^"']+)["']/g)].map(match => match[1])
 ]));
 for (const type of emittedEventTypes) {
   if (!sandbox.GameEvents.contracts.has(type)) throw new Error(`事件发布点缺少契约：${type}`);
+}
+// 成就系统 Batch B：achievement:unlocked 必须被发布点扫描识别、契约已注册、且契约行为正确
+if (!emittedEventTypes.has("achievement:unlocked")) throw new Error("未识别 achievement:unlocked 事件发布点（js/systems/achievements.js）");
+if (!sandbox.GameEvents.contracts.has("achievement:unlocked")) throw new Error("achievement:unlocked 契约未注册");
+{
+  const okCheck = sandbox.GameEvents.contracts.validate("achievement:unlocked", { achievementId:"A01", unlockedAt:1700000000000 });
+  if (!okCheck.valid || !okCheck.registered) throw new Error("achievement:unlocked 合法 payload 未通过契约校验");
+  const missCheck = sandbox.GameEvents.contracts.validate("achievement:unlocked", { achievementId:"A01" });
+  if (missCheck.valid) throw new Error("achievement:unlocked 缺少 unlockedAt 却通过契约校验");
+  const nanCheck = sandbox.GameEvents.contracts.validate("achievement:unlocked", { achievementId:"A01", unlockedAt:"not-a-number" });
+  if (nanCheck.valid) throw new Error("achievement:unlocked 非数字 unlockedAt 却通过契约校验");
 }
 let wrappedOfflineEvent = null;
 const unsubscribeWrappedOffline = sandbox.GameEvents.on("gas:completed", event => { wrappedOfflineEvent = event; });
@@ -380,9 +453,10 @@ if (miningDisplay.current.ore !== "镓" || miningDisplay.running.ore !== "凡晶
 }
 miningDisplay.current.ore = "被外部修改";
 if (vm.runInContext('MOON_MINING_AREAS[0].ore', sandbox) !== "镓") throw new Error("View State向调用方暴露了可修改的静态配置引用");
-if (globalDisplay.cargo.used !== sandbox.getCargoUsedFromState(selectorState) || globalDisplay.cargo.capacity !== 10000000 || globalDisplay.quickOres.length > 4) {
-  throw new Error("全局资源View State没有正确汇总仓库或快捷矿石");
+if (typeof globalDisplay.inventory.total !== "number" || globalDisplay.inventory.total < 0 || globalDisplay.quickOres.length > 4) {
+  throw new Error("全局资源View State没有正确汇总仓库总量或快捷矿石");
 }
+if ("cargo" in globalDisplay) throw new Error("全局View State不应包含 cargo 字段");
 
 const actionState = JSON.parse(JSON.stringify(sandbox.gameState));
 actionState.skills.mining.lvl = 1;
@@ -630,16 +704,19 @@ if (!deployPlanetAction.changed || deployedPlanet.id !== "planet_1" || deployedP
   throw new Error("行星建设动作没有正确扣费、创建 planetType 部署或发布 planetary:deployed 事件");
 }
 deployedPlanet.storage = 5;
-const cargoUsedBeforePlanetCollect = sandbox.getCargoUsedFromState(planetaryActionState);
-const collectPlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/collect", id:deployedPlanet.id, cargoCapacity:cargoUsedBeforePlanetCollect + 3 }, selectorNow);
-if (!collectPlanetAction.changed || collectPlanetAction.quantity !== 3 || deployedPlanet.storage !== 2) {
-  throw new Error("行星收取动作数量或库存异常");
+const collectPlanetAction = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/collect", id:deployedPlanet.id }, selectorNow);
+if (!collectPlanetAction.changed || collectPlanetAction.quantity !== 5 || deployedPlanet.storage !== 0) {
+  throw new Error("行星收取动作数量或库存异常（应全量收取）");
 }
+// 重新加回库存以测试非空禁止拆除
+deployedPlanet.storage = 1;
 // 非空库存禁止拆除
 const demolishStoredPlanet = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/demolish", id:deployedPlanet.id }, selectorNow);
 if (demolishStoredPlanet.changed || demolishStoredPlanet.reason !== "storage-not-empty" || planetaryActionState.planetary.deployments.length !== 1) {
   throw new Error("非空库存行星被错误拆除");
 }
+// 还原库存供后续续期测试
+deployedPlanet.storage = 2;
 // 运行中重复续期返回 already-active，且不扣费
 const iskBeforeAlreadyActive = planetaryActionState.resources.isk;
 const renewRunning = sandbox.dispatchGameAction(planetaryActionState, { type:"planetary/renew", id:deployedPlanet.id }, selectorNow + 1000);
@@ -776,8 +853,8 @@ shellViewState.statistics.totals.highestEnhancementLevel = 5;
 shellViewState.statistics.production.manufactured.integrated_hull = 2;
 shellViewState.statistics.combat.zoneClears.angel_outpost = 1;
 const shellViewBefore = JSON.stringify(shellViewState);
-const cargoDisplay = sandbox.getCargoDisplayState(shellViewState, "mineral", 10000000);
-const equipmentCargoDisplay = sandbox.getCargoDisplayState(shellViewState, "equipment", 10000000);
+const cargoDisplay = sandbox.getCargoDisplayState(shellViewState, "mineral");
+const equipmentCargoDisplay = sandbox.getCargoDisplayState(shellViewState, "equipment");
 const lpDisplay = sandbox.getLPStoreDisplayState(shellViewState);
 const hangarDisplay = sandbox.getHangarDisplayState(shellViewState, selectorNow);
 const fittingDisplay = sandbox.getShipFittingDisplayState(shellViewState, shellViewState.inventory.ships[0].instanceId);
@@ -809,6 +886,21 @@ if (cargoDisplay.filter !== "mineral" || cargoDisplay.items.find(item => item.na
     combatSidebarDisplay?.level !== 26 || combatSidebarDisplay.xp !== null ||
     !combatSidebarDisplay.tooltip.includes("⌊(31 + 21) ÷ 2⌋ = Lv.26")) {
   throw new Error("仓库、LP商店、船坞、装配、队列或导航View State异常");
+}
+
+// ---- station-panel 导航互斥断言（独立面板不允许出现在通用技能面板中）----
+const stationNav = sandbox.getNavigationDisplayState("station", "");
+if (stationNav.standalonePanel !== "station-panel") throw new Error("station 导航 standalonePanel 应为 station-panel，实际为 " + stationNav.standalonePanel);
+if (stationNav.showGenericSkill !== false) throw new Error("station 导航 showGenericSkill 应为 false，实际为 " + stationNav.showGenericSkill);
+const shellSource = sandbox.scriptSources && sandbox.scriptSources[sandbox.scriptSources.indexOf("./js/ui/shell-render.js")];
+if (shellSource) {
+  if (!shellSource.includes('"station-panel"')) throw new Error("getManagedPanels 的 ids 中缺少 station-panel");
+  if (!shellSource.includes(':not(#station-panel)')) throw new Error("getGenericSkillPanels 选择器中缺少 :not(#station-panel)");
+}
+// 检查各独立页面导航均不指向 station-panel
+for (const page of ["equipmentEngineering", "boosterEngineering", "archaeology", "combat", "cargo", "hangar", "statistics"]) {
+  const nav = sandbox.getNavigationDisplayState(page, "");
+  if (nav.standalonePanel === "station-panel") throw new Error(page + " 导航误指向 station-panel");
 }
 
 const shellActionState = JSON.parse(JSON.stringify(shellViewState));
@@ -2290,14 +2382,226 @@ if (saveFixturePath) {
       !Array.isArray(importedResources) || importedResources.length === 0) {
     throw new Error(`真实存档迁移后缺少舰船或无法通过ResourceRegistry读取资源：ships=${sandbox.gameState.inventory.ships?.length}, resources=${importedResources?.length}`);
   }
-  if (!sandbox.gameState.statistics || sandbox.gameState.statistics.version !== 1 ||
+  if (!sandbox.gameState.statistics || sandbox.gameState.statistics.version !== 7 ||
       !Array.isArray(sandbox.gameState.statistics.eventLedger?.processedEventIds)) {
-    throw new Error("真实旧存档没有迁移到统计事件消费者所需的兼容结构");
+    throw new Error("真实旧存档没有迁移到统计事件消费者所需的兼容结构（version 应为 9）");
+  }
+  // Batch C-14A：真实旧存档迁移后必须补齐 lifecycle 五字段（有限非负；秒量纲允许小数）
+  {
+    const _lcOld = sandbox.gameState.statistics.lifecycle;
+    if (!_lcOld || typeof _lcOld !== "object" || Array.isArray(_lcOld)) {
+      throw new Error("真实旧存档迁移后 statistics.lifecycle 缺失或不是普通对象");
+    }
+    for (const _k of ["onlineSeconds", "offlineSettlements", "offlineSettledSeconds", "maxQueueItems", "combatRepairResumes"]) {
+      const _v = _lcOld[_k];
+      if (typeof _v !== "number" || !Number.isFinite(_v) || _v < 0) {
+        throw new Error("真实旧存档迁移后 statistics.lifecycle." + _k + " 缺失或非有限非负");
+      }
+    }
+    if (!Number.isInteger(_lcOld.offlineSettlements) || !Number.isInteger(_lcOld.maxQueueItems) || !Number.isInteger(_lcOld.combatRepairResumes)) {
+      throw new Error("真实旧存档迁移后 statistics.lifecycle 的三个计数字段必须为非负整数");
+    }
+  }
+  if (!Number.isFinite(Number(sandbox.gameState.statistics.totals?.equipmentEnhancementAttempts)) ||
+      Number(sandbox.gameState.statistics.totals?.equipmentEnhancementAttempts) < 0) {
+    throw new Error("真实旧存档迁移后 statistics.totals.equipmentEnhancementAttempts 缺失或非有限非负");
+  }
+  if (!Number.isFinite(Number(sandbox.gameState.statistics.totals?.boostersManufactured)) ||
+      Number(sandbox.gameState.statistics.totals?.boostersManufactured) < 0) {
+    throw new Error("真实旧存档迁移后 statistics.totals.boostersManufactured 缺失或非有限非负");
+  }
+  if (!sandbox.gameState.statistics.production?.boosters ||
+      typeof sandbox.gameState.statistics.production.boosters !== "object" ||
+      Array.isArray(sandbox.gameState.statistics.production.boosters)) {
+    throw new Error("真实旧存档迁移后 statistics.production.boosters 缺失或不是普通对象");
+  }
+  // 成就系统 Batch C-7：真实旧存档迁移到 v4 后必须补齐考古 totals 与 archaeology map
+  for (const archTotalKey of ["archaeologyAttempts", "artifactsSold", "archaeologyLpEarned", "archaeologyRareFinds"]) {
+    const archTotalValue = Number(sandbox.gameState.statistics.totals?.[archTotalKey]);
+    if (!Number.isFinite(archTotalValue) || archTotalValue < 0) {
+      throw new Error(`真实旧存档迁移后 statistics.totals.${archTotalKey} 缺失或非有限非负`);
+    }
+  }
+  {
+    const archMap = sandbox.gameState.statistics.archaeology;
+    if (!archMap || typeof archMap !== "object" || Array.isArray(archMap) ||
+        !archMap.sites || typeof archMap.sites !== "object" || Array.isArray(archMap.sites) ||
+        !archMap.tiers || typeof archMap.tiers !== "object" || Array.isArray(archMap.tiers)) {
+      throw new Error("真实旧存档迁移后 statistics.archaeology 缺失或 sites/tiers 不是普通对象");
+    }
+  }
+  // 成就系统 Batch C-8：真实旧存档迁移到 v5 后必须补齐 planetary 子结构与 planetaryUnits
+  {
+    const planStat = sandbox.gameState.statistics.planetary;
+    if (!planStat || typeof planStat !== "object" || Array.isArray(planStat) ||
+        !planStat.deployedTypes || typeof planStat.deployedTypes !== "object" || Array.isArray(planStat.deployedTypes)) {
+      throw new Error("真实旧存档迁移后 statistics.planetary 缺失或 deployedTypes 不是普通对象");
+    }
+    const planMc = Number(planStat.maxConcurrentDeployments);
+    if (!Number.isFinite(planMc) || planMc < 0 || Math.floor(planMc) !== planMc) {
+      throw new Error("真实旧存档迁移后 statistics.planetary.maxConcurrentDeployments 非有限非负整数");
+    }
+    const planUnits = Number(sandbox.gameState.statistics.totals?.planetaryUnits);
+    if (!Number.isFinite(planUnits) || planUnits < 0) {
+      throw new Error("真实旧存档迁移后 statistics.totals.planetaryUnits 缺失或非有限非负");
+    }
+  }
+  // 成就系统 Batch C-9：真实旧存档迁移到 v6 后必须补齐 station 子结构三字段（均为有限非负整数）
+  {
+    const stationStat = sandbox.gameState.statistics.station;
+    if (!stationStat || typeof stationStat !== "object" || Array.isArray(stationStat)) {
+      throw new Error("真实旧存档迁移后 statistics.station 缺失或不是普通对象");
+    }
+    for (const stationKey of ["constructionCompletions", "maxConcurrentAutoLines", "maxOfflineSettlementSeconds"]) {
+      const stationValue = Number(stationStat[stationKey]);
+      if (!Number.isFinite(stationValue) || stationValue < 0 || Math.floor(stationValue) !== stationValue) {
+        throw new Error(`真实旧存档迁移后 statistics.station.${stationKey} 非有限非负整数`);
+      }
+    }
+  }
+  // 成就系统 Batch C-11/C-12：真实旧存档迁移到 v7/v8 后必须补齐战斗进阶字段
+  // （maxWaveReached / capital / supercapital / deathspaceEntries / flawlessZoneClears / maxSingleBattleDamage 有限非负；
+  //  zoneClearsByWeapon 三键有限非负；factionBossKills 三键有限非负整数）
+  {
+    const cStat = sandbox.gameState.statistics.combat;
+    if (!cStat || typeof cStat !== "object" || Array.isArray(cStat)) {
+      throw new Error("真实旧存档迁移后 statistics.combat 缺失或不是普通对象");
+    }
+    if (!Number.isFinite(Number(cStat.maxWaveReached)) || Number(cStat.maxWaveReached) < 0) {
+      throw new Error("真实旧存档迁移后 statistics.combat.maxWaveReached 非有限非负");
+    }
+    const zw = cStat.zoneClearsByWeapon;
+    if (!zw || typeof zw !== "object" || Array.isArray(zw) ||
+        !Number.isFinite(Number(zw.laser)) || Number(zw.laser) < 0 ||
+        !Number.isFinite(Number(zw.cannon)) || Number(zw.cannon) < 0 ||
+        !Number.isFinite(Number(zw.missile)) || Number(zw.missile) < 0) {
+      throw new Error("真实旧存档迁移后 statistics.combat.zoneClearsByWeapon 非三键有限非负");
+    }
+    if (!Number.isFinite(Number(cStat.capitalEnemyKills)) || Number(cStat.capitalEnemyKills) < 0 ||
+        !Number.isFinite(Number(cStat.supercapitalEnemyKills)) || Number(cStat.supercapitalEnemyKills) < 0) {
+      throw new Error("真实旧存档迁移后 statistics.combat.capital/supercapitalEnemyKills 非有限非负");
+    }
+    // Batch C-12：v8 字段验证
+    for (const k of ["deathspaceEntries","flawlessZoneClears","maxSingleBattleDamage"]) {
+      if (typeof cStat[k] !== "number" || !Number.isFinite(cStat[k]) || cStat[k] < 0) {
+        throw new Error("真实旧存档迁移后 statistics.combat." + k + " 非有限非负");
+      }
+    }
+    const cfk = cStat.factionBossKills;
+    if (!cfk || typeof cfk !== "object" || Array.isArray(cfk) ||
+        typeof cfk.angel !== "number" || !Number.isFinite(cfk.angel) || cfk.angel < 0 ||
+        typeof cfk.blood !== "number" || !Number.isFinite(cfk.blood) || cfk.blood < 0 ||
+        typeof cfk.sansha !== "number" || !Number.isFinite(cfk.sansha) || cfk.sansha < 0) {
+      throw new Error("真实旧存档迁移后 statistics.combat.factionBossKills 非三键有限非负");
+    }
   }
   if (!sandbox.gameState.settings || sandbox.gameState.settings.confirmShipEnhancement !== true || sandbox.gameState.settings.combatSkillsExpanded !== false) {
     throw new Error("真实旧存档没有补齐默认开启的强化确认或默认折叠的战斗技能设置");
   }
   console.log(`真实存档回归通过：${path.basename(resolvedSavePath)}，${sandbox.gameState.inventory.ships.length} 艘舰船，${importedResources.length} 类已注册资源`);
+}
+
+// 统计量 v9 硬断言（fresh 游戏）：version 应为 9 且 v7/v8 战斗字段、v9 生命周期字段全部有限非负
+if (!sandbox.gameState || !sandbox.gameState.statistics || sandbox.gameState.statistics.version !== 9) {
+  throw new Error("游戏初始 statistics 版本不为 v9");
+}
+const _eea = sandbox.gameState.statistics.totals ? sandbox.gameState.statistics.totals.equipmentEnhancementAttempts : undefined;
+if (!Number.isFinite(Number(_eea)) || Number(_eea) < 0) {
+  throw new Error("游戏初始 statistics.totals.equipmentEnhancementAttempts 缺失或非有限非负");
+}
+const _bm = sandbox.gameState.statistics.totals ? sandbox.gameState.statistics.totals.boostersManufactured : undefined;
+if (!Number.isFinite(Number(_bm)) || Number(_bm) < 0) {
+  throw new Error("游戏初始 statistics.totals.boostersManufactured 缺失或非有限非负");
+}
+if (!sandbox.gameState.statistics.production?.boosters ||
+    typeof sandbox.gameState.statistics.production.boosters !== "object" ||
+    Array.isArray(sandbox.gameState.statistics.production.boosters)) {
+  throw new Error("游戏初始 statistics.production.boosters 缺失或不是普通对象");
+}
+// 成就系统 Batch C-11：fresh 游戏 v7 必须自带战斗进阶字段且均为有限非负。
+// 注意：本脚本在捕获 migrationSnapshot 前已运行若干领域事件测试，
+//   故 maxWaveReached 等可能因先前的 combat:zoneCleared 事件而 >0；
+//   此处只校验 v7 字段存在且有限非负，精确归零由审计 cbE18/cbE19 覆盖。
+{
+  const fcStat = sandbox.gameState.statistics.combat;
+  if (!fcStat || typeof fcStat !== "object" || Array.isArray(fcStat) ||
+      !Number.isFinite(Number(fcStat.maxWaveReached)) || Number(fcStat.maxWaveReached) < 0) {
+    throw new Error("游戏初始 statistics.combat.maxWaveReached 非有限非负");
+  }
+  const fzw = fcStat.zoneClearsByWeapon;
+  if (!fzw || typeof fzw !== "object" || Array.isArray(fzw) ||
+      !Number.isFinite(Number(fzw.laser)) || Number(fzw.laser) < 0 ||
+      !Number.isFinite(Number(fzw.cannon)) || Number(fzw.cannon) < 0 ||
+      !Number.isFinite(Number(fzw.missile)) || Number(fzw.missile) < 0) {
+    throw new Error("游戏初始 statistics.combat.zoneClearsByWeapon 非三键有限非负");
+  }
+  if (!Number.isFinite(Number(fcStat.capitalEnemyKills)) || Number(fcStat.capitalEnemyKills) < 0 ||
+      !Number.isFinite(Number(fcStat.supercapitalEnemyKills)) || Number(fcStat.supercapitalEnemyKills) < 0) {
+    throw new Error("游戏初始 statistics.combat.capital/supercapitalEnemyKills 非有限非负");
+  }
+  // Batch C-12：v8 战斗字段（deathspaceEntries/flawlessZoneClears/maxSingleBattleDamage 有限非负整数）
+  for (const k of ["deathspaceEntries","flawlessZoneClears","maxSingleBattleDamage"]) {
+    if (typeof fcStat[k] !== "number" || !Number.isFinite(fcStat[k]) || fcStat[k] < 0 || Math.floor(fcStat[k]) !== fcStat[k]) {
+      throw new Error("游戏初始 statistics.combat." + k + " 非有限非负整数");
+    }
+  }
+  // Batch C-12：factionBossKills 仅三合法键且均为有限非负整数
+  const fbk = fcStat.factionBossKills;
+  if (!fbk || typeof fbk !== "object" || Array.isArray(fbk) ||
+      Object.keys(fbk).length !== 3 ||
+      !("angel" in fbk) || !("blood" in fbk) || !("sansha" in fbk) ||
+      typeof fbk.angel !== "number" || !Number.isFinite(fbk.angel) || fbk.angel < 0 ||
+      typeof fbk.blood !== "number" || !Number.isFinite(fbk.blood) || fbk.blood < 0 ||
+      typeof fbk.sansha !== "number" || !Number.isFinite(fbk.sansha) || fbk.sansha < 0) {
+    throw new Error("游戏初始 statistics.combat.factionBossKills 非三键有限非负");
+  }
+}
+// 成就系统 Batch C-7：fresh 游戏 v4 必须自带考古 totals（全 0）与 archaeology={sites:{},tiers:{}}
+for (const archTotalKey of ["archaeologyAttempts", "artifactsSold", "archaeologyLpEarned", "archaeologyRareFinds"]) {
+  if (sandbox.gameState.statistics.totals?.[archTotalKey] !== 0) {
+    throw new Error(`游戏初始 statistics.totals.${archTotalKey} 不为 0`);
+  }
+}
+{
+  const freshArch = sandbox.gameState.statistics.archaeology;
+  if (!freshArch || typeof freshArch !== "object" || Array.isArray(freshArch) ||
+      !freshArch.sites || typeof freshArch.sites !== "object" || Array.isArray(freshArch.sites) || Object.keys(freshArch.sites).length !== 0 ||
+      !freshArch.tiers || typeof freshArch.tiers !== "object" || Array.isArray(freshArch.tiers) || Object.keys(freshArch.tiers).length !== 0) {
+    throw new Error("游戏初始 statistics.archaeology 不是 {sites:{},tiers:{}} 空结构");
+  }
+}
+// 成就系统 Batch C-8：v5 必须自带 planetary 子结构（deployedTypes 普通对象、maxConcurrentDeployments 有限非负整数）
+// 注：verify 前文的玩法模拟会经全局事件总线向 sandbox.gameState.statistics 入账（如 planetary:deployed），
+// 故此处校验结构合法而非严格为空——严格空结构由 audit-achievements.mjs 的 VM 隔离分区覆盖。
+{
+  const freshPlan = sandbox.gameState.statistics.planetary;
+  if (!freshPlan || typeof freshPlan !== "object" || Array.isArray(freshPlan) ||
+      !freshPlan.deployedTypes || typeof freshPlan.deployedTypes !== "object" || Array.isArray(freshPlan.deployedTypes)) {
+    throw new Error("游戏 statistics.planetary 缺失或 deployedTypes 不是普通对象");
+  }
+  const freshMc = Number(freshPlan.maxConcurrentDeployments);
+  if (!Number.isFinite(freshMc) || freshMc < 0 || Math.floor(freshMc) !== freshMc) {
+    throw new Error("游戏 statistics.planetary.maxConcurrentDeployments 非有限非负整数");
+  }
+  const freshUnits = Number(sandbox.gameState.statistics.totals?.planetaryUnits);
+  if (!Number.isFinite(freshUnits) || freshUnits < 0) {
+    throw new Error("游戏 statistics.totals.planetaryUnits 缺失或非有限非负");
+  }
+}
+// 成就系统 Batch C-9：v6 必须自带 station 子结构三字段（有限非负整数；
+// verify 前文玩法模拟可能经事件总线入账，故校验结构合法而非严格为 0——
+// 严格边界由 audit-achievements.mjs 的 --station VM 隔离分区覆盖）
+{
+  const freshStation = sandbox.gameState.statistics.station;
+  if (!freshStation || typeof freshStation !== "object" || Array.isArray(freshStation)) {
+    throw new Error("游戏 statistics.station 缺失或不是普通对象");
+  }
+  for (const stationKey of ["constructionCompletions", "maxConcurrentAutoLines", "maxOfflineSettlementSeconds"]) {
+    const stationValue = Number(freshStation[stationKey]);
+    if (!Number.isFinite(stationValue) || stationValue < 0 || Math.floor(stationValue) !== stationValue) {
+      throw new Error(`游戏 statistics.station.${stationKey} 非有限非负整数`);
+    }
+  }
 }
 
 const mime = { ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".png": "image/png" };
@@ -2607,6 +2911,384 @@ console.log("旗舰装备专项校验通过：六件 Lv.80 装备数据/配方/�
   for (const fid of FLAGSHIP_IDS) assertArch(canFit(ED[fid], archShips.illuminator) === false, fid + " 不应可装于启明级");
 
   console.log("考古船第一阶段校验通过：5 舰/解锁等级 1·15·35·55·80/统一解析/不进 STARTER·INDUSTRIAL 数据表、可由战斗解析器正确解析并参战/5 配方 level-time-xp-免蓝图(仅苍鹭)-部件总数 6·10·13·16·28-禁 materialCost/苍鹭 50000 ISK 蓝图·余者无蓝图/工业仍 10 舰/启明级禁装旗舰装备");
+}
+
+// Batch C-12：成就目录恰 197 项且 E28 不存在
+const _achData = sandbox.AchievementData;
+const _allIds = _achData && _achData.ACHIEVEMENTS ? _achData.ACHIEVEMENTS.map(a => a.id) : [];
+if (_allIds.length !== 197) throw new Error("成就目录长度不为 197，实际为 " + _allIds.length);
+if (_allIds.includes("E28")) throw new Error("已删除的 E28 仍存在于成就目录");
+if (!_allIds.includes("E26") || !_allIds.includes("E33")) throw new Error("E26/E33 不存在于成就目录");
+
+// Batch C-14A/C-14B：J01–J06 与 J10–J12 全部已有规则映射；总规则 197、未映射 0
+{
+  const _rd = sandbox.AchievementRuleData;
+  if (!_rd || !Array.isArray(_rd.GENERAL_RULES) || _rd.GENERAL_RULES.length !== 6) {
+    throw new Error("AchievementRuleData.GENERAL_RULES 缺失或不为 6 条");
+  }
+  if (_rd.GENERAL_RULES.map(r => r.achievementId).join(",") !== "J01,J02,J03,J04,J05,J06") {
+    throw new Error("GENERAL_RULES 的 achievementId 顺序不为 J01→J06");
+  }
+  if (!Array.isArray(_rd.META_RULES) || _rd.META_RULES.length !== 3) {
+    throw new Error("AchievementRuleData.META_RULES 缺失或不为 3 条");
+  }
+  if (_rd.META_RULES.map(r => r.achievementId).join(",") !== "J10,J11,J12") {
+    throw new Error("META_RULES 的 achievementId 顺序不为 J10→J12");
+  }
+  if (!Object.isFrozen(_rd.META_RULES) || !Object.isFrozen(_rd.META_RULES_BY_ID) ||
+      !Object.isFrozen(_rd.META_ACHIEVEMENT_IDS) || _rd.META_RULES.some(r => !Object.isFrozen(r))) {
+    throw new Error("META_RULES / META_RULES_BY_ID / META_ACHIEVEMENT_IDS 未冻结");
+  }
+  if (_rd.META_ACHIEVEMENT_IDS.join(",") !== "J10,J11,J12") {
+    throw new Error("META_ACHIEVEMENT_IDS 不为 J10,J11,J12");
+  }
+  if (_rd.META_RULES_BY_ID.J10.minValue !== 50 || _rd.META_RULES_BY_ID.J11.minValue !== 100) {
+    throw new Error("J10/J11 阈值不为 50/100");
+  }
+  if (_rd.META_RULES_BY_ID.J12.type !== "meta-catalog-complete" ||
+      _rd.META_RULES_BY_ID.J12.excludeIds.join(",") !== "J12") {
+    throw new Error("J12 规则必须为 meta-catalog-complete 且仅排除自身");
+  }
+  if (!Array.isArray(_rd.ACHIEVEMENT_RULES) || _rd.ACHIEVEMENT_RULES.length !== 197) {
+    throw new Error("ACHIEVEMENT_RULES 总数不为 197，实际为 " + (_rd.ACHIEVEMENT_RULES ? _rd.ACHIEVEMENT_RULES.length : "缺失"));
+  }
+  for (const _jid of ["J01", "J02", "J03", "J04", "J05", "J06", "J10", "J11", "J12"]) {
+    if (!_rd.ACHIEVEMENT_RULES_BY_ID[_jid]) throw new Error(_jid + " 未映射规则");
+  }
+  const _unmapped = _allIds.filter(id => !_rd.ACHIEVEMENT_RULES_BY_ID[id]);
+  if (_unmapped.length !== 0) {
+    throw new Error("未映射成就应为 0，实际为 " + _unmapped.join(","));
+  }
+}
+
+// Batch C-14A：statistics v9 版本断言
+if (sandbox.gameState.statistics.version !== 9) throw new Error("statistics version 不为 9");
+// v9 生命周期字段有限非负（fresh 游戏；秒量纲允许小数，计数量纲必须为整数）
+{
+  const _lc = sandbox.gameState.statistics.lifecycle;
+  if (!_lc || typeof _lc !== "object" || Array.isArray(_lc)) {
+    throw new Error("statistics.lifecycle 缺失或不是普通对象");
+  }
+  for (const _k of ["onlineSeconds", "offlineSettlements", "offlineSettledSeconds", "maxQueueItems", "combatRepairResumes"]) {
+    const _v = _lc[_k];
+    if (typeof _v !== "number" || !Number.isFinite(_v) || _v < 0) {
+      throw new Error("statistics.lifecycle." + _k + " 无效或非有限非负");
+    }
+  }
+  if (!Number.isInteger(_lc.offlineSettlements) || !Number.isInteger(_lc.maxQueueItems) || !Number.isInteger(_lc.combatRepairResumes)) {
+    throw new Error("statistics.lifecycle 的 offlineSettlements/maxQueueItems/combatRepairResumes 必须为非负整数");
+  }
+}
+// v8 战斗字段有限非负
+const _cb = sandbox.gameState.statistics.combat;
+if (typeof _cb.deathspaceEntries !== "number" || _cb.deathspaceEntries < 0 || !Number.isFinite(_cb.deathspaceEntries) ||
+    typeof _cb.flawlessZoneClears !== "number" || _cb.flawlessZoneClears < 0 || !Number.isFinite(_cb.flawlessZoneClears) ||
+    typeof _cb.maxSingleBattleDamage !== "number" || _cb.maxSingleBattleDamage < 0 || !Number.isFinite(_cb.maxSingleBattleDamage)) {
+  throw new Error("v8 战斗字段 deathspaceEntries/flawlessZoneClears/maxSingleBattleDamage 无效");
+}
+if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
+    typeof _cb.factionBossKills.angel !== "number" || _cb.factionBossKills.angel < 0 || !Number.isFinite(_cb.factionBossKills.angel) ||
+    typeof _cb.factionBossKills.blood !== "number" || _cb.factionBossKills.blood < 0 || !Number.isFinite(_cb.factionBossKills.blood) ||
+    typeof _cb.factionBossKills.sansha !== "number" || _cb.factionBossKills.sansha < 0 || !Number.isFinite(_cb.factionBossKills.sansha)) {
+  throw new Error("factionBossKills 三键(angel/blood/sansha)无效或非有限非负");
+}
+
+// ===== Batch C-14A 第一次定点返修 verify 断言：队列容量迁移 + 维修后真实自动恢复链 =====
+// 仅覆盖「旧档 J05 仍不可达」「J06 实际不可达」两真实缺口已修复；不触碰其它系统、不创建辅助文件。
+{
+  // 捕获 pristine 游戏态，供 import/load 旧档测试构造合法存档（避免 A4 改写 gameState 影响）
+  const pristineGameState = JSON.parse(JSON.stringify(sandbox.gameState));
+
+  // 断言 4（先于队列测试，使用 pristine gameState）：维修后真实自动恢复链可执行且 combat:resumedAfterRepair 恰发 1 次
+  {
+    const beltZone = sandbox.gameState.combat.zone;
+    let resumeCount = 0;
+    const offResume = sandbox.GameEvents.on("combat:resumedAfterRepair", () => { resumeCount += 1; });
+    const T0 = 1700000000000;
+    const beginRes = sandbox.dispatchGameAction(sandbox.gameState, { type: "combat/beginRecovery" }, T0);
+    if (!beginRes || !beginRes.changed || sandbox.gameState.combat.repairUntil !== T0 + 180000 ||
+        sandbox.gameState.currentAction.active !== false || !sandbox.gameState.resumeAfterRepair ||
+        sandbox.gameState.resumeAfterRepair.returnZoneId !== beltZone) {
+      throw new Error("combat/beginRecovery 未正确建立 repairUntil + resumeAfterRepair");
+    }
+    sandbox.updateCombatRecovery(T0 + 180000); // 维修到期：唯一入口真实自动恢复出击
+    if (resumeCount !== 1 || sandbox.gameState.combat.active !== true || sandbox.gameState.currentAction.active !== true ||
+        sandbox.gameState.resumeAfterRepair !== null || sandbox.gameState.combat.repairUntil !== 0) {
+      throw new Error("维修到期后未真实自动恢复出击，或 combat:resumedAfterRepair 事件次数不为 1（实际 " + resumeCount + "）");
+    }
+    sandbox.updateCombatRecovery(T0 + 999999); // 已恢复后重复调用不得再 emit
+    if (resumeCount !== 1) throw new Error("重复 updateCombatRecovery 再次发射了 combat:resumedAfterRepair");
+    if (typeof offResume === "function") offResume();
+  }
+
+  // 断言 1：fresh 队列默认容量 >= 25（normalizeQueueState 为新游戏路径建立默认队列）
+  {
+    const freshState = {};
+    sandbox.normalizeQueueState(freshState);
+    if (!freshState.queue || !freshState.queue.config || typeof freshState.queue.config.maxSize !== "number" ||
+        freshState.queue.config.maxSize < 25) {
+      throw new Error("normalizeQueueState 新建默认队列 config.maxSize 未达 25，实际 " +
+        (freshState.queue && freshState.queue.config && freshState.queue.config.maxSize));
+    }
+  }
+
+  // 断言 2：旧档 maxSize=20 经 load / importData 迁移后均为 25（修复旧档 J05 不可达）
+  {
+    const oldSave = JSON.parse(JSON.stringify(pristineGameState));
+    oldSave.queue.config.maxSize = 20;
+    const oldJson = JSON.stringify(oldSave);
+    sandbox.SaveManager.importData(oldJson); // importData 路径
+    if (sandbox.gameState.queue.config.maxSize !== 25) {
+      throw new Error("旧档 maxSize=20 经 importData 后未迁移为 25，实际 " + sandbox.gameState.queue.config.maxSize);
+    }
+    localStorageMock.getItem = () => oldJson; // load 路径（经 localStorage 适配器）
+    const loaded = sandbox.SaveManager.load();
+    localStorageMock.getItem = () => null;
+    if (!loaded) throw new Error("SaveManager.load 返回 false");
+    if (sandbox.gameState.queue.config.maxSize !== 25) {
+      throw new Error("旧档 maxSize=20 经 load 后未迁移为 25，实际 " + sandbox.gameState.queue.config.maxSize);
+    }
+  }
+
+  // 断言 3：合法 maxSize>25 不被缩小（normalizeQueueState 直接 + importData 路径）
+  {
+    const bigSave = JSON.parse(JSON.stringify(pristineGameState));
+    bigSave.queue.config.maxSize = 100;
+    sandbox.normalizeQueueState(bigSave);
+    if (bigSave.queue.config.maxSize !== 100) {
+      throw new Error("normalizeQueueState 将合法 maxSize=100 错误缩小为 " + bigSave.queue.config.maxSize);
+    }
+    sandbox.SaveManager.importData(JSON.stringify(bigSave));
+    if (sandbox.gameState.queue.config.maxSize !== 100) {
+      throw new Error("合法 maxSize=100 旧档经 importData 后被缩小为 " + sandbox.gameState.queue.config.maxSize);
+    }
+  }
+}
+
+// ===== Batch C-14B：元成就 J10/J11/J12 最小行为断言 =====
+// 覆盖：阈值边界（49/50、99/100）、J12 目录完整性、元成就不自我抬高计数、
+//       旧档追溯补齐且已有时间不覆盖、事件递归不重复 emit / 不栈溢出。
+{
+  const AS = sandbox.AchievementSystem;
+  const META_IDS = ["J10", "J11", "J12"];
+  const NON_META = _allIds.filter(id => META_IDS.indexOf(id) === -1);
+  if (NON_META.length !== 194) throw new Error("非元成就应为 194 项，实际 " + NON_META.length);
+  if (typeof AS.evaluateMetaAchievementRules !== "function" || typeof AS.installMetaAchievementConsumer !== "function") {
+    throw new Error("AchievementSystem 缺少 evaluateMetaAchievementRules / installMetaAchievementConsumer");
+  }
+
+  // 断言 4：元成就自身 / 未知 ID / 非法时间都不得计入 J10 阈值（离线纯求值）
+  {
+    const T = 1800000000000;
+    const st = { achievements: { schemaVersion: 1, unlockedAtById: {} } };
+    const m = st.achievements.unlockedAtById;
+    for (let i = 0; i < 49; i++) m[NON_META[i]] = T;
+    m.J11 = T; m.J12 = T;                  // 元成就自身不得抬高 J10 计数
+    m.ZZ99 = T;                            // 未知 ID（幽灵成就）
+    m[NON_META[100]] = Number.NaN;         // 非法时间
+    m[NON_META[101]] = -1;
+    m[NON_META[102]] = "1800000000000";
+    const r1 = AS.evaluateMetaAchievementRules(st, T);
+    if (!r1.ok || r1.unlockedIds.length !== 0 || typeof m.J10 === "number") {
+      throw new Error("元成就自身/未知 ID/非法时间被错误计入 J10 阈值");
+    }
+    m[NON_META[49]] = T;                   // 补足到真实 50 项非元成就
+    const r2 = AS.evaluateMetaAchievementRules(st, T);
+    if (r2.unlockedIds.join(",") !== "J10" || m.J10 !== T) {
+      throw new Error("真实 50 项非元成就时 J10 未解锁");
+    }
+  }
+
+  // 断言 1/2/3/6：真实解锁事件链在 gameState 上顺序驱动 J10→J11→J12，各恰 emit 一次
+  {
+    const gs = sandbox.gameState;
+    gs.achievements.unlockedAtById = {};   // 受控场景
+    const T0 = 1810000000000;
+    const emitted = [];
+    const reasons = [];
+    const off = sandbox.GameEvents.on("achievement:unlocked", (e) => {
+      emitted.push(e.payload.achievementId);
+      // 递归探针：嵌套派发期间再次求值必须被重入保护拦截（不递归、不重复解锁）
+      reasons.push(AS.evaluateMetaAchievementRules(gs, e.timestamp).reason);
+    });
+
+    for (let i = 0; i < 49; i++) AS.unlockAchievement(gs, NON_META[i], T0 + i);
+    if (AS.isAchievementUnlocked(gs, "J10")) throw new Error("49 项非元成就时 J10 不应解锁");
+    AS.unlockAchievement(gs, NON_META[49], T0 + 49);
+    if (!AS.isAchievementUnlocked(gs, "J10")) throw new Error("第 50 项真实解锁后 J10 未解锁");
+    if (AS.getAchievementUnlockTime(gs, "J10") !== T0 + 49) throw new Error("J10 未采用第 50 次解锁的事件时间戳");
+    if (AS.isAchievementUnlocked(gs, "J11")) throw new Error("50 项时 J11 不应解锁");
+
+    for (let i = 50; i < 99; i++) AS.unlockAchievement(gs, NON_META[i], T0 + i);
+    if (AS.isAchievementUnlocked(gs, "J11")) throw new Error("99 项非元成就时 J11 不应解锁");
+    AS.unlockAchievement(gs, NON_META[99], T0 + 99);
+    if (!AS.isAchievementUnlocked(gs, "J11")) throw new Error("第 100 项真实解锁后 J11 未解锁");
+    if (AS.isAchievementUnlocked(gs, "J12")) throw new Error("100 项时 J12 不应解锁");
+
+    for (let i = 100; i < 193; i++) AS.unlockAchievement(gs, NON_META[i], T0 + i);
+    if (AS.isAchievementUnlocked(gs, "J12")) throw new Error("缺任意一个普通成就时 J12 不应解锁");
+    AS.unlockAchievement(gs, NON_META[193], T0 + 193);
+    if (!AS.isAchievementUnlocked(gs, "J12")) throw new Error("目录除 J12 外全部解锁后 J12 未解锁");
+
+    for (const id of META_IDS) {
+      const n = emitted.filter(x => x === id).length;
+      if (n !== 1) throw new Error(id + " 的 achievement:unlocked 次数应为 1，实际 " + n);
+    }
+    if (reasons.indexOf("REENTRANT") === -1) throw new Error("嵌套派发期间未触发元成就重入保护");
+    const before = emitted.length;
+    const again = AS.evaluateMetaAchievementRules(gs, T0 + 500);
+    if (!again.ok || again.unlockedIds.length !== 0 || emitted.length !== before) {
+      throw new Error("重复求值元成就产生了重复解锁或重复 emit");
+    }
+    if (Object.keys(gs.achievements.unlockedAtById).length !== 197) {
+      throw new Error("最终解锁总数不为 197，实际 " + Object.keys(gs.achievements.unlockedAtById).length);
+    }
+    if (typeof off === "function") off();
+  }
+
+  // 断言 5：旧档追溯（importData 路径）可补 J10/J11/J12，已有解锁时间保持不变
+  {
+    const oldSave = JSON.parse(JSON.stringify(sandbox.gameState));
+    const OLD_J10_AT = 1234567890;
+    oldSave.achievements.unlockedAtById = {};
+    for (const id of NON_META) oldSave.achievements.unlockedAtById[id] = 1700000000000;
+    oldSave.achievements.unlockedAtById.J10 = OLD_J10_AT; // 旧档已有 J10：时间必须原样保持
+    sandbox.SaveManager.importData(JSON.stringify(oldSave));
+    const map = sandbox.gameState.achievements.unlockedAtById;
+    if (map.J10 !== OLD_J10_AT) throw new Error("旧档已有的 J10 解锁时间被覆盖，实际 " + map.J10);
+    if (typeof map.J11 !== "number" || typeof map.J12 !== "number") {
+      throw new Error("旧档追溯未补齐 J11/J12");
+    }
+    if (Object.keys(map).length !== 197) {
+      throw new Error("旧档追溯后解锁总数不为 197，实际 " + Object.keys(map).length);
+    }
+  }
+
+  console.log("Batch C-14B 元成就校验通过：J10 49/50 边界、J11 99/100 边界、J12 目录完整性、元成就不自我计数、旧档追溯保时间、事件重入保护、规则 197/未映射 0");
+}
+
+// ==========================================================================
+// 成就系统 Batch D：成就页面实装（导航 / 面板显隐 / 汇总 / 筛选 / 隐藏遮蔽）
+// 只读视图校验：不触发解锁、不改成就规则与状态，用例结束后恢复原 unlockedAtById。
+// ==========================================================================
+{
+  const AD = sandbox.AchievementData;
+  const TOTAL = AD.ACHIEVEMENTS.length;
+  if (TOTAL !== 197) throw new Error("成就目录不为 197 项，实际 " + TOTAL);
+
+  // 1) 导航入口与 panel DOM 必须存在，且成就入口位于统计档案附近（其后）
+  if (!/<div class="nav-item" data-page="achievements">/.test(html)) {
+    throw new Error('侧边栏缺少 data-page="achievements" 成就入口');
+  }
+  if (html.indexOf('data-page="statistics"') >= html.indexOf('data-page="achievements"')) {
+    throw new Error("成就入口应位于统计档案之后");
+  }
+  const achDomIds = [
+    "achievements-panel", "achievements-summary-count", "achievements-summary-percent",
+    "achievements-progress-fill", "achievements-tier-counts", "achievements-category-tabs",
+    "achievements-status-tabs", "achievements-grid"
+  ];
+  for (const id of achDomIds) if (!htmlIds.has(id)) throw new Error("index.html 缺少成就页 DOM：" + id);
+  if (!/<div class="panel achievements-panel" id="achievements-panel" style="display:none;">/.test(html)) {
+    throw new Error("achievements-panel 未按现有面板体系声明（class .panel + 默认 display:none）");
+  }
+
+  const achEls = {};
+  for (const id of achDomIds) achEls[id] = makeElement();
+  const originalAchGetElementById = sandbox.document.getElementById;
+  sandbox.document.getElementById = (id) => achEls[id] || makeElement();
+  const achievementsUnlockedBefore = sandbox.gameState.achievements.unlockedAtById;
+  sandbox.gameState.achievements.unlockedAtById = {};
+  const countCards = () => (achEls["achievements-grid"].innerHTML.match(/data-ach-id="/g) || []).length;
+
+  try {
+    // 2) 切换到成就页后 panel 必须显示（复用现有导航显隐体系）
+    sandbox.switchPage("achievements");
+    if (achEls["achievements-panel"].style.display !== "") throw new Error("切换到成就页后 achievements-panel 未显示");
+
+    // 3) 卡片按目录原顺序全量渲染 197 张
+    let display = sandbox.renderAchievementsPage("all", "all");
+    if (display.total !== TOTAL || display.cards.length !== TOTAL || countCards() !== TOTAL) {
+      throw new Error("成就卡片总数不为 197，实际 " + display.cards.length + " / DOM " + countCards());
+    }
+    for (let i = 0; i < TOTAL; i += 1) {
+      if (display.cards[i].id !== AD.ACHIEVEMENTS[i].id) throw new Error("成就卡片未按 AchievementData.ACHIEVEMENTS 原目录顺序渲染");
+    }
+    const placeholder = AD.ACHIEVEMENTS.find(a => a.nameStatus === "placeholder" && !a.hidden);
+    if (!achEls["achievements-grid"].innerHTML.includes(placeholder.name)) throw new Error("placeholder 成就名称未原样显示");
+    if (display.unlocked !== 0 || display.percentText !== "0.0%") throw new Error("零解锁时汇总或百分比不正确");
+
+    // 4) 未解锁的隐藏成就必须遮蔽名称与条件
+    const hiddenDef = AD.ACHIEVEMENTS.find(a => a.hidden);
+    if (!hiddenDef) throw new Error("目录中没有 hidden=true 成就，遮蔽用例失效");
+    let hiddenCard = display.cards.find(c => c.id === hiddenDef.id);
+    if (!hiddenCard.masked || hiddenCard.name !== "隐藏成就" || hiddenCard.conditionText !== "达成条件未知") {
+      throw new Error("锁定隐藏成就未被遮蔽");
+    }
+    if (achEls["achievements-grid"].innerHTML.includes(hiddenDef.conditionText)) throw new Error("锁定隐藏成就真实条件泄漏到 DOM");
+
+    // 5) 汇总数量必须与 unlockedAtById 一致（幽灵 ID 不计入）
+    const T = 1751000000000;
+    const map = sandbox.gameState.achievements.unlockedAtById;
+    const unlockedIds = AD.ACHIEVEMENTS.slice(0, 5).map(a => a.id);
+    for (const id of unlockedIds) map[id] = T;
+    map[hiddenDef.id] = T + 1000;
+    const expectedUnlocked = unlockedIds.length + 1;
+    display = sandbox.renderAchievementsPage("all", "all");
+    if (display.unlocked !== expectedUnlocked) throw new Error("汇总已解锁数量与 unlockedAtById 不一致");
+    if (achEls["achievements-summary-count"].textContent !== expectedUnlocked + " / " + TOTAL) throw new Error("汇总文本不为 已解锁/197");
+    if (display.percentText !== ((expectedUnlocked / TOTAL) * 100).toFixed(1) + "%") throw new Error("完成百分比计算错误");
+    if (achEls["achievements-progress-fill"].style.width !== ((expectedUnlocked / TOTAL) * 100).toFixed(2) + "%") throw new Error("完成度进度条宽度未跟随解锁比例");
+    map["ZZ99"] = T;
+    if (sandbox.renderAchievementsPage("all", "all").unlocked !== expectedUnlocked) throw new Error("目录外幽灵成就被计入汇总");
+    delete map["ZZ99"];
+
+    // 6) 铜/银/金/传奇分级汇总
+    display = sandbox.renderAchievementsPage("all", "all");
+    if (display.tiers.map(t => t.label).join(",") !== "铜,银,金,传奇") throw new Error("分级汇总不是 铜/银/金/传奇 四档");
+    const tierTotals = {};
+    for (const a of AD.ACHIEVEMENTS) tierTotals[a.tier] = (tierTotals[a.tier] || 0) + 1;
+    for (const tier of display.tiers) {
+      if (tier.total !== (tierTotals[tier.code] || 0)) throw new Error("分级总数与目录不一致：" + tier.code);
+    }
+    if (display.tiers.reduce((sum, t) => sum + t.unlocked, 0) !== display.unlocked) throw new Error("分级已解锁数量之和与总解锁数不一致");
+
+    // 7) 已解锁 / 未解锁筛选
+    const unlockedView = sandbox.renderAchievementsPage("all", "unlocked");
+    if (unlockedView.cards.length !== expectedUnlocked || unlockedView.cards.some(c => !c.unlocked) || countCards() !== expectedUnlocked) {
+      throw new Error("已解锁筛选结果错误");
+    }
+    const lockedView = sandbox.renderAchievementsPage("all", "locked");
+    if (lockedView.cards.length !== TOTAL - expectedUnlocked || lockedView.cards.some(c => c.unlocked) || countCards() !== TOTAL - expectedUnlocked) {
+      throw new Error("未解锁筛选结果错误");
+    }
+
+    // 8) 分类筛选：全部 + AchievementData.CATEGORIES 真实分类
+    const firstCategory = AD.CATEGORIES[0];
+    const categoryView = sandbox.renderAchievementsPage(firstCategory, "all");
+    const categoryTotal = AD.ACHIEVEMENTS.filter(a => a.category === firstCategory).length;
+    if (categoryView.cards.length !== categoryTotal || categoryView.cards.some(c => c.category !== firstCategory)) {
+      throw new Error("分类筛选结果错误：" + firstCategory);
+    }
+    if (categoryView.categories.length !== AD.CATEGORIES.length + 1 || categoryView.categories[0].id !== "all") {
+      throw new Error("分类筛选项不是 全部 + 全部真实分类");
+    }
+
+    // 9) 隐藏成就解锁后显示真实名称、真实条件与本地化解锁时间
+    display = sandbox.renderAchievementsPage("all", "all");
+    hiddenCard = display.cards.find(c => c.id === hiddenDef.id);
+    if (hiddenCard.masked || hiddenCard.name !== hiddenDef.name || hiddenCard.conditionText !== hiddenDef.conditionText) {
+      throw new Error("解锁后隐藏成就未显示真实名称与条件");
+    }
+    if (!hiddenCard.unlockedAtText || hiddenCard.unlockedAtText !== new Date(T + 1000).toLocaleString("zh-CN", { hour12: false })) {
+      throw new Error("已解锁成就缺少本地化解锁时间");
+    }
+    if (!achEls["achievements-grid"].innerHTML.includes(hiddenDef.conditionText)) throw new Error("解锁后隐藏成就真实条件未渲染到 DOM");
+  } finally {
+    sandbox.gameState.achievements.unlockedAtById = achievementsUnlockedBefore;
+    sandbox.document.getElementById = originalAchGetElementById;
+  }
+  console.log("Batch D 成就页面校验通过：导航/panel 显隐、197 张目录序卡片、汇总与 unlockedAtById 一致、铜银金传奇分级、状态与分类筛选、隐藏成就遮蔽与解锁揭示");
 }
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);

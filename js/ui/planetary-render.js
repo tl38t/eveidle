@@ -72,7 +72,7 @@ function renderPlanetaryCard(card) {
 
 function renderPlanetaryPage(now) {
   const renderTime = Number(now) || Date.now();
-  const display = getPlanetaryDisplayState(gameState, renderTime, getCargoCapacity());
+  const display = getPlanetaryDisplayState(gameState, renderTime);
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("planetary-header-info", `等级 ${display.level} · 槽位 ${display.usedSlots} / ${display.slots}`);
   const logText = document.getElementById("planetary-logistics");
@@ -98,7 +98,7 @@ function renderPlanetaryPage(now) {
 
 function updatePlanetaryLiveUI(now) {
   const renderTime = Number(now) || Date.now();
-  const display = getPlanetaryDisplayState(gameState, renderTime, getCargoCapacity());
+  const display = getPlanetaryDisplayState(gameState, renderTime);
   const grid = document.getElementById("planet-grid");
   if (grid && grid.querySelectorAll(".planet-card").length !== display.deployments.length) return renderPlanetaryPage(renderTime);
   const slotInfo = document.getElementById("planetary-slot-info"); if (slotInfo) slotInfo.textContent = `可用槽位：${display.usedSlots} / ${display.slots}`;
@@ -122,7 +122,7 @@ function updatePlanetaryLiveUI(now) {
 }
 
 function updatePlanetaryAnimationFrame(frameTime, elapsedFrames) {
-  const display = getPlanetaryDisplayState(gameState, Date.now(), getCargoCapacity());
+  const display = getPlanetaryDisplayState(gameState, Date.now());
   for (const card of display.deployments) {
     const currentOffset = planetVisualOffsets.has(card.id) ? planetVisualOffsets.get(card.id) : Math.random();
     const nextOffset = (currentOffset + (_PLANET_SPEEDS[card.type] || 0.0008) * elapsedFrames) % 1;
@@ -134,7 +134,7 @@ function updatePlanetaryAnimationFrame(frameTime, elapsedFrames) {
 }
 
 function planetaryActionMessage(result) {
-  const messages = { "level-locked":"需要行星开发 Lv." + (result.level || 1), "no-slots":"没有空余槽位！", "insufficient-isk":"ISK 不足！", "insufficient-tritanium":"三钛合金不足！", "cargo-full":"主仓库空间不足！", "storage-not-empty":"请先收取行星库存，再拆除该行星。", "already-active":"该行星仍在运行中，无需续期。", "empty":"没有可收取的库存。" };
+  const messages = { "level-locked":"需要行星开发 Lv." + (result.level || 1), "no-slots":"没有空余槽位！", "insufficient-isk":"ISK 不足！", "insufficient-tritanium":"三钛合金不足！", "storage-not-empty":"请先收取行星库存，再拆除该行星。", "already-active":"该行星仍在运行中，无需续期。", "empty":"没有可收取的库存。" };
   return messages[result.reason] || "操作失败";
 }
 
@@ -145,8 +145,7 @@ function deployPlanet(type) {
 }
 
 function collectPlanet(id) {
-  const result = dispatchGameAction(gameState, { type:"planetary/collect", id, cargoCapacity:getCargoCapacity() }, Date.now());
-  if (!result.changed && result.reason === "cargo-full") alert(planetaryActionMessage(result));
+  const result = dispatchGameAction(gameState, { type:"planetary/collect", id }, Date.now());
   if (result.changed) renderPlanetaryPage();
   return result.changed;
 }
@@ -171,7 +170,7 @@ function demolishPlanet(id) {
 function showDeployModal() {
   const overlay = document.getElementById("deploy-modal"); const options = document.getElementById("deploy-options");
   if (!overlay || !options) return;
-  const display = getPlanetaryDisplayState(gameState, Date.now(), getCargoCapacity());
+  const display = getPlanetaryDisplayState(gameState, Date.now());
   options.innerHTML = display.deployOptions.map(option => `<div class="deploy-option${option.unlocked ? "" : " locked"}"><div class="do-info"><span class="do-name">${option.icon} ${option.name}</span><span class="do-detail">产出：${option.output} · 间隔 ${option.interval.toFixed(1)}s · 维护 ISK ${formatCompact(option.maintenanceCostISK)}/24h</span></div><div class="do-cost">${option.unlocked ? `建设 ISK ${formatCompact(option.constructionISK)} · 三钛 ${option.constructionTrit}<br><button class="btn primary" style="margin-top:4px;font-size:11px;" data-type="${option.type}">建设</button>` : `🔒 需 Lv.${option.level}`}</div></div>`).join("");
   overlay.classList.remove("hidden");
 }

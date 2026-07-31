@@ -17,12 +17,12 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "blueprintstore-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#booster-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#blueprintstore-panel)')];
+  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#achievements-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#booster-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#station-panel):not(#blueprintstore-panel)')];
 }
 
 function renderCombatSkillGroup() {
@@ -44,7 +44,10 @@ function renderCurrentNavigation() {
   getGenericSkillPanels().forEach(panel => { panel.style.display = navigation.page === "skill" ? "" : "none"; });
   const skillCurrent = document.querySelector(".skill-current");
   if (skillCurrent) skillCurrent.style.display = navigation.showGenericSkill ? "" : "none";
-  const panelId = navigation.standalonePanel || navigation.specializedSkillPanel;
+  // 成就页不改选择器契约（js/core/selectors.js 的 standalonePages 不动），
+  // 由外壳层补一条独立页映射，其余显隐/高亮完全复用现有导航体系。
+  const shellStandalonePanel = navigation.page === "achievements" ? "achievements-panel" : null;
+  const panelId = navigation.standalonePanel || shellStandalonePanel || navigation.specializedSkillPanel;
   if (panelId) { const panel = document.getElementById(panelId); if (panel) panel.style.display = ""; }
   document.querySelectorAll(".sidebar .nav-item").forEach(item => item.classList.remove("active"));
   const activeSelector = navigation.activeNav.type === "skill" ? `.sidebar .nav-item[data-skill="${navigation.activeNav.value}"]` : `.sidebar .nav-item[data-page="${navigation.activeNav.value}"]`;
@@ -55,12 +58,13 @@ function renderCurrentNavigation() {
   else if (navigation.page === "save") SaveManager._updateStatus("就绪");
   else if (navigation.page === "settings") renderSettingsPage();
   else if (navigation.page === "statistics") renderStatisticsPage();
+  else if (navigation.page === "achievements") renderAchievementsPage();
   else if (navigation.page === "planetary") renderPlanetaryPage();
   else if (navigation.page === "archaeology") renderArchaeologyPage();
   else if (navigation.page === "queue") renderQueuePanel();
   else if (navigation.page === "combat") renderCombatPanel();
   else if (navigation.page === "hangar") renderHangarPanel();
-  else if (navigation.page === "station") { const p = document.getElementById("station-panel"); if (p) p.style.display = ""; renderStationPage(); }
+  else if (navigation.page === "station") { renderStationPage(); }
   else if (navigation.page === "blueprints" || navigation.page === "lpstore") renderBlueprintStore();
 
   // 3D 层（ES module）通常晚于本函数首次执行才就绪：若尚未加载，
@@ -88,8 +92,8 @@ function switchSkill(skillKey) {
 
 function renderCargoPage(filter) {
   cargoFilter = filter || cargoFilter || "all";
-  const display = getCargoDisplayState(gameState, cargoFilter, getCargoCapacity());
-  const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = "容量：" + display.used.toLocaleString() + " / " + display.capacity.toLocaleString();
+  const display = getCargoDisplayState(gameState, cargoFilter);
+  const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = "物资总量：" + display.total.toLocaleString();
   document.querySelectorAll(".cargo-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.filter === display.filter));
   const list = document.getElementById("cargo-list"); if (!list) return display;
   list.style.display = "";
@@ -176,6 +180,131 @@ function renderStatisticsPage() {
   const summaries = display.summaryGroups.map(group => `<section class="statistics-summary-card ${group.id}"><div class="statistics-card-title"><i class="${group.icon}"></i><span>${group.title}</span></div><div class="statistics-metric-grid">${group.items.map(item => `<div class="statistics-metric"><span>${item.label}</span><strong>${formatStatisticValue(item)}</strong></div>`).join("")}</div></section>`).join("");
   const details = display.detailGroups.map(group => `<section class="statistics-detail-card"><div class="statistics-card-title"><i class="${group.icon}"></i><span>${group.title}</span></div>${group.items.length ? `<div class="statistics-ranking">${group.items.map((item, index) => `<div class="statistics-rank-row"><span class="statistics-rank">${index + 1}</span><span class="statistics-rank-name">${item.name}</span><strong>${item.value.toLocaleString("zh-CN")}</strong></div>`).join("")}</div>` : `<div class="statistics-empty">${group.emptyText}</div>`}</section>`).join("");
   content.innerHTML = `<div class="statistics-note"><i class="fa-solid fa-circle-info"></i>${display.note}</div><div class="statistics-summary-grid">${summaries}</div><div class="statistics-detail-grid">${details}</div>`;
+  return display;
+}
+
+/* ================================================================
+   成就页面（成就系统 Batch D）
+   —— 只读视图：目录来自 AchievementData，解锁事实来自
+      gameState.achievements.unlockedAtById，本页不写状态、不触发解锁。
+   ================================================================ */
+const ACHIEVEMENT_TIER_ORDER = ["bronze", "silver", "gold", "legendary"];
+const ACHIEVEMENT_STATUS_FILTERS = [
+  { id: "all", label: "全部" },
+  { id: "unlocked", label: "已解锁" },
+  { id: "locked", label: "未解锁" }
+];
+const ACHIEVEMENT_HIDDEN_NAME = "隐藏成就";
+const ACHIEVEMENT_HIDDEN_CONDITION = "达成条件未知";
+let achievementCategoryFilter = "all";
+let achievementStatusFilter = "all";
+
+function escapeAchievementText(text) {
+  const map = { "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;" };
+  return String(text === null || text === undefined ? "" : text).replace(/[&<>"]/g, ch => map[ch]);
+}
+
+function getAchievementCatalogData() {
+  const data = (typeof AchievementData !== "undefined" && AchievementData) ||
+    (typeof window !== "undefined" && window.AchievementData) || null;
+  return data && Array.isArray(data.ACHIEVEMENTS) ? data : null;
+}
+
+function getAchievementUnlockTimestamp(achievementId) {
+  const map = typeof gameState !== "undefined" && gameState && gameState.achievements
+    ? gameState.achievements.unlockedAtById : null;
+  if (!map || typeof map !== "object") return null;
+  const ts = map[achievementId];
+  return (typeof ts === "number" && isFinite(ts) && ts >= 0) ? ts : null;
+}
+
+function formatAchievementUnlockTime(ms) {
+  if (typeof ms !== "number" || !isFinite(ms) || ms < 0) return "";
+  return new Date(ms).toLocaleString("zh-CN", { hour12:false });
+}
+
+function getAchievementsDisplayState(category, status) {
+  const data = getAchievementCatalogData();
+  const selectedCategory = category || "all";
+  const selectedStatus = ACHIEVEMENT_STATUS_FILTERS.some(item => item.id === status) ? status : "all";
+  if (!data) {
+    return { total:0, unlocked:0, percentValue:0, percentText:"0.0%", tiers:[], categories:[], statuses:[], cards:[], category:selectedCategory, status:selectedStatus };
+  }
+  const tiers = ACHIEVEMENT_TIER_ORDER.map(code => ({
+    code, label:(data.TIERS && data.TIERS[code] ? data.TIERS[code].label : code), unlocked:0, total:0
+  }));
+  const tierByCode = {}; for (const tier of tiers) tierByCode[tier.code] = tier;
+  const categoryCounts = {};
+  const cards = [];
+  let unlocked = 0;
+  for (const definition of data.ACHIEVEMENTS) {
+    const unlockedAt = getAchievementUnlockTimestamp(definition.id);
+    const isUnlocked = unlockedAt !== null;
+    if (isUnlocked) unlocked += 1;
+    const tier = tierByCode[definition.tier];
+    if (tier) { tier.total += 1; if (isUnlocked) tier.unlocked += 1; }
+    categoryCounts[definition.category] = (categoryCounts[definition.category] || 0) + 1;
+    // 未解锁的隐藏成就必须遮蔽名称与条件；解锁后原样揭示（placeholder 名称同样原样显示）
+    const masked = Boolean(definition.hidden) && !isUnlocked;
+    if (selectedCategory !== "all" && definition.category !== selectedCategory) continue;
+    if (selectedStatus === "unlocked" && !isUnlocked) continue;
+    if (selectedStatus === "locked" && isUnlocked) continue;
+    cards.push({
+      id: definition.id,
+      category: definition.category,
+      tier: definition.tier,
+      tierLabel: definition.tierLabel,
+      hidden: Boolean(definition.hidden),
+      masked,
+      unlocked: isUnlocked,
+      unlockedAt,
+      unlockedAtText: isUnlocked ? formatAchievementUnlockTime(unlockedAt) : "",
+      name: masked ? ACHIEVEMENT_HIDDEN_NAME : definition.name,
+      conditionText: masked ? ACHIEVEMENT_HIDDEN_CONDITION : definition.conditionText
+    });
+  }
+  const total = data.ACHIEVEMENTS.length;
+  const percentValue = total ? (unlocked / total) * 100 : 0;
+  return {
+    total, unlocked, percentValue,
+    percentText: percentValue.toFixed(1) + "%",
+    tiers,
+    categories: [{ id:"all", label:"全部", count:total, selected:selectedCategory === "all" }].concat(
+      (data.CATEGORIES || []).map(name => ({ id:name, label:name, count:categoryCounts[name] || 0, selected:selectedCategory === name }))
+    ),
+    statuses: ACHIEVEMENT_STATUS_FILTERS.map(item => ({ id:item.id, label:item.label, selected:selectedStatus === item.id })),
+    cards,
+    category: selectedCategory,
+    status: selectedStatus
+  };
+}
+
+function renderAchievementsPage(category, status) {
+  achievementCategoryFilter = category === undefined ? achievementCategoryFilter : (category || "all");
+  achievementStatusFilter = status === undefined ? achievementStatusFilter : (status || "all");
+  const display = getAchievementsDisplayState(achievementCategoryFilter, achievementStatusFilter);
+  achievementCategoryFilter = display.category;
+  achievementStatusFilter = display.status;
+  const count = document.getElementById("achievements-summary-count");
+  if (count) count.textContent = display.unlocked + " / " + display.total;
+  const percent = document.getElementById("achievements-summary-percent");
+  if (percent) percent.textContent = display.percentText;
+  const fill = document.getElementById("achievements-progress-fill");
+  if (fill) fill.style.width = display.percentValue.toFixed(2) + "%";
+  const tierBox = document.getElementById("achievements-tier-counts");
+  if (tierBox) tierBox.innerHTML = display.tiers.map(tier => `<span class="ach-tier-count tier-${tier.code}"><b>${escapeAchievementText(tier.label)}</b><span>${tier.unlocked} / ${tier.total}</span></span>`).join("");
+  const categoryTabs = document.getElementById("achievements-category-tabs");
+  if (categoryTabs) categoryTabs.innerHTML = display.categories.map(item => `<button class="ach-tab${item.selected ? " active" : ""}" data-ach-category="${escapeAchievementText(item.id)}">${escapeAchievementText(item.label)}<small>${item.count}</small></button>`).join("");
+  const statusTabs = document.getElementById("achievements-status-tabs");
+  if (statusTabs) statusTabs.innerHTML = display.statuses.map(item => `<button class="ach-tab${item.selected ? " active" : ""}" data-ach-status="${escapeAchievementText(item.id)}">${escapeAchievementText(item.label)}</button>`).join("");
+  const grid = document.getElementById("achievements-grid");
+  if (!grid) return display;
+  grid.innerHTML = display.cards.length ? display.cards.map(card => `<div class="ach-card ${card.unlocked ? "unlocked" : "locked"}${card.masked ? " masked" : ""} tier-${card.tier}" data-ach-id="${escapeAchievementText(card.id)}">
+      <div class="ach-card-head"><span class="ach-card-id">${escapeAchievementText(card.id)}</span><span class="ach-card-tier tier-${card.tier}">${escapeAchievementText(card.tierLabel)}</span><span class="ach-card-cat">${escapeAchievementText(card.category)}</span><span class="ach-card-state">${card.unlocked ? "已解锁" : "未解锁"}</span></div>
+      <div class="ach-card-name">${escapeAchievementText(card.name)}</div>
+      <div class="ach-card-cond">${escapeAchievementText(card.conditionText)}</div>
+      <div class="ach-card-time">${card.unlocked ? "解锁于 " + escapeAchievementText(card.unlockedAtText) : "尚未达成"}</div>
+    </div>`).join("") : `<div class="ach-empty">当前筛选条件下没有成就</div>`;
   return display;
 }
 
@@ -627,6 +756,27 @@ function addCurrentToQueue() {
     const result = dispatchGameAction(gameState, { type:"settings/setShipEnhancementConfirmation", enabled:enhancementConfirm.checked }, Date.now());
     if (result.changed) { renderSettingsPage(); showToast(result.enabled ? "舰船强化确认提示已开启" : "舰船强化确认提示已关闭"); }
   });
+  const achievementCategoryTabs = document.getElementById("achievements-category-tabs"); if (achievementCategoryTabs) achievementCategoryTabs.addEventListener("click", event => {
+    const button = event.target.closest("[data-ach-category]"); if (!button) return;
+    renderAchievementsPage(button.dataset.achCategory, achievementStatusFilter);
+  });
+  const achievementStatusTabs = document.getElementById("achievements-status-tabs"); if (achievementStatusTabs) achievementStatusTabs.addEventListener("click", event => {
+    const button = event.target.closest("[data-ach-status]"); if (!button) return;
+    renderAchievementsPage(achievementCategoryFilter, button.dataset.achStatus);
+  });
+  // 成就解锁播报：只读消费具体事件，不改成就状态、不重复解锁；在成就页时即时重渲。
+  const achievementEvents = (typeof GameEvents !== "undefined" && GameEvents) || (typeof window !== "undefined" && window.GameEvents) || null;
+  if (achievementEvents && typeof achievementEvents.on === "function") {
+    achievementEvents.on("achievement:unlocked", event => {
+      const achievementId = event && event.payload ? event.payload.achievementId : null;
+      if (!achievementId) return;
+      const data = getAchievementCatalogData();
+      const definition = data && data.ACHIEVEMENTS_BY_ID ? data.ACHIEVEMENTS_BY_ID[achievementId] : null;
+      if (!definition) return; // 目录外的幽灵 ID 不播报
+      showToast("🏆 成就解锁：" + definition.name);
+      if (currentPage === "achievements") renderAchievementsPage();
+    });
+  }
   const queueModalButton = document.getElementById("action-modal-queue"); if (queueModalButton) queueModalButton.addEventListener("click", queueActionConfirmation);
   document.addEventListener("keydown", event => { const modal = document.getElementById("equipOrbitModal"); if (event.key === "Escape" && modal && modal.classList.contains("active")) closeEquipOrbit(); });
 })();

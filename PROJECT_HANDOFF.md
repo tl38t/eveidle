@@ -15,10 +15,11 @@
   - 禁止硬编码数值；尺寸由 ship size 推导可复现 seed
   - 回归命令 15 条全 EXIT=0 为收口标准
 
-## 2. 已完成系统（截至 2026-07-26）
+## 2. 已完成系统（截至 2026-07-27）
 
 | 系统 | 状态 |
 |------|------|
+| 无限库存 | 仓库容量机制已删除，改为无限库存。`cargoManagement` 技能、`getCargoCapacity/getCargoUsed/isCargoFull` 已删除。所有生产不再受总量限制（采矿/月矿/采气/冶炼/装备/部件/组装/增强剂/自动线）。行星全量收取。存档迁移幂等。UI 只显示"物资总量"。 |
 | 采矿 / 冶炼 / 气体采集 | 完整版，含离线结算、队列支持 |
 | 舰船工程（部件制造 + 总装） | 完整版，含蓝图系统 |
 | 装备工程（装备/燃料/弹药制造） | 完整版，含蓝图和强化系统 |
@@ -38,6 +39,7 @@
 | 优先级 | 系统 | 说明 |
 |--------|------|------|
 | P0 | **队列测试缺口修复** | 第二项走真实完成链；删除 queue.js 旧回退入口；浏览器测试改为真实点击 |
+| P1 | **无限库存** | 已完成（2026-07-27）：仓库容量机制删除、cargoManagement 技能删除、所有生产不再受总量限制、行星全量收取、存档迁移幂等。`audit-unlimited-inventory.mjs` 专项审计。 |
 | P1 | **军团系统与空间站** | Phase 3C 全阶段完成。空间站三级本体/八建筑/维护/自动线/船坞/综合后勤/统一页面显示态均已实装验收。NPC 军团工作/战斗/任务/科技留作 DLC。`audit-station.mjs` 1145/0，`tools/station-browser-test.html` RESULT=PASS。 |
 | P2 | **ShipFactory2 P9 渲染升级** | 已延后 |
 | P3 | **成就系统** | 暂不设计 |
@@ -56,20 +58,34 @@
 ### 已修改（M）
 
 **本阶段返修文件**（可暂存/提交）：
-- `js/core/actions.js` — 共享校验、统一队列入口、queueStart 重写、queueItemForState
+- `js/core/actions.js` — 共享校验、统一队列入口、queueStart 重写、queueItemForState + 行星全量收取（collect 删 cargoCapacity）
 - `js/core/queue.js` — executeQueueItem 改为调用 executeQueueItemForState
-- `js/core/selectors.js` — 考古弹窗使用 canStartArchaeology、修复 self-OR
+- `js/core/selectors.js` — 考古弹窗使用 canStartArchaeology、修复 self-OR + 无限库存（删除容量字段）
 - `js/systems/archaeology.js` — 稀有率预览、运行锁定、levelLocked/actionLocked
 - `js/ui/archaeology-render.js` — 文言区分、disabled 条件、状态行中文名
 - `js/ui/booster-render.js` — showActionConfirm 调用
-- `js/ui/render.js` — 考古分支 null 守卫
-- `js/ui/shell-render.js` — addCurrentToQueue 新增两项
+- `js/ui/render.js` — 考古分支 null 守卫 + 无限库存 UI
+- `js/ui/shell-render.js` — addCurrentToQueue 新增两项 + 无限库存显示态
 - `css/panels.css` — 考古面板 overflow、asc-drops 样式
-- `tools/verify.mjs` — bar-archaeology optional + 源码守卫
+- `tools/verify.mjs` — bar-archaeology optional + 源码守卫 + 无限库存适配
 - `tools/audit-archaeology-system.mjs` — 弱断言修复、G/H/I/J 新区
 - `tools/audit-boosters.mjs` — ZZC2 重写
 - `tools/simulate-archaeology-user-flow.mjs` — now 参数修复
 - `tools/archaeology-browser-test.html` — iframe 验收
+
+**新增无限库存文件**（本次修改/新增）：
+- `js/data/base.js` — 删除 cargoManagement
+- `js/systems/production.js` — 删除 getCargoCapacity/getCargoUsed/isCargoFull
+- `js/core/resources.js` — getCargoTotal → getInventoryTotal
+- `js/core/tick.js` — 删除所有满仓停止
+- `js/core/offline.js` — 删除容量限制 maxCycles
+- `js/core/persistence.js` — 新增 migrateUnlimitedInventoryState
+- `js/systems/boosters.js` — 删除 isCargoFull 条件
+- `index.html` — 物资总量显示
+- `css/base.css` — 删除容量进度条样式
+- `js/ui/planetary-render.js` — 删除容量引用
+- `tools/audit-unlimited-inventory.mjs` — 新建审计
+- `tools/unlimited-inventory-browser-test.html` — 新建浏览器验收
 
 **并行 3D 建模文件**（不可触碰）：
 - `js/render3d/shipfactory2/ShipFactory2.js`
@@ -233,7 +249,7 @@ git diff --check
 
 ---
 
-*最后更新：2026-07-26（Phase 3C-8 最终收尾：`getStationPageDisplayState` 修复自动线 `al` 错误引用 → 改用 cfg/lineData/targets 真实变量；新增 `getStationAutoLineCycleDuration` 共用函数（冶炼含舰船/rig/建筑/后勤，装备/增强剂含建筑/后勤）；八建筑 `effectText`/`nextEffectText` 非空；9 行效果固定；行星槽位显示 Lv.1+0/Lv.2+1/Lv.3+2；综合后勤仅依赖本体等级和燃料，不依赖资源调度中心；断油船坞例外；新增 O 区 14 条显示态断言；新建 `tools/station-browser-test.html`（17 条真实 DOM 测试）。`audit-station.mjs` **PASS=1145 FAIL=0**。全量 12 条验证全 EXIT=0。Phase 3C-8 完成。）*
+*最后更新：2026-07-27（无限库存：删除仓库容量机制、cargoManagement 技能、getCargoCapacity/getCargoUsed/isCargoFull。所有生产不再受总量限制。行星全量收取。UI 只显示"物资总量"。存档迁移幂等。新增审计 audit-unlimited-inventory.mjs 和浏览器验收。保留 3C-8 stationLogistics 修正。）*
 
 *上次更新：2026-07-26（Phase 3C-6 第七轮最终审计收口：G2 改统一离线 10h 断油对比（fuel=0/1h/10h → 周期 0/180/1800，C=10×B）；J 区船坞节省升级为真实 Lv.3 验证（J4 在线/J5 离线/J6 在线100vs离线100/新增 J6b materialCost 配方 gale）。发现并修复真实缺陷：materialCost 纯材料名 ref（如"镓"）与 `namespace:key`（`moon:镓`）命名空间错配，导致船坞节省路径无法组装/扣料——新增 `resources.getByRef/spendByRef`，station.js/manufacturing.js/selectors.js 四处由 `get/spend` 切换为 `getByRef/spendByRef`。`audit-station.mjs` **PASS=998 FAIL=0（连跑两次一致）**；因游戏代码变动跑完整正式回归全 EXIT=0。未 commit。）*
 

@@ -72,11 +72,8 @@
     </div>
     <div class="res-item cargo-item">
       <i class="fa-solid fa-boxes-stacked res-icon cargo-icon"></i>
-      <span class="res-label">仓库</span>
-      <span class="res-value" id="cargo-text">0 / 1,100</span>
-      <div class="cargo-bar">
-        <div class="cargo-fill" id="cargo-fill" style="width: 0%;"></div>
-      </div>
+      <span class="res-label">物资总量</span>
+      <span class="res-value" id="cargo-text">0</span>
     </div>
   </div>
   <div class="ore-quick">
@@ -99,7 +96,7 @@
       <span class="nav-icon"><i class="fa-solid fa-scroll"></i></span> 蓝图商店
     </div>
     <div class="nav-item" data-page="cargo">
-      <span class="nav-icon"><i class="fa-solid fa-warehouse"></i></span> 仓库 <span class="nav-lv" data-lv="cargoManagement">Lv.1</span>
+      <span class="nav-icon"><i class="fa-solid fa-warehouse"></i></span> 仓库
     </div>
     <div class="nav-item" data-page="hangar">
       <span class="nav-icon"><i class="fa-solid fa-ship"></i></span> 船坞
@@ -112,6 +109,9 @@
     </div>
     <div class="nav-item" data-page="statistics">
       <span class="nav-icon"><i class="fa-solid fa-chart-column"></i></span> 统计档案
+    </div>
+    <div class="nav-item" data-page="achievements">
+      <span class="nav-icon"><i class="fa-solid fa-trophy"></i></span> 成就
     </div>
     <div class="nav-divider"></div>
     <div class="nav-item" data-skill="mining">
@@ -735,7 +735,7 @@
     <div class="panel cargo-panel" id="cargo-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">📦 仓库</span>
-        <span id="cargo-capacity-text">容量：0 / 1,100</span>
+        <span id="cargo-capacity-text">物资总量计算中...</span>
       </div>
       <div class="panel-body">
         <div class="cargo-tabs" id="cargo-tabs">
@@ -798,6 +798,29 @@
         <span class="text-muted">只读 · 从统计系统启用后累计</span>
       </div>
       <div class="panel-body" id="statistics-content"></div>
+    </div>
+
+    <!-- ===== 成就（成就系统 Batch D）===== -->
+    <div class="panel achievements-panel" id="achievements-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-trophy"></i> 成就</span>
+        <span class="text-muted">只读 · 解锁事实来自成就系统对账</span>
+      </div>
+      <div class="panel-body">
+        <section class="achievements-summary">
+          <div class="ach-summary-head">
+            <span class="ach-summary-count" id="achievements-summary-count">0 / 197</span>
+            <span class="ach-summary-percent" id="achievements-summary-percent">0.0%</span>
+          </div>
+          <div class="ach-progress-track"><div class="ach-progress-fill" id="achievements-progress-fill" style="width:0%;"></div></div>
+          <div class="ach-tier-counts" id="achievements-tier-counts"></div>
+        </section>
+        <section class="achievements-filters">
+          <div class="ach-filter-row" id="achievements-category-tabs"></div>
+          <div class="ach-filter-row" id="achievements-status-tabs"></div>
+        </section>
+        <div class="achievements-grid" id="achievements-grid"></div>
+      </div>
     </div>
 
   
@@ -884,8 +907,15 @@
   <script defer src="./js/data/equipment.js"></script>
   <script defer src="./js/data/ammunition.js"></script>
   <script defer src="./js/data/archaeology.js"></script>
+  <script defer src="./js/data/research.js"></script>
+  <script defer src="./js/core/research-state.js"></script>
+  <script defer src="./js/data/achievements.js"></script>
+  <script defer src="./js/data/achievement-rules.js"></script>
+  <script defer src="./js/core/achievement-state.js"></script>
   <script defer src="./js/core/state.js"></script>
+  <script defer src="./js/systems/research.js"></script>
   <script defer src="./js/core/statistics.js"></script>
+  <script defer src="./js/systems/achievements.js"></script>
   <script defer src="./js/systems/production.js"></script>
   <script defer src="./js/core/resources.js"></script>
   <script defer src="./js/systems/manufacturing.js"></script>
@@ -903,7 +933,7 @@
   <script defer src="./js/core/combat-modifiers.js"></script>
   <script defer src="./js/core/selectors.js"></script>
   <script defer src="./js/core/actions.js"></script>
-  <script defer src="./js/ui/shell-render.js?v=4"></script>
+  <script defer src="./js/ui/shell-render.js?v=5"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=2"></script>
   <script defer src="./js/ui/combat-render.js?v=9"></script>
   <script defer src="./js/ui/planetary-render.js"></script>

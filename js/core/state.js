@@ -147,6 +147,15 @@ const gameState = {
   upgrades: {},
   ownedBlueprints: [],
 
+  // 研究系统（批次 B）：单一研究槽 + 队列，独立于 currentAction 与现有 queue。
+  // 由 js/core/research-state.js（须在本文件之前加载）提供默认结构；不复制第二套 schema。
+  research: ResearchState.createDefaultResearchState(),
+
+  // 成就系统（Batch B）：唯一权威解锁状态（解锁时间映射为唯一事实来源）。
+  // 由 js/core/achievement-state.js（须在本文件之前加载）提供默认结构；
+  // fail-fast：AchievementState 缺失即抛 ReferenceError，禁止第二套兜底 schema。
+  achievements: AchievementState.createDefaultAchievementState(),
+
   combat: {
     mode: "belt",
     viewMode: "belt",
@@ -186,7 +195,8 @@ const gameState = {
 
   queue: {
     items: [],
-    config: { maxSize: 20, loopMode: false, skipOnFail: true },
+    // Batch C-14A（J05）：队列历史首次达 25 项即解锁，故容量下限须 ≥ 25；原为 20 会使 J05 永远不可达（真实 bug）。
+    config: { maxSize: 25, loopMode: false, skipOnFail: true },
     status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 }
   },
 

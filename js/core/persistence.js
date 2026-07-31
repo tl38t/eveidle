@@ -641,6 +641,48 @@ function migrateBoosterState() {
 window.migrateBoosterState = migrateBoosterState;
 
 // ================================================================
+//  无限库存迁移（Phase 无限容量）：删除仓库容量限制
+//   - 删除旧 skills.cargoManagement
+//   - 删除 queue.items 中 skill==="cargoManagement" 的旧项目
+//   - 若 currentAction.skill==="cargoManagement"，安全停止并切换到 mining
+//   - 清理 queue.status 使 activeIndex 合法
+//   - 不补偿 XP，不赠送或扣除资源
+//   - 不改变舰船、装备、蓝图、资源、其他技能、空间站和行星数据
+//   - 幂等：连续两次调用结果一致
+//   - 必须在 calculateOfflineGains 前运行
+// ================================================================
+function migrateUnlimitedInventoryState(state = gameState) {
+  if (!state) return;
+  // 1) 删除旧技能
+  if (state.skills && state.skills.cargoManagement) {
+    delete state.skills.cargoManagement;
+  }
+  // 2) 删除队列中 cargoManagement 项目
+  if (state.queue && Array.isArray(state.queue.items)) {
+    state.queue.items = state.queue.items.filter(item => item.skill !== "cargoManagement");
+    // 清理 queue.status：空队列归零首项，activeIndex 不得越界
+    if (state.queue.status) {
+      if (state.queue.items.length === 0) {
+        state.queue.status.activeIndex = -1;
+        state.queue.status.isRunning = false;
+      } else if (state.queue.status.activeIndex >= state.queue.items.length) {
+        state.queue.status.activeIndex = 0;
+      }
+    }
+  }
+  // 3) 若当前行动为 cargoManagement，安全停止并切换到 mining
+  if (state.currentAction && state.currentAction.skill === "cargoManagement") {
+    state.currentAction.active = false;
+    state.currentAction.skill = "mining";
+    state.currentAction.progress = 0;
+    state.currentAction.batchRemaining = 0;
+    state.currentAction.lastProgressUpdate = Date.now();
+  }
+  state._dirty = true;
+}
+window.migrateUnlimitedInventoryState = migrateUnlimitedInventoryState;
+
+// ================================================================
 //  军团与空间站系统 Phase 3C-1：存档外壳 + 幂等迁移
 //   - 补齐 station / corporation 最小结构（不触碰玩家舰船/装备/资源/技能/蓝图）
 //   - 旧存档无 station → 初始化空壳（bodyLevel 0、buildings 全 0、maintenance 默认）
@@ -894,10 +936,50 @@ function normalizePlanetaryState(state, opts) {
 }
 window.normalizePlanetaryState = normalizePlanetaryState;
 
+// Batch C-14A 第一次定点返修：唯一幂等队列规范化函数。
+// - queue 缺失/null/数组/非对象：创建完整默认队列。
+// - items 非数组：归一为 []（不丢弃合法内容，只修正类型）。
+// - config 非普通对象：归一为空对象后补默认字段。
+// - config.maxSize：typeof number && 有限 && >=25 → Math.floor 保留；其余统一设为 25（含 20 等旧档容量，J05 才可解锁）；已有 >25 的合法容量不得缩小。
+// - loopMode / skipOnFail 缺失或类型错误时补现有默认值。
+// - status 缺失时补默认结构；不得清空合法旧队列项目。
+// 新游戏路径安全、幂等；旧档 maxSize=20 登录/导入后变为 25，可继续真实追加 21–25 项。
+function normalizeQueueState(state) {
+  if (!state.queue || typeof state.queue !== "object" || Array.isArray(state.queue)) {
+    state.queue = {
+      items: [],
+      config: { maxSize: 25, loopMode: false, skipOnFail: true },
+      status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 },
+    };
+    return;
+  }
+  if (!Array.isArray(state.queue.items)) state.queue.items = [];
+  if (!state.queue.config || typeof state.queue.config !== "object" || Array.isArray(state.queue.config)) {
+    state.queue.config = {};
+  }
+  const ms = state.queue.config.maxSize;
+  if (typeof ms === "number" && Number.isFinite(ms) && ms >= 25) {
+    state.queue.config.maxSize = Math.floor(ms);
+  } else {
+    state.queue.config.maxSize = 25;
+  }
+  if (typeof state.queue.config.loopMode !== "boolean") state.queue.config.loopMode = false;
+  if (typeof state.queue.config.skipOnFail !== "boolean") state.queue.config.skipOnFail = true;
+  if (!state.queue.status || typeof state.queue.status !== "object" || Array.isArray(state.queue.status)) {
+    state.queue.status = { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 };
+  } else {
+    if (typeof state.queue.status.activeIndex !== "number") state.queue.status.activeIndex = -1;
+    if (typeof state.queue.status.isRunning !== "boolean") state.queue.status.isRunning = false;
+    if (typeof state.queue.status.completedCount !== "number") state.queue.status.completedCount = 0;
+    if (typeof state.queue.status.failCount !== "number") state.queue.status.failCount = 0;
+  }
+}
+window.normalizeQueueState = normalizeQueueState;
+
 const SaveManager = {
   adapter: LocalStorageAdapter,
   save() { gameState.lastSaveTime = Date.now(); gameState._dirty = false; const ok = this.adapter.save(gameState); this._updateStatus(ok ? "已保存 " + new Date().toLocaleTimeString() : "保存失败"); document.getElementById("footer-save") && (document.getElementById("footer-save").textContent = "存档：" + new Date().toLocaleTimeString()); return ok; },
-  load() { const data = this.adapter.load(); if (data) { gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } return false; },
+  load() { const data = this.adapter.load(); if (data) { gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } return false; },
   exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "EVE_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
   importData(jsonString) {
     try {
@@ -906,6 +988,7 @@ const SaveManager = {
       gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null;
       Object.assign(gameState, data);
       if (!Object.hasOwn(data, "settings")) gameState.settings = {};
+      normalizeQueueState(gameState);
       ensureUserSettingsState(gameState);
       ensureStatisticsState(gameState);
       // 装备迁移标志管理：不得无条件删除现代存档已有的迁移标志。
@@ -921,9 +1004,76 @@ const SaveManager = {
       finalizeEquipmentStateAfterLegacyMigrations(gameState);
       // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移
       migrateStationCorporationState();
+      // 无限库存迁移：必须在离线结算之前
+      migrateUnlimitedInventoryState();
       // 行星规范化（与 autoLoad 同一路径，幂等）；必须在离线结算之前
       normalizePlanetaryState(gameState);
       delete gameState.planetaryDeployments;
+      // 研究系统迁移（批次 B）：补全 research 子状态 + planetary deployment 自动续费。
+      // 必须在 deployments 已存在之后调用（migratePlanAutoRenew 依赖 planetary.deployments）。
+      if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
+        ResearchState.migrateResearchState(gameState);
+      }
+      // 成就系统迁移（Batch B）：importData 唯一调用点，恰好一次。
+      // 顺序：normalizePlanetaryState → research 迁移 → achievement 迁移 → calculateOfflineGains，
+      // 必须早于离线结算（为后续离线成就事件接入留下正确顺序）。迁移不 dirty、不 emit。
+      if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
+        AchievementState.migrateAchievementState(gameState);
+      }
+      // 成就追溯对账（Batch C-1 技能 + Batch C-2 生产 + Batch C-3 战斗 + Batch C-4 制造）：importData 唯一调用点，
+      // 各恰好一次。在 achievement 迁移之后、离线结算之前；
+      // 四次求值复用同一个 now（本次导入只取一次 Date.now()）。
+      {
+        const achievementReconcileNow = Date.now();
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateSkillAchievementRules === "function") {
+          AchievementSystem.evaluateSkillAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateProductionAchievementRules === "function") {
+          AchievementSystem.evaluateProductionAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateCombatAchievementRules === "function") {
+          AchievementSystem.evaluateCombatAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateManufacturingAchievementRules === "function") {
+          AchievementSystem.evaluateManufacturingAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEquipmentAchievementRules === "function") {
+          AchievementSystem.evaluateEquipmentAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBoosterAchievementRules === "function") {
+          AchievementSystem.evaluateBoosterAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateArchaeologyAchievementRules === "function") {
+          AchievementSystem.evaluateArchaeologyAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluatePlanetaryAchievementRules === "function") {
+          AchievementSystem.evaluatePlanetaryAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateStationAchievementRules === "function") {
+          AchievementSystem.evaluateStationAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBlueprintAchievementRules === "function") {
+          AchievementSystem.evaluateBlueprintAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-13：经济追溯必须在离线结算**之前**，用同一 achievementReconcileNow，
+        // 使解锁时间戳落在"读档瞬间"而非离线补偿之后；persistence.js 排在 resources.js 之后，
+        // 此处 ResourceRegistry 必然已就绪。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEconomyAchievementRules === "function") {
+          AchievementSystem.evaluateEconomyAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14A：综合（J01–J06）追溯必须同样在离线结算**之前**，用同一 achievementReconcileNow。
+        // 若放到 calculateOfflineGains 之后，本次读档触发的离线结算会先把 lifecycle 推高，
+        // 导致"迁移追溯"与"本次离线收益"混为一谈，解锁时间戳也会偏移到离线补偿之后。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateGeneralAchievementRules === "function") {
+          AchievementSystem.evaluateGeneralAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14B：元成就（J10/J11/J12）追溯必须排在全部普通类追溯**之后**、
+        // 离线结算**之前**，复用同一 achievementReconcileNow：
+        // 先让普通成就在本次读档补齐，元成就才能看到完整的解锁事实并顺序补齐 J10→J11→J12。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
+          AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
+        }
+      }
       // 离线结算必须在规范化之后
       if (typeof calculateOfflineGains === "function") calculateOfflineGains();
       // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
@@ -985,7 +1135,8 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     if (!gameState.currentAction.shipAsmTarget) gameState.currentAction.shipAsmTarget = "rifter";
     if (gameState.currentAction.startedShipAsmTarget === undefined) gameState.currentAction.startedShipAsmTarget = "";
     if (gameState.currentAction.batchRemaining === undefined) gameState.currentAction.batchRemaining = 0;
-    if (!gameState.queue) gameState.queue = { items: [], config: { maxSize: 20, loopMode: false, skipOnFail: true }, status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 } };
+    // Batch C-14A（J05）：队列规范化已收口于 SaveManager.load 内的 normalizeQueueState（含旧档 maxSize=20→25），
+    // 此处不再保留只处理「!gameState.queue」的第二套兜底。
     if (!gameState.inventory.ships) gameState.inventory.ships = [];
     if (gameState.inventory.ships.length === 0) gameState.inventory.ships.push(createShipInstance("rifter"));
     if (gameState.activeIndustrialShip === undefined) gameState.activeIndustrialShip = null;
@@ -1026,9 +1177,73 @@ window.addEventListener("beforeunload", () => SaveManager.save());
   migrateMoonMiningState();
   migrateDeathspaceState();
   migrateBoosterState();
+  // 无限库存迁移：必须在离线结算之前
+  migrateUnlimitedInventoryState();
   // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
   finalizeEquipmentStateAfterLegacyMigrations(gameState);
-    if (restored) calculateOfflineGains();
+  // 研究系统迁移（批次 B 返修）：唯一权威调用点，必须先于第一次 calculateOfflineGains。
+  // 此时 planetary.deployments 已存在（restored 由 normalizePlanetaryState 创建，新游戏为 state.js 字面量），
+  // migratePlanAutoRenew 可安全补 deployment.autoRenew。restored=false（新游戏）同样执行且幂等、不报错。
+  if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
+    ResearchState.migrateResearchState(gameState);
+  }
+  // 成就系统迁移（Batch B）：autoLoad 唯一调用点，恰好一次；
+  // restored=true / restored=false（新游戏）都执行且幂等、安全。
+  // 顺序：research 迁移 → achievement 迁移 → restored 时 calculateOfflineGains，
+  // 必须早于离线结算。迁移不 dirty、不 emit。
+  if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
+    AchievementState.migrateAchievementState(gameState);
+  }
+  // 成就追溯对账（Batch C-1 技能 + Batch C-2 生产 + Batch C-3 战斗 + Batch C-4 制造）：autoLoad 唯一调用点，
+  // 各恰好一次；restored=true 与 restored=false（新游戏，应解锁 0 项）都执行；
+  // 早于离线结算；四次求值复用同一个 now（本次登录只取一次 Date.now()）。
+  {
+    const achievementReconcileNow = Date.now();
+    if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateSkillAchievementRules === "function") {
+      AchievementSystem.evaluateSkillAchievementRules(gameState, achievementReconcileNow);
+    }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateProductionAchievementRules === "function") {
+          AchievementSystem.evaluateProductionAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateCombatAchievementRules === "function") {
+          AchievementSystem.evaluateCombatAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateManufacturingAchievementRules === "function") {
+          AchievementSystem.evaluateManufacturingAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEquipmentAchievementRules === "function") {
+          AchievementSystem.evaluateEquipmentAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBoosterAchievementRules === "function") {
+          AchievementSystem.evaluateBoosterAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateArchaeologyAchievementRules === "function") {
+          AchievementSystem.evaluateArchaeologyAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluatePlanetaryAchievementRules === "function") {
+          AchievementSystem.evaluatePlanetaryAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateStationAchievementRules === "function") {
+          AchievementSystem.evaluateStationAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBlueprintAchievementRules === "function") {
+          AchievementSystem.evaluateBlueprintAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-13：经济追溯，同一 achievementReconcileNow，位于离线结算之前（与 importData 对称）
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEconomyAchievementRules === "function") {
+          AchievementSystem.evaluateEconomyAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14A：综合（J01–J06）追溯，同一 achievementReconcileNow，位于离线结算之前（与 importData 对称）
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateGeneralAchievementRules === "function") {
+          AchievementSystem.evaluateGeneralAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14B：元成就（J10/J11/J12）追溯，排在全部普通类追溯之后、离线结算之前，
+        // 同一 achievementReconcileNow（与 importData 对称）。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
+          AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
+        }
+      }
+  if (restored) calculateOfflineGains();
   ensureUserSettingsState(gameState);
   ensureStatisticsState(gameState);
   // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移（新游戏/旧存档共用）

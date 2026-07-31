@@ -2,6 +2,82 @@
 
 > 2026-07-12 及以前的历史记录保留在根目录 `DEVLOG.md`。本文件仅记录 `eveidle-modular` 拆分版后续开发，根目录原始文件继续作为回滚基线。
 
+## 2026-07-27 — 无限库存：删除仓库/货舱容量机制
+
+### 概述
+统一删除整个仓库容量系统，改为无限库存。所有生产和离线结算不再受主仓库总量限制。
+
+### 改动清单
+
+**数据层** (`js/data/base.js`)：
+- `INITIAL_SKILLS` 删除 `cargoManagement` 技能
+
+**生产系统** (`js/systems/production.js`)：
+- 删除 `getCargoCapacity()`、`getCargoUsed()`、`isCargoFull()` 三个函数（不保留 Infinity 兼容假函数）
+
+**资源系统** (`js/core/resources.js`)：
+- `getCargoTotal` → `getInventoryTotal`（仅统计总量，不参与限制）
+
+**选择器** (`js/core/selectors.js`)：
+- `getCargoUsedFromState` → `getInventoryTotalFromState`（调用 `getInventoryTotal`）
+- `getGlobalDisplayState`：`cargo` 对象仅返回 `total`，删除 `capacity`/`full`/`percent`/`used`/`free`
+- `getCargoDisplayState`：删除 `cargoCapacity` 参数，返回 `total` 代替 `used`+`capacity`
+- `getPlanetaryDisplayState`：删除 `cargoCapacity` 参数和 `cargo` 字段
+- 保留全部 Phase 3C-8 stationLogistics 修正
+
+**在线 tick** (`js/core/tick.js`)：
+- 删除全局满仓停止条件（`isCargoFull()` 分支）
+- 删除双倍矿物 cargoSpace 限幅
+- 删除装备工程、舰船部件、舰船组装的满仓判断
+
+**离线结算** (`js/core/offline.js`)：
+- 采矿/月矿离线 `maxCycles` 改为 `Infinity`，删除 apply 内的双倍矿物 cargoSpace 限幅
+- 冶炼离线删除 `netCargo` 容量约束，`maxCycles` 仅受矿石库存限制
+- 采气离线 `maxCycles` 改为 `Infinity`
+- 舰船部件离线删除容量约束
+- 舰船组装离线删除 `isCargoFull()` 检查
+- 装备工程离线删除容量约束
+
+**行动系统** (`js/core/actions.js`)：
+- `PlanetaryStateActions.collect(state, id)` 改为全量收取（不再有 cargoCapacity 参数和 cargo-full reason）
+- 行星 storage 全量移入主仓库后归零
+- 删除 `cargo-full` 返回 reason
+
+**增强剂** (`js/systems/boosters.js`)：
+- `tickBoosterTimers`：采矿分支删除 `isCargoFull()` 暂停条件
+- `getBoosterSlotStatus`：采矿分支删除 `isCargoFull()` 暂停条件
+
+**UI 文件**：
+- `index.html`：顶栏显示"物资总量"（删容量 x/y 和进度条）；导航删除 `cargoManagement` 等级显示；仓库页标题改为"物资总量"
+- `css/base.css`：删除 `.cargo-bar`、`.cargo-fill`、`.cargo-fill.full`、`#cargo-text.warn`、`@keyframes blink` 样式
+- `js/ui/render.js`：`renderGlobalDisplay`/`updateLiveUI` 只显示总量；删除 `getCargoCapacity()` 调用
+- `js/ui/shell-render.js`：`renderCargoPage` 显示"物资总量"
+- `js/ui/planetary-render.js`：删除 `getCargoCapacity()` 调用；`collectPlanet` 不传 `cargoCapacity`；`planetaryActionMessage` 删除 `cargo-full`
+
+**存档迁移** (`js/core/persistence.js`)：
+- 新增 `migrateUnlimitedInventoryState()`：删除 `skills.cargoManagement`、清理队列和当前行动的 cargoManagement 项，不补偿 XP/资源
+- 接入 `autoLoad` 和 `importData` 路径，在 `calculateOfflineGains` 前运行
+
+**审计**：
+- 新建 `tools/audit-unlimited-inventory.mjs`：A~L 区真实行为验证
+- 更新 `tools/verify.mjs`：适应新 cargo 显示态和行星全量收取
+- 更新 `tools/audit-planetary.mjs`：adapt collect 语义
+- 更新 `tools/audit-station.mjs`：删除对 `isCargoFull` 的引用
+
+**浏览器验收**：
+- 新建 `tools/unlimited-inventory-browser-test.html`：iframe 加载真实 index.html，覆盖仓库导航/总量/超千万生产/双倍/行星全量收取/增强剂 paused
+
+### 边界
+- 不碰 `js/render3d/**`、`ship-lab.*`、`*candidates.html`、`*capital-*.html`、`CORPORATION_AND_STATION_IMPLEMENTATION_PLAN.md`
+- 不修改考古/增强剂/掉落/成功率/经验/经济数值
+- 不修改增强剂离线算法
+- 不触及其他未提交改动
+- 不 git add/commit/push
+- 行星 6 小时 storage 上限保留
+- 舰船槽位、改装槽位、装配环容量保留
+
+---
+
 ## 2026-07-26 — 页面滚动布局修复：修复面板内容被 flex 压缩裁切
 
 ### 根因

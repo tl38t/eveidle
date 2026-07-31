@@ -131,14 +131,7 @@ function renderShipEngineeringPage(now) {
   const efficiency = document.getElementById("shipeng-eff-value"); if (efficiency) efficiency.textContent = display.efficiency.toFixed(2) + "x";
   const speedInfo = document.getElementById("shipeng-speed-breakdown");
   if (speedInfo) {
-    const sm = display.skillMultiplier || display.efficiency;
-    const ym = display.shipyardMultiplier || 1;
-    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
-    const total = display.totalSpeedMultiplier || (sm * ym * lm);
-    const parts = ["技能 ×" + sm.toFixed(2), "船坞 ×" + ym.toFixed(2)];
-    const logPart = (sl.bodyLevel > 0 && sl.operational) ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2) + "（" + (sl.text || "未建立") + "）";
-    parts.push(logPart);
-    speedInfo.textContent = parts.join(" · ") + " · 最终 ×" + total.toFixed(2);
+    speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display);
   }
   const fill = document.getElementById("shipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   const xp = document.getElementById("shipeng-exp-value"); if (xp) xp.textContent = display.xp.toLocaleString() + " / " + display.xpNeeded.toLocaleString();

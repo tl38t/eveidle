@@ -61,22 +61,18 @@ function getFleetMiningSupportState(state, assignedInstance) {
   return best;
 }
 
-function getCargoUsedFromState(state) {
-  return ResourceRegistry.getCargoTotal(state);
+function getInventoryTotalFromState(state) {
+  return ResourceRegistry.getInventoryTotal(state);
 }
 
-function getGlobalDisplayState(state, cargoCapacity) {
+function getGlobalDisplayState(state) {
   const resources = state && state.resources ? state.resources : {};
-  const capacity = cargoCapacity || 10000000;
-  const cargoUsed = getCargoUsedFromState(state);
+  const total = getInventoryTotalFromState(state);
   return {
     isk:ResourceRegistry.get(state, "currency:isk"),
     lp:ResourceRegistry.get(state, "currency:lp"),
-    cargo:{
-      used:cargoUsed,
-      capacity,
-      full:cargoUsed >= capacity,
-      percent:Math.min(100, Math.floor(cargoUsed / capacity * 100))
+    inventory:{
+      total
     },
     quickOres:ResourceRegistry.listStateEntries(state, "ore")
       .filter(entry => entry.quantity > 0)
@@ -750,6 +746,20 @@ function getShipEngineeringDisplayState(state, now) {
   };
 }
 
+function getShipEngineeringSpeedBreakdownText(display) {
+  const sl = display.stationLogistics || {};
+  const sm = Number(display.skillMultiplier || display.efficiency) || 1;
+  const ym = Number(display.shipyardMultiplier) || 1;
+  const lm = Number(sl.multiplier) || 1;
+  const total = Number(display.totalSpeedMultiplier) || (sm * ym * lm);
+  const parts = ["技能 ×" + sm.toFixed(2), "船坞 ×" + ym.toFixed(2)];
+  const logPart = (sl.bodyLevel > 0 && sl.operational)
+    ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）"
+    : "后勤 ×" + lm.toFixed(2) + "（" + (sl.text || "未建立") + "）";
+  parts.push(logPart);
+  return parts.join(" · ") + " · 最终 ×" + total.toFixed(2);
+}
+
 function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const action = state.currentAction;
   const skill = state.skills.equipmentEngineering || { lvl:1, xp:0 };
@@ -1420,18 +1430,15 @@ function getPlanetDeploymentDisplayState(state, deployment, now) {
   };
 }
 
-function getPlanetaryDisplayState(state, now, cargoCapacity) {
+function getPlanetaryDisplayState(state, now) {
   const capacity = getPlanetaryCapacityState(state);
   const deployments = state.planetary && Array.isArray(state.planetary.deployments) ? state.planetary.deployments : [];
   const isk = ResourceRegistry.get(state, "currency:isk");
   const tritanium = ResourceRegistry.get(state, "mineral:三钛合金");
-  const usedCargo = getCargoUsedFromState(state);
-  const totalCargo = Number(cargoCapacity) || 10000000;
   return {
     kind:"planetary",
     ...capacity,
     canDeploy:capacity.usedSlots < capacity.slots,
-    cargo:{ used:usedCargo, capacity:totalCargo, free:Math.max(0, totalCargo - usedCargo) },
     deployments:deployments.map(deployment => getPlanetDeploymentDisplayState(state, deployment, now)),
     deployOptions:PLANET_TYPES.map(config => {
       const constructionISK = Number(config.constructionCost && config.constructionCost.isk) || 0;
@@ -1458,7 +1465,7 @@ function getPlanetaryDisplayState(state, now, cargoCapacity) {
   };
 }
 
-function getCargoDisplayState(state, filter, cargoCapacity) {
+function getCargoDisplayState(state, filter) {
   const selectedFilter = ITEM_CATEGORIES[filter] || filter === "all" ? filter : "all";
   const componentNames = Object.fromEntries(SHIP_COMPONENT_RECIPES.map(recipe => [recipe.id, recipe.name]));
   const resources = state.resources || {};
@@ -1501,8 +1508,7 @@ function getCargoDisplayState(state, filter, cargoCapacity) {
   return {
     kind:"cargo",
     filter:selectedFilter,
-    used:getCargoUsedFromState(state),
-    capacity:Number(cargoCapacity) || 10000000,
+    total:getInventoryTotalFromState(state),
     items,
     emptyText:selectedFilter === "all" ? "仓库空空如也" : selectedFilter === "equipment" ? "暂无舰船/装备数据" : "该分类暂无物品",
     filters:Object.keys(ITEM_CATEGORIES).map(id => ({ id, selected:id === selectedFilter }))
@@ -2038,7 +2044,7 @@ function getStatisticsDisplayState(state) {
 }
 
 function getNavigationDisplayState(page, view) {
-  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel" };
+  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel" };
   const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", combat:"combat-panel" };
   const selectedPage = page || "skill";
   const selectedView = view || "mining";

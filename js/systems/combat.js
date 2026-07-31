@@ -31,7 +31,15 @@ function finishCombatRecovery(now) {
 }
 
 function updateCombatRecovery(now) {
-  finishCombatRecovery(now);
+  // 唯一恢复入口（Batch C-14A 第一次定点返修）：
+  // 记录维修前是否处于 repairUntil（真实「维修中→维修完成」跃迁），先结束维修，
+  // 仅在本次真实从维修中变为维修完成、且存在待恢复战斗（resumeAfterRepair.type==="combat"）时，
+  // 调用 tryResumeCombatAfterRepair 自动恢复出击并发出唯一的 combat:resumedAfterRepair。
+  const wasRepairing = (Number(gameState.combat.repairUntil) || 0) > 0;
+  const finished = finishCombatRecovery(now);
+  if (finished && wasRepairing && gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "combat") {
+    tryResumeCombatAfterRepair();
+  }
   return getCombatRecoveryRemaining(now);
 }
 
@@ -46,6 +54,11 @@ function emitCombatEvent(event) {
 function beginCombatRecovery() {
   const result = dispatchGameAction(gameState, { type:"combat/beginRecovery" }, Date.now());
   if (result.changed) {
+    // Batch C-11：战败即本 run 终止，清空实际开火武器类型登记
+    resetCombatRunWeaponTypes(gameState.combat);
+    // Batch C-12：战败即本 run 终止，清空单场伤害累计
+    gameState.combat.runDamageDealt = 0;
+    gameState.combat.runDamageTaken = 0;
     const payload = { type:"ship-destroyed", shipId:gameState.combat.destroyedShip, repairSeconds:180 };
     GameEvents.emit("ship:destroyed", payload);
     emitCombatEvent(payload);
@@ -516,6 +529,10 @@ function resolveDeathspaceWaveVictory(site, zone) {
     c.deathspaceClears[site.id] = (c.deathspaceClears[site.id] || 0) + 1;
     c.lastLoot += " · 全通LP +" + clearLp;
     c.lastStatus = "死亡空间全通 · " + site.name;
+    // Batch C-12（返修）：先 emit deathspaceCleared，再清零 runDamage
+    GameEvents.emit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
+    c.runDamageDealt = 0;
+    c.runDamageTaken = 0;
     c.active = false;
     gameState.currentAction.active = false;
     c.enemies = [];
@@ -526,13 +543,50 @@ function resolveDeathspaceWaveVictory(site, zone) {
     const maxHp = getCombatMaxHpFromState(gameState, { zoneId:zone.id });
     c.hp = { ...maxHp };
     c.maxHp = { ...maxHp };
-    GameEvents.emit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
     return true;
   }
   c.lastStatus = "房间肃清 · LP +" + waveLp;
   c.wave++;
   spawnCombatWave();
   return true;
+}
+
+// ============================================================================
+// Batch C-11：本次星带 run 内「实际开火过」的武器类型登记（runWeaponTypes）
+//   - 合法类型只有 laser / cannon / missile（与 WEAPON_CONFIG 键一致）；
+//   - 只在真实攻击结算（canFire 且武器配置存在）时去重登记，安装未开火不登记；
+//   - 重置点：星带肃清发事件后 / 战败进入维修 / 维修恢复新 run / 切换星带；
+//   - 旧存档/坏值清洗：非数组重建为 []，数组内剔除非法类型并去重；
+//   - runWeaponTypesZone 仅用于切区检测（zone 变化即视为新 run）。
+// ============================================================================
+const COMBAT_RUN_WEAPON_TYPES = Object.freeze(["laser", "cannon", "missile"]);
+
+function normalizeCombatRunWeaponTypes(c, zoneId) {
+  if (!Array.isArray(c.runWeaponTypes)) {
+    c.runWeaponTypes = [];
+  } else {
+    const cleaned = [];
+    for (const t of c.runWeaponTypes) {
+      if (COMBAT_RUN_WEAPON_TYPES.indexOf(t) !== -1 && cleaned.indexOf(t) === -1) cleaned.push(t);
+    }
+    if (cleaned.length !== c.runWeaponTypes.length) c.runWeaponTypes = cleaned;
+  }
+  if (zoneId !== undefined && c.runWeaponTypesZone !== zoneId) {
+    c.runWeaponTypesZone = zoneId;
+    c.runWeaponTypes = [];
+  }
+}
+
+function resetCombatRunWeaponTypes(c) {
+  c.runWeaponTypes = [];
+}
+
+// Batch C-12（返修）：单一清洗原语——runDamageDealt/runDamageTaken 仅接受 typeof number、
+// 有限非负；合法小数保留；字符串数字、NaN、Infinity、负数、null、对象、数组、布尔归零。
+function normalizeCombatRunDamage(c) {
+  const normalize = (v) => (typeof v === "number" && Number.isFinite(v) && v >= 0) ? v : 0;
+  c.runDamageDealt = normalize(c.runDamageDealt);
+  c.runDamageTaken = normalize(c.runDamageTaken);
 }
 
 function resolveCombatWaveVictory(zone) {
@@ -550,9 +604,17 @@ function resolveCombatWaveVictory(zone) {
     c.zoneClears[zone.id] = (c.zoneClears[zone.id] || 0) + 1;
     c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + "肃清LP +" + lp;
     c.lastStatus = "肃清完成 · " + zone.name;
-    GameEvents.emit("combat:zoneCleared", { zoneId:zone.id, name:zone.name, lp, clearCount:c.zoneClears[zone.id] });
+    // Batch C-11：payload 附带通关波次与本 run 实际开火武器类型（快照副本，防外部引用篡改）
+    // Batch C-12：追加 damageTaken（全程累计实际承伤，emit 后归零）
+    normalizeCombatRunWeaponTypes(c, zone.id);
+    normalizeCombatRunDamage(c);
+    const clearedDamageTaken = c.runDamageTaken;
+    GameEvents.emit("combat:zoneCleared", { zoneId:zone.id, name:zone.name, lp, clearCount:c.zoneClears[zone.id], wave:c.wave, weaponTypes:c.runWeaponTypes.slice(), damageTaken:clearedDamageTaken });
     c.wave = 1;
     c.runEliteKills = 0;
+    c.runDamageDealt = 0;
+    c.runDamageTaken = 0;
+    resetCombatRunWeaponTypes(c);
   } else {
     GameEvents.emit("combat:waveCleared", { zoneId:zone.id, wave:c.wave });
     c.wave++;
@@ -582,6 +644,12 @@ function tryResumeCombatAfterRepair() {
   c.wave = 1;
   c.runEliteKills = 0;
   c.totalKills = 0;
+  // Batch C-11：维修恢复即全新 run，清空武器类型登记并同步切区检测键
+  resetCombatRunWeaponTypes(c);
+  // Batch C-12：维修恢复即全新 run，清空单场伤害累计
+  c.runDamageDealt = 0;
+  c.runDamageTaken = 0;
+  c.runWeaponTypesZone = r.returnZoneId;
   const wave = buildCombatWave(zone, 1);
   // 经既有 combat/start Action 续跑：内部完整校验（维修中/等级/无武器）失败则不改状态、安全停止
   const res = dispatchGameAction(gameState, { type:"combat/start", enemies:wave.enemies, formationId:wave.formationId }, now);
@@ -594,12 +662,9 @@ function tryResumeCombatAfterRepair() {
 
 function combatTick() {
   const c = gameState.combat;
-  const hadRepair = (Number(c.repairUntil) || 0) > 0;
+  // 维修结束与自动恢复出击统一收口于 updateCombatRecovery（gameTick 顶部亦调用），
+  // 此处不再重复 tryResume，避免双调用 / 双 combat:resumedAfterRepair 事件。
   updateCombatRecovery();
-  // 维修刚结束（repairUntil 被 finishRecovery 清零）：尝试自动恢复被打断的战斗 run
-  if (hadRepair && (Number(c.repairUntil) || 0) === 0) {
-    tryResumeCombatAfterRepair();
-  }
   if (!c.active) return;
   const zone = getCombatEncounterZone(c);
   if (!zone) return;
@@ -635,6 +700,11 @@ function combatTick() {
   const canFire = weapons.length > 0 && enoughFuel && enoughAmmo;
 
   if (canFire) {
+    // Batch C-11：真实开火前清洗/切区检测（仅普通星带模式登记；死亡空间不参与 E21–E23）
+    if (c.mode !== "deathspace") normalizeCombatRunWeaponTypes(c, zone.id);
+    // Batch C-12：记录本轮开火前清洗 runDamage 并捕获快照
+    normalizeCombatRunDamage(c);
+    const prevRunDamage = c.runDamageDealt;
     ResourceRegistry.spend(gameState, "consumable:fuel", volleyFuel);
     for (const [type, amount] of Object.entries(ammoRequired)) ResourceRegistry.spend(gameState, "ammo:" + type, amount);
     const capSkill = gameState.skills.capacitorManagement;
@@ -646,6 +716,10 @@ function combatTick() {
       const combat = equipment.combat;
       const weapon = WEAPON_CONFIG[combat.weaponType];
       if (!weapon) continue;
+      // Batch C-11：真实攻击结算才登记武器类型（WEAPON_CONFIG 命中即为合法类型），去重追加
+      if (c.mode !== "deathspace" && c.runWeaponTypes.indexOf(combat.weaponType) === -1) {
+        c.runWeaponTypes.push(combat.weaponType);
+      }
       const playerHit = calcPlayerHit(combat.weaponType, equipment);
       const dmgMult = calcPlayerDmgMult(combat.weaponType);
       let counterMult = 1.0;
@@ -656,10 +730,13 @@ function combatTick() {
       const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).weaponDamageMultiplier : null;
       const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
       const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier);
-      applyLayeredCombatDamage(enemy.hp, damage);
+      const dealt = applyLayeredCombatDamage(enemy.hp, damage);
+      const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
+      c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;
       for (const areaTarget of getCapitalAreaDamageTargets(c.enemies, enemy, combat.aoe)) {
         const areaDamage = Math.max(1, Math.round(damage * areaTarget.multiplier));
-        applyLayeredCombatDamage(areaTarget.enemy.hp, areaDamage);
+        const areaDealt = applyLayeredCombatDamage(areaTarget.enemy.hp, areaDamage);
+        c.runDamageDealt += areaDealt.shield + areaDealt.armor + areaDealt.structure;
       }
       playAttackFX(true, combat.weaponType, damage);
       const weaponSkill = gameState.skills[weapon.skillKey];
@@ -668,6 +745,13 @@ function combatTick() {
       const targetingSkill = gameState.skills.targeting;
       if (targetingSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "targeting", 1); }
       else if (targetingSkill) { targetingSkill.xp += 1; checkLevelUp("targeting"); }
+    }
+    // Batch C-12（返修）：只有 amount 为有限正数才 emit；全部 miss/0 实伤不发射
+    const amountThisVolley = c.runDamageDealt - prevRunDamage;
+    if (typeof amountThisVolley === "number" && Number.isFinite(amountThisVolley) && amountThisVolley > 0) {
+      GameEvents.emit("combat:damageDealt", {
+        zoneId:zone.id, mode:c.mode, amount:amountThisVolley, runTotal:c.runDamageDealt
+      });
     }
     c.lastStatus = "";
   } else if (weapons.length === 0) {
@@ -696,6 +780,8 @@ function combatTick() {
     const enemyDmg = Math.max(0, Math.round(mitigation.damage));
     const damageTaken = applyLayeredCombatDamage(c.hp, enemyDmg);
     armorDamageTaken += damageTaken.armor;
+    // Batch C-12：累计玩家实际承受伤害
+    c.runDamageTaken = (typeof c.runDamageTaken === "number" ? c.runDamageTaken : 0) + damageTaken.shield + damageTaken.armor + damageTaken.structure;
     enemyVolley.mitigatedDamage += Math.round(mitigation.mitigated);
     const actualDamage = damageTaken.shield + damageTaken.armor + damageTaken.structure;
     const attackOrder = enemyVolley.attackers;

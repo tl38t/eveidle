@@ -101,11 +101,20 @@ const ResourceRegistry = (() => {
     if (definition.pool) {
       const container = getPoolContainer(state, definition, true);
       if (!container) return false;
+      const previousValue = Number(container[definition.key]) || 0;
       container[definition.key] = value;
+      // 仅在真实改变（值不同）时 emit 一次；add/spend/spendMaterial/spendCost 经 set 自然得到一次事件
+      if (value !== previousValue && typeof GameEvents !== "undefined") {
+        GameEvents.emit("resource:changed", { resourceId:id, previousValue, value, delta:Math.abs(value - previousValue) }, { source:"resource-registry" });
+      }
     } else {
       const resources = getResources(state);
       if (!resources) return false;
+      const previousValue = Number(resources[definition.scalarKey]) || 0;
       resources[definition.scalarKey] = value;
+      if (value !== previousValue && typeof GameEvents !== "undefined") {
+        GameEvents.emit("resource:changed", { resourceId:id, previousValue, value, delta:Math.abs(value - previousValue) }, { source:"resource-registry" });
+      }
     }
     state._dirty = true;
     return true;
@@ -204,7 +213,7 @@ const ResourceRegistry = (() => {
     });
   }
 
-  function getCargoTotal(state) {
+  function getInventoryTotal(state) {
     const namespaces = ["ore", "mineral", "planetary", "gas", "moon", "special", "component"];
     const stackables = namespaces.reduce((total, namespace) =>
       total + listStateEntries(state, namespace).reduce((sum, entry) => sum + entry.quantity, 0), 0);
@@ -234,7 +243,7 @@ const ResourceRegistry = (() => {
     getResourceDisplayName,
     listDefinitions,
     listStateEntries,
-    getCargoTotal
+    getInventoryTotal
   };
 })();
 window.ResourceRegistry = ResourceRegistry;

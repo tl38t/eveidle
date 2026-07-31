@@ -8,7 +8,6 @@ const SKILL_DESC = {
   gasHarvesting: "采集气体用于制造燃料",
   shipEngineering: "制造舰船部件与合成整船",
   planetaryIndustry: "后台产出行星材料",
-  cargoManagement: "提升仓库总容量",
   laserOps: "提升激光炮伤害与伤害应用",
   cannonOps: "提升炮台伤害与伤害应用",
   missileOperations: "提升导弹伤害与伤害应用",
@@ -201,9 +200,7 @@ function renderGlobalDisplay(display) {
   const quickEl = document.querySelector('.ore-quick');
   if (quickEl) quickEl.innerHTML = display.quickOres.length ? display.quickOres.map(item => `<span class="ore-icon">${item.name} × ${item.value.toLocaleString()}</span>`).join("") : '<span class="ore-icon">暂无矿石</span>';
   const cargoText = document.getElementById("cargo-text");
-  if (cargoText) { cargoText.textContent = display.cargo.used.toLocaleString() + " / " + display.cargo.capacity.toLocaleString(); cargoText.className = "res-value" + (display.cargo.full ? " warn" : ""); }
-  const cargoFill = document.getElementById("cargo-fill");
-  if (cargoFill) { cargoFill.style.width = display.cargo.percent + "%"; cargoFill.className = "cargo-fill" + (display.cargo.full ? " full" : ""); }
+  if (cargoText) { cargoText.textContent = display.inventory.total.toLocaleString(); }
 }
 
 function updateUI(now) {
@@ -246,7 +243,7 @@ function updateUI(now) {
 
   const fillEl = document.querySelector('.skill-current .fill.exp'); if (fillEl) fillEl.style.width = shell.xpPercent + "%";
   const expVal = document.querySelector('.skill-current .exp-value'); if (expVal) expVal.textContent = shell.xp.toLocaleString() + " / " + shell.xpNeeded.toLocaleString();
-  renderGlobalDisplay(getGlobalDisplayState(gameState, getCargoCapacity()));
+  renderGlobalDisplay(getGlobalDisplayState(gameState));
   renderSidebar(getSidebarDisplayState(gameState));
 }
 
@@ -256,7 +253,7 @@ function setLiveText(element, value) {
 
 // 每秒只更新会持续变化的字段；结构性面板仍由 updateUI() 按事件重建。
 function updateLiveUI() {
-  const globalDisplay = getGlobalDisplayState(gameState, getCargoCapacity());
+  const globalDisplay = getGlobalDisplayState(gameState);
   const iskEl = document.querySelector('.res-value.isk');
   const lpEl = document.querySelector('.res-value.lp');
   setLiveText(iskEl, formatCompact(globalDisplay.isk));
@@ -264,15 +261,7 @@ function updateLiveUI() {
 
   const cargoText = document.getElementById("cargo-text");
   if (cargoText) {
-    setLiveText(cargoText, globalDisplay.cargo.used.toLocaleString() + " / " + globalDisplay.cargo.capacity.toLocaleString());
-    const cargoClass = "res-value" + (globalDisplay.cargo.full ? " warn" : "");
-    if (cargoText.className !== cargoClass) cargoText.className = cargoClass;
-  }
-  const cargoFill = document.getElementById("cargo-fill");
-  if (cargoFill) {
-    const width = globalDisplay.cargo.percent + "%"; const fillClass = "cargo-fill" + (globalDisplay.cargo.full ? " full" : "");
-    if (cargoFill.style.width !== width) cargoFill.style.width = width;
-    if (cargoFill.className !== fillClass) cargoFill.className = fillClass;
+    setLiveText(cargoText, globalDisplay.inventory.total.toLocaleString());
   }
 
   const quickEl = document.querySelector('.ore-quick');

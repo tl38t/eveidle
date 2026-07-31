@@ -86,7 +86,7 @@ const ProductionStateActions = {
 };
 
 const ManufacturingStateActions = {
-  buyBlueprint(state, blueprintId) {
+  buyBlueprint(state, blueprintId, now) {
     const blueprint = SHIP_BLUEPRINTS.find(item => item.id === blueprintId);
     if (!blueprint) return { changed:false, reason:"unknown-blueprint" };
     if ((state.ownedBlueprints || []).includes(blueprint.shipId)) return { changed:false, reason:"already-owned" };
@@ -97,6 +97,10 @@ const ManufacturingStateActions = {
     if (!Array.isArray(state.ownedBlueprints)) state.ownedBlueprints = [];
     state.ownedBlueprints.push(blueprint.shipId);
     state._dirty = true;
+    if (typeof GameEvents !== "undefined") {
+      const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+      GameEvents.emit("blueprint:acquired", { ownershipKey: blueprint.shipId, blueprintKind: "ship", productId: blueprint.shipId }, { timestamp: ts, source: "blueprint-store", offline: false });
+    }
     return { changed:true, blueprint };
   },
 
@@ -394,11 +398,15 @@ const CombatStateActions = {
     state.combat.enemies = [];
     state.combat.currentEnemy = null;
     state.combat.wave = 1;
+    state.combat.runWeaponTypes = [];
+    state.combat.runWeaponTypesZone = state.combat.zone || null;
     state.combat.currentFormation = "";
     state.combat.lastLoot = "";
     state.combat.lastSpecialLoot = "";
     state.combat.lastStatus = "";
     state.combat.lastEnemyVolley = null;
+    state.combat.runDamageDealt = 0;
+    state.combat.runDamageTaken = 0;
     state._dirty = true;
     return { changed:true, mode };
   },
@@ -432,7 +440,10 @@ const CombatStateActions = {
       lastLoot:"",
       lastSpecialLoot:"",
       lastStatus:"",
-      lastEnemyVolley:null
+      lastEnemyVolley:null,
+      runWeaponTypes:[],
+      runWeaponTypesZone:zone.id,
+      runDamageDealt:0, runDamageTaken:0
     });
     state._dirty = true;
     return { changed:true, zone };
@@ -460,7 +471,8 @@ const CombatStateActions = {
       viewDeathspaceTier:site.dedTier,
       zone:site.sourceZoneId,
       enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0,
-      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null
+      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null,
+      runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
     });
     state._dirty = true;
     return { changed:true, site };
@@ -487,7 +499,8 @@ const CombatStateActions = {
       viewDeathspaceTier:selectedTier, viewDeathspaceId:site.id,
       zone:site.sourceZoneId,
       enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0,
-      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null
+      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null,
+      runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
     });
     state._dirty = true;
     return { changed:true, tier:selectedTier, site };
@@ -504,6 +517,10 @@ const CombatStateActions = {
       state.combat.enemies = enemies;
       state.combat.currentEnemy = enemies[0] || null;
       state.combat.currentFormation = formationId || "";
+      state.combat.runWeaponTypes = [];
+      state.combat.runWeaponTypesZone = state.combat.zone || null;
+      state.combat.runDamageDealt = 0;
+      state.combat.runDamageTaken = 0;
     } else {
       state.combat.currentEnemy = living[0];
     }
@@ -535,11 +552,15 @@ const CombatStateActions = {
       deathspaceTier:site.dedTier, viewDeathspaceId:site.id, viewDeathspaceTier:site.dedTier,
       active:true, enemies, currentEnemy:enemies[0] || null, wave:1,
       totalKills:0, runEliteKills:0, currentFormation:formationId || "deathspace_1",
-      lastLoot:"", lastSpecialLoot:"", lastStatus:"通行密钥已消耗", lastEnemyVolley:null
+      lastLoot:"", lastSpecialLoot:"", lastStatus:"通行密钥已消耗", lastEnemyVolley:null,
+      runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
     });
     state.currentAction.skill = "combat";
     state.currentAction.active = true;
     state._dirty = true;
+    window.GameEvents.emit("combat:deathspaceEntered", {
+      deathspaceId:site.id, zoneId:site.sourceZoneId, faction:site.faction, tier:site.dedTier
+    }, { timestamp:now, source:"combat", offline:false });
     return { changed:true, site };
   },
 
@@ -564,7 +585,10 @@ const CombatStateActions = {
       lastLoot:"",
       lastSpecialLoot:"",
       lastStatus:abandonedDeathspace ? "已撤离死亡空间，通行密钥不返还" : "",
-      lastEnemyVolley:null
+      lastEnemyVolley:null,
+      runWeaponTypes:[],
+      runWeaponTypesZone:null,
+      runDamageDealt:0, runDamageTaken:0
     });
     state.resumeAfterRepair = null; // 玩家主动停止：取消待恢复（含维修中取消自动出击）
     state._dirty = true;
@@ -657,18 +681,16 @@ const PlanetaryStateActions = {
     return { changed:true, deployment, config };
   },
 
-  collect(state, id, cargoCapacity) {
+  collect(state, id) {
     const deployment = state.planetary && state.planetary.deployments.find(item => item.id === id);
     if (!deployment) return { changed:false, reason:"unknown-deployment" };
-    if ((Number(deployment.storage) || 0) <= 0) return { changed:false, reason:"empty" };
-    const freeCargo = Math.max(0, (Number(cargoCapacity) || 10000000) - getCargoUsedFromState(state));
-    const quantity = Math.min(Number(deployment.storage) || 0, freeCargo);
-    if (quantity <= 0) return { changed:false, reason:"cargo-full" };
+    const quantity = Number(deployment.storage) || 0;
+    if (quantity <= 0) return { changed:false, reason:"empty" };
     const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
     const output = config ? config.output : "未知产物";
     const resourceId = "planetary:" + output;
     ResourceRegistry.add(state, resourceId, quantity);
-    deployment.storage -= quantity;
+    deployment.storage = 0;
     state._dirty = true;
     if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:collected", {
       deploymentId:deployment.id, planetType:deployment.planetType, quantity, resourceId
@@ -876,7 +898,7 @@ const ShellStateActions = {
     return { changed:true, expanded:settings.combatSkillsExpanded };
   },
 
-  buyLPItem(state, itemId) {
+  buyLPItem(state, itemId, now) {
     const item = getLPStoreCatalogItem(itemId);
     if (!item) return { changed:false, reason:"unknown-item" };
     if (item.kind === "equipmentBlueprint" && hasEquipmentBlueprintFromState(state, item.equipmentId)) return { changed:false, reason:"already-owned" };
@@ -884,14 +906,25 @@ const ShellStateActions = {
     ResourceRegistry.spend(state, "currency:lp", item.lpPrice);
     if (item.kind === "equipmentBlueprint") {
       if (!Array.isArray(state.ownedBlueprints)) state.ownedBlueprints = [];
-      state.ownedBlueprints.push(getEquipmentBlueprintOwnershipKey(item.equipmentId));
+      const ownershipKey = getEquipmentBlueprintOwnershipKey(item.equipmentId);
+      state.ownedBlueprints.push(ownershipKey);
       state._dirty = true;
+      if (typeof GameEvents !== "undefined") {
+        const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+        GameEvents.emit("blueprint:acquired", { ownershipKey, blueprintKind: "equipment", productId: item.equipmentId }, { timestamp: ts, source: "blueprint-store", offline: false });
+      }
       return { changed:true, item, blueprint:item };
     }
     if (!state.equipment) state.equipment = { inventory:[] };
     if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
     state.equipment.inventory.push(item.equipmentId);
     state._dirty = true;
+    // Batch C-13：普通装备购入使未安装装备数 +1，计入 ResourceRegistry.getInventoryTotal，
+    // 故在真实入库成功后 emit 一次 inventory:changed（蓝图分支不发，它只发 blueprint:acquired）。
+    if (typeof GameEvents !== "undefined") {
+      const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+      GameEvents.emit("inventory:changed", { kind: "equipment", itemId: item.equipmentId, delta: 1 }, { timestamp: ts, source: "lp-store", offline: false });
+    }
     return { changed:true, item, equipment:EQUIPMENT_DB[item.equipmentId] };
   },
 
@@ -936,7 +969,7 @@ const ShellStateActions = {
     state.shipAssignments.combat = instance.instanceId;
     state.combat.activeShip = instance.instanceId;
     const maxHp = getCombatMaxHpFromState(state);
-    Object.assign(state.combat, { hp:{ ...maxHp }, maxHp:{ ...maxHp }, weapon:config.recommendedWeapon || "laser", enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0, currentFormation:"", active:false });
+    Object.assign(state.combat, { hp:{ ...maxHp }, maxHp:{ ...maxHp }, weapon:config.recommendedWeapon || "laser", enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0, currentFormation:"", runWeaponTypes:[], runWeaponTypesZone:state.combat.zone||null, runDamageDealt:0, runDamageTaken:0, active:false });
     state._dirty = true;
     return { changed:true, instance, config };
   },
@@ -1138,6 +1171,17 @@ const ShellStateActions = {
     if (front) queue.items.unshift(queueItem); else queue.items.push(queueItem);
     if (front && queue.status.isRunning && queue.status.activeIndex >= 0) queue.status.activeIndex++;
     state._dirty = true;
+    // Batch C-14A（J05）：唯一真实新增入口。仅在数组写入完成后发射一次，
+    // size 取写入后的真实长度（不是 +1 推算）。合并到末项 / 队列已满 / 蓝图未解锁 /
+    // 缺失队列结构等路径均在上方 return，不会到达此处，因此不存在虚增。
+    // GameEvents 不可用时安全降级：入队本身已成功，不回滚、不抛错。
+    if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.emit === "function") {
+      GameEvents.emit("queue:itemAdded", {
+        itemId:queueItem.id,
+        size:queue.items.length,
+        maxSize:queue.config.maxSize
+      }, { offline:false, source:"queue-add" });
+    }
     return { changed:true, item:queueItem };
   },
 
@@ -1464,7 +1508,7 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "production/selectMiningMode") return ProductionStateActions.selectMiningMode(state, action.mode);
   if (action.type === "production/selectSmeltingRecipe") return ProductionStateActions.selectSmeltingRecipe(state, action.areaName, actionTime);
   if (action.type === "production/selectGasArea") return ProductionStateActions.selectGasArea(state, action.areaName, actionTime);
-  if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId);
+  if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId, actionTime);
   if (action.type === "manufacturing/selectShipComponent") return ManufacturingStateActions.selectShipComponent(state, action.componentId);
   if (action.type === "manufacturing/selectShipAssembly") return ManufacturingStateActions.selectShipAssembly(state, action.recipeId);
   if (action.type === "manufacturing/startShipComponent") return ManufacturingStateActions.startShipComponent(state, actionTime);
@@ -1492,10 +1536,10 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "combat/beginRecovery") return CombatStateActions.beginRecovery(state, actionTime);
   if (action.type === "combat/finishRecovery") return CombatStateActions.finishRecovery(state, actionTime);
   if (action.type === "planetary/deploy") return PlanetaryStateActions.deploy(state, action.planetType, actionTime);
-  if (action.type === "planetary/collect") return PlanetaryStateActions.collect(state, action.id, action.cargoCapacity);
+  if (action.type === "planetary/collect") return PlanetaryStateActions.collect(state, action.id);
   if (action.type === "planetary/renew") return PlanetaryStateActions.renew(state, action.id, actionTime);
   if (action.type === "planetary/demolish") return PlanetaryStateActions.demolish(state, action.id);
-  if (action.type === "shell/buyLPItem") return ShellStateActions.buyLPItem(state, action.equipmentId);
+  if (action.type === "shell/buyLPItem") return ShellStateActions.buyLPItem(state, action.equipmentId, actionTime);
   if (action.type === "hangar/toggleAssignment") return ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime);
   if (action.type === "hangar/equipCombatShip") return ShellStateActions.equipCombatShip(state, action.instanceId, actionTime);
   if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue);

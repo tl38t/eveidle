@@ -103,12 +103,8 @@ function executeQueueItem(index) {
     return false;
   }
   queue.status.activeIndex = index;
-  // 所有项目经统一入口执行
-  if (typeof executeQueueItemForState === "function") {
-    executeQueueItemForState(gameState, queue.items[index], Date.now());
-  } else {
-    applyQueueItemConfig(queueItemConfig(queue.items[index]));
-  }
+  // 所有项目经统一入口执行（executeQueueItemForState 恒存在，旧回退分支已清理）
+  executeQueueItemForState(gameState, queue.items[index], Date.now());
   gameState._dirty = true;
   return true;
 }

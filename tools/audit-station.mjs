@@ -2315,10 +2315,37 @@ section("F5 isStationOperational 语义");
     // 清理：结束 J 区动作，避免污染后续区
     G.currentAction.active = false;
   })();
-})();
+// ---- K1：舰船工程后勤文案行为断言（纯函数，不依赖 space state）----
+(() => {
+  section("K1 舰船工程后勤文案");
+  const fn = W.getShipEngineeringSpeedBreakdownText;
+  ok(typeof fn === "function", "K1 getShipEngineeringSpeedBreakdownText 存在");
 
-// ================================================================
-// G 区：Phase 3C-6 离线燃料闸门 —— 精确周期断言（真实业务入口）
+  // 1. 未建立空间站（stationLogistics 缺失）：不抛异常，lm=1，显示"未建立"
+  const noStation = fn({ skillMultiplier:2, shipyardMultiplier:1, totalSpeedMultiplier:2 });
+  ok(typeof noStation === "string" && !noStation.includes("ReferenceError") && !noStation.includes("NaN") && !noStation.includes("undefined") && noStation.includes("未建立"),
+    "K1 无空间站 lm=1 显示'未建立': " + noStation);
+
+  // 2. 空间站 Lv.1 且有燃料：后勤倍率 1.01，最终倍率=2×1×1.01=2.02
+  const lv1 = fn({ skillMultiplier:2, shipyardMultiplier:1, stationLogistics:{ bodyLevel:1, operational:true, multiplier:1.01, text:"×1.01" }, totalSpeedMultiplier:2*1*1.01 });
+  ok(lv1.includes("1.01") && lv1.includes("+1%") && lv1.includes("2.02") && !lv1.includes("未建立"),
+    "K1 Lv.1 后勤×1.01: " + lv1);
+
+  // 3. 空间站 Lv.3 且有燃料：后勤倍率 1.03
+  const lv3 = fn({ skillMultiplier:2, shipyardMultiplier:1.30, stationLogistics:{ bodyLevel:3, operational:true, multiplier:1.03, text:"×1.03" }, totalSpeedMultiplier:2*1.30*1.03 });
+  ok(lv3.includes("1.03") && lv3.includes("+3%"), "K1 Lv.3 后勤×1.03: " + lv3);
+
+  // 4. 空间站断油：后勤倍率=1，无 NaN/undefined
+  const noFuel = fn({ skillMultiplier:2, shipyardMultiplier:1.30, stationLogistics:{ bodyLevel:3, operational:false, multiplier:1, text:"断油" }, totalSpeedMultiplier:2*1.30*1 });
+  ok(!noFuel.includes("NaN") && !noFuel.includes("undefined") && noFuel.includes("断油") && !noFuel.includes("+0%"),
+    "K1 断油 lm=1 显示'断油': " + noFuel);
+
+  // 5. stationLogistics 彻底缺失（字段不存在）：fail-safe 回退到 1，不抛 ReferenceError
+  const missing = fn({ skillMultiplier:1, shipyardMultiplier:1 });
+  ok(typeof missing === "string" && !missing.includes("ReferenceError") && !missing.includes("undefined") && !missing.includes("NaN"),
+    "K1 缺失 stationLogistics 不抛异常: " + missing);
+})();
+})();
 // ================================================================
 (() => {
   const RECIPE = evalIn("SMELTING_RECIPES").find(r => r.name === "凡晶石带"); // 顶层 const 经 vm 取真实配方
@@ -2522,7 +2549,7 @@ section("F5 isStationOperational 语义");
     W.gameTick();
     const shipsAfter = (G.inventory.ships || []).filter(s => s.shipId === "rifter").length;
     ok(shipsAfter - shipsBefore === 1, "G5 在线断油仍组装 1 艘 (=" + (shipsAfter - shipsBefore) + ")");
-    ok(G.currentAction.active === true && W.isCargoFull() === false, "G5 行动未被误停/货舱未满");
+    ok(G.currentAction.active === true, "G5 行动未被误停");
     // 离线断油批量
     G.currentAction.active = true; G.currentAction.progress = 0; G.currentAction.lastProgressUpdate = Date.now();
     for (const c of COMP_KEYS) RR.set(G, "component:" + c, 1000);

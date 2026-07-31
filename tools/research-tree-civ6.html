@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EVE IDLE · 研究科技树（文明6风格）</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: #0a0e16;
+    color: #c8d6e6;
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    overflow: hidden;
+  }
+  #topbar {
+    height: 56px;
+    background: linear-gradient(180deg,#101826,#0a0e16);
+    border-bottom: 1px solid #1c2636;
+    display: flex; align-items: center; gap: 18px;
+    padding: 0 20px; position: relative; z-index: 30;
+  }
+  #topbar h1 { font-size: 15px; font-weight: 600; color: #8ab8d8; letter-spacing: 1px; }
+  #topbar .now {
+    font-size: 12px; color: #d6c080;
+    background: rgba(200,160,40,0.12); border: 1px solid rgba(200,160,40,0.3);
+    padding: 4px 12px; border-radius: 14px;
+  }
+  #legend { margin-left: auto; display: flex; gap: 14px; font-size: 11px; color: #7a8aa0; }
+  #legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .dot.done { background: #2a8f8f; border: 1px solid #3fd0c0; }
+  .dot.avail { background: #2a3340; border: 1px solid #5a7088; }
+  .dot.lock { background: #161b22; border: 1px solid #2a3340; }
+  .dot.proto { background: #2a1f0a; border: 1px solid #d0a030; }
+
+  #scroll { position: absolute; top: 56px; left: 0; right: 0; bottom: 64px; overflow: auto; }
+  #stage { position: relative; }
+
+  svg#edges { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
+  .edge { fill: none; stroke: #2c3a4e; stroke-width: 2; }
+  .edge.done { stroke: #3fd0c0; stroke-width: 2.4; }
+  .edge.hi { stroke: #6ad0ff; stroke-width: 3.2; }
+  .edge.dim { opacity: 0.35; }
+
+  .era-head {
+    position: absolute; z-index: 2; text-align: center;
+    border-radius: 8px 8px 0 0;
+    padding: 10px 4px; font-size: 14px; font-weight: 700; letter-spacing: 1px;
+    color: #eaf2fb; border: 1px solid rgba(255,255,255,0.08);
+    border-bottom: none;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  }
+
+  .tech {
+    position: absolute; z-index: 5; width: 186px; height: 54px;
+    border-radius: 8px; padding: 7px 10px; cursor: pointer;
+    border: 1.5px solid #2a3340; background: #161b22;
+    display: flex; flex-direction: column; justify-content: center;
+    transition: transform .12s, box-shadow .12s; user-select: none;
+  }
+  .tech:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,0.5); z-index: 9; }
+  .tech .nm { font-size: 13px; font-weight: 600; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tech .tg { font-size: 10px; margin-top: 3px; opacity: 0.8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  .tech.completed { background: #15474a; border-color: #3fd0c0; color: #d6fffb; }
+  .tech.active { background: #15474a; border-color: #3fd0c0; color: #d6fffb; animation: pulse 1.6s infinite; }
+  .tech.available { background: #232c3a; border-color: #5a7088; color: #d4e2f0; }
+  .tech.locked { background: #13171f; border-color: #232c3a; color: #59667a; opacity: 0.62; }
+  .tech.proto { border-color: #d0a030; }
+  .tech.proto.completed { background: #3a2a10; border-color: #f0c040; color: #f0d8a0; }
+  .tech.proto.active { background: #3a2a10; border-color: #f0c040; color: #f0d8a0; animation: pulse 1.6s infinite; }
+  .tech.proto.available { background: #2a2010; border-color: #c0a040; color: #e0c890; }
+  .tech.proto.locked { background: #1a1408; border-color: #3a2a10; color: #6a5a30; }
+
+  @keyframes pulse {
+    0%,100% { box-shadow: 0 0 0 0 rgba(63,208,192,0.45); }
+    50% { box-shadow: 0 0 0 5px rgba(63,208,192,0); }
+  }
+  .tech .researching {
+    position: absolute; top: -9px; right: 8px; font-size: 9px;
+    background: #3fd0c0; color: #062; padding: 1px 6px; border-radius: 8px; font-weight: 700;
+  }
+  .tech .badge {
+    position: absolute; top: -8px; left: 8px; font-size: 9px;
+    padding: 1px 6px; border-radius: 8px; font-weight: 700;
+  }
+  .badge.single { background: #2a8f8f; color: #d6fffb; }
+  .badge.proto { background: #d0a030; color: #2a1a06; }
+
+  /* Detail panel */
+  #detail {
+    position: fixed; top: 70px; right: 16px; width: 290px; z-index: 40;
+    background: #121826; border: 1px solid #2a3850; border-radius: 10px;
+    padding: 14px; display: none; box-shadow: 0 8px 30px rgba(0,0,0,0.6);
+  }
+  #detail h3 { font-size: 15px; color: #cfe6ff; margin-bottom: 4px; }
+  #detail .meta { font-size: 11px; color: #7a8aa0; margin-bottom: 8px; }
+  #detail .meta b { color: #9ab8d8; }
+  #detail .desc { font-size: 12px; color: #aebfd2; line-height: 1.5; margin-bottom: 10px; }
+  #detail .lab { font-size: 11px; color: #6a7a90; text-transform: uppercase; letter-spacing: 1px; margin: 8px 0 4px; }
+  #detail .eff { font-size: 12px; color: #c8d6e6; line-height: 1.7; }
+  #detail .eff .st { color: #3fd0c0; }
+  #detail .pre { font-size: 12px; color: #d6c080; }
+  #detail .sttag { display: inline-block; font-size: 11px; padding: 2px 10px; border-radius: 10px; margin-bottom: 8px; }
+  #detail .close { position: absolute; top: 8px; right: 10px; cursor: pointer; color: #6a7a90; font-size: 16px; }
+  #detail .close:hover { color: #c8d6e6; }
+</style>
+</head>
+<body>
+  <div id="topbar">
+    <h1>◈ EVE IDLE · 研究科技树</h1>
+    <div class="now" id="now-research">当前研究：采矿理论 IV</div>
+    <div id="legend">
+      <span><i class="dot done"></i>已研究</span>
+      <span><i class="dot avail"></i>可研究</span>
+      <span><i class="dot lock"></i>前置不足</span>
+      <span><i class="dot proto"></i>协议节点</span>
+    </div>
+  </div>
+
+  <div id="scroll">
+    <div id="stage">
+      <svg id="edges"><defs>
+        <marker id="ah" markerWidth="9" markerHeight="9" refX="0" refY="4.5" orient="auto">
+          <path d="M0,0 L9,4.5 L0,9 Z" fill="#3a4a5e"></path>
+        </marker>
+        <marker id="ahd" markerWidth="9" markerHeight="9" refX="0" refY="4.5" orient="auto">
+          <path d="M0,0 L9,4.5 L0,9 Z" fill="#3fd0c0"></path>
+        </marker>
+      </defs></svg>
+    </div>
+  </div>
+
+  <div id="detail">
+    <span class="close" id="d-close">✕</span>
+    <h3 id="d-name"></h3>
+    <div class="meta" id="d-meta"></div>
+    <div class="sttag" id="d-status"></div>
+    <div class="desc" id="d-desc"></div>
+    <div class="lab">效果</div>
+    <div class="eff" id="d-eff"></div>
+    <div class="lab">前置需求</div>
+    <div class="pre" id="d-pre"></div>
+  </div>
+
+<script>
+  // ============ DATA ============
+  const LEVELS = ["I","II","III","IV","V"];
+  const lv5 = fn => [1,2,3,4,5].map(fn);
+
+  const NODES = {
+    // Era 0 — 基础
+    syseng:    { name:"系统工程", era:0, single:true, status:"available", desc:"基础工程方法论，为所有科技领域提供理论支撑。提升所有采集效率。", effects:["所有采集效率 +2%"], prereq:[] },
+    matsci:    { name:"材料科学", era:0, single:true, status:"available", desc:"研究材料的微观结构与宏观性能。提升所有制造效率。", effects:["所有制造效率 +2%"], prereq:[] },
+    dataan:    { name:"数据分析", era:0, single:true, status:"completed", desc:"大规模数据处理与模式识别技术。提升全武器伤害。", effects:["全武器伤害 +2%"], prereq:[] },
+    autocon:   { name:"自动控制", era:0, single:true, status:"available", desc:"自动化系统与反馈控制理论。提升考古效率。", effects:["考古效率 +2%"], prereq:[] },
+
+    // Era 1 — 应用
+    smelt:     { name:"冶炼理论", era:1, status:"available", desc:"改进矿石冶炼工艺。", effects:lv5(l=>"冶炼效率 +"+(l*1.2)+"%"), prereq:["matsci"] },
+    arch:      { name:"遗迹分析效率", era:1, status:"available", desc:"提升考古扫描与分析速度。", effects:lv5(l=>"考古效率 +"+(l*1.2)+"%"), prereq:["syseng"] },
+    mine:      { name:"采矿理论", era:1, status:"active", desc:"提升采矿设备的作业效率。", effects:lv5(l=>"采矿效率 +"+(l*1.2)+"%"), prereq:["syseng"] },
+    signal:    { name:"信号解析", era:1, status:"available", desc:"提高信号解码准确率。", effects:lv5(l=>"考古成功率 +"+(l*0.6)+"pp"), prereq:["dataan"] },
+    gas:       { name:"气云动力学", era:1, status:"available", desc:"研究气云采集与分离技术。", effects:lv5(l=>"采气效率 +"+(l*1.2)+"%"), prereq:["matsci"] },
+    backlash:  { name:"反冲隔离", era:1, status:"locked", desc:"降低遗迹反噬的破坏性。", effects:lv5(l=>"反噬伤害 -"+(l*1.2)+"%"), prereq:["matsci"] },
+    equipeng:  { name:"装备工程理论", era:1, status:"available", desc:"加速装备制造流程。", effects:lv5(l=>"装备制造效率 +"+(l*1.2)+"%"), prereq:["syseng","dataan"] },
+    boostereng:{ name:"增强剂工程理论", era:1, status:"available", desc:"提高增强剂合成速率。", effects:lv5(l=>"增强剂制造效率 +"+(l*1.2)+"%"), prereq:["dataan"] },
+    fuellog:   { name:"维护燃料管理", era:1, status:"available", desc:"减少空间站维护燃料需求。", effects:lv5(l=>"维护燃料消耗 -"+(l*1.8)+"%"), prereq:["matsci"] },
+    combat:    { name:"作战理论", era:1, status:"available", desc:"提升战斗经验获取效率。", effects:lv5(l=>"战斗经验 +"+(l*1.2)+"%"), prereq:["syseng","matsci"] },
+    planfin:   { name:"行星财政管理", era:1, status:"locked", desc:"降低行星基地维护费用。", effects:lv5(l=>"行星维护费 -"+(l*1.8)+"%"), prereq:["dataan"] },
+
+    // Era 2 — 工程
+    probe:     { name:"探针经济学", era:2, status:"locked", desc:"减少考古探针的消耗量。", effects:lv5(l=>"探针消耗 -"+(l*1.2)+"%"), prereq:["signal"] },
+    shipcomp:  { name:"舰船组件工程", era:2, status:"locked", desc:"提升舰船部件的制造速度。", effects:lv5(l=>"组件制造效率 +"+(l*1.2)+"%"), prereq:["mine","smelt"] },
+    planind:   { name:"行星工业管理", era:2, status:"locked", desc:"提高行星基地生产效率。", effects:lv5(l=>"行星生产效率 +"+(l*1.8)+"%"), prereq:["planfin"] },
+    englog:    { name:"工程统筹", era:2, status:"locked", desc:"提高空间站建设工程效率。", effects:lv5(l=>"建设效率 +"+(l*1.8)+"%"), prereq:["syseng","fuellog"] },
+    firectrl:  { name:"火控预测", era:2, status:"available", desc:"提高武器命中预测精度。", effects:lv5(l=>"全武器伤害 +"+(l*0.6)+"%"), prereq:["combat"] },
+    defense:   { name:"防御工程", era:2, status:"available", desc:"增强舰船综合防御能力。", effects:lv5(l=>"三层生命 +"+(l*0.6)+"%"), prereq:["combat"] },
+
+    // Era 3 — 尖端
+    shipasm:   { name:"舰船装配工程", era:3, status:"locked", desc:"加速舰船总装生产线。", effects:lv5(l=>"舰船总装效率 +"+(l*1.2)+"%"), prereq:["shipcomp"] },
+    dataarch:  { name:"数据归档", era:3, status:"locked", desc:"优化考古数据的存储与分析效率。", effects:lv5(l=>"考古经验 +"+(l*1.2)+"%"), prereq:["signal","probe"] },
+    autolog:   { name:"自动线调度", era:3, status:"locked", desc:"优化自动生产线调度算法。", effects:lv5(l=>"自动线效率 +"+(l*1.8)+"%"), prereq:["englog","dataan"] },
+    laser:     { name:"激光物理", era:3, status:"available", desc:"研究激光武器能量输出。", effects:lv5(l=>"激光伤害 +"+(l*1.2)+"%"), prereq:["firectrl"] },
+    shield:    { name:"护盾谐振", era:3, status:"locked", desc:"优化护盾发生器频率。", effects:lv5(l=>"护盾容量 +"+(l*1.2)+"%"), prereq:["defense"] },
+    projectile: { name:"射弹弹道学", era:3, status:"locked", desc:"改进射弹武器的弹道特性。", effects:lv5(l=>"射弹伤害 +"+(l*1.2)+"%"), prereq:["firectrl"] },
+    armor:     { name:"装甲复合材料", era:3, status:"locked", desc:"研发新型装甲合金。", effects:lv5(l=>"装甲容量 +"+(l*1.2)+"%"), prereq:["defense"] },
+    planauto:  { name:"行星维护自动化", era:3, status:"locked", desc:"每个基地独立开启自动续费。", effects:["自动续费 保留最低ISK"], prereq:["planfin","planind","autocon"], protocol:true },
+    missile:   { name:"导弹动力学", era:3, status:"locked", desc:"优化导弹飞行与制导。", effects:lv5(l=>"导弹伤害 +"+(l*1.2)+"%"), prereq:["firectrl"] },
+    repair:    { name:"战场维修理论", era:3, status:"locked", desc:"提升主动维修效率。", effects:lv5(l=>"主动维修量 +"+(l*1.2)+"%"), prereq:["defense"] },
+    structure: { name:"结构应力控制", era:3, status:"locked", desc:"改进舰船骨架结构。", effects:lv5(l=>"结构容量 +"+(l*1.2)+"%"), prereq:["defense"] },
+    tactical:  { name:"综合战术模型", era:3, status:"locked", desc:"火控与防御的交叉研究成果。", effects:lv5(l=>"伤害+三层生命 +"+(l*0.3)+"%"), prereq:["firectrl","defense"] },
+
+    // Era 4 — 协议
+    autoenh:   { name:"自动强化协议", era:4, status:"locked", desc:"消费仓库已有组件，自动连续执行舰船强化。", effects:["自动强化 不生产组件"], prereq:["shipasm","autocon"], protocol:true },
+    intship:   { name:"一体化造船协议", era:4, status:"locked", desc:"自动计算缺少的组件，依次制造，齐全后自动总装。", effects:["自动计算→制造→总装 全链路"], prereq:["shipcomp","shipasm"], protocol:true },
+    autoconv:  { name:"文物自动兑换协议", era:4, status:"locked", desc:"自动兑换可换LP的文物。", effects:["自动兑换文物 获得LP"], prereq:["dataarch","planfin"], protocol:true },
+    autosell:  { name:"文物自动出售协议", era:4, status:"locked", desc:"自动出售可换ISK的文物。", effects:["自动出售文物 获得ISK"], prereq:["dataarch","planfin"], protocol:true },
+    autorepair:{ name:"野外自动维修协议", era:4, status:"locked", desc:"考古失败受伤时触发，消耗燃料自动维修。", effects:["自动维修 护盾/装甲/结构"], prereq:["backlash","repair"], protocol:true },
+  };
+
+  const ERAS = [
+    { label:"时代 I", sub:"基础科学", color:"#2a4a7a", ids:["syseng","matsci","dataan","autocon"] },
+    { label:"时代 II", sub:"应用科学", color:"#2a6a4a", ids:["smelt","arch","mine","signal","gas","backlash","equipeng","boostereng","fuellog","combat","planfin"] },
+    { label:"时代 III", sub:"工程学", color:"#6a5a2a", ids:["probe","shipcomp","planind","englog","firectrl","defense"] },
+    { label:"时代 IV", sub:"尖端科技", color:"#6a2a4a", ids:["shipasm","dataarch","autolog","laser","shield","projectile","armor","planauto","missile","repair","structure","tactical"] },
+    { label:"时代 V", sub:"协议与集成", color:"#4a2a6a", ids:["autoenh","intship","autoconv","autosell","autorepair"] },
+  ];
+
+  const EDGES = [
+    ["syseng","mine"],["matsci","gas"],["matsci","smelt"],["syseng","equipeng"],["dataan","equipeng"],
+    ["dataan","boostereng"],["syseng","arch"],["dataan","signal"],["matsci","backlash"],["syseng","combat"],
+    ["matsci","combat"],["matsci","fuellog"],["syseng","englog"],["dataan","autolog"],["dataan","planfin"],
+    ["mine","shipcomp"],["smelt","shipcomp"],["shipcomp","shipasm"],["shipcomp","intship"],["shipasm","intship"],
+    ["shipasm","autoenh"],["autocon","autoenh"],
+    ["signal","probe"],["signal","dataarch"],["probe","dataarch"],
+    ["dataarch","autosell"],["planfin","autosell"],["dataarch","autoconv"],["planfin","autoconv"],
+    ["combat","firectrl"],["combat","defense"],["firectrl","laser"],["firectrl","missile"],["firectrl","projectile"],
+    ["defense","shield"],["defense","armor"],["defense","structure"],["defense","repair"],["firectrl","tactical"],["defense","tactical"],
+    ["fuellog","englog"],["englog","autolog"],["planfin","planind"],["planfin","planauto"],["planind","planauto"],["autocon","planauto"],
+    ["backlash","autorepair"],["repair","autorepair"],
+  ];
+
+  // ============ LAYOUT ============
+  const COL_W = 260, BOX_W = 186, BOX_H = 54, TOP = 96, ROW_H = 72, COL_X0 = 24;
+  const stage = document.getElementById("stage");
+  const svg = document.getElementById("edges");
+  const NS = "http://www.w3.org/2000/svg";
+
+  const pos = {};
+  ERAS.forEach((era, ei) => {
+    const x = COL_X0 + ei * COL_W + (COL_W - BOX_W) / 2;
+    era.ids.forEach((id, ri) => { pos[id] = { x, y: TOP + ri * ROW_H, era: ei }; });
+  });
+
+  const totalW = COL_X0 + ERAS.length * COL_W;
+  const totalH = TOP + Math.max(...ERAS.map(e => e.ids.length)) * ROW_H + 16;
+  stage.style.width = totalW + "px";
+  stage.style.height = totalH + "px";
+  svg.setAttribute("width", totalW);
+  svg.setAttribute("height", totalH);
+
+  // Era headers
+  ERAS.forEach((era, ei) => {
+    const h = document.createElement("div");
+    h.className = "era-head";
+    h.style.left = (COL_X0 + ei * COL_W) + "px";
+    h.style.top = "8px";
+    h.style.width = (COL_W - 8) + "px";
+    h.style.background = era.color;
+    h.textContent = era.sub;
+    stage.appendChild(h);
+  });
+
+  // Edges
+  const edgeEls = [];
+  EDGES.forEach(([from, to]) => {
+    const a = pos[from], b = pos[to];
+    const sx = a.x + BOX_W, sy = a.y + BOX_H / 2;
+    const tx = b.x - 12, ty = b.y + BOX_H / 2;
+    const dx = tx - sx;
+    const c1x = sx + dx * 0.45, c2x = tx - dx * 0.45;
+    const p = document.createElementNS(NS, "path");
+    p.setAttribute("d", `M ${sx} ${sy} C ${c1x} ${sy}, ${c2x} ${ty}, ${tx} ${ty}`);
+    const done = NODES[from].status === "completed";
+    p.setAttribute("class", "edge" + (done ? " done" : ""));
+    p.setAttribute("marker-end", done ? "url(#ahd)" : "url(#ah)");
+    p.dataset.from = from; p.dataset.to = to;
+    svg.appendChild(p);
+    edgeEls.push(p);
+  });
+
+  // Boxes
+  const statusMap = { completed:"已完成", active:"研究中", available:"可研究", locked:"前置不足" };
+  Object.keys(NODES).forEach(id => {
+    const n = NODES[id], p = pos[id];
+    const el = document.createElement("div");
+    const cls = ["tech", n.status];
+    if (n.protocol) cls.push("proto");
+    el.className = cls.join(" ");
+    el.style.left = p.x + "px";
+    el.style.top = p.y + "px";
+    let badge = "";
+    if (n.single) badge = '<span class="badge single">单级</span>';
+    else if (n.protocol) badge = '<span class="badge proto">协议</span>';
+    let researching = (n.status === "active") ? '<span class="researching">研究中</span>' : "";
+    el.innerHTML = badge + researching +
+      '<div class="nm">' + n.name.replace("\n"," ") + '</div>' +
+      '<div class="tg">' + (n.protocol ? "协议节点" : (n.single ? "基础科技" : "数值科技 · " + ERAS[n.era].sub)) + '</div>';
+    el.addEventListener("click", () => showDetail(id));
+    el.addEventListener("mouseenter", () => focusNode(id));
+    el.addEventListener("mouseleave", clearFocus);
+    stage.appendChild(el);
+  });
+
+  // ============ INTERACTION ============
+  function focusNode(id) {
+    edgeEls.forEach(e => {
+      if (e.dataset.from === id || e.dataset.to === id) e.classList.add("hi");
+      else e.classList.add("dim");
+    });
+  }
+  function clearFocus() {
+    edgeEls.forEach(e => { e.classList.remove("hi"); e.classList.remove("dim"); });
+  }
+
+  const dp = document.getElementById("detail");
+  function showDetail(id) {
+    const n = NODES[id];
+    document.getElementById("d-name").textContent = n.name.replace("\n"," ");
+    document.getElementById("d-meta").innerHTML = "领域：" + ERAS[n.era].label + " · " + ERAS[n.era].sub +
+      " ｜ 类型：" + (n.protocol ? "协议节点" : (n.single ? "基础科技 · 单级" : "数值科技"));
+    const st = document.getElementById("d-status");
+    st.textContent = "状态：" + statusMap[n.status];
+    st.style.background = n.protocol ? "rgba(200,160,40,0.15)" : "rgba(40,120,180,0.15)";
+    st.style.color = n.protocol ? "#d0a030" : "#3aa0d0";
+    document.getElementById("d-desc").textContent = n.desc;
+
+    const eff = document.getElementById("d-eff");
+    if (n.protocol) {
+      eff.innerHTML = '<div>' + n.effects[0] + '</div>';
+    } else if (n.single) {
+      eff.innerHTML = '<div class="st">Lv.1 ｜ ' + n.effects[0] + '</div>';
+    } else {
+      eff.innerHTML = n.effects.map((e, i) => {
+        const done = (n.status === "completed") || (n.status === "completed_1" && i < 1);
+        return '<div class="' + (done ? "st" : "") + '">' + LEVELS[i] + ' ｜ ' + e + '</div>';
+      }).join("");
+    }
+
+    const pre = document.getElementById("d-pre");
+    pre.textContent = n.prereq.length
+      ? n.prereq.map(pid => NODES[pid].name.replace("\n"," ")).join("  →  ")
+      : "无（根节点）";
+    dp.style.display = "block";
+  }
+  document.getElementById("d-close").addEventListener("click", () => dp.style.display = "none");
+
+</script>
+</body>
+</html>

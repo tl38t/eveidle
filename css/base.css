@@ -91,25 +91,6 @@
 
   /* -- 仓库显示 -- */
   .cargo-item { gap: 6px; }
-  .cargo-bar {
-    width: 80px;
-    height: 6px;
-    background: #1a2330;
-    border-radius: 4px;
-    overflow: hidden;
-    margin-left: 2px;
-    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
-  }
-  .cargo-fill {
-    height: 100%;
-    border-radius: 4px;
-    background: linear-gradient(90deg, #4a90d9, #6ab0f0);
-    transition: width 0.4s ease;
-    box-shadow: 0 0 12px rgba(74, 144, 217, 0.3);
-  }
-  .cargo-fill.full { background: #d94a4a; }
-  #cargo-text.warn { color: #d94a4a; animation: blink 0.6s step-end infinite; }
-  @keyframes blink { 50% { opacity: 0.25; } }
 
   .topbar .ore-quick {
     display: flex;
@@ -291,7 +272,6 @@
     .topbar .resources .res-item { gap: 3px; }
     .topbar .res-label { display: none; }
     .topbar .res-value { font-size: 13px; }
-    .topbar .cargo-bar { display: none; }
     .topbar .ore-quick { display: none; }
 
     .topbar .current-activity {
@@ -365,4 +345,182 @@
       justify-content: space-between;
     }
     .topbar .current-activity { order: 4; }
+  }
+
+  /* ===== 成就面板（成就系统 Batch D）===== */
+  .achievements-panel .panel-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 14px;
+  }
+
+  .achievements-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px 14px;
+    background: rgba(13, 19, 28, 0.85);
+    border: 1px solid #1e2a38;
+    border-radius: 6px;
+  }
+
+  .ach-summary-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .ach-summary-count {
+    font-family: var(--font-tech);
+    font-size: 20px;
+    font-weight: 700;
+    color: #e8d8a0;
+    letter-spacing: 1px;
+  }
+
+  .ach-summary-percent {
+    font-family: var(--font-tech);
+    font-size: 16px;
+    font-weight: 600;
+    color: #d4a843;
+  }
+
+  .ach-progress-track {
+    height: 10px;
+    background: #0b1017;
+    border: 1px solid #1e2a38;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .ach-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #6b5a20, #d4a843);
+    box-shadow: 0 0 10px rgba(212, 168, 67, 0.28);
+    transition: width 0.35s ease;
+  }
+
+  .ach-tier-counts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .ach-tier-count {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 10px;
+    font-size: 12px;
+    color: #8899aa;
+    background: rgba(16, 22, 31, 0.9);
+    border: 1px solid #1e2a38;
+    border-radius: 12px;
+  }
+
+  .ach-tier-count b { font-weight: 700; }
+  .ach-tier-count.tier-bronze b { color: #c58a5a; }
+  .ach-tier-count.tier-silver b { color: #bcc7d4; }
+  .ach-tier-count.tier-gold b { color: #e8c05a; }
+  .ach-tier-count.tier-legendary b { color: #c48ce8; }
+
+  .achievements-filters { display: flex; flex-direction: column; gap: 6px; }
+  .ach-filter-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .ach-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 11px;
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: #8899aa;
+    background: rgba(16, 22, 31, 0.9);
+    border: 1px solid #1e2a38;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: border-color 0.2s, color 0.2s;
+  }
+
+  .ach-tab:hover { border-color: rgba(212, 168, 67, 0.45); color: #cfd8e3; }
+  .ach-tab.active { border-color: #d4a843; color: #e8d8a0; background: rgba(212, 168, 67, 0.12); }
+  .ach-tab small { color: #5d6d80; font-size: 11px; }
+
+  .achievements-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 10px;
+  }
+
+  .ach-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 11px 12px;
+    background: #0d131c;
+    border: 1px solid #1e2a38;
+    border-radius: 6px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .ach-card.locked { opacity: 0.72; }
+  .ach-card.unlocked { border-color: #665528; box-shadow: inset 0 0 18px rgba(212, 168, 67, 0.06); }
+  .ach-card.masked .ach-card-name { color: #7d8899; font-style: italic; }
+
+  .ach-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+
+  .ach-card-id {
+    font-family: var(--font-tech);
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: #5d6d80;
+  }
+
+  .ach-card-tier {
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+    border: 1px solid #33465c;
+    border-radius: 10px;
+    color: #8899aa;
+  }
+
+  .ach-card-tier.tier-bronze { color: #c58a5a; border-color: #6b4a32; }
+  .ach-card-tier.tier-silver { color: #bcc7d4; border-color: #4d5a6b; }
+  .ach-card-tier.tier-gold { color: #e8c05a; border-color: #6b5a28; }
+  .ach-card-tier.tier-legendary { color: #c48ce8; border-color: #57386b; }
+
+  .ach-card-cat { font-size: 11px; color: #718499; }
+
+  .ach-card-state {
+    margin-left: auto;
+    font-size: 11px;
+    font-weight: 600;
+    color: #5d6d80;
+  }
+
+  .ach-card.unlocked .ach-card-state { color: #7fc98a; }
+
+  .ach-card-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e8d8a0;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+
+  .ach-card-cond { font-size: 12px; color: #8899aa; line-height: 1.45; word-break: break-word; }
+  .ach-card-time { font-size: 11px; color: #5d6d80; }
+  .ach-card.unlocked .ach-card-time { color: #86a37f; }
+
+  .ach-empty {
+    padding: 22px;
+    text-align: center;
+    font-size: 13px;
+    color: #4a5a6a;
+  }
+
+  @media (max-width: 720px) {
+    .achievements-grid { grid-template-columns: 1fr; }
+    .achievements-panel .panel-body { padding: 10px; }
+    .ach-summary-count { font-size: 17px; }
   }
