@@ -103,6 +103,10 @@ const gameState = {
     // 把每次行动被取整丢弃的小数燃料节省攒起来，攒满 1 点就少扣 1 燃料。
     // 恒有限、归一化到 [0,1)；仅在完整重置游戏时清零。
     fuelSavingRemainder: 0,
+    // 确定性探针节省累计器（研究批次 G · probe 组减耗）：与燃料累计器同构。
+    // 每周期把 getResearchBonusValue(state,"probe") 的小数节省攒起来，攒满 1 支就免扣 1 支探针。
+    // 恒有限、归一化到 [0,1)；仅在完整重置游戏时清零。
+    probeSavingRemainder: 0,
     log: []
   },
 

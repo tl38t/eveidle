@@ -48,6 +48,10 @@ const GameEventContracts = (() => {
     "archaeology:artifactFound": { required:["artifactId", "category", "tier"], numbers:["iskValue", "lpValue"] },
     "archaeology:shipDisabled": { required:["instanceId", "repairSeconds"], numbers:["repairSeconds"] },
     "archaeology:repairCompleted": { required:["instanceId"], numbers:[] },
+    // 野外自动维修（Batch J · autorepair）：每件实际激活的维修装备恰好 emit 一次。
+    // amount = 实际治疗量（非理论量），fuelCost = 真实扣除量；meta.timestamp = context.now、offline、source = "research-protocol"。
+    // 满血 / 燃料不足 / 协议关闭 / 未研究 / 致命反噬均不 emit。
+    "archaeology:fieldRepairApplied": { required:["instanceId", "itemId", "target", "amount", "fuelCost"], numbers:["amount", "fuelCost"] },
     // 维修后自动恢复（Phase 3D）：维修完成后自动续跑被打断的考古行动
     "archaeology:resumedAfterRepair": { required:["siteId"], numbers:[] },
     "archaeology:artifactSold": { required:["artifactId", "quantity", "isk"], numbers:["quantity", "isk"] },
@@ -114,7 +118,19 @@ const GameEventContracts = (() => {
     // Batch C-14A：动作队列真实新增一项（ShellStateActions.queueAdd 在数组写入完成后 emit 一次）。
     // 相同项目合并 count（items.length 未增长）/ 队列已满 / 蓝图未解锁等失败路径一律不发。
     // size 为写入后的真实 queue.items.length，maxSize 为队列容量上限。
-    "queue:itemAdded": { required:["itemId", "size", "maxSize"], numbers:["size", "maxSize"] }
+    "queue:itemAdded": { required:["itemId", "size", "maxSize"], numbers:["size", "maxSize"] },
+    // Batch E：成就一次性科研工时发放。只有「首次真实入账」才发射一次；
+    // 重复解锁 / 重复读档对账 / reward=null / research 缺失一律不发。
+    // payload 精确 {achievementId, hours, seconds}，hours 取自冻结目录 reward.hours，
+    // seconds = hours * 3600（绝不信任事件外部传入的数值）；
+    // meta.timestamp = 发放时刻，source = "achievement-system"。
+    "achievement:researchHoursGranted": { required:["achievementId", "hours", "seconds"], numbers:["hours", "seconds"] },
+    // Batch E：科研工时投入当前研究。ResearchSystem.applyResearchHours 真实扣减成功后发射一次；
+    // usedSeconds 为实扣秒数（已按 50% 上限 / 银行余额 / 本步剩余时间三重截断，必然 > 0）。
+    "research:hoursApplied": { required:["techId", "level", "usedSeconds"], numbers:["level", "usedSeconds"] },
+    // Batch E：研究取消。ResearchSystem.cancelResearch 真实作废当前步骤后发射一次；
+    // refundedSeconds 为退回银行的成就工时秒数（可为 0）；取消不发 research:stepCompleted。
+    "research:cancelled": { required:["techId", "level", "refundedSeconds"], numbers:["level", "refundedSeconds"] }
   });
 
   function cloneValue(value) {

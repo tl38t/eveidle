@@ -198,6 +198,11 @@ function getProductionEfficiencyState(state, actionKey) {
     }
   }
   const amplifier = shipAmplifier + equipmentAmplifier;
+  // 研究批次 G：采集科研唯一乘子（allMining 根加成 + mining/gas 专精，先加法汇总再生成单一乘子）。
+  // 采矿走 ["allMining","mining"]，采气走 ["allMining","gas"]；零科研时恒为 1，结果与接入前严格一致。
+  const researchMultiplier = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(state, isMining ? ["allMining", "mining"] : ["allMining", "gas"])
+    : 1;
 
   for (const slot of ["high", "mid", "low", "rig"]) {
     for (const ref of fitting[slot]) {
@@ -233,7 +238,8 @@ function getProductionEfficiencyState(state, actionKey) {
     fleetSupportBonus:fleetSupport.bonus,
     fleetSupportShip:fleetSupport.ship,
     stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
-    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state)
+    researchMultiplier,
+    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier
   };
 }
 
@@ -263,7 +269,9 @@ function buildProductionEfficiencyTooltip(display, targetName, baseTime) {
   if (logMult > 1) lines.push("空间站综合后勤：×" + logMult.toFixed(2) + "（+" + Math.round((logMult - 1) * 100) + "%）");
   else if (logMult < 1) lines.push("空间站综合后勤：×" + logMult.toFixed(2));
   else lines.push("空间站综合后勤：×1.00（未生效）");
-  lines.push("最终效率：" + display.skillMultiplier.toFixed(2) + " × " + (1 + display.primaryBonus).toFixed(3) + " × " + (1 + display.secondaryBonus).toFixed(3) + " × " + display.enhancementMultiplier.toFixed(3) + " × " + (1 + display.fleetSupportBonus).toFixed(3) + " × " + logMult.toFixed(3) + " = " + display.total.toFixed(2) + "x");
+  const researchMult = Number(display.researchMultiplier) || 1;
+  if (researchMult !== 1) lines.push("科研加成：×" + researchMult.toFixed(3) + "（+" + ((researchMult - 1) * 100).toFixed(1) + "%）");
+  lines.push("最终效率：" + display.skillMultiplier.toFixed(2) + " × " + (1 + display.primaryBonus).toFixed(3) + " × " + (1 + display.secondaryBonus).toFixed(3) + " × " + display.enhancementMultiplier.toFixed(3) + " × " + (1 + display.fleetSupportBonus).toFixed(3) + " × " + logMult.toFixed(3) + " × " + researchMult.toFixed(3) + " = " + display.total.toFixed(2) + "x");
   lines.push("", "当前目标：" + targetName, "基础时间：" + baseTime + "s", "实际时间：" + (baseTime / display.total).toFixed(1) + "s");
   return lines.join("\n");
 }
@@ -359,7 +367,10 @@ function getSmeltingDisplayState(state, now) {
   const rigBonus = rigMods.smeltingSpeed || 0;
   const skillEfficiency = 1 + level * 0.02;
   const stationLogisticsMultiplier = getStationLogisticsMultiplier(state);
-  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier;
+  // 研究批次 G：冶炼科研唯一乘子 = 1 + (allMfg + smelt)（加法汇总，绝不逐项连乘）
+  const researchMultiplier = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(state, ["allMfg", "smelt"]) : 1;
+  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier;
   const progress = getProgressDisplayState(action, "refining", running.baseTime / efficiency, now);
   const targetChanged = progress.active && current.name !== running.name;
   const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
@@ -372,6 +383,7 @@ function getSmeltingDisplayState(state, now) {
     skillEfficiency,
     efficiency,
     stationLogisticsMultiplier,
+    researchMultiplier,
     stationLogisticsBonusRate: stationLogisticsMultiplier - 1,
     ship:assigned.config ? { id:assigned.config.id, name:assigned.config.name } : null,
     shipBonus,
@@ -637,7 +649,9 @@ function getActionConfirmationDisplayState(state, target, now) {
 // skillMultiplier = 1 + shipEngineering.lvl × 0.02；shipyardMultiplier = getShipyardSpeedMultiplier(state)（断油仍生效）
 // fail closed：任一倍率非有限正数回退 ×1；base 非有限正数回退 1，绝不产生 NaN/Infinity
 // 注意：只含速度倍率，材料节省率（getShipyardSavingRate）绝不混入此公式
-function getShipEngineeringSpeedBreakdown(state) {
+// 研究批次 G：kind = "component" | "assembly" 时追加科研乘子（组件只吃 shipComp，总装只吃 shipAsm，
+// 两者共享 allMfg 根加成但互不串味）；kind 省略时科研乘子为 1，保持既有调用点行为不变。
+function getShipEngineeringSpeedBreakdown(state, kind) {
   const lvl = state && state.skills && state.skills.shipEngineering ? Number(state.skills.shipEngineering.lvl) : NaN;
   let skillMultiplier = 1 + lvl * 0.02;
   if (!Number.isFinite(skillMultiplier) || skillMultiplier <= 0) skillMultiplier = 1;
@@ -645,14 +659,27 @@ function getShipEngineeringSpeedBreakdown(state) {
   if (!Number.isFinite(shipyardMultiplier) || shipyardMultiplier <= 0) shipyardMultiplier = 1;
   let stationLogisticsMultiplier = (typeof getStationLogisticsMultiplier === "function") ? Number(getStationLogisticsMultiplier(state)) : 1;
   if (!Number.isFinite(stationLogisticsMultiplier) || stationLogisticsMultiplier <= 0) stationLogisticsMultiplier = 1;
-  return { skillMultiplier, shipyardMultiplier, stationLogisticsMultiplier, totalSpeedMultiplier: skillMultiplier * shipyardMultiplier * stationLogisticsMultiplier };
+  let researchMultiplier = 1;
+  if (typeof ResearchState !== "undefined" && (kind === "component" || kind === "assembly")) {
+    researchMultiplier = Number(ResearchState.getResearchMultiplier(state, kind === "component" ? ["allMfg", "shipComp"] : ["allMfg", "shipAsm"]));
+  }
+  if (!Number.isFinite(researchMultiplier) || researchMultiplier <= 0) researchMultiplier = 1;
+  return {
+    skillMultiplier, shipyardMultiplier, stationLogisticsMultiplier, researchMultiplier,
+    totalSpeedMultiplier: skillMultiplier * shipyardMultiplier * stationLogisticsMultiplier * researchMultiplier
+  };
+}
+
+// 配方类别判定：总装配方带 shipId/componentCost，组件配方只有 cost。
+function getShipEngineeringRecipeKind(recipe) {
+  return (recipe && (recipe.shipId || recipe.componentCost)) ? "assembly" : "component";
 }
 
 function getShipEngineeringCycleDuration(state, recipe) {
   let base = recipe ? Number(recipe.time) : NaN;
   if (!Number.isFinite(base) || base <= 0) base = 1;
-  const speed = getShipEngineeringSpeedBreakdown(state);
-  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier;
+  const speed = getShipEngineeringSpeedBreakdown(state, getShipEngineeringRecipeKind(recipe));
+  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier;
 }
 
 function getShipEngineeringDisplayState(state, now) {
@@ -663,6 +690,9 @@ function getShipEngineeringDisplayState(state, now) {
   const xpNeeded = xpForLevel(level + 1);
   const efficiency = 1 + level * 0.02;
   const speed = getShipEngineeringSpeedBreakdown(state);
+  // 研究批次 G：组件线 / 总装线各自的完整速度分解（含独立科研乘子），供显示与校验消费
+  const componentSpeed = getShipEngineeringSpeedBreakdown(state, "component");
+  const assemblySpeed = getShipEngineeringSpeedBreakdown(state, "assembly");
   const currentComponent = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === action.shipCompTarget) || SHIP_COMPONENT_RECIPES[0];
   const runningComponent = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === (action.startedShipCompTarget || action.shipCompTarget)) || currentComponent;
   const currentAssembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === action.shipAsmTarget) || SHIP_ASSEMBLY_RECIPES[0];
@@ -698,6 +728,10 @@ function getShipEngineeringDisplayState(state, now) {
     shipyardMultiplier:speed.shipyardMultiplier,
     stationLogisticsMultiplier:speed.stationLogisticsMultiplier,
     totalSpeedMultiplier:speed.totalSpeedMultiplier,
+    componentResearchMultiplier:componentSpeed.researchMultiplier,
+    assemblyResearchMultiplier:assemblySpeed.researchMultiplier,
+    componentTotalSpeedMultiplier:componentSpeed.totalSpeedMultiplier,
+    assemblyTotalSpeedMultiplier:assemblySpeed.totalSpeedMultiplier,
     componentActualTime,
     assemblyActualTime,
     active,
@@ -766,7 +800,10 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const level = Number(skill.lvl) || 1;
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
-  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state);
+  // 研究批次 G：装备工程科研唯一乘子 = 1 + (allMfg + equip)；与 tick/离线的 getEquipEngEfficiency 同一 API、同一结果
+  const researchMultiplier = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(state, ["allMfg", "equip"]) : 1;
+  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state) * researchMultiplier;
   const requestedRecipe = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
   const savedCategory = EQUIPMENT_ENGINEERING_CATEGORIES.find(category => category.id === action.equipEngCategory);
   const category = savedCategory || getEquipEngCategoryDefinition(requestedRecipe.category);
@@ -887,7 +924,10 @@ function getBoosterManufacturingDisplayState(state, now) {
   const level = Number(skill.lvl) || 1;
   const xp = Number(skill.xp) || 0;
   const xpRequired = xpForLevel(level + 1);
-  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state);
+  // 研究批次 G：增强剂制造科研唯一乘子 = 1 + (allMfg + booster)；与 tick/离线的 getBoosterEfficiency 同一 API、同一结果
+  const researchMultiplier = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(state, ["allMfg", "booster"]) : 1;
+  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state) * researchMultiplier;
 
   // 分类与品质筛选（用户选择；运行中切换不改变正在制造的产物）。
   const categoryId = (BOOSTER_CATEGORY_META.find(c => c.id === action.boosterCategory) || BOOSTER_CATEGORY_META[0]).id;
@@ -1065,6 +1105,56 @@ function getCombatLevelBreakdownFromState(state) {
   return { attack, defense, level:Math.floor((attack + defense) / 2) };
 }
 
+// ============================================================================
+// 研究批次 H：战斗科研 modifier 的唯一构造器
+//   - damageMultiplier / maxHp / repairMultiplier 每个 stat 每次计算最多产出一条
+//     source:"research" 的聚合 modifier；绝不给每个 group 单独建一条。
+//   - value 直接来自一次 ResearchState.getResearchMultiplier(state, groups)：
+//     根加成 + 专精 + tactical 先加法汇总，再一次成乘子，杜绝逐项复利。
+//   - 纯派生值：不写入 state.combat.modifiers，不新增任何存档字段。
+//   - key 无法识别（未知武器类型 / 未知层）时返回空数组，保持接入前的安全结果。
+// ============================================================================
+const COMBAT_RESEARCH_PRIORITY = 60;
+
+const COMBAT_RESEARCH_GROUPS = Object.freeze({
+  // 武器：laser / missile / cannon 为 WEAPON_CONFIG 的真实键，
+  // proj 是科研注册表对「射弹」的别名，与 cannon 共用 projDmg 专精。
+  damageMultiplier:Object.freeze({
+    laser:Object.freeze(["allWeapon", "weaponDmg", "laserDmg", "tactical"]),
+    missile:Object.freeze(["allWeapon", "weaponDmg", "missileDmg", "tactical"]),
+    cannon:Object.freeze(["allWeapon", "weaponDmg", "projDmg", "tactical"]),
+    proj:Object.freeze(["allWeapon", "weaponDmg", "projDmg", "tactical"])
+  }),
+  // 三层生命：tierHp 与 tactical 同时影响三层，层专精严格隔离。
+  maxHp:Object.freeze({
+    shield:Object.freeze(["tierHp", "shield", "tactical"]),
+    armor:Object.freeze(["tierHp", "armor", "tactical"]),
+    structure:Object.freeze(["tierHp", "structure", "tactical"])
+  }),
+  // 主动维修：三层共用同一 repair 组，只放大治疗量，不改燃料成本与上限钳制。
+  repairMultiplier:Object.freeze({
+    shield:Object.freeze(["repair"]),
+    armor:Object.freeze(["repair"]),
+    structure:Object.freeze(["repair"])
+  })
+});
+
+function getCombatResearchGroups(stat, key) {
+  const table = COMBAT_RESEARCH_GROUPS[stat];
+  return table && key && table[key] ? table[key] : null;
+}
+
+function getCombatResearchModifierList(state, stat, key) {
+  const groups = getCombatResearchGroups(stat, key);
+  if (!groups || typeof ResearchState === "undefined") return [];
+  return [{
+    operation:"multiply",
+    value:ResearchState.getResearchMultiplier(state, groups),
+    priority:COMBAT_RESEARCH_PRIORITY,
+    source:"research"
+  }];
+}
+
 function getCombatMaxHpFromState(state, context) {
   const activeShip = getActiveCombatShipState(state);
   const ship = activeShip.config;
@@ -1088,21 +1178,25 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "shieldOperation") * 0.03, priority:20, source:"skill" },
       { operation:"add", value:flat.shield, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
-      { operation:"multiply", value:1 + (rigMods.shieldCapacityPercent || 0), priority:50, source:"rig" }
+      { operation:"multiply", value:1 + (rigMods.shieldCapacityPercent || 0), priority:50, source:"rig" },
+      // 研究批次 H：科研聚合乘子作用在船体/技能/装备平段/强化/rig 之后的最终 HP 上
+      ...getCombatResearchModifierList(state, "maxHp", "shield")
     ], { ...(context || {}), actor:"player", layer:"shield" })),
     armor:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.armor, [
       { operation:"multiply", value:1 + (bonuses.armorCapacity || 0), priority:10, source:"ship" },
       { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "armorReinforcement") * 0.03, priority:20, source:"skill" },
       { operation:"add", value:flat.armor, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
-      { operation:"multiply", value:1 + (rigMods.armorCapacityPercent || 0), priority:50, source:"rig" }
+      { operation:"multiply", value:1 + (rigMods.armorCapacityPercent || 0), priority:50, source:"rig" },
+      ...getCombatResearchModifierList(state, "maxHp", "armor")
     ], { ...(context || {}), actor:"player", layer:"armor" })),
     structure:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.structure, [
       { operation:"multiply", value:1 + (bonuses.structureCapacity || 0), priority:10, source:"ship" },
       { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "hullEngineering") * 0.03, priority:20, source:"skill" },
       { operation:"add", value:flat.structure, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
-      { operation:"multiply", value:1 + (rigMods.structureCapacityPercent || 0), priority:50, source:"rig" }
+      { operation:"multiply", value:1 + (rigMods.structureCapacityPercent || 0), priority:50, source:"rig" },
+      ...getCombatResearchModifierList(state, "maxHp", "structure")
     ], { ...(context || {}), actor:"player", layer:"structure" }))
   };
 }
@@ -1129,7 +1223,9 @@ function getCombatDamageMultiplierFromState(state, weaponType, context) {
   return calculateCombatStatFromState(state, "damageMultiplier", 1, [
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, config.skillKey) * 0.02, priority:10, source:"skill" },
     { operation:"multiply", value:1 + shipBonus, priority:20, source:"ship" },
-    { operation:"multiply", value:enhancement.damageMultiplier, priority:30, source:"enhancement" }
+    { operation:"multiply", value:enhancement.damageMultiplier, priority:30, source:"enhancement" },
+    // 研究批次 H：武器科研聚合乘子（技能/船体/强化之后只乘一次；未知 weaponType 上方已提前返回 1）
+    ...getCombatResearchModifierList(state, "damageMultiplier", weaponType)
   ], { ...(context || {}), actor:"player", weaponType });
 }
 
@@ -1157,7 +1253,9 @@ function getCombatRepairMultiplierFromState(state, target, context) {
   const roleBonus = ship.bonuses && target ? (ship.bonuses[target + "Repair"] || 0) : 0;
   return calculateCombatStatFromState(state, "repairMultiplier", 1, [
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "defense") * 0.02, priority:10, source:"skill" },
-    { operation:"multiply", value:1 + roleBonus, priority:20, source:"ship" }
+    { operation:"multiply", value:1 + roleBonus, priority:20, source:"ship" },
+    // 研究批次 H：维修科研聚合乘子（defense 技能与船体维修加成之后只乘一次；只放大治疗量）
+    ...getCombatResearchModifierList(state, "repairMultiplier", target)
   ], { ...(context || {}), actor:"player", layer:target });
 }
 
@@ -1363,7 +1461,21 @@ function getPlanetOutputIntervalFromState(state, type) {
   const config = PLANET_TYPES.find(planet => planet.id === type);
   const level = getPlanetaryCapacityState(state).level;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(state)) : 1;
-  return config ? config.interval / (1 + level * 0.02) / stationMult : 10;
+  // 研究批次 G：行星生产提速 → 周期 ÷ 乘子（在线 planetaryTick 与离线 settleOfflinePlanets 共用此唯一入口）
+  let researchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["planProd"])) : 1;
+  if (!Number.isFinite(researchMult) || researchMult <= 0) researchMult = 1;
+  return config ? config.interval / (1 + level * 0.02) / stationMult / researchMult : 10;
+}
+
+// 研究批次 G · planCost（reduceFraction）：行星续期费唯一公式。
+// 部署卡显示价 / 余额判断价 / actions.PlanetaryStateActions.renew 实扣价 / renewed 事件价
+// 四处只准读这一个函数，禁止任何一处再算第二套。
+function getPlanetRenewCostISK(state, config) {
+  const base = Number(config && config.maintenanceCostISK) || 0;
+  if (base <= 0) return 0;
+  const raw = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchBonusValue(state, "planCost")) : 0;
+  const factor = Math.max(0, 1 - (Number.isFinite(raw) ? Math.max(0, raw) : 0));
+  return Math.ceil(base * factor);
 }
 
 // 纯显示态：只消费不修改。三状态 running / expired（deployment 一定存在，未布置态由 deployOptions 表达）。
@@ -1389,7 +1501,10 @@ function getPlanetDeploymentDisplayState(state, deployment, now) {
   const minutes = Math.floor((remaining % 3600) / 60);
   const statusClass = expired ? "expired" : full ? "full" : "running";
   const statusText = expired ? "已到期 · 停止生产" : full ? "满仓停产" : "运行中";
-  const renewCost = config ? Number(config.maintenanceCostISK) || 0 : 0;
+  // 研究批次 G：行星维护费减免（planCost，reduceFraction）。显示费用 = 实扣费用（唯一公式 getPlanetRenewCostISK）。
+  const renewBaseCost = config ? Number(config.maintenanceCostISK) || 0 : 0;
+  const renewCost = getPlanetRenewCostISK(state, config);
+  const planCostFactor = renewBaseCost > 0 ? (renewCost / renewBaseCost) : 1;
   const isk = ResourceRegistry.get(state, "currency:isk");
   const enoughIskForRenew = isk >= renewCost;
   return {
@@ -1421,6 +1536,8 @@ function getPlanetDeploymentDisplayState(state, deployment, now) {
     timeWarning:remaining < 3600,
     timeLeftText:expired ? "已到期" : hours > 0 ? `剩余 ${hours}h${minutes}m` : `剩余 ${minutes}m`,
     renewCost,
+    renewBaseCost,
+    planCostReduction:1 - planCostFactor,
     enoughIskForRenew,
     showRenew:expired,
     canRenew:expired && enoughIskForRenew,
@@ -1455,7 +1572,8 @@ function getPlanetaryDisplayState(state, now) {
         constructionISK,
         constructionTrit,
         maintenanceCostISK,
-        renewCost:maintenanceCostISK,
+        // 研究批次 G · planCost：目录页续期价与部署卡/实扣共用唯一公式
+        renewCost:getPlanetRenewCostISK(state, config),
         unlocked:capacity.level >= config.level,
         enoughIsk:isk >= constructionISK,
         enoughTrit:tritanium >= constructionTrit,

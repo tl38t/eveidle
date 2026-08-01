@@ -136,7 +136,10 @@ function getRunningEquipEngRecipe() {
 function getEquipEngEfficiency() {
   const skillMult = 1 + gameState.skills.equipmentEngineering.lvl * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
-  return skillMult * stationMult;
+  // 研究批次 G：与 selectors.getEquipmentEngineeringDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
+  const researchMult = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "equip"]) : 1;
+  return skillMult * stationMult * researchMult;
 }
 
 function getEquipEngCategoryDefinition(categoryId) {
@@ -262,7 +265,10 @@ function getBoosterEfficiency() {
   const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
   const skillMult = 1 + lvl * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
-  return skillMult * stationMult;
+  // 研究批次 G：与 selectors.getBoosterManufacturingDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
+  const researchMult = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "booster"]) : 1;
+  return skillMult * stationMult * researchMult;
 }
 
 function getSelectedBoosterRecipe() {

@@ -251,8 +251,23 @@ function setLiveText(element, value) {
   if (element && element.textContent !== value) element.textContent = value;
 }
 
+// 轻量 DOM 更新辅助：写 DOM 前比较新旧值（避免无谓写入/重排）。
+function setLiveWidth(element, value) {
+  if (element && element.style.width !== value) element.style.width = value;
+}
+function setLiveDisabled(element, value) {
+  if (element && element.disabled !== value) element.disabled = value;
+}
+// 含子标签的片段（如 <b> 名称）用 innerHTML 比较更新，避免整容器重建。
+function setLiveHTML(element, value) {
+  if (element && element.innerHTML !== value) element.innerHTML = value;
+}
+
 // 每秒只更新会持续变化的字段；结构性面板仍由 updateUI() 按事件重建。
-function updateLiveUI() {
+// 新增：空间站 / 研究 实时字段刷新（接入同一每秒 tick，不另建定时器）。
+// 统一接收显式 now：整条刷新链路只取一次时间，避免显示态时间不一致。
+function updateLiveUI(nowArg) {
+  const now = Number(nowArg) || Date.now();
   const globalDisplay = getGlobalDisplayState(gameState);
   const iskEl = document.querySelector('.res-value.isk');
   const lpEl = document.querySelector('.res-value.lp');
@@ -275,12 +290,18 @@ function updateLiveUI() {
   renderSidebar(getSidebarDisplayState(gameState));
   if (currentPage === "planetary") updatePlanetaryLiveUI();
   if (currentPage === "skill" && currentView === "combat") updateCombatLiveUI();
+  // 空间站 / 研究 实时刷新：currentPage 为唯一主判断（仅当前可见页才刷）。
+  // 注意：document.hidden 不在此处做门控（只作参考），避免无头/后台环境导致刷新测试全失效。
+  // 节流与展示态计算已分别约束在 updateStationLiveUI / updateResearchLiveUI 内部。
+  if (currentPage === "station" && typeof updateStationLiveUI === "function") updateStationLiveUI(now);
+  else if (currentPage === "research" && typeof updateResearchLiveUI === "function") updateResearchLiveUI(now);
 }
 
 function refreshVisiblePanelAfterAction() {
   if (currentPage === "skill") updateUI();
   else if (currentPage === "cargo") renderCargoPage();
   else if (currentPage === "hangar") renderHangarPanel();
+  else if (currentPage === "station" && typeof renderStationPage === "function") renderStationPage(Date.now());
 }
 
 /* ================================================================

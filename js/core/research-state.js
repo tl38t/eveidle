@@ -57,6 +57,108 @@
   }
 
   // -------------------------------------------------------------------------
+  // Batch K · intship 一体化造船作业持久化 schema
+  //   - 唯一存放位置：state.research.protocolJobs.intship（null = 无作业）
+  //   - 清洗幂等：对同一对象重复调用结果完全一致；绝不新增 / 提升 schemaVersion
+  //   - 非对象一律置 null；完全无可用身份信息（连旧版 blueprintId 都没有）的畸形对象归一为 null；
+  //     有部分可识别身份但无法安全恢复的对象，归一为字段完整且受控的 recovery-required 作业
+  //     （绝不静默按 active 继续产舰）；删除未知字段；数组 / 数值 / 布尔字段严格清洗。
+  //   - quantity 上限 1000；processedEventIds 只保留最近 512 条字符串且去重。
+  // -------------------------------------------------------------------------
+  const INTSHIP_JOB_PHASES = ["component", "assembly", "completed", "stopped", "preempted", "cancelled", "recovery-required"];
+  const INTSHIP_MAX_QUANTITY = 1000;
+  const INTSHIP_MAX_EVENT_IDS = 512;
+  const INTSHIP_MAX_COMPONENT_COUNT = INTSHIP_MAX_QUANTITY * 64;
+
+  function sanitizeIntshipCountMap(raw) {
+    const out = {};
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return out;
+    for (const key of Object.keys(raw)) {
+      if (typeof key !== "string" || !key) continue;
+      let value = Number(raw[key]);
+      if (typeof raw[key] !== "number" || !isFinite(value) || !Number.isInteger(value) || value < 0) value = 0;
+      if (value > INTSHIP_MAX_COMPONENT_COUNT) value = INTSHIP_MAX_COMPONENT_COUNT;
+      out[key] = value;
+    }
+    return out;
+  }
+
+  function sanitizeIntshipJob(raw) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+    const jobId = (typeof raw.jobId === "string" && raw.jobId) ? raw.jobId : "";
+    const shipId = (typeof raw.shipId === "string" && raw.shipId) ? raw.shipId : "";
+    const recipeId = (typeof raw.recipeId === "string" && raw.recipeId) ? raw.recipeId : "";
+    const blueprintId = (typeof raw.blueprintId === "string" && raw.blueprintId) ? raw.blueprintId : "";
+    // 完全无可用身份信息（连旧版 blueprintId 都没有）→ 归一为 null
+    if (!jobId && !shipId && !recipeId && !blueprintId) return null;
+
+    // 身份完整性：jobId / shipId / recipeId 三键齐备才算可安全恢复；否则归一为受控的 recovery-required
+    const completeIdentity = Boolean(jobId && shipId && recipeId);
+    const safeShipId = shipId || blueprintId || recipeId;
+    const safeRecipeId = recipeId || blueprintId || shipId;
+    const safeJobId = jobId || ("intship-legacy-" + (safeShipId || safeRecipeId || "unknown"));
+
+    let quantity = Number(raw.quantity);
+    if (typeof raw.quantity !== "number" || !isFinite(quantity) || !Number.isInteger(quantity) || quantity < 1) quantity = 1;
+    else if (quantity > INTSHIP_MAX_QUANTITY) quantity = INTSHIP_MAX_QUANTITY;
+
+    let phase = INTSHIP_JOB_PHASES.indexOf(raw.phase) >= 0 ? raw.phase : "recovery-required";
+    if (!completeIdentity) phase = "recovery-required";
+
+    const componentPlan = sanitizeIntshipCountMap(raw.componentPlan);
+    const completedComponents = sanitizeIntshipCountMap(raw.completedComponents);
+    // 已完成数绝不超过计划数（防脏档凭空跳过组件阶段直接总装）
+    for (const key of Object.keys(completedComponents)) {
+      const need = Number(componentPlan[key]) || 0;
+      if (completedComponents[key] > need) completedComponents[key] = need;
+    }
+
+    let assemblyRemaining = Number(raw.assemblyRemaining);
+    if (typeof raw.assemblyRemaining !== "number" || !isFinite(assemblyRemaining) ||
+        !Number.isInteger(assemblyRemaining) || assemblyRemaining < 0) assemblyRemaining = 0;
+    if (assemblyRemaining > quantity) assemblyRemaining = quantity;
+
+    let producedShips = Number(raw.producedShips);
+    if (typeof raw.producedShips !== "number" || !isFinite(producedShips) ||
+        !Number.isInteger(producedShips) || producedShips < 0) producedShips = 0;
+    if (producedShips > quantity) producedShips = quantity;
+
+    const currentComponentId = (typeof raw.currentComponentId === "string" && raw.currentComponentId) ? raw.currentComponentId : null;
+    let stopReason = (typeof raw.stopReason === "string" && raw.stopReason) ? raw.stopReason : null;
+    if (!completeIdentity) stopReason = "RECOVERY_REQUIRED";
+
+    const ids = [];
+    const seen = Object.create(null);
+    if (Array.isArray(raw.processedEventIds)) {
+      for (const entry of raw.processedEventIds) {
+        if (typeof entry !== "string" || !entry) continue;
+        if (seen[entry]) continue;
+        seen[entry] = true;
+        ids.push(entry);
+      }
+    }
+    const processedEventIds = ids.length > INTSHIP_MAX_EVENT_IDS ? ids.slice(ids.length - INTSHIP_MAX_EVENT_IDS) : ids;
+
+    let createdAt = Number(raw.createdAt);
+    if (typeof raw.createdAt !== "number" || !isFinite(createdAt) || createdAt < 0) createdAt = 0;
+    let updatedAt = Number(raw.updatedAt);
+    if (typeof raw.updatedAt !== "number" || !isFinite(updatedAt) || updatedAt < 0) updatedAt = createdAt;
+
+    const out = {
+      jobId: safeJobId,
+      shipId: safeShipId,
+      recipeId: safeRecipeId,
+      quantity, phase,
+      componentPlan, completedComponents, currentComponentId,
+      assemblyRemaining, producedShips,
+      stopReason, processedEventIds, createdAt, updatedAt
+    };
+    // 兼容官方旧版蓝图字段（迁移保留该已知字段；其余未知字段一律删除）
+    if (blueprintId) out.blueprintId = blueprintId;
+    return out;
+  }
+
+  // -------------------------------------------------------------------------
   // planetary deployment 自动续费迁移（planauto 协议，§6.3）
   //   - 与 research 迁移同时触发；调用方须保证 planetary.deployments 已存在。
   //   - 每个 deployment 独立新对象（不得共享 autoRenew 引用）。
@@ -122,9 +224,27 @@
       }
     }
 
+    // Batch E：已投入的成就科研工时必须严格合法且不超过本步基础时长的 50%。
+    //   - 非 number / NaN / Infinity / 负数 / 字符串 / 对象 / 布尔 → 0
+    //   - 合法小数原样保留（不整数化）
+    //   - 夹紧到 [0, 0.5 * baseDuration]；baseDuration 非法时上限视为 0
+    if (r.activeResearch && typeof r.activeResearch === "object" && !Array.isArray(r.activeResearch)) {
+      const ar = r.activeResearch;
+      const base = ar.baseDuration;
+      const cap = (typeof base === "number" && isFinite(base) && base > 0) ? base * 0.5 : 0;
+      let applied = ar.appliedAchievementSeconds;
+      if (typeof applied !== "number" || !isFinite(applied) || applied < 0) applied = 0;
+      if (applied > cap) applied = cap;
+      ar.appliedAchievementSeconds = applied;
+    }
+
     if (!Array.isArray(r.pendingQueue)) r.pendingQueue = [];
 
-    if (typeof r.researchHourBank !== "number" || !isFinite(r.researchHourBank)) r.researchHourBank = 0;
+    // Batch E：科研工时银行（秒）必须是有限非负数。
+    //   字符串 / NaN / Infinity / 负数 / 对象 / 布尔 → 0；合法小数原样保留（不整数化）。
+    if (typeof r.researchHourBank !== "number" || !isFinite(r.researchHourBank) || r.researchHourBank < 0) {
+      r.researchHourBank = 0;
+    }
 
     if (!r.protocolSettings || typeof r.protocolSettings !== "object" || Array.isArray(r.protocolSettings)) {
       r.protocolSettings = {};
@@ -135,7 +255,14 @@
         r.protocolSettings[k] = (k === "autoenh") ? { enabled: false, maxAttempts: 0 } : { enabled: false };
       } else {
         if (typeof cur.enabled !== "boolean") cur.enabled = false;
-        if (k === "autoenh" && typeof cur.maxAttempts !== "number") cur.maxAttempts = 0;
+        // Batch J：autoenh.maxAttempts 清洗（幂等、不新增/不改 schemaVersion）
+        //   非有限/负数/小数/字符串/对象/数组/布尔 → 0；合法整数保留；超过安全上限 10000 夹紧到上限
+        if (k === "autoenh") {
+          let m = cur.maxAttempts;
+          if (typeof m !== "number" || !isFinite(m) || !Number.isInteger(m) || m < 0) m = 0;
+          else if (m > 10000) m = 10000;
+          cur.maxAttempts = m;
+        }
         // 顶层 protocolSettings.planauto 只保存 enabled；不得存全局 minIskReserve
         // （每基地权威配置见 §6.3，minIskReserve 按 deployment 保存）
         if (k === "planauto" && Object.prototype.hasOwnProperty.call(cur, "minIskReserve")) {
@@ -148,6 +275,8 @@
       r.protocolJobs = {};
     }
     if (!("intship" in r.protocolJobs)) r.protocolJobs.intship = null;
+    // Batch K：intship 作业清洗（幂等、fail closed、不改 schemaVersion）
+    r.protocolJobs.intship = sanitizeIntshipJob(r.protocolJobs.intship);
 
     if (typeof r.lastProcessedAt !== "number" || !isFinite(r.lastProcessedAt)) {
       r.lastProcessedAt = Date.now();
@@ -209,6 +338,10 @@
   const ResearchState = {
     createDefaultResearchState,
     migrateResearchState,
+    sanitizeIntshipJob,
+    INTSHIP_JOB_PHASES,
+    INTSHIP_MAX_QUANTITY,
+    INTSHIP_MAX_EVENT_IDS,
     getResearchBonusValue,
     getResearchCombinedBonus,
     getResearchMultiplier,

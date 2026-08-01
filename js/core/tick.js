@@ -66,6 +66,8 @@ function gameTick() {
   }
 
   updateCombatRecovery();
+  // Batch K：intship 一体化造船——每 tick 对账，作业已不驱动 currentAction 时落为 stopped/preempted
+  if (typeof reconcileIntshipRuntime === "function") reconcileIntshipRuntime(gameState, Date.now());
   let actionCompleted = false;
   if (gameState.currentAction.active) {
     const key = gameState.currentAction.skill;
@@ -192,7 +194,11 @@ function gameTick() {
           ResourceRegistry.add(gameState, "component:" + recipe.id, 1);
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
           GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, xp:recipe.xp }, { offline:false });
-          if (completeQueuedActionCycle()) { updateUI(); break; }
+          if (completeQueuedActionCycle()) {
+            // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
+            if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
+            updateUI(); break;
+          }
         }
         if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
         if (s.xp > 0) checkLevelUp("shipEngineering");
@@ -211,7 +217,11 @@ function gameTick() {
           gameState.inventory.ships.push(createShipInstance(recipe.shipId));
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
           GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, xp:recipe.xp }, { offline:false });
-          if (completeQueuedActionCycle()) { updateUI(); break; }
+          if (completeQueuedActionCycle()) {
+            // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
+            if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
+            updateUI(); break;
+          }
         }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
       if (s.xp > 0) checkLevelUp("shipEngineering");
@@ -247,9 +257,11 @@ function gameTick() {
     // 信号干扰中：暂停并清空进度
     if (arch.interferenceUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
 
-    const archSpeedEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).archaeologySpeedMultiplier : 1;
-    const archLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
-    const actualTime = site.time * archSpeedEff / archLogisticsMult;
+    // 考古周期唯一公式（研究批次 G · archEff）：base × 增强剂 ÷ 空间站后勤 ÷ 科研倍率。
+    // 在线 tick / 离线 descriptor / 离线时间账本 / 显示态四处共用 getArchaeologyCycleSeconds，禁止此处再算第二套。
+    const actualTime = (typeof getArchaeologyCycleSeconds === "function")
+      ? getArchaeologyCycleSeconds(gameState, site)
+      : site.time;
     gameState.currentAction.refDuration = actualTime;
     const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
     gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;

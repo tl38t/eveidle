@@ -393,7 +393,7 @@ function migrateArchaeologyState() {
     if (!gameState.resources[pool] || typeof gameState.resources[pool] !== "object") gameState.resources[pool] = {};
   }
   if (!gameState.archaeology || typeof gameState.archaeology !== "object") {
-    gameState.archaeology = { activeSiteId:null, activeProbeId:"core_probe_i", progress:0, startedSiteId:null, startedProbeId:null, shipHp:{}, repairUntil:0, repairInstanceId:null, interferenceUntil:0, fuelSavingRemainder:0, log:[] };
+    gameState.archaeology = { activeSiteId:null, activeProbeId:"core_probe_i", progress:0, startedSiteId:null, startedProbeId:null, shipHp:{}, repairUntil:0, repairInstanceId:null, interferenceUntil:0, fuelSavingRemainder:0, probeSavingRemainder:0, log:[] };
   }
   const arch = gameState.archaeology;
   arch.activeSiteId = arch.activeSiteId || null;
@@ -410,6 +410,11 @@ function migrateArchaeologyState() {
   {
     const rawRem = Number(arch.fuelSavingRemainder);
     arch.fuelSavingRemainder = (Number.isFinite(rawRem) && rawRem > 0) ? (rawRem - Math.floor(rawRem)) : 0;
+  }
+  // 探针节省累计器（研究批次 G · probe 组）：旧存档回填 0；恒有限并归一化到 [0,1)（幂等）。
+  {
+    const rawProbeRem = Number(arch.probeSavingRemainder);
+    arch.probeSavingRemainder = (Number.isFinite(rawProbeRem) && rawProbeRem > 0) ? (rawProbeRem - Math.floor(rawProbeRem)) : 0;
   }
   if (!gameState.currentAction || gameState.currentAction.skill !== "archaeology") {
     arch.startedSiteId = null; arch.startedProbeId = null; arch.interferenceUntil = 0;
@@ -1073,7 +1078,16 @@ const SaveManager = {
         if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
           AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
         }
+        // Batch E：成就科研工时奖励旧档对账，必须排在**全部**成就追溯（含元成就）之后、
+        // 离线结算之前，复用同一 achievementReconcileNow，且整段读档流程只调用一次。
+        // 只为「已解锁但账本无记录」的成就补发；已发放过的一律跳过（幂等，重复读档不重复发）。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.reconcileAchievementResearchRewards === "function") {
+          AchievementSystem.reconcileAchievementResearchRewards(gameState, achievementReconcileNow);
+        }
       }
+      // Batch K：intship 一体化造船运行期恢复——必须在研究迁移之后、离线结算之前；
+      // active 作业重装幂等消费者，shape 不匹配或不再驱动 currentAction 时 fail closed 为 recovery-required。
+      if (typeof restoreIntshipProtocolRuntime === "function") restoreIntshipProtocolRuntime(gameState);
       // 离线结算必须在规范化之后
       if (typeof calculateOfflineGains === "function") calculateOfflineGains();
       // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
@@ -1242,7 +1256,15 @@ window.addEventListener("beforeunload", () => SaveManager.save());
         if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
           AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
         }
+        // Batch E：成就科研工时奖励旧档对账，排在全部成就追溯之后、离线结算之前，
+        // 同一 achievementReconcileNow（与 importData 对称），整段自动读档只调用一次。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.reconcileAchievementResearchRewards === "function") {
+          AchievementSystem.reconcileAchievementResearchRewards(gameState, achievementReconcileNow);
+        }
       }
+  // Batch K：intship 一体化造船运行期恢复——必须在研究迁移之后、离线结算之前；
+  // active 作业重装幂等消费者，shape 不匹配或不再驱动 currentAction 时 fail closed 为 recovery-required。
+  if (typeof restoreIntshipProtocolRuntime === "function") restoreIntshipProtocolRuntime(gameState);
   if (restored) calculateOfflineGains();
   ensureUserSettingsState(gameState);
   ensureStatisticsState(gameState);

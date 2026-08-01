@@ -524,3 +524,313 @@
     .achievements-panel .panel-body { padding: 10px; }
     .ach-summary-count { font-size: 17px; }
   }
+
+  /* ===== 研究系统面板（Batch F） ===== */
+  .research-panel .panel-body { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+  .research-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .research-bank {
+    font-family: var(--font-tech, sans-serif);
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #d4a843;
+    padding: 6px 12px;
+    background: #0d131c;
+    border: 1px solid #665528;
+    border-radius: 6px;
+    box-shadow: inset 0 0 18px rgba(212, 168, 67, 0.06);
+  }
+
+  .research-active-section { display: flex; flex-direction: column; gap: 8px; }
+  .research-active {
+    padding: 10px 12px;
+    background: #0d131c;
+    border: 1px solid #1e2a38;
+    border-left: 3px solid #4a8ed6;
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+  .research-active:empty::before {
+    content: "当前没有进行中的研究";
+    color: #7d8899;
+    font-style: italic;
+  }
+  .research-progress-track {
+    height: 10px;
+    background: #0a0f16;
+    border: 1px solid #1e2a38;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .research-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #2f6ea8, #4a8ed6);
+    transition: width 0.3s ease;
+  }
+  .research-active-detail { color: #9fb0c2; font-size: 12px; }
+  .research-active-warn { color: #d68a4a; font-size: 12px; }
+
+  /* ---- 节点详情弹窗（Batch F 视觉返修：复用 #research-detail，点击科技后弹出） ---- */
+  .research-detail:empty { display: none; }
+  .research-detail {
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+  .rt-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(4, 8, 14, 0.66);
+    z-index: 1;
+  }
+  .rt-modal-box {
+    position: relative;
+    z-index: 2;
+    width: min(480px, 92vw);
+    max-height: 84vh;
+    overflow-y: auto;
+    padding: 16px 18px 18px;
+    box-sizing: border-box;
+    background: #121826;
+    border: 1px solid #2a3850;
+    border-radius: 10px;
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.6);
+    font-size: 12px;
+    color: #9fb0c2;
+    line-height: 1.6;
+  }
+  .rt-modal-close {
+    position: absolute;
+    top: 8px;
+    right: 10px;
+    width: 26px;
+    height: 26px;
+    line-height: 1;
+    padding: 0;
+    background: transparent;
+    border: 1px solid #33465c;
+    border-radius: 6px;
+    color: #cdd6e1;
+    font-size: 16px;
+    cursor: pointer;
+  }
+  .rt-modal-close:hover { background: #1d2a3a; border-color: #4a8ed6; }
+  .rt-d-name { font-size: 15px; font-weight: 700; color: #cfe6ff; margin-bottom: 4px; }
+  .rt-d-meta { font-size: 11px; color: #7a8aa0; margin-bottom: 8px; }
+  .rt-d-meta b { color: #9ab8d8; }
+  .rt-d-tag {
+    display: inline-block; font-size: 11px; padding: 2px 10px; border-radius: 10px;
+    margin-bottom: 8px; border: 1px solid #2f6e8a; color: #6fc6e0;
+  }
+  .rt-d-tag--protocol { border-color: #c0a040; color: #e0c890; }
+  .rt-d-desc { color: #aebfd2; margin-bottom: 4px; }
+  .rt-d-lab {
+    font-size: 11px; color: #6a7a90; letter-spacing: 1px;
+    margin: 10px 0 4px; text-transform: uppercase;
+  }
+  .rt-d-row { color: #9fb0c2; }
+  .rt-d-eff-row { color: #8f9fb2; }
+  .rt-d-eff-row--owned { color: #3fd0c0; }
+  .rt-d-eff-row--next { color: #9fd0ff; font-weight: 600; }
+  .rt-d-pre-row--met { color: #7fe0c0; }
+  .rt-d-pre-row--unmet { color: #d68a4a; }
+  .rt-d-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .rt-d-hint { font-size: 11px; color: #d0a030; font-style: italic; margin-top: 8px; }
+  .rt-d-empty { color: #7d8899; font-style: italic; }
+
+  .section-title {
+    font-family: var(--font-tech, sans-serif);
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #8899aa;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  /* ---- 文明6式横向科技树画布 ---- */
+  .research-tree-layout { display: flex; gap: 12px; align-items: flex-start; max-width: 100%; }
+  .research-tree {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 100%;
+    position: relative;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    background-color: #0a0e16;
+    background-image:
+      linear-gradient(rgba(70, 110, 150, 0.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(70, 110, 150, 0.05) 1px, transparent 1px);
+    background-size: 40px 40px;
+    border: 1px solid #1c2636;
+    border-radius: 8px;
+    cursor: grab;
+  }
+  .research-tree.is-dragging { cursor: grabbing; }
+  .rt-stage { position: relative; }
+
+  .rt-edges { position: absolute; top: 0; left: 0; pointer-events: none; z-index: 1; }
+  .rt-edge { fill: none; stroke: #2c3a4e; stroke-width: 2; }
+  .rt-edge--met { stroke: #3fd0c0; stroke-width: 2.4; }
+  .rt-edge--projected { stroke: #4a8ed6; stroke-width: 2.2; stroke-dasharray: 6 5; }
+  .rt-edge--hi { stroke: #6ad0ff; stroke-width: 3.2; }
+  .rt-edge--dim { opacity: 0.25; }
+
+  .rt-era-band { position: absolute; top: 0; z-index: 0; border-left: 1px dashed rgba(90, 120, 160, 0.16); }
+  .rt-era-head {
+    position: absolute; z-index: 2; text-align: center;
+    border-radius: 8px 8px 0 0;
+    border: 1px solid rgba(255, 255, 255, 0.08); border-bottom: none;
+    padding: 8px 4px 7px; font-size: 15px; font-weight: 700; letter-spacing: 1px;
+    color: #eaf2fb; text-shadow: 0 1px 2px rgba(0, 0, 0, 0.55);
+  }
+
+  .rt-node {
+    position: absolute; z-index: 5; box-sizing: border-box;
+    display: flex; flex-direction: column; justify-content: center; gap: 2px;
+    padding: 7px 10px; border-radius: 8px; cursor: pointer; user-select: none;
+    border: 1.5px solid #2a3340; background: #161b22; color: #c8d6e6;
+    transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s, opacity 0.12s;
+  }
+  .rt-node:hover { transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55); z-index: 9; }
+  .rt-node:focus { outline: none; border-color: #6ad0ff; box-shadow: 0 0 0 2px rgba(106, 208, 255, 0.35); z-index: 9; }
+  .rt-node-name { font-size: 13px; font-weight: 600; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rt-node-sub { font-size: 10px; opacity: 0.86; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rt-node-eff { font-size: 10px; color: #7fa9d6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rt-node-pips { display: flex; gap: 3px; margin-top: 2px; }
+  .rt-pip { width: 16px; height: 5px; border-radius: 2px; border: 1px solid #33465c; background: transparent; }
+  .rt-pip--filled { background: #3fd0c0; border-color: #3fd0c0; }
+  .rt-pip--active { background: #9fd0ff; border-color: #6ad0ff; animation: rt-pip-blink 1.4s infinite; }
+  .rt-pip--queued { background: #4a6ed6; border-color: #6a8ef0; }
+  @keyframes rt-pip-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .rt-badge { position: absolute; top: -8px; left: 8px; z-index: 6; font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 700; }
+  .rt-badge--single { background: #2a8f8f; color: #d6fffb; }
+  .rt-badge--protocol { background: #d0a030; color: #2a1a06; }
+  .rt-flag { position: absolute; top: -9px; right: 8px; z-index: 6; font-size: 9px; padding: 1px 6px; border-radius: 8px; font-weight: 700; }
+  .rt-flag--active { background: #3fd0c0; color: #06382f; }
+  .rt-flag--queued { background: #4a6ed6; color: #eaf2ff; }
+
+  .rt-node--completed { background: #15474a; border-color: #3fd0c0; color: #d6fffb; }
+  .rt-node--active {
+    background: #123c52; border-color: #6ad0ff; color: #d8f2ff;
+    animation: rt-node-pulse 1.8s infinite;
+  }
+  .rt-node--queued { background: #1a2540; border-color: #4a6ed6; color: #cfe0ff; }
+  .rt-node--available { background: #232c3a; border-color: #5a7088; color: #d4e2f0; }
+  .rt-node--locked { background: #13171f; border-color: #232c3a; color: #909db0; }
+  .rt-node--locked .rt-node-eff { color: #63758c; }
+  @keyframes rt-node-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(106, 208, 255, 0.42); }
+    50% { box-shadow: 0 0 0 6px rgba(106, 208, 255, 0); }
+  }
+
+  .rt-node--protocol { border-color: #d0a030; }
+  .rt-node--protocol.rt-node--completed { background: #3a2a10; border-color: #f0c040; color: #f0d8a0; }
+  .rt-node--protocol.rt-node--active { background: #3a2a10; border-color: #f0c040; color: #f0d8a0; }
+  .rt-node--protocol.rt-node--queued { background: #332612; border-color: #c0a040; color: #e8d2a0; }
+  .rt-node--protocol.rt-node--available { background: #2a2010; border-color: #c0a040; color: #e0c890; }
+  .rt-node--protocol.rt-node--locked { background: #1c1608; border-color: #4a3810; color: #a89058; }
+  .rt-node--protocol .rt-node-eff { color: #c8a860; }
+
+  .rt-node--faded { opacity: 0.32; }
+  .rt-node--linked { box-shadow: 0 0 0 2px rgba(106, 208, 255, 0.5); z-index: 8; }
+
+  .research-protocol-hint {
+    font-size: 11px;
+    color: #d0a030;
+    font-style: italic;
+  }
+
+  /* 研究批次 I：已实装协议（planauto / autosell / autoconv）配置面板 */
+  .research-protocol-panel { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+  .research-protocol-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 6px 8px;
+    background: #12181f; border: 1px solid #2a3a4a; border-radius: 5px;
+  }
+  .research-protocol-status { font-size: 12px; color: #cdd6e1; }
+  .research-protocol-scope { color: #8fb3d0; font-style: normal; }
+  .research-protocol-planet {
+    padding: 7px 8px; background: #10161d;
+    border: 1px solid #26313d; border-radius: 5px;
+  }
+  .research-protocol-planet + .research-protocol-planet { margin-top: 6px; }
+  .research-protocol-planet-head { font-size: 12px; color: #d6e2ee; }
+  .research-protocol-planet-meta { font-size: 11px; color: #8ba0b4; margin-top: 2px; }
+  .research-protocol-planet-ctrl {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+  }
+  .research-protocol-reserve-label {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; color: #8ba0b4;
+  }
+  .research-protocol-reserve {
+    width: 110px; padding: 3px 6px;
+    background: #0c1218; border: 1px solid #33465c; border-radius: 4px;
+    color: #cdd6e1; font-family: var(--font-ui, sans-serif); font-size: 12px;
+  }
+  .research-protocol-reserve:focus { outline: none; border-color: #4a8ed6; }
+
+  .research-protocol-planet--muted { opacity: 0.55; }
+  .research-protocol-max { width: 84px; }
+  .research-protocol-planet-ctrl .research-btn + .research-btn { margin-left: 6px; }
+
+  .research-btn {
+    font-family: var(--font-ui, sans-serif);
+    font-size: 12px;
+    padding: 4px 10px;
+    background: #16202c;
+    border: 1px solid #33465c;
+    border-radius: 5px;
+    color: #cdd6e1;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .research-btn:hover { background: #1d2a3a; border-color: #4a8ed6; }
+  .research-btn:disabled { opacity: 0.4; cursor: not-allowed; border-color: #2a2f3a; }
+  .research-btn.primary { background: #1d3a52; border-color: #4a8ed6; color: #cfe6ff; }
+  .research-btn.danger { border-color: #7a3a3a; color: #e6a0a0; }
+  .research-btn.danger:hover { background: #3a1d1d; border-color: #d65a5a; }
+
+  .research-queue { display: flex; flex-direction: column; gap: 8px; }
+  .research-queue:empty::before {
+    content: "队列为空";
+    color: #7d8899;
+    font-style: italic;
+    font-size: 13px;
+  }
+  .research-queue-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 12px;
+    background: #0d131c;
+    border: 1px solid #7a5fb0;
+    border-radius: 6px;
+    font-size: 13px;
+  }
+  .research-queue-index { font-family: var(--font-tech, sans-serif); color: #c2a8ff; margin-right: 4px; }
+  .research-queue-meta { color: #9fb0c2; font-size: 12px; }
+
+  /* 移动端：仍是横向科技树，只是详情区改为竖排；横向移动只发生在树内部 */
+  @media (max-width: 720px) {
+    .research-tree-layout { flex-direction: column; }
+    .research-detail { flex: 1 1 auto; width: 100%; position: static; max-height: none; }
+    .research-panel .panel-body { padding: 10px; overflow-x: hidden; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .rt-node--active { animation: none; box-shadow: 0 0 0 2px rgba(106, 208, 255, 0.55); }
+    .rt-pip--active { animation: none; }
+    .rt-node { transition: none; }
+    .research-progress-fill { transition: none; }
+  }

@@ -113,6 +113,9 @@
     <div class="nav-item" data-page="achievements">
       <span class="nav-icon"><i class="fa-solid fa-trophy"></i></span> 成就
     </div>
+    <div class="nav-item" data-page="research">
+      <span class="nav-icon"><i class="fa-solid fa-flask-vial"></i></span> 研究
+    </div>
     <div class="nav-divider"></div>
     <div class="nav-item" data-skill="mining">
       <span class="nav-icon"><i class="fa-solid fa-gem"></i></span> 采矿 <span class="nav-lv" data-lv="mining">Lv.86</span>
@@ -814,12 +817,40 @@
           </div>
           <div class="ach-progress-track"><div class="ach-progress-fill" id="achievements-progress-fill" style="width:0%;"></div></div>
           <div class="ach-tier-counts" id="achievements-tier-counts"></div>
+          <div class="ach-research-bank" id="achievements-research-bank">科研工时余额：0 小时</div>
         </section>
         <section class="achievements-filters">
           <div class="ach-filter-row" id="achievements-category-tabs"></div>
           <div class="ach-filter-row" id="achievements-status-tabs"></div>
         </section>
         <div class="achievements-grid" id="achievements-grid"></div>
+      </div>
+    </div>
+
+    <div class="panel research-panel" id="research-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-flask-vial"></i> 研究</span>
+        <span class="text-muted">科技树 · 在线操作 · 成就工时</span>
+      </div>
+      <div class="panel-body">
+        <section class="research-summary" id="research-summary">
+          <div class="research-bank" id="research-bank">科研工时余额：0 小时</div>
+        </section>
+        <section class="research-active-section">
+          <div class="research-active" id="research-active"></div>
+          <div class="research-progress-track"><div class="research-progress-fill" id="research-progress-fill" style="width:0%;"></div></div>
+        </section>
+        <section class="research-tree-section">
+          <h3 class="section-title">科技树</h3>
+          <div class="research-tree-layout">
+            <div class="research-tree" id="research-tree"></div>
+            <aside class="research-detail" id="research-detail"></aside>
+          </div>
+        </section>
+        <section class="research-queue-section">
+          <h3 class="section-title">研究队列</h3>
+          <div class="research-queue" id="research-queue"></div>
+        </section>
       </div>
     </div>
 
@@ -933,6 +964,7 @@
   <script defer src="./js/core/combat-modifiers.js"></script>
   <script defer src="./js/core/selectors.js"></script>
   <script defer src="./js/core/actions.js"></script>
+  <script defer src="./js/systems/research-protocols.js"></script>
   <script defer src="./js/ui/shell-render.js?v=5"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=2"></script>
   <script defer src="./js/ui/combat-render.js?v=9"></script>

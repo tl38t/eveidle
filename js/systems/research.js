@@ -446,6 +446,230 @@
     };
   }
 
+  // =========================================================================
+  //  Batch E：科研工时消耗 / 研究取消（正式 API）
+  //
+  //  共同铁律：
+  //    - 两个 API 都先调用唯一时间结算入口 processResearchUntil(state, now)，
+  //      绝不自行计算 elapsed、绝不绕开锚点。
+  //    - 工时单位统一为「秒」；state.research.researchHourBank 是唯一余额载体。
+  //    - 单步可被成就工时抵扣的上限严格为 baseDuration 的 50%
+  //      （activeResearch.appliedAchievementSeconds 累计不得越界）。
+  //    - 失败分支一律不改状态、不设置 dirty、不 emit。
+  //    - 事件系统缺失时业务仍然成功（emit 只是可选副作用）。
+  // =========================================================================
+
+  const ACHIEVEMENT_HOURS_CAP_RATIO = 0.5; // 单步成就工时抵扣上限占 baseDuration 的比例
+  const SECONDS_PER_HOUR = 3600;
+
+  function getEventBus() {
+    return (
+      (typeof globalThis !== "undefined" && globalThis.GameEvents) ||
+      (typeof window !== "undefined" && window.GameEvents) ||
+      null
+    );
+  }
+
+  function resolveNowMs(now) {
+    return (typeof now === "number" && isFinite(now))
+      ? now
+      : ((typeof Date !== "undefined" && Date.now) ? Date.now() : 0);
+  }
+
+  // -------------------------------------------------------------------------
+  // applyResearchHours(state, hours, now)
+  //   把科研工时银行中的时间投入当前研究，直接扣减 remainingSeconds。
+  //
+  //   ① processResearchUntil(state, now) 先结算自然时间；
+  //   ② hours 必须是有限正数                → INVALID_HOURS
+  //   ③ 无 research 状态                    → NO_RESEARCH_STATE
+  //   ④ 无 activeResearch（结算后）         → NOTHING_ACTIVE
+  //   ⑤ baseDuration / remainingSeconds 非法 → INVALID_ACTIVE
+  //   ⑥ 本步已用满 50% 上限                 → CAP_REACHED
+  //   ⑦ 银行余额 <= 0                        → INSUFFICIENT_BANK
+  //   ⑧ 实扣 usedSeconds = min(请求秒数, 50% 剩余额度, 银行余额, 本步剩余时间)
+  //      —— 请求超额不报错，按可用量截断（部分成交），usedSeconds 必然 > 0。
+  //   ⑨ 若扣到 remainingSeconds <= 0 → 立即 completeResearchStep + 队列衔接。
+  //
+  //   成功 emit 恰一次 research:hoursApplied {techId, level, usedSeconds}。
+  // -------------------------------------------------------------------------
+  function applyResearchHours(state, hours, now) {
+    const research = state && state.research ? state.research : null;
+    if (!research || typeof research !== "object" || Array.isArray(research)) {
+      return { ok: false, reason: "NO_RESEARCH_STATE" };
+    }
+    if (typeof hours !== "number" || !isFinite(hours) || hours <= 0) {
+      return { ok: false, reason: "INVALID_HOURS" };
+    }
+
+    const resolvedNow = resolveNowMs(now);
+    processResearchUntil(state, resolvedNow); // ① 唯一时间结算入口
+
+    const ar = research.activeResearch;
+    if (!ar || typeof ar !== "object" || Array.isArray(ar)) {
+      return { ok: false, reason: "NOTHING_ACTIVE" };
+    }
+
+    const base = Number(ar.baseDuration);
+    const remaining = Number(ar.remainingSeconds);
+    if (!isFinite(base) || base <= 0 || !isFinite(remaining) || remaining <= 0) {
+      return { ok: false, reason: "INVALID_ACTIVE" };
+    }
+
+    const appliedRaw = ar.appliedAchievementSeconds;
+    const applied = (typeof appliedRaw === "number" && isFinite(appliedRaw) && appliedRaw > 0) ? appliedRaw : 0;
+    const capTotal = base * ACHIEVEMENT_HOURS_CAP_RATIO;
+    const capLeft = capTotal - applied;
+    if (!(capLeft > 0)) {
+      return { ok: false, reason: "CAP_REACHED", techId: ar.techId, level: ar.targetLevel, capSeconds: capTotal };
+    }
+
+    const bankRaw = research.researchHourBank;
+    const bank = (typeof bankRaw === "number" && isFinite(bankRaw) && bankRaw > 0) ? bankRaw : 0;
+    if (bank <= 0) {
+      return { ok: false, reason: "INSUFFICIENT_BANK", techId: ar.techId, level: ar.targetLevel };
+    }
+
+    const requested = hours * SECONDS_PER_HOUR;
+    const usedSeconds = Math.min(requested, capLeft, bank, remaining);
+    if (!(usedSeconds > 0)) {
+      // 理论不可达（上面四个量均已确认 > 0）；保守失败，不改状态。
+      return { ok: false, reason: "INSUFFICIENT_BANK", techId: ar.techId, level: ar.targetLevel };
+    }
+
+    const techId = ar.techId;
+    const level = ar.targetLevel;
+
+    research.researchHourBank = bank - usedSeconds;
+    ar.remainingSeconds = remaining - usedSeconds;
+    ar.appliedAchievementSeconds = applied + usedSeconds;
+    markResearchDirty(state);
+
+    const finalRemaining = ar.remainingSeconds;
+    const finalApplied = ar.appliedAchievementSeconds;
+
+    // ⑨ 抵扣到 0 立即结算该步并衔接队列下一项（startedAt 用同一 resolvedNow）
+    let completed = false;
+    if (!(finalRemaining > 0)) {
+      const done = completeResearchStep(state, resolvedNow);
+      completed = !!(done && done.ok);
+      if (completed) startNextFromQueue(state, resolvedNow);
+    }
+
+    const GE = getEventBus();
+    if (GE && typeof GE.emit === "function") {
+      GE.emit("research:hoursApplied", { techId, level, usedSeconds }, { timestamp: resolvedNow });
+    }
+
+    return {
+      ok: true,
+      reason: null,
+      techId,
+      level,
+      usedSeconds,
+      completed,
+      bankSeconds: research.researchHourBank,
+      remainingSeconds: finalRemaining,
+      appliedAchievementSeconds: finalApplied,
+      capSeconds: capTotal,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // cancelResearch(state, now)
+  //   取消当前研究：进度作废（不写 completedLevels、不写 history、不 emit
+  //   research:stepCompleted），已投入的成就科研工时全额退回银行。
+  //
+  //   ① processResearchUntil(state, now) 先结算——若自然时间已让该步完成，
+  //      则此刻取消的是「队列衔接后的下一项」或返回 NOTHING_ACTIVE，
+  //      绝不出现「已完成还能取消退款」的双花。
+  //   ② 无 research 状态            → NO_RESEARCH_STATE
+  //   ③ 结算后无 activeResearch     → NOTHING_ACTIVE
+  //   ④ 退款 refundedSeconds = 清洗后的 appliedAchievementSeconds（夹紧 50% 上限）
+  //   ⑤ activeResearch = null，随后 startNextFromQueue 衔接队列下一项。
+  //
+  //   成功 emit 恰一次 research:cancelled {techId, level, refundedSeconds}。
+  // -------------------------------------------------------------------------
+  function cancelResearch(state, now) {
+    const research = state && state.research ? state.research : null;
+    if (!research || typeof research !== "object" || Array.isArray(research)) {
+      return { ok: false, reason: "NO_RESEARCH_STATE" };
+    }
+
+    const resolvedNow = resolveNowMs(now);
+    processResearchUntil(state, resolvedNow); // ① 唯一时间结算入口
+
+    const ar = research.activeResearch;
+    if (!ar || typeof ar !== "object" || Array.isArray(ar)) {
+      return { ok: false, reason: "NOTHING_ACTIVE" };
+    }
+
+    const techId = ar.techId;
+    const level = ar.targetLevel;
+
+    // ④ 退款额度：只退真实投入过的成就工时，并再次夹紧 50% 上限（防坏档超额退款）
+    const base = Number(ar.baseDuration);
+    const capTotal = (isFinite(base) && base > 0) ? base * ACHIEVEMENT_HOURS_CAP_RATIO : 0;
+    const appliedRaw = ar.appliedAchievementSeconds;
+    let refundedSeconds = (typeof appliedRaw === "number" && isFinite(appliedRaw) && appliedRaw > 0) ? appliedRaw : 0;
+    if (refundedSeconds > capTotal) refundedSeconds = capTotal;
+
+    const bankRaw = research.researchHourBank;
+    const bank = (typeof bankRaw === "number" && isFinite(bankRaw) && bankRaw > 0) ? bankRaw : 0;
+    research.researchHourBank = bank + refundedSeconds;
+
+    // ⑤ 进度作废：不写 completedLevels / history / research:stepCompleted
+    research.activeResearch = null;
+    markResearchDirty(state);
+
+    const next = startNextFromQueue(state, resolvedNow);
+
+    const GE = getEventBus();
+    if (GE && typeof GE.emit === "function") {
+      GE.emit("research:cancelled", { techId, level, refundedSeconds }, { timestamp: resolvedNow });
+    }
+
+    return {
+      ok: true,
+      reason: null,
+      techId,
+      level,
+      refundedSeconds,
+      bankSeconds: research.researchHourBank,
+      startedNext: !!(next && next.ok) ? next.started : null,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // removeQueuedResearch(state, stepKey, now)  —— Batch F：移除队列项
+  //   严格 stepKey 定位，只删除完全匹配的一项。
+  //   ① processResearchUntil(state, now) 先结算，确保基于最新状态操作；
+  //   ② 非法 state           → INVALID_STATE；
+  //   ③ stepKey 解析失败      → INVALID_STEP_KEY；
+  //   ④ pendingQueue 精确匹配 → splice 移除一项并置 dirty → ok；
+  //      否则                → NOT_QUEUED。
+  //   不取消 activeResearch、不重新排列其他队列项、不复制队列合法性算法。
+  // -------------------------------------------------------------------------
+  function removeQueuedResearch(state, stepKey, now) {
+    if (!state || !state.research || typeof state.research !== "object" || Array.isArray(state.research)) {
+      return { ok: false, reason: "INVALID_STATE" };
+    }
+    const parsed = parseResearchStepKey(stepKey);
+    if (!parsed) return { ok: false, reason: "INVALID_STEP_KEY" };
+
+    const resolvedNow = resolveNowMs(now);
+    processResearchUntil(state, resolvedNow); // ① 基于最新状态
+
+    const research = state.research;
+    const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+    const index = queue.indexOf(stepKey); // 严格字符串匹配：仅删完全匹配的一项
+    if (index < 0) return { ok: false, reason: "NOT_QUEUED" };
+
+    queue.splice(index, 1); // 只移除一项，其余顺序保持（不重排）
+    markResearchDirty(state);
+    return { ok: true, reason: null, key: stepKey, removedIndex: index };
+  }
+
   // -------------------------------------------------------------------------
   // 暴露
   // -------------------------------------------------------------------------
@@ -462,6 +686,11 @@
     processResearchUntil,
     completeResearchStep,
     getResearchProgress,
+    // Batch E：科研工时消耗 / 研究取消
+    applyResearchHours,
+    cancelResearch,
+    // Batch F：移除队列项
+    removeQueuedResearch,
   };
 
   if (typeof window !== "undefined") window.ResearchSystem = ResearchSystem;

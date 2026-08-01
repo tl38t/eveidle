@@ -162,6 +162,11 @@
       );
     }
 
+    // Batch E：首次成功解锁 → 直接发放一次性科研工时（不经过事件总线，
+    // 因此 GameEvents 缺失时奖励仍能到账）。发放本身幂等且安全失败：
+    // 无奖励 / research 缺失 / 账本已有记录都只是返回失败，不影响解锁结果。
+    grantAchievementResearchReward(state, achievementId, unlockedAt);
+
     return { ok: true, reason: null, achievementId, unlockedAt };
   }
 
@@ -1884,6 +1889,147 @@
     return { ok: true, reason: null };
   }
 
+  // =========================================================================
+  //  Batch E：成就科研工时奖励（一次性发放 + 账本防重）
+  //
+  //  设计约束：
+  //    - 奖励只是「一次性科研工时」，不提供任何永久研究速度加成。
+  //    - 唯一权威工时载体：state.research.researchHourBank（单位：秒）。
+  //    - 唯一防重账本：state.achievements.researchRewardSecondsById（单位：秒），
+  //      只记录「已经真实发放过的秒数」；键存在即视为已发放，绝不二次入账。
+  //    - 发放金额只信任冻结目录 AchievementData 的 reward.hours，
+  //      绝不信任事件 payload 或存档里的任何数值。
+  //    - 只有首次真实入账才设置 _dirty 并 emit achievement:researchHoursGranted。
+  // =========================================================================
+
+  const RESEARCH_REWARD_TYPE = "research-hours";
+  const RESEARCH_REWARD_SECONDS_PER_HOUR = 3600;
+
+  function getGameEventsBus() {
+    return (
+      (typeof globalThis !== "undefined" && globalThis.GameEvents) ||
+      (typeof window !== "undefined" && window.GameEvents) ||
+      null
+    );
+  }
+
+  // schema v2 账本可用性：achievements 结构合法 且 researchRewardSecondsById 是普通对象
+  function hasValidResearchRewardLedger(state) {
+    if (!hasValidAchievementState(state)) return false;
+    const ledger = state.achievements.researchRewardSecondsById;
+    return !!(ledger && typeof ledger === "object" && !Array.isArray(ledger));
+  }
+
+  // -------------------------------------------------------------------------
+  // 只读：目录奖励工时。
+  //   未知 ID / reward 为 null / reward 非对象 / type 不是 research-hours /
+  //   hours 非有限正数 → 一律返回 null（表示「本成就没有科研工时奖励」）。
+  // 纯只读，不接触 state。
+  // -------------------------------------------------------------------------
+  function getAchievementResearchRewardHours(achievementId) {
+    const def = getAchievementDefinition(achievementId);
+    if (!def) return null;
+    const reward = def.reward;
+    if (!reward || typeof reward !== "object" || Array.isArray(reward)) return null;
+    if (reward.type !== RESEARCH_REWARD_TYPE) return null;
+    const hours = reward.hours;
+    if (typeof hours !== "number" || !isFinite(hours) || hours <= 0) return null;
+    return hours;
+  }
+
+  // -------------------------------------------------------------------------
+  // 一次性发放：
+  //   - 账本/成就状态非法        → {ok:false, reason:"INVALID_STATE"}
+  //   - ID 不在目录              → {ok:false, reason:"UNKNOWN_ACHIEVEMENT"}
+  //   - 尚未真正解锁             → {ok:false, reason:"NOT_UNLOCKED"}
+  //   - 目录 reward 为 null/非法 → {ok:false, reason:"NO_REWARD"}
+  //   - 账本已有记录             → {ok:false, reason:"ALREADY_GRANTED", seconds:已发秒数}
+  //   - state.research 缺失/非法 → {ok:false, reason:"RESEARCH_UNAVAILABLE"}（安全失败，不抛异常）
+  //   - 首次成功                 → {ok:true, reason:null, achievementId, hours, seconds, bankSeconds}
+  //
+  // 失败分支一律不改状态、不设置 _dirty、不 emit。
+  // -------------------------------------------------------------------------
+  function grantAchievementResearchReward(state, achievementId, atMs) {
+    if (!hasValidResearchRewardLedger(state)) {
+      return { ok: false, reason: "INVALID_STATE" };
+    }
+    if (!getAchievementDefinition(achievementId)) {
+      return { ok: false, reason: "UNKNOWN_ACHIEVEMENT" };
+    }
+    if (!isAchievementUnlocked(state, achievementId)) {
+      return { ok: false, reason: "NOT_UNLOCKED", achievementId };
+    }
+    const hours = getAchievementResearchRewardHours(achievementId);
+    if (hours === null) {
+      return { ok: false, reason: "NO_REWARD", achievementId };
+    }
+
+    const ledger = state.achievements.researchRewardSecondsById;
+    const prev = ledger[achievementId];
+    if (typeof prev === "number" && isFinite(prev) && prev >= 0) {
+      return { ok: false, reason: "ALREADY_GRANTED", achievementId, hours, seconds: prev };
+    }
+
+    const research = state.research;
+    if (!research || typeof research !== "object" || Array.isArray(research)) {
+      return { ok: false, reason: "RESEARCH_UNAVAILABLE", achievementId, hours };
+    }
+
+    const seconds = hours * RESEARCH_REWARD_SECONDS_PER_HOUR;
+    const bankRaw = research.researchHourBank;
+    const bank = (typeof bankRaw === "number" && isFinite(bankRaw) && bankRaw > 0) ? bankRaw : 0;
+
+    research.researchHourBank = bank + seconds;
+    ledger[achievementId] = seconds;
+    state._dirty = true;
+
+    const grantedAt = (typeof atMs === "number" && isFinite(atMs) && atMs >= 0) ? atMs : Date.now();
+    const GE = getGameEventsBus();
+    if (GE && typeof GE.emit === "function") {
+      GE.emit(
+        "achievement:researchHoursGranted",
+        { achievementId, hours, seconds },
+        { timestamp: grantedAt, source: "achievement-system" }
+      );
+    }
+
+    return {
+      ok: true,
+      reason: null,
+      achievementId,
+      hours,
+      seconds,
+      bankSeconds: research.researchHourBank,
+    };
+  }
+
+  // -------------------------------------------------------------------------
+  // 旧档对账：按冻结目录顺序，为「已解锁但账本无记录」的成就补发一次。
+  //   - 状态非法 → {ok:false, reason:"INVALID_STATE", grantedIds:[], grantedSeconds:0}
+  //   - 正常     → {ok:true, reason:null, grantedIds:[...], grantedSeconds:总秒数}
+  //   - 同批补发共用同一个 atMs；已发放过的一律跳过（幂等：第二次 grantedIds 为空）。
+  // -------------------------------------------------------------------------
+  function reconcileAchievementResearchRewards(state, atMs) {
+    if (!hasValidResearchRewardLedger(state)) {
+      return { ok: false, reason: "INVALID_STATE", grantedIds: [], grantedSeconds: 0 };
+    }
+    const AD = getAchievementData();
+    if (!AD || !Array.isArray(AD.ACHIEVEMENTS)) {
+      return { ok: true, reason: null, grantedIds: [], grantedSeconds: 0 };
+    }
+    const at = (typeof atMs === "number" && isFinite(atMs) && atMs >= 0) ? atMs : Date.now();
+    const grantedIds = [];
+    let grantedSeconds = 0;
+    for (const achievement of AD.ACHIEVEMENTS) {
+      const r = grantAchievementResearchReward(state, achievement.id, at);
+      if (r && r.ok) {
+        grantedIds.push(achievement.id);
+        grantedSeconds += r.seconds;
+      }
+    }
+    return { ok: true, reason: null, grantedIds, grantedSeconds };
+  }
+
   // -------------------------------------------------------------------------
   // 暴露
   // -------------------------------------------------------------------------
@@ -1919,6 +2065,9 @@
     installGeneralAchievementConsumer,
     evaluateMetaAchievementRules,
     installMetaAchievementConsumer,
+    getAchievementResearchRewardHours,
+    grantAchievementResearchReward,
+    reconcileAchievementResearchRewards,
   };
 
   if (typeof window !== "undefined") window.AchievementSystem = AchievementSystem;

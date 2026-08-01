@@ -35,8 +35,9 @@
   // -------------------------------------------------------------------------
   function createDefaultAchievementState() {
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       unlockedAtById: {},
+      researchRewardSecondsById: {},
     };
   }
 
@@ -44,13 +45,16 @@
   // 幂等迁移：
   //   1) state 非对象           → 安全返回，不抛异常
   //   2) achievements 缺失/null/数组/非对象 → 替换为默认结构
-  //   3) schemaVersion          → 最终规范为 1
+  //   3) schemaVersion          → 最终规范为 2（Batch E：新增科研工时奖励账本）
   //   4) unlockedAtById 缺失/数组/非对象 → 规范为空对象
   //   5) 重建干净普通对象：仅保留目录内 ID + 有限且 >=0 的 number 时间戳；
   //      未知 ID、NaN、Infinity、负数、字符串、对象、布尔值全部删除
-  //   6) 不补发成就、不 emit、不设置 _dirty
-  //   7) 幂等：连续迁移两次 JSON 严格一致
-  //   8) 返回传入的根 state
+  //   6) researchRewardSecondsById 缺失/数组/非对象 → 规范为空对象；
+  //      同样只保留目录内 ID + 有限且 >=0 的 number 秒数（其余全部删除）。
+  //      该字段只记录「已经真实发放过的秒数」，迁移本身绝不补发、绝不改数值。
+  //   7) 不补发成就、不 emit、不设置 _dirty
+  //   8) 幂等：连续迁移两次 JSON 严格一致
+  //   9) 返回传入的根 state
   // -------------------------------------------------------------------------
   function migrateAchievementState(state) {
     if (!state || typeof state !== "object") return state;
@@ -61,10 +65,17 @@
     }
 
     const a = state.achievements;
-    a.schemaVersion = 1;
+    a.schemaVersion = 2;
 
     if (!a.unlockedAtById || typeof a.unlockedAtById !== "object" || Array.isArray(a.unlockedAtById)) {
       a.unlockedAtById = {};
+    }
+    if (
+      !a.researchRewardSecondsById ||
+      typeof a.researchRewardSecondsById !== "object" ||
+      Array.isArray(a.researchRewardSecondsById)
+    ) {
+      a.researchRewardSecondsById = {};
     }
 
     const AD = getAchievementData();
@@ -79,6 +90,18 @@
       clean[id] = ts;
     }
     a.unlockedAtById = clean;
+
+    // 奖励账本同样重建：只保留目录内 ID + 有限非负 number。
+    // 注意：这里不校验「是否已解锁」，因为解锁记录被清洗掉时也不应触发二次发放；
+    // 真正的对账由 AchievementSystem.reconcileAchievementResearchRewards 负责。
+    const cleanReward = {};
+    for (const id of Object.keys(a.researchRewardSecondsById)) {
+      if (!Object.prototype.hasOwnProperty.call(byId, id)) continue;
+      const sec = a.researchRewardSecondsById[id];
+      if (typeof sec !== "number" || !isFinite(sec) || sec < 0) continue;
+      cleanReward[id] = sec;
+    }
+    a.researchRewardSecondsById = cleanReward;
 
     return state;
   }

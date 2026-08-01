@@ -17,12 +17,12 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#achievements-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#booster-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#station-panel):not(#blueprintstore-panel)')];
+  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#achievements-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#booster-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#station-panel):not(#blueprintstore-panel):not(#research-panel)')];
 }
 
 function renderCombatSkillGroup() {
@@ -44,9 +44,11 @@ function renderCurrentNavigation() {
   getGenericSkillPanels().forEach(panel => { panel.style.display = navigation.page === "skill" ? "" : "none"; });
   const skillCurrent = document.querySelector(".skill-current");
   if (skillCurrent) skillCurrent.style.display = navigation.showGenericSkill ? "" : "none";
-  // 成就页不改选择器契约（js/core/selectors.js 的 standalonePages 不动），
-  // 由外壳层补一条独立页映射，其余显隐/高亮完全复用现有导航体系。
-  const shellStandalonePanel = navigation.page === "achievements" ? "achievements-panel" : null;
+  // 成就页 / 研究页 不改选择器契约（js/core/selectors.js 的 standalonePages 不动），
+  // 由外壳层补独立页映射，其余显隐/高亮完全复用现有导航体系。
+  const shellStandalonePanel = navigation.page === "achievements" ? "achievements-panel"
+    : navigation.page === "research" ? "research-panel"
+    : null;
   const panelId = navigation.standalonePanel || shellStandalonePanel || navigation.specializedSkillPanel;
   if (panelId) { const panel = document.getElementById(panelId); if (panel) panel.style.display = ""; }
   document.querySelectorAll(".sidebar .nav-item").forEach(item => item.classList.remove("active"));
@@ -59,6 +61,7 @@ function renderCurrentNavigation() {
   else if (navigation.page === "settings") renderSettingsPage();
   else if (navigation.page === "statistics") renderStatisticsPage();
   else if (navigation.page === "achievements") renderAchievementsPage();
+  else if (navigation.page === "research") renderResearchPage();
   else if (navigation.page === "planetary") renderPlanetaryPage();
   else if (navigation.page === "archaeology") renderArchaeologyPage();
   else if (navigation.page === "queue") renderQueuePanel();
@@ -223,12 +226,52 @@ function formatAchievementUnlockTime(ms) {
   return new Date(ms).toLocaleString("zh-CN", { hour12:false });
 }
 
+// Batch E：成就奖励只读展示辅助（UI 纯读，绝不发放、不修改 state / 目录）。
+// 奖励工时一律取自冻结目录 definition.reward，绝不按 tier 猜测。
+const ACHIEVEMENT_NO_REWARD_TEXT = "无科研工时奖励";
+
+function readAchievementRewardHours(definition) {
+  if (!definition || typeof definition !== "object") return null;
+  const reward = definition.reward;
+  if (!reward || typeof reward !== "object" || Array.isArray(reward)) return null;
+  if (reward.type !== "research-hours") return null;
+  const hours = reward.hours;
+  if (typeof hours !== "number" || !isFinite(hours) || hours <= 0) return null;
+  return hours;
+}
+
+// 0.5 → "0.5"、1 → "1"、262 → "262"；非法值统一 "0"
+function formatResearchHoursNumber(hours) {
+  if (typeof hours !== "number" || !isFinite(hours) || hours <= 0) return "0";
+  if (Number.isInteger(hours)) return String(hours);
+  return hours.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function formatAchievementRewardText(definition) {
+  const hours = readAchievementRewardHours(definition);
+  if (hours === null) return ACHIEVEMENT_NO_REWARD_TEXT;
+  return "科研工时 +" + formatResearchHoursNumber(hours) + "h";
+}
+
+// 科研工时余额（秒 → 小时），只读 gameState.research.researchHourBank
+function getResearchHourBankSeconds() {
+  const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
+  if (!research || typeof research !== "object") return 0;
+  const bank = research.researchHourBank;
+  if (typeof bank !== "number" || !isFinite(bank) || bank <= 0) return 0;
+  return bank;
+}
+
 function getAchievementsDisplayState(category, status) {
   const data = getAchievementCatalogData();
   const selectedCategory = category || "all";
   const selectedStatus = ACHIEVEMENT_STATUS_FILTERS.some(item => item.id === status) ? status : "all";
+  const bankSeconds = getResearchHourBankSeconds();
+  const bankHours = bankSeconds / 3600;
+  const researchBankText = "科研工时余额：" + formatResearchHoursNumber(bankHours) + " 小时";
   if (!data) {
-    return { total:0, unlocked:0, percentValue:0, percentText:"0.0%", tiers:[], categories:[], statuses:[], cards:[], category:selectedCategory, status:selectedStatus };
+    return { total:0, unlocked:0, percentValue:0, percentText:"0.0%", tiers:[], categories:[], statuses:[], cards:[], category:selectedCategory, status:selectedStatus,
+      researchBankSeconds:bankSeconds, researchBankHours:bankHours, researchBankText };
   }
   const tiers = ACHIEVEMENT_TIER_ORDER.map(code => ({
     code, label:(data.TIERS && data.TIERS[code] ? data.TIERS[code].label : code), unlocked:0, total:0
@@ -260,7 +303,10 @@ function getAchievementsDisplayState(category, status) {
       unlockedAt,
       unlockedAtText: isUnlocked ? formatAchievementUnlockTime(unlockedAt) : "",
       name: masked ? ACHIEVEMENT_HIDDEN_NAME : definition.name,
-      conditionText: masked ? ACHIEVEMENT_HIDDEN_CONDITION : definition.conditionText
+      conditionText: masked ? ACHIEVEMENT_HIDDEN_CONDITION : definition.conditionText,
+      // Batch E：奖励文字始终来自冻结目录 reward（隐藏成就也照常显示奖励，不遮蔽）
+      rewardHours: readAchievementRewardHours(definition),
+      rewardText: formatAchievementRewardText(definition)
     });
   }
   const total = data.ACHIEVEMENTS.length;
@@ -275,7 +321,10 @@ function getAchievementsDisplayState(category, status) {
     statuses: ACHIEVEMENT_STATUS_FILTERS.map(item => ({ id:item.id, label:item.label, selected:selectedStatus === item.id })),
     cards,
     category: selectedCategory,
-    status: selectedStatus
+    status: selectedStatus,
+    researchBankSeconds: bankSeconds,
+    researchBankHours: bankHours,
+    researchBankText
   };
 }
 
@@ -293,6 +342,8 @@ function renderAchievementsPage(category, status) {
   if (fill) fill.style.width = display.percentValue.toFixed(2) + "%";
   const tierBox = document.getElementById("achievements-tier-counts");
   if (tierBox) tierBox.innerHTML = display.tiers.map(tier => `<span class="ach-tier-count tier-${tier.code}"><b>${escapeAchievementText(tier.label)}</b><span>${tier.unlocked} / ${tier.total}</span></span>`).join("");
+  const researchBank = document.getElementById("achievements-research-bank");
+  if (researchBank) researchBank.textContent = display.researchBankText;
   const categoryTabs = document.getElementById("achievements-category-tabs");
   if (categoryTabs) categoryTabs.innerHTML = display.categories.map(item => `<button class="ach-tab${item.selected ? " active" : ""}" data-ach-category="${escapeAchievementText(item.id)}">${escapeAchievementText(item.label)}<small>${item.count}</small></button>`).join("");
   const statusTabs = document.getElementById("achievements-status-tabs");
@@ -303,9 +354,1132 @@ function renderAchievementsPage(category, status) {
       <div class="ach-card-head"><span class="ach-card-id">${escapeAchievementText(card.id)}</span><span class="ach-card-tier tier-${card.tier}">${escapeAchievementText(card.tierLabel)}</span><span class="ach-card-cat">${escapeAchievementText(card.category)}</span><span class="ach-card-state">${card.unlocked ? "已解锁" : "未解锁"}</span></div>
       <div class="ach-card-name">${escapeAchievementText(card.name)}</div>
       <div class="ach-card-cond">${escapeAchievementText(card.conditionText)}</div>
+      <div class="ach-card-reward">${escapeAchievementText(card.rewardText)}</div>
       <div class="ach-card-time">${card.unlocked ? "解锁于 " + escapeAchievementText(card.unlockedAtText) : "尚未达成"}</div>
     </div>`).join("") : `<div class="ach-empty">当前筛选条件下没有成就</div>`;
   return display;
+}
+
+// =========================================================================
+// 研究系统页面（Batch F）：仅做纯读渲染 + 经 dispatchGameAction 转发操作。
+//   渲染函数绝不调用 processResearchUntil，绝不修改 state.research。
+// =========================================================================
+function getResearchSystem() {
+  return (typeof globalThis !== "undefined" && globalThis.ResearchSystem) ||
+         (typeof window !== "undefined" && window.ResearchSystem) || null;
+}
+function getResearchData() {
+  return (typeof globalThis !== "undefined" && globalThis.ResearchData) ||
+         (typeof window !== "undefined" && window.ResearchData) || null;
+}
+function formatResearchHours(hours) {
+  const h = Number(hours) || 0;
+  if (h <= 0) return "0 小时";
+  return formatResearchHoursNumber(h) + " 小时";
+}
+function formatResearchDuration(seconds) {
+  const s = Math.max(0, Math.round(Number(seconds) || 0));
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h > 0) return h + "小时" + (m > 0 ? m + "分" : "");
+  if (m > 0) return m + "分" + (sec > 0 ? sec + "秒" : "");
+  return sec + "秒";
+}
+function formatResearchDateTime(ms) {
+  const d = new Date(Number(ms) || Date.now());
+  if (isNaN(d.getTime())) return "未知";
+  const pad = (n) => String(n).padStart(2, "0");
+  return (d.getMonth() + 1) + "/" + d.getDate() + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+}
+function researchReasonText(reason) {
+  const map = {
+    ALREADY_ACTIVE: "该研究已在进行中",
+    ALREADY_QUEUED: "已加入队列",
+    PREREQ_UNMET: "前置条件未满足",
+    QUEUE_FULL: "队列已满（上限 20）",
+    CAP_REACHED: "本步成就工时已达 50% 上限",
+    INSUFFICIENT_BANK: "科研工时余额不足",
+    NOTHING_ACTIVE: "当前没有进行中的研究",
+    NOT_QUEUED: "队列中没有该项",
+    INVALID_STEP_KEY: "无效的队列项标识",
+    INVALID_STATE: "研究状态无效",
+    ALREADY_COMPLETED: "该科技已完成",
+    SKIP_LEVEL: "必须按顺序逐级研究",
+    LEVEL_OUT_OF_RANGE: "等级超出范围",
+    UNKNOWN_TECH: "未知科技",
+    INVALID_HOURS: "投入工时无效",
+    INVALID_ACTIVE: "当前研究状态异常",
+    NO_RESEARCH_STATE: "研究系统未就绪",
+    DURATION_UNAVAILABLE: "无法获取研究时长",
+    "not-available": "研究系统未就绪",
+    // 研究批次 I · 自动化协议稳定 reason
+    UNKNOWN_PROTOCOL: "该协议尚未接入设置",
+    PROTOCOL_LOCKED: "该协议尚未研究",
+    INVALID_ENABLED: "开关参数无效",
+    UNKNOWN_DEPLOYMENT: "未找到该行星基地",
+    INVALID_RESERVE: "最低 ISK 储备必须是不小于 0 的数字",
+    ALREADY_SET: "设置未发生变化",
+    PROTOCOL_DISABLED: "该协议未启用",
+    RESERVE_NOT_MET: "低于最低 ISK 储备，已跳过",
+    INSUFFICIENT_ISK: "ISK 不足",
+    NOTHING_TO_PROCESS: "当前没有可自动处理的内容",
+    // 研究批次 J · autoenh / autorepair 稳定 reason
+    INVALID_MAX_ATTEMPTS: "最大尝试次数必须是 0–10000 的整数",
+    UNKNOWN_SHIP: "未找到该舰船实例",
+    SHIP_ACTIVE: "该舰船正处于活动中，无法强化",
+    ENHANCEMENT_UNAVAILABLE: "该舰船当前不可强化",
+    INSUFFICIENT_COMPONENTS: "强化部件不足，已停止",
+    MAX_ATTEMPTS_REACHED: "已达到设定的最大尝试次数",
+    GUARD_REACHED: "已达到安全上限，已停止",
+    NO_ARCHAEOLOGY_SHIP: "未指派考古舰船",
+    NO_REPAIRERS: "考古舰船未安装维修装备",
+    FULL_HP: "舰船已满血，无需维修",
+    INSUFFICIENT_FUEL: "维修燃料不足，已停止",
+    // 研究批次 K · intship 一体化造船稳定 reason（5 个复用 Batch I + 14 个新增）
+    INVALID_QUANTITY: "造船数量必须是 1–1000 的整数",
+    UNKNOWN_RECIPE: "未找到该舰船装配配方",
+    BLUEPRINT_LOCKED: "未获得该舰船蓝图",
+    LEVEL_LOCKED: "舰船工程等级不足",
+    SHIPYARD_LOCKED: "船坞等级不足，无法总装该舰船",
+    ACTION_BUSY: "当前有进行中的制造动作",
+    JOB_ALREADY_ACTIVE: "已有一个进行中的造船作业",
+    NO_ACTIVE_JOB: "当前没有造船作业",
+    JOB_NOT_RESUMABLE: "该作业当前状态不可续作",
+    JOB_COMPLETED: "该造船作业已完成",
+    JOB_CANCELLED: "该造船作业已取消",
+    INSUFFICIENT_MATERIALS: "缺口材料不足，无法开工",
+    PREEMPTED: "制造动作被抢占，作业已中断",
+    RECOVERY_REQUIRED: "作业与存档不一致，已冻结；请取消后重新发起",
+    START_FAILED: "启动制造动作失败",
+  };
+  return map[reason] || ("操作失败：" + (reason || "unknown"));
+}
+
+// 节点状态：completed / active / queued / available / locked（只读 research）
+function getNodeResearchState(node, projected, research) {
+  const maxLevel = node.maxLevel;
+  const completed = Number(research.completedLevels && research.completedLevels[node.id]) || 0;
+  const ar = research.activeResearch;
+  const activeLevel = (ar && typeof ar === "object" && !Array.isArray(ar) && ar.techId === node.id) ? ar.targetLevel : 0;
+  const nextTarget = activeLevel || (completed + 1);
+  let status;
+  if (completed >= maxLevel) status = "completed";
+  else if (activeLevel) status = "active";
+  else {
+    const queuedKey = node.id + "@" + (completed + 1);
+    if (Array.isArray(research.pendingQueue) && research.pendingQueue.includes(queuedKey)) status = "queued";
+    else {
+      let prereqMet = true;
+      for (const p of node.prerequisites || []) {
+        if ((Number(projected[p.id]) || 0) < p.level) { prereqMet = false; break; }
+      }
+      status = prereqMet ? "available" : "locked";
+    }
+  }
+  return { status, completed, activeLevel, nextTarget, maxLevel };
+}
+
+// 取消研究的真实退款秒数：cancelResearch 退还的是 appliedAchievementSeconds
+//（受系统层既有的 50% 合法夹紧），与 capLeft「剩余可投入额度」是两个完全不同的量。
+function computeResearchRefundSeconds(research) {
+  if (!research || typeof research !== "object") return 0;
+  const ar = research.activeResearch;
+  if (!ar || typeof ar !== "object" || Array.isArray(ar)) return 0;
+  const applied = Math.max(0, Number(ar.appliedAchievementSeconds) || 0);
+  const capTotal = Math.max(0, (Number(ar.baseDuration) || 0) * 0.5);
+  return Math.min(applied, capTotal);
+}
+
+function computeMaxApplyHours(research) {
+  if (!research || typeof research !== "object") return 0;
+  const ar = research.activeResearch;
+  if (!ar || typeof ar !== "object" || Array.isArray(ar)) return 0;
+  const bankSeconds = Math.max(0, Number(research.researchHourBank) || 0);
+  const remaining = Math.max(0, Number(ar.remainingSeconds) || 0);
+  const capTotal = (Number(ar.baseDuration) || 0) * 0.5;
+  const applied = Math.max(0, Number(ar.appliedAchievementSeconds) || 0);
+  const capLeft = Math.max(0, capTotal - applied);
+  return Math.min(bankSeconds, remaining, capLeft) / 3600;
+}
+
+function renderResearchActive(research, RS) {
+  const el = document.getElementById("research-active");
+  const fill = document.getElementById("research-progress-fill");
+  if (!el) return;
+  const ar = research.activeResearch;
+  if (!ar || typeof ar !== "object" || Array.isArray(ar)) {
+    el.innerHTML = "";
+    if (fill) fill.style.width = "0%";
+    return;
+  }
+  const node = RS && RS.getResearchNode ? RS.getResearchNode(ar.techId) : null;
+  const name = node ? node.name : ar.techId;
+  const progress = RS && RS.getResearchProgress ? RS.getResearchProgress(gameState) : null;
+  const ratio = progress && typeof progress.ratio === "number" ? progress.ratio : 0;
+  const pct = Math.round(ratio * 100);
+  const remainingText = formatResearchDuration(ar.remainingSeconds);
+  const etaText = formatResearchDateTime(Date.now() + (Number(ar.remainingSeconds) || 0) * 1000);
+  const base = Number(ar.baseDuration) || 0;
+  const capTotal = base * 0.5;
+  const applied = Math.max(0, Number(ar.appliedAchievementSeconds) || 0);
+  const capLeft = Math.max(0, capTotal - applied);
+  const maxHours = computeMaxApplyHours(research);
+  if (fill) fill.style.width = pct + "%";
+  el.innerHTML =
+    '<div class="research-active-detail" id="research-active-name"><b>' + escapeAchievementText(name) + '</b> · 目标等级 ' + ar.targetLevel + '</div>' +
+    '<div class="research-active-detail" id="research-active-progress">进度：' + pct + '% ｜ 剩余 ' + escapeAchievementText(remainingText) + ' ｜ 预计完成 ' + escapeAchievementText(etaText) + '</div>' +
+    '<div class="research-active-detail" id="research-active-applied">本步已用成就工时：' + formatResearchHours(applied / 3600) + ' ｜ 50% 上限 ' + formatResearchHours(capTotal / 3600) + ' ｜ 剩余可投入 ' + formatResearchHours(capLeft / 3600) + '</div>' +
+    '<div class="research-active-actions" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">' +
+      '<button class="research-btn" data-active-action="apply" data-hours="0.5">投入 0.5h</button>' +
+      '<button class="research-btn" data-active-action="apply" data-hours="1">投入 1h</button>' +
+      '<button class="research-btn" data-active-action="apply" data-hours="4">投入 4h</button>' +
+      '<button class="research-btn primary" id="research-active-btn-max" data-active-action="apply" data-hours="max">最大可用（' + formatResearchHours(maxHours) + '）</button>' +
+      // 退款口径 = appliedAchievementSeconds（cancelResearch 的真实退款），不是 capLeft
+      '<button class="research-btn danger" id="research-active-btn-cancel" data-active-action="cancel">取消（退还 ' + formatResearchHours(computeResearchRefundSeconds(research) / 3600) + '）</button>' +
+    '</div>';
+}
+
+// =========================================================================
+// 文明6式横向科技树（Batch F 视觉返修）
+//   布局/连线/状态全部由 ResearchData.NODES + gameState.research 动态推导，
+//   原型 tools/research-tree-civ6.html 只提供视觉与绘图算法，不提供任何数据。
+//   只硬编码「时代序号 / 时代名称 / 时代配色」，时代内的节点清单一律动态分组。
+// =========================================================================
+const RESEARCH_ERA_META = [
+  { index: 0, label: "时代 I", sub: "基础科学", color: "#2a4a7a" },
+  { index: 1, label: "时代 II", sub: "应用科学", color: "#2a6a4a" },
+  { index: 2, label: "时代 III", sub: "工程学", color: "#6a5a2a" },
+  { index: 3, label: "时代 IV", sub: "尖端科技", color: "#6a2a4a" },
+  { index: 4, label: "时代 V", sub: "协议与集成", color: "#4a2a6a" }
+];
+const RT_LAYOUT = { COL_X0: 20, COL_W: 280, BOX_W: 204, BOX_H: 76, TOP: 98, ROW_H: 88, PAD_B: 28 };
+const RESEARCH_STATUS_LABEL = { completed: "已完成", active: "研究中", queued: "已排队", available: "可研究", locked: "前置未满足" };
+const RESEARCH_EDGE_ARROW = { met: "#3fd0c0", projected: "#4a8ed6", unmet: "#3a4a5e" };
+const RESEARCH_CATEGORY_LABEL = {
+  protocol: "协议", foundation: "基础", industry: "工业", combat: "战斗",
+  archaeology: "考古", manufacturing: "制造", logistics: "后勤", planetary: "行星", ship: "舰船"
+};
+
+// 纯读模型：不写 gameState，不调用 processResearchUntil。
+function buildResearchTreeModel(research, RD, RS) {
+  const catalog = (RD && Array.isArray(RD.NODES)) ? RD.NODES : [];
+  const L = RT_LAYOUT;
+  const projected = (RS && RS.buildProjectedResearchLevels) ? RS.buildProjectedResearchLevels(gameState) : (research.completedLevels || {});
+  const completedLevels = research.completedLevels || {};
+  const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+  const rowCursor = {};
+  const viewById = {};
+  const nodes = [];
+  // 同时代内严格保持 ResearchData.NODES 的原始顺序
+  for (const node of catalog) {
+    const era = Number(node.era) || 0;
+    const row = rowCursor[era] || 0;
+    rowCursor[era] = row + 1;
+    const st = getNodeResearchState(node, projected, research);
+    const isProtocol = node.type === "protocol" || node.category === "protocol";
+    const isSingle = !isProtocol && node.maxLevel === 1;
+    const levelMarks = [];
+    if (!isProtocol && node.maxLevel > 1) {
+      const done = Number(completedLevels[node.id]) || 0;
+      for (let lv = 1; lv <= node.maxLevel; lv += 1) {
+        if (lv <= done) levelMarks.push("filled");
+        else if (st.activeLevel === lv) levelMarks.push("active");
+        else if (queue.indexOf(node.id + "@" + lv) >= 0) levelMarks.push("queued");
+        else levelMarks.push("empty");
+      }
+    }
+    const nextDuration = (RS && RS.getResearchDuration && st.nextTarget <= node.maxLevel)
+      ? RS.getResearchDuration(node.id, st.nextTarget) : null;
+    const effects = Array.isArray(node.effects) ? node.effects : [];
+    const view = {
+      id: node.id,
+      name: node.name,
+      era,
+      row,
+      x: L.COL_X0 + era * L.COL_W + (L.COL_W - L.BOX_W) / 2,
+      y: L.TOP + row * L.ROW_H,
+      type: node.type,
+      category: node.category,
+      status: st.status,
+      statusLabel: RESEARCH_STATUS_LABEL[st.status] || st.status,
+      completed: st.completed,
+      activeLevel: st.activeLevel,
+      nextTarget: st.nextTarget,
+      maxLevel: node.maxLevel,
+      isProtocol,
+      isSingle,
+      levelMarks,
+      nextDurationSeconds: (nextDuration != null && isFinite(nextDuration)) ? nextDuration : null,
+      shortEffect: effects.length ? String(effects[Math.min(Math.max(st.nextTarget, 1) - 1, effects.length - 1)]) : ""
+    };
+    viewById[node.id] = view;
+    nodes.push(view);
+  }
+  // 连线：逐节点逐前置动态生成，边数恒等于 Σ node.prerequisites.length
+  const edges = [];
+  for (const node of catalog) {
+    for (const prereq of (node.prerequisites || [])) {
+      const from = viewById[prereq.id];
+      const to = viewById[node.id];
+      if (!from || !to) continue;
+      const realLevel = Number(completedLevels[prereq.id]) || 0;
+      const projLevel = Number(projected[prereq.id]) || 0;
+      const state = realLevel >= prereq.level ? "met" : (projLevel >= prereq.level ? "projected" : "unmet");
+      const sx = from.x + L.BOX_W;
+      const sy = from.y + L.BOX_H / 2;
+      const tx = to.x - 10;
+      const ty = to.y + L.BOX_H / 2;
+      const dx = tx - sx;
+      // 跨时代正向走平滑贝塞尔；同列/回折时改用固定外扩控制点，避免线穿过节点正文
+      const c1x = dx > 24 ? sx + dx * 0.45 : sx + 52;
+      const c2x = dx > 24 ? tx - dx * 0.45 : tx - 52;
+      edges.push({
+        from: prereq.id,
+        to: node.id,
+        requiredLevel: prereq.level,
+        state,
+        path: "M " + sx + " " + sy + " C " + c1x + " " + sy + ", " + c2x + " " + ty + ", " + tx + " " + ty
+      });
+    }
+  }
+  const eras = RESEARCH_ERA_META.map(meta => ({
+    index: meta.index, label: meta.label, sub: meta.sub, color: meta.color, count: rowCursor[meta.index] || 0
+  }));
+  let maxRows = 1;
+  for (const era of eras) if (era.count > maxRows) maxRows = era.count;
+  return {
+    nodes,
+    edges,
+    eras,
+    maxRows,
+    width: L.COL_X0 * 2 + RESEARCH_ERA_META.length * L.COL_W,
+    height: L.TOP + maxRows * L.ROW_H + L.PAD_B
+  };
+}
+
+// 罗马数字：用于 EVE 风格的等级显示（1=I, 2=II, 3=III, 4=IV, 5=V）
+function toRoman(num) {
+  if (!Number.isInteger(num) || num <= 0) return "";
+  const romans = ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+  return romans[num - 1] || String(num);
+}
+
+function renderResearchNodeHtml(view) {
+  const L = RT_LAYOUT;
+  let cls = "rt-node rt-node--" + view.status;
+  if (view.isProtocol) cls += " rt-node--protocol";
+  let badge = "";
+  if (view.isProtocol) badge = '<span class="rt-badge rt-badge--protocol">协议</span>';
+  else if (view.isSingle) badge = '<span class="rt-badge rt-badge--single">单级</span>';
+  let flag = "";
+  if (view.status === "active") flag = '<span class="rt-flag rt-flag--active">研究中</span>';
+  else if (view.status === "queued") flag = '<span class="rt-flag rt-flag--queued">已排队</span>';
+  const pips = view.levelMarks.length
+    ? '<div class="rt-node-pips">' + view.levelMarks.map(m => '<span class="rt-pip rt-pip--' + m + '"></span>').join("") + '</div>'
+    : "";
+  const levelText = view.isProtocol ? "协议 · " + view.completed + "/" + view.maxLevel
+    : (view.isSingle ? "单级 · " + view.completed + "/" + view.maxLevel : "Lv." + view.completed + "/" + view.maxLevel);
+  // 节点名称后缀规则：
+  // - 单级/协议节点永远不加罗马数字（它们只有一级）
+  // - 五级节点追加真实已完成等级；未完成时 completed=0 不追加，避免提前显示目标等级
+  const showRomanSuffix = !view.isSingle && !view.isProtocol && view.completed >= 1;
+  const nameSuffix = showRomanSuffix ? " " + toRoman(view.completed) : "";
+  return '<div class="' + cls + '"' +
+    ' style="left:' + view.x + 'px;top:' + view.y + 'px;width:' + L.BOX_W + 'px;height:' + L.BOX_H + 'px;"' +
+    ' data-tech-id="' + escapeAchievementText(view.id) + '"' +
+    ' data-era="' + view.era + '"' +
+    ' data-status="' + escapeAchievementText(view.status) + '"' +
+    ' role="button" tabindex="0"' +
+    ' title="' + escapeAchievementText(view.name + nameSuffix + " · " + view.statusLabel) + '">' +
+    badge + flag +
+    '<div class="rt-node-name">' + escapeAchievementText(view.name + nameSuffix) + '</div>' +
+    '<div class="rt-node-sub">' + escapeAchievementText(levelText + " ｜ " + view.statusLabel) + '</div>' +
+    '<div class="rt-node-eff">' + escapeAchievementText(view.shortEffect) + '</div>' +
+    pips +
+  '</div>';
+}
+
+function renderResearchTree(model) {
+  const el = document.getElementById("research-tree");
+  if (!el) return;
+  if (!model || !model.nodes.length) { el.innerHTML = ""; return; }
+  const L = RT_LAYOUT;
+  const bands = model.eras.map(era =>
+    '<div class="rt-era-band" style="left:' + (L.COL_X0 + era.index * L.COL_W) + 'px;width:' + (L.COL_W - 8) + 'px;height:' + model.height + 'px;"></div>'
+  ).join("");
+  const heads = model.eras.map(era =>
+    '<div class="rt-era-head" style="left:' + (L.COL_X0 + era.index * L.COL_W) + 'px;top:8px;width:' + (L.COL_W - 8) + 'px;background:' + era.color + ';">' +
+      escapeAchievementText(era.sub) +
+    '</div>'
+  ).join("");
+  const defs = '<defs>' + ["met", "projected", "unmet"].map(state =>
+    '<marker id="rt-arrow-' + state + '" markerWidth="9" markerHeight="9" refX="0" refY="4.5" orient="auto">' +
+      '<path d="M0,0 L9,4.5 L0,9 Z" fill="' + RESEARCH_EDGE_ARROW[state] + '"></path>' +
+    '</marker>'
+  ).join("") + '</defs>';
+  const paths = model.edges.map(edge =>
+    '<path class="rt-edge rt-edge--' + edge.state + '" d="' + edge.path + '"' +
+      ' data-from="' + escapeAchievementText(edge.from) + '"' +
+      ' data-to="' + escapeAchievementText(edge.to) + '"' +
+      ' data-required-level="' + edge.requiredLevel + '"' +
+      ' marker-end="url(#rt-arrow-' + edge.state + ')"></path>'
+  ).join("");
+  el.innerHTML =
+    '<div class="rt-stage" style="width:' + model.width + 'px;height:' + model.height + 'px;">' +
+      bands +
+      '<svg class="rt-edges" width="' + model.width + '" height="' + model.height + '" viewBox="0 0 ' + model.width + ' ' + model.height + '" aria-hidden="true">' +
+        defs + paths +
+      '</svg>' +
+      heads +
+      model.nodes.map(renderResearchNodeHtml).join("") +
+    '</div>';
+}
+
+// ---- 研究批次 I / J / K：已完成协议节点的配置面板（纯读 getResearchProtocolDisplayState，绝不修改 state） ----
+// 已实装的 planauto / autosell / autoconv / autoenh / autorepair / intship 六个协议渲染开关与设置；
+// 六个协议均已实装，不再有"协议业务尚未接入"。
+function renderResearchProtocolPanelHtml(display) {
+  if (!display || !display.implemented) {
+    return '<div class="rt-d-hint research-protocol-hint">协议业务尚未接入</div>';
+  }
+  const enabled = display.enabled === true;
+  const parts = [];
+  parts.push('<div class="rt-d-lab">协议设置</div>');
+  parts.push(
+    '<div class="research-protocol-row">' +
+      '<span class="research-protocol-status">总开关 ｜ ' + escapeAchievementText(display.statusText) + '</span>' +
+      '<button class="research-btn' + (enabled ? " danger" : " primary") + '" type="button"' +
+        ' data-detail-action="protocol-toggle"' +
+        ' data-protocol-id="' + escapeAchievementText(display.protocolId) + '"' +
+        ' data-protocol-enabled="' + (enabled ? "false" : "true") + '">' +
+        (enabled ? "关闭协议" : "启用协议") +
+      '</button>' +
+    '</div>'
+  );
+  if (display.scopeText) {
+    parts.push('<div class="rt-d-hint research-protocol-scope">' + escapeAchievementText(display.scopeText) + '</div>');
+  }
+  if (display.protocolId === "planauto") {
+    parts.push('<div class="rt-d-lab">行星基地（逐个独立配置）</div>');
+    const deployments = Array.isArray(display.deployments) ? display.deployments : [];
+    if (!deployments.length) {
+      parts.push('<div class="rt-d-row">当前没有行星基地</div>');
+    } else {
+      parts.push(deployments.map(dep => {
+        const on = dep.autoRenewEnabled === true;
+        const idAttr = escapeAchievementText(String(dep.deploymentId));
+        const timeText = (dep.running ? "到期时间 " : "已到期于 ") + formatAchievementUnlockTime(dep.expiresAt);
+        const metaText = "续期费用 " + Math.round(Number(dep.renewCostISK) || 0).toLocaleString("zh-CN") +
+          " ISK ｜ 自动续期：" + (on ? "已开启" : "已关闭");
+        return '<div class="research-protocol-planet" data-deployment-row="' + idAttr + '" data-deployment-current="' + (on ? "true" : "false") + '">' +
+          '<div class="research-protocol-planet-head">' +
+            escapeAchievementText((dep.planetIcon ? dep.planetIcon + " " : "") + dep.planetName + " ｜ " + dep.statusText + " ｜ " + timeText) +
+          '</div>' +
+          '<div class="research-protocol-planet-meta">' + escapeAchievementText(metaText) + '</div>' +
+          '<div class="research-protocol-planet-ctrl">' +
+            '<button class="research-btn' + (on ? " danger" : "") + '" type="button"' +
+              ' data-detail-action="planauto-toggle" data-deployment-id="' + idAttr + '"' +
+              ' data-deployment-enabled="' + (on ? "false" : "true") + '">' +
+              (on ? "关闭自动续期" : "开启自动续期") +
+            '</button>' +
+            '<label class="research-protocol-reserve-label">最低 ISK 储备' +
+              '<input class="research-protocol-reserve" type="number" min="0" step="1" value="' +
+                escapeAchievementText(String(Number(dep.minIskReserve) || 0)) + '" data-protocol-reserve>' +
+            '</label>' +
+            '<button class="research-btn" type="button" data-detail-action="planauto-reserve" data-deployment-id="' + idAttr + '">保存储备</button>' +
+          '</div>' +
+        '</div>';
+      }).join(""));
+    }
+  } else if (display.protocolId === "autoenh") {
+    parts.push('<div class="rt-d-lab">自动强化设置</div>');
+    parts.push(
+      '<div class="research-protocol-row research-protocol-autoenh" data-autoenh-panel="' + (enabled ? "1" : "0") + '">' +
+        '<label class="research-protocol-reserve-label">最大尝试次数（0 = 持续到部件不足）' +
+          '<input class="research-protocol-reserve research-protocol-max" type="number" min="0" max="10000" step="1" value="' +
+            escapeAchievementText(String(Number(display.maxAttempts) || 0)) + '" data-protocol-max>' +
+        '</label>' +
+        '<button class="research-btn" type="button" data-detail-action="autoenh-set-max">保存次数</button>' +
+      '</div>'
+    );
+    const ships = Array.isArray(display.ships) ? display.ships : [];
+    if (!ships.length) {
+      parts.push('<div class="rt-d-row">当前没有舰船</div>');
+    } else {
+      parts.push('<div class="rt-d-lab">舰船列表（点击开始自动强化）</div>');
+      parts.push(ships.map(s => {
+        const idAttr = escapeAchievementText(String(s.instanceId));
+        const suf = s.hasTier ? ("强化等级 " + s.currentLevel) : "不可强化";
+        const comp = s.hasTier ? (s.componentsSufficient ? "部件充足" : "部件不足") : "";
+        const disabled = (!s.hasTier || !s.componentsSufficient) ? " disabled" : "";
+        return '<div class="research-protocol-planet' + (s.hasTier ? "" : " research-protocol-planet--muted") + '">' +
+          '<div class="research-protocol-planet-head">' + escapeAchievementText(s.shipId || idAttr) + " ｜ " + suf + (comp ? " ｜ " + comp : "") + '</div>' +
+          '<div class="research-protocol-planet-ctrl">' +
+            '<button class="research-btn' + (s.hasTier && s.componentsSufficient ? " primary" : "") + '" type="button"' +
+              ' data-detail-action="autoenh-run" data-instance-id="' + idAttr + '"' + disabled + '>开始自动强化</button>' +
+          '</div>' +
+        '</div>';
+      }).join(""));
+    }
+  } else if (display.protocolId === "autorepair") {
+    parts.push('<div class="rt-d-lab">考古舰船自动维修</div>');
+    const ship = display.archaeologyShip;
+    if (!ship) {
+      parts.push('<div class="rt-d-row">未指派考古舰船，无法使用维修协议</div>');
+    } else {
+      parts.push('<div class="research-protocol-row"><span class="research-protocol-status">' + escapeAchievementText(ship.shipId) + ' ｜ 已指派考古</span></div>');
+      const reps = Array.isArray(display.repairers) ? display.repairers : [];
+      if (!reps.length) {
+        parts.push('<div class="rt-d-row">该考古舰船未安装维修装备</div>');
+      } else {
+        parts.push('<div class="rt-d-lab">已安装维修装备（非致命反噬后逐件激活一次）</div>');
+        parts.push(reps.map(r =>
+          '<div class="research-protocol-planet">' +
+            '<div class="research-protocol-planet-head">' + escapeAchievementText(String(r.itemId)) + " ｜ 修复 " + escapeAchievementText(String(r.target)) +
+              " ｜ 量 " + Number(r.amount) + " ｜ 燃料 " + Number(r.fuelCost) + '</div>' +
+          '</div>'
+        ).join(""));
+      }
+    }
+    parts.push('<div class="rt-d-hint research-protocol-scope">仅在非致命考古反噬后，每件维修装备最多激活一次；满血层不耗燃料、燃料不足即停止、不复活、不处理致命反噬。无主动执行按钮。</div>');
+  } else if (display.protocolId === "intship") {
+    parts.push('<div class="rt-d-lab">一体化造船</div>');
+    const job = display.job;
+    if (!job) {
+      // 无作业：启动表单（舰船下拉 + 数量 + 开始按钮）
+      parts.push('<div class="rt-d-hint research-protocol-scope">选定舰船与数量后，协议自动补齐缺口组件并完成总装；制造过程复用舰船工程链路。</div>');
+      const recipes = Array.isArray(display.recipes) ? display.recipes : [];
+      if (!recipes.length) {
+        parts.push('<div class="rt-d-row">当前没有可用的装配配方</div>');
+      } else {
+        const options = recipes.map(r => {
+          const lockedText = r.buildable ? "" : (" （" + researchReasonText(r.lockReason) + "）");
+          return '<option value="' + escapeAchievementText(String(r.recipeId)) + '"' + (r.buildable ? "" : " disabled") + '>' +
+            escapeAchievementText(String(r.name) + "（工程 Lv." + Number(r.level) + "）" + lockedText) + '</option>';
+        }).join("");
+        const busy = display.actionBusy === true;
+        parts.push(
+          '<div class="research-protocol-row research-protocol-intship" data-intship-panel="1">' +
+            '<label class="research-protocol-reserve-label">舰船配方' +
+              '<select class="research-protocol-intship-recipe" data-intship-recipe>' + options + '</select>' +
+            '</label>' +
+            '<label class="research-protocol-reserve-label">数量（1–' + display.maxQuantity + '）' +
+              '<input class="research-protocol-intship-qty" type="number" min="1" max="' + display.maxQuantity + '" step="1" value="1" data-intship-quantity>' +
+            '</label>' +
+            '<button class="research-btn primary" type="button" data-detail-action="intship-start"' + (busy ? " disabled" : "") + '>开始造船</button>' +
+            (busy ? '<span class="research-protocol-status">当前有制造动作进行中</span>' : "") +
+          '</div>'
+        );
+      }
+    } else {
+      // 有作业：进度展示 + 续作 / 取消按钮
+      const phaseText = {
+        component: "组件生产",
+        assembly: "舰船总装",
+        completed: "已完成",
+        stopped: "已停止",
+        preempted: "已抢占",
+        cancelled: "已取消",
+        "recovery-required": "需手动恢复"
+      }[job.phase] || job.phase;
+      const headText = job.shipId + " ×" + Number(job.quantity) + " ｜ " + phaseText +
+        (job.active || job.phase === "stopped" || job.phase === "preempted"
+          ? " ｜ 已产出 " + Number(job.producedShips) + "/" + Number(job.quantity) + " 艘" : "");
+      parts.push('<div class="research-protocol-planet' + (job.phase === "recovery-required" ? " research-protocol-planet--muted" : "") + '">');
+      parts.push('<div class="research-protocol-planet-head">' + escapeAchievementText(headText) + '</div>');
+      if (job.phase === "component") {
+        parts.push('<div class="rt-d-lab">组件缺口（已产/需求）</div>');
+        const compRows = job.components.map(c =>
+          '<div class="research-protocol-planet-meta">' + escapeAchievementText(String(c.componentId) + " ｜ " + c.done + "/" + c.need) + '</div>'
+        ).join("");
+        parts.push(compRows || '<div class="rt-d-row">组件计划为空</div>');
+      } else if (job.phase === "assembly") {
+        parts.push('<div class="rt-d-hint research-protocol-scope">总装中：已产出 ' + Number(job.producedShips) + " / " + Number(job.quantity) + " 艘</div>");
+      } else if (job.phase === "completed") {
+        parts.push('<div class="rt-d-hint research-protocol-scope">作业完成：已产出 ' + Number(job.producedShips) + ' 艘' + (job.shipId ? " " + job.shipId : "") + '</div>');
+      } else if (job.phase === "stopped" || job.phase === "preempted") {
+        parts.push('<div class="rt-d-hint research-protocol-scope">作业已中断：' + researchReasonText(job.stopReason) +
+          "（组件 " + Number(job.componentsProduced) + "/" + Number(job.componentsPlanned) +
+          "，已产出 " + Number(job.producedShips) + "/" + Number(job.quantity) + " 艘）</div>");
+      } else if (job.phase === "recovery-required") {
+        parts.push('<div class="rt-d-hint research-protocol-scope">作业与存档不一致，已冻结；请取消后重新发起。</div>');
+      }
+      const canContinue = (job.phase === "stopped" || job.phase === "preempted") && display.actionBusy !== true;
+      const canCancel = job.phase !== "completed" && job.phase !== "cancelled";
+      parts.push('<div class="research-protocol-planet-ctrl">');
+      if (canContinue) {
+        parts.push('<button class="research-btn primary" type="button" data-detail-action="intship-continue">续作作业</button>');
+      }
+      if (canCancel) {
+        parts.push('<button class="research-btn danger" type="button" data-detail-action="intship-cancel">取消作业</button>');
+      }
+      parts.push('</div>');
+      parts.push('</div>');
+    }
+  }
+  return '<div class="research-protocol-panel">' + parts.join("") + '</div>';
+}
+
+// ---- 节点详情（#research-detail）：直接读正式 node 对象，不从卡片截断文字反推 ----
+function renderResearchDetail(research, RD, RS, model) {
+  const el = document.getElementById("research-detail");
+  if (!el) return;
+  const node = (_researchSelectedTechId && RS && RS.getResearchNode) ? RS.getResearchNode(_researchSelectedTechId) : null;
+  if (!node) {
+    el.innerHTML = '';
+    return;
+  }
+  const view = (model && model.nodes) ? model.nodes.find(n => n.id === node.id) : null;
+  const status = view ? view.status : "locked";
+  const statusLabel = RESEARCH_STATUS_LABEL[status] || status;
+  const isProtocol = node.type === "protocol" || node.category === "protocol";
+  const isSingle = !isProtocol && node.maxLevel === 1;
+  const completedLevels = research.completedLevels || {};
+  const completed = Number(completedLevels[node.id]) || 0;
+  const activeLevel = view ? view.activeLevel : 0;
+  const nextTarget = view ? view.nextTarget : completed + 1;
+  const eraMeta = RESEARCH_ERA_META[Number(node.era) || 0] || { label: "时代 ?", sub: "" };
+  const categoryLabel = RESEARCH_CATEGORY_LABEL[node.category] || node.category || "—";
+  const effects = Array.isArray(node.effects) ? node.effects : [];
+
+  const effectRows = effects.map((text, i) => {
+    const level = i + 1;
+    let rowCls = "rt-d-eff-row";
+    let suffix = "";
+    if (level <= completed) { rowCls += " rt-d-eff-row--owned"; suffix = "（已获得）"; }
+    else if (level === nextTarget && !isProtocol) { rowCls += " rt-d-eff-row--next"; suffix = activeLevel === level ? "（研究中）" : "（下一等级）"; }
+    const prefix = (isProtocol || isSingle) ? "效果" : toRoman(level);
+    return '<div class="' + rowCls + '">' + escapeAchievementText(prefix + " ｜ " + text + suffix) + '</div>';
+  }).join("") || '<div class="rt-d-eff-row">—</div>';
+
+  const prereqRows = (node.prerequisites && node.prerequisites.length)
+    ? node.prerequisites.map(p => {
+        const pn = RS && RS.getResearchNode ? RS.getResearchNode(p.id) : null;
+        const own = Number(completedLevels[p.id]) || 0;
+        const met = own >= p.level;
+        const ownRoman = own > 0 ? toRoman(own) : "0";
+        return '<div class="rt-d-pre-row--' + (met ? "met" : "unmet") + '">' +
+          escapeAchievementText((met ? "✔ " : "✖ ") + (pn ? pn.name : p.id) + " 需 " + toRoman(p.level) + " ｜ 当前 " + ownRoman + " ｜ " + (met ? "已满足" : "未满足")) +
+        '</div>';
+      }).join("")
+    : '<div class="rt-d-row">无（根节点）</div>';
+
+  const nextDurationText = (view && view.nextDurationSeconds != null)
+    ? formatResearchDuration(view.nextDurationSeconds)
+    : (status === "completed" ? "已全部完成" : "—");
+
+  // 研究批次 I：协议节点未研究时仍复用"立即研究 / 加入队列"；已研究才进入协议配置面板。
+  const protocolDisplay = (isProtocol && typeof getResearchProtocolDisplayState === "function")
+    ? getResearchProtocolDisplayState(gameState, node.id) : null;
+  const protocolUnlocked = Boolean(protocolDisplay && protocolDisplay.unlocked);
+
+  let actionsHtml = "";
+  if (isProtocol && !protocolDisplay) {
+    actionsHtml = '<div class="rt-d-hint research-protocol-hint">协议业务尚未接入</div>';
+  } else if (isProtocol && protocolUnlocked) {
+    actionsHtml = renderResearchProtocolPanelHtml(protocolDisplay);
+  } else if (status === "completed") {
+    actionsHtml = '<div class="rt-d-row">该科技已全部完成</div>';
+  } else if (status === "active") {
+    actionsHtml = '<div class="rt-d-row">研究中</div>';
+  } else if (status === "queued") {
+    actionsHtml = '<div class="rt-d-row">已加入队列</div>';
+  } else {
+    const disabled = status === "locked" ? " disabled" : "";
+    const unmet = (node.prerequisites || []).filter(p => (Number(completedLevels[p.id]) || 0) < p.level)
+      .map(p => { const pn = RS && RS.getResearchNode ? RS.getResearchNode(p.id) : null; return (pn ? pn.name : p.id) + " " + toRoman(p.level); });
+    actionsHtml =
+      '<div class="rt-d-actions">' +
+        '<button class="research-btn primary" data-detail-action="start" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + disabled + '>立即研究 ' + toRoman(nextTarget) + '</button>' +
+        '<button class="research-btn" data-detail-action="enqueue" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + disabled + '>加入队列</button>' +
+      '</div>' +
+      (status === "locked" ? '<div class="rt-d-hint">缺少前置：' + escapeAchievementText(unmet.join("、") || "—") + '</div>' : "");
+  }
+
+  el.innerHTML =
+    '<div class="rt-modal-backdrop" data-detail-close></div>' +
+    '<div class="rt-modal-box">' +
+      '<button class="rt-modal-close" type="button" data-detail-close aria-label="关闭">×</button>' +
+      '<div class="rt-d-name">' + escapeAchievementText(node.name) + '</div>' +
+      '<div class="rt-d-meta">' + escapeAchievementText("分类：" + categoryLabel + " ｜ 类型：" + (isProtocol ? "协议节点" : (isSingle ? "基础科技 · 单级" : "数值科技 · 五级"))) + '</div>' +
+      '<div class="rt-d-tag' + (isProtocol ? " rt-d-tag--protocol" : "") + '">状态：' + escapeAchievementText(statusLabel) + ' ｜ 等级 ' + completed + '/' + node.maxLevel + '</div>' +
+      '<div class="rt-d-desc">' + escapeAchievementText(node.description || node.bonus || "—") + '</div>' +
+      '<div class="rt-d-lab">全等级效果</div>' + effectRows +
+      '<div class="rt-d-lab">下一等级</div>' +
+      '<div class="rt-d-row">' + escapeAchievementText(status === "completed" ? "已全部完成" : (toRoman(nextTarget) + " ｜ 研究时间 " + nextDurationText)) + '</div>' +
+      '<div class="rt-d-lab">前置需求</div>' + prereqRows +
+      actionsHtml +
+    '</div>';
+}
+
+function renderResearchQueue(research, RD, RS) {
+  const el = document.getElementById("research-queue");
+  if (!el) return;
+  const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+  if (!queue.length) { el.innerHTML = ""; return; }
+  const html = queue.map((key, idx) => {
+    const parsed = RS && RS.parseResearchStepKey ? RS.parseResearchStepKey(key) : null;
+    const techId = parsed ? parsed.techId : key;
+    const level = parsed ? parsed.targetLevel : "?";
+    const node = RS && RS.getResearchNode ? RS.getResearchNode(techId) : null;
+    const name = node ? node.name : techId;
+    const dur = (node && RS && RS.getResearchDuration) ? RS.getResearchDuration(techId, level) : null;
+    const durText = (dur != null && isFinite(dur)) ? formatResearchDuration(dur) : "—";
+    return '<div class="research-queue-item">' +
+      '<div><span class="research-queue-index">#' + (idx + 1) + '</span><b>' + escapeAchievementText(name) + '</b> · Lv.' + level +
+        '<div class="research-queue-meta">预计耗时 ' + escapeAchievementText(durText) + '</div></div>' +
+      '<button class="research-btn danger" data-remove-key="' + key + '">移除</button>' +
+    '</div>';
+  }).join("");
+  el.innerHTML = html;
+}
+
+function getResearchDisplayState(research, model) {
+  const statuses = {};
+  const edgeStates = {};
+  const nodeViews = (model ? model.nodes : []).map(v => {
+    statuses[v.status] = (statuses[v.status] || 0) + 1;
+    return {
+      id: v.id, name: v.name, type: v.type, category: v.category, era: v.era, row: v.row,
+      x: v.x, y: v.y, status: v.status, nextTarget: v.nextTarget, completed: v.completed,
+      maxLevel: v.maxLevel, isProtocol: v.isProtocol, isSingle: v.isSingle, levelMarks: v.levelMarks.slice()
+    };
+  });
+  const edges = (model ? model.edges : []).map(e => {
+    edgeStates[e.state] = (edgeStates[e.state] || 0) + 1;
+    return { from: e.from, to: e.to, requiredLevel: e.requiredLevel, state: e.state };
+  });
+  return {
+    bankSeconds: Number(research.researchHourBank) || 0,
+    nodeCount: nodeViews.length,
+    statuses,
+    nodes: nodeViews,
+    edges,
+    edgeCount: edges.length,
+    edgeStates,
+    eras: (model ? model.eras : []).map(e => ({ index: e.index, label: e.label, sub: e.sub, count: e.count })),
+    selectedTechId: _researchSelectedTechId,
+    stage: { width: model ? model.width : 0, height: model ? model.height : 0 },
+    queue: Array.isArray(research.pendingQueue) ? research.pendingQueue.slice() : []
+  };
+}
+
+function renderResearchPage() {
+  const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
+  if (!research || typeof research !== "object" || Array.isArray(research)) return null;
+  const RD = getResearchData();
+  const RS = getResearchSystem();
+  const bankEl = document.getElementById("research-bank");
+  if (bankEl) bankEl.textContent = "科研工时余额：" + formatResearchHours((Number(research.researchHourBank) || 0) / 3600);
+  const model = buildResearchTreeModel(research, RD, RS);
+  _researchTreeModel = model;
+  renderResearchActive(research, RS);
+  renderResearchTree(model);
+  renderResearchDetail(research, RD, RS, model);
+  renderResearchQueue(research, RD, RS);
+  // 仅首次进入研究页或 activeResearch 目标变化时定位，绝不每次重绘抢夺玩家滚动位置
+  autoScrollResearchTree(research, model);
+  // 同步结构签名：用于 live updater 判断是否需要整页重渲染（不进 gameState/存档）。
+  _researchSig = computeResearchSig();
+  return getResearchDisplayState(research, model);
+}
+
+/* ================================================================
+   研究实时刷新（live updater）：只读 getResearchProgress / activeResearch 写 DOM，
+   不推进游戏状态、不写 gameState、不触发整页重建（除非结构签名变化）。
+   节流时间戳与结构签名均为模块级变量，绝不进入 gameState / 存档。
+   ================================================================ */
+
+var _researchSig = "";
+var _researchLastLive = 0;
+// Batch F 视觉返修：科技树视图态一律模块级，绝不进入 gameState / 存档。
+var _researchSelectedTechId = null;   // 详情区当前选中的科技
+var _researchTreeModel = null;        // 最近一次渲染的纯读布局模型
+var _researchAutoScrollKey = null;    // 已完成自动定位的 activeResearch 标识
+var _researchDrag = null;             // 画布拖动状态
+
+// 结构签名：activeResearch 唯一标识（techId@targetLevel）与队列 keys。
+// 二者任一变化即代表结构性变化（研究中/完成/衔接下一项/队列增减）→ 整页渲染。
+function computeResearchSig() {
+  var research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : {};
+  var ar = research.activeResearch;
+  var activeKey = (ar && typeof ar === "object" && !Array.isArray(ar)) ? (ar.techId + "@" + ar.targetLevel) : "-";
+  var queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+  return "A:" + activeKey + "|Q:" + queue.join(",");
+}
+
+// 统一实时入口（由 updateLiveUI 每秒按 currentPage==="research" 调用）。
+// 节流仅作用于「轻量字段刷新」分支；结构签名一旦变化必须无条件立即整页重渲染，
+// 否则研究完成/队列衔接等结构变化在节流窗口内被漏渲染，玩家须手动切页才看得到更新。
+function updateResearchLiveUI(now) {
+  var t = Number(now) || Date.now();
+  var research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
+  if (!research) return;
+  var sig = computeResearchSig();
+  if (sig !== _researchSig) {
+    // 结构性变化（activeResearch 唯一标识变化/完成、队列变化）→ 整页渲染。
+    renderResearchPage();
+    _researchLastLive = t;
+    return;
+  }
+  // 非结构变化：仅轻量更新随时间变化的字段；节流避免每秒多次无谓重写 DOM。
+  if (t - _researchLastLive < 1000) return;
+  _researchLastLive = t;
+  liveUpdateResearchFields(t);
+}
+
+// 轻量只读刷新：只更新进度条 width / 文本 / 按钮文字，绝不重建容器、不写 gameState。
+function liveUpdateResearchFields(now) {
+  var t = Number(now) || Date.now();
+  var research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
+  if (!research) return;
+  var RS = getResearchSystem();
+  var ar = research.activeResearch;
+  if (!ar || typeof ar !== "object" || Array.isArray(ar)) return;
+  var progress = (RS && RS.getResearchProgress) ? RS.getResearchProgress(gameState) : null;
+  var ratio = (progress && typeof progress.ratio === "number") ? progress.ratio : 0;
+  var pct = Math.round(ratio * 100);
+  var fill = document.getElementById("research-progress-fill");
+  if (fill) setLiveWidth(fill, pct + "%");
+  var node = (RS && RS.getResearchNode) ? RS.getResearchNode(ar.techId) : null;
+  var name = node ? node.name : ar.techId;
+  var nameEl = document.getElementById("research-active-name");
+  if (nameEl) setLiveHTML(nameEl, "<b>" + escapeAchievementText(name) + "</b> · 目标等级 " + ar.targetLevel);
+  var remainingText = formatResearchDuration(ar.remainingSeconds);
+  var etaText = formatResearchDateTime(t + (Number(ar.remainingSeconds) || 0) * 1000);
+  var progEl = document.getElementById("research-active-progress");
+  if (progEl) setLiveText(progEl, "进度：" + pct + "% ｜ 剩余 " + escapeAchievementText(remainingText) + " ｜ 预计完成 " + escapeAchievementText(etaText));
+  var base = Number(ar.baseDuration) || 0;
+  var capTotal = base * 0.5;
+  var applied = Math.max(0, Number(ar.appliedAchievementSeconds) || 0);
+  var capLeft = Math.max(0, capTotal - applied);
+  var appliedEl = document.getElementById("research-active-applied");
+  if (appliedEl) setLiveText(appliedEl, "本步已用成就工时：" + formatResearchHours(applied / 3600) + " ｜ 50% 上限 " + formatResearchHours(capTotal / 3600) + " ｜ 剩余可投入 " + formatResearchHours(capLeft / 3600));
+  var maxHours = computeMaxApplyHours(research);
+  var maxBtn = document.getElementById("research-active-btn-max");
+  if (maxBtn) setLiveText(maxBtn, "最大可用（" + formatResearchHours(maxHours) + "）");
+  var cancelBtn = document.getElementById("research-active-btn-cancel");
+  if (cancelBtn) setLiveText(cancelBtn, "取消（退还 " + formatResearchHours(computeResearchRefundSeconds(research) / 3600) + "）");
+}
+
+// ---- 研究页交互（事件委托，全部经 dispatchGameAction） ----
+function onResearchQueueClick(event) {
+  const btn = event.target.closest("[data-remove-key]");
+  if (!btn) return;
+  const key = btn.dataset.removeKey;
+  if (!key) return;
+  const result = dispatchGameAction(gameState, { type: "research/removeQueued", stepKey: key }, Date.now());
+  if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+  renderResearchPage();
+}
+function onResearchActiveClick(event) {
+  const btn = event.target.closest("[data-active-action]");
+  if (!btn) return;
+  const action = btn.dataset.activeAction;
+  const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
+  if (action === "apply") {
+    let hours;
+    if (btn.dataset.hours === "max") {
+      hours = computeMaxApplyHours(research);
+      if (!(hours > 0)) { showToast("无可投入的科研工时"); return; }
+    } else {
+      hours = Number(btn.dataset.hours);
+    }
+    const result = dispatchGameAction(gameState, { type: "research/applyHours", hours }, Date.now());
+    if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+    renderResearchPage();
+  } else if (action === "cancel") {
+    // 确认文案与按钮文案统一口径：都用 appliedAchievementSeconds
+    const refunded = computeResearchRefundSeconds(research);
+    const msg = "取消当前研究？将退还已投入的成就工时 " + formatResearchHours(refunded / 3600) + "。";
+    const confirmed = (typeof window !== "undefined" && typeof window.confirm === "function") ? window.confirm(msg) : true;
+    if (!confirmed) return;
+    const result = dispatchGameAction(gameState, { type: "research/cancel" }, Date.now());
+    if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+    renderResearchPage();
+  }
+}
+
+// ---- Batch F 视觉返修：画布交互（拖动 / 关联高亮 / 自动定位 / 详情操作） ----
+function researchPrefersReducedMotion() {
+  if (typeof window === "undefined" || typeof window.matchMedia !== "function") return false;
+  const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+  return !!(mq && mq.matches);
+}
+
+// 只在「首次进入研究页」或「activeResearch 目标变化」时返回 true，避免每次重绘抢滚动位置
+function shouldAutoScrollResearch(activeKey) {
+  const key = activeKey || "-";
+  if (_researchAutoScrollKey === key) return false;
+  _researchAutoScrollKey = key;
+  return true;
+}
+function resetResearchAutoScroll() { _researchAutoScrollKey = null; }
+
+function autoScrollResearchTree(research, model) {
+  const el = document.getElementById("research-tree");
+  if (!el) return false;
+  const ar = research ? research.activeResearch : null;
+  const hasActive = !!(ar && typeof ar === "object" && !Array.isArray(ar));
+  const activeKey = hasActive ? (ar.techId + "@" + ar.targetLevel) : null;
+  if (!shouldAutoScrollResearch(activeKey)) return false;
+  let targetLeft = 0; // 无 activeResearch 时保持时代 I 可见
+  if (hasActive && model) {
+    const view = model.nodes.find(n => n.id === ar.techId);
+    if (view) targetLeft = Math.max(0, view.x - (Number(el.clientWidth) || 640) / 2 + RT_LAYOUT.BOX_W / 2);
+  }
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ left: targetLeft, behavior: researchPrefersReducedMotion() ? "auto" : "smooth" });
+  } else {
+    el.scrollLeft = targetLeft;
+  }
+  return true;
+}
+
+// 直接关联集合：该节点 + 直接入边/出边 + 直接相邻节点（不做递归祖先/后代）
+function computeResearchFocusSets(techId, model) {
+  const edgeKeys = [];
+  const nodeIds = [techId];
+  const seen = { [techId]: true };
+  const edges = (model && model.edges) ? model.edges : [];
+  for (const edge of edges) {
+    if (edge.from !== techId && edge.to !== techId) continue;
+    edgeKeys.push(edge.from + ">" + edge.to + "@" + edge.requiredLevel);
+    for (const id of [edge.from, edge.to]) {
+      if (!seen[id]) { seen[id] = true; nodeIds.push(id); }
+    }
+  }
+  return { edgeKeys, nodeIds };
+}
+
+function applyResearchFocus(techId) {
+  const el = document.getElementById("research-tree");
+  if (!el || typeof el.querySelectorAll !== "function") return;
+  const sets = computeResearchFocusSets(techId, _researchTreeModel);
+  const linked = {};
+  for (const id of sets.nodeIds) linked[id] = true;
+  const paths = el.querySelectorAll(".rt-edge");
+  for (let i = 0; i < paths.length; i += 1) {
+    const p = paths[i];
+    const from = p.dataset ? p.dataset.from : null;
+    const to = p.dataset ? p.dataset.to : null;
+    const hit = (from === techId || to === techId);
+    p.classList.remove(hit ? "rt-edge--dim" : "rt-edge--hi");
+    p.classList.add(hit ? "rt-edge--hi" : "rt-edge--dim");
+  }
+  const nodeEls = el.querySelectorAll(".rt-node");
+  for (let i = 0; i < nodeEls.length; i += 1) {
+    const n = nodeEls[i];
+    const id = n.dataset ? n.dataset.techId : null;
+    const on = !!linked[id];
+    n.classList.remove(on ? "rt-node--faded" : "rt-node--linked");
+    n.classList.add(on ? "rt-node--linked" : "rt-node--faded");
+  }
+}
+
+function clearResearchFocus() {
+  const el = document.getElementById("research-tree");
+  if (!el || typeof el.querySelectorAll !== "function") return;
+  const paths = el.querySelectorAll(".rt-edge");
+  for (let i = 0; i < paths.length; i += 1) {
+    paths[i].classList.remove("rt-edge--hi");
+    paths[i].classList.remove("rt-edge--dim");
+  }
+  const nodeEls = el.querySelectorAll(".rt-node");
+  for (let i = 0; i < nodeEls.length; i += 1) {
+    nodeEls[i].classList.remove("rt-node--linked");
+    nodeEls[i].classList.remove("rt-node--faded");
+  }
+}
+
+// 选中节点 → 仅刷新详情区，不重排科技树、不动 gameState
+function selectResearchNode(techId) {
+  if (!techId) return;
+  _researchSelectedTechId = techId;
+  const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
+  if (!research) return;
+  renderResearchDetail(research, getResearchData(), getResearchSystem(), _researchTreeModel);
+}
+
+// 关闭详情弹窗：清空选中态并隐藏（纯视图，不写 gameState / 存档）
+function closeResearchDetail() {
+  _researchSelectedTechId = null;
+  const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
+  if (!research) return;
+  renderResearchDetail(research, getResearchData(), getResearchSystem(), _researchTreeModel);
+}
+
+function onResearchTreeClick(event) {
+  if (_researchDrag && _researchDrag.moved) return; // 拖动画布不算点选
+  const node = event.target && typeof event.target.closest === "function" ? event.target.closest(".rt-node") : null;
+  if (!node || !node.dataset) return;
+  selectResearchNode(node.dataset.techId);
+}
+
+function onResearchTreeKeyDown(event) {
+  if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") return;
+  const node = event.target && typeof event.target.closest === "function" ? event.target.closest(".rt-node") : null;
+  if (!node || !node.dataset) return;
+  if (typeof event.preventDefault === "function") event.preventDefault();
+  selectResearchNode(node.dataset.techId);
+}
+
+function onResearchTreeOver(event) {
+  const node = event.target && typeof event.target.closest === "function" ? event.target.closest(".rt-node") : null;
+  if (!node || !node.dataset || !node.dataset.techId) return;
+  applyResearchFocus(node.dataset.techId);
+}
+function onResearchTreeOut(event) {
+  const node = event.target && typeof event.target.closest === "function" ? event.target.closest(".rt-node") : null;
+  if (!node) return;
+  clearResearchFocus();
+}
+
+// 画布拖动：只处理鼠标/触控笔，触摸交给浏览器原生横向滚动；节点上按下不触发拖动
+function onResearchTreePointerDown(event) {
+  if (event.pointerType === "touch") return;
+  if (event.button != null && event.button !== 0) return;
+  if (event.target && typeof event.target.closest === "function" && event.target.closest(".rt-node")) return;
+  const el = document.getElementById("research-tree");
+  if (!el) return;
+  _researchDrag = { startX: Number(event.clientX) || 0, startLeft: Number(el.scrollLeft) || 0, moved: false };
+  el.classList.add("is-dragging");
+}
+function onResearchTreePointerMove(event) {
+  if (!_researchDrag) return;
+  const el = document.getElementById("research-tree");
+  if (!el) return;
+  const dx = (Number(event.clientX) || 0) - _researchDrag.startX;
+  if (Math.abs(dx) > 3) _researchDrag.moved = true;
+  el.scrollLeft = _researchDrag.startLeft - dx;
+}
+function onResearchTreePointerUp() {
+  if (!_researchDrag) return;
+  const el = document.getElementById("research-tree");
+  if (el) el.classList.remove("is-dragging");
+  const moved = _researchDrag.moved;
+  _researchDrag = moved ? { moved: true } : null;
+  if (moved) setTimeout(() => { _researchDrag = null; }, 0);
+}
+
+// 详情弹窗操作：关闭（遮罩 / × / 按 ESC）→ 经 dispatchGameAction 操作 → 整页刷新
+function onResearchDetailClick(event) {
+  const closeEl = event.target && typeof event.target.closest === "function" ? event.target.closest("[data-detail-close]") : null;
+  if (closeEl) { closeResearchDetail(); return; }
+  const btn = event.target && typeof event.target.closest === "function" ? event.target.closest("[data-detail-action]") : null;
+  if (!btn || !btn.dataset) return;
+  if (btn.disabled) return;
+  const action = btn.dataset.detailAction;
+  // 研究批次 I / J / K：协议配置一律经 dispatchGameAction 派发（UI 不直接改 state、不复制业务判断）
+  if (action === "protocol-toggle" || action === "planauto-toggle" || action === "planauto-reserve" ||
+      action === "autoenh-set-max" || action === "autoenh-run" ||
+      action === "intship-start" || action === "intship-continue" || action === "intship-cancel") {
+    onResearchProtocolAction(action, btn);
+    return;
+  }
+  const techId = btn.dataset.techId;
+  const targetLevel = Number(btn.dataset.level);
+  if (!techId || !Number.isInteger(targetLevel)) return;
+  const type = action === "start" ? "research/start" : action === "enqueue" ? "research/enqueue" : null;
+  if (!type) return;
+  const result = dispatchGameAction(gameState, { type, techId, targetLevel }, Date.now());
+  if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+  renderResearchPage();
+}
+
+// 研究批次 I：协议总开关 / 单基地自动续期 / 最低 ISK 储备（全部走 action 路由）
+function onResearchProtocolAction(action, btn) {
+  if (action === "protocol-toggle") {
+    const protocolId = btn.dataset.protocolId;
+    const enabled = btn.dataset.protocolEnabled === "true";
+    const result = dispatchGameAction(gameState, { type:"research/setProtocolEnabled", protocolId, enabled }, Date.now());
+    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+    showToast(enabled ? "协议已启用" : "协议已关闭");
+    renderResearchPage();
+    return;
+  }
+  if (action === "autoenh-set-max") {
+    const panel = (typeof btn.closest === "function") ? btn.closest("[data-autoenh-panel]") : null;
+    const input = panel ? panel.querySelector("[data-protocol-max]") : null;
+    const raw = input ? String(input.value).trim() : "";
+    const maxAttempts = raw === "" ? 0 : Number(raw);
+    if (!Number.isInteger(maxAttempts) || maxAttempts < 0 || maxAttempts > 10000) {
+      showToast(researchReasonText("INVALID_MAX_ATTEMPTS"));
+      return;
+    }
+    const result = dispatchGameAction(gameState, { type:"research/setAutoEnhancementMaxAttempts", maxAttempts }, Date.now());
+    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+    showToast("已保存最大尝试次数：" + maxAttempts);
+    renderResearchPage();
+    return;
+  }
+  if (action === "autoenh-run") {
+    const instanceId = btn.dataset.instanceId;
+    if (!instanceId) return;
+    if (typeof confirm === "function" && !confirm("确认对该舰船执行自动强化？将按设定次数反复尝试直至部件不足。")) return;
+    const result = dispatchGameAction(gameState, { type:"research/runAutoEnhancement", instanceId, context:{} }, Date.now());
+    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+    showToast("自动强化完成 ｜ 尝试 " + result.attempts + " ｜ 成功 " + result.successes + " ｜ 失败 " + result.failures +
+      " ｜ 终等级 " + result.toLevel + " ｜ 停止：" + (result.stopReason || ""));
+    renderResearchPage();
+    return;
+  }
+  // 研究批次 K：intship 一体化造船（启动 / 续作 / 取消）
+  if (action === "intship-start") {
+    const panel = (typeof btn.closest === "function") ? btn.closest("[data-intship-panel]") : null;
+    const recipeSelect = panel ? panel.querySelector("[data-intship-recipe]") : null;
+    const qtyInput = panel ? panel.querySelector("[data-intship-quantity]") : null;
+    const recipeId = recipeSelect ? recipeSelect.value : "";
+    if (!recipeId) { showToast(researchReasonText("UNKNOWN_RECIPE")); return; }
+    const rawQty = qtyInput ? String(qtyInput.value).trim() : "1";
+    const quantity = rawQty === "" ? 1 : Number(rawQty);
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > 1000) {
+      showToast(researchReasonText("INVALID_QUANTITY"));
+      return;
+    }
+    const result = dispatchGameAction(gameState, { type:"research/startIntship", options:{ recipeId, quantity } }, Date.now());
+    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+    showToast("造船作业已启动 ｜ " + String(result.shipId || "") + " ×" + quantity + " ｜ 阶段：" + (result.phase || ""));
+    renderResearchPage();
+    return;
+  }
+  if (action === "intship-continue") {
+    const result = dispatchGameAction(gameState, { type:"research/continueIntship" }, Date.now());
+    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+    showToast("造船作业已续作 ｜ 阶段：" + (result.phase || ""));
+    renderResearchPage();
+    return;
+  }
+  if (action === "intship-cancel") {
+    if (typeof confirm === "function" && !confirm("确认取消当前造船作业？已产出的组件与舰船保留，未完成部分不再继续。")) return;
+    const result = dispatchGameAction(gameState, { type:"research/cancelIntship" }, Date.now());
+    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+    showToast("造船作业已取消");
+    renderResearchPage();
+    return;
+  }
+  const deploymentId = btn.dataset.deploymentId;
+  const row = (typeof btn.closest === "function") ? btn.closest("[data-deployment-row]") : null;
+  const input = row ? row.querySelector("[data-protocol-reserve]") : null;
+  const raw = input ? String(input.value).trim() : "";
+  const minIskReserve = raw === "" ? 0 : Number(raw);
+  if (!Number.isFinite(minIskReserve) || minIskReserve < 0) {
+    showToast(researchReasonText("INVALID_RESERVE"));
+    return;
+  }
+  const enabled = (action === "planauto-toggle")
+    ? btn.dataset.deploymentEnabled === "true"
+    : Boolean(row && row.dataset.deploymentCurrent === "true");
+  const result = dispatchGameAction(gameState, { type:"research/setPlanetAutoRenew", deploymentId, enabled, minIskReserve }, Date.now());
+  if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+  showToast(action === "planauto-toggle"
+    ? (enabled ? "该基地已开启自动续期" : "该基地已关闭自动续期")
+    : "已保存最低 ISK 储备");
+  renderResearchPage();
+}
+
+// 弹窗内按 ESC 关闭
+function onResearchDetailKey(event) {
+  if (event.key === "Escape") closeResearchDetail();
 }
 
 function getLPStoreItems() {
@@ -773,10 +1947,41 @@ function addCurrentToQueue() {
       const data = getAchievementCatalogData();
       const definition = data && data.ACHIEVEMENTS_BY_ID ? data.ACHIEVEMENTS_BY_ID[achievementId] : null;
       if (!definition) return; // 目录外的幽灵 ID 不播报
-      showToast("🏆 成就解锁：" + definition.name);
+      // Batch E：奖励文字读冻结目录 definition.reward，不按 tier 猜测、不读事件 payload
+      const rewardHours = readAchievementRewardHours(definition);
+      const rewardSuffix = rewardHours === null
+        ? "（" + ACHIEVEMENT_NO_REWARD_TEXT + "）"
+        : "（科研工时 +" + formatResearchHoursNumber(rewardHours) + "h）";
+      showToast("🏆 成就解锁：" + definition.name + rewardSuffix);
       if (currentPage === "achievements") renderAchievementsPage();
     });
   }
+  // Batch F 研究页：只监听具体事件（无 "*" 通配），在研究页时重绘；监听器纯读，不改状态。
+  const researchEvents = (typeof GameEvents !== "undefined" && GameEvents) || (typeof window !== "undefined" && window.GameEvents) || null;
+  if (researchEvents && typeof researchEvents.on === "function") {
+    const redrawResearch = () => { if (currentPage === "research") renderResearchPage(); };
+    researchEvents.on("research:stepCompleted", redrawResearch);
+    researchEvents.on("research:hoursApplied", redrawResearch);
+    researchEvents.on("research:cancelled", redrawResearch);
+    researchEvents.on("achievement:researchHoursGranted", redrawResearch);
+  }
+  // 科技树画布：全部事件委托到容器，只注册一次；38 个节点不做逐个永久绑定。
+  const researchTreeEl = document.getElementById("research-tree");
+  if (researchTreeEl) {
+    researchTreeEl.addEventListener("click", onResearchTreeClick);
+    researchTreeEl.addEventListener("keydown", onResearchTreeKeyDown);
+    researchTreeEl.addEventListener("mouseover", onResearchTreeOver);
+    researchTreeEl.addEventListener("mouseout", onResearchTreeOut);
+    researchTreeEl.addEventListener("focusin", onResearchTreeOver);
+    researchTreeEl.addEventListener("focusout", onResearchTreeOut);
+    researchTreeEl.addEventListener("pointerdown", onResearchTreePointerDown);
+    researchTreeEl.addEventListener("pointermove", onResearchTreePointerMove);
+    researchTreeEl.addEventListener("pointerup", onResearchTreePointerUp);
+    researchTreeEl.addEventListener("pointerleave", onResearchTreePointerUp);
+  }
+  const researchDetailEl = document.getElementById("research-detail"); if (researchDetailEl) { researchDetailEl.addEventListener("click", onResearchDetailClick); researchDetailEl.addEventListener("keydown", onResearchDetailKey); }
+  const researchQueueEl = document.getElementById("research-queue"); if (researchQueueEl) researchQueueEl.addEventListener("click", onResearchQueueClick);
+  const researchActiveEl = document.getElementById("research-active"); if (researchActiveEl) researchActiveEl.addEventListener("click", onResearchActiveClick);
   const queueModalButton = document.getElementById("action-modal-queue"); if (queueModalButton) queueModalButton.addEventListener("click", queueActionConfirmation);
   document.addEventListener("keydown", event => { const modal = document.getElementById("equipOrbitModal"); if (event.key === "Escape" && modal && modal.classList.contains("active")) closeEquipOrbit(); });
 })();

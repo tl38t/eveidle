@@ -699,7 +699,7 @@ const PlanetaryStateActions = {
   },
 
   // 续期：仅当已到期（active=false 或时间超期）且 ISK 足够；只扣 maintenanceCostISK，保留 storage；运行中重复续期返回 already-active。
-  renew(state, id, now) {
+  renew(state, id, now, meta) {
     const deployment = state.planetary && state.planetary.deployments.find(item => item.id === id);
     if (!deployment) return { changed:false, reason:"unknown-deployment" };
     const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
@@ -709,16 +709,23 @@ const PlanetaryStateActions = {
     const timeExpired = (now - deployedAt) / 1000 >= duration;
     const running = Boolean(deployment.active) && !timeExpired;
     if (running) return { changed:false, reason:"already-active" };
-    const maintenanceISK = Number(config.maintenanceCostISK) || 0;
+    // 研究批次 G · planCost（reduceFraction）：实扣与 getPlanetDeploymentDisplayState 完全同式
+    // （基础费 × (1 - planCost 减免) 后 ceil），保证"显示价 = 余额判断价 = 实扣价 = 事件价"。
+    const maintenanceISK = (typeof getPlanetRenewCostISK === "function")
+      ? getPlanetRenewCostISK(state, config)
+      : (Number(config.maintenanceCostISK) || 0);
     if (ResourceRegistry.get(state, "currency:isk") < maintenanceISK) return { changed:false, reason:"insufficient-isk" };
     ResourceRegistry.spend(state, "currency:isk", maintenanceISK);
     const newDuration = Number(config.maintenanceDuration) || 86400;
     Object.assign(deployment, { deployedAt:now, lastTick:now, progress:0, duration:newDuration, active:true });
     state._dirty = true;
     const expiresAt = now + newDuration * 1000;
+    // 可选 meta 第 4 参：planauto 离线/在线自动续期透传 offline 与 source（与 completed/expired 一致）；
+    // 手动续期（UI）不传则默认 offline:false，行为与历史一致，不影响 Batch G 等既有断言。
+    const metaArg = (meta && typeof meta === "object") ? meta : { offline:false };
     if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:renewed", {
       deploymentId:deployment.id, planetType:deployment.planetType, maintenanceISK, expiresAt
-    });
+    }, metaArg);
     return { changed:true, deployment, config };
   },
 
@@ -1477,7 +1484,8 @@ const StationStateActions = {
     m.lowFuelNotified = false;
     m.depletedNotified = false;
     state._dirty = true;
-    const remainingMs = info.targetFuel / getStationFuelBurnRatePerMs(info.points);
+    // 研究批次 G · fuel：补满后的可持续时长同样按实际燃烧速率计算（与显示态/结算同源）
+    const remainingMs = info.targetFuel / getStationEffectiveFuelBurnRatePerMs(state, info.points);
     if (typeof GameEvents !== "undefined") {
       GameEvents.emit("station:maintenanceRefilled", { points:info.points, fuelSpent:cost, fuelRemaining:info.targetFuel, remainingMs }, { source:"station", offline:false });
     }
@@ -1499,7 +1507,50 @@ const StationStateActions = {
   }
 };
 
-function dispatchGameAction(state, action, now) {
+  // -------------------------------------------------------------------------
+  // 研究系统 Action（Batch F）：仅转发到 ResearchSystem 公开 API，
+  //   不复制验证 / 时间结算 / 额度公式。actionTime 透传给系统层，
+  //   系统层返回的稳定 reason 原样保留。失败分支由 ResearchSystem 负责
+  //   （不置 dirty、不改状态），此处只映射为 { changed, reason }。
+  // -------------------------------------------------------------------------
+  function getResearchSystemRef() {
+    return (typeof globalThis !== "undefined" && globalThis.ResearchSystem) ||
+           (typeof window !== "undefined" && window.ResearchSystem) || null;
+  }
+  function researchActionResult(result) {
+    if (!result || typeof result !== "object") return { changed: false, reason: "internal-error" };
+    const { ok, reason, ...rest } = result;
+    return Object.assign({ changed: !!ok, reason: ok ? null : (reason || "failed") }, rest);
+  }
+  const ResearchStateActions = {
+    start(state, techId, targetLevel, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.startResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.startResearch(state, techId, targetLevel, now));
+    },
+    enqueue(state, techId, targetLevel, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.enqueueResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.enqueueResearch(state, techId, targetLevel, now));
+    },
+    cancel(state, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.cancelResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.cancelResearch(state, now));
+    },
+    applyHours(state, hours, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.applyResearchHours !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.applyResearchHours(state, hours, now));
+    },
+    removeQueued(state, stepKey, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.removeQueuedResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.removeQueuedResearch(state, stepKey, now));
+    }
+  };
+
+  function dispatchGameAction(state, action, now) {
   if (!state || !action || typeof action.type !== "string") return { changed:false, reason:"invalid-action" };
   const actionTime = Number(now) || Date.now();
   if (action.type === "action/stop") return ShellStateActions.stopCurrentAction(state, actionTime);
@@ -1572,6 +1623,50 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "station/refillMaintenance") return StationStateActions.refillMaintenance(state, actionTime);
   if (action.type === "station/startBodyConstruction") return StationStateActions.startBodyConstruction(state, actionTime);
   if (action.type === "station/startBuildingConstruction") return StationStateActions.startBuildingConstruction(state, action.buildingId, actionTime);
+  // 研究系统 Batch F：所有操作经 ResearchSystem 公开 API，actionTime 透传
+  if (action.type === "research/start") return ResearchStateActions.start(state, action.techId, action.targetLevel, actionTime);
+  if (action.type === "research/enqueue") return ResearchStateActions.enqueue(state, action.techId, action.targetLevel, actionTime);
+  if (action.type === "research/cancel") return ResearchStateActions.cancel(state, actionTime);
+  if (action.type === "research/applyHours") return ResearchStateActions.applyHours(state, action.hours, actionTime);
+  if (action.type === "research/removeQueued") return ResearchStateActions.removeQueued(state, action.stepKey, actionTime);
+  // 研究系统 Batch I：自动化协议配置（业务实现全在 js/systems/research-protocols.js，actionTime 原样透传）
+  if (action.type === "research/setProtocolEnabled") {
+    return (typeof setResearchProtocolEnabled === "function")
+      ? setResearchProtocolEnabled(state, action.protocolId, action.enabled, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/setPlanetAutoRenew") {
+    return (typeof setPlanetAutoRenew === "function")
+      ? setPlanetAutoRenew(state, action.deploymentId, action.enabled, action.minIskReserve, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  // 研究系统 Batch J：autoenh 自动强化配置与执行（业务实现全在 js/systems/research-protocols.js）
+  if (action.type === "research/setAutoEnhancementMaxAttempts") {
+    return (typeof setAutoEnhancementMaxAttempts === "function")
+      ? setAutoEnhancementMaxAttempts(state, action.maxAttempts)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/runAutoEnhancement") {
+    return (typeof runAutoEnhancement === "function")
+      ? runAutoEnhancement(state, action.instanceId, action.context)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  // 研究系统 Batch K：intship 一体化造船（业务实现全在 js/systems/research-protocols.js）
+  if (action.type === "research/startIntship") {
+    return (typeof startIntship === "function")
+      ? startIntship(state, action.options, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/continueIntship") {
+    return (typeof continueIntship === "function")
+      ? continueIntship(state, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/cancelIntship") {
+    return (typeof cancelIntship === "function")
+      ? cancelIntship(state, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
   return { changed:false, reason:"unknown-action" };
 }
 
