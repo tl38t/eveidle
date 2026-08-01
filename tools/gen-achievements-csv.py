@@ -45,6 +45,12 @@ HEADER = ["编号", "分类", "触发条件/建议", "难度档", "隐藏", "成
 
 TIER_MAP = {"铜": "bronze", "银": "silver", "金": "gold", "传奇": "legendary"}
 
+# Batch E：成就奖励为「一次性科研工时」，按难度档确定性映射（不提供永久研究速度）。
+REWARD_TYPE = "research-hours"
+TIER_REWARD_HOURS = {"bronze": 0.5, "silver": 1, "gold": 2, "legendary": 4}
+# 研究类成就不奖励科研工时（避免研究自反馈），reward 必须为 null。
+REWARD_EXCLUDED_CATEGORIES = ("研究",)
+
 PROVISIONAL_NAMES = {
     "A02": "如果你能开100个球种水，你还会是现在这样？",
     "A23": "鹰酱称之曰：能",
@@ -1865,14 +1871,41 @@ def tier_of(tier_label):
     return TIER_MAP.get(tier_label, "bronze")
 
 
+def reward_hours_of(cat, tier_label):
+    """按分类 + 难度档确定性推导一次性科研工时；研究类返回 None（reward=null）。"""
+    if cat in REWARD_EXCLUDED_CATEGORIES:
+        return None
+    return TIER_REWARD_HOURS.get(tier_of(tier_label))
+
+
+def reward_csv_cell(cat, tier_label):
+    hours = reward_hours_of(cat, tier_label)
+    if hours is None:
+        return ""
+    return json.dumps({"type": REWARD_TYPE, "hours": hours}, ensure_ascii=False, separators=(",", ":"))
+
+
+def reward_js_literal(cat, tier_label):
+    hours = reward_hours_of(cat, tier_label)
+    if hours is None:
+        return "null"
+    return "Object.freeze({ type: " + json.dumps(REWARD_TYPE, ensure_ascii=False) + ", hours: " + json.dumps(hours) + " })"
+
+
+def csv_row_for(r):
+    idv, cat, cond, tier, hidden, name, note = r
+    return [
+        idv, cat, cond, tier, hidden, display_name(idv), note, name_status(idv),
+        "", reward_csv_cell(cat, tier), "否", "", "", "",
+    ]
+
+
 def build_csv_text():
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
     w.writerow(HEADER)
     for r in FROZEN_ROWS:
-        idv, cat, cond, tier, hidden, name, note = r
-        row = [idv, cat, cond, tier, hidden, display_name(idv), note, name_status(idv), "", "", "否", "", "", ""]
-        w.writerow(row)
+        w.writerow(csv_row_for(r))
     return "\ufeff" + buf.getvalue()
 
 
@@ -1910,7 +1943,7 @@ def build_js_text():
             ", hidden: " + hidden_bool +
             ", name: " + json.dumps(display_name(idv), ensure_ascii=False) +
             ", nameStatus: " + json.dumps(name_status(idv), ensure_ascii=False) +
-            ", trigger: null, reward: null" +
+            ", trigger: null, reward: " + reward_js_literal(cat, tier) +
             ", steam: Object.freeze({ enabled: false, apiName: null, progressStatApiName: null, progressMax: null })" +
             ", note: " + json.dumps(note, ensure_ascii=False) +
             " }),"
@@ -1948,6 +1981,19 @@ def main():
     h, nbytes = freeze_hash(norm)
     placeholder_count = sum(1 for r in FROZEN_ROWS if name_status(r[0]) == "placeholder")
     provisional_count = sum(1 for r in FROZEN_ROWS if name_status(r[0]) == "provisional")
+    reward_tier_counts = {}
+    reward_total_hours = 0.0
+    reward_null_count = 0
+    for r in FROZEN_ROWS:
+        hrs = reward_hours_of(r[1], r[3])
+        if hrs is None:
+            reward_null_count += 1
+            continue
+        reward_tier_counts[tier_of(r[3])] = reward_tier_counts.get(tier_of(r[3]), 0) + 1
+        reward_total_hours += float(hrs)
+    reward_summary = "奖励档位: " + " ".join(
+        "%s=%d" % (k, reward_tier_counts.get(k, 0)) for k in ("bronze", "silver", "gold", "legendary")
+    ) + " null=%d 总工时=%s" % (reward_null_count, ("%g" % reward_total_hours))
 
     if mode == "--check":
         ok = True
@@ -1968,7 +2014,7 @@ def main():
             else:
                 for i, gr in enumerate(got_rows):
                     fr = FROZEN_ROWS[i]
-                    exp = [fr[0], fr[1], fr[2], fr[3], fr[4], display_name(fr[0]), fr[6], name_status(fr[0]), "", "", "否", "", "", ""]
+                    exp = csv_row_for(fr)
                     if gr != exp:
                         sys.stderr.write("CSV 第 %d 行不一致: %r != %r\n" % (i + 2, gr, exp)); ok = False; break
         if not os.path.exists(JS_PATH):
@@ -1985,6 +2031,7 @@ def main():
         print("provisional 数量: %d" % provisional_count)
         print("冻结哈希: %s" % h)
         print("冻结 JSON 字节数: %d" % nbytes)
+        print(reward_summary)
         sys.exit(0 if ok else 1)
 
     # --write（二进制写入，避免 Windows 文本模式把 \n 翻成 \r\n 破坏字节一致性）
@@ -1996,6 +2043,7 @@ def main():
     print("已生成: %s" % JS_PATH)
     print("行数: %d  占位名: %d  provisional: %d" % (len(FROZEN_ROWS), placeholder_count, provisional_count))
     print("冻结哈希: %s" % h)
+    print(reward_summary)
     sys.exit(0)
 
 

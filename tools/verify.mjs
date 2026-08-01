@@ -12,7 +12,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 49) throw new Error(`预期 49 个脚本，实际 ${scriptSources.length}`); // 49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js）
+if (scriptSources.length !== 50) throw new Error(`预期 50 个脚本，实际 ${scriptSources.length}`); // 50 = 49 + 研究系统 Batch I 自动化协议统一模块：js/systems/research-protocols.js（49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js））
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -115,15 +115,28 @@ const optionalIds = new Set([
   "runtime-error-boundary", "runtime-error-dismiss", "runtime-error-resume", "runtime-error-reload",
   "runtime-error-message", "runtime-error-meta", "runtime-error-stack",
   // 动态创建的 ID：bar-archaeology 由 archaeology-render.js 运行时创建 canvas
-  "bar-archaeology"
+  "bar-archaeology",
+  // 动态创建的 ID：research-active-* 由 shell-render.js 的 renderResearchActive 运行时 innerHTML 生成
+  "research-active-name", "research-active-progress", "research-active-applied",
+  "research-active-btn-max", "research-active-btn-cancel"
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
 
-// DOM ID 基线：285 = 277 + 成就系统 Batch D 成就页 8 个 ID
+// DOM ID 基线：294 = 277 + 成就系统 Batch D 成就页 8 个 ID
 // （achievements-panel / -summary-count / -summary-percent / -progress-fill /
 //   -tier-counts / -category-tabs / -status-tabs / -grid）
-if (htmlIds.size !== 285) throw new Error(`预期 285 个 DOM ID，实际 ${htmlIds.size}`);
+// + Batch E 科研工时余额 1 个 ID（achievements-research-bank）
+// + Batch F 研究页 8 个 ID（research-panel / -summary / -bank / -active /
+//   research-progress-fill / research-tree / research-detail / research-queue）
+if (htmlIds.size !== 294) throw new Error(`预期 294 个 DOM ID，实际 ${htmlIds.size}`);
+const BATCH_F_IDS = [
+  "research-panel", "research-summary", "research-bank", "research-active",
+  "research-progress-fill", "research-tree", "research-detail", "research-queue"
+];
+for (const id of BATCH_F_IDS) {
+  if (!htmlIds.has(id)) throw new Error(`Batch F：index.html 缺少研究页 DOM ID ${id}`);
+}
 
 // bar-archaeology 是动态创建 ID，verify 必须在源码中确认它被创建且有 null 守卫
 const barArchSourceCheck = scripts.some(src => src.includes('id="bar-archaeology"'));
@@ -777,7 +790,7 @@ if (!/planetary\/renew/.test(actionsSource) || !/planetary\/demolish/.test(actio
 if (/planetary\/upgrade|planetaryUpgrade|upgradePlanet/.test(actionsSource + planetaryRenderSource + planetaryCoreSource + planetDataSource)) throw new Error("引入了行星升级系统");
 if (/data-action="upgrade"|升级行星|planet-upgrade|upgrade-planet/.test(planetaryRenderSource + html)) throw new Error("行星 UI 引入了升级按钮");
 {
-  const renewMatch = /renew\(state, id, now\) \{[\s\S]*?\n  \},/.exec(actionsSource);
+  const renewMatch = /renew\(state, id, now(, [^)]*)?\) \{[\s\S]*?\n  \},/.exec(actionsSource);
   if (!renewMatch) throw new Error("未能定位 renew 动作实现");
   if (/constructionCost/.test(renewMatch[0])) throw new Error("续期路径读取了 constructionCost（应只扣 maintenanceCostISK）");
   if (!/maintenanceCostISK/.test(renewMatch[0])) throw new Error("续期路径没有读取 maintenanceCostISK");
@@ -839,6 +852,10 @@ if (directUiStateWrite.test(shellRenderSource) || directUiStateWrite.test(mainRe
 }
 if (!/RuntimeGuard\.runCritical\("gameTick"/.test(mainRenderSource) || !/RuntimeGuard\.runRecoverable\("renderLoop"/.test(mainRenderSource)) {
   throw new Error("主循环或渲染循环没有通过运行时守卫调度");
+}
+
+if (!/currentPage\s*===\s*["']station["'][\s\S]{0,160}renderStationPage\s*\(/.test(mainRenderSource)) {
+  throw new Error("空间站动作成功后没有刷新当前空间站页面");
 }
 
 const shellViewState = JSON.parse(JSON.stringify(sandbox.gameState));
@@ -3289,6 +3306,3456 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     sandbox.document.getElementById = originalAchGetElementById;
   }
   console.log("Batch D 成就页面校验通过：导航/panel 显隐、197 张目录序卡片、汇总与 unlockedAtById 一致、铜银金传奇分级、状态与分类筛选、隐藏成就遮蔽与解锁揭示");
+}
+
+// ==========================================================================
+// Batch E：成就科研工时奖励 + 研究工时消耗/取消闭环
+// 覆盖：目录奖励确定性、schema v2 账本迁移清洗与幂等、在线首发/防重/旧档对账、
+//       研究状态清洗与 50% 夹紧、applyResearchHours / cancelResearch 行为与事件契约、
+//       最小 UI（余额 + 卡片奖励 + 解锁播报奖励文字）。
+// 全部用例使用独立 state 对象；触碰真实 gameState 的部分在 finally 中原样恢复。
+// ==========================================================================
+{
+  const AD = sandbox.AchievementData;
+  const AS = sandbox.AchievementSystem;
+  const RS = sandbox.ResearchSystem;
+  const RD = sandbox.ResearchData;
+  const AStateM = sandbox.AchievementState;
+  const RStateM = sandbox.ResearchState;
+  const TIER_HOURS = { bronze: 0.5, silver: 1, gold: 2, legendary: 4 };
+  const HOUR = 3600;
+  const T0 = 1751000000000;
+
+  for (const fn of ["getAchievementResearchRewardHours", "grantAchievementResearchReward", "reconcileAchievementResearchRewards"]) {
+    if (typeof AS[fn] !== "function") throw new Error("AchievementSystem 缺少 Batch E API：" + fn);
+  }
+  for (const fn of ["applyResearchHours", "cancelResearch"]) {
+    if (typeof RS[fn] !== "function") throw new Error("ResearchSystem 缺少 Batch E API：" + fn);
+  }
+
+  // ---- E-1 目录奖励数据：四档确定性 + 总计 262 小时 + 研究类必须 null ----
+  {
+    const tierCount = { bronze: 0, silver: 0, gold: 0, legendary: 0 };
+    let totalHours = 0;
+    for (const a of AD.ACHIEVEMENTS) {
+      if (a.category === "研究") {
+        if (a.reward !== null) throw new Error("研究类成就 " + a.id + " 的 reward 必须为 null");
+        continue;
+      }
+      const r = a.reward;
+      if (!r || typeof r !== "object" || Array.isArray(r)) throw new Error("成就 " + a.id + " 缺少 reward 对象");
+      if (!Object.isFrozen(r)) throw new Error("成就 " + a.id + " 的 reward 未冻结");
+      if (r.type !== "research-hours") throw new Error("成就 " + a.id + " 的 reward.type 必须是 research-hours");
+      if (Object.keys(r).length !== 2) throw new Error("成就 " + a.id + " 的 reward 字段必须精确为 {type, hours}");
+      if (r.hours !== TIER_HOURS[a.tier]) throw new Error("成就 " + a.id + " 奖励工时与档位不匹配：" + r.hours);
+      tierCount[a.tier] += 1;
+      totalHours += r.hours;
+    }
+    if (tierCount.bronze !== 44 || tierCount.silver !== 82 || tierCount.gold !== 63 || tierCount.legendary !== 8) {
+      throw new Error("四档奖励数量不是 44/82/63/8：" + JSON.stringify(tierCount));
+    }
+    if (Math.abs(totalHours - 262) > 1e-9) throw new Error("奖励总工时不是 262，实际 " + totalHours);
+    if (AS.getAchievementResearchRewardHours("ZZ99") !== null) throw new Error("未知 ID 的奖励工时必须为 null");
+    const probe = AD.ACHIEVEMENTS[0];
+    if (AS.getAchievementResearchRewardHours(probe.id) !== TIER_HOURS[probe.tier]) {
+      throw new Error("getAchievementResearchRewardHours 与冻结目录不一致");
+    }
+  }
+
+  // ---- E-2 账本 schema v2：默认结构 / 迁移清洗 / 幂等 / 不补发 ----
+  {
+    const d1 = AStateM.createDefaultAchievementState();
+    const d2 = AStateM.createDefaultAchievementState();
+    if (d1.schemaVersion !== 2) throw new Error("默认成就状态 schemaVersion 必须为 2，实际 " + d1.schemaVersion);
+    if (!d1.researchRewardSecondsById || typeof d1.researchRewardSecondsById !== "object" ||
+        Array.isArray(d1.researchRewardSecondsById) || Object.keys(d1.researchRewardSecondsById).length !== 0) {
+      throw new Error("默认成就状态缺少空的 researchRewardSecondsById");
+    }
+    if (d1.researchRewardSecondsById === d2.researchRewardSecondsById) throw new Error("researchRewardSecondsById 引用被共享");
+
+    // 旧档 v1 升级：只升版本 + 补空账本，绝不补发、不 dirty
+    const legacy = {
+      achievements: { schemaVersion: 1, unlockedAtById: { [AD.ACHIEVEMENTS[0].id]: T0 } },
+      research: RStateM.createDefaultResearchState()
+    };
+    legacy.research.researchHourBank = 0;
+    AStateM.migrateAchievementState(legacy);
+    if (legacy.achievements.schemaVersion !== 2) throw new Error("旧档 schemaVersion 未升级到 2");
+    if (Object.keys(legacy.achievements.researchRewardSecondsById).length !== 0) throw new Error("迁移不得补发奖励");
+    if (legacy.research.researchHourBank !== 0) throw new Error("迁移不得改动 researchHourBank");
+    if (legacy._dirty) throw new Error("迁移不得设置 _dirty");
+
+    // 非法账本值清洗：未知 ID / 负数 / NaN / Infinity / 字符串 / 对象 / 布尔 全部删除
+    const ids = AD.ACHIEVEMENTS.slice(0, 7).map(a => a.id);
+    const dirty = { achievements: { schemaVersion: 1, unlockedAtById: {}, researchRewardSecondsById: {} } };
+    const L = dirty.achievements.researchRewardSecondsById;
+    L[ids[0]] = 1800; L[ids[1]] = -1; L[ids[2]] = Number.NaN; L[ids[3]] = Infinity;
+    L[ids[4]] = "3600"; L[ids[5]] = { seconds: 1 }; L[ids[6]] = true; L["ZZ99"] = 3600;
+    AStateM.migrateAchievementState(dirty);
+    if (JSON.stringify(dirty.achievements.researchRewardSecondsById) !== JSON.stringify({ [ids[0]]: 1800 })) {
+      throw new Error("账本清洗结果不正确：" + JSON.stringify(dirty.achievements.researchRewardSecondsById));
+    }
+    const snapshot = JSON.stringify(dirty.achievements);
+    AStateM.migrateAchievementState(dirty);
+    if (JSON.stringify(dirty.achievements) !== snapshot) throw new Error("成就状态迁移不幂等");
+
+    // 账本为数组 / 非对象 → 规范为空对象
+    for (const bad of [[1, 2, 3], "x", 5, null]) {
+      const st = { achievements: { schemaVersion: 1, unlockedAtById: {}, researchRewardSecondsById: bad } };
+      AStateM.migrateAchievementState(st);
+      const led = st.achievements.researchRewardSecondsById;
+      if (!led || typeof led !== "object" || Array.isArray(led) || Object.keys(led).length !== 0) {
+        throw new Error("非法账本容器未被规范为空对象：" + JSON.stringify(bad));
+      }
+    }
+  }
+
+  const goldDef = AD.ACHIEVEMENTS.find(a => a.tier === "gold");
+  const mkState = () => ({
+    achievements: AStateM.createDefaultAchievementState(),
+    research: RStateM.createDefaultResearchState()
+  });
+
+  // ---- E-3 发放 API：在线首发 / 防重 / 失败 reason / 事件契约 / 旧档对账 ----
+  {
+    const grantEvents = [];
+    const offGrant = sandbox.GameEvents.on("achievement:researchHoursGranted", e => grantEvents.push(e));
+    try {
+      const s1 = mkState();
+      const u1 = AS.unlockAchievement(s1, goldDef.id, T0);
+      if (!u1.ok) throw new Error("首次解锁应成功");
+      if (s1.research.researchHourBank !== 2 * HOUR) throw new Error("金档首次解锁应到账 7200 秒，实际 " + s1.research.researchHourBank);
+      if (s1.achievements.researchRewardSecondsById[goldDef.id] !== 2 * HOUR) throw new Error("账本未记录已发放秒数");
+      if (s1._dirty !== true) throw new Error("首次发放必须置 _dirty");
+      if (grantEvents.length !== 1) throw new Error("首次发放必须 emit 恰一次 achievement:researchHoursGranted");
+      const ev = grantEvents[0];
+      if (ev.payload.achievementId !== goldDef.id || ev.payload.hours !== 2 || ev.payload.seconds !== 7200) {
+        throw new Error("achievement:researchHoursGranted payload 契约不符：" + JSON.stringify(ev.payload));
+      }
+      if (ev.timestamp !== T0 || ev.meta.source !== "achievement-system") throw new Error("发放事件 meta 不符");
+      if (!sandbox.GameEvents.contracts.has("achievement:researchHoursGranted")) throw new Error("缺少 achievement:researchHoursGranted 契约登记");
+
+      // 重复解锁 / 重复 grant 都不得二次入账、不得再 emit
+      const u2 = AS.unlockAchievement(s1, goldDef.id, T0 + 5000);
+      if (u2.ok || u2.reason !== "ALREADY_UNLOCKED") throw new Error("重复解锁应返回 ALREADY_UNLOCKED");
+      const g2 = AS.grantAchievementResearchReward(s1, goldDef.id, T0 + 6000);
+      if (g2.ok || g2.reason !== "ALREADY_GRANTED" || g2.seconds !== 2 * HOUR) throw new Error("重复 grant 应返回 ALREADY_GRANTED");
+      if (s1.research.researchHourBank !== 2 * HOUR) throw new Error("重复发放导致工时重复到账");
+      if (grantEvents.length !== 1) throw new Error("重复发放不得再次 emit");
+
+      // 稳定失败 reason
+      const otherDef = AD.ACHIEVEMENTS.find(a => a.id !== goldDef.id);
+      if (AS.grantAchievementResearchReward(s1, otherDef.id, T0).reason !== "NOT_UNLOCKED") throw new Error("未解锁成就应返回 NOT_UNLOCKED");
+      if (AS.grantAchievementResearchReward(s1, "ZZ99", T0).reason !== "UNKNOWN_ACHIEVEMENT") throw new Error("未知 ID 应返回 UNKNOWN_ACHIEVEMENT");
+      if (AS.grantAchievementResearchReward({}, goldDef.id, T0).reason !== "INVALID_STATE") throw new Error("非法状态应返回 INVALID_STATE");
+      if (grantEvents.length !== 1) throw new Error("失败分支不得 emit");
+
+      // research 缺失：解锁仍成功，安全失败；research 就绪后可补发且置 dirty
+      const s2 = { achievements: AStateM.createDefaultAchievementState() };
+      if (!AS.unlockAchievement(s2, goldDef.id, T0).ok) throw new Error("research 缺失时解锁仍必须成功");
+      if (Object.keys(s2.achievements.researchRewardSecondsById).length !== 0) throw new Error("research 缺失时不得写账本");
+      if (AS.grantAchievementResearchReward(s2, goldDef.id, T0).reason !== "RESEARCH_UNAVAILABLE") throw new Error("research 缺失应返回 RESEARCH_UNAVAILABLE");
+      s2.research = RStateM.createDefaultResearchState();
+      s2._dirty = false;
+      const g3 = AS.grantAchievementResearchReward(s2, goldDef.id, T0 + 1);
+      if (!g3.ok || g3.seconds !== 2 * HOUR || s2.research.researchHourBank !== 2 * HOUR) throw new Error("research 就绪后补发失败");
+      if (s2._dirty !== true) throw new Error("grant 首次成功必须置 _dirty");
+
+      // 旧档对账：已解锁但账本为空 → 按目录顺序补发一次；重复对账为空
+      const legacyDefs = ["bronze", "silver", "legendary"].map(t => AD.ACHIEVEMENTS.find(a => a.tier === t));
+      const s4 = mkState();
+      for (const d of legacyDefs) s4.achievements.unlockedAtById[d.id] = T0;
+      const rec1 = AS.reconcileAchievementResearchRewards(s4, T0 + 10);
+      const expectSeconds = (0.5 + 1 + 4) * HOUR;
+      const orderedIds = AD.ACHIEVEMENTS.filter(a => legacyDefs.some(d => d.id === a.id)).map(a => a.id);
+      if (!rec1.ok || rec1.grantedIds.join(",") !== orderedIds.join(",")) throw new Error("旧档对账未按目录顺序补发：" + rec1.grantedIds.join(","));
+      if (Math.abs(rec1.grantedSeconds - expectSeconds) > 1e-9) throw new Error("旧档对账补发秒数错误：" + rec1.grantedSeconds);
+      if (Math.abs(s4.research.researchHourBank - expectSeconds) > 1e-9) throw new Error("旧档补发未正确入账");
+      const rec2 = AS.reconcileAchievementResearchRewards(s4, T0 + 20);
+      if (rec2.grantedIds.length !== 0 || rec2.grantedSeconds !== 0) throw new Error("重复对账必须为空（不重复补发）");
+      if (Math.abs(s4.research.researchHourBank - expectSeconds) > 1e-9) throw new Error("重复对账改变了工时余额");
+      if (AS.reconcileAchievementResearchRewards({}, T0).reason !== "INVALID_STATE") throw new Error("非法状态对账应返回 INVALID_STATE");
+    } finally { offGrant(); }
+
+    // 事件总线缺失时奖励仍必须到账（不依赖 GameEvents）
+    const s3 = mkState();
+    const savedBus = sandbox.GameEvents;
+    delete sandbox.GameEvents;
+    try {
+      if (!AS.unlockAchievement(s3, goldDef.id, T0).ok) throw new Error("事件总线缺失时解锁必须成功");
+      if (s3.research.researchHourBank !== 2 * HOUR) throw new Error("事件总线缺失时奖励仍必须到账");
+      if (s3.achievements.researchRewardSecondsById[goldDef.id] !== 2 * HOUR) throw new Error("事件总线缺失时账本未记录");
+    } finally { sandbox.GameEvents = savedBus; }
+
+    // reward = null（未来研究类成就）：稳定失败、不入账、不补发
+    {
+      const nullDef = Object.freeze({
+        id: "RSCH01", category: "研究", conditionText: "研究类占位", tier: "bronze", tierLabel: "铜",
+        hidden: false, name: "研究类占位", nameStatus: "placeholder", trigger: null, reward: null,
+        steam: Object.freeze({ enabled: false, apiName: null, progressStatApiName: null, progressMax: null }), note: ""
+      });
+      const fakeCatalog = Object.freeze({
+        SCHEMA_VERSION: 1, ACHIEVEMENTS: Object.freeze([nullDef]),
+        ACHIEVEMENTS_BY_ID: Object.freeze({ RSCH01: nullDef }),
+        CATEGORIES: Object.freeze(["研究"]), TIERS: AD.TIERS, PLACEHOLDER_NAME_PREFIX: AD.PLACEHOLDER_NAME_PREFIX
+      });
+      const savedCatalog = sandbox.AchievementData;
+      sandbox.AchievementData = fakeCatalog;
+      try {
+        if (AS.getAchievementResearchRewardHours("RSCH01") !== null) throw new Error("reward=null 的奖励工时必须为 null");
+        const s5 = {
+          achievements: { schemaVersion: 2, unlockedAtById: { RSCH01: T0 }, researchRewardSecondsById: {} },
+          research: RStateM.createDefaultResearchState()
+        };
+        const g5 = AS.grantAchievementResearchReward(s5, "RSCH01", T0);
+        if (g5.ok || g5.reason !== "NO_REWARD") throw new Error("reward=null 的 grant 必须返回 NO_REWARD");
+        if (s5.research.researchHourBank !== 0 || Object.keys(s5.achievements.researchRewardSecondsById).length !== 0) {
+          throw new Error("reward=null 不得改动余额或账本");
+        }
+        const recNull = AS.reconcileAchievementResearchRewards(s5, T0);
+        if (!recNull.ok || recNull.grantedIds.length !== 0) throw new Error("reward=null 对账不得补发");
+      } finally { sandbox.AchievementData = savedCatalog; }
+    }
+  }
+
+  // ---- E-4 研究状态清洗：researchHourBank + appliedAchievementSeconds 50% 夹紧 ----
+  const rootNode = RD.NODES.find(n => !n.prerequisites || n.prerequisites.length === 0);
+  const nextNode = RD.NODES.find(n => n.id !== rootNode.id && (!n.prerequisites || n.prerequisites.length === 0));
+  if (!rootNode || !nextNode) throw new Error("找不到两个无前置研究节点，Batch E 研究用例失效");
+  const BASE = rootNode.durationByLevel[0];
+  const CAP = BASE * 0.5;
+  {
+    const bankCases = [["3600", 0], [Number.NaN, 0], [Infinity, 0], [-Infinity, 0], [-5, 0], [{}, 0], [true, 0],
+                       [null, 0], [undefined, 0], [[], 0], [0, 0], [1.5, 1.5], [7200, 7200]];
+    for (const [input, expect] of bankCases) {
+      const st = { research: RStateM.createDefaultResearchState() };
+      st.research.researchHourBank = input;
+      RStateM.migrateResearchState(st);
+      if (st.research.researchHourBank !== expect) {
+        throw new Error("researchHourBank 清洗失败：" + String(input) + " → " + st.research.researchHourBank);
+      }
+    }
+    const appliedCases = [["x", 0], [Number.NaN, 0], [Infinity, 0], [-1, 0], [true, 0], [{}, 0], [null, 0],
+                          [0, 0], [10.25, 10.25], [CAP, CAP], [CAP + 1, CAP], [BASE, CAP], [1e9, CAP]];
+    for (const [input, expect] of appliedCases) {
+      const st = { research: RStateM.createDefaultResearchState() };
+      st.research.activeResearch = {
+        techId: rootNode.id, targetLevel: 1, startedAt: T0,
+        baseDuration: BASE, remainingSeconds: BASE, appliedAchievementSeconds: input
+      };
+      RStateM.migrateResearchState(st);
+      const got = st.research.activeResearch.appliedAchievementSeconds;
+      if (got !== expect) throw new Error("appliedAchievementSeconds 夹紧失败：" + String(input) + " → " + got);
+    }
+  }
+
+  const mkResearchState = (now) => {
+    const st = mkState();
+    st.research.lastProcessedAt = now;
+    return st;
+  };
+
+  // ---- E-5 applyResearchHours：50% 上限截断 / 余额扣减 / 完成衔接 / 失败 reason ----
+  {
+    const applyEvents = [];
+    const offApply = sandbox.GameEvents.on("research:hoursApplied", e => applyEvents.push(e));
+    try {
+      const s6 = mkResearchState(T0);
+      if (!RS.startResearch(s6, rootNode.id, 1, T0).ok) throw new Error("研究启动失败");
+      s6.research.researchHourBank = 10 * HOUR;
+      const a1 = RS.applyResearchHours(s6, 10, T0); // 请求远超上限 → 截断到 50%
+      if (!a1.ok) throw new Error("applyResearchHours 应成功，实际 " + a1.reason);
+      if (Math.abs(a1.usedSeconds - CAP) > 1e-9) throw new Error("单步抵扣未截断到 50% 上限，实际 " + a1.usedSeconds);
+      if (Math.abs(s6.research.activeResearch.remainingSeconds - (BASE - CAP)) > 1e-9) throw new Error("remainingSeconds 未按实扣减少");
+      if (Math.abs(s6.research.activeResearch.appliedAchievementSeconds - CAP) > 1e-9) throw new Error("appliedAchievementSeconds 未累计");
+      if (Math.abs(s6.research.researchHourBank - (10 * HOUR - CAP)) > 1e-9) throw new Error("银行余额未按实扣扣减");
+      if (s6._dirty !== true) throw new Error("成功抵扣必须置 _dirty");
+      if (applyEvents.length !== 1) throw new Error("成功抵扣必须 emit 恰一次 research:hoursApplied");
+      const ap = applyEvents[0].payload;
+      if (ap.techId !== rootNode.id || ap.level !== 1 || Math.abs(ap.usedSeconds - CAP) > 1e-9) {
+        throw new Error("research:hoursApplied payload 契约不符：" + JSON.stringify(ap));
+      }
+      if (!sandbox.GameEvents.contracts.has("research:hoursApplied")) throw new Error("缺少 research:hoursApplied 契约登记");
+
+      // 已达 50% 上限：稳定失败、不改状态、不 emit
+      const bankBefore = s6.research.researchHourBank;
+      const remainBefore = s6.research.activeResearch.remainingSeconds;
+      const a2 = RS.applyResearchHours(s6, 1, T0);
+      if (a2.ok || a2.reason !== "CAP_REACHED") throw new Error("已达 50% 上限应返回 CAP_REACHED");
+      if (s6.research.researchHourBank !== bankBefore || s6.research.activeResearch.remainingSeconds !== remainBefore) {
+        throw new Error("CAP_REACHED 分支不得改动状态");
+      }
+      if (applyEvents.length !== 1) throw new Error("CAP_REACHED 不得 emit");
+
+      // 非法 hours
+      for (const bad of [0, -1, Number.NaN, Infinity, "1", null, undefined, {}]) {
+        if (RS.applyResearchHours(s6, bad, T0).reason !== "INVALID_HOURS") throw new Error("非法 hours 必须返回 INVALID_HOURS：" + String(bad));
+      }
+      if (applyEvents.length !== 1) throw new Error("非法 hours 不得 emit");
+
+      // 无进行中研究 / 余额为 0 / 无 research 状态
+      const s7 = mkResearchState(T0);
+      s7.research.researchHourBank = HOUR;
+      if (RS.applyResearchHours(s7, 1, T0).reason !== "NOTHING_ACTIVE") throw new Error("无进行中研究应返回 NOTHING_ACTIVE");
+      const s8 = mkResearchState(T0);
+      RS.startResearch(s8, rootNode.id, 1, T0);
+      s8.research.researchHourBank = 0;
+      if (RS.applyResearchHours(s8, 1, T0).reason !== "INSUFFICIENT_BANK") throw new Error("余额为 0 应返回 INSUFFICIENT_BANK");
+      if (RS.applyResearchHours({}, 1, T0).reason !== "NO_RESEARCH_STATE") throw new Error("无 research 状态应返回 NO_RESEARCH_STATE");
+
+      // 抵扣到 0 → 立即完成该步并衔接队列下一项（不越过 50% 上限：剩余仅 25%）
+      const s9 = mkResearchState(T0);
+      if (!RS.startResearch(s9, rootNode.id, 1, T0).ok) throw new Error("s9 启动失败");
+      if (!RS.enqueueResearch(s9, nextNode.id, 1).ok) throw new Error("s9 入队失败");
+      s9.research.researchHourBank = 10 * HOUR;
+      const bank9Before = s9.research.researchHourBank;
+      const T9 = T0 + Math.round(BASE * 750); // 自然推进 75% 时长，剩余 25%
+      const a3 = RS.applyResearchHours(s9, 10, T9);
+      if (!a3.ok || !a3.completed) throw new Error("抵扣到 0 应立即完成该步");
+      if (Math.abs(a3.usedSeconds - BASE * 0.25) > 0.01) throw new Error("完成步实扣秒数应约为剩余 25%，实际 " + a3.usedSeconds);
+      if (Math.abs(s9.research.researchHourBank - (bank9Before - a3.usedSeconds)) > 1e-9) throw new Error("完成步未按实扣扣减余额");
+      if ((s9.research.completedLevels[rootNode.id] || 0) !== 1) throw new Error("完成后 completedLevels 未写入");
+      if (!s9.research.activeResearch || s9.research.activeResearch.techId !== nextNode.id) throw new Error("完成后未衔接队列下一项");
+      if (s9.research.pendingQueue.length !== 0) throw new Error("已启动的队列项未出队");
+      if (s9.research.activeResearch.appliedAchievementSeconds !== 0) throw new Error("新步骤的 appliedAchievementSeconds 必须从 0 开始");
+    } finally { offApply(); }
+  }
+
+  // ---- E-6 cancelResearch：全额退款 / 进度作废 / 队列衔接 / 事件契约 ----
+  {
+    const cancelEvents = [];
+    const stepEvents = [];
+    const offCancel = sandbox.GameEvents.on("research:cancelled", e => cancelEvents.push(e));
+    const offStep = sandbox.GameEvents.on("research:stepCompleted", e => stepEvents.push(e));
+    try {
+      const s10 = mkResearchState(T0);
+      if (!RS.startResearch(s10, rootNode.id, 1, T0).ok) throw new Error("s10 启动失败");
+      if (!RS.enqueueResearch(s10, nextNode.id, 1).ok) throw new Error("s10 入队失败");
+      s10.research.researchHourBank = 5 * HOUR;
+      const inv = RS.applyResearchHours(s10, 0.1, T0); // 投入 360 秒
+      if (!inv.ok || Math.abs(inv.usedSeconds - 360) > 1e-9) throw new Error("预投入失败：" + inv.reason);
+      const bankAfterInvest = s10.research.researchHourBank;
+
+      const c1 = RS.cancelResearch(s10, T0);
+      if (!c1.ok || Math.abs(c1.refundedSeconds - 360) > 1e-9) throw new Error("取消应全额退还已投入的成就工时");
+      if (Math.abs(s10.research.researchHourBank - (bankAfterInvest + 360)) > 1e-9) throw new Error("取消退款未入账");
+      if ((s10.research.completedLevels[rootNode.id] || 0) !== 0) throw new Error("取消不得写入 completedLevels");
+      if (s10.research.history.length !== 0) throw new Error("取消不得写入 history");
+      if (stepEvents.length !== 0) throw new Error("取消不得 emit research:stepCompleted");
+      if (cancelEvents.length !== 1) throw new Error("取消必须 emit 恰一次 research:cancelled");
+      const cp = cancelEvents[0].payload;
+      if (cp.techId !== rootNode.id || cp.level !== 1 || Math.abs(cp.refundedSeconds - 360) > 1e-9) {
+        throw new Error("research:cancelled payload 契约不符：" + JSON.stringify(cp));
+      }
+      if (!sandbox.GameEvents.contracts.has("research:cancelled")) throw new Error("缺少 research:cancelled 契约登记");
+      if (!s10.research.activeResearch || s10.research.activeResearch.techId !== nextNode.id) throw new Error("取消后未衔接队列下一项");
+      if (c1.startedNext !== nextNode.id + "@1") throw new Error("取消返回的 startedNext 不正确：" + c1.startedNext);
+
+      // 未投入工时的取消退款为 0；随后无 active
+      const c2 = RS.cancelResearch(s10, T0);
+      if (!c2.ok || c2.refundedSeconds !== 0) throw new Error("未投入工时的取消退款必须为 0");
+      if (s10.research.activeResearch !== null) throw new Error("队列为空时取消后不应有进行中研究");
+      const c3 = RS.cancelResearch(s10, T0);
+      if (c3.ok || c3.reason !== "NOTHING_ACTIVE") throw new Error("无进行中研究取消应返回 NOTHING_ACTIVE");
+      if (RS.cancelResearch({}, T0).reason !== "NO_RESEARCH_STATE") throw new Error("无 research 状态取消应返回 NO_RESEARCH_STATE");
+      if (cancelEvents.length !== 2) throw new Error("失败取消不得 emit（累计应为 2 次成功）");
+      if (stepEvents.length !== 0) throw new Error("整个取消流程都不得 emit research:stepCompleted");
+    } finally { offCancel(); offStep(); }
+  }
+
+  // ---- E-7 最小 UI：科研工时余额 + 卡片奖励文字 + 解锁播报奖励文字 ----
+  {
+    const achDomIds = [
+      "achievements-panel", "achievements-summary-count", "achievements-summary-percent",
+      "achievements-progress-fill", "achievements-tier-counts", "achievements-category-tabs",
+      "achievements-status-tabs", "achievements-grid", "achievements-research-bank"
+    ];
+    for (const id of achDomIds) if (!htmlIds.has(id)) throw new Error("index.html 缺少成就页 DOM：" + id);
+    if (!sandbox.gameState.research || typeof sandbox.gameState.research !== "object") throw new Error("gameState.research 缺失，UI 用例失效");
+
+    const els = {};
+    for (const id of achDomIds) els[id] = makeElement();
+    const savedGetElementById = sandbox.document.getElementById;
+    const savedBank = sandbox.gameState.research.researchHourBank;
+    const savedUnlocked = sandbox.gameState.achievements.unlockedAtById;
+    const savedToast = sandbox.showToast;
+    if (typeof savedToast !== "function") throw new Error("沙箱缺少 showToast，解锁播报用例失效");
+    sandbox.document.getElementById = (id) => els[id] || makeElement();
+    sandbox.gameState.achievements.unlockedAtById = {};
+    try {
+      sandbox.gameState.research.researchHourBank = 262 * HOUR;
+      let display = sandbox.renderAchievementsPage("all", "all");
+      if (display.researchBankText !== "科研工时余额：262 小时") throw new Error("科研工时余额文案错误：" + display.researchBankText);
+      if (els["achievements-research-bank"].textContent !== "科研工时余额：262 小时") throw new Error("achievements-research-bank 未渲染余额");
+
+      sandbox.gameState.research.researchHourBank = 1800;
+      sandbox.renderAchievementsPage("all", "all");
+      if (els["achievements-research-bank"].textContent !== "科研工时余额：0.5 小时") {
+        throw new Error("半小时余额渲染错误：" + els["achievements-research-bank"].textContent);
+      }
+      sandbox.gameState.research.researchHourBank = -5; // UI 纯读兜底，不修改 state
+      display = sandbox.renderAchievementsPage("all", "all");
+      if (els["achievements-research-bank"].textContent !== "科研工时余额：0 小时") throw new Error("非法余额未兜底为 0 小时");
+      if (sandbox.gameState.research.researchHourBank !== -5) throw new Error("UI 渲染必须纯只读，不得修改 researchHourBank");
+
+      // 每张卡的奖励文字必须与冻结目录 reward 一致（隐藏成就同样显示奖励）
+      const rewardTextOf = (hours) => "科研工时 +" + (hours === 0.5 ? "0.5" : String(hours)) + "h";
+      if (display.cards.length !== AD.ACHIEVEMENTS.length) throw new Error("UI 用例应渲染全量卡片");
+      for (const card of display.cards) {
+        const def = AD.ACHIEVEMENTS_BY_ID[card.id];
+        const expected = def.reward === null ? "无科研工时奖励" : rewardTextOf(def.reward.hours);
+        if (card.rewardText !== expected) throw new Error("成就卡奖励文字错误：" + card.id + " → " + card.rewardText);
+        if (card.rewardHours !== (def.reward === null ? null : def.reward.hours)) throw new Error("成就卡 rewardHours 与目录不一致：" + card.id);
+      }
+      const gridHtml = els["achievements-grid"].innerHTML;
+      for (const text of ["科研工时 +0.5h", "科研工时 +1h", "科研工时 +2h", "科研工时 +4h"]) {
+        if (!gridHtml.includes(text)) throw new Error("成就卡 DOM 缺少奖励文字：" + text);
+      }
+
+      // 解锁播报必须带真实奖励文字（读目录 reward，不按 tier 猜测）
+      const toasts = [];
+      sandbox.showToast = (message) => { toasts.push(String(message)); };
+      sandbox.GameEvents.emit("achievement:unlocked", { achievementId: goldDef.id, unlockedAt: T0 },
+        { timestamp: T0, source: "achievement-system" });
+      if (!toasts.some(m => m.includes(goldDef.name) && m.includes("科研工时 +2h"))) {
+        throw new Error("解锁播报缺少真实奖励文字：" + toasts.join(" | "));
+      }
+    } finally {
+      sandbox.showToast = savedToast;
+      sandbox.gameState.research.researchHourBank = savedBank;
+      sandbox.gameState.achievements.unlockedAtById = savedUnlocked;
+      sandbox.document.getElementById = savedGetElementById;
+    }
+  }
+
+  console.log("Batch E 校验通过：四档奖励 44/82/63/8 合计 262 小时、schema v2 账本迁移清洗与幂等、在线首发/防重/旧档对账/无事件总线仍到账、researchHourBank 与 appliedAchievementSeconds 50% 夹紧、applyResearchHours 截断与完成衔接、cancelResearch 全额退款与队列衔接、三条事件契约、成就页余额与卡片奖励文字");
+}
+
+// ==========================================================================
+// Batch F：研究页面 + 在线操作闭环
+// 覆盖：导航与面板显隐、8 个研究页 DOM、38 节点冻结序渲染、五种节点状态、
+//       dispatchGameAction 启动/排队/投入/取消/移除、协议节点只读、
+//       50% 上限截断、退款与队列衔接、渲染纯读、既有基线不放宽。
+// 操作用例使用独立 state；触碰真实 gameState / document 的部分 finally 恢复。
+// ==========================================================================
+{
+  const RS = sandbox.ResearchSystem;
+  const RD = sandbox.ResearchData;
+  const RStateM = sandbox.ResearchState;
+  const HOUR = 3600;
+  const TF = 1752000000000;
+
+  // ---- F-12 既有基线不得放宽（脚本 / 样式 / DOM ID / Batch D·E 关键 DOM） ----
+  if (scriptSources.length !== 50) throw new Error("Batch F 起 JS 基线为 50（Batch I 新增 research-protocols.js），实际 " + scriptSources.length);
+  if (styleSources.length !== 4) throw new Error("Batch F 不得改变 4 CSS 基线，实际 " + styleSources.length);
+  if (htmlIds.size !== 294) throw new Error("Batch F DOM ID 基线应为 294，实际 " + htmlIds.size);
+  for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
+    if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
+  }
+  if (typeof RS.removeQueuedResearch !== "function") throw new Error("ResearchSystem 缺少 Batch F API：removeQueuedResearch");
+
+  // ---- F-2 研究页 8 个新 DOM ID + 导航入口 + 面板体系声明 ----
+  const researchDomIds = [
+    "research-panel", "research-summary", "research-bank", "research-active",
+    "research-progress-fill", "research-tree", "research-detail", "research-queue"
+  ];
+  for (const id of researchDomIds) if (!htmlIds.has(id)) throw new Error("index.html 缺少研究页 DOM：" + id);
+  if (!/<div class="nav-item" data-page="research">/.test(html)) throw new Error('侧边栏缺少 data-page="research" 研究入口');
+  if (html.indexOf('data-page="achievements"') >= html.indexOf('data-page="research"')) {
+    throw new Error("研究入口应位于成就入口之后");
+  }
+  if (!/<div class="panel research-panel" id="research-panel" style="display:none;">/.test(html)) {
+    throw new Error("research-panel 未按现有面板体系声明（class .panel + 默认 display:none）");
+  }
+
+  const nodes = RD.NODES;
+  if (nodes.length !== 38) throw new Error("研究目录不为 38 节点，实际 " + nodes.length);
+  const nodeById = {};
+  for (const n of nodes) nodeById[n.id] = n;
+  const MATSCI_BASE = nodeById.matsci.durationByLevel[0];
+
+  const mkFState = () => {
+    const research = RStateM.createDefaultResearchState();
+    research.lastProcessedAt = TF;
+    return { research };
+  };
+
+  // ---- F-5 / F-7 / F-8 / F-9 / F-10：全部经 dispatchGameAction 的在线操作闭环 ----
+  {
+    // F-5 启动 + 排队
+    const s = mkFState();
+    const started = sandbox.dispatchGameAction(s, { type: "research/start", techId: "syseng", targetLevel: 1 }, TF);
+    if (!started.changed) throw new Error("research/start 应成功，实际 reason=" + started.reason);
+    if (!s.research.activeResearch || s.research.activeResearch.techId !== "syseng" || s.research.activeResearch.targetLevel !== 1) {
+      throw new Error("research/start 未写入 activeResearch");
+    }
+    if (s._dirty !== true) throw new Error("research/start 成功必须置 _dirty");
+    const dupe = sandbox.dispatchGameAction(s, { type: "research/start", techId: "syseng", targetLevel: 1 }, TF);
+    if (dupe.changed || dupe.reason !== "ALREADY_ACTIVE") throw new Error("重复启动应返回稳定 reason ALREADY_ACTIVE，实际 " + dupe.reason);
+
+    for (const id of ["matsci", "dataan", "autocon"]) {
+      const q = sandbox.dispatchGameAction(s, { type: "research/enqueue", techId: id, targetLevel: 1 }, TF);
+      if (!q.changed) throw new Error("research/enqueue 应成功：" + id + " reason=" + q.reason);
+    }
+    if (s.research.pendingQueue.join(",") !== "matsci@1,dataan@1,autocon@1") {
+      throw new Error("排队顺序不符：" + s.research.pendingQueue.join(","));
+    }
+    const dupeQ = sandbox.dispatchGameAction(s, { type: "research/enqueue", techId: "matsci", targetLevel: 1 }, TF);
+    if (dupeQ.changed || dupeQ.reason !== "ALREADY_QUEUED") throw new Error("重复排队应返回 ALREADY_QUEUED，实际 " + dupeQ.reason);
+
+    // F-10 移除队列项：只删完全匹配的一项，其余顺序不变
+    const notQueued = sandbox.dispatchGameAction(s, { type: "research/removeQueued", stepKey: "mine@1" }, TF);
+    if (notQueued.changed || notQueued.reason !== "NOT_QUEUED") throw new Error("移除未排队项应返回 NOT_QUEUED，实际 " + notQueued.reason);
+    const badKey = sandbox.dispatchGameAction(s, { type: "research/removeQueued", stepKey: "matsci" }, TF);
+    if (badKey.changed || badKey.reason !== "INVALID_STEP_KEY") throw new Error("非法 stepKey 应返回 INVALID_STEP_KEY，实际 " + badKey.reason);
+    const activeBefore = JSON.stringify(s.research.activeResearch);
+    const removed = sandbox.dispatchGameAction(s, { type: "research/removeQueued", stepKey: "dataan@1" }, TF);
+    if (!removed.changed) throw new Error("research/removeQueued 应成功，实际 " + removed.reason);
+    if (s.research.pendingQueue.join(",") !== "matsci@1,autocon@1") {
+      throw new Error("移除后队列顺序错误：" + s.research.pendingQueue.join(","));
+    }
+    if (JSON.stringify(s.research.activeResearch) !== activeBefore) throw new Error("移除队列项不得影响进行中的研究");
+
+    const emptyCancel = sandbox.dispatchGameAction(mkFState(), { type: "research/cancel" }, TF);
+    if (emptyCancel.changed || emptyCancel.reason !== "NOTHING_ACTIVE") {
+      throw new Error("无进行中研究取消应返回 NOTHING_ACTIVE，实际 " + emptyCancel.reason);
+    }
+  }
+
+  // ---- F-7 / F-8 / F-9：成就工时投入与取消退款（用 mine@3，50% 上限足够大以区分部分投入与满额） ----
+  {
+    const MINE_L3 = nodeById.mine.durationByLevel[2];
+    const CAP = MINE_L3 * 0.5;
+    if (!(CAP > 0.5 * HOUR)) throw new Error("mine@3 的 50% 上限不足 0.5 小时，投入用例失效");
+    const s2 = mkFState();
+    s2.research.completedLevels = { syseng: 1, mine: 2 };
+    if (!sandbox.dispatchGameAction(s2, { type: "research/start", techId: "mine", targetLevel: 3 }, TF).changed) {
+      throw new Error("mine@3 启动失败");
+    }
+    if (!sandbox.dispatchGameAction(s2, { type: "research/enqueue", techId: "arch", targetLevel: 1 }, TF).changed) {
+      throw new Error("arch@1 排队失败");
+    }
+
+    // F-7 投入 0.5h：银行 / 剩余 / 已用三者按实扣同步
+    s2.research.researchHourBank = 10 * HOUR;
+    const applied = sandbox.dispatchGameAction(s2, { type: "research/applyHours", hours: 0.5 }, TF);
+    if (!applied.changed) throw new Error("research/applyHours 应成功，实际 " + applied.reason);
+    if (Math.abs(applied.usedSeconds - 0.5 * HOUR) > 1e-9) throw new Error("0.5h 投入实扣不符：" + applied.usedSeconds);
+    if (Math.abs(s2.research.researchHourBank - 9.5 * HOUR) > 1e-9) throw new Error("投入后银行余额未同步");
+    if (Math.abs(s2.research.activeResearch.remainingSeconds - (MINE_L3 - 0.5 * HOUR)) > 1e-9) throw new Error("投入后剩余时间未同步");
+    if (Math.abs(s2.research.activeResearch.appliedAchievementSeconds - 0.5 * HOUR) > 1e-9) throw new Error("投入后已用成就工时未同步");
+
+    // F-8 最大可用投入：只由只读状态推导，抵满 50% 上限但绝不越界，再投返回 CAP_REACHED
+    const maxHours = sandbox.computeMaxApplyHours(s2.research);
+    const expectMax = Math.min(s2.research.researchHourBank, s2.research.activeResearch.remainingSeconds, CAP - 0.5 * HOUR) / HOUR;
+    if (Math.abs(maxHours - expectMax) > 1e-9) throw new Error("最大可用工时计算错误：" + maxHours + " 期望 " + expectMax);
+    if (!(maxHours > 0)) throw new Error("最大可投入工时应为正数，实际 " + maxHours);
+    const maxApplied = sandbox.dispatchGameAction(s2, { type: "research/applyHours", hours: maxHours }, TF);
+    if (!maxApplied.changed) throw new Error("最大可用投入应成功，实际 " + maxApplied.reason);
+    if (s2.research.activeResearch.appliedAchievementSeconds > CAP + 1e-6) {
+      throw new Error("已用成就工时越过 50% 上限：" + s2.research.activeResearch.appliedAchievementSeconds);
+    }
+    if (Math.abs(s2.research.activeResearch.appliedAchievementSeconds - CAP) > 1e-6) {
+      throw new Error("最大可用投入未抵满 50% 上限：" + s2.research.activeResearch.appliedAchievementSeconds);
+    }
+    const overCap = sandbox.dispatchGameAction(s2, { type: "research/applyHours", hours: 1 }, TF);
+    if (overCap.changed || overCap.reason !== "CAP_REACHED") throw new Error("达到 50% 上限后应返回 CAP_REACHED，实际 " + overCap.reason);
+
+    // F-9 取消：全额退款 + 队列首项自动接上
+    const bankBeforeCancel = s2.research.researchHourBank;
+    const appliedBeforeCancel = s2.research.activeResearch.appliedAchievementSeconds;
+    const cancelled = sandbox.dispatchGameAction(s2, { type: "research/cancel" }, TF);
+    if (!cancelled.changed) throw new Error("research/cancel 应成功，实际 " + cancelled.reason);
+    if (Math.abs(s2.research.researchHourBank - (bankBeforeCancel + appliedBeforeCancel)) > 1e-9) {
+      throw new Error("取消退款与已投入成就工时不一致");
+    }
+    if (!s2.research.activeResearch || s2.research.activeResearch.techId !== "arch") {
+      throw new Error("取消后队列首项 arch@1 未自动接上");
+    }
+    if (s2.research.pendingQueue.length !== 0) throw new Error("取消后队列未正确出队：" + s2.research.pendingQueue.join(","));
+    if (s2.research.completedLevels.mine !== 2) throw new Error("取消不得把被取消的研究计为已完成");
+  }
+
+  // ---- F-1 / F-3 / F-4 / F-6 / F-11 + Batch F 视觉返修（文明6式横向科技树）：页面渲染（纯读） ----
+  {
+    const toRoman = (num) => {
+      if (!Number.isInteger(num) || num <= 0) return "";
+      return ["I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"][num - 1] || String(num);
+    };
+
+    // FV-A 唯一数据源：正式渲染层 / index.html 不得内联第二份科技清单
+    const shellIdx = scriptSources.findIndex(src => src.includes("shell-render"));
+    if (shellIdx < 0) throw new Error("未找到 js/ui/shell-render.js");
+    const shellSrc = scripts[shellIdx];
+    for (const n of nodes) {
+      if (shellSrc.includes(n.name)) throw new Error("shell-render.js 内联了科技名称（第二份静态清单）：" + n.name);
+      if (html.includes(n.name)) throw new Error("index.html 内联了科技名称（第二份静态清单）：" + n.name);
+    }
+    if (/\bconst\s+EDGES\s*=|\bvar\s+EDGES\s*=/.test(shellSrc)) throw new Error("不得复制原型的静态 EDGES 连线表");
+    const eraMetaAt = shellSrc.indexOf("RESEARCH_ERA_META = [");
+    if (eraMetaAt < 0) throw new Error("缺少五时代元数据 RESEARCH_ERA_META");
+    const eraMetaBlock = shellSrc.slice(eraMetaAt, shellSrc.indexOf("];", eraMetaAt));
+    if (/\bids\s*:|\bnodes\s*:|\btechs\s*:/.test(eraMetaBlock)) throw new Error("RESEARCH_ERA_META 只能硬编码序号/名称/配色，不得内联时代节点清单");
+
+    // FV-B 旧 auto-fill 卡片网格必须彻底移除；SVG 层不得遮挡点击；必须有 reduced-motion 降级
+    const treeCssAt = baseCss.indexOf(".research-tree {");
+    if (treeCssAt < 0) throw new Error("base.css 缺少 .research-tree 画布样式");
+    const treeCssBlock = baseCss.slice(treeCssAt, baseCss.indexOf("}", treeCssAt));
+    if (/grid-template-columns/.test(treeCssBlock)) throw new Error(".research-tree 仍是旧 auto-fill 卡片网格");
+    if (baseCss.includes(".research-node")) throw new Error("base.css 仍残留旧 .research-node 卡片网格样式");
+    if (!/\.rt-edges\s*\{[^}]*pointer-events:\s*none/.test(baseCss)) throw new Error("SVG 连线层必须 pointer-events:none，不得遮挡节点点击");
+    if (!baseCss.includes("@media (prefers-reduced-motion: reduce)")) throw new Error("缺少 prefers-reduced-motion 动效降级");
+
+    // FV-C 时代分组必须动态：喂入合成目录时分布完全跟随数据，证明未硬编码时代内节点 ID
+    {
+      const mkStub = (id, era, prereq) => ({
+        id, name: "STUB_" + id, era, type: "numeric", category: "industry",
+        maxLevel: 1, rank: 1, prerequisites: prereq || [], effects: ["stub"], bonus: "stub",
+        description: "stub", durationByLevel: [60]
+      });
+      const stubRD = { NODES: [mkStub("__sa", 2), mkStub("__sb", 2, [{ id: "__sa", level: 1 }]), mkStub("__sc", 0)] };
+      const stubRS = { buildProjectedResearchLevels: () => ({}), getResearchDuration: () => 3600, getResearchNode: () => null };
+      const stubModel = sandbox.buildResearchTreeModel({ completedLevels: {}, pendingQueue: [], activeResearch: null }, stubRD, stubRS);
+      if (stubModel.nodes.length !== 3) throw new Error("时代分组非动态：合成目录渲染 " + stubModel.nodes.length + " 个节点");
+      if (stubModel.eras.map(e => e.count).join(",") !== "1,0,2,0,0") {
+        throw new Error("时代分组硬编码了节点清单，合成目录分布为 " + stubModel.eras.map(e => e.count).join(","));
+      }
+      if (stubModel.edges.length !== 1) throw new Error("连线未按 prerequisites 动态生成，合成目录边数 " + stubModel.edges.length);
+    }
+
+    // 正式目录派生的期望值（全部现算，不写死）
+    const expectedEdgeKeys = [];
+    const expectedEraCounts = [0, 0, 0, 0, 0];
+    for (const n of nodes) {
+      expectedEraCounts[Number(n.era) || 0] += 1;
+      for (const p of (n.prerequisites || [])) expectedEdgeKeys.push(p.id + ">" + n.id + "@" + p.level);
+    }
+    const expectedEdgeCount = expectedEdgeKeys.length;
+    let fanInId = nodes[0].id; let fanInMax = 0;
+    for (const n of nodes) {
+      const len = (n.prerequisites || []).length;
+      if (len > fanInMax) { fanInMax = len; fanInId = n.id; }
+    }
+    if (fanInMax < 3) throw new Error("目录里应存在多前置节点用于验证多边，实际最大入度 " + fanInMax);
+
+    const els = {};
+    for (const id of researchDomIds.concat(["achievements-panel", "cargo-panel"])) els[id] = makeElement();
+    const savedGetElementById = sandbox.document.getElementById;
+    const savedResearch = sandbox.gameState.research;
+    sandbox.document.getElementById = (id) => els[id] || makeElement();
+
+    const fixture = RStateM.createDefaultResearchState();
+    fixture.lastProcessedAt = TF;
+    // syseng 单级 completed / gas 五级 completed Lv2 / mine 五级 active targetLevel=2（已完成 Lv1）
+    fixture.completedLevels = { syseng: 1, gas: 2, mine: 1 };
+    fixture.activeResearch = {                                // active：目标 Lv2，但名称只应显示已完成 Lv1
+      techId: "mine", targetLevel: 2, startedAt: TF,
+      baseDuration: MATSCI_BASE, remainingSeconds: MATSCI_BASE / 2, appliedAchievementSeconds: 0
+    };
+    fixture.pendingQueue = ["dataan@1"];                      // queued（autocon 保持 available，shipcomp 前置未满足 → locked）
+    fixture.researchHourBank = 3 * HOUR;
+
+    try {
+      sandbox.gameState.research = fixture;
+
+      // F-1 切换到研究页：只显示 research-panel，其它托管面板隐藏
+      sandbox.switchPage("research");
+      if (els["research-panel"].style.display !== "") throw new Error("切换到研究页后 research-panel 未显示");
+      if (els["achievements-panel"].style.display !== "none") throw new Error("切换到研究页后 achievements-panel 未隐藏");
+      if (els["cargo-panel"].style.display !== "none") throw new Error("切换到研究页后 cargo-panel 未隐藏");
+
+      // F-11 渲染必须纯读：state 快照渲染前后逐字节一致
+      const snapshotBefore = JSON.stringify(sandbox.gameState.research);
+      const display = sandbox.renderResearchPage();
+      const snapshotAfter = JSON.stringify(sandbox.gameState.research);
+      if (snapshotBefore !== snapshotAfter) throw new Error("renderResearchPage 修改了 state.research，渲染必须纯读");
+      const treeHtml = els["research-tree"].innerHTML;
+
+      // F-3 38 个节点严格按冻结目录顺序渲染
+      if (!display || display.nodeCount !== 38 || display.nodes.length !== 38) {
+        throw new Error("研究树未渲染 38 个节点，实际 " + (display ? display.nodes.length : "null"));
+      }
+      for (let i = 0; i < 38; i += 1) {
+        if (display.nodes[i].id !== nodes[i].id) throw new Error("研究树未按 ResearchData.NODES 冻结顺序渲染，第 " + i + " 项");
+      }
+
+      // FV-1 五个时代头部按 era0→era4 顺序渲染，只显示副标题（基础科学/应用科学/工程学/尖端科技/协议与集成）
+      const eraHeads = [...treeHtml.matchAll(/<div class="rt-era-head"[^>]*>([^<]+)<\/div>/g)]
+        .map(m => m[1].trim());
+      const eraHeadExpect = "基础科学 → 应用科学 → 工程学 → 尖端科技 → 协议与集成";
+      if (eraHeads.join(" → ") !== eraHeadExpect) throw new Error("五时代标题顺序/名称不符：" + eraHeads.join(" → "));
+      if (eraHeads.some(h => /^时代 [IV]+/.test(h))) throw new Error("时代头部仍残留“时代几”字样：" + eraHeads.join(" → "));
+
+      // FV-2 / FV-3 38 个节点各渲染一次；data-tech-id / data-era / data-status 与正式数据一致
+      const nodeTags = [...treeHtml.matchAll(/<div class="(rt-node[^"]*)" style="[^"]*" data-tech-id="([^"]+)" data-era="(\d+)" data-status="([^"]+)"/g)];
+      if (nodeTags.length !== 38) throw new Error("科技树 DOM 节点数不为 38，实际 " + nodeTags.length);
+      const domNodeById = {};
+      for (const [, cls, id, era, status] of nodeTags) {
+        if (domNodeById[id]) throw new Error("节点被重复渲染：" + id);
+        domNodeById[id] = { cls, era: Number(era), status };
+      }
+      for (const n of nodes) {
+        const dom = domNodeById[n.id];
+        if (!dom) throw new Error("科技树 DOM 缺少节点：" + n.id);
+        const occurrences = treeHtml.split('data-tech-id="' + n.id + '"').length - 1;
+        if (occurrences !== 1) throw new Error("节点 " + n.id + " 在树中出现 " + occurrences + " 次，应恰好一次");
+        if (dom.era !== (Number(n.era) || 0)) throw new Error("节点 data-era 与正式数据不一致：" + n.id + " DOM=" + dom.era + " 数据=" + n.era);
+        if (!treeHtml.includes(n.name)) throw new Error("科技树未显示正式节点名称：" + n.name);
+        const view = display.nodes.find(v => v.id === n.id);
+        const shouldHaveRoman = !view.isSingle && !view.isProtocol && view.completed >= 1;
+        if (shouldHaveRoman) {
+          const expectedName = n.name + " " + toRoman(view.completed);
+          if (!treeHtml.includes(expectedName)) throw new Error("五级节点名称未追加已完成等级罗马数字后缀：" + n.id + " 期望 " + expectedName);
+        } else {
+          // 单级/协议/completed=0 节点不得伪造罗马后缀
+          if (treeHtml.includes(n.name + " I") || treeHtml.includes(n.name + " V") || treeHtml.includes(n.name + " II")) {
+            throw new Error("不应追加罗马数字后缀的节点出现了后缀：" + n.id);
+          }
+        }
+        if (dom.status !== view.status) throw new Error("节点 data-status 与状态模型不一致：" + n.id);
+        if (!dom.cls.includes("rt-node--" + view.status)) throw new Error("节点缺少状态视觉类：" + n.id + " → rt-node--" + view.status);
+      }
+      // 时代内顺序 = ResearchData.NODES 原始顺序；行号从 0 连续递增
+      for (let era = 0; era < 5; era += 1) {
+        const fromData = nodes.filter(n => (Number(n.era) || 0) === era).map(n => n.id).join(",");
+        const fromView = display.nodes.filter(v => v.era === era).map(v => v.id).join(",");
+        if (fromData !== fromView) throw new Error("时代 " + era + " 内节点顺序未保持目录原始顺序");
+        const rows = display.nodes.filter(v => v.era === era).map(v => v.row).join(",");
+        const expectRows = display.nodes.filter(v => v.era === era).map((_, i) => i).join(",");
+        if (rows !== expectRows) throw new Error("时代 " + era + " 行号未连续递增：" + rows);
+        if (display.eras[era].count !== expectedEraCounts[era]) {
+          throw new Error("时代 " + era + " 节点数不符：DOM=" + display.eras[era].count + " 数据=" + expectedEraCounts[era]);
+        }
+      }
+
+      // FV-4 SVG 连线数量 === Σ prerequisites.length，且 from/to/requiredLevel 与正式前置双向一致
+      const edgeTags = [...treeHtml.matchAll(/<path class="rt-edge rt-edge--([a-z]+)" d="[^"]*" data-from="([^"]+)" data-to="([^"]+)" data-required-level="(\d+)"/g)];
+      if (edgeTags.length !== expectedEdgeCount) throw new Error("SVG 连线数应等于前置总数 " + expectedEdgeCount + "，实际 " + edgeTags.length);
+      if (display.edgeCount !== expectedEdgeCount) throw new Error("模型边数与前置总数不符：" + display.edgeCount);
+      const domEdgeKeys = edgeTags.map(m => m[2] + ">" + m[3] + "@" + m[4]).sort();
+      const dataEdgeKeys = expectedEdgeKeys.slice().sort();
+      if (domEdgeKeys.join("|") !== dataEdgeKeys.join("|")) throw new Error("SVG 连线与 node.prerequisites 不是双向一致");
+      for (const [, state] of edgeTags) {
+        if (!["met", "projected", "unmet"].includes(state)) throw new Error("连线状态非法：" + state);
+      }
+      // 多前置节点必须生成多条边
+      const fanInEdges = edgeTags.filter(m => m[3] === fanInId).length;
+      if (fanInEdges !== fanInMax) throw new Error("多前置节点 " + fanInId + " 应有 " + fanInMax + " 条入边，实际 " + fanInEdges);
+      // 已完成前置 → met；未完成 → unmet/projected
+      const metEdge = edgeTags.find(m => m[2] === "syseng" && Number(m[4]) === 1);
+      if (!metEdge || metEdge[1] !== "met") throw new Error("已满足的前置连线未标记为 met：" + (metEdge && metEdge[1]));
+
+      // FV-5 六种状态视觉：五种状态类 + 协议金色类
+      for (const [status, id] of [["completed", "syseng"], ["active", "mine"], ["queued", "dataan"], ["available", "autocon"], ["locked", "shipcomp"]]) {
+        const view = display.nodes.find(n => n.id === id);
+        if (!view || view.status !== status) throw new Error("节点状态判定错误：" + id + " 期望 " + status + " 实际 " + (view && view.status));
+        if (!(display.statuses[status] >= 1)) throw new Error("缺少状态样本：" + status);
+        if (!treeHtml.includes("rt-node--" + status)) throw new Error("DOM 缺少状态样式类：rt-node--" + status);
+      }
+      if (!treeHtml.includes("rt-node--protocol")) throw new Error("协议节点缺少金色视觉类 rt-node--protocol");
+      if (treeHtml.includes("research-node--")) throw new Error("科技树仍残留旧卡片网格样式类 research-node--*");
+
+      // FV-6 五级科技显示 5 个等级标记；单级 / 协议不得伪造五级
+      const nodeChunks = treeHtml.split('<div class="rt-node rt-node--').slice(1);
+      if (nodeChunks.length !== 38) throw new Error("节点 HTML 分片数不为 38，实际 " + nodeChunks.length);
+      for (let i = 0; i < 38; i += 1) {
+        const view = display.nodes[i];
+        const chunk = nodeChunks[i];
+        if (!chunk.includes('data-tech-id="' + view.id + '"')) throw new Error("节点 HTML 顺序错位：" + view.id);
+        const pips = chunk.split('class="rt-pip ').length - 1;
+        if (view.isProtocol) {
+          if (pips !== 0) throw new Error("协议节点不得显示等级标记：" + view.id);
+          if (!chunk.includes("rt-badge--protocol")) throw new Error("协议节点缺少“协议”标记：" + view.id);
+          if (view.levelMarks.length !== 0) throw new Error("协议节点不得生成等级标记模型：" + view.id);
+        } else if (view.maxLevel === 1) {
+          if (pips !== 0) throw new Error("单级节点不得伪造五级标记：" + view.id);
+          if (!chunk.includes("rt-badge--single")) throw new Error("单级节点缺少“单级”标记：" + view.id);
+        } else {
+          if (pips !== view.maxLevel) throw new Error("五级科技等级标记数不符：" + view.id + " 实际 " + pips);
+          if (view.levelMarks.length !== view.maxLevel) throw new Error("等级标记模型长度不符：" + view.id);
+          if (chunk.includes("rt-badge--single") || chunk.includes("rt-badge--protocol")) {
+            throw new Error("五级科技不得带单级/协议标记：" + view.id);
+          }
+        }
+      }
+      // 已完成等级 → filled；正在研究的等级 → active；排队等级 → queued
+      const lockedMarks = display.nodes.find(v => v.id === "shipcomp").levelMarks.join(",");
+      if (lockedMarks !== "empty,empty,empty,empty,empty") throw new Error("未研究五级科技标记应全空：" + lockedMarks);
+      const activeMarks = display.nodes.find(v => v.id === "mine").levelMarks.join(",");
+      if (activeMarks !== "filled,active,empty,empty,empty") {
+        throw new Error("研究中五级科技标记应为 filled+active+empty*3：" + activeMarks);
+      }
+
+      // FV-7 协议节点：树上无操作按钮
+      const protocolViews = display.nodes.filter(n => n.isProtocol);
+      if (protocolViews.length !== 6) throw new Error("协议节点数量不为 6，实际 " + protocolViews.length);
+      if (/data-(research|detail)-action/.test(treeHtml)) throw new Error("科技树节点本体不得内嵌操作按钮，操作只在详情区");
+
+      // FV-8 节点详情：直接读正式 node 对象（description / 全等级 effects / 前置要求等级 / 玩家真实等级）
+      const detailOf = (techId) => { sandbox.selectResearchNode(techId); return els["research-detail"].innerHTML; };
+      const lockedNode = nodeById.shipcomp;
+      const lockedHtml = detailOf("shipcomp");
+      if (!lockedHtml.includes(lockedNode.name)) throw new Error("详情缺少科技名称");
+      if (!lockedHtml.includes(lockedNode.description)) throw new Error("详情缺少 description");
+      for (const eff of lockedNode.effects) {
+        if (!lockedHtml.includes(eff)) throw new Error("详情缺少全等级效果：" + eff);
+      }
+      for (const p of lockedNode.prerequisites) {
+        const pn = nodeById[p.id];
+        if (!lockedHtml.includes(pn.name + " 需 " + toRoman(p.level))) throw new Error("详情缺少前置名称与要求等级：" + p.id);
+        const own = Number(fixture.completedLevels[p.id]) || 0;
+        const ownLabel = own > 0 ? toRoman(own) : "0";
+        if (!lockedHtml.includes("当前 " + ownLabel)) {
+          throw new Error("详情缺少玩家真实完成等级：" + p.id);
+        }
+      }
+      if (!lockedHtml.includes("✖")) throw new Error("详情未标记前置未满足");
+      // FV-9 locked 不能启动
+      if (!/data-detail-action="start"[^>]*disabled/.test(lockedHtml)) throw new Error("locked 节点的“立即研究”必须禁用");
+      if (!/data-detail-action="enqueue"[^>]*disabled/.test(lockedHtml)) throw new Error("locked 节点的“加入队列”必须禁用");
+      if (!lockedHtml.includes("缺少前置：")) throw new Error("locked 节点未显示缺少哪些前置");
+
+      // FV-10 available 仍可 start / enqueue（按钮可用 + 动作真实生效）
+      const availHtml = detailOf("autocon");
+      const startTag = availHtml.match(/<button[^>]*data-detail-action="start"[^>]*>/);
+      const queueTag = availHtml.match(/<button[^>]*data-detail-action="enqueue"[^>]*>/);
+      if (!startTag || /disabled/.test(startTag[0])) throw new Error("available 节点必须可以立即研究");
+      if (!queueTag || /disabled/.test(queueTag[0])) throw new Error("available 节点必须可以加入队列");
+      if (!/data-tech-id="autocon"[^>]*data-level="1"/.test(availHtml)) throw new Error("详情操作按钮未携带 techId / 目标等级");
+      {
+        const sAct = mkFState();
+        if (!sandbox.dispatchGameAction(sAct, { type: "research/start", techId: "autocon", targetLevel: 1 }, TF).changed) {
+          throw new Error("详情区 available 节点应能经 dispatchGameAction 启动");
+        }
+        if (!sandbox.dispatchGameAction(sAct, { type: "research/enqueue", techId: "syseng", targetLevel: 1 }, TF).changed) {
+          throw new Error("详情区 available 节点应能经 dispatchGameAction 排队");
+        }
+        const lockedTry = sandbox.dispatchGameAction(mkFState(), { type: "research/start", techId: "shipcomp", targetLevel: 1 }, TF);
+        if (lockedTry.changed) throw new Error("locked 节点不得被启动");
+      }
+
+      // FV-11 协议节点详情：无任何操作按钮，只提示未接入
+      // Batch I 起：未研究的协议节点复用"立即研究 / 加入队列"，但绝不出现任何协议设置控件。
+      const protoHtml = detailOf(protocolViews[0].id);
+      if (protoHtml.includes("data-protocol-id") || protoHtml.includes("data-deployment-id")) {
+        throw new Error("未研究的协议节点不得出现协议设置控件：" + protocolViews[0].id);
+      }
+      if (!/data-detail-action="(start|enqueue)"/.test(protoHtml) && !protoHtml.includes("协议业务尚未接入")) {
+        throw new Error("未研究协议节点详情既无研究按钮也无未接入提示：" + protocolViews[0].id);
+      }
+      // completed / active / queued 三态详情文案
+      if (!detailOf("syseng").includes("该科技已全部完成")) throw new Error("已完成节点详情文案错误");
+      if (detailOf("syseng").includes("data-detail-action")) throw new Error("已完成节点不得显示操作按钮");
+      if (!detailOf("mine").includes("研究中")) throw new Error("进行中节点详情文案错误");
+      if (!detailOf("dataan").includes("已加入队列")) throw new Error("已排队节点详情文案错误");
+
+      // FV-12 关联高亮：只含该节点 + 直接入边/出边 + 直接相邻节点，不递归整棵树
+      {
+        const focusId = fanInId;
+        const sets = sandbox.computeResearchFocusSets(focusId, { edges: display.edges });
+        const expectEdges = display.edges.filter(e => e.from === focusId || e.to === focusId)
+          .map(e => e.from + ">" + e.to + "@" + e.requiredLevel).sort();
+        if (sets.edgeKeys.slice().sort().join("|") !== expectEdges.join("|")) throw new Error("关联高亮的边集合不正确");
+        const expectNodes = new Set([focusId]);
+        for (const e of display.edges) {
+          if (e.from === focusId) expectNodes.add(e.to);
+          if (e.to === focusId) expectNodes.add(e.from);
+        }
+        if (sets.nodeIds.slice().sort().join(",") !== [...expectNodes].sort().join(",")) throw new Error("关联高亮的节点集合不正确");
+        // 不得递归：祖父节点（前置的前置）不应被点亮
+        const directPrereqs = (nodeById[focusId].prerequisites || []).map(p => p.id);
+        for (const dp of directPrereqs) {
+          for (const gp of (nodeById[dp].prerequisites || [])) {
+            if (!expectNodes.has(gp.id) && sets.nodeIds.includes(gp.id)) {
+              throw new Error("关联高亮递归到了间接祖先：" + gp.id);
+            }
+          }
+        }
+      }
+
+      // FV-13 active 只在首次进入 / 目标变化时定位，重绘不抢滚动
+      {
+        sandbox.resetResearchAutoScroll();
+        els["research-tree"].scrollLeft = 0;
+        const first = sandbox.autoScrollResearchTree(fixture, sandbox._researchTreeModel);
+        const again = sandbox.autoScrollResearchTree(fixture, sandbox._researchTreeModel);
+        if (!first) throw new Error("首次进入研究页必须定位到当前研究");
+        if (again) throw new Error("重绘不得反复抢夺玩家滚动位置");
+        const lastEraNode = display.nodes.filter(v => v.era === 4)[0];
+        const changed = sandbox.autoScrollResearchTree(
+          { activeResearch: { techId: lastEraNode.id, targetLevel: 1 } }, sandbox._researchTreeModel);
+        if (!changed) throw new Error("activeResearch 目标变化后应重新定位");
+        if (!(Number(els["research-tree"].scrollLeft) > 0)) throw new Error("定位到末代科技时未产生横向滚动");
+        sandbox.resetResearchAutoScroll();
+      }
+
+      // 当前研究 / 成就工时余额 / 队列的可见文本
+      if (els["research-bank"].textContent !== "科研工时余额：3 小时") {
+        throw new Error("research-bank 余额文案错误：" + els["research-bank"].textContent);
+      }
+      const activeHtml = els["research-active"].innerHTML;
+      if (!activeHtml.includes("采矿理论") || !activeHtml.includes("目标等级 2")) throw new Error("当前研究未显示科技名称与目标等级");
+      if (!activeHtml.includes("进度：50%")) throw new Error("当前研究未显示进度百分比：" + activeHtml);
+      if (!activeHtml.includes("剩余 ") || !activeHtml.includes("预计完成 ")) throw new Error("当前研究未显示剩余时间与预计完成时间");
+      if (!activeHtml.includes("本步已用成就工时：") || !activeHtml.includes("50% 上限")) throw new Error("当前研究未显示已用成就工时与 50% 上限");
+      if (els["research-progress-fill"].style.width !== "50%") throw new Error("进度条宽度未跟随进度：" + els["research-progress-fill"].style.width);
+      for (const label of ["投入 0.5h", "投入 1h", "投入 4h", "最大可用"]) {
+        if (!activeHtml.includes(label)) throw new Error("当前研究缺少投入按钮：" + label);
+      }
+      const queueHtml = els["research-queue"].innerHTML;
+      if (!queueHtml.includes("#1") || !queueHtml.includes("数据分析") || !queueHtml.includes('data-remove-key="dataan@1"')) {
+        throw new Error("研究队列未按序号/名称/移除按钮渲染：" + queueHtml);
+      }
+
+      // FV-14 退款显示口径修正：一律用 appliedAchievementSeconds，绝不再用 capLeft
+      {
+        const applied = 0.1 * MATSCI_BASE;
+        const capLeft = MATSCI_BASE * 0.5 - applied;      // 与退款完全不同的量
+        fixture.activeResearch.appliedAchievementSeconds = applied;
+        const refund = sandbox.computeResearchRefundSeconds(fixture);
+        if (Math.abs(refund - applied) > 1e-9) throw new Error("退款秒数应等于 appliedAchievementSeconds，实际 " + refund);
+        if (Math.abs(refund - capLeft) < 1e-6) throw new Error("退款口径与 capLeft 无法区分，用例失效");
+        sandbox.renderResearchPage();
+        const refundHtml = els["research-active"].innerHTML;
+        const wantText = "取消（退还 " + sandbox.formatResearchHours(applied / 3600) + "）";
+        const wrongText = "取消（退还 " + sandbox.formatResearchHours(capLeft / 3600) + "）";
+        if (!refundHtml.includes(wantText)) throw new Error("取消按钮未按 appliedAchievementSeconds 显示退款：" + refundHtml);
+        if (refundHtml.includes(wrongText)) throw new Error("取消按钮仍在用 capLeft 显示退款");
+        if (!refundHtml.includes("本步已用成就工时：" + sandbox.formatResearchHours(applied / 3600))) {
+          throw new Error("“已投入工时”未使用 appliedAchievementSeconds");
+        }
+        if (!refundHtml.includes("剩余可投入 " + sandbox.formatResearchHours(capLeft / 3600))) {
+          throw new Error("capLeft 应只用于“剩余可投入额度”");
+        }
+        // 与业务层真实退款对账：银行增加量 === computeResearchRefundSeconds
+        const sRef = mkFState();
+        sRef.research.completedLevels = { syseng: 1, mine: 2 };
+        sandbox.dispatchGameAction(sRef, { type: "research/start", techId: "mine", targetLevel: 3 }, TF);
+        sRef.research.researchHourBank = 5 * HOUR;
+        sandbox.dispatchGameAction(sRef, { type: "research/applyHours", hours: 1 }, TF);
+        const uiRefund = sandbox.computeResearchRefundSeconds(sRef.research);
+        const bankBefore = sRef.research.researchHourBank;
+        sandbox.dispatchGameAction(sRef, { type: "research/cancel" }, TF);
+        if (Math.abs(sRef.research.researchHourBank - (bankBefore + uiRefund)) > 1e-9) {
+          throw new Error("UI 显示的退款与 cancelResearch 实际退款不一致");
+        }
+        fixture.activeResearch.appliedAchievementSeconds = 0;
+      }
+
+      // FV-15 渲染纯读复检：详情/高亮/定位跑完后 state 仍逐字节一致
+      const snapshotFinal = JSON.stringify(sandbox.gameState.research);
+      sandbox.selectResearchNode("shipcomp");
+      sandbox.renderResearchPage();
+      if (JSON.stringify(sandbox.gameState.research) !== snapshotFinal) {
+        throw new Error("树布局 / SVG / 详情渲染必须纯读，不得写入 state.research");
+      }
+
+      // FV-16 详情为点击后弹出的模态框：含遮罩 / 关闭按钮 / 弹窗容器；关闭后完全隐藏
+      const modalHtml = els["research-detail"].innerHTML;
+      if (!modalHtml.includes("rt-modal-backdrop")) throw new Error("详情未以模态弹窗形式呈现（缺少遮罩层）");
+      if (!modalHtml.includes('class="rt-modal-box"')) throw new Error("详情未包裹在弹窗容器内");
+      if (!modalHtml.includes("rt-modal-close")) throw new Error("详情弹窗缺少关闭按钮");
+      if (modalHtml.includes("research-detail")) throw new Error("详情弹窗不得常驻为侧栏（仍含侧栏结构）");
+      sandbox.closeResearchDetail();
+      if (sandbox._researchSelectedTechId !== null) throw new Error("关闭详情弹窗后未清空选中态");
+      if (els["research-detail"].innerHTML !== "") throw new Error("关闭详情弹窗后弹窗未隐藏");
+
+      // 空队列 / 无进行中研究的空态
+      fixture.pendingQueue = [];
+      fixture.activeResearch = null;
+      sandbox.renderResearchPage();
+      if (els["research-queue"].innerHTML !== "") throw new Error("空队列应清空 DOM 交由空态样式提示");
+      if (els["research-active"].innerHTML !== "") throw new Error("无进行中研究应清空当前研究 DOM");
+      if (els["research-progress-fill"].style.width !== "0%") throw new Error("无进行中研究时进度条未归零");
+      if (!els["research-tree"].innerHTML.includes("rt-era-head")) throw new Error("无进行中研究时科技树仍必须完整渲染");
+    } finally {
+      sandbox.gameState.research = savedResearch;
+      sandbox.document.getElementById = savedGetElementById;
+      sandbox._researchSelectedTechId = null;
+      sandbox.resetResearchAutoScroll();
+    }
+  }
+
+  console.log("Batch F 研究页面校验通过：导航与面板显隐、8 个研究 DOM 与 294 基线、38 节点冻结序渲染、五种节点状态、6 个协议节点只读、dispatchGameAction 启动/排队/移除/投入/取消闭环、0.5h 与最大可用投入不越 50% 上限、取消全额退款与队列衔接、渲染纯读");
+  console.log("Batch F 视觉返修校验通过：五时代动态分组与标题顺序、38 节点各渲染一次且 data-era/data-status 与正式数据一致、SVG 连线数等于 Σprerequisites 且双向一致、多前置多边、六种节点视觉状态、五级等级标记与单级/协议不伪造、详情区 description/全等级效果/前置真实等级、locked 禁用与 available 可 start/enqueue、协议详情无按钮、关联高亮不递归、active 仅首次定位、退款统一用 appliedAchievementSeconds、无第二份静态科技清单与旧卡片网格残留");
+}
+
+// ============================================================================================
+// 研究系统 Batch G：非战斗数值科技正式接入（19 组 bonus.group 真正影响在线 / 离线 / 显示 / 实扣）
+// 铁律：
+//   1) 所有消费点只准调用 ResearchState.getResearchBonusValue / getResearchCombinedBonus /
+//      getResearchMultiplier，禁止自行读 completedLevels、禁止复制节点数值；
+//   2) 根加成 + 专精先加法汇总，再生成唯一乘子（绝不逐项连乘 → 绝不复利）；
+//   3) 零科研时所有结果必须与接入前严格一致；
+//   4) 同一语义只允许一份公式：在线 tick / 离线结算 / 显示态 / 实扣四处同源。
+// ============================================================================================
+{
+  let gChecks = 0;
+  const okG = (condition, message) => {
+    if (!condition) throw new Error("Batch G 校验失败：" + message);
+    gChecks += 1;
+  };
+  const nearG = (a, b, eps = 1e-9) => Math.abs(Number(a) - Number(b)) <= eps;
+
+  const RSG = sandbox.ResearchState;
+  const RDG = sandbox.ResearchData;
+  const RRG = G("ResourceRegistry");
+  const gsG = sandbox.gameState;
+  const nowG = 1767225600000;
+
+  const savedResearchG = JSON.parse(JSON.stringify(gsG.research));
+  const savedArchG = JSON.parse(JSON.stringify(gsG.archaeology));
+  const savedActionG = JSON.parse(JSON.stringify(gsG.currentAction));
+  const savedAssignG = JSON.parse(JSON.stringify(gsG.shipAssignments || {}));
+  const savedShipsG = JSON.parse(JSON.stringify((gsG.inventory && gsG.inventory.ships) || []));
+
+  try {
+    // 纯净基线快照：后续所有夹具都从它克隆，避免被前面用例的残留污染
+    const pristineG = JSON.parse(JSON.stringify(gsG));
+    pristineG.research.completedLevels = {};
+
+    // 19 组非战斗 bonus.group（战斗 / 科研自举 / 六协议不在本批次范围内）
+    const GROUPS_G = [
+      "allMining", "mining", "gas",
+      "allMfg", "smelt", "equip", "booster", "shipComp", "shipAsm",
+      "archEff", "archSuccess", "backlash", "probe", "archExp",
+      "fuel", "planCost", "build", "autoline", "planProd"
+    ];
+    // 全满级（基础节点 1 级 + 数值节点 5 级）
+    const FULL_G = {
+      syseng: 1, matsci: 1, autocon: 1,
+      mine: 5, gas: 5, smelt: 5, equipeng: 5, boostereng: 5, shipcomp: 5, shipasm: 5,
+      arch: 5, signal: 5, backlash: 5, probe: 5, dataarch: 5,
+      fuellog: 5, planfin: 5, englog: 5, planind: 5, autolog: 5
+    };
+    const mkG = (levels) => {
+      const state = JSON.parse(JSON.stringify(pristineG));
+      state.research.completedLevels = Object.assign({}, levels || {});
+      return state;
+    };
+    const ZERO_G = mkG({});
+    const FULL_STATE_G = mkG(FULL_G);
+
+    const siteG = G("ARCHAEOLOGY_SITES")[0];
+    const probeDefG = G("ARCHAEOLOGY_PROBES")[0];
+    // 考古夹具：苍鹭级 + 充足探针/燃料 + 干净的两个累计器
+    const mkArchG = (levels) => {
+      const state = mkG(levels);
+      const instance = sandbox.createShipInstance("heron", 1700000000000);
+      if (!state.inventory || typeof state.inventory !== "object") state.inventory = { ships: [], equipment: [], rigs: [] };
+      if (!Array.isArray(state.inventory.ships)) state.inventory.ships = [];
+      state.inventory.ships.push(instance);
+      if (!state.shipAssignments || typeof state.shipAssignments !== "object") state.shipAssignments = {};
+      state.shipAssignments.archaeology = instance.instanceId;
+      Object.assign(state.archaeology, {
+        activeSiteId: siteG.id, startedSiteId: siteG.id,
+        activeProbeId: probeDefG.id, startedProbeId: probeDefG.id,
+        fuelSavingRemainder: 0, probeSavingRemainder: 0,
+        shipHp: {}, repairUntil: 0, repairInstanceId: null, interferenceUntil: 0
+      });
+      state.currentAction = Object.assign({}, state.currentAction, { active: true, skill: "archaeology", progress: 0 });
+      RRG.add(state, "probe:" + probeDefG.id, 5000);
+      RRG.add(state, "consumable:fuel", 500000);
+      return state;
+    };
+
+    // ---- G-01 零科研基线 + 19 组全部登记在消费点注册表 --------------------------------
+    // RESEARCH_BONUS_CONSUMERS 是 group -> descriptor[] 的键值对象（非数组）
+    const consumersG = RDG.RESEARCH_BONUS_CONSUMERS || {};
+    const registeredGroupsG = new Set(Object.keys(consumersG));
+    for (const group of GROUPS_G) {
+      okG(registeredGroupsG.has(group), "RESEARCH_BONUS_CONSUMERS 未登记消费点 group=" + group);
+      okG(Array.isArray(consumersG[group]) && consumersG[group].length > 0,
+        "RESEARCH_BONUS_CONSUMERS[" + group + "] 必须是非空 descriptor 数组");
+      okG(RSG.getResearchBonusValue(ZERO_G, group) === 0, "零科研时 " + group + " 加成必须恰为 0");
+      okG(RSG.getResearchMultiplier(ZERO_G, [group]) === 1, "零科研时 " + group + " 乘子必须恰为 1");
+    }
+
+    // ---- G-02 加法汇总，绝不复利 ------------------------------------------------------
+    okG(nearG(RSG.getResearchBonusValue(FULL_STATE_G, "allMining"), 0.02), "allMining 满级应为 +2%");
+    okG(nearG(RSG.getResearchBonusValue(FULL_STATE_G, "mining"), 0.06), "mining 满级应为 +6%");
+    okG(nearG(RSG.getResearchCombinedBonus(FULL_STATE_G, ["allMining", "mining"]), 0.08), "根加成与专精必须纯加法汇总为 0.08");
+    okG(nearG(RSG.getResearchMultiplier(FULL_STATE_G, ["allMining", "mining"]), 1.08), "采矿唯一乘子必须为 1.08");
+    okG(!nearG(RSG.getResearchMultiplier(FULL_STATE_G, ["allMining", "mining"]), 1.02 * 1.06, 1e-6), "采矿科研出现逐项连乘复利 1.0812");
+    okG(nearG(RSG.getResearchMultiplier(FULL_STATE_G, ["allMfg", "smelt"]), 1.08), "制造唯一乘子必须为 1.08");
+    okG(!nearG(RSG.getResearchMultiplier(FULL_STATE_G, ["allMfg", "smelt"]), 1.02 * 1.06, 1e-6), "制造科研出现复利");
+
+    // ---- G-03 采矿效率：唯一乘子进入 total ---------------------------------------------
+    const mineZeroG = sandbox.getProductionEfficiencyState(ZERO_G, "mining");
+    const mineFullG = sandbox.getProductionEfficiencyState(FULL_STATE_G, "mining");
+    okG(mineZeroG.researchMultiplier === 1, "零科研采矿显示态乘子必须为 1");
+    okG(nearG(mineFullG.researchMultiplier, 1.08), "满级采矿显示态乘子必须为 1.08");
+    okG(nearG(mineFullG.total / mineZeroG.total, 1.08), "采矿 total 必须严格 ×1.08");
+
+    // ---- G-04 采矿 / 采气专精互不串味 --------------------------------------------------
+    const miningOnlyG = mkG({ syseng: 1, mine: 5 });
+    okG(nearG(sandbox.getProductionEfficiencyState(miningOnlyG, "mining").researchMultiplier, 1.08), "只点采矿专精时采矿应为 1.08");
+    okG(nearG(sandbox.getProductionEfficiencyState(miningOnlyG, "gas").researchMultiplier, 1.02), "只点采矿专精时采气只能吃 allMining 根加成 1.02");
+    const gasOnlyG = mkG({ syseng: 1, gas: 5 });
+    okG(nearG(sandbox.getProductionEfficiencyState(gasOnlyG, "gas").researchMultiplier, 1.08), "只点气云专精时采气应为 1.08");
+    okG(nearG(sandbox.getProductionEfficiencyState(gasOnlyG, "mining").researchMultiplier, 1.02), "只点气云专精时采矿只能吃 allMining 根加成 1.02");
+
+    // ---- G-05 冶炼：提速但不改产量 -----------------------------------------------------
+    const smeltZeroG = sandbox.getSmeltingDisplayState(ZERO_G, nowG);
+    const smeltFullG = sandbox.getSmeltingDisplayState(FULL_STATE_G, nowG);
+    okG(smeltZeroG.researchMultiplier === 1, "零科研冶炼乘子必须为 1");
+    okG(nearG(smeltFullG.researchMultiplier, 1.08), "满级冶炼乘子必须为 1.08");
+    okG(nearG(smeltZeroG.actualTime / smeltFullG.actualTime, 1.08), "冶炼周期必须 ÷1.08");
+    okG(smeltFullG.output === smeltZeroG.output, "冶炼提速科技不得改变单周期产量");
+
+    // ---- G-06 / G-07 装备与增强剂：显示态与真实结算函数同一 API 同一结果 -----------------
+    const equipZeroG = sandbox.getEquipmentEngineeringDisplayState(ZERO_G, nowG, "");
+    const equipFullG = sandbox.getEquipmentEngineeringDisplayState(FULL_STATE_G, nowG, "");
+    okG(nearG(equipFullG.efficiency / equipZeroG.efficiency, 1.08), "装备工程效率必须 ×1.08");
+    const boosterZeroG = sandbox.getBoosterManufacturingDisplayState(ZERO_G, nowG);
+    const boosterFullG = sandbox.getBoosterManufacturingDisplayState(FULL_STATE_G, nowG);
+    okG(nearG(boosterFullG.efficiency / boosterZeroG.efficiency, 1.08), "增强剂制造效率必须 ×1.08");
+    gsG.research.completedLevels = Object.assign({}, FULL_G);
+    const liveEquipEffG = sandbox.getEquipEngEfficiency();
+    const liveBoosterEffG = sandbox.getBoosterEfficiency();
+    okG(nearG(liveEquipEffG, sandbox.getEquipmentEngineeringDisplayState(gsG, nowG, "").efficiency, 1e-12), "装备真实结算效率与显示态必须完全一致");
+    okG(nearG(liveBoosterEffG, sandbox.getBoosterManufacturingDisplayState(gsG, nowG).efficiency, 1e-12), "增强剂真实结算效率与显示态必须完全一致");
+    gsG.research.completedLevels = {};
+    okG(nearG(sandbox.getEquipEngEfficiency() * 1.08, liveEquipEffG, 1e-9), "装备真实结算未吃到 1.08 科研乘子");
+    okG(nearG(sandbox.getBoosterEfficiency() * 1.08, liveBoosterEffG, 1e-9), "增强剂真实结算未吃到 1.08 科研乘子");
+
+    // ---- G-08 舰船组件 / 总装：共享 allMfg，专精互不串味，周期 ÷ 乘子 ---------------------
+    const compOnlyG = mkG({ matsci: 1, shipcomp: 5 });
+    okG(nearG(sandbox.getShipEngineeringSpeedBreakdown(compOnlyG, "component").researchMultiplier, 1.08), "组件线应为 1.08");
+    okG(nearG(sandbox.getShipEngineeringSpeedBreakdown(compOnlyG, "assembly").researchMultiplier, 1.02), "总装线只能吃共享 allMfg 1.02");
+    okG(sandbox.getShipEngineeringSpeedBreakdown(compOnlyG).researchMultiplier === 1, "未指定 kind 时不得注入科研乘子");
+    const compRecipeG = G("SHIP_COMPONENT_RECIPES")[0];
+    const asmRecipeG = G("SHIP_ASSEMBLY_RECIPES")[0];
+    okG(sandbox.getShipEngineeringRecipeKind(compRecipeG) === "component", "组件配方类别判定错误");
+    okG(sandbox.getShipEngineeringRecipeKind(asmRecipeG) === "assembly", "总装配方类别判定错误");
+    okG(nearG(sandbox.getShipEngineeringCycleDuration(ZERO_G, compRecipeG) / sandbox.getShipEngineeringCycleDuration(compOnlyG, compRecipeG), 1.08), "组件周期必须 ÷1.08");
+    okG(nearG(sandbox.getShipEngineeringCycleDuration(ZERO_G, asmRecipeG) / sandbox.getShipEngineeringCycleDuration(compOnlyG, asmRecipeG), 1.02), "总装周期只能 ÷1.02");
+
+    // ---- G-09 考古周期唯一公式：在线 / 离线 descriptor / 显示态三处同源 --------------------
+    okG(nearG(sandbox.getArchaeologyCycleSeconds(ZERO_G, siteG), siteG.time), "零科研考古周期必须恰等于 site.time");
+    const archEffG = mkArchG({ autocon: 1, arch: 5 });
+    okG(nearG(RSG.getResearchMultiplier(archEffG, ["archEff"]), 1.08), "archEff 满级应为 1.08");
+    const archCycleG = sandbox.getArchaeologyCycleSeconds(archEffG, siteG);
+    okG(nearG(siteG.time / archCycleG, 1.08), "考古周期必须 ÷1.08");
+    const archDisplayG = sandbox.getArchaeologyDisplayState(archEffG, nowG);
+    const siteRowG = archDisplayG.sites.find(row => row.id === siteG.id);
+    okG(nearG(siteRowG.actualCycleTime, archCycleG, 1e-12), "考古显示态周期必须与唯一公式同源");
+    gsG.research.completedLevels = { autocon: 1, arch: 5 };
+    const offlineShipG = sandbox.createShipInstance("heron", 1700000000001);
+    gsG.inventory.ships.push(offlineShipG);
+    gsG.shipAssignments.archaeology = offlineShipG.instanceId;
+    Object.assign(gsG.archaeology, { activeSiteId: siteG.id, startedSiteId: siteG.id, activeProbeId: probeDefG.id, startedProbeId: probeDefG.id });
+    gsG.currentAction = Object.assign({}, gsG.currentAction, { active: true, skill: "archaeology", progress: 0 });
+    const descriptorG = sandbox.getOfflineActionDescriptor();
+    okG(descriptorG && descriptorG.key === "archaeology", "离线考古 descriptor 构造失败");
+    okG(nearG(descriptorG.duration, sandbox.getArchaeologyCycleSeconds(gsG, siteG), 1e-12), "离线 descriptor 周期必须与唯一公式同源");
+    okG(nearG(descriptorG.duration, siteG.time / 1.08, 1e-9), "离线 descriptor 未吃到 archEff 提速");
+    gsG.research.completedLevels = {};
+
+    // ---- G-10 archSuccess：百分点加法 + [0.05, 0.95] 夹紧 --------------------------------
+    const succG = mkG({ signal: 5 });
+    okG(nearG(RSG.getResearchBonusValue(succG, "archSuccess"), 0.03), "archSuccess 满级应为 +3 个百分点");
+    const baseChanceG = sandbox.computeArchaeologySuccessChance(50, 50);
+    okG(nearG(sandbox.getArchaeologyFinalSuccessChance(ZERO_G, 50, 50), baseChanceG), "零科研成功率必须等于基础成功率");
+    okG(nearG(sandbox.getArchaeologyFinalSuccessChance(succG, 50, 50), baseChanceG + 0.03), "成功率必须按百分点加法叠加");
+    okG(sandbox.getArchaeologyFinalSuccessChance(succG, 500, 0) === 0.95, "成功率上限必须夹在 0.95");
+    okG(nearG(sandbox.getArchaeologyFinalSuccessChance(succG, 0, 500), 0.08), "下限 0.05 之上仍按百分点叠加为 0.08");
+
+    // ---- G-11 backlash：只减一次，显示 = 结算 -------------------------------------------
+    const tierG = sandbox.getArchaeologyTierConfig(siteG.tier);
+    const profileG = sandbox.getSiteEffectiveProfile(siteG, tierG);
+    const profMultG = profileG ? profileG.backlashMultiplier : 1;
+    const heronCfgG = sandbox.getShipConfigById("heron");
+    const shipRedG = (heronCfgG && heronCfgG.bonuses && heronCfgG.bonuses.archaeologyFailureDamageReduction) || 0;
+    const backlashStateG = mkArchG({ backlash: 5 });
+    okG(nearG(RSG.getResearchBonusValue(backlashStateG, "backlash"), 0.06), "backlash 满级应为 -6%");
+    const expectedBacklashG = Math.ceil(siteG.backlashDamage * profMultG * (1 - shipRedG) * 0.94);
+    const backlashRowG = sandbox.getArchaeologyDisplayState(backlashStateG, nowG).sites.find(row => row.id === siteG.id);
+    okG(backlashRowG.effectiveBacklash === expectedBacklashG, "反噬显示值未按 (1-6%) 只减一次：" + backlashRowG.effectiveBacklash + " != " + expectedBacklashG);
+    const zeroBacklashRowG = sandbox.getArchaeologyDisplayState(mkArchG({}), nowG).sites.find(row => row.id === siteG.id);
+    okG(zeroBacklashRowG.effectiveBacklash === Math.ceil(siteG.backlashDamage * profMultG * (1 - shipRedG)), "零科研反噬必须与接入前一致");
+    const failResultG = sandbox.resolveArchaeologyCycle(backlashStateG, nowG, 0.999999999);
+    okG(failResultG && failResultG.success === false, "强制失败用例未走到反噬分支");
+    okG(failResultG.backlash === expectedBacklashG, "反噬真实结算与显示态不一致");
+
+    // ---- G-12 probe：确定性累计器，100 周期实耗 94 支、6 支免费 ---------------------------
+    const probeStateG = mkArchG({ probe: 5 });
+    okG(nearG(RSG.getResearchBonusValue(probeStateG, "probe"), 0.06), "probe 满级应为 -6%");
+    okG(sandbox.getArchaeologyProbeCostState(ZERO_G).chargedProbe === 1, "零科研必须每周期实扣 1 支探针");
+    const probeBeforeG = RRG.get(probeStateG, "probe:" + probeDefG.id);
+    let probeCyclesG = 0;
+    for (let i = 0; i < 100; i += 1) {
+      const result = sandbox.resolveArchaeologyCycle(probeStateG, nowG + i * 1000, 0);
+      if (result && result.success) probeCyclesG += 1;
+    }
+    okG(probeCyclesG === 100, "100 个考古周期未全部成功结算，实际 " + probeCyclesG);
+    const probeSpentG = probeBeforeG - RRG.get(probeStateG, "probe:" + probeDefG.id);
+    okG(probeSpentG === 94, "100 周期探针实耗必须为 94 支（6 支免费），实际 " + probeSpentG);
+    okG(Math.abs(Number(probeStateG.archaeology.probeSavingRemainder)) < 1e-6, "100 周期后探针累计器余数必须回到 0");
+    // 免费周期：库存为 0 也能开工
+    const freeProbeG = mkArchG({ probe: 5 });
+    RRG.spend(freeProbeG, "probe:" + probeDefG.id, RRG.get(freeProbeG, "probe:" + probeDefG.id));
+    freeProbeG.archaeology.probeSavingRemainder = 0.95;
+    okG(sandbox.getArchaeologyProbeCostState(freeProbeG).chargedProbe === 0, "累计器攒满时必须出现免费周期");
+    okG(sandbox.resolveArchaeologyCycle(freeProbeG, nowG, 0).success === true, "免费周期不得被探针库存判断拦下");
+    // 原子拒绝：不足时不扣资源、不推进累计器
+    const rejectProbeG = mkArchG({ probe: 5 });
+    RRG.spend(rejectProbeG, "probe:" + probeDefG.id, RRG.get(rejectProbeG, "probe:" + probeDefG.id));
+    const rejectFuelBeforeG = RRG.get(rejectProbeG, "consumable:fuel");
+    const rejectResultG = sandbox.resolveArchaeologyCycle(rejectProbeG, nowG, 0);
+    okG(rejectResultG && rejectResultG.reason === "insufficient", "探针不足时必须原子拒绝");
+    okG(Number(rejectProbeG.archaeology.probeSavingRemainder) === 0, "被拒绝的周期不得推进探针累计器");
+    okG(RRG.get(rejectProbeG, "consumable:fuel") === rejectFuelBeforeG, "被拒绝的周期不得扣燃料");
+
+    // ---- G-13 探针累计器迁移幂等 -------------------------------------------------------
+    gsG.archaeology.probeSavingRemainder = 3.7;
+    sandbox.migrateArchaeologyState();
+    okG(nearG(gsG.archaeology.probeSavingRemainder, 0.7), "迁移必须把累计器归一化到 [0,1)");
+    sandbox.migrateArchaeologyState();
+    okG(nearG(gsG.archaeology.probeSavingRemainder, 0.7), "迁移必须幂等");
+    gsG.archaeology.probeSavingRemainder = -5;
+    sandbox.migrateArchaeologyState();
+    okG(gsG.archaeology.probeSavingRemainder === 0, "非法负值必须回填 0");
+    delete gsG.archaeology.probeSavingRemainder;
+    sandbox.migrateArchaeologyState();
+    okG(gsG.archaeology.probeSavingRemainder === 0, "旧存档缺字段必须回填 0");
+
+    // ---- G-14 archExp：经验 ×1.06，事件值 = 入账值 ----------------------------------------
+    const expStateG = mkArchG({ dataarch: 5 });
+    okG(nearG(RSG.getResearchMultiplier(expStateG, ["archExp"]), 1.06), "archExp 满级应为 1.06");
+    let expEventXpG = null;
+    const unsubscribeExpG = sandbox.GameEvents.on("archaeology:success", event => { expEventXpG = event.payload.xp; });
+    const expResultG = sandbox.resolveArchaeologyCycle(expStateG, nowG, 0);
+    unsubscribeExpG();
+    okG(expResultG && expResultG.success === true, "考古经验用例未成功结算");
+    okG(nearG(expResultG.xp, siteG.xp * 1.06), "考古经验必须 ×1.06");
+    okG(nearG(expEventXpG, expResultG.xp), "archaeology:success 事件 xp 必须等于真实入账 xp");
+    okG(nearG(sandbox.resolveArchaeologyCycle(mkArchG({}), nowG, 0).xp, siteG.xp), "零科研考古经验必须等于 site.xp");
+
+    // ---- G-15 fuel：燃烧速率 ×0.91，结算 / 显示 / 补给闸门同源 ------------------------------
+    const fuelStateG = mkG({ fuellog: 5 });
+    fuelStateG.station.bodyLevel = 1;
+    fuelStateG.station.maintenance = { tier: "standard", fuelRemaining: 1000, lastRefillAt: 0, lastTick: nowG - 3600000 };
+    const fuelPointsG = sandbox.getStationMaintenancePoints(fuelStateG);
+    okG(fuelPointsG > 0, "燃料用例的维护点数必须大于 0");
+    const baseRateG = sandbox.getStationFuelBurnRatePerMs(fuelPointsG);
+    okG(nearG(sandbox.getStationEffectiveFuelBurnRatePerMs(ZERO_G, fuelPointsG), baseRateG, 1e-18), "零科研燃烧速率必须等于基础速率");
+    okG(nearG(sandbox.getStationEffectiveFuelBurnRatePerMs(fuelStateG, fuelPointsG), baseRateG * 0.91, 1e-18), "满级燃料科研燃烧速率必须为基础 ×0.91");
+    sandbox.settleStationMaintenance(fuelStateG, nowG, false);
+    okG(nearG(fuelStateG.station.maintenance.fuelRemaining, 1000 - baseRateG * 0.91 * 3600000, 1e-9), "真实燃料扣减必须按 ×0.91 的有效速率");
+    const fuelDisplayG = sandbox.getStationMaintenanceDisplayState(fuelStateG, nowG);
+    const fuelRefillG = sandbox.getStationRefillMaintenanceState(fuelStateG);
+    okG(nearG(fuelDisplayG.remainingMs, fuelRefillG.remainingMs, 1e-6), "维护剩余时长：显示态与补给闸门必须同一公式");
+
+    // ---- G-16 build：建设时长 ÷1.09，且不污染建筑倍率 --------------------------------------
+    const buildStateG = mkG({ englog: 5 });
+    okG(nearG(RSG.getResearchMultiplier(buildStateG, ["build"]), 1.09), "build 满级应为 1.09");
+    const bodyPlanG = G("STATION_BODY_PLANS")[1];
+    okG(sandbox.getStationConstructionDurationMs(ZERO_G, bodyPlanG) === bodyPlanG.durationMs, "零科研建设时长必须等于 plan.durationMs");
+    okG(sandbox.getStationConstructionDurationMs(buildStateG, bodyPlanG) === Math.max(1, Math.round(bodyPlanG.durationMs / 1.09)), "建设时长必须 ÷1.09");
+    const buildLineIdG = G("AUTO_LINE_CONFIG").smelting.buildingId;
+    const buildProbeZeroG = mkG({});
+    buildProbeZeroG.station.buildings[buildLineIdG] = 2;
+    const buildProbeFullG = mkG({ englog: 5 });
+    buildProbeFullG.station.buildings[buildLineIdG] = 2;
+    okG(sandbox.getStationBuildingSpeedMultiplier(buildProbeFullG, buildLineIdG) === sandbox.getStationBuildingSpeedMultiplier(buildProbeZeroG, buildLineIdG), "build 科研不得污染建筑速度倍率");
+
+    // ---- G-17 autoline：只加速周期，材料与产量不变 ------------------------------------------
+    const autoZeroG = mkG({});
+    autoZeroG.station.buildings[buildLineIdG] = 2;
+    const autoFullG = mkG({ autolog: 5 });
+    autoFullG.station.buildings[buildLineIdG] = 2;
+    okG(nearG(RSG.getResearchMultiplier(autoFullG, ["autoline"]), 1.09), "autoline 满级应为 1.09");
+    const smeltRecipeG = G("SMELTING_RECIPES")[0];
+    const autoZeroDurG = sandbox.getStationAutoLineCycleDuration(autoZeroG, "smelting", smeltRecipeG);
+    const autoFullDurG = sandbox.getStationAutoLineCycleDuration(autoFullG, "smelting", smeltRecipeG);
+    okG(autoZeroDurG > 0 && nearG(autoZeroDurG / autoFullDurG, 1.09), "自动线周期必须 ÷1.09");
+    okG(sandbox.getStationAutoLineCycleDuration(autoFullG, "smelting", smeltRecipeG) === autoFullDurG, "自动线周期公式必须纯函数可复现");
+    okG(sandbox.getStationBuildingSpeedMultiplier(autoFullG, buildLineIdG) === sandbox.getStationBuildingSpeedMultiplier(autoZeroG, buildLineIdG), "autoline 科研不得改变建筑倍率");
+    okG(sandbox.getSmeltingDisplayState(autoFullG, nowG).output === sandbox.getSmeltingDisplayState(autoZeroG, nowG).output, "autoline 科研不得改变单周期产量");
+    okG(smeltRecipeG.baseOutput === G("SMELTING_RECIPES")[0].baseOutput && smeltRecipeG.consumeOre === G("SMELTING_RECIPES")[0].consumeOre, "自动线科研不得改写配方材料/产量数据");
+
+    // ---- G-18 planCost：显示价 = 目录价 = 判断价 = 实扣价 = 事件价 --------------------------
+    const lavaG = G("PLANET_TYPES").find(planet => Number(planet.maintenanceCostISK) > 0);
+    const expectedRenewG = Math.ceil(Number(lavaG.maintenanceCostISK) * 0.91);
+    const mkPlanG = (levels) => {
+      const state = mkG(levels);
+      if (!state.planetary || typeof state.planetary !== "object") state.planetary = { deployments: [] };
+      state.planetary.deployments = [{
+        id: "dep_batch_g", planetType: lavaG.id, deployedAt: nowG - 200000 * 1000,
+        duration: 86400, lastTick: nowG, progress: 0, storage: 0, active: false
+      }];
+      return state;
+    };
+    const planZeroG = mkPlanG({});
+    okG(sandbox.getPlanetRenewCostISK(planZeroG, lavaG) === Number(lavaG.maintenanceCostISK), "零科研续期价必须等于基础维护费");
+    const planFullG = mkPlanG({ planfin: 5 });
+    okG(nearG(RSG.getResearchBonusValue(planFullG, "planCost"), 0.09), "planCost 满级应为 -9%");
+    okG(sandbox.getPlanetRenewCostISK(planFullG, lavaG) === expectedRenewG, "续期唯一公式必须为 ceil(基础费 × 0.91)");
+    const planDisplayG = sandbox.getPlanetaryDisplayState(planFullG, nowG);
+    const cardG = planDisplayG.deployments[0];
+    const optionG = planDisplayG.deployOptions.find(option => option.id === lavaG.id);
+    okG(cardG.renewCost === expectedRenewG, "部署卡显示价必须为减免后价格");
+    okG(optionG.renewCost === expectedRenewG, "目录页续期价必须与部署卡同源");
+    okG(cardG.renewBaseCost === Number(lavaG.maintenanceCostISK), "部署卡必须同时暴露基础价用于展示减免");
+    // 判断价：少 1 ISK 必须被拒
+    const planShortG = mkPlanG({ planfin: 5 });
+    RRG.spend(planShortG, "currency:isk", RRG.get(planShortG, "currency:isk"));
+    RRG.add(planShortG, "currency:isk", expectedRenewG - 1);
+    okG(sandbox.getPlanetDeploymentDisplayState(planShortG, planShortG.planetary.deployments[0], nowG).canRenew === false, "余额差 1 ISK 时显示态必须不可续期");
+    okG(sandbox.dispatchGameAction(planShortG, { type: "planetary/renew", id: "dep_batch_g" }, nowG).reason === "insufficient-isk", "余额差 1 ISK 时必须原子拒绝");
+    // 实扣价 + 事件价
+    const planPayG = mkPlanG({ planfin: 5 });
+    RRG.spend(planPayG, "currency:isk", RRG.get(planPayG, "currency:isk"));
+    RRG.add(planPayG, "currency:isk", expectedRenewG);
+    let renewEventIskG = null;
+    const unsubscribeRenewG = sandbox.GameEvents.on("planetary:renewed", event => { renewEventIskG = event.payload.maintenanceISK; });
+    const renewResultG = sandbox.dispatchGameAction(planPayG, { type: "planetary/renew", id: "dep_batch_g" }, nowG);
+    unsubscribeRenewG();
+    okG(renewResultG && renewResultG.changed === true, "减免后余额恰好时必须续期成功");
+    okG(RRG.get(planPayG, "currency:isk") === 0, "实扣价必须等于减免后价格");
+    okG(renewEventIskG === expectedRenewG, "planetary:renewed 事件价必须等于实扣价");
+
+    // ---- G-19 planProd：行星周期 ÷1.09，在线与离线共用同一入口 -------------------------------
+    const planProdG = mkG({ planind: 5 });
+    okG(nearG(RSG.getResearchMultiplier(planProdG, ["planProd"]), 1.09), "planProd 满级应为 1.09");
+    okG(nearG(sandbox.getPlanetOutputIntervalFromState(ZERO_G, lavaG.id) / sandbox.getPlanetOutputIntervalFromState(planProdG, lavaG.id), 1.09), "行星产出周期必须 ÷1.09");
+    // 零科研必须与接入前严格一致：仅由 配置 interval / 行星学等级 / 站点后勤 三项决定
+    const planCapLevelG = sandbox.getPlanetaryCapacityState(ZERO_G).level;
+    const planStationMultG = Math.max(0.001, sandbox.getStationLogisticsMultiplier(ZERO_G));
+    const planBaseIntervalG = lavaG.interval / (1 + planCapLevelG * 0.02) / planStationMultG;
+    okG(nearG(sandbox.getPlanetOutputIntervalFromState(ZERO_G, lavaG.id), planBaseIntervalG, 1e-12),
+      "零科研行星周期必须等于接入前基线（研究乘子恰为 1）");
+    gsG.research.completedLevels = { planind: 5 };
+    okG(nearG(sandbox.getPlanetOutputInterval(lavaG.id), sandbox.getPlanetOutputIntervalFromState(gsG, lavaG.id), 1e-12), "在线/离线共用的 getPlanetOutputInterval 必须委托唯一公式");
+    gsG.research.completedLevels = {};
+
+    // ---- G-20 不进战斗、不进六协议 -------------------------------------------------------
+    okG(JSON.stringify(sandbox.getCombatDisplayState(ZERO_G, nowG)) === JSON.stringify(sandbox.getCombatDisplayState(FULL_STATE_G, nowG)), "非战斗科研全满级不得改变战斗显示态");
+    const protocolNodesG = RDG.NODES.filter(node => node.type === "protocol");
+    okG(protocolNodesG.length === 6, "协议节点必须恰为 6 个");
+    for (const node of protocolNodesG) okG(!node.bonus, "协议节点 " + node.id + " 不得带 bonus");
+
+    // ---- G-21 冻结基线不回退 -------------------------------------------------------------
+    okG(RDG.NODES.length === 38, "科技节点总数必须仍为 38");
+    okG(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294, "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+    okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
+  } finally {
+    gsG.research = JSON.parse(JSON.stringify(savedResearchG));
+    gsG.archaeology = JSON.parse(JSON.stringify(savedArchG));
+    gsG.currentAction = JSON.parse(JSON.stringify(savedActionG));
+    gsG.shipAssignments = JSON.parse(JSON.stringify(savedAssignG));
+    if (gsG.inventory) gsG.inventory.ships = JSON.parse(JSON.stringify(savedShipsG));
+  }
+
+  console.log("Batch G 非战斗数值科技校验通过（" + gChecks + " 项）：19 组零科研基线与消费点注册、加法汇总拒绝复利、采矿/采气专精不串味、冶炼/装备/增强剂显示与真实结算同源、组件与总装各吃各专精、考古周期在线=离线=显示唯一公式、成功率百分点夹紧、反噬只减一次、探针 100 周期实耗 94 支与免费周期/原子拒绝/迁移幂等、考古经验事件=入账、燃料 ×0.91 结算与剩余时长同源、建设 ÷1.09 不污染建筑倍率、自动线只提速不改产量、行星续期四价同源、行星周期 ÷1.09、战斗与六协议零影响");
+}
+
+// ============================================================================================
+// 研究系统 Batch H：12 组战斗数值科技正式接入（武器伤害 / 三层生命 / 主动维修 / 战斗经验）
+// 铁律：
+//   1) 只准调用 ResearchState.getResearchBonusValue / getResearchCombinedBonus /
+//      getResearchMultiplier，禁止自行读 completedLevels、禁止复制节点数值；
+//   2) 每个最终战斗 stat 只允许一条 source:"research" 的聚合 modifier，
+//      其 value 直接来自一次 getResearchMultiplier（先加法汇总，绝不逐项复利）；
+//   3) 零科研时逐值与接入前严格一致；显示态与真实 combatTick 同源；
+//   4) 不修改敌方伤害 / HP / 维修，不进入六协议业务。
+// ============================================================================================
+{
+  let hChecks = 0;
+  const okH = (condition, message) => {
+    if (!condition) throw new Error("Batch H 校验失败：" + message);
+    hChecks += 1;
+  };
+  const nearH = (a, b, eps = 1e-12) => Math.abs(Number(a) - Number(b)) <= eps;
+
+  const RSH = sandbox.ResearchState;
+  const RDH = sandbox.ResearchData;
+  const gsH = sandbox.gameState;
+  const nowH = 1767225600000;
+
+  const savedResearchH = JSON.parse(JSON.stringify(gsH.research));
+  const savedCombatH = JSON.parse(JSON.stringify(gsH.combat));
+  const savedActionH = JSON.parse(JSON.stringify(gsH.currentAction));
+  const savedAssignH = JSON.parse(JSON.stringify(gsH.shipAssignments || {}));
+  const savedShipsH = JSON.parse(JSON.stringify((gsH.inventory && gsH.inventory.ships) || []));
+  const savedSkillsH = JSON.parse(JSON.stringify(gsH.skills));
+  const savedStationH = JSON.parse(JSON.stringify(gsH.station));
+  const savedResourcesH = JSON.parse(JSON.stringify(gsH.resources));
+  const savedEquipH = JSON.parse(JSON.stringify((gsH.equipment && gsH.equipment.inventory) || []));
+
+  try {
+    const pristineH = JSON.parse(JSON.stringify(gsH));
+    pristineH.research.completedLevels = {};
+
+    // 12 组战斗 bonus.group
+    const GROUPS_H = [
+      "combatExp",
+      "allWeapon", "weaponDmg", "laserDmg", "missileDmg", "projDmg", "tactical",
+      "tierHp", "shield", "armor", "structure",
+      "repair"
+    ];
+    // 全满级（基础节点 1 级 + 战斗数值节点 5 级）
+    const FULL_H = {
+      dataan: 1,
+      combat: 5, firectrl: 5, defense: 5, tactical: 5,
+      laser: 5, missile: 5, projectile: 5,
+      shield: 5, armor: 5, structure: 5, repair: 5
+    };
+
+    const mkH = (levels) => {
+      const state = JSON.parse(JSON.stringify(pristineH));
+      state.research.completedLevels = Object.assign({}, levels || {});
+      return state;
+    };
+    // 战斗夹具：裂谷级（护盾 300 / 装甲 100 / 结构 100，护盾 +10%、激光 +5%），强化 0 级、无 rig、无装备平段
+    const FIT_H = { high: ["t1_small_laser"], mid: ["t1_shield_booster"], low: [], rig: [] };
+    const mkShipH = (levels, fitted) => {
+      const state = mkH(levels);
+      const instance = sandbox.createShipInstance("rifter", 1700000000000);
+      instance.enhancementLevel = 0;
+      instance.fitted = JSON.parse(JSON.stringify(fitted || FIT_H));
+      state.inventory.ships = [instance];
+      state.shipAssignments = Object.assign({}, state.shipAssignments, { combat: instance.instanceId });
+      if (state.equipment) state.equipment.inventory = [];
+      Object.assign(state.combat, {
+        active: false, mode: "belt", viewMode: "belt", zone: "angel_outpost",
+        activeShip: instance.instanceId, enemies: [], currentEnemy: null,
+        hp: null, maxHp: null, modifiers: [], repairUntil: 0, destroyedShip: null
+      });
+      return state;
+    };
+
+    const ZERO_H = mkShipH({});
+    const FULL_STATE_H = mkShipH(FULL_H);
+    const dmgH = (state, weaponType) => sandbox.getCombatDamageMultiplierFromState(state, weaponType);
+    const hpH = (state) => sandbox.getCombatMaxHpFromState(state);
+    const repH = (state, layer) => sandbox.getCombatRepairMultiplierFromState(state, layer);
+
+    // ---- H-01 12 组零科研基线 + 31 组数值 group 全部进入正式消费点 ----------------------
+    for (const group of GROUPS_H) {
+      okH(RSH.getResearchBonusValue(ZERO_H, group) === 0, "零科研 " + group + " 加成必须严格为 0");
+      okH(RSH.getResearchMultiplier(ZERO_H, [group]) === 1, "零科研 " + group + " 乘子必须严格为 1");
+    }
+    const consumersH = RDH.RESEARCH_BONUS_CONSUMERS || {};
+    const numericGroupsH = new Set(RDH.NODES.filter(node => node.bonus && node.bonus.group).map(node => node.bonus.group));
+    okH(numericGroupsH.size === 31, "科技树数值 bonus.group 必须恰为 31 组（Batch G 19 + Batch H 12）");
+    for (const group of numericGroupsH) {
+      okH(Array.isArray(consumersH[group]) && consumersH[group].length > 0, "group " + group + " 未登记正式消费点");
+    }
+    for (const group of GROUPS_H) okH(numericGroupsH.has(group), "战斗 group " + group + " 必须存在于科技树");
+
+    // ---- H-02 零科研逐值基线（独立复算接入前公式，不用近似断言）--------------------------
+    const lvlH = (skill) => sandbox.getCombatSkillLevelFromState(ZERO_H, skill);
+    const baseShieldH = 300 * 1.10 * (1 + lvlH("shieldOperation") * 0.03);
+    const baseArmorH = 100 * (1 + lvlH("armorReinforcement") * 0.03);
+    const baseStructureH = 100 * (1 + lvlH("hullEngineering") * 0.03);
+    const zeroHpH = hpH(ZERO_H);
+    okH(zeroHpH.shield === Math.round(baseShieldH), "零科研护盾必须等于接入前基线");
+    okH(zeroHpH.armor === Math.round(baseArmorH), "零科研装甲必须等于接入前基线");
+    okH(zeroHpH.structure === Math.round(baseStructureH), "零科研结构必须等于接入前基线");
+    okH(dmgH(ZERO_H, "laser") === (1 + lvlH("laserOps") * 0.02) * 1.05, "零科研激光伤害倍率必须等于接入前基线");
+    okH(dmgH(ZERO_H, "missile") === (1 + lvlH("missileOperations") * 0.02) * 1, "零科研导弹伤害倍率必须等于接入前基线");
+    okH(dmgH(ZERO_H, "cannon") === (1 + lvlH("cannonOps") * 0.02) * 1, "零科研射弹伤害倍率必须等于接入前基线");
+    for (const layer of ["shield", "armor", "structure"]) {
+      okH(repH(ZERO_H, layer) === (1 + lvlH("defense") * 0.02) * 1, "零科研 " + layer + " 维修倍率必须等于接入前基线");
+      okH(sandbox.getCombatResearchModifierList(ZERO_H, "repairMultiplier", layer)[0].value === 1, "零科研维修 modifier 必须恰为 1（×1 为恒等）");
+      okH(sandbox.getCombatResearchModifierList(ZERO_H, "maxHp", layer)[0].value === 1, "零科研生命 modifier 必须恰为 1（×1 为恒等）");
+    }
+    for (const weapon of ["laser", "missile", "cannon"]) {
+      okH(sandbox.getCombatResearchModifierList(ZERO_H, "damageMultiplier", weapon)[0].value === 1, "零科研武器 modifier 必须恰为 1（×1 为恒等）");
+    }
+
+    // ---- H-03 三武器满专精严格 1.125，显式拒绝逐项复利 ------------------------------------
+    const WEAPON_GROUPS_H = {
+      laser: ["allWeapon", "weaponDmg", "laserDmg", "tactical"],
+      missile: ["allWeapon", "weaponDmg", "missileDmg", "tactical"],
+      cannon: ["allWeapon", "weaponDmg", "projDmg", "tactical"]
+    };
+    const weaponCompoundH = 1.02 * 1.03 * 1.06 * 1.015; // 逐项连乘 ≈ 1.1274（错误结果）
+    for (const [weapon, groups] of Object.entries(WEAPON_GROUPS_H)) {
+      okH(nearH(RSH.getResearchCombinedBonus(FULL_STATE_H, groups), 0.125), weapon + " 加法汇总必须为 0.125");
+      okH(nearH(RSH.getResearchMultiplier(FULL_STATE_H, groups), 1.125), weapon + " 满专精科研乘子必须严格 1.125");
+      okH(!nearH(RSH.getResearchMultiplier(FULL_STATE_H, groups), weaponCompoundH, 1e-6), weapon + " 不得得到逐项复利结果 " + weaponCompoundH);
+      okH(nearH(dmgH(FULL_STATE_H, weapon) / dmgH(ZERO_H, weapon), 1.125), weapon + " 真实伤害倍率必须恰好 ×1.125");
+      okH(sandbox.getCombatResearchGroups("damageMultiplier", weapon).join(",") === groups.join(","), weapon + " 科研组合必须与规格一致");
+    }
+    // proj 是科研注册表对射弹的别名，与 cannon 共用 projDmg 专精
+    okH(sandbox.getCombatResearchGroups("damageMultiplier", "proj").join(",") === WEAPON_GROUPS_H.cannon.join(","), "proj 别名必须与 cannon 共用同一组合");
+
+    // ---- H-04 武器专精严格互不串味 --------------------------------------------------------
+    const SPEC_H = [["laser", "laser"], ["missile", "missile"], ["projectile", "cannon"]];
+    for (const [nodeId, weapon] of SPEC_H) {
+      const onlyH = mkShipH({ [nodeId]: 5 });
+      okH(nearH(dmgH(onlyH, weapon) / dmgH(ZERO_H, weapon), 1.06), "只点 " + nodeId + " 时 " + weapon + " 必须 ×1.06");
+      for (const other of ["laser", "missile", "cannon"]) {
+        if (other === weapon) continue;
+        okH(dmgH(onlyH, other) === dmgH(ZERO_H, other), "只点 " + nodeId + " 时 " + other + " 伤害必须逐值不变");
+      }
+    }
+    // tactical 影响三类武器，但每类只吃一次
+    const tacticalOnlyH = mkShipH({ tactical: 5 });
+    for (const weapon of ["laser", "missile", "cannon"]) {
+      okH(nearH(dmgH(tacticalOnlyH, weapon) / dmgH(ZERO_H, weapon), 1.015), "tactical 必须对 " + weapon + " 生效且只吃一次");
+    }
+    // 未知武器类型：保持接入前安全结果，不应用科研
+    okH(sandbox.getCombatDamageMultiplierFromState(FULL_STATE_H, "plasma") === 1, "未知 weaponType 必须保持安全结果 1");
+    okH(sandbox.getCombatResearchModifierList(FULL_STATE_H, "damageMultiplier", "plasma").length === 0, "未知 weaponType 不得产生科研 modifier");
+
+    // ---- H-05 三层生命严格 1.105，拒绝复利，层间隔离 --------------------------------------
+    const hpCompoundH = 1.03 * 1.06 * 1.015; // ≈ 1.1082（错误结果）
+    const HP_BASE_H = { shield: baseShieldH, armor: baseArmorH, structure: baseStructureH };
+    const fullHpH = hpH(FULL_STATE_H);
+    for (const layer of ["shield", "armor", "structure"]) {
+      const groups = ["tierHp", layer, "tactical"];
+      okH(nearH(RSH.getResearchCombinedBonus(FULL_STATE_H, groups), 0.105), layer + " 加法汇总必须为 0.105");
+      okH(nearH(RSH.getResearchMultiplier(FULL_STATE_H, groups), 1.105), layer + " 满科研乘子必须严格 1.105");
+      okH(!nearH(RSH.getResearchMultiplier(FULL_STATE_H, groups), hpCompoundH, 1e-6), layer + " 不得得到逐项复利结果 " + hpCompoundH);
+      okH(fullHpH[layer] === Math.round(HP_BASE_H[layer] * 1.105), layer + " 最终 HP 必须等于接入前基线 ×1.105 后取整");
+      okH(sandbox.getCombatResearchGroups("maxHp", layer).join(",") === groups.join(","), layer + " 科研组合必须与规格一致");
+    }
+    for (const layer of ["shield", "armor", "structure"]) {
+      const onlyH = hpH(mkShipH({ [layer]: 5 }));
+      okH(onlyH[layer] === Math.round(HP_BASE_H[layer] * 1.06), "只点 " + layer + " 专精必须 ×1.06");
+      for (const other of ["shield", "armor", "structure"]) {
+        if (other === layer) continue;
+        okH(onlyH[other] === zeroHpH[other], "只点 " + layer + " 专精时 " + other + " 必须逐值不变");
+      }
+    }
+    const tierOnlyH = hpH(mkShipH({ defense: 5 }));
+    const tacticalHpH = hpH(tacticalOnlyH);
+    for (const layer of ["shield", "armor", "structure"]) {
+      okH(tierOnlyH[layer] === Math.round(HP_BASE_H[layer] * 1.03), "tierHp 必须同时影响 " + layer);
+      okH(tacticalHpH[layer] === Math.round(HP_BASE_H[layer] * 1.015), "tactical 必须同时影响 " + layer + " 且只吃一次");
+    }
+
+    // ---- H-06 维修满级 1.06 ---------------------------------------------------------------
+    okH(nearH(RSH.getResearchMultiplier(FULL_STATE_H, ["repair"]), 1.06), "repair 满级科研乘子必须严格 1.06");
+    for (const layer of ["shield", "armor", "structure"]) {
+      okH(nearH(repH(FULL_STATE_H, layer) / repH(ZERO_H, layer), 1.06), layer + " 维修倍率必须 ×1.06");
+      okH(sandbox.getCombatResearchGroups("repairMultiplier", layer).join(",") === "repair", layer + " 维修科研组必须只有 repair");
+    }
+
+    // ---- H-07 聚合 modifier 约束：每个 stat 最多一条 source:"research" --------------------
+    const STAT_KEYS_H = [
+      ["damageMultiplier", "laser"], ["damageMultiplier", "missile"], ["damageMultiplier", "cannon"],
+      ["maxHp", "shield"], ["maxHp", "armor"], ["maxHp", "structure"],
+      ["repairMultiplier", "shield"], ["repairMultiplier", "armor"], ["repairMultiplier", "structure"]
+    ];
+    for (const [stat, key] of STAT_KEYS_H) {
+      const list = sandbox.getCombatResearchModifierList(FULL_STATE_H, stat, key);
+      okH(list.length === 1, stat + "/" + key + " 必须恰好一条科研 modifier");
+      okH(list[0].source === "research" && list[0].operation === "multiply", stat + "/" + key + " 科研 modifier 必须是 multiply/research");
+      okH(list[0].value === RSH.getResearchMultiplier(FULL_STATE_H, sandbox.getCombatResearchGroups(stat, key)),
+        stat + "/" + key + " 的 value 必须直接来自一次 getResearchMultiplier");
+    }
+    okH((FULL_STATE_H.combat.modifiers || []).filter(m => m && m.source === "research").length === 0, "科研 modifier 不得写入 state.combat.modifiers");
+    okH(!Object.prototype.hasOwnProperty.call(FULL_STATE_H.research, "combatModifiers"), "科研战斗接入不得新增存档字段");
+
+    // ---- H-08 战斗经验：科研与空间站两个独立乘区 -----------------------------------------
+    const WHITELIST_H = G("COMBAT_SKILL_WHITELIST");
+    okH(Array.isArray(WHITELIST_H) && WHITELIST_H.length === 10, "战斗技能白名单必须仍为 10 项");
+    // 无空间站：科研经验仍然生效，且不得伪报空间站加成事件
+    const xpSoloH = mkH(FULL_H);
+    xpSoloH.station.bodyLevel = 0;
+    xpSoloH.station.buildings.combat_command = 0;
+    xpSoloH.station.maintenance.fuelRemaining = 0;
+    okH(sandbox.getStationCombatXpMultiplier(xpSoloH) === 1, "无空间站时作战指挥中心倍率必须为 1");
+    for (const skill of WHITELIST_H) {
+      xpSoloH.skills[skill] = { lvl: 99, xp: 0 };
+      const soloEventsH = [];
+      const unSoloH = sandbox.GameEvents.on("station:combatXpBoosted", event => soloEventsH.push(event));
+      const gainedSoloH = sandbox.addStationModifiedCombatXp(xpSoloH, skill, 100);
+      unSoloH();
+      okH(nearH(gainedSoloH, 106, 1e-9), skill + " 无空间站时科研经验必须仍生效（100 → 106）");
+      okH(nearH(xpSoloH.skills[skill].xp, 106, 1e-9), skill + " 真实入账必须等于 106");
+      okH(soloEventsH.length === 0, skill + " 仅科研生效时不得 emit station:combatXpBoosted");
+    }
+    // 有空间站：两个乘区相乘，事件数学关系成立
+    const xpStationH = mkH(FULL_H);
+    xpStationH.station.bodyLevel = 3;
+    xpStationH.station.buildings.combat_command = 3;
+    xpStationH.station.maintenance.fuelRemaining = 500000;
+    xpStationH.skills.laserOps = { lvl: 99, xp: 0 };
+    okH(sandbox.getStationCombatXpMultiplier(xpStationH) === 1.30, "Lv.3 有油作战指挥中心必须为 ×1.30");
+    const stationEventsH = [];
+    const unStationH = sandbox.GameEvents.on("station:combatXpBoosted", event => stationEventsH.push(event));
+    const gainedStationH = sandbox.addStationModifiedCombatXp(xpStationH, "laserOps", 100);
+    unStationH();
+    okH(nearH(gainedStationH, 100 * 1.06 * 1.30, 1e-9), "科研与空间站必须是独立乘区：100 × 1.06 × 1.30");
+    okH(nearH(xpStationH.skills.laserOps.xp, 100 * 1.06 * 1.30, 1e-9), "真实入账必须等于两个乘区之积");
+    okH(stationEventsH.length === 1, "空间站真实生效时必须恰好 emit 一次 combatXpBoosted");
+    const payloadH = stationEventsH[0].payload;
+    okH(nearH(payloadH.baseXp, 106, 1e-9), "事件 baseXp 必须是科研调整后的基准（researchAdjustedBase）");
+    okH(payloadH.multiplier === 1.30, "事件 multiplier 必须仍为真实空间站倍率");
+    okH(nearH(payloadH.actualXp, gainedStationH, 1e-12), "事件 actualXp 必须等于最终真实入账");
+    okH(nearH(payloadH.baseXp * payloadH.multiplier, payloadH.actualXp, 1e-9), "事件必须保持 baseXp × multiplier === actualXp");
+    // 零科研 + 空间站：与接入前逐值一致
+    const xpLegacyH = mkH({});
+    xpLegacyH.station.bodyLevel = 3;
+    xpLegacyH.station.buildings.combat_command = 3;
+    xpLegacyH.station.maintenance.fuelRemaining = 500000;
+    xpLegacyH.skills.laserOps = { lvl: 99, xp: 0 };
+    const legacyEventsH = [];
+    const unLegacyH = sandbox.GameEvents.on("station:combatXpBoosted", event => legacyEventsH.push(event));
+    const gainedLegacyH = sandbox.addStationModifiedCombatXp(xpLegacyH, "laserOps", 100);
+    unLegacyH();
+    okH(gainedLegacyH === 130, "零科研 + Lv.3 空间站必须与接入前完全一致（130）");
+    okH(legacyEventsH.length === 1 && legacyEventsH[0].payload.baseXp === 100 && legacyEventsH[0].payload.actualXp === 130, "零科研时事件 payload 必须逐值不变");
+    // 非白名单技能不吃 combatExp
+    const xpNonH = mkH(FULL_H);
+    xpNonH.station.bodyLevel = 3;
+    xpNonH.station.buildings.combat_command = 3;
+    xpNonH.station.maintenance.fuelRemaining = 500000;
+    for (const skill of ["mining", "refining", "gasHarvesting", "shipEngineering"]) {
+      okH(!WHITELIST_H.includes(skill), skill + " 必须确非战斗白名单技能");
+      xpNonH.skills[skill] = { lvl: 99, xp: 0 };
+      const nonEventsH = [];
+      const unNonH = sandbox.GameEvents.on("station:combatXpBoosted", event => nonEventsH.push(event));
+      const gainedNonH = sandbox.addStationModifiedCombatXp(xpNonH, skill, 100);
+      unNonH();
+      okH(gainedNonH === 100, skill + " 非白名单技能不得获得科研战斗经验");
+      okH(nonEventsH.length === 0, skill + " 非白名单技能不得 emit 加成事件");
+    }
+    // 离线不存在第二条战斗经验路径（战斗离线冻结）
+    okH(!/addStationModifiedCombatXp/.test(scripts[scriptSources.indexOf("./js/core/offline.js")]), "离线结算不得存在第二条战斗经验入口");
+
+    // ---- H-09 显示态与真实 combatTick 同源，敌方不受影响 ---------------------------------
+    const zoneObjH = G('COMBAT_ZONES.find(zone => zone.id === "angel_outpost")');
+    const weaponModH = sandbox.getInstalledCombatModulesFromState(ZERO_H).filter(module => module.combat.kind === "weapon")[0];
+    okH(Boolean(weaponModH) && weaponModH.combat.weaponType === "laser", "战斗夹具必须真实装配一门激光武器");
+    for (const [label, state] of [["零科研", ZERO_H], ["满科研", FULL_STATE_H]]) {
+      const displayH = sandbox.getCombatDisplayState(state, nowH);
+      const selectorH = sandbox.getCombatDamageMultiplierFromState(state, "laser", { now: nowH, zoneId: zoneObjH.id });
+      okH(displayH.player.volleyDamage === Math.round(weaponModH.combat.baseDamage * selectorH), label + " 显示齐射伤害必须自然反映科研，不在显示层追加倍率");
+    }
+    okH(nearH(sandbox.getCombatDisplayState(FULL_STATE_H, nowH).player.volleyDamage /
+      sandbox.getCombatDisplayState(ZERO_H, nowH).player.volleyDamage, 1.125, 2e-3), "显示齐射伤害必须随科研 ×1.125");
+    const enemySigH = (state) => {
+      gsH.research.completedLevels = JSON.parse(JSON.stringify(state.research.completedLevels));
+      const wave = sandbox.buildCombatWave(zoneObjH, 1, () => 0);
+      return JSON.stringify(wave.enemies.map(enemy => ({ hp: enemy.hp, maxHp: enemy.maxHp, baseDamage: enemy.baseDamage, hit: enemy.hit, dodge: enemy.dodge })));
+    };
+    okH(enemySigH(ZERO_H) === enemySigH(FULL_STATE_H), "战斗科研不得修改敌方 HP / 伤害 / 命中 / 闪避");
+    gsH.research.completedLevels = {};
+
+    // ---- H-10 真实 combatTick：maxHp / 维修 / 燃料 ----------------------------------------
+    const tickShipH = sandbox.createShipInstance("rifter", 1700000000000);
+    tickShipH.enhancementLevel = 0;
+    tickShipH.fitted = JSON.parse(JSON.stringify(FIT_H));
+    gsH.research.completedLevels = {};
+    gsH.inventory.ships = [tickShipH];
+    gsH.shipAssignments = { combat: tickShipH.instanceId };
+    if (gsH.equipment) gsH.equipment.inventory = [];
+    gsH.resources.fuel = 1000000;
+    gsH.resources.ammunition = { laser: 100000, missile: 100000, cannon: 100000 };
+    gsH.station.bodyLevel = 0;
+    gsH.station.buildings.combat_command = 0;
+    gsH.station.maintenance.fuelRemaining = 0;
+    // hit:0 → calcCombatDamage 命中系数恒为 0 → 敌方每次恰好造成 1 点伤害（完全确定性）
+    const mkTargetH = () => ({
+      id: "batch_h_target", name: "BatchH 靶舰", kind: "normal",
+      hp: { shield: 900000, armor: 900000, structure: 900000 },
+      maxHp: { shield: 900000, armor: 900000, structure: 900000 },
+      hit: 0, dodge: 30, baseDamage: 50, iskDrop: 0, xpDrop: 0, level: 1, defeated: false, rewarded: false
+    });
+    const armCombatH = (hpOverride) => {
+      const maxHp = sandbox.getCombatMaxHpFromState(gsH);
+      const target = mkTargetH();
+      gsH.combat = Object.assign({}, savedCombatH, {
+        active: true, mode: "belt", viewMode: "belt", zone: zoneObjH.id, activeShip: tickShipH.instanceId,
+        enemies: [target], currentEnemy: target, wave: 1, currentFormation: "",
+        hp: Object.assign({}, maxHp, hpOverride || {}), maxHp: Object.assign({}, maxHp),
+        modifiers: [], repairUntil: 0, destroyedShip: null, lastStatus: "", lastEnemyVolley: null,
+        runWeaponTypes: [], runWeaponTypesZone: null, runDamageDealt: 0, runDamageTaken: 0
+      });
+      gsH.currentAction.skill = "combat";
+      gsH.currentAction.active = true;
+      return maxHp;
+    };
+    const repModuleH = sandbox.getInstalledCombatRepairers()[0];
+    okH(Boolean(repModuleH) && repModuleH.equipment.combat.target === "shield", "战斗夹具必须真实装配护盾回充器");
+    const repBaseAmountH = repModuleH.equipment.combat.amount * (repModuleH.multiplier || 1);
+    const boosterRepH = sandbox.getBoosterEffectState(gsH).repairMultiplier.shield;
+
+    // 零科研一轮：护盾打到 1，敌方恰好 1 点伤害 → 归零后由维修器治疗
+    const zeroMaxHpTickH = armCombatH({ shield: 1 });
+    const zeroRepMultH = sandbox.calcRepairMult("shield");
+    const zeroFuelBeforeH = gsH.resources.fuel;
+    const enemyShieldBeforeH = gsH.combat.enemies[0].hp.shield;
+    sandbox.combatTick();
+    const zeroHealH = gsH.combat.hp.shield;
+    const zeroFuelSpentH = zeroFuelBeforeH - gsH.resources.fuel;
+    okH(JSON.stringify(gsH.combat.maxHp) === JSON.stringify(zeroMaxHpTickH), "真实战斗的 maxHp 必须来自唯一选择器");
+    okH(gsH.combat.enemies[0].hp.shield < enemyShieldBeforeH, "真实齐射必须对敌方造成伤害");
+    okH(gsH.combat.lastEnemyVolley.totalDamage === 1, "夹具敌方每轮必须恰好造成 1 点伤害（确定性）");
+    okH(zeroHealH === Math.round(repBaseAmountH * zeroRepMultH * boosterRepH), "零科研真实治疗量必须等于接入前公式");
+
+    // 满科研一轮：同一夹具，只有科研不同
+    gsH.research.completedLevels = Object.assign({}, FULL_H);
+    const fullMaxHpTickH = armCombatH({ shield: 1 });
+    const fullRepMultH = sandbox.calcRepairMult("shield");
+    const fullFuelBeforeH = gsH.resources.fuel;
+    sandbox.combatTick();
+    const fullHealH = gsH.combat.hp.shield;
+    const fullFuelSpentH = fullFuelBeforeH - gsH.resources.fuel;
+    okH(fullMaxHpTickH.shield === Math.round(baseShieldH * 1.105), "新战斗必须使用科研后的 maxHp");
+    okH(nearH(fullRepMultH / zeroRepMultH, 1.06), "真实维修倍率必须 ×1.06");
+    okH(fullHealH === Math.round(repBaseAmountH * zeroRepMultH * 1.06 * boosterRepH), "满科研真实治疗量必须按 ×1.06 提升");
+    okH(fullHealH > zeroHealH, "科研必须真实提升治疗量");
+    okH(fullFuelSpentH === zeroFuelSpentH, "科研不得改变齐射与维修的燃料成本");
+
+    // 溢出维修必须钳制到 maxHp
+    const clampMaxHpH = armCombatH({});
+    gsH.combat.hp.shield = clampMaxHpH.shield - 1;
+    sandbox.combatTick();
+    okH(gsH.combat.hp.shield === gsH.combat.maxHp.shield, "溢出维修后 HP 不得超过 maxHp");
+
+    // 未安装维修装备的层不得被科研治疗
+    tickShipH.fitted.mid = [];
+    const noRepairMaxHpH = armCombatH({ shield: 1 });
+    sandbox.combatTick();
+    okH(sandbox.getInstalledCombatRepairers().length === 0, "该轮必须确无维修装备");
+    okH(gsH.combat.hp.shield === 0, "未安装维修装备时护盾不得被治疗");
+    okH(gsH.combat.hp.armor === noRepairMaxHpH.armor && gsH.combat.hp.structure === noRepairMaxHpH.structure, "未安装维修装备的层不得产生治疗");
+    tickShipH.fitted.mid = ["t1_shield_booster"];
+
+    // 战斗中途研究完成：不免费治疗、不强制重算已冻结的 combat.maxHp
+    gsH.research.completedLevels = {};
+    armCombatH({ shield: 1 });
+    sandbox.combatTick();
+    const midMaxHpH = JSON.stringify(gsH.combat.maxHp);
+    const midHpH = JSON.stringify(gsH.combat.hp);
+    gsH.research.completedLevels = Object.assign({}, FULL_H);
+    okH(JSON.stringify(gsH.combat.maxHp) === midMaxHpH, "战斗中途完成研究不得强制重算已冻结的 combat.maxHp");
+    okH(JSON.stringify(gsH.combat.hp) === midHpH, "战斗中途完成研究不得免费治疗当前舰船");
+    // 下一场新战斗使用新科研 HP
+    okH(sandbox.dispatchGameAction(gsH, { type: "combat/stop" }, nowH).changed === true, "必须能结束当前战斗");
+    okH(gsH.combat.maxHp.shield === Math.round(baseShieldH * 1.105), "下一场战斗必须使用新的科研 maxHp");
+    // 真实 combatTick 与显示态同源
+    okH(sandbox.calcPlayerDmgMult("laser") === sandbox.getCombatDamageMultiplierFromState(gsH, "laser"), "真实 combatTick 伤害倍率必须与选择器同源");
+
+    // ---- H-11 Batch G 非战斗结果不回退、战斗科研不外溢 ------------------------------------
+    gsH.research.completedLevels = {};
+    okH(nearH(sandbox.getProductionEfficiencyState(mkH({ syseng: 1, mine: 5 }), "mining").total /
+      sandbox.getProductionEfficiencyState(mkH({}), "mining").total, 1.08, 1e-9), "Batch G 采集 ×1.08 不得回退");
+    okH(nearH(RSH.getResearchMultiplier(mkH({ autocon: 1, arch: 5 }), ["archEff"]), 1.08), "Batch G archEff ×1.08 不得回退");
+    okH(nearH(RSH.getResearchMultiplier(mkH({ planind: 5 }), ["planProd"]), 1.09), "Batch G planProd ×1.09 不得回退");
+    okH(sandbox.getProductionEfficiencyState(FULL_STATE_H, "mining").total === sandbox.getProductionEfficiencyState(ZERO_H, "mining").total, "战斗科研不得外溢到非战斗产能");
+    okH(RDH.NODES.filter(node => node.type === "protocol").every(node => !node.bonus), "六协议节点必须仍然无 bonus（本批不进协议业务）");
+
+    // ---- H-12 冻结基线不回退 --------------------------------------------------------------
+    okH(RDH.NODES.length === 38, "科技节点总数必须仍为 38");
+    okH(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294, "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+  } finally {
+    gsH.research = JSON.parse(JSON.stringify(savedResearchH));
+    gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
+    gsH.currentAction = JSON.parse(JSON.stringify(savedActionH));
+    gsH.shipAssignments = JSON.parse(JSON.stringify(savedAssignH));
+    gsH.skills = JSON.parse(JSON.stringify(savedSkillsH));
+    gsH.station = JSON.parse(JSON.stringify(savedStationH));
+    gsH.resources = JSON.parse(JSON.stringify(savedResourcesH));
+    if (gsH.inventory) gsH.inventory.ships = JSON.parse(JSON.stringify(savedShipsH));
+    if (gsH.equipment) gsH.equipment.inventory = JSON.parse(JSON.stringify(savedEquipH));
+  }
+
+  console.log("Batch H 战斗数值科技校验通过（" + hChecks + " 项）：12 组零科研基线与 31 组数值 group 全量登记、三武器满专精严格 1.125 并拒绝逐项复利、激光/导弹/射弹专精互不串味、tactical 三武器各只一次、未知武器类型不应用科研、三层生命严格 1.105 且层间隔离、tierHp/tactical 同时影响三层、每个 stat 恰一条聚合 research modifier 且 value 来自单次 getResearchMultiplier、维修 ×1.06 且燃料成本与上限钳制不变、未装维修装备不产生治疗、战斗经验科研与空间站独立乘区、仅科研不伪报 combatXpBoosted、事件 baseXp×multiplier===actualXp、非白名单技能不吃 combatExp、显示齐射与真实 combatTick 同源、敌方 HP/伤害零影响、战斗中途完成研究不免费治疗且不强制重算、下一场使用新 maxHp、Batch G 结果与 38 节点/50 JS/4 CSS/294 DOM 基线不回退");
+}
+
+// ============================================================================================
+// 研究系统 Batch I：三项经济自动化协议完整实装（planauto / autosell / autoconv）
+// 铁律：
+//   1) 解锁唯一事实来源 = research.completedLevels[protocolId] >= 1；三层门槛（已研究 → 总开关 →
+//      业务条件）缺一不可；脏档 enabled=true 但未研究绝不越权执行；
+//   2) 绝不复制业务公式：续期费取 getPlanetRenewCostISK、续期走 PlanetaryStateActions.renew、
+//      出售 / 兑换走 sellArchaeologyArtifacts / redeemArchaeologyArtifacts；
+//   3) 在线 planetaryTick 与离线 settleOfflinePlanets 共用 advancePlanetDeploymentTimeline 唯一时间轴；
+//   4) 只实现三协议，不进 intship / autoenh / autorepair。
+// ============================================================================================
+{
+  let iChecks = 0;
+  const okI = (condition, message) => {
+    if (!condition) throw new Error("Batch I 校验失败：" + message);
+    iChecks += 1;
+  };
+
+  const RSI = sandbox.ResearchState;
+  const RDI = sandbox.ResearchData;
+  const RSYSI = sandbox.ResearchSystem;
+  const RRI = G("ResourceRegistry");
+  const REASONS_I = G("RESEARCH_PROTOCOL_REASONS");
+  const gsI = sandbox.gameState;
+  const nowI = 1767225600000;
+  const DAY_MS_I = 86400 * 1000;
+  const lavaI = G("PLANET_TYPES").find(planet => planet.id === "lava");
+
+  const savedResearchI = JSON.parse(JSON.stringify(gsI.research));
+  const savedPlanetaryI = JSON.parse(JSON.stringify(gsI.planetary || { deployments: [], nextId: 1 }));
+  const savedResourcesI = JSON.parse(JSON.stringify(gsI.resources));
+  const savedSkillsI = JSON.parse(JSON.stringify(gsI.skills));
+  const savedStatsI = JSON.parse(JSON.stringify(gsI.statistics));
+  const savedArchI = JSON.parse(JSON.stringify(gsI.archaeology));
+  const savedActionI = JSON.parse(JSON.stringify(gsI.currentAction));
+
+  try {
+    const pristineI = JSON.parse(JSON.stringify(gsI));
+
+    // 夹具：干净默认研究状态 + 指定已完成等级 + 指定协议总开关
+    const mkI = (levels, protocolEnabled) => {
+      const state = JSON.parse(JSON.stringify(pristineI));
+      state.research = RSI.createDefaultResearchState();
+      state.research.lastProcessedAt = nowI;
+      state.research.completedLevels = Object.assign({}, levels || {});
+      for (const [key, value] of Object.entries(protocolEnabled || {})) {
+        state.research.protocolSettings[key].enabled = value;
+      }
+      state.planetary = { deployments: [], nextId: 1 };
+      state._dirty = false;
+      return state;
+    };
+    // 行星夹具：默认恰好在 nowI 到期（deployedAt = nowI - 24h，duration = 24h）
+    const mkPlanI = (levels, protocolEnabled, specs, isk) => {
+      const state = mkI(levels, protocolEnabled);
+      state.planetary = {
+        nextId: specs.length + 1,
+        deployments: specs.map((spec, idx) => Object.assign({
+          id: "planet_i_" + (idx + 1),
+          planetType: lavaI.id,
+          deployedAt: nowI - DAY_MS_I,
+          duration: 86400,
+          storage: 0,
+          lastTick: nowI - 1000,
+          progress: 0,
+          active: true
+        }, spec))
+      };
+      RRI.set(state, "currency:isk", Number(isk) || 0);
+      state._dirty = false;
+      return state;
+    };
+    // 文物夹具：ISK 类 2+1 件（600×2 + 3000 = 4200）、LP 3 件（50×3 = 150）、校准物 4 件（永不自动处理）
+    const mkArtI = (levels, protocolEnabled) => {
+      const state = mkI(levels, protocolEnabled);
+      RRI.set(state, "currency:isk", 0);
+      RRI.set(state, "currency:lp", 0);
+      for (const artifact of G("ARCHAEOLOGY_ARTIFACTS")) RRI.set(state, "artifact:" + artifact.id, 0);
+      RRI.set(state, "artifact:art_i_common_a", 2);
+      RRI.set(state, "artifact:art_i_unique_a", 1);
+      RRI.set(state, "artifact:art_i_lp", 3);
+      RRI.set(state, "artifact:art_i_calib", 4);
+      state._dirty = false;
+      return state;
+    };
+    // 在线 tick / 离线结算都跑真实全局入口：临时把夹具子树挂进 gameState，跑完原样还原
+    const withGameStateI = (state, fn) => {
+      const savedR = gsI.research, savedP = gsI.planetary, savedRes = gsI.resources, savedSk = gsI.skills;
+      gsI.research = state.research; gsI.planetary = state.planetary;
+      gsI.resources = state.resources; gsI.skills = state.skills;
+      try { return fn(); } finally {
+        gsI.research = savedR; gsI.planetary = savedP; gsI.resources = savedRes; gsI.skills = savedSk;
+      }
+    };
+    const runTickI = (state, tickNow) => withGameStateI(state, () => sandbox.planetaryTick(tickNow));
+    const runOfflineI = (state, seconds, segEnd) => withGameStateI(state, () => {
+      const gains = { planetaryIndustry: 0 };
+      sandbox.settleOfflinePlanets(seconds, gains, segEnd);
+      return gains;
+    });
+
+    // ---- I-01 统一协议模块：API / 已实装集合 / 11 个稳定 reason ------------------------------
+    const apiNamesI = [
+      "isResearchProtocolUnlocked", "isResearchProtocolEnabled", "isResearchProtocolActive",
+      "setResearchProtocolEnabled", "setPlanetAutoRenew", "getResearchProtocolDisplayState",
+      "tryPlanetAutoRenew", "applyArchaeologyArtifactProtocols"
+    ];
+    okI(apiNamesI.every(name => typeof sandbox[name] === "function"), "统一协议模块必须暴露全部公开 API：" + apiNamesI.join("/"));
+    okI(G("IMPLEMENTED_RESEARCH_PROTOCOLS").join(",") === "planauto,autosell,autoconv,autoenh,autorepair,intship" &&
+        G("ALL_RESEARCH_PROTOCOLS").length === 6,
+      "Batch K 后已实装协议必须为六个协议全实装，协议全集仍为 6 个");
+    const reasonKeysI = ["INVALID_STATE", "UNKNOWN_PROTOCOL", "PROTOCOL_LOCKED", "INVALID_ENABLED",
+      "UNKNOWN_DEPLOYMENT", "INVALID_RESERVE", "ALREADY_SET", "PROTOCOL_DISABLED",
+      "RESERVE_NOT_MET", "INSUFFICIENT_ISK", "NOTHING_TO_PROCESS"];
+    okI(Object.keys(REASONS_I).length === 11 && reasonKeysI.every(key => REASONS_I[key] === key),
+      "稳定 reason 必须恰为 11 个且值与键名一致");
+
+    // ---- I-02 新游戏零副作用 ----------------------------------------------------------------
+    const freshI = mkI({});
+    okI(["planauto", "autosell", "autoconv"].every(pid =>
+        sandbox.isResearchProtocolUnlocked(freshI, pid) === false &&
+        sandbox.isResearchProtocolEnabled(freshI, pid) === false &&
+        sandbox.isResearchProtocolActive(freshI, pid) === false),
+      "新游戏默认三协议必须全部未解锁、未启用、不可执行");
+    okI(Object.keys(freshI.research.protocolSettings).length === 6 &&
+        !Object.prototype.hasOwnProperty.call(freshI.research.protocolSettings.planauto, "minIskReserve"),
+      "默认 protocolSettings 必须是 6 个协议，且 planauto 不保存全局最低储备金");
+    const freshPlanI = mkPlanI({}, {}, [{ autoRenew: { enabled: true, minIskReserve: 0 } }], 1000000000);
+    const freshSnapI = JSON.stringify(freshPlanI.research);
+    const freshExpiredI = [];
+    const unsubFreshI = sandbox.GameEvents.on("planetary:expired", event => freshExpiredI.push(event.payload.deploymentId));
+    runTickI(freshPlanI, nowI + 1000);
+    unsubFreshI();
+    okI(freshExpiredI.join(",") === "planet_i_1" && freshPlanI.planetary.deployments[0].active === false &&
+        RRI.get(freshPlanI, "currency:isk") === 1000000000 && JSON.stringify(freshPlanI.research) === freshSnapI,
+      "未研究 planauto 时即使基地已开自动续期也必须照常到期停产、零扣费、零写入");
+
+    // ---- I-03 脏档保护：enabled=true 但未研究 → 绝不执行 --------------------------------------
+    const dirtyPlanI = mkPlanI({}, { planauto: true }, [{ autoRenew: { enabled: true, minIskReserve: 0 } }], 1000000000);
+    const dirtyTryI = sandbox.tryPlanetAutoRenew(dirtyPlanI, dirtyPlanI.planetary.deployments[0], nowI, { offline: false });
+    okI(sandbox.isResearchProtocolEnabled(dirtyPlanI, "planauto") === true &&
+        sandbox.isResearchProtocolActive(dirtyPlanI, "planauto") === false &&
+        dirtyTryI.renewed === false && dirtyTryI.reason === REASONS_I.PROTOCOL_LOCKED &&
+        RRI.get(dirtyPlanI, "currency:isk") === 1000000000,
+      "脏档 enabled=true 但未研究时必须 PROTOCOL_LOCKED、零扣费");
+
+    // ---- I-04 真实研究链解锁（不伪造 completedLevels） ----------------------------------------
+    const chainI = mkI({ dataarch: 4, planfin: 4 });
+    okI(sandbox.dispatchGameAction(chainI, { type: "research/start", techId: "autosell", targetLevel: 1 }, nowI).changed === true,
+      "前置满足后必须能通过真实 action 启动 autosell 协议研究");
+    let chainCursorI = nowI;
+    for (let guard = 0; guard < 400 && chainI.research.activeResearch; guard += 1) {
+      chainCursorI += DAY_MS_I;
+      RSYSI.processResearchUntil(chainI, chainCursorI);
+    }
+    okI(!chainI.research.activeResearch && Number(chainI.research.completedLevels.autosell) === 1 &&
+        sandbox.isResearchProtocolUnlocked(chainI, "autosell") === true &&
+        sandbox.isResearchProtocolEnabled(chainI, "autosell") === false &&
+        sandbox.isResearchProtocolActive(chainI, "autosell") === false,
+      "真实研究链完成后 autosell 解锁，但不得自动开启总开关");
+
+    // ---- I-05 setResearchProtocolEnabled：成功 / 重复 / 非法 / 未知 / 未研究 -------------------
+    const setStateI = mkI({ planauto: 1, autosell: 1, autoconv: 1 });
+    RRI.set(setStateI, "currency:isk", 1000);
+    RRI.set(setStateI, "artifact:art_i_common_a", 5);
+    const setOkI = sandbox.setResearchProtocolEnabled(setStateI, "autosell", true, nowI);
+    okI(setOkI.changed === true && setStateI.research.protocolSettings.autosell.enabled === true &&
+        setStateI.research.protocolSettings.autoconv.enabled === false &&
+        setStateI.research.protocolSettings.planauto.enabled === false && setStateI._dirty === true &&
+        RRI.get(setStateI, "currency:isk") === 1000 && RRI.get(setStateI, "artifact:art_i_common_a") === 5,
+      "开启协议只改该协议开关并置脏，绝不执行任何业务");
+    okI(sandbox.setResearchProtocolEnabled(setStateI, "autosell", true, nowI).reason === REASONS_I.ALREADY_SET,
+      "重复设置同一值必须返回 ALREADY_SET");
+    okI(["true", 1, null, undefined, {}].every(value =>
+        sandbox.setResearchProtocolEnabled(setStateI, "autoconv", value, nowI).reason === REASONS_I.INVALID_ENABLED) &&
+        setStateI.research.protocolSettings.autoconv.enabled === false,
+      "非布尔开关一律 INVALID_ENABLED 且不改状态");
+    okI(sandbox.setResearchProtocolEnabled(setStateI, "nope", true, nowI).reason === REASONS_I.UNKNOWN_PROTOCOL,
+      "未知协议必须返回 UNKNOWN_PROTOCOL");
+    okI(["autoenh", "autorepair", "intship", "planauto", "autosell", "autoconv"].every(pid =>
+        sandbox.setResearchProtocolEnabled(setStateI, pid, true, nowI).reason !== REASONS_I.UNKNOWN_PROTOCOL),
+      "Batch K 后六个协议全部实装，一律不得返回 UNKNOWN_PROTOCOL");
+    const lockedSetI = mkI({});
+    const lockedRouteI = sandbox.dispatchGameAction(lockedSetI, { type: "research/setProtocolEnabled", protocolId: "planauto", enabled: true }, nowI);
+    okI(lockedRouteI.changed === false && lockedRouteI.reason === REASONS_I.PROTOCOL_LOCKED &&
+        lockedSetI.research.protocolSettings.planauto.enabled === false && lockedSetI._dirty === false,
+      "未研究协议经 action 路由也必须 PROTOCOL_LOCKED 且零副作用");
+
+    // ---- I-06 setPlanetAutoRenew：每基地独立 + 参数校验 ---------------------------------------
+    const twoPlanI = mkPlanI({ planauto: 1 }, { planauto: true }, [{}, {}], 1000000);
+    const depAI = twoPlanI.planetary.deployments[0];
+    const depBI = twoPlanI.planetary.deployments[1];
+    okI(sandbox.setPlanetAutoRenew(twoPlanI, depAI.id, true, 12345.5, nowI).changed === true &&
+        depAI.autoRenew.enabled === true && depAI.autoRenew.minIskReserve === 12345.5 &&
+        !depBI.autoRenew && twoPlanI._dirty === true,
+      "只写目标基地的 autoRenew，合法小数原样保留");
+    okI(sandbox.setPlanetAutoRenew(twoPlanI, depBI.id, true, 0, nowI).changed === true &&
+        depBI.autoRenew !== depAI.autoRenew && depAI.autoRenew.minIskReserve === 12345.5 && depBI.autoRenew.minIskReserve === 0,
+      "两个基地的 autoRenew 必须是独立对象，互不串改");
+    okI([-1, NaN, Infinity, "1000", true, null].every(value =>
+        sandbox.setPlanetAutoRenew(twoPlanI, depAI.id, true, value, nowI).reason === REASONS_I.INVALID_RESERVE) &&
+        depAI.autoRenew.minIskReserve === 12345.5,
+      "非法最低储备金一律 INVALID_RESERVE 且不改状态");
+    okI(sandbox.setPlanetAutoRenew(twoPlanI, "planet_not_exist", true, 0, nowI).reason === REASONS_I.UNKNOWN_DEPLOYMENT &&
+        sandbox.setPlanetAutoRenew(twoPlanI, depAI.id, true, 12345.5, nowI).reason === REASONS_I.ALREADY_SET &&
+        sandbox.setPlanetAutoRenew(mkPlanI({}, {}, [{}], 0), "planet_i_1", true, 0, nowI).reason === REASONS_I.PROTOCOL_LOCKED,
+      "未知基地 UNKNOWN_DEPLOYMENT、同值重复 ALREADY_SET、未研究 PROTOCOL_LOCKED");
+    const routePlanI = sandbox.dispatchGameAction(twoPlanI, { type: "research/setPlanetAutoRenew", deploymentId: depBI.id, enabled: false, minIskReserve: 7 }, nowI);
+    okI(routePlanI.changed === true && depBI.autoRenew.enabled === false && depBI.autoRenew.minIskReserve === 7 &&
+        !Object.prototype.hasOwnProperty.call(twoPlanI.research.protocolSettings.planauto, "minIskReserve"),
+      "action 路由与直调同源；顶层 protocolSettings.planauto 永不保存全局储备金");
+
+    // ---- I-07 储备金边界 + 续期四价同源 ------------------------------------------------------
+    const renewCostI = sandbox.getPlanetRenewCostISK(mkI({}), lavaI);
+    const reserveI = 20000;
+    const mkRenewI = (isk) => mkPlanI({ planauto: 1 }, { planauto: true },
+      [{ autoRenew: { enabled: true, minIskReserve: reserveI } }], isk);
+    const exactI = mkRenewI(renewCostI + reserveI);
+    let renewEventI = null;
+    const unsubRenewI = sandbox.GameEvents.on("planetary:renewed", event => { renewEventI = event; });
+    const tryExactI = sandbox.tryPlanetAutoRenew(exactI, exactI.planetary.deployments[0], nowI, { offline: false });
+    unsubRenewI();
+    okI(tryExactI.renewed === true && RRI.get(exactI, "currency:isk") === reserveI &&
+        exactI.planetary.deployments[0].deployedAt === nowI && exactI.planetary.deployments[0].active === true,
+      "余额恰好等于维护费 + 最低储备金时必须续期成功并精确扣费（边界包含等于）");
+    okI(renewEventI && renewEventI.payload.maintenanceISK === renewCostI && tryExactI.maintenanceISK === renewCostI &&
+        sandbox.getPlanetDeploymentDisplayState(exactI, exactI.planetary.deployments[0], nowI).renewCost === renewCostI &&
+        sandbox.getResearchProtocolDisplayState(exactI, "planauto").deployments[0].renewCostISK === renewCostI,
+      "续期四价同源：部署卡显示价 = 协议面板价 = 实扣价 = 事件价");
+    const shortI = mkRenewI(renewCostI + reserveI - 1);
+    const tryShortI = sandbox.tryPlanetAutoRenew(shortI, shortI.planetary.deployments[0], nowI, { offline: false });
+    okI(tryShortI.renewed === false && tryShortI.reason === REASONS_I.RESERVE_NOT_MET &&
+        RRI.get(shortI, "currency:isk") === renewCostI + reserveI - 1 &&
+        shortI.planetary.deployments[0].deployedAt === nowI - DAY_MS_I,
+      "低于最低储备金 1 ISK 必须拒绝续期且不扣任何费用");
+    const brokeI = mkRenewI(renewCostI - 1);
+    const tryBrokeI = sandbox.tryPlanetAutoRenew(brokeI, brokeI.planetary.deployments[0], nowI, { offline: false });
+    okI(tryBrokeI.renewed === false && tryBrokeI.reason === REASONS_I.INSUFFICIENT_ISK &&
+        RRI.get(brokeI, "currency:isk") === renewCostI - 1,
+      "ISK 不足维护费必须返回 INSUFFICIENT_ISK 且不扣费");
+    const offSwitchI = mkRenewI(renewCostI + reserveI);
+    offSwitchI.research.protocolSettings.planauto.enabled = false;
+    const perDepOffI = mkRenewI(renewCostI + reserveI);
+    perDepOffI.planetary.deployments[0].autoRenew.enabled = false;
+    okI(sandbox.tryPlanetAutoRenew(offSwitchI, offSwitchI.planetary.deployments[0], nowI, {}).reason === REASONS_I.PROTOCOL_DISABLED &&
+        sandbox.tryPlanetAutoRenew(perDepOffI, perDepOffI.planetary.deployments[0], nowI, {}).reason === REASONS_I.PROTOCOL_DISABLED &&
+        RRI.get(offSwitchI, "currency:isk") === renewCostI + reserveI,
+      "总开关关闭或该基地未开自动续期时必须 PROTOCOL_DISABLED（三层门槛缺一不可）");
+
+    // ---- I-08 多 deployment 互不影响 ---------------------------------------------------------
+    const multiI = mkPlanI({ planauto: 1 }, { planauto: true }, [
+      { autoRenew: { enabled: true, minIskReserve: 0 } },
+      { autoRenew: { enabled: true, minIskReserve: 1000000000 } },
+      {}
+    ], renewCostI * 2);
+    const multiRenewedI = [];
+    const multiExpiredI = [];
+    const unsubMultiRI = sandbox.GameEvents.on("planetary:renewed", event => multiRenewedI.push(event.payload.deploymentId));
+    const unsubMultiEI = sandbox.GameEvents.on("planetary:expired", event => multiExpiredI.push(event.payload.deploymentId));
+    runTickI(multiI, nowI);
+    unsubMultiRI(); unsubMultiEI();
+    okI(multiRenewedI.join(",") === "planet_i_1" && multiExpiredI.slice().sort().join(",") === "planet_i_2,planet_i_3",
+      "同一次结算里各基地互不影响：足额者续期，储备金不足与未开自动者各自停产");
+    okI(RRI.get(multiI, "currency:isk") === renewCostI &&
+        multiI.planetary.deployments[0].active === true &&
+        multiI.planetary.deployments[1].active === false && multiI.planetary.deployments[2].active === false,
+      "多基地场景只扣成功续期的那一份维护费");
+
+    // ---- I-09 在线跨 expiresAt 只续期一次 ----------------------------------------------------
+    const onlineI = mkPlanI({ planauto: 1 }, { planauto: true },
+      [{ autoRenew: { enabled: true, minIskReserve: 0 } }], renewCostI * 3);
+    const onlineEventsI = [];
+    const unsubOnlineI = sandbox.GameEvents.on("planetary:renewed", event => onlineEventsI.push(event));
+    runTickI(onlineI, nowI + 1000);
+    const iskAfterOnlineI = RRI.get(onlineI, "currency:isk");
+    runTickI(onlineI, nowI + 1000);
+    unsubOnlineI();
+    okI(onlineEventsI.length === 1 && onlineEventsI[0].meta.offline === false && iskAfterOnlineI === renewCostI * 2,
+      "在线跨过 expiresAt 只续期一次，事件 metadata 必须是在线（offline=false）");
+    okI(RRI.get(onlineI, "currency:isk") === iskAfterOnlineI && onlineI.planetary.deployments[0].active === true,
+      "同一时刻重复 tick 不得重复扣费");
+
+    // ---- I-10 离线多周期逐次判断、逐次扣费 ---------------------------------------------------
+    const mkOfflineI = (isk) => mkPlanI({ planauto: 1 }, { planauto: true }, [{
+      autoRenew: { enabled: true, minIskReserve: 0 },
+      deployedAt: nowI - 3 * DAY_MS_I, lastTick: nowI - 3 * DAY_MS_I
+    }], isk);
+    const offlineI = mkOfflineI(renewCostI * 3);
+    const offlineEventsI = [];
+    const unsubOfflineI = sandbox.GameEvents.on("planetary:renewed", event => offlineEventsI.push(event));
+    runOfflineI(offlineI, 3 * 86400, nowI);
+    unsubOfflineI();
+    okI(offlineEventsI.length === 3 && RRI.get(offlineI, "currency:isk") === 0 &&
+        offlineEventsI.every(event => event.meta.offline === true && event.meta.source === "offline-settlement"),
+      "离线跨 3 个维护周期必须逐周期各续期一次、逐次扣费，事件带离线结算 metadata");
+    const offlineShortI = mkOfflineI(renewCostI * 2 + renewCostI - 1);
+    const offlineExpiredI = [];
+    const unsubOffExpI = sandbox.GameEvents.on("planetary:expired", event => offlineExpiredI.push(event));
+    runOfflineI(offlineShortI, 3 * 86400, nowI);
+    unsubOffExpI();
+    okI(offlineExpiredI.length === 1 && offlineShortI.planetary.deployments[0].active === false &&
+        RRI.get(offlineShortI, "currency:isk") === renewCostI - 1,
+      "离线余额只够 2 次续期时：第 3 个周期停产、只发一次 expired、剩余 ISK 原样保留");
+
+    // ---- I-10ts 虚拟事件时间（真实 GameEvents 捕获对象的 event.timestamp）--------------------
+    // 1) 在线 deployment 于 T 到期，planetaryTick 在 T+5000 才执行：
+    //    renewed.timestamp === T，payload.expiresAt === T + 维护周期，timestamp !== T+5000
+    {
+      const Ts = nowI;
+      const delayedI = mkPlanI({ planauto: 1 }, { planauto: true }, [{
+        autoRenew: { enabled: true, minIskReserve: 0 },
+        deployedAt: Ts - DAY_MS_I, lastTick: Ts - 1000
+      }], renewCostI * 3);
+      const delayedEvI = [];
+      const unsubDE = sandbox.GameEvents.on("planetary:renewed", event => delayedEvI.push(event));
+      runTickI(delayedI, Ts + 5000);
+      unsubDE();
+      okI(delayedEvI.length === 1 &&
+          delayedEvI[0].timestamp === Ts &&
+          delayedEvI[0].payload.expiresAt === Ts + DAY_MS_I &&
+          delayedEvI[0].timestamp !== Ts + 5000,
+        "在线延期 tick（T+5000 才执行）：renewed.timestamp 必须等于真实到期边界 T、expiresAt=T+维护周期、绝不等于 tick 时刻");
+    }
+
+    // 2) 自动续期失败 → expired.timestamp 必须等于 payload.expiredAt === T
+    {
+      const Te = nowI;
+      const failExpI = mkPlanI({ planauto: 1 }, { planauto: true }, [{
+        autoRenew: { enabled: true, minIskReserve: 0 },
+        deployedAt: Te - DAY_MS_I, lastTick: Te - 1000
+      }], 0); // ISK 不足，续期必失败
+      const failEvI = [];
+      const unsubFE = sandbox.GameEvents.on("planetary:expired", event => failEvI.push(event));
+      runTickI(failExpI, Te + 5000);
+      unsubFE();
+      okI(failEvI.length === 1 &&
+          failEvI[0].timestamp === Te &&
+          failEvI[0].payload.expiredAt === Te,
+        "自动续期失败：expired.timestamp 必须等于 payload.expiredAt 等于真实到期边界 T");
+    }
+
+    // 3) 离线三周期连续续期：三个 renewed.timestamp 等于真实周期边界、严格递增、非登录时刻
+    {
+      const threeCycI = mkPlanI({ planauto: 1 }, { planauto: true }, [{
+        autoRenew: { enabled: true, minIskReserve: 0 },
+        deployedAt: nowI - 3 * DAY_MS_I, lastTick: nowI - 3 * DAY_MS_I
+      }], renewCostI * 3);
+      const threeEvI = [];
+      const unsub3 = sandbox.GameEvents.on("planetary:renewed", event => threeEvI.push(event));
+      runOfflineI(threeCycI, 3 * 86400, nowI);
+      unsub3();
+      const expectTsI = [nowI - 2 * DAY_MS_I, nowI - DAY_MS_I, nowI];
+      const ts3I = threeEvI.map(e => e.timestamp);
+      okI(threeEvI.length === 3 &&
+          ts3I.every((t, i) => t === expectTsI[i]) &&
+          ts3I[0] < ts3I[1] && ts3I[1] < ts3I[2] &&
+          threeEvI.every((e, i) => e.payload.expiresAt === e.timestamp + DAY_MS_I) &&
+          ts3I.every(t => t !== Date.now()),
+        "离线三周期续期：各 renewed.timestamp 等于真实周期边界、严格递增、expiresAt=ts+维护周期、且非登录时刻");
+    }
+
+    // 4) 离线第三周期余额不足：前两次 renewed.timestamp 正确，最后 expired.timestamp 等于第三边界，顺序一致
+    {
+      const shortCycI = mkPlanI({ planauto: 1 }, { planauto: true }, [{
+        autoRenew: { enabled: true, minIskReserve: 0 },
+        deployedAt: nowI - 3 * DAY_MS_I, lastTick: nowI - 3 * DAY_MS_I
+      }], renewCostI * 2); // 只够 2 次续期
+      const shortRenI = [];
+      const shortExpI = [];
+      const unsubSR = sandbox.GameEvents.on("planetary:renewed", event => shortRenI.push(event));
+      const unsubSE = sandbox.GameEvents.on("planetary:expired", event => shortExpI.push(event));
+      runOfflineI(shortCycI, 3 * 86400, nowI);
+      unsubSR(); unsubSE();
+      const thirdB = nowI;
+      okI(shortRenI.length === 2 &&
+          shortRenI[0].timestamp === nowI - 2 * DAY_MS_I &&
+          shortRenI[1].timestamp === nowI - DAY_MS_I &&
+          shortExpI.length === 1 &&
+          shortExpI[0].timestamp === thirdB &&
+          shortExpI[0].payload.expiredAt === thirdB &&
+          shortRenI[0].timestamp < shortRenI[1].timestamp &&
+          shortRenI[1].timestamp < shortExpI[0].timestamp,
+        "离线余额只够 2 次：前两次 renewed.timestamp 正确、最后 expired.timestamp 等于第三边界且事件顺序与虚拟时间一致");
+    }
+
+    // 5) 同一 now 重复结算：不新增 renewed/expired；eventId 全局唯一；runId:sequence:type 格式不变
+    {
+      const repeatI = mkPlanI({ planauto: 1 }, { planauto: true }, [{
+        autoRenew: { enabled: true, minIskReserve: 0 },
+        deployedAt: nowI - DAY_MS_I, lastTick: nowI - DAY_MS_I
+      }], renewCostI * 3);
+      const renewExpI = [];
+      const completedI = [];
+      const unsubR = sandbox.GameEvents.on("planetary:renewed", e => renewExpI.push(e));
+      const unsubE = sandbox.GameEvents.on("planetary:expired", e => renewExpI.push(e));
+      const unsubC = sandbox.GameEvents.on("planetary:completed", e => completedI.push(e));
+      runOfflineI(repeatI, 86400, nowI);
+      runOfflineI(repeatI, 86400, nowI); // 同一 now 重复结算
+      unsubR(); unsubE(); unsubC();
+      const idsI = [...renewExpI, ...completedI].map(e => e.eventId);
+      const uniqueI = new Set(idsI).size === idsI.length;
+      const offlineFmtI = completedI.length > 0 &&
+        completedI.every(e => /^offline_.*:\d+:planetary:completed$/.test(e.eventId));
+      okI(renewExpI.length === 1 && uniqueI && offlineFmtI,
+        "同一 now 重复结算：仅首轮产生 1 个 renewed、无新增 renewed/expired、eventId 全局唯一、offline 事件保持 runId:sequence:type 格式");
+    }
+
+    // ---- I-11 autosell / autoconv 分类严格 ---------------------------------------------------
+    const soldOnlyI = mkArtI({ autosell: 1, autoconv: 1 }, { autosell: true, autoconv: false });
+    const soldEventsI = [];
+    const unsubSoldI = sandbox.GameEvents.on("archaeology:artifactsSold", event => soldEventsI.push(event));
+    const soldResI = sandbox.applyArchaeologyArtifactProtocols(soldOnlyI, { offline: false, source: "research-protocol" });
+    unsubSoldI();
+    okI(soldResI.changed === true && soldResI.soldQuantity === 3 && soldResI.totalIsk === 4200 && soldResI.redeemed === null &&
+        RRI.get(soldOnlyI, "currency:isk") === 4200 && RRI.get(soldOnlyI, "currency:lp") === 0 &&
+        RRI.get(soldOnlyI, "artifact:art_i_lp") === 3 && RRI.get(soldOnlyI, "artifact:art_i_calib") === 4,
+      "autosell 只处理 ISK 类与唯一文物，LP 与校准物必须原样保留");
+    okI(soldEventsI.length === 1 && soldEventsI[0].meta.offline === false && soldEventsI[0].meta.source === "research-protocol",
+      "在线自动出售只发一次批量事件，metadata 为在线协议来源");
+    const convOnlyI = mkArtI({ autosell: 1, autoconv: 1 }, { autosell: false, autoconv: true });
+    const convEventsI = [];
+    const unsubConvI = sandbox.GameEvents.on("archaeology:artifactsRedeemed", event => convEventsI.push(event));
+    const convResI = sandbox.applyArchaeologyArtifactProtocols(convOnlyI, { offline: true, source: "research-protocol" });
+    unsubConvI();
+    okI(convResI.changed === true && convResI.redeemedQuantity === 3 && convResI.totalLp === 150 && convResI.sold === null &&
+        RRI.get(convOnlyI, "currency:lp") === 150 && RRI.get(convOnlyI, "currency:isk") === 0 &&
+        RRI.get(convOnlyI, "artifact:art_i_common_a") === 2 && RRI.get(convOnlyI, "artifact:art_i_unique_a") === 1,
+      "autoconv 只处理 LP 文物，ISK 类文物必须原样保留");
+    okI(convEventsI.length === 1 && convEventsI[0].meta.offline === true && convEventsI[0].meta.source === "research-protocol",
+      "离线自动兑换事件 metadata 必须标记离线且来源为协议");
+    const bothI = mkArtI({ autosell: 1, autoconv: 1 }, { autosell: true, autoconv: true });
+    const bothCountI = { sold: 0, redeemed: 0 };
+    const unsubBothSI = sandbox.GameEvents.on("archaeology:artifactsSold", () => { bothCountI.sold += 1; });
+    const unsubBothRI = sandbox.GameEvents.on("archaeology:artifactsRedeemed", () => { bothCountI.redeemed += 1; });
+    const bothResI = sandbox.applyArchaeologyArtifactProtocols(bothI, { offline: false, source: "research-protocol" });
+    unsubBothSI(); unsubBothRI();
+    okI(bothResI.changed === true && bothCountI.sold === 1 && bothCountI.redeemed === 1 &&
+        RRI.get(bothI, "currency:isk") === 4200 && RRI.get(bothI, "currency:lp") === 150 &&
+        RRI.get(bothI, "artifact:art_i_calib") === 4,
+      "两协议同开时各处理一次、互不重复消费，校准物永不自动处理");
+    const noneI = mkArtI({ autosell: 1, autoconv: 1 }, { autosell: false, autoconv: false });
+    const dirtyArtI = mkArtI({}, { autosell: true, autoconv: true });
+    const noneResI = sandbox.applyArchaeologyArtifactProtocols(noneI, { offline: false, source: "research-protocol" });
+    const dirtyArtResI = sandbox.applyArchaeologyArtifactProtocols(dirtyArtI, { offline: false, source: "research-protocol" });
+    okI(noneResI.changed === false && noneResI.reason === REASONS_I.NOTHING_TO_PROCESS &&
+        dirtyArtResI.changed === false && dirtyArtResI.reason === REASONS_I.NOTHING_TO_PROCESS &&
+        RRI.get(dirtyArtI, "currency:isk") === 0 && RRI.get(dirtyArtI, "artifact:art_i_common_a") === 2,
+      "总开关关闭或脏档未研究时一律 NOTHING_TO_PROCESS 且零收益");
+    const manualI = mkArtI({ autosell: 1, autoconv: 1 }, { autosell: true, autoconv: true });
+    const manualEventsI = [];
+    const unsubManualI = sandbox.GameEvents.on("archaeology:artifactSold", event => manualEventsI.push(event));
+    const manualResI = sandbox.sellArchaeologyArtifacts(manualI, "art_i_common_a", 1, false);
+    unsubManualI();
+    okI(manualResI.changed === true && manualEventsI.length === 1 &&
+        manualEventsI[0].meta.offline === false && manualEventsI[0].meta.source === "game",
+      "手动出售不传 context 时必须保持既有 metadata（offline=false、source=game）");
+
+    // ---- I-12 真实触发点：考古成功周期 + 唯一时间轴 ------------------------------------------
+    const srcOfI = (needle) => scripts[scriptSources.findIndex(source => source.includes(needle))];
+    const archSrcI = srcOfI("js/systems/archaeology.js");
+    const planSrcI = srcOfI("js/systems/planetary.js");
+    const offlineSrcI = srcOfI("js/core/offline.js");
+    okI(archSrcI.includes('applyArchaeologyArtifactProtocols(state, { offline:Boolean(randomValue === "offline"), source:"research-protocol" })'),
+      "考古成功分支必须在文物入库后以真实在线/离线标记调用统一协议入口");
+    okI(/advancePlanetDeploymentTimeline\(gameState, deployment/.test(planSrcI) &&
+        /advancePlanetDeploymentTimeline\(gameState, deployment/.test(offlineSrcI) &&
+        (planSrcI.match(/function advancePlanetDeploymentTimeline/g) || []).length === 1,
+      "在线 planetaryTick 与离线 settleOfflinePlanets 必须共用唯一的 advancePlanetDeploymentTimeline");
+    const siteI = G("ARCHAEOLOGY_SITES")[0];
+    const probeI = G("ARCHAEOLOGY_PROBES")[0];
+    const cycleStateI = mkArtI({ autosell: 1, autoconv: 1 }, { autosell: true, autoconv: true });
+    const instanceI = sandbox.createShipInstance("heron", nowI);
+    if (!cycleStateI.inventory || typeof cycleStateI.inventory !== "object") cycleStateI.inventory = { ships: [], equipment: [], rigs: [] };
+    if (!Array.isArray(cycleStateI.inventory.ships)) cycleStateI.inventory.ships = [];
+    cycleStateI.inventory.ships.push(instanceI);
+    cycleStateI.shipAssignments = Object.assign({}, cycleStateI.shipAssignments, { archaeology: instanceI.instanceId });
+    Object.assign(cycleStateI.archaeology, {
+      activeSiteId: siteI.id, startedSiteId: siteI.id,
+      activeProbeId: probeI.id, startedProbeId: probeI.id,
+      fuelSavingRemainder: 0, probeSavingRemainder: 0,
+      shipHp: {}, repairUntil: 0, repairInstanceId: null, interferenceUntil: 0
+    });
+    cycleStateI.currentAction = Object.assign({}, cycleStateI.currentAction, { active: true, skill: "archaeology", progress: 0 });
+    RRI.add(cycleStateI, "probe:" + probeI.id, 5000);
+    RRI.add(cycleStateI, "consumable:fuel", 500000);
+    for (const artifact of G("ARCHAEOLOGY_ARTIFACTS")) RRI.set(cycleStateI, "artifact:" + artifact.id, 0);
+    const cycleResI = sandbox.resolveArchaeologyCycle(cycleStateI, nowI, 0);
+    const leftoverI = G("ARCHAEOLOGY_ARTIFACTS").filter(artifact => RRI.get(cycleStateI, "artifact:" + artifact.id) > 0);
+    okI(cycleResI.success === true && cycleResI.protocols && cycleResI.protocols.changed === true &&
+        leftoverI.every(artifact => artifact.category === "calibration"),
+      "真实考古成功周期必须触发协议入口，自动处理后剩余文物只能是校准物");
+
+    // ---- I-13 UI：三已实装可配置 / 三未实装只读 / 渲染纯读 ------------------------------------
+    const elsI = {};
+    for (const id of ["research-panel", "research-summary", "research-bank", "research-active",
+      "research-progress-fill", "research-tree", "research-detail", "research-queue"]) elsI[id] = makeElement();
+    const savedGetByIdI = sandbox.document.getElementById;
+    const savedResearchRefI = gsI.research;
+    const savedPlanetaryRefI = gsI.planetary;
+    sandbox.document.getElementById = (id) => elsI[id] || makeElement();
+    try {
+      const uiStateI = mkPlanI(
+        { planauto: 1, autosell: 1, autoconv: 1, intship: 1, autoenh: 1, autorepair: 1 },
+        { planauto: true, autosell: true, autoconv: false },
+        [{}], 500000);
+      gsI.research = uiStateI.research;
+      gsI.planetary = uiStateI.planetary;
+      const uiSnapBeforeI = JSON.stringify(gsI.research);
+      sandbox.renderResearchPage();
+      const detailOfI = (techId) => { sandbox.selectResearchNode(techId); return elsI["research-detail"].innerHTML; };
+      const planHtmlI = detailOfI("planauto");
+      okI(planHtmlI.includes('data-detail-action="protocol-toggle"') && planHtmlI.includes('data-protocol-id="planauto"') &&
+          planHtmlI.includes('data-detail-action="planauto-toggle"') && planHtmlI.includes('data-deployment-id="planet_i_1"') &&
+          planHtmlI.includes("data-protocol-reserve") && planHtmlI.includes('data-detail-action="planauto-reserve"'),
+        "planauto 详情必须提供总开关与逐基地自动续期 / 最低储备金控件");
+      const sellHtmlI = detailOfI("autosell");
+      const convHtmlI = detailOfI("autoconv");
+      okI(sellHtmlI.includes('data-protocol-id="autosell"') && sellHtmlI.includes("校准物不会自动处理") &&
+          convHtmlI.includes('data-protocol-id="autoconv"') && convHtmlI.includes("已关闭") &&
+          !sellHtmlI.includes("data-deployment-id") && !convHtmlI.includes("data-deployment-id"),
+        "autosell / autoconv 详情必须提供总开关与范围说明，且不得出现行星基地控件");
+      okI(((() => {
+        const html = detailOfI("intship");
+        return html.includes('data-protocol-id="intship"') && html.includes("data-intship-recipe") &&
+          html.includes('data-detail-action="intship-start"') && !html.includes("协议业务尚未接入");
+      })()), "intship 详情必须提供启动表单（配方 / 数量 / 开始按钮），不再显示“协议业务尚未接入”");
+      const autoenhHtmlI = detailOfI("autoenh");
+      const autorepairHtmlI = detailOfI("autorepair");
+      okI(autoenhHtmlI.includes('data-protocol-id="autoenh"') && autoenhHtmlI.includes('data-detail-action="autoenh-run"') &&
+          autoenhHtmlI.includes('data-detail-action="autoenh-set-max"'),
+        "autoenh 详情必须提供总开关 / 最大尝试次数 / 开始自动强化控件");
+      okI(autorepairHtmlI.includes('data-protocol-id="autorepair"') && autorepairHtmlI.includes("仅在非致命考古反噬后") &&
+          !autorepairHtmlI.includes('data-detail-action="autoenh-run"'),
+        "autorepair 详情必须提供总开关 / 维修说明，且无主动执行按钮");
+      okI(JSON.stringify(gsI.research) === uiSnapBeforeI, "研究页渲染与协议面板必须纯读，不得写入 state.research");
+      const uiLockedI = mkPlanI({}, {}, [{}], 500000);
+      gsI.research = uiLockedI.research;
+      gsI.planetary = uiLockedI.planetary;
+      sandbox.renderResearchPage();
+      const lockedProtoHtmlI = detailOfI("planauto");
+      okI(!lockedProtoHtmlI.includes("data-protocol-id") && !lockedProtoHtmlI.includes("data-deployment-id") &&
+          /data-detail-action="(start|enqueue)"/.test(lockedProtoHtmlI),
+        "未研究的 planauto 仍是可研究节点，且绝不出现协议设置控件");
+    } finally {
+      sandbox.document.getElementById = savedGetByIdI;
+      gsI.research = savedResearchRefI;
+      gsI.planetary = savedPlanetaryRefI;
+      sandbox._researchSelectedTechId = null;
+      sandbox.resetResearchAutoScroll();
+    }
+
+    // ---- I-14 冻结基线不回退 -----------------------------------------------------------------
+    let stepsI = 0;
+    let secondsI = 0;
+    for (const node of RDI.NODES) {
+      stepsI += Number(node.maxLevel) || 0;
+      for (const duration of (node.durationByLevel || [])) secondsI += Number(duration) || 0;
+    }
+    const protocolNodesI = RDI.NODES.filter(node => node.type === "protocol");
+    okI(Object.keys(RDI.RESEARCH_BONUS_CONSUMERS || {}).length === 31 && RDI.NODES.length === 38 &&
+        stepsI === 150 && Math.abs(secondsI - 7776000) < 1e-6 &&
+        protocolNodesI.length === 6 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
+      "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
+    okI(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294,
+      "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+  } finally {
+    gsI.research = JSON.parse(JSON.stringify(savedResearchI));
+    gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
+    gsI.resources = JSON.parse(JSON.stringify(savedResourcesI));
+    gsI.skills = JSON.parse(JSON.stringify(savedSkillsI));
+    gsI.statistics = JSON.parse(JSON.stringify(savedStatsI));
+    gsI.archaeology = JSON.parse(JSON.stringify(savedArchI));
+    gsI.currentAction = JSON.parse(JSON.stringify(savedActionI));
+  }
+
+  console.log("Batch I 经济自动化协议校验通过（" + iChecks + " 项）：统一模块 8 个 API 与 11 个稳定 reason、新游戏三协议零副作用、脏档 enabled=true 未研究不执行、真实研究链解锁且不自动开启、setProtocolEnabled 成功/重复/非法/未知/未研究五类、setPlanetAutoRenew 每基地独立对象与储备金参数校验、储备金边界（恰好等于放行 / 少 1 ISK 拒绝）与续期四价同源、多基地互不影响只扣成功那份、在线跨 expiresAt 只续期一次且重复 tick 不重扣、离线 3 周期逐次扣费与余额不足只停该基地、autosell 只 ISK/唯一 与 autoconv 只 LP 且校准物永不处理、两协议同开各一次、在线 offline=false / 离线 offline=true+offline-settlement / 手动 source=game、真实考古周期触发入口且剩余仅校准物、在线离线共用唯一时间轴、UI 三已实装可配置与三未实装只读且渲染纯读、31 group/38 节点/150 步/90 天/50 JS/4 CSS/294 DOM 基线不回退");
+}
+
+// ============================================================================================
+// 研究系统 Batch J：自动强化 + 野外自动维修完整实装（autoenh / autorepair）
+// 铁律：
+//   1) 三层门槛：completedLevels[protocolId] >= 1 → protocolSettings[protocolId].enabled === true
+//      → 业务条件；脏档 enabled=true 但未研究绝不越权执行；
+//   2) 绝不复制业务公式：强化逐次调既有 ShellStateActions.enhanceShip（成本 / 成功率 / 经验 /
+//      等级 / 事件全部归底层），维修量走 fitting → resolveEquipmentReference → combat.kind==="repair"，
+//      repair 科研倍率只乘一次；
+//   3) 野外维修数据源严格为考古舰船，绝不读战斗舰船；只在非致命反噬（destroyed===false）后触发；
+//   4) 在线与离线共用同一函数与同一扣减逻辑；GameEvents 缺失时维修与扣费仍成功；
+//   5) 本批实装 autoenh / autorepair；intship 由 Batch K 实装（此处断言六协议全实装）。
+// ============================================================================================
+{
+  let jChecks = 0;
+  const okJ = (condition, message) => {
+    if (!condition) throw new Error("Batch J 校验失败：" + message);
+    jChecks += 1;
+  };
+  const nearJ = (a, b, eps) => Math.abs(Number(a) - Number(b)) <= (eps === undefined ? 1e-6 : eps);
+
+  const RSJ = sandbox.ResearchState;
+  const RDJ = sandbox.ResearchData;
+  const RRJ = G("ResourceRegistry");
+  const SSAJ = G("ShellStateActions");
+  const REASONS_J = G("RESEARCH_PROTOCOL_REASONS");
+  const AERJ = G("AUTO_ENHANCE_REASONS");
+  const AFRJ = G("ARCHAEOLOGY_FIELD_REPAIR_REASONS");
+  const gsJ = sandbox.gameState;
+  const nowJ = 1769817600000;
+
+  const savedResearchJ = JSON.parse(JSON.stringify(gsJ.research));
+  const savedInventoryJ = JSON.parse(JSON.stringify(gsJ.inventory));
+  const savedResourcesJ = JSON.parse(JSON.stringify(gsJ.resources));
+  const savedSkillsJ = JSON.parse(JSON.stringify(gsJ.skills));
+  const savedArchJ = JSON.parse(JSON.stringify(gsJ.archaeology));
+  const savedActionJ = JSON.parse(JSON.stringify(gsJ.currentAction));
+  const savedAssignJ = JSON.parse(JSON.stringify(gsJ.shipAssignments || {}));
+
+  try {
+    const pristineJ = JSON.parse(JSON.stringify(gsJ));
+
+    // 夹具：干净默认研究状态 + 指定已完成等级 + 指定协议总开关 + 空机库 / 空装备池 / 无活动
+    const mkJ = (levels, protocolEnabled) => {
+      const state = JSON.parse(JSON.stringify(pristineJ));
+      state.research = RSJ.createDefaultResearchState();
+      state.research.lastProcessedAt = nowJ;
+      state.research.completedLevels = Object.assign({}, levels || {});
+      for (const [key, value] of Object.entries(protocolEnabled || {})) {
+        state.research.protocolSettings[key].enabled = value;
+      }
+      state.inventory = { ships: [], equipment: [], rigs: [] };
+      if (!state.equipment || typeof state.equipment !== "object") state.equipment = {};
+      state.equipment.instances = [];
+      state.shipAssignments = {};
+      state.planetary = { deployments: [], nextId: 1 };
+      state.currentAction = Object.assign({}, state.currentAction, { active: false, skill: null, progress: 0 });
+      if (state.combat && typeof state.combat === "object") { state.combat.active = false; state.combat.activeShip = null; }
+      state._dirty = false;
+      return state;
+    };
+
+    // ---- autoenh 夹具：rifter（制造等级 1 → 一档三件套，每次 attempt 恰 3 个部件） --------------
+    const rifterCfgJ = sandbox.getShipConfigById("rifter");
+    const enhCostJ = sandbox.getShipEnhancementCost(rifterCfgJ);
+    const enhCompIdsJ = Object.keys(enhCostJ);
+    const perAttemptJ = Object.values(enhCostJ).reduce((sum, q) => sum + q, 0);
+    const allCompIdsJ = G("SHIP_ENHANCEMENT_TIERS").reduce((acc, tier) => acc.concat(tier.componentIds), []);
+    const compSnapJ = (state) => allCompIdsJ.map(id => RRJ.get(state, "component:" + id));
+    const tierCompTotalJ = (state) => enhCompIdsJ.reduce((sum, id) => sum + RRJ.get(state, "component:" + id), 0);
+    const mkEnhJ = (levels, protocolEnabled, sets) => {
+      const state = mkJ(levels, protocolEnabled);
+      for (const id of allCompIdsJ) RRJ.set(state, "component:" + id, 0);
+      const inst = sandbox.createShipInstance("rifter", nowJ);
+      state.inventory.ships.push(inst);
+      for (const [id, q] of Object.entries(enhCostJ)) RRJ.set(state, "component:" + id, q * sets);
+      state._dirty = false;
+      return { state, inst };
+    };
+
+    okJ(perAttemptJ === 3 && enhCompIdsJ.length === 3,
+      "rifter 一档强化必须恰为三件套（每次 attempt 3 个部件），实际 " + perAttemptJ);
+
+    // ---- J-01 三层门槛：未研究 / 已研究未启用 / 脏档 enabled=true 未研究 ----------------------
+    const lockedEnhJ = mkEnhJ({}, {}, 10);
+    const resLockedJ = sandbox.runAutoEnhancement(lockedEnhJ.state, lockedEnhJ.inst.instanceId, { randomValue: 0 });
+    okJ(resLockedJ.changed === false && resLockedJ.reason === REASONS_J.PROTOCOL_LOCKED &&
+        resLockedJ.attempts === 0 && tierCompTotalJ(lockedEnhJ.state) === 30 && lockedEnhJ.inst.enhancementLevel === 0,
+      "未研究 autoenh：绝不执行强化、绝不消耗任何部件");
+    const disabledEnhJ = mkEnhJ({ autoenh: 1 }, { autoenh: false }, 10);
+    const resDisabledJ = sandbox.runAutoEnhancement(disabledEnhJ.state, disabledEnhJ.inst.instanceId, { randomValue: 0 });
+    okJ(resDisabledJ.changed === false && resDisabledJ.reason === REASONS_J.PROTOCOL_DISABLED &&
+        resDisabledJ.attempts === 0 && tierCompTotalJ(disabledEnhJ.state) === 30,
+      "已研究但总开关关闭：autoenh 绝不执行、绝不消耗部件");
+    const dirtyEnhJ = mkEnhJ({}, { autoenh: true }, 10);
+    const resDirtyJ = sandbox.runAutoEnhancement(dirtyEnhJ.state, dirtyEnhJ.inst.instanceId, { randomValue: 0 });
+    okJ(resDirtyJ.changed === false && resDirtyJ.reason === REASONS_J.PROTOCOL_LOCKED &&
+        tierCompTotalJ(dirtyEnhJ.state) === 30,
+      "脏档 enabled=true 但未研究：autoenh 绝不越权执行");
+
+    // ---- J-02 setAutoEnhancementMaxAttempts 严格参数校验 --------------------------------------
+    const cfgJ = mkJ({ autoenh: 1 }, { autoenh: true });
+    const badMaxJ = [-1, 1.5, NaN, Infinity, -Infinity, "3", null, true, [], {}, 10001];
+    okJ(badMaxJ.every(value => {
+      const result = sandbox.setAutoEnhancementMaxAttempts(cfgJ, value);
+      return result.changed === false && result.reason === AERJ.INVALID_MAX_ATTEMPTS;
+    }) && cfgJ.research.protocolSettings.autoenh.maxAttempts === 0 && cfgJ._dirty === false,
+      "负数 / 小数 / NaN / Infinity / 数字字符串 / null / 布尔 / 数组 / 对象 / 超上限一律 INVALID_MAX_ATTEMPTS 且不写入");
+    okJ(sandbox.setAutoEnhancementMaxAttempts(cfgJ, 0).reason === REASONS_J.ALREADY_SET,
+      "重复设置相同 maxAttempts 必须返回 ALREADY_SET");
+    okJ(sandbox.setAutoEnhancementMaxAttempts(cfgJ, 10000).changed === true &&
+        cfgJ.research.protocolSettings.autoenh.maxAttempts === 10000 && cfgJ._dirty === true,
+      "安全上限 10000 必须放行并写入 maxAttempts、置 _dirty");
+    okJ(sandbox.setAutoEnhancementMaxAttempts(cfgJ, 3).changed === true &&
+        cfgJ.research.protocolSettings.autoenh.maxAttempts === 3,
+      "合法整数必须写入权威字段 protocolSettings.autoenh.maxAttempts");
+    okJ(sandbox.setAutoEnhancementMaxAttempts(null, 3).reason === REASONS_J.INVALID_STATE,
+      "非法 state 必须返回 INVALID_STATE");
+
+    // ---- J-03 迁移清洗：脏档 maxAttempts 幂等归一，schemaVersion 不变 -------------------------
+    const migCasesJ = [[-5, 0], [1.5, 0], [99999, 10000], ["abc", 0], [null, 0], [NaN, 0], [Infinity, 0], [77, 77]];
+    okJ(migCasesJ.every(([raw, expected]) => {
+      const state = mkJ({}, {});
+      const schemaBefore = state.research.schemaVersion;
+      state.research.protocolSettings.autoenh.maxAttempts = raw;
+      RSJ.migrateResearchState(state);
+      const once = state.research.protocolSettings.autoenh.maxAttempts;
+      RSJ.migrateResearchState(state);
+      return once === expected && state.research.protocolSettings.autoenh.maxAttempts === expected &&
+        state.research.schemaVersion === schemaBefore;
+    }), "脏档 autoenh.maxAttempts 必须被幂等清洗到 [0,10000] 整数区间，且不改 schemaVersion");
+    okJ((() => {
+      const state = mkJ({}, {});
+      delete state.research.protocolSettings.autoenh;
+      RSJ.migrateResearchState(state);
+      const entry = state.research.protocolSettings.autoenh;
+      return entry && entry.enabled === false && entry.maxAttempts === 0;
+    })(), "缺失的 autoenh 设置必须补全为 { enabled:false, maxAttempts:0 }");
+
+    // ---- J-04 maxAttempts=N：恰 N 次真实 attempt，事件数 === attempts ------------------------
+    const capJ = mkEnhJ({ autoenh: 1 }, { autoenh: true }, 10);
+    sandbox.setAutoEnhancementMaxAttempts(capJ.state, 3);
+    const capEventsJ = [];
+    const capOffJ = sandbox.GameEvents.on("ship:enhancementAttempted", event => capEventsJ.push(event));
+    const capBeforeJ = tierCompTotalJ(capJ.state);
+    const capResJ = sandbox.runAutoEnhancement(capJ.state, capJ.inst.instanceId, { randomValue: 0 });
+    capOffJ();
+    okJ(capResJ.changed === true && capResJ.attempts === 3 && capResJ.successes === 3 && capResJ.failures === 0 &&
+        capResJ.stopReason === AERJ.MAX_ATTEMPTS_REACHED && capResJ.maxAttempts === 3,
+      "maxAttempts=3 必须恰跑 3 次真实 attempt 后以 MAX_ATTEMPTS_REACHED 停止");
+    okJ(capResJ.componentsSpent === 9 && (capBeforeJ - tierCompTotalJ(capJ.state)) === 9 &&
+        capResJ.fromLevel === 0 && capResJ.toLevel === 3 && capJ.inst.enhancementLevel === 3,
+      "3 次成功强化必须真实扣 9 个部件并把强化等级推进到 3");
+    okJ(capEventsJ.length === capResJ.attempts && capEventsJ.every(event => event.payload.success === true),
+      "ship:enhancementAttempted 事件数必须严格等于 attempts");
+
+    // ---- J-05 maxAttempts=0：持续到真实材料不足 ----------------------------------------------
+    const contJ = mkEnhJ({ autoenh: 1 }, { autoenh: true }, 4);
+    const contResJ = sandbox.runAutoEnhancement(contJ.state, contJ.inst.instanceId, { randomValue: 0.9 });
+    okJ(contResJ.attempts === 4 && contResJ.maxAttempts === 0 &&
+        contResJ.stopReason === AERJ.INSUFFICIENT_COMPONENTS && tierCompTotalJ(contJ.state) === 0,
+      "maxAttempts=0 必须持续到强化部件真实耗尽后以 INSUFFICIENT_COMPONENTS 停止");
+    okJ(contResJ.failures === 4 && contResJ.successes === 0 && contJ.inst.enhancementLevel === 0,
+      "全部失败：等级保持 0（失败不掉级），失败计数正确");
+
+    // ---- J-06 单次成功 / 单次失败：等级、XP、部件、事件四项同底层 ---------------------------
+    const expectedXpJ = sandbox.getShipEnhancementSuccessXp(rifterCfgJ, 0);
+    const sucJ = mkEnhJ({ autoenh: 1 }, { autoenh: true }, 1);
+    sandbox.setAutoEnhancementMaxAttempts(sucJ.state, 1);
+    const sucEventsJ = [];
+    const sucOffJ = sandbox.GameEvents.on("ship:enhancementAttempted", event => sucEventsJ.push(event));
+    const sucXpBeforeJ = Number(sucJ.state.skills.shipEngineering.xp) || 0;
+    const sucResJ = sandbox.runAutoEnhancement(sucJ.state, sucJ.inst.instanceId, { randomValue: 0 });
+    sucOffJ();
+    okJ(sucResJ.attempts === 1 && sucResJ.successes === 1 && sucJ.inst.enhancementLevel === 1 &&
+        tierCompTotalJ(sucJ.state) === 0 && sucEventsJ.length === 1 &&
+        sucEventsJ[0].payload.xp === expectedXpJ && expectedXpJ > 0 &&
+        (Number(sucJ.state.skills.shipEngineering.xp) || 0) !== sucXpBeforeJ,
+      "成功一次：等级 +1、扣 3 部件、发一条事件、经验取底层 getShipEnhancementSuccessXp");
+    const failJ = mkEnhJ({ autoenh: 1 }, { autoenh: true }, 1);
+    sandbox.setAutoEnhancementMaxAttempts(failJ.state, 1);
+    const failEventsJ = [];
+    const failOffJ = sandbox.GameEvents.on("ship:enhancementAttempted", event => failEventsJ.push(event));
+    const failXpBeforeJ = Number(failJ.state.skills.shipEngineering.xp) || 0;
+    const failResJ = sandbox.runAutoEnhancement(failJ.state, failJ.inst.instanceId, { randomValue: 0.9 });
+    failOffJ();
+    okJ(failResJ.attempts === 1 && failResJ.failures === 1 && failJ.inst.enhancementLevel === 0 &&
+        tierCompTotalJ(failJ.state) === 0 && failEventsJ.length === 1 &&
+        failEventsJ[0].payload.success === false && failEventsJ[0].payload.xp === 0 &&
+        (Number(failJ.state.skills.shipEngineering.xp) || 0) === failXpBeforeJ,
+      "失败一次：等级不变、0 XP、强化部件照常真实扣除");
+
+    // ---- J-07 只消耗不产出：非本档部件一律不动 ------------------------------------------------
+    const noGainJ = mkEnhJ({ autoenh: 1 }, { autoenh: true }, 10);
+    for (const id of allCompIdsJ) if (enhCompIdsJ.indexOf(id) < 0) RRJ.set(noGainJ.state, "component:" + id, 5);
+    sandbox.setAutoEnhancementMaxAttempts(noGainJ.state, 2);
+    const noGainBeforeJ = compSnapJ(noGainJ.state);
+    sandbox.runAutoEnhancement(noGainJ.state, noGainJ.inst.instanceId, { randomValue: 0 });
+    const noGainAfterJ = compSnapJ(noGainJ.state);
+    okJ(allCompIdsJ.every((id, idx) => enhCompIdsJ.indexOf(id) >= 0
+        ? (noGainBeforeJ[idx] - noGainAfterJ[idx]) === 2
+        : noGainAfterJ[idx] === noGainBeforeJ[idx]),
+      "自动强化只能消耗本档三件套，绝不产出任何部件，也不得动其它档部件");
+
+    // ---- J-08 活动舰船拒绝：零尝试零消耗 ------------------------------------------------------
+    const activeJ = mkEnhJ({ autoenh: 1 }, { autoenh: true }, 10);
+    activeJ.state.currentAction = Object.assign({}, activeJ.state.currentAction, { active: true, skill: "mining" });
+    activeJ.state.shipAssignments.mining = activeJ.inst.instanceId;
+    const activeResJ = sandbox.runAutoEnhancement(activeJ.state, activeJ.inst.instanceId, { randomValue: 0 });
+    okJ(activeResJ.changed === false && activeResJ.attempts === 0 && activeResJ.stopReason === AERJ.SHIP_ACTIVE &&
+        tierCompTotalJ(activeJ.state) === 30 && activeJ.inst.enhancementLevel === 0,
+      "舰船正在执行行动时：零尝试、零消耗、停止原因 SHIP_ACTIVE");
+    const unknownResJ = sandbox.runAutoEnhancement(activeJ.state, "ship_not_exist", { randomValue: 0 });
+    okJ(unknownResJ.changed === false && unknownResJ.reason === AERJ.UNKNOWN_SHIP && unknownResJ.attempts === 0,
+      "未知 instanceId 必须返回 UNKNOWN_SHIP 且零尝试");
+
+    // ---- J-09 手动单次强化行为不被协议改变 ----------------------------------------------------
+    const manualJ = mkEnhJ({}, {}, 1);
+    const manualBeforeJ = tierCompTotalJ(manualJ.state);
+    const manualResJ = SSAJ.enhanceShip(manualJ.state, manualJ.inst.instanceId, 0);
+    okJ(manualResJ.changed === true && manualResJ.success === true && manualResJ.fromLevel === 0 &&
+        manualResJ.toLevel === 1 && manualJ.inst.enhancementLevel === 1 &&
+        (manualBeforeJ - tierCompTotalJ(manualJ.state)) === 3 && manualResJ.xp === expectedXpJ,
+      "协议未研究时手动单次强化的既有行为必须完全不变");
+
+    // ---- J-10 action 路由：两个新 action 落到统一协议模块且遵守同样门槛 ----------------------
+    const routeJ = mkEnhJ({ autoenh: 1 }, { autoenh: true }, 5);
+    const routeSetJ = sandbox.dispatchGameAction(routeJ.state, { type: "research/setAutoEnhancementMaxAttempts", maxAttempts: 2 }, nowJ);
+    const routeRunJ = sandbox.dispatchGameAction(routeJ.state, { type: "research/runAutoEnhancement", instanceId: routeJ.inst.instanceId, context: { randomValue: 0 } }, nowJ);
+    okJ(routeSetJ.changed === true && routeJ.state.research.protocolSettings.autoenh.maxAttempts === 2 &&
+        routeRunJ.attempts === 2 && routeJ.inst.enhancementLevel === 2,
+      "research/setAutoEnhancementMaxAttempts 与 research/runAutoEnhancement 两条路由必须真实生效");
+    const routeLockedJ = mkEnhJ({}, { autoenh: true }, 5);
+    const routeLockedResJ = sandbox.dispatchGameAction(routeLockedJ.state, { type: "research/runAutoEnhancement", instanceId: routeLockedJ.inst.instanceId, context: { randomValue: 0 } }, nowJ);
+    okJ(routeLockedResJ.changed === false && routeLockedResJ.reason === REASONS_J.PROTOCOL_LOCKED &&
+        tierCompTotalJ(routeLockedJ.state) === 15,
+      "走 action 路由同样不得绕过三层门槛");
+
+    // ---- autorepair 夹具：星图级（mid 3 / low 2）三层维修件齐装 ------------------------------
+    const siteJ = G("ARCHAEOLOGY_SITES")[0];
+    const probeJ = G("ARCHAEOLOGY_PROBES")[0];
+    const FIT3_J = { high: [], mid: ["t1_shield_booster"], low: ["t1_armor_repairer", "t1_structure_repairer"], rig: [] };
+    const REPAIR_CTX_J = (offline, now) => ({ now: now === undefined ? nowJ : now, offline: Boolean(offline), source: "research-protocol" });
+    const mkArchJ = (levels, protocolEnabled, fitted, shipId) => {
+      const state = mkJ(levels, protocolEnabled);
+      const inst = sandbox.createShipInstance(shipId || "starmap", nowJ);
+      inst.fitted = { high: (fitted.high || []).slice(), mid: (fitted.mid || []).slice(), low: (fitted.low || []).slice(), rig: (fitted.rig || []).slice() };
+      state.inventory.ships.push(inst);
+      state.shipAssignments.archaeology = inst.instanceId;
+      Object.assign(state.archaeology, {
+        activeSiteId: siteJ.id, startedSiteId: siteJ.id,
+        activeProbeId: probeJ.id, startedProbeId: probeJ.id,
+        fuelSavingRemainder: 0, probeSavingRemainder: 0,
+        shipHp: {}, repairUntil: 0, repairInstanceId: null, interferenceUntil: 0
+      });
+      state.currentAction = Object.assign({}, state.currentAction, { active: true, skill: "archaeology", progress: 0 });
+      RRJ.set(state, "probe:" + probeJ.id, 5000);
+      RRJ.set(state, "consumable:fuel", 500000);
+      state._dirty = false;
+      return { state, inst };
+    };
+    const maxHpStarmapJ = sandbox.getShipConfigById("starmap").hp;
+
+    // ---- J-11 数据来源严格为考古舰船，绝不借用战斗舰船 --------------------------------------
+    const srcOfJ = (needle) => scripts[scriptSources.findIndex(source => source.includes(needle))];
+    const archSrcJ = srcOfJ("js/systems/archaeology.js");
+    const repairSrcJ = archSrcJ.slice(
+      archSrcJ.indexOf("function getInstalledRepairersForShip"),
+      archSrcJ.indexOf("function applyArchaeologyDamage"));
+    okJ(repairSrcJ.length > 200 &&
+        !/getInstalledCombatRepairers|getActiveCombatShipState|shipAssignments\.combat/.test(repairSrcJ) &&
+        repairSrcJ.includes("getFittingFromInstance") && repairSrcJ.includes("resolveEquipmentReference") &&
+        repairSrcJ.includes('combat.kind !== "repair"'),
+      "野外维修必须只走考古舰船 fitting → resolveEquipmentReference，绝不引用任何战斗舰船来源");
+    const noRepJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, { high: [], mid: [], low: [], rig: [] });
+    const combatShipJ = sandbox.createShipInstance("rifter", nowJ + 1);
+    combatShipJ.fitted = { high: [], mid: ["t1_shield_booster"], low: ["t1_armor_repairer"], rig: [] };
+    noRepJ.state.inventory.ships.push(combatShipJ);
+    noRepJ.state.shipAssignments.combat = combatShipJ.instanceId;
+    okJ(sandbox.getInstalledRepairersForShip(noRepJ.state, noRepJ.inst.instanceId).length === 0 &&
+        sandbox.getInstalledRepairersForShip(noRepJ.state, combatShipJ.instanceId).length === 2,
+      "维修装备只能来自被查询舰船自身的 fitting");
+    const noRepHpJ = { shield: 100, armor: 100, structure: 100 };
+    const noRepFuelJ = RRJ.get(noRepJ.state, "consumable:fuel");
+    const noRepResJ = sandbox.applyArchaeologyFieldRepair(noRepJ.state, noRepJ.inst.instanceId, noRepHpJ, REPAIR_CTX_J(false));
+    okJ(noRepResJ.changed === false && noRepResJ.reason === AFRJ.NO_REPAIRERS &&
+        noRepHpJ.shield === 100 && RRJ.get(noRepJ.state, "consumable:fuel") === noRepFuelJ,
+      "考古舰船未装维修装备时：绝不借用战斗舰船维修件、绝不扣燃料");
+
+    // ---- J-12 三层门槛：脏档 / 已研究未启用都不得维修 ----------------------------------------
+    const lockRepJ = mkArchJ({}, { autorepair: true }, FIT3_J);
+    const lockHpJ = { shield: 100, armor: 100, structure: 100 };
+    const lockFuelJ = RRJ.get(lockRepJ.state, "consumable:fuel");
+    const lockResJ = sandbox.applyArchaeologyFieldRepair(lockRepJ.state, lockRepJ.inst.instanceId, lockHpJ, REPAIR_CTX_J(false));
+    okJ(lockResJ.changed === false && lockResJ.reason === AFRJ.PROTOCOL_DISABLED &&
+        JSON.stringify(lockHpJ) === JSON.stringify({ shield: 100, armor: 100, structure: 100 }) &&
+        RRJ.get(lockRepJ.state, "consumable:fuel") === lockFuelJ,
+      "脏档 enabled=true 但未研究 autorepair：绝不维修、绝不扣燃料");
+    const offRepJ = mkArchJ({ autorepair: 1 }, { autorepair: false }, FIT3_J);
+    const offHpJ = { shield: 100, armor: 100, structure: 100 };
+    const offResJ = sandbox.applyArchaeologyFieldRepair(offRepJ.state, offRepJ.inst.instanceId, offHpJ, REPAIR_CTX_J(false));
+    okJ(offResJ.changed === false && offResJ.reason === AFRJ.PROTOCOL_DISABLED && offHpJ.shield === 100,
+      "已研究但总开关关闭：autorepair 绝不维修");
+
+    // ---- J-13 真实非致命反噬周期：三层各修一次、扣真实燃料、协议关闭则完全不动 ---------------
+    const cycleOnJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    const cycleOffJ = mkArchJ({ autorepair: 1 }, { autorepair: false }, FIT3_J);
+    cycleOnJ.state.archaeology.shipHp[cycleOnJ.inst.instanceId] = { shield: 100, armor: 100, structure: 100 };
+    cycleOffJ.state.archaeology.shipHp[cycleOffJ.inst.instanceId] = { shield: 100, armor: 100, structure: 100 };
+    const cycleFuelJ = sandbox.getArchaeologyFuelCostState(cycleOnJ.state, siteJ, cycleOnJ.inst).chargedFuel;
+    const fuelOnBeforeJ = RRJ.get(cycleOnJ.state, "consumable:fuel");
+    const fuelOffBeforeJ = RRJ.get(cycleOffJ.state, "consumable:fuel");
+    const cycleResOnJ = sandbox.resolveArchaeologyCycle(cycleOnJ.state, nowJ, 0.999999999);
+    const cycleResOffJ = sandbox.resolveArchaeologyCycle(cycleOffJ.state, nowJ, 0.999999999);
+    const hpOnJ = cycleOnJ.state.archaeology.shipHp[cycleOnJ.inst.instanceId];
+    const hpOffJ = cycleOffJ.state.archaeology.shipHp[cycleOffJ.inst.instanceId];
+    const backlashJ = cycleResOnJ.backlash;
+    okJ(cycleResOnJ.success === false && cycleResOnJ.destroyed === false && cycleResOnJ.fieldRepair &&
+        cycleResOnJ.fieldRepair.changed === true && cycleResOnJ.fieldRepair.repaired === 3 &&
+        cycleResOffJ.fieldRepair && cycleResOffJ.fieldRepair.changed === false &&
+        cycleResOffJ.fieldRepair.reason === AFRJ.PROTOCOL_DISABLED,
+      "非致命反噬后：已启用逐件维修 3 次；未启用只返回 PROTOCOL_DISABLED");
+    okJ(backlashJ > 0 && backlashJ < 100 &&
+        hpOffJ.shield === 100 - backlashJ && hpOffJ.armor === 100 && hpOffJ.structure === 100 &&
+        hpOnJ.shield === 100 - backlashJ + 30 && hpOnJ.armor === 120 && hpOnJ.structure === 110,
+      "三层维修目标各自独立且严格落在自己那层：护盾 +30 / 装甲 +20 / 结构 +10");
+    okJ((fuelOffBeforeJ - RRJ.get(cycleOffJ.state, "consumable:fuel")) === cycleFuelJ &&
+        (fuelOnBeforeJ - RRJ.get(cycleOnJ.state, "consumable:fuel")) === cycleFuelJ + 5,
+      "维修额外燃料必须恰为三件维修装备 fuelCost 之和（1+1+3=5）");
+
+    // ---- J-14 致命反噬绝不维修、绝不复活 ------------------------------------------------------
+    const deadJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    deadJ.state.archaeology.shipHp[deadJ.inst.instanceId] = { shield: 0, armor: 0, structure: 1 };
+    const deadFuelBeforeJ = RRJ.get(deadJ.state, "consumable:fuel");
+    const deadResJ = sandbox.resolveArchaeologyCycle(deadJ.state, nowJ, 0.999999999);
+    const deadHpJ = deadJ.state.archaeology.shipHp[deadJ.inst.instanceId];
+    okJ(deadResJ.destroyed === true && deadResJ.fieldRepair === undefined &&
+        deadHpJ.shield === 0 && deadHpJ.armor === 0 && deadHpJ.structure === 0 &&
+        (deadFuelBeforeJ - RRJ.get(deadJ.state, "consumable:fuel")) === cycleFuelJ,
+      "致命反噬：绝不触发野外维修、绝不复活、只扣周期燃料");
+
+    // ---- J-15 满血层跳过不耗燃料 + 溢出严格钳制在 maxHp ---------------------------------------
+    const clampJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    RRJ.set(clampJ.state, "consumable:fuel", 100);
+    const clampHpJ = { shield: maxHpStarmapJ.shield, armor: maxHpStarmapJ.armor - 10, structure: maxHpStarmapJ.structure };
+    const clampResJ = sandbox.applyArchaeologyFieldRepair(clampJ.state, clampJ.inst.instanceId, clampHpJ, REPAIR_CTX_J(false));
+    okJ(clampResJ.changed === true && clampResJ.repaired === 1 &&
+        clampHpJ.shield === maxHpStarmapJ.shield && clampHpJ.structure === maxHpStarmapJ.structure &&
+        RRJ.get(clampJ.state, "consumable:fuel") === 99,
+      "满血层必须跳过且完全不耗燃料（只有缺血的装甲层消耗 1 燃料）");
+    okJ(clampHpJ.armor === maxHpStarmapJ.armor,
+      "维修量 20 > 缺口 10 时必须钳制在 maxHp，绝不溢出");
+    const fullJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    const fullHpJ = { shield: maxHpStarmapJ.shield, armor: maxHpStarmapJ.armor, structure: maxHpStarmapJ.structure };
+    const fullFuelJ = RRJ.get(fullJ.state, "consumable:fuel");
+    const fullResJ = sandbox.applyArchaeologyFieldRepair(fullJ.state, fullJ.inst.instanceId, fullHpJ, REPAIR_CTX_J(false));
+    okJ(fullResJ.changed === false && fullResJ.reason === AFRJ.FULL_HP &&
+        RRJ.get(fullJ.state, "consumable:fuel") === fullFuelJ,
+      "三层全满：返回 FULL_HP 且零燃料消耗");
+
+    // ---- J-16 燃料只够第一件：第一件成功、后续停止、燃料不为负 -------------------------------
+    const fuelLimitJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    RRJ.set(fuelLimitJ.state, "consumable:fuel", 1);
+    const fuelLimitHpJ = { shield: 10, armor: 10, structure: 10 };
+    const fuelLimitResJ = sandbox.applyArchaeologyFieldRepair(fuelLimitJ.state, fuelLimitJ.inst.instanceId, fuelLimitHpJ, REPAIR_CTX_J(false));
+    okJ(fuelLimitResJ.changed === true && fuelLimitResJ.repaired === 1 &&
+        fuelLimitHpJ.shield === 40 && fuelLimitHpJ.armor === 10 && fuelLimitHpJ.structure === 10 &&
+        RRJ.get(fuelLimitJ.state, "consumable:fuel") === 0,
+      "燃料只够第一件：第一件成功后立即停止，燃料绝不为负");
+    const zeroFuelJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    RRJ.set(zeroFuelJ.state, "consumable:fuel", 0);
+    const zeroFuelHpJ = { shield: 10, armor: 10, structure: 10 };
+    const zeroFuelResJ = sandbox.applyArchaeologyFieldRepair(zeroFuelJ.state, zeroFuelJ.inst.instanceId, zeroFuelHpJ, REPAIR_CTX_J(false));
+    okJ(zeroFuelResJ.changed === false && zeroFuelResJ.reason === AFRJ.INSUFFICIENT_FUEL &&
+        zeroFuelHpJ.shield === 10 && RRJ.get(zeroFuelJ.state, "consumable:fuel") === 0,
+      "燃料为 0：一件都不修、返回 INSUFFICIENT_FUEL");
+
+    // ---- J-17 repair 科研满级 ×1.06，且只乘一次 ----------------------------------------------
+    const ONE_REP_J = { high: [], mid: ["t1_shield_booster"], low: [], rig: [] };
+    const rep0J = mkArchJ({ autorepair: 1 }, { autorepair: true }, ONE_REP_J);
+    const rep5J = mkArchJ({ autorepair: 1, repair: 5 }, { autorepair: true }, ONE_REP_J);
+    okJ(nearJ(RSJ.getResearchMultiplier(rep0J.state, ["repair"]), 1) &&
+        nearJ(RSJ.getResearchMultiplier(rep5J.state, ["repair"]), 1.06),
+      "repair 组满级唯一乘子必须为 1.06（5 级 × 1.2%）");
+    const repList0J = sandbox.getInstalledRepairersForShip(rep0J.state, rep0J.inst.instanceId);
+    const repList5J = sandbox.getInstalledRepairersForShip(rep5J.state, rep5J.inst.instanceId);
+    okJ(repList0J.length === 1 && repList5J.length === 1 &&
+        nearJ(repList0J[0].multiplier, 1) && nearJ(repList5J[0].multiplier, 1.06) &&
+        repList0J[0].amount === 30 && repList0J[0].fuelCost === 1 && repList0J[0].target === "shield",
+      "维修件标准化必须携带装备强化 × 科研的唯一乘子，base amount / fuelCost 取自装备定义");
+    const hp0J = { shield: 0, armor: maxHpStarmapJ.armor, structure: maxHpStarmapJ.structure };
+    const hp5J = { shield: 0, armor: maxHpStarmapJ.armor, structure: maxHpStarmapJ.structure };
+    sandbox.applyArchaeologyFieldRepair(rep0J.state, rep0J.inst.instanceId, hp0J, REPAIR_CTX_J(false));
+    sandbox.applyArchaeologyFieldRepair(rep5J.state, rep5J.inst.instanceId, hp5J, REPAIR_CTX_J(false));
+    okJ(nearJ(hp0J.shield, 30) && nearJ(hp5J.shield, 31.8) && nearJ(hp5J.shield / hp0J.shield, 1.06),
+      "维修量必须严格 ×1.06 一次，绝不出现复利或漏乘");
+
+    // ---- J-18 在线 / 离线共用同一逻辑，事件 metadata 真实 -------------------------------------
+    const onlineJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    const offlineJ = mkArchJ({ autorepair: 1 }, { autorepair: true }, FIT3_J);
+    const repairEventsJ = [];
+    const repairOffJ = sandbox.GameEvents.on("archaeology:fieldRepairApplied", event => repairEventsJ.push(event));
+    const hpOnlineJ = { shield: 100, armor: 100, structure: 100 };
+    const hpOfflineJ = { shield: 100, armor: 100, structure: 100 };
+    const fuelOnlineBeforeJ = RRJ.get(onlineJ.state, "consumable:fuel");
+    const fuelOfflineBeforeJ = RRJ.get(offlineJ.state, "consumable:fuel");
+    const resOnlineJ = sandbox.applyArchaeologyFieldRepair(onlineJ.state, onlineJ.inst.instanceId, hpOnlineJ, REPAIR_CTX_J(false, nowJ));
+    const resOfflineJ = sandbox.applyArchaeologyFieldRepair(offlineJ.state, offlineJ.inst.instanceId, hpOfflineJ, REPAIR_CTX_J(true, nowJ + 7));
+    repairOffJ();
+    okJ(resOnlineJ.repaired === 3 && resOfflineJ.repaired === 3 &&
+        JSON.stringify(hpOnlineJ) === JSON.stringify(hpOfflineJ) &&
+        (fuelOnlineBeforeJ - RRJ.get(onlineJ.state, "consumable:fuel")) === 5 &&
+        (fuelOfflineBeforeJ - RRJ.get(offlineJ.state, "consumable:fuel")) === 5,
+      "在线与离线必须共用同一维修函数与同一扣减逻辑，结果逐字节一致");
+    okJ(repairEventsJ.length === 6 &&
+        repairEventsJ.slice(0, 3).every(event => event.meta.offline === false && event.timestamp === nowJ) &&
+        repairEventsJ.slice(3).every(event => event.meta.offline === true && event.timestamp === nowJ + 7) &&
+        repairEventsJ.every(event => event.meta.source === "research-protocol"),
+      "维修事件 metadata：timestamp 取 context.now、offline 取真实结算路径、source=research-protocol");
+    okJ(repairEventsJ.every(event => event.registered === true && event.valid === true &&
+          ["instanceId", "itemId", "target", "amount", "fuelCost"].every(key => event.payload[key] !== undefined)) &&
+        repairEventsJ.slice(0, 3).map(event => event.payload.itemId).join(",") === "t1_shield_booster,t1_armor_repairer,t1_structure_repairer" &&
+        repairEventsJ.slice(0, 3).map(event => event.payload.target).join(",") === "shield,armor,structure",
+      "archaeology:fieldRepairApplied 必须已注册且契约合法，每件维修装备本次反噬恰激活一次");
+    okJ(repairEventsJ[0].payload.amount === 30 && repairEventsJ[0].payload.fuelCost === 1 &&
+        repairEventsJ[2].payload.amount === 10 && repairEventsJ[2].payload.fuelCost === 3,
+      "事件 amount 必须是实际治疗量、fuelCost 必须是实际扣费");
+
+    // ---- J-19 GameEvents 缺失降级：先扣费再发事件，且发事件被 typeof 守卫 --------------------
+    okJ(/if \(typeof GameEvents !== "undefined"\)\s*\{\s*GameEvents\.emit\("archaeology:fieldRepairApplied"/.test(repairSrcJ) &&
+        repairSrcJ.indexOf("ResourceRegistry.spend(state, fuelKey") < repairSrcJ.indexOf('GameEvents.emit("archaeology:fieldRepairApplied"'),
+      "维修与扣费绝不依赖事件总线：先扣费改血再发事件，且发事件被 typeof GameEvents 守卫");
+
+    // ---- J-20 maxHp 与 resetArchaeologyShipHp 同源 --------------------------------------------
+    const maxHpJ = mkArchJ({}, {}, FIT3_J);
+    sandbox.resetArchaeologyShipHp(maxHpJ.state, maxHpJ.inst.instanceId);
+    const resetHpJ = maxHpJ.state.archaeology.shipHp[maxHpJ.inst.instanceId];
+    const readMaxHpJ = sandbox.getArchaeologyShipMaxHp(maxHpJ.state, maxHpJ.inst.instanceId);
+    okJ(readMaxHpJ.shield === resetHpJ.shield && readMaxHpJ.armor === resetHpJ.armor &&
+        readMaxHpJ.structure === resetHpJ.structure && readMaxHpJ.shield === maxHpStarmapJ.shield,
+      "getArchaeologyShipMaxHp 必须与 resetArchaeologyShipHp 逐层同源");
+    const unknownMaxHpJ = sandbox.getArchaeologyShipMaxHp(maxHpJ.state, "ship_not_exist");
+    okJ(unknownMaxHpJ.shield === 0 && unknownMaxHpJ.armor === 0 && unknownMaxHpJ.structure === 0,
+      "未知舰船的三层最大生命必须安全返回 0");
+
+    // ---- J-21 三个读取类函数纯读：拟合 / 装备池 / research 子树全不变 -------------------------
+    const pureJ = mkArchJ({ autoenh: 1, autorepair: 1 }, { autoenh: true, autorepair: true }, FIT3_J);
+    const pureFitJ = JSON.stringify(pureJ.inst.fitted);
+    const pureEqJ = JSON.stringify(pureJ.state.equipment);
+    const pureResearchJ = JSON.stringify(pureJ.state.research);
+    sandbox.getArchaeologyShipMaxHp(pureJ.state, pureJ.inst.instanceId);
+    const pureListJ = sandbox.getInstalledRepairersForShip(pureJ.state, pureJ.inst.instanceId);
+    pureListJ.push({ target: "shield", amount: 9999, fuelCost: 0, multiplier: 1, itemId: "hack" });
+    pureListJ[0].amount = -1;
+    sandbox.getResearchProtocolDisplayState(pureJ.state, "autoenh");
+    sandbox.getResearchProtocolDisplayState(pureJ.state, "autorepair");
+    okJ(JSON.stringify(pureJ.inst.fitted) === pureFitJ && JSON.stringify(pureJ.state.equipment) === pureEqJ &&
+        JSON.stringify(pureJ.state.research) === pureResearchJ && pureJ.state._dirty === false &&
+        sandbox.getInstalledRepairersForShip(pureJ.state, pureJ.inst.instanceId).length === 3 &&
+        sandbox.getInstalledRepairersForShip(pureJ.state, pureJ.inst.instanceId)[0].amount === 30,
+      "getArchaeologyShipMaxHp / getInstalledRepairersForShip / getResearchProtocolDisplayState 必须纯读且返回新对象");
+
+    // ---- J-22 显示态：六协议全部实装 ---------------------------------------------------------
+    const dispJ = mkArchJ({ planauto: 1, autosell: 1, autoconv: 1, autoenh: 1, autorepair: 1, intship: 1 },
+      { autoenh: true, autorepair: true, intship: true }, FIT3_J);
+    const dispShipJ = sandbox.createShipInstance("rifter", nowJ + 2);
+    dispJ.state.inventory.ships.push(dispShipJ);
+    for (const id of allCompIdsJ) RRJ.set(dispJ.state, "component:" + id, 0);
+    okJ(G("IMPLEMENTED_RESEARCH_PROTOCOLS").join(",") === "planauto,autosell,autoconv,autoenh,autorepair,intship" &&
+        ["planauto", "autosell", "autoconv", "autoenh", "autorepair", "intship"].every(id => sandbox.getResearchProtocolDisplayState(dispJ.state, id).implemented === true),
+      "六个协议必须全部标记为已实装");
+    const dEnhJ = sandbox.getResearchProtocolDisplayState(dispJ.state, "autoenh");
+    okJ(dEnhJ.maxAttempts === 0 && Array.isArray(dEnhJ.ships) && dEnhJ.ships.length === 2 &&
+        dEnhJ.ships.every(row => row.hasTier === true && row.componentsSufficient === false) &&
+        dEnhJ.ships.map(row => row.shipId).join(",") === "starmap,rifter",
+      "autoenh 显示态必须给出 maxAttempts 与逐舰可强化 / 部件充足判定");
+    for (const row of sandbox.getResearchProtocolDisplayState(dispJ.state, "autoenh").ships) {
+      const cfg = sandbox.getShipConfigById(row.shipId);
+      const cost = sandbox.getShipEnhancementCost(cfg);
+      for (const [id, q] of Object.entries(cost)) RRJ.set(dispJ.state, "component:" + id, q);
+    }
+    okJ(sandbox.getResearchProtocolDisplayState(dispJ.state, "autoenh").ships.every(row => row.componentsSufficient === true),
+      "补足部件后 autoenh 显示态必须翻转为部件充足");
+    const dRepJ = sandbox.getResearchProtocolDisplayState(dispJ.state, "autorepair");
+    okJ(dRepJ.archaeologyShip && dRepJ.archaeologyShip.shipId === "starmap" && dRepJ.repairers.length === 3 &&
+        dRepJ.repairers.map(row => row.target).join(",") === "shield,armor,structure" && !dRepJ.statusNote,
+      "autorepair 显示态必须给出考古舰船与三件维修装备清单");
+    const dRepEmptyJ = sandbox.getResearchProtocolDisplayState(mkJ({ autorepair: 1 }, { autorepair: true }), "autorepair");
+    okJ(dRepEmptyJ.archaeologyShip === null && dRepEmptyJ.repairers.length === 0 &&
+        dRepEmptyJ.statusNote === "未指派考古舰船，无法读取维修装备",
+      "未指派考古舰船时 autorepair 显示态必须给出明确说明");
+
+    // ---- J-23 协议面板 HTML：autoenh 可执行 / autorepair 只读 / intship 已提供启动表单 ----------
+    const htmlEnhJ = sandbox.renderResearchProtocolPanelHtml(sandbox.getResearchProtocolDisplayState(dispJ.state, "autoenh"));
+    okJ(htmlEnhJ.includes('data-detail-action="protocol-toggle"') && htmlEnhJ.includes('data-protocol-id="autoenh"') &&
+        htmlEnhJ.includes("data-protocol-max") && htmlEnhJ.includes('data-detail-action="autoenh-set-max"') &&
+        htmlEnhJ.includes('data-detail-action="autoenh-run"') && htmlEnhJ.includes('data-instance-id="' + dispShipJ.instanceId + '"') &&
+        !htmlEnhJ.includes("协议业务尚未接入"),
+      "autoenh 面板必须提供总开关 / 最大尝试次数 / 逐舰开始自动强化按钮");
+    for (const id of allCompIdsJ) RRJ.set(dispJ.state, "component:" + id, 0);
+    const htmlEnhPoorJ = sandbox.renderResearchProtocolPanelHtml(sandbox.getResearchProtocolDisplayState(dispJ.state, "autoenh"));
+    okJ(htmlEnhPoorJ.includes("部件不足") && /data-instance-id="[^"]+" disabled>/.test(htmlEnhPoorJ),
+      "部件不足时开始自动强化按钮必须禁用");
+    const htmlRepJ = sandbox.renderResearchProtocolPanelHtml(dRepJ);
+    okJ(htmlRepJ.includes('data-protocol-id="autorepair"') && htmlRepJ.includes("t1_shield_booster") &&
+        htmlRepJ.includes("t1_armor_repairer") && htmlRepJ.includes("t1_structure_repairer") &&
+        htmlRepJ.includes("仅在非致命考古反噬后") && !htmlRepJ.includes('data-detail-action="autoenh-run"') &&
+        !htmlRepJ.includes("data-deployment-id"),
+      "autorepair 面板必须列出维修装备与说明，且不得出现任何主动执行按钮");
+    const htmlIntJ = sandbox.renderResearchProtocolPanelHtml(sandbox.getResearchProtocolDisplayState(dispJ.state, "intship"));
+    okJ(htmlIntJ.includes('data-protocol-id="intship"') && htmlIntJ.includes("data-intship-recipe") &&
+        htmlIntJ.includes("data-intship-quantity") && htmlIntJ.includes('data-detail-action="intship-start"') &&
+        !htmlIntJ.includes("协议业务尚未接入"),
+      "intship 面板必须提供启动表单（配方下拉 / 数量 / 开始按钮），不再显示“协议业务尚未接入”");
+
+    // ---- J-24 Batch I 不回退 + 冻结基线不回退 ------------------------------------------------
+    const apiNamesJ = [
+      "isResearchProtocolUnlocked", "isResearchProtocolEnabled", "isResearchProtocolActive",
+      "setResearchProtocolEnabled", "setPlanetAutoRenew", "getResearchProtocolDisplayState",
+      "tryPlanetAutoRenew", "applyArchaeologyArtifactProtocols",
+      "setAutoEnhancementMaxAttempts", "runAutoEnhancement",
+      "getArchaeologyShipMaxHp", "getInstalledRepairersForShip", "applyArchaeologyFieldRepair"
+    ];
+    okJ(apiNamesJ.every(name => typeof sandbox[name] === "function"),
+      "Batch I 的 8 个 API 必须与 Batch J 的 5 个新 API 并存：" + apiNamesJ.join("/"));
+    okJ(Object.keys(REASONS_J).length === 11 && Object.keys(AERJ).length === 11 && Object.keys(AFRJ).length === 5 &&
+        Object.values(AERJ).every(value => typeof value === "string" && value === value.toUpperCase()),
+      "Batch I 的 11 个稳定 reason 不得增删；Batch J 加固后维修 reason 恰为 5 个且必须是大写串");
+    const artProtoJ = mkJ({ autosell: 1, autoconv: 1 }, { autosell: true, autoconv: true });
+    okJ(sandbox.isResearchProtocolActive(artProtoJ, "autosell") === true &&
+        sandbox.isResearchProtocolActive(artProtoJ, "autoconv") === true &&
+        sandbox.isResearchProtocolActive(artProtoJ, "autoenh") === false &&
+        sandbox.setResearchProtocolEnabled(artProtoJ, "autoenh", true).reason === REASONS_J.PROTOCOL_LOCKED,
+      "Batch I 三协议行为不得回退，且未研究的 autoenh 仍不可启用");
+    let stepsJ = 0;
+    let secondsJ = 0;
+    for (const node of RDJ.NODES) {
+      stepsJ += Number(node.maxLevel) || 0;
+      for (const duration of (node.durationByLevel || [])) secondsJ += Number(duration) || 0;
+    }
+    const protocolNodesJ = RDJ.NODES.filter(node => node.type === "protocol");
+    okJ(Object.keys(RDJ.RESEARCH_BONUS_CONSUMERS || {}).length === 31 && RDJ.NODES.length === 38 &&
+        stepsJ === 150 && Math.abs(secondsJ - 7776000) < 1e-6 &&
+        protocolNodesJ.length === 6 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
+      "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
+    okJ(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294,
+      "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+  } finally {
+    gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
+    gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
+    gsJ.resources = JSON.parse(JSON.stringify(savedResourcesJ));
+    gsJ.skills = JSON.parse(JSON.stringify(savedSkillsJ));
+    gsJ.archaeology = JSON.parse(JSON.stringify(savedArchJ));
+    gsJ.currentAction = JSON.parse(JSON.stringify(savedActionJ));
+    gsJ.shipAssignments = JSON.parse(JSON.stringify(savedAssignJ));
+  }
+
+  console.log("Batch J 自动强化 / 野外自动维修校验通过（" + jChecks + " 项）：三层门槛（未研究 / 未启用 / 脏档 enabled=true 未研究一律零执行零消耗）、maxAttempts 十一类非法输入与 10000 上限、迁移幂等清洗且 schemaVersion 不变、maxAttempts=N 恰 N 次真实 attempt 且事件数 === attempts、maxAttempts=0 持续到部件真实耗尽、成功 +1 级取底层 XP / 失败不掉级 0 XP 但照扣部件、只消耗不产出部件、活动舰船与未知舰船零尝试、手动单次强化行为不变、两条 action 路由生效且不绕过门槛、维修件只来自考古舰船 fitting 绝不借战斗舰船、真实非致命反噬三层各修一次并多扣 1+1+3 燃料、致命反噬绝不维修绝不复活、满血层跳过零燃料与溢出钳制、燃料只够第一件即停且不为负、repair 满级 ×1.06 只乘一次、在线离线共用同一逻辑、事件 timestamp/offline/source 与五字段契约、扣费先于发事件且 GameEvents 缺失降级、maxHp 与 reset 同源、三个读取函数纯读、六协议全实装（intship 由 Batch K 实装）、autoenh 面板可执行与部件不足禁用、autorepair 面板只读、intship 面板提供启动表单、Batch I 与 31/38/150/90 天/50 JS/4 CSS/294 DOM 基线不回退");
+}
+
+// ============================================================================================
+// 研究系统 Batch K：intship 一体化造船完整实装（第六个协议，研究系统最终收口）
+// 铁律：
+//   1) 只做编排：绝不自行扣材料/组件、绝不自行 createShipInstance、绝不自行 emit
+//      manufacturing:completed、绝不复制周期/成本/船坞公式——全部走既有制造链路；
+//   2) 19 个稳定 reason（5 个复用 Batch I + 14 个新增），公开 API 恰 12 个；
+//   3) 幂等消费者经 GameEvents.onIdempotent 只更账本，绝不覆盖 currentAction；
+//      阶段推进唯一入口 advanceIntshipAfterManufacturingAction（在线/离线共用）；
+//   4) 失败一律原子回滚（作业 + currentAction 快照），起步缺料绝不空转；
+//   5) 取消不回退已产出；存档恢复 fail closed 为 recovery-required。
+// ============================================================================================
+{
+  let kChecks = 0;
+  const okK = (condition, message) => {
+    if (!condition) throw new Error("Batch K 校验失败：" + message);
+    kChecks += 1;
+  };
+  const nearK = (a, b, eps) => Math.abs(Number(a) - Number(b)) <= (eps === undefined ? 1e-6 : eps);
+
+  const RSK = sandbox.ResearchState;
+  const RRK = G("ResourceRegistry");
+  const REASONS_K = G("INTSHIP_REASONS");
+  const MSAK = G("ManufacturingStateActions");
+  const gsK = sandbox.gameState;
+  const nowK = 1780000000000;
+
+  const savedResearchK = JSON.parse(JSON.stringify(gsK.research));
+  const savedInventoryK = JSON.parse(JSON.stringify(gsK.inventory));
+  const savedResourcesK = JSON.parse(JSON.stringify(gsK.resources));
+  const savedSkillsK = JSON.parse(JSON.stringify(gsK.skills));
+  const savedActionK = JSON.parse(JSON.stringify(gsK.currentAction));
+  const savedStationK = JSON.parse(JSON.stringify(gsK.station));
+  const savedQueueK = JSON.parse(JSON.stringify(gsK.queue || null));
+  const savedAssignK = JSON.parse(JSON.stringify(gsK.shipAssignments || {}));
+
+  try {
+    const pristineK = JSON.parse(JSON.stringify(gsK));
+
+    // 夹具：干净默认研究状态 + 指定已完成等级 + 指定协议总开关 + 空机库 / 空装备池 / 无活动
+    const mkK = (levels, protocolEnabled) => {
+      const state = JSON.parse(JSON.stringify(pristineK));
+      state.research = RSK.createDefaultResearchState();
+      state.research.lastProcessedAt = nowK;
+      state.research.completedLevels = Object.assign({}, levels || {});
+      for (const [key, value] of Object.entries(protocolEnabled || {})) {
+        state.research.protocolSettings[key].enabled = value;
+      }
+      state.inventory = { ships: [], equipment: [], rigs: [] };
+      state.shipAssignments = {};
+      state.planetary = { deployments: [], nextId: 1 };
+      state.currentAction = Object.assign({}, state.currentAction, { active: false, skill: null, progress: 0 });
+      if (state.combat && typeof state.combat === "object") { state.combat.active = false; state.combat.activeShip = null; }
+      state._dirty = false;
+      return state;
+    };
+    // 挂载夹具到全局 gameState，跑完原样还原（真实 tick / 离线入口）
+    const withGameStateK = (state, fn) => {
+      const sR = gsK.research, sI = gsK.inventory, sRes = gsK.resources, sSk = gsK.skills;
+      const sA = gsK.currentAction, sS = gsK.station, sQ = gsK.queue, sAs = gsK.shipAssignments;
+      const sBp = gsK.ownedBlueprints;
+      gsK.research = state.research; gsK.inventory = state.inventory; gsK.resources = state.resources;
+      gsK.skills = state.skills; gsK.currentAction = state.currentAction; gsK.station = state.station;
+      gsK.queue = state.queue; gsK.shipAssignments = state.shipAssignments; gsK.ownedBlueprints = state.ownedBlueprints;
+      try { return fn(); } finally {
+        gsK.research = sR; gsK.inventory = sI; gsK.resources = sRes; gsK.skills = sSk;
+        gsK.currentAction = sA; gsK.station = sS; gsK.queue = sQ; gsK.shipAssignments = sAs;
+        gsK.ownedBlueprints = sBp;
+      }
+    };
+
+    // rifter ×1 全链路材料：6 个组件周期（i_h×2 + p_c×2 + f_s×2）总消耗 164/26/18/18
+    const RIFTER_MATS_K = { "三钛合金":164, "类银超金属":26, "重金属":18, "稀有气体":18 };
+    const setMatsK = (state, map) => { for (const [id, q] of Object.entries(map || {})) RRK.set(state, "mineral:" + id, q); };
+    const setComponentsK = (state, counts) => { for (const [id, q] of Object.entries(counts || {})) RRK.set(state, "component:" + id, q); };
+    const mkReadyK = (mats, comps, extra) => {
+      const state = mkK({ intship: 1 }, { intship: true });
+      // 干净队列（不继承全局 gameState 遗留项，保证 queue/start 只执行本夹具入队的动作）
+      state.queue = { items: [], config: { maxSize: 20, loopMode: false, skipOnFail: true }, status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 } };
+      // rifter 装配配方需要蓝图（仅 destroyer 级免蓝图）
+      if (!Array.isArray(state.ownedBlueprints)) state.ownedBlueprints = [];
+      if (state.ownedBlueprints.indexOf("rifter") < 0) state.ownedBlueprints.push("rifter");
+      setMatsK(state, mats || RIFTER_MATS_K);
+      setComponentsK(state, comps || {});
+      if (extra) extra(state);
+      state._dirty = false;
+      return state;
+    };
+    const activePhaseK = (job) => Boolean(job) && (job.phase === "component" || job.phase === "assembly");
+    const driveK = (state, maxTicks) => {
+      const job = state.research.protocolJobs.intship;
+      let ticks = 0;
+      while (job && activePhaseK(job) && ticks < (maxTicks || 12)) {
+        gsK.currentAction.progress = 100000;
+        sandbox.gameTick();
+        ticks++;
+      }
+      return ticks;
+    };
+
+    // ---- K-01 公开 API 与稳定 reason 基线 -----------------------------------------------
+    const intshipApisK = [
+      "startIntship", "continueIntship", "cancelIntship", "advanceIntshipAfterManufacturingAction",
+      "restoreIntshipProtocolRuntime", "getIntshipJob", "summarizeIntshipJob",
+      "buildIntshipComponentPlan", "buildIntshipRecipeOptions", "intshipOwnsCurrentAction",
+      "reconcileIntshipRuntime", "buildIntshipRecipeOptions"
+    ];
+    okK(intshipApisK.every(name => typeof sandbox[name] === "function"),
+      "intship 公开 API 必须全部暴露：" + intshipApisK.join("/"));
+    okK(Object.keys(REASONS_K).length === 20 && Object.values(REASONS_K).every(value => typeof value === "string" && value === value.toUpperCase()) &&
+        REASONS_K.EVENTS_UNAVAILABLE === "EVENTS_UNAVAILABLE",
+      "INTSHIP_REASONS 必须恰为 20 个稳定大写串且含 EVENTS_UNAVAILABLE");
+    okK(sandbox.INTSHIP_MAX_QUANTITY === 1000, "INTSHIP_MAX_QUANTITY 必须为 1000");
+    okK(G("IMPLEMENTED_RESEARCH_PROTOCOLS").join(",").includes("intship"),
+      "六协议全实装集合必须包含 intship");
+
+    // ---- K-02 三层门槛 + 参数校验 + 原子回滚 --------------------------------------------
+    const lockedK = mkK({}, {});
+    const resLockedK = sandbox.startIntship(lockedK, { recipeId: "rifter", quantity: 1 }, nowK);
+    okK(resLockedK.changed === false && resLockedK.reason === REASONS_K.PROTOCOL_LOCKED && lockedK._dirty === false,
+      "未研究 intship 必须 PROTOCOL_LOCKED 且零副作用");
+    const disabledK = mkK({ intship: 1 }, {});
+    okK(sandbox.startIntship(disabledK, { recipeId: "rifter", quantity: 1 }, nowK).reason === REASONS_K.PROTOCOL_DISABLED,
+      "已研究未启用必须 PROTOCOL_DISABLED");
+    okK([0, -3, 1.5, 1001, "abc", "2", NaN].every(q => sandbox.startIntship(mkReadyK(), { recipeId: "rifter", quantity: q }, nowK).reason === REASONS_K.INVALID_QUANTITY),
+      "非法数量（0/-3/小数/超上限/字符串/数字字符串/NaN）一律 INVALID_QUANTITY");
+    okK(sandbox.startIntship(mkReadyK(), { recipeId: "nope", quantity: 1 }, nowK).reason === REASONS_K.UNKNOWN_RECIPE,
+      "未知配方必须 UNKNOWN_RECIPE");
+    okK(sandbox.startIntship(mkReadyK(), { shipId: "gale", quantity: 1 }, nowK).reason === REASONS_K.BLUEPRINT_LOCKED,
+      "未拥有蓝图（gale）必须 BLUEPRINT_LOCKED");
+    okK(sandbox.startIntship(mkReadyK(), { recipeId: "raylight", quantity: 1 }, nowK).reason === REASONS_K.LEVEL_LOCKED,
+      "舰船工程等级不足（raylight Lv.15）必须 LEVEL_LOCKED");
+    const busyK = mkReadyK(); busyK.currentAction.active = true;
+    okK(sandbox.startIntship(busyK, { recipeId: "rifter", quantity: 1 }, nowK).reason === REASONS_K.ACTION_BUSY,
+      "当前有进行中制造动作必须 ACTION_BUSY");
+    const brokeK = mkReadyK({}, {});
+    const brokeBeforeK = JSON.stringify(brokeK.currentAction);
+    const resBrokeK = sandbox.startIntship(brokeK, { recipeId: "rifter", quantity: 1 }, nowK);
+    okK(resBrokeK.reason === REASONS_K.INSUFFICIENT_MATERIALS && brokeK.research.protocolJobs.intship === null &&
+        JSON.stringify(brokeK.currentAction) === brokeBeforeK && brokeK._dirty === false,
+      "起步缺料必须 INSUFFICIENT_MATERIALS 且作业与 currentAction 原子回滚（零残留）");
+
+    // ---- K-03 启动成功：组件计划 / batchRemaining / 库存缺口 ---------------------------------
+    const startK = mkReadyK();
+    const resStartK = sandbox.startIntship(startK, { recipeId: "rifter", quantity: 1 }, nowK);
+    okK(resStartK.changed === true && resStartK.phase === "component" && resStartK.componentId === "integrated_hull",
+      "材料充足必须启动成功并进入组件阶段（componentPlan 键序第一个）");
+    okK(startK.currentAction.skill === "shipEngineering" && startK.currentAction.active === true &&
+        startK.currentAction.shipSubAction === "component" && startK.currentAction.startedShipCompTarget === "integrated_hull" &&
+        startK.currentAction.batchRemaining === 2,
+      "启动后 currentAction 必须被真实制造动作接管且 batchRemaining=缺口 2");
+    const startJobK = startK.research.protocolJobs.intship;
+    okK(JSON.stringify(startJobK.componentPlan) === JSON.stringify({ integrated_hull: 2, power_core: 2, functional_system: 2 }) &&
+        startJobK.assemblyRemaining === 1 && startJobK.producedShips === 0,
+      "componentPlan 必须恰为三组件各 2 缺口，总装余量=数量");
+    const partialK = mkReadyK(RIFTER_MATS_K, { integrated_hull: 1 });
+    const resPartialK = sandbox.startIntship(partialK, { recipeId: "rifter", quantity: 1 }, nowK);
+    okK(resPartialK.changed === true && partialK.research.protocolJobs.intship.componentPlan.integrated_hull === 1 &&
+        partialK.currentAction.batchRemaining === 1,
+      "已有库存组件必须从缺口扣除（1/2）并精确设置批量");
+    const fullK = mkReadyK(RIFTER_MATS_K, { integrated_hull: 2, power_core: 2, functional_system: 2 });
+    const resFullK = sandbox.startIntship(fullK, { recipeId: "rifter", quantity: 1 }, nowK);
+    okK(resFullK.changed === true && resFullK.phase === "assembly" &&
+        fullK.currentAction.shipSubAction === "assembly" && fullK.currentAction.batchRemaining === 1,
+      "组件全齐必须跳过组件阶段直接总装（batchRemaining=数量）");
+    okK(sandbox.startIntship(fullK, { recipeId: "rifter", quantity: 1 }, nowK).reason === REASONS_K.JOB_ALREADY_ACTIVE,
+      "已有活动作业再启动必须 JOB_ALREADY_ACTIVE");
+
+    // ---- K-04 在线全链路：真实 tick 驱动（组件生产 → 总装 → 产舰） --------------------------
+    const onlineK = mkReadyK();
+    okK(sandbox.startIntship(onlineK, { recipeId: "rifter", quantity: 1 }, nowK).changed === true, "在线链路前置：启动成功");
+    withGameStateK(onlineK, () => driveK(onlineK, 12));
+    const onlineJobK = onlineK.research.protocolJobs.intship;
+    okK(onlineJobK.phase === "completed" && onlineJobK.producedShips === 1 && onlineJobK.assemblyRemaining === 0,
+      "在线全链路后作业必须 completed、产舰 1、总装余量 0");
+    okK(onlineK.inventory.ships.length === 1 && onlineK.inventory.ships[0].shipId === "rifter",
+      "机库必须真实产出 1 艘 rifter（既有 createShipInstance 链路）");
+    okK(RRK.get(onlineK, "mineral:三钛合金") === 0 && RRK.get(onlineK, "mineral:类银超金属") === 0 &&
+        RRK.get(onlineK, "mineral:重金属") === 0 && RRK.get(onlineK, "mineral:稀有气体") === 0,
+      "6 个组件周期必须真实扣光 164/26/18/18 材料（既有 deductMats 链路）");
+    okK(RRK.get(onlineK, "component:integrated_hull") === 0 && RRK.get(onlineK, "component:power_core") === 0 &&
+        RRK.get(onlineK, "component:functional_system") === 0,
+      "组件产出 2+2+2 必须被总装 2+2+2 真实消耗（组件库存归零）");
+    okK(onlineK.currentAction.active === false, "作业完成后 currentAction 必须停止");
+    withGameStateK(onlineK, () => { gsK.currentAction.progress = 100000; sandbox.gameTick(); });
+    okK(onlineK.research.protocolJobs.intship.phase === "completed" && onlineK.inventory.ships.length === 1,
+      "作业完成后继续 tick 绝不重复产舰（消费者已卸载）");
+
+    // ---- K-05 幂等消费者：只更账本、去重、错配不入账 --------------------------------------
+    const evStateK = mkReadyK();
+    sandbox.startIntship(evStateK, { recipeId: "rifter", quantity: 1 }, nowK);
+    const evJobK = evStateK.research.protocolJobs.intship;
+    const evLedgerBeforeK = evJobK.processedEventIds.length;
+    const emitCompK = (eventId) => sandbox.GameEvents.emit("manufacturing:completed",
+      { branch: "component", recipeId: evJobK.currentComponentId, resourceId: "component:" + evJobK.currentComponentId, quantity: 1, cycles: 1, xp: 44 },
+      { timestamp: nowK, eventId });
+    emitCompK("k_ev_1");
+    okK(evJobK.completedComponents[evJobK.currentComponentId] === 1 &&
+        evJobK.processedEventIds.length === evLedgerBeforeK + 1 &&
+        evJobK.processedEventIds.includes("intship:" + evJobK.jobId + ":k_ev_1"),
+      "正确组件事件必须入账（completedComponents+1、ledger 记录 consumerId:eventId）");
+    emitCompK("k_ev_1");
+    okK(evJobK.completedComponents[evJobK.currentComponentId] === 1 && evJobK.processedEventIds.length === evLedgerBeforeK + 1,
+      "同 eventId 重复事件必须幂等去重（不重复入账）");
+    sandbox.GameEvents.emit("manufacturing:completed",
+      { branch: "component", recipeId: "power_core", resourceId: "component:power_core", quantity: 1, cycles: 1, xp: 30 },
+      { timestamp: nowK, eventId: "k_ev_2" });
+    okK(evJobK.completedComponents["power_core"] === undefined && evJobK.processedEventIds.length === evLedgerBeforeK + 1,
+      "非当前组件 recipeId 的事件必须不入账");
+    sandbox.GameEvents.emit("manufacturing:completed",
+      { branch: "ship", recipeId: evJobK.recipeId, shipId: evJobK.shipId, quantity: 1, cycles: 1, xp: 30 },
+      { timestamp: nowK, eventId: "k_ev_3" });
+    okK(evJobK.producedShips === 0 && evJobK.assemblyRemaining === 1 && evJobK.processedEventIds.length === evLedgerBeforeK + 1,
+      "组件阶段收到 ship 事件必须不入账（绝不提前产舰）");
+
+    // ---- K-06 中途缺料 → stopped → 补齐续作 → 完成 -----------------------------------------
+    const shortK = mkReadyK({ "三钛合金": 40, "类银超金属": 6, "重金属": 7, "稀有气体": 4 });
+    okK(sandbox.startIntship(shortK, { recipeId: "rifter", quantity: 1 }, nowK).changed === true, "缺料场景前置：启动成功（首周期可负担）");
+    withGameStateK(shortK, () => { gsK.currentAction.progress = 100000; sandbox.gameTick(); });
+    okK(shortK.currentAction.active === false, "第 2 个综合舰体组件缺料后制造动作必须停止");
+    withGameStateK(shortK, () => sandbox.gameTick());
+    okK(shortK.research.protocolJobs.intship.phase === "stopped" &&
+        shortK.research.protocolJobs.intship.stopReason === REASONS_K.INSUFFICIENT_MATERIALS,
+      "下一 tick 对账后作业必须落 stopped 且 stopReason=INSUFFICIENT_MATERIALS");
+    okK(sandbox.continueIntship(shortK, nowK + 1000).reason === REASONS_K.INSUFFICIENT_MATERIALS &&
+        shortK.research.protocolJobs.intship.phase === "stopped" && shortK.currentAction.active === false,
+      "材料未补齐时续作必须 INSUFFICIENT_MATERIALS 且作业保持 stopped（零残留）");
+    setMatsK(shortK, RIFTER_MATS_K);
+    const resContK = sandbox.continueIntship(shortK, nowK + 1000);
+    okK(resContK.changed === true && resContK.phase === "component" && shortK.currentAction.active === true &&
+        shortK.currentAction.batchRemaining === 1,
+      "补齐材料后 continueIntship 必须恢复组件阶段（剩余缺口 1）");
+    withGameStateK(shortK, () => driveK(shortK, 12));
+    okK(shortK.research.protocolJobs.intship.phase === "completed" && shortK.inventory.ships.length === 1,
+      "续作后驱动必须完成作业并产舰 1 艘");
+
+    // ---- K-07 玩家抢占 → preempted → 续作 --------------------------------------------------
+    const preK = mkReadyK();
+    sandbox.startIntship(preK, { recipeId: "rifter", quantity: 1 }, nowK);
+    preK.currentAction.skill = "mining"; // 模拟玩家切换制造动作为其他技能
+    const recPreK = sandbox.reconcileIntshipRuntime(preK, nowK + 500);
+    okK(recPreK.phase === "preempted" && recPreK.stopReason === REASONS_K.PREEMPTED,
+      "作业被其他活动动作抢占后必须落 preempted");
+    okK(sandbox.continueIntship(preK, nowK + 1000).reason === REASONS_K.ACTION_BUSY,
+      "抢占后当前动作仍活动时续作必须 ACTION_BUSY");
+    preK.currentAction.active = false;
+    okK(sandbox.continueIntship(preK, nowK + 1000).changed === true,
+      "停掉抢占动作后 preempted 作业必须可续作");
+
+    // ---- K-08 取消：停止动作 / 保留产出 / 状态机 -------------------------------------------
+    const cancelK = mkReadyK();
+    sandbox.startIntship(cancelK, { recipeId: "rifter", quantity: 1 }, nowK);
+    const resCancelK = sandbox.cancelIntship(cancelK, nowK + 500);
+    okK(resCancelK.changed === true && resCancelK.stoppedAction === true &&
+        cancelK.research.protocolJobs.intship.phase === "cancelled" && cancelK.currentAction.active === false &&
+        cancelK.currentAction.batchRemaining === 0,
+      "取消必须停止驱动动作并落 cancelled（batchRemaining 清零）");
+    okK(sandbox.cancelIntship(cancelK, nowK + 600).reason === REASONS_K.JOB_CANCELLED &&
+        sandbox.continueIntship(cancelK, nowK + 600).reason === REASONS_K.JOB_CANCELLED,
+      "已取消作业再取消 / 续作都必须 JOB_CANCELLED");
+    okK(sandbox.cancelIntship(onlineK, nowK + 600).reason === REASONS_K.JOB_COMPLETED,
+      "已完成作业取消必须 JOB_COMPLETED");
+    okK(sandbox.cancelIntship(mkK({ intship: 1 }, { intship: true }), nowK).reason === REASONS_K.NO_ACTIVE_JOB,
+      "无作业取消必须 NO_ACTIVE_JOB");
+
+    // ---- K-09 存档恢复：重装消费者 / fail closed 为 recovery-required -----------------------
+    okK(sandbox.restoreIntshipProtocolRuntime(mkK({ intship: 1 }, { intship: true })).reason === REASONS_K.NO_ACTIVE_JOB,
+      "无作业恢复必须 NO_ACTIVE_JOB");
+    const restK = mkReadyK();
+    sandbox.startIntship(restK, { recipeId: "rifter", quantity: 1 }, nowK);
+    const resRestK = sandbox.restoreIntshipProtocolRuntime(restK);
+    okK(resRestK.restored === true && resRestK.phase === "component",
+      "活动作业且 currentAction 匹配必须恢复成功并重装消费者");
+    const badShapeK = mkReadyK();
+    sandbox.startIntship(badShapeK, { recipeId: "rifter", quantity: 1 }, nowK);
+    badShapeK.research.protocolJobs.intship.recipeId = "kestrel";
+    okK(sandbox.restoreIntshipProtocolRuntime(badShapeK).reason === REASONS_K.RECOVERY_REQUIRED &&
+        badShapeK.research.protocolJobs.intship.phase === "recovery-required",
+      "配方 shape 不匹配必须 fail closed 为 recovery-required");
+    const detachedK = mkReadyK();
+    sandbox.startIntship(detachedK, { recipeId: "rifter", quantity: 1 }, nowK);
+    detachedK.currentAction.active = false;
+    okK(sandbox.restoreIntshipProtocolRuntime(detachedK).reason === REASONS_K.RECOVERY_REQUIRED &&
+        detachedK.research.protocolJobs.intship.phase === "recovery-required",
+      "作业不再驱动 currentAction 必须 fail closed 为 recovery-required");
+    okK(sandbox.restoreIntshipProtocolRuntime(onlineK).restored === false &&
+        sandbox.restoreIntshipProtocolRuntime(onlineK).reason === REASONS_K.JOB_NOT_RESUMABLE,
+      "已完成作业恢复不装消费者、不产舰");
+
+    // ---- K-10 离线链路：真实 settleOfflineActions 一次推进到完成 -----------------------------
+    const offlineK = mkReadyK();
+    okK(sandbox.startIntship(offlineK, { recipeId: "rifter", quantity: 1 }, nowK).changed === true, "离线链路前置：启动成功");
+    const gainsK = {};
+    withGameStateK(offlineK, () => sandbox.settleOfflineActions(100000, gainsK));
+    okK(offlineK.research.protocolJobs.intship.phase === "completed" && offlineK.inventory.ships.length === 1,
+      "离线结算必须推进并完成一体化造船（组件 → 总装 → 产舰）");
+    okK(RRK.get(offlineK, "mineral:三钛合金") === 0 && RRK.get(offlineK, "component:integrated_hull") === 0 &&
+        RRK.get(offlineK, "component:power_core") === 0 && RRK.get(offlineK, "component:functional_system") === 0,
+      "离线全链路必须真实扣料且组件被总装消耗");
+
+    // ---- K-11 action 路由：三条 research/* 路由与直调同源 ------------------------------------
+    const routeK = mkReadyK();
+    const resRouteK = sandbox.dispatchGameAction(routeK, { type: "research/startIntship", options: { recipeId: "rifter", quantity: 1 } }, nowK);
+    okK(resRouteK.changed === true && resRouteK.phase === "component", "action 路由 research/startIntship 必须生效");
+    okK(sandbox.dispatchGameAction(routeK, { type: "research/cancelIntship" }, nowK).changed === true &&
+        routeK.research.protocolJobs.intship.phase === "cancelled",
+      "action 路由 research/cancelIntship 必须生效");
+    const routeStoppedK = mkReadyK();
+    sandbox.dispatchGameAction(routeStoppedK, { type: "research/startIntship", options: { recipeId: "rifter", quantity: 1 } }, nowK);
+    routeStoppedK.currentAction.active = false;
+    okK(sandbox.dispatchGameAction(routeStoppedK, { type: "research/continueIntship" }, nowK).changed === true,
+      "action 路由 research/continueIntship 必须生效");
+
+    // ---- K-12 UI 显示态：启动表单 / 作业进度 / 中断标记 --------------------------------------
+    const dispK = mkReadyK();
+    const dispEmptyK = sandbox.getResearchProtocolDisplayState(dispK, "intship");
+    okK(dispEmptyK.implemented === true && dispEmptyK.maxQuantity === 1000 && dispEmptyK.job === null &&
+        Array.isArray(dispEmptyK.recipes) && dispEmptyK.recipes.some(r => r.recipeId === "rifter" && r.buildable === true) &&
+        dispEmptyK.actionBusy === false,
+      "intship 显示态无作业时必须给出可造配方清单与数量上限");
+    sandbox.startIntship(dispK, { recipeId: "rifter", quantity: 1 }, nowK);
+    const dispRunK = sandbox.getResearchProtocolDisplayState(dispK, "intship");
+    okK(dispRunK.job && dispRunK.job.phase === "component" && dispRunK.jobRunning === true && dispRunK.jobInterrupted === false,
+      "作业运行时显示态必须 jobRunning=true、jobInterrupted=false");
+    dispK.currentAction.active = false;
+    const dispIntK = sandbox.getResearchProtocolDisplayState(dispK, "intship");
+    okK(dispIntK.jobRunning === false && dispIntK.jobInterrupted === true,
+      "作业被中断时显示态必须 jobInterrupted=true");
+
+    // ---- K-13 公开 API 契约：buildIntshipComponentPlan(state, targetShipId, quantity) ----------
+    const planSigK = sandbox.buildIntshipComponentPlan(mkReadyK(), "rifter", 2);
+    okK(planSigK && planSigK.integrated_hull === 4 && planSigK.power_core === 4 && planSigK.functional_system === 4,
+      "公开 buildIntshipComponentPlan 必须接受舰船 ID 字符串 + 合法数量并返回缺口（需求-库存）");
+    okK(["2", 2.5, NaN, Infinity, 0, -1, 1001, null, {}, ["rifter"]].every(bad =>
+        sandbox.buildIntshipComponentPlan(mkReadyK(), "rifter", bad) === null),
+      "公开 buildIntshipComponentPlan 必须拒绝数字字符串/小数/NaN/Infinity/0/负数/超上限/null/对象/数组数量");
+    okK([undefined, "", 123, {}, null, ["rifter"]].every(bad =>
+        sandbox.buildIntshipComponentPlan(mkReadyK(), bad, 1) === null),
+      "公开 buildIntshipComponentPlan 必须拒绝非字符串/空字符串/数字/对象/数组/null 的 targetShipId");
+
+    // ---- K-14 quantity=2 在线完整链：真实制造 → 总装 → 恰 2 艘 --------------------------------
+    const twoOnlineK = mkReadyK({ "三钛合金": 328, "类银超金属": 52, "重金属": 36, "稀有气体": 36 });
+    okK(sandbox.startIntship(twoOnlineK, { recipeId: "rifter", quantity: 2 }, nowK).changed === true &&
+        twoOnlineK.research.protocolJobs.intship.componentPlan.integrated_hull === 4,
+      "quantity=2 前置：组件缺口必须为 4+4+4");
+    withGameStateK(twoOnlineK, () => driveK(twoOnlineK, 16));
+    okK(twoOnlineK.research.protocolJobs.intship.phase === "completed" &&
+        twoOnlineK.inventory.ships.length === 2 && twoOnlineK.inventory.ships.every(s => s.shipId === "rifter"),
+      "quantity=2 在线全链必须最终恰增加 2 艘 rifter");
+    okK(RRK.get(twoOnlineK, "mineral:三钛合金") === 0 && RRK.get(twoOnlineK, "mineral:类银超金属") === 0 &&
+        RRK.get(twoOnlineK, "mineral:重金属") === 0 && RRK.get(twoOnlineK, "mineral:稀有气体") === 0 &&
+        RRK.get(twoOnlineK, "component:integrated_hull") === 0 && RRK.get(twoOnlineK, "component:power_core") === 0 &&
+        RRK.get(twoOnlineK, "component:functional_system") === 0,
+      "quantity=2 在线全链材料 328/52/36/36 与组件 4+4+4 必须真实消耗干净");
+    withGameStateK(twoOnlineK, () => { gsK.currentAction.progress = 100000; sandbox.gameTick(); });
+    okK(twoOnlineK.inventory.ships.length === 2,
+      "quantity=2 完成后重复 tick 绝不造第 3 艘");
+
+    // ---- K-15 quantity=2 离线完整链 ---------------------------------------------------------
+    const twoOfflineK = mkReadyK({ "三钛合金": 328, "类银超金属": 52, "重金属": 36, "稀有气体": 36 });
+    okK(sandbox.startIntship(twoOfflineK, { recipeId: "rifter", quantity: 2 }, nowK).changed === true,
+      "quantity=2 离线前置：启动成功");
+    withGameStateK(twoOfflineK, () => sandbox.settleOfflineActions(100000, {}));
+    okK(twoOfflineK.research.protocolJobs.intship.phase === "completed" &&
+        twoOfflineK.inventory.ships.length === 2,
+      "quantity=2 离线全链必须最终恰增加 2 艘 rifter");
+
+    // ---- K-16 造 1 件→停→玩家消耗→补料→续作：缺口重算、杜绝死循环 -----------------------------
+    const consumeK = mkReadyK({ "三钛合金": 40, "类银超金属": 6, "重金属": 7, "稀有气体": 4 });
+    okK(sandbox.startIntship(consumeK, { recipeId: "rifter", quantity: 1 }, nowK).changed === true,
+      "消耗恢复前置：启动成功（材料只够 1 个综合舰体组件）");
+    withGameStateK(consumeK, () => { gsK.currentAction.progress = 100000; sandbox.gameTick(); });
+    okK(RRK.get(consumeK, "component:integrated_hull") === 1 && consumeK.currentAction.active === false,
+      "消耗恢复：造出 1 件组件后原料不足必须停止");
+    RRK.spend(consumeK, "component:integrated_hull", 1); // 玩家消耗掉这 1 件组件
+    setMatsK(consumeK, RIFTER_MATS_K); // 补充原料
+    const resConsumeContK = sandbox.continueIntship(consumeK, nowK + 1000);
+    okK(resConsumeContK.changed === true &&
+        consumeK.research.protocolJobs.intship.componentPlan.integrated_hull === 2 &&
+        consumeK.currentAction.batchRemaining === 2,
+      "消耗组件后续作必须重算缺口为 2（重新认定，而非只补 1 后卡在总装）");
+    okK(consumeK.research.protocolJobs.intship.processedEventIds.length === 1,
+      "续作重算不得清空幂等账本 processedEventIds");
+    withGameStateK(consumeK, () => driveK(consumeK, 12));
+    okK(consumeK.research.protocolJobs.intship.phase === "completed" && consumeK.inventory.ships.length === 1,
+      "消耗组件恢复后驱动必须最终完成并造舰 1 艘（绝不循环卡死）");
+
+    // ---- K-17 真实玩家抢占：经公开 queue/add + queue/start 动作链，禁止伪造赋值 -----------------
+    const preemptK = mkReadyK();
+    okK(sandbox.startIntship(preemptK, { recipeId: "rifter", quantity: 1 }, nowK).changed === true,
+      "真实抢占前置：启动成功");
+    okK(sandbox.dispatchGameAction(preemptK, { type: "queue/add", item: { skill: "mining", target: "凡晶石带", label: "凡晶石", count: 1 } }, nowK).changed === true,
+      "真实抢占：queue/add 公开动作必须入队成功");
+    okK(sandbox.dispatchGameAction(preemptK, { type: "queue/start" }, nowK).changed === true &&
+        preemptK.currentAction.skill === "mining" && preemptK.currentAction.active === true,
+      "真实抢占：queue/start 公开动作必须真实接管 currentAction（skill=mining）");
+    const recPreemptK = sandbox.reconcileIntshipRuntime(preemptK, nowK + 500);
+    okK(recPreemptK.phase === "preempted" && recPreemptK.stopReason === REASONS_K.PREEMPTED,
+      "真实抢占后对账必须落 preempted");
+    sandbox.dispatchGameAction(preemptK, { type: "queue/stop" }, nowK + 600);
+    okK(preemptK.currentAction.active === false, "真实抢占：queue/stop 公开动作结束玩家动作");
+    okK(sandbox.continueIntship(preemptK, nowK + 700).changed === true, "真实抢占后必须可续作");
+    withGameStateK(preemptK, () => driveK(preemptK, 12));
+    okK(preemptK.research.protocolJobs.intship.phase === "completed" && preemptK.inventory.ships.length === 1,
+      "真实抢占恢复后必须完成并造舰 1 艘");
+
+    // ---- K-18 事件总线缺失：start 零变化 + restore fail closed --------------------------------
+    const savedOnIdempotentK = sandbox.GameEvents.onIdempotent;
+    const eventsOffK = mkReadyK();
+    const eventsOffSnapK = JSON.stringify({ research: eventsOffK.research, currentAction: eventsOffK.currentAction, resources: eventsOffK.resources, inventory: eventsOffK.inventory, dirty: eventsOffK._dirty });
+    sandbox.GameEvents.onIdempotent = undefined;
+    const resEventsOffK = sandbox.startIntship(eventsOffK, { recipeId: "rifter", quantity: 1 }, nowK);
+    okK(resEventsOffK.reason === REASONS_K.EVENTS_UNAVAILABLE &&
+        eventsOffK.research.protocolJobs.intship === null &&
+        JSON.stringify({ research: eventsOffK.research, currentAction: eventsOffK.currentAction, resources: eventsOffK.resources, inventory: eventsOffK.inventory, dirty: eventsOffK._dirty }) === eventsOffSnapK,
+      "事件总线缺失时 start 必须 EVENTS_UNAVAILABLE 且 job/currentAction/库存/资源/_dirty 深度不变");
+    sandbox.GameEvents.onIdempotent = savedOnIdempotentK;
+    const restoreOffK = mkReadyK();
+    okK(sandbox.startIntship(restoreOffK, { recipeId: "rifter", quantity: 1 }, nowK).changed === true,
+      "restore 总线缺失前置：正常启动成功");
+    sandbox.GameEvents.onIdempotent = undefined;
+    const resRestoreOffK = sandbox.restoreIntshipProtocolRuntime(restoreOffK);
+    okK(resRestoreOffK.reason === REASONS_K.EVENTS_UNAVAILABLE && resRestoreOffK.phase === "recovery-required" &&
+        restoreOffK.research.protocolJobs.intship.phase === "recovery-required",
+      "restore 遇到事件总线缺失必须 fail closed 为 recovery-required，绝不恢复生产动作");
+    sandbox.GameEvents.onIdempotent = savedOnIdempotentK;
+
+    // ---- K-19 迁移严格清洗：畸形对象归一 / 受控 recovery-required / 幂等 -----------------------
+    const saniK = sandbox.ResearchState.sanitizeIntshipJob;
+    const saniLegacyK = saniK({ blueprintId: "rifter", queued: 2, processedEventIds: ["a", "a", "b"] });
+    okK(saniLegacyK && saniLegacyK.blueprintId === "rifter" && saniLegacyK.phase === "recovery-required" &&
+        saniLegacyK.shipId === "rifter" && saniLegacyK.recipeId === "rifter" &&
+        !Object.prototype.hasOwnProperty.call(saniLegacyK, "queued") &&
+        JSON.stringify(saniLegacyK.processedEventIds) === JSON.stringify(["a", "b"]),
+      "旧格式 job 必须清洗为受控 recovery-required 作业（保留 blueprintId、删未知字段、账本去重）");
+    okK(saniK({ queued: 2 }) === null && saniK({}) === null && saniK("junk") === null && saniK(null) === null,
+      "完全无身份信息的畸形对象必须归一为 null");
+    const saniCleanK = saniK({ jobId: "intship-1", shipId: "rifter", recipeId: "rifter", quantity: 2, phase: "component", componentPlan: { integrated_hull: 4 }, completedComponents: { integrated_hull: 5 }, assemblyRemaining: 2, producedShips: 0, processedEventIds: ["x", "x"], createdAt: 10, updatedAt: 20, extraField: "junk" });
+    okK(saniCleanK && saniCleanK.completedComponents.integrated_hull === 4 &&
+        !Object.prototype.hasOwnProperty.call(saniCleanK, "extraField") &&
+        JSON.stringify(saniCleanK) === JSON.stringify(saniK(saniCleanK)),
+      "完整身份 job 必须严格清洗（完成数≤计划数、删未知字段）且二次迁移 JSON 严格一致");
+
+    // ---- K-20 Batch J 野外维修加固复核：归属 / 零治疗零燃料 / source 固定 ----------------------
+    const repK = mkK({ autorepair: 1 }, { autorepair: true });
+    const repInstK = sandbox.createShipInstance("starmap", nowK + 3);
+    repInstK.fitted = { high: [], mid: ["t1_shield_booster"], low: ["t1_armor_repairer", "t1_structure_repairer"], rig: [] };
+    repK.inventory.ships.push(repInstK);
+    repK.shipAssignments.archaeology = repInstK.instanceId;
+    const maxHpStarmapK = sandbox.getShipConfigById("starmap").hp;
+    RRK.set(repK, "consumable:fuel", 500);
+    const repCtxK = { now: nowK, offline: false, source: "hacked" };
+    let repEventsK = 0;
+    const unsubRepK = sandbox.GameEvents.on("archaeology:fieldRepairApplied", () => { repEventsK++; });
+    const repOtherK = sandbox.applyArchaeologyFieldRepair(repK, "other_instance", { shield: 50, armor: 50, structure: 50 }, repCtxK);
+    okK(repOtherK.repaired === 0 && repOtherK.reason === "NO_ARCHAEOLOGY_SHIP" &&
+        RRK.get(repK, "consumable:fuel") === 500 && repEventsK === 0,
+      "非当前考古分配舰船必须零维修、零燃料、零事件");
+    const repFullK = sandbox.applyArchaeologyFieldRepair(repK, repInstK.instanceId,
+      { shield: maxHpStarmapK.shield, armor: maxHpStarmapK.armor, structure: maxHpStarmapK.structure }, repCtxK);
+    okK(repFullK.repaired === 0 && repFullK.reason === "FULL_HP" &&
+        RRK.get(repK, "consumable:fuel") === 500 && repEventsK === 0,
+      "满血层实际治疗量为 0 时必须零燃料、零事件");
+    let repEventMetaK = null;
+    const unsubRepMetaK = sandbox.GameEvents.on("archaeology:fieldRepairApplied", event => { repEventMetaK = event.meta; });
+    sandbox.applyArchaeologyFieldRepair(repK, repInstK.instanceId,
+      { shield: Math.max(0, maxHpStarmapK.shield - 30), armor: maxHpStarmapK.armor, structure: maxHpStarmapK.structure }, repCtxK);
+    unsubRepMetaK();
+    unsubRepK();
+    okK(repEventMetaK && repEventMetaK.source === "research-protocol" && repEventMetaK.offline === false,
+      "维修事件 source 必须固定 research-protocol（不受 context.source 覆盖）");
+
+    // ---- K-21 事件总线 fail-closed 定点返修：运行期入口真实 fail-closed（4 项真实断言） -------
+    const savedOnIdempotentK3 = sandbox.GameEvents.onIdempotent;
+    // 1) reconcile 遇总线缺失：落 recovery-required、停止 intship 驱动动作、库存/资源/账本深度不变
+    const reconOffK = mkReadyK();
+    sandbox.startIntship(reconOffK, { recipeId: "rifter", quantity: 1 }, nowK);
+    const reconOffSnapK = JSON.stringify({
+      resources: reconOffK.resources, inventory: reconOffK.inventory,
+      produced: reconOffK.research.protocolJobs.intship.producedShips,
+      completed: reconOffK.research.protocolJobs.intship.completedComponents
+    });
+    sandbox.GameEvents.onIdempotent = undefined;
+    const reconOffResK = sandbox.reconcileIntshipRuntime(reconOffK, nowK + 500);
+    okK(reconOffResK && reconOffResK.phase === "recovery-required" &&
+        reconOffK.research.protocolJobs.intship.phase === "recovery-required" &&
+        reconOffK.currentAction.active === false && reconOffK.currentAction.batchRemaining === 0 &&
+        reconOffK.currentAction.progress === 0 &&
+        JSON.stringify({
+          resources: reconOffK.resources, inventory: reconOffK.inventory,
+          produced: reconOffK.research.protocolJobs.intship.producedShips,
+          completed: reconOffK.research.protocolJobs.intship.completedComponents
+        }) === reconOffSnapK,
+      "reconcile 遇事件总线缺失必须落 recovery-required、停止 intship 驱动动作（active/batchRemaining/progress 清零）且库存/资源/账本深度不变");
+    sandbox.GameEvents.onIdempotent = savedOnIdempotentK3;
+    // 2) advance 消费者 jobId 不匹配 + 总线缺失：不抛异常、EVENTS_UNAVAILABLE、offline 一致、updatedAt=context.now、零副作用
+    const advOffK = mkReadyK();
+    sandbox.startIntship(advOffK, { recipeId: "rifter", quantity: 1 }, nowK);
+    advOffK.research.protocolJobs.intship.jobId = "intship-mismatch"; // 构造消费者 jobId 不匹配
+    const advOffSnapK = JSON.stringify({
+      resources: advOffK.resources, inventory: advOffK.inventory,
+      ledger: advOffK.research.protocolJobs.intship.processedEventIds,
+      produced: advOffK.research.protocolJobs.intship.producedShips,
+      completed: advOffK.research.protocolJobs.intship.completedComponents
+    });
+    sandbox.GameEvents.onIdempotent = undefined;
+    let advOffThrownK = false;
+    let advOffResK = null;
+    try { advOffResK = sandbox.advanceIntshipAfterManufacturingAction(advOffK, { now: nowK + 2000, offline: true }); }
+    catch (error) { advOffThrownK = true; }
+    okK(!advOffThrownK && advOffResK && advOffResK.reason === REASONS_K.EVENTS_UNAVAILABLE &&
+        advOffResK.phase === "recovery-required" && advOffResK.offline === true &&
+        advOffK.research.protocolJobs.intship.updatedAt === nowK + 2000 &&
+        JSON.stringify({
+          resources: advOffK.resources, inventory: advOffK.inventory,
+          ledger: advOffK.research.protocolJobs.intship.processedEventIds,
+          produced: advOffK.research.protocolJobs.intship.producedShips,
+          completed: advOffK.research.protocolJobs.intship.completedComponents
+        }) === advOffSnapK,
+      "advance 消费者不匹配 + 总线缺失必须不抛异常、EVENTS_UNAVAILABLE、offline 与 context.offline 一致、updatedAt===context.now、零扣料零产出零账本推进");
+    sandbox.GameEvents.onIdempotent = savedOnIdempotentK3;
+    // 3) restore 遇总线缺失：fail closed 为 recovery-required 且立即停止 intship 驱动动作
+    const restoreOffK3 = mkReadyK();
+    sandbox.startIntship(restoreOffK3, { recipeId: "rifter", quantity: 1 }, nowK);
+    okK(restoreOffK3.currentAction.active === true,
+      "restore 总线缺失前置：intship 驱动动作在跑");
+    sandbox.GameEvents.onIdempotent = undefined;
+    const restoreOffResK3 = sandbox.restoreIntshipProtocolRuntime(restoreOffK3);
+    okK(restoreOffResK3.reason === REASONS_K.EVENTS_UNAVAILABLE && restoreOffResK3.phase === "recovery-required" &&
+        restoreOffK3.research.protocolJobs.intship.phase === "recovery-required" &&
+        restoreOffK3.currentAction.active === false && restoreOffK3.currentAction.batchRemaining === 0 &&
+        restoreOffK3.currentAction.progress === 0,
+      "restore 遇事件总线缺失必须 fail closed 为 recovery-required 且立即停止 intship 驱动动作（不留 active=true 制造动作）");
+    sandbox.GameEvents.onIdempotent = savedOnIdempotentK3;
+    // 4) 玩家无关动作不得被 fail-closed 停止
+    const unrelatedK3 = mkReadyK();
+    sandbox.startIntship(unrelatedK3, { recipeId: "rifter", quantity: 1 }, nowK);
+    sandbox.dispatchGameAction(unrelatedK3, { type: "queue/add", item: { skill: "mining", target: "凡晶石带", label: "凡晶石", count: 1 } }, nowK);
+    sandbox.dispatchGameAction(unrelatedK3, { type: "queue/start" }, nowK);
+    okK(unrelatedK3.currentAction.skill === "mining" && unrelatedK3.currentAction.active === true,
+      "玩家无关动作前置：mining 真实接管 currentAction");
+    sandbox.GameEvents.onIdempotent = undefined;
+    const unrelatedResK3 = sandbox.reconcileIntshipRuntime(unrelatedK3, nowK + 500);
+    okK(unrelatedResK3 && unrelatedResK3.phase === "recovery-required" &&
+        unrelatedK3.currentAction.skill === "mining" && unrelatedK3.currentAction.active === true,
+      "事件总线缺失 fail-closed 不得停止玩家无关的当前动作（mining 保留 active）");
+    sandbox.GameEvents.onIdempotent = savedOnIdempotentK3;
+  } finally {
+    gsK.research = JSON.parse(JSON.stringify(savedResearchK));
+    gsK.inventory = JSON.parse(JSON.stringify(savedInventoryK));
+    gsK.resources = JSON.parse(JSON.stringify(savedResourcesK));
+    gsK.skills = JSON.parse(JSON.stringify(savedSkillsK));
+    gsK.currentAction = JSON.parse(JSON.stringify(savedActionK));
+    gsK.station = JSON.parse(JSON.stringify(savedStationK));
+    gsK.queue = JSON.parse(JSON.stringify(savedQueueK));
+    gsK.shipAssignments = JSON.parse(JSON.stringify(savedAssignK));
+  }
+
+  console.log("Batch K 一体化造船（intship）校验通过（" + kChecks + " 项）：12 个公开 API 与恰 20 个稳定 reason（含 EVENTS_UNAVAILABLE）、三层门槛（未研究 / 未启用 / 脏档一律零执行）与数量上限 1000、非法数量（含数字字符串\"2\"） / 未知配方 / 蓝图锁 / 等级锁 / 动作占用五类拒绝、起步缺料原子回滚（作业 + currentAction 快照零残留）、componentPlan 按配方键序与库存缺口精确生成（三组件各 2）、启动后 currentAction 被真实制造动作接管且 batchRemaining=缺口、组件全齐直接总装、在线真实 tick 全链路（组件 → 总装 → 产舰 1 艘、164/26/18/18 材料真实扣光、组件产出 2+2+2 被总装消耗、完成后绝不重复产舰）、幂等消费者只更账本且同 eventId 去重、错 recipeId / 错阶段 ship 事件不入账、中途缺料落 stopped 且补齐续作、玩家抢占落 preempted 且可续作、取消停止动作保留产出、已完成 / 已取消 / 无作业状态机、存档恢复重装消费者且 shape 不匹配 fail closed 为 recovery-required、离线 settleOfflineActions 一次推进到完成、三条 action 路由与直调同源、UI 显示态启动表单 / jobRunning / jobInterrupted、公开 buildIntshipComponentPlan 签名契约（拒数字字符串/小数/NaN/Infinity/0/负数/超上限/对象/null）、quantity=2 在线 / 离线全链各恰产 2 艘且资源消耗干净、造 1 件→停→玩家消耗→补料→续作重算缺口为 2 且账本保留不死循环、真实 queue/add+queue/start 抢占链落 preempted 且续作完成、事件总线缺失 start EVENTS_UNAVAILABLE 深度零变化 / restore fail closed 为 recovery-required、坏档迁移归一 null 或受控 recovery-required 且删未知字段二次迁移 JSON 一致、Batch J 维修三加固（非当前考古舰零维修零燃料零事件 / 满血零治疗零燃料 / source 固定 research-protocol）、事件总线 fail-closed 定点返修（reconcile 每次入口先查总线且停止 intship 驱动动作零副作用、advance 消费者不匹配 + 总线缺失不抛异常且 offline/updatedAt 一致、restore 总线缺失立即停止驱动动作不留 active=true、玩家无关动作保留）");
 }
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);
