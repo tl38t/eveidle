@@ -48,6 +48,42 @@ function getShipAssignmentRestriction(config, actionKey, combatRecoveryActive) {
   return null;
 }
 
+// ---- 舰船维修（per-ship）唯一权威状态：combat.repairs[instanceId] = untilTs ----
+// 任何判断都必须经由以下公共函数，禁止在 selectors/actions/UI 各自重复读取 repairs 字段。
+// 旧字段 combat.repairUntil / combat.destroyedShip 仅作存档迁移占位，迁移后即清零，不参与任何判断。
+function getShipRepairUntil(state, instanceId) {
+  if (!state || !state.combat || !state.combat.repairs || !instanceId) return 0;
+  const until = Number(state.combat.repairs[instanceId]);
+  return Number.isFinite(until) ? until : 0;
+}
+function isShipUnderRepair(state, instanceId, now) {
+  const t = Number(now);
+  if (!Number.isFinite(t)) return false;
+  return getShipRepairUntil(state, instanceId) > t;
+}
+function beginShipRepair(state, instanceId, until) {
+  if (!state.combat) state.combat = {};
+  if (!state.combat.repairs || typeof state.combat.repairs !== "object" || Array.isArray(state.combat.repairs)) state.combat.repairs = {};
+  state.combat.repairs[instanceId] = Number(until) || 0;
+  state._dirty = true;
+}
+function finishShipRepair(state, instanceId) {
+  if (state.combat && state.combat.repairs && Object.prototype.hasOwnProperty.call(state.combat.repairs, instanceId)) {
+    delete state.combat.repairs[instanceId];
+    state._dirty = true;
+  }
+}
+function clearExpiredShipRepairs(state, now) {
+  if (!state.combat || !state.combat.repairs) return 0;
+  const t = Number(now);
+  let cleared = 0;
+  // 到期边界统一：until <= now 视为维修完成（与 isShipUnderRepair 的 until > now 互补）。
+  for (const id of Object.keys(state.combat.repairs)) {
+    if (!isShipUnderRepair(state, id, t)) { delete state.combat.repairs[id]; cleared++; state._dirty = true; }
+  }
+  return cleared;
+}
+
 function getAssignedShipState(state, actionKey) {
   const assignment = state && state.shipAssignments ? state.shipAssignments[actionKey] : null;
   const instance = assignment ? getShipInstanceFromState(state, assignment) : null;
@@ -1080,7 +1116,9 @@ function getActiveCombatShipState(state) {
   const assignedRef = state && state.shipAssignments ? state.shipAssignments.combat : null;
   const activeRef = state && state.combat ? state.combat.activeShip : null;
   const instance = getShipInstanceFromState(state, assignedRef) || getShipInstanceFromState(state, activeRef) || ships[0] || null;
-  const config = getShipConfigById(instance ? instance.shipId : activeRef) || STARTER_SHIPS.rifter;
+  // 问题修复：玩家无拥有舰（instance 为 null）时 config 返回 null，不再 fallback 到 STARTER_SHIPS.rifter
+  // （旧逻辑会在新存档/无舰时凭空造出"星矛级"幽灵舰，与机库不一致）。无舰时由各显示层按 hasShip 处理。
+  const config = instance ? (getShipConfigById(instance.shipId) || STARTER_SHIPS.rifter) : null;
   return { instance, config, fitting:getFittingFromInstance(instance) };
 }
 
@@ -1178,6 +1216,11 @@ function getCombatResearchModifierList(state, stat, key) {
 function getCombatMaxHpFromState(state, context) {
   const activeShip = getActiveCombatShipState(state);
   const ship = activeShip.config;
+  // 玩家无拥有战斗舰（新存档/未指派）时无可计算的船体 HP：返回战斗系统自身的默认上限，避免崩溃。
+  if (!activeShip.instance) {
+    const fallback = (state && state.combat && state.combat.maxHp) || { shield:0, armor:0, structure:0 };
+    return { ...fallback };
+  }
   const enhancement = getShipEnhancementBonuses(ship, activeShip.instance && activeShip.instance.enhancementLevel);
   const flat = { shield:0, armor:0, structure:0 };
   for (const ref of Object.values(activeShip.fitting).flat().filter(Boolean)) {
@@ -1303,6 +1346,7 @@ function getCombatDisplayState(state, now) {
     : null;
   const activeShip = getActiveCombatShipState(state);
   const ship = activeShip.config;
+  const hasShip = Boolean(activeShip.instance);
   const modules = getInstalledCombatModulesFromState(state);
   const weapons = modules.filter(module => module.combat.kind === "weapon");
   const repairers = modules.filter(module => module.combat.kind === "repair");
@@ -1310,7 +1354,9 @@ function getCombatDisplayState(state, now) {
   const zone = encounterMode === "deathspace"
     ? COMBAT_ZONES.find(item => item.id === encounterDeathspace.sourceZoneId) || COMBAT_ZONES[0]
     : COMBAT_ZONES.find(item => item.id === combat.zone) || COMBAT_ZONES[0];
-  const recoveryUntil = Number(combat.repairUntil) || 0;
+  // 问题2：per-ship 维修——recovery 反映「当前战斗舰」自身的维修状态，而非全局单槽。
+  const activeInstanceId = activeShip.instance ? activeShip.instance.instanceId : null;
+  const recoveryUntil = getShipRepairUntil(state, activeInstanceId);
   const recoveryRemaining = recoveryUntil > now ? Math.ceil((recoveryUntil - now) / 1000) : 0;
   const livingEnemies = getCombatLivingEnemiesFromState(combat);
   const target = selectCapitalCombatTarget(livingEnemies, combat.targetingMode, ship);
@@ -1338,13 +1384,15 @@ function getCombatDisplayState(state, now) {
     (combat.lastSpecialLoot ? " · 本次稀有收获: " + combat.lastSpecialLoot : "") +
     (combat.lastStatus ? " · " + combat.lastStatus : "");
   const ticketCount = ResourceRegistry.get(state, "special:" + deathspace.ticketMaterial);
-  const startDisabled = recoveryRemaining > 0 || weapons.length === 0 || !zoneUnlocked || (viewMode === "deathspace" && ticketCount < 1);
-  const startText = recoveryRemaining > 0 ? "维修中 " + recoveryRemaining + "s" : !zoneUnlocked ? "需要战斗等级 " + requiredLevel : weapons.length === 0 ? "未安装武器" : viewMode === "deathspace" && ticketCount < 1 ? "缺少通行密钥" : viewMode === "deathspace" ? "▶ 消耗密钥进入" : "▶ 开始战斗";
+  // 无拥有战斗舰时（新存档/未指派），强制禁用开战并提示去机库指派，避免幽灵舰误导。
+  const noShip = !hasShip;
+  const startDisabled = noShip || recoveryRemaining > 0 || weapons.length === 0 || !zoneUnlocked || (viewMode === "deathspace" && ticketCount < 1);
+  const startText = noShip ? "请先在机库指派战斗舰" : (recoveryRemaining > 0 ? "维修中 " + recoveryRemaining + "s" : !zoneUnlocked ? "需要战斗等级 " + requiredLevel : weapons.length === 0 ? "未安装武器" : viewMode === "deathspace" && ticketCount < 1 ? "缺少通行密钥" : viewMode === "deathspace" ? "▶ 消耗密钥进入" : "▶ 开始战斗");
   const slotNames = { high:"高槽", mid:"中槽", low:"低槽", rig:"改装槽" };
   const equipmentRack = [];
   for (const slot of ["high", "mid", "low", "rig"]) {
     const fitted = activeShip.fitting[slot];
-    const count = Math.max((ship.slots && ship.slots[slot]) || 0, fitted.length);
+    const count = Math.max((ship && ship.slots && ship.slots[slot]) || 0, fitted.length);
     for (let index = 0; index < count; index++) {
       const ref = fitted[index] || null;
       const resolved = ref ? resolveEquipmentReference(state, ref) : null;
@@ -1377,7 +1425,7 @@ function getCombatDisplayState(state, now) {
       mode:isCapitalCombatShip(ship) ? normalizeCapitalTargetingMode(combat.targetingMode) : "formation",
       modeName:getCapitalTargetingModeName(combat.targetingMode),
       options:CAPITAL_TARGETING_MODES.map(option => ({ ...option })),
-      trait:ship.capitalTrait ? { ...ship.capitalTrait } : null
+      trait:ship ? (ship.capitalTrait ? { ...ship.capitalTrait } : null) : null
     },
     zone:{ ...zone, unlocked:zoneUnlocked },
     zones:COMBAT_ZONES.map(item => ({ ...item, selected:item.id === zone.id, unlocked:level >= (item.requiredCL || 1), locked:Boolean(combat.active) || level < (item.requiredCL || 1), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
@@ -1396,7 +1444,7 @@ function getCombatDisplayState(state, now) {
       sourceZoneName:(COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || {}).name || site.sourceZoneId
     })),
     recovery:{ active:recoveryRemaining > 0, remaining:recoveryRemaining, until:recoveryUntil },
-    player:{ instanceId:activeShip.instance ? activeShip.instance.instanceId : null, name:ship.name, image:ship.image || "", speed:ship.speed || 0, dodge:getCombatPlayerDodgeFromState(state, { now, zoneId:zone.id }), hp, maxHp, derivedMaxHp, volleyDamage, weaponCount:weapons.length },
+    player:{ instanceId:hasShip ? activeShip.instance.instanceId : null, name:hasShip ? ship.name : "未装备战斗舰", image:hasShip ? (ship && ship.image ? ship.image : "") : "", hasShip, speed:ship ? (ship.speed || 0) : 0, dodge:hasShip ? getCombatPlayerDodgeFromState(state, { now, zoneId:zone.id }) : 0, hp, maxHp, derivedMaxHp, volleyDamage, weaponCount:weapons.length },
     enemies:enemies.map((enemy, index) => {
       const currentHp = enemy.hp ? enemy.hp.shield + enemy.hp.armor + enemy.hp.structure : 0;
       const maximumHp = enemy.maxHp ? enemy.maxHp.shield + enemy.maxHp.armor + enemy.maxHp.structure : 1;
@@ -1884,16 +1932,19 @@ function getBlueprintStoreDisplayState(state, selectedCategory) {
 function getHangarDisplayState(state, now) {
   const assignments = state.shipAssignments || {};
   const actionNames = { combat:"⚔ 战斗", mining:"⛏ 采矿", gasHarvesting:"☁ 采气", refining:"🔥 冶炼", archaeology:"🛰 考古" };
-  const recovery = state.combat && Number(state.combat.repairUntil) > now;
   const ships = state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
   return {
     kind:"hangar",
     count:ships.length,
     actionNames,
-    combatRecoveryActive:recovery,
+    combatRecoveryActive:false,
     ships:ships.map(instance => {
       const config = getShipConfigById(instance.shipId);
       if (!config) return { instanceId:instance.instanceId, shipId:instance.shipId, unknown:true };
+      // 问题2：per-ship 维修——每艘舰按自身 instanceId 显示维修状态，而非全局单槽。
+      const thisRepairing = isShipUnderRepair(state, instance.instanceId, now);
+      const thisRepairUntil = getShipRepairUntil(state, instance.instanceId);
+      const thisRepairRemaining = thisRepairUntil > now ? Math.ceil((thisRepairUntil - now) / 1000) : 0;
       const assignedActions = Object.entries(assignments)
         .filter(([key, id]) => id === instance.instanceId && Object.prototype.hasOwnProperty.call(actionNames, key))
         .map(([key]) => key);
@@ -1963,8 +2014,11 @@ function getHangarDisplayState(state, now) {
           failureReduction
         },
         assignedActions,
+        repairing:thisRepairing,
+        repairRemaining:thisRepairRemaining,
+        combatRecoveryActive:thisRepairing,
         assignments:Object.keys(actionNames).map(actionKey => {
-          const restriction = getShipAssignmentRestriction(config, actionKey, recovery);
+          const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && thisRepairing);
           return { actionKey, name:actionNames[actionKey], active:assignedActions.includes(actionKey), locked:Boolean(restriction), lockedReason:restriction ? restriction.text : "" };
         })
       };

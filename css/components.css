@@ -449,6 +449,8 @@
   .enhance-btn { margin-left: auto; border-color: #477e9f; color: #8fd5ff; }
   .enhance-btn:disabled { border-color: #283440; color: #53606d; }
   .hangar-ship-actions { margin-top: 9px; }
+  .hangar-ship-repair { margin-top: 8px; padding: 5px 8px; border: 1px solid #6a5a2a; border-radius: 4px; background: rgba(212,168,67,0.08); color: #e0b94a; font-size: 12px; }
+  .hangar-ship-repair .repair-remaining { font-weight: bold; }
 
   /* ===== 设置 ===== */
   .settings-section { max-width: 760px; border: 1px solid #223243; border-radius: 6px; background: #0d141e; overflow: hidden; }

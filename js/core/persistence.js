@@ -131,8 +131,26 @@ function migrateCombatEquipmentState() {
   if (!gameState.combat || typeof gameState.combat !== "object") gameState.combat = {};
   if (!gameState.migrations || typeof gameState.migrations !== "object") gameState.migrations = {};
   const combat = gameState.combat;
-  if (!Number.isFinite(Number(combat.repairUntil))) combat.repairUntil = 0;
-  if (combat.destroyedShip === undefined) combat.destroyedShip = null;
+  if (!combat.repairs || typeof combat.repairs !== "object" || Array.isArray(combat.repairs)) combat.repairs = {};
+  // 旧字段迁移（幂等）：合法旧存档 destroyedShip + repairUntil → repairs[destroyedShip]。
+  // 非法船 ID / 非法时间戳安全丢弃；不延长不缩短合法旧维修时间；迁移后旧字段清零，唯一权威归 repairs。
+  const legacyUntil = Number(combat.repairUntil);
+  const legacyShip = combat.destroyedShip;
+  if (legacyShip && Number.isFinite(legacyUntil) && legacyUntil > 0) {
+    const shipExists = gameState.inventory && Array.isArray(gameState.inventory.ships) && gameState.inventory.ships.some(s => s.instanceId === legacyShip);
+    if (shipExists && !Object.prototype.hasOwnProperty.call(combat.repairs, legacyShip)) {
+      combat.repairs[legacyShip] = legacyUntil;
+    }
+  }
+  // 非法实例 ID（不在舰队中的幽灵条目）与非法时间戳（非有限数 / <=0）一律安全丢弃。
+  const ships = (gameState.inventory && Array.isArray(gameState.inventory.ships)) ? gameState.inventory.ships : [];
+  const shipExists = (id) => ships.some(s => String(s.instanceId) === String(id));
+  for (const id of Object.keys(combat.repairs)) {
+    const ts = Number(combat.repairs[id]);
+    if (!Number.isFinite(ts) || ts <= 0 || !shipExists(id)) delete combat.repairs[id];
+  }
+  combat.repairUntil = 0;
+  combat.destroyedShip = null;
   if (combat.lastStatus === undefined) combat.lastStatus = "";
   if (combat.lastLoot === undefined) combat.lastLoot = "";
   if (!combat.lastEnemyVolley || typeof combat.lastEnemyVolley !== "object") combat.lastEnemyVolley = null;
@@ -1236,6 +1254,7 @@ window.addEventListener("beforeunload", () => SaveManager.save());
       enemies: [], currentEnemy: null, wave: 1, zoneClears: {}, runEliteKills: 0,
       currentFormation: "", totalKills: 0, active: false
     };
+    if (!gameState.combat.repairs || typeof gameState.combat.repairs !== "object" || Array.isArray(gameState.combat.repairs)) gameState.combat.repairs = {};
     if (gameState.combat.repairUntil === undefined) gameState.combat.repairUntil = 0;
     if (gameState.combat.destroyedShip === undefined) gameState.combat.destroyedShip = null;
     if (gameState.combat.lastStatus === undefined) gameState.combat.lastStatus = "";

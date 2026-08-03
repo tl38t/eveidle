@@ -31,14 +31,46 @@ function finishCombatRecovery(now) {
 }
 
 function updateCombatRecovery(now) {
-  // 唯一恢复入口（Batch C-14A 第一次定点返修）：
-  // 记录维修前是否处于 repairUntil（真实「维修中→维修完成」跃迁），先结束维修，
-  // 仅在本次真实从维修中变为维修完成、且存在待恢复战斗（resumeAfterRepair.type==="combat"）时，
-  // 调用 tryResumeCombatAfterRepair 自动恢复出击并发出唯一的 combat:resumedAfterRepair。
-  const wasRepairing = (Number(gameState.combat.repairUntil) || 0) > 0;
-  const finished = finishCombatRecovery(now);
-  if (finished && wasRepairing && gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "combat") {
+  // per-ship 维修唯一恢复入口：combat.repairs[instanceId] = untilTs。
+  // 清除所有已过期的维修条目（某艘舰完成只清该艘），并仅在「当前 active 战斗舰
+  // 刚从维修中变为完成」且存在待恢复战斗时，自动恢复出击并发出唯一的 combat:resumedAfterRepair。
+  // 关键：游戏主循环（combatTick / gameTick）以无参方式调用本函数，必须在此兜底 now=Date.now()；
+  // 否则 now===undefined → Number(undefined)=NaN → isShipUnderRepair 误判为"已到期" → 维修条目被立即清空、
+  // 并立刻触发 tryResumeCombatAfterRepair，表现为"被击毁后马上复活重新进入战斗"。
+  now = Number(now);
+  if (!Number.isFinite(now)) now = Date.now();
+  const combat = gameState.combat;
+  const activeId = combat.activeShip;
+  // 仅用于判定「当前 active 战斗舰是否刚完成维修」以触发自动恢复：语义为"该舰存在维修条目"，
+  // 与到期边界（now === until）一致——到期这一 tick 既满足 activeFinished 也满足 wasRepairingActive，
+  // 从而正确触发 resumeAfterRepair。注意 equip/toggle/enterDeathspace 的拦截仍用 isShipUnderRepair 的严格 > 比较，不受影响。
+  const wasRepairingActive = Boolean(combat.repairs && combat.repairs[activeId] && Number(combat.repairs[activeId]) > 0);
+  let activeFinished = false;
+  if (combat.repairs) {
+    for (const id of Object.keys(combat.repairs)) {
+      // 到期边界统一：until > now 仍维修中（跳过）；until <= now 视为维修完成（清理）。
+      // 与公共判断函数 isShipUnderRepair(gameState,id,now) 语义一致（until > now 返回 true）。
+      if (isShipUnderRepair(gameState, id, now)) continue;
+      if (id === activeId) {
+        const maxHp = getCombatMaxHpFromState(gameState);
+        combat.hp = { ...maxHp };
+        combat.maxHp = { ...maxHp };
+        activeFinished = true;
+      }
+      delete combat.repairs[id];
+      gameState._dirty = true;
+    }
+  }
+  if (activeFinished && wasRepairingActive && gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "combat") {
     tryResumeCombatAfterRepair();
+  }
+  // 悬挂标记清理：resumeAfterRepair 指向的舰维修条目已被清（无论本 tick 清的还是此前已清），
+  // 且未由上方 activeFinished 合法触发 auto-resume，则清掉，避免战斗面板长期显示"完成后返回战斗"误导。
+  const rrPending = gameState.resumeAfterRepair;
+  if (rrPending && rrPending.type === "combat") {
+    const sid = rrPending.shipInstanceId;
+    const stillRepairing = Boolean(sid && gameState.combat.repairs[sid] && Number(gameState.combat.repairs[sid]) > 0);
+    if (!stillRepairing) gameState.resumeAfterRepair = null;
   }
   return getCombatRecoveryRemaining(now);
 }
@@ -52,6 +84,8 @@ function emitCombatEvent(event) {
 }
 
 function beginCombatRecovery() {
+  const activeShip = getActiveCombatShipInstance();
+  const instanceId = activeShip ? activeShip.instanceId : null;
   const result = dispatchGameAction(gameState, { type:"combat/beginRecovery" }, Date.now());
   if (result.changed) {
     // Batch C-11：战败即本 run 终止，清空实际开火武器类型登记
@@ -59,7 +93,7 @@ function beginCombatRecovery() {
     // Batch C-12：战败即本 run 终止，清空单场伤害累计
     gameState.combat.runDamageDealt = 0;
     gameState.combat.runDamageTaken = 0;
-    const payload = { type:"ship-destroyed", shipId:gameState.combat.destroyedShip, repairSeconds:180 };
+    const payload = { type:"ship-destroyed", shipId:instanceId, repairSeconds:180 };
     GameEvents.emit("ship:destroyed", payload);
     emitCombatEvent(payload);
   }
@@ -81,10 +115,13 @@ function getShipConfig(shipId) {
 function getActiveShip() {
   const assigned = getAssignedShip("combat");
   if (assigned) return assigned;
-  const shipRef = gameState.combat.activeShip || (gameState.inventory.ships.length > 0 ? gameState.inventory.ships[0].instanceId : "rifter");
+  // 修复：不再 fallback 到 "rifter" 凭空造舰；玩家无拥有战斗舰时返回 null。
+  const shipRef = gameState.combat.activeShip || (gameState.inventory.ships.length > 0 ? gameState.inventory.ships[0].instanceId : null);
+  if (!shipRef) return null;
   const instance = getShipInstance(shipRef);
-  const cfg = getShipConfig(instance ? instance.shipId : shipRef);
-  return cfg || STARTER_SHIPS.rifter;
+  if (!instance) return null;
+  const cfg = getShipConfig(instance.shipId);
+  return cfg || null;
 }
 
 
@@ -126,6 +163,23 @@ function calcPlayerDodge(ship) {
 
 function calcFuelMult(zone) {
   return getCombatFuelMultiplierFromState(gameState, zone);
+}
+
+// 计算当前已装武器完成「一轮齐射」所需燃料，复用与 combatTick 完全相同的公式
+// （Math.max(1, round(fuelCost * fuelMult)) 逐武器累加）。禁止另写一套公式。
+// 供 Action 层出击前燃料校验与 combatTick 开火结算共用，确保两者一致。
+function computeVolleyFuel(state, zone) {
+  const modules = getInstalledCombatModulesFromState(state);
+  const weapons = modules.filter(m => m.combat && m.combat.kind === "weapon");
+  let volleyFuel = 0;
+  for (const module of weapons) {
+    // 不耗燃料武器（fuelCost 为 0 或未定义）不计入一轮齐射燃料需求；
+    // 与 combatTick 实际逐 tick 消耗（同用本函数）保持一致，避免 fuelCost:0 武器被误算成需 1 燃料。
+    const fc = module.combat && module.combat.fuelCost;
+    if (!(fc > 0)) continue;
+    volleyFuel += Math.max(1, Math.round(fc * getCombatFuelMultiplierFromState(state, zone)));
+  }
+  return volleyFuel;
 }
 
 function calcRepairMult(target) {
@@ -672,6 +726,8 @@ function combatTick() {
   if (!faction) return;
   const ship = getActiveShip();
   const shipInstance = getActiveCombatShipInstance();
+  // 防御：无拥有战斗舰（理论上 active 时必有舰，此处仅兜底，避免逻辑层凭空造舰导致崩溃）
+  if (!ship || !shipInstance) return;
   const weapons = getInstalledCombatWeapons();
   const repairers = getInstalledCombatRepairers();
   let enemy = syncCurrentCombatTarget(c);
@@ -689,10 +745,9 @@ function combatTick() {
   if (c.hp.structure > c.maxHp.structure) c.hp.structure = c.maxHp.structure;
 
   const ammoRequired = {};
-  let volleyFuel = 0;
+  const volleyFuel = computeVolleyFuel(gameState, zone);
   for (const module of weapons) {
     const combat = module.equipment.combat;
-    volleyFuel += Math.max(1, Math.round(combat.fuelCost * calcFuelMult(zone)));
     ammoRequired[combat.weaponType] = (ammoRequired[combat.weaponType] || 0) + (combat.ammoCost || 1);
   }
   const enoughFuel = ResourceRegistry.get(gameState, "consumable:fuel") >= volleyFuel;

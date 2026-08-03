@@ -188,8 +188,10 @@ const gameState = {
     lastSpecialLoot: "",
     lastEnemyVolley: null,
     active: false,
-    repairUntil: 0,
-    destroyedShip: null,
+    repairUntil: 0,        // 旧字段：仅存档迁移兼容占位，迁移后即清零，绝不作为权威判断（见 persistence.migrateCombatEquipmentState）
+    destroyedShip: null,   // 旧字段：同上，权威维修状态见 repairs[instanceId]
+    repairs: {},           // 问题2 权威：per-ship 维修截止时间戳 combat.repairs[instanceId] = untilTs
+    activeShip: null,      // 当前出战战斗舰 instanceId（与 shipAssignments.combat 保持一致；getActiveCombatShipState 优先读 assignments）
     lastStatus: ""
   },
 

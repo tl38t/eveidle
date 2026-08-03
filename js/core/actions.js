@@ -533,14 +533,21 @@ const CombatStateActions = {
     state.combat.lastEnemyVolley = null;
     state.resumeAfterRepair = null; // 手动/自动重新出击：清除待恢复标记
     state._dirty = true;
-    return { changed:true };
+    // 问题1：出击前燃料校验（非阻断）。复用 combat.js 的 computeVolleyFuel（与开火结算同公式）。
+    // 现有燃料不足以完成一轮齐射时仅返回 warning，不取消战斗、不改变 changed/ok 语义。
+    const zoneObj = display.zone;
+    const volleyFuel = computeVolleyFuel(state, zoneObj);
+    const fuelNow = ResourceRegistry.get(state, "consumable:fuel");
+    const warning = (volleyFuel > 0 && fuelNow < volleyFuel) ? "low-fuel" : null;
+    return { changed:true, warning };
   },
 
   enterDeathspace(state, deathspaceId, enemies, formationId, now) {
     const site = DEATHSPACE_DATABASE.find(item => item.id === deathspaceId);
     if (!site) return { changed:false, reason:"unknown-deathspace" };
-    const recoveryUntil = Number(state.combat.repairUntil) || 0;
-    if (recoveryUntil > now) return { changed:false, reason:"repairing", remaining:Math.ceil((recoveryUntil - now) / 1000) };
+    // 问题2：per-ship 维修——仅当「当前战斗舰」正在维修时拒绝出击，健康舰可正常进入。
+    const activeShipId = state.combat.activeShip || (getActiveCombatShipState(state).instance && getActiveCombatShipState(state).instance.instanceId) || null;
+    if (isShipUnderRepair(state, activeShipId, now)) return { changed:false, reason:"repairing", remaining:Math.ceil((getShipRepairUntil(state, activeShipId) - now) / 1000) };
     if (getCombatLevelFromState(state) < site.requiredCL) return { changed:false, reason:"level-locked", requiredCL:site.requiredCL };
     const weapons = getInstalledCombatModulesFromState(state).filter(module => module.combat.kind === "weapon");
     if (weapons.length === 0) return { changed:false, reason:"no-weapons" };
@@ -561,7 +568,12 @@ const CombatStateActions = {
     window.GameEvents.emit("combat:deathspaceEntered", {
       deathspaceId:site.id, zoneId:site.sourceZoneId, faction:site.faction, tier:site.dedTier
     }, { timestamp:now, source:"combat", offline:false });
-    return { changed:true, site };
+    // 问题1：进入死亡空间前同样做燃料校验（非阻断 warning）。
+    const dsZone = COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || COMBAT_ZONES[0];
+    const dsVolleyFuel = computeVolleyFuel(state, dsZone);
+    const dsFuel = ResourceRegistry.get(state, "consumable:fuel");
+    const dsWarning = (dsVolleyFuel > 0 && dsFuel < dsVolleyFuel) ? "low-fuel" : null;
+    return { changed:true, site, warning:dsWarning };
   },
 
   stop(state) {
@@ -626,24 +638,26 @@ const CombatStateActions = {
       runEliteKills:0,
       currentFormation:"",
       lastEnemyVolley:null,
-      repairUntil:now + 180000,
-      destroyedShip:destroyedShipId,
       lastStatus:failedDeathspace
         ? "攻略失败，密钥不返还；维修完成后返回来源星带。"
         : "本轮肃清失败，维修完成后返回该星带。"
     });
+    // 问题2：per-ship 维修——维修状态写入 combat.repairs[destroyedShipId]，不再使用全局 repairUntil。
+    // 换舰/出击均不触碰其他舰的维修条目（beginShipRepair 只写被击毁这艘）。
+    beginShipRepair(state, destroyedShipId, now + 180000);
     state._dirty = true;
-    return { changed:true, repairUntil:state.combat.repairUntil, failedDeathspace, returnZoneId };
+    return { changed:true, repairShipId:destroyedShipId, repairUntilTs:now + 180000, failedDeathspace, returnZoneId };
   },
 
   finishRecovery(state, now) {
-    const repairUntil = Number(state.combat.repairUntil) || 0;
+    // 问题2：per-ship 维修——仅结束「当前 active 战斗舰」的维修，并恢复其满血。
+    const activeId = state.combat.activeShip;
+    const repairUntil = getShipRepairUntil(state, activeId);
     if (!repairUntil || now < repairUntil) return { changed:false, reason:"not-due" };
     const maxHp = getCombatMaxHpFromState(state);
     state.combat.hp = { ...maxHp };
     state.combat.maxHp = { ...maxHp };
-    state.combat.repairUntil = 0;
-    state.combat.destroyedShip = null;
+    finishShipRepair(state, activeId);
     state.combat.lastStatus = "自动维修完成，可以重新出击";
     state._dirty = true;
     return { changed:true };
@@ -867,7 +881,33 @@ function executeQueueItemForState(state, item, now) {
     return { changed:true, skill:"boosterEngineering" };
   }
 
-  // 常规技能
+  // 常规技能：采矿/冶炼/采气/制造等。
+  // 修复：若战斗仍在进行（combat.active），启动其他 action 前必须先干净停止战斗，
+  //       否则 currentAction.skill 被改走后 combatTick 不再被驱动，但 combat.active 残留
+  //       → 战斗冻结在最后一帧（需手动点「停止战斗」才能收尾）。combat/start 会正确接管
+  //       currentAction，这里对称地让其他 action 启动时收尾战斗。
+  if (state.combat && state.combat.active) {
+    const maxHp = getCombatMaxHpFromState(state);
+    Object.assign(state.combat, {
+      active:false,
+      hp:{ ...maxHp },
+      maxHp:{ ...maxHp },
+      enemies:[],
+      currentEnemy:null,
+      wave:1,
+      totalKills:0,
+      runEliteKills:0,
+      currentFormation:"",
+      lastLoot:"",
+      lastSpecialLoot:"",
+      lastStatus:"已切换至其他作业，战斗停止",
+      lastEnemyVolley:null,
+      runWeaponTypes:[],
+      runWeaponTypesZone:null,
+      runDamageDealt:0, runDamageTaken:0
+    });
+    state.resumeAfterRepair = null;
+  }
   applyQueueConfigToState(state, getQueueItemConfigForState(item), now);
   state._dirty = true;
   return { changed:true, skill:state.currentAction.skill };
@@ -940,7 +980,9 @@ const ShellStateActions = {
     if (!instance) return { changed:false, reason:"unknown-ship" };
     const config = getShipConfigById(instance.shipId);
     if (!config) return { changed:false, reason:"unknown-ship" };
-    const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && state.combat && Number(state.combat.repairUntil) > now);
+    // 问题2：per-ship 维修——仅当被操作的这艘舰自身在维修时拒绝指派，健康舰可正常换入。
+    const isRepairingThis = isShipUnderRepair(state, instanceId, now);
+    const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && isRepairingThis);
     if (restriction) return { changed:false, reason:restriction.reason };
     if (!state.shipAssignments) state.shipAssignments = {};
     const removing = state.shipAssignments[actionKey] === instance.instanceId;
@@ -957,6 +999,8 @@ const ShellStateActions = {
       delete state.shipAssignments[actionKey];
     }
     if (actionKey === "combat") state.combat.activeShip = removing ? null : instance.instanceId;
+    // 问题2/清理：战斗舰指派被玩家主动改动（换入/撤出），取消"维修完成后自动出击"待恢复标记。
+    if (actionKey === "combat" && state.resumeAfterRepair && state.resumeAfterRepair.type === "combat") state.resumeAfterRepair = null;
     state._dirty = true;
     return { changed:true, assigned:!removing, instance };
   },
@@ -964,7 +1008,8 @@ const ShellStateActions = {
   equipCombatShip(state, instanceId, now) {
     const instance = getShipInstanceFromState(state, instanceId);
     if (!instance) return { changed:false, reason:"unknown-ship" };
-    if (state.combat && Number(state.combat.repairUntil) > now) return { changed:false, reason:"repairing" };
+    // 问题2：per-ship 维修——仅当被操作的这艘舰自身在维修时拒绝装备，健康舰可正常换入。
+    if (state.combat && isShipUnderRepair(state, instanceId, now)) return { changed:false, reason:"repairing" };
     const config = getShipConfigById(instance.shipId);
     if (!config) return { changed:false, reason:"unknown-ship" };
     if (!state.shipAssignments) state.shipAssignments = {};
@@ -975,6 +1020,10 @@ const ShellStateActions = {
     }
     state.shipAssignments.combat = instance.instanceId;
     state.combat.activeShip = instance.instanceId;
+    // 问题2/清理：玩家主动换入新的战斗舰（健康舰），取消"维修完成后自动出击"待恢复标记，
+    // 与 combat/start（手动出击，actions.js:534）语义一致——接管战斗舰即放弃自动恢复，
+    // 避免战斗面板长期显示"完成后返回战斗"误导。
+    if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat") state.resumeAfterRepair = null;
     const maxHp = getCombatMaxHpFromState(state);
     Object.assign(state.combat, { hp:{ ...maxHp }, maxHp:{ ...maxHp }, weapon:config.recommendedWeapon || "laser", enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0, currentFormation:"", runWeaponTypes:[], runWeaponTypesZone:state.combat.zone||null, runDamageDealt:0, runDamageTaken:0, active:false });
     state._dirty = true;
