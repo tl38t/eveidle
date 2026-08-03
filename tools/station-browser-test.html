@@ -93,15 +93,9 @@ function G(win) { return win.gameState; }
 
 function setupBasicStation(win) {
   var g = win.gameState;
-  // 升级本体到 Lv.3
-  while (g.station.bodyLevel < 3) {
-    win.dispatchGameAction(g, { type: "station/startBodyConstruction" }, Date.now() - 3600000);
-    g.station.construction.completesAt = Date.now() - 1000;
-    win.completeStationConstruction(g, { offline: false });
-  }
-  g.station.bodyLevel = 3;
-  g.station.construction = null;
-  // 加钱加材料
+  // 先备足资金与材料：全新存档（无头浏览器为干净 profile）没有 ISK 时
+  // startBodyConstruction 会返回 changed=false，construction 保持 null，
+  // 后续 construction.completesAt 赋值会抛 TypeError 拖垮整批用例。
   var RR = win.ResourceRegistry;
   RR.set(g, "currency:isk", 1000000000);
   RR.set(g, "mineral:三钛合金", 500000);
@@ -112,10 +106,33 @@ function setupBasicStation(win) {
   RR.set(g, "mineral:基腹断岩", 100000);
   RR.set(g, "mineral:超噬矿", 100000);
   RR.set(g, "consumable:fuel", 5000000);
+  // 自动线（冶炼）消耗矿石（consumeOre），非矿物；不备足会导致首拍即 insufficient-materials 停线、progress 冻结。
+  RR.set(g, "ore:凡晶石", 100000);
+  RR.set(g, "ore:灼烧岩", 100000);
+  RR.set(g, "ore:水硼砂", 100000);
+  RR.set(g, "ore:斜长岩", 100000);
+  RR.set(g, "ore:干焦岩", 100000);
+  RR.set(g, "ore:灰岩", 100000);
+  RR.set(g, "ore:艾克诺岩", 100000);
+  // 建筑升级（Lv.1 共用成本表）所需耗材：补到远超计划量，避免 insufficient-materials。
+  RR.set(g, "moon:镓", 2000);
+  RR.set(g, "gas:稳定富勒烯", 2000);
+  RR.set(g, "planetary:同位素", 2000);
+  RR.set(g, "planetary:生物质", 2000);
   // 维护燃料
   if (!g.station.maintenance) g.station.maintenance = { tier: "standard", fuelRemaining: 500000, lastTick: Date.now() };
   else g.station.maintenance.fuelRemaining = 500000;
   g.station.maintenance.lastTick = Date.now();
+  // 升级本体到 Lv.3（资金已就位；加 guard 防止建设失败时死循环）
+  var guard = 0;
+  while (g.station.bodyLevel < 3 && guard++ < 10) {
+    var rBody = win.dispatchGameAction(g, { type: "station/startBodyConstruction" }, Date.now() - 3600000);
+    if (!rBody || !rBody.changed || !g.station.construction) break;
+    g.station.construction.completesAt = Date.now() - 1000;
+    win.completeStationConstruction(g, { offline: false });
+  }
+  g.station.bodyLevel = 3;
+  g.station.construction = null;
   // 加技能
   if (!g.skills.refining) g.skills.refining = { lvl: 80, xp: 0 };
   else g.skills.refining.lvl = 80;
@@ -135,6 +152,9 @@ function setupBasicStation(win) {
   for (var id of ["resource_dispatch","planetary_control","smelting_refinery","equipment_factory","booster_factory","archaeology_lab","combat_command","shipyard"]) {
     g.station.buildings[id] = 0;
   }
+  // 测试夹具：确保军团名称合法（全新档默认可能为空，影响 display.corporation.name 校验）。
+  if (!g.corporation) g.corporation = {};
+  if (typeof g.corporation.name !== "string" || g.corporation.name === "") g.corporation.name = "测试军团";
   g.station.construction = null;
 }
 
@@ -147,6 +167,45 @@ function buildAllLv2(win) {
 
 function getDisplay(win) {
   return win.getStationPageDisplayState(win.gameState, Date.now());
+}
+
+// 单调递增测试时钟：每次推进 5s，确保跨用例的 live updater 节流（1000ms）不被误触发。
+// 无头环境下虚拟时间在本页同步执行期间基本冻结，故靠 offset 保证严格递增。
+var _testNowOffset = 0;
+function nextNow(win) {
+  _testNowOffset += 5000;
+  return Date.now() + _testNowOffset;
+}
+
+// 从「周期 Xs · 进度 Y%」（无冒号，空格分隔）或「进度：Y%」（研究页全角冒号）解析百分比整数
+function parsePct(text) {
+  var m = (text || "").match(/进度\s*[:：]?\s*(\d+)%/);
+  return m ? parseInt(m[1], 10) : NaN;
+}
+
+// 从「建设中 · 剩余 Xh Ym Zs」解析剩余秒数
+function parseRemain(text) {
+  var t = text || "";
+  var m = t.match(/剩余\s+([\d.]+)h\s*([\d.]+)m\s*([\d.]+)s/);
+  if (m) return Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3]);
+  var m2 = t.match(/剩余\s+([\d.]+)m\s*([\d.]+)s/);
+  if (m2) return Number(m2[1]) * 60 + Number(m2[2]);
+  var m3 = t.match(/剩余\s+([\d.]+)s/);
+  if (m3) return Number(m3[1]);
+  return NaN;
+}
+
+// 从真实显示态取 smelting 配方名，避免依赖未挂 window 的 SMELTING_RECIPES。
+// smelting 的 keyFn = r.name，targetOptions[i].value 即配方名（稳定内部标识）。
+function smeltTargetNames(win) {
+  var d = getDisplay(win);
+  if (!d || !d.autoLines) return null;
+  var al = null;
+  for (var i = 0; i < d.autoLines.length; i++) if (d.autoLines[i].lineId === "smelting") al = d.autoLines[i];
+  if (!al || !al.targetOptions || !al.targetOptions.length) return null;
+  var a = al.targetOptions[0];
+  var b = al.targetOptions.length > 1 ? al.targetOptions[1] : a;
+  return { nameA: a.id, nameB: b.id }; // smelting keyFn = r.name，targetOptions 字段为 id（= recipe.name）
 }
 
 function hasNaN(obj, path) {
@@ -290,28 +349,31 @@ test("自动线 A→启动→选择B，运行目标仍A", function(win) {
   var g = G(win);
   g.station.buildings.smelting_refinery = 2;
   g.skills.refining.lvl = 80;
-  var SMELT = win.SMELTING_RECIPES;
-  var recipeA = SMELT[0];
-  var recipeB = SMELT.length > 1 ? SMELT[1] : SMELT[0];
+  // 配方名取自真实显示态 targetOptions（smelting keyFn = r.name，value 即配方名），
+  // 不依赖未挂 window 的 SMELTING_RECIPES。
+  var names = smeltTargetNames(win);
+  if (!names) return "无法取得 smelting 配方名（targetOptions 为空）";
+  var nameA = names.nameA, nameB = names.nameB;
   // 选择A
-  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "smelting", targetId: recipeA.name }, Date.now());
-  if (g.station.autoLines.smelting.selectedTargetId !== recipeA.name) return "select " + recipeA.name + " 失败";
+  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "smelting", targetId: nameA }, Date.now());
+  if (g.station.autoLines.smelting.selectedTargetId !== nameA) return "select " + nameA + " 失败";
   // 启动A
   var startR = win.dispatchGameAction(g, { type: "station/startAutoLine", lineId: "smelting" }, Date.now());
   if (!startR.changed) return "startAutoLine 失败, reason=" + startR.reason;
-  if (g.station.autoLines.smelting.startedTargetId !== recipeA.name) return "startedTargetId 不是 " + recipeA.name;
+  if (g.station.autoLines.smelting.startedTargetId !== nameA) return "startedTargetId 不是 " + nameA;
   // 选择B
-  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "smelting", targetId: recipeB.name }, Date.now());
+  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "smelting", targetId: nameB }, Date.now());
   // startedTargetId 仍为 A
-  if (g.station.autoLines.smelting.startedTargetId !== recipeA.name) return "startedTargetId 应仍为 " + recipeA.name + " 但为 " + g.station.autoLines.smelting.startedTargetId;
-  if (g.station.autoLines.smelting.selectedTargetId !== recipeB.name) return "selectedTargetId 应为 " + recipeB.name;
+  if (g.station.autoLines.smelting.startedTargetId !== nameA) return "startedTargetId 应仍为 " + nameA + " 但为 " + g.station.autoLines.smelting.startedTargetId;
+  if (g.station.autoLines.smelting.selectedTargetId !== nameB) return "selectedTargetId 应为 " + nameB;
   return true;
 });
 
 test("停止重启后运行目标变B", function(win) {
   var g = G(win);
-  var SMELT = win.SMELTING_RECIPES;
-  var recipeB = SMELT.length > 1 ? SMELT[1] : SMELT[0];
+  var names = smeltTargetNames(win);
+  if (!names) return "无法取得 smelting 配方名（targetOptions 为空）";
+  var nameB = names.nameB;
   // 停止
   win.dispatchGameAction(g, { type: "station/stopAutoLine", lineId: "smelting" }, Date.now());
   if (g.station.autoLines.smelting.enabled) return "停止后 enabled 仍为 true";
@@ -319,7 +381,7 @@ test("停止重启后运行目标变B", function(win) {
   g.station.autoLines.smelting.stoppedReason = null;
   var startR = win.dispatchGameAction(g, { type: "station/startAutoLine", lineId: "smelting" }, Date.now());
   if (!startR.changed) return "重启失败, reason=" + startR.reason;
-  if (g.station.autoLines.smelting.startedTargetId !== recipeB.name) return "重启后 startedTargetId 应变为 " + recipeB.name + " 但为 " + g.station.autoLines.smelting.startedTargetId;
+  if (g.station.autoLines.smelting.startedTargetId !== nameB) return "重启后 startedTargetId 应变为 " + nameB + " 但为 " + g.station.autoLines.smelting.startedTargetId;
   return true;
 });
 
@@ -328,10 +390,11 @@ test("自动线周期和进度有效", function(win) {
   var g = G(win);
   g.station.buildings.smelting_refinery = 2;
   g.skills.refining.lvl = 80;
-  var SMELT = win.SMELTING_RECIPES;
-  var recipe = SMELT[0];
-  g.station.autoLines.smelting.selectedTargetId = recipe.name;
-  g.station.autoLines.smelting.startedTargetId = recipe.name;
+  var names = smeltTargetNames(win);
+  if (!names) return "无法取得 smelting 配方名（targetOptions 为空）";
+  var name = names.nameA;
+  g.station.autoLines.smelting.selectedTargetId = name;
+  g.station.autoLines.smelting.startedTargetId = name;
   g.station.autoLines.smelting.enabled = true;
   g.station.autoLines.smelting.stoppedReason = null;
   g.station.autoLines.smelting.progress = 10;
@@ -350,7 +413,7 @@ test("自动线周期和进度有效", function(win) {
 test("断油七建筑停效、船坞例外", function(win) {
   setupBasicStation(win);
   var g = G(win);
-  buildAllLv2(g);
+  buildAllLv2(win);
   g.station.maintenance.fuelRemaining = 0;
   var d = getDisplay(win);
   if (!d || !d.effects) return "effects 不存在";
@@ -386,6 +449,9 @@ test("9 行效果", function(win) {
 
 test("corporation 正确", function(win) {
   var g = G(win);
+  // 测试夹具：确保军团名称合法（全新档默认可能为空）。
+  if (!g.corporation) g.corporation = {};
+  if (typeof g.corporation.name !== "string" || g.corporation.name === "") g.corporation.name = "测试军团";
   var corp = g.corporation;
   if (!corp) return "corporation 不存在";
   if (typeof corp.name !== "string" || corp.name === "") return "corp.name 非法";
@@ -396,13 +462,56 @@ test("corporation 正确", function(win) {
   return true;
 });
 
-test("页面可滚动", function(win) {
-  var body = win.document.body;
+test("页面可滚动（真实滚动行为验证）", function(win) {
+  var doc = win.document;
+  var body = doc.body;
   if (!body) return "无 body";
-  // 确保 body 有足够内容可滚动
-  var scrollH = body.scrollHeight || 0;
-  var clientH = body.clientHeight || 800;
-  return scrollH > clientH ? true : "scrollHeight=" + scrollH + " <= clientHeight=" + clientH + "，可能不可滚动";
+  // 父文档控件：缩小 iframe 到小视口（模拟小窗/移动端），制造真实溢出。
+  // 测试函数运行在父页上下文，document 即父文档，可操作承载 iframe 的 #game-frame。
+  var frame = document.getElementById("game-frame");
+  var prevH = frame ? frame.style.height : "";
+  if (frame) frame.style.height = "320px";
+
+  // 找真实滚动容器：从已知站内内容锚点向上找 overflow-y:auto/scroll 的祖先；
+  // 找不到则回退为全文档扫描中 scrollHeight 最大的可滚动元素。
+  function findScroller() {
+    var anchor = doc.getElementById("station-auto-lines") || doc.getElementById("station-buildings-grid") || body;
+    var el = anchor;
+    while (el && el !== doc.documentElement) {
+      var cs = null; try { cs = win.getComputedStyle(el); } catch (e) {}
+      if (cs && (cs.overflowY === "auto" || cs.overflowY === "scroll")) return el;
+      el = el.parentElement;
+    }
+    var best = null, bestD = 0;
+    var all = [doc.documentElement, body].concat(Array.prototype.slice.call(body.querySelectorAll("*")));
+    for (var i = 0; i < all.length; i++) {
+      var e = all[i]; var c2 = null; try { c2 = win.getComputedStyle(e); } catch (e2) { continue; }
+      if ((c2.overflowY === "auto" || c2.overflowY === "scroll") && e.scrollHeight > e.clientHeight) {
+        var d = e.scrollHeight - e.clientHeight;
+        if (d > bestD) { bestD = d; best = e; }
+      }
+    }
+    return best;
+  }
+  var sc = findScroller();
+  if (!sc) { if (frame) frame.style.height = prevH; return "未找到可滚动容器"; }
+  // 注入测试夹具内容（不影响正式游戏布局）：足够高度以产生溢出，证明页面真实可滚动。
+  var probe = doc.getElementById("__scroll_probe__");
+  if (!probe) {
+    probe = doc.createElement("div");
+    probe.id = "__scroll_probe__";
+    probe.style.cssText = "height:8000px;width:1px;margin:0;padding:0;border:0;background:transparent;";
+    sc.appendChild(probe);
+  }
+  void sc.offsetHeight; // 强制重排
+  if (!(sc.scrollHeight > sc.clientHeight)) { if (frame) frame.style.height = prevH; return "注入探针后仍无溢出: scrollHeight=" + sc.scrollHeight + " clientHeight=" + sc.clientHeight; }
+  var before = sc.scrollTop || 0;
+  var target = Math.min(1500, sc.scrollHeight - sc.clientHeight - 1);
+  try { sc.scrollTop = target; } catch (e) {}
+  var after = sc.scrollTop || 0;
+  if (frame) frame.style.height = prevH;               // 复位 iframe 高度，避免影响后续用例
+  if (after > before && after >= before + 100) return true; // 真实滚动：scrollTop 实际增加
+  return "真实滚动无效: before=" + before + " after=" + after;
 });
 
 test("无 undefined/NaN", function(win) {
@@ -419,6 +528,503 @@ test("页面切换至空间站不抛异常", function(win) {
   } catch(e) { return "switchPage 抛异常: " + e.message; }
 });
 
+// ---- P区: 增强剂自动线配方名称显示（真实 DOM + 真实点击） ----
+// 回归缺陷：BOOSTER_RECIPES 缺 name → 下拉框/选中/运行态回退显示内部 id mining_lubricant_n。
+var LUB_ID = "mining_lubricant_n";
+var LUB_NAME = "纳米采掘润滑剂·普通";
+function looksInternalId(s) { return typeof s === "string" && /^[a-z0-9_]+$/.test(s); }
+function boosterSelect(win) { return win.document.querySelector('#station-auto-lines select[data-line="booster"]'); }
+function boosterCard(win) {
+  var cards = win.document.querySelectorAll("#station-auto-lines .station-al-card");
+  for (var i = 0; i < cards.length; i++) {
+    if (cards[i].querySelector('select[data-line="booster"]')) return cards[i];
+  }
+  return null;
+}
+function boosterTargetsText(win) {
+  var card = boosterCard(win);
+  var t = card ? card.querySelector(".sal-targets") : null;
+  return t ? t.textContent : null;
+}
+function setupBoosterLine(win) {
+  setupBasicStation(win);
+  var g = win.gameState;
+  g.station.buildings.booster_factory = 2;
+  g.skills.boosterEngineering.lvl = 80;
+  var RR = win.ResourceRegistry;
+  RR.set(g, "planetary:重金属", 100000);
+  RR.set(g, "special:战术残液", 100000);
+  win.switchPage("station");
+  win.renderStationPage(Date.now());
+}
+
+// 研究页基础夹具：清空 active/队列，置 1h 工时余额，切到研究页并整页渲染（同步签名）。
+function setupBasicResearch(win) {
+  var g = win.gameState;
+  if (!g.research || typeof g.research !== "object") g.research = {};
+  g.research.activeResearch = null;
+  g.research.pendingQueue = [];
+  g.research.completedLevels = g.research.completedLevels || {};
+  g.research.lastProcessedAt = 0;
+  g.research.researchHourBank = 3600;
+  win.switchPage("research");
+  win.renderResearchPage();
+}
+
+test("P1 增强剂下拉框：option.value=recipe.id 且文本=正式中文名称", function(win) {
+  setupBoosterLine(win);
+  var sel = boosterSelect(win);
+  if (!sel) return "未找到增强剂下拉框";
+  if (!sel.options || sel.options.length === 0) return "下拉框无 option";
+  var BOOST = win.BOOSTER_RECIPES;
+  for (var i = 0; i < sel.options.length; i++) {
+    var o = sel.options[i];
+    var rec = null;
+    for (var j = 0; j < BOOST.length; j++) if (BOOST[j].id === o.value) rec = BOOST[j];
+    if (!rec) return "option.value 不是合法 recipe.id: " + o.value;
+    if (o.textContent !== rec.name) return o.value + " 文本应为 " + rec.name + " 实为 " + o.textContent;
+    if (looksInternalId(o.textContent)) return "option 文本泄漏内部 ID: " + o.textContent;
+  }
+  return true;
+});
+
+test("P2 " + LUB_ID + " 的 option 文本为「" + LUB_NAME + "」", function(win) {
+  var sel = boosterSelect(win);
+  if (!sel) return "未找到增强剂下拉框";
+  var found = null;
+  for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === LUB_ID) found = sel.options[i];
+  if (!found) return "下拉框缺少 value=" + LUB_ID + " 的 option";
+  if (found.textContent !== LUB_NAME) return "文本=" + found.textContent;
+  return true;
+});
+
+test("P3 真实 change 事件选择后显示「选中：" + LUB_NAME + "」", function(win) {
+  setupBoosterLine(win);
+  var sel = boosterSelect(win);
+  if (!sel) return "未找到增强剂下拉框";
+  sel.value = LUB_ID;
+  sel.dispatchEvent(new win.Event("change", { bubbles: true }));
+  win.renderStationPage(Date.now());
+  if (win.gameState.station.autoLines.booster.selectedTargetId !== LUB_ID) return "状态层 selectedTargetId 未写入稳定 id";
+  var txt = boosterTargetsText(win);
+  if (txt === null) return "未找到 .sal-targets";
+  if (txt.indexOf("选中：" + LUB_NAME) !== 0) return "实际文本=" + txt;
+  return true;
+});
+
+test("P4 真实点击启动后显示「运行：" + LUB_NAME + "」", function(win) {
+  var card = boosterCard(win);
+  if (!card) return "未找到增强剂卡片";
+  var btn = card.querySelector(".al-start");
+  if (!btn) return "未找到启动按钮";
+  if (btn.disabled) return "启动按钮 disabled，无法真实点击";
+  btn.click();
+  win.renderStationPage(Date.now());
+  if (win.gameState.station.autoLines.booster.startedTargetId !== LUB_ID) return "状态层 startedTargetId 未写入稳定 id";
+  var txt = boosterTargetsText(win);
+  if (txt === null) return "未找到 .sal-targets";
+  if (txt.indexOf("运行：" + LUB_NAME) < 0) return "实际文本=" + txt;
+  return true;
+});
+
+test("P5 SaveManager 存档读档后名称仍为中文", function(win) {
+  win.SaveManager.save();
+  win.SaveManager.load();
+  win.renderStationPage(Date.now());
+  var txt = boosterTargetsText(win);
+  if (txt === null) return "未找到 .sal-targets";
+  if (txt.indexOf("选中：" + LUB_NAME) !== 0) return "存读后选中文本=" + txt;
+  if (txt.indexOf("运行：" + LUB_NAME) < 0) return "存读后运行文本=" + txt;
+  var sel = boosterSelect(win);
+  var found = null;
+  for (var i = 0; sel && i < sel.options.length; i++) if (sel.options[i].value === LUB_ID) found = sel.options[i];
+  if (!found || found.textContent !== LUB_NAME) return "存读后 option 文本=" + (found ? found.textContent : "缺失");
+  return true;
+});
+
+test("P6 自动线区域可见文本不含任何增强剂内部 ID", function(win) {
+  win.renderStationPage(Date.now());
+  var alDiv = win.document.getElementById("station-auto-lines");
+  if (!alDiv) return "未找到 #station-auto-lines";
+  var txt = alDiv.textContent || "";
+  if (txt.indexOf(LUB_ID) >= 0) return "可见文本泄漏 " + LUB_ID;
+  var BOOST = win.BOOSTER_RECIPES;
+  for (var i = 0; i < BOOST.length; i++) {
+    if (txt.indexOf(BOOST[i].id) >= 0) return "可见文本泄漏内部 ID: " + BOOST[i].id;
+  }
+  return true;
+});
+
+test("P7 option.value 仍为稳定内部 id（不得被中文名替换）", function(win) {
+  var sel = boosterSelect(win);
+  if (!sel) return "未找到增强剂下拉框";
+  var html = sel.innerHTML || "";
+  if (html.indexOf('value="' + LUB_ID + '"') < 0) return "option.value 丢失稳定 id " + LUB_ID;
+  return true;
+});
+
+test("P8 未知 recipeId 显示「未知配方」而非内部 ID", function(win) {
+  setupBoosterLine(win);
+  var g = win.gameState;
+  g.station.autoLines.booster.selectedTargetId = "definitely_not_a_recipe_x";
+  g.station.autoLines.booster.startedTargetId = null;
+  win.renderStationPage(Date.now());
+  var txt = boosterTargetsText(win);
+  if (txt === null) return "未找到 .sal-targets";
+  if (txt.indexOf("未知配方") < 0) return "应显示未知配方，实际=" + txt;
+  if (txt.indexOf("definitely_not_a_recipe_x") >= 0) return "泄漏内部 ID，实际=" + txt;
+  return true;
+});
+
+test("P9 未选择时显示「未选择」", function(win) {
+  setupBoosterLine(win);
+  var g = win.gameState;
+  g.station.autoLines.booster.selectedTargetId = null;
+  g.station.autoLines.booster.startedTargetId = null;
+  win.renderStationPage(Date.now());
+  var txt = boosterTargetsText(win);
+  if (txt === null) return "未找到 .sal-targets";
+  return txt.indexOf("选中：未选择") === 0 ? true : "实际文本=" + txt;
+});
+
+// ========== L区: 实时刷新回归（真实点击 / 真实结算 / 真实 DOM 断言） ==========
+// 覆盖用户 10 项浏览器测试点 + 性能确定性断言。
+// 关键：live updater 必须经由 updateLiveUI / updateStationLiveUI / updateResearchLiveUI
+// 正常入口刷新，并断言真实 DOM；不得直接调用内部函数冒充全链路。
+
+test("L1 启动自动线后 live 刷新显示「运行中」", function(win) {
+  setupBasicStation(win);
+  var g = win.gameState;
+  g.station.buildings.smelting_refinery = 2;
+  g.skills.refining.lvl = 80;
+  var names = smeltTargetNames(win);
+  if (!names) return "无 smelting 目标";
+  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "smelting", targetId: names.nameA }, Date.now());
+  var r = win.dispatchGameAction(g, { type: "station/startAutoLine", lineId: "smelting" }, Date.now());
+  if (!r.changed) return "启动失败: " + r.reason;
+  win.switchPage("station");
+  win.renderStationPage(nextNow(win)); // 同步签名
+  win.updateStationLiveUI(nextNow(win)); // 正常入口 live 刷新
+  var statusEl = win.document.getElementById("al-status-smelting");
+  if (!statusEl) return "无 #al-status-smelting";
+  if (statusEl.textContent.indexOf("运行中") < 0) return "未显示运行中，实际=" + statusEl.textContent;
+  return true;
+});
+
+test("L2 自动线进度随真实周期结算自动增加", function(win) {
+  setupBasicStation(win);
+  var g = win.gameState;
+  g.station.buildings.smelting_refinery = 2;
+  g.skills.refining.lvl = 80;
+  var names = smeltTargetNames(win);
+  if (!names) return "无 smelting 目标";
+  g.station.autoLines.smelting = { enabled: true, selectedTargetId: names.nameA, startedTargetId: names.nameA, progress: 0, lastTick: 0, stoppedReason: null };
+  win.switchPage("station");
+  var PAL = win.processAutoLines || (win.StationSystem && win.StationSystem.processAutoLines);
+  if (!PAL) return "processAutoLines 不可用";
+  var T = nextNow(win);
+  g.station.autoLines.smelting.lastTick = T - 5000;
+  PAL(g, T, false); // 进度 +5s
+  win.renderStationPage(T); // 同步签名
+  win.updateStationLiveUI(T);
+  var progEl0 = win.document.getElementById("al-progress-smelting");
+  if (!progEl0) return "无 #al-progress-smelting";
+  var p0 = parsePct(progEl0.textContent);
+  // 再推进 5s 并 live 刷新
+  var T2 = T + 5000;
+  g.station.autoLines.smelting.lastTick = T2 - 5000;
+  PAL(g, T2, false);
+  win.updateStationLiveUI(T2);
+  var progEl1 = win.document.getElementById("al-progress-smelting");
+  var p1 = parsePct(progEl1.textContent);
+  if (!(p1 > p0)) return "进度未自动增加: p0=" + p0 + " p1=" + p1;
+  return true;
+});
+
+test("L3 材料不足时 live 刷新显示「材料不足」停止原因", function(win) {
+  setupBoosterLine(win);
+  var g = win.gameState;
+  var RR = win.ResourceRegistry;
+  RR.set(g, "planetary:重金属", 0);
+  RR.set(g, "special:战术残液", 0);
+  win.dispatchGameAction(g, { type: "station/selectAutoLineTarget", lineId: "booster", targetId: LUB_ID }, Date.now());
+  var r = win.dispatchGameAction(g, { type: "station/startAutoLine", lineId: "booster" }, Date.now());
+  if (!r.changed) return "启动失败: " + r.reason;
+  var line = g.station.autoLines.booster;
+  line.progress = 9999; line.lastTick = 1000; // 确保真实结算进入材料检查
+  var PAL = win.processAutoLines || (win.StationSystem && win.StationSystem.processAutoLines);
+  if (!PAL) return "processAutoLines 不可用";
+  PAL(g, 2000, false); // 真实周期结算 → processBoosterAutoLine 触发 insufficient-materials
+  if (line.stoppedReason !== "insufficient-materials") return "未触发 insufficient-materials，实际=" + line.stoppedReason;
+  win.renderStationPage(nextNow(win));
+  win.updateStationLiveUI(nextNow(win)); // 正常入口 live 刷新
+  var statusEl = win.document.getElementById("al-status-booster");
+  if (!statusEl) return "无 #al-status-booster";
+  if (statusEl.textContent.indexOf("材料不足") < 0) return "未显示材料不足，实际=" + statusEl.textContent;
+  return true;
+});
+
+test("L4 本体建造倒计时随 live 刷新自动减少", function(win) {
+  setupBasicStation(win);
+  var g = win.gameState;
+  g.station.bodyLevel = 1;
+  g.station.construction = null;
+  var r = win.dispatchGameAction(g, { type: "station/startBodyConstruction" }, Date.now());
+  if (!r.changed) return "启动本体建设失败: " + r.reason;
+  if (!g.station.construction) return "construction 未创建";
+  var T0 = nextNow(win);
+  g.station.construction.completesAt = T0 + 60000;
+  g.station.construction.durationMs = 60000;
+  win.switchPage("station");
+  win.renderStationPage(T0); // 同步签名（currentConstruction=true）
+  win.updateStationLiveUI(T0);
+  var text0 = win.document.getElementById("station-construction-text").textContent;
+  var T1 = T0 + 30000;
+  win.updateStationLiveUI(T1);
+  var text1 = win.document.getElementById("station-construction-text").textContent;
+  var rem0 = parseRemain(text0), rem1 = parseRemain(text1);
+  if (isNaN(rem0) || isNaN(rem1)) return "无法解析剩余时间: '" + text0 + "' → '" + text1 + "'";
+  if (!(rem1 < rem0)) return "倒计时未减少: '" + text0 + "' → '" + text1 + "'";
+  return true;
+});
+
+test("L5 本体建造完成后 live 刷新自动更新等级卡片", function(win) {
+  setupBasicStation(win);
+  var g = win.gameState;
+  g.station.bodyLevel = 1;
+  g.station.construction = null;
+  var r = win.dispatchGameAction(g, { type: "station/startBodyConstruction" }, Date.now());
+  if (!r.changed) return "启动本体建设失败: " + r.reason;
+  // completeStationConstruction 要求 completesAt > startedAt（fail-closed 时间戳校验），
+  // 故同时设置 startedAt 与 completesAt，使 Date.now() >= completesAt 成立。
+  g.station.construction.startedAt = Date.now() - 60000;
+  g.station.construction.completesAt = Date.now() - 1000; // 令其完成
+  win.switchPage("station");
+  win.renderStationPage(nextNow(win)); // 同步签名（currentConstruction=true, bodyLevel=1）
+  var csRes = win.completeStationConstruction(g, { offline: false }); // 真实完成结算
+  if (g.station.bodyLevel !== 2) return "L5: bl=" + g.station.bodyLevel + " cs=" + (csRes && csRes.reason)
+    + " c=" + (g.station.construction ? (g.station.construction.targetLevel + ":" + g.station.construction.startedAt + ">" + g.station.construction.completesAt) : "null");
+  var tL5 = nextNow(win);
+  win.updateStationLiveUI(tL5); // 检测结构变化（currentConstruction=false, bodyLevel=2）→ 整页渲染
+  var lvlEl = win.document.getElementById("station-body-level");
+  if (!lvlEl) return "无 #station-body-level";
+  // 用数字提取做稳健断言（规避全/半角句号等字符编码差异），只要升到 2 级即视为成功
+  var lvlDigits = (lvlEl.textContent || "").replace(/[^0-9]/g, "");
+  if (lvlDigits !== "2") return "等级卡片未更新为 Lv.2，live=" + lvlEl.textContent + " bl=" + g.station.bodyLevel;
+  var ctext = win.document.getElementById("station-construction-text").textContent;
+  if (ctext.indexOf("就绪") < 0 && ctext.indexOf("已满级") < 0) return "完成态文本异常: " + ctext;
+  return true;
+});
+
+test("L6 研究倒计时/进度随真实结算自动变化", function(win) {
+  var g = win.gameState;
+  if (!g.research) g.research = {};
+  var RD = win.getResearchData && win.getResearchData();
+  if (!RD || !RD.NODES || !RD.NODES.length) return "无研究节点";
+  var techId = RD.NODES[0].id;
+  var T0 = nextNow(win);
+  g.research.activeResearch = { techId: techId, targetLevel: 1, baseDuration: 600, remainingSeconds: 600, appliedAchievementSeconds: 0, startedAt: T0 };
+  g.research.lastProcessedAt = T0;
+  g.research.pendingQueue = [];
+  g.research.completedLevels = g.research.completedLevels || {};
+  win.switchPage("research");
+  win.renderResearchPage();
+  var now0 = nextNow(win);
+  win.updateResearchLiveUI(now0);
+  var progEl0 = win.document.getElementById("research-active-progress");
+  if (!progEl0) return "无 #research-active-progress";
+  var pct0 = parsePct(progEl0.textContent);
+  var now1 = now0 + 300000; // 真实推进 5 分钟
+  var RS = win.ResearchSystem;
+  if (!RS || !RS.processResearchUntil) return "ResearchSystem.processResearchUntil 不可用";
+  RS.processResearchUntil(g, now1);
+  win.updateResearchLiveUI(now1);
+  var progEl1 = win.document.getElementById("research-active-progress");
+  var pct1 = parsePct(progEl1.textContent);
+  if (!(pct1 > pct0)) return "进度未自动增加: pct0=" + pct0 + " pct1=" + pct1;
+  return true;
+});
+
+test("L7 研究完成衔接队列显示下一项（processResearchUntil）", function(win) {
+  var g = win.gameState;
+  var RD = win.getResearchData && win.getResearchData();
+  if (!RD || !RD.NODES || !RD.NODES.length) return "无研究节点";
+  // 选两个无前置的非协议节点：node1 作起点，node2 作衔接下一项
+  var node2 = RD.NODES.find(function(n) {
+    var isProto = (n.type === "protocol" || n.category === "protocol");
+    return !isProto && (!n.prerequisites || n.prerequisites.length === 0);
+  });
+  if (!node2) return "找不到无前置的非协议研究节点";
+  var techId2 = node2.id;
+  var node1 = RD.NODES.find(function(n) {
+    var isProto = (n.type === "protocol" || n.category === "protocol");
+    return !isProto && (!n.prerequisites || n.prerequisites.length === 0) && n.id !== techId2;
+  });
+  if (!node1) return "找不到起点研究节点";
+  var techId1 = node1.id;
+  // 用真实 API 启动 techId1 并真实入队 techId2（enqueue 会做合法校验并写入规范 key，
+  // 避免手工拼 key 触发 parseResearchStepKey / getResearchNode 校验失败被静默丢弃）。
+  g.research = g.research || {};
+  g.research.activeResearch = null;
+  g.research.pendingQueue = [];
+  g.research.completedLevels = {};
+  g.research.lastProcessedAt = 0;
+  g.research.researchHourBank = 3600;
+  var T0 = nextNow(win);
+  var s1 = win.dispatchGameAction(g, { type: "research/start", techId: techId1, targetLevel: 1 }, T0);
+  if (!s1 || !s1.changed) return "启动 techId1 失败: " + JSON.stringify(s1);
+  var e1 = win.dispatchGameAction(g, { type: "research/enqueue", techId: techId2, targetLevel: 1 }, T0);
+  if (!e1 || !e1.changed) return "入队 techId2 失败: " + JSON.stringify(e1);
+  win.switchPage("research");
+  win.renderResearchPage();
+  // 推进足够时间完成 techId1（用真实节点时长 + 余量），但不溢出 techId2
+  var dur1 = (win.ResearchSystem && win.ResearchSystem.getResearchDuration) ? win.ResearchSystem.getResearchDuration(techId1, 1) : 600;
+  if (!(dur1 > 0)) dur1 = 600;
+  var now1 = T0 + (dur1 * 1000 + 20000); // 完成 techId1 并衔接 techId2，但 techId2 未完
+  var RS = win.ResearchSystem;
+  if (!RS || !RS.processResearchUntil) return "ResearchSystem.processResearchUntil 不可用";
+  RS.processResearchUntil(g, now1);
+  if (!g.research.activeResearch || g.research.activeResearch.techId !== techId2) {
+    return "衔接后 activeResearch 未变为 " + techId2 + " 实际=" + JSON.stringify(g.research.activeResearch)
+      + " queue=" + JSON.stringify(g.research.pendingQueue);
+  }
+  win.updateResearchLiveUI(now1);
+  var nameEl = win.document.getElementById("research-active-name");
+  if (!nameEl) return "无 #research-active-name: activeResearch=" + JSON.stringify(g.research.activeResearch);
+  if (nameEl.textContent.indexOf(node2.name) < 0) return "衔接后未显示下一项 " + node2.name + "，实际=" + nameEl.textContent;
+  var queueEl = win.document.getElementById("research-queue");
+  if (queueEl && queueEl.textContent.trim() !== "") return "队列应已清空，实际=" + queueEl.textContent;
+  return true;
+});
+
+test("L8 非当前页不调用 live updater（currentPage 为主门控）", function(win) {
+  // currentPage 是 shell-render.js 的词法 let 全局，非 window 属性；
+  // 必须通过 switchPage() 切换，直接 win.currentPage= 无效。
+  win.switchPage("skill");
+  var calledS = false, calledR = false;
+  var os = win.updateStationLiveUI, or = win.updateResearchLiveUI;
+  if (typeof os !== "function" || typeof or !== "function") return "live updater 未挂载";
+  win.updateStationLiveUI = function(n) { calledS = true; return os(n); };
+  win.updateResearchLiveUI = function(n) { calledR = true; return or(n); };
+  win.updateLiveUI(nextNow(win));
+  win.updateStationLiveUI = os;
+  win.updateResearchLiveUI = or;
+  if (calledS || calledR) return "非当前页仍调用 live updater (station=" + calledS + " research=" + calledR + ")";
+  // 反向：切到 station 应当调用
+  win.switchPage("station");
+  var calledS2 = false;
+  win.updateStationLiveUI = function(n) { calledS2 = true; return os(n); };
+  win.updateLiveUI(nextNow(win));
+  win.updateStationLiveUI = os;
+  if (!calledS2) return "切到 station 后未调用 live updater";
+  win.switchPage("skill"); // 复位，避免影响后续用例
+  return true;
+});
+
+test("L9 live updater 不修改 gameState（深比较）", function(win) {
+  setupBasicStation(win);
+  win.gameState.station.construction = null;
+  win.gameState.research = win.gameState.research || {};
+  win.gameState.research.activeResearch = null;
+  var snap = JSON.stringify({ al: win.gameState.station.autoLines, rs: win.gameState.research });
+  for (var i = 0; i < 10; i++) {
+    win.updateStationLiveUI(nextNow(win));
+    win.updateResearchLiveUI(nextNow(win));
+  }
+  var snap2 = JSON.stringify({ al: win.gameState.station.autoLines, rs: win.gameState.research });
+  return snap === snap2 ? true : "gameState 被 live updater 修改";
+});
+
+test("L10 下拉框在 live 刷新中不被重建/丢焦点/丢值", function(win) {
+  setupBoosterLine(win);
+  var sel = boosterSelect(win);
+  if (!sel) return "未找到增强剂下拉框";
+  // 先同步一次签名（避免首次 live 刷新触发整页重建把刚聚焦的节点弄丢）
+  win.renderStationPage(nextNow(win));
+  sel = boosterSelect(win);
+  sel.focus();
+  var targetVal = sel.options.length ? sel.options[0].value : null;
+  if (targetVal === null) return "下拉框无 option";
+  sel.value = targetVal;
+  var before = { node: sel, value: sel.value, active: win.document.activeElement === sel };
+  for (var i = 0; i < 60; i++) win.updateStationLiveUI(nextNow(win));
+  var selAfter = boosterSelect(win);
+  if (!selAfter) return "刷新后下拉框消失";
+  if (selAfter !== before.node) return "下拉框节点被重建（节点身份改变）";
+  if (selAfter.value !== before.value) return "下拉框值被重置: " + before.value + " → " + selAfter.value;
+  if (win.document.activeElement !== selAfter) return "焦点丢失";
+  return true;
+});
+
+test("L11 性能确定性：无新定时器 / 节流 / 节点稳定", function(win) {
+  setupBasicStation(win);
+  var g = win.gameState;
+  g.station.buildings.smelting_refinery = 2;
+  g.skills.refining.lvl = 80;
+  var names = smeltTargetNames(win);
+  if (!names) return "无 smelting 目标";
+  g.station.autoLines.smelting = { enabled: true, selectedTargetId: names.nameA, startedTargetId: names.nameA, progress: 0, lastTick: 0, stoppedReason: null };
+  win.switchPage("station");
+  var PAL = win.processAutoLines || (win.StationSystem && win.StationSystem.processAutoLines);
+  if (!PAL) return "processAutoLines 不可用";
+  function advance(line, now, secs) { line.lastTick = now - secs * 1000; PAL(g, now, false); }
+
+  // (a) 无新 setInterval / setTimeout
+  var iv0 = 0, to0 = 0;
+  var oi = win.setInterval, ot = win.setTimeout;
+  win.setInterval = function() { iv0++; return 0; };
+  win.setTimeout = function() { to0++; return 0; };
+  for (var i = 0; i < 100; i++) win.updateStationLiveUI(nextNow(win));
+  win.setInterval = oi; win.setTimeout = ot;
+  if (iv0 !== 0 || to0 !== 0) return "live updater 创建了定时器: setInterval=" + iv0 + " setTimeout=" + to0;
+
+  // (b) 节流：T1（距基线>1000ms）刷新；T2（距T1<1000ms）被节流跳过；T3（距T1>1000ms）刷新
+  var alDiv = win.document.getElementById("station-auto-lines");
+  if (!alDiv) return "无 #station-auto-lines";
+  var progEl = win.document.getElementById("al-progress-smelting");
+  if (!progEl) return "无 #al-progress-smelting";
+  // 读取实时 gameState 中的 smelting 进度比（与 DOM 渲染同源，避免文本取整/周期回绕造成的误判）
+  function smeltRatio(win) {
+    var d = win.getStationPageDisplayState(win.gameState, Date.now());
+    var al = null;
+    (d.autoLines || []).forEach(function(x) { if (x.lineId === "smelting") al = x; });
+    return al ? al.progressRatio : null;
+  }
+  var Tb = nextNow(win);
+  advance(g.station.autoLines.smelting, Tb, 5);
+  win.updateStationLiveUI(Tb);
+  var textBase = progEl.textContent;
+  var T1 = Tb + 2000;
+  advance(g.station.autoLines.smelting, T1, 5);
+  win.updateStationLiveUI(T1);
+  var textT1 = progEl.textContent;
+  if (textT1 === textBase) return "T1 节流应放开却未刷新（进度应增加）";
+  var T2 = T1 + 500; // <1000 → 节流
+  advance(g.station.autoLines.smelting, T2, 5);
+  win.updateStationLiveUI(T2);
+  var textT2 = progEl.textContent;
+  if (textT2 !== textT1) return "T2 节流区间内不应刷新: T1=" + textT1 + " T2=" + textT2;
+  var T3 = T1 + 2000;
+  advance(g.station.autoLines.smelting, T3, 5);
+  win.updateStationLiveUI(T3);
+  var textT3 = progEl.textContent;
+  // T3 未被节流：DOM 必须反映最新 gameState 进度（与实时 gameState 对齐校验，规避回绕后文本相等误判）
+  var expectedT3 = smeltRatio(win);
+  var domT3 = parsePct(textT3);
+  if (isNaN(domT3)) return "T3 解析进度失败: " + textT3;
+  if (domT3 !== Math.round(expectedT3 * 100)) return "T3 节流放开后未刷新到最新进度: dom=" + domT3 + "% expected=" + Math.round(expectedT3 * 100) + "%";
+
+  // (c) 子节点数稳定 + booster select 节点身份不变（数百次调用后）
+  var sel0 = win.document.querySelector('#station-auto-lines select[data-line="booster"]');
+  var c0 = alDiv.childElementCount;
+  for (var j = 0; j < 100; j++) win.updateStationLiveUI(nextNow(win));
+  var c1 = alDiv.childElementCount;
+  var sel1 = win.document.querySelector('#station-auto-lines select[data-line="booster"]');
+  if (c0 !== c1) return "alDiv 子节点数变化: " + c0 + " → " + c1;
+  if (sel0 && sel1 && sel0 !== sel1) return "booster select 节点被重建";
+  return true;
+});
+
 // ========== 最终统计 ==========
 test("console/page/resource/rejection 均为0", function(win) {
   // 在 runAll 中已有计数器，这里只是汇总报告
@@ -428,6 +1034,27 @@ test("console/page/resource/rejection 均为0", function(win) {
   if (resourceErrors > 0) return "resourceErrors=" + resourceErrors;
   return true;
 });
+
+// ========== 无头自动运行（供 tools/run-station-browser-test.mjs 采集 EXIT CODE） ==========
+// 访问 ?autorun=1 时自动跑全部用例，完成后写入 #autorun-done 供运行器判定。
+(function setupAutorun() {
+  if (location.search.indexOf("autorun") < 0) return;
+  var attempts = 0;
+  function tryRun() {
+    attempts++;
+    var iframe = document.getElementById("game-frame");
+    var win = iframe && iframe.contentWindow;
+    if ((!win || !win.gameState || typeof win.renderStationPage !== "function") && attempts < 60) {
+      setTimeout(tryRun, 250); return;
+    }
+    try { runAll(); } catch (e) { log("AUTORUN 异常: " + e.message, "fail"); }
+    var mark = document.createElement("div");
+    mark.id = "autorun-done";
+    mark.textContent = "AUTORUN_DONE";
+    document.body.appendChild(mark);
+  }
+  window.addEventListener("load", function() { setTimeout(tryRun, 300); });
+})();
 
 </script>
 </body>

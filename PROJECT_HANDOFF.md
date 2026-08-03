@@ -1,5 +1,7 @@
 # PROJECT HANDOFF — EVE IDLE
 
+> 2026-08-01：已修复空间站自动线启动/停止成功后当前页面不刷新的问题。`refreshVisiblePanelAfterAction()` 现覆盖 `station`，综合验证与空间站审计通过。
+
 ## 1. 游戏定位与核心设计原则
 
 - **名称**：EVE放置：新伊甸纪元 / EVE Idle: New Eden
