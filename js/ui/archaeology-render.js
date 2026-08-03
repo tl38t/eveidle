@@ -66,15 +66,15 @@ function renderArchaeologyPage(now) {
           <span>难度 ${site.difficulty}</span>
           <span>成功率 ${site.successPercent}%</span>
           <span>反噬 ${site.effectiveBacklash || site.backlashDamage}</span>
-          <span>LP ×${site.preview ? site.preview.effectiveLpMultiplier : site.lpMultiplier}</span>
+          <span>${DisplayNames.getCurrencyName("lp")} ×${site.preview ? site.preview.effectiveLpMultiplier : site.lpMultiplier}</span>
         </span>
         ${site.drops ? `
         <span class="asc-drops">
           <span class="ad-line"><span class="ad-icon">📜</span> ${site.drops.common.text}${site.preview ? " · 译码器+" + site.preview.decoderPct + "%" : ""}</span>
           <span class="ad-line"><span class="ad-icon">🔬</span> 独特文物 ${site.drops.unique.ratePct}%${site.drops.unique.ratePct !== site.drops.unique.boostedPct ? ` <span class="ad-boost">(增强 +${(site.drops.unique.boostedPct - site.drops.unique.ratePct).toFixed(1)}%)</span>` : ""}</span>
-          <span class="ad-line"><span class="ad-icon">🎖</span> LP 文物 ${site.drops.lp.ratePct}%${site.drops.lp.item ? " · " + site.drops.lp.item.lpValue + " LP" : ""}</span>
+          <span class="ad-line"><span class="ad-icon">🎖</span> 功勋文物 ${site.drops.lp.ratePct}%${site.drops.lp.item ? " · " + site.drops.lp.item.lpValue + " 功勋" : ""}</span>
           <span class="ad-line"><span class="ad-icon">🔧</span> 校准材料 ${site.drops.calibration.ratePct}% · ×${site.drops.calibration.amount}</span>
-          ${site.preview ? `<span class="ad-line ad-expected"><span class="ad-icon">📈</span> 单次期望 ${Math.round(site.preview.expectedIskPerCycle).toLocaleString()} ISK · ${site.preview.expectedLpPerCycle.toFixed(2)} LP · ${site.preview.expectedCalibPerCycle.toFixed(2)} 校准</span>` : ""}
+          ${site.preview ? `<span class="ad-line ad-expected"><span class="ad-icon">📈</span> 单次期望 ${Math.round(site.preview.expectedIskPerCycle).toLocaleString()} 星币 · ${site.preview.expectedLpPerCycle.toFixed(2)} 功勋 · ${site.preview.expectedCalibPerCycle.toFixed(2)} 校准</span>` : ""}
         </span>` : ""}
         <span class="asc-state">${site.runningTarget ? "解析中" : site.levelLocked ? `需考古 Lv.${site.level}` : site.actionLocked ? "行动中不可切换" : site.selected ? "已选择" : "可解析"}</span>
       </button>
@@ -123,23 +123,23 @@ function renderArchaeologyPage(now) {
     <div class="archaeology-artifacts">
       <div class="archaeology-section-title">📦 文物库存</div>
       <div class="archaeology-artifact-header">
-        <button class="btn" id="archaeology-sell-all">💰 出售全部 ISK 文物</button>
-        <button class="btn" id="archaeology-redeem-all">🎖 兑换全部 LP 文物</button>
+        <button class="btn" id="archaeology-sell-all">💰 出售全部星币文物</button>
+        <button class="btn" id="archaeology-redeem-all">🎖 兑换全部 ${DisplayNames.getCurrencyName("lp")} 文物</button>
       </div>
       <div class="archaeology-artifact-grid">
         ${display.artifacts.map(row => {
           const a = row.artifact;
           const isLP = a.category === "lp";
           const isCal = a.category === "calibration";
-          const sellBtn = isLP ? `<button class="btn archaeology-redeem-btn" data-artifact-id="${a.id}">🎖 兑换 LP</button>`
+          const sellBtn = isLP ? `<button class="btn archaeology-redeem-btn" data-artifact-id="${a.id}">🎖 兑换 ${DisplayNames.getCurrencyName("lp")}</button>`
             : isCal ? `<span class="archaeology-cal-note">（未来用途）</span>`
             : `<button class="btn archaeology-sell-btn" data-artifact-id="${a.id}">💰 出售</button>`;
           return `<div class="archaeology-artifact-card">
             <span class="aac-name">${isLP ? "🎖 " : isCal ? "🔬 " : "📜 "}${a.name}</span>
             <span class="aac-tier">${a.tier}</span>
             <span class="aac-count">×${row.count}</span>
-            ${a.iskValue ? `<span class="aac-value">${a.iskValue.toLocaleString()} ISK</span>` : ""}
-            ${a.lpValue ? `<span class="aac-value">${a.lpValue} LP</span>` : ""}
+            ${a.iskValue ? `<span class="aac-value">${a.iskValue.toLocaleString()} 星币</span>` : ""}
+            ${a.lpValue ? `<span class="aac-value">${a.lpValue} 功勋</span>` : ""}
             ${sellBtn}
           </div>`;
         }).join("")}
@@ -236,14 +236,14 @@ function bindArchaeologyEvents(body) {
     btn.addEventListener("click", () => {
       const artifactId = btn.dataset.artifactId;
       const result = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", artifactId, quantity:1 }, Date.now());
-      if (result.changed) { showToast("出售文物获得 " + result.isk.toLocaleString() + " ISK"); renderArchaeologyPage(); updateUI(); }
+      if (result.changed) { showToast("出售文物获得 " + result.isk.toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
     });
   });
   body.querySelectorAll(".archaeology-redeem-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const artifactId = btn.dataset.artifactId;
       const result = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", artifactId, quantity:1 }, Date.now());
-      if (result.changed) { showToast("兑换文物获得 " + result.lp + " LP"); renderArchaeologyPage(); updateUI(); }
+      if (result.changed) { showToast("兑换文物获得 " + result.lp + " 功勋"); renderArchaeologyPage(); updateUI(); }
     });
   });
 
@@ -252,10 +252,10 @@ function bindArchaeologyEvents(body) {
   const redeemAll = body.querySelector("#archaeology-redeem-all");
   if (sellAll) sellAll.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", all:true }, Date.now());
-    if (result.changed) { showToast("出售全部文物获得 " + result.totalIsk.toLocaleString() + " ISK"); renderArchaeologyPage(); updateUI(); }
+    if (result.changed) { showToast("出售全部文物获得 " + result.totalIsk.toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
   });
   if (redeemAll) redeemAll.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", all:true }, Date.now());
-    if (result.changed) { showToast("兑换全部文物获得 " + result.totalLp.toLocaleString() + " LP"); renderArchaeologyPage(); updateUI(); }
+    if (result.changed) { showToast("兑换全部文物获得 " + result.totalLp.toLocaleString() + " 功勋"); renderArchaeologyPage(); updateUI(); }
   });
 }

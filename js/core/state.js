@@ -14,7 +14,7 @@ const STATION_BUILDING_IDS = [
 // ---- gameState 主状态对象 ----
 const gameState = {
   resources: {
-    isk: 1000000,
+    isk: 10000,
     lp: 0,
     ores: {},
     minerals: {},
@@ -74,7 +74,7 @@ const gameState = {
   },
 
   inventory: {
-    ships: [{ shipId: "rifter", instanceId: "ship_" + Date.now() + "_0", builtAt: Date.now(), fitted: getDefaultCombatFitting("rifter") }],
+    ships: [],
     equipment: [],
     rigs: []
   },
@@ -150,6 +150,9 @@ const gameState = {
 
   upgrades: {},
   ownedBlueprints: [],
+
+  // 新手引导（Batch O）：唯一权威 tutorial 状态，由 tutorial-state.js 提供默认结构。
+  tutorial: TutorialState.createDefaultTutorialState(),
 
   // 研究系统（批次 B）：单一研究槽 + 队列，独立于 currentAction 与现有 queue。
   // 由 js/core/research-state.js（须在本文件之前加载）提供默认结构；不复制第二套 schema。

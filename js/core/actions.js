@@ -1550,6 +1550,16 @@ const StationStateActions = {
     }
   };
 
+  function tutorialNote(state, action, result, now) {
+    const TS = (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem
+      : (typeof window !== "undefined" && window.TutorialSystem ? window.TutorialSystem : null);
+    if (TS && typeof TS.noteTutorialActionResult === "function" && result && result.changed) {
+      try { TS.noteTutorialActionResult(state, action, result, now); } catch (e) { /* 新手任务旁路失败不影响主流程 */ }
+    }
+    return result;
+  }
+
   function dispatchGameAction(state, action, now) {
   if (!state || !action || typeof action.type !== "string") return { changed:false, reason:"invalid-action" };
   const actionTime = Number(now) || Date.now();
@@ -1578,12 +1588,12 @@ const StationStateActions = {
   if (action.type === "booster/replace") return BoosterStateActions.replace(state, action.slot, action.itemId);
   if (action.type === "combat/selectMode") return CombatStateActions.selectMode(state, action.mode);
   if (action.type === "combat/selectTargetingMode") return CombatStateActions.selectTargetingMode(state, action.mode);
-  if (action.type === "combat/selectZone") return CombatStateActions.selectZone(state, action.zoneId);
+  if (action.type === "combat/selectZone") return tutorialNote(state, action, CombatStateActions.selectZone(state, action.zoneId), actionTime);
   if (action.type === "combat/selectDeathspace") return CombatStateActions.selectDeathspace(state, action.deathspaceId);
   if (action.type === "combat/selectDeathspaceTier") return CombatStateActions.selectDeathspaceTier(state, action.tier);
-  if (action.type === "combat/start") return CombatStateActions.start(state, action.enemies, action.formationId, actionTime);
+  if (action.type === "combat/start") return tutorialNote(state, action, CombatStateActions.start(state, action.enemies, action.formationId, actionTime), actionTime);
   if (action.type === "combat/enterDeathspace") return CombatStateActions.enterDeathspace(state, action.deathspaceId, action.enemies, action.formationId, actionTime);
-  if (action.type === "combat/stop") return CombatStateActions.stop(state);
+  if (action.type === "combat/stop") return tutorialNote(state, action, CombatStateActions.stop(state), actionTime);
   if (action.type === "combat/beginRecovery") return CombatStateActions.beginRecovery(state, actionTime);
   if (action.type === "combat/finishRecovery") return CombatStateActions.finishRecovery(state, actionTime);
   if (action.type === "planetary/deploy") return PlanetaryStateActions.deploy(state, action.planetType, actionTime);
@@ -1591,8 +1601,8 @@ const StationStateActions = {
   if (action.type === "planetary/renew") return PlanetaryStateActions.renew(state, action.id, actionTime);
   if (action.type === "planetary/demolish") return PlanetaryStateActions.demolish(state, action.id);
   if (action.type === "shell/buyLPItem") return ShellStateActions.buyLPItem(state, action.equipmentId, actionTime);
-  if (action.type === "hangar/toggleAssignment") return ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime);
-  if (action.type === "hangar/equipCombatShip") return ShellStateActions.equipCombatShip(state, action.instanceId, actionTime);
+  if (action.type === "hangar/toggleAssignment") return tutorialNote(state, action, ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime), actionTime);
+  if (action.type === "hangar/equipCombatShip") return tutorialNote(state, action, ShellStateActions.equipCombatShip(state, action.instanceId, actionTime), actionTime);
   if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue);
   if (action.type === "hangar/setFittingSlot") return ShellStateActions.setFittingSlot(state, action.instanceId, action.slot, action.slotIndex, action.equipmentId);
   if (action.type === "hangar/resetFitting") return ShellStateActions.resetFitting(state, action.instanceId);
@@ -1665,6 +1675,27 @@ const StationStateActions = {
   if (action.type === "research/cancelIntship") {
     return (typeof cancelIntship === "function")
       ? cancelIntship(state, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  // 新手任务 Batch O：任务领取 / 确认 / 战斗路线选择 / 应急舰船
+  if (action.type === "tutorial/claim") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.claimTutorialTask(state, action.taskId, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "tutorial/confirm") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.confirmTutorialTask(state, action.taskId, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "tutorial/chooseCombatTrack") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.chooseTutorialCombatTrack(state, action.track, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "tutorial/claimEmergencyShip") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.claimEmergencyTutorialShip(state, actionTime)
       : { changed:false, reason:"INVALID_STATE" };
   }
   return { changed:false, reason:"unknown-action" };

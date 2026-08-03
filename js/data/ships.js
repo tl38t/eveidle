@@ -22,11 +22,11 @@ const SHIP_COMPONENT_RECIPES = [
 
 // ---- 舰船工程：蓝图商店 ----
 const SHIP_BLUEPRINTS = [
-  { id: "rifter",  name: "裂谷级",   shipId: "rifter",  costISK: 50000, level: 1  },
-  { id: "kestrel", name: "茶隼级",   shipId: "kestrel", costISK: 50000, level: 1  },
-  { id: "atron",   name: "阿特龙级", shipId: "atron",   costISK: 50000, level: 1  },
-  { id: "miner_frigate",  name: "冲锋者级", shipId: "miner_frigate",  costISK: 50000, level: 1  },
-  { id: "gas_frigate",    name: "勘探者级", shipId: "gas_frigate",    costISK: 50000, level: 1  },
+  { id: "rifter",  name: "星矛级",   shipId: "rifter",  costISK: 50000, level: 1  },
+  { id: "kestrel", name: "铁卫级",   shipId: "kestrel", costISK: 50000, level: 1  },
+  { id: "atron",   name: "闪刃级", shipId: "atron",   costISK: 50000, level: 1  },
+  { id: "miner_frigate",  name: "拓岩级", shipId: "miner_frigate",  costISK: 50000, level: 1  },
+  { id: "gas_frigate",    name: "捕云级", shipId: "gas_frigate",    costISK: 50000, level: 1  },
   { id: "gale", name: "疾风级", shipId: "gale", costLP: 60, level: 20, sourceZoneId:"angel_corridor" },
   { id: "bloodthorn", name: "血刺级", shipId: "bloodthorn", costLP: 60, level: 20, sourceZoneId:"blood_sacrifice" },
   { id: "umbra", name: "暗影级", shipId: "umbra", costLP: 60, level: 20, sourceZoneId:"sansha_node" },
@@ -40,20 +40,22 @@ const SHIP_BLUEPRINTS = [
   { id: "eternal_fortress", name: "恒城级", shipId: "eternal_fortress", costLP: 1000, level: 90, description:"永久解锁装甲·导弹超级旗舰制造配方" },
   { id: "arbiter", name: "裁决级", shipId: "arbiter", costLP: 1000, level: 90, description:"永久解锁结构·火炮超级旗舰制造配方" },
   // ---- 考古船蓝图（仅苍鹭级需要永久蓝图，其余四舰凭舰船工程等级解锁）----
-  { id: "heron", name: "苍鹭级", shipId: "heron", costISK: 50000, level: 1 }
+  { id: "heron", name: "觅迹级", shipId: "heron", costISK: 50000, level: 1 }
 ];
 
 // ---- 舰船工程：舰船合成配方 ----
 const SHIP_ASSEMBLY_RECIPES = [
-  { id:"rifter", name:"裂谷级", shipId:"rifter", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
-  { id:"kestrel", name:"茶隼级", shipId:"kestrel", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
-  { id:"atron", name:"阿特龙级", shipId:"atron", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
-  { id:"miner_frigate", name:"冲锋者级", shipId:"miner_frigate", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
-  { id:"gas_frigate", name:"勘探者级", shipId:"gas_frigate", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
+  // ---- 启程级：新手引导专属低成本配方（1/1/1 组件，无需蓝图），不参与常规同级预算模型 ----
+  { id:"rookie_corvette", name:"启程级", shipId:"rookie_corvette", level:1, time:30, xp:30, requiresBlueprint:false, componentCost:{integrated_hull:1,power_core:1,functional_system:1} },
+  { id:"rifter", name:"星矛级", shipId:"rifter", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
+  { id:"kestrel", name:"铁卫级", shipId:"kestrel", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
+  { id:"atron", name:"闪刃级", shipId:"atron", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
+  { id:"miner_frigate", name:"拓岩级", shipId:"miner_frigate", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
+  { id:"gas_frigate", name:"捕云级", shipId:"gas_frigate", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
   { id:"raylight", name:"雷光级", shipId:"raylight", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
   { id:"spearfalcon", name:"矛隼级", shipId:"spearfalcon", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
   { id:"swiftblade", name:"疾锋级", shipId:"swiftblade", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
-  { id:"miner_destroyer", name:"妄想级", shipId:"miner_destroyer", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
+  { id:"miner_destroyer", name:"凿岩级", shipId:"miner_destroyer", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
   { id:"gas_destroyer", name:"采集者级", shipId:"gas_destroyer", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
   { id:"gale", name:"疾风级", shipId:"gale", level:20, time:60, xp:90, componentCost:{destroyer_integrated_hull:4,destroyer_power_core:4,destroyer_functional_system:5}, materialCost:{"镓":10,"铂":8,"天使低级加密数据":15} },
   { id:"bloodthorn", name:"血刺级", shipId:"bloodthorn", level:20, time:60, xp:90, componentCost:{destroyer_integrated_hull:4,destroyer_power_core:4,destroyer_functional_system:5}, materialCost:{"镓":10,"铂":8,"血袭者低级加密数据":15} },
@@ -61,9 +63,9 @@ const SHIP_ASSEMBLY_RECIPES = [
   { id:"dawnlight", name:"曙光级", shipId:"dawnlight", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
   { id:"warfalcon", name:"战隼级", shipId:"warfalcon", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
   { id:"stormblade", name:"烈锋级", shipId:"stormblade", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
-  { id:"miner_cruiser", name:"霍克级", shipId:"miner_cruiser", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
-  { id:"gas_cruiser", name:"奋进级", shipId:"gas_cruiser", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
-  { id:"dolphin", name:"海豚级", shipId:"dolphin", level:35, time:80, xp:120, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:4,cruiser_functional_system:6} },
+  { id:"miner_cruiser", name:"岩脊级", shipId:"miner_cruiser", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
+  { id:"gas_cruiser", name:"云舶级", shipId:"gas_cruiser", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
+  { id:"dolphin", name:"驮星级", shipId:"dolphin", level:35, time:80, xp:120, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:4,cruiser_functional_system:6} },
   { id:"thunder", name:"雷霆级", shipId:"thunder", level:40, time:90, xp:140, componentCost:{cruiser_integrated_hull:5,cruiser_power_core:5,cruiser_functional_system:6}, materialCost:{"铪":15,"锇":12,"天使中级加密数据":30} },
   { id:"crimson", name:"猩红级", shipId:"crimson", level:40, time:90, xp:140, componentCost:{cruiser_integrated_hull:5,cruiser_power_core:5,cruiser_functional_system:6}, materialCost:{"铪":15,"锇":12,"血袭者中级加密数据":30} },
   { id:"nether", name:"幽冥级", shipId:"nether", level:40, time:90, xp:140, componentCost:{cruiser_integrated_hull:5,cruiser_power_core:5,cruiser_functional_system:6}, materialCost:{"铪":15,"锇":12,"萨沙中级加密数据":30} },
@@ -78,12 +80,12 @@ const SHIP_ASSEMBLY_RECIPES = [
   { id:"firmament", name:"天穹级", shipId:"firmament", level:80, time:300, xp:450, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:8} },
   { id:"heavy_bastion", name:"重垒级", shipId:"heavy_bastion", level:80, time:300, xp:450, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:8} },
   { id:"riftbreaker", name:"裂界级", shipId:"riftbreaker", level:80, time:300, xp:450, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:8} },
-  { id:"orca", name:"逆戟鲸级", shipId:"orca", level:80, time:320, xp:500, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:10} },
+  { id:"orca", name:"山海级", shipId:"orca", level:80, time:320, xp:500, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:10} },
   { id:"starcrown", name:"星冕级", shipId:"starcrown", level:90, time:600, xp:800, componentCost:{supercapital_integrated_hull:18,supercapital_power_core:16,supercapital_functional_system:18}, materialCost:{"天穹深层舰船数据":60} },
   { id:"eternal_fortress", name:"恒城级", shipId:"eternal_fortress", level:90, time:600, xp:800, componentCost:{supercapital_integrated_hull:18,supercapital_power_core:16,supercapital_functional_system:18}, materialCost:{"重垒深层舰船数据":60} },
   { id:"arbiter", name:"裁决级", shipId:"arbiter", level:90, time:600, xp:800, componentCost:{supercapital_integrated_hull:18,supercapital_power_core:16,supercapital_functional_system:18}, materialCost:{"裂界深层舰船数据":60} },
   // ---- 考古船制造配方（复用现有舰体组件，无考古专属材料；仅苍鹭级需蓝图）----
-  { id:"heron", name:"苍鹭级", shipId:"heron", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
+  { id:"heron", name:"觅迹级", shipId:"heron", level:1, time:30, xp:30, componentCost:{integrated_hull:2,power_core:2,functional_system:2} },
   { id:"tracer", name:"追迹级", shipId:"tracer", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
   { id:"starmap", name:"星图级", shipId:"starmap", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
   { id:"farscope", name:"远镜级", shipId:"farscope", level:55, time:100, xp:160, requiresBlueprint:false, componentCost:{battleship_integrated_hull:6,battleship_power_core:5,battleship_functional_system:5} },
@@ -92,9 +94,24 @@ const SHIP_ASSEMBLY_RECIPES = [
 
 // ---- 舰船工程：新手战舰属性表（参照第7节） ----
 const STARTER_SHIPS = {
+  rookie_corvette: {
+    id: "rookie_corvette", name: "启程级", tier: "T1", type: "frigate",
+    flavor: "边疆登记机构配发的低成本通用训练艇，三类槽位各留一格，采矿、探查与自卫都能勉强胜任，唯独哪一项都不出色。",
+    hp: { shield: 240, armor: 80, structure: 80 }, totalHp: 400,
+    dodge: 22, speed: 240, targeting: 105,
+    capacitor: { capacity: 90, rechargeRate: 4 },
+    fuelEfficiency: 1.0,
+    slots: { high: 1, mid: 1, low: 1, rig: 0 },
+    bonuses: {
+      laserDamage: 0.02, missileDamage: 0.02, cannonDamage: 0.02,
+      shieldCapacity: 0.05, miningLaserEfficiency: 0.03, archaeologyScanStrength: 2
+    },
+    recommendedWeapon: "laser",
+    unlock: { type: "tutorial", isDefault: false }
+  },
   rifter: {
-    id: "rifter", name: "裂谷级", tier: "T1", type: "frigate",
-    flavor: "天使集团风格，高护盾、高电容，适配激光武器",
+    id: "rifter", name: "星矛级", tier: "T1", type: "frigate",
+    flavor: "苍穹劫团风格，高护盾、高电容，适配激光武器",
     hp: { shield: 300, armor: 100, structure: 100 }, totalHp: 500,
     dodge: 25, speed: 280, targeting: 120,
     capacitor: { capacity: 120, rechargeRate: 6 },
@@ -106,8 +123,8 @@ const STARTER_SHIPS = {
     image: "images/ships/裂谷级.png"
   },
   kestrel: {
-    id: "kestrel", name: "茶隼级", tier: "T1", type: "frigate",
-    flavor: "血袭者风格，高装甲、高锁定，适配导弹武器",
+    id: "kestrel", name: "铁卫级", tier: "T1", type: "frigate",
+    flavor: "赤誓教团风格，高装甲、高锁定，适配导弹武器",
     hp: { shield: 100, armor: 300, structure: 100 }, totalHp: 500,
     dodge: 22, speed: 250, targeting: 135,
     capacitor: { capacity: 100, rechargeRate: 5 },
@@ -118,8 +135,8 @@ const STARTER_SHIPS = {
     unlock: { type: "starter", isDefault: true }
   },
   atron: {
-    id: "atron", name: "阿特龙级", tier: "T1", type: "frigate",
-    flavor: "萨沙共和国风格，高结构、高速度，适配炮台武器",
+    id: "atron", name: "闪刃级", tier: "T1", type: "frigate",
+    flavor: "静默集群风格，高结构、高速度，适配炮台武器",
     hp: { shield: 100, armor: 100, structure: 300 }, totalHp: 500,
     dodge: 30, speed: 320, targeting: 110,
     capacitor: { capacity: 100, rechargeRate: 5 },
@@ -167,7 +184,7 @@ const STARTER_SHIPS = {
   },
   gale: {
     id: "gale", name: "疾风级", tier: "混血", type: "destroyer",
-    flavor: "天使联合技术驱逐舰，在常规驱逐舰框架上强化护盾与激光火力",
+    flavor: "苍穹劫团联合技术驱逐舰，在常规驱逐舰框架上强化护盾与激光火力",
     hp: { shield: 660, armor: 165, structure: 165 }, totalHp: 990,
     dodge: 26, speed: 230, targeting: 135,
     capacitor: { capacity: 170, rechargeRate: 8 },
@@ -179,7 +196,7 @@ const STARTER_SHIPS = {
   },
   bloodthorn: {
     id: "bloodthorn", name: "血刺级", tier: "混血", type: "destroyer",
-    flavor: "血袭者联合技术驱逐舰，在常规驱逐舰框架上强化装甲与导弹火力",
+    flavor: "赤誓教团联合技术驱逐舰，在常规驱逐舰框架上强化装甲与导弹火力",
     hp: { shield: 165, armor: 660, structure: 165 }, totalHp: 990,
     dodge: 12, speed: 210, targeting: 155,
     capacitor: { capacity: 160, rechargeRate: 8 },
@@ -191,7 +208,7 @@ const STARTER_SHIPS = {
   },
   umbra: {
     id: "umbra", name: "暗影级", tier: "混血", type: "destroyer",
-    flavor: "萨沙联合技术驱逐舰，在常规驱逐舰框架上强化结构与射弹火力",
+    flavor: "静默集群联合技术驱逐舰，在常规驱逐舰框架上强化结构与射弹火力",
     hp: { shield: 165, armor: 165, structure: 660 }, totalHp: 990,
     dodge: 24, speed: 260, targeting: 125,
     capacitor: { capacity: 160, rechargeRate: 8 },
@@ -239,7 +256,7 @@ const STARTER_SHIPS = {
   },
   thunder: {
     id: "thunder", name: "雷霆级", tier: "混血", type: "cruiser",
-    flavor: "天使联合技术巡洋舰，在常规巡洋舰框架上强化护盾与中型激光火力",
+    flavor: "苍穹劫团联合技术巡洋舰，在常规巡洋舰框架上强化护盾与中型激光火力",
     hp: { shield: 1380, armor: 345, structure: 345 }, totalHp: 2070,
     dodge: 17, speed: 170, targeting: 155,
     capacitor: { capacity: 260, rechargeRate: 12 },
@@ -251,7 +268,7 @@ const STARTER_SHIPS = {
   },
   crimson: {
     id: "crimson", name: "猩红级", tier: "混血", type: "cruiser",
-    flavor: "血袭者联合技术巡洋舰，在常规巡洋舰框架上强化装甲与重型导弹火力",
+    flavor: "赤誓教团联合技术巡洋舰，在常规巡洋舰框架上强化装甲与重型导弹火力",
     hp: { shield: 375, armor: 1320, structure: 375 }, totalHp: 2070,
     dodge: 14, speed: 155, targeting: 180,
     capacitor: { capacity: 240, rechargeRate: 12 },
@@ -263,7 +280,7 @@ const STARTER_SHIPS = {
   },
   nether: {
     id: "nether", name: "幽冥级", tier: "混血", type: "cruiser",
-    flavor: "萨沙联合技术巡洋舰，在常规巡洋舰框架上强化结构与中型射弹火力",
+    flavor: "静默集群联合技术巡洋舰，在常规巡洋舰框架上强化结构与中型射弹火力",
     hp: { shield: 285, armor: 285, structure: 1500 }, totalHp: 2070,
     dodge: 18, speed: 195, targeting: 145,
     capacitor: { capacity: 240, rechargeRate: 12 },
@@ -311,7 +328,7 @@ const STARTER_SHIPS = {
   },
   dawnbreaker: {
     id: "dawnbreaker", name: "破晓级", tier: "混血", type: "battleship",
-    flavor: "天使混血战列舰，在曜光级框架上以护盾与聚焦激光压制战场",
+    flavor: "苍穹劫团混血战列舰，在曜光级框架上以护盾与聚焦激光压制战场",
     hp: { shield: 3300, armor: 510, structure: 510 }, totalHp: 4320,
     dodge: 13, speed: 120, targeting: 180,
     capacitor: { capacity: 420, rechargeRate: 18 },
@@ -323,7 +340,7 @@ const STARTER_SHIPS = {
   },
   crimson_bastion: {
     id: "crimson_bastion", name: "赤垒级", tier: "混血", type: "battleship",
-    flavor: "血袭者混血战列舰，在堡隼级框架上以装甲与重型导弹持久压制",
+    flavor: "赤誓教团混血战列舰，在堡隼级框架上以装甲与重型导弹持久压制",
     hp: { shield: 660, armor: 3000, structure: 660 }, totalHp: 4320,
     dodge: 8, speed: 110, targeting: 210,
     capacitor: { capacity: 390, rechargeRate: 18 },
@@ -335,7 +352,7 @@ const STARTER_SHIPS = {
   },
   spectre_frame: {
     id: "spectre_frame", name: "幽构级", tier: "混血", type: "battleship",
-    flavor: "萨沙混血战列舰，在震锋级框架上以结构与射弹炮实施重装突击",
+    flavor: "静默集群混血战列舰，在震锋级框架上以结构与射弹炮实施重装突击",
     hp: { shield: 460, armor: 460, structure: 3400 }, totalHp: 4320,
     dodge: 5, speed: 135, targeting: 165,
     capacitor: { capacity: 390, rechargeRate: 18 },
@@ -428,7 +445,7 @@ const STARTER_SHIPS = {
 // ---- 工业舰船：属性表（参照20260712细化，效能加成版） ----
 const INDUSTRIAL_SHIPS = {
   miner_frigate: {
-    id: "miner_frigate", name: "冲锋者级", tier: "T1", type: "industrial_frigate",
+    id: "miner_frigate", name: "拓岩级", tier: "T1", type: "industrial_frigate",
     flavor: "采矿专用护卫舰，放大采矿装备效能",
     hp: { shield: 220, armor: 75, structure: 75 }, totalHp: 370,
     dodge: 20, speed: 240, targeting: 90,
@@ -439,7 +456,7 @@ const INDUSTRIAL_SHIPS = {
     unlock: { type: "blueprint", costISK: 50000 }
   },
   gas_frigate: {
-    id: "gas_frigate", name: "勘探者级", tier: "T1", type: "industrial_frigate",
+    id: "gas_frigate", name: "捕云级", tier: "T1", type: "industrial_frigate",
     flavor: "采气专用护卫舰，放大采气装备效能",
     hp: { shield: 220, armor: 75, structure: 75 }, totalHp: 370,
     dodge: 20, speed: 240, targeting: 90,
@@ -450,7 +467,7 @@ const INDUSTRIAL_SHIPS = {
     unlock: { type: "blueprint", costISK: 50000 }
   },
   miner_destroyer: {
-    id: "miner_destroyer", name: "妄想级", tier: "T1", type: "industrial_destroyer",
+    id: "miner_destroyer", name: "凿岩级", tier: "T1", type: "industrial_destroyer",
     flavor: "采矿专用驱逐舰，在低级工业舰与巡洋级采矿平台之间承上启下",
     hp: { shield: 300, armor: 150, structure: 110 }, totalHp: 560,
     dodge: 16, speed: 210, targeting: 100,
@@ -472,7 +489,7 @@ const INDUSTRIAL_SHIPS = {
     unlock: { type: "shipEngineering", level: 15 }
   },
   miner_cruiser: {
-    id: "miner_cruiser", name: "霍克级", tier: "T1", type: "industrial_cruiser",
+    id: "miner_cruiser", name: "岩脊级", tier: "T1", type: "industrial_cruiser",
     flavor: "采矿专用巡洋舰，以更多工业槽位承载中级采矿装备",
     hp: { shield: 450, armor: 300, structure: 220 }, totalHp: 970,
     dodge: 12, speed: 160, targeting: 110,
@@ -483,7 +500,7 @@ const INDUSTRIAL_SHIPS = {
     unlock: { type: "shipEngineering", level: 35 }
   },
   gas_cruiser: {
-    id: "gas_cruiser", name: "奋进级", tier: "T1", type: "industrial_cruiser",
+    id: "gas_cruiser", name: "云舶级", tier: "T1", type: "industrial_cruiser",
     flavor: "采气专用巡洋舰，以更多工业槽位承载中级采气装备",
     hp: { shield: 450, armor: 300, structure: 220 }, totalHp: 970,
     dodge: 12, speed: 160, targeting: 110,
@@ -494,7 +511,7 @@ const INDUSTRIAL_SHIPS = {
     unlock: { type: "shipEngineering", level: 35 }
   },
   dolphin: {
-    id: "dolphin", name: "海豚级", tier: "T1", type: "industrial_support",
+    id: "dolphin", name: "驮星级", tier: "T1", type: "industrial_support",
     flavor: "工业支援巡洋舰；在船坞中协调采矿作业，也可被分配至冶炼工作",
     hp: { shield: 550, armor: 350, structure: 250 }, totalHp: 1150,
     dodge: 11, speed: 150, targeting: 120,
@@ -528,7 +545,7 @@ const INDUSTRIAL_SHIPS = {
     unlock: { type: "shipEngineering", level: 55 }
   },
   orca: {
-    id: "orca", name: "逆戟鲸级", tier: "旗舰", type: "industrial_capital",
+    id: "orca", name: "山海级", tier: "旗舰", type: "industrial_capital",
     flavor: "工业旗舰，在船坞中为整个采矿编队提供最高级别的协调加成",
     hp: { shield: 2200, armor: 1100, structure: 750 }, totalHp: 4050,
     dodge: 8, speed: 100, targeting: 80,
@@ -546,7 +563,7 @@ const ARCHAEOLOGY_SHIP_TYPES = ["archaeology_frigate", "archaeology_destroyer", 
 // ---- 考古船：属性表（第一阶段仅船体，考古行动/遗迹/探针/装备/文物为后续批次） ----
 const ARCHAEOLOGY_SHIPS = {
   heron: {
-    id: "heron", name: "苍鹭级", tier: "T1", type: "archaeology_frigate",
+    id: "heron", name: "觅迹级", tier: "T1", type: "archaeology_frigate",
     flavor: "入门级考古护卫舰，专为扫描信号与解析遗迹而生，轻装应对微弱的信号反噬",
     hp: { shield: 260, armor: 80, structure: 60 }, totalHp: 400,
     dodge: 22, speed: 250, targeting: 100,

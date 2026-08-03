@@ -80,6 +80,8 @@ function renderCurrentNavigation() {
       renderCurrentNavigation();
     }, { once: true });
   }
+  // Batch P：每次页面切换（含 skill 页经 updateUI）都刷新引导小部件
+  renderTutorialWidget();
 }
 
 function switchPage(page) {
@@ -151,7 +153,7 @@ function renderEquipmentEnhancementList(visible) {
 function renderBlueprintStore() {
   const display = getBlueprintStoreDisplayState(gameState, blueprintStoreCategory);
   const balance = document.getElementById("blueprintstore-balance");
-  if (balance) balance.textContent = "可用 ISK：" + display.balance.isk.toLocaleString() + " · LP：" + display.balance.lp.toLocaleString();
+  if (balance) balance.textContent = "可用星币（SC）：" + display.balance.isk.toLocaleString() + " · 功勋（MR）：" + display.balance.lp.toLocaleString();
   const tabs = document.getElementById("blueprintstore-tabs");
   if (tabs) tabs.innerHTML = display.categories.map(category => `<button class="blueprintstore-tab${category.selected ? " active" : ""}" data-blueprint-category="${category.id}"><i class="${category.icon}"></i><span>${category.name}</span><small>${category.count}</small></button>`).join("");
   const grid = document.getElementById("blueprintstore-grid"); if (!grid) return display;
@@ -416,11 +418,11 @@ function researchReasonText(reason) {
     PROTOCOL_LOCKED: "该协议尚未研究",
     INVALID_ENABLED: "开关参数无效",
     UNKNOWN_DEPLOYMENT: "未找到该行星基地",
-    INVALID_RESERVE: "最低 ISK 储备必须是不小于 0 的数字",
+    INVALID_RESERVE: "最低星币储备必须是不小于 0 的数字",
     ALREADY_SET: "设置未发生变化",
     PROTOCOL_DISABLED: "该协议未启用",
-    RESERVE_NOT_MET: "低于最低 ISK 储备，已跳过",
-    INSUFFICIENT_ISK: "ISK 不足",
+    RESERVE_NOT_MET: "低于最低星币储备，已跳过",
+    INSUFFICIENT_ISK: "星币不足",
     NOTHING_TO_PROCESS: "当前没有可自动处理的内容",
     // 研究批次 J · autoenh / autorepair 稳定 reason
     INVALID_MAX_ATTEMPTS: "最大尝试次数必须是 0–10000 的整数",
@@ -769,7 +771,7 @@ function renderResearchProtocolPanelHtml(display) {
         const idAttr = escapeAchievementText(String(dep.deploymentId));
         const timeText = (dep.running ? "到期时间 " : "已到期于 ") + formatAchievementUnlockTime(dep.expiresAt);
         const metaText = "续期费用 " + Math.round(Number(dep.renewCostISK) || 0).toLocaleString("zh-CN") +
-          " ISK ｜ 自动续期：" + (on ? "已开启" : "已关闭");
+          " 星币 ｜ 自动续期：" + (on ? "已开启" : "已关闭");
         return '<div class="research-protocol-planet" data-deployment-row="' + idAttr + '" data-deployment-current="' + (on ? "true" : "false") + '">' +
           '<div class="research-protocol-planet-head">' +
             escapeAchievementText((dep.planetIcon ? dep.planetIcon + " " : "") + dep.planetName + " ｜ " + dep.statusText + " ｜ " + timeText) +
@@ -781,7 +783,7 @@ function renderResearchProtocolPanelHtml(display) {
               ' data-deployment-enabled="' + (on ? "false" : "true") + '">' +
               (on ? "关闭自动续期" : "开启自动续期") +
             '</button>' +
-            '<label class="research-protocol-reserve-label">最低 ISK 储备' +
+            '<label class="research-protocol-reserve-label">最低星币储备' +
               '<input class="research-protocol-reserve" type="number" min="0" step="1" value="' +
                 escapeAchievementText(String(Number(dep.minIskReserve) || 0)) + '" data-protocol-reserve>' +
             '</label>' +
@@ -1386,7 +1388,7 @@ function onResearchDetailClick(event) {
   renderResearchPage();
 }
 
-// 研究批次 I：协议总开关 / 单基地自动续期 / 最低 ISK 储备（全部走 action 路由）
+// 研究批次 I：协议总开关 / 单基地自动续期 / 最低星币储备（全部走 action 路由）
 function onResearchProtocolAction(action, btn) {
   if (action === "protocol-toggle") {
     const protocolId = btn.dataset.protocolId;
@@ -1473,7 +1475,7 @@ function onResearchProtocolAction(action, btn) {
   if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
   showToast(action === "planauto-toggle"
     ? (enabled ? "该基地已开启自动续期" : "该基地已关闭自动续期")
-    : "已保存最低 ISK 储备");
+    : "已保存最低星币储备");
   renderResearchPage();
 }
 
@@ -1489,7 +1491,7 @@ function getLPStoreItems() {
 function buyLPStoreItem(itemId) {
   const result = dispatchGameAction(gameState, { type:"shell/buyLPItem", equipmentId:itemId }, Date.now());
   if (!result.changed) {
-    if (result.reason === "insufficient-lp") showToast("LP不足");
+    if (result.reason === "insufficient-lp") showToast("功勋不足");
     else if (result.reason === "already-owned") showToast("该蓝图已拥有");
     return false;
   }
@@ -1501,8 +1503,8 @@ function buyBlueprintStoreItem(itemId, kind) {
     ? dispatchGameAction(gameState, { type:"manufacturing/buyBlueprint", blueprintId:itemId }, Date.now())
     : dispatchGameAction(gameState, { type:"shell/buyLPItem", equipmentId:itemId }, Date.now());
   if (!result.changed) {
-    if (result.reason === "insufficient-lp") showToast("LP不足");
-    else if (result.reason === "insufficient-isk") showToast("ISK不足");
+    if (result.reason === "insufficient-lp") showToast("功勋不足");
+    else if (result.reason === "insufficient-isk") showToast("星币不足");
     else if (result.reason === "already-owned") showToast("该蓝图已拥有");
     return false;
   }
@@ -1821,8 +1823,311 @@ function addCurrentToQueue() {
   else if (skill === "archaeology") { const arch = gameState.archaeology; const site = arch.activeSiteId; if (site) { target = site; label = getArchaeologySite(site)?.name || site; } }
   else if (skill === "boosterEngineering") { const recipe = gameState.currentAction.boosterRecipeTarget; const item = getBoosterItem(recipe); if (item) { target = recipe; label = item.name; } }
   if (!target) return false;
-  const changed = addToQueue(skill, target, label); if (changed) showToast("已加入队列：" + getQueueSkillLabel(skill) + " · " + label);
+  const changed = addToQueue(skill, target, label); if (changed) showToast("已加入队列：" + getQueueSkillLabel(skill) + " · " + (typeof transformDisplayText === "function" ? transformDisplayText(label) : label));
   return changed;
+}
+
+/* ================================================================
+   新手引导常驻小部件（Batch P：右上角 / 移动端底栏）
+   设计约束：仅读取 tutorial 显示态，绝不修改 gameState.tutorial；
+   折叠与支线切换仅保存在模块级临时变量（不写入存档）。
+   交互委托 + 5 个具体事件监听器均只安装一次。
+   ================================================================ */
+let _tutorialWidgetCollapsed = false;
+let _tutorialWidgetBranch = "prologue"; // 仅 UI 临时变量，不写 gameState
+let _tutorialWidgetUpdateUIWrapped = false;
+let _tutorialWidgetListenersInstalled = false;
+let _tutorialWidgetRenderQueued = false;
+
+function getTutorialSystemGlobal() {
+  if (typeof window !== "undefined" && window.TutorialSystem && typeof window.TutorialSystem.getTutorialDisplayState === "function") return window.TutorialSystem;
+  if (typeof globalThis !== "undefined" && globalThis.TutorialSystem && typeof globalThis.TutorialSystem.getTutorialDisplayState === "function") return globalThis.TutorialSystem;
+  return null;
+}
+
+function getTutorialWidgetDisplay() {
+  const ts = getTutorialSystemGlobal();
+  if (!ts) return null;
+  let state = null;
+  try { state = (typeof gameState !== "undefined") ? gameState : null; } catch (e) { state = null; }
+  if (!state || !state.tutorial) return null;
+  try { return ts.getTutorialDisplayState(state); } catch (e) { return null; }
+}
+
+function twEsc(s) {
+  if (s === null || s === undefined) return "";
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function twSet(el, html) { if (el) el.innerHTML = html; }
+
+// 统一经 dispatchGameAction 派发新手任务动作；失败显示简短中文 toast（不吞掉 reason）
+function twDispatch(action) {
+  let gs = null;
+  try { gs = (typeof gameState !== "undefined") ? gameState : null; } catch (e) { gs = null; }
+  if (!gs) { showToast("游戏状态尚未就绪"); return; }
+  let result = null;
+  try { result = dispatchGameAction(gs, action, Date.now()); }
+  catch (e) { showToast("操作失败：" + (e && e.message ? e.message : "未知错误")); return; }
+  if (!result || !result.changed) {
+    showToast("操作未完成：" + ((result && result.reason) ? result.reason : "未知原因"));
+    return;
+  }
+  // 成功后依赖 5 个具体事件重新渲染；此处额外主动重渲一次以防事件未触发
+  renderTutorialWidget();
+}
+
+function twActButton(act, taskId, track, label, kind, preview) {
+  const dataAct = ' data-act="' + act + '"' + (taskId ? ' data-task="' + taskId + '"' : "") + (track ? ' data-track="' + track + '"' : "");
+  const previewAttr = preview ? ' title="' + twEsc(preview) + '"' : "";
+  const cls = "tw-btn " + (kind || "tw-btn-primary");
+  return '<button type="button" class="' + cls + '"' + dataAct + previewAttr + '>' + twEsc(label) + '</button>';
+}
+
+function twStatusClass(isLocked, isCompleted, isClaimable) {
+  if (isCompleted) return "tw-status-completed";
+  if (isLocked) return "tw-status-locked";
+  if (isClaimable) return "tw-status-claimable";
+  return "tw-status-active";
+}
+
+// 复用侧边栏真实路由：按 data-skill / data-page 决定目标类型，而不是用 gameState.skills 猜测。
+// 背景坑：planetary / archaeology 既是 gameState.skills 的键，又是页面名（sidebar 用 data-page）。
+// 若按 skills 猜测会误判成 skill 视图、调 switchSkill 跳错页；查真实 DOM 才与 sidebar 点击行为完全一致。
+function twResolveTargetKind(target) {
+  let doc = null; try { doc = (typeof document !== "undefined") ? document : null; } catch (e) { doc = null; }
+  if (doc && typeof doc.querySelector === "function") {
+    if (doc.querySelector('.sidebar .nav-item[data-skill="' + target + '"]')) return "skill";
+    if (doc.querySelector('.sidebar .nav-item[data-page="' + target + '"]')) return "page";
+  }
+  // 降级（无 DOM 环境，如测试沙箱）：用 gameState.skills 猜测，与旧逻辑一致
+  const gs = (typeof gameState !== "undefined") ? gameState : null;
+  if (gs && gs.skills && gs.skills[target]) return "skill";
+  return "page";
+}
+
+function twIsOnTargetPage(target) {
+  if (twResolveTargetKind(target) === "skill") return (currentPage === "skill" && currentView === target);
+  return (currentPage === target);
+}
+
+function twGoToTarget(target) {
+  // 复用现有导航机制：与 sidebar nav-item 的 data-skill / data-page 完全一致
+  if (twResolveTargetKind(target) === "skill") switchSkill(target); else switchPage(target);
+}
+
+// ---- 渲染：读取显示态并填充静态外壳（不改动任何状态）----
+function renderTutorialWidget() {
+  // 惰性包裹 updateUI：保证任意 updateUI() 调用后小部件也刷新（不修改 render.js）
+  ensureTutorialWidgetUpdateUIWrap();
+
+  const widget = document.getElementById("tutorial-widget");
+  const toggleEl = document.getElementById("tutorial-widget-toggle");
+  const progressEl = document.getElementById("tutorial-widget-progress");
+  const tabsEl = document.getElementById("tutorial-widget-branch-tabs");
+  const dialogueEl = document.getElementById("tutorial-widget-dialogue");
+  const objectiveEl = document.getElementById("tutorial-widget-objective");
+  const actionsEl = document.getElementById("tutorial-widget-actions");
+
+  // 折叠状态仅作用于 DOM class（不写入 gameState）
+  if (widget) {
+    widget.classList.toggle("collapsed", _tutorialWidgetCollapsed);
+    widget.setAttribute("aria-expanded", _tutorialWidgetCollapsed ? "false" : "true");
+  }
+  if (toggleEl) {
+    toggleEl.textContent = _tutorialWidgetCollapsed ? "展开" : "收起";
+    toggleEl.setAttribute("aria-expanded", _tutorialWidgetCollapsed ? "false" : "true");
+  }
+
+  const display = getTutorialWidgetDisplay();
+  if (!display) {
+    twSet(progressEl, ""); twSet(tabsEl, ""); twSet(dialogueEl, ""); twSet(objectiveEl, ""); twSet(actionsEl, "");
+    return;
+  }
+
+  // 选定支线：P7 前仅序章；分支未解锁时强制回退序章
+  if (!display.branchesUnlocked && _tutorialWidgetBranch !== "prologue") _tutorialWidgetBranch = "prologue";
+  const chapterId = _tutorialWidgetBranch;
+  const chapter = (display.chapterById && display.chapterById[chapterId]) || (display.chapterById && display.chapterById.prologue) || null;
+  const task = (chapter && chapter.currentTaskId && display.taskById[chapter.currentTaskId]) ? display.taskById[chapter.currentTaskId] : null;
+
+  // ---- 进度头：总进度 + 当前支线进度 ----
+  const totalPct = display.totalCount > 0 ? Math.round((display.completedCount / display.totalCount) * 100) : 0;
+  let progressHtml = "";
+  progressHtml += '<div class="tw-chapter-name">' + twEsc(chapter ? chapter.name : "新手引导") + (chapter ? " · " + chapter.completed + "/" + chapter.total : "") + '</div>';
+  // 全部完成时给出明确的收尾文案（仍保留 X/Y 计数，卡片继续可展开、不出现跳过入口）
+  progressHtml += '<div class="tw-total">' + (display.allCompleted ? "培训档案完成 " : "已完成 ") + display.completedCount + "/" + display.totalCount + '</div>';
+  progressHtml += '<div class="tw-bar"><div class="tw-bar-fill" style="width:' + totalPct + '%"></div></div>';
+  twSet(progressEl, progressHtml);
+
+  // ---- 支线选项卡 ----
+  const chapterOrder = display.chapters || [];
+  let tabsHtml = "";
+  for (const c of chapterOrder) {
+    const enabled = display.branchesUnlocked || c.id === "prologue";
+    const active = c.id === chapterId;
+    const disabledAttr = enabled ? "" : ' disabled aria-disabled="true"';
+    tabsHtml += '<button type="button" class="tw-tab' + (active ? " active" : "") + '" data-branch="' + twEsc(c.id) + '"' + disabledAttr + '>' + twEsc(c.name) + '</button>';
+  }
+  twSet(tabsEl, tabsHtml);
+
+  // ---- 对话（讲者 + 简报）----
+  if (task) {
+    let dlg = "";
+    if (task.speaker) dlg += '<div class="tw-speaker">' + twEsc(task.speaker) + '</div>';
+    if (task.briefing) dlg += '<div class="tw-line">' + twEsc(task.briefing) + '</div>';
+    twSet(dialogueEl, dlg);
+  } else {
+    const allDone = chapter && chapter.total > 0 && chapter.completed === chapter.total;
+    twSet(dialogueEl, '<div class="tw-line">' + (allDone ? "本章全部任务已完成。" : "本章暂无进行中的任务。") + '</div>');
+  }
+
+  // ---- 目标 + 奖励 + 状态 ----
+  let objHtml = "";
+  if (task) {
+    const statusCls = twStatusClass(task.isLocked, task.isCompleted, task.isClaimable);
+    objHtml += '<div class="tw-task ' + statusCls + '">';
+    objHtml += '<div class="tw-task-title"><span class="tw-task-index">' + twEsc(task.chapterName) + " · 任务 " + task.order + '</span>' + twEsc(task.title) + '</div>';
+    if (task.objectiveText) objHtml += '<div class="tw-objective-text">' + twEsc(task.objectiveText) + '</div>';
+    if (task.progressSummary && task.progressSummary.text) objHtml += '<div class="tw-objective-progress">' + twEsc(task.progressSummary.text) + '</div>';
+    if (task.rewardItems && task.rewardItems.length) {
+      const rewardText = task.rewardItems.map(x => twEsc(x.text)).join("、");
+      objHtml += '<div class="tw-reward">奖励：' + rewardText + '</div>';
+    } else if (task.canChooseCombatTrack && task.trackOptions) {
+      objHtml += '<div class="tw-reward">奖励：选择战斗方向后确定（含专属舰船与装备）</div>';
+    }
+    if (task.isCompleted && task.completionText) {
+      objHtml += '<div class="tw-completion">' + twEsc(task.completionText) + '</div>';
+      if (task.rewardClaimed) objHtml += '<div class="tw-claimed">奖励已领取</div>';
+    }
+    objHtml += '</div>';
+  } else {
+    objHtml += '<div class="tw-empty">暂无可用任务</div>';
+  }
+  twSet(objectiveEl, objHtml);
+
+  // ---- 动作按钮 ----
+  let actHtml = "";
+  // 应急舰船（顶层条件，与当前任务无关）
+  if (display.emergencyShipAvailable) {
+    actHtml += twActButton("claimEmergency", null, null, "领取应急舰船", "tw-btn-primary", "完成 P5 后无舰船时可领取一次性应急舰船");
+  }
+  if (task && !task.isLocked) {
+    if (task.canChooseCombatTrack && task.trackOptions) {
+      for (const opt of task.trackOptions) {
+        actHtml += twActButton("chooseTrack", task.id, opt.track, opt.label + "方向", "tw-btn-track", opt.previewText);
+      }
+    } else if (task.canConfirm) {
+      const label = (task.id === "P7") ? "开启三条职业支线" : "确认完成";
+      actHtml += twActButton("confirm", task.id, null, label, "tw-btn-primary", null);
+    } else if (task.canClaim) {
+      let label = "领取";
+      if (task.id === "I1" || task.id === "I4") {
+        // 支援包领取后按钮消失、任务保持 active
+        if (!task.supportClaimed) label = "领取支援包"; else label = null;
+      } else if (task.id === "I6" || task.id === "I7" || task.id === "A6" || task.id === "C6") {
+        label = "领取奖励";
+      }
+      if (label) actHtml += twActButton("claim", task.id, null, label, "tw-btn-primary", null);
+    }
+    // 导航按钮：有 navigationTarget 且当前不在目标页时显示「前往执行」
+    if (task.navigationTarget && !twIsOnTargetPage(task.navigationTarget)) {
+      actHtml += '<button type="button" class="tw-btn tw-btn-secondary" data-act="nav" data-nav="' + twEsc(task.navigationTarget) + '">前往执行</button>';
+    }
+  }
+  if (!actHtml) actHtml = '<div class="tw-no-action"></div>';
+  twSet(actionsEl, actHtml);
+}
+
+// 教程事件在同一次 dispatch 内部同步派发，早于该次 dispatch 末尾的「解锁下一任务」收尾：
+// 事件回调看到的是中间态（上一任务刚完成、下一任务仍 locked），只渲染一次会把动作区永久留在空态。
+// 因此事件回调统一走本函数：先立即渲染一次（即时反馈），再在结算后补渲一次（宏任务，合并去重）。
+function twRenderSoon() {
+  renderTutorialWidget();
+  if (_tutorialWidgetRenderQueued) return;
+  if (typeof setTimeout !== "function") return; // 无定时器环境（测试沙箱）仅保留即时渲染
+  _tutorialWidgetRenderQueued = true;
+  setTimeout(() => {
+    _tutorialWidgetRenderQueued = false;
+    try { renderTutorialWidget(); } catch (e) { /* 补渲失败不得影响核心流程 */ }
+  }, 0);
+}
+
+// ---- 5 个具体事件处理器（纯读，不推进/发放，仅重渲 + 非阻塞 toast）----
+function twOnTaskCompleted(event) {
+  const display = getTutorialWidgetDisplay();
+  const taskId = event && event.payload ? event.payload.taskId : null;
+  if (display && taskId && display.taskById[taskId] && display.taskById[taskId].completionText) {
+    showToast(display.taskById[taskId].completionText);
+  }
+  twRenderSoon();
+}
+function twOnRewardClaimed() { twRenderSoon(); }
+function twOnBranchesUnlocked() {
+  if (_tutorialWidgetBranch === "prologue") _tutorialWidgetBranch = "industrial"; // 解锁后默认切到首条支线
+  twRenderSoon();
+}
+function twOnCombatTrackSelected() { twRenderSoon(); }
+function twOnEmergencyShipGranted() { twRenderSoon(); }
+
+// 惰性包裹全局 updateUI：让每次 updateUI() 也刷新小部件（不修改 render.js）
+function ensureTutorialWidgetUpdateUIWrap() {
+  if (_tutorialWidgetUpdateUIWrapped) return;
+  let ui = null;
+  if (typeof window !== "undefined" && typeof window.updateUI === "function") ui = window.updateUI;
+  else if (typeof globalThis !== "undefined" && typeof globalThis.updateUI === "function") ui = globalThis.updateUI;
+  if (!ui) return; // render.js 晚于本脚本，首次 renderTutorialWidget 调用时再尝试
+  const _orig = ui;
+  const wrapped = function (now) {
+    const r = _orig.apply(this, arguments);
+    try { renderTutorialWidget(); } catch (e) { /* 小部件渲染错误不得中断核心 UI 刷新 */ }
+    return r;
+  };
+  if (typeof window !== "undefined") window.updateUI = wrapped;
+  if (typeof globalThis !== "undefined") globalThis.updateUI = wrapped;
+  _tutorialWidgetUpdateUIWrapped = true;
+}
+
+// 安装事件监听器与交互委托（仅一次）
+function installTutorialWidgetListeners() {
+  if (_tutorialWidgetListenersInstalled) return;
+  const GE = (typeof GameEvents !== "undefined" && GameEvents) || (typeof window !== "undefined" && window.GameEvents) || (typeof globalThis !== "undefined" && globalThis.GameEvents) || null;
+  if (GE && typeof GE.on === "function") {
+    // 仅监听 5 个具体事件，绝不监听 "*" 通配；监听器只安装一次
+    GE.on("tutorial:taskCompleted", twOnTaskCompleted);
+    GE.on("tutorial:rewardClaimed", twOnRewardClaimed);
+    GE.on("tutorial:branchesUnlocked", twOnBranchesUnlocked);
+    GE.on("tutorial:combatTrackSelected", twOnCombatTrackSelected);
+    GE.on("tutorial:emergencyShipGranted", twOnEmergencyShipGranted);
+  }
+  const toggleEl = document.getElementById("tutorial-widget-toggle");
+  if (toggleEl) toggleEl.addEventListener("click", () => {
+    _tutorialWidgetCollapsed = !_tutorialWidgetCollapsed;
+    renderTutorialWidget();
+  });
+  const tabsEl = document.getElementById("tutorial-widget-branch-tabs");
+  if (tabsEl) tabsEl.addEventListener("click", (event) => {
+    const btn = event.target && event.target.closest ? event.target.closest("[data-branch]") : null;
+    if (!btn || btn.disabled) return;
+    const branch = btn.getAttribute("data-branch");
+    if (!branch) return;
+    _tutorialWidgetBranch = branch;
+    renderTutorialWidget();
+  });
+  const actionsEl = document.getElementById("tutorial-widget-actions");
+  if (actionsEl) actionsEl.addEventListener("click", (event) => {
+    const btn = event.target && event.target.closest ? event.target.closest("button[data-act]") : null;
+    if (!btn || btn.disabled) return;
+    const act = btn.getAttribute("data-act");
+    const taskId = btn.getAttribute("data-task");
+    const track = btn.getAttribute("data-track");
+    if (act === "claim") twDispatch({ type: "tutorial/claim", taskId: taskId });
+    else if (act === "confirm") twDispatch({ type: "tutorial/confirm", taskId: taskId });
+    else if (act === "chooseTrack") twDispatch({ type: "tutorial/chooseCombatTrack", track: track });
+    else if (act === "claimEmergency") twDispatch({ type: "tutorial/claimEmergencyShip" });
+    else if (act === "nav") twGoToTarget(btn.getAttribute("data-nav"));
+  });
+  _tutorialWidgetListenersInstalled = true;
 }
 
 (function bindShellUI() {
@@ -1984,4 +2289,8 @@ function addCurrentToQueue() {
   const researchActiveEl = document.getElementById("research-active"); if (researchActiveEl) researchActiveEl.addEventListener("click", onResearchActiveClick);
   const queueModalButton = document.getElementById("action-modal-queue"); if (queueModalButton) queueModalButton.addEventListener("click", queueActionConfirmation);
   document.addEventListener("keydown", event => { const modal = document.getElementById("equipOrbitModal"); if (event.key === "Escape" && modal && modal.classList.contains("active")) closeEquipOrbit(); });
+
+  // ---- Batch P：新手引导常驻小部件 —— 事件监听器与交互委托只安装一次 ----
+  installTutorialWidgetListeners();
+  renderTutorialWidget();
 })();

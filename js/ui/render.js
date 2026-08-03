@@ -63,7 +63,7 @@ function setProductionControls(display, startButton) {
 }
 
 function renderMiningDisplay(display, areaEl, outEl) {
-  if (areaEl) areaEl.textContent = "目标矿石：" + display.current.ore;
+  if (areaEl) areaEl.textContent = "目标矿石：" + getResourceDisplayName(display.current.ore);
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
   const areaSelect = document.getElementById("mining-area-select"); if (areaSelect) areaSelect.style.display = "block";
   const stats = document.getElementById("mining-stats"); if (stats) stats.style.display = "block";
@@ -71,7 +71,7 @@ function renderMiningDisplay(display, areaEl, outEl) {
   const strip = document.getElementById("mining-target-strip");
   if (strip) {
     strip.innerHTML = display.targets.map(area => `<button class="mining-target-card${area.selected ? " selected" : ""}${area.locked ? " locked" : ""}${area.running ? " running" : ""}" data-area="${area.name}" style="--ore-color:${area.color}" ${area.locked ? "disabled" : ""}>
-      <span class="mining-target-name">${area.ore}</span><span class="mining-target-visual"><i class="fa-solid fa-gem"></i></span>
+      <span class="mining-target-name">${getResourceDisplayName(area.ore)}</span><span class="mining-target-visual"><i class="fa-solid fa-gem"></i></span>
       <span class="mining-target-meta">Lv.${area.level} · ${area.baseTime}s · ${area.baseXP} XP</span>
       <span class="mining-target-state">${area.locked ? `需要 Lv.${area.level}` : area.running ? "正在采集" : area.selected ? "已选择" : "可采集"}</span></button>`).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchMiningArea(card.dataset.area)));
@@ -96,12 +96,12 @@ function renderMiningDisplay(display, areaEl, outEl) {
 }
 
 function renderSmeltingDisplay(display, areaEl, outEl) {
-  if (areaEl) areaEl.textContent = "消耗：" + display.current.consumeOre + " → " + display.current.outputMineral;
-  if (display.progress.active && display.runningStock < 1 && areaEl) areaEl.textContent = "⚠ 原料不足：" + display.running.consumeOre + " (库存：" + display.runningStock + ")";
+  if (areaEl) areaEl.textContent = "消耗：" + getResourceDisplayName(display.current.consumeOre) + " → " + getResourceDisplayName(display.current.outputMineral);
+  if (display.progress.active && display.runningStock < 1 && areaEl) areaEl.textContent = "⚠ 原料不足：" + getResourceDisplayName(display.running.consumeOre) + " (库存：" + display.runningStock + ")";
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
   const select = document.getElementById("smelting-area-select"); if (select) select.style.display = "flex";
   const stats = document.getElementById("smelting-stats"); if (stats) stats.style.display = "block";
-  const dropdown = document.getElementById("smelting-dropbtn"); if (dropdown) dropdown.textContent = display.current.outputMineral + " ▾";
+  const dropdown = document.getElementById("smelting-dropbtn"); if (dropdown) dropdown.textContent = getResourceDisplayName(display.current.outputMineral) + " ▾";
   const efficiency = document.getElementById("smelting-eff-value");
   if (efficiency) {
     efficiency.textContent = display.efficiency.toFixed(2);
@@ -161,7 +161,7 @@ function renderSmeltingDropdown() {
   content.innerHTML = display.options.map(recipe => {
     const className = (recipe.selected ? " selected" : "") + (recipe.locked ? " locked" : "");
     const requirement = recipe.locked ? `<span class="area-req">需冶炼 Lv.${recipe.level}</span>` : "";
-    return `<div class="area-option${className}" data-area="${recipe.name}">${recipe.consumeOre} → ${recipe.outputMineral} — ${recipe.baseTime}s / ${recipe.baseXP}XP${requirement}</div>`;
+    return `<div class="area-option${className}" data-area="${recipe.name}">${getResourceDisplayName(recipe.consumeOre)} → ${getResourceDisplayName(recipe.outputMineral)} — ${recipe.baseTime}s / ${recipe.baseXP}XP${requirement}</div>`;
   }).join("");
   content.querySelectorAll(".area-option:not(.locked)").forEach(option => option.addEventListener("click", event => {
     event.stopPropagation();

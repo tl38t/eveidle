@@ -178,7 +178,7 @@ function setText(id, val) { var el = document.getElementById(id); if (el) el.tex
 
 function blockReasonText(reason) {
   if (!reason) return "";
-  var m = { "construction-in-progress":"已有建设项目进行中", "body-level-cap":"不能超过本体等级", "max-level":"已满级", "insufficient-isk":"ISK 不足", "insufficient-materials":"材料不足", "unknown-building":"未知建筑" };
+  var m = { "construction-in-progress":"已有建设项目进行中", "body-level-cap":"不能超过本体等级", "max-level":"已满级", "insufficient-isk":"星币不足", "insufficient-materials":"材料不足", "unknown-building":"未知建筑" };
   return m[reason] || reason;
 }
 

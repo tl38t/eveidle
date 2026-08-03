@@ -634,8 +634,8 @@ function getArchaeologyDisplayState(state, now) {
     const lpArt = artis.find(a => a.category === "lp");
     const calibArt = artis.find(a => a.category === "calibration");
     const cw = profile.commonWeights || ARCHAEOLOGY_COMMON_WEIGHTS;
-    const commonNames = commonArts.map((a,i) => a.name + " (" + a.iskValue.toLocaleString() + " ISK, " + Math.round(cw[i]*100) + "%)").join("、");
-    const uniqueNames = uniqueArts.map(a => a.name + " (" + a.iskValue.toLocaleString() + " ISK)").join("、");
+    const commonNames = commonArts.map((a,i) => a.name + " (" + a.iskValue.toLocaleString() + " 星币, " + Math.round(cw[i]*100) + "%)").join("、");
+    const uniqueNames = uniqueArts.map(a => a.name + " (" + a.iskValue.toLocaleString() + " 星币)").join("、");
     // 稀有率预览（含 profile 倍率）
     const effectiveUniqueRate = profile.effectiveUniqueRate !== undefined ? profile.effectiveUniqueRate : tier.uniqueRate;
     const rareShiftMul = (boosterEff && Number.isFinite(boosterEff.rareShiftMultiplier)) ? boosterEff.rareShiftMultiplier : 1;

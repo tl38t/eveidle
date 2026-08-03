@@ -130,7 +130,13 @@ const GameEventContracts = (() => {
     "research:hoursApplied": { required:["techId", "level", "usedSeconds"], numbers:["level", "usedSeconds"] },
     // Batch E：研究取消。ResearchSystem.cancelResearch 真实作废当前步骤后发射一次；
     // refundedSeconds 为退回银行的成就工时秒数（可为 0）；取消不发 research:stepCompleted。
-    "research:cancelled": { required:["techId", "level", "refundedSeconds"], numbers:["level", "refundedSeconds"] }
+    "research:cancelled": { required:["techId", "level", "refundedSeconds"], numbers:["level", "refundedSeconds"] },
+    // 新手引导（Batch O）：tutorial-system 统一事件契约；payload 与契约严格一致，source 固定 "tutorial-system"。
+    "tutorial:taskCompleted": { required:["taskId", "chapter", "completedAt"], numbers:["completedAt"] },
+    "tutorial:rewardClaimed": { required:["taskId", "claimedAt"], numbers:["claimedAt"] },
+    "tutorial:branchesUnlocked": { required:["unlockedAt"], numbers:["unlockedAt"] },
+    "tutorial:combatTrackSelected": { required:["track", "selectedAt"], numbers:["selectedAt"] },
+    "tutorial:emergencyShipGranted": { required:["instanceId", "grantedAt"], numbers:["grantedAt"] }
   });
 
   function cloneValue(value) {

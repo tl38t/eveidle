@@ -288,11 +288,11 @@ function getResearchProtocolDisplayState(state, protocolId) {
   };
   if (!known) return base;
   if (protocolId === "autosell") {
-    base.scopeText = "自动处理范围：ISK 文物与唯一文物 ｜ 校准物不会自动处理";
+    base.scopeText = "自动处理范围：星币文物与唯一文物 ｜ 校准物不会自动处理";
   } else if (protocolId === "autoconv") {
-    base.scopeText = "自动处理范围：LP 文物 ｜ 校准物不会自动处理";
+    base.scopeText = "自动处理范围：功勋文物 ｜ 校准物不会自动处理";
   } else if (protocolId === "planauto") {
-    base.scopeText = "每个基地独立开启并配置最低 ISK 储备；到期时刻自动续期，余额不足只停该基地";
+    base.scopeText = "每个基地独立开启并配置最低星币储备；到期时刻自动续期，余额不足只停该基地";
     const deployments = (isValidProtocolStateShape(state) && state.planetary && Array.isArray(state.planetary.deployments))
       ? state.planetary.deployments : [];
     const nowRef = Date.now();

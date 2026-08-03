@@ -170,7 +170,7 @@ function renderCombatPanel(now) {
   const deathspaceTierTabs = document.getElementById("deathspace-tier-tabs");
   if (deathspaceTierTabs) deathspaceTierTabs.innerHTML = display.deathspaceTiers.map(item => `<button class="deathspace-tier-tab${item.selected ? " active" : ""}${item.unlocked ? "" : " locked"}" data-deathspace-tier="${item.tier}">${item.label}<small>战斗等级 ${item.requiredCL}</small></button>`).join("");
   const deathspaceGrid = document.getElementById("deathspace-grid");
-  if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${site.ticketMaterial} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} LP · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} LP · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${site.coreMaterial} · 📜 ${site.protocolMaterial} 2%</small></button>`).join("");
+  if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${getResourceDisplayName(site.ticketMaterial)} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} ${DisplayNames.getCurrencyName("lp")} · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} ${DisplayNames.getCurrencyName("lp")} · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${getResourceDisplayName(site.coreMaterial)} · 📜 ${getResourceDisplayName(site.protocolMaterial)} 2%</small></button>`).join("");
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
   const targetingControl = document.getElementById("capital-targeting-control");
   const targetingSelect = document.getElementById("capital-targeting-select");
@@ -224,7 +224,7 @@ function renderCombatDropPreview(display) {
     if (Array.isArray(preview.leaderLoot) && preview.leaderLoot.length > 0) {
       rows.push(`<div class="drop-group-title">💠 首领战利品（每波 BOSS 击破时结算）</div>`);
       for (const loot of preview.leaderLoot) {
-        rows.push(row("🟣", loot.coreMaterial, `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${loot.protocolMaterial} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader"));
+        rows.push(row("🟣", getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${getResourceDisplayName(loot.protocolMaterial)} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader"));
       }
     }
     if (preview.tacticalMaterial) {
@@ -291,7 +291,7 @@ function startCombatEncounter() {
       if (result.reason === "repairing") showToast("舰船自动维修中，还需 " + result.remaining + " 秒");
       else if (result.reason === "level-locked") showToast("该死亡空间需要战斗等级 " + result.requiredCL);
       else if (result.reason === "no-weapons") showToast("当前战斗舰没有安装武器，请先在船坞装配");
-      else if (result.reason === "missing-ticket") showToast("缺少：" + result.ticketMaterial);
+      else if (result.reason === "missing-ticket") showToast("缺少：" + getResourceDisplayName(result.ticketMaterial));
       renderCombatPanel(now); return false;
     }
     showToast("已消耗1枚通行密钥，进入" + deathspace.name);

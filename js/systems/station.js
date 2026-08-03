@@ -1609,7 +1609,7 @@ function buildStationCostRows(state, isk, materials) {
   if (Number.isFinite(isk) && isk > 0) {
     var haveIsk = 0;
     if (ResourceRegistry && ResourceRegistry.get) haveIsk = ResourceRegistry.get(state, "currency:isk");
-    rows.push({ ref:"currency:isk", displayName:"ISK", quantity:isk, have:haveIsk, enough:haveIsk >= isk });
+    rows.push({ ref:"currency:isk", displayName:"星币", quantity:isk, have:haveIsk, enough:haveIsk >= isk });
   }
   if (materials && typeof materials === "object") {
     for (var ref in materials) {
@@ -1618,7 +1618,7 @@ function buildStationCostRows(state, isk, materials) {
         var have = 0;
         if (ResourceRegistry.getByRef) have = ResourceRegistry.getByRef(state, ref);
         else if (ResourceRegistry.getMaterialStock) have = ResourceRegistry.getMaterialStock(state, ref);
-        rows.push({ ref:ref, displayName:ref.replace(/^(mineral|planetary|moon|special|component):/, ""), quantity:qty, have:have, enough:have >= qty });
+        rows.push({ ref:ref, displayName:(typeof getResourceDisplayName === "function" ? getResourceDisplayName(ref) : ref.replace(/^(mineral|planetary|moon|special|component):/, "")), quantity:qty, have:have, enough:have >= qty });
       }
     }
   }

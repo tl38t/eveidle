@@ -12,7 +12,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 50) throw new Error(`预期 50 个脚本，实际 ${scriptSources.length}`); // 50 = 49 + 研究系统 Batch I 自动化协议统一模块：js/systems/research-protocols.js（49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js））
+if (scriptSources.length !== 54) throw new Error(`预期 54 个脚本，实际 ${scriptSources.length}`); // 54 = 52 + 新手任务系统 Batch O 运行时两模块：js/core/tutorial-state.js、js/systems/tutorial.js // 52 = 51 + 新手任务系统 Batch N 任务目录数据：js/data/tutorial.js // 50 = 49 + 研究系统 Batch I 自动化协议统一模块：js/systems/research-protocols.js（49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js））
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -123,13 +123,14 @@ const optionalIds = new Set([
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
 
-// DOM ID 基线：294 = 277 + 成就系统 Batch D 成就页 8 个 ID
+// DOM ID 基线：303 = 294 + Batch P 新手引导常驻小部件 8 个 ID + 删除存档按钮 btn-delete-save 1 个 ID
+// （tutorial-widget / -header / -toggle / -progress / -branch-tabs / -dialogue / -objective / -actions）
 // （achievements-panel / -summary-count / -summary-percent / -progress-fill /
 //   -tier-counts / -category-tabs / -status-tabs / -grid）
 // + Batch E 科研工时余额 1 个 ID（achievements-research-bank）
 // + Batch F 研究页 8 个 ID（research-panel / -summary / -bank / -active /
 //   research-progress-fill / research-tree / research-detail / research-queue）
-if (htmlIds.size !== 294) throw new Error(`预期 294 个 DOM ID，实际 ${htmlIds.size}`);
+if (htmlIds.size !== 303) throw new Error(`预期 303 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
   "research-progress-fill", "research-tree", "research-detail", "research-queue"
@@ -186,6 +187,9 @@ const makeElement = () => ({
   querySelector: () => makeElement(),
   querySelectorAll: () => [],
   remove: noop,
+  setAttribute: noop,
+  removeAttribute: noop,
+  getAttribute: () => null,
   select: noop,
   style: {},
   textContent: "",
@@ -202,7 +206,7 @@ const documentMock = {
   querySelectorAll: () => []
 };
 
-const localStorageMock = { getItem: () => null, setItem: noop };
+const localStorageMock = { getItem: () => null, setItem: noop, removeItem: noop };
 const sandbox = {
   alert: noop,
   Blob,
@@ -224,6 +228,28 @@ sandbox.window.addEventListener = noop;
 vm.createContext(sandbox);
 for (let index = 0; index < scripts.length; index += 1) {
   vm.runInContext(scripts[index], sandbox, { filename: scriptSources[index] });
+}
+
+// Batch Q 最终定点返修：脚本装载完毕的这一刻，就是「空 localStorage 的真实首次启动」——
+// persistence.js 的 autoLoad IIFE 已经跑完（localStorageMock.getItem 恒返回 null）。
+// 后续断言会大量改写 gameState 与来源标记，因此必须在此立即取证，不能事后补拍。
+const freshBootEvidence = {
+  lastLoadSource: sandbox.SaveManager._lastLoadSourceHadTutorial,
+  isLegacy: sandbox.isLegacySaveSource(),
+  ships: JSON.parse(JSON.stringify(sandbox.gameState.inventory.ships || [])),
+  isk: sandbox.gameState.resources.isk,
+  tutorial: JSON.parse(JSON.stringify(sandbox.gameState.tutorial))
+};
+
+// 取证完成后再为测试环境播种一艘舰船：修复前全新开局被误判成老档、白送一艘 rifter，
+// 下方大量既有 fixture（选择器 / 战斗视图 / 装配 / 生产效率 / 死亡空间）都建立在「gameState 自带首舰
+// 且该舰已由 migrateCombatEquipmentState 装上默认战斗挂载」之上。
+// 真实新档零舰船的结论已由 freshBootEvidence 固化；这里只是把测试环境复原成修复前的样子，
+// 且完全交由真实迁移函数完成（重置一次性迁移标志后重跑收尾链），不手写任何挂载数据。
+if (!Array.isArray(sandbox.gameState.inventory.ships) || sandbox.gameState.inventory.ships.length === 0) {
+  sandbox.gameState.inventory.ships = [sandbox.createShipInstance("rifter")];
+  sandbox.gameState.migrations.combatEquipmentV1 = false;
+  sandbox.finalizeEquipmentStateAfterLegacyMigrations(sandbox.gameState);
 }
 
 // 运行时守卫必须隔离关键循环错误、允许显式恢复，并让可恢复循环继续调度。
@@ -452,6 +478,8 @@ selectorState.currentAction.miningMode = "moon";
 selectorState.currentAction.startedArea = "凡晶石带";
 selectorState.currentAction.progress = 2;
 selectorState.currentAction.lastProgressUpdate = selectorNow - 5000;
+// Batch Q 定点返修：全新开局已不再误发兜底舰船，选择器 fixture 必须自备一艘测试舰。
+if (!selectorState.inventory.ships.length) selectorState.inventory.ships.push(sandbox.createShipInstance("rifter"));
 const selectorShip = selectorState.inventory.ships[0];
 selectorShip.fitted = { high:["t1_mining_laser"], mid:[], low:[], rig:[] };
 selectorState.shipAssignments.mining = selectorShip.instanceId;
@@ -522,7 +550,7 @@ manufacturingState.currentAction.startedEquipEngTarget = "t1_mining_laser";
 manufacturingState.currentAction.progress = 4;
 manufacturingState.currentAction.lastProgressUpdate = selectorNow - 1000;
 const equipmentStateBefore = JSON.stringify(manufacturingState);
-const equipmentEngineeringDisplay = sandbox.getEquipmentEngineeringDisplayState(manufacturingState, selectorNow, "血仆");
+const equipmentEngineeringDisplay = sandbox.getEquipmentEngineeringDisplayState(manufacturingState, selectorNow, "赤誓仆从");
 if (JSON.stringify(manufacturingState) !== equipmentStateBefore) throw new Error("装备工程View State修改了输入状态");
 if (equipmentEngineeringDisplay.selectedRecipe.id !== "blood_servant_drone_link" || equipmentEngineeringDisplay.runningRecipe.id !== "t1_mining_laser" ||
     !equipmentEngineeringDisplay.active || !equipmentEngineeringDisplay.detail.runningNote?.targetDiffers || equipmentEngineeringDisplay.recipes.length !== 1 ||
@@ -669,7 +697,8 @@ const planetaryViewBefore = JSON.stringify(planetaryViewState);
 const planetaryDisplay = sandbox.getPlanetaryDisplayState(planetaryViewState, selectorNow, 10000000);
 if (JSON.stringify(planetaryViewState) !== planetaryViewBefore) throw new Error("行星View State修改了输入状态");
 const planetaryCard = planetaryDisplay.deployments[0];
-if (planetaryDisplay.level !== 1 || planetaryDisplay.slots !== 1 ||
+// Batch N：新手期行星槽位保底 2（Lv.1-19 = 2），后续曲线不变
+if (planetaryDisplay.level !== 1 || planetaryDisplay.slots !== 2 ||
     planetaryCard.output !== "重金属" || planetaryCard.outputProgress !== 4 || planetaryCard.outputPercent !== 40 ||
     planetaryCard.storage !== 2 || !planetaryCard.active || planetaryCard.statusText !== "运行中" || !planetaryDisplay.deployOptions[0].unlocked) {
   throw new Error("行星View State没有正确表达技能、槽位、库存、产出进度或部署选项");
@@ -891,7 +920,7 @@ combatSidebarState.skills.armorReinforcement.lvl = 15;
 combatSidebarState.skills.hullEngineering.lvl = 10;
 const combatSidebarDisplay = sandbox.getSidebarDisplayState(combatSidebarState).find(item => item.key === "combat");
 if (JSON.stringify(shellViewState) !== shellViewBefore) throw new Error("外壳View State修改了输入状态");
-if (cargoDisplay.filter !== "mineral" || cargoDisplay.items.find(item => item.name === "三钛合金")?.quantity !== 5 ||
+if (cargoDisplay.filter !== "mineral" || cargoDisplay.items.find(item => item.name === "标准钛材")?.quantity !== 5 ||
     equipmentCargoDisplay.items.find(item => item.name === "驱逐舰综合舰体组件")?.quantity !== 7 ||
     !lpDisplay.items.length || hangarDisplay.count !== shellViewState.inventory.ships.length || !fittingDisplay ||
     queueDisplay.count !== shellViewState.queue.items.length || navigationDisplay.specializedSkillPanel !== "combat-panel" || navigationDisplay.showGenericSkill ||
@@ -899,7 +928,7 @@ if (cargoDisplay.filter !== "mineral" || cargoDisplay.items.find(item => item.na
     statisticsNavigation.standalonePanel !== "statistics-panel" || statisticsDisplay.kind !== "statistics" || statisticsDisplay.summaryGroups.length !== 4 ||
     statisticsDisplay.summaryGroups.find(group => group.id === "enhancement")?.items.find(item => item.label === "成功率")?.value !== 75 ||
     statisticsDisplay.detailGroups.find(group => group.id === "manufactured")?.items[0]?.name !== "综合舰体组件" ||
-    statisticsDisplay.detailGroups.find(group => group.id === "zones")?.items[0]?.name !== "天使前哨站" ||
+    statisticsDisplay.detailGroups.find(group => group.id === "zones")?.items[0]?.name !== "苍穹劫团前哨站" ||
     combatSidebarDisplay?.level !== 26 || combatSidebarDisplay.xp !== null ||
     !combatSidebarDisplay.tooltip.includes("⌊(31 + 21) ÷ 2⌋ = Lv.26")) {
   throw new Error("仓库、LP商店、船坞、装配、队列或导航View State异常");
@@ -1018,7 +1047,9 @@ const expectedShipMaterials = {
 };
 const shipAssemblyRecipes = vm.runInContext("SHIP_ASSEMBLY_RECIPES", sandbox);
 const shipComponentRecipes = vm.runInContext("SHIP_COMPONENT_RECIPES", sandbox);
-for (const recipe of shipAssemblyRecipes.filter(item => item.level <= 60)) {
+// 启程级（rookie_corvette）是新手引导专属训练艇，采用 1/1/1 的减半用料，不参与常规同级整船材料模型；
+// 其专项校验见文末「Batch N」块。
+for (const recipe of shipAssemblyRecipes.filter(item => item.level <= 60 && item.id !== "rookie_corvette")) {
   if (!recipe.componentCost || recipe.extraCost || recipe.comps || recipe.compCount) {
     throw new Error(`${recipe.name}仍使用旧式统一部件字段`);
   }
@@ -1087,7 +1118,8 @@ for (const [shipId, expectation] of Object.entries(capitalRecipeExpectations)) {
 const buildMiningAreas = vm.runInContext("MINING_AREAS", sandbox);
 const buildRefiningRecipes = vm.runInContext("SMELTING_RECIPES", sandbox);
 const buildPlanetTypes = vm.runInContext("PLANET_TYPES", sandbox);
-for (const recipe of shipAssemblyRecipes.filter(item => item.level <= 55 && !item.materialCost)) {
+// 同上：启程级刻意低于常规护卫舰 2～3 小时的自给预算（新手引导用），不纳入预算模型。
+for (const recipe of shipAssemblyRecipes.filter(item => item.level <= 55 && !item.materialCost && item.id !== "rookie_corvette")) {
   const level = recipe.level;
   const gatheringLevel = Math.min(99, level + 10);
   const gatheringEfficiency = 1 + gatheringLevel * 0.02;
@@ -1116,7 +1148,8 @@ for (const recipe of shipAssemblyRecipes.filter(item => item.level <= 55 && !ite
     const component = shipComponentRecipes.find(item => item.id === componentId);
     activeSeconds += component.time * count / manufacturingEfficiency;
   }
-  const lanes = Array.from({ length:Math.min(5, 1 + Math.floor(level / 10)) }, () => 0);
+  // 行星并行车道数与正式 selectors 一致：Lv.1-19 保底 2 道（Batch N 行星槽保底 2 的同源修正）
+  const lanes = Array.from({ length:Math.min(5, Math.max(2, 1 + Math.floor(level / 10))) }, () => 0);
   for (const seconds of planetJobs.sort((left, right) => right - left)) {
     const lane = lanes.indexOf(Math.min(...lanes));
     lanes[lane] += seconds;
@@ -1380,9 +1413,9 @@ const improvedEquipmentPreview = deathspaceBlueprintPreview.items.find(item => i
 const visibleBlueprintText = JSON.stringify([shipBlueprintPreview, deathspaceBlueprintPreview]);
 if (!mixedShipPreview || mixedShipPreview.productName !== "疾风级" ||
     !mixedShipPreview.previewLines.some(line => line.label === "舰体" && line.value.includes("总生命 990")) ||
-    !mixedShipPreview.previewLines.some(line => line.label === "消耗" && line.value.includes("天使低级加密数据×15")) ||
+    !mixedShipPreview.previewLines.some(line => line.label === "消耗" && line.value.includes("劫团低阶密钥×15")) ||
     !improvedEquipmentPreview || !improvedEquipmentPreview.previewLines.some(line => line.label === "属性" && line.value.includes("基础伤害")) ||
-    !improvedEquipmentPreview.previewLines.some(line => line.label === "消耗" && line.value.includes("吉斯特A型大型激光炮")) ||
+    !improvedEquipmentPreview.previewLines.some(line => line.label === "消耗" && line.value.includes("劫团A型大型激光炮")) ||
     /价格等于|次肃清LP|次全通LP/.test(visibleBlueprintText)) {
   throw new Error("蓝图商店没有完整预览产物属性/制造消耗，或仍显示策划定价语言");
 }
@@ -1982,7 +2015,7 @@ sandbox.document.getElementById = (id) => id === "ship-inventory-list" ? shipInv
 sandbox.renderShipInventory();
 sandbox.document.getElementById = originalInventoryGetElementById;
 sandbox.gameState.inventory.ships = originalShips;
-if (!shipInventoryList.innerHTML.includes("冲锋者级") || !shipInventoryList.innerHTML.includes("HP: 220/75/75") || shipInventoryList.innerHTML.includes("miner_frigate")) {
+if (!shipInventoryList.innerHTML.includes("拓岩级") || !shipInventoryList.innerHTML.includes("HP: 220/75/75") || shipInventoryList.innerHTML.includes("miner_frigate")) {
   throw new Error("已有舰船仍把工业舰显示成内部 ID 或缺少实际属性");
 }
 
@@ -3746,9 +3779,9 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   const TF = 1752000000000;
 
   // ---- F-12 既有基线不得放宽（脚本 / 样式 / DOM ID / Batch D·E 关键 DOM） ----
-  if (scriptSources.length !== 50) throw new Error("Batch F 起 JS 基线为 50（Batch I 新增 research-protocols.js），实际 " + scriptSources.length);
+  if (scriptSources.length !== 54) throw new Error("Batch F 起 JS 基线为 54（Batch L 新增 display-names.js，Batch N 新增 tutorial.js，Batch O 新增 tutorial-state.js 与 systems/tutorial.js），实际 " + scriptSources.length);
   if (styleSources.length !== 4) throw new Error("Batch F 不得改变 4 CSS 基线，实际 " + styleSources.length);
-  if (htmlIds.size !== 294) throw new Error("Batch F DOM ID 基线应为 294，实际 " + htmlIds.size);
+  if (htmlIds.size !== 303) throw new Error("Batch F DOM ID 基线应为 303，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
@@ -4638,7 +4671,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- G-21 冻结基线不回退 -------------------------------------------------------------
     okG(RDG.NODES.length === 38, "科技节点总数必须仍为 38");
-    okG(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294, "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+    okG(scriptSources.length === 54 && styleSources.length === 4 && htmlIds.size === 303, "54 JS / 4 CSS / 303 DOM ID 基线不得回退");
     okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
   } finally {
     gsG.research = JSON.parse(JSON.stringify(savedResearchG));
@@ -5046,7 +5079,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- H-12 冻结基线不回退 --------------------------------------------------------------
     okH(RDH.NODES.length === 38, "科技节点总数必须仍为 38");
-    okH(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294, "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+    okH(scriptSources.length === 54 && styleSources.length === 4 && htmlIds.size === 303, "54 JS / 4 CSS / 303 DOM ID 基线不得回退");
   } finally {
     gsH.research = JSON.parse(JSON.stringify(savedResearchH));
     gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
@@ -5624,8 +5657,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsI === 150 && Math.abs(secondsI - 7776000) < 1e-6 &&
         protocolNodesI.length === 6 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294,
-      "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+    okI(scriptSources.length === 54 && styleSources.length === 4 && htmlIds.size === 303,
+      "54 JS / 4 CSS / 303 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -6183,8 +6216,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsJ === 150 && Math.abs(secondsJ - 7776000) < 1e-6 &&
         protocolNodesJ.length === 6 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 50 && styleSources.length === 4 && htmlIds.size === 294,
-      "50 JS / 4 CSS / 294 DOM ID 基线不得回退");
+    okJ(scriptSources.length === 54 && styleSources.length === 4 && htmlIds.size === 303,
+      "54 JS / 4 CSS / 303 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -6756,6 +6789,1574 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   }
 
   console.log("Batch K 一体化造船（intship）校验通过（" + kChecks + " 项）：12 个公开 API 与恰 20 个稳定 reason（含 EVENTS_UNAVAILABLE）、三层门槛（未研究 / 未启用 / 脏档一律零执行）与数量上限 1000、非法数量（含数字字符串\"2\"） / 未知配方 / 蓝图锁 / 等级锁 / 动作占用五类拒绝、起步缺料原子回滚（作业 + currentAction 快照零残留）、componentPlan 按配方键序与库存缺口精确生成（三组件各 2）、启动后 currentAction 被真实制造动作接管且 batchRemaining=缺口、组件全齐直接总装、在线真实 tick 全链路（组件 → 总装 → 产舰 1 艘、164/26/18/18 材料真实扣光、组件产出 2+2+2 被总装消耗、完成后绝不重复产舰）、幂等消费者只更账本且同 eventId 去重、错 recipeId / 错阶段 ship 事件不入账、中途缺料落 stopped 且补齐续作、玩家抢占落 preempted 且可续作、取消停止动作保留产出、已完成 / 已取消 / 无作业状态机、存档恢复重装消费者且 shape 不匹配 fail closed 为 recovery-required、离线 settleOfflineActions 一次推进到完成、三条 action 路由与直调同源、UI 显示态启动表单 / jobRunning / jobInterrupted、公开 buildIntshipComponentPlan 签名契约（拒数字字符串/小数/NaN/Infinity/0/负数/超上限/对象/null）、quantity=2 在线 / 离线全链各恰产 2 艘且资源消耗干净、造 1 件→停→玩家消耗→补料→续作重算缺口为 2 且账本保留不死循环、真实 queue/add+queue/start 抢占链落 preempted 且续作完成、事件总线缺失 start EVENTS_UNAVAILABLE 深度零变化 / restore fail closed 为 recovery-required、坏档迁移归一 null 或受控 recovery-required 且删未知字段二次迁移 JSON 一致、Batch J 维修三加固（非当前考古舰零维修零燃料零事件 / 满血零治疗零燃料 / source 固定 research-protocol）、事件总线 fail-closed 定点返修（reconcile 每次入口先查总线且停止 intship 驱动动作零副作用、advance 消费者不匹配 + 总线缺失不抛异常且 offline/updatedAt 一致、restore 总线缺失立即停止驱动动作不留 active=true、玩家无关动作保留）");
+}
+
+// ============================================================================================
+// 研究系统 Batch L：IP 去相似化 · 玩家可见名称替换（仅显示层）
+// 铁律：
+//   1) internal ID / 存档旧 key 永久保持原值，只改玩家可见文字；
+//   2) 显示名映射全部冻结于 js/data/display-names.js，UI 不复制映射、不临时 replace；
+//   3) 数值、公式、掉落、价格、时间、成就阈值一律不变；
+//   4) 成就目录经 gen-achievements-csv.py 权威行重生成（哈希更新为本批预期）。
+// ============================================================================================
+{
+  let lChecks = 0;
+  const okL = (condition, message) => { if (!condition) throw new Error("Batch L 校验失败：" + message); lChecks++; };
+  const DL = sandbox.DisplayNames;
+
+  // ---- L-01 公开 API 与全部映射冻结 -------------------------------------------------
+  okL(DL && ["getCurrencyName", "getCurrencyAbbreviation", "getFactionName", "getFactionEnName",
+      "getShipName", "getResourceName", "getResourceRefName", "getItemName", "getAreaName",
+      "getCombatZoneName", "formatResourceAmount"].every(name => typeof DL[name] === "function"),
+    "DisplayNames 必须暴露全部公开 API");
+  okL(Object.isFrozen(DL) && Object.isFrozen(DL.CURRENCY_NAMES) && Object.isFrozen(DL.ORE_NAMES) &&
+      Object.isFrozen(DL.MINERAL_NAMES) && Object.isFrozen(DL.SHIP_NAMES) && Object.isFrozen(DL.FACTION_NAMES) &&
+      Object.isFrozen(DL.ITEM_NAMES) && Object.isFrozen(DL.AREA_NAMES),
+    "DisplayNames 与全部公开映射表必须冻结");
+
+  // ---- L-02 映射正确性（玩家可见新名；内部键保持） ------------------------------------
+  okL(DL.getCurrencyName("isk") === "星币" && DL.getCurrencyName("lp") === "功勋" &&
+      DL.getCurrencyAbbreviation("isk") === "SC" && DL.getCurrencyAbbreviation("lp") === "MR",
+    "货币显示名必须为 星币/功勋（SC/MR）");
+  okL(DL.getFactionName("angel") === "苍穹劫团" && DL.getFactionName("blood") === "赤誓教团" &&
+      DL.getFactionName("sansha") === "静默集群",
+    "三势力显示名必须为 苍穹劫团/赤誓教团/静默集群");
+  okL(DL.getResourceName("ore", "凡晶石") === "铁硅原矿" && DL.getResourceName("mineral", "三钛合金") === "标准钛材" &&
+      DL.getResourceName("mineral", "莫尔石") === "暗质晶核" && DL.getResourceName("ore", "艾克诺岩") === "极星矿",
+    "矿石/矿物显示名必须为原创名（内部库存键保持）");
+  okL(DL.getItemName("天使低级加密数据") === "劫团低阶密钥" && DL.getItemName("血袭者中级加密数据") === "赤誓中阶密钥" &&
+      DL.getItemName("萨沙高级加密数据") === "静默高阶密钥" &&
+      DL.getItemName("天使秘密补给站通行密钥") === "苍穹劫团秘密补给站通行密钥",
+    "势力加密数据/死亡空间门票显示名必须转换（内部 special 键保持）");
+  okL(DL.getShipName("rifter") === "星矛级" && DL.getShipName("kestrel") === "铁卫级" &&
+      DL.getShipName("orca") === "山海级" && DL.getShipName("heron") === "觅迹级" &&
+      DL.getShipName("dolphin") === "驮星级",
+    "EVE 舰船显示名必须为原创名（内部 shipId 保持）");
+
+  // ---- L-03 脚本顺序：display-names.js 必须早于 resources.js / selectors / UI ----------
+  const dnIdxL = scriptSources.findIndex(s => s.includes("display-names.js"));
+  const resIdxL = scriptSources.findIndex(s => s.includes("resources.js"));
+  const selIdxL = scriptSources.findIndex(s => s.includes("selectors.js"));
+  const shellIdxL = scriptSources.findIndex(s => s.includes("shell-render.js"));
+  okL(dnIdxL >= 0 && dnIdxL < resIdxL && dnIdxL < selIdxL && dnIdxL < shellIdxL,
+    "display-names.js 必须注册在 resources.js / selectors / shell-render 之前（顺序断言）");
+
+  // ---- L-04 旧存档 fixture：内部 key 与数值完全保留 -----------------------------------
+  const legacyL = JSON.parse(JSON.stringify(sandbox.gameState));
+  legacyL.resources.ores["凡晶石"] = 777;
+  legacyL.resources.minerals["三钛合金"] = 888;
+  legacyL.inventory.ships = [sandbox.createShipInstance("rifter", 1000)];
+  if (!Array.isArray(legacyL.ownedBlueprints)) legacyL.ownedBlueprints = [];
+  legacyL.ownedBlueprints.push("rifter");
+  const legacyBeforeL = JSON.stringify({ ores: legacyL.resources.ores, minerals: legacyL.resources.minerals, ships: legacyL.inventory.ships, bp: legacyL.ownedBlueprints });
+  okL(G("ResourceRegistry").get(legacyL, "ore:凡晶石") === 777 && G("ResourceRegistry").get(legacyL, "mineral:三钛合金") === 888 &&
+      legacyL.inventory.ships[0].shipId === "rifter" && legacyL.ownedBlueprints.includes("rifter") &&
+      JSON.stringify({ ores: legacyL.resources.ores, minerals: legacyL.resources.minerals, ships: legacyL.inventory.ships, bp: legacyL.ownedBlueprints }) === legacyBeforeL,
+    "旧存档 fixture 内部 key 与数值必须完全保留（凡晶石/三钛合金/rifter 不动）");
+
+  // ---- L-05 仓库统一显示入口输出新名 ---------------------------------------------------
+  okL(G("getResourceDisplayName")("ore:凡晶石") === "铁硅原矿" &&
+      G("getResourceDisplayName")("mineral:三钛合金") === "标准钛材" &&
+      G("getResourceDisplayName")("凡晶石") === "铁硅原矿" &&
+      !G("getResourceDisplayName")("ore:凡晶石").includes("凡晶石"),
+    "仓库统一资源显示入口必须输出新名（铁硅原矿/标准钛材）");
+
+  // ---- L-06 旧 rifter 舰船显示星矛级（数据 name 已改 + DisplayNames 兜底） --------------
+  okL(sandbox.getShipConfigById("rifter") && sandbox.getShipConfigById("rifter").name === "星矛级" &&
+      sandbox.getShipConfigById("rifter").id === "rifter" && DL.getShipName("rifter") === "星矛级",
+    "rifter 旧存档舰船显示必须为星矛级（内部 shipId/recipeId/blueprintId 仍 rifter）");
+
+  // ---- L-07 蓝图/制造/装备/战斗仍用 shipId rifter -------------------------------------
+  okL(legacyL.ownedBlueprints.includes("rifter") && legacyL.inventory.ships[0].shipId === "rifter" &&
+      sandbox.getShipConfigById("rifter").bonuses && typeof sandbox.getShipConfigById("rifter").bonuses === "object",
+    "蓝图购买/制造/装备/战斗必须仍使用 shipId:rifter（内部键不动）");
+
+  // ---- L-08 三势力：zone 显示新名 + faction ID 保持 angel/blood/sansha ------------------
+  const zonesL = G("COMBAT_ZONES");
+  okL(Array.isArray(zonesL) && zonesL.length > 0 &&
+      zonesL.every(z => z.faction === "angel" || z.faction === "blood" || z.faction === "sansha") &&
+      zonesL.some(z => z.name.includes("苍穹劫团")) && zonesL.some(z => z.name.includes("赤誓教团")) &&
+      zonesL.some(z => z.name.includes("静默集群")),
+    "三势力星带显示新名且 faction ID 保持 angel/blood/sansha");
+
+  // ---- L-09 顶栏货币：数值不变，显示名由 DisplayNames 提供 ------------------------------
+  okL(typeof legacyL.resources.isk === "number" && typeof legacyL.resources.lp === "number" &&
+      DL.getCurrencyName("isk") === "星币" && DL.getCurrencyName("lp") === "功勋",
+    "顶栏显示星币/功勋，gameState.isk/lp 数值不变");
+
+  // ---- L-10 成就目录：197 项 / 262 小时 / 档位不变（结构回归） --------------------------
+  const achL = G("AchievementData");
+  okL(achL && Array.isArray(achL.ACHIEVEMENTS) && achL.ACHIEVEMENTS.length === 197 &&
+      typeof achL.ACHIEVEMENTS_BY_ID === "object" && Object.keys(achL.ACHIEVEMENTS_BY_ID).length === 197,
+    "成就目录 197 项与 unlockedAtById 结构必须不变");
+
+  // ---- L-11 研究 38 节点 / 150 步 / 六协议不变 ------------------------------------------
+  const rdL = G("ResearchData");
+  okL(rdL && rdL.NODES.length === 38 && G("IMPLEMENTED_RESEARCH_PROTOCOLS").length === 6,
+    "研究 38 节点与六协议必须不变（本批不改研究逻辑）");
+
+  // ---- L-12 index.html 正式页面不得出现旧专名（显示文本） ------------------------------
+  const htmlRawL = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  okL(["EVE放置", "新伊甸", "ISK", "LP", "天使集团", "血袭者", "萨沙", "凡晶石", "三钛合金",
+      "裂谷级", "茶隼级", "冲锋者级", "勘探者级", "逆戟鲸级", "苍鹭级"].every(word => !htmlRawL.includes(word)),
+    "index.html 正式页面不得出现旧专名");
+
+  // ---- L-13 主要 UI 显示层源码：字符串字面量不得出现旧货币/势力专名（变量名/注释不受限） ----
+  const uiFilesL = ["js/ui/shell-render.js", "js/ui/render.js", "js/ui/archaeology-render.js",
+    "js/ui/booster-render.js", "js/ui/planetary-render.js", "js/ui/station-render.js",
+    "js/ui/manufacturing-render.js", "js/ui/combat-render.js"];
+  okL(uiFilesL.every(file => {
+    const src = fs.readFileSync(path.join(root, file), "utf8");
+    return ["可用 ISK", "ISK 不足", "ISK不足", "LP不足", "忠诚点", "新伊甸", "EVE放置",
+      "天使集团", "血袭者", "萨沙", "最低 ISK", " ISK ｜", " ISK；", "（ISK"].every(phrase => !src.includes(phrase));
+  }), "主要 UI 显示层不得出现旧货币/势力专名文案（内部键 / 变量名 / 注释不受此限制）");
+
+  // ---- L-14 显示名转换必须纯读：不修改任何 state ----------------------------------------
+  const stateBeforeL = JSON.stringify(legacyL);
+  G("getResourceDisplayName")("ore:凡晶石");
+  G("getResourceDisplayName")("mineral:三钛合金");
+  DL.getShipName("rifter");
+  DL.getItemName("天使低级加密数据");
+  sandbox.getShipConfigById("rifter");
+  okL(JSON.stringify(legacyL) === stateBeforeL, "显示名转换必须只读，渲染前后 state 深度一致");
+
+  // ---- L-15 数值/配方/库存内部键保持（显示层改动零数值影响） ----------------------------
+  okL(legacyL.resources.ores["凡晶石"] === 777 && legacyL.resources.minerals["三钛合金"] === 888 &&
+      legacyL.inventory.ships[0].shipId === "rifter" && legacyL.inventory.ships[0].enhancementLevel === 0,
+    "数值/配方/库存内部键必须保持（凡晶石/三钛合金/rifter 数值与键名不变）");
+
+  // ---- L-16 制造材料显示转换：真实扣费仍走 material 内部键 ------------------------------
+  const mfgL = sandbox.getShipEngineeringDisplayState(legacyL, Date.now());
+  okL(mfgL && Array.isArray(mfgL.componentMaterials) && mfgL.componentMaterials.length > 0 &&
+      mfgL.componentMaterials.some(item => item.material === "三钛合金" || item.material === "类银超金属") &&
+      mfgL.componentMaterials.every(item => typeof item.material === "string" && item.material.length > 0),
+    "制造成本材料内部键必须保持（三钛合金等），显示转换由 UI 经 DisplayNames 完成");
+  const confirmL = sandbox.getActionConfirmationDisplayState(legacyL, "shipComp", Date.now());
+  okL(confirmL && confirmL.requirements.some(item => item.name === "三钛合金" && item.displayName === "标准钛材"),
+    "确认弹窗材料 name 保持内部键且 displayName 为新名（标准钛材）");
+
+  // ---- L-17 队列显示态可读取且 label 经词级转换 ----------------------------------------
+  const queueL = sandbox.getQueueDisplayState(legacyL);
+  okL(queueL && Array.isArray(queueL.items), "队列显示态必须可读取（target 保持逻辑键）");
+
+  // ---- L-18 顶栏余额文案（shell-render 显示层） ----------------------------------------
+  const shellSrcL = fs.readFileSync(path.join(root, "js/ui/shell-render.js"), "utf8");
+  okL(shellSrcL.includes("星币（SC）") && shellSrcL.includes("功勋（MR）") && !shellSrcL.includes("可用 ISK"),
+    "顶栏余额文案必须为 星币（SC）/功勋（MR），不得出现 可用 ISK");
+
+  // ---- L-19 定点返修：显示名回退链 / 玩家可见泄漏清理 ----------------------------------
+  // 1) getResourceDisplayName 回退链：DisplayNames 映射 → ResourceRegistry definition.name → 原 ID
+  okL(G("getResourceDisplayName")("ore:凡晶石") === "铁硅原矿" &&
+      G("getResourceDisplayName")("mineral:三钛合金") === "标准钛材" &&
+      G("getResourceDisplayName")("component:integrated_hull") === "综合舰体组件" &&
+      G("getResourceDisplayName")("consumable:fuel") === "燃料单元" &&
+      G("getResourceDisplayName")("ammo:laser") === "激光晶体弹药" &&
+      G("getResourceDisplayName")("unknown:not_real") === "unknown:not_real",
+    "getResourceDisplayName 回退链：有映射用新名；未映射回退已注册 definition.name；完全未知才回退原始 ID");
+
+  // 2) index.html 四处旧占位必须消失（仅显示文字）
+  const htmlL19 = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  okL(!htmlL19.includes("灼烧岩") && !htmlL19.includes("类银超金属") &&
+      !htmlL19.includes("干焦岩带") && !htmlL19.includes("超新星诺克石") &&
+      htmlL19.includes("赤镍矿 × 1,050") && htmlL19.includes("银镍合金 × 890") &&
+      htmlL19.includes("区域：诺瓦矿带") && htmlL19.includes("产出：诺瓦陶金"),
+    "index.html 四处旧占位（灼烧岩/类银超金属/干焦岩带/超新星诺克石）必须替换为新名");
+
+  // 3) ships.js flavor 不得出现旧势力名
+  const shipsSrcL19 = fs.readFileSync(path.join(root, "js/data/ships.js"), "utf8");
+  const flavorLinesL19 = shipsSrcL19.split("\n").filter(line => line.includes("flavor:"));
+  okL(flavorLinesL19.length >= 9 && flavorLinesL19.every(line =>
+        !line.includes("天使") && !line.includes("血袭者") && !line.includes("萨沙")) &&
+      flavorLinesL19.some(line => line.includes("苍穹劫团")) &&
+      flavorLinesL19.some(line => line.includes("赤誓教团")) &&
+      flavorLinesL19.some(line => line.includes("静默集群")),
+    "舰船 flavor 不得出现旧势力名（天使/血袭者/萨沙），必须为新势力名");
+
+  // 4) 考古页面实际渲染：LP 文案全部消失（经 DisplayNames 统一为功勋）
+  const archBodyL19 = makeElement();
+  const archOrigL19 = sandbox.document.getElementById;
+  const archStateBeforeL19 = JSON.stringify(sandbox.gameState);
+  const archOrigArtifactsL19 = sandbox.gameState.resources.artifacts;
+  sandbox.gameState.resources.artifacts = { ...(archOrigArtifactsL19 || {}) };
+  sandbox.gameState.resources.artifacts["art_i_lp"] = 2; // 确保 LP 文物库存区真实渲染
+  sandbox.document.getElementById = (id) => id === "archaeology-body" ? archBodyL19 : makeElement();
+  try {
+    sandbox.renderArchaeologyPage(Date.now());
+    okL(!archBodyL19.innerHTML.includes("LP ×") && !archBodyL19.innerHTML.includes("兑换全部 LP") &&
+        !archBodyL19.innerHTML.includes("兑换 LP") && archBodyL19.innerHTML.includes("功勋"),
+      "考古页面实际渲染不得出现 LP 文案，必须为功勋");
+  } finally {
+    sandbox.document.getElementById = archOrigL19;
+    if (archOrigArtifactsL19 !== undefined && archOrigArtifactsL19 !== null) sandbox.gameState.resources.artifacts = archOrigArtifactsL19;
+    else delete sandbox.gameState.resources.artifacts;
+  }
+  okL(JSON.stringify(sandbox.gameState) === archStateBeforeL19, "考古页面渲染必须纯读（渲染前后 state 深度一致）");
+
+  // 5) 死亡空间卡片实际渲染：门票/材料经统一显示 API + 功勋；复渲染纯读
+  const dsGridL19 = makeElement();
+  const combatOrigGetElL19 = sandbox.document.getElementById;
+  const origTierL19 = sandbox.gameState.combat.deathspaceTier;
+  sandbox.gameState.combat.deathspaceTier = 2; // tier 2 含 苍穹劫团/赤誓教团/静默集群 三站点
+  sandbox.document.getElementById = (id) => id === "deathspace-grid" ? dsGridL19 : makeElement();
+  try {
+    sandbox.renderCombatPanel(Date.now()); // 预热（recovery 结算副作用只发生一次）
+    const combatHtmlL19 = dsGridL19.innerHTML;
+    okL(combatHtmlL19.includes("苍穹劫团") && combatHtmlL19.includes("赤誓教团") && combatHtmlL19.includes("静默集群") &&
+        !combatHtmlL19.includes("天使") && !combatHtmlL19.includes("血袭者") && !combatHtmlL19.includes("萨沙") &&
+        combatHtmlL19.includes("功勋") && !combatHtmlL19.includes("LP"),
+      "死亡空间卡片实际渲染必须显示转换后的门票/材料名（苍穹劫团/赤誓教团/静默集群）与功勋，不得泄漏旧势力前缀或 LP");
+    const combatStateAfter1L19 = JSON.stringify(sandbox.gameState);
+    sandbox.renderCombatPanel(Date.now() + 1000); // 复渲染：渲染本身必须纯读
+    okL(JSON.stringify(sandbox.gameState) === combatStateAfter1L19,
+      "死亡空间卡片复渲染必须纯读（渲染前后 state 深度一致）");
+  } finally {
+    sandbox.document.getElementById = combatOrigGetElL19;
+    sandbox.gameState.combat.deathspaceTier = origTierL19;
+  }
+
+  // 6) 研究协议 scopeText 使用 星币/功勋
+  const autoSellDispL19 = sandbox.getResearchProtocolDisplayState(sandbox.gameState, "autosell");
+  const autoConvDispL19 = sandbox.getResearchProtocolDisplayState(sandbox.gameState, "autoconv");
+  const planAutoDispL19 = sandbox.getResearchProtocolDisplayState(sandbox.gameState, "planauto");
+  okL(autoSellDispL19 && autoSellDispL19.scopeText.includes("星币文物") &&
+      !autoSellDispL19.scopeText.includes("ISK 文物") &&
+      autoConvDispL19 && autoConvDispL19.scopeText.includes("功勋文物") &&
+      !autoConvDispL19.scopeText.includes("LP 文物") &&
+      planAutoDispL19 && planAutoDispL19.scopeText.includes("最低星币储备") &&
+      !planAutoDispL19.scopeText.includes("最低 ISK 储备"),
+    "研究协议 scopeText 必须使用 星币/功勋（自动处理范围与最低储备文案）");
+
+
+  console.log("Batch L IP 去相似化 · 玩家可见名称替换校验通过（" + lChecks + " 项）：DisplayNames 公开 API 与全部映射冻结、52 脚本顺序（display-names 早于 resources/selectors/UI）、货币 星币/功勋（SC/MR）、三势力 苍穹劫团/赤誓教团/静默集群 且 faction ID 保持 angel/blood/sansha、矿石/矿物原创显示名（铁硅原矿/标准钛材/暗质晶核等）而内部库存键保持、势力加密数据/门票显示转换（劫团低阶密钥等）内部 special 键保持、EVE 舰船原创名（星矛级/山海级/觅迹级等）shipId 保持、旧存档 fixture 内部 key 与数值逐字节保留、仓库/制造/队列/顶栏显示新名、成就 197 项与 262 小时档位不变（生成器重生成新哈希）、研究 38 节点与六协议不变、index.html 与主要 UI 无旧专名泄漏、显示名转换纯读零副作用、定点返修（回退链 映射→definition.name→原 ID、index 四处占位替换、舰船 flavor 无旧势力词、考古实际渲染无 LP 文案、死亡空间卡片实际渲染转换门票/材料名且无旧势力前缀、协议 scopeText 星币/功勋、渲染测试前后 state 深度一致）");
+}
+
+// ============================================================================================
+// Batch N 新手任务系统：启程级、任务目录与原创文案冻结
+// 约束：
+//   1) 本批只冻结数据与文案，不接入进度推进、奖励发放、UI 渲染；
+//   2) 目标与奖励一律存内部真实 ID，展示交由 DisplayNames；禁止幽灵 ID；
+//   3) 启程级是引导专属训练艇，用料/工时刻意低于常规护卫舰模型，已在整船材料与预算两处过滤器中显式排除。
+// ============================================================================================
+{
+  let nChecks = 0;
+  const okN = (condition, message) => { if (!condition) throw new Error("Batch N 校验失败：" + message); nChecks++; };
+
+  const starterN = vm.runInContext("STARTER_SHIPS", sandbox);
+  const industrialN = vm.runInContext("INDUSTRIAL_SHIPS", sandbox);
+  const archShipsN = vm.runInContext("ARCHAEOLOGY_SHIPS", sandbox);
+  const recipesN = vm.runInContext("SHIP_ASSEMBLY_RECIPES", sandbox);
+  const blueprintsN = vm.runInContext("SHIP_BLUEPRINTS", sandbox);
+  const componentsN = vm.runInContext("SHIP_COMPONENT_RECIPES", sandbox);
+  const fittingsN = vm.runInContext("DEFAULT_COMBAT_FITTINGS", sandbox);
+  const equipmentN = vm.runInContext("EQUIPMENT_DB", sandbox);
+  const miningAreasN = vm.runInContext("MINING_AREAS", sandbox);
+  const smeltingN = vm.runInContext("SMELTING_RECIPES", sandbox);
+  const gasAreasN = vm.runInContext("GAS_AREAS", sandbox);
+  const planetTypesN = vm.runInContext("PLANET_TYPES", sandbox);
+  const sitesN = vm.runInContext("ARCHAEOLOGY_SITES", sandbox);
+  const zonesN = vm.runInContext("COMBAT_ZONES", sandbox);
+  const ammoRecipesN = vm.runInContext("AMMO_ENG_RECIPES", sandbox);
+  const DN = sandbox.DisplayNames;
+  const TD = sandbox.TutorialData;
+
+  // ---- N-01 启程级正式数据逐项冻结 ----------------------------------------------------
+  const rookieN = starterN.rookie_corvette;
+  okN(!!rookieN && rookieN.id === "rookie_corvette" && rookieN.name === "启程级" &&
+      rookieN.tier === "T1" && rookieN.type === "frigate" &&
+      rookieN.hp.shield === 240 && rookieN.hp.armor === 80 && rookieN.hp.structure === 80 && rookieN.totalHp === 400 &&
+      rookieN.dodge === 22 && rookieN.speed === 240 && rookieN.targeting === 105 &&
+      rookieN.capacitor.capacity === 90 && rookieN.capacitor.rechargeRate === 4 &&
+      rookieN.fuelEfficiency === 1.0 &&
+      rookieN.slots.high === 1 && rookieN.slots.mid === 1 && rookieN.slots.low === 1 && rookieN.slots.rig === 0 &&
+      rookieN.recommendedWeapon === "laser" &&
+      rookieN.unlock && rookieN.unlock.type === "tutorial" && rookieN.unlock.isDefault === false,
+    "启程级基础属性必须与冻结值逐项一致（400 总血 / 22 闪避 / 240 速度 / 105 锁定 / 90 电容 / 1-1-1-0 槽位 / tutorial 解锁）");
+  okN(rookieN.hp.shield + rookieN.hp.armor + rookieN.hp.structure === rookieN.totalHp &&
+      typeof rookieN.flavor === "string" && rookieN.flavor.trim().length >= 20,
+    "启程级三层血量之和必须等于 totalHp=400，且必须有原创 flavor 文案");
+  okN(Object.keys(rookieN.bonuses).length === 6 &&
+      rookieN.bonuses.laserDamage === 0.02 && rookieN.bonuses.missileDamage === 0.02 && rookieN.bonuses.cannonDamage === 0.02 &&
+      rookieN.bonuses.shieldCapacity === 0.05 && rookieN.bonuses.miningLaserEfficiency === 0.03 &&
+      rookieN.bonuses.archaeologyScanStrength === 2,
+    "启程级加成必须恰为冻结的六项（三系武器 2% / 护盾 5% / 采矿 3% / 考古扫描 +2）");
+
+  // ---- N-02 启程级禁用字段 -------------------------------------------------------------
+  okN(!("shieldRepair" in rookieN.bonuses) && !("archaeologyFailureDamageReduction" in rookieN.bonuses) &&
+      !("gasLaserEfficiency" in rookieN.bonuses) && rookieN.image === undefined,
+    "启程级不得含护盾维修 / 考古失败减伤 / 气云采集效率加成，也不得指定专属贴图（走通用 3D 兜底）");
+
+  // ---- N-03 / N-04 启程级专属配方（1/1/1、免蓝图）--------------------------------------
+  const rookieRecipeN = recipesN.find(item => item.id === "rookie_corvette");
+  okN(!!rookieRecipeN && rookieRecipeN.shipId === "rookie_corvette" && rookieRecipeN.level === 1 &&
+      rookieRecipeN.time === 30 && rookieRecipeN.xp === 30 && !rookieRecipeN.materialCost &&
+      Object.keys(rookieRecipeN.componentCost).length === 3 &&
+      rookieRecipeN.componentCost.integrated_hull === 1 && rookieRecipeN.componentCost.power_core === 1 &&
+      rookieRecipeN.componentCost.functional_system === 1,
+    "启程级配方必须是 1/1/1 组件、Lv.1、30s、30xp，且无额外材料消耗");
+  okN(rookieRecipeN.requiresBlueprint === false &&
+      !blueprintsN.some(item => item.id === "rookie_corvette" || item.shipId === "rookie_corvette"),
+    "启程级必须免蓝图，且不得出现在蓝图目录中");
+  const rookieMaterialsN = {};
+  for (const [componentId, count] of Object.entries(rookieRecipeN.componentCost)) {
+    const component = componentsN.find(item => item.id === componentId);
+    if (!component || component.level !== 1) throw new Error("Batch N 校验失败：启程级引用了非 Lv.1 T1 组件 " + componentId);
+    for (const [material, quantity] of Object.entries(component.cost)) {
+      rookieMaterialsN[material] = (rookieMaterialsN[material] || 0) + quantity * count;
+    }
+  }
+  okN(rookieMaterialsN["三钛合金"] === 82 && rookieMaterialsN["类银超金属"] === 13 &&
+      rookieMaterialsN["重金属"] === 9 && rookieMaterialsN["稀有气体"] === 9,
+    "启程级整船材料必须为 三钛合金82 / 类银超金属13 / 重金属9 / 稀有气体9（恰为常规护卫舰的一半）");
+
+  // ---- N-05 建造后必须空装 --------------------------------------------------------------
+  okN(fittingsN.rookie_corvette === undefined && Object.keys(fittingsN).length === 3 &&
+      ["rifter", "kestrel", "atron"].every(id => !!fittingsN[id]),
+    "启程级不得写入 DEFAULT_COMBAT_FITTINGS（建造后必须空装），默认配装仍只覆盖三艘起始护卫舰");
+
+  // ---- N-06 显示名 -----------------------------------------------------------------------
+  okN(DN.getShipName("rookie_corvette") === "启程级" && Object.isFrozen(DN.SHIP_NAMES),
+    "DisplayNames 必须把 rookie_corvette 显示为 启程级，且映射表保持冻结");
+
+  // ---- N-07 任务目录规模与唯一性 -----------------------------------------------------------
+  okN(!!TD && Array.isArray(TD.tasks) && TD.tasks.length === 26 &&
+      new Set(TD.tasks.map(item => item.id)).size === 26,
+    "TutorialData 必须冻结 26 条任务且 ID 唯一");
+  okN(/<script defer src="\.\/js\/data\/tutorial\.js"><\/script>/.test(html),
+    "index.html 必须以 defer 方式引入 js/data/tutorial.js");
+
+  // ---- N-08 章节分布 7 / 7 / 6 / 6 ---------------------------------------------------------
+  const groupN = { prologue: 0, industrial: 0, archaeology: 0, combat: 0 };
+  for (const task of TD.tasks) groupN[task.chapter] = (groupN[task.chapter] || 0) + 1;
+  okN(groupN.prologue === 7 && groupN.industrial === 7 && groupN.archaeology === 6 && groupN.combat === 6,
+    "章节分布必须为 序章7 / 工业7 / 考古6 / 作战6");
+  okN(TD.chapterOrder.every(chapter => {
+    const orders = TD.tasks.filter(task => task.chapter === chapter).map(task => task.order);
+    return orders.every((value, index) => value === index + 1);
+  }), "每个章节内部的 order 必须从 1 起连续递增");
+
+  // ---- N-09 / N-10 文案完整性与去重 --------------------------------------------------------
+  okN(TD.tasks.every(task =>
+      typeof task.title === "string" && task.title.trim().length > 0 &&
+      ["边疆调度员", "引航员"].includes(task.speaker) &&
+      typeof task.briefing === "string" && task.briefing.trim().length >= 20 &&
+      typeof task.objectiveText === "string" && task.objectiveText.trim().length > 0 &&
+      typeof task.completionText === "string" && task.completionText.trim().length > 0 &&
+      typeof task.progressType === "string" && task.progressType.trim().length > 0 &&
+      Array.isArray(task.unlocks) && !!task.reward && typeof task.reward === "object" &&
+      (task.navigationTarget === null || typeof task.navigationTarget === "string")),
+    "26 条任务的标题/叙述人/简报/目标/完成语/进度类型/奖励/导航字段不得缺失或类型错误");
+  okN(TD.tasks.every(task =>
+      task.briefing !== task.objectiveText && task.objectiveText !== task.completionText &&
+      task.briefing !== task.completionText),
+    "同一任务的简报、目标描述、完成语不得互相重复");
+
+  // ---- N-11 深度冻结 ------------------------------------------------------------------------
+  const deepFrozenN = (value) => {
+    if (value === null || typeof value !== "object") return true;
+    if (!Object.isFrozen(value)) return false;
+    return Object.getOwnPropertyNames(value).every(key => deepFrozenN(value[key]));
+  };
+  okN(deepFrozenN(TD), "TutorialData 及其全部嵌套对象/数组必须 Object.freeze");
+
+  // ---- N-12 / N-13 分支解锁点唯一 ------------------------------------------------------------
+  okN(JSON.stringify(TD.byId.P7.unlocks.slice().sort()) === JSON.stringify(["archaeology", "combat", "industrial"]),
+    "P7 必须一次性解锁 工业 / 考古 / 作战 三条分支");
+  okN(TD.byId.P5.unlocks.length === 0 && TD.byId.P6.unlocks.length === 0 &&
+      TD.tasks.filter(task => task.unlocks.length > 0).length === 1,
+    "P5 / P6 不得提前解锁分支，全表只允许 P7 一处解锁点");
+
+  // ---- N-13B Batch O 奖励契约通用工具（resourceAmounts / equipment / ships / blueprints 四桶）----
+  const RN = {
+    ISK: "currency:isk", TI: "mineral:三钛合金", AG: "mineral:类银超金属",
+    HEAVY: "planetary:重金属", RARE: "planetary:稀有气体", FUEL: "consumable:fuel",
+    PROBE: "probe:core_probe_i", AL: "ammo:laser", AM: "ammo:missile", AC: "ammo:cannon"
+  };
+  const sizesN = (reward) => ({
+    res: Object.keys((reward && reward.resourceAmounts) || {}).length,
+    eq: Object.keys((reward && reward.equipment) || {}).length,
+    sh: Object.keys((reward && reward.ships) || {}).length,
+    bp: Object.keys((reward && reward.blueprints) || {}).length
+  });
+  const emptyRewardN = (reward) => {
+    const s = sizesN(reward);
+    return !!reward && s.res === 0 && s.eq === 0 && s.sh === 0 && s.bp === 0;
+  };
+  const resAmtN = (reward, key) => ((reward && reward.resourceAmounts) || {})[key];
+
+  // ---- N-14 I4 双行星 + 原额补贴（奖励改存 reward.resourceAmounts 命名空间键）------------------
+  const i4N = TD.byId.I4;
+  const lavaN = planetTypesN.find(item => item.id === "lava");
+  const gasPlanetN = planetTypesN.find(item => item.id === "gas");
+  okN(i4N.progressType === "planetDeploy" && i4N.target.planetTypes.length === 2 &&
+      i4N.target.planetTypes.includes("lava") && i4N.target.planetTypes.includes("gas") &&
+      resAmtN(i4N.reward, RN.ISK) === 276000 && resAmtN(i4N.reward, RN.AG) === 26 &&
+      sizesN(i4N.reward).res === 2 && sizesN(i4N.reward).eq === 0 &&
+      sizesN(i4N.reward).sh === 0 && sizesN(i4N.reward).bp === 0,
+    "I4 必须是熔岩+气态双行星部署，奖励恰为 276000 星币 + 26 类银超金属，无其他奖励");
+  okN(lavaN && gasPlanetN && lavaN.constructionCost.isk + gasPlanetN.constructionCost.isk === resAmtN(i4N.reward, RN.ISK),
+    "I4 补贴必须恰好覆盖两颗行星的建造费合计（138000 × 2）");
+
+  // ---- N-15 序章 P1-P7 精确冻结 ----------------------------------------------------------------
+  const p1 = TD.byId.P1;
+  okN(p1.progressType === "claim" && p1.target.kit === "registration_materials" && p1.unlocks.length === 0,
+    "P1 必须是手动领取登记材料包，且不得解锁分支");
+  okN(resAmtN(p1.reward, RN.TI) === 82 && resAmtN(p1.reward, RN.AG) === 13 &&
+      resAmtN(p1.reward, RN.HEAVY) === 9 && resAmtN(p1.reward, RN.RARE) === 9 &&
+      sizesN(p1.reward).res === 4 && sizesN(p1.reward).eq === 0 &&
+      sizesN(p1.reward).sh === 0 && sizesN(p1.reward).bp === 0,
+    "P1 奖励必须恰好为 三钛合金82 / 类银超金属13 / 重金属9 / 稀有气体9");
+  const p2 = TD.byId.P2, p3 = TD.byId.P3, p4 = TD.byId.P4;
+  okN(p2.progressType === "manufacture" && p2.target.recipeId === "integrated_hull" && p2.target.count === 1 && emptyRewardN(p2.reward),
+    "P2 必须只对应 综合舰体组件 ×1 且无奖励");
+  okN(p3.progressType === "manufacture" && p3.target.recipeId === "power_core" && p3.target.count === 1 && emptyRewardN(p3.reward),
+    "P3 必须只对应 动力控制核心 ×1 且无奖励");
+  okN(p4.progressType === "manufacture" && p4.target.recipeId === "functional_system" && p4.target.count === 1 && emptyRewardN(p4.reward),
+    "P4 必须只对应 舰船功能组件 ×1 且无奖励");
+  const p5 = TD.byId.P5;
+  okN(p5.progressType === "build_and_assign" && p5.target.shipId === "rookie_corvette" && p5.target.count === 1 &&
+      p5.target.slot === "combat" && emptyRewardN(p5.reward) && p5.unlocks.length === 0,
+    "P5 必须同时要求建造启程级并编入战斗位，且无奖励、不解锁分支（不得拆为 P5/P6）");
+  const p6 = TD.byId.P6;
+  okN(p6.progressType === "claim" && p6.target.kit === "registration_bonus" && resAmtN(p6.reward, RN.ISK) === 50000 &&
+      sizesN(p6.reward).res === 1 && sizesN(p6.reward).eq === 0 && sizesN(p6.reward).sh === 0 &&
+      sizesN(p6.reward).bp === 0 && p6.unlocks.length === 0,
+    "P6 必须恰为 50000 星币且无其他奖励、不解锁分支");
+  const p7 = TD.byId.P7;
+  okN(p7.progressType === "confirm" && emptyRewardN(p7.reward) &&
+      JSON.stringify(p7.unlocks.slice().sort()) === JSON.stringify(["archaeology", "combat", "industrial"]),
+    "P7 奖励必须为空，且唯一解锁 工业/考古/作战 三分支");
+
+  // ---- N-16 工业 I1-I7 精确冻结 ----------------------------------------------------------------
+  const i1 = TD.byId.I1;
+  okN(i1.progressType === "claim_install_assign" && i1.target.equipmentId === "t1_mining_laser" &&
+      i1.target.shipId === "rookie_corvette" && i1.target.slot === "mining" &&
+      i1.reward.equipment["t1_mining_laser"] === 1 && resAmtN(i1.reward, RN.FUEL) === 200 &&
+      sizesN(i1.reward).res === 1 && sizesN(i1.reward).eq === 1 &&
+      sizesN(i1.reward).sh === 0 && sizesN(i1.reward).bp === 0,
+    "I1 必须领取并安装基础采矿器到启程级采矿位，奖励 t1_mining_laser ×1 + 燃料 200");
+  const i2 = TD.byId.I2;
+  okN(i2.progressType === "mine" && i2.target.resourceId === "ore:凡晶石" && i2.target.count === 364 && i2.target.sinceActivation === true &&
+      emptyRewardN(i2.reward), "I2 必须新采集凡晶石 364（显示铁硅原矿），无奖励");
+  const i3 = TD.byId.I3;
+  okN(i3.progressType === "refine" && i3.target.outputId === RN.TI && i3.target.count === 364 && i3.target.sinceActivation === true &&
+      emptyRewardN(i3.reward), "I3 必须新冶炼三钛合金 364（显示标准钛材），无奖励");
+  const i5 = TD.byId.I5;
+  okN(i5.progressType === "planetExtract" && i5.target.resources[RN.HEAVY] === 18 && i5.target.resources[RN.RARE] === 18 &&
+      emptyRewardN(i5.reward), "I5 必须真实提取 重金属18 / 稀有气体18，无奖励（不得 200/200）");
+  const i6 = TD.byId.I6;
+  okN(i6.progressType === "manufacture_components" && i6.target.components.integrated_hull === 2 &&
+      i6.target.components.power_core === 2 && i6.target.components.functional_system === 2 &&
+      i6.target.sinceActivation === true &&
+      i6.reward.blueprints.miner_frigate === 1 && sizesN(i6.reward).bp === 1 &&
+      sizesN(i6.reward).res === 0 && sizesN(i6.reward).eq === 0 && sizesN(i6.reward).sh === 0,
+    "I6 必须新制造三组件各 2 件，奖励恰为 拓岩级蓝图 ×1（Batch O 契约修正：不得为空奖励）");
+  const i7 = TD.byId.I7;
+  okN(i7.progressType === "assemble_ship" && i7.target.shipId === "miner_frigate" && i7.target.count === 1,
+    "I7 目标必须是玩家新总装 拓岩级 ×1（拓岩级为玩家制造产物，非赠予）");
+  okN(resAmtN(i7.reward, RN.ISK) === 50000 && i7.reward.ships.gas_frigate &&
+      i7.reward.ships.gas_frigate.count === 1 && i7.reward.ships.gas_frigate.fitting === "empty" &&
+      sizesN(i7.reward).res === 1 && sizesN(i7.reward).sh === 1 &&
+      sizesN(i7.reward).eq === 0 && sizesN(i7.reward).bp === 0,
+    "I7 奖励必须恰为 50000 星币 + 空配捕云级 ×1，无其他奖励");
+
+  // ---- N-17 考古 A1-A6 精确冻结 ----------------------------------------------------------------
+  const a1 = TD.byId.A1;
+  okN(a1.progressType === "claim" && a1.target.kit === "archaeology_starter" &&
+      resAmtN(a1.reward, RN.PROBE) === 20 && resAmtN(a1.reward, RN.FUEL) === 200 &&
+      sizesN(a1.reward).res === 2 && sizesN(a1.reward).eq === 0 &&
+      sizesN(a1.reward).sh === 0 && sizesN(a1.reward).bp === 0,
+    "A1 必须手动领取实习包，奖励 20 标准考古探针 I + 燃料 200，不要求自造探针、不发舰");
+  const a2 = TD.byId.A2;
+  okN(a2.progressType === "assign" && a2.target.shipId === "rookie_corvette" && a2.target.slot === "archaeology" &&
+      emptyRewardN(a2.reward), "A2 必须将启程级编入考古位，不要求蓝图或制造觅迹级");
+  const a3 = TD.byId.A3;
+  okN(a3.progressType === "archaeology_attempt" && a3.target.tier === "I" && a3.target.count === 1 && a3.target.acceptEither === true &&
+      ["site_i_a", "site_i_b", "site_i_c"].every(id => a3.target.sites.includes(id)) && emptyRewardN(a3.reward),
+    "A3 必须是任一 I 级遗迹 + 一次真实尝试（成功失败均完成），不要求三遗迹各一次");
+  const a4 = TD.byId.A4;
+  okN(a4.progressType === "obtain_artifact" && a4.target.count === 1 && a4.target.sinceActivation === true &&
+      emptyRewardN(a4.reward), "A4 必须任务激活后获得任意遗物 1 件，无奖励");
+  const a5 = TD.byId.A5;
+  okN(a5.progressType === "dispose_artifact" && a5.target.count === 1 && emptyRewardN(a5.reward),
+    "A5 必须出售或兑换任意遗物 1 件，无奖励");
+  const a6 = TD.byId.A6;
+  okN(a6.progressType === "confirm" && resAmtN(a6.reward, RN.ISK) === 50000 &&
+      a6.reward.ships.heron && a6.reward.ships.heron.count === 1 && a6.reward.ships.heron.fitting === "empty" &&
+      resAmtN(a6.reward, RN.PROBE) === 20 &&
+      sizesN(a6.reward).res === 2 && sizesN(a6.reward).sh === 1 &&
+      sizesN(a6.reward).eq === 0 && sizesN(a6.reward).bp === 0,
+    "A6 奖励必须恰为 50000 星币 + 空配觅迹级 ×1 + 20 标准考古探针 I，不发觅迹级蓝图");
+
+  // ---- N-18 作战 C1-C6 精确冻结 ----------------------------------------------------------------
+  const c1 = TD.byId.C1;
+  okN(c1.progressType === "choose_combat_training" && JSON.stringify(c1.target.tracks) === JSON.stringify(["laser", "missile", "cannon"]) &&
+      c1.target.once === true && emptyRewardN(c1.reward),
+    "C1 必须三方向选一且仅一次，无直接奖励（奖励走 choiceRewards）");
+  const c1exp = {
+    laser:   { weapon: "t1_small_laser", ammo: RN.AL },
+    missile: { weapon: "t1_light_missile_launcher", ammo: RN.AM },
+    cannon:  { weapon: "t1_small_cannon", ammo: RN.AC }
+  };
+  okN(c1.choiceRewards && ["laser", "missile", "cannon"].every(dir => {
+    const cr = c1.choiceRewards[dir], exp = c1exp[dir], s = sizesN(cr);
+    return cr && cr.equipment[exp.weapon] === 1 && cr.equipment["t1_shield_booster"] === 1 &&
+      resAmtN(cr, exp.ammo) === 100 && resAmtN(cr, RN.FUEL) === 300 &&
+      s.res === 2 && s.eq === 2 && s.sh === 0 && s.bp === 0;
+  }), "C1 三方向奖励必须逐项精确：对应武器 + 护盾增效器 + 100 弹药 + 300 燃料");
+  const c2 = TD.byId.C2;
+  okN(c2.progressType === "install" && c2.target.shipId === "rookie_corvette" && c2.target.weaponFromChoice === true &&
+      c2.target.shieldBooster === "t1_shield_booster" && emptyRewardN(c2.reward),
+    "C2 只要求安装 C1 所选武器与护盾增效器到启程级，不要求玩家自造装备");
+  const c3 = TD.byId.C3;
+  okN(c3.progressType === "assign_and_select_zone" && c3.target.shipId === "rookie_corvette" && c3.target.slot === "combat" &&
+      c3.target.zoneLevel === 1 && c3.target.zoneType === "highsec" && c3.target.zones.length === 3 &&
+      c3.target.zones.every(id => { const z = zonesN.find(zz => zz.id === id); return z && z.level === 1 && z.formationPool === "highsec"; }) &&
+      emptyRewardN(c3.reward),
+    "C3 必须将启程级编入战斗位并选择真实 Lv1 普通星带（angel_outpost/blood_hideout/sansha_outpost），无幽灵 ID");
+  const c4 = TD.byId.C4;
+  okN(c4.progressType === "kill" && c4.target.count === 1 && c4.target.sinceActivation === true && emptyRewardN(c4.reward),
+    "C4 必须任务激活后真实击毁 1 个，不要求 30 击杀");
+  const c5 = TD.byId.C5;
+  okN(c5.progressType === "clear_wave" && c5.target.wave === 1 && emptyRewardN(c5.reward),
+    "C5 必须真实清除第 1 波");
+  const c6 = TD.byId.C6;
+  okN(c6.progressType === "clear_wave_same_sortie" && c6.target.wave === 4 && c6.target.sameSortie === true &&
+      emptyRewardN(c6.reward),
+    "C6 必须是同次出击清除第 4 波，不要求手动撤离/停止挂机/清空20波/自制正式舰");
+  const c6exp = { laser: { ship: "rifter", ammo: RN.AL }, missile: { ship: "kestrel", ammo: RN.AM }, cannon: { ship: "atron", ammo: RN.AC } };
+  okN(c6.choiceRewards && ["laser", "missile", "cannon"].every(dir => {
+    const cr = c6.choiceRewards[dir], exp = c6exp[dir], s = sizesN(cr);
+    return cr && resAmtN(cr, RN.ISK) === 50000 && cr.ships[exp.ship] &&
+      cr.ships[exp.ship].count === 1 && cr.ships[exp.ship].fitting === "empty" &&
+      resAmtN(cr, exp.ammo) === 100 && resAmtN(cr, RN.FUEL) === 300 &&
+      s.res === 3 && s.eq === 0 && s.sh === 1 && s.bp === 0;
+  }), "C6 三方向奖励必须逐项精确：50000 星币 + 空配正战舰（星矛/铁卫/闪刃）+ 100 弹药 + 300 燃料");
+
+  // ---- N-19 A7 / C7 已删除 ----------------------------------------------------------------------
+  okN(!TD.byId.A7 && !TD.byId.C7 && !TD.tasks.some(task => task.id === "A7" || task.id === "C7"),
+    "A7 与 C7 已在本批删除，不得残留在任务目录中");
+
+  // ---- N-20 全表只允许 I7 / A6 / C6 三处赠予空配成品舰 -------------------------------------------
+  const shipRewardTasks = new Set();
+  for (const t of TD.tasks) {
+    if (sizesN(t.reward).sh > 0) shipRewardTasks.add(t.id);
+    if (t.choiceRewards) {
+      for (const dir of Object.keys(t.choiceRewards)) {
+        if (sizesN(t.choiceRewards[dir]).sh > 0) shipRewardTasks.add(t.id);
+      }
+    }
+  }
+  okN(JSON.stringify([...shipRewardTasks].sort()) === JSON.stringify(["A6", "C6", "I7"]),
+    "全表只允许 I7 / A6 / C6 三处赠予空配成品舰（P5 启程级与 I7 目标拓岩级均为玩家自造，不计入）");
+  okN(i7.reward.ships.gas_frigate.fitting === "empty" && a6.reward.ships.heron.fitting === "empty" &&
+      c6.choiceRewards.laser.ships.rifter.fitting === "empty" &&
+      c6.choiceRewards.missile.ships.kestrel.fitting === "empty" &&
+      c6.choiceRewards.cannon.ships.atron.fitting === "empty",
+    "I7/A6/C6 赠予的三艘成品舰必须全部为空配（fitting=empty）");
+
+  // ---- N-21 幽灵 ID 防线（适配新 reward 结构：minerals/equipment/fuel/probe/ammo/ships + choiceRewards）----
+  const shipIdsN = new Set([...Object.keys(starterN), ...Object.keys(industrialN), ...Object.keys(archShipsN)]);
+  const equipIdsN = new Set(Object.keys(equipmentN));
+  const componentIdsN = new Set(componentsN.map(item => item.id));
+  const siteIdsN = new Set(sitesN.map(item => item.id));
+  const zoneIdsN = new Set(zonesN.map(item => item.id));
+  const areaNamesN = new Set(miningAreasN.map(item => item.name));
+  const planetIdsN = new Set(planetTypesN.map(item => item.id));
+  const ammoKindsN = new Set(ammoRecipesN.filter(item => item.output && item.output.weapon).map(item => item.output.weapon));
+  const probeItemIdsN = new Set(ammoRecipesN.filter(item => item.output && item.output.type === "probe").map(item => item.output.itemId));
+  const resourceKeysN = new Set([
+    ...smeltingN.map(item => item.outputMineral),
+    ...miningAreasN.map(item => item.ore),
+    ...gasAreasN.map(item => item.gas),
+    ...planetTypesN.map(item => item.output)
+  ]);
+  const slotTokensN = new Set(["combat", "mining", "archaeology"]);
+  const navTokensN = new Set([
+    ...[...html.matchAll(/data-page="([^"]+)"/g)].map(match => match[1]),
+    ...[...html.matchAll(/data-skill="([^"]+)"/g)].map(match => match[1])
+  ]);
+  // Batch O：resourceAmounts 一律为 ResourceRegistry 命名空间键，逐 namespace 校验真实 key
+  const nsKeySetsN = {
+    currency: new Set(["isk", "lp"]),
+    ore: new Set(miningAreasN.map(item => item.ore)),
+    mineral: new Set(smeltingN.map(item => item.outputMineral)),
+    planetary: new Set(planetTypesN.map(item => item.output)),
+    gas: new Set(gasAreasN.map(item => item.gas)),
+    consumable: new Set(["fuel"]),
+    ammo: ammoKindsN,
+    probe: probeItemIdsN,
+    component: componentIdsN
+  };
+  const ghostN = [];
+  const checkIdN = (set, value, label) => { if (value !== undefined && value !== null && !set.has(value)) ghostN.push(label + "=" + value); };
+  const checkResIdN = (id, label) => {
+    const sep = String(id).indexOf(":");
+    if (sep <= 0) { ghostN.push(label + "=" + id + "(缺命名空间)"); return; }
+    const ns = String(id).slice(0, sep), key = String(id).slice(sep + 1);
+    const set = nsKeySetsN[ns];
+    if (!set) { ghostN.push(label + "=" + id + "(未知命名空间)"); return; }
+    if (!set.has(key)) ghostN.push(label + "=" + id);
+  };
+  const checkRewardBucketsN = (reward, label) => {
+    if (!reward) { ghostN.push(label + "=缺失奖励对象"); return; }
+    for (const bucket of ["resourceAmounts", "equipment", "ships", "blueprints"]) {
+      if (!reward[bucket] || typeof reward[bucket] !== "object") ghostN.push(label + "." + bucket + "=缺失");
+    }
+    Object.keys(reward.resourceAmounts || {}).forEach(id => {
+      checkResIdN(id, label + ".resourceAmounts");
+      const v = reward.resourceAmounts[id];
+      if (!Number.isInteger(v) || v < 0 || !Number.isFinite(v)) ghostN.push(label + ".resourceAmounts[" + id + "]=非法数量 " + v);
+    });
+    Object.keys(reward.equipment || {}).forEach(id => checkIdN(equipIdsN, id, label + ".equipment"));
+    Object.keys(reward.ships || {}).forEach(id => {
+      checkIdN(shipIdsN, id, label + ".ships");
+      const entry = reward.ships[id];
+      if (!entry || entry.fitting !== "empty" || !Number.isInteger(entry.count) || entry.count <= 0) ghostN.push(label + ".ships[" + id + "]=必须 count>0 且 fitting=empty");
+    });
+    Object.keys(reward.blueprints || {}).forEach(id => {
+      if (!shipIdsN.has(id)) ghostN.push(label + ".blueprints=" + id);
+      const v = reward.blueprints[id];
+      if (!Number.isInteger(v) || v <= 0) ghostN.push(label + ".blueprints[" + id + "]=非法数量 " + v);
+    });
+  };
+  for (const task of TD.tasks) {
+    const target = task.target || {};
+    checkIdN(componentIdsN, target.recipeId, task.id + ".target.recipeId");
+    checkIdN(equipIdsN, target.equipmentId, task.id + ".target.equipmentId");
+    checkIdN(shipIdsN, target.shipId, task.id + ".target.shipId");
+    checkIdN(slotTokensN, target.slot, task.id + ".target.slot");
+    checkIdN(areaNamesN, target.area, task.id + ".target.area");
+    if (target.resourceId !== undefined) checkResIdN(target.resourceId, task.id + ".target.resourceId");
+    if (target.outputId !== undefined) checkResIdN(target.outputId, task.id + ".target.outputId");
+    (target.planetTypes || []).forEach(id => checkIdN(planetIdsN, id, task.id + ".target.planetTypes"));
+    Object.keys(target.components || {}).forEach(id => checkIdN(componentIdsN, id, task.id + ".target.components"));
+    Object.keys(target.resources || {}).forEach(id => checkResIdN(id, task.id + ".target.resources"));
+    (target.sites || []).forEach(id => checkIdN(siteIdsN, id, task.id + ".target.sites"));
+    (target.zones || []).forEach(id => checkIdN(zoneIdsN, id, task.id + ".target.zones"));
+    (target.tracks || []).forEach(id => checkIdN(ammoKindsN, id, task.id + ".target.tracks"));
+    checkIdN(equipIdsN, target.shieldBooster, task.id + ".target.shieldBooster");
+    checkRewardBucketsN(task.reward, task.id + ".reward");
+    if (task.choiceRewards) {
+      for (const dir of Object.keys(task.choiceRewards)) checkRewardBucketsN(task.choiceRewards[dir], task.id + ".choiceRewards." + dir);
+    }
+    if (task.navigationTarget !== null) checkIdN(navTokensN, task.navigationTarget, task.id + ".navigationTarget");
+  }
+  okN(ghostN.length === 0, "任务目录出现幽灵 ID / 非法奖励：" + ghostN.join("、"));
+  okN(TD.tasks.some(task => task.target && task.target.shipId === "rookie_corvette") &&
+      TD.tasks.some(task => task.reward.equipment && task.reward.equipment["t1_mining_laser"] === 1),
+    "序章必须包含启程级建造目标，工业线必须发放 T1采矿激光器");
+
+  // ---- N-22 Batch O 新增冻结字段：rewardTiming / completionMode 语义固定 ----------------------
+  const timingValsN = new Set(["none", "beforeObjective", "onAction", "afterObjective"]);
+  const modeValsN = new Set(["automatic", "claim", "confirm", "choice"]);
+  okN(TD.tasks.every(t => timingValsN.has(t.rewardTiming) && modeValsN.has(t.completionMode)),
+    "26 条任务必须全部带合法的 rewardTiming 与 completionMode");
+  const byTimingN = (v) => TD.tasks.filter(t => t.rewardTiming === v).map(t => t.id).sort();
+  okN(JSON.stringify(byTimingN("beforeObjective")) === JSON.stringify(["I1", "I4"]),
+    "rewardTiming=beforeObjective 必须恰为 I1 / I4");
+  okN(JSON.stringify(byTimingN("onAction")) === JSON.stringify(["A1", "P1", "P6"]),
+    "rewardTiming=onAction 必须恰为 P1 / P6 / A1");
+  okN(JSON.stringify(byTimingN("afterObjective")) === JSON.stringify(["A6", "C6", "I6", "I7"]),
+    "rewardTiming=afterObjective 必须恰为 I6 / I7 / A6 / C6");
+  okN(JSON.stringify(TD.tasks.filter(t => t.completionMode === "choice").map(t => t.id)) === JSON.stringify(["C1"]),
+    "completionMode=choice 必须唯一为 C1");
+  okN(JSON.stringify(TD.tasks.filter(t => t.completionMode === "confirm").map(t => t.id).sort()) === JSON.stringify(["P7"]),
+    "completionMode=confirm 必须唯一为 P7（A6 走 afterObjective + claim）");
+  okN(TD.tasks.every(t => t.rewardTiming !== "none" || emptyRewardN(t.reward)),
+    "rewardTiming=none 的任务其 reward 四桶必须全空");
+  okN(TD.tasks.every(t => t.completionMode !== "automatic" || t.rewardTiming === "none"),
+    "completionMode=automatic 的任务不得携带任何发放时机");
+
+  // ---- N-19 行星槽位曲线：Lv.1-19 保底 2，其后 3 / 4 / 5 不变 -------------------------------------
+  const capStateN = JSON.parse(JSON.stringify(sandbox.gameState));
+  capStateN.planetary = { nextId: 1, deployments: [] };
+  const slotsAtN = (lvl) => {
+    capStateN.skills.planetaryIndustry = { lvl, xp: 0 };
+    return sandbox.getPlanetaryCapacityState(capStateN).slots;
+  };
+  okN(sandbox.getStationPlanetarySlotBonus(capStateN) === 0,
+    "新档空间站不应提供行星槽位加成（用于隔离纯技能曲线校验）");
+  okN(slotsAtN(1) === 2 && slotsAtN(5) === 2 && slotsAtN(9) === 2 && slotsAtN(10) === 2 && slotsAtN(19) === 2,
+    "Lv.1-19 行星槽位必须保底为 2（新手期可同时开熔岩 + 气态）");
+  okN(slotsAtN(20) === 3 && slotsAtN(29) === 3 && slotsAtN(30) === 4 && slotsAtN(39) === 4 &&
+      slotsAtN(40) === 5 && slotsAtN(99) === 5,
+    "Lv.20 起的行星槽位曲线必须保持 3 / 4 / 5 不变");
+  okN(sandbox.getPlanetaryCapacityState(capStateN).maxSlots === 5, "行星槽位硬上限必须仍为 5");
+  const origBonusN = sandbox.getStationPlanetarySlotBonus;
+  try {
+    sandbox.getStationPlanetarySlotBonus = () => 2;
+    capStateN.skills.planetaryIndustry = { lvl: 1, xp: 0 };
+    okN(sandbox.getPlanetaryCapacityState(capStateN).slots === 4, "Lv.1 与空间站 +2 必须叠加为 4 槽");
+    capStateN.skills.planetaryIndustry = { lvl: 40, xp: 0 };
+    okN(sandbox.getPlanetaryCapacityState(capStateN).slots === 5, "空间站加成叠加后仍受 5 槽硬上限约束");
+  } finally {
+    sandbox.getStationPlanetarySlotBonus = origBonusN;
+  }
+
+  // ---- N-20 既有数值不得回退 ------------------------------------------------------------------------
+  okN(starterN.rifter.totalHp === 500 && starterN.kestrel.totalHp === 500 && starterN.atron.totalHp === 500 &&
+      recipesN.filter(item => item.level === 1 && item.id !== "rookie_corvette")
+        .every(item => Object.values(item.componentCost).reduce((sum, count) => sum + count, 0) === 6),
+    "本批不得改动既有舰船：三艘起始护卫舰仍为 500 总血，其余 Lv.1 配方仍为 2/2/2 组件");
+  okN(new Set(recipesN.map(item => item.id)).size === recipesN.length &&
+      Object.keys(starterN).filter(id => starterN[id].unlock && starterN[id].unlock.type === "tutorial").length === 1,
+    "舰船配方 ID 必须唯一，且全表只允许启程级一艘 tutorial 解锁舰");
+
+  console.log("Batch N 新手任务系统（第一次定点返修）· 启程级与 26 条任务目录冻结校验通过（" + nChecks + " 项）：启程级属性/加成/禁用字段、1-1-1 专属配方与 82-13-9-9 整船材料、免蓝图、不入默认配装（建造后空装）、DisplayNames 启程级、26 条任务 ID 唯一与 7/7/6/6 分布、章内 order 连续、文案完整且三段不重复、TutorialData 深度冻结、P7 唯一解锁三分支而 P5/P6 不解锁、P1 材料 82/13/9/9、P2-P4 各单一组件、P5 建造+编入战斗位合并、P6 恰 50000 星币、I1 采矿器+200 燃料、I2/I3 各 364、I4 双行星+276000+26、I5 各 18、I6 各 2、I7 造拓岩级+空配捕云级、A1 探针20+燃料200、A2 启程级考古位、A3 任一 I 级遗迹+一次尝试、A4/A5 各 1 遗物、A6 空配觅迹级+探针20、C1/C6 三方向逐项精确、C2 装武器+盾修、C3 启程级+Lv1 星带、C4 击杀1、C5 第1波、C6 同次第4波、A7/C7 已删除、全表仅 I7/A6/C6 赠予空配成品舰、零幽灵 ID、行星槽位 Lv.1-19=2 与 20/30/40 档 3/4/5 不变（空间站加成仍叠加、硬上限 5）、既有舰船与配方数值零回退");
+}
+
+// ============================================================================================
+// Batch O 新手任务系统：状态 / 进度 / 奖励 / 存档 运行时闭环行为验证
+// 轻量 verify：不接 UI，直接驱动 TutorialState / TutorialSystem / GameEvents / ResourceRegistry。
+// ============================================================================================
+{
+  let oChecks = 0;
+  const okO = (condition, message) => { if (!condition) throw new Error("Batch O 校验失败：" + message); oChecks++; };
+  const NOW = 1700000000000;
+  const cloneState = () => { const s = JSON.parse(JSON.stringify(sandbox.gameState)); delete s.tutorial; return s; };
+
+  okO(sandbox.TutorialState && sandbox.TutorialSystem && sandbox.TutorialData && sandbox.ResourceRegistry && sandbox.GameEvents,
+    "Batch O 运行时全局必须暴露 TutorialState / TutorialSystem / TutorialData / ResourceRegistry / GameEvents");
+
+  // ---- O-1 createDefaultTutorialState 默认态 --------------------------------------------
+  const def0 = sandbox.TutorialState.createDefaultTutorialState();
+  okO(def0.schemaVersion === 2, "schemaVersion 必须为 2（Batch O 定点返修升级幂等账本）");
+  okO(def0.legacy === false, "新档 legacy 必须为 false");
+  okO(def0.eventLedger && typeof def0.eventLedger === "object" && Array.isArray(def0.eventLedger.processedEventIds) && def0.eventLedger.processedEventIds.length === 0, "eventLedger 权威结构必须为 { processedEventIds: [] }");
+  okO(def0.prologueStatus === "active", "序章默认 active");
+  okO(def0.taskStateById.P1.status === "active", "P1 默认 active");
+  const OTHER_IDS = ["P2","P3","P4","P5","P6","P7","I1","I2","I3","I4","I5","I6","I7","A1","A2","A3","A4","A5","A6","C1","C2","C3","C4","C5","C6"];
+  okO(OTHER_IDS.every(id => def0.taskStateById[id] && def0.taskStateById[id].status === "locked"), "其余 25 条默认 locked");
+  okO(def0.branchStatus.industrial === "locked" && def0.branchStatus.archaeology === "locked" && def0.branchStatus.combat === "locked", "三条分支默认 locked");
+  okO(def0.selectedCombatTrack === null, "selectedCombatTrack 默认 null");
+  okO(Object.keys(def0.rewardLedger).length === 0, "rewardLedger 默认空");
+  okO(def0.emergencyShipGranted === false, "emergencyShipGranted 默认 false");
+  okO(def0.combatRunSequence === 0 && def0.activeCombatRunToken === null, "战斗 run 计数器默认 0 / null");
+  okO(def0.lastReconciledAt === 0, "lastReconciledAt 默认 0");
+
+  // ---- O-2 migrateTutorialState 新档迁移：幂等 + 无跳过状态 -----------------------------
+  const sNew = cloneState();
+  const m1 = sandbox.TutorialState.migrateTutorialState(sNew, { isLegacy:false });
+  okO(sNew.tutorial === m1, "migrateTutorialState 返回 state.tutorial 引用");
+  okO(sNew.tutorial.taskStateById.P1.status === "active", "新档迁移后 P1 active");
+  const before = JSON.stringify(sNew.tutorial);
+  sandbox.TutorialState.migrateTutorialState(sNew, { isLegacy:false });
+  okO(JSON.stringify(sNew.tutorial) === before, "二次迁移必须幂等（输出完全一致）");
+  const VALID_STATUS = ["locked","active","claimable","completed","legacyCompleted"];
+  okO(Object.values(sNew.tutorial.taskStateById).every(t => VALID_STATUS.includes(t.status)), "所有任务状态必须合法，无 undefined 跳过");
+
+  // ---- O-3 旧档迁移：P1-P7 legacyCompleted + 三分支激活 + I1/A1/C1 激活 ----------------
+  const sLeg = cloneState();
+  sandbox.TutorialState.migrateTutorialState(sLeg, { isLegacy:true });
+  okO(sLeg.tutorial.legacy === true, "legacy 档 legacy=true");
+  okO(sLeg.tutorial.prologueStatus === "legacyCompleted", "序章 legacyCompleted");
+  okO(["P1","P2","P3","P4","P5","P6","P7"].every(id => sLeg.tutorial.taskStateById[id].status === "legacyCompleted"), "P1-P7 全部 legacyCompleted");
+  okO(sLeg.tutorial.branchStatus.industrial === "active" && sLeg.tutorial.branchStatus.archaeology === "active" && sLeg.tutorial.branchStatus.combat === "active", "三分支 legacy 激活");
+  okO(sLeg.tutorial.taskStateById.I1.status === "active" && sLeg.tutorial.taskStateById.A1.status === "active" && sLeg.tutorial.taskStateById.C1.status === "active", "I1/A1/C1 legacy 激活");
+  okO(sLeg.tutorial.taskStateById.I2.status === "locked", "I2 仍 locked（未被误激活）");
+
+  // ---- O-4 bootstrap：迁移 + 安装消费者 + reconcile -----------------------------------
+  const S = cloneState();
+  const boot = sandbox.TutorialSystem.bootstrap(S, { isLegacy:false, now: NOW });
+  okO(boot === S.tutorial, "bootstrap 返回 state.tutorial");
+  okO(typeof boot.lastReconciledAt === "number" && boot.lastReconciledAt === NOW, "bootstrap 必须运行 reconcile 并设置 lastReconciledAt=now");
+  const reInstall = sandbox.TutorialSystem.installTutorialConsumers(S);
+  okO(reInstall && reInstall.already === true, "bootstrap 必须已安装事件消费者（二次安装 already=true）");
+
+  // ---- 全局捕获 5 个 tutorial:* 事件契约（source 固定 tutorial-system）-----------------
+  const captured = [];
+  const unsubs = [];
+  for (const type of ["tutorial:taskCompleted","tutorial:rewardClaimed","tutorial:branchesUnlocked","tutorial:combatTrackSelected","tutorial:emergencyShipGranted"]) {
+    unsubs.push(sandbox.GameEvents.on(type, (event) => captured.push({ type: event.type, meta: event.meta })));
+  }
+
+  // ---- O-5 事件消费者推进任务（消费者已在脚本加载时由游戏 bootstrap 安装到真实 sandbox.gameState）----
+  const G = sandbox.gameState;
+  sandbox.TutorialSystem.bootstrap(G, { isLegacy:false, now: NOW }); // 重置为默认态；消费者已绑定 G
+  // 制造 -> P2（automatic 直完成）
+  G.tutorial.taskStateById.P2.status = "active";
+  sandbox.GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:"integrated_hull", quantity:1, cycles:1, xp:10 }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.P2.status === "completed", "manufacturing:completed 推进 P2 至 completed（automatic）");
+  okO((G.tutorial.taskStateById.P2.progress.integrated_hull || 0) >= 1, "P2 进度 integrated_hull>=1");
+
+  // 采矿 -> I2
+  G.tutorial.taskStateById.I2.status = "active";
+  const i2count = sandbox.TutorialData.byId.I2.target.count;
+  sandbox.GameEvents.emit("mining:completed", { area:"belt", mode:"mine", resourceId:"ore:凡晶石", quantity: i2count, cycles:1, xp:10 }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.I2.status === "completed", "mining:completed 推进 I2 至 completed");
+
+  // I6（afterObjective）-> claimable -> 领取发放蓝图 + 防重复
+  G.tutorial.taskStateById.I6.status = "active";
+  sandbox.GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:"integrated_hull", quantity:2, cycles:1, xp:10 }, { timestamp:NOW, source:"test", offline:false });
+  sandbox.GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:"power_core", quantity:2, cycles:1, xp:10 }, { timestamp:NOW, source:"test", offline:false });
+  sandbox.GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:"functional_system", quantity:2, cycles:1, xp:10 }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.I6.status === "claimable", "I6 目标达成后应为 claimable（afterObjective）");
+  okO((G.tutorial.taskStateById.I6.progress.integrated_hull||0) >= 2 && (G.tutorial.taskStateById.I6.progress.power_core||0) >= 2 && (G.tutorial.taskStateById.I6.progress.functional_system||0) >= 2, "I6 三组件进度>=2");
+  const i6r = sandbox.TutorialSystem.claimTutorialTask(G, "I6", NOW);
+  okO(i6r.ok === true, "I6 领取成功");
+  okO(G.tutorial.taskStateById.I6.status === "completed", "I6 领取后 completed");
+  okO(typeof G.tutorial.rewardLedger.I6 === "number", "I6 写入 rewardLedger");
+  okO(Array.isArray(G.ownedBlueprints) && G.ownedBlueprints.includes("miner_frigate"), "I6 发放蓝图 miner_frigate");
+  const i6again = sandbox.TutorialSystem.claimTutorialTask(G, "I6", NOW);
+  okO(i6again.ok === false && i6again.reason === "ALREADY_CLAIMED", "I6 重复领取返回 ALREADY_CLAIMED");
+
+  // 考古尝试 -> A3 / 遗物出土 -> A4
+  G.tutorial.taskStateById.A3.status = "active";
+  sandbox.GameEvents.emit("archaeology:attemptCompleted", { siteId: sandbox.TutorialData.byId.A3.target.sites[0], tier:1, success:true, successChance:0.5 }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.A3.status === "completed", "archaeology:attemptCompleted 推进 A3");
+  G.tutorial.taskStateById.A4.status = "active";
+  sandbox.GameEvents.emit("archaeology:artifactFound", { artifactId:"x", category:"relic", tier:1, iskValue:0, lpValue:0 }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.A4.status === "completed", "archaeology:artifactFound 推进 A4");
+
+  // 击杀 -> C4
+  G.tutorial.taskStateById.C4.status = "active";
+  sandbox.GameEvents.emit("combat:enemyDefeated", { zoneId:"x", faction:"angel", enemyId:"e1", enemyKind:"frigate", isk:0, xp:10 }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.C4.status === "completed", "combat:enemyDefeated 推进 C4");
+
+  // C5/C6 同次 run token
+  G.tutorial.taskStateById.C5.status = "active";
+  G.tutorial.taskStateById.C6.status = "active";
+  const c6zone = sandbox.TutorialData.byId.C6.target.zones[0];
+  const c5zone = c6zone; // C5 不限制 zone（target 无 zones），任意 zone 均计入第 1 波
+  // G 为跨 Batch 共享的实时 gameState，combatRunSequence 在存档中保持（bootstrap 不会清零），此处显式归零以保证验证确定性
+  G.tutorial.combatRunSequence = 0;
+  G.tutorial.activeCombatRunToken = null;
+  sandbox.TutorialSystem.noteTutorialActionResult(G, { type:"combat/start" }, { changed:true }, NOW);
+  okO(G.tutorial.combatRunSequence === 1, "combat/start 递增 combatRunSequence");
+  okO(typeof G.tutorial.activeCombatRunToken === "string" && G.tutorial.activeCombatRunToken.length > 0, "combat/start 设置 activeCombatRunToken");
+  const token1 = G.tutorial.activeCombatRunToken;
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:1, zoneId: c5zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.C5.wave1 === true, "第1波写入 C5.wave1");
+  okO(G.tutorial.taskStateById.C5.c5Token === token1, "C5.c5Token 记录同次 run token");
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:4, zoneId: c6zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(G.tutorial.taskStateById.C6.wave4 === true, "同次第4波写入 C6.wave4");
+  okO(G.tutorial.taskStateById.C6.c6Token === token1, "C6.c6Token 等于 c5Token（同次）");
+  okO(G.tutorial.taskStateById.C5.status === "completed", "C5 同次达成后自动 completed");
+  okO(G.tutorial.taskStateById.C6.status === "claimable", "C6 同次第4波后 claimable（afterObjective）");
+  // C6 为方向专属奖励，领取前须已选作战轨道（真实 API 选择 laser）
+  G.tutorial.taskStateById.C1.status = "active";
+  sandbox.TutorialSystem.chooseTutorialCombatTrack(G, "laser", NOW);
+  const c6claim = sandbox.TutorialSystem.claimTutorialTask(G, "C6", NOW);
+  okO(c6claim.ok === true, "C6 领取成功");
+  okO(G.tutorial.taskStateById.C6.status === "completed", "C6 领取后 completed");
+  // 不同次：stop 清 token；用真实 routing 验证「重开出击」不卡死 + 跨次拒绝（禁止手工清 c5Token/c6Token）
+  sandbox.TutorialSystem.noteTutorialActionResult(G, { type:"combat/stop" }, { changed:true }, NOW);
+  okO(G.tutorial.activeCombatRunToken === null, "combat/stop 清空 activeCombatRunToken");
+
+  // 场景 A：run1 wave1 写入锚点但未到 wave4 -> run2 未经历 wave1 直接 wave4 不得完成 C6（防跨次冒领）
+  // 注意：事件消费者仅绑定在真实 sandbox.gameState（G），故真实 routing 场景必须驱动 G（每次重置为默认态）。
+  const Gx = sandbox.gameState;
+  Gx.tutorial = null; // 重建为全新默认态（C5/C6 波次进度归零），避免沿用 O-5 已 claim 的脏状态
+  sandbox.TutorialSystem.bootstrap(Gx, { isLegacy:false, now: NOW });
+  Gx.tutorial.taskStateById.C5.status = "active";
+  Gx.tutorial.taskStateById.C6.status = "active";
+  Gx.tutorial.combatRunSequence = 0; Gx.tutorial.activeCombatRunToken = null;
+  sandbox.TutorialSystem.noteTutorialActionResult(Gx, { type:"combat/start" }, { changed:true }, NOW);
+  const tr1 = Gx.tutorial.activeCombatRunToken;
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:1, zoneId: c5zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(Gx.tutorial.taskStateById.C5.c5Token === tr1, "run1 第1波写入 C5.c5Token");
+  sandbox.TutorialSystem.noteTutorialActionResult(Gx, { type:"combat/stop" }, { changed:true }, NOW);
+  sandbox.TutorialSystem.noteTutorialActionResult(Gx, { type:"combat/start" }, { changed:true }, NOW);
+  const tr2 = Gx.tutorial.activeCombatRunToken;
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:4, zoneId: c6zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(Gx.tutorial.taskStateById.C6.wave4 === false, "run2 未经历 wave1 直接 wave4 不得完成 C6（防跨次冒领）");
+  okO(Gx.tutorial.taskStateById.C6.status === "active", "run2 跨次 wave4 后 C6 仍 active（未 claimable）");
+
+  // 场景 B：run1 wave1 -> stop -> run2 start -> run2 wave1 替换 C6 锚点 -> run2 wave4 -> C6 claimable（重开出击修复）
+  const Gy = sandbox.gameState;
+  sandbox.TutorialSystem.bootstrap(Gy, { isLegacy:false, now: NOW });
+  Gy.tutorial.taskStateById.C5.status = "active";
+  Gy.tutorial.taskStateById.C6.status = "active";
+  Gy.tutorial.combatRunSequence = 0; Gy.tutorial.activeCombatRunToken = null;
+  sandbox.TutorialSystem.noteTutorialActionResult(Gy, { type:"combat/start" }, { changed:true }, NOW);
+  const tx1 = Gy.tutorial.activeCombatRunToken;
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:1, zoneId: c5zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(Gy.tutorial.taskStateById.C5.c5Token === tx1, "run1 第1波写入 c5Token");
+  sandbox.TutorialSystem.noteTutorialActionResult(Gy, { type:"combat/stop" }, { changed:true }, NOW);
+  sandbox.TutorialSystem.noteTutorialActionResult(Gy, { type:"combat/start" }, { changed:true }, NOW);
+  const tx2 = Gy.tutorial.activeCombatRunToken;
+  okO(tx2 !== tx1, "第二次 combat/start 产生新 run token");
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:1, zoneId: c5zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(Gy.tutorial.taskStateById.C5.c5Token === tx2, "第二次第1波写入新 c5Token（替换锚点）");
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:4, zoneId: c6zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(Gy.tutorial.taskStateById.C6.wave4 === true, "run2 同次第4波写入 C6.wave4");
+  okO(Gy.tutorial.taskStateById.C6.status === "claimable", "run2 同次达成 C6 claimable");
+
+  // 场景 C：已 claimable 的 C6 不被后续事件回退（run3 跨次 wave4 不篡改）
+  sandbox.TutorialSystem.noteTutorialActionResult(Gy, { type:"combat/stop" }, { changed:true }, NOW);
+  sandbox.TutorialSystem.noteTutorialActionResult(Gy, { type:"combat/start" }, { changed:true }, NOW);
+  const tx3 = Gy.tutorial.activeCombatRunToken;
+  sandbox.GameEvents.emit("combat:waveCleared", { wave:4, zoneId: c6zone }, { timestamp:NOW, source:"test", offline:false });
+  okO(Gy.tutorial.taskStateById.C6.wave4 === true, "run3 跨次 wave4 不得篡改已达成 wave4（仍 true）");
+  okO(Gy.tutorial.taskStateById.C6.status === "claimable", "run3 跨次 wave4 不回退 C6（仍 claimable）");
+
+  // ---- O-6 动作 API：锁定守卫 + onAction 领取 + 原子防重复 -----------------------------
+  const S2 = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S2, { isLegacy:false });
+  const lockr = sandbox.TutorialSystem.claimTutorialTask(S2, "P2", NOW);
+  okO(lockr.ok === false && lockr.reason === "TASK_LOCKED", "领取 locked 任务返回 TASK_LOCKED");
+  const p1TIBefore = sandbox.ResourceRegistry.get(S2, "mineral:三钛合金");
+  const p1Add = sandbox.TutorialData.byId.P1.reward.resourceAmounts["mineral:三钛合金"] || 0;
+  const p1r = sandbox.TutorialSystem.claimTutorialTask(S2, "P1", NOW);
+  okO(p1r.ok === true, "P1（onAction）领取成功");
+  okO(S2.tutorial.taskStateById.P1.status === "completed", "P1 领取后 completed");
+  okO(typeof S2.tutorial.rewardLedger.P1 === "number", "P1 写入 rewardLedger");
+  okO(sandbox.ResourceRegistry.get(S2, "mineral:三钛合金") === p1TIBefore + p1Add, "P1 发放 " + p1Add + " 三钛合金");
+  const p1again = sandbox.TutorialSystem.claimTutorialTask(S2, "P1", NOW);
+  okO(p1again.ok === false && p1again.reason === "ALREADY_CLAIMED", "P1 重复领取 ALREADY_CLAIMED");
+  okO(sandbox.ResourceRegistry.get(S2, "mineral:三钛合金") === p1TIBefore + p1Add, "P1 重复领取后资源不变（原子防重复）");
+
+  // ---- O-7 beforeObjective：I1 先领支援包，任务保持 active ----------------------------
+  const S3 = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S3, { isLegacy:false });
+  S3.tutorial.taskStateById.I1.status = "active";
+  const i1FuelBefore = sandbox.ResourceRegistry.get(S3, "consumable:fuel");
+  const i1Add = sandbox.TutorialData.byId.I1.reward.resourceAmounts["consumable:fuel"] || 0;
+  const i1r = sandbox.TutorialSystem.claimTutorialTask(S3, "I1", NOW);
+  okO(i1r.ok === true && i1r.supportGranted === true, "I1（beforeObjective）领取支援包成功");
+  okO(S3.tutorial.taskStateById.I1.status === "active", "I1 领取支援包后保持 active");
+  okO(S3.tutorial.taskStateById.I1.supportClaimed === true, "I1 supportClaimed=true");
+  okO(sandbox.ResourceRegistry.get(S3, "consumable:fuel") === i1FuelBefore + i1Add, "I1 发放 " + i1Add + " 燃料");
+  const i1again = sandbox.TutorialSystem.claimTutorialTask(S3, "I1", NOW);
+  okO(i1again.ok === false && i1again.reason === "ALREADY_CLAIMED", "I1 重复领取 ALREADY_CLAIMED");
+
+  // ---- O-8 confirm：P7 确认解锁三分支并激活 I1/A1/C1 ----------------------------------
+  const S7 = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S7, { isLegacy:false });
+  S7.tutorial.taskStateById.P7.status = "active";
+  const p7r = sandbox.TutorialSystem.confirmTutorialTask(S7, "P7", NOW);
+  okO(p7r.ok === true, "P7 confirm 成功");
+  okO(S7.tutorial.taskStateById.P7.status === "completed", "P7 确认后 completed");
+  okO(S7.tutorial.branchStatus.industrial === "active" && S7.tutorial.branchStatus.archaeology === "active" && S7.tutorial.branchStatus.combat === "active", "P7 确认解锁三分支");
+  okO(S7.tutorial.taskStateById.I1.status === "active" && S7.tutorial.taskStateById.A1.status === "active" && S7.tutorial.taskStateById.C1.status === "active", "P7 确认激活 I1/A1/C1");
+
+  // ---- O-9 选择作战轨道：C1（legacy 下 active）----------------------------------------
+  const S9 = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S9, { isLegacy:true });
+  const c1FuelBefore = sandbox.ResourceRegistry.get(S9, "consumable:fuel");
+  const c1Add = sandbox.TutorialData.byId.C1.choiceRewards.laser.resourceAmounts["consumable:fuel"] || 0;
+  const chr = sandbox.TutorialSystem.chooseTutorialCombatTrack(S9, "laser", NOW);
+  okO(chr.ok === true && chr.track === "laser", "C1 选择 laser 轨道成功");
+  okO(S9.tutorial.selectedCombatTrack === "laser", "selectedCombatTrack=laser");
+  okO(S9.tutorial.taskStateById.C1.status === "completed", "C1 选择后 completed");
+  okO(typeof S9.tutorial.rewardLedger.C1 === "number", "C1 写入 rewardLedger");
+  okO(sandbox.ResourceRegistry.get(S9, "consumable:fuel") === c1FuelBefore + c1Add, "C1 laser 轨道按数据发放燃料");
+  const ch2 = sandbox.TutorialSystem.chooseTutorialCombatTrack(S9, "missile", NOW);
+  okO(ch2.ok === false && ch2.reason === "CHOICE_ALREADY_SET", "重复选择轨道 CHOICE_ALREADY_SET");
+  const S9b = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S9b, { isLegacy:true });
+  const ch3 = sandbox.TutorialSystem.chooseTutorialCombatTrack(S9b, "plasma", NOW);
+  okO(ch3.ok === false && ch3.reason === "INVALID_CHOICE", "非法轨道 INVALID_CHOICE");
+
+  // ---- O-10 紧急舰船：P5 完成 + 无舰船时才发放 ---------------------------------------
+  const S10 = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S10, { isLegacy:false });
+  const em0 = sandbox.TutorialSystem.claimEmergencyTutorialShip(S10, NOW);
+  okO(em0.ok === false && em0.reason === "EMERGENCY_NOT_AVAILABLE", "P5 未完成时 EMERGENCY_NOT_AVAILABLE");
+  S10.tutorial.taskStateById.P5.status = "completed";
+  S10.inventory = S10.inventory || { ships:[], equipment:[], rigs:[] };
+  S10.inventory.ships = [{ shipId:"rifter", instanceId:"x1" }];
+  const em1 = sandbox.TutorialSystem.claimEmergencyTutorialShip(S10, NOW);
+  okO(em1.ok === false && em1.reason === "EMERGENCY_NOT_AVAILABLE", "已有舰船时 EMERGENCY_NOT_AVAILABLE");
+  S10.inventory.ships = [];
+  const em2 = sandbox.TutorialSystem.claimEmergencyTutorialShip(S10, NOW);
+  okO(em2.ok === true && S10.tutorial.emergencyShipGranted === true, "紧急舰船发放成功");
+  okO(S10.inventory.ships.length === 1 && S10.inventory.ships[0].shipId === "rookie_corvette", "紧急舰船为 rookie_corvette");
+  okO(typeof S10.tutorial.rewardLedger["recovery:emergencyCorvette"] === "number", "紧急舰船写入 rewardLedger");
+  const em3 = sandbox.TutorialSystem.claimEmergencyTutorialShip(S10, NOW);
+  okO(em3.ok === false && em3.reason === "EMERGENCY_ALREADY_GRANTED", "重复发放 EMERGENCY_ALREADY_GRANTED");
+
+  // ---- O-11 REASON 稳定常量（16 个，取值与字面量一致）---------------------------------
+  const REASON = sandbox.TutorialSystem.REASON;
+  okO(REASON && Object.keys(REASON).length === 16, "REASON 必须恰为 16 个稳定常量");
+  okO(REASON.ALREADY_CLAIMED === "ALREADY_CLAIMED" && REASON.ALREADY_COMPLETED === "ALREADY_COMPLETED" && REASON.CHOICE_ALREADY_SET === "CHOICE_ALREADY_SET" && REASON.EMERGENCY_ALREADY_GRANTED === "EMERGENCY_ALREADY_GRANTED" && REASON.INVALID_CHOICE === "INVALID_CHOICE" && REASON.EMERGENCY_NOT_AVAILABLE === "EMERGENCY_NOT_AVAILABLE" && REASON.TASK_LOCKED === "TASK_LOCKED" && REASON.TASK_NOT_CLAIMABLE === "TASK_NOT_CLAIMABLE" && REASON.UNKNOWN_TASK === "UNKNOWN_TASK" && REASON.INVALID_STATE === "INVALID_STATE", "REASON 取值必须与字面量一致（稳定契约）");
+
+  // ---- O-12 五个 tutorial:* 事件契约：均发出且 source=tutorial-system ------------------
+  const capturedTypes = new Set(captured.map(c => c.type));
+  for (const type of ["tutorial:taskCompleted","tutorial:rewardClaimed","tutorial:branchesUnlocked","tutorial:combatTrackSelected","tutorial:emergencyShipGranted"]) {
+    okO(capturedTypes.has(type), "必须发出领域事件 " + type);
+    const evt = captured.find(c => c.type === type);
+    const src = (evt && evt.meta && evt.meta.source) || (evt && evt.payload && evt.payload.source);
+    okO(src === "tutorial-system", type + " 事件 meta.source 必须为 tutorial-system");
+  }
+
+  // ---- O-13 脚本加载顺序依赖 -----------------------------------------------------------
+  const idxOfO = (suffix) => scriptSources.findIndex(s => s.endsWith(suffix));
+  const dTut = idxOfO("js/data/tutorial.js");
+  const tState = idxOfO("js/core/tutorial-state.js");
+  const sTut = idxOfO("js/systems/tutorial.js");
+  const resO = idxOfO("js/core/resources.js");
+  const persistO = idxOfO("js/core/persistence.js");
+  okO(dTut >= 0 && tState >= 0 && sTut >= 0, "新手任务三个运行时脚本必须被加载");
+  okO(dTut < tState && tState < sTut, "脚本顺序：data/tutorial.js < tutorial-state.js < systems/tutorial.js");
+  okO(resO < sTut, "resources.js 必须早于 systems/tutorial.js（ResourceRegistry 依赖）");
+  okO(sTut < persistO, "systems/tutorial.js 必须早于 persistence.js（bootstrap 依赖）");
+
+  // ============================================================================================
+  // O-14 定点返修：C6 奖励解析 + 三方向真实验账（缺口一 / 缺口五）
+  // 走真实 combat/start + combat:waveCleared 路由把 C6 推到 claimable，再比较领取前后实际资产差值。
+  // ============================================================================================
+  const c6z = sandbox.TutorialData.byId.C6.target.zones[0];
+  for (const track of ["laser", "missile", "cannon"]) {
+    const C = sandbox.gameState;
+    sandbox.TutorialState.migrateTutorialState(C, { isLegacy: true }); // 新鲜 legacy 基线（C1 active，consumers 已绑定 C）
+    const chTrack = sandbox.TutorialSystem.chooseTutorialCombatTrack(C, track, NOW);
+    okO(chTrack.ok && chTrack.track === track, "C6奖励-" + track + "：C1 选 " + track + " 轨道成功");
+    okO(C.tutorial.selectedCombatTrack === track, "C6奖励-" + track + "：selectedCombatTrack=" + track);
+    C.tutorial.taskStateById.C6.status = "active";
+    C.tutorial.combatRunSequence = 0; C.tutorial.activeCombatRunToken = null;
+    sandbox.TutorialSystem.noteTutorialActionResult(C, { type: "combat/start" }, { changed: true }, NOW);
+    const cTok = C.tutorial.activeCombatRunToken;
+    sandbox.GameEvents.emit("combat:waveCleared", { wave: 1, zoneId: c6z }, { timestamp: NOW, source: "test", offline: false });
+    sandbox.GameEvents.emit("combat:waveCleared", { wave: 4, zoneId: c6z }, { timestamp: NOW, source: "test", offline: false });
+    okO(C.tutorial.taskStateById.C6.status === "claimable", "C6奖励-" + track + "：同次第4波后 claimable");
+
+    const before = {
+      isk: sandbox.ResourceRegistry.get(C, "currency:isk"),
+      fuel: sandbox.ResourceRegistry.get(C, "consumable:fuel"),
+      laser: sandbox.ResourceRegistry.get(C, "ammo:laser"),
+      missile: sandbox.ResourceRegistry.get(C, "ammo:missile"),
+      cannon: sandbox.ResourceRegistry.get(C, "ammo:cannon"),
+      ships: C.inventory.ships.length
+    };
+    const claimR = sandbox.TutorialSystem.claimTutorialTask(C, "C6", NOW);
+    okO(claimR.ok === true, "C6奖励-" + track + "：领取成功");
+    const after = {
+      isk: sandbox.ResourceRegistry.get(C, "currency:isk"),
+      fuel: sandbox.ResourceRegistry.get(C, "consumable:fuel"),
+      laser: sandbox.ResourceRegistry.get(C, "ammo:laser"),
+      missile: sandbox.ResourceRegistry.get(C, "ammo:missile"),
+      cannon: sandbox.ResourceRegistry.get(C, "ammo:cannon"),
+      ships: C.inventory.ships.length
+    };
+    okO(after.isk === before.isk + 50000, "C6奖励-" + track + "：实际到账 +50000 星币");
+    okO(after.fuel === before.fuel + 300, "C6奖励-" + track + "：实际到账 +300 燃料");
+    if (track === "laser") okO(after.laser === before.laser + 100, "C6奖励-laser：实际到账 +100 激光弹药");
+    if (track === "missile") okO(after.missile === before.missile + 100, "C6奖励-missile：实际到账 +100 导弹弹药");
+    if (track === "cannon") okO(after.cannon === before.cannon + 100, "C6奖励-cannon：实际到账 +100 火炮弹药");
+    okO(after.ships === before.ships + 1, "C6奖励-" + track + "：实际到账 +1 舰船");
+    const newShip = C.inventory.ships[C.inventory.ships.length - 1];
+    const expShip = track === "laser" ? "rifter" : track === "missile" ? "kestrel" : "atron";
+    okO(newShip && newShip.shipId === expShip, "C6奖励-" + track + "：到账新舰为 " + expShip);
+    okO(newShip && newShip.fitted && Array.isArray(newShip.fitted.high) && newShip.fitted.high.length === 0 && Array.isArray(newShip.fitted.mid) && newShip.fitted.mid.length === 0 && Array.isArray(newShip.fitted.low) && newShip.fitted.low.length === 0 && Array.isArray(newShip.fitted.rig) && newShip.fitted.rig.length === 0, "C6奖励-" + track + "：新舰 fitted 四槽为空");
+    // 重复领取：ALREADY_CLAIMED，四类资产不变
+    const claimR2 = sandbox.TutorialSystem.claimTutorialTask(C, "C6", NOW);
+    okO(claimR2.ok === false && claimR2.reason === "ALREADY_CLAIMED", "C6奖励-" + track + "：重复领取 ALREADY_CLAIMED");
+    okO(sandbox.ResourceRegistry.get(C, "currency:isk") === after.isk, "C6奖励-" + track + "：重复领取后星币不变（原子防重复）");
+    okO(C.inventory.ships.length === after.ships, "C6奖励-" + track + "：重复领取后舰船数不变（原子防重复）");
+    // 显示态奖励解析为所选方向实际 choiceRewards
+    const disp = sandbox.TutorialSystem.getTutorialDisplayState(C);
+    const c6disp = disp.tasks.find(t => t.id === "C6");
+    const expReward = sandbox.TutorialData.byId.C6.choiceRewards[track];
+    okO(c6disp && JSON.stringify(c6disp.reward) === JSON.stringify(expReward), "C6奖励-" + track + "：显示态奖励解析为 " + track + " 方向实际 choiceRewards");
+    okO(c6disp && c6disp.rewardClaimed === true, "C6奖励-" + track + "：显示态 rewardClaimed 与领取一致");
+  }
+  // 未选轨道领取 C6 稳定失败，不改库存/账本/dirty；显示态奖励为 null
+  const Cn = cloneState();
+  sandbox.TutorialState.migrateTutorialState(Cn, { isLegacy: false });
+  Cn.tutorial.taskStateById.C6.status = "active";
+  Cn._dirty = false;
+  const nBefore = {
+    isk: sandbox.ResourceRegistry.get(Cn, "currency:isk"),
+    ships: Cn.inventory.ships.length,
+    ledger: Object.keys(Cn.tutorial.rewardLedger).length,
+    snap: JSON.stringify(Cn.tutorial)
+  };
+  const noTrackR = sandbox.TutorialSystem.claimTutorialTask(Cn, "C6", NOW);
+  okO(noTrackR.ok === false, "未选轨道领取 C6 稳定失败（不改状态）");
+  okO(sandbox.ResourceRegistry.get(Cn, "currency:isk") === nBefore.isk && Cn.inventory.ships.length === nBefore.ships && Object.keys(Cn.tutorial.rewardLedger).length === nBefore.ledger && Cn._dirty !== true, "未选轨道领取 C6 不改库存/账本/dirty");
+  okO(JSON.stringify(Cn.tutorial) === nBefore.snap, "未选轨道领取 C6 不改任何教程状态（字节级一致）");
+  const c6nd = sandbox.TutorialSystem.getTutorialDisplayState(Cn).tasks.find(t => t.id === "C6");
+  okO(c6nd && c6nd.reward === null, "未选轨道时 C6 显示态奖励为 null（稳定失败不报错）");
+
+  // ============================================================================================
+  // O-15 定点返修：事件幂等账本（缺口三）
+  // ============================================================================================
+  okO(sandbox.TutorialState.SCHEMA_VERSION === 2, "SCHEMA_VERSION 已升至 2");
+  const sEvt = cloneState();
+  sandbox.TutorialState.migrateTutorialState(sEvt, { isLegacy: false });
+  sEvt.tutorial.eventLedger = ["tutorial:prod:evt-a", "tutorial:prod:evt-b"];
+  sEvt.tutorial.processedEventIds = ["tutorial:prod:evt-b", "tutorial:combat:evt-c"]; // 根级错误结构，含重复
+  sandbox.TutorialState.migrateTutorialState(sEvt, { isLegacy: false });
+  okO(sEvt.tutorial.schemaVersion === 2, "迁移后 schemaVersion=2");
+  okO(sEvt.tutorial.eventLedger && Array.isArray(sEvt.tutorial.eventLedger.processedEventIds), "eventLedger 权威结构 { processedEventIds: [] }");
+  const evtIds = sEvt.tutorial.eventLedger.processedEventIds;
+  okO(evtIds.includes("tutorial:prod:evt-a") && evtIds.includes("tutorial:prod:evt-b") && evtIds.includes("tutorial:combat:evt-c"), "三种来源合并（旧数组 + 根级错误结构）");
+  okO(evtIds.filter(x => x === "tutorial:prod:evt-b").length === 1, "合并后去重：evt-b 仅一次");
+  okO(!("processedEventIds" in sEvt.tutorial), "根级错误 processedEventIds 已删除");
+  const evtSnap = JSON.stringify(sEvt.tutorial);
+  sandbox.TutorialState.migrateTutorialState(sEvt, { isLegacy: false });
+  okO(JSON.stringify(sEvt.tutorial) === evtSnap, "二次迁移严格幂等（JSON 一致）");
+  const sEvt2 = cloneState();
+  sandbox.TutorialState.migrateTutorialState(sEvt2, { isLegacy: false });
+  sEvt2.tutorial.eventLedger = { processedEventIds: ["x:y:1", "x:y:2"] };
+  sandbox.TutorialState.migrateTutorialState(sEvt2, { isLegacy: false });
+  okO(sEvt2.tutorial.eventLedger.processedEventIds.includes("x:y:1") && sEvt2.tutorial.eventLedger.processedEventIds.includes("x:y:2"), "新结构 eventLedger.processedEventIds 保留");
+
+  // 同 eventId 仅推进一次；重载后再次发射同 eventId 不增加第二次
+  const G3 = sandbox.gameState;
+  sandbox.TutorialSystem.bootstrap(G3, { isLegacy: false, now: NOW });
+  G3.tutorial.taskStateById.P3.status = "active";
+  const dupId = "dup-evt-unit";
+  sandbox.GameEvents.emit("manufacturing:completed", { branch: "component", recipeId: "power_core", quantity: 1, cycles: 1, xp: 10 }, { timestamp: NOW, source: "test", offline: false, eventId: dupId });
+  okO((G3.tutorial.taskStateById.P3.progress.power_core || 0) === 1, "同 eventId 首次发射推进一次");
+  okO((G3.tutorial.eventLedger.processedEventIds || []).some(x => x.endsWith(":" + dupId)), "eventId 已记入 eventLedger");
+  sandbox.TutorialState.migrateTutorialState(G3, { isLegacy: false }); // 重载（保留 eventLedger）
+  okO((G3.tutorial.eventLedger.processedEventIds || []).some(x => x.endsWith(":" + dupId)), "重载后 eventLedger 保留 eventId");
+  G3.tutorial.taskStateById.P3.status = "active";
+  sandbox.GameEvents.emit("manufacturing:completed", { branch: "component", recipeId: "power_core", quantity: 1, cycles: 1, xp: 10 }, { timestamp: NOW, source: "test", offline: false, eventId: dupId });
+  okO((G3.tutorial.taskStateById.P3.progress.power_core || 0) === 1, "重载后再发同 eventId 不得增加第二次（幂等）");
+
+  // ============================================================================================
+  // O-16 定点返修：残缺档默认状态（缺口四）
+  // ============================================================================================
+  const sEmpty = cloneState();
+  sEmpty.tutorial = {};
+  sandbox.TutorialState.migrateTutorialState(sEmpty, { isLegacy: false });
+  okO(sEmpty.tutorial.taskStateById.P1.status === "active", "tutorial:{} 非legacy → P1 active");
+  okO(OTHER_IDS.every(id => sEmpty.tutorial.taskStateById[id] && sEmpty.tutorial.taskStateById[id].status === "locked"), "tutorial:{} 其余25项锁定");
+  okO(sEmpty.tutorial.branchStatus.industrial === "locked" && sEmpty.tutorial.branchStatus.archaeology === "locked" && sEmpty.tutorial.branchStatus.combat === "locked", "tutorial:{} 三分支 locked");
+  okO(sEmpty.tutorial.schemaVersion === 2, "tutorial:{} 迁移后 schemaVersion=2");
+
+  const sLegPartial = cloneState();
+  sLegPartial.tutorial = { legacy: true };
+  sandbox.TutorialState.migrateTutorialState(sLegPartial, { isLegacy: false });
+  okO(sLegPartial.tutorial.prologueStatus === "legacyCompleted", "legacy 残缺态 → prologueStatus legacyCompleted");
+  okO(["P1","P2","P3","P4","P5","P6","P7"].every(id => sLegPartial.tutorial.taskStateById[id].status === "legacyCompleted"), "legacy 残缺态 → P1-P7 legacyCompleted");
+  okO(sLegPartial.tutorial.taskStateById.I1.status === "active" && sLegPartial.tutorial.taskStateById.A1.status === "active" && sLegPartial.tutorial.taskStateById.C1.status === "active", "legacy 残缺态 → I1/A1/C1 active");
+  okO(sLegPartial.tutorial.taskStateById.I2.status === "locked", "legacy 残缺态 → I2 按旧档默认 locked");
+
+  const sKeep = cloneState();
+  sandbox.TutorialState.migrateTutorialState(sKeep, { isLegacy: false });
+  sKeep.tutorial.taskStateById.P3.status = "completed";
+  sKeep.tutorial.taskStateById.A4.status = "claimable";
+  sandbox.TutorialState.migrateTutorialState(sKeep, { isLegacy: false });
+  okO(sKeep.tutorial.taskStateById.P3.status === "completed", "既有 completed 状态保留");
+  okO(sKeep.tutorial.taskStateById.A4.status === "claimable", "既有 claimable 状态保留");
+
+  const sUnk = cloneState();
+  sandbox.TutorialState.migrateTutorialState(sUnk, { isLegacy: false });
+  sUnk.tutorial.taskStateById.Z9 = { status: "active" };
+  sandbox.TutorialState.migrateTutorialState(sUnk, { isLegacy: false });
+  okO(!("Z9" in sUnk.tutorial.taskStateById), "未知 taskId Z9 已删除");
+
+  // ============================================================================================
+  // O-17 定点返修：领取显示态同步（缺口五）
+  // ============================================================================================
+  const S5 = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S5, { isLegacy: false });
+  const p1r5 = sandbox.TutorialSystem.claimTutorialTask(S5, "P1", NOW);
+  okO(p1r5.ok === true && S5.tutorial.taskStateById.P1.rewardClaimed === true, "P1 领取后 rewardClaimed=true");
+  okO(sandbox.TutorialSystem.getTutorialDisplayState(S5).tasks.find(t => t.id === "P1").rewardClaimed === true, "P1 显示态 rewardClaimed 与任务状态一致");
+
+  const S5b = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S5b, { isLegacy: false });
+  S5b.tutorial.taskStateById.I1.status = "active";
+  const i1r5 = sandbox.TutorialSystem.claimTutorialTask(S5b, "I1", NOW);
+  okO(i1r5.ok === true && i1r5.supportGranted === true && S5b.tutorial.taskStateById.I1.supportClaimed === true, "I1 支援包 supportClaimed=true");
+  okO(S5b.tutorial.taskStateById.I1.rewardClaimed === true, "I1 领取后 rewardClaimed=true（同时 supportClaimed）");
+  okO(S5b.tutorial.taskStateById.I1.status === "active", "I1 领取支援包后保持 active");
+
+  const S5c = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S5c, { isLegacy: false });
+  S5c.tutorial.taskStateById.C6.status = "active";
+  sandbox.TutorialSystem.claimTutorialTask(S5c, "C6", NOW); // 未选轨道，稳定失败
+  okO(S5c.tutorial.taskStateById.C6.rewardClaimed === false, "C6 未选轨道领取失败不写 rewardClaimed");
+
+  const S5d = cloneState();
+  sandbox.TutorialState.migrateTutorialState(S5d, { isLegacy: false });
+  S5d.tutorial.taskStateById.P7.status = "active";
+  const p7r5 = sandbox.TutorialSystem.confirmTutorialTask(S5d, "P7", NOW);
+  okO(p7r5.ok === true && S5d.tutorial.taskStateById.P7.rewardClaimed === true, "P7 confirm 后 rewardClaimed=true");
+
+  for (const u of unsubs) { try { u(); } catch (e) {} }
+  console.log("Batch O 新手任务系统运行时闭环 · 状态/进度/奖励/存档行为验证通过（" + oChecks + " 项）：默认态（P1 active 余 locked、分支 locked、计数器 0）、新档迁移幂等且无跳过状态、旧档迁移（P1-P7 legacyCompleted+三分支激活+I1/A1/C1 active）、bootstrap 安装消费者+reconcile、12 类事件消费者推进任务至 completed/claimable、C5/C6 同次 run token 防跨次冒领、锁定守卫 TASK_LOCKED、onAction 领取+原子防重复（ALREADY_CLAIMED 不重复发放）、beforeObjective 先发支援包保持 active、confirm 解锁三分支并激活 I1/A1/C1、choose 选择轨道发放奖励且 CHOICE_ALREADY_SET/INVALID_CHOICE、emergency 紧急舰船 EMERGENCY_* 三态、REASON 16 稳定常量、5 个 tutorial:* 事件 source=tutorial-system、脚本顺序依赖；第一次定点返修（C6 三方向真实到账验账 +50000星币/+300燃料/+100对应弹药/+1 空配舰且四槽为空、重复领取 ALREADY_CLAIMED 资产零增、未选轨道稳定失败字节级零副作用、显示态与领取共用同一只读奖励解析器、重开出击真实 routing 三场景（跨次 wave4 不冒领 / run2 替换锚点后可领 / 已 claimable 不被回滚）、schemaVersion=2 与 eventLedger{processedEventIds} 三源合并去重+删根级错误键+二次迁移 JSON 一致、同 eventId 重载后不二次推进、tutorial:{} 与 legacy 残缺档按权威默认态补全且删未知任务、rewardClaimed/supportClaimed 显示态同步且失败不预写）");
+}
+
+{
+  let pChecks = 0;
+  const okP = (condition, message) => { if (!condition) throw new Error("Batch P 校验失败：" + message); pChecks++; };
+  const NOW = 1700000000000;
+  // 每个场景用全新默认 tutorial 重置（bootstrap 会保留既有进度，故直接替换为默认态）
+  const resetTut = () => { sandbox.gameState.tutorial = sandbox.TutorialState.createDefaultTutorialState(); };
+
+  // 渲染小部件所需的 DOM 缓存（覆盖 sandbox.document.getElementById，仅本块生效）
+  const cachedEls = {};
+  const makeWidgetEl = (id) => ({
+    id, _html: "",
+    get innerHTML() { return this._html; }, set innerHTML(v) { this._html = String(v); },
+    textContent: "", dataset: {}, style: {},
+    classList: { add() {}, remove() {}, toggle() {}, contains() { return false; } },
+    setAttribute() {}, getAttribute() { return null; },
+    addEventListener() {}, appendChild() {}, remove() {},
+    closest() { return null; },
+    querySelector() { return makeWidgetEl("q"); }, querySelectorAll() { return []; },
+    getContext() { return new MockCanvasContext(); }
+  });
+  const _origGetById = sandbox.document.getElementById;
+  sandbox.document.getElementById = (id) => { if (!cachedEls[id]) cachedEls[id] = makeWidgetEl(id); return cachedEls[id]; };
+  const twHtml = (id) => (cachedEls[id] ? cachedEls[id].innerHTML : "");
+
+  const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const baseCss = fs.readFileSync(path.join(root, "css", "base.css"), "utf8");
+  const shellRenderSource = fs.readFileSync(path.join(root, "js/ui/shell-render.js"), "utf8");
+  const tutorialSource = fs.readFileSync(path.join(root, "js/systems/tutorial.js"), "utf8");
+
+  // 让 twResolveTargetKind 在沙箱中按 index.html 侧边栏真实 data-page/data-skill 解析
+  // （documentMock.querySelector 默认恒真，会令 page/skill 误判；此处仅本块局部覆盖）
+  const _navData = {};
+  { const _re = /data-(page|skill)="([a-zA-Z]+)"/g; let _m; while ((_m = _re.exec(indexHtml))) _navData[_m[1] + ":" + _m[2]] = true; }
+  const _origQS = sandbox.document.querySelector;
+  sandbox.document.querySelector = (sel) => {
+    const _mm = /data-(page|skill)="([^"]+)"/.exec(sel || "");
+    if (_mm && _navData[_mm[1] + ":" + _mm[2]]) return makeElement();
+    return null;
+  };
+
+  // 1) 静态结构：8 个 DOM ID + <aside> + aria + 无全屏遮罩
+  const WIDGET_IDS = ["tutorial-widget","tutorial-widget-header","tutorial-widget-toggle","tutorial-widget-progress","tutorial-widget-branch-tabs","tutorial-widget-dialogue","tutorial-widget-objective","tutorial-widget-actions"];
+  okP(WIDGET_IDS.every(id => htmlIds.has(id)) && /<aside id="tutorial-widget"/.test(indexHtml) && /aria-live="polite"/.test(indexHtml) && /id="tutorial-widget-toggle"[^>]*aria-expanded/.test(indexHtml) && !/tutorial-overlay|tutorial-modal|tutorial__overlay/.test(indexHtml), "必须含 8 个小部件 DOM ID、<aside> 外壳、aria-live=polite、toggle 有 aria-expanded、且无全屏遮罩");
+
+  // 2) 纯只读：getTutorialDisplayState 不改变 state.tutorial 且可重复计算一致
+  resetTut();
+  const beforeDisp = JSON.stringify(sandbox.gameState.tutorial);
+  const d1 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  const d2 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(JSON.stringify(sandbox.gameState.tutorial) === beforeDisp && d1 && d2 && JSON.stringify(d1) === JSON.stringify(d2), "getTutorialDisplayState 纯只读且可重复计算一致");
+
+  // 3) 总计数 / 初始态
+  okP(d1.totalCount === 26 && d1.completedCount === 0 && d1.allCompleted === false && d1.prologueCompleted === false && d1.branchesUnlocked === false && d1.emergencyShipAvailable === false, "初始态：totalCount=26、completedCount=0、未全完成、序章未完成、分支未解锁、无应急舰船");
+
+  // 4) 每任务显示字段 + progressSummary 形状
+  const p1 = d1.taskById.P1;
+  const needKeys = ["id","chapter","order","title","speaker","briefing","objectiveText","completionText","navigationTarget","completionMode","rewardTiming","status","progress","reward","rewardClaimed","supportClaimed","isActive","isClaimable","isCompleted","canClaim","canConfirm","canChooseCombatTrack","progressSummary"];
+  okP(p1 && needKeys.every(k => k in p1) && p1.progressSummary && typeof p1.progressSummary.current === "number" && typeof p1.progressSummary.target === "number" && typeof p1.progressSummary.ratio === "number" && typeof p1.progressSummary.text === "string", "P1 含全部规定显示字段且 progressSummary 形如 {current,target,ratio,text}");
+
+  // 5) 顶层字段 + chapters 每项含 completed/total
+  const topKeys = ["completedCount","totalCount","prologueCompleted","branchStatus","selectedCombatTrack","emergencyShipAvailable","allCompleted","chapters","chapterById","currentTaskId","tasks","taskById"];
+  okP(topKeys.every(k => k in d1) && Array.isArray(d1.chapters) && d1.chapters.length >= 4 && d1.chapters.every(c => "completed" in c && "total" in c), "顶层显示态含全部规定字段且 chapters 每项含 completed/total");
+
+  // 6) P7 前三分支默认 locked
+  okP(d1.branchStatus.industrial === "locked" && d1.branchStatus.archaeology === "locked" && d1.branchStatus.combat === "locked", "P7 前三分支默认 locked");
+
+  // 7) 事件监听：仅 5 个具体事件、无 '*' 通配、只装一次
+  okP(typeof sandbox.renderTutorialWidget === "function", "renderTutorialWidget 必须作为全局函数暴露");
+  const evtNames = ["tutorial:taskCompleted","tutorial:rewardClaimed","tutorial:branchesUnlocked","tutorial:combatTrackSelected","tutorial:emergencyShipGranted"];
+  okP(evtNames.every(n => shellRenderSource.includes('GE.on("' + n + '"')) && shellRenderSource.includes("_tutorialWidgetListenersInstalled") && !/\.on\(\s*["']\*["']/.test(shellRenderSource), "必须监听 5 个具体 tutorial 事件、有只装一次守卫、且不得监听 '*' 通配");
+
+  // 8) 事件触发后重渲且仍纯读（不推进/发放）
+  const tutBefore = JSON.stringify(sandbox.gameState.tutorial);
+  sandbox.GameEvents.emit("tutorial:rewardClaimed", { taskId: "P1", claimedAt: NOW });
+  okP(JSON.stringify(sandbox.gameState.tutorial) === tutBefore && twHtml("tutorial-widget-dialogue").length > 0, "tutorial:rewardClaimed 事件后应重渲对话区且不得改变 state.tutorial");
+
+  // 9) P1 按钮→action.type 映射（领取；navigationTarget=null → 无『前往执行』）
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.P1.status = "active";
+  sandbox.renderTutorialWidget();
+  okP(/data-act="claim"\s+data-task="P1"/.test(twHtml("tutorial-widget-actions")) && !/data-act="nav"/.test(twHtml("tutorial-widget-actions")), "P1 应渲染『领取』(claim) 且 navigationTarget=null 故无『前往执行』导航按钮");
+
+  // === Batch P 第一次定点返修：任务导航纠正断言（≤15 项）===
+  // (A) 26 项静态 navigationTarget 与本指令表逐项一致
+  const EXPECT_NAV = { P1:null, P2:"shipEngineering", P3:"shipEngineering", P4:"shipEngineering", P5:"shipEngineering", P6:null, P7:null, I1:"hangar", I2:"mining", I3:"refining", I4:"planetary", I5:"planetary", I6:"shipEngineering", I7:"shipEngineering", A1:null, A2:"hangar", A3:"archaeology", A4:"archaeology", A5:"archaeology", A6:null, C1:null, C2:"hangar", C3:"hangar", C4:"combat", C5:"combat", C6:"combat" };
+  const allTasks = sandbox.TutorialData.tasks;
+  okP(allTasks.length === 26 && allTasks.every(t => EXPECT_NAV[t.id] === (t.navigationTarget || null)), "26 项静态 navigationTarget 与本指令表逐项一致");
+
+  // (B) P1/P6/A1/C1 显示态 navigationTarget 全为 null（不渲染导航按钮）
+  resetTut();
+  const noNavIds = ["P1","P6","A1","C1"];
+  const order26 = allTasks.map(t => t.id);
+  for (const id of noNavIds) {
+    const idx = order26.indexOf(id);
+    for (let i = 0; i < idx; i++) sandbox.gameState.tutorial.taskStateById[order26[i]].status = "completed";
+    sandbox.gameState.tutorial.taskStateById[id].status = "active";
+  }
+  const dNoNav = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(noNavIds.every(id => dNoNav.taskById[id].navigationTarget === null), "P1/P6/A1/C1 显示态 navigationTarget 全为 null（无导航按钮）");
+
+  // (C) P2 类（shipEngineering）『前往执行』实际落点 #shipeng-panel 而非 #blueprintstore-panel
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.P1.status = "completed";
+  sandbox.gameState.tutorial.taskStateById.P2.status = "active";
+  sandbox.renderTutorialWidget();
+  const navMatch = /data-act="nav"\s+data-nav="([^"]+)"/.exec(twHtml("tutorial-widget-actions"));
+  sandbox.document.getElementById("shipeng-panel").style.display = "none";
+  sandbox.document.getElementById("blueprintstore-panel").style.display = "none";
+  sandbox.twGoToTarget("shipEngineering");
+  okP(navMatch && navMatch[1] === "shipEngineering" && cachedEls["shipeng-panel"].style.display === "" && cachedEls["blueprintstore-panel"].style.display === "none", "P2『前往执行』目标=shipEngineering，twGoToTarget 实际显示 #shipeng-panel 且 #blueprintstore-panel 保持隐藏");
+
+  // (D) A5 实际落点 #archaeology-panel 而非 #cargo-panel
+  // 小部件按分支选项卡渲染：P1-P7 全部完成后默认序章选项卡无当前任务，
+  // A5 位于考古选项卡且未被选中，其『前往执行』按钮不会渲染。
+  // 指令允许『触发真实按钮 或 调用正式 twGoToTarget』二选一，这里取后者：
+  // 先断言显示态 navigationTarget===archaeology（即真实按钮本应承载的目标），
+  // 再调用正式 twGoToTarget 检查面板实际显隐。
+  resetTut();
+  for (const id of ["P1","P2","P3","P4","P5","P6","P7","A1","A2","A3","A4"]) sandbox.gameState.tutorial.taskStateById[id].status = "completed";
+  sandbox.gameState.tutorial.taskStateById.A5.status = "active";
+  const dA5 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  sandbox.document.getElementById("archaeology-panel").style.display = "none";
+  sandbox.document.getElementById("cargo-panel").style.display = "none";
+  sandbox.twGoToTarget("archaeology");
+  okP(dA5.taskById.A5.navigationTarget === "archaeology" && cachedEls["archaeology-panel"].style.display === "" && cachedEls["cargo-panel"].style.display === "none", "A5『前往执行』目标=archaeology，twGoToTarget 实际显示 #archaeology-panel 且 #cargo-panel 保持隐藏");
+
+  // (E) P5 动态：未造船→shipEngineering；已造未编战斗位→hangar
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.P5.status = "active";
+  sandbox.gameState.inventory.ships = [];
+  const dP5a = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  sandbox.gameState.inventory.ships = [{ shipId: "rookie_corvette", instanceId: "ship_test_p5", fitted: { high: [], mid: [], low: [], rig: [] }, enhancementLevel: 0 }];
+  sandbox.gameState.tutorial.taskStateById.P5.instanceId = "ship_test_p5";
+  sandbox.gameState.shipAssignments = {};
+  const dP5b = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dP5a.taskById.P5.navigationTarget === "shipEngineering" && dP5b.taskById.P5.navigationTarget === "hangar", "P5 未造启程级→shipEngineering；已造未编战斗位→hangar");
+
+  // (F) C3 动态：未编战斗位→hangar；已编未选合法星带→combat
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.C3.status = "active";
+  sandbox.gameState.shipAssignments = {};
+  const dC3a = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  sandbox.gameState.inventory.ships = [{ shipId: "rookie_corvette", instanceId: "ship_test_c3", fitted: { high: [], mid: [], low: [], rig: [] }, enhancementLevel: 0 }];
+  sandbox.gameState.shipAssignments = { combat: "ship_test_c3" };
+  sandbox.gameState.combat = { zone: "unknown_zone" };
+  const dC3b = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dC3a.taskById.C3.navigationTarget === "hangar" && dC3b.taskById.C3.navigationTarget === "combat", "C3 未编战斗位→hangar；已编未选合法星带→combat");
+
+  // (G) I1/I4 支援包：未领→无导航；领取后→hangar/planetary
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.I1.status = "active";
+  sandbox.gameState.tutorial.taskStateById.I1.supportClaimed = false;
+  const dI1a = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  sandbox.gameState.tutorial.taskStateById.I1.supportClaimed = true;
+  const dI1b = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dI1a.taskById.I1.navigationTarget === null && dI1b.taskById.I1.navigationTarget === "hangar", "I1 未领支援包→无导航；领取后→hangar");
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.I4.status = "active";
+  sandbox.gameState.tutorial.taskStateById.I4.supportClaimed = false;
+  const dI4a = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  sandbox.gameState.tutorial.taskStateById.I4.supportClaimed = true;
+  const dI4b = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dI4a.taskById.I4.navigationTarget === null && dI4b.taskById.I4.navigationTarget === "planetary", "I4 未领支援包→无导航；领取后→planetary");
+
+  // (H) I6/I7/A6/C6 进入 claimable 后 navigationTarget=null（只领奖励、不导航）
+  const claimIds = ["I6","I7","A6","C6"];
+  let allClaimNull = true;
+  for (const id of claimIds) {
+    resetTut();
+    if (id === "C6") sandbox.gameState.tutorial.selectedCombatTrack = "laser";
+    sandbox.gameState.tutorial.taskStateById[id].status = "claimable";
+    const dCl = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+    if (dCl.taskById[id].navigationTarget !== null) allClaimNull = false;
+  }
+  okP(allClaimNull, "I6/I7/A6/C6 进入 claimable 后 navigationTarget 全为 null（只显示领取奖励）");
+
+  // (I) completed / legacyCompleted 任务 navigationTarget 必为 null
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.P2.status = "completed";
+  sandbox.gameState.tutorial.taskStateById.P3.status = "legacyCompleted";
+  const dDone = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dDone.taskById.P2.navigationTarget === null && dDone.taskById.P3.navigationTarget === null, "completed / legacyCompleted 任务 navigationTarget 必为 null");
+
+  // (J) 动态导航计算纯读可重复
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.P5.status = "active";
+  sandbox.gameState.inventory.ships = [{ shipId: "rookie_corvette", instanceId: "ship_pure", fitted: { high: [], mid: [], low: [], rig: [] }, enhancementLevel: 0 }];
+  sandbox.gameState.tutorial.taskStateById.P5.instanceId = "ship_pure";
+  const tutBeforeNav = JSON.stringify(sandbox.gameState.tutorial);
+  const dNav1 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  const dNav2 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(JSON.stringify(sandbox.gameState.tutorial) === tutBeforeNav && dNav1.taskById.P5.navigationTarget === dNav2.taskById.P5.navigationTarget, "动态导航计算纯读且可重复：不改变 state.tutorial");
+
+  // (K) DOM 总数与收口提示一致
+  okP(htmlIds.size === 303, "DOM 总数 303（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save）与收口提示一致");
+
+  // 10) P7 按钮→action.type 映射（开启三条职业支线 / confirm）
+  resetTut();
+  for (const id of ["P1","P2","P3","P4","P5","P6"]) sandbox.gameState.tutorial.taskStateById[id].status = "completed";
+  sandbox.gameState.tutorial.taskStateById.P7.status = "active";
+  sandbox.renderTutorialWidget();
+  okP(/data-act="confirm"\s+data-task="P7"/.test(twHtml("tutorial-widget-actions")) && twHtml("tutorial-widget-actions").includes("开启三条职业支线"), "P7 应渲染『开启三条职业支线』按钮 (confirm)");
+
+  // 11) 应急舰船入口（顶层条件）+ 按钮
+  resetTut();
+  sandbox.gameState.tutorial.taskStateById.P5.status = "completed";
+  sandbox.gameState.inventory.ships = [];
+  sandbox.gameState.tutorial.emergencyShipGranted = false;
+  const dEm = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dEm.emergencyShipAvailable === true && (sandbox.renderTutorialWidget(), /data-act="claimEmergency"/.test(twHtml("tutorial-widget-actions"))), "P5 完成且无舰船时应出现应急舰船入口按钮 (claimEmergency)");
+
+  // 12) I1 支援包按钮（领取支援包，保持 active）
+  resetTut();
+  sandbox.gameState.tutorial.prologueStatus = "completed";
+  sandbox.gameState.tutorial.branchStatus.industrial = "active";
+  sandbox.gameState.tutorial.branchStatus.archaeology = "active";
+  sandbox.gameState.tutorial.branchStatus.combat = "active";
+  sandbox.gameState.tutorial.taskStateById.P7.status = "completed";
+  sandbox.twOnBranchesUnlocked();
+  sandbox.gameState.tutorial.taskStateById.I1.status = "active";
+  sandbox.gameState.tutorial.taskStateById.I1.supportClaimed = false;
+  for (const id of ["I2","I3","I4","I5","I6","I7"]) sandbox.gameState.tutorial.taskStateById[id].status = "completed";
+  sandbox.renderTutorialWidget();
+  okP(twHtml("tutorial-widget-actions").includes("领取支援包"), "I1 未领支援包时应渲染『领取支援包』");
+
+  // 13) I6 领取奖励按钮（canClaim + 领取奖励）
+  sandbox.gameState.tutorial.taskStateById.I1.status = "completed";
+  sandbox.gameState.tutorial.taskStateById.I6.status = "claimable";
+  for (const id of ["I2","I3","I4","I5","I7"]) sandbox.gameState.tutorial.taskStateById[id].status = "completed";
+  const dI6 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  sandbox.renderTutorialWidget();
+  okP(dI6.taskById.I6.canClaim === true && twHtml("tutorial-widget-actions").includes("领取奖励"), "I6 可达 claimable 且渲染『领取奖励』");
+
+  // 14) C1 三轨道选择（trackOptions=3，标签 激光/导弹/火炮，含预览）
+  sandbox.gameState.tutorial.taskStateById.C1.status = "active";
+  const dC1 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dC1.taskById.C1.canChooseCombatTrack === true && Array.isArray(dC1.taskById.C1.trackOptions) && dC1.taskById.C1.trackOptions.length === 3 && dC1.taskById.C1.trackOptions.every(o => ["激光","导弹","火炮"].includes(o.label) && o.previewText && o.previewText.length > 0), "C1 可三轨道选择且 trackOptions=3（激光/导弹/火炮 含预览）");
+
+  // 15) C6 奖励经 DisplayNames 显示舰船名
+  sandbox.gameState.tutorial.taskStateById.C6.status = "claimable";
+  sandbox.gameState.tutorial.selectedCombatTrack = "laser";
+  const dC6 = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  okP(dC6.taskById.C6.rewardItems.some(r => r.text.includes("星矛级")), "C6（laser）奖励应经 DisplayNames 显示舰船名 星矛级");
+
+  // 16) 移动端 CSS：@media720 + safe-area + reduced-motion，新手部件无闪烁
+  const twCssStart = baseCss.indexOf(".tutorial-widget");
+  const twCss = twCssStart >= 0 ? baseCss.slice(twCssStart) : "";
+  okP(/@media\s*\(max-width:\s*720px\)/.test(twCss) && twCss.includes("env(safe-area-inset-bottom") && twCss.includes("prefers-reduced-motion") && !/flash|blink/.test(twCss), "base.css 须含移动端 @media720 + safe-area + reduced-motion 且新手部件无闪烁动画");
+
+  // 17) 折叠仅 UI 临时变量，不写 gameState
+  okP(shellRenderSource.includes("_tutorialWidgetCollapsed") && shellRenderSource.includes('classList.toggle("collapsed"') && !shellRenderSource.includes("gameState.tutorial ="), "折叠必须用模块级临时变量 + DOM class，且不得写入 gameState.tutorial");
+
+  // 18) 不引用 audit 脚本、脚本数不回退
+  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 54, "Batch P 不得引用 audit 脚本且脚本数保持 54 不变");
+
+  // === Batch Q 真实浏览器试玩定点返修断言（5 项）===
+  // (Q1) 真实浏览器复现：领取 P1 后动作区永久空白。根因是 tutorial 事件在同一次 dispatch 内部同步派发，
+  // 早于该次 dispatch 末尾的「解锁下一任务」收尾；事件回调只渲染一次会把 DOM 定格在中间态且此后不再刷新。
+  // 因此 5 个事件处理器必须统一经 twRenderSoon（即时渲染 + 结算后补渲）。
+  okP(shellRenderSource.includes("function twRenderSoon()")
+    && /function twOnRewardClaimed\(\)\s*\{\s*twRenderSoon\(\);\s*\}/.test(shellRenderSource)
+    && /function twOnCombatTrackSelected\(\)\s*\{\s*twRenderSoon\(\);\s*\}/.test(shellRenderSource)
+    && /function twOnEmergencyShipGranted\(\)\s*\{\s*twRenderSoon\(\);\s*\}/.test(shellRenderSource)
+    && (shellRenderSource.match(/twRenderSoon\(\)/g) || []).length >= 6,
+    "5 个教程事件处理器须统一经 twRenderSoon 重渲，不得只在事件回调里渲染一次");
+  // (Q2) twRenderSoon 自身契约：即时渲染 + 去重标志 + 无定时器环境守卫 + 宏任务补渲且补渲异常不外抛
+  okP(shellRenderSource.includes('typeof setTimeout !== "function"')
+    && shellRenderSource.includes("_tutorialWidgetRenderQueued = true")
+    && /setTimeout\([\s\S]{0,240}?renderTutorialWidget\(\);[\s\S]{0,120}?\}\s*,\s*0\s*\)/.test(shellRenderSource),
+    "twRenderSoon 须含：去重标志 + 无 setTimeout 环境守卫 + setTimeout(...,0) 补渲且 try/catch 兜底");
+  // (Q3) 完成态收尾文案：26/26 全部完成时进度头显示『培训档案完成 26/26』
+  resetTut();
+  for (const t of sandbox.TutorialData.tasks) sandbox.gameState.tutorial.taskStateById[t.id].status = "completed";
+  sandbox.gameState.tutorial.prologueStatus = "completed";
+  sandbox.gameState.tutorial.branchStatus = { industrial: "completed", archaeology: "completed", combat: "completed" };
+  const dQAll = sandbox.TutorialSystem.getTutorialDisplayState(sandbox.gameState);
+  sandbox.renderTutorialWidget();
+  const qProgAll = twHtml("tutorial-widget-progress");
+  okP(dQAll.allCompleted === true && qProgAll.includes("培训档案完成 26/26"), "26/26 全部完成时进度头须显示『培训档案完成 26/26』");
+  // (Q4) 完成态不得出现任何跳过入口，卡片仍保留结构
+  okP(!/跳过|data-act="skip"/.test(twHtml("tutorial-widget-actions")) && !/跳过/.test(qProgAll) && twHtml("tutorial-widget-progress").length > 0,
+    "完成态不得出现跳过入口且教程卡结构保留");
+  // (Q5) 未完成态文案不得回退：仍显示『已完成 X/26』
+  resetTut();
+  sandbox.renderTutorialWidget();
+  const qProgFresh = twHtml("tutorial-widget-progress");
+  okP(qProgFresh.includes("已完成 0/26") && !qProgFresh.includes("培训档案完成"), "未完成态进度头须保持『已完成 X/26』文案");
+
+  sandbox.document.getElementById = _origGetById;
+  sandbox.document.querySelector = _origQS;
+  console.log("Batch P 新手引导常驻小部件校验通过（" + pChecks + " 项）：8 DOM ID + <aside>/aria/无遮罩、getTutorialDisplayState 纯只读且 26 总数、每任务/顶层字段齐全、P7 前三分支 locked、5 具体事件监听且无 '*' 通配且只装一次、事件触发重渲且仍纯读、按钮→action.type 映射（P1 领取 / P7 开启三条职业支线 / I1 领取支援包 / I6 领取奖励 / C1 三轨道 / 应急舰船 claimEmergency / 前往执行导航）、C1 三轨道预览与 C6 经 DisplayNames 显示舰船名、移动端 @media720 + safe-area + reduced-motion 无闪烁、折叠仅 UI 变量不写 gameState、不引用 audit、脚本数 54 不变");
+}
+
+// ===== Batch Q 最终定点返修：存档来源三态（null / false / true）真实行为断言 =====
+// 复用上方同一套全脚本沙箱与既有 localStorage fixture，不新建第二套沙箱、不做纯源码字符串检查：
+// 全部结论均来自真实的 SaveManager.load / SaveManager.importData / SaveManager.deleteSave /
+// migrateShipAndEquipmentState 调用，以及脚本装载时真实执行过的 autoLoad 启动路径。
+{
+  let qChecks = 0;
+  const okQ = (condition, message) => { if (!condition) throw new Error("Batch Q 校验失败：" + message); qChecks++; };
+  const shipIds = () => (sandbox.gameState.inventory.ships || []).map(s => s && s.shipId);
+  const shipCount = () => (sandbox.gameState.inventory.ships || []).length;
+  const hasShip = (id) => shipIds().includes(id);
+
+  // ---- A. 空 localStorage 的首次启动：来源必须是 null（真正的新游戏），零舰船、零补偿 ----
+  okQ(freshBootEvidence.lastLoadSource === null && freshBootEvidence.isLegacy === false,
+    "空存档首启来源标记必须严格为 null 且不得判定为老档，实际 " + String(freshBootEvidence.lastLoadSource));
+  okQ(freshBootEvidence.ships.length === 0,
+    "空存档首启必须为零舰船，实际 " + JSON.stringify(freshBootEvidence.ships.map(s => s && s.shipId)));
+  okQ(!freshBootEvidence.ships.some(s => s && s.shipId === "rifter") &&
+      !freshBootEvidence.ships.some(s => s && s.shipId === "miner_frigate"),
+    "空存档首启不得含旧档兜底补偿舰 rifter / miner_frigate");
+  okQ(freshBootEvidence.isk === 10000,
+    "空存档首启星币必须保持正式新档值 10000，不得升到旧档补偿值 1000000，实际 " + freshBootEvidence.isk);
+  okQ(freshBootEvidence.tutorial && freshBootEvidence.tutorial.taskStateById &&
+      freshBootEvidence.tutorial.taskStateById.P1 && freshBootEvidence.tutorial.taskStateById.P1.status === "active",
+    "空存档首启 tutorial.P1 必须为 active");
+  {
+    // 应急舰船的「零舰船」前提：拿首启快照真实跑一次展示态计算
+    const S = JSON.parse(JSON.stringify(sandbox.gameState));
+    S.inventory.ships = JSON.parse(JSON.stringify(freshBootEvidence.ships));
+    S.tutorial = JSON.parse(JSON.stringify(freshBootEvidence.tutorial));
+    S.tutorial.taskStateById.P5.status = "completed";
+    const disp = sandbox.TutorialSystem.getTutorialDisplayState(S);
+    okQ(disp.emergencyShipAvailable === true,
+      "空存档首启零舰船前提下，应急舰船必须可用（emergencyShipAvailable=true）");
+  }
+
+  // ---- B. 老档（原始存档无 tutorial 字段）：来源严格 false，旧档补偿保留且幂等 ----
+  const legacySave = JSON.parse(JSON.stringify(sandbox.gameState));
+  delete legacySave.tutorial;
+  legacySave.inventory.ships = [];
+  const legacyJson = JSON.stringify(legacySave);
+  localStorageMock.getItem = () => legacyJson;
+  const legacyLoaded = sandbox.SaveManager.load();
+  localStorageMock.getItem = () => null;
+  okQ(legacyLoaded === true && sandbox.SaveManager._lastLoadSourceHadTutorial === false && sandbox.isLegacySaveSource() === true,
+    "老档经真实 SaveManager.load 后，来源标记必须严格为 false 且判定为老档");
+  sandbox.migrateShipAndEquipmentState();
+  const legacyShipsAfterFirst = shipCount();
+  okQ(hasShip("rifter") && legacyShipsAfterFirst === 1,
+    "老档兜底补偿必须仍然生效：迁移后补发 1 艘 rifter，实际 " + JSON.stringify(shipIds()));
+  sandbox.migrateShipAndEquipmentState();
+  sandbox.migrateShipAndEquipmentState();
+  okQ(shipCount() === legacyShipsAfterFirst,
+    "老档补偿必须幂等：重复迁移不得重复补舰，实际 " + JSON.stringify(shipIds()));
+
+  // ---- C. 现代档（原始存档含 tutorial、舰船为空）：来源严格 true，不触发旧档补偿 ----
+  const modernSave = JSON.parse(JSON.stringify(sandbox.gameState));
+  modernSave.tutorial = sandbox.TutorialState.createDefaultTutorialState();
+  modernSave.inventory.ships = [];
+  const modernJson = JSON.stringify(modernSave);
+  localStorageMock.getItem = () => modernJson;
+  const modernLoaded = sandbox.SaveManager.load();
+  localStorageMock.getItem = () => null;
+  okQ(modernLoaded === true && sandbox.SaveManager._lastLoadSourceHadTutorial === true && sandbox.isLegacySaveSource() === false,
+    "现代档经真实 SaveManager.load 后，来源标记必须严格为 true 且不得判定为老档");
+  sandbox.migrateShipAndEquipmentState();
+  okQ(shipCount() === 0 && !hasShip("rifter"),
+    "现代档舰船为空时不得触发旧档补偿，实际 " + JSON.stringify(shipIds()));
+
+  // ---- importData 同样按原始存档自有 tutorial 字段写 false / true ----
+  sandbox.SaveManager.importData(legacyJson);
+  const importLegacyFlag = sandbox.SaveManager._lastLoadSourceHadTutorial;
+  sandbox.SaveManager.importData(modernJson);
+  const importModernFlag = sandbox.SaveManager._lastLoadSourceHadTutorial;
+  okQ(importLegacyFlag === false && importModernFlag === true,
+    "importData 必须按原始存档是否自有 tutorial 字段写 false / true，实际 " + String(importLegacyFlag) + " / " + String(importModernFlag));
+
+  // ---- D. 删除存档后再次启动：来源回到 null，不沿用上一次标记，仍为零舰船新档 ----
+  sandbox.SaveManager._pendingDelete = false;
+  sandbox.SaveManager.deleteSave();
+  okQ(sandbox.SaveManager._lastLoadSourceHadTutorial === null,
+    "deleteSave 后来源标记必须立刻回到 null，不得沿用上一次的 legacy/modern 标记");
+  localStorageMock.getItem = () => null;
+  const restartLoaded = sandbox.SaveManager.load();
+  okQ(restartLoaded === false && sandbox.SaveManager._lastLoadSourceHadTutorial === null && sandbox.isLegacySaveSource() === false,
+    "删档后再次启动：load 返回 false、来源回到 null、且不得判定为老档");
+  sandbox.gameState.inventory.ships = [];
+  sandbox.migrateShipAndEquipmentState();
+  okQ(shipCount() === 0,
+    "删档后再次启动仍为零舰船新档，不得补发 rifter，实际 " + JSON.stringify(shipIds()));
+
+  console.log("Batch Q 存档来源三态校验通过（" + qChecks + " 项）：空档首启来源=null 且零舰船/零补偿/星币 10000/P1 active/应急舰船前提成立、老档来源严格 false 且 rifter 补偿保留并幂等、现代档来源严格 true 且不补偿、importData 写 false/true、删档重开来源回到 null 仍为零舰船");
 }
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);

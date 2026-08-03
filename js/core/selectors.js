@@ -7,6 +7,24 @@
    3. 返回可序列化的普通对象，供原生 DOM、测试或未来框架共同消费。
    ================================================================ */
 
+// Batch L（IP 去相似化）显示层辅助：区域 / 星带显示名转换（内部 area name 是逻辑键，仅显示层替换）
+function getAreaDisplayName(name) {
+  return (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getAreaName === "function")
+    ? DisplayNames.getAreaName(name)
+    : name;
+}
+
+// Batch L：对拼接文案做词级显示名替换（矿石 / 矿物 / 势力材料 / 旧舰船名等），
+// 只影响玩家可见文本，绝不改动内部键。未命中返回原文。
+function transformDisplayText(text) {
+  if (typeof text !== "string" || !text) return text;
+  if (typeof DisplayNames === "undefined" || !DisplayNames) return text;
+  let out = text;
+  for (const key of Object.keys(DisplayNames.ORE_NAMES || {})) out = out.split(key).join(DisplayNames.ORE_NAMES[key]);
+  for (const key of Object.keys(DisplayNames.MINERAL_NAMES || {})) out = out.split(key).join(DisplayNames.MINERAL_NAMES[key]);
+  return out;
+}
+
 function getShipInstanceFromState(state, shipRef) {
   const ships = state && state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
   return ships.find(ship => ship.instanceId === shipRef) || ships.find(ship => ship.shipId === shipRef) || null;
@@ -77,7 +95,7 @@ function getGlobalDisplayState(state) {
     quickOres:ResourceRegistry.listStateEntries(state, "ore")
       .filter(entry => entry.quantity > 0)
       .slice(0, 4)
-      .map(entry => ({ name:entry.definition.name, value:entry.quantity }))
+      .map(entry => ({ name:getResourceDisplayName(entry.definition.id), value:entry.quantity }))
   };
 }
 
@@ -142,7 +160,7 @@ function getCurrentActivityDisplayState(state) {
   if (key === "mining") detail = "采集" + getAreaByName(ALL_MINING_AREAS, action.startedArea || action.area).ore;
   else if (key === "refining") {
     const recipe = SMELTING_RECIPES.find(item => item.name === (action.startedSmeltingArea || action.smeltingArea)) || SMELTING_RECIPES[0];
-    detail = "冶炼" + recipe.consumeOre + "→" + recipe.outputMineral;
+    detail = "冶炼" + getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral);
   } else if (key === "gasHarvesting") detail = "采集" + getAreaByName(GAS_AREAS, action.startedGasArea || action.gasArea).gas;
   else if (key === "shipEngineering") {
     if (action.shipSubAction === "component") {
@@ -328,10 +346,11 @@ function getMiningDisplayState(state, now) {
   const targetChanged = progress.active && current.name !== running.name;
   const requirement = getMiningRequirementState(state, current);
   const level = Number(state.skills.mining && state.skills.mining.lvl) || 1;
+  // Batch L：显示层统一替换星带名（内部 area.name 仍是 action.area / queue target 逻辑键，保持原值）
   return {
     kind:"mining",
-    current:{ ...current },
-    running:{ ...running },
+    current:{ ...current, displayName:getAreaDisplayName(current.name) },
+    running:{ ...running, displayName:getAreaDisplayName(running.name) },
     mode,
     level,
     efficiency,
@@ -347,6 +366,7 @@ function getMiningDisplayState(state, now) {
     requirement,
     targets:(mode === "moon" ? MOON_MINING_AREAS : MINING_AREAS).map(area => ({
       ...area,
+      displayName:getAreaDisplayName(area.name),
       locked:level < area.level,
       selected:current.name === area.name,
       running:progress.active && running.name === area.name
@@ -377,8 +397,8 @@ function getSmeltingDisplayState(state, now) {
   const runningStock = ResourceRegistry.get(state, "ore:" + running.consumeOre);
   return {
     kind:"refining",
-    current:{ ...current },
-    running:{ ...running },
+    current:{ ...current, displayName:getAreaDisplayName(current.name) },
+    running:{ ...running, displayName:getAreaDisplayName(running.name) },
     level,
     skillEfficiency,
     efficiency,
@@ -397,7 +417,7 @@ function getSmeltingDisplayState(state, now) {
     showStart:!progress.active || targetChanged,
     showStop:progress.active && !targetChanged,
     canStart:level >= current.level,
-    options:SMELTING_RECIPES.map(recipe => ({ ...recipe, locked:level < recipe.level, selected:recipe.name === current.name }))
+    options:SMELTING_RECIPES.map(recipe => ({ ...recipe, displayName:getAreaDisplayName(recipe.name), locked:level < recipe.level, selected:recipe.name === current.name }))
   };
 }
 
@@ -516,13 +536,13 @@ function getActionConfirmationDisplayState(state, target, now) {
     const recipe = display.current;
     result.title = icons.refining + " " + (SKILL_LABEL.refining || "冶炼");
     result.duration = display.actualTime;
-    result.outputText = recipe.outputMineral + "×" + display.output;
+    result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
     result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:recipe.consumeOre, quantity:1, stock:display.stock, enough:display.stock >= 1 }];
     result.maxCount = Math.max(1, display.stock);
     result.unlimited = false;
     result.canOpen = display.canStart;
     result.blockedText = display.canStart ? "" : "需要冶炼等级 Lv." + recipe.level;
-    result.queue = { skill:"refining", target:recipe.name, label:recipe.consumeOre + "→" + recipe.outputMineral };
+    result.queue = { skill:"refining", target:recipe.name, label:getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral) };
   } else if (target === "gasHarvesting") {
     const display = getGasDisplayState(state, now);
     result.title = icons.gasHarvesting + " " + (SKILL_LABEL.gasHarvesting || "气体采集");
@@ -538,7 +558,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.duration = recipe.time / display.efficiency;
     result.requirements = [
       ...display.detail.equipmentInputs.map(item => ({ resourceId:"equipment:" + item.itemId, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
-      ...display.detail.materials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, quantity:item.quantity, stock:item.stock, enough:item.enough }))
+      ...display.detail.materials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
     result.maxCount = Math.max(1, getEquipmentMaxCyclesFromState(state, recipe));
     result.unlimited = false;
@@ -553,7 +573,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     const recipe = display.currentComponent;
     result.title = icons.shipComp + " " + recipe.name;
     result.duration = display.componentActualTime; // 唯一周期公式（含船坞倍率）
-    result.requirements = display.componentMaterials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, quantity:item.quantity, stock:item.stock, enough:item.enough }));
+    result.requirements = display.componentMaterials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }));
     result.maxCount = Math.max(1, result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999));
     result.unlimited = false;
     result.outputText = recipe.name + "×1";
@@ -568,7 +588,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.duration = display.assemblyActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = [
       ...display.assemblyComponents.map(item => ({ resourceId:"component:" + item.id, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
-      ...display.assemblyMaterials.map(item => ({ resourceId:item.material, name:item.material, quantity:item.quantity, stock:item.stock, enough:item.enough }))
+      ...display.assemblyMaterials.map(item => ({ resourceId:item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
     result.maxCount = Math.max(1, display.assemblyMaxCycles);
     result.unlimited = false;
@@ -1444,7 +1464,8 @@ function getPlanetaryCapacityState(state) {
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     usedSlots:deployments.length,
-    slots:Math.min(5, 1 + Math.floor(level / 10) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0)),
+    // 新手期保底 2 个行星槽位（Lv1-19 = 2），后续曲线不变：Lv20-29=3 / Lv30-39=4 / Lv40+=5；空间站加成仍叠加，硬上限 5
+    slots:Math.min(5, Math.max(2, 1 + Math.floor(level / 10)) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0)),
     maxSlots:5
   };
 }
@@ -1600,12 +1621,12 @@ function getCargoDisplayState(state, filter) {
     if (equipment) equipmentSource[equipment.name] = (equipmentSource[equipment.name] || 0) + 1;
   }
   const sources = {
-    ore:Object.fromEntries(ResourceRegistry.listStateEntries(state, "ore").map(entry => [entry.definition.name, entry.quantity])),
-    mineral:Object.fromEntries(ResourceRegistry.listStateEntries(state, "mineral").map(entry => [entry.definition.name, entry.quantity])),
-    planetary:Object.fromEntries(ResourceRegistry.listStateEntries(state, "planetary").map(entry => [entry.definition.name, entry.quantity])),
-    gases:Object.fromEntries(ResourceRegistry.listStateEntries(state, "gas").map(entry => [entry.definition.name, entry.quantity])),
-    moon:Object.fromEntries(ResourceRegistry.listStateEntries(state, "moon").map(entry => [entry.definition.name, entry.quantity])),
-    special:Object.fromEntries(ResourceRegistry.listStateEntries(state, "special").map(entry => [entry.definition.name, entry.quantity])),
+    ore:Object.fromEntries(ResourceRegistry.listStateEntries(state, "ore").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
+    mineral:Object.fromEntries(ResourceRegistry.listStateEntries(state, "mineral").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
+    planetary:Object.fromEntries(ResourceRegistry.listStateEntries(state, "planetary").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
+    gases:Object.fromEntries(ResourceRegistry.listStateEntries(state, "gas").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
+    moon:Object.fromEntries(ResourceRegistry.listStateEntries(state, "moon").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
+    special:Object.fromEntries(ResourceRegistry.listStateEntries(state, "special").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     consumable:{ "燃料单元":ResourceRegistry.get(state, "consumable:fuel"), "激光晶体弹药":ResourceRegistry.get(state, "ammo:laser"), "导弹":ResourceRegistry.get(state, "ammo:missile"), "炮台弹药":ResourceRegistry.get(state, "ammo:cannon"), "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") },
     equipment:equipmentSource
   };
@@ -1779,7 +1800,7 @@ function getBlueprintShipPreview(item) {
     const component = SHIP_COMPONENT_RECIPES.find(entry => entry.id === componentId);
     return (component ? component.name : componentId) + "×" + quantity;
   });
-  const materialText = Object.entries(recipe.materialCost || {}).map(([material, quantity]) => material + "×" + quantity);
+  const materialText = Object.entries(recipe.materialCost || {}).map(([material, quantity]) => getResourceDisplayName(material) + "×" + quantity);
   const bonusNames = {
     shieldCapacity:"护盾容量", armorCapacity:"装甲容量", structureCapacity:"结构容量",
     laserDamage:"激光伤害", missileDamage:"导弹伤害", cannonDamage:"射弹伤害",
@@ -2066,6 +2087,7 @@ function getQueueDisplayState(state) {
       active:Boolean(queue.status.isRunning && queue.status.activeIndex === index),
       icon:icons[item.skill] || "▶",
       skillLabel:labels[item.skill] || item.skill,
+      label:transformDisplayText(item.label),
       countText:item.count === -1 ? "无限" : "剩余 ×" + (item.count || 1) + " 次",
       canMoveUp:index > 0,
       canMoveDown:index < queue.items.length - 1
@@ -2088,7 +2110,7 @@ function getStatisticsDisplayState(state) {
   const production = statistics.production || {};
   const combat = statistics.combat || {};
   const number = value => Math.max(0, Number(value) || 0);
-  const resourceNames = new Map(ResourceRegistry.listDefinitions().map(definition => [definition.id, definition.name]));
+  const resourceNames = new Map(ResourceRegistry.listDefinitions().map(definition => [definition.id, getResourceDisplayName(definition.id)]));
   const recipeNames = new Map([
     ...SHIP_COMPONENT_RECIPES.map(recipe => [recipe.id, recipe.name]),
     ...SHIP_ASSEMBLY_RECIPES.map(recipe => [recipe.id, recipe.name]),
