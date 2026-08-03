@@ -90,7 +90,8 @@
   .topbar .res-value.lp  { color: #5da8d4; }
 
   /* -- 仓库显示 -- */
-  .cargo-item { gap: 6px; }
+  .topbar .resources .res-item.cargo-item { cursor: pointer; border-radius: 4px; transition: background .15s; }
+  .topbar .resources .res-item.cargo-item:hover { background: rgba(136,153,170,.15); }
 
   .topbar .ore-quick {
     display: flex;

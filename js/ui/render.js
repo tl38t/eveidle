@@ -3,11 +3,11 @@
    ================================================================ */
 
 const SKILL_DESC = {
-  mining: "采矿效率，解锁更高级矿带",
+  mining: "提升采矿效率，解锁更高级矿带",
   refining: "将矿石精炼为矿物",
   gasHarvesting: "采集气体用于制造燃料",
   shipEngineering: "制造舰船部件与合成整船",
-  planetaryIndustry: "后台产出行星材料",
+  planetaryIndustry: "自动产出行星材料",
   laserOps: "提升激光炮伤害与伤害应用",
   cannonOps: "提升炮台伤害与伤害应用",
   missileOperations: "提升导弹伤害与伤害应用",
@@ -18,18 +18,37 @@ const SKILL_DESC = {
   piloting: "降低舰船受到的伤害",
   capacitorManagement: "降低燃料消耗",
   defense: "提升维修效率",
-  combat: "由最高攻击技能与最高防御技能共同决定，解锁更高安全等级星带",
+  combat: "由攻击与防御技能共同决定的综合等级，决定可前往的星带安全等级",
+  archaeology: "扫描遗迹信号并解析其中的文物",
   drones: "（占位）无人机伤害加成",
   equipmentEngineering: "制造舰船装备、燃料与各类弹药",
-  boosterEngineering: "制造采矿、考古与战斗增强剂（提升等级加快制造速度）",
+  boosterEngineering: "制造采矿、考古与战斗增强剂",
   rigEngineering: "制造舰船改装件",
   reverseEngineering: "（占位）解析残骸获取蓝图碎片"
+};
+
+const PAGE_DESC = {
+  blueprints:   "用星币和功勋购买可永久制造的蓝图",
+  cargo:        "查看与管理物资库存，强化装备",
+  hangar:       "管理舰队、指派任务、强化舰船",
+  station:      "升级空间站、补给燃料、建造建筑",
+  queue:        "把多个动作排成队列依次执行",
+  statistics:   "查看累计游戏数据与记录排行",
+  achievements: "浏览成就及解锁条件与奖励",
+  research:     "解锁科技",
+  save:         "保存、导出、导入或清除存档",
+  settings:     "调整游戏选项与偏好"
 };
 
 function renderSidebar(sidebarState) {
   const byKey = new Map((sidebarState || getSidebarDisplayState(gameState)).map(item => [item.key, item]));
   document.querySelectorAll('.sidebar .nav-item').forEach(el => {
     const lvSpan = el.querySelector('.nav-lv');
+    const pageKey = el.dataset.page;
+    if (pageKey && !lvSpan) {
+      const t = PAGE_DESC[pageKey];
+      if (t && el.title !== t) el.title = t;
+    }
     if (!lvSpan) return;
     const skillKey = lvSpan.dataset.lv;
     if (!skillKey) return;
