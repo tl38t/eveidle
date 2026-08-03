@@ -2191,8 +2191,8 @@ const testEnemy = {
   kind:"normal", hit:100, dodge:30, baseDamage:36, iskDrop:0, xpDrop:0, level:1, defeated:false, rewarded:false
 };
 sandbox.gameState.combat = {
-  ...originalCombat, active:true, enemies:[testEnemy], currentEnemy:testEnemy, hp:{...testMaxHp}, maxHp:{...testMaxHp},
-  repairUntil:0, destroyedShip:null, lastStatus:"", zone:"angel_outpost"
+  ...originalCombat, activeShip:testCombatShip.instanceId, active:true, enemies:[testEnemy], currentEnemy:testEnemy, hp:{...testMaxHp}, maxHp:{...testMaxHp},
+  repairUntil:0, destroyedShip:null, repairs:{}, lastStatus:"", zone:"angel_outpost"
 };
 const volleyFuel = Math.max(1, Math.round(3 * sandbox.calcFuelMult())) + Math.max(1, Math.round(1 * sandbox.calcFuelMult()));
 const enemyShieldBefore = testEnemy.hp.shield;
@@ -2247,9 +2247,11 @@ const destroyedHp = sandbox.gameState.combat.hp.structure;
 if (sandbox.repairShip() !== false || sandbox.gameState.combat.hp.structure !== destroyedHp) {
   throw new Error("爆船后仍然可以手动修复");
 }
-sandbox.gameState.combat.repairUntil = Date.now() - 1;
-sandbox.updateCombatRecovery();
-if (sandbox.gameState.combat.repairUntil !== 0 || sandbox.gameState.combat.hp.structure !== sandbox.gameState.combat.maxHp.structure) {
+// 问题2：per-ship 维修权威字段为 combat.repairs[instanceId]；旧 repairUntil 已不参与判断。
+sandbox.gameState.combat.repairs = sandbox.gameState.combat.repairs || {};
+sandbox.gameState.combat.repairs[testCombatShip.instanceId] = Date.now() - 1;
+sandbox.updateCombatRecovery(Date.now());
+if (sandbox.gameState.combat.repairs[testCombatShip.instanceId] !== undefined || sandbox.gameState.combat.hp.structure !== sandbox.gameState.combat.maxHp.structure) {
   throw new Error("180秒结束后没有自动满血修复");
 }
 
@@ -3056,14 +3058,16 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     const offResume = sandbox.GameEvents.on("combat:resumedAfterRepair", () => { resumeCount += 1; });
     const T0 = 1700000000000;
     const beginRes = sandbox.dispatchGameAction(sandbox.gameState, { type: "combat/beginRecovery" }, T0);
-    if (!beginRes || !beginRes.changed || sandbox.gameState.combat.repairUntil !== T0 + 180000 ||
+    if (!beginRes || !beginRes.changed || sandbox.gameState.combat.repairs[beginRes.repairShipId] !== T0 + 180000 ||
         sandbox.gameState.currentAction.active !== false || !sandbox.gameState.resumeAfterRepair ||
         sandbox.gameState.resumeAfterRepair.returnZoneId !== beltZone) {
-      throw new Error("combat/beginRecovery 未正确建立 repairUntil + resumeAfterRepair");
+      throw new Error("combat/beginRecovery 未正确建立 repairs + resumeAfterRepair");
     }
+    // 镜像真实游戏：被毁舰即当前 active 战斗舰（beginRecovery 不改动 activeShip，真实流程中它本就指向被毁舰）
+    sandbox.gameState.combat.activeShip = beginRes.repairShipId;
     sandbox.updateCombatRecovery(T0 + 180000); // 维修到期：唯一入口真实自动恢复出击
     if (resumeCount !== 1 || sandbox.gameState.combat.active !== true || sandbox.gameState.currentAction.active !== true ||
-        sandbox.gameState.resumeAfterRepair !== null || sandbox.gameState.combat.repairUntil !== 0) {
+        sandbox.gameState.resumeAfterRepair !== null || sandbox.gameState.combat.repairs[beginRes.repairShipId] !== undefined) {
       throw new Error("维修到期后未真实自动恢复出击，或 combat:resumedAfterRepair 事件次数不为 1（实际 " + resumeCount + "）");
     }
     sandbox.updateCombatRecovery(T0 + 999999); // 已恢复后重复调用不得再 emit
