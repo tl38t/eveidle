@@ -175,6 +175,9 @@ node --max-old-space-size=8192 tools/simulate-destroyer-belts.mjs --assert-nulls
 
 # 17. 尾随空格检查
 git diff --check
+
+# 18.（新增）十倍速运行期开关冒烟
+node tools/smoke-speed.mjs
 ```
 
 **验收标准**：全部 EXIT=0。`simulate-destroyer-belts` 两条（第 15/16 条）一律使用 `--max-old-space-size=8192`；4GB 会纯 v8 内存压力崩溃（EXIT 139/进程被杀），属已知模拟器内存问题，非游戏代码回归。
@@ -248,6 +251,24 @@ git diff --check
 1. 完成上述三个测试/契约缺口
 2. 继续空间站策划实装（基于 CORPORATION_AND_STATION_IMPLEMENTATION_PLAN.md）
 3. 按计划分阶段完成军团系统与空间站模块
+
+## 11. 十倍速运行期开关（2026-08-04）
+
+**架构**：单仓库 + 运行期开关，消灭 main / 10x 两分支漂移。全仓库唯一速度源 `js/core/speed-config.js`（IIFE 写入 `globalThis.GAME_SPEED / getGameSpeed / gameDeltaSec / gameNow`）。
+
+**开关解析优先级**：URL `?speed=` > `localStorage('eve_speed')` > 兼容旧 `window.TEST_ACTIVE_SPEED`；非有限或 ≤0 降级为 1（生产默认 1）。
+
+**加速范围（v1）**：仅缩放「产出/进度积累」——
+- 采矿/气采/精炼/冶炼 tick `delta` 经 `gameDeltaSec()` 包裹（`js/core/tick.js` 8 处）；
+- 科研在线结算 `processResearchUntil(state, now, { scale: getGameSpeed() })`；
+- 空间站自动线 `getStationLogisticsMultiplier` 返回 `base * getGameSpeed()`。
+**冷却/到期实时**：维修、考古干扰、战斗恢复、增强剂过期、离线结算时间轴均基于 `Date.now()`，不乘速度。代码纯度已验证：速度源标识符仅出现在 `speed-config.js / tick.js / station.js`。
+
+**修改文件**：新增 `js/core/speed-config.js`；`index.html` 注入脚本（defer 计数 54→55）；`js/core/tick.js`（delta 包裹 + 守卫 + 科研 scale）；`js/systems/research.js`（scale 参数）；`js/systems/station.js`（后勤倍率乘 speed）；`tools/verify.mjs` 与 `tools/audit-archaeology-ships.mjs` 计数 54→55；新增 `tools/smoke-speed.mjs`。
+
+**验证**：`GAME_SPEED=1` 全量回归逐字节不变（verify 55 JS/4 CSS/303 DOM、regress-combat-repair 86/0、audit-station 1172/0 均 EXIT=0）。`GAME_SPEED=10` 冒烟（`tools/smoke-speed.mjs`）全 26 断言 EXIT=0：采矿进度×10、后勤倍率×10、科研×10、增强剂冷却 speed=1 与 speed=10 完全一致。
+
+**使用**：调试用 `index.html?speed=10` 或 `localStorage.setItem('eve_speed', 10)`。旧 `EVEIDLE-10X-SYNC` 分支待用户决定退役方式；本改动尚未 commit（待授权）。
 
 ---
 

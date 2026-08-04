@@ -1563,3 +1563,33 @@ p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
 
 ### 全局仓库容量
 本轮未修改 `getCargoCapacity`、`getCargoUsed`、`isCargoFull` 等全局仓库容量相关代码。
+
+### 十倍速运行期开关（单仓库 + 运行期开关，2026-08-04）
+
+**背景**：原 `EVEIDLE-10X-SYNC` 分支仅靠 `index.html` 的 `window.TEST_ACTIVE_SPEED=10` 局部加速空间站自动线，且相对 main 含大量非加速差异（裸 ID 显示、初始塞船、删迁移/教程/verify 行），两分支长期漂移。改为「单仓库 + 运行期开关」：十倍速只是一个值，彻底消灭分支漂移。
+
+**架构**：全仓库唯一速度源 `js/core/speed-config.js`（IIFE 写入 `globalThis.GAME_SPEED / getGameSpeed / gameDeltaSec / gameNow`）。解析优先级：URL `?speed=` > `localStorage('eve_speed')` > 兼容 `window.TEST_ACTIVE_SPEED`；非有限或 ≤0 降级为 1。
+
+**加速范围（v1）**：仅缩放「产出/进度积累」——
+- 采矿/气采/精炼/冶炼的 tick `delta` 经 `gameDeltaSec()` 包裹（`tick.js` 8 处）；
+- 科研在线结算 `ResearchSystem.processResearchUntil(state, now, { scale: getGameSpeed() })`；
+- 空间站自动线 `getStationLogisticsMultiplier` 返回 `base * getGameSpeed()`。
+所有基于 `Date.now()` 的**冷却/到期保持实时**：维修、考古干扰、战斗恢复、增强剂过期、离线结算时间轴等一概不缩放。代码纯度已验证：速度源标识符 `gameDeltaSec / getGameSpeed / GAME_SPEED` 仅出现在 `speed-config.js / tick.js / station.js` 三个文件，冷却类函数（增强剂/战斗恢复/考古干扰/维修）绝不引用速度源。
+
+**修改文件**：
+- 新增 `js/core/speed-config.js`
+- `index.html`：在 `tick.js` 之前注入 `<script defer src="./js/core/speed-config.js"></script>`（defer 脚本计数 54→55）
+- `js/core/tick.js`：8 处 `const delta = Math.min(5, …)` 改为 `gameDeltaSec(Math.min(5, …))`；顶部守卫（未加载 speed-config 时注入等价 speed=1 实现，保证 Node 测试安全）；科研结算传 `{ scale: getGameSpeed() }`
+- `js/systems/research.js`：`processResearchUntil(state, now, opts)` 新增 `_scale` 参数（离线调用不传 opts → scale=1 不变）
+- `js/systems/station.js`：`getStationLogisticsMultiplier` 返回 `base * getGameSpeed()`
+- `tools/verify.mjs` / `tools/audit-archaeology-ships.mjs`：脚本计数断言 54→55
+- 新增 `tools/smoke-speed.mjs`：`?speed=10` 端到端冒烟（速度解析/产出/科研/自动线≈10×、增强剂冷却实时、速度源文件纯度）
+
+**验证结果**：
+- `GAME_SPEED=1` 全量回归逐字节不变：`verify.mjs` 55 JS / 4 CSS / 303 DOM（EXIT=0）、`regress-combat-repair.mjs` 86/0、`audit-station.mjs` 1172/0。
+- `GAME_SPEED=10` 冒烟：`tools/smoke-speed.mjs` 全 26 断言 EXIT=0（采矿进度×10、后勤倍率×10、科研×10、增强剂剩余时长在 speed=1 与 speed=10 下完全一致、速度源仅 3 文件）。
+- 3D / UI 文案不受 speed 影响（speed 只改变数值，显示层逻辑与 speed=1 一致；专名不泄漏已由 `verify.mjs` 覆盖）。
+
+**使用**：调试用 `index.html?speed=10` 或 `localStorage.setItem('eve_speed', 10)`；生产默认 1。
+
+**注意**：原 10x 分支「只差一个文件」的幻觉已破，现由本开关替代；旧 `EVEIDLE-10X-SYNC` 分支待用户决定退役方式。本改动尚未 commit，待用户授权。

@@ -1426,7 +1426,10 @@ function getStationLogisticsMultiplier(state) {
   if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 3) return 1;
   if (!isStationOperational(state)) return 1;
   const table = {0: 1, 1: 1.01, 2: 1.02, 3: 1.03};
-  return table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
+  const base = table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
+  // 十倍速开关（2026-08-04）：仅缩放产出周期，冷却/到期仍实时。speed=1 时恒为 1。
+  const speed = (typeof getGameSpeed === "function") ? getGameSpeed() : 1;
+  return base * speed;
 }
 
 function getStationLogisticsDisplayState(state) {

@@ -363,7 +363,7 @@
   // -------------------------------------------------------------------------
   var MAX_RESEARCH_OFFLINE_SECONDS = 86400; // 与 offline.js MAX_OFFLINE_SECONDS 同值；科研链路唯一封顶点
 
-  function processResearchUntil(state, now) {
+  function processResearchUntil(state, now, opts) {
     const research = state && state.research ? state.research : null;
     if (!research || typeof research !== "object") {
       return { ok: false, reason: "NO_RESEARCH_STATE" };
@@ -378,7 +378,9 @@
       return { ok: true, completedSteps: 0 };
     }
     const rawElapsed = Math.max(0, (resolvedNow - oldAnchor) / 1000);
-    let elapsed = Math.min(rawElapsed, MAX_RESEARCH_OFFLINE_SECONDS);
+    // 十倍速开关（2026-08-04）：仅缩放科研进度积累，冷却/到期保持实时；离线调用不传 opts → scale=1。
+    const _scale = (opts && typeof opts.scale === "number" && isFinite(opts.scale) && opts.scale > 0) ? opts.scale : 1;
+    let elapsed = Math.min(rawElapsed, MAX_RESEARCH_OFFLINE_SECONDS) * _scale;
     let cursorAt = oldAnchor;
     let completedSteps = 0;
     let guard = 0;

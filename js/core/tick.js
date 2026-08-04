@@ -1,3 +1,15 @@
+// 速度源兜底：即使未通过 index.html 加载 speed-config.js（如部分 Node 测试环境），
+// gameDeltaSec / getGameSpeed / gameNow 等全局函数也须存在且等价于「实时」（speed=1）。
+if (typeof gameDeltaSec !== "function") {
+  (function () {
+    var g = (typeof globalThis !== "undefined") ? globalThis : (typeof window !== "undefined" ? window : {});
+    if (typeof g.GAME_SPEED !== "number" || !(g.GAME_SPEED > 0)) g.GAME_SPEED = 1;
+    g.getGameSpeed = function () { return (typeof g.GAME_SPEED === "number" && g.GAME_SPEED > 0) ? g.GAME_SPEED : 1; };
+    g.gameDeltaSec = function (realSec) { return (typeof realSec === "number" && Number.isFinite(realSec)) ? realSec * g.getGameSpeed() : 0; };
+    g.gameNow = function () { return (typeof Date !== "undefined" && Date.now) ? Date.now() : 0; };
+  })();
+}
+
 // 队列失败/资源不足时：跳转到下一项或停止
 function stopOrSkip() {
     const q = gameState.queue;
@@ -62,7 +74,7 @@ function gameTick() {
   // 确保主行动异常 / 资源不足 / 暂停时科研仍正常推进。每 tick 仅调用一次。
   if (typeof ResearchSystem !== "undefined" && ResearchSystem &&
       typeof ResearchSystem.processResearchUntil === "function") {
-    ResearchSystem.processResearchUntil(gameState, Date.now());
+    ResearchSystem.processResearchUntil(gameState, Date.now(), { scale: (typeof getGameSpeed === "function") ? getGameSpeed() : 1 });
   }
 
   updateCombatRecovery();
@@ -82,7 +94,7 @@ function gameTick() {
       const actualTime = area.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now();
-      const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+      const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         gameState.currentAction.progress -= actualTime;
@@ -118,7 +130,7 @@ function gameTick() {
       const eff = smeltingState.efficiency; const actualTime = recipe.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now();
-      const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+      const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         if (ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre) < 1) { stopOrSkip(); updateUI(); return; }
@@ -137,7 +149,7 @@ function gameTick() {
       const eff = getGasEfficiency(); const actualTime = area.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now();
-      const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+      const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         gameState.currentAction.progress -= actualTime;
@@ -164,7 +176,7 @@ function gameTick() {
       if (!hasEnoughEquipEngInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
       const eff = getEquipEngEfficiency(); const actualTime = recipe.time / eff;
       gameState.currentAction.refDuration = actualTime;
-      const now = Date.now(); const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+      const now = Date.now(); const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         if (!hasEnoughEquipEngInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
@@ -185,7 +197,7 @@ function gameTick() {
         if (!hasEnoughMats(recipe.cost)) { stopOrSkip(); updateUI(); return; }
         const actualTime = getShipEngineeringCycleDuration(gameState, recipe); // 唯一周期公式（技能×船坞）
         gameState.currentAction.refDuration = actualTime;
-        const now = Date.now(); const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+        const now = Date.now(); const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
         gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
         while (gameState.currentAction.progress >= actualTime) {
           if (!hasEnoughMats(recipe.cost)) { stopOrSkip(); updateUI(); return; }
@@ -207,7 +219,7 @@ function gameTick() {
         if (!hasEnoughShipAssemblyComponents(recipe)) { stopOrSkip(); updateUI(); return; }
         const actualTime = getShipEngineeringCycleDuration(gameState, recipe); // 唯一周期公式（技能×船坞）
         gameState.currentAction.refDuration = actualTime;
-        const now = Date.now(); const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+        const now = Date.now(); const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
         gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
         while (gameState.currentAction.progress >= actualTime) {
           if (!hasEnoughShipAssemblyComponents(recipe)) { stopOrSkip(); updateUI(); return; }
@@ -263,7 +275,7 @@ function gameTick() {
       ? getArchaeologyCycleSeconds(gameState, site)
       : site.time;
     gameState.currentAction.refDuration = actualTime;
-    const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+    const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
     gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
     while (gameState.currentAction.progress >= actualTime) {
       gameState.currentAction.progress -= actualTime;
@@ -301,7 +313,7 @@ function gameTick() {
       if (!hasEnoughBoosterInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
       const eff = getBoosterEfficiency(); const actualTime = recipe.time / eff;
       gameState.currentAction.refDuration = actualTime;
-      const now = Date.now(); const delta = Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000);
+      const now = Date.now(); const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
         if (!hasEnoughBoosterInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
