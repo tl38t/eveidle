@@ -27,7 +27,7 @@ function makeElement() {
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
     getContext: () => new MockCanvasContext(), innerHTML: "", offsetHeight: 24, offsetWidth: 560,
     querySelector: () => makeElement(), querySelectorAll: () => [],
-    remove: noop, select: noop, style: {}, textContent: "", value: "1"
+    remove: noop, select: noop, setAttribute: noop, style: {}, textContent: "", value: "1"
   };
 }
 const sandbox = {

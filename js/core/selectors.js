@@ -37,6 +37,61 @@ function getShipConfigById(shipId) {
     || null;
 }
 
+// ---- 舰船工程 UI 重做（2026-08-04）：部件分类 / 总装技术线 常量与分类辅助 ----
+const SHIP_COMPONENT_CLASSES = [
+  { id:"integrated", name:"护卫部件" },
+  { id:"destroyer", name:"驱逐部件" },
+  { id:"cruiser", name:"巡洋部件" },
+  { id:"battleship", name:"战列部件" },
+  { id:"capital", name:"旗舰部件" },
+  { id:"supercapital", name:"超级旗舰部件" }
+];
+const SHIP_ASSEMBLY_LINES = [
+  { id:"shield_laser", name:"护盾激光系" },
+  { id:"armor_missile", name:"装甲导弹系" },
+  { id:"structure_cannon", name:"结构火炮系" },
+  { id:"industrial", name:"工业系" },
+  { id:"archaeology", name:"考古系" }
+];
+const SHIP_ASSEMBLY_PAGE_SIZE = 20;
+const SHIP_INDUSTRIAL_IDS = new Set(["miner_frigate","gas_frigate","miner_destroyer","gas_destroyer","miner_cruiser","gas_cruiser","miner_battleship","gas_battleship","dolphin","orca"]);
+const SHIP_ARCHAEOLOGY_IDS = new Set(["heron","tracer","starmap","farscope","illuminator"]);
+const SHIP_HYBRID_IDS = new Set(["gale","bloodthorn","umbra","thunder","crimson","nether","dawnbreaker","crimson_bastion","spectre_frame"]);
+
+function getShipComponentClass(recipeId) {
+  if (recipeId.startsWith("destroyer_")) return "destroyer";
+  if (recipeId.startsWith("cruiser_")) return "cruiser";
+  if (recipeId.startsWith("battleship_")) return "battleship";
+  if (recipeId.startsWith("capital_")) return "capital";
+  if (recipeId.startsWith("supercapital_")) return "supercapital";
+  return "integrated";
+}
+
+function getShipAssemblyLine(shipId) {
+  if (SHIP_INDUSTRIAL_IDS.has(shipId)) return "industrial";
+  if (SHIP_ARCHAEOLOGY_IDS.has(shipId)) return "archaeology";
+  const cfg = getShipConfigById(shipId);
+  const weapon = cfg && cfg.recommendedWeapon;
+  if (weapon === "missile") return "armor_missile";
+  if (weapon === "cannon") return "structure_cannon";
+  if (weapon === "laser") return "shield_laser";
+  const flavor = (cfg && cfg.flavor) || "";
+  if (flavor.includes("导弹")) return "armor_missile";
+  if (flavor.includes("炮台") || flavor.includes("火炮")) return "structure_cannon";
+  return "shield_laser";
+}
+
+function getShipRoleName(shipId) {
+  if (shipId.startsWith("miner_")) return "矿石采集工业舰";
+  if (shipId.startsWith("gas_")) return "气体采集工业舰";
+  if (shipId === "dolphin") return "工业支援巡洋舰";
+  if (shipId === "orca") return "工业旗舰";
+  const cfg = getShipConfigById(shipId);
+  const type = cfg && cfg.type;
+  const TYPE_MAP = { frigate:"护卫舰", destroyer:"驱逐舰", cruiser:"巡洋舰", battleship:"战列舰", capital:"旗舰", supercapital:"超级旗舰" };
+  return (type && TYPE_MAP[type]) || "舰船";
+}
+
 function getShipAssignmentRestriction(config, actionKey, combatRecoveryActive) {
   const bonuses = config && config.bonuses ? config.bonuses : {};
   if (!["combat", "mining", "gasHarvesting", "refining", "archaeology"].includes(actionKey)) return { reason:"unsupported-task", text:"该任务不需要分配舰船岗位" };
@@ -773,6 +828,55 @@ function getShipEngineeringDisplayState(state, now) {
   const shipCounts = {};
   for (const instance of (state.inventory && state.inventory.ships) || []) shipCounts[instance.shipId] = (shipCounts[instance.shipId] || 0) + 1;
 
+  // ---- 舰船工程 UI 重做（2026-08-04）：一级视图 / 二级标签 / 栅格 / 分页 展示字段 ----
+  const subView = action.shipEngSubView || "component";
+  const compClass = action.shipCompClass || "integrated";
+  const asmLine = action.shipAsmLine || "shield_laser";
+  let asmPage = Number.isInteger(action.shipAsmPage) ? action.shipAsmPage : 0;
+
+  const componentClassTabs = SHIP_COMPONENT_CLASSES.map(item => ({ ...item, selected:item.id === compClass }));
+  const assemblyLineTabs = SHIP_ASSEMBLY_LINES.map(item => ({ ...item, selected:item.id === asmLine }));
+
+  const componentGrid = SHIP_COMPONENT_RECIPES
+    .filter(recipe => getShipComponentClass(recipe.id) === compClass)
+    .map(recipe => ({
+      id:recipe.id, name:recipe.name, level:recipe.level, time:recipe.time, xp:recipe.xp,
+      cost:Object.entries(recipe.cost).map(([material, quantity]) => {
+        const stock = getMaterialStockFromState(state, material);
+        return { material, quantity, stock, enough:stock >= quantity };
+      }),
+      owned:Number(componentInventory[recipe.id]) || 0,
+      unlocked:level >= recipe.level,
+      selected:recipe.id === currentComponent.id
+    }));
+
+  const assemblyMatched = SHIP_ASSEMBLY_RECIPES
+    .map(recipe => {
+      const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
+      const hasRequiredBlueprint = !requiresBlueprint || ownedBlueprints.has(recipe.shipId);
+      return {
+        recipe, requiresBlueprint, hasRequiredBlueprint,
+        unlocked:level >= recipe.level && hasRequiredBlueprint,
+        line:getShipAssemblyLine(recipe.shipId),
+        role:getShipRoleName(recipe.shipId),
+        tier:(getShipConfigById(recipe.shipId) || {}).tier,
+        hybrid:SHIP_HYBRID_IDS.has(recipe.shipId)
+      };
+    })
+    .filter(item => item.line === asmLine);
+  const assemblyPageCount = Math.max(1, Math.ceil(assemblyMatched.length / SHIP_ASSEMBLY_PAGE_SIZE));
+  const assemblyPageClamped = Math.min(Math.max(0, asmPage), assemblyPageCount - 1);
+  const assemblyGrid = assemblyMatched
+    .slice(assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE, assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE + SHIP_ASSEMBLY_PAGE_SIZE)
+    .map(item => ({
+      id:item.recipe.id, name:item.recipe.name, shipId:item.recipe.shipId, level:item.recipe.level, time:item.recipe.time, xp:item.recipe.xp,
+      requiresBlueprint:item.requiresBlueprint, hasRequiredBlueprint:item.hasRequiredBlueprint, unlocked:item.unlocked,
+      selected:item.recipe.id === currentAssembly.id, role:item.role, tier:item.tier, hybrid:item.hybrid
+    }));
+  const shipRole = getShipRoleName(currentAssembly.shipId);
+  const shipFlavor = selectedShip ? selectedShip.flavor : "";
+  const hybridSelected = SHIP_HYBRID_IDS.has(currentAssembly.shipId);
+
   return {
     kind:"shipEngineering",
     level,
@@ -832,7 +936,18 @@ function getShipEngineeringDisplayState(state, now) {
     ownedShips:Object.entries(shipCounts).map(([shipId, quantity]) => {
       const config = getShipConfigById(shipId);
       return { shipId, quantity, name:config ? config.name : shipId, hp:config ? { ...config.hp } : null };
-    })
+    }),
+    subView,
+    componentClassTabs,
+    assemblyLineTabs,
+    componentGrid,
+    assemblyGrid,
+    assemblyPage:assemblyPageClamped,
+    assemblyPageCount,
+    assemblyTotal:assemblyMatched.length,
+    shipRole,
+    shipFlavor,
+    hybridSelected
   };
 }
 

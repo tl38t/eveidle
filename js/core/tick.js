@@ -81,7 +81,14 @@ function gameTick() {
   // Batch K：intship 一体化造船——每 tick 对账，作业已不驱动 currentAction 时落为 stopped/preempted
   if (typeof reconcileIntshipRuntime === "function") reconcileIntshipRuntime(gameState, Date.now());
   let actionCompleted = false;
-  if (gameState.currentAction.active) {
+  // 死亡空间连刷修复：上一轮全通时 resolveDeathspaceWaveVictory 会置
+  // deathspaceChainPending=true 并把 currentAction.active=false（combat.js:664-666）。
+  // 若不在此放行，下一 tick 因 currentAction.active=false 直接跳过 combatTick，
+  // pending 续跑钩子（combat.js:1045）永远到不了，连刷在首轮后卡死。
+  // 故：当前 action 是 combat 且存在死亡空间连刷待续时，仍驱动 combatTick 让其自动续进。
+  const dsPending = gameState.currentAction.skill === "combat"
+    && Boolean(gameState.combat && gameState.combat.deathspaceChainPending);
+  if (gameState.currentAction.active || dsPending) {
     const key = gameState.currentAction.skill;
     const s = gameState.skills[key];
     if (key === "combat") { combatTick(); }

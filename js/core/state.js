@@ -56,6 +56,11 @@ const gameState = {
     startedShipCompTarget: "",
     shipAsmTarget: "rifter",
     startedShipAsmTarget: "",
+    // 舰船工程 UI 重做（2026-08-04）：一级视图 / 部件分类 / 总装技术线 / 分页
+    shipEngSubView: "component",
+    shipCompClass: "integrated",
+    shipAsmLine: "shield_laser",
+    shipAsmPage: 0,
     batchRemaining: 0,
     startedArea: "",
     startedSmeltingArea: "",
@@ -172,6 +177,8 @@ const gameState = {
     viewDeathspaceId: "angel_ded_6_10",
     viewDeathspaceTier: 6,
     deathspaceClears: {},
+    deathspaceChainRemaining: 0,
+    deathspaceChainPending: false,
     weapon: "laser",
     hp: { shield: 300, armor: 100, structure: 100 },
     maxHp: { shield: 300, armor: 100, structure: 100 },
@@ -191,7 +198,14 @@ const gameState = {
     destroyedShip: null,   // 旧字段：同上，权威维修状态见 repairs[instanceId]
     repairs: {},           // 问题2 权威：per-ship 维修截止时间戳 combat.repairs[instanceId] = untilTs
     activeShip: null,      // 当前出战战斗舰 instanceId（与 shipAssignments.combat 保持一致；getActiveCombatShipState 优先读 assignments）
-    lastStatus: ""
+    lastStatus: "",
+    // Batch R：JSON 安全确定性 RNG 状态（在线/离线共用，不 monkeypatch 全局 Math.random）
+    //   seed/counterLo/counterHi 均为 uint32；counterLo 溢出向 counterHi 进位。
+    //   null 占位由 migrateDeathspaceState 依存档稳定摘要派生并填充。
+    randomState: null,
+    runToken: null,         // 当前 combat run 标识（非空字符串或 null）；整条连刷链同一 runToken
+    runSequence: 0,         // Batch R：run 序号（非负安全整数）；新 run +1、续轮不增、战败恢复 +1、迁移非法归零；并入 runToken
+    enemyInstanceSeq: 0     // 当前 run 内敌人实例序号（单调、不重复），供确定性 enemyId
   },
 
   settings: {

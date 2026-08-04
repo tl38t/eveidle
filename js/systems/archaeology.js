@@ -595,7 +595,10 @@ function getArchaeologyDisplayState(state, now) {
   const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
   const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
   const config = instance ? getShipConfigById(instance.shipId) : null;
-  const isArchaeologyShip = Boolean(config && ARCHAEOLOGY_SHIP_TYPES.includes(config.type));
+  // 考古判据统一为「能力优先」：有考古扫描能力(archaeologyScanStrength>0)即可当考古舰，
+  // 不再限定专属五舰 ARCHAEOLOGY_SHIP_TYPES（启程级等自带 +2 扫描的通用舰也应可用）。
+  // 与 selectors.js:getShipAssignmentRestriction 的 archaeology 分支保持一致。
+  const isArchaeologyShip = Boolean(config && config.bonuses && (config.bonuses.archaeologyScanStrength || 0) > 0);
 
   const assignedShip = instance ? {
     instanceId,

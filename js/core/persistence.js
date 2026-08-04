@@ -454,7 +454,8 @@ function migrateArchaeologyState() {
   if (aId) {
     const inst = getShipInstanceFromState(gameState, aId);
     const cfg = inst ? getShipConfigById(inst.shipId) : null;
-    if (!cfg || !ARCHAEOLOGY_SHIP_TYPES.includes(cfg.type)) delete gameState.shipAssignments.archaeology;
+    // 考古判据统一为「能力优先」：仅当该舰无考古扫描能力时才清掉考古分配（避免启程级等被误删）。
+    if (!cfg || !cfg.bonuses || !((cfg.bonuses.archaeologyScanStrength || 0) > 0)) delete gameState.shipAssignments.archaeology;
   }
   // 维修后自动恢复（Phase 3D 修正）幂等迁移：旧存档回填 null；结构非法一律归 null（fail-closed）。
   // 战斗标记严格校验：returnZoneId 必须是合法 COMBAT_ZONES；defeatedMode 仅允许 belt/deathspace；
@@ -574,22 +575,92 @@ function migrateMoonMiningState() {
   }
 }
 
-function migrateDeathspaceState() {
-  if (!gameState.combat || typeof gameState.combat !== "object") return;
-  if (gameState.combat.mode !== "deathspace") gameState.combat.mode = "belt";
-  const savedTier = [2,3,4,6].includes(Number(gameState.combat.deathspaceTier)) ? Number(gameState.combat.deathspaceTier) : null;
-  if (!DEATHSPACE_DATABASE.some(site => site.id === gameState.combat.deathspaceId)) {
-    gameState.combat.deathspaceId = (DEATHSPACE_DATABASE.find(site => site.dedTier === savedTier) || DEATHSPACE_DATABASE[0]).id;
+// Batch R：确定性 RNG 状态迁移辅助（与 combat.js 的 nextCombatRandom 共用同一 JSON 安全结构）。
+// 严格清洗三 uint32；非法（缺失/类型错/越界）整体重建；不使用固定常量 seed、不读取 Date.now。
+function isUint32(v) {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 0xFFFFFFFF && Number.isSafeInteger(v);
+}
+
+// 稳定摘要：仅取存档中稳定的战斗相关字段，保证「连续两次迁移 JSON 严格一致」。
+// 不同旧档因 cleared/isk/lp/totalKills 等内容不同 → 派生 seed 不同 → 序列不同。
+function stableCombatDigest(combat, state) {
+  const resources = (state && state.resources) || {};
+  const subset = {
+    z: combat.zone,
+    d: combat.deathspaceId,
+    dc: combat.deathspaceClears,
+    zc: combat.zoneClears,
+    dt: combat.deathspaceTier,
+    vd: combat.viewDeathspaceId,
+    isk: resources.isk || 0,
+    lp: resources.lp || 0,
+    tk: combat.totalKills || 0
+  };
+  const str = JSON.stringify(subset);
+  let h = 0x811c9dc5 >>> 0;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
   }
-  const selectedSite = DEATHSPACE_DATABASE.find(site => site.id === gameState.combat.deathspaceId) || DEATHSPACE_DATABASE[0];
-  gameState.combat.deathspaceTier = selectedSite.dedTier;
-  if (gameState.combat.viewMode !== "belt" && gameState.combat.viewMode !== "deathspace") gameState.combat.viewMode = gameState.combat.mode;
-  if (!DEATHSPACE_DATABASE.some(site => site.id === gameState.combat.viewDeathspaceId)) gameState.combat.viewDeathspaceId = selectedSite.id;
-  const viewedSite = DEATHSPACE_DATABASE.find(site => site.id === gameState.combat.viewDeathspaceId) || selectedSite;
-  gameState.combat.viewDeathspaceTier = viewedSite.dedTier;
-  if (!gameState.combat.deathspaceClears || typeof gameState.combat.deathspaceClears !== "object") gameState.combat.deathspaceClears = {};
-  if (typeof gameState.combat.lastSpecialLoot !== "string") gameState.combat.lastSpecialLoot = "";
-  gameState.combat.targetingMode = normalizeCapitalTargetingMode(gameState.combat.targetingMode);
+  return h >>> 0;
+}
+
+function createDefaultCombatRandomState(combat, state) {
+  return { seed: stableCombatDigest(combat, state) >>> 0, counterLo: 0, counterHi: 0 };
+}
+
+function migrateCombatRandomState(combat, state) {
+  const rs = combat.randomState;
+  if (rs && isUint32(rs.seed) && isUint32(rs.counterLo) && isUint32(rs.counterHi)) return; // 已合法：保留（保证二次迁移一致）
+  combat.randomState = createDefaultCombatRandomState(combat, state);
+}
+
+function migrateDeathspaceState(combat, state) {
+  combat = combat || (typeof gameState !== "undefined" ? gameState.combat : null);
+  state = state || (typeof gameState !== "undefined" ? gameState : null);
+  if (!combat || typeof combat !== "object") return;
+  if (combat.mode !== "deathspace") combat.mode = "belt";
+  // 原始 deathspaceId 合法性（供 pending 规则使用，避免被下方的修复逻辑掩盖）
+  const originalDeathspaceIdValid = DEATHSPACE_DATABASE.some(site => site.id === combat.deathspaceId);
+  const savedTier = [2,3,4,6].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
+  if (!originalDeathspaceIdValid) {
+    combat.deathspaceId = (DEATHSPACE_DATABASE.find(site => site.dedTier === savedTier) || DEATHSPACE_DATABASE[0]).id;
+  }
+  const selectedSite = DEATHSPACE_DATABASE.find(site => site.id === combat.deathspaceId) || DEATHSPACE_DATABASE[0];
+  combat.deathspaceTier = selectedSite.dedTier;
+  if (combat.viewMode !== "belt" && combat.viewMode !== "deathspace") combat.viewMode = combat.mode;
+  if (!DEATHSPACE_DATABASE.some(site => site.id === combat.viewDeathspaceId)) combat.viewDeathspaceId = selectedSite.id;
+  const viewedSite = DEATHSPACE_DATABASE.find(site => site.id === combat.viewDeathspaceId) || selectedSite;
+  combat.viewDeathspaceTier = viewedSite.dedTier;
+  if (!combat.deathspaceClears || typeof combat.deathspaceClears !== "object") combat.deathspaceClears = {};
+  // Batch R：严格化死亡空间连刷数量——仅整数 0–98 合法，否则归零（覆盖小数/负数/NaN/Infinity/越界/字符串）。
+  const remaining = combat.deathspaceChainRemaining;
+  if (typeof remaining !== "number" || !Number.isFinite(remaining) || !Number.isInteger(remaining) || remaining < 0 || remaining > 98) {
+    combat.deathspaceChainRemaining = 0;
+  }
+  // Batch R：pending 仅当「原值严格 true 且 remaining>0 且（原始）deathspaceId 合法」才保留，否则 false。
+  const pendingRaw = combat.deathspaceChainPending;
+  if (!(pendingRaw === true && combat.deathspaceChainRemaining > 0 && originalDeathspaceIdValid)) {
+    combat.deathspaceChainPending = false;
+  }
+  // Batch R：确定性 RNG 状态严格清洗。
+  migrateCombatRandomState(combat, state);
+  // Batch R：runToken 仅非空字符串保留，否则 null。
+  if (typeof combat.runToken !== "string" || combat.runToken.length === 0) {
+    combat.runToken = null;
+  }
+  // Batch R：enemyInstanceSeq 仅非负安全整数保留，否则 0。
+  const seq = combat.enemyInstanceSeq;
+  if (typeof seq !== "number" || !Number.isFinite(seq) || !Number.isInteger(seq) || seq < 0 || !Number.isSafeInteger(seq)) {
+    combat.enemyInstanceSeq = 0;
+  }
+  // Batch R：runSequence 仅非负安全整数保留，否则 0（并入 runToken，保证新 run 永不重复）。
+  const rs = combat.runSequence;
+  if (typeof rs !== "number" || !Number.isFinite(rs) || !Number.isInteger(rs) || rs < 0 || !Number.isSafeInteger(rs)) {
+    combat.runSequence = 0;
+  }
+  if (typeof combat.lastSpecialLoot !== "string") combat.lastSpecialLoot = "";
+  combat.targetingMode = normalizeCapitalTargetingMode(combat.targetingMode);
 }
 
 // ================================================================
@@ -1229,6 +1300,11 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     if (gameState.currentAction.startedShipCompTarget === undefined) gameState.currentAction.startedShipCompTarget = "";
     if (!gameState.currentAction.shipAsmTarget) gameState.currentAction.shipAsmTarget = "rifter";
     if (gameState.currentAction.startedShipAsmTarget === undefined) gameState.currentAction.startedShipAsmTarget = "";
+    // 舰船工程 UI 重做（2026-08-04）：旧存档补齐 UI 视图状态字段
+    if (!gameState.currentAction.shipEngSubView) gameState.currentAction.shipEngSubView = "component";
+    if (!gameState.currentAction.shipCompClass) gameState.currentAction.shipCompClass = "integrated";
+    if (!gameState.currentAction.shipAsmLine) gameState.currentAction.shipAsmLine = "shield_laser";
+    if (gameState.currentAction.shipAsmPage === undefined) gameState.currentAction.shipAsmPage = 0;
     if (gameState.currentAction.batchRemaining === undefined) gameState.currentAction.batchRemaining = 0;
     // Batch C-14A（J05）：队列规范化已收口于 SaveManager.load 内的 normalizeQueueState（含旧档 maxSize=20→25），
     // 此处不再保留只处理「!gameState.queue」的第二套兜底。

@@ -107,7 +107,7 @@ const ManufacturingStateActions = {
   selectShipComponent(state, componentId) {
     const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === componentId);
     if (!recipe) return { changed:false, reason:"unknown-component" };
-    if ((state.skills.shipEngineering.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    // 等级锁定只挡「制造」，不挡「选中预览」：未达等级也可点选查看 3D/属性/成本
     state.currentAction.shipCompTarget = recipe.id;
     state._dirty = true;
     return { changed:true, recipe };
@@ -116,12 +116,55 @@ const ManufacturingStateActions = {
   selectShipAssembly(state, recipeId) {
     const recipe = SHIP_ASSEMBLY_RECIPES.find(item => item.id === recipeId);
     if (!recipe) return { changed:false, reason:"unknown-assembly" };
-    const hasBlueprint = recipe.requiresBlueprint === false || (state.ownedBlueprints || []).includes(recipe.shipId);
-    if (!hasBlueprint) return { changed:false, reason:"blueprint-locked" };
-    if ((state.skills.shipEngineering.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    // 蓝图/等级锁定只挡「合成」，不挡「选中预览」：未解锁也可点选查看 3D/属性/成本
     state.currentAction.shipAsmTarget = recipe.id;
     state._dirty = true;
     return { changed:true, recipe };
+  },
+
+  // ---- 舰船工程 UI 重做（2026-08-04）：一级视图 / 部件分类 / 总装技术线 / 分页 切换 ----
+  selectShipEngSubView(state, view) {
+    if (view !== "component" && view !== "assembly") return { changed:false, reason:"bad-subview" };
+    if (state.currentAction.shipEngSubView === view) return { changed:false, reason:"same" };
+    state.currentAction.shipEngSubView = view;
+    state._dirty = true;
+    return { changed:true, view };
+  },
+
+  selectShipCompClass(state, cls) {
+    if (!SHIP_COMPONENT_CLASSES.some(item => item.id === cls)) return { changed:false, reason:"unknown-class" };
+    state.currentAction.shipCompClass = cls;
+    if (getShipComponentClass(state.currentAction.shipCompTarget) !== cls) {
+      const first = SHIP_COMPONENT_RECIPES.find(recipe => getShipComponentClass(recipe.id) === cls);
+      if (first) state.currentAction.shipCompTarget = first.id;
+    }
+    state._dirty = true;
+    return { changed:true, cls };
+  },
+
+  selectShipAsmLine(state, line) {
+    if (!SHIP_ASSEMBLY_LINES.some(item => item.id === line)) return { changed:false, reason:"unknown-line" };
+    const currentRecipe = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === state.currentAction.shipAsmTarget);
+    const currentLine = currentRecipe ? getShipAssemblyLine(currentRecipe.shipId) : null;
+    state.currentAction.shipAsmLine = line;
+    state.currentAction.shipAsmPage = 0;
+    if (currentLine !== line) {
+      const first = SHIP_ASSEMBLY_RECIPES.find(recipe => getShipAssemblyLine(recipe.shipId) === line);
+      if (first) state.currentAction.shipAsmTarget = first.id;
+    }
+    state._dirty = true;
+    return { changed:true, line };
+  },
+
+  selectShipAsmPage(state, page) {
+    const line = state.currentAction.shipAsmLine || "shield_laser";
+    const total = SHIP_ASSEMBLY_RECIPES.filter(recipe => getShipAssemblyLine(recipe.shipId) === line).length;
+    const pageCount = Math.max(1, Math.ceil(total / SHIP_ASSEMBLY_PAGE_SIZE));
+    const next = Math.min(Math.max(0, Number(page) | 0), pageCount - 1);
+    if (state.currentAction.shipAsmPage === next) return { changed:false, reason:"same" };
+    state.currentAction.shipAsmPage = next;
+    state._dirty = true;
+    return { changed:true, page:next };
   },
 
   startShipComponent(state, now) {
@@ -511,13 +554,26 @@ const CombatStateActions = {
     const living = getCombatLivingEnemiesFromState(state.combat);
     if (living.length === 0) {
       if (!Array.isArray(enemies) || enemies.length === 0) return { changed:false, reason:"missing-formation" };
-      state.combat.enemies = enemies;
-      state.combat.currentEnemy = enemies[0] || null;
+      // Batch R 返修：新 run 严格顺序——先刷新 runToken + runSequence（+1）并将 enemyInstanceSeq 归零，
+      // 再把「传入编队」的敌人 ID 重新盖戳为新 runToken，杜绝 UI 预生成的旧 token 敌人误入新 run；
+      // 编队构成（数量/类型）保留传入值（公共路由兼容），enemyInstanceSeq 从传入敌人最大序号续推。
+      if (typeof resetCombatRunState === "function") resetCombatRunState(state.combat);
+      const newToken = state.combat.runToken;
+      let maxSeq = -1;
+      const stamped = enemies.map((e) => {
+        const m = (e && typeof e.id === "string" && e.id.indexOf("_e") >= 0) ? parseInt(e.id.split("_e")[1], 10) : NaN;
+        if (Number.isFinite(m) && m > maxSeq) maxSeq = m;
+        return Object.assign({}, e, { id: newToken + "_e" + (Number.isFinite(m) ? m : 0) });
+      });
+      state.combat.enemies = stamped;
+      state.combat.currentEnemy = stamped[0] || null;
       state.combat.currentFormation = formationId || "";
+      state.combat.enemyInstanceSeq = (maxSeq >= 0 ? maxSeq + 1 : stamped.length);
       state.combat.runWeaponTypes = [];
       state.combat.runWeaponTypesZone = state.combat.zone || null;
       state.combat.runDamageDealt = 0;
       state.combat.runDamageTaken = 0;
+      state.combat.wave = 1;
     } else {
       state.combat.currentEnemy = living[0];
     }
@@ -531,7 +587,6 @@ const CombatStateActions = {
     state.resumeAfterRepair = null; // 手动/自动重新出击：清除待恢复标记
     state._dirty = true;
     // 问题1：出击前燃料校验（非阻断）。复用 combat.js 的 computeVolleyFuel（与开火结算同公式）。
-    // 现有燃料不足以完成一轮齐射时仅返回 warning，不取消战斗、不改变 changed/ok 语义。
     const zoneObj = display.zone;
     const volleyFuel = computeVolleyFuel(state, zoneObj);
     const fuelNow = ResourceRegistry.get(state, "consumable:fuel");
@@ -540,37 +595,60 @@ const CombatStateActions = {
   },
 
   enterDeathspace(state, deathspaceId, enemies, formationId, now) {
-    const site = DEATHSPACE_DATABASE.find(item => item.id === deathspaceId);
-    if (!site) return { changed:false, reason:"unknown-deathspace" };
-    // 问题2：per-ship 维修——仅当「当前战斗舰」正在维修时拒绝出击，健康舰可正常进入。
-    const activeShipId = state.combat.activeShip || (getActiveCombatShipState(state).instance && getActiveCombatShipState(state).instance.instanceId) || null;
-    if (isShipUnderRepair(state, activeShipId, now)) return { changed:false, reason:"repairing", remaining:Math.ceil((getShipRepairUntil(state, activeShipId) - now) / 1000) };
-    if (getCombatLevelFromState(state) < site.requiredCL) return { changed:false, reason:"level-locked", requiredCL:site.requiredCL };
-    const weapons = getInstalledCombatModulesFromState(state).filter(module => module.combat.kind === "weapon");
-    if (weapons.length === 0) return { changed:false, reason:"no-weapons" };
-    if (ResourceRegistry.get(state, "special:" + site.ticketMaterial) < 1) return { changed:false, reason:"missing-ticket", ticketMaterial:site.ticketMaterial };
-    if (!Array.isArray(enemies) || enemies.length === 0) return { changed:false, reason:"missing-formation" };
-    ResourceRegistry.spend(state, "special:" + site.ticketMaterial, 1);
-    Object.assign(state.combat, {
-      mode:"deathspace", viewMode:"deathspace", deathspaceId:site.id, zone:site.sourceZoneId,
-      deathspaceTier:site.dedTier, viewDeathspaceId:site.id, viewDeathspaceTier:site.dedTier,
-      active:true, enemies, currentEnemy:enemies[0] || null, wave:1,
-      totalKills:0, runEliteKills:0, currentFormation:formationId || "deathspace_1",
-      lastLoot:"", lastSpecialLoot:"", lastStatus:"通行密钥已消耗", lastEnemyVolley:null,
-      runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
+    // Batch R：委托给共享原语 beginDeathspaceRun（校验/扣密钥/初始化/emit 统一收口）。
+    let waveEnemies = enemies;
+    let waveFormation = formationId;
+    if (!Array.isArray(waveEnemies) || waveEnemies.length === 0) {
+      const site = getDeathspaceById(deathspaceId);
+      if (site) {
+        const w = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(state.combat); }, state.combat);
+        waveEnemies = w.enemies;
+        waveFormation = w.formationId;
+      }
+    }
+    const res = beginDeathspaceRun(state, {
+      deathspaceId,
+      enemies: waveEnemies,
+      formationId: waveFormation
+    }, {
+      now: (typeof now === "number" ? now : (typeof Date !== "undefined" ? Date.now() : 0)),
+      emit: (typeof window !== "undefined" && window.GameEvents ? window.GameEvents.emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {})),
+      offline:false
     });
-    state.currentAction.skill = "combat";
-    state.currentAction.active = true;
+    if (!res.changed) return { changed:false, reason:res.reason, ticketMaterial:res.ticketMaterial, requiredCL:res.requiredCL, remaining:res.remaining };
+    return { changed:true, site:res.site, warning:res.warning };
+  },
+
+  // 连续挑战：消耗首枚密钥进入，并设定后续自动续跑次数（N-1）。
+  // 每一轮全清后由 combatTick 的 pending 钩子自动进入下一轮，直到次数耗尽 / 密钥不足 / 战败 / 手动停。
+  startDeathspaceChain(state, count, now) {
+    if (state.combat.active) return { changed:false, reason:"already-active" };
+    const requestedMode = state.combat.viewMode === "deathspace" ? "deathspace" : state.combat.viewMode === "belt" ? "belt" : state.combat.mode;
+    const site = requestedMode === "deathspace" ? getDeathspaceById(state.combat.viewDeathspaceId || state.combat.deathspaceId) : null;
+    if (!site) return { changed:false, reason:"no-deathspace-selected" };
+    // Batch R：严格连刷次数校验——仅接受 typeof number + isFinite + isInteger + 范围 1–99。
+    // 非法值：零副作用（不改 dirty / 密钥 / remaining / pending），直接拒绝。
+    if (typeof count !== "number" || !Number.isFinite(count) || !Number.isInteger(count) || count < 1 || count > 99) {
+      return { changed:false, reason:"invalid-chain-count" };
+    }
+    const n = count;
+    state.combat.deathspaceChainRemaining = n - 1;
+    state.combat.deathspaceChainPending = false;
+    const wave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(state.combat); }, state.combat);
+    const res = CombatStateActions.enterDeathspace(state, site.id, wave.enemies, wave.formationId, now);
+    if (!res.changed) {
+      state.combat.deathspaceChainRemaining = 0;
+      state.combat.deathspaceChainPending = false;
+      return { changed:false, reason:res.reason, ticketMaterial:res.ticketMaterial, requiredCL:res.requiredCL, remaining:res.remaining };
+    }
+    return { changed:true, site, remaining:state.combat.deathspaceChainRemaining, warning:res.warning };
+  },
+
+  cancelDeathspaceChain(state) {
+    state.combat.deathspaceChainRemaining = 0;
+    state.combat.deathspaceChainPending = false;
     state._dirty = true;
-    window.GameEvents.emit("combat:deathspaceEntered", {
-      deathspaceId:site.id, zoneId:site.sourceZoneId, faction:site.faction, tier:site.dedTier
-    }, { timestamp:now, source:"combat", offline:false });
-    // 问题1：进入死亡空间前同样做燃料校验（非阻断 warning）。
-    const dsZone = COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || COMBAT_ZONES[0];
-    const dsVolleyFuel = computeVolleyFuel(state, dsZone);
-    const dsFuel = ResourceRegistry.get(state, "consumable:fuel");
-    const dsWarning = (dsVolleyFuel > 0 && dsFuel < dsVolleyFuel) ? "low-fuel" : null;
-    return { changed:true, site, warning:dsWarning };
+    return { changed:true };
   },
 
   stop(state) {
@@ -600,6 +678,8 @@ const CombatStateActions = {
       runDamageDealt:0, runDamageTaken:0
     });
     state.resumeAfterRepair = null; // 玩家主动停止：取消待恢复（含维修中取消自动出击）
+    state.combat.deathspaceChainRemaining = 0; // 手动停止战斗：连刷链一并取消
+    state.combat.deathspaceChainPending = false;
     state._dirty = true;
     return { changed:true, abandonedDeathspace, cancelledResume:hasPendingResume };
   },
@@ -635,6 +715,8 @@ const CombatStateActions = {
       runEliteKills:0,
       currentFormation:"",
       lastEnemyVolley:null,
+      deathspaceChainRemaining:0,
+      deathspaceChainPending:false,
       lastStatus:failedDeathspace
         ? "攻略失败，密钥不返还；维修完成后返回来源星带。"
         : "本轮肃清失败，维修完成后返回该星带。"
@@ -648,13 +730,18 @@ const CombatStateActions = {
 
   finishRecovery(state, now) {
     // 问题2：per-ship 维修——仅结束「当前 active 战斗舰」的维修，并恢复其满血。
-    const activeId = state.combat.activeShip;
+    // 与 beginRecovery 保持一致：优先 combat.activeShip，缺失时回退到 shipAssignments.combat / 首舰。
+    const _activeShip = getActiveCombatShipState(state);
+    const activeId = state.combat.activeShip || (_activeShip && _activeShip.instance && _activeShip.instance.instanceId) || null;
     const repairUntil = getShipRepairUntil(state, activeId);
     if (!repairUntil || now < repairUntil) return { changed:false, reason:"not-due" };
     const maxHp = getCombatMaxHpFromState(state);
     state.combat.hp = { ...maxHp };
     state.combat.maxHp = { ...maxHp };
     finishShipRepair(state, activeId);
+    // 维修完成：战斗上下文回到普通星带（死亡空间永不续跑、密钥不返还，见 beginRecovery 约定）
+    state.combat.mode = "belt";
+    state.combat.viewMode = "belt";
     state.combat.lastStatus = "自动维修完成，可以重新出击";
     state._dirty = true;
     return { changed:true };
@@ -817,7 +904,8 @@ function canStartArchaeology(state, now) {
   const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
   const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
   const config = instance ? getShipConfigById(instance.shipId) : null;
-  if (!config || !ARCHAEOLOGY_SHIP_TYPES.includes(config.type)) return { ok:false, reason:"no-archaeology-ship" };
+  // 考古判据统一为「能力优先」（与 selectors.js / archaeology.js 一致）：有考古扫描能力即可。
+  if (!config || !config.bonuses || !((config.bonuses.archaeologyScanStrength || 0) > 0)) return { ok:false, reason:"no-archaeology-ship" };
   const probeId = arch.activeProbeId;
   if (ResourceRegistry.get(state, "probe:" + probeId) < 1) return { ok:false, reason:"insufficient-probe" };
   const fuelState = getArchaeologyFuelCostState(state, site, instance);
@@ -1618,6 +1706,10 @@ const StationStateActions = {
   if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId, actionTime);
   if (action.type === "manufacturing/selectShipComponent") return ManufacturingStateActions.selectShipComponent(state, action.componentId);
   if (action.type === "manufacturing/selectShipAssembly") return ManufacturingStateActions.selectShipAssembly(state, action.recipeId);
+  if (action.type === "manufacturing/selectShipEngSubView") return ManufacturingStateActions.selectShipEngSubView(state, action.view);
+  if (action.type === "manufacturing/selectShipCompClass") return ManufacturingStateActions.selectShipCompClass(state, action.cls);
+  if (action.type === "manufacturing/selectShipAsmLine") return ManufacturingStateActions.selectShipAsmLine(state, action.line);
+  if (action.type === "manufacturing/selectShipAsmPage") return ManufacturingStateActions.selectShipAsmPage(state, action.page);
   if (action.type === "manufacturing/startShipComponent") return ManufacturingStateActions.startShipComponent(state, actionTime);
   if (action.type === "manufacturing/startShipAssembly") return ManufacturingStateActions.startShipAssembly(state, actionTime);
   if (action.type === "manufacturing/selectEquipmentCategory") return ManufacturingStateActions.selectEquipmentCategory(state, action.categoryId);
@@ -1639,6 +1731,8 @@ const StationStateActions = {
   if (action.type === "combat/selectDeathspaceTier") return CombatStateActions.selectDeathspaceTier(state, action.tier);
   if (action.type === "combat/start") return tutorialNote(state, action, CombatStateActions.start(state, action.enemies, action.formationId, actionTime), actionTime);
   if (action.type === "combat/enterDeathspace") return CombatStateActions.enterDeathspace(state, action.deathspaceId, action.enemies, action.formationId, actionTime);
+  if (action.type === "combat/startDeathspaceChain") return CombatStateActions.startDeathspaceChain(state, action.count, actionTime);
+  if (action.type === "combat/cancelDeathspaceChain") return CombatStateActions.cancelDeathspaceChain(state);
   if (action.type === "combat/stop") return tutorialNote(state, action, CombatStateActions.stop(state), actionTime);
   if (action.type === "combat/beginRecovery") return CombatStateActions.beginRecovery(state, actionTime);
   if (action.type === "combat/finishRecovery") return CombatStateActions.finishRecovery(state, actionTime);

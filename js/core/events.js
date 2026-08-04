@@ -27,6 +27,8 @@ const GameEventContracts = (() => {
     // Batch C-12：死亡空间进入事件——严格在 enterDeathspace 成功完成后 emit 一次。
     "combat:deathspaceEntered": { required:["deathspaceId", "zoneId", "faction", "tier"], numbers:["tier"] },
     "combat:deathspaceCleared": { required:["deathspaceId", "name", "lp", "clearCount"], numbers:["lp", "clearCount"] },
+    // 死亡空间连刷自动续跑：上一轮全清后由 combatTick 自动 enterDeathspace 续下一轮时 emit。
+    "combat:deathspaceChainContinued": { required:["deathspaceId", "remaining"], numbers:["remaining"] },
     // Batch C-12：每次玩家真实齐射结算后 emit 实际伤害（amount 为本次三层合计，runTotal 为单场累计）。
     "combat:damageDealt": { required:["zoneId", "mode", "amount", "runTotal"], numbers:["amount", "runTotal"] },
     // 维修后自动恢复（Phase 3D 修正）：无论普通星带/死亡空间重创，维修后都返回来源普通星带第 1 波。

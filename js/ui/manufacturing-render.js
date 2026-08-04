@@ -14,23 +14,38 @@ onActionProgressReset(({ skill, shipSubAction }) => {
   const eta = document.getElementById(prefix + "-eta"); if (eta) eta.textContent = "0s";
 });
 
-function renderShipCompDropdown(display) {
-  const state = display || getShipEngineeringDisplayState(gameState, Date.now());
-  const content = document.getElementById("shipcomp-dropdown-content");
-  const button = document.getElementById("shipcomp-dropbtn");
-  if (!content || !button) return;
-  button.textContent = state.currentComponent.name + " ▾";
-  content.innerHTML = state.componentOptions.map(recipe => {
-    const className = (recipe.selected ? " selected" : "") + (recipe.unlocked ? "" : " locked");
-    const requirement = recipe.unlocked ? "" : `<span class="area-req">需舰船工程 Lv.${recipe.level}</span>`;
-    return `<div class="area-option${className}" data-comp="${recipe.id}">${recipe.name} — ${recipe.time}s / ${recipe.xp}XP${requirement}</div>`;
-  }).join("");
-  content.querySelectorAll(".area-option:not(.locked)").forEach(option => option.addEventListener("click", event => {
-    event.stopPropagation();
-    const result = switchShipCompTarget(option.dataset.comp);
-    content.classList.remove("show");
-    if (result.changed) renderShipEngineeringPage();
-  }));
+function renderShipEngSubViewTabs(display) {
+  const el = document.getElementById("shipeng-subview-tabs"); if (!el) return;
+  const tabs = [{ id:"component", name:"🔩 部件车间" }, { id:"assembly", name:"⚓ 舰船总装" }];
+  el.innerHTML = tabs.map(tab => `<button class="shipeng-subview-tab${tab.id === display.subView ? " active" : ""}" data-subview="${tab.id}" role="tab" aria-selected="${tab.id === display.subView}">${tab.name}</button>`).join("");
+}
+
+function renderShipCompClassTabs(display) {
+  const el = document.getElementById("shipeng-comp-class-tabs"); if (!el) return;
+  el.innerHTML = display.componentClassTabs.map(item => `<button class="shipeng-class-tab${item.selected ? " active" : ""}" data-compclass="${item.id}">${item.name}</button>`).join("");
+}
+
+function renderShipCompGrid(display) {
+  const el = document.getElementById("shipeng-comp-grid"); if (!el) return;
+  if (!display.componentGrid.length) { el.innerHTML = '<div class="shipeng-empty">该分类暂无部件</div>'; return; }
+  el.innerHTML = display.componentGrid.map(recipe => `
+    <button class="shipeng-comp-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-comp="${recipe.id}">
+      <span class="sec-top"><span>${recipe.level} 级</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : "Lv." + recipe.level + " 解锁"}</span></span>
+      <strong>${recipe.name}</strong>
+      <span class="sec-cost">${recipe.cost.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`).join(" ")}</span>
+      <span class="sec-bottom"><span>${recipe.time}s · ${recipe.xp} XP</span><span>库存 ${recipe.owned}</span></span>
+    </button>`).join("");
+}
+
+function renderShipCompDetail(display) {
+  renderShipCompCost(display);
+  renderShipCompInventory(display);
+  const btn = document.getElementById("btn-start-shipcomp");
+  if (btn) {
+    if (display.canStartComponent) { btn.textContent = "⚙ 制造 " + display.currentComponent.name; }
+    else { btn.textContent = "🔒 舰船工程 Lv." + display.currentComponent.level + " 解锁"; }
+    btn.disabled = !display.canStartComponent;
+  }
 }
 
 function renderShipCompCost(display) {
@@ -48,25 +63,60 @@ function renderShipCompInventory(display) {
   grid.innerHTML = display.componentInventory.map(item => `<div class="ship-comp-item"><span class="sci-name">${item.name}</span><span class="sci-qty${item.quantity === 0 ? " zero" : ""}">×${item.quantity}</span></div>`).join("");
 }
 
-function renderShipAsmDropdown(display) {
-  const state = display || getShipEngineeringDisplayState(gameState, Date.now());
-  const content = document.getElementById("shipasm-dropdown-content");
-  const button = document.getElementById("shipasm-dropbtn");
-  if (!content || !button) return;
-  button.textContent = state.currentAssembly.name + " ▾";
-  content.innerHTML = state.assemblyOptions.map(recipe => {
-    const className = (recipe.selected ? " selected" : "") + (recipe.unlocked ? "" : " locked");
-    let requirement = "";
-    if (!recipe.hasRequiredBlueprint) requirement = '<span class="area-req">需先购买蓝图</span>';
-    else if (state.level < recipe.level) requirement = `<span class="area-req">需舰船工程 Lv.${recipe.level}</span>`;
-    return `<div class="area-option${className}" data-ship="${recipe.id}">${recipe.name}${requirement}</div>`;
+function renderShipAsmLineTabs(display) {
+  const el = document.getElementById("shipeng-asm-line-tabs"); if (!el) return;
+  el.innerHTML = display.assemblyLineTabs.map(item => `<button class="shipeng-class-tab${item.selected ? " active" : ""}" data-asmline="${item.id}">${item.name}</button>`).join("");
+}
+
+function renderShipAsmGrid(display) {
+  const el = document.getElementById("shipeng-asm-grid"); if (!el) return;
+  if (!display.assemblyGrid.length) { el.innerHTML = '<div class="shipeng-empty">该系列暂无舰船</div>'; return; }
+  el.innerHTML = display.assemblyGrid.map(recipe => {
+    const status = !recipe.hasRequiredBlueprint ? "需蓝图" : (!recipe.unlocked ? "Lv." + recipe.level + " 解锁" : "可建造");
+    const hybridBadge = recipe.hybrid ? '<span class="sec-hybrid">混血</span>' : "";
+    return `
+    <button class="shipeng-asm-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-ship="${recipe.id}">
+      <span class="sec-top"><span>${recipe.role}</span>${hybridBadge}</span>
+      <strong>${recipe.name}</strong>
+      <span class="sec-bottom"><span>${recipe.level} 级 · ${recipe.time}s</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${status}</span></span>
+    </button>`;
   }).join("");
-  content.querySelectorAll(".area-option:not(.locked)").forEach(option => option.addEventListener("click", event => {
-    event.stopPropagation();
-    const result = switchShipAsmTarget(option.dataset.ship);
-    content.classList.remove("show");
-    if (result.changed) renderShipEngineeringPage();
-  }));
+}
+
+function renderShipAsmDetail(display) {
+  const wrap = document.getElementById("shipeng-asm-detail"); if (!wrap) return;
+  renderShipAttributes(display.selectedShip);
+  mountManufacturing3D(display);
+  renderShipAsmCost(display);
+  const flavorEl = document.getElementById("shipeng-asm-flavor");
+  if (flavorEl) flavorEl.textContent = display.shipFlavor || "";
+  const badges = document.getElementById("shipeng-asm-badges");
+  if (badges) {
+    const roleBadge = display.selectedShip ? `<span class="badge">${display.shipRole}</span><span class="badge">舰船工程 Lv.${display.currentAssembly.level}+</span>` : "";
+    const hybridBadge = display.hybridSelected ? '<span class="badge hybrid">混血</span>' : "";
+    badges.innerHTML = roleBadge + hybridBadge;
+  }
+  const btn = document.getElementById("btn-start-shipasm");
+  if (btn) {
+    if (display.canStartAssembly) { btn.textContent = "⚓ 合成 " + display.currentAssembly.name; }
+    else {
+      const shipId = display.currentAssembly.shipId;
+      const hasBp = (gameState.ownedBlueprints || []).includes(shipId);
+      btn.textContent = hasBp ? ("🔒 舰船工程 Lv." + display.currentAssembly.level + " 解锁") : "🔒 需蓝图解锁";
+    }
+    btn.disabled = !display.canStartAssembly;
+  }
+}
+
+function renderShipAsmPager(display) {
+  const el = document.getElementById("shipeng-asm-pager"); if (!el) return;
+  if (display.assemblyPageCount <= 1) { el.style.display = "none"; el.innerHTML = ""; return; }
+  el.style.display = "";
+  const prevDisabled = display.assemblyPage <= 0 ? "disabled" : "";
+  const nextDisabled = display.assemblyPage >= display.assemblyPageCount - 1 ? "disabled" : "";
+  el.innerHTML = `<button class="shipeng-pager-btn" data-asm-page="prev" ${prevDisabled}>‹ 上一页</button>
+    <span class="shipeng-pager-info">第 ${display.assemblyPage + 1} / ${display.assemblyPageCount} 页 · 共 ${display.assemblyTotal} 艘</span>
+    <button class="shipeng-pager-btn" data-asm-page="next" ${nextDisabled}>下一页 ›</button>`;
 }
 
 function renderShipAsmCost(display) {
@@ -130,20 +180,24 @@ function renderShipEngineeringPage(now) {
   const display = getShipEngineeringDisplayState(gameState, Number(now) || Date.now());
   const efficiency = document.getElementById("shipeng-eff-value"); if (efficiency) efficiency.textContent = display.efficiency.toFixed(2) + "x";
   const speedInfo = document.getElementById("shipeng-speed-breakdown");
-  if (speedInfo) {
-    speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display);
-  }
+  if (speedInfo) speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display);
   const fill = document.getElementById("shipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   const xp = document.getElementById("shipeng-exp-value"); if (xp) xp.textContent = display.xp.toLocaleString() + " / " + display.xpNeeded.toLocaleString();
   const status = document.getElementById("shipeng-header-status"); if (status) status.textContent = display.status;
-  renderShipCompDropdown(display);
-  renderShipCompCost(display);
-  renderShipCompInventory(display);
-  renderShipAsmDropdown(display);
-  renderShipAsmCost(display);
+
+  renderShipEngSubViewTabs(display);
+  renderShipCompClassTabs(display);
+  renderShipCompGrid(display);
+  renderShipCompDetail(display);
+  renderShipAsmLineTabs(display);
+  renderShipAsmGrid(display);
+  renderShipAsmDetail(display);
+  renderShipAsmPager(display);
   renderShipInventory(display);
-  renderShipAttributes(display.selectedShip);
-  mountManufacturing3D(display);
+
+  const compView = document.getElementById("shipeng-comp-view"); if (compView) compView.style.display = display.subView === "component" ? "" : "none";
+  const asmView = document.getElementById("shipeng-asm-view"); if (asmView) asmView.style.display = display.subView === "assembly" ? "" : "none";
+
   const componentRow = document.getElementById("shipcomp-progress-row"); if (componentRow) componentRow.style.display = display.componentActive ? "" : "none";
   const assemblyRow = document.getElementById("shipasm-progress-row"); if (assemblyRow) assemblyRow.style.display = display.assemblyActive ? "" : "none";
   drawSkillBar(document.getElementById("bar-shipcomp"), display.componentProgress.percent, "purple");
@@ -231,18 +285,44 @@ function renderEquipEngPage(now) {
 }
 
 (function bindManufacturingUI() {
-  const componentButton = document.getElementById("shipcomp-dropbtn");
-  const componentContent = document.getElementById("shipcomp-dropdown-content");
-  if (componentButton && componentContent) {
-    componentButton.addEventListener("click", event => { event.stopPropagation(); renderShipCompDropdown(); componentContent.classList.toggle("show"); });
-    document.addEventListener("click", () => componentContent.classList.remove("show"));
-  }
-  const assemblyButton = document.getElementById("shipasm-dropbtn");
-  const assemblyContent = document.getElementById("shipasm-dropdown-content");
-  if (assemblyButton && assemblyContent) {
-    assemblyButton.addEventListener("click", event => { event.stopPropagation(); renderShipAsmDropdown(); assemblyContent.classList.toggle("show"); });
-    document.addEventListener("click", () => assemblyContent.classList.remove("show"));
-  }
+  const subviewTabs = document.getElementById("shipeng-subview-tabs");
+  if (subviewTabs) subviewTabs.addEventListener("click", event => {
+    const btn = event.target.closest("[data-subview]"); if (!btn) return;
+    const result = dispatchGameAction(gameState, { type:"manufacturing/selectShipEngSubView", view:btn.dataset.subview }, Date.now());
+    if (result.changed) renderShipEngineeringPage();
+  });
+  const compClassTabs = document.getElementById("shipeng-comp-class-tabs");
+  if (compClassTabs) compClassTabs.addEventListener("click", event => {
+    const btn = event.target.closest("[data-compclass]"); if (!btn) return;
+    const result = dispatchGameAction(gameState, { type:"manufacturing/selectShipCompClass", cls:btn.dataset.compclass }, Date.now());
+    if (result.changed) renderShipEngineeringPage();
+  });
+  const compGrid = document.getElementById("shipeng-comp-grid");
+  if (compGrid) compGrid.addEventListener("click", event => {
+    const btn = event.target.closest("[data-comp]"); if (!btn || btn.disabled) return;
+    const result = switchShipCompTarget(btn.dataset.comp);
+    if (result.changed) renderShipEngineeringPage();
+  });
+  const asmLineTabs = document.getElementById("shipeng-asm-line-tabs");
+  if (asmLineTabs) asmLineTabs.addEventListener("click", event => {
+    const btn = event.target.closest("[data-asmline]"); if (!btn) return;
+    const result = dispatchGameAction(gameState, { type:"manufacturing/selectShipAsmLine", line:btn.dataset.asmline }, Date.now());
+    if (result.changed) renderShipEngineeringPage();
+  });
+  const asmGrid = document.getElementById("shipeng-asm-grid");
+  if (asmGrid) asmGrid.addEventListener("click", event => {
+    const btn = event.target.closest("[data-ship]"); if (!btn || btn.disabled) return;
+    const result = switchShipAsmTarget(btn.dataset.ship);
+    if (result.changed) renderShipEngineeringPage();
+  });
+  const pager = document.getElementById("shipeng-asm-pager");
+  if (pager) pager.addEventListener("click", event => {
+    const btn = event.target.closest("[data-asm-page]"); if (!btn || btn.disabled) return;
+    const current = gameState.currentAction.shipAsmPage || 0;
+    const next = btn.dataset.asmPage === "prev" ? current - 1 : current + 1;
+    const result = dispatchGameAction(gameState, { type:"manufacturing/selectShipAsmPage", page:next }, Date.now());
+    if (result.changed) renderShipEngineeringPage();
+  });
   const tabs = document.getElementById("equipeng-category-tabs");
   if (tabs) tabs.addEventListener("click", event => {
     const button = event.target.closest("[data-category]");

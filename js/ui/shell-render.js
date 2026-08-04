@@ -2158,8 +2158,9 @@ function installTutorialWidgetListeners() {
     if (assignment) {
       const result = dispatchGameAction(gameState, { type:"hangar/toggleAssignment", instanceId:assignment.dataset.sid, actionKey:assignment.dataset.shipAction }, Date.now());
       if (!result.changed && result.reason === "repairing") showToast("舰船自动维修中，暂时不能更换战斗舰");
-      else if (!result.changed && result.reason === "unsupported-mining") showToast("该舰船没有采矿岗位");
+      else       if (!result.changed && result.reason === "unsupported-mining") showToast("该舰船没有采矿岗位");
       else if (!result.changed && result.reason === "unsupported-gas") showToast("该舰船没有采气岗位");
+      else if (!result.changed && result.reason === "unsupported-archaeology") showToast("该舰船没有考古扫描能力");
       else if (!result.changed && result.reason === "unsupported-refining") showToast("只有工业支援舰可以承担冶炼岗位");
       else if (!result.changed && result.reason === "unsupported-task") showToast("该任务不需要分配舰船岗位");
       else if (!result.changed && result.reason === "ship-active") showToast("舰船正在执行任务，停止当前任务后才能重新分配");

@@ -25,6 +25,47 @@
 <style id="ship3d-style">
   .ship3d-canvas { display:block; width:100%; height:100%; }
   #manufacturing-3d-canvas { width:100%; height:340px; margin-top:8px; border-radius:8px; background:#070d14; }
+
+/* ---- 舰船工程 UI 重做（2026-08-04）---- */
+.shipeng-subview-tabs { display:flex; gap:6px; margin:4px 0 12px; background:#0d1622; border:1px solid #1d2c3c; border-radius:9px; padding:4px; }
+.shipeng-subview-tab { flex:1; padding:9px 12px; border:none; border-radius:6px; background:transparent; color:#8a9aae; font-size:14px; font-weight:600; cursor:pointer; }
+.shipeng-subview-tab.active { background:linear-gradient(90deg,#1f6fb0,#2e9fe0); color:#fff; box-shadow:inset 0 -2px 0 #38bdf8; }
+.shipeng-class-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+.shipeng-class-tab { padding:5px 13px; border-radius:18px; border:1px solid #2a3a4a; background:transparent; color:#8a9aae; font-size:12.5px; cursor:pointer; }
+.shipeng-class-tab.active { border-color:#38bdf8; background:rgba(56,189,248,.15); color:#7dd3fc; }
+.shipeng-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+/* 左右分栏：左侧分类/栅格 + 分页，右侧详情（宽屏）；窄屏自动回退为上下堆叠 */
+.shipeng-split { display:flex; gap:18px; align-items:flex-start; }
+.shipeng-split-left { flex:1 1 auto; min-width:0; }
+.shipeng-split-right { flex:0 0 380px; max-width:380px; align-self:flex-start; }
+.shipeng-comp-detail, .shipeng-asm-detail { margin-top:0; }
+@media (min-width: 900px) { .shipeng-split-right { position:sticky; top:8px; } }
+@media (max-width: 900px) { .shipeng-split { flex-direction:column; } .shipeng-split-right { flex:1 1 auto; max-width:none; width:100%; } }
+.shipeng-comp-card, .shipeng-asm-card { display:flex; flex-direction:column; gap:5px; padding:10px; border:1px solid #1f2e3d; border-radius:9px; background:#0c151f; text-align:left; cursor:pointer; color:#cdd9e5; }
+.shipeng-comp-card:hover, .shipeng-asm-card:hover { border-color:#38bdf8; }
+.shipeng-comp-card.selected, .shipeng-asm-card.selected { border-color:#38bdf8; background:rgba(56,189,248,.12); box-shadow:0 0 0 1px #38bdf8; }
+.shipeng-comp-card.locked, .shipeng-asm-card.locked { opacity:.62; cursor:pointer; }
+.shipeng-comp-card .sec-top, .shipeng-asm-card .sec-top { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#7d8da0; }
+.shipeng-comp-card strong, .shipeng-asm-card strong { font-size:14px; color:#e6eef6; }
+.shipeng-comp-card .sec-cost { display:flex; flex-wrap:wrap; gap:4px; font-size:11px; }
+.shipeng-comp-card .sec-cost .enough, .shipeng-asm-card .sec-bottom .can-build { color:#5fd39a; }
+.shipeng-comp-card .sec-cost .short { color:#e5705a; }
+.shipeng-comp-card .sec-bottom, .shipeng-asm-card .sec-bottom { display:flex; justify-content:space-between; font-size:11px; color:#8a9aae; }
+.shipeng-asm-card .sec-bottom .level-locked { color:#e5705a; }
+.sec-hybrid { background:#caa14a; color:#1a1206; border-radius:4px; padding:1px 6px; font-size:10px; font-weight:700; }
+.shipeng-empty { grid-column:1/-1; padding:24px; text-align:center; color:#5a6a7a; font-size:13px; }
+.shipeng-comp-detail, .shipeng-asm-detail { margin-top:14px; padding:14px; border:1px solid #1d2c3c; border-radius:10px; background:#0a121d; }
+.shipeng-asm-head { display:flex; flex-direction:column; gap:6px; margin-bottom:8px; }
+.shipeng-asm-badges { display:flex; flex-wrap:wrap; gap:6px; }
+.badge { border:1px solid #38bdf8; color:#7dd3fc; border-radius:4px; padding:2px 8px; font-size:11px; }
+.badge.hybrid { border-color:#caa14a; color:#e7c878; }
+.shipeng-asm-flavor { margin:0; padding-left:8px; border-left:3px solid #38bdf8; color:#aebccb; font-size:12.5px; line-height:1.5; }
+.build-btn { width:100%; margin-top:10px; padding:11px; border:none; border-radius:8px; background:linear-gradient(90deg,#2e6fa8,#69c0ed); color:#04121d; font-weight:700; font-size:14px; cursor:pointer; }
+.build-btn:disabled { background:#26323e; color:#5b6976; cursor:not-allowed; }
+.shipeng-asm-pager { display:flex; align-items:center; justify-content:center; gap:14px; margin:12px 0 4px; }
+.shipeng-pager-btn { padding:6px 14px; border:1px solid #2a3a4a; border-radius:6px; background:transparent; color:#bcd0e2; font-size:13px; cursor:pointer; }
+.shipeng-pager-btn:disabled { opacity:.4; cursor:not-allowed; }
+.shipeng-pager-info { font-size:12.5px; color:#8a9aae; }
   .hangar-ship-thumb { width:100%; height:120px; object-fit:contain; background:#070d14; border-radius:6px; cursor:pointer; display:block; }
   #hangar-3d-popup { position:fixed; inset:0; background:rgba(4,8,14,.82); display:none; align-items:center; justify-content:center; z-index:2000; }
   #hangar-3d-popup.open { display:flex; }
@@ -52,6 +93,13 @@
   .combat-side-image::after { content:"🔍 点击查看"; position:absolute; right:8px; bottom:8px; padding:2px 8px; font-size:11px; color:#cfe; background:rgba(6,12,20,.66); border:1px solid rgba(80,140,180,.4); border-radius:10px; pointer-events:none; opacity:0; transition:opacity .15s; z-index:2; }
   .combat-side-image:hover::after { opacity:1; }
   .combat-3d-note { font-size:10px; color:#5a6a7a; text-align:center; margin-top:2px; }
+  /* 死亡空间连刷控件 */
+  .deathspace-chain-control { display:flex; align-items:center; gap:8px; margin-top:8px; padding:6px 10px; background:rgba(10,18,28,.5); border:1px solid rgba(80,140,180,.28); border-radius:8px; flex-wrap:wrap; }
+  .deathspace-chain-control .chain-label { font-size:13px; color:#bfe; font-weight:600; }
+  .deathspace-chain-control .chain-input { width:58px; padding:5px 6px; font-size:14px; text-align:center; color:#eafff4; background:#0a121c; border:1px solid #2a4258; border-radius:6px; }
+  .deathspace-chain-control .chain-input:focus { outline:none; border-color:#38bdf8; }
+  .deathspace-chain-control .chain-unit { font-size:13px; color:#9fb3c4; }
+  .deathspace-chain-control .deathspace-chain-status { font-size:12px; color:#7fd; margin-left:2px; }
 </style>
 </head>
 <body>
@@ -367,49 +415,55 @@
           <span class="me-logistics" id="shipeng-speed-breakdown"></span>
         </div>
 
-        <!-- 部件制造 -->
-        <div class="shipeng-section">
-          <h4>🔩 部件制造</h4>
-          <div class="ship-synth-controls">
-            <span class="ss-label">选择部件：</span>
-            <div class="area-dropdown" id="shipcomp-dropdown">
-              <button class="area-dropbtn" id="shipcomp-dropbtn">综合舰体组件 ▾</button>
-              <div class="area-dropdown-content" id="shipcomp-dropdown-content"></div>
+        <!-- 舰船工程 UI 重做（2026-08-04）：双一级 tab + 二级子标签 + 栅格 + 详情 + 分页 -->
+        <div class="shipeng-subview-tabs" id="shipeng-subview-tabs"></div>
+
+        <!-- 部件车间 -->
+        <div id="shipeng-comp-view" class="shipeng-split">
+          <div class="shipeng-split-left">
+            <div class="shipeng-class-tabs" id="shipeng-comp-class-tabs"></div>
+            <div class="shipeng-grid" id="shipeng-comp-grid"></div>
+          </div>
+          <div class="shipeng-split-right">
+            <div class="shipeng-comp-detail" id="shipeng-comp-detail">
+              <div class="ship-cost-list" id="shipcomp-cost"></div>
+              <div class="ship-comp-grid" id="ship-comp-inventory"></div>
+              <button class="btn primary build-btn" id="btn-start-shipcomp">⚙ 制造</button>
+              <div class="ship-progress-row" id="shipcomp-progress-row" style="display:none;">
+                <span class="sp-label">制造进度</span>
+                <canvas class="skill-canvas-bar" id="bar-shipcomp" width="560" height="24"></canvas>
+                <span class="mp-eta" id="shipcomp-eta">0s</span>
+              </div>
             </div>
-            <button class="btn primary" id="btn-start-shipcomp">▶ 开始制造</button>
           </div>
-          <div class="ship-cost-list" id="shipcomp-cost"></div>
-          <div class="ship-progress-row" id="shipcomp-progress-row" style="display:none;">
-            <span class="sp-label">制造进度</span>
-            <canvas class="skill-canvas-bar" id="bar-shipcomp" width="560" height="24"></canvas>
-            <span class="mp-eta" id="shipcomp-eta">0s</span>
-          </div>
-          <div class="ship-comp-grid" id="ship-comp-inventory"></div>
         </div>
 
-        <!-- 舰船合成 -->
-        <div class="shipeng-section">
-          <h4>⚓ 舰船合成</h4>
-          <div class="ship-synth-controls">
-            <span class="ss-label">选择舰船：</span>
-            <div class="area-dropdown" id="shipasm-dropdown">
-              <button class="area-dropbtn" id="shipasm-dropbtn">星矛级 ▾</button>
-              <div class="area-dropdown-content" id="shipasm-dropdown-content"></div>
+        <!-- 舰船总装 -->
+        <div id="shipeng-asm-view" class="shipeng-split" style="display:none;">
+          <div class="shipeng-split-left">
+            <div class="shipeng-class-tabs" id="shipeng-asm-line-tabs"></div>
+            <div class="shipeng-grid" id="shipeng-asm-grid"></div>
+            <div class="shipeng-asm-pager" id="shipeng-asm-pager"></div>
+          </div>
+          <div class="shipeng-split-right">
+            <div class="shipeng-asm-detail" id="shipeng-asm-detail">
+              <div class="shipeng-asm-head">
+                <div class="shipeng-asm-badges" id="shipeng-asm-badges"></div>
+                <p class="shipeng-asm-flavor" id="shipeng-asm-flavor"></p>
+              </div>
+              <div id="ship-attr-display" style="margin-top:8px;"></div>
+              <canvas id="manufacturing-3d-canvas" class="ship3d-canvas"></canvas>
+              <div class="ship-cost-list" id="shipasm-cost"></div>
+              <button class="btn primary build-btn" id="btn-start-shipasm">⚓ 合成</button>
+              <div class="ship-progress-row" id="shipasm-progress-row" style="display:none;">
+                <span class="sp-label">合成进度</span>
+                <canvas class="skill-canvas-bar" id="bar-shipasm" width="560" height="24"></canvas>
+                <span class="mp-eta" id="shipasm-eta">0s</span>
+              </div>
+              <div style="margin-top:8px; font-size:12px; color:#8899aa;">已有舰船：</div>
+              <div id="ship-inventory-list"></div>
             </div>
-            <button class="btn primary" id="btn-start-shipasm">⚓ 合成</button>
           </div>
-          <div class="ship-cost-list" id="shipasm-cost"></div>
-          <div class="ship-progress-row" id="shipasm-progress-row" style="display:none;">
-            <span class="sp-label">合成进度</span>
-            <canvas class="skill-canvas-bar" id="bar-shipasm" width="560" height="24"></canvas>
-            <span class="mp-eta" id="shipasm-eta">0s</span>
-          </div>
-          <!-- 舰船属性展示 -->
-          <div id="ship-attr-display" style="margin-top:8px;"></div>
-          <canvas id="manufacturing-3d-canvas" class="ship3d-canvas"></canvas>
-          <!-- 已有舰船 -->
-          <div style="margin-top:8px; font-size:12px; color:#8899aa;">已有舰船：</div>
-          <div id="ship-inventory-list"></div>
         </div>
       </div>
     </div>
@@ -554,6 +608,13 @@
             <span class="combat-wave">第 <span class="cw-num" id="combat-wave-num">1</span>/<span id="combat-wave-max">20</span> 波 · <span id="combat-clear-label">已肃清</span> <span id="combat-clear-count">0</span></span>
             <button class="btn danger combat-engagement-btn" id="btn-stop-combat" style="display:none;">■ 停止战斗</button>
             <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 开始战斗</button>
+          </div>
+          <div class="deathspace-chain-control" id="deathspace-chain-control" style="display:none;">
+            <span class="chain-label">连刷</span>
+            <input type="number" id="deathspace-chain-count" class="chain-input" min="1" max="99" step="1" value="5" />
+            <span class="chain-unit">次</span>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat-chain">▶ 连续挑战</button>
+            <span class="deathspace-chain-status" id="deathspace-chain-status"></span>
           </div>
         </div>
 

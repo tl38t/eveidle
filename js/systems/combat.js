@@ -4,42 +4,53 @@
    DOM渲染位于 js/ui/combat-render.js
    ================================================================ */
 
-function getActiveCombatShipInstance() {
-  return getActiveCombatShipState(gameState).instance;
+// Batch R 返修：所有共享内核辅助函数显式接收 state；不传 state 时回退全局 gameState
+// （仅兼容冻结 UI/旧调用方），但 advanceCombatRound 调用路径始终传入 state，不触碰全局。
+function getActiveCombatShipInstance(state) {
+  return getActiveCombatShipState(state || gameState).instance;
 }
 
 const COMBAT_RECOVERY_MS = 180000;
 
-function getInstalledCombatModules() {
-  return getInstalledCombatModulesFromState(gameState).map(module => ({ id:module.id, itemId:module.itemId, instance:module.instance, enhancementLevel:module.enhancementLevel, multiplier:module.multiplier, equipment:EQUIPMENT_DB[module.itemId], slot:module.slot }));
+function getInstalledCombatModules(state) {
+  return getInstalledCombatModulesFromState(state || gameState).map(module => ({ id:module.id, itemId:module.itemId, instance:module.instance, enhancementLevel:module.enhancementLevel, multiplier:module.multiplier, equipment:EQUIPMENT_DB[module.itemId], slot:module.slot }));
 }
 
-function getInstalledCombatWeapons() {
-  return getInstalledCombatModules().filter(module => module.equipment.combat.kind === "weapon");
+function getInstalledCombatWeapons(state) {
+  return getInstalledCombatModules(state).filter(module => module.equipment.combat.kind === "weapon");
 }
 
-function getInstalledCombatRepairers() {
-  return getInstalledCombatModules().filter(module => module.equipment.combat.kind === "repair");
+function getInstalledCombatRepairers(state) {
+  return getInstalledCombatModules(state).filter(module => module.equipment.combat.kind === "repair");
 }
 
-function getCombatRecoveryRemaining(now) {
-  return getCombatDisplayState(gameState, Number(now) || Date.now()).recovery.remaining;
+function getCombatRecoveryRemaining(state, now) {
+  const g = (state && state.combat) ? state : gameState;
+  // 仅用于「未显式传入 now」的显示查询（如 verify/浏览器面板）；权威战斗路径（updateCombatRecovery）
+  // 始终显式传入有限 now，不会触发此回退。不存在 loose Number()——非有限即回退真实时间用于显示。
+  if (typeof now !== "number" || !Number.isFinite(now)) now = Date.now();
+  return getCombatDisplayState(g, now).recovery.remaining;
 }
 
-function finishCombatRecovery(now) {
-  return dispatchGameAction(gameState, { type:"combat/finishRecovery" }, Number(now) || Date.now()).changed;
+// Batch R 返修：state 优先（在线真实路径由 combatTick 传入 gameState），无 state 回退全局。
+function finishCombatRecovery(state, now) {
+  const g = (state && state.combat) ? state : gameState;
+  const t = (typeof now === "number" && Number.isFinite(now)) ? now : Date.now();
+  return dispatchGameAction(g, { type:"combat/finishRecovery" }, t).changed;
 }
 
-function updateCombatRecovery(now) {
+function updateCombatRecovery(now, state) {
   // per-ship 维修唯一恢复入口：combat.repairs[instanceId] = untilTs。
   // 清除所有已过期的维修条目（某艘舰完成只清该艘），并仅在「当前 active 战斗舰
   // 刚从维修中变为完成」且存在待恢复战斗时，自动恢复出击并发出唯一的 combat:resumedAfterRepair。
   // 关键：游戏主循环（combatTick / gameTick）以无参方式调用本函数，必须在此兜底 now=Date.now()；
   // 否则 now===undefined → Number(undefined)=NaN → isShipUnderRepair 误判为"已到期" → 维修条目被立即清空、
   // 并立刻触发 tryResumeCombatAfterRepair，表现为"被击毁后马上复活重新进入战斗"。
+  // Batch R 返修：state 优先（combatTick 在线真实路径传入 gameState），无 state 回退全局。
+  const g = (state && state.combat) ? state : gameState;
   now = Number(now);
   if (!Number.isFinite(now)) now = Date.now();
-  const combat = gameState.combat;
+  const combat = g.combat;
   const activeId = combat.activeShip;
   // 仅用于判定「当前 active 战斗舰是否刚完成维修」以触发自动恢复：语义为"该舰存在维修条目"，
   // 与到期边界（now === until）一致——到期这一 tick 既满足 activeFinished 也满足 wasRepairingActive，
@@ -49,30 +60,30 @@ function updateCombatRecovery(now) {
   if (combat.repairs) {
     for (const id of Object.keys(combat.repairs)) {
       // 到期边界统一：until > now 仍维修中（跳过）；until <= now 视为维修完成（清理）。
-      // 与公共判断函数 isShipUnderRepair(gameState,id,now) 语义一致（until > now 返回 true）。
-      if (isShipUnderRepair(gameState, id, now)) continue;
+      // 与公共判断函数 isShipUnderRepair(g,id,now) 语义一致（until > now 返回 true）。
+      if (isShipUnderRepair(g, id, now)) continue;
       if (id === activeId) {
-        const maxHp = getCombatMaxHpFromState(gameState);
+        const maxHp = getCombatMaxHpFromState(g);
         combat.hp = { ...maxHp };
         combat.maxHp = { ...maxHp };
         activeFinished = true;
       }
       delete combat.repairs[id];
-      gameState._dirty = true;
+      g._dirty = true;
     }
   }
-  if (activeFinished && wasRepairingActive && gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "combat") {
+  if (activeFinished && wasRepairingActive && g.resumeAfterRepair && g.resumeAfterRepair.type === "combat") {
     tryResumeCombatAfterRepair();
   }
   // 悬挂标记清理：resumeAfterRepair 指向的舰维修条目已被清（无论本 tick 清的还是此前已清），
   // 且未由上方 activeFinished 合法触发 auto-resume，则清掉，避免战斗面板长期显示"完成后返回战斗"误导。
-  const rrPending = gameState.resumeAfterRepair;
+  const rrPending = g.resumeAfterRepair;
   if (rrPending && rrPending.type === "combat") {
     const sid = rrPending.shipInstanceId;
-    const stillRepairing = Boolean(sid && gameState.combat.repairs[sid] && Number(gameState.combat.repairs[sid]) > 0);
-    if (!stillRepairing) gameState.resumeAfterRepair = null;
+    const stillRepairing = Boolean(sid && g.combat.repairs[sid] && Number(g.combat.repairs[sid]) > 0);
+    if (!stillRepairing) g.resumeAfterRepair = null;
   }
-  return getCombatRecoveryRemaining(now);
+  return getCombatRecoveryRemaining(g, now);
 }
 
 function onCombatEvent(listener) {
@@ -83,19 +94,24 @@ function emitCombatEvent(event) {
   GameEvents.emit("combat:event", event);
 }
 
-function beginCombatRecovery() {
-  const activeShip = getActiveCombatShipInstance();
+function beginCombatRecovery(state, context) {
+  context = context || {};
+  const emit = (typeof context.emit === "function") ? context.emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
+  const now = context.now;
+  // Batch R 返修：非有限 now → 稳定失败，绝不回退真实时间（Date.now）。
+  if (typeof now !== "number" || !Number.isFinite(now)) return false;
+  const activeShip = getActiveCombatShipInstance(state);
   const instanceId = activeShip ? activeShip.instanceId : null;
-  const result = dispatchGameAction(gameState, { type:"combat/beginRecovery" }, Date.now());
+  const result = dispatchGameAction(state, { type:"combat/beginRecovery" }, now);
   if (result.changed) {
     // Batch C-11：战败即本 run 终止，清空实际开火武器类型登记
-    resetCombatRunWeaponTypes(gameState.combat);
+    resetCombatRunWeaponTypes(state.combat);
     // Batch C-12：战败即本 run 终止，清空单场伤害累计
-    gameState.combat.runDamageDealt = 0;
-    gameState.combat.runDamageTaken = 0;
-    const payload = { type:"ship-destroyed", shipId:instanceId, repairSeconds:180 };
-    GameEvents.emit("ship:destroyed", payload);
-    emitCombatEvent(payload);
+    state.combat.runDamageDealt = 0;
+    state.combat.runDamageTaken = 0;
+    const payload = { type:"ship-destroyed", shipId:instanceId, repairSeconds:180, timestamp: now };
+    emit("ship:destroyed", payload, { timestamp: now, source:"combat" });
+    emit("combat:event", payload, { timestamp: now, source:"combat" });
   }
   return result.changed;
 }
@@ -112,16 +128,10 @@ function getShipConfig(shipId) {
   return resolved || STARTER_SHIPS[shipId] || null;
 }
 
-function getActiveShip() {
-  const assigned = getAssignedShip("combat");
-  if (assigned) return assigned;
-  // 修复：不再 fallback 到 "rifter" 凭空造舰；玩家无拥有战斗舰时返回 null。
-  const shipRef = gameState.combat.activeShip || (gameState.inventory.ships.length > 0 ? gameState.inventory.ships[0].instanceId : null);
-  if (!shipRef) return null;
-  const instance = getShipInstance(shipRef);
-  if (!instance) return null;
-  const cfg = getShipConfig(instance.shipId);
-  return cfg || null;
+function getActiveShip(state) {
+  // Batch R 返修：state 优先（完全 state-based，不触碰全局 gameState）；无 state 回退全局。
+  const st = state || gameState;
+  return getActiveCombatShipState(st).config;
 }
 
 
@@ -143,26 +153,27 @@ function calcCombatDamage(attackerHit, targetDodge, baseDps, counterMultiplier, 
 }
 
 // ---- 战斗技能加成计算 ----
-function getSkillLvl(key) { return (gameState.skills[key] && gameState.skills[key].lvl) || 1; }
+function getSkillLvl(key, state) { const g = (state && state.skills) ? state : gameState; return (g.skills[key] && g.skills[key].lvl) || 1; }
 
-function calcPlayerHit(weapon, equipment) {
-  return getCombatWeaponHitFromState(gameState, weapon, equipment && equipment.combat);
+function calcPlayerHit(weapon, equipment, state) {
+  return getCombatWeaponHitFromState(state || gameState, weapon, equipment && equipment.combat);
 }
 
-function calcPlayerDmgMult(weapon) {
-  return getCombatDamageMultiplierFromState(gameState, weapon);
+function calcPlayerDmgMult(weapon, state) {
+  return getCombatDamageMultiplierFromState(state || gameState, weapon);
 }
 
-function calcCombatMaxHp(ship, shipInstance) {
-  return getCombatMaxHpFromState(gameState);
+function calcCombatMaxHp(ship, shipInstance, state) {
+  // 兼容旧调用（verify/audit 仍传 ship+shipInstance）；state-based 计算以 state 为准，忽略前两个参数。
+  return getCombatMaxHpFromState(state || gameState);
 }
 
-function calcPlayerDodge(ship) {
-  return getCombatPlayerDodgeFromState(gameState);
+function calcPlayerDodge(ship, state) {
+  return getCombatPlayerDodgeFromState(state || gameState);
 }
 
-function calcFuelMult(zone) {
-  return getCombatFuelMultiplierFromState(gameState, zone);
+function calcFuelMult(zone, state) {
+  return getCombatFuelMultiplierFromState(state || gameState, zone);
 }
 
 // 计算当前已装武器完成「一轮齐射」所需燃料，复用与 combatTick 完全相同的公式
@@ -182,8 +193,8 @@ function computeVolleyFuel(state, zone) {
   return volleyFuel;
 }
 
-function calcRepairMult(target) {
-  return getCombatRepairMultiplierFromState(gameState, target);
+function calcRepairMult(target, state) {
+  return getCombatRepairMultiplierFromState(state || gameState, target);
 }
 
 function calcCL() {
@@ -203,9 +214,9 @@ function getLivingCombatEnemies(combat) {
   return c.enemies.filter(enemy => enemy && !enemy.defeated && enemy.hp && enemy.hp.structure > 0);
 }
 
-function syncCurrentCombatTarget(combat) {
-  const c = combat || gameState.combat;
-  const ship = getActiveShip();
+function syncCurrentCombatTarget(combat, state) {
+  const c = combat || (state || gameState).combat;
+  const ship = getActiveShip(state || gameState);
   c.currentEnemy = selectCapitalCombatTarget(getLivingCombatEnemies(c), c.targetingMode, ship);
   return c.currentEnemy;
 }
@@ -234,24 +245,72 @@ function getRandomCombatEnemyKey(zone, kind, randomFn) {
   return pool[Math.min(pool.length - 1, Math.floor(roll() * pool.length))];
 }
 
-function createCombatEnemy(zone, kind, randomFn) {
+function createCombatEnemy(zone, kind, randomFn, combatState) {
   const faction = ENEMY_DATABASE[zone.faction];
   const enemyKey = getRandomCombatEnemyKey(zone, kind, randomFn);
   const tpl = faction && faction.types[enemyKey];
   if (!tpl) return null;
+  // Batch R：确定性 enemyId —— 由 combat.runToken + 单调递增 enemyInstanceSeq 生成，
+  // 不再使用 Date.now()+Math.random()。combatState 缺省回退到权威 gameState.combat。
+  const combat = combatState || (typeof gameState !== "undefined" ? gameState.combat : null) || {};
+  const token = (typeof combat.runToken === "string" && combat.runToken) ? combat.runToken : "rt_unseeded";
+  const seq = (typeof combat.enemyInstanceSeq === "number" && combat.enemyInstanceSeq >= 0 && Number.isSafeInteger(combat.enemyInstanceSeq)) ? combat.enemyInstanceSeq : 0;
+  combat.enemyInstanceSeq = seq + 1;
   const balance = zone.enemyBalance || {};
   const kindBalance = balance[kind] || {};
   const hpScale = (Number(balance.hp) || 1) * (Number(kindBalance.hp) || 1);
   const damageScale = (Number(balance.damage) || 1) * (Number(kindBalance.damage) || 1);
   const scaledHp = Object.fromEntries(Object.entries(tpl.hp).map(([layer, value]) => [layer, Math.max(1, Math.round(value * hpScale))]));
   return {
-    id:"enemy_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+    id: token + "_e" + seq,
     type:enemyKey, kind:tpl.kind || kind, name:tpl.name, icon:tpl.icon,
     hp:{...scaledHp}, maxHp:{...scaledHp},
     level:tpl.level, hit:tpl.hit, dodge:tpl.dodge, baseDamage:Math.max(1, Math.round((tpl.baseDamage || 1) * damageScale)),
     iskDrop:tpl.iskDrop, xpDrop:tpl.xpDrop, image:tpl.image,
     defeated:false, rewarded:false
   };
+}
+
+// ============================================================================
+// Batch R：JSON 安全确定性 RNG（在线/离线共用，禁止 monkeypatch 全局 Math.random）
+//   combat.randomState = { seed:uint32, counterLo:uint32, counterHi:uint32 }
+//   nextCombatRandom(combat) 推进 64 位计数器（counterLo 溢出向 counterHi 进位），返回 [0,1)。
+//   所有编队/敌人/洗牌/伤害浮动/掉落均通过注入 rng 调用，保证可复现、同态同序列。
+// ============================================================================
+function nextCombatRandom(combat) {
+  const rs = combat.randomState;
+  if (!rs || !Number.isInteger(rs.seed) || !Number.isInteger(rs.counterLo) || !Number.isInteger(rs.counterHi) ||
+      rs.seed < 0 || rs.seed > 0xFFFFFFFF || rs.counterLo < 0 || rs.counterLo > 0xFFFFFFFF || rs.counterHi < 0 || rs.counterHi > 0xFFFFFFFF) {
+    return 0.5; // 防御：状态缺失/损坏时确定性占位（已迁移存档不应触发）
+  }
+  let lo = (rs.counterLo >>> 0) + 1;
+  let hi = rs.counterHi >>> 0;
+  if (lo > 0xFFFFFFFF) { lo = 0; hi = (hi + 1) >>> 0; }
+  rs.counterLo = lo;
+  rs.counterHi = hi;
+  let x = ((rs.seed >>> 0) ^ lo ^ Math.imul(hi, 0x9E3779B9)) >>> 0;
+  x = (x ^ (x >>> 16)) >>> 0;
+  x = Math.imul(x, 0x7F4A7C15) >>> 0;
+  x = (x ^ (x >>> 16)) >>> 0;
+  return (x >>> 0) / 4294967296;
+}
+
+// runToken 由当前 randomState + runSequence 派生（不含 Date.now），保证同态确定、跨 run 唯一。
+// 格式 rt_<seed>_<counterHi>_<counterLo>_<runSequence>，每段均有下划线分隔，且 runSequence 保证
+// 即便种子/计数器零消耗（start→stop→start）也能产生不同 token。
+function makeRunToken(combat) {
+  const rs = combat.randomState || { seed:0, counterLo:0, counterHi:0 };
+  const seq = (typeof combat.runSequence === "number" && Number.isSafeInteger(combat.runSequence) && combat.runSequence >= 0) ? combat.runSequence : 0;
+  return "rt_" + (rs.seed >>> 0).toString(36) + "_" + (rs.counterHi >>> 0).toString(36) + "_" + (rs.counterLo >>> 0).toString(36) + "_" + seq.toString(36);
+}
+
+// 新 run：runSequence +1（保证 token 唯一）、刷新 runToken、重置敌人序号。
+// 续入链（continuation）不调用，沿用既有 runToken / runSequence / 敌人序号连续性。
+function resetCombatRunState(combat) {
+  const prev = (typeof combat.runSequence === "number" && Number.isSafeInteger(combat.runSequence) && combat.runSequence >= 0) ? combat.runSequence : 0;
+  combat.runSequence = prev + 1;
+  combat.runToken = makeRunToken(combat);
+  combat.enemyInstanceSeq = 0;
 }
 
 function getDeathspaceById(deathspaceId) {
@@ -271,7 +330,7 @@ function getCombatEncounterZone(combat) {
   return COMBAT_ZONES.find(zone => zone.id === (c && c.zone)) || null;
 }
 
-function buildDeathspaceWave(site, wave, randomFn) {
+function buildDeathspaceWave(site, wave, randomFn, combatState) {
   const zone = site && COMBAT_ZONES.find(item => item.id === site.sourceZoneId);
   const waveConfig = site && site.waves[Math.max(0, wave - 1)];
   if (!zone || !waveConfig) return { formationId:"", enemies:[] };
@@ -280,7 +339,7 @@ function buildDeathspaceWave(site, wave, randomFn) {
   const damageScale = (balance.damage || 1) * (waveConfig.final ? (balance.finalDamage || 1) : 1);
   const enemies = [];
   for (let index = 0; index < (waveConfig.escortNormal || 0); index++) {
-    const escort = createCombatEnemy(zone, "normal", randomFn);
+    const escort = createCombatEnemy(zone, "normal", randomFn, combatState);
     if (!escort) continue;
     escort.baseDamage = Math.max(1, Math.round(escort.baseDamage * damageScale));
     for (const layer of ["shield", "armor", "structure"]) {
@@ -289,7 +348,7 @@ function buildDeathspaceWave(site, wave, randomFn) {
     }
     enemies.push(escort);
   }
-  const leader = createCombatEnemy(zone, "boss", randomFn);
+  const leader = createCombatEnemy(zone, "boss", randomFn, combatState);
   if (leader) {
     leader.name = waveConfig.name;
     leader.deathspaceLeader = true;
@@ -314,26 +373,27 @@ function shuffleCombatEnemies(enemies, randomFn) {
   return enemies;
 }
 
-function buildCombatWave(zone, wave, randomFn) {
+function buildCombatWave(zone, wave, randomFn, combatState) {
   if (!zone) return { formationId:"", enemies:[] };
   const formation = getCombatFormation(zone, wave, randomFn);
   const enemies = [];
-  for (let index = 0; index < (formation.normal || 0); index++) enemies.push(createCombatEnemy(zone, "normal", randomFn));
-  for (let index = 0; index < (formation.elite || 0); index++) enemies.push(createCombatEnemy(zone, "elite", randomFn));
-  for (let index = 0; index < (formation.boss || 0); index++) enemies.push(createCombatEnemy(zone, "boss", randomFn));
+  for (let index = 0; index < (formation.normal || 0); index++) enemies.push(createCombatEnemy(zone, "normal", randomFn, combatState));
+  for (let index = 0; index < (formation.elite || 0); index++) enemies.push(createCombatEnemy(zone, "elite", randomFn, combatState));
+  for (let index = 0; index < (formation.boss || 0); index++) enemies.push(createCombatEnemy(zone, "boss", randomFn, combatState));
   return { formationId:formation.id, enemies:shuffleCombatEnemies(enemies.filter(Boolean), randomFn) };
 }
 
-function spawnCombatWave(randomFn) {
-  const c = gameState.combat;
+function spawnCombatWave(randomFn, combatState, state) {
+  const c = combatState || gameState.combat;
+  const g = state || gameState;
   const zone = getCombatEncounterZone(c);
   if (!zone) return [];
   const site = c.mode === "deathspace" ? getDeathspaceById(c.deathspaceId) : null;
-  const wave = site ? buildDeathspaceWave(site, c.wave, randomFn) : buildCombatWave(zone, c.wave, randomFn);
+  const wave = site ? buildDeathspaceWave(site, c.wave, randomFn, c) : buildCombatWave(zone, c.wave, randomFn, c);
   c.enemies = wave.enemies;
   c.currentFormation = wave.formationId;
   c.lastEnemyVolley = null;
-  syncCurrentCombatTarget(c);
+  syncCurrentCombatTarget(c, g);
   return c.enemies;
 }
 
@@ -420,7 +480,8 @@ function getDeathspaceLeaderLootConfigs(site) {
   }));
 }
 
-function rollFactionEncryptedDataDrop(factionId, enemyKind, randomValue, zone) {
+function rollFactionEncryptedDataDrop(factionId, enemyKind, randomValue, zone, state) {
+  state = state || gameState;
   if (enemyKind !== "elite" && enemyKind !== "boss") return null;
   const cfg = getEncryptedDataDropConfig(zone);
   if (!cfg) return null;
@@ -428,11 +489,12 @@ function rollFactionEncryptedDataDrop(factionId, enemyKind, randomValue, zone) {
   if (!chance) return null;
   const roll = randomValue === undefined ? Math.random() : randomValue;
   if (roll >= chance) return null;
-  ResourceRegistry.add(gameState, "special:" + cfg.material, cfg.qty);
+  ResourceRegistry.add(state, "special:" + cfg.material, cfg.qty);
   return { material: cfg.material, qty: cfg.qty };
 }
 
-function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues) {
+function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues, state) {
+  state = state || gameState;
   if (enemyKind !== "elite" && enemyKind !== "boss") return [];
   const configs = getCombatZoneSpecialDropConfigs(zone);
   if (configs.length === 0) return [];
@@ -444,13 +506,14 @@ function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues) {
     const roll = values[index] !== undefined ? values[index] :
       typeof randomValues === "number" ? randomValues : Math.random();
     if (!cfg.resourceId || roll >= chance) continue;
-    ResourceRegistry.add(gameState, cfg.resourceId, cfg.qty);
+    ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
     drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty, rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
   }
   return drops;
 }
 
-function rollDeathspaceTicketDrop(zone, enemyKind, randomValue) {
+function rollDeathspaceTicketDrop(zone, enemyKind, randomValue, state) {
+  state = state || gameState;
   if (enemyKind !== "elite" && enemyKind !== "boss") return null;
   const cfg = getDeathspaceTicketDropConfig(zone);
   if (!cfg) return null;
@@ -458,24 +521,25 @@ function rollDeathspaceTicketDrop(zone, enemyKind, randomValue) {
   if (!chance) return null;
   const roll = randomValue === undefined ? Math.random() : randomValue;
   if (roll >= chance) return null;
-  ResourceRegistry.add(gameState, "special:" + cfg.material, 1);
+  ResourceRegistry.add(state, "special:" + cfg.material, 1);
   return { material: cfg.material, qty: 1, deathspaceId: cfg.deathspaceId };
 }
 
-function rollDeathspaceLeaderLoot(site, wave, coreRandomValue, protocolRandomValue) {
+function rollDeathspaceLeaderLoot(site, wave, coreRandomValue, protocolRandomValue, state) {
+  state = state || gameState;
   const configs = getDeathspaceLeaderLootConfigs(site);
   const waveConfig = configs[Math.max(0, wave - 1)];
   if (!waveConfig) return [];
   const drops = [];
   const coreRoll = coreRandomValue === undefined ? Math.random() : coreRandomValue;
   if (coreRoll < waveConfig.coreChance) {
-    ResourceRegistry.add(gameState, "special:" + site.coreMaterial, 1);
+    ResourceRegistry.add(state, "special:" + site.coreMaterial, 1);
     drops.push({ material: site.coreMaterial, qty: 1, rarity: "rare" });
   }
   if (waveConfig.isFinal) {
     const protocolRoll = protocolRandomValue === undefined ? Math.random() : protocolRandomValue;
     if (protocolRoll < waveConfig.protocolChance) {
-      ResourceRegistry.add(gameState, "special:" + site.protocolMaterial, 1);
+      ResourceRegistry.add(state, "special:" + site.protocolMaterial, 1);
       drops.push({ material: site.protocolMaterial, qty: 1, rarity: "veryRare" });
     }
   }
@@ -523,29 +587,36 @@ function applyLayeredCombatDamage(hp, amount) {
   return dealt;
 }
 
-function resolveCombatEnemyDefeat(enemy, zone) {
+function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
+  state = state || gameState;
   if (!enemy || enemy.rewarded) return null;
-  const c = gameState.combat;
+  const c = state.combat;
+  const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
+  const roll = (typeof rng === "function") ? rng : Math.random;
   const isk = Math.round(enemy.iskDrop * zone.iskMulti);
-  ResourceRegistry.add(gameState, "currency:isk", isk);
+  ResourceRegistry.add(state, "currency:isk", isk);
   enemy.defeated = true;
   enemy.rewarded = true;
   c.lastLoot = "ISK " + isk.toLocaleString();
   const deathspace = c.mode === "deathspace" ? getDeathspaceById(c.deathspaceId) : null;
-  const dataDrop = deathspace ? null : rollFactionEncryptedDataDrop(zone.faction, enemy.kind, undefined, zone);
+  const dataDrop = deathspace ? null : rollFactionEncryptedDataDrop(zone.faction, enemy.kind, roll(), zone, state);
   if (dataDrop) c.lastLoot += " · " + dataDrop.material + " ×" + dataDrop.qty;
-  const zoneSpecialDrops = deathspace ? [] : rollCombatZoneSpecialDrops(zone, enemy.kind);
+  const zoneSpecialConfigs = deathspace ? [] : getCombatZoneSpecialDropConfigs(zone);
+  const specialValues = zoneSpecialConfigs.map(() => roll());
+  const zoneSpecialDrops = deathspace ? [] : rollCombatZoneSpecialDrops(zone, enemy.kind, specialValues, state);
   for (const drop of zoneSpecialDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
-  const ticketDrop = deathspace ? null : rollDeathspaceTicketDrop(zone, enemy.kind);
+  const ticketDrop = deathspace ? null : rollDeathspaceTicketDrop(zone, enemy.kind, roll(), state);
   if (ticketDrop) c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty;
-  const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave) : [];
+  const coreRoll = roll();
+  const protoRoll = roll();
+  const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave, coreRoll, protoRoll, state) : [];
   for (const drop of deathspaceDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
   // 增强剂系统 Phase 2A：战术材料掉落（星带与死亡空间同规则，对所有 kind 开放）。
   // 纯函数 rollTacticalMaterialDrop 仅计算；此处负责发奖、事件与展示。
-  const tacticalDrop = rollTacticalMaterialDrop(zone, enemy.kind);
+  const tacticalDrop = rollTacticalMaterialDrop(zone, enemy.kind, roll);
   let tacticalEvent = null;
   if (tacticalDrop) {
-    ResourceRegistry.add(gameState, "special:" + tacticalDrop.materialId, tacticalDrop.quantity);
+    ResourceRegistry.add(state, "special:" + tacticalDrop.materialId, tacticalDrop.quantity);
     tacticalEvent = {
       zoneId: zone.id,
       deathspaceId: deathspace ? deathspace.id : null,
@@ -557,7 +628,7 @@ function resolveCombatEnemyDefeat(enemy, zone) {
       quantity: tacticalDrop.quantity,
       securityLayer: tacticalDrop.securityLayer
     };
-    GameEvents.emit("combat:tacticalMaterialDropped", tacticalEvent);
+    doEmit("combat:tacticalMaterialDropped", tacticalEvent);
     c.lastLoot += " · " + tacticalDrop.materialId + " ×" + tacticalDrop.quantity;
   }
   const fmtDrop = d => ((d && d.materialId !== undefined ? d.materialId : (d && d.material)) + " ×" + (d && d.quantity !== undefined ? d.quantity : (d && d.qty)));
@@ -565,43 +636,47 @@ function resolveCombatEnemyDefeat(enemy, zone) {
   if (specialDrops.length > 0) c.lastSpecialLoot = specialDrops.map(fmtDrop).join(" · ");
   c.totalKills++;
   if (enemy.kind === "elite") c.runEliteKills = (c.runEliteKills || 0) + 1;
-  syncCurrentCombatTarget(c);
-  GameEvents.emit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent });
+  syncCurrentCombatTarget(c, state);
+  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent });
   return { isk, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent };
 }
 
-function resolveDeathspaceWaveVictory(site, zone) {
-  const c = gameState.combat;
+function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
+  state = state || gameState;
+  const c = state.combat;
+  const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
+  const theRng = (typeof rng === "function") ? rng : Math.random;
   const waveLp = site.waveLp || 0;
-  ResourceRegistry.add(gameState, "currency:lp", waveLp);
+  ResourceRegistry.add(state, "currency:lp", waveLp);
   c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + "房间LP +" + waveLp;
-  GameEvents.emit("combat:deathspaceWaveCleared", { deathspaceId:site.id, zoneId:zone.id, wave:c.wave, lp:waveLp });
+  doEmit("combat:deathspaceWaveCleared", { deathspaceId:site.id, zoneId:zone.id, wave:c.wave, lp:waveLp });
   if (c.wave >= site.maxWave) {
     const clearLp = site.clearLpBonus || 0;
-    ResourceRegistry.add(gameState, "currency:lp", clearLp);
+    ResourceRegistry.add(state, "currency:lp", clearLp);
     if (!c.deathspaceClears || typeof c.deathspaceClears !== "object") c.deathspaceClears = {};
     c.deathspaceClears[site.id] = (c.deathspaceClears[site.id] || 0) + 1;
     c.lastLoot += " · 全通LP +" + clearLp;
     c.lastStatus = "死亡空间全通 · " + site.name;
     // Batch C-12（返修）：先 emit deathspaceCleared，再清零 runDamage
-    GameEvents.emit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
+    doEmit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
     c.runDamageDealt = 0;
     c.runDamageTaken = 0;
     c.active = false;
-    gameState.currentAction.active = false;
+    state.currentAction.active = false;
+    if (c.deathspaceChainRemaining > 0) c.deathspaceChainPending = true; // 连刷：标记待续，下一 tick 自动续进
     c.enemies = [];
     c.currentEnemy = null;
     c.wave = 1;
     c.currentFormation = "";
     c.lastEnemyVolley = null;
-    const maxHp = getCombatMaxHpFromState(gameState, { zoneId:zone.id });
+    const maxHp = getCombatMaxHpFromState(state, { zoneId:zone.id });
     c.hp = { ...maxHp };
     c.maxHp = { ...maxHp };
     return true;
   }
   c.lastStatus = "房间肃清 · LP +" + waveLp;
   c.wave++;
-  spawnCombatWave();
+  spawnCombatWave(theRng, state.combat, state);
   return true;
 }
 
@@ -643,17 +718,20 @@ function normalizeCombatRunDamage(c) {
   c.runDamageTaken = normalize(c.runDamageTaken);
 }
 
-function resolveCombatWaveVictory(zone) {
-  const c = gameState.combat;
+function resolveCombatWaveVictory(zone, rng, emit, state) {
+  state = state || gameState;
+  const c = state.combat;
+  const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
+  const theRng = (typeof rng === "function") ? rng : Math.random;
   if (getLivingCombatEnemies(c).length > 0) return false;
   if (c.mode === "deathspace") {
     const site = getDeathspaceById(c.deathspaceId);
-    return site ? resolveDeathspaceWaveVictory(site, zone) : false;
+    return site ? resolveDeathspaceWaveVictory(site, zone, theRng, doEmit, state) : false;
   }
   const maxWave = zone.maxWave || 20;
   if (c.wave >= maxWave) {
     const lp = zone.clearLp || 0;
-    ResourceRegistry.add(gameState, "currency:lp", lp);
+    ResourceRegistry.add(state, "currency:lp", lp);
     if (!c.zoneClears || typeof c.zoneClears !== "object") c.zoneClears = {};
     c.zoneClears[zone.id] = (c.zoneClears[zone.id] || 0) + 1;
     c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + "肃清LP +" + lp;
@@ -663,18 +741,18 @@ function resolveCombatWaveVictory(zone) {
     normalizeCombatRunWeaponTypes(c, zone.id);
     normalizeCombatRunDamage(c);
     const clearedDamageTaken = c.runDamageTaken;
-    GameEvents.emit("combat:zoneCleared", { zoneId:zone.id, name:zone.name, lp, clearCount:c.zoneClears[zone.id], wave:c.wave, weaponTypes:c.runWeaponTypes.slice(), damageTaken:clearedDamageTaken });
+    doEmit("combat:zoneCleared", { zoneId:zone.id, name:zone.name, lp, clearCount:c.zoneClears[zone.id], wave:c.wave, weaponTypes:c.runWeaponTypes.slice(), damageTaken:clearedDamageTaken });
     c.wave = 1;
     c.runEliteKills = 0;
     c.runDamageDealt = 0;
     c.runDamageTaken = 0;
     resetCombatRunWeaponTypes(c);
   } else {
-    GameEvents.emit("combat:waveCleared", { zoneId:zone.id, wave:c.wave });
+    doEmit("combat:waveCleared", { zoneId:zone.id, wave:c.wave });
     c.wave++;
     c.lastStatus = "";
   }
-  spawnCombatWave();
+  spawnCombatWave(theRng, state.combat, state);
   return true;
 }
 
@@ -714,44 +792,59 @@ function tryResumeCombatAfterRepair() {
   return false;
 }
 
-function combatTick() {
-  const c = gameState.combat;
-  // 维修结束与自动恢复出击统一收口于 updateCombatRecovery（gameTick 顶部亦调用），
-  // 此处不再重复 tryResume，避免双调用 / 双 combat:resumedAfterRepair 事件。
-  updateCombatRecovery();
-  if (!c.active) return;
+// ============================================================================
+// Batch R：共享战斗回合内核（在线/离线共用）
+//   advanceCombatRound(state, context) —— 一次调用 = 一个战斗秒/回合。
+//   context = { now, offline, emit, rng, playEffects }。emit 可注入；rng 默认推进
+//   combat.randomState（JSON 安全确定性）；playEffects=false 时不触发任何 FX/DOM/toast。
+//   复用原始真实逻辑（编队/敌人/武器/弹药燃料原子消耗/AOE/反击/三层 HP/维修/技能 XP/
+//   掉落/清波/战败维修/死亡空间连刷），不另写公式、不做平均化。
+//   返回 { ok, advanced, active, pending, recovering, reason }。
+// ============================================================================
+function advanceCombatRound(state, context) {
+  context = context || {};
+  const emit = (typeof context.emit === "function") ? context.emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
+  const playEffects = context.playEffects !== false; // 默认播放特效
+  const rng = (typeof context.rng === "function") ? context.rng : function () { return nextCombatRandom(state.combat); };
+  const c = state.combat;
+  // Batch R 返修：虚拟时间权威化——context.now 非有限 number 时返回稳定失败，绝不回退真实时间（Date.now）。
+  const now = context.now;
+  if (typeof now !== "number" || !Number.isFinite(now)) {
+    return { ok:false, advanced:false, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"invalid-now" };
+  }
+  if (!c.active) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"inactive" };
   const zone = getCombatEncounterZone(c);
-  if (!zone) return;
+  if (!zone) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-zone" };
   const faction = ENEMY_DATABASE[zone.faction];
-  if (!faction) return;
-  const ship = getActiveShip();
-  const shipInstance = getActiveCombatShipInstance();
+  if (!faction) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-faction" };
+  const ship = getActiveShip(state);
+  const shipInstance = getActiveCombatShipInstance(state);
   // 防御：无拥有战斗舰（理论上 active 时必有舰，此处仅兜底，避免逻辑层凭空造舰导致崩溃）
-  if (!ship || !shipInstance) return;
-  const weapons = getInstalledCombatWeapons();
-  const repairers = getInstalledCombatRepairers();
-  let enemy = syncCurrentCombatTarget(c);
+  if (!ship || !shipInstance) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-ship" };
+  const weapons = getInstalledCombatWeapons(state);
+  const repairers = getInstalledCombatRepairers(state);
+  let enemy = syncCurrentCombatTarget(c, state);
   if (!enemy) {
-    resolveCombatWaveVictory(zone);
-    enemy = syncCurrentCombatTarget(c);
-    if (!enemy) return;
+    resolveCombatWaveVictory(zone, rng, emit, state);
+    enemy = syncCurrentCombatTarget(c, state);
+    if (!enemy) return { ok:true, advanced:false, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"wave-cleared" };
   }
 
   // 动态刷新 maxHp（技能升级后自动增长）
-  const dynMaxHp = calcCombatMaxHp(ship, shipInstance);
+  const dynMaxHp = calcCombatMaxHp(undefined, undefined, state);
   c.maxHp = dynMaxHp;
   if (c.hp.shield  > c.maxHp.shield)  c.hp.shield  = c.maxHp.shield;
   if (c.hp.armor   > c.maxHp.armor)   c.hp.armor   = c.maxHp.armor;
   if (c.hp.structure > c.maxHp.structure) c.hp.structure = c.maxHp.structure;
 
   const ammoRequired = {};
-  const volleyFuel = computeVolleyFuel(gameState, zone);
+  const volleyFuel = computeVolleyFuel(state, zone);
   for (const module of weapons) {
     const combat = module.equipment.combat;
     ammoRequired[combat.weaponType] = (ammoRequired[combat.weaponType] || 0) + (combat.ammoCost || 1);
   }
-  const enoughFuel = ResourceRegistry.get(gameState, "consumable:fuel") >= volleyFuel;
-  const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => ResourceRegistry.get(gameState, "ammo:" + type) >= amount);
+  const enoughFuel = ResourceRegistry.get(state, "consumable:fuel") >= volleyFuel;
+  const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => ResourceRegistry.get(state, "ammo:" + type) >= amount);
   const canFire = weapons.length > 0 && enoughFuel && enoughAmmo;
 
   if (canFire) {
@@ -760,11 +853,10 @@ function combatTick() {
     // Batch C-12：记录本轮开火前清洗 runDamage 并捕获快照
     normalizeCombatRunDamage(c);
     const prevRunDamage = c.runDamageDealt;
-    ResourceRegistry.spend(gameState, "consumable:fuel", volleyFuel);
-    for (const [type, amount] of Object.entries(ammoRequired)) ResourceRegistry.spend(gameState, "ammo:" + type, amount);
-    const capSkill = gameState.skills.capacitorManagement;
-    if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "capacitorManagement", volleyFuel * 0.3); }
-    else if (capSkill) { capSkill.xp += volleyFuel * 0.3; checkLevelUp("capacitorManagement"); }
+    ResourceRegistry.spend(state, "consumable:fuel", volleyFuel);
+    for (const [type, amount] of Object.entries(ammoRequired)) ResourceRegistry.spend(state, "ammo:" + type, amount);
+    const capSkill = state.skills.capacitorManagement;
+    if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", volleyFuel * 0.3); }
 
     for (const module of weapons) {
       const equipment = module.equipment;
@@ -775,16 +867,16 @@ function combatTick() {
       if (c.mode !== "deathspace" && c.runWeaponTypes.indexOf(combat.weaponType) === -1) {
         c.runWeaponTypes.push(combat.weaponType);
       }
-      const playerHit = calcPlayerHit(combat.weaponType, equipment);
-      const dmgMult = calcPlayerDmgMult(combat.weaponType);
+      const playerHit = calcPlayerHit(combat.weaponType, equipment, state);
+      const dmgMult = calcPlayerDmgMult(combat.weaponType, state);
       let counterMult = 1.0;
       if (weapon.counterType === "shield" && enemy.hp.shield > 0) counterMult = 1.25;
       else if (weapon.counterType === "armor" && enemy.hp.shield <= 0 && enemy.hp.armor > 0) counterMult = 1.25;
       else if (weapon.counterType === "structure" && enemy.hp.shield <= 0 && enemy.hp.armor <= 0 && enemy.hp.structure > 0) counterMult = 1.25;
       const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
-      const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).weaponDamageMultiplier : null;
+      const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
       const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
-      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier);
+      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier, rng);
       const dealt = applyLayeredCombatDamage(enemy.hp, damage);
       const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
       c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;
@@ -793,20 +885,16 @@ function combatTick() {
         const areaDealt = applyLayeredCombatDamage(areaTarget.enemy.hp, areaDamage);
         c.runDamageDealt += areaDealt.shield + areaDealt.armor + areaDealt.structure;
       }
-      playAttackFX(true, combat.weaponType, damage);
-      const weaponSkill = gameState.skills[weapon.skillKey];
-      if (weaponSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, weapon.skillKey, 2); }
-      else if (weaponSkill) { weaponSkill.xp += 2; checkLevelUp(weapon.skillKey); }
-      const targetingSkill = gameState.skills.targeting;
-      if (targetingSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "targeting", 1); }
-      else if (targetingSkill) { targetingSkill.xp += 1; checkLevelUp("targeting"); }
+      if (playEffects) playAttackFX(true, combat.weaponType, damage);
+      const weaponSkill = state.skills[weapon.skillKey];
+      if (weaponSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weapon.skillKey, 2); }
+      const targetingSkill = state.skills.targeting;
+      if (targetingSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "targeting", 1); }
     }
     // Batch C-12（返修）：只有 amount 为有限正数才 emit；全部 miss/0 实伤不发射
     const amountThisVolley = c.runDamageDealt - prevRunDamage;
     if (typeof amountThisVolley === "number" && Number.isFinite(amountThisVolley) && amountThisVolley > 0) {
-      GameEvents.emit("combat:damageDealt", {
-        zoneId:zone.id, mode:c.mode, amount:amountThisVolley, runTotal:c.runDamageDealt
-      });
+      emit("combat:damageDealt", { zoneId:zone.id, mode:c.mode, amount:amountThisVolley, runTotal:c.runDamageDealt });
     }
     c.lastStatus = "";
   } else if (weapons.length === 0) {
@@ -819,17 +907,17 @@ function combatTick() {
 
   // 玩家先手与AOE击毁的所有敌舰均立即结算，本轮不再反击。
   for (const defeated of c.enemies.filter(item => item && !item.rewarded && item.hp && item.hp.structure <= 0)) {
-    resolveCombatEnemyDefeat(defeated, zone);
+    resolveCombatEnemyDefeat(defeated, zone, rng, emit, state);
   }
 
   // --- 所有存活敌人依照编队顺序逐一行动 ---
-  const playerDodge = calcPlayerDodge(ship);
+  const playerDodge = calcPlayerDodge(undefined, state);
   const capitalTrait = getCapitalCombatTrait(ship);
   const enemyVolley = { attackers:0, totalDamage:0, mitigatedDamage:0, armorRestored:0, traitName:capitalTrait ? capitalTrait.name : "", hits:[] };
   let shieldHitsUsed = 0;
   let armorDamageTaken = 0;
   for (const attacker of getLivingCombatEnemies(c)) {
-    const rawEnemyDamage = calcCombatDamage(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0);
+    const rawEnemyDamage = calcCombatDamage(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, rng);
     const mitigation = applyCapitalShieldMitigation(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
     if (mitigation.shieldHitUsed) shieldHitsUsed++;
     const enemyDmg = Math.max(0, Math.round(mitigation.damage));
@@ -843,17 +931,17 @@ function combatTick() {
     enemyVolley.attackers++;
     enemyVolley.totalDamage += actualDamage;
     enemyVolley.hits.push({ enemyId:attacker.id, damage:actualDamage });
-    playEnemyAttackFX(c.enemies.indexOf(attacker), attackOrder, actualDamage);
+    if (playEffects) playEnemyAttackFX(c.enemies.indexOf(attacker), attackOrder, actualDamage);
 
-    if (damageTaken.shield > 0) { const s = gameState.skills.shieldOperation; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "shieldOperation", 1); } else if (s) { s.xp += 1; checkLevelUp("shieldOperation"); } }
-    if (damageTaken.armor > 0) { const s = gameState.skills.armorReinforcement; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "armorReinforcement", 1); } else if (s) { s.xp += 1; checkLevelUp("armorReinforcement"); } }
-    if (damageTaken.structure > 0) { const s = gameState.skills.hullEngineering; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "hullEngineering", 1); } else if (s) { s.xp += 1; checkLevelUp("hullEngineering"); } }
+    if (damageTaken.shield > 0) { const s = state.skills.shieldOperation; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "shieldOperation", 1); } }
+    if (damageTaken.armor > 0) { const s = state.skills.armorReinforcement; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "armorReinforcement", 1); } }
+    if (damageTaken.structure > 0) { const s = state.skills.hullEngineering; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "hullEngineering", 1); } }
     if (damageTaken.shield + damageTaken.armor + damageTaken.structure > 0) {
-      const s = gameState.skills.piloting; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "piloting", 1); } else if (s) { s.xp += 1; checkLevelUp("piloting"); }
+      const s = state.skills.piloting; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "piloting", 1); }
     }
     if (c.hp.structure <= 0) {
-      beginCombatRecovery();
-      return;
+      beginCombatRecovery(state, context);
+      return { ok:true, advanced:true, active:false, pending:Boolean(c.deathspaceChainPending), recovering:true, reason:"defeated" };
     }
   }
   c.lastEnemyVolley = enemyVolley;
@@ -865,20 +953,115 @@ function combatTick() {
   }
 
   // --- 维修：只读取舰船实际安装的维修装备 ---
-  const boosterRep = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).repairMultiplier : null;
+  const boosterRep = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).repairMultiplier : null;
   for (const module of repairers) {
     const rep = module.equipment.combat;
-    const repFuelCost = Math.max(1, Math.round((rep.fuelCost || 1) * calcFuelMult(zone)));
-    if (ResourceRegistry.get(gameState, "consumable:fuel") < repFuelCost) continue;
+    const repFuelCost = Math.max(1, Math.round((rep.fuelCost || 1) * calcFuelMult(zone, state)));
+    if (ResourceRegistry.get(state, "consumable:fuel") < repFuelCost) continue;
     if (c.hp[rep.target] < c.maxHp[rep.target]) {
       const repMult = (boosterRep && boosterRep[rep.target]) ? boosterRep[rep.target] : 1;
-      const healAmount = Math.round(rep.amount * (module.multiplier || 1) * calcRepairMult(rep.target) * repMult);
+      const healAmount = Math.round(rep.amount * (module.multiplier || 1) * calcRepairMult(rep.target, state) * repMult);
       c.hp[rep.target] = Math.min(c.maxHp[rep.target], c.hp[rep.target] + healAmount);
-      ResourceRegistry.spend(gameState, "consumable:fuel", repFuelCost);
+      ResourceRegistry.spend(state, "consumable:fuel", repFuelCost);
       // 防御经验
-      const s = gameState.skills.defense; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(gameState, "defense", 1); } else if (s) { s.xp += 1; checkLevelUp("defense"); }
+      const s = state.skills.defense; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "defense", 1); }
     }
   }
-  resolveCombatWaveVictory(zone);
-  gameState._dirty = true;
+  resolveCombatWaveVictory(zone, rng, emit, state);
+  state._dirty = true;
+  return { ok:true, advanced:true, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:c.active ? "ongoing" : "cleared" };
+}
+
+// ============================================================================
+// Batch R：死亡空间进入原语（手动进入 / 连刷首轮 / 在线续跑 共用）
+//   严格顺序：先全部校验 → 通过后才扣 1 密钥 → 初始化死亡空间状态 → emit
+//   combat:deathspaceEntered（context.emit）。任一校验失败：密钥/剩余/待续/HP/敌人/
+//   账本全部不变（原子回滚）。continuation:true 沿用既有 runToken（同一连刷链=同一 run）；
+//   否则刷新 runToken（新 run）。
+// ============================================================================
+function beginDeathspaceRun(state, options, context) {
+  context = context || {};
+  const emit = (typeof context.emit === "function") ? context.emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
+  // Batch R 返修：虚拟时间权威化——context.now 非有限 number 时返回稳定失败，绝不宽松 Number()、绝不回退真实时间。
+  if (typeof context.now !== "number" || !Number.isFinite(context.now)) return { changed:false, reason:"invalid-now" };
+  const now = context.now;
+  const opts = options || {};
+  const deathspaceId = opts.deathspaceId;
+  const site = getDeathspaceById(deathspaceId);
+  if (!site) return { changed:false, reason:"unknown-deathspace" };
+  // 问题2：per-ship 维修——仅当「当前战斗舰」正在维修时拒绝出击，健康舰可正常进入。
+  const activeShipId = state.combat.activeShip || (getActiveCombatShipState(state).instance && getActiveCombatShipState(state).instance.instanceId) || null;
+  if (isShipUnderRepair(state, activeShipId, now)) return { changed:false, reason:"repairing", remaining:Math.ceil((getShipRepairUntil(state, activeShipId) - now) / 1000) };
+  if (getCombatLevelFromState(state) < site.requiredCL) return { changed:false, reason:"level-locked", requiredCL:site.requiredCL };
+  const weapons = getInstalledCombatModulesFromState(state).filter(module => module.combat && module.combat.kind === "weapon");
+  if (weapons.length === 0) return { changed:false, reason:"no-weapons" };
+  if (ResourceRegistry.get(state, "special:" + site.ticketMaterial) < 1) return { changed:false, reason:"missing-ticket", ticketMaterial:site.ticketMaterial };
+  // 全部校验通过：仅在此时进入新 run 初始化 / 扣密钥（原子——之前任一 return 均未触达此处）。
+  // Batch R 返修：新 run 先刷新 runToken + runSequence（+1）并将 enemyInstanceSeq 归零；
+  // 续跑（continuation）沿用既有 runToken / runSequence，敌人序号继续递增。
+  // 编队/敌人统一在入口内用「当前 run 的 RNG 与 token」权威生成，杜绝 UI 预生成的旧 token 敌人误入新 run。
+  if (!opts.continuation) resetCombatRunState(state.combat);
+  const wave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(state.combat); }, state.combat);
+  const enemies = wave.enemies;
+  const formationId = wave.formationId;
+  if (!Array.isArray(enemies) || enemies.length === 0) return { changed:false, reason:"missing-formation" };
+  ResourceRegistry.spend(state, "special:" + site.ticketMaterial, 1); // 校验通过后才扣密钥
+  Object.assign(state.combat, {
+    mode:"deathspace", viewMode:"deathspace", deathspaceId:site.id, zone:site.sourceZoneId,
+    deathspaceTier:site.dedTier, viewDeathspaceId:site.id, viewDeathspaceTier:site.dedTier,
+    active:true, enemies, currentEnemy:enemies[0] || null, wave:1,
+    totalKills:0, runEliteKills:0, currentFormation:formationId,
+    lastLoot:"", lastSpecialLoot:"", lastStatus:"通行密钥已消耗", lastEnemyVolley:null,
+    runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
+  });
+  state.currentAction.skill = "combat";
+  state.currentAction.active = true;
+  state._dirty = true;
+  emit("combat:deathspaceEntered", {
+    deathspaceId:site.id, zoneId:site.sourceZoneId, faction:site.faction, tier:site.dedTier
+  }, { timestamp:now, source:"combat", offline:Boolean(context.offline) });
+  // 问题1：进入死亡空间前同样做燃料校验（非阻断 warning）。
+  const dsZone = COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || COMBAT_ZONES[0];
+  const dsVolleyFuel = computeVolleyFuel(state, dsZone);
+  const dsFuel = ResourceRegistry.get(state, "consumable:fuel");
+  const dsWarning = (dsVolleyFuel > 0 && dsFuel < dsVolleyFuel) ? "low-fuel" : null;
+  return { changed:true, site, warning:dsWarning };
+}
+
+// 在线 combatTick：薄包装。先执行 recovery / 连刷 pending 语义，再每 tick 恰好一次调用
+// 共享内核 advanceCombatRound（离线结算仅在 Batch S 接入，本批不接 offline.js）。
+// 在线 combatTick：薄包装。本 tick 仅取一次 Date.now() 并复用同一 now 给 recovery / 连刷 pending /
+// entered / continued / 首回合，严禁多次 Date.now()。state 固定传入权威 gameState。
+function combatTick() {
+  const now = Date.now();
+  const emit = (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
+  updateCombatRecovery(now, gameState);
+  const c = gameState.combat;
+  // 连刷自动续跑：上一轮全清后 pending，本 tick（满血、无维修）自动续进下一轮。
+  // 顺序：beginDeathspaceRun 成功并已扣密钥 → deathspaceChainRemaining-- → emit
+  // combat:deathspaceChainContinued → 同 tick 内由下方 advanceCombatRound 跑首轮。
+  // entered 必须早于 continued。编队/敌人统一由 beginDeathspaceRun 内部用「当前 run 的 RNG 与 token」
+  // 权威生成（续跑沿用既有 runToken，敌人序号继续递增），杜绝 UI 预生成的旧 token 敌人误入。
+  if (c.deathspaceChainPending && !c.active) {
+    c.deathspaceChainPending = false;
+    if (c.deathspaceChainRemaining > 0) {
+      const pendingSite = getDeathspaceById(c.deathspaceId);
+      if (pendingSite) {
+        const res = beginDeathspaceRun(gameState, {
+          deathspaceId: pendingSite.id,
+          continuation: true
+        }, { now, emit, offline:false });
+        if (res && res.changed) {
+          c.deathspaceChainRemaining--;
+          if (typeof GameEvents !== "undefined") GameEvents.emit("combat:deathspaceChainContinued", { deathspaceId:pendingSite.id, remaining:c.deathspaceChainRemaining }, { timestamp:now, source:"combat", offline:false });
+        } else {
+          c.deathspaceChainRemaining = 0; // 无密钥/等级/维修任一不过 → 连刷自然终止
+        }
+      } else {
+        c.deathspaceChainRemaining = 0;
+      }
+    }
+  }
+  if (!c.active) return;
+  advanceCombatRound(gameState, { now, offline:false, emit, playEffects:true });
 }

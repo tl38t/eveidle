@@ -79,6 +79,21 @@ function renderCombatLiveDisplay(display) {
   const start = document.getElementById("btn-start-combat"); const stop = document.getElementById("btn-stop-combat");
   if (start) { start.style.display = display.controls.showStart ? "" : "none"; start.disabled = display.controls.startDisabled; start.textContent = display.controls.startText; }
   if (stop) stop.style.display = display.controls.showStop ? "" : "none";
+  // 死亡空间连刷控件：仅在该模式下显示；armed（连刷进行中/待续）时改用取消文案并禁用单次进入按钮
+  const chainControl = document.getElementById("deathspace-chain-control");
+  if (chainControl) {
+    const inDeathspace = display.mode === "deathspace";
+    chainControl.style.display = inDeathspace ? "" : "none";
+    if (inDeathspace) {
+      const c = gameState.combat;
+      const armed = (c.deathspaceChainRemaining > 0) || c.deathspaceChainPending;
+      const chainBtn = document.getElementById("btn-start-combat-chain");
+      const statusEl = document.getElementById("deathspace-chain-status");
+      if (chainBtn) chainBtn.textContent = armed ? "⏹ 取消连刷" : "▶ 连续挑战";
+      if (start) start.disabled = armed || display.controls.startDisabled;
+      if (statusEl) statusEl.textContent = armed ? ("连刷中 · 剩余 " + (c.active ? c.deathspaceChainRemaining + 1 : c.deathspaceChainRemaining) + " 次") : "";
+    }
+  }
   document.body.classList.toggle("in-combat", display.active);
 }
 
@@ -322,6 +337,32 @@ function startCombatEncounter() {
     renderCombatPanel(now); return false;
   }
   if (result.warning === "low-fuel") showToast("⚠ 燃料不足以完成一轮齐射，部分或全部武器将无法开火");
+  renderCombatPanel(now); updateUI(); return true;
+}
+
+function startDeathspaceChainEncounter() {
+  const now = Date.now();
+  const c = gameState.combat;
+  const armed = (c.deathspaceChainRemaining > 0) || c.deathspaceChainPending;
+  if (armed) {
+    const result = dispatchGameAction(gameState, { type:"combat/cancelDeathspaceChain" }, now);
+    if (result && result.changed) showToast("已取消连刷");
+    renderCombatPanel(now); updateUI(); return;
+  }
+  const input = document.getElementById("deathspace-chain-count");
+  const n = input ? Math.max(1, Math.min(99, Math.floor(Number(input.value) || 1))) : 1;
+  const result = dispatchGameAction(gameState, { type:"combat/startDeathspaceChain", count:n }, now);
+  if (!result.changed) {
+    if (result.reason === "repairing") showToast("舰船自动维修中，还需 " + result.remaining + " 秒");
+    else if (result.reason === "level-locked") showToast("该死亡空间需要战斗等级 " + result.requiredCL);
+    else if (result.reason === "no-weapons") showToast("当前战斗舰没有安装武器，请先在船坞装配");
+    else if (result.reason === "missing-ticket") showToast("缺少：" + getResourceDisplayName(result.ticketMaterial));
+    else if (result.reason === "already-active") showToast("战斗进行中，请先停止");
+    else showToast("无法开始连刷");
+    renderCombatPanel(now); return;
+  }
+  showToast("连刷 " + n + " 次：已消耗1枚通行密钥进入" + result.site.name);
+  if (result.warning === "low-fuel") showToast("⚠ 燃料不足以完成一轮齐射");
   renderCombatPanel(now); updateUI(); return true;
 }
 
@@ -588,4 +629,5 @@ function closeCombat3DPopup() {
 
   const start = document.getElementById("btn-start-combat"); if (start) start.addEventListener("click", startCombatEncounter);
   const stop = document.getElementById("btn-stop-combat"); if (stop) stop.addEventListener("click", stopCombatEncounter);
+  const chainBtn = document.getElementById("btn-start-combat-chain"); if (chainBtn) chainBtn.addEventListener("click", startDeathspaceChainEncounter);
 })();

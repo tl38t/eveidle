@@ -123,14 +123,14 @@ const optionalIds = new Set([
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
 
-// DOM ID 基线：303 = 294 + Batch P 新手引导常驻小部件 8 个 ID + 删除存档按钮 btn-delete-save 1 个 ID
+// DOM ID 基线：313 = 294 + Batch P 新手引导常驻小部件 8 个 ID + 删除存档按钮 btn-delete-save 1 个 ID + 舰船工程 UI 重做新增 6 个结构 id + 死亡空间连刷控件 4 个 id
 // （tutorial-widget / -header / -toggle / -progress / -branch-tabs / -dialogue / -objective / -actions）
 // （achievements-panel / -summary-count / -summary-percent / -progress-fill /
 //   -tier-counts / -category-tabs / -status-tabs / -grid）
 // + Batch E 科研工时余额 1 个 ID（achievements-research-bank）
 // + Batch F 研究页 8 个 ID（research-panel / -summary / -bank / -active /
 //   research-progress-fill / research-tree / research-detail / research-queue）
-if (htmlIds.size !== 303) throw new Error(`预期 303 个 DOM ID，实际 ${htmlIds.size}`);
+if (htmlIds.size !== 313) throw new Error(`预期 313 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
   "research-progress-fill", "research-tree", "research-detail", "research-queue"
@@ -591,7 +591,8 @@ manufacturingActionState.skills.shipEngineering.lvl = 15;
 manufacturingActionState.resources.isk = 100000;
 manufacturingActionState.ownedBlueprints = [];
 const lockedFrigateAssembly = sandbox.dispatchGameAction(manufacturingActionState, { type:"manufacturing/selectShipAssembly", recipeId:"rifter" }, selectorNow);
-if (lockedFrigateAssembly.changed || lockedFrigateAssembly.reason !== "blueprint-locked") throw new Error("无蓝图状态仍能选择护卫舰组装");
+if (!lockedFrigateAssembly.changed || manufacturingActionState.currentAction.shipAsmTarget !== "rifter") throw new Error("无蓝图舰船无法选中预览");
+if (sandbox.getShipEngineeringDisplayState(manufacturingActionState, selectorNow).canStartAssembly) throw new Error("无蓝图状态仍能合成护卫舰");
 const freeDestroyerAssembly = sandbox.dispatchGameAction(manufacturingActionState, { type:"manufacturing/selectShipAssembly", recipeId:"raylight" }, selectorNow);
 if (!freeDestroyerAssembly.changed || manufacturingActionState.currentAction.shipAsmTarget !== "raylight") throw new Error("免蓝图驱逐舰无法通过状态动作选择");
 const blueprintPurchase = sandbox.dispatchGameAction(manufacturingActionState, { type:"manufacturing/buyBlueprint", blueprintId:"rifter" }, selectorNow);
@@ -603,9 +604,9 @@ manufacturingActionState.resources.lp = 60;
 const lockedMixedAssembly = sandbox.dispatchGameAction(manufacturingActionState, { type:"manufacturing/selectShipAssembly", recipeId:"gale" }, selectorNow);
 const mixedBlueprintPurchase = sandbox.dispatchGameAction(manufacturingActionState, { type:"manufacturing/buyBlueprint", blueprintId:"gale" }, selectorNow);
 const unlockedMixedAssembly = sandbox.dispatchGameAction(manufacturingActionState, { type:"manufacturing/selectShipAssembly", recipeId:"gale" }, selectorNow);
-if (lockedMixedAssembly.changed || lockedMixedAssembly.reason !== "blueprint-locked" || !mixedBlueprintPurchase.changed ||
+if (!lockedMixedAssembly.changed || !mixedBlueprintPurchase.changed ||
     manufacturingActionState.resources.lp !== 0 || !manufacturingActionState.ownedBlueprints.includes("gale") || !unlockedMixedAssembly.changed) {
-  throw new Error("混血舰船LP蓝图没有正确执行锁定、购买与永久解锁");
+  throw new Error("混血舰船LP蓝图没有正确执行选中预览、购买与永久解锁");
 }
 manufacturingActionState.currentAction.active = true;
 manufacturingActionState.currentAction.skill = "equipmentEngineering";
@@ -3786,7 +3787,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   // ---- F-12 既有基线不得放宽（脚本 / 样式 / DOM ID / Batch D·E 关键 DOM） ----
   if (scriptSources.length !== 55) throw new Error("Batch F 起 JS 基线为 55（Batch L 新增 display-names.js，Batch N 新增 tutorial.js，Batch O 新增 tutorial-state.js 与 systems/tutorial.js），实际 " + scriptSources.length);
   if (styleSources.length !== 4) throw new Error("Batch F 不得改变 4 CSS 基线，实际 " + styleSources.length);
-  if (htmlIds.size !== 303) throw new Error("Batch F DOM ID 基线应为 303，实际 " + htmlIds.size);
+  if (htmlIds.size !== 313) throw new Error("Batch F DOM ID 基线应为 313，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
@@ -4676,7 +4677,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- G-21 冻结基线不回退 -------------------------------------------------------------
     okG(RDG.NODES.length === 38, "科技节点总数必须仍为 38");
-    okG(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 303, "55 JS / 4 CSS / 303 DOM ID 基线不得回退");
+    okG(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313, "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
     okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
   } finally {
     gsG.research = JSON.parse(JSON.stringify(savedResearchG));
@@ -5084,7 +5085,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- H-12 冻结基线不回退 --------------------------------------------------------------
     okH(RDH.NODES.length === 38, "科技节点总数必须仍为 38");
-    okH(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 303, "55 JS / 4 CSS / 303 DOM ID 基线不得回退");
+    okH(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313, "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
   } finally {
     gsH.research = JSON.parse(JSON.stringify(savedResearchH));
     gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
@@ -5662,8 +5663,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsI === 150 && Math.abs(secondsI - 7776000) < 1e-6 &&
         protocolNodesI.length === 6 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 303,
-      "55 JS / 4 CSS / 303 DOM ID 基线不得回退");
+    okI(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313,
+      "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -6221,8 +6222,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsJ === 150 && Math.abs(secondsJ - 7776000) < 1e-6 &&
         protocolNodesJ.length === 6 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 303,
-      "55 JS / 4 CSS / 303 DOM ID 基线不得回退");
+    okJ(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313,
+      "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -8172,7 +8173,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(JSON.stringify(sandbox.gameState.tutorial) === tutBeforeNav && dNav1.taskById.P5.navigationTarget === dNav2.taskById.P5.navigationTarget, "动态导航计算纯读且可重复：不改变 state.tutorial");
 
   // (K) DOM 总数与收口提示一致
-  okP(htmlIds.size === 303, "DOM 总数 303（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save）与收口提示一致");
+  okP(htmlIds.size === 313, "DOM 总数 313（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save + 舰船工程 UI 重做新增 6 结构 id + 死亡空间连刷控件 4 个 id）与收口提示一致");
 
   // 10) P7 按钮→action.type 映射（开启三条职业支线 / confirm）
   resetTut();
@@ -8362,6 +8363,460 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     "删档后再次启动仍为零舰船新档，不得补发 rifter，实际 " + JSON.stringify(shipIds()));
 
   console.log("Batch Q 存档来源三态校验通过（" + qChecks + " 项）：空档首启来源=null 且零舰船/零补偿/星币 10000/P1 active/应急舰船前提成立、老档来源严格 false 且 rifter 补偿保留并幂等、现代档来源严格 true 且不补偿、importData 写 false/true、删档重开来源回到 null 仍为零舰船");
+}
+
+// ===== Batch R：离线战斗共享基础设施断言（advanceCombatRound / beginDeathspaceRun / 确定性 RNG / 连刷严格化） =====
+// 复用同一套全脚本沙箱；所有结论来自真实函数调用，不依赖源码字符串检查。
+{
+  const ok = (condition, message) => { if (!condition) throw new Error("Batch R 校验失败：" + message); };
+  const CZ = vm.runInContext("COMBAT_ZONES", sandbox);
+  const DSD = vm.runInContext("DEATHSPACE_DATABASE", sandbox);
+  const SITE = DSD.find((z) => z.id === "angel_ded_2_10"); // requiredCL:1, sourceZoneId:angel_outpost, maxWave:3
+  const ZONE = CZ.find((z) => z.id === "angel_outpost");
+  const MAT = SITE.ticketMaterial;
+  const reg = sandbox.ResourceRegistry;
+  const RR = sandbox.advanceCombatRound;
+
+  // 准备一艘可战斗的 rifter（Batch Q 末尾可能清空舰船）
+  if (!Array.isArray(sandbox.gameState.inventory.ships) || sandbox.gameState.inventory.ships.length === 0) {
+    sandbox.gameState.inventory.ships = [sandbox.createShipInstance("rifter")];
+    sandbox.gameState.migrations.combatEquipmentV1 = false;
+    sandbox.finalizeEquipmentStateAfterLegacyMigrations(sandbox.gameState);
+  }
+  const brShip = sandbox.gameState.inventory.ships[0];
+  brShip.fitted = { high:["t1_small_laser"], mid:["t1_shield_booster"], low:[], rig:[] };
+  sandbox.gameState.shipAssignments.combat = brShip.instanceId;
+
+  const giveSupplies = (s) => {
+    reg.add(s, "consumable:fuel", 1000000);
+    reg.add(s, "ammo:laser", 1000000);
+    reg.add(s, "ammo:missile", 1000000);
+    reg.add(s, "ammo:cannon", 1000000);
+  };
+  const setTickets = (s, mat, n) => {
+    const cur = reg.get(s, "special:" + mat);
+    if (cur > 0) reg.spend(s, "special:" + mat, cur);
+    reg.add(s, "special:" + mat, n);
+  };
+  const resetCombat = (s) => {
+    s.combat.active = false; s.combat.mode = "belt"; s.combat.viewMode = "belt";
+    s.combat.zone = ""; s.combat.deathspaceId = ""; s.combat.wave = 1;
+    s.combat.enemies = []; s.combat.currentEnemy = null; s.combat.currentFormation = "";
+    s.combat.deathspaceChainRemaining = 0; s.combat.deathspaceChainPending = false;
+    s.combat.lastLoot = ""; s.combat.lastStatus = "";
+    s.combat.totalKills = 0; s.combat.runEliteKills = 0;
+    s.combat.runDamageDealt = 0; s.combat.runDamageTaken = 0;
+    s.combat.runWeaponTypes = []; s.combat.runWeaponTypesZone = null;
+    s.combat.randomState = { seed: 0x12345, counterLo: 0, counterHi: 0 };
+    s.combat.repairs = {}; // 重置战斗必须清空维修记录，否则后续 beginDeathspaceRun/start 会被 isShipUnderRepair 误判拦截
+    s.combat.runSequence = 0; // 测试确定性：每次 reset 重置为 0，使 resetCombatRunState 后 token 固定（真实 run 路径不固定，见「七」）
+    sandbox.resetCombatRunState(s.combat);
+    const _mh = sandbox.getCombatMaxHpFromState(s);
+    s.combat.maxHp = { shield:_mh.shield, armor:_mh.armor, structure:_mh.structure };
+    s.combat.hp = { shield:_mh.shield, armor:_mh.armor, structure:_mh.structure };
+    s.currentAction.active = false; s.currentAction.skill = null;
+    s.resumeAfterRepair = null;
+  };
+  const armBelt = (s, zoneId, rngVal) => {
+    resetCombat(s); s.combat.mode = "belt"; s.combat.viewMode = "belt"; s.combat.zone = zoneId; s.combat.active = true;
+    giveSupplies(s);
+    const w = sandbox.buildCombatWave(CZ.find((z) => z.id === zoneId), 1, () => rngVal, s.combat);
+    s.combat.enemies = w.enemies.map((e) => Object.assign({}, e, { baseDamage: 0 })); // 敌不反击，避免测试回合内被打死
+    s.combat.currentEnemy = s.combat.enemies[0] || null;
+    s.combat.currentFormation = w.formationId;
+    // 与真实 combat/start 一致：将 activeShip 指向当前指派战斗舰实例，确保战败维修键 repairs[instanceId] 一致
+    s.combat.activeShip = ((sandbox.getActiveCombatShipInstance && sandbox.getActiveCombatShipInstance(s)) || {}).instanceId || null;
+  };
+  const armDS = (s, siteId, waveNum, rngVal) => {
+    resetCombat(s); s.combat.mode = "deathspace"; s.combat.viewMode = "deathspace"; s.combat.deathspaceId = siteId;
+    s.combat.zone = DSD.find((z) => z.id === siteId).sourceZoneId; s.combat.active = true; s.combat.wave = waveNum || 1;
+    giveSupplies(s);
+    const w = sandbox.buildDeathspaceWave(DSD.find((z) => z.id === siteId), waveNum || 1, () => rngVal, s.combat);
+    s.combat.enemies = w.enemies; s.combat.currentEnemy = w.enemies[0] || null; s.combat.currentFormation = w.formationId;
+    s.combat.activeShip = ((sandbox.getActiveCombatShipInstance && sandbox.getActiveCombatShipInstance(s)) || {}).instanceId || null;
+  };
+
+  // (A) advanceCombatRound 存在 & 一次调用=一个回合
+  ok(typeof RR === "function", "advanceCombatRound 必须存在且为函数");
+  const sA = sandbox.gameState;
+  armBelt(sA, "angel_outpost", 0.5);
+  const rA1 = RR(sA, { now:1000, offline:false, emit: sandbox.GameEvents.emit, playEffects:false });
+  ok(rA1 && rA1.ok === true && rA1.advanced === true, "advanceCombatRound 首轮必须推进（advanced:true）");
+  const rA2 = RR(sA, { now:1001, offline:false, emit: sandbox.GameEvents.emit, playEffects:false });
+  ok(rA2 && rA2.advanced === true, "advanceCombatRound 第二轮必须再推进一个回合（一次调用=一个战斗回合）");
+
+  // (B) combatTick 薄包装：每 tick 恰好一次调用 advanceCombatRound
+  let advCalls = 0;
+  const origRR = sandbox.advanceCombatRound;
+  sandbox.advanceCombatRound = (state, ctx) => { advCalls++; return origRR(state, ctx); };
+  armBelt(sA, "angel_outpost", 0.5);
+  advCalls = 0;
+  sandbox.combatTick();
+  ok(advCalls === 1, "combatTick 每 tick 必须恰好委托 advanceCombatRound 一次（实测 " + advCalls + "）");
+  sandbox.advanceCombatRound = origRR;
+
+  // (C) playEffects=false 零 FX；playEffects=true 确有 FX
+  let fxCount = 0;
+  const origFX1 = sandbox.playAttackFX, origFX2 = sandbox.playEnemyAttackFX;
+  sandbox.playAttackFX = () => { fxCount++; };
+  sandbox.playEnemyAttackFX = () => { fxCount++; };
+  armBelt(sA, "angel_outpost", 0.5);
+  fxCount = 0;
+  RR(sA, { now:1000, offline:false, emit: () => {}, playEffects:false });
+  ok(fxCount === 0, "playEffects=false 时不得调用任何战斗 FX（实测 " + fxCount + "）");
+  fxCount = 0;
+  RR(sA, { now:1001, offline:false, emit: () => {}, playEffects:true });
+  ok(fxCount > 0, "playEffects=true 时必须调用战斗 FX（证明 gating 真实，实测 " + fxCount + "）");
+  sandbox.playAttackFX = origFX1; sandbox.playEnemyAttackFX = origFX2;
+
+  // (D) 注入 emit 捕获事件
+  armBelt(sA, "angel_outpost", 0.5);
+  const captured = [];
+  RR(sA, { now:1000, offline:false, emit: (t) => captured.push(t), playEffects:false });
+  ok(captured.length > 0, "注入的 emit 必须捕获到至少一个战斗事件（实测 " + captured.length + "）");
+  ok(captured.some((t) => t.indexOf("combat:") === 0), "注入的 emit 捕获到的必须是 combat 事件");
+
+  // (E) 固定 RNG 推演逐字节可复现
+  const runScenario = () => {
+    const s = sandbox.gameState;
+    reg.set(s, "currency:isk", 10000); // 重置资源基线，保证两次推演初始状态一致（可复现性断言要求）
+    armBelt(s, "angel_outpost", 0.5);
+    const ev = [];
+    for (let i = 0; i < 5; i++) RR(s, { now:1000 + i, offline:false, emit:(t)=>ev.push(t), playEffects:false, rng:() => 0.5 });
+    return JSON.stringify({ hp: s.combat.hp, enemies: s.combat.enemies.map((e) => e.id + ":" + e.hp.structure), loot: s.combat.lastLoot, kills: s.combat.totalKills, isk: reg.get(s, "currency:isk") });
+  };
+  ok(runScenario() === runScenario(), "固定 RNG（rng=()=>0.5）下两次完整推演必须逐字节一致（可复现）");
+
+  // (F) 迁移保持 RNG 计数器（续跑同态）
+  const mCombat = { deathspaceChainRemaining:2, deathspaceChainPending:true, deathspaceId:"angel_ded_2_10", runToken:"rt_x", enemyInstanceSeq:0, randomState:{ seed:99, counterLo:7, counterHi:3 } };
+  sandbox.migrateDeathspaceState(mCombat, sandbox.gameState);
+  ok(mCombat.randomState && mCombat.randomState.seed === 99 && mCombat.randomState.counterLo === 7 && mCombat.randomState.counterHi === 3, "migrateDeathspaceState 必须保持 randomState 计数器不变（续跑同态）");
+  const nBefore = sandbox.nextCombatRandom(mCombat);
+  const nAfter = sandbox.nextCombatRandom(mCombat);
+  ok(typeof nBefore === "number" && nBefore >= 0 && nBefore < 1 && nAfter !== nBefore, "nextCombatRandom 迁移后必须从原计数器继续推进");
+
+  // (G) enemyId 形态 / 唯一 / 确定性
+  armBelt(sA, "angel_outpost", 0.5);
+  const ids = new Set();
+  sA.combat.enemies.forEach((e) => ids.add(e.id));
+  for (let i = 0; i < 10; i++) { RR(sA, { now:1000 + i, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 }); sA.combat.enemies.forEach((e) => ids.add(e.id)); }
+  const token = sA.combat.runToken;
+  let gOk = true;
+  for (const id of ids) if (!id.startsWith(token + "_e")) gOk = false;
+  ok(gOk && ids.size > 0, "所有 enemyId 必须为 runToken_e序号 形态且以当前 runToken 开头");
+  ok(ids.size === (new Set(ids)).size, "enemyId 在整轮推演中必须唯一");
+  const idsRun1 = (() => { armBelt(sandbox.gameState, "angel_outpost", 0.5); return sandbox.gameState.combat.enemies.map((e) => e.id).join(","); })();
+  const idsRun2 = (() => { armBelt(sandbox.gameState, "angel_outpost", 0.5); return sandbox.gameState.combat.enemies.map((e) => e.id).join(","); })();
+  ok(idsRun1 === idsRun2, "相同 runToken 下生成的首波 enemyId 必须确定性一致");
+
+  // (H) 连刷次数=3 消耗 3 密钥；仅 2 密钥时只进 2 次
+  const simChain = (count, tickets) => {
+    const s = sandbox.gameState;
+    resetCombat(s);
+    s.combat.viewMode = "deathspace"; s.combat.viewDeathspaceId = "angel_ded_2_10";
+    giveSupplies(s); setTickets(s, MAT, tickets);
+    const _cmh = sandbox.calcCombatMaxHp; sandbox.calcCombatMaxHp = () => ({ shield:1e9, armor:1e9, structure:1e9 }); // 防测试内被打死
+    s.skills.laserOps = { lvl:90, xp:0 };
+    const before = reg.get(s, "special:" + MAT);
+    const r = sandbox.dispatchGameAction(s, { type:"combat/startDeathspaceChain", count }, 2000000000000);
+    let guard = 0;
+    while (guard < 6000) {
+      guard++;
+      sandbox.combatTick();
+      // 测试内令玩家满血（maxHp 已被覆盖为 1e9），避免连刷中途战死打断票务统计
+      s.combat.hp = { shield: s.combat.maxHp.shield, armor: s.combat.maxHp.armor, structure: s.combat.maxHp.structure };
+      if (!s.combat.active && !s.combat.deathspaceChainPending) break;
+    }
+    sandbox.calcCombatMaxHp = _cmh;
+    return { before, after: reg.get(s, "special:" + MAT), consumed: before - reg.get(s, "special:" + MAT), remaining: s.combat.deathspaceChainRemaining, changed: r.changed };
+  };
+  const sim3 = simChain(3, 1000);
+  ok(sim3.changed && sim3.consumed === 3 && sim3.remaining === 0, "连刷次数=3 必须恰好消耗 3 枚密钥且收尾 remaining=0（实测 consumed=" + sim3.consumed + " remaining=" + sim3.remaining + "）");
+  const sim2 = simChain(3, 2);
+  ok(sim2.consumed === 2 && sim2.remaining === 0, "仅 2 枚密钥时连刷只能进 2 次、消耗 2 枚、remaining=0（实测 consumed=" + sim2.consumed + "）");
+
+  // (I) 非法连刷次数全部拒绝且零副作用
+  const illegalVals = ["3", 3.5, 0, -1, 100, NaN, null, undefined, Infinity, true, -5, 99.1];
+  let allRejected = true, anySideEffect = false;
+  for (const v of illegalVals) {
+    const s = sandbox.gameState;
+    resetCombat(s); s.combat.viewMode = "deathspace"; s.combat.viewDeathspaceId = "angel_ded_2_10";
+    reg.add(s, "special:" + MAT, 50);
+    const before = { t: reg.get(s, "special:" + MAT), rem: s.combat.deathspaceChainRemaining, pend: s.combat.deathspaceChainPending, dirty: s._dirty };
+    const res = sandbox.dispatchGameAction(s, { type:"combat/startDeathspaceChain", count: v }, 2000000000000);
+    const after = { t: reg.get(s, "special:" + MAT), rem: s.combat.deathspaceChainRemaining, pend: s.combat.deathspaceChainPending, dirty: s._dirty };
+    if (!(res && res.changed === false && res.reason === "invalid-chain-count")) allRejected = false;
+    if (before.t !== after.t || before.rem !== after.rem || before.pend !== after.pend || before.dirty !== after.dirty) anySideEffect = true;
+  }
+  ok(allRejected, "所有非法连刷次数（字符串/小数/0/负/越界/NaN/null/undefined/Infinity/布尔）必须被拒绝");
+  ok(!anySideEffect, "非法连刷次数必须零副作用（密钥/remaining/pending/_dirty 不变）");
+
+  // (J) remaining 严格 0–98 边界
+  resetCombat(sA); sA.combat.viewMode = "deathspace"; sA.combat.viewDeathspaceId = "angel_ded_2_10"; setTickets(sA, MAT, 200);
+  sandbox.dispatchGameAction(sA, { type:"combat/startDeathspaceChain", count:1 }, 2000000000000);
+  ok(sA.combat.deathspaceChainRemaining === 0, "count=1 → remaining=0（有效下界）");
+  resetCombat(sA); sA.combat.viewMode = "deathspace"; sA.combat.viewDeathspaceId = "angel_ded_2_10"; setTickets(sA, MAT, 200);
+  sandbox.dispatchGameAction(sA, { type:"combat/startDeathspaceChain", count:99 }, 2000000000000);
+  ok(sA.combat.deathspaceChainRemaining === 98, "count=99 → remaining=98（有效上界，严格 0–98）");
+
+  // (K) 迁移 pending 保留/清除规则
+  const mkMig = (over) => {
+    const c = { active:false, mode:"belt", deathspaceChainRemaining:3, deathspaceChainPending:true, deathspaceId:"angel_ded_2_10", runToken:"rt_x", randomState:{seed:1,counterLo:0,counterHi:0}, enemyInstanceSeq:0 };
+    Object.assign(c, over || {});
+    sandbox.migrateDeathspaceState(c, sandbox.gameState);
+    return c;
+  };
+  ok(mkMig({}).deathspaceChainPending === true && mkMig({}).deathspaceChainRemaining === 3, "迁移：pending 合法（remaining>0 且 site 有效）必须保留");
+  ok(mkMig({ deathspaceChainRemaining:0 }).deathspaceChainPending === false, "迁移：pending=true 但 remaining=0 必须清除");
+  ok(mkMig({ deathspaceId:"nonexistent" }).deathspaceChainPending === false, "迁移：pending=true 但 deathspaceId 无效必须清除");
+  ok(mkMig({ deathspaceChainPending:false }).deathspaceChainPending === false, "迁移：pending=false 必须保持 false");
+
+  // (L) 战败清零连刷链
+  armDS(sA, "angel_ded_2_10", 1, 0.5);
+  sA.combat.deathspaceChainRemaining = 5; sA.combat.deathspaceChainPending = false;
+  sA.combat.hp.structure = 0; // 强制结构归零
+  const rDef = RR(sA, { now:1000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+  ok(rDef && rDef.recovering === true && rDef.reason === "defeated", "结构归零时 advanceCombatRound 必须返回 defeated/recovering");
+  ok(sA.combat.deathspaceChainRemaining === 0 && sA.combat.deathspaceChainPending === false, "战败必须清零连刷链（remaining/pending=0）");
+  ok(sA.combat.active === false, "战败后 combat.active 必须为 false");
+
+  // (M) 维修恢复不恢复连刷链（回到普通星带）
+  const rec = sandbox.dispatchGameAction(sA, { type:"combat/beginRecovery" }, 1000);
+  ok(rec && rec.changed, "combat/beginRecovery 必须成功登记维修");
+  ok(sA.combat.deathspaceChainRemaining === 0 && sA.combat.deathspaceChainPending === false, "战败后连刷链仍为 0（恢复前）");
+  sandbox.dispatchGameAction(sA, { type:"combat/finishRecovery" }, 1000 + 180000);
+  ok(sA.combat.deathspaceChainRemaining === 0 && sA.combat.deathspaceChainPending === false, "维修恢复后连刷链不得被恢复（仍为 0）");
+  ok(sA.combat.mode === "belt", "维修恢复后应回到普通星带模式");
+
+  // (N) 现有事件契约有效（combat:deathspaceChainContinued 已注册）
+  ok(sandbox.GameEvents.contracts.has("combat:deathspaceChainContinued"), "combat:deathspaceChainContinued 契约必须已注册");
+  ok(sandbox.GameEvents.contracts.validate("combat:deathspaceChainContinued", { deathspaceId:"angel_ded_2_10", remaining:2 }).valid, "combat:deathspaceChainContinued 合法 payload 必须通过契约校验");
+  ok(!sandbox.GameEvents.contracts.validate("combat:deathspaceChainContinued", { deathspaceId:"angel_ded_2_10" }).valid, "combat:deathspaceChainContinued 缺 remaining 必须不通过校验");
+
+  // (O) playEffects=false 不触发任何 DOM 访问
+  let domGet = 0;
+  const _g = sandbox.document.getElementById;
+  sandbox.document.getElementById = () => { domGet++; return { getContext:()=>new sandbox.CanvasRenderingContext2D(), style:{}, addEventListener:()=>{}, setAttribute:()=>{}, classList:{add:()=>{},remove:()=>{},toggle:()=>{},contains:()=>false} }; };
+  armBelt(sA, "angel_outpost", 0.5);
+  domGet = 0;
+  RR(sA, { now:1000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+  ok(domGet === 0, "playEffects=false 时 advanceCombatRound 不得触发任何 DOM getElementById（实测 " + domGet + "）");
+  sandbox.document.getElementById = _g;
+
+  // (P) 续跑时 combat:deathspaceEntered 必须早于 combat:deathspaceChainContinued
+  resetCombat(sA); sA.combat.viewMode = "deathspace"; sA.combat.viewDeathspaceId = "angel_ded_2_10"; setTickets(sA, MAT, 100);
+  sandbox.dispatchGameAction(sA, { type:"combat/startDeathspaceChain", count:2 }, 2000000000000);
+  sA.combat.active = false; sA.combat.deathspaceChainPending = true; sA.combat.deathspaceChainRemaining = 1; sA.combat.deathspaceId = "angel_ded_2_10";
+  const evs = [];
+  const _e = sandbox.GameEvents.emit;
+  sandbox.GameEvents.emit = (t, p, m) => { evs.push(t); return _e(t, p, m); };
+  sandbox.combatTick();
+  sandbox.GameEvents.emit = _e;
+  const idxEntered = evs.indexOf("combat:deathspaceEntered");
+  const idxContinued = evs.indexOf("combat:deathspaceChainContinued");
+  ok(idxEntered !== -1 && idxContinued !== -1 && idxEntered < idxContinued, "续跑时 combat:deathspaceEntered 必须早于 combat:deathspaceChainContinued");
+
+  // (Q) 全清后置 pending、待下一 tick 续跑（同一次 advanceCombatRound 不续跑）
+  armDS(sA, "angel_ded_2_10", 3, 0.5); // 最后一波
+  sA.combat.deathspaceChainRemaining = 1; sA.combat.deathspaceChainPending = false;
+  sA.combat.enemies.forEach((e) => { e.hp.shield = 0; e.hp.armor = 0; e.hp.structure = 0; e.baseDamage = 0; }); // 已是残血/全灭，单轮即可触发全清
+  const rClr = RR(sA, { now:1000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+  ok(rClr && rClr.active === false && sA.combat.deathspaceChainPending === true, "死亡空间全清后必须进入 pending（待下一 tick 续跑），active=false");
+  ok(sA.combat.deathspaceChainRemaining === 1, "全清后 remaining 保持为 1（续跑扣减推迟到下一 tick）");
+
+  // ===== Batch R 定点返修新增断言（五/六/七/八）=====
+  // (五) 状态隔离真实断言：深克隆 altState、存 global gameState JSON、advanceCombatRound 后
+  //      altState 真实变化且 global gameState 严格零变化；覆盖普通攻击/击杀掉落/清波/死亡空间通关/战败维修。
+  const cloneState = () => JSON.parse(JSON.stringify(sandbox.gameState));
+  const runIso = (mut, rounds, useDS) => {
+    const alt = cloneState();
+    if (useDS) armDS(alt, "angel_ded_2_10", 3, 0.5); else armBelt(alt, "angel_outpost", 0.5);
+    if (mut) mut(alt);
+    const beforeGlobal = JSON.stringify(sandbox.gameState);
+    const sigBefore = JSON.stringify({ hp: alt.combat.hp, enemies: alt.combat.enemies.map((e) => e.id + ":" + e.hp.structure), isk: reg.get(alt, "currency:isk"), repairs: alt.combat.repairs, rdt: alt.combat.runDamageTaken });
+    sandbox.advanceCombatRound(alt, { now: 1767225600000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+    if (rounds && rounds > 1) for (let i = 1; i < rounds; i++) sandbox.advanceCombatRound(alt, { now: 1767225600000 + i*1000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+    const sigAfter = JSON.stringify({ hp: alt.combat.hp, enemies: alt.combat.enemies.map((e) => e.id + ":" + e.hp.structure), isk: reg.get(alt, "currency:isk"), repairs: alt.combat.repairs, rdt: alt.combat.runDamageTaken });
+    const afterGlobal = JSON.stringify(sandbox.gameState);
+    return { beforeGlobal, afterGlobal, sigBefore, sigAfter };
+  };
+  const isoAttack = runIso(null, 6);
+  ok(isoAttack.beforeGlobal === isoAttack.afterGlobal, "五：普通攻击场景 global gameState 必须严格零变化（状态隔离）");
+  ok(isoAttack.sigBefore !== isoAttack.sigAfter, "五：普通攻击场景 altState 必须真实变化");
+  const isoKill = runIso((a) => { a.combat.enemies.forEach((e) => { e.hp.shield = 1; e.hp.armor = 1; e.hp.structure = 1; }); }, 8);
+  ok(isoKill.beforeGlobal === isoKill.afterGlobal, "五：击杀掉落场景 global gameState 必须严格零变化");
+  ok(isoKill.sigBefore !== isoKill.sigAfter, "五：击杀掉落场景 altState 必须真实变化（含资源/击杀）");
+  const isoClear = runIso((a) => { a.combat.enemies.forEach((e) => { e.hp.shield = 0; e.hp.armor = 0; e.hp.structure = 0; }); }, 2);
+  ok(isoClear.beforeGlobal === isoClear.afterGlobal, "五：清波场景 global gameState 必须严格零变化");
+  ok(isoClear.sigBefore !== isoClear.sigAfter, "五：清波场景 altState 必须真实变化（新波生成）");
+  const isoDS = runIso(null, 1, true);
+  ok(isoDS.beforeGlobal === isoDS.afterGlobal, "五：死亡空间通关场景 global gameState 必须严格零变化");
+  ok(isoDS.sigBefore !== isoDS.sigAfter, "五：死亡空间通关场景 altState 必须真实变化（pending/active）");
+  const isoDef = runIso((a) => { a.combat.hp.structure = 0; }, 1);
+  ok(isoDef.beforeGlobal === isoDef.afterGlobal, "五：战败维修场景 global gameState 必须严格零变化");
+  ok(isoDef.sigBefore !== isoDef.sigAfter, "五：战败维修场景 altState 必须真实变化（repairs/active）");
+
+  // (六) 虚拟时间断言：T=1767225600000
+  const T = 1767225600000;
+  ok(T !== Date.now(), "六：虚拟时间 T 必须不等于真实 Date.now()（隔离性前提）");
+  // 战败：repairUntil === T+180000、ship:destroyed.timestamp === T、同回合两事件同毫秒
+  const sV = sandbox.gameState;
+  armBelt(sV, "angel_outpost", 0.5);
+  sV.combat.hp.structure = 0;
+  const ev6 = [];
+  const rDef6 = RR(sV, { now:T, offline:false, emit:(t,p,m)=>ev6.push({t,p,m}), playEffects:false, rng:()=>0.5 });
+  ok(rDef6 && rDef6.recovering === true && rDef6.reason === "defeated", "六：T 时刻战败 advanceCombatRound 必须返回 defeated/recovering");
+  const instId6 = sV.combat.activeShip;
+  ok(sV.combat.repairs[instId6] === T + 180000, "六：战败 repairUntil（repairs[instanceId]）必须等于 T+180000（实测 " + sV.combat.repairs[instId6] + "）");
+  const destroyed6 = ev6.find((e) => e.t === "ship:destroyed");
+  const ce6 = ev6.find((e) => e.t === "combat:event");
+  ok(destroyed6 && destroyed6.p.timestamp === T, "六：ship:destroyed.timestamp 必须等于 T（实测 " + (destroyed6 && destroyed6.p.timestamp) + "）");
+  ok(ce6 && ce6.p.timestamp === T, "六：combat:event.timestamp 必须等于 T");
+  ok(destroyed6 && ce6 && destroyed6.p.timestamp === ce6.p.timestamp, "六：同回合内 ship:destroyed 与 combat:event 时间戳必须完全相同（无多次 Date.now 差异）");
+  // 连刷续轮：combatTick 同一 now 复用于 entered 与 continued，且都等于 T
+  resetCombat(sV); sV.combat.viewMode = "deathspace"; sV.combat.viewDeathspaceId = "angel_ded_2_10"; setTickets(sV, MAT, 100);
+  sandbox.dispatchGameAction(sV, { type:"combat/startDeathspaceChain", count:2 }, T);
+  sV.combat.active = false; sV.combat.deathspaceChainPending = true; sV.combat.deathspaceChainRemaining = 1; sV.combat.deathspaceId = "angel_ded_2_10";
+  const ev6t = [];
+  const _e6 = sandbox.GameEvents.emit;
+  sandbox.GameEvents.emit = (t,p,m) => { ev6t.push({ t, m }); return _e6(t,p,m); };
+  // 强制 combatTick 取到的唯一 now = T：vm 上下文的内建 Date 不会作为属性暴露到 sandbox 对象
+  // （实测 sandbox.Date === undefined），必须从上下文内部改写其全局 Date.now，调用后立即还原。
+  vm.runInContext("globalThis.__origNow = Date.now; Date.now = function(){ return " + T + "; };", sandbox);
+  sandbox.combatTick();
+  vm.runInContext("Date.now = globalThis.__origNow;", sandbox);
+  sandbox.GameEvents.emit = _e6;
+  const en6 = ev6t.find((e) => e.t === "combat:deathspaceEntered");
+  const co6 = ev6t.find((e) => e.t === "combat:deathspaceChainContinued");
+  ok(en6 && en6.m.timestamp === T, "六：连刷续轮 deathspaceEntered.timestamp 必须等于 T");
+  ok(co6 && co6.m.timestamp === T, "六：连刷续轮 deathspaceChainContinued.timestamp 必须等于 T");
+  ok(en6 && co6 && en6.m.timestamp === co6.m.timestamp, "六：同一 tick 内 entered 与 continued 必须共享同一 now（combatTick 仅取一次 Date.now）");
+
+  // (七) RNG / 敌人 ID 断言
+  // 克隆两份逐字节一致
+  const runDeterm = (src) => {
+    const a = JSON.parse(JSON.stringify(src));
+    armBelt(a, "angel_outpost", 0.5);
+    const out = [];
+    for (let i = 0; i < 8; i++) {
+      sandbox.advanceCombatRound(a, { now:1000 + i, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+      out.push(JSON.stringify({ e: a.combat.enemies.map((e) => e.id + ":" + e.hp.structure), isk: reg.get(a, "currency:isk"), k: a.combat.totalKills }));
+    }
+    return out.join("|");
+  };
+  const d1 = runDeterm(sandbox.gameState);
+  const d2 = runDeterm(sandbox.gameState);
+  ok(d1 === d2, "七：相同序列化状态克隆两份 → 逐字节一致（确定性 RNG）");
+  // start → stop → start 两次 token 必不同 + 首波 enemyId 以新 runToken 开头
+  const sR = sandbox.gameState;
+  resetCombat(sR); sR.combat.zone = "angel_outpost"; sR.combat.viewMode = "belt"; sR.combat.repairs = {}; giveSupplies(sR);
+  const wR = sandbox.buildCombatWave(CZ.find((z) => z.id === "angel_outpost"), 1, () => 0.5, sR.combat);
+  const r1 = sandbox.dispatchGameAction(sR, { type:"combat/start", enemies:wR.enemies, formationId:wR.formationId }, 1000);
+  ok(r1 && r1.changed, "七：combat/start（belt）必须成功");
+  const tok1 = sR.combat.runToken;
+  const firstIds = sR.combat.enemies.map((e) => e.id);
+  ok(firstIds.length > 0 && firstIds.every((id) => id.startsWith(tok1 + "_e")), "七：首波 enemyId 必须以新 runToken 开头");
+  sandbox.dispatchGameAction(sR, { type:"combat/stop" }, 1001);
+  const r2 = sandbox.dispatchGameAction(sR, { type:"combat/start", enemies:wR.enemies, formationId:wR.formationId }, 1002);
+  ok(r2 && r2.changed, "七：stop 后再次 start 必须成功");
+  const tok2 = sR.combat.runToken;
+  ok(tok1 && tok2 && tok1 !== tok2, "七：start→stop→start 两次 token 必须不同（tok1=" + tok1 + " tok2=" + tok2 + "）");
+  // 后续波 enemyInstanceSeq 单调递增、绝不归零、仍以同 token 开头
+  const firstMaxSeq = Math.max(...firstIds.map((id) => parseInt(id.split("_e")[1], 10)));
+  const eisBefore = sR.combat.enemyInstanceSeq;
+  sR.combat.enemies.forEach((e) => { e.hp.shield = 0; e.hp.armor = 0; e.hp.structure = 0; });
+  sandbox.advanceCombatRound(sR, { now:2000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+  const secondIds = sR.combat.enemies.map((e) => e.id);
+  const secondMinSeq = Math.min(...secondIds.map((id) => parseInt(id.split("_e")[1], 10)));
+  ok(secondMinSeq > firstMaxSeq, "七：后续波 enemyInstanceSeq 必须单调递增（首max=" + firstMaxSeq + " 二min=" + secondMinSeq + "）");
+  ok(sR.combat.enemyInstanceSeq > eisBefore, "七：清波后 enemyInstanceSeq 必须继续递增、绝不归零");
+  ok(secondIds.every((id) => id.startsWith(sR.combat.runToken + "_e")), "七：续波 enemyId 仍以同一 runToken 开头（未重置 token）");
+  // 连刷三轮同 token 且全局唯一
+  const sC = sandbox.gameState;
+  resetCombat(sC); sC.combat.viewMode = "deathspace"; sC.combat.viewDeathspaceId = "angel_ded_2_10"; giveSupplies(sC); setTickets(sC, MAT, 100);
+  const _cmh7 = sandbox.calcCombatMaxHp; sandbox.calcCombatMaxHp = () => ({ shield:1e9, armor:1e9, structure:1e9 });
+  sC.skills.laserOps = { lvl:90, xp:0 };
+  sandbox.dispatchGameAction(sC, { type:"combat/startDeathspaceChain", count:3 }, 2000000000000);
+  const chainIds = new Set();
+  let guard7 = 0;
+  while (guard7 < 8000) {
+    guard7++;
+    sandbox.combatTick();
+    sC.combat.hp = { shield: sC.combat.maxHp.shield, armor: sC.combat.maxHp.armor, structure: sC.combat.maxHp.structure };
+    sC.combat.enemies.forEach((e) => chainIds.add(e.id));
+    if (!sC.combat.active && !sC.combat.deathspaceChainPending) break;
+  }
+  sandbox.calcCombatMaxHp = _cmh7;
+  const chainToken = sC.combat.runToken;
+  ok(chainIds.size > 0, "七连刷：必须采集到敌人 ID");
+  ok([...chainIds].every((id) => id.startsWith(chainToken + "_e")), "七连刷：三轮全部 enemyId 必须以同一 runToken 开头");
+  // 续刷链内 enemyInstanceSeq 只增不归零（仅 resetCombatRunState 新 run 才归零，continuation 不调）；
+  // 一旦中途重置，序号会小于全局唯一敌人数，此不变量直接暴露「ID 重复/重置」问题。
+  ok(sC.combat.enemyInstanceSeq === chainIds.size, "七连刷：enemyInstanceSeq 必须等于全局唯一敌人数（续刷链内敌人序号单调递增、无重置→无重复 ID）");
+  // 战败恢复新 run 使用新 token
+  const sD = sandbox.gameState;
+  resetCombat(sD); sD.combat.zone = "angel_outpost"; sD.combat.viewMode = "belt"; sD.combat.repairs = {}; giveSupplies(sD);
+  const wD = sandbox.buildCombatWave(CZ.find((z) => z.id === "angel_outpost"), 1, () => 0.5, sD.combat);
+  sandbox.dispatchGameAction(sD, { type:"combat/start", enemies:wD.enemies, formationId:wD.formationId }, 1000);
+  const tokD1 = sD.combat.runToken;
+  sD.combat.hp.structure = 0;
+  sandbox.advanceCombatRound(sD, { now:2000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 }); // 战败 → beginRecovery(now=2000)
+  sandbox.dispatchGameAction(sD, { type:"combat/finishRecovery" }, 2000 + 180000); // 清维修
+  sandbox.dispatchGameAction(sD, { type:"combat/start", enemies:wD.enemies, formationId:wD.formationId }, 2002); // 恢复后新 run
+  const tokD2 = sD.combat.runToken;
+  ok(tokD1 && tokD2 && tokD1 !== tokD2, "七战败恢复：恢复后新 run 必须获得不同 runToken（tokD1=" + tokD1 + " tokD2=" + tokD2 + "）");
+  // 生产入口不裸 Math.random：未显式传 rng 时仍推进 combat.randomState（证明注入确定性 RNG）
+  const sM = sandbox.gameState;
+  resetCombat(sM); sM.combat.zone = "angel_outpost"; armBelt(sM, "angel_outpost", 0.5);
+  const rsB = JSON.stringify(sM.combat.randomState);
+  sandbox.advanceCombatRound(sM, { now:3000, offline:false, emit:()=>{}, playEffects:false }); // 无 rng
+  const rsA = JSON.stringify(sM.combat.randomState);
+  ok(rsB !== rsA, "七：未传 rng 时生产入口仍推进 combat.randomState（默认注入 nextCombatRandom，非裸 Math.random）");
+
+  // (八) 性能基准 86400 轮（独立 altState、global 不参与、emit=no-op、playEffects=false、不加载 UI、now+=1000/轮）
+  {
+    const perfState = JSON.parse(JSON.stringify(sandbox.gameState));
+    const pC = perfState.combat;
+    pC.active = true; pC.mode = "belt"; pC.viewMode = "belt"; pC.zone = "angel_outpost"; pC.wave = 1;
+    pC.randomState = { seed: 0x12345, counterLo: 0, counterHi: 0 };
+    sandbox.resetCombatRunState(pC);
+    const pW = sandbox.buildCombatWave(CZ.find((z) => z.id === "angel_outpost"), 1, () => 0.5, pC);
+    // 敌人血量设为天文数字：玩家永不能击杀 → 不触发清波/重刷/战败，每轮都跑完整开火+反击+结算。
+    pC.enemies = pW.enemies.map((e) => ({ ...e, hp:{ shield:1e12, armor:1e12, structure:1e12 }, baseDamage: e.baseDamage }));
+    pC.currentEnemy = pC.enemies[0] || null;
+    pC.currentFormation = pW.formationId;
+    pC.maxHp = { shield:1e9, armor:1e9, structure:1e9 };
+    pC.hp = { shield:1e9, armor:1e9, structure:1e9 };
+    giveSupplies(perfState);
+    const _pcmh = sandbox.calcCombatMaxHp;
+    sandbox.calcCombatMaxHp = () => ({ shield:1e9, armor:1e9, structure:1e9 }); // 玩家无敌：防止回合内 clamp 回落
+    let perfNow = 1000000;
+    const t0 = Date.now();
+    for (let i = 0; i < 86400; i++) {
+      perfNow += 1000;
+      sandbox.advanceCombatRound(perfState, { now: perfNow, offline:false, emit:()=>{}, playEffects:false });
+    }
+    const t1 = Date.now();
+    sandbox.calcCombatMaxHp = _pcmh;
+    const perfMs = t1 - t0;
+    console.log("Batch R 八 性能基准：86400 轮纯内核耗时 " + perfMs + " ms（独立 altState、global 不参与、emit=no-op、playEffects=false、不加载 UI、now+=1000/轮）");
+  }
+  // —— Batch R 收口证据汇总（自包含实算，便于人工核对）——
+  // 五·状态隔离真实证据：克隆态跑回合，全局 gameState 必须严格零变化，altState 必须真实变化。
+  const evAlt = cloneState(); armBelt(evAlt, "angel_outpost", 0.5);
+  const evGlobalBefore = JSON.stringify(sandbox.gameState);
+  const evAltBefore = JSON.stringify(evAlt);
+  for (let i = 0; i < 5; i++) sandbox.advanceCombatRound(evAlt, { now: 1767225600000 + i * 1000, offline:false, emit:()=>{}, playEffects:false, rng:()=>0.5 });
+  const evGlobalAfter = JSON.stringify(sandbox.gameState);
+  const evAltAfter = JSON.stringify(evAlt);
+  console.log("Batch R 证据·五：全局 gameState 零变化=" + (evGlobalBefore === evGlobalAfter) + "，altState 真实变化=" + (evAltBefore !== evAltAfter));
+  console.log("Batch R 证据·六：虚拟战败时间 T=" + T + "，repairUntil=T+180000=" + (T + 180000) + "，ship:destroyed.timestamp=T=" + (T === 1767225600000));
+  console.log("Batch R 证据·七：start→stop→start 两 token 不同=" + (tok1 !== tok2) + "（tok1=" + tok1 + " / tok2=" + tok2 + "）");
+  console.log("Batch R 证据·七：首波 enemyId=[" + firstIds.join(", ") + "]（均以 " + tok1 + "_e 开头=" + firstIds.every((id) => id.startsWith(tok1 + "_e")) + "）");
+  console.log("Batch R 证据·七：连刷三轮 chainToken=" + chainToken + "，全局唯一敌人数=" + chainIds.size + "（enemyInstanceSeq=" + sandbox.gameState.combat.enemyInstanceSeq + "，相等即无重置/无重复）");
+  // 八的性能耗时由上方「Batch R 八 性能基准」行单独打印（perfMs 作用域限于该 if 块），此处不再重复引用。
+
+  console.log("Batch R 共享战斗基础设施断言通过：advanceCombatRound 存在/单轮推进、combatTick 一次委托、playEffects=false 零 FX/无 DOM、注入 emit 捕获、固定 RNG 可复现、迁移保持 RNG 计数器、enemyId 形态/唯一/确定性、连刷次数=3 耗 3 密钥、2 密钥只进 2 次、非法次数全拒绝零副作用、remaining 0–98、pending 保留/清除规则、战败清零链、维修恢复不恢复链、事件契约有效、entered 早于 continued、全清 pending 待续跑；定点返修新增：五状态隔离(攻击/击杀/清波/死亡空间/战败 global 零变化+altState 真实变化)、六虚拟时间(T 战败 repairUntil=T+180000/ship:destroyed.timestamp=T/entered==continued 同 now)、七RNG/敌人ID(克隆一致/两token不同/首波前缀/续波单调递增/连刷三轮同token全局唯一/战败恢复新token/默认注入RNG)、八86k轮性能基准");
 }
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);
