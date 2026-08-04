@@ -180,26 +180,23 @@ const ManufacturingStateActions = {
     return { changed:true, category };
   },
 
-  // 改装件二级筛选（类别：combat/industry/archaeology；档位：all/I~V）。
+  // 改装件二级筛选：按 9 个系列（stackGroup）单选。
   // 只改筛选状态与 equipEngTarget（详情落到第一个可见配方），
   // 绝不触碰 startedEquipEngTarget —— 制造中切换筛选不改变实际产物。
   selectEquipEngRigFilter(state, payload) {
     const action = state.currentAction;
-    const sub = payload.sub !== undefined ? payload.sub : (action.equipEngRigSub || "combat");
-    const tier = payload.tier !== undefined ? payload.tier : (action.equipEngRigTier || "all");
-    if (!RIG_ENGINEERING_SUBCATEGORIES.some(item => item.id === sub)) return { changed:false, reason:"unknown-rig-subcategory" };
-    if (tier !== "all" && !RIG_ENGINEERING_TIERS.includes(tier)) return { changed:false, reason:"unknown-rig-tier" };
-    action.equipEngRigSub = sub;
-    action.equipEngRigTier = tier;
+    const series = payload.series !== undefined ? payload.series : (action.equipEngRigSeries || RIG_ENGINEERING_SERIES[0].id);
+    if (!RIG_ENGINEERING_SERIES.some(item => item.id === series)) return { changed:false, reason:"unknown-rig-series" };
+    action.equipEngRigSeries = series;
     const filtered = EQUIPMENT_ENGINEERING_RECIPES.filter(recipe =>
-      recipe.category === "rigs" && recipe.rigCategory === sub && (tier === "all" || recipe.rigTier === tier));
+      recipe.category === "rigs" && recipe.stackGroup === series);
     const current = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
     if (!filtered.some(recipe => recipe.id === current.id)) {
       const next = filtered.find(recipe => (state.skills.equipmentEngineering.lvl || 1) >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || filtered[0];
       if (next) action.equipEngTarget = next.id;
     }
     state._dirty = true;
-    return { changed:true, sub, tier };
+    return { changed:true, series };
   },
 
   selectEquipmentRecipe(state, recipeId) {

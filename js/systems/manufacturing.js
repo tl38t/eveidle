@@ -200,7 +200,9 @@ function getEquipEngTierLabel(recipe) {
 
 function getEquipEngRecipeIcon(recipe) {
   const equipment = recipe.output.type === "equipment" ? EQUIPMENT_DB[recipe.output.itemId] : null;
-  if (recipe.category === "industry") return recipe.id.includes("gas") ? "fa-solid fa-wind" : "fa-solid fa-gem";
+  if (recipe.category === "mining") return "fa-solid fa-gem";
+  if (recipe.category === "gas") return "fa-solid fa-cloud";
+  if (recipe.category === "collect_boost") return "fa-solid fa-arrow-up";
   if (recipe.category === "drones") return "fa-solid fa-satellite-dish";
   if (recipe.category === "fuel") return "fa-solid fa-gas-pump";
   if (recipe.category === "ammunition") return recipe.output.weapon === "missile" ? "fa-solid fa-rocket" : "fa-solid fa-burst";

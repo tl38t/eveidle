@@ -170,10 +170,9 @@ function renderEquipEngRigFilters(display) {
   const container = document.getElementById("equipeng-rig-filters"); if (!container) return;
   if (!display.rigFilters) { container.style.display = "none"; container.innerHTML = ""; return; }
   container.style.display = "flex"; // flex-wrap:wrap（见 index.html 内联样式），窄窗口自动换行不遮挡
-  const button = (kind, item) => `<button class="equipeng-rig-filter-btn${item.selected ? " selected" : ""}" data-rig-${kind}="${item.id}" role="tab" aria-selected="${item.selected}" style="padding:3px 10px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid ${item.selected ? "#38bdf8" : "#2a3a4a"};background:${item.selected ? "rgba(56,189,248,.15)" : "transparent"};color:${item.selected ? "#7dd3fc" : "#8a9aae"};">${item.name}</button>`;
+  const button = (item) => `<button class="equipeng-rig-filter-btn${item.selected ? " selected" : ""}" data-rig-series="${item.id}" role="tab" aria-selected="${item.selected}" style="padding:3px 10px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid ${item.selected ? "#38bdf8" : "#2a3a4a"};background:${item.selected ? "rgba(56,189,248,.15)" : "transparent"};color:${item.selected ? "#7dd3fc" : "#8a9aae"};">${item.name}</button>`;
   container.innerHTML =
-    '<span style="font-size:12px;color:#6a7a8e;">类别</span>' + display.rigFilters.subcategories.map(item => button("sub", item)).join("") +
-    '<span style="font-size:12px;color:#6a7a8e;margin-left:8px;">档位</span>' + display.rigFilters.tiers.map(item => button("tier", item)).join("");
+    '<span style="font-size:12px;color:#6a7a8e;">系列</span>' + display.rigFilters.seriesList.map(item => button(item)).join("");
 }
 
 function renderEquipEngRecipeGrid(display) {
@@ -260,12 +259,9 @@ function renderEquipEngPage(now) {
   });
   const rigFilters = document.getElementById("equipeng-rig-filters");
   if (rigFilters) rigFilters.addEventListener("click", event => {
-    const subButton = event.target.closest("[data-rig-sub]");
-    const tierButton = event.target.closest("[data-rig-tier]");
-    if (!subButton && !tierButton) return;
-    const payload = { type:"manufacturing/selectEquipEngRigFilter" };
-    if (subButton) payload.sub = subButton.dataset.rigSub;
-    if (tierButton) payload.tier = tierButton.dataset.rigTier;
+    const seriesButton = event.target.closest("[data-rig-series]");
+    if (!seriesButton) return;
+    const payload = { type:"manufacturing/selectEquipEngRigFilter", series: seriesButton.dataset.rigSeries };
     const result = dispatchGameAction(gameState, payload, Date.now());
     if (result.changed) renderEquipEngPage();
   });

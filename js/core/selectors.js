@@ -865,15 +865,14 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const category = savedCategory || getEquipEngCategoryDefinition(requestedRecipe.category);
   const normalizedSearch = String(searchTerm || "").trim().toLocaleLowerCase();
   const categoryRecipes = EQUIPMENT_ENGINEERING_RECIPES.filter(recipe => recipe.category === category.id);
-  // 改装件二级筛选（类别：战斗/工业/考古，默认战斗；档位：全部/I~V，默认全部）。
+  // 改装件二级筛选：按 9 个系列（stackGroup）单选，默认第一个系列。
   // 筛选计算全部在显示态层完成，UI 只消费结果，不在 DOM 层临时隐藏。
   const isRigCategory = category.id === "rigs";
-  const rigSub = isRigCategory
-    ? (RIG_ENGINEERING_SUBCATEGORIES.find(sub => sub.id === action.equipEngRigSub) || RIG_ENGINEERING_SUBCATEGORIES[0])
+  const rigSeries = isRigCategory
+    ? (RIG_ENGINEERING_SERIES.find(s => s.id === action.equipEngRigSeries) || RIG_ENGINEERING_SERIES[0])
     : null;
-  const rigTier = isRigCategory && RIG_ENGINEERING_TIERS.includes(action.equipEngRigTier) ? action.equipEngRigTier : "all";
   const filteredRecipes = isRigCategory
-    ? categoryRecipes.filter(recipe => recipe.rigCategory === rigSub.id && (rigTier === "all" || recipe.rigTier === rigTier))
+    ? categoryRecipes.filter(recipe => recipe.stackGroup === rigSeries.id)
     : categoryRecipes;
   const visibleRecipes = filteredRecipes.filter(recipe => !normalizedSearch || recipe.name.toLocaleLowerCase().includes(normalizedSearch));
   // 改装件页：切换分类/档位/搜索时详情自动落到第一个可见配方（不影响其他类别既有行为）
@@ -916,10 +915,8 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     category:{ ...category },
     categories:EQUIPMENT_ENGINEERING_CATEGORIES.map(item => ({ ...item, selected:item.id === category.id })),
     rigFilters:isRigCategory ? {
-      sub:rigSub.id,
-      tier:rigTier,
-      subcategories:RIG_ENGINEERING_SUBCATEGORIES.map(sub => ({ id:sub.id, name:sub.name, selected:sub.id === rigSub.id })),
-      tiers:[{ id:"all", name:"全部" }, ...RIG_ENGINEERING_TIERS.map(tier => ({ id:tier, name:tier }))].map(tier => ({ ...tier, selected:tier.id === rigTier }))
+      series:rigSeries.id,
+      seriesList:RIG_ENGINEERING_SERIES.map(s => ({ id:s.id, name:s.name, rigCategory:s.rigCategory, selected:s.id === rigSeries.id }))
     } : null,
     visibleCount:visibleRecipes.length,
     selectedRecipe:{ ...selectedRecipe, cost:{ ...(selectedRecipe.cost || {}) }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output } },

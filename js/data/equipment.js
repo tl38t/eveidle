@@ -344,7 +344,13 @@ function getEquipmentRecipeCategory(equipment) {
   if (equipment.combat && equipment.combat.kind === "weapon") return "weapons";
   if ((equipment.combat && equipment.combat.kind === "repair") || equipment.id === "shield_ext_small") return "defense";
   if (equipment.id.includes("drone")) return "drones";
-  return "industry";
+  // 工业采集类按功能细分为三个顶层分类：采矿装备 / 采气装备 / 采集增益
+  if (equipment.slot === "high") {
+    if (equipment.bonuses && equipment.bonuses.miningEfficiency) return "mining";
+    if (equipment.bonuses && equipment.bonuses.gasEfficiency) return "gas";
+  }
+  if (equipment.slot === "low" && equipment.bonuses && (equipment.bonuses.miningLaserEfficiency || equipment.bonuses.gasLaserEfficiency)) return "collect_boost";
+  return "mining";
 }
 
 const EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly).map(eq => ({

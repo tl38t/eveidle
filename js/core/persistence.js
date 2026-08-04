@@ -1240,7 +1240,7 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     if (!gameState.equipment) gameState.equipment = { inventory:[] };
     if (!gameState.currentAction.equipEngTarget) gameState.currentAction.equipEngTarget = "t1_mining_laser";
     if (!EQUIPMENT_ENGINEERING_CATEGORIES.some(category => category.id === gameState.currentAction.equipEngCategory)) {
-      gameState.currentAction.equipEngCategory = getEquipmentEngineeringRecipe(gameState.currentAction.equipEngTarget).category || "industry";
+      gameState.currentAction.equipEngCategory = getEquipmentEngineeringRecipe(gameState.currentAction.equipEngTarget).category || "mining";
     }
     if (gameState.currentAction.startedEquipEngTarget === undefined) gameState.currentAction.startedEquipEngTarget = "";
     // 20260711 迁移：赠送冲锋者级工业舰（新手任务 Batch O：仅老档生效，新档由 I7 任务发放）

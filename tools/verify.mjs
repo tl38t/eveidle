@@ -1296,9 +1296,9 @@ if (sandbox.gameState.equipment.inventory.length !== factionEquipmentBefore + 1 
   throw new Error("血仆无人机指挥链路没有进入装备库存");
 }
 
-// 装备工程分类不再单列势力标签；高级采集装备完整进入工业采集，LP商品不混入制造配方。
+// 装备工程分类不再单列势力标签；原「工业采集」按功能细分为 采矿装备 / 采气装备 / 采集增益 三个顶层分类，LP商品不混入制造配方。
 const equipEngCategories = vm.runInContext("EQUIPMENT_ENGINEERING_CATEGORIES.map(category => category.id)", sandbox);
-if (equipEngCategories.length !== 9 || equipEngCategories.includes("faction")) { // 9 = 8 + rigs（改装件系统 2026-07-22）
+if (equipEngCategories.length !== 11 || equipEngCategories.includes("faction")) { // 11 = 采矿/采气/采集增益 + 无人机/武器/防御/燃料/弹药/考古/探针/改装件
   throw new Error("装备工程仍然存在独立势力标签，或基础分类数量不正确");
 }
 for (const equipmentId of [
@@ -1307,12 +1307,13 @@ for (const equipmentId of [
 ]) {
   const equipment = vm.runInContext(`EQUIPMENT_DB["${equipmentId}"]`, sandbox);
   const recipe = sandbox.getEquipmentEngineeringRecipe(equipmentId);
-  if (!equipment || recipe.id !== equipmentId || recipe.category !== "industry") {
-    throw new Error(`高级采集装备 ${equipmentId} 没有进入工业采集制造分类`);
+  const expectedCategory = equipmentId.includes("gas_harvester") ? "gas" : "mining";
+  if (!equipment || recipe.id !== equipmentId || recipe.category !== expectedCategory) {
+    throw new Error(`高级采集装备 ${equipmentId} 没有进入正确的制造分类（应为 ${expectedCategory}）`);
   }
 }
-if (bloodLinkRecipe.category !== "drones" || sanshaBoosterRecipe.category !== "industry") {
-  throw new Error("势力装备没有按实际用途归入无人机或工业采集分类");
+if (bloodLinkRecipe.category !== "drones" || sanshaBoosterRecipe.category !== "collect_boost") {
+  throw new Error("势力装备没有按实际用途归入无人机或采集增益分类");
 }
 const lpStoreItems = sandbox.getLPStoreItems();
 const beltEquipmentPairs = [
@@ -1448,7 +1449,7 @@ if (angelMiningRecipe.id !== "angel_mining_laser" || angelGasRecipe.id !== "ange
     angelGasHarvester.bonuses.gasEfficiency !== allianceGasHarvester.bonuses.gasEfficiency ||
     angelMiningRecipe.level !== 25 || angelGasRecipe.level !== 25 ||
     angelMiningRecipe.cost["天使低级加密数据"] !== 5 || angelGasRecipe.cost["天使低级加密数据"] !== 5 ||
-    angelMiningRecipe.category !== "industry" || angelGasRecipe.category !== "industry") {
+    angelMiningRecipe.category !== "mining" || angelGasRecipe.category !== "gas") {
   throw new Error("天使联合采集装备没有保持联盟装备属性或未正确接入数据制造配方");
 }
 

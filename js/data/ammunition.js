@@ -12,7 +12,9 @@ const AMMO_ENG_RECIPES = [
 ];
 
 const EQUIPMENT_ENGINEERING_CATEGORIES = [
-  { id:"industry", name:"工业采集", icon:"fa-solid fa-gem" },
+  { id:"mining", name:"采矿装备", icon:"fa-solid fa-gem" },
+  { id:"gas", name:"采气装备", icon:"fa-solid fa-cloud" },
+  { id:"collect_boost", name:"采集增益", icon:"fa-solid fa-arrow-up" },
   { id:"drones", name:"无人机", icon:"fa-solid fa-satellite-dish" },
   { id:"weapons", name:"武器系统", icon:"fa-solid fa-crosshairs" },
   { id:"defense", name:"防御维修", icon:"fa-solid fa-shield-halved" },
@@ -23,13 +25,9 @@ const EQUIPMENT_ENGINEERING_CATEGORIES = [
   { id:"rigs", name:"改装件", icon:"fa-solid fa-microchip" }
 ];
 
-// 改装件子分类（战斗 / 工业 / 考古）与档位过滤（I~V），供装备工程 UI 二级筛选。
-const RIG_ENGINEERING_SUBCATEGORIES = [
-  { id:"combat", name:"战斗" },
-  { id:"industry", name:"工业" },
-  { id:"archaeology", name:"考古" }
-];
-const RIG_ENGINEERING_TIERS = ["I", "II", "III", "IV", "V"];
+// 改装件二级筛选改为「按 9 个系列单选」（护盾容量/装甲容量/结构容量/采矿速度/采气速度/冶炼速度/扫描强度/考古燃料效率/考古干扰缩短），
+// 每个系列 5 档（I~V），点开即一排 5 张卡。数据直接复用 equipment.js 的 RIG_SERIES（label/rigCategory/stackGroup），避免中文名写两遍。
+const RIG_ENGINEERING_SERIES = RIG_SERIES.map(s => ({ id:s.stackGroup, name:s.label, rigCategory:s.rigCategory }));
 
 // 装备工程统一配方：可装配装备、燃料和弹药都走同一制造技能与队列。
 const EQUIPMENT_ENGINEERING_RECIPES = [

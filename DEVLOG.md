@@ -1598,4 +1598,17 @@ p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
 
 **使用**：调试用 `index.html?speed=10` 或 `localStorage.setItem('eve_speed', 10)`；生产默认 1。
 
-**注意**：原 10x 分支「只差一个文件」的幻觉已破，现由本开关替代；旧 `EVEIDLE-10X-SYNC` 分支待用户决定退役方式。本改动尚未 commit，待用户授权。
+**注意**：原 10x 分支「只差一个文件」的幻觉已破，现由本开关替代；旧 `EVEIDLE-10X-SYNC` 分支保留作历史、已另立统一开关（`b854ace` 强推至 `test/10x-active-speed`）。
+
+### 装备制造页 X 方案（操作条抽离钉底 + 目录内部滚动，2026-08-04）
+
+**问题复述**：单栏（≤1120px）时可制造配方目录在上方、`.equipeng-detail` 详情（含「开始/停止」按钮）在整页最下方，目录一长就下拉很久才够得着按钮。
+
+**实装（commit `421c92d`，基线 `682a903`，detached HEAD，未推送）**：
+- `index.html`：把 `.equipeng-detail-actions` 从 `<aside class="equipeng-detail">` 内移到 `.equipeng-workspace` 直接子元素（equipeng + booster 两处均改），按钮 id 不变、JS 按 id 取仍正常。
+- `css/panels.css`：操作条 `grid-column:1/-1` + `position:sticky;bottom:0;z-index:5` 跨整宽钉视口底部；`.equipeng-recipe-grid` 设 `max-height:calc(100vh-340px);overflow-y:auto` 让长目录**自身内部滚动**、不撑高页面——这一步是关键，纯 sticky 做不到在目录顶部滚动时按钮仍可见。
+- 两栏/单栏布局通吃。
+
+**验证**：`verify.mjs` 仍 55 JS / 4 CSS / 303 DOM IDs（按钮 id 均在），EXIT=0。
+
+**回滚**：`git revert 421c92d`（仅撤 X，保留基线 `682a903` 的按钮范式 + A1 修复）或 `git reset --hard 682a903`（丢掉 X）。
