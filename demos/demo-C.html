@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>舰船工程 · 方案C 视觉换皮（保留结构）[DEMO]</title>
+<style>
+  :root{--bg:#0a0f16;--panel:#0f1722;--line:#1e2c3a;--txt:#cdd9e5;--muted:#7d8da0;--cyan:#38bdf8;--gold:#f5c451}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1000px 500px at 80% -10%,#13202e,#0a0f16 60%);color:var(--txt);
+    font-family:'Segoe UI','PingFang SC',system-ui,sans-serif;padding:18px;max-width:760px}
+  .demo-note{font-size:12px;color:var(--muted);border-left:3px solid var(--cyan);padding-left:10px;margin:0 0 14px}
+  .topbar{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:14px}
+  .xp-row{display:flex;align-items:center;gap:10px;font-size:12px}
+  .xp-bar{flex:1;height:8px;border-radius:6px;background:#16202c;overflow:hidden}
+  .xp-bar i{display:block;height:100%;width:38%;background:linear-gradient(90deg,#1d6fb8,#38bdf8)}
+  .eff{display:flex;gap:18px;margin-top:10px;font-size:12px;color:var(--muted)}
+  .eff b{color:var(--gold)}
+  .section{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--cyan);border-radius:12px;padding:14px;margin-bottom:14px}
+  .section h3{margin:0 0 12px;font-size:14px;letter-spacing:.5px;display:flex;align-items:center;gap:8px}
+  .section h3 .badge{font-size:10px;color:var(--muted);border:1px solid var(--line);padding:1px 7px;border-radius:10px}
+  .controls{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  select{background:#0c131c;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;min-width:200px}
+  .go{background:linear-gradient(90deg,#1d6fb8,#38bdf8);color:#04121d;border:none;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer}
+  .cost{font-size:12px;color:var(--muted);margin:10px 0}
+  .cost .ok{color:#3ddc84}.cost .no{color:#ff6b6b}
+  .prog{display:flex;align-items:center;gap:10px;margin-top:6px}
+  .prog .bar{flex:1;height:10px;border-radius:6px;background:#16202c;overflow:hidden}
+  .prog .bar i{display:block;height:100%;width:55%;background:linear-gradient(90deg,#7c3aed,#a855f7)}
+  .eta{font-size:12px;color:var(--cyan)}
+  .attr{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px 14px;margin:12px 0}
+  .attr .s{font-size:12px}
+  .attr .s .l{display:flex;justify-content:space-between;color:var(--muted);margin-bottom:3px}
+  .attr .s .b{height:6px;border-radius:4px;background:#16202c;overflow:hidden}
+  .attr .s .b i{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,#7dd3fc)}
+  .viewer{height:200px;border-radius:12px;background:radial-gradient(400px 180px at 50% 30%,#16263a,#070d14);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;position:relative;margin-top:8px}
+  .viewer .np{position:absolute;left:12px;bottom:10px;color:var(--cyan);font-size:13px;letter-spacing:1px}
+  .viewer .hh{position:absolute;right:12px;top:10px;color:var(--muted);font-size:10px}
+  .inv{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .chip{font-size:12px;border:1px solid var(--line);border-radius:18px;padding:4px 12px;background:#0c131c}
+  .chip b{color:var(--cyan)}
+</style>
+</head>
+<body>
+<p class="demo-note">DEMO · 方案C「纯视觉换皮」—— 保留现有上下两段结构（部件制造 / 舰船合成），只升级观感：分区样式 + 属性 stat 条 + 3D 加铭牌/边框 + 渐变进度条。最低风险，verify 全绿。</p>
+
+<div class="topbar">
+  <div class="xp-row"><span>舰船工程</span><div class="xp-bar"><i></i></div><span>38,200 / 100,000</span></div>
+  <div class="eff"><span>制造效率 <b>1.78×</b></span><span>船坞 Lv.3 · 并行产线 ×2</span></div>
+</div>
+
+<div class="section">
+  <h3>🔩 部件制造 <span class="badge">18 种 · 3 类 × 6 级阶</span></h3>
+  <div class="controls">
+    <select><option>综合舰体组件（T1）</option><option>动力控制核心（T1）</option><option>舰船功能组件（T1）</option><option>驱逐舰综合舰体组件</option></select>
+    <button class="go">▶ 开始制造</button>
+  </div>
+  <div class="cost">消耗：三钛合金×40 + 类银超金属×6 + 重金属×7 + 稀有气体×4 · 耗时 63s · 经验 44</div>
+  <div class="prog"><span>进度</span><div class="bar"><i></i></div><span class="eta">28s</span></div>
+  <div class="inv">
+    <span class="chip">综合舰体 <b>5</b></span><span class="chip">动力核心 <b>5</b></span><span class="chip">功能组件 <b>5</b></span>
+    <span class="chip">驱逐舰体 <b>0</b></span><span class="chip">巡洋舰体 <b>0</b></span>
+  </div>
+</div>
+
+<div class="section" style="border-left-color:var(--gold)">
+  <h3>⚓ 舰船合成 <span class="badge">30+ 艘可造舰</span></h3>
+  <div class="controls">
+    <select><option>星矛级（护卫舰 · T1）</option><option>雷光级（驱逐舰 · T1）</option><option>疾风级（驱逐舰 · 混血）</option><option>天穹级（旗舰）</option><option>星冕级（超级旗舰）</option></select>
+    <button class="go">⚓ 合成</button>
+  </div>
+  <div class="cost">部件：综合舰体×2 + 动力核心×2 + 功能组件×2 · 组装不消耗额外材料 · 耗时 30s · 经验 30</div>
+  <div class="prog"><span>进度</span><div class="bar"><i style="background:linear-gradient(90deg,#1d6fb8,#38bdf8)"></i></div><span class="eta">13s</span></div>
+  <div class="attr">
+    <div class="s"><div class="l"><span>护盾</span><span>420</span></div><div class="b"><i style="width:42%"></i></div></div>
+    <div class="s"><div class="l"><span>装甲</span><span>380</span></div><div class="b"><i style="width:38%"></i></div></div>
+    <div class="s"><div class="l"><span>结构</span><span>520</span></div><div class="b"><i style="width:52%"></i></div></div>
+    <div class="s"><div class="l"><span>速度</span><span>380</span></div><div class="b"><i style="width:90%"></i></div></div>
+    <div class="s"><div class="l"><span>闪避</span><span>32</span></div><div class="b"><i style="width:80%"></i></div></div>
+    <div class="s"><div class="l"><span>锁定</span><span>6.2</span></div><div class="b"><i style="width:62%"></i></div></div>
+  </div>
+  <div class="viewer">
+    <svg viewBox="0 0 100 40" width="160"><g fill="#a98bff"><path d="M5 20 L70 12 L88 20 L70 28 Z"/><path d="M60 20 L92 8 L96 20 L92 32 Z" opacity=".7"/></g></svg>
+    <div class="np">星矛级 · 护卫舰</div><div class="hh">拖拽旋转</div>
+  </div>
+  <div class="inv"><span class="chip">已有 星矛级 <b>×2</b></span><span class="chip">已有 铁卫级 <b>×1</b></span></div>
+</div>
+</body>
+</html>

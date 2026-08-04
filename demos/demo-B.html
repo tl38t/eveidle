@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>舰船工程 · 方案B 目标驱动流水线 [DEMO]</title>
+<style>
+  :root{--bg:#0a0f16;--panel:#0f1722;--line:#1e2c3a;--txt:#cdd9e5;--muted:#7d8da0;--cyan:#38bdf8;--gold:#f5c451;--ok:#3ddc84;--bad:#ff6b6b}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1000px 500px at 80% -10%,#13202e,#0a0f16 60%);color:var(--txt);
+    font-family:'Segoe UI','PingFang SC',system-ui,sans-serif;padding:18px;max-width:780px}
+  .demo-note{font-size:12px;color:var(--muted);border-left:3px solid var(--cyan);padding-left:10px;margin:0 0 14px}
+  .target{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px;display:flex;align-items:center;gap:14px}
+  .target select{background:#0c131c;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:14px;min-width:240px}
+  .target .lab{font-size:12px;color:var(--muted)}
+  .steps{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .step{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;position:relative}
+  .step .num{position:absolute;top:-12px;left:14px;width:26px;height:26px;border-radius:50%;background:var(--cyan);color:#04121d;font-weight:700;display:flex;align-items:center;justify-content:center;font-size:13px}
+  .step h3{margin:6px 0 12px;font-size:14px}
+  .ready-gauge{height:10px;border-radius:6px;background:#16202c;overflow:hidden;margin:4px 0 12px}
+  .ready-gauge i{display:block;height:100%;background:linear-gradient(90deg,#1d6fb8,#38bdf8)}
+  .req{display:flex;justify-content:space-between;font-size:12px;padding:7px 10px;border:1px solid var(--line);border-radius:8px;margin-bottom:7px;background:#0c131c}
+  .req .have.yes{color:var(--ok)} .req .have.no{color:var(--bad)}
+  .mk{width:100%;padding:8px;border:1px solid var(--line);border-radius:8px;background:#16202c;color:var(--txt);font-size:12px;cursor:pointer;margin-bottom:6px}
+  .mk:hover{border-color:var(--cyan)}
+  .assemble{width:100%;padding:12px;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;background:linear-gradient(90deg,#15803d,#3ddc84);color:#04121d}
+  .assemble:disabled{background:#26323e;color:#5b6976;cursor:not-allowed}
+  .done{font-size:12px;color:var(--ok);margin-top:8px;text-align:center}
+</style>
+</head>
+<body>
+<p class="demo-note">DEMO · 方案B「目标驱动流水线」—— 顶部选目标舰，下分两步：① 部件车间（显示造这艘还差哪些部件 + 一键造）② 总装（部件齐了自动点亮成绿色）。保留两段逻辑，加流程感。</p>
+
+<div class="target">
+  <span class="lab">目标舰船</span>
+  <select><option>星矛级（护卫舰 · T1 · 可造）</option><option>疾风级（驱逐舰 · 混血 · 需蓝图）</option><option>天穹级（旗舰）</option><option>星冕级（超级旗舰）</option></select>
+  <span class="lab">舰船工程 Lv.40 · 船坞 Lv.3</span>
+</div>
+
+<div class="steps">
+  <div class="step">
+    <div class="num">1</div>
+    <h3>🔩 部件车间</h3>
+    <div style="font-size:12px;color:var(--muted);margin-bottom:8px">造「星矛级」还差：</div>
+    <div class="req"><span>综合舰体组件 ×2</span><span class="have yes">库存 5 ✓</span></div>
+    <div class="req"><span>动力控制核心 ×2</span><span class="have yes">库存 5 ✓</span></div>
+    <div class="req"><span>舰船功能组件 ×2</span><span class="have no">库存 0 ✗</span></div>
+    <button class="mk">▶ 制造 舰船功能组件 ×2</button>
+  </div>
+
+  <div class="step">
+    <div class="num">2</div>
+    <h3>⚓ 总装</h3>
+    <div style="font-size:12px;color:var(--muted)">就绪度</div>
+    <div class="ready-gauge"><i style="width:66%"></i></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">2/3 部件已备齐</div>
+    <button class="assemble" disabled>部件不足 · 无法合成</button>
+    <div class="done" style="display:none">✓ 已就绪，可合成</div>
+  </div>
+</div>
+</body>
+</html>
