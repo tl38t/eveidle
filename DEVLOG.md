@@ -1561,8 +1561,14 @@ p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
 - 仅滚动舰船卡片区域，不影响侧边栏；
 - 窄窗口/缩放窗口仍可用。
 
-### 全局仓库容量
-本轮未修改 `getCargoCapacity`、`getCargoUsed`、`isCargoFull` 等全局仓库容量相关代码。
+### 装备制造页交互修复（2026-08-04）
+**问题**：① 可制造配方多时，开始/停止制造按钮被挤到视口下方需滚动；② 正在制造 A 时切到 B 的配方卡片，按钮仍是「停止制造」、无法直接开始 B。
+
+**修复**：
+- 问题①（A1 修正为 flex 钉底，sticky 方案已弃）：`.equipeng-detail` 本就是 flex 纵向布局（原 `display:flex; flex-direction:column`），补充 `align-self:start; max-height:calc(100vh - 96px)` 限高；`.equipeng-detail-body` 加 `flex:1 1 auto; min-height:0; overflow-y:auto` 让内容区在右栏内部滚动；`.equipeng-detail-header/progress/actions` 加 `flex-shrink:0` 使按钮钉在右栏底部始终可见。sticky 方案被 `.panel{overflow:hidden}` 截断内部 sticky 而失效，已改用 flex 钉底（不依赖外部滚动容器）。窄屏单列保留钉底。
+- 问题②（仿采矿范式）：`js/ui/manufacturing-render.js` 的 `renderEquipEngPage` 按采矿模板用 `targetChanged = active && runningRecipe.id !== selectedRecipe.id` 控制按钮显隐——`showStart = !active || targetChanged`、`showStop = active && !targetChanged`；targetChanged 时开始按钮文案=「▶ 切换制造」。同步修正 `runningNote` 提示（targetDiffers 时改为「点击切换制造将改为制造当前配方」，不再误导说「不会改变产物」）。点「开始/切换制造」走确认弹窗 → front 接管 → `startedEquipEngTarget` 变为当前选中配方（替换在制品），与采矿「切到别的带就变开始」行为一致。
+
+**验证**：新增 `tools/smoke-equipeng-switch.mjs`（16 断言 EXIT=0：三种状态按钮显隐/文案 + 点开始替换在制品 + canStart 不变）；speed=1 全量回归不变（verify 55JS/4CSS/303DOM、regress-combat-repair 86/0、audit-station 1172/0 全 EXIT=0）。未新增页面 defer 脚本，verify 脚本计数仍 55。
 
 ### 十倍速运行期开关（单仓库 + 运行期开关，2026-08-04）
 

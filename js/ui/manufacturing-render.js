@@ -195,7 +195,7 @@ function renderEquipEngDetail(display) {
   const attributes = display.detail.attributes.length ? `<div class="equipeng-detail-section"><span class="equipeng-detail-label">装备属性</span><div class="equipeng-attribute-list">${display.detail.attributes.map(line => `<span>${line}</span>`).join("")}</div></div>` : "";
   const equipmentInputs = display.detail.equipmentInputs.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-box"></i>${item.name}</span><strong>×${item.quantity}</strong><small>未装配库存 ${item.stock.toLocaleString()}</small></div>`).join("");
   const materials = display.detail.materials.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-cubes-stacked"></i>${item.displayName || item.name || getResourceDisplayName(item.material)}</span><strong>×${item.quantity}</strong><small>库存 ${item.stock.toLocaleString()}</small></div>`).join("");
-  const running = display.detail.runningNote ? `<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：${display.detail.runningNote.name}${display.detail.runningNote.targetDiffers ? " · 当前查看不会改变本次产物" : ""}</div>` : "";
+  const running = display.detail.runningNote ? `<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：${display.detail.runningNote.name}${display.detail.runningNote.targetDiffers ? " · 点击「切换制造」将改为制造当前配方" : ""}</div>` : "";
   body.innerHTML = `${running}${attributes}<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">${equipmentInputs}${materials}</div></div>
     <div class="equipeng-detail-section equipeng-manufacture-summary"><span>${getEquipEngOutputHtmlFromDisplay(display)}</span><span>单次耗时 ${display.detail.actualTime.toFixed(1)}s（基础 ${display.detail.baseTime}s）</span><span>装备工程经验 +${display.detail.xp}</span><span>按当前库存最多制造 ${display.detail.maxCycles.toLocaleString()} 次</span></div>`;
 }
@@ -221,8 +221,14 @@ function renderEquipEngPage(now) {
   drawSkillBar(document.getElementById("bar-equipeng"), display.progress.percent, "purple");
   const eta = document.getElementById("equipeng-eta"); if (eta) eta.textContent = display.progress.etaText;
   const status = document.getElementById("equipeng-status-text"); if (status) status.textContent = display.status;
-  const start = document.getElementById("btn-start-equipeng"); if (start) { start.style.display = display.active ? "none" : ""; start.disabled = !display.canStart; }
-  const stop = document.getElementById("btn-stop-equipeng"); if (stop) stop.style.display = display.active ? "" : "none";
+  // 仿采矿范式：正在制造 A、当前选中 B（targetChanged）时，停止按钮隐藏、开始按钮显示
+  // 且文案提示"切换制造"；选中==在跑时显示停止；完全未在跑时显示开始。
+  const targetChanged = Boolean(display.active && display.runningRecipe && display.selectedRecipe && display.runningRecipe.id !== display.selectedRecipe.id);
+  const showStart = !display.active || targetChanged;
+  const showStop = display.active && !targetChanged;
+  const start = document.getElementById("btn-start-equipeng");
+  if (start) { start.style.display = showStart ? "" : "none"; start.disabled = !display.canStart; start.textContent = targetChanged ? "▶ 切换制造" : "▶ 开始制造"; }
+  const stop = document.getElementById("btn-stop-equipeng"); if (stop) stop.style.display = showStop ? "" : "none";
 }
 
 (function bindManufacturingUI() {

@@ -60,6 +60,14 @@
   .equipeng-catalog, .equipeng-detail {
     min-width: 0; background: #0b1119; border: 1px solid #1f2d3c; border-radius: 4px;
   }
+  /* A1（修正版）：.equipeng-detail 本就是 flex 纵向布局（见下方定义）。
+     限高 + 让 .equipeng-detail-body 内部滚动、操作按钮 flex-shrink:0 钉底，
+     不依赖外部滚动容器，按钮始终可见。 */
+  .equipeng-detail { align-self: start; max-height: calc(100vh - 96px); }
+  .equipeng-detail-header, .equipeng-detail-progress, .equipeng-detail-actions { flex-shrink: 0; }
+  .equipeng-detail-actions {
+    background: #0b1119; border-top: 1px solid #1f2d3c;
+  }
   .equipeng-catalog { padding: 12px; }
   .equipeng-catalog-header {
     display: flex; align-items: center; justify-content: space-between; gap: 12px;
@@ -127,7 +135,7 @@
     min-width: 50px; padding: 3px 9px; border-radius: 14px; text-align: center;
     color: #5db7e8; background: #163d58; font-size: 10px;
   }
-  .equipeng-detail-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; }
+  .equipeng-detail-body { padding: 14px; display: flex; flex-direction: column; gap: 14px; flex: 1 1 auto; min-height: 0; overflow-y: auto; }
   .equipeng-detail-section { display: flex; flex-direction: column; gap: 7px; }
   .equipeng-detail-label { color: #627589; font-size: 10px; }
   .equipeng-attribute-list, .equipeng-manufacture-summary {
@@ -165,6 +173,7 @@
 
   @media (max-width: 1120px) {
     .equipeng-workspace { grid-template-columns: 1fr; }
+    /* 单列堆叠时仍保留按钮 sticky 钉底（窄屏更需要按钮常驻可见），仅放宽对齐。 */
     .equipeng-category-tabs { grid-template-columns: repeat(6, minmax(120px, 1fr)); }
     .equipeng-recipe-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
   }
