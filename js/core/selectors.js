@@ -237,9 +237,9 @@ function getSkillShellDisplayState(state, viewKey) {
   };
 }
 
-function getCurrentActivityDisplayState(state) {
+function getCurrentActivityDisplayState(state, now) {
   const action = state.currentAction;
-  if (!action.active) return { active:false, text:"待命" };
+  if (!action.active) return { active:false, text:"待命", progressPercent:0, progressActive:false };
   const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔", archaeology:"🛰️" };
   const key = action.skill;
   const skill = state.skills[key] || { lvl:1 };
@@ -265,12 +265,18 @@ function getCurrentActivityDisplayState(state) {
     const recipe = getEquipmentEngineeringRecipe(action.startedEquipEngTarget || action.equipEngTarget);
     detail = "制造" + recipe.name;
   } else if (key === "combat") detail = "交战中 波次" + (state.combat.wave || 1);
+  // 顶部状态条小进度条：用 tick 实时更新的 refDuration 作为周期。
+  const renderNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  const duration = key === "combat" ? 0 : (Number(action.refDuration) || 0);
+  const progress = getProgressDisplayState(action, key, duration, renderNow);
   return {
     active:true,
     key,
     level:Number(skill.lvl) || 1,
     detail,
-    text:(icons[key] || "▶") + " " + (SKILL_LABEL[key] || key) + " Lv." + (Number(skill.lvl) || 1) + " · " + detail + " · 进行中"
+    text:(icons[key] || "▶") + " " + (SKILL_LABEL[key] || key) + " Lv." + (Number(skill.lvl) || 1) + " · " + detail + " · 进行中",
+    progressPercent:progress.percent,
+    progressActive:progress.active
   };
 }
 
@@ -1476,7 +1482,9 @@ function getCombatDisplayState(state, now) {
   const targetIndex = target ? Math.max(0, enemies.indexOf(target)) : -1;
   const derivedMaxHp = getCombatMaxHpFromState(state, { now, zoneId:zone.id });
   const maxHp = combat.maxHp && Number.isFinite(combat.maxHp.structure) ? { ...combat.maxHp } : { ...derivedMaxHp };
-  const hp = combat.hp && Number.isFinite(combat.hp.structure) ? { ...combat.hp } : { ...maxHp };
+  // 非战斗态下 combat.hp 是上一场交战的残留（可能 structure=0），不应作为舰体当前血量展示。
+  // 待命/战斗前页面应显示满血（准备出战）；战斗中才使用 combat.hp 实时受损值。
+  const hp = combat.active && combat.hp && Number.isFinite(combat.hp.structure) ? { ...combat.hp } : { ...maxHp };
   const requiredLevel = encounterMode === "deathspace" ? encounterDeathspace.requiredCL : (zone.requiredCL || 1);
   const zoneUnlocked = level >= requiredLevel;
   const volleyDamage = weapons.reduce((total, module) => total + Math.round(module.combat.baseDamage * getCombatDamageMultiplierFromState(state, module.combat.weaponType, { now, zoneId:zone.id })), 0);

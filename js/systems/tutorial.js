@@ -344,7 +344,7 @@
         if (!r.ok) return r;
         tsd.supportClaimed = true;
         tsd.rewardClaimed = true;
-        return { ok: true, supportGranted: true };
+        return { ok: true, changed: true, supportGranted: true };
       }
       if (task.rewardTiming === "afterObjective" && tsd.status !== "claimable") {
         return { ok: false, reason: REASON.TASK_NOT_CLAIMABLE };
@@ -353,7 +353,7 @@
       if (!r.ok) return r;
       tsd.rewardClaimed = true;
       completeTask(state, taskId, now);
-      return { ok: true };
+      return { ok: true, changed: true };
     }
 
     if (task.completionMode === "confirm") {
@@ -361,7 +361,7 @@
       if (!r.ok) return r;
       tsd.rewardClaimed = true;
       completeTask(state, taskId, now);
-      return { ok: true };
+      return { ok: true, changed: true };
     }
 
     return { ok: false, reason: REASON.INVALID_STATE };
@@ -379,7 +379,7 @@
     if (!r.ok) return r;
     tsd.rewardClaimed = true;
     completeTask(state, taskId, now);
-    return { ok: true };
+    return { ok: true, changed: true };
   }
 
   function chooseTutorialCombatTrack(state, track, now) {
@@ -401,7 +401,7 @@
     tsd.rewardClaimed = true;
     emitTutorial("tutorial:combatTrackSelected", { track, selectedAt: nowMs(now) }, now);
     completeTask(state, "C1", now);
-    return { ok: true, track };
+    return { ok: true, changed: true, track };
   }
 
   function claimEmergencyTutorialShip(state, now) {
@@ -420,7 +420,7 @@
     state.tutorial.rewardLedger["recovery:emergencyCorvette"] = nowMs(now);
     markDirty(state);
     emitTutorial("tutorial:emergencyShipGranted", { instanceId: inst.instanceId, grantedAt: nowMs(now) }, now);
-    return { ok: true, instanceId: inst.instanceId };
+    return { ok: true, changed: true, instanceId: inst.instanceId };
   }
 
   function noteTutorialActionResult(state, action, result, now) {
@@ -560,6 +560,33 @@
     state.tutorial.activeCombatRunToken = null;
     markDirty(state);
   }
+  // Batch S：离线战斗聚合事件驱动 C4/C5/C6。不重放 combat:waveCleared（指令禁止逐波事件），
+  // 改由聚合 payload.runsDetail 一次性推进。C4=任意击杀；C5=某次出击清第 1 波；C6=同次出击清第 4 波。
+  // 离线单次会话只产 1 个 runsDetail 条目（settle 仅首段 activeAtStart 时入列），故同次校验天然成立。
+  function onOfflineCombatSettled(state, event) {
+    const p = event && event.payload;
+    if (!p || !p.runsDetail || !Array.isArray(p.runsDetail) || !state.tutorial) return;
+    // C4：本段离线有任何击杀即达成
+    if (Number(p.kills) > 0) {
+      const c4 = ts(state, "C4");
+      if (c4 && (c4.status === "active" || c4.status === "claimable")) { c4.kill = true; markDirty(state); }
+    }
+    // C5/C6：按 runsDetail 推进（同条目内 wavesCleared 既含第 1 波也含第 4 波 → 同次 token 一致）
+    for (const run of p.runsDetail) {
+      if (!run || typeof run.token !== "string") continue;
+      if (Number(run.wavesCleared) >= 1) {
+        const c5 = ts(state, "C5");
+        if (c5 && c5.status !== "completed" && c5.status !== "claimable") { c5.wave1 = true; c5.c5Token = run.token; markDirty(state); }
+      }
+      if (Number(run.wavesCleared) >= 4) {
+        const c6 = ts(state, "C6");
+        if (c6 && c6.status !== "completed" && c6.status !== "claimable") {
+          c6.c5Token = run.token; c6.c6Token = run.token; c6.wave4 = true; markDirty(state);
+        }
+      }
+    }
+    reconcileTutorialState(state, event && event.timestamp);
+  }
 
   function installTutorialConsumers(state) {
     if (_consumersInstalled) return { ok: true, reason: null, already: true };
@@ -577,6 +604,8 @@
     GameEvents.onIdempotent("combat:enemyDefeated", { consumerId: "tutorial:combat", getLedger }, e => onEnemyDefeated(state, e));
     GameEvents.onIdempotent("combat:waveCleared", { consumerId: "tutorial:combat", getLedger }, e => onWaveCleared(state, e));
     GameEvents.onIdempotent("ship:destroyed", { consumerId: "tutorial:combat", getLedger }, e => onShipDestroyed(state, e));
+    // Batch S：离线战斗聚合事件（具体类型监听，先于通配消费者运行；只驱动 C4/C5/C6，不依赖统计/成就）
+    GameEvents.onIdempotent("offline:combatSettled", { consumerId: "tutorial:combat", getLedger }, e => onOfflineCombatSettled(state, e));
     _consumersInstalled = true;
     return { ok: true, reason: null };
   }

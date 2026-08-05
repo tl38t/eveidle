@@ -1084,9 +1084,6 @@ function getStationAutoLineDisplayState(state, lineId) {
     blockedReason = "already-running";
   } else if (!info.selectedTargetId) {
     blockedReason = "no-target-selected";
-  } else if (line && line.startedTargetId && line.startedTargetId !== info.selectedTargetId) {
-    // selectedTarget changed while running — allow start only when current cycle completes
-    blockedReason = "current-cycle-in-progress";
   } else {
     canStart = true;
   }
@@ -1502,9 +1499,21 @@ function getStationPageDisplayState(state, now) {
     if (!targetId) return null;
     return cfg.recipePool.find(function(r) { return cfg.keyFn(r) === targetId; }) || null;
   }
-  function autoLineTargetName(recipe) {
+  function autoLineTargetName(recipe, lineId) {
     var nm = recipe && typeof recipe.name === "string" ? recipe.name.trim() : "";
-    return nm || UNKNOWN_RECIPE_NAME;
+    if (!nm) return UNKNOWN_RECIPE_NAME;
+    // 矿带类配方（冶炼自动线）：内部 name 为原矿星带名（如"凡晶石带"），
+    // 显示层统一走 DisplayNames.getAreaName 转换为原创名（如"铁硅原矿带"）。
+    // 非星带配方（装备/加成工厂）未在 AREA_NAMES 映射，getAreaName 回退原值，无副作用。
+    if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getAreaName === "function") {
+      nm = DisplayNames.getAreaName(nm, nm);
+    }
+    // 冶炼自动线冶炼的是原矿/矿物，不是星带，去掉显示名末尾的"带"字。
+    // 内部 targetId（selectedTargetId/startedTargetId）仍保留"带"字，旧存档与后端结算不受影响。
+    if (lineId === "smelting" && typeof nm === "string" && nm.charAt(nm.length - 1) === "带") {
+      nm = nm.slice(0, nm.length - 1);
+    }
+    return nm;
   }
 
   autoLines = alConfigs.map(function(cfg) {
@@ -1515,7 +1524,7 @@ function getStationPageDisplayState(state, now) {
       return skillLvl >= (r.level || 1);
     }).map(function(r) {
       // option.value 用稳定内部 id；option 文本只用正式中文名称。
-      return { id:cfg.keyFn(r), name:autoLineTargetName(r), level:r.level||1 };
+      return { id:cfg.keyFn(r), name:autoLineTargetName(r, cfg.lineId), level:r.level||1 };
     });
     var baseDisplay = (typeof getStationAutoLineDisplayState === "function") ? getStationAutoLineDisplayState(state, cfg.lineId) : {};
     var bm = getStationBuildingSpeedMultiplier(state, cfg.buildingId);
@@ -1538,9 +1547,9 @@ function getStationPageDisplayState(state, now) {
       buildingId: cfg.buildingId,
       selectedTargetId: selectedTarget,
       // 各自按自己的 recipe.id 独立查配方读中文名，互不串味；未选择/未启动时为 null。
-      selectedTargetName: selectedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, selectedTarget)) : null,
+      selectedTargetName: selectedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, selectedTarget), cfg.lineId) : null,
       startedTargetId: startedTarget,
-      startedTargetName: startedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, startedTarget)) : null,
+      startedTargetName: startedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, startedTarget), cfg.lineId) : null,
       running: running,
       targetOptions: targets,
       buildingMultiplier: bm,

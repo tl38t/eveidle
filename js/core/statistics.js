@@ -589,6 +589,85 @@ function consumeStatisticsEvent(event) {
         if (dmgInt > statistics.combat.maxSingleBattleDamage) statistics.combat.maxSingleBattleDamage = dmgInt;
       }
       break;
+    case "offline:combatSettled": {
+      // Batch S：统计等效离线战斗的聚合事件（每离线会话恰一次，由 OfflineCombatSystem.flush
+      // 发射，早于 offline:settlementCompleted）。把聚合量折叠进与在线 combat:* 事件完全相同的
+      // 权威统计累计，使成就（只读 state.statistics.combat）与玩家可见统计一致，且不重放逐波事件
+      // （防双计）。payload 已通过 events.js 基础校验；此处只对明确字段做防御性数值校验。
+      const p = payload;
+      if (!p || typeof p !== "object") { handled = false; break; }
+      // 击杀（按 faction / zone / kind 折叠）
+      const totalKills = Number(p.kills) || 0;
+      if (totalKills > 0) statistics.totals.enemyKills += totalKills;
+      const kbk = p.killsByKind || {};
+      if (Number(kbk.elite) > 0) statistics.totals.eliteKills += Number(kbk.elite);
+      if (Number(kbk.boss) > 0) statistics.totals.bossKills += Number(kbk.boss);
+      const kbf = p.killsByFaction || {};
+      for (const faction in kbf) {
+        const n = Number(kbf[faction]) || 0;
+        if (n <= 0) continue;
+        statistics.combat.factionKills[faction] = (Number(statistics.combat.factionKills[faction]) || 0) + n;
+      }
+      const kbz = p.killsByZone || {};
+      for (const zoneId in kbz) {
+        const n = Number(kbz[zoneId]) || 0;
+        if (n <= 0) continue;
+        statistics.combat.zoneKills[zoneId] = (Number(statistics.combat.zoneKills[zoneId]) || 0) + n;
+        if (getCapitalCombatZoneIdsForStats().indexOf(zoneId) !== -1) statistics.combat.capitalEnemyKills += n;
+        else if (getSupercapitalCombatZoneIdsForStats().indexOf(zoneId) !== -1) statistics.combat.supercapitalEnemyKills += n;
+      }
+      // 阵营 Boss 击杀（仅 angel/blood/sansha + boss kind）
+      const kbfk = p.killsByFactionKind || {};
+      for (const faction in kbfk) {
+        if (faction !== "angel" && faction !== "blood" && faction !== "sansha") continue;
+        const bossN = Number((kbfk[faction] && kbfk[faction].boss) || 0);
+        if (bossN > 0) statistics.combat.factionBossKills[faction] = (Number(statistics.combat.factionBossKills[faction]) || 0) + bossN;
+      }
+      // 波次清场
+      const wbz = p.wavesByZone || {};
+      let totalWaves = 0;
+      for (const zoneId in wbz) { const n = Number(wbz[zoneId]) || 0; if (n > 0) totalWaves += n; }
+      if (totalWaves > 0) statistics.totals.wavesCleared += totalWaves;
+      // 星带通关
+      const zcz = p.zoneClearsByZone || {};
+      for (const zoneId in zcz) {
+        const n = Number(zcz[zoneId]) || 0;
+        if (n <= 0) continue;
+        statistics.totals.zonesCleared += n;
+        statistics.combat.zoneClears[zoneId] = (Number(statistics.combat.zoneClears[zoneId]) || 0) + n;
+      }
+      // 死亡空间（deathspaceId 必须属于真实冻结集合，否则拒绝该项，不 dirty）
+      const dsE = p.deathspaceEntriesById || {};
+      for (const dsId in dsE) {
+        const n = Number(dsE[dsId]) || 0;
+        if (n <= 0) continue;
+        if (getDeathspaceIdsForStats().indexOf(dsId) !== -1) statistics.combat.deathspaceEntries += n;
+      }
+      const dsW = p.deathspaceWavesById || {};
+      let totalDsWaves = 0;
+      for (const dsId in dsW) { const n = Number(dsW[dsId]) || 0; if (n > 0) totalDsWaves += n; }
+      if (totalDsWaves > 0) statistics.totals.deathspaceWavesCleared += totalDsWaves;
+      const dsC = p.deathspaceClearsById || {};
+      for (const dsId in dsC) {
+        const n = Number(dsC[dsId]) || 0;
+        if (n <= 0) continue;
+        statistics.totals.deathspacesCleared += n;
+        statistics.combat.deathspaceClears[dsId] = (Number(statistics.combat.deathspaceClears[dsId]) || 0) + n;
+      }
+      // 伤害：取整段离线总伤害作为单次战斗伤害的等效上界，取 max（不回退）
+      const totalDmg = Number(p.totalDamageDealt) || 0;
+      if (totalDmg > 0) {
+        const d = Math.floor(totalDmg);
+        if (d > statistics.combat.maxSingleBattleDamage) statistics.combat.maxSingleBattleDamage = d;
+      }
+      // 最高波次（离线聚合给出的整段最高波号）
+      const mwr = Number(p.maxWaveReached) || 0;
+      if (mwr > statistics.combat.maxWaveReached) statistics.combat.maxWaveReached = mwr;
+      // 战败（映射 ship:destroyed）
+      const defeats = Number(p.defeats) || 0;
+      if (defeats > 0) statistics.totals.shipsDestroyed += defeats;
+      break;
+    }
     case "ship:destroyed":
       statistics.totals.shipsDestroyed++;
       break;

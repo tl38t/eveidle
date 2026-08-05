@@ -12,7 +12,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 55) throw new Error(`预期 55 个脚本，实际 ${scriptSources.length}`); // 55 = 54 + 十倍速开关 js/core/speed-config.js（2026-08-04） // 54 = 52 + 新手任务系统 Batch O 运行时两模块：js/core/tutorial-state.js、js/systems/tutorial.js // 52 = 51 + 新手任务系统 Batch N 任务目录数据：js/data/tutorial.js // 50 = 49 + 研究系统 Batch I 自动化协议统一模块：js/systems/research-protocols.js（49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js））
+if (scriptSources.length !== 56) throw new Error(`预期 56 个脚本，实际 ${scriptSources.length}`); // 56 = 55 + Batch S 离线战斗 js/systems/offline-combat.js（2026-08-05） // 55 = 54 + 十倍速开关 js/core/speed-config.js（2026-08-04） // 54 = 52 + 新手任务系统 Batch O 运行时两模块：js/core/tutorial-state.js、js/systems/tutorial.js // 52 = 51 + 新手任务系统 Batch N 任务目录数据：js/data/tutorial.js // 50 = 49 + 研究系统 Batch I 自动化协议统一模块：js/systems/research-protocols.js（49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js））
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -3785,7 +3785,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   const TF = 1752000000000;
 
   // ---- F-12 既有基线不得放宽（脚本 / 样式 / DOM ID / Batch D·E 关键 DOM） ----
-  if (scriptSources.length !== 55) throw new Error("Batch F 起 JS 基线为 55（Batch L 新增 display-names.js，Batch N 新增 tutorial.js，Batch O 新增 tutorial-state.js 与 systems/tutorial.js），实际 " + scriptSources.length);
+  if (scriptSources.length !== 56) throw new Error("Batch F 起 JS 基线为 56（55 + Batch S 新增 js/systems/offline-combat.js），实际 " + scriptSources.length);
   if (styleSources.length !== 4) throw new Error("Batch F 不得改变 4 CSS 基线，实际 " + styleSources.length);
   if (htmlIds.size !== 313) throw new Error("Batch F DOM ID 基线应为 313，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
@@ -4677,7 +4677,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- G-21 冻结基线不回退 -------------------------------------------------------------
     okG(RDG.NODES.length === 38, "科技节点总数必须仍为 38");
-    okG(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313, "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okG(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313, "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
     okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
   } finally {
     gsG.research = JSON.parse(JSON.stringify(savedResearchG));
@@ -5085,7 +5085,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- H-12 冻结基线不回退 --------------------------------------------------------------
     okH(RDH.NODES.length === 38, "科技节点总数必须仍为 38");
-    okH(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313, "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okH(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313, "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
   } finally {
     gsH.research = JSON.parse(JSON.stringify(savedResearchH));
     gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
@@ -5663,8 +5663,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsI === 150 && Math.abs(secondsI - 7776000) < 1e-6 &&
         protocolNodesI.length === 6 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313,
-      "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okI(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313,
+      "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -6222,8 +6222,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsJ === 150 && Math.abs(secondsJ - 7776000) < 1e-6 &&
         protocolNodesJ.length === 6 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 55 && styleSources.length === 4 && htmlIds.size === 313,
-      "55 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okJ(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313,
+      "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -8232,7 +8232,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(shellRenderSource.includes("_tutorialWidgetCollapsed") && shellRenderSource.includes('classList.toggle("collapsed"') && !shellRenderSource.includes("gameState.tutorial ="), "折叠必须用模块级临时变量 + DOM class，且不得写入 gameState.tutorial");
 
   // 18) 不引用 audit 脚本、脚本数不回退
-  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 55, "Batch P 不得引用 audit 脚本且脚本数保持 54 不变");
+  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 56, "Batch P 不得引用 audit 脚本且脚本数保持 55 不变");
 
   // === Batch Q 真实浏览器试玩定点返修断言（5 项）===
   // (Q1) 真实浏览器复现：领取 P1 后动作区永久空白。根因是 tutorial 事件在同一次 dispatch 内部同步派发，
@@ -8817,6 +8817,124 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   // 八的性能耗时由上方「Batch R 八 性能基准」行单独打印（perfMs 作用域限于该 if 块），此处不再重复引用。
 
   console.log("Batch R 共享战斗基础设施断言通过：advanceCombatRound 存在/单轮推进、combatTick 一次委托、playEffects=false 零 FX/无 DOM、注入 emit 捕获、固定 RNG 可复现、迁移保持 RNG 计数器、enemyId 形态/唯一/确定性、连刷次数=3 耗 3 密钥、2 密钥只进 2 次、非法次数全拒绝零副作用、remaining 0–98、pending 保留/清除规则、战败清零链、维修恢复不恢复链、事件契约有效、entered 早于 continued、全清 pending 待续跑；定点返修新增：五状态隔离(攻击/击杀/清波/死亡空间/战败 global 零变化+altState 真实变化)、六虚拟时间(T 战败 repairUntil=T+180000/ship:destroyed.timestamp=T/entered==continued 同 now)、七RNG/敌人ID(克隆一致/两token不同/首波前缀/续波单调递增/连刷三轮同token全局唯一/战败恢复新token/默认注入RNG)、八86k轮性能基准");
+}
+
+// ===== Batch S：统计等效离线战斗结算断言（消费方：统计先行→成就→新手任务；红线：无逐轮循环）=====
+{
+  const okS = (cond, msg) => { if (!cond) throw new Error("Batch S 校验失败：" + msg); };
+  const S = sandbox;
+  okS(typeof S.OfflineCombatSystem === "object" && S.OfflineCombatSystem, "OfflineCombatSystem 必须已加载（Batch S 新增文件）");
+  // gameState 是 const 单例（state.js:15），只能原地还原，不能重新赋值
+  const savedGS = JSON.parse(JSON.stringify(S.gameState));
+  // 重要：每次还原都必须重新深克隆 savedGS，否则嵌套对象会被各场景的战斗模拟
+  // （grantXp/技能升级/HP 变化等）原地改写并泄漏回 savedGS，污染后续 run（典型症状：
+  // 场景 C 两次同态离线结算击杀/波次不一致）。深克隆保证每个场景拿到互不干扰的纯净副本。
+  function restoreGS() {
+    const clone = JSON.parse(JSON.stringify(savedGS));
+    const live = S.gameState;
+    Object.keys(live).forEach(k => delete live[k]);
+    Object.keys(clone).forEach(k => { live[k] = clone[k]; });
+  }
+  function setupCombat() {
+    const gs = S.gameState;
+    if (gs.skills.laserOps) gs.skills.laserOps.lvl = 80;
+    if (gs.skills.shieldOperation) gs.skills.shieldOperation.lvl = 80;
+    let ship = gs.inventory.ships.find(s => s.shipId === "rifter");
+    if (!ship) { ship = S.createShipInstance("rifter"); gs.inventory.ships.push(ship); }
+    const now = 1700000000000;
+    S.applyEquipEngOutput(S.getEquipmentEngineeringRecipe("t1_light_missile_launcher"), 1);
+    S.dispatchGameAction(gs, { type: "hangar/toggleAssignment", instanceId: ship.instanceId, actionKey: "combat" }, now);
+    S.dispatchGameAction(gs, { type: "hangar/setFittingSlot", instanceId: ship.instanceId, slot: "high", slotIndex: 1, equipmentId: "t1_light_missile_launcher" }, now);
+    S.dispatchGameAction(gs, { type: "combat/selectZone", zoneId: "angel_corridor" }, now);
+    const zone = vm.runInContext('COMBAT_ZONES.find(z => z.id === "angel_corridor")', S);
+    const w = S.buildCombatWave(zone, 1, () => 0);
+    S.dispatchGameAction(gs, { type: "combat/start", enemies: w.enemies, formationId: w.formationId }, now);
+    S.ResourceRegistry.add(gs, "consumable:fuel", 999999);
+    S.ResourceRegistry.add(gs, "ammo:missile", 999999);
+    return gs;
+  }
+  const FC_KEYS = ["firstKill", "firstWaveClear", "firstZoneClear", "firstDeathspaceEntry", "firstDeathspaceClear", "firstChainContinuation", "firstDefeat", "firstRepairComplete"];
+  try {
+    // ---- 场景 A：24h 完整结算（active）----
+    setupCombat();
+    const gsA = S.gameState;
+    okS(gsA.combat.active === true, "combat/start 后战斗应处于 active");
+    okS(S.getInstalledCombatWeapons(gsA).length >= 1, "战斗舰应已装备至少一把武器");
+    const evt = [];
+    const unsub = S.GameEvents.on("offline:combatSettled", e => evt.push(e));
+    const enemyKillsBefore = gsA.statistics.totals.enemyKills;
+    // 红线探针：离线结算不得调用逐轮 advanceCombatRound / combatTick
+    const _adv = S.advanceCombatRound, _tick = S.combatTick;
+    let advCount = 0, tickCount = 0;
+    S.advanceCombatRound = function () { advCount++; return _adv.apply(this, arguments); };
+    S.combatTick = function () { tickCount++; return _tick.apply(this, arguments); };
+    const gains = S.applyOfflineGains(86400, { runId: "batchS_A" });
+    S.advanceCombatRound = _adv; S.combatTick = _tick;
+    unsub();
+    okS(evt.length === 1, "每离线会话应恰发射 1 次 offline:combatSettled（实际 " + evt.length + "）");
+    okS(advCount === 0 && tickCount === 0, "离线战斗不得调用 advanceCombatRound/combatTick（adv=" + advCount + "/tick=" + tickCount + "）");
+    const p = evt[0].payload;
+    okS(typeof p.kills === "number" && p.kills >= 0, "payload.kills 必须为非负数字");
+    okS(p.kills > 0, "24h 离线战斗应产生击杀（实际 " + p.kills + "）");
+    okS(Array.isArray(p.runsDetail) && p.runsDetail.length >= 1, "payload.runsDetail 必须为非空数组");
+    okS(p.runsDetail[0] && typeof p.runsDetail[0].token === "string" && typeof p.runsDetail[0].wavesCleared === "number", "runsDetail 条目须含 token/wavesCleared");
+    okS(p.firstCrossings && typeof p.firstCrossings === "object", "payload.firstCrossings 必须为对象");
+    okS(FC_KEYS.every(k => Object.prototype.hasOwnProperty.call(p.firstCrossings, k)), "firstCrossings 须含 8 个约定字段");
+    okS(p.roundsEstimated > 0, "离线战斗应实际推进回合（roundsEstimated>0）");
+    okS(typeof gains.combat === "number" && Number.isFinite(gains.combat), "gains.combat 必须为有限数字");
+    okS(S.ResourceRegistry.get(gsA, "consumable:fuel") >= 0, "离线后燃料不得为负");
+    okS(S.ResourceRegistry.get(gsA, "ammo:missile") >= 0, "离线后导弹弹药不得为负");
+    const enemyKillsDelta = S.gameState.statistics.totals.enemyKills - enemyKillsBefore;
+    okS(enemyKillsDelta === p.kills, "statistics.enemyKills 增量须恰等于 payload.kills（无双计/无遗漏）：+" + enemyKillsDelta + " vs " + p.kills);
+
+    // ---- 场景 B：离线前无有效战斗 → 跳过，不发射事件，flush 返回 null ----
+    restoreGS();
+    const gsB = S.gameState;
+    gsB.combat.active = false;
+    gsB.combat.deathspaceChainPending = false;
+    const evt2 = [];
+    const unsub2 = S.GameEvents.on("offline:combatSettled", e => evt2.push(e));
+    S.applyOfflineGains(86400, { runId: "batchS_B" });
+    unsub2();
+    okS(evt2.length === 0, "离线前无有效战斗时不得发射 offline:combatSettled（实际 " + evt2.length + "）");
+    const flushNull = S.OfflineCombatSystem.flush(gsB, { runId: "batchS_B", gains: { combat: 0 } });
+    okS(flushNull === null, "无有效战斗时 flush 应返回 null（不发射空事件）");
+
+    // ---- 场景 C：RNG 可复现（同初始态 + 同 randomState → 同 payload）----
+    function runOnce() {
+      restoreGS();
+      setupCombat();
+      S.gameState.combat.randomState = 777;
+      const ev = [];
+      const u = S.GameEvents.on("offline:combatSettled", e => ev.push(e));
+      S.applyOfflineGains(86400, { runId: "batchS_C" });
+      u();
+      return ev[0] ? ev[0].payload : null;
+    }
+    const p1 = runOnce();
+    const p2 = runOnce();
+    okS(p1 && p2, "RNG 可复现测试须取得两次 payload");
+    okS(p1.kills === p2.kills, "同 randomState 两次离线结算击杀数须一致（" + p1.kills + " vs " + p2.kills + "）");
+    okS(JSON.stringify(p1.runsDetail) === JSON.stringify(p2.runsDetail), "同 randomState 两次 runsDetail 须一致");
+    okS(p1.iskDelta === p2.iskDelta, "同 randomState 两次 ISK 收益须一致（掉落可复现）");
+
+    // ---- 场景 D：离线战斗驱动新手任务 C4（击杀 1）----
+    restoreGS();
+    setupCombat();
+    const c4 = S.gameState.tutorial && S.gameState.tutorial.taskStateById && S.gameState.tutorial.taskStateById["C4"];
+    okS(c4, "tutorial.taskStateById.C4 必须存在以验证离线驱动");
+    if (c4) {
+      c4.status = "active"; c4.kill = false; c4.rewardClaimed = false;
+      const ev4 = [];
+      const u4 = S.GameEvents.on("offline:combatSettled", e => ev4.push(e));
+      S.applyOfflineGains(86400, { runId: "batchS_D" });
+      u4();
+      okS(c4.kill === true, "离线有击杀时 C4.kill 应被置为 true");
+    }
+    console.log("Batch S 统计等效离线战斗结算断言通过：" + evt.length + " 次聚合事件 / 红线零逐轮调用 / " + FC_KEYS.length + " 项 firstCrossings / 统计无双计 / RNG 可复现 / 离线驱动 C4");
+  } finally {
+    restoreGS();
+  }
 }
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);

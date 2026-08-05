@@ -558,6 +558,12 @@ const CombatStateActions = {
       // 再把「传入编队」的敌人 ID 重新盖戳为新 runToken，杜绝 UI 预生成的旧 token 敌人误入新 run；
       // 编队构成（数量/类型）保留传入值（公共路由兼容），enemyInstanceSeq 从传入敌人最大序号续推。
       if (typeof resetCombatRunState === "function") resetCombatRunState(state.combat);
+      // 新 run 开战前将玩家舰血量重置为满血：上一场（惨胜/战败）残留的受损 hp 不应带入新 run，
+      // 否则会出现"显示满血但开战打一下直接被击败进维修"的错觉（显示层非战斗态统一显示满血，
+      // 底层 combat.hp 却仍是旧残血）。维修态已由上方 display.recovery.active 拦截，此处仅初始化健康舰。
+      const _maxHp = (typeof getCombatMaxHpFromState === "function") ? getCombatMaxHpFromState(state)
+        : (state.combat.maxHp || { shield:0, armor:0, structure:0 });
+      state.combat.hp = { ..._maxHp };
       const newToken = state.combat.runToken;
       let maxSeq = -1;
       const stamped = enemies.map((e) => {

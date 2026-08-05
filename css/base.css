@@ -107,6 +107,26 @@
     color: #8899aa;
   }
 
+  /* -- 顶部当前活动小进度条 -- */
+  .activity-mini-progress {
+    display: inline-block;
+    width: 48px;
+    height: 4px;
+    background: rgba(26, 35, 48, 0.6);
+    border-radius: 2px;
+    overflow: hidden;
+    vertical-align: middle;
+    margin-left: 8px;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.3);
+  }
+  .activity-mini-progress .fill {
+    display: block;
+    height: 100%;
+    border-radius: 2px;
+    background: #5da8d4;
+    transition: width 0.2s linear;
+  }
+
   /* ===== 主体区域 ===== */
   .main-container {
     display: flex;
@@ -862,12 +882,17 @@
   }
   .tutorial-widget[hidden] { display: none; }
 
+  /* 拖动支持（桌面端）：抓手光标 + 拖动态禁选中，触屏防止滚动干扰 */
   .tutorial-widget .tw-header {
+    cursor: grab;
+    touch-action: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 10px;
   }
+  .tutorial-widget.tw-dragging { cursor: grabbing; user-select: none; }
+  .tutorial-widget.tw-dragging .tw-header { cursor: grabbing; }
   .tutorial-widget .tw-brand {
     font-family: var(--font-tech);
     font-size: 12px;
@@ -1019,10 +1044,10 @@
   /* ---- 移动端：底部紧凑条 / 可展开卡片 ---- */
   @media (max-width: 720px) {
     .tutorial-widget {
-      top: auto;
-      right: 8px;
-      left: 8px;
-      bottom: 0;
+      top: auto !important;
+      right: 8px !important;
+      left: 8px !important;
+      bottom: 0 !important;
       width: auto;
       max-width: none;
       max-height: 55vh;

@@ -1000,7 +1000,15 @@ function beginDeathspaceRun(state, options, context) {
   // Batch R 返修：新 run 先刷新 runToken + runSequence（+1）并将 enemyInstanceSeq 归零；
   // 续跑（continuation）沿用既有 runToken / runSequence，敌人序号继续递增。
   // 编队/敌人统一在入口内用「当前 run 的 RNG 与 token」权威生成，杜绝 UI 预生成的旧 token 敌人误入新 run。
-  if (!opts.continuation) resetCombatRunState(state.combat);
+  if (!opts.continuation) {
+    resetCombatRunState(state.combat);
+    // 新 run 开战前将玩家舰血量重置为满血：上一场残留受损 hp 不应带入新 run（惨胜残血会导致
+    // 开战即被击败、立即进维修）。维修态已由上方 isShipUnderRepair 拦截，此处仅初始化健康舰满血。
+    const _maxHp = (typeof getCombatMaxHpFromState === "function") ? getCombatMaxHpFromState(state)
+      : (state.combat.maxHp || { shield:0, armor:0, structure:0 });
+    state.combat.hp = { ..._maxHp };
+    state.combat.maxHp = { ..._maxHp };
+  }
   const wave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(state.combat); }, state.combat);
   const enemies = wave.enemies;
   const formationId = wave.formationId;

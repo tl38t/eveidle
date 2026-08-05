@@ -614,9 +614,11 @@
       if (!event || typeof event !== "object") return;
       const t = event.type;
       // Batch C-12：扩展至 5 类战斗事件——通关、击杀、进入死亡空间、通关死亡空间、齐射伤害
+      // Batch S：追加 offline:combatSettled（聚合事件），使离线战斗折叠进 state.statistics.combat
+      // 后立刻触发成就求值（statistics 通配消费者注册早于本消费者，已先更新权威累计）。
       if (t !== "combat:zoneCleared" && t !== "combat:enemyDefeated" &&
           t !== "combat:deathspaceEntered" && t !== "combat:deathspaceCleared" &&
-          t !== "combat:damageDealt") return;
+          t !== "combat:damageDealt" && t !== "offline:combatSettled") return;
       // 权威事实是 state.statistics.combat 当前累计；payload 只作为触发信号
       evaluateCombatAchievementRules(state, event.timestamp);
     });

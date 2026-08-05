@@ -229,7 +229,15 @@ function updateUI(now) {
   const panelTitle = document.getElementById("skill-panel-title"); if (panelTitle) panelTitle.textContent = shell.icon + " " + shell.name;
   const panelStatus = document.getElementById("skill-panel-status"); if (panelStatus) panelStatus.textContent = shell.status;
   const nameEl = document.querySelector('.skill-current .skill-name'); if (nameEl) nameEl.textContent = shell.name;
-  const activityEl = document.getElementById("current-activity"); if (activityEl) activityEl.textContent = getCurrentActivityDisplayState(gameState).text;
+  const activityEl = document.getElementById("current-activity");
+  if (activityEl) {
+    const activity = getCurrentActivityDisplayState(gameState, renderTime);
+    const bar = activity.progressActive
+      ? `<span class="activity-mini-progress" aria-label="进度 ${activity.progressPercent}%" title="${activity.progressPercent}%"><span class="fill" style="width:${activity.progressPercent}%"></span></span>`
+      : "";
+    const safeText = String(activity.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    activityEl.innerHTML = safeText + bar;
+  }
   const levelEl = document.querySelector('.skill-current .lv-num'); if (levelEl) levelEl.textContent = shell.level;
   const areaEl = document.querySelector('.skill-current .skill-area');
   const outEl = document.querySelector('.skill-current .skill-output');
@@ -399,6 +407,10 @@ let _lastPlanetFrame = 0;
     else if (currentPage === "archaeology" && key === "archaeology") {
       drawSkillBar(document.getElementById("bar-archaeology"), pct, "green");
     }
+    // 顶部全局活动迷你进度条：随渲染循环约每 100ms 刷新，
+    // 避免只在事件触发或周期切换时才跳变（原先靠 updateUI 离散刷新）。
+    const topFill = document.querySelector("#current-activity .activity-mini-progress .fill");
+    if (topFill) topFill.style.width = pct + "%";
   }
 
   // 行星动画限制在约 15 FPS；页面隐藏或不在行星页时完全暂停绘制。

@@ -39,7 +39,8 @@ function showOfflineToast(seconds, gains) {
   const labels = {
     mining: "⛏ 采矿", refining: "🔥 冶炼", gasHarvesting: "☁️ 气体",
     equipmentEngineering: "🔧 装备工程", boosterEngineering: "💉 增强剂制造",
-    shipEngineering: "🚀 舰船工程", planetaryIndustry: "🪐 行星"
+    shipEngineering: "🚀 舰船工程", planetaryIndustry: "🪐 行星",
+    combat: "⚔️ 战斗"
   };
   const detail = Object.entries(labels)
     .filter(([key]) => (gains[key] || 0) > 0)
@@ -747,6 +748,15 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     settleOfflineActions(segSec, gains, undefined, timeBySkill);
     gameState._auditTimeBySkill = timeBySkill;
 
+    // Batch S：统计等效离线战斗结算（每段累积；聚合事件在 applyOfflineGains 末尾 flush 一次）
+    if (typeof OfflineCombatSystem !== "undefined") {
+      OfflineCombatSystem.settle(gameState, segSec, {
+        runId: context && context.runId,
+        now: currentTime,
+        offlineEnd: offlineEnd
+      });
+    }
+
     // 2) 行星：按段结束时间结算（segmentEnd 使 deployment.lastTick 正确推进）
     settleOfflinePlanets(segSec, gains, segEnd);
 
@@ -792,7 +802,8 @@ function applyOfflineGains(rawSeconds, context) {
   const seconds = Math.min(normalizedRawSeconds, MAX_OFFLINE_SECONDS);
   const gains = {
     mining: 0, refining: 0, shipEngineering: 0, gasHarvesting: 0,
-    equipmentEngineering: 0, boosterEngineering: 0, planetaryIndustry: 0
+    equipmentEngineering: 0, boosterEngineering: 0, planetaryIndustry: 0,
+    combat: 0
   };
   if (seconds <= 5) return gains;
   // 初始化考古虚拟时间
@@ -804,13 +815,20 @@ function applyOfflineGains(rawSeconds, context) {
   _offlineEventBatch = { runId, sequence:0 };
   try {
     // 唯一协调入口：按燃料/施工分段时间轴
-    settleOfflineTimeline(seconds, gains, context);
+    // Batch S：把本离线会话唯一 runId 一并传入时间轴，使 OfflineCombatSystem.settle
+    // 与末尾 flush 用同一 runId 寻址同一会话聚合器（否则 settle 落到 "offline_undefined"
+    // 而 flush 用真实 runId，会话错配 → 不发射聚合事件）。
+    settleOfflineTimeline(seconds, gains, Object.assign({}, context, { runId: runId }));
     // Batch C-9：真实结算成功完成后、_offlineEventBatch 恢复前，严格 emit 一次唯一完成事件
     // （沿用同一 runId/eventId 链）。settleOfflineTimeline 抛出异常时不会执行到此行，
     // 不伪造完成事件。calculateOfflineGains / forceOfflineTest / 直接 applyOfflineGains
     // 均经由本入口，禁止在其他位置复制发射。rawSeconds 使用入口处唯一严格归一化结果
     // normalizedRawSeconds（非负有限 number、未封顶、不整数化），settledSeconds 为实际
     // 结算秒数（已按 MAX_OFFLINE_SECONDS 封顶）。禁止此处再做 Number()/|| 0 等宽松转换。
+    // Batch S：离线战斗聚合事件（必须早于 settlementCompleted，全离线恰一次）
+    if (typeof OfflineCombatSystem !== "undefined") {
+      OfflineCombatSystem.flush(gameState, { runId, gains, offlineEnd: Date.now() });
+    }
     emitOfflineGameEvent("offline:settlementCompleted", {
       rawSeconds: normalizedRawSeconds,
       settledSeconds: seconds

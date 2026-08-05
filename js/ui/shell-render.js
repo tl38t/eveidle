@@ -1839,6 +1839,9 @@ let _tutorialWidgetBranch = "prologue"; // 仅 UI 临时变量，不写 gameStat
 let _tutorialWidgetUpdateUIWrapped = false;
 let _tutorialWidgetListenersInstalled = false;
 let _tutorialWidgetRenderQueued = false;
+let _tutorialWidgetDragInstalled = false;
+const TUTORIAL_WIDGET_POS_KEY = "eveidle.tutorialWidgetPos";
+const TUTORIAL_WIDGET_DRAG_MIN_W = 721; // 仅桌面端（>720px）允许拖动，移动端保留底栏布局
 
 function getTutorialSystemGlobal() {
   if (typeof window !== "undefined" && window.TutorialSystem && typeof window.TutorialSystem.getTutorialDisplayState === "function") return window.TutorialSystem;
@@ -1861,6 +1864,79 @@ function twEsc(s) {
 }
 
 function twSet(el, html) { if (el) el.innerHTML = html; }
+
+// 拖动支持：桌面端用标题栏作为抓手，把原 right 锚点折算成 left/top，clamp 到视口，位置写入 localStorage 持久化。
+// 移动端（≤720px）不启用，保留底栏布局（CSS 已用 !important 兜底）。
+function twInstallDrag() {
+  if (_tutorialWidgetDragInstalled) return;
+  _tutorialWidgetDragInstalled = true;
+  const widget = document.getElementById("tutorial-widget");
+  const header = document.getElementById("tutorial-widget-header");
+  if (!widget || !header) return;
+
+  const isDesktop = () => (typeof window !== "undefined" && window.innerWidth >= TUTORIAL_WIDGET_DRAG_MIN_W);
+  const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
+
+  // 还原已保存位置（仅桌面端）
+  if (isDesktop()) {
+    try {
+      const saved = JSON.parse((typeof localStorage !== "undefined" ? localStorage.getItem(TUTORIAL_WIDGET_POS_KEY) : null) || "null");
+      if (saved && typeof saved.left === "number" && typeof saved.top === "number" && isFinite(saved.left) && isFinite(saved.top)) {
+        widget.style.right = "auto";
+        widget.style.left = saved.left + "px";
+        widget.style.top = saved.top + "px";
+      }
+    } catch (e) { /* 忽略损坏的存档 */ }
+  }
+
+  let dragging = false, startX = 0, startY = 0, originLeft = 0, originTop = 0, moved = false;
+
+  const onDown = (e) => {
+    if (!isDesktop()) return;
+    if (e.button !== undefined && e.button !== 0) return;            // 仅左键
+    if (e.target && e.target.closest && e.target.closest("#tutorial-widget-toggle")) return; // 收起按钮不触发
+    const rect = widget.getBoundingClientRect();
+    if (widget.style.right !== "auto") {                            // 首次拖动：right → left 折算
+      widget.style.right = "auto";
+      widget.style.left = rect.left + "px";
+      widget.style.top = rect.top + "px";
+    }
+    dragging = true; moved = false;
+    startX = e.clientX; startY = e.clientY;
+    originLeft = rect.left; originTop = rect.top;
+    widget.classList.add("tw-dragging");
+    if (header.setPointerCapture && e.pointerId !== undefined) { try { header.setPointerCapture(e.pointerId); } catch (_) {} }
+    e.preventDefault();
+  };
+
+  const onMove = (e) => {
+    if (!dragging) return;
+    const dx = e.clientX - startX, dy = e.clientY - startY;
+    if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;     // 移动阈值，避免误触
+    moved = true;
+    const w = widget.offsetWidth, h = widget.offsetHeight;
+    const left = clamp(originLeft + dx, 0, (window.innerWidth || document.documentElement.clientWidth) - w);
+    const top = clamp(originTop + dy, 0, (window.innerHeight || document.documentElement.clientHeight) - h);
+    widget.style.left = left + "px";
+    widget.style.top = top + "px";
+  };
+
+  const onUp = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    widget.classList.remove("tw-dragging");
+    if (header.releasePointerCapture && e.pointerId !== undefined) { try { header.releasePointerCapture(e.pointerId); } catch (_) {} }
+    try {
+      const left = parseFloat(widget.style.left), top = parseFloat(widget.style.top);
+      if (isFinite(left) && isFinite(top)) localStorage.setItem(TUTORIAL_WIDGET_POS_KEY, JSON.stringify({ left, top }));
+    } catch (e2) { /* 忽略隐私模式写入失败 */ }
+  };
+
+  header.addEventListener("pointerdown", onDown);
+  header.addEventListener("pointermove", onMove);
+  header.addEventListener("pointerup", onUp);
+  header.addEventListener("pointercancel", onUp);
+}
 
 // 统一经 dispatchGameAction 派发新手任务动作；失败显示简短中文 toast（不吞掉 reason）
 function twDispatch(action) {
@@ -2106,6 +2182,7 @@ function installTutorialWidgetListeners() {
     _tutorialWidgetCollapsed = !_tutorialWidgetCollapsed;
     renderTutorialWidget();
   });
+  twInstallDrag();
   const tabsEl = document.getElementById("tutorial-widget-branch-tabs");
   if (tabsEl) tabsEl.addEventListener("click", (event) => {
     const btn = event.target && event.target.closest ? event.target.closest("[data-branch]") : null;
