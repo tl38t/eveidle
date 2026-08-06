@@ -203,6 +203,8 @@
 
   /* ===== 仓库面板 ===== */
   .cargo-panel { flex: 1; display: flex; flex-direction: column; }
+  /* 让面板体成为有界弹性列，仓库列表才能内部滚动（否则 .cargo-list 的 flex:1 失效、被面板 overflow:hidden 裁掉） */
+  #cargo-panel > .panel-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
   .cargo-tabs {
     display: flex; gap: 4px; flex-wrap: wrap;
     margin-bottom: 12px; padding-bottom: 8px;
@@ -215,56 +217,127 @@
 
   .cargo-list {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 6px; overflow-y: auto; flex: 1;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 10px; overflow-y: auto; flex: 1; min-height: 0;
     align-content: start;
   }
-  .cargo-item {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 10px; background: #0f141e;
-    border: 1px solid #1a2535; border-radius: 3px;
-    font-size: 12px;
+  .cargo-card {
+    position: relative; background: #0f141e; border: 1px solid #1a2535;
+    border-radius: 6px; padding: 12px 12px 10px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 8px; min-height: 116px;
+    transition: border-color .15s, transform .15s, box-shadow .15s;
   }
-  .cargo-item .ci-icon { font-size: 16px; flex-shrink: 0; }
-  .cargo-item .ci-content { min-width: 0; flex: 1; display: flex; flex-direction: column; gap: 2px; }
-  .cargo-item .ci-name { color: #c8d0d8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .cargo-item .ci-qty  { color: #e8d8a0; font-weight: 600; flex-shrink: 0; }
-  .cargo-item .ci-details { color: #6a7a8e; font-size: 10px; line-height: 1.25; white-space: normal; }
-  .cargo-item.equipment-item { align-items: flex-start; min-height: 48px; }
-  .cargo-item.equipment-item .ci-qty { padding-top: 1px; }
-  .cargo-item.empty { opacity: 0.3; }
+  .cargo-card:hover { border-color: #5da8d4; transform: translateY(-2px); box-shadow: 0 4px 14px rgba(93,168,212,0.15); }
+  .cargo-card .cc-cat { position: absolute; top: 0; left: 0; font-size: 10px; color: #6a7a8e;
+    border: 1px solid #1a2535; border-top: none; border-left: none; border-bottom-right-radius: 5px;
+    padding: 1px 7px; background: #131a26; }
+  .cargo-card .cc-top { display: flex; align-items: center; gap: 8px; }
+  .cargo-card .cc-icon { width: 34px; height: 34px; flex-shrink: 0; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center; font-size: 18px;
+    background: #0a0e14; border: 1px solid #1a2535; }
+  .cargo-card .cc-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; color: #dde4ea;
+    line-height: 1.25; word-break: break-word; }
+  .cargo-card .cc-foot { display: flex; align-items: center; font-size: 11px; color: #6a7a8e; }
+  .cargo-card .cc-qty { margin-top: auto; text-align: right; font-size: 13px; font-weight: 700; color: #e8d8a0;
+    font-variant-numeric: tabular-nums; }
+  .cargo-card[data-cat="矿石"] { border-left: 3px solid #8a9bb0; }
+  .cargo-card[data-cat="矿物"] { border-left: 3px solid #5da8d4; }
+  .cargo-card[data-cat="装备"] { border-left: 3px solid #d4a843; }
+  .cargo-card[data-cat="特殊"] { border-left: 3px solid #c87ad4; }
+  .cargo-card[data-cat="气体"] { border-left: 3px solid #7ad4b0; }
+  .cargo-card[data-cat="行星产物"] { border-left: 3px solid #9bb0d4; }
+  .cargo-card[data-cat="月球"] { border-left: 3px solid #d4a87a; }
+  .cargo-card[data-cat="组件"] { border-left: 3px solid #a0a8b8; }
+  .cargo-card[data-cat="消耗品"] { border-left: 3px solid #e8d8a0; }
+  /* 顶栏资源条（.res-item.cargo-item）仅用此类做点击手感，仓库卡片已改用 .cargo-card，此处仅恢复指针/hover */
+  .cargo-item { cursor: pointer; }
 
-  /* ===== 装备强化面板 ===== */
+  /* ===== 装备强化面板（牛牛式：按型号×等级单元格 + 居中弹窗） ===== */
   .equipment-enhancement-list {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 8px; overflow-y: auto; flex: 1;
-    align-content: start;
+    display: flex; flex-direction: column; gap: 8px;
+    overflow-y: auto; flex: 1; min-height: 0;
   }
-  .enh-card { background: #0f141e; border: 1px solid #1a2535; border-radius: 4px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
-  .enh-card-head { display: flex; align-items: center; gap: 6px; border-bottom: 1px solid #1a2535; padding-bottom: 5px; }
-  .enh-card-head .enh-icon { font-size: 16px; }
-  .enh-card-head .enh-name { color: #c8d0d8; font-weight: 600; flex: 1; font-size: 13px; }
-  .enh-card-head .enh-cat { font-size: 10px; color: #6a7a8e; border: 1px solid #273b4d; border-radius: 3px; padding: 1px 5px; }
-  .enh-instance { background: #131a26; border: 1px solid #1f2b3a; border-radius: 3px; padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
-  .enh-instance-head { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-  .enh-level { color: #d4a843; font-weight: 700; }
-  .enh-bonus { color: #4db8b8; font-size: 11px; }
-  .enh-preview { color: #6a7a8e; font-size: 11px; }
-  .enh-tag.milestone { color: #e57a7a; font-size: 10px; border: 1px solid #5a2a2a; background: #2a1515; border-radius: 3px; padding: 1px 5px; }
-  .enh-row { display: flex; gap: 8px; font-size: 11px; }
-  .enh-row .enh-label { color: #6a7a8e; }
-  .enh-row .enh-success { color: #6fb86f; font-weight: 600; }
-  .enh-costs { display: flex; flex-wrap: wrap; gap: 4px; }
-  .enh-cost { font-size: 10px; color: #8aa0b8; background: #0f1822; border: 1px solid #1f2b3a; border-radius: 3px; padding: 2px 6px; }
-  .enh-cost small { color: #6a7a8e; }
-  .enh-cost.insufficient { color: #e57a7a; border-color: #5a2a2a; }
-  .enh-extra { margin-top: 2px; }
-  .enh-btn { margin-top: 4px; font-size: 12px; padding: 4px 8px; }
-  .enh-stack { background: #10161f; }
-  .enh-installed { display: flex; flex-direction: column; gap: 2px; }
-  .enh-installed-line { color: #6a7a8e; font-size: 10px; }
-  .equipment-enhancement-list .cargo-empty { grid-column: 1 / -1; color: #6a7a8e; padding: 24px; text-align: center; }
+  .eem-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .eem-search { flex: 1; min-width: 140px; max-width: 260px; }
+  .eem-filters { display: inline-flex; flex-wrap: wrap; border: 1px solid #1c2632; border-radius: 5px; overflow: hidden; }
+  .eem-filters .seg-tab { --seg-accent: #d4a843; padding: 5px 12px; }
+  .equip-enh-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 8px; overflow-y: auto; align-content: start; flex: 1; min-height: 0; padding-right: 2px;
+  }
+  .equip-enh-cell {
+    background: #0f141e; border: 1px solid #1a2535; border-radius: 6px; padding: 8px;
+    display: flex; flex-direction: column; gap: 6px; cursor: pointer;
+    transition: border-color .12s, transform .08s, background .12s;
+  }
+  .equip-enh-cell:hover { border-color: #5da8d4; background: #121b27; transform: translateY(-1px); }
+  .equip-enh-cell.locked { opacity: 0.55; }
+  .equip-enh-cell.locked:hover { border-color: #3a4658; transform: none; }
+  .equip-enh-cell.nores { border-color: #4a3a2a; }
+  .eec-icon { font-size: 20px; }
+  .eec-info { display: flex; align-items: baseline; gap: 6px; }
+  .eec-name { color: #c8d0d8; font-weight: 600; font-size: 13px; flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .eec-level { color: #d4a843; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+  .eec-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+  .eem-badge { font-size: 10px; border-radius: 3px; padding: 1px 5px; border: 1px solid #273b4d; color: #8aa0b8; }
+  .eem-badge.stock { color: #6fb86f; border-color: #2a4a2a; }
+  .eem-badge.installed { color: #d4a843; border-color: #4a3f2a; }
+  .eem-badge.milestone { color: #e57a7a; border-color: #5a2a2a; }
+  .eec-count { color: #9fb0c4; font-size: 11px; }
+  .equipment-enhancement-list .cargo-empty { color: #6a7a8e; padding: 24px; text-align: center; }
+
+  /* ---- 强化弹窗 ---- */
+  .equip-enh-modal-backdrop {
+    position: fixed; inset: 0; background: rgba(4,8,14,0.62);
+    display: none; align-items: center; justify-content: center; z-index: 2200; padding: 16px;
+  }
+  .equip-enh-modal {
+    width: 440px; max-width: 94vw; max-height: 86vh; overflow-y: auto;
+    background: #0e141d; border: 1px solid #25323f; border-radius: 10px;
+    box-shadow: 0 18px 50px rgba(0,0,0,0.55); display: flex; flex-direction: column;
+    animation: eem-pop .14s ease-out;
+  }
+  @keyframes eem-pop { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: scale(1); } }
+  .eem-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid #1c2632; }
+  .eem-icon { font-size: 26px; }
+  .eem-title-wrap { flex: 1; min-width: 0; }
+  .eem-title { color: #e6edf4; font-weight: 700; font-size: 15px; }
+  .eem-level { color: #d4a843; }
+  .eem-sub { color: #8aa0b8; font-size: 11px; margin-top: 2px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .eem-close { background: transparent; border: none; color: #6a7a8e; font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+  .eem-close:hover { color: #c8d0d8; background: #1a2535; }
+  .eem-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
+  .eem-status { display: flex; flex-direction: column; gap: 8px; }
+  .eem-status-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #b8c4d2; }
+  .eem-dot { font-size: 10px; border-radius: 3px; padding: 1px 6px; border: 1px solid #273b4d; color: #8aa0b8; flex-shrink: 0; }
+  .eem-dot.stock { color: #6fb86f; border-color: #2a4a2a; }
+  .eem-dot.installed { color: #d4a843; border-color: #4a3f2a; }
+  .eem-dot.none { color: #e0887e; border-color: #5a2a2a; }
+  .eem-installed-ships { color: #6a7a8e; font-size: 11px; padding-left: 46px; line-height: 1.4; }
+  .eem-upgrade { background: #0b1118; border: 1px solid #1c2632; border-radius: 8px; padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+  .eem-upgrade-title { color: #c8d0d8; font-weight: 600; font-size: 13px; }
+  .eem-row { display: flex; justify-content: space-between; font-size: 12px; color: #8aa0b8; }
+  .eem-row b { color: #c8d0d8; }
+  .eem-costs-label { color: #6a7a8e; font-size: 11px; margin-top: 2px; }
+  .eem-costs { display: flex; flex-wrap: wrap; gap: 4px; }
+  .eem-cost { font-size: 11px; color: #8aa0b8; background: #0f1822; border: 1px solid #1f2b3a; border-radius: 3px; padding: 2px 6px; }
+  .eem-cost small { color: #6a7a8e; }
+  .eem-cost.insufficient { color: #e57a7a; border-color: #5a2a2a; }
+  .eem-extra { margin-top: 2px; }
+  .eem-tag.milestone { color: #e57a7a; font-size: 10px; border: 1px solid #5a2a2a; background: #2a1515; border-radius: 3px; padding: 1px 5px; }
+  .eem-foot { padding: 12px 16px; border-top: 1px solid #1c2632; display: flex; flex-direction: column; gap: 8px; }
+  .eem-warn { color: #e0887e; font-size: 11px; }
+  .eem-enhance { width: 100%; justify-content: center; }
+  .eem-section { display: flex; flex-direction: column; gap: 8px; }
+  .eem-sec-title { margin: 0; font-size: 11px; color: #6a7a8e; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
+  .eem-desc { font-size: 12.5px; line-height: 1.6; color: #b8c4d2; white-space: normal; word-break: break-word; }
+  .eem-source { display: flex; align-items: center; gap: 10px; background: #0b1118; border: 1px solid #1c2632; border-radius: 6px; padding: 10px 12px; }
+  .eem-src-icon { width: 30px; height: 30px; border-radius: 5px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; background: #0a0e14; border: 1px solid #1c2632; color: #5da8d4; }
+  .eem-src-text { flex: 1; line-height: 1.35; }
+  .eem-src-label { font-size: 11px; color: #6a7a8e; }
+  .eem-src-page { font-size: 14px; font-weight: 600; color: #dde4ea; }
+  .eem-jump { width: 100%; justify-content: center; margin-top: 2px; }
 
 
   /* ===== 采矿效率与进度 ===== */

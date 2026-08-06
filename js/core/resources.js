@@ -194,8 +194,15 @@ const ResourceRegistry = (() => {
     if (parsed) {
       if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getResourceName === "function") {
         const renamed = DisplayNames.getResourceName(parsed.namespace, parsed.key, null);
-        // 仅 DisplayNames 明确给出新映射（非 null / 非 undefined / 非原 key）时采用
-        if (renamed !== null && renamed !== undefined && renamed !== parsed.key) return renamed;
+        if (renamed !== null && renamed !== undefined) {
+          // DisplayNames 明确给出新映射（与原 key 不同）——直接采用
+          if (renamed !== parsed.key) return renamed;
+          // renamed === parsed.key：可能是 ore/mineral 未映射（应回落 defName），
+          // 也可能是 moon/gas/planetary 这类「裸键即最终显示名、且无专门 IP 映射」的命名空间。
+          // 后者直接在显示层采用裸键，避免把 "moon:镓" 这类带命名空间前缀的 id 泄漏到界面。
+          const BARE_KEY_NAMESPACES = ["moon", "gas", "planetary"];
+          if (BARE_KEY_NAMESPACES.includes(parsed.namespace)) return renamed;
+        }
       }
       if (defName) return defName;
       return id;

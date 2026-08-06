@@ -118,7 +118,9 @@ const optionalIds = new Set([
   "bar-archaeology",
   // 动态创建的 ID：research-active-* 由 shell-render.js 的 renderResearchActive 运行时 innerHTML 生成
   "research-active-name", "research-active-progress", "research-active-applied",
-  "research-active-btn-max", "research-active-btn-cancel"
+  "research-active-btn-max", "research-active-btn-cancel",
+  // 动态创建的 ID：由 shell-render.js 的装备强化与物品详情弹窗运行时创建
+  "equip-enh-grid", "equip-enhance-modal", "item-detail-modal"
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);

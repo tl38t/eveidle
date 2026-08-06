@@ -101,53 +101,246 @@ function renderCargoPage(filter) {
   const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = "物资总量：" + display.total.toLocaleString();
   document.querySelectorAll(".cargo-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.filter === display.filter));
   const list = document.getElementById("cargo-list"); if (!list) return display;
-  list.style.display = "";
-  list.innerHTML = display.items.length ? display.items.map(item => `<div class="cargo-item${item.details ? " equipment-item" : ""}"${item.details ? ` title="${item.name}\n${item.details}"` : ""}><span class="ci-icon">${item.icon}</span><span class="ci-content"><span class="ci-name">${item.name}</span>${item.details ? `<span class="ci-details">${item.details}</span>` : ""}</span><span class="ci-qty">${item.quantity.toLocaleString()}</span></div>`).join("") : `<div class="cargo-empty">${display.emptyText}</div>`;
-  renderEquipmentEnhancementList(display.filter === "equipment");
+  const isEquipmentTab = display.filter === "equipment";
+  // 装备页由强化网格接管展示，隐藏冗余的原始物品列表，避免同一批装备名字出现两遍
+  list.style.display = isEquipmentTab ? "none" : "";
+  if (!isEquipmentTab) {
+    currentCargoItems = display.items;
+    list.innerHTML = display.items.length ? display.items.map((item, idx) => `<div class="cargo-card" data-cat="${escapeAchievementText(item.categoryLabel)}" data-ci="${idx}">
+      <span class="cc-cat">${escapeAchievementText(item.categoryLabel)}</span>
+      <div class="cc-top"><span class="cc-icon">${item.icon}</span><span class="cc-name">${escapeAchievementText(item.name)}</span></div>
+      <div class="cc-foot"><span class="cc-src">${escapeAchievementText(item.source.pageLabel)}</span></div>
+      <div class="cc-qty">×${item.quantity.toLocaleString()}</div>
+    </div>`).join("") : `<div class="cargo-empty">${display.emptyText}</div>`;
+    if (!cargoCardBound) {
+      list.addEventListener("click", event => {
+        const card = event.target.closest(".cargo-card"); if (!card) return;
+        const item = currentCargoItems[Number(card.dataset.ci)];
+        if (item) openItemDetailModal(item);
+      });
+      cargoCardBound = true;
+    }
+  }
+  renderEquipmentEnhancementList(isEquipmentTab);
   return display;
 }
 
+/* 仓库物品方块卡点击 → 通用物品弹窗（装备=介绍+强化+出产；非装备=介绍+出产） */
+let currentCargoItems = [];
+let cargoCardBound = false;
+
+/* ---- 装备强化：按 (型号, 等级) 折叠成单元格 + 居中弹窗（牛牛式） ---- */
+let equipEnhanceFilter = "all";     // all | enhanceable | installed | unenhanced
+let equipEnhanceSearch = "";
+let equipEnhanceModal = null;        // { itemId, level } 或 null
+
 function renderEquipmentEnhancementList(visible) {
   const panel = document.getElementById("equipment-enhancement-list"); if (!panel) return;
-  if (!visible) { panel.style.display = "none"; panel.innerHTML = ""; return; }
+  if (!visible) { panel.style.display = "none"; panel.innerHTML = ""; closeEquipEnhanceModal(); return; }
   panel.style.display = "";
   const display = getEquipmentEnhancementListDisplayState(gameState);
   if (!display.entries.length) {
     panel.innerHTML = `<div class="cargo-empty">暂无可强化装备（制造或获取装备后将显示于此）</div>`;
     return;
   }
-  const cardHtml = entry => {
-    const instanceBlocks = entry.instanceCards.map(inst => {
-      const cost = inst.costRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.name} ${r.need}<small>(${r.stock})</small></span>`).join("");
-      const extra = inst.extraRows.length ? `<div class="enh-extra">${inst.extraRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.label} ×${r.need}<small>(${r.have})</small></span>`).join("")}</div>` : "";
-      const milestoneTag = inst.isMilestone ? `<span class="enh-tag milestone">里程碑 Lv.${inst.level + 1}</span>` : "";
-      return `<div class="enh-instance">
-        <div class="enh-instance-head"><span class="enh-level">+${inst.level}</span><span class="enh-bonus">当前加成 +${inst.bonusPercent}%</span><span class="enh-preview">升级 → +${inst.previewBonusPercent}%</span>${milestoneTag}</div>
-        <div class="enh-row"><span class="enh-label">成功率</span><span class="enh-success" title="基础${Math.round(inst.successBreakdown.base*100)}% · 技能加成+${Math.round(inst.successBreakdown.skillBonus*1000)/10}% · 强化惩罚−${Math.round(inst.successBreakdown.levelPenalty*1000)/10}% · 最终${inst.successPercent}%">${inst.successPercent}%</span></div>
-        <div class="enh-costs">${cost}${extra}</div>
-        <button class="btn primary enh-btn" data-enhance-target="${String(inst.instanceId)}" ${inst.canEnhance ? "" : "disabled"}>强化此件 (Lv.${inst.level} → ${inst.level + 1})</button>
-      </div>`;
-    }).join("");
-    const stackBlock = entry.stack ? (() => {
-      const disp = entry.stack;
-      const cost = disp.costRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.name} ${r.need}<small>(${r.stock})</small></span>`).join("");
-      const extra = disp.extraRows.length ? `<div class="enh-extra">${disp.extraRows.map(r => `<span class="enh-cost${r.enough ? "" : " insufficient"}">${r.label} ×${r.need}<small>(${r.have})</small></span>`).join("")}</div>` : "";
-      const milestoneTag = disp.isMilestone ? `<span class="enh-tag milestone">里程碑 Lv.1</span>` : "";
-      return `<div class="enh-instance enh-stack">
-        <div class="enh-instance-head"><span class="enh-level">库存新品 ×${disp.count}</span><span class="enh-preview">强化后 +${disp.previewBonusPercent}%</span>${milestoneTag}</div>
-        <div class="enh-row"><span class="enh-label">成功率</span><span class="enh-success" title="基础${Math.round(disp.successBreakdown.base*100)}% · 技能加成+${Math.round(disp.successBreakdown.skillBonus*1000)/10}% · 强化惩罚−${Math.round(disp.successBreakdown.levelPenalty*1000)/10}% · 最终${disp.successPercent}%">${disp.successPercent}%</span></div>
-        <div class="enh-costs">${cost}${extra}</div>
-        <button class="btn primary enh-btn" data-enhance-target="${encodeURIComponent(disp.targetRef)}" ${disp.canEnhance ? "" : "disabled"}>强化一件 (+0 → +1)</button>
-      </div>`;
-    })() : "";
-    const installedBlock = entry.installed.length ? `<div class="enh-installed">${entry.installed.map(inst => `<span class="enh-installed-line">🔒 已安装至 ${inst.shipName} (+${inst.level}) · 需先卸载</span>`).join("")}</div>` : "";
-    return `<div class="enh-card">
-      <div class="enh-card-head"><span class="enh-icon">${entry.icon}</span><span class="enh-name">${entry.name}</span><span class="enh-cat">${entry.categoryLabel}</span></div>
-      ${instanceBlocks}${stackBlock}${installedBlock}
+  const filters = [["all","全部"],["enhanceable","可强化"],["installed","已装载"],["unenhanced","未强化"]];
+  panel.innerHTML =
+    `<div class="eem-toolbar">
+       <input class="u-select eem-search" type="text" placeholder="搜索装备名 / 分类…" data-equip-search value="${escapeAchievementText(equipEnhanceSearch)}" />
+       <div class="eem-filters">
+         ${filters.map(([id,label]) => `<button class="seg-tab eem-filter${equipEnhanceFilter===id?" active":""}" data-equip-filter="${id}">${label}</button>`).join("")}
+       </div>
+     </div>
+     <div class="equip-enh-grid" id="equip-enh-grid"></div>`;
+  renderEquipEnhanceGrid();
+}
+
+function renderEquipEnhanceGrid() {
+  const grid = document.getElementById("equip-enh-grid"); if (!grid) return;
+  const display = getEquipmentEnhancementListDisplayState(gameState);
+  const term = (equipEnhanceSearch || "").trim().toLowerCase();
+  const filtered = display.entries.filter(e => {
+    if (equipEnhanceFilter === "enhanceable" && e.stockCount === 0) return false;
+    if (equipEnhanceFilter === "installed" && e.installedCount === 0) return false;
+    if (equipEnhanceFilter === "unenhanced" && e.level !== 0) return false;
+    if (term && !(e.name.toLowerCase().includes(term) || (e.categoryLabel || "").toLowerCase().includes(term))) return false;
+    return true;
+  });
+  grid.innerHTML = filtered.length
+    ? filtered.map(equipCellHtml).join("")
+    : `<div class="cargo-empty">没有符合条件的装备</div>`;
+}
+
+function equipCellHtml(e) {
+  const levelLabel = e.isUnenhanced ? "未强化" : `+${e.level}`;
+  const badges = [];
+  if (e.stockCount > 0) badges.push(`<span class="eem-badge stock">库存 ${e.stockCount}</span>`);
+  if (e.installedCount > 0) badges.push(`<span class="eem-badge installed">已装 ${e.installedCount}</span>`);
+  if (e.isMilestone) badges.push(`<span class="eem-badge milestone">里程碑</span>`);
+  const lockCls = e.stockCount === 0 ? " locked" : (e.canEnhance ? "" : " nores");
+  return `<div class="equip-enh-cell${lockCls}" data-equip-cell="${encodeURIComponent(e.itemId)}|${e.level}" title="点击查看强化详情">
+    <div class="eec-icon">${e.icon}</div>
+    <div class="eec-info">
+      <div class="eec-name">${escapeAchievementText(e.name)}</div>
+      <div class="eec-level">${levelLabel}</div>
+    </div>
+    <div class="eec-badges">${badges.join("")}</div>
+    <div class="eec-count">${levelLabel} ×${e.totalCount}</div>
+  </div>`;
+}
+
+function openEquipEnhanceModal(itemId, level) {
+  const display = getEquipmentEnhancementListDisplayState(gameState);
+  const cell = display.entries.find(e => e.itemId === itemId && e.level === level);
+  if (!cell) { closeEquipEnhanceModal(); return; }
+  equipEnhanceModal = { itemId, level };
+  const eqEnt = EQUIPMENT_DB[cell.itemId];
+  const descText = eqEnt ? getEquipmentAttributeText(eqEnt) : "";
+  const src = { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" };
+  let backdrop = document.getElementById("equip-enhance-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "equip-enhance-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", event => { if (event.target === backdrop) closeEquipEnhanceModal(); });
+    backdrop._esc = event => { if (event.key === "Escape" && backdrop.style.display === "flex") closeEquipEnhanceModal(); };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  const rateColor = cell.successPercent >= 75 ? "#9be8a8" : cell.successPercent >= 60 ? "#d4a843" : "#e0887e";
+  const levelLabel = cell.isUnenhanced ? "未强化" : `+${cell.level}`;
+  const levelCode = cell.isUnenhanced ? "+0" : `+${cell.level}`;
+  const nextLabel = cell.isUnenhanced ? "+1" : `+${cell.level + 1}`;
+  const costHtml = cell.costRows.map(r => `<span class="eem-cost${r.enough ? "" : " insufficient"}">${escapeAchievementText(r.name)} ${r.need}<small>(${r.stock})</small></span>`).join("");
+  const extraHtml = cell.extraRows.length ? `<div class="eem-extra">${cell.extraRows.map(r => `<span class="eem-cost${r.enough ? "" : " insufficient"}">${escapeAchievementText(r.label)} ×${r.need}<small>(${r.have})</small></span>`).join("")}</div>` : "";
+  const milestoneTag = cell.isMilestone ? `<span class="eem-tag milestone">里程碑 Lv.${cell.level + 1}</span>` : "";
+  const stockHtml = cell.stockCount
+    ? `<div class="eem-status-row"><span class="eem-dot stock">库存</span><span>库存 ${cell.stockCount} 件 ${levelLabel}（未装载，可强化）</span></div>`
+    : `<div class="eem-status-row"><span class="eem-dot none">无库存</span><span>无未装载件 —— 需先到船坞卸载已装载的 ${levelLabel} 装备</span></div>`;
+  const installedHtml = cell.installedCount
+    ? `<div class="eem-status-row"><span class="eem-dot installed">已装载</span><span>已装载 ${cell.installedCount} 件 ${levelLabel}（在船上）</span></div>
+       <div class="eem-installed-ships">🔒 ${cell.installedShips.map(s => escapeAchievementText(s)).join("、")}</div>`
+    : "";
+  const locked = cell.stockCount === 0;
+  const btnLabel = locked ? "无可用件可强化" : `强化 ${levelCode} → ${nextLabel}`;
+  const btnDisabled = (locked || !cell.canEnhance) ? "disabled" : "";
+  const btnWarn = (!locked && !cell.canEnhance) ? `<div class="eem-warn">材料不足或缺少里程碑耗材，无法强化</div>` : "";
+  const targetRefAttr = cell.targetRef ? encodeURIComponent(cell.targetRef) : "";
+
+  backdrop.innerHTML = `
+    <div class="equip-enh-modal" role="dialog" aria-modal="true">
+      <div class="eem-head">
+        <span class="eem-icon">${cell.icon}</span>
+        <div class="eem-title-wrap">
+          <div class="eem-title">${escapeAchievementText(cell.name)} <span class="eem-level">${levelLabel}</span></div>
+          <div class="eem-sub">${escapeAchievementText(cell.categoryLabel)} · 当前加成 +${cell.bonusPercent}%${milestoneTag}</div>
+        </div>
+        <button class="eem-close" data-eem-close aria-label="关闭">✕</button>
+      </div>
+      <div class="eem-body">
+        <div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(descText)}</div></div>
+        <div class="eem-status">${stockHtml}${installedHtml}</div>
+        <div class="eem-upgrade">
+          <div class="eem-upgrade-title">升级 ${levelCode} → ${nextLabel}</div>
+          <div class="eem-row"><span>当前加成</span><b>+${cell.bonusPercent}%</b></div>
+          <div class="eem-row"><span>升级后加成</span><b>+${cell.previewBonusPercent}%</b></div>
+          <div class="eem-row"><span>成功率</span><b style="color:${rateColor}">${cell.successPercent}%</b></div>
+          <div class="eem-costs-label">消耗材料</div>
+          <div class="eem-costs">${costHtml}${extraHtml}</div>
+        </div>
+        <div class="eem-section"><h3 class="eem-sec-title">出产位置</h3>
+          <div class="eem-source"><span class="eem-src-icon"><i class="${src.icon}"></i></span>
+            <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
+          <button class="btn primary eem-jump" data-eem-jump="${src.pageId}">跳转至「${escapeAchievementText(src.pageLabel)}」页面</button>
+        </div>
+      </div>
+      <div class="eem-foot">
+        ${btnWarn}
+        <button class="btn primary eem-enhance" data-enhance-target="${targetRefAttr}" ${btnDisabled}>${btnLabel}</button>
+      </div>
     </div>`;
-  };
-  panel.innerHTML = display.entries.map(cardHtml).join("");
-  return display;
+  backdrop.style.display = "flex";
+
+  const closeBtn = backdrop.querySelector("[data-eem-close]");
+  if (closeBtn) closeBtn.addEventListener("click", closeEquipEnhanceModal);
+  const enhBtn = backdrop.querySelector(".eem-enhance");
+  if (enhBtn && !enhBtn.disabled) {
+    enhBtn.addEventListener("click", () => {
+      const ref = decodeURIComponent(enhBtn.dataset.enhanceTarget);
+      const before = equipEnhanceModal;
+      const res = enhanceEquipmentFromWarehouse(ref);
+      if (res && res.changed) {
+        const newLevel = res.success ? res.toLevel : res.fromLevel;
+        openEquipEnhanceModal(before.itemId, newLevel); // 自动跳到新等级格
+      }
+    });
+  }
+  const jumpBtn = backdrop.querySelector("[data-eem-jump]");
+  if (jumpBtn) jumpBtn.addEventListener("click", () => { closeEquipEnhanceModal(); twGoToTarget(jumpBtn.dataset.eemJump); });
+}
+
+function closeEquipEnhanceModal() {
+  equipEnhanceModal = null;
+  const backdrop = document.getElementById("equip-enhance-modal");
+  if (backdrop) {
+    backdrop.style.display = "none";
+    backdrop.innerHTML = "";
+  }
+}
+
+/* 通用物品详情弹窗：装备 → 解析到强化弹窗（含强化+介绍+出产）；非装备 → 介绍+出产 */
+function openItemDetailModal(item) {
+  if (item.category === "equipment" && item.itemId) {
+    const disp = getEquipmentEnhancementListDisplayState(gameState);
+    const entries = disp.entries.filter(e => e.itemId === item.itemId);
+    if (entries.length) {
+      entries.sort((a, b) => (b.stockCount > 0 ? 1 : 0) - (a.stockCount > 0 ? 1 : 0) || b.level - a.level);
+      openEquipEnhanceModal(entries[0].itemId, entries[0].level);
+    } else {
+      closeItemDetailModal();
+    }
+    return;
+  }
+  let backdrop = document.getElementById("item-detail-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "item-detail-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", event => { if (event.target === backdrop) closeItemDetailModal(); });
+    backdrop._esc = event => { if (event.key === "Escape" && backdrop.style.display === "flex") closeItemDetailModal(); };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  const src = item.source || { pageId:"station", pageLabel:"空间站", icon:"fa-regular fa-building" };
+  backdrop.innerHTML = `
+    <div class="equip-enh-modal" role="dialog" aria-modal="true">
+      <div class="eem-head">
+        <span class="eem-icon">${item.icon}</span>
+        <div class="eem-title-wrap">
+          <div class="eem-title">${escapeAchievementText(item.name)}</div>
+          <div class="eem-sub">${escapeAchievementText(item.categoryLabel || item.category)}</div>
+        </div>
+        <button class="eem-close" data-idm-close aria-label="关闭">✕</button>
+      </div>
+      <div class="eem-body">
+        <div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(item.description)}</div></div>
+        <div class="eem-section"><h3 class="eem-sec-title">出产位置</h3>
+          <div class="eem-source"><span class="eem-src-icon"><i class="${src.icon}"></i></span>
+            <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
+          <button class="btn primary eem-jump" data-idm-jump="${src.pageId}">跳转至「${escapeAchievementText(src.pageLabel)}」页面</button>
+        </div>
+      </div>
+    </div>`;
+  backdrop.style.display = "flex";
+  const closeBtn = backdrop.querySelector("[data-idm-close]");
+  if (closeBtn) closeBtn.addEventListener("click", closeItemDetailModal);
+  const jumpBtn = backdrop.querySelector("[data-idm-jump]");
+  if (jumpBtn) jumpBtn.addEventListener("click", () => { closeItemDetailModal(); twGoToTarget(jumpBtn.dataset.idmJump); });
+}
+
+function closeItemDetailModal() {
+  const backdrop = document.getElementById("item-detail-modal");
+  if (backdrop) { backdrop.style.display = "none"; backdrop.innerHTML = ""; }
 }
 
 function renderBlueprintStore() {
@@ -1697,7 +1890,7 @@ function enhanceEquipmentFromWarehouse(targetRef) {
       "unknown-equipment":"装备不存在"
     };
     showToast(messages[result.reason] || "强化失败");
-    return false;
+    return result;
   }
   showToast(result.success
     ? `${definition.name} 强化成功：+${result.fromLevel} → +${result.toLevel}，获得 ${result.xp} 经验`
@@ -1705,7 +1898,7 @@ function enhanceEquipmentFromWarehouse(targetRef) {
   renderCargoPage("equipment");
   renderCombatPanel();
   updateUI();
-  return true;
+  return result;
 }
 
 function equipShip(shipRef) {
@@ -2253,10 +2446,25 @@ function installTutorialWidgetListeners() {
     }
     const fitting = event.target.closest("[data-open-fitting]"); if (fitting) openEquipOrbit(fitting.dataset.openFitting);
   });
-  const enhPanel = document.getElementById("equipment-enhancement-list"); if (enhPanel) enhPanel.addEventListener("click", event => {
-    const btn = event.target.closest("[data-enhance-target]");
-    if (btn && !btn.disabled) enhanceEquipmentFromWarehouse(decodeURIComponent(btn.dataset.enhanceTarget));
-  });
+  const enhPanel = document.getElementById("equipment-enhancement-list"); if (enhPanel) {
+    enhPanel.addEventListener("click", event => {
+      const filterBtn = event.target.closest("[data-equip-filter]");
+      if (filterBtn) {
+        equipEnhanceFilter = filterBtn.dataset.equipFilter;
+        enhPanel.querySelectorAll(".eem-filter").forEach(b => b.classList.toggle("active", b.dataset.equipFilter === equipEnhanceFilter));
+        renderEquipEnhanceGrid();
+        return;
+      }
+      const cell = event.target.closest("[data-equip-cell]");
+      if (cell) {
+        const [itemId, level] = decodeURIComponent(cell.dataset.equipCell).split("|");
+        openEquipEnhanceModal(itemId, Number(level));
+      }
+    });
+    enhPanel.addEventListener("input", event => {
+      if (event.target.matches("[data-equip-search]")) { equipEnhanceSearch = event.target.value; renderEquipEnhanceGrid(); }
+    });
+  }
   const fittingOptions = document.getElementById("equipSelectOptions"); if (fittingOptions) fittingOptions.addEventListener("click", event => {
     const option = event.target.closest("[data-equip],[data-rig-destroy]"); if (!option || orbitSelectedIndex === null) return;
     const display = getShipFittingDisplayState(gameState, orbitShipId); const slot = display && display.orbitSlots.find(item => item.index === orbitSelectedIndex); if (!slot) return;

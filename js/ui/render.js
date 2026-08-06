@@ -104,9 +104,10 @@ function renderMiningDisplay(display, areaEl, outEl) {
   const fleetSupportRow = document.getElementById("mining-fleet-support-row");
   const logText = document.getElementById("mining-logistics");
   if (logText) {
-    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    const lm = Number(display.stationLogisticsMultiplier) || 1;
+    const stationLog = (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(gameState) : null;
     if (lm > 1) logText.textContent = "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）";
-    else logText.textContent = "后勤 ×1.00" + (gameState.station && gameState.station.bodyLevel > 0 ? "（燃料不足）" : "（未建立）");
+    else logText.textContent = "后勤 ×1.00（" + (stationLog ? stationLog.text : (gameState.station && gameState.station.bodyLevel > 0 ? "燃料不足" : "未建立")) + "）";
   }
   if (fleetSupport) fleetSupport.textContent = display.efficiency.fleetSupportBonus > 0 ? display.efficiency.fleetSupportShip.name + " · 最终速度 +" + (display.efficiency.fleetSupportBonus * 100).toFixed(0) + "%" : "未启用";
   if (fleetSupportRow) fleetSupportRow.classList.toggle("active", display.efficiency.fleetSupportBonus > 0);
@@ -145,8 +146,9 @@ function renderGasDisplay(display, areaEl, outEl) {
   const efficiency = document.getElementById("gas-eff-value"); if (efficiency) { efficiency.textContent = display.efficiency.total.toFixed(2); efficiency.title = display.efficiencyTooltip; }
   const gasLogText = document.getElementById("gas-logistics");
   if (gasLogText) {
-    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
-    gasLogText.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×1.00" + ((display.station && display.station.bodyLevel > 0) ? "（燃料不足）" : "（未建立）");
+    const lm = Number(display.stationLogisticsMultiplier) || 1;
+    const stationLog = (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(gameState) : null;
+    gasLogText.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×1.00（" + (stationLog ? stationLog.text : ((gameState.station && gameState.station.bodyLevel > 0) ? "燃料不足" : "未建立")) + "）";
   }
   setProductionControls(display, document.getElementById("btn-start-gas"));
   drawSkillBar(document.getElementById("bar-gas"), display.progress.percent, "green");

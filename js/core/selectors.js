@@ -1772,8 +1772,45 @@ function getPlanetaryDisplayState(state, now) {
   };
 }
 
+/* 仓库物品「出产位置」映射：分类 → 侧边栏页面（data-skill/data-page 与 twGoToTarget 一致）。
+   对照游戏真实生产线：矿石→采矿、矿物→冶炼、行星产物→行星开发、气体→气体采集、
+   月矿→采矿（月矿激光器剥离）、特殊→战斗；消耗品(弹药/燃料/维修膏)→装备工程；
+   舰船组件→舰船工程（舰船船坞）。装备(可装配装备)统一在装备工程制造，蓝图为前置非产地。 */
+const CARGO_SOURCE = {
+  ore:       { pageId:"mining",        pageLabel:"采矿",     icon:"fa-solid fa-gem" },
+  mineral:   { pageId:"refining",      pageLabel:"冶炼",     icon:"fa-solid fa-fire" },
+  planetary: { pageId:"planetary",     pageLabel:"行星开发", icon:"fa-solid fa-globe" },
+  gases:     { pageId:"gasHarvesting", pageLabel:"气体采集", icon:"fa-solid fa-wind" },
+  moon:      { pageId:"mining",        pageLabel:"采矿",     icon:"fa-solid fa-moon" },
+  special:   { pageId:"combat",        pageLabel:"战斗",     icon:"fa-solid fa-crosshairs" },
+  consumable:{ pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" },
+  component: { pageId:"shipEngineering",       pageLabel:"舰船工程", icon:"fa-solid fa-rocket" }
+};
+
+/* 仓库物品「文字介绍」：无独立描述字段，按分类给一句准确说明（装备用真实属性文本） */
+const CARGO_DESC = {
+  ore:       "基础矿石。通过采矿激光器从小行星带剥离获取，是精炼矿物与合金的原料。",
+  mineral:   "精炼矿物。由矿石冶炼或在空间站精炼线提纯得到，用于装备制造与舰船构件。",
+  planetary: "行星产物。在行星开发链上采集与加工，供给工业与制造体系。",
+  gases:     "气态原料。由气体采集从太空气云中收集，用于无人机链路与增强剂合成。",
+  moon:      "月矿。由采矿舰船装配月矿激光器从小卫星剥离获取，是旗舰级装备与反应堆构件的原料。",
+  special:   "特殊材料。主要来自战斗掉落、考古与势力活动，是研发与高级配方的稀缺耗材。",
+  consumable:"消耗品。燃料、弹药与维修膏由装备工程制造，战斗与作业消耗，也可在空间站补给。",
+  component: "舰船构件。由精炼矿物在舰船工程（舰船船坞）总装，供舰船制造直接调用。"
+};
+
+/* 仓库物品分类中文显示名（用于方块卡角标与配色选择，ITEM_CATEGORIES 的键是英文码） */
+const CARGO_CATEGORY_LABEL = {
+  ore:"矿石", mineral:"矿物", planetary:"行星产物", gases:"气体",
+  moon:"月球", special:"特殊", consumable:"消耗品", component:"组件", equipment:"装备"
+};
+
 function getCargoDisplayState(state, filter) {
-  const selectedFilter = ITEM_CATEGORIES[filter] || filter === "all" ? filter : "all";
+  // 支持虚拟筛选项：equipment(真装备) 与 component(舰船组件) 在数据中均挂在 ITEM_CATEGORIES.equipment 键下，需拆开
+  let selectedFilter;
+  if (filter === "all" || filter === "equipment" || filter === "component") selectedFilter = filter;
+  else if (ITEM_CATEGORIES[filter]) selectedFilter = filter;
+  else selectedFilter = "all";
   const componentNames = Object.fromEntries(SHIP_COMPONENT_RECIPES.map(recipe => [recipe.id, recipe.name]));
   const resources = state.resources || {};
   const equipmentSource = {};
@@ -1801,14 +1838,42 @@ function getCargoDisplayState(state, filter) {
   const equipmentByName = Object.fromEntries(Object.values(EQUIPMENT_DB).map(equipment => [equipment.name, equipment]));
   const items = [];
   for (const [category, configuredNames] of Object.entries(ITEM_CATEGORIES)) {
-    if (selectedFilter !== "all" && selectedFilter !== category) continue;
+    const includeCat = selectedFilter === "all" || selectedFilter === category || (selectedFilter === "component" && category === "equipment");
+    if (!includeCat) continue;
     const names = [...new Set([...configuredNames, ...Object.keys(sources[category] || {})])];
     for (const name of names) {
       const quantity = Number(sources[category] && sources[category][name]) || 0;
       if (quantity <= 0) continue;
       const equipment = category === "equipment" ? equipmentByName[name] : null;
       const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : "📦";
-      items.push({ category, name, quantity, icon:ITEM_ICONS[name] || fallbackIcon, details:equipment ? getEquipmentAttributeText(equipment) : "" });
+      const isEquip = category === "equipment" && !!equipment;
+      const isComponent = category === "equipment" && !equipment;
+      // 虚拟筛选：装备页只显真装备，组件页只显舰船组件
+      if (selectedFilter === "equipment" && isComponent) continue;
+      if (selectedFilter === "component" && !isComponent) continue;
+      const categoryLabel = isComponent ? (CARGO_CATEGORY_LABEL.component || "组件") : (CARGO_CATEGORY_LABEL[category] || category);
+      const source = isEquip
+        ? { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" }
+        : isComponent
+          ? { pageId:"shipEngineering", pageLabel:"舰船工程", icon:"fa-solid fa-rocket" }
+          : (CARGO_SOURCE[category] || { pageId:"station", pageLabel:"空间站", icon:"fa-regular fa-building" });
+      const description = isEquip
+        ? getEquipmentAttributeText(equipment)
+        : isComponent
+          ? (CARGO_DESC.component || "")
+          : (CARGO_DESC[category] || "");
+      items.push({
+        category,
+        categoryLabel,
+        name,
+        quantity,
+        icon:ITEM_ICONS[name] || fallbackIcon,
+        details:equipment ? getEquipmentAttributeText(equipment) : "",
+        isEquipment:isEquip,
+        itemId:isEquip ? equipment.id : null,
+        description,
+        source
+      });
     }
   }
   items.sort((left, right) => right.quantity - left.quantity);
@@ -1817,7 +1882,13 @@ function getCargoDisplayState(state, filter) {
     filter:selectedFilter,
     total:getInventoryTotalFromState(state),
     items,
-    emptyText:selectedFilter === "all" ? "仓库空空如也" : selectedFilter === "equipment" ? "暂无舰船/装备数据" : "该分类暂无物品",
+    emptyText:selectedFilter === "all"
+      ? "仓库空空如也"
+      : selectedFilter === "equipment"
+        ? "暂无舰船装备数据"
+        : selectedFilter === "component"
+          ? "暂无舰船组件数据"
+          : "该分类暂无物品",
     filters:Object.keys(ITEM_CATEGORIES).map(id => ({ id, selected:id === selectedFilter }))
   };
 }
@@ -1849,87 +1920,94 @@ function getEquipmentEnhancementListDisplayState(state) {
     }
     return rows;
   };
-  const canEnhance = (costRows, extraRows) =>
-    Array.isArray(costRows) &&
-    costRows.length > 0 &&
-    costRows.every(row => row.enough) &&
-    Array.isArray(extraRows) &&
-    extraRows.every(row => row.enough);
+  // 与 enhanceEquipment 前置校验一致：instance 目标不消耗库存（里程碑 donor 除外），
+  // inventory 目标自身消耗 1 件。requiredInventory = (实例?0:1) + (里程碑?1:0)。
+  const canEnhanceFor = (eq, level, targetRef) => {
+    const isInstance = isEquipmentInstanceId(state, targetRef);
+    const display = getEquipmentEnhancementDisplayState(eq, level, engLevel);
+    if (!ResourceRegistry.canAffordCost(state, display.cost)) return false;
+    const needDonor = Boolean(display.extra.sameTypeItemId);
+    const requiredInventory = (isInstance ? 0 : 1) + (needDonor ? 1 : 0);
+    if (getEquipmentInventoryCount(state, eq.id) < requiredInventory) return false;
+    if (display.extra.core && ResourceRegistry.getMaterialStock(state, display.extra.core) < 1) return false;
+    if (display.extra.protocol && ResourceRegistry.getMaterialStock(state, display.extra.protocol) < 1) return false;
+    return true;
+  };
 
+  const CATEGORY_LABEL = { normal:"通用", faction:"势力", alliance:"联盟", "deathspace-standard":"死亡空间", "deathspace-supervisor":"死亡空间(监督者)", "deathspace":"死亡空间", unknown:"其它" };
+  const entries = [];
   const groups = new Map();
   const ensure = itemId => { if (!groups.has(itemId)) groups.set(itemId, { itemId, inventoryRefs:[], instances:[] }); return groups.get(itemId); };
   for (const ref of inventory) ensure(ref).inventoryRefs.push(ref);
   for (const inst of instances) ensure(inst.itemId).instances.push(inst);
 
-  const CATEGORY_LABEL = { normal:"通用", faction:"势力", alliance:"联盟", "deathspace-standard":"死亡空间", "deathspace-supervisor":"死亡空间(监督者)", "deathspace":"死亡空间", unknown:"其它" };
-  const entries = [];
   for (const [itemId, group] of groups) {
     const eq = EQUIPMENT_DB[itemId];
     if (!eq) continue;
     if (eq.slot === "rig") continue; // 改装件不参与强化（安装即消耗，无 enhancementLevel），不进强化列表
-    const category = getEquipmentEnhancementCategory(eq);
-    const instanceCards = [];
-    const installed = [];
-    for (const inst of group.instances) {
-      const level = Math.max(0, Number(inst.enhancementLevel) || 0);
-      if (inst.installedOn) {
-        const ship = getShipInstanceFromState(state, inst.installedOn);
-        const shipName = ship ? (getShipConfigById(ship.shipId) ? getShipConfigById(ship.shipId).name : inst.installedOn) : inst.installedOn;
-        installed.push({ instanceId:inst.instanceId, level, shipName });
-        continue;
-      }
+
+    // 按等级分桶（未安装 / 已安装）
+    const byLevel = new Map();
+    const bucket = (level, inst) => {
+      if (!byLevel.has(level)) byLevel.set(level, { uninstalled:[], installed:[] });
+      (inst.installedOn ? byLevel.get(level).installed : byLevel.get(level).uninstalled).push(inst);
+    };
+    for (const inst of group.instances) bucket(Math.max(0, Number(inst.enhancementLevel) || 0), inst);
+
+    // 涉及的等级：库存 +0 始终出格；加上所有实例等级
+    const levels = new Set([0]);
+    for (const lv of byLevel.keys()) levels.add(lv);
+
+    for (const level of levels) {
+      const at = byLevel.get(level) || { uninstalled:[], installed:[] };
+      const stockCount = (level === 0 ? group.inventoryRefs.length : 0) + at.uninstalled.length;
+      const installedCount = at.installed.length;
+      if (stockCount === 0 && installedCount === 0) continue;
+
+      // 代表强化目标：优先未安装件；+0 优先用库存（创建实例路径），否则用 +0 实例
+      let targetRef = null;
+      if (level === 0 && group.inventoryRefs.length) targetRef = group.inventoryRefs[0];
+      else if (at.uninstalled.length) targetRef = at.uninstalled[0].instanceId;
+
       const display = getEquipmentEnhancementDisplayState(eq, level, engLevel);
       const costRows = buildCostRows(display);
       const extraRows = buildExtraRows(display, itemId);
-      instanceCards.push({
-        instanceId:inst.instanceId,
+      const canEnhance = targetRef ? canEnhanceFor(eq, level, targetRef) : false;
+
+      entries.push({
+        itemId,
+        name: eq.name,
+        icon: ITEM_ICONS[eq.name] || "📦",
+        slot: eq.slot,
+        category: getEquipmentEnhancementCategory(eq),
+        categoryLabel: CATEGORY_LABEL[getEquipmentEnhancementCategory(eq)] || "其它",
         level,
-        multiplier:display.multiplier,
-        bonusPercent:Math.round((display.multiplier - 1) * 1000) / 10,
-        previewMultiplier:display.previewMultiplier,
-        previewBonusPercent:Math.round((display.previewMultiplier - 1) * 1000) / 10,
-        successPercent:Math.round(display.success * 1000) / 10,
-        successBreakdown:display.successBreakdown,
-        isMilestone:display.isMilestone,
+        isUnenhanced: level === 0,
+        stockCount,
+        installedCount,
+        totalCount: stockCount + installedCount,
+        multiplier: display.multiplier,
+        bonusPercent: Math.round((display.multiplier - 1) * 1000) / 10,
+        previewMultiplier: display.previewMultiplier,
+        previewBonusPercent: Math.round((display.previewMultiplier - 1) * 1000) / 10,
+        successPercent: Math.round(display.success * 1000) / 10,
+        successBreakdown: display.successBreakdown,
+        isMilestone: display.isMilestone,
         costRows,
         extraRows,
-        canEnhance:canEnhance(costRows, extraRows)
+        canEnhance,
+        targetRef,
+        installedShips: at.installed.map(inst => {
+          const ship = getShipInstanceFromState(state, inst.installedOn);
+          return ship ? (getShipConfigById(ship.shipId) ? getShipConfigById(ship.shipId).name : inst.installedOn) : inst.installedOn;
+        })
       });
     }
-    instanceCards.sort((a, b) => a.level - b.level);
-
-    let stack = null;
-    if (group.inventoryRefs.length) {
-      const display = getEquipmentEnhancementDisplayState(eq, 0, engLevel);
-      const costRows = buildCostRows(display);
-      const extraRows = buildExtraRows(display, itemId);
-      stack = {
-        count:group.inventoryRefs.length,
-        targetRef:group.inventoryRefs[0],
-        bonusPercent:0,
-        previewBonusPercent:Math.round((display.previewMultiplier - 1) * 1000) / 10,
-        successPercent:Math.round(display.success * 1000) / 10,
-        successBreakdown:display.successBreakdown,
-        isMilestone:display.isMilestone,
-        costRows,
-        extraRows,
-        canEnhance:canEnhance(costRows, extraRows)
-      };
-    }
-
-    entries.push({
-      itemId,
-      name:eq.name,
-      icon:ITEM_ICONS[eq.name] || "📦",
-      slot:eq.slot,
-      category,
-      categoryLabel:CATEGORY_LABEL[category] || "其它",
-      instanceCards,
-      stack,
-      installed
-    });
   }
-  entries.sort((a, b) => (CATEGORY_LABEL[a.category] || "其它").localeCompare(CATEGORY_LABEL[b.category] || "其它", "zh") || a.name.localeCompare(b.name, "zh"));
+  entries.sort((a, b) =>
+    (CATEGORY_LABEL[a.category] || "其它").localeCompare(CATEGORY_LABEL[b.category] || "其它", "zh") ||
+    a.name.localeCompare(b.name, "zh") ||
+    a.level - b.level);
   return { entries };
 }
 
