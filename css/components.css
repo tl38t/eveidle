@@ -38,6 +38,82 @@
 
   /* ===== 微调 ===== */
   .text-muted    { color: #6a7a8e; }
+  /* 面板头副标题/状态文字统一类（与 text-muted 同色，避免语义一致的副标题散落多种写法） */
+  .panel-status-label {
+    color: #6a7a8e;
+    font-size: 12px;
+    font-weight: 500;
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  /* ===== 分段选择器公共基类（Batch UI 统一：采矿/战斗/舰船/蓝图/货舱/死亡空间 共用同一 shape 语言） =====
+     公共 shape 规则通过选择器列表同时命中 .seg-tab 与 6 个现有子类（HTML 无需改动）；
+     各面板具体类只需保留主题强调色（覆盖 --seg-accent 等变量）与尺寸差异。
+     激活态统一为「底部下划线」语法，避免有的用内阴影、有的用边框高亮。 */
+  .seg-tab,
+  .mining-mode-tab,
+  .equipeng-category-tab,
+  .blueprintstore-tab,
+  .cargo-tab,
+  .combat-mode-tab,
+  .deathspace-tier-tab {
+    /* 主题色变量，子类覆盖其一即可 */
+    --seg-accent: #67bce8;
+    --seg-active-text: #e0f3ff;
+    --seg-active-bg: rgba(40, 70, 100, 0.55);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 0;
+    border-right: 1px solid var(--seg-divider, #0a0f16);
+    border-radius: 0;
+    color: #6a7a8e;
+    background: #141d29;
+    font: 600 12px 'Rajdhani', "Microsoft YaHei", sans-serif;
+    letter-spacing: .04em;
+    cursor: pointer;
+    transition: color .15s, background .15s, box-shadow .15s;
+  }
+  .seg-tab:last-child,
+  .mining-mode-tab:last-child,
+  .equipeng-category-tab:last-child,
+  .blueprintstore-tab:last-child,
+  .cargo-tab:last-child,
+  .combat-mode-tab:last-child,
+  .deathspace-tier-tab:last-child { border-right: 0; }
+  .seg-tab:hover,
+  .mining-mode-tab:hover,
+  .equipeng-category-tab:hover,
+  .blueprintstore-tab:hover,
+  .cargo-tab:hover,
+  .combat-mode-tab:hover,
+  .deathspace-tier-tab:hover { color: #c4d0da; background: #192534; }
+  .seg-tab.active,
+  .mining-mode-tab.active,
+  .equipeng-category-tab.active,
+  .blueprintstore-tab.active,
+  .cargo-tab.active,
+  .combat-mode-tab.active,
+  .deathspace-tier-tab.active {
+    color: var(--seg-active-text);
+    background: var(--seg-active-bg);
+    box-shadow: inset 0 -3px var(--seg-accent);
+  }
+  .seg-tab i,
+  .mining-mode-tab i,
+  .equipeng-category-tab i { font-size: 11px; opacity: .9; }
+  .seg-tab small,
+  .mining-mode-tab small,
+  .equipeng-category-tab small,
+  .blueprintstore-tab small,
+  .deathspace-tier-tab small { color: inherit; opacity: .65; }
+  .seg-tab.locked,
+  .deathspace-tier-tab.locked { color: #657287; }
+  .seg-tab:disabled,
+  .mining-mode-tab:disabled,
+  .combat-mode-tab:disabled { cursor: not-allowed; opacity: .55; }
   .text-warning  { color: #d4a843; }
   .text-danger   { color: #d94a4a; }
   .text-success  { color: #7ac87a; }
@@ -58,14 +134,10 @@
     background: #0c131c;
   }
   .mining-mode-tab {
-    height: 40px; border: 0; border-right: 1px solid #243448;
-    color: #788b9e; background: #151e2a; font-family: var(--font-tech); font-size:14px; font-weight:700;
-    letter-spacing:.12em; cursor: pointer;
-    transition: color .15s, background .15s, box-shadow .15s;
+    height: 40px; font-size: 14px; font-weight: 700; letter-spacing: .12em;
+    --seg-accent: #67bce8; --seg-active-text: #e0f3ff;
+    --seg-active-bg: linear-gradient(180deg, #315f8c, #244b70);
   }
-  .mining-mode-tab:last-child { border-right: 0; }
-  .mining-mode-tab:hover { color: #c4d0da; background: #192635; }
-  .mining-mode-tab.active { color: #e0f3ff; background: linear-gradient(180deg,#315f8c,#244b70); box-shadow: inset 0 -3px #67bce8; }
   .mining-mode-tab i { margin-right: 6px; }
   .mining-target-scroll { overflow-x: auto; padding-bottom: 4px; scrollbar-color: #31465c #0b1119; }
   .mining-target-strip { display: flex; flex-wrap: nowrap; gap: 8px; min-width: max-content; }
@@ -137,12 +209,9 @@
     border-bottom: 1px solid #1a2535;
   }
   .cargo-tab {
-    padding: 4px 12px; font-size: 12px; color: #6a7a8e;
-    border: 1px solid #1e2a38; border-radius: 3px;
-    cursor: default; transition: all 0.15s;
+    padding: 4px 12px; border-radius: 3px;
+    --seg-accent: #d4a843; --seg-active-text: #f0d999; --seg-active-bg: #1a1a10;
   }
-  .cargo-tab:hover { color: #bcc5d0; border-color: #3a4a5a; }
-  .cargo-tab.active { color: #d4a843; border-color: #d4a843; background: #1a1a10; }
 
   .cargo-list {
     display: grid;
@@ -409,11 +478,11 @@
   .qi-status.running { background: #1a2a20; color: #7ac87a; }
   .qi-status.waiting { color: #4a5a6a; }
   .queue-item .qi-actions { display: flex; gap: 4px; }
-  .queue-item .qi-btn { background: none; border: 1px solid #2a3545; border-radius: 3px; color: #6a7a8e; font-size: 11px; padding: 2px 6px; cursor: default; font-family: inherit; }
+  .queue-item .qi-btn { background: none; border: 1px solid #2a3545; border-radius: 4px; color: #6a7a8e; font-size: 11px; padding: 2px 6px; cursor: default; font-family: 'Rajdhani', sans-serif; transition: all 0.2s; }
   .queue-item .qi-btn:hover { color: #d94a4a; border-color: #d94a4a; }
-  .act-tag { display: inline-block; padding: 2px 8px; margin: 2px; border: 1px solid #2a3545; border-radius: 3px; font-size: 11px; color: #4a5a6a; background: rgba(21,29,40,0.5); cursor: default; transition: all 0.2s; }
+  .act-tag { display: inline-block; padding: 2px 8px; margin: 2px; border: 1px solid #2a3545; border-radius: 4px; font-size: 11px; font-weight: 600; color: #4a5a6a; background: rgba(21,29,40,0.5); cursor: default; transition: all 0.2s; }
   .act-tag:hover { border-color: #5da8d4; color: #8899aa; }
-  .act-tag.on { color: #d4a843; border-color: #d4a843; background: rgba(212,168,67,0.12); }
+  .act-tag.on { color: #d4a843; border-color: #d4a843; background: rgba(212,168,67,0.12); box-shadow: 0 0 8px rgba(212,168,67,0.25); }
   .hsh-equipped { display: inline-block; font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(212,168,67,0.15); color: #d4a843; margin-right: 3px; }
   .act-tag:disabled { border-color: #202b36; color: #3d4a57; background: rgba(12,18,25,.55); cursor: not-allowed; opacity: .62; }
   .act-tag:disabled:hover { border-color: #202b36; color: #3d4a57; }

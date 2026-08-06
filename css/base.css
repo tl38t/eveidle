@@ -247,7 +247,6 @@
   }
 
   .panel.skill-current { overflow: visible; }
-  #ammoeng-panel { overflow: visible; }
 
   /* ===== 主流滚动容器修正 =====
    *
@@ -597,7 +596,7 @@
   .research-detail {
     position: fixed;
     inset: 0;
-    z-index: 200;
+    z-index: 2100;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -805,12 +804,13 @@
   .research-protocol-planet-ctrl .research-btn + .research-btn { margin-left: 6px; }
 
   .research-btn {
-    font-family: var(--font-ui, sans-serif);
+    font-family: 'Rajdhani', sans-serif;
+    font-weight: 600;
     font-size: 12px;
     padding: 4px 10px;
     background: #16202c;
     border: 1px solid #33465c;
-    border-radius: 5px;
+    border-radius: 4px;
     color: #cdd6e1;
     cursor: pointer;
     transition: background 0.15s, border-color 0.15s;
@@ -1044,10 +1044,10 @@
   /* ---- 移动端：底部紧凑条 / 可展开卡片 ---- */
   @media (max-width: 720px) {
     .tutorial-widget {
-      top: auto !important;
-      right: 8px !important;
-      left: 8px !important;
-      bottom: 0 !important;
+      top: auto;
+      right: 8px;
+      left: 8px;
+      bottom: 0;
       width: auto;
       max-width: none;
       max-height: 55vh;

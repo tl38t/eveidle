@@ -1841,7 +1841,7 @@ let _tutorialWidgetListenersInstalled = false;
 let _tutorialWidgetRenderQueued = false;
 let _tutorialWidgetDragInstalled = false;
 const TUTORIAL_WIDGET_POS_KEY = "eveidle.tutorialWidgetPos";
-const TUTORIAL_WIDGET_DRAG_MIN_W = 721; // 仅桌面端（>720px）允许拖动，移动端保留底栏布局
+const TUTORIAL_WIDGET_DRAG_MIN_W = 721; // 历史阈值：桌面默认右上角悬浮卡；移动端默认底部条。两类布局均允许拖动。
 
 function getTutorialSystemGlobal() {
   if (typeof window !== "undefined" && window.TutorialSystem && typeof window.TutorialSystem.getTutorialDisplayState === "function") return window.TutorialSystem;
@@ -1865,8 +1865,9 @@ function twEsc(s) {
 
 function twSet(el, html) { if (el) el.innerHTML = html; }
 
-// 拖动支持：桌面端用标题栏作为抓手，把原 right 锚点折算成 left/top，clamp 到视口，位置写入 localStorage 持久化。
-// 移动端（≤720px）不启用，保留底栏布局（CSS 已用 !important 兜底）。
+// 拖动支持：标题栏作为抓手，把原 right/bottom 锚点折算成 left/top，clamp 到视口，位置写入 localStorage 持久化。
+// 桌面端（>720px）默认右上角悬浮卡；移动端（≤720px）默认底部条；两类布局都允许拖动，拖动后切换为 left/top 定位
+// （base.css 移动端媒体查询已去掉 !important，以便内联样式生效）。
 function twInstallDrag() {
   if (_tutorialWidgetDragInstalled) return;
   _tutorialWidgetDragInstalled = true;
@@ -1874,32 +1875,38 @@ function twInstallDrag() {
   const header = document.getElementById("tutorial-widget-header");
   if (!widget || !header) return;
 
-  const isDesktop = () => (typeof window !== "undefined" && window.innerWidth >= TUTORIAL_WIDGET_DRAG_MIN_W);
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
+  const vw = () => (window.innerWidth || document.documentElement.clientWidth || 0);
+  const vh = () => (window.innerHeight || document.documentElement.clientHeight || 0);
 
-  // 还原已保存位置（仅桌面端）
-  if (isDesktop()) {
-    try {
-      const saved = JSON.parse((typeof localStorage !== "undefined" ? localStorage.getItem(TUTORIAL_WIDGET_POS_KEY) : null) || "null");
-      if (saved && typeof saved.left === "number" && typeof saved.top === "number" && isFinite(saved.left) && isFinite(saved.top)) {
-        widget.style.right = "auto";
-        widget.style.left = saved.left + "px";
-        widget.style.top = saved.top + "px";
-      }
-    } catch (e) { /* 忽略损坏的存档 */ }
-  }
+  // 把当前 CSS 锚定（right/bottom 或 left/right 全宽）折算为 left/top 浮动定位，并固化宽度
+  // （移动端 width:auto 需锁成具体 px，否则只设 left 会让卡片坍缩到内容宽）。
+  const pinToFloating = (left, top) => {
+    const w0 = widget.offsetWidth || 280;
+    const lockedW = clamp(w0, 140, Math.max(140, vw() - 16));
+    widget.style.right = "auto";
+    widget.style.bottom = "auto";
+    widget.style.width = lockedW + "px";
+    widget.style.left = clamp(left, 0, Math.max(0, vw() - lockedW)) + "px";
+    widget.style.top = clamp(top, 0, Math.max(0, vh() - widget.offsetHeight)) + "px";
+  };
+
+  // 还原已保存位置（桌面/移动通用）：clamp 到当前视口，避免跨设备/旋转后跑出屏幕。
+  try {
+    const saved = JSON.parse((typeof localStorage !== "undefined" ? localStorage.getItem(TUTORIAL_WIDGET_POS_KEY) : null) || "null");
+    if (saved && Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      pinToFloating(saved.left, saved.top);
+    }
+  } catch (e) { /* 忽略损坏的存档 */ }
 
   let dragging = false, startX = 0, startY = 0, originLeft = 0, originTop = 0, moved = false;
 
   const onDown = (e) => {
-    if (!isDesktop()) return;
-    if (e.button !== undefined && e.button !== 0) return;            // 仅左键
+    if (e.button !== undefined && e.button !== 0) return;            // 仅主键 / 触摸
     if (e.target && e.target.closest && e.target.closest("#tutorial-widget-toggle")) return; // 收起按钮不触发
     const rect = widget.getBoundingClientRect();
-    if (widget.style.right !== "auto") {                            // 首次拖动：right → left 折算
-      widget.style.right = "auto";
-      widget.style.left = rect.left + "px";
-      widget.style.top = rect.top + "px";
+    if (widget.style.right !== "auto" || widget.style.bottom !== "auto" || widget.style.left === "") {
+      pinToFloating(rect.left, rect.top);                           // 首次拖动：CSS 锚点 → left/top 折算并锁宽
     }
     dragging = true; moved = false;
     startX = e.clientX; startY = e.clientY;
@@ -1915,8 +1922,8 @@ function twInstallDrag() {
     if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;     // 移动阈值，避免误触
     moved = true;
     const w = widget.offsetWidth, h = widget.offsetHeight;
-    const left = clamp(originLeft + dx, 0, (window.innerWidth || document.documentElement.clientWidth) - w);
-    const top = clamp(originTop + dy, 0, (window.innerHeight || document.documentElement.clientHeight) - h);
+    const left = clamp(originLeft + dx, 0, Math.max(0, vw() - w));
+    const top = clamp(originTop + dy, 0, Math.max(0, vh() - h));
     widget.style.left = left + "px";
     widget.style.top = top + "px";
   };
@@ -1928,7 +1935,7 @@ function twInstallDrag() {
     if (header.releasePointerCapture && e.pointerId !== undefined) { try { header.releasePointerCapture(e.pointerId); } catch (_) {} }
     try {
       const left = parseFloat(widget.style.left), top = parseFloat(widget.style.top);
-      if (isFinite(left) && isFinite(top)) localStorage.setItem(TUTORIAL_WIDGET_POS_KEY, JSON.stringify({ left, top }));
+      if (Number.isFinite(left) && Number.isFinite(top)) localStorage.setItem(TUTORIAL_WIDGET_POS_KEY, JSON.stringify({ left, top }));
     } catch (e2) { /* 忽略隐私模式写入失败 */ }
   };
 

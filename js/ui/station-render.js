@@ -138,7 +138,7 @@ function renderStationPage(now) {
         '<div class="sbc-effect">' + (b.effectText || "") + '</div>' +
         (b.nextEffectText ? '<div class="sbc-next">' + b.nextEffectText + '</div>' : '') +
         (costHtml ? '<div class="sbc-cost">' + costHtml + '</div>' : '') +
-        '<button class="btn small sbc-upgrade" id="bld-upgrade-' + b.buildingId + '" data-building="' + b.buildingId + '"' + ((b.canUpgrade && !b.isConstructingThis) ? '' : ' disabled') + '>' +
+        '<button class="btn sm sbc-upgrade" id="bld-upgrade-' + b.buildingId + '" data-building="' + b.buildingId + '"' + ((b.canUpgrade && !b.isConstructingThis) ? '' : ' disabled') + '>' +
         (b.isConstructingThis ? '建设中' : (bt || '升级')) + '</button></div>';
     }).join("");
     // 升级按钮点击已通过 #station-buildings-grid 的事件委托统一处理（initStationUI），不在此重复绑定。
@@ -161,12 +161,12 @@ function renderStationPage(now) {
       var startName = al.startedTargetName || "";
       return '<div class="station-al-card" id="al-card-' + al.lineId + '"><div class="sal-header"><strong>' + (al.name || al.lineId) + '</strong></div>' +
         '<div class="sal-mult">建筑 ×' + al.buildingMultiplier.toFixed(2) + ' · 后勤 ×' + al.logisticsMultiplier.toFixed(2) + ' · 综合 ×' + al.effectiveMultiplier.toFixed(2) + '</div>' +
-        '<div class="sal-select"><select data-line="' + al.lineId + '">' + opts + '</select></div>' +
+        '<div class="sal-select"><select data-line="' + al.lineId + '" class="u-select">' + opts + '</select></div>' +
         '<div class="sal-targets" id="al-targets-' + al.lineId + '">选中：' + selName + (startName ? ' · 运行：' + startName : '') + '</div>' +
         '<div class="sal-status" id="al-status-' + al.lineId + '">状态：' + statAl + '</div>' +
-        (al.cycleDurationMs ? '<div class="sal-progress" id="al-progress-' + al.lineId + '">周期 ' + (al.cycleDurationMs / 1000).toFixed(1) + 's · 进度 ' + (al.progressRatio * 100).toFixed(0) + '%</div>' : '') +
-        '<button class="btn small al-start" id="al-start-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStart ? '' : ' disabled') + '>' + (al.running ? '已启动' : '启动') + '</button>' +
-        '<button class="btn small al-stop" id="al-stop-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStop ? '' : ' disabled') + '>停止</button></div>';
+        (al.cycleDurationMs ? '<div class="al-progress-wrap"><div class="progress-bar"><div class="fill al-fill" id="al-fill-' + al.lineId + '" style="width:' + (al.progressRatio * 100).toFixed(0) + '%"></div></div><div class="sal-progress" id="al-progress-' + al.lineId + '">周期 ' + (al.cycleDurationMs / 1000).toFixed(1) + 's · 进度 ' + (al.progressRatio * 100).toFixed(0) + '%</div></div>' : '') +
+        '<button class="btn sm al-start" id="al-start-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStart ? '' : ' disabled') + '>' + (al.running ? '已启动' : '启动') + '</button>' +
+        '<button class="btn sm al-stop" id="al-stop-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStop ? '' : ' disabled') + '>停止</button></div>';
     }).join("");
 
     // 自动线 select/按钮的点击与 change 已通过 #station-auto-lines 的事件委托统一处理（initStationUI），不在此重复绑定。
@@ -320,6 +320,8 @@ function liveUpdateStationFields(display, now) {
       if (al.cycleDurationMs) setLiveText(progEl, "周期 " + (al.cycleDurationMs / 1000).toFixed(1) + "s · 进度 " + (al.progressRatio * 100).toFixed(0) + "%");
       else progEl.textContent = "";
     }
+    var fillEl = document.getElementById("al-fill-" + al.lineId);
+    if (fillEl) setLiveWidth(fillEl, (al.progressRatio * 100).toFixed(0) + "%");
     var startBtn = document.getElementById("al-start-" + al.lineId);
     if (startBtn) { setLiveDisabled(startBtn, !al.canStart); setLiveText(startBtn, al.running ? "已启动" : "启动"); }
     var stopBtn = document.getElementById("al-stop-" + al.lineId);

@@ -28,19 +28,9 @@
 
   .combat-mode-tab {
     padding: 10px 14px;
-    border: 1px solid transparent;
     border-radius: 6px;
-    color: #8293a8;
-    background: transparent;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .combat-mode-tab.active {
-    color: #d8efff;
-    border-color: #327aa5;
-    background: linear-gradient(180deg, #17334a, #102334);
-    box-shadow: inset 0 -2px 0 #54bce8;
+    --seg-accent: #54bce8; --seg-active-text: #d8efff;
+    --seg-active-bg: linear-gradient(180deg, #17334a, #102334);
   }
 
   .combat-mode-tab:disabled {
@@ -79,17 +69,9 @@
 
   .deathspace-tier-tab {
     padding: 7px 10px;
-    border: 1px solid #3b4660;
     border-radius: 5px;
-    color: #8798ae;
-    background: #121b2a;
-    cursor: pointer;
-    font-weight: 700;
+    --seg-accent: #9b70dc; --seg-active-text: #eadfff; --seg-active-bg: #2a1f40;
   }
-
-  .deathspace-tier-tab.active { color: #eadfff; border-color: #9b70dc; background: #2a1f40; }
-  .deathspace-tier-tab.locked { color: #657287; }
-  .deathspace-tier-tab small { display: block; margin-top: 2px; color: inherit; font-size: 10px; font-weight: 500; }
 
   .deathspace-grid {
     display: grid;
@@ -247,11 +229,12 @@
   .weapon-btn {
     padding: 4px 12px;
     font-size: 12px;
-    font-family: inherit;
+    font-weight: 600;
+    font-family: 'Rajdhani', sans-serif;
     background: #151d28;
     color: #6a7a8e;
     border: 1px solid #2a3545;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: default;
     transition: all 0.2s;
   }
@@ -267,10 +250,12 @@
   .repair-toggle {
     padding: 3px 10px;
     font-size: 11px;
+    font-weight: 600;
+    font-family: 'Rajdhani', sans-serif;
     background: #151d28;
     color: #4a5a6a;
     border: 1px solid #2a3545;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: default;
     transition: all 0.2s;
     margin-right: 6px;
@@ -280,7 +265,7 @@
     background: #0f1525;
     border-color: #2a5a8a;
     color: #5da8d4;
-    box-shadow: 0 0 6px rgba(93,168,212,0.25);
+    box-shadow: 0 0 8px rgba(93,168,212,0.3);
   }
 
   /* ---- 血条增强 ---- */
@@ -637,9 +622,9 @@
   .combat-engagement-btn {
     min-width: 126px;
     padding: 8px 16px;
-    font-family: 'Orbitron', sans-serif;
-    font-size: 11px;
-    letter-spacing: 0.6px;
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 12px;
+    letter-spacing: 0.3px;
   }
   #btn-start-combat {
     color: #161105;

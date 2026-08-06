@@ -60,8 +60,8 @@
 .badge { border:1px solid #38bdf8; color:#7dd3fc; border-radius:4px; padding:2px 8px; font-size:11px; }
 .badge.hybrid { border-color:#caa14a; color:#e7c878; }
 .shipeng-asm-flavor { margin:0; padding-left:8px; border-left:3px solid #38bdf8; color:#aebccb; font-size:12.5px; line-height:1.5; }
-.build-btn { width:100%; margin-top:10px; padding:11px; border:none; border-radius:8px; background:linear-gradient(90deg,#2e6fa8,#69c0ed); color:#04121d; font-weight:700; font-size:14px; cursor:pointer; }
-.build-btn:disabled { background:#26323e; color:#5b6976; cursor:not-allowed; }
+.build-btn { width:100%; margin-top:10px; }
+.build-btn:disabled { opacity:.55; cursor:not-allowed; }
 .shipeng-asm-pager { display:flex; align-items:center; justify-content:center; gap:14px; margin:12px 0 4px; }
 .shipeng-pager-btn { padding:6px 14px; border:1px solid #2a3a4a; border-radius:6px; background:transparent; color:#bcd0e2; font-size:13px; cursor:pointer; }
 .shipeng-pager-btn:disabled { opacity:.4; cursor:not-allowed; }
@@ -472,7 +472,7 @@
     <div class="panel" id="equipeng-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">🔧 装备工程</span>
-        <span id="equipeng-status-text">待命</span>
+        <span class="text-muted" id="equipeng-status-text">待命</span>
       </div>
       <div class="panel-body">
         <div class="skill-info equipeng-info">
@@ -521,7 +521,7 @@
     <div class="panel" id="booster-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">💉 增强剂制造</span>
-        <span id="booster-status-text">待命</span>
+        <span class="text-muted" id="booster-status-text">待命</span>
       </div>
       <div class="panel-body">
         <div class="skill-info equipeng-info">
@@ -731,7 +731,7 @@
     <div class="panel blueprintstore-panel" id="blueprintstore-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">📜 蓝图商店</span>
-        <span id="blueprintstore-balance">可用星币（SC）：0 · 功勋（MR）：0</span>
+        <span class="text-muted" id="blueprintstore-balance">可用星币（SC）：0 · 功勋（MR）：0</span>
       </div>
       <div class="panel-body">
         <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>

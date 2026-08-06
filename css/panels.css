@@ -17,10 +17,18 @@
   .station-al-card { background: rgba(30,55,75,0.6); border: 1px solid #2a4a5e; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
   .sal-header { font-size: 13px; color: #b0d0e8; margin-bottom: 4px; }
   .sal-mult { font-size: 11px; color: #5a8aaa; }
-  .sal-select select { background: #1a3345; color: #b0d0e8; border: 1px solid #2a4a5e; border-radius: 4px; padding: 3px 6px; margin: 4px 0; width: 100%; }
+  .sal-select select, .u-select { background: #1a3345; color: #b0d0e8; border: 1px solid #2a4a5e; border-radius: 4px; padding: 3px 6px; margin: 4px 0; width: 100%; font-family: 'Rajdhani', sans-serif; font-size: 12px; }
+  .sal-select select:focus, .u-select:focus { border-color: #5da8d4; box-shadow: 0 0 0 2px rgba(93,168,212,0.18); outline: none; }
   .sal-targets { font-size: 11px; color: #7a9ab0; }
   .sal-status { font-size: 12px; color: #8ab4d6; margin: 2px 0; }
   .sal-progress { font-size: 11px; color: #5a8aaa; }
+  /* 自动线启动/停止按钮语义着色（与全游戏 .btn.primary/.btn.danger 一致） */
+  .btn.sm.al-start { color: #7ac87a; border-color: rgba(58, 90, 58, 0.5); }
+  .btn.sm.al-stop { color: #d94a4a; border-color: rgba(90, 58, 58, 0.5); }
+  .btn.sm.al-start:hover:not(:disabled) { background: rgba(34, 58, 42, 0.7); }
+  .btn.sm.al-stop:hover:not(:disabled) { background: rgba(58, 34, 34, 0.7); }
+  .al-progress-wrap { margin-top: 4px; }
+  .al-fill { transition: width 1s linear; }
   .station-effect-line { font-size: 12px; padding: 3px 6px; margin: 2px 0; border-radius: 4px; }
   .effect-active { color: #7ab87a; background: rgba(40,100,40,0.2); }
   .effect-inactive { color: #b07a7a; background: rgba(100,40,40,0.2); }
@@ -41,18 +49,9 @@
   }
   .equipeng-category-tab {
     min-width: 100px; height: 44px; padding: 0 10px;
-    display: flex; align-items: center; justify-content: center; gap: 7px;
-    color: #708196; background: #141d29; border: 0; border-right: 1px solid #0a0f16;
-    font: 600 12px 'Rajdhani', "Microsoft YaHei", sans-serif;
-    cursor: pointer; transition: color .15s, background .15s, box-shadow .15s;
+    --seg-accent: #69c0ed; --seg-active-text: #d9f1ff;
+    --seg-active-bg: linear-gradient(180deg, #2e5f8d, #244c71);
   }
-  .equipeng-category-tab:last-child { border-right: 0; }
-  .equipeng-category-tab:hover { color: #c8d0d8; background: #192534; }
-  .equipeng-category-tab.active {
-    color: #d9f1ff; background: linear-gradient(180deg, #2e5f8d, #244c71);
-    box-shadow: inset 0 -3px #69c0ed;
-  }
-  .equipeng-category-tab i { font-size: 11px; opacity: .9; }
   .equipeng-workspace {
     display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(310px, .95fr);
     gap: 10px; margin-top: 10px;
@@ -196,15 +195,10 @@
     border: 1px solid #1f2d3c; border-radius: 4px;
   }
   .blueprintstore-tab {
-    min-width: 110px; height: 46px; padding: 0 9px; border: 0; border-right: 1px solid #0a0f16;
-    display: flex; align-items: center; justify-content: center; gap: 6px;
-    color: #73869a; background: #141d29; font: 600 12px 'Rajdhani', "Microsoft YaHei", sans-serif;
-    cursor: pointer;
+    min-width: 110px; height: 46px; padding: 0 9px;
+    --seg-accent: #e1b847; --seg-active-text: #fff0bd;
+    --seg-active-bg: linear-gradient(180deg, #675323, #443714);
   }
-  .blueprintstore-tab:last-child { border-right: 0; }
-  .blueprintstore-tab:hover { color: #d0d8e0; background: #192534; }
-  .blueprintstore-tab.active { color: #fff0bd; background: linear-gradient(180deg,#675323,#443714); box-shadow: inset 0 -3px #e1b847; }
-  .blueprintstore-tab small { color: inherit; opacity: .65; }
   .lpstore-intro { margin-bottom: 12px; color: #6a7a8e; font-size: 12px; }
   .lpstore-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 10px; }
   .lpstore-card { display: grid; grid-template-columns: 58px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 14px; background: linear-gradient(145deg,#152131,#0e1620); border: 1px solid #263a4e; border-radius: 5px; }
@@ -359,6 +353,13 @@
     border-color: rgba(140, 110, 60, 0.5);
   }
 
+  /* 小尺寸按钮：队列/行星/自动线等紧凑场景（修复此前 .small 无效引用的 bug） */
+  .btn.sm {
+    padding: 3px 10px;
+    font-size: 11px;
+    letter-spacing: 0.2px;
+  }
+
   /* ===== 进度条通用 ===== */
   .progress-bar {
     height: 8px;
@@ -375,6 +376,7 @@
     border-radius: 4px;
     position: relative;
     overflow: hidden;
+    background: #5da8d4;
   }
   .progress-bar .fill::after {
     content: '';
@@ -466,35 +468,38 @@
     margin-top: 4px;
     padding: 2px 10px;
     border: 1px solid #3a5a3a;
-    border-radius: 3px;
+    border-radius: 4px;
     background: #1a2a20;
     color: #7ac87a;
     font-size: 11px;
-    cursor: default;
-    font-family: inherit;
+    font-weight: 600;
+    font-family: 'Rajdhani', sans-serif;
+    cursor: pointer;
   }
   .btn-collect:hover { background: #243a2a; }
   .btn-redeploy {
     padding: 2px 10px;
     border: 1px solid #5a5a3a;
-    border-radius: 3px;
+    border-radius: 4px;
     background: #2a2a10;
     color: #d4a843;
     font-size: 11px;
-    cursor: default;
-    font-family: inherit;
+    font-weight: 600;
+    font-family: 'Rajdhani', sans-serif;
+    cursor: pointer;
   }
   .btn-redeploy:hover { background: #3a3a18; }
   .btn-remove-planet {
     margin-left: auto;
     padding: 2px 10px;
     border: 1px solid #63342f;
-    border-radius: 3px;
+    border-radius: 4px;
     background: #251312;
     color: #c86b61;
     font-size: 11px;
-    cursor: default;
-    font-family: inherit;
+    font-weight: 600;
+    font-family: 'Rajdhani', sans-serif;
+    cursor: pointer;
   }
   .btn-remove-planet:hover { background: #381b18; color: #e0887e; }
 
