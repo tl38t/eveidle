@@ -705,12 +705,21 @@ const CombatStateActions = {
       if (site) returnZoneId = site.sourceZoneId;
     }
     state.currentAction.active = false;
+    // 队列感知：若当前是队列驱动的战斗，把队列进度带入续战标记（跨维修保留）。
+    // 死亡空间队列项：战败即计 1 次入场（queueEntriesDone+1），修好重入下一入场。
+    const qActive = Boolean(state.combat.queueItemId);
+    const qDs = qActive && state.combat.queueEntriesTarget > 0 && state.combat.mode === "deathspace";
     state.resumeAfterRepair = {
       type:"combat",
       returnZoneId,
       defeatedMode:failedDeathspace ? "deathspace" : "belt",
       deathspaceId:failedDeathspaceId,
-      shipInstanceId:destroyedShipId
+      shipInstanceId:destroyedShipId,
+      queueItemId: qActive ? state.combat.queueItemId : null,
+      queueWavesTarget: qActive ? state.combat.queueWavesTarget : 0,
+      queueWavesDone: qActive ? state.combat.queueWavesDone : 0,
+      queueEntriesTarget: qActive ? state.combat.queueEntriesTarget : 0,
+      queueEntriesDone: qActive ? (state.combat.queueEntriesDone + (qDs ? 1 : 0)) : 0
     };
     Object.assign(state.combat, {
       active:false,
@@ -925,6 +934,9 @@ function executeQueueItemForState(state, item, now) {
   const queue = state.queue;
   if (!queue || !item) return { changed:false, reason:"no-item" };
 
+  // 战斗并入队列：combat 技能项由队列 runner 特判（初始化 belt/deathspace 并写队列进度）。
+  if (skill === "combat") return startCombatQueueItem(state, item, now);
+
   // 先保存当前 user 选择（archeology activeSiteId/probeId, booster recipeTarget）以免被覆盖
   if (skill === "archaeology") {
     // 设置目标遗迹供 canStartArchaeology / ArchaeologyStateActions.start 读取
@@ -1002,6 +1014,97 @@ function executeQueueItemForState(state, item, now) {
   applyQueueConfigToState(state, getQueueItemConfigForState(item), now);
   state._dirty = true;
   return { changed:true, skill:state.currentAction.skill };
+}
+
+// ============================================================================
+// 战斗并入队列：队列 runner 特判入口 + 续战标记 + 完成终结
+// ============================================================================
+function startCombatQueueItem(state, item, now) {
+  const ds = (typeof DEATHSPACE_DATABASE !== "undefined") && DEATHSPACE_DATABASE.find(s => s.id === item.target);
+  const isDeathspace = Boolean(ds);
+  const countNum = item.count === -1 ? Infinity : (Number(item.count) || 1);
+  // 写入战斗队列进度字段（随 combat 状态存档、跨维修保留）
+  state.combat.queueItemId = item.id;
+  state.combat.queueWavesTarget = isDeathspace ? 0 : countNum;
+  state.combat.queueWavesDone = 0;
+  state.combat.queueEntriesTarget = isDeathspace ? countNum : 0;
+  state.combat.queueEntriesDone = 0;
+  if (isDeathspace) {
+    const wave = (typeof buildDeathspaceWave === "function")
+      ? buildDeathspaceWave(ds, 1, function () { return Math.random(); }, state.combat)
+      : { enemies:[], formationId:"" };
+    const res = CombatStateActions.enterDeathspace(state, ds.id, wave.enemies, wave.formationId, now);
+    if (!res || !res.changed) {
+      // 校验失败（密钥/等级/维修中）：清队列字段、记为失败跳过
+      state.combat.queueItemId = null; state.combat.queueWavesTarget = 0; state.combat.queueWavesDone = 0;
+      state.combat.queueEntriesTarget = 0; state.combat.queueEntriesDone = 0;
+      return { changed:false, reason: res && res.reason ? res.reason : "enter-failed" };
+    }
+    setCombatQueueResume(state);
+    return { changed:true, skill:"combat" };
+  }
+  const zone = (typeof COMBAT_ZONES !== "undefined") && COMBAT_ZONES.find(z => z.id === item.target);
+  if (!zone) {
+    state.combat.queueItemId = null; state.combat.queueWavesTarget = 0; state.combat.queueWavesDone = 0;
+    return { changed:false, reason:"no-zone" };
+  }
+  const wave = (typeof buildCombatWave === "function")
+    ? buildCombatWave(zone, 1, function () { return Math.random(); }, state.combat)
+    : { enemies:[], formationId:"" };
+  const res = CombatStateActions.start(state, wave.enemies, wave.formationId, now);
+  if (!res || !res.changed) {
+    state.combat.queueItemId = null; state.combat.queueWavesTarget = 0; state.combat.queueWavesDone = 0;
+    return { changed:false, reason: res && res.reason ? res.reason : "start-failed" };
+  }
+  setCombatQueueResume(state);
+  return { changed:true, skill:"combat" };
+}
+
+// 写/刷新「队列感知续战标记」：维修完成后由 updateCombatRecovery 据此重入战斗。
+// 全部读取 state.combat 已恢复的队列字段；死亡空间项才带 deathspaceId 供重入。
+function setCombatQueueResume(state) {
+  const c = state.combat;
+  if (!c.queueItemId) { state.resumeAfterRepair = null; return; }
+  state.resumeAfterRepair = {
+    type:"combat",
+    queueItemId: c.queueItemId,
+    queueWavesTarget: c.queueWavesTarget || 0,
+    queueWavesDone: c.queueWavesDone || 0,
+    queueEntriesTarget: c.queueEntriesTarget || 0,
+    queueEntriesDone: c.queueEntriesDone || 0,
+    deathspaceId: (c.queueEntriesTarget > 0 && c.mode === "deathspace") ? (c.deathspaceId || null) : null,
+    returnZoneId: c.zone || "angel_outpost",
+    defeatedMode: (c.mode === "deathspace") ? "deathspace" : "belt",
+    shipInstanceId: c.activeShip
+  };
+}
+
+// 战斗队列项达标终结：关闭战斗、清字段、推进队列到下一项（与普通队列项推进逻辑一致）。
+function finalizeCombatQueueItem(state, now) {
+  const c = state.combat;
+  const queue = state.queue;
+  c.active = false;
+  state.currentAction.active = false;
+  c.queueItemId = null; c.queueWavesTarget = 0; c.queueWavesDone = 0;
+  c.queueEntriesTarget = 0; c.queueEntriesDone = 0;
+  c.deathspaceChainRemaining = 0; c.deathspaceChainPending = false; // 清残留连刷链，避免污染后续作业
+  state.resumeAfterRepair = null;
+  if (queue.status.isRunning && queue.status.activeIndex >= 0 && queue.status.activeIndex < queue.items.length) {
+    queue.items.splice(queue.status.activeIndex, 1);
+  }
+  if (queue.items.length) {
+    queue.status.activeIndex = Math.max(0, Math.min(queue.status.activeIndex, queue.items.length - 1));
+    const next = queue.items[queue.status.activeIndex];
+    const r = executeQueueItemForState(state, next, now);
+    if (!r.changed && !r.skill) {
+      queue.status.isRunning = false; queue.status.activeIndex = -1;
+    }
+  } else {
+    queue.status.isRunning = false; queue.status.activeIndex = -1;
+    state.currentAction.active = false; state.currentAction.batchRemaining = 0;
+  }
+  state._dirty = true;
+  return { changed:true };
 }
 
 const ShellStateActions = {

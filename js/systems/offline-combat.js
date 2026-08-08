@@ -76,6 +76,8 @@
           zoneSpecial: {}, // key: zoneId -> [{resourceId, qty, elite, boss}]
           ticket: {},      // key: zoneId -> {elite, boss}
           leader: {},      // key: siteId -> [{wave, isFinal, core, proto}]
+          stationCore: {}, // key: zoneId -> {elite, boss}（Tier3 四核心，唯一产出）
+          cargo: {},       // key: zoneId -> { class -> {normal, elite, boss} }（货柜，按船级+kind 计数）
           tactical: { normal: 0, elite: 0, boss: 0 }
         },
         activeAtStart: false
@@ -119,25 +121,29 @@
       const cb = m.equipment && m.equipment.combat;
       if (cb && cb.weaponType) ammoMap[cb.weaponType] = (ammoMap[cb.weaponType] || 0) + (cb.ammoCost || 1);
     }
-    s.ammo = {}; s.ammoInit = {};
+    s.ammo = {}; s.ammoInit = {}; s.ammoTier = {};
     for (const type in ammoMap) {
-      const cur = RR.get(state, "ammo:" + type);
+      const cur = getSelectedCount(state, type);
       s.ammo[type] = cur; s.ammoInit[type] = cur;
     }
     s.fuel = RR.get(state, "consumable:fuel");
     s.fuelInit = s.fuel;
   }
-  function canFireVirtual(inputs, zone, s) {
+  function canFireVirtual(inputs, zone, s, state) {
     if (!inputs.weapons || inputs.weapons.length === 0) return false;
-    if (s.fuel <= 0) return false;
-    const RR = G("ResourceRegistry");
-    // 与 combat.js:842-848 同算法：每种武器类型累计 ammoCost，全部满足才开火
+    if (s.fuel <= 0) { s.blockedBy = "fuel"; return false; }
+    // 与 combat.js 同算法：每种武器类型累计 ammoCost，全部满足才开火；优先高级预存档位
     const need = {};
     for (const m of inputs.weapons) {
       const cb = m.equipment.combat;
       need[cb.weaponType] = (need[cb.weaponType] || 0) + (cb.ammoCost || 1);
     }
-    for (const type in need) if ((s.ammo[type] || 0) < need[type]) return false;
+    s.ammoTier = {};
+    for (const type in need) {
+      const stacks = getSelectedStacks(state, type);
+      s.ammoTier[type] = stacks.length ? stacks[0].tier : "T1";
+      if ((s.ammo[type] || 0) < need[type]) { s.blockedBy = "ammo"; return false; }
+    }
     return true;
   }
   function consumeVolleyVirtual(inputs, zone, s) {
@@ -185,7 +191,7 @@
 
     while (true) {
       if (rounds >= MAX_WAVE_ROUNDS) { return { outcome: "cleared", rounds, kills }; }
-      const fire = canFireVirtual(inputs, zone, s);
+      const fire = canFireVirtual(inputs, zone, s, state);
       if (fire) {
         let roundDealt = 0;
         for (const m of inputs.weapons) {
@@ -193,7 +199,8 @@
           const weapon = WEAPON_CONFIG[cb.weaponType];
           if (!weapon) continue;
           if (!current) break;
-          const playerHit = G("calcPlayerHit")(cb.weaponType, m.equipment, state);
+          const ammoProps = getAmmoTierProps(s.ammoTier[cb.weaponType] || "T1");
+          const playerHit = G("calcPlayerHit")(cb.weaponType, m.equipment, state) * ammoProps.hitMult;
           const dmgMult = G("calcPlayerDmgMult")(cb.weaponType, state);
           let counterMult = 1.0;
           if (weapon.counterType === "shield" && current.hp.shield > 0) counterMult = 1.25;
@@ -201,7 +208,7 @@
           else if (weapon.counterType === "structure" && current.hp.shield <= 0 && current.hp.armor <= 0 && current.hp.structure > 0) counterMult = 1.25;
           const traitMult = G("getCapitalWeaponTraitMultiplier")(inputs.ship, cb.weaponType, c.hp, c.maxHp);
           const wbm = (inputs.boosterDmg && inputs.boosterDmg[cb.weaponType]) ? inputs.boosterDmg[cb.weaponType] : 1;
-          const dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult, EXPECT);
+          const dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, EXPECT);
           const dealt = G("applyLayeredCombatDamage")(current.hp, dmg);
           const total = dealt.shield + dealt.armor + dealt.structure;
           roundDealt += total;
@@ -332,6 +339,16 @@
       for (const cfg of sc) {
         (da.zoneSpecial[zone.id] = da.zoneSpecial[zone.id] || []).push({ resourceId: cfg.resourceId, qty: cfg.qty, kind: enemy.kind });
       }
+      const coreCfgs = G("getStationCoreDropConfigs")(zone);
+      if (coreCfgs.length && (enemy.kind === "elite" || enemy.kind === "boss")) {
+        (da.stationCore[zone.id] = da.stationCore[zone.id] || { elite: 0, boss: 0 });
+        da.stationCore[zone.id][enemy.kind]++;
+      }
+      // 货柜（按敌方船级+kind 记录计数，flush 时确定性重滚；死亡空间不计入）
+      const cargoCls = (typeof getEnemyCargoClass === "function") ? getEnemyCargoClass(zone.faction, enemy.type) : "frigate";
+      const cargoZoneMap = (da.cargo[zone.id] = da.cargo[zone.id] || {});
+      const cargoClsMap = (cargoZoneMap[cargoCls] = cargoZoneMap[cargoCls] || { normal: 0, elite: 0, boss: 0 });
+      cargoClsMap[enemy.kind]++;
     }
     // 战术材料（按 kind 累计 N；期望数量在 flush 计算）
     if (enemy.kind === "elite") da.tactical.elite++;
@@ -392,12 +409,26 @@
         recordFirst(s, "firstZoneClear", nowRef.t);
         waveNum = 1; // 从第 1 波继续（不自动换区）
       }
+      // 队列感知：普通星带每清一波累计 queueWavesDone（与在线 resolveCombatWaveVictory 一致）；
+      // 达标则停止离线模拟并终结队列项（受时间/资源约束，离线最多清到目标即停）。
+      if (c.queueItemId && c.queueWavesTarget > 0) {
+        c.queueWavesDone = (c.queueWavesDone || 0) + 1;
+        if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat" && state.resumeAfterRepair.queueItemId === c.queueItemId) {
+          state.resumeAfterRepair.queueWavesDone = c.queueWavesDone;
+        }
+        if (c.queueWavesDone >= c.queueWavesTarget) {
+          const fin = G("finalizeCombatQueueItem");
+          if (typeof fin === "function") fin(state, nowRef.t);
+          s.stopReason = "queue-target-reached";
+          return;
+        }
+      }
       c.wave = waveNum;
       // 资源不足 → 停止进攻（敌人仍会造成伤害已在 simulateWave 内处理；此处判定无法继续开火）
       if (budgetMs <= 0) { s.stopReason = "time"; return; }
       const inputs = readInputs(state);
       ensureVirtualAmmoFuel(state, s);
-      if (!canFireVirtual(inputs, zone, s)) { s.stopReason = "resources"; return; }
+      if (!canFireVirtual(inputs, zone, s, state)) { s.stopReason = (s.blockedBy === "ammo") ? "ammo" : "resources"; return; }
     }
     if (!c.active) s.stopReason = s.stopReason || "resolved";
     else s.stopReason = s.stopReason || "time";
@@ -487,6 +518,40 @@
       // 整条死亡空间通关
       bump(s.deathspaceClearsById, site.id, 1);
       recordFirst(s, "firstDeathspaceClear", nowRef.t);
+      // 队列感知：死亡空间每全通一次计 1 入场（与在线 resolveDeathspaceWaveVictory 一致）；
+      // 达标则停止离线模拟并终结队列项；未达标则手动重入下一入场（消耗密钥），由 queueEntries 接管连刷计数。
+      if (c.queueItemId && c.queueEntriesTarget > 0) {
+        c.queueEntriesDone = (c.queueEntriesDone || 0) + 1;
+        if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat" && state.resumeAfterRepair.queueItemId === c.queueItemId) {
+          state.resumeAfterRepair.queueEntriesDone = c.queueEntriesDone;
+        }
+        if (c.queueEntriesDone >= c.queueEntriesTarget) {
+          const fin = G("finalizeCombatQueueItem");
+          if (typeof fin === "function") fin(state, nowRef.t);
+          s.stopReason = "queue-target-reached";
+          return;
+        }
+        // 未达标：手动重入下一入场（消耗密钥），绕过既有链 break 以便继续清场
+        const RRd = G("ResourceRegistry");
+        if (!RRd || RRd.get(state, "special:" + site.ticketMaterial) < 1) {
+          const fin = G("finalizeCombatQueueItem");
+          if (typeof fin === "function") fin(state, nowRef.t);
+          s.stopReason = "no-keys"; return;
+        }
+        const nw = G("buildDeathspaceWave")(site, 1, detRng(c), c);
+        const nen = nw.enemies.map(e => ({ id:e.id, hit:e.hit, hp:{shield:e.hp.shield,armor:e.hp.armor,structure:e.hp.structure}, dodge:e.dodge, baseDamage:e.baseDamage, kind:e.kind, iskDrop:e.iskDrop, xpDrop:e.xpDrop, deathspaceLeader:Boolean(e.deathspaceLeader), deathspaceWave:1, _rewarded:false }));
+        RRd.spend(state, "special:" + site.ticketMaterial, 1);
+        s.ticketsConsumed++;
+        c.active = true; c.mode = "deathspace"; c.enemies = nen; c.currentEnemy = nen[0] || null;
+        c.wave = 1; c.totalKills = 0; c.runEliteKills = 0;
+        c.deathspaceChainRemaining = 1; // 仅用于绕过下方 506 的 break；连刷计数由 queueEntries 接管
+        c.deathspaceChainPending = false;
+        c.lastStatus = "通行密钥已消耗";
+        bump(s.deathspaceEntriesById, site.id, 1);
+        bump(s.deathspaceWavesById, site.id, 1);
+        if (typeof G("setCombatQueueResume") === "function") G("setCombatQueueResume")(state);
+        continue; // 外层 while：以新入场重新清场
+      }
       if (c.deathspaceChainRemaining > 0) {
         // 写 pending，下一秒虚拟时间续入（循环顶部处理）
         c.deathspaceChainPending = true;
@@ -581,7 +646,7 @@
       // 弹药/燃料：初始 - 当前虚拟 = 净消耗
       for (const type in s.ammoInit) {
         const used = s.ammoInit[type] - (s.ammo[type] || 0);
-        if (used > 0) { RR.spend(state, "ammo:" + type, used); addResource(s, "ammo:" + type, -used); }
+        if (used > 0) { applyAmmoDelta(state, type, used); }
       }
       const fuelUsed = s.fuelInit - s.fuel;
       if (fuelUsed > 0) { RR.spend(state, "consumable:fuel", fuelUsed); addResource(s, "consumable:fuel", -fuelUsed); }
@@ -662,6 +727,55 @@
       const fd = da.factionData[zoneId];
       if (fd.elite) { const n = batchCount(fd.elite, cfg.eliteChance, rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
       if (fd.boss) { const n = batchCount(fd.boss, cfg.bossChance, rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
+    }
+    // 1.5) 装备专用料（Tier2，zone-bound；死亡空间不计入，复用 elite/boss 计数）
+    for (const zoneId in da.factionData) {
+      const zone = COMBAT_ZONES.find(z => z.id === zoneId);
+      if (!zone) continue;
+      const gearConfigs = G("getGearDropConfigs")(zone);
+      if (!gearConfigs.length) continue;
+      const fd = da.factionData[zoneId];
+      for (const cfg of gearConfigs) {
+        if (fd.elite) { const n = batchCount(fd.elite, cfg.eliteChance, rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
+        if (fd.boss) { const n = batchCount(fd.boss, cfg.bossChance, rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
+      }
+    }
+    // 1.6) 空间站四核心（Tier3，唯一产出；死亡空间不计入，复用 elite/boss 计数）
+    const obtainedCores = state.stationCoresObtained = state.stationCoresObtained || {};
+    for (const zoneId in da.stationCore) {
+      const zone = COMBAT_ZONES.find(z => z.id === zoneId);
+      if (!zone) continue;
+      const coreConfigs = G("getStationCoreDropConfigs")(zone);
+      if (!coreConfigs.length) continue;
+      const cc = da.stationCore[zoneId];
+      for (const cfg of coreConfigs) {
+        if (obtainedCores[cfg.coreId]) continue;
+        const n = (cc.elite ? batchCount(cc.elite, cfg.eliteChance, rng) : 0) + (cc.boss ? batchCount(cc.boss, cfg.bossChance, rng) : 0);
+        if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty); addResource(s, cfg.resourceId, cfg.qty); obtainedCores[cfg.coreId] = true; break; }
+      }
+    }
+    // 1.7) 货柜（按船级+kind 计数，flush 时确定性重滚）
+    for (const zoneId in da.cargo) {
+      const zone = COMBAT_ZONES.find(z => z.id === zoneId);
+      if (!zone) continue;
+      const cz = da.cargo[zoneId];
+      for (const cls in cz) {
+        const spec = (typeof CARGO_CLASS_SIZES !== "undefined" && CARGO_CLASS_SIZES[cls]) || null;
+        if (!spec) continue;
+        const kindCounts = cz[cls];
+        for (const kind of ["normal", "elite", "boss"]) {
+          const n = kindCounts[kind] || 0;
+          if (!n) continue;
+          const chance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
+          const drops = batchCount(n, chance, rng);
+          for (let d = 0; d < drops; d++) {
+            const size = cargoWeightedPick(spec.sizes.map((sz, i) => ({ id: sz, weight: spec.weights[i] })), rng).id;
+            const itemId = cargoItemId(size);
+            RR.add(state, itemId, 1);
+            addResource(s, itemId, 1);
+          }
+        }
+      }
     }
     // 2) 区域特殊掉落
     for (const zoneId in da.zoneSpecial) {

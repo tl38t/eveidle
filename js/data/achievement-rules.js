@@ -632,6 +632,9 @@
     "ammo_laser",
     "ammo_missile",
     "ammo_cannon",
+    "ammo_laser_t2",
+    "ammo_missile_t2",
+    "ammo_cannon_t2",
   ]);
 
   function equipmentRecipeSetAnyRule(achievementId, recipeIds, minValue) {

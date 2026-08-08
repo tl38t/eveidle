@@ -170,10 +170,18 @@ function renderBoosterInventory(display) {
 /* ---- 主渲染入口 ---- */
 function renderBoosterPage(now) {
   var display = getBoosterManufacturingDisplayState(gameState, Number(now) || Date.now());
-  var efficiency = document.getElementById("booster-eff-display"); if (efficiency) efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
+  var efficiency = document.getElementById("booster-eff-display");
+  if (efficiency) {
+    efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
+    var skillMult = (1 + display.level * 0.02);
+    efficiency.title = "技能速度：1 × (1 + Lv." + display.level + " × 0.02) = " + skillMult.toFixed(2) + "x"
+      + "\n空间站综合后勤：×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）"
+      + "\n科研加成：×" + (display.researchMultiplier || 1).toFixed(3)
+      + "\n最终效率：" + display.efficiency.toFixed(2) + "x";
+  }
   var bsLog = document.getElementById("booster-logistics");
   if (bsLog) {
-    var lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    var lm = display.stationLogisticsMultiplier || 1;
     bsLog.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2);
   }
   var level = document.getElementById("booster-lv-num"); if (level) level.textContent = display.level;

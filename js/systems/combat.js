@@ -51,7 +51,14 @@ function updateCombatRecovery(now, state) {
   now = Number(now);
   if (!Number.isFinite(now)) now = Date.now();
   const combat = g.combat;
-  const activeId = combat.activeShip;
+  // 维修完成检测必须与 beginRecovery 写入维修键的解析口径完全一致：beginRecovery 用
+  // getActiveCombatShipState 解析「当前 active 战斗舰」(shipAssignments.combat → combat.activeShip → ships[0])
+  // 并把维修条目写在该舰 instanceId 下、resumeAfterRepair.shipInstanceId 也记该舰。
+  // 若此处仅用 combat.activeShip（可能因单舰兼顾挖矿/指派变更被置 null 或指向他舰），
+  // 则 repairs 键对不上 → 维修完成检测不到 → 自动续战永不触发 → 悬挂清理又删掉 resumeAfterRepair → 永久卡死
+  // （表现：战败进维修、修好后又一次战败就再无动作）。故统一用 getActiveCombatShipState 解析。
+  const _activeShip = getActiveCombatShipState(g);
+  const activeId = (_activeShip && _activeShip.instance && _activeShip.instance.instanceId) || combat.activeShip || null;
   // 仅用于判定「当前 active 战斗舰是否刚完成维修」以触发自动恢复：语义为"该舰存在维修条目"，
   // 与到期边界（now === until）一致——到期这一 tick 既满足 activeFinished 也满足 wasRepairingActive，
   // 从而正确触发 resumeAfterRepair。注意 equip/toggle/enterDeathspace 的拦截仍用 isShipUnderRepair 的严格 > 比较，不受影响。
@@ -72,13 +79,14 @@ function updateCombatRecovery(now, state) {
       g._dirty = true;
     }
   }
+  let resumed = false;
   if (activeFinished && wasRepairingActive && g.resumeAfterRepair && g.resumeAfterRepair.type === "combat") {
-    tryResumeCombatAfterRepair();
+    resumed = Boolean(tryResumeCombatAfterRepair());
   }
-  // 悬挂标记清理：resumeAfterRepair 指向的舰维修条目已被清（无论本 tick 清的还是此前已清），
-  // 且未由上方 activeFinished 合法触发 auto-resume，则清掉，避免战斗面板长期显示"完成后返回战斗"误导。
+  // 悬挂标记清理：仅当本 tick 未成功触发 auto-resume 时，清掉已无维修条目支撑的 resumeAfterRepair。
+  // （已成功续战则跳过——tryResumeCombatAfterRepair 会重新写回队列感知的续战标记，不可被此处清掉。）
   const rrPending = g.resumeAfterRepair;
-  if (rrPending && rrPending.type === "combat") {
+  if (!resumed && rrPending && rrPending.type === "combat") {
     const sid = rrPending.shipInstanceId;
     const stillRepairing = Boolean(sid && g.combat.repairs[sid] && Number(g.combat.repairs[sid]) > 0);
     if (!stillRepairing) g.resumeAfterRepair = null;
@@ -512,6 +520,65 @@ function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues, state) {
   return drops;
 }
 
+// Tier2 加密数据拆分：装备专用料掉落（zone-bound，不进池、不等权；死亡空间不触发）。
+function getGearDropConfigs(zone) {
+  if (!zone || !Array.isArray(zone.gearDrops)) return [];
+  return zone.gearDrops.map(config => ({
+    material: config.material || (config.resourceId || "").split(":").slice(1).join(":") || config.resourceId,
+    resourceId: config.resourceId,
+    qty: Math.max(1, Number(config.qty) || 1),
+    eliteChance: Number(config.chances && config.chances.elite) || 0,
+    bossChance: Number(config.chances && config.chances.boss) || 0
+  }));
+}
+
+function rollGearDrops(zone, enemyKind, randomValues, state) {
+  state = state || gameState;
+  if (enemyKind !== "elite" && enemyKind !== "boss") return [];
+  const configs = getGearDropConfigs(zone);
+  if (configs.length === 0) return [];
+  const values = Array.isArray(randomValues) ? randomValues : [];
+  const drops = [];
+  for (let index = 0; index < configs.length; index++) {
+    const cfg = configs[index];
+    const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
+    const roll = values[index] !== undefined ? values[index] :
+      typeof randomValues === "number" ? randomValues : Math.random();
+    if (!cfg.resourceId || roll >= chance) continue;
+    ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
+    drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty, rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
+  }
+  return drops;
+}
+
+// Tier3 空间站四核心：唯一产出、特殊物资、建站才生效（生效乘子在系数 B）。
+function getStationCoreDropConfigs(zone) {
+  if (!zone || !Array.isArray(zone.stationCoreDrops)) return [];
+  return zone.stationCoreDrops.map(config => ({
+    coreId: config.coreId,
+    material: config.material || (config.resourceId || "").split(":").slice(1).join(":") || config.resourceId,
+    resourceId: config.resourceId,
+    qty: Math.max(1, Number(config.qty) || 1),
+    eliteChance: Number(config.chances && config.chances.elite) || 0,
+    bossChance: Number(config.chances && config.chances.boss) || 0
+  }));
+}
+
+function rollStationCoreDrop(zone, enemyKind, randomValue, state) {
+  state = state || gameState;
+  if (enemyKind !== "elite" && enemyKind !== "boss") return null;
+  const obtained = state.stationCoresObtained || {};
+  const cfg = getStationCoreDropConfigs(zone).find(c => !obtained[c.coreId]);
+  if (!cfg) return null; // 该带核心已获得 → 不再掉落
+  const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
+  if (!chance) return null;
+  const roll = randomValue === undefined ? Math.random() : randomValue;
+  if (roll >= chance) return null;
+  ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
+  state.stationCoresObtained[cfg.coreId] = true;
+  return { coreId: cfg.coreId, material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty };
+}
+
 function rollDeathspaceTicketDrop(zone, enemyKind, randomValue, state) {
   state = state || gameState;
   if (enemyKind !== "elite" && enemyKind !== "boss") return null;
@@ -605,8 +672,17 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const specialValues = zoneSpecialConfigs.map(() => roll());
   const zoneSpecialDrops = deathspace ? [] : rollCombatZoneSpecialDrops(zone, enemy.kind, specialValues, state);
   for (const drop of zoneSpecialDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
+  const gearConfigs = deathspace ? [] : getGearDropConfigs(zone);
+  const gearValues = gearConfigs.map(() => roll());
+  const gearDrops = deathspace ? [] : rollGearDrops(zone, enemy.kind, gearValues, state);
+  for (const drop of gearDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
+  const coreDrop = deathspace ? null : rollStationCoreDrop(zone, enemy.kind, roll(), state);
+  if (coreDrop) c.lastLoot += " · " + coreDrop.material + " ×" + coreDrop.qty;
   const ticketDrop = deathspace ? null : rollDeathspaceTicketDrop(zone, enemy.kind, roll(), state);
   if (ticketDrop) c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty;
+  // 货柜系统：敌方船被击坠低概率掉货柜（死亡空间不掉落）；内容待玩家开箱揭晓。
+  const cargoDrop = deathspace ? null : (typeof rollCargoDrop === "function" ? rollCargoDrop(enemy, zone, roll, state) : null);
+  if (cargoDrop) c.lastLoot += " · 货柜" + cargoDrop.size + " ×1";
   const coreRoll = roll();
   const protoRoll = roll();
   const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave, coreRoll, protoRoll, state) : [];
@@ -632,13 +708,13 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     c.lastLoot += " · " + tacticalDrop.materialId + " ×" + tacticalDrop.quantity;
   }
   const fmtDrop = d => ((d && d.materialId !== undefined ? d.materialId : (d && d.material)) + " ×" + (d && d.quantity !== undefined ? d.quantity : (d && d.qty)));
-  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...deathspaceDrops, tacticalDrop].filter(Boolean);
+  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...gearDrops, coreDrop, ...deathspaceDrops, tacticalDrop, cargoDrop].filter(Boolean);
   if (specialDrops.length > 0) c.lastSpecialLoot = specialDrops.map(fmtDrop).join(" · ");
   c.totalKills++;
   if (enemy.kind === "elite") c.runEliteKills = (c.runEliteKills || 0) + 1;
   syncCurrentCombatTarget(c, state);
-  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent });
-  return { isk, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent };
+  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop });
+  return { isk, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop };
 }
 
 function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
@@ -661,9 +737,11 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
     doEmit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
     c.runDamageDealt = 0;
     c.runDamageTaken = 0;
+    // 队列感知：入场清场完成计 1 次；达标则终结队列项，否则直接重入下一入场。
+    const entryDone = (c.queueItemId && c.queueEntriesTarget > 0);
+    if (entryDone) c.queueEntriesDone = (c.queueEntriesDone || 0) + 1;
     c.active = false;
     state.currentAction.active = false;
-    if (c.deathspaceChainRemaining > 0) c.deathspaceChainPending = true; // 连刷：标记待续，下一 tick 自动续进
     c.enemies = [];
     c.currentEnemy = null;
     c.wave = 1;
@@ -672,6 +750,25 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
     const maxHp = getCombatMaxHpFromState(state, { zoneId:zone.id });
     c.hp = { ...maxHp };
     c.maxHp = { ...maxHp };
+    if (entryDone && c.queueEntriesDone >= c.queueEntriesTarget) {
+      // 入场次数达标：终结战斗队列项并推进队列
+      if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
+      return true;
+    }
+    if (entryDone) {
+      // 未达标：直接重入同一 site 的下一入场（消耗密钥），并刷新续战标记
+      const nextWave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(c); }, c);
+      const res = dispatchGameAction(state, { type:"combat/enterDeathspace", deathspaceId:site.id, enemies:nextWave.enemies, formationId:nextWave.formationId }, Date.now());
+      if (res && res.changed) {
+        if (typeof setCombatQueueResume === "function") setCombatQueueResume(state);
+        c.lastStatus = "死亡空间连刷 · 第 " + (c.queueEntriesDone + 1) + " 次入场";
+      } else {
+        // 重入失败（密钥/等级/维修中）：安全停止并终结队列项
+        if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
+      }
+      return true;
+    }
+    if (c.deathspaceChainRemaining > 0) c.deathspaceChainPending = true; // 旧连刷链（非队列）路径
     return true;
   }
   c.lastStatus = "房间肃清 · LP +" + waveLp;
@@ -724,6 +821,14 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
   const theRng = (typeof rng === "function") ? rng : Math.random;
   if (getLivingCombatEnemies(c).length > 0) return false;
+  // 普通星带并入队列：每清一波累计 queueWavesDone（跨维修累计），达标即终结队列项并推进。
+  if (c.queueItemId && c.queueWavesTarget > 0) {
+    c.queueWavesDone = (c.queueWavesDone || 0) + 1;
+    if (c.queueWavesDone >= c.queueWavesTarget) {
+      if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
+      return false; // 不走后续 spawn，战斗已结束
+    }
+  }
   if (c.mode === "deathspace") {
     const site = getDeathspaceById(c.deathspaceId);
     return site ? resolveDeathspaceWaveVictory(site, zone, theRng, doEmit, state) : false;
@@ -756,18 +861,49 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   return true;
 }
 
-// 维修完成后自动恢复战斗（Phase 3D 修正）：无论失败来源是普通星带还是死亡空间，
-// 维修完成后都只返回 returnZoneId 普通星带、从第 1 波开始全新一轮肃清。
-// 死亡空间永不续原副本、绝不调用 enterDeathspace、绝不检查或扣除通行密钥。
-// 任何校验失败（非法 returnZoneId、等级/武器/维修中）一律安全停止，不抛错、不扣任何资源。
+// 维修完成后自动恢复战斗（Phase 3D 修正 + 战斗并入队列）：
+//  - 队列驱动战斗：恢复队列进度字段，死亡空间队列项修好重入同一 site（消耗密钥），
+//    普通星带队列项回到 returnZoneId 第 1 波继续累计清波；均达标则终结队列项。
+//  - 非队列战斗（resumeAfterRepair 无 queueItemId）：维持原行为——死亡空间永不续跑、
+//    只返回普通星带。
+// 任何校验失败（非法 returnZoneId、等级/武器/维修中/密钥不足）一律安全停止，不抛错、不扣任何资源。
 function tryResumeCombatAfterRepair() {
   const r = gameState.resumeAfterRepair;
   if (!r || r.type !== "combat") return false;
   gameState.resumeAfterRepair = null; // 一次性消费，避免重复触发
-  const zone = COMBAT_ZONES.find(item => item.id === r.returnZoneId);
-  if (!zone) return false; // 非法 returnZoneId：安全停止，不生成敌人、不扣资源
   const now = Date.now();
   const c = gameState.combat;
+  // 队列感知：恢复队列进度字段（跨维修保留）。
+  // 离线累计保护：c.queueWavesDone/EntriesDone 是权威的跨维修/跨离线累计值；
+  // r.* 只是上次续战写入的快照，可能被离线模拟推进超越，取较大者避免回滚进度。
+  if (r.queueItemId) {
+    c.queueItemId = r.queueItemId;
+    c.queueWavesTarget = r.queueWavesTarget || 0;
+    c.queueWavesDone = Math.max(c.queueWavesDone || 0, r.queueWavesDone || 0);
+    c.queueEntriesTarget = r.queueEntriesTarget || 0;
+    c.queueEntriesDone = Math.max(c.queueEntriesDone || 0, r.queueEntriesDone || 0);
+  }
+  // 死亡空间队列项：修好重入同一 site（消耗密钥）；入场次数达标则终结队列项。
+  if (r.deathspaceId && r.queueItemId && c.queueEntriesTarget > 0) {
+    if (c.queueEntriesDone >= c.queueEntriesTarget) {
+      if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(gameState, now);
+      return true;
+    }
+    const site = getDeathspaceById(r.deathspaceId);
+    if (site) {
+      const wave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(c); }, c);
+      const res = dispatchGameAction(gameState, { type:"combat/enterDeathspace", deathspaceId:site.id, enemies:wave.enemies, formationId:wave.formationId }, now);
+      if (res && res.changed) {
+        if (typeof setCombatQueueResume === "function") setCombatQueueResume(gameState);
+        GameEvents.emit("combat:resumedAfterRepair", { zoneId:site.sourceZoneId, defeatedMode:"deathspace", deathspaceId:site.id }, { offline:false });
+        return true;
+      }
+    }
+    return false;
+  }
+  // 普通星带（含队列）：回到 returnZoneId 第 1 波
+  const zone = COMBAT_ZONES.find(item => item.id === r.returnZoneId);
+  if (!zone) return false; // 非法 returnZoneId：安全停止，不生成敌人、不扣资源
   // 强制回到普通星带语义：清除死亡空间残留，回到来源星带第 1 波。
   c.mode = "belt";
   c.viewMode = "belt";
@@ -786,6 +922,7 @@ function tryResumeCombatAfterRepair() {
   // 经既有 combat/start Action 续跑：内部完整校验（维修中/等级/无武器）失败则不改状态、安全停止
   const res = dispatchGameAction(gameState, { type:"combat/start", enemies:wave.enemies, formationId:wave.formationId }, now);
   if (res && res.changed) {
+    if (typeof setCombatQueueResume === "function") setCombatQueueResume(gameState);
     GameEvents.emit("combat:resumedAfterRepair", { zoneId:r.returnZoneId, defeatedMode:r.defeatedMode, deathspaceId:r.deathspaceId || null }, { offline:false });
     return true;
   }
@@ -837,14 +974,24 @@ function advanceCombatRound(state, context) {
   if (c.hp.armor   > c.maxHp.armor)   c.hp.armor   = c.maxHp.armor;
   if (c.hp.structure > c.maxHp.structure) c.hp.structure = c.maxHp.structure;
 
-  const ammoRequired = {};
+  // 弹药耗尽撤退：所有已装载弹药都无法供给任何需弹武器 → 结束战斗（撤退，保留已得战利品）
+  const needsAmmoWeapons = weapons.filter(m => (m.equipment.combat.ammoCost || 1) > 0);
+  if (needsAmmoWeapons.length > 0 && !needsAmmoWeapons.some(m => hasSelectedAmmo(state, m.equipment.combat.weaponType))) {
+    c.active = false; state.currentAction.active = false;
+    c.enemies = []; c.currentEnemy = null;
+    c.lastStatus = "弹药耗尽，撤退";
+    c.runDamageDealt = 0; c.runDamageTaken = 0;
+    return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"ammo-depleted" };
+  }
+
   const volleyFuel = computeVolleyFuel(state, zone);
+  const ammoRequired = {};
   for (const module of weapons) {
     const combat = module.equipment.combat;
     ammoRequired[combat.weaponType] = (ammoRequired[combat.weaponType] || 0) + (combat.ammoCost || 1);
   }
   const enoughFuel = ResourceRegistry.get(state, "consumable:fuel") >= volleyFuel;
-  const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => ResourceRegistry.get(state, "ammo:" + type) >= amount);
+  const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => getSelectedCount(state, type) >= amount);
   const canFire = weapons.length > 0 && enoughFuel && enoughAmmo;
 
   if (canFire) {
@@ -854,7 +1001,11 @@ function advanceCombatRound(state, context) {
     normalizeCombatRunDamage(c);
     const prevRunDamage = c.runDamageDealt;
     ResourceRegistry.spend(state, "consumable:fuel", volleyFuel);
-    for (const [type, amount] of Object.entries(ammoRequired)) ResourceRegistry.spend(state, "ammo:" + type, amount);
+    const volleyAmmoProps = {};
+    for (const [type, amount] of Object.entries(ammoRequired)) {
+      const r = consumeAmmoForType(state, type, amount);
+      volleyAmmoProps[type] = getAmmoTierProps(r.tier);
+    }
     const capSkill = state.skills.capacitorManagement;
     if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", volleyFuel * 0.3); }
 
@@ -867,7 +1018,8 @@ function advanceCombatRound(state, context) {
       if (c.mode !== "deathspace" && c.runWeaponTypes.indexOf(combat.weaponType) === -1) {
         c.runWeaponTypes.push(combat.weaponType);
       }
-      const playerHit = calcPlayerHit(combat.weaponType, equipment, state);
+      const ammoProps = volleyAmmoProps[combat.weaponType] || getAmmoTierProps("T1");
+      const playerHit = calcPlayerHit(combat.weaponType, equipment, state) * ammoProps.hitMult;
       const dmgMult = calcPlayerDmgMult(combat.weaponType, state);
       let counterMult = 1.0;
       if (weapon.counterType === "shield" && enemy.hp.shield > 0) counterMult = 1.25;
@@ -876,7 +1028,7 @@ function advanceCombatRound(state, context) {
       const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
       const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
       const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
-      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier, rng);
+      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult, rng);
       const dealt = applyLayeredCombatDamage(enemy.hp, damage);
       const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
       c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;

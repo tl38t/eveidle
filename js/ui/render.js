@@ -125,7 +125,7 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   const efficiency = document.getElementById("smelting-eff-value");
   if (efficiency) {
     efficiency.textContent = display.efficiency.toFixed(2);
-    efficiency.title = "技能速度：1 × (1 + " + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" + (display.shipBonus > 0 ? "\n舰船冶炼加速：" + display.ship.name + " +" + (display.shipBonus * 100).toFixed(0) + "%" : "\n舰船冶炼加速：无") + "\n空间站综合后勤：×" + (display.stationLogistics ? display.stationLogistics.multiplier : 1).toFixed(2) + "（" + (display.stationLogistics ? display.stationLogistics.text : "未建立") + "）" + "\n最终速度：" + display.efficiency.toFixed(2) + "x\n\n基础时间：" + display.current.baseTime + "s\n实际时间：" + display.actualTime.toFixed(1) + "s\n产量只受冶炼技能影响，舰船只缩短时间";
+    efficiency.title = "技能速度：1 × (1 + " + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" + (display.shipBonus > 0 ? "\n舰船冶炼加速：" + display.ship.name + " +" + (display.shipBonus * 100).toFixed(0) + "%" : "\n舰船冶炼加速：无") + "\n空间站综合后勤：×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）" + "\n最终速度：" + display.efficiency.toFixed(2) + "x\n\n基础时间：" + display.current.baseTime + "s\n实际时间：" + display.actualTime.toFixed(1) + "s\n产量只受冶炼技能影响，舰船只缩短时间";
   }
   const output = document.getElementById("smelting-output-qty"); if (output) output.textContent = display.output;
   const support = document.getElementById("smelting-ship-support"); if (support) support.textContent = display.shipBonus > 0 ? display.ship.name + " · 速度 +" + (display.shipBonus * 100).toFixed(0) + "%" : "未分配";

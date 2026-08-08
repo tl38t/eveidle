@@ -866,7 +866,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   } else if (output.type === "fuel") {
     ResourceRegistry.add(state, "consumable:fuel", totalQty);
   } else if (output.type === "ammo") {
-    ResourceRegistry.add(state, "ammo:" + output.weapon, totalQty);
+    addAmmo(state, { type: output.weapon, tier: output.tier || "T1", props: output.props, qty: totalQty });
   } else if (output.type === "probe") {
     ResourceRegistry.add(state, "probe:" + output.itemId, totalQty);
   }
@@ -1413,10 +1413,17 @@ function getStationBuildingEffectsDisplayState(state) {
   };
 }
 
-// ---- 综合后勤倍率（Phase 3C-7）----
+// ---- 综合后勤倍率（Phase 3C-7，系数 B 扩展）----
 // Lv.0=×1, Lv.1=×1.01, Lv.2=×1.02, Lv.3=×1.03；断油=×1；非法 bodyLevel/NaN/Infinity fail-closed ×1
 // 独立速度乘区，仅缩短周期时间，不改变产量/XP/材料/掉落/成功率
-function getStationLogisticsMultiplier(state) {
+// 系数 B（2026-08-06）：传入 coreTag 且对应空间站核心已获取并持有库存时，该制造线额外 +10%（加算，非乘算）。
+const STATION_CORE_RESOURCE = {
+  smelt:   "special:空间站冶炼核心",
+  shipEng: "special:空间站船坞核心",
+  equipEng:"special:空间站装备制造核心",
+  booster: "special:空间站增强剂制造核心",
+};
+function getStationLogisticsMultiplier(state, coreTag) {
   const s = state && state.station;
   if (!s) return 1;
   let bodyLevel = Math.floor(Number(s.bodyLevel));
@@ -1424,9 +1431,18 @@ function getStationLogisticsMultiplier(state) {
   if (!isStationOperational(state)) return 1;
   const table = {0: 1, 1: 1.01, 2: 1.02, 3: 1.03};
   const base = table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
+  let mult = base;
+  // 系数 B：携带对应空间站核心（已获取且库存持有）时该制造线 +10%（加算，叠在本体基础倍率上）
+  if (coreTag && STATION_CORE_RESOURCE[coreTag]) {
+    const obtained = state.stationCoresObtained || {};
+    const held = (typeof ResourceRegistry !== "undefined")
+      ? Number(ResourceRegistry.get(state, STATION_CORE_RESOURCE[coreTag])) || 0
+      : 0;
+    if (obtained[coreTag] && held > 0) mult += 0.10;
+  }
   // 十倍速开关（2026-08-04）：仅缩放产出周期，冷却/到期仍实时。speed=1 时恒为 1。
   const speed = (typeof getGameSpeed === "function") ? getGameSpeed() : 1;
-  return base * speed;
+  return mult * speed;
 }
 
 function getStationLogisticsDisplayState(state) {

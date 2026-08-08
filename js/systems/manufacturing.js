@@ -135,7 +135,7 @@ function getRunningEquipEngRecipe() {
 
 function getEquipEngEfficiency() {
   const skillMult = 1 + gameState.skills.equipmentEngineering.lvl * 0.02;
-  const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
+  const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState, "equipEng")) : 1;
   // 研究批次 G：与 selectors.getEquipmentEngineeringDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
   const researchMult = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "equip"]) : 1;
@@ -250,7 +250,7 @@ function applyEquipEngOutput(recipe, cycles) {
   } else if (output.type === "fuel") {
     ResourceRegistry.add(gameState, "consumable:fuel", total);
   } else if (output.type === "ammo") {
-    ResourceRegistry.add(gameState, "ammo:" + output.weapon, total);
+    addAmmo(gameState, { type: output.weapon, tier: output.tier || "T1", props: output.props, qty: total });
   } else if (output.type === "probe") {
     ResourceRegistry.add(gameState, "probe:" + output.itemId, total);
   }
@@ -266,7 +266,7 @@ function applyEquipEngOutput(recipe, cycles) {
 function getBoosterEfficiency() {
   const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
   const skillMult = 1 + lvl * 0.02;
-  const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
+  const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState, "booster")) : 1;
   // 研究批次 G：与 selectors.getBoosterManufacturingDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
   const researchMult = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "booster"]) : 1;

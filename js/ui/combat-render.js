@@ -75,26 +75,66 @@ function renderCombatLiveDisplay(display) {
   text("combat-player-stats", "齐射伤害:" + display.player.volleyDamage + " · 武器:" + display.player.weaponCount + " · 航速:" + display.player.speed);
   renderCombatEnemyPanel(display); updateCombatRing(display);
   const rewards = document.getElementById("combat-rewards"); if (rewards) { rewards.style.display = display.showRewards ? "" : "none"; if (display.showRewards) rewards.textContent = display.runStatus; }
-  text("combat-fuel-val", display.supplies.fuel.toLocaleString()); text("combat-ammo-laser", display.supplies.laser.toLocaleString()); text("combat-ammo-missile", display.supplies.missile.toLocaleString()); text("combat-ammo-cannon", display.supplies.cannon.toLocaleString());
+  text("combat-fuel-val", display.supplies.fuel.toLocaleString());
+  text("combat-ammo-laser", getSelectedCount(gameState, "laser").toLocaleString() + (getSelectedHasT2(gameState, "laser") ? " ⚡T2" : ""));
+  text("combat-ammo-missile", getSelectedCount(gameState, "missile").toLocaleString() + (getSelectedHasT2(gameState, "missile") ? " ⚡T2" : ""));
+  text("combat-ammo-cannon", getSelectedCount(gameState, "cannon").toLocaleString() + (getSelectedHasT2(gameState, "cannon") ? " ⚡T2" : ""));
   const start = document.getElementById("btn-start-combat"); const stop = document.getElementById("btn-stop-combat");
   if (start) { start.style.display = display.controls.showStart ? "" : "none"; start.disabled = display.controls.startDisabled; start.textContent = display.controls.startText; }
   if (stop) stop.style.display = display.controls.showStop ? "" : "none";
-  // 死亡空间连刷控件：仅在该模式下显示；armed（连刷进行中/待续）时改用取消文案并禁用单次进入按钮
-  const chainControl = document.getElementById("deathspace-chain-control");
-  if (chainControl) {
-    const inDeathspace = display.mode === "deathspace";
-    chainControl.style.display = inDeathspace ? "" : "none";
-    if (inDeathspace) {
-      const c = gameState.combat;
-      const armed = (c.deathspaceChainRemaining > 0) || c.deathspaceChainPending;
-      const chainBtn = document.getElementById("btn-start-combat-chain");
-      const statusEl = document.getElementById("deathspace-chain-status");
-      if (chainBtn) chainBtn.textContent = armed ? "⏹ 取消连刷" : "▶ 连续挑战";
-      if (start) start.disabled = armed || display.controls.startDisabled;
-      if (statusEl) statusEl.textContent = armed ? ("连刷中 · 剩余 " + (c.active ? c.deathspaceChainRemaining + 1 : c.deathspaceChainRemaining) + " 次") : "";
+  // 星带/死亡空间共用同一个「开始」按钮触发确认弹窗；死亡空间下隐藏 belt 波次信息
+  const waveSpan = document.querySelector(".combat-wave");
+  if (waveSpan) waveSpan.style.display = display.mode === "deathspace" ? "none" : "";
+  // 战斗队列进度：普通星带显示「清波 X/Y」，死亡空间显示「入场 X/Y」
+  const progressEl = document.getElementById("combat-queue-progress");
+  if (progressEl) {
+    const c = gameState.combat;
+    if (c && c.queueItemId) {
+      if (c.queueWavesTarget > 0) progressEl.textContent = "队列剩余：清波 " + (c.queueWavesDone || 0) + "/" + c.queueWavesTarget;
+      else if (c.queueEntriesTarget > 0) progressEl.textContent = "队列剩余：入场 " + (c.queueEntriesDone || 0) + "/" + c.queueEntriesTarget;
+      else progressEl.textContent = "";
+      progressEl.style.display = "";
+    } else {
+      progressEl.textContent = "";
+      progressEl.style.display = "none";
     }
   }
   document.body.classList.toggle("in-combat", display.active);
+  renderCombatAmmoLoadout(gameState);
+}
+
+// 弹药装载面板：列出每型弹药各实例（按档降序），玩家勾选「参战」控制是否带入战斗
+function renderCombatAmmoLoadout(state) {
+  const wrap = document.getElementById("combat-ammo-loadout");
+  if (!wrap) return;
+  const types = ["laser", "missile", "cannon"];
+  const groups = [];
+  for (const type of types) {
+    const stacks = (state.ammo || []).filter(s => s.type === type && (s.qty || 0) > 0);
+    if (!stacks.length) continue;
+    stacks.sort((a, b) => ammoTierRank(b.tier) - ammoTierRank(a.tier));
+    const stackHtml = stacks.map(s => {
+      const on = s.loaded !== false;
+      const tierTag = s.tier === "T2"
+        ? '<span class="ammo-tier-tag t2">⚡T2 · 伤害/命中 +10%</span>'
+        : '<span class="ammo-tier-tag t1">T1</span>';
+      return `<div class="ammo-stack">${tierTag}<span class="ammo-stack-name">${escHtml(s.name)}</span><span class="ammo-stack-qty">×${s.qty.toLocaleString()}</span><button class="ammo-load-toggle${on ? " on" : ""}" data-ammo-id="${escHtml(s.id)}">${on ? "参战" : "卸下"}</button></div>`;
+    }).join("");
+    groups.push(`<div class="ammo-type-group"><div class="ammo-type-name">${AMMO_TYPE_NAMES[type]}</div><div class="ammo-stacks">${stackHtml}</div></div>`);
+  }
+  wrap.innerHTML = groups.length ? groups.join("") : '<div class="ammo-empty">无弹药库存（去制造台生产）</div>';
+  wrap.querySelectorAll(".ammo-load-toggle").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-ammo-id");
+      const st = (state.ammo || []).find(s => s.id === id);
+      if (!st) return;
+      st.loaded = (st.loaded === false); // 切换参战/卸下
+      if (typeof renderCombatPanel === "function") renderCombatPanel();
+    });
+  });
+}
+function escHtml(s) {
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
 }
 
 /* ================================================================
@@ -190,6 +230,8 @@ function renderCombatPanel(now) {
   document.querySelectorAll("[data-combat-mode]").forEach(button => button.classList.toggle("active", button.dataset.combatMode === display.mode));
   const zoneSelector = document.getElementById("combat-zone-selector"); if (zoneSelector) zoneSelector.style.display = display.mode === "belt" ? "" : "none";
   const deathspacePanel = document.getElementById("deathspace-selector-panel"); if (deathspacePanel) deathspacePanel.style.display = display.mode === "deathspace" ? "" : "none";
+  const queueControl = document.getElementById("combat-queue-control"); if (queueControl) queueControl.style.display = "none";
+  const chainControl = document.getElementById("deathspace-chain-control"); if (chainControl) chainControl.style.display = "none";
   const deathspaceIntro = deathspacePanel && deathspacePanel.querySelector(".deathspace-intro strong"); if (deathspaceIntro) deathspaceIntro.textContent = "DED " + display.deathspaceTier + "/10";
   const deathspaceIntroText = document.getElementById("deathspace-intro-text");
   if (deathspaceIntroText) {
@@ -222,7 +264,7 @@ function renderCombatPanel(now) {
 }
 
 // 掉落预览（Phase 3D 其他任务）：基于 getCombatDropPreview 纯函数渲染当前选中星带/死亡空间的
-// 可能掉落物与概率。仅展示加密数据/特殊掉落/通行密钥/首领战利品/战术材料，不含 ISK/LP 经济与成功率。
+// 可能掉落物与概率。展示加密数据/特殊掉落/装备专用数据/通行密钥/首领战利品/战术材料/货柜，不含 ISK/LP 经济与成功率。
 function renderCombatDropPreview(display) {
   const wrap = document.getElementById("combat-drop-preview-wrap");
   const body = document.getElementById("combat-drop-preview");
@@ -279,10 +321,32 @@ function renderCombatDropPreview(display) {
       const t = preview.ticketDrop;
       rows.push(row("🎫", t.material, `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket"));
     }
+    if (Array.isArray(preview.gearDrops) && preview.gearDrops.length > 0) {
+      rows.push(`<div class="drop-group-title">🔧 装备专用数据（精英/BOSS 掉落）</div>`);
+      for (const gd of preview.gearDrops) {
+        rows.push(row("🔧", gd.material, `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear"));
+      }
+    }
     if (preview.tacticalMaterial) {
       const t = preview.tacticalMaterial;
       rows.push(`<div class="drop-group-title">🧪 战术材料（所有敌人）</div>`);
       rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical"));
+    }
+    // 货柜（低概率宝箱；死亡空间模式 cargoDrops===null，不渲染）
+    if (preview.cargoDrops) {
+      const c = preview.cargoDrops;
+      const dc = c.dropChance;
+      const sizeNames = { S:"小型", M:"中型", L:"大型", XL:"超大型" };
+      // 汇总本区所有可能出现的货柜尺寸（去重保序）
+      const sizeSet = new Set();
+      if (c.sizesByClass) for (const sizes of Object.values(c.sizesByClass)) for (const s of sizes) sizeSet.add(s);
+      const sizeList = Array.from(sizeSet);
+      const sizeStr = sizeList.map(s => sizeNames[s] || s).join(" / ");
+      rows.push(`<div class="drop-group-title">📦 货柜（击坠敌人低概率掉落）</div>`);
+      rows.push(row("📦", "货柜（" + sizeStr + "）",
+        `普通 ${pct(dc.normal)} · 精英 ${pct(dc.elite)} · BOSS ${pct(dc.boss)}` +
+        " · 点开揭晓内容（T1 保底·T2 矿物/普通弹·T3 T2弹·BP 按尺寸出装备蓝图(D→S/C→M/B→L/A→XL)·T4 仅脑插）",
+        "drop-cargo"));
     }
   }
   body.innerHTML = rows.join("");
@@ -627,7 +691,12 @@ function closeCombat3DPopup() {
   });
 
 
-  const start = document.getElementById("btn-start-combat"); if (start) start.addEventListener("click", startCombatEncounter);
+  const start = document.getElementById("btn-start-combat"); if (start) start.addEventListener("click", () => {
+    const mode = (gameState.combat && gameState.combat.viewMode === "deathspace") ? "deathspace" : "belt";
+    if (typeof showActionConfirm === "function") showActionConfirm(mode === "deathspace" ? "combatDeathspace" : "combatBelt");
+  });
   const stop = document.getElementById("btn-stop-combat"); if (stop) stop.addEventListener("click", stopCombatEncounter);
-  const chainBtn = document.getElementById("btn-start-combat-chain"); if (chainBtn) chainBtn.addEventListener("click", startDeathspaceChainEncounter);
+  const chainBtn = document.getElementById("btn-start-combat-chain"); if (chainBtn) chainBtn.addEventListener("click", () => {
+    if (typeof showActionConfirm === "function") showActionConfirm("combatDeathspace");
+  });
 })();

@@ -560,6 +560,11 @@ function migrateMoonMiningState() {
     if (gameState.resources.special[material] === undefined) gameState.resources.special[material] = 0;
   }
 
+  if (!gameState.stationCoresObtained || typeof gameState.stationCoresObtained !== "object") gameState.stationCoresObtained = {};
+  for (const coreId of ["smelt", "shipEng", "equipEng", "booster"]) {
+    if (gameState.stationCoresObtained[coreId] !== true) gameState.stationCoresObtained[coreId] = false;
+  }
+
   if (!gameState.currentAction || typeof gameState.currentAction !== "object") return;
   const action = gameState.currentAction;
   if (!action.normalMiningArea || !MINING_AREAS.some(area => area.name === action.normalMiningArea)) action.normalMiningArea = "凡晶石带";
@@ -1290,7 +1295,7 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     if (!gameState.resources.gases) gameState.resources.gases = {};
     migrateMoonMiningState();
     if (gameState.resources.fuel === undefined) gameState.resources.fuel = 1000;
-    if (!gameState.resources.ammunition || typeof gameState.resources.ammunition !== "object" || !gameState.resources.ammunition.laser) gameState.resources.ammunition = { laser: 500, missile: 500, cannon: 500 };
+    if (typeof migrateLegacyAmmunition === "function") migrateLegacyAmmunition(gameState);
     if (!gameState.currentAction.gasArea) gameState.currentAction.gasArea = "富勒烯云团";
     // 旧存档迁移：舰船工程字段
     if (!gameState.resources.shipComponents) gameState.resources.shipComponents = {};

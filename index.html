@@ -8,10 +8,10 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css">
-<link rel="stylesheet" href="./css/panels.css">
-<link rel="stylesheet" href="./css/combat.css">
-<link rel="stylesheet" href="./css/components.css">
+<link rel="stylesheet" href="./css/base.css?v=1">
+<link rel="stylesheet" href="./css/panels.css?v=1">
+<link rel="stylesheet" href="./css/combat.css?v=1">
+<link rel="stylesheet" href="./css/components.css?v=1">
 <script type="importmap">
 {
   "imports": {
@@ -20,8 +20,7 @@
   }
 }
 </script>
-<script>window.TEST_ACTIVE_SPEED = 10;</script>
-<script defer src="./js/core/speed-config.js"></script>
+<script defer src="./js/core/speed-config.js?v=1"></script>
 <script type="module" src="./js/ui/ship3d.js?v=5"></script>
 <style id="ship3d-style">
   .ship3d-canvas { display:block; width:100%; height:100%; }
@@ -410,9 +409,10 @@
           </div>
           <span class="exp-value" id="shipeng-exp-value">0 / 100</span>
         </div>
-        <div class="mining-efficiency">
-          <span class="me-label">制造效率：</span>
-          <span class="me-value" id="shipeng-eff-value" title="效率 = 1 × (1 + 舰船工程Lv × 0.02)">1.02x</span>
+        <div class="skill-info equipeng-info">
+          <span class="skill-name">舰船工程</span>
+          <span class="skill-level">等级 <span class="lv-num" id="shipeng-lv-num">1</span></span>
+          <span class="skill-output" id="shipeng-eff-display">效率：1.02x</span>
           <span class="me-logistics" id="shipeng-speed-breakdown"></span>
         </div>
 
@@ -607,14 +607,20 @@
           </div>
           <div class="combat-engagement-group">
             <span class="combat-wave">第 <span class="cw-num" id="combat-wave-num">1</span>/<span id="combat-wave-max">20</span> 波 · <span id="combat-clear-label">已肃清</span> <span id="combat-clear-count">0</span></span>
+            <div class="combat-queue-control" id="combat-queue-control">
+              <label for="combat-queue-count">战斗次数</label>
+              <input type="number" id="combat-queue-count" class="chain-input" min="1" max="99999" step="1" value="1" />
+              <span class="chain-unit" id="combat-queue-unit">波</span>
+            </div>
+            <span class="combat-queue-progress" id="combat-queue-progress" style="display:none;"></span>
             <button class="btn danger combat-engagement-btn" id="btn-stop-combat" style="display:none;">■ 停止战斗</button>
-            <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 开始战斗</button>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 加入队列</button>
           </div>
           <div class="deathspace-chain-control" id="deathspace-chain-control" style="display:none;">
-            <span class="chain-label">连刷</span>
+            <span class="chain-label">入场</span>
             <input type="number" id="deathspace-chain-count" class="chain-input" min="1" max="99" step="1" value="5" />
             <span class="chain-unit">次</span>
-            <button class="btn primary combat-engagement-btn" id="btn-start-combat-chain">▶ 连续挑战</button>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat-chain">▶ 加入队列</button>
             <span class="deathspace-chain-status" id="deathspace-chain-status"></span>
           </div>
         </div>
@@ -668,6 +674,8 @@
             战斗等级 <b id="combat-cl-val">0</b> · 激光 Lv.<span id="combat-laser-lv">1</span> · 炮台 Lv.<span id="combat-cannon-lv">1</span> · 导弹 Lv.<span id="combat-missile-lv">1</span> · 锁定 Lv.<span id="combat-target-lv">1</span>
           </div>
         </div>
+
+        <div class="combat-ammo-loadout" id="combat-ammo-loadout"></div>
 
         <!-- EVE 风格舰船控制台：左控制、中环带、右装备 -->
         <div class="combat-command-console">
@@ -978,7 +986,7 @@
     <div class="action-input-row">
       <label for="action-batch-count">执行</label>
       <input type="number" id="action-batch-count" value="1" min="1" max="1">
-      <label for="action-batch-count">次</label>
+      <span id="action-batch-unit">次</span>
       <button class="btn" id="action-batch-infinity" style="font-size:13px; padding:4px 10px;">∞ 无限</button>
       <span class="ai-max" id="action-batch-max"></span>
     </div>
@@ -1006,61 +1014,63 @@
   </div>
 </aside>
 
-  <script defer src="./js/core/runtime.js"></script>
-  <script defer src="./js/core/events.js"></script>
-  <script defer src="./js/ui/error-boundary.js"></script>
-  <script defer src="./js/data/base.js"></script>
-  <script defer src="./js/data/display-names.js"></script>
-  <script defer src="./js/data/planets.js"></script>
-  <script defer src="./js/data/ships.js"></script>
-  <script defer src="./js/data/boosters.js"></script>
-  <script defer src="./js/systems/boosters.js"></script>
-  <script defer src="./js/data/combat.js"></script>
-  <script defer src="./js/data/equipment.js"></script>
-  <script defer src="./js/data/ammunition.js"></script>
-  <script defer src="./js/data/archaeology.js"></script>
-  <script defer src="./js/data/research.js"></script>
-  <script defer src="./js/core/research-state.js"></script>
-  <script defer src="./js/data/achievements.js"></script>
-  <script defer src="./js/data/achievement-rules.js"></script>
-  <script defer src="./js/data/tutorial.js"></script>
-  <script defer src="./js/core/tutorial-state.js"></script>
-  <script defer src="./js/core/achievement-state.js"></script>
-  <script defer src="./js/core/state.js"></script>
-  <script defer src="./js/systems/research.js"></script>
-  <script defer src="./js/core/statistics.js"></script>
-  <script defer src="./js/systems/achievements.js"></script>
-  <script defer src="./js/systems/production.js"></script>
-  <script defer src="./js/core/resources.js"></script>
-  <script defer src="./js/systems/tutorial.js"></script>
-  <script defer src="./js/systems/manufacturing.js"></script>
-  <script defer src="./js/systems/enhancement-chance.js"></script>
-  <script defer src="./js/systems/ship-enhancement.js"></script>
-  <script defer src="./js/systems/equipment-enhancement.js"></script>
-  <script defer src="./js/systems/rigs.js"></script>
-  <script defer src="./js/systems/archaeology.js"></script>
-  <script defer src="./js/systems/planetary.js"></script>
-  <script defer src="./js/systems/station.js"></script>
-  <script defer src="./js/ui/action-modal.js"></script>
-  <script defer src="./js/core/queue.js"></script>
-  <script defer src="./js/systems/capital-combat.js"></script>
-  <script defer src="./js/systems/combat.js"></script>
-  <script defer src="./js/core/combat-modifiers.js"></script>
-  <script defer src="./js/core/selectors.js"></script>
-  <script defer src="./js/core/actions.js"></script>
-  <script defer src="./js/systems/research-protocols.js"></script>
+  <script defer src="./js/core/runtime.js?v=1"></script>
+  <script defer src="./js/core/events.js?v=1"></script>
+  <script defer src="./js/ui/error-boundary.js?v=1"></script>
+  <script defer src="./js/data/base.js?v=1"></script>
+  <script defer src="./js/data/ammo.js?v=1"></script>
+  <script defer src="./js/data/display-names.js?v=1"></script>
+  <script defer src="./js/data/planets.js?v=1"></script>
+  <script defer src="./js/data/ships.js?v=1"></script>
+  <script defer src="./js/data/boosters.js?v=1"></script>
+  <script defer src="./js/systems/boosters.js?v=1"></script>
+  <script defer src="./js/data/combat.js?v=1"></script>
+  <script defer src="./js/data/cargo.js?v=1"></script>
+  <script defer src="./js/data/equipment.js?v=1"></script>
+  <script defer src="./js/data/ammunition.js?v=1"></script>
+  <script defer src="./js/data/archaeology.js?v=1"></script>
+  <script defer src="./js/data/research.js?v=1"></script>
+  <script defer src="./js/core/research-state.js?v=1"></script>
+  <script defer src="./js/data/achievements.js?v=1"></script>
+  <script defer src="./js/data/achievement-rules.js?v=1"></script>
+  <script defer src="./js/data/tutorial.js?v=1"></script>
+  <script defer src="./js/core/tutorial-state.js?v=1"></script>
+  <script defer src="./js/core/achievement-state.js?v=1"></script>
+  <script defer src="./js/core/state.js?v=1"></script>
+  <script defer src="./js/systems/research.js?v=1"></script>
+  <script defer src="./js/core/statistics.js?v=1"></script>
+  <script defer src="./js/systems/achievements.js?v=1"></script>
+  <script defer src="./js/systems/production.js?v=1"></script>
+  <script defer src="./js/core/resources.js?v=1"></script>
+  <script defer src="./js/systems/tutorial.js?v=1"></script>
+  <script defer src="./js/systems/manufacturing.js?v=1"></script>
+  <script defer src="./js/systems/enhancement-chance.js?v=1"></script>
+  <script defer src="./js/systems/ship-enhancement.js?v=1"></script>
+  <script defer src="./js/systems/equipment-enhancement.js?v=1"></script>
+  <script defer src="./js/systems/rigs.js?v=1"></script>
+  <script defer src="./js/systems/archaeology.js?v=1"></script>
+  <script defer src="./js/systems/planetary.js?v=1"></script>
+  <script defer src="./js/systems/station.js?v=1"></script>
+  <script defer src="./js/ui/action-modal.js?v=1"></script>
+  <script defer src="./js/core/queue.js?v=1"></script>
+  <script defer src="./js/systems/capital-combat.js?v=1"></script>
+  <script defer src="./js/systems/combat.js?v=1"></script>
+  <script defer src="./js/core/combat-modifiers.js?v=1"></script>
+  <script defer src="./js/core/selectors.js?v=1"></script>
+  <script defer src="./js/core/actions.js?v=1"></script>
+  <script defer src="./js/systems/research-protocols.js?v=1"></script>
   <script defer src="./js/ui/shell-render.js?v=5"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=2"></script>
   <script defer src="./js/ui/combat-render.js?v=9"></script>
-  <script defer src="./js/ui/planetary-render.js"></script>
-  <script defer src="./js/ui/archaeology-render.js"></script>
-  <script defer src="./js/ui/booster-render.js"></script>
-  <script defer src="./js/ui/station-render.js"></script>
-  <script defer src="./js/core/tick.js"></script>
-  <script defer src="./js/core/offline.js"></script>
-  <script defer src="./js/systems/offline-combat.js"></script>
-  <script defer src="./js/ui/render.js"></script>
-  <script defer src="./js/core/persistence.js"></script>
+  <script defer src="./js/ui/planetary-render.js?v=1"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=1"></script>
+  <script defer src="./js/ui/booster-render.js?v=1"></script>
+  <script defer src="./js/ui/station-render.js?v=1"></script>
+  <script defer src="./js/core/tick.js?v=1"></script>
+  <script defer src="./js/core/offline.js?v=1"></script>
+  <script defer src="./js/systems/offline-combat.js?v=1"></script>
+  <script defer src="./js/ui/render.js?v=1"></script>
+  <script defer src="./js/core/persistence.js?v=1"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">
       <span class="popup-close" id="hangar-3d-popup-close">×</span>

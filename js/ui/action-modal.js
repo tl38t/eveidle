@@ -25,8 +25,10 @@ function renderActionConfirmation(display) {
   const maxCount = Math.max(1, Number(display.maxCount) || 1);
   const duration = Math.max(0, Number(display.duration) || 0);
 
+  const unitEl = document.getElementById("action-batch-unit");
+  if (unitEl) unitEl.textContent = display.combat ? (display.combatMode === "deathspace" ? "入场" : "波") : "次";
   title.textContent = display.title;
-  infoEl.innerHTML = `<div class="ai-row"><span class="ai-label">单次耗时：</span><span class="ai-value">${duration.toFixed(1)}s</span></div>`;
+  infoEl.innerHTML = `<div class="ai-row"><span class="ai-label">单次耗时：</span><span class="ai-value">${display.combat ? "视战斗情况而定" : duration.toFixed(1) + "s"}</span></div>`;
   const requirementRows = display.requirements.map(item => {
     const className = item.enough ? "" : " ar-short";
     return `<div class="ar-row${className}">需求：${item.name}×${item.quantity}（库存：${Number(item.stock || 0).toLocaleString()}）</div>`;
@@ -38,11 +40,11 @@ function renderActionConfirmation(display) {
   input.value = 1;
   input.max = maxCount;
   maxEl.textContent = display.unlimited ? "" : "最大：" + maxCount;
-  summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>约 ${formatDuration(duration)}`;
+  summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration)}`;
   input.oninput = function() {
     const value = Math.max(1, Math.min(maxCount, parseInt(this.value) || 1));
     this.value = value;
-    summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>约 ${formatDuration(duration * value)}`;
+    summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration * value)}`;
   };
 
   document.getElementById("action-modal").classList.remove("hidden");
@@ -90,7 +92,7 @@ function submitActionConfirmation(front) {
   const positionText = front ? "队列首位" : "队列";
   showToast(`已加入${positionText}${countText}：${getQueueSkillLabel(queueItem.skill)} · ${queueItem.label}`);
   if (front) startQueue();
-  if (currentPage !== "queue") switchPage("queue");
+  if (!display.combat && currentPage !== "queue") switchPage("queue");
   return true;
 }
 

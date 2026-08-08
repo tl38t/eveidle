@@ -3,6 +3,15 @@
   #archaeology-panel { overflow: visible; }
   #equipeng-panel .panel-body { position: relative; }
   #equipeng-panel .equipeng-info { padding-right: 130px; }
+  /* 三个工程面板（舰船/装备/增强剂）效率行统一样式：
+     原 .skill-output 仅在 .skill-current 容器内生效，而这三个面板不在其中，
+     导致效率文字大小/颜色与舰船工程（.me-value）不一致。统一为 teal 加粗。 */
+  .equipeng-info { display: flex; align-items: baseline; gap: 18px; flex-wrap: wrap; }
+  .equipeng-info .skill-name { font-size: 18px; font-weight: 700; color: #e8d8a0; }
+  .equipeng-info .skill-level { font-size: 13px; color: #6a7a8e; }
+  .equipeng-info .skill-level .lv-num { color: #4db8b8; font-weight: 700; font-size: 16px; }
+  .equipeng-info .skill-output { font-size: 14px; font-weight: 700; color: #4db8b8; }
+  .equipeng-info .me-logistics { color: #8a9bb0; font-size: 12px; margin-left: 8px; white-space: nowrap; }
   /* ===== 空间站面板（Phase 3C-8）===== */
   .station-panel .panel-body { max-height: none; overflow-y: visible; }
   .station-section { margin-bottom: 20px; padding: 12px; background: rgba(20,40,55,0.5); border-radius: 6px; }
