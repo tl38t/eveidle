@@ -753,6 +753,38 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.blockedText = display.canStart ? "" : (recipe ? ("材料不足或 Lv." + recipe.level + " 解锁") : "请先选择配方");
     result.outputText = recipe ? recipe.displayName + "×1" : "";
     result.queue = recipe ? { skill:"boosterEngineering", target:recipe.id, label:recipe.displayName } : null;
+  } else if (target === "combatBelt" || target === "combatDeathspace") {
+    const display = getCombatDisplayState(state, now);
+    const isDS = target === "combatDeathspace";
+    result.title = "⚔ " + (isDS ? "死亡空间" : "星带战斗");
+    result.duration = 0;
+    result.combat = true;
+    result.combatMode = isDS ? "deathspace" : "belt";
+    result.outputText = isDS ? (display.deathspace.name + " · 全通约 " + display.deathspace.maxWave + " 波") : ("肃清 " + display.zone.name);
+    const reqs = [];
+    if (isDS) {
+      reqs.push({ name:"战斗等级", quantity:display.deathspace.requiredCL || 1, stock:display.level, enough:display.deathspace.unlocked });
+      reqs.push({ name:"已装备武器", quantity:1, stock:display.weapons.length, enough:display.weapons.length > 0 });
+      const ticketName = getResourceDisplayName("special:" + display.deathspace.ticketMaterial);
+      reqs.push({ name:ticketName, quantity:1, stock:display.deathspace.ticketCount, enough:display.deathspace.ticketCount >= 1 });
+    } else {
+      reqs.push({ name:"战斗等级", quantity:display.zone.requiredCL || 1, stock:display.level, enough:display.zone.unlocked });
+      reqs.push({ name:"已装备武器", quantity:1, stock:display.weapons.length, enough:display.weapons.length > 0 });
+    }
+    result.requirements = reqs;
+    result.maxCount = 99999;
+    result.unlimited = true;
+    let blockedText = "";
+    if (!display.player.hasShip) blockedText = "请先在机库指派战斗舰";
+    else if (display.recovery.remaining > 0) blockedText = "维修中 " + display.recovery.remaining + "s";
+    else if (display.weapons.length === 0) blockedText = "未安装武器";
+    else if (isDS ? !display.deathspace.unlocked : !display.zone.unlocked) blockedText = "需要战斗等级 " + (isDS ? display.deathspace.requiredCL : display.zone.requiredCL);
+    else if (isDS && display.deathspace.ticketCount < 1) blockedText = "缺少通行密钥";
+    result.canOpen = !blockedText;
+    result.blockedText = blockedText;
+    result.queue = isDS
+      ? { skill:"combat", target:display.deathspace.id, label:display.deathspace.name }
+      : { skill:"combat", target:display.zone.id, label:display.zone.name };
   } else {
     result.canOpen = false;
     result.blockedText = "未知行动";
@@ -1512,7 +1544,8 @@ function getCombatDisplayState(state, now) {
   // 无拥有战斗舰时（新存档/未指派），强制禁用开战并提示去机库指派，避免幽灵舰误导。
   const noShip = !hasShip;
   const startDisabled = noShip || recoveryRemaining > 0 || weapons.length === 0 || !zoneUnlocked || (viewMode === "deathspace" && ticketCount < 1);
-  const startText = noShip ? "请先在机库指派战斗舰" : (recoveryRemaining > 0 ? "维修中 " + recoveryRemaining + "s" : !zoneUnlocked ? "需要战斗等级 " + requiredLevel : weapons.length === 0 ? "未安装武器" : viewMode === "deathspace" && ticketCount < 1 ? "缺少通行密钥" : viewMode === "deathspace" ? "▶ 消耗密钥进入" : "▶ 开始战斗");
+  // 战斗并入队列：点击后弹出与采矿一致的确认弹窗，选择波数/入场次数、无限、加入队列或直接开始。
+  const startText = noShip ? "请先在机库指派战斗舰" : (recoveryRemaining > 0 ? "维修中 " + recoveryRemaining + "s" : !zoneUnlocked ? "需要战斗等级 " + requiredLevel : weapons.length === 0 ? "未安装武器" : viewMode === "deathspace" && ticketCount < 1 ? "缺少通行密钥" : (viewMode === "deathspace" ? "▶ 开始攻略" : "▶ 开始战斗"));
   const slotNames = { high:"高槽", mid:"中槽", low:"低槽", rig:"改装槽" };
   const equipmentRack = [];
   for (const slot of ["high", "mid", "low", "rig"]) {
@@ -2330,8 +2363,9 @@ function getShipFittingDisplayState(state, shipRef) {
 
 function getQueueDisplayState(state) {
   const queue = state.queue || { items:[], config:{}, status:{} };
-  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧" };
-  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程" };
+  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔" };
+  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", combat:"⚔战斗" };
+  const combat = state.combat || {};
   return {
     kind:"queue",
     running:Boolean(queue.status.isRunning),
@@ -2341,17 +2375,25 @@ function getQueueDisplayState(state) {
     count:Array.isArray(queue.items) ? queue.items.length : 0,
     completedCount:Number(queue.status.completedCount) || 0,
     failCount:Number(queue.status.failCount) || 0,
-    items:(queue.items || []).map((item, index) => ({
-      ...item,
-      index,
-      active:Boolean(queue.status.isRunning && queue.status.activeIndex === index),
-      icon:icons[item.skill] || "▶",
-      skillLabel:labels[item.skill] || item.skill,
-      label:transformDisplayText(item.label),
-      countText:item.count === -1 ? "无限" : "剩余 ×" + (item.count || 1) + " 次",
-      canMoveUp:index > 0,
-      canMoveDown:index < queue.items.length - 1
-    }))
+    items:(queue.items || []).map((item, index) => {
+      const active = Boolean(queue.status.isRunning && queue.status.activeIndex === index);
+      let countText = item.count === -1 ? "无限" : "剩余 ×" + (item.count || 1) + " 次";
+      if (item.skill === "combat" && active && combat.queueItemId === item.id) {
+        if (combat.queueWavesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueWavesTarget - (combat.queueWavesDone || 0)) + " 波";
+        else if (combat.queueEntriesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueEntriesTarget - (combat.queueEntriesDone || 0)) + " 入场";
+      }
+      return {
+        ...item,
+        index,
+        active,
+        icon:icons[item.skill] || "▶",
+        skillLabel:labels[item.skill] || item.skill,
+        label:transformDisplayText(item.label),
+        countText,
+        canMoveUp:index > 0,
+        canMoveDown:index < queue.items.length - 1
+      };
+    })
   };
 }
 

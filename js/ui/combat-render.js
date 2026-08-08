@@ -82,19 +82,21 @@ function renderCombatLiveDisplay(display) {
   const start = document.getElementById("btn-start-combat"); const stop = document.getElementById("btn-stop-combat");
   if (start) { start.style.display = display.controls.showStart ? "" : "none"; start.disabled = display.controls.startDisabled; start.textContent = display.controls.startText; }
   if (stop) stop.style.display = display.controls.showStop ? "" : "none";
-  // 死亡空间连刷控件：仅在该模式下显示；armed（连刷进行中/待续）时改用取消文案并禁用单次进入按钮
-  const chainControl = document.getElementById("deathspace-chain-control");
-  if (chainControl) {
-    const inDeathspace = display.mode === "deathspace";
-    chainControl.style.display = inDeathspace ? "" : "none";
-    if (inDeathspace) {
-      const c = gameState.combat;
-      const armed = (c.deathspaceChainRemaining > 0) || c.deathspaceChainPending;
-      const chainBtn = document.getElementById("btn-start-combat-chain");
-      const statusEl = document.getElementById("deathspace-chain-status");
-      if (chainBtn) chainBtn.textContent = armed ? "⏹ 取消连刷" : "▶ 连续挑战";
-      if (start) start.disabled = armed || display.controls.startDisabled;
-      if (statusEl) statusEl.textContent = armed ? ("连刷中 · 剩余 " + (c.active ? c.deathspaceChainRemaining + 1 : c.deathspaceChainRemaining) + " 次") : "";
+  // 星带/死亡空间共用同一个「开始」按钮触发确认弹窗；死亡空间下隐藏 belt 波次信息
+  const waveSpan = document.querySelector(".combat-wave");
+  if (waveSpan) waveSpan.style.display = display.mode === "deathspace" ? "none" : "";
+  // 战斗队列进度：普通星带显示「清波 X/Y」，死亡空间显示「入场 X/Y」
+  const progressEl = document.getElementById("combat-queue-progress");
+  if (progressEl) {
+    const c = gameState.combat;
+    if (c && c.queueItemId) {
+      if (c.queueWavesTarget > 0) progressEl.textContent = "队列剩余：清波 " + (c.queueWavesDone || 0) + "/" + c.queueWavesTarget;
+      else if (c.queueEntriesTarget > 0) progressEl.textContent = "队列剩余：入场 " + (c.queueEntriesDone || 0) + "/" + c.queueEntriesTarget;
+      else progressEl.textContent = "";
+      progressEl.style.display = "";
+    } else {
+      progressEl.textContent = "";
+      progressEl.style.display = "none";
     }
   }
   document.body.classList.toggle("in-combat", display.active);
@@ -228,6 +230,8 @@ function renderCombatPanel(now) {
   document.querySelectorAll("[data-combat-mode]").forEach(button => button.classList.toggle("active", button.dataset.combatMode === display.mode));
   const zoneSelector = document.getElementById("combat-zone-selector"); if (zoneSelector) zoneSelector.style.display = display.mode === "belt" ? "" : "none";
   const deathspacePanel = document.getElementById("deathspace-selector-panel"); if (deathspacePanel) deathspacePanel.style.display = display.mode === "deathspace" ? "" : "none";
+  const queueControl = document.getElementById("combat-queue-control"); if (queueControl) queueControl.style.display = "none";
+  const chainControl = document.getElementById("deathspace-chain-control"); if (chainControl) chainControl.style.display = "none";
   const deathspaceIntro = deathspacePanel && deathspacePanel.querySelector(".deathspace-intro strong"); if (deathspaceIntro) deathspaceIntro.textContent = "DED " + display.deathspaceTier + "/10";
   const deathspaceIntroText = document.getElementById("deathspace-intro-text");
   if (deathspaceIntroText) {
@@ -687,7 +691,12 @@ function closeCombat3DPopup() {
   });
 
 
-  const start = document.getElementById("btn-start-combat"); if (start) start.addEventListener("click", startCombatEncounter);
+  const start = document.getElementById("btn-start-combat"); if (start) start.addEventListener("click", () => {
+    const mode = (gameState.combat && gameState.combat.viewMode === "deathspace") ? "deathspace" : "belt";
+    if (typeof showActionConfirm === "function") showActionConfirm(mode === "deathspace" ? "combatDeathspace" : "combatBelt");
+  });
   const stop = document.getElementById("btn-stop-combat"); if (stop) stop.addEventListener("click", stopCombatEncounter);
-  const chainBtn = document.getElementById("btn-start-combat-chain"); if (chainBtn) chainBtn.addEventListener("click", startDeathspaceChainEncounter);
+  const chainBtn = document.getElementById("btn-start-combat-chain"); if (chainBtn) chainBtn.addEventListener("click", () => {
+    if (typeof showActionConfirm === "function") showActionConfirm("combatDeathspace");
+  });
 })();

@@ -79,13 +79,14 @@ function updateCombatRecovery(now, state) {
       g._dirty = true;
     }
   }
+  let resumed = false;
   if (activeFinished && wasRepairingActive && g.resumeAfterRepair && g.resumeAfterRepair.type === "combat") {
-    tryResumeCombatAfterRepair();
+    resumed = Boolean(tryResumeCombatAfterRepair());
   }
-  // 悬挂标记清理：resumeAfterRepair 指向的舰维修条目已被清（无论本 tick 清的还是此前已清），
-  // 且未由上方 activeFinished 合法触发 auto-resume，则清掉，避免战斗面板长期显示"完成后返回战斗"误导。
+  // 悬挂标记清理：仅当本 tick 未成功触发 auto-resume 时，清掉已无维修条目支撑的 resumeAfterRepair。
+  // （已成功续战则跳过——tryResumeCombatAfterRepair 会重新写回队列感知的续战标记，不可被此处清掉。）
   const rrPending = g.resumeAfterRepair;
-  if (rrPending && rrPending.type === "combat") {
+  if (!resumed && rrPending && rrPending.type === "combat") {
     const sid = rrPending.shipInstanceId;
     const stillRepairing = Boolean(sid && g.combat.repairs[sid] && Number(g.combat.repairs[sid]) > 0);
     if (!stillRepairing) g.resumeAfterRepair = null;
@@ -736,9 +737,11 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
     doEmit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
     c.runDamageDealt = 0;
     c.runDamageTaken = 0;
+    // 队列感知：入场清场完成计 1 次；达标则终结队列项，否则直接重入下一入场。
+    const entryDone = (c.queueItemId && c.queueEntriesTarget > 0);
+    if (entryDone) c.queueEntriesDone = (c.queueEntriesDone || 0) + 1;
     c.active = false;
     state.currentAction.active = false;
-    if (c.deathspaceChainRemaining > 0) c.deathspaceChainPending = true; // 连刷：标记待续，下一 tick 自动续进
     c.enemies = [];
     c.currentEnemy = null;
     c.wave = 1;
@@ -747,6 +750,25 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
     const maxHp = getCombatMaxHpFromState(state, { zoneId:zone.id });
     c.hp = { ...maxHp };
     c.maxHp = { ...maxHp };
+    if (entryDone && c.queueEntriesDone >= c.queueEntriesTarget) {
+      // 入场次数达标：终结战斗队列项并推进队列
+      if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
+      return true;
+    }
+    if (entryDone) {
+      // 未达标：直接重入同一 site 的下一入场（消耗密钥），并刷新续战标记
+      const nextWave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(c); }, c);
+      const res = dispatchGameAction(state, { type:"combat/enterDeathspace", deathspaceId:site.id, enemies:nextWave.enemies, formationId:nextWave.formationId }, Date.now());
+      if (res && res.changed) {
+        if (typeof setCombatQueueResume === "function") setCombatQueueResume(state);
+        c.lastStatus = "死亡空间连刷 · 第 " + (c.queueEntriesDone + 1) + " 次入场";
+      } else {
+        // 重入失败（密钥/等级/维修中）：安全停止并终结队列项
+        if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
+      }
+      return true;
+    }
+    if (c.deathspaceChainRemaining > 0) c.deathspaceChainPending = true; // 旧连刷链（非队列）路径
     return true;
   }
   c.lastStatus = "房间肃清 · LP +" + waveLp;
@@ -799,6 +821,14 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
   const theRng = (typeof rng === "function") ? rng : Math.random;
   if (getLivingCombatEnemies(c).length > 0) return false;
+  // 普通星带并入队列：每清一波累计 queueWavesDone（跨维修累计），达标即终结队列项并推进。
+  if (c.queueItemId && c.queueWavesTarget > 0) {
+    c.queueWavesDone = (c.queueWavesDone || 0) + 1;
+    if (c.queueWavesDone >= c.queueWavesTarget) {
+      if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
+      return false; // 不走后续 spawn，战斗已结束
+    }
+  }
   if (c.mode === "deathspace") {
     const site = getDeathspaceById(c.deathspaceId);
     return site ? resolveDeathspaceWaveVictory(site, zone, theRng, doEmit, state) : false;
@@ -831,18 +861,49 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   return true;
 }
 
-// 维修完成后自动恢复战斗（Phase 3D 修正）：无论失败来源是普通星带还是死亡空间，
-// 维修完成后都只返回 returnZoneId 普通星带、从第 1 波开始全新一轮肃清。
-// 死亡空间永不续原副本、绝不调用 enterDeathspace、绝不检查或扣除通行密钥。
-// 任何校验失败（非法 returnZoneId、等级/武器/维修中）一律安全停止，不抛错、不扣任何资源。
+// 维修完成后自动恢复战斗（Phase 3D 修正 + 战斗并入队列）：
+//  - 队列驱动战斗：恢复队列进度字段，死亡空间队列项修好重入同一 site（消耗密钥），
+//    普通星带队列项回到 returnZoneId 第 1 波继续累计清波；均达标则终结队列项。
+//  - 非队列战斗（resumeAfterRepair 无 queueItemId）：维持原行为——死亡空间永不续跑、
+//    只返回普通星带。
+// 任何校验失败（非法 returnZoneId、等级/武器/维修中/密钥不足）一律安全停止，不抛错、不扣任何资源。
 function tryResumeCombatAfterRepair() {
   const r = gameState.resumeAfterRepair;
   if (!r || r.type !== "combat") return false;
   gameState.resumeAfterRepair = null; // 一次性消费，避免重复触发
-  const zone = COMBAT_ZONES.find(item => item.id === r.returnZoneId);
-  if (!zone) return false; // 非法 returnZoneId：安全停止，不生成敌人、不扣资源
   const now = Date.now();
   const c = gameState.combat;
+  // 队列感知：恢复队列进度字段（跨维修保留）。
+  // 离线累计保护：c.queueWavesDone/EntriesDone 是权威的跨维修/跨离线累计值；
+  // r.* 只是上次续战写入的快照，可能被离线模拟推进超越，取较大者避免回滚进度。
+  if (r.queueItemId) {
+    c.queueItemId = r.queueItemId;
+    c.queueWavesTarget = r.queueWavesTarget || 0;
+    c.queueWavesDone = Math.max(c.queueWavesDone || 0, r.queueWavesDone || 0);
+    c.queueEntriesTarget = r.queueEntriesTarget || 0;
+    c.queueEntriesDone = Math.max(c.queueEntriesDone || 0, r.queueEntriesDone || 0);
+  }
+  // 死亡空间队列项：修好重入同一 site（消耗密钥）；入场次数达标则终结队列项。
+  if (r.deathspaceId && r.queueItemId && c.queueEntriesTarget > 0) {
+    if (c.queueEntriesDone >= c.queueEntriesTarget) {
+      if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(gameState, now);
+      return true;
+    }
+    const site = getDeathspaceById(r.deathspaceId);
+    if (site) {
+      const wave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(c); }, c);
+      const res = dispatchGameAction(gameState, { type:"combat/enterDeathspace", deathspaceId:site.id, enemies:wave.enemies, formationId:wave.formationId }, now);
+      if (res && res.changed) {
+        if (typeof setCombatQueueResume === "function") setCombatQueueResume(gameState);
+        GameEvents.emit("combat:resumedAfterRepair", { zoneId:site.sourceZoneId, defeatedMode:"deathspace", deathspaceId:site.id }, { offline:false });
+        return true;
+      }
+    }
+    return false;
+  }
+  // 普通星带（含队列）：回到 returnZoneId 第 1 波
+  const zone = COMBAT_ZONES.find(item => item.id === r.returnZoneId);
+  if (!zone) return false; // 非法 returnZoneId：安全停止，不生成敌人、不扣资源
   // 强制回到普通星带语义：清除死亡空间残留，回到来源星带第 1 波。
   c.mode = "belt";
   c.viewMode = "belt";
@@ -861,6 +922,7 @@ function tryResumeCombatAfterRepair() {
   // 经既有 combat/start Action 续跑：内部完整校验（维修中/等级/无武器）失败则不改状态、安全停止
   const res = dispatchGameAction(gameState, { type:"combat/start", enemies:wave.enemies, formationId:wave.formationId }, now);
   if (res && res.changed) {
+    if (typeof setCombatQueueResume === "function") setCombatQueueResume(gameState);
     GameEvents.emit("combat:resumedAfterRepair", { zoneId:r.returnZoneId, defeatedMode:r.defeatedMode, deathspaceId:r.deathspaceId || null }, { offline:false });
     return true;
   }

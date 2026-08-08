@@ -208,7 +208,14 @@ const gameState = {
     randomState: null,
     runToken: null,         // 当前 combat run 标识（非空字符串或 null）；整条连刷链同一 runToken
     runSequence: 0,         // Batch R：run 序号（非负安全整数）；新 run +1、续轮不增、战败恢复 +1、迁移非法归零；并入 runToken
-    enemyInstanceSeq: 0     // 当前 run 内敌人实例序号（单调、不重复），供确定性 enemyId
+    enemyInstanceSeq: 0,    // 当前 run 内敌人实例序号（单调、不重复），供确定性 enemyId
+    // 战斗并入队列（队列 count 取代 resumeAfterRepair 的自动续战职责）：
+    //   queueItemId 关联驱动当前战斗的队列项；progress 字段随 combat 状态存档、跨维修保留。
+    queueItemId: null,      // 当前驱动战斗的队列项 id（combat 经队列启动时由队列 runner 写入）
+    queueWavesTarget: 0,    // 普通星带：目标清波数（= 队列项 count）
+    queueWavesDone: 0,      // 普通星带：已清波数（跨维修累计，达标即终结队列项并推进）
+    queueEntriesTarget: 0,  // 死亡空间：目标入场次数（= 队列项 count）
+    queueEntriesDone: 0     // 死亡空间：已完成入场数（清场或战败均计 1 次）
   },
 
   settings: {

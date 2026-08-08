@@ -607,14 +607,20 @@
           </div>
           <div class="combat-engagement-group">
             <span class="combat-wave">第 <span class="cw-num" id="combat-wave-num">1</span>/<span id="combat-wave-max">20</span> 波 · <span id="combat-clear-label">已肃清</span> <span id="combat-clear-count">0</span></span>
+            <div class="combat-queue-control" id="combat-queue-control">
+              <label for="combat-queue-count">战斗次数</label>
+              <input type="number" id="combat-queue-count" class="chain-input" min="1" max="99999" step="1" value="1" />
+              <span class="chain-unit" id="combat-queue-unit">波</span>
+            </div>
+            <span class="combat-queue-progress" id="combat-queue-progress" style="display:none;"></span>
             <button class="btn danger combat-engagement-btn" id="btn-stop-combat" style="display:none;">■ 停止战斗</button>
-            <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 开始战斗</button>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 加入队列</button>
           </div>
           <div class="deathspace-chain-control" id="deathspace-chain-control" style="display:none;">
-            <span class="chain-label">连刷</span>
+            <span class="chain-label">入场</span>
             <input type="number" id="deathspace-chain-count" class="chain-input" min="1" max="99" step="1" value="5" />
             <span class="chain-unit">次</span>
-            <button class="btn primary combat-engagement-btn" id="btn-start-combat-chain">▶ 连续挑战</button>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat-chain">▶ 加入队列</button>
             <span class="deathspace-chain-status" id="deathspace-chain-status"></span>
           </div>
         </div>
@@ -980,7 +986,7 @@
     <div class="action-input-row">
       <label for="action-batch-count">执行</label>
       <input type="number" id="action-batch-count" value="1" min="1" max="1">
-      <label for="action-batch-count">次</label>
+      <span id="action-batch-unit">次</span>
       <button class="btn" id="action-batch-infinity" style="font-size:13px; padding:4px 10px;">∞ 无限</button>
       <span class="ai-max" id="action-batch-max"></span>
     </div>

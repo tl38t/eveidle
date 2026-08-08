@@ -409,6 +409,20 @@
         recordFirst(s, "firstZoneClear", nowRef.t);
         waveNum = 1; // 从第 1 波继续（不自动换区）
       }
+      // 队列感知：普通星带每清一波累计 queueWavesDone（与在线 resolveCombatWaveVictory 一致）；
+      // 达标则停止离线模拟并终结队列项（受时间/资源约束，离线最多清到目标即停）。
+      if (c.queueItemId && c.queueWavesTarget > 0) {
+        c.queueWavesDone = (c.queueWavesDone || 0) + 1;
+        if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat" && state.resumeAfterRepair.queueItemId === c.queueItemId) {
+          state.resumeAfterRepair.queueWavesDone = c.queueWavesDone;
+        }
+        if (c.queueWavesDone >= c.queueWavesTarget) {
+          const fin = G("finalizeCombatQueueItem");
+          if (typeof fin === "function") fin(state, nowRef.t);
+          s.stopReason = "queue-target-reached";
+          return;
+        }
+      }
       c.wave = waveNum;
       // 资源不足 → 停止进攻（敌人仍会造成伤害已在 simulateWave 内处理；此处判定无法继续开火）
       if (budgetMs <= 0) { s.stopReason = "time"; return; }
@@ -504,6 +518,40 @@
       // 整条死亡空间通关
       bump(s.deathspaceClearsById, site.id, 1);
       recordFirst(s, "firstDeathspaceClear", nowRef.t);
+      // 队列感知：死亡空间每全通一次计 1 入场（与在线 resolveDeathspaceWaveVictory 一致）；
+      // 达标则停止离线模拟并终结队列项；未达标则手动重入下一入场（消耗密钥），由 queueEntries 接管连刷计数。
+      if (c.queueItemId && c.queueEntriesTarget > 0) {
+        c.queueEntriesDone = (c.queueEntriesDone || 0) + 1;
+        if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat" && state.resumeAfterRepair.queueItemId === c.queueItemId) {
+          state.resumeAfterRepair.queueEntriesDone = c.queueEntriesDone;
+        }
+        if (c.queueEntriesDone >= c.queueEntriesTarget) {
+          const fin = G("finalizeCombatQueueItem");
+          if (typeof fin === "function") fin(state, nowRef.t);
+          s.stopReason = "queue-target-reached";
+          return;
+        }
+        // 未达标：手动重入下一入场（消耗密钥），绕过既有链 break 以便继续清场
+        const RRd = G("ResourceRegistry");
+        if (!RRd || RRd.get(state, "special:" + site.ticketMaterial) < 1) {
+          const fin = G("finalizeCombatQueueItem");
+          if (typeof fin === "function") fin(state, nowRef.t);
+          s.stopReason = "no-keys"; return;
+        }
+        const nw = G("buildDeathspaceWave")(site, 1, detRng(c), c);
+        const nen = nw.enemies.map(e => ({ id:e.id, hit:e.hit, hp:{shield:e.hp.shield,armor:e.hp.armor,structure:e.hp.structure}, dodge:e.dodge, baseDamage:e.baseDamage, kind:e.kind, iskDrop:e.iskDrop, xpDrop:e.xpDrop, deathspaceLeader:Boolean(e.deathspaceLeader), deathspaceWave:1, _rewarded:false }));
+        RRd.spend(state, "special:" + site.ticketMaterial, 1);
+        s.ticketsConsumed++;
+        c.active = true; c.mode = "deathspace"; c.enemies = nen; c.currentEnemy = nen[0] || null;
+        c.wave = 1; c.totalKills = 0; c.runEliteKills = 0;
+        c.deathspaceChainRemaining = 1; // 仅用于绕过下方 506 的 break；连刷计数由 queueEntries 接管
+        c.deathspaceChainPending = false;
+        c.lastStatus = "通行密钥已消耗";
+        bump(s.deathspaceEntriesById, site.id, 1);
+        bump(s.deathspaceWavesById, site.id, 1);
+        if (typeof G("setCombatQueueResume") === "function") G("setCombatQueueResume")(state);
+        continue; // 外层 while：以新入场重新清场
+      }
       if (c.deathspaceChainRemaining > 0) {
         // 写 pending，下一秒虚拟时间续入（循环顶部处理）
         c.deathspaceChainPending = true;

@@ -4,7 +4,7 @@
    ================================================================ */
 
 function getQueueSkillLabel(skill) {
-  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", archaeology:"🔍考古", boosterEngineering:"💉增强剂" };
+  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", archaeology:"🔍考古", boosterEngineering:"💉增强剂", combat:"⚔战斗" };
   return labels[skill] || skill;
 }
 
