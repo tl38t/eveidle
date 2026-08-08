@@ -101,11 +101,20 @@ const ResourceRegistry = (() => {
     if (definition.pool) {
       const container = getPoolContainer(state, definition, true);
       if (!container) return false;
+      const previousValue = Number(container[definition.key]) || 0;
       container[definition.key] = value;
+      // 仅在真实改变（值不同）时 emit 一次；add/spend/spendMaterial/spendCost 经 set 自然得到一次事件
+      if (value !== previousValue && typeof GameEvents !== "undefined") {
+        GameEvents.emit("resource:changed", { resourceId:id, previousValue, value, delta:Math.abs(value - previousValue) }, { source:"resource-registry" });
+      }
     } else {
       const resources = getResources(state);
       if (!resources) return false;
+      const previousValue = Number(resources[definition.scalarKey]) || 0;
       resources[definition.scalarKey] = value;
+      if (value !== previousValue && typeof GameEvents !== "undefined") {
+        GameEvents.emit("resource:changed", { resourceId:id, previousValue, value, delta:Math.abs(value - previousValue) }, { source:"resource-registry" });
+      }
     }
     state._dirty = true;
     return true;
@@ -176,14 +185,26 @@ const ResourceRegistry = (() => {
 
   function getResourceDisplayName(id) {
     if (typeof id !== "string" || !id) return id;
-    // 已注册定义（含懒注册）优先；懒注册 fallback 的 name===key 时视为"无名称"，回退原始键
+    // Batch L（IP 去相似化）：显示层优先走统一 DisplayNames（矿石/矿物/特殊材料/货币）；
+    // 内部库存键永久保持原值，仅显示名替换。DisplayNames 未映射（返回 null 或原 key）时
+    // 回落 ResourceRegistry 已注册 definition.name；完全未知资源才回退原始 ID。
     const parsed = parseId(id);
-    if (!parsed) {
-      // 非 namespace:key 形式（如直接中文名"三钛合金"），原样返回
+    const definition = definitions.has(id) ? definitions.get(id) : getDefinition(id);
+    const defName = (definition && definition.name && definition.name !== definition.key) ? definition.name : null;
+    if (parsed) {
+      if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getResourceName === "function") {
+        const renamed = DisplayNames.getResourceName(parsed.namespace, parsed.key, null);
+        // 仅 DisplayNames 明确给出新映射（非 null / 非 undefined / 非原 key）时采用
+        if (renamed !== null && renamed !== undefined && renamed !== parsed.key) return renamed;
+      }
+      if (defName) return defName;
       return id;
     }
-    const definition = definitions.has(id) ? definitions.get(id) : getDefinition(id);
-    if (definition && definition.name && definition.name !== definition.key) return definition.name;
+    // 非 namespace:key 形式（如直接中文名"三钛合金"）：查 DisplayNames 裸键映射，否则原样
+    if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getResourceRefName === "function") {
+      const renamed = DisplayNames.getResourceRefName(id, null);
+      if (renamed !== null && renamed !== undefined) return renamed;
+    }
     return id;
   }
 
@@ -204,7 +225,7 @@ const ResourceRegistry = (() => {
     });
   }
 
-  function getCargoTotal(state) {
+  function getInventoryTotal(state) {
     const namespaces = ["ore", "mineral", "planetary", "gas", "moon", "special", "component"];
     const stackables = namespaces.reduce((total, namespace) =>
       total + listStateEntries(state, namespace).reduce((sum, entry) => sum + entry.quantity, 0), 0);
@@ -234,7 +255,7 @@ const ResourceRegistry = (() => {
     getResourceDisplayName,
     listDefinitions,
     listStateEntries,
-    getCargoTotal
+    getInventoryTotal
   };
 })();
 window.ResourceRegistry = ResourceRegistry;

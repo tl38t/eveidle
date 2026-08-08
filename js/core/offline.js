@@ -5,17 +5,30 @@
 const MAX_OFFLINE_SECONDS = 86400;
 let _offlineToastTimer = null;
 let _offlineEventBatch = null;
+// 全局单调批次序号：保证同一毫秒内多次独立结算生成的 runId 全局唯一，
+// 避免不同批次的事件拿到相同 eventId、被通配消费者（onIdempotent）误判为重复而丢弃真实结算记账。
+// eventId 格式仍为 runId:sequence:type；调用方显式传入的 runId 原样保留。
+let _offlineBatchSeq = 0;
 
-function emitOfflineGameEvent(type, payload) {
-  const batch = _offlineEventBatch || { runId:"offline_" + Date.now().toString(36), sequence:0 };
+// 虚拟时间兼容入口：第三参 meta 可选；
+// 1) 旧两参数调用（emitOfflineGameEvent(type, payload)）行为完全不变；
+// 2) offline 永远为 true、source 默认仍为 "offline-settlement"；
+// 3) runId/sequence/eventId 格式与唯一性完全不变（不得复制第二套事件号逻辑）；
+// 4) meta.timestamp 为有限 number 时透传 GameEvents.emit（虚拟时间）；非法/缺失时保持原 Date.now() 回退。
+function emitOfflineGameEvent(type, payload, meta) {
+  const inputMeta = meta && typeof meta === "object" ? meta : {};
+  const ts = Number.isFinite(Number(inputMeta.timestamp)) ? Number(inputMeta.timestamp) : undefined;
+  const batch = _offlineEventBatch || { runId:"offline_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36), sequence:0 };
   batch.sequence++;
-  return GameEvents.emit(type, payload, {
+  const emitMeta = {
     offline:true,
     aggregate:Number(payload && payload.cycles) > 1,
-    source:"offline-settlement",
+    source:(typeof inputMeta.source === "string" && inputMeta.source) ? inputMeta.source : "offline-settlement",
     runId:batch.runId,
     eventId:batch.runId + ":" + batch.sequence + ":" + type
-  });
+  };
+  if (ts !== undefined) emitMeta.timestamp = ts;
+  return GameEvents.emit(type, payload, emitMeta);
 }
 
 function showOfflineToast(seconds, gains) {
@@ -74,7 +87,7 @@ function getOfflineActionDescriptor() {
     const doubleChance = (boosterEff && boosterEff.doubleMineralChance) || 0;
     return {
       key, duration: area.baseTime / (miningEff * speedMult),
-      maxCycles: () => Math.max(0, getCargoCapacity() - getCargoUsed()),
+      maxCycles: () => Infinity,
       apply(cycles, gains) {
         let totalOre = cycles;
         if (doubleChance > 0) {
@@ -82,9 +95,6 @@ function getOfflineActionDescriptor() {
             if ((typeof rollDoubleMineral === "function") && rollDoubleMineral(doubleChance)) totalOre++;
           }
         }
-        // 双倍不得突破货舱硬上限
-        const cargoSpace = Math.max(0, getCargoCapacity() - getCargoUsed());
-        if (totalOre > cargoSpace) totalOre = cargoSpace;
         ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, totalOre);
         // XP 始终按实际采集次数计算（双倍不增加 XP）
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
@@ -102,10 +112,7 @@ function getOfflineActionDescriptor() {
     return {
       key, duration: recipe.baseTime / eff,
       maxCycles() {
-        let cycles = ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
-        const netCargo = output - 1;
-        if (netCargo > 0) cycles = Math.min(cycles, Math.floor(Math.max(0, getCargoCapacity() - getCargoUsed()) / netCargo));
-        return cycles;
+        return ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
       },
       apply(cycles, gains) {
         ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, cycles);
@@ -122,7 +129,7 @@ function getOfflineActionDescriptor() {
     if (!area) return null;
     return {
       key, duration: area.baseTime / getGasEfficiency(),
-      maxCycles: () => Math.max(0, getCargoCapacity() - getCargoUsed()),
+      maxCycles: () => Infinity,
       apply(cycles, gains) {
         ResourceRegistry.add(gameState, "gas:" + area.gas, cycles);
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
@@ -135,7 +142,7 @@ function getOfflineActionDescriptor() {
     const recipe = getRunningShipCompRecipe(); if (!recipe) return null;
     return {
       key, duration: getShipEngineeringCycleDuration(gameState, recipe), // 唯一周期公式（技能×船坞，与在线 tick 一致）
-      maxCycles: () => Math.min(getMaxMaterialCycles(recipe.cost), Math.max(0, getCargoCapacity() - getCargoUsed())),
+      maxCycles: () => getMaxMaterialCycles(recipe.cost),
       apply(cycles, gains) {
         deductMatsMultiple(recipe.cost, cycles);
         ResourceRegistry.add(gameState, "component:" + recipe.id, cycles);
@@ -150,7 +157,7 @@ function getOfflineActionDescriptor() {
     return {
       key, duration: getShipEngineeringCycleDuration(gameState, recipe), // 唯一周期公式（技能×船坞，与在线 tick 一致）
       maxCycles() {
-        return isCargoFull() ? 0 : getMaxShipAssemblyCycles(recipe);
+        return getMaxShipAssemblyCycles(recipe);
       },
       apply(cycles, gains) {
         deductShipAssemblyComponents(recipe, cycles);
@@ -166,7 +173,7 @@ function getOfflineActionDescriptor() {
     return {
       key, duration: recipe.time / getEquipEngEfficiency(),
       maxCycles: () => !equipmentRecipeHasRequiredBlueprint(gameState, recipe) ? 0 : recipe.output.type === "equipment"
-        ? recipe.inputEquipment ? getEquipEngMaxCycles(recipe) : Math.min(getEquipEngMaxCycles(recipe), Math.max(0, getCargoCapacity() - getCargoUsed()))
+        ? recipe.inputEquipment ? getEquipEngMaxCycles(recipe) : getEquipEngMaxCycles(recipe)
         : getEquipEngMaxCycles(recipe),
       apply(cycles, gains) {
         deductEquipEngInputs(recipe, cycles);
@@ -202,10 +209,13 @@ function getOfflineActionDescriptor() {
     const instanceId = gameState.shipAssignments && gameState.shipAssignments.archaeology;
     const instance = instanceId ? getShipInstanceFromState(gameState, instanceId) : null;
     if (!instance) return null;
-    const archSpeedEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).archaeologySpeedMultiplier : 1;
-    const archLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
+    // 考古周期唯一公式（研究批次 G · archEff）：与在线 tick / 显示态共用 getArchaeologyCycleSeconds，
+    // 离线 descriptor 与时间账本都只读这一个数，禁止再算第二套。
+    const archCycleSeconds = (typeof getArchaeologyCycleSeconds === "function")
+      ? getArchaeologyCycleSeconds(gameState, site)
+      : site.time;
     return {
-      key, duration: site.time * archSpeedEff / archLogisticsMult,
+      key, duration: archCycleSeconds,
       maxCycles() {
         const probeStock = ResourceRegistry.get(gameState, "probe:" + probeId);
         const fuelStock = ResourceRegistry.get(gameState, "consumable:fuel");
@@ -213,11 +223,17 @@ function getOfflineActionDescriptor() {
         // 保证在线/离线可负担次数一致；apply 循环内每次仍以真实累计器结算并在不足时中断。
         const fuelState = getArchaeologyFuelCostState(gameState, site, instance);
         const perCycle = Math.max(1, fuelState.averageFuelPerCycle);
-        return Math.max(0, Math.min(probeStock, Math.floor(fuelStock / perCycle) + 2));
+        // 研究批次 G · probe：探针也走确定性累计器，长期平均 < 1 时可跑的周期数多于库存数。
+        // 无科研（平均 = 1）时保持与接入前完全一致的 probeStock 上限，避免基线漂移。
+        const probeState = (typeof getArchaeologyProbeCostState === "function")
+          ? getArchaeologyProbeCostState(gameState) : { averageProbePerCycle:1 };
+        const probeAvg = Math.max(0.01, Number(probeState.averageProbePerCycle) || 1);
+        const probeCapacity = (probeAvg >= 1) ? probeStock : (Math.floor(probeStock / probeAvg) + 2);
+        return Math.max(0, Math.min(probeCapacity, Math.floor(fuelStock / perCycle) + 2));
       },
       apply(cycles, gains) {
         let done = 0;
-        const durMs = site.time * archSpeedEff * 1000;
+        const durMs = archCycleSeconds * 1000;
         let repairMs = 0;
         if (gameState.archaeology.repairUntil > Date.now()) {
           repairMs = gameState.archaeology.repairUntil - Date.now();
@@ -255,7 +271,7 @@ function getOfflineActionDescriptor() {
       //   - 每个完整周期前做真实探针 + getArchaeologyFuelCostState 燃料校验，不足则不推进时间/资源/队列
       settleByTime(maxWallSeconds, gains, context) {
         const arch = gameState.archaeology;
-        const durMs = site.time * archSpeedEff * 1000;
+        const durMs = archCycleSeconds * 1000;
         let wallBudgetMs = maxWallSeconds * 1000;
         // 行动预算（增强剂分段边界）：仅约束行动时间，维修时间不占用
         let actionBudgetMs = (context && Number.isFinite(context.actionBudgetSeconds))
@@ -314,7 +330,10 @@ function getOfflineActionDescriptor() {
 
           // 5) 完成完整周期前：真实探针 + 燃料校验（不足则不推进任何时间/资源/队列）
           const probeStock = ResourceRegistry.get(gameState, "probe:" + probeId);
-          if (probeStock < 1) { stopped = true; reason = "insufficient-probe"; break; }
+          // 研究批次 G · probe：与 resolveArchaeologyCycle 同一累计器口径（免费周期 chargedProbe=0 不拦）
+          const probeState = (typeof getArchaeologyProbeCostState === "function")
+            ? getArchaeologyProbeCostState(gameState) : { chargedProbe:1 };
+          if (probeStock < probeState.chargedProbe) { stopped = true; reason = "insufficient-probe"; break; }
           const fuelState = getArchaeologyFuelCostState(gameState, site, instance);
           const fuelStock = ResourceRegistry.get(gameState, "consumable:fuel");
           if (fuelStock < fuelState.chargedFuel) { stopped = true; reason = "insufficient-fuel"; break; }
@@ -369,7 +388,7 @@ function advanceOfflineQueue() {
     nextIndex = 0;
   }
   queue.status.activeIndex = nextIndex;
-  applyQueueItemConfig(queueItemConfig(queue.items[nextIndex]));
+  executeQueueItemForState(gameState, queue.items[nextIndex], Date.now());
   return true;
 }
 
@@ -413,7 +432,7 @@ function completeOfflineQueueCycles(cycles) {
   }
 
   queue.status.activeIndex = index;
-  applyQueueItemConfig(queueItemConfig(queue.items[index]));
+  executeQueueItemForState(gameState, queue.items[index], Date.now());
   return true;
 }
 
@@ -434,7 +453,7 @@ function settleOfflineActions(seconds, gains) {
     let index = queue.status.activeIndex;
     if (index < 0 || index >= queue.items.length) index = 0;
     queue.status.activeIndex = index;
-    applyQueueItemConfig(queueItemConfig(queue.items[index]));
+    executeQueueItemForState(gameState, queue.items[index], Date.now());
   }
 
   let remaining = seconds;
@@ -584,6 +603,11 @@ function settleOfflineActions(seconds, gains) {
     }
 
     if (completeOfflineQueueCycles(cycles)) {
+      // Batch K：intship 阶段推进（离线批量清空后唯一推进点，非 intship 驱动时内部为无操作；
+      // 推进成功后 currentAction.active 重新为 true，经下方 continue 用剩余离线时间续下一阶段）
+      if (typeof advanceIntshipAfterManufacturingAction === "function") {
+        advanceIntshipAfterManufacturingAction(gameState, { now, offline:true });
+      }
       if (gameState.currentAction.active) continue;
       break;
     }
@@ -614,54 +638,22 @@ function settleOfflinePlanets(seconds, gains, segmentEnd) {
   const offlineStart = now - seconds * 1000;
   for (const deployment of gameState.planetary.deployments) {
     if (!deployment.active) continue; // 已到期：跳过，且不重复触发 expired
-    const interval = getPlanetOutputInterval(deployment.planetType);
-    const storageMax = getPlanetStorageMax(deployment.planetType);
-    const deployedAt = Number(deployment.deployedAt) || 0;
-    const durationMs = (Number(deployment.duration) > 0 ? Number(deployment.duration) : 86400) * 1000;
-
-    // 离线区间从离线起点（= now - 离线秒数，受 MAX_OFFLINE_SECONDS 上限约束）起算，
-    // 与在线共用同一结算纯函数；夹紧到 [deployedAt, expiresAt]
-    const res = computePlanetarySettlement({
-      fromTime: offlineStart,
-      toTime: now,
-      progress: deployment.progress,
-      storage: deployment.storage,
-      interval,
-      storageMax,
-      deployedAt,
-      durationMs
+    // 研究批次 I · planauto：离线与在线共用同一个「单 deployment 时间轴」入口
+    // （产出结算 / 精确到期判定 / 逐周期自动续期全部在 advancePlanetDeploymentTimeline 内完成）。
+    // 离线区间从离线起点（= now - 离线秒数，受 MAX_OFFLINE_SECONDS 上限约束）起算。
+    const res = advancePlanetDeploymentTimeline(gameState, deployment, offlineStart, now, {
+      offline:true,
+      emit:(type, payload, eventMeta) => emitOfflineGameEvent(type, payload, eventMeta),
+      // 空间站自动收取（Phase 3C-4/6）：storage>=storageMax 时移入库存并清零
+      collect:(dep, storageMax) => (typeof applyStationAutoCollect === "function" && dep.storage >= storageMax)
+        ? applyStationAutoCollect(gameState, dep, storageMax, true) : 0
     });
-    deployment.progress = res.progress;
-    deployment.storage = res.storage;
-    deployment.lastTick = res.endSettled; // = min(now, expiresAt)，不越过到期点
-    // 空间站自动收取（Phase 3C-4/6）：storage>=storageMax 时移入库存并清零
-    if (typeof applyStationAutoCollect === "function" && deployment.storage >= storageMax) {
-      applyStationAutoCollect(gameState, deployment, storageMax, true);
-    }
     if (res.cycles > 0) {
       gameState.skills.planetaryIndustry.xp += res.cycles;
       gains.planetaryIndustry += res.cycles;
       gameState._dirty = true;
-      const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
-      emitOfflineGameEvent("planetary:completed", {
-        deploymentId:deployment.id,
-        planetType:deployment.planetType,
-        resourceId:"planetary:" + (config ? config.output : deployment.planetType),
-        quantity:res.cycles,
-        cycles:res.cycles,
-        xp:res.cycles
-      });
     }
-    const expiresAt = deployedAt + durationMs;
-    // 离线只结算到到期时刻；到期精确停产、只触发一次 expired（online tick 会在 !active 处跳过，不重复）
-    if (now >= expiresAt) {
-      deployment.active = false;
-      emitOfflineGameEvent("planetary:expired", {
-        deploymentId:deployment.id,
-        planetType:deployment.planetType,
-        expiredAt:expiresAt
-      });
-    }
+    if (res.renewals > 0) gameState._dirty = true;
   }
   if (gains.planetaryIndustry > 0) {
     checkLevelUp("planetaryIndustry", {
@@ -701,7 +693,7 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
   }
 
   const haveFuelFns = typeof getStationMaintenancePoints === "function"
-    && typeof getStationFuelBurnRatePerMs === "function";
+    && typeof getStationEffectiveFuelBurnRatePerMs === "function";
 
   // 动态时间轴：不再在循环前一次性构造边界。每段开始重算维护点数/燃烧率/
   // 燃料耗尽时刻/施工完成时刻——这样施工中途升级维护点数后，剩余燃料按
@@ -716,7 +708,9 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     let fuelExhaustAt = Infinity;
     if (haveFuelFns && s && s.maintenance) {
       const points = getStationMaintenancePoints(gameState);
-      const burnRate = points > 0 ? getStationFuelBurnRatePerMs(points) : 0;
+      // 研究批次 G · fuel：离线分段的燃料耗尽时刻必须用实际燃烧速率推算，
+      // 与 settleStationMaintenance 的实际扣减完全同源，否则会提前把站点判为断油。
+      const burnRate = points > 0 ? getStationEffectiveFuelBurnRatePerMs(gameState, points) : 0;
       const fuelRem = Number(s.maintenance.fuelRemaining) || 0;
       if (burnRate > 0 && fuelRem > 0) {
         const fuelCoverageMs = fuelRem / burnRate;
@@ -785,7 +779,17 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
 }
 
 function applyOfflineGains(rawSeconds, context) {
-  const seconds = Math.min(Math.max(0, rawSeconds || 0), MAX_OFFLINE_SECONDS);
+  // Batch C-9 定点返修：rawSeconds 严格归一化（唯一归一点）。
+  // 合法 = typeof "number" 且 Number.isFinite 且 >= 0；合法值原样保留（不整数化）。
+  // 其余一切输入（NaN / Infinity / -Infinity / 负数 / 数字字符串 / 普通字符串 /
+  // null / undefined / 对象 / 数组 / 布尔）一律归一为 0，随后被 seconds <= 5 提前返回拦截：
+  // 不初始化考古虚拟时间、不调用 settleOfflineTimeline、不发射离线结算完成事件、
+  // 不改动统计/事件账本/_dirty。事件构造处禁止再做 Number() / || 0 等宽松转换。
+  const normalizedRawSeconds =
+    (typeof rawSeconds === "number" && Number.isFinite(rawSeconds) && rawSeconds >= 0)
+      ? rawSeconds
+      : 0;
+  const seconds = Math.min(normalizedRawSeconds, MAX_OFFLINE_SECONDS);
   const gains = {
     mining: 0, refining: 0, shipEngineering: 0, gasHarvesting: 0,
     equipmentEngineering: 0, boosterEngineering: 0, planetaryIndustry: 0
@@ -796,11 +800,21 @@ function applyOfflineGains(rawSeconds, context) {
   const previousBatch = _offlineEventBatch;
   const runId = context && typeof context.runId === "string" && context.runId
     ? context.runId
-    : "offline_" + Math.round(Date.now() - seconds * 1000).toString(36) + "_" + Date.now().toString(36);
+    : "offline_" + Math.round(Date.now() - seconds * 1000).toString(36) + "_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36);
   _offlineEventBatch = { runId, sequence:0 };
   try {
     // 唯一协调入口：按燃料/施工分段时间轴
     settleOfflineTimeline(seconds, gains, context);
+    // Batch C-9：真实结算成功完成后、_offlineEventBatch 恢复前，严格 emit 一次唯一完成事件
+    // （沿用同一 runId/eventId 链）。settleOfflineTimeline 抛出异常时不会执行到此行，
+    // 不伪造完成事件。calculateOfflineGains / forceOfflineTest / 直接 applyOfflineGains
+    // 均经由本入口，禁止在其他位置复制发射。rawSeconds 使用入口处唯一严格归一化结果
+    // normalizedRawSeconds（非负有限 number、未封顶、不整数化），settledSeconds 为实际
+    // 结算秒数（已按 MAX_OFFLINE_SECONDS 封顶）。禁止此处再做 Number()/|| 0 等宽松转换。
+    emitOfflineGameEvent("offline:settlementCompleted", {
+      rawSeconds: normalizedRawSeconds,
+      settledSeconds: seconds
+    });
   } finally {
     _offlineEventBatch = previousBatch;
     delete gameState._archVirtualNowMs;
@@ -814,6 +828,13 @@ function applyOfflineGains(rawSeconds, context) {
 
 function calculateOfflineGains() {
   const now = Date.now();
+  // 批次 C：科研离线时间结算 —— 必须在既有 elapsed <= 5 提前 return 之前调用，
+  // 复用本函数同一 now（不传 elapsed、不预封顶）。每离线结算仅调用一次；
+  // 真实超时封顶在 processResearchUntil 内统一处理。
+  if (typeof ResearchSystem !== "undefined" && ResearchSystem &&
+      typeof ResearchSystem.processResearchUntil === "function") {
+    ResearchSystem.processResearchUntil(gameState, now);
+  }
   const lastActive = gameState.lastActiveTime || now;
   const elapsed = Math.floor((now - lastActive) / 1000);
   if (elapsed <= 5) return;
@@ -828,7 +849,7 @@ function calculateOfflineGains() {
 
 function forceOfflineTest(seconds) {
   if (!seconds || seconds <= 0) { console.log("用法：forceOfflineTest(60) — 模拟离线 60 秒"); return; }
-  const gains = applyOfflineGains(seconds, { runId:"offline_test_" + Date.now().toString(36) });
+  const gains = applyOfflineGains(seconds, { runId:"offline_test_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36) });
   gameState.currentAction.lastProgressUpdate = Date.now();
   gameState.lastActiveTime = Date.now(); gameState._dirty = true;
   const total = Object.values(gains).reduce((sum, value) => sum + value, 0);

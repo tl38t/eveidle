@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>舰船工程 · 方案D 3D 展厅式 [DEMO]</title>
+<style>
+  :root{--bg:#0a0f16;--panel:#0f1722;--line:#1e2c3a;--txt:#cdd9e5;--muted:#7d8da0;--cyan:#38bdf8;--gold:#f5c451}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 700px at 50% -20%,#16273a,#0a0f16 60%);color:var(--txt);
+    font-family:'Segoe UI','PingFang SC',system-ui,sans-serif;padding:18px}
+  .demo-note{font-size:12px;color:var(--muted);border-left:3px solid var(--cyan);padding-left:10px;margin:0 0 14px;max-width:900px}
+  .hall{display:grid;grid-template-columns:1fr 300px;gap:16px;max-width:980px}
+  .stage{background:radial-gradient(500px 300px at 50% 35%,#1a2c42,#060b11);border:1px solid var(--line);border-radius:16px;height:460px;position:relative;display:flex;align-items:center;justify-content:center;overflow:hidden}
+  .stage .floor{position:absolute;bottom:60px;width:360px;height:60px;border-radius:50%;background:radial-gradient(closest-side,rgba(56,189,248,.18),transparent)}
+  .stage .title{position:absolute;left:18px;top:16px;font-size:22px;font-weight:700;letter-spacing:1px}
+  .stage .sub{position:absolute;left:18px;top:48px;font-size:12px;color:var(--muted)}
+  .stage .hint{position:absolute;right:16px;bottom:14px;font-size:11px;color:var(--muted)}
+  .stage svg{filter:drop-shadow(0 14px 40px rgba(56,189,248,.35));animation:spin 18s linear infinite;transform-origin:center}
+  @keyframes spin{from{transform:rotateY(0)}to{transform:rotateY(360deg)}}
+  .rail{display:flex;gap:8px;margin-top:12px;overflow-x:auto;padding-bottom:6px}
+  .thumb{flex:none;width:74px;height:54px;border:1px solid var(--line);border-radius:10px;background:#0c131c;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .thumb.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+  .side{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px}
+  .side h3{margin:0 0 12px;font-size:15px}
+  .stat{font-size:12px;margin-bottom:9px}
+  .stat .l{display:flex;justify-content:space-between;color:var(--muted);margin-bottom:3px}
+  .stat .b{height:6px;border-radius:4px;background:#16202c;overflow:hidden}
+  .stat .b i{display:block;height:100%;background:linear-gradient(90deg,#38bdf8,#7dd3fc)}
+  .build{margin-top:14px;width:100%;padding:11px;border:none;border-radius:10px;background:linear-gradient(90deg,#1d6fb8,#38bdf8);color:#04121d;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<p class="demo-note">DEMO · 方案D「3D 展厅式」—— 以大号可旋转舰船查看器为主角，下方 rail 滚选舰船，侧栏看属性与建造。强调沉浸式「陈列厅」观感。真实页用 ship3d.js（已接 hangar/战斗/制造）替换这里的占位旋转。</p>
+<div class="hall">
+  <div>
+    <div class="stage">
+      <div class="floor"></div>
+      <div class="title">星冕级</div><div class="sub">超级旗舰 · 护盾·激光</div>
+      <svg viewBox="0 0 100 40" width="300"><g fill="#ff7a59"><path d="M3 20 L60 10 L90 20 L60 30 Z"/><path d="M55 20 L95 4 L99 20 L95 36 Z" opacity=".75"/><path d="M20 20 L26 6 L32 20 L26 34 Z" opacity=".5"/></g></svg>
+      <div class="hint">拖拽旋转 · 滚轮缩放</div>
+    </div>
+    <div class="rail" id="rail"></div>
+  </div>
+  <div class="side">
+    <h3>星冕级 · 属性</h3>
+    <div class="stat"><div class="l"><span>护盾</span><span>42,000</span></div><div class="b"><i style="width:100%"></i></div></div>
+    <div class="stat"><div class="l"><span>装甲</span><span>38,000</span></div><div class="b"><i style="width:90%"></i></div></div>
+    <div class="stat"><div class="l"><span>结构</span><span>52,000</span></div><div class="b"><i style="width:100%"></i></div></div>
+    <div class="stat"><div class="l"><span>速度</span><span>90</span></div><div class="b"><i style="width:21%"></i></div></div>
+    <div class="stat"><div class="l"><span>闪避</span><span>8</span></div><div class="b"><i style="width:20%"></i></div></div>
+    <div style="font-size:11px;color:var(--muted);margin:10px 0 4px">总装所需</div>
+    <div style="font-size:12px">超级旗舰综合舰体×24 · 动力核心×24 · 功能组件×28 · 蓝图 ✓</div>
+    <button class="build">⚓ 合成 星冕级</button>
+  </div>
+</div>
+<script>
+const SHIPS=[['星矛级','#a98bff',30],['铁卫级','#5b7fa6',30],['雷光级','#5b7fa6',42],['疾风级','#a98bff',42],['曙光级','#5b7fa6',54],['天穹级','#f5c451',82],['星冕级','#ff7a59',96]];
+const R=document.getElementById('rail');
+R.innerHTML=SHIPS.map((s,i)=>`<div class="thumb ${i===6?'sel':''}" title="${s[0]}"><svg viewBox="0 0 100 40" width="52"><g fill="${s[1]}"><path d="M5 20 L70 12 L88 20 L70 28 Z"/><path d="M60 20 L92 8 L96 20 L92 32 Z" opacity=".7"/></g></svg></div>`).join('');
+R.querySelectorAll('.thumb').forEach(t=>t.onclick=()=>{R.querySelectorAll('.thumb').forEach(x=>x.classList.remove('sel'));t.classList.add('sel');});
+</script>
+</body>
+</html>

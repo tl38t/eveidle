@@ -86,7 +86,7 @@ const ProductionStateActions = {
 };
 
 const ManufacturingStateActions = {
-  buyBlueprint(state, blueprintId) {
+  buyBlueprint(state, blueprintId, now) {
     const blueprint = SHIP_BLUEPRINTS.find(item => item.id === blueprintId);
     if (!blueprint) return { changed:false, reason:"unknown-blueprint" };
     if ((state.ownedBlueprints || []).includes(blueprint.shipId)) return { changed:false, reason:"already-owned" };
@@ -97,6 +97,10 @@ const ManufacturingStateActions = {
     if (!Array.isArray(state.ownedBlueprints)) state.ownedBlueprints = [];
     state.ownedBlueprints.push(blueprint.shipId);
     state._dirty = true;
+    if (typeof GameEvents !== "undefined") {
+      const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+      GameEvents.emit("blueprint:acquired", { ownershipKey: blueprint.shipId, blueprintKind: "ship", productId: blueprint.shipId }, { timestamp: ts, source: "blueprint-store", offline: false });
+    }
     return { changed:true, blueprint };
   },
 
@@ -176,26 +180,23 @@ const ManufacturingStateActions = {
     return { changed:true, category };
   },
 
-  // 改装件二级筛选（类别：combat/industry/archaeology；档位：all/I~V）。
+  // 改装件二级筛选：按 9 个系列（stackGroup）单选。
   // 只改筛选状态与 equipEngTarget（详情落到第一个可见配方），
   // 绝不触碰 startedEquipEngTarget —— 制造中切换筛选不改变实际产物。
   selectEquipEngRigFilter(state, payload) {
     const action = state.currentAction;
-    const sub = payload.sub !== undefined ? payload.sub : (action.equipEngRigSub || "combat");
-    const tier = payload.tier !== undefined ? payload.tier : (action.equipEngRigTier || "all");
-    if (!RIG_ENGINEERING_SUBCATEGORIES.some(item => item.id === sub)) return { changed:false, reason:"unknown-rig-subcategory" };
-    if (tier !== "all" && !RIG_ENGINEERING_TIERS.includes(tier)) return { changed:false, reason:"unknown-rig-tier" };
-    action.equipEngRigSub = sub;
-    action.equipEngRigTier = tier;
+    const series = payload.series !== undefined ? payload.series : (action.equipEngRigSeries || RIG_ENGINEERING_SERIES[0].id);
+    if (!RIG_ENGINEERING_SERIES.some(item => item.id === series)) return { changed:false, reason:"unknown-rig-series" };
+    action.equipEngRigSeries = series;
     const filtered = EQUIPMENT_ENGINEERING_RECIPES.filter(recipe =>
-      recipe.category === "rigs" && recipe.rigCategory === sub && (tier === "all" || recipe.rigTier === tier));
+      recipe.category === "rigs" && recipe.stackGroup === series);
     const current = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
     if (!filtered.some(recipe => recipe.id === current.id)) {
       const next = filtered.find(recipe => (state.skills.equipmentEngineering.lvl || 1) >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || filtered[0];
       if (next) action.equipEngTarget = next.id;
     }
     state._dirty = true;
-    return { changed:true, sub, tier };
+    return { changed:true, series };
   },
 
   selectEquipmentRecipe(state, recipeId) {
@@ -394,11 +395,15 @@ const CombatStateActions = {
     state.combat.enemies = [];
     state.combat.currentEnemy = null;
     state.combat.wave = 1;
+    state.combat.runWeaponTypes = [];
+    state.combat.runWeaponTypesZone = state.combat.zone || null;
     state.combat.currentFormation = "";
     state.combat.lastLoot = "";
     state.combat.lastSpecialLoot = "";
     state.combat.lastStatus = "";
     state.combat.lastEnemyVolley = null;
+    state.combat.runDamageDealt = 0;
+    state.combat.runDamageTaken = 0;
     state._dirty = true;
     return { changed:true, mode };
   },
@@ -432,7 +437,10 @@ const CombatStateActions = {
       lastLoot:"",
       lastSpecialLoot:"",
       lastStatus:"",
-      lastEnemyVolley:null
+      lastEnemyVolley:null,
+      runWeaponTypes:[],
+      runWeaponTypesZone:zone.id,
+      runDamageDealt:0, runDamageTaken:0
     });
     state._dirty = true;
     return { changed:true, zone };
@@ -460,7 +468,8 @@ const CombatStateActions = {
       viewDeathspaceTier:site.dedTier,
       zone:site.sourceZoneId,
       enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0,
-      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null
+      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null,
+      runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
     });
     state._dirty = true;
     return { changed:true, site };
@@ -487,7 +496,8 @@ const CombatStateActions = {
       viewDeathspaceTier:selectedTier, viewDeathspaceId:site.id,
       zone:site.sourceZoneId,
       enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0,
-      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null
+      currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null,
+      runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
     });
     state._dirty = true;
     return { changed:true, tier:selectedTier, site };
@@ -504,6 +514,10 @@ const CombatStateActions = {
       state.combat.enemies = enemies;
       state.combat.currentEnemy = enemies[0] || null;
       state.combat.currentFormation = formationId || "";
+      state.combat.runWeaponTypes = [];
+      state.combat.runWeaponTypesZone = state.combat.zone || null;
+      state.combat.runDamageDealt = 0;
+      state.combat.runDamageTaken = 0;
     } else {
       state.combat.currentEnemy = living[0];
     }
@@ -516,14 +530,21 @@ const CombatStateActions = {
     state.combat.lastEnemyVolley = null;
     state.resumeAfterRepair = null; // 手动/自动重新出击：清除待恢复标记
     state._dirty = true;
-    return { changed:true };
+    // 问题1：出击前燃料校验（非阻断）。复用 combat.js 的 computeVolleyFuel（与开火结算同公式）。
+    // 现有燃料不足以完成一轮齐射时仅返回 warning，不取消战斗、不改变 changed/ok 语义。
+    const zoneObj = display.zone;
+    const volleyFuel = computeVolleyFuel(state, zoneObj);
+    const fuelNow = ResourceRegistry.get(state, "consumable:fuel");
+    const warning = (volleyFuel > 0 && fuelNow < volleyFuel) ? "low-fuel" : null;
+    return { changed:true, warning };
   },
 
   enterDeathspace(state, deathspaceId, enemies, formationId, now) {
     const site = DEATHSPACE_DATABASE.find(item => item.id === deathspaceId);
     if (!site) return { changed:false, reason:"unknown-deathspace" };
-    const recoveryUntil = Number(state.combat.repairUntil) || 0;
-    if (recoveryUntil > now) return { changed:false, reason:"repairing", remaining:Math.ceil((recoveryUntil - now) / 1000) };
+    // 问题2：per-ship 维修——仅当「当前战斗舰」正在维修时拒绝出击，健康舰可正常进入。
+    const activeShipId = state.combat.activeShip || (getActiveCombatShipState(state).instance && getActiveCombatShipState(state).instance.instanceId) || null;
+    if (isShipUnderRepair(state, activeShipId, now)) return { changed:false, reason:"repairing", remaining:Math.ceil((getShipRepairUntil(state, activeShipId) - now) / 1000) };
     if (getCombatLevelFromState(state) < site.requiredCL) return { changed:false, reason:"level-locked", requiredCL:site.requiredCL };
     const weapons = getInstalledCombatModulesFromState(state).filter(module => module.combat.kind === "weapon");
     if (weapons.length === 0) return { changed:false, reason:"no-weapons" };
@@ -535,12 +556,21 @@ const CombatStateActions = {
       deathspaceTier:site.dedTier, viewDeathspaceId:site.id, viewDeathspaceTier:site.dedTier,
       active:true, enemies, currentEnemy:enemies[0] || null, wave:1,
       totalKills:0, runEliteKills:0, currentFormation:formationId || "deathspace_1",
-      lastLoot:"", lastSpecialLoot:"", lastStatus:"通行密钥已消耗", lastEnemyVolley:null
+      lastLoot:"", lastSpecialLoot:"", lastStatus:"通行密钥已消耗", lastEnemyVolley:null,
+      runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
     });
     state.currentAction.skill = "combat";
     state.currentAction.active = true;
     state._dirty = true;
-    return { changed:true, site };
+    window.GameEvents.emit("combat:deathspaceEntered", {
+      deathspaceId:site.id, zoneId:site.sourceZoneId, faction:site.faction, tier:site.dedTier
+    }, { timestamp:now, source:"combat", offline:false });
+    // 问题1：进入死亡空间前同样做燃料校验（非阻断 warning）。
+    const dsZone = COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || COMBAT_ZONES[0];
+    const dsVolleyFuel = computeVolleyFuel(state, dsZone);
+    const dsFuel = ResourceRegistry.get(state, "consumable:fuel");
+    const dsWarning = (dsVolleyFuel > 0 && dsFuel < dsVolleyFuel) ? "low-fuel" : null;
+    return { changed:true, site, warning:dsWarning };
   },
 
   stop(state) {
@@ -564,7 +594,10 @@ const CombatStateActions = {
       lastLoot:"",
       lastSpecialLoot:"",
       lastStatus:abandonedDeathspace ? "已撤离死亡空间，通行密钥不返还" : "",
-      lastEnemyVolley:null
+      lastEnemyVolley:null,
+      runWeaponTypes:[],
+      runWeaponTypesZone:null,
+      runDamageDealt:0, runDamageTaken:0
     });
     state.resumeAfterRepair = null; // 玩家主动停止：取消待恢复（含维修中取消自动出击）
     state._dirty = true;
@@ -602,24 +635,26 @@ const CombatStateActions = {
       runEliteKills:0,
       currentFormation:"",
       lastEnemyVolley:null,
-      repairUntil:now + 180000,
-      destroyedShip:destroyedShipId,
       lastStatus:failedDeathspace
         ? "攻略失败，密钥不返还；维修完成后返回来源星带。"
         : "本轮肃清失败，维修完成后返回该星带。"
     });
+    // 问题2：per-ship 维修——维修状态写入 combat.repairs[destroyedShipId]，不再使用全局 repairUntil。
+    // 换舰/出击均不触碰其他舰的维修条目（beginShipRepair 只写被击毁这艘）。
+    beginShipRepair(state, destroyedShipId, now + 180000);
     state._dirty = true;
-    return { changed:true, repairUntil:state.combat.repairUntil, failedDeathspace, returnZoneId };
+    return { changed:true, repairShipId:destroyedShipId, repairUntilTs:now + 180000, failedDeathspace, returnZoneId };
   },
 
   finishRecovery(state, now) {
-    const repairUntil = Number(state.combat.repairUntil) || 0;
+    // 问题2：per-ship 维修——仅结束「当前 active 战斗舰」的维修，并恢复其满血。
+    const activeId = state.combat.activeShip;
+    const repairUntil = getShipRepairUntil(state, activeId);
     if (!repairUntil || now < repairUntil) return { changed:false, reason:"not-due" };
     const maxHp = getCombatMaxHpFromState(state);
     state.combat.hp = { ...maxHp };
     state.combat.maxHp = { ...maxHp };
-    state.combat.repairUntil = 0;
-    state.combat.destroyedShip = null;
+    finishShipRepair(state, activeId);
     state.combat.lastStatus = "自动维修完成，可以重新出击";
     state._dirty = true;
     return { changed:true };
@@ -657,18 +692,16 @@ const PlanetaryStateActions = {
     return { changed:true, deployment, config };
   },
 
-  collect(state, id, cargoCapacity) {
+  collect(state, id) {
     const deployment = state.planetary && state.planetary.deployments.find(item => item.id === id);
     if (!deployment) return { changed:false, reason:"unknown-deployment" };
-    if ((Number(deployment.storage) || 0) <= 0) return { changed:false, reason:"empty" };
-    const freeCargo = Math.max(0, (Number(cargoCapacity) || 10000000) - getCargoUsedFromState(state));
-    const quantity = Math.min(Number(deployment.storage) || 0, freeCargo);
-    if (quantity <= 0) return { changed:false, reason:"cargo-full" };
+    const quantity = Number(deployment.storage) || 0;
+    if (quantity <= 0) return { changed:false, reason:"empty" };
     const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
     const output = config ? config.output : "未知产物";
     const resourceId = "planetary:" + output;
     ResourceRegistry.add(state, resourceId, quantity);
-    deployment.storage -= quantity;
+    deployment.storage = 0;
     state._dirty = true;
     if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:collected", {
       deploymentId:deployment.id, planetType:deployment.planetType, quantity, resourceId
@@ -677,7 +710,7 @@ const PlanetaryStateActions = {
   },
 
   // 续期：仅当已到期（active=false 或时间超期）且 ISK 足够；只扣 maintenanceCostISK，保留 storage；运行中重复续期返回 already-active。
-  renew(state, id, now) {
+  renew(state, id, now, meta) {
     const deployment = state.planetary && state.planetary.deployments.find(item => item.id === id);
     if (!deployment) return { changed:false, reason:"unknown-deployment" };
     const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
@@ -687,16 +720,23 @@ const PlanetaryStateActions = {
     const timeExpired = (now - deployedAt) / 1000 >= duration;
     const running = Boolean(deployment.active) && !timeExpired;
     if (running) return { changed:false, reason:"already-active" };
-    const maintenanceISK = Number(config.maintenanceCostISK) || 0;
+    // 研究批次 G · planCost（reduceFraction）：实扣与 getPlanetDeploymentDisplayState 完全同式
+    // （基础费 × (1 - planCost 减免) 后 ceil），保证"显示价 = 余额判断价 = 实扣价 = 事件价"。
+    const maintenanceISK = (typeof getPlanetRenewCostISK === "function")
+      ? getPlanetRenewCostISK(state, config)
+      : (Number(config.maintenanceCostISK) || 0);
     if (ResourceRegistry.get(state, "currency:isk") < maintenanceISK) return { changed:false, reason:"insufficient-isk" };
     ResourceRegistry.spend(state, "currency:isk", maintenanceISK);
     const newDuration = Number(config.maintenanceDuration) || 86400;
     Object.assign(deployment, { deployedAt:now, lastTick:now, progress:0, duration:newDuration, active:true });
     state._dirty = true;
     const expiresAt = now + newDuration * 1000;
+    // 可选 meta 第 4 参：planauto 离线/在线自动续期透传 offline 与 source（与 completed/expired 一致）；
+    // 手动续期（UI）不传则默认 offline:false，行为与历史一致，不影响 Batch G 等既有断言。
+    const metaArg = (meta && typeof meta === "object") ? meta : { offline:false };
     if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:renewed", {
       deploymentId:deployment.id, planetType:deployment.planetType, maintenanceISK, expiresAt
-    });
+    }, metaArg);
     return { changed:true, deployment, config };
   },
 
@@ -838,7 +878,33 @@ function executeQueueItemForState(state, item, now) {
     return { changed:true, skill:"boosterEngineering" };
   }
 
-  // 常规技能
+  // 常规技能：采矿/冶炼/采气/制造等。
+  // 修复：若战斗仍在进行（combat.active），启动其他 action 前必须先干净停止战斗，
+  //       否则 currentAction.skill 被改走后 combatTick 不再被驱动，但 combat.active 残留
+  //       → 战斗冻结在最后一帧（需手动点「停止战斗」才能收尾）。combat/start 会正确接管
+  //       currentAction，这里对称地让其他 action 启动时收尾战斗。
+  if (state.combat && state.combat.active) {
+    const maxHp = getCombatMaxHpFromState(state);
+    Object.assign(state.combat, {
+      active:false,
+      hp:{ ...maxHp },
+      maxHp:{ ...maxHp },
+      enemies:[],
+      currentEnemy:null,
+      wave:1,
+      totalKills:0,
+      runEliteKills:0,
+      currentFormation:"",
+      lastLoot:"",
+      lastSpecialLoot:"",
+      lastStatus:"已切换至其他作业，战斗停止",
+      lastEnemyVolley:null,
+      runWeaponTypes:[],
+      runWeaponTypesZone:null,
+      runDamageDealt:0, runDamageTaken:0
+    });
+    state.resumeAfterRepair = null;
+  }
   applyQueueConfigToState(state, getQueueItemConfigForState(item), now);
   state._dirty = true;
   return { changed:true, skill:state.currentAction.skill };
@@ -876,7 +942,7 @@ const ShellStateActions = {
     return { changed:true, expanded:settings.combatSkillsExpanded };
   },
 
-  buyLPItem(state, itemId) {
+  buyLPItem(state, itemId, now) {
     const item = getLPStoreCatalogItem(itemId);
     if (!item) return { changed:false, reason:"unknown-item" };
     if (item.kind === "equipmentBlueprint" && hasEquipmentBlueprintFromState(state, item.equipmentId)) return { changed:false, reason:"already-owned" };
@@ -884,14 +950,25 @@ const ShellStateActions = {
     ResourceRegistry.spend(state, "currency:lp", item.lpPrice);
     if (item.kind === "equipmentBlueprint") {
       if (!Array.isArray(state.ownedBlueprints)) state.ownedBlueprints = [];
-      state.ownedBlueprints.push(getEquipmentBlueprintOwnershipKey(item.equipmentId));
+      const ownershipKey = getEquipmentBlueprintOwnershipKey(item.equipmentId);
+      state.ownedBlueprints.push(ownershipKey);
       state._dirty = true;
+      if (typeof GameEvents !== "undefined") {
+        const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+        GameEvents.emit("blueprint:acquired", { ownershipKey, blueprintKind: "equipment", productId: item.equipmentId }, { timestamp: ts, source: "blueprint-store", offline: false });
+      }
       return { changed:true, item, blueprint:item };
     }
     if (!state.equipment) state.equipment = { inventory:[] };
     if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
     state.equipment.inventory.push(item.equipmentId);
     state._dirty = true;
+    // Batch C-13：普通装备购入使未安装装备数 +1，计入 ResourceRegistry.getInventoryTotal，
+    // 故在真实入库成功后 emit 一次 inventory:changed（蓝图分支不发，它只发 blueprint:acquired）。
+    if (typeof GameEvents !== "undefined") {
+      const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+      GameEvents.emit("inventory:changed", { kind: "equipment", itemId: item.equipmentId, delta: 1 }, { timestamp: ts, source: "lp-store", offline: false });
+    }
     return { changed:true, item, equipment:EQUIPMENT_DB[item.equipmentId] };
   },
 
@@ -900,7 +977,9 @@ const ShellStateActions = {
     if (!instance) return { changed:false, reason:"unknown-ship" };
     const config = getShipConfigById(instance.shipId);
     if (!config) return { changed:false, reason:"unknown-ship" };
-    const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && state.combat && Number(state.combat.repairUntil) > now);
+    // 问题2：per-ship 维修——仅当被操作的这艘舰自身在维修时拒绝指派，健康舰可正常换入。
+    const isRepairingThis = isShipUnderRepair(state, instanceId, now);
+    const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && isRepairingThis);
     if (restriction) return { changed:false, reason:restriction.reason };
     if (!state.shipAssignments) state.shipAssignments = {};
     const removing = state.shipAssignments[actionKey] === instance.instanceId;
@@ -917,6 +996,8 @@ const ShellStateActions = {
       delete state.shipAssignments[actionKey];
     }
     if (actionKey === "combat") state.combat.activeShip = removing ? null : instance.instanceId;
+    // 问题2/清理：战斗舰指派被玩家主动改动（换入/撤出），取消"维修完成后自动出击"待恢复标记。
+    if (actionKey === "combat" && state.resumeAfterRepair && state.resumeAfterRepair.type === "combat") state.resumeAfterRepair = null;
     state._dirty = true;
     return { changed:true, assigned:!removing, instance };
   },
@@ -924,7 +1005,8 @@ const ShellStateActions = {
   equipCombatShip(state, instanceId, now) {
     const instance = getShipInstanceFromState(state, instanceId);
     if (!instance) return { changed:false, reason:"unknown-ship" };
-    if (state.combat && Number(state.combat.repairUntil) > now) return { changed:false, reason:"repairing" };
+    // 问题2：per-ship 维修——仅当被操作的这艘舰自身在维修时拒绝装备，健康舰可正常换入。
+    if (state.combat && isShipUnderRepair(state, instanceId, now)) return { changed:false, reason:"repairing" };
     const config = getShipConfigById(instance.shipId);
     if (!config) return { changed:false, reason:"unknown-ship" };
     if (!state.shipAssignments) state.shipAssignments = {};
@@ -935,8 +1017,12 @@ const ShellStateActions = {
     }
     state.shipAssignments.combat = instance.instanceId;
     state.combat.activeShip = instance.instanceId;
+    // 问题2/清理：玩家主动换入新的战斗舰（健康舰），取消"维修完成后自动出击"待恢复标记，
+    // 与 combat/start（手动出击，actions.js:534）语义一致——接管战斗舰即放弃自动恢复，
+    // 避免战斗面板长期显示"完成后返回战斗"误导。
+    if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat") state.resumeAfterRepair = null;
     const maxHp = getCombatMaxHpFromState(state);
-    Object.assign(state.combat, { hp:{ ...maxHp }, maxHp:{ ...maxHp }, weapon:config.recommendedWeapon || "laser", enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0, currentFormation:"", active:false });
+    Object.assign(state.combat, { hp:{ ...maxHp }, maxHp:{ ...maxHp }, weapon:config.recommendedWeapon || "laser", enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0, currentFormation:"", runWeaponTypes:[], runWeaponTypesZone:state.combat.zone||null, runDamageDealt:0, runDamageTaken:0, active:false });
     state._dirty = true;
     return { changed:true, instance, config };
   },
@@ -1138,6 +1224,17 @@ const ShellStateActions = {
     if (front) queue.items.unshift(queueItem); else queue.items.push(queueItem);
     if (front && queue.status.isRunning && queue.status.activeIndex >= 0) queue.status.activeIndex++;
     state._dirty = true;
+    // Batch C-14A（J05）：唯一真实新增入口。仅在数组写入完成后发射一次，
+    // size 取写入后的真实长度（不是 +1 推算）。合并到末项 / 队列已满 / 蓝图未解锁 /
+    // 缺失队列结构等路径均在上方 return，不会到达此处，因此不存在虚增。
+    // GameEvents 不可用时安全降级：入队本身已成功，不回滚、不抛错。
+    if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.emit === "function") {
+      GameEvents.emit("queue:itemAdded", {
+        itemId:queueItem.id,
+        size:queue.items.length,
+        maxSize:queue.config.maxSize
+      }, { offline:false, source:"queue-add" });
+    }
     return { changed:true, item:queueItem };
   },
 
@@ -1433,7 +1530,8 @@ const StationStateActions = {
     m.lowFuelNotified = false;
     m.depletedNotified = false;
     state._dirty = true;
-    const remainingMs = info.targetFuel / getStationFuelBurnRatePerMs(info.points);
+    // 研究批次 G · fuel：补满后的可持续时长同样按实际燃烧速率计算（与显示态/结算同源）
+    const remainingMs = info.targetFuel / getStationEffectiveFuelBurnRatePerMs(state, info.points);
     if (typeof GameEvents !== "undefined") {
       GameEvents.emit("station:maintenanceRefilled", { points:info.points, fuelSpent:cost, fuelRemaining:info.targetFuel, remainingMs }, { source:"station", offline:false });
     }
@@ -1455,7 +1553,60 @@ const StationStateActions = {
   }
 };
 
-function dispatchGameAction(state, action, now) {
+  // -------------------------------------------------------------------------
+  // 研究系统 Action（Batch F）：仅转发到 ResearchSystem 公开 API，
+  //   不复制验证 / 时间结算 / 额度公式。actionTime 透传给系统层，
+  //   系统层返回的稳定 reason 原样保留。失败分支由 ResearchSystem 负责
+  //   （不置 dirty、不改状态），此处只映射为 { changed, reason }。
+  // -------------------------------------------------------------------------
+  function getResearchSystemRef() {
+    return (typeof globalThis !== "undefined" && globalThis.ResearchSystem) ||
+           (typeof window !== "undefined" && window.ResearchSystem) || null;
+  }
+  function researchActionResult(result) {
+    if (!result || typeof result !== "object") return { changed: false, reason: "internal-error" };
+    const { ok, reason, ...rest } = result;
+    return Object.assign({ changed: !!ok, reason: ok ? null : (reason || "failed") }, rest);
+  }
+  const ResearchStateActions = {
+    start(state, techId, targetLevel, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.startResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.startResearch(state, techId, targetLevel, now));
+    },
+    enqueue(state, techId, targetLevel, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.enqueueResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.enqueueResearch(state, techId, targetLevel, now));
+    },
+    cancel(state, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.cancelResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.cancelResearch(state, now));
+    },
+    applyHours(state, hours, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.applyResearchHours !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.applyResearchHours(state, hours, now));
+    },
+    removeQueued(state, stepKey, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.removeQueuedResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.removeQueuedResearch(state, stepKey, now));
+    }
+  };
+
+  function tutorialNote(state, action, result, now) {
+    const TS = (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem
+      : (typeof window !== "undefined" && window.TutorialSystem ? window.TutorialSystem : null);
+    if (TS && typeof TS.noteTutorialActionResult === "function" && result && result.changed) {
+      try { TS.noteTutorialActionResult(state, action, result, now); } catch (e) { /* 新手任务旁路失败不影响主流程 */ }
+    }
+    return result;
+  }
+
+  function dispatchGameAction(state, action, now) {
   if (!state || !action || typeof action.type !== "string") return { changed:false, reason:"invalid-action" };
   const actionTime = Number(now) || Date.now();
   if (action.type === "action/stop") return ShellStateActions.stopCurrentAction(state, actionTime);
@@ -1464,7 +1615,7 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "production/selectMiningMode") return ProductionStateActions.selectMiningMode(state, action.mode);
   if (action.type === "production/selectSmeltingRecipe") return ProductionStateActions.selectSmeltingRecipe(state, action.areaName, actionTime);
   if (action.type === "production/selectGasArea") return ProductionStateActions.selectGasArea(state, action.areaName, actionTime);
-  if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId);
+  if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId, actionTime);
   if (action.type === "manufacturing/selectShipComponent") return ManufacturingStateActions.selectShipComponent(state, action.componentId);
   if (action.type === "manufacturing/selectShipAssembly") return ManufacturingStateActions.selectShipAssembly(state, action.recipeId);
   if (action.type === "manufacturing/startShipComponent") return ManufacturingStateActions.startShipComponent(state, actionTime);
@@ -1483,21 +1634,21 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "booster/replace") return BoosterStateActions.replace(state, action.slot, action.itemId);
   if (action.type === "combat/selectMode") return CombatStateActions.selectMode(state, action.mode);
   if (action.type === "combat/selectTargetingMode") return CombatStateActions.selectTargetingMode(state, action.mode);
-  if (action.type === "combat/selectZone") return CombatStateActions.selectZone(state, action.zoneId);
+  if (action.type === "combat/selectZone") return tutorialNote(state, action, CombatStateActions.selectZone(state, action.zoneId), actionTime);
   if (action.type === "combat/selectDeathspace") return CombatStateActions.selectDeathspace(state, action.deathspaceId);
   if (action.type === "combat/selectDeathspaceTier") return CombatStateActions.selectDeathspaceTier(state, action.tier);
-  if (action.type === "combat/start") return CombatStateActions.start(state, action.enemies, action.formationId, actionTime);
+  if (action.type === "combat/start") return tutorialNote(state, action, CombatStateActions.start(state, action.enemies, action.formationId, actionTime), actionTime);
   if (action.type === "combat/enterDeathspace") return CombatStateActions.enterDeathspace(state, action.deathspaceId, action.enemies, action.formationId, actionTime);
-  if (action.type === "combat/stop") return CombatStateActions.stop(state);
+  if (action.type === "combat/stop") return tutorialNote(state, action, CombatStateActions.stop(state), actionTime);
   if (action.type === "combat/beginRecovery") return CombatStateActions.beginRecovery(state, actionTime);
   if (action.type === "combat/finishRecovery") return CombatStateActions.finishRecovery(state, actionTime);
   if (action.type === "planetary/deploy") return PlanetaryStateActions.deploy(state, action.planetType, actionTime);
-  if (action.type === "planetary/collect") return PlanetaryStateActions.collect(state, action.id, action.cargoCapacity);
+  if (action.type === "planetary/collect") return PlanetaryStateActions.collect(state, action.id);
   if (action.type === "planetary/renew") return PlanetaryStateActions.renew(state, action.id, actionTime);
   if (action.type === "planetary/demolish") return PlanetaryStateActions.demolish(state, action.id);
-  if (action.type === "shell/buyLPItem") return ShellStateActions.buyLPItem(state, action.equipmentId);
-  if (action.type === "hangar/toggleAssignment") return ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime);
-  if (action.type === "hangar/equipCombatShip") return ShellStateActions.equipCombatShip(state, action.instanceId, actionTime);
+  if (action.type === "shell/buyLPItem") return ShellStateActions.buyLPItem(state, action.equipmentId, actionTime);
+  if (action.type === "hangar/toggleAssignment") return tutorialNote(state, action, ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime), actionTime);
+  if (action.type === "hangar/equipCombatShip") return tutorialNote(state, action, ShellStateActions.equipCombatShip(state, action.instanceId, actionTime), actionTime);
   if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue);
   if (action.type === "hangar/setFittingSlot") return ShellStateActions.setFittingSlot(state, action.instanceId, action.slot, action.slotIndex, action.equipmentId);
   if (action.type === "hangar/resetFitting") return ShellStateActions.resetFitting(state, action.instanceId);
@@ -1528,6 +1679,71 @@ function dispatchGameAction(state, action, now) {
   if (action.type === "station/refillMaintenance") return StationStateActions.refillMaintenance(state, actionTime);
   if (action.type === "station/startBodyConstruction") return StationStateActions.startBodyConstruction(state, actionTime);
   if (action.type === "station/startBuildingConstruction") return StationStateActions.startBuildingConstruction(state, action.buildingId, actionTime);
+  // 研究系统 Batch F：所有操作经 ResearchSystem 公开 API，actionTime 透传
+  if (action.type === "research/start") return ResearchStateActions.start(state, action.techId, action.targetLevel, actionTime);
+  if (action.type === "research/enqueue") return ResearchStateActions.enqueue(state, action.techId, action.targetLevel, actionTime);
+  if (action.type === "research/cancel") return ResearchStateActions.cancel(state, actionTime);
+  if (action.type === "research/applyHours") return ResearchStateActions.applyHours(state, action.hours, actionTime);
+  if (action.type === "research/removeQueued") return ResearchStateActions.removeQueued(state, action.stepKey, actionTime);
+  // 研究系统 Batch I：自动化协议配置（业务实现全在 js/systems/research-protocols.js，actionTime 原样透传）
+  if (action.type === "research/setProtocolEnabled") {
+    return (typeof setResearchProtocolEnabled === "function")
+      ? setResearchProtocolEnabled(state, action.protocolId, action.enabled, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/setPlanetAutoRenew") {
+    return (typeof setPlanetAutoRenew === "function")
+      ? setPlanetAutoRenew(state, action.deploymentId, action.enabled, action.minIskReserve, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  // 研究系统 Batch J：autoenh 自动强化配置与执行（业务实现全在 js/systems/research-protocols.js）
+  if (action.type === "research/setAutoEnhancementMaxAttempts") {
+    return (typeof setAutoEnhancementMaxAttempts === "function")
+      ? setAutoEnhancementMaxAttempts(state, action.maxAttempts)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/runAutoEnhancement") {
+    return (typeof runAutoEnhancement === "function")
+      ? runAutoEnhancement(state, action.instanceId, action.context)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  // 研究系统 Batch K：intship 一体化造船（业务实现全在 js/systems/research-protocols.js）
+  if (action.type === "research/startIntship") {
+    return (typeof startIntship === "function")
+      ? startIntship(state, action.options, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/continueIntship") {
+    return (typeof continueIntship === "function")
+      ? continueIntship(state, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "research/cancelIntship") {
+    return (typeof cancelIntship === "function")
+      ? cancelIntship(state, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  // 新手任务 Batch O：任务领取 / 确认 / 战斗路线选择 / 应急舰船
+  if (action.type === "tutorial/claim") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.claimTutorialTask(state, action.taskId, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "tutorial/confirm") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.confirmTutorialTask(state, action.taskId, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "tutorial/chooseCombatTrack") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.chooseTutorialCombatTrack(state, action.track, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
+  if (action.type === "tutorial/claimEmergencyShip") {
+    return (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem.claimEmergencyTutorialShip(state, actionTime)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
   return { changed:false, reason:"unknown-action" };
 }
 

@@ -40,7 +40,6 @@ sandbox.updateUI = noop;
 sandbox.updateLiveUI = noop;
 sandbox.refreshVisiblePanelAfterAction = noop;
 sandbox.showToast = noop;
-sandbox.isCargoFull = () => false;
 vm.createContext(sandbox);
 for (const source of scriptSources) {
   vm.runInContext(fs.readFileSync(path.resolve(root, source.replace(/^\.\//, "")), "utf8"), sandbox, { filename:source });

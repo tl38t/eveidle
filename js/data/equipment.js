@@ -7,8 +7,8 @@ const EQUIPMENT_DB = {
   "t2_gas_harvester": { id:"t2_gas_harvester", name:"中型气云采集器",  slot:"high", level:15, time:35, xp:20, cost:{"三钛合金":80,"稳定富勒烯":10}, bonuses:{gasEfficiency:0.15} },
   "raider_mining_laser": { id:"raider_mining_laser", name:"联盟采矿激光器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":120,"类银超金属":48}, bonuses:{miningEfficiency:0.20}, faction:"alliance", requiresBlueprint:true },
   "raider_gas_harvester": { id:"raider_gas_harvester", name:"联盟气云采集器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":120,"稳定富勒烯":15}, bonuses:{gasEfficiency:0.20}, faction:"alliance", requiresBlueprint:true },
-  "angel_mining_laser": { id:"angel_mining_laser", name:"天使联合采矿激光器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"类银超金属":40,"天使低级加密数据":5}, bonuses:{miningEfficiency:0.20}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
-  "angel_gas_harvester": { id:"angel_gas_harvester", name:"天使联合气云采集器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"稳定富勒烯":12,"天使低级加密数据":5}, bonuses:{gasEfficiency:0.20}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
+  "angel_mining_laser": { id:"angel_mining_laser", name:"苍穹劫团联合采矿激光器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"类银超金属":40,"天使低级加密数据":5}, bonuses:{miningEfficiency:0.20}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
+  "angel_gas_harvester": { id:"angel_gas_harvester", name:"苍穹劫团联合气云采集器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"稳定富勒烯":12,"天使低级加密数据":5}, bonuses:{gasEfficiency:0.20}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
   "t3_mining_laser":  { id:"t3_mining_laser",  name:"重型采矿激光器",  slot:"high", level:35, time:60, xp:40, cost:{"三钛合金":200,"类银超金属":80,"同位聚合体":20,"重金属":10}, bonuses:{miningEfficiency:0.30} },
   "t3_gas_harvester": { id:"t3_gas_harvester", name:"重型气云采集器",  slot:"high", level:35, time:60, xp:40, cost:{"三钛合金":200,"稳定富勒烯":8,"氦同位素":5}, bonuses:{gasEfficiency:0.30} },
   "t4_mining_laser":  { id:"t4_mining_laser",  name:"大型采矿激光器",  slot:"high", level:55, time:100, xp:75, cost:{"三钛合金":500,"超新星诺克石":30,"铷":2,"等离子体":15}, bonuses:{miningEfficiency:0.50} },
@@ -31,7 +31,7 @@ const EQUIPMENT_DB = {
   "t1_drone_control": { id:"t1_drone_control", name:"T1无人机控制单元", slot:"mid", level:1, time:20, xp:10, cost:{"三钛合金":25,"类银超金属":8}, bonuses:{miningEfficiency:0.02,gasEfficiency:0.02} },
   "t2_drone_link": { id:"t2_drone_link", name:"协同无人机指挥链路", slot:"mid", level:15, time:35, xp:20, cost:{"三钛合金":100,"类银超金属":35,"类晶体胶矿":10,"稳定富勒烯":5}, bonuses:{miningEfficiency:0.05,gasEfficiency:0.05} },
   "t3_drone_link": { id:"t3_drone_link", name:"高级无人机指挥链路", slot:"mid", level:35, time:60, xp:40, cost:{"三钛合金":250,"类银超金属":90,"同位聚合体":20,"稳定富勒烯":5,"稀有气体":10}, bonuses:{miningEfficiency:0.10,gasEfficiency:0.10} },
-  "blood_servant_drone_link": { id:"blood_servant_drone_link", name:"血仆无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":350,"类银超金属":120,"同位聚合体":20,"血袭者中级加密数据":8}, bonuses:{miningEfficiency:0.12,gasEfficiency:0.12}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
+  "blood_servant_drone_link": { id:"blood_servant_drone_link", name:"赤誓仆从无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":350,"类银超金属":120,"同位聚合体":20,"血袭者中级加密数据":8}, bonuses:{miningEfficiency:0.12,gasEfficiency:0.12}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
   "alliance_drone_link": { id:"alliance_drone_link", name:"联盟无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":420,"类银超金属":144,"同位聚合体":24}, bonuses:{miningEfficiency:0.12,gasEfficiency:0.12}, faction:"alliance", requiresBlueprint:true },
   "t4_drone_link": { id:"t4_drone_link", name:"深空无人机指挥链路", slot:"mid", level:55, time:100, xp:75, cost:{"三钛合金":600,"超新星诺克石":25,"铷":2,"等离子体":15}, bonuses:{miningEfficiency:0.16,gasEfficiency:0.16} },
   "t5_drone_core": { id:"t5_drone_core", name:"旗舰无人机指挥核心", slot:"mid", level:80, time:180, xp:130, cost:{"三钛合金":1400,"超噬矿":20,"铷":8,"超纯聚合气体":2,"磁场聚合物":30}, bonuses:{miningEfficiency:0.25,gasEfficiency:0.25} },
@@ -152,7 +152,7 @@ const DEATHSPACE_EQUIPMENT_TIERS = Object.freeze({
 });
 
 const DEATHSPACE_EQUIPMENT_ROUTES = Object.freeze({
-  angel:{ prefix:{2:"吉斯特试制",3:"吉斯特强化",4:"吉斯特精锐",6:"吉斯特A型"}, weapon:{2:"t1_small_laser",3:"t1_small_laser",4:"t1_medium_laser",6:"t1_large_laser"}, repair:{2:"t1_shield_booster",3:"t1_shield_booster",4:"t1_medium_shield_booster",6:"t1_large_shield_booster"} },
+  angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型"}, weapon:{2:"t1_small_laser",3:"t1_small_laser",4:"t1_medium_laser",6:"t1_large_laser"}, repair:{2:"t1_shield_booster",3:"t1_shield_booster",4:"t1_medium_shield_booster",6:"t1_large_shield_booster"} },
   blood:{ prefix:{2:"科尔普斯试制",3:"科尔普斯强化",4:"科尔普斯精锐",6:"科尔普斯A型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_light_missile_launcher",4:"t1_heavy_missile_launcher",6:"t1_cruise_missile_launcher"}, repair:{2:"t1_armor_repairer",3:"t1_armor_repairer",4:"t1_medium_armor_repairer",6:"t1_large_armor_repairer"} },
   sansha:{ prefix:{2:"森屠斯试制",3:"森屠斯强化",4:"森屠斯精锐",6:"森屠斯A型"}, weapon:{2:"t1_small_cannon",3:"t1_small_cannon",4:"t1_medium_cannon",6:"t1_large_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_structure_repairer",4:"t1_medium_structure_repairer",6:"t1_large_structure_repairer"} }
 });
@@ -293,10 +293,10 @@ const BLUEPRINT_STORE_CATEGORIES = Object.freeze([
   { id:"ships", name:"舰船蓝图", icon:"fa-solid fa-ship" },
   { id:"alliance", name:"联盟装备", icon:"fa-solid fa-star" },
   { id:"faction", name:"势力装备", icon:"fa-solid fa-flag" },
-  { id:"deathspace-2", name:"DED 2/10", icon:"fa-solid fa-dungeon" },
-  { id:"deathspace-3", name:"DED 3/10", icon:"fa-solid fa-dungeon" },
-  { id:"deathspace-4", name:"DED 4/10", icon:"fa-solid fa-dungeon" },
-  { id:"deathspace-6", name:"DED 6/10", icon:"fa-solid fa-dungeon" }
+  { id:"deathspace-2", name:"深空清剿 2/10", icon:"fa-solid fa-dungeon" },
+  { id:"deathspace-3", name:"深空清剿 3/10", icon:"fa-solid fa-dungeon" },
+  { id:"deathspace-4", name:"深空清剿 4/10", icon:"fa-solid fa-dungeon" },
+  { id:"deathspace-6", name:"深空清剿 6/10", icon:"fa-solid fa-dungeon" }
 ]);
 
 function getEquipmentBlueprintOwnershipKey(equipmentId) {
@@ -344,7 +344,13 @@ function getEquipmentRecipeCategory(equipment) {
   if (equipment.combat && equipment.combat.kind === "weapon") return "weapons";
   if ((equipment.combat && equipment.combat.kind === "repair") || equipment.id === "shield_ext_small") return "defense";
   if (equipment.id.includes("drone")) return "drones";
-  return "industry";
+  // 工业采集类按功能细分为三个顶层分类：采矿装备 / 采气装备 / 采集增益
+  if (equipment.slot === "high") {
+    if (equipment.bonuses && equipment.bonuses.miningEfficiency) return "mining";
+    if (equipment.bonuses && equipment.bonuses.gasEfficiency) return "gas";
+  }
+  if (equipment.slot === "low" && equipment.bonuses && (equipment.bonuses.miningLaserEfficiency || equipment.bonuses.gasLaserEfficiency)) return "collect_boost";
+  return "mining";
 }
 
 const EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly).map(eq => ({

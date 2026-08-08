@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>舰船工程 · 方案E 标签页拆分 [DEMO]</title>
+<style>
+  :root{--bg:#0a0f16;--panel:#0f1722;--line:#1e2c3a;--txt:#cdd9e5;--muted:#7d8da0;--cyan:#38bdf8;--gold:#f5c451}
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1000px 500px at 80% -10%,#13202e,#0a0f16 60%);color:var(--txt);
+    font-family:'Segoe UI','PingFang SC',system-ui,sans-serif;padding:18px;max-width:900px}
+  .demo-note{font-size:12px;color:var(--muted);border-left:3px solid var(--cyan);padding-left:10px;margin:0 0 14px}
+  .tabs{display:flex;gap:6px;margin-bottom:14px}
+  .tab{padding:9px 18px;border:1px solid var(--line);border-radius:10px 10px 0 0;background:#0c131c;color:var(--muted);cursor:pointer;font-size:13px}
+  .tab.sel{background:var(--panel);color:var(--cyan);border-bottom-color:var(--panel)}
+  .pane{background:var(--panel);border:1px solid var(--line);border-radius:0 12px 12px 12px;padding:16px;display:none}
+  .pane.sel{display:block}
+  .group-h{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin:4px 0 10px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .cell{border:1px solid var(--line);border-radius:10px;padding:10px;background:#0c131c;font-size:12px}
+  .cell .n{font-weight:600;font-size:13px}
+  .cell .m{color:var(--muted);font-size:11px;margin-top:3px}
+  .cell .tag{display:inline-block;font-size:10px;margin-top:6px;padding:1px 7px;border-radius:10px;border:1px solid var(--line)}
+  .ship-grid .cell{display:flex;flex-direction:column;gap:2px}
+  .pill{font-size:10px;border:1px solid var(--line);padding:1px 7px;border-radius:10px}
+  .ok{color:#3ddc84}.lock{color:#ff6b6b}.bp{color:var(--gold)}
+  .asm{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .asm select{background:#0c131c;color:var(--txt);border:1px solid var(--line);border-radius:8px;padding:9px 12px;font-size:13px;min-width:220px}
+  .asm .go{background:linear-gradient(90deg,#1d6fb8,#38bdf8);color:#04121d;border:none;border-radius:8px;padding:9px 16px;font-weight:700;cursor:pointer}
+</style>
+</head>
+<body>
+<p class="demo-note">DEMO · 方案E「标签页拆分」—— 舰船工程拆成三个清晰 tab：部件车间（18 部件按 3 类×6 级阶栅格）/ 图鉴（30+ 舰含锁定态与属性）/ 总装（选舰+建造）。导航清晰、信息不挤。</p>
+
+<div class="tabs">
+  <div class="tab sel" data-t="parts">🔩 部件车间</div>
+  <div class="tab" data-t="codex">📖 舰船图鉴</div>
+  <div class="tab" data-t="asm">⚓ 总装</div>
+</div>
+
+<div class="pane sel" id="parts">
+  <div class="group-h">综合舰体组件</div>
+  <div class="grid">
+    <div class="cell"><div class="n">T1 综合舰体</div><div class="m">Lv.1 · 63s</div><span class="tag">护卫</span></div>
+    <div class="cell"><div class="n">驱逐舰综合舰体</div><div class="m">Lv.15 · 93s</div><span class="tag">驱逐</span></div>
+    <div class="cell"><div class="n">巡洋舰综合舰体</div><div class="m">Lv.35 · 137s</div><span class="tag">巡洋</span></div>
+    <div class="cell"><div class="n">战列舰综合舰体</div><div class="m">Lv.55 · 195s</div><span class="tag">战列</span></div>
+    <div class="cell"><div class="n">旗舰综合舰体</div><div class="m">Lv.80 · 420s</div><span class="tag">旗舰</span></div>
+    <div class="cell"><div class="n">超级旗舰综合舰体</div><div class="m">Lv.90 · 630s</div><span class="tag">超级旗舰</span></div>
+  </div>
+  <div class="group-h" style="margin-top:14px">动力控制核心 / 舰船功能组件</div>
+  <div class="grid">
+    <div class="cell"><div class="n">T1 动力核心</div><div class="m">Lv.1 · 42s</div><span class="tag">护卫</span></div>
+    <div class="cell"><div class="n">T1 功能组件</div><div class="m">Lv.1 · 18s</div><span class="tag">护卫</span></div>
+    <div class="cell"><div class="n">驱逐舰动力核心</div><div class="m">Lv.15 · 62s</div><span class="tag">驱逐</span></div>
+    <div class="cell"><div class="n">巡洋舰功能组件</div><div class="m">Lv.35 · 42s</div><span class="tag">巡洋</span></div>
+    <div class="cell"><div class="n">战列舰动力核心</div><div class="m">Lv.55 · 133s</div><span class="tag">战列</span></div>
+    <div class="cell"><div class="n">旗舰功能组件</div><div class="m">Lv.80 · 180s</div><span class="tag">旗舰</span></div>
+  </div>
+</div>
+
+<div class="pane ship-grid" id="codex">
+  <div class="grid">
+    <div class="cell"><div class="n">星矛级</div><span class="pill">护卫·T1</span><div class="m ok">可造</div></div>
+    <div class="cell"><div class="n">铁卫级</div><span class="pill">护卫·T1</span><div class="m ok">可造</div></div>
+    <div class="cell"><div class="n">雷光级</div><span class="pill">驱逐·T1</span><div class="m ok">可造</div></div>
+    <div class="cell"><div class="n">疾风级</div><span class="pill">驱逐·混血</span><div class="m bp">需蓝图</div></div>
+    <div class="cell"><div class="n">曙光级</div><span class="pill">巡洋·T1</span><div class="m ok">可造</div></div>
+    <div class="cell"><div class="n">雷霆级</div><span class="pill">巡洋·混血</span><div class="m bp">需蓝图</div></div>
+    <div class="cell"><div class="n">曜光级</div><span class="pill">战列·T1</span><div class="m ok">可造</div></div>
+    <div class="cell"><div class="n">天穹级</div><span class="pill">旗舰</span><div class="m ok">可造</div></div>
+    <div class="cell"><div class="n">星冕级</div><span class="pill">超级旗舰</span><div class="m bp">需蓝图</div></div>
+    <div class="cell"><div class="n">裁决级</div><span class="pill">超级旗舰</span><div class="m lock">Lv.90</div></div>
+  </div>
+</div>
+
+<div class="pane" id="asm">
+  <div class="asm">
+    <select><option>星矛级（护卫舰 · T1）</option><option>雷光级（驱逐舰 · T1）</option><option>天穹级（旗舰）</option><option>星冕级（超级旗舰）</option></select>
+    <button class="go">⚓ 合成</button>
+  </div>
+  <div style="font-size:12px;color:var(--muted);margin-top:14px">部件：综合舰体×2 + 动力核心×2 + 功能组件×2 · 耗时 30s · 经验 30</div>
+</div>
+
+<script>
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('sel'));
+  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('sel'));
+  t.classList.add('sel');document.getElementById(t.dataset.t).classList.add('sel');
+});
+</script>
+</body>
+</html>

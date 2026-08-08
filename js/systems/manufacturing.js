@@ -136,7 +136,10 @@ function getRunningEquipEngRecipe() {
 function getEquipEngEfficiency() {
   const skillMult = 1 + gameState.skills.equipmentEngineering.lvl * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
-  return skillMult * stationMult;
+  // 研究批次 G：与 selectors.getEquipmentEngineeringDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
+  const researchMult = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "equip"]) : 1;
+  return skillMult * stationMult * researchMult;
 }
 
 function getEquipEngCategoryDefinition(categoryId) {
@@ -197,7 +200,9 @@ function getEquipEngTierLabel(recipe) {
 
 function getEquipEngRecipeIcon(recipe) {
   const equipment = recipe.output.type === "equipment" ? EQUIPMENT_DB[recipe.output.itemId] : null;
-  if (recipe.category === "industry") return recipe.id.includes("gas") ? "fa-solid fa-wind" : "fa-solid fa-gem";
+  if (recipe.category === "mining") return "fa-solid fa-gem";
+  if (recipe.category === "gas") return "fa-solid fa-cloud";
+  if (recipe.category === "collect_boost") return "fa-solid fa-arrow-up";
   if (recipe.category === "drones") return "fa-solid fa-satellite-dish";
   if (recipe.category === "fuel") return "fa-solid fa-gas-pump";
   if (recipe.category === "ammunition") return recipe.output.weapon === "missile" ? "fa-solid fa-rocket" : "fa-solid fa-burst";
@@ -262,7 +267,10 @@ function getBoosterEfficiency() {
   const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
   const skillMult = 1 + lvl * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState)) : 1;
-  return skillMult * stationMult;
+  // 研究批次 G：与 selectors.getBoosterManufacturingDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
+  const researchMult = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "booster"]) : 1;
+  return skillMult * stationMult * researchMult;
 }
 
 function getSelectedBoosterRecipe() {

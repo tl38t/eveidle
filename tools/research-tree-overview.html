@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>EVE Idle — 研究科技树总览</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#070b12; color:#b0c0d8; font-family:'Segoe UI','Microsoft YaHei',sans-serif; overflow:hidden; height:100vh; user-select:none; }
+#app { display:flex; flex-direction:column; height:100vh; }
+
+/* Header */
+#header { display:flex; align-items:center; justify-content:space-between; padding:10px 20px; background:rgba(8,14,26,0.95); border-bottom:1px solid #1a2a3e; flex-shrink:0; z-index:10; }
+#header .title { font-size:18px; font-weight:700; color:#d0e0f0; letter-spacing:2px; }
+#header .title span { color:#5a8abd; }
+#header .stats { display:flex; gap:24px; font-size:12px; }
+#header .stats .stat { display:flex; flex-direction:column; align-items:center; }
+#header .stats .stat .label { color:#6a8aaa; font-size:10px; }
+#header .stats .stat .value { color:#c0d8f0; font-size:14px; font-weight:600; }
+#header .badge { background:#1a2a3e; color:#8ab0d8; padding:4px 12px; border-radius:12px; font-size:11px; border:1px solid #2a4a6e; }
+
+/* Canvas wrapper */
+#canvas-wrap { flex:1; overflow:hidden; position:relative; background:#070b12; cursor:grab; }
+#canvas-wrap.dragging { cursor:grabbing; }
+#canvas-wrap svg { display:block; }
+
+/* Toolbar overlay */
+#toolbar { position:absolute; bottom:20px; left:50%; transform:translateX(-50%); display:flex; gap:8px; z-index:20; }
+#toolbar button { background:rgba(16,28,48,0.9); color:#8ab8d8; border:1px solid #1a3a5e; padding:6px 14px; border-radius:4px; cursor:pointer; font-size:12px; transition:all .15s; }
+#toolbar button:hover { background:rgba(26,48,78,0.9); color:#b0d8f0; border-color:#2a5a8e; }
+#toolbar label { display:flex; align-items:center; gap:4px; color:#6a8aaa; font-size:12px; }
+#toolbar input[type=checkbox] { accent-color:#4a8abd; }
+
+/* Detail panel */
+#detail-panel { position:absolute; right:15px; top:15px; width:280px; background:rgba(10,18,32,0.95); border:1px solid #1a3a5e; border-radius:6px; padding:14px; display:none; z-index:30; max-height:calc(100vh - 100px); overflow-y:auto; }
+#detail-panel .close { float:right; cursor:pointer; color:#6a8aaa; font-size:16px; }
+#detail-panel .close:hover { color:#c0d8f0; }
+#detail-panel .dp-name { font-size:16px; font-weight:700; color:#d0e8ff; margin-bottom:2px; }
+#detail-panel .dp-type { font-size:11px; color:#6a8aaa; margin-bottom:8px; }
+#detail-panel .dp-desc { font-size:12px; color:#9ab0c8; margin-bottom:8px; }
+#detail-panel .dp-effect { font-size:12px; background:rgba(20,40,70,0.4); padding:8px; border-radius:4px; margin-bottom:6px; }
+#detail-panel .dp-effect .level-row { display:flex; justify-content:space-between; padding:2px 0; font-size:12px; }
+#detail-panel .dp-effect .level-row .lvl { color:#6a8aaa; }
+#detail-panel .dp-effect .level-row .val { color:#b0d8f0; }
+#detail-panel .dp-prereq { font-size:11px; color:#5a7a9a; margin-bottom:4px; }
+#detail-panel .dp-status { font-size:11px; padding:2px 6px; border-radius:3px; display:inline-block; margin-top:4px; }
+#detail-panel .dp-time { font-size:11px; color:#6a8aaa; margin-top:4px; }
+
+/* Bottom queue */
+#queue-bar { height:42px; background:rgba(8,14,26,0.95); border-top:1px solid #1a2a3e; display:flex; align-items:center; padding:0 16px; gap:8px; flex-shrink:0; overflow-x:auto; z-index:10; }
+#queue-bar .qb-label { font-size:11px; color:#5a7a9a; flex-shrink:0; }
+#queue-bar .qb-item { background:rgba(20,40,70,0.5); border:1px solid #1a3a5e; border-radius:4px; padding:3px 10px; font-size:11px; color:#9ab8d0; white-space:nowrap; display:flex; align-items:center; gap:6px; flex-shrink:0; }
+#queue-bar .qb-item .qb-progress { width:40px; height:4px; background:#0a1a2a; border-radius:2px; overflow:hidden; }
+#queue-bar .qb-item .qb-progress .qb-fill { height:100%; background:#3a8abc; border-radius:2px; width:0%; }
+
+/* Legend */
+#legend { position:absolute; top:15px; left:15px; z-index:20; background:rgba(10,18,32,0.92); border:1px solid #1a2a3e; border-radius:6px; padding:10px; font-size:11px; min-width:140px; }
+#legend .lg-item { display:flex; align-items:center; gap:6px; padding:2px 0; }
+#legend .lg-color { width:14px; height:14px; border-radius:3px; flex-shrink:0; }
+#legend .lg-hex { width:14px; height:14px; border-radius:50%; flex-shrink:0; border:1px solid #4a6a8a; }
+
+/* Node status styles */
+.node-completed { fill:#1a6a8a; stroke:#3aa0d0; }
+.node-completed text { fill:#c0e8ff; }
+.node-active { fill:#1a4a3a; stroke:#30d0a0; }
+.node-active text { fill:#a0f0d0; }
+.node-available { fill:#0a1a2a; stroke:#3a7aaa; }
+.node-available text { fill:#8ab8d8; }
+.node-locked { fill:#0a0e14; stroke:#1a2a3e; opacity:0.4; }
+.node-locked text { fill:#3a4a5a; }
+.node-protocol { fill:#2a1a0a; stroke:#d0a030; }
+.node-protocol text { fill:#e0c080; }
+.node-protocol.node-completed { fill:#3a2a10; stroke:#f0c040; }
+.node-protocol.node-completed text { fill:#f0d8a0; }
+.node-protocol.node-active { fill:#2a3a10; stroke:#c0d020; }
+.node-protocol.node-active text { fill:#d0e080; }
+.node-protocol.node-locked { fill:#1a1408; stroke:#3a2a10; }
+.node-protocol.node-locked text { fill:#5a4a20; }
+
+/* Level dots */
+.lvl-dot { rx:3; ry:3; }
+.lvl-done { fill:#3aa0d0; }
+.lvl-current { fill:#30d0a0; }
+.lvl-future { fill:#1a2a3e; }
+.lvl-future.protocol { fill:#3a2a10; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <div class="title">🔬 研究科技树 <span>RESEARCH NETWORK</span></div>
+    <div class="stats">
+      <div class="stat"><span class="label">研究完成度</span><span class="value">67 / 635 级 · 10.5%</span></div>
+      <div class="stat"><span class="label">当前研究</span><span class="value">采矿理论 IV · 2h 14m</span></div>
+      <div class="stat"><span class="label">预计完成</span><span class="value">~ 约 90 天全精通</span></div>
+    </div>
+    <div class="badge">⏳ 不占用行动槽</div>
+  </div>
+
+  <div id="canvas-wrap">
+    <svg id="tree-svg" width="2560" height="1440" viewBox="0 0 2560 1440" style="min-width:2560px;min-height:1440px;"></svg>
+    <div id="toolbar">
+      <button id="btn-reset">⟲ 适合当前缩放</button>
+      <label><input type="checkbox" id="chk-all-prereq"> 显示全部前置</label>
+      <label><input type="checkbox" id="chk-only-available"> 仅显示可研究</label>
+    </div>
+    <div id="legend">
+      <div class="lg-item"><div class="lg-color" style="background:#1a6a8a;border:1px solid #3aa0d0;"></div> 已完成</div>
+      <div class="lg-item"><div class="lg-color" style="background:#1a4a3a;border:1px solid #30d0a0;"></div> 研究中</div>
+      <div class="lg-item"><div class="lg-color" style="background:#0a1a2a;border:1px solid #3a7aaa;"></div> 可研究</div>
+      <div class="lg-item"><div class="lg-color" style="background:#0a0e14;border:1px solid #1a2a3e;"></div> 前置不足</div>
+      <div class="lg-item"><div class="lg-hex" style="background:#2a1a0a;border-color:#d0a030;"></div> 协议节点</div>
+      <div class="lg-item" style="margin-top:4px;border-top:1px solid #1a2a3e;padding-top:4px;"><span style="font-size:10px;">─ 常规连线　══ 跨领域连线</span></div>
+    </div>
+    <div id="detail-panel">
+      <span class="close" id="dp-close">✕</span>
+      <div class="dp-name" id="dp-name"></div>
+      <div class="dp-type" id="dp-type"></div>
+      <div class="dp-desc" id="dp-desc"></div>
+      <div class="dp-effect" id="dp-effect"></div>
+      <div class="dp-prereq" id="dp-prereq"></div>
+      <div class="dp-status" id="dp-status"></div>
+      <div class="dp-time" id="dp-time"></div>
+    </div>
+  </div>
+
+  <div id="queue-bar">
+    <span class="qb-label">📋 研究队列</span>
+    <div class="qb-item"><span>采矿理论 IV</span><div class="qb-progress"><div class="qb-fill" style="width:67%"></div></div><span>67%</span></div>
+    <div class="qb-item"><span>气云动力学 I</span><div class="qb-progress"><div class="qb-fill" style="width:12%"></div></div><span>12%</span></div>
+    <div class="qb-item"><span>系统工程 II</span><span style="color:#5a7a9a;">等待中</span></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const NS = "http://www.w3.org/2000/svg";
+  const svg = document.getElementById("tree-svg");
+  const wrap = document.getElementById("canvas-wrap");
+
+  // ==================== DATA ====================
+  const LEVELS = ["I","II","III","IV","V"];
+
+  const NODES = [
+    // --- Central Basic Theories ---
+    { id:"syseng", name:"系统工程", type:"数值", const:"core", x:1180, y:670, single:true, desc:"基础工程方法论，为所有科技领域提供理论支撑。提升所有采集效率。", effects:["所有采集效率 +2%"], prereq:[], status:"available" },
+    { id:"matsci", name:"材料科学", type:"数值", const:"core", x:1380, y:670, single:true, desc:"研究材料的微观结构与宏观性能。提升所有制造效率。", effects:["所有制造效率 +2%"], prereq:[], status:"available" },
+    { id:"dataan", name:"数据分析", type:"数值", const:"core", x:1180, y:770, single:true, desc:"大规模数据处理与模式识别技术。提升全武器伤害。", effects:["全武器伤害 +2%"], prereq:[], status:"completed" },
+    { id:"autocon", name:"自动控制", type:"数值", const:"core", x:1380, y:770, single:true, desc:"自动化系统与反馈控制理论。提升考古效率。", effects:["考古效率 +2%"], prereq:[], status:"available" },
+
+    // --- Industrial Constellation ---
+    { id:"mine", name:"采矿理论", type:"数值", const:"industrial", x:680, y:400, desc:"提升采矿设备的作业效率。", effects:[1,2,3,4,5].map(l=>"采矿效率 +"+(l*1.2)+"%"), prereq:["syseng"], status:"active" },
+    { id:"gas", name:"气云动力学", type:"数值", const:"industrial", x:480, y:480, desc:"研究气云采集与分离技术。", effects:[1,2,3,4,5].map(l=>"采气效率 +"+(l*1.2)+"%"), prereq:["matsci"], status:"available" },
+    { id:"smelt", name:"冶炼理论", type:"数值", const:"industrial", x:530, y:340, desc:"改进矿石冶炼工艺。", effects:[1,2,3,4,5].map(l=>"冶炼效率 +"+(l*1.2)+"%"), prereq:["matsci"], status:"available" },
+    { id:"equipeng", name:"装备工程理论", type:"数值", const:"industrial", x:780, y:520, desc:"加速装备制造流程。", effects:[1,2,3,4,5].map(l=>"装备制造效率 +"+(l*1.2)+"%"), prereq:["syseng","dataan"], status:"available" },
+    { id:"boostereng", name:"增强剂工程理论", type:"数值", const:"industrial", x:630, y:560, desc:"提高增强剂合成速率。", effects:[1,2,3,4,5].map(l=>"增强剂制造效率 +"+(l*1.2)+"%"), prereq:["dataan"], status:"available" },
+    { id:"shipcomp", name:"舰船组件工程", type:"数值", const:"industrial", x:830, y:420, desc:"提升舰船部件的制造速度。", effects:[1,2,3,4,5].map(l=>"组件制造效率 +"+(l*1.2)+"%"), prereq:["mine","smelt"], status:"locked" },
+    { id:"shipasm", name:"舰船装配工程", type:"数值", const:"industrial", x:880, y:310, desc:"加速舰船总装生产线。", effects:[1,2,3,4,5].map(l=>"舰船总装效率 +"+(l*1.2)+"%"), prereq:["shipcomp"], status:"locked" },
+    // Industrial protocol
+    { id:"intship", name:"一体化造船\n协议", type:"协议", const:"industrial", x:680, y:260, desc:"自动计算缺少的组件，依次制造，齐全后自动总装。", effects:["自动计算→制造→总装 全链路"], prereq:["shipcomp","shipasm"], status:"locked", protocol:true },
+    { id:"autoenh", name:"自动强化\n协议", type:"协议", const:"industrial", x:780, y:220, desc:"消费仓库已有组件，自动连续执行舰船强化。", effects:["自动强化 不生产组件"], prereq:["shipasm","autocon"], status:"locked", protocol:true },
+
+    // --- Exploration Constellation ---
+    { id:"arch", name:"遗迹分析效率", type:"数值", const:"exploration", x:1680, y:360, desc:"提升考古扫描与分析速度。", effects:[1,2,3,4,5].map(l=>"考古效率 +"+(l*1.2)+"%"), prereq:["syseng"], status:"available" },
+    { id:"signal", name:"信号解析", type:"数值", const:"exploration", x:1880, y:400, desc:"提高信号解码准确率。", effects:[1,2,3,4,5].map(l=>"考古成功率 +"+(l*0.6)+"pp"), prereq:["dataan"], status:"available" },
+    { id:"backlash", name:"反冲隔离", type:"数值", const:"exploration", x:1780, y:480, desc:"降低遗迹反噬的破坏性。", effects:[1,2,3,4,5].map(l=>"反噬伤害 -"+(l*1.2)+"%"), prereq:["matsci"], status:"locked" },
+    { id:"probe", name:"探针经济学", type:"数值", const:"exploration", x:1980, y:340, desc:"减少考古探针的消耗量。", effects:[1,2,3,4,5].map(l=>"探针消耗 -"+(l*1.2)+"%"), prereq:["signal"], status:"locked" },
+    { id:"dataarch", name:"数据归档", type:"数值", const:"exploration", x:2080, y:440, desc:"优化考古数据的存储与分析效率。", effects:[1,2,3,4,5].map(l=>"考古经验 +"+(l*1.2)+"%"), prereq:["signal","probe"], status:"locked" },
+    // Exploration protocols
+    { id:"autosell", name:"文物自动\n出售协议", type:"协议", const:"exploration", x:1880, y:280, desc:"自动出售可换ISK的文物，可按品质档位设置保留。", effects:["自动出售文物 获得ISK"], prereq:["dataarch","planfin"], status:"locked", protocol:true },
+    { id:"autoconv", name:"文物自动\n兑换协议", type:"协议", const:"exploration", x:1980, y:270, desc:"自动兑换可换LP的文物，可按品质档位设置保留。", effects:["自动兑换文物 获得LP"], prereq:["dataarch","planfin"], status:"locked", protocol:true },
+
+    // --- Combat Constellation ---
+    { id:"combat", name:"作战理论", type:"数值", const:"combat", x:580, y:1020, desc:"提升战斗经验获取效率。", effects:[1,2,3,4,5].map(l=>"战斗经验 +"+(l*1.2)+"%"), prereq:["syseng","matsci"], status:"available" },
+    { id:"firectrl", name:"火控预测", type:"数值", const:"combat", x:430, y:1110, desc:"提高武器命中预测精度。", effects:[1,2,3,4,5].map(l=>"全武器伤害 +"+(l*0.6)+"%"), prereq:["combat"], status:"available" },
+    { id:"laser", name:"激光物理", type:"数值", const:"combat", x:280, y:1060, desc:"研究激光武器能量输出。", effects:[1,2,3,4,5].map(l=>"激光伤害 +"+(l*1.2)+"%"), prereq:["firectrl"], status:"available" },
+    { id:"missile", name:"导弹动力学", type:"数值", const:"combat", x:330, y:1190, desc:"优化导弹飞行与制导。", effects:[1,2,3,4,5].map(l=>"导弹伤害 +"+(l*1.2)+"%"), prereq:["firectrl"], status:"locked" },
+    { id:"projectile", name:"射弹弹道学", type:"数值", const:"combat", x:180, y:1140, desc:"改进射弹武器的弹道特性。", effects:[1,2,3,4,5].map(l=>"射弹伤害 +"+(l*1.2)+"%"), prereq:["firectrl"], status:"locked" },
+    { id:"defense", name:"防御工程", type:"数值", const:"combat", x:730, y:1110, desc:"增强舰船综合防御能力。", effects:[1,2,3,4,5].map(l=>"三层生命 +"+(l*0.6)+"%"), prereq:["combat"], status:"available" },
+    { id:"shield", name:"护盾谐振", type:"数值", const:"combat", x:830, y:1060, desc:"优化护盾发生器频率。", effects:[1,2,3,4,5].map(l=>"护盾容量 +"+(l*1.2)+"%"), prereq:["defense"], status:"locked" },
+    { id:"armor", name:"装甲复合材料", type:"数值", const:"combat", x:880, y:1150, desc:"研发新型装甲合金。", effects:[1,2,3,4,5].map(l=>"装甲容量 +"+(l*1.2)+"%"), prereq:["defense"], status:"locked" },
+    { id:"structure", name:"结构应力控制", type:"数值", const:"combat", x:780, y:1240, desc:"改进舰船骨架结构。", effects:[1,2,3,4,5].map(l=>"结构容量 +"+(l*1.2)+"%"), prereq:["defense"], status:"locked" },
+    { id:"repair", name:"战场维修理论", type:"数值", const:"combat", x:630, y:1200, desc:"提升主动维修效率。", effects:[1,2,3,4,5].map(l=>"主动维修量 +"+(l*1.2)+"%"), prereq:["defense"], status:"locked" },
+    { id:"tactical", name:"综合战术\n模型", type:"数值", const:"combat", x:530, y:1300, desc:"火控与防御的交叉研究成果。", effects:[1,2,3,4,5].map(l=>"伤害 + 三层生命 +"+(l*0.3)+"%"), prereq:["firectrl","defense"], status:"locked" },
+
+    // --- Logistics Constellation ---
+    { id:"fuellog", name:"维护燃料管理", type:"数值", const:"logistics", x:1680, y:1020, desc:"减少空间站维护燃料需求。", effects:[1,2,3,4,5].map(l=>"维护燃料消耗 -"+(l*1.8)+"%"), prereq:["matsci"], status:"available" },
+    { id:"englog", name:"工程统筹", type:"数值", const:"logistics", x:1780, y:1100, desc:"提高空间站建设工程效率。", effects:[1,2,3,4,5].map(l=>"建设效率 +"+(l*1.8)+"%"), prereq:["syseng","fuellog"], status:"locked" },
+    { id:"autolog", name:"自动线调度", type:"数值", const:"logistics", x:1900, y:1060, desc:"优化自动生产线调度算法。", effects:[1,2,3,4,5].map(l=>"自动线效率 +"+(l*1.8)+"%"), prereq:["englog","dataan"], status:"locked" },
+    { id:"planfin", name:"行星财政管理", type:"数值", const:"logistics", x:2000, y:1140, desc:"降低行星基地维护费用。", effects:[1,2,3,4,5].map(l=>"行星维护费 -"+(l*1.8)+"%"), prereq:["dataan"], status:"locked" },
+    { id:"planind", name:"行星工业管理", type:"数值", const:"logistics", x:2100, y:1080, desc:"提高行星基地生产效率。", effects:[1,2,3,4,5].map(l=>"行星生产效率 +"+(l*1.8)+"%"), prereq:["planfin"], status:"locked" },
+    // Logistics protocol
+    { id:"planauto", name:"行星维护\n自动化", type:"协议", const:"logistics", x:2180, y:1170, desc:"每个基地独立开启自动续费，到期支付真实维护ISK。", effects:["自动续费 保留最低ISK"], prereq:["planfin","planind","autocon"], status:"locked", protocol:true }
+  ];
+
+  // Autorepair protocol (cross-constellation)
+  NODES.push({
+    id:"autorepair", name:"野外自动\n维修协议", type:"协议", const:"cross", x:2080, y:600, desc:"考古失败受伤时触发，消耗燃料自动维修。", effects:["自动维修 护盾/装甲/结构"], prereq:["backlash","repair"], status:"locked", protocol:true
+  });
+
+  // ==================== CONNECTIONS ====================
+  function makeEdge(from, to, cross) {
+    return { from, to, cross:!!cross };
+  }
+
+  const EDGES = [
+    // Core → Constellation
+    makeEdge("syseng","mine"), makeEdge("matsci","gas"), makeEdge("matsci","smelt"),
+    makeEdge("syseng","equipeng"), makeEdge("dataan","equipeng"),
+    makeEdge("dataan","boostereng"),
+    makeEdge("syseng","arch"), makeEdge("dataan","signal"), makeEdge("matsci","backlash"),
+    makeEdge("syseng","combat"), makeEdge("matsci","combat"),
+    makeEdge("matsci","fuellog"), makeEdge("syseng","englog"), makeEdge("dataan","autolog"), makeEdge("dataan","planfin"),
+
+    // Industrial internal
+    makeEdge("mine","shipcomp"), makeEdge("smelt","shipcomp"),
+    makeEdge("shipcomp","shipasm"),
+    makeEdge("shipcomp","intship"), makeEdge("shipasm","intship"),
+    makeEdge("shipasm","autoenh"), makeEdge("autocon","autoenh"),
+
+    // Exploration internal
+    makeEdge("signal","probe"), makeEdge("signal","dataarch"), makeEdge("probe","dataarch"),
+
+    // Cross: Exploration ↔ Logistics (auto sell/convert)
+    makeEdge("dataarch","autosell"), makeEdge("planfin","autosell",true),
+    makeEdge("dataarch","autoconv"), makeEdge("planfin","autoconv",true),
+
+    // Combat internal
+    makeEdge("combat","firectrl"), makeEdge("combat","defense"),
+    makeEdge("firectrl","laser"), makeEdge("firectrl","missile"), makeEdge("firectrl","projectile"),
+    makeEdge("defense","shield"), makeEdge("defense","armor"), makeEdge("defense","structure"), makeEdge("defense","repair"),
+    makeEdge("firectrl","tactical"), makeEdge("defense","tactical"),
+
+    // Logistics internal
+    makeEdge("fuellog","englog"), makeEdge("englog","autolog"),
+    makeEdge("planfin","planind"),
+    makeEdge("planfin","planauto"), makeEdge("planind","planauto"), makeEdge("autocon","planauto",true),
+
+    // Cross: Exploration ↔ Combat (autorepair)
+    makeEdge("backlash","autorepair"), makeEdge("repair","autorepair",true),
+  ];
+
+  // ==================== RENDER ====================
+  const NODE_W = 130, NODE_H = 52, NODE_R = 6;
+  const PROTO_R = 32; // hexagon radius
+
+  function createSvgEl(tag, attrs) {
+    const el = document.createElementNS(NS, tag);
+    if (attrs) Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
+    return el;
+  }
+
+  // Background
+  function drawBackground() {
+    // Stars
+    for (let i = 0; i < 300; i++) {
+      const cx = Math.random() * 2560, cy = Math.random() * 1440, r = Math.random() * 1.5 + 0.3;
+      const star = createSvgEl("circle", { cx, cy, r, fill:"rgba(80,140,200,"+(Math.random()*0.4+0.1)+")" });
+      svg.appendChild(star);
+    }
+    // Grid
+    const defs = createSvgEl("defs");
+    const pattern = createSvgEl("pattern", { id:"grid", width:80, height:80, patternUnits:"userSpaceOnUse" });
+    pattern.appendChild(createSvgEl("circle", { cx:40, cy:40, r:1, fill:"rgba(60,120,180,0.06)" }));
+    defs.appendChild(pattern);
+    svg.appendChild(defs);
+    const gridRect = createSvgEl("rect", { x:0, y:0, width:2560, height:1440, fill:"url(#grid)" });
+    svg.appendChild(gridRect);
+  }
+
+  // Constellation labels
+  function drawConstellations() {
+    const cs = [
+      { label:"⚙ 工业科技", cx:680, cy:160, color:"#3a8abc" },
+      { label:"🔭 探索科技", cx:1880, cy:190, color:"#5a9a3a" },
+      { label:"⚔ 作战科技", cx:530, cy:1390, color:"#c04030" },
+      { label:"🔧 后勤科技", cx:1880, cy:1390, color:"#8a7a30" },
+      { label:"◈ 基础理论", cx:1280, cy:600, color:"#5a6a8a" }
+    ];
+    cs.forEach(c => {
+      const t = createSvgEl("text", { x:c.cx, y:c.cy, fill:c.color, "font-size":"20", "font-weight":"700", "text-anchor":"middle", "font-family":"'Microsoft YaHei',sans-serif", opacity:0.6 });
+      t.textContent = c.label;
+      svg.appendChild(t);
+    });
+  }
+
+  // Draw edges
+  function drawEdges() {
+    // Build node position lookup
+    const pos = {};
+    NODES.forEach(n => { pos[n.id] = { x:n.x, y:n.y, protocol:!!n.protocol }; });
+
+    EDGES.forEach(e => {
+      const p1 = pos[e.from], p2 = pos[e.to];
+      if (!p1 || !p2) return;
+      const isCross = e.cross;
+      // Calculate edge endpoints at node borders
+      const dx = p2.x - p1.x, dy = p2.y - p1.y;
+      const len = Math.sqrt(dx*dx + dy*dy);
+      if (len < 1) return;
+      const ux = dx/len, uy = dy/len;
+      const r1 = p1.protocol ? PROTO_R : NODE_W/2;
+      const r2 = p2.protocol ? PROTO_R : NODE_W/2;
+      const x1 = p1.x + ux * Math.min(r1, len/2);
+      const y1 = p1.y + uy * Math.min(r1, len/2);
+      const x2 = p2.x - ux * Math.min(r2, len/2);
+      const y2 = p2.y - uy * Math.min(r2, len/2);
+
+      const attrs = {
+        x1, y1, x2, y2,
+        stroke: isCross ? "#6a4a1a" : "#1a2a3e",
+        "stroke-width": isCross ? 2.5 : 1.5,
+        "stroke-dasharray": isCross ? "8,4" : "none",
+        opacity: 0.6
+      };
+      const line = createSvgEl("line", attrs);
+      svg.appendChild(line);
+    });
+  }
+
+  // Build hexagon path
+  function hexPath(cx, cy, r) {
+    const pts = [];
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI/6 + i * Math.PI/3;
+      pts.push((cx + r * Math.cos(a)).toFixed(1) + "," + (cy + r * Math.sin(a)).toFixed(1));
+    }
+    return "M" + pts.join(" L") + " Z";
+  }
+
+  // Draw nodes
+  function drawNodes() {
+    NODES.forEach(n => {
+      const g = createSvgEl("g", { class:"node", "data-id":n.id, style:"cursor:pointer;" });
+      const isProtocol = !!n.protocol;
+
+      let status = n.status || "locked";
+      let fill, stroke, textColor;
+
+      if (isProtocol) {
+        if (status === "completed" || status === "completed_1") { fill="#3a2a10"; stroke="#f0c040"; textColor="#f0d8a0"; }
+        else if (status === "active") { fill="#2a3a10"; stroke="#c0d020"; textColor="#d0e080"; }
+        else if (status === "available") { fill="#2a1a0a"; stroke="#d0a030"; textColor="#e0c080"; }
+        else { fill="#1a1408"; stroke="#3a2a10"; textColor="#5a4a20"; }
+      } else {
+        if (status === "completed" || status === "completed_1") { fill="#1a6a8a"; stroke="#3aa0d0"; textColor="#c0e8ff"; }
+        else if (status === "active") { fill="#1a4a3a"; stroke="#30d0a0"; textColor="#a0f0d0"; }
+        else if (status === "available") { fill="#0a1a2a"; stroke="#3a7aaa"; textColor="#8ab8d8"; }
+        else { fill="#0a0e14"; stroke="#1a2a3e"; textColor="#3a4a5a"; opacity:0.4; }
+      }
+
+      if (isProtocol) {
+        const path = createSvgEl("path", { d:hexPath(n.x, n.y, PROTO_R), fill, stroke:"none" });
+        g.appendChild(path);
+        // Glow
+        if (status === "active") {
+          const glow = createSvgEl("path", { d:hexPath(n.x, n.y, PROTO_R+4), fill:"none", stroke, "stroke-width":2, opacity:"0.6" });
+          g.appendChild(glow);
+        }
+      } else {
+        const rect = createSvgEl("rect", {
+          x: n.x - NODE_W/2, y: n.y - NODE_H/2, width:NODE_W, height:NODE_H, rx:NODE_R, ry:NODE_R,
+          fill, stroke, "stroke-width":1.5
+        });
+        g.appendChild(rect);
+        // Active glow
+        if (status === "active") {
+          const glow = createSvgEl("rect", {
+            x: n.x - NODE_W/2 - 3, y: n.y - NODE_H/2 - 3, width:NODE_W+6, height:NODE_H+6, rx:NODE_R+2, ry:NODE_R+2,
+            fill:"none", stroke, "stroke-width":2, opacity:"0.6"
+          });
+          g.appendChild(glow);
+        }
+        // Level dots
+        if (n.single) {
+          const done = (status === "completed" || status === "completed_1" || status === "active");
+          const dot = createSvgEl("circle", { cx: n.x, cy: n.y + NODE_H/2 - 8, r:4, class: done ? "lvl-dot lvl-done" : "lvl-dot lvl-future" });
+          g.appendChild(dot);
+        } else {
+          const levelStart = n.x - 42;
+          const currentLevel = status === "active" ? 3 : status === "completed_1" ? 1 : 0;
+          for (let i = 0; i < 5; i++) {
+            const cls = i < currentLevel ? "lvl-dot lvl-done" : i === currentLevel && status === "active" ? "lvl-dot lvl-current" : "lvl-dot lvl-future";
+            const dot = createSvgEl("circle", { cx:levelStart + i*21, cy:n.y + NODE_H/2 - 8, r:4, class:cls });
+            g.appendChild(dot);
+          }
+        }
+      }
+
+      // Label
+      const lines = n.name.split("\n");
+      lines.forEach((line, i) => {
+        const t = createSvgEl("text", {
+          x: n.x, y: n.y + (lines.length > 1 ? (i - (lines.length-1)/2) * 14 : 4),
+          fill:textColor, "font-size":lines.length > 1 ? 10 : 12, "text-anchor":"middle",
+          "dominant-baseline":"central"
+        });
+        t.textContent = line;
+        g.appendChild(t);
+      });
+
+      // Click handler
+      g.addEventListener("click", function() { showDetail(n); });
+      svg.appendChild(g);
+    });
+  }
+
+  // ==================== DETAIL PANEL ====================
+  const dp = document.getElementById("detail-panel");
+
+  function showDetail(n) {
+    document.getElementById("dp-name").textContent = n.protocol ? "⬡ " + n.name.replace("\n","") : n.name;
+    document.getElementById("dp-type").textContent = (n.protocol ? "协议节点" : (n.single ? "基础科技 · 单级" : "数值科技")) + " · " + n.const;
+    document.getElementById("dp-desc").textContent = n.desc;
+
+    const effectEl = document.getElementById("dp-effect");
+    if (n.protocol) {
+      effectEl.innerHTML = '<div style="color:#d0a030;font-weight:600;">协议效果</div><div>' + n.effects[0] + '</div>';
+    } else if (n.single) {
+      const done = (n.status === "completed" || n.status === "completed_1" || n.status === "active");
+      const st = done ? "color:#3aa0d0;" : "";
+      effectEl.innerHTML = '<div class="level-row"><span class="lvl">Lv.1</span><span class="val" style="' + st + '">' + n.effects[0] + '</span></div>';
+    } else {
+      let html = "";
+      n.effects.forEach((eff, i) => {
+        const st = n.status === "completed" || (n.status === "completed_1" && i < 1) ? "color:#3aa0d0;" : "";
+        html += '<div class="level-row"><span class="lvl">' + LEVELS[i] + '</span><span class="val" style="' + st + '">' + eff + '</span></div>';
+      });
+      effectEl.innerHTML = html;
+    }
+
+    const prereqEl = document.getElementById("dp-prereq");
+    prereqEl.textContent = "前置：" + (n.prereq.length ? n.prereq.map(id => { const found = NODES.find(x=>x.id===id); return found ? found.name.replace("\n","") : id; }).join(" → ") : "无");
+
+    const stEl = document.getElementById("dp-status");
+    const statusMap = { completed:"已完成（满级）", completed_1:"已完成 I级", active:"研究中", available:"可研究", locked:"前置不足" };
+    stEl.textContent = statusMap[n.status] || n.status;
+    stEl.style.background = n.protocol ? "rgba(200,160,40,0.15)" : "rgba(40,120,180,0.15)";
+    stEl.style.color = n.protocol ? "#d0a030" : "#3aa0d0";
+
+    document.getElementById("dp-time").textContent = "预计研究时间：—（待分配）";
+    dp.style.display = "block";
+  }
+
+  document.getElementById("dp-close").addEventListener("click", function() { dp.style.display = "none"; });
+
+  // ==================== PAN/ ZOOM ====================
+  let isDown = false, startX, startY, tx = 0, ty = 0, scale = 1;
+  const MIN_SCALE = 0.3, MAX_SCALE = 3;
+
+  wrap.addEventListener("mousedown", function(e) {
+    if (e.target !== wrap && e.target !== svg && e.target.tagName !== "svg") return;
+    isDown = true; startX = e.clientX - tx; startY = e.clientY - ty;
+    wrap.classList.add("dragging");
+  });
+  window.addEventListener("mousemove", function(e) {
+    if (!isDown) return;
+    tx = e.clientX - startX; ty = e.clientY - startY;
+    updateTransform();
+  });
+  window.addEventListener("mouseup", function() { isDown = false; wrap.classList.remove("dragging"); });
+
+  wrap.addEventListener("wheel", function(e) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.92 : 1/0.92;
+    const ns = Math.min(MAX_SCALE, Math.max(MIN_SCALE, scale * delta));
+    const rect = wrap.getBoundingClientRect();
+    const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    tx = mx - (mx - tx) * ns / scale;
+    ty = my - (my - ty) * ns / scale;
+    scale = ns;
+    updateTransform();
+  }, { passive:false });
+
+  function updateTransform() {
+    svg.style.transform = "translate(" + tx + "px," + ty + "px) scale(" + scale + ")";
+    svg.style.transformOrigin = "0 0";
+  }
+
+  document.getElementById("btn-reset").addEventListener("click", function() {
+    tx = 0; ty = 0; scale = 1;
+    updateTransform();
+  });
+
+  // ==================== FILTERS ====================
+  document.getElementById("chk-only-available").addEventListener("change", function() {
+    const only = this.checked;
+    document.querySelectorAll(".node").forEach(el => {
+      // For now just a visual placeholder — actual filter needs state
+    });
+  });
+
+  // ==================== INIT ====================
+  drawBackground();
+  drawConstellations();
+  drawEdges();
+  drawNodes();
+
+  console.log("Research tree loaded:", NODES.length, "nodes,", EDGES.length, "edges");
+})();
+</script>
+</body>
+</html>

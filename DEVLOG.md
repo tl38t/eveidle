@@ -1,6 +1,88 @@
 # EVE IDLE 模块化版本开发日志
 
+## 2026-08-01 — 修复空间站自动线启动后界面不刷新
+
+- 根因：`refreshVisiblePanelAfterAction()` 遗漏 `station` 页面，自动线启动动作成功后状态已改变，但按钮、状态和进度仍显示旧值。
+- 修复：空间站为当前页面时调用 `renderStationPage(Date.now())`，并在 `tools/verify.mjs` 增加刷新链路守卫。
+- 验证：语法检查、综合验证、空间站专项审计和差异检查均 EXIT=0；空间站审计 PASS=1151 FAIL=0。
+
 > 2026-07-12 及以前的历史记录保留在根目录 `DEVLOG.md`。本文件仅记录 `eveidle-modular` 拆分版后续开发，根目录原始文件继续作为回滚基线。
+
+## 2026-07-27 — 无限库存：删除仓库/货舱容量机制
+
+### 概述
+统一删除整个仓库容量系统，改为无限库存。所有生产和离线结算不再受主仓库总量限制。
+
+### 改动清单
+
+**数据层** (`js/data/base.js`)：
+- `INITIAL_SKILLS` 删除 `cargoManagement` 技能
+
+**生产系统** (`js/systems/production.js`)：
+- 删除 `getCargoCapacity()`、`getCargoUsed()`、`isCargoFull()` 三个函数（不保留 Infinity 兼容假函数）
+
+**资源系统** (`js/core/resources.js`)：
+- `getCargoTotal` → `getInventoryTotal`（仅统计总量，不参与限制）
+
+**选择器** (`js/core/selectors.js`)：
+- `getCargoUsedFromState` → `getInventoryTotalFromState`（调用 `getInventoryTotal`）
+- `getGlobalDisplayState`：`cargo` 对象仅返回 `total`，删除 `capacity`/`full`/`percent`/`used`/`free`
+- `getCargoDisplayState`：删除 `cargoCapacity` 参数，返回 `total` 代替 `used`+`capacity`
+- `getPlanetaryDisplayState`：删除 `cargoCapacity` 参数和 `cargo` 字段
+- 保留全部 Phase 3C-8 stationLogistics 修正
+
+**在线 tick** (`js/core/tick.js`)：
+- 删除全局满仓停止条件（`isCargoFull()` 分支）
+- 删除双倍矿物 cargoSpace 限幅
+- 删除装备工程、舰船部件、舰船组装的满仓判断
+
+**离线结算** (`js/core/offline.js`)：
+- 采矿/月矿离线 `maxCycles` 改为 `Infinity`，删除 apply 内的双倍矿物 cargoSpace 限幅
+- 冶炼离线删除 `netCargo` 容量约束，`maxCycles` 仅受矿石库存限制
+- 采气离线 `maxCycles` 改为 `Infinity`
+- 舰船部件离线删除容量约束
+- 舰船组装离线删除 `isCargoFull()` 检查
+- 装备工程离线删除容量约束
+
+**行动系统** (`js/core/actions.js`)：
+- `PlanetaryStateActions.collect(state, id)` 改为全量收取（不再有 cargoCapacity 参数和 cargo-full reason）
+- 行星 storage 全量移入主仓库后归零
+- 删除 `cargo-full` 返回 reason
+
+**增强剂** (`js/systems/boosters.js`)：
+- `tickBoosterTimers`：采矿分支删除 `isCargoFull()` 暂停条件
+- `getBoosterSlotStatus`：采矿分支删除 `isCargoFull()` 暂停条件
+
+**UI 文件**：
+- `index.html`：顶栏显示"物资总量"（删容量 x/y 和进度条）；导航删除 `cargoManagement` 等级显示；仓库页标题改为"物资总量"
+- `css/base.css`：删除 `.cargo-bar`、`.cargo-fill`、`.cargo-fill.full`、`#cargo-text.warn`、`@keyframes blink` 样式
+- `js/ui/render.js`：`renderGlobalDisplay`/`updateLiveUI` 只显示总量；删除 `getCargoCapacity()` 调用
+- `js/ui/shell-render.js`：`renderCargoPage` 显示"物资总量"
+- `js/ui/planetary-render.js`：删除 `getCargoCapacity()` 调用；`collectPlanet` 不传 `cargoCapacity`；`planetaryActionMessage` 删除 `cargo-full`
+
+**存档迁移** (`js/core/persistence.js`)：
+- 新增 `migrateUnlimitedInventoryState()`：删除 `skills.cargoManagement`、清理队列和当前行动的 cargoManagement 项，不补偿 XP/资源
+- 接入 `autoLoad` 和 `importData` 路径，在 `calculateOfflineGains` 前运行
+
+**审计**：
+- 新建 `tools/audit-unlimited-inventory.mjs`：A~L 区真实行为验证
+- 更新 `tools/verify.mjs`：适应新 cargo 显示态和行星全量收取
+- 更新 `tools/audit-planetary.mjs`：adapt collect 语义
+- 更新 `tools/audit-station.mjs`：删除对 `isCargoFull` 的引用
+
+**浏览器验收**：
+- 新建 `tools/unlimited-inventory-browser-test.html`：iframe 加载真实 index.html，覆盖仓库导航/总量/超千万生产/双倍/行星全量收取/增强剂 paused
+
+### 边界
+- 不碰 `js/render3d/**`、`ship-lab.*`、`*candidates.html`、`*capital-*.html`、`CORPORATION_AND_STATION_IMPLEMENTATION_PLAN.md`
+- 不修改考古/增强剂/掉落/成功率/经验/经济数值
+- 不修改增强剂离线算法
+- 不触及其他未提交改动
+- 不 git add/commit/push
+- 行星 6 小时 storage 上限保留
+- 舰船槽位、改装槽位、装配环容量保留
+
+---
 
 ## 2026-07-26 — 页面滚动布局修复：修复面板内容被 flex 压缩裁切
 
@@ -1479,5 +1561,54 @@ p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
 - 仅滚动舰船卡片区域，不影响侧边栏；
 - 窄窗口/缩放窗口仍可用。
 
-### 全局仓库容量
-本轮未修改 `getCargoCapacity`、`getCargoUsed`、`isCargoFull` 等全局仓库容量相关代码。
+### 装备制造页交互修复（2026-08-04）
+**问题**：① 可制造配方多时，开始/停止制造按钮被挤到视口下方需滚动；② 正在制造 A 时切到 B 的配方卡片，按钮仍是「停止制造」、无法直接开始 B。
+
+**修复**：
+- 问题①（A1 修正为 flex 钉底，sticky 方案已弃）：`.equipeng-detail` 本就是 flex 纵向布局（原 `display:flex; flex-direction:column`），补充 `align-self:start; max-height:calc(100vh - 96px)` 限高；`.equipeng-detail-body` 加 `flex:1 1 auto; min-height:0; overflow-y:auto` 让内容区在右栏内部滚动；`.equipeng-detail-header/progress/actions` 加 `flex-shrink:0` 使按钮钉在右栏底部始终可见。sticky 方案被 `.panel{overflow:hidden}` 截断内部 sticky 而失效，已改用 flex 钉底（不依赖外部滚动容器）。窄屏单列保留钉底。
+- 问题②（仿采矿范式）：`js/ui/manufacturing-render.js` 的 `renderEquipEngPage` 按采矿模板用 `targetChanged = active && runningRecipe.id !== selectedRecipe.id` 控制按钮显隐——`showStart = !active || targetChanged`、`showStop = active && !targetChanged`；targetChanged 时开始按钮文案=「▶ 切换制造」。同步修正 `runningNote` 提示（targetDiffers 时改为「点击切换制造将改为制造当前配方」，不再误导说「不会改变产物」）。点「开始/切换制造」走确认弹窗 → front 接管 → `startedEquipEngTarget` 变为当前选中配方（替换在制品），与采矿「切到别的带就变开始」行为一致。
+
+**验证**：新增 `tools/smoke-equipeng-switch.mjs`（16 断言 EXIT=0：三种状态按钮显隐/文案 + 点开始替换在制品 + canStart 不变）；speed=1 全量回归不变（verify 55JS/4CSS/303DOM、regress-combat-repair 86/0、audit-station 1172/0 全 EXIT=0）。未新增页面 defer 脚本，verify 脚本计数仍 55。
+
+### 十倍速运行期开关（单仓库 + 运行期开关，2026-08-04）
+
+**背景**：原 `EVEIDLE-10X-SYNC` 分支仅靠 `index.html` 的 `window.TEST_ACTIVE_SPEED=10` 局部加速空间站自动线，且相对 main 含大量非加速差异（裸 ID 显示、初始塞船、删迁移/教程/verify 行），两分支长期漂移。改为「单仓库 + 运行期开关」：十倍速只是一个值，彻底消灭分支漂移。
+
+**架构**：全仓库唯一速度源 `js/core/speed-config.js`（IIFE 写入 `globalThis.GAME_SPEED / getGameSpeed / gameDeltaSec / gameNow`）。解析优先级：URL `?speed=` > `localStorage('eve_speed')` > 兼容 `window.TEST_ACTIVE_SPEED`；非有限或 ≤0 降级为 1。
+
+**加速范围（v1）**：仅缩放「产出/进度积累」——
+- 采矿/气采/精炼/冶炼的 tick `delta` 经 `gameDeltaSec()` 包裹（`tick.js` 8 处）；
+- 科研在线结算 `ResearchSystem.processResearchUntil(state, now, { scale: getGameSpeed() })`；
+- 空间站自动线 `getStationLogisticsMultiplier` 返回 `base * getGameSpeed()`。
+所有基于 `Date.now()` 的**冷却/到期保持实时**：维修、考古干扰、战斗恢复、增强剂过期、离线结算时间轴等一概不缩放。代码纯度已验证：速度源标识符 `gameDeltaSec / getGameSpeed / GAME_SPEED` 仅出现在 `speed-config.js / tick.js / station.js` 三个文件，冷却类函数（增强剂/战斗恢复/考古干扰/维修）绝不引用速度源。
+
+**修改文件**：
+- 新增 `js/core/speed-config.js`
+- `index.html`：在 `tick.js` 之前注入 `<script defer src="./js/core/speed-config.js"></script>`（defer 脚本计数 54→55）
+- `js/core/tick.js`：8 处 `const delta = Math.min(5, …)` 改为 `gameDeltaSec(Math.min(5, …))`；顶部守卫（未加载 speed-config 时注入等价 speed=1 实现，保证 Node 测试安全）；科研结算传 `{ scale: getGameSpeed() }`
+- `js/systems/research.js`：`processResearchUntil(state, now, opts)` 新增 `_scale` 参数（离线调用不传 opts → scale=1 不变）
+- `js/systems/station.js`：`getStationLogisticsMultiplier` 返回 `base * getGameSpeed()`
+- `tools/verify.mjs` / `tools/audit-archaeology-ships.mjs`：脚本计数断言 54→55
+- 新增 `tools/smoke-speed.mjs`：`?speed=10` 端到端冒烟（速度解析/产出/科研/自动线≈10×、增强剂冷却实时、速度源文件纯度）
+
+**验证结果**：
+- `GAME_SPEED=1` 全量回归逐字节不变：`verify.mjs` 55 JS / 4 CSS / 303 DOM（EXIT=0）、`regress-combat-repair.mjs` 86/0、`audit-station.mjs` 1172/0。
+- `GAME_SPEED=10` 冒烟：`tools/smoke-speed.mjs` 全 26 断言 EXIT=0（采矿进度×10、后勤倍率×10、科研×10、增强剂剩余时长在 speed=1 与 speed=10 下完全一致、速度源仅 3 文件）。
+- 3D / UI 文案不受 speed 影响（speed 只改变数值，显示层逻辑与 speed=1 一致；专名不泄漏已由 `verify.mjs` 覆盖）。
+
+**使用**：调试用 `index.html?speed=10` 或 `localStorage.setItem('eve_speed', 10)`；生产默认 1。
+
+**注意**：原 10x 分支「只差一个文件」的幻觉已破，现由本开关替代；旧 `EVEIDLE-10X-SYNC` 分支保留作历史、已另立统一开关（`b854ace` 强推至 `test/10x-active-speed`）。
+
+### 装备制造页 X 方案（操作条抽离钉底 + 目录内部滚动，2026-08-04）
+
+**问题复述**：单栏（≤1120px）时可制造配方目录在上方、`.equipeng-detail` 详情（含「开始/停止」按钮）在整页最下方，目录一长就下拉很久才够得着按钮。
+
+**实装（commit `421c92d`，基线 `682a903`，detached HEAD，未推送）**：
+- `index.html`：把 `.equipeng-detail-actions` 从 `<aside class="equipeng-detail">` 内移到 `.equipeng-workspace` 直接子元素（equipeng + booster 两处均改），按钮 id 不变、JS 按 id 取仍正常。
+- `css/panels.css`：操作条 `grid-column:1/-1` + `position:sticky;bottom:0;z-index:5` 跨整宽钉视口底部；`.equipeng-recipe-grid` 设 `max-height:calc(100vh-340px);overflow-y:auto` 让长目录**自身内部滚动**、不撑高页面——这一步是关键，纯 sticky 做不到在目录顶部滚动时按钮仍可见。
+- 两栏/单栏布局通吃。
+
+**验证**：`verify.mjs` 仍 55 JS / 4 CSS / 303 DOM IDs（按钮 id 均在），EXIT=0。
+
+**回滚**：`git revert 421c92d`（仅撤 X，保留基线 `682a903` 的按钮范式 + A1 修复）或 `git reset --hard 682a903`（丢掉 X）。

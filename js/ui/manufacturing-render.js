@@ -37,7 +37,7 @@ function renderShipCompCost(display) {
   display = display || getShipEngineeringDisplayState(gameState, Date.now());
   const element = document.getElementById("shipcomp-cost");
   if (!element) return;
-  const parts = display.componentMaterials.map(item => `<span class="${item.enough ? "enough" : "short"}">${item.material}×${item.quantity}</span>`);
+  const parts = display.componentMaterials.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`);
   element.innerHTML = "消耗：" + parts.join(" + ") + ` · 耗时${display.currentComponent.time}s · 经验${display.currentComponent.xp}`;
 }
 
@@ -74,7 +74,7 @@ function renderShipAsmCost(display) {
   const element = document.getElementById("shipasm-cost");
   if (!element) return;
   const parts = display.assemblyComponents.map(item => `<span class="${item.enough ? "enough" : "short"}">${item.name}×${item.quantity}</span>`).join(" + ");
-  const materials = display.assemblyMaterials.map(item => `<span class="${item.enough ? "enough" : "short"}">${item.material}×${item.quantity}</span>`).join(" + ");
+  const materials = display.assemblyMaterials.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`).join(" + ");
   element.innerHTML = `部件：${parts}${materials ? ` · 额外材料：${materials}` : " · 组装不消耗额外材料"} · 耗时${display.currentAssembly.time}s · 经验${display.currentAssembly.xp}`;
 }
 
@@ -131,14 +131,7 @@ function renderShipEngineeringPage(now) {
   const efficiency = document.getElementById("shipeng-eff-value"); if (efficiency) efficiency.textContent = display.efficiency.toFixed(2) + "x";
   const speedInfo = document.getElementById("shipeng-speed-breakdown");
   if (speedInfo) {
-    const sm = display.skillMultiplier || display.efficiency;
-    const ym = display.shipyardMultiplier || 1;
-    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
-    const total = display.totalSpeedMultiplier || (sm * ym * lm);
-    const parts = ["技能 ×" + sm.toFixed(2), "船坞 ×" + ym.toFixed(2)];
-    const logPart = (sl.bodyLevel > 0 && sl.operational) ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2) + "（" + (sl.text || "未建立") + "）";
-    parts.push(logPart);
-    speedInfo.textContent = parts.join(" · ") + " · 最终 ×" + total.toFixed(2);
+    speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display);
   }
   const fill = document.getElementById("shipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   const xp = document.getElementById("shipeng-exp-value"); if (xp) xp.textContent = display.xp.toLocaleString() + " / " + display.xpNeeded.toLocaleString();
@@ -177,10 +170,9 @@ function renderEquipEngRigFilters(display) {
   const container = document.getElementById("equipeng-rig-filters"); if (!container) return;
   if (!display.rigFilters) { container.style.display = "none"; container.innerHTML = ""; return; }
   container.style.display = "flex"; // flex-wrap:wrap（见 index.html 内联样式），窄窗口自动换行不遮挡
-  const button = (kind, item) => `<button class="equipeng-rig-filter-btn${item.selected ? " selected" : ""}" data-rig-${kind}="${item.id}" role="tab" aria-selected="${item.selected}" style="padding:3px 10px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid ${item.selected ? "#38bdf8" : "#2a3a4a"};background:${item.selected ? "rgba(56,189,248,.15)" : "transparent"};color:${item.selected ? "#7dd3fc" : "#8a9aae"};">${item.name}</button>`;
+  const button = (item) => `<button class="equipeng-rig-filter-btn${item.selected ? " selected" : ""}" data-rig-series="${item.id}" role="tab" aria-selected="${item.selected}" style="padding:3px 10px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid ${item.selected ? "#38bdf8" : "#2a3a4a"};background:${item.selected ? "rgba(56,189,248,.15)" : "transparent"};color:${item.selected ? "#7dd3fc" : "#8a9aae"};">${item.name}</button>`;
   container.innerHTML =
-    '<span style="font-size:12px;color:#6a7a8e;">类别</span>' + display.rigFilters.subcategories.map(item => button("sub", item)).join("") +
-    '<span style="font-size:12px;color:#6a7a8e;margin-left:8px;">档位</span>' + display.rigFilters.tiers.map(item => button("tier", item)).join("");
+    '<span style="font-size:12px;color:#6a7a8e;">系列</span>' + display.rigFilters.seriesList.map(item => button(item)).join("");
 }
 
 function renderEquipEngRecipeGrid(display) {
@@ -201,8 +193,8 @@ function renderEquipEngDetail(display) {
   const body = document.getElementById("equipeng-detail-body"); if (!body) return;
   const attributes = display.detail.attributes.length ? `<div class="equipeng-detail-section"><span class="equipeng-detail-label">装备属性</span><div class="equipeng-attribute-list">${display.detail.attributes.map(line => `<span>${line}</span>`).join("")}</div></div>` : "";
   const equipmentInputs = display.detail.equipmentInputs.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-box"></i>${item.name}</span><strong>×${item.quantity}</strong><small>未装配库存 ${item.stock.toLocaleString()}</small></div>`).join("");
-  const materials = display.detail.materials.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-cubes-stacked"></i>${item.displayName || item.material}</span><strong>×${item.quantity}</strong><small>库存 ${item.stock.toLocaleString()}</small></div>`).join("");
-  const running = display.detail.runningNote ? `<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：${display.detail.runningNote.name}${display.detail.runningNote.targetDiffers ? " · 当前查看不会改变本次产物" : ""}</div>` : "";
+  const materials = display.detail.materials.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-cubes-stacked"></i>${item.displayName || item.name || getResourceDisplayName(item.material)}</span><strong>×${item.quantity}</strong><small>库存 ${item.stock.toLocaleString()}</small></div>`).join("");
+  const running = display.detail.runningNote ? `<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：${display.detail.runningNote.name}${display.detail.runningNote.targetDiffers ? " · 点击「切换制造」将改为制造当前配方" : ""}</div>` : "";
   body.innerHTML = `${running}${attributes}<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">${equipmentInputs}${materials}</div></div>
     <div class="equipeng-detail-section equipeng-manufacture-summary"><span>${getEquipEngOutputHtmlFromDisplay(display)}</span><span>单次耗时 ${display.detail.actualTime.toFixed(1)}s（基础 ${display.detail.baseTime}s）</span><span>装备工程经验 +${display.detail.xp}</span><span>按当前库存最多制造 ${display.detail.maxCycles.toLocaleString()} 次</span></div>`;
 }
@@ -228,8 +220,14 @@ function renderEquipEngPage(now) {
   drawSkillBar(document.getElementById("bar-equipeng"), display.progress.percent, "purple");
   const eta = document.getElementById("equipeng-eta"); if (eta) eta.textContent = display.progress.etaText;
   const status = document.getElementById("equipeng-status-text"); if (status) status.textContent = display.status;
-  const start = document.getElementById("btn-start-equipeng"); if (start) { start.style.display = display.active ? "none" : ""; start.disabled = !display.canStart; }
-  const stop = document.getElementById("btn-stop-equipeng"); if (stop) stop.style.display = display.active ? "" : "none";
+  // 仿采矿范式：正在制造 A、当前选中 B（targetChanged）时，停止按钮隐藏、开始按钮显示
+  // 且文案提示"切换制造"；选中==在跑时显示停止；完全未在跑时显示开始。
+  const targetChanged = Boolean(display.active && display.runningRecipe && display.selectedRecipe && display.runningRecipe.id !== display.selectedRecipe.id);
+  const showStart = !display.active || targetChanged;
+  const showStop = display.active && !targetChanged;
+  const start = document.getElementById("btn-start-equipeng");
+  if (start) { start.style.display = showStart ? "" : "none"; start.disabled = !display.canStart; start.textContent = targetChanged ? "▶ 切换制造" : "▶ 开始制造"; }
+  const stop = document.getElementById("btn-stop-equipeng"); if (stop) stop.style.display = showStop ? "" : "none";
 }
 
 (function bindManufacturingUI() {
@@ -261,12 +259,9 @@ function renderEquipEngPage(now) {
   });
   const rigFilters = document.getElementById("equipeng-rig-filters");
   if (rigFilters) rigFilters.addEventListener("click", event => {
-    const subButton = event.target.closest("[data-rig-sub]");
-    const tierButton = event.target.closest("[data-rig-tier]");
-    if (!subButton && !tierButton) return;
-    const payload = { type:"manufacturing/selectEquipEngRigFilter" };
-    if (subButton) payload.sub = subButton.dataset.rigSub;
-    if (tierButton) payload.tier = tierButton.dataset.rigTier;
+    const seriesButton = event.target.closest("[data-rig-series]");
+    if (!seriesButton) return;
+    const payload = { type:"manufacturing/selectEquipEngRigFilter", series: seriesButton.dataset.rigSeries };
     const result = dispatchGameAction(gameState, payload, Date.now());
     if (result.changed) renderEquipEngPage();
   });

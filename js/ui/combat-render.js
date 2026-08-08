@@ -90,28 +90,42 @@ function mountCombat3D(display) {
   if (!S3D) return; // 模块尚未就绪时静默跳过，后续 tick 会补上
 
   // 玩家舰：当前出战舰（combat.activeShip → 实例 → 蓝图 id）
+  // 修复：无拥有战斗舰时不渲染幽灵模型，保留/恢复占位符（🚀），与机库保持一致。
+  // 关键：必须用 display.player.hasShip（已按"是否真有指派战斗舰"计算），
+  //       不能重新调 getActiveCombatShipState（它的 ships[0] 回退会把库存未指派舰误判为 active）。
   try {
     let playerShipId = "rifter";
-    if (typeof getActiveCombatShipState === "function") {
-      const active = getActiveCombatShipState(gameState);
-      if (active && active.config && active.config.id) playerShipId = active.config.id;
-    }
-    const playerSpec = S3D.buildSpecForShip(playerShipId);
-    mountCombat3D._playerSpec = playerSpec; // 供点开大图复用，确保与侧栏模型一致
-    const pImg = document.getElementById("combat-player-image");
-    if (pImg) {
-      let canvas = pImg.querySelector("#combat-player-3d");
-      if (!canvas) {
-        canvas = document.createElement("canvas");
-        canvas.id = "combat-player-3d";
-        canvas.className = "ship3d-canvas";
-        canvas.style.cssText = "height:100%;width:100%;border-radius:8px;background:#070d14;display:block;";
-        // 清空占位符后 append（不破坏同级元素）
-        pImg.innerHTML = "";
-        pImg.appendChild(canvas);
+    const hasPlayerShip = !!(display && display.player && display.player.hasShip);
+    if (!hasPlayerShip) {
+      const pImg = document.getElementById("combat-player-image");
+      if (pImg) {
+        const old = pImg.querySelector("#combat-player-3d");
+        if (old) old.remove();
+        pImg.innerHTML = '<span class="combat-ship-placeholder">🚀</span>';
       }
-      const viewer = S3D.ensureViewer(canvas, { orbit: false, autoSpin: false });
-      S3D.setShips(viewer, [{ spec: playerSpec, position: [0, 0, 0], scale: 1, sway: true }]);
+      mountCombat3D._playerSpec = null;
+    } else {
+      if (typeof getActiveCombatShipState === "function") {
+        const active = getActiveCombatShipState(gameState);
+        if (active && active.config && active.config.id) playerShipId = active.config.id;
+      }
+      const playerSpec = S3D.buildSpecForShip(playerShipId);
+      mountCombat3D._playerSpec = playerSpec; // 供点开大图复用，确保与侧栏模型一致
+      const pImg = document.getElementById("combat-player-image");
+      if (pImg) {
+        let canvas = pImg.querySelector("#combat-player-3d");
+        if (!canvas) {
+          canvas = document.createElement("canvas");
+          canvas.id = "combat-player-3d";
+          canvas.className = "ship3d-canvas";
+          canvas.style.cssText = "height:100%;width:100%;border-radius:8px;background:#070d14;display:block;";
+          // 清空占位符后 append（不破坏同级元素）
+          pImg.innerHTML = "";
+          pImg.appendChild(canvas);
+        }
+        const viewer = S3D.ensureViewer(canvas, { orbit: false, autoSpin: false });
+        S3D.setShips(viewer, [{ spec: playerSpec, position: [0, 0, 0], scale: 1, sway: true }]);
+      }
     }
   } catch (err) { console.error("[combat] 玩家 3D 渲染失败", err); }
 
@@ -170,7 +184,7 @@ function renderCombatPanel(now) {
   const deathspaceTierTabs = document.getElementById("deathspace-tier-tabs");
   if (deathspaceTierTabs) deathspaceTierTabs.innerHTML = display.deathspaceTiers.map(item => `<button class="deathspace-tier-tab${item.selected ? " active" : ""}${item.unlocked ? "" : " locked"}" data-deathspace-tier="${item.tier}">${item.label}<small>战斗等级 ${item.requiredCL}</small></button>`).join("");
   const deathspaceGrid = document.getElementById("deathspace-grid");
-  if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${site.ticketMaterial} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} LP · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} LP · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${site.coreMaterial} · 📜 ${site.protocolMaterial} 2%</small></button>`).join("");
+  if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${getResourceDisplayName(site.ticketMaterial)} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} ${DisplayNames.getCurrencyName("lp")} · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} ${DisplayNames.getCurrencyName("lp")} · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${getResourceDisplayName(site.coreMaterial)} · 📜 ${getResourceDisplayName(site.protocolMaterial)} 2%</small></button>`).join("");
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
   const targetingControl = document.getElementById("capital-targeting-control");
   const targetingSelect = document.getElementById("capital-targeting-select");
@@ -224,7 +238,7 @@ function renderCombatDropPreview(display) {
     if (Array.isArray(preview.leaderLoot) && preview.leaderLoot.length > 0) {
       rows.push(`<div class="drop-group-title">💠 首领战利品（每波 BOSS 击破时结算）</div>`);
       for (const loot of preview.leaderLoot) {
-        rows.push(row("🟣", loot.coreMaterial, `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${loot.protocolMaterial} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader"));
+        rows.push(row("🟣", getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${getResourceDisplayName(loot.protocolMaterial)} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader"));
       }
     }
     if (preview.tacticalMaterial) {
@@ -291,10 +305,11 @@ function startCombatEncounter() {
       if (result.reason === "repairing") showToast("舰船自动维修中，还需 " + result.remaining + " 秒");
       else if (result.reason === "level-locked") showToast("该死亡空间需要战斗等级 " + result.requiredCL);
       else if (result.reason === "no-weapons") showToast("当前战斗舰没有安装武器，请先在船坞装配");
-      else if (result.reason === "missing-ticket") showToast("缺少：" + result.ticketMaterial);
+      else if (result.reason === "missing-ticket") showToast("缺少：" + getResourceDisplayName(result.ticketMaterial));
       renderCombatPanel(now); return false;
     }
     showToast("已消耗1枚通行密钥，进入" + deathspace.name);
+    if (result.warning === "low-fuel") showToast("⚠ 燃料不足以完成一轮齐射，部分或全部武器将无法开火");
     renderCombatPanel(now); updateUI(); return true;
   }
   const zone = COMBAT_ZONES.find(item => item.id === combat.zone) || COMBAT_ZONES[0];
@@ -306,6 +321,7 @@ function startCombatEncounter() {
     else if (result.reason === "no-weapons") showToast("当前战斗舰没有安装武器，请先在船坞装配");
     renderCombatPanel(now); return false;
   }
+  if (result.warning === "low-fuel") showToast("⚠ 燃料不足以完成一轮齐射，部分或全部武器将无法开火");
   renderCombatPanel(now); updateUI(); return true;
 }
 
@@ -467,6 +483,8 @@ function openCombat3DPopup(which) {
       '<div class="c3d-attr-bars">' + renderHPBars(target.hp, target.maxHp) + '</div>';
   } else {
     const player = display.player;
+    // 无拥有战斗舰时不应放大幽灵模型：提示去机库指派后返回。
+    if (!player.hasShip) { showToast("请先在机库指派战斗舰"); return; }
     spec = mountCombat3D._playerSpec
       ? JSON.parse(JSON.stringify(mountCombat3D._playerSpec))
       : S3D.buildSpecForShip("rifter");

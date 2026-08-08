@@ -88,6 +88,20 @@ function emitStationEvent(type, payload, meta) {
    返回：{ changed:boolean, reason?:string, targetLevel?, startedAt?, completesAt?, durationMs?, costSnapshot? }
    nowOverride：可选，供测试注入确定性 startedAt（生产环境不传，用 Date.now()）
    ---------------------------------------------------------------- */
+/* ----------------------------------------------------------------
+   研究批次 G · build 组：建设工程科研提速
+   真实建设时长 = plan.durationMs ÷ getResearchMultiplier(state, ["build"])
+   主体开工 / 建筑开工 / 页面预览三处共用此唯一入口，禁止在别处再算一遍。
+   注意：不叠加进 getStationBuildingSpeedMultiplier（那是自动线的建筑倍率，与建设无关）。
+   ---------------------------------------------------------------- */
+function getStationConstructionDurationMs(state, plan) {
+  const base = plan ? Number(plan.durationMs) : NaN;
+  if (!Number.isFinite(base) || base <= 0) return 0;
+  let mult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["build"])) : 1;
+  if (!Number.isFinite(mult) || mult <= 0) mult = 1;
+  return Math.max(1, Math.round(base / mult));
+}
+
 function startStationBodyConstruction(state, nowOverride) {
   if (!state || typeof state !== "object") return { changed: false, reason: "invalid-state" };
   const s = state.station;
@@ -112,7 +126,7 @@ function startStationBodyConstruction(state, nowOverride) {
   ResourceRegistry.spendCost(state, plan.materials);
 
   const startedAt = Number.isFinite(Number(nowOverride)) ? Number(nowOverride) : Date.now();
-  const durationMs = plan.durationMs;
+  const durationMs = getStationConstructionDurationMs(state, plan);
   const completesAt = startedAt + durationMs;
   const costSnapshot = buildStationCostSnapshot(plan);
 
@@ -258,7 +272,7 @@ function completeStationConstruction(state, meta) {
    最小纯显示态（仅供审计 / 后续 UI 调用；本阶段不新增正式页面）。
    保证所有字段非 undefined / 非 NaN；缺失值统一用 null / 0。
    ---------------------------------------------------------------- */
-function getStationBodyDisplayState(state) {
+function getStationBodyDisplayState(state, now) {
   const s = (state && typeof state === "object" && state.station && typeof state.station === "object") ? state.station : null;
   const bodyLevel = s ? (Math.floor(Number(s.bodyLevel)) || 0) : 0;
   const bodyName = getStationBodyName(bodyLevel);
@@ -274,12 +288,12 @@ function getStationBodyDisplayState(state) {
   let remainingMs = 0;
   let progress = 0;
   if (rawC) {
-    const now = Date.now();
+    const nowMs = Number.isFinite(Number(now)) ? Number(now) : Date.now();
     const startedAt = Number(rawC.startedAt) || 0;
     const completesAt = Number(rawC.completesAt) || 0;
     const total = Math.max(1, Number(rawC.durationMs) || (completesAt - startedAt) || 1);
-    remainingMs = Math.max(0, completesAt - now);
-    const elapsed = Math.max(0, Math.min(total, now - startedAt));
+    remainingMs = Math.max(0, completesAt - nowMs);
+    const elapsed = Math.max(0, Math.min(total, nowMs - startedAt));
     progress = Math.max(0, Math.min(1, elapsed / total));
     if (rawC.kind === "building") {
       const bid = rawC.buildingId;
@@ -453,7 +467,7 @@ function startStationBuildingConstruction(state, buildingId, nowOverride) {
   ResourceRegistry.spendCost(state, plan.materials);
 
   const startedAt = Number.isFinite(Number(nowOverride)) ? Number(nowOverride) : Date.now();
-  const durationMs = plan.durationMs;
+  const durationMs = getStationConstructionDurationMs(state, plan);
   const completesAt = startedAt + durationMs;
   const costSnapshot = buildStationCostSnapshot(plan);
 
@@ -996,7 +1010,10 @@ function processAutoLines(state, now, offline) {
 
     // 仅 operational 段累积进度并结算。自动线最终倍率 = buildingMultiplier × stationLogisticsMultiplier
     const stationLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state) : 1;
-    const multiplier = buildingMultiplier * stationLogisticsMult;
+    // 研究批次 G · autoline 组：自动化协议提速（只加速周期，材料消耗与单周期产量完全不变）
+    let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
+    if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
+    const multiplier = buildingMultiplier * stationLogisticsMult * autoLineResearchMult;
     line.progress = (line.progress || 0) + cappedMs / 1000;
     line.lastTick = now;
 
@@ -1032,7 +1049,10 @@ function getStationAutoLineCycleDuration(state, lineId, recipe) {
   if (!recipe) return 0;
   const buildingMult = getStationBuildingSpeedMultiplier(state, AUTO_LINE_CONFIG[lineId].buildingId);
   const logisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state) : 1;
-  const mult = Math.max(0.001, buildingMult * logisticsMult);
+  // 研究批次 G · autoline 组：与 processAutoLines 完全同式，UI 显示周期 = 实际结算周期
+  let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
+  if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
+  const mult = Math.max(0.001, buildingMult * logisticsMult * autoLineResearchMult);
   if (lineId === "smelting") {
     const assigned = (typeof getAssignedShipState === "function") ? getAssignedShipState(state, "refining") : { config:null, instance:null };
     const shipBonus = (assigned.config && assigned.config.bonuses) ? (assigned.config.bonuses.smeltingSpeed || 0) : 0;
@@ -1126,6 +1146,18 @@ function getStationFuelBurnRatePerMs(points) {
   return points * MAINTENANCE_WEEKLY_FUEL_PER_POINT / MAINTENANCE_WEEK_MS;
 }
 
+/* ----------------------------------------------------------------
+   研究批次 G · fuel 组：燃料后勤减耗（reduceFraction）
+   实际燃烧速率 = 基础速率 × (1 - getResearchBonusValue(state,"fuel"))
+   在线结算 / 离线结算 / 剩余时长显示三处共用此唯一入口。
+   ---------------------------------------------------------------- */
+function getStationEffectiveFuelBurnRatePerMs(state, points) {
+  const base = getStationFuelBurnRatePerMs(points);
+  const raw = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchBonusValue(state, "fuel")) : 0;
+  const reduction = Number.isFinite(raw) ? Math.max(0, Math.min(0.95, raw)) : 0;
+  return base * (1 - reduction);
+}
+
 function isStationOperational(state) {
   const s = state && state.station;
   if (!s) return false;
@@ -1149,7 +1181,7 @@ function settleStationMaintenance(state, now, offline) {
   if (now <= lastTick) return;
   const points = getStationMaintenancePoints(state);
   if (points <= 0) { m.lastTick = now; return; }
-  const burnRate = getStationFuelBurnRatePerMs(points);
+  const burnRate = getStationEffectiveFuelBurnRatePerMs(state, points);
   const elapsed = now - lastTick;
   const consumed = burnRate * elapsed;
   const beforeFuel = m.fuelRemaining;
@@ -1160,7 +1192,7 @@ function settleStationMaintenance(state, now, offline) {
     m.depletedNotified = true;
     emitStationEvent("station:maintenanceDepleted", { fuelRemaining:0 }, { offline:Boolean(offline) });
   }
-  const remainingMs = (m.fuelRemaining > 0 && points > 0) ? m.fuelRemaining / getStationFuelBurnRatePerMs(points) : 0;
+  const remainingMs = (m.fuelRemaining > 0 && points > 0) ? m.fuelRemaining / getStationEffectiveFuelBurnRatePerMs(state, points) : 0;
   if (m.fuelRemaining > 0 && remainingMs < MAINTENANCE_REFILL_HOURS * 3600000 && !m.lowFuelNotified) {
     m.lowFuelNotified = true;
     emitStationEvent("station:maintenanceLow", { fuelRemaining:m.fuelRemaining, remainingMs }, { offline:Boolean(offline) });
@@ -1176,7 +1208,9 @@ function getStationRefillMaintenanceState(state) {
   if (points <= 0) return { canRefill:false, reason:"station-not-built" };
   const fuel = Number(s.maintenance && s.maintenance.fuelRemaining) || 0;
   const targetFuel = points * MAINTENANCE_WEEKLY_FUEL_PER_POINT;
-  const remainingMs = (fuel > 0 && points > 0) ? fuel / getStationFuelBurnRatePerMs(points) : 0;
+  // 研究批次 G · fuel：补给闸门的“剩余时长”必须与显示态/结算同用实际燃烧速率，
+  // 否则有燃料科研时会出现“显示还能撑很久、却已允许补给”的两套口径。
+  const remainingMs = (fuel > 0 && points > 0) ? fuel / getStationEffectiveFuelBurnRatePerMs(state, points) : 0;
   if (remainingMs > MAINTENANCE_REFILL_HOURS * 3600000) {
     return { canRefill:false, reason:"maintenance-not-needed", remainingMs, points, fuel, targetFuel };
   }
@@ -1191,7 +1225,7 @@ function getStationMaintenanceDisplayState(state, now) {
   const bodyLvl = Math.floor(Number(s.bodyLevel)) || 0;
   const points = getStationMaintenancePoints(state);
   const fuel = Number(s.maintenance && s.maintenance.fuelRemaining) || 0;
-  const burnRate = points > 0 ? getStationFuelBurnRatePerMs(points) : 0;
+  const burnRate = points > 0 ? getStationEffectiveFuelBurnRatePerMs(state, points) : 0;
   const remainingMs = burnRate > 0 ? fuel / burnRate : 0;
   const refillInfo = getStationRefillMaintenanceState(state);
   return {
@@ -1236,15 +1270,25 @@ const COMBAT_SKILL_WHITELIST = Object.freeze([
 ]);
 
 function addStationModifiedCombatXp(state, skillId, baseXp) {
-  // 非白名单技能不加成
+  // 非白名单技能不加成：既不吃作战指挥中心倍率，也不吃 combatExp 科研
   if (!COMBAT_SKILL_WHITELIST.includes(skillId)) {
     return addSkillXpToState(state, skillId, baseXp, { source:"station-combat-command" });
   }
+  // 研究批次 H · combatExp：科研与作战指挥中心是两个彼此独立的乘区。
+  //   researchAdjustedBase = baseXp × getResearchMultiplier(state, ["combatExp"])   ← 只乘一次
+  //   actualXp             = researchAdjustedBase × 真实空间站倍率
+  // 科研乘子不依赖空间站是否建成、是否有燃料；零科研时 researchAdjustedBase === baseXp，
+  // 旧结果与事件 payload 逐值不变。
+  const researchMultiplier = (typeof ResearchState !== "undefined")
+    ? ResearchState.getResearchMultiplier(state, ["combatExp"]) : 1;
+  const researchAdjustedBase = baseXp * researchMultiplier;
   const mult = getStationCombatXpMultiplier(state);
-  const totalXp = baseXp * mult;
+  const totalXp = researchAdjustedBase * mult;
   const gained = addSkillXpToState(state, skillId, totalXp, { source:"station-combat-command" });
-  if (mult > 1 && gained > baseXp) {
-    emitStationEvent("station:combatXpBoosted", { skillId, baseXp, multiplier:mult, actualXp:gained }, { offline:false });
+  // 只有真实空间站倍率 > 1 才算「空间站加成」；仅科研生效时不得伪报该事件。
+  // payload.baseXp 用 researchAdjustedBase，保证 baseXp × multiplier === actualXp 的数学关系成立。
+  if (mult > 1 && gained > researchAdjustedBase) {
+    emitStationEvent("station:combatXpBoosted", { skillId, baseXp:researchAdjustedBase, multiplier:mult, actualXp:gained }, { offline:false });
   }
   return gained;
 }
@@ -1382,7 +1426,10 @@ function getStationLogisticsMultiplier(state) {
   if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 3) return 1;
   if (!isStationOperational(state)) return 1;
   const table = {0: 1, 1: 1.01, 2: 1.02, 3: 1.03};
-  return table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
+  const base = table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
+  // 十倍速开关（2026-08-04）：仅缩放产出周期，冷却/到期仍实时。speed=1 时恒为 1。
+  const speed = (typeof getGameSpeed === "function") ? getGameSpeed() : 1;
+  return base * speed;
 }
 
 function getStationLogisticsDisplayState(state) {
@@ -1403,7 +1450,7 @@ function getStationLogisticsDisplayState(state) {
 // Phase 3C-8：统一空间站页面显示态
 function getStationPageDisplayState(state, now) {
   const renderNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
-  const bodyRaw = (typeof getStationBodyDisplayState === "function") ? getStationBodyDisplayState(state) : {};
+  const bodyRaw = (typeof getStationBodyDisplayState === "function") ? getStationBodyDisplayState(state, renderNow) : {};
   // 补齐 body nextCostRows/durationMs/blockedText
   const bodyLevel = Number(bodyRaw.bodyLevel) || 0;
   const nextLevel = bodyLevel < 3 ? bodyLevel + 1 : null;
@@ -1415,7 +1462,7 @@ function getStationPageDisplayState(state, now) {
     currentConstruction: bodyRaw.currentConstruction || null,
     remainingMs: bodyRaw.remainingMs || 0,
     nextCostRows: nextPlan ? buildStationCostRows(state, nextPlan.isk, nextPlan.materials) : [],
-    durationMs: nextPlan ? nextPlan.durationMs : 0,
+    durationMs: nextPlan ? getStationConstructionDurationMs(state, nextPlan) : 0,
     canStart: bodyRaw.canStart || false,
     blockedReason: atMax ? "max-level" : (bodyRaw.blockedReason || null),
     blockedText: atMax ? "已达到最高等级" : (bodyRaw.blockedText || null)
@@ -1432,7 +1479,7 @@ function getStationPageDisplayState(state, now) {
       isConstructingThis: b.isConstructingThis || false,
       effectText: b.effectText || "",
       nextEffectText: b.nextEffectText || (plan ? plan.effectText || "" : ""),
-      durationMs: plan ? plan.durationMs : 0,
+      durationMs: plan ? getStationConstructionDurationMs(state, plan) : 0,
       nextCostRows: plan ? buildStationCostRows(state, plan.isk, plan.materials) : [],
       canUpgrade: b.canUpgrade || false,
       blockedReason: b.blockedReason || null,
@@ -1447,6 +1494,19 @@ function getStationPageDisplayState(state, now) {
     { lineId:"equipment", buildingId:"equipment_factory", recipePool:typeof EQUIPMENT_ENGINEERING_RECIPES!="undefined"?EQUIPMENT_ENGINEERING_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"equipmentEngineering", excludeShip:true },
     { lineId:"booster", buildingId:"booster_factory", recipePool:typeof BOOSTER_RECIPES!="undefined"?BOOSTER_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"boosterEngineering" }
   ];
+  // 自动线目标显示名解析：只认配方的正式中文名称字段（recipe.name）。
+  // 查不到配方、或配方缺正式名称时一律返回"未知配方"——绝不用内部 recipeId 兜底，
+  // 避免 mining_lubricant_n 这类内部 ID 泄漏到界面。id 只作稳定 option.value 与调试用。
+  var UNKNOWN_RECIPE_NAME = "未知配方";
+  function findAutoLineRecipe(cfg, targetId) {
+    if (!targetId) return null;
+    return cfg.recipePool.find(function(r) { return cfg.keyFn(r) === targetId; }) || null;
+  }
+  function autoLineTargetName(recipe) {
+    var nm = recipe && typeof recipe.name === "string" ? recipe.name.trim() : "";
+    return nm || UNKNOWN_RECIPE_NAME;
+  }
+
   autoLines = alConfigs.map(function(cfg) {
     var line = state.station && state.station.autoLines ? state.station.autoLines[cfg.lineId] : null;
     var skillLvl = Number(state.skills[cfg.skillKey] && state.skills[cfg.skillKey].lvl) || 1;
@@ -1454,7 +1514,8 @@ function getStationPageDisplayState(state, now) {
       if (cfg.excludeShip && (r.category === "ship" || r.category === "shipComponent")) return false;
       return skillLvl >= (r.level || 1);
     }).map(function(r) {
-      return { id:cfg.keyFn(r), name:r.name || cfg.keyFn(r), level:r.level||1 };
+      // option.value 用稳定内部 id；option 文本只用正式中文名称。
+      return { id:cfg.keyFn(r), name:autoLineTargetName(r), level:r.level||1 };
     });
     var baseDisplay = (typeof getStationAutoLineDisplayState === "function") ? getStationAutoLineDisplayState(state, cfg.lineId) : {};
     var bm = getStationBuildingSpeedMultiplier(state, cfg.buildingId);
@@ -1463,10 +1524,8 @@ function getStationPageDisplayState(state, now) {
     var lineData = line || {};
     var selectedTarget = lineData.selectedTargetId || null;
     var startedTarget = lineData.startedTargetId || null;
-    // Find matching recipe for started or selected target
-    var matchedRecipe = (startedTarget || selectedTarget) ? cfg.recipePool.find(function(r){
-      return cfg.keyFn(r) === (startedTarget || selectedTarget);
-    }) : null;
+    // Find matching recipe for started or selected target（周期计算用，运行中优先按已启动配方）
+    var matchedRecipe = findAutoLineRecipe(cfg, startedTarget || selectedTarget);
     var cycleDurationSec = (typeof getStationAutoLineCycleDuration === "function" && matchedRecipe)
       ? getStationAutoLineCycleDuration(state, cfg.lineId, matchedRecipe) : 0;
     var progressVal = Number(lineData.progress) || 0;
@@ -1478,10 +1537,10 @@ function getStationPageDisplayState(state, now) {
       name: AUTO_LINE_CONFIG[cfg.lineId].name,
       buildingId: cfg.buildingId,
       selectedTargetId: selectedTarget,
-      selectedTargetName: matchedRecipe ? (matchedRecipe.name || cfg.keyFn(matchedRecipe)) : null,
+      // 各自按自己的 recipe.id 独立查配方读中文名，互不串味；未选择/未启动时为 null。
+      selectedTargetName: selectedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, selectedTarget)) : null,
       startedTargetId: startedTarget,
-      startedTargetName: startedTarget && startedTarget !== selectedTarget
-        ? (cfg.recipePool.find(function(r){return cfg.keyFn(r)===startedTarget;}) || {}).name || null : null,
+      startedTargetName: startedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, startedTarget)) : null,
       running: running,
       targetOptions: targets,
       buildingMultiplier: bm,
@@ -1553,7 +1612,7 @@ function buildStationCostRows(state, isk, materials) {
   if (Number.isFinite(isk) && isk > 0) {
     var haveIsk = 0;
     if (ResourceRegistry && ResourceRegistry.get) haveIsk = ResourceRegistry.get(state, "currency:isk");
-    rows.push({ ref:"currency:isk", displayName:"ISK", quantity:isk, have:haveIsk, enough:haveIsk >= isk });
+    rows.push({ ref:"currency:isk", displayName:"星币", quantity:isk, have:haveIsk, enough:haveIsk >= isk });
   }
   if (materials && typeof materials === "object") {
     for (var ref in materials) {
@@ -1562,7 +1621,7 @@ function buildStationCostRows(state, isk, materials) {
         var have = 0;
         if (ResourceRegistry.getByRef) have = ResourceRegistry.getByRef(state, ref);
         else if (ResourceRegistry.getMaterialStock) have = ResourceRegistry.getMaterialStock(state, ref);
-        rows.push({ ref:ref, displayName:ref.replace(/^(mineral|planetary|moon|special|component):/, ""), quantity:qty, have:have, enough:have >= qty });
+        rows.push({ ref:ref, displayName:(typeof getResourceDisplayName === "function" ? getResourceDisplayName(ref) : ref.replace(/^(mineral|planetary|moon|special|component):/, "")), quantity:qty, have:have, enough:have >= qty });
       }
     }
   }
@@ -1614,6 +1673,8 @@ const StationSystem = {
   MAINTENANCE_WEEK_MS,
   getStationMaintenancePoints,
   getStationFuelBurnRatePerMs,
+  getStationEffectiveFuelBurnRatePerMs,
+  getStationConstructionDurationMs,
   isStationOperational,
   settleStationMaintenance,
   getStationRefillMaintenanceState,
@@ -1656,6 +1717,9 @@ if (typeof window !== "undefined") {
   // Phase 3C-6
   window.getStationMaintenancePoints = getStationMaintenancePoints;
   window.getStationFuelBurnRatePerMs = getStationFuelBurnRatePerMs;
+  // 研究批次 G：燃料实耗（fuel 组）与建设时长（build 组）的唯一计算层
+  window.getStationEffectiveFuelBurnRatePerMs = getStationEffectiveFuelBurnRatePerMs;
+  window.getStationConstructionDurationMs = getStationConstructionDurationMs;
   window.isStationOperational = isStationOperational;
   window.settleStationMaintenance = settleStationMaintenance;
   window.getStationRefillMaintenanceState = getStationRefillMaintenanceState;

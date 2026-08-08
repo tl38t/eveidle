@@ -14,7 +14,7 @@ const STATION_BUILDING_IDS = [
 // ---- gameState 主状态对象 ----
 const gameState = {
   resources: {
-    isk: 1000000,
+    isk: 10000,
     lp: 0,
     ores: {},
     minerals: {},
@@ -49,9 +49,8 @@ const gameState = {
     smeltingArea: "凡晶石带",
     gasArea: "富勒烯云团",
     equipEngTarget: "t1_mining_laser",
-    equipEngCategory: "industry",
-    equipEngRigSub: "combat",
-    equipEngRigTier: "all",
+    equipEngCategory: "mining",
+    equipEngRigSeries: RIG_ENGINEERING_SERIES[0].id,
     startedEquipEngTarget: "",
     shipCompTarget: "integrated_hull",
     startedShipCompTarget: "",
@@ -74,7 +73,7 @@ const gameState = {
   },
 
   inventory: {
-    ships: [{ shipId: "rifter", instanceId: "ship_" + Date.now() + "_0", builtAt: Date.now(), fitted: getDefaultCombatFitting("rifter") }],
+    ships: [],
     equipment: [],
     rigs: []
   },
@@ -103,6 +102,10 @@ const gameState = {
     // 把每次行动被取整丢弃的小数燃料节省攒起来，攒满 1 点就少扣 1 燃料。
     // 恒有限、归一化到 [0,1)；仅在完整重置游戏时清零。
     fuelSavingRemainder: 0,
+    // 确定性探针节省累计器（研究批次 G · probe 组减耗）：与燃料累计器同构。
+    // 每周期把 getResearchBonusValue(state,"probe") 的小数节省攒起来，攒满 1 支就免扣 1 支探针。
+    // 恒有限、归一化到 [0,1)；仅在完整重置游戏时清零。
+    probeSavingRemainder: 0,
     log: []
   },
 
@@ -147,6 +150,18 @@ const gameState = {
   upgrades: {},
   ownedBlueprints: [],
 
+  // 新手引导（Batch O）：唯一权威 tutorial 状态，由 tutorial-state.js 提供默认结构。
+  tutorial: TutorialState.createDefaultTutorialState(),
+
+  // 研究系统（批次 B）：单一研究槽 + 队列，独立于 currentAction 与现有 queue。
+  // 由 js/core/research-state.js（须在本文件之前加载）提供默认结构；不复制第二套 schema。
+  research: ResearchState.createDefaultResearchState(),
+
+  // 成就系统（Batch B）：唯一权威解锁状态（解锁时间映射为唯一事实来源）。
+  // 由 js/core/achievement-state.js（须在本文件之前加载）提供默认结构；
+  // fail-fast：AchievementState 缺失即抛 ReferenceError，禁止第二套兜底 schema。
+  achievements: AchievementState.createDefaultAchievementState(),
+
   combat: {
     mode: "belt",
     viewMode: "belt",
@@ -172,8 +187,10 @@ const gameState = {
     lastSpecialLoot: "",
     lastEnemyVolley: null,
     active: false,
-    repairUntil: 0,
-    destroyedShip: null,
+    repairUntil: 0,        // 旧字段：仅存档迁移兼容占位，迁移后即清零，绝不作为权威判断（见 persistence.migrateCombatEquipmentState）
+    destroyedShip: null,   // 旧字段：同上，权威维修状态见 repairs[instanceId]
+    repairs: {},           // 问题2 权威：per-ship 维修截止时间戳 combat.repairs[instanceId] = untilTs
+    activeShip: null,      // 当前出战战斗舰 instanceId（与 shipAssignments.combat 保持一致；getActiveCombatShipState 优先读 assignments）
     lastStatus: ""
   },
 
@@ -186,7 +203,8 @@ const gameState = {
 
   queue: {
     items: [],
-    config: { maxSize: 20, loopMode: false, skipOnFail: true },
+    // Batch C-14A（J05）：队列历史首次达 25 项即解锁，故容量下限须 ≥ 25；原为 20 会使 J05 永远不可达（真实 bug）。
+    config: { maxSize: 25, loopMode: false, skipOnFail: true },
     status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 }
   },
 

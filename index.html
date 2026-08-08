@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>EVE放置：新伊甸纪元</title>
+<title>深空放置：边疆纪元</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -20,6 +20,7 @@
   }
 }
 </script>
+<script defer src="./js/core/speed-config.js"></script>
 <script type="module" src="./js/ui/ship3d.js?v=5"></script>
 <style id="ship3d-style">
   .ship3d-canvas { display:block; width:100%; height:100%; }
@@ -57,33 +58,30 @@
 
 <!-- ===== 顶部状态栏 ===== -->
 <header class="topbar">
-  <span class="brand"><i class="fa-solid fa-anchor"></i> EVE放置 · 新伊甸</span>
+  <span class="brand"><i class="fa-solid fa-anchor"></i> 深空放置 · 边疆纪元</span>
   <span class="current-activity" id="current-activity">⛏ 采矿 Lv.86 · 进行中</span>
   <div class="resources">
     <div class="res-item">
       <i class="fa-solid fa-coins res-icon isk-icon"></i>
-      <span class="res-label">ISK</span>
+      <span class="res-label">星币</span>
       <span class="res-value isk">12,500,000</span>
     </div>
     <div class="res-item">
       <i class="fa-solid fa-medal res-icon lp-icon"></i>
-      <span class="res-label">LP</span>
+      <span class="res-label">功勋</span>
       <span class="res-value lp">3,400</span>
     </div>
     <div class="res-item cargo-item">
       <i class="fa-solid fa-boxes-stacked res-icon cargo-icon"></i>
-      <span class="res-label">仓库</span>
-      <span class="res-value" id="cargo-text">0 / 1,100</span>
-      <div class="cargo-bar">
-        <div class="cargo-fill" id="cargo-fill" style="width: 0%;"></div>
-      </div>
+      <span class="res-label">物资总量</span>
+      <span class="res-value" id="cargo-text">0</span>
     </div>
   </div>
   <div class="ore-quick">
-    <span class="ore-icon">凡晶石 × 2,340</span>
-    <span class="ore-icon">灼烧岩 × 1,050</span>
-    <span class="ore-icon">三钛合金 × 4,800</span>
-    <span class="ore-icon">类银超金属 × 890</span>
+    <span class="ore-icon">铁硅原矿 × 2,340</span>
+    <span class="ore-icon">赤镍矿 × 1,050</span>
+    <span class="ore-icon">标准钛材 × 4,800</span>
+    <span class="ore-icon">银镍合金 × 890</span>
   </div>
 </header>
 
@@ -99,7 +97,7 @@
       <span class="nav-icon"><i class="fa-solid fa-scroll"></i></span> 蓝图商店
     </div>
     <div class="nav-item" data-page="cargo">
-      <span class="nav-icon"><i class="fa-solid fa-warehouse"></i></span> 仓库 <span class="nav-lv" data-lv="cargoManagement">Lv.1</span>
+      <span class="nav-icon"><i class="fa-solid fa-warehouse"></i></span> 仓库
     </div>
     <div class="nav-item" data-page="hangar">
       <span class="nav-icon"><i class="fa-solid fa-ship"></i></span> 船坞
@@ -112,6 +110,12 @@
     </div>
     <div class="nav-item" data-page="statistics">
       <span class="nav-icon"><i class="fa-solid fa-chart-column"></i></span> 统计档案
+    </div>
+    <div class="nav-item" data-page="achievements">
+      <span class="nav-icon"><i class="fa-solid fa-trophy"></i></span> 成就
+    </div>
+    <div class="nav-item" data-page="research">
+      <span class="nav-icon"><i class="fa-solid fa-flask-vial"></i></span> 研究
     </div>
     <div class="nav-divider"></div>
     <div class="nav-item" data-skill="mining">
@@ -197,8 +201,8 @@
         <div class="skill-info">
           <span class="skill-name">采矿</span>
           <span class="skill-level">等级 <span class="lv-num">34</span></span>
-          <span class="skill-area">区域：干焦岩带</span>
-          <span class="skill-output">产出：超新星诺克石 ×12 / 次</span>
+          <span class="skill-area">区域：诺瓦矿带</span>
+          <span class="skill-output">产出：诺瓦陶金 ×12 / 次</span>
         </div>
         <div class="exp-row mt-4">
           <span class="exp-label">经验</span>
@@ -237,7 +241,7 @@
         <div class="mining-area-select smelting-area-select" id="smelting-area-select" style="display:none;">
           <span class="area-label">冶炼目标：</span>
           <div class="area-dropdown">
-            <button class="area-dropbtn" id="smelting-dropbtn">三钛合金 ▾</button>
+            <button class="area-dropbtn" id="smelting-dropbtn">标准钛材 ▾</button>
             <div class="area-dropdown-content" id="smelting-dropdown-content"></div>
           </div>
         </div>
@@ -389,7 +393,7 @@
           <div class="ship-synth-controls">
             <span class="ss-label">选择舰船：</span>
             <div class="area-dropdown" id="shipasm-dropdown">
-              <button class="area-dropbtn" id="shipasm-dropbtn">裂谷级 ▾</button>
+              <button class="area-dropbtn" id="shipasm-dropbtn">星矛级 ▾</button>
               <div class="area-dropdown-content" id="shipasm-dropdown-content"></div>
             </div>
             <button class="btn primary" id="btn-start-shipasm">⚓ 合成</button>
@@ -434,7 +438,7 @@
         <div class="equipeng-workspace">
           <section class="equipeng-catalog">
             <div class="equipeng-catalog-header">
-              <div><strong id="equipeng-category-title">工业采集</strong><span id="equipeng-category-count">0 个配方</span></div>
+              <div><strong id="equipeng-category-title">采矿装备</strong><span id="equipeng-category-count">0 个配方</span></div>
               <label class="equipeng-search"><i class="fa-solid fa-magnifying-glass"></i><input id="equipeng-search-input" type="search" placeholder="搜索当前分类" autocomplete="off"></label>
             </div>
             <div class="equipeng-recipe-grid" id="equipeng-recipe-grid"></div>
@@ -450,11 +454,11 @@
               <canvas class="skill-canvas-bar" id="bar-equipeng" width="420" height="24"></canvas>
               <span class="mp-eta" id="equipeng-eta">0s</span>
             </div>
-            <div class="equipeng-detail-actions">
-              <button class="btn danger" id="btn-stop-equipeng" style="display:none;">■ 停止制造</button>
-              <button class="btn primary" id="btn-start-equipeng">▶ 开始制造</button>
-            </div>
           </aside>
+          <div class="equipeng-detail-actions">
+            <button class="btn danger" id="btn-stop-equipeng" style="display:none;">■ 停止制造</button>
+            <button class="btn primary" id="btn-start-equipeng">▶ 开始制造</button>
+          </div>
         </div>
       </div>
     </div>
@@ -500,11 +504,11 @@
               <canvas class="skill-canvas-bar" id="bar-booster" width="420" height="24"></canvas>
               <span class="mp-eta" id="booster-eta">0s</span>
             </div>
-            <div class="equipeng-detail-actions">
-              <button class="btn danger" id="btn-stop-booster" style="display:none;">■ 停止制造</button>
-              <button class="btn primary" id="btn-start-booster">▶ 开始制造</button>
-            </div>
           </aside>
+          <div class="equipeng-detail-actions">
+            <button class="btn danger" id="btn-stop-booster" style="display:none;">■ 停止制造</button>
+            <button class="btn primary" id="btn-start-booster">▶ 开始制造</button>
+          </div>
         </div>
         <section class="booster-inventory" style="margin-top:14px;">
           <div class="equipeng-catalog-header"><div><strong>增强剂库存</strong><span id="booster-inventory-count">0 种</span></div></div>
@@ -562,7 +566,7 @@
         <div class="combat-arena">
           <div class="combat-player-side">
             <div class="combat-side-kicker">PILOT VESSEL</div>
-            <div class="combat-side-name" id="combat-player-ship">裂谷级</div>
+            <div class="combat-side-name" id="combat-player-ship">星矛级</div>
             <div class="health-bars health-bars-sm" id="combat-player-bars"></div>
             <div class="combat-side-image" id="combat-player-image">
               <div class="combat-ship-placeholder"><span>🚀</span></div>
@@ -623,7 +627,7 @@
             </svg>
             <div class="combat-ring-core">
               <span class="ring-ship-icon">◈</span>
-              <strong id="combat-ring-ship">裂谷级</strong>
+              <strong id="combat-ring-ship">星矛级</strong>
               <span id="combat-ring-wave">待命</span>
             </div>
             <div class="combat-ring-legend" id="combat-ring-legend"></div>
@@ -666,7 +670,7 @@
     <div class="panel blueprintstore-panel" id="blueprintstore-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">📜 蓝图商店</span>
-        <span id="blueprintstore-balance">可用 ISK：0 · LP：0</span>
+        <span id="blueprintstore-balance">可用星币（SC）：0 · 功勋（MR）：0</span>
       </div>
       <div class="panel-body">
         <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
@@ -735,7 +739,7 @@
     <div class="panel cargo-panel" id="cargo-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">📦 仓库</span>
-        <span id="cargo-capacity-text">容量：0 / 1,100</span>
+        <span id="cargo-capacity-text">物资总量计算中...</span>
       </div>
       <div class="panel-body">
         <div class="cargo-tabs" id="cargo-tabs">
@@ -768,6 +772,7 @@
           <button class="btn" id="btn-save-game">💾 保存游戏</button>
           <button class="btn" id="btn-export-save">📥 导出存档</button>
           <button class="btn" id="btn-import-save">📤 导入存档</button>
+          <button class="btn btn-danger" id="btn-delete-save" title="清空并删除本地存档（不可恢复）">🗑 删除存档</button>
           <input type="file" id="import-file-input" accept=".json" style="display:none;">
         </div>
         <div class="save-info" id="save-info" style="margin-top:12px;font-size:12px;color:#6a7a8e;"></div>
@@ -800,12 +805,63 @@
       <div class="panel-body" id="statistics-content"></div>
     </div>
 
+    <!-- ===== 成就（成就系统 Batch D）===== -->
+    <div class="panel achievements-panel" id="achievements-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-trophy"></i> 成就</span>
+        <span class="text-muted">只读 · 解锁事实来自成就系统对账</span>
+      </div>
+      <div class="panel-body">
+        <section class="achievements-summary">
+          <div class="ach-summary-head">
+            <span class="ach-summary-count" id="achievements-summary-count">0 / 197</span>
+            <span class="ach-summary-percent" id="achievements-summary-percent">0.0%</span>
+          </div>
+          <div class="ach-progress-track"><div class="ach-progress-fill" id="achievements-progress-fill" style="width:0%;"></div></div>
+          <div class="ach-tier-counts" id="achievements-tier-counts"></div>
+          <div class="ach-research-bank" id="achievements-research-bank">科研工时余额：0 小时</div>
+        </section>
+        <section class="achievements-filters">
+          <div class="ach-filter-row" id="achievements-category-tabs"></div>
+          <div class="ach-filter-row" id="achievements-status-tabs"></div>
+        </section>
+        <div class="achievements-grid" id="achievements-grid"></div>
+      </div>
+    </div>
+
+    <div class="panel research-panel" id="research-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-flask-vial"></i> 研究</span>
+        <span class="text-muted">科技树 · 在线操作 · 成就工时</span>
+      </div>
+      <div class="panel-body">
+        <section class="research-summary" id="research-summary">
+          <div class="research-bank" id="research-bank">科研工时余额：0 小时</div>
+        </section>
+        <section class="research-active-section">
+          <div class="research-active" id="research-active"></div>
+          <div class="research-progress-track"><div class="research-progress-fill" id="research-progress-fill" style="width:0%;"></div></div>
+        </section>
+        <section class="research-tree-section">
+          <h3 class="section-title">科技树</h3>
+          <div class="research-tree-layout">
+            <div class="research-tree" id="research-tree"></div>
+            <aside class="research-detail" id="research-detail"></aside>
+          </div>
+        </section>
+        <section class="research-queue-section">
+          <h3 class="section-title">研究队列</h3>
+          <div class="research-queue" id="research-queue"></div>
+        </section>
+      </div>
+    </div>
+
   
 <!-- ===== 舰船装备环带弹窗 ===== -->
 <div class="equip-modal-overlay" id="equipOrbitModal">
   <div class="equip-ship-modal">
     <button class="equip-modal-close" id="equipOrbitClose">✕</button>
-    <div class="modal-title" id="equipOrbitTitle">裂谷级</div>
+    <div class="modal-title" id="equipOrbitTitle">星矛级</div>
     <div class="modal-sub" id="equipOrbitSub">T1 护卫舰</div>
     <div class="orbit-wrapper" id="equipOrbitWrapper">
       <svg viewBox="0 0 500 500" id="equipOrbitSvg"></svg>
@@ -845,7 +901,7 @@
     <h3>🪐 部署行星 <span class="modal-close" id="modal-close">✕</span></h3>
     <div id="deploy-options"></div>
     <div style="margin-top:8px;font-size:11px;color:#4a5a6a;">
-      首次建设消耗 ISK + 三钛合金；维护期统一 24 小时。到期后停产，可支付 ISK 续期（续期不再消耗三钛）；主动拆除不返还任何资源。
+      首次建设消耗星币 + 标准钛材；维护期统一 24 小时。到期后停产，可支付星币续期（续期不再消耗标准钛材）；主动拆除不返还任何资源。
     </div>
   </div>
 </div>
@@ -872,10 +928,26 @@
   </div>
 </div>
 
+<!-- ===== 新手引导常驻小部件（Batch P：右上角 / 移动端底栏）===== -->
+<aside id="tutorial-widget" class="tutorial-widget" aria-live="polite" aria-label="新手引导任务">
+  <div id="tutorial-widget-header" class="tw-header">
+    <span class="tw-brand">新手引导</span>
+    <button type="button" id="tutorial-widget-toggle" class="tw-toggle" aria-expanded="true" aria-controls="tutorial-widget">收起</button>
+  </div>
+  <div id="tutorial-widget-progress" class="tw-progress"></div>
+  <div class="tw-body">
+    <div id="tutorial-widget-branch-tabs" class="tw-tabs" role="tablist" aria-label="任务支线"></div>
+    <div id="tutorial-widget-dialogue" class="tw-dialogue"></div>
+    <div id="tutorial-widget-objective" class="tw-objective"></div>
+    <div id="tutorial-widget-actions" class="tw-actions"></div>
+  </div>
+</aside>
+
   <script defer src="./js/core/runtime.js"></script>
   <script defer src="./js/core/events.js"></script>
   <script defer src="./js/ui/error-boundary.js"></script>
   <script defer src="./js/data/base.js"></script>
+  <script defer src="./js/data/display-names.js"></script>
   <script defer src="./js/data/planets.js"></script>
   <script defer src="./js/data/ships.js"></script>
   <script defer src="./js/data/boosters.js"></script>
@@ -884,10 +956,20 @@
   <script defer src="./js/data/equipment.js"></script>
   <script defer src="./js/data/ammunition.js"></script>
   <script defer src="./js/data/archaeology.js"></script>
+  <script defer src="./js/data/research.js"></script>
+  <script defer src="./js/core/research-state.js"></script>
+  <script defer src="./js/data/achievements.js"></script>
+  <script defer src="./js/data/achievement-rules.js"></script>
+  <script defer src="./js/data/tutorial.js"></script>
+  <script defer src="./js/core/tutorial-state.js"></script>
+  <script defer src="./js/core/achievement-state.js"></script>
   <script defer src="./js/core/state.js"></script>
+  <script defer src="./js/systems/research.js"></script>
   <script defer src="./js/core/statistics.js"></script>
+  <script defer src="./js/systems/achievements.js"></script>
   <script defer src="./js/systems/production.js"></script>
   <script defer src="./js/core/resources.js"></script>
+  <script defer src="./js/systems/tutorial.js"></script>
   <script defer src="./js/systems/manufacturing.js"></script>
   <script defer src="./js/systems/enhancement-chance.js"></script>
   <script defer src="./js/systems/ship-enhancement.js"></script>
@@ -903,7 +985,8 @@
   <script defer src="./js/core/combat-modifiers.js"></script>
   <script defer src="./js/core/selectors.js"></script>
   <script defer src="./js/core/actions.js"></script>
-  <script defer src="./js/ui/shell-render.js?v=4"></script>
+  <script defer src="./js/systems/research-protocols.js"></script>
+  <script defer src="./js/ui/shell-render.js?v=5"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=2"></script>
   <script defer src="./js/ui/combat-render.js?v=9"></script>
   <script defer src="./js/ui/planetary-render.js"></script>

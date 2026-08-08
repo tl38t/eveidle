@@ -18,16 +18,6 @@ const MOON_MINING_AREAS = [
 ];
 const ALL_MINING_AREAS = [...MINING_AREAS, ...MOON_MINING_AREAS];
 
-function getCargoUsed() {
-  return getCargoUsedFromState(gameState);
-}
-function getCargoCapacity() {
-  return 10000000;  // 测试阶段：一千万容量
-}
-function isCargoFull() {
-  return getCargoUsed() >= getCargoCapacity();
-}
-
 const ITEM_CATEGORIES = {
   ore:       ["凡晶石","灼烧岩","水硼砂","斜长岩","干焦岩","灰岩","艾克诺岩"],
   mineral:   ["三钛合金","类银超金属","类晶体胶矿","同位聚合体","超新星诺克石","基腹断岩","超噬矿","莫尔石"],

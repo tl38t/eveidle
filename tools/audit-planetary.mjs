@@ -182,20 +182,19 @@ region("K", "deploy 满槽拒绝", () => {
   assert(!res.changed && res.reason === "no-slots", "第 6 次应 no-slots");
 });
 
-// ================= L：collect 语义 =================
-region("L", "collect 收取与仓位边界", () => {
+// ================= L：collect 语义（无限库存全量收取） =================
+region("L", "collect 全量收取", () => {
   const state = freshState({ isk:500000, trit:100 });
   dispatch(state, { type:"planetary/deploy", planetType:"lava" }, NOW);
   const dep = state.planetary.deployments[0];
   dep.storage = 5;
-  const used = sandbox.getCargoUsedFromState(state);
   let ev = null; const un = sandbox.GameEvents.on("planetary:collected", e => { ev = e; });
-  const res = dispatch(state, { type:"planetary/collect", id:dep.id, cargoCapacity:used + 3 }, NOW);
+  const res = dispatch(state, { type:"planetary/collect", id:dep.id }, NOW);
   un();
-  assert(res.changed && res.quantity === 3 && dep.storage === 2, "collect 应按仓位收取 3，剩 2");
-  assert(ev && ev.payload.quantity === 3 && ev.payload.resourceId === "planetary:重金属", "planetary:collected 负载异常");
+  assert(res.changed && res.quantity === 5 && dep.storage === 0, "collect 应全量收取 5，归零");
+  assert(ev && ev.payload.quantity === 5 && ev.payload.resourceId === "planetary:重金属", "planetary:collected 负载异常");
   dep.storage = 0;
-  const emptyRes = dispatch(state, { type:"planetary/collect", id:dep.id, cargoCapacity:used + 3 }, NOW);
+  const emptyRes = dispatch(state, { type:"planetary/collect", id:dep.id }, NOW);
   assert(!emptyRes.changed && emptyRes.reason === "empty", "空仓收取应返回 empty");
 });
 
@@ -646,7 +645,7 @@ region("ZK", "在线 6 小时满仓停产", () => {
   assert(dep2.storage === storageMax, "满仓后不再增产");
   // 收取后恢复
   const dispatch = sandbox.dispatchGameAction;
-  dispatch(g, { type:"planetary/collect", id:"planet_1", cargoCapacity:10000000 }, now + 20000);
+  dispatch(g, { type:"planetary/collect", id:"planet_1" }, now + 20000);
   // 采集后 storage 应减少
   const dep3 = sandbox.gameState.planetary.deployments[0];
   assert(dep3.storage < storageMax, "收取后 storage 减少（" + dep3.storage + " < " + storageMax + "）");

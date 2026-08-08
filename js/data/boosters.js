@@ -136,6 +136,9 @@ const BOOSTER_RECIPES = [];
     BOOSTER_RECIPES.push({
       id,
       itemId,
+      // 正式中文名称：与 BOOSTER_ITEMS[id].name 同源（系列名·品质名），
+      // 是 UI 唯一允许的显示字段；id 仅作稳定内部键与调试用，禁止外泄到界面。
+      name,
       series:seriesKey,
       quality:qualityKey,
       level,

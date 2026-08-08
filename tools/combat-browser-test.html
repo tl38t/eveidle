@@ -1,0 +1,525 @@
+<!--
+  战斗系统浏览器验收页（问题1 燃料告警 / 问题2 per-ship 维修）
+  通过 iframe 加载真实 index.html，在 iframe.contentWindow 中操作真实游戏代码与真实 DOM。
+  交互步骤（指派/开始战斗/选择舰船/进入死亡空间）一律使用真实 DOM 点击（.click()），
+  不得用直接 dispatchGameAction 调用替代；"舰船被击毁"通过真实死亡处理入口 beginCombatRecovery()
+  （即 combatTick 在舰船阵亡时调用的同一函数）触发，并非伪造状态。
+  用法：浏览器打开 http://localhost:PORT/tools/combat-browser-test.html （PORT 来自本地 serve）
+-->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>战斗浏览器验收</title>
+<style>
+body { font-family: monospace; background: #0a0f18; color: #c8d8e8; padding: 20px; }
+h1 { color: #d4a843; }
+h2 { color: #8ac8ff; font-size: 14px; margin-top: 20px; }
+.pass { color: #4ac87a; }
+.fail { color: #e05555; }
+.warn { color: #d4a843; }
+.log { margin: 4px 0; font-size: 13px; }
+.section { margin: 16px 0; padding: 8px; border-left: 2px solid #2a3a4a; }
+#frame-box { border: 1px solid #2a3a4a; margin: 12px 0; }
+#frame-box iframe { width: 100%; height: 800px; border: none; background: #0a0f18; }
+summary { cursor: pointer; font-weight: bold; margin-bottom: 8px; }
+.btn { background:#1a2a3a; color:#c8d8e8; border:1px solid #2a3a4a; padding:4px 12px; cursor:pointer; margin:4px; border-radius:3px; }
+.btn:hover { background:#2a3a4a; }
+</style>
+</head>
+<body>
+<h1>⚔ 战斗浏览器验收（问题1 / 问题2）</h1>
+<p style="color:#6a7a8e;font-size:13px;">通过 iframe 加载真实 index.html，真实 DOM 点击驱动</p>
+<button class="btn" onclick="runAll()">▶ 运行全部测试</button>
+<button class="btn" onclick="clearLog()">清空日志</button>
+<div id="frame-box"><iframe id="game-frame" src="../index.html"></iframe></div>
+<div id="output"></div>
+
+<script>
+var out = document.getElementById("output");
+var pass = 0, fail = 0, skip = 0, total = 0;
+var consoleErrors = 0, pageErrors = 0, rejections = 0, resourceErrors = 0;
+var tests = [];
+
+function log(msg, cls) { var d = document.createElement("div"); d.className = "log " + (cls || ""); d.textContent = msg; out.appendChild(d); }
+function clearLog() {
+  out.innerHTML = ""; pass = 0; fail = 0; skip = 0; total = 0;
+  consoleErrors = 0; pageErrors = 0; rejections = 0; resourceErrors = 0;
+}
+
+function test(name, fn) {
+  tests.push(function(win) {
+    try {
+      var result = fn(win);
+      if (result === true || result === undefined) { pass++; log("✅ " + name, "pass"); }
+      else { fail++; log("❌ " + name + " → " + result, "fail"); }
+    } catch(e) {
+      fail++; log("❌ " + name + " → 异常: " + e.message + (e.stack ? " at " + e.stack.split("\n")[1] : ""), "fail");
+    }
+    total++;
+  });
+}
+
+function runAll() {
+  clearLog();
+  var iframe = document.getElementById("game-frame");
+  var win = iframe.contentWindow;
+  if (!win || !win.gameState) { log("⏳ iframe 未加载完成，等待..."); setTimeout(function(){runAll();}, 500); return; }
+  log("=== " + tests.length + " 项测试 ===", "section");
+  var origOnError = win.onerror;
+  win.onerror = function(msg, url, line) { pageErrors++; return false; };
+  var origOnRejection = win.onunhandledrejection;
+  win.onunhandledrejection = function() { rejections++; };
+  var origConsoleError = win.console.error;
+  win.console.error = function() { consoleErrors++; origConsoleError.apply(win, arguments); };
+  for (var i = 0; i < tests.length; i++) tests[i](win);
+  win.onerror = origOnError;
+  win.onunhandledrejection = origOnRejection;
+  win.console.error = origConsoleError;
+  log("", "section");
+  log("控制台错误: " + consoleErrors + " 页面错误: " + pageErrors + " 未捕获rejection: " + rejections + " 资源错误: " + resourceErrors, "");
+  log("==== 结果: PASS=" + pass + " FAIL=" + fail + " SKIP=" + skip + " 总共=" + total + " ====", "section");
+  if (fail === 0 && skip === 0 && consoleErrors === 0 && pageErrors === 0 && rejections === 0 && resourceErrors === 0) {
+    log("★★★★★ RESULT=PASS ★★★★★", "pass");
+  } else {
+    log("RESULT=FAIL", "fail");
+    if (skip > 0) log("  SKIP 必须为 0", "warn");
+  }
+}
+
+// ========== 辅助函数 ==========
+function G(win) { return win.gameState; }
+
+function setupCombatFixture(win) {
+  var g = win.gameState;
+  var RR = win.ResourceRegistry;
+  if (!g.inventory) g.inventory = { ships: [], equipment: { instances: [], inventory: [] }, rigs: [] };
+  if (!g.equipment) g.equipment = { inventory: [], instances: [], nextInstanceId: 1 };
+  if (!g.equipment.instances) g.equipment.instances = [];
+  if (!g.shipAssignments) g.shipAssignments = {};
+  if (!g.skills) g.skills = {};
+  // 注入两艘战斗舰 + 各装一把 t1_small_laser（燃料消耗型武器，便于燃料告警用例）
+  g.inventory.ships = [
+    { shipId:"rifter", instanceId:"ship_A", builtAt:1, fitted:{high:["eq_A"],mid:[],low:[],rig:[]}, enhancementLevel:0 },
+    { shipId:"rifter", instanceId:"ship_B", builtAt:1, fitted:{high:["eq_B"],mid:[],low:[],rig:[]}, enhancementLevel:0 }
+  ];
+  g.equipment.instances = [
+    { instanceId:"eq_A", itemId:"t1_small_laser", enhancementLevel:0, installedOn:"ship_A" },
+    { instanceId:"eq_B", itemId:"t1_small_laser", enhancementLevel:0, installedOn:"ship_B" }
+  ];
+  // 资源充足
+  RR.set(g, "consumable:fuel", 5000000);
+  // 战斗技能拉满，过 level-locked
+  for (var k of ["laserOps","cannonOps","missileOperations","shieldOperation","armorReinforcement","hullEngineering","capacitorManagement"]) {
+    if (!g.skills[k]) g.skills[k] = { lvl: 200, xp: 0 }; else g.skills[k].lvl = 200;
+  }
+  // 重置战斗状态
+  g.combat.active = false;
+  g.combat.repairs = {};
+  g.combat.resumeAfterRepair = null;
+  g.combat.activeShip = "ship_A";
+  g.combat.mode = "belt";
+  g.combat.viewMode = "belt";
+  g.combat.enemies = [];
+  g.combat.currentEnemy = null;
+  g.combat.wave = 1;
+  g.shipAssignments.combat = "ship_A";
+  g.currentAction = g.currentAction || {};
+  g.currentAction.active = false;
+  g.currentAction.skill = null;
+  // 取得默认死亡空间（id + 通行密钥材料），并备足密钥
+  var disp0 = win.getCombatDisplayState(g, Date.now());
+  var ds0 = disp0 && disp0.deathspace;
+  g._dsId = ds0 ? ds0.id : (g.combat.viewDeathspaceId || g.combat.deathspaceId);
+  g._dsTicket = ds0 ? ds0.ticketMaterial : null;
+  if (g._dsTicket) RR.set(g, "special:" + g._dsTicket, 5);
+  // 无头环境避免 WebGL 挂载 3D 抛错（与维修/指派/燃料逻辑无关，仅测试桩）
+  win.mountCombat3D = function(){};
+}
+
+// showToast 是 shell-render.js 的词法函数，无法通过重写 window.showToast 拦截；
+// 直接读取真实 .queue-toast DOM 断言文案（定时器在 runAll 同步结束后才触发移除）。
+function clearToasts(win) { var ts = win.document.querySelectorAll(".queue-toast"); for (var i = 0; i < ts.length; i++) ts[i].remove(); }
+function toastContains(win, substr) {
+  var ts = win.document.querySelectorAll(".queue-toast");
+  for (var i = 0; i < ts.length; i++) { if ((ts[i].textContent || "").indexOf(substr) >= 0) return true; }
+  return false;
+}
+
+function getGrid(win) { return win.document.getElementById("hangar-ship-grid"); }
+function shipCombatBtn(win, sid) { var g = getGrid(win); if (!g) return null; return g.querySelector('[data-ship-action="combat"][data-sid="' + sid + '"]'); }
+function startBtn(win) { return win.document.getElementById("btn-start-combat"); }
+function stopBtn(win) { return win.document.getElementById("btn-stop-combat"); }
+function repairBadge(win, sid) { var g = getGrid(win); if (!g) return null; return g.querySelector('[data-repair-ship="' + sid + '"]'); }
+function repairRemain(win, sid) { var b = repairBadge(win, sid); if (!b) return null; var s = b.querySelector(".repair-remaining"); return s ? parseInt(s.textContent, 10) : null; }
+
+// ========== 存在性 ==========
+test("iframe 加载且 gameState.combat 就绪", function(win) {
+  return (win.gameState && win.gameState.combat) ? true : "gameState.combat 不存在";
+});
+test("战斗系统函数已挂载（beginCombatRecovery/beginShipRepair/isShipUnderRepair/updateCombatRecovery/SaveManager/getCombatDisplayState）", function(win) {
+  if (typeof win.beginCombatRecovery !== "function") return "beginCombatRecovery 缺失";
+  if (typeof win.beginShipRepair !== "function") return "beginShipRepair 缺失";
+  if (typeof win.isShipUnderRepair !== "function") return "isShipUnderRepair 缺失";
+  if (typeof win.updateCombatRecovery !== "function") return "updateCombatRecovery 缺失";
+  if (!win.SaveManager) return "SaveManager 缺失";
+  if (typeof win.getCombatDisplayState !== "function") return "getCombatDisplayState 缺失";
+  return true;
+});
+
+// ========== 一、真实浏览器交互测试（10 子场景，真实 DOM 点击） ==========
+
+// 一(1) A 被击毁 → 进入维修
+test("一(1) A 被击毁→进入维修（真实死亡处理 beginCombatRecovery）", function(win) {
+  setupCombatFixture(win);
+  win.switchPage("combat"); win.renderCombatPanel(Date.now());
+  win.beginCombatRecovery(); // 真实死亡处理入口（combatTick 在舰船阵亡时调用同一函数）
+  var g = win.gameState;
+  if (!g.combat.repairs.ship_A) return "repairs.ship_A 未写入";
+  if (!(g.combat.repairs.ship_A > 0)) return "repairs.ship_A 时间戳非法";
+  if (!win.isShipUnderRepair(g, "ship_A", Date.now())) return "isShipUnderRepair(A) 应为 true";
+  return true;
+});
+
+// 一(2) 机库：A 战斗指派按钮显示维修中 + 禁用
+test("一(2) 机库 A 战斗指派按钮显示维修中+禁用", function(win) {
+  setupCombatFixture(win);
+  win.beginCombatRecovery();
+  win.switchPage("hangar"); win.renderHangarPanel();
+  var btn = shipCombatBtn(win, "ship_A");
+  if (!btn) return "未找到 A 的战斗指派按钮";
+  if (btn.disabled !== true) return "A 维修中按钮应禁用";
+  if ((btn.title || "").indexOf("维修") < 0) return "A 按钮 title 应含『维修』提示，实际=" + btn.title;
+  if (!repairBadge(win, "ship_A")) return "A 维修徽标缺失";
+  if (!(repairRemain(win, "ship_A") > 0)) return "A 维修剩余时间应>0";
+  return true;
+});
+
+// 一(3) 真实点击将健康舰 B 指派战斗
+test("一(3) 真实点击将健康舰 B 指派战斗", function(win) {
+  setupCombatFixture(win);
+  win.beginCombatRecovery(); // A 维修
+  win.switchPage("hangar"); win.renderHangarPanel();
+  var btnB = shipCombatBtn(win, "ship_B");
+  if (!btnB) return "未找到 B 按钮";
+  if (btnB.disabled) return "B 健康，按钮不应禁用";
+  btnB.click(); // 真实 DOM 点击 → 委派处理器 hangar/toggleAssignment
+  var g = win.gameState;
+  if (g.combat.activeShip !== "ship_B") return "点击后 activeShip 应为 ship_B，实际=" + g.combat.activeShip;
+  if (g.shipAssignments.combat !== "ship_B") return "shipAssignments.combat 应为 ship_B";
+  if (!g.combat.repairs.ship_A) return "指派 B 不应清除 A 的维修条目";
+  return true;
+});
+
+// 一(4) 真实点击开始星带战斗，B 进入
+test("一(4) 真实点击开始星带战斗，B 进入", function(win) {
+  setupCombatFixture(win);
+  win.beginCombatRecovery();
+  win.switchPage("hangar"); win.renderHangarPanel();
+  shipCombatBtn(win, "ship_B").click(); // 指派 B
+  win.switchPage("combat"); win.renderCombatPanel(Date.now());
+  var sb = startBtn(win);
+  if (!sb) return "未找到开始战斗按钮";
+  if (sb.disabled) return "B 健康，开始按钮不应禁用";
+  sb.click(); // 真实点击 → startCombatEncounter → combat/start
+  var g = win.gameState;
+  if (!g.combat.active) return "战斗未激活";
+  if (g.combat.mode !== "belt") return "模式应为 belt，实际=" + g.combat.mode;
+  if (g.combat.activeShip !== "ship_B") return "activeShip 应为 B";
+  if (!g.combat.repairs.ship_A) return "B 进入不应清除 A 维修";
+  return true;
+});
+
+// 一(5) 返回机库，A 仍显示正确维修剩余时间
+test("一(5) 返回机库，A 仍显示正确维修剩余时间", function(win) {
+  setupCombatFixture(win);
+  win.beginCombatRecovery(); // A until = now+180000
+  win.switchPage("hangar"); win.renderHangarPanel();
+  var badge = repairBadge(win, "ship_A");
+  if (!badge) return "A 维修徽标缺失";
+  var rem = repairRemain(win, "ship_A");
+  if (!(rem > 0)) return "剩余时间应>0，实际=" + rem;
+  var expected = Math.ceil((win.getShipRepairUntil(win.gameState, "ship_A") - Date.now()) / 1000);
+  if (Math.abs(rem - expected) > 1) return "剩余时间不符：DOM=" + rem + " 期望≈" + expected;
+  return true;
+});
+
+// 一(6) 真实点击选择维修中的 A 被拒绝（清晰提示）
+test("一(6) 真实点击选择维修中的 A 被拒绝（清晰提示）", function(win) {
+  setupCombatFixture(win);
+  win.beginCombatRecovery(); // A 维修
+  win.switchPage("hangar"); win.renderHangarPanel();
+  var btnA = shipCombatBtn(win, "ship_A");
+  if (!btnA) return "未找到 A 按钮";
+  // 清晰提示 = 按钮禁用 + title 含维修说明（真实 UI 拒绝机制）
+  if (btnA.disabled !== true) return "A 维修中按钮应禁用（清晰提示）";
+  if ((btnA.title || "").indexOf("维修") < 0) return "A 按钮 title 应有维修提示";
+  // 真实点击禁用按钮不会派发 click → 指派不变、维修条目保留
+  btnA.click();
+  var g = win.gameState;
+  if (!g.combat.repairs.ship_A) return "A 维修条目应保留";
+  // 补充：即便强行点击（解除禁用），处理器仍弹出清晰拒绝提示（真实 toast 路径）
+  clearToasts(win);
+  btnA.disabled = false;
+  btnA.click();
+  btnA.disabled = true;
+  if (!toastContains(win, "维修")) return "强行点击应弹出维修拒绝提示 toast";
+  return true;
+});
+
+// 一(7) B 被击毁后，A、B 各自独立维修
+test("一(7) B 被击毁后 A、B 各自独立维修", function(win) {
+  setupCombatFixture(win);
+  win.beginCombatRecovery(); // A 维修（activeShip=A）
+  win.switchPage("hangar"); win.renderHangarPanel();
+  shipCombatBtn(win, "ship_B").click(); // B 成为 active
+  win.beginCombatRecovery(); // B 维修（activeShip=B）
+  var g = win.gameState;
+  if (!g.combat.repairs.ship_A) return "A 维修条目丢失";
+  if (!g.combat.repairs.ship_B) return "B 维修条目缺失";
+  if (Object.keys(g.combat.repairs).length !== 2) return "应恰好两条独立维修条目，实际=" + JSON.stringify(g.combat.repairs);
+  // 独立性：清除 A 的维修不应影响 B（反之亦然）
+  win.finishShipRepair(g, "ship_A");
+  if (!g.combat.repairs.ship_B) return "清除 A 维修后 B 应不受影响";
+  if (g.combat.repairs.ship_A) return "A 应已被清除";
+  win.switchPage("hangar"); win.renderHangarPanel();
+  if (!repairBadge(win, "ship_B")) return "机库缺少 B 维修徽标";
+  return true;
+});
+
+// 一(8) 推进到 A 到期而 B 未到期，仅 A 恢复
+test("一(8) 推进到 A 到期而 B 未到期，仅 A 恢复", function(win) {
+  setupCombatFixture(win);
+  var now = Date.now();
+  win.beginShipRepair(win.gameState, "ship_A", now + 100000);
+  win.beginShipRepair(win.gameState, "ship_B", now + 300000);
+  win.updateCombatRecovery(now + 200000); // 模拟离线返回：越过 A、未到 B
+  var g = win.gameState;
+  if (g.combat.repairs.ship_A) return "A 过期后应清除";
+  if (!g.combat.repairs.ship_B) return "B 未到期应保留";
+  if (!win.isShipUnderRepair(g, "ship_B", now + 200000)) return "B 仍应维修中";
+  if (win.isShipUnderRepair(g, "ship_A", now + 200000)) return "A 不应仍维修";
+  return true;
+});
+
+// 一(9) 存盘→读档后双舰维修状态正确
+test("一(9) 存盘→读档后双舰维修状态正确", function(win) {
+  setupCombatFixture(win);
+  var now = Date.now();
+  win.beginShipRepair(win.gameState, "ship_A", now + 100000);
+  win.beginShipRepair(win.gameState, "ship_B", now + 300000);
+  win.SaveManager.save();
+  win.SaveManager.load();
+  var g = win.gameState;
+  if (!g.combat.repairs.ship_A || !g.combat.repairs.ship_B) return "读档后维修条目丢失";
+  if (g.combat.repairUntil !== 0 || g.combat.destroyedShip !== null) return "读档后旧字段未清零";
+  win.switchPage("hangar"); win.renderHangarPanel();
+  if (!repairBadge(win, "ship_A") || !repairBadge(win, "ship_B")) return "读档后机库维修徽标缺失";
+  return true;
+});
+
+// 一(10) 死亡空间：健康舰可进入，维修舰不可，密钥不返还/副本不重建
+test("一(10) 死亡空间：健康舰可进入，维修舰不可，密钥不返还/副本不重建", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  win.beginCombatRecovery(); // A 维修
+  win.switchPage("hangar"); win.renderHangarPanel();
+  shipCombatBtn(win, "ship_B").click(); // B 健康 active
+  g.combat.viewMode = "deathspace";
+  g.combat.viewDeathspaceId = g._dsId;
+  g.combat.deathspaceId = g._dsId;
+  var RR = win.ResourceRegistry;
+  var ticketBefore = g._dsTicket ? RR.get(g, "special:" + g._dsTicket) : 999;
+  win.switchPage("combat"); win.renderCombatPanel(Date.now());
+  var sb = startBtn(win);
+  if (!sb) return "未找到开始按钮";
+  if (sb.disabled) return "健康舰 B 开始按钮不应禁用";
+  sb.click(); // 真实点击 → startCombatEncounter → combat/enterDeathspace
+  if (!g.combat.active) return "健康舰 B 应成功进入死亡空间";
+  if (g.combat.mode !== "deathspace") return "模式应为 deathspace";
+  if (g.combat.activeShip !== "ship_B") return "进入后 activeShip 应为 B";
+  if (g._dsTicket) {
+    var ticketAfterEnter = RR.get(g, "special:" + g._dsTicket);
+    if (ticketAfterEnter !== ticketBefore - 1) return "进入应消耗1枚密钥：before=" + ticketBefore + " after=" + ticketAfterEnter;
+  }
+  var shipsBefore = g.inventory.ships.length;
+  var stb = stopBtn(win);
+  if (!stb) return "未找到停止按钮";
+  stb.click(); // 真实点击撤离
+  if (g.combat.active) return "撤离后应结束战斗";
+  if (g._dsTicket) {
+    var ticketAfterLeave = RR.get(g, "special:" + g._dsTicket);
+    if (ticketAfterLeave !== ticketBefore - 1) return "撤离后密钥不应返还：before=" + ticketBefore + " after=" + ticketAfterLeave;
+  }
+  if (g.inventory.ships.length !== shipsBefore) return "不应因撤离重建舰船副本";
+  // 维修舰 A 作为 active 时，开始按钮应禁用（不可进入死亡空间）
+  g.combat.active = false;
+  g.combat.activeShip = "ship_A"; // A 维修中
+  g.shipAssignments.combat = "ship_A";
+  win.switchPage("combat"); win.renderCombatPanel(Date.now());
+  var sb2 = startBtn(win);
+  if (!sb2) return "未找到开始按钮(2)";
+  if (sb2.disabled !== true) return "维修舰为 active 时开始按钮应禁用（不可进入死亡空间）";
+  sb2.click(); // 禁用按钮点击不会进入
+  if (g.combat.active) return "维修舰不应进入死亡空间";
+  if (g.inventory.ships.length !== shipsBefore) return "维修舰尝试进入不应重建副本";
+  return true;
+});
+
+// ========== 二(6) 燃料不足 UI 非阻断 toast（约定文案） ==========
+// 注意：capacitorManagement 等技能会降低燃料倍率，使 volleyFuel 可能低至 1；
+// 故将燃料设为 0（必然 < 任意正 volleyFuel）以稳定触发 warning。
+test("二(6) 星带出击燃料不足→UI 非阻断 toast（约定文案）", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  win.switchPage("hangar"); win.renderHangarPanel();
+  shipCombatBtn(win, "ship_B").click(); // B 健康 active
+  win.ResourceRegistry.set(g, "consumable:fuel", 0); // 必然低于一轮齐射
+  win.switchPage("combat"); win.renderCombatPanel(Date.now());
+  clearToasts(win); // 隔离本次点击产生的 toast
+  var sb = startBtn(win);
+  if (!sb) return "未找到开始按钮";
+  if (sb.disabled) return "B 健康，开始按钮不应禁用（disabled=" + sb.disabled + "）";
+  sb.click();
+  var ts = win.document.querySelectorAll(".queue-toast");
+  var txts = []; for (var i = 0; i < ts.length; i++) txts.push(ts[i].textContent);
+  if (!toastContains(win, "燃料不足以完成一轮齐射")) return "未出现约定燃料告警 toast active=" + g.combat.active + " toasts=" + JSON.stringify(txts);
+  if (!g.combat.active) return "燃料不足不应阻断出击（仍应进入战斗）";
+  return true;
+});
+
+test("二(6) 死亡空间进入燃料不足→UI 非阻断 toast", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  win.switchPage("hangar"); win.renderHangarPanel();
+  shipCombatBtn(win, "ship_B").click();
+  g.combat.viewMode = "deathspace";
+  g.combat.viewDeathspaceId = g._dsId;
+  g.combat.deathspaceId = g._dsId;
+  win.ResourceRegistry.set(g, "consumable:fuel", 0);
+  win.switchPage("combat"); win.renderCombatPanel(Date.now());
+  clearToasts(win);
+  var sb = startBtn(win);
+  if (!sb) return "未找到开始按钮";
+  sb.click();
+  var ts = win.document.querySelectorAll(".queue-toast");
+  var txts = []; for (var i = 0; i < ts.length; i++) txts.push(ts[i].textContent);
+  if (!toastContains(win, "燃料不足以完成一轮齐射")) return "死亡空间未出现约定燃料告警 toast active=" + g.combat.active + " mode=" + g.combat.mode + " toasts=" + JSON.stringify(txts);
+  if (!g.combat.active || g.combat.mode !== "deathspace") return "死亡空间燃料不足不应阻断进入";
+  return true;
+});
+
+// ========== 三、正式存档入口验证（真实 SaveManager 导出/导入） ==========
+test("三(1) 正式 SaveManager 导出/导入保留 repairs", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  var now = Date.now();
+  win.beginShipRepair(g, "ship_A", now + 100000);
+  win.beginShipRepair(g, "ship_B", now + 300000);
+  var json = win.SaveManager.adapter.export(g); // 真实序列化
+  g.lastSaveTime = Date.now();
+  var okImp = win.SaveManager.importData(json); // 真实导入（含迁移链）
+  if (!okImp) return "importData 返回失败";
+  if (!g.combat.repairs.ship_A || !g.combat.repairs.ship_B) return "导入后 repairs 丢失";
+  if (g.combat.repairUntil !== 0 || g.combat.destroyedShip !== null) return "导入后旧字段未清零";
+  return true;
+});
+
+test("三(2) 旧档 destroyedShip+repairUntil 经迁移转为 repairs", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  var json = win.SaveManager.adapter.export(g);
+  var obj = JSON.parse(json);
+  obj.combat.repairs = {};
+  obj.combat.destroyedShip = "ship_A";
+  obj.combat.repairUntil = Date.now() + 180000;
+  obj.lastSaveTime = Date.now();
+  var okImp = win.SaveManager.importData(JSON.stringify(obj));
+  if (!okImp) return "importData 失败";
+  if (!g.combat.repairs.ship_A) return "旧档未迁移为 repairs[ship_A]";
+  if (g.combat.repairUntil !== 0 || g.combat.destroyedShip !== null) return "迁移后旧字段未清零";
+  return true;
+});
+
+test("三(3) 重复导入保持幂等（不产生重复条目）", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  var json = win.SaveManager.adapter.export(g);
+  var obj = JSON.parse(json);
+  obj.combat.repairs = {};
+  obj.combat.destroyedShip = "ship_A";
+  obj.combat.repairUntil = Date.now() + 180000;
+  obj.lastSaveTime = Date.now();
+  win.SaveManager.importData(JSON.stringify(obj));
+  win.SaveManager.importData(JSON.stringify(obj)); // 再导入一次
+  if (Object.keys(g.combat.repairs).length !== 1 || !g.combat.repairs.ship_A) return "重复导入产生重复/错误条目: " + JSON.stringify(g.combat.repairs);
+  return true;
+});
+
+test("三(4) 非法实例ID与非法时间戳被安全清理", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  var json = win.SaveManager.adapter.export(g);
+  var obj = JSON.parse(json);
+  obj.combat.repairs = {
+    ship_A: Date.now() + 100000,      // 合法
+    ghost_ship: Date.now() + 200000,  // 非法实例ID（不在舰队）
+    ship_B: null,                     // 非法时间戳
+    ship_C: 0                         // 非法时间戳(<=0)
+  };
+  obj.lastSaveTime = Date.now();
+  var okImp = win.SaveManager.importData(JSON.stringify(obj));
+  if (!okImp) return "importData 失败";
+  if (!g.combat.repairs.ship_A) return "合法条目被误删";
+  if (g.combat.repairs.ghost_ship) return "非法实例ID未清理";
+  if (g.combat.repairs.ship_B !== undefined) return "非法时间戳(ship_B=null)未清理";
+  if (g.combat.repairs.ship_C !== undefined) return "非法时间戳(ship_C=0)未清理";
+  if (Object.keys(g.combat.repairs).length !== 1) return "残留非法条目: " + JSON.stringify(g.combat.repairs);
+  return true;
+});
+
+test("三(5) 离线返回后每舰剩余维修时间按既有规则结算", function(win) {
+  setupCombatFixture(win);
+  var g = win.gameState;
+  var now = Date.now();
+  win.beginShipRepair(g, "ship_A", now + 100000);
+  win.beginShipRepair(g, "ship_B", now + 300000);
+  win.updateCombatRecovery(now + 200000); // 模拟离线返回：越过 A、未到 B
+  if (g.combat.repairs.ship_A) return "离线结算后已到期 A 应清除";
+  if (!g.combat.repairs.ship_B) return "离线结算后未到期 B 应保留";
+  var rem = Math.ceil((g.combat.repairs.ship_B - (now + 200000)) / 1000);
+  if (Math.abs(rem - 100) > 1) return "B 剩余维修时间应为100秒，实际=" + rem;
+  return true;
+});
+
+// ========== 最终统计 ==========
+test("console/page/resource/rejection 均为0", function(win) {
+  if (consoleErrors > 0) return "console.errors=" + consoleErrors;
+  if (pageErrors > 0) return "page errors=" + pageErrors;
+  if (rejections > 0) return "rejections=" + rejections;
+  if (resourceErrors > 0) return "resourceErrors=" + resourceErrors;
+  return true;
+});
+
+// ========== 无头自动运行（供 tools/run-combat-browser-test.mjs 采集 EXIT CODE） ==========
+(function setupAutorun() {
+  if (location.search.indexOf("autorun") < 0) return;
+  var attempts = 0;
+  function tryRun() {
+    attempts++;
+    var iframe = document.getElementById("game-frame");
+    var win = iframe && iframe.contentWindow;
+    if ((!win || !win.gameState || typeof win.renderHangarPanel !== "function") && attempts < 60) {
+      setTimeout(tryRun, 250); return;
+    }
+    try { runAll(); } catch (e) { log("AUTORUN 异常: " + e.message, "fail"); }
+    var mark = document.createElement("div");
+    mark.id = "autorun-done";
+    mark.textContent = "AUTORUN_DONE";
+    document.body.appendChild(mark);
+  }
+  window.addEventListener("load", function() { setTimeout(tryRun, 300); });
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>舰船工程 · 方案A v2（双一级Tab+二级子标签·对齐装备制造）[DEMO]</title>
+<style>
+  :root{
+    --bg:#0a0f16; --panel:#0b1119; --panel2:#141d29; --line:#1f2d3c;
+    --txt:#cdd9e5; --muted:#708196; --cyan:#69c0ed; --gold:#e8d8a0;
+    --t1:#5b7fa6; --mix:#a98bff; --cap:#f5c451; --sup:#ff7a59;
+    --ok:#3ddc84; --bad:#ff6b6b;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:radial-gradient(1200px 600px at 70% -10%,#13202e,#0a0f16 60%);color:var(--txt);
+    font-family:'Rajdhani','Segoe UI','Microsoft YaHei',system-ui,sans-serif;padding:18px}
+  .demo-note{font-size:12px;color:var(--muted);margin:0 0 14px;border-left:3px solid var(--cyan);padding-left:10px}
+  h2{font-size:15px;margin:0 0 10px;letter-spacing:.5px}
+  /* 顶部技能条（对齐装备制造 skill-info） */
+  .skill-bar{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px;margin-bottom:14px;
+    display:flex;align-items:center;gap:18px;font-size:12px}
+  .skill-bar .lv{font-weight:700;font-size:14px;color:var(--gold)}
+  .skill-bar .eff{color:var(--cyan)}
+  .skill-bar .spacer{margin-left:auto;color:var(--muted)}
+  /* 一级标签：对齐 .equipeng-category-tabs（segmented bar） */
+  .cat-tabs{display:grid;grid-template-columns:repeat(2,minmax(140px,1fr));margin-top:0;
+    background:var(--panel);border:1px solid var(--line);border-radius:4px 4px 0 0;overflow:hidden}
+  .cat-tab{min-height:44px;padding:0 14px;display:flex;align-items:center;justify-content:center;gap:8px;
+    color:var(--muted);background:var(--panel2);border:0;border-right:1px solid #0a0f16;
+    font:600 14px 'Rajdhani','Microsoft YaHei',sans-serif;cursor:pointer;transition:.15s}
+  .cat-tab:last-child{border-right:0}
+  .cat-tab:hover{color:#c8d0d8;background:#192534}
+  .cat-tab.active{color:#d9f1ff;background:linear-gradient(180deg,#2e5f8d,#244c71);box-shadow:inset 0 -3px var(--cyan)}
+  .cat-tab i{font-size:12px;opacity:.9}
+  /* 面板容器（对齐 .equipeng-workspace 底色） */
+  .pane{display:none;background:var(--panel);border:1px solid var(--line);border-top:0;border-radius:0 0 6px 6px;padding:14px}
+  .pane.on{display:block}
+  /* 二级子标签：对齐 .equipeng-rig-filters（pill） */
+  .subtabs{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center;padding:4px 2px 12px}
+  .subtab{font-size:12px;padding:5px 13px;border-radius:16px;border:1px solid var(--line);color:var(--muted);
+    background:#101a26;cursor:pointer;font-weight:600;transition:.15s}
+  .subtab:hover{color:#c8d0d8}
+  .subtab.on{color:#04121d;background:linear-gradient(90deg,#2e6fa8,#69c0ed);border-color:var(--cyan);font-weight:700}
+  .count{font-size:12px;color:var(--muted);margin-left:auto}
+  /* 部件栅格（对齐 .equipeng-recipe-grid） */
+  .comp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px}
+  .comp-card{border:1px solid var(--line);border-radius:5px;padding:11px;background:var(--panel2)}
+  .comp-card .nm{font-size:14px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+  .lvbadge{font-size:10px;padding:1px 7px;border-radius:10px;border:1px solid var(--line);color:var(--muted)}
+  .comp-card .cost{font-size:11px;color:var(--muted);margin:7px 0;line-height:1.5}
+  .comp-card .meta{font-size:11px;color:var(--txt)}
+  .comp-card .inv{font-size:11px;color:var(--cyan)}
+  .mk-btn{margin-top:9px;width:100%;padding:11px;border:none;border-radius:8px;background:linear-gradient(90deg,#2e6fa8,#69c0ed);
+    color:#04121d;font-weight:700;font-size:14px;cursor:pointer}
+  .mk-btn:disabled{background:#26323e;color:#5b6976;cursor:not-allowed}
+  /* 舰船总装：左栅格 + 右详情（对齐 .equipeng-workspace） */
+  .workspace{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(310px,.95fr);gap:10px}
+  .ship-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-content:start}
+  .ship-card{border:1px solid var(--line);border-radius:5px;padding:10px;background:var(--panel2);cursor:pointer;transition:.15s}
+  .ship-card:hover{border-color:var(--cyan);transform:translateY(-2px)}
+  .ship-card.sel{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+  .ship-card .ico{height:36px;display:flex;align-items:center;justify-content:center;margin-bottom:6px}
+  .ship-card .nm{font-size:14px;font-weight:600}
+  .ship-card .sub{font-size:11px;color:var(--muted);margin-top:2px}
+  .ship-card .st{font-size:10px;margin-top:5px}
+  .st-build{color:var(--ok)} .st-lock{color:var(--bad)} .st-bp{color:var(--gold)}
+  .tier-chip{font-size:9px;padding:1px 6px;border-radius:8px;border:1px solid;margin-left:6px;vertical-align:middle;font-weight:700}
+  .pager{display:flex;gap:6px;align-items:center;justify-content:center;margin-top:12px}
+  .pager button{padding:5px 12px;border:1px solid var(--line);border-radius:6px;background:var(--panel2);color:var(--txt);cursor:pointer;font-size:12px}
+  .pager button:disabled{color:#46535f;cursor:not-allowed}
+  .pager .pg{font-size:12px;color:var(--muted)}
+  /* 详情（对齐 .equipeng-detail） */
+  .detail{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:14px;align-self:start}
+  .detail-head{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:8px}
+  .detail-title{font-size:20px;font-weight:700}
+  .badge{font-size:11px;padding:2px 9px;border-radius:4px;border:1px solid var(--line)}
+  .flavor{font-size:12px;color:#aebfd2;line-height:1.6;margin:0 0 12px;
+    border-left:2px solid var(--cyan);padding-left:10px;background:rgba(105,192,237,.06);border-radius:0 4px 4px 0}
+  .viewer{position:relative;height:210px;border-radius:8px;background:radial-gradient(400px 190px at 50% 30%,#16263a,#070d14);
+    border:1px solid var(--cyan);box-shadow:0 0 22px rgba(105,192,237,.18) inset;overflow:hidden;display:flex;align-items:center;justify-content:center}
+  .viewer .nameplate{position:absolute;left:12px;bottom:10px;font-size:13px;color:var(--cyan);letter-spacing:1px;font-weight:600}
+  .viewer .hint{position:absolute;right:12px;top:10px;font-size:10px;color:var(--muted)}
+  .viewer svg{filter:drop-shadow(0 6px 18px rgba(105,192,237,.35))}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;margin:14px 0}
+  .stat{font-size:12px}
+  .stat .l{display:flex;justify-content:space-between;color:var(--muted);margin-bottom:3px}
+  .stat .bar{height:6px;border-radius:4px;background:#16202c;overflow:hidden}
+  .stat .bar i{display:block;height:100%;background:linear-gradient(90deg,#2e6fa8,#69c0ed)}
+  .req h4{font-size:12px;color:var(--muted);margin:0 0 8px;font-weight:600}
+  .req-row{display:flex;align-items:center;justify-content:space-between;font-size:12px;padding:6px 10px;border:1px solid var(--line);border-radius:6px;margin-bottom:6px;background:var(--panel)}
+  .req-row .have{font-size:11px}
+  .yes{color:var(--ok)} .no{color:var(--bad)}
+  .build-btn{margin-top:10px;width:100%;padding:11px;border:none;border-radius:8px;background:linear-gradient(90deg,#2e6fa8,#69c0ed);color:#04121d;font-weight:700;font-size:14px;cursor:pointer}
+  .build-btn:disabled{background:#26323e;color:#5b6976;cursor:not-allowed}
+</style>
+</head>
+<body>
+<p class="demo-note">DEMO · 方案A v2 —— 对齐装备制造页样式：① 两个<strong>一级标签</strong>（部件车间 / 舰船总装，segmented bar 风格）；② 部件车间下<strong>二级子标签=护卫/驱逐/巡洋/战列/旗舰/超级旗舰部件</strong>；③ 舰船总装下<strong>二级子标签=护盾激光系/装甲导弹系/结构火炮系/工业系/考古系</strong>；④ 每艘舰的 <code>flavor</code> 简介放在标题与 3D 之间。数据取自 ships.js 真实部件/舰船/简介。纯草样，未接逻辑。</p>
+
+<div class="skill-bar">
+  <span class="lv">舰船工程 Lv.42</span>
+  <span class="eff">总装效率 1.62×</span>
+  <span class="spacer">船坞 · 并行产线 ×2 · 已造舰船 14</span>
+</div>
+
+<div class="cat-tabs">
+  <div class="cat-tab active" data-tab="comp"><i class="fa-solid fa-screwdriver-wrench"></i> 部件车间</div>
+  <div class="cat-tab" data-tab="asm"><i class="fa-solid fa-anchor"></i> 舰船总装</div>
+</div>
+
+<!-- 部件车间 -->
+<div class="pane on" id="pane-comp">
+  <div class="subtabs" id="comp-subtabs"></div>
+  <div class="comp-grid" id="comp-grid"></div>
+</div>
+
+<!-- 舰船总装 -->
+<div class="pane" id="pane-asm">
+  <div class="subtabs" id="asm-subtabs"></div>
+  <div class="workspace">
+    <div>
+      <div class="ship-grid" id="ship-grid"></div>
+      <div class="pager" id="pager"></div>
+    </div>
+    <div class="detail" id="detail"></div>
+  </div>
+</div>
+
+<script>
+const TIER_COLOR={T1:'var(--t1)',混血:'var(--mix)',旗舰:'var(--cap)',超级旗舰:'var(--sup)'};
+const LINE_COLOR={'护盾激光':'#69c0ed','装甲导弹':'#ff9d6e','结构火炮':'#c9a0ff','工业':'#7fd6a0','考古':'#e8d8a0'};
+function shipSVG(tier,cls){
+  const c=TIER_COLOR[tier]||'#9fb3c8';
+  const w={护卫舰:30,驱逐舰:42,巡洋舰:54,战列舰:66,旗舰:82,超级旗舰:96,工业舰:46,考古舰:44}[cls]||42;
+  return `<svg viewBox="0 0 100 40" width="${w}"><g fill="${c}"><path d="M5 20 L70 12 L88 20 L70 28 Z"/><path d="M60 20 L92 8 L96 20 L92 32 Z" opacity=".7"/></g></svg>`;
+}
+/* ===== 部件数据：真实 SHIP_COMPONENT_RECIPES，按舰种档分 6 组 ===== */
+const COMP_TIERS=[
+ {id:"T1",label:"护卫部件",items:[
+   {name:"综合舰体组件",lv:1,t:63,cost:"三钛合金×40 · 类银超金属×6 · 重金属×7 · 稀有气体×4",inv:5},
+   {name:"动力控制核心",lv:1,t:42,cost:"三钛合金×28 · 类银超金属×6 · 稀有气体×5",inv:2},
+   {name:"舰船功能组件",lv:1,t:18,cost:"三钛合金×14 · 类银超金属×1 · 重金属×2",inv:0}]},
+ {id:"驱逐",label:"驱逐部件",items:[
+   {name:"驱逐舰综合舰体组件",lv:15,t:93,cost:"三钛×46 · 类银×16 · 重金属×6 · 稀有气体×3",inv:0},
+   {name:"驱逐舰动力控制核心",lv:15,t:62,cost:"三钛×29 · 类银×4 · 类晶体胶矿×2 · 重金属×3 · 稀有气体×3",inv:0},
+   {name:"驱逐舰舰船功能组件",lv:15,t:28,cost:"三钛×14 · 类银×4 · 稀有气体×3",inv:0}]},
+ {id:"巡洋",label:"巡洋部件",items:[
+   {name:"巡洋舰综合舰体组件",lv:35,t:137,cost:"三钛×43 · 类银×16 · 同位聚合体×6 · 同位素×6 · 重金属×4",inv:0},
+   {name:"巡洋舰动力控制核心",lv:35,t:93,cost:"三钛×27 · 类银×4 · 类晶体胶矿×3 · 同位聚合体×2 · 重金属×4 · 稀有气体×4",inv:0},
+   {name:"巡洋舰舰船功能组件",lv:35,t:42,cost:"三钛×15 · 类银×3 · 同位聚合体×1 · 稀有气体×4",inv:0}]},
+ {id:"战列",label:"战列部件",items:[
+   {name:"战列舰综合舰体组件",lv:55,t:195,cost:"三钛×40 · 同位聚合体×23 · 超新星诺克石×20 · 同位素×5 · 重金属×6 · 等离子体×10",inv:0},
+   {name:"战列舰动力控制核心",lv:55,t:133,cost:"三钛×28 · 同位聚合体×12 · 超新星诺克石×12 · 重金属×6 · 稀有气体×6 · 等离子体×5",inv:0},
+   {name:"战列舰舰船功能组件",lv:55,t:60,cost:"三钛×10 · 同位聚合体×5 · 超新星诺克石×7 · 稀有气体×6 · 等离子体×2",inv:0}]},
+ {id:"旗舰",label:"旗舰部件",items:[
+   {name:"旗舰综合舰体组件",lv:80,t:420,cost:"三钛×220 · 基腹断岩×11 · 超噬矿×7 · 铷×1 · 磁场聚合物×6",inv:0},
+   {name:"旗舰动力控制核心",lv:80,t:300,cost:"三钛×165 · 基腹断岩×7 · 超噬矿×5 · 铷×1 · 等离子体×5 · 超纯聚合气体×1",inv:0},
+   {name:"旗舰舰船功能组件",lv:80,t:180,cost:"三钛×110 · 基腹断岩×5 · 超噬矿×4 · 铷×1 · 磁场聚合物×4 · 聚合气体×1",inv:0}]},
+ {id:"超级旗舰",label:"超级旗舰部件",items:[
+   {name:"超级旗舰综合舰体组件",lv:90,t:630,cost:"三钛×340 · 基腹断岩×17 · 超噬矿×11 · 莫尔石×1 · 铷×3 · 磁场聚合物×8",inv:0},
+   {name:"超级旗舰动力控制核心",lv:90,t:450,cost:"三钛×255 · 基腹断岩×11 · 超噬矿×9 · 莫尔石×1 · 铷×2 · 等离子体×7 · 超纯聚合气体×1",inv:0},
+   {name:"超级旗舰舰船功能组件",lv:90,t:270,cost:"三钛×170 · 基腹断岩×7 · 超噬矿×6 · 莫尔石×1 · 铷×2 · 磁场聚合物×6 · 聚合气体×2",inv:0}]},
+];
+/* ===== 舰船数据：真实 SHIP_ASSEMBLY_RECIPES + flavor（来自 ships.js） ===== */
+const COMP_BASE={hull:"综合舰体组件",core:"动力控制核心",sys:"舰船功能组件"};
+const CT_PREFIX={T1:"",驱逐:"驱逐舰",巡洋:"巡洋舰",战列:"战列舰",旗舰:"旗舰",超级旗舰:"超级旗舰"};
+// [name, shipId, cls, tier, level, line, compTier, h, c, s, flavor]
+const RAW=[
+ ["星矛级","rifter","护卫舰","T1",1,"护盾激光","T1",2,2,2,"苍穹劫团风格，高护盾、高电容，适配激光武器"],
+ ["铁卫级","kestrel","护卫舰","T1",1,"装甲导弹","T1",2,2,2,"赤誓教团风格，高装甲、高锁定，适配导弹武器"],
+ ["闪刃级","atron","护卫舰","T1",1,"结构火炮","T1",2,2,2,"静默集群风格，高结构、高速度，适配炮台武器"],
+ ["拓岩级","miner_frigate","工业舰","T1",1,"工业","T1",2,2,2,"采矿专用护卫舰，放大采矿装备效能"],
+ ["捕云级","gas_frigate","工业舰","T1",1,"工业","T1",2,2,2,"采气专用护卫舰，放大采气装备效能"],
+ ["觅迹级","heron","考古舰","T1",1,"考古","T1",2,2,2,"入门级考古护卫舰，专为扫描信号与解析遗迹而生，轻装应对微弱的信号反噬"],
+ ["雷光级","raylight","驱逐舰","T1",15,"护盾激光","驱逐",3,3,4,"护盾专精驱逐舰，以三门小型激光武器和持续护盾维修承担正面火力"],
+ ["矛隼级","spearfalcon","驱逐舰","T1",15,"装甲导弹","驱逐",3,3,4,"装甲专精驱逐舰，以三门轻型导弹和强化装甲维修应对持久战"],
+ ["疾锋级","swiftblade","驱逐舰","T1",15,"结构火炮","驱逐",3,3,4,"结构专精驱逐舰，以三门小型炮台、速度和强化结构维修进行高风险作战"],
+ ["凿岩级","miner_destroyer","工业舰","T1",15,"工业","驱逐",3,3,4,"采矿专用驱逐舰，在低级工业舰与巡洋级采矿平台之间承上启下"],
+ ["采集者级","gas_destroyer","工业舰","T1",15,"工业","驱逐",3,3,4,"采气专用驱逐舰，在低级工业舰与巡洋级采气平台之间承上启下"],
+ ["疾风级","gale","驱逐舰","混血",20,"护盾激光","驱逐",4,4,5,"苍穹劫团联合技术驱逐舰，在常规驱逐舰框架上强化护盾与激光火力"],
+ ["血刺级","bloodthorn","驱逐舰","混血",20,"装甲导弹","驱逐",4,4,5,"赤誓教团联合技术驱逐舰，在常规驱逐舰框架上强化装甲与导弹火力"],
+ ["暗影级","umbra","驱逐舰","混血",20,"结构火炮","驱逐",4,4,5,"静默集群联合技术驱逐舰，在常规驱逐舰框架上强化结构与射弹火力"],
+ ["曙光级","dawnlight","巡洋舰","T1",35,"护盾激光","巡洋",4,5,4,"护盾专精巡洋舰，以四门中型激光炮和厚重护盾维持正面火力"],
+ ["战隼级","warfalcon","巡洋舰","T1",35,"装甲导弹","巡洋",4,5,4,"装甲专精巡洋舰，以四门重型导弹和强化装甲维修进行持久压制"],
+ ["烈锋级","stormblade","巡洋舰","T1",35,"结构火炮","巡洋",4,5,4,"结构专精巡洋舰，以四门中型射弹炮、机动和高效结构维修承担高风险突击"],
+ ["岩脊级","miner_cruiser","工业舰","T1",35,"工业","巡洋",4,5,4,"采矿专用巡洋舰，以更多工业槽位承载中级采矿装备"],
+ ["云舶级","gas_cruiser","工业舰","T1",35,"工业","巡洋",4,5,4,"采气专用巡洋舰，以更多工业槽位承载中级采气装备"],
+ ["驮星级","dolphin","工业舰","T1",35,"工业","巡洋",4,4,6,"工业支援巡洋舰；在船坞中协调采矿作业，也可被分配至冶炼工作"],
+ ["曜光级","sunlance","战列舰","T1",55,"护盾激光","战列",6,5,5,"护盾专精战列舰，以五门大型激光炮和重型护盾阵列维持正面火力"],
+ ["堡隼级","fortfalcon","战列舰","T1",55,"装甲导弹","战列",6,5,5,"装甲专精战列舰，以五门大型导弹发射器和强化装甲维修进行持久压制"],
+ ["震锋级","thunderblade","战列舰","T1",55,"结构火炮","战列",6,5,5,"结构专精战列舰，以五门大型射弹炮、机动和高效结构维修实施重装突击"],
+ ["巨像级","miner_battleship","工业舰","T1",55,"工业","战列",6,5,5,"大型采矿工业舰，以高槽规模和工业系统支撑长时间采矿作业"],
+ ["云海级","gas_battleship","工业舰","T1",55,"工业","战列",6,5,5,"大型采气工业舰，以高槽规模和工业系统支撑长时间采气作业"],
+ ["破晓级","dawnbreaker","战列舰","混血",60,"护盾激光","战列",6,5,5,"苍穹劫团混血战列舰，在曜光级框架上以护盾与聚焦激光压制战场"],
+ ["赤垒级","crimson_bastion","战列舰","混血",60,"装甲导弹","战列",6,5,5,"赤誓教团混血战列舰，在堡隼级框架上以装甲与重型导弹持久压制"],
+ ["幽构级","spectre_frame","战列舰","混血",60,"结构火炮","战列",6,5,5,"静默集群混血战列舰，在震锋级框架上以结构与射弹炮实施重装突击"],
+ ["天穹级","firmament","旗舰","T1",80,"护盾激光","旗舰",10,8,8,"曜光技术线的护盾·激光旗舰，以偏导护盾抵挡敌方编队的首轮重击"],
+ ["重垒级","heavy_bastion","旗舰","T1",80,"装甲导弹","旗舰",10,8,8,"堡隼技术线的装甲·导弹旗舰，以应激装甲维持长时间阵地作战"],
+ ["裂界级","riftbreaker","旗舰","T1",80,"结构火炮","旗舰",10,8,8,"震锋技术线的结构·火炮旗舰，在结构受损后逐步释放过载火力"],
+ ["山海级","orca","工业舰","T1",80,"工业","旗舰",10,8,10,"工业旗舰，在船坞中为整个采矿编队提供最高级别的协调加成"],
+ ["星冕级","starcrown","超级旗舰","超级旗舰",90,"护盾激光","超级旗舰",18,16,18,"护盾·激光超级旗舰，将偏导护盾扩展到每轮前两次护盾命中"],
+ ["恒城级","eternal_fortress","超级旗舰","超级旗舰",90,"装甲导弹","超级旗舰",18,16,18,"装甲·导弹超级旗舰，以强化应激装甲承受深层0.0的持续火力"],
+ ["裁决级","arbiter","超级旗舰","超级旗舰",90,"结构火炮","超级旗舰",18,16,18,"结构·火炮超级旗舰，以强化结构过载换取终局级单体火力"],
+ ["追迹级","tracer","考古舰","T1",15,"考古","驱逐",3,3,4,"轻型考古驱逐舰，强化扫描阵列以追踪深层遗迹信号，具备初步的信号反噬抗性"],
+ ["星图级","starmap","考古舰","T1",35,"考古","巡洋",4,5,4,"中型考古巡洋舰，以更强的扫描解析能力测绘复杂遗迹，并加固对信号反噬的防护"],
+ ["远镜级","farscope","考古舰","T1",55,"考古","战列",6,5,5,"大型考古战列舰，凭借远程扫描阵列深入解析大型遗迹，厚重装甲承受强烈信号反噬"],
+ ["启明级","illuminator","考古舰","T1",80,"考古","旗舰",10,8,10,"考古旗舰，搭载最高级扫描与遗迹解析矩阵，能在最强的信号反噬中稳定作业"],
+];
+const SHIPS=RAW.map(r=>({name:r[0],shipId:r[1],cls:r[2],tier:r[3],lvl:r[4],line:r[5],ct:r[6],h:r[7],c:r[8],s:r[9],flavor:r[10]}));
+const INV={hull:5,core:5,sys:5};
+// 舰种/角色标签：战斗/考古沿用舰种；工业舰按用途拆成 矿石采集/气体采集/工业旗舰/工业支援，避免全显示成“工业舰”
+function roleOf(s){
+  if(s.line==='工业'){
+    if(s.shipId.startsWith('miner_')) return '矿石采集工业舰';
+    if(s.shipId.startsWith('gas_')) return '气体采集工业舰';
+    if(s.shipId==='dolphin') return '工业支援巡洋舰';
+    if(s.shipId==='orca') return '工业旗舰';
+  }
+  return s.cls;
+}
+/* ===== 一级 Tab 切换 ===== */
+document.querySelectorAll('.cat-tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.cat-tab').forEach(x=>x.classList.remove('active'));
+  document.querySelectorAll('.pane').forEach(x=>x.classList.remove('on'));
+  t.classList.add('active');
+  document.getElementById(t.dataset.tab==='comp'?'pane-comp':'pane-asm').classList.add('on');
+});
+/* ===== 部件车间 ===== */
+let compSub=COMP_TIERS[0].id;
+function renderCompSubtabs(){
+  document.getElementById('comp-subtabs').innerHTML=COMP_TIERS.map(t=>
+    `<span class="subtab ${t.id===compSub?'on':''}" data-id="${t.id}">${t.label}</span>`).join('')
+    +`<span class="count">部件按舰种档分 6 组 · 每组 3 件</span>`;
+  document.querySelectorAll('#comp-subtabs .subtab').forEach(ch=>ch.onclick=()=>{compSub=ch.dataset.id;renderCompSubtabs();renderComps();});
+}
+function renderComps(){
+  const tier=COMP_TIERS.find(t=>t.id===compSub);
+  document.getElementById('comp-grid').innerHTML=tier.items.map(it=>
+    `<div class="comp-card"><div class="nm">${it.name}<span class="lvbadge">Lv.${it.lv}</span></div>
+      <div class="cost">${it.cost}</div>
+      <div class="meta">耗时 ${it.t}s${it.inv>0?` · <span class="inv">库存 ${it.inv}</span>`:''}</div>
+      <button class="mk-btn">⚙ 制造 ${it.name}</button></div>`).join('');
+}
+/* ===== 舰船总装 ===== */
+const LINES=["护盾激光","装甲导弹","结构火炮","工业","考古"];
+let asmSub="护盾激光",page=1,sel=0,PAGE=8;
+function renderAsmSubtabs(){
+  document.getElementById('asm-subtabs').innerHTML=LINES.map(l=>
+    `<span class="subtab ${l===asmSub?'on':''}" data-l="${l}" style="${l===asmSub?'':''}">${l}系</span>`).join('')
+    +`<span class="count" id="ship-count"></span>`;
+  document.querySelectorAll('#asm-subtabs .subtab').forEach(ch=>ch.onclick=()=>{asmSub=ch.dataset.l;page=1;renderAsmSubtabs();renderShips();renderDetail();});
+}
+function lineShips(){return SHIPS.filter(s=>s.line===asmSub);}
+function renderShips(){
+  const list=lineShips();
+  const pages=Math.max(1,Math.ceil(list.length/PAGE));
+  if(page>pages)page=pages;
+  const slice=list.slice((page-1)*PAGE,page*PAGE);
+  document.getElementById('ship-count').textContent=`${list.length} 艘 · 第 ${page}/${pages} 页`;
+  document.getElementById('ship-grid').innerHTML=slice.map(s=>{
+    const gi=SHIPS.indexOf(s);
+    const st=s.lvl>40?'<span class="st st-lock">Lv.'+s.lvl+'</span>':
+      (s.line==='工业'||s.line==='考古'?`<span class="st st-build">可造</span>`:`<span class="st st-build">可造</span>`);
+    return `<div class="ship-card ${gi===sel?'sel':''}" data-i="${gi}"><div class="ico">${shipSVG(s.tier,s.cls)}</div>
+      <div class="nm">${s.name}</div><div class="sub">${roleOf(s)}${s.tier==='混血'?` <span class="tier-chip" style="border-color:${TIER_COLOR[s.tier]};color:${TIER_COLOR[s.tier]}">混血</span>`:''}</div>${st}</div>`;
+  }).join('');
+  document.getElementById('pager').innerHTML=
+    `<button ${page<=1?'disabled':''} id="prev">‹ 上一页</button><span class="pg">${page} / ${pages}</span><button ${page>=pages?'disabled':''} id="next">下一页 ›</button>`;
+  document.getElementById('prev').onclick=()=>{page--;renderShips();};
+  document.getElementById('next').onclick=()=>{page++;renderShips();};
+  document.querySelectorAll('.ship-card').forEach(c=>c.onclick=()=>{sel=+c.dataset.i;renderShips();renderDetail();});
+}
+function statBar(label,val,max){
+  const pct=Math.min(100,Math.round(val/max*100));
+  return `<div class="stat"><div class="l"><span>${label}</span><span>${val.toLocaleString()}</span></div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+}
+function renderDetail(){
+  const s=SHIPS[sel];if(!s)return;
+  const pre=CT_PREFIX[s.ct]||"";
+  const reqRows=[
+    {k:'hull',v:s.h},{k:'core',v:s.c},{k:'sys',v:s.s}
+  ].map(o=>{const have=INV[o.k]||0,ok=have>=o.v;
+    return `<div class="req-row"><span>${pre}${COMP_BASE[o.k]} ×${o.v}</span><span class="have ${ok?'yes':'no'}">库存 ${have} ${ok?'✓':'✗'}</span></div>`;
+  }).join('');
+  const ready=(INV.hull>=s.h&&INV.core>=s.c&&INV.sys>=s.s);
+  document.getElementById('detail').innerHTML=
+    `<div class="detail-head"><div><div class="detail-title">${s.name}</div>
+      <span class="badge" style="border-color:${TIER_COLOR[s.tier]};color:${TIER_COLOR[s.tier]}">${s.tier}</span>
+      <span class="badge">${roleOf(s)}</span>
+      <span class="badge" style="border-color:${LINE_COLOR[s.line]};color:${LINE_COLOR[s.line]}">${s.line}系</span></div>
+      <span class="badge">舰船工程 Lv.${s.lvl}+</span></div>
+    <p class="flavor">${s.flavor}</p>
+    <div class="viewer">${shipSVG(s.tier,s.cls)}
+      <div class="nameplate">${s.name} · ${roleOf(s)}</div><div class="hint">拖拽旋转 · 滚轮缩放</div></div>
+    <div class="stats">
+      ${statBar('护盾',Math.round(500*(s.hull+s.core)/14),140000)}${statBar('装甲',Math.round(500*(s.hull+s.core)/14),140000)}
+      ${statBar('结构',Math.round(700*(s.hull+s.core)/14),190000)}${statBar('速度',Math.max(90,420-s.cls.length*20),420)}
+      ${statBar('闪避',Math.max(8,40-s.cls.length*2),40)}${statBar('电容',Math.round(600*(s.hull)/14),150000)}
+    </div>
+    <div class="req"><h4>总装所需部件</h4>${reqRows}</div>
+    <button class="build-btn" ${ready?'':'disabled'}>${ready?'⚓ 合成 '+s.name:'部件不足 / 条件未满足'}</button>`;
+}
+renderCompSubtabs();renderComps();renderAsmSubtabs();renderShips();renderDetail();
+</script>
+</body>
+</html>

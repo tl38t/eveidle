@@ -7,10 +7,11 @@
 // 全部走真实脚本 VM 沙箱 + 真实 Action / selector，不伪造 fitted 数组。
 // ================================================================
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
-const ROOT = "c:/Users/10195/Documents/EVE IDLE/EVEIDLE-WORKBUDDY";
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const html = readFileSync(join(ROOT, "index.html"), "utf8");
 const scripts = [];
 const re = /<script\s+defer\s+src="([^"]+)"/g;
@@ -70,6 +71,7 @@ window.RIG_SERIES=(typeof RIG_SERIES!=='undefined')?RIG_SERIES:null;
 window.RIG_TIER_META=(typeof RIG_TIER_META!=='undefined')?RIG_TIER_META:null;
 window.EQUIPMENT_ENGINEERING_RECIPES=(typeof EQUIPMENT_ENGINEERING_RECIPES!=='undefined')?EQUIPMENT_ENGINEERING_RECIPES:null;
 window.EQUIPMENT_ENGINEERING_CATEGORIES=(typeof EQUIPMENT_ENGINEERING_CATEGORIES!=='undefined')?EQUIPMENT_ENGINEERING_CATEGORIES:null;
+window.RIG_ENGINEERING_SERIES=(typeof RIG_ENGINEERING_SERIES!=='undefined')?RIG_ENGINEERING_SERIES:null;
 window.ARCHAEOLOGY_TIERS=(typeof ARCHAEOLOGY_TIERS!=='undefined')?ARCHAEOLOGY_TIERS:null;
 window.ARCHAEOLOGY_SITES=(typeof ARCHAEOLOGY_SITES!=='undefined')?ARCHAEOLOGY_SITES:null;
 window.gameState=(typeof gameState!=='undefined')?gameState:null;
@@ -493,43 +495,36 @@ section("J 经济固化（掉率·掉落数量·配方需求·期望次数，防
 /* ================= K Phase 3B UI 返修 ================= */
 section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过滤 / 销毁语义）");
 {
-  const SUBS=["combat","industry","archaeology"];
-  const TIERS=["I","II","III","IV","V"];
-  // K1 类别 + 档位筛选：每类别 15 件、每类别每档 3 件、过滤纯净、详情落可见集合
-  for(const sub of SUBS){
+  const SERIES=W.RIG_ENGINEERING_SERIES.map(s=>s.id);
+  // K1 系列筛选：每系列 5 件（I~V）、过滤纯净、详情落可见集合、selected 唯一
+  for(const seriesId of SERIES){
     const st=freshState();
     st.skills.equipmentEngineering={lvl:80,xp:0};
     W.dispatchGameAction(st,{type:"manufacturing/selectEquipmentCategory",categoryId:"rigs"},0);
-    const r=W.dispatchGameAction(st,{type:"manufacturing/selectEquipEngRigFilter",sub,tier:"all"},0);
-    ok(r.changed===true, `K ${sub} 筛选 Action 生效`);
+    const r=W.dispatchGameAction(st,{type:"manufacturing/selectEquipEngRigFilter",series:seriesId},0);
+    ok(r.changed===true, `K ${seriesId} 筛选 Action 生效`);
     let d=W.getEquipmentEngineeringDisplayState(st,0,"");
-    ok(d.visibleCount===15&&d.recipes.length===15, `K ${sub}+全部=15 件（实际 ${d.visibleCount}）`);
-    ok(d.recipes.every(x=>{const def=W.EQUIPMENT_DB[x.id];return def&&def.rigCategory===sub;}), `K ${sub} 可见配方类别纯净`);
-    ok(d.rigFilters&&d.rigFilters.sub===sub&&d.rigFilters.subcategories.filter(s=>s.selected).length===1, `K ${sub} rigFilters 显示态 selected 唯一`);
-    for(const tier of TIERS){
-      W.dispatchGameAction(st,{type:"manufacturing/selectEquipEngRigFilter",tier},0);
-      d=W.getEquipmentEngineeringDisplayState(st,0,"");
-      ok(d.visibleCount===3, `K ${sub}+${tier}=3 件（实际 ${d.visibleCount}）`);
-      ok(d.recipes.every(x=>{const def=W.EQUIPMENT_DB[x.id];return def&&def.rigCategory===sub&&def.rigTier===tier;}), `K ${sub}+${tier} 过滤纯净`);
-      ok(d.selectedRecipe&&d.recipes.some(x=>x.id===d.selectedRecipe.id), `K ${sub}+${tier} 详情落在可见集合内`);
-    }
+    ok(d.visibleCount===5&&d.recipes.length===5, `K ${seriesId}=5 件（实际 ${d.visibleCount}）`);
+    ok(d.recipes.every(x=>{const def=W.EQUIPMENT_DB[x.id];return def&&def.stackGroup===seriesId;}), `K ${seriesId} 可见配方系列纯净`);
+    ok(d.rigFilters&&d.rigFilters.series===seriesId&&d.rigFilters.seriesList.filter(s=>s.selected).length===1, `K ${seriesId} rigFilters 显示态 selected 唯一`);
+    ok(d.selectedRecipe&&d.recipes.some(x=>x.id===d.selectedRecipe.id), `K ${seriesId} 详情落在可见集合内`);
   }
-  // K2 搜索 × 类别/档位组合过滤
+  // K2 搜索 × 系列组合过滤
   {
     const st=freshState();
     st.skills.equipmentEngineering={lvl:80,xp:0};
     W.dispatchGameAction(st,{type:"manufacturing/selectEquipmentCategory",categoryId:"rigs"},0);
-    W.dispatchGameAction(st,{type:"manufacturing/selectEquipEngRigFilter",sub:"combat",tier:"all"},0);
+    W.dispatchGameAction(st,{type:"manufacturing/selectEquipEngRigFilter",series:"rig_shield_capacity"},0);
     const all=W.getEquipmentEngineeringDisplayState(st,0,"");
     const term=all.recipes[0].name.slice(0,2);
     const searched=W.getEquipmentEngineeringDisplayState(st,0,term);
     ok(searched.visibleCount>0&&searched.visibleCount<=all.visibleCount&&searched.recipes.every(x=>x.name.includes(term)),
-      `K 搜索+类别组合过滤正确（"${term}"→${searched.visibleCount} 件）`);
-    ok(searched.recipes.every(x=>{const def=W.EQUIPMENT_DB[x.id];return def&&def.rigCategory==="combat";}), "K 搜索结果仍受类别约束");
+      `K 搜索+系列组合过滤正确（"${term}"→${searched.visibleCount} 件）`);
+    ok(searched.recipes.every(x=>{const def=W.EQUIPMENT_DB[x.id];return def&&def.stackGroup==="rig_shield_capacity";}), "K 搜索结果仍受系列约束");
     const none=W.getEquipmentEngineeringDisplayState(st,0,"不存在的配方名xyz");
     ok(none.visibleCount===0&&none.recipes.length===0, "K 无匹配搜索 visibleCount=0");
   }
-  // K3 制造中切换筛选：startedEquipEngTarget / runningRecipe（实际产物）不变
+  // K3 制造中切换系列：startedEquipEngTarget / runningRecipe（实际产物）不变
   {
     const st=freshState();
     st.skills.equipmentEngineering={lvl:80,xp:0};
@@ -537,8 +532,8 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
     st.currentAction.active=true;
     st.currentAction.startedEquipEngTarget="rig_shield_capacity_i";
     st.currentAction.equipEngCategory="rigs";
-    W.dispatchGameAction(st,{type:"manufacturing/selectEquipEngRigFilter",sub:"archaeology",tier:"V"},0);
-    ok(st.currentAction.startedEquipEngTarget==="rig_shield_capacity_i", "K 制造中切换筛选 startedEquipEngTarget 不变");
+    W.dispatchGameAction(st,{type:"manufacturing/selectEquipEngRigFilter",series:"rig_archaeology_interference"},0);
+    ok(st.currentAction.startedEquipEngTarget==="rig_shield_capacity_i", "K 制造中切换系列 startedEquipEngTarget 不变");
     const d=W.getEquipmentEngineeringDisplayState(st,0,"");
     ok(d.runningRecipe.id==="rig_shield_capacity_i", "K 制造中 runningRecipe（实际产物）不变");
     ok(d.active===true, "K 制造进行态不被筛选打断");
@@ -560,8 +555,7 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
     let selectedOk=true, clean=true, withDisplay=true;
     for(const r of recipes){
       st.currentAction.equipEngTarget=r.id;
-      st.currentAction.equipEngRigSub=r.rigCategory;
-      st.currentAction.equipEngRigTier=r.rigTier;
+      st.currentAction.equipEngRigSeries=r.stackGroup;
       const d=W.getEquipmentEngineeringDisplayState(st,0,"");
       if(d.selectedRecipe.id!==r.id) selectedOk=false;
       for(const m of d.detail.materials){
@@ -669,7 +663,7 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
     ok(!hasBad(d), "K 装配显示态无 undefined/NaN");
     const st2=freshState(); st2.skills.equipmentEngineering={lvl:80,xp:0};
     W.dispatchGameAction(st2,{type:"manufacturing/selectEquipmentCategory",categoryId:"rigs"},0);
-    W.dispatchGameAction(st2,{type:"manufacturing/selectEquipEngRigFilter",sub:"archaeology",tier:"III"},0);
+    W.dispatchGameAction(st2,{type:"manufacturing/selectEquipEngRigFilter",series:"rig_archaeology_interference"},0);
     const d2=W.getEquipmentEngineeringDisplayState(st2,0,"");
     ok(!hasBad(d2), "K 装备工程显示态无 undefined/NaN");
   }

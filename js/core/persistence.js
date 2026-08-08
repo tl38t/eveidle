@@ -10,13 +10,25 @@ const LocalStorageAdapter = {
   save(data) { try { localStorage.setItem(this._key, JSON.stringify(data)); return true; } catch (e) { console.warn("存档失败：", e); return false; } },
   load() { try { const json = localStorage.getItem(this._key); return json ? JSON.parse(json) : null; } catch (e) { console.warn("读档失败：", e); return null; } },
   export(data) { return JSON.stringify(data, null, 2); },
-  import(jsonString) { return JSON.parse(jsonString); }
+  import(jsonString) { return JSON.parse(jsonString); },
+  removeItem() { try { localStorage.removeItem(this._key); return true; } catch (e) { console.warn("删除存档失败：", e); return false; } }
 };
+
+// 新手任务 Batch O：旧档兜底补给（rifter / miner_frigate / 100 万 ISK）只允许对「老档」生效。
+// Batch Q 定点返修：来源标记 SaveManager._lastLoadSourceHadTutorial 收敛为明确三态，
+// 判定只看**读档瞬间的原始存档对象**，绝不看当前内存态：
+//   - null  → 没有找到任何存档，真正的全新游戏；不补给（起始资产由新手任务链发放）
+//   - false → 成功读取了存档，但原始存档没有 tutorial 字段 → 老档（legacy），保留历史兜底，避免老玩家资产被清空
+//   - true  → 成功读取了包含 tutorial 字段的现代存档；不补给
+// 严禁用 gameState.tutorial 是否存在反推来源：新游戏的默认状态本来就含 tutorial，反推会把全新开局误判成老档。
+function isLegacySaveSource() {
+  return typeof SaveManager !== "undefined" && SaveManager && SaveManager._lastLoadSourceHadTutorial === false;
+}
 
 function migrateShipAndEquipmentState() {
   if (!gameState.inventory) gameState.inventory = { ships: [], equipment: [], rigs: [] };
   if (!Array.isArray(gameState.inventory.ships)) gameState.inventory.ships = [];
-  if (gameState.inventory.ships.length === 0) gameState.inventory.ships.push(createShipInstance("rifter"));
+  if (isLegacySaveSource() && gameState.inventory.ships.length === 0) gameState.inventory.ships.push(createShipInstance("rifter"));
   ensureShipInstances();
 
   if (!gameState.equipment || typeof gameState.equipment !== "object") gameState.equipment = { inventory: [] };
@@ -24,7 +36,7 @@ function migrateShipAndEquipmentState() {
 
   const legacyFitted = gameState.equipment.fitted;
   const legacyItems = legacyFitted ? Object.values(normalizeFitting(legacyFitted)).flat().filter(Boolean) : [];
-  if (legacyItems.length > 0) {
+  if (legacyItems.length > 0 && gameState.inventory.ships.length > 0) {
     const preferredRef = (gameState.shipAssignments && gameState.shipAssignments.combat) ||
       (gameState.combat && gameState.combat.activeShip) || gameState.inventory.ships[0].instanceId;
     const targetShip = getShipInstance(preferredRef) || gameState.inventory.ships[0];
@@ -119,8 +131,26 @@ function migrateCombatEquipmentState() {
   if (!gameState.combat || typeof gameState.combat !== "object") gameState.combat = {};
   if (!gameState.migrations || typeof gameState.migrations !== "object") gameState.migrations = {};
   const combat = gameState.combat;
-  if (!Number.isFinite(Number(combat.repairUntil))) combat.repairUntil = 0;
-  if (combat.destroyedShip === undefined) combat.destroyedShip = null;
+  if (!combat.repairs || typeof combat.repairs !== "object" || Array.isArray(combat.repairs)) combat.repairs = {};
+  // 旧字段迁移（幂等）：合法旧存档 destroyedShip + repairUntil → repairs[destroyedShip]。
+  // 非法船 ID / 非法时间戳安全丢弃；不延长不缩短合法旧维修时间；迁移后旧字段清零，唯一权威归 repairs。
+  const legacyUntil = Number(combat.repairUntil);
+  const legacyShip = combat.destroyedShip;
+  if (legacyShip && Number.isFinite(legacyUntil) && legacyUntil > 0) {
+    const shipExists = gameState.inventory && Array.isArray(gameState.inventory.ships) && gameState.inventory.ships.some(s => s.instanceId === legacyShip);
+    if (shipExists && !Object.prototype.hasOwnProperty.call(combat.repairs, legacyShip)) {
+      combat.repairs[legacyShip] = legacyUntil;
+    }
+  }
+  // 非法实例 ID（不在舰队中的幽灵条目）与非法时间戳（非有限数 / <=0）一律安全丢弃。
+  const ships = (gameState.inventory && Array.isArray(gameState.inventory.ships)) ? gameState.inventory.ships : [];
+  const shipExists = (id) => ships.some(s => String(s.instanceId) === String(id));
+  for (const id of Object.keys(combat.repairs)) {
+    const ts = Number(combat.repairs[id]);
+    if (!Number.isFinite(ts) || ts <= 0 || !shipExists(id)) delete combat.repairs[id];
+  }
+  combat.repairUntil = 0;
+  combat.destroyedShip = null;
   if (combat.lastStatus === undefined) combat.lastStatus = "";
   if (combat.lastLoot === undefined) combat.lastLoot = "";
   if (!combat.lastEnemyVolley || typeof combat.lastEnemyVolley !== "object") combat.lastEnemyVolley = null;
@@ -393,7 +423,7 @@ function migrateArchaeologyState() {
     if (!gameState.resources[pool] || typeof gameState.resources[pool] !== "object") gameState.resources[pool] = {};
   }
   if (!gameState.archaeology || typeof gameState.archaeology !== "object") {
-    gameState.archaeology = { activeSiteId:null, activeProbeId:"core_probe_i", progress:0, startedSiteId:null, startedProbeId:null, shipHp:{}, repairUntil:0, repairInstanceId:null, interferenceUntil:0, fuelSavingRemainder:0, log:[] };
+    gameState.archaeology = { activeSiteId:null, activeProbeId:"core_probe_i", progress:0, startedSiteId:null, startedProbeId:null, shipHp:{}, repairUntil:0, repairInstanceId:null, interferenceUntil:0, fuelSavingRemainder:0, probeSavingRemainder:0, log:[] };
   }
   const arch = gameState.archaeology;
   arch.activeSiteId = arch.activeSiteId || null;
@@ -410,6 +440,11 @@ function migrateArchaeologyState() {
   {
     const rawRem = Number(arch.fuelSavingRemainder);
     arch.fuelSavingRemainder = (Number.isFinite(rawRem) && rawRem > 0) ? (rawRem - Math.floor(rawRem)) : 0;
+  }
+  // 探针节省累计器（研究批次 G · probe 组）：旧存档回填 0；恒有限并归一化到 [0,1)（幂等）。
+  {
+    const rawProbeRem = Number(arch.probeSavingRemainder);
+    arch.probeSavingRemainder = (Number.isFinite(rawProbeRem) && rawProbeRem > 0) ? (rawProbeRem - Math.floor(rawProbeRem)) : 0;
   }
   if (!gameState.currentAction || gameState.currentAction.skill !== "archaeology") {
     arch.startedSiteId = null; arch.startedProbeId = null; arch.interferenceUntil = 0;
@@ -639,6 +674,48 @@ function migrateBoosterState() {
   gameState._dirty = true;
 }
 window.migrateBoosterState = migrateBoosterState;
+
+// ================================================================
+//  无限库存迁移（Phase 无限容量）：删除仓库容量限制
+//   - 删除旧 skills.cargoManagement
+//   - 删除 queue.items 中 skill==="cargoManagement" 的旧项目
+//   - 若 currentAction.skill==="cargoManagement"，安全停止并切换到 mining
+//   - 清理 queue.status 使 activeIndex 合法
+//   - 不补偿 XP，不赠送或扣除资源
+//   - 不改变舰船、装备、蓝图、资源、其他技能、空间站和行星数据
+//   - 幂等：连续两次调用结果一致
+//   - 必须在 calculateOfflineGains 前运行
+// ================================================================
+function migrateUnlimitedInventoryState(state = gameState) {
+  if (!state) return;
+  // 1) 删除旧技能
+  if (state.skills && state.skills.cargoManagement) {
+    delete state.skills.cargoManagement;
+  }
+  // 2) 删除队列中 cargoManagement 项目
+  if (state.queue && Array.isArray(state.queue.items)) {
+    state.queue.items = state.queue.items.filter(item => item.skill !== "cargoManagement");
+    // 清理 queue.status：空队列归零首项，activeIndex 不得越界
+    if (state.queue.status) {
+      if (state.queue.items.length === 0) {
+        state.queue.status.activeIndex = -1;
+        state.queue.status.isRunning = false;
+      } else if (state.queue.status.activeIndex >= state.queue.items.length) {
+        state.queue.status.activeIndex = 0;
+      }
+    }
+  }
+  // 3) 若当前行动为 cargoManagement，安全停止并切换到 mining
+  if (state.currentAction && state.currentAction.skill === "cargoManagement") {
+    state.currentAction.active = false;
+    state.currentAction.skill = "mining";
+    state.currentAction.progress = 0;
+    state.currentAction.batchRemaining = 0;
+    state.currentAction.lastProgressUpdate = Date.now();
+  }
+  state._dirty = true;
+}
+window.migrateUnlimitedInventoryState = migrateUnlimitedInventoryState;
 
 // ================================================================
 //  军团与空间站系统 Phase 3C-1：存档外壳 + 幂等迁移
@@ -894,18 +971,68 @@ function normalizePlanetaryState(state, opts) {
 }
 window.normalizePlanetaryState = normalizePlanetaryState;
 
+// Batch C-14A 第一次定点返修：唯一幂等队列规范化函数。
+// - queue 缺失/null/数组/非对象：创建完整默认队列。
+// - items 非数组：归一为 []（不丢弃合法内容，只修正类型）。
+// - config 非普通对象：归一为空对象后补默认字段。
+// - config.maxSize：typeof number && 有限 && >=25 → Math.floor 保留；其余统一设为 25（含 20 等旧档容量，J05 才可解锁）；已有 >25 的合法容量不得缩小。
+// - loopMode / skipOnFail 缺失或类型错误时补现有默认值。
+// - status 缺失时补默认结构；不得清空合法旧队列项目。
+// 新游戏路径安全、幂等；旧档 maxSize=20 登录/导入后变为 25，可继续真实追加 21–25 项。
+function normalizeQueueState(state) {
+  if (!state.queue || typeof state.queue !== "object" || Array.isArray(state.queue)) {
+    state.queue = {
+      items: [],
+      config: { maxSize: 25, loopMode: false, skipOnFail: true },
+      status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 },
+    };
+    return;
+  }
+  if (!Array.isArray(state.queue.items)) state.queue.items = [];
+  if (!state.queue.config || typeof state.queue.config !== "object" || Array.isArray(state.queue.config)) {
+    state.queue.config = {};
+  }
+  const ms = state.queue.config.maxSize;
+  if (typeof ms === "number" && Number.isFinite(ms) && ms >= 25) {
+    state.queue.config.maxSize = Math.floor(ms);
+  } else {
+    state.queue.config.maxSize = 25;
+  }
+  if (typeof state.queue.config.loopMode !== "boolean") state.queue.config.loopMode = false;
+  if (typeof state.queue.config.skipOnFail !== "boolean") state.queue.config.skipOnFail = true;
+  if (!state.queue.status || typeof state.queue.status !== "object" || Array.isArray(state.queue.status)) {
+    state.queue.status = { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 };
+  } else {
+    if (typeof state.queue.status.activeIndex !== "number") state.queue.status.activeIndex = -1;
+    if (typeof state.queue.status.isRunning !== "boolean") state.queue.status.isRunning = false;
+    if (typeof state.queue.status.completedCount !== "number") state.queue.status.completedCount = 0;
+    if (typeof state.queue.status.failCount !== "number") state.queue.status.failCount = 0;
+  }
+}
+window.normalizeQueueState = normalizeQueueState;
+
 const SaveManager = {
   adapter: LocalStorageAdapter,
-  save() { gameState.lastSaveTime = Date.now(); gameState._dirty = false; const ok = this.adapter.save(gameState); this._updateStatus(ok ? "已保存 " + new Date().toLocaleTimeString() : "保存失败"); document.getElementById("footer-save") && (document.getElementById("footer-save").textContent = "存档：" + new Date().toLocaleTimeString()); return ok; },
-  load() { const data = this.adapter.load(); if (data) { gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } return false; },
+  save() { if (this._pendingDelete) return false; gameState.lastSaveTime = Date.now(); gameState._dirty = false; const ok = this.adapter.save(gameState); this._updateStatus(ok ? "已保存 " + new Date().toLocaleTimeString() : "保存失败"); document.getElementById("footer-save") && (document.getElementById("footer-save").textContent = "存档：" + new Date().toLocaleTimeString()); return ok; },
+  // 新手任务 Batch O：sourceHadTutorial 必须在 Object.assign 之前、对**原始存档对象**判定，
+  // 用于区分「老档（无 tutorial 字段）」与「现代档（已带 tutorial）」。判定结果挂在 SaveManager 上，
+  // 供 autoLoad 决定 legacy 迁移与旧档兜底补给是否生效。
+  // Batch Q 定点返修：三态语义见 isLegacySaveSource() 注释。默认 null＝尚未读到任何存档（真正的全新游戏），
+  // 绝不能默认 false——false 表示「确实读到了一份没有 tutorial 字段的老档」，会让全新开局被误判并补发 rifter。
+  _lastLoadSourceHadTutorial: null,
+  load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
   exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "EVE_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
   importData(jsonString) {
     try {
       const data = this.adapter.import(jsonString);
       if (!data || !data.skills) throw new Error("无效存档");
+      // 新手任务 Batch O：必须在 Object.assign 之前对**原始存档对象**判定 tutorial 字段是否存在。
+      const sourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial");
+      this._lastLoadSourceHadTutorial = sourceHadTutorial;
       gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null;
       Object.assign(gameState, data);
       if (!Object.hasOwn(data, "settings")) gameState.settings = {};
+      normalizeQueueState(gameState);
       ensureUserSettingsState(gameState);
       ensureStatisticsState(gameState);
       // 装备迁移标志管理：不得无条件删除现代存档已有的迁移标志。
@@ -921,9 +1048,89 @@ const SaveManager = {
       finalizeEquipmentStateAfterLegacyMigrations(gameState);
       // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移
       migrateStationCorporationState();
+      // 无限库存迁移：必须在离线结算之前
+      migrateUnlimitedInventoryState();
       // 行星规范化（与 autoLoad 同一路径，幂等）；必须在离线结算之前
       normalizePlanetaryState(gameState);
       delete gameState.planetaryDeployments;
+      // 研究系统迁移（批次 B）：补全 research 子状态 + planetary deployment 自动续费。
+      // 必须在 deployments 已存在之后调用（migratePlanAutoRenew 依赖 planetary.deployments）。
+      if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
+        ResearchState.migrateResearchState(gameState);
+      }
+      // 成就系统迁移（Batch B）：importData 唯一调用点，恰好一次。
+      // 顺序：normalizePlanetaryState → research 迁移 → achievement 迁移 → calculateOfflineGains，
+      // 必须早于离线结算（为后续离线成就事件接入留下正确顺序）。迁移不 dirty、不 emit。
+      if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
+        AchievementState.migrateAchievementState(gameState);
+      }
+      // 成就追溯对账（Batch C-1 技能 + Batch C-2 生产 + Batch C-3 战斗 + Batch C-4 制造）：importData 唯一调用点，
+      // 各恰好一次。在 achievement 迁移之后、离线结算之前；
+      // 四次求值复用同一个 now（本次导入只取一次 Date.now()）。
+      {
+        const achievementReconcileNow = Date.now();
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateSkillAchievementRules === "function") {
+          AchievementSystem.evaluateSkillAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateProductionAchievementRules === "function") {
+          AchievementSystem.evaluateProductionAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateCombatAchievementRules === "function") {
+          AchievementSystem.evaluateCombatAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateManufacturingAchievementRules === "function") {
+          AchievementSystem.evaluateManufacturingAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEquipmentAchievementRules === "function") {
+          AchievementSystem.evaluateEquipmentAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBoosterAchievementRules === "function") {
+          AchievementSystem.evaluateBoosterAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateArchaeologyAchievementRules === "function") {
+          AchievementSystem.evaluateArchaeologyAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluatePlanetaryAchievementRules === "function") {
+          AchievementSystem.evaluatePlanetaryAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateStationAchievementRules === "function") {
+          AchievementSystem.evaluateStationAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBlueprintAchievementRules === "function") {
+          AchievementSystem.evaluateBlueprintAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-13：经济追溯必须在离线结算**之前**，用同一 achievementReconcileNow，
+        // 使解锁时间戳落在"读档瞬间"而非离线补偿之后；persistence.js 排在 resources.js 之后，
+        // 此处 ResourceRegistry 必然已就绪。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEconomyAchievementRules === "function") {
+          AchievementSystem.evaluateEconomyAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14A：综合（J01–J06）追溯必须同样在离线结算**之前**，用同一 achievementReconcileNow。
+        // 若放到 calculateOfflineGains 之后，本次读档触发的离线结算会先把 lifecycle 推高，
+        // 导致"迁移追溯"与"本次离线收益"混为一谈，解锁时间戳也会偏移到离线补偿之后。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateGeneralAchievementRules === "function") {
+          AchievementSystem.evaluateGeneralAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14B：元成就（J10/J11/J12）追溯必须排在全部普通类追溯**之后**、
+        // 离线结算**之前**，复用同一 achievementReconcileNow：
+        // 先让普通成就在本次读档补齐，元成就才能看到完整的解锁事实并顺序补齐 J10→J11→J12。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
+          AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch E：成就科研工时奖励旧档对账，必须排在**全部**成就追溯（含元成就）之后、
+        // 离线结算之前，复用同一 achievementReconcileNow，且整段读档流程只调用一次。
+        // 只为「已解锁但账本无记录」的成就补发；已发放过的一律跳过（幂等，重复读档不重复发）。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.reconcileAchievementResearchRewards === "function") {
+          AchievementSystem.reconcileAchievementResearchRewards(gameState, achievementReconcileNow);
+        }
+      }
+      // Batch K：intship 一体化造船运行期恢复——必须在研究迁移之后、离线结算之前；
+      // active 作业重装幂等消费者，shape 不匹配或不再驱动 currentAction 时 fail closed 为 recovery-required。
+      if (typeof restoreIntshipProtocolRuntime === "function") restoreIntshipProtocolRuntime(gameState);
+      // 新手任务 Batch O：与 autoLoad 对称——tutorial 迁移 + 消费者装载 + 对账，必须在离线结算之前。
+      if (typeof TutorialSystem !== "undefined" && TutorialSystem && typeof TutorialSystem.bootstrap === "function") {
+        TutorialSystem.bootstrap(gameState, { isLegacy: sourceHadTutorial !== true, now: Date.now() });
+      }
       // 离线结算必须在规范化之后
       if (typeof calculateOfflineGains === "function") calculateOfflineGains();
       // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
@@ -943,6 +1150,44 @@ const SaveManager = {
     }
   },
   setAdapter(newAdapter) { this.adapter = newAdapter; },
+  // 删除存档：在「存档管理」页通过带警告的二次确认弹窗调用，确认后清空本地存档并重启到全新开局。
+  deleteSave() {
+    // 标记待删除：阻止紧随 reload 的 beforeunload 自动保存把内存态重新写回 localStorage。
+    this._pendingDelete = true;
+    // Batch Q 定点返修：来源标记必须立刻回到 null，删档后重开不得沿用上一次的 legacy/modern 判定。
+    this._lastLoadSourceHadTutorial = null;
+    try { this.adapter.removeItem(this.adapter._key); } catch (e) { /* 忽略：即使删除失败也继续重启 */ }
+    this._updateStatus("存档已删除，正在重启…");
+    setTimeout(() => { try { location.reload(); } catch (e) {} }, 120);
+  },
+  // 暗金风格的二次确认弹窗（动态创建，不写入 index.html 静态结构，避免新增静态 DOM ID）。
+  confirmDeleteSave() {
+    if (this._deleteModalOpen) return;
+    this._deleteModalOpen = true;
+    const backdrop = document.createElement("div");
+    backdrop.className = "dlg-backdrop";
+    const box = document.createElement("div");
+    box.className = "dlg-box dlg-danger";
+    box.setAttribute("role", "alertdialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "删除存档确认");
+    box.innerHTML =
+      '<div class="dlg-title">⚠ 删除存档</div>' +
+      '<p class="dlg-body">此操作<strong>不可恢复</strong>，将永久清空本地存档中的全部进度——包括所有舰船、资源、技能、蓝图与新手指引进度。</p>' +
+      '<p class="dlg-body dlg-warn">删除后游戏将回到全新开局（序章重新可玩）。请确认是否删除。</p>' +
+      '<div class="dlg-actions">' +
+        '<button type="button" class="btn dlg-cancel">取消</button>' +
+        '<button type="button" class="btn btn-danger dlg-confirm">确认删除</button>' +
+      '</div>';
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
+    const close = () => { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); this._deleteModalOpen = false; };
+    box.querySelector(".dlg-cancel").addEventListener("click", close);
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+    const confirmBtn = box.querySelector(".dlg-confirm");
+    confirmBtn.addEventListener("click", () => { this._deleteModalOpen = false; this.deleteSave(); });
+    if (confirmBtn && typeof confirmBtn.focus === "function") confirmBtn.focus();
+  },
   _updateStatus(msg) { const el = document.getElementById("save-status"); if (el) el.textContent = msg; const info = document.getElementById("save-info"); if (info) info.textContent = msg; }
 };
 window.SaveManager = SaveManager;
@@ -985,19 +1230,21 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     if (!gameState.currentAction.shipAsmTarget) gameState.currentAction.shipAsmTarget = "rifter";
     if (gameState.currentAction.startedShipAsmTarget === undefined) gameState.currentAction.startedShipAsmTarget = "";
     if (gameState.currentAction.batchRemaining === undefined) gameState.currentAction.batchRemaining = 0;
-    if (!gameState.queue) gameState.queue = { items: [], config: { maxSize: 20, loopMode: false, skipOnFail: true }, status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 } };
+    // Batch C-14A（J05）：队列规范化已收口于 SaveManager.load 内的 normalizeQueueState（含旧档 maxSize=20→25），
+    // 此处不再保留只处理「!gameState.queue」的第二套兜底。
     if (!gameState.inventory.ships) gameState.inventory.ships = [];
-    if (gameState.inventory.ships.length === 0) gameState.inventory.ships.push(createShipInstance("rifter"));
+    // 新手任务 Batch O：仅老档（原始存档无 tutorial 字段）保留兜底赠舰
+    if (isLegacySaveSource() && gameState.inventory.ships.length === 0) gameState.inventory.ships.push(createShipInstance("rifter"));
     if (gameState.activeIndustrialShip === undefined) gameState.activeIndustrialShip = null;
     if (!gameState.shipAssignments) gameState.shipAssignments = {};
     if (!gameState.equipment) gameState.equipment = { inventory:[] };
     if (!gameState.currentAction.equipEngTarget) gameState.currentAction.equipEngTarget = "t1_mining_laser";
     if (!EQUIPMENT_ENGINEERING_CATEGORIES.some(category => category.id === gameState.currentAction.equipEngCategory)) {
-      gameState.currentAction.equipEngCategory = getEquipmentEngineeringRecipe(gameState.currentAction.equipEngTarget).category || "industry";
+      gameState.currentAction.equipEngCategory = getEquipmentEngineeringRecipe(gameState.currentAction.equipEngTarget).category || "mining";
     }
     if (gameState.currentAction.startedEquipEngTarget === undefined) gameState.currentAction.startedEquipEngTarget = "";
-    // 20260711 迁移：赠送冲锋者级工业舰
-    if (!gameState.inventory.ships.some(s => s.shipId === "miner_frigate")) gameState.inventory.ships.push(createShipInstance("miner_frigate"));
+    // 20260711 迁移：赠送冲锋者级工业舰（新手任务 Batch O：仅老档生效，新档由 I7 任务发放）
+    if (isLegacySaveSource() && !gameState.inventory.ships.some(s => s.shipId === "miner_frigate")) gameState.inventory.ships.push(createShipInstance("miner_frigate"));
     // 战斗系统迁移
     if (!gameState.combat) gameState.combat = {
       zone: "angel_outpost", weapon: "laser",
@@ -1007,12 +1254,13 @@ window.addEventListener("beforeunload", () => SaveManager.save());
       enemies: [], currentEnemy: null, wave: 1, zoneClears: {}, runEliteKills: 0,
       currentFormation: "", totalKills: 0, active: false
     };
+    if (!gameState.combat.repairs || typeof gameState.combat.repairs !== "object" || Array.isArray(gameState.combat.repairs)) gameState.combat.repairs = {};
     if (gameState.combat.repairUntil === undefined) gameState.combat.repairUntil = 0;
     if (gameState.combat.destroyedShip === undefined) gameState.combat.destroyedShip = null;
     if (gameState.combat.lastStatus === undefined) gameState.combat.lastStatus = "";
     migrateDeathspaceState();
-    // 测试用：旧存档 ISK 过低时补充启动资金
-    if (!gameState.resources.isk || gameState.resources.isk < 10000) gameState.resources.isk = 1000000;
+    // 测试用：旧存档 ISK 过低时补充启动资金（新手任务 Batch O：仅老档生效，新档保持 10000 起步）
+    if (isLegacySaveSource() && (!gameState.resources.isk || gameState.resources.isk < 10000)) gameState.resources.isk = 1000000;
     migrateAmmunitionEngineeringState();
     // 旧舰船部件必须先迁移，再结算离线制造；否则旧配方目标会被错误地回退到新配方首项。
     migrateShipAndEquipmentState();
@@ -1026,9 +1274,91 @@ window.addEventListener("beforeunload", () => SaveManager.save());
   migrateMoonMiningState();
   migrateDeathspaceState();
   migrateBoosterState();
+  // 无限库存迁移：必须在离线结算之前
+  migrateUnlimitedInventoryState();
   // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
   finalizeEquipmentStateAfterLegacyMigrations(gameState);
-    if (restored) calculateOfflineGains();
+  // 研究系统迁移（批次 B 返修）：唯一权威调用点，必须先于第一次 calculateOfflineGains。
+  // 此时 planetary.deployments 已存在（restored 由 normalizePlanetaryState 创建，新游戏为 state.js 字面量），
+  // migratePlanAutoRenew 可安全补 deployment.autoRenew。restored=false（新游戏）同样执行且幂等、不报错。
+  if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
+    ResearchState.migrateResearchState(gameState);
+  }
+  // 成就系统迁移（Batch B）：autoLoad 唯一调用点，恰好一次；
+  // restored=true / restored=false（新游戏）都执行且幂等、安全。
+  // 顺序：research 迁移 → achievement 迁移 → restored 时 calculateOfflineGains，
+  // 必须早于离线结算。迁移不 dirty、不 emit。
+  if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
+    AchievementState.migrateAchievementState(gameState);
+  }
+  // 成就追溯对账（Batch C-1 技能 + Batch C-2 生产 + Batch C-3 战斗 + Batch C-4 制造）：autoLoad 唯一调用点，
+  // 各恰好一次；restored=true 与 restored=false（新游戏，应解锁 0 项）都执行；
+  // 早于离线结算；四次求值复用同一个 now（本次登录只取一次 Date.now()）。
+  {
+    const achievementReconcileNow = Date.now();
+    if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateSkillAchievementRules === "function") {
+      AchievementSystem.evaluateSkillAchievementRules(gameState, achievementReconcileNow);
+    }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateProductionAchievementRules === "function") {
+          AchievementSystem.evaluateProductionAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateCombatAchievementRules === "function") {
+          AchievementSystem.evaluateCombatAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateManufacturingAchievementRules === "function") {
+          AchievementSystem.evaluateManufacturingAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEquipmentAchievementRules === "function") {
+          AchievementSystem.evaluateEquipmentAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBoosterAchievementRules === "function") {
+          AchievementSystem.evaluateBoosterAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateArchaeologyAchievementRules === "function") {
+          AchievementSystem.evaluateArchaeologyAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluatePlanetaryAchievementRules === "function") {
+          AchievementSystem.evaluatePlanetaryAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateStationAchievementRules === "function") {
+          AchievementSystem.evaluateStationAchievementRules(gameState, achievementReconcileNow);
+        }
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBlueprintAchievementRules === "function") {
+          AchievementSystem.evaluateBlueprintAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-13：经济追溯，同一 achievementReconcileNow，位于离线结算之前（与 importData 对称）
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEconomyAchievementRules === "function") {
+          AchievementSystem.evaluateEconomyAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14A：综合（J01–J06）追溯，同一 achievementReconcileNow，位于离线结算之前（与 importData 对称）
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateGeneralAchievementRules === "function") {
+          AchievementSystem.evaluateGeneralAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch C-14B：元成就（J10/J11/J12）追溯，排在全部普通类追溯之后、离线结算之前，
+        // 同一 achievementReconcileNow（与 importData 对称）。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
+          AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
+        }
+        // Batch E：成就科研工时奖励旧档对账，排在全部成就追溯之后、离线结算之前，
+        // 同一 achievementReconcileNow（与 importData 对称），整段自动读档只调用一次。
+        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.reconcileAchievementResearchRewards === "function") {
+          AchievementSystem.reconcileAchievementResearchRewards(gameState, achievementReconcileNow);
+        }
+      }
+  // Batch K：intship 一体化造船运行期恢复——必须在研究迁移之后、离线结算之前；
+  // active 作业重装幂等消费者，shape 不匹配或不再驱动 currentAction 时 fail closed 为 recovery-required。
+  if (typeof restoreIntshipProtocolRuntime === "function") restoreIntshipProtocolRuntime(gameState);
+  // 新手任务 Batch O：tutorial 迁移 + 幂等消费者装载 + 首次对账，必须在离线结算**之前**完成，
+  // 这样离线期间补发的事件才能被新手任务消费者接住（离线只推进到 completed / claimable，不自动发奖）。
+  // restored=false（真正的全新开局，来源标记为 null）时一律不走 legacy 分支；
+  // restored=true 时由三态标记严格判定：仅 === false（原始存档确实没有 tutorial 字段）才算老档。
+  if (typeof TutorialSystem !== "undefined" && TutorialSystem && typeof TutorialSystem.bootstrap === "function") {
+    TutorialSystem.bootstrap(gameState, {
+      isLegacy: restored ? isLegacySaveSource() : false,
+      now: Date.now()
+    });
+  }
+  if (restored) calculateOfflineGains();
   ensureUserSettingsState(gameState);
   ensureStatisticsState(gameState);
   // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移（新游戏/旧存档共用）
@@ -1046,6 +1376,8 @@ window.addEventListener("beforeunload", () => SaveManager.save());
   if (btnExport) btnExport.addEventListener("click", () => SaveManager.exportData());
   if (btnImport) btnImport.addEventListener("click", () => fileInput && fileInput.click());
   if (fileInput) fileInput.addEventListener("change", (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => { SaveManager.importData(ev.target.result); fileInput.value = ""; }; reader.readAsText(file); });
+  const btnDelete = document.getElementById("btn-delete-save");
+  if (btnDelete) btnDelete.addEventListener("click", () => SaveManager.confirmDeleteSave());
 })();
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden) calculateOfflineGains(); });
@@ -1054,7 +1386,7 @@ document.addEventListener("visibilitychange", () => { if (!document.hidden) calc
 (function bindCombatButtons() {
 })();
 
-console.log("🚀 EVE放置：新伊甸纪元 已就绪");
+console.log("🚀 深空放置：边疆纪元 已就绪");
 console.log("💡 调试命令：forceOfflineTest(60) — 模拟离线 60 秒");
 console.log("🪐 行星系统已加载 — 点击侧边栏「行星概览」查看");
 console.log("⚔ 战斗系统已加载 — 点击侧边栏「战斗」出击");

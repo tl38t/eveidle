@@ -3,12 +3,11 @@
    ================================================================ */
 
 const SKILL_DESC = {
-  mining: "采矿效率，解锁更高级矿带",
+  mining: "提升采矿效率，解锁更高级矿带",
   refining: "将矿石精炼为矿物",
   gasHarvesting: "采集气体用于制造燃料",
   shipEngineering: "制造舰船部件与合成整船",
-  planetaryIndustry: "后台产出行星材料",
-  cargoManagement: "提升仓库总容量",
+  planetaryIndustry: "自动产出行星材料",
   laserOps: "提升激光炮伤害与伤害应用",
   cannonOps: "提升炮台伤害与伤害应用",
   missileOperations: "提升导弹伤害与伤害应用",
@@ -19,18 +18,37 @@ const SKILL_DESC = {
   piloting: "降低舰船受到的伤害",
   capacitorManagement: "降低燃料消耗",
   defense: "提升维修效率",
-  combat: "由最高攻击技能与最高防御技能共同决定，解锁更高安全等级星带",
+  combat: "由攻击与防御技能共同决定的综合等级，决定可前往的星带安全等级",
+  archaeology: "扫描遗迹信号并解析其中的文物",
   drones: "（占位）无人机伤害加成",
   equipmentEngineering: "制造舰船装备、燃料与各类弹药",
-  boosterEngineering: "制造采矿、考古与战斗增强剂（提升等级加快制造速度）",
+  boosterEngineering: "制造采矿、考古与战斗增强剂",
   rigEngineering: "制造舰船改装件",
   reverseEngineering: "（占位）解析残骸获取蓝图碎片"
+};
+
+const PAGE_DESC = {
+  blueprints:   "用星币和功勋购买可永久制造的蓝图",
+  cargo:        "查看与管理物资库存，强化装备",
+  hangar:       "管理舰队、指派任务、强化舰船",
+  station:      "升级空间站、补给燃料、建造建筑",
+  queue:        "把多个动作排成队列依次执行",
+  statistics:   "查看累计游戏数据与记录排行",
+  achievements: "浏览成就及解锁条件与奖励",
+  research:     "解锁科技",
+  save:         "保存、导出、导入或清除存档",
+  settings:     "调整游戏选项与偏好"
 };
 
 function renderSidebar(sidebarState) {
   const byKey = new Map((sidebarState || getSidebarDisplayState(gameState)).map(item => [item.key, item]));
   document.querySelectorAll('.sidebar .nav-item').forEach(el => {
     const lvSpan = el.querySelector('.nav-lv');
+    const pageKey = el.dataset.page;
+    if (pageKey && !lvSpan) {
+      const t = PAGE_DESC[pageKey];
+      if (t && el.title !== t) el.title = t;
+    }
     if (!lvSpan) return;
     const skillKey = lvSpan.dataset.lv;
     if (!skillKey) return;
@@ -64,7 +82,7 @@ function setProductionControls(display, startButton) {
 }
 
 function renderMiningDisplay(display, areaEl, outEl) {
-  if (areaEl) areaEl.textContent = "目标矿石：" + display.current.ore;
+  if (areaEl) areaEl.textContent = "目标矿石：" + getResourceDisplayName(display.current.ore);
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
   const areaSelect = document.getElementById("mining-area-select"); if (areaSelect) areaSelect.style.display = "block";
   const stats = document.getElementById("mining-stats"); if (stats) stats.style.display = "block";
@@ -72,7 +90,7 @@ function renderMiningDisplay(display, areaEl, outEl) {
   const strip = document.getElementById("mining-target-strip");
   if (strip) {
     strip.innerHTML = display.targets.map(area => `<button class="mining-target-card${area.selected ? " selected" : ""}${area.locked ? " locked" : ""}${area.running ? " running" : ""}" data-area="${area.name}" style="--ore-color:${area.color}" ${area.locked ? "disabled" : ""}>
-      <span class="mining-target-name">${area.ore}</span><span class="mining-target-visual"><i class="fa-solid fa-gem"></i></span>
+      <span class="mining-target-name">${getResourceDisplayName(area.ore)}</span><span class="mining-target-visual"><i class="fa-solid fa-gem"></i></span>
       <span class="mining-target-meta">Lv.${area.level} · ${area.baseTime}s · ${area.baseXP} XP</span>
       <span class="mining-target-state">${area.locked ? `需要 Lv.${area.level}` : area.running ? "正在采集" : area.selected ? "已选择" : "可采集"}</span></button>`).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchMiningArea(card.dataset.area)));
@@ -97,12 +115,12 @@ function renderMiningDisplay(display, areaEl, outEl) {
 }
 
 function renderSmeltingDisplay(display, areaEl, outEl) {
-  if (areaEl) areaEl.textContent = "消耗：" + display.current.consumeOre + " → " + display.current.outputMineral;
-  if (display.progress.active && display.runningStock < 1 && areaEl) areaEl.textContent = "⚠ 原料不足：" + display.running.consumeOre + " (库存：" + display.runningStock + ")";
+  if (areaEl) areaEl.textContent = "消耗：" + getResourceDisplayName(display.current.consumeOre) + " → " + getResourceDisplayName(display.current.outputMineral);
+  if (display.progress.active && display.runningStock < 1 && areaEl) areaEl.textContent = "⚠ 原料不足：" + getResourceDisplayName(display.running.consumeOre) + " (库存：" + display.runningStock + ")";
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
   const select = document.getElementById("smelting-area-select"); if (select) select.style.display = "flex";
   const stats = document.getElementById("smelting-stats"); if (stats) stats.style.display = "block";
-  const dropdown = document.getElementById("smelting-dropbtn"); if (dropdown) dropdown.textContent = display.current.outputMineral + " ▾";
+  const dropdown = document.getElementById("smelting-dropbtn"); if (dropdown) dropdown.textContent = getResourceDisplayName(display.current.outputMineral) + " ▾";
   const efficiency = document.getElementById("smelting-eff-value");
   if (efficiency) {
     efficiency.textContent = display.efficiency.toFixed(2);
@@ -162,7 +180,7 @@ function renderSmeltingDropdown() {
   content.innerHTML = display.options.map(recipe => {
     const className = (recipe.selected ? " selected" : "") + (recipe.locked ? " locked" : "");
     const requirement = recipe.locked ? `<span class="area-req">需冶炼 Lv.${recipe.level}</span>` : "";
-    return `<div class="area-option${className}" data-area="${recipe.name}">${recipe.consumeOre} → ${recipe.outputMineral} — ${recipe.baseTime}s / ${recipe.baseXP}XP${requirement}</div>`;
+    return `<div class="area-option${className}" data-area="${recipe.name}">${getResourceDisplayName(recipe.consumeOre)} → ${getResourceDisplayName(recipe.outputMineral)} — ${recipe.baseTime}s / ${recipe.baseXP}XP${requirement}</div>`;
   }).join("");
   content.querySelectorAll(".area-option:not(.locked)").forEach(option => option.addEventListener("click", event => {
     event.stopPropagation();
@@ -201,9 +219,7 @@ function renderGlobalDisplay(display) {
   const quickEl = document.querySelector('.ore-quick');
   if (quickEl) quickEl.innerHTML = display.quickOres.length ? display.quickOres.map(item => `<span class="ore-icon">${item.name} × ${item.value.toLocaleString()}</span>`).join("") : '<span class="ore-icon">暂无矿石</span>';
   const cargoText = document.getElementById("cargo-text");
-  if (cargoText) { cargoText.textContent = display.cargo.used.toLocaleString() + " / " + display.cargo.capacity.toLocaleString(); cargoText.className = "res-value" + (display.cargo.full ? " warn" : ""); }
-  const cargoFill = document.getElementById("cargo-fill");
-  if (cargoFill) { cargoFill.style.width = display.cargo.percent + "%"; cargoFill.className = "cargo-fill" + (display.cargo.full ? " full" : ""); }
+  if (cargoText) { cargoText.textContent = display.inventory.total.toLocaleString(); }
 }
 
 function updateUI(now) {
@@ -246,7 +262,7 @@ function updateUI(now) {
 
   const fillEl = document.querySelector('.skill-current .fill.exp'); if (fillEl) fillEl.style.width = shell.xpPercent + "%";
   const expVal = document.querySelector('.skill-current .exp-value'); if (expVal) expVal.textContent = shell.xp.toLocaleString() + " / " + shell.xpNeeded.toLocaleString();
-  renderGlobalDisplay(getGlobalDisplayState(gameState, getCargoCapacity()));
+  renderGlobalDisplay(getGlobalDisplayState(gameState));
   renderSidebar(getSidebarDisplayState(gameState));
 }
 
@@ -254,9 +270,24 @@ function setLiveText(element, value) {
   if (element && element.textContent !== value) element.textContent = value;
 }
 
+// 轻量 DOM 更新辅助：写 DOM 前比较新旧值（避免无谓写入/重排）。
+function setLiveWidth(element, value) {
+  if (element && element.style.width !== value) element.style.width = value;
+}
+function setLiveDisabled(element, value) {
+  if (element && element.disabled !== value) element.disabled = value;
+}
+// 含子标签的片段（如 <b> 名称）用 innerHTML 比较更新，避免整容器重建。
+function setLiveHTML(element, value) {
+  if (element && element.innerHTML !== value) element.innerHTML = value;
+}
+
 // 每秒只更新会持续变化的字段；结构性面板仍由 updateUI() 按事件重建。
-function updateLiveUI() {
-  const globalDisplay = getGlobalDisplayState(gameState, getCargoCapacity());
+// 新增：空间站 / 研究 实时字段刷新（接入同一每秒 tick，不另建定时器）。
+// 统一接收显式 now：整条刷新链路只取一次时间，避免显示态时间不一致。
+function updateLiveUI(nowArg) {
+  const now = Number(nowArg) || Date.now();
+  const globalDisplay = getGlobalDisplayState(gameState);
   const iskEl = document.querySelector('.res-value.isk');
   const lpEl = document.querySelector('.res-value.lp');
   setLiveText(iskEl, formatCompact(globalDisplay.isk));
@@ -264,15 +295,7 @@ function updateLiveUI() {
 
   const cargoText = document.getElementById("cargo-text");
   if (cargoText) {
-    setLiveText(cargoText, globalDisplay.cargo.used.toLocaleString() + " / " + globalDisplay.cargo.capacity.toLocaleString());
-    const cargoClass = "res-value" + (globalDisplay.cargo.full ? " warn" : "");
-    if (cargoText.className !== cargoClass) cargoText.className = cargoClass;
-  }
-  const cargoFill = document.getElementById("cargo-fill");
-  if (cargoFill) {
-    const width = globalDisplay.cargo.percent + "%"; const fillClass = "cargo-fill" + (globalDisplay.cargo.full ? " full" : "");
-    if (cargoFill.style.width !== width) cargoFill.style.width = width;
-    if (cargoFill.className !== fillClass) cargoFill.className = fillClass;
+    setLiveText(cargoText, globalDisplay.inventory.total.toLocaleString());
   }
 
   const quickEl = document.querySelector('.ore-quick');
@@ -286,12 +309,18 @@ function updateLiveUI() {
   renderSidebar(getSidebarDisplayState(gameState));
   if (currentPage === "planetary") updatePlanetaryLiveUI();
   if (currentPage === "skill" && currentView === "combat") updateCombatLiveUI();
+  // 空间站 / 研究 实时刷新：currentPage 为唯一主判断（仅当前可见页才刷）。
+  // 注意：document.hidden 不在此处做门控（只作参考），避免无头/后台环境导致刷新测试全失效。
+  // 节流与展示态计算已分别约束在 updateStationLiveUI / updateResearchLiveUI 内部。
+  if (currentPage === "station" && typeof updateStationLiveUI === "function") updateStationLiveUI(now);
+  else if (currentPage === "research" && typeof updateResearchLiveUI === "function") updateResearchLiveUI(now);
 }
 
 function refreshVisiblePanelAfterAction() {
   if (currentPage === "skill") updateUI();
   else if (currentPage === "cargo") renderCargoPage();
   else if (currentPage === "hangar") renderHangarPanel();
+  else if (currentPage === "station" && typeof renderStationPage === "function") renderStationPage(Date.now());
 }
 
 /* ================================================================

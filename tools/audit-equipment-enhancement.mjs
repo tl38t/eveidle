@@ -624,7 +624,7 @@ console.log("\nD. 效果接入");
   state.equipment.inventory.push(normalEq.id); // 1 件 inventory
   state.equipment.instances.push({ instanceId:"eq_1", itemId:normalEq.id, enhancementLevel:0, installedOn:null }); // 1 件未安装实例
   state.equipment.nextInstanceId = 2;
-  const cargoTotal = s.ResourceRegistry.getCargoTotal(state);
+  const cargoTotal = s.ResourceRegistry.getInventoryTotal(state);
   assert("cargo 统计 inventory + 未安装实例", cargoTotal >= 2);
 }
 

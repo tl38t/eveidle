@@ -2315,10 +2315,37 @@ section("F5 isStationOperational 语义");
     // 清理：结束 J 区动作，避免污染后续区
     G.currentAction.active = false;
   })();
-})();
+// ---- K1：舰船工程后勤文案行为断言（纯函数，不依赖 space state）----
+(() => {
+  section("K1 舰船工程后勤文案");
+  const fn = W.getShipEngineeringSpeedBreakdownText;
+  ok(typeof fn === "function", "K1 getShipEngineeringSpeedBreakdownText 存在");
 
-// ================================================================
-// G 区：Phase 3C-6 离线燃料闸门 —— 精确周期断言（真实业务入口）
+  // 1. 未建立空间站（stationLogistics 缺失）：不抛异常，lm=1，显示"未建立"
+  const noStation = fn({ skillMultiplier:2, shipyardMultiplier:1, totalSpeedMultiplier:2 });
+  ok(typeof noStation === "string" && !noStation.includes("ReferenceError") && !noStation.includes("NaN") && !noStation.includes("undefined") && noStation.includes("未建立"),
+    "K1 无空间站 lm=1 显示'未建立': " + noStation);
+
+  // 2. 空间站 Lv.1 且有燃料：后勤倍率 1.01，最终倍率=2×1×1.01=2.02
+  const lv1 = fn({ skillMultiplier:2, shipyardMultiplier:1, stationLogistics:{ bodyLevel:1, operational:true, multiplier:1.01, text:"×1.01" }, totalSpeedMultiplier:2*1*1.01 });
+  ok(lv1.includes("1.01") && lv1.includes("+1%") && lv1.includes("2.02") && !lv1.includes("未建立"),
+    "K1 Lv.1 后勤×1.01: " + lv1);
+
+  // 3. 空间站 Lv.3 且有燃料：后勤倍率 1.03
+  const lv3 = fn({ skillMultiplier:2, shipyardMultiplier:1.30, stationLogistics:{ bodyLevel:3, operational:true, multiplier:1.03, text:"×1.03" }, totalSpeedMultiplier:2*1.30*1.03 });
+  ok(lv3.includes("1.03") && lv3.includes("+3%"), "K1 Lv.3 后勤×1.03: " + lv3);
+
+  // 4. 空间站断油：后勤倍率=1，无 NaN/undefined
+  const noFuel = fn({ skillMultiplier:2, shipyardMultiplier:1.30, stationLogistics:{ bodyLevel:3, operational:false, multiplier:1, text:"断油" }, totalSpeedMultiplier:2*1.30*1 });
+  ok(!noFuel.includes("NaN") && !noFuel.includes("undefined") && noFuel.includes("断油") && !noFuel.includes("+0%"),
+    "K1 断油 lm=1 显示'断油': " + noFuel);
+
+  // 5. stationLogistics 彻底缺失（字段不存在）：fail-safe 回退到 1，不抛 ReferenceError
+  const missing = fn({ skillMultiplier:1, shipyardMultiplier:1 });
+  ok(typeof missing === "string" && !missing.includes("ReferenceError") && !missing.includes("undefined") && !missing.includes("NaN"),
+    "K1 缺失 stationLogistics 不抛异常: " + missing);
+})();
+})();
 // ================================================================
 (() => {
   const RECIPE = evalIn("SMELTING_RECIPES").find(r => r.name === "凡晶石带"); // 顶层 const 经 vm 取真实配方
@@ -2522,7 +2549,7 @@ section("F5 isStationOperational 语义");
     W.gameTick();
     const shipsAfter = (G.inventory.ships || []).filter(s => s.shipId === "rifter").length;
     ok(shipsAfter - shipsBefore === 1, "G5 在线断油仍组装 1 艘 (=" + (shipsAfter - shipsBefore) + ")");
-    ok(G.currentAction.active === true && W.isCargoFull() === false, "G5 行动未被误停/货舱未满");
+    ok(G.currentAction.active === true, "G5 行动未被误停");
     // 离线断油批量
     G.currentAction.active = true; G.currentAction.progress = 0; G.currentAction.lastProgressUpdate = Date.now();
     for (const c of COMP_KEYS) RR.set(G, "component:" + c, 1000);
@@ -3324,6 +3351,117 @@ section("F5 isStationOperational 语义");
   var expCycleMs = (smeltRecipe.baseTime / Math.max(0.001, effMult)) * 1000;
   ok(smeltAL !== null && smeltAL.cycleDurationMs > 0 && Math.abs(smeltAL.cycleDurationMs - expCycleMs) < 1,
     "O11 冶炼周期含全部倍率 (got "+(smeltAL?smeltAL.cycleDurationMs:"null")+", exp "+expCycleMs+", mult "+effMult+")");
+})();
+
+// ---- P 区：增强剂自动线配方名称显示（禁止内部 recipeId 泄漏到 UI） ----
+// 回归缺陷：BOOSTER_RECIPES 展开时漏了 name 字段，导致 targetOptions / selectedTargetName /
+// startedTargetName 三处 `r.name || keyFn(r)` 全部回退为内部 id（mining_lubricant_n）。
+(() => {
+  const BOOST = evalIn("BOOSTER_RECIPES");
+  const BITEMS = evalIn("BOOSTER_ITEMS");
+  // 内部 ID 形态：纯小写字母/数字/下划线（mining_lubricant_n）。正式中文名绝不长这样。
+  const looksInternalId = (s) => typeof s === "string" && /^[a-z0-9_]+$/.test(s);
+  const lineOf = (d, id) => (d && Array.isArray(d.autoLines)) ? (d.autoLines.find(al => al.lineId === id) || null) : null;
+  const LUB_ID = "mining_lubricant_n";
+  const LUB_NAME = "纳米采掘润滑剂·普通";
+  function prepBooster() {
+    bSetBody(3); fundBig(); bResetBuildings();
+    G.station.maintenance.fuelRemaining = 500000;
+    G.station.buildings.booster_factory = 2;
+    G.skills.boosterEngineering = { lvl: 80, xp: 0 };
+    RR.set(G, "planetary:重金属", 100000);
+    RR.set(G, "special:战术残液", 100000);
+    G.station.autoLines.booster = { enabled:false, operatorId:null, selectedTargetId:null,
+      startedTargetId:null, progress:0, lastTick:0, stoppedReason:null };
+  }
+
+  section("P1 BOOSTER_RECIPES 均有正式中文名称且与 BOOSTER_ITEMS 同源");
+  ok(Array.isArray(BOOST) && BOOST.length === 30, "P1 BOOSTER_RECIPES 30 条 (got " + (BOOST ? BOOST.length : "undefined") + ")");
+  const p1bad = [];
+  for (const r of BOOST) {
+    if (typeof r.name !== "string" || r.name.trim() === "") { p1bad.push(r.id + ":名称缺失"); continue; }
+    if (looksInternalId(r.name)) { p1bad.push(r.id + ":名称是内部ID(" + r.name + ")"); continue; }
+    const it = BITEMS[r.id];
+    if (!it || it.name !== r.name) p1bad.push(r.id + ":与 BOOSTER_ITEMS 名称不一致");
+  }
+  ok(p1bad.length === 0, "P1 30 条配方均有中文正式名称且与物品表同源" + (p1bad.length ? " 异常: " + p1bad.slice(0, 5).join(" / ") : ""));
+  const lubRecipe = BOOST.find(r => r.id === LUB_ID);
+  ok(!!lubRecipe && lubRecipe.name === LUB_NAME, "P1 " + LUB_ID + ".name=" + LUB_NAME + " (got " + (lubRecipe ? lubRecipe.name : "配方缺失") + ")");
+
+  section("P2 下拉框 option：value=recipe.id，文本=正式中文名称");
+  prepBooster();
+  let disp = W.getStationPageDisplayState(G, Date.now());
+  let bl = lineOf(disp, "booster");
+  ok(!!bl && Array.isArray(bl.targetOptions) && bl.targetOptions.length > 0, "P2 增强剂线 targetOptions 非空");
+  const p2bad = [];
+  for (const t of (bl ? bl.targetOptions : [])) {
+    const rec = BOOST.find(r => r.id === t.id);
+    if (!rec) { p2bad.push("option.value 不是合法 recipe.id: " + t.id); continue; }
+    if (t.name !== rec.name) p2bad.push(t.id + " 文本应为 " + rec.name + " 实为 " + t.name);
+    if (looksInternalId(t.name)) p2bad.push(t.id + " 文本泄漏内部 ID: " + t.name);
+  }
+  ok(p2bad.length === 0, "P2 每个 option value=recipe.id 且文本=中文名称" + (p2bad.length ? " 异常: " + p2bad.slice(0, 5).join(" / ") : ""));
+  const lubOpt = bl ? bl.targetOptions.find(t => t.id === LUB_ID) : null;
+  ok(!!lubOpt && lubOpt.id === LUB_ID && lubOpt.name === LUB_NAME,
+    "P2 " + LUB_ID + " option value/文本 = " + LUB_ID + "/" + LUB_NAME + " (got " + (lubOpt ? lubOpt.id + "/" + lubOpt.name : "缺失") + ")");
+
+  section("P3 选中后 selectedTargetName 为中文名称");
+  const selR = W.dispatchGameAction(G, { type:"station/selectAutoLineTarget", lineId:"booster", targetId:LUB_ID }, Date.now());
+  ok(selR.changed === true, "P3 经真实 Action 选择 " + LUB_ID + " 成功" + (selR.changed ? "" : " reason=" + selR.reason));
+  ok(G.station.autoLines.booster.selectedTargetId === LUB_ID, "P3 状态层 selectedTargetId 仍是稳定内部 id");
+  disp = W.getStationPageDisplayState(G, Date.now()); bl = lineOf(disp, "booster");
+  ok(!!bl && bl.selectedTargetName === LUB_NAME, "P3 selectedTargetName=" + LUB_NAME + " (got " + (bl ? bl.selectedTargetName : "null") + ")");
+
+  section("P4 启动后 startedTargetName 为中文名称");
+  const startR = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"booster" }, Date.now());
+  ok(startR.changed === true, "P4 经真实 Action 启动增强剂线成功" + (startR.changed ? "" : " reason=" + startR.reason));
+  disp = W.getStationPageDisplayState(G, Date.now()); bl = lineOf(disp, "booster");
+  ok(!!bl && bl.startedTargetId === LUB_ID, "P4 startedTargetId 仍是稳定内部 id");
+  ok(!!bl && bl.startedTargetName === LUB_NAME, "P4 startedTargetName=" + LUB_NAME + " (got " + (bl ? bl.startedTargetName : "null") + ")");
+
+  section("P5 保存读取后名称仍正确");
+  const snapshot = JSON.parse(JSON.stringify(G));
+  for (const k of Object.keys(snapshot)) G[k] = snapshot[k];
+  W.normalizeStationState(G);
+  disp = W.getStationPageDisplayState(G, Date.now()); bl = lineOf(disp, "booster");
+  ok(!!bl && bl.selectedTargetName === LUB_NAME && bl.startedTargetName === LUB_NAME,
+    "P5 存读后 选中/运行 名称均为 " + LUB_NAME + " (got " + (bl ? bl.selectedTargetName + "/" + bl.startedTargetName : "null") + ")");
+  const lubOpt2 = bl ? bl.targetOptions.find(t => t.id === LUB_ID) : null;
+  ok(!!lubOpt2 && lubOpt2.name === LUB_NAME, "P5 存读后 option 文本仍为中文名称");
+
+  section("P6 找不到配方显示未知配方，绝不回退 recipeId");
+  G.station.autoLines.booster.selectedTargetId = "definitely_not_a_recipe_x";
+  G.station.autoLines.booster.startedTargetId = "definitely_not_a_recipe_x";
+  disp = W.getStationPageDisplayState(G, Date.now()); bl = lineOf(disp, "booster");
+  ok(!!bl && bl.selectedTargetName === "未知配方", "P6 未知 id → selectedTargetName=未知配方 (got " + (bl ? bl.selectedTargetName : "null") + ")");
+  ok(!!bl && bl.startedTargetName === "未知配方", "P6 未知 id → startedTargetName=未知配方 (got " + (bl ? bl.startedTargetName : "null") + ")");
+  ok(!!bl && bl.selectedTargetId === "definitely_not_a_recipe_x", "P6 内部 id 仍保留于 selectedTargetId 供调试");
+
+  section("P7 未选择/未启动时名称为 null（渲染层显示未选择）");
+  G.station.autoLines.booster.selectedTargetId = null;
+  G.station.autoLines.booster.startedTargetId = null;
+  disp = W.getStationPageDisplayState(G, Date.now()); bl = lineOf(disp, "booster");
+  ok(!!bl && bl.selectedTargetName === null && bl.startedTargetName === null, "P7 未选择时 selected/startedTargetName 均为 null");
+
+  section("P8 三条自动线全量目标名称无内部 ID 泄漏");
+  prepBooster();
+  G.station.buildings.smelting_refinery = 2;
+  G.station.buildings.equipment_factory = 2;
+  G.skills.refining = { lvl: 99, xp: 0 };
+  G.skills.equipmentEngineering = { lvl: 99, xp: 0 };
+  G.skills.boosterEngineering = { lvl: 99, xp: 0 };
+  disp = W.getStationPageDisplayState(G, Date.now());
+  const leaks = [];
+  for (const al of disp.autoLines) {
+    for (const t of al.targetOptions) {
+      if (typeof t.name !== "string" || t.name.trim() === "") leaks.push(al.lineId + "/" + t.id + ":空名称");
+      else if (looksInternalId(t.name)) leaks.push(al.lineId + "/" + t.id + ":" + t.name);
+    }
+  }
+  ok(leaks.length === 0, "P8 三线 option 文本无内部 ID 泄漏" + (leaks.length ? " 泄漏 " + leaks.length + " 项: " + leaks.slice(0, 5).join(" / ") : ""));
+  const bLine = lineOf(disp, "booster");
+  ok(!!bLine && bLine.targetOptions.length === 30, "P8 增强剂线 99 级可见全部 30 个目标 (got " + (bLine ? bLine.targetOptions.length : "null") + ")");
+  ok(!!bLine && bLine.targetOptions.every(t => t.name.indexOf("·") > 0), "P8 增强剂 30 个目标名称均为「系列名·品质名」形态");
 })();
 
 // ---- 事件契约健康检查 ----
