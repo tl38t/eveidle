@@ -9,7 +9,7 @@ const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
 // 归一化：去掉 ?v= 缓存串（UI 脚本用 ?v=2 破缓存），否则本地文件读取 ENOENT
 const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((match) => match[1].replace(/\?.*$/, ""));
-const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1]);
+const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const localSources = [...styleSources, ...scriptSources];
 
 if (scriptSources.length !== 56) throw new Error(`预期 56 个脚本，实际 ${scriptSources.length}`); // 56 = 55 + Batch S 离线战斗 js/systems/offline-combat.js（2026-08-05） // 55 = 54 + 十倍速开关 js/core/speed-config.js（2026-08-04） // 54 = 52 + 新手任务系统 Batch O 运行时两模块：js/core/tutorial-state.js、js/systems/tutorial.js // 52 = 51 + 新手任务系统 Batch N 任务目录数据：js/data/tutorial.js // 50 = 49 + 研究系统 Batch I 自动化协议统一模块：js/systems/research-protocols.js（49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js））
@@ -8938,5 +8938,276 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     restoreGS();
   }
 }
+
+// ===================================================================
+// 军团运输线掉落实装验收（2026-08-06）：通用加密数据 flat / 装备专用料 zone-bound /
+// 四核心唯一产出 + 建站生效 / 系数 B（核心+0.10 加算）/ 在线·离线·预览三态一致
+// ===================================================================
+{
+  const near = (a, b, eps = 1e-9) => Math.abs(Number(a) - Number(b)) <= eps;
+  const deepEq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const Z = (id) => `COMBAT_ZONES.find(z => z.id === ${JSON.stringify(id)})`;
+
+  // —— 1) 通用加密数据 flat（Task #1）：基础概率 elite 0.005 / boss 0.02，且不再有 per-zone 覆盖 ——
+  const enc = vm.runInContext("FACTION_ENCRYPTED_DATA_DROPS", sandbox);
+  for (const [faction, cfg] of Object.entries(enc)) {
+    if (!near(cfg.chances.elite, 0.005) || !near(cfg.chances.boss, 0.02)) {
+      throw new Error(`通用加密数据概率未 flat：${faction} elite=${cfg.chances.elite} boss=${cfg.chances.boss}（期望 0.005/0.02）`);
+    }
+  }
+  const zones = vm.runInContext("COMBAT_ZONES", sandbox);
+  const disabledZones = zones.filter(z => z.encryptedDataDisabled === true).map(z => z.id);
+  const expectedDisabled = ["angel_outer_reach", "blood_outer_reliquary", "sansha_outer_array", "angel_deep_domain", "blood_deep_reliquary", "sansha_deep_nexus"];
+  if (disabledZones.length !== expectedDisabled.length || !expectedDisabled.every(id => disabledZones.includes(id))) {
+    throw new Error(`加密数据禁用战区不符：实际 [${disabledZones.join(", ")}] 期望 [${expectedDisabled.join(", ")}]`);
+  }
+  const leftoverOverrides = zones.filter(z => z.encryptedDataChances !== undefined);
+  if (leftoverOverrides.length) throw new Error(`仍存在 per-zone 加密数据覆盖（Task #1 应已移除）：${leftoverOverrides.map(z => z.id).join(", ")}`);
+
+  // —— 2) 装备专用料 zone-bound 掉落（Task #3）：3 个来源战区，elite 0.005 / boss 0.02，qty 1 ——
+  const gearExpect = {
+    angel_corridor: ["special:苍穹劫团采矿矩阵·数据", "special:苍穹劫团气脉萃取·数据"],
+    blood_cathedral: ["special:赤誓血契链路·数据"],
+    sansha_command_matrix: ["special:静默同化协议·数据"],
+  };
+  for (const [zoneId, ids] of Object.entries(gearExpect)) {
+    const cfg = vm.runInContext(`getGearDropConfigs(${Z(zoneId)})`, sandbox);
+    if (!cfg || cfg.length !== ids.length) throw new Error(`装备专用料来源战区 ${zoneId} 配置数量不符：${cfg ? cfg.length : "null"} 期望 ${ids.length}`);
+    const gotIds = cfg.map(c => c.resourceId).sort();
+    if (!deepEq(gotIds, [...ids].sort())) throw new Error(`装备专用料 ${zoneId} 物料不符：实际 [${gotIds.join(", ")}] 期望 [${[...ids].sort().join(", ")}]`);
+    for (const c of cfg) {
+      if (c.qty !== 1 || !near(c.eliteChance, 0.005) || !near(c.bossChance, 0.02)) {
+        throw new Error(`装备专用料 ${zoneId} 概率/qty 异常：${c.resourceId} qty=${c.qty} elite=${c.eliteChance} boss=${c.bossChance}`);
+      }
+    }
+  }
+  for (const z of zones.filter(z => !gearExpect[z.id])) {
+    const cfg = vm.runInContext(`getGearDropConfigs(${Z(z.id)})`, sandbox);
+    if (cfg && cfg.length) throw new Error(`非来源战区 ${z.id} 不应掉落装备专用料`);
+  }
+
+  // —— 3) 四核心唯一产出 + 建站生效（Task #2）——
+  const coreExpect = {
+    angel_hunting_ground: { coreId: "smelt", resourceId: "special:空间站冶炼核心", elite: 0.000794, boss: 0.00397 },
+    sansha_command_matrix: { coreId: "shipEng", resourceId: "special:空间站船坞核心", elite: 0.000690, boss: 0.00345 },
+    blood_outer_reliquary: { coreId: "equipEng", resourceId: "special:空间站装备制造核心", elite: 0.000610, boss: 0.00305 },
+    angel_deep_domain: { coreId: "booster", resourceId: "special:空间站增强剂制造核心", elite: 0.000546, boss: 0.00273 },
+  };
+  for (const [zoneId, exp] of Object.entries(coreExpect)) {
+    const cfg = vm.runInContext(`getStationCoreDropConfigs(${Z(zoneId)})`, sandbox);
+    if (!cfg || cfg.length !== 1) throw new Error(`核心来源战区 ${zoneId} 配置异常：${cfg ? cfg.length : "null"}`);
+    const c = cfg[0];
+    if (c.coreId !== exp.coreId || c.resourceId !== exp.resourceId || !near(c.eliteChance, exp.elite) || !near(c.bossChance, exp.boss)) {
+      throw new Error(`核心 ${zoneId} 配置不符：coreId=${c.coreId} resourceId=${c.resourceId} elite=${c.eliteChance} boss=${c.bossChance}`);
+    }
+  }
+  const specialMats = vm.runInContext("COMBAT_SPECIAL_MATERIALS", sandbox);
+  for (const exp of Object.values(coreExpect)) {
+    if (!specialMats.includes(exp.resourceId.replace(/^special:/, ""))) throw new Error(`核心物料未登记进 COMBAT_SPECIAL_MATERIALS：${exp.resourceId}`);
+  }
+  const coreRoll = vm.runInContext(`(function(){
+    const base = { stationCoresObtained: { smelt:false, shipEng:false, equipEng:false, booster:false }, resources:{ special:{} } };
+    const z = ${Z("angel_hunting_ground")};
+    const first = rollStationCoreDrop(z, "boss", 0, JSON.parse(JSON.stringify(base))); // randomValue=0 必掉
+    const obtained = JSON.parse(JSON.stringify(base)); obtained.stationCoresObtained.smelt = true;
+    const again = rollStationCoreDrop(z, "boss", 0, obtained); // 已获得 → null
+    const normal = rollStationCoreDrop(z, "normal", 0, JSON.parse(JSON.stringify(base))); // 普通敌 → null
+    return { first, again, normal };
+  })()`, sandbox);
+  if (!coreRoll.first || coreRoll.first.coreId !== "smelt") throw new Error("核心首次 roll 应掉落 smelt");
+  if (coreRoll.again !== null) throw new Error("核心唯一产出失效：已获得后再次 roll 仍掉落");
+  if (coreRoll.normal !== null) throw new Error("核心不应由普通敌掉落");
+
+  // —— 4) 系数 B（Task #4）：运营中持有对应核心 → 该制造线 +10%（加算，1.03+0.10=1.13，speed 无关）——
+  const speed = vm.runInContext("(typeof getGameSpeed === 'function') ? getGameSpeed() : 1", sandbox);
+  const mult = vm.runInContext(`(function(){
+    const mk = (bodyLevel, fuel, cores, held) => ({ station:{ bodyLevel, maintenance:{ fuelRemaining: fuel } }, stationCoresObtained: cores, resources:{ special: held } });
+    const opSmelt  = mk(3, 1000, { smelt:true,  shipEng:false, equipEng:false, booster:false }, { "空间站冶炼核心": 1 });
+    const opNoCore = mk(3, 1000, { smelt:false, shipEng:false, equipEng:false, booster:false }, {});
+    const opWrong  = mk(3, 1000, { smelt:false, shipEng:true,  equipEng:false, booster:false }, { "空间站船坞核心": 1 });
+    const offBody0 = mk(0, 0,    { smelt:true }, { "空间站冶炼核心": 1 });
+    const offFuel  = mk(3, 0,    { smelt:true }, { "空间站冶炼核心": 1 });
+    const obtNoHold= mk(3, 1000, { smelt:true }, {});
+    const opShipEng= mk(3, 1000, { shipEng:true }, { "空间站船坞核心": 1 });
+    return {
+      opSmelt:   getStationLogisticsMultiplier(opSmelt, "smelt"),
+      opNoCore:  getStationLogisticsMultiplier(opNoCore, "smelt"),
+      opWrong:   getStationLogisticsMultiplier(opWrong, "smelt"),
+      offBody0:  getStationLogisticsMultiplier(offBody0, "smelt"),
+      offFuel:   getStationLogisticsMultiplier(offFuel, "smelt"),
+      obtNoHold: getStationLogisticsMultiplier(obtNoHold, "smelt"),
+      baseNoTag: getStationLogisticsMultiplier(opSmelt),
+      opShipEng: getStationLogisticsMultiplier(opShipEng, "shipEng"),
+    };
+  })()`, sandbox);
+  if (!near(mult.opSmelt, (1.03 + 0.10) * speed)) throw new Error(`系数 B smelt 运营持有应 1.03+0.10=1.13，实际 ${mult.opSmelt}`);
+  if (!near(mult.opNoCore, 1.03 * speed)) throw new Error(`系数 B 无核心应维持 ×1.03，实际 ${mult.opNoCore}`);
+  if (!near(mult.opWrong, 1.03 * speed)) throw new Error(`系数 B 持错核心不应给 smelt 加成，实际 ${mult.opWrong}`);
+  if (!near(mult.offBody0, 1.0)) throw new Error(`系数 B 未建站应 ×1，实际 ${mult.offBody0}`);
+  if (!near(mult.offFuel, 1.0)) throw new Error(`系数 B 断油应 ×1，实际 ${mult.offFuel}`);
+  if (!near(mult.obtNoHold, 1.03 * speed)) throw new Error(`系数 B 已获取但未持有库存不应加成，实际 ${mult.obtNoHold}`);
+  if (!near(mult.baseNoTag, 1.03 * speed)) throw new Error(`系数 B 未传 coreTag 不应加成（即便持有），实际 ${mult.baseNoTag}`);
+  if (!near(mult.opShipEng, (1.03 + 0.10) * speed)) throw new Error(`系数 B shipEng 应 1.03+0.10=1.13，实际 ${mult.opShipEng}`);
+
+  // —— 5) 在线 / 离线 / 预览 三态一致（Task #5）——
+  const previewGear = vm.runInContext("getCombatDropPreview({}, { zoneId:'angel_corridor' })", sandbox);
+  const cfgGear = vm.runInContext("getGearDropConfigs(COMBAT_ZONES.find(z => z.id === 'angel_corridor'))", sandbox);
+  if (!deepEq(previewGear.gearDrops, cfgGear)) throw new Error("预览态 gearDrops 与 getGearDropConfigs 不一致");
+  const previewCore = vm.runInContext("getCombatDropPreview({}, { zoneId:'angel_hunting_ground' })", sandbox);
+  const cfgCore = vm.runInContext("getStationCoreDropConfigs(COMBAT_ZONES.find(z => z.id === 'angel_hunting_ground'))", sandbox);
+  if (!deepEq(previewCore.stationCoreDrops, cfgCore)) throw new Error("预览态 stationCoreDrops 与 getStationCoreDropConfigs 不一致");
+  const dsPreview = vm.runInContext("getCombatDropPreview({}, { mode:'deathspace', deathspaceId:'__none__' })", sandbox);
+  if (dsPreview.mode !== "deathspace" || dsPreview.valid !== false) throw new Error("死亡空间预览应返回 invalid 分支，无法核对 gear/核心 null");
+  const previewSrc = scripts[scriptSources.indexOf("./js/core/selectors.js")];
+  if (!/gearDrops:\s*null,\s*stationCoreDrops:\s*null/.test(previewSrc)) throw new Error("getCombatDropPreview 死亡空间分支未将 gear/核心置 null");
+  const offlineSrc = scripts[scriptSources.indexOf("./js/systems/offline-combat.js")];
+  if (!offlineSrc.includes("getGearDropConfigs") || !offlineSrc.includes("getStationCoreDropConfigs")) {
+    throw new Error("离线战斗未复用 getGearDropConfigs / getStationCoreDropConfigs，在线/离线/预览三态可能不一致");
+  }
+
+  console.log("军团运输线掉落实装验收通过（2026-08-06）：加密数据 flat / 装备专用料 zone-bound / 四核心唯一产出+系数 B / 在线·离线·预览三态一致");
+}
+
+// === 货柜验收 START ===
+{
+  const near = (a, b, eps = 1e-9) => Math.abs(Number(a) - Number(b)) <= eps;
+  const deepEq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+  // 1) ENEMY_CARGO_CLASS 三阵营共 54 个模板 key
+  const expectedKeys = {
+    angel: ["scout","raider","commander","patrol_destroyer","raider_destroyer","hunter_commander","strike_cruiser","war_cruiser","fleet_commander","siege_battleship","marauder_battleship","war_master","frontier_capital","domination_capital","outer_reach_overseer","abyssal_supercapital","seraph_supercapital","deep_domain_overlord"],
+    blood: ["acolyte","priest","cardinal","ritual_destroyer","blood_destroyer","high_priest","sermon_cruiser","sacrament_cruiser","blood_archon","iron_battleship","apostle_battleship","blood_sovereign","covenant_capital","apostolic_capital","outer_reliquary_overseer","abyssal_blood_supercapital","crimson_supercapital","deep_reliquary_overlord"],
+    sansha: ["drone","sentinel","overlord","control_destroyer","sentinel_destroyer","control_overlord","assimilation_cruiser","dominion_cruiser","nexus_overlord","command_battleship","domination_battleship","matrix_overlord","nexus_capital","dominion_capital","outer_array_overseer","abyssal_nexus_supercapital","ascendant_supercapital","deep_nexus_overlord"]
+  };
+  for (const faction of ["angel","blood","sansha"]) {
+    const map = vm.runInContext("ENEMY_CARGO_CLASS['" + faction + "']", sandbox);
+    for (const k of expectedKeys[faction]) if (!map[k]) throw new Error("ENEMY_CARGO_CLASS." + faction + " 缺 key: " + k);
+    if (Object.keys(map).length !== expectedKeys[faction].length) throw new Error("ENEMY_CARGO_CLASS." + faction + " key 数=" + Object.keys(map).length + " 应 " + expectedKeys[faction].length);
+  }
+
+  // 2) CARGO_CLASS_SIZES 映射 + 权重
+  const classSizes = vm.runInContext("CARGO_CLASS_SIZES", sandbox);
+  const expectSizes = { frigate:["S"], destroyer:["S","M"], cruiser:["M"], battleship:["M","L"], capital:["L"], supercapital:["L","XL"] };
+  for (const cls of Object.keys(expectSizes)) {
+    if (!deepEq(classSizes[cls].sizes, expectSizes[cls])) throw new Error("CARGO_CLASS_SIZES." + cls + " 应为 " + JSON.stringify(expectSizes[cls]) + " 实 " + JSON.stringify(classSizes[cls].sizes));
+  }
+  if (!near(classSizes.supercapital.weights[0], 0.70) || !near(classSizes.supercapital.weights[1], 0.30)) throw new Error("supercapital 权重应 0.70/0.30");
+  if (!near(classSizes.destroyer.weights[0], 0.80) || !near(classSizes.destroyer.weights[1], 0.20)) throw new Error("destroyer 权重应 0.80/0.20");
+
+  // 3) 尺寸加权抽取（纯函数）
+  const pickFrig = vm.runInContext("cargoWeightedPick(CARGO_CLASS_SIZES.frigate.sizes.map((s,i)=>({id:s,weight:CARGO_CLASS_SIZES.frigate.weights[i]})), ()=>0.5).id", sandbox);
+  if (pickFrig !== "S") throw new Error("frigate 必出 S，实 " + pickFrig);
+  const pickSuperL = vm.runInContext("cargoWeightedPick(CARGO_CLASS_SIZES.supercapital.sizes.map((s,i)=>({id:s,weight:CARGO_CLASS_SIZES.supercapital.weights[i]})), ()=>0.0).id", sandbox);
+  if (pickSuperL !== "L") throw new Error("supercapital rng=0 应 L，实 " + pickSuperL);
+  const pickSuperXL = vm.runInContext("cargoWeightedPick(CARGO_CLASS_SIZES.supercapital.sizes.map((s,i)=>({id:s,weight:CARGO_CLASS_SIZES.supercapital.weights[i]})), ()=>0.99).id", sandbox);
+  if (pickSuperXL !== "XL") throw new Error("supercapital rng=0.99 应 XL，实 " + pickSuperXL);
+
+  // 4) rollCargoDrop 命中/未命中/尺寸 + 发放物品（用 sandbox 内 gameState = INITIAL_STATE）
+  //    rng 序列：第一个值决定掉落命中（< chance），第二个值起决定尺寸抽取。
+  //    supercapital 尺寸 L/XL 权重 0.70/0.30 → 尺寸抽取 rng<0.70 出 L，>=0.70 出 XL。
+  sandbox.__seq = (arr) => { let i = 0; return () => { const v = arr[Math.min(i, arr.length - 1)]; i++; return v; }; };
+  const dHitXL = vm.runInContext("rollCargoDrop({kind:'boss',type:'abyssal_supercapital'}, {faction:'angel'}, __seq([0,0.99]), gameState)", sandbox);
+  if (!dHitXL || dHitXL.size !== "XL") throw new Error("超级旗舰 boss 应可掉 XL（rng 序列 [0,0.99]），实 " + JSON.stringify(dHitXL));
+  if (vm.runInContext("ResourceRegistry.get(gameState, 'special:货柜XL')", sandbox) < 1) throw new Error("掉落未发放 货柜XL");
+  const dHitL = vm.runInContext("rollCargoDrop({kind:'boss',type:'abyssal_supercapital'}, {faction:'angel'}, __seq([0,0]), gameState)", sandbox);
+  if (!dHitL || dHitL.size !== "L") throw new Error("超级旗舰 boss 应可掉 L（rng 序列 [0,0]），实 " + JSON.stringify(dHitL));
+  const dS = vm.runInContext("rollCargoDrop({kind:'normal',type:'scout'}, {faction:'angel'}, ()=>0.0, gameState)", sandbox);
+  if (!dS || dS.size !== "S") throw new Error("护卫 normal rng=0 应掉 S，实 " + JSON.stringify(dS));
+  const dMiss = vm.runInContext("rollCargoDrop({kind:'normal',type:'scout'}, {faction:'angel'}, ()=>0.99, gameState)", sandbox);
+  if (dMiss !== null) throw new Error("rng=0.99 应不掉，实 " + JSON.stringify(dMiss));
+
+  // 5) openCargoContainer 消耗+发放（XL 抽 3 次；rng=0 → 全 T1 → 每抽发 3 件三件套）
+  const beforeXL = vm.runInContext("ResourceRegistry.get(gameState, 'special:货柜XL')", sandbox);
+  const opened = vm.runInContext("openCargoContainer(gameState, 'XL', ()=>0.0)", sandbox);
+  if (!opened) throw new Error("开 XL 失败");
+  const afterXL = vm.runInContext("ResourceRegistry.get(gameState, 'special:货柜XL')", sandbox);
+  if (afterXL !== beforeXL - 1) throw new Error("开箱未消耗 货柜XL: " + beforeXL + "->" + afterXL);
+  // XL rng=0 → 3 次 T1 抽，每次 3 件 = 9 条发放明细（T1 已不含矿物）
+  if (opened.rolls.length !== 9) throw new Error("XL rng=0 应 3 次 T1 抽×3 件=9 条，实 " + opened.rolls.length);
+  const ids = opened.rolls.map(r => r.id);
+  const mineralInT1 = ids.some(id => ["mineral:三钛合金","mineral:类银超金属","mineral:类晶体胶矿"].includes(id));
+  if (mineralInT1) throw new Error("T1 不应含基础矿物（已挪 T2）: " + JSON.stringify(ids));
+  const planetaryOk = ids.some(id => id.indexOf("planetary:") === 0);
+  const iskOk = ids.indexOf("loot:isk") >= 0;
+  const tacticalOk = ids.indexOf("special:战术残液") >= 0;
+  if (!(planetaryOk && iskOk && tacticalOk)) throw new Error("T1 三件套不齐(行星+战术残液+星币): " + JSON.stringify(ids));
+  // T1 数额随尺寸缩放：XL 星币 > S 星币（同 rng=0）
+  vm.runInContext("ResourceRegistry.add(gameState, 'special:货柜S', 1)", sandbox);
+  const openedS = vm.runInContext("openCargoContainer(gameState, 'S', ()=>0.0)", sandbox);
+  if (!openedS) throw new Error("开 S 失败");
+  if (openedS.rolls.length !== 3) throw new Error("S rng=0 应 1 次 T1 抽×3 件=3 条，实 " + openedS.rolls.length);
+  const xlIsk = opened.rolls.find(r => r.id === "loot:isk").qty;
+  const sIsk = openedS.rolls.find(r => r.id === "loot:isk").qty;
+  if (!(xlIsk > sIsk)) throw new Error("T1 星币应随尺寸缩放（XL=" + xlIsk + " > S=" + sIsk + "）");
+  for (const r of opened.rolls.concat(openedS.rolls)) {
+    if (r.loot) continue; // 具名战利品不入库存，单独存 state.cargoLoot
+    if (vm.runInContext("ResourceRegistry.get(gameState, " + JSON.stringify(r.id) + ")", sandbox) < r.qty) throw new Error("开箱未发放 " + r.id);
+  }
+  // T1 星币改为具名战利品：开箱应铸入 state.cargoLoot（XL 3 抽 + S 1 抽 = 4 件 isk 战利品）
+  const clAll = vm.runInContext("gameState.cargoLoot", sandbox);
+  if (!Array.isArray(clAll) || clAll.length < 4) throw new Error("开箱未铸入 cargoLoot（应≥4 件 isk 战利品），实 " + (clAll ? clAll.length : "无"));
+  const iskLoot = clAll.filter(x => x.kind === "isk");
+  if (iskLoot.length < 4) throw new Error("cargoLoot 中 isk 战利品应≥4，实 " + iskLoot.length);
+  const iskN = vm.runInContext("CARGO_ISK_LOOT_NAMES", sandbox);
+  for (const x of iskLoot) {
+    if (iskN.indexOf(x.name) < 0) throw new Error("isk 战利品名不在池内: " + x.name);
+    if (x.value < 1 || x.value > 30000 * 4.2 + 10) throw new Error("isk 战利品价值越界: " + x.value);
+  }
+
+  // 6) T1 保底三件套结构 + T2 含基础矿物 + 掉率 + T2/T3/T4 池 + T4 脑插
+  const cfg = vm.runInContext("getCargoDropConfigs(COMBAT_ZONES.find(z=>z.id==='angel_corridor'))", sandbox);
+  if (!cfg || !cfg.t1Bundle) throw new Error("应含 t1Bundle");
+  if (cfg.t1Bundle.mineralChoices) throw new Error("T1 不应再含 mineralChoices（已挪 T2）");
+  const pc = cfg.t1Bundle.planetaryChoices;
+  const expectPC = { S: 3, M: 4, L: 5, XL: 6 };
+  for (const s of ["S", "M", "L", "XL"]) {
+    if (!Array.isArray(pc[s]) || pc[s].length !== expectPC[s]) throw new Error("T1 行星 " + s + " 应选 " + expectPC[s] + " 种，实 " + (pc[s] ? pc[s].length : "无"));
+  }
+  if (cfg.t1Bundle.qty.mineral) throw new Error("T1_QTY 不应含 mineral（已挪 T2）");
+  if (!cfg.t1Bundle.qty.tactical) throw new Error("T1_QTY 应含 tactical（战术残液 ≈20min 战斗 farm）");
+  // 掉率：同比例压缩 ÷10 → normal 0.6% / elite 1.0% / boss 1.5%
+  const dc = vm.runInContext("CARGO_DROP_CHANCE", sandbox);
+  if (!near(dc.normal, 0.006) || !near(dc.elite, 0.010) || !near(dc.boss, 0.015)) throw new Error("掉率应为 0.6/1.0/1.5%: " + JSON.stringify(dc));
+  // T2 应含三种基础矿物（三钛/银镍/晶格），qty [30,100]
+  const t2Ids = cfg.pools.T2.map(p => p.id);
+  for (const m of ["mineral:三钛合金","mineral:类银超金属","mineral:类晶体胶矿"]) {
+    if (!t2Ids.includes(m)) throw new Error("T2 应含基础矿物 " + m);
+    const e = cfg.pools.T2.find(p => p.id === m);
+    if (!Array.isArray(e.qty) || e.qty[0] !== 30 || e.qty[1] !== 100) throw new Error("T2 基础矿物 " + m + " qty 应 [30,100]，实 " + JSON.stringify(e.qty));
+  }
+  // T2 的 isk/lp 改为具名兑换物（loot:isk / loot:lp）；功勋砍半 [25,100]
+  if (!t2Ids.includes("loot:isk")) throw new Error("T2 应含 loot:isk（具名星币战利品）");
+  if (!t2Ids.includes("loot:lp")) throw new Error("T2 应含 loot:lp（具名功勋战利品）");
+  const lp2 = cfg.pools.T2.find(p => p.id === "loot:lp");
+  if (!Array.isArray(lp2.qty) || lp2.qty[0] !== 25 || lp2.qty[1] !== 100) throw new Error("T2 loot:lp qty 应 [25,100]（砍半后），实 " + JSON.stringify(lp2.qty));
+  // 名池：星币 13 / 功勋 15，含指定名、不含旧名
+  const iskNames = vm.runInContext("CARGO_ISK_LOOT_NAMES", sandbox);
+  const lpN = vm.runInContext("CARGO_LP_LOOT_NAMES", sandbox);
+  if (iskNames.length !== 13) throw new Error("CARGO_ISK_LOOT_NAMES 应 13，实 " + iskNames.length);
+  if (lpN.length !== 15) throw new Error("CARGO_LP_LOOT_NAMES 应 15，实 " + lpN.length);
+  for (const n of ["染血海盗狗牌","染血战术终端","太阳能战斧","璀璨星图"]) if (lpN.indexOf(n) < 0) throw new Error("LP 名池缺: " + n);
+  if (lpN.indexOf("带血海盗狗牌") >= 0 || lpN.indexOf("血染战术终端") >= 0) throw new Error("LP 名池仍含旧名（应已改为染血）");
+  // cargoGrantLoot 直接铸件：lp 战利品名来自 LP 池、value 入参正确、进 cargoLoot
+  const clBefore = vm.runInContext("gameState.cargoLoot.length", sandbox);
+  const lootItem = vm.runInContext("cargoGrantLoot(gameState, 'lp', 77, ()=>0.3)", sandbox);
+  if (!lootItem || lpN.indexOf(lootItem.name) < 0 || lootItem.kind !== "lp" || lootItem.value !== 77) throw new Error("cargoGrantLoot 异常: " + JSON.stringify(lootItem));
+  if (vm.runInContext("gameState.cargoLoot.length", sandbox) !== clBefore + 1) throw new Error("cargoGrantLoot 未 push 进 cargoLoot");
+  // T3 loot:lp 仍保留（[1000,4000]）
+  const lp3 = cfg.pools.T3.find(p => p.id === "loot:lp");
+  if (!lp3 || !Array.isArray(lp3.qty) || lp3.qty[0] !== 1000 || lp3.qty[1] !== 4000) throw new Error("T3 loot:lp qty 应 [1000,4000]，实 " + JSON.stringify(lp3 && lp3.qty));
+  if (!cfg.pools || !cfg.pools.T2 || !cfg.pools.T3 || !cfg.pools.T4) throw new Error("CARGO_POOLS 应含 T2-T4");
+  if (!cfg.pools.T4.some(p => p.id.indexOf('神经植入体') >= 0)) throw new Error("T4 应含神经植入体");
+  if (cfg.pools.T3.some(p => p.id.indexOf('空间站') >= 0 || p.id.indexOf('数据') >= 0)) throw new Error("T3 不应含战区绑定装备料/空间站核心（护栏）");
+
+  // 7) 预览与配置一致；死亡空间 cargoDrops=null
+  const preview = vm.runInContext("getCombatDropPreview({}, {zoneId:'angel_corridor'})", sandbox);
+  if (!deepEq(preview.cargoDrops, cfg)) throw new Error("预览 cargoDrops 与 getCargoDropConfigs 不一致");
+  const dsId = vm.runInContext("(DEATHSPACE_DATABASE.find(function(d){ return COMBAT_ZONES.some(function(z){ return z.id===d.sourceZoneId; }); }) || DEATHSPACE_DATABASE[0]).id", sandbox);
+  const dsPrev = vm.runInContext("getCombatDropPreview({}, {mode:'deathspace', deathspaceId:" + JSON.stringify(dsId) + "})", sandbox);
+  if (dsPrev.cargoDrops !== null) throw new Error("死亡空间 cargoDrops 应 null（deathspaceId=" + dsId + "），实 " + JSON.stringify(dsPrev.cargoDrops));
+
+  console.log("货柜系统验收通过（2026-08-08）：船级→尺寸映射/权重、rollCargoDrop 尺寸分布+发放、openCargoContainer 消耗+发放、T1三件套(无矿物·行星随尺寸解锁三~六选一·战术残液180-210·星币改具名战利品)+T2含基础矿物(30-100)·T2/T3含具名兑换物(isk/lp)·T2-lp砍半[25,100]·T4脑插、掉率0.6/1.0/1.5%、名池13/15、预览一致、死亡空间排除");
+}
+// === 货柜验收 END ===
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);

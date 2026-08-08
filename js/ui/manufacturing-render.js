@@ -178,7 +178,11 @@ function mountManufacturing3D(display) {
 
 function renderShipEngineeringPage(now) {
   const display = getShipEngineeringDisplayState(gameState, Number(now) || Date.now());
-  const efficiency = document.getElementById("shipeng-eff-value"); if (efficiency) efficiency.textContent = display.efficiency.toFixed(2) + "x";
+  const efficiency = document.getElementById("shipeng-eff-display"); if (efficiency) {
+    efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
+    efficiency.title = getShipEngineeringSpeedBreakdownText(display);
+  }
+  const lvNum = document.getElementById("shipeng-lv-num"); if (lvNum) lvNum.textContent = display.level;
   const speedInfo = document.getElementById("shipeng-speed-breakdown");
   if (speedInfo) speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display);
   const fill = document.getElementById("shipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
@@ -255,10 +259,18 @@ function renderEquipEngDetail(display) {
 
 function renderEquipEngPage(now) {
   const display = getEquipmentEngineeringDisplayState(gameState, Number(now) || Date.now(), equipEngSearchTerm);
-  const efficiency = document.getElementById("equipeng-eff-display"); if (efficiency) efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
+  const efficiency = document.getElementById("equipeng-eff-display");
+  if (efficiency) {
+    efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
+    const skillMult = (1 + display.level * 0.02);
+    efficiency.title = "技能速度：1 × (1 + Lv." + display.level + " × 0.02) = " + skillMult.toFixed(2) + "x"
+      + "\n空间站综合后勤：×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）"
+      + "\n科研加成：×" + (display.researchMultiplier || 1).toFixed(3)
+      + "\n最终效率：" + display.efficiency.toFixed(2) + "x";
+  }
   const eqLog = document.getElementById("equipeng-logistics");
   if (eqLog) {
-    const lm = display.stationLogistics ? display.stationLogistics.multiplier : 1 || 1;
+    const lm = display.stationLogisticsMultiplier || 1;
     eqLog.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2);
   }
   const level = document.getElementById("equipeng-lv-num"); if (level) level.textContent = display.level;

@@ -51,7 +51,14 @@ function updateCombatRecovery(now, state) {
   now = Number(now);
   if (!Number.isFinite(now)) now = Date.now();
   const combat = g.combat;
-  const activeId = combat.activeShip;
+  // 维修完成检测必须与 beginRecovery 写入维修键的解析口径完全一致：beginRecovery 用
+  // getActiveCombatShipState 解析「当前 active 战斗舰」(shipAssignments.combat → combat.activeShip → ships[0])
+  // 并把维修条目写在该舰 instanceId 下、resumeAfterRepair.shipInstanceId 也记该舰。
+  // 若此处仅用 combat.activeShip（可能因单舰兼顾挖矿/指派变更被置 null 或指向他舰），
+  // 则 repairs 键对不上 → 维修完成检测不到 → 自动续战永不触发 → 悬挂清理又删掉 resumeAfterRepair → 永久卡死
+  // （表现：战败进维修、修好后又一次战败就再无动作）。故统一用 getActiveCombatShipState 解析。
+  const _activeShip = getActiveCombatShipState(g);
+  const activeId = (_activeShip && _activeShip.instance && _activeShip.instance.instanceId) || combat.activeShip || null;
   // 仅用于判定「当前 active 战斗舰是否刚完成维修」以触发自动恢复：语义为"该舰存在维修条目"，
   // 与到期边界（now === until）一致——到期这一 tick 既满足 activeFinished 也满足 wasRepairingActive，
   // 从而正确触发 resumeAfterRepair。注意 equip/toggle/enterDeathspace 的拦截仍用 isShipUnderRepair 的严格 > 比较，不受影响。
@@ -512,6 +519,65 @@ function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues, state) {
   return drops;
 }
 
+// Tier2 加密数据拆分：装备专用料掉落（zone-bound，不进池、不等权；死亡空间不触发）。
+function getGearDropConfigs(zone) {
+  if (!zone || !Array.isArray(zone.gearDrops)) return [];
+  return zone.gearDrops.map(config => ({
+    material: config.material || (config.resourceId || "").split(":").slice(1).join(":") || config.resourceId,
+    resourceId: config.resourceId,
+    qty: Math.max(1, Number(config.qty) || 1),
+    eliteChance: Number(config.chances && config.chances.elite) || 0,
+    bossChance: Number(config.chances && config.chances.boss) || 0
+  }));
+}
+
+function rollGearDrops(zone, enemyKind, randomValues, state) {
+  state = state || gameState;
+  if (enemyKind !== "elite" && enemyKind !== "boss") return [];
+  const configs = getGearDropConfigs(zone);
+  if (configs.length === 0) return [];
+  const values = Array.isArray(randomValues) ? randomValues : [];
+  const drops = [];
+  for (let index = 0; index < configs.length; index++) {
+    const cfg = configs[index];
+    const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
+    const roll = values[index] !== undefined ? values[index] :
+      typeof randomValues === "number" ? randomValues : Math.random();
+    if (!cfg.resourceId || roll >= chance) continue;
+    ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
+    drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty, rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
+  }
+  return drops;
+}
+
+// Tier3 空间站四核心：唯一产出、特殊物资、建站才生效（生效乘子在系数 B）。
+function getStationCoreDropConfigs(zone) {
+  if (!zone || !Array.isArray(zone.stationCoreDrops)) return [];
+  return zone.stationCoreDrops.map(config => ({
+    coreId: config.coreId,
+    material: config.material || (config.resourceId || "").split(":").slice(1).join(":") || config.resourceId,
+    resourceId: config.resourceId,
+    qty: Math.max(1, Number(config.qty) || 1),
+    eliteChance: Number(config.chances && config.chances.elite) || 0,
+    bossChance: Number(config.chances && config.chances.boss) || 0
+  }));
+}
+
+function rollStationCoreDrop(zone, enemyKind, randomValue, state) {
+  state = state || gameState;
+  if (enemyKind !== "elite" && enemyKind !== "boss") return null;
+  const obtained = state.stationCoresObtained || {};
+  const cfg = getStationCoreDropConfigs(zone).find(c => !obtained[c.coreId]);
+  if (!cfg) return null; // 该带核心已获得 → 不再掉落
+  const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
+  if (!chance) return null;
+  const roll = randomValue === undefined ? Math.random() : randomValue;
+  if (roll >= chance) return null;
+  ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
+  state.stationCoresObtained[cfg.coreId] = true;
+  return { coreId: cfg.coreId, material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty };
+}
+
 function rollDeathspaceTicketDrop(zone, enemyKind, randomValue, state) {
   state = state || gameState;
   if (enemyKind !== "elite" && enemyKind !== "boss") return null;
@@ -605,8 +671,17 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const specialValues = zoneSpecialConfigs.map(() => roll());
   const zoneSpecialDrops = deathspace ? [] : rollCombatZoneSpecialDrops(zone, enemy.kind, specialValues, state);
   for (const drop of zoneSpecialDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
+  const gearConfigs = deathspace ? [] : getGearDropConfigs(zone);
+  const gearValues = gearConfigs.map(() => roll());
+  const gearDrops = deathspace ? [] : rollGearDrops(zone, enemy.kind, gearValues, state);
+  for (const drop of gearDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
+  const coreDrop = deathspace ? null : rollStationCoreDrop(zone, enemy.kind, roll(), state);
+  if (coreDrop) c.lastLoot += " · " + coreDrop.material + " ×" + coreDrop.qty;
   const ticketDrop = deathspace ? null : rollDeathspaceTicketDrop(zone, enemy.kind, roll(), state);
   if (ticketDrop) c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty;
+  // 货柜系统：敌方船被击坠低概率掉货柜（死亡空间不掉落）；内容待玩家开箱揭晓。
+  const cargoDrop = deathspace ? null : (typeof rollCargoDrop === "function" ? rollCargoDrop(enemy, zone, roll, state) : null);
+  if (cargoDrop) c.lastLoot += " · 货柜" + cargoDrop.size + " ×1";
   const coreRoll = roll();
   const protoRoll = roll();
   const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave, coreRoll, protoRoll, state) : [];
@@ -632,13 +707,13 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     c.lastLoot += " · " + tacticalDrop.materialId + " ×" + tacticalDrop.quantity;
   }
   const fmtDrop = d => ((d && d.materialId !== undefined ? d.materialId : (d && d.material)) + " ×" + (d && d.quantity !== undefined ? d.quantity : (d && d.qty)));
-  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...deathspaceDrops, tacticalDrop].filter(Boolean);
+  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...gearDrops, coreDrop, ...deathspaceDrops, tacticalDrop, cargoDrop].filter(Boolean);
   if (specialDrops.length > 0) c.lastSpecialLoot = specialDrops.map(fmtDrop).join(" · ");
   c.totalKills++;
   if (enemy.kind === "elite") c.runEliteKills = (c.runEliteKills || 0) + 1;
   syncCurrentCombatTarget(c, state);
-  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent });
-  return { isk, dataDrop, zoneSpecialDrops, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent };
+  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop });
+  return { isk, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop };
 }
 
 function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
@@ -837,14 +912,24 @@ function advanceCombatRound(state, context) {
   if (c.hp.armor   > c.maxHp.armor)   c.hp.armor   = c.maxHp.armor;
   if (c.hp.structure > c.maxHp.structure) c.hp.structure = c.maxHp.structure;
 
-  const ammoRequired = {};
+  // 弹药耗尽撤退：所有已装载弹药都无法供给任何需弹武器 → 结束战斗（撤退，保留已得战利品）
+  const needsAmmoWeapons = weapons.filter(m => (m.equipment.combat.ammoCost || 1) > 0);
+  if (needsAmmoWeapons.length > 0 && !needsAmmoWeapons.some(m => hasSelectedAmmo(state, m.equipment.combat.weaponType))) {
+    c.active = false; state.currentAction.active = false;
+    c.enemies = []; c.currentEnemy = null;
+    c.lastStatus = "弹药耗尽，撤退";
+    c.runDamageDealt = 0; c.runDamageTaken = 0;
+    return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"ammo-depleted" };
+  }
+
   const volleyFuel = computeVolleyFuel(state, zone);
+  const ammoRequired = {};
   for (const module of weapons) {
     const combat = module.equipment.combat;
     ammoRequired[combat.weaponType] = (ammoRequired[combat.weaponType] || 0) + (combat.ammoCost || 1);
   }
   const enoughFuel = ResourceRegistry.get(state, "consumable:fuel") >= volleyFuel;
-  const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => ResourceRegistry.get(state, "ammo:" + type) >= amount);
+  const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => getSelectedCount(state, type) >= amount);
   const canFire = weapons.length > 0 && enoughFuel && enoughAmmo;
 
   if (canFire) {
@@ -854,7 +939,11 @@ function advanceCombatRound(state, context) {
     normalizeCombatRunDamage(c);
     const prevRunDamage = c.runDamageDealt;
     ResourceRegistry.spend(state, "consumable:fuel", volleyFuel);
-    for (const [type, amount] of Object.entries(ammoRequired)) ResourceRegistry.spend(state, "ammo:" + type, amount);
+    const volleyAmmoProps = {};
+    for (const [type, amount] of Object.entries(ammoRequired)) {
+      const r = consumeAmmoForType(state, type, amount);
+      volleyAmmoProps[type] = getAmmoTierProps(r.tier);
+    }
     const capSkill = state.skills.capacitorManagement;
     if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", volleyFuel * 0.3); }
 
@@ -867,7 +956,8 @@ function advanceCombatRound(state, context) {
       if (c.mode !== "deathspace" && c.runWeaponTypes.indexOf(combat.weaponType) === -1) {
         c.runWeaponTypes.push(combat.weaponType);
       }
-      const playerHit = calcPlayerHit(combat.weaponType, equipment, state);
+      const ammoProps = volleyAmmoProps[combat.weaponType] || getAmmoTierProps("T1");
+      const playerHit = calcPlayerHit(combat.weaponType, equipment, state) * ammoProps.hitMult;
       const dmgMult = calcPlayerDmgMult(combat.weaponType, state);
       let counterMult = 1.0;
       if (weapon.counterType === "shield" && enemy.hp.shield > 0) counterMult = 1.25;
@@ -876,7 +966,7 @@ function advanceCombatRound(state, context) {
       const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
       const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
       const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
-      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier, rng);
+      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult, rng);
       const dealt = applyLayeredCombatDamage(enemy.hp, damage);
       const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
       c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;

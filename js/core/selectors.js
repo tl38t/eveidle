@@ -483,7 +483,7 @@ function getSmeltingDisplayState(state, now) {
     ? getRigModifiers(state, assigned.instance) : {};
   const rigBonus = rigMods.smeltingSpeed || 0;
   const skillEfficiency = 1 + level * 0.02;
-  const stationLogisticsMultiplier = getStationLogisticsMultiplier(state);
+  const stationLogisticsMultiplier = getStationLogisticsMultiplier(state, "smelt");
   // 研究批次 G：冶炼科研唯一乘子 = 1 + (allMfg + smelt)（加法汇总，绝不逐项连乘）
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "smelt"]) : 1;
@@ -500,6 +500,7 @@ function getSmeltingDisplayState(state, now) {
     skillEfficiency,
     efficiency,
     stationLogisticsMultiplier,
+    stationLogistics: (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : null,
     researchMultiplier,
     stationLogisticsBonusRate: stationLogisticsMultiplier - 1,
     ship:assigned.config ? { id:assigned.config.id, name:assigned.config.name } : null,
@@ -587,7 +588,7 @@ function getEquipmentOwnedCountFromState(state, recipe) {
       instances.filter(instance => instance.itemId === recipe.output.itemId).length;
   }
   if (recipe.output.type === "fuel") return ResourceRegistry.get(state, "consumable:fuel");
-  return ResourceRegistry.get(state, "ammo:" + recipe.output.weapon);
+  return getAmmoCount(state, recipe.output.weapon);
 }
 
 function getEquipmentMaxCyclesFromState(state, recipe) {
@@ -774,7 +775,7 @@ function getShipEngineeringSpeedBreakdown(state, kind) {
   if (!Number.isFinite(skillMultiplier) || skillMultiplier <= 0) skillMultiplier = 1;
   let shipyardMultiplier = (typeof getShipyardSpeedMultiplier === "function") ? Number(getShipyardSpeedMultiplier(state)) : 1;
   if (!Number.isFinite(shipyardMultiplier) || shipyardMultiplier <= 0) shipyardMultiplier = 1;
-  let stationLogisticsMultiplier = (typeof getStationLogisticsMultiplier === "function") ? Number(getStationLogisticsMultiplier(state)) : 1;
+  let stationLogisticsMultiplier = (typeof getStationLogisticsMultiplier === "function") ? Number(getStationLogisticsMultiplier(state, "shipEng")) : 1;
   if (!Number.isFinite(stationLogisticsMultiplier) || stationLogisticsMultiplier <= 0) stationLogisticsMultiplier = 1;
   let researchMultiplier = 1;
   if (typeof ResearchState !== "undefined" && (kind === "component" || kind === "assembly")) {
@@ -805,7 +806,6 @@ function getShipEngineeringDisplayState(state, now) {
   const level = Number(skill.lvl) || 1;
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
-  const efficiency = 1 + level * 0.02;
   const speed = getShipEngineeringSpeedBreakdown(state);
   // 研究批次 G：组件线 / 总装线各自的完整速度分解（含独立科研乘子），供显示与校验消费
   const componentSpeed = getShipEngineeringSpeedBreakdown(state, "component");
@@ -889,10 +889,11 @@ function getShipEngineeringDisplayState(state, now) {
     xp,
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
-    efficiency,
+    efficiency: (subView === "assembly" ? assemblySpeed : componentSpeed).totalSpeedMultiplier,
     skillMultiplier:speed.skillMultiplier,
     shipyardMultiplier:speed.shipyardMultiplier,
     stationLogisticsMultiplier:speed.stationLogisticsMultiplier,
+    stationLogistics: (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : null,
     totalSpeedMultiplier:speed.totalSpeedMultiplier,
     componentResearchMultiplier:componentSpeed.researchMultiplier,
     assemblyResearchMultiplier:assemblySpeed.researchMultiplier,
@@ -962,7 +963,7 @@ function getShipEngineeringSpeedBreakdownText(display) {
   const sm = Number(display.skillMultiplier || display.efficiency) || 1;
   const ym = Number(display.shipyardMultiplier) || 1;
   const lm = Number(sl.multiplier) || 1;
-  const total = Number(display.totalSpeedMultiplier) || (sm * ym * lm);
+  const total = Number(display.efficiency) || (sm * ym * lm);
   const parts = ["技能 ×" + sm.toFixed(2), "船坞 ×" + ym.toFixed(2)];
   const logPart = (sl.bodyLevel > 0 && sl.operational)
     ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）"
@@ -980,7 +981,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   // 研究批次 G：装备工程科研唯一乘子 = 1 + (allMfg + equip)；与 tick/离线的 getEquipEngEfficiency 同一 API、同一结果
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "equip"]) : 1;
-  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state) * researchMultiplier;
+  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state, "equipEng") * researchMultiplier;
   const requestedRecipe = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
   const savedCategory = EQUIPMENT_ENGINEERING_CATEGORIES.find(category => category.id === action.equipEngCategory);
   const category = savedCategory || getEquipEngCategoryDefinition(requestedRecipe.category);
@@ -1028,7 +1029,9 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     efficiency,
     stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
+    stationLogistics: (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : null,
     stationLogisticsBonusRate: getStationLogisticsMultiplier(state) - 1,
+    researchMultiplier,
     active,
     status:active ? "进行中" : "待命",
     progress,
@@ -1101,7 +1104,7 @@ function getBoosterManufacturingDisplayState(state, now) {
   // 研究批次 G：增强剂制造科研唯一乘子 = 1 + (allMfg + booster)；与 tick/离线的 getBoosterEfficiency 同一 API、同一结果
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "booster"]) : 1;
-  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state) * researchMultiplier;
+  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state, "booster") * researchMultiplier;
 
   // 分类与品质筛选（用户选择；运行中切换不改变正在制造的产物）。
   const categoryId = (BOOSTER_CATEGORY_META.find(c => c.id === action.boosterCategory) || BOOSTER_CATEGORY_META[0]).id;
@@ -1204,7 +1207,9 @@ function getBoosterManufacturingDisplayState(state, now) {
     xpPercent:Math.min(100, Math.floor(xp / xpRequired * 100)),
     efficiency,
     stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
+    stationLogistics: (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : null,
     stationLogisticsBonusRate: getStationLogisticsMultiplier(state) - 1,
+    researchMultiplier,
     isRunning,
     status:isRunning ? "进行中" : "待命",
     statusText,
@@ -1574,7 +1579,7 @@ function getCombatDisplayState(state, now) {
     lockText:target ? "目标锁定" : "等待目标",
     runStatus,
     showRewards:Boolean(combat.active && target || combat.lastLoot || combat.lastSpecialLoot || combat.lastStatus),
-    supplies:{ fuel:ResourceRegistry.get(state, "consumable:fuel"), laser:ResourceRegistry.get(state, "ammo:laser"), missile:ResourceRegistry.get(state, "ammo:missile"), cannon:ResourceRegistry.get(state, "ammo:cannon") },
+    supplies:{ fuel:ResourceRegistry.get(state, "consumable:fuel"), laser:getAmmoCount(state, "laser"), missile:getAmmoCount(state, "missile"), cannon:getAmmoCount(state, "cannon") },
     weapons:weapons.map(module => ({ ...module, icon:{ laser:"⚡", missile:"🚀", cannon:"💥" }[module.combat.weaponType] || "◆" })),
     repairers:repairers.map(module => ({ ...module })),
     equipmentRack,
@@ -1585,7 +1590,7 @@ function getCombatDisplayState(state, now) {
 // 战斗/死亡空间掉落预览（Phase 3D 其他任务）：
 // 纯函数——只读生产掉落配置（systems/combat.js 的 get*DropConfig 系列），不改动全局状态、不调用发奖/事件。
 // 与生产掉落结算（roll* 系列）同源：roll* 与预览均消费同一组纯配置函数，概率/材料/数量单一事实来源。
-// 字段：加密数据 / 星带特殊掉落 / 通行密钥 / 死亡空间首领战利品 / 战术材料。
+// 字段：加密数据 / 星带特殊掉落 / 装备专用数据 / 通行密钥 / 货柜 / 死亡空间首领战利品 / 战术材料。
 // 注意：生产结算中，死亡空间模式不掉落加密数据/特殊掉落/通行密钥，仅掉落首领战利品 + 战术材料。
 // 返回值不含 ISK/LP 经济与成功率模拟（用户明确要求排除）。
 // fail-closed：非法 zoneId / 死亡空间 / 来源星带一律返回 {valid:false, reason}，不回退首个星带。
@@ -1602,7 +1607,7 @@ function getCombatDropPreview(state, options) {
       mode: "deathspace", valid: true,
       deathspaceId: site.id, name: site.name, faction: site.faction,
       sourceZoneId: sourceZone.id, sourceZoneName: sourceZone.name,
-      encryptedData: null, zoneSpecialDrops: null, ticketDrop: null,
+      encryptedData: null, zoneSpecialDrops: null, ticketDrop: null, gearDrops: null, stationCoreDrops: null, cargoDrops: null,
       leaderLoot: getDeathspaceLeaderLootConfigs(site),
       tacticalMaterial: getTacticalMaterialDropConfig(sourceZone)
     };
@@ -1613,8 +1618,11 @@ function getCombatDropPreview(state, options) {
   return {
     mode: "belt", valid: true,
     zoneId: zone.id, name: zone.name, faction: zone.faction,
-    encryptedData: getEncryptedDataDropConfig(zone),
+      encryptedData: getEncryptedDataDropConfig(zone),
     zoneSpecialDrops: getCombatZoneSpecialDropConfigs(zone),
+    gearDrops: getGearDropConfigs(zone),
+    stationCoreDrops: getStationCoreDropConfigs(zone),
+    cargoDrops: getCargoDropConfigs(zone),
     ticketDrop: getDeathspaceTicketDropConfig(zone),
     tacticalMaterial: getTacticalMaterialDropConfig(zone)
   };
@@ -1832,7 +1840,7 @@ function getCargoDisplayState(state, filter) {
     gases:Object.fromEntries(ResourceRegistry.listStateEntries(state, "gas").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     moon:Object.fromEntries(ResourceRegistry.listStateEntries(state, "moon").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     special:Object.fromEntries(ResourceRegistry.listStateEntries(state, "special").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
-    consumable:{ "燃料单元":ResourceRegistry.get(state, "consumable:fuel"), "激光晶体弹药":ResourceRegistry.get(state, "ammo:laser"), "导弹":ResourceRegistry.get(state, "ammo:missile"), "炮台弹药":ResourceRegistry.get(state, "ammo:cannon"), "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") },
+    consumable:{ "燃料单元":ResourceRegistry.get(state, "consumable:fuel"), "激光晶体弹药":getAmmoCount(state, "laser"), "导弹":getAmmoCount(state, "missile"), "炮台弹药":getAmmoCount(state, "cannon"), "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") },
     equipment:equipmentSource
   };
   const equipmentByName = Object.fromEntries(Object.values(EQUIPMENT_DB).map(equipment => [equipment.name, equipment]));

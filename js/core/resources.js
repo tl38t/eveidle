@@ -289,9 +289,8 @@ ResourceRegistry.register({ namespace:"currency", key:"lp", name:"LP", scalarKey
 ResourceRegistry.register({ namespace:"consumable", key:"fuel", name:"燃料单元", scalarKey:"fuel", category:"consumable" });
 ResourceRegistry.register({ namespace:"consumable", key:"repairPaste", name:"纳米维修膏", scalarKey:"repairPaste", category:"consumable" });
 ResourceRegistry.register({ namespace:"consumable", key:"warpFuel", name:"跃迁燃料", scalarKey:"warpFuel", category:"consumable" });
-ResourceRegistry.register({ namespace:"ammo", key:"laser", name:"激光晶体弹药", category:"consumable" });
-ResourceRegistry.register({ namespace:"ammo", key:"missile", name:"导弹", category:"consumable" });
-ResourceRegistry.register({ namespace:"ammo", key:"cannon", name:"炮台弹药", category:"consumable" });
+// 弹药不再走 ResourceRegistry 计数：改为 state.ammo 实例数组（见 js/data/ammo.js）。
+// 旧 namespace "ammo" 已注销；所有读取点改用 getAmmoCount / getSelectedCount 等助手。
 
 for (const recipe of SHIP_COMPONENT_RECIPES) {
   ResourceRegistry.register({ namespace:"component", key:recipe.id, name:recipe.name, category:"equipment" });

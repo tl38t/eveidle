@@ -19,7 +19,6 @@ const gameState = {
     ores: {},
     minerals: {},
     planetary: {},
-    ammunition: {},
     gases: {},
     moonOres: { "镓":0, "铂":0, "铪":0, "锇":0, "钷":0, "铷":0 },
     special: Object.fromEntries(COMBAT_SPECIAL_MATERIALS.map(material => [material, 0])),
@@ -27,11 +26,14 @@ const gameState = {
     repairPaste: 0,
     warpFuel: 1,
     fuel: 1000,
-    ammunition: { laser: 500, missile: 500, cannon: 500 },
     probes: {},
     artifacts: {},
     calibrations: {}
   },
+
+  stationCoresObtained: { smelt:false, shipEng:false, equipEng:false, booster:false },
+
+  ammo: [], // 弹药实例数组（见 js/data/ammo.js）；旧 resources.ammunition 计数已迁移
 
   skills: JSON.parse(JSON.stringify(INITIAL_SKILLS)),
 
@@ -85,6 +87,7 @@ const gameState = {
 
   activeIndustrialShip: null,
   shipAssignments: {},
+  cargoLoot: [],
 
   // 维修后自动恢复原行动（Phase 3D）：舰船在考古重创 / 战斗损毁进入维修时记录被打断的行动，
   // 维修完成后据此自动续跑。null = 无需恢复。结构：

@@ -5,6 +5,10 @@ const AMMO_ENG_RECIPES = [
   { id:"ammo_laser",  name:"激光晶体弹药", level:1,  time:10, xp:8,  category:"ammunition", cost:{"三钛合金":5},          output:{type:"ammo", weapon:"laser", qty:50} },
   { id:"ammo_missile",name:"导弹",         level:1,  time:10, xp:8,  category:"ammunition", cost:{"三钛合金":5,"类银超金属":2}, output:{type:"ammo", weapon:"missile", qty:50} },
   { id:"ammo_cannon", name:"炮台弹药",     level:1,  time:10, xp:8,  category:"ammunition", cost:{"三钛合金":5,"类晶体胶矿":2}, output:{type:"ammo", weapon:"cannon", qty:50} },
+  // T2 弹药（用户定：time25 = T1 的 2.5×、output30、成本 三钛10+月矿2、dmgMult/hitMult ×1.10 独立乘区；默认解锁 level1 便于测试，考古蓝图门控后续再叠）
+  { id:"ammo_laser_t2",  name:"聚焦相位激光弹", level:1, time:25, xp:20, category:"ammunition", cost:{"三钛合金":10,"镓":2}, output:{type:"ammo", weapon:"laser",  qty:30, tier:"T2"} },
+  { id:"ammo_missile_t2",name:"高爆制导导弹",   level:1, time:25, xp:20, category:"ammunition", cost:{"三钛合金":10,"镓":2}, output:{type:"ammo", weapon:"missile", qty:30, tier:"T2"} },
+  { id:"ammo_cannon_t2", name:"重型轨道弹药",   level:1, time:25, xp:20, category:"ammunition", cost:{"三钛合金":10,"铂":2}, output:{type:"ammo", weapon:"cannon",  qty:30, tier:"T2"} },
   // 考古探针（弹药/燃料类，不可安装、不可强化）
   { id:"probe_core_i",    name:"标准考古探针 I",  level:1,  time:15, xp:20, category:"probes", cost:{"三钛合金":40},                output:{type:"probe", itemId:"core_probe_i",    qty:20} },
   { id:"probe_enhanced_ii",name:"强化考古探针 II", level:35, time:35, xp:80, category:"probes", cost:{"三钛合金":200,"类晶体胶矿":60}, output:{type:"probe", itemId:"enhanced_probe_ii", qty:20} },
