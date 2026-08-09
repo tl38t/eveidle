@@ -490,6 +490,20 @@ function finalizeEquipmentStateAfterLegacyMigrations(state) {
   migrateEquipmentInstancesV1(state);
   normalizeEquipmentState(state);
   migrateArchaeologyState();
+  migrateDeadSkillFields();
+}
+
+// 移除 rigEngineering / reverseEngineering 两个死字段（仅声明 + 成就占位，
+// 无制造/tick/UI 读取，且已确认不计入生产技能）。
+// - 不影响任何功能（这两个字段永远 lvl:1，无 XP 来源）
+// - 顺带修复 A46(全部技能Lv.50)/A48(全部技能Lv.99) 原本因死字段永远无法达成的问题
+// - 幂等：连续两次调用结果一致
+// - 必须在其他 skills 迁移之后运行，故注册在 finalize 主链末端
+function migrateDeadSkillFields() {
+  if (!gameState.skills) return;
+  if (gameState.skills.rigEngineering) delete gameState.skills.rigEngineering;
+  if (gameState.skills.reverseEngineering) delete gameState.skills.reverseEngineering;
+  gameState._dirty = true;
 }
 
 function migrateAmmunitionEngineeringState() {
