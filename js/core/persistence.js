@@ -491,6 +491,7 @@ function finalizeEquipmentStateAfterLegacyMigrations(state) {
   normalizeEquipmentState(state);
   migrateArchaeologyState();
   migrateDeadSkillFields();
+  migrateImplants();
 }
 
 // 移除 rigEngineering / reverseEngineering 两个死字段（仅声明 + 成就占位，
@@ -503,6 +504,17 @@ function migrateDeadSkillFields() {
   if (!gameState.skills) return;
   if (gameState.skills.rigEngineering) delete gameState.skills.rigEngineering;
   if (gameState.skills.reverseEngineering) delete gameState.skills.reverseEngineering;
+  gameState._dirty = true;
+}
+
+// 脑插系统初始化与旧档补发：
+// - 确保 state.implants 为对象（旧档缺失时）
+// - 技能早已满 99 级但当时无脑插系统，按 IMPLANT_BY_SKILL 映射补发（幂等）
+// - 注册在 finalize 主链末端（skills 迁移之后，rigEngineering/reverseEngineering 已清除）
+function migrateImplants() {
+  if (!gameState) return;
+  if (!gameState.implants || typeof gameState.implants !== "object") gameState.implants = {};
+  if (typeof reconcileImplantsFromSkills === "function") reconcileImplantsFromSkills(gameState);
   gameState._dirty = true;
 }
 

@@ -955,7 +955,7 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
   emitStationEvent("booster:manufactured", {
     recipeId:recipe.id, itemId:recipe.output.itemId,
     series:recipe.series, quality:recipe.quality,
-    quantity:cycles, xpGained, offline
+    quantity:cycles, time:recipe.time, cycles, xpGained, offline
   }, { offline });
 
   if (cycles < cyclesByTime) {

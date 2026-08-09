@@ -117,6 +117,8 @@ function gameTick() {
           dispatchBonus = recordStationDispatchAction(gameState, "mining", 1);
           if (dispatchBonus > 0) quantity += dispatchBonus;
         }
+        // 脑插·采矿双生：4% 概率本次产出×2（双倍矿物/调度加成之后）
+        if (Math.random() < getImplantDoubleOutputChance(gameState, "mining")) quantity *= 2;
         ResourceRegistry.add(gameState, resourceId, quantity);
         // XP 始终只加一次（双倍不影响 XP）
         s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
@@ -142,7 +144,9 @@ function gameTick() {
       while (gameState.currentAction.progress >= actualTime) {
         if (ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre) < 1) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime; ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, 1);
-        const output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
+        let output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
+        // 脑插·冶炼双生：3% 概率本次产出×2
+        if (Math.random() < getImplantDoubleOutputChance(gameState, "refining")) output *= 2;
         ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, output);
         s.xp += recipe.baseXP; gameState._dirty = true; actionCompleted = true;
         GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:1, outputQuantity:output, xp:recipe.baseXP }, { offline:false });
@@ -167,6 +171,8 @@ function gameTick() {
           dispatchBonus = recordStationDispatchAction(gameState, "gas", 1);
           if (dispatchBonus > 0) quantity += dispatchBonus;
         }
+        // 脑插·采气双生：4% 概率本次产出×2（调度加成之后）
+        if (Math.random() < getImplantDoubleOutputChance(gameState, "gas")) quantity *= 2;
         ResourceRegistry.add(gameState, resourceId, quantity);
         s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
         GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
@@ -191,7 +197,7 @@ function gameTick() {
         deductEquipEngInputs(recipe, 1);
         applyEquipEngOutput(recipe, 1);
         s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, xp:recipe.xp }, { offline:false });
+        GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, time:recipe.time, xp:recipe.xp }, { offline:false });
         if (recipe.slot === "rig") GameEvents.emit("rig:manufactured", { rigId:recipe.output.itemId, quantity:recipe.output.qty }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
@@ -212,7 +218,7 @@ function gameTick() {
           deductMats(recipe.cost);
           ResourceRegistry.add(gameState, "component:" + recipe.id, 1);
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-          GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, xp:recipe.xp }, { offline:false });
+          GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
@@ -235,7 +241,7 @@ function gameTick() {
           if (!gameState.inventory.ships) gameState.inventory.ships = [];
           gameState.inventory.ships.push(createShipInstance(recipe.shipId));
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-          GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, xp:recipe.xp }, { offline:false });
+          GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
@@ -326,9 +332,10 @@ function gameTick() {
         if (!hasEnoughBoosterInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime;
         deductBoosterInputs(recipe, 1);
-        applyBoosterOutput(recipe, 1);
+        // 脑插·增强剂双生：3% 概率本次产出×2（inputs 仍扣 1 份，与离线一致）
+        applyBoosterOutput(recipe, (Math.random() < getImplantDoubleOutputChance(gameState, "booster")) ? 2 : 1);
         s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("booster:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, series:recipe.series, quality:recipe.quality, quantity:1, xpGained:recipe.xp, offline:false }, { offline:false });
+        GameEvents.emit("booster:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, series:recipe.series, quality:recipe.quality, quantity:1, time:recipe.time, xpGained:recipe.xp, offline:false }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;

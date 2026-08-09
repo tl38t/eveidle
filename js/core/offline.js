@@ -96,6 +96,13 @@ function getOfflineActionDescriptor() {
             if ((typeof rollDoubleMineral === "function") && rollDoubleMineral(doubleChance)) totalOre++;
           }
         }
+        // 脑插·采矿双生：4% 概率该 cycle 产出×2（逐 cycle 独立掷骰，与在线一致）
+        const implantDoubleMining = (typeof getImplantDoubleOutputChance === "function") ? getImplantDoubleOutputChance(gameState, "mining") : 0;
+        if (implantDoubleMining > 0) {
+          for (let i = 0; i < cycles; i++) {
+            if (Math.random() < implantDoubleMining) totalOre++;
+          }
+        }
         ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, totalOre);
         // XP 始终按实际采集次数计算（双倍不增加 XP）
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
@@ -116,10 +123,18 @@ function getOfflineActionDescriptor() {
         return ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
       },
       apply(cycles, gains) {
+        // 脑插·冶炼双生：3% 概率该 cycle 产出×2（逐 cycle 独立掷骰）
+        const implantDoubleRefine = (typeof getImplantDoubleOutputChance === "function") ? getImplantDoubleOutputChance(gameState, "refining") : 0;
+        let outQty = cycles * output;
+        if (implantDoubleRefine > 0) {
+          for (let i = 0; i < cycles; i++) {
+            if (Math.random() < implantDoubleRefine) outQty += output;
+          }
+        }
         ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, cycles);
-        ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, cycles * output);
+        ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, outQty);
         addOfflineSkillXp(key, cycles * recipe.baseXP); gains[key] += cycles;
-        emitOfflineGameEvent("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:cycles, outputQuantity:cycles * output, cycles, xp:cycles * recipe.baseXP });
+        emitOfflineGameEvent("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:cycles, outputQuantity:outQty, cycles, xp:cycles * recipe.baseXP });
       }
     };
   }
@@ -132,9 +147,17 @@ function getOfflineActionDescriptor() {
       key, duration: area.baseTime / getGasEfficiency(),
       maxCycles: () => Infinity,
       apply(cycles, gains) {
-        ResourceRegistry.add(gameState, "gas:" + area.gas, cycles);
+        // 脑插·采气双生：4% 概率该 cycle 产出×2（逐 cycle 独立掷骰）
+        const implantDoubleGas = (typeof getImplantDoubleOutputChance === "function") ? getImplantDoubleOutputChance(gameState, "gas") : 0;
+        let qty = cycles;
+        if (implantDoubleGas > 0) {
+          for (let i = 0; i < cycles; i++) {
+            if (Math.random() < implantDoubleGas) qty++;
+          }
+        }
+        ResourceRegistry.add(gameState, "gas:" + area.gas, qty);
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
-        emitOfflineGameEvent("gas:completed", { area:area.name, resourceId:"gas:" + area.gas, quantity:cycles, cycles, xp:cycles * area.baseXP });
+        emitOfflineGameEvent("gas:completed", { area:area.name, resourceId:"gas:" + area.gas, quantity:qty, cycles, xp:cycles * area.baseXP });
       }
     };
   }
@@ -148,7 +171,7 @@ function getOfflineActionDescriptor() {
         deductMatsMultiple(recipe.cost, cycles);
         ResourceRegistry.add(gameState, "component:" + recipe.id, cycles);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
-        emitOfflineGameEvent("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:cycles, cycles, xp:cycles * recipe.xp });
+        emitOfflineGameEvent("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });
       }
     };
   }
@@ -164,7 +187,7 @@ function getOfflineActionDescriptor() {
         deductShipAssemblyComponents(recipe, cycles);
         for (let i = 0; i < cycles; i++) gameState.inventory.ships.push(createShipInstance(recipe.shipId));
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
-        emitOfflineGameEvent("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:cycles, cycles, xp:cycles * recipe.xp });
+        emitOfflineGameEvent("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });
       }
     };
   }
@@ -180,7 +203,7 @@ function getOfflineActionDescriptor() {
         deductEquipEngInputs(recipe, cycles);
         applyEquipEngOutput(recipe, cycles);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
-        emitOfflineGameEvent("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:cycles * recipe.output.qty, cycles, xp:cycles * recipe.xp });
+        emitOfflineGameEvent("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:cycles * recipe.output.qty, time:recipe.time, cycles, xp:cycles * recipe.xp });
         if (recipe.slot === "rig") emitOfflineGameEvent("rig:manufactured", { rigId:recipe.output.itemId, quantity:cycles * recipe.output.qty });
       }
     };
@@ -194,10 +217,18 @@ function getOfflineActionDescriptor() {
       key, duration: recipe.time / getBoosterEfficiency(),
       maxCycles: () => isBoosterRecipeUnlocked(recipe) ? getBoosterMaxCyclesFromState(gameState, recipe) : 0,
       apply(cycles, gains) {
+        // 脑插·增强剂双生：3% 概率该 cycle 产出×2（逐 cycle 独立掷骰；料仍按 cycle 扣 1）
+        const implantDoubleBooster = (typeof getImplantDoubleOutputChance === "function") ? getImplantDoubleOutputChance(gameState, "booster") : 0;
+        let outQty = cycles;
+        if (implantDoubleBooster > 0) {
+          for (let i = 0; i < cycles; i++) {
+            if (Math.random() < implantDoubleBooster) outQty++;
+          }
+        }
         deductBoosterInputs(recipe, cycles);
-        applyBoosterOutput(recipe, cycles);
+        applyBoosterOutput(recipe, outQty);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
-        emitOfflineGameEvent("boosters:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, quantity:cycles * recipe.output.qty, totalXp:cycles * recipe.xp, offline:true });
+        emitOfflineGameEvent("boosters:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, quantity:outQty * recipe.output.qty, time:recipe.time, cycles:cycles, totalXp:cycles * recipe.xp, offline:true });
       }
     };
   }

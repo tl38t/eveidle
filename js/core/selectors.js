@@ -354,7 +354,9 @@ function getProductionEfficiencyState(state, actionKey) {
     fleetSupportShip:fleetSupport.ship,
     stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
     researchMultiplier,
-    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier
+    // 脑插·采集增效（考古来源）：采矿/采气各 +3%，独立乘区
+    implantCollectMult: (typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1,
+    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier * ((typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1)
   };
 }
 
@@ -487,7 +489,9 @@ function getSmeltingDisplayState(state, now) {
   // 研究批次 G：冶炼科研唯一乘子 = 1 + (allMfg + smelt)（加法汇总，绝不逐项连乘）
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "smelt"]) : 1;
-  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier;
+  // 脑插·冶炼增效（货柜 T4 来源）：冶炼效率 +6%，独立乘区
+  const implantRefineEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).refiningEff : 1;
+  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff;
   const progress = getProgressDisplayState(action, "refining", running.baseTime / efficiency, now);
   const targetChanged = progress.active && current.name !== running.name;
   const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
@@ -829,7 +833,9 @@ function getShipEngineeringCycleDuration(state, recipe) {
   let base = recipe ? Number(recipe.time) : NaN;
   if (!Number.isFinite(base) || base <= 0) base = 1;
   const speed = getShipEngineeringSpeedBreakdown(state, getShipEngineeringRecipeKind(recipe));
-  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier;
+  // 脑插·舰船制造增效（死亡空间 6/10 来源）：周期 ÷1.06（效率 +6%）
+  const implantShipMfgEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).shipMfgEff : 1;
+  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier / implantShipMfgEff;
 }
 
 function getShipEngineeringDisplayState(state, now) {
@@ -1390,6 +1396,9 @@ function getCombatMaxHpFromState(state, context) {
   // 改装件容量加成（护盾/装甲/结构 *Percent），乘算在最终 HP 上（含装备平段 + 强化）
   const rigMods = (activeShip.instance && typeof getRigModifiers === "function")
     ? getRigModifiers(state, activeShip.instance) : {};
+  // 脑插（99 级生产技能成就）：独立乘区，与船体/技能/装备/强化/rig/科研相乘
+  const implantHp = (typeof getImplantBonuses === "function")
+    ? getImplantBonuses(state).hpCap : { shield:1, armor:1, structure:1 };
   return {
     shield:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.shield, [
       { operation:"multiply", value:1 + (bonuses.shieldCapacity || 0), priority:10, source:"ship" },
@@ -1398,7 +1407,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.shieldCapacityPercent || 0), priority:50, source:"rig" },
       // 研究批次 H：科研聚合乘子作用在船体/技能/装备平段/强化/rig 之后的最终 HP 上
-      ...getCombatResearchModifierList(state, "maxHp", "shield")
+      ...getCombatResearchModifierList(state, "maxHp", "shield"),
+      { operation:"multiply", value:implantHp.shield || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"shield" })),
     armor:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.armor, [
       { operation:"multiply", value:1 + (bonuses.armorCapacity || 0), priority:10, source:"ship" },
@@ -1406,7 +1416,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"add", value:flat.armor, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.armorCapacityPercent || 0), priority:50, source:"rig" },
-      ...getCombatResearchModifierList(state, "maxHp", "armor")
+      ...getCombatResearchModifierList(state, "maxHp", "armor"),
+      { operation:"multiply", value:implantHp.armor || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"armor" })),
     structure:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.structure, [
       { operation:"multiply", value:1 + (bonuses.structureCapacity || 0), priority:10, source:"ship" },
@@ -1414,7 +1425,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"add", value:flat.structure, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.structureCapacityPercent || 0), priority:50, source:"rig" },
-      ...getCombatResearchModifierList(state, "maxHp", "structure")
+      ...getCombatResearchModifierList(state, "maxHp", "structure"),
+      { operation:"multiply", value:implantHp.structure || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"structure" }))
   };
 }
@@ -1438,12 +1450,16 @@ function getCombatDamageMultiplierFromState(state, weaponType, context) {
   const ship = activeShip.config;
   const shipBonus = ship.bonuses ? (ship.bonuses[weaponType + "Damage"] || 0) : 0;
   const enhancement = getShipEnhancementBonuses(ship, activeShip.instance && activeShip.instance.enhancementLevel);
+  // 脑插（99 级生产技能成就）：独立乘区，与技能/船体/强化/科研相乘
+  const implantMult = (typeof getImplantBonuses === "function")
+    ? (getImplantBonuses(state).weaponDamage[weaponType] || 1) : 1;
   return calculateCombatStatFromState(state, "damageMultiplier", 1, [
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, config.skillKey) * 0.02, priority:10, source:"skill" },
     { operation:"multiply", value:1 + shipBonus, priority:20, source:"ship" },
     { operation:"multiply", value:enhancement.damageMultiplier, priority:30, source:"enhancement" },
     // 研究批次 H：武器科研聚合乘子（技能/船体/强化之后只乘一次；未知 weaponType 上方已提前返回 1）
-    ...getCombatResearchModifierList(state, "damageMultiplier", weaponType)
+    ...getCombatResearchModifierList(state, "damageMultiplier", weaponType),
+    { operation:"multiply", value:implantMult, priority:60, source:"implant" }
   ], { ...(context || {}), actor:"player", weaponType });
 }
 
@@ -1473,7 +1489,9 @@ function getCombatRepairMultiplierFromState(state, target, context) {
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "defense") * 0.02, priority:10, source:"skill" },
     { operation:"multiply", value:1 + roleBonus, priority:20, source:"ship" },
     // 研究批次 H：维修科研聚合乘子（defense 技能与船体维修加成之后只乘一次；只放大治疗量）
-    ...getCombatResearchModifierList(state, "repairMultiplier", target)
+    ...getCombatResearchModifierList(state, "repairMultiplier", target),
+    // 脑插：维修增强植入体（阿尔法/贝塔）独立乘区
+    { operation:"multiply", value:(typeof getImplantBonuses === "function") ? getImplantBonuses(state).repair : 1, priority:60, source:"implant" }
   ], { ...(context || {}), actor:"player", layer:target });
 }
 
@@ -1667,6 +1685,9 @@ function getPlanetaryCapacityState(state) {
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
   const deployments = state.planetary && Array.isArray(state.planetary.deployments) ? state.planetary.deployments : [];
+  // 脑插·行星扩展（货柜 T3 来源）：+1 行星槽（硬上限同步 +1）
+  const implantPlanetSlot = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).planetSlot : 0;
+  const planetSlotCap = 5 + implantPlanetSlot;
   return {
     level,
     xp,
@@ -1674,8 +1695,8 @@ function getPlanetaryCapacityState(state) {
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     usedSlots:deployments.length,
     // 新手期保底 2 个行星槽位（Lv1-19 = 2），后续曲线不变：Lv20-29=3 / Lv30-39=4 / Lv40+=5；空间站加成仍叠加，硬上限 5
-    slots:Math.min(5, Math.max(2, 1 + Math.floor(level / 10)) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0)),
-    maxSlots:5
+    slots:Math.min(planetSlotCap, Math.max(2, 1 + Math.floor(level / 10)) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0) + implantPlanetSlot),
+    maxSlots:planetSlotCap
   };
 }
 
@@ -1694,7 +1715,9 @@ function getPlanetOutputIntervalFromState(state, type) {
   // 研究批次 G：行星生产提速 → 周期 ÷ 乘子（在线 planetaryTick 与离线 settleOfflinePlanets 共用此唯一入口）
   let researchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["planProd"])) : 1;
   if (!Number.isFinite(researchMult) || researchMult <= 0) researchMult = 1;
-  return config ? config.interval / (1 + level * 0.02) / stationMult / researchMult : 10;
+  // 脑插·行星加速（货柜 T3 来源）：周期 ÷1.05（加速 +5%）
+  const implantPlanetSpeed = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).planetSpeed : 1;
+  return config ? config.interval / (1 + level * 0.02) / stationMult / researchMult / implantPlanetSpeed : 10;
 }
 
 // 研究批次 G · planCost（reduceFraction）：行星续期费唯一公式。
@@ -1847,6 +1870,29 @@ const CARGO_CATEGORY_LABEL = {
 };
 
 function getCargoDisplayState(state, filter) {
+  // 脑插子标签：展示全部 6 枚（拥有/未获得），不依赖 ITEM_CATEGORIES 资源池
+  if (filter === "implant") {
+    const owned = (state && state.implants) || {};
+    const items = Object.values(IMPLANT_DB).map(imp => ({
+      id: imp.id,
+      name: imp.name,
+      icon: imp.icon,
+      desc: imp.desc,
+      owned: !!owned[imp.id],
+      category: "implant",
+      categoryLabel: "脑插",
+      quantity: owned[imp.id] ? 1 : 0,
+      source: { pageId: "skill", pageLabel: imp.sourceSkillName + " Lv.99" }
+    }));
+    return {
+      kind: "cargo",
+      filter: "implant",
+      total: Object.keys(owned).length,
+      items,
+      emptyText: "暂无脑插。将 采矿 / 冶炼 / 舰船工程 / 装备工程 / 增强剂制造 / 气体采集 练至 99 级即可激活对应脑插。",
+      filters: Object.keys(ITEM_CATEGORIES).map(id => ({ id, selected: false }))
+    };
+  }
   // 支持虚拟筛选项：equipment(真装备) 与 component(舰船组件) 在数据中均挂在 ITEM_CATEGORIES.equipment 键下，需拆开
   let selectedFilter;
   if (filter === "all" || filter === "equipment" || filter === "component") selectedFilter = filter;

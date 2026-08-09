@@ -35,6 +35,8 @@ const gameState = {
 
   ammo: [], // 弹药实例数组（见 js/data/ammo.js）；旧 resources.ammunition 计数已迁移
 
+  implants: {}, // 账号全局被动脑插（见 js/data/implants.js）：拥有即永久生效，键为脑插 id
+
   skills: JSON.parse(JSON.stringify(INITIAL_SKILLS)),
 
   currentAction: {

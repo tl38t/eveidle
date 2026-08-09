@@ -57,7 +57,8 @@ function computeArchaeologyScanStrength(state, instance, probeId) {
     const mods = getRigModifiers(state, instance) || {};
     scanPercent = Number(mods.archaeologyScanPercent) || 0;
   }
-  return base * (1 + Math.max(0, scanPercent));
+  const implantScan = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).archaeology.scan : 1;
+  return base * (1 + Math.max(0, scanPercent)) * implantScan;
 }
 
 // ---- 成功率 ----
@@ -85,7 +86,9 @@ function getArchaeologyCycleSeconds(state, site) {
   const archLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(state)) : 1;
   let researchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["archEff"])) : 1;
   if (!Number.isFinite(researchMult) || researchMult <= 0) researchMult = 1;
-  return base * archSpeedEff / archLogisticsMult / researchMult;
+  const implantSpeed = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).archaeology.speed : 1;
+  // 解析速度 +10% 等价于周期 ÷1.10（越小越快）
+  return base * archSpeedEff / archLogisticsMult / researchMult / implantSpeed;
 }
 
 // ---- 舰船 HP 存取 ----
@@ -295,9 +298,11 @@ function resolveArchaeologyDrops(state, site, tier, fitted, rng, now) {
   }
 
   // 3) 独特文物（地点倍率 × 增强剂倍率 × 实验室倍率，上限 0.99）
-  const rareShift = (typeof getBoosterEffectState === "function" && typeof getBoosterArchaeologyEffectiveUniqueRate === "function")
+  const rareShiftRaw = (typeof getBoosterEffectState === "function" && typeof getBoosterArchaeologyEffectiveUniqueRate === "function")
     ? getBoosterArchaeologyEffectiveUniqueRate(effectiveUniqueRate, getBoosterEffectState(state).rareShiftMultiplier)
     : effectiveUniqueRate;
+  const implantUnique = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).archaeology.unique : 1;
+  const rareShift = rareShiftRaw * implantUnique;
   const labMult = (typeof getArchaeologyLabMultiplier === "function") ? getArchaeologyLabMultiplier(state) : 1;
   const withLab = Math.min(0.99, rareShift * labMult);
   const withoutLab = Math.min(0.99, rareShift);

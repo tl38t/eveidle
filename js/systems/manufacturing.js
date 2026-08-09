@@ -270,7 +270,9 @@ function getBoosterEfficiency() {
   // 研究批次 G：与 selectors.getBoosterManufacturingDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
   const researchMult = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "booster"]) : 1;
-  return skillMult * stationMult * researchMult;
+  // 脑插·增强剂增效（货柜 T4 来源）：效率 +6%，独立乘区
+  const implantBoosterEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(gameState).boosterEff : 1;
+  return skillMult * stationMult * researchMult * implantBoosterEff;
 }
 
 function getSelectedBoosterRecipe() {
