@@ -35,6 +35,11 @@ function getActionBoosterSlots(actionKey) {
     case "mining": return ["miningSpeed", "miningYield"];
     case "archaeology": return ["archaeologySpeed", "archaeologyRare"];
     case "combat": return ["combatWeapon", "combatRepair"];
+    // 考古重制（Phase B）：四类生产增强剂槽位，考古蓝图产出，在线/离线共用。
+    case "gasHarvesting": return ["gasSpeed", "gasYield"];
+    case "refining": return ["smeltSpeed", "smeltYield"];
+    case "shipEngineering": return ["shipSpeed", "shipYield"];
+    case "boosterEngineering": return ["boosterSpeed", "boosterYield"];
     default: return [];
   }
 }
@@ -72,6 +77,13 @@ function checkBoosterValidTarget(state, item) {
   // 采矿 / 考古增强剂永远有有效目标
   if (item.effectType === "miningSpeed" || item.effectType === "doubleMineral" ||
       item.effectType === "archaeologySpeed" || item.effectType === "rareShift") {
+    return true;
+  }
+  // 考古重制（Phase B）：四类生产增强剂始终有有效目标（采气/冶炼/舰船/增强剂制造恒在）
+  if (item.effectType === "gasSpeed" || item.effectType === "gasDouble" ||
+      item.effectType === "smeltSpeed" || item.effectType === "smeltDouble" ||
+      item.effectType === "shipSpeed" || item.effectType === "shipMaterialDiscount" ||
+      item.effectType === "boosterSpeed" || item.effectType === "boosterDouble") {
     return true;
   }
   // 战斗武器增强剂：需当前舰船有对应武器类型
@@ -234,6 +246,7 @@ function tickBoosterTimers(state, now) {
   var running = (action && action.active) ? action.skill : null;
 
   var runMining = false, runArch = false, runCombat = false;
+  var runGas = false, runSmelt = false, runShip = false, runBooster = false;
 
   if (running === "mining") {
     var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;
@@ -242,11 +255,22 @@ function tickBoosterTimers(state, now) {
   } else if (running === "archaeology") {
     var arch = state.archaeology;
     if (arch) {
-      runArch = (!arch.repairUntil || arch.repairUntil <= now) &&
+      // 按舰船实例隔离的维修态：仅当前考古舰实例维修中才阻断增强剂计时。
+      var archInstId = (state.shipAssignments && state.shipAssignments.archaeology) || null;
+      var archRepair = arch.repairsByInstanceId && archInstId ? arch.repairsByInstanceId[archInstId] : null;
+      runArch = (!archRepair || Number(archRepair.until) <= now) &&
                 (!arch.interferenceUntil || arch.interferenceUntil <= now);
     }
   } else if (running === "combat") {
     runCombat = Boolean(state.combat && state.combat.active);
+  } else if (running === "gasHarvesting") {
+    runGas = true;
+  } else if (running === "refining") {
+    runSmelt = true;
+  } else if (running === "shipEngineering") {
+    runShip = true;
+  } else if (running === "boosterEngineering") {
+    runBooster = true;
   }
 
   if (runMining) {
@@ -260,6 +284,23 @@ function tickBoosterTimers(state, now) {
   if (runCombat) {
     applyBoosterTimeConsumption(state, "combatWeapon", elapsed, now);
     applyBoosterTimeConsumption(state, "combatRepair", elapsed, now);
+  }
+  // 考古重制（Phase B）：四类生产增强剂在线计时（考古蓝图产出）。
+  if (runGas) {
+    applyBoosterTimeConsumption(state, "gasSpeed", elapsed, now);
+    applyBoosterTimeConsumption(state, "gasYield", elapsed, now);
+  }
+  if (runSmelt) {
+    applyBoosterTimeConsumption(state, "smeltSpeed", elapsed, now);
+    applyBoosterTimeConsumption(state, "smeltYield", elapsed, now);
+  }
+  if (runShip) {
+    applyBoosterTimeConsumption(state, "shipSpeed", elapsed, now);
+    applyBoosterTimeConsumption(state, "shipYield", elapsed, now);
+  }
+  if (runBooster) {
+    applyBoosterTimeConsumption(state, "boosterSpeed", elapsed, now);
+    applyBoosterTimeConsumption(state, "boosterYield", elapsed, now);
   }
 
   // 无论是否消耗，lastTick 必须推进（防止恢复后追扣）
@@ -286,6 +327,15 @@ function getBoosterEffectState(state) {
     rareShiftMultiplier: 1,
     weaponDamageMultiplier: { laser:1, missile:1, cannon:1 },
     repairMultiplier: { shield:1, armor:1, structure:1 },
+    // 考古重制（Phase B）：四类生产增强剂乘区（考古蓝图产出，在线/离线共用）。
+    gasSpeedMultiplier: 1,
+    doubleGasChance: 0,
+    smeltSpeedMultiplier: 1,
+    doubleSmeltChance: 0,
+    shipSpeedMultiplier: 1,
+    shipMaterialDiscount: 0,
+    boosterSpeedMultiplier: 1,
+    doubleBoosterChance: 0,
     activeEntries: {}
   };
   var slots = (Array.isArray(BOOSTER_SLOTS) ? BOOSTER_SLOTS : []);
@@ -330,6 +380,39 @@ function getBoosterEffectState(state) {
           eff.repairMultiplier[item.repairTarget] *= (1 + Number(item.effectValue));
         }
         break;
+      // 考古重制（Phase B）：四类生产增强剂（考古蓝图产出）。
+      case "gasSpeed":
+        eff.gasSpeedMultiplier *= (1 + Number(item.effectValue));
+        break;
+      case "gasDouble": {
+        var gv = Number(item.effectValue) || 0;
+        if (gv > eff.doubleGasChance) eff.doubleGasChance = gv;
+        break;
+      }
+      case "smeltSpeed":
+        eff.smeltSpeedMultiplier *= (1 + Number(item.effectValue));
+        break;
+      case "smeltDouble": {
+        var sv = Number(item.effectValue) || 0;
+        if (sv > eff.doubleSmeltChance) eff.doubleSmeltChance = sv;
+        break;
+      }
+      case "shipSpeed":
+        eff.shipSpeedMultiplier *= (1 + Number(item.effectValue));
+        break;
+      case "shipMaterialDiscount": {
+        var dv = Number(item.effectValue) || 0;
+        if (dv > eff.shipMaterialDiscount) eff.shipMaterialDiscount = dv;
+        break;
+      }
+      case "boosterSpeed":
+        eff.boosterSpeedMultiplier *= (1 + Number(item.effectValue));
+        break;
+      case "boosterDouble": {
+        var bv = Number(item.effectValue) || 0;
+        if (bv > eff.doubleBoosterChance) eff.doubleBoosterChance = bv;
+        break;
+      }
     }
   }
   return eff;
@@ -355,6 +438,62 @@ function getBoosterArchaeologyEffectiveUniqueRate(baseUniqueRate, rareShiftMulti
 }
 
 /* ----------------------------------------------------------------
+   舰船材料折扣（考古重制 Phase B · precision_rationing 系列）
+   返回材料实际倍率（1 - discount），供在线/离线舰船组件制造扣料使用。
+   ---------------------------------------------------------------- */
+function getShipMaterialDiscountMultiplier(state) {
+  var eff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state) : null;
+  var discount = (eff && typeof eff.shipMaterialDiscount === "number") ? eff.shipMaterialDiscount : 0;
+  if (!(discount > 0)) return 1;
+  if (discount > 0.95) discount = 0.95; // 安全夹紧，材料倍率不低于 0.05
+  return 1 - discount;
+}
+
+// 对成本表 { mat:qty } 按倍率缩放，逐条目向下取整且至少保留 1（单件材料不免费）。
+function discountCost(cost, mult) {
+  if (!cost || typeof cost !== "object" || !(mult > 0) || mult >= 1) return cost;
+  var out = {};
+  for (var mat in cost) {
+    if (!Object.prototype.hasOwnProperty.call(cost, mat)) continue;
+    var q = Math.floor(Number(cost[mat]) * mult);
+    if (!(q >= 1)) q = 1;
+    out[mat] = q;
+  }
+  return out;
+}
+
+/* ----------------------------------------------------------------
+   精密配给剂（precision_rationing）统一报价 / 门槛函数（考古重制 Phase B）
+   激活期间（getBoosterEffectState().shipMaterialDiscount > 0）：
+     - 组件 / 总装真实材料成本严格 ceil(base × 0.9)（逐条，单件至少 1）
+     - 配方等级门槛 +5
+   覆盖在线 / 离线 / 队列 / intship 四类调用点（队列与 intship 复用同一制造描述符）。
+   增强剂耗尽后 effectState 归零，本函数实时读状态，下一原子周期自动恢复原成本原门槛。
+   kind: "component" 取 recipe.cost；"assembly" 取 recipe.materialCost（组件为生产物，非折扣材料）。
+   ---------------------------------------------------------------- */
+function getShipBuildingQuote(state, recipe, context) {
+  if (!recipe) return { cost: {}, levelGate: 0, discounted: false };
+  var eff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state) : null;
+  var active = !!(eff && eff.shipMaterialDiscount > 0);
+  var kind = (context && context.kind) === "assembly" ? "assembly" : "component";
+  var baseCost = (kind === "assembly") ? (recipe.materialCost || {}) : (recipe.cost || {});
+  var cost;
+  if (active) {
+    cost = {};
+    for (var mat in baseCost) {
+      if (!Object.prototype.hasOwnProperty.call(baseCost, mat)) continue;
+      var c = Math.ceil(Number(baseCost[mat]) * 0.9);
+      if (!(c >= 1)) c = 1;
+      cost[mat] = c;
+    }
+  } else {
+    cost = baseCost;
+  }
+  var levelGate = active ? (Number(recipe.level) || 0) + 5 : (Number(recipe.level) || 0);
+  return { cost: cost, levelGate: levelGate, discounted: active };
+}
+
+/* ----------------------------------------------------------------
    槽位状态判定（用于 UI 显示）
    返回："active" | "paused" | "no-target" | "depleted"
    ---------------------------------------------------------------- */
@@ -373,8 +512,12 @@ function getBoosterSlotStatus(state, slot, item, remainingMs, now) {
     var canMine = area && (typeof canMineArea === "function") && canMineArea(area);
     if (!canMine) return "paused";
   } else if (running === "archaeology") {
-    var arch = state.archaeology;
-    if (arch && ((arch.repairUntil && arch.repairUntil > now) || (arch.interferenceUntil && arch.interferenceUntil > now))) return "paused";
+    var arch2 = state.archaeology;
+    if (arch2) {
+      var archInstId2 = (state.shipAssignments && state.shipAssignments.archaeology) || null;
+      var archRepair2 = arch2.repairsByInstanceId && archInstId2 ? arch2.repairsByInstanceId[archInstId2] : null;
+      if ((archRepair2 && Number(archRepair2.until) > now) || (arch2.interferenceUntil && arch2.interferenceUntil > now)) return "paused";
+    }
   } else if (running === "combat") {
     if (!state.combat || !state.combat.active) return "paused";
   }
@@ -390,7 +533,12 @@ function getBoosterDisplayState(state, now) {
   var groups = {
     mining:   { label:"采矿",   slots:["miningSpeed","miningYield"] },
     archaeology: { label:"考古", slots:["archaeologySpeed","archaeologyRare"] },
-    combat:   { label:"战斗",   slots:["combatWeapon","combatRepair"] }
+    combat:   { label:"战斗",   slots:["combatWeapon","combatRepair"] },
+    // 考古重制（Phase B）：四类生产增强剂分组（考古蓝图产出）。
+    gas:      { label:"采气",   slots:["gasSpeed","gasYield"] },
+    refining: { label:"冶炼",   slots:["smeltSpeed","smeltYield"] },
+    ship:     { label:"舰船工程", slots:["shipSpeed","shipYield"] },
+    booster:  { label:"增强剂制造", slots:["boosterSpeed","boosterYield"] }
   };
   var result = { effect:effect, activeSlots:{}, groups:[] };
   for (var groupKey in groups) {
@@ -487,6 +635,9 @@ window.tickBoosterTimers = tickBoosterTimers;
 window.getBoosterEffectState = getBoosterEffectState;
 window.rollDoubleMineral = rollDoubleMineral;
 window.getBoosterArchaeologyEffectiveUniqueRate = getBoosterArchaeologyEffectiveUniqueRate;
+window.getShipMaterialDiscountMultiplier = getShipMaterialDiscountMultiplier;
+window.getShipBuildingQuote = getShipBuildingQuote;
+window.discountCost = discountCost;
 window.getBoosterDisplayState = getBoosterDisplayState;
 window.getBoosterSlotStatus = getBoosterSlotStatus;
 window.getBoosterTotalRemainingSeconds = getBoosterTotalRemainingSeconds;

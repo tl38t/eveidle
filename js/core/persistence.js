@@ -446,6 +446,29 @@ function migrateArchaeologyState() {
     const rawProbeRem = Number(arch.probeSavingRemainder);
     arch.probeSavingRemainder = (Number.isFinite(rawProbeRem) && rawProbeRem > 0) ? (rawProbeRem - Math.floor(rawProbeRem)) : 0;
   }
+  // 考古重做：按舰船实例隔离的维修态（repairsByInstanceId）。
+  // 幂等：旧存档回填 {}；若存在仍生效的旧全局维修（repairUntil>now 且绑定实例），
+  // 转移进按舰表并清零全局残留，避免重复触发；已迁移过的二次运行因 repairUntil=0 自然跳过。
+  arch.repairsByInstanceId = (arch.repairsByInstanceId && typeof arch.repairsByInstanceId === "object") ? arch.repairsByInstanceId : {};
+  {
+    const legacyUntil = Number(arch.repairUntil) || 0;
+    const legacyInstance = arch.repairInstanceId || null;
+    if (legacyUntil > 0 && legacyInstance && !arch.repairsByInstanceId[legacyInstance]) {
+      const legacyResume = (gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "archaeology")
+        ? gameState.resumeAfterRepair
+        : null;
+      arch.repairsByInstanceId[legacyInstance] = {
+        until: legacyUntil,
+        resume: {
+          siteId: legacyResume ? (legacyResume.siteId || arch.startedSiteId) : arch.startedSiteId,
+          probeId: legacyResume ? (legacyResume.probeId || arch.startedProbeId) : arch.startedProbeId,
+          focusId: legacyResume ? (legacyResume.focusId || null) : null
+        }
+      };
+      arch.repairUntil = 0;
+      arch.repairInstanceId = null;
+    }
+  }
   if (!gameState.currentAction || gameState.currentAction.skill !== "archaeology") {
     arch.startedSiteId = null; arch.startedProbeId = null; arch.interferenceUntil = 0;
   }
@@ -476,6 +499,17 @@ function migrateArchaeologyState() {
       gameState.resumeAfterRepair = null;
     }
   }
+  // 凭证迁移（考古重做定点返修）：旧档 state.vouchers 布尔账本 → special:voucher_<id> 资源。
+  // 兼容临时结构，不补发、不 emit；仅当确有可迁移凭证时才置脏（否则不 dirty）。
+  if (gameState.vouchers && typeof gameState.vouchers === "object") {
+    for (const vid of Object.keys(gameState.vouchers)) {
+      if (gameState.vouchers[vid] && typeof vid === "string" && vid.indexOf("voucher_") === 0) {
+        if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(gameState, "special:" + vid, 1);
+        gameState._dirty = true;
+      }
+    }
+    delete gameState.vouchers;
+  }
   gameState._dirty = true;
 }
 
@@ -490,6 +524,32 @@ function finalizeEquipmentStateAfterLegacyMigrations(state) {
   migrateEquipmentInstancesV1(state);
   normalizeEquipmentState(state);
   migrateArchaeologyState();
+  migrateDeadSkillFields();
+  migrateImplants();
+}
+
+// 移除 rigEngineering / reverseEngineering 两个死字段（仅声明 + 成就占位，
+// 无制造/tick/UI 读取，且已确认不计入生产技能）。
+// - 不影响任何功能（这两个字段永远 lvl:1，无 XP 来源）
+// - 顺带修复 A46(全部技能Lv.50)/A48(全部技能Lv.99) 原本因死字段永远无法达成的问题
+// - 幂等：连续两次调用结果一致
+// - 必须在其他 skills 迁移之后运行，故注册在 finalize 主链末端
+function migrateDeadSkillFields() {
+  if (!gameState.skills) return;
+  if (gameState.skills.rigEngineering) delete gameState.skills.rigEngineering;
+  if (gameState.skills.reverseEngineering) delete gameState.skills.reverseEngineering;
+  gameState._dirty = true;
+}
+
+// 脑插系统初始化与旧档补发：
+// - 确保 state.implants 为对象（旧档缺失时）
+// - 技能早已满 99 级但当时无脑插系统，按 IMPLANT_BY_SKILL 映射补发（幂等）
+// - 注册在 finalize 主链末端（skills 迁移之后，rigEngineering/reverseEngineering 已清除）
+function migrateImplants() {
+  if (!gameState) return;
+  if (!gameState.implants || typeof gameState.implants !== "object") gameState.implants = {};
+  if (typeof reconcileImplantsFromSkills === "function") reconcileImplantsFromSkills(gameState);
+  gameState._dirty = true;
 }
 
 function migrateAmmunitionEngineeringState() {

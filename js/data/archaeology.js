@@ -123,18 +123,163 @@ function getArchaeologyArtifactsByTier(tier) {
   return ARCHAEOLOGY_ARTIFACTS.filter(artifact => artifact.tier === tier);
 }
 
-// ---- 3 种探针（弹药/燃料类，不可安装、不可强化） ----
+// ---- 3 种基础探针（弹药/燃料类，不可安装、不可强化） ----
 const ARCHAEOLOGY_PROBES = Object.freeze([
   { id:"core_probe_i",    name:"标准考古探针 I",  level:1,  scanBonus:0,  batchSize:20, craftTime:15,  economyCostISK:250,   cost:{ "三钛合金":40 } },
   { id:"enhanced_probe_ii", name:"强化考古探针 II", level:35, scanBonus:10, batchSize:20, craftTime:35,  economyCostISK:1500,  cost:{ "三钛合金":200, "类晶体胶矿":60 } },
   { id:"deep_probe_iii",  name:"深空考古探针 III", level:70, scanBonus:20, batchSize:20, craftTime:75,  economyCostISK:7800,  cost:{ "三钛合金":600, "超噬矿":10, "铷":3 } }
 ]);
 
+// ---- 两种复原强化探针（直接掉落、不可制造、可消耗，科研节省同样适用） ----
+// 标准探针 I 扫描加成为 0，不设计无意义的 1.5 倍版本。
+// restored_probe_ii = +15（基础 +10 的 1.5 倍）；restored_deep_probe_iii = +30（基础 +20 的 1.5 倍）。
+const ARCHAEOLOGY_RESTORED_PROBES = Object.freeze([
+  { id:"restored_probe_ii",       name:"复原强化考古探针 II",     level:15, scanBonus:15 },
+  { id:"restored_deep_probe_iii", name:"复原深空考古探针 III",    level:35, scanBonus:30 }
+]);
+
+// 探针完整表（基础 + 复原）：运行时枚举用。
+const ARCHAEOLOGY_ALL_PROBES = Object.freeze(ARCHAEOLOGY_PROBES.concat(ARCHAEOLOGY_RESTORED_PROBES));
+
 function getArchaeologyProbe(probeId) {
-  return ARCHAEOLOGY_PROBES.find(probe => probe.id === probeId) || null;
+  return ARCHAEOLOGY_ALL_PROBES.find(probe => probe.id === probeId) || null;
 }
 
-// ---- 普通 ISK 文物抽取权重（低/中/高 60/30/10） ----
+// ================================================================
+// 考古重做 — 五地点 × 三焦点权威映射（PLAN-archaeology-redesign §3/§4/§5/§7/§10）
+// 内部 15 个旧 site ID（site_i_a … site_v_c）继续存在于 ARCHAEOLOGY_SITES 用于兼容，
+// 焦点只改变常规结果权重，地点决定全部稀有掉落与货柜尺寸。
+// ================================================================
+
+// 两件唯一功能凭证（PLAN §12）：来源考古稀有池；影响统一物品回收入口的最终收益 +10%。
+// 唯一、不可出售/回收/消耗；作为普通库存条目（voucher:<id> 资源）存在，不建独立 UI。
+const ARCHAEOLOGY_VOUCHERS = Object.freeze({
+  voucher_pan_galactic: {
+    id:"voucher_pan_galactic",
+    name:"泛银河商业同盟接入界面",
+    effect:"isk",           // 影响所有以星币结算的物品回收最终收益 +10%
+    desc:"所有以星币结算的物品回收最终收益 +10%",
+    sourceTier:"II"
+  },
+  voucher_galactic_kin: {
+    id:"voucher_galactic_kin",
+    name:"银河联盟军警亲属金卡",
+    effect:"lp",            // 影响所有以功勋结算的物品回收最终收益 +10%
+    desc:"所有以功勋结算的物品回收最终收益 +10%",
+    sourceTier:"III"
+  }
+});
+
+// 三焦点常规结果权重（PLAN §5）：结果类型为 星币回收物 / 功勋回收物 / 未开启货柜。
+// a=星币焦点，b=功勋焦点，c=货柜焦点。
+const ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS = Object.freeze({
+  a: { coin:0.70, merit:0.15, cargo:0.15 },
+  b: { coin:0.15, merit:0.70, cargo:0.15 },
+  c: { coin:0.15, merit:0.15, cargo:0.70 }
+});
+
+// 五地点权威表（PLAN §4/§7/§10）。
+// foci: 三焦点 → 15 个旧 site ID（保留兼容）。
+// cargoWeights: 货柜尺寸分布（PLAN §4）。
+// rareRate: 每次成功周期的稀有发现率（PLAN §7）。
+// rareWeights: 稀有发现内部权重 {blueprint, booster, probe, credential, implant, starPack}（PLAN §7）。
+// equipmentBlueprints: 本地点考古装备蓝图池（equipmentId 列表）。
+// boosterBlueprints: 本地点增幅剂蓝图池（booster recipeId 列表）。
+// probeBlueprints: 本地点复原强化探针池（probeId 列表；可重复掉落，不按拥有过滤）。
+// credential: 本地点唯一凭证 id（voucher_*）或 null。
+// compensation: 蓝图/稀有池清空后的固定星币补偿（PLAN §10）。
+const ARCHAEOLOGY_LOCATIONS = Object.freeze([
+  {
+    id:"loc_i", tier:"I", name:"边疆信标残骸", level:1,
+    foci: { a:"site_i_a", b:"site_i_b", c:"site_i_c" },
+    cargoWeights: [ { size:"S", weight:95 }, { size:"M", weight:5 } ],
+    rareRate: 0.020,
+    rareWeights: { blueprint:20, booster:60, probe:0, credential:0, implant:0, starPack:20 },
+    equipmentBlueprints: [ "archaeo_analyzer_frontier_i" ],
+    boosterBlueprints: [ "gas_rheology_n", "fullerene_nucleation_n", "high_temp_flux_n", "lattice_proliferation_n" ],
+    probeBlueprints: [],
+    credential: null,
+    compensation: 5000
+  },
+  {
+    id:"loc_ii", tier:"II", name:"废弃工业环站", level:15,
+    foci: { a:"site_ii_a", b:"site_ii_b", c:"site_ii_c" },
+    cargoWeights: [ { size:"S", weight:45 }, { size:"M", weight:50 }, { size:"L", weight:5 } ],
+    rareRate: 0.015,
+    rareWeights: { blueprint:15, booster:45, probe:25, credential:5, implant:10, starPack:0 },
+    equipmentBlueprints: [ "archaeo_stabilizer_station_ii" ],
+    boosterBlueprints: [ "assembly_coordinator_n", "precision_rationing_n", "reaction_accelerant_n", "reaction_chain_proliferation_n" ],
+    probeBlueprints: [ "restored_probe_ii" ],
+    credential: "voucher_pan_galactic",
+    compensation: 15000
+  },
+  {
+    id:"loc_iii", tier:"III", name:"沉睡舰队坟场", level:35,
+    foci: { a:"site_iii_a", b:"site_iii_b", c:"site_iii_c" },
+    cargoWeights: [ { size:"M", weight:85 }, { size:"L", weight:15 } ],
+    rareRate: 0.010,
+    rareWeights: { blueprint:15, booster:40, probe:25, credential:5, implant:15, starPack:0 },
+    equipmentBlueprints: [ "archaeo_decoder_fleet_iii" ],
+    boosterBlueprints: [ "gas_rheology_r", "fullerene_nucleation_r", "high_temp_flux_r", "lattice_proliferation_r" ],
+    probeBlueprints: [ "restored_probe_ii" ],
+    credential: "voucher_galactic_kin",
+    compensation: 50000
+  },
+  {
+    id:"loc_iv", tier:"IV", name:"湮灭研究禁区", level:55,
+    foci: { a:"site_iv_a", b:"site_iv_b", c:"site_iv_c" },
+    cargoWeights: [ { size:"M", weight:35 }, { size:"L", weight:60 }, { size:"XL", weight:5 } ],
+    rareRate: 0.0075,
+    rareWeights: { blueprint:15, booster:40, probe:25, credential:0, implant:20, starPack:0 },
+    equipmentBlueprints: [ "archaeo_analyzer_forbidden_iv" ],
+    boosterBlueprints: [ "assembly_coordinator_r", "precision_rationing_r", "reaction_accelerant_r", "reaction_chain_proliferation_r" ],
+    probeBlueprints: [ "restored_deep_probe_iii" ],
+    credential: null,
+    compensation: 120000
+  },
+  {
+    id:"loc_v", tier:"V", name:"先驱文明核心", level:80,
+    foci: { a:"site_v_a", b:"site_v_b", c:"site_v_c" },
+    cargoWeights: [ { size:"L", weight:70 }, { size:"XL", weight:30 } ],
+    rareRate: 0.005,
+    rareWeights: { blueprint:20, booster:40, probe:20, credential:0, implant:20, starPack:0 },
+    equipmentBlueprints: [ "archaeo_analyzer_pioneer_v", "archaeo_stabilizer_pioneer_v", "archaeo_decoder_pioneer_v" ],
+    boosterBlueprints: [
+      "gas_rheology_l", "fullerene_nucleation_l", "high_temp_flux_l", "lattice_proliferation_l",
+      "assembly_coordinator_l", "precision_rationing_l", "reaction_accelerant_l", "reaction_chain_proliferation_l"
+    ],
+    probeBlueprints: [ "restored_deep_probe_iii" ],
+    credential: null,
+    compensation: 300000
+  }
+]);
+
+function getArchaeologyFocusFromSiteId(siteId) {
+  if (typeof siteId !== "string" || siteId.length < 2) return null;
+  const suf = siteId.slice(-1).toLowerCase();
+  if (suf === "a" || suf === "b" || suf === "c") return suf;
+  return null;
+}
+
+function getArchaeologyLocationByTier(tier) {
+  return ARCHAEOLOGY_LOCATIONS.find(loc => loc.tier === tier) || null;
+}
+
+function getArchaeologyLocationBySiteId(siteId) {
+  const focus = getArchaeologyFocusFromSiteId(siteId);
+  if (!focus) return null;
+  const tier = (typeof siteId === "string" && siteId.length >= 7) ? siteId.slice(5, 6).toUpperCase() : null;
+  // site_i_a → tier 从 "site_i" 取；更稳妥：通过 site 对象 tier
+  const site = getArchaeologySite(siteId);
+  if (!site) return null;
+  return getArchaeologyLocationByTier(site.tier) || null;
+}
+
+function getArchaeologyFocusRegularWeights(focus) {
+  return ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS[focus] || ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS.a;
+}
+
+// 普通 ISK 文物抽取权重（低/中/高 60/30/10），用于焦点结果=星币时在档内三件间选一。
 const ARCHAEOLOGY_COMMON_WEIGHTS = Object.freeze([0.6, 0.3, 0.1]);
 
 // ---- 稳定器/译码器上限 ----
@@ -165,3 +310,12 @@ window.getSiteEffectiveProfile = getSiteEffectiveProfile;
 window.getArchaeologyArtifact = getArchaeologyArtifact;
 window.getArchaeologyArtifactsByTier = getArchaeologyArtifactsByTier;
 window.getArchaeologyProbe = getArchaeologyProbe;
+window.ARCHAEOLOGY_RESTORED_PROBES = ARCHAEOLOGY_RESTORED_PROBES;
+window.ARCHAEOLOGY_ALL_PROBES = ARCHAEOLOGY_ALL_PROBES;
+window.ARCHAEOLOGY_VOUCHERS = ARCHAEOLOGY_VOUCHERS;
+window.ARCHAEOLOGY_LOCATIONS = ARCHAEOLOGY_LOCATIONS;
+window.ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS = ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS;
+window.getArchaeologyFocusFromSiteId = getArchaeologyFocusFromSiteId;
+window.getArchaeologyLocationByTier = getArchaeologyLocationByTier;
+window.getArchaeologyLocationBySiteId = getArchaeologyLocationBySiteId;
+window.getArchaeologyFocusRegularWeights = getArchaeologyFocusRegularWeights;

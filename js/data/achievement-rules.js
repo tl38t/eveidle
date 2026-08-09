@@ -3,7 +3,7 @@
 //  成就规则冻结数据 —— Batch C-1（技能类 50 项）+ Batch C-2（采矿工业 18 项）
 //                       + Batch C-3（战斗星带 19 项）+ Batch C-4（舰船制造 12 项）
 //
-//  职责：为 A01–A48、C14、F22 共 50 项技能成就、B01–B18 共 18 项采矿工业成就、
+//  职责：为 A01–A48、C14、F22 共 46 项技能成就（已移除 A07/A09/A28/A30 四条 rig/reverse 死字段规则）、B01–B18 共 18 项采矿工业成就、
 //  E01–E19 共 19 项战斗星带成就、C01–C10/C12/C13 共 12 项舰船制造成就提供显式
 //  冻结规则映射（合计 116 项）。
 //  规则完全静态声明：
@@ -27,7 +27,7 @@
 'use strict';
 
 (function () {
-  // 21 项权威技能键（顺序冻结，精确对应 A01–A21 / A22–A42）
+  // 19 项权威技能键（顺序冻结，精确对应 A01–A21 / A22–A42；已移除 rigEngineering/reverseEngineering 死字段）
   const ALL_SKILL_KEYS = Object.freeze([
     "mining",
     "planetaryIndustry",
@@ -35,9 +35,7 @@
     "gasHarvesting",
     "shipEngineering",
     "equipmentEngineering",
-    "rigEngineering",
     "boosterEngineering",
-    "reverseEngineering",
     "laserOps",
     "cannonOps",
     "missileOperations",
@@ -77,7 +75,7 @@
     return Object.freeze({ achievementId, type: "skill-all", keys, minLevel });
   }
 
-  // 50 条规则（顺序即求值顺序）：A01–A42 单技能、A43–A48 组合、C14/F22 分类重复
+  // 46 条规则（顺序即求值顺序）：A01–A42 单技能、A43–A48 组合、C14/F22 分类重复；已移除 A07/A09/A28/A30 四条 rig/reverse 死字段规则
   const SKILL_RULES = Object.freeze([
     // ---- Lv.50 单技能：A01–A21 ----
     skillRule("A01", "mining", 50),
@@ -86,9 +84,7 @@
     skillRule("A04", "gasHarvesting", 50),
     skillRule("A05", "shipEngineering", 50),
     skillRule("A06", "equipmentEngineering", 50),
-    skillRule("A07", "rigEngineering", 50),
     skillRule("A08", "boosterEngineering", 50),
-    skillRule("A09", "reverseEngineering", 50),
     skillRule("A10", "laserOps", 50),
     skillRule("A11", "cannonOps", 50),
     skillRule("A12", "missileOperations", 50),
@@ -108,9 +104,7 @@
     skillRule("A25", "gasHarvesting", 99),
     skillRule("A26", "shipEngineering", 99),
     skillRule("A27", "equipmentEngineering", 99),
-    skillRule("A28", "rigEngineering", 99),
     skillRule("A29", "boosterEngineering", 99),
-    skillRule("A30", "reverseEngineering", 99),
     skillRule("A31", "laserOps", 99),
     skillRule("A32", "cannonOps", 99),
     skillRule("A33", "missileOperations", 99),

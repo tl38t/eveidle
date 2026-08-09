@@ -18,7 +18,7 @@ const CARGO_CLASS_SIZES = {
   destroyer:   { sizes: ["S", "M"],          weights: [0.80, 0.20] },
   cruiser:     { sizes: ["M"],               weights: [1] },
   battleship:  { sizes: ["M", "L"],          weights: [0.75, 0.25] },
-  capital:     { sizes: ["L"],               weights: [1] },
+  capital:     { sizes: ["L", "XL"],         weights: [0.80, 0.20] },
   supercapital: { sizes: ["L", "XL"],        weights: [0.70, 0.30] },
 };
 
@@ -147,15 +147,17 @@ const CARGO_POOLS = {
     { id: "ammo:T1",             qty: 75,               weight: 14 }  // 普通弹：随机一种武器类型；数量按尺寸缩放（S75/M120/L195/XL315，×1.5）
   ],
   T3: [
-    // T3 现仅含 T2 弹药；装备蓝图已按档位(D/C/B/A)移至 CARGO_BLUEPRINT_BY_SIZE（S/M/L/XL），作为独立 BP 奖励档。
-    { id: "ammo:T2",             qty: 45,               weight: 12 }  // T2 弹×1.10独立乘区：随机一种武器类型；数量按尺寸缩放（S45/M72/L117/XL189，×1.5）
+    // T3 含 T2 弹药 + 行星轴脑插；装备蓝图已按档位(D/C/B/A)移至 CARGO_BLUEPRINT_BY_SIZE（S/M/L/XL），作为独立 BP 奖励档。
+    { id: "ammo:T2",              qty: 225,              weight: 12 }, // T2 弹×1.10独立乘区
+    { id: "implant_planet_speed", qty: 1,                weight: 3 },  // 行星加速 +5%
+    { id: "implant_planet_slot",  qty: 1,                weight: 3 }   // 行星槽位 +1
   ],
   T4: [
-    // T4 仅保留脑插；装备蓝图已移至 CARGO_BLUEPRINT_BY_SIZE（按档位分到 S/M/L/XL 的 BP 奖励档）。
-    { id: "special:神经植入体·攻击", qty: 1, weight: 4 },
-    { id: "special:神经植入体·防御", qty: 1, weight: 4 },
-    { id: "special:神经植入体·工程", qty: 1, weight: 4 },
-    { id: "special:神经植入体·指挥", qty: 1, weight: 4 }
+    // T4 仅保留冶炼/增强剂轴脑插（退役旧 special:神经植入体，由 implants 系统取代）。
+    { id: "implant_refine_eff",     qty: 1, weight: 4 },  // 冶炼效率 +6%
+    { id: "implant_double_refine",  qty: 1, weight: 4 },  // 冶炼 3% 概率产出×2
+    { id: "implant_booster_eff",    qty: 1, weight: 4 },  // 增强剂制造效率 +6%
+    { id: "implant_double_booster", qty: 1, weight: 4 }   // 增强剂 3% 概率产出×2
   ]
 };
 
@@ -357,7 +359,7 @@ function openCargoContainer(state, size, rng) {
         const item = cargoGrantLoot(state, kind, qty, rng);
         grants = [{ tier, id: entry.id, qty, loot: true, name: item.name, kind }];
       } else if (entry.id === "ammo:T1" || entry.id === "ammo:T2") {
-        // 弹药实例：随机一种武器类型；数量按尺寸缩放（普通弹 S75/M120/L195/XL315，T2 弹 S45/M72/L117/XL189，均 ×1.5）
+        // 弹药实例：随机一种武器类型；数量按尺寸缩放（普通弹 S75/M120/L195/XL315，T2 弹 S225/M360/L585/XL945，T2翻五倍）
         const aTier = entry.id === "ammo:T2" ? "T2" : "T1";
         const ammoTypes = ["laser", "missile", "cannon"];
           const atype = ammoTypes[Math.floor((typeof rng === "function" ? rng() : Math.random()) * 3)];
@@ -367,7 +369,11 @@ function openCargoContainer(state, size, rng) {
         if (typeof addAmmo === "function") addAmmo(state, { type: atype, tier: aTier, props: aprops, qty: aqty, name: aName });
         grants = [{ tier, id: entry.id, qty: aqty, ammo: true, weaponType: atype, name: aName }];
       } else {
-        if (entry.id.startsWith("blueprint:")) {
+        if (entry.id.startsWith("implant_")) {
+          // 脑插：授予 state.implants（账号全局被动，拥有即永久生效）；不入库存、不随尺寸缩放。
+          if (typeof grantImplant === "function") grantImplant(state, entry.id);
+          grants = [{ tier, id: entry.id, qty: 1, implant: true, implantId: entry.id }];
+        } else if (entry.id.startsWith("blueprint:")) {
           // 货柜装备蓝图：复用 buyLPItem 的 ownedBlueprints 写入 + blueprint:acquired 事件；已拥有折算 loot:lp
           const equipmentId = entry.id.slice("blueprint:".length);
           const res = grantEquipmentBlueprintFromCargo(state, equipmentId, size, rng);

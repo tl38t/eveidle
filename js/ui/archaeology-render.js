@@ -1,6 +1,45 @@
 /* ================================================================
-   考古系统 UI 渲染
+   考古系统 UI 渲染（重做 Phase C）
+   三栏工作台：左=5 个地点；中=选中地点详情 + 三焦点 + 运行面板；
+   右=当前地点稀有档案（蓝图 / 实物 / 脑插）+ 校准说明。
+   运行时仍按「具体遗迹 site_X_y」选择（遗迹 id 内含地点 tier 与焦点 a/b/c）。
    ================================================================ */
+
+// 焦点元数据（a=星币 b=功勋 c=货柜），与 ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS 对应
+const ARCH_FOCUS_META = {
+  a: { key:"coin",  icon:"◉", title:"星币焦点", sub:"偏向可回收商业物资",
+       yieldTitle:"商业回收物资", yieldCopy:"常规成功偏向可回收为星币的物品；不会改变蓝图、凭证、探针或脑插概率。" },
+  b: { key:"merit", icon:"✦", title:"功勋焦点", sub:"偏向军警与联盟档案",
+       yieldTitle:"军警功勋档案", yieldCopy:"常规成功偏向可回收为功勋的档案；不会改变蓝图、凭证、探针或脑插概率。" },
+  c: { key:"cargo", icon:"▣", title:"货柜焦点", sub:"偏向未开启标准货柜",
+       yieldTitle:"舰队密封货柜", yieldCopy:"常规成功偏向未开启货柜；货柜内容仍由统一货柜系统决定。" }
+};
+
+// 地点描述（纯展示文案，与运行时数据解耦）
+const ARCH_LOCATION_DESC = {
+  I:"破损导航信标与民用残骸散布在边疆航道，适合完成第一批实地解析。",
+  II:"停摆的精炼设施与装配环保存着大量工业档案，部分商业接口仍能响应。",
+  III:"大规模舰队残骸沿失效航道漂流，军用数据库与密封货舱仍可能保持完整。",
+  IV:"被封锁的研究设施仍维持危险的自动防护，留下高价值制造记录与深层信号。",
+  V:"先驱文明的核心节点藏在深空干扰层内，只有顶级测绘舰与探针能够稳定接近。"
+};
+
+const ARCH_TIER_ORDER = ["I","II","III","IV","V"];
+
+function archFocusFromSite(siteId) {
+  if (typeof siteId !== "string" || siteId.length < 2) return "a";
+  const suf = siteId.slice(-1).toLowerCase();
+  return (suf === "a" || suf === "b" || suf === "c") ? suf : "a";
+}
+
+function archBlueprintName(id) {
+  if (typeof getEquipmentBlueprint === "function") { const e = getEquipmentBlueprint(id); if (e && e.name) return e.name; }
+  if (typeof getBoosterRecipe === "function") { const b = getBoosterRecipe(id); if (b && b.name) return b.name; }
+  if (typeof getBoosterItem === "function") { const bi = getBoosterItem(id); if (bi && bi.name) return bi.name; }
+  if (typeof getArchaeologyProbe === "function") { const p = getArchaeologyProbe(id); if (p && p.name) return p.name; }
+  if (typeof ARCHAEOLOGY_VOUCHERS === "object" && ARCHAEOLOGY_VOUCHERS[id] && ARCHAEOLOGY_VOUCHERS[id].name) return ARCHAEOLOGY_VOUCHERS[id].name;
+  return id;
+}
 
 function renderArchaeologyPage(now) {
   const renderTime = Number(now) || Date.now();
@@ -18,7 +57,6 @@ function renderArchaeologyPage(now) {
   const activeSiteId = arch.active ? (arch.startedSiteId || arch.activeSiteId) : arch.activeSiteId;
   const ship = display.assignedShip;
 
-  // 周期时间格式化：整数不带小数，含加速时保留 1 位
   const fmtTime = t => Number.isFinite(t) ? (Number.isInteger(t) ? String(t) : t.toFixed(1)) : "0";
 
   // ---- 状态行 ----
@@ -30,6 +68,14 @@ function renderArchaeologyPage(now) {
     statusText = "🛰️ 解析中 · " + (runningSite ? runningSite.name : activeSiteId || "");
   }
   if (status) status.textContent = statusText;
+
+  // ---- 本舰重创维修面板（按舰隔离：仅当前编入实例维修时显示） ----
+  const repairPanel = (arch.repairing && ship) ? `
+    <div class="archaeology-repair-panel">
+      <div class="arch-repair-title">🔧 本舰重创 · 自动维修中 ${arch.repairRemaining}s</div>
+      <div class="arch-repair-detail">结构归零触发维修；维修完成且本舰仍编入、燃料与探针充足时将自动恢复解析。</div>
+      <button class="btn" id="archaeology-btn-swap-ship">🚀 更换考古舰（前往船坞）</button>
+    </div>` : "";
 
   // ---- 分配舰船 ----
   const shipSection = ship ? `
@@ -43,49 +89,84 @@ function renderArchaeologyPage(now) {
           ${renderHpBar("装甲", ship.hp.armor, ship.maxHp.armor, "#d4a843")}
           ${renderHpBar("结构", ship.hp.structure, ship.maxHp.structure, "#e05555")}
         </div>` : ""}
+      ${repairPanel}
     </div>
   ` : `<div class="archaeology-no-ship">
     <span>⚠ 未分配考古舰船</span>
     <small>在「船坞」页面将考古舰船分配至考古岗位</small>
   </div>`;
 
-  // ---- 遗迹选择 ----
-  const tierLabels = { I:"T1 低安", II:"T2 中安", III:"T3 高安", IV:"T4 旗舰", V:"T5 超旗" };
-  const siteCards = groupBy(display.sites, "tier");
-  const siteSection = Object.entries(tierLabels).map(([tier, label]) => {
-    const sites = siteCards[tier] || [];
-    if (!sites.length) return "";
-    const cards = sites.map(site => `
-      <button class="archaeology-site-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}"
-        data-site-id="${site.id}"
-        ${site.locked || arch.repairing || arch.active ? "disabled" : ""}>
-        <span class="asc-name">${site.name}</span>
-        <span class="asc-profile">${site.profile && site.profile.label ? "🏷️ " + site.profile.label : ""}</span>
-        <span class="asc-meta">Lv.${site.level} · ⏱${fmtTime(site.actualCycleTime)}s/次${site.archSpeedEff && site.archSpeedEff !== 1 ? ` <span class="asc-base">增强剂 ×${site.archSpeedEff.toFixed(2)}</span>` : ""}${site.archLogisticsMult && site.archLogisticsMult > 1 ? ` <span class="asc-base">后勤 ×${site.archLogisticsMult.toFixed(2)}</span>` : ""}${site.archSpeedEff && site.archSpeedEff !== 1 || (site.archLogisticsMult && site.archLogisticsMult > 1) ? ` <span class="asc-base">(基础${site.time}s)</span>` : ""} · ⛽${site.fuel}</span>
-        <span class="asc-detail">
-          <span>难度 ${site.difficulty}</span>
-          <span>成功率 ${site.successPercent}%</span>
-          <span>反噬 ${site.effectiveBacklash || site.backlashDamage}</span>
-          <span>${DisplayNames.getCurrencyName("lp")} ×${site.preview ? site.preview.effectiveLpMultiplier : site.lpMultiplier}</span>
-        </span>
-        ${site.drops ? `
-        <span class="asc-drops">
-          <span class="ad-line"><span class="ad-icon">📜</span> ${site.drops.common.text}${site.preview ? " · 译码器+" + site.preview.decoderPct + "%" : ""}</span>
-          <span class="ad-line"><span class="ad-icon">🔬</span> 独特文物 ${site.drops.unique.ratePct}%${site.drops.unique.ratePct !== site.drops.unique.boostedPct ? ` <span class="ad-boost">(增强 +${(site.drops.unique.boostedPct - site.drops.unique.ratePct).toFixed(1)}%)</span>` : ""}</span>
-          <span class="ad-line"><span class="ad-icon">🎖</span> 功勋文物 ${site.drops.lp.ratePct}%${site.drops.lp.item ? " · " + site.drops.lp.item.lpValue + " 功勋" : ""}</span>
-          <span class="ad-line"><span class="ad-icon">🔧</span> 校准材料 ${site.drops.calibration.ratePct}% · ×${site.drops.calibration.amount}</span>
-          ${site.preview ? `<span class="ad-line ad-expected"><span class="ad-icon">📈</span> 单次期望 ${Math.round(site.preview.expectedIskPerCycle).toLocaleString()} 星币 · ${site.preview.expectedLpPerCycle.toFixed(2)} 功勋 · ${site.preview.expectedCalibPerCycle.toFixed(2)} 校准</span>` : ""}
-        </span>` : ""}
-        <span class="asc-state">${site.runningTarget ? "解析中" : site.levelLocked ? `需考古 Lv.${site.level}` : site.actionLocked ? "行动中不可切换" : site.selected ? "已选择" : "可解析"}</span>
-      </button>
-    `).join("");
-    return `<div class="archaeology-tier-group">
-      <div class="archaeology-tier-label">${label}</div>
-      <div class="archaeology-site-grid">${cards}</div>
-    </div>`;
+  // 当前选中地点 / 焦点
+  const selectedTier = (activeSiteId && getArchaeologySite(activeSiteId)) ? getArchaeologySite(activeSiteId).tier : (display.sites[0] ? display.sites[0].tier : "I");
+  const selectedFocus = archFocusFromSite(activeSiteId);
+  const selectedLocation = (typeof ARCHAEOLOGY_LOCATIONS !== "undefined") ? ARCHAEOLOGY_LOCATIONS.find(l => l.tier === selectedTier) : null;
+  const selectedSite = display.sites.find(s => s.id === activeSiteId) || display.sites.find(s => s.tier === selectedTier) || null;
+  const lockSel = arch.repairing || arch.active;
+
+  // ---- 左栏：5 个地点 ----
+  const locationCards = (typeof ARCHAEOLOGY_LOCATIONS !== "undefined" ? ARCHAEOLOGY_LOCATIONS : []).map(loc => {
+    const lv = gameState.skills.archaeology.lvl || 1;
+    const locked = lv < loc.level;
+    const isSel = loc.tier === selectedTier;
+    const cargoSizes = (loc.cargoWeights || []).map(c => c.size).join(" / ");
+    const stateLabel = isSel ? "当前地点" : (locked ? "需考古 Lv." + loc.level : "已勘明");
+    return `<button class="arch-location${isSel ? " active" : ""}${locked ? " locked" : ""}"
+        data-loc-tier="${loc.tier}" ${locked || lockSel ? "disabled" : ""}>
+        <span class="arch-loc-mark">${loc.tier}</span>
+        <span class="arch-loc-main"><span class="arch-loc-name">${loc.name}</span><span class="arch-loc-meta">Lv.${loc.level} · ${cargoSizes} 货柜</span></span>
+        <span class="arch-loc-state">${stateLabel}</span>
+      </button>`;
   }).join("");
 
-  // ---- 探针选择 ----
+  // ---- 中栏：地点详情 + 三焦点 + 产出示意 + 运行面板 ----
+  const locName = selectedLocation ? selectedLocation.name : (selectedSite ? selectedSite.name : "考古");
+  const locCopy = selectedLocation ? (ARCH_LOCATION_DESC[selectedTier] || "") : "";
+  const riskText = selectedSite ? `难度 ${selectedSite.difficulty} · 反噬 ${selectedSite.effectiveBacklash || selectedSite.backlashDamage}` : "";
+
+  const focusTabs = ARCH_TIER_ORDER.length ? ["a","b","c"].map(f => {
+    const fm = ARCH_FOCUS_META[f];
+    const siteId = selectedLocation ? selectedLocation.foci[f] : null;
+    const site = siteId ? display.sites.find(s => s.id === siteId) : null;
+    const isActive = f === selectedFocus;
+    return `<button class="arch-focus${isActive ? " active" : ""}" data-site-id="${siteId || ""}" ${!site || site.locked || lockSel ? "disabled" : ""}>
+        <b>${fm.icon} ${fm.title}</b><small>${fm.sub}</small>
+      </button>`;
+  }).join("") : "";
+
+  // 产出示意卡（按焦点）
+  const fm = ARCH_FOCUS_META[selectedFocus];
+  let yieldBody = "";
+  if (selectedFocus === "c" && selectedLocation) {
+    const sizes = selectedLocation.cargoWeights || [];
+    const maxW = sizes.reduce((m, c) => Math.max(m, c.weight), 0);
+    yieldBody = `<div class="arch-cargo-mix">${sizes.map(c => `<span class="arch-cargo-pill${c.weight === maxW ? " main" : ""}">${c.size}</span>`).join("")}</div>`;
+  } else if (selectedFocus === "a" && selectedSite && selectedSite.drops) {
+    yieldBody = `<p class="arch-yield-sub">常规成功 → 星币文物（低 / 中 / 高三档，按档内权重抽取）</p>`;
+  } else if (selectedFocus === "b" && selectedSite && selectedSite.drops) {
+    yieldBody = `<p class="arch-yield-sub">常规成功 → 功勋文物（固定功勋值）</p>`;
+  }
+
+  // 运行面板
+  const runTitle = (arch.active ? "正在解析 · " : "准备解析 · ") + fm.title;
+  const runClock = selectedSite ? fmtTime(selectedSite.actualCycleTime) + "s / 次" : "";
+  const progressSection = arch.active ? `
+    <div class="archaeology-progress">
+      <div class="archaeology-progress-header">
+        <span>解析 ${selectedSite ? selectedSite.name : activeSiteId}</span>
+        <span>${runClock}</span>
+      </div>
+      <canvas class="skill-canvas-bar" id="bar-archaeology" width="560" height="24"></canvas>
+    </div>
+  ` : "";
+
+  const canStart = ship && display.canAssign && !arch.repairing && !arch.interference && !arch.active && activeSiteId;
+  const controls = `
+    <div class="archaeology-controls">
+      <button class="btn danger" id="archaeology-btn-stop" ${arch.active ? "" : 'style="display:none;"'}>■ 停止解析</button>
+      <button class="btn primary" id="archaeology-btn-start" ${canStart && !arch.active ? "" : 'style="display:none;"'}>▶ 开始解析</button>
+    </div>
+  `;
+
   const probeSection = display.probes.map(probe => `
     <button class="archaeology-probe-card${probe.selected ? " selected" : ""}${probe.locked ? " locked" : ""}"
       data-probe-id="${probe.id}"
@@ -97,26 +178,87 @@ function renderArchaeologyPage(now) {
     </button>
   `).join("");
 
-  // ---- 进度条（与采矿共用 drawSkillBar） ----
-  const activeSite = display.sites.find(s => s.id === activeSiteId);
-  const progressSection = arch.active ? `
-    <div class="archaeology-progress">
-      <div class="archaeology-progress-header">
-        <span>解析 ${activeSite ? activeSite.name : arch.activeSiteId}</span>
-        <span>${activeSite ? fmtTime(activeSite.actualCycleTime) + "s / 次" : ""}</span>
-      </div>
-      <canvas class="skill-canvas-bar" id="bar-archaeology" width="560" height="24"></canvas>
-    </div>
-  ` : "";
+  const runStats = selectedSite ? `
+    <div class="arch-run-stats">
+      <div class="arch-run-stat"><label>成功率</label><b>${selectedSite.successPercent}%</b></div>
+      <div class="arch-run-stat"><label>每周期燃料</label><b>${selectedSite.nextFuelCost}</b></div>
+      <div class="arch-run-stat"><label>探针消耗</label><b>${selectedSite.nextProbeCost}</b></div>
+      <div class="arch-run-stat"><label>经验</label><b>${selectedSite.xp} XP</b></div>
+    </div>` : "";
 
-  // ---- 控制按钮 ----
-  const canStart = ship && display.canAssign && !arch.repairing && !arch.interference && !arch.active && activeSiteId;
-  const controls = `
-    <div class="archaeology-controls">
-      <button class="btn danger" id="archaeology-btn-stop" ${arch.active ? "" : 'style="display:none;"'}>■ 停止解析</button>
-      <button class="btn primary" id="archaeology-btn-start" ${canStart && !arch.active ? "" : 'style="display:none;"'}>▶ 开始解析</button>
+  const detailColumn = `
+    <div class="arch-detail-head">
+      <div><h1 class="arch-place-name">${locName}</h1><p class="arch-place-copy">${locCopy}</p></div>
+      <div class="arch-risk"><label>反噬威胁</label><b>${riskText}</b></div>
     </div>
+    <div class="arch-focus-title">选择回收焦点</div>
+    <div class="arch-focus-tabs">${focusTabs}</div>
+    <div class="arch-yield-card">
+      <div class="arch-yield-icon">${fm.icon}</div>
+      <div><b class="arch-yield-title">${fm.yieldTitle}</b><p class="arch-yield-copy">${fm.yieldCopy}</p></div>
+      ${yieldBody}
+    </div>
+    <div class="arch-run-panel">
+      <div class="arch-run-top"><b>${runTitle}</b><span>${runClock}</span></div>
+      ${runStats}
+      <div class="arch-focus-title">选择探针</div>
+      <div class="arch-probe-row">${probeSection}</div>
+    </div>
+    ${controls}
   `;
+
+  // ---- 右栏：当前地点稀有档案 ----
+  let rareArchive = "";
+  if (selectedLocation) {
+    const eqBps = selectedLocation.equipmentBlueprints || [];
+    const boBps = selectedLocation.boosterBlueprints || [];
+    const prBps = selectedLocation.probeBlueprints || [];
+    const owned = new Set(gameState.ownedBlueprints || []);
+    const bpList = []
+      .concat(eqBps.map(id => ({ id, kind:"equipment" })))
+      .concat(boBps.map(id => ({ id, kind:"booster" })));
+    const blueprintRows = bpList.map((b, i) => {
+      const ownedKey = b.kind === "equipment" ? "equipment:" + b.id : (b.kind === "booster" ? "booster:" + b.id : null);
+      const isOwned = ownedKey ? owned.has(ownedKey) : false;
+      const sub = i === 0 ? "地点标志性蓝图" : "未拥有时进入有效蓝图池";
+      return rewardRow("⌘", archBlueprintName(b.id), isOwned ? ("已拥有 · " + sub) : sub, i === 0 ? "epic" : "rare", isOwned);
+    }).join("");
+
+    const itemIds = [];
+    (selectedLocation.probeBlueprints || []).forEach(id => itemIds.push(id));
+    if (selectedLocation.credential) itemIds.push(selectedLocation.credential);
+    const itemRows = itemIds.map(id => {
+      const isVoucher = typeof id === "string" && id.indexOf("voucher_") === 0;
+      return rewardRow(isVoucher ? "◆" : "⌁", archBlueprintName(id), isVoucher ? "唯一永久回收凭证" : "直接获得的消耗型探针", isVoucher ? "unique" : "rare", false);
+    }).join("");
+
+    // 脑插信号：能力探测（中央目录无专属标签时回退说明）
+    let implantNote = "具体 ID 由中央脑插目录按稀有权重提供";
+    if (typeof tryGetArchaeologyImplantDrop === "function") {
+      const probe = tryGetArchaeologyImplantDrop(gameState, selectedLocation, Math.random);
+      if (probe && probe.implantId) implantNote = "可能掉落：" + probe.implantId;
+    }
+    const implantRows = rewardRow("◇", "脑插信号", implantNote, "", false);
+
+    rareArchive = `
+      <p class="arch-eyebrow">当前地点 · 稀有档案</p>
+      <div class="arch-reward-grid">
+        <section class="arch-reward-section">
+          <div class="arch-reward-head"><b>技术蓝图</b><span>只抽未拥有项目</span></div>
+          <div class="arch-reward-list">${blueprintRows}</div>
+        </section>
+        <section class="arch-reward-section">
+          <div class="arch-reward-head"><b>实物发现</b><span>三个焦点概率相同</span></div>
+          <div class="arch-reward-list">${itemRows || '<div class="arch-reward-note">本地点无实物掉落</div>'}</div>
+        </section>
+        <section class="arch-reward-section">
+          <div class="arch-reward-head"><b>脑插信号</b><span>由中央脑插目录提供</span></div>
+          <div class="arch-reward-list">${implantRows}</div>
+        </section>
+      </div>
+      <div class="arch-calibration"><b>校准材料</b><br>用于<b>改装件制造</b>：rig 配方在装备工程消耗 <code>calibration:art_&lt;tier&gt;_calib</code>。本次重做不改变其掉落概率与数量。</div>
+    `;
+  }
 
   // ---- 文物库存 ----
   const artifactSection = display.artifacts.length ? `
@@ -132,7 +274,7 @@ function renderArchaeologyPage(now) {
           const isLP = a.category === "lp";
           const isCal = a.category === "calibration";
           const sellBtn = isLP ? `<button class="btn archaeology-redeem-btn" data-artifact-id="${a.id}">🎖 兑换 ${DisplayNames.getCurrencyName("lp")}</button>`
-            : isCal ? `<span class="archaeology-cal-note">（未来用途）</span>`
+            : isCal ? `<span class="archaeology-cal-note">🛠 改装件制造材料</span>`
             : `<button class="btn archaeology-sell-btn" data-artifact-id="${a.id}">💰 出售</button>`;
           return `<div class="archaeology-artifact-card">
             <span class="aac-name">${isLP ? "🎖 " : isCal ? "🔬 " : "📜 "}${a.name}</span>
@@ -147,17 +289,46 @@ function renderArchaeologyPage(now) {
     </div>
   ` : `<div class="archaeology-section-title" style="color:#4a5a6a;">📦 暂无文物</div>`;
 
+  // ---- 统一回收舱报价（消费 getRecycleQuote；凭证 special: 资源，最终收益严格 ×1.10） ----
+  const recycleBayItems = display.artifacts.map(row => {
+    const a = row.artifact;
+    if (a.category === "common_isk" || a.category === "unique") return { currency:"isk", amount:(Number(a.iskValue) || 0) * row.count };
+    if (a.category === "lp") return { currency:"lp", amount:(Number(a.lpValue) || 0) * row.count };
+    return null;
+  }).filter(Boolean);
+  const recycleQuote = (typeof getRecycleQuote === "function") ? getRecycleQuote(gameState, recycleBayItems) : { base:0, bonus:0, final:0, byCurrency:{} };
+  const recycleBayHtml = recycleQuote.base > 0 ? `
+    <div class="archaeology-recycle-bay">
+      <div class="archaeology-section-title">♻ 统一回收舱 · 当前库存报价</div>
+      <div class="recycle-quote">
+        ${recycleQuote.byCurrency.isk ? recycleCurrencyRow("星币", recycleQuote.byCurrency.isk) : ""}
+        ${recycleQuote.byCurrency.lp ? recycleCurrencyRow("功勋", recycleQuote.byCurrency.lp) : ""}
+      </div>
+      <div class="recycle-hint">持有银河泛星 / 银河同族凭证即最终收益 ×1.10；无凭证按基础值结算。星币与功勋回收均经统一回收舱（recycling.js）入账。</div>
+    </div>
+  ` : "";
+
   // ---- 行动日志 ----
   const logSection = arch.log.length ? `
     <div class="archaeology-log">
       <div class="archaeology-section-title">📋 最近行动</div>
       <div class="archaeology-log-list">
         ${arch.log.map(entry => {
-          const icon = entry.type === "success" ? "✅" : entry.type === "failure" ? "❌" : entry.type === "repair" ? "🔧" : "📋";
+          let icon = "📋", detail = "";
+          if (entry.success) {
+            icon = "✅";
+            detail = "解析成功" + (entry.artifacts && entry.artifacts.length ? "：获得 " + entry.artifacts.join("、") : "");
+          } else if (entry.destroyed) {
+            icon = "💥";
+            detail = "重创！结构归零，进入自动维修" + (Number(entry.backlash) > 0 ? "（反噬 " + entry.backlash + "）" : "");
+          } else {
+            icon = "⚠️";
+            detail = "解析失败" + (Number(entry.backlash) > 0 ? "（反噬 " + entry.backlash + "）" : "");
+          }
           return `<div class="archaeology-log-entry">
             <span class="ale-icon">${icon}</span>
             <span class="ale-site">${entry.site || ""}</span>
-            <span class="ale-detail">${entry.detail || ""}</span>
+            <span class="ale-detail">${detail}</span>
           </div>`;
         }).join("")}
       </div>
@@ -168,18 +339,51 @@ function renderArchaeologyPage(now) {
     ${shipSection}
     ${progressSection}
     ${controls}
-    <div class="archaeology-section-title">📍 选择遗迹</div>
-    <div class="archaeology-site-section">${siteSection}</div>
-    <div class="archaeology-section-title">📡 选择探针</div>
-    <div class="archaeology-probe-row">${probeSection}</div>
+    <div class="arch-workbench">
+      <aside class="arch-col arch-col-locations">
+        <p class="arch-eyebrow">勘探区域 · 5</p>
+        <div class="arch-location-list">${locationCards}</div>
+        <div class="arch-side-note">地点决定稀有池；星币、功勋、货柜三个焦点只改变常规回报。切换焦点不会改变蓝图、强化探针、凭证或脑插概率。</div>
+      </aside>
+      <section class="arch-col arch-col-detail">${detailColumn}</section>
+      <aside class="arch-col arch-col-loot">${rareArchive}</aside>
+    </div>
     ${artifactSection}
+    ${recycleBayHtml}
     ${logSection}
   `;
 
-  // ---- 事件绑定 ----
   bindArchaeologyEvents(body);
-
   return display;
+}
+
+function rewardRow(icon, name, sub, rarity, owned) {
+  const rarityCls = (rarity === "unique" || rarity === "epic" || rarity === "rare") ? " " + rarity : "";
+  const dim = owned ? " arch-reward-owned" : "";
+  const rarityLabel = rarity === "unique" ? "唯一" : rarity === "epic" ? "极稀有" : rarity === "rare" ? "稀有" : "";
+  return `<div class="arch-reward${dim}">
+    <span class="arch-reward-icon">${icon}</span>
+    <div><b>${name}</b><small>${sub}</small></div>
+    ${rarityLabel ? `<span class="arch-rarity${rarityCls}">${rarityLabel}</span>` : ""}
+  </div>`;
+}
+
+// 统一回收舱：单币种报价行（基础 / 凭证加成 / 实得）
+function recycleCurrencyRow(label, c) {
+  const multTag = c.multiplier > 1 ? ` <span class="recycle-mult">×${c.multiplier}</span>` : "";
+  return `<div class="recycle-row">
+    <span class="recycle-label">${label}${multTag}</span>
+    <span class="recycle-base">基础 ${c.base.toLocaleString()}</span>
+    ${c.bonus > 0 ? `<span class="recycle-bonus">凭证 +${c.bonus.toLocaleString()}</span>` : ""}
+    <span class="recycle-final">实得 ${c.final.toLocaleString()}</span>
+  </div>`;
+}
+
+// 由基础值反查统一回收舱实际入账（含凭证 ×1.10），供 toast 展示真实收益
+function recycleFinal(currency, base) {
+  if (!(base > 0)) return 0;
+  if (typeof getRecycleQuote !== "function") return base;
+  return getRecycleQuote(gameState, [{ currency, amount: base }]).final;
 }
 
 function renderHpBar(label, current, max, color) {
@@ -193,21 +397,26 @@ function renderHpBar(label, current, max, color) {
   </div>`;
 }
 
-function groupBy(arr, key) {
-  const result = {};
-  for (const item of arr) {
-    const k = item[key];
-    if (!result[k]) result[k] = [];
-    result[k].push(item);
-  }
-  return result;
-}
-
 function bindArchaeologyEvents(body) {
-  // 遗迹选择
-  body.querySelectorAll(".archaeology-site-card:not([disabled])").forEach(card => {
+  // 地点选择（选中该地点的当前焦点遗迹）
+  body.querySelectorAll(".arch-location:not([disabled])").forEach(card => {
+    card.addEventListener("click", () => {
+      const tier = card.dataset.locTier;
+      const loc = (typeof ARCHAEOLOGY_LOCATIONS !== "undefined") ? ARCHAEOLOGY_LOCATIONS.find(l => l.tier === tier) : null;
+      if (!loc) return;
+      const focus = (gameState.archaeology.startedSiteId || gameState.archaeology.activeSiteId || "");
+      const f = archFocusFromSite(focus);
+      const siteId = loc.foci[f] || loc.foci.a;
+      const result = dispatchGameAction(gameState, { type:"archaeology/selectSite", siteId }, Date.now());
+      if (result.changed) renderArchaeologyPage();
+    });
+  });
+
+  // 焦点选择（直接选中具体遗迹 site_X_y）
+  body.querySelectorAll(".arch-focus:not([disabled])").forEach(card => {
     card.addEventListener("click", () => {
       const siteId = card.dataset.siteId;
+      if (!siteId) return;
       const result = dispatchGameAction(gameState, { type:"archaeology/selectSite", siteId }, Date.now());
       if (result.changed) renderArchaeologyPage();
     });
@@ -230,20 +439,28 @@ function bindArchaeologyEvents(body) {
     const result = dispatchGameAction(gameState, { type:"archaeology/stop" }, Date.now());
     if (result.changed) { showToast("已停止考古行动"); renderArchaeologyPage(); updateUI(); }
   });
+  // 更换考古舰：手动换船取消原舰自动恢复意图（不取消其维修）；释放岗位后前往船坞指派健康舰
+  const swapBtn = body.querySelector("#archaeology-btn-swap-ship");
+  if (swapBtn) swapBtn.addEventListener("click", () => {
+    const instId = (gameState.shipAssignments && gameState.shipAssignments.archaeology) || null;
+    if (instId) dispatchGameAction(gameState, { type:"hangar/toggleAssignment", instanceId:instId, actionKey:"archaeology" }, Date.now());
+    if (typeof switchPage === "function") switchPage("hangar");
+    else { renderArchaeologyPage(); updateUI(); }
+  });
 
   // 出售/兑换文物
   body.querySelectorAll(".archaeology-sell-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const artifactId = btn.dataset.artifactId;
       const result = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", artifactId, quantity:1 }, Date.now());
-      if (result.changed) { showToast("出售文物获得 " + result.isk.toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
+      if (result.changed) { showToast("出售文物获得 " + recycleFinal("isk", result.isk).toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
     });
   });
   body.querySelectorAll(".archaeology-redeem-btn").forEach(btn => {
     btn.addEventListener("click", () => {
       const artifactId = btn.dataset.artifactId;
       const result = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", artifactId, quantity:1 }, Date.now());
-      if (result.changed) { showToast("兑换文物获得 " + result.lp + " 功勋"); renderArchaeologyPage(); updateUI(); }
+      if (result.changed) { showToast("兑换文物获得 " + recycleFinal("lp", result.lp).toLocaleString() + " 功勋"); renderArchaeologyPage(); updateUI(); }
     });
   });
 
@@ -252,10 +469,10 @@ function bindArchaeologyEvents(body) {
   const redeemAll = body.querySelector("#archaeology-redeem-all");
   if (sellAll) sellAll.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", all:true }, Date.now());
-    if (result.changed) { showToast("出售全部文物获得 " + result.totalIsk.toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
+    if (result.changed) { showToast("出售全部文物获得 " + recycleFinal("isk", result.totalIsk).toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
   });
   if (redeemAll) redeemAll.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", all:true }, Date.now());
-    if (result.changed) { showToast("兑换全部文物获得 " + result.totalLp.toLocaleString() + " 功勋"); renderArchaeologyPage(); updateUI(); }
+    if (result.changed) { showToast("兑换全部文物获得 " + recycleFinal("lp", result.totalLp).toLocaleString() + " 功勋"); renderArchaeologyPage(); updateUI(); }
   });
 }

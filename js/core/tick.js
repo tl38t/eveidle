@@ -91,11 +91,12 @@ function gameTick() {
   if (gameState.currentAction.active || dsPending) {
     const key = gameState.currentAction.skill;
     const s = gameState.skills[key];
+    // 增强剂效果聚合（考古重制 Phase B）：所有主动技能分支共用，含四类生产增强剂乘区。
+    const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState) : null;
     if (key === "combat") { combatTick(); }
     if (key === "mining") {
       const area = getRunningMiningArea(); if (!area) return;
       if (!canMineArea(area)) { stopOrSkip(); updateUI(); return; }
-      const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState) : null;
       const boosterSpeed = (boosterEff && boosterEff.miningSpeedMultiplier) || 1;
       const eff = getMiningEfficiency() * boosterSpeed;
       const actualTime = area.baseTime / eff;
@@ -117,6 +118,8 @@ function gameTick() {
           dispatchBonus = recordStationDispatchAction(gameState, "mining", 1);
           if (dispatchBonus > 0) quantity += dispatchBonus;
         }
+        // 脑插·采矿双生：4% 概率本次产出×2（双倍矿物/调度加成之后）
+        if (Math.random() < getImplantDoubleOutputChance(gameState, "mining")) quantity *= 2;
         ResourceRegistry.add(gameState, resourceId, quantity);
         // XP 始终只加一次（双倍不影响 XP）
         s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
@@ -142,7 +145,11 @@ function gameTick() {
       while (gameState.currentAction.progress >= actualTime) {
         if (ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre) < 1) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime; ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, 1);
-        const output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
+        let output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
+        // 脑插·冶炼双生：3% 概率本次产出×2
+        if (Math.random() < getImplantDoubleOutputChance(gameState, "refining")) output *= 2;
+        // 增强剂·冶炼产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率本次产出×2
+        if (boosterEff && boosterEff.doubleSmeltChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleSmeltChance)) output *= 2;
         ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, output);
         s.xp += recipe.baseXP; gameState._dirty = true; actionCompleted = true;
         GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:1, outputQuantity:output, xp:recipe.baseXP }, { offline:false });
@@ -167,6 +174,10 @@ function gameTick() {
           dispatchBonus = recordStationDispatchAction(gameState, "gas", 1);
           if (dispatchBonus > 0) quantity += dispatchBonus;
         }
+        // 脑插·采气双生：4% 概率本次产出×2（调度加成之后）
+        if (Math.random() < getImplantDoubleOutputChance(gameState, "gas")) quantity *= 2;
+        // 增强剂·采气产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率本次额外产出 +1（与离线 add 模型一致）
+        if (boosterEff && boosterEff.doubleGasChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleGasChance)) quantity += 1;
         ResourceRegistry.add(gameState, resourceId, quantity);
         s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
         GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
@@ -191,7 +202,7 @@ function gameTick() {
         deductEquipEngInputs(recipe, 1);
         applyEquipEngOutput(recipe, 1);
         s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, xp:recipe.xp }, { offline:false });
+        GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, time:recipe.time, xp:recipe.xp }, { offline:false });
         if (recipe.slot === "rig") GameEvents.emit("rig:manufactured", { rigId:recipe.output.itemId, quantity:recipe.output.qty }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
@@ -201,18 +212,22 @@ function gameTick() {
       const sub = gameState.currentAction.shipSubAction;
       if (sub === "component") {
         const recipe = getRunningShipCompRecipe(); if (!recipe) { resetActionProgress(); gameState.currentAction.active = false; updateUI(); return; }
-        if (!hasEnoughMats(recipe.cost)) { stopOrSkip(); updateUI(); return; }
         const actualTime = getShipEngineeringCycleDuration(gameState, recipe); // 唯一周期公式（技能×船坞）
         gameState.currentAction.refDuration = actualTime;
         const now = Date.now(); const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
         gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
         while (gameState.currentAction.progress >= actualTime) {
-          if (!hasEnoughMats(recipe.cost)) { stopOrSkip(); updateUI(); return; }
+          // 每周期提交前重新读取权威报价/门槛：配给剂可能中途激活（门槛 +5）或耗尽（恢复原规则）。
+          const shipCompQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"component" }) : { cost: recipe.cost, levelGate: recipe.level };
+          const shipCompCost = shipCompQuote.cost;
+          const shipCompLevel = Number((gameState.skills.shipEngineering || {}).lvl) || 1;
+          if (shipCompLevel < shipCompQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
+          if (!hasEnoughMats(shipCompCost)) { stopOrSkip(); updateUI(); return; }
           gameState.currentAction.progress -= actualTime;
-          deductMats(recipe.cost);
+          deductMats(shipCompCost);
           ResourceRegistry.add(gameState, "component:" + recipe.id, 1);
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-          GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, xp:recipe.xp }, { offline:false });
+          GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
@@ -229,21 +244,25 @@ function gameTick() {
         const now = Date.now(); const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
         gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
         while (gameState.currentAction.progress >= actualTime) {
+          // 每周期提交前重新读取权威报价/门槛：配给剂可能中途激活（门槛 +5）或耗尽（恢复原规则）。
+          const asmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"assembly" }) : { levelGate: recipe.level };
+          const asmLevel = Number((gameState.skills.shipEngineering || {}).lvl) || 1;
+          if (asmLevel < asmQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
           if (!hasEnoughShipAssemblyComponents(recipe)) { stopOrSkip(); updateUI(); return; }
           gameState.currentAction.progress -= actualTime;
           deductShipAssemblyComponents(recipe);
           if (!gameState.inventory.ships) gameState.inventory.ships = [];
           gameState.inventory.ships.push(createShipInstance(recipe.shipId));
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-          GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, xp:recipe.xp }, { offline:false });
+          GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
             updateUI(); break;
           }
         }
-      if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
-      if (s.xp > 0) checkLevelUp("shipEngineering");
+        if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
+        if (s.xp > 0) checkLevelUp("shipEngineering");
       }
     } else if (key === "archaeology") {
     const arch = gameState.archaeology;
@@ -253,26 +272,21 @@ function gameTick() {
     const instance = instanceId ? getShipInstanceFromState(gameState, instanceId) : null;
     if (!instance) { stopOrSkip(); updateUI(); return; }
     const now = Date.now();
+    // 按舰船实例隔离的维修态：仅当前考古舰实例的维修会阻断/续跑。
+    const repairEntry = arch.repairsByInstanceId && arch.repairsByInstanceId[instanceId];
+    const repairing = repairEntry && Number(repairEntry.until) > now;
     // 维修完成：恢复满血并继续
-    if (arch.repairUntil && arch.repairUntil <= now) {
-      if (arch.repairInstanceId) {
-        resetArchaeologyShipHp(gameState, arch.repairInstanceId);
-        GameEvents.emit("archaeology:repairCompleted", { instanceId:arch.repairInstanceId }, { offline:false });
-      }
-      arch.repairUntil = 0; arch.repairInstanceId = null;
-      // 维修后自动恢复（Phase 3D）：重新校验条件/资源；不足则安全停止（不抛错），充足则清标记续跑。
-      if (gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "archaeology") {
-        const chk = (typeof canStartArchaeology === "function") ? canStartArchaeology(gameState, now) : { ok:true };
-        if (!chk.ok) {
-          gameState.resumeAfterRepair = null;
-          stopOrSkip(); updateUI(); return;
-        }
-        gameState.resumeAfterRepair = null;
-        GameEvents.emit("archaeology:resumedAfterRepair", { siteId:arch.startedSiteId }, { offline:false });
-      }
+    if (repairEntry && Number(repairEntry.until) <= now) {
+      resetArchaeologyShipHp(gameState, instanceId);
+      GameEvents.emit("archaeology:repairCompleted", { instanceId }, { offline:false });
+      delete arch.repairsByInstanceId[instanceId];
+      // 维修后自动恢复（Phase 3D）：重新校验条件/资源；不足则安全停止（不抛错），充足则续跑。
+      const chk = (typeof canStartArchaeology === "function") ? canStartArchaeology(gameState, now) : { ok:true };
+      if (!chk.ok) { stopOrSkip(); updateUI(); return; }
+      GameEvents.emit("archaeology:resumedAfterRepair", { siteId:arch.startedSiteId }, { offline:false });
     }
     // 维修中：暂停并清空进度
-    if (arch.repairUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
+    if (repairing) { gameState.currentAction.progress = 0; updateUI(); return; }
     // 信号干扰中：暂停并清空进度
     if (arch.interferenceUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
 
@@ -289,17 +303,22 @@ function gameTick() {
       const result = resolveArchaeologyCycle(gameState, now, undefined);
       if (!result || result.reason === "insufficient") { stopOrSkip(); updateUI(); return; }
       if (result.success) {
-        arch.log.push({ time:now, site:site.name, success:true, artifacts:result.found.map(a => a.name) });
+        // 安全提取文物可读名：正式返回结构为 {success,site,successChance,drops,xp,protocols}，
+        // 文物在 drops.regular.found。ISK/LP 文物有 name；货柜结果仅有 id="special:货柜X" 无 name；
+        // 任一缺失都回退可读名，杜绝 undefined（不复制掉落、不重发奖励）。
+        const _found = (result.drops && result.drops.regular && Array.isArray(result.drops.regular.found)) ? result.drops.regular.found : [];
+        const _names = _found.map(a => {
+          if (a && typeof a.name === "string" && a.name) return a.name;
+          if (a && a.kind === "cargo") { const _c = (a.id || "").replace(/^special:/, ""); return _c || "货柜"; }
+          if (a && typeof a.id === "string" && a.id) return a.id;
+          return "未知文物";
+        });
+        arch.log.push({ time:now, site:site.name, success:true, artifacts:_names });
       } else {
         if (result.destroyed) {
           arch.log.push({ time:now, site:site.name, success:false, destroyed:true, backlash:result.backlash });
-          // 维修后自动恢复（Phase 3D）：记录被打断的考古 run，供维修完成后重新校验续跑。
-          gameState.resumeAfterRepair = {
-            type:"archaeology",
-            siteId:arch.startedSiteId,
-            probeId:arch.startedProbeId,
-            shipInstanceId:arch.repairInstanceId
-          };
+          // 维修态已写入 arch.repairsByInstanceId[instanceId]（resolveArchaeologyCycle 内）；不再使用全局 resumeAfterRepair。
+          gameState.resumeAfterRepair = null;
         } else {
           const rigMods = (typeof getRigModifiers === "function" && instance) ? (getRigModifiers(gameState, instance) || {}) : {};
           const interferenceSeconds = getArchaeologyInterferenceSeconds(site, rigMods.archaeologyInterferenceReduction);
@@ -326,9 +345,13 @@ function gameTick() {
         if (!hasEnoughBoosterInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime;
         deductBoosterInputs(recipe, 1);
-        applyBoosterOutput(recipe, 1);
+        // 脑插·增强剂双生 + 增强剂·增强剂产量翻倍（考古重制 Phase B）：各自 chance，本次额外产出 +1（inputs 扣 1 份，与离线一致）
+        let boosterQty = 1;
+        if (Math.random() < getImplantDoubleOutputChance(gameState, "booster")) boosterQty += 1;
+        if (boosterEff && boosterEff.doubleBoosterChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleBoosterChance)) boosterQty += 1;
+        applyBoosterOutput(recipe, boosterQty);
         s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("booster:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, series:recipe.series, quality:recipe.quality, quantity:1, xpGained:recipe.xp, offline:false }, { offline:false });
+        GameEvents.emit("booster:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, series:recipe.series, quality:recipe.quality, quantity: recipe.output.qty * boosterQty, time:recipe.time, xpGained:recipe.xp, offline:false }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;

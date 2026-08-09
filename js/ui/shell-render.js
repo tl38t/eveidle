@@ -98,12 +98,18 @@ function switchSkill(skillKey) {
 function renderCargoPage(filter) {
   cargoFilter = filter || cargoFilter || "all";
   const display = getCargoDisplayState(gameState, cargoFilter);
-  const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = "物资总量：" + display.total.toLocaleString();
+  const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = display.filter === "implant" ? ("脑插收集：" + display.total + " / " + display.items.length) : ("物资总量：" + display.total.toLocaleString());
   document.querySelectorAll(".cargo-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.filter === display.filter));
   const list = document.getElementById("cargo-list"); if (!list) return display;
   const isEquipmentTab = display.filter === "equipment";
+  const isImplantTab = display.filter === "implant";
   // 装备页由强化网格接管展示，隐藏冗余的原始物品列表，避免同一批装备名字出现两遍
   list.style.display = isEquipmentTab ? "none" : "";
+  if (isImplantTab) {
+    renderImplantTab(display);
+    renderEquipmentEnhancementList(false);
+    return display;
+  }
   if (!isEquipmentTab) {
     currentCargoItems = display.items;
     list.innerHTML = display.items.length ? display.items.map((item, idx) => `<div class="cargo-card" data-cat="${escapeAchievementText(item.categoryLabel)}" data-ci="${idx}">
@@ -123,6 +129,25 @@ function renderCargoPage(filter) {
   }
   renderEquipmentEnhancementList(isEquipmentTab);
   return display;
+}
+
+/* ---- 仓库脑插子标签：展示全部 22 枚（已激活高亮 / 未获得灰显），不占仓库格、账号全局被动 ---- */
+function renderImplantTab(display) {
+  const list = document.getElementById("cargo-list"); if (!list) return;
+  list.style.display = "";
+  if (!display.items.length) { list.innerHTML = `<div class="cargo-empty">${escapeAchievementText(display.emptyText)}</div>`; return; }
+  list.innerHTML = display.items.map(item => {
+    const cls = item.owned ? " owned" : " locked";
+    const status = item.owned ? "已激活" : "未获得（" + item.source.pageLabel + "）";
+    return `<div class="implant-card${cls}" data-implant="${item.id}">
+      <div class="ic-icon">${item.owned ? item.icon : "🔒"}</div>
+      <div class="ic-body">
+        <div class="ic-name">${escapeAchievementText(item.name)}</div>
+        <div class="ic-bonus">${escapeAchievementText(item.desc)}</div>
+        <div class="ic-status">${escapeAchievementText(status)}</div>
+      </div>
+    </div>`;
+  }).join("");
 }
 
 /* 仓库物品方块卡点击 → 通用物品弹窗（装备=介绍+强化+出产；非装备=介绍+出产） */
@@ -2221,6 +2246,11 @@ function renderTutorialWidget() {
     twSet(progressEl, ""); twSet(tabsEl, ""); twSet(dialogueEl, ""); twSet(objectiveEl, ""); twSet(actionsEl, "");
     return;
   }
+
+  // 全部任务完成后自动隐藏新手引导卡：常驻会遮挡操作且无后续动作（此前卡片一直保留，被反馈为 bug）。
+  // 若后续版本加入新任务使 allCompleted 重新变 false，卡片会随渲染自动重现。
+  if (widget) widget.hidden = Boolean(display.allCompleted);
+  if (display.allCompleted) return;
 
   // 选定支线：P7 前仅序章；分支未解锁时强制回退序章
   if (!display.branchesUnlocked && _tutorialWidgetBranch !== "prologue") _tutorialWidgetBranch = "prologue";

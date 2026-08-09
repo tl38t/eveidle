@@ -286,6 +286,7 @@ function getAreaByName(areas, name) {
 
 function getProductionEfficiencyState(state, actionKey) {
   const isMining = actionKey === "mining";
+  const isGas = actionKey === "gasHarvesting";
   const skillKey = isMining ? "mining" : "gasHarvesting";
   const primaryKey = isMining ? "miningEfficiency" : "gasEfficiency";
   const secondaryKey = isMining ? "miningBonus" : "gasBonus";
@@ -354,7 +355,11 @@ function getProductionEfficiencyState(state, actionKey) {
     fleetSupportShip:fleetSupport.ship,
     stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
     researchMultiplier,
-    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier
+    // 脑插·采集增效（考古来源）：采矿/采气各 +3%，独立乘区
+    implantCollectMult: (typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1,
+    // 增强剂·采气速度（考古重制 Phase B · 考古蓝图产出）：独立乘区，仅采气生效
+    boosterGasSpeed: (isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1,
+    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier * ((typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1) * ((isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1)
   };
 }
 
@@ -487,7 +492,11 @@ function getSmeltingDisplayState(state, now) {
   // 研究批次 G：冶炼科研唯一乘子 = 1 + (allMfg + smelt)（加法汇总，绝不逐项连乘）
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "smelt"]) : 1;
-  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier;
+  // 脑插·冶炼增效（货柜 T4 来源）：冶炼效率 +6%，独立乘区
+  const implantRefineEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).refiningEff : 1;
+  // 增强剂·冶炼速度（考古重制 Phase B · 考古蓝图产出）：独立乘区
+  const boosterSmeltSpeed = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).smeltSpeedMultiplier : 1;
+  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed;
   const progress = getProgressDisplayState(action, "refining", running.baseTime / efficiency, now);
   const targetChanged = progress.active && current.name !== running.name;
   const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
@@ -506,6 +515,7 @@ function getSmeltingDisplayState(state, now) {
     ship:assigned.config ? { id:assigned.config.id, name:assigned.config.name } : null,
     shipBonus,
     rigBonus,
+    boosterSmeltSpeed,
     actualTime:current.baseTime / efficiency,
     output:Math.max(1, Math.floor(current.baseOutput * skillEfficiency)),
     stock,
@@ -551,13 +561,18 @@ function getMaterialStockFromState(state, material) {
 }
 
 function getShipAssemblyMaxCyclesFromState(state, recipe) {
-  // 船坞节省路径：通过 quote 计算可负担周期
+  // 唯一有效报价顺序（与扣料/在线一致）：先过精密配给剂权威报价折扣 materialCost，
+  // 再进入船坞节省 quote。不复制 ceil×0.9 / +5 / 船坞节省公式。
+  const discounted = (typeof getDiscountedAssemblyRecipe === "function")
+    ? getDiscountedAssemblyRecipe(state, recipe)
+    : Object.assign({}, recipe, { materialCost: (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }).cost : (recipe.materialCost || {}) });
+  // 船坞节省路径：通过 quote 计算可负担周期（已含配给剂折扣）
   if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(state) > 0) {
     // 二分查找最大可负担 cycles
     let low = 0, high = 100000;
     while (low < high) {
       const mid = Math.ceil((low + high) / 2);
-      const quote = getShipyardProductionQuote(state, recipe, mid);
+      const quote = getShipyardProductionQuote(state, discounted, mid);
       let affordable = true;
       for (const [ref, qty] of Object.entries(quote.payable)) {
         // materialCost 键为纯材料名，须按名聚合校验（component:xxx 仍走精确读）
@@ -568,12 +583,12 @@ function getShipAssemblyMaxCyclesFromState(state, recipe) {
     }
     return low;
   }
-  // 无节省旧路径
+  // 无船坞节省：组件 + 精密配给剂折扣后材料成本同源
   let max = Infinity;
   for (const [componentId, count] of Object.entries(getShipAssemblyComponentCost(recipe))) {
     max = Math.min(max, Math.floor(ResourceRegistry.get(state, "component:" + componentId) / count));
   }
-  for (const [material, count] of Object.entries(recipe && recipe.materialCost || {})) {
+  for (const [material, count] of Object.entries(discounted.materialCost || {})) {
     max = Math.min(max, Math.floor(getMaterialStockFromState(state, material) / count));
   }
   return Number.isFinite(max) ? Math.max(0, max) : 0;
@@ -829,7 +844,11 @@ function getShipEngineeringCycleDuration(state, recipe) {
   let base = recipe ? Number(recipe.time) : NaN;
   if (!Number.isFinite(base) || base <= 0) base = 1;
   const speed = getShipEngineeringSpeedBreakdown(state, getShipEngineeringRecipeKind(recipe));
-  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier;
+  // 脑插·舰船制造增效（死亡空间 6/10 来源）：周期 ÷1.06（效率 +6%）
+  const implantShipMfgEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).shipMfgEff : 1;
+  // 增强剂·舰船工程速度（考古重制 Phase B · 考古蓝图产出）：周期 ÷ 速度乘区
+  const boosterShipSpeed = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).shipSpeedMultiplier : 1;
+  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier / implantShipMfgEff / boosterShipSpeed;
 }
 
 function getShipEngineeringDisplayState(state, now) {
@@ -846,6 +865,26 @@ function getShipEngineeringDisplayState(state, now) {
   const runningComponent = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === (action.startedShipCompTarget || action.shipCompTarget)) || currentComponent;
   const currentAssembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === action.shipAsmTarget) || SHIP_ASSEMBLY_RECIPES[0];
   const runningAssembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === (action.startedShipAsmTarget || action.shipAsmTarget)) || currentAssembly;
+  // 精密配给剂权威报价（不复制公式）：组件/总装成本与等级门槛统一由此读取，供 UI 显示 / 启动判断一致。
+  const compQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, currentComponent, { kind:"component" }) : { cost: currentComponent.cost, levelGate: currentComponent.level };
+  const asmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, currentAssembly, { kind:"assembly" }) : { cost: currentAssembly.materialCost || {}, levelGate: currentAssembly.level };
+  const runningCompQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, runningComponent, { kind:"component" }) : { cost: runningComponent.cost, levelGate: runningComponent.level };
+  const runningAsmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, runningAssembly, { kind:"assembly" }) : { cost: runningAssembly.materialCost || {}, levelGate: runningAssembly.level };
+  // 当前总装每周期有效成本（精密配给剂 + 船坞节省两层），与真实扣料 / 最大周期判断同源。
+  const asmShipyardOn = (typeof getShipyardProductionQuote === "function") && (typeof getShipyardSavingRate === "function") && getShipyardSavingRate(state) > 0;
+  const asmEffective = (function () {
+    const discounted = (typeof getDiscountedAssemblyRecipe === "function") ? getDiscountedAssemblyRecipe(state, currentAssembly) : Object.assign({}, currentAssembly, { materialCost: asmQuote.cost });
+    if (asmShipyardOn) {
+      const q = getShipyardProductionQuote(state, discounted, 1);
+      const materials = {};
+      for (const mat of Object.keys(discounted.materialCost || {})) materials[mat] = (q.payable[mat] != null) ? q.payable[mat] : (discounted.materialCost[mat] || 0);
+      const components = {};
+      const compBase = getShipAssemblyComponentCost(currentAssembly);
+      for (const cid of Object.keys(compBase)) components[cid] = (q.payable["component:" + cid] != null) ? q.payable["component:" + cid] : (compBase[cid] || 0);
+      return { materials, components };
+    }
+    return { materials: discounted.materialCost || {}, components: getShipAssemblyComponentCost(currentAssembly) };
+  })();
   const active = Boolean(action.active && action.skill === "shipEngineering");
   const componentActive = active && action.shipSubAction === "component";
   const assemblyActive = active && action.shipSubAction === "assembly";
@@ -877,24 +916,30 @@ function getShipEngineeringDisplayState(state, now) {
 
   const componentGrid = SHIP_COMPONENT_RECIPES
     .filter(recipe => getShipComponentClass(recipe.id) === compClass)
-    .map(recipe => ({
-      id:recipe.id, name:recipe.name, level:recipe.level, time:recipe.time, xp:recipe.xp,
-      cost:Object.entries(recipe.cost).map(([material, quantity]) => {
-        const stock = getMaterialStockFromState(state, material);
-        return { material, quantity, stock, enough:stock >= quantity };
-      }),
-      owned:Number(componentInventory[recipe.id]) || 0,
-      unlocked:level >= recipe.level,
-      selected:recipe.id === currentComponent.id
-    }));
+    .map(recipe => {
+      const cq = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"component" }) : { cost: recipe.cost, levelGate: recipe.level };
+      return {
+        id:recipe.id, name:recipe.name, level:recipe.level, time:recipe.time, xp:recipe.xp,
+        cost:Object.entries(cq.cost).map(([material, quantity]) => {
+          const stock = getMaterialStockFromState(state, material);
+          return { material, quantity, stock, enough:stock >= quantity };
+        }),
+        owned:Number(componentInventory[recipe.id]) || 0,
+        unlocked:level >= cq.levelGate,
+        requiredLevel:cq.levelGate,
+        selected:recipe.id === currentComponent.id
+      };
+    });
 
   const assemblyMatched = SHIP_ASSEMBLY_RECIPES
     .map(recipe => {
       const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
       const hasRequiredBlueprint = !requiresBlueprint || ownedBlueprints.has(recipe.shipId);
+      const aq = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate:recipe.level };
       return {
         recipe, requiresBlueprint, hasRequiredBlueprint,
-        unlocked:level >= recipe.level && hasRequiredBlueprint,
+        levelGate:aq.levelGate,
+        unlocked:level >= aq.levelGate && hasRequiredBlueprint,
         line:getShipAssemblyLine(recipe.shipId),
         role:getShipRoleName(recipe.shipId),
         tier:(getShipConfigById(recipe.shipId) || {}).tier,
@@ -908,7 +953,7 @@ function getShipEngineeringDisplayState(state, now) {
     .slice(assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE, assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE + SHIP_ASSEMBLY_PAGE_SIZE)
     .map(item => ({
       id:item.recipe.id, name:item.recipe.name, shipId:item.recipe.shipId, level:item.recipe.level, time:item.recipe.time, xp:item.recipe.xp,
-      requiresBlueprint:item.requiresBlueprint, hasRequiredBlueprint:item.hasRequiredBlueprint, unlocked:item.unlocked,
+      requiresBlueprint:item.requiresBlueprint, hasRequiredBlueprint:item.hasRequiredBlueprint, unlocked:item.unlocked, requiredLevel:item.levelGate,
       selected:item.recipe.id === currentAssembly.id, role:item.role, tier:item.tier, hybrid:item.hybrid
     }));
   const shipRole = getShipRoleName(currentAssembly.shipId);
@@ -944,33 +989,37 @@ function getShipEngineeringDisplayState(state, now) {
       owned:ownedBlueprints.has(blueprint.shipId),
       canBuy:!ownedBlueprints.has(blueprint.shipId) && ResourceRegistry.get(state, "currency:" + (blueprint.costLP ? "lp" : "isk")) >= (blueprint.costLP || blueprint.costISK || 0)
     })),
-    currentComponent:{ ...currentComponent },
-    runningComponent:{ ...runningComponent },
-    componentOptions:SHIP_COMPONENT_RECIPES.map(recipe => ({ ...recipe, unlocked:level >= recipe.level, selected:recipe.id === currentComponent.id })),
-    componentMaterials:Object.entries(currentComponent.cost).map(([material, quantity]) => {
+    currentComponent:{ ...currentComponent, cost: compQuote.cost, requiredLevel: compQuote.levelGate },
+    runningComponent:{ ...runningComponent, requiredLevel: runningCompQuote.levelGate },
+    componentOptions:SHIP_COMPONENT_RECIPES.map(recipe => {
+      const q = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"component" }) : { levelGate:recipe.level };
+      return { ...recipe, unlocked:level >= q.levelGate, selected:recipe.id === currentComponent.id };
+    }),
+    componentMaterials:Object.entries(compQuote.cost).map(([material, quantity]) => {
       const stock = getMaterialStockFromState(state, material);
       return { material, quantity, stock, enough:stock >= quantity };
     }),
     componentInventory:SHIP_COMPONENT_RECIPES.map(recipe => ({ id:recipe.id, name:recipe.name, quantity:Number(componentInventory[recipe.id]) || 0 })),
-    currentAssembly:{ ...currentAssembly, componentCost:{ ...getShipAssemblyComponentCost(currentAssembly) }, materialCost:{ ...(currentAssembly.materialCost || {}) } },
-    runningAssembly:{ ...runningAssembly, componentCost:{ ...getShipAssemblyComponentCost(runningAssembly) }, materialCost:{ ...(runningAssembly.materialCost || {}) } },
+    currentAssembly:{ ...currentAssembly, componentCost:{ ...getShipAssemblyComponentCost(currentAssembly) }, materialCost:{ ...asmQuote.cost }, requiredLevel: asmQuote.levelGate },
+    runningAssembly:{ ...runningAssembly, componentCost:{ ...getShipAssemblyComponentCost(runningAssembly) }, materialCost:{ ...runningAsmQuote.cost }, requiredLevel: runningAsmQuote.levelGate },
     assemblyOptions:SHIP_ASSEMBLY_RECIPES.map(recipe => {
       const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
       const hasRequiredBlueprint = !requiresBlueprint || ownedBlueprints.has(recipe.shipId);
-      return { ...recipe, requiresBlueprint, hasRequiredBlueprint, unlocked:level >= recipe.level && hasRequiredBlueprint, selected:recipe.id === currentAssembly.id };
+      const q = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate:recipe.level };
+      return { ...recipe, requiresBlueprint, hasRequiredBlueprint, unlocked:level >= q.levelGate && hasRequiredBlueprint, selected:recipe.id === currentAssembly.id };
     }),
-    assemblyComponents:Object.entries(getShipAssemblyComponentCost(currentAssembly)).map(([componentId, quantity]) => {
+    assemblyComponents:Object.entries(asmEffective.components).map(([componentId, quantity]) => {
       const info = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === componentId);
       const stock = Number(componentInventory[componentId]) || 0;
       return { id:componentId, name:info ? info.name : componentId, quantity, stock, enough:stock >= quantity };
     }),
-    assemblyMaterials:Object.entries(currentAssembly.materialCost || {}).map(([material, quantity]) => {
+    assemblyMaterials:Object.entries(asmEffective.materials).map(([material, quantity]) => {
       const stock = getMaterialStockFromState(state, material);
       return { material, quantity, stock, enough:stock >= quantity };
     }),
     assemblyMaxCycles:getShipAssemblyMaxCyclesFromState(state, currentAssembly),
-    canStartComponent:level >= currentComponent.level,
-    canStartAssembly:level >= currentAssembly.level && (!shipAssemblyRequiresBlueprint(currentAssembly) || ownedBlueprints.has(currentAssembly.shipId)) && getShipAssemblyMaxCyclesFromState(state, currentAssembly) > 0,
+    canStartComponent:level >= compQuote.levelGate,
+    canStartAssembly:level >= asmQuote.levelGate && (!shipAssemblyRequiresBlueprint(currentAssembly) || ownedBlueprints.has(currentAssembly.shipId)) && getShipAssemblyMaxCyclesFromState(state, currentAssembly) > 0,
     selectedShip:selectedShip ? { ...selectedShip, hp:{ ...selectedShip.hp }, slots:{ ...selectedShip.slots }, bonuses:{ ...selectedShip.bonuses }, capacitor:{ ...selectedShip.capacitor } } : null,
     ownedShips:Object.entries(shipCounts).map(([shipId, quantity]) => {
       const config = getShipConfigById(shipId);
@@ -1390,6 +1439,9 @@ function getCombatMaxHpFromState(state, context) {
   // 改装件容量加成（护盾/装甲/结构 *Percent），乘算在最终 HP 上（含装备平段 + 强化）
   const rigMods = (activeShip.instance && typeof getRigModifiers === "function")
     ? getRigModifiers(state, activeShip.instance) : {};
+  // 脑插（99 级生产技能成就）：独立乘区，与船体/技能/装备/强化/rig/科研相乘
+  const implantHp = (typeof getImplantBonuses === "function")
+    ? getImplantBonuses(state).hpCap : { shield:1, armor:1, structure:1 };
   return {
     shield:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.shield, [
       { operation:"multiply", value:1 + (bonuses.shieldCapacity || 0), priority:10, source:"ship" },
@@ -1398,7 +1450,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.shieldCapacityPercent || 0), priority:50, source:"rig" },
       // 研究批次 H：科研聚合乘子作用在船体/技能/装备平段/强化/rig 之后的最终 HP 上
-      ...getCombatResearchModifierList(state, "maxHp", "shield")
+      ...getCombatResearchModifierList(state, "maxHp", "shield"),
+      { operation:"multiply", value:implantHp.shield || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"shield" })),
     armor:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.armor, [
       { operation:"multiply", value:1 + (bonuses.armorCapacity || 0), priority:10, source:"ship" },
@@ -1406,7 +1459,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"add", value:flat.armor, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.armorCapacityPercent || 0), priority:50, source:"rig" },
-      ...getCombatResearchModifierList(state, "maxHp", "armor")
+      ...getCombatResearchModifierList(state, "maxHp", "armor"),
+      { operation:"multiply", value:implantHp.armor || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"armor" })),
     structure:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.structure, [
       { operation:"multiply", value:1 + (bonuses.structureCapacity || 0), priority:10, source:"ship" },
@@ -1414,7 +1468,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"add", value:flat.structure, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.structureCapacityPercent || 0), priority:50, source:"rig" },
-      ...getCombatResearchModifierList(state, "maxHp", "structure")
+      ...getCombatResearchModifierList(state, "maxHp", "structure"),
+      { operation:"multiply", value:implantHp.structure || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"structure" }))
   };
 }
@@ -1438,12 +1493,16 @@ function getCombatDamageMultiplierFromState(state, weaponType, context) {
   const ship = activeShip.config;
   const shipBonus = ship.bonuses ? (ship.bonuses[weaponType + "Damage"] || 0) : 0;
   const enhancement = getShipEnhancementBonuses(ship, activeShip.instance && activeShip.instance.enhancementLevel);
+  // 脑插（99 级生产技能成就）：独立乘区，与技能/船体/强化/科研相乘
+  const implantMult = (typeof getImplantBonuses === "function")
+    ? (getImplantBonuses(state).weaponDamage[weaponType] || 1) : 1;
   return calculateCombatStatFromState(state, "damageMultiplier", 1, [
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, config.skillKey) * 0.02, priority:10, source:"skill" },
     { operation:"multiply", value:1 + shipBonus, priority:20, source:"ship" },
     { operation:"multiply", value:enhancement.damageMultiplier, priority:30, source:"enhancement" },
     // 研究批次 H：武器科研聚合乘子（技能/船体/强化之后只乘一次；未知 weaponType 上方已提前返回 1）
-    ...getCombatResearchModifierList(state, "damageMultiplier", weaponType)
+    ...getCombatResearchModifierList(state, "damageMultiplier", weaponType),
+    { operation:"multiply", value:implantMult, priority:60, source:"implant" }
   ], { ...(context || {}), actor:"player", weaponType });
 }
 
@@ -1473,7 +1532,9 @@ function getCombatRepairMultiplierFromState(state, target, context) {
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "defense") * 0.02, priority:10, source:"skill" },
     { operation:"multiply", value:1 + roleBonus, priority:20, source:"ship" },
     // 研究批次 H：维修科研聚合乘子（defense 技能与船体维修加成之后只乘一次；只放大治疗量）
-    ...getCombatResearchModifierList(state, "repairMultiplier", target)
+    ...getCombatResearchModifierList(state, "repairMultiplier", target),
+    // 脑插：维修增强植入体（阿尔法/贝塔）独立乘区
+    { operation:"multiply", value:(typeof getImplantBonuses === "function") ? getImplantBonuses(state).repair : 1, priority:60, source:"implant" }
   ], { ...(context || {}), actor:"player", layer:target });
 }
 
@@ -1667,6 +1728,9 @@ function getPlanetaryCapacityState(state) {
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
   const deployments = state.planetary && Array.isArray(state.planetary.deployments) ? state.planetary.deployments : [];
+  // 脑插·行星扩展（货柜 T3 来源）：+1 行星槽（硬上限同步 +1）
+  const implantPlanetSlot = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).planetSlot : 0;
+  const planetSlotCap = 5 + implantPlanetSlot;
   return {
     level,
     xp,
@@ -1674,8 +1738,8 @@ function getPlanetaryCapacityState(state) {
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     usedSlots:deployments.length,
     // 新手期保底 2 个行星槽位（Lv1-19 = 2），后续曲线不变：Lv20-29=3 / Lv30-39=4 / Lv40+=5；空间站加成仍叠加，硬上限 5
-    slots:Math.min(5, Math.max(2, 1 + Math.floor(level / 10)) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0)),
-    maxSlots:5
+    slots:Math.min(planetSlotCap, Math.max(2, 1 + Math.floor(level / 10)) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0) + implantPlanetSlot),
+    maxSlots:planetSlotCap
   };
 }
 
@@ -1694,7 +1758,9 @@ function getPlanetOutputIntervalFromState(state, type) {
   // 研究批次 G：行星生产提速 → 周期 ÷ 乘子（在线 planetaryTick 与离线 settleOfflinePlanets 共用此唯一入口）
   let researchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["planProd"])) : 1;
   if (!Number.isFinite(researchMult) || researchMult <= 0) researchMult = 1;
-  return config ? config.interval / (1 + level * 0.02) / stationMult / researchMult : 10;
+  // 脑插·行星加速（货柜 T3 来源）：周期 ÷1.05（加速 +5%）
+  const implantPlanetSpeed = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).planetSpeed : 1;
+  return config ? config.interval / (1 + level * 0.02) / stationMult / researchMult / implantPlanetSpeed : 10;
 }
 
 // 研究批次 G · planCost（reduceFraction）：行星续期费唯一公式。
@@ -1847,6 +1913,29 @@ const CARGO_CATEGORY_LABEL = {
 };
 
 function getCargoDisplayState(state, filter) {
+  // 脑插子标签：展示全部 6 枚（拥有/未获得），不依赖 ITEM_CATEGORIES 资源池
+  if (filter === "implant") {
+    const owned = (state && state.implants) || {};
+    const items = Object.values(IMPLANT_DB).map(imp => ({
+      id: imp.id,
+      name: imp.name,
+      icon: imp.icon,
+      desc: imp.desc,
+      owned: !!owned[imp.id],
+      category: "implant",
+      categoryLabel: "脑插",
+      quantity: owned[imp.id] ? 1 : 0,
+      source: { pageId: "skill", pageLabel: imp.sourceSkillName + " Lv.99" }
+    }));
+    return {
+      kind: "cargo",
+      filter: "implant",
+      total: Object.keys(owned).length,
+      items,
+      emptyText: "暂无脑插。将 采矿 / 冶炼 / 舰船工程 / 装备工程 / 增强剂制造 / 气体采集 练至 99 级即可激活对应脑插。",
+      filters: Object.keys(ITEM_CATEGORIES).map(id => ({ id, selected: false }))
+    };
+  }
   // 支持虚拟筛选项：equipment(真装备) 与 component(舰船组件) 在数据中均挂在 ITEM_CATEGORIES.equipment 键下，需拆开
   let selectedFilter;
   if (filter === "all" || filter === "equipment" || filter === "component") selectedFilter = filter;
