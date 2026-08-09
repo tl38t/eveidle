@@ -107,6 +107,9 @@ const gameState = {
     shipHp: {},
     repairUntil: 0,
     repairInstanceId: null,
+    // 考古重做：按舰船实例隔离的维修态（每舰独立 180s 重创维修 + 断线续作上下文）。
+    // instanceId → { until, resume:{siteId,probeId,focusId} }
+    repairsByInstanceId: {},
     interferenceUntil: 0,
     // 确定性燃料节省累计器（见 RIG_SYSTEM_IMPLEMENTATION_PLAN 3.6）：
     // 把每次行动被取整丢弃的小数燃料节省攒起来，攒满 1 点就少扣 1 燃料。
@@ -129,6 +132,14 @@ const gameState = {
       miningYield: null,
       archaeologySpeed: null,
       archaeologyRare: null,
+      gasSpeed: null,
+      gasYield: null,
+      smeltSpeed: null,
+      smeltYield: null,
+      shipSpeed: null,
+      shipYield: null,
+      boosterSpeed: null,
+      boosterYield: null,
       combatWeapon: null,
       combatRepair: null
     },
@@ -159,6 +170,9 @@ const gameState = {
 
   upgrades: {},
   ownedBlueprints: [],
+
+  // 考古重做：永久回收凭证已改为 special:voucher_<id> 资源（见 ARCHAEOLOGY_VOUCHERS），
+  // 不再保留 state.vouchers 第二套布尔账本。旧档由 persistence.migrateArchaeologyState 兼容迁移。
 
   // 新手引导（Batch O）：唯一权威 tutorial 状态，由 tutorial-state.js 提供默认结构。
   tutorial: TutorialState.createDefaultTutorialState(),

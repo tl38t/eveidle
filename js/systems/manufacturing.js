@@ -37,43 +37,55 @@ function getMaxShipAssemblyCycles(recipe) {
   return getShipAssemblyMaxCyclesFromState(gameState, recipe);
 }
 
+// 总装 materialCost 先过精密配给剂权威报价（不复制 ceil×0.9/+5 公式），再用于船坞节省 quote / 扣料。
+function getDiscountedAssemblyRecipe(state, recipe) {
+  const asmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { cost: (recipe && recipe.materialCost) || {} };
+  return Object.assign({}, recipe, { materialCost: asmQuote.cost });
+}
+
 // 带船坞节省的舰船组装材料校验（用量 quote 计算需要的实际数量）
 function hasEnoughShipAssemblyComponents(recipe, cycles) {
   const multiplier = cycles || 1;
+  // 先按精密配给剂权威报价折扣 materialCost，再进入船坞节省 quote（两效果各算一次，不简单相加）
+  const discountedRecipe = getDiscountedAssemblyRecipe(gameState, recipe);
   if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
-    const quote = getShipyardProductionQuote(gameState, recipe, multiplier);
+    const quote = getShipyardProductionQuote(gameState, discountedRecipe, multiplier);
     for (const [ref, qty] of Object.entries(quote.payable)) {
       // materialCost 键为纯材料名，须按名聚合校验（component:xxx 仍走精确读）
       if (ResourceRegistry.getByRef(gameState, ref) < qty) return false;
     }
     return true;
   }
-  // 无节省时的旧路径
+  // 无船坞节省：组件 + 折扣后材料成本同源
   const hasComponents = Object.entries(getShipAssemblyComponentCost(recipe)).every(([id, count]) =>
     ResourceRegistry.get(gameState, "component:" + id) >= count * multiplier
   );
-  return hasComponents && ResourceRegistry.canAffordCost(gameState, recipe.materialCost || {}, multiplier);
+  return hasComponents && ResourceRegistry.canAffordCost(gameState, discountedRecipe.materialCost, multiplier);
 }
 
 // 带船坞节省的舰船组装材料扣除
 function deductShipAssemblyComponents(recipe, cycles) {
   const multiplier = cycles || 1;
+  // 先按精密配给剂权威报价折扣 materialCost，再进入船坞节省 quote（两效果各算一次，不简单相加）
+  const discountedRecipe = getDiscountedAssemblyRecipe(gameState, recipe);
   if (typeof getShipyardProductionQuote === "function" && typeof commitShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
-    const quote = getShipyardProductionQuote(gameState, recipe, multiplier);
+    const quote = getShipyardProductionQuote(gameState, discountedRecipe, multiplier);
     const result = commitShipyardProductionQuote(gameState, quote);
     if (result.changed !== true) return false;
     if (quote.totalSaved > 0) {
       if (typeof GameEvents !== "undefined") {
+        // station:shipyardMaterialsSaved 只报告空间站实际节省（quote.saved 由 getShipyardProductionQuote 在已折扣 materialCost 上计算），
+        // 不含精密配给剂九折差额。
         GameEvents.emit("station:shipyardMaterialsSaved", { recipeId:recipe.id, cycles:multiplier, savings:quote.saved, totalSaved:quote.totalSaved }, { source:"station" });
       }
     }
     return true;
   }
-  // 无节省时的旧路径
+  // 无船坞节省：组件 + 折扣后材料成本同源
   for (const [id, count] of Object.entries(getShipAssemblyComponentCost(recipe))) {
     ResourceRegistry.spend(gameState, "component:" + id, count * multiplier);
   }
-  ResourceRegistry.spendCost(gameState, recipe.materialCost || {}, multiplier);
+  ResourceRegistry.spendCost(gameState, discountedRecipe.materialCost, multiplier);
   return true;
 }
 
@@ -272,7 +284,9 @@ function getBoosterEfficiency() {
     ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "booster"]) : 1;
   // 脑插·增强剂增效（货柜 T4 来源）：效率 +6%，独立乘区
   const implantBoosterEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(gameState).boosterEff : 1;
-  return skillMult * stationMult * researchMult * implantBoosterEff;
+  // 增强剂·增强剂制造速度（考古重制 Phase B · 考古蓝图产出）：效率 × 速度乘区
+  const boosterSpeedMult = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).boosterSpeedMultiplier : 1;
+  return skillMult * stationMult * researchMult * implantBoosterEff * boosterSpeedMult;
 }
 
 function getSelectedBoosterRecipe() {
@@ -286,7 +300,11 @@ function getRunningBoosterRecipe() {
 function isBoosterRecipeUnlocked(recipe) {
   if (!recipe) return false;
   const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
-  return lvl >= recipe.level;
+  if (lvl < recipe.level) return false;
+  // 考古重做：requiresBlueprint 配方（新增 24 张）需对应蓝图解锁；既有 30 张无此标记，仅受等级限制。
+  return typeof boosterRecipeHasRequiredBlueprint === "function"
+    ? boosterRecipeHasRequiredBlueprint(gameState, recipe)
+    : true;
 }
 
 // 单一材料约束下的最大可制造瓶数（不占货舱：产物入 boosters.inventory）。

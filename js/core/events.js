@@ -60,6 +60,12 @@ const GameEventContracts = (() => {
     "archaeology:artifactRedeemed": { required:["artifactId", "quantity", "lp"], numbers:["quantity", "lp"] },
     "archaeology:artifactsSold": { required:["quantity", "totalIsk"], numbers:["quantity", "totalIsk"] },
     "archaeology:artifactsRedeemed": { required:["quantity", "totalLp"], numbers:["quantity", "totalLp"] },
+    // 考古重做定点返修：新增正式事件契约（仅发真实事实）
+    "archaeology:rareFound": { required:["siteId", "tier", "kind"], numbers:[] },
+    "archaeology:backlashAvoided": { required:["siteId", "tier", "avoid"], numbers:[] },
+    "archaeology:probeFound": { required:["probeId", "quantity", "siteId", "tier"], numbers:["quantity"] },
+    "archaeology:credentialGranted": { required:["voucherId", "siteId", "tier"], numbers:[] },
+    "item:recycled": { required:["totalBase", "totalFinal"], numbers:["totalBase", "totalBonus", "totalFinal", "isk", "lp", "iskBase", "lpBase", "iskBonus", "lpBonus"] },
     // 增强剂系统 Phase 2A（§7 事件契约）
     "combat:tacticalMaterialDropped": { required:["zoneId", "deathspaceId", "enemyId", "enemyKind", "materialId", "materialName", "tier", "quantity", "securityLayer"], numbers:["quantity"], nullable:["deathspaceId"] },
     "booster:manufactured": { required:["recipeId", "itemId", "series", "quality", "quantity", "xpGained", "offline"], numbers:["quantity", "xpGained"] },
@@ -138,7 +144,11 @@ const GameEventContracts = (() => {
     "tutorial:rewardClaimed": { required:["taskId", "claimedAt"], numbers:["claimedAt"] },
     "tutorial:branchesUnlocked": { required:["unlockedAt"], numbers:["unlockedAt"] },
     "tutorial:combatTrackSelected": { required:["track", "selectedAt"], numbers:["selectedAt"] },
-    "tutorial:emergencyShipGranted": { required:["instanceId", "grantedAt"], numbers:["grantedAt"] }
+    "tutorial:emergencyShipGranted": { required:["instanceId", "grantedAt"], numbers:["grantedAt"] },
+    // 脑插系统（账号全局被动增益；获得即永久生效、不占槽、独立乘区叠加）：
+    // 任意脑插（99级生产技能成就 / 采集·制造随机掉落）首次发放成功后严格 emit 一次；payload 精确 {id}。
+    // meta.source 由发射方约定（announceImplant 经 GameEvents.emit，默认 "game"），offline 语义随来源一致。
+    "implant:granted": { required:["id"], numbers:[] }
   });
 
   function cloneValue(value) {

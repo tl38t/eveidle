@@ -30,7 +30,7 @@ function renderShipCompGrid(display) {
   if (!display.componentGrid.length) { el.innerHTML = '<div class="shipeng-empty">该分类暂无部件</div>'; return; }
   el.innerHTML = display.componentGrid.map(recipe => `
     <button class="shipeng-comp-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-comp="${recipe.id}">
-      <span class="sec-top"><span>${recipe.level} 级</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : "Lv." + recipe.level + " 解锁"}</span></span>
+      <span class="sec-top"><span>${recipe.requiredLevel} 级</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : "Lv." + recipe.requiredLevel + " 解锁"}</span></span>
       <strong>${recipe.name}</strong>
       <span class="sec-cost">${recipe.cost.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`).join(" ")}</span>
       <span class="sec-bottom"><span>${recipe.time}s · ${recipe.xp} XP</span><span>库存 ${recipe.owned}</span></span>
@@ -43,7 +43,7 @@ function renderShipCompDetail(display) {
   const btn = document.getElementById("btn-start-shipcomp");
   if (btn) {
     if (display.canStartComponent) { btn.textContent = "⚙ 制造 " + display.currentComponent.name; }
-    else { btn.textContent = "🔒 舰船工程 Lv." + display.currentComponent.level + " 解锁"; }
+    else { btn.textContent = "🔒 舰船工程 Lv." + display.currentComponent.requiredLevel + " 解锁"; }
     btn.disabled = !display.canStartComponent;
   }
 }
@@ -72,13 +72,13 @@ function renderShipAsmGrid(display) {
   const el = document.getElementById("shipeng-asm-grid"); if (!el) return;
   if (!display.assemblyGrid.length) { el.innerHTML = '<div class="shipeng-empty">该系列暂无舰船</div>'; return; }
   el.innerHTML = display.assemblyGrid.map(recipe => {
-    const status = !recipe.hasRequiredBlueprint ? "需蓝图" : (!recipe.unlocked ? "Lv." + recipe.level + " 解锁" : "可建造");
+    const status = !recipe.hasRequiredBlueprint ? "需蓝图" : (!recipe.unlocked ? "Lv." + recipe.requiredLevel + " 解锁" : "可建造");
     const hybridBadge = recipe.hybrid ? '<span class="sec-hybrid">混血</span>' : "";
     return `
     <button class="shipeng-asm-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-ship="${recipe.id}">
       <span class="sec-top"><span>${recipe.role}</span>${hybridBadge}</span>
       <strong>${recipe.name}</strong>
-      <span class="sec-bottom"><span>${recipe.level} 级 · ${recipe.time}s</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${status}</span></span>
+      <span class="sec-bottom"><span>${recipe.requiredLevel} 级 · ${recipe.time}s</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${status}</span></span>
     </button>`;
   }).join("");
 }
@@ -92,7 +92,7 @@ function renderShipAsmDetail(display) {
   if (flavorEl) flavorEl.textContent = display.shipFlavor || "";
   const badges = document.getElementById("shipeng-asm-badges");
   if (badges) {
-    const roleBadge = display.selectedShip ? `<span class="badge">${display.shipRole}</span><span class="badge">舰船工程 Lv.${display.currentAssembly.level}+</span>` : "";
+    const roleBadge = display.selectedShip ? `<span class="badge">${display.shipRole}</span><span class="badge">舰船工程 Lv.${display.currentAssembly.requiredLevel}+</span>` : "";
     const hybridBadge = display.hybridSelected ? '<span class="badge hybrid">混血</span>' : "";
     badges.innerHTML = roleBadge + hybridBadge;
   }
@@ -102,7 +102,7 @@ function renderShipAsmDetail(display) {
     else {
       const shipId = display.currentAssembly.shipId;
       const hasBp = (gameState.ownedBlueprints || []).includes(shipId);
-      btn.textContent = hasBp ? ("🔒 舰船工程 Lv." + display.currentAssembly.level + " 解锁") : "🔒 需蓝图解锁";
+      btn.textContent = hasBp ? ("🔒 舰船工程 Lv." + display.currentAssembly.requiredLevel + " 解锁") : "🔒 需蓝图解锁";
     }
     btn.disabled = !display.canStartAssembly;
   }

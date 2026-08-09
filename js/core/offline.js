@@ -77,6 +77,8 @@ function addOfflineSkillXp(skillKey, amount) {
 function getOfflineActionDescriptor() {
   const action = gameState.currentAction;
   const key = action.skill;
+  // 增强剂效果聚合（考古重制 Phase B）：各分支 apply 用于双倍产出掷骰，离线/在线共用。
+  const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState) : null;
 
   if (key === "mining") {
     const areaName = action.startedArea || action.area;
@@ -131,6 +133,12 @@ function getOfflineActionDescriptor() {
             if (Math.random() < implantDoubleRefine) outQty += output;
           }
         }
+        // 增强剂·冶炼产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率该 cycle 额外 +output（逐 cycle 独立掷骰，与在线一致）
+        if (boosterEff && boosterEff.doubleSmeltChance > 0 && (typeof rollDoubleMineral === "function")) {
+          for (let i = 0; i < cycles; i++) {
+            if (rollDoubleMineral(boosterEff.doubleSmeltChance)) outQty += output;
+          }
+        }
         ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, cycles);
         ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, outQty);
         addOfflineSkillXp(key, cycles * recipe.baseXP); gains[key] += cycles;
@@ -155,6 +163,12 @@ function getOfflineActionDescriptor() {
             if (Math.random() < implantDoubleGas) qty++;
           }
         }
+        // 增强剂·采气产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率该 cycle 额外 +1（逐 cycle 独立掷骰，与在线一致）
+        if (boosterEff && boosterEff.doubleGasChance > 0 && (typeof rollDoubleMineral === "function")) {
+          for (let i = 0; i < cycles; i++) {
+            if (rollDoubleMineral(boosterEff.doubleGasChance)) qty++;
+          }
+        }
         ResourceRegistry.add(gameState, "gas:" + area.gas, qty);
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
         emitOfflineGameEvent("gas:completed", { area:area.name, resourceId:"gas:" + area.gas, quantity:qty, cycles, xp:cycles * area.baseXP });
@@ -164,11 +178,21 @@ function getOfflineActionDescriptor() {
 
   if (key === "shipEngineering" && action.shipSubAction === "component") {
     const recipe = getRunningShipCompRecipe(); if (!recipe) return null;
+    // 精密配给剂（考古重制 Phase B · precision_rationing）：每周期重新读取权威报价/门槛函数；
+    // 配给剂可能在读档/离线结算时已激活（门槛 +5），等级不足返回 0 周期 / 零副作用 apply。
+    const getCompQuote = () => (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"component" }) : { cost: recipe.cost, levelGate: recipe.level };
+    const compLevel = () => Number((gameState.skills.shipEngineering || {}).lvl) || 1;
     return {
       key, duration: getShipEngineeringCycleDuration(gameState, recipe), // 唯一周期公式（技能×船坞，与在线 tick 一致）
-      maxCycles: () => getMaxMaterialCycles(recipe.cost),
+      maxCycles: () => {
+        const q = getCompQuote();
+        if (compLevel() < q.levelGate) return 0;
+        return getMaxMaterialCycles(q.cost);
+      },
       apply(cycles, gains) {
-        deductMatsMultiple(recipe.cost, cycles);
+        const q = getCompQuote();
+        if (compLevel() < q.levelGate) return; // 等级不足：零副作用（不扣料/不产出/不加 XP/不 emit）
+        deductMatsMultiple(q.cost, cycles);
         ResourceRegistry.add(gameState, "component:" + recipe.id, cycles);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
         emitOfflineGameEvent("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });
@@ -178,12 +202,20 @@ function getOfflineActionDescriptor() {
 
   if (key === "shipEngineering" && action.shipSubAction === "assembly") {
     const recipe = getRunningShipAsmRecipe(); if (!recipe) return null;
+    // 精密配给剂（考古重制 Phase B · precision_rationing）：每周期重新读取权威报价/门槛函数；
+    // 等级不足返回 0 周期 / 零副作用 apply（与组件同原则，杜绝门槛绕过）。
+    const getAsmQuote = () => (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"assembly" }) : { cost: recipe.materialCost || {}, levelGate: recipe.level };
+    const asmLevel = () => Number((gameState.skills.shipEngineering || {}).lvl) || 1;
     return {
       key, duration: getShipEngineeringCycleDuration(gameState, recipe), // 唯一周期公式（技能×船坞，与在线 tick 一致）
       maxCycles() {
+        const q = getAsmQuote();
+        if (asmLevel() < q.levelGate) return 0;
         return getMaxShipAssemblyCycles(recipe);
       },
       apply(cycles, gains) {
+        const q = getAsmQuote();
+        if (asmLevel() < q.levelGate) return; // 等级不足：零副作用
         deductShipAssemblyComponents(recipe, cycles);
         for (let i = 0; i < cycles; i++) gameState.inventory.ships.push(createShipInstance(recipe.shipId));
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
@@ -223,6 +255,12 @@ function getOfflineActionDescriptor() {
         if (implantDoubleBooster > 0) {
           for (let i = 0; i < cycles; i++) {
             if (Math.random() < implantDoubleBooster) outQty++;
+          }
+        }
+        // 增强剂·增强剂产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率该 cycle 额外 +1（逐 cycle 独立掷骰，与在线一致）
+        if (boosterEff && boosterEff.doubleBoosterChance > 0 && (typeof rollDoubleMineral === "function")) {
+          for (let i = 0; i < cycles; i++) {
+            if (rollDoubleMineral(boosterEff.doubleBoosterChance)) outQty++;
           }
         }
         deductBoosterInputs(recipe, cycles);
@@ -266,32 +304,25 @@ function getOfflineActionDescriptor() {
       apply(cycles, gains) {
         let done = 0;
         const durMs = archCycleSeconds * 1000;
-        let repairMs = 0;
-        if (gameState.archaeology.repairUntil > Date.now()) {
-          repairMs = gameState.archaeology.repairUntil - Date.now();
-        }
+        const repairState = gameState.archaeology.repairsByInstanceId && gameState.archaeology.repairsByInstanceId[instanceId];
+        let repairMs = (repairState && Number(repairState.until) > Date.now()) ? (repairState.until - Date.now()) : 0;
         let virtualNow = Date.now();
         for (let i = 0; i < cycles; i++) {
           if (repairMs > 0) {
             const consume = Math.min(repairMs, durMs);
             virtualNow += consume;
             repairMs -= consume;
-            if (repairMs <= 0) {
-              if (gameState.archaeology.repairInstanceId) {
-                resetArchaeologyShipHp(gameState, gameState.archaeology.repairInstanceId);
-              }
-              gameState.archaeology.repairUntil = 0;
-              gameState.archaeology.repairInstanceId = null;
+            if (repairMs <= 0 && gameState.archaeology.repairsByInstanceId) {
+              delete gameState.archaeology.repairsByInstanceId[instanceId];
             }
             continue;
           }
           virtualNow += durMs;
-          const result = resolveArchaeologyCycle(gameState, virtualNow, "offline");
+          const result = resolveArchaeologyCycle(gameState, virtualNow, "offline", { timestamp: virtualNow });
           if (!result || result.reason === "insufficient") break;
           done++;
-          if (gameState.archaeology.repairUntil) {
-            repairMs = gameState.archaeology.repairUntil - virtualNow;
-          }
+          const rs2 = gameState.archaeology.repairsByInstanceId && gameState.archaeology.repairsByInstanceId[instanceId];
+          if (rs2 && Number(rs2.until) > virtualNow) repairMs = rs2.until - virtualNow;
         }
         gains[key] = (gains[key] || 0) + done;
       },
@@ -318,16 +349,17 @@ function getOfflineActionDescriptor() {
         let stopped = false, reason = "";
 
         while (wallBudgetMs > 1) {
-          // 1) 维修优先：按墙钟消耗，不扣行动预算/增强剂，不推进进度
-          if (arch.repairUntil > virtualNow) {
-            const repairNeedMs = Math.min(arch.repairUntil - virtualNow, wallBudgetMs);
+          // 1) 维修优先：按墙钟消耗，不扣行动预算/增强剂，不推进进度（按舰实例隔离）
+          const repairState = arch.repairsByInstanceId && arch.repairsByInstanceId[instanceId];
+          if (repairState && Number(repairState.until) > virtualNow) {
+            const repairNeedMs = Math.min(repairState.until - virtualNow, wallBudgetMs);
             virtualNow += repairNeedMs;
             wallBudgetMs -= repairNeedMs;
             repairSec += repairNeedMs / 1000;
-            if (arch.repairUntil <= virtualNow) {
+            if (repairState.until <= virtualNow) {
               // 维修完成：恢复 HP，清维修状态
-              if (arch.repairInstanceId) resetArchaeologyShipHp(gameState, arch.repairInstanceId);
-              arch.repairUntil = 0; arch.repairInstanceId = null;
+              resetArchaeologyShipHp(gameState, instanceId);
+              delete arch.repairsByInstanceId[instanceId];
               continue; // 维修完成后重新进入循环，重新检查资源/预算
             }
             // 墙钟耗尽仍在维修
@@ -377,7 +409,7 @@ function getOfflineActionDescriptor() {
           actionBudgetMs -= cycleCostMs;
 
           // 7) 执行真实考古周期（含探针/燃料实扣、成功率、重创判定）
-          const result = resolveArchaeologyCycle(gameState, virtualNow, "offline");
+          const result = resolveArchaeologyCycle(gameState, virtualNow, "offline", { timestamp: virtualNow });
           if (!result || result.reason === "insufficient") {
             // 理论上前置校验已挡住，此处为防御性回退；不计入完成周期
             stopped = true; reason = (result && result.reason) || "insufficient";
@@ -506,7 +538,10 @@ function settleOfflineActions(seconds, gains) {
     // getOfflineActionDescriptor, naturally splitting the timeline.
     let boosterLimitSec = Infinity;
     let relevantSlots = [];
-    if (currentSkill === "mining" || currentSkill === "archaeology") {
+    // 考古重制 Phase B：四类生产增强剂（考古蓝图产出）在线/离线共用同一消耗模型，故离线段也按增强剂时间分段。
+    if (currentSkill === "mining" || currentSkill === "archaeology" ||
+        currentSkill === "gasHarvesting" || currentSkill === "refining" ||
+        currentSkill === "shipEngineering" || currentSkill === "boosterEngineering") {
       if (typeof getActionBoosterSlots === "function") {
         relevantSlots = getActionBoosterSlots(currentSkill);
       }

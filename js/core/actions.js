@@ -169,7 +169,9 @@ const ManufacturingStateActions = {
 
   startShipComponent(state, now) {
     const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === state.currentAction.shipCompTarget) || SHIP_COMPONENT_RECIPES[0];
-    if ((state.skills.shipEngineering.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    // 精密配给剂（考古重制 Phase B · precision_rationing）：激活期间配方等级门槛 +5（组件/总装同公式）。
+    const shipBuildingQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"component" }) : { levelGate: recipe.level };
+    if ((state.skills.shipEngineering.lvl || 1) < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
     // 船坞等级门槛
     if (typeof canManufactureAtShipyard === "function" && !canManufactureAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
     Object.assign(state.currentAction, {
@@ -188,7 +190,9 @@ const ManufacturingStateActions = {
     const recipe = SHIP_ASSEMBLY_RECIPES.find(item => item.id === state.currentAction.shipAsmTarget) || SHIP_ASSEMBLY_RECIPES[0];
     const hasBlueprint = recipe.requiresBlueprint === false || (state.ownedBlueprints || []).includes(recipe.shipId);
     if (!hasBlueprint) return { changed:false, reason:"blueprint-locked" };
-    if ((state.skills.shipEngineering.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    // 精密配给剂（考古重制 Phase B · precision_rationing）：激活期间配方等级门槛 +5（组件/总装同公式）。
+    const shipBuildingQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate: recipe.level };
+    if ((state.skills.shipEngineering.lvl || 1) < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
     // 船坞等级门槛
     if (typeof canAssembleAtShipyard === "function" && !canAssembleAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
     if (getShipAssemblyMaxCyclesFromState(state, recipe) < 1) return { changed:false, reason:"insufficient-components" };
@@ -914,7 +918,10 @@ function canStartArchaeology(state, now) {
   const site = getArchaeologySite(arch.activeSiteId);
   if (!site) return { ok:false, reason:"no-site" };
   if ((state.skills.archaeology.lvl || 1) < site.level) return { ok:false, reason:"level-locked" };
-  if (arch.repairUntil > now) return { ok:false, reason:"repairing" };
+  // 按舰船实例隔离的维修态：仅当前编入的考古舰实例维修中会阻断启动（不再使用全局 repairUntil）。
+  const archInstanceId = state.shipAssignments && state.shipAssignments.archaeology;
+  const archRepair = (arch.repairsByInstanceId && archInstanceId) ? arch.repairsByInstanceId[archInstanceId] : null;
+  if (archRepair && Number(archRepair.until) > now) return { ok:false, reason:"repairing" };
   if (arch.interferenceUntil > now) return { ok:false, reason:"interference" };
   const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
   const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;

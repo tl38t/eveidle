@@ -29,12 +29,25 @@ const BOOSTER_SERIES = Object.freeze({
   cannon_booster:  { id:"cannon_booster",   name:"火炮增压药",     category:"combatWeapon",  slot:"combatWeapon",     effectType:"damageMultiplier", weaponType:"cannon" },
   shield_recharge: { id:"shield_recharge",  name:"护盾回充液",     category:"combatRepair",  slot:"combatRepair",     effectType:"repairAmount", repairTarget:"shield" },
   armor_nano:      { id:"armor_nano",       name:"装甲纳米修复剂", category:"combatRepair",  slot:"combatRepair",     effectType:"repairAmount", repairTarget:"armor" },
-  structure_gel:   { id:"structure_gel",    name:"结构再生胶",     category:"combatRepair",  slot:"combatRepair",     effectType:"repairAmount", repairTarget:"structure" }
+  structure_gel:   { id:"structure_gel",    name:"结构再生胶",     category:"combatRepair",  slot:"combatRepair",     effectType:"repairAmount", repairTarget:"structure" },
+  // —— 考古重做 · 8 系列（§9）覆盖采气/冶炼/舰船工程/增幅剂制造两槽 ——
+  gas_rheology:            { id:"gas_rheology",            name:"气云流变剂",     category:"gas",      slot:"gasSpeed",    effectType:"gasSpeed" },
+  fullerene_nucleation:    { id:"fullerene_nucleation",    name:"富勒烯成核剂",   category:"gas",      slot:"gasYield",    effectType:"gasDouble" },
+  high_temp_flux:          { id:"high_temp_flux",          name:"高温助熔剂",     category:"refining", slot:"smeltSpeed",  effectType:"smeltSpeed" },
+  lattice_proliferation:   { id:"lattice_proliferation",   name:"晶格增殖剂",     category:"refining", slot:"smeltYield",  effectType:"smeltDouble" },
+  assembly_coordinator:    { id:"assembly_coordinator",    name:"装配协调剂",     category:"ship",     slot:"shipSpeed",   effectType:"shipSpeed" },
+  precision_rationing:     { id:"precision_rationing",     name:"精密配给剂",     category:"ship",     slot:"shipYield",   effectType:"shipMaterialDiscount" },
+  reaction_accelerant:     { id:"reaction_accelerant",     name:"反应加速介质",   category:"booster",  slot:"boosterSpeed", effectType:"boosterSpeed" },
+  reaction_chain_proliferation: { id:"reaction_chain_proliferation", name:"反应链增殖剂", category:"booster", slot:"boosterYield", effectType:"boosterDouble" }
 });
 
 const BOOSTER_CATEGORY_META = Object.freeze([
   { id:"mining",       name:"采矿" },
   { id:"archaeology",  name:"考古" },
+  { id:"gas",          name:"采气" },
+  { id:"refining",     name:"冶炼" },
+  { id:"ship",         name:"舰船工程" },
+  { id:"booster",      name:"增幅剂制造" },
   { id:"combatWeapon", name:"战斗武器" },
   { id:"combatRepair", name:"战斗维修" }
 ]);
@@ -100,7 +113,40 @@ const BOOSTER_DEFS = [
   ["missile_catalyst","l",84,149,365,"磁场聚合物",5,"gas:聚合气体",3,"damageMultiplier",0.24,"combatWeapon"],
   ["artifact_tracer","l", 88,153,376,"磁场聚合物",5,"special:深层适应性样本",7,"rareShift",2.20,"archaeologyRare"],
   ["cannon_booster","l",  92,156,385,"磁场聚合物",5,"gas:超纯聚合气体",3,"damageMultiplier",0.24,"combatWeapon"],
-  ["structure_gel","l",   96,160,396,"磁场聚合物",5,"gas:超纯聚合气体",3,"repairAmount",0.45,"combatRepair"]
+  ["structure_gel","l",   96,160,396,"磁场聚合物",5,"gas:超纯聚合气体",3,"repairAmount",0.45,"combatRepair"],
+  // ---- 考古新增增幅剂（8 系列 × 3 品质，默认锁定，需对应蓝图解锁）----
+  // 气云流变剂：采气速度
+  ["gas_rheology","n",  33, 64,  5,"同位素",3,"special:活性战术凝胶",4,"gasSpeed",0.08,"gasSpeed",true],
+  ["gas_rheology","r",  73,124, 70,"等离子体",3,"special:高能战术萃取物",4,"gasSpeed",0.18,"gasSpeed",true],
+  ["gas_rheology","l",  89,148,322,"生物质",5,"special:极化战术介质",7,"gasSpeed",0.30,"gasSpeed",true],
+  // 富勒烯成核剂：采气产量翻倍概率
+  ["fullerene_nucleation","n",34, 65,  6,"同位素",3,"special:活性战术凝胶",4,"gasDouble",0.10,"gasYield",true],
+  ["fullerene_nucleation","r",74,125, 71,"等离子体",3,"special:高能战术萃取物",4,"gasDouble",0.20,"gasYield",true],
+  ["fullerene_nucleation","l",90,149,326,"生物质",5,"special:极化战术介质",7,"gasDouble",0.30,"gasYield",true],
+  // 高温助熔剂：冶炼速度
+  ["high_temp_flux","n", 35, 67,  8,"同位素",3,"special:活性战术凝胶",4,"smeltSpeed",0.08,"smeltSpeed",true],
+  ["high_temp_flux","r", 75,127, 73,"等离子体",3,"special:高能战术萃取物",4,"smeltSpeed",0.18,"smeltSpeed",true],
+  ["high_temp_flux","l", 91,151,330,"生物质",5,"special:极化战术介质",7,"smeltSpeed",0.30,"smeltSpeed",true],
+  // 晶格增殖剂：冶炼产量翻倍概率
+  ["lattice_proliferation","n",36, 68,  9,"同位素",3,"special:活性战术凝胶",4,"smeltDouble",0.10,"smeltYield",true],
+  ["lattice_proliferation","r",76,128, 74,"等离子体",3,"special:高能战术萃取物",4,"smeltDouble",0.20,"smeltYield",true],
+  ["lattice_proliferation","l",92,152,334,"生物质",5,"special:极化战术介质",7,"smeltDouble",0.30,"smeltYield",true],
+  // 装配协调剂：舰船工程速度
+  ["assembly_coordinator","n",37, 70, 10,"同位素",3,"special:活性战术凝胶",4,"shipSpeed",0.08,"shipSpeed",true],
+  ["assembly_coordinator","r",77,130, 75,"等离子体",3,"special:高能战术萃取物",4,"shipSpeed",0.18,"shipSpeed",true],
+  ["assembly_coordinator","l",93,154,338,"生物质",5,"special:极化战术介质",7,"shipSpeed",0.30,"shipSpeed",true],
+  // 精密配给剂：舰船材料九折（品质仅改持续时间）
+  ["precision_rationing","n",38, 71, 12,"同位素",3,"special:活性战术凝胶",4,"shipMaterialDiscount",0.10,"shipYield",true],
+  ["precision_rationing","r",78,131, 76,"等离子体",3,"special:高能战术萃取物",4,"shipMaterialDiscount",0.10,"shipYield",true],
+  ["precision_rationing","l",94,155,342,"生物质",5,"special:极化战术介质",7,"shipMaterialDiscount",0.10,"shipYield",true],
+  // 反应加速介质：增幅剂制造速度
+  ["reaction_accelerant","n",39, 73, 13,"同位素",3,"special:活性战术凝胶",4,"boosterSpeed",0.08,"boosterSpeed",true],
+  ["reaction_accelerant","r",79,133, 78,"等离子体",3,"special:高能战术萃取物",4,"boosterSpeed",0.18,"boosterSpeed",true],
+  ["reaction_accelerant","l",95,157,346,"生物质",5,"special:极化战术介质",7,"boosterSpeed",0.30,"boosterSpeed",true],
+  // 反应链增殖剂：增幅剂产量翻倍概率
+  ["reaction_chain_proliferation","n",40, 74, 14,"同位素",3,"special:活性战术凝胶",4,"boosterDouble",0.10,"boosterYield",true],
+  ["reaction_chain_proliferation","r",80,134, 79,"等离子体",3,"special:高能战术萃取物",4,"boosterDouble",0.20,"boosterYield",true],
+  ["reaction_chain_proliferation","l",96,158,350,"生物质",5,"special:极化战术介质",7,"boosterDouble",0.30,"boosterYield",true]
 ];
 
 // 由唯一事实来源展开为 BOOSTER_ITEMS（map）与 BOOSTER_RECIPES（array），二者一一对应 30 条。
@@ -108,7 +154,7 @@ const BOOSTER_ITEMS = {};
 const BOOSTER_RECIPES = [];
 (function buildBoosterTables() {
   for (const def of BOOSTER_DEFS) {
-    const [seriesKey, qualityKey, level, time, xp, planetName, planetQty, secondKey, secondQty, effectType, effectValue, slot] = def;
+    const [seriesKey, qualityKey, level, time, xp, planetName, planetQty, secondKey, secondQty, effectType, effectValue, slot, requiresBlueprint=false] = def;
     const series = BOOSTER_SERIES[seriesKey];
     const quality = BOOSTER_QUALITIES[qualityKey];
     const id = seriesKey + "_" + qualityKey;               // 例：mining_lubricant_n
@@ -150,7 +196,8 @@ const BOOSTER_RECIPES = [];
       },
       output:{ type:"booster", itemId, qty:1 },
       durationMs:BOOSTER_DURATION_MS,
-      effect:{ type:effectType, value:effectValue, slot }
+      effect:{ type:effectType, value:effectValue, slot },
+      requiresBlueprint: !!requiresBlueprint
     });
   }
 })();
@@ -163,11 +210,27 @@ function describeBoosterEffect(effectType, value) {
     case "rareShift":         return "稀有发现 ×" + value.toFixed(2);
     case "damageMultiplier":  return "武器伤害 +" + Math.round(value * 100) + "%";
     case "repairAmount":      return "维修量 +" + Math.round(value * 100) + "%";
+    case "gasSpeed":          return "采气速度 +" + Math.round(value * 100) + "%";
+    case "gasDouble":         return "采气产量翻倍概率 " + Math.round(value * 100) + "%";
+    case "smeltSpeed":        return "冶炼速度 +" + Math.round(value * 100) + "%";
+    case "smeltDouble":       return "冶炼产量翻倍概率 " + Math.round(value * 100) + "%";
+    case "shipSpeed":         return "舰船工程速度 +" + Math.round(value * 100) + "%";
+    case "shipMaterialDiscount": return "舰船材料 -" + Math.round(value * 100) + "%";
+    case "boosterSpeed":      return "增幅剂制造速度 +" + Math.round(value * 100) + "%";
+    case "boosterDouble":     return "增幅剂产量翻倍概率 " + Math.round(value * 100) + "%";
     default:                  return effectType + " " + value;
   }
 }
 
-const BOOSTER_SLOTS = Object.freeze(["miningSpeed", "miningYield", "archaeologySpeed", "archaeologyRare", "combatWeapon", "combatRepair"]);
+const BOOSTER_SLOTS = Object.freeze([
+  "miningSpeed", "miningYield",
+  "archaeologySpeed", "archaeologyRare",
+  "gasSpeed", "gasYield",
+  "smeltSpeed", "smeltYield",
+  "shipSpeed", "shipYield",
+  "boosterSpeed", "boosterYield",
+  "combatWeapon", "combatRepair"
+]);
 
 function getBoosterItem(id) {
   if (!id) return null;
@@ -179,6 +242,19 @@ function getBoosterRecipe(id) {
   if (!id) return null;
   const key = String(id).startsWith("booster:") ? String(id).slice("booster:".length) : String(id);
   return BOOSTER_RECIPES.find(recipe => recipe.id === key) || null;
+}
+
+// 考古重做：增幅剂蓝图与装备蓝图共用 state.ownedBlueprints 唯一事实源。
+// 蓝图键前缀 "booster:" 与装备 "equipment:" 区分，互不冲突。
+function getBoosterBlueprintOwnershipKey(recipeId) {
+  return "booster:" + recipeId;
+}
+function hasBoosterBlueprintFromState(state, recipeId) {
+  return Array.isArray(state && state.ownedBlueprints) &&
+    state.ownedBlueprints.includes(getBoosterBlueprintOwnershipKey(recipeId));
+}
+function boosterRecipeHasRequiredBlueprint(state, recipe) {
+  return !recipe || !recipe.requiresBlueprint || hasBoosterBlueprintFromState(state, recipe.id);
 }
 
 // 显式挂 window（普通 script 全局加载约定）。
@@ -193,3 +269,6 @@ window.TACTICAL_MATERIALS = TACTICAL_MATERIALS;
 window.TACTICAL_MATERIAL_BY_LAYER = TACTICAL_MATERIAL_BY_LAYER;
 window.getBoosterItem = getBoosterItem;
 window.getBoosterRecipe = getBoosterRecipe;
+window.getBoosterBlueprintOwnershipKey = getBoosterBlueprintOwnershipKey;
+window.hasBoosterBlueprintFromState = hasBoosterBlueprintFromState;
+window.boosterRecipeHasRequiredBlueprint = boosterRecipeHasRequiredBlueprint;
