@@ -260,53 +260,7 @@ function renderArchaeologyPage(now) {
     `;
   }
 
-  // ---- 文物库存 ----
-  const artifactSection = display.artifacts.length ? `
-    <div class="archaeology-artifacts">
-      <div class="archaeology-section-title">📦 文物库存</div>
-      <div class="archaeology-artifact-header">
-        <button class="btn" id="archaeology-sell-all">💰 出售全部星币文物</button>
-        <button class="btn" id="archaeology-redeem-all">🎖 兑换全部 ${DisplayNames.getCurrencyName("lp")} 文物</button>
-      </div>
-      <div class="archaeology-artifact-grid">
-        ${display.artifacts.map(row => {
-          const a = row.artifact;
-          const isLP = a.category === "lp";
-          const isCal = a.category === "calibration";
-          const sellBtn = isLP ? `<button class="btn archaeology-redeem-btn" data-artifact-id="${a.id}">🎖 兑换 ${DisplayNames.getCurrencyName("lp")}</button>`
-            : isCal ? `<span class="archaeology-cal-note">🛠 改装件制造材料</span>`
-            : `<button class="btn archaeology-sell-btn" data-artifact-id="${a.id}">💰 出售</button>`;
-          return `<div class="archaeology-artifact-card">
-            <span class="aac-name">${isLP ? "🎖 " : isCal ? "🔬 " : "📜 "}${a.name}</span>
-            <span class="aac-tier">${a.tier}</span>
-            <span class="aac-count">×${row.count}</span>
-            ${a.iskValue ? `<span class="aac-value">${a.iskValue.toLocaleString()} 星币</span>` : ""}
-            ${a.lpValue ? `<span class="aac-value">${a.lpValue} 功勋</span>` : ""}
-            ${sellBtn}
-          </div>`;
-        }).join("")}
-      </div>
-    </div>
-  ` : `<div class="archaeology-section-title" style="color:#4a5a6a;">📦 暂无文物</div>`;
-
-  // ---- 统一回收舱报价（消费 getRecycleQuote；凭证 special: 资源，最终收益严格 ×1.10） ----
-  const recycleBayItems = display.artifacts.map(row => {
-    const a = row.artifact;
-    if (a.category === "common_isk" || a.category === "unique") return { currency:"isk", amount:(Number(a.iskValue) || 0) * row.count };
-    if (a.category === "lp") return { currency:"lp", amount:(Number(a.lpValue) || 0) * row.count };
-    return null;
-  }).filter(Boolean);
-  const recycleQuote = (typeof getRecycleQuote === "function") ? getRecycleQuote(gameState, recycleBayItems) : { base:0, bonus:0, final:0, byCurrency:{} };
-  const recycleBayHtml = recycleQuote.base > 0 ? `
-    <div class="archaeology-recycle-bay">
-      <div class="archaeology-section-title">♻ 统一回收舱 · 当前库存报价</div>
-      <div class="recycle-quote">
-        ${recycleQuote.byCurrency.isk ? recycleCurrencyRow("星币", recycleQuote.byCurrency.isk) : ""}
-        ${recycleQuote.byCurrency.lp ? recycleCurrencyRow("功勋", recycleQuote.byCurrency.lp) : ""}
-      </div>
-      <div class="recycle-hint">持有银河泛星 / 银河同族凭证即最终收益 ×1.10；无凭证按基础值结算。星币与功勋回收均经统一回收舱（recycling.js）入账。</div>
-    </div>
-  ` : "";
+  // ---- 文物库存 / 统一回收舱：已整合至仓库「交易品」标签（renderTradeTab），此处不再展示 ----
 
   // ---- 行动日志 ----
   const logSection = arch.log.length ? `
@@ -348,8 +302,6 @@ function renderArchaeologyPage(now) {
       <section class="arch-col arch-col-detail">${detailColumn}</section>
       <aside class="arch-col arch-col-loot">${rareArchive}</aside>
     </div>
-    ${artifactSection}
-    ${recycleBayHtml}
     ${logSection}
   `;
 
@@ -368,23 +320,7 @@ function rewardRow(icon, name, sub, rarity, owned) {
   </div>`;
 }
 
-// 统一回收舱：单币种报价行（基础 / 凭证加成 / 实得）
-function recycleCurrencyRow(label, c) {
-  const multTag = c.multiplier > 1 ? ` <span class="recycle-mult">×${c.multiplier}</span>` : "";
-  return `<div class="recycle-row">
-    <span class="recycle-label">${label}${multTag}</span>
-    <span class="recycle-base">基础 ${c.base.toLocaleString()}</span>
-    ${c.bonus > 0 ? `<span class="recycle-bonus">凭证 +${c.bonus.toLocaleString()}</span>` : ""}
-    <span class="recycle-final">实得 ${c.final.toLocaleString()}</span>
-  </div>`;
-}
-
-// 由基础值反查统一回收舱实际入账（含凭证 ×1.10），供 toast 展示真实收益
-function recycleFinal(currency, base) {
-  if (!(base > 0)) return 0;
-  if (typeof getRecycleQuote !== "function") return base;
-  return getRecycleQuote(gameState, [{ currency, amount: base }]).final;
-}
+// 统一回收舱报价行 / 反查函数已迁移至仓库「交易品」标签，考古页不再需要
 
 function renderHpBar(label, current, max, color) {
   const pct = max > 0 ? Math.max(0, Math.min(100, (current / max) * 100)) : 0;
@@ -448,31 +384,6 @@ function bindArchaeologyEvents(body) {
     else { renderArchaeologyPage(); updateUI(); }
   });
 
-  // 出售/兑换文物
-  body.querySelectorAll(".archaeology-sell-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const artifactId = btn.dataset.artifactId;
-      const result = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", artifactId, quantity:1 }, Date.now());
-      if (result.changed) { showToast("出售文物获得 " + recycleFinal("isk", result.isk).toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
-    });
-  });
-  body.querySelectorAll(".archaeology-redeem-btn").forEach(btn => {
-    btn.addEventListener("click", () => {
-      const artifactId = btn.dataset.artifactId;
-      const result = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", artifactId, quantity:1 }, Date.now());
-      if (result.changed) { showToast("兑换文物获得 " + recycleFinal("lp", result.lp).toLocaleString() + " 功勋"); renderArchaeologyPage(); updateUI(); }
-    });
-  });
+  // 出售/兑换文物：已整合至仓库「交易品」标签（renderTradeTab 一键回收），此处不再绑定
 
-  // 全部出售/兑换
-  const sellAll = body.querySelector("#archaeology-sell-all");
-  const redeemAll = body.querySelector("#archaeology-redeem-all");
-  if (sellAll) sellAll.addEventListener("click", () => {
-    const result = dispatchGameAction(gameState, { type:"archaeology/sellArtifact", all:true }, Date.now());
-    if (result.changed) { showToast("出售全部文物获得 " + recycleFinal("isk", result.totalIsk).toLocaleString() + " 星币"); renderArchaeologyPage(); updateUI(); }
-  });
-  if (redeemAll) redeemAll.addEventListener("click", () => {
-    const result = dispatchGameAction(gameState, { type:"archaeology/redeemArtifact", all:true }, Date.now());
-    if (result.changed) { showToast("兑换全部文物获得 " + recycleFinal("lp", result.totalLp).toLocaleString() + " 功勋"); renderArchaeologyPage(); updateUI(); }
-  });
 }

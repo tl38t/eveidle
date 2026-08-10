@@ -106,7 +106,7 @@
     color: #bcc5d0; background: linear-gradient(145deg, #162130, #101822 58%);
     border: 1px solid #24374a; border-radius: 5px; overflow: hidden;
     font: 12px 'Rajdhani', "Microsoft YaHei", sans-serif;
-    text-align: left; cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s;
+    text-align: left; cursor: pointer; position: relative; transition: transform .15s, border-color .15s, box-shadow .15s;
   }
   .equipeng-recipe-card:hover { transform: translateY(-1px); border-color: #466580; }
   .equipeng-recipe-card.selected {
@@ -135,6 +135,29 @@
   }
   .equipeng-card-bottom { margin-top: auto; color: #718497; border-top: 1px solid #223243; background: rgba(12,19,28,.7); }
   .equipeng-card-bottom span:last-child { color: #8facbe; }
+  /* 锁定配方视觉提示：选中锁定卡橙色高亮 + 🔒 角标 + 暖色状态 badge（装备/增强剂共用此类） */
+  .equipeng-recipe-card.locked.selected {
+    opacity: .96; filter: none;
+    border-color: #e0913a; box-shadow: 0 0 16px rgba(224,145,58,.45), inset 0 0 0 1px rgba(224,145,58,.18);
+  }
+  .equipeng-recipe-card.locked.selected .equipeng-card-icon { color: #f0a85a; }
+  .lock-badge {
+    position: absolute; top: 7px; right: 7px; width: 22px; height: 22px; border-radius: 50%;
+    background: rgba(217,106,106,.92); color: #fff; display: grid; place-items: center;
+    font-size: 12px; box-shadow: 0 1px 4px rgba(0,0,0,.4); z-index: 2;
+  }
+  .lock-tag {
+    display: inline-block; padding: 1px 6px; border-radius: 3px;
+    background: rgba(224,145,58,.20); color: #e0913a; border: 1px solid rgba(224,145,58,.45);
+    font-size: 9px; font-weight: 600;
+  }
+  .lock-tag.lvl { background: rgba(217,106,106,.16); color: #e07a7a; border-color: rgba(217,106,106,.45); }
+  .lock-banner {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-radius: 5px;
+    background: rgba(224,145,58,.14); border: 1px solid rgba(224,145,58,.5); color: #e0913a;
+    font-size: 13px; margin-bottom: 12px; font-weight: 600;
+  }
+  .lock-banner .lb-icon { font-size: 17px; line-height: 1; }
   .equipeng-empty { grid-column: 1 / -1; padding: 56px 20px; color: #4a5a6a; text-align: center; }
   .equipeng-detail { display: flex; flex-direction: column; }
   .equipeng-detail-header {

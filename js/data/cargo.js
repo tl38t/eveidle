@@ -70,9 +70,9 @@ function getEnemyCargoClass(faction, enemyKey) {
   return (map && map[enemyKey]) || "frigate";
 }
 
-// T1 保底三件套（全尺寸统一内容，数额随尺寸缩放）。
+// T1 保底三选一（全尺寸统一内容池，等权随机其一，数额随尺寸缩放）。
 // 行星材料按尺寸递增解锁：S=三选一（重金属/稀有气体/同位素）；M 加等离子体；L 加生物质；XL 加磁场聚合体。
-// 基础矿物已挪至 T2 池；T1 三件套在开箱选中 T1 时一次性发放（见 rollCargoT1）。
+// 基础矿物已挪至 T2 池；T1 三选一在开箱选中 T1 时等权随机其一发放（见 rollCargoT1）。
 const CARGO_T1_PLANETARY_BASE = ["planetary:重金属", "planetary:稀有气体", "planetary:同位素"];
 // 尺寸递增累积解锁：M 加等离子体，L 再加生物质，XL 再加磁场聚合体（非覆盖）。
 const CARGO_T1_PLANETARY_UNLOCK = {
@@ -250,7 +250,7 @@ function grantEquipmentBlueprintFromCargo(state, equipmentId, size, rng) {
   return { id: "blueprint:" + equipmentId, blueprint: true, equipmentId, name: eq.name + "蓝图" };
 }
 
-// T1 保底三件套：行星按尺寸三~六选一（按各自 20 分钟产能计） + 战术残液 + 星币，数额按尺寸缩放。
+// T1 保底三选一：行星材料（按尺寸三~六选一）/ 战术残液 / 星币战利品，等权随机其一，数额按尺寸缩放。
 // 基础矿物已挪至 T2 池；功勋已移出 T1。返回发放明细数组（每项 { tier:"T1", id, qty }），供 openCargoContainer 汇总与 UI 展示。
 function rollCargoT1(state, size, rng) {
   const mul = CARGO_T1_SIZE_MUL[size] || 1;
@@ -259,18 +259,25 @@ function rollCargoT1(state, size, rng) {
     return Math.max(1, Math.floor(q));
   };
   const out = [];
-  const grant = (id, base) => {
-    const qty = scaledQty(base);
-    if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, id, qty);
-    out.push({ tier: "T1", id, qty });
-  };
-  // 1) 行星材料（按尺寸三~六选一，等权；按各自真实 20 分钟产能计）
-  const pId = cargoWeightedPick(cargoT1PlanetaryChoices(size).map((id) => ({ id, weight: 1 })), rng).id;
-  grant(pId, CARGO_T1_PLANETARY_20MIN[pId] || [40, 60]);
-  // 2) 战术残液（≈20 分钟战斗 farm 量）
-  grant("special:战术残液", CARGO_T1_QTY.tactical);
-  // 3) 星币 → 具名战利品（出售换星币；不直接入账）
-  {
+  // 三选一：行星材料 / 战术残液 / 星币战利品，等权随机其一
+  const pick = cargoWeightedPick([
+    { id: "planetary", weight: 1 },
+    { id: "tactical", weight: 1 },
+    { id: "isk", weight: 1 },
+  ], rng).id;
+  if (pick === "planetary") {
+    // 行星材料（按尺寸三~六选一，等权；按各自真实 20 分钟产能计）
+    const pId = cargoWeightedPick(cargoT1PlanetaryChoices(size).map((id) => ({ id, weight: 1 })), rng).id;
+    const qty = scaledQty(CARGO_T1_PLANETARY_20MIN[pId] || [40, 60]);
+    if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, pId, qty);
+    out.push({ tier: "T1", id: pId, qty });
+  } else if (pick === "tactical") {
+    // 战术残液（≈20 分钟战斗 farm 量）
+    const qty = scaledQty(CARGO_T1_QTY.tactical);
+    if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, "special:战术残液", qty);
+    out.push({ tier: "T1", id: "special:战术残液", qty });
+  } else {
+    // 星币 → 具名战利品（出售换星币；不直接入账）
     const qty = scaledQty(CARGO_T1_QTY.isk);
     const item = cargoGrantLoot(state, "isk", qty, rng);
     out.push({ tier: "T1", id: "loot:isk", qty, loot: true, name: item.name, kind: "isk" });
@@ -392,7 +399,29 @@ function openCargoContainer(state, size, rng) {
   return { size, rolls: out };
 }
 
-// 暴露给浏览器控制台测试：window.openCargo(size)
+// 批量开箱：消耗至多 count 个货柜（不足则按实际持有量），聚合所有奖励返回。
+// 返回 { size, opened, rolls:[...] } 或 null（无货柜）。
+function openCargoContainers(state, size, count, rng) {
+  if (!state || !size) return null;
+  const itemId = cargoItemId(size);
+  if (typeof ResourceRegistry === "undefined") return null;
+  const have = ResourceRegistry.get(state, itemId);
+  if (have < 1) return null;
+  const n = Math.max(1, Math.min(Math.floor(Number(count)) || 1, have));
+  const allRolls = [];
+  let opened = 0;
+  for (let k = 0; k < n; k++) {
+    const one = openCargoContainer(state, size, rng);
+    if (!one) break;
+    opened++;
+    if (Array.isArray(one.rolls)) for (const r of one.rolls) allRolls.push(r);
+  }
+  return { size, opened, rolls: allRolls };
+}
+
+// 暴露给浏览器控制台测试：window.openCargo(size) 开单箱；window.openCargoBoxes(size, count) 批量开箱。
+// 注意：调试别名绝不能覆盖全局 openCargoContainers（否则 doOpen 调用会被 2 参包装器递归吃掉 → 栈溢出）。
 if (typeof window !== "undefined") {
   window.openCargo = function (size) { return openCargoContainer(gameState, size, Math.random); };
+  window.openCargoBoxes = function (size, count) { return openCargoContainers(gameState, size, count, Math.random); };
 }

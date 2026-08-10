@@ -1209,7 +1209,13 @@ function getBoosterManufacturingDisplayState(state, now) {
 
   const recipes = filteredRecipes.map(recipe => {
     const item = BOOSTER_ITEMS[recipe.id] || {};
-    const isUnlocked = level >= recipe.level;
+    // 考古重做：requiresBlueprint 配方（新增 24 张）需对应蓝图（state.ownedBlueprints 的 "booster:<id>"）解锁；
+    // 既有 30 张无此标记，仅受等级限制。显示层必须与动作层 isBoosterRecipeUnlocked 保持一致，否则会出现"直解锁却造不出"。
+    const requiresBlueprint = !!recipe.requiresBlueprint;
+    const hasRequiredBlueprint = !requiresBlueprint ||
+      (typeof hasBoosterBlueprintFromState === "function" ? hasBoosterBlueprintFromState(state, recipe.id) : true);
+    const levelUnlocked = level >= recipe.level;
+    const isUnlocked = levelUnlocked && hasRequiredBlueprint;
     const materialRows = Object.entries(recipe.cost || {}).map(([reference, quantity]) => {
       const required = Math.max(1, Number(quantity) || 1);
       const stock = ResourceRegistry.getMaterialStock(state, reference);
@@ -1219,7 +1225,8 @@ function getBoosterManufacturingDisplayState(state, now) {
     // 库存按裸 id 键存于 state.boosters.inventory（ResourceRegistry 命名空间去前缀），经 ResourceRegistry.get 统一寻址
     const owned = Number(ResourceRegistry.get(state, recipe.itemId) || 0) || 0;
     let lockedReason = "";
-    if (!isUnlocked) lockedReason = "需要增强剂制造 Lv." + recipe.level;
+    if (!levelUnlocked) lockedReason = "需要增强剂制造 Lv." + recipe.level;
+    else if (!hasRequiredBlueprint) lockedReason = "需要蓝图（考古掉落）";
     else if (!hasMaterials) lockedReason = "材料不足";
     return {
       id:recipe.id,
@@ -1240,6 +1247,8 @@ function getBoosterManufacturingDisplayState(state, now) {
       stock:owned,
       isUnlocked,
       hasMaterials,
+      requiresBlueprint,
+      hasRequiredBlueprint,
       canManufacture:isUnlocked && hasMaterials,
       lockedReason,
       selected:recipe.id === selectedRecipe.id,
@@ -1936,6 +1945,8 @@ function getCargoDisplayState(state, filter) {
       filters: Object.keys(ITEM_CATEGORIES).map(id => ({ id, selected: false }))
     };
   }
+  // 交易品子标签：聚合「货柜具名战利品 + 考古星币/功勋文物」，统一一键回收
+  if (filter === "trade") return getTradeGoodsDisplayState(state);
   // 支持虚拟筛选项：equipment(真装备) 与 component(舰船组件) 在数据中均挂在 ITEM_CATEGORIES.equipment 键下，需拆开
   let selectedFilter;
   if (filter === "all" || filter === "equipment" || filter === "component") selectedFilter = filter;
@@ -1955,14 +1966,27 @@ function getCargoDisplayState(state, filter) {
     const equipment = EQUIPMENT_DB[instance.itemId];
     if (equipment) equipmentSource[equipment.name] = (equipmentSource[equipment.name] || 0) + 1;
   }
+  // 货柜容器（资源 id 为 special:货柜S/M/L/XL）原本随 special 命名空间归入「特殊物资」标签。
+  // 按需求改挂到「消耗品」标签展示：仅调整仓库视图归类，物品 id 保持不变，
+  // 故开箱弹窗（openItemDetailModal 按 id 前缀判定）、考古/战斗掉落与存档逻辑均不受影响。
+  const specialEntries = ResourceRegistry.listStateEntries(state, "special");
+  const cargoEntries = specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") === 0);
   const sources = {
     ore:Object.fromEntries(ResourceRegistry.listStateEntries(state, "ore").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     mineral:Object.fromEntries(ResourceRegistry.listStateEntries(state, "mineral").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     planetary:Object.fromEntries(ResourceRegistry.listStateEntries(state, "planetary").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     gases:Object.fromEntries(ResourceRegistry.listStateEntries(state, "gas").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     moon:Object.fromEntries(ResourceRegistry.listStateEntries(state, "moon").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
-    special:Object.fromEntries(ResourceRegistry.listStateEntries(state, "special").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
-    consumable:{ "燃料单元":ResourceRegistry.get(state, "consumable:fuel"), "激光晶体弹药":getAmmoCount(state, "laser"), "导弹":getAmmoCount(state, "missile"), "炮台弹药":getAmmoCount(state, "cannon"), "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") },
+    special:Object.fromEntries(
+      specialEntries
+        .filter(entry => (entry.definition.id || "").indexOf("special:货柜") !== 0)  // 货柜改由 consumable 收纳
+        .map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }])
+    ),
+    consumable:Object.assign(
+      { "燃料单元":ResourceRegistry.get(state, "consumable:fuel"), "激光晶体弹药":getAmmoCount(state, "laser"), "导弹":getAmmoCount(state, "missile"), "炮台弹药":getAmmoCount(state, "cannon"), "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") },
+      // 货柜复用与 special 一致的形状 {qty,id}，id 保留 special:货柜* 以保证开箱功能
+      Object.fromEntries(cargoEntries.map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }]))
+    ),
     equipment:equipmentSource
   };
   const equipmentByName = Object.fromEntries(Object.values(EQUIPMENT_DB).map(equipment => [equipment.name, equipment]));
@@ -1972,7 +1996,8 @@ function getCargoDisplayState(state, filter) {
     if (!includeCat) continue;
     const names = [...new Set([...configuredNames, ...Object.keys(sources[category] || {})])];
     for (const name of names) {
-      const quantity = Number(sources[category] && sources[category][name]) || 0;
+      const rawEntry = sources[category] && sources[category][name];
+      const quantity = Number(rawEntry && typeof rawEntry === "object" ? rawEntry.qty : rawEntry) || 0;
       if (quantity <= 0) continue;
       const equipment = category === "equipment" ? equipmentByName[name] : null;
       const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : "📦";
@@ -1982,21 +2007,30 @@ function getCargoDisplayState(state, filter) {
       if (selectedFilter === "equipment" && isComponent) continue;
       if (selectedFilter === "component" && !isComponent) continue;
       const categoryLabel = isComponent ? (CARGO_CATEGORY_LABEL.component || "组件") : (CARGO_CATEGORY_LABEL[category] || category);
-      const source = isEquip
+      // 物品真实 id（货柜为 special:货柜*，用于下方来源覆写与开箱弹窗判定）
+      const itemId = (rawEntry && typeof rawEntry === "object" && rawEntry.id) || null;
+      let source = isEquip
         ? { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" }
         : isComponent
           ? { pageId:"shipEngineering", pageLabel:"舰船工程", icon:"fa-solid fa-rocket" }
           : (CARGO_SOURCE[category] || { pageId:"station", pageLabel:"空间站", icon:"fa-regular fa-building" });
-      const description = isEquip
+      let description = isEquip
         ? getEquipmentAttributeText(equipment)
         : isComponent
           ? (CARGO_DESC.component || "")
           : (CARGO_DESC[category] || "");
+      // 货柜容器虽归入「消耗品」标签展示，但其真实来源是战斗击坠与考古探索，并非装备工程；
+      // 故覆盖掉 consumable 默认的来源与描述，避免卡片误导玩家。
+      if (itemId && itemId.indexOf("special:货柜") === 0) {
+        source = { pageId:"combat", pageLabel:"战斗", icon:"fa-solid fa-crosshairs" };
+        description = "货柜容器。由战斗击坠敌舰与考古探索低概率获取，开启后可获得矿物、行星材料、具名战利品、装备蓝图或神经植入体。";
+      }
       items.push({
         category,
         categoryLabel,
         name,
         quantity,
+        id: itemId,
         icon:ITEM_ICONS[name] || fallbackIcon,
         details:equipment ? getEquipmentAttributeText(equipment) : "",
         isEquipment:isEquip,
@@ -2020,6 +2054,67 @@ function getCargoDisplayState(state, filter) {
           ? "暂无舰船组件数据"
           : "该分类暂无物品",
     filters:Object.keys(ITEM_CATEGORIES).map(id => ({ id, selected:id === selectedFilter }))
+  };
+}
+
+/* ---- 仓库「交易品」子标签：货柜具名战利品 + 考古星币/功勋文物，统一一键回收 ---- */
+function getTradeGoodsDisplayState(state) {
+  const items = [];
+  // 1) 货柜具名战利品（state.cargoLoot）：仅 isk / lp 两类，直接铸入背包、无其他用途
+  if (Array.isArray(state.cargoLoot)) {
+    for (const loot of state.cargoLoot) {
+      if (!loot || (loot.kind !== "isk" && loot.kind !== "lp")) continue;
+      items.push({
+        id: loot.id,
+        name: loot.name,
+        icon: loot.kind === "lp" ? "🎖" : "💰",
+        quantity: 1,
+        kind: loot.kind,
+        value: loot.value,
+        category: "trade",
+        categoryLabel: "交易品",
+        description: loot.kind === "lp"
+          ? "货柜出产的具名战利品，可兑换为功勋。"
+          : "货柜出产的具名战利品，可出售为星币。",
+        source: { pageId: "cargo", pageLabel: "货柜", icon: "fa-solid fa-box-open" }
+      });
+    }
+  }
+  // 2) 考古文物：common_isk / unique → 星币；lp → 功勋。校准物（用于考古升级）排除
+  if (typeof ARCHAEOLOGY_ARTIFACTS !== "undefined") {
+    for (const a of ARCHAEOLOGY_ARTIFACTS) {
+      if (a.category === "calibration") continue;
+      if (a.category !== "common_isk" && a.category !== "unique" && a.category !== "lp") continue;
+      const stock = ResourceRegistry.get(state, "artifact:" + a.id);
+      if (stock <= 0) continue;
+      const isLP = a.category === "lp";
+      items.push({
+        id: "artifact:" + a.id,
+        name: a.name,
+        icon: isLP ? "🎖" : "📜",
+        quantity: stock,
+        kind: isLP ? "lp" : "isk",
+        value: isLP ? (Number(a.lpValue) || 0) : (Number(a.iskValue) || 0),
+        category: "trade",
+        categoryLabel: "交易品",
+        description: isLP
+          ? (a.desc || "考古出产的勋章类文物，可兑换为功勋。")
+          : (a.desc || "考古出产的商业文物，可出售为星币。"),
+        source: { pageId: "archaeology", pageLabel: "考古", icon: "fa-solid fa-digging" }
+      });
+    }
+  }
+  // 回收报价（含银河凭证 ×1.10 预估）
+  const quoteItems = items.map(it => ({ currency: it.kind, amount: Math.max(0, Math.round(it.value * it.quantity)) }));
+  const quote = (typeof getRecycleQuote === "function") ? getRecycleQuote(state, quoteItems) : { byCurrency: {} };
+  return {
+    kind: "cargo",
+    filter: "trade",
+    total: items.length,
+    items,
+    quote,
+    emptyText: "暂无交易品。货柜开出的具名战利品、考古出产的星币/功勋文物会汇集于此，可一键回收为星币与功勋。",
+    filters: []
   };
 }
 

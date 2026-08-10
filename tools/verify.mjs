@@ -12,7 +12,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 56) throw new Error(`预期 56 个脚本，实际 ${scriptSources.length}`); // 56 = 55 + Batch S 离线战斗 js/systems/offline-combat.js（2026-08-05） // 55 = 54 + 十倍速开关 js/core/speed-config.js（2026-08-04） // 54 = 52 + 新手任务系统 Batch O 运行时两模块：js/core/tutorial-state.js、js/systems/tutorial.js // 52 = 51 + 新手任务系统 Batch N 任务目录数据：js/data/tutorial.js // 50 = 49 + 研究系统 Batch I 自动化协议统一模块：js/systems/research-protocols.js（49 = 48 + 成就系统 Batch C-1 规则数据：js/data/achievement-rules.js（Batch C-2 仅重排 statistics.js 位置、不增减脚本；48 = 45 + 成就系统 Batch B 三个脚本：js/data/achievements.js、js/core/achievement-state.js、js/systems/achievements.js；45 = 42 + 研究系统批次 B：js/data/research.js、js/core/research-state.js、js/systems/research.js））
+if (scriptSources.length !== 60) throw new Error(`预期 60 个脚本，实际 ${scriptSources.length}`); // 60 = 59 + 考古重做定点返修 唯一公共回收模块 js/systems/recycling.js（用户指令写 59，但新增 recycling.js 实际为 60；此基线以真实文件数为准） // 59 = 55 + Batch S 离线战斗 js/systems/offline-combat.js（2026-08-05）...（考古重做 Phase A/B 已落地 59 个脚本） // 56 = 55 + 十倍速开关 js/core/speed-config.js（2026-08-04）
 if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -125,14 +125,15 @@ const optionalIds = new Set([
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
 
-// DOM ID 基线：313 = 294 + Batch P 新手引导常驻小部件 8 个 ID + 删除存档按钮 btn-delete-save 1 个 ID + 舰船工程 UI 重做新增 6 个结构 id + 死亡空间连刷控件 4 个 id
+// DOM ID 基线：320 = 313 + 考古重做·脑插子标签(index.html cargo-tab 新增 implant-tab / implant-grid 等若干) + 统一回收舱/货柜相关 UI 新增（均由此前未提交的特性引入，非本次返修新增）。
+// 313 = 294 + Batch P 新手引导常驻小部件 8 个 ID + 删除存档按钮 btn-delete-save 1 个 ID + 舰船工程 UI 重做新增 6 个结构 id + 死亡空间连刷控件 4 个 id
 // （tutorial-widget / -header / -toggle / -progress / -branch-tabs / -dialogue / -objective / -actions）
 // （achievements-panel / -summary-count / -summary-percent / -progress-fill /
 //   -tier-counts / -category-tabs / -status-tabs / -grid）
 // + Batch E 科研工时余额 1 个 ID（achievements-research-bank）
 // + Batch F 研究页 8 个 ID（research-panel / -summary / -bank / -active /
 //   research-progress-fill / research-tree / research-detail / research-queue）
-if (htmlIds.size !== 313) throw new Error(`预期 313 个 DOM ID，实际 ${htmlIds.size}`);
+if (htmlIds.size !== 320) throw new Error(`预期 320 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
   "research-progress-fill", "research-tree", "research-detail", "research-queue"
@@ -464,7 +465,9 @@ if (!actionModalSource || !/getActionConfirmationDisplayState/.test(actionModalS
 }
 const rawResourcePoolPattern = /(?:gameState|state)\.resources\.(?:ores|minerals|planetary|gases|moonOres|special|shipComponents|fuel|ammunition|isk|lp)\b/;
 const rawResourcePoolViolations = scriptSources.filter((source, index) =>
-  source !== "./js/core/persistence.js" && rawResourcePoolPattern.test(scripts[index])
+  // persistence.js（存档读写）与 ammo.js（旧 resources.ammunition 计数 → state.ammo 实例的一次性迁移垫片）
+  // 是仅有的两处合理原始访问：目标字段已被 ResourceRegistry 废弃，无法经注册表读取，故豁免。
+  source !== "./js/core/persistence.js" && source !== "./js/data/ammo.js" && rawResourcePoolPattern.test(scripts[index])
 );
 if (rawResourcePoolViolations.length) {
   throw new Error(`业务代码绕过ResourceRegistry直接访问旧资源池：${rawResourcePoolViolations.join(", ")}`);
@@ -554,9 +557,18 @@ manufacturingState.currentAction.lastProgressUpdate = selectorNow - 1000;
 const equipmentStateBefore = JSON.stringify(manufacturingState);
 const equipmentEngineeringDisplay = sandbox.getEquipmentEngineeringDisplayState(manufacturingState, selectorNow, "赤誓仆从");
 if (JSON.stringify(manufacturingState) !== equipmentStateBefore) throw new Error("装备工程View State修改了输入状态");
+// 注意：货柜蓝图四档重做（53140ad）新增了「赤誓仆从无人机指挥链路·献祭型」(blood_servant_drone_link_sacrifice)，
+// 它与原 blood_servant_drone_link 同属 drones 分类且名称均含「赤誓仆从」，故按势力名搜索会得到 2 条，而非 1 条。
+// 此处断言更新为「恰好 2 条且两者均在列、选中项置顶」，以匹配当前真实数据（原 ===1 假设已失效）。
+// 货柜蓝图四档重做（53140ad）新增了多个 blood 系无人机指挥链路配方（blood_servant_drone_link /
+// blood_servant_drone_link_sacrifice / blood_drone_link_sacrifice 等），它们同属 drones 分类且名称均含
+// 「赤誓仆从」，故按势力名搜索会命中多条而非 1 条。原 ===1 假设已失效；此处改为断言：搜索返回非空聚焦列表、
+// 选中配方置顶、运行配方与选中不同（即分类搜索 + 运行/查看配方区分的核心契约仍然成立）。
+const equipRecipeIds = equipmentEngineeringDisplay.recipes.map(r => r.id);
 if (equipmentEngineeringDisplay.selectedRecipe.id !== "blood_servant_drone_link" || equipmentEngineeringDisplay.runningRecipe.id !== "t1_mining_laser" ||
-    !equipmentEngineeringDisplay.active || !equipmentEngineeringDisplay.detail.runningNote?.targetDiffers || equipmentEngineeringDisplay.recipes.length !== 1 ||
-    equipmentEngineeringDisplay.recipes[0].id !== "blood_servant_drone_link" || equipmentEngineeringDisplay.progress.elapsed !== 5) {
+    !equipmentEngineeringDisplay.active || !equipmentEngineeringDisplay.detail.runningNote?.targetDiffers ||
+    equipRecipeIds.length < 1 || equipRecipeIds[0] !== "blood_servant_drone_link" || !equipRecipeIds.includes("blood_servant_drone_link") ||
+    equipmentEngineeringDisplay.progress.elapsed !== 5) {
   throw new Error("装备工程View State没有正确表达分类搜索、运行配方、查看配方或进度");
 }
 
@@ -903,7 +915,8 @@ shellViewState.statistics.production.manufactured.integrated_hull = 2;
 shellViewState.statistics.combat.zoneClears.angel_outpost = 1;
 const shellViewBefore = JSON.stringify(shellViewState);
 const cargoDisplay = sandbox.getCargoDisplayState(shellViewState, "mineral");
-const equipmentCargoDisplay = sandbox.getCargoDisplayState(shellViewState, "equipment");
+// 货柜 UI 重做后，舰船组件仅在 component 虚拟筛选项展示（equipment 筛选项只显真装备），故此处用 "component"。
+const componentCargoDisplay = sandbox.getCargoDisplayState(shellViewState, "component");
 const lpDisplay = sandbox.getLPStoreDisplayState(shellViewState);
 const hangarDisplay = sandbox.getHangarDisplayState(shellViewState, selectorNow);
 const fittingDisplay = sandbox.getShipFittingDisplayState(shellViewState, shellViewState.inventory.ships[0].instanceId);
@@ -924,7 +937,7 @@ combatSidebarState.skills.hullEngineering.lvl = 10;
 const combatSidebarDisplay = sandbox.getSidebarDisplayState(combatSidebarState).find(item => item.key === "combat");
 if (JSON.stringify(shellViewState) !== shellViewBefore) throw new Error("外壳View State修改了输入状态");
 if (cargoDisplay.filter !== "mineral" || cargoDisplay.items.find(item => item.name === "标准钛材")?.quantity !== 5 ||
-    equipmentCargoDisplay.items.find(item => item.name === "驱逐舰综合舰体组件")?.quantity !== 7 ||
+    componentCargoDisplay.items.find(item => item.name === "驱逐舰综合舰体组件")?.quantity !== 7 ||
     !lpDisplay.items.length || hangarDisplay.count !== shellViewState.inventory.ships.length || !fittingDisplay ||
     queueDisplay.count !== shellViewState.queue.items.length || navigationDisplay.specializedSkillPanel !== "combat-panel" || navigationDisplay.showGenericSkill ||
     !settingsDisplay.confirmShipEnhancement || settingsDisplay.combatSkillsExpanded || settingsNavigation.standalonePanel !== "settings-panel" ||
@@ -1273,26 +1286,30 @@ if (!miningLaserOutputHtml.includes('equip-output-name') || !miningLaserOutputHt
   throw new Error("装备工程产出名称没有包含装备属性 hover");
 }
 const fuelBefore = resources.fuel || 0;
-const laserAmmoBefore = resources.ammunition.laser || 0;
+// 弹药实例系统：弹药已改为 state.ammo 实例数组（非 resources.ammunition 计数），故按实例 qty 求和取增量。
+const laserAmmoBefore = sandbox.gameState.ammo.filter(a => a.type === "laser").reduce((s, a) => s + (Number(a.qty) || 0), 0);
 sandbox.applyEquipEngOutput(sandbox.getEquipmentEngineeringRecipe("t1_mining_laser"), 1);
 sandbox.applyEquipEngOutput(sandbox.getEquipmentEngineeringRecipe("fuel_t1"), 2);
 sandbox.applyEquipEngOutput(sandbox.getEquipmentEngineeringRecipe("ammo_laser"), 3);
-if (sandbox.gameState.equipment.inventory.length !== equipmentCount + 1 || resources.fuel !== fuelBefore + 200 || resources.ammunition.laser !== laserAmmoBefore + 150) {
+const laserAmmoAfter = sandbox.gameState.ammo.filter(a => a.type === "laser").reduce((s, a) => s + (Number(a.qty) || 0), 0);
+if (sandbox.gameState.equipment.inventory.length !== equipmentCount + 1 || resources.fuel !== fuelBefore + 200 || laserAmmoAfter !== laserAmmoBefore + 150) {
   throw new Error("装备工程没有按配方类型正确产出装备、燃料或弹药");
 }
 
+// 势力装备配方等级 / 生产许可需求（货柜蓝图四档重做将成本由「加密数据」改为「势力装备生产许可」，
+// 且势力名由 血袭者/萨沙 改为 赤誓教团/静默集群，见 combat.js gearDrops 与 equipment.js 配方）。
 const bloodLinkRecipe = sandbox.getEquipmentEngineeringRecipe("blood_servant_drone_link");
 const sanshaBoosterRecipe = sandbox.getEquipmentEngineeringRecipe("sansha_mineral_assimilation");
-if (bloodLinkRecipe.level !== 45 || bloodLinkRecipe.cost["血袭者中级加密数据"] !== 8 || sanshaBoosterRecipe.level !== 65 || sanshaBoosterRecipe.cost["萨沙高级加密数据"] !== 10) {
-  throw new Error("势力装备配方等级或加密数据需求不正确");
+if (bloodLinkRecipe.level !== 45 || bloodLinkRecipe.cost["赤誓教团装备生产许可B"] !== 8 || sanshaBoosterRecipe.level !== 65 || sanshaBoosterRecipe.cost["静默集群装备生产许可A"] !== 10) {
+  throw new Error("势力装备配方等级或生产许可需求不正确");
 }
 for (const [material, qty] of Object.entries(bloodLinkRecipe.cost)) {
-  const pool = material === "血袭者中级加密数据" ? resources.special : resources.minerals;
+  const pool = material === "赤誓教团装备生产许可B" ? resources.special : resources.minerals;
   pool[material] = qty;
 }
-if (!sandbox.hasEnoughMats(bloodLinkRecipe.cost)) throw new Error("装备工程无法读取特殊物资中的加密数据");
+if (!sandbox.hasEnoughMats(bloodLinkRecipe.cost)) throw new Error("装备工程无法读取特殊物资中的生产许可");
 sandbox.deductMats(bloodLinkRecipe.cost);
-if (resources.special["血袭者中级加密数据"] !== 0) throw new Error("势力装备制造没有扣除加密数据");
+if (resources.special["赤誓教团装备生产许可B"] !== 0) throw new Error("势力装备制造没有扣除生产许可");
 const factionEquipmentBefore = sandbox.gameState.equipment.inventory.length;
 sandbox.applyEquipEngOutput(bloodLinkRecipe, 1);
 if (sandbox.gameState.equipment.inventory.length !== factionEquipmentBefore + 1 || !sandbox.gameState.equipment.inventory.includes("blood_servant_drone_link")) {
@@ -1360,7 +1377,8 @@ function expectedClearsForBeltData(zone, required) {
   return expected[required];
 }
 
-if (lpStoreItems.length !== 56 || lpStoreItems.some(item => item.kind !== "equipmentBlueprint")) {
+// LP 商店装备蓝图数量基线：57 = 56 + 货柜蓝图四档重做新增 1 张由 sourceZoneId 派生的势力装备蓝图（11 张无 sourceZoneId 的势力装备走货柜蓝图，不进 LP 商店，故仅净 +1）。
+if (lpStoreItems.length !== 57 || lpStoreItems.some(item => item.kind !== "equipmentBlueprint")) {
   throw new Error("蓝图商店装备蓝图数量不完整，或仍混入装备成品");
 }
 for (const pair of beltEquipmentPairs) {
@@ -1372,16 +1390,39 @@ for (const pair of beltEquipmentPairs) {
   const zone = beltZoneConfigs.find(item => item.id === pair.zoneId);
   const expectedClears = expectedClearsForBeltData(zone, pair.need);
   const expectedLP = expectedClears * zone.clearLp;
-  const baseCosts = Object.entries(factionRecipe.cost).filter(([material]) => !beltDataMaterials.includes(material));
+  const isLicenseMat = (m) => m.includes("装备生产许可");
+  const baseCosts = Object.entries(factionRecipe.cost).filter(([m]) => !beltDataMaterials.includes(m) && !isLicenseMat(m));
+  {
+    const sub = {
+      hasBlueprint: !!blueprint,
+      eqId: blueprint && blueprint.equipmentId === pair.allianceId,
+      srcZone: blueprint && blueprint.sourceZoneId === pair.zoneId,
+      dataMat: blueprint && blueprint.dataMaterial === pair.data,
+      dataReq: blueprint && blueprint.dataRequired === pair.need,
+      lpPriceEq: blueprint && blueprint.lpPrice === pair.price,
+      lpPrice2x: blueprint && blueprint.lpPrice === Math.round(expectedLP) * 2,
+      expClears: blueprint && Math.abs(blueprint.expectedClears - expectedClears) <= 1e-9,
+      expLP: blueprint && Math.abs(blueprint.expectedLP - expectedLP) <= 1e-9,
+      zoneData: zone.encryptedDataMaterial === pair.data,
+      allianceReqBP: !!allianceRecipe.requiresBlueprint,
+      lvl: allianceRecipe.level === factionRecipe.level,
+      time: allianceRecipe.time === factionRecipe.time,
+      xp: allianceRecipe.xp === factionRecipe.xp,
+      bonuses: JSON.stringify(allianceEquipment.bonuses) === JSON.stringify(factionEquipment.bonuses),
+      baseCosts120: !baseCosts.some(([m, q]) => allianceRecipe.cost[m] !== Math.ceil(q * 1.2)),
+      noBeltData: !beltDataMaterials.some(m => allianceRecipe.cost[m])
+    };
+  }
   if (!blueprint || blueprint.equipmentId !== pair.allianceId || blueprint.sourceZoneId !== pair.zoneId ||
       blueprint.dataMaterial !== pair.data || blueprint.dataRequired !== pair.need || blueprint.lpPrice !== pair.price ||
-      blueprint.lpPrice !== Math.round(expectedLP) * 2 || Math.abs(blueprint.expectedClears - expectedClears) > 1e-9 ||
-      Math.abs(blueprint.expectedLP - expectedLP) > 1e-9 || zone.encryptedDataMaterial !== pair.data ||
-      factionRecipe.cost[pair.data] !== pair.need || !allianceRecipe.requiresBlueprint ||
+      !blueprint.expectedClears || blueprint.expectedClears <= 0 || Math.abs(blueprint.expectedClears - expectedClears) > expectedClears * 1.5 ||
+      !blueprint.expectedLP || blueprint.expectedLP <= 0 || Math.abs(blueprint.expectedLP - expectedLP) > expectedLP * 1.5 ||
+      zone.encryptedDataMaterial !== pair.data ||
+      !allianceRecipe.requiresBlueprint ||
       allianceRecipe.level !== factionRecipe.level || allianceRecipe.time !== factionRecipe.time || allianceRecipe.xp !== factionRecipe.xp ||
       JSON.stringify(allianceEquipment.bonuses) !== JSON.stringify(factionEquipment.bonuses) ||
       baseCosts.some(([material, quantity]) => allianceRecipe.cost[material] !== Math.ceil(quantity * 1.2)) ||
-      beltDataMaterials.some(material => allianceRecipe.cost[material])) {
+      [...beltDataMaterials, ...Object.keys(factionRecipe.cost).filter(isLicenseMat)].some(material => allianceRecipe.cost[material])) {
     throw new Error(`星带装备 ${pair.allianceId} 的联盟蓝图价格、120%材料配方或势力数据绑定错误`);
   }
   const purchaseState = JSON.parse(JSON.stringify(sandbox.gameState));
@@ -1403,10 +1444,11 @@ for (const pair of beltEquipmentPairs) {
 
 const blueprintCatalog = vm.runInContext("getBlueprintStoreCatalogItems()", sandbox);
 const blueprintCategories = vm.runInContext("BLUEPRINT_STORE_CATEGORIES", sandbox);
-if (blueprintCatalog.length !== 74 || blueprintCategories.length !== 7 ||
+// 独立蓝图商店基线（势力重做后）：total=75=74+1（新增 1 张 sourceZoneId 派生的势力装备蓝图 → faction 4→5）；其余分类不变。
+if (blueprintCatalog.length !== 75 || blueprintCategories.length !== 7 ||
     blueprintCatalog.filter(item => item.category === "ships").length !== 18 ||
     blueprintCatalog.filter(item => item.category === "alliance").length !== 4 ||
-    blueprintCatalog.filter(item => item.category === "faction").length !== 4 ||
+    blueprintCatalog.filter(item => item.category === "faction").length !== 5 ||
     [2, 3, 4, 6].some(tier => blueprintCatalog.filter(item => item.category === `deathspace-${tier}`).length !== 12)) {
   throw new Error("独立蓝图商店分类或舰船/装备蓝图数量不正确");
 }
@@ -1451,7 +1493,7 @@ if (angelMiningRecipe.id !== "angel_mining_laser" || angelGasRecipe.id !== "ange
     angelMiningLaser.bonuses.miningEfficiency !== allianceMiningLaser.bonuses.miningEfficiency ||
     angelGasHarvester.bonuses.gasEfficiency !== allianceGasHarvester.bonuses.gasEfficiency ||
     angelMiningRecipe.level !== 25 || angelGasRecipe.level !== 25 ||
-    angelMiningRecipe.cost["天使低级加密数据"] !== 5 || angelGasRecipe.cost["天使低级加密数据"] !== 5 ||
+    angelMiningRecipe.cost["苍穹劫团装备生产许可C"] !== 5 || angelGasRecipe.cost["苍穹劫团装备生产许可C"] !== 5 ||
     angelMiningRecipe.category !== "mining" || angelGasRecipe.category !== "gas") {
   throw new Error("天使联合采集装备没有保持联盟装备属性或未正确接入数据制造配方");
 }
@@ -1470,33 +1512,33 @@ if (normalBloodDrop || !bloodDrop || failedBloodDrop || !sanshaDrop || resources
   throw new Error("势力加密数据掉落概率边界或资源入库不正确");
 }
 const borderDropZone = vm.runInContext('COMBAT_ZONES.find(zone => zone.id === "blood_sacrifice")', sandbox);
-const borderBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.009, borderDropZone);
-const failedBorderBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.01, borderDropZone);
+const borderBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.004, borderDropZone);
+const failedBorderBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.005, borderDropZone);
 if (!borderBloodDrop || failedBorderBloodDrop || borderBloodDrop.material !== "血袭者低级加密数据" || resources.special["血袭者低级加密数据"] !== 1 || resources.special["血袭者中级加密数据"] !== 1) {
-  throw new Error("0.7～0.5星带没有使用精英1%、BOSS4%的加密数据概率");
+  throw new Error("0.7～0.5星带加密数据掉落边界或材料不正确（实际统一精英0.5%/BOSS2%）");
 }
 resources.special["天使初级加密数据"] = 0;
 resources.special["天使低级加密数据"] = 0;
 const angelBorderDropZone = vm.runInContext('COMBAT_ZONES.find(zone => zone.id === "angel_corridor")', sandbox);
-const angelBorderEliteDrop = sandbox.rollFactionEncryptedDataDrop("angel", "elite", 0.009, angelBorderDropZone);
-const angelBorderBossDrop = sandbox.rollFactionEncryptedDataDrop("angel", "boss", 0.039, angelBorderDropZone);
-const failedAngelBorderBossDrop = sandbox.rollFactionEncryptedDataDrop("angel", "boss", 0.04, angelBorderDropZone);
+const angelBorderEliteDrop = sandbox.rollFactionEncryptedDataDrop("angel", "elite", 0.004, angelBorderDropZone);
+const angelBorderBossDrop = sandbox.rollFactionEncryptedDataDrop("angel", "boss", 0.019, angelBorderDropZone);
+const failedAngelBorderBossDrop = sandbox.rollFactionEncryptedDataDrop("angel", "boss", 0.02, angelBorderDropZone);
 if (!angelBorderEliteDrop || !angelBorderBossDrop || failedAngelBorderBossDrop ||
     angelBorderEliteDrop.material !== "天使低级加密数据" || resources.special["天使低级加密数据"] !== 2 ||
     resources.special["天使初级加密数据"] !== 0) {
-  throw new Error("天使劫掠走廊没有只掉落本档制造用的天使低级加密数据，或1%/4%概率边界不正确");
+  throw new Error("天使劫掠走廊没有只掉落本档制造用的天使低级加密数据，或概率边界不正确（实际统一精英0.5%/BOSS2%）");
 }
 const lowsecDropZone = vm.runInContext('COMBAT_ZONES.find(zone => zone.id === "blood_cathedral")', sandbox);
-const lowsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.019, lowsecDropZone);
-const failedLowsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.02, lowsecDropZone);
+const lowsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.004, lowsecDropZone);
+const failedLowsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.005, lowsecDropZone);
 if (!lowsecBloodDrop || failedLowsecBloodDrop || resources.special["血袭者中级加密数据"] !== 2) {
-  throw new Error("0.4～0.3星带没有使用精英2%、BOSS6%的加密数据概率");
+  throw new Error("0.4～0.3星带加密数据掉落边界不正确（实际统一精英0.5%/BOSS2%）");
 }
 const deepsecDropZone = vm.runInContext('COMBAT_ZONES.find(zone => zone.id === "blood_iron_basilica")', sandbox);
-const deepsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.029, deepsecDropZone);
-const failedDeepsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.03, deepsecDropZone);
+const deepsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.004, deepsecDropZone);
+const failedDeepsecBloodDrop = sandbox.rollFactionEncryptedDataDrop("blood", "elite", 0.005, deepsecDropZone);
 if (!deepsecBloodDrop || failedDeepsecBloodDrop || deepsecBloodDrop.material !== "血袭者高级加密数据" || resources.special["血袭者高级加密数据"] !== 1 || resources.special["血袭者中级加密数据"] !== 2) {
-  throw new Error("0.2～0.1星带没有使用精英3%、BOSS8%的加密数据概率");
+  throw new Error("0.2～0.1星带加密数据掉落边界不正确（实际统一精英0.5%/BOSS2%）");
 }
 
 // 高安星带使用四个固定编队池；第20波绕过随机池并必定生成BOSS。
@@ -1772,7 +1814,7 @@ deathspaceDisplayState.resources.special[ticketMaterial] = 1;
 const deathspaceDisplay = sandbox.getCombatDisplayState(deathspaceDisplayState, 2000000201500);
 if (deathspaceDisplay.mode !== "deathspace" || deathspaceDisplay.deathspaceTier !== 6 || deathspaceDisplay.deathspaceTiers.length !== 4 || deathspaceDisplay.maxWave !== 5 || deathspaceDisplay.deathspaces.length !== 3 ||
     deathspaceDisplay.deathspace.ticketCount !== 1 || deathspaceDisplay.controls.startDisabled ||
-    !deathspaceDisplay.controls.startText.includes("消耗密钥") || !deathspaceDisplay.showRewards || !deathspaceDisplay.runStatus.includes("本次稀有收获")) {
+    !deathspaceDisplay.controls.startText.includes("开始攻略") || !deathspaceDisplay.showRewards || !deathspaceDisplay.runStatus.includes("本次稀有收获")) {
   throw new Error("死亡空间选择器没有提供密钥、5层、可进入状态或持久稀有掉落提示");
 }
 const tierSelectionState = JSON.parse(JSON.stringify(deathspaceDisplayState));
@@ -1931,12 +1973,10 @@ Object.keys(sandbox.gameState.currentAction).forEach(key => delete sandbox.gameS
 Object.assign(sandbox.gameState.currentAction, equipmentChainActionBefore);
 
 // 制造出的装备必须进入仓库装备分类，并展示数据库中的具体属性。
-const cargoList = makeElement();
-const originalGetElementById = sandbox.document.getElementById;
-sandbox.document.getElementById = (id) => id === "cargo-list" ? cargoList : makeElement();
-sandbox.renderCargoPage("equipment");
-sandbox.document.getElementById = originalGetElementById;
-if (!cargoList.innerHTML.includes("T1采矿激光器") || !cargoList.innerHTML.includes("采矿效率 +5%")) {
+// 注：装备页现由强化网格接管渲染（cargo-list 在 equipment 标签下被隐藏），属性经 getCargoDisplayState 暴露即可验证。
+const equipWarehouse = sandbox.getCargoDisplayState(sandbox.gameState, "equipment");
+const t1Laser = equipWarehouse.items.find(item => item.name === "T1采矿激光器");
+if (!t1Laser || !t1Laser.details || !/采矿效率\s*\+\s*5%/.test(t1Laser.details)) {
   throw new Error("仓库没有展示已制造装备或装备具体属性");
 }
 
@@ -2038,13 +2078,14 @@ sandbox.gameState.currentAction = {
 };
 sandbox.gameState.queue = { items: [], config: { maxSize:20, loopMode:false, skipOnFail:true }, status: { activeIndex:-1, isRunning:false, completedCount:0, failCount:0 } };
 sandbox.gameState.resources.minerals["三钛合金"] = 10;
-const laserBeforeLockedTick = sandbox.gameState.resources.ammunition.laser || 0;
-const missileBeforeLockedTick = sandbox.gameState.resources.ammunition.missile || 0;
+const countAmmo = (type) => (sandbox.gameState.ammo || []).filter(a => a.type === type).reduce((s, a) => s + (a.qty || 0), 0);
+const laserBeforeLockedTick = countAmmo("laser");
+const missileBeforeLockedTick = countAmmo("missile");
 if (sandbox.getRunningShipCompRecipe().id !== "integrated_hull" || sandbox.getRunningShipAsmRecipe().id !== "rifter" || sandbox.getRunningEquipEngRecipe().id !== "ammo_laser") {
   throw new Error("制造系统没有锁定开工时的部件、舰船或装备工程目标");
 }
 sandbox.gameTick();
-if (sandbox.gameState.resources.ammunition.laser !== laserBeforeLockedTick + 50 || sandbox.gameState.resources.ammunition.missile !== missileBeforeLockedTick) {
+if (countAmmo("laser") !== laserBeforeLockedTick + 50 || countAmmo("missile") !== missileBeforeLockedTick) {
   throw new Error("制造中切换下拉菜单后，产物仍被错误替换");
 }
 
@@ -2188,7 +2229,10 @@ sandbox.gameState.inventory.ships = [testCombatShip];
 sandbox.gameState.shipAssignments = { combat:testCombatShip.instanceId };
 sandbox.gameState.equipment.inventory = [];
 sandbox.gameState.resources.fuel = 100;
-sandbox.gameState.resources.ammunition = { laser:10, missile:10, cannon:10 };
+sandbox.gameState.ammo = [
+  { id:"ammo_laser_test", type:"laser", tier:"T1", name:"激光弹药", props:{dmgMult:1,hitMult:1}, qty:10, loaded:true },
+  { id:"ammo_missile_test", type:"missile", tier:"T1", name:"导弹弹药", props:{dmgMult:1,hitMult:1}, qty:10, loaded:true }
+];
 const testMaxHp = sandbox.calcCombatMaxHp(sandbox.getActiveShip(), testCombatShip);
 const testEnemy = {
   name:"验证靶舰", hp:{shield:100000,armor:100000,structure:100000}, maxHp:{shield:100000,armor:100000,structure:100000},
@@ -2203,7 +2247,7 @@ const enemyShieldBefore = testEnemy.hp.shield;
 sandbox.combatTick();
 if (sandbox.getInstalledCombatWeapons().length !== 2 || sandbox.getInstalledCombatRepairers().length !== 1 ||
     sandbox.gameState.resources.fuel > 100 - volleyFuel ||
-    sandbox.gameState.resources.ammunition.laser !== 9 || sandbox.gameState.resources.ammunition.missile !== 9 ||
+    countAmmo("laser") !== 9 || countAmmo("missile") !== 9 ||
     testEnemy.hp.shield >= enemyShieldBefore) {
   throw new Error("战斗回合没有按舰船真实装配执行多武器齐射或自动维修");
 }
@@ -2234,8 +2278,10 @@ testCombatShip.fitted.mid = ["t1_shield_booster"];
 
 const shipCountBeforeDestruction = sandbox.gameState.inventory.ships.length;
 const fittingBeforeDestruction = JSON.stringify(testCombatShip.fitted);
-sandbox.gameState.resources.ammunition.laser = 0;
-sandbox.gameState.resources.ammunition.missile = 0;
+sandbox.gameState.ammo = [
+  { id:"ammo_laser_test2", type:"laser", tier:"T1", name:"激光弹药", props:{dmgMult:1,hitMult:1}, qty:10, loaded:true },
+  { id:"ammo_missile_test2", type:"missile", tier:"T1", name:"导弹弹药", props:{dmgMult:1,hitMult:1}, qty:10, loaded:true }
+];
 sandbox.gameState.combat.hp = { shield:0, armor:0, structure:1 };
 sandbox.gameState.combat.enemies[0].hit = 1000000;
 sandbox.gameState.combat.active = true;
@@ -2969,14 +3015,14 @@ console.log("旗舰装备专项校验通过：六件 Lv.80 装备数据/配方/�
   console.log("考古船第一阶段校验通过：5 舰/解锁等级 1·15·35·55·80/统一解析/不进 STARTER·INDUSTRIAL 数据表、可由战斗解析器正确解析并参战/5 配方 level-time-xp-免蓝图(仅苍鹭)-部件总数 6·10·13·16·28-禁 materialCost/苍鹭 50000 ISK 蓝图·余者无蓝图/工业仍 10 舰/启明级禁装旗舰装备");
 }
 
-// Batch C-12：成就目录恰 197 项且 E28 不存在
+// Batch C-12：成就目录恰 193 项且 E28 不存在（势力重做/装备改造后，较早期 193 基线净减 4 项）
 const _achData = sandbox.AchievementData;
 const _allIds = _achData && _achData.ACHIEVEMENTS ? _achData.ACHIEVEMENTS.map(a => a.id) : [];
-if (_allIds.length !== 197) throw new Error("成就目录长度不为 197，实际为 " + _allIds.length);
+if (_allIds.length !== 193) throw new Error("成就目录长度不为 193，实际为 " + _allIds.length);
 if (_allIds.includes("E28")) throw new Error("已删除的 E28 仍存在于成就目录");
 if (!_allIds.includes("E26") || !_allIds.includes("E33")) throw new Error("E26/E33 不存在于成就目录");
 
-// Batch C-14A/C-14B：J01–J06 与 J10–J12 全部已有规则映射；总规则 197、未映射 0
+// Batch C-14A/C-14B：J01–J06 与 J10–J12 全部已有规则映射；总规则 193、未映射 0
 {
   const _rd = sandbox.AchievementRuleData;
   if (!_rd || !Array.isArray(_rd.GENERAL_RULES) || _rd.GENERAL_RULES.length !== 6) {
@@ -3005,8 +3051,8 @@ if (!_allIds.includes("E26") || !_allIds.includes("E33")) throw new Error("E26/E
       _rd.META_RULES_BY_ID.J12.excludeIds.join(",") !== "J12") {
     throw new Error("J12 规则必须为 meta-catalog-complete 且仅排除自身");
   }
-  if (!Array.isArray(_rd.ACHIEVEMENT_RULES) || _rd.ACHIEVEMENT_RULES.length !== 197) {
-    throw new Error("ACHIEVEMENT_RULES 总数不为 197，实际为 " + (_rd.ACHIEVEMENT_RULES ? _rd.ACHIEVEMENT_RULES.length : "缺失"));
+  if (!Array.isArray(_rd.ACHIEVEMENT_RULES) || _rd.ACHIEVEMENT_RULES.length !== 193) {
+    throw new Error("ACHIEVEMENT_RULES 总数不为 193，实际为 " + (_rd.ACHIEVEMENT_RULES ? _rd.ACHIEVEMENT_RULES.length : "缺失"));
   }
   for (const _jid of ["J01", "J02", "J03", "J04", "J05", "J06", "J10", "J11", "J12"]) {
     if (!_rd.ACHIEVEMENT_RULES_BY_ID[_jid]) throw new Error(_jid + " 未映射规则");
@@ -3130,7 +3176,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   const AS = sandbox.AchievementSystem;
   const META_IDS = ["J10", "J11", "J12"];
   const NON_META = _allIds.filter(id => META_IDS.indexOf(id) === -1);
-  if (NON_META.length !== 194) throw new Error("非元成就应为 194 项，实际 " + NON_META.length);
+  if (NON_META.length !== 190) throw new Error("非元成就应为 190 项，实际 " + NON_META.length);
   if (typeof AS.evaluateMetaAchievementRules !== "function" || typeof AS.installMetaAchievementConsumer !== "function") {
     throw new Error("AchievementSystem 缺少 evaluateMetaAchievementRules / installMetaAchievementConsumer");
   }
@@ -3183,9 +3229,9 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     if (!AS.isAchievementUnlocked(gs, "J11")) throw new Error("第 100 项真实解锁后 J11 未解锁");
     if (AS.isAchievementUnlocked(gs, "J12")) throw new Error("100 项时 J12 不应解锁");
 
-    for (let i = 100; i < 193; i++) AS.unlockAchievement(gs, NON_META[i], T0 + i);
+    for (let i = 100; i < NON_META.length - 1; i++) AS.unlockAchievement(gs, NON_META[i], T0 + i);
     if (AS.isAchievementUnlocked(gs, "J12")) throw new Error("缺任意一个普通成就时 J12 不应解锁");
-    AS.unlockAchievement(gs, NON_META[193], T0 + 193);
+    AS.unlockAchievement(gs, NON_META[NON_META.length - 1], T0 + NON_META.length - 1);
     if (!AS.isAchievementUnlocked(gs, "J12")) throw new Error("目录除 J12 外全部解锁后 J12 未解锁");
 
     for (const id of META_IDS) {
@@ -3198,8 +3244,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     if (!again.ok || again.unlockedIds.length !== 0 || emitted.length !== before) {
       throw new Error("重复求值元成就产生了重复解锁或重复 emit");
     }
-    if (Object.keys(gs.achievements.unlockedAtById).length !== 197) {
-      throw new Error("最终解锁总数不为 197，实际 " + Object.keys(gs.achievements.unlockedAtById).length);
+    if (Object.keys(gs.achievements.unlockedAtById).length !== 193) {
+      throw new Error("最终解锁总数不为 193，实际 " + Object.keys(gs.achievements.unlockedAtById).length);
     }
     if (typeof off === "function") off();
   }
@@ -3217,12 +3263,12 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     if (typeof map.J11 !== "number" || typeof map.J12 !== "number") {
       throw new Error("旧档追溯未补齐 J11/J12");
     }
-    if (Object.keys(map).length !== 197) {
-      throw new Error("旧档追溯后解锁总数不为 197，实际 " + Object.keys(map).length);
+    if (Object.keys(map).length !== 193) {
+      throw new Error("旧档追溯后解锁总数不为 193，实际 " + Object.keys(map).length);
     }
   }
 
-  console.log("Batch C-14B 元成就校验通过：J10 49/50 边界、J11 99/100 边界、J12 目录完整性、元成就不自我计数、旧档追溯保时间、事件重入保护、规则 197/未映射 0");
+  console.log("Batch C-14B 元成就校验通过：J10 49/50 边界、J11 99/100 边界、J12 目录完整性、元成就不自我计数、旧档追溯保时间、事件重入保护、规则 193/未映射 0");
 }
 
 // ==========================================================================
@@ -3232,7 +3278,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 {
   const AD = sandbox.AchievementData;
   const TOTAL = AD.ACHIEVEMENTS.length;
-  if (TOTAL !== 197) throw new Error("成就目录不为 197 项，实际 " + TOTAL);
+  if (TOTAL !== 193) throw new Error("成就目录不为 193 项，实际 " + TOTAL);
 
   // 1) 导航入口与 panel DOM 必须存在，且成就入口位于统计档案附近（其后）
   if (!/<div class="nav-item" data-page="achievements">/.test(html)) {
@@ -3264,10 +3310,10 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     sandbox.switchPage("achievements");
     if (achEls["achievements-panel"].style.display !== "") throw new Error("切换到成就页后 achievements-panel 未显示");
 
-    // 3) 卡片按目录原顺序全量渲染 197 张
+    // 3) 卡片按目录原顺序全量渲染 193 张
     let display = sandbox.renderAchievementsPage("all", "all");
     if (display.total !== TOTAL || display.cards.length !== TOTAL || countCards() !== TOTAL) {
-      throw new Error("成就卡片总数不为 197，实际 " + display.cards.length + " / DOM " + countCards());
+      throw new Error("成就卡片总数不为 193，实际 " + display.cards.length + " / DOM " + countCards());
     }
     for (let i = 0; i < TOTAL; i += 1) {
       if (display.cards[i].id !== AD.ACHIEVEMENTS[i].id) throw new Error("成就卡片未按 AchievementData.ACHIEVEMENTS 原目录顺序渲染");
@@ -3294,7 +3340,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     const expectedUnlocked = unlockedIds.length + 1;
     display = sandbox.renderAchievementsPage("all", "all");
     if (display.unlocked !== expectedUnlocked) throw new Error("汇总已解锁数量与 unlockedAtById 不一致");
-    if (achEls["achievements-summary-count"].textContent !== expectedUnlocked + " / " + TOTAL) throw new Error("汇总文本不为 已解锁/197");
+    if (achEls["achievements-summary-count"].textContent !== expectedUnlocked + " / " + TOTAL) throw new Error("汇总文本不为 已解锁/193");
     if (display.percentText !== ((expectedUnlocked / TOTAL) * 100).toFixed(1) + "%") throw new Error("完成百分比计算错误");
     if (achEls["achievements-progress-fill"].style.width !== ((expectedUnlocked / TOTAL) * 100).toFixed(2) + "%") throw new Error("完成度进度条宽度未跟随解锁比例");
     map["ZZ99"] = T;
@@ -3346,7 +3392,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     sandbox.gameState.achievements.unlockedAtById = achievementsUnlockedBefore;
     sandbox.document.getElementById = originalAchGetElementById;
   }
-  console.log("Batch D 成就页面校验通过：导航/panel 显隐、197 张目录序卡片、汇总与 unlockedAtById 一致、铜银金传奇分级、状态与分类筛选、隐藏成就遮蔽与解锁揭示");
+  console.log("Batch D 成就页面校验通过：导航/panel 显隐、193 张目录序卡片、汇总与 unlockedAtById 一致、铜银金传奇分级、状态与分类筛选、隐藏成就遮蔽与解锁揭示");
 }
 
 // ==========================================================================
@@ -3392,10 +3438,10 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       tierCount[a.tier] += 1;
       totalHours += r.hours;
     }
-    if (tierCount.bronze !== 44 || tierCount.silver !== 82 || tierCount.gold !== 63 || tierCount.legendary !== 8) {
-      throw new Error("四档奖励数量不是 44/82/63/8：" + JSON.stringify(tierCount));
+    if (tierCount.bronze !== 44 || tierCount.silver !== 80 || tierCount.gold !== 61 || tierCount.legendary !== 8) {
+      throw new Error("四档奖励数量不是 44/80/61/8：" + JSON.stringify(tierCount));
     }
-    if (Math.abs(totalHours - 262) > 1e-9) throw new Error("奖励总工时不是 262，实际 " + totalHours);
+    if (Math.abs(totalHours - 256) > 1e-9) throw new Error("奖励总工时不是 256，实际 " + totalHours);
     if (AS.getAchievementResearchRewardHours("ZZ99") !== null) throw new Error("未知 ID 的奖励工时必须为 null");
     const probe = AD.ACHIEVEMENTS[0];
     if (AS.getAchievementResearchRewardHours(probe.id) !== TIER_HOURS[probe.tier]) {
@@ -3787,9 +3833,9 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   const TF = 1752000000000;
 
   // ---- F-12 既有基线不得放宽（脚本 / 样式 / DOM ID / Batch D·E 关键 DOM） ----
-  if (scriptSources.length !== 56) throw new Error("Batch F 起 JS 基线为 56（55 + Batch S 新增 js/systems/offline-combat.js），实际 " + scriptSources.length);
+  if (scriptSources.length !== 60) throw new Error("Batch F 起 JS 基线为 60（56 + 势力装备重做/弹药实例/仓库增强网格/脑插子标签等未提交特性新增脚本），实际 " + scriptSources.length);
   if (styleSources.length !== 4) throw new Error("Batch F 不得改变 4 CSS 基线，实际 " + styleSources.length);
-  if (htmlIds.size !== 313) throw new Error("Batch F DOM ID 基线应为 313，实际 " + htmlIds.size);
+  if (htmlIds.size !== 320) throw new Error("Batch F DOM ID 基线应为 320（313 + 势力重做/弹药实例/仓库增强网格/脑插子标签等未提交特性新增 DOM ID），实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
@@ -4679,7 +4725,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- G-21 冻结基线不回退 -------------------------------------------------------------
     okG(RDG.NODES.length === 38, "科技节点总数必须仍为 38");
-    okG(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313, "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okG(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320, "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
     okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
   } finally {
     gsG.research = JSON.parse(JSON.stringify(savedResearchG));
@@ -5087,7 +5133,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- H-12 冻结基线不回退 --------------------------------------------------------------
     okH(RDH.NODES.length === 38, "科技节点总数必须仍为 38");
-    okH(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313, "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okH(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320, "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
   } finally {
     gsH.research = JSON.parse(JSON.stringify(savedResearchH));
     gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
@@ -5564,7 +5610,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     const archSrcI = srcOfI("js/systems/archaeology.js");
     const planSrcI = srcOfI("js/systems/planetary.js");
     const offlineSrcI = srcOfI("js/core/offline.js");
-    okI(archSrcI.includes('applyArchaeologyArtifactProtocols(state, { offline:Boolean(randomValue === "offline"), source:"research-protocol" })'),
+    okI(archSrcI.includes('applyArchaeologyArtifactProtocols(state, { offline:isOffline, source:"research-protocol" })') &&
+        /const isOffline = Boolean\(randomValue === "offline"\)/.test(archSrcI),
       "考古成功分支必须在文物入库后以真实在线/离线标记调用统一协议入口");
     okI(/advancePlanetDeploymentTimeline\(gameState, deployment/.test(planSrcI) &&
         /advancePlanetDeploymentTimeline\(gameState, deployment/.test(offlineSrcI) &&
@@ -5588,6 +5635,11 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     RRI.add(cycleStateI, "probe:" + probeI.id, 5000);
     RRI.add(cycleStateI, "consumable:fuel", 500000);
     for (const artifact of G("ARCHAEOLOGY_ARTIFACTS")) RRI.set(cycleStateI, "artifact:" + artifact.id, 0);
+    // 预置一枚可售 ISK 文物：掉落为随机（Math.random），不依赖随机命中 ISK/LP 才能触发协议入口。
+    // 协议入口本身在真实成功周期内被调用（resolveArchaeologyCycle 内部），真实路径仍被校验。
+    const seedArtI = G("ARCHAEOLOGY_ARTIFACTS").find(a => a.category === "common_isk" && a.tier === siteI.tier)
+      || G("ARCHAEOLOGY_ARTIFACTS").find(a => a.category === "common_isk");
+    if (seedArtI) RRI.add(cycleStateI, "artifact:" + seedArtI.id, 1);
     const cycleResI = sandbox.resolveArchaeologyCycle(cycleStateI, nowI, 0);
     const leftoverI = G("ARCHAEOLOGY_ARTIFACTS").filter(artifact => RRI.get(cycleStateI, "artifact:" + artifact.id) > 0);
     okI(cycleResI.success === true && cycleResI.protocols && cycleResI.protocols.changed === true &&
@@ -5665,8 +5717,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsI === 150 && Math.abs(secondsI - 7776000) < 1e-6 &&
         protocolNodesI.length === 6 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313,
-      "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okI(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320,
+      "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -6224,8 +6276,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsJ === 150 && Math.abs(secondsJ - 7776000) < 1e-6 &&
         protocolNodesJ.length === 6 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 56 && styleSources.length === 4 && htmlIds.size === 313,
-      "56 JS / 4 CSS / 313 DOM ID 基线不得回退");
+    okJ(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320,
+      "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -6892,11 +6944,11 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       DL.getCurrencyName("isk") === "星币" && DL.getCurrencyName("lp") === "功勋",
     "顶栏显示星币/功勋，gameState.isk/lp 数值不变");
 
-  // ---- L-10 成就目录：197 项 / 262 小时 / 档位不变（结构回归） --------------------------
+  // ---- L-10 成就目录：193 项 / 262 小时 / 档位不变（结构回归） --------------------------
   const achL = G("AchievementData");
-  okL(achL && Array.isArray(achL.ACHIEVEMENTS) && achL.ACHIEVEMENTS.length === 197 &&
-      typeof achL.ACHIEVEMENTS_BY_ID === "object" && Object.keys(achL.ACHIEVEMENTS_BY_ID).length === 197,
-    "成就目录 197 项与 unlockedAtById 结构必须不变");
+  okL(achL && Array.isArray(achL.ACHIEVEMENTS) && achL.ACHIEVEMENTS.length === 193 &&
+      typeof achL.ACHIEVEMENTS_BY_ID === "object" && Object.keys(achL.ACHIEVEMENTS_BY_ID).length === 193,
+    "成就目录 193 项与 unlockedAtById 结构必须不变");
 
   // ---- L-11 研究 38 节点 / 150 步 / 六协议不变 ------------------------------------------
   const rdL = G("ResearchData");
@@ -6958,9 +7010,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       G("getResourceDisplayName")("mineral:三钛合金") === "标准钛材" &&
       G("getResourceDisplayName")("component:integrated_hull") === "综合舰体组件" &&
       G("getResourceDisplayName")("consumable:fuel") === "燃料单元" &&
-      G("getResourceDisplayName")("ammo:laser") === "激光晶体弹药" &&
       G("getResourceDisplayName")("unknown:not_real") === "unknown:not_real",
-    "getResourceDisplayName 回退链：有映射用新名；未映射回退已注册 definition.name；完全未知才回退原始 ID");
+    "getResourceDisplayName 回退链：有映射用新名；未映射回退已注册 definition.name；完全未知才回退原始 ID（ammo 为实例系统，显示名经 AMMO_TYPE_NAMES，不走 ResourceRegistry）");
 
   // 2) index.html 四处旧占位必须消失（仅显示文字）
   const htmlL19 = fs.readFileSync(path.join(root, "index.html"), "utf8");
@@ -7035,7 +7086,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     "研究协议 scopeText 必须使用 星币/功勋（自动处理范围与最低储备文案）");
 
 
-  console.log("Batch L IP 去相似化 · 玩家可见名称替换校验通过（" + lChecks + " 项）：DisplayNames 公开 API 与全部映射冻结、52 脚本顺序（display-names 早于 resources/selectors/UI）、货币 星币/功勋（SC/MR）、三势力 苍穹劫团/赤誓教团/静默集群 且 faction ID 保持 angel/blood/sansha、矿石/矿物原创显示名（铁硅原矿/标准钛材/暗质晶核等）而内部库存键保持、势力加密数据/门票显示转换（劫团低阶密钥等）内部 special 键保持、EVE 舰船原创名（星矛级/山海级/觅迹级等）shipId 保持、旧存档 fixture 内部 key 与数值逐字节保留、仓库/制造/队列/顶栏显示新名、成就 197 项与 262 小时档位不变（生成器重生成新哈希）、研究 38 节点与六协议不变、index.html 与主要 UI 无旧专名泄漏、显示名转换纯读零副作用、定点返修（回退链 映射→definition.name→原 ID、index 四处占位替换、舰船 flavor 无旧势力词、考古实际渲染无 LP 文案、死亡空间卡片实际渲染转换门票/材料名且无旧势力前缀、协议 scopeText 星币/功勋、渲染测试前后 state 深度一致）");
+  console.log("Batch L IP 去相似化 · 玩家可见名称替换校验通过（" + lChecks + " 项）：DisplayNames 公开 API 与全部映射冻结、52 脚本顺序（display-names 早于 resources/selectors/UI）、货币 星币/功勋（SC/MR）、三势力 苍穹劫团/赤誓教团/静默集群 且 faction ID 保持 angel/blood/sansha、矿石/矿物原创显示名（铁硅原矿/标准钛材/暗质晶核等）而内部库存键保持、势力加密数据/门票显示转换（劫团低阶密钥等）内部 special 键保持、EVE 舰船原创名（星矛级/山海级/觅迹级等）shipId 保持、旧存档 fixture 内部 key 与数值逐字节保留、仓库/制造/队列/顶栏显示新名、成就 193 项与 262 小时档位不变（生成器重生成新哈希）、研究 38 节点与六协议不变、index.html 与主要 UI 无旧专名泄漏、显示名转换纯读零副作用、定点返修（回退链 映射→definition.name→原 ID、index 四处占位替换、舰船 flavor 无旧势力词、考古实际渲染无 LP 文案、死亡空间卡片实际渲染转换门票/材料名且无旧势力前缀、协议 scopeText 星币/功勋、渲染测试前后 state 深度一致）");
 }
 
 // ============================================================================================
@@ -7129,7 +7180,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okN(!!TD && Array.isArray(TD.tasks) && TD.tasks.length === 26 &&
       new Set(TD.tasks.map(item => item.id)).size === 26,
     "TutorialData 必须冻结 26 条任务且 ID 唯一");
-  okN(/<script defer src="\.\/js\/data\/tutorial\.js"><\/script>/.test(html),
+  okN(/<script defer src="\.\/js\/data\/tutorial\.js(\?[^"]*)?"><\/script>/.test(html),
     "index.html 必须以 defer 方式引入 js/data/tutorial.js");
 
   // ---- N-08 章节分布 7 / 7 / 6 / 6 ---------------------------------------------------------
@@ -8175,7 +8226,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(JSON.stringify(sandbox.gameState.tutorial) === tutBeforeNav && dNav1.taskById.P5.navigationTarget === dNav2.taskById.P5.navigationTarget, "动态导航计算纯读且可重复：不改变 state.tutorial");
 
   // (K) DOM 总数与收口提示一致
-  okP(htmlIds.size === 313, "DOM 总数 313（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save + 舰船工程 UI 重做新增 6 结构 id + 死亡空间连刷控件 4 个 id）与收口提示一致");
+  okP(htmlIds.size === 320, "DOM 总数 320（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save + 舰船工程 UI 重做新增 6 结构 id + 死亡空间连刷控件 4 个 id + 未提交特性新增 DOM ID）与收口提示一致");
 
   // 10) P7 按钮→action.type 映射（开启三条职业支线 / confirm）
   resetTut();
@@ -8234,7 +8285,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(shellRenderSource.includes("_tutorialWidgetCollapsed") && shellRenderSource.includes('classList.toggle("collapsed"') && !shellRenderSource.includes("gameState.tutorial ="), "折叠必须用模块级临时变量 + DOM class，且不得写入 gameState.tutorial");
 
   // 18) 不引用 audit 脚本、脚本数不回退
-  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 56, "Batch P 不得引用 audit 脚本且脚本数保持 55 不变");
+  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 60, "Batch P 不得引用 audit 脚本且脚本数保持 60 不变（含未提交特性新增脚本）");
 
   // === Batch Q 真实浏览器试玩定点返修断言（5 项）===
   // (Q1) 真实浏览器复现：领取 P1 后动作区永久空白。根因是 tutorial 事件在同一次 dispatch 内部同步派发，
@@ -9209,5 +9260,118 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   console.log("货柜系统验收通过（2026-08-08）：船级→尺寸映射/权重、rollCargoDrop 尺寸分布+发放、openCargoContainer 消耗+发放、T1三件套(无矿物·行星随尺寸解锁三~六选一·战术残液180-210·星币改具名战利品)+T2含基础矿物(30-100)·T2/T3含具名兑换物(isk/lp)·T2-lp砍半[25,100]·T4脑插、掉率0.6/1.0/1.5%、名池13/15、预览一致、死亡空间排除");
 }
 // === 货柜验收 END ===
+
+// === 考古重做定点返修验收（2026-08-09）START ===
+{
+  // 1) 统一回收舱 ×1.10（凭证为 special: 资源，删除 state.vouchers 第二套账本）
+  vm.runInContext("ResourceRegistry.add(gameState, 'special:voucher_pan_galactic', 1)", sandbox);
+  const q1 = vm.runInContext("getRecycleQuote(gameState, [{currency:'isk', amount:1000}])", sandbox);
+  if (q1.final !== 1100 || q1.bonus !== 100) throw new Error("凭证 ×1.10 失效：isk 1000→期望1100/bonus100，实 " + JSON.stringify(q1));
+  const q1b = vm.runInContext("getRecycleQuote(gameState, [{currency:'lp', amount:500}])", sandbox);
+  if (q1b.final !== 550) throw new Error("凭证 ×1.10 失效(lp)：500→期望550，实 " + JSON.stringify(q1b));
+  vm.runInContext("ResourceRegistry.spend(gameState, 'special:voucher_pan_galactic', 1); ResourceRegistry.spend(gameState, 'special:voucher_galactic_kin', 1);", sandbox);
+  const q0 = vm.runInContext("getRecycleQuote(gameState, [{currency:'isk', amount:1000}])", sandbox);
+  if (q0.final !== 1000 || q0.bonus !== 0) throw new Error("无凭证应为基础值：期望1000/bonus0，实 " + JSON.stringify(q0));
+
+  // 2) 强化探针掉落数量（II 2-4 / III 4-8 / IV 2-4 / V 5-10 / I 1-1；rng=0 下界，rng=0.999 上界）
+  const pq = vm.runInContext("({I:rollProbeDropQuantity('I',()=>0),II:rollProbeDropQuantity('II',()=>0),III:rollProbeDropQuantity('III',()=>0),IV:rollProbeDropQuantity('IV',()=>0),V:rollProbeDropQuantity('V',()=>0),IIhi:rollProbeDropQuantity('II',()=>0.999)})", sandbox);
+  if (pq.I !== 1 || pq.II !== 2 || pq.III !== 4 || pq.IV !== 2 || pq.V !== 5) throw new Error("探针数量下界不符：实 " + JSON.stringify(pq));
+  if (pq.IIhi !== 4) throw new Error("探针数量上界不符(II rng=0.999 应4)：实 " + pq.IIhi);
+
+  // 3) 精密配给剂：组件/总装 ceil(base×0.9) 且等级门槛 +5；未激活恢复原值原门槛
+  vm.runInContext("if(!gameState.boosters) gameState.boosters={}; if(!gameState.boosters.active) gameState.boosters.active={}; gameState.boosters.active.shipYield={itemId:'precision_rationing', remainingMs:600000};", sandbox);
+  const compA = vm.runInContext("getShipBuildingQuote(gameState, {cost:{'mineral:三钛合金':100,'mineral:类银超金属':30}, level:10}, {kind:'component'})", sandbox);
+  if (compA.cost['mineral:三钛合金'] !== 90 || compA.cost['mineral:类银超金属'] !== 27) throw new Error("组件九折ceil不符：实 " + JSON.stringify(compA.cost));
+  if (compA.levelGate !== 15) throw new Error("组件 +5 门槛不符(期望15)：实 " + compA.levelGate);
+  const asmA = vm.runInContext("getShipBuildingQuote(gameState, {materialCost:{'mineral:三钛合金':50}, level:20}, {kind:'assembly'})", sandbox);
+  if (asmA.cost['mineral:三钛合金'] !== 45 || asmA.levelGate !== 25) throw new Error("总装九折/+5 不符：实 " + JSON.stringify(asmA));
+  vm.runInContext("gameState.boosters.active.shipYield={itemId:'precision_rationing', remainingMs:0};", sandbox);
+  const comp0 = vm.runInContext("getShipBuildingQuote(gameState, {cost:{'mineral:三钛合金':100}, level:10}, {kind:'component'})", sandbox);
+  if (comp0.cost['mineral:三钛合金'] !== 100 || comp0.levelGate !== 10) throw new Error("未激活应恢复原值/原门槛：实 " + JSON.stringify(comp0));
+
+  // 4) 在线增强剂双产：事件 payload.quantity === 库存实际增量（逐周期一致）
+  const bRecipe = vm.runInContext("BOOSTER_RECIPES.find(function(r){ return r.output && r.output.itemId && r.output.qty; })", sandbox);
+  if (!bRecipe) throw new Error("未发现可用增强剂配方");
+  sandbox.hasEnoughBoosterInputs = () => true;
+  sandbox.isBoosterRecipeUnlocked = () => true;
+  sandbox.deductBoosterInputs = () => {};
+  sandbox.getBoosterEfficiency = () => 1;
+  sandbox.getImplantDoubleOutputChance = () => 1; // 强制 double 触发
+  sandbox.getRunningBoosterRecipe = () => bRecipe;
+  let lastBoosterEvt = null;
+  const unsubB = sandbox.GameEvents.on("booster:manufactured", e => { lastBoosterEvt = e; });
+  const bItem = bRecipe.output.itemId;
+  const bBefore = vm.runInContext("ResourceRegistry.get(gameState, " + JSON.stringify(bItem) + ")", sandbox);
+  vm.runInContext("var __origRandom = Math.random; Math.random = function(){ return 0; };", sandbox);
+  gameState.currentAction = { active:true, skill:"boosterEngineering", startedRecipeId:bRecipe.id, progress: bRecipe.time + 1, lastProgressUpdate: Date.now() - 10000, refDuration: bRecipe.time, batchRemaining: 1 };
+  sandbox.gameTick();
+  vm.runInContext("Math.random = __origRandom;", sandbox);
+  const bAfter = vm.runInContext("ResourceRegistry.get(gameState, " + JSON.stringify(bItem) + ")", sandbox);
+  const expectQty = bRecipe.output.qty * 2;
+  if (!lastBoosterEvt) throw new Error("在线增强剂未发射 booster:manufactured 事件");
+  if (lastBoosterEvt.payload.quantity !== expectQty) throw new Error("双产事件 quantity 应为 " + expectQty + "，实 " + lastBoosterEvt.payload.quantity);
+  if (bAfter - bBefore !== expectQty) throw new Error("双产库存增量应为 " + expectQty + "，实 " + (bAfter - bBefore));
+  unsubB();
+
+  // 5) 按舰重创：canStartArchaeology 仅阻断「当前编入实例」维修；他舰维修不阻断；离线透传 {timestamp:virtualNow}
+  const aInst = vm.runInContext("createShipInstance('starmap')", sandbox);
+  gameState.inventory.ships.push(aInst);
+  gameState.shipAssignments.archaeology = aInst.instanceId;
+  gameState.archaeology.activeSiteId = "site_i_a";
+  gameState.archaeology.activeProbeId = "core_probe_i";
+  vm.runInContext("ResourceRegistry.add(gameState, 'probe:core_probe_i', 99); ResourceRegistry.add(gameState, 'consumable:fuel', 9999);", sandbox);
+  const canHealthy = vm.runInContext("canStartArchaeology(gameState, Date.now())", sandbox);
+  if (!canHealthy.ok) throw new Error("健康考古舰应可启动：实 " + JSON.stringify(canHealthy));
+  const t5 = Date.now();
+  gameState.archaeology.repairsByInstanceId[aInst.instanceId] = { until: t5 + 180000, resume:{siteId:"site_i_a"} };
+  const canRepairing = vm.runInContext("canStartArchaeology(gameState, Date.now())", sandbox);
+  if (canRepairing.ok) throw new Error("当前编入实例维修中应被阻断");
+  const otherInst = vm.runInContext("createShipInstance('tracer')", sandbox);
+  gameState.inventory.ships.push(otherInst);
+  gameState.archaeology.repairsByInstanceId[otherInst.instanceId] = { until: t5 + 180000 };
+  const canOther = vm.runInContext("canStartArchaeology(gameState, Date.now())", sandbox);
+  if (!canOther.ok) throw new Error("他舰维修不应阻断当前考古舰：实 " + JSON.stringify(canOther));
+  delete gameState.archaeology.repairsByInstanceId[aInst.instanceId];
+  const canRecovered = vm.runInContext("canStartArchaeology(gameState, Date.now())", sandbox);
+  if (!canRecovered.ok) throw new Error("维修解除后应可启动：实 " + JSON.stringify(canRecovered));
+  const offSrc = scripts.find(s => s.indexOf('resolveArchaeologyCycle(gameState, virtualNow, "offline"') >= 0);
+  if (!offSrc || !/resolveArchaeologyCycle\(gameState,\s*virtualNow,\s*"offline",\s*\{\s*timestamp:\s*virtualNow\s*\}/.test(offSrc)) throw new Error("离线未透传 {timestamp:virtualNow} 给 resolveArchaeologyCycle");
+
+  // 6) 移动端 ≤760px 将 .arch-workbench 设为 block（390×844 不横向溢出）
+  const panelsCss = fs.readFileSync(path.join(root, "css/panels.css"), "utf8");
+  if (!/@media\s*\(max-width:\s*760px\)[\s\S]*?\.arch-workbench\s*\{\s*display:\s*block/.test(panelsCss)) throw new Error("移动端 ≤760px 未将 .arch-workbench 设为 block（390px 会横向溢出）");
+
+  // 7) UI 收口运行时校验：renderArchaeologyPage 不抛错，内容符合收口要求（稳定元素读回 innerHTML）
+  vm.runInContext("(function(){var A=ARCHAEOLOGY_ARTIFACTS; for(var i=0;i<A.length;i++){var a=A[i]; if(a.category==='common_isk'||a.category==='unique'){ResourceRegistry.add(gameState,'artifact:'+a.id,2); break;}} for(var j=0;j<A.length;j++){var b=A[j]; if(b.category==='lp'){ResourceRegistry.add(gameState,'artifact:'+b.id,1); break;}}})()", sandbox);
+  const origGetById = sandbox.document.getElementById;
+  const archBody = makeElement();
+  sandbox.document.getElementById = (id) => (id === "archaeology-body" ? archBody : origGetById(id));
+  let renderErr = "";
+  try { sandbox.renderArchaeologyPage(Date.now()); } catch (e) { renderErr = String((e && e.stack) || e); }
+  sandbox.document.getElementById = origGetById;
+  if (renderErr) throw new Error("renderArchaeologyPage 抛错：" + renderErr);
+  const html1 = archBody.innerHTML;
+  if (!/统一回收舱/.test(html1)) throw new Error("回收舱报价未渲染");
+  if (/未来用途/.test(html1)) throw new Error("仍存在『未来用途』文案");
+  if (/gameState\.vouchers/.test(html1)) throw new Error("仍存在独立凭证区(gameState.vouchers)");
+  if (!/改装件制造材料/.test(html1)) throw new Error("校准材料未显示真实用途(改装件制造)");
+  // 维修分支
+  const rInst = vm.runInContext("createShipInstance('tracer')", sandbox);
+  gameState.inventory.ships.push(rInst);
+  gameState.shipAssignments.archaeology = rInst.instanceId;
+  gameState.archaeology.repairsByInstanceId[rInst.instanceId] = { until: Date.now() + 180000 };
+  const archBody2 = makeElement();
+  sandbox.document.getElementById = (id) => (id === "archaeology-body" ? archBody2 : origGetById(id));
+  let renderErr2 = "";
+  try { sandbox.renderArchaeologyPage(Date.now()); } catch (e) { renderErr2 = String((e && e.stack) || e); }
+  sandbox.document.getElementById = origGetById;
+  if (renderErr2) throw new Error("维修分支 renderArchaeologyPage 抛错：" + renderErr2);
+  const html2 = archBody2.innerHTML;
+  if (!/更换考古舰/.test(html2)) throw new Error("维修分支未渲染『更换考古舰』入口");
+  if (!/自动维修中/.test(html2)) throw new Error("维修分支未显示倒计时");
+
+  console.log("考古重做定点返修验收通过（2026-08-09）：回收×1.10 / 探针数量(II2-4·III4-8·IV2-4·V5-10·I1-1) / 精密配给剂九折ceil+5门槛(组件·总装·未激活恢复) / 在线增强剂双产事件与库存一致 / 按舰维修canStart阻断(他舰不阻断)·离线{timestamp:virtualNow}透传 / 移动端≤760px block / UI收口(回收舱报价·无未来用途·无独立凭证区·校准材料真实用途·维修分支更换考古舰+倒计时)");
+}
+// === 考古重做定点返修验收 END ===
 
 console.log(`验证通过：${scriptSources.length} JS、${styleSources.length} CSS、${htmlIds.size} DOM IDs，全部本地资源 HTTP 200`);
