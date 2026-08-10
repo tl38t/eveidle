@@ -1149,7 +1149,33 @@ window.normalizeQueueState = normalizeQueueState;
 
 const SaveManager = {
   adapter: LocalStorageAdapter,
-  save() { if (this._pendingDelete) return false; gameState.lastSaveTime = Date.now(); gameState._dirty = false; const ok = this.adapter.save(gameState); this._updateStatus(ok ? "已保存 " + new Date().toLocaleTimeString() : "保存失败"); document.getElementById("footer-save") && (document.getElementById("footer-save").textContent = "存档：" + new Date().toLocaleTimeString()); return ok; },
+  _pendingDelete: false,
+  _importTransaction: false,
+  save() {
+    // 定点返修 P1-A：删除事务 / 导入事务挂起时禁止写盘，避免污染或回滚竞态。
+    if (this._pendingDelete || this._importTransaction) return false;
+    // 先保留原始 lastSaveTime；写入候选时间后再真正落盘，只有落盘成功才确认。
+    // 失败（返回 false 或抛异常）时还原时间戳、保持 _dirty=true，让 5s 自动保存下一次重试。
+    const prevLastSaveTime = gameState.lastSaveTime;
+    const candidateSaveTime = Date.now();
+    gameState.lastSaveTime = candidateSaveTime;
+    let ok = false;
+    try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
+    if (ok) {
+      gameState._dirty = false;
+      this._updateStatus("已保存 " + new Date(candidateSaveTime).toLocaleTimeString());
+      const footer = document.getElementById("footer-save");
+      if (footer) footer.textContent = "存档：" + new Date(candidateSaveTime).toLocaleTimeString();
+      return true;
+    }
+    // 落盘失败：还原时间戳、保持 dirty、明确失败提示；footer 绝不伪造成功。
+    gameState.lastSaveTime = prevLastSaveTime;
+    gameState._dirty = true;
+    this._updateStatus("保存失败，将自动重试");
+    const footer = document.getElementById("footer-save");
+    if (footer) footer.textContent = "存档：保存失败";
+    return false;
+  },
   // 新手任务 Batch O：sourceHadTutorial 必须在 Object.assign 之前、对**原始存档对象**判定，
   // 用于区分「老档（无 tutorial 字段）」与「现代档（已带 tutorial）」。判定结果挂在 SaveManager 上，
   // 供 autoLoad 决定 legacy 迁移与旧档兜底补给是否生效。
@@ -1159,6 +1185,14 @@ const SaveManager = {
   load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
   exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "EVE_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
   importData(jsonString) {
+    // 定点返修 P1-B：导入原子化。导入前对当前内存态与来源标记做快照，
+    // 全程挂起内部 SaveManager.save（含 calculateOfflineGains 内部的落盘调用），
+    // 仅在全部迁移/对账/离线/规范化/UI 切换成功后做唯一一次最终落盘。
+    // 任意异常或最终落盘失败 → 就地还原导入前 gameState、还原来源标记、释放事务标志、
+    // 保留本地原存档、返回 false。
+    const preImportSnapshot = createSerializableGameStateSnapshot(gameState);
+    const preImportSourceHadTutorial = this._lastLoadSourceHadTutorial;
+    this._importTransaction = true;
     try {
       const data = this.adapter.import(jsonString);
       if (!data || !data.skills) throw new Error("无效存档");
@@ -1279,8 +1313,17 @@ const SaveManager = {
       switchPage("skill");
       this._updateStatus("存档已导入，共 " + JSON.stringify(data).length + " 字节");
       updateUI();
+      // 全流程成功：先释放事务标志，再做唯一一次最终落盘（此前所有内部 save 均被 _importTransaction 抑制）。
+      this._importTransaction = false;
+      if (!this.save()) throw new Error("导入后落盘失败");
       return true;
     } catch (e) {
+      // 异常安全回滚：就地还原导入前内存态与来源标记，释放事务标志，保留本地原存档。
+      try {
+        restoreSerializableGameStateSnapshot(gameState, preImportSnapshot);
+        this._lastLoadSourceHadTutorial = preImportSourceHadTutorial;
+      } catch (rollbackErr) { /* 回滚自身异常安全：尽量还原，忽略回滚错误 */ }
+      this._importTransaction = false;
       alert("导入失败：存档格式无效");
       return false;
     }
@@ -1291,10 +1334,20 @@ const SaveManager = {
     // 标记待删除：阻止紧随 reload 的 beforeunload 自动保存把内存态重新写回 localStorage。
     this._pendingDelete = true;
     // Batch Q 定点返修：来源标记必须立刻回到 null，删档后重开不得沿用上一次的 legacy/modern 判定。
+    const prevMarker = this._lastLoadSourceHadTutorial;
     this._lastLoadSourceHadTutorial = null;
-    try { this.adapter.removeItem(this.adapter._key); } catch (e) { /* 忽略：即使删除失败也继续重启 */ }
+    // 真正落盘移除，检查 removeItem 真实返回值：成功才重启；失败则回滚标志、保留存档、提示、不重启。
+    let removed = false;
+    try { removed = this.adapter.removeItem(this.adapter._key); } catch (e) { removed = false; }
+    if (!removed) {
+      this._pendingDelete = false;
+      this._lastLoadSourceHadTutorial = prevMarker;
+      this._updateStatus("删除失败，存档仍保留");
+      return false;
+    }
     this._updateStatus("存档已删除，正在重启…");
     setTimeout(() => { try { location.reload(); } catch (e) {} }, 120);
+    return true;
   },
   // 暗金风格的二次确认弹窗（动态创建，不写入 index.html 静态结构，避免新增静态 DOM ID）。
   confirmDeleteSave() {
