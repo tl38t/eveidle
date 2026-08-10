@@ -273,7 +273,7 @@ function renderEquipEngDetail(display) {
   const running = display.detail.runningNote ? `<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：${display.detail.runningNote.name}${display.detail.runningNote.targetDiffers ? " · 点击「切换制造」将改为制造当前配方" : ""}</div>` : "";
   const selRecipe = display.selectedRecipe;
   const lockBanner = (selRecipe && !selRecipe.unlocked)
-    ? `<div class="lock-banner"><span class="lb-icon">🔒</span><span>${selRecipe.hasRequiredBlueprint ? ("未解锁：装备工程 Lv." + selRecipe.level + " 解锁") : "未解锁：需蓝图解锁（考古掉落获取蓝图）"}</span></div>`
+    ? `<div class="lock-banner"><span class="lb-icon">🔒</span><span>${selRecipe.hasRequiredBlueprint ? ("未解锁：装备工程 Lv." + selRecipe.level + " 解锁") : ("未解锁：需蓝图解锁（" + (typeof getEquipmentBlueprintSourceHint === "function" ? getEquipmentBlueprintSourceHint(selRecipe) : "考古掉落获取蓝图") + "）")}</span></div>`
     : "";
   body.innerHTML = `${lockBanner}${running}${attributes}<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">${equipmentInputs}${materials}</div></div>
     <div class="equipeng-detail-section equipeng-manufacture-summary"><span>${getEquipEngOutputHtmlFromDisplay(display)}</span><span>单次耗时 ${display.detail.actualTime.toFixed(1)}s（基础 ${display.detail.baseTime}s）</span><span>装备工程经验 +${display.detail.xp}</span><span>按当前库存最多制造 ${display.detail.maxCycles.toLocaleString()} 次</span></div>`;

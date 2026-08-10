@@ -87,6 +87,16 @@ function getShipEnhancementFailureXp(shipConfig) {
   return 0; // 2026-07-24：失败 0 XP（与装备强化一致）
 }
 
+// 冶炼侧舰船强化乘子：仅享受工业强化幅度的 50%（采矿/采气为全幅 industryMultiplier）。
+// 非工业船 industryMultiplier 恒为 1 → 本函数返回 1，对战斗/考古船无副作用。
+const SHIP_ENHANCE_SMELT_RATIO = 0.5;
+
+function getShipEnhancementSmeltMultiplier(shipConfig, enhancementLevel) {
+  const b = getShipEnhancementBonuses(shipConfig, enhancementLevel);
+  const full = (b && b.industryMultiplier) || 1;
+  return 1 + (full - 1) * SHIP_ENHANCE_SMELT_RATIO;
+}
+
 function getShipEnhancementBonuses(shipConfig, enhancementLevel) {
   const level = normalizeShipEnhancementLevel(enhancementLevel);
   const blocks = Math.floor(level / 5);
@@ -137,5 +147,6 @@ window.ShipEnhancement = Object.freeze({
   getSuccessXp:getShipEnhancementSuccessXp,
   getFailureXp:getShipEnhancementFailureXp,
   getBonuses:getShipEnhancementBonuses,
+  getSmeltMultiplier:getShipEnhancementSmeltMultiplier,
   isMilestone:isShipEnhancementMilestone
 });
