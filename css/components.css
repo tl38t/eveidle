@@ -249,6 +249,24 @@
   .cargo-card[data-cat="月球"] { border-left: 3px solid #d4a87a; }
   .cargo-card[data-cat="组件"] { border-left: 3px solid #a0a8b8; }
   .cargo-card[data-cat="消耗品"] { border-left: 3px solid #e8d8a0; }
+  .cargo-card[data-cat="交易品"] { border-left: 3px solid #e0a85d; }
+  /* ===== 仓库「交易品」子标签 ===== */
+  .trade-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .trade-quote { font-size: 12px; color: #9bb0c4; font-variant-numeric: tabular-nums; }
+  .trade-quote .recycle-mult { color: #7ad4b0; font-weight: 700; }
+  /* ===== 仓库货柜开箱：数量选择 + 全部打开 ===== */
+  .eem-cargo-open .eem-open-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+  .eem-qty-label { font-size: 13px; color: #9bb0c4; }
+  .eem-qty-input {
+    width: 64px; text-align: center; padding: 4px 6px; border-radius: 6px;
+    border: 1px solid #2c3b4d; background: #0f1622; color: #e6eef7;
+    font-variant-numeric: tabular-nums;
+  }
+  .eem-qty-input::-webkit-outer-spin-button,
+  .eem-qty-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .eem-qty-input { -moz-appearance: textfield; }
+  .eem-qty-have { font-size: 12px; color: #9bb0c4; }
+  .eem-open-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   /* ===== 仓库脑插子标签卡片 ===== */
   .implant-card {
     position: relative; background: #0f141e; border: 1px solid #1a2535;

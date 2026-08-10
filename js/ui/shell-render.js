@@ -98,7 +98,7 @@ function switchSkill(skillKey) {
 function renderCargoPage(filter) {
   cargoFilter = filter || cargoFilter || "all";
   const display = getCargoDisplayState(gameState, cargoFilter);
-  const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = display.filter === "implant" ? ("脑插收集：" + display.total + " / " + display.items.length) : ("物资总量：" + display.total.toLocaleString());
+  const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = display.filter === "implant" ? ("脑插收集：" + display.total + " / " + display.items.length) : display.filter === "trade" ? ("交易品：" + display.total + " 件") : ("物资总量：" + display.total.toLocaleString());
   document.querySelectorAll(".cargo-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.filter === display.filter));
   const list = document.getElementById("cargo-list"); if (!list) return display;
   const isEquipmentTab = display.filter === "equipment";
@@ -108,6 +108,10 @@ function renderCargoPage(filter) {
   if (isImplantTab) {
     renderImplantTab(display);
     renderEquipmentEnhancementList(false);
+    return display;
+  }
+  if (display.filter === "trade") {
+    renderTradeTab(display);
     return display;
   }
   if (!isEquipmentTab) {
@@ -129,6 +133,50 @@ function renderCargoPage(filter) {
   }
   renderEquipmentEnhancementList(isEquipmentTab);
   return display;
+}
+
+/* ---- 仓库「交易品」子标签：聚合货柜战利品 + 考古文物，顶部一键回收 ---- */
+function renderTradeTab(display) {
+  const list = document.getElementById("cargo-list"); if (!list) return;
+  renderEquipmentEnhancementList(false);
+  list.style.display = "";
+  if (!display.items.length) {
+    list.innerHTML = `<div class="cargo-empty">${escapeAchievementText(display.emptyText)}</div>`;
+    return;
+  }
+  currentCargoItems = display.items; // 复用既有卡片点击 → 通用详情弹窗
+  const q = display.quote || { byCurrency: {} };
+  const iskFinal = (q.byCurrency && q.byCurrency.isk) ? q.byCurrency.isk.final : 0;
+  const lpFinal = (q.byCurrency && q.byCurrency.lp) ? q.byCurrency.lp.final : 0;
+  const hasVoucher = (q.byCurrency && q.byCurrency.isk && q.byCurrency.isk.multiplier > 1) || (q.byCurrency && q.byCurrency.lp && q.byCurrency.lp.multiplier > 1);
+  const quoteLine = (iskFinal > 0 || lpFinal > 0)
+    ? `<div class="trade-quote">预计回收：💰 ${iskFinal.toLocaleString()} 星币 · 🎖 ${lpFinal.toLocaleString()} 功勋${hasVoucher ? "（含银河凭证 ×1.10）" : ""}</div>`
+    : "";
+  const toolbar = `<div class="trade-toolbar">
+      <button class="btn primary trade-recycle-all" id="trade-recycle-all">♻ 一键回收全部（${display.items.length} 件）</button>
+      ${quoteLine}
+    </div>`;
+  list.innerHTML = toolbar + display.items.map((item, idx) => `<div class="cargo-card" data-cat="交易品" data-ci="${idx}">
+      <span class="cc-cat">${item.kind === "lp" ? "🎖 功勋" : "💰 星币"}</span>
+      <div class="cc-top"><span class="cc-icon">${item.icon}</span><span class="cc-name">${escapeAchievementText(item.name)}</span></div>
+      <div class="cc-foot"><span class="cc-src">来自：${escapeAchievementText(item.source.pageLabel)}</span></div>
+      <div class="cc-qty">×${item.quantity.toLocaleString()} · ${item.kind === "lp" ? (Number(item.value).toLocaleString() + " 功勋/件") : (Number(item.value).toLocaleString() + " 星币/件")}</div>
+    </div>`).join("");
+  const btn = list.querySelector("#trade-recycle-all");
+  if (btn) btn.addEventListener("click", () => {
+    if (typeof recycleAllTradeGoods !== "function") return;
+    const r = recycleAllTradeGoods(gameState);
+    if (r && r.changed) {
+      const parts = [];
+      if (r.isk > 0) parts.push("💰 " + r.isk.toLocaleString() + " 星币");
+      if (r.lp > 0) parts.push("🎖 " + r.lp.toLocaleString() + " 功勋");
+      showToast("一键回收：" + parts.join(" · "));
+    } else {
+      showToast("没有可回收的交易品");
+    }
+    renderCargoPage("trade");
+    updateUI();
+  });
 }
 
 /* ---- 仓库脑插子标签：展示全部 22 枚（已激活高亮 / 未获得灰显），不占仓库格、账号全局被动 ---- */
@@ -337,6 +385,8 @@ function openItemDetailModal(item) {
     document.addEventListener("keydown", backdrop._esc);
   }
   const src = item.source || { pageId:"station", pageLabel:"空间站", icon:"fa-regular fa-building" };
+  const isCargo = typeof item.id === "string" && item.id.indexOf("special:货柜") === 0;
+  const cargoSize = isCargo ? item.id.slice("special:货柜".length) : null;
   backdrop.innerHTML = `
     <div class="equip-enh-modal" role="dialog" aria-modal="true">
       <div class="eem-head">
@@ -354,6 +404,21 @@ function openItemDetailModal(item) {
             <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
           <button class="btn primary eem-jump" data-idm-jump="${src.pageId}">跳转至「${escapeAchievementText(src.pageLabel)}」页面</button>
         </div>
+        ${isCargo ? `
+        <div class="eem-section eem-cargo-open">
+          <div class="eem-open-row">
+            <label class="eem-qty-label">开箱数量</label>
+            <button class="btn eem-qty-dec" type="button" aria-label="减少">−</button>
+            <input class="eem-qty-input" type="number" min="1" max="${item.quantity}" value="1" data-cargo-size="${cargoSize}">
+            <button class="btn eem-qty-inc" type="button" aria-label="增加">＋</button>
+            <span class="eem-qty-have">/ 持有 ${item.quantity} 个</span>
+          </div>
+          <div class="eem-open-actions">
+            <button class="btn primary eem-open-cargo" data-cargo-size="${cargoSize}">📦 开箱揭晓内容</button>
+            <button class="btn eem-open-all" data-cargo-size="${cargoSize}" data-open-count="${item.quantity}">全部打开（${item.quantity}）</button>
+          </div>
+        </div>` : ""}
+        ${item.category === "trade" ? `<div class="eem-section"><button class="btn primary eem-trade-recycle">♻ 回收此物品（换${item.kind === "lp" ? "功勋" : "星币"}）</button></div>` : ""}
       </div>
     </div>`;
   backdrop.style.display = "flex";
@@ -361,6 +426,77 @@ function openItemDetailModal(item) {
   if (closeBtn) closeBtn.addEventListener("click", closeItemDetailModal);
   const jumpBtn = backdrop.querySelector("[data-idm-jump]");
   if (jumpBtn) jumpBtn.addEventListener("click", () => { closeItemDetailModal(); twGoToTarget(jumpBtn.dataset.idmJump); });
+  if (isCargo) {
+    const qtyInput = backdrop.querySelector(".eem-qty-input");
+    const maxQty = Math.max(1, item.quantity);
+    const clampQty = v => {
+      let n = Math.floor(Number(v));
+      if (!isFinite(n) || n < 1) n = 1;
+      if (n > maxQty) n = maxQty;
+      return n;
+    };
+    const decBtn = backdrop.querySelector(".eem-qty-dec");
+    const incBtn = backdrop.querySelector(".eem-qty-inc");
+    if (qtyInput) qtyInput.addEventListener("change", () => { qtyInput.value = clampQty(qtyInput.value); });
+    if (decBtn) decBtn.addEventListener("click", () => { if (qtyInput) qtyInput.value = clampQty(Number(qtyInput.value) - 1); });
+    if (incBtn) incBtn.addEventListener("click", () => { if (qtyInput) qtyInput.value = clampQty(Number(qtyInput.value) + 1); });
+    const doOpen = count => {
+      try {
+        let result = null;
+        if (typeof openCargoContainers === "function") {
+          result = openCargoContainers(gameState, cargoSize, count, Math.random);
+        } else if (typeof openCargoContainer === "function") {
+          // 兜底：旧版 cargo.js 仅暴露单箱 openCargoContainer 时，按数量循环开箱
+          const have = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "special:货柜" + cargoSize) : 0;
+          const n = Math.max(1, Math.min(Math.floor(Number(count)) || 1, have));
+          const all = [];
+          for (let k = 0; k < n; k++) {
+            const one = openCargoContainer(gameState, cargoSize, Math.random);
+            if (!one) break;
+            if (Array.isArray(one.rolls)) for (const r of one.rolls) all.push(r);
+          }
+          result = { size: cargoSize, opened: all.length ? n : 0, rolls: all };
+        } else {
+          if (typeof showToast === "function") showToast("开箱功能未加载，请硬刷新页面（Ctrl/Cmd+Shift+R）");
+          console.error("[开箱] openCargoContainer(s) 均未定义：cargo.js 可能未加载或被旧缓存拦截");
+          return;
+        }
+        closeItemDetailModal();
+        if (typeof renderCargoPage === "function") renderCargoPage(cargoFilter);
+        if (result && result.opened && Array.isArray(result.rolls) && result.rolls.length) {
+          const parts = result.rolls.map(r => {
+            const nm = r.name || (typeof getResourceDisplayName === "function" ? getResourceDisplayName(r.id) : r.id) || r.id;
+            return (typeof nm === "string" ? nm : String(r.id)) + "×" + (r.qty || 1);
+          });
+          if (typeof showToast === "function") showToast("开箱获得：" + parts.join("、"));
+        } else if (result && result.opened) {
+          if (typeof showToast === "function") showToast("已开箱，但未获得可展示奖励");
+        }
+      } catch (err) {
+        console.error("[开箱] 执行异常：", err);
+        if (typeof showToast === "function") showToast("开箱出错：" + (err && err.message ? err.message : String(err)));
+      }
+    };
+    const openBtn = backdrop.querySelector(".eem-open-cargo");
+    if (openBtn) openBtn.addEventListener("click", () => doOpen(qtyInput ? clampQty(qtyInput.value) : 1));
+    const openAllBtn = backdrop.querySelector(".eem-open-all");
+    if (openAllBtn) openAllBtn.addEventListener("click", () => doOpen(openAllBtn.dataset.openCount));
+  }
+  const tradeRecycleBtn = backdrop.querySelector(".eem-trade-recycle");
+  if (tradeRecycleBtn) tradeRecycleBtn.addEventListener("click", () => {
+    if (typeof recycleOneTradeItem !== "function") return;
+    const res = recycleOneTradeItem(gameState, item);
+    if (res && res.changed) {
+      closeItemDetailModal();
+      renderCargoPage("trade");
+      updateUI();
+      showToast(item.kind === "lp"
+        ? ("🎖 兑换获得 " + ((res.lp || 0)).toLocaleString() + " 功勋")
+        : ("💰 出售获得 " + ((res.isk || 0)).toLocaleString() + " 星币"));
+    } else {
+      showToast("此物品无需回收");
+    }
+  });
 }
 
 function closeItemDetailModal() {

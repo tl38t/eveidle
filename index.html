@@ -9,9 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=1">
-<link rel="stylesheet" href="./css/panels.css?v=1">
+<link rel="stylesheet" href="./css/panels.css?v=2">
 <link rel="stylesheet" href="./css/combat.css?v=1">
-<link rel="stylesheet" href="./css/components.css?v=1">
+<link rel="stylesheet" href="./css/components.css?v=2">
 <script type="importmap">
 {
   "imports": {
@@ -42,9 +42,10 @@
 .shipeng-comp-detail, .shipeng-asm-detail { margin-top:0; }
 @media (min-width: 900px) { .shipeng-split-right { position:sticky; top:8px; } }
 @media (max-width: 900px) { .shipeng-split { flex-direction:column; } .shipeng-split-right { flex:1 1 auto; max-width:none; width:100%; } }
-.shipeng-comp-card, .shipeng-asm-card { display:flex; flex-direction:column; gap:5px; padding:10px; border:1px solid #1f2e3d; border-radius:9px; background:#0c151f; text-align:left; cursor:pointer; color:#cdd9e5; }
+.shipeng-comp-card, .shipeng-asm-card { display:flex; flex-direction:column; gap:5px; padding:10px; border:1px solid #1f2e3d; border-radius:9px; background:#0c151f; text-align:left; cursor:pointer; position:relative; color:#cdd9e5; }
 .shipeng-comp-card:hover, .shipeng-asm-card:hover { border-color:#38bdf8; }
 .shipeng-comp-card.selected, .shipeng-asm-card.selected { border-color:#38bdf8; background:rgba(56,189,248,.12); box-shadow:0 0 0 1px #38bdf8; }
+.shipeng-comp-card.locked.selected, .shipeng-asm-card.locked.selected { border-color:#e0913a; background:rgba(224,145,58,.12); box-shadow:0 0 0 1px #e0913a; }
 .shipeng-comp-card.locked, .shipeng-asm-card.locked { opacity:.62; cursor:pointer; }
 .shipeng-comp-card .sec-top, .shipeng-asm-card .sec-top { display:flex; justify-content:space-between; align-items:center; font-size:11px; color:#7d8da0; }
 .shipeng-comp-card strong, .shipeng-asm-card strong { font-size:14px; color:#e6eef6; }
@@ -825,6 +826,7 @@
           <span class="cargo-tab" data-filter="equipment">舰船装备</span>
           <span class="cargo-tab" data-filter="component">舰船组件</span>
           <span class="cargo-tab" data-filter="implant">脑插</span>
+          <span class="cargo-tab" data-filter="trade">交易品</span>
         </div>
         <div class="cargo-list" id="cargo-list">    </div>
         <div class="equipment-enhancement-list" id="equipment-enhancement-list" style="display:none;"></div>
@@ -1026,9 +1028,9 @@
   <script defer src="./js/data/ships.js?v=1"></script>
   <script defer src="./js/data/boosters.js?v=1"></script>
   <script defer src="./js/systems/boosters.js?v=1"></script>
-  <script defer src="./js/systems/recycling.js?v=1"></script>
+  <script defer src="./js/systems/recycling.js?v=2"></script>
   <script defer src="./js/data/combat.js?v=1"></script>
-  <script defer src="./js/data/cargo.js?v=1"></script>
+  <script defer src="./js/data/cargo.js?v=3"></script>
   <script defer src="./js/data/implants.js?v=1"></script>
   <script defer src="./js/data/equipment.js?v=1"></script>
   <script defer src="./js/data/ammunition.js?v=1"></script>
@@ -1060,15 +1062,15 @@
   <script defer src="./js/systems/capital-combat.js?v=1"></script>
   <script defer src="./js/systems/combat.js?v=1"></script>
   <script defer src="./js/core/combat-modifiers.js?v=1"></script>
-  <script defer src="./js/core/selectors.js?v=1"></script>
-  <script defer src="./js/core/actions.js?v=1"></script>
+  <script defer src="./js/core/selectors.js?v=4"></script>
+  <script defer src="./js/core/actions.js?v=3"></script>
   <script defer src="./js/systems/research-protocols.js?v=1"></script>
-  <script defer src="./js/ui/shell-render.js?v=5"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=2"></script>
+  <script defer src="./js/ui/shell-render.js?v=6"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=4"></script>
   <script defer src="./js/ui/combat-render.js?v=9"></script>
   <script defer src="./js/ui/planetary-render.js?v=1"></script>
-  <script defer src="./js/ui/archaeology-render.js?v=1"></script>
-  <script defer src="./js/ui/booster-render.js?v=1"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=2"></script>
+  <script defer src="./js/ui/booster-render.js?v=3"></script>
   <script defer src="./js/ui/station-render.js?v=1"></script>
   <script defer src="./js/core/tick.js?v=1"></script>
   <script defer src="./js/core/offline.js?v=1"></script>

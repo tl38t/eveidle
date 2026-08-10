@@ -72,13 +72,16 @@ function renderShipAsmGrid(display) {
   const el = document.getElementById("shipeng-asm-grid"); if (!el) return;
   if (!display.assemblyGrid.length) { el.innerHTML = '<div class="shipeng-empty">该系列暂无舰船</div>'; return; }
   el.innerHTML = display.assemblyGrid.map(recipe => {
-    const status = !recipe.hasRequiredBlueprint ? "需蓝图" : (!recipe.unlocked ? "Lv." + recipe.requiredLevel + " 解锁" : "可建造");
+    const locked = !recipe.unlocked;
+    const status = locked ? ("🔒 " + (!recipe.hasRequiredBlueprint ? "需蓝图" : "Lv." + recipe.requiredLevel + " 解锁")) : "可建造";
+    const statusCls = locked ? ("lock-tag" + (!recipe.hasRequiredBlueprint ? "" : " lvl")) : "can-build";
     const hybridBadge = recipe.hybrid ? '<span class="sec-hybrid">混血</span>' : "";
     return `
-    <button class="shipeng-asm-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-ship="${recipe.id}">
+    <button class="shipeng-asm-card${recipe.selected ? " selected" : ""}${locked ? " locked" : ""}" data-ship="${recipe.id}">
+      ${locked ? '<span class="lock-badge">🔒</span>' : ""}
       <span class="sec-top"><span>${recipe.role}</span>${hybridBadge}</span>
       <strong>${recipe.name}</strong>
-      <span class="sec-bottom"><span>${recipe.requiredLevel} 级 · ${recipe.time}s</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${status}</span></span>
+      <span class="sec-bottom"><span>${recipe.requiredLevel} 级 · ${recipe.time}s</span><span class="${statusCls}">${status}</span></span>
     </button>`;
   }).join("");
 }
@@ -106,6 +109,15 @@ function renderShipAsmDetail(display) {
     }
     btn.disabled = !display.canStartAssembly;
   }
+  // 锁定舰船：详情顶部显眼「未解锁」横幅（与装备/增强剂一致）
+  let asmBanner = "";
+  if (!display.canStartAssembly && display.currentAssembly) {
+    const hasBp = (gameState.ownedBlueprints || []).includes(display.currentAssembly.shipId);
+    asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>' + (hasBp ? ("未解锁：舰船工程 Lv." + display.currentAssembly.requiredLevel + " 解锁") : "未解锁：需蓝图解锁") + '</span></div>';
+  }
+  const existingBanner = wrap.querySelector(".lock-banner");
+  if (existingBanner) existingBanner.remove();
+  if (asmBanner) wrap.insertAdjacentHTML("afterbegin", asmBanner);
 }
 
 function renderShipAsmPager(display) {
@@ -239,10 +251,16 @@ function renderEquipEngRecipeGrid(display) {
   const title = document.getElementById("equipeng-category-title"); if (title) title.textContent = state.category.name;
   const count = document.getElementById("equipeng-category-count"); if (count) count.textContent = (typeof state.visibleCount === "number" ? state.visibleCount : state.recipes.length) + " 个配方";
   if (!state.recipes.length) { grid.innerHTML = '<div class="equipeng-empty">当前分类没有匹配的配方</div>'; return; }
-  grid.innerHTML = state.recipes.map(recipe => `<button class="equipeng-recipe-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-recipe="${recipe.id}" ${recipe.unlocked ? "" : "disabled"}>
-    <span class="equipeng-card-top"><span>${recipe.tier} · ${recipe.slot}</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : !recipe.hasRequiredBlueprint ? "需蓝图" : "Lv." + recipe.level + " 解锁"}</span></span>
+  grid.innerHTML = state.recipes.map(recipe => {
+    const locked = !recipe.unlocked;
+    const statusCls = recipe.unlocked ? "can-build" : ("lock-tag" + (recipe.hasRequiredBlueprint ? " lvl" : ""));
+    const statusTxt = recipe.unlocked ? "可制造" : ("🔒 " + (!recipe.hasRequiredBlueprint ? "需蓝图" : "Lv." + recipe.level + " 解锁"));
+    return `<button class="equipeng-recipe-card${recipe.selected ? " selected" : ""}${locked ? " locked" : ""}" data-recipe="${recipe.id}">
+    ${locked ? '<span class="lock-badge">🔒</span>' : ""}
+    <span class="equipeng-card-top"><span>${recipe.tier} · ${recipe.slot}</span><span class="${statusCls}">${statusTxt}</span></span>
     <span class="equipeng-card-icon"><i class="${recipe.icon}"></i></span><strong>${recipe.name}</strong><span class="equipeng-card-attributes">${recipe.attributes}</span>
-    <span class="equipeng-card-bottom"><span>${recipe.actualTime.toFixed(1)}s · ${recipe.xp} XP</span><span>库存 ${recipe.ownedCount.toLocaleString()}</span></span></button>`).join("");
+    <span class="equipeng-card-bottom"><span>${recipe.actualTime.toFixed(1)}s · ${recipe.xp} XP</span><span>库存 ${recipe.ownedCount.toLocaleString()}</span></span></button>`;
+  }).join("");
 }
 
 function renderEquipEngDetail(display) {
@@ -253,7 +271,11 @@ function renderEquipEngDetail(display) {
   const equipmentInputs = display.detail.equipmentInputs.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-box"></i>${item.name}</span><strong>×${item.quantity}</strong><small>未装配库存 ${item.stock.toLocaleString()}</small></div>`).join("");
   const materials = display.detail.materials.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-cubes-stacked"></i>${item.displayName || item.name || getResourceDisplayName(item.material)}</span><strong>×${item.quantity}</strong><small>库存 ${item.stock.toLocaleString()}</small></div>`).join("");
   const running = display.detail.runningNote ? `<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：${display.detail.runningNote.name}${display.detail.runningNote.targetDiffers ? " · 点击「切换制造」将改为制造当前配方" : ""}</div>` : "";
-  body.innerHTML = `${running}${attributes}<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">${equipmentInputs}${materials}</div></div>
+  const selRecipe = display.selectedRecipe;
+  const lockBanner = (selRecipe && !selRecipe.unlocked)
+    ? `<div class="lock-banner"><span class="lb-icon">🔒</span><span>${selRecipe.hasRequiredBlueprint ? ("未解锁：装备工程 Lv." + selRecipe.level + " 解锁") : "未解锁：需蓝图解锁（考古掉落获取蓝图）"}</span></div>`
+    : "";
+  body.innerHTML = `${lockBanner}${running}${attributes}<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">${equipmentInputs}${materials}</div></div>
     <div class="equipeng-detail-section equipeng-manufacture-summary"><span>${getEquipEngOutputHtmlFromDisplay(display)}</span><span>单次耗时 ${display.detail.actualTime.toFixed(1)}s（基础 ${display.detail.baseTime}s）</span><span>装备工程经验 +${display.detail.xp}</span><span>按当前库存最多制造 ${display.detail.maxCycles.toLocaleString()} 次</span></div>`;
 }
 
@@ -292,7 +314,18 @@ function renderEquipEngPage(now) {
   const showStart = !display.active || targetChanged;
   const showStop = display.active && !targetChanged;
   const start = document.getElementById("btn-start-equipeng");
-  if (start) { start.style.display = showStart ? "" : "none"; start.disabled = !display.canStart; start.textContent = targetChanged ? "▶ 切换制造" : "▶ 开始制造"; }
+  if (start) {
+    start.style.display = showStart ? "" : "none";
+    start.disabled = !display.canStart;
+    // 未解锁也可选中预览；启动按钮按舰船总装逻辑显示锁定原因（蓝图 / 等级），不再只是置灰。
+    if (!display.canStart) {
+      start.textContent = !display.detail.hasRequiredBlueprint
+        ? "🔒 需蓝图解锁"
+        : ("🔒 装备工程 Lv." + (display.selectedRecipe ? display.selectedRecipe.level : display.detail.tier) + " 解锁");
+    } else {
+      start.textContent = targetChanged ? "▶ 切换制造" : "▶ 开始制造";
+    }
+  }
   const stop = document.getElementById("btn-stop-equipeng"); if (stop) stop.style.display = showStop ? "" : "none";
 }
 

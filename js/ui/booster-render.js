@@ -50,9 +50,13 @@ function renderBoosterRecipeGrid(display) {
     return;
   }
   grid.innerHTML = display.recipes.map(function(recipe) {
-    var statusLabel = recipe.isUnlocked ? (recipe.hasMaterials ? "可制造" : "材料不足") : ("Lv." + recipe.level + " 解锁");
-    var statusClass = recipe.canManufacture ? "can-build" : "level-locked";
-    return '<button class="equipeng-recipe-card' + (recipe.selected ? " selected" : "") + (recipe.isUnlocked ? "" : " locked") + '" data-booster-recipe="' + recipe.id + '"' + (recipe.isUnlocked ? "" : " disabled") + '>' +
+    var locked = !recipe.isUnlocked;
+    var statusLabel = recipe.isUnlocked
+      ? (recipe.hasMaterials ? "可制造" : "材料不足")
+      : ("🔒 " + (recipe.requiresBlueprint && !recipe.hasRequiredBlueprint ? "需蓝图" : ("Lv." + recipe.level + " 解锁")));
+    var statusClass = recipe.isUnlocked ? (recipe.canManufacture ? "can-build" : "level-locked") : ("lock-tag" + (recipe.requiresBlueprint && !recipe.hasRequiredBlueprint ? "" : " lvl"));
+    return '<button class="equipeng-recipe-card' + (recipe.selected ? " selected" : "") + (locked ? " locked" : "") + '" data-booster-recipe="' + recipe.id + '">' +
+      (locked ? '<span class="lock-badge">🔒</span>' : "") +
       '<span class="equipeng-card-top"><span>' + recipe.qualityName + " · " + recipe.seriesName + '</span><span class="' + statusClass + '">' + statusLabel + '</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-syringe"></i></span><strong>' + recipe.displayName + '</strong>' +
       '<span class="equipeng-card-attributes">' + recipe.effectText + ' · 持续 ' + recipe.durationSeconds + 's</span>' +
@@ -82,8 +86,9 @@ function renderBoosterDetail(display) {
     : (display.isRunning && display.runningRecipeId === recipe.id)
       ? '<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：' + recipe.displayName + '</div>'
       : "";
-  var lockNote = (!recipe.canManufacture && recipe.lockedReason)
-    ? '<div class="equipeng-detail-section" style="color:#f0857b;">' + recipe.lockedReason + '</div>' : "";
+  var lockNote = (recipe && !recipe.isUnlocked)
+    ? '<div class="lock-banner"><span class="lb-icon">🔒</span><span>' + (recipe.requiresBlueprint && !recipe.hasRequiredBlueprint ? "未解锁：需蓝图解锁（考古掉落获取蓝图）" : ("未解锁：增强剂制造 Lv." + recipe.level + " 解锁")) + '</span></div>'
+    : "";
   body.innerHTML = running +
     '<div class="equipeng-detail-section"><span class="equipeng-detail-label">效果</span><div class="equipeng-attribute-list"><span>' + recipe.effectText + '</span><span>每瓶持续 ' + recipe.durationSeconds + 's</span></div></div>' +
     '<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">' + materials + '</div></div>' +
@@ -198,7 +203,16 @@ function renderBoosterPage(now) {
   if (typeof drawSkillBar === "function") drawSkillBar(document.getElementById("bar-booster"), display.progress.percent, "purple");
   var eta = document.getElementById("booster-eta"); if (eta) eta.textContent = display.progress.etaText;
   var status = document.getElementById("booster-status-text"); if (status) status.textContent = display.statusText;
-  var start = document.getElementById("btn-start-booster"); if (start) { start.style.display = display.isRunning ? "none" : ""; start.disabled = !display.canStart; }
+  var start = document.getElementById("btn-start-booster"); if (start) {
+    start.style.display = display.isRunning ? "none" : "";
+    start.disabled = !display.canStart;
+    // 未解锁也可选中预览；启动按钮按舰船总装逻辑显示锁定原因（需蓝图 / 等级），不再只是置灰。
+    if (!display.canStart && display.selectedRecipe) {
+      start.textContent = "🔒 " + (display.selectedRecipe.lockedReason || "无法制造");
+    } else if (!display.isRunning) {
+      start.textContent = "▶ 开始制造";
+    }
+  }
   var stop = document.getElementById("btn-stop-booster"); if (stop) stop.style.display = display.isRunning ? "" : "none";
 }
 

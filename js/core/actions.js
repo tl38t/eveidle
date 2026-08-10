@@ -249,8 +249,7 @@ const ManufacturingStateActions = {
   selectEquipmentRecipe(state, recipeId) {
     const recipe = EQUIPMENT_ENGINEERING_RECIPES.find(item => item.id === recipeId);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
-    if (!equipmentRecipeHasRequiredBlueprint(state, recipe)) return { changed:false, reason:"blueprint-locked" };
-    if ((state.skills.equipmentEngineering.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    // 与舰船总装一致：蓝图/等级锁定只挡「制造」，不挡「选中预览」——未解锁也可点选查看属性/材料/成本。
     state.currentAction.equipEngTarget = recipe.id;
     state.currentAction.equipEngCategory = recipe.category;
     state._dirty = true;
@@ -316,7 +315,12 @@ const BoosterStateActions = {
   startManufacturing(state, now, recipeId) {
     const recipe = recipeId ? getBoosterRecipe(recipeId) : (getBoosterRecipe(state.currentAction.boosterRecipeTarget) || BOOSTER_RECIPES[0]);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
-    if (!isBoosterRecipeUnlocked(recipe)) return { changed:false, reason:"level-locked" };
+    if (!isBoosterRecipeUnlocked(recipe)) {
+      // 区分失败原因：等级不足 vs 缺蓝图（考古重做的新增 24 张 requiresBlueprint 配方）
+      const lvl = (state.skills && state.skills.boosterEngineering && state.skills.boosterEngineering.lvl) || 1;
+      const reason = (lvl < recipe.level) ? "level-locked" : "blueprint-locked";
+      return { changed:false, reason };
+    }
     if (!hasEnoughBoosterInputs(recipe, 1)) return { changed:false, reason:"insufficient-materials" };
     Object.assign(state.currentAction, {
       skill:"boosterEngineering",

@@ -73,6 +73,42 @@ function recycleItems(state, items, meta) {
   return quote;
 }
 
+// ---- 交易品统一回收（仓库「交易品」标签一键回收） ----
+// 聚合：① state.cargoLoot 的 isk/lp 战利品；② 考古 common_isk/unique 文物（→星币）；③ 考古 lp 文物（→功勋）。
+// 统一经 getRecycleQuote / recycleItems 入账，并返回合计 { changed, isk, lp, count }。
+function recycleAllTradeGoods(state) {
+  let isk = 0, lp = 0, count = 0;
+  if (typeof recycleCargoLoot === "function") {
+    const r = recycleCargoLoot(state, { all: true });
+    if (r && r.changed) { isk += r.isk || 0; lp += r.lp || 0; count += r.count || 0; }
+  }
+  if (typeof sellArchaeologyArtifacts === "function") {
+    const r = sellArchaeologyArtifacts(state, null, 0, true);
+    if (r && r.changed) isk += r.totalIsk || 0;
+  }
+  if (typeof redeemArchaeologyArtifacts === "function") {
+    const r = redeemArchaeologyArtifacts(state, null, 0, true);
+    if (r && r.changed) lp += r.totalLp || 0;
+  }
+  return { changed: count > 0 || isk > 0 || lp > 0, isk, lp, count };
+}
+
+// 单件交易品回收：item = getTradeGoodsDisplayState 产出的元素（含 id / kind）。
+// cargoLoot（id 形如 clN）→ recycleCargoLoot({ids}); 考古文物（id 形如 artifact:xxx）→ 单件出售/兑换。
+function recycleOneTradeItem(state, item) {
+  if (!item || !item.id) return { changed: false, reason: "no-item" };
+  if (item.id.indexOf("artifact:") === 0) {
+    const aid = item.id.slice("artifact:".length);
+    if (item.kind === "lp") return (typeof redeemArchaeologyArtifacts === "function")
+      ? redeemArchaeologyArtifacts(state, aid, 1, false) : { changed: false };
+    return (typeof sellArchaeologyArtifacts === "function")
+      ? sellArchaeologyArtifacts(state, aid, 1, false) : { changed: false };
+  }
+  // 货柜具名战利品（cargoLoot）：item.id 形如 clN
+  if (typeof recycleCargoLoot === "function") return recycleCargoLoot(state, { ids: [item.id] });
+  return { changed: false, reason: "unsupported" };
+}
+
 // ---- cargoLoot 回收（需求 #1：cargoLoot 的星币/功勋回收也必须委托统一入口） ----
 // opts: { all?:boolean, kind?:("isk"|"lp"), ids?:[string] }
 // 返回 { changed, isk, lp, count, base, bonus, final }。
@@ -108,4 +144,6 @@ if (typeof window !== "undefined") {
   window.getRecycleQuote = getRecycleQuote;
   window.recycleItems = recycleItems;
   window.recycleCargoLoot = recycleCargoLoot;
+  window.recycleAllTradeGoods = recycleAllTradeGoods;
+  window.recycleOneTradeItem = recycleOneTradeItem;
 }
