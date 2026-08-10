@@ -70,6 +70,19 @@
     return isValidShipId(id);
   }
 
+  // ---- 弹药引用解析（局部、纯读）----
+  // 仅允许 ammo:laser / ammo:missile / ammo:cannon 三种；未知 ammo:* 必须拒绝，
+  // 不得让 ResourceRegistry 动态注册占位 def。普通资源命名空间不经过此解析。
+  function isAmmoRef(id) {
+    return typeof id === "string" && id.indexOf("ammo:") === 0;
+  }
+  function resolveAmmoType(id) {
+    if (id === "ammo:laser") return "laser";
+    if (id === "ammo:missile") return "missile";
+    if (id === "ammo:cannon") return "cannon";
+    return null; // 已知 ammo 命名空间但类型非法 → 拒绝
+  }
+
   // ---- 奖励原子原语：先全量校验，再统一写入 ----
   function validateReward(state, reward) {
     if (!reward || typeof reward !== "object") return { ok: true };
@@ -77,6 +90,12 @@
     for (const id of Object.keys(ra)) {
       const qty = Number(ra[id]);
       if (!(qty >= 0) || !Number.isInteger(qty)) return { ok: false, reason: REASON.REWARD_UNAVAILABLE };
+      if (isAmmoRef(id)) {
+        const ammoType = resolveAmmoType(id);
+        if (ammoType === null) return { ok: false, reason: REASON.REWARD_UNAVAILABLE }; // 未知 ammo 类型拒绝，不放行到 ResourceRegistry
+        if (typeof addAmmo !== "function") return { ok: false, reason: REASON.REWARD_UNAVAILABLE }; // 确认 addAmmo 可用
+        continue; // 三种合法 ammo 类型：不经 ResourceRegistry 校验
+      }
       if (typeof ResourceRegistry === "undefined" || !ResourceRegistry.getDefinition(id)) return { ok: false, reason: REASON.REWARD_UNAVAILABLE };
     }
     const eq = reward.equipment || {};
@@ -112,10 +131,24 @@
     }
     const now = nowMs(ctx ? ctx.now : null);
 
-    // 资源
+    // 资源（普通命名空间经 ResourceRegistry；ammo:* 三种分流至正式 state.ammo 实例）
     const ra = reward.resourceAmounts || {};
     if (typeof ResourceRegistry !== "undefined") {
-      for (const id of Object.keys(ra)) ResourceRegistry.add(state, id, Number(ra[id]));
+      for (const id of Object.keys(ra)) {
+        if (isAmmoRef(id)) continue; // 弹药走 addAmmo，不写废弃计数池 resources.ammunition
+        ResourceRegistry.add(state, id, Number(ra[id]));
+      }
+    }
+    // 弹药分流：三种 ammo:* 经正式 addAmmo 写入 state.ammo 实例数组（T1，默认 props/name）
+    const ammoRefs = Object.keys(ra).filter(isAmmoRef);
+    if (ammoRefs.length && typeof addAmmo === "function") {
+      for (const id of ammoRefs) {
+        const ammoType = resolveAmmoType(id);
+        if (ammoType === null) continue; // 理论上已被 validateReward 拦截
+        const qty = Number(ra[id]) || 0;
+        if (qty <= 0) continue; // 数量为 0 时不创建空弹药栈
+        addAmmo(state, { type: ammoType, tier: "T1", qty });
+      }
     }
     // 装备
     const eq = reward.equipment || {};
