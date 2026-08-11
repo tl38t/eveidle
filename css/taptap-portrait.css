@@ -1,0 +1,377 @@
+/* =============================================================
+   TapTap 竖屏 UI（生产迁移版）
+   - 仅窄屏（max-width:820px）生效；桌面（≥821px）保持正式原版布局。
+   - 独立覆盖层：抽屉 / 底部五项导航 / 教程移动定位 / 全页滚动 /
+     仓库双列 / 考古单列 / 移动船坞单舰焦点 / 装备弹窗全屏。
+   - 不重写任何生产 CSS/JS 逻辑；仅新增布局样式与少量 hook。
+   ============================================================= */
+:root{
+  --tp-top-h: 70px;
+  --tp-bottom-h: 56px;
+  --tp-safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* 注入元素在桌面默认隐藏，仅在窄屏媒体查询内显示 */
+.tp-menu-btn,
+.tp-bottom-nav,
+.tp-drawer-overlay{ display: none; }
+
+/* ---------------- 窄屏（竖屏手机） ---------------- */
+@media (max-width: 820px){
+
+  /* 顶栏：两行结构（第一行 菜单+品牌；第二行 星币/功勋/物资总量）。
+     高度按真实内容约 70px；资源独占第二行，数字完整可见，不再被 overflow 裁切。 */
+  .topbar{
+    position: fixed; top:0; left:0; right:0;
+    height: auto; min-height: var(--tp-top-h); z-index: 1500;
+    display:flex; flex-wrap:wrap; align-items:stretch; align-content:stretch;
+    padding:0; gap:0; overflow:hidden; white-space:nowrap;
+  }
+  /* 第一行：菜单 + 品牌 */
+  .topbar .tp-menu-btn{ flex:0 0 auto; width:32px; height:32px; margin:2px 6px 2px 8px; }
+  .topbar .brand{ flex:0 0 auto; flex-basis:auto; font-size:13px; line-height:36px; max-width:160px; overflow:hidden; text-overflow:ellipsis; }
+  .topbar .current-activity{ display:none; }
+  .topbar .ore-quick{ display:none; }
+  /* 第二行：资源整行下沉（flex:1 1 100% 触发换行） */
+  .topbar .resources{
+    flex:1 1 100%; width:auto; margin-left:0; justify-content:flex-start;
+    display:flex; align-items:center; gap:16px;
+    height:34px; padding:0 8px; overflow:hidden;
+  }
+  .topbar .res-item{ gap:4px; font-size:12.5px; }
+  .topbar .res-label{ display:none; }
+  .topbar .res-value{ font-size:13px; }
+
+  .tp-menu-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:40px; height:40px; flex:0 0 auto; border:none; border-radius:8px;
+    background:rgba(56,189,248,.16); color:#bfe; font-size:20px; cursor:pointer;
+  }
+
+  body{
+    padding-top: var(--tp-top-h);
+    padding-bottom: calc(var(--tp-bottom-h) + var(--tp-safe-b));
+    overflow-x: hidden;
+  }
+
+  /* 教程：移动端恢复「浮动 + 可拖动」卡片（与生产桌面行为一致；仅重新定位避开顶栏/底栏）。
+     注意：top/left/right/bottom 不能用 !important —— 生产拖动逻辑会把新位置写进行内 style，
+     行内无 !important 会被样式表 !important 压住，导致「看似不能拖」。此处仅靠 #ID 选择器压过 base.css。 */
+  #tutorial-widget{
+    position: fixed !important;
+    /* 移到右下角（底栏之上），避免覆盖采矿目标横滑条（原 top-right 会盖住 mining-target-scroll 阻断横滑） */
+    top: auto;
+    left: auto;
+    right: 8px;
+    bottom: calc(var(--tp-bottom-h) + var(--tp-safe-b) + 8px);
+    width: min(80vw, 340px);
+    max-width: calc(100vw - 16px) !important;
+    max-height: 46vh !important;
+    z-index: 1200 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 10px 32px rgba(0,0,0,.55) !important;
+  }
+  #tutorial-widget .tw-body{
+    max-height: calc(46vh - 112px);
+    overflow-y:auto; -webkit-overflow-scrolling:touch;
+  }
+
+  /* 侧栏 -> 抽屉（不复制导航 DOM，复用现有 .sidebar） */
+  /* 单一页面滚动区：主容器固定夹在顶栏与底栏之间；.content 负责内部纵向滚动。 */
+  .main-container{
+    position: fixed;
+    top: var(--tp-top-h);
+    bottom: calc(var(--tp-bottom-h) + var(--tp-safe-b));
+    left:0; right:0;
+    width:100%; min-width:0; min-height:0;
+    overflow:hidden;
+  }
+  .sidebar{
+    position: fixed; top: var(--tp-top-h); left:0;
+    bottom: calc(var(--tp-bottom-h) + var(--tp-safe-b));
+    width: min(74vw, 260px); z-index: 1400;
+    transform: translateX(-100%); transition: transform .25s ease;
+    overflow-y:auto; overflow-x:hidden; background:#0a121e; border-right:1px solid #1d2c3c;
+    padding-bottom:8px; overscroll-behavior: contain;
+    /* 覆盖生产 base.css @media(max-width:720px) 把侧栏改成横排的规则 */
+    display:flex; flex-direction:column; flex:0 0 auto;
+    margin-right:0; border-bottom:0; min-height:0;
+  }
+  .sidebar.open{ transform: translateX(0); }
+  /* 抽屉导航压缩：减少纵向间距，使主菜单不再需要滚动 */
+  .sidebar .nav-item{ padding: 7px 14px; font-size: 12.5px; }
+  /* 恢复分类分隔线（生产 base.css 在 max-width:720px 里把 .nav-divider 设了 display:none） */
+  .sidebar .nav-divider{
+    display:block; height:1px; flex:0 0 auto;
+    background: linear-gradient(90deg, transparent, rgba(56,189,248,.30), transparent);
+    margin: 8px 10px;
+  }
+  .content{
+    width:100%; min-width:0; min-height:0; height:100%;
+    padding:8px; padding-bottom:12px;
+    overflow-y:auto; overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    /* 用 manipulation：允许纵向(本容器)与横向(嵌套条)平移，仅禁用双击缩放。 */
+    touch-action:manipulation;
+    overscroll-behavior-y:contain;
+    scrollbar-gutter:auto;
+  }
+
+  /* 桌面底部状态栏在手机上让位给底部五项导航 */
+  .footer-bar{ display:none; }
+
+  .tp-drawer-overlay{
+    display:block; position:fixed; inset:0; z-index:1300;
+    background:rgba(0,0,0,.55); opacity:0; pointer-events:none;
+    transition:opacity .2s ease;
+  }
+  .tp-drawer-overlay.show{ opacity:1; pointer-events:auto; }
+
+  /* 底部五项导航 */
+  .tp-bottom-nav{
+    display:flex; position:fixed; left:0; right:0; bottom:0; z-index:1100;
+    height: calc(var(--tp-bottom-h) + var(--tp-safe-b));
+    padding-bottom: var(--tp-safe-b);
+    background:#0b1422; border-top:1px solid #1d2c3c;
+    justify-content:space-around; align-items:stretch;
+  }
+  .tp-bottom-nav button{
+    flex:1 1 0; max-width:20%; min-width:0; min-height:44px;
+    border:none; background:transparent; color:#9fb3c4;
+    font-size:10px; display:flex; flex-direction:column; align-items:center;
+    justify-content:center; gap:1px; cursor:pointer;
+    overflow:hidden; padding:2px 0; box-sizing:border-box;
+  }
+  .tp-bottom-nav button > span:last-child{
+    white-space:nowrap; overflow:hidden; text-overflow:clip; width:100%; text-align:center;
+  }
+  .tp-bottom-nav button .ico{ font-size:18px; line-height:1; }
+  .tp-bottom-nav button.active{ color:#7dd3fc; }
+
+  /* 战斗纵向排列 */
+  .combat-arena{ flex-direction:column; }
+  .combat-lock-column{ display:flex; justify-content:center; padding:4px 0; }
+  .combat-header-row{ flex-wrap:wrap; }
+  .combat-command-console{ flex-direction:column; }
+  .combat-control-bank, .combat-equipment-rack{ width:100%; }
+  .combat-ring-module{ margin:10px auto; }
+
+  /* 研究树：仅自身容器横向滚动 */
+  .research-tree-layout{ flex-direction:column; }
+  .research-tree{ overflow-x:auto; -webkit-overflow-scrolling:touch; padding-bottom:8px; }
+  .research-detail{ width:100%; }
+
+  /* 考古三栏纵向排列；地点在 <=460px 单列 */
+  .archaeology-body{ display:block !important; }
+  .arch-col{ width:100% !important; margin-bottom:12px; }
+  .arch-location-list{ grid-template-columns:1fr; }
+
+  /* 考古产出卡：窄屏下把右侧说明文字折到第二行，避免中间文字列被挤成竖条 */
+  .arch-yield-card{
+    grid-template-columns:auto 1fr;
+    grid-template-rows:auto auto;
+    gap:8px 10px;
+    align-items:start;
+  }
+  .arch-yield-card > .arch-yield-icon{ grid-row:1; grid-column:1; }
+  .arch-yield-card > div:nth-child(2){ grid-row:1; grid-column:2; min-width:0; }
+  .arch-yield-card > .arch-yield-sub,
+  .arch-yield-card > .arch-cargo-mix{
+    grid-row:2; grid-column:1 / -1;
+    margin:0; width:100%;
+  }
+  .arch-yield-title{ white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .arch-yield-copy{ word-break:normal; overflow-wrap:anywhere; }
+
+  /* 空间站自动线单列 */
+  #station-auto-lines{ display:flex; flex-direction:column; gap:8px; }
+  .station-buildings-grid{ grid-template-columns:1fr; }
+
+  /* 船坞 3D 区域约 210px 高 + 卡片双列 */
+  .hangar-ship-grid{ grid-template-columns:repeat(2,1fr); }
+  .hangar-panel canvas, .hangar-panel .ship3d-canvas{ max-height:210px; }
+
+  /* 采矿横向目标列表：显式横向滚动 + 触摸横向平移（不影响纵向页面滚动）。 */
+  .mining-target-scroll{
+    width:100%; max-width:100%; min-width:0;
+    overflow-x:auto; overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    touch-action:pan-x;
+    overscroll-behavior-x:contain;
+    scrollbar-width:auto;
+  }
+  .mining-target-strip{ width:max-content; min-width:max-content; flex-wrap:nowrap; }
+  .mining-target-card{ flex:0 0 auto; touch-action:pan-x; }
+  /* 锁定卡片不截获触摸：让横向拖动穿透到滚动容器；锁定仍不可选（生产仅对非 disabled 绑 click）。 */
+  .mining-target-card.locked{ pointer-events:none; }
+
+  /* 仓库：移动端紧凑双列（仅视口 < 320px 才退化为单列） */
+  .cargo-list{
+    grid-template-columns: repeat(2, minmax(0,1fr));
+    gap:6px;
+    overflow-y:auto; min-height:0; touch-action:pan-y; -webkit-overflow-scrolling:touch;
+  }
+  .cargo-card{ min-width:0; min-height:78px; padding:8px 8px 7px; gap:5px; }
+  .cargo-card .cc-icon{ width:28px; height:28px; font-size:15px; }
+  .cargo-card .cc-name{ font-size:12px; line-height:1.2; max-height:2.4em; overflow:hidden; }
+  .cargo-card .cc-cat{ font-size:9px; padding:0 5px; }
+  .cargo-card .cc-qty{ font-size:12px; }
+  @media (max-width: 319px){
+    .cargo-list{ grid-template-columns:1fr; }
+  }
+
+  /* 通用卡片单列 */
+  .panel{ width:100%; }
+
+  /* ---------------- 装备候选面板：深色金色主题（§五） ----------------
+     覆盖浏览器默认白按钮；与生产 .equip-select-panel .equip-option 同色系但
+     在窄屏全屏弹窗里明确锁定深色背景 + #d4a843 金色强调，禁用态明显，
+     触控高度 ≥44px，图标/名称不重叠。不改变正式装备行为。 */
+  .equip-select-panel .equip-option{
+    display:flex; align-items:center; gap:10px;
+    width:100%; min-height:44px; box-sizing:border-box;
+    padding:10px 12px; margin:6px 0;
+    border:1px solid #1d2c3c; border-radius:8px;
+    background:rgba(16,26,38,.85); color:#cdd9e5;
+    font-size:14px; line-height:1.2; cursor:pointer;
+    text-align:left; -webkit-appearance:none; appearance:none;
+    transition:background .15s, border-color .15s;
+  }
+  .equip-select-panel .equip-option:hover{ background:rgba(212,168,67,.10); border-color:rgba(212,168,67,.35); }
+  .equip-select-panel .equip-option:active{ background:rgba(212,168,67,.18); }
+  .equip-select-panel .equip-option .eq-icon{ font-size:20px; width:28px; text-align:center; flex:0 0 auto; overflow:hidden; }
+  .equip-select-panel .equip-option .eq-name{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .equip-select-panel .equip-option.empty-option{ color:#7d8a99; font-style:normal; border-style:dashed; }
+  .equip-select-panel .equip-option.empty-option:hover{ background:rgba(40,55,75,.5); border-color:#2a3744; }
+  .equip-select-panel .equip-option-hint{ color:#8a6d3b; }
+}
+
+/* ============ 船坞移动端「单舰焦点」重构 ============ */
+.tp-hangar-root{ display:none; }
+/* 装备环中央覆盖层桌面默认隐藏，仅 ≤820px 媒体查询内显示 */
+.tp-orbit-center{ display:none; }
+
+@media (max-width: 820px){
+  /* 隐藏生产双列桌面网格（移动端由单舰焦点结构替代） */
+  #hangar-ship-grid, #hangar-empty{ display:none !important; }
+  .tp-hangar-root{ display:none; width:100%; max-width:100%; min-height:0; box-sizing:border-box; flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; }
+
+  .tp-hangar-filters{ display:flex; gap:6px; padding:4px 12px 6px; flex-wrap:wrap; }
+  .tp-filter{ flex:0 0 auto; padding:5px 12px; border-radius:14px; border:1px solid #1d2c3c; background:rgba(20,30,44,.6); color:#b6c4d2; font-size:13px; }
+  .tp-filter.active{ background:#d4a843; color:#0a121e; border-color:#d4a843; font-weight:600; }
+
+  .tp-hangar-main{ padding:2px 12px 8px; }
+  .tp-hangar-main-head{ display:flex; align-items:baseline; gap:8px; }
+  .tp-hangar-name{ font-size:18px; font-weight:700; color:#fff; }
+  .tp-hangar-tier{ font-size:12px; color:#8aa0b4; }
+  .tp-hangar-meta{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px; }
+  .tp-htag{ font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(40,55,75,.6); color:#cdd9e5; }
+  .tp-htag.role-combat{ background:rgba(217,74,74,.18); color:#ff9a9a; }
+  .tp-htag.role-ind{ background:rgba(93,168,212,.18); color:#9fd0f0; }
+  .tp-htag.role-arch{ background:rgba(160,140,200,.2); color:#cdbcff; }
+  .tp-htag.tp-lv{ background:rgba(212,168,67,.18); color:#e7c66a; }
+  .tp-htag.tp-duty{ background:rgba(40,55,75,.6); }
+  .tp-htag.tp-repair{ background:rgba(217,140,60,.2); color:#ffc078; }
+
+  /* 主舰视觉区：390≈170px / 360≈158px；fallback 常驻底层，有效缩略图覆盖其上；加载失败隐藏 img 即露出 fallback（深蓝径向渐变+角色图标+舰名+舰型+点击查看3D），杜绝纯黑矩形。 */
+  .tp-hangar-3d{ position:relative; width:100%; height:170px; border-radius:10px; overflow:hidden; background:#070b10; border:1px solid #16222f; margin-top:6px; }
+  .tp-hangar-3d-img{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; cursor:pointer; background:#070b10; }
+  .tp-3d-fallback{ position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; cursor:pointer; background:radial-gradient(ellipse at 50% 30%, #0f1a2a, #070b10 80%); }
+  .tp-3d-fb-ico{ font-size:48px; filter:drop-shadow(0 0 12px rgba(74,144,217,.4)); }
+  .tp-3d-fb-name{ font-size:14px; font-weight:700; color:#eaf2fa; }
+  .tp-3d-fb-type{ font-size:11px; color:#8aa0b4; }
+  .tp-3d-fb-tip{ font-size:11px; color:#6a7a8e; }
+
+  .tp-hangar-selector{ display:flex; gap:8px; overflow-x:auto; overflow-y:hidden; -webkit-overflow-scrolling:touch; touch-action:pan-x; overscroll-behavior-x:contain; padding:8px 12px; scrollbar-width:thin; }
+  .tp-hangar-chip{ flex:0 0 auto; width:100px; height:72px; border-radius:10px; border:1px solid #1d2c3c; background:rgba(16,26,38,.8); color:#cdd9e5; padding:5px 4px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; position:relative; }
+  .tp-hangar-chip.current{ border:2px solid #d4a843; box-shadow:0 0 12px rgba(212,168,67,.35); }
+  .tp-chip-vis{ position:relative; width:32px; height:32px; flex:0 0 auto; }
+  .tp-chip-thumb{ position:absolute; inset:0; width:100%; height:100%; object-fit:contain; }
+  .tp-chip-ico{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:26px; }
+  .tp-chip-name{ font-size:11px; line-height:1.1; max-width:96px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tp-chip-lv{ font-size:10px; color:#e7c66a; margin-top:0; }
+  .tp-chip-dot{ position:absolute; top:4px; right:4px; width:8px; height:8px; border-radius:50%; box-shadow:0 0 0 1px rgba(0,0,0,.4); }
+  .tp-chip-dot.role-combat{ background:#d94a4a; }
+  .tp-chip-dot.role-ind{ background:#5da8d4; }
+  .tp-chip-dot.role-arch{ background:#a08cc8; }
+  .tp-chip-assigned{ position:absolute; bottom:3px; right:4px; font-size:9px; color:#7ac87a; }
+
+  .tp-hangar-tabs{ display:flex; border-top:1px solid #16222f; border-bottom:1px solid #16222f; margin-top:4px; }
+  .tp-htab{ flex:1 1 0; min-height:42px; border:none; background:transparent; color:#8aa0b4; font-size:14px; font-weight:600; border-bottom:2px solid transparent; }
+  .tp-htab.active{ color:#eaf2fa; border-bottom-color:#d4a843; }
+
+  .tp-hangar-tabbody{ padding:8px 12px 18px; }
+  .tp-stat-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
+  .tp-stat{ background:rgba(0,0,0,.3); border:1px solid #16222f; border-radius:8px; padding:8px 4px; text-align:center; }
+  .tp-stat-l{ display:block; font-size:10px; color:#7d8a99; text-transform:uppercase; }
+  .tp-stat-v{ display:block; font-size:15px; font-weight:700; color:#c8d0d8; font-family:'Orbitron',sans-serif; }
+  .tp-stat-v.shield{ color:#4a90d9; } .tp-stat-v.armor{ color:#d4a843; } .tp-stat-v.hull{ color:#d94a4a; } .tp-stat-v.speed{ color:#7ac87a; }
+  .tp-box{ background:rgba(0,0,0,.25); border:1px solid #16222f; border-radius:8px; padding:9px 11px; margin-top:8px; }
+  .tp-box-t{ font-size:11px; color:#7d8a99; margin-bottom:3px; }
+  .tp-box-b{ font-size:13px; color:#cdd9e5; line-height:1.5; }
+  .tp-repair-box{ border-color:rgba(217,140,60,.4); }
+  .tp-empty{ font-size:13px; color:#5a6a7a; padding:10px 4px; text-align:center; }
+
+  .tp-fit-list{ display:flex; flex-direction:column; gap:6px; }
+  .tp-fit-row{ display:flex; align-items:center; gap:10px; background:rgba(0,0,0,.25); border:1px solid #16222f; border-radius:8px; padding:9px 11px; }
+  .tp-fit-type{ flex:0 0 56px; font-size:13px; color:#b6c4d2; font-weight:600; }
+  .tp-fit-count{ flex:0 0 44px; font-size:14px; color:#e7c66a; font-weight:700; }
+  .tp-fit-detail{ flex:1; font-size:12px; color:#8aa0b4; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tp-manage-equip{ width:100%; margin-top:12px; padding:11px; border-radius:8px; background:#d4a843; color:#0a121e; font-weight:700; font-size:14px; border:none; }
+
+  .tp-enh-card{ background:rgba(0,0,0,.25); border:1px solid #16222f; border-radius:10px; padding:12px; }
+  .tp-enh-top{ display:flex; justify-content:space-between; gap:8px; align-items:center; }
+  .tp-enh-lv{ font-size:16px; font-weight:700; color:#e7c66a; }
+  .tp-enh-next{ font-size:12px; color:#9fd0f0; text-align:right; }
+  .tp-enh-bonus{ font-size:12px; color:#b6c4d2; margin-top:6px; }
+  .tp-enh-meta{ display:flex; flex-direction:column; gap:2px; font-size:12px; color:#8aa0b4; margin-top:8px; }
+  .tp-enh-mats{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0; }
+  .tp-mat{ font-size:12px; padding:2px 8px; border-radius:6px; background:rgba(40,55,75,.6); color:#cdd9e5; }
+  .tp-mat.short{ background:rgba(217,74,74,.2); color:#ff9a9a; }
+  .tp-enh-btn{ width:100%; margin-top:6px; padding:11px; border-radius:8px; background:#4a90d9; color:#fff; font-weight:700; font-size:14px; border:none; }
+  .tp-enh-btn:disabled{ background:#2a3744; color:#6a7a8e; }
+
+  .tp-assign-group{ margin-bottom:12px; }
+  .tp-assign-gt{ font-size:12px; color:#7d8a99; margin-bottom:6px; }
+  .tp-assign-group .act-tag{ margin:0 6px 6px 0; }
+
+  /* 空态：居中卡片，高度约 260px，不占满整页 */
+  .tp-hangar-empty{ display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:10px; margin:18px auto; max-width:340px; padding:28px 24px; background:rgba(12,22,34,.7); border:1px solid #1d2c3c; border-radius:14px; min-height:260px; box-sizing:border-box; }
+  .tp-empty-ship{ font-size:64px; filter:drop-shadow(0 0 16px rgba(74,144,217,.3)); }
+  .tp-empty-title{ font-size:18px; font-weight:700; color:#eaf2fa; }
+  .tp-empty-desc{ font-size:13px; color:#8aa0b4; }
+  .tp-empty-cta{ padding:11px 22px; border-radius:8px; background:#d4a843; color:#0a121e; font-weight:700; font-size:14px; border:none; }
+  .tp-empty-hint{ font-size:11px; color:#5a6a7a; }
+
+  /* 装备弹窗移动端专用响应式（仅在 ≤820px）：全屏工作区，无大片空白 */
+  .equip-modal-overlay{ z-index:10000; background:rgba(4,8,14,.92); }
+  .equip-ship-modal{ width:100%; max-width:none; height:auto; max-height:100dvh; border-radius:0; padding:0; display:flex; flex-direction:column; overflow:hidden; background:#0c1622; }
+  .equip-modal-close{ top:0; right:0; width:44px; height:44px; line-height:44px; font-size:26px; z-index:9; color:#cfe; background:rgba(0,0,0,.25); }
+  .equip-ship-modal .modal-title{ position:sticky; top:0; padding:14px 52px 12px 16px; background:#0c1622; z-index:8; border-bottom:1px solid #16222f; font-size:16px; }
+  .equip-ship-modal .modal-sub{ position:static; padding:4px 16px 10px; background:#0c1622; z-index:8; color:#8aa0b4; font-size:12px; margin-top:0; border-bottom:1px solid #16222f; }
+  .orbit-wrapper{ position:relative; width:min(320px,86vw); max-width:none; aspect-ratio:1/1; margin:14px auto 6px; flex:0 0 auto; }
+  #equipOrbitSvg{ width:100%; height:100%; display:block; }
+  /* 装备环中央真实缩略图（移动端；作为 svg 兄弟节点，不被 buildOrbit 清空；pointer-events:none 不挡槽位点击） */
+  .tp-orbit-center{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); width:140px; height:140px; pointer-events:none; }
+  .tp-orbit-center-img{ width:120px; height:120px; object-fit:contain; pointer-events:none; filter:drop-shadow(0 0 14px rgba(74,144,217,.35)); }
+  .tp-orbit-center-name{ font-size:13px; font-weight:700; color:#eaf2fa; max-width:140px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.2; }
+  .tp-orbit-center-tier{ font-size:10px; color:#8aa0b4; }
+  .tp-orbit-center-fb{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
+  .tp-orbit-center-fb-ico{ font-size:44px; filter:drop-shadow(0 0 12px rgba(74,144,217,.4)); }
+  .tp-orbit-center-fb-txt{ font-size:11px; color:#8aa0b4; }
+  .equip-library{ flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; margin:10px 12px; padding:10px 12px; background:rgba(0,0,0,.2); border-radius:8px; border:1px solid #16222f; }
+  .ship-stats{ display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin:0 12px 10px; padding:10px 14px; background:rgba(0,0,0,.3); border-radius:8px; border:1px solid #16222f; }
+  .modal-actions{ position:sticky; bottom:0; flex:0 0 auto; background:#0c1622; border-top:1px solid #16222f; padding:12px; z-index:8; display:flex; gap:10px; justify-content:center; }
+
+  /* 装备弹窗打开时：隐藏底栏/抽屉/教程（避免遮挡与误触）；关闭后由 body.tp-equip-open 移除自动恢复 */
+  body.tp-equip-open .tp-bottom-nav{ display:none !important; }
+  body.tp-equip-open .sidebar{ display:none !important; }
+  body.tp-equip-open #tutorial-widget{ display:none !important; }
+  body.tp-equip-open .tp-drawer-overlay{ display:none !important; }
+
+  /* 360px 微调：主视觉/选择条略缩，首屏更稳 */
+  @media (max-width: 380px){
+    .tp-hangar-3d{ height:158px; }
+    .tp-hangar-chip{ height:68px; }
+  }
+}
