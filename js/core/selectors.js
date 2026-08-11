@@ -683,7 +683,8 @@ function getActionConfirmationDisplayState(state, target, now) {
     else if (recipe.output.type === "fuel") result.outputText = "燃料单元×" + recipe.output.qty;
     else result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
     result.canOpen = display.level >= recipe.level && display.detail.hasRequiredBlueprint;
-    result.blockedText = result.canOpen ? "" : !display.detail.hasRequiredBlueprint ? "需要先在蓝图商店购买" + recipe.name + "蓝图" : "需要装备工程等级 Lv." + recipe.level;
+    const blueprintLocked = display.detail.requiresBlueprint && !display.detail.hasRequiredBlueprint;
+    result.blockedText = result.canOpen ? "" : blueprintLocked ? "需要先在蓝图商店购买" + recipe.name + "蓝图" : "需要装备工程等级 Lv." + recipe.level;
     result.queue = { skill:"equipmentEngineering", target:recipe.id, label:recipe.name };
   } else if (target === "shipComp") {
     const display = getShipEngineeringDisplayState(state, now);
@@ -1128,7 +1129,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
       seriesList:RIG_ENGINEERING_SERIES.map(s => ({ id:s.id, name:s.name, rigCategory:s.rigCategory, selected:s.id === rigSeries.id }))
     } : null,
     visibleCount:visibleRecipes.length,
-    selectedRecipe:{ ...selectedRecipe, cost:{ ...(selectedRecipe.cost || {}) }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output } },
+    selectedRecipe:{ ...selectedRecipe, cost:{ ...(selectedRecipe.cost || {}) }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output }, unlocked:level >= selectedRecipe.level && selectedHasRequiredBlueprint, hasRequiredBlueprint:selectedHasRequiredBlueprint },
     runningRecipe:{ ...runningRecipe, cost:{ ...(runningRecipe.cost || {}) }, inputEquipment:runningRecipe.inputEquipment ? { ...runningRecipe.inputEquipment } : null, output:{ ...runningRecipe.output } },
     recipes:visibleRecipes.map(recipe => {
       const equipment = recipe.output.type === "equipment" ? EQUIPMENT_DB[recipe.output.itemId] : null;
