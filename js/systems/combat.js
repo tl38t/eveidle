@@ -664,7 +664,12 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   ResourceRegistry.add(state, "currency:isk", isk);
   enemy.defeated = true;
   enemy.rewarded = true;
-  c.lastLoot = "ISK " + isk.toLocaleString();
+  let iskName = "星币";
+  if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getCurrencyName === "function") {
+    const got = DisplayNames.getCurrencyName("isk");
+    if (got && got !== "isk") iskName = got;
+  }
+  c.lastLoot = iskName + " " + isk.toLocaleString();
   const deathspace = c.mode === "deathspace" ? getDeathspaceById(c.deathspaceId) : null;
   const dataDrop = deathspace ? null : rollFactionEncryptedDataDrop(zone.faction, enemy.kind, roll(), zone, state);
   if (dataDrop) c.lastLoot += " · " + dataDrop.material + " ×" + dataDrop.qty;

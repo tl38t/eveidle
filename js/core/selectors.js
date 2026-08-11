@@ -2240,6 +2240,15 @@ function getEquipmentEnhancementListDisplayState(state) {
   return { entries };
 }
 
+// 定点返修：统一经显示层取货币名，DisplayNames 不可用时按 fallback 收口（不得直接 isk/LP.toUpperCase）。
+function displayCurrencyName(currencyId, fallback) {
+  if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getCurrencyName === "function") {
+    const got = DisplayNames.getCurrencyName(currencyId);
+    if (got && got !== currencyId) return got;
+  }
+  return fallback;
+}
+
 function getLPStoreDisplayState(state) {
   const lp = ResourceRegistry.get(state, "currency:lp");
   const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
@@ -2260,7 +2269,7 @@ function getLPStoreDisplayState(state) {
         owned,
         ownedText:isBlueprint ? (owned ? "永久蓝图已拥有" : "永久蓝图未拥有") : "已拥有 " + owned,
         canBuy:lp >= item.lpPrice && (!isBlueprint || owned === 0),
-        purchaseText:isBlueprint && owned ? "已拥有" : item.lpPrice + " LP 兑换",
+        purchaseText:isBlueprint && owned ? "已拥有" : item.lpPrice + " " + displayCurrencyName("lp", "功勋") + "兑换",
         icon:isBlueprint ? "fa-solid fa-scroll" : item.equipmentId.includes("gas") ? "fa-solid fa-wind" : "fa-solid fa-gem"
       };
     })
@@ -2348,8 +2357,8 @@ function getBlueprintStoreDisplayState(state, selectedCategory) {
         canBuy:!owned && balance >= item.price,
         productName:preview.productName,
         previewLines:preview.previewLines,
-        priceText:item.price.toLocaleString() + " " + item.currency.toUpperCase(),
-        purchaseText:owned ? "已拥有" : item.price.toLocaleString() + " " + item.currency.toUpperCase() + " 购买",
+        priceText:item.price.toLocaleString() + " " + displayCurrencyName(item.currency === "lp" ? "lp" : "isk", item.currency === "lp" ? "功勋" : "星币"),
+        purchaseText:owned ? "已拥有" : item.price.toLocaleString() + " " + displayCurrencyName(item.currency === "lp" ? "lp" : "isk", item.currency === "lp" ? "功勋" : "星币") + " 购买",
         icon:item.kind === "shipBlueprint" ? "fa-solid fa-ship" : item.deathspaceTier ? "fa-solid fa-dungeon" : "fa-solid fa-scroll"
       };
     })
