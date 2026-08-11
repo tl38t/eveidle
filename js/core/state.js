@@ -331,3 +331,29 @@ const SKILL_LABEL = {
   archaeology: "考古",
   combat: "战斗"
 };
+
+/* ================================================================
+   Task 1 定点返修：存档/离线事务共享快照函数
+   - 仅做 JSON 归档语义的深拷贝快照与就地还原，无任何 schema 变更。
+   - 不创建第二个 state 对象，不改变 const gameState 引用（外部持有者不受影响）。
+   - 不序列化函数/DOM/监听器；gameState 为纯数据（数值/对象/数组），JSON 往返天然排除它们。
+   ================================================================ */
+
+// 创建可序列化快照：深拷贝 state 的纯数据部分。
+function createSerializableGameStateSnapshot(state) {
+  return JSON.parse(JSON.stringify(state || {}));
+}
+
+// 就地还原快照：删除 state 中快照不存在的根字段，再用快照内容 Object.assign 覆盖。
+// 必须就地修改同一 state 对象（外部 const gameState 引用不能断裂）。
+function restoreSerializableGameStateSnapshot(state, snapshot) {
+  if (!snapshot || typeof snapshot !== "object" || Array.isArray(snapshot)) return state;
+  for (const key of Object.keys(state)) {
+    if (!Object.prototype.hasOwnProperty.call(snapshot, key)) delete state[key];
+  }
+  Object.assign(state, JSON.parse(JSON.stringify(snapshot)));
+  return state;
+}
+
+window.createSerializableGameStateSnapshot = createSerializableGameStateSnapshot;
+window.restoreSerializableGameStateSnapshot = restoreSerializableGameStateSnapshot;

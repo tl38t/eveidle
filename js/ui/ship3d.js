@@ -278,7 +278,7 @@ export function createViewer(canvas, opts = {}) {
     autoFit: doAutoFit = true
   } = opts;
 
-  const handle = { canvas, ships: [], disposed: false, raf: null, error: null, _specKey: "" };
+  const handle = { canvas, ships: [], disposed: false, raf: null, error: null, _specKey: "", contextLost: false, _onContextLost: null, _onContextRestored: null, _previousCanvasTitle: undefined, _previousCanvasAria: undefined };
 
   try {
     const renderer = createRenderer(canvas, false);
@@ -314,12 +314,65 @@ export function createViewer(canvas, opts = {}) {
     handle._autoFit = doAutoFit;
     handle._needsAutoFit = false;
 
+    // ---- WebGL 上下文丢失 / 恢复安全处理（Task 9 定点返修）----
+    // 仅在此处（createViewer 成功创建 renderer 后）为每个 canvas 安装应用层监听，
+    // 处理器函数引用保存在 handle，供 disposeViewer 精确解绑。
+    // 设计原则：
+    //   1. 丢失时 preventDefault 允许浏览器尝试异步恢复；不 dispose、不重建 renderer/frame、不清除 ships。
+    //   2. CPU 侧场景对象保持完好 → restored 后 Three.js 自行重传 GPU 资源，下一帧自然恢复。
+    //   3. 仅写显示层（dataset + title/aria-label + 可选 toast），绝不写 gameState / handle.error。
+    function onContextLost(e) {
+      if (handle.disposed) return;
+      e.preventDefault();                       // 允许浏览器尝试异步恢复
+      if (handle.contextLost) return;           // 幂等：仅首次 正常→lost 进入处理
+      handle.contextLost = true;
+      // 快照原语义（仅首次），restored 时还原，避免永久覆盖玩家原本的 title/aria。
+      if (handle._previousCanvasTitle === undefined) {
+        handle._previousCanvasTitle = canvas.getAttribute("title");
+        handle._previousCanvasAria = canvas.getAttribute("aria-label");
+      }
+      canvas.dataset.ship3dContext = "lost";
+      canvas.setAttribute("title", "3D 渲染暂时中断；若未自动恢复请刷新页面");
+      canvas.setAttribute("aria-label", "3D 渲染暂时中断；若未自动恢复请刷新页面");
+      if (typeof window.showToast === "function") {
+        try { window.showToast("3D 渲染暂时中断，正在尝试恢复；若长时间未恢复请刷新页面"); }
+        catch (_) { /* 主游戏不可受影响 */ }
+      } else {
+        console.warn("[Ship3D] WebGL 上下文丢失，3D 渲染暂时中断；若未自动恢复请刷新页面");
+      }
+    }
+    function onContextRestored() {
+      if (handle.disposed) return;
+      if (!handle.contextLost) return;          // 幂等：仅 lost→restored 进入处理
+      handle.contextLost = false;
+      delete canvas.dataset.ship3dContext;
+      // 还原 canvas 原有 title/aria-label 语义（不永久覆盖）
+      if (handle._previousCanvasTitle !== undefined) {
+        if (handle._previousCanvasTitle == null) canvas.removeAttribute("title");
+        else canvas.setAttribute("title", handle._previousCanvasTitle);
+        if (handle._previousCanvasAria == null) canvas.removeAttribute("aria-label");
+        else canvas.setAttribute("aria-label", handle._previousCanvasAria);
+        handle._previousCanvasTitle = undefined;
+        handle._previousCanvasAria = undefined;
+      }
+      handle._needsAutoFit = true;              // 下次有效布局重新取景（Three.js 负责内部 GPU 资源重传）
+      if (typeof window.showToast === "function") {
+        try { window.showToast("3D 渲染已恢复"); }
+        catch (_) { /* 主游戏不可受影响 */ }
+      }
+    }
+    canvas.addEventListener("webglcontextlost", onContextLost, false);
+    canvas.addEventListener("webglcontextrestored", onContextRestored, false);
+    handle._onContextLost = onContextLost;
+    handle._onContextRestored = onContextRestored;
+
     const clock = new THREE.Clock();
     let last = 0;
     function frame() {
       if (handle.disposed) return;
       handle.raf = requestAnimationFrame(frame);
       if (document.hidden) return;
+      if (handle.contextLost) return;           // 上下文丢失：跳过渲染（不重建/不 dispose），restored 后自然恢复
       // 画布未布局（如弹窗隐藏、clientWidth/Height=0）时跳过渲染，避免 1x1 空转/浪费 GPU
       if (canvas.clientWidth === 0 || canvas.clientHeight === 0) return;
       const now = performance.now();
@@ -436,6 +489,17 @@ export function setShips(handle, specs) {
 export function disposeViewer(handle) {
   if (!handle) return;
   handle.disposed = true;
+  // 先精确解绑 context 监听，避免随后的 forceContextLoss 触发已解绑之后的监听提示
+  if (handle.canvas) {
+    if (handle._onContextLost) {
+      handle.canvas.removeEventListener("webglcontextlost", handle._onContextLost, false);
+      handle._onContextLost = null;
+    }
+    if (handle._onContextRestored) {
+      handle.canvas.removeEventListener("webglcontextrestored", handle._onContextRestored, false);
+      handle._onContextRestored = null;
+    }
+  }
   if (handle.raf) cancelAnimationFrame(handle.raf);
   for (const s of handle.ships) disposeObject(s.group);
   if (handle.root) handle.root.clear();

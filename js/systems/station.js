@@ -739,9 +739,12 @@ function processSmeltingAutoLine(state, line, multiplier, offline) {
   const rigMods = (assigned.instance && typeof getRigModifiers === "function")
     ? getRigModifiers(state, assigned.instance) : {};
   const rigBonus = rigMods.smeltingSpeed || 0;
+  // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
+  const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
+    ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
 
   const skillEfficiency = 1 + (Number(state.skills.refining && state.skills.refining.lvl) || 1) * 0.02;
-  const efficiency = (1 + shipBonus + rigBonus) * multiplier;
+  const efficiency = (1 + shipBonus + rigBonus) * multiplier * shipEnhanceSmelt;
   const cycleTimeSec = recipe.baseTime / Math.max(0.001, efficiency);
   const outputPerCycle = Math.max(1, Math.floor(recipe.baseOutput * skillEfficiency));
   const oreId = "ore:" + recipe.consumeOre;
@@ -1009,7 +1012,8 @@ function processAutoLines(state, now, offline) {
     }
 
     // 仅 operational 段累积进度并结算。自动线最终倍率 = buildingMultiplier × stationLogisticsMultiplier
-    const stationLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state) : 1;
+    // 冶炼自动线补挂「空间站冶炼核心」+10%（与手动冶炼一致；装备/增强剂自动线不挂，核心本就是冶炼核心）
+    const stationLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, lineId === "smelting" ? "smelt" : undefined) : 1;
     // 研究批次 G · autoline 组：自动化协议提速（只加速周期，材料消耗与单周期产量完全不变）
     let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
     if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
@@ -1048,7 +1052,8 @@ function getStationBuildingSpeedMultiplier(state, buildingId) {
 function getStationAutoLineCycleDuration(state, lineId, recipe) {
   if (!recipe) return 0;
   const buildingMult = getStationBuildingSpeedMultiplier(state, AUTO_LINE_CONFIG[lineId].buildingId);
-  const logisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state) : 1;
+  // 冶炼自动线补挂「空间站冶炼核心」+10%（与手动冶炼/实际结算一致）；装备/增强剂自动线不挂
+  const logisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, lineId === "smelting" ? "smelt" : undefined) : 1;
   // 研究批次 G · autoline 组：与 processAutoLines 完全同式，UI 显示周期 = 实际结算周期
   let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
   if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
@@ -1058,7 +1063,10 @@ function getStationAutoLineCycleDuration(state, lineId, recipe) {
     const shipBonus = (assigned.config && assigned.config.bonuses) ? (assigned.config.bonuses.smeltingSpeed || 0) : 0;
     const rigMods = (assigned.instance && typeof getRigModifiers === "function") ? getRigModifiers(state, assigned.instance) : {};
     const rigBonus = rigMods.smeltingSpeed || 0;
-    const eff = (1 + shipBonus + rigBonus) * mult;
+    // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与结算 processSmeltingAutoLine 同式）
+    const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
+      ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
+    const eff = (1 + shipBonus + rigBonus) * mult * shipEnhanceSmelt;
     return recipe.baseTime / Math.max(0.001, eff);
   }
   return (recipe.time || recipe.baseTime || 30) / mult;

@@ -496,7 +496,10 @@ function getSmeltingDisplayState(state, now) {
   const implantRefineEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).refiningEff : 1;
   // 增强剂·冶炼速度（考古重制 Phase B · 考古蓝图产出）：独立乘区
   const boosterSmeltSpeed = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).smeltSpeedMultiplier : 1;
-  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed;
+  // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
+  const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
+    ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
+  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt;
   const progress = getProgressDisplayState(action, "refining", running.baseTime / efficiency, now);
   const targetChanged = progress.active && current.name !== running.name;
   const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
@@ -515,6 +518,7 @@ function getSmeltingDisplayState(state, now) {
     ship:assigned.config ? { id:assigned.config.id, name:assigned.config.name } : null,
     shipBonus,
     rigBonus,
+    shipEnhanceSmelt,
     boosterSmeltSpeed,
     actualTime:current.baseTime / efficiency,
     output:Math.max(1, Math.floor(current.baseOutput * skillEfficiency)),
@@ -679,7 +683,8 @@ function getActionConfirmationDisplayState(state, target, now) {
     else if (recipe.output.type === "fuel") result.outputText = "燃料单元×" + recipe.output.qty;
     else result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
     result.canOpen = display.level >= recipe.level && display.detail.hasRequiredBlueprint;
-    result.blockedText = result.canOpen ? "" : !display.detail.hasRequiredBlueprint ? "需要先在 LP 商店购买" + recipe.name + "蓝图" : "需要装备工程等级 Lv." + recipe.level;
+    const blueprintLocked = display.detail.requiresBlueprint && !display.detail.hasRequiredBlueprint;
+    result.blockedText = result.canOpen ? "" : blueprintLocked ? "需要先在蓝图商店购买" + recipe.name + "蓝图" : "需要装备工程等级 Lv." + recipe.level;
     result.queue = { skill:"equipmentEngineering", target:recipe.id, label:recipe.name };
   } else if (target === "shipComp") {
     const display = getShipEngineeringDisplayState(state, now);
@@ -1124,7 +1129,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
       seriesList:RIG_ENGINEERING_SERIES.map(s => ({ id:s.id, name:s.name, rigCategory:s.rigCategory, selected:s.id === rigSeries.id }))
     } : null,
     visibleCount:visibleRecipes.length,
-    selectedRecipe:{ ...selectedRecipe, cost:{ ...(selectedRecipe.cost || {}) }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output } },
+    selectedRecipe:{ ...selectedRecipe, cost:{ ...(selectedRecipe.cost || {}) }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output }, unlocked:level >= selectedRecipe.level && selectedHasRequiredBlueprint, hasRequiredBlueprint:selectedHasRequiredBlueprint },
     runningRecipe:{ ...runningRecipe, cost:{ ...(runningRecipe.cost || {}) }, inputEquipment:runningRecipe.inputEquipment ? { ...runningRecipe.inputEquipment } : null, output:{ ...runningRecipe.output } },
     recipes:visibleRecipes.map(recipe => {
       const equipment = recipe.output.type === "equipment" ? EQUIPMENT_DB[recipe.output.itemId] : null;
@@ -2236,6 +2241,15 @@ function getEquipmentEnhancementListDisplayState(state) {
   return { entries };
 }
 
+// 定点返修：统一经显示层取货币名，DisplayNames 不可用时按 fallback 收口（不得直接 isk/LP.toUpperCase）。
+function displayCurrencyName(currencyId, fallback) {
+  if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getCurrencyName === "function") {
+    const got = DisplayNames.getCurrencyName(currencyId);
+    if (got && got !== currencyId) return got;
+  }
+  return fallback;
+}
+
 function getLPStoreDisplayState(state) {
   const lp = ResourceRegistry.get(state, "currency:lp");
   const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
@@ -2256,7 +2270,7 @@ function getLPStoreDisplayState(state) {
         owned,
         ownedText:isBlueprint ? (owned ? "永久蓝图已拥有" : "永久蓝图未拥有") : "已拥有 " + owned,
         canBuy:lp >= item.lpPrice && (!isBlueprint || owned === 0),
-        purchaseText:isBlueprint && owned ? "已拥有" : item.lpPrice + " LP 兑换",
+        purchaseText:isBlueprint && owned ? "已拥有" : item.lpPrice + " " + displayCurrencyName("lp", "功勋") + "兑换",
         icon:isBlueprint ? "fa-solid fa-scroll" : item.equipmentId.includes("gas") ? "fa-solid fa-wind" : "fa-solid fa-gem"
       };
     })
@@ -2344,8 +2358,8 @@ function getBlueprintStoreDisplayState(state, selectedCategory) {
         canBuy:!owned && balance >= item.price,
         productName:preview.productName,
         previewLines:preview.previewLines,
-        priceText:item.price.toLocaleString() + " " + item.currency.toUpperCase(),
-        purchaseText:owned ? "已拥有" : item.price.toLocaleString() + " " + item.currency.toUpperCase() + " 购买",
+        priceText:item.price.toLocaleString() + " " + displayCurrencyName(item.currency === "lp" ? "lp" : "isk", item.currency === "lp" ? "功勋" : "星币"),
+        purchaseText:owned ? "已拥有" : item.price.toLocaleString() + " " + displayCurrencyName(item.currency === "lp" ? "lp" : "isk", item.currency === "lp" ? "功勋" : "星币") + " 购买",
         icon:item.kind === "shipBlueprint" ? "fa-solid fa-ship" : item.deathspaceTier ? "fa-solid fa-dungeon" : "fa-solid fa-scroll"
       };
     })

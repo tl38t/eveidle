@@ -14,6 +14,33 @@ const LocalStorageAdapter = {
   removeItem() { try { localStorage.removeItem(this._key); return true; } catch (e) { console.warn("删除存档失败：", e); return false; } }
 };
 
+// 定点返修：导入存档大小上限（10 MB）。既防超大文件读取，也防 importData 直调。
+const MAX_IMPORT_SAVE_BYTES = 10 * 1024 * 1024;
+
+// 定点返修：结构化遍历导入存档，拒绝任意层级的原型链污染键（__proto__/prototype/constructor）。
+// 纯只读遍历、不修改输入；必须在 Object.assign(gameState, data) 之前调用。
+// 返回 false 的情形：根非普通对象/为数组、或任意层级发现禁止键。
+function validateImportedSavePayload(data) {
+  if (data === null || typeof data !== "object" || Array.isArray(data)) return false;
+  const FORBIDDEN = new Set(["__proto__", "prototype", "constructor"]);
+  const stack = [data];
+  while (stack.length > 0) {
+    const node = stack.pop();
+    if (node === null || typeof node !== "object") continue;
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) stack.push(node[i]);
+      continue;
+    }
+    const keys = Object.keys(node); // 仅自有可枚举键，不读取继承属性
+    for (let i = 0; i < keys.length; i++) {
+      const k = keys[i];
+      if (FORBIDDEN.has(k)) return false;
+      stack.push(node[k]);
+    }
+  }
+  return true;
+}
+
 // 新手任务 Batch O：旧档兜底补给（rifter / miner_frigate / 100 万 ISK）只允许对「老档」生效。
 // Batch Q 定点返修：来源标记 SaveManager._lastLoadSourceHadTutorial 收敛为明确三态，
 // 判定只看**读档瞬间的原始存档对象**，绝不看当前内存态：
@@ -1149,7 +1176,33 @@ window.normalizeQueueState = normalizeQueueState;
 
 const SaveManager = {
   adapter: LocalStorageAdapter,
-  save() { if (this._pendingDelete) return false; gameState.lastSaveTime = Date.now(); gameState._dirty = false; const ok = this.adapter.save(gameState); this._updateStatus(ok ? "已保存 " + new Date().toLocaleTimeString() : "保存失败"); document.getElementById("footer-save") && (document.getElementById("footer-save").textContent = "存档：" + new Date().toLocaleTimeString()); return ok; },
+  _pendingDelete: false,
+  _importTransaction: false,
+  save() {
+    // 定点返修 P1-A：删除事务 / 导入事务挂起时禁止写盘，避免污染或回滚竞态。
+    if (this._pendingDelete || this._importTransaction) return false;
+    // 先保留原始 lastSaveTime；写入候选时间后再真正落盘，只有落盘成功才确认。
+    // 失败（返回 false 或抛异常）时还原时间戳、保持 _dirty=true，让 5s 自动保存下一次重试。
+    const prevLastSaveTime = gameState.lastSaveTime;
+    const candidateSaveTime = Date.now();
+    gameState.lastSaveTime = candidateSaveTime;
+    let ok = false;
+    try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
+    if (ok) {
+      gameState._dirty = false;
+      this._updateStatus("已保存 " + new Date(candidateSaveTime).toLocaleTimeString());
+      const footer = document.getElementById("footer-save");
+      if (footer) footer.textContent = "存档：" + new Date(candidateSaveTime).toLocaleTimeString();
+      return true;
+    }
+    // 落盘失败：还原时间戳、保持 dirty、明确失败提示；footer 绝不伪造成功。
+    gameState.lastSaveTime = prevLastSaveTime;
+    gameState._dirty = true;
+    this._updateStatus("保存失败，将自动重试");
+    const footer = document.getElementById("footer-save");
+    if (footer) footer.textContent = "存档：保存失败";
+    return false;
+  },
   // 新手任务 Batch O：sourceHadTutorial 必须在 Object.assign 之前、对**原始存档对象**判定，
   // 用于区分「老档（无 tutorial 字段）」与「现代档（已带 tutorial）」。判定结果挂在 SaveManager 上，
   // 供 autoLoad 决定 legacy 迁移与旧档兜底补给是否生效。
@@ -1157,11 +1210,24 @@ const SaveManager = {
   // 绝不能默认 false——false 表示「确实读到了一份没有 tutorial 字段的老档」，会让全新开局被误判并补发 rifter。
   _lastLoadSourceHadTutorial: null,
   load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
-  exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "EVE_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
+  exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "DeepSpaceIdle_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
   importData(jsonString) {
+    // 定点返修：直接调用入口防御（与文件选择器 file.size 双重守卫）。
+    // 命中即返回 false，不进入事务、不快照、不触碰 gameState / 本地存档。
+    if (typeof jsonString !== "string" || jsonString.length > MAX_IMPORT_SAVE_BYTES) { alert("导入失败：存档格式无效"); return false; }
+    // 定点返修 P1-B：导入原子化。导入前对当前内存态与来源标记做快照，
+    // 全程挂起内部 SaveManager.save（含 calculateOfflineGains 内部的落盘调用），
+    // 仅在全部迁移/对账/离线/规范化/UI 切换成功后做唯一一次最终落盘。
+    // 任意异常或最终落盘失败 → 就地还原导入前 gameState、还原来源标记、释放事务标志、
+    // 保留本地原存档、返回 false。
+    const preImportSnapshot = createSerializableGameStateSnapshot(gameState);
+    const preImportSourceHadTutorial = this._lastLoadSourceHadTutorial;
+    this._importTransaction = true;
     try {
       const data = this.adapter.import(jsonString);
       if (!data || !data.skills) throw new Error("无效存档");
+      // 定点返修：结构遍历拒绝原型链污染键，必须在 Object.assign 之前执行。
+      if (!validateImportedSavePayload(data)) throw new Error("无效存档");
       // 新手任务 Batch O：必须在 Object.assign 之前对**原始存档对象**判定 tutorial 字段是否存在。
       const sourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial");
       this._lastLoadSourceHadTutorial = sourceHadTutorial;
@@ -1279,8 +1345,17 @@ const SaveManager = {
       switchPage("skill");
       this._updateStatus("存档已导入，共 " + JSON.stringify(data).length + " 字节");
       updateUI();
+      // 全流程成功：先释放事务标志，再做唯一一次最终落盘（此前所有内部 save 均被 _importTransaction 抑制）。
+      this._importTransaction = false;
+      if (!this.save()) throw new Error("导入后落盘失败");
       return true;
     } catch (e) {
+      // 异常安全回滚：就地还原导入前内存态与来源标记，释放事务标志，保留本地原存档。
+      try {
+        restoreSerializableGameStateSnapshot(gameState, preImportSnapshot);
+        this._lastLoadSourceHadTutorial = preImportSourceHadTutorial;
+      } catch (rollbackErr) { /* 回滚自身异常安全：尽量还原，忽略回滚错误 */ }
+      this._importTransaction = false;
       alert("导入失败：存档格式无效");
       return false;
     }
@@ -1291,10 +1366,20 @@ const SaveManager = {
     // 标记待删除：阻止紧随 reload 的 beforeunload 自动保存把内存态重新写回 localStorage。
     this._pendingDelete = true;
     // Batch Q 定点返修：来源标记必须立刻回到 null，删档后重开不得沿用上一次的 legacy/modern 判定。
+    const prevMarker = this._lastLoadSourceHadTutorial;
     this._lastLoadSourceHadTutorial = null;
-    try { this.adapter.removeItem(this.adapter._key); } catch (e) { /* 忽略：即使删除失败也继续重启 */ }
+    // 真正落盘移除，检查 removeItem 真实返回值：成功才重启；失败则回滚标志、保留存档、提示、不重启。
+    let removed = false;
+    try { removed = this.adapter.removeItem(this.adapter._key); } catch (e) { removed = false; }
+    if (!removed) {
+      this._pendingDelete = false;
+      this._lastLoadSourceHadTutorial = prevMarker;
+      this._updateStatus("删除失败，存档仍保留");
+      return false;
+    }
     this._updateStatus("存档已删除，正在重启…");
     setTimeout(() => { try { location.reload(); } catch (e) {} }, 120);
+    return true;
   },
   // 暗金风格的二次确认弹窗（动态创建，不写入 index.html 静态结构，避免新增静态 DOM ID）。
   confirmDeleteSave() {
@@ -1516,7 +1601,7 @@ window.addEventListener("beforeunload", () => SaveManager.save());
   if (btnSave) btnSave.addEventListener("click", () => SaveManager.save());
   if (btnExport) btnExport.addEventListener("click", () => SaveManager.exportData());
   if (btnImport) btnImport.addEventListener("click", () => fileInput && fileInput.click());
-  if (fileInput) fileInput.addEventListener("change", (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (ev) => { SaveManager.importData(ev.target.result); fileInput.value = ""; }; reader.readAsText(file); });
+  if (fileInput) fileInput.addEventListener("change", (e) => { const file = e.target.files[0]; if (!file) return; if (file.size > MAX_IMPORT_SAVE_BYTES) { fileInput.value = ""; alert("存档文件超过 10 MB，已拒绝导入"); return; } const reader = new FileReader(); reader.onload = (ev) => { SaveManager.importData(ev.target.result); fileInput.value = ""; }; reader.readAsText(file); });
   const btnDelete = document.getElementById("btn-delete-save");
   if (btnDelete) btnDelete.addEventListener("click", () => SaveManager.confirmDeleteSave());
 })();

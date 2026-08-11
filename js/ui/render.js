@@ -373,7 +373,14 @@ function refreshVisiblePanelAfterAction() {
 })();
 
 dispatchGameAction(gameState, { type:"production/ensureMiningArea" }, Date.now());
-setInterval(() => RuntimeGuard.runCritical("gameTick", gameTick), 1000);
+// 定点返修 P1-D：后台计时安全。页面隐藏（document.hidden）时跳过 gameTick 且不更新 lastActiveTime，
+// 避免移动端后台降频期间空转少结算；可见时正常推进。可见性恢复后的离线追算由 persistence.js
+// 的 visibilitychange 处理。单一计时器、不在 render.js 额外注册 visibilitychange。
+function runScheduledGameTick() {
+  if (document.hidden) return;
+  RuntimeGuard.runCritical("gameTick", gameTick);
+}
+setInterval(runScheduledGameTick, 1000);
 
 let _lastProgressFrame = 0;
 let _lastPlanetFrame = 0;

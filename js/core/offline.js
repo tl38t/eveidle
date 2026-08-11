@@ -872,6 +872,10 @@ function applyOfflineGains(rawSeconds, context) {
     combat: 0
   };
   if (seconds <= 5) return gains;
+  // 定点返修 P1-C：结算前对 gameState 做全量快照；若 settle/flush/emit 任一阶段抛异常，
+  // 在 catch 中就地还原结算前 gameState（不前进 lastActiveTime、不落盘半应用状态），
+  // 仅向 RuntimeGuard 报告一次后 rethrow，由调用方决定是否继续。
+  const settlementSnapshot = createSerializableGameStateSnapshot(gameState);
   // 初始化考古虚拟时间
   gameState._archVirtualNowMs = Date.now() - seconds * 1000;
   const previousBatch = _offlineEventBatch;
@@ -899,6 +903,13 @@ function applyOfflineGains(rawSeconds, context) {
       rawSeconds: normalizedRawSeconds,
       settledSeconds: seconds
     });
+  } catch (e) {
+    // 异常安全回滚：就地还原结算前 gameState（finally 负责还原 batch 与清理虚拟时间）。
+    try { restoreSerializableGameStateSnapshot(gameState, settlementSnapshot); } catch (restoreErr) { /* 还原异常安全 */ }
+    if (typeof RuntimeGuard !== "undefined" && RuntimeGuard && typeof RuntimeGuard.report === "function") {
+      RuntimeGuard.report(e, { source:"offline:settlement", fatal:false, kind:"offline-settlement" });
+    }
+    throw e;
   } finally {
     _offlineEventBatch = previousBatch;
     delete gameState._archVirtualNowMs;
@@ -922,7 +933,14 @@ function calculateOfflineGains() {
   const lastActive = gameState.lastActiveTime || now;
   const elapsed = Math.floor((now - lastActive) / 1000);
   if (elapsed <= 5) return;
-  const gains = applyOfflineGains(elapsed, { runId:"offline_" + lastActive.toString(36) + "_" + now.toString(36) });
+  // 定点返修 P1-C：结算异常时 applyOfflineGains 已就地回滚并 rethrow；此处捕获后直接返回，
+  // 不前进 lastActiveTime、不落盘半应用状态（结算失败不应制造离线收益）。
+  let gains;
+  try {
+    gains = applyOfflineGains(elapsed, { runId:"offline_" + lastActive.toString(36) + "_" + now.toString(36) });
+  } catch (e) {
+    return;
+  }
   gameState.currentAction.lastProgressUpdate = now;
   gameState.lastActiveTime = now;
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);

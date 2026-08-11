@@ -379,6 +379,57 @@ function getEquipmentRecipeCategory(equipment) {
   return "mining";
 }
 
+// 装备蓝图来源提示：基于权威目录判定，不再用 recipe.faction / sourceZoneId 猜测来源。
+// recipe 为 EQUIPMENT_RECIPES 展平副本，携带 category / sourceDeathspaceId / sourceZoneId / faction。
+// 判定优先级：深空清剿 → 考古勘探 → 货柜 → 蓝图商店(LP) → 未知（绝不默认考古掉落）。
+// 货柜与 LP 商店均运行时只读权威常量，不复制第二份目录、不修改配方或 gameState。
+
+// 权威货柜蓝图装备 ID 集合（懒构建，兼容 cargo.js 加载顺序 / TDZ / 常量不可用的情况）。
+const BLUEPRINT_PREFIX = "blueprint:";
+let _cargoBlueprintEquipmentIds = null;
+function getCargoBlueprintEquipmentIds() {
+  if (_cargoBlueprintEquipmentIds) return _cargoBlueprintEquipmentIds;
+  // 权威货柜目录暂时不可用（TDZ / 加载顺序 / 常量缺失）：安全返回临时空集，
+  // 不永久缓存，等目录可用后下一次调用再构建并缓存。
+  if (typeof CARGO_BLUEPRINT_BY_SIZE === "undefined" || !CARGO_BLUEPRINT_BY_SIZE) {
+    return new Set();
+  }
+  const ids = new Set();
+  for (const size in CARGO_BLUEPRINT_BY_SIZE) {
+    const entries = CARGO_BLUEPRINT_BY_SIZE[size];
+    if (!Array.isArray(entries)) continue;
+    for (const e of entries) {
+      if (e && typeof e.id === "string") {
+        // 货柜条目 id 形如 "blueprint:<equipmentId>"，剥离前缀得到装备 ID。
+        const eqId = e.id.startsWith(BLUEPRINT_PREFIX) ? e.id.slice(BLUEPRINT_PREFIX.length) : e.id;
+        if (eqId) ids.add(eqId);
+      }
+    }
+  }
+  _cargoBlueprintEquipmentIds = ids;
+  return ids;
+}
+
+// 权威 LP 商店装备蓝图 ID 集合：蓝图商店实际在售装备（联盟 + 星带势力 + 深空清剿三类），
+// 由本文件既有权威数组汇总，杜绝用 recipe.faction / sourceZoneId 猜测。
+const LP_STORE_EQUIPMENT_IDS = (function () {
+  const ids = new Set();
+  const add = (arr) => { if (Array.isArray(arr)) for (const it of arr) if (it && it.equipmentId) ids.add(it.equipmentId); };
+  add(LP_STORE_BLUEPRINTS);
+  add(STAR_BELT_EQUIPMENT_BLUEPRINTS);
+  add(DEATHSPACE_EQUIPMENT_BLUEPRINTS);
+  return ids;
+})();
+
+function getEquipmentBlueprintSourceHint(recipe) {
+  if (!recipe || !recipe.id) return "获取蓝图";
+  if (recipe.sourceDeathspaceId) return "深空清剿获取蓝图";
+  if (recipe.category === "archaeology") return "考古勘探获取蓝图";
+  if (getCargoBlueprintEquipmentIds().has(recipe.id)) return "开启货柜获取蓝图";
+  if (LP_STORE_EQUIPMENT_IDS.has(recipe.id)) return "在蓝图商店用功勋购买蓝图";
+  return "获取蓝图";
+}
+
 const EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly).map(eq => ({
   id:eq.id, name:eq.name, level:eq.level, time:eq.time, xp:eq.xp,
   cost:eq.cost, slot:eq.slot, faction:eq.faction || "", requiresBlueprint:Boolean(eq.requiresBlueprint),
