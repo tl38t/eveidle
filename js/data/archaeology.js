@@ -21,7 +21,7 @@ const SITE_PROFILES = Object.freeze({
     backlashMultiplier:0.70, commonWeights:[0.45,0.35,0.20], calibrationMultiplier:0.5, uniqueMultiplier:0.5, lpMultiplier:0.5 }),
   research: Object.freeze({ type:"research", label:"科研遗迹", desc:"校准材料概率最高",
     backlashMultiplier:1.0,  commonWeights:[0.60,0.30,0.10], calibrationMultiplier:2.0, uniqueMultiplier:1.0, lpMultiplier:1.0 }),
-  treasure: Object.freeze({ type:"treasure", label:"危险秘藏", desc:"高风险高回报独特与LP",
+  treasure: Object.freeze({ type:"treasure", label:"危险秘藏", desc:"高风险高回报，侧重独特发现与功勋",
     backlashMultiplier:1.40, commonWeights:[0.70,0.20,0.10], calibrationMultiplier:0.5, uniqueMultiplier:2.0, lpMultiplier:2.0 })
 });
 

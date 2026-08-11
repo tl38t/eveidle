@@ -664,12 +664,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   ResourceRegistry.add(state, "currency:isk", isk);
   enemy.defeated = true;
   enemy.rewarded = true;
-  let iskName = "星币";
-  if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getCurrencyName === "function") {
-    const got = DisplayNames.getCurrencyName("isk");
-    if (got && got !== "isk") iskName = got;
-  }
-  c.lastLoot = iskName + " " + isk.toLocaleString();
+  c.lastLoot = getCombatCurrencyDisplayName("isk", "星币") + " " + isk.toLocaleString();
   const deathspace = c.mode === "deathspace" ? getDeathspaceById(c.deathspaceId) : null;
   const dataDrop = deathspace ? null : rollFactionEncryptedDataDrop(zone.faction, enemy.kind, roll(), zone, state);
   if (dataDrop) c.lastLoot += " · " + dataDrop.material + " ×" + dataDrop.qty;
@@ -722,6 +717,16 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   return { isk, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop };
 }
 
+// 定点返修：战斗内货币显示统一入口（纯读，不写 gameState）。
+// DisplayNames 不可用时回退 fallback，避免战斗/死亡空间掉落文案硬编码 LP/ISK。
+function getCombatCurrencyDisplayName(currencyId, fallback) {
+  if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getCurrencyName === "function") {
+    const got = DisplayNames.getCurrencyName(currencyId);
+    if (got && got !== currencyId) return got;
+  }
+  return fallback;
+}
+
 function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
   state = state || gameState;
   const c = state.combat;
@@ -729,14 +734,14 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
   const theRng = (typeof rng === "function") ? rng : Math.random;
   const waveLp = site.waveLp || 0;
   ResourceRegistry.add(state, "currency:lp", waveLp);
-  c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + "房间LP +" + waveLp;
+  c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + getCombatCurrencyDisplayName("lp", "功勋") + " +" + waveLp;
   doEmit("combat:deathspaceWaveCleared", { deathspaceId:site.id, zoneId:zone.id, wave:c.wave, lp:waveLp });
   if (c.wave >= site.maxWave) {
     const clearLp = site.clearLpBonus || 0;
     ResourceRegistry.add(state, "currency:lp", clearLp);
     if (!c.deathspaceClears || typeof c.deathspaceClears !== "object") c.deathspaceClears = {};
     c.deathspaceClears[site.id] = (c.deathspaceClears[site.id] || 0) + 1;
-    c.lastLoot += " · 全通LP +" + clearLp;
+    c.lastLoot += " · " + getCombatCurrencyDisplayName("lp", "功勋") + " +" + clearLp;
     c.lastStatus = "死亡空间全通 · " + site.name;
     // Batch C-12（返修）：先 emit deathspaceCleared，再清零 runDamage
     doEmit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
@@ -776,7 +781,7 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
     if (c.deathspaceChainRemaining > 0) c.deathspaceChainPending = true; // 旧连刷链（非队列）路径
     return true;
   }
-  c.lastStatus = "房间肃清 · LP +" + waveLp;
+  c.lastStatus = "房间肃清 · " + getCombatCurrencyDisplayName("lp", "功勋") + " +" + waveLp;
   c.wave++;
   spawnCombatWave(theRng, state.combat, state);
   return true;
@@ -844,7 +849,7 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
     ResourceRegistry.add(state, "currency:lp", lp);
     if (!c.zoneClears || typeof c.zoneClears !== "object") c.zoneClears = {};
     c.zoneClears[zone.id] = (c.zoneClears[zone.id] || 0) + 1;
-    c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + "肃清LP +" + lp;
+    c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + getCombatCurrencyDisplayName("lp", "功勋") + " +" + lp;
     c.lastStatus = "肃清完成 · " + zone.name;
     // Batch C-11：payload 附带通关波次与本 run 实际开火武器类型（快照副本，防外部引用篡改）
     // Batch C-12：追加 damageTaken（全程累计实际承伤，emit 后归零）

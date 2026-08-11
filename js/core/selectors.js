@@ -683,7 +683,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     else if (recipe.output.type === "fuel") result.outputText = "燃料单元×" + recipe.output.qty;
     else result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
     result.canOpen = display.level >= recipe.level && display.detail.hasRequiredBlueprint;
-    result.blockedText = result.canOpen ? "" : !display.detail.hasRequiredBlueprint ? "需要先在 LP 商店购买" + recipe.name + "蓝图" : "需要装备工程等级 Lv." + recipe.level;
+    result.blockedText = result.canOpen ? "" : !display.detail.hasRequiredBlueprint ? "需要先在蓝图商店购买" + recipe.name + "蓝图" : "需要装备工程等级 Lv." + recipe.level;
     result.queue = { skill:"equipmentEngineering", target:recipe.id, label:recipe.name };
   } else if (target === "shipComp") {
     const display = getShipEngineeringDisplayState(state, now);
