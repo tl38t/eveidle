@@ -634,6 +634,10 @@
     GameEvents.onIdempotent("archaeology:artifactFound", { consumerId: "tutorial:arch", getLedger }, e => onArchFound(state, e));
     GameEvents.onIdempotent("archaeology:artifactSold", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
     GameEvents.onIdempotent("archaeology:artifactRedeemed", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
+    // 批量路径（仓库「一键回收」/ 研究协议自动出售兑换均走 all=true）只发复数事件
+    // archaeology:artifactsSold / artifactsRedeemed，A5「遗物兑现」必须也能收此信号，否则卡住。
+    GameEvents.onIdempotent("archaeology:artifactsSold", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
+    GameEvents.onIdempotent("archaeology:artifactsRedeemed", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
     GameEvents.onIdempotent("combat:enemyDefeated", { consumerId: "tutorial:combat", getLedger }, e => onEnemyDefeated(state, e));
     GameEvents.onIdempotent("combat:waveCleared", { consumerId: "tutorial:combat", getLedger }, e => onWaveCleared(state, e));
     GameEvents.onIdempotent("ship:destroyed", { consumerId: "tutorial:combat", getLedger }, e => onShipDestroyed(state, e));
