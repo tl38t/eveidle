@@ -2724,12 +2724,38 @@ const server = http.createServer((request, response) => {
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const address = server.address();
 const baseUrl = `http://127.0.0.1:${address.port}`;
-for (const source of ["./index.html", ...localSources, "./images/ships/裂谷级.png", "./images/enemies/天使侦查舰.png"]) {
+for (const source of ["./index.html", ...localSources]) {
   const response = await fetch(new URL(source.replace(/^\.\//, "/"), baseUrl));
   if (!response.ok) throw new Error(`HTTP ${response.status}：${source}`);
   await response.arrayBuffer();
 }
 await new Promise((resolve) => server.close(resolve));
+
+// ============================================================
+// 定点返修（TapTap 版权合规第一次定点返修）：退役 2D 舰船素材后轻量断言
+// 不复制整套战斗审计；仅校验 (a) 数据层 image 字段已移除 (b) 渲染层 placeholder 分支保留 (c) 退役路径不再被生产代码引用
+// ============================================================
+{
+  if (vm.runInContext('ENEMY_DATABASE.angel.types.scout.image', sandbox) !== undefined)
+    throw new Error("定点返修失败：combat.js scout 仍含 image 字段");
+  if (vm.runInContext('STARTER_SHIPS.rifter.image', sandbox) !== undefined)
+    throw new Error("定点返修失败：ships.js rifter 仍含 image 字段");
+
+  const combatRenderSrc = fs.readFileSync(path.join(root, "js/ui/combat-render.js"), "utf8");
+  if (!/target\.image\s*\?\s*`[^`]*`\s*:\s*`[^`]*combat-ship-placeholder/.test(combatRenderSrc))
+    throw new Error("定点返修失败：combat-render.js 敌人 placeholder 分支缺失");
+  if (!/display\.player\.image\s*\?\s*`[^`]*`\s*:\s*'[^']*combat-ship-placeholder/.test(combatRenderSrc))
+    throw new Error("定点返修失败：combat-render.js 玩家 placeholder 分支缺失");
+
+  const retired = ["images/enemies/天使侦查舰.png", "images/ships/裂谷级.png"];
+  for (const p of retired) {
+    if (combatRenderSrc.includes(p)) throw new Error("定点返修失败：combat-render.js 仍引用 " + p);
+    if (fs.readFileSync(path.join(root, "js/data/ships.js"), "utf8").includes(p))
+      throw new Error("定点返修失败：ships.js 仍引用 " + p);
+    if (fs.readFileSync(path.join(root, "js/data/combat.js"), "utf8").includes(p))
+      throw new Error("定点返修失败：combat.js 仍引用 " + p);
+  }
+}
 
 // ============================================================
 // Lv.80 旗舰基础战斗装备与 0.0 强度校准 — 专项校验
