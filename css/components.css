@@ -166,6 +166,11 @@
     color:#b7c7d5; font-family:'Rajdhani', 'Bahnschrift', sans-serif; font-size:14px; font-weight:600;
     line-height:1.4; letter-spacing:.02em; font-variant-numeric:tabular-nums; white-space:nowrap;
   }
+  .mining-target-sub {
+    color:#9fb0bf; font-family:var(--font-ui); font-size:12px; font-weight:600;
+    line-height:1.35; text-align:center; letter-spacing:.01em; max-width:100%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
   .mining-target-state {
     margin-top:auto; color:#86d3f7; font-family:var(--font-tech); font-size:14px;
     line-height:1.4; font-weight:700; letter-spacing:.14em; text-shadow:0 0 9px rgba(121,201,242,.16);
@@ -200,6 +205,29 @@
   .area-dropdown-content .area-option.selected { color: #d4a843; }
   .area-dropdown-content .area-option.locked { color: #3a4a5a; font-style: italic; }
   .area-dropdown-content .area-option .area-req { font-size: 10px; color: #4a5a6a; margin-left: 8px; }
+
+  /* ===== 工业卡片：手机端紧凑网格（对齐银河奶牛放置风格，一屏内不滚动显示全部） ===== */
+  @media (max-width: 720px) {
+    .mining-target-scroll { overflow-x: visible; }
+    .mining-target-strip { flex-wrap: wrap; gap: 6px; min-width: 0; width: 100%; }
+    .mining-target-card {
+      flex: 0 0 calc(33.33% - 4px);
+      width: calc(33.33% - 4px);
+      max-width: 120px;
+      min-width: 92px;
+      height: auto;
+      min-height: 128px;
+      max-height: 140px;
+      padding: 7px 5px 6px;
+    }
+    /* 小卡上斜角"运行中"丝带会被裁切且显拥挤，改为仅靠状态文字「正在采集」表达 */
+    .mining-target-card.running::after { display: none; }
+    .mining-target-name { font-size: 11px; letter-spacing: .06em; }
+    .mining-target-visual { width: 44px; height: 44px; font-size: 28px; }
+    .mining-target-meta { font-size: 10px; }
+    .mining-target-sub { font-size: 9px; }
+    .mining-target-state { font-size: 10px; letter-spacing: .06em; }
+  }
 
   /* ===== 仓库面板 ===== */
   .cargo-panel { flex: 1; display: flex; flex-direction: column; }

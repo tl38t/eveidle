@@ -67,7 +67,7 @@
     width: min(80vw, 340px);
     max-width: calc(100vw - 16px) !important;
     max-height: 46vh !important;
-    z-index: 1200 !important;
+    z-index: 1450 !important;
     border-radius: 10px !important;
     box-shadow: 0 10px 32px rgba(0,0,0,.55) !important;
   }
@@ -105,6 +105,13 @@
     display:block; height:1px; flex:0 0 auto;
     background: linear-gradient(90deg, transparent, rgba(56,189,248,.30), transparent);
     margin: 8px 10px;
+  }
+  /* Bug3：竖屏抽屉恢复技能等级徽标。
+     生产 base.css @media(max-width:720px) 把 .sidebar .nav-lv 设了 display:none；
+     此处用更高优先级选择器重新显示（含战斗子技能，均带 data-lv）。 */
+  .sidebar .nav-item .nav-lv{
+    display: inline-flex; align-items: center;
+    margin-left: auto; flex: 0 0 auto;
   }
   .content{
     width:100%; min-width:0; min-height:0; height:100%;
@@ -202,6 +209,23 @@
   }
   .mining-target-strip{ width:max-content; min-width:max-content; flex-wrap:nowrap; }
   .mining-target-card{ flex:0 0 auto; touch-action:pan-x; }
+  /* <=720px 由 components.css 使用三列紧凑网格；本文件后加载，必须在这里
+     复写原横滑规则，否则 width:max-content + nowrap 会把网格强制还原成单行。 */
+  @media (max-width:720px){
+    .mining-target-scroll{
+      overflow-x:visible; overflow-y:visible;
+      touch-action:pan-y;
+      overscroll-behavior-x:auto;
+    }
+    .mining-target-strip{
+      width:100%; min-width:0;
+      flex-wrap:wrap;
+    }
+    .mining-target-card{
+      flex:0 0 calc(33.333% - 4px);
+      touch-action:pan-y;
+    }
+  }
   /* 锁定卡片不截获触摸：让横向拖动穿透到滚动容器；锁定仍不可选（生产仅对非 disabled 绑 click）。 */
   .mining-target-card.locked{ pointer-events:none; }
 

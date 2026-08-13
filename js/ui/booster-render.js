@@ -79,7 +79,9 @@ function renderBoosterDetail(display) {
   if (tier) tier.textContent = recipe.qualityName;
   if (!body) return;
   var materials = recipe.materialRows.map(function(row) {
-    return '<div class="equipeng-material' + (row.enough ? " enough" : " short") + '"><span><i class="fa-solid fa-cubes-stacked"></i>' + row.displayName + '</span><strong>×' + row.required + '</strong><small>库存 ' + row.stock.toLocaleString() + '</small></div>';
+    var key = row.reference;
+    var name = row.displayName;
+    return '<div class="equipeng-material' + (row.enough ? " enough" : " short") + '"><span><i class="fa-solid fa-cubes-stacked"></i><button type="button" class="mat-link" data-mat-key="' + twEsc(key) + '" data-mat-name="' + twEsc(name) + '">' + twEsc(name) + '</button></span><strong>×' + row.required + '</strong><small>库存 ' + row.stock.toLocaleString() + '</small></div>';
   }).join("");
   var running = (display.isRunning && display.runningRecipeId && display.runningRecipeId !== recipe.id)
     ? '<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造其他配方 · 当前查看不会改变本次产物</div>'

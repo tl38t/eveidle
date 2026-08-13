@@ -124,7 +124,10 @@ const optionalIds = new Set([
   // 动态创建的 ID：reward-result-modal 由 shell-render.js openRewardResultModal 运行时创建（持久结算/开箱弹窗）
   "reward-result-modal",
   // 动态创建的 ID：tp-hangar-root 由 taptap-portrait.js 运行时创建（竖屏舰船坞根容器）
-  "tp-hangar-root"
+  "tp-hangar-root",
+  // 动态创建的 ID：__qa_dom_probe__ 由 js/qa-seed.js 的 hasRealDom() 在运行时创建、使用并删除，
+  // 属于 QA 探针的临时 DOM 节点，不应静态存在于 index.html。禁止为了通过检查把它塞进 index.html，也禁止删除 QA 探针。
+  "__qa_dom_probe__"
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
@@ -136,8 +139,11 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 //   -tier-counts / -category-tabs / -status-tabs / -grid）
 // + Batch E 科研工时余额 1 个 ID（achievements-research-bank）
 // + Batch F 研究页 8 个 ID（research-panel / -summary / -bank / -active /
-//   research-progress-fill / research-tree / research-detail / research-queue）
-if (htmlIds.size !== 320) throw new Error(`预期 320 个 DOM ID，实际 ${htmlIds.size}`);
+//   research-progress-fill / research-tree / research-detail / research-queue)
+// 注：基线 320 → 319 的 −1 来自本次返修前（同日未提交 diff）的工业 UI 统一化：移除采气/冶炼旧下拉
+// （gas-dropbtn / gas-dropdown-content / smelting-dropbtn / smelting-dropdown-content）共 4 个 id，
+// 新增 #gas-target-strip / #smelting-target-strip / #tutorial-widget-mini 共 3 个 id，净减 1。
+if (htmlIds.size !== 319) throw new Error(`预期 319 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
   "research-progress-fill", "research-tree", "research-detail", "research-queue"

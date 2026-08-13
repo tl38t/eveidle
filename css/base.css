@@ -842,10 +842,9 @@
   .research-queue-index { font-family: var(--font-tech, sans-serif); color: #c2a8ff; margin-right: 4px; }
   .research-queue-meta { color: #9fb0c2; font-size: 12px; }
 
-  /* 移动端：仍是横向科技树，只是详情区改为竖排；横向移动只发生在树内部 */
+  /* 移动端：仍是横向科技树；详情区沿用桌面端固定模态（不再覆盖为 static），横向移动只发生在树内部 */
   @media (max-width: 720px) {
     .research-tree-layout { flex-direction: column; }
-    .research-detail { flex: 1 1 auto; width: 100%; position: static; max-height: none; }
     .research-panel .panel-body { padding: 10px; overflow-x: hidden; }
   }
 
@@ -879,6 +878,8 @@
     border: 1px solid rgba(212, 168, 67, 0.34);
     border-radius: 10px;
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
+    /* 触屏：整卡统一由 JS 接管手势（拖拽/滚动方向自判），避免浏览器把竖向手势当滚动而中断拖拽 */
+    touch-action: none;
   }
   .tutorial-widget[hidden] { display: none; }
 
@@ -940,7 +941,14 @@
 
   .tutorial-widget .tw-body { display: flex; flex-direction: column; gap: 8px; }
   .tutorial-widget.collapsed .tw-body { display: none; }
-  .tutorial-widget.collapsed { gap: 6px; padding-bottom: 10px; }
+  .tutorial-widget.collapsed { gap: 0; padding: 8px 11px; }
+  /* 收起态：仅保留 header 一行（新手引导 · 已完成 N/M + 展开按钮），其余全部隐藏 */
+  .tutorial-widget.collapsed .tw-progress { display: none; }
+  .tutorial-widget.collapsed .tw-brand { letter-spacing: .5px; text-transform: none; }
+  .tutorial-widget.collapsed .tw-collapsed-label { display: inline; }
+  .tutorial-widget:not(.collapsed) .tw-collapsed-label { display: none; }
+  .tutorial-widget.collapsed .tw-header { cursor: pointer; }
+  .tutorial-widget .tw-mini-num { color: #d4a843; font-weight: 700; }
 
   .tutorial-widget .tw-tabs { display: flex; gap: 6px; }
   .tutorial-widget .tw-tabs[hidden] { display: none; }

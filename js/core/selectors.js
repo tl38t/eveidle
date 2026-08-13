@@ -644,17 +644,17 @@ function getActionConfirmationDisplayState(state, target, now) {
     const display = getMiningDisplayState(state, now);
     result.title = icons.mining + " " + (SKILL_LABEL.mining || "采矿");
     result.duration = display.actualTime;
-    result.outputText = display.current.ore + "×1";
+    result.outputText = getResourceDisplayName(display.current.ore) + "×1";
     result.canOpen = display.canStart;
     result.blockedText = display.requirement.text;
-    result.queue = { skill:"mining", target:display.current.name, label:display.current.ore };
+    result.queue = { skill:"mining", target:display.current.name, label:getResourceDisplayName(display.current.ore) };
   } else if (target === "refining") {
     const display = getSmeltingDisplayState(state, now);
     const recipe = display.current;
     result.title = icons.refining + " " + (SKILL_LABEL.refining || "冶炼");
     result.duration = display.actualTime;
     result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
-    result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:recipe.consumeOre, quantity:1, stock:display.stock, enough:display.stock >= 1 }];
+    result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:getResourceDisplayName(recipe.consumeOre), quantity:1, stock:display.stock, enough:display.stock >= 1 }];
     result.maxCount = Math.max(1, display.stock);
     result.unlimited = false;
     result.canOpen = display.canStart;
@@ -664,10 +664,10 @@ function getActionConfirmationDisplayState(state, target, now) {
     const display = getGasDisplayState(state, now);
     result.title = icons.gasHarvesting + " " + (SKILL_LABEL.gasHarvesting || "气体采集");
     result.duration = display.actualTime;
-    result.outputText = display.current.gas + "×1";
+    result.outputText = getResourceDisplayName(display.current.gas) + "×1";
     result.canOpen = display.canStart;
     result.blockedText = display.canStart ? "" : "需要气体采集等级 Lv." + display.current.level;
-    result.queue = { skill:"gasHarvesting", target:display.current.name, label:display.current.gas };
+    result.queue = { skill:"gasHarvesting", target:display.current.name, label:getResourceDisplayName(display.current.gas) };
   } else if (target === "equipmentEngineering") {
     const display = getEquipmentEngineeringDisplayState(state, now, "");
     const recipe = display.selectedRecipe;

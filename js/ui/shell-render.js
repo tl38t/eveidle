@@ -382,6 +382,76 @@ function closeEquipEnhanceModal() {
   }
 }
 
+/* Bug2：制造配方材料来源映射（按资源 id 前缀 / 中文名归类，pageId 与 CARGO_SOURCE 一致，可被 twGoToTarget 路由） */
+const MATERIAL_SOURCE = {
+  ore:        { pageId:"mining",            pageLabel:"采矿",     icon:"fa-solid fa-gem",        emoji:"🪨" },
+  mineral:    { pageId:"refining",          pageLabel:"冶炼",     icon:"fa-solid fa-fire",       emoji:"🔩" },
+  planetary:  { pageId:"planetary",         pageLabel:"行星开发", icon:"fa-solid fa-globe",      emoji:"🌍" },
+  gases:      { pageId:"gasHarvesting",     pageLabel:"气体采集", icon:"fa-solid fa-wind",       emoji:"💨" },
+  moon:       { pageId:"mining",            pageLabel:"采矿",     icon:"fa-solid fa-moon",       emoji:"🌑" },
+  special:    { pageId:"combat",            pageLabel:"战斗",     icon:"fa-solid fa-crosshairs", emoji:"⚔️" },
+  consumable: { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears", emoji:"🔧" },
+  component:  { pageId:"shipEngineering",   pageLabel:"舰船工程", icon:"fa-solid fa-rocket",  emoji:"🛠️" }
+};
+// 资源命名空间 → MATERIAL_SOURCE 键映射（与 ResourceRegistry 定义一致，避免中文特例维护）
+const SOURCE_BY_NAMESPACE = {
+  ore: "ore",
+  mineral: "mineral",
+  planetary: "planetary",
+  gas: "gases",
+  moon: "moon",
+  special: "special",
+  component: "component",
+  consumable: "consumable"
+};
+function getMaterialSourceInfo(key) {
+  if (typeof key !== "string") return MATERIAL_SOURCE.mineral;
+  // 优先使用权威资源定义：resolveMaterialIds 同时覆盖 namespace:itemId 与纯中文名（跨命名空间按名聚合），
+  // 再取 getDefinition 的 namespace 映射到来源分类。镓/铂/铪/铷（月矿）→ 采矿，行星材料 → 行星开发，气体 → 气体采集。
+  const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : null;
+  if (RR && typeof RR.resolveMaterialIds === "function" && typeof RR.getDefinition === "function") {
+    try {
+      const ids = RR.resolveMaterialIds(key);
+      const id = (ids && ids[0]) || (key.indexOf(":") >= 0 ? key : null);
+      const def = id ? RR.getDefinition(id) : null;
+      if (def && def.namespace) {
+        const mapped = SOURCE_BY_NAMESPACE[def.namespace];
+        if (mapped && MATERIAL_SOURCE[mapped]) return MATERIAL_SOURCE[mapped];
+      }
+    } catch (e) { /* 解析异常则降级到正则 */ }
+  }
+  // 降级：仅当 ResourceRegistry 不可用或完全解析失败时，使用旧的命名前缀/中文正则判断
+  if (key.indexOf(":") >= 0) {
+    const prefix = key.slice(0, key.indexOf(":")).toLowerCase();
+    const norm = prefix === "gas" ? "gases" : prefix;
+    if (MATERIAL_SOURCE[norm]) return MATERIAL_SOURCE[norm];
+  }
+  if (/气体|同位素|富勒烯/.test(key)) return MATERIAL_SOURCE.gases;
+  if (key === "重金属") return MATERIAL_SOURCE.planetary;
+  if (/许可|教团|劫团|集群|残液/.test(key)) return MATERIAL_SOURCE.special;
+  return MATERIAL_SOURCE.mineral;
+}
+// Bug2（修正）：制造页「制造材料」列表里的材料名 → 仓库式物品弹窗。
+// 弹窗展示该材料的「物品介绍 + 出产位置（去哪获取）」，直接回答"材料怎么来"。
+function openMaterialDetail(materialKey, displayName) {
+  if (typeof openItemDetailModal !== "function") return;
+  const src = getMaterialSourceInfo(materialKey);
+  openItemDetailModal({
+    id: typeof materialKey === "string" ? materialKey : String(materialKey),
+    name: displayName,
+    icon: src.emoji || "📦",
+    category: "material",
+    description: "",
+    source: src
+  });
+}
+// 全局委托：制造页材料名链接（data-mat-key / data-mat-name）点击即弹材料详情。
+document.addEventListener("click", event => {
+  const link = event.target.closest("[data-mat-key]");
+  if (!link) return;
+  openMaterialDetail(link.dataset.matKey, link.dataset.matName || link.textContent);
+});
+
 /* 通用物品详情弹窗：装备 → 解析到强化弹窗（含强化+介绍+出产）；非装备 → 介绍+出产 */
 function openItemDetailModal(item) {
   if (item.category === "equipment" && item.itemId) {
@@ -2457,50 +2527,122 @@ function twInstallDrag() {
     }
   } catch (e) { /* 忽略损坏的存档 */ }
 
-  let dragging = false, startX = 0, startY = 0, originLeft = 0, originTop = 0, moved = false;
+  let pointerActive = false, panelDragMode = false, scrollMode = false, pointerCaptured = false;
+  let startX = 0, startY = 0, lastY = 0, originLeft = 0, originTop = 0, moved = false;
+  let startTarget = null;
+  let dragStartTab = null;        // 起拖所在的具体 .tw-tab 元素，用于限定 click 抑制范围
+  let clickGuardHandler = null;   // 当前活动的「拖拽后 click 拦截」监听
+  let clickGuardTimer = null;     // 超时自动清理定时器
+  const bodyEl = widget.querySelector(".tw-body");
+  const removeClickGuard = () => {
+    if (clickGuardTimer) { clearTimeout(clickGuardTimer); clickGuardTimer = null; }
+    if (clickGuardHandler) { document.removeEventListener("click", clickGuardHandler, true); clickGuardHandler = null; }
+  };
 
   const onDown = (e) => {
     if (e.button !== undefined && e.button !== 0) return;            // 仅主键 / 触摸
     if (e.target && e.target.closest && e.target.closest("#tutorial-widget-toggle")) return; // 收起按钮不触发
+    if (e.target && e.target.closest && e.target.closest(".tw-btn")) return; // 任务按钮不触发
+    // 仅记录起点与候选手势状态；禁止在 down 阶段 pin/捕获/写位置/加 tw-dragging。
+    // 单击、标签切换、正文滚动都不得移动面板或写 TUTORIAL_WIDGET_POS_KEY。
+    removeClickGuard();             // 新一次按下先撤销任何残留的 click 守卫，避免误吞后续点击
     const rect = widget.getBoundingClientRect();
-    if (widget.style.right !== "auto" || widget.style.bottom !== "auto" || widget.style.left === "") {
-      pinToFloating(rect.left, rect.top);                           // 首次拖动：CSS 锚点 → left/top 折算并锁宽
-    }
-    dragging = true; moved = false;
-    startX = e.clientX; startY = e.clientY;
+    pointerActive = true;
+    panelDragMode = false;
+    scrollMode = false;
+    pointerCaptured = false;
+    moved = false;
+    startX = e.clientX; startY = e.clientY; lastY = e.clientY;
     originLeft = rect.left; originTop = rect.top;
-    widget.classList.add("tw-dragging");
-    if (header.setPointerCapture && e.pointerId !== undefined) { try { header.setPointerCapture(e.pointerId); } catch (_) {} }
-    e.preventDefault();
+    startTarget = e.target;
+    dragStartTab = (startTarget && startTarget.closest) ? startTarget.closest(".tw-tab") : null;
   };
 
   const onMove = (e) => {
-    if (!dragging) return;
+    if (!pointerActive) return;
     const dx = e.clientX - startX, dy = e.clientY - startY;
-    if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;     // 移动阈值，避免误触
-    moved = true;
-    const w = widget.offsetWidth, h = widget.offsetHeight;
-    const left = clamp(originLeft + dx, 0, Math.max(0, vw() - w));
-    const top = clamp(originTop + dy, 0, Math.max(0, vh() - h));
-    widget.style.left = left + "px";
-    widget.style.top = top + "px";
+    if (!moved && Math.abs(dx) < 4 && Math.abs(dy) < 4) return;     // 超过 4px 阈值后才判定手势意图
+    if (!moved) {
+      moved = true;
+      // 首次明显移动：起点在可滚动 .tw-body 且竖向为主 → 仅滚正文；其余（标题/标签/横向/列表不溢出）→ 拖动面板
+      const onTabs = startTarget && startTarget.closest && startTarget.closest(".tw-tabs");
+      const onBody = !onTabs && startTarget && startTarget.closest && startTarget.closest(".tw-body");
+      const bodyScrollable = bodyEl && bodyEl.scrollHeight > bodyEl.clientHeight + 1;
+      if (onBody && bodyScrollable && Math.abs(dy) > Math.abs(dx)) {
+        scrollMode = true;
+      } else {
+        panelDragMode = true;
+        // 仅确认 panelDragMode 后才 pin/捕获/加拖动态/更新 left/top
+        const rect = widget.getBoundingClientRect();
+        if (widget.style.right !== "auto" || widget.style.bottom !== "auto" || widget.style.left === "") {
+          pinToFloating(rect.left, rect.top);                       // CSS 锚点 → left/top 折算并锁宽
+        }
+        originLeft = parseFloat(widget.style.left) || rect.left;
+        originTop = parseFloat(widget.style.top) || rect.top;
+        widget.classList.add("tw-dragging");
+        if (widget.setPointerCapture && e.pointerId !== undefined) { try { widget.setPointerCapture(e.pointerId); pointerCaptured = true; } catch (_) {} }
+      }
+      e.preventDefault();                                           // 已确认手势，阻止浏览器原生滚动/选择
+    }
+    if (scrollMode) {
+      const delta = lastY - e.clientY;                              // 手指上移 → 列表上滚
+      if (bodyEl) bodyEl.scrollTop += delta;
+      lastY = e.clientY;
+      return;                                                       // 不改动面板 left/top/width，不保存位置
+    }
+    if (panelDragMode) {
+      const w = widget.offsetWidth, h = widget.offsetHeight;
+      const left = clamp(originLeft + dx, 0, Math.max(0, vw() - w));
+      const top = clamp(originTop + dy, 0, Math.max(0, vh() - h));
+      widget.style.left = left + "px";
+      widget.style.top = top + "px";
+    }
   };
 
-  const onUp = (e) => {
-    if (!dragging) return;
-    dragging = false;
+  // 统一收尾：isCancel=true 表示 pointercancel（只清理状态/释放捕获，不安装 click 守卫）；
+  // isCancel=false 表示 pointerup（可安装「拖拽后 click 抑制」）。
+  const finishPointer = (e, isCancel) => {
+    if (!pointerActive) return;
+    pointerActive = false;
+    const wasPanelDrag = panelDragMode;
     widget.classList.remove("tw-dragging");
-    if (header.releasePointerCapture && e.pointerId !== undefined) { try { header.releasePointerCapture(e.pointerId); } catch (_) {} }
-    try {
-      const left = parseFloat(widget.style.left), top = parseFloat(widget.style.top);
-      if (Number.isFinite(left) && Number.isFinite(top)) localStorage.setItem(TUTORIAL_WIDGET_POS_KEY, JSON.stringify({ left, top }));
-    } catch (e2) { /* 忽略隐私模式写入失败 */ }
+    // 释放指针捕获前先判断确实捕获过
+    if (pointerCaptured) {
+      if (widget.releasePointerCapture && e.pointerId !== undefined) { try { widget.releasePointerCapture(e.pointerId); } catch (_) {} }
+      pointerCaptured = false;
+    }
+    // 仅 pointerup 的真实面板拖动才持久化；pointercancel/单击/标签切换/正文滚动一律不写位置
+    if (!isCancel && wasPanelDrag) {
+      try {
+        const left = parseFloat(widget.style.left), top = parseFloat(widget.style.top);
+        if (Number.isFinite(left) && Number.isFinite(top)) localStorage.setItem(TUTORIAL_WIDGET_POS_KEY, JSON.stringify({ left, top }));
+      } catch (e2) { /* 忽略隐私模式写入失败 */ }
+    }
+    // 仅 pointerup + 从标签起拖 + 确属面板拖动时，才安装 click 抑制：
+    // 限定为「同一 .tw-tab 内部」的 click，避免吞掉其他按钮或页面点击；超时 100ms 自动清理，绝不残留。
+    if (!isCancel && wasPanelDrag && dragStartTab) {
+      const tab = dragStartTab;
+      clickGuardHandler = (ev) => {
+        const t = ev.target;
+        if (t && t.closest && tab.contains(t)) { ev.stopPropagation(); ev.preventDefault(); }
+        removeClickGuard();
+      };
+      document.addEventListener("click", clickGuardHandler, true);
+      clickGuardTimer = setTimeout(() => { removeClickGuard(); }, 100);
+    }
+    panelDragMode = false;
+    scrollMode = false;
+    startTarget = null;
+    dragStartTab = null;
   };
 
-  header.addEventListener("pointerdown", onDown);
-  header.addEventListener("pointermove", onMove);
-  header.addEventListener("pointerup", onUp);
-  header.addEventListener("pointercancel", onUp);
+  const onUp = (e) => finishPointer(e, false);
+  const onCancel = (e) => finishPointer(e, true);
+
+  widget.addEventListener("pointerdown", onDown);
+  widget.addEventListener("pointermove", onMove);
+  widget.addEventListener("pointerup", onUp);
+  widget.addEventListener("pointercancel", onCancel);
 }
 
 // 统一经 dispatchGameAction 派发新手任务动作；失败显示简短中文 toast（不吞掉 reason）
@@ -2548,9 +2690,16 @@ function twResolveTargetKind(target) {
   return "page";
 }
 
-function twIsOnTargetPage(target) {
+function twIsOnTargetPage(target, subtab) {
   if (twResolveTargetKind(target) === "skill") return (currentPage === "skill" && currentView === target);
-  return (currentPage === target);
+  if (currentPage !== target) return false;
+  // 仓库子标签导航：指定 subtab 时，必须当前 cargoFilter 与之匹配才算「已在目标页」。
+  // 这样玩家停留在仓库「全部/装备」等标签时，「前往执行」按钮仍可见，可引导至目标子标签。
+  if (target === "cargo" && subtab) {
+    const cur = (typeof cargoFilter !== "undefined") ? cargoFilter : null;
+    return cur === subtab;
+  }
+  return true;
 }
 
 function twGoToTarget(target) {
@@ -2606,6 +2755,10 @@ function renderTutorialWidget() {
   progressHtml += '<div class="tw-total">' + (display.allCompleted ? "培训档案完成 " : "已完成 ") + display.completedCount + "/" + display.totalCount + '</div>';
   progressHtml += '<div class="tw-bar"><div class="tw-bar-fill" style="width:' + totalPct + '%"></div></div>';
   twSet(progressEl, progressHtml);
+
+  // 收起态 mini 标签：仅显示「· 已完成 N/M」（展开态由 .tw-progress 完整区呈现）
+  const miniEl = document.getElementById("tutorial-widget-mini");
+  if (miniEl) miniEl.innerHTML = " · 已完成 <span class=\"tw-mini-num\">" + display.completedCount + "/" + display.totalCount + "</span>";
 
   // ---- 支线选项卡 ----
   const chapterOrder = display.chapters || [];
@@ -2677,9 +2830,10 @@ function renderTutorialWidget() {
       }
       if (label) actHtml += twActButton("claim", task.id, null, label, "tw-btn-primary", null);
     }
-    // 导航按钮：有 navigationTarget 且当前不在目标页时显示「前往执行」
-    if (task.navigationTarget && !twIsOnTargetPage(task.navigationTarget)) {
-      actHtml += '<button type="button" class="tw-btn tw-btn-secondary" data-act="nav" data-nav="' + twEsc(task.navigationTarget) + '">前往执行</button>';
+    // 导航按钮：有 navigationTarget（可选 navigationSubtab）且当前不在目标页/子标签时显示「前往执行」
+    if (task.navigationTarget && !twIsOnTargetPage(task.navigationTarget, task.navigationSubtab)) {
+      const subAttr = task.navigationSubtab ? ' data-nav-sub="' + twEsc(task.navigationSubtab) + '"' : '';
+      actHtml += '<button type="button" class="tw-btn tw-btn-secondary" data-act="nav" data-nav="' + twEsc(task.navigationTarget) + '"' + subAttr + '>前往执行</button>';
     }
   }
   if (!actHtml) actHtml = '<div class="tw-no-action"></div>';
@@ -2773,7 +2927,7 @@ function installTutorialWidgetListeners() {
     else if (act === "confirm") twDispatch({ type: "tutorial/confirm", taskId: taskId });
     else if (act === "chooseTrack") twDispatch({ type: "tutorial/chooseCombatTrack", track: track });
     else if (act === "claimEmergency") twDispatch({ type: "tutorial/claimEmergencyShip" });
-    else if (act === "nav") twGoToTarget(btn.getAttribute("data-nav"));
+    else if (act === "nav") { twGoToTarget(btn.getAttribute("data-nav")); const sub = btn.getAttribute("data-nav-sub"); if (sub) renderCargoPage(sub); }
   });
   _tutorialWidgetListenersInstalled = true;
 }

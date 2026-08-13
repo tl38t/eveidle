@@ -80,7 +80,7 @@ function setProductionControls(display, startButton) {
 }
 
 function renderMiningDisplay(display, areaEl, outEl) {
-  if (areaEl) areaEl.textContent = "目标矿石：" + getResourceDisplayName(display.current.ore);
+  if (areaEl) areaEl.textContent = "目标矿带：" + display.current.displayName;
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
   const areaSelect = document.getElementById("mining-area-select"); if (areaSelect) areaSelect.style.display = "block";
   const stats = document.getElementById("mining-stats"); if (stats) stats.style.display = "block";
@@ -88,7 +88,7 @@ function renderMiningDisplay(display, areaEl, outEl) {
   const strip = document.getElementById("mining-target-strip");
   if (strip) {
     strip.innerHTML = display.targets.map(area => `<button class="mining-target-card${area.selected ? " selected" : ""}${area.locked ? " locked" : ""}${area.running ? " running" : ""}" data-area="${area.name}" style="--ore-color:${area.color}" ${area.locked ? "disabled" : ""}>
-      <span class="mining-target-name">${getResourceDisplayName(area.ore)}</span><span class="mining-target-visual"><i class="fa-solid fa-gem"></i></span>
+      <span class="mining-target-name">${area.displayName}</span><span class="mining-target-visual"><i class="fa-solid fa-gem"></i></span>
       <span class="mining-target-meta">Lv.${area.level} · ${area.baseTime}s · ${area.baseXP} XP</span>
       <span class="mining-target-state">${area.locked ? `需要 Lv.${area.level}` : area.running ? "正在采集" : area.selected ? "已选择" : "可采集"}</span></button>`).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchMiningArea(card.dataset.area)));
@@ -114,12 +114,19 @@ function renderMiningDisplay(display, areaEl, outEl) {
 }
 
 function renderSmeltingDisplay(display, areaEl, outEl) {
-  if (areaEl) areaEl.textContent = "消耗：" + getResourceDisplayName(display.current.consumeOre) + " → " + getResourceDisplayName(display.current.outputMineral);
-  if (display.progress.active && display.runningStock < 1 && areaEl) areaEl.textContent = "⚠ 原料不足：" + getResourceDisplayName(display.running.consumeOre) + " (库存：" + display.runningStock + ")";
+  if (areaEl) areaEl.textContent = getResourceDisplayName(display.current.outputMineral);
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
-  const select = document.getElementById("smelting-area-select"); if (select) select.style.display = "flex";
+  const select = document.getElementById("smelting-area-select"); if (select) { select.style.display = "flex"; const lbl = select.querySelector(".area-label"); if (lbl) lbl.style.display = "none"; }
   const stats = document.getElementById("smelting-stats"); if (stats) stats.style.display = "block";
-  const dropdown = document.getElementById("smelting-dropbtn"); if (dropdown) dropdown.textContent = getResourceDisplayName(display.current.outputMineral) + " ▾";
+  const strip = document.getElementById("smelting-target-strip");
+  if (strip) {
+    strip.innerHTML = display.options.map(recipe => `<button class="mining-target-card${recipe.selected ? " selected" : ""}${recipe.locked ? " locked" : ""}" data-area="${recipe.name}" style="--ore-color:#e8b04a" ${recipe.locked ? "disabled" : ""}>
+      <span class="mining-target-name">${getResourceDisplayName(recipe.outputMineral)}</span><span class="mining-target-visual"><i class="fa-solid fa-fire"></i></span>
+      <span class="mining-target-meta">Lv.${recipe.level} · ${recipe.baseTime}s · ${recipe.baseXP} XP</span>
+      <span class="mining-target-sub">${getResourceDisplayName(recipe.consumeOre)} → ${getResourceDisplayName(recipe.outputMineral)}</span>
+      <span class="mining-target-state">${recipe.locked ? `需要 Lv.${recipe.level}` : recipe.selected ? "已选择" : "可冶炼"}</span></button>`).join("");
+    strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchSmeltingRecipe(card.dataset.area)));
+  }
   const efficiency = document.getElementById("smelting-eff-value");
   if (efficiency) {
     efficiency.textContent = display.efficiency.toFixed(2);
@@ -136,12 +143,17 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
 }
 
 function renderGasDisplay(display, areaEl, outEl) {
-  if (areaEl) areaEl.textContent = "目标气体：" + display.current.gas;
+  if (areaEl) areaEl.textContent = "目标气云：" + display.current.name;
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
-  const select = document.getElementById("gas-area-select"); if (select) select.style.display = "flex";
+  const select = document.getElementById("gas-area-select"); if (select) { select.style.display = "flex"; const lbl = select.querySelector(".area-label"); if (lbl) lbl.style.display = "none"; }
   const stats = document.getElementById("gas-stats"); if (stats) stats.style.display = "block";
-  const dropdown = document.getElementById("gas-dropbtn"); if (dropdown) dropdown.textContent = display.current.gas + " ▾";
-  const efficiency = document.getElementById("gas-eff-value"); if (efficiency) { efficiency.textContent = display.efficiency.total.toFixed(2); efficiency.title = display.efficiencyTooltip; }
+  const strip = document.getElementById("gas-target-strip");
+  if (strip) {
+    strip.innerHTML = display.options.map(area => '<button class="mining-target-card'+(area.selected?" selected":"")+(area.locked?" locked":"")+'" data-area="'+area.name+'" style="--ore-color:#5fd0e6" '+(area.locked?"disabled":"")+'">'+'<span class="mining-target-name">'+area.name+'</span><span class="mining-target-visual"><i class="fa-solid fa-wind"></i></span><span class="mining-target-meta">Lv.'+area.level+' · '+area.baseTime+'s · '+area.baseXP+' XP</span><span class="mining-target-state">'+(area.locked?('需要 Lv.'+area.level):(area.selected?"已选择":"可采集"))+'</span></button>').join("");
+    strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchGasArea(card.dataset.area)));
+  }
+  const efficiency = document.getElementById("gas-eff-value");
+  if (efficiency) { efficiency.textContent = display.efficiency.total.toFixed(2); efficiency.title = display.efficiencyTooltip; }
   const gasLogText = document.getElementById("gas-logistics");
   if (gasLogText) {
     const lm = Number(display.stationLogisticsMultiplier) || 1;
@@ -152,43 +164,6 @@ function renderGasDisplay(display, areaEl, outEl) {
   drawSkillBar(document.getElementById("bar-gas"), display.progress.percent, "green");
   const eta = document.getElementById("gas-eta"); if (eta) eta.textContent = display.progress.etaText;
 }
-
-function renderGasDropdown() {
-  const display = getGasDisplayState(gameState, Date.now());
-  const content = document.getElementById("gas-dropdown-content");
-  const button = document.getElementById("gas-dropbtn");
-  if (!content || !button) return;
-  button.textContent = display.current.gas + " ▾";
-  content.innerHTML = display.options.map(area => {
-    const className = (area.selected ? " selected" : "") + (area.locked ? " locked" : "");
-    const requirement = area.locked ? `<span class="area-req">需气体采集 Lv.${area.level}</span>` : "";
-    return `<div class="area-option${className}" data-area="${area.name}">${area.gas} — ${area.baseTime}s / ${area.baseXP}XP${requirement}</div>`;
-  }).join("");
-  content.querySelectorAll(".area-option:not(.locked)").forEach(option => option.addEventListener("click", event => {
-    event.stopPropagation();
-    switchGasArea(option.dataset.area);
-    content.classList.remove("show");
-  }));
-}
-
-function renderSmeltingDropdown() {
-  const display = getSmeltingDisplayState(gameState, Date.now());
-  const content = document.getElementById("smelting-dropdown-content");
-  const button = document.getElementById("smelting-dropbtn");
-  if (!content || !button) return;
-  button.textContent = display.current.outputMineral + " ▾";
-  content.innerHTML = display.options.map(recipe => {
-    const className = (recipe.selected ? " selected" : "") + (recipe.locked ? " locked" : "");
-    const requirement = recipe.locked ? `<span class="area-req">需冶炼 Lv.${recipe.level}</span>` : "";
-    return `<div class="area-option${className}" data-area="${recipe.name}">${getResourceDisplayName(recipe.consumeOre)} → ${getResourceDisplayName(recipe.outputMineral)} — ${recipe.baseTime}s / ${recipe.baseXP}XP${requirement}</div>`;
-  }).join("");
-  content.querySelectorAll(".area-option:not(.locked)").forEach(option => option.addEventListener("click", event => {
-    event.stopPropagation();
-    switchSmeltingRecipe(option.dataset.area);
-    content.classList.remove("show");
-  }));
-}
-
 function switchGasArea(areaName) {
   const result = dispatchGameAction(gameState, { type:"production/selectGasArea", areaName }, Date.now());
   if (result.changed) updateUI();
@@ -337,18 +312,6 @@ function refreshVisiblePanelAfterAction() {
 
 (function bindProductionSelectors() {
   document.querySelectorAll(".mining-mode-tab").forEach(tab => tab.addEventListener("click", () => switchMiningMode(tab.dataset.mode)));
-  const gasButton = document.getElementById("gas-dropbtn");
-  const gasContent = document.getElementById("gas-dropdown-content");
-  if (gasButton && gasContent) {
-    gasButton.addEventListener("click", event => { event.stopPropagation(); renderGasDropdown(); gasContent.classList.toggle("show"); });
-    document.addEventListener("click", () => gasContent.classList.remove("show"));
-  }
-  const smeltingButton = document.getElementById("smelting-dropbtn");
-  const smeltingContent = document.getElementById("smelting-dropdown-content");
-  if (smeltingButton && smeltingContent) {
-    smeltingButton.addEventListener("click", event => { event.stopPropagation(); renderSmeltingDropdown(); smeltingContent.classList.toggle("show"); });
-    document.addEventListener("click", () => smeltingContent.classList.remove("show"));
-  }
 })();
 
 (function bindCargoEvents() {
