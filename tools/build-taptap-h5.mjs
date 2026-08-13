@@ -78,6 +78,8 @@ const fail = (m) => { throw new Error(m); };
 
 // ---------- 白名单 ----------
 function isWhitelisted(rel) {
+  // QA 种子（js/qa-seed.js）仅用于本地验收，禁止进入任何 TapTap 包（selftest / release 均排除）
+  if (rel === "js/qa-seed.js") return false;
   // 精确许可证白名单（修复 release 对白名单 .txt 许可证的遗漏）
   if (rel === "js/vendor/LICENSE_THREE.txt") return true;
   if (rel === "index.html") return true;
@@ -118,6 +120,8 @@ function walkDirToMap(dir, baseRel, map) {
 // ---------- 本地化 index.html ----------
 function localizeIndexHtml(html) {
   let out = html;
+  // 移除本地 QA 入口脚本（js/qa-seed.js 仅用于本地验收，禁止进入发布包；无论 selftest/release）
+  out = out.replace(/<script[^>]*src=["'][^"']*js\/qa-seed\.js[^"']*["'][^>]*>\s*<\/script>\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com">\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com" crossorigin>\s*/g, "");
   out = out.replace(/<link href="https:\/\/fonts\.googleapis\.com\/css2\?family=Orbitron:[^"]*" rel="stylesheet">\s*/g, "");
@@ -263,6 +267,11 @@ function verifyPackage(buffer, mode) {
     const extHit = (indexTxt.match(/fonts\.googleapis|fonts\.gstatic|cdnjs\.cloudflare/i) || []);
     ok("index.html 外链零残留", extHit.length === 0, extHit.join(","));
 
+    // QA 隔离硬断言（selftest / release 两种包都不得包含 qa-seed.js，index.html 不得引用）
+    const qaFileHit = entries.filter((e) => /(^|\/)js\/qa-seed\.js$/.test(e));
+    ok("QA 隔离: 包内不含 js/qa-seed.js", qaFileHit.length === 0, qaFileHit.join(" | "));
+    ok("QA 隔离: 包内 index.html 不引用 qa-seed.js", !/qa-seed\.js/.test(indexTxt));
+
     // 8b) release 专属：探针文件 / key 字符串 / 测试文案 / 全包 CDN 零残留
     const probeFile = PKG_TOP + "/taptap-compat-probe.mjs";
     if (mode === "release") {
@@ -279,6 +288,18 @@ function verifyPackage(buffer, mode) {
       ok("release: 探针 key 字符串零残留", !keyHit);
       ok("release: 测试文案零残留", !textHit);
       ok("release: 全包 Google Fonts/cdnjs 外链零残留", cdnHit.length === 0, cdnHit.join(" | "));
+
+      // release 专属：运行文件不得含 window.QA 句柄与 ?qa= 场景入口
+      const QA_SCENES = ["?qa=offline", "?qa=cargo", "?qa=enhance", "?qa=dismantle", "?qa=fitting"];
+      let qaGlobalHit = false, qaSceneHit = false;
+      for (const e of entries) {
+        if (!/\.(html|css|js|mjs)$/i.test(e)) continue;
+        const c = await z.file(e).async("string");
+        if (/window\.QA\b/.test(c)) qaGlobalHit = true;
+        if (QA_SCENES.some((s) => c.includes(s))) qaSceneHit = true;
+      }
+      ok("release: 运行文件不含 window.QA", !qaGlobalHit);
+      ok("release: 运行文件不含 ?qa= 场景入口", !qaSceneHit);
 
       // 跨模式比对：与 selftest 产物证明“唯一差异=探针文件+index.html 注入标签”
       const selftestZip = path.join(OUTDIR, "deep-space-idle-t4-portrait-selftest.zip");
