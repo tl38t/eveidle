@@ -60,6 +60,22 @@ function getShipEnhancementCost(shipConfig) {
   return tier ? Object.fromEntries(tier.componentIds.map(id => [id, 1])) : {};
 }
 
+// 舰船强化「星币消耗」：按制造等级分层（与组件分层同档），单次固定、不随强化等级递增。
+// 设计锚点：单次 ≈ 该档满装小时收入的 ~2.5%，使 0→20 满强化 ≈ 2 小时 farm 收入，
+// 既给星币持续的后期存在感，又不惩罚（~40 次尝试/小时的收入即可覆盖单次）。
+const SHIP_ENHANCEMENT_ISK_BY_TIER = Object.freeze({
+  1: 50000,    // 护卫（rifter）
+  15: 80000,   // 驱逐（gale 等）
+  35: 200000,  // 巡洋（thunder 等）
+  55: 350000,  // 战列（dawnbreaker 等）
+  80: 600000,  // 旗舰
+  90: 1000000  // 超级旗舰
+});
+function getShipEnhancementIskCost(shipConfig) {
+  const tier = getShipEnhancementTier(shipConfig);
+  return tier ? (SHIP_ENHANCEMENT_ISK_BY_TIER[tier.level] || 0) : 0;
+}
+
 function getShipEnhancementBaseXp(shipConfig) {
   const tier = getShipEnhancementTier(shipConfig);
   if (!tier) return 0;
@@ -141,6 +157,7 @@ window.ShipEnhancement = Object.freeze({
   getTier:getShipEnhancementTier,
   getRole:getShipEnhancementRole,
   getCost:getShipEnhancementCost,
+  getIskCost:getShipEnhancementIskCost,
   getBaseXp:getShipEnhancementBaseXp,
   getSuccessChance:getShipEnhancementSuccessChance,
   getSuccessBreakdown:getShipEnhancementSuccessBreakdown,

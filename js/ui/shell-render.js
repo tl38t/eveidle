@@ -95,6 +95,32 @@ function switchSkill(skillKey) {
   renderCurrentNavigation();
 }
 
+/* ---- 共享仓库物品卡（Batch R）：仓库列表 / 离线收益 / 开箱结果共用同一安全渲染 ---- */
+// item 形态：{ id, name, icon, quantity, categoryLabel, source:{pageLabel} }（getCargoDisplayState 输出）
+// opts 可覆写卡片段（保持旧视觉不变时由调用方传原样文本）：
+//   categoryText / footText / qtyText 覆写三段文本；extraClass 追加样式类（用于离线/开箱弹窗）；
+//   dataAttr 追加到卡片根元素上的 data-* 属性原文（如 data-ci="3"，由调用方转义）。
+// 所有注入 innerHTML 的文本一律 escapeAchievementText 转义；icon 为受控图标字符串（不转义保持图标生效）。
+function buildCargoCardHTML(item, opts) {
+  const opt = opts && typeof opts === "object" ? opts : {};
+  const rawName = item && item.name;
+  const name = (typeof rawName === "string" && rawName) ? rawName : String((item && item.id) || "未知");
+  const categoryText = opt.categoryText !== undefined ? opt.categoryText : (item.categoryLabel || "");
+  const footText = opt.footText !== undefined ? opt.footText : (item.source && item.source.pageLabel) || "";
+  const qtyValue = Number(item && item.quantity);
+  const qtyText = opt.qtyText !== undefined ? opt.qtyText
+    : ("×" + (Number.isFinite(qtyValue) && qtyValue > 0 ? qtyValue : 1).toLocaleString());
+  const icon = (item && typeof item.icon === "string" && item.icon) ? item.icon : "📦";
+  const cls = "cargo-card" + (opt.extraClass ? " " + opt.extraClass : "");
+  const dataAttr = (typeof opt.dataAttr === "string" && opt.dataAttr) ? " " + opt.dataAttr : "";
+  return `<div class="${cls}" data-cat="${escapeAchievementText(categoryText)}"${dataAttr}>` +
+    `<span class="cc-cat">${escapeAchievementText(categoryText)}</span>` +
+    `<div class="cc-top"><span class="cc-icon">${icon}</span><span class="cc-name">${escapeAchievementText(name)}</span></div>` +
+    `<div class="cc-foot">${footText ? `<span class="cc-src">${escapeAchievementText(footText)}</span>` : ""}</div>` +
+    `<div class="cc-qty">${escapeAchievementText(qtyText)}</div>` +
+    `</div>`;
+}
+
 function renderCargoPage(filter) {
   cargoFilter = filter || cargoFilter || "all";
   const display = getCargoDisplayState(gameState, cargoFilter);
@@ -116,12 +142,7 @@ function renderCargoPage(filter) {
   }
   if (!isEquipmentTab) {
     currentCargoItems = display.items;
-    list.innerHTML = display.items.length ? display.items.map((item, idx) => `<div class="cargo-card" data-cat="${escapeAchievementText(item.categoryLabel)}" data-ci="${idx}">
-      <span class="cc-cat">${escapeAchievementText(item.categoryLabel)}</span>
-      <div class="cc-top"><span class="cc-icon">${item.icon}</span><span class="cc-name">${escapeAchievementText(item.name)}</span></div>
-      <div class="cc-foot"><span class="cc-src">${escapeAchievementText(item.source.pageLabel)}</span></div>
-      <div class="cc-qty">×${item.quantity.toLocaleString()}</div>
-    </div>`).join("") : `<div class="cargo-empty">${display.emptyText}</div>`;
+    list.innerHTML = display.items.length ? display.items.map((item, idx) => buildCargoCardHTML(item, { dataAttr:'data-ci="' + idx + '"' })).join("") : `<div class="cargo-empty">${display.emptyText}</div>`;
     if (!cargoCardBound) {
       list.addEventListener("click", event => {
         const card = event.target.closest(".cargo-card"); if (!card) return;
@@ -156,12 +177,12 @@ function renderTradeTab(display) {
       <button class="btn primary trade-recycle-all" id="trade-recycle-all">♻ 一键回收全部（${display.items.length} 件）</button>
       ${quoteLine}
     </div>`;
-  list.innerHTML = toolbar + display.items.map((item, idx) => `<div class="cargo-card" data-cat="交易品" data-ci="${idx}">
-      <span class="cc-cat">${item.kind === "lp" ? "🎖 功勋" : "💰 星币"}</span>
-      <div class="cc-top"><span class="cc-icon">${item.icon}</span><span class="cc-name">${escapeAchievementText(item.name)}</span></div>
-      <div class="cc-foot"><span class="cc-src">来自：${escapeAchievementText(item.source.pageLabel)}</span></div>
-      <div class="cc-qty">×${item.quantity.toLocaleString()} · ${item.kind === "lp" ? (Number(item.value).toLocaleString() + " 功勋/件") : (Number(item.value).toLocaleString() + " 星币/件")}</div>
-    </div>`).join("");
+  list.innerHTML = toolbar + display.items.map((item, idx) => buildCargoCardHTML(item, {
+    categoryText:item.kind === "lp" ? "🎖 功勋" : "💰 星币",
+    footText:"来自：" + item.source.pageLabel,
+    qtyText:"×" + item.quantity.toLocaleString() + " · " + (item.kind === "lp" ? (Number(item.value).toLocaleString() + " 功勋/件") : (Number(item.value).toLocaleString() + " 星币/件")),
+    dataAttr:'data-ci="' + idx + '"'
+  })).join("");
   const btn = list.querySelector("#trade-recycle-all");
   if (btn) btn.addEventListener("click", () => {
     if (typeof recycleAllTradeGoods !== "function") return;
@@ -441,6 +462,12 @@ function openItemDetailModal(item) {
     if (decBtn) decBtn.addEventListener("click", () => { if (qtyInput) qtyInput.value = clampQty(Number(qtyInput.value) - 1); });
     if (incBtn) incBtn.addEventListener("click", () => { if (qtyInput) qtyInput.value = clampQty(Number(qtyInput.value) + 1); });
     const doOpen = count => {
+      // C 项：操作期间禁用两个开箱按钮防双击；成功/失败后统一恢复（成功后详情弹窗已关闭，恢复对已分离节点无害）
+      const setOpenBusy = busy => {
+        [openBtn, openAllBtn].forEach(b => { if (b) { b.disabled = busy; b.classList.toggle("disabled", busy); } });
+        if (qtyInput) qtyInput.disabled = busy;
+      };
+      setOpenBusy(true);
       try {
         let result = null;
         if (typeof openCargoContainers === "function") {
@@ -461,20 +488,32 @@ function openItemDetailModal(item) {
           console.error("[开箱] openCargoContainer(s) 均未定义：cargo.js 可能未加载或被旧缓存拦截");
           return;
         }
+        // 失败（无货柜可开 / 开箱数 0）：不关闭详情弹窗、不刷新仓库，仅提示后恢复按钮
+        if (!result || !result.opened || !Array.isArray(result.rolls)) {
+          if (typeof showToast === "function") showToast("没有可开启的货柜");
+          return;
+        }
         closeItemDetailModal();
         if (typeof renderCargoPage === "function") renderCargoPage(cargoFilter);
-        if (result && result.opened && Array.isArray(result.rolls) && result.rolls.length) {
-          const parts = result.rolls.map(r => {
-            const nm = r.name || (typeof getResourceDisplayName === "function" ? getResourceDisplayName(r.id) : r.id) || r.id;
-            return (typeof nm === "string" ? nm : String(r.id)) + "×" + (r.qty || 1);
-          });
-          if (typeof showToast === "function") showToast("开箱获得：" + parts.join("、"));
-        } else if (result && result.opened) {
-          if (typeof showToast === "function") showToast("已开箱，但未获得可展示奖励");
+        // C 项：统一聚合 rolls → 持久结果弹窗（同一张仓库物品卡，合并相同 canonical ref）
+        const aggregated = aggregateRewardRolls(result.rolls);
+        if (aggregated.length) {
+          if (typeof openRewardResultModal === "function") {
+            openRewardResultModal({
+              title:"📦 开箱结果",
+              subtitle:`货柜 ${cargoSize} · 实际开启 ${result.opened} 个 · 共获得 ${aggregated.length} 类物品`,
+              items: aggregated,
+              emptyText:"已开箱，但未获得可展示奖励"
+            });
+            return;
+          }
         }
+        if (typeof showToast === "function") showToast("已开箱，但未获得可展示奖励");
       } catch (err) {
         console.error("[开箱] 执行异常：", err);
         if (typeof showToast === "function") showToast("开箱出错：" + (err && err.message ? err.message : String(err)));
+      } finally {
+        setOpenBusy(false);
       }
     };
     const openBtn = backdrop.querySelector(".eem-open-cargo");
@@ -501,6 +540,124 @@ function openItemDetailModal(item) {
 
 function closeItemDetailModal() {
   const backdrop = document.getElementById("item-detail-modal");
+  if (backdrop) { backdrop.style.display = "none"; backdrop.innerHTML = ""; }
+}
+
+/* ================================================================
+   奖励条目规范化 + 持久结算弹窗（Batch R）
+   —— 离线收益（B 项）与货柜开箱（C 项）统一走同一张仓库物品卡。
+   ================================================================ */
+
+// cargo rolls 条目（openCargoContainer 输出）或库存快照 diff 条目 →
+// buildCargoCardHTML 可直接消费的 item 形态（含 name/icon/quantity/categoryLabel/source）。
+// 名称优先使用条目自带 name，否则经 getResourceDisplayName（内部走 DisplayNames）解析；
+// 未知 id 回退 raw id，绝不泄漏 undefined。
+const CARGO_TIER_LABELS = { T1:"T1 保底", T2:"T2 矿物", T3:"T3 战利品", T4:"T4 植入体", BP:"蓝图" };
+function normalizeRewardItem(entry) {
+  if (!entry || typeof entry !== "object") return null;
+  if (entry._normalized) return entry;
+  const qtyRaw = Number(entry.quantity);
+  const quantity = Number.isFinite(qtyRaw) && qtyRaw > 0 ? qtyRaw : (Math.max(1, Math.floor(Number(entry.qty)) || 1));
+  let name = (typeof entry.name === "string" && entry.name) ? entry.name : "";
+  if (!name && typeof entry.id === "string") {
+    const rid = entry.id;
+    // 脑插 / 货柜装备蓝图条目无自带 name：先走专用 DB（IMPLANT_DB / EQUIPMENT_DB），
+    // 再回落资源显示名解析（getResourceDisplayName 内部走 DisplayNames），最后原始 id。
+    if (entry.implant && typeof IMPLANT_DB !== "undefined" && IMPLANT_DB && IMPLANT_DB[rid]) {
+      name = IMPLANT_DB[rid].name || rid;
+    } else if (rid.indexOf("blueprint:") === 0 && typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) {
+      const eq = EQUIPMENT_DB[rid.slice("blueprint:".length)];
+      name = (eq && eq.name ? eq.name : rid.slice("blueprint:".length)) + "蓝图";
+    } else if (typeof getResourceDisplayName === "function") {
+      name = getResourceDisplayName(rid);
+    } else if (typeof DisplayNames !== "undefined" && DisplayNames && typeof DisplayNames.getResourceRefName === "function") {
+      name = DisplayNames.getResourceRefName(rid, rid);
+    } else {
+      name = rid;
+    }
+  }
+  if (!name) name = "未知";
+  let icon = (typeof entry.icon === "string" && entry.icon) ? entry.icon : "";
+  if (!icon) {
+    const rid = typeof entry.id === "string" ? entry.id : "";
+    if (entry.loot || rid.indexOf("loot:") === 0) icon = entry.kind === "lp" ? "🎖" : "💰";
+    else if (entry.implant) icon = "🧠";
+    else if (entry.blueprint || rid.indexOf("blueprint:") === 0) icon = "📜";
+    else if (entry.ammo) icon = entry.weaponType === "laser" ? "🔹" : entry.weaponType === "missile" ? "🚀" : "💥";
+    else if (rid.indexOf("special:货柜") === 0) icon = "📦";
+    else icon = "📦";
+  }
+  const categoryLabel = (typeof entry.categoryLabel === "string" && entry.categoryLabel)
+    ? entry.categoryLabel
+    : (CARGO_TIER_LABELS[entry.tier] || (entry.loot ? "战利品" : entry.implant ? "脑插" : entry.blueprint ? "蓝图" : entry.ammo ? "弹药" : "物资"));
+  // canonical ref：优先保留条目自带 ref/id（资源权威键），仅在两者皆缺时回落显示名。
+  // 聚合必须按 canonical ref 进行，绝不能按显示名——否则「不同 ID、相同显示名」会被错误合并。
+  const canonicalRef = (typeof entry.ref === "string" && entry.ref)
+    ? entry.ref
+    : (typeof entry.id === "string" && entry.id ? entry.id : name);
+  return {
+    _normalized:true,
+    ref:canonicalRef,
+    name,
+    icon,
+    quantity,
+    categoryLabel,
+    source:entry.source || { pageLabel:"获得" }
+  };
+}
+
+// 按 canonical ref（显示名）聚合 rolls 条目，合并相同物品数量，按数量降序。
+function aggregateRewardRolls(rolls) {
+  const byRef = new Map();
+  for (const roll of Array.isArray(rolls) ? rolls : []) {
+    const item = normalizeRewardItem(roll);
+    if (!item) continue;
+    const existing = byRef.get(item.ref);
+    if (existing) existing.quantity += item.quantity;
+    else byRef.set(item.ref, item);
+  }
+  return [...byRef.values()].sort((a, b) => b.quantity - a.quantity || a.ref.localeCompare(b.ref, "zh-CN"));
+}
+
+// 持久奖励结算弹窗：仅显式关闭按钮 / 点击背景 / Escape 可关闭（无自动计时）。
+// options: { title, subtitle, items, emptyText }
+function openRewardResultModal(options) {
+  const opt = options && typeof options === "object" ? options : {};
+  const items = Array.isArray(opt.items) ? opt.items : [];
+  let backdrop = document.getElementById("reward-result-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "reward-result-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", event => { if (event.target === backdrop) closeRewardResultModal(); });
+    backdrop._esc = event => { if (event.key === "Escape" && backdrop.style.display === "flex") closeRewardResultModal(); };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  const cards = items.map(item => buildCargoCardHTML(item, { extraClass:"reward-result-card" })).join("");
+  const emptyText = opt.emptyText || "本次没有获得可展示的物品";
+  backdrop.innerHTML = `
+    <div class="equip-enh-modal reward-result-modal" role="dialog" aria-modal="true">
+      <div class="eem-head">
+        <span class="eem-icon">🎁</span>
+        <div class="eem-title-wrap">
+          <div class="eem-title">${escapeAchievementText(opt.title || "结算结果")}</div>
+          ${opt.subtitle ? `<div class="eem-sub reward-sub-line">${escapeAchievementText(opt.subtitle)}</div>` : ""}
+        </div>
+        <button class="eem-close" data-rrm-close aria-label="关闭">✕</button>
+      </div>
+      <div class="eem-body">
+        ${items.length ? `<div class="reward-result-grid">${cards}</div>` : `<div class="reward-result-empty">${escapeAchievementText(emptyText)}</div>`}
+      </div>
+    </div>`;
+  backdrop.style.display = "flex";
+  const closeBtn = backdrop.querySelector("[data-rrm-close]");
+  if (closeBtn) closeBtn.addEventListener("click", closeRewardResultModal);
+  return backdrop;
+}
+
+function closeRewardResultModal() {
+  const backdrop = document.getElementById("reward-result-modal");
   if (backdrop) { backdrop.style.display = "none"; backdrop.innerHTML = ""; }
 }
 
@@ -1978,17 +2135,25 @@ function renderHangarPanel() {
     const bonuses = getHangarBonusText(ship.bonuses);
     const enhancement = ship.enhancement;
     const materials = enhancement.materials.map(item => `<span class="enhance-material${item.enough ? "" : " short"}">${item.name} ${item.stock}/${item.quantity}</span>`).join("");
+    const iskCostLine = enhancement.iskCost > 0
+      ? `<span class="enhance-material${enhancement.iskEnough ? "" : " short"}">💰 星币 ${enhancement.iskStock.toLocaleString()}/${enhancement.iskCost.toLocaleString()}</span>`
+      : "";
     const enhanceDisabled = enhancement.canEnhance ? "" : "disabled";
     const enhanceLabel = enhancement.busy ? "执行任务中" : enhancement.available ? "强化至 +" + (enhancement.level + 1) : "暂不可强化";
     const thumbUrl = getHangarThumb(ship.shipId);
     const thumbHtml = thumbUrl ? `<img class="hangar-ship-thumb" data-open-3d="${ship.instanceId}" src="${thumbUrl}" alt="${ship.name}" title="点击查看 3D 模型">` : "";
+    // Batch R（E 项·舰船拆解）：危险样式按钮；不可拆解时禁用并悬停提示阻塞原因
+    const dismantle = ship.dismantle || { available:false, preview:[], canDismantle:false, blockedText:"" };
+    const dismantleBtn = dismantle.available
+      ? `<button class="btn danger hangar-dismantle-btn" data-dismantle-ship="${ship.instanceId}" ${dismantle.canDismantle ? "" : "disabled"} title="${escapeAchievementText(dismantle.blockedText || "当前无法拆解")}" style="margin-left:6px;">🗑 拆解</button>`
+      : "";
     return `<div class="hangar-ship-card${ship.assignedActions.length ? " equipped" : ""}">${thumbHtml}
       <div class="hangar-ship-header"><span class="hsh-icon">${ship.archaeology ? "🛰️" : ship.industrial ? "🏭" : "🚀"}</span><span class="hsh-name">${ship.name}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier} ${ship.typeName}</span><span class="hsh-tier">${ship.archaeology ? "🛰️ 考古" : ship.industrial ? "🏭 工业" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
       <div class="hangar-ship-stats"><span class="hss-item"><span class="hss-label">护盾</span><span class="hss-val">${ship.hp.shield}</span></span><span class="hss-item"><span class="hss-label">装甲</span><span class="hss-val">${ship.hp.armor}</span></span><span class="hss-item"><span class="hss-label">结构</span><span class="hss-val">${ship.hp.structure}</span></span><span class="hss-item"><span class="hss-label">闪避</span><span class="hss-val">${ship.dodge}</span></span><span class="hss-item"><span class="hss-label">速度</span><span class="hss-val">${ship.speed}</span></span></div>
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
       ${ship.repairing ? `<div class="hangar-ship-repair" data-repair-ship="${ship.instanceId}">🔧 自动维修中 · 剩余 <span class="repair-remaining">${ship.repairRemaining}</span> 秒</div>` : ""}
-      <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}</div><div class="enhance-roll"><span>成功率 <b>${enhancement.chancePercent}%</b></span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div></div>
-      <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button></div></div>`;
+      <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}${iskCostLine}</div><div class="enhance-roll"><span>成功率 <b>${enhancement.chancePercent}%</b></span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div></div>
+      <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button>${dismantleBtn}</div></div>`;
   }).join("");
   return display;
 }
@@ -2000,21 +2165,59 @@ function enhanceShipFromHangar(instanceId) {
   const confirmationEnabled = getSettingsDisplayState(gameState).confirmShipEnhancement;
   if (confirmationEnabled) {
     const costLines = (ship.enhancement.materials || []).map(m => m.name + "×" + m.quantity).join("、");
+    const iskLine = ship.enhancement.iskCost > 0 ? ("\n消耗星币：" + ship.enhancement.iskCost.toLocaleString()) : "";
     const tip = "强化 " + ship.name + "：+" + ship.enhancement.level + " → +" + (ship.enhancement.level + 1) +
       "\n成功率：" + ship.enhancement.chancePercent + "%" +
-      "\n消耗部件：" + costLines +
+      "\n消耗部件：" + costLines + iskLine +
       "\n失败消耗部件、等级保持 +" + ship.enhancement.level + "、0 XP。确认执行强化？";
     if (!window.confirm(tip)) return false;
   }
   const result = dispatchGameAction(gameState, { type:"hangar/enhanceShip", instanceId }, Date.now());
   if (!result.changed) {
-    const messages = { "insufficient-components":"强化部件不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
+    const messages = { "insufficient-components":"强化部件不足", "insufficient-isk":"星币不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
     showToast(messages[result.reason] || "强化失败");
     return false;
   }
   showToast(result.success
     ? result.config.name + " 强化成功：+" + result.fromLevel + " → +" + result.toLevel + "，获得 " + result.xp + " 经验"
     : result.config.name + " 强化失败，等级保持 +" + result.fromLevel + "，本次部件已消耗");
+  renderHangarPanel();
+  renderCombatPanel();
+  updateUI();
+  return true;
+}
+
+// Batch R（E 项·舰船拆解）：二次确认（含归还预览 + 不可恢复警告）→ Action → 重渲染。
+function dismantleShipFromHangar(instanceId) {
+  const display = getHangarDisplayState(gameState, Date.now());
+  const ship = display.ships.find(item => item.instanceId === instanceId);
+  if (!ship || !ship.dismantle || !ship.dismantle.available) { showToast("该舰船没有可拆解配方"); return false; }
+  if (!ship.dismantle.canDismantle) {
+    showToast(ship.dismantle.blockedText || "当前无法拆解");
+    return false;
+  }
+  const previewLines = (ship.dismantle.preview || []).map(entry => entry.name + "×" + entry.returned).join("、");
+  const tip = "确认拆解 " + ship.name + "？\n" +
+    "拆解后舰船将消失，不可恢复。\n" +
+    "归还材料（约 50%）：" + (previewLines || "无") + "\n" +
+    "不归还：蓝图、技能经验、强化等级、已装配装备。\n" +
+    "确认执行拆解？";
+  if (!window.confirm(tip)) return false;
+  const result = dispatchGameAction(gameState, { type:"hangar/disassembleShip", instanceId }, Date.now());
+  if (!result.changed) {
+    const messages = {
+      "unknown-ship":"舰船不存在",
+      "ship-assigned":"舰船正在执行岗位任务，无法拆解",
+      "ship-active":"舰船正在执行中，停止当前任务后才能拆解",
+      "repairing":"舰船正在维修中，维修完成后才能拆解",
+      "has-fitting":"舰船仍装配有装备或改装件，先全部卸下",
+      "no-dismantle-recipe":"该舰船没有可拆解配方"
+    };
+    showToast(messages[result.reason] || "拆解失败");
+    return false;
+  }
+  const returnedText = (result.returned || []).map(entry => entry.name + "×" + entry.returned).join("、");
+  showToast("已拆解 " + result.config.name + "，归还：" + (returnedText || "无材料"));
   renderHangarPanel();
   renderCombatPanel();
   updateUI();
@@ -2127,22 +2330,23 @@ function openOrbitSelect(index) {
   const panel = document.getElementById("equipSelectPanel"), options = document.getElementById("equipSelectOptions"), title = document.getElementById("equipSelectTitle");
   if (!panel || !options) return;
   if (title) title.textContent = ORBIT_TYPE_NAMES[slot.type] + " · 选择装备";
-  // rig 槽候选按槽位取（替换场景排除当前槽的同组判定，允许同系列升级）；其余槽仍按类型取
-  const available = slot.type === "rig"
-    ? ((display.rigCandidates && display.rigCandidates[slot.slotIndex]) || [])
-    : (display.inventoryBySlot[slot.type] || []);
-  if (slot.type === "rig") {
-    // 改装件槽：拆卸即销毁（不返还库存）。占用槽提供"销毁"按钮；替换=旧件销毁+新件安装。
-    const destroyButton = slot.equipmentId
-      ? '<button class="equip-option empty-option" data-rig-destroy="1"><span class="eq-icon">🗑</span><span class="eq-name">销毁改装件（不返还）</span></button>'
-      : "";
-    const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁，同类改装件不能重复安装</div>';
-    options.innerHTML = hint + destroyButton + (available.length
-      ? available.map(item => `<button class="equip-option" data-equip="${item.id}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.isInstance ? " +" + item.enhancementLevel : ""}</span></button>`).join("")
-      : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
-  } else {
-    options.innerHTML = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>' + available.map(item => `<button class="equip-option" data-equip="${item.id}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.isInstance ? " +" + item.enhancementLevel : ""}</span></button>`).join("");
-  }
+    // rig 槽候选按槽位取（替换场景排除当前槽的同组判定，允许同系列升级）；其余槽仍按类型取
+    // 相同 itemId 按强化等级聚合堆叠，避免装备过多撑破面板
+    const stacks = slot.type === "rig"
+      ? ((display.rigStackCandidates && display.rigStackCandidates[slot.slotIndex]) || [])
+      : (display.inventoryStacksBySlot && display.inventoryStacksBySlot[slot.type]) || [];
+    if (slot.type === "rig") {
+      // 改装件槽：拆卸即销毁（不返还库存）。占用槽提供"销毁"按钮；替换=旧件销毁+新件安装。
+      const destroyButton = slot.equipmentId
+        ? '<button class="equip-option empty-option" data-rig-destroy="1"><span class="eq-icon">🗑</span><span class="eq-name">销毁改装件（不返还）</span></button>'
+        : "";
+      const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁，同类改装件不能重复安装</div>';
+      options.innerHTML = hint + destroyButton + (stacks.length
+        ? stacks.map(item => `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.enhancementLevel ? " +" + item.enhancementLevel : ""}${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`).join("")
+        : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
+    } else {
+      options.innerHTML = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>' + stacks.map(item => `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.enhancementLevel ? " +" + item.enhancementLevel : ""}${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`).join("");
+    }
   panel.style.left = "auto"; panel.style.right = "-10px"; panel.style.top = "50%"; panel.style.transform = "translateY(-50%)"; panel.classList.add("active");
 }
 
@@ -2595,6 +2799,8 @@ function installTutorialWidgetListeners() {
     if (button && !button.disabled) buyBlueprintStoreItem(button.dataset.blueprintItem, button.dataset.blueprintKind);
   });
   const hangar = document.getElementById("hangar-ship-grid"); if (hangar) hangar.addEventListener("click", event => {
+    const dismantleBtn = event.target.closest("[data-dismantle-ship]");
+    if (dismantleBtn) { dismantleShipFromHangar(dismantleBtn.dataset.dismantleShip); return; }
     const enhance = event.target.closest("[data-enhance-ship]");
     if (enhance) { enhanceShipFromHangar(enhance.dataset.enhanceShip); return; }
     const assignment = event.target.closest("[data-ship-action]");

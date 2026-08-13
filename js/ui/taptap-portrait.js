@@ -93,9 +93,9 @@
   var _tpHangarTab = "overview";
 
   function tpRoleOf(ship) {
-    if (ship.archaeology) return { key: "archaeology", cls: "role-arch" };
-    if (ship.industrial) return { key: "industrial", cls: "role-ind" };
-    return { key: "combat", cls: "role-combat" };
+    if (ship.archaeology) return { key: "archaeology", cls: "role-arch", label: "考古" };
+    if (ship.industrial) return { key: "industrial", cls: "role-ind", label: "工业" };
+    return { key: "combat", cls: "role-combat", label: "战斗" };
   }
   function tpFilterShips(display, filter) {
     var list = display.ships.slice();
@@ -191,13 +191,22 @@
     var next = window.getEnhancementNextText ? window.getEnhancementNextText(e) : "";
     var bonus = window.getEnhancementBonusText ? window.getEnhancementBonusText(e) : "";
     var mats = e.materials.map(function (m) { return '<span class="tp-mat' + (m.enough ? "" : " short") + '">' + m.name + " " + m.stock + "/" + m.quantity + "</span>"; }).join("");
+    // 星币消耗（与桌面 enhance-material 同口径：iskEnough 不足时 short 红字）
+    var iskLine = e.iskCost > 0
+      ? '<span class="tp-mat' + (e.iskEnough ? "" : " short") + '">💰 星币 ' + e.iskStock.toLocaleString() + "/" + e.iskCost.toLocaleString() + "</span>"
+      : "";
     var label = e.busy ? "执行任务中" : (e.available ? "强化至 +" + (e.level + 1) : "暂不可强化");
     var dis = e.canEnhance ? "" : "disabled";
+    // 星币不足时显式提示（不只在 canEnhance 暗中禁用按钮）
+    var insufficientNote = (e.iskCost > 0 && !e.iskEnough)
+      ? '<div class="tp-enh-insufficient">⚠ 星币不足，无法强化（需 ' + e.iskCost.toLocaleString() + "）</div>"
+      : "";
     return '<div class="tp-enh-card">'
       + '<div class="tp-enh-top"><span class="tp-enh-lv">强化 +' + e.level + '</span><span class="tp-enh-next">' + (e.milestone ? "★ 里程碑 · " : "") + next + "</span></div>"
       + (bonus ? '<div class="tp-enh-bonus">' + bonus + "</div>" : "")
       + '<div class="tp-enh-meta"><span>成功率 <b>' + e.chancePercent + "%</b></span><span>成功 " + e.successXp + " XP · 失败 " + e.failureXp + " XP 并清零</span></div>"
-      + '<div class="tp-enh-mats">' + mats + "</div>"
+      + '<div class="tp-enh-mats">' + mats + iskLine + "</div>"
+      + insufficientNote
       + '<button class="tp-enh-btn btn" data-enhance-ship="' + ship.instanceId + '" ' + dis + ">" + label + "</button></div>";
   }
   function tpAssignmentHTML(display, ship) {
@@ -226,10 +235,28 @@
     });
     return html;
   }
+  function tpDismantleHTML(display, ship) {
+    var d = ship.dismantle || { available:false, preview:[], canDismantle:false, blockedText:"" };
+    if (!d.available) return '<div class="tp-empty">该舰船没有可拆解配方</div>';
+    var preview = (d.preview || []).map(function (p) {
+      return '<li class="tp-dismantle-item">' + p.name + " ×" + p.returned + "</li>";
+    }).join("");
+    var blocked = (!d.canDismantle && d.blockedText)
+      ? '<div class="tp-dismantle-blocked">⚠ ' + d.blockedText + "</div>"
+      : "";
+    var btn = '<button class="tp-dismantle-btn btn danger" data-dismantle-ship="' + ship.instanceId + '" ' + (d.canDismantle ? "" : "disabled") + ">🗑 拆解此舰船（不可恢复）</button>";
+    return '<div class="tp-dismantle-card">'
+      + '<div class="tp-dismantle-warn">拆解后舰船将<b>永久消失</b>，仅归还约 50% 已消耗材料：</div>'
+      + '<ul class="tp-dismantle-preview">' + (preview || '<li class="tp-dismantle-item">无材料可归还</li>') + "</ul>"
+      + blocked
+      + btn
+      + "</div>";
+  }
   function tpTabBodyHTML(display, ship) {
     if (_tpHangarTab === "fitting") return tpFittingHTML(display, ship);
     if (_tpHangarTab === "enhancement") return tpEnhanceHTML(display, ship);
     if (_tpHangarTab === "assignment") return tpAssignmentHTML(display, ship);
+    if (_tpHangarTab === "dismantle") return tpDismantleHTML(display, ship);
     return tpOverviewHTML(display, ship);
   }
   function tpEmptyHTML() {
@@ -246,7 +273,7 @@
     return '<div class="tp-hangar-filters">' + tabs.map(function (t) { return '<button class="tp-filter' + (_tpHangarFilter === t[0] ? " active" : "") + '" data-tp-filter="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</div>";
   }
   function tpTabsHTML() {
-    var t = [["overview", "概览"], ["fitting", "装备"], ["enhancement", "强化"], ["assignment", "指派"]];
+    var t = [["overview", "概览"], ["fitting", "装备"], ["enhancement", "强化"], ["assignment", "指派"], ["dismantle", "拆解"]];
     return '<div class="tp-hangar-tabs">' + t.map(function (x) { return '<button class="tp-htab' + (_tpHangarTab === x[0] ? " active" : "") + '" data-tp-htab="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>";
   }
   /* 装备弹窗环带中央：注入当前舰真实 getHangarThumb 缩略图（移动端）。
@@ -337,6 +364,8 @@
         if (filt) { _tpHangarFilter = filt.getAttribute("data-tp-filter"); mobileRenderHangarPanel(); return; }
         var enh = t.closest("[data-enhance-ship]");
         if (enh) { window.enhanceShipFromHangar(enh.getAttribute("data-enhance-ship")); return; }
+        var dism = t.closest("[data-dismantle-ship]");
+        if (dism) { window.dismantleShipFromHangar(dism.getAttribute("data-dismantle-ship")); return; }
         var act = t.closest("[data-ship-action]");
         if (act) {
           var res = window.dispatchGameAction(window.gameState, { type: "hangar/toggleAssignment", instanceId: act.getAttribute("data-sid"), actionKey: act.getAttribute("data-ship-action") }, Date.now());
@@ -375,6 +404,17 @@
       };
     }
   }
+
+  /* ---------- 测试/QA 句柄（无副作用，仅供自动化审计与 ?qa=1 调用） ---------- */
+  window.TapTapPortrait = {
+    tpRoleOf: tpRoleOf,
+    tpShipMeta: tpShipMeta,
+    tpEnhanceHTML: tpEnhanceHTML,
+    tpDismantleHTML: tpDismantleHTML,
+    get currentShipId() { return _tpCurrentShipId; },
+    get hangarFilter() { return _tpHangarFilter; },
+    get hangarTab() { return _tpHangarTab; }
+  };
 
   /* ---------- 启动 ---------- */
   function boot() { init(); }

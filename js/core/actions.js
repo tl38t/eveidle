@@ -1252,7 +1252,13 @@ const ShellStateActions = {
     if (!Object.entries(cost).every(([id, quantity]) => ResourceRegistry.get(state, "component:" + id) >= quantity)) {
       return { changed:false, reason:"insufficient-components" };
     }
+    // 舰船强化新增星币消耗（后期可持续星币 sink）；不足则拒绝，不扣任何材料。
+    const iskCost = getShipEnhancementIskCost(config);
+    if (iskCost > 0 && ResourceRegistry.get(state, "currency:isk") < iskCost) {
+      return { changed:false, reason:"insufficient-isk" };
+    }
     for (const [id, quantity] of Object.entries(cost)) ResourceRegistry.spend(state, "component:" + id, quantity);
+    if (iskCost > 0) ResourceRegistry.spend(state, "currency:isk", iskCost);
 
     const fromLevel = normalizeShipEnhancementLevel(instance.enhancementLevel);
     const skillLevel = Number(state.skills.shipEngineering && state.skills.shipEngineering.lvl) || 1;
@@ -1275,9 +1281,60 @@ const ShellStateActions = {
       roll,
       success,
       xp,
-      componentsSpent:Object.values(cost).reduce((sum, quantity) => sum + quantity, 0)
+      componentsSpent:Object.values(cost).reduce((sum, quantity) => sum + quantity, 0),
+      iskSpent:iskCost
     }, { offline:false, source:"ship-enhancement" });
-    return { changed:true, instance, config, fromLevel, toLevel, chance, roll, success, xp, cost };
+    return { changed:true, instance, config, fromLevel, toLevel, chance, roll, success, xp, cost, iskCost };
+  },
+
+  // Batch R（E 项·舰船拆解）：只读报价已由 selector 展示；此处执行拆解。
+  // 拒绝：未知 / 已分配 / 执行中 / 维修中 / 带装备或 rig（与 selector 共用 getShipDismantleBlockReason）。
+  // 归还 = getShipDismantleQuote（每项 floor(总量×0.5)），按 refId 精确入账；
+  // 不归还蓝图 / XP / 强化等级 / 装备（装备经 has-fitting 拒绝后天然不残留）。
+  disassembleShip(state, instanceId, now) {
+    const instance = getShipInstanceFromState(state, instanceId);
+    if (!instance) return { changed:false, reason:"unknown-ship" };
+    const config = getShipConfigById(instance.shipId);
+    if (!config) return { changed:false, reason:"unknown-ship" };
+    const actionTime = Number(now) || Date.now();
+    const blocked = getShipDismantleBlockReason(state, instance, actionTime);
+    if (blocked) return { changed:false, reason:blocked };
+    const recipe = SHIP_ASSEMBLY_RECIPES.find(item => item.shipId === instance.shipId) || null;
+    if (!recipe) return { changed:false, reason:"no-dismantle-recipe" };
+    const preview = getShipDismantleQuote(recipe);
+    // 归还材料（quote 条目已过滤 returned<=0；refId 为空则跳过该条目，避免无锚点材料丢失）。
+    // refundedResources 以 canonical ref（资源权威键）→ 实际归还数量映射，与真实入账严格一致。
+    const refundedResources = {};
+    for (const entry of preview) {
+      if (entry.refId) {
+        ResourceRegistry.add(state, entry.refId, entry.returned);
+        refundedResources[entry.refId] = (refundedResources[entry.refId] || 0) + entry.returned;
+      }
+    }
+    // 移除舰船实例
+    const index = state.inventory.ships.indexOf(instance);
+    if (index >= 0) state.inventory.ships.splice(index, 1);
+    // 清理实例级残留（防御性：正常路径 has-fitting/assigned/active/repairing 已保证无引用）
+    finishShipRepair(state, instanceId);
+    if (state.archaeology) {
+      if (state.archaeology.shipHp && Object.prototype.hasOwnProperty.call(state.archaeology.shipHp, instanceId)) {
+        delete state.archaeology.shipHp[instanceId];
+      }
+      if (state.archaeology.repairsByInstanceId && Object.prototype.hasOwnProperty.call(state.archaeology.repairsByInstanceId, instanceId)) {
+        delete state.archaeology.repairsByInstanceId[instanceId];
+      }
+    }
+    if (state.resumeAfterRepair && state.resumeAfterRepair.instanceId === instanceId) state.resumeAfterRepair = null;
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("ship:disassembled", {
+        shipId:instance.shipId,
+        instanceId:instance.instanceId,
+        returnedCount:preview.length,
+        refundedResources
+      }, { offline:false, source:"ship-dismantle" });
+    }
+    return { changed:true, instance, config, returned:preview };
   },
 
   setFittingSlot(state, instanceId, slot, slotIndex, equipmentRef) {
@@ -1864,6 +1921,7 @@ const StationStateActions = {
   if (action.type === "hangar/toggleAssignment") return tutorialNote(state, action, ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime), actionTime);
   if (action.type === "hangar/equipCombatShip") return tutorialNote(state, action, ShellStateActions.equipCombatShip(state, action.instanceId, actionTime), actionTime);
   if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue);
+  if (action.type === "hangar/disassembleShip") return ShellStateActions.disassembleShip(state, action.instanceId, actionTime);
   if (action.type === "hangar/setFittingSlot") return ShellStateActions.setFittingSlot(state, action.instanceId, action.slot, action.slotIndex, action.equipmentId);
   if (action.type === "hangar/resetFitting") return ShellStateActions.resetFitting(state, action.instanceId);
   if (action.type === "hangar/fitRig") return ShellStateActions.fitRig(state, action.instanceId, action.slotIndex, action.rigItemId);
