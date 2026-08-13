@@ -33,7 +33,7 @@ function archFocusFromSite(siteId) {
 }
 
 function archBlueprintName(id) {
-  if (typeof getEquipmentBlueprint === "function") { const e = getEquipmentBlueprint(id); if (e && e.name) return e.name; }
+  if (typeof EQUIPMENT_DB === "object" && EQUIPMENT_DB[id] && EQUIPMENT_DB[id].name) return EQUIPMENT_DB[id].name;
   if (typeof getBoosterRecipe === "function") { const b = getBoosterRecipe(id); if (b && b.name) return b.name; }
   if (typeof getBoosterItem === "function") { const bi = getBoosterItem(id); if (bi && bi.name) return bi.name; }
   if (typeof getArchaeologyProbe === "function") { const p = getArchaeologyProbe(id); if (p && p.name) return p.name; }
@@ -204,7 +204,6 @@ function renderArchaeologyPage(now) {
       <div class="arch-focus-title">选择探针</div>
       <div class="arch-probe-row">${probeSection}</div>
     </div>
-    ${controls}
   `;
 
   // ---- 右栏：当前地点稀有档案 ----

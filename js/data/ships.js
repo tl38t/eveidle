@@ -120,7 +120,6 @@ const STARTER_SHIPS = {
     bonuses: { shieldCapacity: 0.10, laserDamage: 0.05, capacitorRecharge: 0.08 },
     recommendedWeapon: "laser", counterFaction: "angel",
     unlock: { type: "starter", isDefault: true },
-    image: "images/ships/裂谷级.png"
   },
   kestrel: {
     id: "kestrel", name: "铁卫级", tier: "T1", type: "frigate",

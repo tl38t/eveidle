@@ -36,6 +36,9 @@ const GameEventContracts = (() => {
     "combat:resumedAfterRepair": { required:["zoneId", "defeatedMode"], numbers:[] },
     "ship:destroyed": { required:["shipId", "repairSeconds"], numbers:["repairSeconds"] },
     "ship:enhancementAttempted": { required:["shipId", "instanceId", "fromLevel", "toLevel", "chance", "success", "xp"], numbers:["fromLevel", "toLevel", "chance", "xp"] },
+    // Batch R（E 项·舰船拆解）：hangar/disassembleShip Action 真实成功后 emit；returnedCount 为归还材料条目数（诊断用）；
+    // refundedResources 为 canonical ref（资源权威键）→ 实际归还数量的映射（与 Action 真实入账严格一致）。
+    "ship:disassembled": { required:["shipId", "instanceId", "refundedResources"], numbers:[] },
     "equipment:enhancementAttempted": { required:["instanceId", "itemId", "category", "fromLevel", "toLevel", "chance", "success", "xp"], numbers:["fromLevel", "toLevel", "chance", "xp"] },
     "rig:manufactured": { required:["rigId", "quantity"], numbers:["quantity"] },
     "rig:fitted": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },

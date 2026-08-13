@@ -3,7 +3,7 @@ const ENEMY_DATABASE = {
   angel: {
     name: "苍穹劫团",
     types: {
-      scout:    { name:"苍穹劫团侦察兵", level:1,  kind:"normal", icon:"👹", hp:{shield:220,armor:88,structure:55},   hit:100,dodge:30,baseDamage:40, iskDrop:500, xpDrop:20,  image:"images/enemies/天使侦查舰.png" },
+      scout:    { name:"苍穹劫团侦察兵", level:1,  kind:"normal", icon:"👹", hp:{shield:220,armor:88,structure:55},   hit:100,dodge:30,baseDamage:40, iskDrop:500, xpDrop:20 },
       raider:   { name:"苍穹劫团突击舰", level:10, kind:"elite",  icon:"👹", hp:{shield:550,armor:220,structure:110}, hit:130,dodge:40,baseDamage:59, iskDrop:1500,xpDrop:60 },
       commander:{ name:"苍穹劫团指挥官", level:20, kind:"boss",   icon:"👺", hp:{shield:1853,armor:65,structure:32}, hit:160,dodge:50,baseDamage:96, iskDrop:4000,xpDrop:180 },
       patrol_destroyer:{ name:"苍穹劫团巡猎驱逐舰", level:20, kind:"normal", icon:"👹", hp:{shield:545,armor:220,structure:135}, hit:120,dodge:45,baseDamage:94, iskDrop:500,xpDrop:40 },

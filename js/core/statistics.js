@@ -4,7 +4,7 @@
    只记录已经发生的领域事件，不参与生产、战斗或奖励计算。
    ================================================================ */
 
-const GAME_STATISTICS_VERSION = 9;
+const GAME_STATISTICS_VERSION = 10;
 
 function createDefaultStatisticsState() {
   return {
@@ -53,6 +53,11 @@ function createDefaultStatisticsState() {
       maxQueueItems:0,
       combatRepairResumes:0
     },
+    // v10（Batch R·货币消耗统计）：economy 只累计真实发生的星币/功勋消耗。
+    //   iskSpent / lpSpent 仅由 resource:changed（resourceId ∈ {currency:isk, currency:lp}
+    //   且 previousValue > value，即真实 spend 路径）的差值累计；
+    //   禁止从当前余额或旧档余额差猜测历史消耗（旧档迁移后保持 0）。
+    economy:{ iskSpent:0, lpSpent:0 },
     eventLedger:{ processedEventIds:[] }
   };
 }
@@ -287,6 +292,18 @@ function ensureStatisticsState(state) {
     }
   }
   statistics.lifecycle = cleanLifecycle;
+  // v10 清洗（Batch R·货币消耗统计）：economy 两字段仅接受 typeof number + 有限非负，
+  // Math.floor 归一为非负整数；缺失/非法一律归 0。不追溯回填——旧档没有真实消费事件
+  // 事实，禁止从当前余额差臆测历史消耗（与 v4 考古字段同一原则）。
+  const rawEconomy = current.economy;
+  const cleanEconomy = { iskSpent:0, lpSpent:0 };
+  if (rawEconomy && typeof rawEconomy === "object" && !Array.isArray(rawEconomy)) {
+    for (const key of ["iskSpent", "lpSpent"]) {
+      const raw = rawEconomy[key];
+      if (typeof raw === "number" && Number.isFinite(raw) && raw >= 0) cleanEconomy[key] = Math.floor(raw);
+    }
+  }
+  statistics.economy = cleanEconomy;
   // v9 追溯回填（Batch C-14A）：fromVersion<9 时只从已存在的权威事实推导，不臆测。
   //   J05：当前存档 queue.items 的真实长度是「历史曾达到过」的下界 → 取 max。
   //   J03/J04：station.maxOfflineSettlementSeconds 是 offline.js 真实结算过的最长单次秒数，
@@ -491,6 +508,27 @@ function consumeStatisticsEvent(event) {
       const elapsed = payload.seconds;
       if (typeof elapsed !== "number" || !Number.isFinite(elapsed) || elapsed <= 0) { handled = false; break; }
       statistics.lifecycle.onlineSeconds += elapsed;
+      break;
+    }
+    case "resource:changed": {
+      // Batch R（v10·货币消耗统计）：仅累计 currency:isk / currency:lp 的真实消费
+      // （previousValue > value 即 spend 路径，累计差额 previousValue - value）。
+      // 其余资源变动 / 充值（previousValue <= value）一律拒绝（handled=false，不 dirty、不增 events）。
+      // 不信任 events.js 契约的宽松 number 校验（数字串会放行），此处严格要求 typeof number + 有限。
+      const resourceId = payload.resourceId;
+      const previousValue = payload.previousValue;
+      const value = payload.value;
+      if (typeof resourceId !== "string" ||
+          (resourceId !== "currency:isk" && resourceId !== "currency:lp") ||
+          typeof previousValue !== "number" || !Number.isFinite(previousValue) ||
+          typeof value !== "number" || !Number.isFinite(value) ||
+          previousValue <= value) {
+        handled = false;
+        break;
+      }
+      const spent = Math.floor(previousValue - value);
+      if (resourceId === "currency:isk") statistics.economy.iskSpent += spent;
+      else statistics.economy.lpSpent += spent;
       break;
     }
     case "queue:itemAdded": {

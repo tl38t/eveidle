@@ -4,15 +4,16 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>深空放置：边疆纪元</title>
+<script>window.TEST_ACTIVE_SPEED = 10;</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=1">
-<link rel="stylesheet" href="./css/panels.css?v=2">
+<link rel="stylesheet" href="./css/base.css?v=5">
+<link rel="stylesheet" href="./css/panels.css?v=6">
 <link rel="stylesheet" href="./css/combat.css?v=1">
-<link rel="stylesheet" href="./css/components.css?v=2">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=1">
+<link rel="stylesheet" href="./css/components.css?v=7">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=5">
 <script type="importmap">
 {
   "imports": {
@@ -21,7 +22,6 @@
   }
 }
 </script>
-<script>window.TEST_ACTIVE_SPEED = 10;</script>
 <script defer src="./js/core/speed-config.js?v=1"></script>
 <script type="module" src="./js/ui/ship3d.js?v=6"></script>
 <style id="ship3d-style">
@@ -291,10 +291,7 @@
         <!-- 冶炼区域选择 -->
         <div class="mining-area-select smelting-area-select" id="smelting-area-select" style="display:none;">
           <span class="area-label">冶炼目标：</span>
-          <div class="area-dropdown">
-            <button class="area-dropbtn" id="smelting-dropbtn">标准钛材 ▾</button>
-            <div class="area-dropdown-content" id="smelting-dropdown-content"></div>
-          </div>
+          <div class="mining-target-scroll"><div class="mining-target-strip" id="smelting-target-strip"></div></div>
         </div>
         <!-- 冶炼效率 + 进度 -->
         <div class="mining-stats smelting-stats" id="smelting-stats" style="display:none;">
@@ -324,10 +321,7 @@
         <!-- 气体采集区域选择 -->
         <div class="mining-area-select gas-area-select" id="gas-area-select" style="display:none;">
           <span class="area-label">气体目标：</span>
-          <div class="area-dropdown">
-            <button class="area-dropbtn" id="gas-dropbtn">粗制富勒烯 ▾</button>
-            <div class="area-dropdown-content" id="gas-dropdown-content"></div>
-          </div>
+          <div class="mining-target-scroll"><div class="mining-target-strip" id="gas-target-strip"></div></div>
         </div>
         <!-- 气体采集效率 + 进度 -->
         <div class="mining-stats gas-stats" id="gas-stats" style="display:none;">
@@ -767,6 +761,10 @@
             <span id="station-body-level">Lv.0</span>
             <span id="station-logistics-summary"></span>
           </div>
+          <div class="station-explain">
+            <b>这是你的永久基地。</b>升级本体可解锁更高的附属建筑等级，并提升「综合后勤」全局产出倍率；
+            本体需持续消耗<b>维护燃料</b>才能维持全部产出——断油后本体与七座建筑停效（舰船船坞例外）。
+          </div>
           <div class="station-construction">
             <div class="progress-bar"><div class="fill" id="station-construction-fill" style="width:0%"></div></div>
             <span id="station-construction-text">就绪</span>
@@ -780,6 +778,7 @@
           <div>维护点数：<span id="station-maintenance-points">0</span></div>
           <div>燃料：<span id="station-fuel-remaining">0</span></div>
           <div>预计剩余：<span id="station-fuel-remaining-ms">-</span></div>
+          <div class="station-explain">维护点数决定可升级的建筑等级上限；本体与附属建筑持续消耗<b>维护燃料</b>，燃料耗尽前「预计剩余」显示可维持时长。燃料不足时全部停效，可随时用<b>一键补给</b>补充燃料维持运转。</div>
           <div class="station-fuel-notes">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
           <button class="btn primary" id="btn-station-refill">一键补给</button>
         </div>
@@ -791,6 +790,7 @@
         <!-- D. 自动线 -->
         <div class="station-section">
           <h3>自动生产线</h3>
+          <div class="station-explain">由对应建筑（冶炼精炼厂 / 装备制造厂 / 增强剂制造厂）提供倍率加成，可无人值守持续生产。选择产物后启动，按「建筑 × 后勤 × 综合」倍率加速产出。</div>
           <div id="station-auto-lines"></div>
         </div>
         <!-- E. 效果 -->
@@ -1007,7 +1007,7 @@
 <!-- ===== 新手引导常驻小部件（Batch P：右上角 / 移动端底栏）===== -->
 <aside id="tutorial-widget" class="tutorial-widget" aria-live="polite" aria-label="新手引导任务">
   <div id="tutorial-widget-header" class="tw-header">
-    <span class="tw-brand">新手引导</span>
+    <span class="tw-brand">新手引导<span class="tw-collapsed-label" id="tutorial-widget-mini"></span></span>
     <button type="button" id="tutorial-widget-toggle" class="tw-toggle" aria-expanded="true" aria-controls="tutorial-widget">收起</button>
   </div>
   <div id="tutorial-widget-progress" class="tw-progress"></div>
@@ -1020,17 +1020,17 @@
 </aside>
 
   <script defer src="./js/core/runtime.js?v=1"></script>
-  <script defer src="./js/core/events.js?v=1"></script>
+  <script defer src="./js/core/events.js?v=2"></script>
   <script defer src="./js/ui/error-boundary.js?v=1"></script>
   <script defer src="./js/data/base.js?v=1"></script>
   <script defer src="./js/data/ammo.js?v=1"></script>
   <script defer src="./js/data/display-names.js?v=1"></script>
   <script defer src="./js/data/planets.js?v=1"></script>
-  <script defer src="./js/data/ships.js?v=1"></script>
+  <script defer src="./js/data/ships.js?v=2"></script>
   <script defer src="./js/data/boosters.js?v=1"></script>
   <script defer src="./js/systems/boosters.js?v=1"></script>
   <script defer src="./js/systems/recycling.js?v=2"></script>
-  <script defer src="./js/data/combat.js?v=1"></script>
+  <script defer src="./js/data/combat.js?v=2"></script>
   <script defer src="./js/data/cargo.js?v=3"></script>
   <script defer src="./js/data/implants.js?v=1"></script>
   <script defer src="./js/data/equipment.js?v=2"></script>
@@ -1040,45 +1040,46 @@
   <script defer src="./js/core/research-state.js?v=1"></script>
   <script defer src="./js/data/achievements.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=1"></script>
-  <script defer src="./js/data/tutorial.js?v=1"></script>
+  <script defer src="./js/data/tutorial.js?v=3"></script>
   <script defer src="./js/core/tutorial-state.js?v=1"></script>
   <script defer src="./js/core/achievement-state.js?v=1"></script>
   <script defer src="./js/core/state.js?v=2"></script>
   <script defer src="./js/systems/research.js?v=1"></script>
-  <script defer src="./js/core/statistics.js?v=1"></script>
+  <script defer src="./js/core/statistics.js?v=2"></script>
   <script defer src="./js/systems/achievements.js?v=1"></script>
   <script defer src="./js/systems/production.js?v=1"></script>
   <script defer src="./js/core/resources.js?v=1"></script>
-  <script defer src="./js/systems/tutorial.js?v=2"></script>
+  <script defer src="./js/systems/tutorial.js?v=4"></script>
   <script defer src="./js/systems/manufacturing.js?v=1"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=1"></script>
-  <script defer src="./js/systems/ship-enhancement.js?v=2"></script>
+  <script defer src="./js/systems/ship-enhancement.js?v=3"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=1"></script>
   <script defer src="./js/systems/rigs.js?v=1"></script>
   <script defer src="./js/systems/archaeology.js?v=1"></script>
   <script defer src="./js/systems/planetary.js?v=1"></script>
   <script defer src="./js/systems/station.js?v=2"></script>
-  <script defer src="./js/ui/action-modal.js?v=1"></script>
+  <script defer src="./js/ui/action-modal.js?v=3"></script>
   <script defer src="./js/core/queue.js?v=1"></script>
   <script defer src="./js/systems/capital-combat.js?v=1"></script>
   <script defer src="./js/systems/combat.js?v=3"></script>
   <script defer src="./js/core/combat-modifiers.js?v=1"></script>
-  <script defer src="./js/core/selectors.js?v=9"></script>
-  <script defer src="./js/core/actions.js?v=3"></script>
+  <script defer src="./js/core/selectors.js?v=12"></script>
+  <script defer src="./js/core/actions.js?v=4"></script>
   <script defer src="./js/systems/research-protocols.js?v=1"></script>
-  <script defer src="./js/ui/shell-render.js?v=6"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=6"></script>
+  <script defer src="./js/ui/shell-render.js?v=13"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=7"></script>
   <script defer src="./js/ui/combat-render.js?v=9"></script>
   <script defer src="./js/ui/planetary-render.js?v=1"></script>
-  <script defer src="./js/ui/archaeology-render.js?v=2"></script>
-  <script defer src="./js/ui/booster-render.js?v=3"></script>
-  <script defer src="./js/ui/station-render.js?v=1"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=3"></script>
+  <script defer src="./js/ui/booster-render.js?v=4"></script>
+  <script defer src="./js/ui/station-render.js?v=2"></script>
   <script defer src="./js/core/tick.js?v=1"></script>
-  <script defer src="./js/core/offline.js?v=2"></script>
+  <script defer src="./js/core/offline.js?v=3"></script>
   <script defer src="./js/systems/offline-combat.js?v=1"></script>
-  <script defer src="./js/ui/render.js?v=2"></script>
+  <script defer src="./js/ui/render.js?v=4"></script>
   <script defer src="./js/core/persistence.js?v=3"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=1"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=2"></script>
+  <script defer src="./js/qa-seed.js?v=1"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">
       <span class="popup-close" id="hangar-3d-popup-close">×</span>

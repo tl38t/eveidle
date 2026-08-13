@@ -31,19 +31,22 @@ function renderActionConfirmation(display) {
   infoEl.innerHTML = `<div class="ai-row"><span class="ai-label">单次耗时：</span><span class="ai-value">${display.combat ? "视战斗情况而定" : duration.toFixed(1) + "s"}</span></div>`;
   const requirementRows = display.requirements.map(item => {
     const className = item.enough ? "" : " ar-short";
-    return `<div class="ar-row${className}">需求：${item.name}×${item.quantity}（库存：${Number(item.stock || 0).toLocaleString()}）</div>`;
+    const matName = item.displayName || item.name;
+    return `<div class="ar-row${className}">需求：${matName}×${item.quantity}（库存：${Number(item.stock || 0).toLocaleString()}）</div>`;
   });
   if (display.outputText) requirementRows.push(`<div class="ar-row" style="color:#e8d8a0;margin-top:4px;">产出：${display.outputText}</div>`);
   resEl.innerHTML = requirementRows.join("");
 
   _actionConfirmDisplay = display;
   input.value = 1;
+  document.getElementById("action-batch-infinity").classList.remove("selected");
   input.max = maxCount;
   maxEl.textContent = display.unlimited ? "" : "最大：" + maxCount;
   summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration)}`;
   input.oninput = function() {
     const value = Math.max(1, Math.min(maxCount, parseInt(this.value) || 1));
     this.value = value;
+    document.getElementById("action-batch-infinity").classList.remove("selected");
     summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration * value)}`;
   };
 
@@ -92,7 +95,6 @@ function submitActionConfirmation(front) {
   const positionText = front ? "队列首位" : "队列";
   showToast(`已加入${positionText}${countText}：${getQueueSkillLabel(queueItem.skill)} · ${queueItem.label}`);
   if (front) startQueue();
-  if (!display.combat && currentPage !== "queue") switchPage("queue");
   return true;
 }
 
@@ -111,7 +113,11 @@ function queueActionConfirmation() {
   document.getElementById("action-modal").addEventListener("click", event => { if (event.target.id === "action-modal") hideActionConfirm(); });
   document.getElementById("action-batch-count").addEventListener("keydown", event => { if (event.key === "Enter") confirmAction(); });
   document.getElementById("action-batch-infinity").addEventListener("click", () => {
-    document.getElementById("action-batch-count").value = "-1";
-    confirmAction();
+    const input = document.getElementById("action-batch-count");
+    input.value = "-1";
+    // 仅选中无限，不自动提交；刷新摘要并显示选中态，与填入其他数字体验一致
+    const summaryEl = document.getElementById("action-modal-summary");
+    if (summaryEl) summaryEl.innerHTML = '<span class="ai-label">总耗时：</span>∞ 无限';
+    document.getElementById("action-batch-infinity").classList.add("selected");
   });
 })();

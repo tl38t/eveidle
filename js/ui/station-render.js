@@ -123,6 +123,17 @@ function renderStationPage(now) {
   }
 
   // ---- C. 建筑 ----
+  // Bug4：附属建筑「作用说明」——解释每座建筑在空间站体系里的职责（静态文案）。
+  var STATION_BUILDING_PURPOSE = {
+    resource_dispatch: "你采矿 / 采集气体时，空间站按开采次数累计计数；达到「勘探指令阈值」后自动下达勘探指令，额外产出一批资源（只增资源、不加经验）。本建筑降低该阈值，让你更频繁吃到这笔额外产出。",
+    planetary_control: "自动收取行星开发产物，并增加行星开发可同时进行的槽位。",
+    smelting_refinery: "提升冶炼自动线的产出倍率，让无人值守的矿石冶炼更快。",
+    equipment_factory: "提升装备自动线的产出倍率，让无人值守的装备制造更快。",
+    booster_factory: "提升增强剂自动线的产出倍率，让无人值守的增强剂制造更快。",
+    archaeology_lab: "提升考古独特文物的产出倍率，让遗迹勘测更有回报。",
+    combat_command: "提升战斗经验获取速度，让练级更高效。",
+    shipyard: "加快舰船建造与强化速度，并节省相应资源；断油也保持生效。"
+  };
   var grid = document.getElementById("station-buildings-grid");
   if (grid) {
     grid.innerHTML = display.buildings.map(function(b) {
@@ -134,8 +145,12 @@ function renderStationPage(now) {
         }).join(" · ");
         if (b.durationMs) costHtml += ' · ' + fmtDuration(b.durationMs);
       }
+      var purposeHtml = STATION_BUILDING_PURPOSE[b.buildingId]
+        ? '<div class="sbc-purpose">' + STATION_BUILDING_PURPOSE[b.buildingId] + '</div>'
+        : '';
       return '<div class="station-building-card"><div class="sbc-header"><strong>' + (b.name || b.buildingId) + '</strong> Lv.' + (b.level || 0) + '</div>' +
         '<div class="sbc-effect">' + (b.effectText || "") + '</div>' +
+        purposeHtml +
         (b.nextEffectText ? '<div class="sbc-next">' + b.nextEffectText + '</div>' : '') +
         (costHtml ? '<div class="sbc-cost">' + costHtml + '</div>' : '') +
         '<button class="btn sm sbc-upgrade" id="bld-upgrade-' + b.buildingId + '" data-building="' + b.buildingId + '"' + ((b.canUpgrade && !b.isConstructingThis) ? '' : ' disabled') + '>' +

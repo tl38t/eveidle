@@ -16,13 +16,19 @@
   .station-panel .panel-body { max-height: none; overflow-y: visible; }
   .station-section { margin-bottom: 20px; padding: 12px; background: rgba(20,40,55,0.5); border-radius: 6px; }
   .station-section h3 { margin: 0 0 10px; font-size: 14px; color: #8ab4d6; }
-  .station-overview { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 0; }
+  .station-overview { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 0; font-family: var(--font-ui); }
   .station-buildings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
   .station-building-card { background: rgba(30,55,75,0.6); border: 1px solid #2a4a5e; border-radius: 6px; padding: 10px; }
   .sbc-header { font-size: 13px; margin-bottom: 4px; color: #b0d0e8; }
   .sbc-effect { font-size: 12px; color: #7a9ab0; margin-bottom: 2px; }
   .sbc-next { font-size: 11px; color: #5a8aaa; margin-bottom: 4px; }
   .sbc-cost { font-size: 11px; margin: 4px 0; }
+  /* Bug4：附属建筑「作用说明」+ 总览/燃料说明；数字统一为全局 UI 字体 */
+  .sbc-purpose { font-size: 11.5px; color: #9fd0c0; margin: 6px 0 4px; line-height: 1.5; background: rgba(80,180,140,.08); border-radius: 4px; padding: 5px 7px; }
+  .sbc-purpose b { color: #7ad0a8; }
+  .station-explain { margin-top: 10px; padding: 9px 10px; background: rgba(93,168,212,.10); border-left: 3px solid #8ab4d6; border-radius: 4px; font-size: 12px; line-height: 1.55; color: #bcd4e6; }
+  .station-explain b { color: #d4a843; }
+  #station-maintenance-points, #station-fuel-remaining, #station-fuel-remaining-ms { font-family: var(--font-ui); font-weight: 700; color: #dbe6f0; }
   .station-al-card { background: rgba(30,55,75,0.6); border: 1px solid #2a4a5e; border-radius: 6px; padding: 10px; margin-bottom: 8px; }
   .sal-header { font-size: 13px; color: #b0d0e8; margin-bottom: 4px; }
   .sal-mult { font-size: 11px; color: #5a8aaa; }
@@ -188,6 +194,14 @@
   .equipeng-material small { color: #7ac87a; }
   .equipeng-material.short { border-color: rgba(217,74,74,.35); }
   .equipeng-material.short small { color: #d94a4a; }
+  /* Bug2：制造材料名 → 仓库物品弹窗链接 */
+  .mat-link {
+    display: inline; margin: 0; padding: 0;
+    background: none; border: none; border-bottom: 1px dotted currentColor;
+    color: inherit; font: inherit; line-height: inherit; text-align: left; cursor: pointer;
+  }
+  .mat-link:hover { filter: brightness(1.25); border-bottom-style: solid; }
+  .mat-link:focus-visible { outline: 1px solid #5da8d4; outline-offset: 1px; }
   .equipeng-manufacture-summary { color: #8193a5; line-height: 1.45; }
   .equipeng-running-note {
     padding: 8px 10px; color: #70bce6; background: rgba(28,73,101,.3);
@@ -217,6 +231,36 @@
     .equipeng-catalog-header { align-items: stretch; flex-direction: column; }
     .equipeng-search { width: 100%; }
     .equipeng-recipe-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ===== 制造/增强剂：手机端紧凑布局（对齐采矿卡片风格） ===== */
+  @media (max-width: 720px) {
+    /* 二级标签：从固定6列grid改为flex自动换行，缩小字号/padding避免截断 */
+    .equipeng-category-tabs {
+      display: flex; flex-wrap: wrap; gap: 0;
+      grid-template-columns: none;
+      overflow-x: visible;
+    }
+    .equipeng-category-tab {
+      min-width: 0; flex: 1 1 auto;
+      height: 36px; padding: 0 6px;
+      font-size: 10px; gap: 4px;
+    }
+    .equipeng-category-tab i { font-size: 9px; }
+
+    /* 配方卡片：3列紧凑网格（与采矿卡片一行3张一致） */
+    .equipeng-recipe-grid {
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .equipeng-recipe-card {
+      min-height: 120px; max-height: 140px;
+    }
+    .equipeng-card-icon { height: 40px; font-size: 24px; }
+    .equipeng-recipe-card > strong { padding: 2px 6px; font-size: 11px; }
+    .equipeng-card-attributes { height: auto; padding: 2px 6px 4px; font-size: 9px; }
+    .equipeng-card-top, .equipeng-card-bottom { padding: 3px 6px; font-size: 8px; }
+    .lock-badge { width: 18px; height: 18px; font-size: 10px; top: 4px; right: 4px; }
   }
 
   /* ===== LP商店 ===== */
@@ -352,6 +396,12 @@
     background: rgba(34, 58, 42, 0.7);
     border-color: rgba(90, 140, 90, 0.5);
     box-shadow: 0 0 25px rgba(122, 200, 122, 0.08);
+  }
+  .btn.selected {
+    background: rgba(30, 58, 86, 0.7);
+    border-color: #4a8ed6;
+    color: #cfe6ff;
+    box-shadow: 0 0 18px rgba(74, 142, 214, 0.25);
   }
 
   .btn.danger {

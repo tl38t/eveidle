@@ -3,7 +3,6 @@
    ================================================================ */
 
 const MAX_OFFLINE_SECONDS = 86400;
-let _offlineToastTimer = null;
 let _offlineEventBatch = null;
 // 全局单调批次序号：保证同一毫秒内多次独立结算生成的 runId 全局唯一，
 // 避免不同批次的事件拿到相同 eventId、被通配消费者（onIdempotent）误判为重复而丢弃真实结算记账。
@@ -31,9 +30,11 @@ function emitOfflineGameEvent(type, payload, meta) {
   return GameEvents.emit(type, payload, emitMeta);
 }
 
-function showOfflineToast(seconds, gains) {
-  const old = document.querySelector('.offline-toast'); if (old) old.remove();
-  if (_offlineToastTimer) clearTimeout(_offlineToastTimer);
+// Batch R（B 项）：离线收益改为持久结算弹窗。
+// seconds = 离线秒数；gains = 8 计数器（各技能完成次数）；items = 结算前后 canonical
+// 库存快照 diff 出的「最终净获得物品」（无则回退纯文字信息，兼容旧调用方）。
+// 删除自动关闭计时：仅显式关闭按钮 / 点击背景 / Escape 可关闭。
+function showOfflineToast(seconds, gains, items) {
   const min = Math.floor(seconds / 60); const sec = Math.floor(seconds % 60);
   const timeStr = min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
   const labels = {
@@ -45,10 +46,138 @@ function showOfflineToast(seconds, gains) {
   const detail = Object.entries(labels)
     .filter(([key]) => (gains[key] || 0) > 0)
     .map(([key, label]) => `${label} +${gains[key]} 次`).join("  ");
+  const subtitle = `离线 ${timeStr}，已自动结算${detail ? "：" + detail : ""}` +
+    (Array.isArray(items) && items.length ? ` · 共获得 ${items.length} 类物品` : "");
+  if (typeof openRewardResultModal === "function") {
+    openRewardResultModal({
+      title:"⏳ 离线结算完成",
+      subtitle,
+      items:Array.isArray(items) ? items : [],
+      emptyText:detail ? "本次离线没有新增可展示物品" : "离线时长过短，未产生结算"
+    });
+    return;
+  }
+  // 兜底：共享弹窗未加载（极端缓存场景）时退回一次性文字提示，但不自动关闭（保持持久语义）
+  const old = document.querySelector('.offline-toast'); if (old) old.remove();
   const toast = document.createElement("div"); toast.className = "offline-toast";
-  toast.innerHTML = `⏳ 离线 ${timeStr}，已自动结算${detail ? "：" + detail : ""}`;
+  toast.textContent = `⏳ 离线 ${timeStr}，已自动结算${detail ? "：" + detail : ""}`;
   document.body.appendChild(toast);
-  _offlineToastTimer = setTimeout(() => { if (toast.parentNode) toast.remove(); }, 4200);
+}
+
+/* ---- Batch R（B 项）：canonical 库存快照 + 净获得 diff（只读，不改状态） ---- */
+// 覆盖所有可离线获得/消耗的物品形态：ResourceRegistry 全部命名空间资源
+// （ore/mineral/gas/planetary/moon/special/consumable/component/probe/booster/artifact/currency…）、
+// 弹药实例（state.ammo 按 type|tier 聚合）、装备库存（inventory + 未安装 instances）、
+// 舰船实例数、蓝图（ownedBlueprints）、货柜具名战利品（cargoLoot）、脑插（implants）。
+function createInventorySnapshot(state) {
+  const snap = { res:{}, ammo:{}, equipment:{}, ships:0, blueprints:{}, loot:{}, implants:{} };
+  if (typeof ResourceRegistry !== "undefined" && ResourceRegistry && typeof ResourceRegistry.listDefinitions === "function") {
+    for (const def of ResourceRegistry.listDefinitions()) {
+      const q = ResourceRegistry.get(state, def.id);
+      if (q > 0) snap.res[def.id] = q;
+    }
+  }
+  if (Array.isArray(state.ammo)) {
+    for (const a of state.ammo) {
+      if (!a) continue;
+      const key = (a.type || "?") + "|" + (a.tier || "?");
+      snap.ammo[key] = (snap.ammo[key] || 0) + (Number(a.qty) || 0);
+    }
+  }
+  const eqInv = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
+  for (const itemId of eqInv) {
+    if (typeof itemId === "string" && itemId) snap.equipment[itemId] = (snap.equipment[itemId] || 0) + 1;
+  }
+  if (state.equipment && Array.isArray(state.equipment.instances)) {
+    for (const inst of state.equipment.instances) {
+      if (!inst || inst.installedOn || typeof inst.itemId !== "string" || !inst.itemId) continue;
+      snap.equipment[inst.itemId] = (snap.equipment[inst.itemId] || 0) + 1;
+    }
+  }
+  // 按 shipId 聚合舰船数量（不只保存总数），使离线收益能列出具体舰型与数量。
+  snap.ships = {};
+  if (state.inventory && Array.isArray(state.inventory.ships)) {
+    for (const ship of state.inventory.ships) {
+      if (ship && typeof ship.shipId === "string") snap.ships[ship.shipId] = (snap.ships[ship.shipId] || 0) + 1;
+    }
+  }
+  if (Array.isArray(state.ownedBlueprints)) {
+    for (const key of state.ownedBlueprints) {
+      if (typeof key === "string" && key) snap.blueprints[key] = (snap.blueprints[key] || 0) + 1;
+    }
+  }
+  if (Array.isArray(state.cargoLoot)) {
+    for (const loot of state.cargoLoot) {
+      if (!loot) continue;
+      const key = (typeof loot.id === "string" && loot.id) ? loot.id : (loot.name || "?");
+      snap.loot[key] = { count:(snap.loot[key] ? snap.loot[key].count : 0) + 1, kind:loot.kind, name:loot.name };
+    }
+  }
+  if (state.implants && typeof state.implants === "object" && !Array.isArray(state.implants)) {
+    for (const id of Object.keys(state.implants)) if (state.implants[id]) snap.implants[id] = true;
+  }
+  return snap;
+}
+
+// 仅取正差额（最终净获得），丢弃消耗/减少项；输出 normalizeRewardItem 兼容的条目。
+function diffInventorySnapshot(before, after) {
+  const items = [];
+  const source = { pageLabel:"离线收益" };
+  for (const id of Object.keys(after.res)) {
+    const delta = after.res[id] - (before.res[id] || 0);
+    if (delta > 0) {
+      const nm = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(id) : id;
+      items.push({ id, name:nm, quantity:delta, categoryLabel:"物资", source });
+    }
+  }
+  const ammoTypeNames = (typeof AMMO_TYPE_NAMES !== "undefined" && AMMO_TYPE_NAMES) ? AMMO_TYPE_NAMES : { laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" };
+  for (const key of Object.keys(after.ammo)) {
+    const delta = after.ammo[key] - (before.ammo[key] || 0);
+    if (delta > 0) {
+      const sep = key.indexOf("|");
+      const type = sep >= 0 ? key.slice(0, sep) : key;
+      const tier = sep >= 0 ? key.slice(sep + 1) : "T1";
+      items.push({
+        id:"ammo:" + key, ammo:true, weaponType:type,
+        name:(ammoTypeNames[type] || type) + (tier === "T2" ? "（T2）" : ""),
+        quantity:delta, categoryLabel:"弹药", source
+      });
+    }
+  }
+  const eqDb = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) ? EQUIPMENT_DB : null;
+  for (const itemId of Object.keys(after.equipment)) {
+    const delta = after.equipment[itemId] - (before.equipment[itemId] || 0);
+    if (delta > 0) {
+      const eq = eqDb ? eqDb[itemId] : null;
+      items.push({ id:itemId, name:eq && eq.name ? eq.name : itemId, quantity:delta, categoryLabel:"装备", source });
+    }
+  }
+  // 舰船按 shipId 逐项输出具体舰型（ship:<shipId> + 正式舰名 + 数量），而非笼统总数。
+  const shipDb = (typeof getShipConfigById === "function") ? getShipConfigById : null;
+  for (const shipId of Object.keys(after.ships)) {
+    const delta = after.ships[shipId] - (before.ships[shipId] || 0);
+    if (delta > 0) {
+      const cfg = shipDb ? shipDb(shipId) : null;
+      items.push({ id:"ship:" + shipId, shipId, name:(cfg && cfg.name ? cfg.name : shipId), quantity:delta, categoryLabel:"舰船", source });
+    }
+  }
+  for (const key of Object.keys(after.blueprints)) {
+    const delta = after.blueprints[key] - (before.blueprints[key] || 0);
+    if (delta > 0) items.push({ id:"blueprint:" + key, blueprint:true, name:key + "蓝图", quantity:delta, categoryLabel:"蓝图", source });
+  }
+  for (const key of Object.keys(after.loot)) {
+    const entry = after.loot[key];
+    const beforeEntry = before.loot[key];
+    const delta = entry.count - (beforeEntry ? beforeEntry.count : 0);
+    if (delta > 0) items.push({ id:"loot:" + key, loot:true, kind:entry.kind, name:entry.name || key, quantity:delta, categoryLabel:"战利品", source });
+  }
+  const impDb = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB) ? IMPLANT_DB : null;
+  for (const id of Object.keys(after.implants)) {
+    if (before.implants[id]) continue;
+    const imp = impDb ? impDb[id] : null;
+    items.push({ id, implant:true, name:imp && imp.name ? imp.name : id, quantity:1, categoryLabel:"脑插", source });
+  }
+  return items;
 }
 
 function getMaxMaterialCycles(cost) {
@@ -936,26 +1065,31 @@ function calculateOfflineGains() {
   // 定点返修 P1-C：结算异常时 applyOfflineGains 已就地回滚并 rethrow；此处捕获后直接返回，
   // 不前进 lastActiveTime、不落盘半应用状态（结算失败不应制造离线收益）。
   let gains;
+  // Batch R（B 项）：结算前后 canonical 库存快照，diff 出「最终净获得物品」供持久弹窗展示
+  const beforeSnapshot = createInventorySnapshot(gameState);
   try {
     gains = applyOfflineGains(elapsed, { runId:"offline_" + lastActive.toString(36) + "_" + now.toString(36) });
   } catch (e) {
     return;
   }
+  const netItems = diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState));
   gameState.currentAction.lastProgressUpdate = now;
   gameState.lastActiveTime = now;
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (totalGains > 0) showOfflineToast(elapsed, gains);
+  if (totalGains > 0 || netItems.length > 0) showOfflineToast(elapsed, gains, netItems);
   gameState._dirty = true;
   SaveManager.save();
 }
 
 function forceOfflineTest(seconds) {
   if (!seconds || seconds <= 0) { console.log("用法：forceOfflineTest(60) — 模拟离线 60 秒"); return; }
+  const beforeSnapshot = createInventorySnapshot(gameState);
   const gains = applyOfflineGains(seconds, { runId:"offline_test_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36) });
+  const netItems = diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState));
   gameState.currentAction.lastProgressUpdate = Date.now();
   gameState.lastActiveTime = Date.now(); gameState._dirty = true;
   const total = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (total > 0) showOfflineToast(seconds, gains);
+  if (total > 0 || netItems.length > 0) showOfflineToast(seconds, gains, netItems);
   console.log("[离线测试] 完成", gains);
   updateUI();
   return gains;

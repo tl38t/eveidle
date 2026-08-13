@@ -26,7 +26,7 @@
 | 敌人 | 萨沙共和国（结构） | `#14403a` 暗青 | `#101a18` 黑 | `#36e0a0` 青绿 | `#2a1840` 紫 | 合成·异质 |
 
 > 实现：`ShipFactory.COLORS` 改为按 **(role, line)** 取色而非单色。玩家三种线共用银白基底换辉光/点缀；敌人三势力用暗色基底。
-> 早期 `images/ships/裂谷级.png`、`images/enemies/天使侦查舰.png` 仅作 2D 列表/图鉴，不进 3D 舞台。
+> 早期 `images/ships/裂谷级.png`、`images/enemies/天使侦查舰.png` 两张 2D 素材已退役并删除；正式显示使用程序化 3D，3D 不可用时使用通用占位符（🚀/👾），不保留 2D PNG。
 
 ---
 
@@ -106,7 +106,7 @@
 | **血袭者** (armor/missile) | 装甲 | `acolyte`·`priest`(frigate) / `ritual_destroyer`·`blood_destroyer`(destroyer) / `sermon_cruiser`·`sacrament_cruiser`(cruiser) / `iron_battleship`·`apostle_battleship`(battleship) / `cardinal`·`high_priest`·`blood_archon`·`blood_sovereign`(boss) |
 | **萨沙共和国** (structure/cannon) | 结构 | `drone`·`sentinel`(frigate) / `control_destroyer`·`sentinel_destroyer`(destroyer) / `assimilation_cruiser`·`dominion_cruiser`(cruiser) / `command_battleship`·`domination_battleship`(battleship) / `overlord`·`control_overlord`·`nexus_overlord`·`matrix_overlord`(boss) |
 
-> 敌人 `image` 字段（如 `images/enemies/天使侦查舰.png`）仅 2D 图鉴用；3D 由 `buildShip({faction, hull:档位, weapon})` 生成。
+> 敌人 `image` 字段已移除（早期仅 2D 图鉴用，如已删除的 `images/enemies/天使侦查舰.png`）；正式显示由 `buildShip({faction, hull:档位, weapon})` 程序化 3D 生成，3D 不可用时回退通用占位符（👾）。
 
 ---
 

@@ -166,6 +166,11 @@
     color:#b7c7d5; font-family:'Rajdhani', 'Bahnschrift', sans-serif; font-size:14px; font-weight:600;
     line-height:1.4; letter-spacing:.02em; font-variant-numeric:tabular-nums; white-space:nowrap;
   }
+  .mining-target-sub {
+    color:#9fb0bf; font-family:var(--font-ui); font-size:12px; font-weight:600;
+    line-height:1.35; text-align:center; letter-spacing:.01em; max-width:100%;
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
   .mining-target-state {
     margin-top:auto; color:#86d3f7; font-family:var(--font-tech); font-size:14px;
     line-height:1.4; font-weight:700; letter-spacing:.14em; text-shadow:0 0 9px rgba(121,201,242,.16);
@@ -200,6 +205,29 @@
   .area-dropdown-content .area-option.selected { color: #d4a843; }
   .area-dropdown-content .area-option.locked { color: #3a4a5a; font-style: italic; }
   .area-dropdown-content .area-option .area-req { font-size: 10px; color: #4a5a6a; margin-left: 8px; }
+
+  /* ===== 工业卡片：手机端紧凑网格（对齐银河奶牛放置风格，一屏内不滚动显示全部） ===== */
+  @media (max-width: 720px) {
+    .mining-target-scroll { overflow-x: visible; }
+    .mining-target-strip { flex-wrap: wrap; gap: 6px; min-width: 0; width: 100%; }
+    .mining-target-card {
+      flex: 0 0 calc(33.33% - 4px);
+      width: calc(33.33% - 4px);
+      max-width: 120px;
+      min-width: 92px;
+      height: auto;
+      min-height: 128px;
+      max-height: 140px;
+      padding: 7px 5px 6px;
+    }
+    /* 小卡上斜角"运行中"丝带会被裁切且显拥挤，改为仅靠状态文字「正在采集」表达 */
+    .mining-target-card.running::after { display: none; }
+    .mining-target-name { font-size: 11px; letter-spacing: .06em; }
+    .mining-target-visual { width: 44px; height: 44px; font-size: 28px; }
+    .mining-target-meta { font-size: 10px; }
+    .mining-target-sub { font-size: 9px; }
+    .mining-target-state { font-size: 10px; letter-spacing: .06em; }
+  }
 
   /* ===== 仓库面板 ===== */
   .cargo-panel { flex: 1; display: flex; flex-direction: column; }
@@ -457,6 +485,8 @@
   .equip-select-panel .equip-option .eq-name { flex: 1; }
   .equip-select-panel .equip-option.empty-option { color: #4a5a6a; font-style: italic; }
   .equip-select-panel .equip-option.empty-option:hover { background: rgba(74,74,74,0.1); }
+  .equip-select-panel #equipSelectOptions { max-height: min(420px, 60vh); overflow-y: auto; padding-right: 4px; }
+  .equip-select-panel .eq-count { color: #d4a843; font-weight: 600; margin-left: 4px; }
   .equip-library { margin-top: 12px; padding: 10px 12px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid rgba(26,37,53,0.1); }
   .equip-library .el-title { font-size: 10px; color: #4a5a6a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
   .equip-library .el-items { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -492,6 +522,16 @@
   }
   @keyframes toastFadeIn  { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
   @keyframes toastFadeOut { from { opacity: 1; } to { opacity: 0; } }
+
+  /* ===== 奖励结算持久弹窗（离线收益 / 货柜开箱共用） ===== */
+  .reward-result-modal { width: 560px; max-width: 94vw; }
+  .reward-sub-line { font-size: 12px; color: #8aa0b8; line-height: 1.5; }
+  .reward-result-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px; align-content: start;
+  }
+  .reward-result-card { cursor: default; }
+  .reward-result-empty { text-align: center; color: #6a7a8e; padding: 24px 0; font-size: 13px; }
 
   /* ===== 部署弹窗模态 ===== */
   .modal-overlay {

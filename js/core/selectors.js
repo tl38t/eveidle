@@ -644,17 +644,17 @@ function getActionConfirmationDisplayState(state, target, now) {
     const display = getMiningDisplayState(state, now);
     result.title = icons.mining + " " + (SKILL_LABEL.mining || "采矿");
     result.duration = display.actualTime;
-    result.outputText = display.current.ore + "×1";
+    result.outputText = getResourceDisplayName(display.current.ore) + "×1";
     result.canOpen = display.canStart;
     result.blockedText = display.requirement.text;
-    result.queue = { skill:"mining", target:display.current.name, label:display.current.ore };
+    result.queue = { skill:"mining", target:display.current.name, label:getResourceDisplayName(display.current.ore) };
   } else if (target === "refining") {
     const display = getSmeltingDisplayState(state, now);
     const recipe = display.current;
     result.title = icons.refining + " " + (SKILL_LABEL.refining || "冶炼");
     result.duration = display.actualTime;
     result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
-    result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:recipe.consumeOre, quantity:1, stock:display.stock, enough:display.stock >= 1 }];
+    result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:getResourceDisplayName(recipe.consumeOre), quantity:1, stock:display.stock, enough:display.stock >= 1 }];
     result.maxCount = Math.max(1, display.stock);
     result.unlimited = false;
     result.canOpen = display.canStart;
@@ -664,10 +664,10 @@ function getActionConfirmationDisplayState(state, target, now) {
     const display = getGasDisplayState(state, now);
     result.title = icons.gasHarvesting + " " + (SKILL_LABEL.gasHarvesting || "气体采集");
     result.duration = display.actualTime;
-    result.outputText = display.current.gas + "×1";
+    result.outputText = getResourceDisplayName(display.current.gas) + "×1";
     result.canOpen = display.canStart;
     result.blockedText = display.canStart ? "" : "需要气体采集等级 Lv." + display.current.level;
-    result.queue = { skill:"gasHarvesting", target:display.current.name, label:display.current.gas };
+    result.queue = { skill:"gasHarvesting", target:display.current.name, label:getResourceDisplayName(display.current.gas) };
   } else if (target === "equipmentEngineering") {
     const display = getEquipmentEngineeringDisplayState(state, now, "");
     const recipe = display.selectedRecipe;
@@ -2366,6 +2366,61 @@ function getBlueprintStoreDisplayState(state, selectedCategory) {
   };
 }
 
+/* ================================================================
+   舰船拆解只读报价（Batch R · E 项）
+   SHIP_ASSEMBLY_RECIPES.componentCost → SHIP_COMPONENT_RECIPES.cost 折算为基础材料，
+   再合并 assembly 的 materialCost（纯名键），同材料合计后每项 floor(总量 × 0.5) 归还。
+   只读纯计算，不触碰 state；refId 取材料名跨命名空间聚合的第一个命名空间 id（归还锚点）。
+   ================================================================ */
+function getShipDismantleQuote(recipe) {
+  if (!recipe || typeof recipe !== "object") return [];
+  const costMap = {};
+  for (const [compId, qty] of Object.entries(recipe.componentCost || {})) {
+    const comp = SHIP_COMPONENT_RECIPES.find(item => item.id === compId);
+    if (!comp) continue;
+    for (const [mat, cqty] of Object.entries(comp.cost || {})) {
+      costMap[mat] = (costMap[mat] || 0) + Number(cqty) * Number(qty);
+    }
+  }
+  for (const [mat, qty] of Object.entries(recipe.materialCost || {})) {
+    costMap[mat] = (costMap[mat] || 0) + Number(qty);
+  }
+  return Object.entries(costMap)
+    .map(([name, total]) => {
+      const refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
+        ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
+      return { name, refId, total, returned:Math.floor(total * 0.5) };
+    })
+    .filter(entry => entry.returned > 0)
+    .sort((a, b) => b.returned - a.returned || a.name.localeCompare(b.name, "zh-CN"));
+}
+
+// 拆解阻塞判定（selector 与 Action 共用唯一口径，禁止 UI/Action 各自重复判断）：
+// null = 可拆解；否则返回 reason key。
+function getShipDismantleBlockReason(state, instance, now) {
+  if (!instance) return "unknown-ship";
+  if (!getShipConfigById(instance.shipId)) return "unknown-ship";
+  const assignments = state.shipAssignments || {};
+  if (Object.keys(assignments).some(key => assignments[key] === instance.instanceId)) return "ship-assigned";
+  const activeCombat = state.combat && state.combat.active ? getActiveCombatShipState(state).instance : null;
+  if (activeCombat && activeCombat.instanceId === instance.instanceId) return "ship-active";
+  const activeSkill = state.currentAction && state.currentAction.active ? state.currentAction.skill : null;
+  if (activeSkill && assignments[activeSkill] === instance.instanceId) return "ship-active";
+  if (isShipUnderRepair(state, instance.instanceId, now)) return "repairing";
+  const fitting = getFittingFromInstance(instance);
+  if ([fitting.high, fitting.mid, fitting.low, fitting.rig]
+    .some(slot => slot.some(ref => ref !== null && ref !== undefined && ref !== ""))) return "has-fitting";
+  return null;
+}
+
+const SHIP_DISMANTLE_BLOCK_TEXT = {
+  "unknown-ship":"未知舰船",
+  "ship-assigned":"舰船正在执行岗位任务",
+  "ship-active":"舰船正在执行中，停止当前任务后才能拆解",
+  "repairing":"舰船正在维修中，维修完成后才能拆解",
+  "has-fitting":"舰船仍装配有装备或改装件，先全部卸下"
+};
+
 function getHangarDisplayState(state, now) {
   const assignments = state.shipAssignments || {};
   const actionNames = { combat:"⚔ 战斗", mining:"⛏ 采矿", gasHarvesting:"☁ 采气", refining:"🔥 冶炼", archaeology:"🛰 考古" };
@@ -2399,9 +2454,16 @@ function getHangarDisplayState(state, now) {
         const stock = ResourceRegistry.get(state, "component:" + id);
         return { id, name:recipe ? recipe.name : id, quantity, stock, enough:stock >= quantity };
       });
+      const iskCost = getShipEnhancementIskCost(config);
+      const iskStock = ResourceRegistry.get(state, "currency:isk");
+      const iskEnough = iskStock >= iskCost;
       const skillLevel = Number(state.skills.shipEngineering && state.skills.shipEngineering.lvl) || 1;
       const chance = tier ? getShipEnhancementSuccessChance(skillLevel, tier.level, enhancementLevel) : 0;
       const breakdown = tier ? getShipEnhancementSuccessBreakdown(skillLevel, tier.level, enhancementLevel) : null;
+      // Batch R（E 项·舰船拆解）：只读报价 + 阻塞判定（与 Action 共用 getShipDismantleBlockReason）
+      const dismantleRecipe = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.shipId === instance.shipId) || null;
+      const dismantleBlocked = getShipDismantleBlockReason(state, instance, now);
+      const dismantlePreview = dismantleRecipe ? getShipDismantleQuote(dismantleRecipe) : [];
       const role = getShipEnhancementRole(config);
       const hpBefore = { ...config.hp };
       const hp = Object.fromEntries(Object.entries(config.hp).map(([layer, value]) => [layer, Math.round(value * enhancementBonuses.hpMultiplier)]));
@@ -2436,8 +2498,11 @@ function getHangarDisplayState(state, now) {
           failureXp:getShipEnhancementFailureXp(config),
           milestone:isShipEnhancementMilestone(enhancementLevel + 1),
           materials,
+          iskCost,
+          iskStock,
+          iskEnough,
           busy,
-          canEnhance:Boolean(tier) && !busy && materials.length === 3 && materials.every(item => item.enough),
+          canEnhance:Boolean(tier) && !busy && materials.length === 3 && materials.every(item => item.enough) && iskEnough,
           hpBonus:enhancementBonuses.hpMultiplier - 1,
           damageBonus:(enhancementBonuses.damageMultiplier || 1) - 1,
           industryBonus:(enhancementBonuses.industryMultiplier || 1) - 1,
@@ -2454,6 +2519,13 @@ function getHangarDisplayState(state, now) {
         repairing:thisRepairing,
         repairRemaining:thisRepairRemaining,
         combatRecoveryActive:thisRepairing,
+        dismantle:{
+          available:Boolean(dismantleRecipe),
+          preview:dismantlePreview,
+          canDismantle:Boolean(dismantleRecipe) && !dismantleBlocked,
+          blockedReason:dismantleBlocked || "",
+          blockedText:dismantleBlocked ? (SHIP_DISMANTLE_BLOCK_TEXT[dismantleBlocked] || "当前无法拆解") : ""
+        },
         assignments:Object.keys(actionNames).map(actionKey => {
           const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && thisRepairing);
           return { actionKey, name:actionNames[actionKey], active:assignedActions.includes(actionKey), locked:Boolean(restriction), lockedReason:restriction ? restriction.text : "" };
@@ -2476,6 +2548,29 @@ function getOrbitRigCapacity() {
   }
   ORBIT_RIG_CAPACITY_CACHE = capacity;
   return capacity;
+}
+
+function stackEquipmentCandidates(candidates) {
+  const groups = new Map();
+  for (const item of candidates) {
+    const itemId = item.itemId || item.id;
+    const level = Number(item.enhancementLevel) || 0;
+    const key = itemId + "|" + level;
+    const group = groups.get(key);
+    if (group) {
+      group.count += 1;
+      group.ids.push(item.id);
+    } else {
+      groups.set(key, {
+        itemId, name:item.name, icon:item.icon, enhancementLevel:level,
+        count:1, ids:[item.id], isInstance:Boolean(item.isInstance)
+      });
+    }
+  }
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.name !== b.name) return String(a.name).localeCompare(String(b.name));
+    return a.enhancementLevel - b.enhancementLevel;
+  });
 }
 
 function getShipFittingDisplayState(state, shipRef) {
@@ -2506,6 +2601,36 @@ function getShipFittingDisplayState(state, shipRef) {
   const equippedIds = Object.values(fitting).flat().filter(Boolean);
   const enhancement = getShipEnhancementBonuses(config, instance.enhancementLevel);
   const rigMods = (typeof getRigModifiers === "function") ? getRigModifiers(state, instance) : {};
+  const inventoryBySlot = Object.fromEntries(["high", "mid", "low", "rig"].map(slot => {
+    // 1. 来自 inventory 字符串池的候选
+    const fromInventory = inventory.filter(id => {
+      const eq = EQUIPMENT_DB[id];
+      if (!eq || eq.slot !== slot || !canFitEquipmentOnShip(eq, config)) return false;
+      if (slot === "rig" && typeof canFitRig === "function" && !canFitRig(state, instance, id).ok) return false;
+      return true;
+    }).map(id => ({ id, itemId:id, name:EQUIPMENT_DB[id].name, icon:ITEM_ICONS[EQUIPMENT_DB[id].name] || "📦", enhancementLevel:0, isInstance:false }));
+    // 2. 来自实例池中游离（installedOn===null）的非 rig 装备
+    let fromInstances = [];
+    if (state.equipment && Array.isArray(state.equipment.instances)) {
+      const freeInsts = state.equipment.instances.filter(inst => inst.installedOn === null && !(inst.itemId || "").startsWith("rig_"));
+      fromInstances = freeInsts.map(inst => {
+        const itemId = inst.itemId;
+        const eq = EQUIPMENT_DB[itemId];
+        if (!eq || eq.slot !== slot || !canFitEquipmentOnShip(eq, config)) return null;
+        return { id:inst.instanceId, itemId, name:eq.name, icon:ITEM_ICONS[eq.name] || "📦", enhancementLevel:Math.max(0, Number(inst.enhancementLevel) || 0), isInstance:true };
+      }).filter(Boolean);
+    }
+    return [slot, fromInventory.concat(fromInstances)];
+  }));
+  const inventoryStacksBySlot = Object.fromEntries(["high", "mid", "low"].map(slot => [slot, stackEquipmentCandidates(inventoryBySlot[slot] || [])]));
+  // rig 候选按槽位计算：excludeSlotIndex 排除当前槽（替换场景旧件将被销毁），
+  // 其他槽存在同 stackGroup 时仍拒绝。UI 打开某 rig 槽时消费 rigCandidates[slotIndex]。
+  const rigCandidates = Array.from({ length:slots.rig }, (unusedValue, slotIndex) => inventory.filter(id => {
+    const eq = EQUIPMENT_DB[id];
+    if (!eq || eq.slot !== "rig" || !canFitEquipmentOnShip(eq, config)) return false;
+    return typeof canFitRig !== "function" || canFitRig(state, instance, id, slotIndex).ok;
+  }).map(id => ({ id, itemId:id, name:EQUIPMENT_DB[id].name, icon:ITEM_ICONS[EQUIPMENT_DB[id].name] || "📦" })));
+  const rigStackCandidates = rigCandidates.map(list => stackEquipmentCandidates(list));
   return {
     instanceId:instance.instanceId,
     shipId:instance.shipId,
@@ -2525,34 +2650,10 @@ function getShipFittingDisplayState(state, shipRef) {
         icon: equipment ? ITEM_ICONS[equipment.name] || "📦" : "📦"
       };
     }),
-    inventoryBySlot:Object.fromEntries(["high", "mid", "low", "rig"].map(slot => {
-      // 1. 来自 inventory 字符串池的候选
-      const fromInventory = inventory.filter(id => {
-        const eq = EQUIPMENT_DB[id];
-        if (!eq || eq.slot !== slot || !canFitEquipmentOnShip(eq, config)) return false;
-        if (slot === "rig" && typeof canFitRig === "function" && !canFitRig(state, instance, id).ok) return false;
-        return true;
-      }).map(id => ({ id, name:EQUIPMENT_DB[id].name, icon:ITEM_ICONS[EQUIPMENT_DB[id].name] || "📦", enhancementLevel:0, isInstance:false }));
-      // 2. 来自实例池中游离（installedOn===null）的非 rig 装备
-      let fromInstances = [];
-      if (state.equipment && Array.isArray(state.equipment.instances)) {
-        const freeInsts = state.equipment.instances.filter(inst => inst.installedOn === null && !(inst.itemId || "").startsWith("rig_"));
-        fromInstances = freeInsts.map(inst => {
-          const itemId = inst.itemId;
-          const eq = EQUIPMENT_DB[itemId];
-          if (!eq || eq.slot !== slot || !canFitEquipmentOnShip(eq, config)) return null;
-          return { id:inst.instanceId, name:eq.name, icon:ITEM_ICONS[eq.name] || "📦", enhancementLevel:Math.max(0, Number(inst.enhancementLevel) || 0), isInstance:true };
-        }).filter(Boolean);
-      }
-      return [slot, fromInventory.concat(fromInstances)];
-    })),
-    // rig 候选按槽位计算：excludeSlotIndex 排除当前槽（替换场景旧件将被销毁），
-    // 其他槽存在同 stackGroup 时仍拒绝。UI 打开某 rig 槽时消费 rigCandidates[slotIndex]。
-    rigCandidates:Array.from({ length:slots.rig }, (unusedValue, slotIndex) => inventory.filter(id => {
-      const eq = EQUIPMENT_DB[id];
-      if (!eq || eq.slot !== "rig" || !canFitEquipmentOnShip(eq, config)) return false;
-      return typeof canFitRig !== "function" || canFitRig(state, instance, id, slotIndex).ok;
-    }).map(id => ({ id, name:EQUIPMENT_DB[id].name, icon:ITEM_ICONS[EQUIPMENT_DB[id].name] || "📦" }))),
+    inventoryBySlot,
+    inventoryStacksBySlot,
+    rigCandidates,
+    rigStackCandidates,
     enhancementLevel:normalizeShipEnhancementLevel(instance.enhancementLevel),
     stats:{ shield:Math.round(config.hp.shield * enhancement.hpMultiplier * (1 + (rigMods.shieldCapacityPercent || 0))), armor:Math.round(config.hp.armor * enhancement.hpMultiplier * (1 + (rigMods.armorCapacityPercent || 0))), structure:Math.round(config.hp.structure * enhancement.hpMultiplier * (1 + (rigMods.structureCapacityPercent || 0))), speed:config.speed || 0 },
     combatLocked:Boolean(state.combat && state.combat.active && getActiveCombatShipState(state).instance && getActiveCombatShipState(state).instance.instanceId === instance.instanceId)
@@ -2609,6 +2710,7 @@ function getStatisticsDisplayState(state) {
   const activity = statistics.activity || {};
   const production = statistics.production || {};
   const combat = statistics.combat || {};
+  const economy = statistics.economy || {};
   const number = value => Math.max(0, Number(value) || 0);
   const resourceNames = new Map(ResourceRegistry.listDefinitions().map(definition => [definition.id, getResourceDisplayName(definition.id)]));
   const recipeNames = new Map([
@@ -2669,6 +2771,12 @@ function getStatisticsDisplayState(state) {
         { label:"成功率", value:attempts > 0 ? successes / attempts * 100 : 0, suffix:"%", decimals:1 },
         { label:"消耗部件", value:number(totals.enhancementComponentsSpent) },
         { label:"历史最高", value:number(totals.highestEnhancementLevel), prefix:"+" }
+      ] },
+      // Batch R（v10·货币消耗统计）：真实消费累计（resource:changed spend 差值），
+      // 前缀 "-" 表达支出语义；旧档迁移后为 0，不从余额臆测。
+      { id:"economy", icon:"fa-solid fa-coins", title:"经济活动", items:[
+        { label:"累计消耗星币", value:number(economy.iskSpent), prefix:"-" },
+        { label:"累计消耗功勋", value:number(economy.lpSpent), prefix:"-" }
       ] }
     ],
     detailGroups:[

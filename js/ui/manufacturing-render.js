@@ -52,7 +52,11 @@ function renderShipCompCost(display) {
   display = display || getShipEngineeringDisplayState(gameState, Date.now());
   const element = document.getElementById("shipcomp-cost");
   if (!element) return;
-  const parts = display.componentMaterials.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`);
+  const parts = display.componentMaterials.map(item => {
+    const key = item.material;
+    const name = getResourceDisplayName(item.material);
+    return `<span class="${item.enough ? "enough" : "short"}"><button type="button" class="mat-link" data-mat-key="${twEsc(key)}" data-mat-name="${twEsc(name)}">${twEsc(name)}</button>×${item.quantity}</span>`;
+  });
   element.innerHTML = "消耗：" + parts.join(" + ") + ` · 耗时${display.currentComponent.time}s · 经验${display.currentComponent.xp}`;
 }
 
@@ -270,7 +274,11 @@ function renderEquipEngDetail(display) {
   const body = document.getElementById("equipeng-detail-body"); if (!body) return;
   const attributes = display.detail.attributes.length ? `<div class="equipeng-detail-section"><span class="equipeng-detail-label">装备属性</span><div class="equipeng-attribute-list">${display.detail.attributes.map(line => `<span>${line}</span>`).join("")}</div></div>` : "";
   const equipmentInputs = display.detail.equipmentInputs.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-box"></i>${item.name}</span><strong>×${item.quantity}</strong><small>未装配库存 ${item.stock.toLocaleString()}</small></div>`).join("");
-  const materials = display.detail.materials.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-cubes-stacked"></i>${item.displayName || item.name || getResourceDisplayName(item.material)}</span><strong>×${item.quantity}</strong><small>库存 ${item.stock.toLocaleString()}</small></div>`).join("");
+  const materials = display.detail.materials.map(item => {
+    const key = item.material;
+    const name = item.displayName || item.name || getResourceDisplayName(item.material);
+    return `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-cubes-stacked"></i><button type="button" class="mat-link" data-mat-key="${twEsc(key)}" data-mat-name="${twEsc(name)}">${twEsc(name)}</button></span><strong>×${item.quantity}</strong><small>库存 ${item.stock.toLocaleString()}</small></div>`;
+  }).join("");
   const running = display.detail.runningNote ? `<div class="equipeng-running-note"><i class="fa-solid fa-gears"></i>正在制造：${display.detail.runningNote.name}${display.detail.runningNote.targetDiffers ? " · 点击「切换制造」将改为制造当前配方" : ""}</div>` : "";
   const selRecipe = display.selectedRecipe;
   const blueprintLocked = selRecipe && selRecipe.requiresBlueprint && !selRecipe.hasRequiredBlueprint;

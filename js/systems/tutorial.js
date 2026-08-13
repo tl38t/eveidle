@@ -318,7 +318,7 @@
         return Boolean(inst) && inst.shipId === "rookie_corvette" && zoneOk;
       }
       case "C4": return tsd.kill === true;
-      case "C5": return tsd.wave1 === true && Boolean(tsd.c5Token);
+      case "C5": return tsd.wave1 === true;
       case "C6": return tsd.wave4 === true && Boolean(tsd.c6Token) && tsd.c6Token === tsd.c5Token;
       default: return false;
     }
@@ -568,18 +568,26 @@
     const wave = Number(p.wave);
     const token = state.tutorial.activeCombatRunToken;
     const c5 = def("C5"), c6 = def("C6");
-    // C5 不限制 zone（target 无 zones），任意 zone 的第 1 波均可计入；C6 须落在指定 zones 内
-    const c5ZoneOk = c5 && c5.target && Array.isArray(c5.target.zones) ? c5.target.zones.includes(p.zoneId) : true;
     const c6ZoneOk = c6 && c6.target && Array.isArray(c6.target.zones) ? c6.target.zones.includes(p.zoneId) : false;
-    if (wave === 1 && c5ZoneOk && token) {
+    // C5（放宽，用户要求「只要任清掉一波就算」）：清掉任意一波即计入，不再要求「本局有效出击 token」或「仅第 1 波」。
+    // 原门槛 wave1 && c5Token 会在换 zone / 被击毁 / 离线结算时因 token 丢失导致清了波却卡住。
+    if (wave >= 1) {
       const c5tsd = ts(state, "C5");
-      if (c5tsd) { c5tsd.wave1 = true; c5tsd.c5Token = token; markDirty(state); }
-      // C6 同次锚点：第 1 波清场写入本次 run token；若 C6 尚未完成 / claimable，新一局第 1 波可替换旧锚点（修复重开出击卡死）
+      if (c5tsd && c5tsd.status !== "completed" && c5tsd.status !== "claimable") {
+        c5tsd.wave1 = true;
+        if (token) c5tsd.c5Token = token;
+        markDirty(state);
+      }
+    }
+    // C6 同次锚点：本局第 1 波清场写入本次 run token（保持 C6「同次出击清第 4 波」判定）。
+    // C5 已放宽，但 C6 仍需锚定第 1 波 token 做同次校验；新一局第 1 波可替换旧锚点（修复重开出击卡死）。
+    if (wave === 1 && token) {
       const c6tsd = ts(state, "C6");
       if (c6tsd && c6tsd.status !== "completed" && c6tsd.status !== "claimable") {
         c6tsd.c5Token = token; markDirty(state);
       }
     }
+    // C6：指定 zones 内清第 4 波，且 token 与第 1 波锚点一致
     if (wave === 4 && c6ZoneOk && token) {
       const tsd = ts(state, "C6");
       // 同次校验：第 4 波 token 须与第 1 波锚点一致；已完成 / claimable 的 C6 不得被后续事件回退或覆盖
@@ -606,12 +614,18 @@
     }
     // C5/C6：按 runsDetail 推进（同条目内 wavesCleared 既含第 1 波也含第 4 波 → 同次 token 一致）
     for (const run of p.runsDetail) {
-      if (!run || typeof run.token !== "string") continue;
+      if (!run) continue;
+      // C5（放宽）：离线会话只要清过至少一波即计入，不再要求本段 token。
       if (Number(run.wavesCleared) >= 1) {
         const c5 = ts(state, "C5");
-        if (c5 && c5.status !== "completed" && c5.status !== "claimable") { c5.wave1 = true; c5.c5Token = run.token; markDirty(state); }
+        if (c5 && c5.status !== "completed" && c5.status !== "claimable") {
+          c5.wave1 = true;
+          if (typeof run.token === "string") c5.c5Token = run.token;
+          markDirty(state);
+        }
       }
-      if (Number(run.wavesCleared) >= 4) {
+      // C6 仍需同段 token 做同次校验
+      if (Number(run.wavesCleared) >= 4 && typeof run.token === "string") {
         const c6 = ts(state, "C6");
         if (c6 && c6.status !== "completed" && c6.status !== "claimable") {
           c6.c5Token = run.token; c6.c6Token = run.token; c6.wave4 = true; markDirty(state);
@@ -634,6 +648,10 @@
     GameEvents.onIdempotent("archaeology:artifactFound", { consumerId: "tutorial:arch", getLedger }, e => onArchFound(state, e));
     GameEvents.onIdempotent("archaeology:artifactSold", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
     GameEvents.onIdempotent("archaeology:artifactRedeemed", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
+    // 批量路径（仓库「一键回收」/ 研究协议自动出售兑换均走 all=true）只发复数事件
+    // archaeology:artifactsSold / artifactsRedeemed，A5「遗物兑现」必须也能收此信号，否则卡住。
+    GameEvents.onIdempotent("archaeology:artifactsSold", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
+    GameEvents.onIdempotent("archaeology:artifactsRedeemed", { consumerId: "tutorial:arch", getLedger }, e => onArchDispose(state, e));
     GameEvents.onIdempotent("combat:enemyDefeated", { consumerId: "tutorial:combat", getLedger }, e => onEnemyDefeated(state, e));
     GameEvents.onIdempotent("combat:waveCleared", { consumerId: "tutorial:combat", getLedger }, e => onWaveCleared(state, e));
     GameEvents.onIdempotent("ship:destroyed", { consumerId: "tutorial:combat", getLedger }, e => onShipDestroyed(state, e));
@@ -807,7 +825,7 @@
       case "obtain_artifact": return flag(tsd && tsd.artifactFound, "获得遗物");
       case "dispose_artifact": return flag(tsd && tsd.artifactDisposed, "遗物兑现");
       case "kill": return flag(tsd && tsd.kill, "击毁目标");
-      case "clear_wave": return flag(tsd && tsd.wave1, "第 1 波清场");
+      case "clear_wave": return flag(tsd && tsd.wave1, "任意波清场");
       case "clear_wave_same_sortie": return flag(tsd && tsd.wave4, "同次出击第 4 波");
       case "confirm": return mk(done ? 1 : 0, 1, done ? "1/1 已确认" : "0/1 待确认");
       case "choose_combat_training": {

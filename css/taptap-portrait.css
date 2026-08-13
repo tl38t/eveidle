@@ -67,7 +67,7 @@
     width: min(80vw, 340px);
     max-width: calc(100vw - 16px) !important;
     max-height: 46vh !important;
-    z-index: 1200 !important;
+    z-index: 1450 !important;
     border-radius: 10px !important;
     box-shadow: 0 10px 32px rgba(0,0,0,.55) !important;
   }
@@ -105,6 +105,13 @@
     display:block; height:1px; flex:0 0 auto;
     background: linear-gradient(90deg, transparent, rgba(56,189,248,.30), transparent);
     margin: 8px 10px;
+  }
+  /* Bug3：竖屏抽屉恢复技能等级徽标。
+     生产 base.css @media(max-width:720px) 把 .sidebar .nav-lv 设了 display:none；
+     此处用更高优先级选择器重新显示（含战斗子技能，均带 data-lv）。 */
+  .sidebar .nav-item .nav-lv{
+    display: inline-flex; align-items: center;
+    margin-left: auto; flex: 0 0 auto;
   }
   .content{
     width:100%; min-width:0; min-height:0; height:100%;
@@ -202,6 +209,23 @@
   }
   .mining-target-strip{ width:max-content; min-width:max-content; flex-wrap:nowrap; }
   .mining-target-card{ flex:0 0 auto; touch-action:pan-x; }
+  /* <=720px 由 components.css 使用三列紧凑网格；本文件后加载，必须在这里
+     复写原横滑规则，否则 width:max-content + nowrap 会把网格强制还原成单行。 */
+  @media (max-width:720px){
+    .mining-target-scroll{
+      overflow-x:visible; overflow-y:visible;
+      touch-action:pan-y;
+      overscroll-behavior-x:auto;
+    }
+    .mining-target-strip{
+      width:100%; min-width:0;
+      flex-wrap:wrap;
+    }
+    .mining-target-card{
+      flex:0 0 calc(33.333% - 4px);
+      touch-action:pan-y;
+    }
+  }
   /* 锁定卡片不截获触摸：让横向拖动穿透到滚动容器；锁定仍不可选（生产仅对非 disabled 绑 click）。 */
   .mining-target-card.locked{ pointer-events:none; }
 
@@ -244,6 +268,8 @@
   .equip-select-panel .equip-option.empty-option{ color:#7d8a99; font-style:normal; border-style:dashed; }
   .equip-select-panel .equip-option.empty-option:hover{ background:rgba(40,55,75,.5); border-color:#2a3744; }
   .equip-select-panel .equip-option-hint{ color:#8a6d3b; }
+  .equip-select-panel #equipSelectOptions{ max-height:min(360px, 50vh); overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; padding-right:4px; }
+  .equip-select-panel .eq-count{ color:#d4a843; font-weight:600; margin-left:4px; }
 }
 
 /* ============ 船坞移动端「单舰焦点」重构 ============ */
@@ -330,6 +356,18 @@
   .tp-mat.short{ background:rgba(217,74,74,.2); color:#ff9a9a; }
   .tp-enh-btn{ width:100%; margin-top:6px; padding:11px; border-radius:8px; background:#4a90d9; color:#fff; font-weight:700; font-size:14px; border:none; }
   .tp-enh-btn:disabled{ background:#2a3744; color:#6a7a8e; }
+  .tp-enh-insufficient{ margin-top:8px; padding:8px 10px; border-radius:8px; background:rgba(217,74,74,.18); color:#ff9a9a; font-size:12px; font-weight:600; border:1px solid rgba(217,74,74,.4); }
+
+  /* 竖屏舰船拆解（危险操作） */
+  .tp-dismantle-card{ background:rgba(0,0,0,.25); border:1px solid #3a1f23; border-radius:10px; padding:12px; margin-top:4px; }
+  .tp-dismantle-warn{ font-size:13px; color:#f0c2c2; margin-bottom:8px; line-height:1.5; }
+  .tp-dismantle-warn b{ color:#ff8a8a; }
+  .tp-dismantle-preview{ list-style:none; margin:0 0 10px; padding:0; display:flex; flex-wrap:wrap; gap:6px; }
+  .tp-dismantle-item{ font-size:12px; padding:2px 8px; border-radius:6px; background:rgba(120,80,40,.35); color:#e7c66a; }
+  .tp-dismantle-blocked{ font-size:12px; color:#ff9a9a; margin-bottom:10px; padding:6px 8px; border-radius:6px; background:rgba(217,74,74,.15); border:1px solid rgba(217,74,74,.35); }
+  .tp-dismantle-btn{ width:100%; margin-top:4px; padding:12px; border-radius:8px; font-weight:700; font-size:14px; border:none; }
+  .tp-dismantle-btn.danger{ background:#c0392b; color:#fff; }
+  .tp-dismantle-btn.danger:disabled{ background:#3a2226; color:#7a5a5e; }
 
   .tp-assign-group{ margin-bottom:12px; }
   .tp-assign-gt{ font-size:12px; color:#7d8a99; margin-bottom:6px; }
