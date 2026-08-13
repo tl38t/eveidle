@@ -1612,3 +1612,24 @@ p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
 **验证**：`verify.mjs` 仍 55 JS / 4 CSS / 303 DOM IDs（按钮 id 均在），EXIT=0。
 
 **回滚**：`git revert 421c92d`（仅撤 X，保留基线 `682a903` 的按钮范式 + A1 修复）或 `git reset --hard 682a903`（丢掉 X）。
+
+### A–E 功能批次：共享卡 / 离线 / 开箱 / 货币统计 / 舰船拆解（2026-08-12）
+
+**实装（未 commit，基线 `9f7da0e`）**：A 共享仓库物品卡（`buildCargoCardHTML` 抽取，离线+开箱复用，全文本转义）；B 离线收益持久弹窗（删自动计时；`createInventorySnapshot`/`diffInventorySnapshot` canonical 净获得）；C 开箱结果聚合弹窗（`doOpen` 改写；0 货柜/二次开箱返回 null 零副作用）；D 货币消耗统计（`GAME_STATISTICS_VERSION` 9→10，`economy{iskSpent,lpSpent}`，`resource:changed` 仅货币消费累计，经济活动卡）；E 舰船拆解（只读报价 + `hangar/disassembleShip` Action + 危险按钮二次确认 + 发射 `ship:disassembled`）。
+
+**修改**：`js/ui/shell-render.js`、`js/core/offline.js`、`js/core/statistics.js`、`js/core/selectors.js`、`js/core/actions.js`、`js/core/events.js`、`css/components.css`；新增 `tools/audit-features-abcde.mjs`。
+
+**验证**：`node tools/audit-features-abcde.mjs` → PASS=75 FAIL=2 EXIT=0（2 个 FAIL 为既有 verify.mjs 脚本计数 60≠61 与 audit-resume-after-repair.mjs mock 缺 setAttribute，均非本批回归）；6 个受影响 JS `node --check` 全 EXIT=0。真实入口打通：`forceOfflineTest(3600)` 跑通 183 采矿周期并开持久弹窗；拆解干净船实例移除+材料归还+事件发射；重复 eventId 幂等仅计一次。
+
+**回滚**：本批为纯增量（无破坏性重写），逐文件 `git checkout` 即可；新增审计可删。
+
+### 船坞装备候选堆叠 + 滚动（2026-08-12，追加）
+
+**需求**：装备过多时避免撑破面板；同装备按强化等级聚合堆叠；面板可垂直滚动。
+
+**实现**：
+- `js/core/selectors.js`：新增 `stackEquipmentCandidates` 辅助函数；`getShipFittingDisplayState` 返回 `inventoryStacksBySlot`（高/中/低槽堆叠数组）与 `rigStackCandidates`（每 rig 槽堆叠数组）。每个堆叠含 `itemId/name/icon/enhancementLevel/count/ids`，`ids` 保留所有原始可用 id，安装时取第一个。
+- `js/ui/shell-render.js`：`openOrbitSelect` 改用堆叠字段渲染，按钮显示 `名称 +(+等级) ×数量`，`data-equip` 绑定 `ids[0]`。
+- `css/components.css` / `css/taptap-portrait.css`：`#equipSelectOptions` 加 `max-height` + `overflow-y: auto`，桌面限高 `min(420px,60vh)`、移动端限高 `min(360px,50vh)`；新增 `.eq-count` 金色计数样式。
+
+**验证**：`tools/audit-features-abcde.mjs` 新增 E+ 区域 8 断言，PASS 从 75 升至 83，FAIL 仍为 2（既有 verify.mjs 脚本计数与 audit-resume-after-repair.mjs mock 问题），EXIT=0。

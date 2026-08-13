@@ -12,8 +12,8 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 60) throw new Error(`预期 60 个脚本，实际 ${scriptSources.length}`); // 60 = 59 + 考古重做定点返修 唯一公共回收模块 js/systems/recycling.js（用户指令写 59，但新增 recycling.js 实际为 60；此基线以真实文件数为准） // 59 = 55 + Batch S 离线战斗 js/systems/offline-combat.js（2026-08-05）...（考古重做 Phase A/B 已落地 59 个脚本） // 56 = 55 + 十倍速开关 js/core/speed-config.js（2026-08-04）
-if (styleSources.length !== 4) throw new Error(`预期 4 个样式，实际 ${styleSources.length}`);
+if (scriptSources.length !== 62) throw new Error(`预期 62 个脚本，实际 ${scriptSources.length}`); // 62 = 61 + QA 种子 js/qa-seed.js（?qa=1 激活；不污染正常游玩；仅竖屏验收用） // 61 = 60 + TapTap 竖屏迁移 js/ui/taptap-portrait.js（用户指令确认新增者确为 taptap-portrait.js，不得盲改） // 60 = 59 + 考古重做定点返修 唯一公共回收模块 js/systems/recycling.js // 59 = 55 + Batch S 离线战斗 js/systems/offline-combat.js // 56 = 55 + 十倍速开关 js/core/speed-config.js
+if (styleSources.length !== 5) throw new Error(`预期 5 个样式，实际 ${styleSources.length}`); // 5 = 4 + TapTap 竖屏迁移 css/taptap-portrait.css（用户指令确认新增者确为 taptap-portrait.css，不得盲改：base/panels/combat/components + taptap-portrait）
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
 {
@@ -120,7 +120,11 @@ const optionalIds = new Set([
   "research-active-name", "research-active-progress", "research-active-applied",
   "research-active-btn-max", "research-active-btn-cancel",
   // 动态创建的 ID：由 shell-render.js 的装备强化与物品详情弹窗运行时创建
-  "equip-enh-grid", "equip-enhance-modal", "item-detail-modal"
+  "equip-enh-grid", "equip-enhance-modal", "item-detail-modal",
+  // 动态创建的 ID：reward-result-modal 由 shell-render.js openRewardResultModal 运行时创建（持久结算/开箱弹窗）
+  "reward-result-modal",
+  // 动态创建的 ID：tp-hangar-root 由 taptap-portrait.js 运行时创建（竖屏舰船坞根容器）
+  "tp-hangar-root"
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
@@ -201,6 +205,7 @@ const makeElement = () => ({
 
 const documentMock = {
   addEventListener: noop,
+  readyState: "loading",
   body: makeElement(),
   createElement: () => makeElement(),
   createElementNS: () => ({ ...makeElement(), setAttribute: noop }),
@@ -219,6 +224,7 @@ const sandbox = {
   document: documentMock,
   FileReader: class {},
   localStorage: localStorageMock,
+  matchMedia: () => ({ matches:false, media:"", addEventListener:noop, removeEventListener:noop, addListener:noop, removeListener:noop }),
   requestAnimationFrame: noop,
   setInterval: noop,
   setTimeout: noop,
@@ -3859,8 +3865,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   const TF = 1752000000000;
 
   // ---- F-12 既有基线不得放宽（脚本 / 样式 / DOM ID / Batch D·E 关键 DOM） ----
-  if (scriptSources.length !== 60) throw new Error("Batch F 起 JS 基线为 60（56 + 势力装备重做/弹药实例/仓库增强网格/脑插子标签等未提交特性新增脚本），实际 " + scriptSources.length);
-  if (styleSources.length !== 4) throw new Error("Batch F 不得改变 4 CSS 基线，实际 " + styleSources.length);
+  if (scriptSources.length !== 62) throw new Error("Batch F 起 JS 基线为 62（56 + 势力装备重做/弹药实例/仓库增强网格/脑插子标签/QA种子等未提交特性新增脚本），实际 " + scriptSources.length);
+  if (styleSources.length !== 5) throw new Error("Batch F 不得改变 5 CSS 基线，实际 " + styleSources.length);
   if (htmlIds.size !== 320) throw new Error("Batch F DOM ID 基线应为 320（313 + 势力重做/弹药实例/仓库增强网格/脑插子标签等未提交特性新增 DOM ID），实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
@@ -4751,7 +4757,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- G-21 冻结基线不回退 -------------------------------------------------------------
     okG(RDG.NODES.length === 38, "科技节点总数必须仍为 38");
-    okG(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320, "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
+    okG(scriptSources.length === 62 && styleSources.length === 5 && htmlIds.size === 320, "62 JS / 5 CSS / 320 DOM ID 基线不得回退");
     okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
   } finally {
     gsG.research = JSON.parse(JSON.stringify(savedResearchG));
@@ -5159,7 +5165,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- H-12 冻结基线不回退 --------------------------------------------------------------
     okH(RDH.NODES.length === 38, "科技节点总数必须仍为 38");
-    okH(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320, "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
+    okH(scriptSources.length === 62 && styleSources.length === 5 && htmlIds.size === 320, "62 JS / 5 CSS / 320 DOM ID 基线不得回退");
   } finally {
     gsH.research = JSON.parse(JSON.stringify(savedResearchH));
     gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
@@ -5743,8 +5749,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsI === 150 && Math.abs(secondsI - 7776000) < 1e-6 &&
         protocolNodesI.length === 6 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320,
-      "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
+    okI(scriptSources.length === 62 && styleSources.length === 5 && htmlIds.size === 320,
+      "62 JS / 5 CSS / 320 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -6302,8 +6308,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsJ === 150 && Math.abs(secondsJ - 7776000) < 1e-6 &&
         protocolNodesJ.length === 6 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
       "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 60 && styleSources.length === 4 && htmlIds.size === 320,
-      "60 JS / 4 CSS / 320 DOM ID 基线不得回退");
+    okJ(scriptSources.length === 62 && styleSources.length === 5 && htmlIds.size === 320,
+      "62 JS / 5 CSS / 320 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -8311,7 +8317,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(shellRenderSource.includes("_tutorialWidgetCollapsed") && shellRenderSource.includes('classList.toggle("collapsed"') && !shellRenderSource.includes("gameState.tutorial ="), "折叠必须用模块级临时变量 + DOM class，且不得写入 gameState.tutorial");
 
   // 18) 不引用 audit 脚本、脚本数不回退
-  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 60, "Batch P 不得引用 audit 脚本且脚本数保持 60 不变（含未提交特性新增脚本）");
+  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 62, "Batch P 不得引用 audit 脚本且脚本数保持 62 不变（含未提交特性新增脚本）");
 
   // === Batch Q 真实浏览器试玩定点返修断言（5 项）===
   // (Q1) 真实浏览器复现：领取 P1 后动作区永久空白。根因是 tutorial 事件在同一次 dispatch 内部同步派发，

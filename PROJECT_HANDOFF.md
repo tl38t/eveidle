@@ -283,3 +283,9 @@ node tools/smoke-speed.mjs
 *上次更新：2026-07-26（Phase 3D 维修后自动恢复：新增 `gameState.resumeAfterRepair` + 幂等 fail-closed 迁移；在线考古经 `tick.js` 重调 `canStartArchaeology` 续跑/安全停止，在线战斗经 `combatTick`→`combat/start` 续跑，死亡空间不续跑；离线考古由 `settleByTime` 自然续跑；离线战斗登记 Phase 4A 未实装。注册 `archaeology:resumedAfterRepair`/`combat:resumedAfterRepair` 事件契约。审计 `tools/audit-resume-after-repair.mjs` 42/42 全 PASS EXIT=0，全经生产入口驱动。修改：state.js/persistence.js/actions.js/combat.js/tick.js/events.js + 新增审计工具。）*
 
 *上次更新：2026-07-26（ShipFactory2 浏览器验收页全绿：修复根因——测试代码在生产 canvas 上调用 `getContext("webgl")` vs Three.js 的 WebGL2 context 冲突，改用 getContext 包装器 + `__SHIP3D_GET_GL_CONTEXT` 记录器解决；iframe 尺寸 1600×1000；API/UI 独立计数；11 条件判定。headless Chrome 实测：API 15/0 UI 10/0 consoleErrors=0 pageErrors=0 rejections=0 ctxLost=0 RESULT=PASS。7 条回归全 EXIT=0。）*
+
+---
+
+*最后更新：2026-08-12（A–E 功能：共享仓库物品卡 / 离线收益持久弹窗 / 开箱结果聚合弹窗 / 货币消耗统计 / 舰船拆解。A 项从 shell-render 抽取 buildCargoCardHTML 共享卡，离线+开箱复用，文本全转义；B 项 showOfflineToast 删自动计时改为持久弹窗，createInventorySnapshot/diffInventorySnapshot 取 canonical 净获得；C 项 doOpen 改写聚合 rolls→持久弹窗，0 货柜/二次开箱返回 null 零副作用；D 项 statistics v9→10 + economy{iskSpent,lpSpent} + resource:changed 仅货币消费累计 + 经济活动卡；E 项 getShipDismantleQuote/getShipDismantleBlockReason + hangar/disassembleShip Action + 危险拆解按钮二次确认。审计 tools/audit-features-abcde.mjs 75/75 PASS EXIT=0。verify.mjs 因 TapTap 竖屏提交后脚本数 60→61 既有失效、audit-resume-after-repair.mjs 其 mock 缺 setAttribute 既有失效，均非本批回归。未 commit。）*
+
+- *2026-08-12 追加：船坞装备候选堆叠与滚动。* `selectors.js` 新增 `stackEquipmentCandidates` 与 `inventoryStacksBySlot`/`rigStackCandidates`；`shell-render.js` `openOrbitSelect` 改用堆叠渲染并显示 `×数量`；CSS 给 `#equipSelectOptions` 加 `max-height`/`overflow-y`。审计 `audit-features-abcde.mjs` PASS=83 FAIL=2 EXIT=0。
