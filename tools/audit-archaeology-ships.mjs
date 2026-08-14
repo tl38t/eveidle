@@ -11,8 +11,19 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 
+// 脚本数基线从 verify.mjs 权威读取（避免两处硬编码漂移）；默认 62（Batch F：56 + 势力装备重做/弹药实例/
+// 仓库增强网格/脑插子标签/QA 种子等未提交特性新增脚本）。verify.mjs 的基线断言位于 tools/verify.mjs 同一定义处。
+function expectedScriptCount() {
+  try {
+    const v = fs.readFileSync(path.join(root, "tools", "verify.mjs"), "utf8");
+    const m = v.match(/scriptSources\.length\s*!==\s*(\d+)/);
+    if (m) return Number(m[1]);
+  } catch (e) { /* 忽略：回退默认 */ }
+  return 62;
+}
+const EXPECTED_SCRIPTS = expectedScriptCount();
 const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((m) => m[1].replace(/\?.*$/, "").replace(/^\.\//, ""));
-if (scriptSources.length !== 55) throw new Error(`预期 55 个脚本，实际 ${scriptSources.length}`); // 55 = 全部 defer 脚本（含 2026-08-04 新增的十倍速开关 js/core/speed-config.js）
+if (scriptSources.length !== EXPECTED_SCRIPTS) throw new Error(`预期 ${EXPECTED_SCRIPTS} 个脚本（与 verify.mjs 基线一致），实际 ${scriptSources.length}`);
 
 // ---- 与 verify.mjs 一致的 DOM / 环境桩 ----
 function MockCanvasContext() {}
@@ -29,29 +40,39 @@ MockCanvasContext.prototype.getImageData = (x, y, w, h) => ({ data: new Uint8Cla
 
 const classList = { add: noop, remove: noop, toggle: noop, contains: () => false };
 const makeElement = () => ({
-  addEventListener: noop, appendChild: noop, classList, click: noop, closest: () => null,
+  addEventListener: noop, appendChild: noop, append: noop, prepend: noop, insertBefore: noop,
+  removeChild: noop, replaceChildren: noop, remove: noop, classList, click: noop, closest: () => null,
   dataset: {}, focus: noop, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
   getContext: () => new MockCanvasContext(), innerHTML: "", offsetHeight: 24, offsetWidth: 560,
-  querySelector: () => makeElement(), querySelectorAll: () => [], remove: noop, select: noop,
+  querySelector: () => makeElement(), querySelectorAll: () => [], select: noop,
+  setAttribute: noop, removeAttribute: noop, setAttributeNS: noop, matches: () => false,
+  contains: () => false, cloneNode: () => makeElement(),
   style: {}, textContent: "", value: "1"
 });
 const documentMock = {
   addEventListener: noop, body: makeElement(), createElement: () => makeElement(),
-  createElementNS: () => ({ ...makeElement(), setAttribute: noop }),
-  getElementById: () => makeElement(), querySelector: () => makeElement(), querySelectorAll: () => []
+  createElementNS: () => makeElement(),
+  getElementById: () => makeElement(), querySelector: () => makeElement(), querySelectorAll: () => [],
+  matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop, addListener: noop, removeListener: noop })
 };
 const localStorageMock = { getItem: () => null, setItem: noop };
 const sandbox = {
   alert: noop, Blob, CanvasRenderingContext2D: MockCanvasContext, console,
   confirm: () => true, document: documentMock, FileReader: class {}, localStorage: localStorageMock,
-  requestAnimationFrame: noop, setInterval: noop, setTimeout: noop, clearTimeout: noop,
+  requestAnimationFrame: noop, cancelAnimationFrame: noop, performance: { now: () => Date.now() },
+  setInterval: noop, setTimeout: noop, clearTimeout: noop,
   URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noop }, window: null
 };
 sandbox.window = sandbox;
 sandbox.window.addEventListener = noop;
+sandbox.window.matchMedia = documentMock.matchMedia;
 vm.createContext(sandbox);
-for (let index = 0; index < scriptSources.length; index += 1) {
-  const src = scriptSources[index];
+// 仅执行 数据/核心/系统 脚本：UI 脚本（shell-render / taptap-portrait 等）含加载期 DOM 副作用，
+// 与 verify.mjs / audit-blueprint-integrity.mjs 同一约定；本审计断言只依赖 data/core/systems 全局。
+// 脚本数完整性校验仍基于 index.html 全量 defer 列表（上方 scriptSources）。
+const runnableSources = scriptSources.filter((src) => /^(js\/(data|core|systems))\//.test(src));
+for (let index = 0; index < runnableSources.length; index += 1) {
+  const src = runnableSources[index];
   const target = path.resolve(root, src.replace(/^\.\//, ""));
   vm.runInContext(fs.readFileSync(target, "utf8"), sandbox, { filename: src });
 }

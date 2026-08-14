@@ -2506,6 +2506,13 @@ function twInstallDrag() {
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
   const vw = () => (window.innerWidth || document.documentElement.clientWidth || 0);
   const vh = () => (window.innerHeight || document.documentElement.clientHeight || 0);
+  // 仅移动端有固定顶栏/底栏：教程卡片拖动范围需夹在二者之间，避免被遮挡。
+  // 桌面端（无遮挡固定条）返回 0，保持原行为不变。
+  const isMobile = () => (typeof window.matchMedia === "function") && window.matchMedia("(max-width: 820px)").matches;
+  const topbarEl = document.querySelector(".topbar");
+  const bottomNavEl = document.querySelector(".tp-bottom-nav");
+  const safeTop = () => (isMobile() && topbarEl) ? Math.ceil(topbarEl.getBoundingClientRect().height) : 0;
+  const safeBottom = () => (isMobile() && bottomNavEl) ? Math.ceil(bottomNavEl.getBoundingClientRect().height) : 0;
 
   // 把当前 CSS 锚定（right/bottom 或 left/right 全宽）折算为 left/top 浮动定位，并固化宽度
   // （移动端 width:auto 需锁成具体 px，否则只设 left 会让卡片坍缩到内容宽）。
@@ -2516,7 +2523,7 @@ function twInstallDrag() {
     widget.style.bottom = "auto";
     widget.style.width = lockedW + "px";
     widget.style.left = clamp(left, 0, Math.max(0, vw() - lockedW)) + "px";
-    widget.style.top = clamp(top, 0, Math.max(0, vh() - widget.offsetHeight)) + "px";
+    widget.style.top = clamp(top, safeTop(), Math.max(safeTop(), vh() - widget.offsetHeight - safeBottom())) + "px";
   };
 
   // 还原已保存位置（桌面/移动通用）：clamp 到当前视口，避免跨设备/旋转后跑出屏幕。
@@ -2593,7 +2600,7 @@ function twInstallDrag() {
     if (panelDragMode) {
       const w = widget.offsetWidth, h = widget.offsetHeight;
       const left = clamp(originLeft + dx, 0, Math.max(0, vw() - w));
-      const top = clamp(originTop + dy, 0, Math.max(0, vh() - h));
+      const top = clamp(originTop + dy, safeTop(), Math.max(safeTop(), vh() - h - safeBottom()));
       widget.style.left = left + "px";
       widget.style.top = top + "px";
     }

@@ -76,9 +76,18 @@ function renderShipAsmGrid(display) {
   const el = document.getElementById("shipeng-asm-grid"); if (!el) return;
   if (!display.assemblyGrid.length) { el.innerHTML = '<div class="shipeng-empty">该系列暂无舰船</div>'; return; }
   el.innerHTML = display.assemblyGrid.map(recipe => {
+    // 锁定图标仅用于「永久解锁失败」（蓝图/等级/船坞）；已解锁但缺材料不显示锁，仅标注材料不足。
     const locked = !recipe.unlocked;
-    const status = locked ? ("🔒 " + (!recipe.hasRequiredBlueprint ? "需蓝图" : "Lv." + recipe.requiredLevel + " 解锁")) : "可建造";
-    const statusCls = locked ? ("lock-tag" + (!recipe.hasRequiredBlueprint ? "" : " lvl")) : "can-build";
+    let status, statusCls;
+    if (locked) {
+      if (!recipe.hasRequiredBlueprint) { status = "🔒 需蓝图"; statusCls = "lock-tag"; }
+      else if (recipe.assemblyBlockReason === "shipyard-level-locked") { status = "🔒 船坞 Lv." + (recipe.shipyardRequiredLevel || "?") + " 解锁"; statusCls = "lock-tag lvl"; }
+      else { status = "🔒 Lv." + recipe.requiredLevel + " 解锁"; statusCls = "lock-tag lvl"; }
+    } else if (!recipe.hasComponents) {
+      status = "材料不足"; statusCls = "no-mat";
+    } else {
+      status = "可建造"; statusCls = "can-build";
+    }
     const hybridBadge = recipe.hybrid ? '<span class="sec-hybrid">混血</span>' : "";
     return `
     <button class="shipeng-asm-card${recipe.selected ? " selected" : ""}${locked ? " locked" : ""}" data-ship="${recipe.id}">
@@ -103,21 +112,31 @@ function renderShipAsmDetail(display) {
     const hybridBadge = display.hybridSelected ? '<span class="badge hybrid">混血</span>' : "";
     badges.innerHTML = roleBadge + hybridBadge;
   }
+  // 统一消费 getShipAssemblyEligibility 判定；禁止直接读 ownedBlueprints 自行猜测蓝图状态。
+  const cur = display.currentAssembly;
+  const reason = cur.assemblyBlockReason;
   const btn = document.getElementById("btn-start-shipasm");
   if (btn) {
-    if (display.canStartAssembly) { btn.textContent = "⚓ 合成 " + display.currentAssembly.name; }
-    else {
-      const shipId = display.currentAssembly.shipId;
-      const hasBp = (gameState.ownedBlueprints || []).includes(shipId);
-      btn.textContent = hasBp ? ("🔒 舰船工程 Lv." + display.currentAssembly.requiredLevel + " 解锁") : "🔒 需蓝图解锁";
+    if (display.canStartAssembly) {
+      btn.textContent = "⚓ 合成 " + cur.name;
+    } else if (reason === "blueprint-locked") {
+      btn.textContent = "🔒 需蓝图解锁";
+    } else if (reason === "level-locked") {
+      btn.textContent = "🔒 舰船工程 Lv." + cur.requiredLevel + " 解锁";
+    } else if (reason === "shipyard-level-locked") {
+      btn.textContent = "🔒 船坞 Lv." + (cur.shipyardRequiredLevel || "?") + " 解锁";
+    } else {
+      // insufficient-components：缺料不误报为蓝图锁
+      btn.textContent = "组件不足";
     }
     btn.disabled = !display.canStartAssembly;
   }
-  // 锁定舰船：详情顶部显眼「未解锁」横幅（与装备/增强剂一致）
+  // 「未解锁」横幅仅用于永久解锁失败（蓝图/等级/船坞）；缺料不显示横幅（按钮已提示「组件不足」）。
   let asmBanner = "";
-  if (!display.canStartAssembly && display.currentAssembly) {
-    const hasBp = (gameState.ownedBlueprints || []).includes(display.currentAssembly.shipId);
-    asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>' + (hasBp ? ("未解锁：舰船工程 Lv." + display.currentAssembly.requiredLevel + " 解锁") : "未解锁：需蓝图解锁") + '</span></div>';
+  if (!display.canStartAssembly && reason && reason !== "insufficient-components") {
+    if (reason === "blueprint-locked") asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>未解锁：需蓝图解锁</span></div>';
+    else if (reason === "level-locked") asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>未解锁：舰船工程 Lv.' + cur.requiredLevel + ' 解锁</span></div>';
+    else if (reason === "shipyard-level-locked") asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>未解锁：船坞 Lv.' + (cur.shipyardRequiredLevel || "?") + ' 解锁</span></div>';
   }
   const existingBanner = wrap.querySelector(".lock-banner");
   if (existingBanner) existingBanner.remove();

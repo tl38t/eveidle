@@ -701,18 +701,25 @@ function getActionConfirmationDisplayState(state, target, now) {
   } else if (target === "shipAsm") {
     const display = getShipEngineeringDisplayState(state, now);
     const recipe = display.currentAssembly;
-    const option = display.assemblyOptions.find(item => item.id === recipe.id);
     result.title = icons.shipAsm + " " + recipe.name;
     result.duration = display.assemblyActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = [
       ...display.assemblyComponents.map(item => ({ resourceId:"component:" + item.id, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
       ...display.assemblyMaterials.map(item => ({ resourceId:item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
-    result.maxCount = Math.max(1, display.assemblyMaxCycles);
+    // 缺料时 maxCount 必须为 0，禁止 Math.max(1,0) 强制为 1：由弹窗禁用「确认」体现（与 startShipAssembly 材料校验同源）。
+    result.maxCount = display.assemblyMaxCycles;
     result.unlimited = false;
     result.outputText = (display.selectedShip ? display.selectedShip.name : recipe.name) + "×1";
-    result.canOpen = Boolean(option && option.unlocked);
-    result.blockedText = !option || display.level < recipe.level ? "需要舰船工程等级 Lv." + recipe.level : option.hasRequiredBlueprint ? "" : "缺少舰船蓝图";
+    // 仅「永久解锁」（蓝图+等级+船坞）才允许打开确认弹窗；缺料不阻止打开，由 maxCount=0 体现。
+    result.canOpen = recipe.assemblyUnlocked;
+    // 与 getShipAssemblyEligibility 同一判定，禁止自行猜测蓝图状态。
+    result.blockedText = recipe.assemblyUnlocked ? "" : (
+      recipe.assemblyBlockReason === "blueprint-locked" ? "需要先在蓝图商店购买" + recipe.name + "蓝图"
+      : recipe.assemblyBlockReason === "level-locked" ? "需要舰船工程等级 Lv." + recipe.requiredLevel
+      : recipe.assemblyBlockReason === "shipyard-level-locked" ? "需要船坞等级 Lv." + (recipe.shipyardRequiredLevel || "?")
+      : "当前舰船未解锁"
+    );
     result.queue = { skill:"shipEngineering", target:recipe.name, label:recipe.name };
   } else if (target === "archaeology") {
     const archDisplay = getArchaeologyDisplayState(state, now);
@@ -856,6 +863,49 @@ function getShipEngineeringCycleDuration(state, recipe) {
   return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier / implantShipMfgEff / boosterShipSpeed;
 }
 
+// 唯一舰船总装资格判定：与 actions.js 的 startShipAssembly 阻塞优先级完全一致。
+// 供 selectors / 渲染层 / 行动确认统一消费，禁止各自重复猜测。
+//   1. blueprint-locked  2. level-locked  3. shipyard-level-locked  4. insufficient-components  5. null（可开工）
+// assemblyUnlocked 仅表示永久解锁（蓝图 + 技能 + 船坞），不含材料；canStartAssembly 才含材料。
+function getShipAssemblyEligibility(state, recipe) {
+  const fallback = {
+    requiresBlueprint:true, hasRequiredBlueprint:false, levelEnough:false, shipyardEnough:false, hasComponents:false,
+    levelGate: recipe ? (Number(recipe.level) || 0) : 0, shipyardRequiredLevel:null,
+    assemblyBlockReason:"blueprint-locked", assemblyBlockText:"未解锁：需蓝图解锁",
+    assemblyUnlocked:false, canStartAssembly:false
+  };
+  if (!recipe) return fallback;
+  const level = Number((state.skills && state.skills.shipEngineering && state.skills.shipEngineering.lvl) || 1);
+  const owned = new Set(state.ownedBlueprints || []);
+  // 等级必须使用 getShipBuildingQuote 返回的实际 levelGate（兼容增强剂带来的等级门槛变化）。
+  const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
+  const hasRequiredBlueprint = !requiresBlueprint || owned.has(recipe.shipId);
+  const quote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate: Number(recipe.level) || 0 };
+  const levelEnough = level >= quote.levelGate;
+  // 船坞条件复用 canAssembleAtShipyard，不得复制第二套规则；门槛文本走权威 getShipyardAssemblyLevelRequirement。
+  const shipyardEnough = (typeof canAssembleAtShipyard === "function") ? canAssembleAtShipyard(state, recipe.id) : true;
+  const shipyardRequiredLevel = (typeof getShipyardAssemblyLevelRequirement === "function") ? getShipyardAssemblyLevelRequirement(state, recipe.id) : null;
+  // 材料条件复用 getShipAssemblyMaxCyclesFromState。
+  const hasComponents = getShipAssemblyMaxCyclesFromState(state, recipe) > 0;
+  let reason = null;
+  if (!hasRequiredBlueprint) reason = "blueprint-locked";
+  else if (!levelEnough) reason = "level-locked";
+  else if (!shipyardEnough) reason = "shipyard-level-locked";
+  else if (!hasComponents) reason = "insufficient-components";
+  const assemblyUnlocked = hasRequiredBlueprint && levelEnough && shipyardEnough;
+  let blockText = "";
+  if (reason === "blueprint-locked") blockText = "未解锁：需蓝图解锁";
+  else if (reason === "level-locked") blockText = "未解锁：舰船工程 Lv." + quote.levelGate + " 解锁";
+  else if (reason === "shipyard-level-locked") blockText = "未解锁：船坞 Lv." + (shipyardRequiredLevel || "?") + " 解锁";
+  else if (reason === "insufficient-components") blockText = "组件/材料不足";
+  return {
+    requiresBlueprint, hasRequiredBlueprint, levelEnough, shipyardEnough, hasComponents,
+    levelGate: quote.levelGate, shipyardRequiredLevel,
+    assemblyBlockReason: reason, assemblyBlockText: blockText,
+    assemblyUnlocked, canStartAssembly: assemblyUnlocked && hasComponents
+  };
+}
+
 function getShipEngineeringDisplayState(state, now) {
   const action = state.currentAction;
   const skill = state.skills.shipEngineering || { lvl:1, xp:0 };
@@ -936,15 +986,31 @@ function getShipEngineeringDisplayState(state, now) {
       };
     });
 
+  // 单一资格判定源：同一配方在本轮 display 构建中只计算一次（缓存），杜绝第二套 reason 优先级
+  // 导致船坞节省余数/增强剂/状态变化引发的字段不一致。assemblyMatched / assemblyGrid /
+  // assemblyOptions / currentAssembly / canStartAssembly 全部消费 getShipAssemblyEligibility。
+  const _eligibilityCache = new Map();
+  const getAssemblyEligibility = (recipe) => {
+    if (!_eligibilityCache.has(recipe.id)) {
+      _eligibilityCache.set(recipe.id, getShipAssemblyEligibility(state, recipe));
+    }
+    return _eligibilityCache.get(recipe.id);
+  };
   const assemblyMatched = SHIP_ASSEMBLY_RECIPES
     .map(recipe => {
-      const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
-      const hasRequiredBlueprint = !requiresBlueprint || ownedBlueprints.has(recipe.shipId);
-      const aq = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate:recipe.level };
+      const el = getAssemblyEligibility(recipe);
       return {
-        recipe, requiresBlueprint, hasRequiredBlueprint,
-        levelGate:aq.levelGate,
-        unlocked:level >= aq.levelGate && hasRequiredBlueprint,
+        recipe,
+        requiresBlueprint:el.requiresBlueprint,
+        hasRequiredBlueprint:el.hasRequiredBlueprint,
+        levelGate:el.levelGate,
+        levelEnough:el.levelEnough,
+        shipyardEnough:el.shipyardEnough,
+        shipyardRequiredLevel:el.shipyardRequiredLevel,
+        hasComponents:el.hasComponents,
+        assemblyUnlocked:el.assemblyUnlocked,
+        assemblyBlockReason:el.assemblyBlockReason,
+        unlocked:el.assemblyUnlocked,
         line:getShipAssemblyLine(recipe.shipId),
         role:getShipRoleName(recipe.shipId),
         tier:(getShipConfigById(recipe.shipId) || {}).tier,
@@ -958,7 +1024,8 @@ function getShipEngineeringDisplayState(state, now) {
     .slice(assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE, assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE + SHIP_ASSEMBLY_PAGE_SIZE)
     .map(item => ({
       id:item.recipe.id, name:item.recipe.name, shipId:item.recipe.shipId, level:item.recipe.level, time:item.recipe.time, xp:item.recipe.xp,
-      requiresBlueprint:item.requiresBlueprint, hasRequiredBlueprint:item.hasRequiredBlueprint, unlocked:item.unlocked, requiredLevel:item.levelGate,
+      requiresBlueprint:item.requiresBlueprint, hasRequiredBlueprint:item.hasRequiredBlueprint, unlocked:item.assemblyUnlocked, requiredLevel:item.levelGate,
+      shipyardRequiredLevel:item.shipyardRequiredLevel, hasComponents:item.hasComponents, assemblyBlockReason:item.assemblyBlockReason,
       selected:item.recipe.id === currentAssembly.id, role:item.role, tier:item.tier, hybrid:item.hybrid
     }));
   const shipRole = getShipRoleName(currentAssembly.shipId);
@@ -1005,13 +1072,40 @@ function getShipEngineeringDisplayState(state, now) {
       return { material, quantity, stock, enough:stock >= quantity };
     }),
     componentInventory:SHIP_COMPONENT_RECIPES.map(recipe => ({ id:recipe.id, name:recipe.name, quantity:Number(componentInventory[recipe.id]) || 0 })),
-    currentAssembly:{ ...currentAssembly, componentCost:{ ...getShipAssemblyComponentCost(currentAssembly) }, materialCost:{ ...asmQuote.cost }, requiredLevel: asmQuote.levelGate },
+    currentAssembly:(function () {
+      const el = getAssemblyEligibility(currentAssembly);
+      return {
+        ...currentAssembly,
+        componentCost:{ ...getShipAssemblyComponentCost(currentAssembly) },
+        materialCost:{ ...asmQuote.cost },
+        requiredLevel: asmQuote.levelGate,
+        requiresBlueprint:el.requiresBlueprint,
+        hasRequiredBlueprint:el.hasRequiredBlueprint,
+        levelEnough:el.levelEnough,
+        shipyardEnough:el.shipyardEnough,
+        shipyardRequiredLevel:el.shipyardRequiredLevel,
+        hasComponents:el.hasComponents,
+        assemblyBlockReason:el.assemblyBlockReason,
+        assemblyBlockText:el.assemblyBlockText,
+        assemblyUnlocked:el.assemblyUnlocked
+      };
+    })(),
     runningAssembly:{ ...runningAssembly, componentCost:{ ...getShipAssemblyComponentCost(runningAssembly) }, materialCost:{ ...runningAsmQuote.cost }, requiredLevel: runningAsmQuote.levelGate },
     assemblyOptions:SHIP_ASSEMBLY_RECIPES.map(recipe => {
-      const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
-      const hasRequiredBlueprint = !requiresBlueprint || ownedBlueprints.has(recipe.shipId);
-      const q = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate:recipe.level };
-      return { ...recipe, requiresBlueprint, hasRequiredBlueprint, unlocked:level >= q.levelGate && hasRequiredBlueprint, selected:recipe.id === currentAssembly.id };
+      const el = getAssemblyEligibility(recipe);
+      return {
+        ...recipe,
+        requiresBlueprint:el.requiresBlueprint,
+        hasRequiredBlueprint:el.hasRequiredBlueprint,
+        levelEnough:el.levelEnough,
+        shipyardEnough:el.shipyardEnough,
+        shipyardRequiredLevel:el.shipyardRequiredLevel,
+        hasComponents:el.hasComponents,
+        unlocked:el.assemblyUnlocked,
+        assemblyBlockReason:el.assemblyBlockReason,
+        assemblyBlockText:el.assemblyBlockText,
+        selected:recipe.id === currentAssembly.id
+      };
     }),
     assemblyComponents:Object.entries(asmEffective.components).map(([componentId, quantity]) => {
       const info = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === componentId);
@@ -1024,7 +1118,7 @@ function getShipEngineeringDisplayState(state, now) {
     }),
     assemblyMaxCycles:getShipAssemblyMaxCyclesFromState(state, currentAssembly),
     canStartComponent:level >= compQuote.levelGate,
-    canStartAssembly:level >= asmQuote.levelGate && (!shipAssemblyRequiresBlueprint(currentAssembly) || ownedBlueprints.has(currentAssembly.shipId)) && getShipAssemblyMaxCyclesFromState(state, currentAssembly) > 0,
+    canStartAssembly:getAssemblyEligibility(currentAssembly).canStartAssembly,
     selectedShip:selectedShip ? { ...selectedShip, hp:{ ...selectedShip.hp }, slots:{ ...selectedShip.slots }, bonuses:{ ...selectedShip.bonuses }, capacitor:{ ...selectedShip.capacitor } } : null,
     ownedShips:Object.entries(shipCounts).map(([shipId, quantity]) => {
       const config = getShipConfigById(shipId);

@@ -12,6 +12,10 @@
   var MOBILE = window.matchMedia("(max-width: 820px)");
   function onMobile() { return MOBILE.matches; }
 
+  /* 顶部活动状态条（方案 B）状态引用；仅窄屏（≤820px）显示并更新 */
+  var _tpActStrip = null, _tpActIcon = null, _tpActLabel = null, _tpActPct = null,
+      _tpActEta = null, _tpActBar = null, _tpActFill = null, _tpLastStripFrame = 0;
+
   function init() {
     var topbar = document.querySelector(".topbar");
     var sidebar = document.querySelector(".sidebar");
@@ -24,6 +28,31 @@
     menuBtn.setAttribute("aria-label", "菜单");
     menuBtn.textContent = "☰";
     topbar.insertBefore(menuBtn, topbar.firstChild);
+
+    /* 顶部活动状态条（方案 B）：运行期创建，置于顶栏之后（main-container 之前）；
+       显隐完全由 CSS 媒体查询控制（≤820px 显示，桌面隐藏）。
+       更新逻辑 tpUpdateActivityStrip 仅在 onMobile() 时执行，桌面不显示也不刷新。 */
+    var strip = document.createElement("div");
+    strip.id = "tp-activity-strip";
+    strip.className = "tp-activity-strip no-progress";
+    strip.innerHTML =
+      '<div class="tp-act-row">'
+        + '<span class="tp-act-icon"></span>'
+        + '<span class="tp-act-label"></span>'
+        + '<span class="tp-act-pct"></span>'
+        + '<span class="tp-act-eta"></span>'
+      + '</div>'
+      + '<div class="tp-act-bar flowing"><span class="tp-act-fill"></span></div>';
+    /* 放进 topbar 内部（而非 topbar 后面），继承 topbar 的 fixed 定位，
+       避免被固定顶栏遮挡。topbar 本身 flex-wrap:wrap，strip 宽 100% 自动换行到底部。 */
+    topbar.appendChild(strip);
+    _tpActStrip = strip;
+    _tpActIcon = strip.querySelector(".tp-act-icon");
+    _tpActLabel = strip.querySelector(".tp-act-label");
+    _tpActPct = strip.querySelector(".tp-act-pct");
+    _tpActEta = strip.querySelector(".tp-act-eta");
+    _tpActBar = strip.querySelector(".tp-act-bar");
+    _tpActFill = strip.querySelector(".tp-act-fill");
 
     /* 抽屉遮罩：与 .sidebar 同处于 .main-container stacking context，
        content(0) < overlay(1300) < sidebar(1400)，sidebar 因此绘制在遮罩之上、
@@ -78,6 +107,7 @@
       if (e.target.closest(".nav-item")) setTimeout(closeDrawer, 60);
     });
 
+    hookActivityStrip();
     hookHangar();
   }
 
@@ -405,15 +435,67 @@
     }
   }
 
+  /* 顶部活动状态条（方案 B）：仅窄屏（≤820px）显示并刷新。
+     复用正式 getCurrentActivityDisplayState（文案含展示名+图标+等级+动作+进行中）
+     与 getActiveActionProgressDisplayState（percent / etaText）；
+     每 ~100ms 刷新，与桌面顶部迷你进度条同频，避免只在事件触发时跳变。
+     严格门控：onMobile() 为假时直接返回，桌面不显示也不刷新。 */
+  function tpUpdateActivityStrip() {
+    if (!onMobile() || !_tpActStrip || !window.gameState) return;
+    var act = null, prog = null;
+    try { act = window.getCurrentActivityDisplayState(window.gameState, Date.now()); } catch (e) {}
+    try { prog = window.getActiveActionProgressDisplayState(window.gameState, Date.now()); } catch (e) {}
+    if (!act) return;
+    if (!act.active) {
+      _tpActStrip.classList.add("idle", "no-progress");
+      if (_tpActIcon) _tpActIcon.textContent = "⏸";
+      if (_tpActLabel) _tpActLabel.textContent = "待命";
+      if (_tpActPct) _tpActPct.textContent = "";
+      if (_tpActEta) _tpActEta.textContent = "";
+      if (_tpActFill) _tpActFill.style.width = "0%";
+      return;
+    }
+    var isCombat = act.key === "combat";
+    _tpActStrip.classList.remove("idle");
+    _tpActStrip.classList.toggle("no-progress", isCombat);
+    var cps = Array.from(act.text || "");
+    if (_tpActIcon) _tpActIcon.textContent = cps[0] || "";
+    if (_tpActLabel) _tpActLabel.textContent = cps.slice(1).join("").replace(/^\s+/, "");
+    if (isCombat) {
+      if (_tpActPct) _tpActPct.textContent = "";
+      if (_tpActEta) _tpActEta.textContent = "";
+      if (_tpActFill) _tpActFill.style.width = "0%";
+    } else {
+      var pct = prog ? Number(prog.percent) || 0 : 0;
+      pct = Math.max(0, Math.min(100, pct));
+      if (_tpActPct) _tpActPct.textContent = Math.floor(pct) + "%";
+      if (_tpActEta) _tpActEta.textContent = (prog && prog.etaText) ? prog.etaText : "";
+      if (_tpActFill) _tpActFill.style.width = pct + "%";
+    }
+  }
+  function hookActivityStrip() {
+    function loop(t) {
+      if (onMobile() && t - _tpLastStripFrame >= 100) {
+        _tpLastStripFrame = t;
+        tpUpdateActivityStrip();
+      }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  }
+
   /* ---------- 测试/QA 句柄（无副作用，仅供自动化审计与 ?qa=1 调用） ---------- */
   window.TapTapPortrait = {
     tpRoleOf: tpRoleOf,
     tpShipMeta: tpShipMeta,
     tpEnhanceHTML: tpEnhanceHTML,
     tpDismantleHTML: tpDismantleHTML,
+    tpUpdateActivityStrip: tpUpdateActivityStrip,
     get currentShipId() { return _tpCurrentShipId; },
     get hangarFilter() { return _tpHangarFilter; },
-    get hangarTab() { return _tpHangarTab; }
+    get hangarTab() { return _tpHangarTab; },
+    get activityStripText() { return _tpActLabel ? _tpActLabel.textContent : ""; },
+    get activityStripPercent() { return _tpActPct ? _tpActPct.textContent : ""; }
   };
 
   /* ---------- 启动 ---------- */

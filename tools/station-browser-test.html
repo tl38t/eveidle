@@ -208,6 +208,17 @@ function smeltTargetNames(win) {
   return { nameA: a.id, nameB: b.id }; // smelting keyFn = r.name，targetOptions 字段为 id（= recipe.name）
 }
 
+// 取冶炼自动线真实周期秒数（UI 与结算共用公式，见 station.js getStationAutoLineCycleDuration）。
+// 仅在 line 已设置 startedTargetId 后调用才有效（matchedRecipe 才能命中）。
+function getSmeltCycleSec(win) {
+  var d = getDisplay(win);
+  if (!d || !d.autoLines) return 0;
+  for (var i = 0; i < d.autoLines.length; i++) {
+    if (d.autoLines[i].lineId === "smelting") return (d.autoLines[i].cycleDurationMs || 0) / 1000;
+  }
+  return 0;
+}
+
 function hasNaN(obj, path) {
   if (obj === undefined) return path + "=undefined";
   if (obj === null) return null;
@@ -711,33 +722,97 @@ test("L1 启动自动线后 live 刷新显示「运行中」", function(win) {
   return true;
 });
 
-test("L2 自动线进度随真实周期结算自动增加", function(win) {
+// L2 拆为「不跨周期」与「跨周期回绕」两个用例，按真实周期公式断言，
+// 避免旧断言（严格 p1>p0）在冶炼周期缩短后误判回绕为失败。
+// 真实公式（与 station.js processAutoLines / processSmeltingAutoLine 同源）：
+//   cycleTimeSec = recipe.baseTime / efficiency
+//   line.progress 单位为「当前周期内已累计秒数」（UI 显示 = progress/cycleTimeSec*100%）
+//   推进 elapsedSec 后：expectedSec = (progress0 + elapsedSec) % cycleTimeSec
+//   跨过 floor((progress0+elapsedSec)/cycleTimeSec) - floor(progress0/cycleTimeSec) 个完整周期 → 产出增加
+test("L2a 自动线进度随真实周期结算单调增加（不跨周期）", function(win) {
   setupBasicStation(win);
   var g = win.gameState;
   g.station.buildings.smelting_refinery = 2;
   g.skills.refining.lvl = 80;
   var names = smeltTargetNames(win);
   if (!names) return "无 smelting 目标";
-  g.station.autoLines.smelting = { enabled: true, selectedTargetId: names.nameA, startedTargetId: names.nameA, progress: 0, lastTick: 0, stoppedReason: null };
-  win.switchPage("station");
+  var RR = win.ResourceRegistry;
   var PAL = win.processAutoLines || (win.StationSystem && win.StationSystem.processAutoLines);
   if (!PAL) return "processAutoLines 不可用";
+  // 先建立 line（startedTargetId 命中配方）再取真实周期
+  g.station.autoLines.smelting = { enabled: true, selectedTargetId: names.nameA, startedTargetId: names.nameA, progress: 0, lastTick: 0, stoppedReason: null };
+  var cyc = getSmeltCycleSec(win);
+  if (!(cyc > 0)) return "无法取得真实周期";
+  // 不跨完整周期的小步长（40% 周期）
+  var stepSec = cyc * 0.4;
+  win.switchPage("station");
+  var mineralBefore = RR.get(g, "mineral:三钛合金");
   var T = nextNow(win);
-  g.station.autoLines.smelting.lastTick = T - 5000;
-  PAL(g, T, false); // 进度 +5s
-  win.renderStationPage(T); // 同步签名
+  g.station.autoLines.smelting.lastTick = T - stepSec * 1000;
+  PAL(g, T, false);
+  win.renderStationPage(T);
   win.updateStationLiveUI(T);
-  var progEl0 = win.document.getElementById("al-progress-smelting");
-  if (!progEl0) return "无 #al-progress-smelting";
-  var p0 = parsePct(progEl0.textContent);
-  // 再推进 5s 并 live 刷新
-  var T2 = T + 5000;
-  g.station.autoLines.smelting.lastTick = T2 - 5000;
-  PAL(g, T2, false);
-  win.updateStationLiveUI(T2);
-  var progEl1 = win.document.getElementById("al-progress-smelting");
-  var p1 = parsePct(progEl1.textContent);
-  if (!(p1 > p0)) return "进度未自动增加: p0=" + p0 + " p1=" + p1;
+  var line = g.station.autoLines.smelting;
+  if (line.stoppedReason) return "意外停线: " + line.stoppedReason;
+  if (!(line.enabled && line.startedTargetId && !line.stoppedReason)) return "自动线未处于 running 状态";
+  var progSec = Number(line.progress) || 0;
+  var expectedSec = (0 + stepSec) % cyc;
+  if (Math.abs(progSec - expectedSec) > 0.5) return "进度秒数不符: 实际=" + progSec.toFixed(3) + " 期望=" + expectedSec.toFixed(3);
+  if (!(progSec > 0)) return "进度未增加: progSec=" + progSec;
+  // 未跨完整周期 → 不应有产出
+  var mineralAfter = RR.get(g, "mineral:三钛合金");
+  if (mineralAfter !== mineralBefore) return "不跨周期却产出: " + mineralBefore + "→" + mineralAfter;
+  // 状态与 DOM 进度条应反映运行中且递增
+  var statusEl = win.document.getElementById("al-status-smelting");
+  if (statusEl && statusEl.textContent.indexOf("运行中") < 0) return "未显示运行中: " + statusEl.textContent;
+  var p1 = parsePct(win.document.getElementById("al-progress-smelting").textContent);
+  if (!(p1 > 0)) return "DOM 进度未显示增加: p1=" + p1;
+  return true;
+});
+
+test("L2b 自动线跨完整周期后进度回绕且产出增加（真实公式）", function(win) {
+  setupBasicStation(win);
+  var g = win.gameState;
+  g.station.buildings.smelting_refinery = 2;
+  g.skills.refining.lvl = 80;
+  var names = smeltTargetNames(win);
+  if (!names) return "无 smelting 目标";
+  var RR = win.ResourceRegistry;
+  var PAL = win.processAutoLines || (win.StationSystem && win.StationSystem.processAutoLines);
+  if (!PAL) return "processAutoLines 不可用";
+  // 先建立 line（startedTargetId 命中配方）再取真实周期
+  g.station.autoLines.smelting = { enabled: true, selectedTargetId: names.nameA, startedTargetId: names.nameA, progress: 0, lastTick: 0, stoppedReason: null };
+  var cyc = getSmeltCycleSec(win);
+  if (!(cyc > 0)) return "无法取得真实周期";
+  // 初始进度设在周期 80%（高值），推进 1.5 个周期 → 回绕到约 30%，跨过 2 个完整周期
+  var initSec = cyc * 0.8;
+  var advanceSec = cyc * 1.5;
+  g.station.autoLines.smelting.progress = initSec;
+  win.switchPage("station");
+  var mineralBefore = RR.get(g, "mineral:三钛合金");
+  var T = nextNow(win);
+  g.station.autoLines.smelting.lastTick = T - advanceSec * 1000;
+  PAL(g, T, false);
+  win.renderStationPage(T);
+  win.updateStationLiveUI(T);
+  var line = g.station.autoLines.smelting;
+  if (line.stoppedReason) return "意外停线: " + line.stoppedReason;
+  if (!(line.enabled && line.startedTargetId && !line.stoppedReason)) return "自动线未处于 running 状态";
+  // 真实公式：elapsedProgress% = advanceSec/cyc*100；expectedProgress% = (p0% + elapsedProgress%) % 100
+  var p0pct = initSec / cyc * 100;
+  var elapsedPct = advanceSec / cyc * 100;
+  var expectedPct = (p0pct + elapsedPct) % 100;
+  var progSec = Number(line.progress) || 0;
+  var actualPct = progSec / cyc * 100;
+  if (Math.abs(actualPct - expectedPct) > 2) return "回绕后进度不符: 实际=" + actualPct.toFixed(2) + "% 期望=" + expectedPct.toFixed(2) + "%";
+  // 跨过 2 个完整周期（floor(0.8+1.5)-floor(0.8) = 2）→ 产出必须增加
+  var mineralAfter = RR.get(g, "mineral:三钛合金");
+  if (!(mineralAfter > mineralBefore)) return "跨周期但产出未增加: " + mineralBefore + "→" + mineralAfter;
+  // DOM 进度条回绕到约 30%，且应显示运行中
+  var statusEl = win.document.getElementById("al-status-smelting");
+  if (statusEl && statusEl.textContent.indexOf("运行中") < 0) return "未显示运行中: " + statusEl.textContent;
+  var p1 = parsePct(win.document.getElementById("al-progress-smelting").textContent);
+  if (Math.abs(p1 - expectedPct) > 3) return "DOM 进度回绕不符: p1=" + p1 + " 期望≈" + expectedPct.toFixed(0);
   return true;
 });
 

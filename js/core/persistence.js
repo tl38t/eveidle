@@ -322,6 +322,39 @@ function migrateEquipmentInstancesV1(state) {
   state._dirty = true;
 }
 
+// 旧档 I6 拓岩级蓝图幂等补偿（可被 autoLoad 与审计调用）。
+// 显式函数契约：必须传入 { restoredSave:true } 才允许补发，杜绝「调用方保证」的隐性约定。
+// 严格触发条件（硬门禁，全部满足后才修改状态）：
+//   (1) options.restoredSave === true（必须是「已加载存档」路径；全新游戏不得补发）
+//   (2) rewardLedger.I6 为有效有限正时间戳（与 tutorial.js 写入语义一致：nowMs 数值；
+//       拒绝对象 / 字符串 / NaN / Infinity / 负数 / 0 等 truthy 值）
+//   (3) ownedBlueprints 尚未含 "miner_frigate"（幂等；migration flag 不替代此检查）
+//   (4) 当前 SHIP_BLUEPRINTS 仍登记 miner_frigate
+// 仅补蓝图：不发舰船/资源、不重跑 I6、不派发 blueprint:acquired 事件。
+function grantLegacyMinerFrigateBlueprint(state, options) {
+  try {
+    if (!state || typeof state !== "object") return;
+    if (!options || options.restoredSave !== true) return; // 显式契约：非恢复存档零副作用
+    if (!state.tutorial || typeof state.tutorial !== "object") return;
+    const ledger = state.tutorial.rewardLedger;
+    if (!ledger || typeof ledger !== "object") return;
+    const i6 = ledger.I6;
+    // I6 必须是有效有限正时间戳（tutorial.js 以 nowMs(ctx.now) 写入）；拒绝一切非有限正数。
+    if (typeof i6 !== "number" || !isFinite(i6) || i6 <= 0) return;
+    // 不提前规范化 ownedBlueprints（避免条件未过时产生副作用）；仅做只读判断。
+    const owned = Array.isArray(state.ownedBlueprints) ? state.ownedBlueprints : null;
+    if (owned && owned.includes("miner_frigate")) return;
+    const bpStillExists = (typeof SHIP_BLUEPRINTS !== "undefined") && Array.isArray(SHIP_BLUEPRINTS) && SHIP_BLUEPRINTS.some(b => b.shipId === "miner_frigate");
+    if (!bpStillExists) return;
+    // 所有条件通过：此刻才规范化并修改状态。
+    if (!Array.isArray(state.ownedBlueprints)) state.ownedBlueprints = [];
+    state.ownedBlueprints.push("miner_frigate");
+    state._dirty = true;
+    if (!state.migrations) state.migrations = {};
+    state.migrations.legacyMinerFrigateBlueprint = true;
+  } catch (err) { console.error("[grantLegacyMinerFrigateBlueprint] 补偿失败", err); }
+}
+
 // 每次读档的规范化修复（幂等）：重建 installedOn、补全/去重/清理实例与库存、绝不静默删除合法实例。
 function normalizeEquipmentState(state) {
   if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
@@ -1494,6 +1527,12 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     gameState.currentAction.progress = 0;
     gameState.currentAction.lastProgressUpdate = Date.now();
     gameState.currentAction.startTime = Date.now();
+    // 旧档兼容：I6 任务已领取（rewardLedger.I6 为有效有限正时间戳）但拓岩级蓝图未入库的玩家，幂等补发蓝图。
+    // 严格触发四条件：(1) rewardLedger.I6 有效有限正时间戳 (2) ownedBlueprints 尚未含 "miner_frigate"
+    // (3) 当前 SHIP_BLUEPRINTS 仍登记 miner_frigate（蓝图未被移除）(4) 处于已恢复存档（本分支即保证，显式传 restoredSave:true）。
+    // 仅补蓝图：不发舰船/资源、不重跑 I6、不派发 blueprint:acquired 事件（成就对账走既有 reconcile）。
+    // 幂等：重载时 ownedBlueprints 已含则直接返回，绝不重复发放；不重置 tutorial。
+    grantLegacyMinerFrigateBlueprint(gameState, { restoredSave: true });
     SaveManager._updateStatus("存档已恢复");
   }
   migrateAmmunitionEngineeringState();

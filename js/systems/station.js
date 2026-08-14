@@ -1333,27 +1333,41 @@ function canManufactureAtShipyard(state, recipeId) {
 }
 
 // 舰船总装门槛
-function canAssembleAtShipyard(state, recipeId) {
-  const lvl = getShipyardLevel(state);
+// 单一权威规则源：给定配方返回组装所需船坞等级（不复制第二套判定）。
+// 与 canAssembleAtShipyard 共用，供 UI 显示「真实船坞等级要求」文本，杜绝伪造为技能/蓝图问题。
+// 规则（与原正式设计一致，不得改写）：
+//   · 未知配方（不在 SHIP_ASSEMBLY_RECIPES）→ 返回 null（fail closed，不得伪装成正常配方）
+//   · 超级旗舰（supercapital）                 → 3
+//   · 旗舰 / 工业旗舰 / 考古旗舰                 → 2
+//   · 其余常规/工业/考古舰船                     → 0（无需船坞等级）
+function getShipyardAssemblyLevelRequirement(state, recipeId) {
   // 查询 SHIP_ASSEMBLY_RECIPES 获取配方数据
   const recipe = (typeof SHIP_ASSEMBLY_RECIPES !== "undefined")
     ? SHIP_ASSEMBLY_RECIPES.find(r => r.id === recipeId) : null;
-  if (!recipe) return false; // 未知配方
+  if (!recipe) return null; // 未知配方：fail closed，返回 null 交由 canAssembleAtShipyard 判否
   // 通过舰船类型判断级别：查找 shipId 的 type
   const shipConfig = (typeof getShipConfigById === "function") ? getShipConfigById(recipe.shipId) : null;
   if (!shipConfig) {
-    // fallback: 按 recipeId 判断
-    if (recipeId === "starcrown" || recipeId === "eternal_fortress" || recipeId === "arbiter") return lvl >= 3;
-    if (recipeId === "firmament" || recipeId === "heavy_bastion" || recipeId === "riftbreaker" || recipeId === "orca" || recipeId === "illuminator") return lvl >= 2;
-    return true;
+    // fallback: 按 recipeId 判断（理论上 getShipConfigById 必命中；未知 type 一律按 Lv.0 处理，不伪装）
+    if (recipeId === "starcrown" || recipeId === "eternal_fortress" || recipeId === "arbiter") return 3;
+    if (recipeId === "firmament" || recipeId === "heavy_bastion" || recipeId === "riftbreaker" || recipeId === "orca" || recipeId === "illuminator") return 2;
+    return 0;
   }
   const shipType = shipConfig.type || "";
   // 超级旗舰组装：Lv.3
-  if (shipType === "supercapital") return lvl >= 3;
+  if (shipType === "supercapital") return 3;
   // 旗舰/工业旗舰/考古旗舰组装：Lv.2
-  if (shipType === "capital" || shipType === "industrial_capital" || shipType === "archaeology_capital") return lvl >= 2;
+  if (shipType === "capital" || shipType === "industrial_capital" || shipType === "archaeology_capital") return 2;
   // 常规/工业/考古非旗舰：Lv.0
-  return true;
+  return 0;
+}
+
+function canAssembleAtShipyard(state, recipeId) {
+  // 阻塞判定唯一复用本函数（不得复制第二套规则）；门槛文本由 getShipyardAssemblyLevelRequirement 提供。
+  // 未知配方（required === null）必须判否，不得因 null <= level 被 JS 隐式转 0 而误通过。
+  const required = getShipyardAssemblyLevelRequirement(state, recipeId);
+  if (required === null) return false;
+  return getShipyardLevel(state) >= required;
 }
 
 // ---- 确定性余数节省（quote + commit 两阶段）----
@@ -1720,6 +1734,7 @@ const StationSystem = {
   getShipyardLevel,
   canManufactureAtShipyard,
   canAssembleAtShipyard,
+  getShipyardAssemblyLevelRequirement,
   getShipyardProductionQuote,
   canAffordShipyardQuote,
   commitShipyardProductionQuote,
@@ -1765,6 +1780,7 @@ if (typeof window !== "undefined") {
   window.getShipyardLevel = getShipyardLevel;
   window.canManufactureAtShipyard = canManufactureAtShipyard;
   window.canAssembleAtShipyard = canAssembleAtShipyard;
+  window.getShipyardAssemblyLevelRequirement = getShipyardAssemblyLevelRequirement;
   window.getShipyardProductionQuote = getShipyardProductionQuote;
   window.canAffordShipyardQuote = canAffordShipyardQuote;
   window.commitShipyardProductionQuote = commitShipyardProductionQuote;
