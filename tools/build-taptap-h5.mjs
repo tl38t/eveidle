@@ -1,4 +1,4 @@
-// build-taptap-h5.mjs — TapTap H5 确定性构建工具（RC5）
+// build-taptap-h5.mjs — TapTap H5 确定性构建工具（RC7）
 //
 // 设计约束：
 //  - 必须从固定提交导出，而非复制当前脏工作区：
@@ -10,8 +10,8 @@
 //  - 构建两次，校验文件清单 / 各文件 SHA-256 / 最终 ZIP SHA-256 一致（确定性）。
 //  - 来源 SHA 不得硬编码：由 --source-sha 提供，且必须等于本次构建时的当前 HEAD，
 //    同时要求工作分支为 main、tracked 工作树干净、staged 为空。
-//  - 模式：`--mode selftest` 注入探针，输出 deep-space-idle-taptap-rc5-selftest.zip；
-//          `--mode release` 完全不注入探针，输出 deep-space-idle-taptap-rc5.zip。
+//  - 模式：`--mode selftest` 注入探针，输出 deep-space-idle-taptap-rc7-selftest.zip；
+//          `--mode release` 完全不注入探针，输出 deep-space-idle-taptap-rc7.zip。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -51,7 +51,15 @@ if (MODE !== "selftest" && MODE !== "release") {
   throw new Error("未知 --mode: " + MODE + "（仅支持 selftest / release）");
 }
 const INCLUDE_PROBE = MODE === "selftest";
-const ZIP_NAME = MODE === "release" ? "deep-space-idle-taptap-rc6.zip" : "deep-space-idle-taptap-rc6-selftest.zip";
+const WORKTREE_SELFTEST = process.argv.includes("--worktree-selftest");
+if (WORKTREE_SELFTEST && MODE !== "selftest") {
+  throw new Error("--worktree-selftest is restricted to --mode selftest");
+}
+const ZIP_NAME = MODE === "release"
+  ? "deep-space-idle-taptap-rc7.zip"
+  : WORKTREE_SELFTEST
+    ? "deep-space-idle-taptap-rc7-worktree-selftest.zip"
+    : "deep-space-idle-taptap-rc7-selftest.zip";
 
 // ---- 来源 SHA（--source-sha，必须 == 当前 HEAD）----
 function parseSourceSha() {
@@ -67,10 +75,11 @@ function parseSourceSha() {
 function checkRepoState() {
   const branch = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: REPO, encoding: "utf8" }).stdout.trim();
   if (branch !== "main") throw new Error("工作分支必须为 main，当前: " + branch);
-  const wtClean = spawnSync("git", ["diff", "--quiet"], { cwd: REPO }).status === 0;
-  if (!wtClean) throw new Error("tracked 工作树不干净（git diff 非空）");
   const idxClean = spawnSync("git", ["diff", "--cached", "--quiet"], { cwd: REPO }).status === 0;
   if (!idxClean) throw new Error("staged 非空（git diff --cached 非空）");
+  if (WORKTREE_SELFTEST) return;
+  const wtClean = spawnSync("git", ["diff", "--quiet"], { cwd: REPO }).status === 0;
+  if (!wtClean) throw new Error("tracked 工作树不干净（git diff 非空）");
 }
 
 const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
@@ -80,6 +89,8 @@ const fail = (m) => { throw new Error(m); };
 function isWhitelisted(rel) {
   // QA 种子（js/qa-seed.js）仅用于本地验收，禁止进入任何 TapTap 包（selftest / release 均排除）
   if (rel === "js/qa-seed.js") return false;
+  // Steam 适配器为「合同预留、未签约」状态，严禁进入任何 TapTap 发布包（selftest / release 均排除）
+  if (rel.startsWith("js/platform/steam/")) return false;
   // 精确许可证白名单（修复 release 对白名单 .txt 许可证的遗漏）
   if (rel === "js/vendor/LICENSE_THREE.txt") return true;
   if (rel === "index.html") return true;
@@ -114,6 +125,21 @@ function walkDirToMap(dir, baseRel, map) {
     const rel = baseRel ? baseRel + "/" + e.name : e.name;
     if (e.isDirectory()) walkDirToMap(abs, rel, map);
     else if (e.isFile()) map.set(rel.split(path.sep).join("/"), fs.readFileSync(abs));
+  }
+}
+
+function loadWhitelistedWorktree(map) {
+  const indexPath = path.join(REPO, "index.html");
+  if (!fs.existsSync(indexPath)) fail("工作区缺少 index.html");
+  map.set("index.html", fs.readFileSync(indexPath));
+  for (const dirName of ["css", "js", "images"]) {
+    const dir = path.join(REPO, dirName);
+    if (!fs.existsSync(dir)) continue;
+    const candidates = new Map();
+    walkDirToMap(dir, dirName, candidates);
+    for (const [rel, buffer] of candidates) {
+      if (isWhitelisted(rel)) map.set(rel, buffer);
+    }
   }
 }
 
@@ -172,16 +198,19 @@ async function buildOnce(SOURCE_SHA) {
   const stage = path.join(OUTDIR, "_stage");
   fs.rmSync(stage, { recursive: true, force: true });
   fs.mkdirSync(stage, { recursive: true });
-  const archivePath = path.join(stage, "_archive.zip");
-  gitArchiveZip(archivePath, SOURCE_SHA);
-
-  const zip = await JSZip.loadAsync(fs.readFileSync(archivePath));
   const map = new Map();
-  for (const [rel, file] of Object.entries(zip.files)) {
-    if (file.dir) continue;
-    const r = rel.split("/").join("/");
-    if (!isWhitelisted(r)) continue;
-    map.set(r, await file.async("nodebuffer"));
+  if (WORKTREE_SELFTEST) {
+    loadWhitelistedWorktree(map);
+  } else {
+    const archivePath = path.join(stage, "_archive.zip");
+    gitArchiveZip(archivePath, SOURCE_SHA);
+    const zip = await JSZip.loadAsync(fs.readFileSync(archivePath));
+    for (const [rel, file] of Object.entries(zip.files)) {
+      if (file.dir) continue;
+      const r = rel.split("/").join("/");
+      if (!isWhitelisted(r)) continue;
+      map.set(r, await file.async("nodebuffer"));
+    }
   }
 
   // 本地化资源（递归复制，含许可证文本）
@@ -302,7 +331,7 @@ function verifyPackage(buffer, mode) {
       ok("release: 运行文件不含 ?qa= 场景入口", !qaSceneHit);
 
       // 跨模式比对：与 selftest 产物证明“唯一差异=探针文件+index.html 注入标签”
-      const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc6-selftest.zip");
+      const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc7-selftest.zip");
       if (fs.existsSync(selftestZip)) {
         try {
           const sz = await JSZip.loadAsync(fs.readFileSync(selftestZip));
@@ -402,13 +431,16 @@ function verifyPackage(buffer, mode) {
 
 // ---------- 主流程 ----------
 (async () => {
-  console.log("=== TapTap H5 构建（RC5）===");
-  console.log("模式: " + MODE + (INCLUDE_PROBE ? "（保留探针）" : "（正式候选包 RC5，无探针）"));
+  console.log("=== TapTap H5 构建（RC7）===");
+  console.log("模式: " + MODE + (INCLUDE_PROBE ? "（保留探针）" : "（正式候选包 RC7，无探针）"));
   console.log("输出 ZIP: " + ZIP_NAME);
+  if (WORKTREE_SELFTEST) console.log("[SELFTEST] 从当前工作区白名单文件构建；release 模式禁止使用此开关");
 
   // 0) 仓库状态守卫
   checkRepoState();
-  console.log("[REPO] 分支=main 且 tracked 工作树干净、staged 为空 ✓");
+  console.log(WORKTREE_SELFTEST
+    ? "[REPO] 分支=main，staged 为空；允许未提交工作区（仅 selftest） ✓"
+    : "[REPO] 分支=main 且 tracked 工作树干净、staged 为空 ✓");
 
   // 1) 来源 SHA 校验
   const SOURCE_SHA = parseSourceSha();
@@ -452,6 +484,11 @@ function verifyPackage(buffer, mode) {
   console.log("字节: " + b2.buffer.length);
   console.log("SHA-256: " + finalSha);
   console.log("文件数: " + b2.count);
+  if (WORKTREE_SELFTEST) {
+    const fingerprint = sha256(Buffer.from(b2.manifest.map((m) => m.rel + ":" + m.sha256).join("\n"), "utf8"));
+    console.log("工作区包指纹 SHA-256: " + fingerprint);
+    console.log("基线提交: " + SOURCE_SHA + " + 未提交工作区（仅供 TapTap 沙箱自测）");
+  }
   console.log("顶层结构: " + PKG_TOP + "/ (index.html + css/ + js/ + images/ + assets/vendor/taptap-h5/" + (INCLUDE_PROBE ? " + taptap-compat-probe.mjs" : "") + ")");
 
   console.log("\n=== 结论: " + (allPass ? "全部校验通过 ✓" : "存在失败项 ✗") + " ===");

@@ -342,6 +342,7 @@ dispatchGameAction(gameState, { type:"production/ensureMiningArea" }, Date.now()
 // 的 visibilitychange 处理。单一计时器、不在 render.js 额外注册 visibilitychange。
 function runScheduledGameTick() {
   if (document.hidden) return;
+  if (typeof SaveManager !== "undefined" && SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return;
   RuntimeGuard.runCritical("gameTick", gameTick);
 }
 setInterval(runScheduledGameTick, 1000);

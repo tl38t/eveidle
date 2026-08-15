@@ -8,7 +8,24 @@
 const LocalStorageAdapter = {
   _key: "eve_idle_save",
   save(data) { try { localStorage.setItem(this._key, JSON.stringify(data)); return true; } catch (e) { console.warn("存档失败：", e); return false; } },
-  load() { try { const json = localStorage.getItem(this._key); return json ? JSON.parse(json) : null; } catch (e) { console.warn("读档失败：", e); return null; } },
+  // 读取必须区分真正不存在与读取/解析失败；error 绝不能被启动流程当作全新存档。
+  readCandidate() {
+    let json;
+    try { json = localStorage.getItem(this._key); }
+    catch (e) { return { status: "error", error: e }; }
+    if (json === null || json === undefined || json === "") return { status: "none" };
+    try {
+      const payload = JSON.parse(json);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) || !payload.skills) {
+        throw new Error("本地存档结构无效");
+      }
+      return { status: "ok", payload: payload };
+    } catch (e) {
+      console.warn("读档失败：", e);
+      return { status: "error", error: e, rawLength: String(json).length };
+    }
+  },
+  load() { const result = this.readCandidate(); return result.status === "ok" ? result.payload : null; },
   export(data) { return JSON.stringify(data, null, 2); },
   import(jsonString) { return JSON.parse(jsonString); },
   removeItem() { try { localStorage.removeItem(this._key); return true; } catch (e) { console.warn("删除存档失败：", e); return false; } }
@@ -1207,251 +1224,29 @@ function normalizeQueueState(state) {
 }
 window.normalizeQueueState = normalizeQueueState;
 
-const SaveManager = {
-  adapter: LocalStorageAdapter,
-  _pendingDelete: false,
-  _importTransaction: false,
-  save() {
-    // 定点返修 P1-A：删除事务 / 导入事务挂起时禁止写盘，避免污染或回滚竞态。
-    if (this._pendingDelete || this._importTransaction) return false;
-    // 先保留原始 lastSaveTime；写入候选时间后再真正落盘，只有落盘成功才确认。
-    // 失败（返回 false 或抛异常）时还原时间戳、保持 _dirty=true，让 5s 自动保存下一次重试。
-    const prevLastSaveTime = gameState.lastSaveTime;
-    const candidateSaveTime = Date.now();
-    gameState.lastSaveTime = candidateSaveTime;
-    let ok = false;
-    try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
-    if (ok) {
-      gameState._dirty = false;
-      this._updateStatus("已保存 " + new Date(candidateSaveTime).toLocaleTimeString());
-      const footer = document.getElementById("footer-save");
-      if (footer) footer.textContent = "存档：" + new Date(candidateSaveTime).toLocaleTimeString();
-      return true;
-    }
-    // 落盘失败：还原时间戳、保持 dirty、明确失败提示；footer 绝不伪造成功。
-    gameState.lastSaveTime = prevLastSaveTime;
-    gameState._dirty = true;
-    this._updateStatus("保存失败，将自动重试");
-    const footer = document.getElementById("footer-save");
-    if (footer) footer.textContent = "存档：保存失败";
-    return false;
-  },
-  // 新手任务 Batch O：sourceHadTutorial 必须在 Object.assign 之前、对**原始存档对象**判定，
-  // 用于区分「老档（无 tutorial 字段）」与「现代档（已带 tutorial）」。判定结果挂在 SaveManager 上，
-  // 供 autoLoad 决定 legacy 迁移与旧档兜底补给是否生效。
-  // Batch Q 定点返修：三态语义见 isLegacySaveSource() 注释。默认 null＝尚未读到任何存档（真正的全新游戏），
-  // 绝不能默认 false——false 表示「确实读到了一份没有 tutorial 字段的老档」，会让全新开局被误判并补发 rifter。
-  _lastLoadSourceHadTutorial: null,
-  load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
-  exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "DeepSpaceIdle_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
-  importData(jsonString) {
-    // 定点返修：直接调用入口防御（与文件选择器 file.size 双重守卫）。
-    // 命中即返回 false，不进入事务、不快照、不触碰 gameState / 本地存档。
-    if (typeof jsonString !== "string" || jsonString.length > MAX_IMPORT_SAVE_BYTES) { alert("导入失败：存档格式无效"); return false; }
-    // 定点返修 P1-B：导入原子化。导入前对当前内存态与来源标记做快照，
-    // 全程挂起内部 SaveManager.save（含 calculateOfflineGains 内部的落盘调用），
-    // 仅在全部迁移/对账/离线/规范化/UI 切换成功后做唯一一次最终落盘。
-    // 任意异常或最终落盘失败 → 就地还原导入前 gameState、还原来源标记、释放事务标志、
-    // 保留本地原存档、返回 false。
-    const preImportSnapshot = createSerializableGameStateSnapshot(gameState);
-    const preImportSourceHadTutorial = this._lastLoadSourceHadTutorial;
-    this._importTransaction = true;
-    try {
-      const data = this.adapter.import(jsonString);
-      if (!data || !data.skills) throw new Error("无效存档");
-      // 定点返修：结构遍历拒绝原型链污染键，必须在 Object.assign 之前执行。
-      if (!validateImportedSavePayload(data)) throw new Error("无效存档");
-      // 新手任务 Batch O：必须在 Object.assign 之前对**原始存档对象**判定 tutorial 字段是否存在。
-      const sourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial");
-      this._lastLoadSourceHadTutorial = sourceHadTutorial;
-      gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null;
-      Object.assign(gameState, data);
-      if (!Object.hasOwn(data, "settings")) gameState.settings = {};
-      normalizeQueueState(gameState);
-      ensureUserSettingsState(gameState);
-      ensureStatisticsState(gameState);
-      // 装备迁移标志管理：不得无条件删除现代存档已有的迁移标志。
-      // 一次性迁移（migrateCombatEquipmentState / migrateEquipmentInstancesV1）各自带有幂等守卫，
-      // 仅当存档确实缺少对应标志时才运行；normalizeEquipmentState 每次导入都必须执行。
-      if (!gameState.migrations) gameState.migrations = {};
-      // 旧版技能/资源迁移
-      migrateAmmunitionEngineeringState();
-      migrateMoonMiningState();
-      migrateDeathspaceState();
-      migrateBoosterState();
-      // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
-      finalizeEquipmentStateAfterLegacyMigrations(gameState);
-      // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移
-      migrateStationCorporationState();
-      // 无限库存迁移：必须在离线结算之前
-      migrateUnlimitedInventoryState();
-      // 行星规范化（与 autoLoad 同一路径，幂等）；必须在离线结算之前
-      normalizePlanetaryState(gameState);
-      delete gameState.planetaryDeployments;
-      // 研究系统迁移（批次 B）：补全 research 子状态 + planetary deployment 自动续费。
-      // 必须在 deployments 已存在之后调用（migratePlanAutoRenew 依赖 planetary.deployments）。
-      if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
-        ResearchState.migrateResearchState(gameState);
-      }
-      // 成就系统迁移（Batch B）：importData 唯一调用点，恰好一次。
-      // 顺序：normalizePlanetaryState → research 迁移 → achievement 迁移 → calculateOfflineGains，
-      // 必须早于离线结算（为后续离线成就事件接入留下正确顺序）。迁移不 dirty、不 emit。
-      if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
-        AchievementState.migrateAchievementState(gameState);
-      }
-      // 成就追溯对账（Batch C-1 技能 + Batch C-2 生产 + Batch C-3 战斗 + Batch C-4 制造）：importData 唯一调用点，
-      // 各恰好一次。在 achievement 迁移之后、离线结算之前；
-      // 四次求值复用同一个 now（本次导入只取一次 Date.now()）。
-      {
-        const achievementReconcileNow = Date.now();
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateSkillAchievementRules === "function") {
-          AchievementSystem.evaluateSkillAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateProductionAchievementRules === "function") {
-          AchievementSystem.evaluateProductionAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateCombatAchievementRules === "function") {
-          AchievementSystem.evaluateCombatAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateManufacturingAchievementRules === "function") {
-          AchievementSystem.evaluateManufacturingAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEquipmentAchievementRules === "function") {
-          AchievementSystem.evaluateEquipmentAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBoosterAchievementRules === "function") {
-          AchievementSystem.evaluateBoosterAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateArchaeologyAchievementRules === "function") {
-          AchievementSystem.evaluateArchaeologyAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluatePlanetaryAchievementRules === "function") {
-          AchievementSystem.evaluatePlanetaryAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateStationAchievementRules === "function") {
-          AchievementSystem.evaluateStationAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBlueprintAchievementRules === "function") {
-          AchievementSystem.evaluateBlueprintAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch C-13：经济追溯必须在离线结算**之前**，用同一 achievementReconcileNow，
-        // 使解锁时间戳落在"读档瞬间"而非离线补偿之后；persistence.js 排在 resources.js 之后，
-        // 此处 ResourceRegistry 必然已就绪。
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEconomyAchievementRules === "function") {
-          AchievementSystem.evaluateEconomyAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch C-14A：综合（J01–J06）追溯必须同样在离线结算**之前**，用同一 achievementReconcileNow。
-        // 若放到 calculateOfflineGains 之后，本次读档触发的离线结算会先把 lifecycle 推高，
-        // 导致"迁移追溯"与"本次离线收益"混为一谈，解锁时间戳也会偏移到离线补偿之后。
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateGeneralAchievementRules === "function") {
-          AchievementSystem.evaluateGeneralAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch C-14B：元成就（J10/J11/J12）追溯必须排在全部普通类追溯**之后**、
-        // 离线结算**之前**，复用同一 achievementReconcileNow：
-        // 先让普通成就在本次读档补齐，元成就才能看到完整的解锁事实并顺序补齐 J10→J11→J12。
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
-          AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch E：成就科研工时奖励旧档对账，必须排在**全部**成就追溯（含元成就）之后、
-        // 离线结算之前，复用同一 achievementReconcileNow，且整段读档流程只调用一次。
-        // 只为「已解锁但账本无记录」的成就补发；已发放过的一律跳过（幂等，重复读档不重复发）。
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.reconcileAchievementResearchRewards === "function") {
-          AchievementSystem.reconcileAchievementResearchRewards(gameState, achievementReconcileNow);
-        }
-      }
-      // Batch K：intship 一体化造船运行期恢复——必须在研究迁移之后、离线结算之前；
-      // active 作业重装幂等消费者，shape 不匹配或不再驱动 currentAction 时 fail closed 为 recovery-required。
-      if (typeof restoreIntshipProtocolRuntime === "function") restoreIntshipProtocolRuntime(gameState);
-      // 新手任务 Batch O：与 autoLoad 对称——tutorial 迁移 + 消费者装载 + 对账，必须在离线结算之前。
-      if (typeof TutorialSystem !== "undefined" && TutorialSystem && typeof TutorialSystem.bootstrap === "function") {
-        TutorialSystem.bootstrap(gameState, { isLegacy: sourceHadTutorial !== true, now: Date.now() });
-      }
-      // 离线结算必须在规范化之后
-      if (typeof calculateOfflineGains === "function") calculateOfflineGains();
-      // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
-      normalizePlanetaryState(gameState, { finalizeExpiry:true });
-      gameState._dirty = false;
-      gameState.currentAction.progress = 0;
-      gameState.currentAction.lastProgressUpdate = Date.now();
-      window.gameState = gameState;
-      currentPage = "skill";
-      switchPage("skill");
-      this._updateStatus("存档已导入，共 " + JSON.stringify(data).length + " 字节");
-      updateUI();
-      // 全流程成功：先释放事务标志，再做唯一一次最终落盘（此前所有内部 save 均被 _importTransaction 抑制）。
-      this._importTransaction = false;
-      if (!this.save()) throw new Error("导入后落盘失败");
-      return true;
-    } catch (e) {
-      // 异常安全回滚：就地还原导入前内存态与来源标记，释放事务标志，保留本地原存档。
-      try {
-        restoreSerializableGameStateSnapshot(gameState, preImportSnapshot);
-        this._lastLoadSourceHadTutorial = preImportSourceHadTutorial;
-      } catch (rollbackErr) { /* 回滚自身异常安全：尽量还原，忽略回滚错误 */ }
-      this._importTransaction = false;
-      alert("导入失败：存档格式无效");
-      return false;
-    }
-  },
-  setAdapter(newAdapter) { this.adapter = newAdapter; },
-  // 删除存档：在「存档管理」页通过带警告的二次确认弹窗调用，确认后清空本地存档并重启到全新开局。
-  deleteSave() {
-    // 标记待删除：阻止紧随 reload 的 beforeunload 自动保存把内存态重新写回 localStorage。
-    this._pendingDelete = true;
-    // Batch Q 定点返修：来源标记必须立刻回到 null，删档后重开不得沿用上一次的 legacy/modern 判定。
-    const prevMarker = this._lastLoadSourceHadTutorial;
-    this._lastLoadSourceHadTutorial = null;
-    // 真正落盘移除，检查 removeItem 真实返回值：成功才重启；失败则回滚标志、保留存档、提示、不重启。
-    let removed = false;
-    try { removed = this.adapter.removeItem(this.adapter._key); } catch (e) { removed = false; }
-    if (!removed) {
-      this._pendingDelete = false;
-      this._lastLoadSourceHadTutorial = prevMarker;
-      this._updateStatus("删除失败，存档仍保留");
-      return false;
-    }
-    this._updateStatus("存档已删除，正在重启…");
-    setTimeout(() => { try { location.reload(); } catch (e) {} }, 120);
-    return true;
-  },
-  // 暗金风格的二次确认弹窗（动态创建，不写入 index.html 静态结构，避免新增静态 DOM ID）。
-  confirmDeleteSave() {
-    if (this._deleteModalOpen) return;
-    this._deleteModalOpen = true;
-    const backdrop = document.createElement("div");
-    backdrop.className = "dlg-backdrop";
-    const box = document.createElement("div");
-    box.className = "dlg-box dlg-danger";
-    box.setAttribute("role", "alertdialog");
-    box.setAttribute("aria-modal", "true");
-    box.setAttribute("aria-label", "删除存档确认");
-    box.innerHTML =
-      '<div class="dlg-title">⚠ 删除存档</div>' +
-      '<p class="dlg-body">此操作<strong>不可恢复</strong>，将永久清空本地存档中的全部进度——包括所有舰船、资源、技能、蓝图与新手指引进度。</p>' +
-      '<p class="dlg-body dlg-warn">删除后游戏将回到全新开局（序章重新可玩）。请确认是否删除。</p>' +
-      '<div class="dlg-actions">' +
-        '<button type="button" class="btn dlg-cancel">取消</button>' +
-        '<button type="button" class="btn btn-danger dlg-confirm">确认删除</button>' +
-      '</div>';
-    backdrop.appendChild(box);
-    document.body.appendChild(backdrop);
-    const close = () => { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); this._deleteModalOpen = false; };
-    box.querySelector(".dlg-cancel").addEventListener("click", close);
-    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
-    const confirmBtn = box.querySelector(".dlg-confirm");
-    confirmBtn.addEventListener("click", () => { this._deleteModalOpen = false; this.deleteSave(); });
-    if (confirmBtn && typeof confirmBtn.focus === "function") confirmBtn.focus();
-  },
-  _updateStatus(msg) { const el = document.getElementById("save-status"); if (el) el.textContent = msg; const info = document.getElementById("save-info"); if (info) info.textContent = msg; }
-};
-window.SaveManager = SaveManager;
+// ============================================================
+// 单一迁移管线（第一阶段交付决定·四）
+// 旧 autoLoad 与 importData 各自内联了一份重复的迁移/对账序列，
+// 现统一抽离为 normalizeAndMigratePayload；startup 与 import 通过
+// context.source 区分，保证“恰好一次”离线结算与共享迁移顺序。
+// 仅 startup 路径额外执行 applyLegacyStartupFieldMigrations（旧档字段补齐）。
+// ============================================================
 
-setInterval(() => { if (gameState._dirty) SaveManager.save(); }, 5000);
-window.addEventListener("beforeunload", () => SaveManager.save());
+// 规范化游戏态校验和（键序无关），供 sync_meta 与云端冲突判定使用。
+function computeGameStateChecksum(state) {
+  if (typeof SaveEnvelope !== "undefined" && SaveEnvelope && typeof SaveEnvelope.stableStringify === "function") {
+    return SaveEnvelope.stableStringify(state);
+  }
+  // 兜底：本地键排序稳定序列化（仅在 SaveEnvelope 未加载时生效）。
+  try {
+    const keys = Object.keys(state || {}).sort();
+    return JSON.stringify(state, keys);
+  } catch (e) { return ""; }
+}
 
-(function autoLoad() {
-  const restored = SaveManager.load();
-  if (restored) {
+// 旧档字段补齐（仅 startup 读档且确为旧档时由 bootstrap 调用）。原 autoLoad restored
+// 分支逐字保留，确保旧档兼容行为不变。
+function applyLegacyStartupFieldMigrations() {
     // 行星部署幂等规范化（旧 planetaryDeployments 迁移、字段回填、到期规范化、type→planetType）
     normalizePlanetaryState(gameState);
     // 旧存档迁移：气体采集技能和配置
@@ -1528,111 +1323,806 @@ window.addEventListener("beforeunload", () => SaveManager.save());
     gameState.currentAction.lastProgressUpdate = Date.now();
     gameState.currentAction.startTime = Date.now();
     // 旧档兼容：I6 任务已领取（rewardLedger.I6 为有效有限正时间戳）但拓岩级蓝图未入库的玩家，幂等补发蓝图。
-    // 严格触发四条件：(1) rewardLedger.I6 有效有限正时间戳 (2) ownedBlueprints 尚未含 "miner_frigate"
-    // (3) 当前 SHIP_BLUEPRINTS 仍登记 miner_frigate（蓝图未被移除）(4) 处于已恢复存档（本分支即保证，显式传 restoredSave:true）。
-    // 仅补蓝图：不发舰船/资源、不重跑 I6、不派发 blueprint:acquired 事件（成就对账走既有 reconcile）。
-    // 幂等：重载时 ownedBlueprints 已含则直接返回，绝不重复发放；不重置 tutorial。
     grantLegacyMinerFrigateBlueprint(gameState, { restoredSave: true });
     SaveManager._updateStatus("存档已恢复");
-  }
+}
+
+// 单一迁移/对账管线（startup 与 import 共用）。不含离线结算与最终化，
+// 这两步由 activateRestoredState 在迁移之后执行，保证“离线结算恰好一次”且早于最终化。
+function normalizeAndMigratePayload(ctx) {
+  ctx = ctx || {};
+  const isLegacy = ctx.isLegacy === true;
+  const now = ctx.now || Date.now();
   migrateAmmunitionEngineeringState();
   migrateMoonMiningState();
   migrateDeathspaceState();
   migrateBoosterState();
-  // 无限库存迁移：必须在离线结算之前
-  migrateUnlimitedInventoryState();
-  // 装备迁移收尾（统一顺序：舰船 → 部件 → 战斗 → 实例化 → 规范化）
   finalizeEquipmentStateAfterLegacyMigrations(gameState);
-  // 研究系统迁移（批次 B 返修）：唯一权威调用点，必须先于第一次 calculateOfflineGains。
-  // 此时 planetary.deployments 已存在（restored 由 normalizePlanetaryState 创建，新游戏为 state.js 字面量），
-  // migratePlanAutoRenew 可安全补 deployment.autoRenew。restored=false（新游戏）同样执行且幂等、不报错。
+  migrateUnlimitedInventoryState();
+  normalizePlanetaryState(gameState);
+  delete gameState.planetaryDeployments;
   if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
     ResearchState.migrateResearchState(gameState);
   }
-  // 成就系统迁移（Batch B）：autoLoad 唯一调用点，恰好一次；
-  // restored=true / restored=false（新游戏）都执行且幂等、安全。
-  // 顺序：research 迁移 → achievement 迁移 → restored 时 calculateOfflineGains，
-  // 必须早于离线结算。迁移不 dirty、不 emit。
   if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
     AchievementState.migrateAchievementState(gameState);
   }
-  // 成就追溯对账（Batch C-1 技能 + Batch C-2 生产 + Batch C-3 战斗 + Batch C-4 制造）：autoLoad 唯一调用点，
-  // 各恰好一次；restored=true 与 restored=false（新游戏，应解锁 0 项）都执行；
-  // 早于离线结算；四次求值复用同一个 now（本次登录只取一次 Date.now()）。
-  {
-    const achievementReconcileNow = Date.now();
-    if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateSkillAchievementRules === "function") {
-      AchievementSystem.evaluateSkillAchievementRules(gameState, achievementReconcileNow);
-    }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateProductionAchievementRules === "function") {
-          AchievementSystem.evaluateProductionAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateCombatAchievementRules === "function") {
-          AchievementSystem.evaluateCombatAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateManufacturingAchievementRules === "function") {
-          AchievementSystem.evaluateManufacturingAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEquipmentAchievementRules === "function") {
-          AchievementSystem.evaluateEquipmentAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBoosterAchievementRules === "function") {
-          AchievementSystem.evaluateBoosterAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateArchaeologyAchievementRules === "function") {
-          AchievementSystem.evaluateArchaeologyAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluatePlanetaryAchievementRules === "function") {
-          AchievementSystem.evaluatePlanetaryAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateStationAchievementRules === "function") {
-          AchievementSystem.evaluateStationAchievementRules(gameState, achievementReconcileNow);
-        }
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateBlueprintAchievementRules === "function") {
-          AchievementSystem.evaluateBlueprintAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch C-13：经济追溯，同一 achievementReconcileNow，位于离线结算之前（与 importData 对称）
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateEconomyAchievementRules === "function") {
-          AchievementSystem.evaluateEconomyAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch C-14A：综合（J01–J06）追溯，同一 achievementReconcileNow，位于离线结算之前（与 importData 对称）
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateGeneralAchievementRules === "function") {
-          AchievementSystem.evaluateGeneralAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch C-14B：元成就（J10/J11/J12）追溯，排在全部普通类追溯之后、离线结算之前，
-        // 同一 achievementReconcileNow（与 importData 对称）。
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.evaluateMetaAchievementRules === "function") {
-          AchievementSystem.evaluateMetaAchievementRules(gameState, achievementReconcileNow);
-        }
-        // Batch E：成就科研工时奖励旧档对账，排在全部成就追溯之后、离线结算之前，
-        // 同一 achievementReconcileNow（与 importData 对称），整段自动读档只调用一次。
-        if (typeof AchievementSystem !== "undefined" && AchievementSystem && typeof AchievementSystem.reconcileAchievementResearchRewards === "function") {
-          AchievementSystem.reconcileAchievementResearchRewards(gameState, achievementReconcileNow);
-        }
-      }
-  // Batch K：intship 一体化造船运行期恢复——必须在研究迁移之后、离线结算之前；
-  // active 作业重装幂等消费者，shape 不匹配或不再驱动 currentAction 时 fail closed 为 recovery-required。
-  if (typeof restoreIntshipProtocolRuntime === "function") restoreIntshipProtocolRuntime(gameState);
-  // 新手任务 Batch O：tutorial 迁移 + 幂等消费者装载 + 首次对账，必须在离线结算**之前**完成，
-  // 这样离线期间补发的事件才能被新手任务消费者接住（离线只推进到 completed / claimable，不自动发奖）。
-  // restored=false（真正的全新开局，来源标记为 null）时一律不走 legacy 分支；
-  // restored=true 时由三态标记严格判定：仅 === false（原始存档确实没有 tutorial 字段）才算老档。
-  if (typeof TutorialSystem !== "undefined" && TutorialSystem && typeof TutorialSystem.bootstrap === "function") {
-    TutorialSystem.bootstrap(gameState, {
-      isLegacy: restored ? isLegacySaveSource() : false,
-      now: Date.now()
-    });
+  // 成就追溯对账（共享，恰好一次，顺序与历史一致）
+  if (typeof AchievementSystem !== "undefined" && AchievementSystem) {
+    const ev = AchievementSystem;
+    if (ev.evaluateSkillAchievementRules) ev.evaluateSkillAchievementRules(gameState, now);
+    if (ev.evaluateProductionAchievementRules) ev.evaluateProductionAchievementRules(gameState, now);
+    if (ev.evaluateCombatAchievementRules) ev.evaluateCombatAchievementRules(gameState, now);
+    if (ev.evaluateManufacturingAchievementRules) ev.evaluateManufacturingAchievementRules(gameState, now);
+    if (ev.evaluateEquipmentAchievementRules) ev.evaluateEquipmentAchievementRules(gameState, now);
+    if (ev.evaluateBoosterAchievementRules) ev.evaluateBoosterAchievementRules(gameState, now);
+    if (ev.evaluateArchaeologyAchievementRules) ev.evaluateArchaeologyAchievementRules(gameState, now);
+    if (ev.evaluatePlanetaryAchievementRules) ev.evaluatePlanetaryAchievementRules(gameState, now);
+    if (ev.evaluateStationAchievementRules) ev.evaluateStationAchievementRules(gameState, now);
+    if (ev.evaluateBlueprintAchievementRules) ev.evaluateBlueprintAchievementRules(gameState, now);
+    if (ev.evaluateEconomyAchievementRules) ev.evaluateEconomyAchievementRules(gameState, now);
+    if (ev.evaluateGeneralAchievementRules) ev.evaluateGeneralAchievementRules(gameState, now);
+    if (ev.evaluateMetaAchievementRules) ev.evaluateMetaAchievementRules(gameState, now);
+    if (ev.reconcileAchievementResearchRewards) ev.reconcileAchievementResearchRewards(gameState, now);
   }
-  if (restored) calculateOfflineGains();
+  if (typeof restoreIntshipProtocolRuntime === "function") restoreIntshipProtocolRuntime(gameState);
+  if (typeof TutorialSystem !== "undefined" && TutorialSystem && typeof TutorialSystem.bootstrap === "function") {
+    TutorialSystem.bootstrap(gameState, { isLegacy: isLegacy, now: now });
+  }
+}
+
+// 激活已恢复状态：离线结算（至多一次）+ 用户/统计状态补齐 + 军团/空间站迁移 + 行星最终化。
+// 顺序与旧 autoLoad 完全一致：离线结算 → ensure → station/corp 迁移 → 最终化。
+function activateRestoredState(ctx) {
+  ctx = ctx || {};
+  if (ctx.settleOffline) {
+    if (typeof calculateOfflineGains === "function") calculateOfflineGains();
+  }
   ensureUserSettingsState(gameState);
   ensureStatisticsState(gameState);
-  // 军团与空间站系统 Phase 3C-1：station/corporation 外壳幂等迁移（新游戏/旧存档共用）
   migrateStationCorporationState();
-  // 最终化：离线结算已处理到期，此处仅强制 active 过期一致性（安全网，幂等）
-  normalizePlanetaryState(gameState, { finalizeExpiry:true });
-  // 清理旧字段
-  delete gameState.planetaryDeployments;
-})();
+  normalizePlanetaryState(gameState, { finalizeExpiry: true });
+}
+
+const SaveManager = {
+  adapter: LocalStorageAdapter,
+  _pendingDelete: false,
+  _importTransaction: false,
+  save() {
+    // P0-3：启动门禁 fail-closed。idle/loading/awaiting-choice/error 阶段禁止落盘、不清除 _dirty、
+    // 不写 eve_idle_save、不写 sync_meta，避免启动事务完成前污染本地存档或触发误上传。
+    // _committing 期间（_commitFinal 内的离线结算）临时解禁，使离线收益能正常落盘。
+    if (this.isBootBlocked && this.isBootBlocked() && !this._committing) return false;
+    // 定点返修 P1-A：删除事务 / 导入事务挂起时禁止写盘，避免污染或回滚竞态。
+    if (this._pendingDelete || this._importTransaction) return false;
+    // 先保留原始 lastSaveTime；写入候选时间后再真正落盘，只有落盘成功才确认。
+    // 失败（返回 false 或抛异常）时还原时间戳、保持 _dirty=true，让 5s 自动保存下一次重试。
+    const prevLastSaveTime = gameState.lastSaveTime;
+    const candidateSaveTime = Date.now();
+    gameState.lastSaveTime = candidateSaveTime;
+    let ok = false;
+    try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
+    if (ok) {
+      gameState._dirty = false;
+      this._recordSuccessfulLocalSave(candidateSaveTime);
+      this._updateStatus("已保存 " + new Date(candidateSaveTime).toLocaleTimeString());
+      const footer = document.getElementById("footer-save");
+      if (footer) footer.textContent = "存档：" + new Date(candidateSaveTime).toLocaleTimeString();
+      return true;
+    }
+    // 落盘失败：还原时间戳、保持 dirty、明确失败提示；footer 绝不伪造成功。
+    gameState.lastSaveTime = prevLastSaveTime;
+    gameState._dirty = true;
+    this._updateStatus("保存失败，将自动重试");
+    const footer = document.getElementById("footer-save");
+    if (footer) footer.textContent = "存档：保存失败";
+    return false;
+  },
+  _recordSuccessfulLocalSave(savedAt) {
+    // local revision is device metadata, not a cloud-only counter. Keep advancing it even
+    // when the cloud provider is unavailable so mirror generations remain comparable.
+    let revision = 1;
+    let checksum = "";
+    try {
+      checksum = computeGameStateChecksum(gameState);
+      const cs = this._cloudSave;
+      if (cs && cs.getSyncMeta) {
+        const meta = cs.getSyncMeta() || {};
+        revision = (typeof meta.localRevision === "number" ? meta.localRevision : 0) + 1;
+        if (cs.recordLocal) cs.recordLocal(checksum, savedAt, revision);
+        if (cs.isAvailable && cs.isAvailable() && cs.markDirty) cs.markDirty("auto");
+      }
+    } catch (e) { /* metadata failure must not turn a successful local save into failure */ }
+    try {
+      const mirror = this._localMirror;
+      if (mirror && mirror.isAvailable && mirror.isAvailable() && typeof SaveEnvelope !== "undefined") {
+        const envelope = SaveEnvelope.create({
+          payload: createSerializableGameStateSnapshot(gameState),
+          revision: revision,
+          savedAt: savedAt,
+          deviceId: getOrCreateDeviceId(),
+          gameSaveVersion: SaveEnvelope.GAME_SAVE_SCHEMA_VERSION
+        });
+        Promise.resolve(mirror.scheduleWrite(envelope)).then(() => {
+          this._lastMirrorError = null;
+          this._mirrorSyncFailed = false;
+          this._refreshCloudSaveStatus && this._refreshCloudSaveStatus();
+        }).catch((err) => {
+          this._lastMirrorError = err;
+          this._mirrorSyncFailed = true;
+          this._refreshCloudSaveStatus && this._refreshCloudSaveStatus();
+        });
+      }
+    } catch (e) {
+      this._lastMirrorError = e;
+      this._mirrorSyncFailed = true;
+    }
+  },
+  // 新手任务 Batch O：sourceHadTutorial 必须在 Object.assign 之前、对**原始存档对象**判定，
+  // 用于区分「老档（无 tutorial 字段）」与「现代档（已带 tutorial）」。判定结果挂在 SaveManager 上，
+  // 供 autoLoad 决定 legacy 迁移与旧档兜底补给是否生效。
+  // Batch Q 定点返修：三态语义见 isLegacySaveSource() 注释。默认 null＝尚未读到任何存档（真正的全新游戏），
+  // 绝不能默认 false——false 表示「确实读到了一份没有 tutorial 字段的老档」，会让全新开局被误判并补发 rifter。
+  _lastLoadSourceHadTutorial: null,
+  load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
+  exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "DeepSpaceIdle_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
+  importData(jsonString) {
+    // 定点返修：直接调用入口防御（与文件选择器 file.size 双重守卫）。
+    // 命中即返回 false，不进入事务、不快照、不触碰 gameState / 本地存档。
+    if (typeof jsonString !== "string" || jsonString.length > MAX_IMPORT_SAVE_BYTES) { alert("导入失败：存档格式无效"); return false; }
+    // 定点返修 P1-B：导入原子化。导入前对当前内存态与来源标记做快照，
+    // 全程挂起内部 SaveManager.save（含 calculateOfflineGains 内部的落盘调用），
+    // 仅在全部迁移/对账/离线/规范化/UI 切换成功后做唯一一次最终落盘。
+    // 任意异常或最终落盘失败 → 就地还原导入前 gameState、还原来源标记、释放事务标志、
+    // 保留本地原存档、返回 false。
+    const preImportSnapshot = createSerializableGameStateSnapshot(gameState);
+    const preImportSourceHadTutorial = this._lastLoadSourceHadTutorial;
+    this._importTransaction = true;
+    try {
+      const data = this.adapter.import(jsonString);
+      if (!data || !data.skills) throw new Error("无效存档");
+      // 定点返修：结构遍历拒绝原型链污染键，必须在 Object.assign 之前执行。
+      if (!validateImportedSavePayload(data)) throw new Error("无效存档");
+      // 新手任务 Batch O：必须在 Object.assign 之前对**原始存档对象**判定 tutorial 字段是否存在。
+      const sourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial");
+      this._lastLoadSourceHadTutorial = sourceHadTutorial;
+      gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null;
+      Object.assign(gameState, data);
+      if (!Object.hasOwn(data, "settings")) gameState.settings = {};
+      normalizeQueueState(gameState);
+      ensureUserSettingsState(gameState);
+      ensureStatisticsState(gameState);
+      // 装备迁移标志管理：不得无条件删除现代存档已有的迁移标志。
+      // 一次性迁移（migrateCombatEquipmentState / migrateEquipmentInstancesV1）各自带有幂等守卫，
+      // 仅当存档确实缺少对应标志时才运行；normalizeEquipmentState 每次导入都必须执行。
+      if (!gameState.migrations) gameState.migrations = {};
+      // 第一阶段交付决定·四：抽取单一迁移管线，去重 autoLoad / importData 内联的重复序列。
+      // 旧版技能/资源/装备/无限库存/行星/研究/成就迁移 + 14 项成就追溯对账 + intship + tutorial
+      // 全部收口于 normalizeAndMigratePayload（顺序与历史一致、恰好一次）。
+      normalizeAndMigratePayload({ isLegacy: sourceHadTutorial !== true, now: Date.now() });
+      // 激活已恢复状态：离线结算（导入保留既有的 calculateOfflineGains 行为，故 settleOffline:true）
+      // + 用户/统计状态补齐 + 军团/空间站迁移 + 行星最终化。与 autoLoad 同序。
+      activateRestoredState({ settleOffline: true });
+      gameState._dirty = false;
+      gameState.currentAction.progress = 0;
+      gameState.currentAction.lastProgressUpdate = Date.now();
+      window.gameState = gameState;
+      currentPage = "skill";
+      switchPage("skill");
+      this._updateStatus("存档已导入，共 " + JSON.stringify(data).length + " 字节");
+      updateUI();
+      // 全流程成功：先释放事务标志，再做唯一一次最终落盘（此前所有内部 save 均被 _importTransaction 抑制）。
+      this._importTransaction = false;
+      if (!this.save()) throw new Error("导入后落盘失败");
+      return true;
+    } catch (e) {
+      // 异常安全回滚：就地还原导入前内存态与来源标记，释放事务标志，保留本地原存档。
+      try {
+        restoreSerializableGameStateSnapshot(gameState, preImportSnapshot);
+        this._lastLoadSourceHadTutorial = preImportSourceHadTutorial;
+      } catch (rollbackErr) { /* 回滚自身异常安全：尽量还原，忽略回滚错误 */ }
+      this._importTransaction = false;
+      alert("导入失败：存档格式无效");
+      return false;
+    }
+  },
+  setAdapter(newAdapter) { this.adapter = newAdapter; },
+  // 删除存档：在「存档管理」页通过带警告的二次确认弹窗调用，确认后清空本地存档并重启到全新开局。
+  deleteSave() {
+    return this.deleteLocalSaveOnly();
+  },
+  // P1-3：仅删除本地存档（保留云端）。删除后重载，使下一次启动回退到云端存档。
+  deleteLocalSaveOnly() {
+    const self = this;
+    const previousMarker = this._lastLoadSourceHadTutorial;
+    this._pendingDelete = true;
+    const mirrorDelete = this._localMirror && this._localMirror.deleteAll
+      ? this._localMirror.deleteAll() : Promise.resolve(true);
+    return Promise.resolve(mirrorDelete).then(function () {
+      let removed = false;
+      try { removed = self.adapter.removeItem(self.adapter._key); } catch (e) { removed = false; }
+      if (!removed) throw new Error("localStorage 删除失败");
+      self._lastLoadSourceHadTutorial = null;
+      self._hasLocalCandidate = false;
+      self._updateStatus("此设备的本地存档与备份已删除，正在重载…");
+      setTimeout(() => { try { location.reload(); } catch (e) {} }, 120);
+      return true;
+    }).catch(function (err) {
+      self._pendingDelete = false;
+      self._lastLoadSourceHadTutorial = previousMarker;
+      self._updateStatus("设备存档删除失败，已中止：" + (err && err.message ? err.message : "未知错误"));
+      return false;
+    });
+  },
+  // P1-3：永久删除 = 先删云端，成功后再删本地；云端删除失败（或不存在）则中止且绝不删本地（边界纪律）。
+  permanentDeleteSave() {
+    const self = this;
+    const cs = this._cloudSave;
+    const finishLocal = function () {
+      self._pendingDelete = true;
+      const mirrorDelete = self._localMirror && self._localMirror.deleteAll
+        ? self._localMirror.deleteAll() : Promise.resolve(true);
+      return Promise.resolve(mirrorDelete).then(function () {
+        let removed = false;
+        try { removed = self.adapter.removeItem(self.adapter._key); } catch (e) { removed = false; }
+        if (!removed) throw new Error("localStorage 删除失败");
+        self._hasLocalCandidate = false;
+        self._lastLoadSourceHadTutorial = null;
+        self._updateStatus("已永久删除（设备本地+设备备份+云端），正在重载…");
+        setTimeout(() => { try { location.reload(); } catch (e) {} }, 120);
+        return true;
+      }).catch(function (err) {
+        self._pendingDelete = false;
+        self._updateStatus("设备存档删除失败，已中止：" + (err && err.message ? err.message : "未知错误"));
+        return false;
+      });
+    };
+    if (cs && cs.isAvailable && cs.isAvailable()) {
+      const meta = cs.getCloudArchiveMeta && cs.getCloudArchiveMeta();
+      if (!meta) return Promise.resolve(finishLocal()).then(function (x) { return x; }); // 无云端存档 → 直接删设备副本
+      return Promise.resolve(cs.deleteCloud()).then(function () {
+        return finishLocal();
+      }).catch(function (err) {
+        // 云端删除失败：绝不删本地，提示用户（边界纪律）。
+        self._updateStatus("云端删除失败，已中止（本地存档保留）：" + (err && err.message ? err.message : "未知错误"));
+        return false;
+      });
+    }
+    // 本地模式无云端：直接删本地。
+    return Promise.resolve(finishLocal()).then(function (x) { return x; });
+  },
+  // 暗金风格的二次确认弹窗（动态创建，不写入 index.html 静态结构，避免新增静态 DOM ID）。
+  confirmDeleteSave() {
+    if (this._deleteModalOpen) return;
+    this._deleteModalOpen = true;
+    const backdrop = document.createElement("div");
+    backdrop.className = "dlg-backdrop";
+    const box = document.createElement("div");
+    box.className = "dlg-box dlg-danger";
+    box.setAttribute("role", "alertdialog");
+    box.setAttribute("aria-modal", "true");
+    box.setAttribute("aria-label", "删除存档确认");
+    box.innerHTML =
+      '<div class="dlg-title">⚠ 删除存档</div>' +
+      '<p class="dlg-body">将删除此设备上的主存档与两代本地备份。云端存档不会被删除。</p>' +
+      '<p class="dlg-body dlg-warn">若云端存在存档，重载后会从云端恢复；若没有云端存档，将回到全新开局。</p>' +
+      '<div class="dlg-actions">' +
+        '<button type="button" class="btn dlg-cancel">取消</button>' +
+        '<button type="button" class="btn btn-danger dlg-confirm">确认删除</button>' +
+      '</div>';
+    backdrop.appendChild(box);
+    document.body.appendChild(backdrop);
+    const close = () => { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); this._deleteModalOpen = false; };
+    box.querySelector(".dlg-cancel").addEventListener("click", close);
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+    const confirmBtn = box.querySelector(".dlg-confirm");
+    confirmBtn.addEventListener("click", () => { this._deleteModalOpen = false; this.deleteSave(); });
+    if (confirmBtn && typeof confirmBtn.focus === "function") confirmBtn.focus();
+  },
+  _updateStatus(msg) { const el = document.getElementById("save-status"); if (el) el.textContent = msg; const info = document.getElementById("save-info"); if (info) info.textContent = msg; },
+
+  // ===================== 第一阶段交付·启动引导（决定·十） =====================
+  // bootstrap() 收口「本地读档 + 迁移 + 云端冲突判定 + 成就上报」。由 bootstrap-launch.js
+  // 在 render.js 之前同步触发：首个 await 之前是同步本地读档，保证 render 渲染前 gameState 已就绪。
+  // bootState: idle | loading | local-only | awaiting-choice | ready | error。
+  _bootState: "idle",
+  _bootStarted: false,
+  _bootPromise: null,
+  _pendingCloudEnvelope: null,
+  _pendingDeviceCandidate: null,
+  _conflictResolver: null,
+  _cloudSave: null,
+  _localMirror: null,
+  _achievementSync: null,
+  _lastBootError: null,
+  _lastCloudError: null,
+  _lastMirrorError: null,
+  _localReadResult: null,
+  _mirrorReadResult: null,
+  _deviceCandidate: null,
+  _deviceReadError: null,
+  _selectedEnvelope: null,
+  _hasLocalCandidate: false,   // adapter.load() 是否真实返回本地存档（P0-5：不得硬编码 true）
+  _offlineSettled: false,      // 离线结算守卫：整个启动会话仅允许一次（P0-4）
+  _committing: false,          // 启动事务标志：_commitFinal 期间临时解禁 save()，使离线结算落盘不被门禁拦截
+  _cloudSyncFailed: false,     // 云端查询/下载失败标记：local-only/ready 但需向用户提示同步失败（P0-6）
+  _mirrorSyncFailed: false,
+  getBootState() { return this._bootState; },
+  // P0-2 门禁语义：仅 ready 与 local-only（确认无可用云服务的纯本地最终态）解除阻塞；
+  // idle / loading / awaiting-choice / error 一律阻塞 tick / 离线结算 / 自动保存 / 成就上报 / 弹离线收益窗。
+  isBootBlocked() {
+    return this._bootState !== "ready" && this._bootState !== "local-only";
+  },
+  _emitBootState() {
+    const st = this._bootState;
+    try {
+      if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.emit === "function") {
+        GameEvents.emit("boot:state", { state: st, error: this._lastBootError || null });
+      }
+    } catch (e) { /* 事件总线不可用不致命 */ }
+    try {
+      if (typeof window !== "undefined" && typeof window.dispatchEvent === "function" && typeof CustomEvent !== "undefined") {
+        window.dispatchEvent(new CustomEvent("bootstatechange", { detail: { state: st } }));
+      }
+    } catch (e) { /* 同上 */ }
+  },
+  bootstrap() {
+    if (this._bootStarted) return this._bootPromise || Promise.resolve();
+    this._bootStarted = true;
+    this._bootState = "loading";
+    this._offlineSettled = false;
+    this._cloudSyncFailed = false;
+    this._mirrorSyncFailed = false;
+    this._deviceReadError = null;
+    this._deviceCandidate = null;
+    this._selectedEnvelope = null;
+    this._emitBootState();
+    const self = this;
+    // localStorage remains a synchronous first probe, but is not applied yet. The final
+    // payload is selected only after device mirror and cloud probes complete.
+    try {
+      self._localReadResult = self._readLocalCandidate();
+      self._hasLocalCandidate = self._localReadResult.status === "ok";
+    } catch (err) {
+      self._localReadResult = { status: "error", error: err };
+      self._hasLocalCandidate = false;
+    }
+    // Async phase: initialize providers, read mirror, select a device candidate, then
+    // query cloud. loading stays blocked throughout.
+    this._bootPromise = self._initCloudAndAchievement()
+      .then(function () { return self._readAndSelectDeviceCandidate(); })
+      .then(function () { return self._runCloudStartup(); })
+      // _runCloudStartup 内部已对最终 payload 做离线结算并落定 ready / local-only。
+      .catch(function (err) {
+        // 仅当 _runCloudStartup 尚未自行落定最终态时才降级为阻塞错误页。
+        if (self._bootState === "loading" || self._bootState === "awaiting-choice") {
+          self._lastBootError = err;
+          self._bootState = "error";
+          self._emitBootState();
+        }
+        throw err;
+      });
+    return this._bootPromise;
+  },
+  _readLocalCandidate() {
+    if (this.adapter && typeof this.adapter.readCandidate === "function") return this.adapter.readCandidate();
+    try {
+      const payload = this.adapter.load();
+      return payload ? { status: "ok", payload: payload } : { status: "none" };
+    } catch (e) { return { status: "error", error: e }; }
+  },
+  _initCloudAndAchievement() {
+    const self = this;
+    const tasks = [];
+    try {
+      const cs = getCloudSaveService();
+      self._cloudSave = cs;
+      if (cs) tasks.push(Promise.resolve(cs.init()));
+    } catch (e) { /* 无云 provider 支持 → 跳过 */ }
+    try {
+      const mirror = getLocalMirrorService();
+      self._localMirror = mirror;
+      if (mirror) tasks.push(Promise.resolve(mirror.init()));
+    } catch (e) { self._lastMirrorError = e; self._mirrorSyncFailed = true; }
+    try {
+      const as = getAchievementSyncService();
+      self._achievementSync = as;
+      if (as) tasks.push(Promise.resolve(as.init()));
+    } catch (e) { /* 无成就 provider 支持 → 跳过 */ }
+    return Promise.all(tasks.map(function (t) { return t.catch(function () { return false; }); }))
+      .then(function () { return true; });
+  },
+  _makeEnvelopeForPayload(payload) {
+    const cs = this._cloudSave;
+    const meta = cs && cs.getSyncMeta ? (cs.getSyncMeta() || {}) : {};
+    const revision = Math.max(1, Number(meta.localRevision) || 0);
+    return SaveEnvelope.create({
+      payload: payload,
+      revision: revision,
+      savedAt: Number(payload && payload.lastSaveTime) || Date.now(),
+      deviceId: getOrCreateDeviceId(),
+      gameSaveVersion: SaveEnvelope.GAME_SAVE_SCHEMA_VERSION
+    });
+  },
+  _readAndSelectDeviceCandidate() {
+    const self = this;
+    const mirror = this._localMirror;
+    const readMirror = mirror ? mirror.readBest() : Promise.resolve({ status: "unavailable" });
+    return Promise.resolve(readMirror).then(function (mirrorResult) {
+      self._mirrorReadResult = mirrorResult || { status: "error", error: new Error("设备镜像返回无效") };
+      const local = self._localReadResult || { status: "none" };
+      let localCandidate = null;
+      if (local.status === "ok") {
+        try { localCandidate = { source: "local", envelope: self._makeEnvelopeForPayload(local.payload) }; }
+        catch (e) { self._localReadResult = { status: "error", error: e }; }
+      }
+      const mirrorCandidate = self._mirrorReadResult.status === "ok"
+        ? { source: "mirror-" + (self._mirrorReadResult.slot || "current"), envelope: self._mirrorReadResult.envelope }
+        : null;
+      if (localCandidate && mirrorCandidate) {
+        const le = localCandidate.envelope, me = mirrorCandidate.envelope;
+        if (le.checksum === me.checksum) self._deviceCandidate = localCandidate;
+        // Both are device-local generations. savedAt is compared first because sync_meta
+        // may have been cleared together with localStorage and its revision can be unknown.
+        else if (me.savedAt > le.savedAt || (me.savedAt === le.savedAt && me.revision > le.revision)) self._deviceCandidate = mirrorCandidate;
+        else self._deviceCandidate = localCandidate;
+      } else {
+        self._deviceCandidate = localCandidate || mirrorCandidate || null;
+      }
+      const errors = [];
+      if (self._localReadResult && self._localReadResult.status === "error") errors.push(self._localReadResult.error);
+      if (self._mirrorReadResult && self._mirrorReadResult.status === "error") errors.push(self._mirrorReadResult.error);
+      if (errors.length) {
+        self._deviceReadError = errors[0];
+        self._lastMirrorError = self._mirrorReadResult.status === "error" ? self._mirrorReadResult.error : null;
+        self._mirrorSyncFailed = self._mirrorReadResult.status === "error";
+      }
+      self._hasLocalCandidate = !!self._deviceCandidate;
+      return self._deviceCandidate;
+    });
+  },
+  _applySelectedEnvelope(envelope, source) {
+    const payload = envelope && envelope.payload;
+    if (!payload || !payload.skills) throw new Error((source || "候选") + "存档损坏或格式无效");
+    const snap = createSerializableGameStateSnapshot(gameState);
+    const previousMarker = this._lastLoadSourceHadTutorial;
+    try {
+      this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(payload, "tutorial");
+      gameState.statistics = Object.hasOwn(payload, "statistics") ? payload.statistics : null;
+      Object.assign(gameState, payload);
+      if (!Object.hasOwn(payload, "settings")) gameState.settings = {};
+      normalizeQueueState(gameState);
+      applyLegacyStartupFieldMigrations();
+      normalizeAndMigratePayload({ isLegacy: this._lastLoadSourceHadTutorial !== true, now: Date.now() });
+      activateRestoredState({ settleOffline: false });
+      this._selectedEnvelope = envelope;
+      return true;
+    } catch (e) {
+      restoreSerializableGameStateSnapshot(gameState, snap);
+      this._lastLoadSourceHadTutorial = previousMarker;
+      throw e;
+    }
+  },
+  _prepareFreshState() {
+    this._lastLoadSourceHadTutorial = null;
+    normalizeAndMigratePayload({ isLegacy: false, now: Date.now() });
+    activateRestoredState({ settleOffline: false });
+    this._selectedEnvelope = null;
+  },
+  _runCloudStartup() {
+    const self = this;
+    const cs = this._cloudSave;
+    const device = this._deviceCandidate;
+    if (!cs || !cs.isAvailable()) {
+      if (device) {
+        this._applySelectedEnvelope(device.envelope, device.source);
+        return this._commitFinal("local-only", { persist: device.source !== "local", upload: "none", ensureMirror: true });
+      }
+      if (this._deviceReadError) return this._failBoot(this._deviceReadError);
+      this._prepareFreshState();
+      return this._commitFinal("local-only", { persist: true, upload: "none", ensureMirror: true });
+    }
+    return Promise.resolve(cs.fetchCloudEnvelope())
+      .then(function (fetched) {
+        // P0-6：fetchCloudEnvelope 返回 {status:"none"|"ok"|"error"} 显式状态，不再以 null 混淆。
+        if (fetched && fetched.status === "error") {
+          // 云端查询失败：有本地候选 → 降级 local-only 并标记同步失败，绝不覆盖未知云端；
+          // 无本地候选 → 阻塞错误页，不得凭空开新档、不得写盘、不得上传。
+          self._lastCloudError = fetched.error || new Error("云端查询失败");
+          self._cloudSyncFailed = true;
+          if (device) {
+            self._applySelectedEnvelope(device.envelope, device.source);
+            return self._commitFinal("local-only", { persist: device.source !== "local", upload: "none", ensureMirror: true });
+          } else {
+            return self._failBoot(self._lastCloudError);
+          }
+        }
+        const hasCloud = !!(fetched && fetched.status === "ok" && fetched.envelope);
+        const meta = cs.getSyncMeta();
+        const localChecksum = device ? device.envelope.checksum : "";
+        if (!device && !hasCloud && self._deviceReadError) return self._failBoot(self._deviceReadError);
+        const decision = cs.decideResolution({
+          hasLocal: !!device,
+          hasCloud: hasCloud,
+          localChecksum: localChecksum,
+          cloudChecksum: hasCloud ? (fetched.envelope.checksum || "") : "",
+          lastCloudChecksum: meta.lastCloudChecksum
+        });
+        if (decision.decision === "conflict") {
+          self._pendingCloudEnvelope = hasCloud ? fetched : null;
+          self._pendingDeviceCandidate = device;
+          self._bootState = "awaiting-choice";
+          self._emitBootState();
+          // 挂起：返回待定 Promise，待 resolveCloudConflict 调用 _conflictResolver 才放行到 ready。
+          self._conflictResolver = null;
+          return new Promise(function (resolve) { self._conflictResolver = resolve; });
+        }
+        if (decision.decision === "use-cloud" && hasCloud) {
+          self._applySelectedEnvelope(fetched.envelope, "cloud");
+          self._syncLastCloudChecksum(fetched.envelope.checksum);
+          return self._commitFinal("ready", { persist: true, upload: "none", ensureMirror: true });
+        }
+        if (decision.decision === "identical") {
+          self._applySelectedEnvelope(device.envelope, device.source);
+          self._syncLastCloudChecksum(localChecksum);
+          return self._commitFinal("ready", { persist: device.source !== "local", upload: "none", ensureMirror: true });
+        }
+        if (decision.decision === "use-local") {
+          self._applySelectedEnvelope(device.envelope, device.source);
+          return self._commitFinal("ready", { persist: device.source !== "local", upload: "mark", ensureMirror: true });
+        }
+        self._prepareFreshState();
+        return self._commitFinal("ready", { persist: true, upload: "mark", ensureMirror: true });
+      });
+  },
+  _failBoot(error) {
+    this._lastBootError = error || new Error("存档恢复失败");
+    this._bootState = "error";
+    this._emitBootState();
+    return false;
+  },
+  _reconcileAchievements() {
+    const as = this._achievementSync;
+    if (!as || !as.isAvailable()) return;
+    try {
+      const unlocked = (gameState && gameState.achievements && gameState.achievements.unlockedAtById) || {};
+      as.reconcileAll(unlocked);
+    } catch (e) { /* 非致命 */ }
+  },
+  _syncLastCloudChecksum(checksum) {
+    // 将本地当前校验和同步进云端元数据，避免后续误判为 new / conflict。
+    try {
+      const cs = this._cloudSave;
+      if (cs && cs.recordCloudBaseline) {
+        cs.recordCloudBaseline(checksum || computeGameStateChecksum(gameState));
+      } else if (cs && cs.getSyncMeta) {
+        const meta = cs.getSyncMeta();
+        if (meta) meta.lastCloudChecksum = checksum || computeGameStateChecksum(gameState);
+      }
+    } catch (e) { /* 非致命 */ }
+  },
+  _settleFinal() {
+    // P0-4：整个启动会话仅对最终 payload 离线结算一次（无论本地、云端或全新）。
+    if (this._offlineSettled) return;
+    this._offlineSettled = true;
+    try {
+      if (typeof calculateOfflineGains === "function") calculateOfflineGains();
+    } catch (e) {
+      // 离线结算失败不致命，但 guard 已置位避免重复执行。
+    }
+  },
+  _commitFinal(finalState, opts) {
+    // P0-3/4：启动事务的唯一权威落定入口。顺序：①只结算一次 ②受控落盘 ③云上传策略 ④设最终态 ⑤成就对账。
+    opts = opts || {};
+    this._committing = true;
+    try {
+      this._settleFinal();   // 仅最终态结算一次（内部 SaveManager.save 受 _committing 解禁）
+      const upload = opts.upload || "none";
+      if (opts.persist && !this._persistSelectedPayload()) throw new Error("最终存档写入 localStorage 失败");
+      if (opts.ensureMirror && !opts.persist) this._scheduleCurrentMirrorSnapshot();
+      if (upload === "now") {
+        const cs = this._cloudSave;
+        if (cs && cs.isAvailable()) { try { cs.maybeUpload(gameState, "auto"); } catch (e) {} }
+      } else if (upload === "mark") {
+        const cs = this._cloudSave;
+        if (cs && cs.isAvailable()) { try { cs.markDirty("auto"); } catch (e) {} }
+      }
+      this._bootState = finalState;
+      this._emitBootState();
+      this._reconcileAchievements();
+      return Promise.resolve(true);
+    } finally {
+      this._committing = false;
+    }
+  },
+  _persistSelectedPayload() {
+    // P0-3：受控落盘，仅由 _commitFinal / resolveCloudConflict 在启动事务内调用，
+    // 绕过 isBootBlocked 门禁（启动期间普通 save() 被 fail-closed 抑制）。
+    const prevLastSaveTime = gameState.lastSaveTime;
+    const candidateSaveTime = Date.now();
+    gameState.lastSaveTime = candidateSaveTime;
+    let ok = false;
+    try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
+    if (ok) {
+      gameState._dirty = false;
+      this._recordSuccessfulLocalSave(candidateSaveTime);
+      try {
+        const footer = document.getElementById("footer-save");
+        if (footer) footer.textContent = "存档：" + new Date(candidateSaveTime).toLocaleTimeString();
+      } catch (e) {}
+      return true;
+    }
+    // 落盘失败：还原时间戳、保持 dirty 以便后续自动保存重试。
+    gameState.lastSaveTime = prevLastSaveTime;
+    gameState._dirty = true;
+    return false;
+  },
+  _scheduleCurrentMirrorSnapshot() {
+    try {
+      const mirror = this._localMirror;
+      if (!mirror || !mirror.isAvailable || !mirror.isAvailable()) return false;
+      const cs = this._cloudSave;
+      const meta = cs && cs.getSyncMeta ? (cs.getSyncMeta() || {}) : {};
+      const selectedRevision = this._selectedEnvelope && Number(this._selectedEnvelope.revision);
+      const revision = Math.max(1, Number(meta.localRevision) || 0, selectedRevision || 0);
+      const envelope = SaveEnvelope.create({
+        payload: createSerializableGameStateSnapshot(gameState),
+        revision: revision,
+        savedAt: Number(gameState.lastSaveTime) || Date.now(),
+        deviceId: getOrCreateDeviceId(),
+        gameSaveVersion: SaveEnvelope.GAME_SAVE_SCHEMA_VERSION
+      });
+      Promise.resolve(mirror.scheduleWrite(envelope)).then(() => {
+        this._mirrorSyncFailed = false;
+        this._lastMirrorError = null;
+        this._refreshCloudSaveStatus && this._refreshCloudSaveStatus();
+      }).catch((err) => {
+        this._mirrorSyncFailed = true;
+        this._lastMirrorError = err;
+        this._refreshCloudSaveStatus && this._refreshCloudSaveStatus();
+      });
+      return true;
+    } catch (e) {
+      this._mirrorSyncFailed = true;
+      this._lastMirrorError = e;
+      return false;
+    }
+  },
+  _applyCloudSave(envelope) {
+    this._applySelectedEnvelope(envelope, "cloud");
+    this._syncLastCloudChecksum(envelope && envelope.checksum);
+    return Promise.resolve(true);
+  },
+  resolveCloudConflict(choice) {
+    const self = this;
+    if (this._bootState !== "awaiting-choice") return Promise.resolve(false);
+    const cs = this._cloudSave;
+    // P0-6：_pendingCloudEnvelope 现为 {status,meta,envelope}；仅当确为 ok 且含 envelope 才应用云端。
+    const useCloud = (choice === "cloud" && this._pendingCloudEnvelope && this._pendingCloudEnvelope.status === "ok" && this._pendingCloudEnvelope.envelope);
+    const useDevice = (choice === "local" && this._pendingDeviceCandidate && this._pendingDeviceCandidate.envelope);
+    let p;
+    if (useCloud) {
+      p = this._applyCloudSave(this._pendingCloudEnvelope.envelope).then(function () {
+        // P1-1：冲突选云端 → 写本地 + 同步校验和 + 【不】上传。
+        self._pendingCloudEnvelope = null;
+        self._pendingDeviceCandidate = null;
+        return self._commitFinal("ready", { persist: true, upload: "none", ensureMirror: true });
+      });
+    } else if (useDevice) {
+      // P1-1：冲突选本地 → 上传本地到云端。
+      self._applySelectedEnvelope(self._pendingDeviceCandidate.envelope, self._pendingDeviceCandidate.source);
+      self._pendingCloudEnvelope = null;
+      self._pendingDeviceCandidate = null;
+      p = self._commitFinal("ready", { persist: true, upload: "now", ensureMirror: true });
+    } else {
+      return Promise.resolve(false);
+    }
+    return Promise.resolve(p).then(function () {
+      if (typeof self._conflictResolver === "function") { const r = self._conflictResolver; self._conflictResolver = null; r(true); }
+      return true;
+    }).catch(function (err) {
+      self._lastBootError = err;
+      // P1-4：冲突处理失败 → 复位 awaiting-choice（保持阻塞，允许玩家重试或先导出备份），绝不静默推进/覆盖。
+      self._bootState = "awaiting-choice";
+      self._emitBootState();
+      throw err; // 不调用 _conflictResolver：启动事务继续挂起，游戏保持 blocked，等待玩家重新选择
+    });
+  }
+};
+window.SaveManager = SaveManager;
+
+setInterval(() => { if (SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return; if (gameState._dirty) SaveManager.save(); }, 5000);
+// 云端同步：仅在可用且未阻塞时尝试（受 CloudSaveService 内部 60s 门禁 + 并发锁约束）。
+setInterval(() => { const cs = SaveManager._cloudSave; if (cs && cs.isAvailable && cs.isAvailable() && !(SaveManager.isBootBlocked && SaveManager.isBootBlocked())) { try { cs.maybeUpload(gameState, "auto"); } catch (e) {} } }, 30000);
+// Failed mirror writes keep their newest envelope queued; retry periodically without
+// requiring another gameplay mutation.
+setInterval(() => { const ms = SaveManager._localMirror; if (ms && ms.isAvailable && ms.isAvailable() && !(SaveManager.isBootBlocked && SaveManager.isBootBlocked())) { try { Promise.resolve(ms.retryPending()).catch((e) => { SaveManager._mirrorSyncFailed = true; SaveManager._lastMirrorError = e; }); } catch (e) {} } }, 30000);
+// 决定·十：beforeunload 仅同步落本地（不等待云端），保证退出时不丢本地进度。
+window.addEventListener("beforeunload", () => { if (typeof SaveManager !== "undefined") { if (SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return; SaveManager.save(); } });
+
+// ===================== 平台服务惰性单例（决定·十） =====================
+// 这些单例在 bootstrap 运行时（所有平台脚本已加载）才构造，避免在脚本加载顺序之前访问
+// CloudSaveService / TapTapCloudProvider 等尚未定义的符号。web / Noop 环境下 provider 初始化
+// 返回 false，服务不可用，启动直接降级为本地模式。
+
+const SYNC_META_KEY = "deep_space_idle_sync_meta";
+const ACH_LEDGER_KEY = "deep_space_idle_achievement_ledger";
+const DEVICE_ID_KEY = "deep_space_idle_device_id";
+
+function LocalSyncMetaStore() {
+  this._key = SYNC_META_KEY;
+}
+LocalSyncMetaStore.prototype.load = function () {
+  try { const raw = localStorage.getItem(this._key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+};
+LocalSyncMetaStore.prototype.save = function (obj) {
+  try { localStorage.setItem(this._key, JSON.stringify(obj)); return true; } catch (e) { return false; }
+};
+
+function LocalLedgerStore() {
+  this._key = ACH_LEDGER_KEY;
+}
+LocalLedgerStore.prototype.load = function () {
+  try { const raw = localStorage.getItem(this._key); return raw ? JSON.parse(raw) : null; } catch (e) { return null; }
+};
+LocalLedgerStore.prototype.save = function (obj) {
+  try { localStorage.setItem(this._key, JSON.stringify(obj)); return true; } catch (e) { return false; }
+};
+
+function getOrCreateDeviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_ID_KEY);
+    if (!id) { id = "dev_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10); localStorage.setItem(DEVICE_ID_KEY, id); }
+    return id;
+  } catch (e) { return "dev_fallback"; }
+}
+
+let _cloudSaveService = null;
+function getCloudSaveService() {
+  if (_cloudSaveService) return _cloudSaveService;
+  if (typeof CloudSaveService === "undefined") return null;
+  const provider = (typeof PlatformRuntime !== "undefined" && PlatformRuntime.createCloudProvider)
+    ? PlatformRuntime.createCloudProvider() : null;
+  const gameSaveVersion = (typeof GAME_SAVE_SCHEMA_VERSION !== "undefined") ? GAME_SAVE_SCHEMA_VERSION : 1;
+  _cloudSaveService = new CloudSaveService({
+    provider: provider,
+    deviceId: getOrCreateDeviceId(),
+    metaStore: new LocalSyncMetaStore(),
+    gameSaveVersion: gameSaveVersion
+  });
+  return _cloudSaveService;
+}
+
+let _localMirrorService = null;
+function getLocalMirrorService() {
+  if (_localMirrorService) return _localMirrorService;
+  if (typeof LocalMirrorService === "undefined") return null;
+  const provider = (typeof PlatformRuntime !== "undefined" && PlatformRuntime.createLocalMirrorProvider)
+    ? PlatformRuntime.createLocalMirrorProvider() : null;
+  _localMirrorService = new LocalMirrorService({ provider: provider });
+  return _localMirrorService;
+}
+
+let _achievementSyncService = null;
+function getAchievementSyncService() {
+  if (_achievementSyncService) return _achievementSyncService;
+  if (typeof AchievementSyncService === "undefined") return null;
+  const provider = (typeof PlatformRuntime !== "undefined" && PlatformRuntime.createAchievementProvider)
+    ? PlatformRuntime.createAchievementProvider() : null;
+  const platform = (typeof PlatformRuntime !== "undefined" && PlatformRuntime.getPlatform)
+    ? PlatformRuntime.getPlatform() : "web";
+  _achievementSyncService = new AchievementSyncService({
+    provider: provider,
+    map: (typeof PlatformAchievementMap !== "undefined") ? PlatformAchievementMap : null,
+    platform: (platform === "steam") ? "steam" : "taptap",
+    metaStore: new LocalLedgerStore()
+  });
+  return _achievementSyncService;
+}
+
+// 第一阶段交付决定·十：本地读档 + 迁移已收口于 SaveManager.bootstrap()（见上方方法体）。
+// 旧 autoLoad IIFE 已由此取代；统一入口为 bootstrap-launch.js，在 render.js 之前调用，
+// 保证本地读档在渲染前同步完成。此处不再保留自动执行读档。
 
 (function bindSaveEvents() {
   const btnSave = document.getElementById("btn-save-game"), btnExport = document.getElementById("btn-export-save"),
@@ -1643,9 +2133,142 @@ window.addEventListener("beforeunload", () => SaveManager.save());
   if (fileInput) fileInput.addEventListener("change", (e) => { const file = e.target.files[0]; if (!file) return; if (file.size > MAX_IMPORT_SAVE_BYTES) { fileInput.value = ""; alert("存档文件超过 10 MB，已拒绝导入"); return; } const reader = new FileReader(); reader.onload = (ev) => { SaveManager.importData(ev.target.result); fileInput.value = ""; }; reader.readAsText(file); });
   const btnDelete = document.getElementById("btn-delete-save");
   if (btnDelete) btnDelete.addEventListener("click", () => SaveManager.confirmDeleteSave());
+
+  // P1-3：云存档管理 —— 状态 / 时间戳刷新 + 同步 / 检查 / 删除操作。
+  const fmtTime = (ts) => { if (!ts) return "—"; try { return new Date(ts).toLocaleString(); } catch (e) { return String(ts); } };
+
+  // 设备镜像诊断：仅暴露 op/code/msg/文件名；脱敏完整用户目录与任何存档内容/用户 ID/Token/UUID/Secret。
+  function basenameOf(p) {
+    if (typeof p !== "string") return "";
+    const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
+    return i >= 0 ? p.slice(i + 1) : p;
+  }
+  function scrubMsg(msg) {
+    if (typeof msg !== "string") return String(msg == null ? "" : msg);
+    return msg
+      .replace(/tapfile:\/\/usr\/?/g, "")
+      .replace(/[A-Za-z]:\\(?:[^\\ ]+\\)*/g, "")
+      .replace(/\/(?:[^ ]*\/)*(deep_space_idle_device_backup[^\s"']*)/g, "$1");
+  }
+  function describeMirrorError(err) {
+    if (!err) return "未知错误";
+    const op = err.op || "";
+    const code = (err.code !== undefined && err.code !== null && err.code !== 0)
+      ? err.code
+      : (err.errno !== undefined && err.errno !== null && err.errno !== 0 ? err.errno : "");
+    const msg = scrubMsg(err.errMsg || err.message || "未知错误");
+    const file = err.path ? basenameOf(err.path) : "";
+    return "op=" + (op || "?") + (code !== "" ? " code=" + code : "") + " msg=" + msg + (file ? " file=" + file : "");
+  }
+  SaveManager._refreshCloudSaveStatus = function () {
+    const cs = this._cloudSave;
+    const statusEl = document.getElementById("cloud-sync-status");
+    const failedFlag = document.getElementById("cloud-sync-failed-flag");
+    const localEl = document.getElementById("local-save-time");
+    const mirrorStatusEl = document.getElementById("device-backup-status");
+    const mirrorTimeEl = document.getElementById("device-backup-time");
+    const cloudEl = document.getElementById("cloud-save-time");
+    const syncEl = document.getElementById("last-sync-time");
+    const mirror = this._localMirror;
+    const mirrorStatus = mirror && mirror.status ? mirror.status() : null;
+    if (mirrorStatusEl) {
+      if (!mirrorStatus || !mirrorStatus.available) {
+        const initErr = (mirrorStatus && (mirrorStatus.initError || mirrorStatus.error)) ||
+          (this._localMirror && this._localMirror.getLastError && this._localMirror.getLastError());
+        mirrorStatusEl.textContent = initErr
+          ? ("初始化错误（" + describeMirrorError(initErr) + "）")
+          : "不可用";
+      } else if (this._mirrorSyncFailed || (mirrorStatus.error && mirrorStatus.error.op)) {
+        mirrorStatusEl.textContent = "备份失败（" + describeMirrorError(mirrorStatus.error) + "）";
+      } else if (mirrorStatus.busy) {
+        mirrorStatusEl.textContent = "写入中";
+      } else {
+        mirrorStatusEl.textContent = "正常";
+      }
+    }
+    if (mirrorTimeEl) mirrorTimeEl.textContent = mirrorStatus && mirrorStatus.lastWriteAt ? fmtTime(mirrorStatus.lastWriteAt) : "—";
+    if (!cs || !cs.isAvailable || !cs.isAvailable()) {
+      if (statusEl) statusEl.textContent = "不可用（本地模式）";
+      if (failedFlag) failedFlag.style.display = "none";
+      if (localEl) localEl.textContent = fmtTime(gameState.lastSaveTime);
+      if (cloudEl) cloudEl.textContent = "—";
+      if (syncEl) syncEl.textContent = "—";
+      return;
+    }
+    const st = cs.getState ? cs.getState() : "idle";
+    if (statusEl) statusEl.textContent = (st === "error") ? "错误" : (this._cloudSyncFailed ? "已就绪（上次失败）" : "已就绪");
+    if (failedFlag) failedFlag.style.display = this._cloudSyncFailed ? "" : "none";
+    if (localEl) localEl.textContent = fmtTime(gameState.lastSaveTime);
+    const meta = cs.getSyncMeta ? cs.getSyncMeta() : null;
+    if (cloudEl) cloudEl.textContent = meta && meta.lastSuccessfulSyncAt ? fmtTime(meta.lastSuccessfulSyncAt) : "（暂无）";
+    if (syncEl) syncEl.textContent = meta && meta.lastSuccessfulSyncAt ? fmtTime(meta.lastSuccessfulSyncAt) : "—";
+  };
+
+  const btnSyncNow = document.getElementById("btn-sync-now");
+  if (btnSyncNow) btnSyncNow.addEventListener("click", () => {
+    const cs = SaveManager._cloudSave;
+    if (!cs || !cs.isAvailable || !cs.isAvailable()) { alert("当前为本地模式，无云端可同步"); return; }
+    SaveManager._cloudSyncFailed = false;
+    cs.markDirty("manual");
+    Promise.resolve(cs.maybeUpload(gameState, "manual")).then((result) => {
+      if (!result || result.ok !== true) {
+        SaveManager._cloudSyncFailed = true;
+        SaveManager._updateStatus("云端同步未完成：" + (result && result.reason ? result.reason : "未知错误"));
+      } else if (result.reason === "clean") SaveManager._updateStatus("云端已是最新");
+      else SaveManager._updateStatus("云端同步完成");
+      SaveManager._refreshCloudSaveStatus();
+    }).catch((e) => {
+      SaveManager._cloudSyncFailed = true;
+      SaveManager._updateStatus("云端同步失败：" + (e && e.message ? e.message : "未知错误"));
+      SaveManager._refreshCloudSaveStatus();
+    });
+    SaveManager._refreshCloudSaveStatus();
+    SaveManager._updateStatus("正在同步云端…");
+  });
+  const btnBackupDevice = document.getElementById("btn-backup-device");
+  if (btnBackupDevice) btnBackupDevice.addEventListener("click", () => {
+    if (!SaveManager._localMirror || !SaveManager._localMirror.isAvailable || !SaveManager._localMirror.isAvailable()) {
+      const initErr = SaveManager._localMirror && SaveManager._localMirror.status
+        ? (SaveManager._localMirror.status().initError || SaveManager._localMirror.getLastError())
+        : null;
+      alert("当前环境不支持设备文件备份" + (initErr ? "：" + describeMirrorError(initErr) : "")); return;
+    }
+    const ok = SaveManager.save();
+    SaveManager._updateStatus(ok ? "已保存，设备备份正在写入" : "保存失败，未写入设备备份");
+    SaveManager._refreshCloudSaveStatus();
+  });
+  const btnCheckCloud = document.getElementById("btn-check-cloud");
+  if (btnCheckCloud) btnCheckCloud.addEventListener("click", () => {
+    const cs = SaveManager._cloudSave;
+    if (!cs || !cs.isAvailable || !cs.isAvailable()) { alert("当前为本地模式，无云端可检查"); return; }
+    Promise.resolve(cs.fetchCloudEnvelope()).then((f) => {
+      if (f && f.status === "ok") SaveManager._updateStatus("云端检查完成：存在云端存档");
+      else if (f && f.status === "none") SaveManager._updateStatus("云端检查完成：无云端存档");
+      else { SaveManager._cloudSyncFailed = true; SaveManager._updateStatus("云端检查失败：" + (f && f.error ? f.error.message : "未知错误")); }
+      SaveManager._refreshCloudSaveStatus();
+    }).catch((e) => {
+      SaveManager._cloudSyncFailed = true;
+      SaveManager._updateStatus("云端检查异常：" + (e && e.message ? e.message : "未知"));
+      SaveManager._refreshCloudSaveStatus();
+    });
+  });
+  const btnDeleteLocal = document.getElementById("btn-delete-local");
+  if (btnDeleteLocal) btnDeleteLocal.addEventListener("click", () => {
+    if (!confirm("删除此设备的 localStorage 与两代设备备份（保留云端）？删除后将从云端恢复。")) return;
+    SaveManager.deleteLocalSaveOnly();
+  });
+  const btnPermanent = document.getElementById("btn-permanent-delete");
+  if (btnPermanent) btnPermanent.addEventListener("click", () => {
+    if (!confirm("永久删除本地与云端存档？此操作不可恢复！")) return;
+    Promise.resolve(SaveManager.permanentDeleteSave()).then((ok) => { if (!ok) SaveManager._refreshCloudSaveStatus(); });
+  });
+
+  // 启动态变化 / 可见性恢复时刷新云同步状态显示。
+  try { window.addEventListener("bootstatechange", () => SaveManager._refreshCloudSaveStatus()); } catch (e) {}
+  SaveManager._refreshCloudSaveStatus();
 })();
 
-document.addEventListener("visibilitychange", () => { if (!document.hidden) calculateOfflineGains(); });
+document.addEventListener("visibilitychange", () => { if (SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return; if (!document.hidden) calculateOfflineGains(); });
 
 // 战斗按钮事件
 (function bindCombatButtons() {

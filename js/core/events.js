@@ -151,7 +151,11 @@ const GameEventContracts = (() => {
     // 脑插系统（账号全局被动增益；获得即永久生效、不占槽、独立乘区叠加）：
     // 任意脑插（99级生产技能成就 / 采集·制造随机掉落）首次发放成功后严格 emit 一次；payload 精确 {id}。
     // meta.source 由发射方约定（announceImplant 经 GameEvents.emit，默认 "game"），offline 语义随来源一致。
-    "implant:granted": { required:["id"], numbers:[] }
+    "implant:granted": { required:["id"], numbers:[] },
+    // 启动引导状态广播（决定·十）：persistence._emitBootState 经 GameEvents 与 window CustomEvent 双通道广播；
+    // payload 精确 {state, error}，state ∈ {idle,loading,local-only,awaiting-choice,ready,error}（必填、非空字符串），
+    // error 允许为 null（仅在 state==="error" 时携带错误对象，其余状态恒为 null）；非负数字段无。
+    "boot:state": { required:["state"], numbers:[] }
   });
 
   function cloneValue(value) {

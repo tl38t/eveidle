@@ -851,6 +851,24 @@
           <input type="file" id="import-file-input" accept=".json" style="display:none;">
         </div>
         <div class="save-info" id="save-info" style="margin-top:12px;font-size:12px;color:#6a7a8e;"></div>
+        <!-- P1-3：云存档管理（状态 / 时间戳 / 同步操作 / 删除） -->
+        <div class="cloud-save-mgmt" id="cloud-save-mgmt" style="margin-top:14px;border-top:1px solid #243044;padding-top:12px;">
+          <div class="cloud-sync-row" style="font-size:12px;color:#8aa0b6;line-height:1.9;">
+            <div>云同步状态：<span id="cloud-sync-status" class="text-muted">未初始化</span> <span id="cloud-sync-failed-flag" style="color:#ff6b6b;display:none;">（同步失败）</span></div>
+            <div>本地存档时间：<span id="local-save-time" class="text-muted">—</span></div>
+            <div>设备备份状态：<span id="device-backup-status" class="text-muted">未初始化</span></div>
+            <div>设备备份时间：<span id="device-backup-time" class="text-muted">—</span></div>
+            <div>云端存档时间：<span id="cloud-save-time" class="text-muted">—</span></div>
+            <div>最近同步时间：<span id="last-sync-time" class="text-muted">—</span></div>
+          </div>
+          <div class="cloud-sync-actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn" id="btn-sync-now">☁ 立即同步</button>
+            <button class="btn" id="btn-backup-device">💾 立即设备备份</button>
+            <button class="btn" id="btn-check-cloud">🔍 检查云端</button>
+            <button class="btn btn-danger" id="btn-delete-local" title="删除 localStorage 与设备备份，保留云端">🗑 仅删本地</button>
+            <button class="btn btn-danger" id="btn-permanent-delete" title="永久删除：先删云端再删本地（不可恢复）">⚠ 永久删除</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -889,7 +907,7 @@
       <div class="panel-body">
         <section class="achievements-summary">
           <div class="ach-summary-head">
-            <span class="ach-summary-count" id="achievements-summary-count">0 / 197</span>
+            <span class="ach-summary-count" id="achievements-summary-count">0 / 193</span>
             <span class="ach-summary-percent" id="achievements-summary-percent">0.0%</span>
           </div>
           <div class="ach-progress-track"><div class="ach-progress-fill" id="achievements-progress-fill" style="width:0%;"></div></div>
@@ -1075,8 +1093,24 @@
   <script defer src="./js/core/tick.js?v=1"></script>
   <script defer src="./js/core/offline.js?v=3"></script>
   <script defer src="./js/systems/offline-combat.js?v=1"></script>
-  <script defer src="./js/ui/render.js?v=5"></script>
-  <script defer src="./js/core/persistence.js?v=4"></script>
+  <script defer src="./js/platform/cloud-save-contract.js?v=1"></script>
+  <script defer src="./js/platform/achievement-provider-contract.js?v=1"></script>
+  <script defer src="./js/platform/local-mirror-contract.js?v=1"></script>
+  <script defer src="./js/core/save-envelope.js?v=1"></script>
+  <script defer src="./js/platform/providers/noop-cloud-provider.js?v=1"></script>
+  <script defer src="./js/platform/providers/noop-achievement-provider.js?v=1"></script>
+  <script defer src="./js/platform/providers/noop-local-mirror-provider.js?v=1"></script>
+  <script defer src="./js/platform/taptap/taptap-cloud-provider.js?v=1"></script>
+  <script defer src="./js/platform/taptap/taptap-achievement-provider.js?v=1"></script>
+  <script defer src="./js/platform/taptap/taptap-local-mirror-provider.js?v=6"></script>
+  <script defer src="./js/platform/platform-runtime.js?v=2"></script>
+  <script defer src="./js/core/cloud-save-service.js?v=1"></script>
+  <script defer src="./js/core/local-mirror-service.js?v=1"></script>
+  <script defer src="./js/data/platform-achievement-map.js?v=1"></script>
+  <script defer src="./js/core/achievement-sync-service.js?v=1"></script>
+  <script defer src="./js/core/persistence.js?v=9"></script>
+  <script defer src="./js/core/bootstrap-launch.js?v=2"></script>
+  <script defer src="./js/ui/render.js?v=6"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=6"></script>
   <script defer src="./js/qa-seed.js?v=1"></script>
   <div id="hangar-3d-popup">

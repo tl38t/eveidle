@@ -12,7 +12,42 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 62) throw new Error(`预期 62 个脚本，实际 ${scriptSources.length}`); // 62 = 61 + QA 种子 js/qa-seed.js（?qa=1 激活；不污染正常游玩；仅竖屏验收用） // 61 = 60 + TapTap 竖屏迁移 js/ui/taptap-portrait.js（用户指令确认新增者确为 taptap-portrait.js，不得盲改） // 60 = 59 + 考古重做定点返修 唯一公共回收模块 js/systems/recycling.js // 59 = 55 + Batch S 离线战斗 js/systems/offline-combat.js // 56 = 55 + 十倍速开关 js/core/speed-config.js
+if (scriptSources.length !== 78) throw new Error(`预期 78 个脚本，实际 ${scriptSources.length}`); // 78 = 74 + 设备镜像四文件（local-mirror-contract / noop-local-mirror-provider / taptap-local-mirror-provider / local-mirror-service）。
+
+// 平台/云存档/成就/设备镜像生产脚本必须全部被 index.html 引用，且全部排在 persistence.js 之前。
+{
+  const platformScripts = [
+    "js/platform/cloud-save-contract.js",
+    "js/platform/achievement-provider-contract.js",
+    "js/platform/local-mirror-contract.js",
+    "js/core/save-envelope.js",
+    "js/platform/providers/noop-cloud-provider.js",
+    "js/platform/providers/noop-achievement-provider.js",
+    "js/platform/providers/noop-local-mirror-provider.js",
+    "js/platform/taptap/taptap-cloud-provider.js",
+    "js/platform/taptap/taptap-achievement-provider.js",
+    "js/platform/taptap/taptap-local-mirror-provider.js",
+    "js/platform/platform-runtime.js",
+    "js/core/cloud-save-service.js",
+    "js/core/local-mirror-service.js",
+    "js/data/platform-achievement-map.js",
+    "js/core/achievement-sync-service.js"
+  ];
+  const persistenceIdx = scriptSources.findIndex((x) => x.endsWith("js/core/persistence.js"));
+  if (persistenceIdx < 0) throw new Error("未找到 js/core/persistence.js 脚本引用");
+  for (const s of platformScripts) {
+    const idx = scriptSources.findIndex((x) => x.endsWith(s));
+    if (idx < 0) throw new Error(`P0-1：index.html 缺失平台脚本引用：${s}`);
+    if (idx >= persistenceIdx) throw new Error(`P0-1：平台脚本 ${s} (idx=${idx}) 必须早于 persistence.js (idx=${persistenceIdx})`);
+  }
+  // 依赖顺序：contract / save-envelope 早于 provider；provider 早于 platform-runtime；runtime 早于 service。
+  const order = [...platformScripts];
+  for (let i = 1; i < order.length; i++) {
+    if (scriptSources.findIndex((x) => x.endsWith(order[i - 1])) > scriptSources.findIndex((x) => x.endsWith(order[i]))) {
+      throw new Error(`P0-1：平台脚本依赖顺序错误：${order[i - 1]} 必须早于 ${order[i]}`);
+    }
+  }
+}
 if (styleSources.length !== 5) throw new Error(`预期 5 个样式，实际 ${styleSources.length}`); // 5 = 4 + TapTap 竖屏迁移 css/taptap-portrait.css（用户指令确认新增者确为 taptap-portrait.css，不得盲改：base/panels/combat/components + taptap-portrait）
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
@@ -129,7 +164,14 @@ const optionalIds = new Set([
   "tp-activity-strip",
   // 动态创建的 ID：__qa_dom_probe__ 由 js/qa-seed.js 的 hasRealDom() 在运行时创建、使用并删除，
   // 属于 QA 探针的临时 DOM 节点，不应静态存在于 index.html。禁止为了通过检查把它塞进 index.html，也禁止删除 QA 探针。
-  "__qa_dom_probe__"
+  "__qa_dom_probe__",
+  // 动态创建的 ID：boot-fatal-error / boot-conflict-choice / boot-conflict-error 由 js/core/bootstrap-launch.js 运行时创建
+  // （启动失败阻塞错误页 / 云端冲突二选一浮层 / 冲突处理失败提示），与存档读写无关，禁止静态化到 index.html。
+  "boot-fatal-error",
+  "boot-conflict-choice",
+  "boot-conflict-error",
+  // 动态创建的 ID：cargo-content-modal 由 js/ui/shell-render.js 运行时创建（货柜内容弹窗背景层）
+  "cargo-content-modal"
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
@@ -145,7 +187,11 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // 注：基线 320 → 319 的 −1 来自本次返修前（同日未提交 diff）的工业 UI 统一化：移除采气/冶炼旧下拉
 // （gas-dropbtn / gas-dropdown-content / smelting-dropbtn / smelting-dropdown-content）共 4 个 id，
 // 新增 #gas-target-strip / #smelting-target-strip / #tutorial-widget-mini 共 3 个 id，净减 1。
-if (htmlIds.size !== 319) throw new Error(`预期 319 个 DOM ID，实际 ${htmlIds.size}`);
+// 基线 319 → 329 的 +10 来自本次返修 P1-3 云存档管理 UI（位于 #save-panel 内 #cloud-save-mgmt）：
+// cloud-save-mgmt / cloud-sync-status / cloud-sync-failed-flag / local-save-time / cloud-save-time /
+// last-sync-time / btn-sync-now / btn-check-cloud / btn-delete-local / btn-permanent-delete。
+// 基线 329 → 332 的 +3 为设备镜像状态、时间与手动备份按钮。
+if (htmlIds.size !== 332) throw new Error(`预期 332 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
   "research-progress-fill", "research-tree", "research-detail", "research-queue"
@@ -245,6 +291,14 @@ sandbox.window.addEventListener = noop;
 vm.createContext(sandbox);
 for (let index = 0; index < scripts.length; index += 1) {
   vm.runInContext(scripts[index], sandbox, { filename: scriptSources[index] });
+}
+
+// P0-1：生产沙箱必须暴露云存档 / 成就同步 / 平台运行时全局类，供 bootstrap 解析 provider 与同步服务。
+{
+  const requiredGlobals = ["PlatformRuntime", "CloudSaveService", "TapTapCloudProvider", "AchievementSyncService", "PlatformAchievementMap"];
+  for (const g of requiredGlobals) {
+    if (typeof sandbox[g] === "undefined") throw new Error(`P0-1：生产沙箱缺失全局类 ${g}（index.html 平台脚本未生效？）`);
+  }
 }
 
 // Batch Q 最终定点返修：脚本装载完毕的这一刻，就是「空 localStorage 的真实首次启动」——
