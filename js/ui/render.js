@@ -303,6 +303,7 @@ function refreshVisiblePanelAfterAction() {
   if (currentPage === "skill") updateUI();
   else if (currentPage === "cargo") renderCargoPage();
   else if (currentPage === "hangar") renderHangarPanel();
+  else if (currentPage === "queue") renderQueuePanel();
   else if (currentPage === "station" && typeof renderStationPage === "function") renderStationPage(Date.now());
 }
 

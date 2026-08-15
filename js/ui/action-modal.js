@@ -22,7 +22,9 @@ function renderActionConfirmation(display) {
   const summaryEl = document.getElementById("action-modal-summary");
   const input = document.getElementById("action-batch-count");
   const maxEl = document.getElementById("action-batch-max");
-  const maxCount = Math.max(1, Number(display.maxCount) || 1);
+  const rawMax = Number(display.maxCount);
+  const maxCount = rawMax > 0 ? rawMax : (display.unlimited ? 999999 : 0);
+  const noCap = !!display.noCap; // 超量预排：数量可超过当前材料，运行期 skipOnFail 在不足时切下一项
   const duration = Math.max(0, Number(display.duration) || 0);
 
   const unitEl = document.getElementById("action-batch-unit");
@@ -39,12 +41,33 @@ function renderActionConfirmation(display) {
 
   _actionConfirmDisplay = display;
   input.value = 1;
-  document.getElementById("action-batch-infinity").classList.remove("selected");
-  input.max = maxCount;
-  maxEl.textContent = display.unlimited ? "" : "最大：" + maxCount;
+  const infinityBtn = document.getElementById("action-batch-infinity");
+  if (infinityBtn) infinityBtn.classList.remove("selected");
+  input.max = noCap ? 99999999 : maxCount;
+  if (noCap) {
+    maxEl.textContent = "当前材料可产 " + (Number(display.materialHint) || 0) + " 批（可超量预排）";
+  } else {
+    maxEl.textContent = display.unlimited ? "" : "最大：" + maxCount;
+  }
+  // 缺料（maxCount=0 且非超量预排）时禁用确认/加入队列/无限/输入框（与 startShipAssembly 材料校验同源）。
+  const confirmBtn = document.getElementById("action-modal-confirm");
+  const queueBtn = document.getElementById("action-modal-queue");
+  if (maxCount <= 0 && !noCap) {
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (queueBtn) queueBtn.disabled = true;
+    if (infinityBtn) infinityBtn.disabled = true;
+    if (input) input.disabled = true;
+    maxEl.textContent = "材料/组件不足，无法合成";
+  } else {
+    if (confirmBtn) confirmBtn.disabled = false;
+    if (queueBtn) queueBtn.disabled = false;
+    if (infinityBtn) infinityBtn.disabled = false;
+    if (input) input.disabled = false;
+  }
   summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration)}`;
   input.oninput = function() {
-    const value = Math.max(1, Math.min(maxCount, parseInt(this.value) || 1));
+    let value = Math.max(1, parseInt(this.value) || 1);
+    if (!noCap) value = Math.min(maxCount, value);
     this.value = value;
     document.getElementById("action-batch-infinity").classList.remove("selected");
     summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration * value)}`;
@@ -75,12 +98,24 @@ function formatDuration(seconds) {
 }
 
 function submitActionConfirmation(front) {
-  let count = parseInt(document.getElementById("action-batch-count").value);
-  if (count !== -1) count = Math.max(1, count || 1);
   const display = _actionConfirmDisplay;
+  // fail-closed：最内层重新校验，不依赖 disabled 按钮阻止业务动作。
+  if (!display || !display.canOpen || !display.queue) return false;
+  // 与 render 同源计算真实 maxCount（尊重显式 0）。
+  const rawMax = Number(display.maxCount);
+  const maxCount = rawMax > 0 ? rawMax : (display.unlimited ? 999999 : 0);
+  const noCap = !!display.noCap; // 超量预排：材料不足也允许派发，由运行期 skipOnFail 切下一项
+  // 非无限类且非超量预排且 maxCount<=0（材料/组件不足）：禁止派发、不隐藏、不 dispatch。
+  if (!display.unlimited && !noCap && maxCount <= 0) return false;
+  const input = document.getElementById("action-batch-count");
+  let count = parseInt((input && input.value) || "1");
+  if (count === -1) {
+    if (!display.unlimited) count = 1; // 无限被禁用时回退（双重保护，正常不会发生）
+  } else {
+    count = Math.max(1, count || 1);
+    if (!noCap && count > maxCount) count = maxCount; // 非超量预排时数量不得超过 maxCount
+  }
   hideActionConfirm();
-  if (!display || !display.queue) return false;
-
   const queueItem = {
     skill:display.queue.skill,
     target:display.queue.target,
@@ -111,7 +146,14 @@ function queueActionConfirmation() {
   document.getElementById("action-modal-cancel").addEventListener("click", hideActionConfirm);
   document.getElementById("action-modal-confirm").addEventListener("click", confirmAction);
   document.getElementById("action-modal").addEventListener("click", event => { if (event.target.id === "action-modal") hideActionConfirm(); });
-  document.getElementById("action-batch-count").addEventListener("keydown", event => { if (event.key === "Enter") confirmAction(); });
+  document.getElementById("action-batch-count").addEventListener("keydown", event => {
+    if (event.key === "Enter") {
+      const confirmBtn = document.getElementById("action-modal-confirm");
+      // fail-closed：确认按钮被禁用（缺料等）时，Enter 不得绕过校验直接派发。
+      if (confirmBtn && confirmBtn.disabled) return;
+      confirmAction();
+    }
+  });
   document.getElementById("action-batch-infinity").addEventListener("click", () => {
     const input = document.getElementById("action-batch-count");
     input.value = "-1";

@@ -207,7 +207,7 @@ function renderImplantTab(display) {
   if (!display.items.length) { list.innerHTML = `<div class="cargo-empty">${escapeAchievementText(display.emptyText)}</div>`; return; }
   list.innerHTML = display.items.map(item => {
     const cls = item.owned ? " owned" : " locked";
-    const status = item.owned ? "已激活" : "未获得（" + item.source.pageLabel + "）";
+    const status = item.owned ? "已激活" : ("未获得" + (item.source && item.source.pageLabel ? "（" + item.source.pageLabel + "）" : ""));
     return `<div class="implant-card${cls}" data-implant="${item.id}">
       <div class="ic-icon">${item.owned ? item.icon : "🔒"}</div>
       <div class="ic-body">
@@ -222,6 +222,9 @@ function renderImplantTab(display) {
 /* 仓库物品方块卡点击 → 通用物品弹窗（装备=介绍+强化+出产；非装备=介绍+出产） */
 let currentCargoItems = [];
 let cargoCardBound = false;
+// 货柜出率区：内容条目 / 蓝图条目点击 → 打开独立小卡片（叠在货柜卡上，不覆盖）
+let currentCargoContentItems = [];
+let currentCargoBlueprintItems = [];
 
 /* ---- 装备强化：按 (型号, 等级) 折叠成单元格 + 居中弹窗（牛牛式） ---- */
 let equipEnhanceFilter = "all";     // all | enhanceable | installed | unenhanced
@@ -391,7 +394,8 @@ const MATERIAL_SOURCE = {
   moon:       { pageId:"mining",            pageLabel:"采矿",     icon:"fa-solid fa-moon",       emoji:"🌑" },
   special:    { pageId:"combat",            pageLabel:"战斗",     icon:"fa-solid fa-crosshairs", emoji:"⚔️" },
   consumable: { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears", emoji:"🔧" },
-  component:  { pageId:"shipEngineering",   pageLabel:"舰船工程", icon:"fa-solid fa-rocket",  emoji:"🛠️" }
+  component:  { pageId:"shipEngineering",   pageLabel:"舰船工程", icon:"fa-solid fa-rocket",  emoji:"🛠️" },
+  archaeology:{ pageId:"archaeology",       pageLabel:"考古",     icon:"fa-solid fa-digging", emoji:"🏺" }
 };
 // 资源命名空间 → MATERIAL_SOURCE 键映射（与 ResourceRegistry 定义一致，避免中文特例维护）
 const SOURCE_BY_NAMESPACE = {
@@ -402,7 +406,8 @@ const SOURCE_BY_NAMESPACE = {
   moon: "moon",
   special: "special",
   component: "component",
-  consumable: "consumable"
+  consumable: "consumable",
+  calibration: "archaeology"
 };
 function getMaterialSourceInfo(key) {
   if (typeof key !== "string") return MATERIAL_SOURCE.mineral;
@@ -423,7 +428,7 @@ function getMaterialSourceInfo(key) {
   // 降级：仅当 ResourceRegistry 不可用或完全解析失败时，使用旧的命名前缀/中文正则判断
   if (key.indexOf(":") >= 0) {
     const prefix = key.slice(0, key.indexOf(":")).toLowerCase();
-    const norm = prefix === "gas" ? "gases" : prefix;
+    const norm = prefix === "gas" ? "gases" : prefix === "calibration" ? "archaeology" : prefix;
     if (MATERIAL_SOURCE[norm]) return MATERIAL_SOURCE[norm];
   }
   if (/气体|同位素|富勒烯/.test(key)) return MATERIAL_SOURCE.gases;
@@ -452,6 +457,112 @@ document.addEventListener("click", event => {
   openMaterialDetail(link.dataset.matKey, link.dataset.matName || link.textContent);
 });
 
+/* ---- 货柜出率区：仓库卡片 / 战斗点击查看共用 ---- */
+// 把内容条目转成可打开的小卡片描述符
+function cargoContentDescriptor(it, sizeLabel, tierLabel) {
+  let icon = "📦", categoryLabel = "物资";
+  if (it.kind === "implant") { icon = "🧠"; categoryLabel = "脑插"; }
+  else if (it.kind === "blueprint") { icon = "📜"; categoryLabel = "蓝图"; }
+  else if (it.kind === "ammo") { icon = "🔫"; categoryLabel = "弹药"; }
+  else if (it.kind === "loot") { icon = "💰"; categoryLabel = "战利品"; }
+  const desc = "货柜（" + sizeLabel + "）「" + tierLabel + "」档可能开出的物品。" + (it.qtyText ? (" 数量参考：" + it.qtyText + "。") : "");
+  return {
+    name: it.name, icon: icon, categoryLabel: categoryLabel, description: desc,
+    source: { pageId: "cargo", pageLabel: "货柜掉落", icon: "fa-solid fa-box-open" }
+  };
+}
+
+// 货柜出率区 HTML（权重 + 蓝图清单 + 各档内容）。不显示基础掉落概率与抽取次数。
+function cargoDropRateSectionHTML(size) {
+  if (typeof getCargoDropInfo !== "function") return "";
+  const info = getCargoDropInfo(size);
+  if (!info) return "";
+  const weights = info.tierWeights || {};
+  const total = Object.values(weights).reduce((a, b) => a + (Number(b) || 0), 0) || 1;
+  const pct = w => (((Number(w) || 0) / total) * 100).toFixed((Number(w) || 0) >= 0.1 ? 1 : 2) + "%";
+  const tierClass = { T1: "t1", T2: "t2", T3: "t3", T4: "t4", BP: "bp" };
+  const tierLabels = { T1: "T1 保底", T2: "T2 矿物/弹药", T3: "T3 战利品", T4: "T4 脑插" };
+
+  currentCargoContentItems = [];
+  currentCargoBlueprintItems = [];
+
+  // 奖池权重（T4=0 时标「不出」，不附加任何口语标注）
+  const weightChips = Object.keys(weights).map(t => {
+    const w = Number(weights[t]) || 0;
+    const label = (t === "BP") ? "蓝图" : t;
+    return `<span class="cargo-w-chip ${tierClass[t] || ""}${w <= 0 ? " zero" : ""}">${label} ${w <= 0 ? "不出" : pct(w)}</span>`;
+  }).join("");
+
+  // 蓝图清单（具体名，按尺寸分配，不写档位代号）
+  const bpItems = (info.blueprints || []).map(b => {
+    const idx = currentCargoBlueprintItems.length;
+    currentCargoBlueprintItems.push(b);
+    return `<span class="cargo-content-item bp" data-cbi="${idx}">📜 ${escapeAchievementText(b.name)}</span>`;
+  }).join("");
+
+  // 各档具体内容（可点击查看）
+  const contentBlocks = ["T1", "T2", "T3", "T4"].map(tier => {
+    const arr = (info.content && info.content[tier]) || [];
+    if (!arr.length) return "";
+    const items = arr.map(it => {
+      const idx = currentCargoContentItems.length;
+      currentCargoContentItems.push(cargoContentDescriptor(it, info.sizeLabel, tierLabels[tier]));
+      return `<span class="cargo-content-item" data-cci="${idx}">${it.icon || "📦"} ${escapeAchievementText(it.name)}${it.qtyText ? ` <i class="cci-qty">${escapeAchievementText(it.qtyText)}</i>` : ""}</span>`;
+    }).join("");
+    return `<div class="cargo-tier-block"><div class="cargo-tier-label">${tierLabels[tier]}</div><div class="cargo-tier-items">${items}</div></div>`;
+  }).join("");
+
+  return `
+    <div class="eem-section eem-cargo-rate">
+      <h3 class="eem-sec-title">📊 货柜出率（${escapeAchievementText(info.sizeLabel)}）</h3>
+      <div class="cargo-rate-weights"><span class="cargo-rate-hint">奖池权重</span>${weightChips}</div>
+      <div class="cargo-rate-blueprints"><span class="cargo-rate-hint">可能掉落的蓝图</span><div class="cargo-tier-items">${bpItems}</div></div>
+      <div class="cargo-rate-content">${contentBlocks}</div>
+    </div>`;
+}
+
+// 货柜内容/蓝图 点击 → 独立小卡片（叠在货柜详情卡上，关闭后回到货柜卡）
+function openCargoContentCard(desc) {
+  if (!desc) return;
+  let backdrop = document.getElementById("cargo-content-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "cargo-content-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) closeCargoContentCard(); });
+    backdrop._esc = e => { if (e.key === "Escape" && backdrop.style.display === "flex") closeCargoContentCard(); };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  const src = desc.source || { pageLabel: "获得" };
+  const descText = typeof desc.description === "string" ? desc.description : "";
+  backdrop.innerHTML = `
+    <div class="equip-enh-modal" role="dialog" aria-modal="true">
+      <div class="eem-head">
+        <span class="eem-icon">${desc.icon || "📦"}</span>
+        <div class="eem-title-wrap">
+          <div class="eem-title">${escapeAchievementText(desc.name)}</div>
+          <div class="eem-sub">${escapeAchievementText(desc.categoryLabel || "")}</div>
+        </div>
+        <button class="eem-close" data-cc-close aria-label="关闭">✕</button>
+      </div>
+      <div class="eem-body">
+        ${descText ? `<div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(descText)}</div></div>` : ""}
+        <div class="eem-section"><h3 class="eem-sec-title">出产位置</h3>
+          <div class="eem-source"><span class="eem-src-icon"><i class="${src.icon || "fa-solid fa-box-open"}"></i></span>
+            <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
+        </div>
+      </div>
+    </div>`;
+  backdrop.style.display = "flex";
+  const closeBtn = backdrop.querySelector("[data-cc-close]");
+  if (closeBtn) closeBtn.addEventListener("click", closeCargoContentCard);
+}
+function closeCargoContentCard() {
+  const backdrop = document.getElementById("cargo-content-modal");
+  if (backdrop) backdrop.style.display = "none";
+}
+
 /* 通用物品详情弹窗：装备 → 解析到强化弹窗（含强化+介绍+出产）；非装备 → 介绍+出产 */
 function openItemDetailModal(item) {
   if (item.category === "equipment" && item.itemId) {
@@ -474,6 +585,17 @@ function openItemDetailModal(item) {
     backdrop.addEventListener("click", event => { if (event.target === backdrop) closeItemDetailModal(); });
     backdrop._esc = event => { if (event.key === "Escape" && backdrop.style.display === "flex") closeItemDetailModal(); };
     document.addEventListener("keydown", backdrop._esc);
+    // 货柜出率区：内容条目 / 蓝图条目点击 → 打开独立小卡片（叠在货柜卡上，不覆盖）
+    backdrop.addEventListener("click", event => {
+      const ci = event.target.closest(".cargo-content-item[data-cci]");
+      if (ci) { const d = currentCargoContentItems[Number(ci.dataset.cci)]; if (d) openCargoContentCard(d); return; }
+      const bi = event.target.closest(".cargo-content-item.bp[data-cbi]");
+      if (bi) {
+        const b = currentCargoBlueprintItems[Number(bi.dataset.cbi)];
+        if (b) openCargoContentCard({ name: b.name, icon: "📜", categoryLabel: "蓝图", description: "货柜掉落的装备生产许可蓝图，持有后可在装备工程页制造对应装备。", source: { pageId: "cargo", pageLabel: "货柜掉落", icon: "fa-solid fa-box-open" } });
+        return;
+      }
+    });
   }
   const src = item.source || { pageId:"station", pageLabel:"空间站", icon:"fa-regular fa-building" };
   const isCargo = typeof item.id === "string" && item.id.indexOf("special:货柜") === 0;
@@ -495,7 +617,7 @@ function openItemDetailModal(item) {
             <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
           <button class="btn primary eem-jump" data-idm-jump="${src.pageId}">跳转至「${escapeAchievementText(src.pageLabel)}」页面</button>
         </div>
-        ${isCargo ? `
+        ${isCargo && !item.fromCombat ? `
         <div class="eem-section eem-cargo-open">
           <div class="eem-open-row">
             <label class="eem-qty-label">开箱数量</label>
@@ -509,6 +631,7 @@ function openItemDetailModal(item) {
             <button class="btn eem-open-all" data-cargo-size="${cargoSize}" data-open-count="${item.quantity}">全部打开（${item.quantity}）</button>
           </div>
         </div>` : ""}
+        ${isCargo ? cargoDropRateSectionHTML(cargoSize) : ""}
         ${item.category === "trade" ? `<div class="eem-section"><button class="btn primary eem-trade-recycle">♻ 回收此物品（换${item.kind === "lp" ? "功勋" : "星币"}）</button></div>` : ""}
       </div>
     </div>`;
@@ -661,10 +784,16 @@ function normalizeRewardItem(entry) {
     ? entry.categoryLabel
     : (CARGO_TIER_LABELS[entry.tier] || (entry.loot ? "战利品" : entry.implant ? "脑插" : entry.blueprint ? "蓝图" : entry.ammo ? "弹药" : "物资"));
   // canonical ref：优先保留条目自带 ref/id（资源权威键），仅在两者皆缺时回落显示名。
-  // 聚合必须按 canonical ref 进行，绝不能按显示名——否则「不同 ID、相同显示名」会被错误合并。
-  const canonicalRef = (typeof entry.ref === "string" && entry.ref)
+  // 注意：具名战利品（loot:isk/loot:lp）和弹药（ammo:T1/ammo:T2）的 id 是统一档位键，
+  // 真正区分它们的是显示名 / 武器类型，因此必须拼接成唯一 ref，否则「同 ID、不同名」会被错误合并。
+  let canonicalRef = (typeof entry.ref === "string" && entry.ref)
     ? entry.ref
     : (typeof entry.id === "string" && entry.id ? entry.id : name);
+  if (entry.loot || (typeof entry.id === "string" && entry.id.indexOf("loot:") === 0)) {
+    canonicalRef = "loot:" + (entry.kind || "isk") + ":" + name;
+  } else if (entry.ammo) {
+    canonicalRef = "ammo:" + (entry.weaponType || "unknown") + ":" + (entry.tier || "T1") + ":" + name;
+  }
   return {
     _normalized:true,
     ref:canonicalRef,
@@ -2437,7 +2566,7 @@ function renderQueuePanel() {
   const status = document.getElementById("queue-status-text"); if (status) status.textContent = display.statusText;
   const loop = document.getElementById("queue-loop-check"); if (loop) loop.checked = display.loopMode;
   const list = document.getElementById("queue-list"); if (!list) return display;
-  list.innerHTML = display.items.length ? display.items.map(item => `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${item.skillLabel} · ${item.label}</span><span class="qi-detail">${item.countText}</span></div><span class="qi-status ${item.active ? "running" : "waiting"}">${item.active ? "执行中" : "等待"}</span><div class="qi-actions">${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}">↑</button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}">↓</button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}">✕</button></div></div>`).join("") : '<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>';
+  list.innerHTML = display.items.length ? display.items.map(item => `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${item.skillLabel} · ${item.label}</span><span class="qi-detail">${item.countText}</span></div><span class="qi-status ${item.active ? "running" : "waiting"}">${item.active ? "执行中" : "等待"}</span><div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div></div>`).join("") : '<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>';
   return display;
 }
 
@@ -2506,6 +2635,13 @@ function twInstallDrag() {
   const clamp = (v, min, max) => Math.max(min, Math.min(v, max));
   const vw = () => (window.innerWidth || document.documentElement.clientWidth || 0);
   const vh = () => (window.innerHeight || document.documentElement.clientHeight || 0);
+  // 仅移动端有固定顶栏/底栏：教程卡片拖动范围需夹在二者之间，避免被遮挡。
+  // 桌面端（无遮挡固定条）返回 0，保持原行为不变。
+  const isMobile = () => (typeof window.matchMedia === "function") && window.matchMedia("(max-width: 820px)").matches;
+  const topbarEl = document.querySelector(".topbar");
+  const bottomNavEl = document.querySelector(".tp-bottom-nav");
+  const safeTop = () => (isMobile() && topbarEl) ? Math.ceil(topbarEl.getBoundingClientRect().height) : 0;
+  const safeBottom = () => (isMobile() && bottomNavEl) ? Math.ceil(bottomNavEl.getBoundingClientRect().height) : 0;
 
   // 把当前 CSS 锚定（right/bottom 或 left/right 全宽）折算为 left/top 浮动定位，并固化宽度
   // （移动端 width:auto 需锁成具体 px，否则只设 left 会让卡片坍缩到内容宽）。
@@ -2516,7 +2652,7 @@ function twInstallDrag() {
     widget.style.bottom = "auto";
     widget.style.width = lockedW + "px";
     widget.style.left = clamp(left, 0, Math.max(0, vw() - lockedW)) + "px";
-    widget.style.top = clamp(top, 0, Math.max(0, vh() - widget.offsetHeight)) + "px";
+    widget.style.top = clamp(top, safeTop(), Math.max(safeTop(), vh() - widget.offsetHeight - safeBottom())) + "px";
   };
 
   // 还原已保存位置（桌面/移动通用）：clamp 到当前视口，避免跨设备/旋转后跑出屏幕。
@@ -2593,7 +2729,7 @@ function twInstallDrag() {
     if (panelDragMode) {
       const w = widget.offsetWidth, h = widget.offsetHeight;
       const left = clamp(originLeft + dx, 0, Math.max(0, vw() - w));
-      const top = clamp(originTop + dy, 0, Math.max(0, vh() - h));
+      const top = clamp(originTop + dy, safeTop(), Math.max(safeTop(), vh() - h - safeBottom()));
       widget.style.left = left + "px";
       widget.style.top = top + "px";
     }
@@ -3046,7 +3182,7 @@ function installTutorialWidgetListeners() {
   const queueList = document.getElementById("queue-list"); if (queueList) queueList.addEventListener("click", event => {
     const button = event.target.closest("[data-queue-action]"); if (!button) return;
     const index = Number(button.dataset.index), action = button.dataset.queueAction;
-    if (action === "remove") removeFromQueue(index); else if (action === "up") moveQueueItem(index, index - 1); else if (action === "down") moveQueueItem(index, index + 1);
+    if (action === "remove") removeFromQueue(index); else if (action === "up") moveQueueItem(index, index - 1); else if (action === "down") moveQueueItem(index, index + 1); else if (action === "top") moveQueueItemToTop(index);
     renderQueuePanel();
   });
   const startQueueButton = document.getElementById("btn-start-queue"); if (startQueueButton) startQueueButton.addEventListener("click", () => { if (startQueue()) { currentView = gameState.currentAction.skill; renderQueuePanel(); updateUI(); } });

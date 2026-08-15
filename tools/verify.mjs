@@ -125,6 +125,8 @@ const optionalIds = new Set([
   "reward-result-modal",
   // 动态创建的 ID：tp-hangar-root 由 taptap-portrait.js 运行时创建（竖屏舰船坞根容器）
   "tp-hangar-root",
+  // 动态创建的 ID：tp-activity-strip 由 taptap-portrait.js 运行时创建（方案 B 竖屏顶部活动状态条，仅窄屏显示）
+  "tp-activity-strip",
   // 动态创建的 ID：__qa_dom_probe__ 由 js/qa-seed.js 的 hasRealDom() 在运行时创建、使用并删除，
   // 属于 QA 探针的临时 DOM 节点，不应静态存在于 index.html。禁止为了通过检查把它塞进 index.html，也禁止删除 QA 探针。
   "__qa_dom_probe__"
@@ -538,6 +540,10 @@ if (!manufacturingSource || /document\.|render[A-Z]\w*\s*\(/.test(manufacturingS
 const manufacturingState = JSON.parse(JSON.stringify(sandbox.gameState));
 manufacturingState.skills.shipEngineering.lvl = 15;
 manufacturingState.skills.equipmentEngineering.lvl = 99;
+// 船坞统一门槛（getShipyardAssemblyLevelRequirement）：驱逐舰(raylight)需船坞 Lv.1 方可组装。
+// 默认 gameState 船坞 Lv.0，会令免蓝图驱逐舰被船坞锁误判；此处将船坞提到 Lv.3 以验证舰船工程
+// View State 对「运行部件/待选舰船/进度/免蓝图组装」的正确表达（与 startShipAssembly 门槛一致）。
+manufacturingState.station.buildings.shipyard = 3;
 manufacturingState.currentAction.active = true;
 manufacturingState.currentAction.skill = "shipEngineering";
 manufacturingState.currentAction.shipSubAction = "component";
@@ -1276,8 +1282,8 @@ const miningLaserOutputHtml = sandbox.getEquipEngOutputHtml(sandbox.getEquipment
 const moonMiningAreas = vm.runInContext("MOON_MINING_AREAS", sandbox);
 const normalMiningAreas = vm.runInContext("MINING_AREAS", sandbox);
 const expectedMoonMining = [
-  ["镓",20,120,100], ["铂",20,120,100], ["铪",40,240,240],
-  ["锇",40,240,240], ["钷",55,420,450], ["铷",70,720,870]
+  ["镓",20,90,100], ["铂",20,90,100], ["铪",40,180,240],
+  ["锇",40,180,240], ["钷",55,315,450], ["铷",70,540,870]
 ];
 if (JSON.stringify(moonMiningAreas.map(area => [area.ore,area.level,area.baseTime,area.baseXP])) !== JSON.stringify(expectedMoonMining)) {
   throw new Error("月矿等级、耗时或经验配置不符合策划案");
@@ -7286,10 +7292,10 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   const gasPlanetN = planetTypesN.find(item => item.id === "gas");
   okN(i4N.progressType === "planetDeploy" && i4N.target.planetTypes.length === 2 &&
       i4N.target.planetTypes.includes("lava") && i4N.target.planetTypes.includes("gas") &&
-      resAmtN(i4N.reward, RN.ISK) === 276000 && resAmtN(i4N.reward, RN.AG) === 26 &&
-      sizesN(i4N.reward).res === 2 && sizesN(i4N.reward).eq === 0 &&
+      resAmtN(i4N.reward, RN.ISK) === 276000 && resAmtN(i4N.reward, RN.AG) === undefined &&
+      sizesN(i4N.reward).res === 1 && sizesN(i4N.reward).eq === 0 &&
       sizesN(i4N.reward).sh === 0 && sizesN(i4N.reward).bp === 0,
-    "I4 必须是熔岩+气态双行星部署，奖励恰为 276000 星币 + 26 类银超金属，无其他奖励");
+    "I4 必须是熔岩+气态双行星部署，奖励恰为 276000 星币，不再奖励类银超金属");
   okN(lavaN && gasPlanetN && lavaN.constructionCost.isk + gasPlanetN.constructionCost.isk === resAmtN(i4N.reward, RN.ISK),
     "I4 补贴必须恰好覆盖两颗行星的建造费合计（138000 × 2）");
 
@@ -7332,11 +7338,13 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       sizesN(i1.reward).sh === 0 && sizesN(i1.reward).bp === 0,
     "I1 必须领取并安装基础采矿器到启程级采矿位，奖励 t1_mining_laser ×1 + 燃料 200");
   const i2 = TD.byId.I2;
-  okN(i2.progressType === "mine" && i2.target.resourceId === "ore:凡晶石" && i2.target.count === 364 && i2.target.sinceActivation === true &&
-      emptyRewardN(i2.reward), "I2 必须新采集凡晶石 364（显示铁硅原矿），无奖励");
+  okN(i2.progressType === "mine" && i2.target.resourceId === "ore:凡晶石" && i2.target.count === 50 && i2.target.sinceActivation === true &&
+      emptyRewardN(i2.reward), "I2 必须新采集铁硅原矿 50（内部键 凡晶石），无奖励");
   const i3 = TD.byId.I3;
-  okN(i3.progressType === "refine" && i3.target.outputId === RN.TI && i3.target.count === 364 && i3.target.sinceActivation === true &&
-      emptyRewardN(i3.reward), "I3 必须新冶炼三钛合金 364（显示标准钛材），无奖励");
+  okN(i3.progressType === "refine" && i3.target.outputId === RN.TI && i3.target.count === 50 && i3.target.sinceActivation === true &&
+      i3.completionMode === "claim" && i3.rewardTiming === "afterObjective" &&
+      resAmtN(i3.reward, RN.TI) === 314 && resAmtN(i3.reward, RN.AG) === 26 && sizesN(i3.reward).res === 2,
+    "I3 必须新冶炼标准钛材 50（内部键 三钛合金），完成需手动领取(afterObjective+claim)，奖励恰为 314 标准钛材 + 26 银镍合金（内部键 三钛合金/类银超金属）");
   const i5 = TD.byId.I5;
   okN(i5.progressType === "planetExtract" && i5.target.resources[RN.HEAVY] === 18 && i5.target.resources[RN.RARE] === 18 &&
       emptyRewardN(i5.reward), "I5 必须真实提取 重金属18 / 稀有气体18，无奖励（不得 200/200）");
@@ -7553,8 +7561,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     "rewardTiming=beforeObjective 必须恰为 I1 / I4");
   okN(JSON.stringify(byTimingN("onAction")) === JSON.stringify(["A1", "P1", "P6"]),
     "rewardTiming=onAction 必须恰为 P1 / P6 / A1");
-  okN(JSON.stringify(byTimingN("afterObjective")) === JSON.stringify(["A6", "C6", "I6", "I7"]),
-    "rewardTiming=afterObjective 必须恰为 I6 / I7 / A6 / C6");
+  okN(JSON.stringify(byTimingN("afterObjective")) === JSON.stringify(["I3", "A6", "C6", "I6", "I7"]),
+    "rewardTiming=afterObjective 必须恰为 I3 / I6 / I7 / A6 / C6");
   okN(JSON.stringify(TD.tasks.filter(t => t.completionMode === "choice").map(t => t.id)) === JSON.stringify(["C1"]),
     "completionMode=choice 必须唯一为 C1");
   okN(JSON.stringify(TD.tasks.filter(t => t.completionMode === "confirm").map(t => t.id).sort()) === JSON.stringify(["P7"]),
@@ -7563,6 +7571,113 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     "rewardTiming=none 的任务其 reward 四桶必须全空");
   okN(TD.tasks.every(t => t.completionMode !== "automatic" || t.rewardTiming === "none"),
     "completionMode=automatic 的任务不得携带任何发放时机");
+
+  // ---- N-23 Batch：采集速度下调(×0.75) + 冶炼(×0.5) + 工业新手任务 50 份方案 回归 ----
+  {
+  // 静态：基础耗时精确 = 旧值 × 比例（容差比较，禁止 round，保留浮点 52.5/22.5/112.5/337.5）
+  const approxClose = (a, b, eps) => Math.abs(Number(a) - Number(b)) <= (eps == null ? 1e-6 : eps);
+  const OLD_MINING = [20, 40, 70, 120, 180, 260, 380];
+  const OLD_MOON   = [120, 120, 240, 240, 420, 720];
+  const OLD_SMELT  = [20, 40, 70, 120, 180, 260, 380];
+  const OLD_GAS    = [30, 60, 100, 150, 220, 320, 450];
+  const miningAreasN23 = vm.runInContext("MINING_AREAS", sandbox);
+  const moonAreasN23   = vm.runInContext("MOON_MINING_AREAS", sandbox);
+  const smeltN23       = vm.runInContext("SMELTING_RECIPES", sandbox);
+  const gasN23         = vm.runInContext("GAS_AREAS", sandbox);
+  okN(miningAreasN23.length === OLD_MINING.length && moonAreasN23.length === OLD_MOON.length &&
+      smeltN23.length === OLD_SMELT.length && gasN23.length === OLD_GAS.length,
+    "四类采集/冶炼区域数量未变");
+  miningAreasN23.forEach((a, i) => okN(approxClose(a.baseTime, OLD_MINING[i] * 0.75),
+    "MINING_AREAS[" + i + "] baseTime 应为旧值×0.75，实际 " + a.baseTime));
+  moonAreasN23.forEach((a, i) => okN(approxClose(a.baseTime, OLD_MOON[i] * 0.75),
+    "MOON_MINING_AREAS[" + i + "] baseTime 应为旧值×0.75，实际 " + a.baseTime));
+  smeltN23.forEach((a, i) => okN(approxClose(a.baseTime, OLD_SMELT[i] * 0.5),
+    "SMELTING_RECIPES[" + i + "] baseTime 应为旧值×0.5，实际 " + a.baseTime));
+  gasN23.forEach((a, i) => okN(approxClose(a.baseTime, OLD_GAS[i] * 0.75),
+    "GAS_AREAS[" + i + "] baseTime 应为旧值×0.75，实际 " + a.baseTime));
+  // 关键浮点精确值（禁止取整）
+  okN(miningAreasN23[2].baseTime === 52.5 && gasN23[0].baseTime === 22.5 &&
+      gasN23[3].baseTime === 112.5 && gasN23[6].baseTime === 337.5,
+    "关键浮点 baseTime 必须精确保留（52.5 / 22.5 / 112.5 / 337.5）");
+
+  // 运行时：在线实际周期读取同一套新 baseTime（实际周期 = baseTime / 效率；此处仅校验配置被新值覆盖，周期随配置下降）
+  const MINING_AREA_NAMES = ["凡晶石带","灼烧岩带","水硼砂带","斜长岩带","干焦岩带","灰岩带","艾克诺岩带"];
+  const smeltByNameN23 = (nm) => smeltN23.find(r => r.name === nm);
+  okN(smeltByNameN23("凡晶石带").baseTime === 10 && miningAreasN23[0].baseTime === 15,
+    "运行时读取到的新 baseTime（冶炼 20→10 / 采矿 20→15）已生效");
+
+  // 教程：I2/I3=50、I3 奖励精确、I4 不再奖励类银、I3 需手动领取
+  const i2N23 = TD.byId.I2, i3N23 = TD.byId.I3, i4N23 = TD.byId.I4;
+  okN(i2N23.target.count === 50, "I2 目标必须精确为 50");
+  okN(i3N23.target.count === 50, "I3 目标必须精确为 50");
+  okN(i3N23.completionMode === "claim" && i3N23.rewardTiming === "afterObjective",
+    "I3 必须改为手动领取（claim + afterObjective）");
+  okN(resAmtN(i3N23.reward, RN.TI) === 314 && resAmtN(i3N23.reward, RN.AG) === 26 &&
+      sizesN(i3N23.reward).res === 2, "I3 奖励必须精确为 314 标准钛材 + 26 银镍合金");
+  okN(resAmtN(i4N23.reward, RN.AG) === undefined && resAmtN(i4N23.reward, RN.ISK) === 276000 &&
+      sizesN(i4N23.reward).res === 1, "I4 不再奖励类银超金属，仅保留 276000 星币");
+
+  // 幂等：模拟 I3 领取两次 → 第二次稳定失败且库存不变；重载存档不重复发放
+  const mkI3State = () => {
+    const s = JSON.parse(JSON.stringify(sandbox.INITIAL_STATE || sandbox.gameState));
+    s.tutorial = { rewardLedger: {}, taskStateById: {}, branchesUnlocked: [], selectedCombatTrack: null,
+      emergencyShipGranted: false, lastReconciledAt: 0 };
+    for (const id of Object.keys(TD.byId)) {
+      const st = id === "I3" ? "claimable" : "locked";
+      s.tutorial.taskStateById[id] = { status: st, progress: {}, rewardClaimed: false, supportClaimed: false };
+    }
+    s.tutorial.taskStateById.I3.status = "claimable";
+    s.tutorial.taskStateById.I3.progress = { refined: 50 };
+    return s;
+  };
+  const RR = vm.runInContext("ResourceRegistry", sandbox);
+  const tiOf = (st) => RR.get(st, "mineral:三钛合金");
+  const agOf = (st) => RR.get(st, "mineral:类银超金属");
+  const sA = mkI3State();
+  const c1 = sandbox.TutorialSystem.claimTutorialTask(sA, "I3", 1000);
+  okN(c1.ok === true && tiOf(sA) === 314 && agOf(sA) === 26, "I3 首次领取正确到账 314 标准钛材 + 26 银镍合金");
+  const tiAfter1 = tiOf(sA), agAfter1 = agOf(sA);
+  const c2 = sandbox.TutorialSystem.claimTutorialTask(sA, "I3", 2000);
+  okN(c2.ok === false && c2.reason === "ALREADY_CLAIMED" && tiOf(sA) === tiAfter1 && agOf(sA) === agAfter1,
+    "I3 连点第二次返回 ALREADY_CLAIMED 且库存不变");
+  // 重载：用同一 rewardLedger 重建状态（模拟读档），再领 → 仍失败
+  const sB = mkI3State();
+  sB.tutorial.rewardLedger = JSON.parse(JSON.stringify(sA.tutorial.rewardLedger));
+  sB.tutorial.taskStateById.I3.status = "completed";
+  sB.tutorial.taskStateById.I3.rewardClaimed = true;
+  const c3 = sandbox.TutorialSystem.claimTutorialTask(sB, "I3", 3000);
+  okN(c3.ok === false && tiOf(sB) === 0 && agOf(sB) === 0, "I3 重载（已领取账本）后再领不重复到账");
+  // 旧存档兼容：已完成 I3 的旧档不补发新奖励
+  const sC = mkI3State();
+  sC.tutorial.taskStateById.I3.status = "completed";
+  sC.tutorial.taskStateById.I3.rewardClaimed = false; // 旧档无新奖励账本
+  const c4 = sandbox.TutorialSystem.claimTutorialTask(sC, "I3", 4000);
+  okN(c4.ok === false && c4.reason === "ALREADY_COMPLETED" && tiOf(sC) === 0 && agOf(sC) === 0,
+    "已完成 I3 的旧档不补发新奖励（ALREADY_COMPLETED）");
+
+  // 资源账闭合（真实配方/行星成本数据，非伪造）：50 自炼 + 314 奖励 − 200 双行星 = 164 标准钛材
+  //                                         + 26 银镍合金；I5 收 18 重金属 + 18 稀有气体；
+  //                                         六组件(各2)总耗 = 164 标准钛材 + 26 银镍合金 + 18 重金属 + 18 稀有气体 → 耗尽
+  const compRecipesN23 = vm.runInContext("SHIP_COMPONENT_RECIPES", sandbox);
+  const planetTypesN23 = vm.runInContext("PLANET_TYPES", sandbox);
+  const lavaCC = (planetTypesN23.find(p => p.id === "lava") || {}).constructionCost || {};
+  const gasCC  = (planetTypesN23.find(p => p.id === "gas")  || {}).constructionCost || {};
+  const planetTI = Number((lavaCC.resources || {})["mineral:三钛合金"] || 0) + Number((gasCC.resources || {})["mineral:三钛合金"] || 0);
+  okN(planetTI === 200, "双行星建设合计消耗 200 标准钛材（各 100）");
+  const want = { ti: 164, ag: 26, heavy: 18, rare: 18 };
+  let sum = { ti: 0, ag: 0, heavy: 0, rare: 0 };
+  for (const rid of ["integrated_hull", "power_core", "functional_system"]) {
+    const rec = compRecipesN23.find(r => r.id === rid);
+    const c = rec.cost;
+    sum.ti    += (Number(c["三钛合金"] || 0)) * 2;
+    sum.ag    += (Number(c["类银超金属"] || 0)) * 2;
+    sum.heavy += (Number(c["重金属"] || 0)) * 2;
+    sum.rare  += (Number(c["稀有气体"] || 0)) * 2;
+  }
+  okN(sum.ti === want.ti && sum.ag === want.ag && sum.heavy === want.heavy && sum.rare === want.rare,
+    "六组件(各2)总耗精确为 164 标准钛材 + 26 银镍合金 + 18 重金属 + 18 稀有气体，资源账严格闭合");
+  okN((50 + 314 - planetTI) === want.ti, "I3 自炼50 + 奖励314 − 双行星200 = 164 标准钛材，链条首端闭合");
+  }
 
   // ---- N-19 行星槽位曲线：Lv.1-19 保底 2，其后 3 / 4 / 5 不变 -------------------------------------
   const capStateN = JSON.parse(JSON.stringify(sandbox.gameState));

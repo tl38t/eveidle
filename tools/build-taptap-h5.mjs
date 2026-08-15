@@ -1,4 +1,4 @@
-// build-taptap-h5.mjs — TapTap H5 确定性构建工具（T4 / RC3）
+// build-taptap-h5.mjs — TapTap H5 确定性构建工具（RC5）
 //
 // 设计约束：
 //  - 必须从固定提交导出，而非复制当前脏工作区：
@@ -10,8 +10,8 @@
 //  - 构建两次，校验文件清单 / 各文件 SHA-256 / 最终 ZIP SHA-256 一致（确定性）。
 //  - 来源 SHA 不得硬编码：由 --source-sha 提供，且必须等于本次构建时的当前 HEAD，
 //    同时要求工作分支为 main、tracked 工作树干净、staged 为空。
-//  - 模式：`--mode selftest` 注入探针，输出 deep-space-idle-t4-portrait-selftest.zip；
-//          `--mode release` 完全不注入探针，输出 deep-space-idle-taptap-rc3.zip。
+//  - 模式：`--mode selftest` 注入探针，输出 deep-space-idle-taptap-rc5-selftest.zip；
+//          `--mode release` 完全不注入探针，输出 deep-space-idle-taptap-rc5.zip。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -51,7 +51,7 @@ if (MODE !== "selftest" && MODE !== "release") {
   throw new Error("未知 --mode: " + MODE + "（仅支持 selftest / release）");
 }
 const INCLUDE_PROBE = MODE === "selftest";
-const ZIP_NAME = MODE === "release" ? "deep-space-idle-taptap-rc3.zip" : "deep-space-idle-t4-portrait-selftest.zip";
+const ZIP_NAME = MODE === "release" ? "deep-space-idle-taptap-rc5.zip" : "deep-space-idle-taptap-rc5-selftest.zip";
 
 // ---- 来源 SHA（--source-sha，必须 == 当前 HEAD）----
 function parseSourceSha() {
@@ -302,7 +302,7 @@ function verifyPackage(buffer, mode) {
       ok("release: 运行文件不含 ?qa= 场景入口", !qaSceneHit);
 
       // 跨模式比对：与 selftest 产物证明“唯一差异=探针文件+index.html 注入标签”
-      const selftestZip = path.join(OUTDIR, "deep-space-idle-t4-portrait-selftest.zip");
+      const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc5-selftest.zip");
       if (fs.existsSync(selftestZip)) {
         try {
           const sz = await JSZip.loadAsync(fs.readFileSync(selftestZip));
@@ -402,8 +402,8 @@ function verifyPackage(buffer, mode) {
 
 // ---------- 主流程 ----------
 (async () => {
-  console.log("=== TapTap H5 构建（T4 / RC3）===");
-  console.log("模式: " + MODE + (INCLUDE_PROBE ? "（保留探针）" : "（正式候选包 RC3，无探针）"));
+  console.log("=== TapTap H5 构建（RC5）===");
+  console.log("模式: " + MODE + (INCLUDE_PROBE ? "（保留探针）" : "（正式候选包 RC5，无探针）"));
   console.log("输出 ZIP: " + ZIP_NAME);
 
   // 0) 仓库状态守卫

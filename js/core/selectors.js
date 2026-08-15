@@ -248,11 +248,11 @@ function getCurrentActivityDisplayState(state, now) {
     const site = getArchaeologySite(state.archaeology && state.archaeology.activeSiteId);
     detail = site ? "解析" + site.name : "考古待命";
   }
-  if (key === "mining") detail = "采集" + getAreaByName(ALL_MINING_AREAS, action.startedArea || action.area).ore;
+  if (key === "mining") detail = "采集" + getResourceDisplayName("ore:" + getAreaByName(ALL_MINING_AREAS, action.startedArea || action.area).ore);
   else if (key === "refining") {
     const recipe = SMELTING_RECIPES.find(item => item.name === (action.startedSmeltingArea || action.smeltingArea)) || SMELTING_RECIPES[0];
     detail = "冶炼" + getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral);
-  } else if (key === "gasHarvesting") detail = "采集" + getAreaByName(GAS_AREAS, action.startedGasArea || action.gasArea).gas;
+  } else if (key === "gasHarvesting") detail = "采集" + getResourceDisplayName("gas:" + getAreaByName(GAS_AREAS, action.startedGasArea || action.gasArea).gas);
   else if (key === "shipEngineering") {
     if (action.shipSubAction === "component") {
       const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === (action.startedShipCompTarget || action.shipCompTarget)) || SHIP_COMPONENT_RECIPES[0];
@@ -655,8 +655,12 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.duration = display.actualTime;
     result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
     result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:getResourceDisplayName(recipe.consumeOre), quantity:1, stock:display.stock, enough:display.stock >= 1 }];
-    result.maxCount = Math.max(1, display.stock);
+    // 超量预排：放开“按当前材料算上限”的硬限制，数量可超过当前持有；
+    // 运行期由队列 skipOnFail 在材料不足时切下一项（当前项保留、剩余数量续跑）。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, display.stock);
     result.canOpen = display.canStart;
     result.blockedText = display.canStart ? "" : "需要冶炼等级 Lv." + recipe.level;
     result.queue = { skill:"refining", target:recipe.name, label:getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral) };
@@ -677,8 +681,11 @@ function getActionConfirmationDisplayState(state, target, now) {
       ...display.detail.equipmentInputs.map(item => ({ resourceId:"equipment:" + item.itemId, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
       ...display.detail.materials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
-    result.maxCount = Math.max(1, getEquipmentMaxCyclesFromState(state, recipe));
+    // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, getEquipmentMaxCyclesFromState(state, recipe));
     if (recipe.output.type === "equipment") result.outputText = recipe.name + "×" + recipe.output.qty;
     else if (recipe.output.type === "fuel") result.outputText = "燃料单元×" + recipe.output.qty;
     else result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
@@ -692,8 +699,12 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.title = icons.shipComp + " " + recipe.name;
     result.duration = display.componentActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = display.componentMaterials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }));
-    result.maxCount = Math.max(1, result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999));
+    const _shipCompMatMax = result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999);
+    // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, _shipCompMatMax);
     result.outputText = recipe.name + "×1";
     result.canOpen = display.canStartComponent;
     result.blockedText = result.canOpen ? "" : "需要舰船工程等级 Lv." + recipe.level;
@@ -701,18 +712,28 @@ function getActionConfirmationDisplayState(state, target, now) {
   } else if (target === "shipAsm") {
     const display = getShipEngineeringDisplayState(state, now);
     const recipe = display.currentAssembly;
-    const option = display.assemblyOptions.find(item => item.id === recipe.id);
     result.title = icons.shipAsm + " " + recipe.name;
     result.duration = display.assemblyActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = [
       ...display.assemblyComponents.map(item => ({ resourceId:"component:" + item.id, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
       ...display.assemblyMaterials.map(item => ({ resourceId:item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
-    result.maxCount = Math.max(1, display.assemblyMaxCycles);
+    // 缺料时 assemblyMaxCycles 为 0：超量预排放开硬限制（noCap），弹窗不再因缺料禁用“加入队列”，
+    // 仅以 materialHint 提示当前可产批数；运行期 skipOnFail 在材料不足时切下一项。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, display.assemblyMaxCycles);
     result.outputText = (display.selectedShip ? display.selectedShip.name : recipe.name) + "×1";
-    result.canOpen = Boolean(option && option.unlocked);
-    result.blockedText = !option || display.level < recipe.level ? "需要舰船工程等级 Lv." + recipe.level : option.hasRequiredBlueprint ? "" : "缺少舰船蓝图";
+    // 仅「永久解锁」（蓝图+等级+船坞）才允许打开确认弹窗；缺料不阻止打开，由 maxCount=0 体现。
+    result.canOpen = recipe.assemblyUnlocked;
+    // 与 getShipAssemblyEligibility 同一判定，禁止自行猜测蓝图状态。
+    result.blockedText = recipe.assemblyUnlocked ? "" : (
+      recipe.assemblyBlockReason === "blueprint-locked" ? "需要先在蓝图商店购买" + recipe.name + "蓝图"
+      : recipe.assemblyBlockReason === "level-locked" ? "需要舰船工程等级 Lv." + recipe.requiredLevel
+      : recipe.assemblyBlockReason === "shipyard-level-locked" ? "需要船坞等级 Lv." + (recipe.shipyardRequiredLevel || "?")
+      : "当前舰船未解锁"
+    );
     result.queue = { skill:"shipEngineering", target:recipe.name, label:recipe.name };
   } else if (target === "archaeology") {
     const archDisplay = getArchaeologyDisplayState(state, now);
@@ -856,6 +877,49 @@ function getShipEngineeringCycleDuration(state, recipe) {
   return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier / implantShipMfgEff / boosterShipSpeed;
 }
 
+// 唯一舰船总装资格判定：与 actions.js 的 startShipAssembly 阻塞优先级完全一致。
+// 供 selectors / 渲染层 / 行动确认统一消费，禁止各自重复猜测。
+//   1. blueprint-locked  2. level-locked  3. shipyard-level-locked  4. insufficient-components  5. null（可开工）
+// assemblyUnlocked 仅表示永久解锁（蓝图 + 技能 + 船坞），不含材料；canStartAssembly 才含材料。
+function getShipAssemblyEligibility(state, recipe) {
+  const fallback = {
+    requiresBlueprint:true, hasRequiredBlueprint:false, levelEnough:false, shipyardEnough:false, hasComponents:false,
+    levelGate: recipe ? (Number(recipe.level) || 0) : 0, shipyardRequiredLevel:null,
+    assemblyBlockReason:"blueprint-locked", assemblyBlockText:"未解锁：需蓝图解锁",
+    assemblyUnlocked:false, canStartAssembly:false
+  };
+  if (!recipe) return fallback;
+  const level = Number((state.skills && state.skills.shipEngineering && state.skills.shipEngineering.lvl) || 1);
+  const owned = new Set(state.ownedBlueprints || []);
+  // 等级必须使用 getShipBuildingQuote 返回的实际 levelGate（兼容增强剂带来的等级门槛变化）。
+  const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
+  const hasRequiredBlueprint = !requiresBlueprint || owned.has(recipe.shipId);
+  const quote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate: Number(recipe.level) || 0 };
+  const levelEnough = level >= quote.levelGate;
+  // 船坞条件复用 canAssembleAtShipyard，不得复制第二套规则；门槛文本走权威 getShipyardAssemblyLevelRequirement。
+  const shipyardEnough = (typeof canAssembleAtShipyard === "function") ? canAssembleAtShipyard(state, recipe.id) : true;
+  const shipyardRequiredLevel = (typeof getShipyardAssemblyLevelRequirement === "function") ? getShipyardAssemblyLevelRequirement(state, recipe.id) : null;
+  // 材料条件复用 getShipAssemblyMaxCyclesFromState。
+  const hasComponents = getShipAssemblyMaxCyclesFromState(state, recipe) > 0;
+  let reason = null;
+  if (!hasRequiredBlueprint) reason = "blueprint-locked";
+  else if (!levelEnough) reason = "level-locked";
+  else if (!shipyardEnough) reason = "shipyard-level-locked";
+  else if (!hasComponents) reason = "insufficient-components";
+  const assemblyUnlocked = hasRequiredBlueprint && levelEnough && shipyardEnough;
+  let blockText = "";
+  if (reason === "blueprint-locked") blockText = "未解锁：需蓝图解锁";
+  else if (reason === "level-locked") blockText = "未解锁：舰船工程 Lv." + quote.levelGate + " 解锁";
+  else if (reason === "shipyard-level-locked") blockText = "未解锁：船坞 Lv." + (shipyardRequiredLevel || "?") + " 解锁";
+  else if (reason === "insufficient-components") blockText = "组件/材料不足";
+  return {
+    requiresBlueprint, hasRequiredBlueprint, levelEnough, shipyardEnough, hasComponents,
+    levelGate: quote.levelGate, shipyardRequiredLevel,
+    assemblyBlockReason: reason, assemblyBlockText: blockText,
+    assemblyUnlocked, canStartAssembly: assemblyUnlocked && hasComponents
+  };
+}
+
 function getShipEngineeringDisplayState(state, now) {
   const action = state.currentAction;
   const skill = state.skills.shipEngineering || { lvl:1, xp:0 };
@@ -936,15 +1000,31 @@ function getShipEngineeringDisplayState(state, now) {
       };
     });
 
+  // 单一资格判定源：同一配方在本轮 display 构建中只计算一次（缓存），杜绝第二套 reason 优先级
+  // 导致船坞节省余数/增强剂/状态变化引发的字段不一致。assemblyMatched / assemblyGrid /
+  // assemblyOptions / currentAssembly / canStartAssembly 全部消费 getShipAssemblyEligibility。
+  const _eligibilityCache = new Map();
+  const getAssemblyEligibility = (recipe) => {
+    if (!_eligibilityCache.has(recipe.id)) {
+      _eligibilityCache.set(recipe.id, getShipAssemblyEligibility(state, recipe));
+    }
+    return _eligibilityCache.get(recipe.id);
+  };
   const assemblyMatched = SHIP_ASSEMBLY_RECIPES
     .map(recipe => {
-      const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
-      const hasRequiredBlueprint = !requiresBlueprint || ownedBlueprints.has(recipe.shipId);
-      const aq = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate:recipe.level };
+      const el = getAssemblyEligibility(recipe);
       return {
-        recipe, requiresBlueprint, hasRequiredBlueprint,
-        levelGate:aq.levelGate,
-        unlocked:level >= aq.levelGate && hasRequiredBlueprint,
+        recipe,
+        requiresBlueprint:el.requiresBlueprint,
+        hasRequiredBlueprint:el.hasRequiredBlueprint,
+        levelGate:el.levelGate,
+        levelEnough:el.levelEnough,
+        shipyardEnough:el.shipyardEnough,
+        shipyardRequiredLevel:el.shipyardRequiredLevel,
+        hasComponents:el.hasComponents,
+        assemblyUnlocked:el.assemblyUnlocked,
+        assemblyBlockReason:el.assemblyBlockReason,
+        unlocked:el.assemblyUnlocked,
         line:getShipAssemblyLine(recipe.shipId),
         role:getShipRoleName(recipe.shipId),
         tier:(getShipConfigById(recipe.shipId) || {}).tier,
@@ -958,7 +1038,8 @@ function getShipEngineeringDisplayState(state, now) {
     .slice(assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE, assemblyPageClamped * SHIP_ASSEMBLY_PAGE_SIZE + SHIP_ASSEMBLY_PAGE_SIZE)
     .map(item => ({
       id:item.recipe.id, name:item.recipe.name, shipId:item.recipe.shipId, level:item.recipe.level, time:item.recipe.time, xp:item.recipe.xp,
-      requiresBlueprint:item.requiresBlueprint, hasRequiredBlueprint:item.hasRequiredBlueprint, unlocked:item.unlocked, requiredLevel:item.levelGate,
+      requiresBlueprint:item.requiresBlueprint, hasRequiredBlueprint:item.hasRequiredBlueprint, unlocked:item.assemblyUnlocked, requiredLevel:item.levelGate,
+      shipyardRequiredLevel:item.shipyardRequiredLevel, hasComponents:item.hasComponents, assemblyBlockReason:item.assemblyBlockReason,
       selected:item.recipe.id === currentAssembly.id, role:item.role, tier:item.tier, hybrid:item.hybrid
     }));
   const shipRole = getShipRoleName(currentAssembly.shipId);
@@ -1005,13 +1086,40 @@ function getShipEngineeringDisplayState(state, now) {
       return { material, quantity, stock, enough:stock >= quantity };
     }),
     componentInventory:SHIP_COMPONENT_RECIPES.map(recipe => ({ id:recipe.id, name:recipe.name, quantity:Number(componentInventory[recipe.id]) || 0 })),
-    currentAssembly:{ ...currentAssembly, componentCost:{ ...getShipAssemblyComponentCost(currentAssembly) }, materialCost:{ ...asmQuote.cost }, requiredLevel: asmQuote.levelGate },
+    currentAssembly:(function () {
+      const el = getAssemblyEligibility(currentAssembly);
+      return {
+        ...currentAssembly,
+        componentCost:{ ...getShipAssemblyComponentCost(currentAssembly) },
+        materialCost:{ ...asmQuote.cost },
+        requiredLevel: asmQuote.levelGate,
+        requiresBlueprint:el.requiresBlueprint,
+        hasRequiredBlueprint:el.hasRequiredBlueprint,
+        levelEnough:el.levelEnough,
+        shipyardEnough:el.shipyardEnough,
+        shipyardRequiredLevel:el.shipyardRequiredLevel,
+        hasComponents:el.hasComponents,
+        assemblyBlockReason:el.assemblyBlockReason,
+        assemblyBlockText:el.assemblyBlockText,
+        assemblyUnlocked:el.assemblyUnlocked
+      };
+    })(),
     runningAssembly:{ ...runningAssembly, componentCost:{ ...getShipAssemblyComponentCost(runningAssembly) }, materialCost:{ ...runningAsmQuote.cost }, requiredLevel: runningAsmQuote.levelGate },
     assemblyOptions:SHIP_ASSEMBLY_RECIPES.map(recipe => {
-      const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
-      const hasRequiredBlueprint = !requiresBlueprint || ownedBlueprints.has(recipe.shipId);
-      const q = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate:recipe.level };
-      return { ...recipe, requiresBlueprint, hasRequiredBlueprint, unlocked:level >= q.levelGate && hasRequiredBlueprint, selected:recipe.id === currentAssembly.id };
+      const el = getAssemblyEligibility(recipe);
+      return {
+        ...recipe,
+        requiresBlueprint:el.requiresBlueprint,
+        hasRequiredBlueprint:el.hasRequiredBlueprint,
+        levelEnough:el.levelEnough,
+        shipyardEnough:el.shipyardEnough,
+        shipyardRequiredLevel:el.shipyardRequiredLevel,
+        hasComponents:el.hasComponents,
+        unlocked:el.assemblyUnlocked,
+        assemblyBlockReason:el.assemblyBlockReason,
+        assemblyBlockText:el.assemblyBlockText,
+        selected:recipe.id === currentAssembly.id
+      };
     }),
     assemblyComponents:Object.entries(asmEffective.components).map(([componentId, quantity]) => {
       const info = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === componentId);
@@ -1024,7 +1132,7 @@ function getShipEngineeringDisplayState(state, now) {
     }),
     assemblyMaxCycles:getShipAssemblyMaxCyclesFromState(state, currentAssembly),
     canStartComponent:level >= compQuote.levelGate,
-    canStartAssembly:level >= asmQuote.levelGate && (!shipAssemblyRequiresBlueprint(currentAssembly) || ownedBlueprints.has(currentAssembly.shipId)) && getShipAssemblyMaxCyclesFromState(state, currentAssembly) > 0,
+    canStartAssembly:getAssemblyEligibility(currentAssembly).canStartAssembly,
     selectedShip:selectedShip ? { ...selectedShip, hp:{ ...selectedShip.hp }, slots:{ ...selectedShip.slots }, bonuses:{ ...selectedShip.bonuses }, capacitor:{ ...selectedShip.capacitor } } : null,
     ownedShips:Object.entries(shipCounts).map(([shipId, quantity]) => {
       const config = getShipConfigById(shipId);
@@ -1988,7 +2096,22 @@ function getCargoDisplayState(state, filter) {
         .map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }])
     ),
     consumable:Object.assign(
-      { "燃料单元":ResourceRegistry.get(state, "consumable:fuel"), "激光晶体弹药":getAmmoCount(state, "laser"), "导弹":getAmmoCount(state, "missile"), "炮台弹药":getAmmoCount(state, "cannon"), "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") },
+      Object.assign(
+        { "燃料单元":ResourceRegistry.get(state, "consumable:fuel") },
+        // 弹药按「实例名(含档位)」分卡：T1 激光晶体弹药 / T2 聚焦相位激光弹 各自独立成卡，
+        // 不再按类型混并为一张（旧逻辑 getAmmoCount(state,'laser') 把 T1+T2 求和导致同名合并）。
+        (function () {
+          const byName = {};
+          for (const s of (state.ammo || [])) {
+            const qty = Number(s && s.qty) || 0;
+            if (qty <= 0) continue;
+            const nm = (s && s.name) || (typeof ammoDisplayName === "function" ? ammoDisplayName(s && s.type, s && s.tier) : (AMMO_TYPE_NAMES[s && s.type] || "弹药"));
+            byName[nm] = (byName[nm] || 0) + qty;
+          }
+          return byName;
+        })(),
+        { "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") }
+      ),
       // 货柜复用与 special 一致的形状 {qty,id}，id 保留 special:货柜* 以保证开箱功能
       Object.fromEntries(cargoEntries.map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }]))
     ),
@@ -2665,6 +2788,7 @@ function getQueueDisplayState(state) {
   const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔" };
   const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", combat:"⚔战斗" };
   const combat = state.combat || {};
+  const queueRunning = Boolean(queue.status.isRunning) && queue.status.activeIndex >= 0;
   return {
     kind:"queue",
     running:Boolean(queue.status.isRunning),
@@ -2690,7 +2814,8 @@ function getQueueDisplayState(state) {
         label:transformDisplayText(item.label),
         countText,
         canMoveUp:index > 0,
-        canMoveDown:index < queue.items.length - 1
+        canMoveDown:index < queue.items.length - 1,
+        canMoveTop:index > 0 && !(queueRunning && index === queue.status.activeIndex)
       };
     })
   };
