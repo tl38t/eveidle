@@ -228,7 +228,7 @@ ok(beforeA === afterA, "连续两次 normalize 结果完全一致");
 // ---- B3 三档成本匹配策划 6.2 ----
 section("B3 三档成本匹配策划 6.2");
 ok(PLANS[1].isk === 500000, "Lv.1 ISK=500,000");
-ok(PLANS[1].materials["mineral:三钛合金"] === 16000 && PLANS[1].materials["mineral:类银超金属"] === 750 && Object.keys(PLANS[1].materials).length === 2, "Lv.1 材料=三钛16000+类银750（无其他）");
+ok(PLANS[1].materials["mineral:三钛合金"] === 1800 && PLANS[1].materials["mineral:类银超金属"] === 60 && Object.keys(PLANS[1].materials).length === 2, "Lv.1 材料=三钛1800+类银60（标准钛材1800/银镍合金60，无其他）");
 ok(PLANS[2].isk === 2000000, "Lv.2 ISK=2,000,000");
 ok(PLANS[2].materials["mineral:三钛合金"] === 32000 && PLANS[2].materials["mineral:类晶体胶矿"] === 3200 && PLANS[2].materials["mineral:同位聚合体"] === 800 && Object.keys(PLANS[2].materials).length === 3, "Lv.2 材料=三钛32000+类晶体3200+同位800");
 ok(PLANS[3].isk === 8000000, "Lv.3 ISK=8,000,000");
@@ -248,7 +248,7 @@ ok(r4.changed === true, "资源恰好充足 → 开工成功");
 ok(RR.get(G,"currency:isk") === 0, "ISK 精确扣至 0");
 ok(RR.get(G,"mineral:三钛合金") === 0 && RR.get(G,"mineral:类银超金属") === 0, "Lv.1 材料精确扣至 0");
 ok(G.station.construction && G.station.construction.paid === true && G.station.construction.kind === "body" && G.station.construction.targetLevel === 1, "construction 写入 paid=true/kind=body/target=1");
-ok(G.station.construction.costSnapshot && G.station.construction.costSnapshot.isk === 500000 && G.station.construction.costSnapshot.materials["mineral:三钛合金"] === 16000, "costSnapshot 记录本档成本");
+ok(G.station.construction.costSnapshot && G.station.construction.costSnapshot.isk === 500000 && G.station.construction.costSnapshot.materials["mineral:三钛合金"] === 1800 && G.station.construction.costSnapshot.materials["mineral:类银超金属"] === 60, "costSnapshot 记录本档成本（三钛1800+类银60）");
 
 // ---- B6 重复施工拒绝 ----
 section("B6 重复施工拒绝");
@@ -488,7 +488,20 @@ ok(BLEVEL[2].materials["mineral:三钛合金"]===5000 && BLEVEL[2].materials["mi
 ok(BLEVEL[3].isk === 500000, "建筑 Lv.3 ISK=500,000");
 ok(BLEVEL[3].durationMs === 3600000, "建筑 Lv.3 时长 1h");
 ok(BLEVEL[3].materials["mineral:三钛合金"]===5000 && BLEVEL[3].materials["mineral:类晶体胶矿"]===500 && BLEVEL[3].materials["mineral:同位聚合体"]===312 && BLEVEL[3].materials["mineral:超新星诺克石"]===250 && BLEVEL[3].materials["mineral:基腹断岩"]===125 && BLEVEL[3].materials["mineral:超噬矿"]===62 && BLEVEL[3].materials["moon:铪"]===375 && BLEVEL[3].materials["gas:高纯富勒烯"]===250 && BLEVEL[3].materials["planetary:磁场聚合物"]===24 && Object.keys(BLEVEL[3].materials).length===9, "建筑 Lv.3=三钛5000+类晶体500+同位聚合体312+超新星250+基腹断岩125+超噬62+月矿铪375+高纯富勒烯250+磁场聚合物24（9项）");
-ok(KNOWN.every(id => BPLANS[id] === BLEVEL), "八建筑每座三级共用同一套分级成本表");
+// 精炼厂 Lv.1 专属覆盖：其余七座建筑仍共用共享分级成本表（每座三级完全相同）。
+const OTHER7 = KNOWN.filter(id => id !== "smelting_refinery");
+ok(OTHER7.every(id => BPLANS[id] === BLEVEL), "其余七座建筑每座三级共用同一套共享分级成本表");
+ok(BPLANS["smelting_refinery"] !== BLEVEL, "精炼厂使用专属（覆盖）计划，不复用共享表对象");
+ok(OTHER7.every(id => BPLANS[id][1] === BLEVEL[1]), "其余七座建筑 Lv.1 == 共享 Lv.1（标准钛材2500/银镍合金94/镓125/稳定富勒烯150/同位素38/生物质25）");
+ok(OTHER7.every(id => BPLANS[id][2] === BLEVEL[2] && BPLANS[id][3] === BLEVEL[3]), "其余七座建筑 Lv.2/Lv.3 逐项 == 共享计划（不受影响）");
+ok(BPLANS["smelting_refinery"][2] === BLEVEL[2] && BPLANS["smelting_refinery"][3] === BLEVEL[3], "精炼厂 Lv.2/Lv.3 仍复用共享计划（不受影响）");
+ok(BPLANS["smelting_refinery"][1] !== BLEVEL[1], "精炼厂 Lv.1 为专属覆盖计划（与共享 Lv.1 不同对象）");
+// 精炼厂 Lv.1 专属成本：仅标准钛材400 + 银镍合金20 两项，且不再含镓/气体/行星材料。
+ok(BPLANS["smelting_refinery"][1].isk === 50000, "精炼厂 Lv.1 ISK=50,000（不变）");
+ok(BPLANS["smelting_refinery"][1].durationMs === 900000, "精炼厂 Lv.1 施工 15min（不变）");
+ok(BPLANS["smelting_refinery"][1].materials["mineral:三钛合金"] === 400 && BPLANS["smelting_refinery"][1].materials["mineral:类银超金属"] === 20, "精炼厂 Lv.1 材料=三钛400+类银20");
+ok(Object.keys(BPLANS["smelting_refinery"][1].materials).length === 2, "精炼厂 Lv.1 仅 2 个材料键（已移除镓/稳定富勒烯/同位素/生物质）");
+ok(!("moon:镓" in BPLANS["smelting_refinery"][1].materials) && !("gas:稳定富勒烯" in BPLANS["smelting_refinery"][1].materials) && !("planetary:同位素" in BPLANS["smelting_refinery"][1].materials) && !("planetary:生物质" in BPLANS["smelting_refinery"][1].materials), "精炼厂 Lv.1 不再要求镓/稳定富勒烯/同位素/生物质");
 
 // ---- C3 原子扣费 ----
 section("C3 建筑原子扣费（精确消耗）");
@@ -523,6 +536,146 @@ for (const id of KNOWN) {
       ok(r.changed===false && r.reason==="insufficient-materials", id+" Lv."+lvl+" 材料["+ref+"]差1 → insufficient-materials");
       ok(bResEqual(before,bSnap()) && G.station.construction===null, id+" Lv."+lvl+" 材料["+ref+"]不足不扣资源");
     }
+  }
+}
+
+// ---- C4b 精炼厂 Lv.1 专属成本专项（12h 自动冶炼前置）----
+section("C4b 精炼厂 Lv.1 专属成本专项（成本预览/原子扣费/无稀有材料可建/解锁自动冶炼）");
+const SREF = "smelting_refinery";
+const srefPlan = BPLANS[SREF][1];
+// 5) 成本预览 == 真实扣费（同源 STATION_BUILDING_PLANS，不复制第二套判断）
+bSetBody(1); bResetBuildings();
+{
+  const disp = W.StationSystem.getStationBuildingDisplayState(G, SREF);
+  const preview = disp && disp.nextCost;
+  const snap = W.StationSystem.buildStationCostSnapshot(srefPlan);
+  let same = !!preview && preview.isk === snap.isk;
+  if (preview && snap) {
+    for (const ref of Object.keys(snap.materials)) if (preview.materials[ref] !== snap.materials[ref]) same = false;
+    for (const ref of Object.keys(preview.materials)) if (snap.materials[ref] !== preview.materials[ref]) same = false;
+  }
+  ok(!!preview && preview.isk === snap.isk && same, "精炼厂 Lv.1 成本预览 == 计划（ISK 与材料键/数量一致，preview 与 charge 同源）");
+}
+// 6) 仅 400/20 时可成功开工，扣费精确且原子化
+bSetBody(1); bResetBuildings(); bZero();
+RR.set(G,"currency:isk", srefPlan.isk);
+for (const [ref,qty] of Object.entries(srefPlan.materials)) RR.set(G, ref, qty);
+const rS1 = bStart(SREF, Date.now());
+ok(rS1.changed === true && rS1.targetLevel === 1, "精炼厂 Lv.1 资源恰好充足 → 开工成功");
+ok(RR.get(G,"currency:isk") === 0, "精炼厂 Lv.1 ISK 精确扣至 0");
+ok(RR.get(G,"mineral:三钛合金") === 0 && RR.get(G,"mineral:类银超金属") === 0, "精炼厂 Lv.1 标准钛材/银镍合金 精确扣至 0");
+ok(G.station.construction.costSnapshot && G.station.construction.costSnapshot.isk === srefPlan.isk && G.station.construction.costSnapshot.materials["mineral:三钛合金"] === 400 && G.station.construction.costSnapshot.materials["mineral:类银超金属"] === 20, "精炼厂 Lv.1 costSnapshot 精确记录 400/20");
+// 7) 缺任意一种材料时开工失败，库存完全不变
+for (const ref of Object.keys(srefPlan.materials)) {
+  bSetBody(1); bResetBuildings(); bZero();
+  RR.set(G,"currency:isk", srefPlan.isk);
+  for (const [r2,qty] of Object.entries(srefPlan.materials)) RR.set(G, r2, qty);
+  RR.set(G, ref, srefPlan.materials[ref] - 1);
+  const before = bSnap();
+  const r = bStart(SREF, Date.now());
+  ok(r.changed === false && r.reason === "insufficient-materials", "精炼厂 Lv.1 材料[" + ref + "]差1 → insufficient-materials");
+  ok(bResEqual(before, bSnap()) && G.station.construction === null, "精炼厂 Lv.1 材料不足不扣任何资源");
+}
+bSetBody(1); bResetBuildings(); bZero();
+RR.set(G,"currency:isk", srefPlan.isk - 1);
+for (const [ref,qty] of Object.entries(srefPlan.materials)) RR.set(G, ref, qty);
+{ const before = bSnap(); const r = bStart(SREF, Date.now());
+  ok(r.changed === false && r.reason === "insufficient-isk", "精炼厂 Lv.1 ISK差1 → insufficient-isk");
+  ok(bResEqual(before, bSnap()), "精炼厂 Lv.1 ISK不足不扣任何资源"); }
+// 8) 不持有镓/气体/行星材料时，精炼厂 Lv.1 仍可开工
+bSetBody(1); bResetBuildings(); bZero();
+RR.set(G,"currency:isk", srefPlan.isk);
+for (const [ref,qty] of Object.entries(srefPlan.materials)) RR.set(G, ref, qty);
+ok(RR.get(G,"moon:镓") === 0 && RR.get(G,"gas:稳定富勒烯") === 0 && RR.get(G,"planetary:同位素") === 0 && RR.get(G,"planetary:生物质") === 0, "精炼厂 Lv.1 开工前镓/气体/行星材料均为 0");
+{ const r = bStart(SREF, Date.now());
+  ok(r.changed === true, "精炼厂 Lv.1 不持有镓/气体/行星材料时仍可开工"); }
+// 9) 完成空间站 Lv.1 后建设精炼厂 Lv.1，完成后自动冶炼线解锁并可启动
+bSetBody(0); bResetBuildings(); resetAutoLines(); bZero();
+RR.set(G,"currency:isk", 500000); RR.set(G,"mineral:三钛合金", 1800); RR.set(G,"mineral:类银超金属", 60);
+const rBody = W.startStationBodyConstruction(G, Date.now() - 3600000 - 5000);
+ok(rBody.changed === true && rBody.targetLevel === 1, "空间站 Lv.1 开工成功（成本 三钛1800/类银60）");
+const rcBody = W.completeStationConstruction(G, { offline:false });
+ok(rcBody.changed === true && G.station.bodyLevel === 1, "空间站 Lv.1 完成 → bodyLevel=1");
+RR.set(G,"currency:isk", srefPlan.isk); for (const [ref,qty] of Object.entries(srefPlan.materials)) RR.set(G, ref, qty);
+const rRef2 = bStart(SREF, Date.now() - 900000 - 5000);
+ok(rRef2.changed === true && rRef2.targetLevel === 1, "空间站 Lv.1 完成后精炼厂 Lv.1 可开工");
+const rcRef = W.completeStationConstruction(G, { offline:false });
+ok(rcRef.changed === true && G.station.buildings.smelting_refinery === 1, "精炼厂 Lv.1 完成 → buildings.smelting_refinery=1");
+const autoInfo = W.StationSystem.getStationAutoLineInfo(G, "smelting");
+ok(autoInfo && autoInfo.unlocked === true && autoInfo.buildingLevel >= 1, "精炼厂 Lv.1 完成后自动冶炼线解锁（unlocked=true）");
+G.station.autoLines.smelting.selectedTargetId = "凡晶石带";
+const rAuto = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"smelting" }, Date.now());
+ok(rAuto.changed === true && G.station.autoLines.smelting.enabled === true, "自动冶炼线可启动（选定目标并开始）");
+
+// ---- C4c 关键路径：满装凿岩级(T2 标准采矿装备 + T2 采矿速度改装件) 从零到自动冶炼 真实公式总耗时 <12h ----
+section("C4c 关键路径：满装凿岩级(T2采矿 + T2采矿速度改装件) 零→自动冶炼 真实公式总耗时 <12h");
+{
+  // 1) 忠实构造「满装凿岩级 + T2 标准采矿装备 + T2 采矿速度改装件」状态：仅保留本舰，排除舰队协同等外部加成（设计：无舰队支持）
+  if (!G.currentAction) G.currentAction = {};
+  const savedShips = G.inventory.ships.slice();
+  const savedAssign = JSON.parse(JSON.stringify(G.shipAssignments || {}));
+  const savedMiningLvl = G.skills.mining.lvl;
+  const savedRefiningLvl = G.skills.refining.lvl;
+  const savedSmeltArea = G.currentAction.smeltingArea;
+  try {
+    // 凿岩级 miner_destroyer：高3/中1/低2/改装1；满装 T2 标准采矿装备（高槽×3 激光、中槽×1 无人机链、低槽×2 提升器）+ T2 采矿速度改装件（改装槽）
+    const venture = {
+      shipId: "miner_destroyer", instanceId: "CP_test_venture",
+      fitted: { high:["t2_mining_laser","t2_mining_laser","t2_mining_laser"], mid:["t2_drone_link"], low:["t2_mining_booster","t2_mining_booster"], rig:["rig_mining_speed_ii"] },
+      enhancementLevel: 0
+    };
+    G.inventory.ships = [venture];
+    G.shipAssignments = { mining: venture.instanceId, refining: venture.instanceId };
+    G.skills.mining.lvl = 15;     // 设计：采矿 Lv.15
+    G.skills.refining.lvl = 15;   // 设计：冶炼 Lv.15
+
+    // 2) 真实读取成本 / baseTime / 配方（不写死任何数值）
+    const needTrit = PLANS[1].materials["mineral:三钛合金"] + BPLANS["smelting_refinery"][1].materials["mineral:三钛合金"];
+    const needSuper = PLANS[1].materials["mineral:类银超金属"] + BPLANS["smelting_refinery"][1].materials["mineral:类银超金属"];
+    const areas = evalIn("MINING_AREAS");
+    const recipes = evalIn("SMELTING_RECIPES");
+    const areaTri = areas.find(a => a.ore === "凡晶石");
+    const areaScorch = areas.find(a => a.ore === "灼烧岩");
+    const recTri = recipes.find(r => r.consumeOre === "凡晶石");
+    const recScorch = recipes.find(r => r.consumeOre === "灼烧岩");
+
+    // 3) 真实函数计算开采效率（与游戏同公式、同源，加盖岩级高槽放大 + T2 装备加成）
+    const miningEff = W.getProductionEfficiencyState(G, "mining").total;
+    // 4) 真实函数计算冶炼效率（凿岩级无 smeltingSpeed 加成 → 仅技能倍率 1+0.02*Lv）
+    G.currentAction.smeltingArea = recTri.name;
+    const smeltTri = W.getSmeltingDisplayState(G, Date.now());
+    G.currentAction.smeltingArea = recScorch.name;
+    const smeltScorch = W.getSmeltingDisplayState(G, Date.now());
+    G.currentAction.smeltingArea = savedSmeltArea;
+
+    // 5) 每周期时间 = baseTime / efficiency（真实公式）；每周期产量：开采基线 1 ore，冶炼 1 ore→1 mineral（baseOutput*skillEff 取整）
+    const mineTriT = areaTri.baseTime / miningEff;
+    const mineScorchT = areaScorch.baseTime / miningEff;
+    const smeltTriT = recTri.baseTime / smeltTri.efficiency;
+    const smeltScorchT = recScorch.baseTime / smeltScorch.efficiency;
+
+    const miningMs = (needTrit * mineTriT + needSuper * mineScorchT) * 1000;
+    const smeltingMs = (needTrit * smeltTriT + needSuper * smeltScorchT) * 1000;
+    const buildMs = PLANS[1].durationMs + BPLANS["smelting_refinery"][1].durationMs;
+    const totalMs = miningMs + smeltingMs + buildMs;
+    const H12 = 12 * 3600 * 1000;
+
+    console.log("  [C4c] 开采效率 = " + miningEff.toFixed(4) + "x；冶炼效率(凡晶/灼烧) = " + smeltTri.efficiency.toFixed(4) + "/" + smeltScorch.efficiency.toFixed(4) + "x");
+    console.log("  [C4c] 需要 标准钛材=" + needTrit + " 银镍合金=" + needSuper);
+    console.log("  [C4c] 开采 凡晶=" + mineTriT.toFixed(2) + "s/cycle ×" + needTrit + "；灼烧=" + mineScorchT.toFixed(2) + "s/cycle ×" + needSuper);
+    console.log("  [C4c] 冶炼 凡晶=" + smeltTriT.toFixed(2) + "s/cycle ×" + needTrit + "；灼烧=" + smeltScorchT.toFixed(2) + "s/cycle ×" + needSuper);
+    console.log("  [C4c] 采矿=" + (miningMs/3600000).toFixed(3) + "h；冶炼=" + (smeltingMs/3600000).toFixed(3) + "h；建造=" + (buildMs/3600000).toFixed(4) + "h；合计=" + (totalMs/3600000).toFixed(3) + "h");
+
+    ok(miningEff > 1, "C4c 满装凿岩级+3×T2激光+2×T2提升器+T2采矿速度改装件 开采效率>1（" + miningEff.toFixed(3) + "x）");
+    ok(smeltTri.efficiency > 1 && smeltScorch.efficiency > 1, "C4c 冶炼效率>1（仅技能 Lv.15，凿岩级无冶炼加成）");
+    ok(needTrit === 2200 && needSuper === 80, "C4c 真实成本合计：标准钛材2200 + 银镍合金80（均读取自计划表，非写死）");
+    ok(totalMs < H12, "C4c 零→自动冶炼关键路径真实耗时 " + (totalMs/3600000).toFixed(2) + "h < 12h");
+  } finally {
+    G.inventory.ships = savedShips;
+    G.shipAssignments = savedAssign;
+    G.skills.mining.lvl = savedMiningLvl;
+    G.skills.refining.lvl = savedRefiningLvl;
+    G.currentAction.smeltingArea = savedSmeltArea;
   }
 }
 

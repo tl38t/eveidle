@@ -21,8 +21,8 @@ const STATION_BODY_PLANS = Object.freeze({
     durationMs: 3600000,          // 1h
     isk: 500000,
     materials: Object.freeze({
-      "mineral:三钛合金": 16000,
-      "mineral:类银超金属": 750
+      "mineral:三钛合金": 1800,   // 标准钛材：16000 → 1800（降低入门门槛，目标「12h 内自动冶炼」）
+      "mineral:类银超金属": 60    // 银镍合金：750 → 60
     })
   }),
   2: Object.freeze({
@@ -352,7 +352,9 @@ function getStationBodyDisplayState(state, now) {
    ----------------------------------------------------------------
    建筑 ID 稳定列表（优先复用 state.js 的 STATION_BUILDING_IDS，避免跨文件
    const TDZ 在加载期引用；此处本地兜底保证 station.js 独立可用）。
-   八座建筑「每座三级成本相同」（策划 6.2 单座表），故分级成本表对所有建筑共用。
+   七座建筑「每座三级成本相同」（策划 6.2 单座表），分级成本表对这七座共用；
+   冶炼精炼厂 Lv.1 为「12h 内自动冶炼」目标使用专属覆盖（见下方 STATION_BUILDING_PLANS），
+   移除镓/气体/行星材料、仅保留标准钛材+银镍合金，故并非八座建筑完全共用同一套 Lv.1 成本。
    ---------------------------------------------------------------- */
 const STATION_BUILDING_ID_LIST = (typeof STATION_BUILDING_IDS !== "undefined" && Array.isArray(STATION_BUILDING_IDS))
   ? STATION_BUILDING_IDS
@@ -420,9 +422,27 @@ const STATION_BUILDING_LEVEL_PLANS = Object.freeze({
   })
 });
 
-// 全部八建筑共用同一套分级成本表（每座三级成本相同）。
+// 精炼厂（smelting_refinery）Lv.1 专属成本：降低入门门槛，移除镓 / 气体 / 行星材料，
+// 仅保留「标准钛材 + 银镍合金」两项。其余七座建筑与全部 Lv.2/Lv.3 仍沿用共享 STATION_BUILDING_LEVEL_PLANS。
+// ⚠️ 扣费 / 显示态 / 成本预览统一读取 STATION_BUILDING_PLANS[buildingId][level]；
+//    startStationBuildingConstruction 也读此处，不要在别处复制第二套成本判断。
+const STATION_SMELTING_REFINERY_LV1_PLAN = Object.freeze({
+  level: 1,
+  durationMs: 900000,          // 15min（与共享 Lv.1 施工时间一致）
+  isk: 50000,
+  materials: Object.freeze({
+    "mineral:三钛合金": 400,    // 标准钛材：2500 → 400
+    "mineral:类银超金属": 20    // 银镍合金：94 → 20
+  })
+});
+
+// 八建筑分级成本表：默认共用 STATION_BUILDING_LEVEL_PLANS；精炼厂 Lv.1 以专属计划覆盖（其余等级不变）。
 const STATION_BUILDING_PLANS = Object.freeze(
-  Object.fromEntries(STATION_BUILDING_ID_LIST.map(id => [id, STATION_BUILDING_LEVEL_PLANS]))
+  Object.fromEntries(STATION_BUILDING_ID_LIST.map(id => [id,
+    id === "smelting_refinery"
+      ? Object.freeze({ 1: STATION_SMELTING_REFINERY_LV1_PLAN, 2: STATION_BUILDING_LEVEL_PLANS[2], 3: STATION_BUILDING_LEVEL_PLANS[3] })
+      : STATION_BUILDING_LEVEL_PLANS
+  ]))
 );
 
 function getStationBuildingLevel(state, buildingId) {
