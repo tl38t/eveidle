@@ -53,10 +53,14 @@
      元素默认（桌面）display:none，此处仅窄屏启用。 */
   .tp-activity-strip{
     display:flex; flex-direction:column; gap:6px;
-    flex:1 1 100%;          /* 在 topbar(flex-wrap) 内强制换行、占满整行 */
+    position:fixed;
+    top: var(--tp-top-h);
+    left:0; right:0;
     padding:7px 14px 9px;
     background:linear-gradient(180deg, rgba(16,24,36,0.97), rgba(10,15,22,0.97));
     border-bottom:1px solid rgba(30,42,56,0.7);
+    z-index:1490;          /* 低于顶栏(1500)，高于主内容；抽屉打开时右缩进避让侧栏 */
+    box-sizing:border-box;
   }
   .tp-act-row{ display:flex; align-items:center; gap:8px; min-width:0; }
   .tp-act-icon{ flex:0 0 auto; font-size:15px; line-height:1; }
@@ -82,6 +86,11 @@
   @keyframes tp-act-flow{ 0%{ background-position:0 0; } 100%{ background-position:200% 0; } }
   .tp-activity-strip.no-progress .tp-act-bar{ display:none; }
   .tp-activity-strip.idle .tp-act-label{ color:#8899aa; font-weight:500; }
+  /* 抽屉打开：活动条向右缩进，给侧边栏让出空间（不与标签重叠） */
+  body.tp-drawer-open .tp-activity-strip{
+    left: min(74vw, 260px);
+    transition: left .25s ease;
+  }
 
   body{
     padding-top: var(--tp-top-h);
@@ -315,6 +324,9 @@
 @media (max-width: 820px){
   /* 隐藏生产双列桌面网格（移动端由单舰焦点结构替代） */
   #hangar-ship-grid, #hangar-empty{ display:none !important; }
+  /* 船坞面板内 .panel-body 与 .tp-hangar-root 是兄弟；在移动端禁用 .panel-body 占高，
+     避免两个 flex:1 子项平分高度导致单舰焦点内容被压缩、底部动作条与标签重叠。 */
+  #hangar-panel > .panel-body{ flex:0 0 0px; min-height:0; overflow:hidden; }
   .tp-hangar-root{ display:none; width:100%; max-width:100%; min-height:0; box-sizing:border-box; flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; }
 
   .tp-hangar-filters{ display:flex; gap:6px; padding:4px 12px 6px; flex-wrap:wrap; }
@@ -357,11 +369,11 @@
   .tp-chip-dot.role-arch{ background:#a08cc8; }
   .tp-chip-assigned{ position:absolute; bottom:3px; right:4px; font-size:9px; color:#7ac87a; }
 
-  .tp-hangar-tabs{ display:flex; border-top:1px solid #16222f; border-bottom:1px solid #16222f; margin-top:4px; }
+  .tp-hangar-tabs{ display:flex; border-top:1px solid #16222f; border-bottom:1px solid #16222f; margin:4px 0; position:relative; z-index:1; background:#0a121e; }
   .tp-htab{ flex:1 1 0; min-height:42px; border:none; background:transparent; color:#8aa0b4; font-size:14px; font-weight:600; border-bottom:2px solid transparent; }
   .tp-htab.active{ color:#eaf2fa; border-bottom-color:#d4a843; }
 
-  .tp-hangar-tabbody{ padding:8px 12px 18px; }
+  .tp-hangar-tabbody{ padding:8px 12px 24px; }
   .tp-stat-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:6px; }
   .tp-stat{ background:rgba(0,0,0,.3); border:1px solid #16222f; border-radius:8px; padding:8px 4px; text-align:center; }
   .tp-stat-l{ display:block; font-size:10px; color:#7d8a99; text-transform:uppercase; }

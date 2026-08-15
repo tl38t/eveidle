@@ -6,7 +6,6 @@
      · 独立建设队列 station.construction（同一时间仅一个）
    本阶段严禁：
      · 附属建筑 / 维护燃料 / 自动线 / 建筑效果 / 完整 UI / NPC 军团
-     · 本体 +1/+2/+3% 综合后勤加成尚未接入（仅提升 bodyLevel）
    成本与时间严格取自策划案：
      · 成本 = 第六节 6.2「三阶段建设成本」本体行（不复制其他数值）
      · 时间 = 第二节 2.3（Lv.1 1h / Lv.2 2h / Lv.3 4h）
@@ -1436,7 +1435,7 @@ function getStationBuildingEffectsDisplayState(state) {
 }
 
 // ---- 综合后勤倍率（Phase 3C-7，系数 B 扩展）----
-// Lv.0=×1, Lv.1=×1.01, Lv.2=×1.02, Lv.3=×1.03；断油=×1；非法 bodyLevel/NaN/Infinity fail-closed ×1
+// Lv.0=×1, Lv.1=×1.03, Lv.2=×1.08, Lv.3=×1.15；断油=×1；非法 bodyLevel/NaN/Infinity fail-closed ×1
 // 独立速度乘区，仅缩短周期时间，不改变产量/XP/材料/掉落/成功率
 // 系数 B（2026-08-06）：传入 coreTag 且对应空间站核心已获取并持有库存时，该制造线额外 +10%（加算，非乘算）。
 const STATION_CORE_RESOURCE = {
@@ -1451,7 +1450,7 @@ function getStationLogisticsMultiplier(state, coreTag) {
   let bodyLevel = Math.floor(Number(s.bodyLevel));
   if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 3) return 1;
   if (!isStationOperational(state)) return 1;
-  const table = {0: 1, 1: 1.01, 2: 1.02, 3: 1.03};
+  const table = {0: 1, 1: 1.03, 2: 1.08, 3: 1.15};
   const base = table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
   let mult = base;
   // 系数 B：携带对应空间站核心（已获取且库存持有）时该制造线 +10%（加算，叠在本体基础倍率上）

@@ -45,6 +45,7 @@ function makeEl(){
       if(p==="getContext")return()=>makeCtx();
       if(p==="querySelector")return()=>makeEl();
       if(p==="querySelectorAll")return()=>[];
+      if(p==="parentNode")return makeEl();
       if(["appendChild","removeChild","setAttribute","remove","focus","click","append","prepend","insertBefore","addEventListener","removeEventListener","dispatchEvent"].includes(p))return()=>makeEl();
       if(["children","childNodes"].includes(p))return[];
       if(["value","innerHTML","textContent","className","id","width","height","top","left","src","href"].includes(p))return"";
@@ -59,6 +60,11 @@ const sandbox={
   console, setTimeout:()=>0, clearTimeout:()=>{}, setInterval:()=>0, clearInterval:()=>{},
   requestAnimationFrame:()=>0, cancelAnimationFrame:()=>{}, confirm:()=>true, alert:()=>{},
   localStorage:localStorageMock,
+  matchMedia:(q)=>({matches:false,media:q||"",addEventListener:()=>{},removeEventListener:()=>{},addListener:()=>{},removeListener:()=>{}}),
+  MutationObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} takeRecords(){ return []; } },
+  IntersectionObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} takeRecords(){ return []; } },
+  ResizeObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} },
+  getComputedStyle: () => ({ getPropertyValue: () => "" }),
   // RuntimeGuard 位于被排除的 runtime.js；events.js 仅在事件非法时调用它，这里给安全 mock 以捕获意外的契约失败
   RuntimeGuard:{ report:(err,ctx)=>{ sandbox.__guardReports.push({ message:err && err.message, ctx }); } },
   document:new Proxy({},{get(t,p){
@@ -2134,11 +2140,11 @@ section("F5 isStationOperational 语义");
   }
 
   // ---- J9：部件周期速度 —— 四级船坞 在线 gameTick + 离线 applyOfflineGains 各验证 ----
-  // setupComponent 设 bodyLevel=1 → logistics=1.01
+  // setupComponent 设 bodyLevel=1 → logistics=1.03
   section("J9 部件周期速度 四级船坞 在线+离线");
   (() => {
     const elapsedSec = 600; // 离线固定 600s
-    const LOG_MULT_J9 = 1.01;
+    const LOG_MULT_J9 = 1.03;
     for (const lvl of [0, 1, 2, 3]) {
       const expDur = IH.time / SKILL_MULT / YARD_MULT[lvl] / LOG_MULT_J9; // 独立参考公式（含 logistics 倍率）
       // 共用函数与参考公式一致（修复前函数缺失 → NaN → FAIL）
@@ -2175,7 +2181,7 @@ section("F5 isStationOperational 语义");
     const elapsedSec = 900;
     function runOffline(lvl, runId) {
       setupAssembly(lvl);
-      const dur = RIFTER.time / SKILL_MULT / YARD_MULT[lvl] / 1.01; // 独立参考公式（含 syMult + body1 logistics）
+      const dur = RIFTER.time / SKILL_MULT / YARD_MULT[lvl] / 1.03; // 独立参考公式（含 syMult + body1 logistics）
       const exp = Math.floor(elapsedSec / dur);
       fundComponents((exp + 5) * 2);
       const before = shipCountById("rifter");
@@ -2198,7 +2204,7 @@ section("F5 isStationOperational 语义");
     const N = 50;
     const INIT_REM = { integrated_hull:0.37, power_core:0.61, functional_system:0.37 };
     function seed() { const l = {}; for (const c of COMP_KEYS) l["component:" + c] = INIT_REM[c]; G.station.shipyard.savingsLedger = l; }
-    const dur = RIFTER.time / SKILL_MULT / 1.30 / 1.01; // 含 logistics (body1)
+    const dur = RIFTER.time / SKILL_MULT / 1.30 / 1.03; // 含 logistics (body1)
     const elapsedSec = dur * N + 0.5; // 相同实际时长（在线 N 周期 = N×dur 秒）
     // A) 在线：推进 N 个完整周期
     setupAssembly(3); seed(); fundComponents(N * 4);
@@ -2244,11 +2250,11 @@ section("F5 isStationOperational 语义");
     G.currentAction.shipCompTarget = "integrated_hull"; G.currentAction.startedShipCompTarget = "integrated_hull";
     const now = Date.now();
     const d3 = W.getShipEngineeringDisplayState(G, now);
-    const expComp = IH.time / SKILL_MULT / 1.30 / 1.01; // bodyLevel=1 → logistics=1.01
-    const expAsm = RIFTER.time / SKILL_MULT / 1.30 / 1.01;
+    const expComp = IH.time / SKILL_MULT / 1.30 / 1.03; // bodyLevel=1 → logistics=1.03
+    const expAsm = RIFTER.time / SKILL_MULT / 1.30 / 1.03;
     ok(Number.isFinite(d3.skillMultiplier) && Math.abs(d3.skillMultiplier - SKILL_MULT) < 1e-9, "J12 skillMultiplier=" + d3.skillMultiplier + " (期望 " + SKILL_MULT + ")");
     ok(Number.isFinite(d3.shipyardMultiplier) && d3.shipyardMultiplier === 1.30, "J12 shipyardMultiplier=" + d3.shipyardMultiplier + " (期望 1.30)");
-    ok(Number.isFinite(d3.totalSpeedMultiplier) && Math.abs(d3.totalSpeedMultiplier - SKILL_MULT * 1.30 * 1.01) < 1e-9, "J12 totalSpeedMultiplier=skill×yard×log=" + d3.totalSpeedMultiplier);
+    ok(Number.isFinite(d3.totalSpeedMultiplier) && Math.abs(d3.totalSpeedMultiplier - SKILL_MULT * 1.30 * 1.03) < 1e-9, "J12 totalSpeedMultiplier=skill×yard×log=" + d3.totalSpeedMultiplier);
     ok(Math.abs(d3.componentActualTime - expComp) < 1e-9 && d3.componentActualTime === CYC(G, d3.currentComponent), "J12 componentActualTime=" + d3.componentActualTime + " === 共用函数");
     ok(Math.abs(d3.assemblyActualTime - expAsm) < 1e-9 && d3.assemblyActualTime === CYC(G, d3.currentAssembly), "J12 assemblyActualTime=" + d3.assemblyActualTime + " === 共用函数");
     ok(d3.componentProgress.duration === d3.componentActualTime, "J12 componentProgress.duration=actualTime");
@@ -2259,12 +2265,12 @@ section("F5 isStationOperational 语义");
     G.station.maintenance.fuelRemaining = 0;
     const dNoFuel = W.getShipEngineeringDisplayState(G, now);
     ok(dNoFuel.shipyardMultiplier === 1.30, "J12 断油 shipyardMultiplier 仍 1.30");
-    ok(dNoFuel.totalSpeedMultiplier === d3.totalSpeedMultiplier / 1.01, "J12 断油总倍率去掉 logistics (" + d3.totalSpeedMultiplier + "→" + dNoFuel.totalSpeedMultiplier + ")");
+    ok(dNoFuel.totalSpeedMultiplier === d3.totalSpeedMultiplier / 1.03, "J12 断油总倍率去掉 logistics (" + d3.totalSpeedMultiplier + "→" + dNoFuel.totalSpeedMultiplier + ")");
     G.station.maintenance.fuelRemaining = 500000;
     // Lv.0：不改时间（=技能×logistics），Lv.0/Lv.3 时间比 ≈1.30
     G.station.buildings.shipyard = 0;
     const d0 = W.getShipEngineeringDisplayState(G, now);
-    ok(d0.shipyardMultiplier === 1 && Math.abs(d0.componentActualTime - IH.time / SKILL_MULT / 1.01) < 1e-9, "J12 Lv.0 时间=纯技能/log " + d0.componentActualTime);
+    ok(d0.shipyardMultiplier === 1 && Math.abs(d0.componentActualTime - IH.time / SKILL_MULT / 1.03) < 1e-9, "J12 Lv.0 时间=纯技能/log " + d0.componentActualTime);
     ok(Math.abs(d0.componentActualTime / d3.componentActualTime - 1.30) < 1e-9 && Math.abs(d0.assemblyActualTime / d3.assemblyActualTime - 1.30) < 1e-9, "J12 Lv.0/Lv.3 时间比=1.30");
     // 弹窗显示态消费共用周期
     G.station.buildings.shipyard = 3;
@@ -2276,12 +2282,12 @@ section("F5 isStationOperational 语义");
     const saveLvl = G.station.buildings.shipyard;
     G.station.buildings.shipyard = NaN;
     const durBrokenYard = CYC(G, IH);
-    ok(Number.isFinite(durBrokenYard) && Math.abs(durBrokenYard - IH.time / SKILL_MULT / 1.01) < 1e-9, "J12 船坞等级损坏 fail-closed 回退×1 (=" + durBrokenYard + ")");
+    ok(Number.isFinite(durBrokenYard) && Math.abs(durBrokenYard - IH.time / SKILL_MULT / 1.03) < 1e-9, "J12 船坞等级损坏 fail-closed 回退×1 (=" + durBrokenYard + ")");
     G.station.buildings.shipyard = saveLvl;
     const saveSkill = G.skills.shipEngineering;
     G.skills.shipEngineering = { lvl:NaN, xp:0 };
     const durBrokenSkill = CYC(G, IH);
-    ok(Number.isFinite(durBrokenSkill) && Math.abs(durBrokenSkill - IH.time / 1 / 1.30 / 1.01) < 1e-9, "J12 技能等级损坏 fail-closed skill×1 (=" + durBrokenSkill + ")");
+    ok(Number.isFinite(durBrokenSkill) && Math.abs(durBrokenSkill - IH.time / 1 / 1.30 / 1.03) < 1e-9, "J12 技能等级损坏 fail-closed skill×1 (=" + durBrokenSkill + ")");
     G.skills.shipEngineering = saveSkill;
     W.__J12_SNAPSHOT = { skillMultiplier:d3.skillMultiplier, shipyardMultiplier:d3.shipyardMultiplier, totalSpeedMultiplier:d3.totalSpeedMultiplier, componentActualTime:d3.componentActualTime, assemblyActualTime:d3.assemblyActualTime, lv0Component:d0.componentActualTime, lv0Assembly:d0.assemblyActualTime };
   })();
@@ -2326,14 +2332,14 @@ section("F5 isStationOperational 语义");
   ok(typeof noStation === "string" && !noStation.includes("ReferenceError") && !noStation.includes("NaN") && !noStation.includes("undefined") && noStation.includes("未建立"),
     "K1 无空间站 lm=1 显示'未建立': " + noStation);
 
-  // 2. 空间站 Lv.1 且有燃料：后勤倍率 1.01，最终倍率=2×1×1.01=2.02
-  const lv1 = fn({ skillMultiplier:2, shipyardMultiplier:1, stationLogistics:{ bodyLevel:1, operational:true, multiplier:1.01, text:"×1.01" }, totalSpeedMultiplier:2*1*1.01 });
-  ok(lv1.includes("1.01") && lv1.includes("+1%") && lv1.includes("2.02") && !lv1.includes("未建立"),
-    "K1 Lv.1 后勤×1.01: " + lv1);
+  // 2. 空间站 Lv.1 且有燃料：后勤倍率 1.03，最终倍率=2×1×1.03=2.06
+  const lv1 = fn({ skillMultiplier:2, shipyardMultiplier:1, stationLogistics:{ bodyLevel:1, operational:true, multiplier:1.03, text:"×1.03" }, totalSpeedMultiplier:2*1*1.03 });
+  ok(lv1.includes("1.03") && lv1.includes("+3%") && lv1.includes("2.06") && !lv1.includes("未建立"),
+    "K1 Lv.1 后勤×1.03: " + lv1);
 
-  // 3. 空间站 Lv.3 且有燃料：后勤倍率 1.03
-  const lv3 = fn({ skillMultiplier:2, shipyardMultiplier:1.30, stationLogistics:{ bodyLevel:3, operational:true, multiplier:1.03, text:"×1.03" }, totalSpeedMultiplier:2*1.30*1.03 });
-  ok(lv3.includes("1.03") && lv3.includes("+3%"), "K1 Lv.3 后勤×1.03: " + lv3);
+  // 3. 空间站 Lv.3 且有燃料：后勤倍率 1.15
+  const lv3 = fn({ skillMultiplier:2, shipyardMultiplier:1.30, stationLogistics:{ bodyLevel:3, operational:true, multiplier:1.15, text:"×1.15" }, totalSpeedMultiplier:2*1.30*1.15 });
+  ok(lv3.includes("1.15") && lv3.includes("+15%"), "K1 Lv.3 后勤×1.15: " + lv3);
 
   // 4. 空间站断油：后勤倍率=1，无 NaN/undefined
   const noFuel = fn({ skillMultiplier:2, shipyardMultiplier:1.30, stationLogistics:{ bodyLevel:3, operational:false, multiplier:1, text:"断油" }, totalSpeedMultiplier:2*1.30*1 });
@@ -2367,8 +2373,8 @@ section("F5 isStationOperational 语义");
     const r2 = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"smelting" }, Date.now());
     return { r1, r2, pts };
   }
-  // 精确公式：efficiency=(1+0+0)×1.00×1.03(body3)=1.03；cycleTimeSec=baseTime/1.03；outputPerCycle=max(1,floor(1×2.6))=2
-  const cycleTimeSec = RECIPE.baseTime / 1.03; // 20 / 1.03 ≈ 19.4175
+  // 精确公式：efficiency=(1+0+0)×1.00×1.15(body3)=1.15；cycleTimeSec=baseTime/1.15；outputPerCycle=max(1,floor(1×2.6))=2
+  const cycleTimeSec = RECIPE.baseTime / 1.15; // 20 / 1.15 ≈ 17.391
   const outputPerCycle = Math.max(1, Math.floor(RECIPE.baseOutput * (1 + 80 * 0.02))); // 2
 
   // ---- G1：离线 10h、燃料仅 1h → 恰好结算 1h（180 周期）----
@@ -2420,15 +2426,15 @@ section("F5 isStationOperational 语义");
     }
     // A：燃料 0，离线 10h → 断油闸门使 0 周期（不是靠 seconds<=5 提前返回）
     const A = runGroup(0, true, "test_g2a_zero_fuel");
-    // B：燃料精确覆盖 1h，离线 10h → 断油闸门在 1h 处关闭 → ≈185 周期（logistics 1.03 加速）
+    // B：燃料精确覆盖 1h，离线 10h → 断油闸门在 1h 处关闭 → ≈207 周期（logistics 1.15 加速）
     const B = runGroup(1, false, "test_g2b_1h_fuel");
-    // C：燃料覆盖完整 10h，离线 10h → 全程供能 → ≈1854 周期（logistics 1.03 加速）
+    // C：燃料覆盖完整 10h，离线 10h → 全程供能 → ≈2070 周期（logistics 1.15 加速）
     const C = runGroup(10, false, "test_g2c_10h_fuel");
 
     // ---- 精确断言 ----
     ok(A.cycles === 0, "G2-A 断油 → 0 周期 (=" + A.cycles + ")");
-    ok(Math.abs(B.cycles - 185) <= 1, "G2-B 燃料1h → 周期=" + B.cycles + " (期望≈185)");
-    ok(Math.abs(C.cycles - 1854) <= 1, "G2-C 燃料10h → 周期=" + C.cycles + " (期望≈1854)");
+    ok(Math.abs(B.cycles - 207) <= 1, "G2-B 燃料1h → 周期=" + B.cycles + " (期望≈207)");
+    ok(Math.abs(C.cycles - 2070) <= 1, "G2-C 燃料10h → 周期=" + C.cycles + " (期望≈2070)");
     ok(A.cycles < B.cycles && B.cycles < C.cycles, "G2 单调 A<B<C (" + A.cycles + "<" + B.cycles + "<" + C.cycles + ")");
     ok(Math.abs(C.cycles - 10 * B.cycles) <= 4, "G2 线性：C≈10×B (" + C.cycles + " vs " + (10*B.cycles) + ")");
 
@@ -2459,8 +2465,8 @@ section("F5 isStationOperational 语义");
     const xpBefore = G.skills.refining.xp;
     W.applyOfflineGains(36000, { runId:"test_g2b_offline" });
     const cyclesDark = oreBefore - RR.get(G, ORE);
-    // 只应结算 1h≈185 周期（logistics 1.03 加速），不应把 9h 黑暗期计入 progress
-    ok(Math.abs(cyclesDark - 185) <= 1, "G2b 断油段不累积：仅结算≈185 周期 (=" + cyclesDark + ")");
+    // 只应结算 1h≈207 周期（logistics 1.15 加速），不应把 9h 黑暗期计入 progress
+    ok(Math.abs(cyclesDark - 207) <= 1, "G2b 断油段不累积：仅结算≈207 周期 (=" + cyclesDark + ")");
     ok(RR.get(G, ORE) > oreBefore - 200, "G2b 原矿仅少量消耗（大量保留）");
     ok(G.skills.refining.xp - xpBefore === cyclesDark * RECIPE.baseXP, "G2b XP=实际周期×10");
     // progress 未被断油段污染（应为小残值 < cycleTimeSec）
@@ -2756,7 +2762,7 @@ section("F5 isStationOperational 语义");
 
 // ================================================================
 // N 区：Phase 3C-7 空间站综合后勤倍率 —— 独立速度乘区
-// 规则：getStationLogisticsMultiplier(state) = Lv.0=1 / Lv.1=1.01 / Lv.2=1.02 / Lv.3=1.03
+// 规则：getStationLogisticsMultiplier(state) = Lv.0=1 / Lv.1=1.03 / Lv.2=1.08 / Lv.3=1.15
 // 断油=1；非法/NaN/Infinity fail-closed=1；不改变产量/XP/材料/掉落/成功率
 // ================================================================
 (() => {
@@ -2783,9 +2789,9 @@ section("F5 isStationOperational 语义");
     bSetBody(0); G.station.maintenance = { fuelRemaining: 0, lastTick: Date.now() };
     ok(LOG(G) === 1, "N1 Lv.0 = 1");
     bSetBody(1); G.station.maintenance.fuelRemaining = 500000;
-    ok(LOG(G) === 1.01, "N1 Lv.1+油 = 1.01");
-    bSetBody(2); ok(LOG(G) === 1.02, "N1 Lv.2+油 = 1.02");
-    bSetBody(3); ok(LOG(G) === 1.03, "N1 Lv.3+油 = 1.03");
+    ok(LOG(G) === 1.03, "N1 Lv.1+油 = 1.03");
+    bSetBody(2); ok(LOG(G) === 1.08, "N1 Lv.2+油 = 1.08");
+    bSetBody(3); ok(LOG(G) === 1.15, "N1 Lv.3+油 = 1.15");
     // 断油 Lv.3 → 1
     G.station.maintenance.fuelRemaining = 0;
     ok(LOG(G) === 1, "N1 Lv.3 断油 = 1");
@@ -2803,8 +2809,8 @@ section("F5 isStationOperational 语义");
     bSetBody(3); G.station.maintenance.fuelRemaining = 500000;
     const d = LOG_DISP(G);
     ok(d.bodyLevel === 3, "N1 disp bodyLevel=3 ("+d.bodyLevel+")");
-    ok(d.multiplier === 1.03, "N1 disp multiplier=1.03 ("+d.multiplier+")");
-    ok(Math.abs(d.bonusRate - 0.03) < 1e-9, "N1 disp bonusRate=0.03 ("+d.bonusRate+")");
+    ok(d.multiplier === 1.15, "N1 disp multiplier=1.15 ("+d.multiplier+")");
+    ok(Math.abs(d.bonusRate - 0.15) < 1e-9, "N1 disp bonusRate=0.15 ("+d.bonusRate+")");
     ok(d.operational === true, "N1 disp operational=true");
     // 断油 display
     G.station.maintenance.fuelRemaining = 0;
@@ -2860,7 +2866,7 @@ section("F5 isStationOperational 语义");
       G.skills.mining = { lvl:99, xp:0 };
       bSetBody(3); G.station.maintenance.fuelRemaining = 500000; bResetBuildings();
       const eff = W.getProductionEfficiencyState(G, "mining");
-      ok(eff.stationLogisticsMultiplier === 1.03, "N2.2 月矿 stationLogisticsMultiplier=1.03");
+      ok(eff.stationLogisticsMultiplier === 1.15, "N2.2 月矿 stationLogisticsMultiplier=1.15");
     }
   })();
 
@@ -2951,7 +2957,7 @@ section("F5 isStationOperational 语义");
     const interval0 = W.getPlanetOutputIntervalFromState(G, planet.id);
     ok(interval3 < interval0, "N5 断油 interval 恢复 (有油 "+interval3+" < 断油 "+interval0+")");
     const baseInterval = planet.interval / (1 + 99 * 0.02);
-    ok(Math.abs(interval3 - baseInterval / 1.03) < 1e-9, "N5 精确 interval="+interval3+" (基础/1.03="+(baseInterval/1.03)+")");
+    ok(Math.abs(interval3 - baseInterval / 1.15) < 1e-9, "N5 精确 interval="+interval3+" (基础/1.15="+(baseInterval/1.15)+")");
     ok(Math.abs(interval0 - baseInterval) < 1e-9, "N5 断油 exact interval="+interval0);
     G.station.maintenance.fuelRemaining = 500000;
   })();
@@ -3047,8 +3053,8 @@ section("F5 isStationOperational 语义");
       return { cyc, onShips, onXp };
     }
     const r3f = runShip([3,500000], "有油");
-    const exp3 = RIFTER.time / SHIP_MULT / 1.03 / 1.30;
-    ok(Math.abs(r3f.cyc - exp3) < 1e-9, "N8 有油 cycle="+r3f.cyc+" (skill×1.03×1.30)");
+    const exp3 = RIFTER.time / SHIP_MULT / 1.15 / 1.30;
+    ok(Math.abs(r3f.cyc - exp3) < 1e-9, "N8 有油 cycle="+r3f.cyc+" (skill×1.15×1.30)");
     ok(r3f.onShips === N, "N8 有油 在线 N="+r3f.onShips);
     const r3n = runShip([3,0], "断油");
     const exp3n = RIFTER.time / SHIP_MULT / 1 / 1.30;
@@ -3090,7 +3096,7 @@ section("F5 isStationOperational 语义");
       const si = disp.sites.find(s => s.id === site.id);
       if (!si) return;
       const archSpeedEff = (boosterName ? (si.archSpeedEff || 1) : 1);
-      const expTime = site.time * archSpeedEff / 1.03;
+      const expTime = site.time * archSpeedEff / 1.15;
       ok(Math.abs(si.actualCycleTime - expTime) < 1e-6, "N9 "+(boosterName||"无增强剂")+" cycle="+si.actualCycleTime+" (期望 "+expTime+")");
       bSetBody(0);
       const disp0 = W.getArchaeologyDisplayState(G, Date.now());
@@ -3163,20 +3169,20 @@ section("F5 isStationOperational 语义");
   // ---- N11 独立乘区且无 25% 上限 ----
   section("N11 独立乘区无 25% 上限");
   (() => {
-    // 构造：技能 Lv.99 → 2.98, 船坞 Lv.3 → 1.30, 本体 Lv.3 → 1.03
-    // 总倍率 = 2.98 × 1.30 × 1.03 = 3.991... > 1.25 ✓
+    // 构造：技能 Lv.99 → 2.98, 船坞 Lv.3 → 1.30, 本体 Lv.3 → 1.15
+    // 总倍率 = 2.98 × 1.30 × 1.15 = 4.021... > 1.25 ✓
     const RIFTER = W.SHIP_DATA.SHIP_ASSEMBLY_RECIPES.find(r => r.id === "rifter");
     const SHIP_MULT = 1 + 99 * 0.02;
     bSetBody(3); G.station.maintenance.fuelRemaining = 500000;
     G.station.buildings.shipyard = 3;
     G.skills.shipEngineering = { lvl: 99, xp: 0 };
-    const totalMult = SHIP_MULT * 1.03 * 1.30;
+    const totalMult = SHIP_MULT * 1.15 * 1.30;
     ok(totalMult > 1.25, "N11 总倍率 > 1.25 (" + totalMult + ")");
     const cyc = W.getShipEngineeringCycleDuration(G, RIFTER);
     const expCyc = RIFTER.time / totalMult;
     ok(Math.abs(cyc - expCyc) < 1e-9, "N11 实际周期=配方/真实总倍率 (" + cyc + " vs " + expCyc + ")");
     // 若 25% 截断，周期应为 RIFTER.time / (SHIP_MULT * 1.25) ≈ 30 / (2.98 * 1.25) = 8.05s
-    // 实际应为 30 / (2.98 * 1.30 * 1.03) = 30 / 3.991... = 7.517s
+    // 实际应为 30 / (2.98 * 1.30 * 1.15) = 30 / 4.021... = 7.464s
     const capped = RIFTER.time / (SHIP_MULT * 1.25);
     ok(cyc < capped, "N11 实际周期 < 25% 截断 (" + cyc + " < " + capped + ")");
   })();
@@ -3220,7 +3226,7 @@ section("F5 isStationOperational 语义");
     b0(); const ps0 = S.getStationPlanetarySlotBonus(G);
     b3(); ok(S.getStationPlanetarySlotBonus(G) === ps0, "N12 行星槽位 body3=body0");
 
-    // 7) 维护点数不额外乘 1.03
+    // 7) 维护点数不额外乘 1.15
     G.station.buildings.smelting_refinery = 1;
     b0(); G.station.buildings.smelting_refinery = 1; const mp0 = S.getStationMaintenancePoints(G);
     b3(); G.station.buildings.smelting_refinery = 1; ok(S.getStationMaintenancePoints(G) === mp0 + 3, "N12 维护点 body3=body0+3");

@@ -889,7 +889,7 @@
   //     （仅记录真实 completeStationConstruction 发射的 station:constructionCompleted）。
   //   - H12 三条自动线同时运行：statistics.station.maxConcurrentAutoLines >= 3
   //     （每次 station:autoLineStarted 后读取真实 state.station.autoLines 的 enabled 数量取 max）。
-  //   - H13 物流枢纽满级效果：真实 getStationLogisticsMultiplier(state) >= 1.03
+  //   - H13 物流枢纽满级效果：真实 getStationLogisticsMultiplier(state) >= 1.15
   //     （断油/未运行时倍率为 1，不得仅看 bodyLevel === 3）。
   //   - H15 单次离线结算超过 8 小时：statistics.station.maxOfflineSettlementSeconds > 28800
   //     （严格大于：28800 不解锁、28801 解锁；仅由真实 offline:settlementCompleted 累计）。
@@ -941,7 +941,7 @@
     stationBuildingLevelRule("H10", STATION_BUILDING_IDS_FOR_ACHIEVEMENTS[7], 3),     // 旗舰船坞 Lv.3
     stationStatRule("H11", "constructionCompletions", 1),                             // 首次建设完成
     stationStatRule("H12", "maxConcurrentAutoLines", 3),                              // 三条自动线同时运行
-    stationLogisticsRule("H13", 1.03),                                                // 物流枢纽满级效果（真实倍率 >= 1.03）
+    stationLogisticsRule("H13", 1.15),                                                // 物流枢纽满级效果（真实倍率 >= 1.15）
     stationOfflineExceedsRule("H15", 28800),                                          // 单次离线结算 > 8 小时（严格大于）
     stationBuildingLevelRule("H16", STATION_BUILDING_IDS_FOR_ACHIEVEMENTS[7], 3),     // 旗舰船坞 Lv.3（与 H10 同条件、独立规则）
   ]);

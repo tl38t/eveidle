@@ -43,9 +43,9 @@
         + '<span class="tp-act-eta"></span>'
       + '</div>'
       + '<div class="tp-act-bar flowing"><span class="tp-act-fill"></span></div>';
-    /* 放进 topbar 内部（而非 topbar 后面），继承 topbar 的 fixed 定位，
-       避免被固定顶栏遮挡。topbar 本身 flex-wrap:wrap，strip 宽 100% 自动换行到底部。 */
-    topbar.appendChild(strip);
+    /* 方案 A：把活动条放到 topbar 之后、main-container 之前，作为 body 层级的独立 fixed 条。
+       抽屉打开时由 CSS 向右缩进，避免覆盖侧边栏顶部标签（不再压在 sidebar 之上）。 */
+    topbar.parentNode.insertBefore(strip, mainContainer);
     _tpActStrip = strip;
     _tpActIcon = strip.querySelector(".tp-act-icon");
     _tpActLabel = strip.querySelector(".tp-act-label");
@@ -79,8 +79,8 @@
     });
     document.body.appendChild(nav);
 
-    function openDrawer() { sidebar.classList.add("open"); overlay.classList.add("show"); }
-    function closeDrawer() { sidebar.classList.remove("open"); overlay.classList.remove("show"); }
+    function openDrawer() { sidebar.classList.add("open"); overlay.classList.add("show"); document.body.classList.add("tp-drawer-open"); }
+    function closeDrawer() { sidebar.classList.remove("open"); overlay.classList.remove("show"); document.body.classList.remove("tp-drawer-open"); }
 
     menuBtn.addEventListener("click", function () {
       if (sidebar.classList.contains("open")) closeDrawer(); else openDrawer();
