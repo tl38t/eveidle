@@ -1260,8 +1260,8 @@
   // -------------------------------------------------------------------------
   // Batch C-9 空间站类（H01–H13、H15、H16，共 15 项）
   //   - 只读 state.station（本体/建筑等级）与 state.statistics.station（三统计字段）；
-  //   - H13 只调用真实 getStationLogisticsMultiplier(state)（断油/未运行倍率为 1，
-  //     不得仅看 bodyLevel === 3）；
+  //   - H13 只调用真实 getStationLogisticsBaseMultiplier(state)（不含 GAME_SPEED；断油/未运行倍率为 1，
+  //     不得仅看 bodyLevel === 3）；speed=10 不会把 Lv.1 的 1.03 误解锁为「满级」。
   //   - H15 严格大于（> 28800）：28800 不解锁、28801 解锁；
   //   - 不读事件 payload、不解析 conditionText、不修改 state.station / statistics。
   // -------------------------------------------------------------------------
@@ -1286,10 +1286,11 @@
       return typeof v === "number" && isFinite(v) && v >= rule.minValue;
     }
     if (rule.type === "station-logistics-multiplier") {
-      // 真实物流倍率：只调 getStationLogisticsMultiplier(state)。断油/未运行时该函数返回 1，
-      // 天然不满足 >= 1.03；不允许退化为 bodyLevel 判断。不修改 state。
-      if (typeof getStationLogisticsMultiplier !== "function") return false;
-      const mult = getStationLogisticsMultiplier(state);
+      // 真实物流倍率（不含 GAME_SPEED）：用 getStationLogisticsBaseMultiplier，仅含
+      // 「空间站运行状态 + 核心加成语义」。断油/未运行时该函数返回 1，天然不满足 >= 1.15；
+      // 不允许退化为 bodyLevel 判断。speed=10 不会把 Lv.1 的 1.03 放大成 10.3 导致误解锁。
+      if (typeof getStationLogisticsBaseMultiplier !== "function") return false;
+      const mult = getStationLogisticsBaseMultiplier(state);
       return typeof mult === "number" && isFinite(mult) && mult >= rule.minValue;
     }
     if (rule.type === "station-offline-exceeds") {

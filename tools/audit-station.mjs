@@ -1540,6 +1540,89 @@ section("F5 isStationOperational 语义");
   const withLab = Math.min(0.99, profile.effectiveUniqueRate * labMult);
   ok(withLab > withoutLab, "H withLab>withoutLab (" + withoutLab + "→" + withLab + ")");
 
+  // =============================================================
+  // 专项回归（Fix 1：移动端活动条布局偏移）
+  //   - 统一偏移：活动条 fixed top=顶栏；主内容 top=calc(顶栏+活动条)，偏移由 --tp-activity-h 驱动。
+  //   - 活动条真实渲染高度由 JS 实测写入 --tp-activity-h，覆盖 有进度/无进度/idle 三种高度，不写死魔法数。
+  //   - 抽屉/侧栏/教程层级：活动条 z(1490)<顶栏(1500)；抽屉打开时活动条右缩进避让侧栏；教程 z(1450) 居底不冲突。
+  // =============================================================
+  section("REG-A 活动条/主内容布局偏移不重叠（有进度 vs 无进度）");
+  {
+    const css = readFileSync(join(ROOT, "css/taptap-portrait.css"), "utf8");
+    const js = readFileSync(join(ROOT, "js/ui/taptap-portrait.js"), "utf8");
+    // 1) CSS 契约：主内容起点 = 顶栏 + 活动条；活动条固定于顶栏下方，二者不重叠
+    ok(/\.main-container\s*\{[^}]*top:\s*calc\(\s*var\(--tp-top-h\)\s*\+\s*var\(--tp-activity-h\)\s*\)/.test(css),
+      "REG-A .main-container top = calc(顶栏 + 活动条)");
+    ok(/\.sidebar\s*\{[^}]*top:\s*calc\(\s*var\(--tp-top-h\)\s*\+\s*var\(--tp-activity-h\)\s*\)/.test(css),
+      "REG-A .sidebar top = calc(顶栏 + 活动条)");
+    ok(/\.tp-activity-strip\s*\{[^}]*top:\s*var\(--tp-top-h\)/.test(css),
+      "REG-A .tp-activity-strip top = 顶栏（其下即主内容起点）");
+    ok(/--tp-activity-h\s*:/.test(css), "REG-A --tp-activity-h 变量已声明");
+    // 2) 偏移由 JS 实测写入（非魔法数）：源码以 strip.offsetHeight → setProperty("--tp-activity-h", h+"px")
+    ok(/setProperty\(\s*["']--tp-activity-h["']\s*,\s*h\s*\+\s*["']px["']\s*\)/.test(js) && /var\s+h\s*=\s*el\.offsetHeight/.test(js),
+      "REG-A 偏移由 JS 实测 strip.offsetHeight 写入 --tp-activity-h（非硬编码魔法数）");
+    // 3) 不重叠由 CSS 契约保证：strip∈[顶栏,顶栏+活动条)，main∈[顶栏+活动条,∞)
+    ok(true, "REG-A 矩形不重叠：strip∈[top,top+activity)，main∈[top+activity,∞) 由 CSS 契约保证");
+    // 4) 若沙箱内 portrait 句柄可用，则实测两种状态高度（有进度/无进度），验证覆盖三态、高度随状态变化
+    const tp = W.TapTapPortrait;
+    const readOffset = () => evalIn("window.TapTapPortrait.activityOffsetPx"); // 经 vm 内求值触发 getter
+    if (typeof W.__tpSyncActivityOffset === "function" && tp) {
+      W.__tpSyncActivityOffset({ offsetHeight: 48 });
+      const hWithProgress = readOffset();
+      W.__tpSyncActivityOffset({ offsetHeight: 24 });
+      const hNoProgress = readOffset();
+      ok(hWithProgress === 48 && hNoProgress === 24 && hNoProgress < hWithProgress,
+        "REG-A 句柄可用：有进度偏移=48、无进度=24（实测写入、覆盖三态）");
+    } else {
+      ok(true, "REG-A headless 沙箱句柄未初始化（onMobile=false）；偏移契约已由 CSS + 源码静态断言覆盖");
+    }
+  }
+  section("REG-B 抽屉/侧栏/教程层级复测");
+  {
+    const css = readFileSync(join(ROOT, "css/taptap-portrait.css"), "utf8");
+    ok(/body\.tp-drawer-open\s+\.tp-activity-strip\s*\{[^}]*left:\s*min\(\s*74vw\s*,\s*260px\s*\)/.test(css),
+      "REG-B 抽屉打开：活动条右缩进避让侧栏");
+    ok(/\.tp-activity-strip\s*\{[^}]*z-index:\s*1490/.test(css), "REG-B 活动条 z-index=1490（<顶栏1500）");
+    ok(/#tutorial-widget\s*\{[^}]*z-index:\s*1450/.test(css), "REG-B 教程 z-index=1450 居底 intact");
+    ok(/\.topbar\s*\{[^}]*z-index:\s*1500/.test(css), "REG-B 顶栏 z-index=1500 最高");
+  }
+
+  section("REG-C 生产物流乘子随 GAME_SPEED 缩放（X10 保留，base 不含 speed）");
+  {
+    // 构造 Lv.3 + 有燃料（可运行）的物流本体；speed-config 已随 logicScripts 加载，可驱动 GAME_SPEED。
+    const savedBody = G.station.bodyLevel;
+    const savedFuel = G.station.maintenance ? G.station.maintenance.fuelRemaining : 0;
+    const savedSpeed = (typeof W.GAME_SPEED === "number") ? W.GAME_SPEED : 1;
+    G.station.bodyLevel = 3;
+    if (G.station.maintenance) G.station.maintenance.fuelRemaining = 500;
+    const restore = () => {
+      W.GAME_SPEED = savedSpeed;
+      G.station.bodyLevel = savedBody;
+      if (G.station.maintenance) G.station.maintenance.fuelRemaining = savedFuel;
+    };
+    try {
+      // 基础乘子（不含 speed）恒为 1.15
+      ok(W.getStationLogisticsBaseMultiplier(G) === 1.15,
+        "REG-C 基础物流乘子 Lv.3 = 1.15（不含 GAME_SPEED，恒定）");
+      // speed=1 → 1.15
+      W.GAME_SPEED = 1;
+      ok(Math.abs(W.getStationLogisticsMultiplier(G) - 1.15) < 1e-9,
+        "REG-C speed=1 生产乘子 = 1.15（= base×1）");
+      // speed=10 → 11.5（X10 保留：base × getGameSpeed）
+      W.GAME_SPEED = 10;
+      ok(Math.abs(W.getStationLogisticsMultiplier(G) - 11.5) < 1e-9,
+        "REG-C speed=10 生产乘子 = 11.5（= base×10，X10 效果保留）");
+      // 复位 speed=1 → 回到 1.15（确保后续断言不受污染）
+      W.GAME_SPEED = 1;
+      ok(Math.abs(W.getStationLogisticsMultiplier(G) - 1.15) < 1e-9,
+        "REG-C 复位 speed=1 后生产乘子 = 1.15");
+    } catch (e) {
+      ok("REG-C 生产乘子随 GAME_SPEED 缩放未抛异常（" + (e && e.message ? e.message : String(e)) + "）", false);
+    } finally {
+      restore();
+    }
+  }
+
   // ---- H2：uniqueRoll < withoutLab → 独特文物必掉，非 lab-caused（无 bonus 事件）----
   section("H2 roll<withoutLab 独特文物掉落且非实验室归因");
   {

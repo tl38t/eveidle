@@ -9,6 +9,9 @@
   --tp-top-h: 70px;
   --tp-bottom-h: 56px;
   --tp-safe-b: env(safe-area-inset-bottom, 0px);
+  /* 活动条真实高度（由 taptap-portrait.js 按实际渲染高度写入；默认 0 不占偏移）。
+     主内容偏移 = 顶栏 + 活动条，统一由该变量驱动，避免写死与真实高度不一致的魔法数。 */
+  --tp-activity-h: 0px;
 }
 
 /* 注入元素在桌面默认隐藏，仅在窄屏媒体查询内显示 */
@@ -93,7 +96,7 @@
   }
 
   body{
-    padding-top: var(--tp-top-h);
+    padding-top: calc(var(--tp-top-h) + var(--tp-activity-h));
     padding-bottom: calc(var(--tp-bottom-h) + var(--tp-safe-b));
     overflow-x: hidden;
   }
@@ -124,14 +127,14 @@
   /* 单一页面滚动区：主容器固定夹在顶栏与底栏之间；.content 负责内部纵向滚动。 */
   .main-container{
     position: fixed;
-    top: var(--tp-top-h);
+    top: calc(var(--tp-top-h) + var(--tp-activity-h));
     bottom: calc(var(--tp-bottom-h) + var(--tp-safe-b));
     left:0; right:0;
     width:100%; min-width:0; min-height:0;
     overflow:hidden;
   }
   .sidebar{
-    position: fixed; top: var(--tp-top-h); left:0;
+    position: fixed; top: calc(var(--tp-top-h) + var(--tp-activity-h)); left:0;
     bottom: calc(var(--tp-bottom-h) + var(--tp-safe-b));
     width: min(74vw, 260px); z-index: 1400;
     transform: translateX(-100%); transition: transform .25s ease;

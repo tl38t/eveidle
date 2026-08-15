@@ -1444,7 +1444,9 @@ const STATION_CORE_RESOURCE = {
   equipEng:"special:空间站装备制造核心",
   booster: "special:空间站增强剂制造核心",
 };
-function getStationLogisticsMultiplier(state, coreTag) {
+// 基础物流倍率：不含 GAME_SPEED（十倍速），但保留「空间站运行状态 + 核心加成语义」。
+// 用于成就判定（H13）等不应被速度开关扭曲的场景（speed=10 时 Lv.1 的 1.03 不会被放大成 10.3）。
+function getStationLogisticsBaseMultiplier(state, coreTag) {
   const s = state && state.station;
   if (!s) return 1;
   let bodyLevel = Math.floor(Number(s.bodyLevel));
@@ -1461,9 +1463,14 @@ function getStationLogisticsMultiplier(state, coreTag) {
       : 0;
     if (obtained[coreTag] && held > 0) mult += 0.10;
   }
-  // 十倍速开关（2026-08-04）：仅缩放产出周期，冷却/到期仍实时。speed=1 时恒为 1。
+  return mult;
+}
+// 生产用物流倍率：基础倍率 × 十倍速开关（仅缩放产出周期，冷却/到期仍实时）。
+// speed=1 时恒为 1，与基础倍率一致；speed=10 时放大产出速度（保留 X10 效果，不用于成就判定）。
+function getStationLogisticsMultiplier(state, coreTag) {
+  const base = getStationLogisticsBaseMultiplier(state, coreTag);
   const speed = (typeof getGameSpeed === "function") ? getGameSpeed() : 1;
-  return mult * speed;
+  return base * speed;
 }
 
 function getStationLogisticsDisplayState(state) {
@@ -1738,6 +1745,7 @@ const StationSystem = {
   canAffordShipyardQuote,
   commitShipyardProductionQuote,
   getStationBuildingEffectsDisplayState,
+  getStationLogisticsBaseMultiplier,
   getStationLogisticsMultiplier,
   getStationLogisticsDisplayState
 };
@@ -1786,6 +1794,7 @@ if (typeof window !== "undefined") {
   window.getStationBuildingEffectsDisplayState = getStationBuildingEffectsDisplayState;
   // Phase 3C-7
   window.getStationLogisticsMultiplier = getStationLogisticsMultiplier;
+  window.getStationLogisticsBaseMultiplier = getStationLogisticsBaseMultiplier;
   window.getStationLogisticsDisplayState = getStationLogisticsDisplayState;
   // Phase 3C-8
   window.getStationPageDisplayState = getStationPageDisplayState;

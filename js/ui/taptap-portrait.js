@@ -47,6 +47,11 @@
        抽屉打开时由 CSS 向右缩进，避免覆盖侧边栏顶部标签（不再压在 sidebar 之上）。 */
     topbar.parentNode.insertBefore(strip, mainContainer);
     _tpActStrip = strip;
+    // 统一布局偏移：把活动条真实渲染高度写入 --tp-activity-h，主内容(top=顶栏+活动条)据此下移，
+    // 活动条（fixed top=顶栏）与主内容矩形不重叠；覆盖有进度/无进度/idle 三种高度。
+    try { if (typeof ResizeObserver !== "undefined") { var _tpActRO = new ResizeObserver(function () { syncActivityOffset(); }); _tpActRO.observe(strip); } } catch (e) {}
+    syncActivityOffset();
+    window.__tpActivityStrip = _tpActStrip;
     _tpActIcon = strip.querySelector(".tp-act-icon");
     _tpActLabel = strip.querySelector(".tp-act-label");
     _tpActPct = strip.querySelector(".tp-act-pct");
@@ -440,6 +445,20 @@
      与 getActiveActionProgressDisplayState（percent / etaText）；
      每 ~100ms 刷新，与桌面顶部迷你进度条同频，避免只在事件触发时跳变。
      严格门控：onMobile() 为假时直接返回，桌面不显示也不刷新。 */
+  /* 同步主内容布局偏移：用活动条真实渲染高度（offsetHeight）写入 --tp-activity-h。
+     strip 为 fixed top=顶栏，主内容 top=calc(顶栏+活动条)，故二者矩形天然不重叠；
+     offsetHeight 随 有进度/无进度/idle 三种状态变化（进度条显隐改变高度），不写死魔法数。 */
+  var _tpActivityH = 0; // 最近一次同步的活动条高度(px)，供 QA 断言读取
+  function syncActivityOffset(stripEl) {
+    var el = stripEl || _tpActStrip;
+    if (!el) return;
+    var h = el.offsetHeight || 0;
+    _tpActivityH = h;
+    var root = (typeof document !== "undefined") ? document.documentElement : null;
+    if (root && root.style && typeof root.style.setProperty === "function") {
+      root.style.setProperty("--tp-activity-h", h + "px");
+    }
+  }
   function tpUpdateActivityStrip() {
     if (!onMobile() || !_tpActStrip || !window.gameState) return;
     var act = null, prog = null;
@@ -472,6 +491,7 @@
       if (_tpActEta) _tpActEta.textContent = (prog && prog.etaText) ? prog.etaText : "";
       if (_tpActFill) _tpActFill.style.width = pct + "%";
     }
+    syncActivityOffset();
   }
   function hookActivityStrip() {
     function loop(t) {
@@ -485,12 +505,18 @@
   }
 
   /* ---------- 测试/QA 句柄（无副作用，仅供自动化审计与 ?qa=1 调用） ---------- */
+  /* 置于模块顶层、且在启动之前：即便 init() 在 headless 沙箱中未完整执行（onMobile=false 等），
+     句柄仍可被审计脚本捕获，验证「活动条偏移由实测高度驱动、非魔法数」。 */
+  window.__tpSyncActivityOffset = syncActivityOffset;
   window.TapTapPortrait = {
     tpRoleOf: tpRoleOf,
     tpShipMeta: tpShipMeta,
     tpEnhanceHTML: tpEnhanceHTML,
     tpDismantleHTML: tpDismantleHTML,
     tpUpdateActivityStrip: tpUpdateActivityStrip,
+    syncActivityOffset: syncActivityOffset,
+    get activityOffsetPx() { return _tpActivityH; },
+    get activityStripEl() { return _tpActStrip; },
     get currentShipId() { return _tpCurrentShipId; },
     get hangarFilter() { return _tpHangarFilter; },
     get hangarTab() { return _tpHangarTab; },

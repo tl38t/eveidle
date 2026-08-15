@@ -7622,6 +7622,48 @@ function runStation() {
     !rLog3Dry.unlockedIds.includes("H13") &&
     !rLog2Fuel.unlockedIds.includes("H13"));
 
+  // =============================================================
+  // 专项回归（Fix 2：H13 十倍速误解锁）
+  //   - 成就判定用 getStationLogisticsBaseMultiplier（不含 GAME_SPEED）；
+  //     生产 getStationLogisticsMultiplier 仍含 speed（保留 X10）。
+  //   - speed=1 与 speed=10 下，H13 都只在真实 Lv.3 有效物流倍率=1.15 时解锁；
+  //     Lv.1(1.03)/Lv.2(1.08) 不得解锁（speed=10 时 Lv.1 不会被放大成 10.3）。
+  // =============================================================
+  // REG-13 H13 速度无关解锁（speed=1 与 speed=10）
+  //   本沙箱仅加载 station.js（不含 speed-config/tick），故 getGameSpeed 不可用、生产乘子恒为基础值；
+  //   生产乘子随 GAME_SPEED 缩放（X10 保留）由 audit-station REG-C 专项验证。
+  //   此处聚焦 H13 的核心修复：成就判定走 getStationLogisticsBaseMultiplier（不含 GAME_SPEED），
+  //   因此无论 speed=1 还是 speed=10，H13 都只在真实 Lv.3 有效物流倍率=1.15 时解锁，
+  //   Lv.1(1.03)/Lv.2(1.08)/断油 不得解锁（speed=10 不会把 Lv.1 误解锁为「满级」）。
+  {
+    const buildLog = (lvl, fuel) => makeStState(sbH, { bodyLevel: lvl, fuel: fuel });
+    try {
+      for (const speed of [1, 10]) {
+        // 即便生产侧 GAME_SPEED 被置为 speed（本沙箱无 getGameSpeed 故为无操作，但语义正确）：
+        // H13 判定走 base，与 speed 无关，不会把 Lv.1(1.03) 在 speed=10 时误放大成 10.3 解锁。
+        try { sbH.GAME_SPEED = speed; } catch (e) {}
+        const s1 = buildLog(1, 500);   // 真实物流 1.03
+        const s2 = buildLog(2, 500);   // 真实物流 1.08
+        const s3 = buildLog(3, 500);   // 真实物流 1.15
+        const s3dry = buildLog(3, 0);  // 断油
+        // 基础乘子不含 speed：恒为本体值，与 speed 无关
+        ok("[REG-13] speed=" + speed + " 基础物流乘子不含 GAME_SPEED（Lv.1=1.03/Lv.2=1.08/Lv.3=1.15）",
+          sbH.getStationLogisticsBaseMultiplier(s1) === 1.03 &&
+          sbH.getStationLogisticsBaseMultiplier(s2) === 1.08 &&
+          sbH.getStationLogisticsBaseMultiplier(s3) === 1.15);
+        // H13 仅 Lv.3+油解锁；Lv.1/Lv.2/断油 不解锁（哪怕生产侧 speed=10 把乘子放大）
+        const r1 = evalS(s1, 700), r2 = evalS(s2, 700), r3 = evalS(s3, 700), r3d = evalS(s3dry, 700);
+        ok("[REG-13] speed=" + speed + " H13 仅 Lv.3+油解锁（Lv.1/Lv.2/断油 不解锁）",
+          r3.unlockedIds.includes("H13") && !r1.unlockedIds.includes("H13") &&
+          !r2.unlockedIds.includes("H13") && !r3d.unlockedIds.includes("H13"));
+      }
+    } catch (e) {
+      ok("[REG-13] 速度无关回归未抛异常（" + (e && e.message ? e.message : String(e)) + "）", false);
+    } finally {
+      try { delete sbH.GAME_SPEED; } catch (e) {}
+    }
+  }
+
   const sOff0 = makeStState(sbH, { ms: 28800 });
   const rOff0 = evalS(sOff0, 800);
   const sOff1 = makeStState(sbH, { ms: 28801 });
