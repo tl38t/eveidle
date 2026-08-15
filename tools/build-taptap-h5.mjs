@@ -51,7 +51,7 @@ if (MODE !== "selftest" && MODE !== "release") {
   throw new Error("未知 --mode: " + MODE + "（仅支持 selftest / release）");
 }
 const INCLUDE_PROBE = MODE === "selftest";
-const ZIP_NAME = MODE === "release" ? "deep-space-idle-taptap-rc5.zip" : "deep-space-idle-taptap-rc5-selftest.zip";
+const ZIP_NAME = MODE === "release" ? "deep-space-idle-taptap-rc6.zip" : "deep-space-idle-taptap-rc6-selftest.zip";
 
 // ---- 来源 SHA（--source-sha，必须 == 当前 HEAD）----
 function parseSourceSha() {
@@ -302,7 +302,7 @@ function verifyPackage(buffer, mode) {
       ok("release: 运行文件不含 ?qa= 场景入口", !qaSceneHit);
 
       // 跨模式比对：与 selftest 产物证明“唯一差异=探针文件+index.html 注入标签”
-      const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc5-selftest.zip");
+      const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc6-selftest.zip");
       if (fs.existsSync(selftestZip)) {
         try {
           const sz = await JSZip.loadAsync(fs.readFileSync(selftestZip));

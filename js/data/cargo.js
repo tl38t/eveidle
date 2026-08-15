@@ -356,17 +356,28 @@ function getCargoDropInfo(size) {
     if (id.indexOf("loot:") === 0) return "loot";
     return "resource";
   }
-  // 数量参考文本：弹药随尺寸缩放，其余用池内区间/基数
+  // 数量参考文本：与真实开箱一致——矿物/行星材料/弹药随尺寸缩放（round(qty*mul)），loot/implant/blueprint 不缩放
   function qtyText(e) {
     const mul = CARGO_T1_SIZE_MUL[sz] || 1;
     const q = e.qty;
     if (e.id === "ammo:T1" || e.id === "ammo:T2") {
       const base = (typeof q === "number") ? q : (Array.isArray(q) ? q[0] : 1);
       const hi = (Array.isArray(q) ? q[1] : base);
-      const lo = Math.floor(base * mul);
-      const hiS = Math.floor(hi * mul);
+      const lo = Math.round(base * mul);
+      const hiS = Math.round(hi * mul);
       return lo === hiS ? ("×" + lo) : ("×" + lo + "~" + hiS);
     }
+    // 矿物 / 行星材料：随尺寸缩放，与真实开箱 Math.max(1, Math.round(qty*mul)) 一致
+    if (e.id.indexOf("mineral:") === 0 || e.id.indexOf("planetary:") === 0) {
+      if (Array.isArray(q)) {
+        const lo = Math.round(q[0] * mul);
+        const hi = Math.round(q[1] * mul);
+        return lo === hi ? ("×" + lo) : ("×" + lo + "~" + hi);
+      }
+      const n = Math.round(q * mul);
+      return "×" + n;
+    }
+    // loot / implant / blueprint：不随尺寸缩放（真实开箱亦不缩放）
     if (Array.isArray(q)) return q[0].toLocaleString() + "~" + q[1].toLocaleString();
     if (typeof q === "number") return "×" + q;
     return "";

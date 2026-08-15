@@ -6,7 +6,6 @@
      · 独立建设队列 station.construction（同一时间仅一个）
    本阶段严禁：
      · 附属建筑 / 维护燃料 / 自动线 / 建筑效果 / 完整 UI / NPC 军团
-     · 本体 +1/+2/+3% 综合后勤加成尚未接入（仅提升 bodyLevel）
    成本与时间严格取自策划案：
      · 成本 = 第六节 6.2「三阶段建设成本」本体行（不复制其他数值）
      · 时间 = 第二节 2.3（Lv.1 1h / Lv.2 2h / Lv.3 4h）
@@ -22,8 +21,8 @@ const STATION_BODY_PLANS = Object.freeze({
     durationMs: 3600000,          // 1h
     isk: 500000,
     materials: Object.freeze({
-      "mineral:三钛合金": 16000,
-      "mineral:类银超金属": 750
+      "mineral:三钛合金": 1800,   // 标准钛材：16000 → 1800（降低入门门槛，目标「12h 内自动冶炼」）
+      "mineral:类银超金属": 60    // 银镍合金：750 → 60
     })
   }),
   2: Object.freeze({
@@ -353,7 +352,9 @@ function getStationBodyDisplayState(state, now) {
    ----------------------------------------------------------------
    建筑 ID 稳定列表（优先复用 state.js 的 STATION_BUILDING_IDS，避免跨文件
    const TDZ 在加载期引用；此处本地兜底保证 station.js 独立可用）。
-   八座建筑「每座三级成本相同」（策划 6.2 单座表），故分级成本表对所有建筑共用。
+   七座建筑「每座三级成本相同」（策划 6.2 单座表），分级成本表对这七座共用；
+   冶炼精炼厂 Lv.1 为「12h 内自动冶炼」目标使用专属覆盖（见下方 STATION_BUILDING_PLANS），
+   移除镓/气体/行星材料、仅保留标准钛材+银镍合金，故并非八座建筑完全共用同一套 Lv.1 成本。
    ---------------------------------------------------------------- */
 const STATION_BUILDING_ID_LIST = (typeof STATION_BUILDING_IDS !== "undefined" && Array.isArray(STATION_BUILDING_IDS))
   ? STATION_BUILDING_IDS
@@ -421,9 +422,27 @@ const STATION_BUILDING_LEVEL_PLANS = Object.freeze({
   })
 });
 
-// 全部八建筑共用同一套分级成本表（每座三级成本相同）。
+// 精炼厂（smelting_refinery）Lv.1 专属成本：降低入门门槛，移除镓 / 气体 / 行星材料，
+// 仅保留「标准钛材 + 银镍合金」两项。其余七座建筑与全部 Lv.2/Lv.3 仍沿用共享 STATION_BUILDING_LEVEL_PLANS。
+// ⚠️ 扣费 / 显示态 / 成本预览统一读取 STATION_BUILDING_PLANS[buildingId][level]；
+//    startStationBuildingConstruction 也读此处，不要在别处复制第二套成本判断。
+const STATION_SMELTING_REFINERY_LV1_PLAN = Object.freeze({
+  level: 1,
+  durationMs: 900000,          // 15min（与共享 Lv.1 施工时间一致）
+  isk: 50000,
+  materials: Object.freeze({
+    "mineral:三钛合金": 400,    // 标准钛材：2500 → 400
+    "mineral:类银超金属": 20    // 银镍合金：94 → 20
+  })
+});
+
+// 八建筑分级成本表：默认共用 STATION_BUILDING_LEVEL_PLANS；精炼厂 Lv.1 以专属计划覆盖（其余等级不变）。
 const STATION_BUILDING_PLANS = Object.freeze(
-  Object.fromEntries(STATION_BUILDING_ID_LIST.map(id => [id, STATION_BUILDING_LEVEL_PLANS]))
+  Object.fromEntries(STATION_BUILDING_ID_LIST.map(id => [id,
+    id === "smelting_refinery"
+      ? Object.freeze({ 1: STATION_SMELTING_REFINERY_LV1_PLAN, 2: STATION_BUILDING_LEVEL_PLANS[2], 3: STATION_BUILDING_LEVEL_PLANS[3] })
+      : STATION_BUILDING_LEVEL_PLANS
+  ]))
 );
 
 function getStationBuildingLevel(state, buildingId) {
@@ -1436,7 +1455,7 @@ function getStationBuildingEffectsDisplayState(state) {
 }
 
 // ---- 综合后勤倍率（Phase 3C-7，系数 B 扩展）----
-// Lv.0=×1, Lv.1=×1.01, Lv.2=×1.02, Lv.3=×1.03；断油=×1；非法 bodyLevel/NaN/Infinity fail-closed ×1
+// Lv.0=×1, Lv.1=×1.03, Lv.2=×1.08, Lv.3=×1.15；断油=×1；非法 bodyLevel/NaN/Infinity fail-closed ×1
 // 独立速度乘区，仅缩短周期时间，不改变产量/XP/材料/掉落/成功率
 // 系数 B（2026-08-06）：传入 coreTag 且对应空间站核心已获取并持有库存时，该制造线额外 +10%（加算，非乘算）。
 const STATION_CORE_RESOURCE = {
@@ -1445,13 +1464,15 @@ const STATION_CORE_RESOURCE = {
   equipEng:"special:空间站装备制造核心",
   booster: "special:空间站增强剂制造核心",
 };
-function getStationLogisticsMultiplier(state, coreTag) {
+// 基础物流倍率：不含 GAME_SPEED（十倍速），但保留「空间站运行状态 + 核心加成语义」。
+// 用于成就判定（H13）等不应被速度开关扭曲的场景（speed=10 时 Lv.1 的 1.03 不会被放大成 10.3）。
+function getStationLogisticsBaseMultiplier(state, coreTag) {
   const s = state && state.station;
   if (!s) return 1;
   let bodyLevel = Math.floor(Number(s.bodyLevel));
   if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 3) return 1;
   if (!isStationOperational(state)) return 1;
-  const table = {0: 1, 1: 1.01, 2: 1.02, 3: 1.03};
+  const table = {0: 1, 1: 1.03, 2: 1.08, 3: 1.15};
   const base = table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
   let mult = base;
   // 系数 B：携带对应空间站核心（已获取且库存持有）时该制造线 +10%（加算，叠在本体基础倍率上）
@@ -1462,9 +1483,14 @@ function getStationLogisticsMultiplier(state, coreTag) {
       : 0;
     if (obtained[coreTag] && held > 0) mult += 0.10;
   }
-  // 十倍速开关（2026-08-04）：仅缩放产出周期，冷却/到期仍实时。speed=1 时恒为 1。
+  return mult;
+}
+// 生产用物流倍率：基础倍率 × 十倍速开关（仅缩放产出周期，冷却/到期仍实时）。
+// speed=1 时恒为 1，与基础倍率一致；speed=10 时放大产出速度（保留 X10 效果，不用于成就判定）。
+function getStationLogisticsMultiplier(state, coreTag) {
+  const base = getStationLogisticsBaseMultiplier(state, coreTag);
   const speed = (typeof getGameSpeed === "function") ? getGameSpeed() : 1;
-  return mult * speed;
+  return base * speed;
 }
 
 function getStationLogisticsDisplayState(state) {
@@ -1739,6 +1765,7 @@ const StationSystem = {
   canAffordShipyardQuote,
   commitShipyardProductionQuote,
   getStationBuildingEffectsDisplayState,
+  getStationLogisticsBaseMultiplier,
   getStationLogisticsMultiplier,
   getStationLogisticsDisplayState
 };
@@ -1787,6 +1814,7 @@ if (typeof window !== "undefined") {
   window.getStationBuildingEffectsDisplayState = getStationBuildingEffectsDisplayState;
   // Phase 3C-7
   window.getStationLogisticsMultiplier = getStationLogisticsMultiplier;
+  window.getStationLogisticsBaseMultiplier = getStationLogisticsBaseMultiplier;
   window.getStationLogisticsDisplayState = getStationLogisticsDisplayState;
   // Phase 3C-8
   window.getStationPageDisplayState = getStationPageDisplayState;

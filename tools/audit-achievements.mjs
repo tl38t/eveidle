@@ -645,8 +645,8 @@ function buildFullGameSandbox(saveJson) {
 
   const classList = { add: noop, remove: noop, toggle: noop, contains: () => false };
   const makeElement = () => ({
-    addEventListener: noop, appendChild: noop, classList, click: noop, closest: () => null,
-    dataset: {}, focus: noop, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
+    addEventListener: noop, appendChild: noop, insertBefore: noop, classList, click: noop,     closest: () => null,
+    parentNode: { insertBefore: noop, appendChild: noop, removeChild: noop }, dataset: {}, focus: noop, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
     getContext: () => new MockCanvasContext(), innerHTML: "", offsetHeight: 24, offsetWidth: 560,
     querySelector: () => makeElement(), querySelectorAll: () => [], remove: noop, select: noop,
     style: {}, textContent: "", value: "1", setAttribute: noop,
@@ -670,6 +670,11 @@ function buildFullGameSandbox(saveJson) {
     setInterval: noop, setTimeout: noop, clearTimeout: noop, clearInterval: noop,
     URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noop },
     Date: FrozenDate,
+    matchMedia: (q) => ({ matches: false, media: q || "", addEventListener: noop, removeEventListener: noop, addListener: noop, removeListener: noop }),
+    MutationObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} takeRecords(){ return []; } },
+    IntersectionObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} takeRecords(){ return []; } },
+    ResizeObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} },
+    getComputedStyle: () => ({ getPropertyValue: () => "" }),
     window: null,
   };
   sandbox.window = sandbox;
@@ -7498,14 +7503,14 @@ function runStation() {
 
   const hR = {};
   for (const id of ST_IDS) hR[id] = RD.STATION_RULES_BY_ID[id];
-  ok("[h3] 逐项映射精确：H01 body≥1；H02 body≥3；H03–H10 八建筑各 Lv≥3（buildingId 精确）；H11 constructionCompletions≥1；H12 maxConcurrentAutoLines≥3；H13 物流倍率≥1.03；H15 maxOfflineSettlementSeconds>28800；H16 shipyard≥3",
+  ok("[h3] 逐项映射精确：H01 body≥1；H02 body≥3；H03–H10 八建筑各 Lv≥3（buildingId 精确）；H11 constructionCompletions≥1；H12 maxConcurrentAutoLines≥3；H13 物流倍率≥1.15；H15 maxOfflineSettlementSeconds>28800；H16 shipyard≥3",
     hR["H01"].type === "station-body-level" && hR["H01"].minValue === 1 &&
     hR["H02"].type === "station-body-level" && hR["H02"].minValue === 3 &&
     ["H03", "H04", "H05", "H06", "H07", "H08", "H09", "H10"].every((id, i) =>
       hR[id].type === "station-building-level" && hR[id].buildingId === ST_BUILDINGS[i] && hR[id].minValue === 3) &&
     hR["H11"].type === "station-stat" && hR["H11"].statKey === "constructionCompletions" && hR["H11"].minValue === 1 &&
     hR["H12"].type === "station-stat" && hR["H12"].statKey === "maxConcurrentAutoLines" && hR["H12"].minValue === 3 &&
-    hR["H13"].type === "station-logistics-multiplier" && hR["H13"].minValue === 1.03 &&
+    hR["H13"].type === "station-logistics-multiplier" && hR["H13"].minValue === 1.15 &&
     hR["H15"].type === "station-offline-exceeds" && hR["H15"].statKey === "maxOfflineSettlementSeconds" && hR["H15"].exceedsValue === 28800 &&
     hR["H16"].type === "station-building-level" && hR["H16"].buildingId === "shipyard" && hR["H16"].minValue === 3);
 
@@ -7601,21 +7606,63 @@ function runStation() {
     evalS(sMC2, 600).unlockedIds.length === 0 &&
     (() => { const r = evalS(sMC3, 600); return r.unlockedIds.length === 1 && r.unlockedIds[0] === "H12"; })());
 
-  // H13：真实 getStationLogisticsMultiplier（断油=×1、Lv.2=×1.02 均不解锁；Lv.3+有油=×1.03 解锁）
+  // H13：真实 getStationLogisticsMultiplier（断油=×1、Lv.2=×1.08 均不解锁；Lv.3+有油=×1.15 解锁）
   const sLog3Fuel = makeStState(sbH, { bodyLevel: 3, fuel: 500 });
   const rLog3Fuel = evalS(sLog3Fuel, 700);
   const sLog3Dry = makeStState(sbH, { bodyLevel: 3, fuel: 0 });
   const rLog3Dry = evalS(sLog3Dry, 700);
   const sLog2Fuel = makeStState(sbH, { bodyLevel: 2, fuel: 500 });
   const rLog2Fuel = evalS(sLog2Fuel, 700);
-  ok("[h13] H13：真实倍率 Lv.3+有油=×1.03 解锁；Lv.3 断油=×1 不解锁；Lv.2+有油=×1.02 不解锁（不退化为 bodyLevel 判断）",
+  ok("[h13] H13：真实倍率 Lv.3+有油=×1.15 解锁；Lv.3 断油=×1 不解锁；Lv.2+有油=×1.08 不解锁（不退化为 bodyLevel 判断）",
     typeof sbH.getStationLogisticsMultiplier === "function" &&
-    sbH.getStationLogisticsMultiplier(sLog3Fuel) === 1.03 &&
+    sbH.getStationLogisticsMultiplier(sLog3Fuel) === 1.15 &&
     sbH.getStationLogisticsMultiplier(sLog3Dry) === 1 &&
-    sbH.getStationLogisticsMultiplier(sLog2Fuel) === 1.02 &&
+    sbH.getStationLogisticsMultiplier(sLog2Fuel) === 1.08 &&
     rLog3Fuel.unlockedIds.includes("H13") &&
     !rLog3Dry.unlockedIds.includes("H13") &&
     !rLog2Fuel.unlockedIds.includes("H13"));
+
+  // =============================================================
+  // 专项回归（Fix 2：H13 十倍速误解锁）
+  //   - 成就判定用 getStationLogisticsBaseMultiplier（不含 GAME_SPEED）；
+  //     生产 getStationLogisticsMultiplier 仍含 speed（保留 X10）。
+  //   - speed=1 与 speed=10 下，H13 都只在真实 Lv.3 有效物流倍率=1.15 时解锁；
+  //     Lv.1(1.03)/Lv.2(1.08) 不得解锁（speed=10 时 Lv.1 不会被放大成 10.3）。
+  // =============================================================
+  // REG-13 H13 速度无关解锁（speed=1 与 speed=10）
+  //   本沙箱仅加载 station.js（不含 speed-config/tick），故 getGameSpeed 不可用、生产乘子恒为基础值；
+  //   生产乘子随 GAME_SPEED 缩放（X10 保留）由 audit-station REG-C 专项验证。
+  //   此处聚焦 H13 的核心修复：成就判定走 getStationLogisticsBaseMultiplier（不含 GAME_SPEED），
+  //   因此无论 speed=1 还是 speed=10，H13 都只在真实 Lv.3 有效物流倍率=1.15 时解锁，
+  //   Lv.1(1.03)/Lv.2(1.08)/断油 不得解锁（speed=10 不会把 Lv.1 误解锁为「满级」）。
+  {
+    const buildLog = (lvl, fuel) => makeStState(sbH, { bodyLevel: lvl, fuel: fuel });
+    try {
+      for (const speed of [1, 10]) {
+        // 即便生产侧 GAME_SPEED 被置为 speed（本沙箱无 getGameSpeed 故为无操作，但语义正确）：
+        // H13 判定走 base，与 speed 无关，不会把 Lv.1(1.03) 在 speed=10 时误放大成 10.3 解锁。
+        try { sbH.GAME_SPEED = speed; } catch (e) {}
+        const s1 = buildLog(1, 500);   // 真实物流 1.03
+        const s2 = buildLog(2, 500);   // 真实物流 1.08
+        const s3 = buildLog(3, 500);   // 真实物流 1.15
+        const s3dry = buildLog(3, 0);  // 断油
+        // 基础乘子不含 speed：恒为本体值，与 speed 无关
+        ok("[REG-13] speed=" + speed + " 基础物流乘子不含 GAME_SPEED（Lv.1=1.03/Lv.2=1.08/Lv.3=1.15）",
+          sbH.getStationLogisticsBaseMultiplier(s1) === 1.03 &&
+          sbH.getStationLogisticsBaseMultiplier(s2) === 1.08 &&
+          sbH.getStationLogisticsBaseMultiplier(s3) === 1.15);
+        // H13 仅 Lv.3+油解锁；Lv.1/Lv.2/断油 不解锁（哪怕生产侧 speed=10 把乘子放大）
+        const r1 = evalS(s1, 700), r2 = evalS(s2, 700), r3 = evalS(s3, 700), r3d = evalS(s3dry, 700);
+        ok("[REG-13] speed=" + speed + " H13 仅 Lv.3+油解锁（Lv.1/Lv.2/断油 不解锁）",
+          r3.unlockedIds.includes("H13") && !r1.unlockedIds.includes("H13") &&
+          !r2.unlockedIds.includes("H13") && !r3d.unlockedIds.includes("H13"));
+      }
+    } catch (e) {
+      ok("[REG-13] 速度无关回归未抛异常（" + (e && e.message ? e.message : String(e)) + "）", false);
+    } finally {
+      try { delete sbH.GAME_SPEED; } catch (e) {}
+    }
+  }
 
   const sOff0 = makeStState(sbH, { ms: 28800 });
   const rOff0 = evalS(sOff0, 800);
@@ -7957,9 +8004,9 @@ function runStation() {
     unlockedLive()["H10"] === unlockedLive()["H16"]);
 
   const refill = W.dispatchGameAction(G, { type: "station/refillMaintenance" }, FROZEN_NOW);
-  ok("[h38] 真实补油链（dispatchGameAction station/refillMaintenance → station:maintenanceRefilled）：燃料恢复后真实物流倍率=1.03 → H13 解锁",
+  ok("[h38] 真实补油链（dispatchGameAction station/refillMaintenance → station:maintenanceRefilled）：燃料恢复后真实物流倍率=1.15 → H13 解锁",
     refill && refill.changed === true && G.station.maintenance.fuelRemaining > 0 &&
-    W.getStationLogisticsMultiplier(G) === 1.03 && typeof unlockedLive()["H13"] === "number");
+    W.getStationLogisticsMultiplier(G) === 1.15 && typeof unlockedLive()["H13"] === "number");
 
   G.skills.refining = G.skills.refining || {}; G.skills.refining.lvl = 99;
   G.skills.equipmentEngineering = G.skills.equipmentEngineering || {}; G.skills.equipmentEngineering.lvl = 99;
@@ -8220,11 +8267,11 @@ function runBlueprint() {
     MockCanvasContext.prototype.createRadialGradient = () => ({ addColorStop: noop });
     MockCanvasContext.prototype.getImageData = (x, y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
     const classList = { add: noop, remove: noop, toggle: noop, contains: () => false };
-    const makeElement = () => ({ addEventListener: noop, appendChild: noop, classList, click: noop, closest: () => null, dataset: {}, focus: noop, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }), getContext: () => new MockCanvasContext(), innerHTML: "", offsetHeight: 24, offsetWidth: 560, querySelector: () => makeElement(), querySelectorAll: () => [], remove: noop, select: noop, style: {}, textContent: "", value: "1", setAttribute: noop });
+    const makeElement = () => ({ addEventListener: noop, appendChild: noop, insertBefore: noop, classList, click: noop, closest: () => null, dataset: {}, focus: noop, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }), getContext: () => new MockCanvasContext(), innerHTML: "", offsetHeight: 24, offsetWidth: 560, querySelector: () => makeElement(), querySelectorAll: () => [], remove: noop, select: noop, style: {}, textContent: "", value: "1", setAttribute: noop });
     const documentMock = { addEventListener: noop, body: makeElement(), createElement: () => makeElement(), createElementNS: () => makeElement(), getElementById: () => makeElement(), querySelector: () => makeElement(), querySelectorAll: () => [], hidden: false };
     const localStorageMock = { getItem: () => null, setItem: noop, removeItem: noop };
     class FrozenDate extends Date { static now() { return FROZEN_NOW; } }
-    const sbx = { alert: noop, Blob, CanvasRenderingContext2D: MockCanvasContext, console, confirm: () => true, document: documentMock, FileReader: class {}, localStorage: localStorageMock, requestAnimationFrame: noop, setInterval: noop, setTimeout: noop, clearTimeout: noop, clearInterval: noop, URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noop }, Date: FrozenDate, window: null };
+    const sbx = { alert: noop, Blob, CanvasRenderingContext2D: MockCanvasContext, console, confirm: () => true, document: documentMock, FileReader: class {}, localStorage: localStorageMock, requestAnimationFrame: noop, setInterval: noop, setTimeout: noop, clearTimeout: noop, clearInterval: noop, URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noop }, Date: FrozenDate, matchMedia: (q) => ({ matches: false, media: q || "", addEventListener: noop, removeEventListener: noop, addListener: noop, removeListener: noop }), MutationObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} takeRecords(){ return []; } }, IntersectionObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} takeRecords(){ return []; } }, ResizeObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} }, getComputedStyle: () => ({ getPropertyValue: () => "" }), window: null };
     sbx.window = sbx;
     sbx.window.addEventListener = noop;
     sbx.__guardReports = [];
@@ -8318,11 +8365,11 @@ function runBlueprint() {
     MockCanvasContextD.prototype.createRadialGradient = () => ({ addColorStop: noopD });
     MockCanvasContextD.prototype.getImageData = (x, y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
     const classListD = { add: noopD, remove: noopD, toggle: noopD, contains: () => false };
-    const makeElementD = () => ({ addEventListener: noopD, appendChild: noopD, classList: classListD, click: noopD, closest: () => null, dataset: {}, focus: noopD, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }), getContext: () => new MockCanvasContextD(), innerHTML: "", offsetHeight: 24, offsetWidth: 560, querySelector: () => makeElementD(), querySelectorAll: () => [], remove: noopD, select: noopD, style: {}, textContent: "", value: "1", setAttribute: noopD });
+    const makeElementD = () => ({ addEventListener: noopD, appendChild: noopD, insertBefore: noopD, classList: classListD, click: noopD, closest: () => null, dataset: {}, focus: noopD, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }), getContext: () => new MockCanvasContextD(), innerHTML: "", offsetHeight: 24, offsetWidth: 560, querySelector: () => makeElementD(), querySelectorAll: () => [], remove: noopD, select: noopD, style: {}, textContent: "", value: "1", setAttribute: noopD });
     const documentMockD = { addEventListener: noopD, body: makeElementD(), createElement: () => makeElementD(), createElementNS: () => makeElementD(), getElementById: () => makeElementD(), querySelector: () => makeElementD(), querySelectorAll: () => [], hidden: false };
     const localStorageMockD = { getItem: () => null, setItem: noopD, removeItem: noopD };
     class FrozenDateD extends Date { static now() { return FROZEN_NOW; } }
-    const sb2 = { alert: noopD, Blob, CanvasRenderingContext2D: MockCanvasContextD, console, confirm: () => true, document: documentMockD, FileReader: class {}, localStorage: localStorageMockD, requestAnimationFrame: noopD, setInterval: noopD, setTimeout: noopD, clearTimeout: noopD, clearInterval: noopD, URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noopD }, Date: FrozenDateD, window: null };
+    const sb2 = { alert: noopD, Blob, CanvasRenderingContext2D: MockCanvasContextD, console, confirm: () => true, document: documentMockD, FileReader: class {}, localStorage: localStorageMockD, requestAnimationFrame: noopD, setInterval: noopD, setTimeout: noopD, clearTimeout: noopD, clearInterval: noopD, URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noopD }, Date: FrozenDateD, matchMedia: (q) => ({ matches: false, media: q || "", addEventListener: noopD, removeEventListener: noopD, addListener: noopD, removeListener: noopD }), MutationObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} takeRecords(){ return []; } }, IntersectionObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} takeRecords(){ return []; } }, ResizeObserver: class { constructor(cb){ this.cb = cb; } observe(){} disconnect(){} unobserve(){} }, getComputedStyle: () => ({ getPropertyValue: () => "" }), window: null };
     sb2.window = sb2;
     sb2.window.addEventListener = noopD;
     sb2.__guardReports = [];
