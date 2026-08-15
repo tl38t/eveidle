@@ -28,6 +28,10 @@ function moveQueueItem(from, to) {
   return dispatchGameAction(gameState, { type:"queue/move", from, to }, Date.now()).changed;
 }
 
+function moveQueueItemToTop(index) {
+  return dispatchGameAction(gameState, { type:"queue/moveTop", from:index }, Date.now()).changed;
+}
+
 function startQueue() {
   return dispatchGameAction(gameState, { type:"queue/start" }, Date.now()).changed;
 }

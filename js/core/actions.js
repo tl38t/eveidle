@@ -1516,10 +1516,40 @@ const ShellStateActions = {
   queueMove(state, from, to) {
     const queue = state.queue, items = queue.items;
     if (from < 0 || from >= items.length || to < 0 || to >= items.length) return { changed:false, reason:"invalid-index" };
+    const origActive = queue.status.activeIndex;
     const item = items.splice(from, 1)[0]; items.splice(to, 0, item);
-    if (queue.status.activeIndex === from) queue.status.activeIndex = to;
-    else if (from < queue.status.activeIndex && to >= queue.status.activeIndex) queue.status.activeIndex--;
-    else if (from > queue.status.activeIndex && to <= queue.status.activeIndex) queue.status.activeIndex++;
+    if (origActive === from) queue.status.activeIndex = to;
+    else if (from < origActive && to >= origActive) queue.status.activeIndex--;
+    else if (from > origActive && to <= origActive) queue.status.activeIndex++;
+    state._dirty = true;
+    // 自动开始：运行中将一个「待执行/正在执行」的项顶到队列最前（index 0），
+    // 若该顶位项并非当前激活项，则立即顶替开始（与「置顶」按钮行为保持一致）。
+    // 已完成的项（from < origActive）顶到头部不触发，避免重跑已结束的行动。
+    const running = queue.status.isRunning && origActive >= 0;
+    if (running && to === 0 && from >= origActive && queue.status.activeIndex !== 0) {
+      queue.status.activeIndex = 0;
+      executeQueueItemForState(state, items[0], Date.now());
+    }
+    return { changed:true };
+  },
+
+  queueMoveToTop(state, from) {
+    const queue = state.queue, items = queue.items;
+    if (from < 0 || from >= items.length) return { changed:false, reason:"invalid-index" };
+    if (from === 0) return { changed:false, reason:"already-top" };
+    // 真正的置顶：移动到列表最前（index 0），而非紧贴当前行动之后（旧逻辑会落到第二位）。
+    const item = items.splice(from, 1)[0];
+    items.unshift(item);
+    const running = queue.status.isRunning && queue.status.activeIndex >= 0;
+    if (running) {
+      // 运行中：顶替当前正在执行的行动，立即从顶部开始新行动。
+      // 当前行动被推后到队列中，其进行中的一轮作废（引擎只按 count 推进，不存分项进度）。
+      queue.status.activeIndex = 0;
+      executeQueueItemForState(state, items[0], Date.now());
+    } else {
+      // 空闲：仅置顶，待用户启动队列时从顶部开始。
+      queue.status.activeIndex = -1;
+    }
     state._dirty = true;
     return { changed:true };
   },
@@ -1934,6 +1964,7 @@ const StationStateActions = {
   if (action.type === "queue/add") return ShellStateActions.queueAdd(state, action.item, actionTime, action.front);
   if (action.type === "queue/remove") return ShellStateActions.queueRemove(state, action.index, actionTime);
   if (action.type === "queue/move") return ShellStateActions.queueMove(state, action.from, action.to);
+  if (action.type === "queue/moveTop") return ShellStateActions.queueMoveToTop(state, action.from);
   if (action.type === "queue/start") return ShellStateActions.queueStart(state, actionTime);
   if (action.type === "queue/stop") return ShellStateActions.queueStop(state, actionTime);
   if (action.type === "queue/clear") return ShellStateActions.queueClear(state, actionTime);

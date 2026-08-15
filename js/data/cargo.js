@@ -313,6 +313,89 @@ function getCargoDropConfigs(zone) {
   };
 }
 
+// 货柜出率详情（仓库卡片 + 战斗点击查看用）。返回一个结构化对象，供渲染层直接消费，不硬编码。
+// 返回：{ size, sizeLabel, tierWeights, blueprints:[{id,name}], content:{T1:[{id,name,kind,qtyText}], T2, T3, T4} }
+// 注意：T4 在 S 尺寸权重为 0（超小货柜不出脑插），渲染层据此灰显即可，不附加任何口语标注。
+function getCargoDropInfo(size) {
+  const sz = CARGO_SIZES.includes(size) ? size : "S";
+  const sizeLabel = { S: "小型", M: "中型", L: "大型", XL: "超大型" }[sz];
+  const tierWeights = CARGO_SIZE_TIER_WEIGHTS[sz];
+  const bpRaw = CARGO_BLUEPRINT_BY_SIZE[sz] || [];
+  const blueprints = bpRaw.map(b => {
+    const eqId = b.id.slice("blueprint:".length);
+    let name = eqId + "蓝图";
+    if (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB && EQUIPMENT_DB[eqId]) {
+      name = (EQUIPMENT_DB[eqId].name || eqId) + "蓝图";
+    }
+    return { id: b.id, name };
+  });
+
+  // 条目 → 显示名（弹药/战利品/脑插/资源 分别给出可读名，不泄漏内部 id）
+  function entryName(id) {
+    if (id === "ammo:T1") return "普通弹药（随机武器）";
+    if (id === "ammo:T2") return "T2 弹药（随机武器）";
+    if (id === "loot:isk") return "星币战利品（具名）";
+    if (id === "loot:lp") return "功勋战利品（具名）";
+    if (id.indexOf("implant_") === 0 && typeof IMPLANT_DB !== "undefined" && IMPLANT_DB && IMPLANT_DB[id]) {
+      return IMPLANT_DB[id].name || id;
+    }
+    if (id.indexOf("blueprint:") === 0) {
+      const eqId = id.slice("blueprint:".length);
+      if (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB && EQUIPMENT_DB[eqId]) return (EQUIPMENT_DB[eqId].name || eqId) + "蓝图";
+      return eqId + "蓝图";
+    }
+    if (typeof getResourceDisplayName === "function") {
+      try { const n = getResourceDisplayName(id); if (n && n !== id) return n; } catch (_) {}
+    }
+    return id;
+  }
+  function entryKind(id) {
+    if (id.indexOf("implant_") === 0) return "implant";
+    if (id.indexOf("blueprint:") === 0) return "blueprint";
+    if (id.indexOf("ammo:") === 0) return "ammo";
+    if (id.indexOf("loot:") === 0) return "loot";
+    return "resource";
+  }
+  // 数量参考文本：弹药随尺寸缩放，其余用池内区间/基数
+  function qtyText(e) {
+    const mul = CARGO_T1_SIZE_MUL[sz] || 1;
+    const q = e.qty;
+    if (e.id === "ammo:T1" || e.id === "ammo:T2") {
+      const base = (typeof q === "number") ? q : (Array.isArray(q) ? q[0] : 1);
+      const hi = (Array.isArray(q) ? q[1] : base);
+      const lo = Math.floor(base * mul);
+      const hiS = Math.floor(hi * mul);
+      return lo === hiS ? ("×" + lo) : ("×" + lo + "~" + hiS);
+    }
+    if (Array.isArray(q)) return q[0].toLocaleString() + "~" + q[1].toLocaleString();
+    if (typeof q === "number") return "×" + q;
+    return "";
+  }
+  function poolItems(tier) {
+    return (CARGO_POOLS[tier] || []).map(e => ({ id: e.id, name: entryName(e.id), kind: entryKind(e.id), qtyText: qtyText(e) }));
+  }
+
+  // T1：尺寸化行星材料三~六选一 + 战术残液 + 星币战利品（数额随尺寸缩放）
+  const t1 = [];
+  for (const pId of cargoT1PlanetaryChoices(sz)) {
+    const range = CARGO_T1_PLANETARY_20MIN[pId] || [40, 60];
+    const mul = CARGO_T1_SIZE_MUL[sz] || 1;
+    const lo = Math.floor(range[0] * mul), hi = Math.floor(range[1] * mul);
+    t1.push({ id: pId, name: entryName(pId), kind: "resource", qtyText: lo + "~" + hi });
+  }
+  const tm = CARGO_T1_SIZE_MUL[sz] || 1;
+  t1.push({ id: "special:战术残液", name: "战术残液", kind: "resource", qtyText: Math.floor(CARGO_T1_QTY.tactical[0] * tm) + "~" + Math.floor(CARGO_T1_QTY.tactical[1] * tm) });
+  t1.push({ id: "loot:isk", name: "星币战利品（具名）", kind: "loot", qtyText: Math.floor(CARGO_T1_QTY.isk[0] * tm).toLocaleString() + "~" + Math.floor(CARGO_T1_QTY.isk[1] * tm).toLocaleString() });
+
+  return {
+    size: sz,
+    sizeLabel,
+    tierWeights,
+    blueprints,
+    content: { T1: t1, T2: poolItems("T2"), T3: poolItems("T3"), T4: poolItems("T4") }
+  };
+}
+
 // 掉落时调用：决定尺寸并发放货柜物品（在线 resolveCombatEnemyDefeat 用）。
 // 返回 { size, itemId } 或 null（未掉落）。
 function rollCargoDrop(enemy, zone, rng, state) {

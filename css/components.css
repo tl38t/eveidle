@@ -295,24 +295,53 @@
   .eem-qty-input { -moz-appearance: textfield; }
   .eem-qty-have { font-size: 12px; color: #9bb0c4; }
   .eem-open-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* ===== 货柜出率区（仓库卡片 / 战斗点击查看共用） ===== */
+  .eem-cargo-rate .cargo-rate-weights,
+  .eem-cargo-rate .cargo-rate-blueprints { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 8px; }
+  .eem-cargo-rate .cargo-rate-blueprints { margin-bottom: 10px; }
+  .cargo-rate-hint { font-size: 11px; color: #6a7a8e; margin-right: 2px; }
+  .cargo-w-chip {
+    font-size: 11px; padding: 2px 8px; border-radius: 10px;
+    background: #0a0e14; border: 1px solid #1a2535; color: #cdd6e0;
+    font-variant-numeric: tabular-nums;
+  }
+  .cargo-w-chip.t1 { border-color: #2c4a3e; color: #7ad4b0; }
+  .cargo-w-chip.t2 { border-color: #3a4a6a; color: #8aa0c6; }
+  .cargo-w-chip.t3 { border-color: #5a4a2c; color: #e8d8a0; }
+  .cargo-w-chip.t4 { border-color: #5a2c3a; color: #e0a0b0; }
+  .cargo-w-chip.bp { border-color: #3a3a5a; color: #b0a0e0; }
+  .cargo-w-chip.zero { opacity: 0.45; text-decoration: line-through; color: #6a7a8e; border-color: #1a2535; }
+  .cargo-content-item {
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 11px; padding: 3px 8px; margin: 3px 4px 0 0;
+    border-radius: 12px; background: #0a0e14; border: 1px solid #1a2535;
+    color: #cdd6e0; cursor: pointer; line-height: 1.4;
+  }
+  .cargo-content-item:hover { border-color: #8aa0c6; color: #fff; }
+  .cargo-content-item.bp { border-color: #3a3a5a; color: #b0a0e0; }
+  .cargo-content-item .cci-qty { font-style: normal; color: #6a7a8e; font-size: 10px; }
+  .cargo-tier-block { margin-bottom: 8px; }
+  .cargo-tier-label { font-size: 11px; color: #8aa0c6; margin-bottom: 2px; font-weight: 700; }
+  .cargo-tier-items { display: flex; flex-wrap: wrap; }
   /* ===== 仓库脑插子标签卡片 ===== */
   .implant-card {
     position: relative; background: #0f141e; border: 1px solid #1a2535;
-    border-radius: 6px; padding: 12px; display: flex; gap: 12px; align-items: center;
-    min-height: 76px; transition: border-color .15s, transform .15s, box-shadow .15s;
+    border-radius: 6px; padding: 8px; display: flex; gap: 8px; align-items: center;
+    min-height: 60px; min-width: 0; box-sizing: border-box; overflow: hidden;
+    transition: border-color .15s, transform .15s, box-shadow .15s;
     border-left: 3px solid #6a7a8e;
   }
   .implant-card.owned { border-left-color: #7ad4b0; background: #0f1714; }
   .implant-card.locked { opacity: 0.5; filter: grayscale(0.6); }
   .implant-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(122,212,176,0.12); }
-  .implant-card .ic-icon { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center; font-size: 24px;
+  .implant-card .ic-icon { width: 36px; height: 36px; flex-shrink: 0; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
     background: #0a0e14; border: 1px solid #1a2535; }
   .implant-card.owned .ic-icon { border-color: #2c4a3e; background: #0c1a14; }
-  .implant-card .ic-body { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
-  .implant-card .ic-name { font-size: 14px; font-weight: 700; color: #dde4ea; }
-  .implant-card .ic-bonus { font-size: 12px; color: #e8d8a0; }
-  .implant-card .ic-status { font-size: 11px; color: #6a7a8e; }
+  .implant-card .ic-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .implant-card .ic-name { font-size: 11px; font-weight: 700; line-height: 1.25; color: #dde4ea; word-break: break-all; overflow-wrap: anywhere; }
+  .implant-card .ic-bonus { font-size: 10px; line-height: 1.25; color: #e8d8a0; word-break: break-all; overflow-wrap: anywhere; }
+  .implant-card .ic-status { font-size: 9px; line-height: 1.25; color: #6a7a8e; word-break: break-all; overflow-wrap: anywhere; }
   .implant-card.owned .ic-status { color: #7ad4b0; }
   /* 顶栏资源条（.res-item.cargo-item）仅用此类做点击手感，仓库卡片已改用 .cargo-card，此处仅恢复指针/hover */
   .cargo-item { cursor: pointer; }
@@ -527,8 +556,8 @@
   .reward-result-modal { width: 560px; max-width: 94vw; }
   .reward-sub-line { font-size: 12px; color: #8aa0b8; line-height: 1.5; }
   .reward-result-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 10px; align-content: start;
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px; align-content: start;
   }
   .reward-result-card { cursor: default; }
   .reward-result-empty { text-align: center; color: #6a7a8e; padding: 24px 0; font-size: 13px; }
@@ -628,7 +657,8 @@
   .qi-status.running { background: #1a2a20; color: #7ac87a; }
   .qi-status.waiting { color: #4a5a6a; }
   .queue-item .qi-actions { display: flex; gap: 4px; }
-  .queue-item .qi-btn { background: none; border: 1px solid #2a3545; border-radius: 4px; color: #6a7a8e; font-size: 11px; padding: 2px 6px; cursor: default; font-family: 'Rajdhani', sans-serif; transition: all 0.2s; }
+  .queue-item .qi-btn { background: none; border: 1px solid #2a3545; border-radius: 4px; color: #8aa0c6; font-size: 13px; padding: 2px 6px; cursor: default; font-family: 'Rajdhani', sans-serif; transition: all 0.2s; }
+  .queue-item .qi-btn.top-btn { color: #d4a843; border-color: #6b5424; }
   .queue-item .qi-btn:hover { color: #d94a4a; border-color: #d94a4a; }
   .act-tag { display: inline-block; padding: 2px 8px; margin: 2px; border: 1px solid #2a3545; border-radius: 4px; font-size: 11px; font-weight: 600; color: #4a5a6a; background: rgba(21,29,40,0.5); cursor: default; transition: all 0.2s; }
   .act-tag:hover { border-color: #5da8d4; color: #8899aa; }

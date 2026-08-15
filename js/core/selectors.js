@@ -248,11 +248,11 @@ function getCurrentActivityDisplayState(state, now) {
     const site = getArchaeologySite(state.archaeology && state.archaeology.activeSiteId);
     detail = site ? "解析" + site.name : "考古待命";
   }
-  if (key === "mining") detail = "采集" + getAreaByName(ALL_MINING_AREAS, action.startedArea || action.area).ore;
+  if (key === "mining") detail = "采集" + getResourceDisplayName("ore:" + getAreaByName(ALL_MINING_AREAS, action.startedArea || action.area).ore);
   else if (key === "refining") {
     const recipe = SMELTING_RECIPES.find(item => item.name === (action.startedSmeltingArea || action.smeltingArea)) || SMELTING_RECIPES[0];
     detail = "冶炼" + getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral);
-  } else if (key === "gasHarvesting") detail = "采集" + getAreaByName(GAS_AREAS, action.startedGasArea || action.gasArea).gas;
+  } else if (key === "gasHarvesting") detail = "采集" + getResourceDisplayName("gas:" + getAreaByName(GAS_AREAS, action.startedGasArea || action.gasArea).gas);
   else if (key === "shipEngineering") {
     if (action.shipSubAction === "component") {
       const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === (action.startedShipCompTarget || action.shipCompTarget)) || SHIP_COMPONENT_RECIPES[0];
@@ -655,8 +655,12 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.duration = display.actualTime;
     result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
     result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:getResourceDisplayName(recipe.consumeOre), quantity:1, stock:display.stock, enough:display.stock >= 1 }];
-    result.maxCount = Math.max(1, display.stock);
+    // 超量预排：放开“按当前材料算上限”的硬限制，数量可超过当前持有；
+    // 运行期由队列 skipOnFail 在材料不足时切下一项（当前项保留、剩余数量续跑）。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, display.stock);
     result.canOpen = display.canStart;
     result.blockedText = display.canStart ? "" : "需要冶炼等级 Lv." + recipe.level;
     result.queue = { skill:"refining", target:recipe.name, label:getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral) };
@@ -677,8 +681,11 @@ function getActionConfirmationDisplayState(state, target, now) {
       ...display.detail.equipmentInputs.map(item => ({ resourceId:"equipment:" + item.itemId, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
       ...display.detail.materials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
-    result.maxCount = Math.max(1, getEquipmentMaxCyclesFromState(state, recipe));
+    // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, getEquipmentMaxCyclesFromState(state, recipe));
     if (recipe.output.type === "equipment") result.outputText = recipe.name + "×" + recipe.output.qty;
     else if (recipe.output.type === "fuel") result.outputText = "燃料单元×" + recipe.output.qty;
     else result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
@@ -692,8 +699,12 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.title = icons.shipComp + " " + recipe.name;
     result.duration = display.componentActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = display.componentMaterials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }));
-    result.maxCount = Math.max(1, result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999));
+    const _shipCompMatMax = result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999);
+    // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, _shipCompMatMax);
     result.outputText = recipe.name + "×1";
     result.canOpen = display.canStartComponent;
     result.blockedText = result.canOpen ? "" : "需要舰船工程等级 Lv." + recipe.level;
@@ -707,9 +718,12 @@ function getActionConfirmationDisplayState(state, target, now) {
       ...display.assemblyComponents.map(item => ({ resourceId:"component:" + item.id, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
       ...display.assemblyMaterials.map(item => ({ resourceId:item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
-    // 缺料时 maxCount 必须为 0，禁止 Math.max(1,0) 强制为 1：由弹窗禁用「确认」体现（与 startShipAssembly 材料校验同源）。
-    result.maxCount = display.assemblyMaxCycles;
+    // 缺料时 assemblyMaxCycles 为 0：超量预排放开硬限制（noCap），弹窗不再因缺料禁用“加入队列”，
+    // 仅以 materialHint 提示当前可产批数；运行期 skipOnFail 在材料不足时切下一项。
+    result.maxCount = 99999999;
     result.unlimited = false;
+    result.noCap = true;
+    result.materialHint = Math.max(0, display.assemblyMaxCycles);
     result.outputText = (display.selectedShip ? display.selectedShip.name : recipe.name) + "×1";
     // 仅「永久解锁」（蓝图+等级+船坞）才允许打开确认弹窗；缺料不阻止打开，由 maxCount=0 体现。
     result.canOpen = recipe.assemblyUnlocked;
@@ -2082,7 +2096,22 @@ function getCargoDisplayState(state, filter) {
         .map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }])
     ),
     consumable:Object.assign(
-      { "燃料单元":ResourceRegistry.get(state, "consumable:fuel"), "激光晶体弹药":getAmmoCount(state, "laser"), "导弹":getAmmoCount(state, "missile"), "炮台弹药":getAmmoCount(state, "cannon"), "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") },
+      Object.assign(
+        { "燃料单元":ResourceRegistry.get(state, "consumable:fuel") },
+        // 弹药按「实例名(含档位)」分卡：T1 激光晶体弹药 / T2 聚焦相位激光弹 各自独立成卡，
+        // 不再按类型混并为一张（旧逻辑 getAmmoCount(state,'laser') 把 T1+T2 求和导致同名合并）。
+        (function () {
+          const byName = {};
+          for (const s of (state.ammo || [])) {
+            const qty = Number(s && s.qty) || 0;
+            if (qty <= 0) continue;
+            const nm = (s && s.name) || (typeof ammoDisplayName === "function" ? ammoDisplayName(s && s.type, s && s.tier) : (AMMO_TYPE_NAMES[s && s.type] || "弹药"));
+            byName[nm] = (byName[nm] || 0) + qty;
+          }
+          return byName;
+        })(),
+        { "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") }
+      ),
       // 货柜复用与 special 一致的形状 {qty,id}，id 保留 special:货柜* 以保证开箱功能
       Object.fromEntries(cargoEntries.map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }]))
     ),
@@ -2759,6 +2788,7 @@ function getQueueDisplayState(state) {
   const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔" };
   const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", combat:"⚔战斗" };
   const combat = state.combat || {};
+  const queueRunning = Boolean(queue.status.isRunning) && queue.status.activeIndex >= 0;
   return {
     kind:"queue",
     running:Boolean(queue.status.isRunning),
@@ -2784,7 +2814,8 @@ function getQueueDisplayState(state) {
         label:transformDisplayText(item.label),
         countText,
         canMoveUp:index > 0,
-        canMoveDown:index < queue.items.length - 1
+        canMoveDown:index < queue.items.length - 1,
+        canMoveTop:index > 0 && !(queueRunning && index === queue.status.activeIndex)
       };
     })
   };

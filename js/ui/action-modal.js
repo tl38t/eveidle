@@ -22,9 +22,9 @@ function renderActionConfirmation(display) {
   const summaryEl = document.getElementById("action-modal-summary");
   const input = document.getElementById("action-batch-count");
   const maxEl = document.getElementById("action-batch-max");
-  // 尊重选择器显式给出的 0：非无限类行动（如舰船总装缺料）maxCount=0 即「不可确认」。
   const rawMax = Number(display.maxCount);
   const maxCount = rawMax > 0 ? rawMax : (display.unlimited ? 999999 : 0);
+  const noCap = !!display.noCap; // 超量预排：数量可超过当前材料，运行期 skipOnFail 在不足时切下一项
   const duration = Math.max(0, Number(display.duration) || 0);
 
   const unitEl = document.getElementById("action-batch-unit");
@@ -43,12 +43,16 @@ function renderActionConfirmation(display) {
   input.value = 1;
   const infinityBtn = document.getElementById("action-batch-infinity");
   if (infinityBtn) infinityBtn.classList.remove("selected");
-  input.max = maxCount;
-  maxEl.textContent = display.unlimited ? "" : "最大：" + maxCount;
-  // 缺料（maxCount=0）时禁用确认/加入队列/无限/输入框，并给出明确提示（与 startShipAssembly 材料校验同源）。
+  input.max = noCap ? 99999999 : maxCount;
+  if (noCap) {
+    maxEl.textContent = "当前材料可产 " + (Number(display.materialHint) || 0) + " 批（可超量预排）";
+  } else {
+    maxEl.textContent = display.unlimited ? "" : "最大：" + maxCount;
+  }
+  // 缺料（maxCount=0 且非超量预排）时禁用确认/加入队列/无限/输入框（与 startShipAssembly 材料校验同源）。
   const confirmBtn = document.getElementById("action-modal-confirm");
   const queueBtn = document.getElementById("action-modal-queue");
-  if (maxCount <= 0) {
+  if (maxCount <= 0 && !noCap) {
     if (confirmBtn) confirmBtn.disabled = true;
     if (queueBtn) queueBtn.disabled = true;
     if (infinityBtn) infinityBtn.disabled = true;
@@ -62,7 +66,8 @@ function renderActionConfirmation(display) {
   }
   summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration)}`;
   input.oninput = function() {
-    const value = Math.max(1, Math.min(maxCount, parseInt(this.value) || 1));
+    let value = Math.max(1, parseInt(this.value) || 1);
+    if (!noCap) value = Math.min(maxCount, value);
     this.value = value;
     document.getElementById("action-batch-infinity").classList.remove("selected");
     summaryEl.innerHTML = `<span class="ai-label">总耗时：</span>${display.combat ? "视战斗情况而定" : "约 " + formatDuration(duration * value)}`;
@@ -99,15 +104,16 @@ function submitActionConfirmation(front) {
   // 与 render 同源计算真实 maxCount（尊重显式 0）。
   const rawMax = Number(display.maxCount);
   const maxCount = rawMax > 0 ? rawMax : (display.unlimited ? 999999 : 0);
-  // 非无限类行动且 maxCount<=0（材料/组件不足）：禁止派发、不隐藏、不 dispatch。
-  if (!display.unlimited && maxCount <= 0) return false;
+  const noCap = !!display.noCap; // 超量预排：材料不足也允许派发，由运行期 skipOnFail 切下一项
+  // 非无限类且非超量预排且 maxCount<=0（材料/组件不足）：禁止派发、不隐藏、不 dispatch。
+  if (!display.unlimited && !noCap && maxCount <= 0) return false;
   const input = document.getElementById("action-batch-count");
   let count = parseInt((input && input.value) || "1");
   if (count === -1) {
     if (!display.unlimited) count = 1; // 无限被禁用时回退（双重保护，正常不会发生）
   } else {
     count = Math.max(1, count || 1);
-    if (count > maxCount) count = maxCount; // 数量不得超过 maxCount
+    if (!noCap && count > maxCount) count = maxCount; // 非超量预排时数量不得超过 maxCount
   }
   hideActionConfirm();
   const queueItem = {

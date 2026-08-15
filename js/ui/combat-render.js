@@ -265,11 +265,53 @@ function renderCombatPanel(now) {
 
 // 掉落预览（Phase 3D 其他任务）：基于 getCombatDropPreview 纯函数渲染当前选中星带/死亡空间的
 // 可能掉落物与概率。展示加密数据/特殊掉落/装备专用数据/通行密钥/首领战利品/战术材料/货柜，不含 ISK/LP 经济与成功率。
+// 战斗掉落行点击 → 打开对应物品卡片：dropId → 描述符（含货柜 fromCombat 标记）。
+// 本渲染内聚合 name/icon，避免属性注入。
+let _combatDropMeta = {};
+function combatDropToItem(dropId) {
+  const meta = _combatDropMeta[dropId];
+  const name = meta ? meta.name : dropId;
+  const icon = meta ? meta.icon : "📦";
+  if (dropId.indexOf("cargo:") === 0) {
+    const size = dropId.slice("cargo:".length);
+    const sizeLabel = { S: "小型", M: "中型", L: "大型", XL: "超大型" }[size] || size;
+    const owned = (typeof ResourceRegistry !== "undefined" && typeof gameState !== "undefined")
+      ? ResourceRegistry.get(gameState, "special:货柜" + size) : 0;
+    return {
+      id: "special:货柜" + size,
+      name: "货柜（" + sizeLabel + "）",
+      icon: "📦",
+      categoryLabel: "货柜",
+      quantity: owned,
+      fromCombat: true,
+      description: "击坠敌人有概率掉落的低概率宝箱。开箱后按尺寸权重随机获得行星材料、晶体弹药、脑插或装备蓝图等奖励，尺寸越大奖励越丰厚。",
+      source: { pageId: "combat", pageLabel: "战斗掉落", icon: "fa-solid fa-crosshairs" }
+    };
+  }
+  return {
+    name: name,
+    icon: icon,
+    categoryLabel: "战斗掉落",
+    description: "战斗掉落物：击坠敌人后有概率获得。",
+    source: { pageId: "combat", pageLabel: "战斗掉落", icon: "fa-solid fa-crosshairs" }
+  };
+}
+
 function renderCombatDropPreview(display) {
   const wrap = document.getElementById("combat-drop-preview-wrap");
   const body = document.getElementById("combat-drop-preview");
   const zoneLabel = document.getElementById("combat-drop-preview-zone");
   if (!body || !wrap) return;
+  if (!body._cargoDropBound) {
+    body._cargoDropBound = true;
+    body.addEventListener("click", e => {
+      const r = e.target.closest(".drop-row[data-drop-id]");
+      if (!r) return;
+      const item = combatDropToItem(r.dataset.dropId);
+      if (item) openItemDetailModal(item);
+    });
+  }
+  _combatDropMeta = {};
   const preview = getCombatDropPreview(gameState, {
     mode:display.viewMode,
     zoneId:display.zone && display.zone.id,
@@ -288,65 +330,68 @@ function renderCombatDropPreview(display) {
   if (zoneLabel) zoneLabel.textContent = "· " + (preview.name || "");
   const pct = x => (Number(x) * 100).toFixed(x * 100 % 1 === 0 ? 0 : 2) + "%";
   const rows = [];
-  const row = (icon, name, detail, extraClass) => `<div class="drop-row${extraClass ? " " + extraClass : ""}"><span class="drop-name">${icon} ${name}</span><span class="drop-detail">${detail}</span></div>`;
+  const row = (icon, name, detail, extraClass, dropId) => {
+    if (dropId) _combatDropMeta[dropId] = { name, icon };
+    return `<div class="drop-row${extraClass ? " " + extraClass : ""}"${dropId ? ` data-drop-id="${dropId}"` : ""}><span class="drop-name">${icon} ${name}</span><span class="drop-detail">${detail}</span></div>`;
+  };
 
   if (preview.mode === "deathspace") {
     rows.push(`<div class="drop-mode-tag deathspace">死亡空间 · 不掉落加密数据 / 特殊掉落 / 通行密钥</div>`);
     if (Array.isArray(preview.leaderLoot) && preview.leaderLoot.length > 0) {
       rows.push(`<div class="drop-group-title">💠 首领战利品（每波 BOSS 击破时结算）</div>`);
       for (const loot of preview.leaderLoot) {
-        rows.push(row("🟣", getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${getResourceDisplayName(loot.protocolMaterial)} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader"));
+        rows.push(row("🟣", getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${getResourceDisplayName(loot.protocolMaterial)} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader", "leader:" + loot.coreMaterial));
       }
     }
     if (preview.tacticalMaterial) {
       const t = preview.tacticalMaterial;
       rows.push(`<div class="drop-group-title">🧪 战术材料（所有敌人）</div>`);
-      rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical"));
+      rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical", "tactical"));
     }
   } else {
     rows.push(`<div class="drop-mode-tag belt">海盗星带</div>`);
     if (preview.encryptedData) {
       const e = preview.encryptedData;
-      rows.push(row("🔐", e.material, `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data"));
+      rows.push(row("🔐", e.material, `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data", "encryptedData"));
     } else {
       rows.push(row("🔐", "加密数据", "本星带禁用掉落", "drop-none"));
     }
     if (Array.isArray(preview.zoneSpecialDrops) && preview.zoneSpecialDrops.length > 0) {
       rows.push(`<div class="drop-group-title">⭐ 特殊掉落（outer/deep 独有）</div>`);
       for (const sd of preview.zoneSpecialDrops) {
-        rows.push(row("⭐", sd.material, `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special"));
+        rows.push(row("⭐", sd.material, `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", "special:" + sd.material));
       }
     }
     if (preview.ticketDrop) {
       const t = preview.ticketDrop;
-      rows.push(row("🎫", t.material, `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket"));
+      rows.push(row("🎫", t.material, `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket", "ticket"));
     }
     if (Array.isArray(preview.gearDrops) && preview.gearDrops.length > 0) {
       rows.push(`<div class="drop-group-title">🔧 装备专用数据（精英/BOSS 掉落）</div>`);
       for (const gd of preview.gearDrops) {
-        rows.push(row("🔧", gd.material, `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear"));
+        rows.push(row("🔧", gd.material, `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear", "gear:" + gd.material));
       }
     }
     if (preview.tacticalMaterial) {
       const t = preview.tacticalMaterial;
       rows.push(`<div class="drop-group-title">🧪 战术材料（所有敌人）</div>`);
-      rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical"));
+      rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical", "tactical"));
     }
     // 货柜（低概率宝箱；死亡空间模式 cargoDrops===null，不渲染）
     if (preview.cargoDrops) {
       const c = preview.cargoDrops;
       const dc = c.dropChance;
       const sizeNames = { S:"小型", M:"中型", L:"大型", XL:"超大型" };
-      // 汇总本区所有可能出现的货柜尺寸（去重保序）
+      // 汇总本区所有可能出现的货柜尺寸（去重保序），每个尺寸一行、各自可点开对应尺寸卡片
       const sizeSet = new Set();
       if (c.sizesByClass) for (const sizes of Object.values(c.sizesByClass)) for (const s of sizes) sizeSet.add(s);
       const sizeList = Array.from(sizeSet);
-      const sizeStr = sizeList.map(s => sizeNames[s] || s).join(" / ");
       rows.push(`<div class="drop-group-title">📦 货柜（击坠敌人低概率掉落）</div>`);
-      rows.push(row("📦", "货柜（" + sizeStr + "）",
-        `普通 ${pct(dc.normal)} · 精英 ${pct(dc.elite)} · BOSS ${pct(dc.boss)}` +
-        " · 点开揭晓内容（T1 保底·T2 矿物/普通弹·T3 T2弹·BP 按尺寸出装备蓝图(D→S/C→M/B→L/A→XL)·T4 仅脑插）",
-        "drop-cargo"));
+      for (const s of sizeList) {
+        rows.push(row("📦", "货柜（" + (sizeNames[s] || s) + "）",
+          `普通 ${pct(dc.normal)} · 精英 ${pct(dc.elite)} · BOSS ${pct(dc.boss)}`,
+          "drop-cargo", "cargo:" + s));
+      }
     }
   }
   body.innerHTML = rows.join("");
