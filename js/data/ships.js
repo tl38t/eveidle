@@ -473,7 +473,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 120, rechargeRate: 6 },
     fuelEfficiency: 0.95,
     slots: { high: 3, mid: 1, low: 2, rig: 1 },
-    bonuses: { },
+    bonuses: { miningLaserEfficiency: 0.5 },
     unlock: { type: "shipEngineering", level: 15 }
   },
   gas_destroyer: {
@@ -484,7 +484,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 120, rechargeRate: 6 },
     fuelEfficiency: 0.95,
     slots: { high: 3, mid: 1, low: 2, rig: 1 },
-    bonuses: { },
+    bonuses: { gasLaserEfficiency: 0.5 },
     unlock: { type: "shipEngineering", level: 15 }
   },
   miner_cruiser: {
@@ -495,7 +495,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 150, rechargeRate: 8 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 2, low: 2, rig: 2 },
-    bonuses: { },
+    bonuses: { miningLaserEfficiency: 1.4 },
     unlock: { type: "shipEngineering", level: 35 }
   },
   gas_cruiser: {
@@ -506,7 +506,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 150, rechargeRate: 8 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 2, low: 2, rig: 2 },
-    bonuses: { },
+    bonuses: { gasLaserEfficiency: 1.4 },
     unlock: { type: "shipEngineering", level: 35 }
   },
   dolphin: {
@@ -529,7 +529,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 240, rechargeRate: 12 },
     fuelEfficiency: 0.85,
     slots: { high: 4, mid: 3, low: 2, rig: 3 },
-    bonuses: { },
+    bonuses: { miningLaserEfficiency: 1.4 },
     unlock: { type: "shipEngineering", level: 55 }
   },
   gas_battleship: {
@@ -540,7 +540,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 240, rechargeRate: 12 },
     fuelEfficiency: 0.85,
     slots: { high: 4, mid: 3, low: 2, rig: 3 },
-    bonuses: { },
+    bonuses: { gasLaserEfficiency: 1.4 },
     unlock: { type: "shipEngineering", level: 55 }
   },
   orca: {
@@ -551,7 +551,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 300, rechargeRate: 15 },
     fuelEfficiency: 0.80,
     slots: { high: 4, mid: 4, low: 1, rig: 3 },
-    bonuses: { fleetMiningSpeed: 0.20, smeltingSpeed: 0.30 },
+    bonuses: { miningLaserEfficiency: 1.8, gasLaserEfficiency: 1.8, fleetMiningSpeed: 0.20, smeltingSpeed: 0.30 },
     unlock: { type: "shipEngineering", level: 80 }
   }
 };

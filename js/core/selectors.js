@@ -320,7 +320,8 @@ function getProductionEfficiencyState(state, actionKey) {
     ? ResearchState.getResearchMultiplier(state, isMining ? ["allMining", "mining"] : ["allMining", "gas"])
     : 1;
 
-  // 重平衡（2026-08-16）：船身采矿/采气放大器已归零，放大器只来自装备。
+  // 重平衡（2026-08-16）：船身采矿/采气放大器 = 原值 -100pp（150%→50%、280%→180% 等），护卫/驮星原值仅100%砍完为0；
+  // 中槽无人机链 / 改装件的基础效率作为独立乘数乘在高槽放大后的值外面；
   // 中槽无人机链 / 改装件的基础效率不再平加 primaryBonus，而是作为独立乘数乘在高槽放大后的值外面；
   // 带放大器的势力中槽件（同时含 base+amp）的 base 保持平加，避免被高槽放大器二次放大（double-dip）。
   let highTotal = 0;        // 高槽采集装备效果（已乘放大器）合计
