@@ -292,7 +292,7 @@ function openEquipEnhanceModal(itemId, level) {
   if (!cell) { closeEquipEnhanceModal(); return; }
   equipEnhanceModal = { itemId, level };
   const eqEnt = EQUIPMENT_DB[cell.itemId];
-  const descText = eqEnt ? getEquipmentAttributeText(eqEnt) : "";
+  const descText = eqEnt ? getEquipmentAttributeText(eqEnt, "\n") : "";
   const src = { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" };
   let backdrop = document.getElementById("equip-enhance-modal");
   if (!backdrop) {
@@ -310,9 +310,9 @@ function openEquipEnhanceModal(itemId, level) {
   const nextLabel = cell.isUnenhanced ? "+1" : `+${cell.level + 1}`;
   const costHtml = cell.costRows.map(r => `<span class="eem-cost${r.enough ? "" : " insufficient"}">${escapeAchievementText(r.name)} ${r.need}<small>(${r.stock})</small></span>`).join("");
   const extraHtml = cell.extraRows.length ? `<div class="eem-extra">${cell.extraRows.map(r => `<span class="eem-cost${r.enough ? "" : " insufficient"}">${escapeAchievementText(r.label)} ×${r.need}<small>(${r.have})</small></span>`).join("")}</div>` : "";
-  const milestoneTag = cell.isMilestone ? `<span class="eem-tag milestone">里程碑 Lv.${cell.level + 1}</span>` : "";
+  const milestoneHint = cell.isMilestone ? `<div class="eem-milestone-hint">下一里程碑：Lv.${cell.level + 1}（+${cell.previewBonusPercent}% 加成）</div>` : "";
   const stockHtml = cell.stockCount
-    ? `<div class="eem-status-row"><span class="eem-dot stock">库存</span><span>库存 ${cell.stockCount} 件 ${levelLabel}（未装载，可强化）</span></div>`
+    ? `<div class="eem-status-row"><span class="eem-dot stock">库存</span><span>${cell.stockCount} 件 ${levelLabel}（未装载，可强化）</span></div>`
     : `<div class="eem-status-row"><span class="eem-dot none">无库存</span><span>无未装载件 —— 需先到船坞卸载已装载的 ${levelLabel} 装备</span></div>`;
   const installedHtml = cell.installedCount
     ? `<div class="eem-status-row"><span class="eem-dot installed">已装载</span><span>已装载 ${cell.installedCount} 件 ${levelLabel}（在船上）</span></div>
@@ -330,7 +330,8 @@ function openEquipEnhanceModal(itemId, level) {
         <span class="eem-icon">${cell.icon}</span>
         <div class="eem-title-wrap">
           <div class="eem-title">${escapeAchievementText(cell.name)} <span class="eem-level">${levelLabel}</span></div>
-          <div class="eem-sub">${escapeAchievementText(cell.categoryLabel)} · 当前加成 +${cell.bonusPercent}%${milestoneTag}</div>
+          <div class="eem-sub">${escapeAchievementText(cell.categoryLabel)} · 当前加成 +${cell.bonusPercent}%</div>
+          ${milestoneHint}
         </div>
         <button class="eem-close" data-eem-close aria-label="关闭">✕</button>
       </div>

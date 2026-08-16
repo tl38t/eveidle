@@ -399,6 +399,7 @@
   .eem-title { color: #e6edf4; font-weight: 700; font-size: 15px; }
   .eem-level { color: #d4a843; }
   .eem-sub { color: #8aa0b8; font-size: 11px; margin-top: 2px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .eem-milestone-hint { color: #d4a843; font-size: 11px; margin-top: 2px; }
   .eem-close { background: transparent; border: none; color: #6a7a8e; font-size: 16px; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
   .eem-close:hover { color: #c8d0d8; background: #1a2535; }
   .eem-body { padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; }
@@ -425,7 +426,7 @@
   .eem-enhance { width: 100%; justify-content: center; }
   .eem-section { display: flex; flex-direction: column; gap: 8px; }
   .eem-sec-title { margin: 0; font-size: 11px; color: #6a7a8e; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
-  .eem-desc { font-size: 12.5px; line-height: 1.6; color: #b8c4d2; white-space: normal; word-break: break-word; }
+  .eem-desc { font-size: 12.5px; line-height: 1.7; color: #b8c4d2; white-space: pre-line; word-break: break-word; }
   .eem-source { display: flex; align-items: center; gap: 10px; background: #0b1118; border: 1px solid #1c2632; border-radius: 6px; padding: 10px 12px; }
   .eem-src-icon { width: 30px; height: 30px; border-radius: 5px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; background: #0a0e14; border: 1px solid #1c2632; color: #5da8d4; }
   .eem-src-text { flex: 1; line-height: 1.35; }

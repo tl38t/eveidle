@@ -164,6 +164,91 @@ function renderGasDisplay(display, areaEl, outEl) {
   drawSkillBar(document.getElementById("bar-gas"), display.progress.percent, "green");
   const eta = document.getElementById("gas-eta"); if (eta) eta.textContent = display.progress.etaText;
 }
+
+/* ================================================================
+   手机端 hover 信息等价物（方案 C：ⓘ 图标，桌面隐藏）
+   —— 任何「仅桌面 hover 才有」的说明，手机端用 ⓘ 提供点按等价物；
+      桌面端 ⓘ 不显示（CSS @media (hover:none) 门控），保留原生 title hover。
+   ================================================================ */
+function initHoverInfo() {
+  // 给单个 ⓘ 按钮绑定捕获阶段监听：拦截冒泡，避免触发侧边栏导航 / 抽屉关闭，
+  // 并就地弹/收说明浮层（document 层委托已来不及拦截 nav-item/sidebar 的监听）。
+  function bindInfoBtn(btn, resolveTarget) {
+    if (btn._hoverInfoBound) return;
+    btn._hoverInfoBound = true;
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation(); // 捕获阶段截断 → nav-item / sidebar 的冒泡监听不再执行（不导航、不收抽屉）
+      toggleHoverInfoPop(resolveTarget(), btn);
+    }, true);
+  }
+  // 1) 侧边栏标签：页面项(data-page) 与带等级徽标的技能项(.nav-lv) 注入 ⓘ；排除无说明的（如战斗组展开钮）
+  document.querySelectorAll('.sidebar .nav-item').forEach(function (el) {
+    if (el.querySelector(':scope > .hover-info-btn')) return;
+    if (!el.dataset.page && !el.querySelector('.nav-lv')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'hover-info-btn';
+    btn.textContent = 'ⓘ';
+    btn.setAttribute('aria-label', '查看说明');
+    el.appendChild(btn);
+    bindInfoBtn(btn, function () { return btn.closest('[data-page],[data-skill]') || btn.parentElement; });
+  });
+  // 2) 效率数值：采矿/采气/冶炼 三处注入 ⓘ
+  ['me-value', 'gas-eff-value', 'smelting-eff-value'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el || el.parentElement.querySelector(':scope > .hover-info-btn[data-for="' + id + '"]')) return;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'hover-info-btn';
+    btn.dataset.for = id;
+    btn.textContent = 'ⓘ';
+    btn.setAttribute('aria-label', '查看效率明细');
+    el.parentElement.appendChild(btn);
+    bindInfoBtn(btn, function () { return document.getElementById(id); });
+  });
+  // 3) 事件委托：点浮层之外即收起（ⓘ 自身已在捕获阶段 stopPropagation，不会误触此处关闭）
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.hover-info-pop')) hideHoverInfoPop();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') hideHoverInfoPop();
+  });
+}
+
+let _hoverInfoPop = null;
+let _hoverInfoAnchor = null;
+function toggleHoverInfoPop(target, anchor) {
+  if (_hoverInfoPop && _hoverInfoAnchor === anchor) { hideHoverInfoPop(); return; }
+  showHoverInfoPop(target, anchor);
+}
+function showHoverInfoPop(target, anchor) {
+  if (!target) return;
+  const text = (typeof target.title === 'string') ? target.title : (target.getAttribute('title') || '');
+  if (!text) return;
+  hideHoverInfoPop();
+  const pop = document.createElement('div');
+  pop.className = 'hover-info-pop';
+  pop.textContent = text;
+  document.body.appendChild(pop);
+  const r = (anchor || target).getBoundingClientRect();
+  let top = r.bottom + 6;
+  const left = Math.min(r.left, window.innerWidth - pop.offsetWidth - 8);
+  if (top + pop.offsetHeight > window.innerHeight - 8) top = Math.max(8, r.top - pop.offsetHeight - 6);
+  pop.style.top = top + 'px';
+  pop.style.left = Math.max(8, left) + 'px';
+  _hoverInfoPop = pop;
+  _hoverInfoAnchor = anchor;
+}
+function hideHoverInfoPop() {
+  if (_hoverInfoPop) { _hoverInfoPop.remove(); _hoverInfoPop = null; _hoverInfoAnchor = null; }
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', initHoverInfo);
+} else {
+  initHoverInfo();
+}
+
 function switchGasArea(areaName) {
   const result = dispatchGameAction(gameState, { type:"production/selectGasArea", areaName }, Date.now());
   if (result.changed) updateUI();

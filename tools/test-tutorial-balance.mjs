@@ -158,6 +158,66 @@ check("六组件(各2)总耗 = 164 TI + 26 AG + 18 重金属 + 18 稀有气体�
   sum.ti === want.ti && sum.ag === want.ag && sum.heavy === want.heavy && sum.rare === want.rare);
 check("I3 自炼50 + 奖励314 − 双行星200 = 164 TI，链条首端闭合", (50 + 314 - planetTI) === want.ti);
 
+// ===== D. C6「连续清场」在线回归：跳过第 1 波锚点（续打 / 换 zone / 船毁场景）也能完成 =====
+// 复现旧 bug：在线 C6 曾要求第 4 波 token 必须等于第 1 波锚点 c5Token，而该锚点在
+// 非第 1 波续打 / 中途换 zone / 船毁重开时必丢，导致「清了四波却卡住」。修复后只需
+// 一次活跃出击（有有效 run token）内于指定 zones 清掉第 4 波即完成（与离线路径对齐）。
+const GE = sandbox.GameEvents;
+// 本沙箱不会在加载时跑 autoLoad，故手动安装 tutorial 的 combat 事件消费者（绑定 sandbox.gameState）。
+sandbox.TutorialSystem.installTutorialConsumers(sandbox.gameState);
+const c6Reset = () => {
+  const g = sandbox.gameState;
+  if (!g.tutorial) g.tutorial = {};
+  if (!g.tutorial.taskStateById) g.tutorial.taskStateById = {};
+  g.tutorial.taskStateById.C6 = { status: "active", progress: {}, rewardClaimed: false, supportClaimed: false, instanceId: null, combatRunToken: null, c5Token: null, c6Token: null, wave1: false, wave4: false };
+  g.tutorial.activeCombatRunToken = "run-fixed-" + Math.random().toString(36).slice(2);
+  return g;
+};
+const c6Done = (g) => { const s = sandbox.TutorialSystem.getTutorialTaskState(g, "C6"); return !!s && (s.status === "claimable" || s.status === "completed"); };
+
+// 场景 1：直接从第 4 波清场（无第 1 波锚点）—— 旧逻辑会因 c5Token 缺失卡住，修复后应通过
+const g1 = c6Reset();
+GE.emit("combat:waveCleared", { zoneId: "angel_outpost", wave: 4 });
+check("C6 在线：跳过第 1 波锚点、直接清第 4 波仍能完成（修复后）", c6Done(g1));
+
+// 场景 2：第 4 波但 zone 不在白名单（非一级普通星带）—— 仍应保持 active，zone 门禁不受损
+const g2 = c6Reset();
+GE.emit("combat:waveCleared", { zoneId: "sansha_redoubt_lv80", wave: 4 });
+check("C6 在线：第 4 波但 zone 不在白名单 → 不完成（zone 门禁 intact）", !c6Done(g2));
+
+// 场景 3：有效 zone 但仅清到第 3 波 —— 仍应保持 active，wave 门禁不受损
+const g3 = c6Reset();
+GE.emit("combat:waveCleared", { zoneId: "blood_hideout", wave: 3 });
+check("C6 在线：有效 zone 仅清第 3 波 → 不完成（wave 门禁 intact）", !c6Done(g3));
+
+// ===== E. 序章组件任务读取真实库存（修复「提前造组件却卡住」）=====
+// 复现旧 bug：P2 激活前玩家已造出 integrated_hull，动作计数被 bump 守卫丢弃，
+// tsd.progress.integrated_hull 永久为 0；旧逻辑只读 progress → 任务永不完成。
+// 修复后 objectiveMet / 进度展示改为读 component:<recipeId> 真实库存。
+const mkCompState = () => {
+  const s = JSON.parse(JSON.stringify(sandbox.gameState));
+  s.tutorial = { rewardLedger: {}, taskStateById: {}, branchesUnlocked: [], selectedCombatTrack: null, emergencyShipGranted: false, lastReconciledAt: 0 };
+  for (const id of Object.keys(TD.byId)) {
+    s.tutorial.taskStateById[id] = { status: "locked", progress: {}, rewardClaimed: false, supportClaimed: false };
+  }
+  s.tutorial.taskStateById.P2.status = "active";
+  s.tutorial.taskStateById.P2.progress = { integrated_hull: 0 }; // 模拟动作计数被丢弃
+  sandbox.ResourceRegistry.set(s, "component:integrated_hull", 1); // 真实库存已有 1
+  sandbox.ResourceRegistry.set(s, "component:power_core", 0);
+  sandbox.ResourceRegistry.set(s, "component:functional_system", 0);
+  return s;
+};
+const statusOf = (st, id) => ((sandbox.TutorialSystem.getTutorialTaskState(st, id)) || {}).status;
+
+const e1 = mkCompState();
+sandbox.TutorialSystem.reconcileTutorialState(e1, 5000);
+check("P2 序章组件：库存已有 integrated_hull（progress=0）→ 自动完成（读库存而非动作）", statusOf(e1, "P2") === "completed");
+
+const e2 = mkCompState();
+sandbox.ResourceRegistry.set(e2, "component:integrated_hull", 0);
+sandbox.TutorialSystem.reconcileTutorialState(e2, 5000);
+check("P2 序章组件：库存为 0 → 仍 active，不误完成", statusOf(e2, "P2") === "active");
+
 // ===== 汇总 =====
 console.log(`\n聚焦探针结果：${pass} PASS / ${fail} FAIL`);
 process.exit(fail === 0 ? 0 : 1);

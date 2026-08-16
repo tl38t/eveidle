@@ -3133,6 +3133,83 @@ section("F5 isStationOperational 语义");
     ok(Math.abs(offXp - onXp) <= gas.baseXP, "N3 离线 XP≈在线 ("+offXp+" vs "+onXp+")");
   })();
 
+  // ---- N3b 资源调度中心 离线累积生效（修复回归）----
+  section("N3b 资源调度中心 离线累积生效");
+  (() => {
+    const dispatchEvents = [];
+    const un = W.GameEvents.on("station:dispatchBonus", e => dispatchEvents.push(e));
+    try {
+      const AREAS = evalIn("MINING_AREAS");
+      const area = AREAS[0];
+      const oreNs = "ore:" + area.ore;
+      const N = 25; // 跨过 Lv.1 阈值 20 → 应得 1 次调度加成；C∈[20,39] ⇒ bonus=1
+
+      // 采矿离线
+      G.skills.mining = { lvl:99, xp:0 };
+      G.shipAssignments = { mining: null };
+      bSetBody(3); G.station.maintenance.fuelRemaining = 500000;
+      G.station.buildings.resource_dispatch = 1; // Lv.1 阈值 20
+      G.station.dispatch = { miningCount:0, gasCount:0 };
+      dispatchEvents.length = 0;
+      RR.set(G, oreNs, 0);
+      freshAction("mining", { area:area.name, startedArea:area.name });
+      const cyc3 = area.baseTime / W.getProductionEfficiencyState(G, "mining").total;
+      runOfflineN(N, cyc3);
+      const offOre = RR.get(G, oreNs);
+      const cntM = G.station.dispatch.miningCount;
+      ok(offOre === cntM + 21, "N3b 采矿离线 25 周期 → ore=counter+21（含1次调度加成："+offOre+"/cnt="+cntM+"）");
+      ok(cntM >= 4 && cntM <= 5, "N3b 采矿离线后 miningCount∈[4,5]（实得 "+cntM+"）");
+      ok(dispatchEvents.length === 1 && dispatchEvents[0].payload.kind === "mining" && dispatchEvents[0].payload.quantity === 1, "N3b 采矿离线 emit station:dispatchBonus×1 qty=1");
+
+      // 拆分显示：主卡扣减调度加成、新增独立调度卡，且各卡数量之和 == 真实净获得（不重复计数）
+      const splitM = W.splitOfflineDispatchBonus([{ id:oreNs, name:"凡晶石", quantity:offOre, categoryLabel:"物资", source:{pageLabel:"离线收益"} }]);
+      const mainM = splitM.find(it => it.id === oreNs);
+      const dispM = splitM.find(it => it.id === "dispatch:" + oreNs);
+      ok(dispM && dispM.categoryLabel === "资源调度·勘探指令" && dispM.quantity === 1, "N3b 离线弹窗：独立调度卡(凡晶石) qty=1");
+      ok(mainM && mainM.quantity === offOre - 1, "N3b 离线弹窗：主卡扣减后="+(offOre-1)+"（原"+offOre+"）");
+      ok(splitM.reduce((s,it)=>s+(Number(it.quantity)||0),0) === offOre, "N3b 离线弹窗：各卡数量之和==真实净获得("+offOre+")");
+
+      // 采气离线
+      const GAS = evalIn("GAS_AREAS");
+      const gas = GAS[0];
+      G.skills.gasHarvesting = { lvl:99, xp:0 };
+      G.shipAssignments = { gasHarvesting: null };
+      bSetBody(3); G.station.maintenance.fuelRemaining = 500000;
+      G.station.buildings.resource_dispatch = 1;
+      G.station.dispatch = { miningCount:0, gasCount:0 };
+      dispatchEvents.length = 0;
+      RR.set(G, "gas:" + gas.gas, 0);
+      freshAction("gasHarvesting", { gasArea:gas.name, startedGasArea:gas.name });
+      const cycG = gas.baseTime / W.getProductionEfficiencyState(G, "gasHarvesting").total;
+      runOfflineN(N, cycG);
+      const offGas = RR.get(G, "gas:" + gas.gas);
+      const cntG = G.station.dispatch.gasCount;
+      ok(offGas === cntG + 21, "N3b 采气离线 25 周期 → gas=counter+21（含1次调度加成："+offGas+"/cnt="+cntG+"）");
+      ok(dispatchEvents.length === 1 && dispatchEvents[0].payload.kind === "gas" && dispatchEvents[0].payload.quantity === 1, "N3b 采气离线 emit station:dispatchBonus×1 qty=1");
+
+      // 拆分显示（气体）：独立调度卡 + 各卡数量之和 == 真实净获得
+      const gasNs = "gas:" + gas.gas;
+      const splitG = W.splitOfflineDispatchBonus([{ id:gasNs, name:"气体", quantity:offGas, categoryLabel:"物资", source:{pageLabel:"离线收益"} }]);
+      const dispG = splitG.find(it => it.id === "dispatch:" + gasNs);
+      ok(dispG && dispG.categoryLabel === "资源调度·勘探指令" && dispG.quantity === 1, "N3b 离线弹窗：独立调度卡(气体) qty=1");
+      ok(splitG.reduce((s,it)=>s+(Number(it.quantity)||0),0) === offGas, "N3b 离线弹窗：气体各卡数量之和==真实净获得("+offGas+")");
+
+      // 断油对照：离线不应累积/发奖
+      G.station.buildings.resource_dispatch = 1;
+      G.station.dispatch = { miningCount:0, gasCount:0 };
+      G.station.maintenance.fuelRemaining = 0;
+      dispatchEvents.length = 0;
+      RR.set(G, oreNs, 0);
+      freshAction("mining", { area:area.name, startedArea:area.name });
+      runOfflineN(N, cyc3);
+      const offOreNo = RR.get(G, oreNs);
+      ok(offOreNo >= 20 && G.station.dispatch.miningCount === 0 && dispatchEvents.length === 0, "N3b 断油离线：无调度加成(cnt=0,event=0,ore="+offOreNo+")");
+      G.station.maintenance.fuelRemaining = 500000;
+    } finally {
+      if (un) un();
+    }
+  })();
+
   // ---- N4 冶炼在线+离线 ----
   section("N4 冶炼 真实在线+离线");
   (() => {

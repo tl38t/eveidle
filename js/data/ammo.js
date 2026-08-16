@@ -92,13 +92,18 @@ function applyAmmoDelta(state, type, used) {
   }
   state.ammo = state.ammo.filter(s => (s.qty || 0) > 0);
 }
-// 制造产出：同型同档(loaded)合并，否则新建实例。tier/props 缺省按 T1（全 1）。
+// 制造/产出：同型同档优先并「参战」堆、其次「卸下」堆（继承其状态），否则新建实例（默认参战）。
+// tier/props 缺省按 T1（全 1）；T1/T2 严格分离。
 function addAmmo(state, opts) {
   const arr = ensureAmmoArray(state);
   const t = opts.tier || "T1";
   const p = opts.props || AMMO_TIER_PROPS[t];
   const nm = opts.name || ammoDisplayName(opts.type, t);
-  const existing = arr.find(s => s.type === opts.type && s.tier === t && s.loaded !== false);
+  // C：产出弹药继承同型同档现有堆的状态——优先并「参战」堆，其次「卸下」堆；
+  // 不覆盖原堆 name/props/loaded，T1/T2 严格分离（匹配条件带 tier）。全新类型/档默认参战。
+  const loadedMatch   = arr.find(s => s.type === opts.type && s.tier === t && s.loaded !== false);
+  const unloadedMatch = arr.find(s => s.type === opts.type && s.tier === t && s.loaded === false);
+  const existing = loadedMatch || unloadedMatch;
   if (existing) existing.qty += opts.qty;
   else arr.push({ id: nextAmmoId(), type: opts.type, tier: t, name: nm, props: { dmgMult: p.dmgMult, hitMult: p.hitMult }, qty: opts.qty, loaded: true });
 }

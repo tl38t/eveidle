@@ -452,7 +452,13 @@ const EQUIPMENT_BONUS_NAMES = {
   armorCapacityPercent:"装甲容量",
   structureCapacityPercent:"结构容量",
   smeltingSpeed:"冶炼速度",
+  archaeologyScan:"扫描强度",
   archaeologyScanPercent:"扫描强度",
+  archaeologyStabilizer:"失败反噬减免",
+  archaeologyDecoder:"文物掉落加成",
+  archaeologyCycleReduction:"考古周期缩短",
+  archaeologyNonFatalAvoid:"非致命免伤",
+  archaeologyCopyChance:"复制焦点概率",
   archaeologyFuelEfficiency:"考古燃料效率",
   archaeologyInterferenceReduction:"考古干扰缩短"
 };
@@ -460,14 +466,17 @@ const EQUIPMENT_BONUS_NAMES = {
 const RIG_REDUCTION_BONUS_KEYS = ["archaeologyFuelEfficiency", "archaeologyInterferenceReduction"];
 const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","structureCapacityPercent","smeltingSpeed","archaeologyScanPercent"];
 
+const ARCHAEOLOGY_REDUCTION_BONUS_KEYS = ["archaeologyStabilizer", "archaeologyCycleReduction"];
+const ARCHAEOLOGY_PERCENT_BONUS_KEYS = ["archaeologyDecoder", "archaeologyNonFatalAvoid", "archaeologyCopyChance"];
+
 function formatEquipmentBonusValue(key, value) {
   if (["miningEfficiency","gasEfficiency","miningBonus","gasBonus","miningLaserEfficiency","gasLaserEfficiency"].includes(key)) {
     return "+" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
-  if (RIG_REDUCTION_BONUS_KEYS.includes(key)) {
+  if (RIG_REDUCTION_BONUS_KEYS.includes(key) || ARCHAEOLOGY_REDUCTION_BONUS_KEYS.includes(key)) {
     return "-" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
-  if (RIG_PERCENT_BONUS_KEYS.includes(key)) {
+  if (RIG_PERCENT_BONUS_KEYS.includes(key) || ARCHAEOLOGY_PERCENT_BONUS_KEYS.includes(key)) {
     return "+" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
   return "+" + value;

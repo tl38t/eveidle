@@ -1570,6 +1570,15 @@ const ShellStateActions = {
     const queue = state.queue;
     queue.status.isRunning = false; queue.status.activeIndex = -1;
     state.currentAction.progress = 0; state.currentAction.lastProgressUpdate = now; state.currentAction.active = false; state.currentAction.batchRemaining = 0;
+    // 队列停止/删除时连带拆除战斗续战态：否则 combat.active / resumeAfterRepair /
+    // deathspaceChainRemaining 残留，会导致修好后自动重开、删队列仍继续。
+    // 与 stopCombat / finalizeCombatQueueItem 对齐；非战斗队列项调用时这些字段清零为幂等无副作用。
+    if (state.combat) {
+      state.combat.active = false;
+      state.combat.deathspaceChainRemaining = 0;
+      state.combat.deathspaceChainPending = false;
+      state.resumeAfterRepair = null;
+    }
     state._dirty = true;
     return { changed:true };
   },

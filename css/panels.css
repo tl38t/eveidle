@@ -377,7 +377,6 @@
     cursor: default;
     transition: all 0.25s ease;
     letter-spacing: 0.3px;
-    backdrop-filter: blur(2px);
   }
 
   .btn:hover {

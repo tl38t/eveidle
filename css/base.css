@@ -141,7 +141,6 @@
     width: 200px;
     flex-shrink: 0;
     background: rgba(12, 16, 24, 0.6);
-    backdrop-filter: blur(4px);
     border-right: 1px solid rgba(26, 36, 52, 0.5);
     display: flex;
     flex-direction: column;
@@ -163,17 +162,22 @@
     position: relative;
     font-weight: 500;
   }
-  .sidebar .nav-item:hover {
-    background: rgba(20, 30, 50, 0.5);
-    color: #c8d0d8;
+  @media (hover: hover) {
+    .sidebar .nav-item:hover {
+      background: rgba(20, 30, 50, 0.5);
+      color: #c8d0d8;
+    }
+    .sidebar .nav-item:hover::before {
+      content: '';
+      position: absolute;
+      left: 0; top: 10%; height: 80%; width: 2px;
+      background: linear-gradient(180deg, transparent, #d4a843, transparent);
+      opacity: 0.6;
+      box-shadow: 0 0 12px rgba(212, 168, 67, 0.15);
+    }
   }
-  .sidebar .nav-item:hover::before {
-    content: '';
-    position: absolute;
-    left: 0; top: 10%; height: 80%; width: 2px;
-    background: linear-gradient(180deg, transparent, #d4a843, transparent);
-    opacity: 0.6;
-    box-shadow: 0 0 12px rgba(212, 168, 67, 0.15);
+  .sidebar .nav-item:active {
+    background: rgba(20, 30, 50, 0.65);
   }
   .sidebar .nav-item.active {
     color: #d4a843;
@@ -211,6 +215,35 @@
     transition: all 0.3s;
   }
   .combat-nav-chevron { margin-left: 2px; color: #53667a; font-size: 10px; transition: transform .2s ease, color .2s ease; }
+
+  /* 手机端 hover 信息等价物（方案 C：ⓘ 图标，桌面隐藏）——2026-08-16 */
+  .hover-info-btn {
+    display: none;                 /* 桌面默认隐藏，保留原生 title hover */
+    flex: 0 0 auto;
+    margin-left: 6px;
+    width: 16px; height: 16px;
+    padding: 0;
+    align-items: center; justify-content: center;
+    font-size: 10px; line-height: 1;
+    color: #d4a843;
+    background: rgba(212, 168, 67, 0.12);
+    border: 1px solid rgba(212, 168, 67, 0.4);
+    border-radius: 50%;
+    cursor: pointer;
+  }
+  @media (hover: none) {
+    .hover-info-btn { display: inline-flex; }
+  }
+  .hover-info-pop {
+    position: fixed; z-index: 9999;
+    max-width: 280px; max-height: 60vh; overflow: auto;
+    background: #16202c; color: #d9e4f0;
+    border: 1px solid #4a8ed6; border-radius: 8px;
+    padding: 10px 12px; font-size: 12.5px; line-height: 1.55;
+    box-shadow: 0 8px 24px rgba(0,0,0,.55);
+    white-space: pre-line;
+    pointer-events: auto;
+  }
   .combat-nav-toggle[aria-expanded="true"] .combat-nav-chevron { transform: rotate(180deg); color: #d4a843; }
   .combat-skill-group { display: none; }
   .combat-skill-group.expanded { display: block; }
@@ -235,7 +268,6 @@
   /* ===== 面板通用 ===== */
   .panel {
     background: rgba(13, 17, 24, 0.7);
-    backdrop-filter: blur(2px);
     border: 1px solid rgba(26, 37, 53, 0.5);
     border-radius: 6px;
     overflow: hidden;

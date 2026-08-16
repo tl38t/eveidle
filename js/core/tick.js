@@ -145,7 +145,7 @@ function gameTick() {
       while (gameState.currentAction.progress >= actualTime) {
         if (ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre) < 1) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime; ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, 1);
-        let output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
+        let output = Math.max(1, Math.floor(recipe.baseOutput * getRefiningOutputMultiplier(smeltingState.level)));
         // 脑插·冶炼双生：3% 概率本次产出×2
         if (Math.random() < getImplantDoubleOutputChance(gameState, "refining")) output *= 2;
         // 增强剂·冶炼产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率本次产出×2

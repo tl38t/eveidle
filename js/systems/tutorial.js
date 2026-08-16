@@ -269,9 +269,9 @@
   // ---- 目标达成判定 ----
   function objectiveMet(state, task, tsd) {
     switch (task.id) {
-      case "P2": return (tsd.progress.integrated_hull || 0) >= 1;
-      case "P3": return (tsd.progress.power_core || 0) >= 1;
-      case "P4": return (tsd.progress.functional_system || 0) >= 1;
+      case "P2": return (ResourceRegistry.get(state, "component:integrated_hull") || 0) >= 1;
+      case "P3": return (ResourceRegistry.get(state, "component:power_core") || 0) >= 1;
+      case "P4": return (ResourceRegistry.get(state, "component:functional_system") || 0) >= 1;
       case "P5": {
         const inst = shipInstanceById(state, tsd.instanceId);
         return Boolean(inst) && inst.shipId === "rookie_corvette"
@@ -319,7 +319,7 @@
       }
       case "C4": return tsd.kill === true;
       case "C5": return tsd.wave1 === true;
-      case "C6": return tsd.wave4 === true && Boolean(tsd.c6Token) && tsd.c6Token === tsd.c5Token;
+      case "C6": return tsd.wave4 === true && Boolean(tsd.c6Token);
       default: return false;
     }
   }
@@ -498,8 +498,6 @@
     if (p.branch === "component") {
       const recipeId = p.recipeId;
       const qty = Number(p.quantity) || 0;
-      const map = { integrated_hull: "P2", power_core: "P3", functional_system: "P4" };
-      if (map[recipeId]) bump(state, map[recipeId], recipeId, qty);
       bump(state, "I6", recipeId, qty);
     } else if (p.branch === "ship" && p.shipId === "rookie_corvette") {
       const tsd = ts(state, "P5");
@@ -579,21 +577,21 @@
         markDirty(state);
       }
     }
-    // C6 同次锚点：本局第 1 波清场写入本次 run token（保持 C6「同次出击清第 4 波」判定）。
-    // C5 已放宽，但 C6 仍需锚定第 1 波 token 做同次校验；新一局第 1 波可替换旧锚点（修复重开出击卡死）。
+    // 历史遗留：曾用第 1 波 token 做 C6「同次出击」锚点（c5Token）。C6 现已取消该同次校验，
+    // 此处写入 c5Token 仅为兼容旧档迁移，不再参与任何完成判定（见下方 C6 在线块）。
     if (wave === 1 && token) {
       const c6tsd = ts(state, "C6");
       if (c6tsd && c6tsd.status !== "completed" && c6tsd.status !== "claimable") {
         c6tsd.c5Token = token; markDirty(state);
       }
     }
-    // C6：指定 zones 内清第 4 波，且 token 与第 1 波锚点一致
-    if (wave === 4 && c6ZoneOk && token) {
-      const tsd = ts(state, "C6");
-      // 同次校验：第 4 波 token 须与第 1 波锚点一致；已完成 / claimable 的 C6 不得被后续事件回退或覆盖
-      if (tsd && tsd.c5Token && token === tsd.c5Token && tsd.status !== "completed" && tsd.status !== "claimable") {
-        tsd.wave4 = true; tsd.c6Token = token; markDirty(state);
-      }
+    // C6：指定 zones 内、活跃出击（有有效 run token）中清掉第 4 波即完成。
+    // 取消原「第 4 波 token 须等于第 1 波锚点 c5Token」的同次校验——该锚点在换 zone / 暂停重开 /
+    // 船毁 / 非第 1 波续打时必丢，导致「清了四波却卡住」。改为与离线路径（仅要求 wavesCleared>=4 && token）
+    // 及已放宽的 C5 对齐：一次活跃出击里清到第 4 波即计。c5Token 字段保留为迁移兼容冗余，不再参与判定。
+    const c6tsd = ts(state, "C6");
+    if (wave === 4 && c6ZoneOk && token && c6tsd && c6tsd.status !== "completed" && c6tsd.status !== "claimable") {
+      c6tsd.wave4 = true; c6tsd.c6Token = token; markDirty(state);
     }
     reconcileTutorialState(state, event && event.timestamp);
   }
@@ -768,7 +766,7 @@
     switch (task.progressType) {
       case "manufacture": {
         const target = num(t.count);
-        const cur = Math.min(num(p[t.recipeId]), target);
+        const cur = Math.min(Number(ResourceRegistry.get(state, "component:" + t.recipeId)) || 0, target);
         return mk(cur, target, componentDisplayName(t.recipeId) + " " + cur + "/" + target);
       }
       case "manufacture_components": {

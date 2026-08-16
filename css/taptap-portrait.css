@@ -114,7 +114,8 @@
     width: min(80vw, 340px);
     max-width: calc(100vw - 16px) !important;
     max-height: 46vh !important;
-    z-index: 1450 !important;
+    /* 1495：低于顶栏(1500)，高于活动进度条(1490)。避免卡片拖到活动条区域时被其盖住、无法再拖动。 */
+    z-index: 1495 !important;
     border-radius: 10px !important;
     box-shadow: 0 10px 32px rgba(0,0,0,.55) !important;
   }

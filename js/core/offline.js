@@ -8,6 +8,8 @@ let _offlineEventBatch = null;
 // 避免不同批次的事件拿到相同 eventId、被通配消费者（onIdempotent）误判为重复而丢弃真实结算记账。
 // eventId 格式仍为 runId:sequence:type；调用方显式传入的 runId 原样保留。
 let _offlineBatchSeq = 0;
+// 离线结算·资源调度中心（勘探指令）加成收集：供结算弹窗拆分为独立条目展示（不并入主矿/气卡）。
+let _settlementDispatchBonus = [];
 
 // 虚拟时间兼容入口：第三参 meta 可选；
 // 1) 旧两参数调用（emitOfflineGameEvent(type, payload)）行为完全不变；
@@ -180,6 +182,33 @@ function diffInventorySnapshot(before, after) {
   return items;
 }
 
+// 离线结算·资源调度中心（勘探指令）加成：把并入主矿/气卡的调度加成拆分为独立条目展示，
+// 并同步从主卡扣减，保证弹窗各卡「数量之和」== 真实库存净获得（不重复计数）。
+// 仅作用于展示层：ResourceRegistry.add 仍加总量，库存不被改动。
+function splitOfflineDispatchBonus(netItems) {
+  if (!Array.isArray(netItems) || !_settlementDispatchBonus.length) return netItems;
+  const extra = [];
+  for (const e of _settlementDispatchBonus) {
+    const nm = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(e.resourceId) : e.resourceId;
+    extra.push({
+      id: "dispatch:" + e.resourceId,
+      name: nm,
+      icon: "🛰️",
+      quantity: e.quantity,
+      categoryLabel: "资源调度·勘探指令",
+      source: { pageId: "station", pageLabel: "离线收益·调度加成" }
+    });
+    const idx = netItems.findIndex(it => it.id === e.resourceId);
+    if (idx >= 0) {
+      netItems[idx].quantity = Math.max(0, (Number(netItems[idx].quantity) || 0) - e.quantity);
+    }
+  }
+  // 移除被扣减到 0 的主卡（避免显示 ×1 误导），再追加独立调度卡
+  const filtered = netItems.filter(it => Number(it.quantity) > 0);
+  for (const x of extra) filtered.push(x);
+  return filtered;
+}
+
 function getMaxMaterialCycles(cost) {
   let cycles = Infinity;
   for (const [mat, qty] of Object.entries(cost || {})) {
@@ -234,10 +263,25 @@ function getOfflineActionDescriptor() {
             if (Math.random() < implantDoubleMining) totalOre++;
           }
         }
-        ResourceRegistry.add(gameState, (area.mode === "moon" ? "moon:" : "ore:") + area.ore, totalOre);
+        // 资源调度中心·勘探指令：离线累计采矿次数并达阈值额外产出（与在线一致）
+        const dispatchResId = (area.mode === "moon" ? "moon:" : "ore:") + area.ore;
+        const dispatchBonus = (typeof recordStationDispatchAction === "function") ? recordStationDispatchAction(gameState, "mining", cycles) : 0;
+        if (dispatchBonus > 0) {
+          totalOre += dispatchBonus;
+          _settlementDispatchBonus.push({ resourceId: dispatchResId, quantity: dispatchBonus, kind: "mining" });
+          if (implantDoubleMining > 0) {
+            for (let i = 0; i < dispatchBonus; i++) {
+              if (Math.random() < implantDoubleMining) totalOre++;
+            }
+          }
+        }
+        ResourceRegistry.add(gameState, dispatchResId, totalOre);
         // XP 始终按实际采集次数计算（双倍不增加 XP）
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
-        emitOfflineGameEvent("mining:completed", { area:area.name, mode:area.mode, resourceId:(area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity:totalOre, cycles, xp:cycles * area.baseXP });
+        emitOfflineGameEvent("mining:completed", { area:area.name, mode:area.mode, resourceId:dispatchResId, quantity:totalOre, cycles, xp:cycles * area.baseXP });
+        if (dispatchBonus > 0 && typeof emitOfflineGameEvent === "function") {
+          emitOfflineGameEvent("station:dispatchBonus", { kind:"mining", resourceId:(area.mode === "moon" ? "moon:" : "ore:") + area.ore, quantity:dispatchBonus, counter:(gameState.station && gameState.station.dispatch ? gameState.station.dispatch.miningCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:true });
+        }
       }
     };
   }
@@ -247,7 +291,7 @@ function getOfflineActionDescriptor() {
     const recipe = SMELTING_RECIPES.find(r => r.name === recipeName || r.outputMineral === recipeName) || SMELTING_RECIPES[0];
     if (!recipe) return null;
     const smeltingState = getSmeltingDisplayState(gameState, Date.now());
-    const eff = smeltingState.efficiency; const output = Math.max(1, Math.floor(recipe.baseOutput * smeltingState.skillEfficiency));
+    const eff = smeltingState.efficiency; const output = Math.max(1, Math.floor(recipe.baseOutput * getRefiningOutputMultiplier(smeltingState.level)));
     return {
       key, duration: recipe.baseTime / eff,
       maxCycles() {
@@ -298,9 +342,24 @@ function getOfflineActionDescriptor() {
             if (rollDoubleMineral(boosterEff.doubleGasChance)) qty++;
           }
         }
-        ResourceRegistry.add(gameState, "gas:" + area.gas, qty);
+        // 资源调度中心·勘探指令：离线累计采气次数并达阈值额外产出（与在线一致）
+        const dispatchResId = "gas:" + area.gas;
+        const dispatchBonus = (typeof recordStationDispatchAction === "function") ? recordStationDispatchAction(gameState, "gas", cycles) : 0;
+        if (dispatchBonus > 0) {
+          qty += dispatchBonus;
+          _settlementDispatchBonus.push({ resourceId: dispatchResId, quantity: dispatchBonus, kind: "gas" });
+          if (implantDoubleGas > 0) {
+            for (let i = 0; i < dispatchBonus; i++) {
+              if (Math.random() < implantDoubleGas) qty++;
+            }
+          }
+        }
+        ResourceRegistry.add(gameState, dispatchResId, qty);
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
-        emitOfflineGameEvent("gas:completed", { area:area.name, resourceId:"gas:" + area.gas, quantity:qty, cycles, xp:cycles * area.baseXP });
+        emitOfflineGameEvent("gas:completed", { area:area.name, resourceId:dispatchResId, quantity:qty, cycles, xp:cycles * area.baseXP });
+        if (dispatchBonus > 0 && typeof emitOfflineGameEvent === "function") {
+          emitOfflineGameEvent("station:dispatchBonus", { kind:"gas", resourceId:"gas:" + area.gas, quantity:dispatchBonus, counter:(gameState.station && gameState.station.dispatch ? gameState.station.dispatch.gasCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:true });
+        }
       }
     };
   }
@@ -984,6 +1043,8 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
 }
 
 function applyOfflineGains(rawSeconds, context) {
+  // 每次结算前清空资源调度加成收集（避免上一次结算残留污染本次展示）
+  _settlementDispatchBonus = [];
   // Batch C-9 定点返修：rawSeconds 严格归一化（唯一归一点）。
   // 合法 = typeof "number" 且 Number.isFinite 且 >= 0；合法值原样保留（不整数化）。
   // 其余一切输入（NaN / Infinity / -Infinity / 负数 / 数字字符串 / 普通字符串 /
@@ -1072,7 +1133,7 @@ function calculateOfflineGains() {
   } catch (e) {
     return;
   }
-  const netItems = diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState));
+  const netItems = splitOfflineDispatchBonus(diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState)));
   gameState.currentAction.lastProgressUpdate = now;
   gameState.lastActiveTime = now;
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);
@@ -1085,7 +1146,7 @@ function forceOfflineTest(seconds) {
   if (!seconds || seconds <= 0) { console.log("用法：forceOfflineTest(60) — 模拟离线 60 秒"); return; }
   const beforeSnapshot = createInventorySnapshot(gameState);
   const gains = applyOfflineGains(seconds, { runId:"offline_test_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36) });
-  const netItems = diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState));
+  const netItems = splitOfflineDispatchBonus(diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState)));
   gameState.currentAction.lastProgressUpdate = Date.now();
   gameState.lastActiveTime = Date.now(); gameState._dirty = true;
   const total = Object.values(gains).reduce((sum, value) => sum + value, 0);

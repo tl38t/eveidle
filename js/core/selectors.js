@@ -476,6 +476,15 @@ function getMiningDisplayState(state, now) {
   };
 }
 
+// 精炼产出份数：与精炼效率（冶炼速度）解耦，改为按等级阶梯跳变。
+// LV<50 → 1 份；LV50~99 → 2 份；LV≥100 → 3 份（封顶）。
+function getRefiningOutputMultiplier(level) {
+  const lv = Number(level) || 0;
+  if (lv >= 100) return 3;
+  if (lv >= 50)  return 2;
+  return 1;
+}
+
 function getSmeltingDisplayState(state, now) {
   const action = state.currentAction;
   const current = SMELTING_RECIPES.find(recipe => recipe.name === action.smeltingArea) || SMELTING_RECIPES[0];
@@ -521,7 +530,7 @@ function getSmeltingDisplayState(state, now) {
     shipEnhanceSmelt,
     boosterSmeltSpeed,
     actualTime:current.baseTime / efficiency,
-    output:Math.max(1, Math.floor(current.baseOutput * skillEfficiency)),
+    output:Math.max(1, Math.floor(current.baseOutput * getRefiningOutputMultiplier(level))),
     stock,
     runningStock,
     progress,
@@ -658,7 +667,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     // 超量预排：放开“按当前材料算上限”的硬限制，数量可超过当前持有；
     // 运行期由队列 skipOnFail 在材料不足时切下一项（当前项保留、剩余数量续跑）。
     result.maxCount = 99999999;
-    result.unlimited = false;
+    result.unlimited = true;
     result.noCap = true;
     result.materialHint = Math.max(0, display.stock);
     result.canOpen = display.canStart;
@@ -683,7 +692,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     ];
     // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
     result.maxCount = 99999999;
-    result.unlimited = false;
+    result.unlimited = true;
     result.noCap = true;
     result.materialHint = Math.max(0, getEquipmentMaxCyclesFromState(state, recipe));
     if (recipe.output.type === "equipment") result.outputText = recipe.name + "×" + recipe.output.qty;
@@ -702,7 +711,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     const _shipCompMatMax = result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999);
     // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
     result.maxCount = 99999999;
-    result.unlimited = false;
+    result.unlimited = true;
     result.noCap = true;
     result.materialHint = Math.max(0, _shipCompMatMax);
     result.outputText = recipe.name + "×1";
@@ -721,7 +730,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     // 缺料时 assemblyMaxCycles 为 0：超量预排放开硬限制（noCap），弹窗不再因缺料禁用“加入队列”，
     // 仅以 materialHint 提示当前可产批数；运行期 skipOnFail 在材料不足时切下一项。
     result.maxCount = 99999999;
-    result.unlimited = false;
+    result.unlimited = true;
     result.noCap = true;
     result.materialHint = Math.max(0, display.assemblyMaxCycles);
     result.outputText = (display.selectedShip ? display.selectedShip.name : recipe.name) + "×1";
