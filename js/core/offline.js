@@ -375,12 +375,24 @@ function getOfflineActionDescriptor() {
       maxCycles: () => {
         const q = getCompQuote();
         if (compLevel() < q.levelGate) return 0;
+        // 船坞材料节省仅作用于部件制造：按节省后每周期实际消耗求可负担周期
+        const savingRate = (typeof getShipyardSavingRate === "function") ? getShipyardSavingRate(gameState) : 0;
+        if (savingRate > 0 && typeof getShipyardProductionQuote === "function") {
+          const quote = getShipyardProductionQuote(gameState, { materialCost: q.cost }, 1);
+          let max = Infinity;
+          for (const [ref, qty] of Object.entries(quote.payable)) {
+            if (qty <= 0) continue;
+            const stock = ResourceRegistry.getByRef(gameState, ref);
+            max = Math.min(max, Math.floor(stock / qty));
+          }
+          return Number.isFinite(max) ? Math.max(0, max) : 0;
+        }
         return getMaxMaterialCycles(q.cost);
       },
       apply(cycles, gains) {
         const q = getCompQuote();
         if (compLevel() < q.levelGate) return; // 等级不足：零副作用（不扣料/不产出/不加 XP/不 emit）
-        deductMatsMultiple(q.cost, cycles);
+        deductShipCompMatsMultiple(q.cost, cycles);
         ResourceRegistry.add(gameState, "component:" + recipe.id, cycles);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
         emitOfflineGameEvent("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });

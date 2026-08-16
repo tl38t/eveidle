@@ -612,29 +612,11 @@ function getMaterialStockFromState(state, material) {
 }
 
 function getShipAssemblyMaxCyclesFromState(state, recipe) {
-  // 唯一有效报价顺序（与扣料/在线一致）：先过精密配给剂权威报价折扣 materialCost，
-  // 再进入船坞节省 quote。不复制 ceil×0.9 / +5 / 船坞节省公式。
+  // 唯一有效报价顺序（与扣料/在线一致）：先过精密配给剂权威报价折扣 materialCost。
+  // 船坞材料节省仅作用于部件制造，总装不再享受，故此处只按折扣后成本计算可负担周期。
   const discounted = (typeof getDiscountedAssemblyRecipe === "function")
     ? getDiscountedAssemblyRecipe(state, recipe)
     : Object.assign({}, recipe, { materialCost: (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }).cost : (recipe.materialCost || {}) });
-  // 船坞节省路径：通过 quote 计算可负担周期（已含配给剂折扣）
-  if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(state) > 0) {
-    // 二分查找最大可负担 cycles
-    let low = 0, high = 100000;
-    while (low < high) {
-      const mid = Math.ceil((low + high) / 2);
-      const quote = getShipyardProductionQuote(state, discounted, mid);
-      let affordable = true;
-      for (const [ref, qty] of Object.entries(quote.payable)) {
-        // materialCost 键为纯材料名，须按名聚合校验（component:xxx 仍走精确读）
-        if (ResourceRegistry.getByRef(state, ref) < qty) { affordable = false; break; }
-      }
-      if (affordable) low = mid;
-      else high = mid - 1;
-    }
-    return low;
-  }
-  // 无船坞节省：组件 + 精密配给剂折扣后材料成本同源
   let max = Infinity;
   for (const [componentId, count] of Object.entries(getShipAssemblyComponentCost(recipe))) {
     max = Math.min(max, Math.floor(ResourceRegistry.get(state, "component:" + componentId) / count));
@@ -986,19 +968,9 @@ function getShipEngineeringDisplayState(state, now) {
   const asmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, currentAssembly, { kind:"assembly" }) : { cost: currentAssembly.materialCost || {}, levelGate: currentAssembly.level };
   const runningCompQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, runningComponent, { kind:"component" }) : { cost: runningComponent.cost, levelGate: runningComponent.level };
   const runningAsmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, runningAssembly, { kind:"assembly" }) : { cost: runningAssembly.materialCost || {}, levelGate: runningAssembly.level };
-  // 当前总装每周期有效成本（精密配给剂 + 船坞节省两层），与真实扣料 / 最大周期判断同源。
-  const asmShipyardOn = (typeof getShipyardProductionQuote === "function") && (typeof getShipyardSavingRate === "function") && getShipyardSavingRate(state) > 0;
+  // 当前总装每周期有效成本（仅精密配给剂折扣；船坞材料节省仅作用于部件制造，总装不再享受）。
   const asmEffective = (function () {
     const discounted = (typeof getDiscountedAssemblyRecipe === "function") ? getDiscountedAssemblyRecipe(state, currentAssembly) : Object.assign({}, currentAssembly, { materialCost: asmQuote.cost });
-    if (asmShipyardOn) {
-      const q = getShipyardProductionQuote(state, discounted, 1);
-      const materials = {};
-      for (const mat of Object.keys(discounted.materialCost || {})) materials[mat] = (q.payable[mat] != null) ? q.payable[mat] : (discounted.materialCost[mat] || 0);
-      const components = {};
-      const compBase = getShipAssemblyComponentCost(currentAssembly);
-      for (const cid of Object.keys(compBase)) components[cid] = (q.payable["component:" + cid] != null) ? q.payable["component:" + cid] : (compBase[cid] || 0);
-      return { materials, components };
-    }
     return { materials: discounted.materialCost || {}, components: getShipAssemblyComponentCost(currentAssembly) };
   })();
   const active = Boolean(action.active && action.skill === "shipEngineering");
@@ -1034,11 +1006,15 @@ function getShipEngineeringDisplayState(state, now) {
     .filter(recipe => getShipComponentClass(recipe.id) === compClass)
     .map(recipe => {
       const cq = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"component" }) : { cost: recipe.cost, levelGate: recipe.level };
+      const savingRate = (typeof getShipyardSavingRate === "function") ? getShipyardSavingRate(state) : 0;
+      const shipyardOn = savingRate > 0;
+      const payable = shipyardOn ? getShipyardProductionQuote(state, { materialCost: cq.cost }, 1).payable : cq.cost;
       return {
         id:recipe.id, name:recipe.name, level:recipe.level, time:recipe.time, xp:recipe.xp,
-        cost:Object.entries(cq.cost).map(([material, quantity]) => {
+        shipyardSavingRate: savingRate,
+        cost:Object.entries(payable).map(([material, quantity]) => {
           const stock = getMaterialStockFromState(state, material);
-          return { material, quantity, stock, enough:stock >= quantity };
+          return { material, quantity, baseQuantity: cq.cost[material] != null ? cq.cost[material] : quantity, stock, enough:stock >= quantity };
         }),
         owned:Number(componentInventory[recipe.id]) || 0,
         unlocked:level >= cq.levelGate,

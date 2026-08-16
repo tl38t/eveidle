@@ -785,28 +785,20 @@ function consumeIntshipManufacturingEvent(jobId, event) {
 
 // ---------------------------------------------------------------
 // 组件计划（私有）：给定总装配方对象与数量，按唯一成本层计算缺口。
-//   required = 唯一计算层给出的应付组件量（含船坞节省），扣掉现有库存即缺口。
+//   required = 总装完整组件成本（不再含船坞节省，船坞节省仅作用于部件制造），扣掉现有库存即缺口。
 //   缺口为 0 的组件不入计划（避免空转一个 0 批次动作）。
-//   绝不复制制造成本公式：取 getShipAssemblyComponentCost / getShipyardProductionQuote。
+//   绝不复制制造成本公式：取 getShipAssemblyComponentCost。
 // ---------------------------------------------------------------
 function buildIntshipComponentPlanFromRecipe(state, recipe, quantity) {
   const plan = {};
   const perUnit = (typeof getShipAssemblyComponentCost === "function")
     ? (getShipAssemblyComponentCost(recipe) || {})
     : ((recipe && recipe.componentCost) || {});
-  let payable = null;
-  if (typeof getShipyardProductionQuote === "function") {
-    const quote = getShipyardProductionQuote(state, recipe, quantity);
-    payable = (quote && quote.payable && typeof quote.payable === "object") ? quote.payable : null;
-  }
+  // 船坞材料节省仅作用于部件制造，总装不再享受；故 intship 组件计划按总装完整组件成本计算，不套用船坞节省。
   const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : null;
   for (const componentId of Object.keys(perUnit)) {
     const key = "component:" + componentId;
-    let required = (Number(perUnit[componentId]) || 0) * quantity;
-    if (payable && Object.prototype.hasOwnProperty.call(payable, key)) {
-      const quoted = Number(payable[key]);
-      if (Number.isFinite(quoted) && quoted >= 0) required = quoted;
-    }
+    const required = (Number(perUnit[componentId]) || 0) * quantity;
     const stock = RR ? (Number(RR.get(state, key)) || 0) : 0;
     const missing = Math.max(0, Math.ceil(required - stock));
     if (missing > 0) plan[componentId] = missing;

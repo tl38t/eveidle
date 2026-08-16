@@ -43,45 +43,22 @@ function getDiscountedAssemblyRecipe(state, recipe) {
   return Object.assign({}, recipe, { materialCost: asmQuote.cost });
 }
 
-// 带船坞节省的舰船组装材料校验（用量 quote 计算需要的实际数量）
+// 舰船组装材料校验（精密配给剂折扣后）。注意：船坞材料节省仅作用于部件制造，总装不再享受。
 function hasEnoughShipAssemblyComponents(recipe, cycles) {
   const multiplier = cycles || 1;
-  // 先按精密配给剂权威报价折扣 materialCost，再进入船坞节省 quote（两效果各算一次，不简单相加）
+  // 先按精密配给剂权威报价折扣 materialCost
   const discountedRecipe = getDiscountedAssemblyRecipe(gameState, recipe);
-  if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
-    const quote = getShipyardProductionQuote(gameState, discountedRecipe, multiplier);
-    for (const [ref, qty] of Object.entries(quote.payable)) {
-      // materialCost 键为纯材料名，须按名聚合校验（component:xxx 仍走精确读）
-      if (ResourceRegistry.getByRef(gameState, ref) < qty) return false;
-    }
-    return true;
-  }
-  // 无船坞节省：组件 + 折扣后材料成本同源
   const hasComponents = Object.entries(getShipAssemblyComponentCost(recipe)).every(([id, count]) =>
     ResourceRegistry.get(gameState, "component:" + id) >= count * multiplier
   );
   return hasComponents && ResourceRegistry.canAffordCost(gameState, discountedRecipe.materialCost, multiplier);
 }
 
-// 带船坞节省的舰船组装材料扣除
+// 舰船组装材料扣除（精密配给剂折扣后）。注意：船坞材料节省仅作用于部件制造，总装不再享受。
 function deductShipAssemblyComponents(recipe, cycles) {
   const multiplier = cycles || 1;
-  // 先按精密配给剂权威报价折扣 materialCost，再进入船坞节省 quote（两效果各算一次，不简单相加）
+  // 先按精密配给剂权威报价折扣 materialCost
   const discountedRecipe = getDiscountedAssemblyRecipe(gameState, recipe);
-  if (typeof getShipyardProductionQuote === "function" && typeof commitShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
-    const quote = getShipyardProductionQuote(gameState, discountedRecipe, multiplier);
-    const result = commitShipyardProductionQuote(gameState, quote);
-    if (result.changed !== true) return false;
-    if (quote.totalSaved > 0) {
-      if (typeof GameEvents !== "undefined") {
-        // station:shipyardMaterialsSaved 只报告空间站实际节省（quote.saved 由 getShipyardProductionQuote 在已折扣 materialCost 上计算），
-        // 不含精密配给剂九折差额。
-        GameEvents.emit("station:shipyardMaterialsSaved", { recipeId:recipe.id, cycles:multiplier, savings:quote.saved, totalSaved:quote.totalSaved }, { source:"station" });
-      }
-    }
-    return true;
-  }
-  // 无船坞节省：组件 + 折扣后材料成本同源
   for (const [id, count] of Object.entries(getShipAssemblyComponentCost(recipe))) {
     ResourceRegistry.spend(gameState, "component:" + id, count * multiplier);
   }
@@ -111,6 +88,46 @@ function hasEnoughMats(cost) {
 
 function deductMats(cost) {
   return ResourceRegistry.spendCost(gameState, cost);
+}
+
+// 带船坞节省的舰船部件制造成本校验（船坞材料节省仅作用于部件制造，总装不再享受）
+function hasEnoughShipCompMats(cost) {
+  const pseudo = { materialCost: cost };
+  if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
+    const quote = getShipyardProductionQuote(gameState, pseudo, 1);
+    for (const [ref, qty] of Object.entries(quote.payable)) {
+      if (ResourceRegistry.getByRef(gameState, ref) < qty) return false;
+    }
+    return true;
+  }
+  return ResourceRegistry.canAffordCost(gameState, cost);
+}
+
+// 带船坞节省的舰船部件制造成本扣除（船坞材料节省仅作用于部件制造，总装不再享受）
+function deductShipCompMats(cost) {
+  const pseudo = { materialCost: cost };
+  if (typeof getShipyardProductionQuote === "function" && typeof commitShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
+    const quote = getShipyardProductionQuote(gameState, pseudo, 1);
+    const result = commitShipyardProductionQuote(gameState, quote);
+    if (result.changed !== true) return false;
+    if (quote.totalSaved > 0 && typeof GameEvents !== "undefined") {
+      GameEvents.emit("station:shipyardMaterialsSaved", { kind:"component", savings:quote.saved, totalSaved:quote.totalSaved }, { source:"station" });
+    }
+    return true;
+  }
+  ResourceRegistry.spendCost(gameState, cost);
+  return true;
+}
+
+// 带船坞节省的舰船部件制造成本批量扣除（离线结算用，cycles 倍乘）
+function deductShipCompMatsMultiple(cost, cycles) {
+  const pseudo = { materialCost: cost };
+  if (typeof getShipyardProductionQuote === "function" && typeof commitShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
+    const quote = getShipyardProductionQuote(gameState, pseudo, cycles || 1);
+    return commitShipyardProductionQuote(gameState, quote).changed === true;
+  }
+  ResourceRegistry.spendCost(gameState, cost, cycles || 1);
+  return true;
 }
 
 function buyBlueprint(blueprintId) {
