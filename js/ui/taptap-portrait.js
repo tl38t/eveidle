@@ -246,7 +246,7 @@
   }
   function tpAssignmentHTML(display, ship) {
     var groups = [
-      { title: "工业", keys: ["mining", "gasHarvesting"] },
+      { title: "工业", keys: ["mining", "gasHarvesting", "refining"] },
       { title: "探索", keys: ["archaeology"] },
       { title: "作战", keys: ["combat"] }
     ];
