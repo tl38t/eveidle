@@ -50,27 +50,38 @@ const EQUIPMENT_DB = {
   "t1_capital_shield_array": { id:"t1_capital_shield_array", name:"旗舰级护盾回充阵列 I", slot:"mid", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":6,"铷":1,"同位素":8,"磁场聚合物":8}, bonuses:{}, shipTypes:["capital","supercapital"], combat:{kind:"repair",target:"shield",amount:150,fuelCost:5} },
   "t1_capital_armor_array": { id:"t1_capital_armor_array", name:"旗舰级装甲维修阵列 I", slot:"low", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":9,"超噬矿":6,"铷":1,"重金属":10,"等离子体":6}, bonuses:{}, shipTypes:["capital","supercapital"], combat:{kind:"repair",target:"armor",amount:100,fuelCost:5} },
   "t1_capital_structure_array": { id:"t1_capital_structure_array", name:"旗舰级结构修复阵列 I", slot:"low", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":7,"铷":1,"稀有气体":8,"磁场聚合物":6}, bonuses:{}, shipTypes:["capital","supercapital"], combat:{kind:"repair",target:"structure",amount:50,fuelCost:15} },
-  "t1_mining_booster": { id:"t1_mining_booster", name:"T1采矿提升器",  slot:"low", level:10,time:20, xp:12, cost:{"三钛合金":50,"类银超金属":20}, bonuses:{miningLaserEfficiency:0.20} },
-  "t2_mining_booster": { id:"t2_mining_booster", name:"中型采矿提升器", slot:"low", level:15,time:35, xp:20, cost:{"三钛合金":160,"类银超金属":60,"类晶体胶矿":15}, bonuses:{miningLaserEfficiency:0.40} },
-  "t3_mining_booster": { id:"t3_mining_booster", name:"重型采矿提升器", slot:"low", level:35,time:60, xp:40, cost:{"三钛合金":400,"类银超金属":150,"同位聚合体":30,"重金属":15}, bonuses:{miningLaserEfficiency:0.60} },
-  "t4_mining_booster": { id:"t4_mining_booster", name:"大型采矿提升器", slot:"low", level:55,time:110,xp:80, cost:{"三钛合金":900,"超新星诺克石":45,"铷":4,"等离子体":25}, bonuses:{miningLaserEfficiency:0.80} },
-  "sansha_mineral_assimilation": { id:"sansha_mineral_assimilation", name:"矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1100,"超新星诺克石":50,"铷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{miningLaserEfficiency:0.90}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "t1_mining_booster": { id:"t1_mining_booster", name:"T1采矿提升器",  slot:"low", level:10,time:20, xp:12, cost:{"三钛合金":50,"类银超金属":20}, bonuses:{miningLaserEfficiency:0.10} },
+  "t2_mining_booster": { id:"t2_mining_booster", name:"中型采矿提升器", slot:"low", level:15,time:35, xp:20, cost:{"三钛合金":160,"类银超金属":60,"类晶体胶矿":15}, bonuses:{miningLaserEfficiency:0.30} },
+  "t3_mining_booster": { id:"t3_mining_booster", name:"重型采矿提升器", slot:"low", level:35,time:60, xp:40, cost:{"三钛合金":400,"类银超金属":150,"同位聚合体":30,"重金属":15}, bonuses:{miningLaserEfficiency:0.50} },
+  "t4_mining_booster": { id:"t4_mining_booster", name:"大型采矿提升器", slot:"low", level:55,time:110,xp:80, cost:{"三钛合金":900,"超新星诺克石":45,"铷":4,"等离子体":25}, bonuses:{miningLaserEfficiency:0.70} },
+  "sansha_mineral_assimilation": { id:"sansha_mineral_assimilation", name:"矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1100,"超新星诺克石":50,"铷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{miningLaserEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
   // ===== 新增星带势力生产装备（材料按档位分级：D=1.0-0.8 / C=0.7-0.5 / B=0.4-0.3 / A=0.2-0.1） =====
   "angel_mining_laser_outpost": { id:"angel_mining_laser_outpost", name:"苍穹劫团采矿激光器·前哨型", slot:"high", level:10, time:30, xp:15, cost:{"三钛合金":60,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningEfficiency:0.20}, faction:"angel", requiresBlueprint:true },
-  "angel_mineral_assimilation_outpost": { id:"angel_mineral_assimilation_outpost", name:"苍穹劫团矿物同化注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningLaserEfficiency:0.45}, faction:"angel", requiresBlueprint:true },
+  "angel_mineral_assimilation_outpost": { id:"angel_mineral_assimilation_outpost", name:"苍穹劫团矿物同化注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningLaserEfficiency:0.35}, faction:"angel", requiresBlueprint:true },
   "angel_drone_link_war": { id:"angel_drone_link_war", name:"苍穹劫团无人机指挥链路·破阵型", slot:"mid", level:65, time:130, xp:95, cost:{"三钛合金":900,"超新星诺克石":35,"铷":2,"等离子体":20,"苍穹劫团装备生产许可A":10}, bonuses:{miningEfficiency:0.30,gasEfficiency:0.30,miningLaserEfficiency:0.30,gasLaserEfficiency:0.30}, faction:"angel", shipTypes:["industrial_capital"], requiresBlueprint:true },
   "blood_drone_link_sacrifice": { id:"blood_drone_link_sacrifice", name:"赤誓仆从无人机指挥链路·献祭型", slot:"mid", level:25, time:45, xp:30, cost:{"三钛合金":150,"类银超金属":50,"同位聚合体":10,"赤誓教团装备生产许可C":5}, bonuses:{miningEfficiency:0.08,gasEfficiency:0.08}, faction:"blood", sourceZoneId:"blood_sacrifice", requiresBlueprint:true },
   "blood_mining_laser_hunt": { id:"blood_mining_laser_hunt", name:"赤誓采矿激光器·猎杀型", slot:"high", level:45, time:75, xp:55, cost:{"三钛合金":300,"类银超金属":100,"同位聚合体":20,"重金属":15,"赤誓教团装备生产许可B":8}, bonuses:{miningEfficiency:0.60}, faction:"blood", requiresBlueprint:true },
-  "blood_mineral_assimilation_nexus": { id:"blood_mineral_assimilation_nexus", name:"赤誓矿物同化注入器·枢纽型", slot:"low", level:45, time:75, xp:55, cost:{"三钛合金":600,"超新星诺克石":35,"铷":3,"等离子体":15,"赤誓教团装备生产许可B":8}, bonuses:{miningLaserEfficiency:0.95}, faction:"blood", requiresBlueprint:true },
+  "blood_mineral_assimilation_nexus": { id:"blood_mineral_assimilation_nexus", name:"赤誓矿物同化注入器·枢纽型", slot:"low", level:45, time:75, xp:55, cost:{"三钛合金":600,"超新星诺克石":35,"铷":3,"等离子体":15,"赤誓教团装备生产许可B":8}, bonuses:{miningLaserEfficiency:0.85}, faction:"blood", requiresBlueprint:true },
   "blood_gas_harvester_iron": { id:"blood_gas_harvester_iron", name:"赤誓气云采集器·铁血型", slot:"high", level:65, time:130, xp:95, cost:{"三钛合金":700,"聚合气体":15,"氢同位素":10,"赤誓教团装备生产许可A":10}, bonuses:{gasEfficiency:0.90,gasLaserEfficiency:0.30}, faction:"blood", shipTypes:["industrial_capital"], requiresBlueprint:true },
-  "sansha_mineral_assimilation_node": { id:"sansha_mineral_assimilation_node", name:"矿物同化注入器·节点型", slot:"low", level:25, time:45, xp:30, cost:{"三钛合金":300,"类银超金属":100,"同位聚合体":15,"静默集群装备生产许可C":5}, bonuses:{miningLaserEfficiency:0.65}, faction:"sansha", requiresBlueprint:true },
+  "sansha_mineral_assimilation_node": { id:"sansha_mineral_assimilation_node", name:"矿物同化注入器·节点型", slot:"low", level:25, time:45, xp:30, cost:{"三钛合金":300,"类银超金属":100,"同位聚合体":15,"静默集群装备生产许可C":5}, bonuses:{miningLaserEfficiency:0.55}, faction:"sansha", requiresBlueprint:true },
   "sansha_gas_harvester_nexus": { id:"sansha_gas_harvester_nexus", name:"静默气云采集器·枢纽型", slot:"high", level:45, time:75, xp:55, cost:{"三钛合金":300,"稳定富勒烯":15,"氦同位素":10,"静默集群装备生产许可B":8}, bonuses:{gasEfficiency:0.60}, faction:"sansha", requiresBlueprint:true },
   "sansha_mining_laser_war": { id:"sansha_mining_laser_war", name:"静默采矿激光器·破阵型", slot:"high", level:65, time:130, xp:95, cost:{"三钛合金":700,"超新星诺克石":40,"铷":4,"等离子体":20,"静默集群装备生产许可A":10}, bonuses:{miningEfficiency:0.90,miningLaserEfficiency:0.30}, faction:"sansha", shipTypes:["industrial_capital"], requiresBlueprint:true },
   "sansha_drone_link_outpost": { id:"sansha_drone_link_outpost", name:"静默无人机指挥链路·前哨型", slot:"mid", level:10, time:30, xp:15, cost:{"三钛合金":40,"类银超金属":15,"静默集群装备生产许可D":3}, bonuses:{miningEfficiency:0.08,gasEfficiency:0.08}, faction:"sansha", requiresBlueprint:true },
 
-  "alliance_mineral_assimilation": { id:"alliance_mineral_assimilation", name:"联盟矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1320,"超新星诺克石":60,"铷":6,"等离子体":30}, bonuses:{miningLaserEfficiency:0.90}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
-  "t5_mining_booster": { id:"t5_mining_booster", name:"旗舰采矿提升核心", slot:"low", level:80,time:200,xp:150,cost:{"三钛合金":2000,"超噬矿":35,"铷":15,"磁场聚合物":50}, bonuses:{miningLaserEfficiency:1.00} },
-  "t1_gas_booster":    { id:"t1_gas_booster",    name:"T1采气提升器",  slot:"low", level:10,time:20, xp:12, cost:{"三钛合金":50,"粗制富勒烯":20},  bonuses:{gasLaserEfficiency:0.20} },
+  "alliance_mineral_assimilation": { id:"alliance_mineral_assimilation", name:"联盟矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1320,"超新星诺克石":60,"铷":6,"等离子体":30}, bonuses:{miningLaserEfficiency:0.80}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "t5_mining_booster": { id:"t5_mining_booster", name:"旗舰采矿提升核心", slot:"low", level:80,time:200,xp:150,cost:{"三钛合金":2000,"超噬矿":35,"铷":15,"磁场聚合物":50}, bonuses:{miningLaserEfficiency:0.90} },
+  "t1_gas_booster":    { id:"t1_gas_booster",    name:"T1采气提升器",  slot:"low", level:10,time:20, xp:12, cost:{"三钛合金":50,"粗制富勒烯":20},  bonuses:{gasLaserEfficiency:0.10} },
+  // ===== 采气提升器（对标采矿提升器，低槽 gasLaserEfficiency） =====
+  "t2_gas_booster":    { id:"t2_gas_booster",    name:"中型采气提升器",  slot:"low", level:15,time:35,  xp:20,  cost:{"三钛合金":160, "稳定富勒烯":60,   "类晶体胶矿":15}, bonuses:{gasLaserEfficiency:0.30} },
+  "t3_gas_booster":    { id:"t3_gas_booster",    name:"重型采气提升器",  slot:"low", level:35,time:60,  xp:40,  cost:{"三钛合金":400, "稳定富勒烯":150,  "同位聚合体":30,"重金属":15}, bonuses:{gasLaserEfficiency:0.50} },
+  "t4_gas_booster":    { id:"t4_gas_booster",    name:"大型采气提升器",  slot:"low", level:55,time:110, xp:80,  cost:{"三钛合金":900, "聚合气体":45,     "铷":4,  "等离子体":25}, bonuses:{gasLaserEfficiency:0.70} },
+  "t5_gas_booster":    { id:"t5_gas_booster",    name:"旗舰采气提升核心", slot:"low", level:80,time:200, xp:150, cost:{"三钛合金":2000,"超纯聚合气体":35, "铷":15, "磁场聚合物":50}, bonuses:{gasLaserEfficiency:0.90} },
+  // ===== 势力采气提升器（对标势力采矿提升器，气体同化注入器系，需蓝图） =====
+  "sansha_gas_assimilation":  { id:"sansha_gas_assimilation",  name:"静默气体同化注入器",       slot:"low", level:65,time:130,xp:95,  cost:{"三钛合金":1100,"聚合气体":50, "铷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{gasLaserEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "angel_gas_assimilation_outpost": { id:"angel_gas_assimilation_outpost", name:"苍穹劫团气体同化注入器·前哨型", slot:"low", level:10,time:30, xp:15, cost:{"三钛合金":80, "稳定富勒烯":20, "苍穹劫团装备生产许可D":3}, bonuses:{gasLaserEfficiency:0.35}, faction:"angel", requiresBlueprint:true },
+  "blood_gas_assimilation_nexus":  { id:"blood_gas_assimilation_nexus",  name:"赤誓气体同化注入器·枢纽型",   slot:"low", level:45,time:75, xp:55,  cost:{"三钛合金":600, "聚合气体":35, "铷":3,"等离子体":15,"赤誓教团装备生产许可B":8}, bonuses:{gasLaserEfficiency:0.85}, faction:"blood", requiresBlueprint:true },
+  "sansha_gas_assimilation_node":  { id:"sansha_gas_assimilation_node",  name:"静默气体同化注入器·节点型",   slot:"low", level:25,time:45, xp:30,  cost:{"三钛合金":300, "稳定富勒烯":100,"同位聚合体":15,"静默集群装备生产许可C":5}, bonuses:{gasLaserEfficiency:0.55}, faction:"sansha", requiresBlueprint:true },
+  "alliance_gas_assimilation": { id:"alliance_gas_assimilation", name:"联盟气体同化注入器",     slot:"low", level:65,time:130,xp:95,  cost:{"三钛合金":1320,"聚合气体":60, "铷":6,"等离子体":30}, bonuses:{gasLaserEfficiency:0.80}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
 
   // ===== 考古装备（仅考古舰可装备，不可用于战斗，不可安装战斗装备） =====
   // 高槽：遗迹分析仪 — 提升扫描强度
@@ -281,6 +292,17 @@ const LP_STORE_BLUEPRINTS = [
     expectedClears:27.8571964721334,
     expectedLP:417.857947082001,
     description:"永久解锁联盟矿物同化注入器制造配方"
+  },
+  {
+    id:"alliance_gas_assimilation_blueprint",
+    name:"联盟气体同化注入器蓝图",
+    kind:"equipmentBlueprint",
+    equipmentId:"alliance_gas_assimilation",
+    lpPrice:836,
+    sourceZoneId:"sansha_command_matrix",
+    dataMaterial:"萨沙高级加密数据",
+    dataRequired:10,
+    description:"永久解锁联盟气体同化注入器制造配方"
   }
 ];
 

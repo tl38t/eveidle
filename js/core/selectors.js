@@ -320,6 +320,12 @@ function getProductionEfficiencyState(state, actionKey) {
     ? ResearchState.getResearchMultiplier(state, isMining ? ["allMining", "mining"] : ["allMining", "gas"])
     : 1;
 
+  // 重平衡（2026-08-16）：船身采矿/采气放大器已归零，放大器只来自装备。
+  // 中槽无人机链 / 改装件的基础效率不再平加 primaryBonus，而是作为独立乘数乘在高槽放大后的值外面；
+  // 带放大器的势力中槽件（同时含 base+amp）的 base 保持平加，避免被高槽放大器二次放大（double-dip）。
+  let highTotal = 0;        // 高槽采集装备效果（已乘放大器）合计
+  let droneRigBase = 0;     // 中槽无人机链 / 改装件基础效率，作为独立乘数
+  let flatPrimary = 0;      // 带放大器的中槽/低槽件基础效率，保持平加
   for (const slot of ["high", "mid", "low", "rig"]) {
     for (const ref of fitting[slot]) {
       const resolved = resolveEquipmentReference(state, ref);
@@ -327,16 +333,26 @@ function getProductionEfficiencyState(state, actionKey) {
       if (!item || !item.bonuses) continue;
       const multiplier = resolved.multiplier;
       const rawPrimary = (item.bonuses[primaryKey] || 0) * multiplier;
-      const adjustedPrimary = slot === "high" ? rawPrimary * (1 + amplifier) : rawPrimary;
-      const secondary = (item.bonuses[secondaryKey] || 0) * multiplier;
       const amplifierBonus = (item.bonuses[amplifierKey] || 0) * multiplier;
-      if (adjustedPrimary || secondary || amplifierBonus) {
-        primaryBonus += adjustedPrimary;
-        secondaryBonus += secondary;
-        equipment.push({ name:item.name, slot, rawPrimary, adjustedPrimary, secondary, amplifierBonus });
+      const secondary = (item.bonuses[secondaryKey] || 0) * multiplier;
+      if (!rawPrimary && !secondary && !amplifierBonus) continue;
+      const isHigh = slot === "high";
+      const adjustedPrimary = isHigh ? rawPrimary * (1 + amplifier) : rawPrimary;
+      if (isHigh) {
+        highTotal += adjustedPrimary;
+      } else if (slot === "mid" || slot === "rig") {
+        if (amplifierBonus > 0) flatPrimary += rawPrimary; // 势力无人机链路：base 平加防膨胀
+        else droneRigBase += rawPrimary;                    // 标准无人机链/改装件：独立乘数
+      } else { // low
+        flatPrimary += rawPrimary; // 低槽基础效率（矿提通常无 base，保持旧行为平加）
       }
+      equipment.push({ name:item.name, slot, rawPrimary, adjustedPrimary, secondary, amplifierBonus,
+        droneRig: (slot === "mid" || slot === "rig") && amplifierBonus <= 0 });
+      if (secondary) secondaryBonus += secondary;
     }
   }
+  const droneRigMultiplier = 1 + droneRigBase;
+  primaryBonus = highTotal * droneRigMultiplier + flatPrimary;
 
   return {
     actionKey,
@@ -349,6 +365,9 @@ function getProductionEfficiencyState(state, actionKey) {
     equipment,
     primaryBonus,
     secondaryBonus,
+    highTotal,
+    droneRigBase,
+    droneRigMultiplier,
     enhancementMultiplier:enhancement.industryMultiplier,
     enhancementLevel:assigned.instance ? normalizeShipEnhancementLevel(assigned.instance.enhancementLevel) : 0,
     fleetSupportBonus:fleetSupport.bonus,
@@ -359,7 +378,9 @@ function getProductionEfficiencyState(state, actionKey) {
     implantCollectMult: (typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1,
     // 增强剂·采气速度（考古重制 Phase B · 考古蓝图产出）：独立乘区，仅采气生效
     boosterGasSpeed: (isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1,
-    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier * ((typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1) * ((isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1)
+    // 增强剂·采矿速度：独立乘区，仅采矿生效（修复：详情面板此前在计算与连乘式中漏算该项）
+    boosterMiningSpeed: (isMining && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).miningSpeedMultiplier : 1,
+    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier * ((typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1) * ((isMining && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).miningSpeedMultiplier : 1) * ((isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1)
   };
 }
 
@@ -375,14 +396,17 @@ function buildProductionEfficiencyTooltip(display, targetName, baseTime) {
     const bonuses = [];
     if (item.adjustedPrimary) {
       let text = activityName + "效率 +" + (item.adjustedPrimary * 100).toFixed(1) + "%";
-      if (item.adjustedPrimary !== item.rawPrimary) text += "（舰船强化前 " + (item.rawPrimary * 100).toFixed(1) + "%）";
+      if (item.droneRig) text += "（独立乘数，作用于高槽值外）";
+      else if (item.adjustedPrimary !== item.rawPrimary) text += "（舰船强化前 " + (item.rawPrimary * 100).toFixed(1) + "%）";
       bonuses.push(text);
     }
     if (item.secondary) bonuses.push(activityName + "总加成 +" + (item.secondary * 100).toFixed(1) + "%");
     if (item.amplifierBonus) bonuses.push((isMining ? "采矿激光器" : "气云采集器") + "效果 +" + (item.amplifierBonus * 100).toFixed(1) + "%");
     lines.push("- " + item.name + "：" + bonuses.join("，"));
   }
-  lines.push("装备小计：采集效率 +" + (display.primaryBonus * 100).toFixed(1) + "% / 高槽强化 +" + (display.equipmentAmplifier * 100).toFixed(1) + "%");
+  lines.push("高槽采集合计：+" + (display.highTotal * 100).toFixed(1) + "%（已含舰船/装备强化）");
+  if (display.droneRigBase > 0) lines.push("无人机/改装件乘数：×" + display.droneRigMultiplier.toFixed(2) + "（+" + (display.droneRigBase * 100).toFixed(1) + "%）");
+  lines.push("采集效率合计：+" + (display.primaryBonus * 100).toFixed(1) + "% / 高槽强化 +" + (display.equipmentAmplifier * 100).toFixed(1) + "%");
   if (display.enhancementLevel > 0) lines.push("舰船强化：+" + display.enhancementLevel + "，最终采集效率 ×" + display.enhancementMultiplier.toFixed(3));
   if (display.fleetSupportBonus > 0) lines.push("舰队采矿协同：" + display.fleetSupportShip.name + " +" + (display.fleetSupportBonus * 100).toFixed(0) + "%（只取最高值）");
   const logMult = display.stationLogisticsMultiplier || 1;
@@ -391,7 +415,20 @@ function buildProductionEfficiencyTooltip(display, targetName, baseTime) {
   else lines.push("空间站综合后勤：×1.00（未生效）");
   const researchMult = Number(display.researchMultiplier) || 1;
   if (researchMult !== 1) lines.push("科研加成：×" + researchMult.toFixed(3) + "（+" + ((researchMult - 1) * 100).toFixed(1) + "%）");
-  lines.push("最终效率：" + display.skillMultiplier.toFixed(2) + " × " + (1 + display.primaryBonus).toFixed(3) + " × " + (1 + display.secondaryBonus).toFixed(3) + " × " + display.enhancementMultiplier.toFixed(3) + " × " + (1 + display.fleetSupportBonus).toFixed(3) + " × " + logMult.toFixed(3) + " × " + researchMult.toFixed(3) + " = " + display.total.toFixed(2) + "x");
+  // 脑插·采集增效（独立乘区，已计入 total）
+  const implantMult = Number(display.implantCollectMult) || 1;
+  if (implantMult !== 1) lines.push("脑插·采集增效：" + (isMining ? "采矿" : "采气") + "效率 +" + Math.round((implantMult - 1) * 100) + "%（来源：考古掉落植入体）");
+  // 增强剂速度（独立乘区，已计入 total）
+  const boosterMult = isMining ? (Number(display.boosterMiningSpeed) || 1) : (Number(display.boosterGasSpeed) || 1);
+  if (boosterMult !== 1) {
+    const pct = Math.round((boosterMult - 1) * 100);
+    lines.push("增强剂·" + (isMining ? "采矿速度" : "采气速度") + "：" + (pct > 0 ? "+" : "") + pct + "%（" + (isMining ? "纳米采掘润滑剂" : "气云流变剂") + "，仅生效档位，不叠加）");
+  }
+  // 最终效率连乘式（含脑插 / 增强剂，确保与 total 数值一致）
+  let chain = display.skillMultiplier.toFixed(2) + " × " + (1 + display.primaryBonus).toFixed(3) + " × " + (1 + display.secondaryBonus).toFixed(3) + " × " + display.enhancementMultiplier.toFixed(3) + " × " + (1 + display.fleetSupportBonus).toFixed(3) + " × " + logMult.toFixed(3) + " × " + researchMult.toFixed(3);
+  if (implantMult !== 1) chain += " × " + implantMult.toFixed(3);
+  if (boosterMult !== 1) chain += " × " + boosterMult.toFixed(3);
+  lines.push("最终效率：" + chain + " = " + display.total.toFixed(2) + "x");
   lines.push("", "当前目标：" + targetName, "基础时间：" + baseTime + "s", "实际时间：" + (baseTime / display.total).toFixed(1) + "s");
   return lines.join("\n");
 }

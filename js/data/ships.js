@@ -104,7 +104,7 @@ const STARTER_SHIPS = {
     slots: { high: 1, mid: 1, low: 1, rig: 0 },
     bonuses: {
       laserDamage: 0.02, missileDamage: 0.02, cannonDamage: 0.02,
-      shieldCapacity: 0.05, miningLaserEfficiency: 0.03, archaeologyScanStrength: 2
+      shieldCapacity: 0.05, archaeologyScanStrength: 2
     },
     recommendedWeapon: "laser",
     unlock: { type: "tutorial", isDefault: false }
@@ -451,7 +451,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 100, rechargeRate: 5 },
     fuelEfficiency: 1.0,
     slots: { high: 2, mid: 2, low: 1, rig: 1 },
-    bonuses: { miningLaserEfficiency: 1.0 },
+    bonuses: {},
     unlock: { type: "blueprint", costISK: 50000 }
   },
   gas_frigate: {
@@ -462,7 +462,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 100, rechargeRate: 5 },
     fuelEfficiency: 1.0,
     slots: { high: 2, mid: 2, low: 1, rig: 1 },
-    bonuses: { gasLaserEfficiency: 1.0 },
+    bonuses: { },
     unlock: { type: "blueprint", costISK: 50000 }
   },
   miner_destroyer: {
@@ -473,7 +473,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 120, rechargeRate: 6 },
     fuelEfficiency: 0.95,
     slots: { high: 3, mid: 1, low: 2, rig: 1 },
-    bonuses: { miningLaserEfficiency: 1.5 },
+    bonuses: { },
     unlock: { type: "shipEngineering", level: 15 }
   },
   gas_destroyer: {
@@ -484,7 +484,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 120, rechargeRate: 6 },
     fuelEfficiency: 0.95,
     slots: { high: 3, mid: 1, low: 2, rig: 1 },
-    bonuses: { gasLaserEfficiency: 1.5 },
+    bonuses: { },
     unlock: { type: "shipEngineering", level: 15 }
   },
   miner_cruiser: {
@@ -495,7 +495,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 150, rechargeRate: 8 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 2, low: 2, rig: 2 },
-    bonuses: { miningLaserEfficiency: 2.4 },
+    bonuses: { },
     unlock: { type: "shipEngineering", level: 35 }
   },
   gas_cruiser: {
@@ -506,7 +506,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 150, rechargeRate: 8 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 2, low: 2, rig: 2 },
-    bonuses: { gasLaserEfficiency: 2.4 },
+    bonuses: { },
     unlock: { type: "shipEngineering", level: 35 }
   },
   dolphin: {
@@ -517,7 +517,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 180, rechargeRate: 9 },
     fuelEfficiency: 0.90,
     slots: { high: 2, mid: 3, low: 2, rig: 2 },
-    bonuses: { miningLaserEfficiency: 1.0, fleetMiningSpeed: 0.10, smeltingSpeed: 0.25 },
+    bonuses: { fleetMiningSpeed: 0.10, smeltingSpeed: 0.25 },
     fleetMiningExcludesSelf: true,
     unlock: { type: "shipEngineering", level: 35 }
   },
@@ -529,7 +529,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 240, rechargeRate: 12 },
     fuelEfficiency: 0.85,
     slots: { high: 4, mid: 3, low: 2, rig: 3 },
-    bonuses: { miningLaserEfficiency: 2.4 },
+    bonuses: { },
     unlock: { type: "shipEngineering", level: 55 }
   },
   gas_battleship: {
@@ -540,7 +540,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 240, rechargeRate: 12 },
     fuelEfficiency: 0.85,
     slots: { high: 4, mid: 3, low: 2, rig: 3 },
-    bonuses: { gasLaserEfficiency: 2.4 },
+    bonuses: { },
     unlock: { type: "shipEngineering", level: 55 }
   },
   orca: {
@@ -551,7 +551,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 300, rechargeRate: 15 },
     fuelEfficiency: 0.80,
     slots: { high: 4, mid: 4, low: 1, rig: 3 },
-    bonuses: { miningLaserEfficiency: 2.8, gasLaserEfficiency: 2.8, fleetMiningSpeed: 0.20, smeltingSpeed: 0.30 },
+    bonuses: { fleetMiningSpeed: 0.20, smeltingSpeed: 0.30 },
     unlock: { type: "shipEngineering", level: 80 }
   }
 };
