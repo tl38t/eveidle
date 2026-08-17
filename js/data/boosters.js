@@ -218,7 +218,7 @@ function describeBoosterEffect(effectType, value) {
     case "smeltSpeed":        return "冶炼速度 +" + Math.round(value * 100) + "%";
     case "smeltDouble":       return "冶炼产量翻倍概率 " + Math.round(value * 100) + "%";
     case "shipSpeed":         return "舰船工程速度 +" + Math.round(value * 100) + "%";
-    case "shipMaterialDiscount": return "舰船材料 -" + Math.round(value * 100) + "%";
+    case "shipMaterialDiscount": return "舰船材料 -" + Math.round(value * 100) + "%（激活期间配方等级门槛 +5）";
     case "boosterSpeed":      return "增幅剂制造速度 +" + Math.round(value * 100) + "%";
     case "boosterDouble":     return "增幅剂产量翻倍概率 " + Math.round(value * 100) + "%";
     default:                  return effectType + " " + value;

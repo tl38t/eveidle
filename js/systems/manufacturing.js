@@ -91,8 +91,8 @@ function deductMats(cost) {
 }
 
 // 带船坞节省的舰船部件制造成本校验（船坞材料节省仅作用于部件制造，总装不再享受）
-function hasEnoughShipCompMats(cost) {
-  const pseudo = { materialCost: cost };
+function hasEnoughShipCompMats(cost, recipeId) {
+  const pseudo = { materialCost: cost, id: recipeId || null };
   if (typeof getShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
     const quote = getShipyardProductionQuote(gameState, pseudo, 1);
     for (const [ref, qty] of Object.entries(quote.payable)) {
@@ -104,14 +104,14 @@ function hasEnoughShipCompMats(cost) {
 }
 
 // 带船坞节省的舰船部件制造成本扣除（船坞材料节省仅作用于部件制造，总装不再享受）
-function deductShipCompMats(cost) {
-  const pseudo = { materialCost: cost };
+function deductShipCompMats(cost, recipeId) {
+  const pseudo = { materialCost: cost, id: recipeId || null };
   if (typeof getShipyardProductionQuote === "function" && typeof commitShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
     const quote = getShipyardProductionQuote(gameState, pseudo, 1);
     const result = commitShipyardProductionQuote(gameState, quote);
     if (result.changed !== true) return false;
     if (quote.totalSaved > 0 && typeof GameEvents !== "undefined") {
-      GameEvents.emit("station:shipyardMaterialsSaved", { kind:"component", savings:quote.saved, totalSaved:quote.totalSaved }, { source:"station" });
+      GameEvents.emit("station:shipyardMaterialsSaved", { recipeId:quote.recipeId, kind:"component", savings:quote.saved, totalSaved:quote.totalSaved }, { source:"station" });
     }
     return true;
   }
@@ -120,8 +120,8 @@ function deductShipCompMats(cost) {
 }
 
 // 带船坞节省的舰船部件制造成本批量扣除（离线结算用，cycles 倍乘）
-function deductShipCompMatsMultiple(cost, cycles) {
-  const pseudo = { materialCost: cost };
+function deductShipCompMatsMultiple(cost, cycles, recipeId) {
+  const pseudo = { materialCost: cost, id: recipeId || null };
   if (typeof getShipyardProductionQuote === "function" && typeof commitShipyardProductionQuote === "function" && typeof getShipyardSavingRate === "function" && getShipyardSavingRate(gameState) > 0) {
     const quote = getShipyardProductionQuote(gameState, pseudo, cycles || 1);
     return commitShipyardProductionQuote(gameState, quote).changed === true;

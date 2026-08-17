@@ -1453,7 +1453,7 @@ function getShipyardProductionQuote(state, recipe, cycles) {
     if (!Number.isFinite(nextRemainders[ref]) || nextRemainders[ref] < 0) nextRemainders[ref] = 0;
     if (nextRemainders[ref] >= 1) nextRemainders[ref] = 0.999999;
   }
-  return { payable, saved, nextRemainders, totalSaved:Object.values(saved).reduce((a,b)=>a+b,0) };
+  return { payable, saved, nextRemainders, totalSaved:Object.values(saved).reduce((a,b)=>a+b,0), recipeId: recipe.id || null };
 }
 
 function canAffordShipyardQuote(state, quote) {

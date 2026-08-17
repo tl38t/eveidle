@@ -104,7 +104,8 @@ const STARTER_SHIPS = {
     slots: { high: 1, mid: 1, low: 1, rig: 0 },
     bonuses: {
       laserDamage: 0.02, missileDamage: 0.02, cannonDamage: 0.02,
-      shieldCapacity: 0.05, archaeologyScanStrength: 2
+      shieldCapacity: 0.05, archaeologyScanStrength: 2,
+      miningLaserEfficiency: 0.15
     },
     recommendedWeapon: "laser",
     unlock: { type: "tutorial", isDefault: false }
@@ -451,7 +452,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 100, rechargeRate: 5 },
     fuelEfficiency: 1.0,
     slots: { high: 2, mid: 2, low: 1, rig: 1 },
-    bonuses: {},
+    bonuses: { miningLaserEfficiency: 0.25 },
     unlock: { type: "blueprint", costISK: 50000 }
   },
   gas_frigate: {
@@ -462,7 +463,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 100, rechargeRate: 5 },
     fuelEfficiency: 1.0,
     slots: { high: 2, mid: 2, low: 1, rig: 1 },
-    bonuses: { },
+    bonuses: { gasLaserEfficiency: 0.25 },
     unlock: { type: "blueprint", costISK: 50000 }
   },
   miner_destroyer: {

@@ -513,8 +513,18 @@ function openCargoContainer(state, size, rng) {
       } else {
         if (entry.id.startsWith("implant_")) {
           // 脑插：授予 state.implants（账号全局被动，拥有即永久生效）；不入库存、不随尺寸缩放。
-          if (typeof grantImplant === "function") grantImplant(state, entry.id);
-          grants = [{ tier, id: entry.id, qty: 1, implant: true, implantId: entry.id }];
+          // 已拥有时 grantImplant 返回 null：不显示为“新掉落”，而是折算为可直接使用的功勋(currency:lp)，
+          // 金额按货柜尺寸缩放（S200/M320/L520/XL840，与装备蓝图重复折算一致），杜绝废掉落——玩家永远有得拿。
+          const newlyGranted = (typeof grantImplant === "function") ? grantImplant(state, entry.id) : entry.id;
+          if (newlyGranted === null) {
+            const mul = CARGO_T1_SIZE_MUL[size] || 1;
+            const base = Math.max(1, Math.round(200 * mul));
+            if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, "currency:lp", base);
+            const iname = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB && IMPLANT_DB[entry.id]) ? IMPLANT_DB[entry.id].name : entry.id;
+            grants = [{ tier, id: "implantsalvage:" + entry.id, qty: base, implant: true, implantId: entry.id, salvage: true, name: iname + "（重复·折算功勋）", icon: "🎖", categoryLabel: "重复折算" }];
+          } else {
+            grants = [{ tier, id: entry.id, qty: 1, implant: true, implantId: entry.id }];
+          }
         } else if (entry.id.startsWith("blueprint:")) {
           // 货柜装备蓝图：复用 buyLPItem 的 ownedBlueprints 写入 + blueprint:acquired 事件；已拥有折算 loot:lp
           const equipmentId = entry.id.slice("blueprint:".length);

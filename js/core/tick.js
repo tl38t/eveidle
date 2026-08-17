@@ -222,9 +222,9 @@ function gameTick() {
           const shipCompCost = shipCompQuote.cost;
           const shipCompLevel = Number((gameState.skills.shipEngineering || {}).lvl) || 1;
           if (shipCompLevel < shipCompQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
-          if (!hasEnoughShipCompMats(shipCompCost)) { stopOrSkip(); updateUI(); return; }
+          if (!hasEnoughShipCompMats(shipCompCost, recipe.id)) { stopOrSkip(); updateUI(); return; }
           gameState.currentAction.progress -= actualTime;
-          deductShipCompMats(shipCompCost);
+          deductShipCompMats(shipCompCost, recipe.id);
           ResourceRegistry.add(gameState, "component:" + recipe.id, 1);
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
           GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, time:recipe.time, xp:recipe.xp }, { offline:false });
