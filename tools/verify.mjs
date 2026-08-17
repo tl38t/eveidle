@@ -191,7 +191,8 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // cloud-save-mgmt / cloud-sync-status / cloud-sync-failed-flag / local-save-time / cloud-save-time /
 // last-sync-time / btn-sync-now / btn-check-cloud / btn-delete-local / btn-permanent-delete。
 // 基线 329 → 332 的 +3 为设备镜像状态、时间与手动备份按钮。
-if (htmlIds.size !== 332) throw new Error(`预期 332 个 DOM ID，实际 ${htmlIds.size}`);
+// 基线 332 → 334 的 +2 为 Batch S 装备管理：物品丢弃确认 / 装备拆解确认设置开关复选框（setting-discard-confirm / setting-dismantle-confirm）。
+if (htmlIds.size !== 334) throw new Error(`预期 334 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
   "research-progress-fill", "research-tree", "research-detail", "research-queue"

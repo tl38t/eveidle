@@ -1301,7 +1301,7 @@ const ShellStateActions = {
     if (blocked) return { changed:false, reason:blocked };
     const recipe = SHIP_ASSEMBLY_RECIPES.find(item => item.shipId === instance.shipId) || null;
     if (!recipe) return { changed:false, reason:"no-dismantle-recipe" };
-    const preview = getShipDismantleQuote(recipe);
+    const preview = getShipDismantleQuote(recipe, config, instance.enhancementLevel);
     // 归还材料（quote 条目已过滤 returned<=0；refId 为空则跳过该条目，避免无锚点材料丢失）。
     // refundedResources 以 canonical ref（资源权威键）→ 实际归还数量映射，与真实入账严格一致。
     const refundedResources = {};
@@ -1335,6 +1335,96 @@ const ShellStateActions = {
       }, { offline:false, source:"ship-dismantle" });
     }
     return { changed:true, instance, config, returned:preview };
+  },
+
+  /* ---- Batch S·装备管理：物品丢弃（无返还，已装载不可丢） ---- */
+  discardEquipment(state, targetRef, now) {
+    const resolved = resolveEquipmentReference(state, targetRef);
+    if (!resolved) return { changed:false, reason:"unknown-equipment" };
+    if (resolved.instance && resolved.instance.installedOn) return { changed:false, reason:"equipment-installed" };
+    const itemId = resolved.itemId;
+    if (resolved.instance) {
+      const idx = state.equipment.instances.findIndex(i => i.instanceId === resolved.instance.instanceId);
+      if (idx < 0) return { changed:false, reason:"unknown-equipment" };
+      state.equipment.instances.splice(idx, 1);
+    } else {
+      const idx = state.equipment.inventory.indexOf(itemId);
+      if (idx < 0) return { changed:false, reason:"unknown-equipment" };
+      state.equipment.inventory.splice(idx, 1);
+    }
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined" && typeof GameEvents.emit === "function") {
+      GameEvents.emit("equipment:discarded", {
+        itemId,
+        instanceId: resolved.instance ? resolved.instance.instanceId : null
+      }, { offline:false, source:"equipment-discard" });
+    }
+    return { changed:true, itemId };
+  },
+
+  /* ---- Batch S·装备管理：装备拆解（返还约 50% 材料 + 整件逐件 50% 掷骰；isk 不返还） ---- */
+  dismantleEquipment(state, targetRef, now) {
+    const resolved = resolveEquipmentReference(state, targetRef);
+    if (!resolved) return { changed:false, reason:"unknown-equipment" };
+    if (resolved.instance && resolved.instance.installedOn) return { changed:false, reason:"equipment-installed" };
+    const itemId = resolved.itemId;
+    const eqDef = resolved.definition;
+    const level = resolved.enhancementLevel;
+    const quote = getEquipmentDismantleQuote(eqDef, level);
+    const refundedResources = {};
+    for (const entry of quote.materials) {
+      if (entry.refId) {
+        ResourceRegistry.add(state, entry.refId, entry.returned);
+        refundedResources[entry.refId] = (refundedResources[entry.refId] || 0) + entry.returned;
+      }
+    }
+    const returnedItems = [];
+    for (const wi of quote.wholeItems) {
+      if (Math.random() < 0.5) {
+        if (wi.type === "sameType") {
+          if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
+          state.equipment.inventory.push(wi.id);
+          returnedItems.push({ type:wi.type, id:wi.id });
+        } else {
+          // core / protocol 为材料（按名解析权威 refId）
+          const refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
+            ? (ResourceRegistry.resolveMaterialIds(wi.id)[0] || null) : null;
+          if (refId) {
+            ResourceRegistry.add(state, refId, 1);
+            returnedItems.push({ type:wi.type, id:wi.id, refId });
+          }
+        }
+      }
+    }
+    if (resolved.instance) {
+      const idx = state.equipment.instances.findIndex(i => i.instanceId === resolved.instance.instanceId);
+      if (idx >= 0) state.equipment.instances.splice(idx, 1);
+    } else {
+      const idx = state.equipment.inventory.indexOf(itemId);
+      if (idx >= 0) state.equipment.inventory.splice(idx, 1);
+    }
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined" && typeof GameEvents.emit === "function") {
+      GameEvents.emit("equipment:dismantled", {
+        itemId,
+        instanceId: resolved.instance ? resolved.instance.instanceId : null,
+        refundedResources,
+        returnedItems
+      }, { offline:false, source:"equipment-dismantle" });
+    }
+    return { changed:true, itemId, returned:quote.materials, returnedItems };
+  },
+
+  setDiscardConfirmation(state, enabled) {
+    ensureUserSettingsState(state).confirmDiscard = Boolean(enabled);
+    state._dirty = true;
+    return { changed:true, enabled:Boolean(enabled) };
+  },
+
+  setDismantleConfirmation(state, enabled) {
+    ensureUserSettingsState(state).confirmDismantle = Boolean(enabled);
+    state._dirty = true;
+    return { changed:true, enabled:Boolean(enabled) };
   },
 
   setFittingSlot(state, instanceId, slot, slotIndex, equipmentRef) {
@@ -1731,6 +1821,17 @@ const StationStateActions = {
     else if (lineId === "equipment") recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === targetId);
     else if (lineId === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
+    // 产线白名单：装备自动线仅允许消耗品类（燃料/弹药/探针），可装配装备不可选为生产目标
+    if (lineId === "equipment" && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
+      return { changed:false, reason:"target-not-allowed" };
+    }
+    // 蓝图限制：equipment / booster 自动线需对应蓝图（与装备工程页一致，防止绕过）
+    if ((lineId === "equipment" || lineId === "booster") && recipe.requiresBlueprint === true) {
+      const hasBp = (lineId === "equipment")
+        ? hasEquipmentBlueprintFromState(state, recipe.id)
+        : hasBoosterBlueprintFromState(state, recipe.id);
+      if (!hasBp) return { changed:false, reason:"blueprint-locked" };
+    }
     // 运行时允许修改 selectedTargetId（但不能改变 startedTargetId）
     line.selectedTargetId = targetId;
     state._dirty = true;
@@ -1759,6 +1860,19 @@ const StationStateActions = {
     else if (lineId === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
 
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
+
+    // 产线白名单：装备自动线仅允许消耗品类（燃料/弹药/探针），可装配装备不可启动
+    if (lineId === "equipment" && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
+      return { changed:false, reason:"target-not-allowed" };
+    }
+
+    // 蓝图限制：equipment / booster 自动线需对应蓝图（与装备工程页一致，防止绕过）
+    if ((lineId === "equipment" || lineId === "booster") && recipe.requiresBlueprint === true) {
+      const hasBp = (lineId === "equipment")
+        ? hasEquipmentBlueprintFromState(state, recipe.id)
+        : hasBoosterBlueprintFromState(state, recipe.id);
+      if (!hasBp) return { changed:false, reason:"blueprint-locked" };
+    }
 
     // 检查配方等级门槛
     const eeLvl = (lineId === "equipment") ? (Number(state.skills.equipmentEngineering && state.skills.equipmentEngineering.lvl) || 1) : 99;
@@ -1967,8 +2081,12 @@ const StationStateActions = {
   if (action.type === "hangar/destroyFittedRig") return ShellStateActions.destroyFittedRig(state, action.instanceId, action.slotIndex);
   if (action.type === "hangar/replaceFittedRig") return ShellStateActions.replaceFittedRig(state, action.instanceId, action.slotIndex, action.rigItemId);
   if (action.type === "equipment/enhance") return enhanceEquipment(state, action.targetRef, action.randomValue);
+  if (action.type === "equipment/discard") return ShellStateActions.discardEquipment(state, action.targetRef, actionTime);
+  if (action.type === "equipment/dismantle") return ShellStateActions.dismantleEquipment(state, action.targetRef, actionTime);
   if (action.type === "hangar/clearIndustrialShip") return ShellStateActions.clearIndustrialShip(state);
   if (action.type === "settings/setShipEnhancementConfirmation") return ShellStateActions.setShipEnhancementConfirmation(state, action.enabled);
+  if (action.type === "settings/setDiscardConfirmation") return ShellStateActions.setDiscardConfirmation(state, action.enabled);
+  if (action.type === "settings/setDismantleConfirmation") return ShellStateActions.setDismantleConfirmation(state, action.enabled);
   if (action.type === "settings/toggleCombatSkills") return ShellStateActions.toggleCombatSkills(state);
   if (action.type === "queue/add") return ShellStateActions.queueAdd(state, action.item, actionTime, action.front);
   if (action.type === "queue/remove") return ShellStateActions.queueRemove(state, action.index, actionTime);

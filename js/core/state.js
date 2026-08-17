@@ -237,6 +237,8 @@ const gameState = {
 
   settings: {
     confirmShipEnhancement: true,
+    confirmDiscard: true,
+    confirmDismantle: true,
     combatSkillsExpanded: false
   },
 
@@ -263,6 +265,10 @@ function ensureUserSettingsState(state) {
   else state.settings.confirmShipEnhancement = Boolean(state.settings.confirmShipEnhancement);
   if (state.settings.combatSkillsExpanded === undefined) state.settings.combatSkillsExpanded = false;
   else state.settings.combatSkillsExpanded = Boolean(state.settings.combatSkillsExpanded);
+  if (state.settings.confirmDiscard === undefined) state.settings.confirmDiscard = true;
+  else state.settings.confirmDiscard = Boolean(state.settings.confirmDiscard);
+  if (state.settings.confirmDismantle === undefined) state.settings.confirmDismantle = true;
+  else state.settings.confirmDismantle = Boolean(state.settings.confirmDismantle);
   return state.settings;
 }
 

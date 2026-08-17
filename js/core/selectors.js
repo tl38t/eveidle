@@ -2545,24 +2545,45 @@ function getBlueprintStoreDisplayState(state, selectedCategory) {
    再合并 assembly 的 materialCost（纯名键），同材料合计后每项 floor(总量 × 0.5) 归还。
    只读纯计算，不触碰 state；refId 取材料名跨命名空间聚合的第一个命名空间 id（归还锚点）。
    ================================================================ */
-function getShipDismantleQuote(recipe) {
+function getShipDismantleQuote(recipe, config, enhancementLevel) {
   if (!recipe || typeof recipe !== "object") return [];
+  // key -> { total, kind, id? }：material = 基础材料名；component = 舰船强化组件（refId 取 component:<id>）
   const costMap = {};
+  const add = (key, total, kind, id) => {
+    if (!costMap[key]) costMap[key] = { total:0, kind, id };
+    costMap[key].total += Number(total);
+  };
   for (const [compId, qty] of Object.entries(recipe.componentCost || {})) {
     const comp = SHIP_COMPONENT_RECIPES.find(item => item.id === compId);
     if (!comp) continue;
     for (const [mat, cqty] of Object.entries(comp.cost || {})) {
-      costMap[mat] = (costMap[mat] || 0) + Number(cqty) * Number(qty);
+      add(mat, Number(cqty) * Number(qty), "material");
     }
   }
   for (const [mat, qty] of Object.entries(recipe.materialCost || {})) {
-    costMap[mat] = (costMap[mat] || 0) + Number(qty);
+    add(mat, Number(qty), "material");
+  }
+  // 舰船强化消耗（仅组件，星币不返还）：每级固定组件各 1，共 enhancementLevel 级（只算成功，失败不计入）
+  const L = Math.max(0, Math.floor(Number(enhancementLevel) || 0));
+  if (config && L > 0 && typeof getShipEnhancementCost === "function") {
+    const perLevel = getShipEnhancementCost(config);
+    for (const [compId, qty] of Object.entries(perLevel)) {
+      add("__component__" + compId, Number(qty) * L, "component", compId);
+    }
   }
   return Object.entries(costMap)
-    .map(([name, total]) => {
-      const refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
-        ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
-      return { name, refId, total, returned:Math.floor(total * 0.5) };
+    .map(([key, info]) => {
+      let refId, name;
+      if (info.kind === "component") {
+        refId = "component:" + info.id;
+        name = (typeof SHIP_COMPONENT_RECIPES !== "undefined")
+          ? ((SHIP_COMPONENT_RECIPES.find(c => c.id === info.id) || {}).name || info.id) : info.id;
+      } else {
+        name = key;
+        refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
+          ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
+      }
+      return { name, refId, total:info.total, returned:Math.floor(info.total * 0.5) };
     })
     .filter(entry => entry.returned > 0)
     .sort((a, b) => b.returned - a.returned || a.name.localeCompare(b.name, "zh-CN"));
@@ -2593,6 +2614,47 @@ const SHIP_DISMANTLE_BLOCK_TEXT = {
   "repairing":"舰船正在维修中，维修完成后才能拆解",
   "has-fitting":"舰船仍装配有装备或改装件，先全部卸下"
 };
+
+/* ================================================================
+   装备拆解只读报价（Batch S·装备管理）
+   矿物：基础制造材料（eq.cost 全部，含非精炼）+ 逐级成功强化精炼矿物消耗，合计后每项 floor(×0.5)。
+   整件耗材（同型装备 / DED 核心 / 协议）：来自逐级里程碑额外消耗，逐件列出，拆解时独立 50% 掷骰（不在此处结算）。
+   只读纯计算，不触碰 state。
+   ================================================================ */
+function getEquipmentDismantleQuote(equipment, level) {
+  if (!equipment) return { materials:[], wholeItems:[] };
+  const L = Math.max(0, Math.floor(Number(level) || 0));
+  const minerals = {};
+  for (const [mat, qty] of Object.entries(equipment.cost || {})) {
+    minerals[mat] = (minerals[mat] || 0) + Number(qty);
+  }
+  let wholeItems = [];
+  if (L > 0 && typeof EquipmentEnhancement !== "undefined" && EquipmentEnhancement.getEquipmentEnhancementSuccessCostSummary) {
+    const summary = EquipmentEnhancement.getEquipmentEnhancementSuccessCostSummary(equipment, L);
+    for (const [mat, qty] of Object.entries(summary.minerals || {})) {
+      minerals[mat] = (minerals[mat] || 0) + Number(qty);
+    }
+    wholeItems = (summary.wholeItems || []).map(w => ({ type:w.type, id:w.id }));
+  }
+  const materials = Object.entries(minerals)
+    .map(([name, total]) => {
+      const refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
+        ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
+      return { name, refId, total, returned:Math.floor(total * 0.5) };
+    })
+    .filter(entry => entry.returned > 0)
+    .sort((a, b) => b.returned - a.returned || a.name.localeCompare(b.name, "zh-CN"));
+  return { materials, wholeItems };
+}
+
+// 装备拆解/丢弃阻塞判定（与 Action 共用唯一口径）：null = 可操作；否则 reason key。
+function getEquipmentDismantleBlockReason(state, targetRef) {
+  const resolved = (typeof EquipmentEnhancement !== "undefined" && EquipmentEnhancement.resolveEquipmentReference)
+    ? EquipmentEnhancement.resolveEquipmentReference(state, targetRef) : null;
+  if (!resolved) return "unknown-equipment";
+  if (resolved.instance && resolved.instance.installedOn) return "equipment-installed";
+  return null;
+}
 
 function getHangarDisplayState(state, now) {
   const assignments = state.shipAssignments || {};
@@ -2636,7 +2698,7 @@ function getHangarDisplayState(state, now) {
       // Batch R（E 项·舰船拆解）：只读报价 + 阻塞判定（与 Action 共用 getShipDismantleBlockReason）
       const dismantleRecipe = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.shipId === instance.shipId) || null;
       const dismantleBlocked = getShipDismantleBlockReason(state, instance, now);
-      const dismantlePreview = dismantleRecipe ? getShipDismantleQuote(dismantleRecipe) : [];
+      const dismantlePreview = dismantleRecipe ? getShipDismantleQuote(dismantleRecipe, config, enhancementLevel) : [];
       const role = getShipEnhancementRole(config);
       const hpBefore = { ...config.hp };
       const hp = Object.fromEntries(Object.entries(config.hp).map(([layer, value]) => [layer, Math.round(value * enhancementBonuses.hpMultiplier)]));
@@ -2875,6 +2937,8 @@ function getSettingsDisplayState(state) {
   return {
     kind:"settings",
     confirmShipEnhancement:!state.settings || state.settings.confirmShipEnhancement !== false,
+    confirmDiscard:!state.settings || state.settings.confirmDiscard !== false,
+    confirmDismantle:!state.settings || state.settings.confirmDismantle !== false,
     combatSkillsExpanded:Boolean(state.settings && state.settings.combatSkillsExpanded)
   };
 }

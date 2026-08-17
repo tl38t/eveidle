@@ -319,6 +319,7 @@ function openEquipEnhanceModal(itemId, level) {
        <div class="eem-installed-ships">🔒 ${cell.installedShips.map(s => escapeAchievementText(s)).join("、")}</div>`
     : "";
   const locked = cell.stockCount === 0;
+  const lockAttr = locked ? "disabled" : "";
   const btnLabel = locked ? "无可用件可强化" : `强化 ${levelCode} → ${nextLabel}`;
   const btnDisabled = (locked || !cell.canEnhance) ? "disabled" : "";
   const btnWarn = (!locked && !cell.canEnhance) ? `<div class="eem-warn">材料不足或缺少里程碑耗材，无法强化</div>` : "";
@@ -354,7 +355,11 @@ function openEquipEnhanceModal(itemId, level) {
       </div>
       <div class="eem-foot">
         ${btnWarn}
-        <button class="btn primary eem-enhance" data-enhance-target="${targetRefAttr}" ${btnDisabled}>${btnLabel}</button>
+        <div class="eem-foot-actions">
+          <button class="btn eem-discard" data-discard-target="${targetRefAttr}" ${lockAttr}>丢弃</button>
+          <button class="btn eem-dismantle" data-dismantle-target="${targetRefAttr}" ${lockAttr}>拆解</button>
+          <button class="btn primary eem-enhance" data-enhance-target="${targetRefAttr}" ${btnDisabled}>${btnLabel}</button>
+        </div>
       </div>
     </div>`;
   backdrop.style.display = "flex";
@@ -375,6 +380,16 @@ function openEquipEnhanceModal(itemId, level) {
   }
   const jumpBtn = backdrop.querySelector("[data-eem-jump]");
   if (jumpBtn) jumpBtn.addEventListener("click", () => { closeEquipEnhanceModal(); twGoToTarget(jumpBtn.dataset.eemJump); });
+  const discardBtn = backdrop.querySelector("[data-discard-target]");
+  if (discardBtn) discardBtn.addEventListener("click", () => {
+    const ref = decodeURIComponent(discardBtn.dataset.discardTarget);
+    discardEquipmentFromModal(ref);
+  });
+  const dismantleBtn = backdrop.querySelector("[data-dismantle-target]");
+  if (dismantleBtn) dismantleBtn.addEventListener("click", () => {
+    const ref = decodeURIComponent(dismantleBtn.dataset.dismantleTarget);
+    dismantleEquipmentFromModal(ref);
+  });
 }
 
 function closeEquipEnhanceModal() {
@@ -383,6 +398,95 @@ function closeEquipEnhanceModal() {
   if (backdrop) {
     backdrop.style.display = "none";
     backdrop.innerHTML = "";
+  }
+}
+
+/* Batch S·装备管理：通用危险操作确认弹窗（暗金风格，动态创建，复用 .dlg-backdrop/.dlg-box.dlg-danger，与删存档一致） */
+function showDangerConfirm(title, bodyHtml, confirmLabel, onConfirm) {
+  if (document.querySelector(".dlg-backdrop")) return null; // 防重入：已有确认弹窗时不再叠加创建
+  const backdrop = document.createElement("div");
+  backdrop.className = "dlg-backdrop";
+  const box = document.createElement("div");
+  box.className = "dlg-box dlg-danger";
+  box.setAttribute("role", "alertdialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", title.replace(/[⚠🗑]/g, "").trim());
+  box.innerHTML =
+    '<div class="dlg-title">' + title + '</div>' +
+    bodyHtml +
+    '<div class="dlg-actions">' +
+      '<button type="button" class="btn dlg-cancel">取消</button>' +
+      '<button type="button" class="btn btn-danger dlg-confirm">' + confirmLabel + '</button>' +
+    '</div>';
+  backdrop.appendChild(box);
+  document.body.appendChild(backdrop);
+  const close = () => { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); };
+  box.querySelector(".dlg-cancel").addEventListener("click", close);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+  box.querySelector(".dlg-confirm").addEventListener("click", () => { close(); onConfirm(); });
+  const cb = box.querySelector(".dlg-confirm");
+  if (cb && typeof cb.focus === "function") cb.focus();
+  return close;
+}
+
+function discardEquipmentFromModal(targetRef) {
+  const blockReason = getEquipmentDismantleBlockReason(gameState, targetRef);
+  if (blockReason === "unknown-equipment") { showToast("装备不存在"); return; }
+  if (blockReason === "equipment-installed") { showToast("装备已装载在舰船上，先卸下再丢弃"); return; }
+  const resolved = resolveEquipmentReference(gameState, targetRef);
+  const name = resolved.definition ? resolved.definition.name : String(targetRef);
+  const doDiscard = () => {
+    const result = dispatchGameAction(gameState, { type:"equipment/discard", targetRef }, Date.now());
+    if (!result.changed) { showToast(result.reason === "equipment-installed" ? "装备已装载，无法丢弃" : "丢弃失败"); return; }
+    showToast("已丢弃 " + name);
+    closeEquipEnhanceModal();
+    updateUI();
+  };
+  if (getSettingsDisplayState(gameState).confirmDiscard) {
+    showDangerConfirm("⚠ 丢弃装备",
+      '<p class="dlg-body">「' + escapeAchievementText(name) + '」将被永久删除，不可恢复。</p>',
+      "确认丢弃", doDiscard);
+  } else {
+    doDiscard();
+  }
+}
+
+function dismantleEquipmentFromModal(targetRef) {
+  const blockReason = getEquipmentDismantleBlockReason(gameState, targetRef);
+  if (blockReason === "unknown-equipment") { showToast("装备不存在"); return; }
+  if (blockReason === "equipment-installed") { showToast("装备已装载在舰船上，先卸下再拆解"); return; }
+  const resolved = resolveEquipmentReference(gameState, targetRef);
+  const eqDef = resolved.definition;
+  const level = resolved.enhancementLevel;
+  const quote = getEquipmentDismantleQuote(eqDef, level);
+  const name = eqDef ? eqDef.name : String(targetRef);
+  const materialLines = (quote.materials || []).map(e => e.name + "×" + e.returned).join("、");
+  const wholeLines = (quote.wholeItems || []).map(w => {
+    const wname = (w.type === "sameType" && typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[w.id]) ? EQUIPMENT_DB[w.id].name : w.id;
+    return escapeAchievementText(wname) + "（各 50% 概率）";
+  }).join("、");
+  const bodyHtml =
+    '<p class="dlg-body">拆解「' + escapeAchievementText(name) + '」将返还约 50% 材料：</p>' +
+    '<p class="dlg-body">' + (materialLines || "无材料") + '</p>' +
+    (wholeLines ? '<p class="dlg-body dlg-warn">整件耗材（' + wholeLines + '）：每件独立 50% 概率返还，确认时掷骰决定。</p>' : '') +
+    '<p class="dlg-body dlg-warn">强化消耗的星币不返还。装备拆解后消失，不可恢复。</p>';
+  const doDismantle = () => {
+    const result = dispatchGameAction(gameState, { type:"equipment/dismantle", targetRef }, Date.now());
+    if (!result.changed) { showToast(result.reason === "equipment-installed" ? "装备已装载，无法拆解" : "拆解失败"); return; }
+    const returnedText = (result.returned || []).map(e => e.name + "×" + e.returned).join("、");
+    const itemText = (result.returnedItems || []).map(it => {
+      const n = (it.type === "sameType" && typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[it.id]) ? EQUIPMENT_DB[it.id].name : it.id;
+      return escapeAchievementText(n) + "×1";
+    }).join("、");
+    const parts = [returnedText, itemText].filter(Boolean);
+    showToast("已拆解 " + name + (parts.length ? "，归还：" + parts.join("、") : "，无返还"));
+    closeEquipEnhanceModal();
+    updateUI();
+  };
+  if (getSettingsDisplayState(gameState).confirmDismantle) {
+    showDangerConfirm("🗑 拆解装备", bodyHtml, "确认拆解", doDismantle);
+  } else {
+    doDismantle();
   }
 }
 
@@ -880,6 +984,10 @@ function renderSettingsPage() {
   const status = document.getElementById("setting-enhancement-status");
   if (checkbox) checkbox.checked = display.confirmShipEnhancement;
   if (status) status.textContent = display.confirmShipEnhancement ? "已开启" : "已关闭";
+  const discardCb = document.getElementById("setting-discard-confirm");
+  if (discardCb) discardCb.checked = display.confirmDiscard;
+  const dismantleCb = document.getElementById("setting-dismantle-confirm");
+  if (dismantleCb) dismantleCb.checked = display.confirmDismantle;
   return display;
 }
 
@@ -2400,7 +2508,7 @@ function dismantleShipFromHangar(instanceId) {
   const tip = "确认拆解 " + ship.name + "？\n" +
     "拆解后舰船将消失，不可恢复。\n" +
     "归还材料（约 50%）：" + (previewLines || "无") + "\n" +
-    "不归还：蓝图、技能经验、强化等级、已装配装备。\n" +
+    "不归还：蓝图、技能经验、强化等级、已装配装备、强化消耗的星币。\n" +
     "确认执行拆解？";
   if (!window.confirm(tip)) return false;
   const result = dispatchGameAction(gameState, { type:"hangar/disassembleShip", instanceId }, Date.now());
@@ -3193,6 +3301,14 @@ function installTutorialWidgetListeners() {
   const enhancementConfirm = document.getElementById("setting-enhancement-confirm"); if (enhancementConfirm) enhancementConfirm.addEventListener("change", () => {
     const result = dispatchGameAction(gameState, { type:"settings/setShipEnhancementConfirmation", enabled:enhancementConfirm.checked }, Date.now());
     if (result.changed) { renderSettingsPage(); showToast(result.enabled ? "舰船强化确认提示已开启" : "舰船强化确认提示已关闭"); }
+  });
+  const discardConfirm = document.getElementById("setting-discard-confirm"); if (discardConfirm) discardConfirm.addEventListener("change", () => {
+    const result = dispatchGameAction(gameState, { type:"settings/setDiscardConfirmation", enabled:discardConfirm.checked }, Date.now());
+    if (result.changed) showToast(result.enabled ? "物品丢弃确认已开启" : "物品丢弃确认已关闭");
+  });
+  const dismantleConfirm = document.getElementById("setting-dismantle-confirm"); if (dismantleConfirm) dismantleConfirm.addEventListener("change", () => {
+    const result = dispatchGameAction(gameState, { type:"settings/setDismantleConfirmation", enabled:dismantleConfirm.checked }, Date.now());
+    if (result.changed) showToast(result.enabled ? "装备拆解确认已开启" : "装备拆解确认已关闭");
   });
   const achievementCategoryTabs = document.getElementById("achievements-category-tabs"); if (achievementCategoryTabs) achievementCategoryTabs.addEventListener("click", event => {
     const button = event.target.closest("[data-ach-category]"); if (!button) return;

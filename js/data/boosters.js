@@ -186,6 +186,9 @@ const BOOSTER_RECIPES = [];
       // 是 UI 唯一允许的显示字段；id 仅作稳定内部键与调试用，禁止外泄到界面。
       name,
       series:seriesKey,
+      // 分类标签（UI 自动线下拉 <optgroup> 分组用）：与 BOOSTER_ITEMS 同源，取自 series.category。
+      // 之前漏带此字段，导致所有增强剂配方 category 为 undefined、下拉无法分组。
+      category:series.category,
       quality:qualityKey,
       level,
       time,

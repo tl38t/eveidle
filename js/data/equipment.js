@@ -105,16 +105,16 @@ const EQUIPMENT_DB = {
   "archaeo_analyzer_v": { id:"archaeo_analyzer_v", name:"遗迹分析仪 V", slot:"high", level:80, time:200,xp:180,cost:{"三钛合金":2000,"超噬矿":15,"铷":10,"磁场聚合物":40}, bonuses:{archaeologyScan:25}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
   // 中槽：信号稳定器 — 降低失败反噬（总和上限 60%）
   "archaeo_stabilizer_i": { id:"archaeo_stabilizer_i", name:"信号稳定器 I", slot:"mid", level:1,  time:20, xp:14, cost:{"三钛合金":40,"类银超金属":15}, bonuses:{archaeologyStabilizer:0.05}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_stabilizer_ii":{ id:"archaeo_stabilizer_ii",name:"信号稳定器 II",slot:"mid", level:15, time:40, xp:35, cost:{"三钛合金":160,"类银超金属":60,"类晶体胶矿":15}, bonuses:{archaeologyStabilizer:0.06}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_stabilizer_iii":{id:"archaeo_stabilizer_iii",name:"信号稳定器 III",slot:"mid",level:35, time:70, xp:60, cost:{"三钛合金":400,"类银超金属":150,"同位聚合体":25,"重金属":12}, bonuses:{archaeologyStabilizer:0.06}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_stabilizer_iv":{ id:"archaeo_stabilizer_iv",name:"信号稳定器 IV",slot:"mid", level:55, time:120,xp:110,cost:{"三钛合金":900,"超新星诺克石":40,"铷":3,"等离子体":20}, bonuses:{archaeologyStabilizer:0.06}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_stabilizer_v": { id:"archaeo_stabilizer_v", name:"信号稳定器 V", slot:"mid", level:80, time:200,xp:180,cost:{"三钛合金":2000,"超噬矿":15,"铷":10,"磁场聚合物":40}, bonuses:{archaeologyStabilizer:0.06}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_stabilizer_ii":{ id:"archaeo_stabilizer_ii",name:"信号稳定器 II",slot:"mid", level:15, time:40, xp:35, cost:{"三钛合金":160,"类银超金属":60,"类晶体胶矿":15}, bonuses:{archaeologyStabilizer:0.08}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_stabilizer_iii":{id:"archaeo_stabilizer_iii",name:"信号稳定器 III",slot:"mid",level:35, time:70, xp:60, cost:{"三钛合金":400,"类银超金属":150,"同位聚合体":25,"重金属":12}, bonuses:{archaeologyStabilizer:0.11}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_stabilizer_iv":{ id:"archaeo_stabilizer_iv",name:"信号稳定器 IV",slot:"mid", level:55, time:120,xp:110,cost:{"三钛合金":900,"超新星诺克石":40,"铷":3,"等离子体":20}, bonuses:{archaeologyStabilizer:0.14}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_stabilizer_v": { id:"archaeo_stabilizer_v", name:"信号稳定器 V", slot:"mid", level:80, time:200,xp:180,cost:{"三钛合金":2000,"超噬矿":15,"铷":10,"磁场聚合物":40}, bonuses:{archaeologyStabilizer:0.17}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
   // 低槽：文物译码器 — 额外普通 ISK 文物概率（总和上限 75%）
   "archaeo_decoder_i": { id:"archaeo_decoder_i", name:"文物译码器 I", slot:"low", level:1,  time:20, xp:14, cost:{"三钛合金":40,"同位聚合体":12}, bonuses:{archaeologyDecoder:0.10}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_decoder_ii":{ id:"archaeo_decoder_ii",name:"文物译码器 II",slot:"low", level:15, time:40, xp:35, cost:{"三钛合金":160,"同位聚合体":40,"重金属":8}, bonuses:{archaeologyDecoder:0.15}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_decoder_iii":{id:"archaeo_decoder_iii",name:"文物译码器 III",slot:"low",level:35, time:70, xp:60, cost:{"三钛合金":400,"同位聚合体":90,"超新星诺克石":12,"稀有气体":8}, bonuses:{archaeologyDecoder:0.15}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_decoder_iv":{ id:"archaeo_decoder_iv",name:"文物译码器 IV",slot:"low", level:55, time:120,xp:110,cost:{"三钛合金":900,"同位聚合体":200,"铷":3,"等离子体":20}, bonuses:{archaeologyDecoder:0.20}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  "archaeo_decoder_v": { id:"archaeo_decoder_v", name:"文物译码器 V", slot:"low", level:80, time:200,xp:180,cost:{"三钛合金":2000,"同位聚合体":450,"铷":10,"磁场聚合物":40}, bonuses:{archaeologyDecoder:0.20}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_decoder_ii":{ id:"archaeo_decoder_ii",name:"文物译码器 II",slot:"low", level:15, time:40, xp:35, cost:{"三钛合金":160,"同位聚合体":40,"重金属":8}, bonuses:{archaeologyDecoder:0.14}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_decoder_iii":{id:"archaeo_decoder_iii",name:"文物译码器 III",slot:"low",level:35, time:70, xp:60, cost:{"三钛合金":400,"同位聚合体":90,"超新星诺克石":12,"稀有气体":8}, bonuses:{archaeologyDecoder:0.18}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_decoder_iv":{ id:"archaeo_decoder_iv",name:"文物译码器 IV",slot:"low", level:55, time:120,xp:110,cost:{"三钛合金":900,"同位聚合体":200,"铷":3,"等离子体":20}, bonuses:{archaeologyDecoder:0.22}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
+  "archaeo_decoder_v": { id:"archaeo_decoder_v", name:"文物译码器 V", slot:"low", level:80, time:200,xp:180,cost:{"三钛合金":2000,"同位聚合体":450,"铷":10,"磁场聚合物":40}, bonuses:{archaeologyDecoder:0.26}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
 
   // ===== 考古重做 — 7 张特殊考古装备蓝图（仅掉落蓝图，制造后属现有三类考古装备；requiresBlueprint） =====
   // 高槽：遗迹分析仪 — 扫描 + 周期缩短
@@ -123,10 +123,10 @@ const EQUIPMENT_DB = {
   "archaeo_analyzer_pioneer_v": { id:"archaeo_analyzer_pioneer_v", name:"先驱遗迹分析仪 V", slot:"high", level:80, time:210,xp:190,cost:{"三钛合金":2200,"超噬矿":20,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyScan:32, archaeologyCycleReduction:0.06}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
   // 中槽：信号稳定器 — 反噬减免 + 非致命免伤
   "archaeo_stabilizer_station_ii": { id:"archaeo_stabilizer_station_ii", name:"环站信号稳定器 II", slot:"mid", level:15, time:45, xp:40, cost:{"三钛合金":200,"类银超金属":80,"类晶体胶矿":20}, bonuses:{archaeologyStabilizer:0.08, archaeologyNonFatalAvoid:0.05}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
-  "archaeo_stabilizer_pioneer_v": { id:"archaeo_stabilizer_pioneer_v", name:"先驱信号稳定器 V", slot:"mid", level:80, time:210,xp:190,cost:{"三钛合金":2200,"超噬矿":20,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyStabilizer:0.08, archaeologyNonFatalAvoid:0.12}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
+  "archaeo_stabilizer_pioneer_v": { id:"archaeo_stabilizer_pioneer_v", name:"先驱信号稳定器 V", slot:"mid", level:80, time:210,xp:190,cost:{"三钛合金":2200,"超噬矿":20,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyStabilizer:0.20, archaeologyNonFatalAvoid:0.12}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
   // 低槽：文物译码器 — 常规掉落加成 + 复制焦点结果
   "archaeo_decoder_fleet_iii": { id:"archaeo_decoder_fleet_iii", name:"舰墓文物译码器 III", slot:"low", level:35, time:75, xp:65, cost:{"三钛合金":450,"同位聚合体":100,"超新星诺克石":15,"稀有气体":10}, bonuses:{archaeologyDecoder:0.19, archaeologyCopyChance:0.04}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
-  "archaeo_decoder_pioneer_v": { id:"archaeo_decoder_pioneer_v", name:"先驱文物译码器 V", slot:"low", level:80, time:210,xp:190,cost:{"三钛合金":2200,"同位聚合体":500,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyDecoder:0.25, archaeologyCopyChance:0.07}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true }
+  "archaeo_decoder_pioneer_v": { id:"archaeo_decoder_pioneer_v", name:"先驱文物译码器 V", slot:"low", level:80, time:210,xp:190,cost:{"三钛合金":2200,"同位聚合体":500,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyDecoder:0.28, archaeologyCopyChance:0.07}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true }
 };
 
 /* ================================================================
@@ -493,7 +493,7 @@ const EQUIPMENT_BONUS_NAMES = {
   gasBonus:"气体采集总加成",
   miningLaserEfficiency:"采矿激光器效果",
   gasLaserEfficiency:"气云采集器效果",
-  salvageEfficiency:"打捞臂效果",
+  salvageEfficiency:"打捞效率",
   shieldCapacity:"护盾容量",
   shieldCapacityPercent:"护盾容量",
   armorCapacityPercent:"装甲容量",
@@ -548,6 +548,10 @@ function getEquipmentAttributeLines(equipmentRef) {
     lines.push("自动维修：" + (targetNames[eq.combat.target] || eq.combat.target) + " +" + eq.combat.amount);
     lines.push("触发消耗：燃料 " + eq.combat.fuelCost);
     if (Array.isArray(eq.shipTypes)) lines.push("适用舰体：旗舰 / 超级旗舰");
+  }
+  if (eq.bonuses && typeof eq.bonuses.salvageEfficiency === "number") {
+    lines.push("被动：装备即提升货柜掉率（货柜基础掉率×(1+打捞效率)，封顶 50%；战斗与考古通用）");
+    lines.push("主动（战斗界面开关，非死亡空间）：开启后每轮燃料×2，每击毁敌舰消耗同位素与打捞舰船组件，额外掉落舰船组件");
   }
   return lines;
 }

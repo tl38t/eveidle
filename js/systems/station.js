@@ -684,6 +684,10 @@ function getStationBuildingsDisplayState(state) {
 
 const AUTO_LINE_IDS = ["smelting", "equipment", "booster"];
 
+// 装备自动线产线白名单：仅生产消耗品（燃料 / 弹药 / 考古探针）。
+// 可装配装备一律不出现在装备自动线（手动制造页不受影响，仍可造全部装备）。
+const EQUIPMENT_AUTO_LINE_CATEGORIES = Object.freeze(["fuel", "ammunition", "probes"]);
+
 const AUTO_LINE_CONFIG = Object.freeze({
   smelting:  { buildingId:"smelting_refinery",  name:"冶炼自动线" },
   equipment: { buildingId:"equipment_factory",  name:"装备自动线" },
@@ -822,9 +826,22 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   const recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === line.startedTargetId);
   if (!recipe) { stopAutoLineInternal(state, "equipment", "unknown-recipe", offline); return { cycles:0 }; }
 
+  // 产线白名单兜底：装备自动线仅允许消耗品类（燃料/弹药/探针），
+  // 防止旧存档 / 非法 dispatch 让可装配装备目标继续生产
+  if (EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
+    stopAutoLineInternal(state, "equipment", "target-not-allowed", offline);
+    return { cycles:0 };
+  }
+
   // 检查配方等级门槛
   const eeLvl = Number(state.skills.equipmentEngineering && state.skills.equipmentEngineering.lvl) || 1;
   if (eeLvl < recipe.level) { stopAutoLineInternal(state, "equipment", "level-locked", offline); return { cycles:0 }; }
+
+  // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过
+  if (recipe.requiresBlueprint === true && !hasEquipmentBlueprintFromState(state, recipe.id)) {
+    stopAutoLineInternal(state, "equipment", "blueprint-locked", offline);
+    return { cycles:0 };
+  }
 
   // 自动线不乘技能速度：cycleTime = recipe.time / multiplier
   const cycleTimeSec = recipe.time / Math.max(0.001, multiplier);
@@ -926,6 +943,12 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
   // 检查配方等级门槛
   const bLvl = Number(state.skills.boosterEngineering && state.skills.boosterEngineering.lvl) || 1;
   if (bLvl < recipe.level) { stopAutoLineInternal(state, "booster", "level-locked", offline); return { cycles:0 }; }
+
+  // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过
+  if (recipe.requiresBlueprint === true && !hasBoosterBlueprintFromState(state, recipe.id)) {
+    stopAutoLineInternal(state, "booster", "blueprint-locked", offline);
+    return { cycles:0 };
+  }
 
   // 自动线不乘技能速度：cycleTime = recipe.time / multiplier
   const cycleTimeSec = recipe.time / Math.max(0.001, multiplier);
@@ -1112,7 +1135,26 @@ function getStationAutoLineDisplayState(state, lineId) {
   } else if (!info.selectedTargetId) {
     blockedReason = "no-target-selected";
   } else {
-    canStart = true;
+    // 蓝图限制（equipment/booster 线）：选中目标需对应蓝图，否则禁止启动
+    let blueprintOk = true;
+    let categoryOk = true;
+    const selId = info.selectedTargetId;
+    if (selId && (lineId === "equipment" || lineId === "booster")) {
+      const pool = lineId === "equipment" ? EQUIPMENT_ENGINEERING_RECIPES : BOOSTER_RECIPES;
+      const recipe = pool && pool.find(r => r.id === selId);
+      if (recipe && recipe.requiresBlueprint === true) {
+        blueprintOk = lineId === "equipment"
+          ? hasEquipmentBlueprintFromState(state, recipe.id)
+          : hasBoosterBlueprintFromState(state, recipe.id);
+      }
+      // 产线白名单（仅 equipment 线）：非消耗品目标禁止启动
+      if (lineId === "equipment" && recipe && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
+        categoryOk = false;
+      }
+    }
+    if (!categoryOk) blockedReason = "target-not-allowed";
+    else if (!blueprintOk) blockedReason = "blueprint-locked";
+    else canStart = true;
   }
 
   // 材料状态（仅运行时检查）
@@ -1551,8 +1593,8 @@ function getStationPageDisplayState(state, now) {
   // Generate auto-line display from real recipe pools
   var autoLines = [];
   var alConfigs = [
-    { lineId:"smelting", buildingId:"smelting_refinery", recipePool:typeof SMELTING_RECIPES!="undefined"?SMELTING_RECIPES:[], keyFn:function(r){return r.name;}, skillKey:"refining" },
-    { lineId:"equipment", buildingId:"equipment_factory", recipePool:typeof EQUIPMENT_ENGINEERING_RECIPES!="undefined"?EQUIPMENT_ENGINEERING_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"equipmentEngineering", excludeShip:true },
+    { lineId:"smelting", buildingId:"smelting_refinery", recipePool:typeof SMELTING_RECIPES!="undefined"?SMELTING_RECIPES:[], keyFn:function(r){return r.name;}, skillKey:"refining", category:"smelting" },
+    { lineId:"equipment", buildingId:"equipment_factory", recipePool:typeof EQUIPMENT_ENGINEERING_RECIPES!="undefined"?EQUIPMENT_ENGINEERING_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"equipmentEngineering", excludeShip:true, allowedCategories:EQUIPMENT_AUTO_LINE_CATEGORIES },
     { lineId:"booster", buildingId:"booster_factory", recipePool:typeof BOOSTER_RECIPES!="undefined"?BOOSTER_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"boosterEngineering" }
   ];
   // 自动线目标显示名解析：只认配方的正式中文名称字段（recipe.name）。
@@ -1585,10 +1627,21 @@ function getStationPageDisplayState(state, now) {
     var skillLvl = Number(state.skills[cfg.skillKey] && state.skills[cfg.skillKey].lvl) || 1;
     var targets = cfg.recipePool.filter(function(r) {
       if (cfg.excludeShip && (r.category === "ship" || r.category === "shipComponent")) return false;
+      // 产线白名单：装备自动线仅显示消耗品类（燃料/弹药/探针）
+      if (cfg.allowedCategories && cfg.allowedCategories.indexOf(r.category) === -1) return false;
       return skillLvl >= (r.level || 1);
     }).map(function(r) {
       // option.value 用稳定内部 id；option 文本只用正式中文名称。
-      return { id:cfg.keyFn(r), name:autoLineTargetName(r, cfg.lineId), level:r.level||1 };
+      // category 透传给 UI（按应用类聚成 <optgroup>），缺省回落到产线 category / lineId。
+      var opt = { id:cfg.keyFn(r), name:autoLineTargetName(r, cfg.lineId), level:r.level||1, category:(r.category || cfg.category || cfg.lineId) };
+      // equipment / booster 线：透传蓝图状态，供 UI 灰显「需蓝图」选项
+      if (cfg.lineId === "equipment" || cfg.lineId === "booster") {
+        opt.requiresBlueprint = !!r.requiresBlueprint;
+        opt.hasRequiredBlueprint = opt.requiresBlueprint
+          ? (cfg.lineId === "equipment" ? hasEquipmentBlueprintFromState(state, r.id) : hasBoosterBlueprintFromState(state, r.id))
+          : true;
+      }
+      return opt;
     });
     var baseDisplay = (typeof getStationAutoLineDisplayState === "function") ? getStationAutoLineDisplayState(state, cfg.lineId) : {};
     var bm = getStationBuildingSpeedMultiplier(state, cfg.buildingId);
@@ -1629,6 +1682,7 @@ function getStationPageDisplayState(state, now) {
       stoppedReason: lineData.stoppedReason || null,
       stoppedText: lineData.stoppedReason === "insufficient-materials" ? "材料不足"
         : lineData.stoppedReason === "user-stopped" ? "已停止"
+        : lineData.stoppedReason === "target-not-allowed" ? "目标不在产线范围"
         : lineData.stoppedReason || null
     };
   });

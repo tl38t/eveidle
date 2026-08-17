@@ -160,30 +160,34 @@ function renderStationPage(now) {
   }
 
   // ---- D. 自动线 ----
+  // 仅在「可选项集合」变化时重建 select（选项集只随建筑解锁 / 蓝图购买变化，与运行态 / 资源 / 燃料无关）。
+  // 运行态、进度、启停按钮、倍率由 liveUpdateStationFields 每秒轻量同步，不再整段重建，
+  // 避免无关结构变化（本体升级变可负担、他线启停、燃料状态）触发整页重建把原生下拉关掉。
   var alDiv = document.getElementById("station-auto-lines");
   if (alDiv) {
-    alDiv.innerHTML = display.autoLines.map(function(al) {
-      var opts = al.targetOptions.map(function(t) {
-        var sel = t.id === al.selectedTargetId ? " selected" : "";
-        return '<option value="' + t.id + '"' + sel + '>' + t.name + '</option>';
+    var alOptsSig = computeStationAlOptsSig(display.autoLines);
+    if (alOptsSig !== _stationAlOptsSig) {
+      alDiv.innerHTML = display.autoLines.map(function(al) {
+        var opts = renderAutoLineOptions(al.targetOptions, al.selectedTargetId);
+        var statAl = al.running ? "运行中" : (al.stoppedText || "已停止");
+        if (al.stoppedReason === "insufficient-materials") statAl = "材料不足";
+        if (al.stoppedReason === "user-stopped") statAl = "已停止";
+        if (al.stoppedReason === "target-not-allowed") statAl = "目标不在产线范围";
+        // 只显示正式中文名称：未选择时显示"未选择"，查不到配方时显示态已给出"未知配方"。
+        // 绝不回退 selectedTargetId/startedTargetId，避免内部 recipeId 泄漏到界面。
+        var selName = al.selectedTargetName || "未选择";
+        var startName = al.startedTargetName || "";
+        return '<div class="station-al-card" id="al-card-' + al.lineId + '"><div class="sal-header"><strong>' + (al.name || al.lineId) + '</strong></div>' +
+          '<div class="sal-mult" id="al-mult-' + al.lineId + '">建筑 ×' + al.buildingMultiplier.toFixed(2) + ' · 后勤 ×' + al.logisticsMultiplier.toFixed(2) + ' · 综合 ×' + al.effectiveMultiplier.toFixed(2) + '</div>' +
+          '<div class="sal-select"><select data-line="' + al.lineId + '" class="u-select">' + opts + '</select></div>' +
+          '<div class="sal-targets" id="al-targets-' + al.lineId + '">选中：' + selName + (startName ? ' · 运行：' + startName : '') + '</div>' +
+          '<div class="sal-status" id="al-status-' + al.lineId + '">状态：' + statAl + '</div>' +
+          (al.cycleDurationMs ? '<div class="al-progress-wrap"><div class="progress-bar"><div class="fill al-fill" id="al-fill-' + al.lineId + '" style="width:' + (al.progressRatio * 100).toFixed(0) + '%"></div></div><div class="sal-progress" id="al-progress-' + al.lineId + '">周期 ' + (al.cycleDurationMs / 1000).toFixed(1) + 's · 进度 ' + (al.progressRatio * 100).toFixed(0) + '%</div></div>' : '') +
+          '<button class="btn sm al-start" id="al-start-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStart ? '' : ' disabled') + '>' + (al.running ? '已启动' : '启动') + '</button>' +
+          '<button class="btn sm al-stop" id="al-stop-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStop ? '' : ' disabled') + '>停止</button></div>';
       }).join("");
-      var statAl = al.running ? "运行中" : (al.stoppedText || "已停止");
-      if (al.stoppedReason === "insufficient-materials") statAl = "材料不足";
-      if (al.stoppedReason === "user-stopped") statAl = "已停止";
-      // 只显示正式中文名称：未选择时显示"未选择"，查不到配方时显示态已给出"未知配方"。
-      // 绝不回退 selectedTargetId/startedTargetId，避免内部 recipeId 泄漏到界面。
-      var selName = al.selectedTargetName || "未选择";
-      var startName = al.startedTargetName || "";
-      return '<div class="station-al-card" id="al-card-' + al.lineId + '"><div class="sal-header"><strong>' + (al.name || al.lineId) + '</strong></div>' +
-        '<div class="sal-mult">建筑 ×' + al.buildingMultiplier.toFixed(2) + ' · 后勤 ×' + al.logisticsMultiplier.toFixed(2) + ' · 综合 ×' + al.effectiveMultiplier.toFixed(2) + '</div>' +
-        '<div class="sal-select"><select data-line="' + al.lineId + '" class="u-select">' + opts + '</select></div>' +
-        '<div class="sal-targets" id="al-targets-' + al.lineId + '">选中：' + selName + (startName ? ' · 运行：' + startName : '') + '</div>' +
-        '<div class="sal-status" id="al-status-' + al.lineId + '">状态：' + statAl + '</div>' +
-        (al.cycleDurationMs ? '<div class="al-progress-wrap"><div class="progress-bar"><div class="fill al-fill" id="al-fill-' + al.lineId + '" style="width:' + (al.progressRatio * 100).toFixed(0) + '%"></div></div><div class="sal-progress" id="al-progress-' + al.lineId + '">周期 ' + (al.cycleDurationMs / 1000).toFixed(1) + 's · 进度 ' + (al.progressRatio * 100).toFixed(0) + '%</div></div>' : '') +
-        '<button class="btn sm al-start" id="al-start-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStart ? '' : ' disabled') + '>' + (al.running ? '已启动' : '启动') + '</button>' +
-        '<button class="btn sm al-stop" id="al-stop-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStop ? '' : ' disabled') + '>停止</button></div>';
-    }).join("");
-
+      _stationAlOptsSig = alOptsSig;
+    }
     // 自动线 select/按钮的点击与 change 已通过 #station-auto-lines 的事件委托统一处理（initStationUI），不在此重复绑定。
   }
 
@@ -249,6 +253,47 @@ function computeStationSig(display) {
   return parts.join("|");
 }
 
+var _stationAlOptsSig = "";
+// 自动线「可选项集合」签名：仅覆盖选项 id 与蓝图锁状态（随建筑解锁 / 蓝图购买变化）。
+// 运行态、进度、启停、倍率均不进此签名（由 liveUpdateStationFields 每秒轻量同步），
+// 因此无关结构变化（本体升级可负担、他线启停、燃料状态）不会触发 select 重建、误关下拉。
+function computeStationAlOptsSig(autoLines) {
+  if (!autoLines) return "";
+  return autoLines.map(function(al) {
+    return al.lineId + "[" + (al.targetOptions || []).map(function(t) {
+      return t.id + (t.requiresBlueprint && !t.hasRequiredBlueprint ? "L" : "");
+    }).join(",") + "]";
+  }).join("|");
+}
+
+// 自动线下拉分组：按 recipe.category 聚成 <optgroup>（仿装备制造页标签）。
+// 原生 select + optgroup，不引入新渲染路径，上一轮修好的「下拉不被误关」逻辑原样生效。
+// 选项集签名（computeStationAlOptsSig）只认 id + 蓝图锁状态，category 不参与 → 分组不影响重建判定。
+var AUTO_LINE_CATEGORY_ORDER = ["smelting","fuel","ammunition","probes","mining","archaeology","combatWeapon","combatRepair","gas","refining","ship","booster"];
+var AUTO_LINE_CATEGORY_LABELS = {
+  smelting:"原矿冶炼", fuel:"燃料", ammunition:"弹药", probes:"探针",
+  mining:"采矿", archaeology:"考古", combatWeapon:"战斗武器", combatRepair:"战斗维修",
+  gas:"采气", refining:"冶炼", ship:"舰船工程", booster:"增幅剂制造"
+};
+function renderAutoLineOptions(options, selectedId) {
+  if (!options || !options.length) return '<option value="">（无可生产配方）</option>';
+  var buckets = {};
+  options.forEach(function(t) {
+    var c = t.category || "other";
+    (buckets[c] = buckets[c] || []).push(t);
+  });
+  return AUTO_LINE_CATEGORY_ORDER.filter(function(c){ return buckets[c] && buckets[c].length; }).map(function(cat) {
+    var label = AUTO_LINE_CATEGORY_LABELS[cat] || cat;
+    var inner = buckets[cat].map(function(t) {
+      var sel = t.id === selectedId ? " selected" : "";
+      var locked = (t.requiresBlueprint && !t.hasRequiredBlueprint) ? " disabled" : "";
+      var txt = t.name + ((t.requiresBlueprint && !t.hasRequiredBlueprint) ? "（需蓝图）" : "");
+      return '<option value="' + t.id + '"' + sel + locked + '>' + txt + '</option>';
+    }).join("");
+    return '<optgroup label="' + label + '">' + inner + '</optgroup>';
+  }).join("");
+}
+
 // 统一实时入口（由 updateLiveUI 每秒按 currentPage==="station" 调用）。
 // 节流仅作用于「轻量字段刷新」分支；结构签名一旦变化必须无条件立即整页重渲染，
 // 否则建造完成/自动线启停等结构变化在节流窗口内被漏渲染，玩家须手动切页才看得到更新。
@@ -256,9 +301,15 @@ function updateStationLiveUI(now) {
   var t = Number(now) || Date.now();
   var display = getStationPageDisplayState(gameState, t);
   var sig = computeStationSig(display);
-  if (sig !== _stationSig) {
-    // 结构性变化（建造完成、自动线启停/目标改变、维护断油等）→ 整页渲染。
+  var alOptsSig = computeStationAlOptsSig(display.autoLines);
+  if (sig !== _stationSig || alOptsSig !== _stationAlOptsSig) {
+    // 结构性变化（建造完成、自动线启停/目标改变、维护断油、选项集变化等）→ 整页渲染。
+    // 注意：renderStationPage 内部按 _stationAlOptsSig 自行决定是否重建 alDiv 的 <select>，
+    // 选项集未变的无关结构变化不会触碰 <select>，避免误关下拉。
     renderStationPage(t);
+    // 选项集未变时 renderStationPage 不会重建 alDiv；补一次轻量同步确保自动线
+    // 状态/进度/启停/倍率与最新显示态一致（最多延迟到本次渲染）。
+    liveUpdateStationFields(display, t);
     _stationLastLive = t;
     return;
   }
@@ -322,6 +373,7 @@ function liveUpdateStationFields(display, now) {
       var st = al.running ? "运行中" : (al.stoppedText || "已停止");
       if (al.stoppedReason === "insufficient-materials") st = "材料不足";
       else if (al.stoppedReason === "user-stopped") st = "已停止";
+      else if (al.stoppedReason === "target-not-allowed") st = "目标不在产线范围";
       setLiveText(statEl, "状态：" + st);
     }
     var tgtEl = document.getElementById("al-targets-" + al.lineId);
@@ -341,5 +393,7 @@ function liveUpdateStationFields(display, now) {
     if (startBtn) { setLiveDisabled(startBtn, !al.canStart); setLiveText(startBtn, al.running ? "已启动" : "启动"); }
     var stopBtn = document.getElementById("al-stop-" + al.lineId);
     if (stopBtn) { setLiveDisabled(stopBtn, !al.canStop); }
+    var multEl = document.getElementById("al-mult-" + al.lineId);
+    if (multEl) setLiveText(multEl, "建筑 ×" + al.buildingMultiplier.toFixed(2) + " · 后勤 ×" + al.logisticsMultiplier.toFixed(2) + " · 综合 ×" + al.effectiveMultiplier.toFixed(2));
   });
 }

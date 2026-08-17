@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=6">
-<link rel="stylesheet" href="./css/panels.css?v=7">
-<link rel="stylesheet" href="./css/combat.css?v=1">
-<link rel="stylesheet" href="./css/components.css?v=13">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=11">
+<link rel="stylesheet" href="./css/base.css?v=7">
+<link rel="stylesheet" href="./css/panels.css?v=8">
+<link rel="stylesheet" href="./css/combat.css?v=2">
+<link rel="stylesheet" href="./css/components.css?v=14">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=12">
 <script type="importmap">
 {
   "imports": {
@@ -21,8 +21,8 @@
   }
 }
 </script>
-<script defer src="./js/core/speed-config.js?v=1"></script>
-<script type="module" src="./js/ui/ship3d.js?v=6"></script>
+<script defer src="./js/core/speed-config.js?v=2"></script>
+<script type="module" src="./js/ui/ship3d.js?v=7"></script>
 <style id="ship3d-style">
   .ship3d-canvas { display:block; width:100%; height:100%; }
   #manufacturing-3d-canvas { width:100%; height:340px; margin-top:8px; border-radius:8px; background:#070d14; }
@@ -887,6 +887,14 @@
             <span class="setting-copy"><strong>强化操作确认提示</strong><small>开启时，执行舰船或装备强化前显示成功率、失败规则与材料消耗；关闭后点击强化将直接执行。</small></span>
             <span class="setting-switch"><input type="checkbox" id="setting-enhancement-confirm" checked><span class="setting-switch-track"></span></span>
           </label>
+          <label class="setting-row" for="setting-discard-confirm">
+            <span class="setting-copy"><strong>物品丢弃确认提示</strong><small>开启时，丢弃装备前弹出确认框；关闭后直接丢弃，装备将永久消失不可恢复。</small></span>
+            <span class="setting-switch"><input type="checkbox" id="setting-discard-confirm" checked><span class="setting-switch-track"></span></span>
+          </label>
+          <label class="setting-row" for="setting-dismantle-confirm">
+            <span class="setting-copy"><strong>装备拆解确认提示</strong><small>开启时，拆解装备前弹出返还预览确认框；关闭后直接拆解。</small></span>
+            <span class="setting-switch"><input type="checkbox" id="setting-dismantle-confirm" checked><span class="setting-switch-track"></span></span>
+          </label>
         </div>
       </div>
     </div>
@@ -1038,83 +1046,83 @@
   </div>
 </aside>
 
-  <script defer src="./js/core/runtime.js?v=1"></script>
-  <script defer src="./js/core/events.js?v=2"></script>
-  <script defer src="./js/ui/error-boundary.js?v=1"></script>
-  <script defer src="./js/data/base.js?v=1"></script>
-  <script defer src="./js/data/ammo.js?v=4"></script>
-  <script defer src="./js/data/display-names.js?v=1"></script>
-  <script defer src="./js/data/planets.js?v=1"></script>
-  <script defer src="./js/data/ships.js?v=4"></script>
-  <script defer src="./js/data/boosters.js?v=1"></script>
-  <script defer src="./js/systems/boosters.js?v=1"></script>
-  <script defer src="./js/systems/recycling.js?v=2"></script>
-  <script defer src="./js/data/combat.js?v=2"></script>
-  <script defer src="./js/data/cargo.js?v=5"></script>
-  <script defer src="./js/data/implants.js?v=1"></script>
-  <script defer src="./js/data/equipment.js?v=4"></script>
-  <script defer src="./js/data/ammunition.js?v=1"></script>
-  <script defer src="./js/data/archaeology.js?v=2"></script>
-  <script defer src="./js/data/research.js?v=2"></script>
-  <script defer src="./js/core/research-state.js?v=1"></script>
-  <script defer src="./js/data/achievements.js?v=1"></script>
-  <script defer src="./js/data/achievement-rules.js?v=2"></script>
-  <script defer src="./js/data/tutorial.js?v=4"></script>
-  <script defer src="./js/core/tutorial-state.js?v=1"></script>
-  <script defer src="./js/core/achievement-state.js?v=1"></script>
-  <script defer src="./js/core/state.js?v=2"></script>
-  <script defer src="./js/systems/research.js?v=1"></script>
-  <script defer src="./js/core/statistics.js?v=2"></script>
-  <script defer src="./js/systems/achievements.js?v=2"></script>
-  <script defer src="./js/systems/production.js?v=3"></script>
-  <script defer src="./js/core/resources.js?v=1"></script>
-  <script defer src="./js/systems/tutorial.js?v=5"></script>
-  <script defer src="./js/systems/manufacturing.js?v=2"></script>
-  <script defer src="./js/systems/enhancement-chance.js?v=1"></script>
-  <script defer src="./js/systems/ship-enhancement.js?v=3"></script>
-  <script defer src="./js/systems/equipment-enhancement.js?v=1"></script>
-  <script defer src="./js/systems/rigs.js?v=1"></script>
-  <script defer src="./js/systems/archaeology.js?v=1"></script>
-  <script defer src="./js/systems/planetary.js?v=1"></script>
-  <script defer src="./js/systems/station.js?v=4"></script>
-  <script defer src="./js/ui/action-modal.js?v=5"></script>
-  <script defer src="./js/core/queue.js?v=2"></script>
-  <script defer src="./js/systems/capital-combat.js?v=1"></script>
-  <script defer src="./js/systems/combat.js?v=4"></script>
-  <script defer src="./js/core/combat-modifiers.js?v=1"></script>
-  <script defer src="./js/core/selectors.js?v=21"></script>
-  <script defer src="./js/core/actions.js?v=7"></script>
-  <script defer src="./js/systems/research-protocols.js?v=2"></script>
-  <script defer src="./js/ui/shell-render.js?v=19"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=8"></script>
-  <script defer src="./js/ui/combat-render.js?v=11"></script>
-  <script defer src="./js/ui/planetary-render.js?v=1"></script>
-  <script defer src="./js/ui/archaeology-render.js?v=3"></script>
-  <script defer src="./js/ui/booster-render.js?v=4"></script>
-  <script defer src="./js/ui/station-render.js?v=2"></script>
-  <script defer src="./js/core/tick.js?v=3"></script>
-  <script defer src="./js/core/offline.js?v=5"></script>
-  <script defer src="./js/systems/offline-combat.js?v=1"></script>
-  <script defer src="./js/platform/cloud-save-contract.js?v=1"></script>
-  <script defer src="./js/platform/achievement-provider-contract.js?v=1"></script>
-  <script defer src="./js/platform/local-mirror-contract.js?v=1"></script>
-  <script defer src="./js/core/save-envelope.js?v=1"></script>
-  <script defer src="./js/platform/providers/noop-cloud-provider.js?v=1"></script>
-  <script defer src="./js/platform/providers/noop-achievement-provider.js?v=1"></script>
-  <script defer src="./js/platform/providers/noop-local-mirror-provider.js?v=1"></script>
-  <script defer src="./js/platform/taptap/taptap-cloud-provider.js?v=1"></script>
-  <script defer src="./js/platform/taptap/taptap-achievement-provider.js?v=1"></script>
-  <script defer src="./js/platform/taptap/taptap-local-mirror-provider.js?v=6"></script>
-  <script defer src="./js/platform/platform-runtime.js?v=2"></script>
-  <script defer src="./js/core/cloud-save-service.js?v=1"></script>
-  <script defer src="./js/core/local-mirror-service.js?v=1"></script>
-  <script defer src="./js/data/platform-achievement-map.js?v=1"></script>
-  <script defer src="./js/core/achievement-sync-service.js?v=1"></script>
-  <script defer src="./js/core/persistence.js?v=9"></script>
-  <script defer src="./js/core/bootstrap-launch.js?v=2"></script>
-  <script defer src="./js/ui/render.js?v=7"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=7"></script>
-  <script defer src="./js/qa-seed.js?v=1"></script>
+  <script defer src="./js/core/runtime.js?v=2"></script>
+  <script defer src="./js/core/events.js?v=3"></script>
+  <script defer src="./js/ui/error-boundary.js?v=2"></script>
+  <script defer src="./js/data/base.js?v=2"></script>
+  <script defer src="./js/data/ammo.js?v=5"></script>
+  <script defer src="./js/data/display-names.js?v=2"></script>
+  <script defer src="./js/data/planets.js?v=2"></script>
+  <script defer src="./js/data/ships.js?v=5"></script>
+  <script defer src="./js/data/boosters.js?v=3"></script>
+  <script defer src="./js/systems/boosters.js?v=2"></script>
+  <script defer src="./js/systems/recycling.js?v=3"></script>
+  <script defer src="./js/data/combat.js?v=3"></script>
+  <script defer src="./js/data/cargo.js?v=6"></script>
+  <script defer src="./js/data/implants.js?v=2"></script>
+  <script defer src="./js/data/equipment.js?v=5"></script>
+  <script defer src="./js/data/ammunition.js?v=2"></script>
+  <script defer src="./js/data/archaeology.js?v=3"></script>
+  <script defer src="./js/data/research.js?v=3"></script>
+  <script defer src="./js/core/research-state.js?v=2"></script>
+  <script defer src="./js/data/achievements.js?v=2"></script>
+  <script defer src="./js/data/achievement-rules.js?v=3"></script>
+  <script defer src="./js/data/tutorial.js?v=5"></script>
+  <script defer src="./js/core/tutorial-state.js?v=2"></script>
+  <script defer src="./js/core/achievement-state.js?v=2"></script>
+  <script defer src="./js/core/state.js?v=3"></script>
+  <script defer src="./js/systems/research.js?v=2"></script>
+  <script defer src="./js/core/statistics.js?v=3"></script>
+  <script defer src="./js/systems/achievements.js?v=3"></script>
+  <script defer src="./js/systems/production.js?v=4"></script>
+  <script defer src="./js/core/resources.js?v=2"></script>
+  <script defer src="./js/systems/tutorial.js?v=6"></script>
+  <script defer src="./js/systems/manufacturing.js?v=3"></script>
+  <script defer src="./js/systems/enhancement-chance.js?v=2"></script>
+  <script defer src="./js/systems/ship-enhancement.js?v=4"></script>
+  <script defer src="./js/systems/equipment-enhancement.js?v=2"></script>
+  <script defer src="./js/systems/rigs.js?v=2"></script>
+  <script defer src="./js/systems/archaeology.js?v=2"></script>
+  <script defer src="./js/systems/planetary.js?v=2"></script>
+  <script defer src="./js/systems/station.js?v=5"></script>
+  <script defer src="./js/ui/action-modal.js?v=6"></script>
+  <script defer src="./js/core/queue.js?v=3"></script>
+  <script defer src="./js/systems/capital-combat.js?v=2"></script>
+  <script defer src="./js/systems/combat.js?v=5"></script>
+  <script defer src="./js/core/combat-modifiers.js?v=2"></script>
+  <script defer src="./js/core/selectors.js?v=22"></script>
+  <script defer src="./js/core/actions.js?v=8"></script>
+  <script defer src="./js/systems/research-protocols.js?v=3"></script>
+  <script defer src="./js/ui/shell-render.js?v=20"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=9"></script>
+  <script defer src="./js/ui/combat-render.js?v=12"></script>
+  <script defer src="./js/ui/planetary-render.js?v=2"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=4"></script>
+  <script defer src="./js/ui/booster-render.js?v=5"></script>
+  <script defer src="./js/ui/station-render.js?v=3"></script>
+  <script defer src="./js/core/tick.js?v=4"></script>
+  <script defer src="./js/core/offline.js?v=6"></script>
+  <script defer src="./js/systems/offline-combat.js?v=2"></script>
+  <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
+  <script defer src="./js/platform/achievement-provider-contract.js?v=2"></script>
+  <script defer src="./js/platform/local-mirror-contract.js?v=2"></script>
+  <script defer src="./js/core/save-envelope.js?v=2"></script>
+  <script defer src="./js/platform/providers/noop-cloud-provider.js?v=2"></script>
+  <script defer src="./js/platform/providers/noop-achievement-provider.js?v=2"></script>
+  <script defer src="./js/platform/providers/noop-local-mirror-provider.js?v=2"></script>
+  <script defer src="./js/platform/taptap/taptap-cloud-provider.js?v=2"></script>
+  <script defer src="./js/platform/taptap/taptap-achievement-provider.js?v=2"></script>
+  <script defer src="./js/platform/taptap/taptap-local-mirror-provider.js?v=7"></script>
+  <script defer src="./js/platform/platform-runtime.js?v=3"></script>
+  <script defer src="./js/core/cloud-save-service.js?v=2"></script>
+  <script defer src="./js/core/local-mirror-service.js?v=2"></script>
+  <script defer src="./js/data/platform-achievement-map.js?v=2"></script>
+  <script defer src="./js/core/achievement-sync-service.js?v=2"></script>
+  <script defer src="./js/core/persistence.js?v=10"></script>
+  <script defer src="./js/core/bootstrap-launch.js?v=3"></script>
+  <script defer src="./js/ui/render.js?v=8"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=8"></script>
+  <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">
       <span class="popup-close" id="hangar-3d-popup-close">×</span>

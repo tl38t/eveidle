@@ -1129,7 +1129,7 @@
     align-items: center;
     justify-content: center;
     background: rgba(4, 8, 14, 0.7);
-    z-index: 1200;
+    z-index: 2300;
     padding: 16px;
     box-sizing: border-box;
   }

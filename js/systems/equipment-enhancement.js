@@ -198,6 +198,27 @@ function findDonorInventoryIndex(state, itemId, excludeIndex) {
   return -1;
 }
 
+/* ---- 拆解报价辅助：按「只算成功」反推累计消耗（失败尝试不计入）。
+       强化等级仅在成功时 +1，故 total = 逐级 L=1..level 之和：
+       · minerals：每次精炼矿物消耗（仅精炼，剔除非精炼）
+       · wholeItems：每个 5 倍数里程碑的同型装备 / DED 核心 / 协议（逐件列表，供拆解时独立 50% 掷骰） ---- */
+function getEquipmentEnhancementSuccessCostSummary(equipment, level) {
+  const L = Math.max(0, Math.floor(Number(level) || 0));
+  const minerals = {};
+  const wholeItems = [];
+  for (let lvl = 1; lvl <= L; lvl++) {
+    const cost = getEquipmentEnhancementCost(equipment, lvl); // 精炼矿物
+    for (const [mat, qty] of Object.entries(cost)) minerals[mat] = (minerals[mat] || 0) + Number(qty);
+    if (lvl % 5 === 0) {
+      const extra = getEquipmentEnhancementExtraCost(equipment, lvl);
+      if (extra.sameTypeItemId) wholeItems.push({ type:"sameType", id:extra.sameTypeItemId });
+      if (extra.core) wholeItems.push({ type:"core", id:extra.core });
+      if (extra.protocol) wholeItems.push({ type:"protocol", id:extra.protocol });
+    }
+  }
+  return { minerals, wholeItems };
+}
+
 window.EquipmentEnhancement = Object.freeze({
   REFINED_MINERALS,
   getRefinedMineralSet,
@@ -211,6 +232,7 @@ window.EquipmentEnhancement = Object.freeze({
   getEquipmentEnhancementCost,
   getDeathspaceMaterials,
   getEquipmentEnhancementExtraCost,
+  getEquipmentEnhancementSuccessCostSummary,
   isEquipmentInstanceId,
   resolveEquipmentReference,
   getEquipmentEnhancementDisplayState,
