@@ -227,9 +227,8 @@ function applyArchaeologyFieldRepair(state, instanceId, hp, context) {
     const healPotential = rep.amount * rep.multiplier;
     const actualHeal = Math.max(0, Math.min(healPotential, cap - cur));
     if (!(actualHeal > 0)) continue;
-    const fuelStock = hasReg ? ResourceRegistry.get(state, fuelKey) : 0;
-    if (fuelStock < rep.fuelCost) { fuelStopped = true; break; } // 燃料不足该件：停止后续维修装备，不扣不足部分
-    if (hasReg) ResourceRegistry.spend(state, fuelKey, rep.fuelCost);
+    // 考古燃料已改为「按装载装备预付」（每周期基础油已含维修件 combat.fuelCost），
+    // 翻车修复不再重复扣油，避免维修件双重收费。仅执行回血。
     current[rep.target] = cur + actualHeal; // 绝不超 maxHp
     repaired++;
     if (typeof GameEvents !== "undefined") {
@@ -238,7 +237,7 @@ function applyArchaeologyFieldRepair(state, instanceId, hp, context) {
         itemId: rep.itemId,
         target: rep.target,
         amount: actualHeal,
-        fuelCost: rep.fuelCost
+        fuelCost: 0 // 已预付，此处不再收取
       }, { timestamp: now, offline, source });
     }
   }
@@ -298,6 +297,10 @@ function pickCargoSize(location, rng) {
   for (const x of cw) { acc += x.weight; if (roll < acc) return x.size; }
   return cw[cw.length - 1].size;
 }
+
+// 同位素标记打捞臂装在考古舰时的被动货柜基础掉率（每次解析成功独立掷骰，再由 salvageEfficiency 放大，封顶 0.5）。
+// 考古无战斗敌舰分级，故统一基础概率；数值可按手感调。
+const ARCHAEOLOGY_SALVAGE_CARGO_CHANCE = 0.06;
 
 // ---- 常规焦点收益（星币/功勋/货柜 三选一，权重由焦点决定；同一地点三焦点共池） ----
 function resolveArchaeologyRegularYield(state, site, location, focus, fitted, rng, now) {
@@ -481,10 +484,32 @@ function resolveArchaeologyDrops(state, site, tier, fitted, rng, isOffline) {
 }
 
 // ---- 燃料成本 + 确定性节省累计器（唯一计算层，见 RIG_SYSTEM_IMPLEMENTATION_PLAN 3.6） ----
+// 考古燃料改为「按装载装备付费」（取代原地点固定油耗 site.fuel）：
+// 汇总考古舰 high/mid/low/rig 全部装备中带 combat.fuelCost 的项（武器与维修件均计，纯加成件不计），
+// 每件实例按其 combat.fuelCost 累加一次（装备强化倍率已体现在 fitting 中同名实例的数量上）。
+// 返回未乘船体 fuelEfficiency / 改装件减免的原始总和；可为 0（未装任何耗油装备 → 该周期零油耗）。
+function getArchaeologyEquippedFuelCost(state, shipRef) {
+  if (!shipRef) return 0;
+  const fitting = (typeof getFittingFromInstance === "function") ? getFittingFromInstance(shipRef) : (shipRef.fitting || {});
+  let total = 0;
+  for (const slot of ["high", "mid", "low", "rig"]) {
+    const refs = Array.isArray(fitting[slot]) ? fitting[slot] : [];
+    for (const ref of refs) {
+      const resolved = (typeof resolveEquipmentReference === "function") ? resolveEquipmentReference(state, ref) : null;
+      if (!resolved || !resolved.definition || !resolved.definition.combat) continue;
+      const fc = Number(resolved.definition.combat.fuelCost);
+      if (Number.isFinite(fc) && fc > 0) total += fc;
+    }
+  }
+  return total;
+}
+
 // 在线 tick、离线结算、UI 展示三处必须共用此函数，保证结果一致、无随机、无 save-scumming。
 // shipRef：考古舰实例对象（含 shipId / fitted），可为 null（此时无船体/改装件乘数）。
 function getArchaeologyFuelCostState(state, site, shipRef) {
-  const baseFuel = Math.max(1, Math.round((site && site.fuel) || 0));
+  // 考古燃料改为「按装载装备付费」：baseFuel 来自考古舰所有带 combat.fuelCost 的装备（高/中/低/rig）总和，
+  // 不再读取地点固定油耗 site.fuel。纯加成件（打捞臂/矿提/气提等无 fuelCost）不计。未装耗油装备时为 0。
+  const baseFuel = Math.max(0, getArchaeologyEquippedFuelCost(state, shipRef));
 
   // 船体自身燃料效率乘数（与 getCombatFuelMultiplierFromState 读法一致）
   const config = shipRef ? getShipConfigById(shipRef.shipId) : null;
@@ -499,7 +524,7 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
   const rigFuelMultiplier = Math.max(0, 1 - Math.max(0, rigFuelReduction));
 
   // 生燃料成本（未取整），下限 1；也是长期平均消耗
-  const rawFuelCost = Math.max(1, baseFuel * shipFuelMultiplier * rigFuelMultiplier);
+  const rawFuelCost = Math.max(0, baseFuel * shipFuelMultiplier * rigFuelMultiplier);
   const savingPerCycle = Math.max(0, baseFuel - rawFuelCost);
 
   // 归一化上一次余量到 [0,1)
@@ -511,7 +536,7 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
   let savedWholeFuel = Math.floor(savingBalance + 1e-9);
   savedWholeFuel = Math.max(0, Math.min(savedWholeFuel, baseFuel - 1));
 
-  const chargedFuel = Math.max(1, baseFuel - savedWholeFuel);
+  const chargedFuel = Math.max(0, baseFuel - savedWholeFuel);
 
   let nextRemainder = savingBalance - savedWholeFuel;
   if (!Number.isFinite(nextRemainder) || nextRemainder < 0) nextRemainder = 0;
@@ -617,6 +642,22 @@ function resolveArchaeologyCycle(state, now, randomValue, eventMeta) {
       ? (typeof randomValue === "function" ? randomValue : Math.random)
       : Math.random;
     const drops = resolveArchaeologyDrops(state, site, tier, fitted, rng, isOffline);
+    // 同位素标记打捞臂：装在考古舰时，被动提升货柜掉率（与战斗 rollCargoDrop 同公式）。
+    // 每次解析成功按 基础概率 ×(1+Σ打捞效率) 独立掉一个货柜（封顶 0.5）；考古无敌舰分级，统一基础概率。
+    if (typeof getSalvageEfficiency === "function") {
+      const salvEff = getSalvageEfficiency(state, instance);
+      if (salvEff > 0) {
+        const salvChance = Math.min(ARCHAEOLOGY_SALVAGE_CARGO_CHANCE * (1 + salvEff), 0.5);
+        if (rng() < salvChance) {
+          const salvLoc = getArchaeologyLocationBySiteId(site.id);
+          const salvSize = pickCargoSize(salvLoc, rng);
+          if (salvSize) {
+            ResourceRegistry.add(state, "special:货柜" + salvSize, 1);
+            if (drops && typeof drops === "object") drops.salvageCargo = { size: salvSize };
+          }
+        }
+      }
+    }
     const regularArtifacts = (drops.regular && drops.regular.found)
       ? drops.regular.found.filter(a => a && a.category) : [];
     for (const artifact of regularArtifacts) {
@@ -848,7 +889,7 @@ function getArchaeologyDisplayState(state, now) {
     const actualCycleTime = getArchaeologyCycleSeconds(state, site);
     return {
       id: site.id, name: site.name, tier: site.tier, level: site.level,
-      difficulty: site.difficulty, time: site.time, fuel: site.fuel, xp: site.xp,
+      difficulty: site.difficulty, time: site.time, fuel: fuelState.baseFuel, xp: site.xp,
       lpMultiplier: site.lpMultiplier, backlashDamage: site.backlashDamage,
       profile: { type:profile.type || "", label:profile.label || "", desc:profile.desc || "" },
       successChance, successPercent: (successChance * 100).toFixed(1),

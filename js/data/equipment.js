@@ -83,6 +83,19 @@ const EQUIPMENT_DB = {
   "sansha_gas_assimilation_node":  { id:"sansha_gas_assimilation_node",  name:"静默气体同化注入器·节点型",   slot:"low", level:25,time:45, xp:30,  cost:{"三钛合金":300, "稳定富勒烯":100,"同位聚合体":15,"静默集群装备生产许可C":5}, bonuses:{gasLaserEfficiency:0.55}, faction:"sansha", requiresBlueprint:true },
   "alliance_gas_assimilation": { id:"alliance_gas_assimilation", name:"联盟气体同化注入器",     slot:"low", level:65,time:130,xp:95,  cost:{"三钛合金":1320,"聚合气体":60, "铷":6,"等离子体":30}, bonuses:{gasLaserEfficiency:0.80}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
 
+  // ===== 同位素标记打捞臂（对标采矿/采气提升器，低槽 salvageEfficiency；战斗界面可开关：关=仅被动提升货柜掉率，开=燃料×2+消耗同位素+打捞舰船组件） =====
+  "t1_salvage_arm":    { id:"t1_salvage_arm",    name:"T1同位素标记打捞臂",  slot:"low", level:10, time:20,  xp:12,  cost:{"三钛合金":50,  "重金属":20, "稀有气体":12}, bonuses:{salvageEfficiency:0.10} },
+  "t2_salvage_arm":    { id:"t2_salvage_arm",    name:"中型同位素标记打捞臂", slot:"low", level:15, time:35,  xp:20,  cost:{"三钛合金":160, "同位素":60,  "类晶体胶矿":15}, bonuses:{salvageEfficiency:0.30} },
+  "t3_salvage_arm":    { id:"t3_salvage_arm",    name:"重型同位素标记打捞臂", slot:"low", level:35, time:60,  xp:40,  cost:{"三钛合金":400, "等离子体":150, "同位素":30, "重金属":15}, bonuses:{salvageEfficiency:0.50} },
+  "t4_salvage_arm":    { id:"t4_salvage_arm",    name:"大型同位素标记打捞臂", slot:"low", level:55, time:110, xp:80,  cost:{"三钛合金":900, "生物质":45, "铷":4,  "等离子体":25}, bonuses:{salvageEfficiency:0.70} },
+  "t5_salvage_arm":    { id:"t5_salvage_arm",    name:"旗舰同位素标记打捞核心", slot:"low", level:80, time:200, xp:150, cost:{"三钛合金":2000,"磁场聚合物":35, "铷":15, "生物质":50}, bonuses:{salvageEfficiency:0.90} },
+  // ===== 势力同位素标记打捞臂（对标势力采矿/采气提升器，残骸打捞注入器系，需蓝图；渠道逐件对标矿提孪生件：货柜 S/M/L + LP_STORE + STAR_BELT） =====
+  "sansha_salvage_injector":  { id:"sansha_salvage_injector",  name:"静默残骸打捞注入器",       slot:"low", level:65, time:130, xp:95,  cost:{"三钛合金":1100,"等离子体":50, "铷":5, "生物质":25, "静默集群装备生产许可A":10}, bonuses:{salvageEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "angel_salvage_injector_outpost": { id:"angel_salvage_injector_outpost", name:"苍穹劫团残骸打捞注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80, "稀有气体":20, "苍穹劫团装备生产许可D":3}, bonuses:{salvageEfficiency:0.35}, faction:"angel", requiresBlueprint:true },
+  "blood_salvage_injector_nexus":  { id:"blood_salvage_injector_nexus",  name:"赤誓残骸打捞注入器·枢纽型",   slot:"low", level:45, time:75, xp:55,  cost:{"三钛合金":600, "等离子体":35, "铷":3, "生物质":15, "赤誓教团装备生产许可B":8}, bonuses:{salvageEfficiency:0.85}, faction:"blood", requiresBlueprint:true },
+  "sansha_salvage_injector_node":  { id:"sansha_salvage_injector_node",  name:"静默残骸打捞注入器·节点型",   slot:"low", level:25, time:45, xp:30,  cost:{"三钛合金":300, "同位素":100, "同位聚合体":15, "静默集群装备生产许可C":5}, bonuses:{salvageEfficiency:0.55}, faction:"sansha", requiresBlueprint:true },
+  "alliance_salvage_injector": { id:"alliance_salvage_injector", name:"联盟残骸打捞注入器",     slot:"low", level:65, time:130, xp:95,  cost:{"三钛合金":1320,"磁场聚合物":60, "铷":6, "生物质":30}, bonuses:{salvageEfficiency:0.80}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
+
   // ===== 考古装备（仅考古舰可装备，不可用于战斗，不可安装战斗装备） =====
   // 高槽：遗迹分析仪 — 提升扫描强度
   "archaeo_analyzer_i": { id:"archaeo_analyzer_i", name:"遗迹分析仪 I", slot:"high", level:1,  time:20, xp:14, cost:{"三钛合金":40,"类银超金属":15}, bonuses:{archaeologyScan:5},  shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
@@ -303,6 +316,17 @@ const LP_STORE_BLUEPRINTS = [
     dataMaterial:"萨沙高级加密数据",
     dataRequired:10,
     description:"永久解锁联盟气体同化注入器制造配方"
+  },
+  {
+    id:"alliance_salvage_injector_blueprint",
+    name:"联盟残骸打捞注入器蓝图",
+    kind:"equipmentBlueprint",
+    equipmentId:"alliance_salvage_injector",
+    lpPrice:836,
+    sourceZoneId:"sansha_command_matrix",
+    dataMaterial:"萨沙高级加密数据",
+    dataRequired:10,
+    description:"永久解锁联盟残骸打捞注入器制造配方"
   }
 ];
 
@@ -397,7 +421,7 @@ function getEquipmentRecipeCategory(equipment) {
     if (equipment.bonuses && equipment.bonuses.miningEfficiency) return "mining";
     if (equipment.bonuses && equipment.bonuses.gasEfficiency) return "gas";
   }
-  if (equipment.slot === "low" && equipment.bonuses && (equipment.bonuses.miningLaserEfficiency || equipment.bonuses.gasLaserEfficiency)) return "collect_boost";
+  if (equipment.slot === "low" && equipment.bonuses && (equipment.bonuses.miningLaserEfficiency || equipment.bonuses.gasLaserEfficiency || equipment.bonuses.salvageEfficiency)) return "collect_boost";
   return "mining";
 }
 
@@ -469,6 +493,7 @@ const EQUIPMENT_BONUS_NAMES = {
   gasBonus:"气体采集总加成",
   miningLaserEfficiency:"采矿激光器效果",
   gasLaserEfficiency:"气云采集器效果",
+  salvageEfficiency:"打捞臂效果",
   shieldCapacity:"护盾容量",
   shieldCapacityPercent:"护盾容量",
   armorCapacityPercent:"装甲容量",
@@ -492,7 +517,7 @@ const ARCHAEOLOGY_REDUCTION_BONUS_KEYS = ["archaeologyStabilizer", "archaeologyC
 const ARCHAEOLOGY_PERCENT_BONUS_KEYS = ["archaeologyDecoder", "archaeologyNonFatalAvoid", "archaeologyCopyChance"];
 
 function formatEquipmentBonusValue(key, value) {
-  if (["miningEfficiency","gasEfficiency","miningBonus","gasBonus","miningLaserEfficiency","gasLaserEfficiency"].includes(key)) {
+  if (["miningEfficiency","gasEfficiency","miningBonus","gasBonus","miningLaserEfficiency","gasLaserEfficiency","salvageEfficiency"].includes(key)) {
     return "+" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
   if (RIG_REDUCTION_BONUS_KEYS.includes(key) || ARCHAEOLOGY_REDUCTION_BONUS_KEYS.includes(key)) {

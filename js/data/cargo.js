@@ -25,6 +25,38 @@ const CARGO_CLASS_SIZES = {
 // 每个被击坠敌人的基础掉落概率（按 kind）；同比例压缩 ÷10：normal 0.6% / elite 1.0% / boss 1.5%
 const CARGO_DROP_CHANCE = { normal: 0.006, elite: 0.010, boss: 0.015 };
 
+// ============================================================================
+// 同位素标记打捞臂：主动打捞舰船组件（开启开关 + 已装备打捞臂 + 有同位素时触发）
+//   - 档位按「敌舰等级」映射到舰船工程部件配方等级（1/15/35/55/80/90）。
+//   - 每个档位 3 种基础组件（综合舰体/动力核心/功能组件），命中随机抽 1 种。
+//   - 数量随敌舰 kind：normal×1 / elite×2 / boss×3（与同位素消耗保持一致）。
+//   - 触发概率同货柜级别：baseChance[kind] × (1+ΣsalvageEfficiency)，上限 50%。
+// ============================================================================
+const SALVAGE_COMPONENT_TIERS = [
+  { min: 90, tier: "supercapital" },
+  { min: 80, tier: "capital" },
+  { min: 55, tier: "battleship" },
+  { min: 35, tier: "cruiser" },
+  { min: 15, tier: "destroyer" },
+  { min: 0,  tier: "" }
+];
+const SALVAGE_COMPONENT_IDS = {
+  "": ["integrated_hull", "power_core", "functional_system"],
+  "destroyer": ["destroyer_integrated_hull", "destroyer_power_core", "destroyer_functional_system"],
+  "cruiser": ["cruiser_integrated_hull", "cruiser_power_core", "cruiser_functional_system"],
+  "battleship": ["battleship_integrated_hull", "battleship_power_core", "battleship_functional_system"],
+  "capital": ["capital_integrated_hull", "capital_power_core", "capital_functional_system"],
+  "supercapital": ["supercapital_integrated_hull", "supercapital_power_core", "supercapital_functional_system"]
+};
+function getSalvageComponentTier(enemyLevel) {
+  const lv = Number(enemyLevel) || 0;
+  for (const t of SALVAGE_COMPONENT_TIERS) if (lv >= t.min) return t.tier;
+  return "";
+}
+function getSalvageComponentQty(kind) {
+  return kind === "boss" ? 3 : (kind === "elite" ? 2 : 1);
+}
+
 // 尺寸 → 开箱抽取次数（越大越多奖励）
 const CARGO_SIZE_ROLLS = { S: 1, M: 1, L: 2, XL: 3 };
 
@@ -168,16 +200,22 @@ const CARGO_BLUEPRINT_BY_SIZE = {
   S:  [
     { id: "blueprint:angel_mining_laser_outpost",          weight: 1.5 },
     { id: "blueprint:angel_mineral_assimilation_outpost",  weight: 1.5 },
-    { id: "blueprint:sansha_drone_link_outpost",           weight: 1.5 }
+    { id: "blueprint:sansha_drone_link_outpost",           weight: 1.5 },
+    { id: "blueprint:angel_gas_assimilation_outpost",      weight: 1.5 },
+    { id: "blueprint:angel_salvage_injector_outpost",     weight: 1.5 }
   ],
   M:  [
     { id: "blueprint:blood_servant_drone_link_sacrifice",  weight: 1.5 },
-    { id: "blueprint:sansha_mineral_assimilation_node",    weight: 1.5 }
+    { id: "blueprint:sansha_mineral_assimilation_node",    weight: 1.5 },
+    { id: "blueprint:sansha_gas_assimilation_node",        weight: 1.5 },
+    { id: "blueprint:sansha_salvage_injector_node",        weight: 1.5 }
   ],
   L:  [
     { id: "blueprint:blood_mining_laser_hunt",             weight: 1.5 },
     { id: "blueprint:blood_mineral_assimilation_nexus",    weight: 1.5 },
-    { id: "blueprint:sansha_gas_harvester_nexus",          weight: 1.5 }
+    { id: "blueprint:sansha_gas_harvester_nexus",          weight: 1.5 },
+    { id: "blueprint:blood_gas_assimilation_nexus",        weight: 1.5 },
+    { id: "blueprint:blood_salvage_injector_nexus",        weight: 1.5 }
   ],
   XL: [
     { id: "blueprint:angel_drone_link_war",                weight: 1.5 },
@@ -411,7 +449,10 @@ function getCargoDropInfo(size) {
 // 返回 { size, itemId } 或 null（未掉落）。
 function rollCargoDrop(enemy, zone, rng, state) {
   if (!enemy || !zone) return null;
-  const chance = CARGO_DROP_CHANCE[enemy.kind] || 0;
+  // 同位素标记打捞臂：被动提升货柜掉率（装备即生效，与开关无关）；上限 50% 防爆
+  const baseChance = CARGO_DROP_CHANCE[enemy.kind] || 0;
+  const salvageBonus = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+  const chance = Math.min(baseChance * (1 + salvageBonus), 0.5);
   const roll = (typeof rng === "function" ? rng() : Math.random());
   if (roll >= chance) return null;
   const cls = getEnemyCargoClass(zone.faction, enemy.type);

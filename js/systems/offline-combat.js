@@ -128,6 +128,9 @@
     }
     s.fuel = RR.get(state, "consumable:fuel");
     s.fuelInit = s.fuel;
+    // 同位素标记打捞臂：主动打捞同位素消耗（会话级虚拟余额，跨段累计，flush 一次性 apply；与燃料同机制）
+    s.iso = RR.get(state, "planetary:同位素");
+    s.isoInit = s.iso;
   }
   function canFireVirtual(inputs, zone, s, state) {
     if (!inputs.weapons || inputs.weapons.length === 0) return false;
@@ -350,6 +353,17 @@
       const cargoClsMap = (cargoZoneMap[cargoCls] = cargoZoneMap[cargoCls] || { normal: 0, elite: 0, boss: 0 });
       cargoClsMap[enemy.kind]++;
     }
+    // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才记录；死亡空间不触发，与货柜一致）
+    if (!isDeathspace && state.combat.salvageArmActive && (typeof getSalvageEfficiency === "function" ? getSalvageEfficiency(state) : 0) > 0) {
+      const isoCost = (typeof getSalvageComponentQty === "function") ? getSalvageComponentQty(enemy.kind) : 1; // 1/2/3
+      if ((s.iso || 0) >= isoCost) {
+        s.iso -= isoCost;
+        const tier = (typeof getSalvageComponentTier === "function") ? getSalvageComponentTier(enemy.level) : "";
+        const sk = (s.salvageByTier = s.salvageByTier || {});
+        const tk = (sk[tier] = sk[tier] || { normal: 0, elite: 0, boss: 0 });
+        tk[enemy.kind] = (tk[enemy.kind] || 0) + 1;
+      }
+    }
     // 战术材料（按 kind 累计 N；期望数量在 flush 计算）
     if (enemy.kind === "elite") da.tactical.elite++;
     else if (enemy.kind === "boss") da.tactical.boss++;
@@ -373,6 +387,7 @@
       const enemies = built.enemies.map(e => ({
         id: e.id, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
         dodge: e.dodge, baseDamage: e.baseDamage, kind: e.kind, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
+        level: e.level,
         deathspaceLeader: false, deathspaceWave: 0, _rewarded: false
       }));
       const res = simulateWave(state, enemies, zone, false, null, s, nowRef);
@@ -766,7 +781,10 @@
         for (const kind of ["normal", "elite", "boss"]) {
           const n = kindCounts[kind] || 0;
           if (!n) continue;
-          const chance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
+          // 同位素标记打捞臂：被动提升货柜掉率（与在线 rollCargoDrop 同公式 min(base*(1+b),0.5)）
+          const salvageBonus = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+          const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
+          const chance = Math.min(baseChance * (1 + salvageBonus), 0.5);
           const drops = batchCount(n, chance, rng);
           for (let d = 0; d < drops; d++) {
             const size = cargoWeightedPick(spec.sizes.map((sz, i) => ({ id: sz, weight: spec.weights[i] })), rng).id;
@@ -776,6 +794,35 @@
           }
         }
       }
+    }
+    // 1.8) 同位素标记打捞臂：主动打捞舰船组件（按敌舰等级档位，确定性重滚；同位素消耗已在 recordKill 按会话虚拟余额门控）
+    const salvageBonus2 = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+    const sb = s.salvageByTier;
+    if (sb) {
+      for (const tier in sb) {
+        const ids = (typeof SALVAGE_COMPONENT_IDS !== "undefined" && SALVAGE_COMPONENT_IDS[tier]) || null;
+        if (!ids) continue;
+        const tk = sb[tier];
+        for (const kind of ["normal", "elite", "boss"]) {
+          const n = tk[kind] || 0;
+          if (!n) continue;
+          const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
+          const chance = Math.min(baseChance * (1 + salvageBonus2), 0.5);
+          const drops = batchCount(n, chance, rng);
+          const qty = (typeof getSalvageComponentQty === "function") ? getSalvageComponentQty(kind) : 1;
+          for (let d = 0; d < drops; d++) {
+            const compId = ids[Math.floor(rng() * ids.length)];
+            RR.add(state, "component:" + compId, qty);
+            addResource(s, "component:" + compId, qty);
+          }
+        }
+      }
+    }
+    // 主动打捞同位素消耗（每击毁扣，开状态才记；flush 一次性 apply，与燃料同机制）
+    const isoUsed = (s.isoInit || 0) - (s.iso || 0);
+    if (isoUsed > 0) {
+      RR.spend(state, "planetary:同位素", isoUsed);
+      addResource(s, "planetary:同位素", -isoUsed);
     }
     // 2) 区域特殊掉落
     for (const zoneId in da.zoneSpecial) {

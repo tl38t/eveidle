@@ -62,6 +62,40 @@ function renderInstalledCombatControls(display) {
   if (repairRow) repairRow.innerHTML = display.repairers.length ? display.repairers.map(module => `<span class="repair-toggle on installed">${module.name} · 自动</span>`).join("") : '<span class="combat-module-empty">未安装维修装备</span>';
 }
 
+// 同位素标记打捞臂：战斗界面开关（仅已装备打捞臂时显示）。
+// 开=燃料×2 + 每击毁消耗同位素 + 打捞舰船组件；关=仅被动提升货柜掉率。
+function renderCombatSalvageToggle() {
+  const title = document.getElementById("combat-salvage-title");
+  const row = document.getElementById("combat-salvage-arm-row");
+  if (!row) return;
+  const equipped = (typeof hasSalvageArmEquipped === "function") ? hasSalvageArmEquipped(gameState) : false;
+  if (!equipped) {
+    if (title) title.style.display = "none";
+    row.style.display = "none";
+    row.innerHTML = "";
+    return;
+  }
+  if (title) title.style.display = "";
+  row.style.display = "";
+  const active = gameState.combat.salvageArmActive === true;
+  const isoHave = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "planetary:同位素") : 0;
+  const label = active
+    ? "主动打捞：开（燃料×2 · 每击毁消耗同位素 · 打捞舰船组件）"
+    : "主动打捞：关（仅被动提升货柜掉率）";
+  const btnStyle = "width:100%;text-align:left;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;box-sizing:border-box;border:1px solid " +
+    (active ? "#3fd07a" : "#3a4a5a") + ";background:" + (active ? "rgba(63,208,122,.16)" : "rgba(255,255,255,.04)") +
+    ";color:" + (active ? "#8ff0b5" : "#9fb3c8") + ";";
+  row.innerHTML = `<button id="btn-salvage-arm-toggle" style="${btnStyle}">${active ? "⦿" : "○"} ${label}</button>` +
+    (active && isoHave <= 0 ? '<span style="color:#ffb454;font-size:11px;margin-left:6px;">⚠ 同位素不足，无法打捞</span>' : '');
+  const btn = document.getElementById("btn-salvage-arm-toggle");
+  if (btn) {
+    btn.onclick = () => {
+      gameState.combat.salvageArmActive = !(gameState.combat.salvageArmActive === true);
+      if (typeof renderCombatPanel === "function") renderCombatPanel();
+    };
+  }
+}
+
 function renderCombatEquipmentRack(display) {
   const grid = document.getElementById("combat-equipment-grid"); if (!grid) return;
   const icons = { high:"⚡", mid:"◉", low:"◆", rig:"◇" };
@@ -258,6 +292,7 @@ function renderCombatPanel(now) {
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("combat-cl-val", display.level); text("combat-laser-lv", display.skills.laser); text("combat-cannon-lv", display.skills.cannon); text("combat-missile-lv", display.skills.missile); text("combat-target-lv", display.skills.targeting);
   renderInstalledCombatControls(display); renderCombatEquipmentRack(display); renderCombatLiveDisplay(display);
+  renderCombatSalvageToggle();
   mountCombat3D(display);
   renderCombatDropPreview(display);
   return display;

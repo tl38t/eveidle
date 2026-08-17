@@ -198,6 +198,10 @@ function computeVolleyFuel(state, zone) {
     if (!(fc > 0)) continue;
     volleyFuel += Math.max(1, Math.round(fc * getCombatFuelMultiplierFromState(state, zone)));
   }
+  // 同位素标记打捞臂：主动打捞开启时，一轮齐射燃料消耗翻倍（与离线共用本函数，两端一致）。
+  if (state && state.combat && state.combat.salvageArmActive && typeof hasSalvageArmEquipped === "function" && hasSalvageArmEquipped(state)) {
+    volleyFuel *= 2;
+  }
   return volleyFuel;
 }
 
@@ -683,6 +687,29 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   // 货柜系统：敌方船被击坠低概率掉货柜（死亡空间不掉落）；内容待玩家开箱揭晓。
   const cargoDrop = deathspace ? null : (typeof rollCargoDrop === "function" ? rollCargoDrop(enemy, zone, roll, state) : null);
   if (cargoDrop) c.lastLoot += " · 货柜" + cargoDrop.size + " ×1";
+  // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才触发；死亡空间不触发，与货柜一致）
+  if (!deathspace && state.combat.salvageArmActive && typeof hasSalvageArmEquipped === "function" && hasSalvageArmEquipped(state)) {
+    const isoCost = getSalvageComponentQty(enemy.kind); // 1/2/3，与组件数量一致
+    const isoHave = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(state, "planetary:同位素") : 0;
+    if (isoHave >= isoCost) {
+      ResourceRegistry.spend(state, "planetary:同位素", isoCost);
+      c.lastSalvage = c.lastSalvage || { attempts:0, hits:0, isoSpent:0, components:[] };
+      c.lastSalvage.attempts++;
+      c.lastSalvage.isoSpent += isoCost;
+      const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[enemy.kind]) || 0;
+      const chance = Math.min(baseChance * (1 + getSalvageEfficiency(state)), 0.5);
+      if (roll() < chance) {
+        c.lastSalvage.hits++;
+        const tier = getSalvageComponentTier(enemy.level);
+        const ids = (typeof SALVAGE_COMPONENT_IDS !== "undefined" && SALVAGE_COMPONENT_IDS[tier]) || SALVAGE_COMPONENT_IDS[""];
+        const compId = ids[Math.floor(roll() * ids.length)];
+        const qty = isoCost;
+        ResourceRegistry.add(state, "component:" + compId, qty);
+        c.lastSalvage.components.push(compId + "×" + qty);
+        c.lastLoot += " · 残骸组件 " + compId + " ×" + qty;
+      }
+    }
+  }
   const coreRoll = roll();
   const protoRoll = roll();
   const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave, coreRoll, protoRoll, state) : [];
@@ -835,6 +862,9 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   if (c.queueItemId && c.queueWavesTarget > 0) {
     c.queueWavesDone = (c.queueWavesDone || 0) + 1;
     if (c.queueWavesDone >= c.queueWavesTarget) {
+      // 补发收尾波事件：原本队列终结前直接 return，会吞掉最后一波的 combat:waveCleared，
+      // 导致依赖"第4波"的监听（如 C6 教程标记）永远收不到。finalize 前先发一次。
+      doEmit("combat:waveCleared", { zoneId: zone.id, wave: c.wave });
       if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
       return false; // 不走后续 spawn，战斗已结束
     }

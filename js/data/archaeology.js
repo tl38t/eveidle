@@ -6,11 +6,11 @@
 
 // ---- 五档掉落/经济配置 ----
 const ARCHAEOLOGY_TIERS = Object.freeze({
-  I:   { tier:"I",   level:1,  ship:"heron",      difficulty:21,  time:30,  fuel:2,  xp:50,   commonISK:[600, 900, 1200],     uniqueISK:[3000, 4500, 6000],     lpValue:50,   calibrationRate:0.020,  calibrationAmount:1, uniqueRate:0.010, lpBase:0.0005, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:250  },
-  II:  { tier:"II",  level:15, ship:"tracer",      difficulty:64,  time:60,  fuel:5,  xp:150,  commonISK:[1800, 2700, 3600],    uniqueISK:[9000, 13500, 18000],    lpValue:150,  calibrationRate:0.015,  calibrationAmount:1, uniqueRate:0.008, lpBase:0.0007, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:1500 },
-  III: { tier:"III", level:35, ship:"starmap",     difficulty:121, time:120, fuel:10, xp:400,  commonISK:[4500, 6750, 9000],    uniqueISK:[22500, 33750, 45000],   lpValue:400,  calibrationRate:0.010,  calibrationAmount:2, uniqueRate:0.006, lpBase:0.0010, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:4500 },
-  IV:  { tier:"IV",  level:55, ship:"farscope",    difficulty:207, time:180, fuel:20, xp:900,  commonISK:[9000, 13500, 18000],  uniqueISK:[45000, 67500, 90000],   lpValue:1000, calibrationRate:0.0075, calibrationAmount:2, uniqueRate:0.004, lpBase:0.0015, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:12000 },
-  V:   { tier:"V",   level:80, ship:"illuminator", difficulty:300, time:300, fuel:35, xp:2000, commonISK:[18000, 27000, 36000], uniqueISK:[90000, 135000, 180000], lpValue:2500, calibrationRate:0.005,  calibrationAmount:3, uniqueRate:0.002, lpBase:0.0020, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:7800 }
+  I:   { tier:"I",   level:1,  ship:"heron",      difficulty:21,  time:30,    xp:50,   commonISK:[600, 900, 1200],     uniqueISK:[3000, 4500, 6000],     lpValue:50,   calibrationRate:0.020,  calibrationAmount:1, uniqueRate:0.010, lpBase:0.0005, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:250  },
+  II:  { tier:"II",  level:15, ship:"tracer",      difficulty:64,  time:60,    xp:150,  commonISK:[1800, 2700, 3600],    uniqueISK:[9000, 13500, 18000],    lpValue:150,  calibrationRate:0.015,  calibrationAmount:1, uniqueRate:0.008, lpBase:0.0007, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:1500 },
+  III: { tier:"III", level:35, ship:"starmap",     difficulty:121, time:120,  xp:400,  commonISK:[4500, 6750, 9000],    uniqueISK:[22500, 33750, 45000],   lpValue:400,  calibrationRate:0.010,  calibrationAmount:2, uniqueRate:0.006, lpBase:0.0010, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:4500 },
+  IV:  { tier:"IV",  level:55, ship:"farscope",    difficulty:207, time:180,  xp:900,  commonISK:[9000, 13500, 18000],  uniqueISK:[45000, 67500, 90000],   lpValue:1000, calibrationRate:0.0075, calibrationAmount:2, uniqueRate:0.004, lpBase:0.0015, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:12000 },
+  V:   { tier:"V",   level:80, ship:"illuminator", difficulty:300, time:300,  xp:2000, commonISK:[18000, 27000, 36000], uniqueISK:[90000, 135000, 180000], lpValue:2500, calibrationRate:0.005,  calibrationAmount:3, uniqueRate:0.002, lpBase:0.0020, siteMultipliers:[0.8, 1.0, 1.3], economyCostISK:7800 }
 });
 
 // ---- 三类遗迹 profile 定义 ----
@@ -26,22 +26,25 @@ const SITE_PROFILES = Object.freeze({
 });
 
 // ---- 15 个遗迹（5 档 × 3 变体） — lpMultiplier统一为1.0（profile提供绝对倍率）----
+// 考古燃料机制变更：自本版起，考古每周期燃料由「出战考古舰装载的装备」决定
+// （遍历 high/mid/low/rig，汇总所有带 combat.fuelCost 的装备，含武器与维修件；纯加成件不计），
+// 不再是地点固定成本。下方 ARCHAEOLOGY_SITES 已移除原 fuel 字段——引擎不再读取地点油耗。
 const ARCHAEOLOGY_SITES = Object.freeze([
-  { id:"site_i_a", tier:"I", profile:"salvage",  name:"失落信标残骸", level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.0, backlashDamage:18 },
-  { id:"site_i_b", tier:"I", profile:"research", name:"远古殖民舱",   level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.0, backlashDamage:18 },
-  { id:"site_i_c", tier:"I", profile:"treasure", name:"漂流货柜群",   level:1,  difficulty:21,  time:30,  fuel:2,  xp:50,   lpMultiplier:1.0, backlashDamage:18 },
-  { id:"site_ii_a", tier:"II", profile:"salvage",  name:"破碎巡防站", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.0, backlashDamage:34 },
-  { id:"site_ii_b", tier:"II", profile:"research", name:"废弃采矿平台", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.0, backlashDamage:34 },
-  { id:"site_ii_c", tier:"II", profile:"treasure", name:"星图中继塔", level:15, difficulty:64,  time:60,  fuel:5,  xp:150,  lpMultiplier:1.0, backlashDamage:34 },
-  { id:"site_iii_a", tier:"III", profile:"salvage",  name:"沉睡战列残骸", level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.0, backlashDamage:70 },
-  { id:"site_iii_b", tier:"III", profile:"research", name:"湮灭实验室",   level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.0, backlashDamage:70 },
-  { id:"site_iii_c", tier:"III", profile:"treasure", name:"深空方尖碑",   level:35, difficulty:121, time:120, fuel:10, xp:400,  lpMultiplier:1.0, backlashDamage:70 },
-  { id:"site_iv_a", tier:"IV", profile:"salvage",  name:"湮灭旗舰坟场", level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.0, backlashDamage:149 },
-  { id:"site_iv_b", tier:"IV", profile:"research", name:"虚空研究所",   level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.0, backlashDamage:149 },
-  { id:"site_iv_c", tier:"IV", profile:"treasure", name:"远古跃迁枢纽", level:55, difficulty:207, time:180, fuel:20, xp:900,  lpMultiplier:1.0, backlashDamage:149 },
-  { id:"site_v_a", tier:"V", profile:"salvage",  name:"失落文明圣殿", level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.0, backlashDamage:343 },
-  { id:"site_v_b", tier:"V", profile:"research", name:"湮灭母舰核心", level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.0, backlashDamage:343 },
-  { id:"site_v_c", tier:"V", profile:"treasure", name:"深渊观测站",   level:80, difficulty:300, time:300, fuel:35, xp:2000, lpMultiplier:1.0, backlashDamage:343 }
+  { id:"site_i_a", tier:"I", profile:"salvage",  name:"失落信标残骸", level:1,  difficulty:21,  time:30,    xp:50,   lpMultiplier:1.0, backlashDamage:18 },
+  { id:"site_i_b", tier:"I", profile:"research", name:"远古殖民舱",   level:1,  difficulty:21,  time:30,    xp:50,   lpMultiplier:1.0, backlashDamage:18 },
+  { id:"site_i_c", tier:"I", profile:"treasure", name:"漂流货柜群",   level:1,  difficulty:21,  time:30,    xp:50,   lpMultiplier:1.0, backlashDamage:18 },
+  { id:"site_ii_a", tier:"II", profile:"salvage",  name:"破碎巡防站", level:15, difficulty:64,  time:60,    xp:150,  lpMultiplier:1.0, backlashDamage:34 },
+  { id:"site_ii_b", tier:"II", profile:"research", name:"废弃采矿平台", level:15, difficulty:64,  time:60,    xp:150,  lpMultiplier:1.0, backlashDamage:34 },
+  { id:"site_ii_c", tier:"II", profile:"treasure", name:"星图中继塔", level:15, difficulty:64,  time:60,    xp:150,  lpMultiplier:1.0, backlashDamage:34 },
+  { id:"site_iii_a", tier:"III", profile:"salvage",  name:"沉睡战列残骸", level:35, difficulty:121, time:120,  xp:400,  lpMultiplier:1.0, backlashDamage:70 },
+  { id:"site_iii_b", tier:"III", profile:"research", name:"湮灭实验室",   level:35, difficulty:121, time:120,  xp:400,  lpMultiplier:1.0, backlashDamage:70 },
+  { id:"site_iii_c", tier:"III", profile:"treasure", name:"深空方尖碑",   level:35, difficulty:121, time:120,  xp:400,  lpMultiplier:1.0, backlashDamage:70 },
+  { id:"site_iv_a", tier:"IV", profile:"salvage",  name:"湮灭旗舰坟场", level:55, difficulty:207, time:180,  xp:900,  lpMultiplier:1.0, backlashDamage:149 },
+  { id:"site_iv_b", tier:"IV", profile:"research", name:"虚空研究所",   level:55, difficulty:207, time:180,  xp:900,  lpMultiplier:1.0, backlashDamage:149 },
+  { id:"site_iv_c", tier:"IV", profile:"treasure", name:"远古跃迁枢纽", level:55, difficulty:207, time:180,  xp:900,  lpMultiplier:1.0, backlashDamage:149 },
+  { id:"site_v_a", tier:"V", profile:"salvage",  name:"失落文明圣殿", level:80, difficulty:300, time:300,  xp:2000, lpMultiplier:1.0, backlashDamage:343 },
+  { id:"site_v_b", tier:"V", profile:"research", name:"湮灭母舰核心", level:80, difficulty:300, time:300,  xp:2000, lpMultiplier:1.0, backlashDamage:343 },
+  { id:"site_v_c", tier:"V", profile:"treasure", name:"深渊观测站",   level:80, difficulty:300, time:300,  xp:2000, lpMultiplier:1.0, backlashDamage:343 }
 ]);
 
 function getArchaeologySite(siteId) {

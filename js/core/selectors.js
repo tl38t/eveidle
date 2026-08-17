@@ -1494,6 +1494,33 @@ function getInstalledCombatModulesFromState(state) {
   return modules;
 }
 
+// 同位素标记打捞臂：汇总已装备打捞臂的 salvageEfficiency 总和（被动放大器，装备即生效，与开关无关）。
+// 默认读取出战战斗舰；考古等其它岗位可传入对应舰船实例（该实例直接含 .fitting）。
+// 主动打捞（消耗同位素 + 打捞舰船组件）由 combat.js 在 state.combat.salvageArmActive 开启时触发。
+function getSalvageEfficiency(state, shipInstance) {
+  state = state || (typeof gameState !== "undefined" ? gameState : null);
+  if (!state) return 0;
+  const ship = shipInstance || getActiveCombatShipState(state);
+  if (!ship) return 0;
+  let fitting = ship.fitting;
+  if (!fitting && typeof getFittingFromInstance === "function") fitting = getFittingFromInstance(ship);
+  if (!fitting) return 0;
+  let total = 0;
+  for (const slot of ["high", "mid", "low", "rig"]) {
+    for (const ref of fitting[slot] || []) {
+      const resolved = resolveEquipmentReference(state, ref);
+      const item = resolved && resolved.definition;
+      if (item && item.bonuses) total += (item.bonuses.salvageEfficiency || 0) * (resolved.multiplier || 1);
+    }
+  }
+  return total;
+}
+
+// 当前出战舰是否装备了打捞臂（用于战斗界面开关显隐）。
+function hasSalvageArmEquipped(state) {
+  return getSalvageEfficiency(state) > 0;
+}
+
 function getCombatLevelFromState(state) {
   return getCombatLevelBreakdownFromState(state).level;
 }
@@ -2437,11 +2464,11 @@ function getBlueprintShipPreview(item) {
     laserDamage:"激光伤害", missileDamage:"导弹伤害", cannonDamage:"射弹伤害",
     capacitorRecharge:"电容回充", targetingSpeed:"锁定速度", speed:"速度",
     armorRepair:"装甲维修", structureRepair:"结构维修", hitBonus:"命中",
-    miningLaserEfficiency:"采矿装备效果", gasLaserEfficiency:"采气装备效果",
+    miningLaserEfficiency:"采矿装备效果", gasLaserEfficiency:"采气装备效果", salvageEfficiency:"打捞效率",
     fleetMiningSpeed:"舰队采矿速度", smeltingSpeed:"冶炼速度",
     archaeologyScanStrength:"扫描强度", archaeologyFailureDamageReduction:"失败反噬减免"
   };
-  const percentKeys = new Set(["shieldCapacity", "armorCapacity", "structureCapacity", "laserDamage", "missileDamage", "cannonDamage", "capacitorRecharge", "targetingSpeed", "speed", "armorRepair", "structureRepair", "miningLaserEfficiency", "gasLaserEfficiency", "fleetMiningSpeed", "smeltingSpeed", "archaeologyFailureDamageReduction"]);
+  const percentKeys = new Set(["shieldCapacity", "armorCapacity", "structureCapacity", "laserDamage", "missileDamage", "cannonDamage", "capacitorRecharge", "targetingSpeed", "speed", "armorRepair", "structureRepair", "miningLaserEfficiency", "gasLaserEfficiency", "salvageEfficiency", "fleetMiningSpeed", "smeltingSpeed", "archaeologyFailureDamageReduction"]);
   const bonuses = Object.entries(ship.bonuses || {}).map(([key, value]) =>
     (bonusNames[key] || key) + " +" + (percentKeys.has(key) ? Math.round(value * 100) + "%" : value)
   );

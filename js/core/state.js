@@ -213,6 +213,7 @@ const gameState = {
     lastSpecialLoot: "",
     lastEnemyVolley: null,
     active: false,
+    salvageArmActive: false, // 同位素标记打捞臂主动打捞开关：装备后可在战斗界面切换；开=燃料×2+消耗同位素+打捞舰船组件，关=仅被动提升货柜掉率
     repairUntil: 0,        // 旧字段：仅存档迁移兼容占位，迁移后即清零，绝不作为权威判断（见 persistence.migrateCombatEquipmentState）
     destroyedShip: null,   // 旧字段：同上，权威维修状态见 repairs[instanceId]
     repairs: {},           // 问题2 权威：per-ship 维修截止时间戳 combat.repairs[instanceId] = untilTs
