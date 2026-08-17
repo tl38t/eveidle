@@ -496,7 +496,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 150, rechargeRate: 8 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 2, low: 2, rig: 2 },
-    bonuses: { miningLaserEfficiency: 1.4 },
+    bonuses: { miningLaserEfficiency: 1.0 },
     unlock: { type: "shipEngineering", level: 35 }
   },
   gas_cruiser: {
@@ -507,7 +507,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 150, rechargeRate: 8 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 2, low: 2, rig: 2 },
-    bonuses: { gasLaserEfficiency: 1.4 },
+    bonuses: { gasLaserEfficiency: 1.0 },
     unlock: { type: "shipEngineering", level: 35 }
   },
   dolphin: {
