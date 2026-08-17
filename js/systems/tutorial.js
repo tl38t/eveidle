@@ -319,7 +319,7 @@
       }
       case "C4": return tsd.kill === true;
       case "C5": return tsd.wave1 === true;
-      case "C6": return tsd.wave4 === true && Boolean(tsd.c6Token);
+      case "C6": return tsd.wave4 === true;
       default: return false;
     }
   }
