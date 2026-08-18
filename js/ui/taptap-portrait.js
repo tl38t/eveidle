@@ -187,12 +187,14 @@
   }
   function tpStatsHTML(ship) {
     var hp = ship.hp;
+    var capRecharge = Math.max(0, Math.round((1 - (Number(ship.fuelEfficiency) || 1)) * 100));
     return '<div class="tp-stat-grid">'
       + '<div class="tp-stat"><span class="tp-stat-l">护盾</span><span class="tp-stat-v shield">' + hp.shield + "</span></div>"
       + '<div class="tp-stat"><span class="tp-stat-l">装甲</span><span class="tp-stat-v armor">' + hp.armor + "</span></div>"
       + '<div class="tp-stat"><span class="tp-stat-l">结构</span><span class="tp-stat-v hull">' + hp.structure + "</span></div>"
       + '<div class="tp-stat"><span class="tp-stat-l">闪避</span><span class="tp-stat-v">' + ship.dodge + "</span></div>"
       + '<div class="tp-stat"><span class="tp-stat-l">速度</span><span class="tp-stat-v speed">' + ship.speed + "</span></div>"
+      + '<div class="tp-stat"><span class="tp-stat-l">电容回充</span><span class="tp-stat-v capacitor">' + capRecharge + "%</span></div>"
       + "</div>";
   }
   function tpOverviewHTML(display, ship) {

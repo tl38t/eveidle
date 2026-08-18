@@ -2760,6 +2760,7 @@ function getHangarDisplayState(state, now) {
           scanStrength:Math.round(scanBase * scanMul),
           failureReduction
         },
+        fuelEfficiency:Number(config.fuelEfficiency) || 1,
         assignedActions,
         repairing:thisRepairing,
         repairRemaining:thisRepairRemaining,
