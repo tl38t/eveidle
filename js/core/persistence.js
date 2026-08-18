@@ -2254,13 +2254,17 @@ function getAchievementSyncService() {
   });
   const btnDeleteLocal = document.getElementById("btn-delete-local");
   if (btnDeleteLocal) btnDeleteLocal.addEventListener("click", () => {
-    if (!confirm("删除此设备的 localStorage 与两代设备备份（保留云端）？删除后将从云端恢复。")) return;
-    SaveManager.deleteLocalSaveOnly();
+    showDangerConfirm("⚠ 删除本地存档",
+      "<p class=\"dlg-body\">删除此设备的 localStorage 与两代设备备份（保留云端）？删除后将从云端恢复。</p>",
+      "确认删除",
+      () => { SaveManager.deleteLocalSaveOnly(); });
   });
   const btnPermanent = document.getElementById("btn-permanent-delete");
   if (btnPermanent) btnPermanent.addEventListener("click", () => {
-    if (!confirm("永久删除本地与云端存档？此操作不可恢复！")) return;
-    Promise.resolve(SaveManager.permanentDeleteSave()).then((ok) => { if (!ok) SaveManager._refreshCloudSaveStatus(); });
+    showDangerConfirm("⚠ 永久删除存档",
+      "<p class=\"dlg-body\">永久删除本地与云端存档？此操作不可恢复！</p>",
+      "确认永久删除",
+      () => { Promise.resolve(SaveManager.permanentDeleteSave()).then((ok) => { if (!ok) SaveManager._refreshCloudSaveStatus(); }); });
   });
 
   // 启动态变化 / 可见性恢复时刷新云同步状态显示。

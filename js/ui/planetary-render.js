@@ -161,10 +161,14 @@ function demolishPlanet(id) {
   if (!deployment) return false;
   if ((deployment.storage || 0) > 0) { alert("请先收取行星库存，再拆除该行星。"); return false; }
   const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
-  if (!confirm(`确定永久拆除${config ? config.name : "该行星"}吗？\n\n· 建设投入（星币 + 标准钛材）不会返还\n· 已到期停产的行星拆除同样不返还\n· 若日后重建，需再次支付全额建设费用`)) return false;
-  const result = dispatchGameAction(gameState, { type:"planetary/demolish", id }, Date.now());
-  if (result.changed) { planetVisualOffsets.delete(id); renderPlanetaryPage(); }
-  return result.changed;
+  showDangerConfirm("⚠ 永久拆除行星",
+    "<p class=\"dlg-body\">确定永久拆除" + (config ? config.name : "该行星") + "吗？<br><br>· 建设投入（星币 + 标准钛材）不会返还<br>· 已到期停产的行星拆除同样不返还<br>· 若日后重建，需再次支付全额建设费用</p>",
+    "确认拆除",
+    () => {
+      const result = dispatchGameAction(gameState, { type:"planetary/demolish", id }, Date.now());
+      if (result.changed) { planetVisualOffsets.delete(id); renderPlanetaryPage(); }
+    });
+  return false;
 }
 
 function showDeployModal() {

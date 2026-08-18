@@ -263,10 +263,14 @@ function renderBoosterPage(now) {
       if (unequipBtn) {
         var slot = unequipBtn.dataset.boosterSlot;
         if (!slot) return;
-        if (!confirm("确定卸下该增强剂？当前瓶剩余时间将作废，且不会返还。")) return;
-        var result = dispatchGameAction(gameState, { type:"booster/unequip", slot:slot }, Date.now());
-        if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
-        else { showBoosterToast(result.reason || "卸下失败", true); }
+        showDangerConfirm("⚠ 卸下增强剂",
+          "<p class=\"dlg-body\">确定卸下该增强剂？当前瓶剩余时间将作废，且不会返还。</p>",
+          "确认卸下",
+          function() {
+            var result = dispatchGameAction(gameState, { type:"booster/unequip", slot:slot }, Date.now());
+            if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
+            else { showBoosterToast(result.reason || "卸下失败", true); }
+          });
         return;
       }
       // 空槽点击：打开库存选择装载
@@ -288,10 +292,15 @@ function renderBoosterPage(now) {
         var item = compatibleItems[0];
         if (item.inv <= 0) { showBoosterToast("库存不足", true); return; }
         if (existing) {
-          if (!confirm("当前槽位已装载增强剂。替换后当前瓶剩余时间将作废，且不会返还。")) return;
-          var result = dispatchGameAction(gameState, { type:"booster/replace", slot:slot, itemId:item.id }, Date.now());
-          if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
-          else { showBoosterToast(result.reason || "替换失败", true); }
+          showDangerConfirm("⚠ 替换增强剂",
+            "<p class=\"dlg-body\">当前槽位已装载增强剂。替换后当前瓶剩余时间将作废，且不会返还。</p>",
+            "确认替换",
+            function() {
+              var result = dispatchGameAction(gameState, { type:"booster/replace", slot:slot, itemId:item.id }, Date.now());
+              if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
+              else { showBoosterToast(result.reason || "替换失败", true); }
+            });
+          return;
         } else {
           var result = dispatchGameAction(gameState, { type:"booster/equip", slot:slot, itemId:item.id }, Date.now());
           if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
@@ -327,10 +336,15 @@ function renderBoosterPage(now) {
           showBoosterToast("该增强剂已在槽位中", true);
           return;
         }
-        if (!confirm("替换后当前瓶剩余时间将作废，且不会返还。")) return;
-        var result = dispatchGameAction(gameState, { type:"booster/replace", slot:slot, itemId:itemId }, Date.now());
-        if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
-        else { showBoosterToast(result.reason || "替换失败", true); }
+        showDangerConfirm("⚠ 替换增强剂",
+          "<p class=\"dlg-body\">替换后当前瓶剩余时间将作废，且不会返还。</p>",
+          "确认替换",
+          function() {
+            var result = dispatchGameAction(gameState, { type:"booster/replace", slot:slot, itemId:itemId }, Date.now());
+            if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
+            else { showBoosterToast(result.reason || "替换失败", true); }
+          });
+        return;
       } else {
         // 空槽：直接装备
         var result = dispatchGameAction(gameState, { type:"booster/equip", slot:slot, itemId:itemId }, Date.now());
