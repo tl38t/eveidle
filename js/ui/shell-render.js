@@ -2249,8 +2249,17 @@ function onResearchProtocolAction(action, btn) {
   if (action === "autoenh-run") {
     const instanceId = btn.dataset.instanceId;
     if (!instanceId) return;
-    if (typeof confirm === "function" && !confirm("确认对该舰船执行自动强化？将按设定次数反复尝试直至部件不足。")) return;
-    const result = dispatchGameAction(gameState, { type:"research/runAutoEnhancement", instanceId, context:{} }, Date.now());
+    showDangerConfirm("⚠ 自动强化",
+      "<p class=\"dlg-body\">确认对该舰船执行自动强化？将按设定次数反复尝试直至部件不足。</p>",
+      "确认强化",
+      () => {
+        const result = dispatchGameAction(gameState, { type:"research/runAutoEnhancement", instanceId, context:{} }, Date.now());
+        if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+        showToast("自动强化完成 ｜ 尝试 " + result.attempts + " ｜ 成功 " + result.successes + " ｜ 失败 " + result.failures +
+          " ｜ 终等级 " + result.toLevel + " ｜ 停止：" + (result.stopReason || ""));
+        renderResearchPage();
+      });
+    return;
     if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
     showToast("自动强化完成 ｜ 尝试 " + result.attempts + " ｜ 成功 " + result.successes + " ｜ 失败 " + result.failures +
       " ｜ 终等级 " + result.toLevel + " ｜ 停止：" + (result.stopReason || ""));
@@ -2284,11 +2293,15 @@ function onResearchProtocolAction(action, btn) {
     return;
   }
   if (action === "intship-cancel") {
-    if (typeof confirm === "function" && !confirm("确认取消当前造船作业？已产出的组件与舰船保留，未完成部分不再继续。")) return;
-    const result = dispatchGameAction(gameState, { type:"research/cancelIntship" }, Date.now());
-    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
-    showToast("造船作业已取消");
-    renderResearchPage();
+    showDangerConfirm("⚠ 取消造船作业",
+      "<p class=\"dlg-body\">确认取消当前造船作业？已产出的组件与舰船保留，未完成部分不再继续。</p>",
+      "确认取消",
+      () => {
+        const result = dispatchGameAction(gameState, { type:"research/cancelIntship" }, Date.now());
+        if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+        showToast("造船作业已取消");
+        renderResearchPage();
+      });
     return;
   }
   const deploymentId = btn.dataset.deploymentId;
@@ -3364,26 +3377,36 @@ function installTutorialWidgetListeners() {
     let result;
     if (slot.type === "rig") {
       // 改装件槽：销毁 / 替换 / 安装均走专属 Action（事件契约 rig:destroyed / rig:replaced / rig:fitted）
+      const finishRigOp = () => {
+        const panel = document.getElementById("equipSelectPanel"); if (panel) panel.classList.remove("active");
+        buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel();
+      };
       if (option.dataset.rigDestroy) {
-        if (!confirm("确定销毁「" + (slot.name || "该改装件") + "」吗？\n\n⚠ 改装件拆卸即销毁，不会返还仓库，此操作不可撤销！")) return;
-        handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/destroyFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex }, Date.now()));
+        showDangerConfirm("⚠ 销毁改装件",
+          "<p class=\"dlg-body\">确定销毁「" + (slot.name || "该改装件") + "」吗？<br><br>⚠ 改装件拆卸即销毁，不会返还仓库，此操作不可撤销！</p>",
+          "确认销毁",
+          () => { handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/destroyFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex }, Date.now())); finishRigOp(); });
+        return;
       } else if (slot.equipmentId) {
         const newName = (EQUIPMENT_DB[option.dataset.equip] || {}).name || option.dataset.equip;
-        if (!confirm("确定用「" + newName + "」替换「" + (slot.name || "当前改装件") + "」吗？\n\n⚠ 被替换的旧改装件将被销毁，不会返还仓库，此操作不可撤销！")) return;
-        handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/replaceFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now()));
+        showDangerConfirm("⚠ 替换改装件",
+          "<p class=\"dlg-body\">确定用「" + newName + "」替换「" + (slot.name || "当前改装件") + "」吗？<br><br>⚠ 被替换的旧改装件将被销毁，不会返还仓库，此操作不可撤销！</p>",
+          "确认替换",
+          () => { handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/replaceFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now())); finishRigOp(); });
+        return;
       } else {
         // 新安装：同系列已装配则弹谐振提示（显示实际效果量），确认后再装
         const newRigId = option.dataset.equip;
         const newDef = EQUIPMENT_DB[newRigId];
         const inst = getShipInstanceFromState(gameState, orbitShipId);
         const preview = (newDef && newDef.slot === "rig" && inst) ? getRigResonancePreview(gameState, inst, newRigId) : null;
+        const doInstall = () => { handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:newRigId }, Date.now())); finishRigOp(); };
         if (preview && preview.existingCount > 0) {
-          showRigResonanceModal(preview, newDef, () => {
-            handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:newRigId }, Date.now()));
-          });
+          showRigResonanceModal(preview, newDef, doInstall);
         } else {
-          handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:newRigId }, Date.now()));
+          doInstall();
         }
+        return;
       }
     } else {
       result = dispatchGameAction(gameState, { type:"hangar/setFittingSlot", instanceId:orbitShipId, slot:slot.type, slotIndex:slot.slotIndex, equipmentId:option.dataset.equip || null }, Date.now());
@@ -3402,19 +3425,19 @@ function installTutorialWidgetListeners() {
   const orbitReset = document.getElementById("equipResetBtn"); if (orbitReset) orbitReset.addEventListener("click", () => {
     if (!orbitShipId) return;
     // 从真实显示态读取已装改装件，逐件列出即将销毁的名称（同名合并计数）。
-    // 此确认为破坏性操作专用，使用原生 confirm，不受设置中的强化提示开关控制。
     const display = getShipFittingDisplayState(gameState, orbitShipId); if (!display) return;
     const fittedRigNames = display.orbitSlots.filter(slot => slot.type === "rig" && slot.equipmentId).map(slot => slot.name || slot.equipmentId);
-    let message = "确定清空所有装备吗？\n\n普通装备将返还仓库（保留为未安装实例）。";
+    let body = "<p class=\"dlg-body\">确定清空所有装备吗？<br><br>普通装备将返还仓库（保留为未安装实例）。</p>";
     if (fittedRigNames.length) {
       const counts = new Map();
       for (const name of fittedRigNames) counts.set(name, (counts.get(name) || 0) + 1);
-      const lines = [...counts.entries()].map(([name, count]) => "  · " + name + (count > 1 ? " ×" + count : ""));
-      message += "\n\n⚠ 以下改装件将被永久销毁（不返还）：\n" + lines.join("\n");
+      const lines = [...counts.entries()].map(([name, count]) => "· " + name + (count > 1 ? " ×" + count : ""));
+      body += "<p class=\"dlg-body dlg-warn\">⚠ 以下改装件将被永久销毁（不返还）：<br>" + lines.join("<br>") + "</p>";
     }
-    if (!confirm(message)) return;
-    const result = dispatchGameAction(gameState, { type:"hangar/resetFitting", instanceId:orbitShipId }, Date.now());
-    if (result.changed) { buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel(); }
+    showDangerConfirm("⚠ 清空所有装备", body, "确认清空", () => {
+      const result = dispatchGameAction(gameState, { type:"hangar/resetFitting", instanceId:orbitShipId }, Date.now());
+      if (result.changed) { buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel(); }
+    });
   });
   const queueList = document.getElementById("queue-list"); if (queueList) queueList.addEventListener("click", event => {
     const button = event.target.closest("[data-queue-action]"); if (!button) return;
@@ -3424,7 +3447,12 @@ function installTutorialWidgetListeners() {
   });
   const startQueueButton = document.getElementById("btn-start-queue"); if (startQueueButton) startQueueButton.addEventListener("click", () => { if (startQueue()) { currentView = gameState.currentAction.skill; renderQueuePanel(); updateUI(); } });
   const stopQueueButton = document.getElementById("btn-stop-queue"); if (stopQueueButton) stopQueueButton.addEventListener("click", () => { stopQueue(); renderQueuePanel(); updateUI(); });
-  const clearQueueButton = document.getElementById("btn-clear-queue"); if (clearQueueButton) clearQueueButton.addEventListener("click", () => { if (confirm("确定清空队列？")) { clearQueue(); renderQueuePanel(); } });
+  const clearQueueButton = document.getElementById("btn-clear-queue"); if (clearQueueButton) clearQueueButton.addEventListener("click", () => {
+    showDangerConfirm("⚠ 清空队列",
+      "<p class=\"dlg-body\">确定清空队列？已排队的生产作业将被移除。</p>",
+      "确认清空",
+      () => { clearQueue(); renderQueuePanel(); });
+  });
   const loop = document.getElementById("queue-loop-check"); if (loop) loop.addEventListener("change", () => dispatchGameAction(gameState, { type:"queue/setLoop", enabled:loop.checked }, Date.now()));
   const enhancementConfirm = document.getElementById("setting-enhancement-confirm"); if (enhancementConfirm) enhancementConfirm.addEventListener("change", () => {
     const result = dispatchGameAction(gameState, { type:"settings/setShipEnhancementConfirmation", enabled:enhancementConfirm.checked }, Date.now());
