@@ -96,12 +96,12 @@ const SHIP_ASSEMBLY_RECIPES = [
 const STARTER_SHIPS = {
   rookie_corvette: {
     id: "rookie_corvette", name: "启程级", tier: "T1", type: "frigate",
-    flavor: "边疆登记机构配发的低成本通用训练艇，三类槽位各留一格，采矿、探查与自卫都能勉强胜任，唯独哪一项都不出色。",
+    flavor: "边疆登记机构配发的低成本通用训练艇，高槽两格、中低槽各一格，采矿、探查与自卫都能勉强胜任，唯独哪一项都不出色。",
     hp: { shield: 240, armor: 80, structure: 80 }, totalHp: 400,
     dodge: 22, speed: 240, targeting: 105,
     capacitor: { capacity: 90 },
     fuelEfficiency: 1.0,
-    slots: { high: 1, mid: 1, low: 1, rig: 0 },
+    slots: { high: 2, mid: 1, low: 1, rig: 0 },
     bonuses: {
       laserDamage: 0.02, missileDamage: 0.02, cannonDamage: 0.02,
       shieldCapacity: 0.05, archaeologyScanStrength: 2,
