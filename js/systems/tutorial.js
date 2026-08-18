@@ -466,13 +466,14 @@
         if (changed) {
           t.combatRunSequence += 1;
           t.activeCombatRunToken = "run_" + t.combatRunSequence + "_" + nowMs(now);
+          t.c6RunWaves = 0; // 新出击：在线进度清零
           markDirty(state);
         }
         if (changed) reconcileTutorialState(state, now);
         return { ok: true };
       case "combat/stop":
       case "combat/selectZone":
-        if (changed) { t.activeCombatRunToken = null; markDirty(state); reconcileTutorialState(state, now); }
+        if (changed) { t.activeCombatRunToken = null; t.c6RunWaves = 0; markDirty(state); reconcileTutorialState(state, now); }
         return { ok: true };
       case "hangar/toggleAssignment":
       case "hangar/equipCombatShip":
@@ -585,6 +586,11 @@
         c6tsd.c5Token = token; markDirty(state);
       }
     }
+    // C6 在线进度（仅展示）：C6 目标星带内、活跃出击里，每清一波 +1，供任务卡显示 X/4。
+    if (wave >= 1 && c6ZoneOk && token) {
+      const tut = state.tutorial;
+      if (tut) { tut.c6RunWaves = Math.min(4, (Number(tut.c6RunWaves) || 0) + 1); markDirty(state); }
+    }
     // C6：指定 zones 内、活跃出击（有有效 run token）中清掉第 4 波即完成。
     // 取消原「第 4 波 token 须等于第 1 波锚点 c5Token」的同次校验——该锚点在换 zone / 暂停重开 /
     // 船毁 / 非第 1 波续打时必丢，导致「清了四波却卡住」。改为与离线路径（仅要求 wavesCleared>=4 && token）
@@ -597,6 +603,7 @@
   }
   function onShipDestroyed(state, event) {
     state.tutorial.activeCombatRunToken = null;
+    state.tutorial.c6RunWaves = 0;
     markDirty(state);
   }
   // Batch S：离线战斗聚合事件驱动 C4/C5/C6。不重放 combat:waveCleared（指令禁止逐波事件），
@@ -622,7 +629,9 @@
           markDirty(state);
         }
       }
-      // C6 仍需同段 token 做同次校验
+      // C6 保底（放宽至极限，应对 TapTap 环境不确定性）：离线会话只要清过至少 4 波即完成，
+      // 不再校验星带/模式/sortieToken——任何战斗内部 runToken 恒为字符串，故实质等同「清 4 波」。
+      // 与封包前可解卡后门一致；在线路径（含队列登记修正）仍为正经判定，离线仅作兜底。
       if (Number(run.wavesCleared) >= 4 && typeof run.token === "string") {
         const c6 = ts(state, "C6");
         if (c6 && c6.status !== "completed" && c6.status !== "claimable") {
@@ -824,7 +833,11 @@
       case "dispose_artifact": return flag(tsd && tsd.artifactDisposed, "遗物兑现");
       case "kill": return flag(tsd && tsd.kill, "击毁目标");
       case "clear_wave": return flag(tsd && tsd.wave1, "任意波清场");
-      case "clear_wave_same_sortie": return flag(tsd && tsd.wave4, "同次出击第 4 波");
+      case "clear_wave_same_sortie": {
+        const tgt = Number(t.wave) || 4;
+        const cur = Math.min(Number(state.tutorial && state.tutorial.c6RunWaves) || 0, tgt);
+        return mk(cur, tgt, "已清波次 " + cur + "/" + tgt + (done ? " · 已完成" : ""));
+      }
       case "confirm": return mk(done ? 1 : 0, 1, done ? "1/1 已确认" : "0/1 待确认");
       case "choose_combat_training": {
         const track = state && state.tutorial ? state.tutorial.selectedCombatTrack : null;

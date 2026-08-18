@@ -371,11 +371,12 @@ function openEquipEnhanceModal(itemId, level) {
     enhBtn.addEventListener("click", () => {
       const ref = decodeURIComponent(enhBtn.dataset.enhanceTarget);
       const before = equipEnhanceModal;
-      const res = enhanceEquipmentFromWarehouse(ref);
-      if (res && res.changed) {
-        const newLevel = res.success ? res.toLevel : res.fromLevel;
-        openEquipEnhanceModal(before.itemId, newLevel); // 自动跳到新等级格
-      }
+      enhanceEquipmentFromWarehouse(ref, (res) => {
+        if (res && res.changed) {
+          const newLevel = res.success ? res.toLevel : res.fromLevel;
+          openEquipEnhanceModal(before.itemId, newLevel); // 自动跳到新等级格
+        }
+      });
     });
   }
   const jumpBtn = backdrop.querySelector("[data-eem-jump]");
@@ -402,7 +403,9 @@ function closeEquipEnhanceModal() {
 }
 
 /* Batch S·装备管理：通用危险操作确认弹窗（暗金风格，动态创建，复用 .dlg-backdrop/.dlg-box.dlg-danger，与删存档一致） */
-function showDangerConfirm(title, bodyHtml, confirmLabel, onConfirm) {
+/* Batch R·舰船拆解/强化：扩展 onCancel，使取消可追踪（弹窗打开/取消/确认三层均可打日志）。
+   onCancel 为可选；取消与背景点击均视为 cancel，确认不触发 onCancel。settled 防止重复结算。 */
+function showDangerConfirm(title, bodyHtml, confirmLabel, onConfirm, onCancel) {
   if (document.querySelector(".dlg-backdrop")) return null; // 防重入：已有确认弹窗时不再叠加创建
   const backdrop = document.createElement("div");
   backdrop.className = "dlg-backdrop";
@@ -420,13 +423,19 @@ function showDangerConfirm(title, bodyHtml, confirmLabel, onConfirm) {
     '</div>';
   backdrop.appendChild(box);
   document.body.appendChild(backdrop);
-  const close = () => { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); };
-  box.querySelector(".dlg-cancel").addEventListener("click", close);
-  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
-  box.querySelector(".dlg-confirm").addEventListener("click", () => { close(); onConfirm(); });
+  let settled = false;
+  const close = (cancelled) => {
+    if (settled) return;
+    settled = true;
+    if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+    if (cancelled && typeof onCancel === "function") onCancel();
+  };
+  box.querySelector(".dlg-cancel").addEventListener("click", () => close(true));
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(true); });
+  box.querySelector(".dlg-confirm").addEventListener("click", () => { close(false); if (typeof onConfirm === "function") onConfirm(); });
   const cb = box.querySelector(".dlg-confirm");
   if (cb && typeof cb.focus === "function") cb.focus();
-  return close;
+  return () => close(true);
 }
 
 function discardEquipmentFromModal(targetRef) {
@@ -2011,12 +2020,16 @@ function onResearchActiveClick(event) {
   } else if (action === "cancel") {
     // 确认文案与按钮文案统一口径：都用 appliedAchievementSeconds
     const refunded = computeResearchRefundSeconds(research);
-    const msg = "取消当前研究？将退还已投入的成就工时 " + formatResearchHours(refunded / 3600) + "。";
-    const confirmed = (typeof window !== "undefined" && typeof window.confirm === "function") ? window.confirm(msg) : true;
-    if (!confirmed) return;
-    const result = dispatchGameAction(gameState, { type: "research/cancel" }, Date.now());
-    if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
-    renderResearchPage();
+    const bodyHtml = '<p class="dlg-body">取消当前研究？将退还已投入的成就工时 ' + formatResearchHours(refunded / 3600) + '。</p>';
+    console.log("[research] cancel confirm open");
+    showDangerConfirm("取消研究", bodyHtml, "确认取消", () => {
+      console.log("[research] cancel confirm confirmed");
+      const result = dispatchGameAction(gameState, { type: "research/cancel" }, Date.now());
+      if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+      renderResearchPage();
+    }, () => {
+      console.log("[research] cancel confirm dismissed");
+    });
   }
 }
 
@@ -2470,29 +2483,46 @@ function enhanceShipFromHangar(instanceId) {
   const display = getHangarDisplayState(gameState, Date.now());
   const ship = display.ships.find(item => item.instanceId === instanceId);
   if (!ship || !ship.enhancement || !ship.enhancement.available) return false;
+  console.log("[ship-op][enhance] open", { instanceId: instanceId, name: ship.name, level: ship.enhancement.level });
+  const doEnhance = () => {
+    console.log("[ship-op][enhance] confirm", { instanceId: instanceId });
+    const result = dispatchGameAction(gameState, { type:"hangar/enhanceShip", instanceId }, Date.now());
+    if (!result.changed) {
+      const messages = { "insufficient-components":"强化部件不足", "insufficient-isk":"星币不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
+      showToast(messages[result.reason] || "强化失败");
+      return false;
+    }
+    showToast(result.success
+      ? result.config.name + " 强化成功：+" + result.fromLevel + " → +" + result.toLevel + "，获得 " + result.xp + " 经验"
+      : result.config.name + " 强化失败，等级保持 +" + result.fromLevel + "，本次部件已消耗");
+    renderHangarPanel();
+    renderCombatPanel();
+    updateUI();
+    return true;
+  };
   const confirmationEnabled = getSettingsDisplayState(gameState).confirmShipEnhancement;
   if (confirmationEnabled) {
     const costLines = (ship.enhancement.materials || []).map(m => m.name + "×" + m.quantity).join("、");
-    const iskLine = ship.enhancement.iskCost > 0 ? ("\n消耗星币：" + ship.enhancement.iskCost.toLocaleString()) : "";
-    const tip = "强化 " + ship.name + "：+" + ship.enhancement.level + " → +" + (ship.enhancement.level + 1) +
-      "\n成功率：" + ship.enhancement.chancePercent + "%" +
-      "\n消耗部件：" + costLines + iskLine +
-      "\n失败消耗部件、等级保持 +" + ship.enhancement.level + "、0 XP。确认执行强化？";
-    if (!window.confirm(tip)) return false;
+    const iskLine = ship.enhancement.iskCost > 0 ? ("<br>消耗星币：" + ship.enhancement.iskCost.toLocaleString()) : "";
+    const bodyHtml =
+      '<p class="dlg-body">强化 ' + escapeAchievementText(ship.name) + '：+' + ship.enhancement.level + ' → +' + (ship.enhancement.level + 1) + '</p>' +
+      '<p class="dlg-body">成功率：' + ship.enhancement.chancePercent + '%</p>' +
+      '<p class="dlg-body">消耗部件：' + escapeAchievementText(costLines) + iskLine + '</p>' +
+      '<p class="dlg-body dlg-warn">失败将消耗部件，等级保持 +' + ship.enhancement.level + '、0 XP。</p>';
+    showDangerConfirm("⚠ 强化舰船", bodyHtml, "确认强化", doEnhance, () => {
+      console.log("[ship-op][enhance] cancel", { instanceId: instanceId });
+    });
+  } else {
+    doEnhance();
   }
-  const result = dispatchGameAction(gameState, { type:"hangar/enhanceShip", instanceId }, Date.now());
-  if (!result.changed) {
-    const messages = { "insufficient-components":"强化部件不足", "insufficient-isk":"星币不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
-    showToast(messages[result.reason] || "强化失败");
-    return false;
-  }
-  showToast(result.success
-    ? result.config.name + " 强化成功：+" + result.fromLevel + " → +" + result.toLevel + "，获得 " + result.xp + " 经验"
-    : result.config.name + " 强化失败，等级保持 +" + result.fromLevel + "，本次部件已消耗");
-  renderHangarPanel();
-  renderCombatPanel();
-  updateUI();
   return true;
+}
+
+/* 诊断加固：显式导出到 window，确保 TapTap 竖屏入口在任意加载顺序/打包方式下都能稳定调用，
+   不再依赖经典脚本顶层函数提升产生的隐式全局（防止未来模块化或 shell-render / taptap-portrait 版本错配）。 */
+if (typeof window !== "undefined") {
+  window.enhanceShipFromHangar = enhanceShipFromHangar;
+  window.dismantleShipFromHangar = dismantleShipFromHangar;
 }
 
 // Batch R（E 项·舰船拆解）：二次确认（含归还预览 + 不可恢复警告）→ Action → 重渲染。
@@ -2504,42 +2534,71 @@ function dismantleShipFromHangar(instanceId) {
     showToast(ship.dismantle.blockedText || "当前无法拆解");
     return false;
   }
+  console.log("[ship-op][dismantle] open", { instanceId: instanceId, name: ship.name });
   const previewLines = (ship.dismantle.preview || []).map(entry => entry.name + "×" + entry.returned).join("、");
-  const tip = "确认拆解 " + ship.name + "？\n" +
-    "拆解后舰船将消失，不可恢复。\n" +
-    "归还材料（约 50%）：" + (previewLines || "无") + "\n" +
-    "不归还：蓝图、技能经验、强化等级、已装配装备、强化消耗的星币。\n" +
-    "确认执行拆解？";
-  if (!window.confirm(tip)) return false;
-  const result = dispatchGameAction(gameState, { type:"hangar/disassembleShip", instanceId }, Date.now());
-  if (!result.changed) {
-    const messages = {
-      "unknown-ship":"舰船不存在",
-      "ship-assigned":"舰船正在执行岗位任务，无法拆解",
-      "ship-active":"舰船正在执行中，停止当前任务后才能拆解",
-      "repairing":"舰船正在维修中，维修完成后才能拆解",
-      "has-fitting":"舰船仍装配有装备或改装件，先全部卸下",
-      "no-dismantle-recipe":"该舰船没有可拆解配方"
-    };
-    showToast(messages[result.reason] || "拆解失败");
-    return false;
-  }
-  const returnedText = (result.returned || []).map(entry => entry.name + "×" + entry.returned).join("、");
-  showToast("已拆解 " + result.config.name + "，归还：" + (returnedText || "无材料"));
-  renderHangarPanel();
-  renderCombatPanel();
-  updateUI();
+  const doDismantle = () => {
+    console.log("[ship-op][dismantle] confirm", { instanceId: instanceId });
+    const result = dispatchGameAction(gameState, { type:"hangar/disassembleShip", instanceId }, Date.now());
+    if (!result.changed) {
+      const messages = {
+        "unknown-ship":"舰船不存在",
+        "ship-assigned":"舰船正在执行岗位任务，无法拆解",
+        "ship-active":"舰船正在执行中，停止当前任务后才能拆解",
+        "repairing":"舰船正在维修中，维修完成后才能拆解",
+        "has-fitting":"舰船仍装配有装备或改装件，先全部卸下",
+        "no-dismantle-recipe":"该舰船没有可拆解配方"
+      };
+      showToast(messages[result.reason] || "拆解失败");
+      return false;
+    }
+    const returnedText = (result.returned || []).map(entry => entry.name + "×" + entry.returned).join("、");
+    showToast("已拆解 " + result.config.name + "，归还：" + (returnedText || "无材料"));
+    renderHangarPanel();
+    renderCombatPanel();
+    updateUI();
+    return true;
+  };
+  const bodyHtml =
+    '<p class="dlg-body dlg-warn">确认拆解 ' + escapeAchievementText(ship.name) + '？拆解后舰船将消失，不可恢复。</p>' +
+    '<p class="dlg-body">归还材料（约 50%）：' + (escapeAchievementText(previewLines) || "无") + '</p>' +
+    '<p class="dlg-body dlg-warn">不归还：蓝图、技能经验、强化等级、已装配装备、强化消耗的星币。</p>';
+  showDangerConfirm("🗑 拆解舰船", bodyHtml, "确认拆解", doDismantle, () => {
+    console.log("[ship-op][dismantle] cancel", { instanceId: instanceId });
+  });
   return true;
 }
 
-function enhanceEquipmentFromWarehouse(targetRef) {
-  if (!targetRef) return false;
+function enhanceEquipmentFromWarehouse(targetRef, onDone) {
+  if (!targetRef) { if (typeof onDone === "function") onDone(null); return false; }
   const resolved = resolveEquipmentReference(gameState, targetRef);
-  if (!resolved) { showToast("装备不存在"); return false; }
+  if (!resolved) { showToast("装备不存在"); if (typeof onDone === "function") onDone(null); return false; }
   const definition = resolved.definition;
   const fromLevel = resolved.enhancementLevel;
   const engLevel = Number(gameState.skills && gameState.skills.equipmentEngineering && gameState.skills.equipmentEngineering.lvl) || 1;
   const preview = getEquipmentEnhancementDisplayState(definition, fromLevel, engLevel);
+  const doEnhance = () => {
+    const result = dispatchGameAction(gameState, { type:"equipment/enhance", targetRef }, Date.now());
+    if (!result.changed) {
+      const messages = {
+        "insufficient-minerals":"精炼矿物不足",
+        "missing-donor":"缺少同型号 +0 装备",
+        "insufficient-core":"缺少对应核心",
+        "insufficient-protocol":"缺少对应协议",
+        "equipment-installed":"装备已安装，需先卸载",
+        "unknown-equipment":"装备不存在"
+      };
+      showToast(messages[result.reason] || "强化失败");
+      if (typeof onDone === "function") onDone(result);
+      return;
+    }
+    showToast(result.success
+      ? `${definition.name} 强化成功：+${result.fromLevel} → +${result.toLevel}，获得 ${result.xp} 经验`
+      : `强化失败，等级保持 +${result.fromLevel}，本次材料已消耗`);
+    renderCargoPage("equipment");
+    renderCombatPanel();
+    updateUI();
+    if (typeof onDone === "function") onDone(result);
+  };
   const confirmationEnabled = getSettingsDisplayState(gameState).confirmShipEnhancement;
   if (confirmationEnabled) {
     const materialLines = Object.entries(preview.cost).map(([mineral, qty]) => `${mineral}×${qty}`).join("、");
@@ -2548,29 +2607,22 @@ function enhanceEquipmentFromWarehouse(targetRef) {
     if (preview.extra.core) extraLines.push(preview.extra.core + "×1");
     if (preview.extra.protocol) extraLines.push(preview.extra.protocol + "×1");
     const fullList = [materialLines, ...extraLines].filter(Boolean).join(" + ");
-    const tip = `强化 ${definition.name}：+${fromLevel} → +${fromLevel + 1}\n成功率：${Math.round(preview.success * 1000) / 10}%\n消耗材料：${fullList || "无"}\n失败仅消耗材料，等级保持 +${fromLevel}，不会回退或降级。\n确认执行强化？`;
-    if (!window.confirm(tip)) return false;
+    const bodyHtml =
+      '<p class="dlg-body">强化 ' + escapeAchievementText(definition.name) + '：+' + fromLevel + ' → +' + (fromLevel + 1) + '</p>' +
+      '<p class="dlg-body">成功率：' + (Math.round(preview.success * 1000) / 10) + '%</p>' +
+      '<p class="dlg-body">消耗材料：' + escapeAchievementText(fullList || "无") + '</p>' +
+      '<p class="dlg-body dlg-warn">失败仅消耗材料，等级保持 +' + fromLevel + '，不会回退或降级。</p>';
+    console.log("[equip-op][enhance] confirm open");
+    showDangerConfirm("强化装备", bodyHtml, "确认强化", () => {
+      console.log("[equip-op][enhance] confirm confirmed");
+      doEnhance();
+    }, () => {
+      console.log("[equip-op][enhance] confirm dismissed", { targetRef: targetRef });
+    });
+    return true;
   }
-  const result = dispatchGameAction(gameState, { type:"equipment/enhance", targetRef }, Date.now());
-  if (!result.changed) {
-    const messages = {
-      "insufficient-minerals":"精炼矿物不足",
-      "missing-donor":"缺少同型号 +0 装备",
-      "insufficient-core":"缺少对应核心",
-      "insufficient-protocol":"缺少对应协议",
-      "equipment-installed":"装备已安装，需先卸载",
-      "unknown-equipment":"装备不存在"
-    };
-    showToast(messages[result.reason] || "强化失败");
-    return result;
-  }
-  showToast(result.success
-    ? `${definition.name} 强化成功：+${result.fromLevel} → +${result.toLevel}，获得 ${result.xp} 经验`
-    : `强化失败，等级保持 +${result.fromLevel}，本次材料已消耗`);
-  renderCargoPage("equipment");
-  renderCombatPanel();
-  updateUI();
-  return result;
+  doEnhance();
+  return true;
 }
 
 function equipShip(shipRef) {
@@ -3213,6 +3265,8 @@ function installTutorialWidgetListeners() {
     GE.on("tutorial:branchesUnlocked", twOnBranchesUnlocked);
     GE.on("tutorial:combatTrackSelected", twOnCombatTrackSelected);
     GE.on("tutorial:emergencyShipGranted", twOnEmergencyShipGranted);
+    // 在线战斗每清一波即刷新任务卡，让 C6 进度从 0/4 实时跳到 1/4…
+    GE.on("combat:waveCleared", () => { if (typeof twRenderSoon === "function") twRenderSoon(); });
   }
   const toggleEl = document.getElementById("tutorial-widget-toggle");
   if (toggleEl) toggleEl.addEventListener("click", () => {

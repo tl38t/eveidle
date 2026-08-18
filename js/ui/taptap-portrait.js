@@ -398,9 +398,17 @@
         var filt = t.closest("[data-tp-filter]");
         if (filt) { _tpHangarFilter = filt.getAttribute("data-tp-filter"); mobileRenderHangarPanel(); return; }
         var enh = t.closest("[data-enhance-ship]");
-        if (enh) { window.enhanceShipFromHangar(enh.getAttribute("data-enhance-ship")); return; }
+        if (enh) {
+          if (typeof window.enhanceShipFromHangar === "function") window.enhanceShipFromHangar(enh.getAttribute("data-enhance-ship"));
+          else { console.error("[taptap-portrait] 入口缺失：window.enhanceShipFromHangar 未定义"); if (window.showToast) window.showToast("强化入口缺失，请刷新或更新客户端"); }
+          return;
+        }
         var dism = t.closest("[data-dismantle-ship]");
-        if (dism) { window.dismantleShipFromHangar(dism.getAttribute("data-dismantle-ship")); return; }
+        if (dism) {
+          if (typeof window.dismantleShipFromHangar === "function") window.dismantleShipFromHangar(dism.getAttribute("data-dismantle-ship"));
+          else { console.error("[taptap-portrait] 入口缺失：window.dismantleShipFromHangar 未定义"); if (window.showToast) window.showToast("拆解入口缺失，请刷新或更新客户端"); }
+          return;
+        }
         var act = t.closest("[data-ship-action]");
         if (act) {
           var res = window.dispatchGameAction(window.gameState, { type: "hangar/toggleAssignment", instanceId: act.getAttribute("data-sid"), actionKey: act.getAttribute("data-ship-action") }, Date.now());

@@ -281,7 +281,7 @@
       // 推进回合与虚拟时间
       rounds++;
       nowRef.t += ROUND_SECONDS * 1000;
-      advanceBoosterTime(state, ROUND_SECONDS * 1000);
+      advanceBoosterTime(state, ROUND_SECONDS * 1000, nowRef.t);
       // 重新读取（技能可能升级、HP 变化）
       const ni = readInputs(state);
       inputs.maxHp = ni.maxHp; inputs.playerDodge = ni.playerDodge;
@@ -291,14 +291,19 @@
   }
 
   // ---- 增强剂离线时间推进（打破"战斗增强剂离线冻结"；不得双扣）----
-  function advanceBoosterTime(state, ms) {
-    const b = state.boosters;
-    if (!b || !b.active) return;
-    for (const slot in b.active) {
-      const entry = b.active[slot];
-      if (!entry || typeof entry.remainingMs !== "number") continue;
-      entry.remainingMs -= ms;
-      if (entry.remainingMs <= 0) delete b.active[slot]; // 到期移除，getBoosterEffectState 自然归 1
+  // 复用与在线 tickBoosterTimers 完全相同的纯计算函数 applyBoosterTimeConsumption，
+  // 仅推进战斗相关两槽（combatWeapon / combatRepair），与在线战斗分支严格一致：
+  // 正确消费库存并在耗尽时自动续装；不再 delete 槽位、不再漏扣库存、不再波及非战斗槽。
+  function advanceBoosterTime(state, ms, now) {
+    if (!state || !state.boosters || !state.boosters.active) return;
+    if (!(ms > 0)) return;
+    const t = (typeof now === "number" && Number.isFinite(now)) ? now : Date.now();
+    const combatSlots = ["combatWeapon", "combatRepair"];
+    for (const slot of combatSlots) {
+      const entry = state.boosters.active[slot];
+      if (entry && entry.itemId) {
+        applyBoosterTimeConsumption(state, slot, ms, t, { offline:true });
+      }
     }
   }
 
@@ -461,7 +466,7 @@
     while (budgetMs > 0 && (c.active || c.deathspaceChainPending)) {
       if (!c.active && c.deathspaceChainPending) {
         // 连刷续入：消耗 1 秒虚拟时间
-        nowRef.t += ROUND_SECONDS * 1000; advanceBoosterTime(state, ROUND_SECONDS * 1000); budgetMs -= ROUND_SECONDS * 1000;
+        nowRef.t += ROUND_SECONDS * 1000; advanceBoosterTime(state, ROUND_SECONDS * 1000, nowRef.t); budgetMs -= ROUND_SECONDS * 1000;
         s.simulatedSeconds += ROUND_SECONDS;
         if (c.deathspaceChainRemaining <= 0) { c.deathspaceChainPending = false; break; }
         // 校验（等级/武器/维修/密钥）
@@ -630,7 +635,15 @@
         const c = state.combat;
         s.activeAtStart = Boolean(c.active) || Boolean(c.deathspaceChainPending);
         s.mode = c.mode || (c.deathspaceChainPending ? "deathspace" : "belt");
-        if (c.active || c.deathspaceChainPending) { s.runs++; s.currentRunToken = c.runToken; s.runsDetail.push({ token: c.runToken, wavesCleared: 0, defeated: false, zoneClears: 0 }); }
+        if (c.active || c.deathspaceChainPending) {
+          // 把同一权威教程 sortie token（activeCombatRunToken）与来源星带 zoneId / 战斗模式 带入离线快照：
+          // 在线/离线共用同一 token；仅普通星带（mode==="belt"）且三个一级普通星带之一可完成 C6，
+          // 死亡空间（mode==="deathspace"）或高级星带 sortieToken/zone/mode 任一不符 → 不得误完成。
+          // token(combat.runToken) 保留供离线内部续波链接使用，不改动。
+          const tutToken = (state.tutorial && typeof state.tutorial.activeCombatRunToken === "string") ? state.tutorial.activeCombatRunToken : null;
+          s.runs++; s.currentRunToken = c.runToken;
+          s.runsDetail.push({ token: c.runToken, sortieToken: tutToken, zoneId: c.zone, mode: c.mode, wavesCleared: 0, defeated: false, zoneClears: 0 });
+        }
       }
       if (!s.activeAtStart) { s.stopReason = "inactive"; return; } // 离线前无有效战斗，跳过
       const nowRef = s.endedAtRef;

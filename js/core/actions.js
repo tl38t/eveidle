@@ -1067,6 +1067,9 @@ function startCombatQueueItem(state, item, now) {
     state.combat.queueItemId = null; state.combat.queueWavesTarget = 0; state.combat.queueWavesDone = 0;
     return { changed:false, reason: res && res.reason ? res.reason : "start-failed" };
   }
+  // 普通星带队列出击：登记教程 sortie token（与手动 combat/start 共用同一 run-token 生命周期）。
+  // 死亡空间队列项不登记（非 C6 目标星带；其离线 runsDetail.sortieToken 留空，不会误完成 C6）。
+  registerTutorialCombatStart(state, now);
   setCombatQueueResume(state);
   return { changed:true, skill:"combat" };
 }
@@ -2021,6 +2024,19 @@ const StationStateActions = {
     return result;
   }
 
+  // 单一"成功开始战斗后登记教程 sortie"入口：手动 combat/start 与普通星带队列 startCombatQueueItem 共用。
+  // 复用 TutorialSystem.noteTutorialActionResult（与 dispatchGameAction 的 tutorialNote 同源），
+  // 严禁在 queue.js/actions.js 复制第二套 combatRunSequence / activeCombatRunToken 生成逻辑。
+  // 一次真实出击只生成一个 token：仅在战斗真实成功启动（changed）时调用一次，绝不逐波/逐 tick 重复调用。
+  function registerTutorialCombatStart(state, now) {
+    const TS = (typeof TutorialSystem !== "undefined" && TutorialSystem)
+      ? TutorialSystem
+      : (typeof window !== "undefined" && window.TutorialSystem ? window.TutorialSystem : null);
+    if (TS && typeof TS.noteTutorialActionResult === "function") {
+      try { TS.noteTutorialActionResult(state, { type: "combat/start" }, { changed: true }, now); } catch (e) { /* 新手任务旁路失败不影响主流程 */ }
+    }
+  }
+
   function dispatchGameAction(state, action, now) {
   if (!state || !action || typeof action.type !== "string") return { changed:false, reason:"invalid-action" };
   const actionTime = Number(now) || Date.now();
@@ -2056,7 +2072,11 @@ const StationStateActions = {
   if (action.type === "combat/selectZone") return tutorialNote(state, action, CombatStateActions.selectZone(state, action.zoneId), actionTime);
   if (action.type === "combat/selectDeathspace") return CombatStateActions.selectDeathspace(state, action.deathspaceId);
   if (action.type === "combat/selectDeathspaceTier") return CombatStateActions.selectDeathspaceTier(state, action.tier);
-  if (action.type === "combat/start") return tutorialNote(state, action, CombatStateActions.start(state, action.enemies, action.formationId, actionTime), actionTime);
+  if (action.type === "combat/start") {
+    const res = CombatStateActions.start(state, action.enemies, action.formationId, actionTime);
+    if (res && res.changed) registerTutorialCombatStart(state, actionTime);
+    return res;
+  }
   if (action.type === "combat/enterDeathspace") return CombatStateActions.enterDeathspace(state, action.deathspaceId, action.enemies, action.formationId, actionTime);
   if (action.type === "combat/startDeathspaceChain") return CombatStateActions.startDeathspaceChain(state, action.count, actionTime);
   if (action.type === "combat/cancelDeathspaceChain") return CombatStateActions.cancelDeathspaceChain(state);

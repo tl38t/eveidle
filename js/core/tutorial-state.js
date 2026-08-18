@@ -106,6 +106,7 @@
       emergencyShipGranted: false,
       combatRunSequence: 0,
       activeCombatRunToken: null,
+      c6RunWaves: 0,
       lastReconciledAt: 0
     };
   }
@@ -151,6 +152,7 @@
       emergencyShipGranted: bool(t.emergencyShipGranted),
       combatRunSequence: num(t.combatRunSequence, base.combatRunSequence),
       activeCombatRunToken: typeof t.activeCombatRunToken === "string" ? t.activeCombatRunToken : base.activeCombatRunToken,
+      c6RunWaves: num(t.c6RunWaves, base.c6RunWaves),
       lastReconciledAt: num(t.lastReconciledAt, base.lastReconciledAt)
     };
     const knownIds = (typeof TutorialData !== "undefined" && TutorialData && TutorialData.tasks)
