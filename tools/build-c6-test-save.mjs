@@ -2,7 +2,7 @@
 //   - C6 在线实时进度 0/4 → 1/4（清波）
 //   - C6 离线保底（清 4 波即完成）
 //   - 舰船强化/拆解、装备强化/拆解 自定义弹窗
-// 产出：项目根目录 c6-test-save.json（与游戏 SaveManager 写入格式一致的信封存档）
+// 产出：项目根目录 c6-test-save.json（与游戏 LocalStorageAdapter 实际写入格式一致的裸 gameState）
 // 运行：NODE_OPTIONS="" node tools/build-c6-test-save.mjs
 import fs from "node:fs";
 import path from "node:path";
@@ -93,27 +93,46 @@ gs.tutorial.branchStatus = { industrial: "completed", archaeology: "completed", 
 gs.tutorial.selectedCombatTrack = "laser";
 gs.tutorial.c6RunWaves = 0;
 
-// 5) 校验：SaveEnvelope 可用，生成与游戏写入一致的有校验和信封
-assert(G("typeof SaveEnvelope === 'object' && typeof SaveEnvelope.create === 'function'"), "SaveEnvelope 可用");
-const encoded = G(`(function(){
-  var e = SaveEnvelope.create({ payload: gameState, revision: 1, savedAt: ${now}, deviceId: "c6-test-device", gameSaveVersion: 1 });
-  return SaveEnvelope.encode(e);
-})()`);
-assert(typeof encoded === "string" && encoded.length > 0, "信封编码成功");
+// 5) 序列化为「裸 gameState」——与游戏 LocalStorageAdapter.save 实际写入格式一致。
+//    游戏启动后 SaveManager 把 gameState 直接 JSON.stringify 进 localStorage 的 eve_idle_save，
+//    而非信封（信封仅用于云端/镜像比对）。因此测试存档必须是裸 gameState，否则
+//    readCandidate（第 19 行）与导入按钮 importData（第 1483 行）会因顶层缺 .skills
+//    判为「本地存档结构无效 / 导入失败：存档格式无效」。
+let serialized;
+try {
+  serialized = G("JSON.stringify(gameState)");
+} catch (e) {
+  console.error("JSON.stringify(gameState) 失败（可能含不可序列化字段）：" + (e && e.message));
+  process.exit(1);
+}
+assert(typeof serialized === "string" && serialized.length > 0, "裸 gameState 序列化成功");
 
-// 6) 回读自检：用 SaveEnvelope.decode 验证校验和，并确认 payload 含关键字段
-const decoded = G(`SaveEnvelope.decode(${JSON.stringify(encoded)})`);
-assert(decoded && decoded.payload && decoded.payload.tutorial && decoded.payload.tutorial.taskStateById.C6 && decoded.payload.tutorial.taskStateById.C6.status === "active", "回读校验：C6 为 active");
-assert(decoded.payload.inventory.ships.some((s) => s.instanceId === shipId), "回读校验：启程级在 ships 中");
-assert(decoded.payload.equipment.instances.length >= 3, "回读校验：装备实例 ≥ 3");
+// 6) 回读自检：模拟真实加载链路 Object.assign(gameState, parsed) + normalizeAndMigratePayload，
+//    确认 C6 仍 active、启程级与装备完好（与 readCandidate / importData 后续处理一致）。
+G("globalThis.__c6test = JSON.stringify(gameState)");
+const roundTripOk = G(`(function(){
+  var parsed = JSON.parse(globalThis.__c6test);
+  if (!parsed || !parsed.skills) return false;
+  Object.assign(gameState, parsed);
+  if (!Object.hasOwn(parsed, 'settings')) gameState.settings = {};
+  if (typeof normalizeQueueState === 'function') normalizeQueueState(gameState);
+  if (typeof normalizeAndMigratePayload === 'function') normalizeAndMigratePayload({ isLegacy: !Object.prototype.hasOwnProperty.call(parsed, 'tutorial'), now: Date.now() });
+  return gameState.tutorial.taskStateById.C6.status === 'active'
+    && gameState.inventory.ships.some(function(s){ return s.instanceId === ${JSON.stringify(shipId)}; })
+    && gameState.equipment.instances.length >= 3;
+})()`);
+assert(roundTripOk, "裸 gameState 经 Object.assign + normalizeAndMigratePayload 后 C6 仍 active、启程级/装备完好");
 
 const outPath = path.join(root, "c6-test-save.json");
-fs.writeFileSync(outPath, encoded, "utf8");
-console.log("已写出测试存档：" + outPath);
-console.log("  大小：" + encoded.length + " 字节");
+fs.writeFileSync(outPath, serialized, "utf8");
+console.log("已写出测试存档（裸 gameState，可直接导入或写入 localStorage）：" + outPath);
+console.log("  大小：" + serialized.length + " 字节");
 console.log("  启程级 instanceId：" + shipId);
 console.log("  装备实例：" + gs.equipment.instances.map((i) => i.itemId + "(" + i.instanceId + ")").join(", "));
 console.log("  已指派战斗位 + 预选星带 angel_outpost（level-1 highsec）");
 console.log("  教程：P1-P7/I1-I7/A1-A6/C1-C5=completed，C6=active，combat 分支=active，训练方向=laser");
-console.log("加载方式（浏览器控制台，确保同源）：");
+console.log("");
+console.log("加载方式 A（浏览器控制台，确保同源）：");
 console.log("  await fetch('c6-test-save.json').then(r=>r.text()).then(t=>localStorage.setItem('eve_idle_save', t)); location.reload();");
+console.log("加载方式 B（游戏内「导入存档」按钮，直接粘贴/上传本文件内容）：");
+console.log("  设置 → 存档管理 → 导入存档，选择或粘贴 c6-test-save.json 内容即可。");
