@@ -104,7 +104,7 @@ function migrateShipAndEquipmentState() {
     if (!instanceId) continue;
     const ship = getShipInstance(instanceId);
     const config = ship ? getShipConfig(ship.shipId) : null;
-    const unsupportedAssignment = getShipAssignmentRestriction(config, actionKey, false);
+    const unsupportedAssignment = getShipAssignmentRestriction(config, actionKey, false, ship, gameState);
     if (unsupportedAssignment || assignedInstances.has(instanceId)) delete gameState.shipAssignments[actionKey];
     else assignedInstances.add(instanceId);
   }

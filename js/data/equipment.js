@@ -135,19 +135,23 @@ const EQUIPMENT_DB = {
    数据由下方配置程序化生成并合并入 EQUIPMENT_DB（避免 45 行手写重复）。
    ================================================================ */
 // 9 系列：stackGroup 唯一，bonusKey 为效果字段，rigCategory 用于装备工程子分类。
+// 档位曲线遵循「谐振（堆叠）规范」：同一 stackGroup 内第 3 件同级改装件的实际增量严格低于下一级单件值。
+//   - 战斗 / 工业 6 系列封顶 15% → [0.05, 0.07, 0.09, 0.12, 0.15]
+//   - 考古 3 系列封顶 20%      → [0.08, 0.11, 0.14, 0.17, 0.20]
+// 同系列可重复装配，但后续装配受 EVE 谐振惩罚（见 rigs.js getRigStackPenalty）实际效果递减。
 const RIG_SERIES = [
   // 战斗（三种容量同档同百分比；用 *Percent 键避免与 shield_ext_small 的平值 shieldCapacity 冲突）
-  { stackGroup:"rig_shield_capacity",          label:"护盾容量",   rigCategory:"combat",      bonusKey:"shieldCapacityPercent",          values:[0.04, 0.06, 0.08, 0.11, 0.15] },
-  { stackGroup:"rig_armor_capacity",           label:"装甲容量",   rigCategory:"combat",      bonusKey:"armorCapacityPercent",           values:[0.04, 0.06, 0.08, 0.11, 0.15] },
-  { stackGroup:"rig_structure_capacity",       label:"结构容量",   rigCategory:"combat",      bonusKey:"structureCapacityPercent",       values:[0.04, 0.06, 0.08, 0.11, 0.15] },
+  { stackGroup:"rig_shield_capacity",          label:"护盾容量",   rigCategory:"combat",      bonusKey:"shieldCapacityPercent",          values:[0.05, 0.07, 0.09, 0.12, 0.15] },
+  { stackGroup:"rig_armor_capacity",           label:"装甲容量",   rigCategory:"combat",      bonusKey:"armorCapacityPercent",           values:[0.05, 0.07, 0.09, 0.12, 0.15] },
+  { stackGroup:"rig_structure_capacity",       label:"结构容量",   rigCategory:"combat",      bonusKey:"structureCapacityPercent",       values:[0.05, 0.07, 0.09, 0.12, 0.15] },
   // 工业（采矿/采气/冶炼同档同速度增幅）
-  { stackGroup:"rig_mining_speed",             label:"采矿速度",   rigCategory:"industry",    bonusKey:"miningEfficiency",               values:[0.04, 0.06, 0.08, 0.11, 0.15] },
-  { stackGroup:"rig_gas_speed",                label:"采气速度",   rigCategory:"industry",    bonusKey:"gasEfficiency",                  values:[0.04, 0.06, 0.08, 0.11, 0.15] },
-  { stackGroup:"rig_smelting_speed",           label:"冶炼速度",   rigCategory:"industry",    bonusKey:"smeltingSpeed",                  values:[0.04, 0.06, 0.08, 0.11, 0.15] },
+  { stackGroup:"rig_mining_speed",             label:"采矿速度",   rigCategory:"industry",    bonusKey:"miningEfficiency",               values:[0.05, 0.07, 0.09, 0.12, 0.15] },
+  { stackGroup:"rig_gas_speed",                label:"采气速度",   rigCategory:"industry",    bonusKey:"gasEfficiency",                  values:[0.05, 0.07, 0.09, 0.12, 0.15] },
+  { stackGroup:"rig_smelting_speed",           label:"冶炼速度",   rigCategory:"industry",    bonusKey:"smeltingSpeed",                  values:[0.05, 0.07, 0.09, 0.12, 0.15] },
   // 考古（扫描增益 / 燃料减免 / 干扰缩短，减免类以正数存储）
-  { stackGroup:"rig_archaeology_scan",         label:"扫描强度",   rigCategory:"archaeology", bonusKey:"archaeologyScanPercent",         values:[0.05, 0.08, 0.12, 0.17, 0.25] },
-  { stackGroup:"rig_archaeology_fuel",         label:"考古燃料效率", rigCategory:"archaeology", bonusKey:"archaeologyFuelEfficiency",       values:[0.08, 0.12, 0.16, 0.20, 0.25] },
-  { stackGroup:"rig_archaeology_interference", label:"考古干扰缩短", rigCategory:"archaeology", bonusKey:"archaeologyInterferenceReduction", values:[0.10, 0.15, 0.20, 0.25, 0.30] }
+  { stackGroup:"rig_archaeology_scan",         label:"扫描强度",   rigCategory:"archaeology", bonusKey:"archaeologyScanPercent",         values:[0.08, 0.11, 0.14, 0.17, 0.20] },
+  { stackGroup:"rig_archaeology_fuel",         label:"考古燃料效率", rigCategory:"archaeology", bonusKey:"archaeologyFuelEfficiency",       values:[0.08, 0.11, 0.14, 0.17, 0.20] },
+  { stackGroup:"rig_archaeology_interference", label:"考古干扰缩短", rigCategory:"archaeology", bonusKey:"archaeologyInterferenceReduction", values:[0.08, 0.11, 0.14, 0.17, 0.20] }
 ];
 // 5 档：等级门槛、耗时、经验、校准材料需求、精炼矿物成本（材料来源见 PLAN 5.2）。
 const RIG_TIER_META = [
@@ -535,6 +539,10 @@ function getEquipmentAttributeLines(equipmentRef) {
   const lines = ["槽位：" + (EQUIPMENT_SLOT_NAMES[eq.slot] || eq.slot)];
   for (const [key, value] of Object.entries(eq.bonuses || {})) {
     lines.push((EQUIPMENT_BONUS_NAMES[key] || key) + " " + formatEquipmentBonusValue(key, value));
+  }
+  // 改装件信息卡片：说明同舰同系列装配的谐振（堆叠）惩罚
+  if (eq.slot === "rig") {
+    lines.push("谐振效应：同一舰船装配相同改装件时，后装配的改装件会因谐振效应降低实际效果（同系列第 2 件起实际加成比例递减）。");
   }
   if (eq.combat && eq.combat.kind === "weapon") {
     const weaponNames = { laser:"激光", missile:"导弹", cannon:"射弹" };

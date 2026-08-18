@@ -1187,7 +1187,7 @@ const ShellStateActions = {
     if (!config) return { changed:false, reason:"unknown-ship" };
     // 问题2：per-ship 维修——仅当被操作的这艘舰自身在维修时拒绝指派，健康舰可正常换入。
     const isRepairingThis = isShipUnderRepair(state, instanceId, now);
-    const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && isRepairingThis);
+    const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && isRepairingThis, instance, state);
     if (restriction) return { changed:false, reason:restriction.reason };
     if (!state.shipAssignments) state.shipAssignments = {};
     const removing = state.shipAssignments[actionKey] === instance.instanceId;
@@ -1445,11 +1445,6 @@ const ShellStateActions = {
       const equipment = resolved && resolved.definition;
       if (!equipment || equipment.slot !== slot) return { changed:false, reason:"equipment-unavailable" };
       if (!canFitEquipmentOnShip(equipment, config)) return { changed:false, reason:"incompatible-equipment" };
-      // 改装件 stackGroup 同组排重（排除当前目标槽，兼容替换）。前置校验，失败原子不变。
-      if (slot === "rig" && equipment.stackGroup) {
-        const check = canFitRig(state, instance, resolved.itemId, slotIndex);
-        if (!check.ok) return { changed:false, reason:check.reason };
-      }
       let targetInstance = resolved && resolved.instance;
       if (!targetInstance) {
         const inventoryIndex = state.equipment.inventory.indexOf(equipmentRef);
@@ -1461,6 +1456,8 @@ const ShellStateActions = {
       }
       if (targetInstance.installedOn) return { changed:false, reason:"equipment-installed" };
       targetInstance.installedOn = instance.instanceId;
+      // 改装件：记录装配顺序序号（rigSeq），供谐振（堆叠）惩罚按装配先后排序。同系列允许重复装配。
+      if (slot === "rig") { state._rigSeq = (state._rigSeq || 0) + 1; targetInstance.rigSeq = state._rigSeq; }
       // rig 槽的旧件=销毁（删除实例，不归还）；其他槽=归还 inventory
       if (previous) { if (slot === "rig") destroyRigRefFromFitting(state, previous); else detachEquipmentRefFromFitting(state, previous); }
       instance.fitted[slot][slotIndex] = targetInstance.instanceId;

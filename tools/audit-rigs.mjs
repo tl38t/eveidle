@@ -61,6 +61,7 @@ sandbox.window=sandbox; sandbox.globalThis=sandbox;
 sandbox.addEventListener=()=>{}; sandbox.removeEventListener=()=>{}; sandbox.dispatchEvent=()=>{};
 sandbox.location={href:"",search:"",hash:""}; sandbox.navigator={userAgent:"node"};
 sandbox.innerWidth=1280; sandbox.innerHeight=800;
+sandbox.matchMedia=()=>({matches:false,addEventListener(){},removeEventListener(){},addListener(){},removeListener(){}});
 sandbox.CanvasRenderingContext2D=function(){}; sandbox.CanvasRenderingContext2D.prototype={};
 
 let combined="";
@@ -173,10 +174,14 @@ section("C 装配 / 销毁 / 替换");
   const instRef=ship.fitted.rig[0];
   const resolved=W.resolveEquipmentReference(st,instRef);
   ok(resolved && resolved.instance && resolved.instance.installedOn===ship.instanceId, "C3 创建实例且 installedOn 正确");
-  // stackGroup 排重：同组不同档也不能共存
+  // 谐振模型：同组不同档现在允许共存（堆叠惩罚在聚合层处理）
   st.equipment.inventory.push("rig_archaeology_scan_v");
   r=W.dispatchGameAction(st,{type:"hangar/fitRig",instanceId:ship.instanceId,slotIndex:1,rigItemId:"rig_archaeology_scan_v"},0);
-  ok(r.changed===false && r.reason==="same-stack-group-exists", `C4 同组不同档被拒（${r.reason}）`);
+  ok(r.changed===true, `C4 同组不同档现在允许装配（谐振模型）`);
+  const scanMods=W.getRigModifiers(st, ship);
+  // scan_i=0.08(T1)@S1 + scan_v=0.20(T5)@S2 → 0.08 + 0.20*0.8694 ≈ 0.2539
+  ok(scanMods && approx(scanMods.archaeologyScanPercent, 0.08 + 0.20*0.8694, 0.002),
+    `C4 谐振聚合生效（scan=${scanMods && scanMods.archaeologyScanPercent}）`);
   // 不同组可共存
   st.equipment.inventory.push("rig_archaeology_fuel_i");
   r=W.dispatchGameAction(st,{type:"hangar/fitRig",instanceId:ship.instanceId,slotIndex:1,rigItemId:"rig_archaeology_fuel_i"},0);
@@ -811,23 +816,22 @@ section("M 装配面板 stats 正确反映改装件容量倍率");
       `M5 清空后 HP 恢复基础（${s.shield}/${s.armor}/${s.structure} = 2900/1100/800）`);
   }
 
-  // 多个 rig 同系列不叠加（stackGroup 排重）：只能装一个护盾容量
-  // 三个不同系列的 rig（各 4%）作用于不同 HP 类型，互不叠加：
-  // shield * (1+0.04) = 2900*1.04=3016, armor * (1+0.04)=1100*1.04=1144, structure * (1+0.04)=800*1.04=832
+  // 谐振（堆叠）模型：同 stackGroup（同系列）允许重复装配，但后续装配按 EVE 谐振惩罚实际效果递减
+  // 三个不同系列各 T1（5%）作用于不同 HP 类型：shield=2900*1.05=3045, armor=1100*1.05=1155, structure=800*1.05=840
+  // 第4槽装护盾容量 II（7%，同组）→ 允许；谐振后 shield 倍率 = 1 + 0.05*S1 + 0.07*S2 = 1 + 0.05 + 0.07*0.8694 ≈ 1.1109
   {
     const st=freshState();
     const ship=addShip(st,"illuminator");
     fitRig(st,ship,"rig_shield_capacity_i",0);
     fitRig(st,ship,"rig_armor_capacity_i",1);
     fitRig(st,ship,"rig_structure_capacity_i",2);
-    // 第4槽不能再装盾容（同 stackGroup 排重）
     st.equipment.inventory.push("rig_shield_capacity_ii");
     const r=W.dispatchGameAction(st,{type:"hangar/fitRig",instanceId:ship.instanceId,slotIndex:3,rigItemId:"rig_shield_capacity_ii"},0);
-    ok(!r.changed, "M6 第4槽护盾容量 II 因同 stackGroup 被拒绝");
+    ok(r.changed, "M6 同系列第二个改装件现在允许装配（谐振模型，不再排重）");
     const d=W.getShipFittingDisplayState(st,ship.instanceId);
     const s=d.stats;
-    ok(s.shield===3016 && s.armor===1144 && s.structure===832,
-      `M6 三系列各 4% 分属不同 HP 类型: ${s.shield}/${s.armor}/${s.structure}`);
+    ok(s.shield>3045 && s.shield<3248, `M6 谐振后盾容介于单件(${3045})与线性叠加(3248)之间: ${s.shield}`);
+    ok(s.armor===1155 && s.structure===840, `M6 其余系列不受影响: ${s.armor}/${s.structure}`);
   }
 
   // 强化等级不影响 rig 容量倍率（rig 不参与强化）

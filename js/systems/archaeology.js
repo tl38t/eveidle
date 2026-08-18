@@ -523,8 +523,14 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
   }
   const rigFuelMultiplier = Math.max(0, 1 - Math.max(0, rigFuelReduction));
 
-  // 生燃料成本（未取整），下限 1；也是长期平均消耗
-  const rawFuelCost = Math.max(0, baseFuel * shipFuelMultiplier * rigFuelMultiplier);
+  // 电容管理技能(capacitorManagement)对所有燃料路径统一生效，降低燃料消耗；与战斗路径 skill 乘子一致。
+  const capSkillLevel = (typeof getCombatSkillLevelFromState === "function")
+    ? getCombatSkillLevelFromState(state, "capacitorManagement")
+    : ((state && state.skills && state.skills.capacitorManagement && state.skills.capacitorManagement.lvl) || 0);
+  const capFactor = 1 / (1 + capSkillLevel * 0.02);
+
+  // 生燃料成本（未取整）；也是长期平均消耗
+  const rawFuelCost = Math.max(0, baseFuel * shipFuelMultiplier * rigFuelMultiplier * capFactor);
   const savingPerCycle = Math.max(0, baseFuel - rawFuelCost);
 
   // 归一化上一次余量到 [0,1)
@@ -546,6 +552,7 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
     baseFuel,
     shipFuelMultiplier,
     rigFuelMultiplier,
+    capFactor,
     rawFuelCost,
     savingPerCycle,
     previousRemainder,
@@ -831,6 +838,36 @@ function getArchaeologyDisplayState(state, now) {
   // 运行中锁定目标，从 started 读取；待命时从 active 读取（允许选择切换）
   const effectiveSiteId = isArchActive ? (arch.startedSiteId || arch.activeSiteId) : arch.activeSiteId;
   const effectiveProbeId = isArchActive ? (arch.startedProbeId || arch.activeProbeId) : arch.activeProbeId;
+
+  // 考古舰「实际生效」属性（供船卡展示：船体 + 装备 + 改装件 + 脑插 + 当前探针；反噬仅取船体+装备可控部分）
+  if (assignedShip && instance) {
+    const fittedB = getArchaeologyFittedBonuses(state, instance);
+    const shipReduction = (config && config.bonuses && config.bonuses.archaeologyFailureDamageReduction) || 0;
+    const scanStrength = computeArchaeologyScanStrength(state, instance, effectiveProbeId);
+    const failureReduction = 1 - (1 - shipReduction) * (1 - Math.min(0.60, fittedB.stabilizer || 0));
+    const fuelSt = getArchaeologyFuelCostState(state, null, instance);
+    const fuelMultiplier = (fuelSt.shipFuelMultiplier || 1) * (fuelSt.rigFuelMultiplier || 1) * (fuelSt.capFactor || 1);
+    const fitting = (typeof getFittingFromInstance === "function") ? getFittingFromInstance(instance) : (instance.fitted || {});
+    const slotsCfg = (config && config.slots) || {};
+    const slotCell = (slot) => ({
+      used: Array.isArray(fitting[slot]) ? fitting[slot].length : 0,
+      cap: (slotsCfg[slot]) || 0
+    });
+    // 装备派生加成（考古页原完全不可见，集中在此汇总；稳定器已折进 failureReduction 不重复）
+    const equipBonuses = {
+      decoder: fittedB.decoder || 0,
+      nonFatalAvoid: fittedB.nonFatalAvoid || 0,
+      copyChance: fittedB.copyChance || 0,
+      cycleReduction: fittedB.cycleReduction || 0
+    };
+    assignedShip.attrs = {
+      scanStrength,
+      failureReduction,
+      fuelMultiplier,
+      slots: { high: slotCell("high"), mid: slotCell("mid"), low: slotCell("low"), rig: slotCell("rig") },
+      equipBonuses
+    };
+  }
 
   const sites = ARCHAEOLOGY_SITES.map(site => {
     const tier = getArchaeologyTierConfig(site.tier);

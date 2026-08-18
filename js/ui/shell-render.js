@@ -2332,7 +2332,7 @@ function buyBlueprintStoreItem(itemId, kind) {
 }
 
 function getHangarBonusText(bonuses) {
-  const names = { shieldCapacity:"+护盾", armorCapacity:"+装甲", structureCapacity:"+结构", laserDamage:"+激光伤", missileDamage:"+导弹伤", cannonDamage:"+炮台伤", capacitorRecharge:"+电容", targetingSpeed:"+锁定", speed:"+速度", miningLaserEfficiency:"+采矿器效能", gasLaserEfficiency:"+采气器效能", salvageEfficiency:"+打捞效率", fleetMiningSpeed:"+舰队采矿速度", smeltingSpeed:"+冶炼速度", miningEfficiency:"+采矿效率", gasEfficiency:"+采气效率" };
+  const names = { shieldCapacity:"+护盾", armorCapacity:"+装甲", structureCapacity:"+结构", laserDamage:"+激光伤", missileDamage:"+导弹伤", cannonDamage:"+炮台伤", targetingSpeed:"+锁定", speed:"+速度", miningLaserEfficiency:"+采矿器效能", gasLaserEfficiency:"+采气器效能", salvageEfficiency:"+打捞效率", fleetMiningSpeed:"+舰队采矿速度", smeltingSpeed:"+冶炼速度", miningEfficiency:"+采矿效率", gasEfficiency:"+采气效率" };
   return Object.entries(bonuses || {}).map(([key, value]) => {
     // 考古船加成为绝对数值 / 固定减免，不能按百分比乘 100 显示。
     if (key === "archaeologyScanStrength") return "扫描强度 " + value;
@@ -2648,7 +2648,7 @@ function openOrbitSelect(index) {
       const destroyButton = slot.equipmentId
         ? '<button class="equip-option empty-option" data-rig-destroy="1"><span class="eq-icon">🗑</span><span class="eq-name">销毁改装件（不返还）</span></button>'
         : "";
-      const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁，同类改装件不能重复安装</div>';
+      const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁；同系列可重复装配，但后续装配受谐振效应影响，实际效果递减</div>';
       options.innerHTML = hint + destroyButton + (stacks.length
         ? stacks.map(item => `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.enhancementLevel ? " +" + item.enhancementLevel : ""}${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`).join("")
         : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
@@ -2668,6 +2668,74 @@ function updateOrbitStats() {
   const display = getShipFittingDisplayState(gameState, orbitShipId); if (!display) return;
   const values = { orbitStatShield:display.stats.shield, orbitStatArmor:display.stats.armor, orbitStatHull:display.stats.structure, orbitStatSpeed:display.stats.speed };
   for (const [id, value] of Object.entries(values)) { const element = document.getElementById(id); if (element) element.textContent = value; }
+}
+
+// 改装件安装结果处理：提示 + 刷新装配面板
+function handleRigFitResult(res) {
+  if (!res.changed && res.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");
+  else if (!res.changed && res.reason === "slot-occupied") showToast("该改装槽已被占用");
+  else if (!res.changed && res.reason === "equipment-unavailable") showToast("仓库中没有该改装件");
+  else if (!res.changed && res.reason) showToast("操作失败：" + res.reason);
+  const panel = document.getElementById("equipSelectPanel"); if (panel) panel.classList.remove("active");
+  buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel();
+}
+
+// 谐振（堆叠）提示弹窗：显示本次装配同系列改装件的实际效果量
+function showRigResonanceModal(preview, def, onConfirm) {
+  let modal = document.getElementById("rigResonanceModal");
+  if (!modal) {
+    modal = document.createElement("div");
+    modal.id = "rigResonanceModal";
+    modal.className = "rig-resonance-overlay";
+    document.body.appendChild(modal);
+    const style = document.createElement("style");
+    style.textContent =
+      ".rig-resonance-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);}" +
+      ".rig-resonance-overlay.active{display:flex;}" +
+      ".rig-resonance-box{width:min(420px,90vw);background:#16202c;border:1px solid #2a3a4a;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);overflow:hidden;}" +
+      ".rig-resonance-box h3{margin:0;padding:14px 18px;font-size:15px;background:linear-gradient(90deg,#1d2a38,#16202c);border-bottom:1px solid #2a3a4a;color:#ffd27d;}" +
+      ".rig-resonance-body{padding:16px 18px;color:#cdd8e3;font-size:13px;line-height:1.6;}" +
+      ".rig-resonance-note{color:#8a9aae;font-size:12px;margin:8px 0 12px;}" +
+      ".rig-resonance-grid{display:grid;grid-template-columns:1fr auto;gap:6px 12px;background:#0f1822;border:1px solid #223040;border-radius:8px;padding:12px 14px;margin:6px 0;}" +
+      ".rig-resonance-grid .k{color:#8a9aae;}" +
+      ".rig-resonance-grid .v{text-align:right;font-variant-numeric:tabular-nums;font-weight:600;}" +
+      ".rig-resonance-grid .v.dim{color:#7dd3fc;}" +
+      ".rig-resonance-grid .v.warn{color:#ffb454;}" +
+      ".rig-resonance-actions{display:flex;gap:10px;padding:14px 18px;border-top:1px solid #2a3a4a;}" +
+      ".rig-resonance-actions button{flex:1;padding:9px 0;border-radius:7px;border:1px solid #2a3a4a;cursor:pointer;font-size:13px;}" +
+      ".rig-resonance-actions .cancel{background:transparent;color:#9fb0c0;}" +
+      ".rig-resonance-actions .confirm{background:#c0392b;border-color:#e74c3c;color:#fff;}";
+    document.head.appendChild(style);
+  }
+  const series = (typeof RIG_SERIES !== "undefined") ? RIG_SERIES.find(s => s.stackGroup === preview.stackGroup) : null;
+  const seriesLabel = (series && series.label) || preview.stackGroup;
+  const bonusLabel = (typeof EQUIPMENT_BONUS_NAMES !== "undefined" && EQUIPMENT_BONUS_NAMES[preview.bonusKey]) || preview.bonusKey;
+  const pct = v => (v * 100).toFixed((Math.abs(v * 100) % 1 < 1e-9) ? 0 : 1) + "%";
+  modal.innerHTML =
+    '<div class="rig-resonance-box">' +
+      '<h3>⚡ 谐振效应提示</h3>' +
+      '<div class="rig-resonance-body">' +
+        '你正在安装第 <b>' + preview.newPosition + '</b> 个「<b>' + seriesLabel + '</b>」改装件。<br>' +
+        '同一舰船重复装配同系列改装件，后装配的改装件会因<b>谐振效应</b>降低实际效果。' +
+        '<div class="rig-resonance-note">「' + bonusLabel + '」名义效果 ' + pct(preview.baseValue) + '，实际生效量见下：</div>' +
+        '<div class="rig-resonance-grid">' +
+          '<span class="k">本件名义效果</span><span class="v">+' + pct(preview.baseValue) + '</span>' +
+          '<span class="k">谐振系数（第 ' + preview.newPosition + ' 件）</span><span class="v warn">×' + pct(preview.penalty) + '</span>' +
+          '<span class="k">本件实际生效</span><span class="v dim">+' + pct(preview.effectiveValue) + '</span>' +
+          '<span class="k">安装前该系列累计</span><span class="v">+' + pct(preview.totalBefore) + '</span>' +
+          '<span class="k">安装后该系列累计</span><span class="v dim">+' + pct(preview.totalAfter) + '</span>' +
+        '</div>' +
+      '</div>' +
+      '<div class="rig-resonance-actions">' +
+        '<button class="cancel" data-rr-cancel>取消</button>' +
+        '<button class="confirm" data-rr-confirm>仍要安装</button>' +
+      '</div>' +
+    '</div>';
+  modal.classList.add("active");
+  const close = () => modal.classList.remove("active");
+  modal.querySelector("[data-rr-cancel]").onclick = close;
+  modal.querySelector("[data-rr-confirm]").onclick = () => { close(); onConfirm(); };
+  modal.onclick = e => { if (e.target === modal) close(); };
 }
 
 function renderQueuePanel() {
@@ -3244,19 +3312,25 @@ function installTutorialWidgetListeners() {
       // 改装件槽：销毁 / 替换 / 安装均走专属 Action（事件契约 rig:destroyed / rig:replaced / rig:fitted）
       if (option.dataset.rigDestroy) {
         if (!confirm("确定销毁「" + (slot.name || "该改装件") + "」吗？\n\n⚠ 改装件拆卸即销毁，不会返还仓库，此操作不可撤销！")) return;
-        result = dispatchGameAction(gameState, { type:"hangar/destroyFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex }, Date.now());
+        handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/destroyFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex }, Date.now()));
       } else if (slot.equipmentId) {
         const newName = (EQUIPMENT_DB[option.dataset.equip] || {}).name || option.dataset.equip;
         if (!confirm("确定用「" + newName + "」替换「" + (slot.name || "当前改装件") + "」吗？\n\n⚠ 被替换的旧改装件将被销毁，不会返还仓库，此操作不可撤销！")) return;
-        result = dispatchGameAction(gameState, { type:"hangar/replaceFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now());
+        handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/replaceFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now()));
       } else {
-        result = dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now());
+        // 新安装：同系列已装配则弹谐振提示（显示实际效果量），确认后再装
+        const newRigId = option.dataset.equip;
+        const newDef = EQUIPMENT_DB[newRigId];
+        const inst = getShipInstanceFromState(gameState, orbitShipId);
+        const preview = (newDef && newDef.slot === "rig" && inst) ? getRigResonancePreview(gameState, inst, newRigId) : null;
+        if (preview && preview.existingCount > 0) {
+          showRigResonanceModal(preview, newDef, () => {
+            handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:newRigId }, Date.now()));
+          });
+        } else {
+          handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:newRigId }, Date.now()));
+        }
       }
-      if (!result.changed && result.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");
-      else if (!result.changed && result.reason === "same-stack-group-exists") showToast("同类改装件已安装，不能重复安装");
-      else if (!result.changed && result.reason === "slot-occupied") showToast("该改装槽已被占用");
-      else if (!result.changed && result.reason === "equipment-unavailable") showToast("仓库中没有该改装件");
-      else if (!result.changed && result.reason) showToast("操作失败：" + result.reason);
     } else {
       result = dispatchGameAction(gameState, { type:"hangar/setFittingSlot", instanceId:orbitShipId, slot:slot.type, slotIndex:slot.slotIndex, equipmentId:option.dataset.equip || null }, Date.now());
       if (!result.changed && result.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");

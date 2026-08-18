@@ -604,6 +604,17 @@
 .archaeology-no-ship span { display:block; color:#d4a843; font-weight:600; margin-bottom:4px; }
 .archaeology-no-ship small { color:#6a7a8e; }
 
+/* 考古舰属性面板（血条下的实际生效属性） */
+.archaeology-ship-attrs { margin-top:10px; }
+.arch-attr-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:8px; }
+.arch-attr { background:rgba(255,255,255,.04); border:1px solid #2a3a4a; border-radius:6px; padding:8px 10px; display:flex; flex-direction:column; gap:3px; }
+.arch-attr-label { font-size:11px; color:#6a7a8e; }
+.arch-attr-value { font-size:15px; font-weight:600; color:#d6e2ee; }
+.arch-attr-slots { font-size:12px; line-height:1.4; }
+.arch-attr-chips { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:8px; }
+.arch-chips-title { font-size:11px; color:#6a7a8e; margin-right:2px; }
+.arch-chip { font-size:11px; color:#bcd0e0; background:rgba(120,170,220,.12); border:1px solid #2f4a63; border-radius:10px; padding:2px 8px; }
+
 .archaeology-section-title {
   font-size:13px; font-weight:700; color:#8899aa; margin:14px 0 8px;
 }

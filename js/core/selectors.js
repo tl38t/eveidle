@@ -92,13 +92,22 @@ function getShipRoleName(shipId) {
   return (type && TYPE_MAP[type]) || "舰船";
 }
 
-function getShipAssignmentRestriction(config, actionKey, combatRecoveryActive) {
+function getShipAssignmentRestriction(config, actionKey, combatRecoveryActive, instance, state) {
   const bonuses = config && config.bonuses ? config.bonuses : {};
   if (!["combat", "mining", "gasHarvesting", "refining", "archaeology"].includes(actionKey)) return { reason:"unsupported-task", text:"该任务不需要分配舰船岗位" };
   if (actionKey === "combat" && combatRecoveryActive) return { reason:"repairing", text:"舰船自动维修中" };
   if (actionKey === "mining" && !(bonuses.miningLaserEfficiency > 0)) return { reason:"unsupported-mining", text:"该舰船没有采矿岗位" };
   if (actionKey === "gasHarvesting" && !(bonuses.gasLaserEfficiency > 0)) return { reason:"unsupported-gas", text:"该舰船没有采气岗位" };
-  if (actionKey === "refining" && !(bonuses.smeltingSpeed > 0)) return { reason:"unsupported-refining", text:"只有工业支援舰可以承担冶炼岗位" };
+  if (actionKey === "refining") {
+    // 冶炼资格 = 船体自带 smeltingSpeed + 改装件（冶炼速度 rig）提供的 smeltingSpeed 之和。
+    // 任一来源提供冶炼效率即可承担冶炼岗位（呼应"只要带冶炼效率提升就行"）。
+    let smelt = Number(bonuses.smeltingSpeed) || 0;
+    if (instance && state && typeof getRigModifiers === "function") {
+      const rigMods = getRigModifiers(state, instance) || {};
+      smelt += Number(rigMods.smeltingSpeed) || 0;
+    }
+    if (!(smelt > 0)) return { reason:"unsupported-refining", text:"该舰船没有冶炼能力（需船体或改装件提供冶炼速度）" };
+  }
   if (actionKey === "archaeology" && !((bonuses.archaeologyScanStrength || 0) > 0)) return { reason:"unsupported-archaeology", text:"该舰船没有考古扫描能力" };
   return null;
 }
@@ -1690,6 +1699,7 @@ function getCombatFuelMultiplierFromState(state, zone, context) {
   const selectedZone = zone || COMBAT_ZONES.find(item => item.id === (state.combat && state.combat.zone));
   const shipMultiplier = Number.isFinite(ship.fuelEfficiency) ? ship.fuelEfficiency : 1;
   const zoneMultiplier = selectedZone && Number.isFinite(selectedZone.fuelMult) ? selectedZone.fuelMult : 1;
+  // 舰船级燃料折扣 = 船体燃料效率(fuelEfficiency)；电容管理技能(capacitorManagement)对所有燃料路径统一生效（考古见 getArchaeologyFuelCostState）。
   return calculateCombatStatFromState(state, "fuelMultiplier", 1, [
     { operation:"multiply", value:shipMultiplier, priority:10, source:"ship" },
     { operation:"multiply", value:zoneMultiplier, priority:20, source:"zone" },
@@ -2462,13 +2472,13 @@ function getBlueprintShipPreview(item) {
   const bonusNames = {
     shieldCapacity:"护盾容量", armorCapacity:"装甲容量", structureCapacity:"结构容量",
     laserDamage:"激光伤害", missileDamage:"导弹伤害", cannonDamage:"射弹伤害",
-    capacitorRecharge:"电容回充", targetingSpeed:"锁定速度", speed:"速度",
+    targetingSpeed:"锁定速度", speed:"速度",
     armorRepair:"装甲维修", structureRepair:"结构维修", hitBonus:"命中",
     miningLaserEfficiency:"采矿装备效果", gasLaserEfficiency:"采气装备效果", salvageEfficiency:"打捞效率",
     fleetMiningSpeed:"舰队采矿速度", smeltingSpeed:"冶炼速度",
     archaeologyScanStrength:"扫描强度", archaeologyFailureDamageReduction:"失败反噬减免"
   };
-  const percentKeys = new Set(["shieldCapacity", "armorCapacity", "structureCapacity", "laserDamage", "missileDamage", "cannonDamage", "capacitorRecharge", "targetingSpeed", "speed", "armorRepair", "structureRepair", "miningLaserEfficiency", "gasLaserEfficiency", "salvageEfficiency", "fleetMiningSpeed", "smeltingSpeed", "archaeologyFailureDamageReduction"]);
+  const percentKeys = new Set(["shieldCapacity", "armorCapacity", "structureCapacity", "laserDamage", "missileDamage", "cannonDamage", "targetingSpeed", "speed", "armorRepair", "structureRepair", "miningLaserEfficiency", "gasLaserEfficiency", "salvageEfficiency", "fleetMiningSpeed", "smeltingSpeed", "archaeologyFailureDamageReduction"]);
   const bonuses = Object.entries(ship.bonuses || {}).map(([key, value]) =>
     (bonusNames[key] || key) + " +" + (percentKeys.has(key) ? Math.round(value * 100) + "%" : value)
   );
@@ -2762,7 +2772,7 @@ function getHangarDisplayState(state, now) {
           blockedText:dismantleBlocked ? (SHIP_DISMANTLE_BLOCK_TEXT[dismantleBlocked] || "当前无法拆解") : ""
         },
         assignments:Object.keys(actionNames).map(actionKey => {
-          const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && thisRepairing);
+          const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && thisRepairing, instance, state);
           return { actionKey, name:actionNames[actionKey], active:assignedActions.includes(actionKey), locked:Boolean(restriction), lockedReason:restriction ? restriction.text : "" };
         })
       };

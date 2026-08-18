@@ -89,6 +89,23 @@ function renderArchaeologyPage(now) {
           ${renderHpBar("装甲", ship.hp.armor, ship.maxHp.armor, "#d4a843")}
           ${renderHpBar("结构", ship.hp.structure, ship.maxHp.structure, "#e05555")}
         </div>` : ""}
+      ${ship.attrs ? `
+        <div class="archaeology-ship-attrs">
+          <div class="arch-attr-grid">
+            <div class="arch-attr"><span class="arch-attr-label">扫描强度</span><span class="arch-attr-value">${Math.round(ship.attrs.scanStrength)}</span></div>
+            <div class="arch-attr"><span class="arch-attr-label">失败反噬减免</span><span class="arch-attr-value">${Math.round(ship.attrs.failureReduction * 100)}%</span></div>
+            <div class="arch-attr"><span class="arch-attr-label">燃料效率</span><span class="arch-attr-value">${ship.attrs.fuelMultiplier.toFixed(2)}</span></div>
+            <div class="arch-attr"><span class="arch-attr-label">槽位占用</span><span class="arch-attr-value arch-attr-slots">高${ship.attrs.slots.high.used}/${ship.attrs.slots.high.cap} · 中${ship.attrs.slots.mid.used}/${ship.attrs.slots.mid.cap} · 低${ship.attrs.slots.low.used}/${ship.attrs.slots.low.cap} · 改${ship.attrs.slots.rig.used}/${ship.attrs.slots.rig.cap}</span></div>
+          </div>
+          ${ship.attrs.equipBonuses && (ship.attrs.equipBonuses.decoder > 0 || ship.attrs.equipBonuses.nonFatalAvoid > 0 || ship.attrs.equipBonuses.copyChance > 0 || ship.attrs.equipBonuses.cycleReduction > 0) ? `
+          <div class="arch-attr-chips">
+            <span class="arch-chips-title">装备加成</span>
+            ${ship.attrs.equipBonuses.decoder > 0 ? `<span class="arch-chip">译码 +${Math.round(ship.attrs.equipBonuses.decoder * 100)}%</span>` : ""}
+            ${ship.attrs.equipBonuses.nonFatalAvoid > 0 ? `<span class="arch-chip">免伤 ${Math.round(ship.attrs.equipBonuses.nonFatalAvoid * 100)}%</span>` : ""}
+            ${ship.attrs.equipBonuses.copyChance > 0 ? `<span class="arch-chip">复制 ${Math.round(ship.attrs.equipBonuses.copyChance * 100)}%</span>` : ""}
+            ${ship.attrs.equipBonuses.cycleReduction > 0 ? `<span class="arch-chip">周期 -${Math.round(ship.attrs.equipBonuses.cycleReduction * 100)}%</span>` : ""}
+          </div>` : ""}
+        </div>` : ""}
       ${repairPanel}
     </div>
   ` : `<div class="archaeology-no-ship">
