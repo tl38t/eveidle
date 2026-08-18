@@ -154,7 +154,7 @@ function loadWhitelistedWorktree(map) {
 }
 
 // ---------- 本地化 index.html ----------
-function localizeIndexHtml(html) {
+function localizeIndexHtml(html, includeProbe) {
   let out = html;
   // 移除本地 QA 入口脚本（js/qa-seed.js 仅用于本地验收，禁止进入发布包；无论 selftest/release）
   out = out.replace(/<script[^>]*src=["'][^"']*js\/qa-seed\.js[^"']*["'][^>]*>\s*<\/script>\s*/g, "");
@@ -166,7 +166,7 @@ function localizeIndexHtml(html) {
     '<link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css">\n' +
     '<link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">'
   );
-  if (INCLUDE_PROBE) {
+  if (includeProbe) {
     out = out.replace(
       "</body>",
       '<script type="module" src="./taptap-compat-probe.mjs"></script>\n</body>'
@@ -235,7 +235,7 @@ async function buildOnce(SOURCE_SHA, includeProbe) {
 
   // 本地化 index.html
   if (!map.has("index.html")) fail("包内缺少 index.html");
-  map.set("index.html", Buffer.from(localizeIndexHtml(map.get("index.html").toString("utf8")), "utf8"));
+  map.set("index.html", Buffer.from(localizeIndexHtml(map.get("index.html").toString("utf8"), includeProbe), "utf8"));
 
   // 排序键（确定性）
   const keys = [...map.keys()].sort((a, b) => a.localeCompare(b));
@@ -481,7 +481,12 @@ function verifyPackage(buffer, mode, includeProbe) {
   if (MODE === "release") {
     const sBuild = await buildOnce(SOURCE_SHA, true);
     const sVerify = await verifyPackage(sBuild.buffer, "selftest", true);
-    if (sVerify.some((r) => !r.pass)) { console.error("selftest 内部构建校验失败，终止"); process.exit(2); }
+    const sFailList = sVerify.filter((r) => !r.pass);
+    if (sFailList.length) {
+      console.error("selftest 内部构建校验失败:");
+      for (const r of sFailList) console.error("  FAIL " + r.name + (r.detail ? "  [" + r.detail + "]" : ""));
+      process.exit(2);
+    }
     fs.writeFileSync(path.join(OUTDIR, "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip"), sBuild.buffer);
     console.log("[SELFTEST] 已生成匹配 selftest 包以供跨模式校验");
   }
