@@ -10,8 +10,10 @@
 //  - 构建两次，校验文件清单 / 各文件 SHA-256 / 最终 ZIP SHA-256 一致（确定性）。
 //  - 来源 SHA 不得硬编码：由 --source-sha 提供，且必须等于本次构建时的当前 HEAD，
 //    同时要求工作分支为 main、tracked 工作树干净、staged 为空。
-//  - 模式：`--mode selftest` 注入探针，输出 deep-space-idle-taptap-rc9-selftest.zip；
-//          `--mode release` 完全不注入探针，输出 deep-space-idle-taptap-rc9.zip。
+//  - 模式：`--mode selftest` 注入探针，输出 deep-space-idle-taptap-rc{N}-selftest.zip；
+//          `--mode release` 完全不注入探针，输出 deep-space-idle-taptap-rc{N}.zip。
+//          RC 号由 tools/rc-counter.txt 持久化：release 每次 +1，selftest 复用当前号；
+//          release 模式会内部生成同名 selftest 包供跨模式一致性校验。
 
 import fs from "node:fs";
 import path from "node:path";
@@ -55,11 +57,19 @@ const WORKTREE_SELFTEST = process.argv.includes("--worktree-selftest");
 if (WORKTREE_SELFTEST && MODE !== "selftest") {
   throw new Error("--worktree-selftest is restricted to --mode selftest");
 }
-const ZIP_NAME = MODE === "release"
-  ? "deep-space-idle-taptap-rc9.zip"
-  : WORKTREE_SELFTEST
-    ? "deep-space-idle-taptap-rc9-worktree-selftest.zip"
-    : "deep-space-idle-taptap-rc9-selftest.zip";
+// RC 计数器：每次生成 release 包时 +1；selftest/worktree-selftest 复用当前 RC 号（不 +1）。
+// 计数器存于 tools/rc-counter.txt（已加入 .gitignore，纯本地、不进包、不进仓库）。
+const COUNTER_PATH = path.join(REPO, "tools", "rc-counter.txt");
+function readRcCounter() {
+  try {
+    const v = Number(fs.readFileSync(COUNTER_PATH, "utf8").trim());
+    if (Number.isFinite(v) && v >= 0) return v;
+  } catch (_) { /* 缺失则用默认基线 9（已发布至 rc9） */ }
+  return 9;
+}
+function writeRcCounter(n) { fs.writeFileSync(COUNTER_PATH, String(n)); }
+let ZIP_NAME = "";      // 在 main 流程中按 RC 计算
+let CURRENT_RC = 0;     // 当前构建使用的 RC 号
 
 // ---- 来源 SHA（--source-sha，必须 == 当前 HEAD）----
 function parseSourceSha() {
@@ -194,7 +204,7 @@ function collectRefs(rel, content) {
 }
 
 // ---------- 单次构建 ----------
-async function buildOnce(SOURCE_SHA) {
+async function buildOnce(SOURCE_SHA, includeProbe) {
   const stage = path.join(OUTDIR, "_stage");
   fs.rmSync(stage, { recursive: true, force: true });
   fs.mkdirSync(stage, { recursive: true });
@@ -218,7 +228,7 @@ async function buildOnce(SOURCE_SHA) {
   walkDirToMap(ASSETS_SRC, "assets/vendor/taptap-h5", map);
 
   // 探针
-  if (INCLUDE_PROBE) {
+  if (includeProbe) {
     if (!fs.existsSync(PROBE_SRC)) fail("探针源文件缺失: " + PROBE_SRC);
     map.set("taptap-compat-probe.mjs", fs.readFileSync(PROBE_SRC));
   }
@@ -259,7 +269,7 @@ async function buildOnce(SOURCE_SHA) {
 }
 
 // ---------- 校验 ----------
-function verifyPackage(buffer, mode) {
+function verifyPackage(buffer, mode, includeProbe) {
   const results = [];
   const ok = (name, cond, detail) => results.push({ name, pass: !!cond, detail: detail || "" });
 
@@ -292,7 +302,7 @@ function verifyPackage(buffer, mode) {
     ok("排除清单零命中", hits.length === 0, hits.slice(0, 5).join(" | "));
     // 8)9) 探针注入一次 & 外链零残留
     const probeCount = (indexTxt.match(/taptap-compat-probe\.mjs/g) || []).length;
-    ok("探针恰好注入一次", INCLUDE_PROBE ? probeCount === 1 : probeCount === 0, "count=" + probeCount);
+    ok("探针恰好注入一次", includeProbe ? probeCount === 1 : probeCount === 0, "count=" + probeCount);
     const extHit = (indexTxt.match(/fonts\.googleapis|fonts\.gstatic|cdnjs\.cloudflare/i) || []);
     ok("index.html 外链零残留", extHit.length === 0, extHit.join(","));
 
@@ -331,7 +341,7 @@ function verifyPackage(buffer, mode) {
       ok("release: 运行文件不含 ?qa= 场景入口", !qaSceneHit);
 
       // 跨模式比对：与 selftest 产物证明“唯一差异=探针文件+index.html 注入标签”
-      const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc9-selftest.zip");
+      const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip");
       if (fs.existsSync(selftestZip)) {
         try {
           const sz = await JSZip.loadAsync(fs.readFileSync(selftestZip));
@@ -431,8 +441,21 @@ function verifyPackage(buffer, mode) {
 
 // ---------- 主流程 ----------
 (async () => {
-  console.log("=== TapTap H5 构建（RC9）===");
-  console.log("模式: " + MODE + (INCLUDE_PROBE ? "（保留探针）" : "（正式候选包 RC9，无探针）"));
+  // 2) 计算 RC 号：release 包每次 +1；selftest/worktree 复用当前号（不 +1）
+  if (MODE === "release") {
+    CURRENT_RC = readRcCounter() + 1;
+    writeRcCounter(CURRENT_RC);
+  } else {
+    CURRENT_RC = readRcCounter();
+  }
+  ZIP_NAME = MODE === "release"
+    ? "deep-space-idle-taptap-rc" + CURRENT_RC + ".zip"
+    : WORKTREE_SELFTEST
+      ? "deep-space-idle-taptap-rc" + CURRENT_RC + "-worktree-selftest.zip"
+      : "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip";
+
+  console.log("=== TapTap H5 构建（RC" + CURRENT_RC + "）===");
+  console.log("模式: " + MODE + (INCLUDE_PROBE ? "（保留探针）" : "（正式候选包 RC" + CURRENT_RC + "，无探针）"));
   console.log("输出 ZIP: " + ZIP_NAME);
   if (WORKTREE_SELFTEST) console.log("[SELFTEST] 从当前工作区白名单文件构建；release 模式禁止使用此开关");
 
@@ -454,15 +477,24 @@ function verifyPackage(buffer, mode) {
 
   fs.mkdirSync(OUTDIR, { recursive: true });
 
+  // release 模式：先内部构建同名 selftest 包，供跨模式一致性校验（证明唯一差异=探针）
+  if (MODE === "release") {
+    const sBuild = await buildOnce(SOURCE_SHA, true);
+    const sVerify = await verifyPackage(sBuild.buffer, "selftest", true);
+    if (sVerify.some((r) => !r.pass)) { console.error("selftest 内部构建校验失败，终止"); process.exit(2); }
+    fs.writeFileSync(path.join(OUTDIR, "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip"), sBuild.buffer);
+    console.log("[SELFTEST] 已生成匹配 selftest 包以供跨模式校验");
+  }
+
   console.log("\n--- 第一次构建 ---");
-  const b1 = await buildOnce(SOURCE_SHA);
-  const v1 = await verifyPackage(b1.buffer, MODE);
+  const b1 = await buildOnce(SOURCE_SHA, INCLUDE_PROBE);
+  const v1 = await verifyPackage(b1.buffer, MODE, INCLUDE_PROBE);
   let allPass = true;
   for (const r of v1) { console.log((r.pass ? "PASS " : "FAIL ") + r.name + (r.detail ? "  [" + r.detail + "]" : "")); if (!r.pass) allPass = false; }
 
   console.log("\n--- 第二次构建（确定性复验）---");
-  const b2 = await buildOnce(SOURCE_SHA);
-  const v2 = await verifyPackage(b2.buffer, MODE);
+  const b2 = await buildOnce(SOURCE_SHA, INCLUDE_PROBE);
+  const v2 = await verifyPackage(b2.buffer, MODE, INCLUDE_PROBE);
   for (const r of v2) { console.log((r.pass ? "PASS " : "FAIL ") + r.name); if (!r.pass) allPass = false; }
 
   // 14) 两次构建一致

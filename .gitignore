@@ -8,3 +8,6 @@ package.json
 
 # 本地回归日志
 logs/
+
+# 本地 RC 计数器（构建脚本自动维护，不进仓库）
+tools/rc-counter.txt
