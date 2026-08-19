@@ -2156,6 +2156,9 @@ function getEquipmentFunctionGroup(eq){
   return "其他";
 }
 const EQUIP_FUNCTION_ORDER = { "武器":0,"维修":1,"采矿":2,"采气":3,"打捞":4,"考古":5,"改装件":6,"其他":7,"舰船组件":8 };
+/* 增强剂制造五档战术材料名→T1..T5 档位序（仓库「战术材料」小分类内按档排序；boosters.js 的 TACTICAL_MATERIALS 在 selectors.js 前加载） */
+const TACTICAL_MATERIAL_ORDER = (typeof TACTICAL_MATERIALS !== "undefined")
+  ? Object.fromEntries(TACTICAL_MATERIALS.map((m, i) => [m.name, i])) : {};
 /* 计算单个仓库物品的分层排序元数据；componentLevelByName 为 舰船组件名→等级 映射 */
 function computeCargoSortMeta(item, componentLevelByName){
   const topRank = CARGO_TOP_RANK[item.category] != null ? CARGO_TOP_RANK[item.category] : 99;
@@ -2169,13 +2172,19 @@ function computeCargoSortMeta(item, componentLevelByName){
     if(id.indexOf("calibration:") === 0){
       subRank = 0; subLabel = "校准基体";
       const m = id.match(/_([iv]+)_calib$/); primary = romanToNum(m ? m[1] : "");
-    } else if(/密钥/.test(nm)){ subRank = 1; subLabel = "战斗密钥"; primary = 0; secondary = nm; }        // 势力密钥(劫团低阶密钥等) + 通行密钥
-    else if(/协议/.test(nm)){ subRank = 2; subLabel = "协议材料"; primary = 0; secondary = nm; }          // 死亡空间首领协议
-    else if(/战术残液/.test(nm)){ subRank = 3; subLabel = "战术残液"; primary = 0; secondary = nm; }
-    else if(/核心/.test(nm)){ subRank = 4; subLabel = "核心素材"; primary = 0; secondary = nm; }          // 校准核心 + 空间站核心
-    else if(/生产许可/.test(nm)){ subRank = 5; subLabel = "装备生产许可"; primary = 0; secondary = nm; }  // 苍穹劫团装备生产许可 D/C/B/A 等
-    else if(/神经植入体/.test(nm)){ subRank = 6; subLabel = "神经植入体"; primary = 0; secondary = nm; }
-    else if(/数据/.test(nm)){ subRank = 7; subLabel = "舰船数据"; primary = 0; secondary = nm; }          // 天穹/重垒/裂界 深层舰船数据
+    } else if(/通行密钥/.test(nm)){ subRank = 1; subLabel = "通行密钥"; primary = 0; secondary = nm; }     // 死亡空间入场凭证（各势力/站点通行密钥）
+    else if(/阶密钥/.test(nm)){                                                                       // 势力加密数据（天使低阶密钥/血袭中阶密钥/萨沙高阶密钥…）
+      subRank = 2; subLabel = "势力密钥";
+      const tm = nm.match(/(低|中|高)阶/); const torder = { 低:0, 中:1, 高:2 };
+      primary = tm ? torder[tm[1]] : 0; secondary = nm;
+    } else if(/协议/.test(nm)){ subRank = 3; subLabel = "协议材料"; primary = 0; secondary = nm; }          // 死亡空间首领协议
+    else if(TACTICAL_MATERIAL_ORDER.hasOwnProperty(nm)){                                                 // 增强剂制造五档战术材料（战术残液→活性战术凝胶→高能战术萃取物→极化战术介质→深层适应性样本）
+      subRank = 4; subLabel = "战术材料";
+      primary = TACTICAL_MATERIAL_ORDER[nm]; secondary = nm;
+    } else if(/核心/.test(nm)){ subRank = 5; subLabel = "核心素材"; primary = 0; secondary = nm; }          // 校准核心 + 空间站核心
+    else if(/生产许可/.test(nm)){ subRank = 6; subLabel = "装备生产许可"; primary = 0; secondary = nm; }  // 苍穹劫团装备生产许可 D/C/B/A 等
+    else if(/神经植入体/.test(nm)){ subRank = 7; subLabel = "神经植入体"; primary = 0; secondary = nm; }
+    else if(/数据/.test(nm)){ subRank = 8; subLabel = "舰船数据"; primary = 0; secondary = nm; }          // 天穹/重垒/裂界 深层舰船数据
     else { subRank = 9; subLabel = "其他掉落"; primary = 0; secondary = nm; }
   } else if(cat === "consumable"){
     if(nm === "燃料单元"){ subRank = 0; subLabel = "燃料"; }
