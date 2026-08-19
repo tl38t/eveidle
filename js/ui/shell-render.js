@@ -142,7 +142,33 @@ function renderCargoPage(filter) {
   }
   if (!isEquipmentTab) {
     currentCargoItems = display.items;
-    list.innerHTML = display.items.length ? display.items.map((item, idx) => buildCargoCardHTML(item, { dataAttr:'data-ci="' + idx + '"' })).join("") : `<div class="cargo-empty">${display.emptyText}</div>`;
+    if (!display.items.length) {
+      list.innerHTML = `<div class="cargo-empty">${escapeAchievementText(display.emptyText)}</div>`;
+    } else {
+      // 仓库自动排序视图：按顶层分类（仅「全部」时显示吸顶标题）+ 小分类分组渲染，
+      // 每个分组包进 .cargo-cluster > .cargo-grid；标题 div 不带 data-ci、非 .cargo-card，不影响点击映射。
+      const showTop = display.filter === "all";
+      let html = "";
+      let curTop = null, curSub = null, gridOpen = false;
+      const closeGrid = () => { if (gridOpen) { html += "</div></div>"; gridOpen = false; } };
+      display.items.forEach((item, idx) => {
+        if (showTop && item.topRank !== curTop) {
+          closeGrid();
+          curTop = item.topRank; curSub = null;
+          html += `<div class="cargo-top-head">${escapeAchievementText(item.topLabel)}</div>`;
+        }
+        if (item.subRank !== curSub) {
+          closeGrid();
+          curSub = item.subRank;
+          if (item.subLabel) html += `<div class="cargo-sub-head">${escapeAchievementText(item.subLabel)}</div>`;
+          html += `<div class="cargo-cluster"><div class="cargo-grid">`;
+          gridOpen = true;
+        }
+        html += buildCargoCardHTML(item, { dataAttr:'data-ci="' + idx + '"' });
+      });
+      closeGrid();
+      list.innerHTML = html;
+    }
     if (!cargoCardBound) {
       list.addEventListener("click", event => {
         const card = event.target.closest(".cargo-card"); if (!card) return;

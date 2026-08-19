@@ -2121,6 +2121,84 @@ const CARGO_CATEGORY_LABEL = {
   moon:"月球", special:"特殊", consumable:"消耗品", component:"组件", equipment:"装备"
 };
 
+/* 仓库自动排序：顶层分类固定顺序（矿石→矿物→行星产物→气体→月矿→特殊物资→消耗品→舰船装备） */
+const CARGO_TOP_RANK = { ore:0, mineral:1, planetary:2, gases:3, moon:4, special:5, consumable:6, equipment:7 };
+/* 各类材料的「采集/开采等级」，用于组内升序排列（资源按产出区域等级，矿物/月矿/气体/行星同此映射） */
+const CARGO_COLLECT_LEVEL = {
+  // 矿石（原始小行星带）
+  "凡晶石":1,"灼烧岩":10,"水硼砂":20,"斜长岩":40,"干焦岩":55,"灰岩":70,"艾克诺岩":85,
+  // 矿物（精炼）
+  "三钛合金":1,"类银超金属":10,"类晶体胶矿":20,"同位聚合体":40,"超新星诺克石":55,"基腹断岩":70,"超噬矿":85,
+  // 行星产物
+  "重金属":1,"稀有气体":1,"同位素":20,"等离子体":40,"生物质":60,"磁场聚合物":80,
+  // 气体
+  "粗制富勒烯":1,"氦同位素":10,"稳定富勒烯":20,"氢同位素":40,"高纯富勒烯":55,"聚合气体":70,"超纯聚合气体":85,
+  // 月矿
+  "镓":20,"铂":20,"铪":40,"锇":40,"钷":55,"铷":70
+};
+const ROMAN_TO_NUM = { i:1, ii:2, iii:3, iv:4, v:5 };
+function romanToNum(s){ return ROMAN_TO_NUM[String(s == null ? "" : s).toLowerCase()] || 0; }
+/* 装备按功能分组：武器/维修/采矿/采气/打捞/考古/改装件（依据 slot、combat.kind、bonuses 推导） */
+function getEquipmentFunctionGroup(eq){
+  if(!eq) return "其他";
+  if(eq.slot === "rig") return "改装件";
+  const combat = eq.combat || {};
+  if(combat.kind === "weapon") return "武器";
+  if(combat.kind === "repair") return "维修";
+  const b = eq.bonuses || {};
+  if("salvageEfficiency" in b) return "打捞";
+  if(eq.archaeology === true || "archaeologyScan" in b || "archaeologyStabilizer" in b || "archaeologyDecoder" in b || "archaeologyCycleReduction" in b) return "考古";
+  const hasMining = "miningEfficiency" in b || "miningLaserEfficiency" in b;
+  const hasGas = "gasEfficiency" in b || "gasLaserEfficiency" in b;
+  if(hasMining) return "采矿";
+  if(hasGas) return "采气";
+  if("shieldCapacity" in b || "armorCapacity" in b || "structureCapacity" in b || "hullCapacity" in b) return "维修";
+  return "其他";
+}
+const EQUIP_FUNCTION_ORDER = { "武器":0,"维修":1,"采矿":2,"采气":3,"打捞":4,"考古":5,"改装件":6,"其他":7,"舰船组件":8 };
+/* 计算单个仓库物品的分层排序元数据；componentLevelByName 为 舰船组件名→等级 映射 */
+function computeCargoSortMeta(item, componentLevelByName){
+  const topRank = CARGO_TOP_RANK[item.category] != null ? CARGO_TOP_RANK[item.category] : 99;
+  const topLabel = CARGO_CATEGORY_LABEL[item.category] || item.categoryLabel || "";
+  let subRank = 0, subLabel = null, primary = 0, secondary = "";
+  const cat = item.category, nm = item.name || "", id = item.id || "";
+  if(["ore","mineral","planetary","gases","moon"].includes(cat)){
+    subLabel = null; // 资源类不拆分小分类，按采集等级升序一条直线排
+    primary = CARGO_COLLECT_LEVEL[nm] != null ? CARGO_COLLECT_LEVEL[nm] : 999;
+  } else if(cat === "special"){
+    if(id.indexOf("calibration:") === 0){
+      subRank = 0; subLabel = "校准基体";
+      const m = id.match(/_([iv]+)_calib$/); primary = romanToNum(m ? m[1] : "");
+    } else { subRank = 1; subLabel = "其他文物"; primary = 0; secondary = nm; }
+  } else if(cat === "consumable"){
+    if(nm === "燃料单元"){ subRank = 0; subLabel = "燃料"; }
+    else if(/弹药|导弹/.test(nm)){
+      const tier = (nm.match(/T(\d+)/) || [,"1"])[1];
+      subRank = 10 + Number(tier); subLabel = "弹药 T" + tier; secondary = nm.replace(/\s*T\d+.*$/,"");
+    }
+    else if(nm === "纳米维修膏"){ subRank = 2; subLabel = "维修耗材"; }
+    else if(/货柜/.test(nm)){
+      const size = (nm.match(/货柜\s*(S|M|L|XL)/) || [,"M"])[1];
+      const sizeOrder = { S:0, M:1, L:2, XL:3 };
+      subRank = 3; subLabel = "容器"; primary = sizeOrder[size] != null ? sizeOrder[size] : 1;
+    }
+    else { subRank = 9; subLabel = "其它"; secondary = nm; }
+  } else if(cat === "equipment"){
+    if(item.isEquipment){
+      const eq = EQUIPMENT_DB[item.itemId];
+      const grp = getEquipmentFunctionGroup(eq);
+      subRank = EQUIP_FUNCTION_ORDER[grp] != null ? EQUIP_FUNCTION_ORDER[grp] : 7;
+      subLabel = grp;
+      primary = -(eq ? (eq.level || 0) : 0); // 组内按等级降序（高强化在前、低强化在后）
+    } else {
+      subRank = 8; subLabel = "舰船组件";
+      const lvl = componentLevelByName ? componentLevelByName[nm] : undefined;
+      primary = lvl != null ? lvl : 0;
+    }
+  }
+  return { topRank, topLabel, subRank, subLabel, primary, secondary };
+}
+
 function getCargoDisplayState(state, filter) {
   // 脑插子标签：展示全部 6 枚（拥有/未获得），不依赖 ITEM_CATEGORIES 资源池
   if (filter === "implant") {
@@ -2264,7 +2342,22 @@ function getCargoDisplayState(state, filter) {
       });
     }
   }
-  items.sort((left, right) => right.quantity - left.quantity);
+  // 仓库自动排序：顶层分类固定顺序 → 小分类 → 组内排序键（资源按采集等级升序；装备组内按等级降序；数量仅作同级 tiebreaker）
+  const componentLevelByName = Object.fromEntries(SHIP_COMPONENT_RECIPES.map(r => [r.name, r.level]));
+  for (const it of items) {
+    const meta = computeCargoSortMeta(it, componentLevelByName);
+    it.topRank = meta.topRank; it.topLabel = meta.topLabel;
+    it.subRank = meta.subRank; it.subLabel = meta.subLabel;
+    it._primary = meta.primary; it._secondary = meta.secondary;
+  }
+  items.sort((a, b) => {
+    if (a.topRank !== b.topRank) return a.topRank - b.topRank;
+    if (a.subRank !== b.subRank) return a.subRank - b.subRank;
+    if (a._primary !== b._primary) return a._primary - b._primary;
+    if (a._secondary !== b._secondary) return a._secondary < b._secondary ? -1 : 1;
+    if (b.quantity !== a.quantity) return b.quantity - a.quantity;
+    return (a.name || "") < (b.name || "") ? -1 : 1;
+  });
   return {
     kind:"cargo",
     filter:selectedFilter,
