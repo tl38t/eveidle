@@ -400,10 +400,6 @@ function refreshVisiblePanelAfterAction() {
   document.querySelectorAll(".mining-mode-tab").forEach(tab => tab.addEventListener("click", () => switchMiningMode(tab.dataset.mode)));
 })();
 
-(function bindCargoEvents() {
-  const sortBtn = document.getElementById("btn-sort-cargo"); if (sortBtn) sortBtn.addEventListener("click", () => alert("功能开发中"));
-})();
-
 (function bindButtons() {
   const stopBtn = document.getElementById("btn-stop"); const switchBtn = document.getElementById("btn-switch-skill");
   const startSmeltBtn = document.getElementById("btn-start-smelt"); const startMineBtn = document.getElementById("btn-start-mine"); const startGasBtn = document.getElementById("btn-start-gas");
