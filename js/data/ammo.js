@@ -2,7 +2,7 @@
 // 弹药从 `ammo:<weapon>` 纯计数（state.resources.ammunition）改为 `state.ammo` 实例数组：
 //   { id, type:"laser"|"missile"|"cannon", tier:"T1"|"T2", name, props:{dmgMult,hitMult}, qty, loaded }
 // - 普通弹(props 全 1)与 T2 弹(props 带数值)都是实例，区别只在属性高低（用户定：全部实例化）。
-// - loaded(默认 true)：战斗中是否参战；玩家在战斗面板勾选「参战」控制。
+// - loaded(默认 true)：是否已装载上膛；玩家在战斗面板勾选「已装载」控制。
 // - 消耗时「优先高级」：从已装载(loaded)栈里按 tier 降序扣。
 // - 离线战斗用虚拟快照（ensureVirtualAmmoFuel）读取已装载总量、flush 时 applyAmmoDelta 回写净消耗。
 // 全函数挂全局，供 combat.js / offline-combat.js / station.js / manufacturing.js / selectors.js 调用。
@@ -92,15 +92,15 @@ function applyAmmoDelta(state, type, used) {
   }
   state.ammo = state.ammo.filter(s => (s.qty || 0) > 0);
 }
-// 制造/产出：同型同档优先并「参战」堆、其次「卸下」堆（继承其状态），否则新建实例（默认参战）。
+// 制造/产出：同型同档优先并「已装载」堆、其次「未装载」堆（继承其状态），否则新建实例（默认已装载）。
 // tier/props 缺省按 T1（全 1）；T1/T2 严格分离。
 function addAmmo(state, opts) {
   const arr = ensureAmmoArray(state);
   const t = opts.tier || "T1";
   const p = opts.props || AMMO_TIER_PROPS[t];
   const nm = opts.name || ammoDisplayName(opts.type, t);
-  // C：产出弹药继承同型同档现有堆的状态——优先并「参战」堆，其次「卸下」堆；
-  // 不覆盖原堆 name/props/loaded，T1/T2 严格分离（匹配条件带 tier）。全新类型/档默认参战。
+  // C：产出弹药继承同型同档现有堆的状态——优先并「已装载」堆，其次「未装载」堆；
+  // 不覆盖原堆 name/props/loaded，T1/T2 严格分离（匹配条件带 tier）。全新类型/档默认已装载。
   const loadedMatch   = arr.find(s => s.type === opts.type && s.tier === t && s.loaded !== false);
   const unloadedMatch = arr.find(s => s.type === opts.type && s.tier === t && s.loaded === false);
   const existing = loadedMatch || unloadedMatch;

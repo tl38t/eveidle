@@ -178,10 +178,15 @@ function renderShipAttributes(ship) {
   const element = document.getElementById("ship-attr-display");
   if (!element || !ship) return;
   const labels = { shieldCapacity:"护盾容量", laserDamage:"激光伤害", armorCapacity:"装甲容量", missileDamage:"导弹伤害", targetingSpeed:"锁定速度", structureCapacity:"结构容量", cannonDamage:"炮台伤害", speed:"速度", armorRepair:"装甲维修", structureRepair:"结构维修", hitBonus:"命中", miningLaserEfficiency:"采矿器效能", gasLaserEfficiency:"采气器效能", fleetMiningSpeed:"舰队采矿速度", smeltingSpeed:"冶炼速度" };
-  const bonuses = Object.entries(ship.bonuses).map(([key, value]) => {
+  const bonuses = Object.entries(ship.bonuses).filter(([key]) => key !== "structureEmergencyRepair").map(([key, value]) => {
     // 考古船加成为绝对扫描强度 / 固定失败反噬减免，不能统一按百分比显示。
     if (key === "archaeologyScanStrength") return "扫描强度 " + value;
     if (key === "archaeologyFailureDamageReduction") return "失败反噬减免 " + Math.round(value * 100) + "%（固定）";
+    if (key === "structureRepair") {
+      const extra = ship.bonuses.structureEmergencyRepair || 0;
+      const line = "结构维修 +" + Math.round(value * 100) + "%";
+      return extra > 0 ? line + "（结构<70%时 +" + Math.round((value + extra) * 100) + "%）" : line;
+    }
     return (labels[key] || key) + " +" + (key === "hitBonus" ? value : Math.round(value * 100) + "%");
   }).join(" · ");
   const trait = ship.capitalTrait ? `<div class="ship-attr-bonus">固有特性：<span>${ship.capitalTrait.name} · ${ship.capitalTrait.description}</span></div>` : "";

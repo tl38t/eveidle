@@ -711,6 +711,71 @@ function skipFailedOfflineQueueItem() {
   return advanceOfflineQueue();
 }
 
+// 队列权威 batchLimit 解析（修复 B：考古/采矿/制造等离线分支不得把陈旧/缺失的
+// currentAction.batchRemaining === 0 解释为 Infinity，从而吞掉整段离线时间后才切换）。
+// 规则：
+//  - 队列运行时：以 queue.items[activeIndex].count 为权威。
+//      count === -1        → Infinity（明确的无限任务才允许持续整段离线）；
+//      count 为有限正数    → 等于该值；
+//      count 为 0/NaN/缺失/activeIndex 越界 → fail-closed，按 1 推进（立即终结项并退回队列），
+//                                绝不解释为 Infinity 考古。
+//  - 非队列（手动作业）：以 currentAction.batchRemaining 为权威，同样 0/NaN/缺失 fail-closed 为 1。
+function getQueueBatchLimit(state) {
+  const queue = state.queue;
+  if (queue && queue.status.isRunning && queue.status.activeIndex >= 0 && queue.status.activeIndex < queue.items.length) {
+    const item = queue.items[queue.status.activeIndex];
+    const cnt = item.count;
+    if (cnt === -1) return Infinity;
+    if (typeof cnt === "number" && Number.isFinite(cnt) && cnt > 0) return cnt;
+    return 1; // fail-closed：非法 count 按 1 推进，绝不解释为 Infinity
+  }
+  const br = state.currentAction.batchRemaining;
+  if (br === -1) return Infinity;
+  if (typeof br === "number" && Number.isFinite(br) && br > 0) return br;
+  return 1; // fail-closed：手动作业下非法 batchRemaining 同样不解释为 Infinity
+}
+
+// 队列项 target 与 currentAction 是否一致（仅用于一致性修复判定）。
+function queueItemTargetMatchesAction(state, item, action) {
+  const skill = item.skill;
+  if (skill === "archaeology") return action.archaeologyTarget === item.target;
+  if (skill === "mining") return action.area === item.target || action.normalMiningArea === item.target || action.moonMiningArea === item.target;
+  if (skill === "refining") return action.smeltingArea === item.target;
+  if (skill === "gasHarvesting") return action.gasArea === item.target;
+  if (skill === "shipEngineering") return Boolean(action.shipSubAction) && Boolean(action.shipCompTarget || action.shipAsmTarget);
+  if (skill === "equipmentEngineering") return action.equipEngTarget === item.target;
+  if (skill === "boosterEngineering") return action.boosterTarget === item.target;
+  return true; // 其他（如 combat 由自身逻辑维护）不强制 target
+}
+
+// 进入 settleOfflineActions 时的队列一致性修复（需求 3）：
+// 若队列正在运行且 currentAction 已激活，确认 currentAction 对应当前队列项；
+// skill / target / batchRemaining 任一不一致时，以队列项权威重新 applyQueueConfigToState。
+// 不允许「currentAction.active === true」绕过队列配置同步。
+// 战斗项由 startCombatQueueItem 自管（敌人/波次/queueWaves* 字段），不在此处重新 apply。
+function syncQueueCurrentAction(state) {
+  const queue = state.queue;
+  if (!queue || !queue.status.isRunning) return;
+  if (queue.status.activeIndex < 0 || queue.status.activeIndex >= queue.items.length) {
+    // 索引越界：fail-closed，停止队列（避免把越界项解释为无限考古）
+    queue.status.isRunning = false;
+    queue.status.activeIndex = -1;
+    return;
+  }
+  const item = queue.items[queue.status.activeIndex];
+  if (!item) return;
+  const action = state.currentAction;
+  if (!action.active) return; // 下方 executeQueueItemForState 兜底启动
+  if (item.skill === "combat") return; // 战斗由自身逻辑维护一致性
+  const expectedSkill = item.skill === "ammunitionEngineering" ? "equipmentEngineering" : item.skill;
+  const expectedBatch = (item.count === -1) ? -1 : (Number(item.count) || 1);
+  const targetMatches = queueItemTargetMatchesAction(state, item, action);
+  if (action.skill !== expectedSkill || action.batchRemaining !== expectedBatch || !targetMatches) {
+    applyQueueConfigToState(state, getQueueItemConfigForState(item), Date.now());
+    state._dirty = true;
+  }
+}
+
 function settleOfflineActions(seconds, gains) {
   const queue = gameState.queue;
   if (queue && queue.status.isRunning && queue.items.length > 0 && !gameState.currentAction.active) {
@@ -719,6 +784,11 @@ function settleOfflineActions(seconds, gains) {
     queue.status.activeIndex = index;
     executeQueueItemForState(gameState, queue.items[index], Date.now());
   }
+
+  // 队列一致性修复：currentAction 已激活但可能与当前队列项错位（陈旧 batchRemaining /
+  // 错配 skill/target，典型为旧档恢复或刷新），以队列项权威重新同步，避免把陈旧
+  // batchRemaining === 0 解释为无限、从而吞掉整段离线时间。
+  syncQueueCurrentAction(gameState);
 
   let remaining = seconds;
   let guard = 0;
@@ -764,8 +834,8 @@ function settleOfflineActions(seconds, gains) {
     //   - maxWallSeconds = 完整剩余墙钟（remaining），保证维修可跨段按墙钟完成
     //   - actionBudgetSeconds = boosterLimitSec（仅约束行动时间，不约束维修/进度）
     if (currentSkill === "archaeology" && typeof descriptor.settleByTime === "function") {
-      const batchRemaining2 = gameState.currentAction.batchRemaining;
-      const batchLimit2 = batchRemaining2 > 0 ? batchRemaining2 : Infinity;
+      // 修复 B：batchLimit 读取权威队列项 count，绝不信任可能陈旧的 currentAction.batchRemaining。
+      const batchLimit2 = getQueueBatchLimit(gameState);
       const ctx = {
         virtualNowMs: (gameState._archVirtualNowMs != null) ? gameState._archVirtualNowMs : null,
         batchLimit: batchLimit2,
@@ -842,8 +912,8 @@ function settleOfflineActions(seconds, gains) {
     }
 
       const cyclesByTime = 1 + Math.floor((maxTime - timeToFirst) / descriptor.duration);
-      const batchRemaining = gameState.currentAction.batchRemaining;
-      const batchLimit = batchRemaining > 0 ? batchRemaining : Infinity;
+      // 修复 B：通用离线分支同样以权威队列项 count 为 batchLimit，避免采矿/制造等存在相同漏洞。
+      const batchLimit = getQueueBatchLimit(gameState);
       const possibleCycles = Math.max(0, descriptor.maxCycles());
       const cycles = Math.min(cyclesByTime, batchLimit, possibleCycles);
 
@@ -1014,13 +1084,22 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     settleOfflineActions(segSec, gains, undefined, timeBySkill);
     gameState._auditTimeBySkill = timeBySkill;
 
-    // Batch S：统计等效离线战斗结算（每段累积；聚合事件在 applyOfflineGains 末尾 flush 一次）
+    // Batch S：统计等效离线战斗结算（每段累积；聚合事件在 applyOfflineGains 末尾 flush 一次）。
+    // 返回段内未被战斗消耗的剩余秒数，避免在「战斗终结→下一项为生产」时浪费剩余离线时间。
+    let combatLeftover = 0;
     if (typeof OfflineCombatSystem !== "undefined") {
-      OfflineCombatSystem.settle(gameState, segSec, {
+      const left = OfflineCombatSystem.settle(gameState, segSec, {
         runId: context && context.runId,
         now: currentTime,
         offlineEnd: offlineEnd
       });
+      combatLeftover = (typeof left === "number" && left > 0) ? left : 0;
+    }
+    // 战斗终结后启动了生产项（combat.active=false 但 currentAction.active=true）：
+    // 用剩余段内时间继续结算生产，避免浪费剩余离线时间（等价于接续到下一分段，但无需切段）。
+    if (combatLeftover > 0 && gameState.currentAction.active && !gameState.combat.active) {
+      settleOfflineActions(combatLeftover, gains, undefined, timeBySkill);
+      gameState._auditTimeBySkill = timeBySkill;
     }
 
     // 2) 行星：按段结束时间结算（segmentEnd 使 deployment.lastTick 正确推进）

@@ -1041,6 +1041,8 @@ function startCombatQueueItem(state, item, now) {
   state.combat.queueEntriesTarget = isDeathspace ? countNum : 0;
   state.combat.queueEntriesDone = 0;
   if (isDeathspace) {
+    // 队列启动死亡空间时显式写入目标站点（与战斗区对称，避免续战沿用上一场残留 combat.deathspaceId）
+    state.combat.deathspaceId = ds.id;
     const wave = (typeof buildDeathspaceWave === "function")
       ? buildDeathspaceWave(ds, 1, function () { return Math.random(); }, state.combat)
       : { enemies:[], formationId:"" };
@@ -1059,6 +1061,8 @@ function startCombatQueueItem(state, item, now) {
     state.combat.queueItemId = null; state.combat.queueWavesTarget = 0; state.combat.queueWavesDone = 0;
     return { changed:false, reason:"no-zone" };
   }
+  // 队列启动战斗时显式写入目标星带（避免续战沿用上一场残留 c.zone，导致 combat→combat 打错星带）
+  state.combat.zone = zone.id;
   const wave = (typeof buildCombatWave === "function")
     ? buildCombatWave(zone, 1, function () { return Math.random(); }, state.combat)
     : { enemies:[], formationId:"" };
@@ -2253,3 +2257,9 @@ const ArchaeologyStateActions = {
 
 window.canStartArchaeology = canStartArchaeology;
 window.executeQueueItemForState = executeQueueItemForState;
+// 离线战斗队列终结 / 续战标记：显式导出，供 offline-combat.js 的 G() 在 TapTap/脚本隔离环境中解析到
+// （此前未导出导致 G("finalizeCombatQueueItem") 为 undefined，离线战斗达标后无法推进队列项）。
+window.finalizeCombatQueueItem = finalizeCombatQueueItem;
+globalThis.finalizeCombatQueueItem = finalizeCombatQueueItem;
+window.setCombatQueueResume = setCombatQueueResume;
+globalThis.setCombatQueueResume = setCombatQueueResume;

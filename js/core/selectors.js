@@ -439,7 +439,8 @@ function buildProductionEfficiencyTooltip(display, targetName, baseTime) {
   if (implantMult !== 1) chain += " × " + implantMult.toFixed(3);
   if (boosterMult !== 1) chain += " × " + boosterMult.toFixed(3);
   lines.push("最终效率：" + chain + " = " + display.total.toFixed(2) + "x");
-  lines.push("", "当前目标：" + targetName, "基础时间：" + baseTime + "s", "实际时间：" + (baseTime / display.total).toFixed(1) + "s");
+  const targetLabel = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(targetName) : targetName;
+  lines.push("", "当前目标：" + targetLabel, "基础时间：" + baseTime + "s", "实际时间：" + (baseTime / display.total).toFixed(1) + "s");
   return lines.join("\n");
 }
 
@@ -1526,6 +1527,27 @@ function getSalvageEfficiency(state, shipInstance) {
 }
 
 // 当前出战舰是否装备了打捞臂（用于战斗界面开关显隐）。
+// 打捞臂燃料消耗（每击毁一艘）：汇总已装备打捞臂的 salvageFuelPerKill 总和（装备即生效，与开关无关）。
+// 主动打捞（state.combat.salvageArmActive）时该基准 ×3，由 combat.js / offline-combat.js 在击毁处应用。
+function getSalvageFuelPerKill(state, shipInstance) {
+  state = state || (typeof gameState !== "undefined" ? gameState : null);
+  if (!state) return 0;
+  const ship = shipInstance || getActiveCombatShipState(state);
+  if (!ship) return 0;
+  let fitting = ship.fitting;
+  if (!fitting && typeof getFittingFromInstance === "function") fitting = getFittingFromInstance(ship);
+  if (!fitting) return 0;
+  let total = 0;
+  for (const slot of ["high", "mid", "low", "rig"]) {
+    for (const ref of fitting[slot] || []) {
+      const resolved = resolveEquipmentReference(state, ref);
+      const item = resolved && resolved.definition;
+      if (item && item.salvageFuelPerKill) total += item.salvageFuelPerKill * (resolved.multiplier || 1);
+    }
+  }
+  return total;
+}
+
 function hasSalvageArmEquipped(state) {
   return getSalvageEfficiency(state) > 0;
 }
@@ -1707,12 +1729,17 @@ function getCombatFuelMultiplierFromState(state, zone, context) {
   ], { ...(context || {}), actor:"player", zoneId:selectedZone && selectedZone.id });
 }
 
-function getCombatRepairMultiplierFromState(state, target, context) {
+function getCombatRepairMultiplierFromState(state, target, context, structureRatio) {
   const ship = getActiveCombatShipState(state).config;
   const roleBonus = ship.bonuses && target ? (ship.bonuses[target + "Repair"] || 0) : 0;
+  let shipRepairMult = 1 + roleBonus;
+  // 结构系船体紧急维修：结构层低于 70% 时，结构维修加成额外 +structureEmergencyRepair（现状 +100%，即 +200%→+300%）；仅作用于结构层
+  if (target === "structure" && typeof structureRatio === "number" && structureRatio < 0.7 && ship.bonuses && typeof ship.bonuses.structureEmergencyRepair === "number") {
+    shipRepairMult += ship.bonuses.structureEmergencyRepair;
+  }
   return calculateCombatStatFromState(state, "repairMultiplier", 1, [
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "defense") * 0.02, priority:10, source:"skill" },
-    { operation:"multiply", value:1 + roleBonus, priority:20, source:"ship" },
+    { operation:"multiply", value:shipRepairMult, priority:20, source:"ship" },
     // 研究批次 H：维修科研聚合乘子（defense 技能与船体维修加成之后只乘一次；只放大治疗量）
     ...getCombatResearchModifierList(state, "repairMultiplier", target),
     // 脑插：维修增强植入体（阿尔法/贝塔）独立乘区
@@ -2143,6 +2170,9 @@ function getCargoDisplayState(state, filter) {
   // 按需求改挂到「消耗品」标签展示：仅调整仓库视图归类，物品 id 保持不变，
   // 故开箱弹窗（openItemDetailModal 按 id 前缀判定）、考古/战斗掉落与存档逻辑均不受影响。
   const specialEntries = ResourceRegistry.listStateEntries(state, "special");
+  // 校准基体（calibration: 命名空间，存于 state.calibrations 池）此前无仓库桶，导致完全不可见；
+  // 并入「特殊物资」标签展示（来历实为考古，下方逐件纠正来源/说明）。
+  const calibrationEntries = ResourceRegistry.listStateEntries(state, "calibration");
   const cargoEntries = specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") === 0);
   const sources = {
     ore:Object.fromEntries(ResourceRegistry.listStateEntries(state, "ore").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
@@ -2151,9 +2181,10 @@ function getCargoDisplayState(state, filter) {
     gases:Object.fromEntries(ResourceRegistry.listStateEntries(state, "gas").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     moon:Object.fromEntries(ResourceRegistry.listStateEntries(state, "moon").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     special:Object.fromEntries(
-      specialEntries
-        .filter(entry => (entry.definition.id || "").indexOf("special:货柜") !== 0)  // 货柜改由 consumable 收纳
-        .map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }])
+      [
+        ...specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") !== 0),  // 货柜改由 consumable 收纳
+        ...calibrationEntries
+      ].map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }])
     ),
     consumable:Object.assign(
       Object.assign(
@@ -2212,6 +2243,11 @@ function getCargoDisplayState(state, filter) {
       if (itemId && itemId.indexOf("special:货柜") === 0) {
         source = { pageId:"combat", pageLabel:"战斗", icon:"fa-solid fa-crosshairs" };
         description = "货柜容器。由战斗击坠敌舰与考古探索低概率获取，开启后可获得矿物、行星材料、具名战利品、装备蓝图或神经植入体。";
+      }
+      // 校准基体（calibration: 命名空间）虽归入「特殊物资」标签，但来历实为考古，纠正来源与说明避免误归战斗
+      if (itemId && itemId.indexOf("calibration:") === 0) {
+        source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
+        description = "校准材料。由考古探索获取，是改装件制造的核心耗材，在装备工程的各档 rig 配方中消耗。";
       }
       items.push({
         category,
@@ -2592,6 +2628,7 @@ function getShipDismantleQuote(recipe, config, enhancementLevel) {
         name = key;
         refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
           ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
+        name = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(name) : name;
       }
       return { name, refId, total:info.total, returned:Math.floor(info.total * 0.5) };
     })
@@ -2650,7 +2687,8 @@ function getEquipmentDismantleQuote(equipment, level) {
     .map(([name, total]) => {
       const refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
         ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
-      return { name, refId, total, returned:Math.floor(total * 0.5) };
+      const label = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(name) : name;
+      return { name:label, refId, total, returned: Math.floor(total * 0.5) };
     })
     .filter(entry => entry.returned > 0)
     .sort((a, b) => b.returned - a.returned || a.name.localeCompare(b.name, "zh-CN"));

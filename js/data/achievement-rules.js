@@ -619,6 +619,7 @@
   const FUEL_RECIPE_IDS = Object.freeze([
     "fuel_t1",
     "fuel_t2",
+    "fuel_t3",
   ]);
 
   // 弹药配方 ID（顺序冻结，精确对应 AMMO_ENG_RECIPES.category==="ammunition"）

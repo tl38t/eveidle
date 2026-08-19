@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>仓库自动排序 Demo v2（PC / 手机）</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#121722; --panel2:#171d2b; --line:#26304a;
+    --txt:#cfe0ff; --txt-dim:#8aa0c8; --gold:#e9c46a; --cyan:#36c9d6; --orange:#ff9f43;
+    --accent-blue:#4a90e2; --accent-green:#3ddc97; --accent-purple:#a87bff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+    padding:24px;}
+  h1{font-size:20px;margin:0 0 6px;color:#fff}
+  .sub{color:var(--txt-dim);font-size:13px;margin-bottom:22px;line-height:1.6}
+  .frames{display:flex;gap:32px;flex-wrap:wrap;align-items:flex-start}
+  .frame-wrap{display:flex;flex-direction:column;gap:8px}
+  .frame-label{font-size:13px;color:var(--txt-dim);font-weight:600;letter-spacing:.04em}
+  .frame{border:1px solid var(--line);border-radius:14px;overflow:hidden;
+    background:var(--panel);box-shadow:0 8px 30px rgba(0,0,0,.45)}
+
+  /* PC frame */
+  .pc{width:560px}
+  /* phone frame */
+  .phone{width:390px}
+  .device-bar{height:34px;background:var(--panel2);display:flex;align-items:center;
+    padding:0 14px;font-size:12px;color:var(--txt-dim);border-bottom:1px solid var(--line)}
+
+  /* scroll container — headers stick inside it */
+  .wh-scroll{height:600px;overflow-y:auto;overflow-x:hidden;padding:0 14px 30px}
+  .phone .wh-scroll{height:680px;padding:0 10px 30px}
+
+  /* top category header — sticky */
+  .top-head{position:sticky;top:0;z-index:5;
+    background:linear-gradient(180deg,var(--panel) 70%,rgba(18,23,34,.85));
+    padding:14px 4px 10px;margin:0 -14px 6px;
+    font-size:15px;font-weight:700;color:#eaf2ff;
+    border-left:4px solid var(--cyan);padding-left:12px;
+    backdrop-filter:blur(2px);}
+  .phone .top-head{margin:0 -10px;padding-left:10px;font-size:14px}
+
+  /* small category bar */
+  .sub-head{display:flex;align-items:center;gap:8px;margin:14px 0 8px;
+    padding:6px 10px;border:1px dashed var(--line);border-radius:8px;
+    background:rgba(255,159,67,.06);font-size:13px;font-weight:600;color:var(--orange)}
+  .sub-head::before{content:"";width:8px;height:8px;border-radius:50%;
+    background:var(--orange);flex:0 0 auto}
+  .sub-head .cnt{margin-left:auto;font-size:11px;color:var(--txt-dim);font-weight:500}
+
+  /* indented card cluster */
+  .cluster{margin-left:16px;padding-left:12px;border-left:2px solid rgba(54,201,214,.25)}
+
+  /* card grid */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+  .phone .grid{grid-template-columns:repeat(2,1fr);gap:8px}
+
+  .card{position:relative;background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:10px 12px 26px;min-height:64px;
+    transition:transform .08s,border-color .12s}
+  .card:active{border-color:var(--cyan);transform:scale(.985)}
+  .card .tag{position:absolute;top:8px;right:8px;font-size:10px;color:var(--txt-dim);
+    background:rgba(255,255,255,.05);padding:2px 6px;border-radius:6px}
+  .card .nm{font-size:13px;font-weight:600;color:#fff;line-height:1.3;margin-bottom:4px}
+  .phone .card .nm{font-size:12px}
+  .card .lv{font-size:11px;color:var(--accent-blue)}
+  .card .qty{position:absolute;bottom:8px;right:10px;font-size:13px;font-weight:700;color:var(--gold)}
+  .phone .card .qty{font-size:12px}
+  .card .qty small{font-size:10px;color:var(--txt-dim);font-weight:500}
+
+  .legend{margin-top:18px;font-size:12px;color:var(--txt-dim);line-height:1.8;
+    border-top:1px solid var(--line);padding-top:14px}
+  .legend b{color:var(--txt)}
+  .chip{display:inline-block;padding:1px 8px;border-radius:6px;margin:0 3px;
+    border:1px solid var(--line);font-size:11px}
+  .chip.cyan{color:var(--cyan);border-color:rgba(54,201,214,.5)}
+  .chip.orange{color:var(--orange);border-color:rgba(255,159,67,.5)}
+</style>
+</head>
+<body>
+  <h1>仓库自动排序 Demo · v2</h1>
+  <div class="sub">
+    相对 v1 调整：① 小分类标题条保持（橙点虚线框）② 卡片整体缩进一级并加层级左线 ③ 顶层分类标题<b>吸顶</b>（滚动时固定）④ 矿物 / 气体<b>不再拆分高低级</b>，按采集等级一条直线升序 ⑤ 舰船装备改为按<b>功能</b>分组（武器→维修→采矿→采气→打捞→考古→改装件），<b>组内高强化在前、低强化在后</b>。
+  </div>
+
+  <div class="frames">
+    <div class="frame-wrap">
+      <div class="frame-label">PC 端（宽屏多列）</div>
+      <div class="frame pc">
+        <div class="device-bar">DEEP-SPACE IDLE · 仓库</div>
+        <div class="wh-scroll" id="pcScroll"></div>
+      </div>
+    </div>
+
+    <div class="frame-wrap">
+      <div class="frame-label">手机端（窄屏两列）</div>
+      <div class="frame phone">
+        <div class="device-bar">仓库</div>
+        <div class="wh-scroll" id="phoneScroll"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <b>排序口径：</b>
+    <span class="chip cyan">顶层标题</span> 固定顺序：矿物 → 行星产物 → 气体 → 月矿 → 特殊物资 → 消耗品 → 舰船装备 → 舰船组件（非空才显示，吸顶）。<br>
+    <span class="chip orange">小分类标题</span> 矿物/气体/月矿/行星 = 单组无拆分；消耗品/装备/特殊/组件 = 按用途拆分并显示标题。<br>
+    组内规则：资源按<b>采集等级升序</b>；装备组内按<b>等级降序（高强化在前）</b>；组件按等级升序；数量仅作同级 tiebreaker。
+  </div>
+
+<script>
+// ---------- 模拟数据（贴近游戏命名） ----------
+const COLLECT = { // 采集等级映射
+  '三钛合金':1,'类银超金属':10,'类晶体胶矿':20,'同位聚合体':40,'超新星诺克石':55,'基腹断岩':70,'超噬矿':85,
+  '重金属':1,'稀有气体':1,'同位素':20,'等离子体':40,'生物质':60,'磁场聚合物':80,
+  '粗制富勒烯':1,'氦同位素':10,'稳定富勒烯':20,'氢同位素':40,'高纯富勒烯':55,'聚合气体':70,'超纯聚合气体':85,
+  '镓':20,'铂':20,'铪':40,'锇':40,'钷':55,'铷':70
+};
+const TOP_ORDER = ['矿物','行星产物','气体','月矿','特殊物资','消耗品','舰船装备','舰船组件'];
+
+// 每个顶层类：groups = [{label, items}] ；label 为 null 表示扁平无小标题
+const DATA = {
+  '矿物':{ groups:[{label:null, items:[
+    {nm:'三钛合金',lv:1,qty:99999},{nm:'类银超金属',lv:10,qty:5240},
+    {nm:'类晶体胶矿',lv:20,qty:3120},{nm:'同位聚合体',lv:40,qty:880},
+    {nm:'超新星诺克石',lv:55,qty:420},{nm:'基腹断岩',lv:70,qty:150},{nm:'超噬矿',lv:85,qty:60}
+  ]}]},
+  '行星产物':{ groups:[{label:null, items:[
+    {nm:'重金属',lv:1,qty:2400},{nm:'稀有气体',lv:1,qty:980},{nm:'同位素',lv:20,qty:760},
+    {nm:'等离子体',lv:40,qty:320},{nm:'生物质',lv:60,qty:110},{nm:'磁场聚合物',lv:80,qty:40}
+  ]}]},
+  '气体':{ groups:[{label:null, items:[
+    {nm:'粗制富勒烯',lv:1,qty:5300},{nm:'氦同位素',lv:10,qty:4200},{nm:'稳定富勒烯',lv:20,qty:3100},
+    {nm:'氢同位素',lv:40,qty:1700},{nm:'高纯富勒烯',lv:55,qty:900},{nm:'聚合气体',lv:70,qty:480},{nm:'超纯聚合气体',lv:85,qty:120}
+  ]}]},
+  '月矿':{ groups:[{label:null, items:[
+    {nm:'镓',lv:20,qty:680},{nm:'铂',lv:20,qty:640},{nm:'铪',lv:40,qty:300},{nm:'锇',lv:40,qty:280},
+    {nm:'钷',lv:55,qty:150},{nm:'铷',lv:70,qty:60}
+  ]}]},
+  '特殊物资':{ groups:[
+    {label:'校准基体', items:[
+      {nm:'校准基体 I 型',lv:1,qty:12},{nm:'校准基体 II 型',lv:15,qty:6},
+      {nm:'校准基体 III 型',lv:35,qty:3},{nm:'校准基体 IV 型',lv:55,qty:2},{nm:'校准基体 V 型',lv:80,qty:1}
+    ]},
+    {label:'其他文物', items:[
+      {nm:'劫团低阶密钥',lv:0,qty:8},{nm:'血袭低阶密钥',lv:0,qty:5},{nm:'三神低阶密钥',lv:0,qty:4}
+    ]}
+  ]},
+  '消耗品':{ groups:[
+    {label:'燃料', items:[{nm:'同位素燃料',lv:1,qty:12000}]},
+    {label:'弹药 · T1', items:[{nm:'激光晶体弹药 T1',lv:1,qty:5400},{nm:'导弹 T1',lv:1,qty:4800},{nm:'炮台弹药 T1',lv:1,qty:6100}]},
+    {label:'弹药 · T2', items:[{nm:'激光晶体弹药 T2',lv:15,qty:1200},{nm:'导弹 T2',lv:15,qty:980},{nm:'炮台弹药 T2',lv:15,qty:1100}]},
+    {label:'维修耗材', items:[{nm:'纳米维修膏',lv:1,qty:340}]},
+    {label:'容器', items:[{nm:'货柜 S',lv:1,qty:12},{nm:'货柜 M',lv:1,qty:6},{nm:'货柜 L',lv:1,qty:3},{nm:'货柜 XL',lv:1,qty:1}]}
+  ]},
+  '舰船装备':{ groups:[
+    // 武器
+    {label:'武器', items:[
+      {nm:'重型激光炮 IV',lv:55,qty:2},{nm:'中型激光炮 III',lv:35,qty:4},{nm:'小型激光炮 II',lv:15,qty:9},{nm:'小型激光炮 I',lv:1,qty:14}
+    ]},
+    // 维修
+    {label:'维修', items:[
+      {nm:'大型装甲维修器 II',lv:55,qty:2},{nm:'中型结构修理器 I',lv:35,qty:5},{nm:'小型护盾维修器 I',lv:1,qty:11}
+    ]},
+    // 采矿
+    {label:'采矿', items:[
+      {nm:'采矿无人机链接 IV',lv:55,qty:2},{nm:'采矿激光增幅器 IV',lv:55,qty:3},{nm:'小型采矿激光 I',lv:1,qty:13}
+    ]},
+    // 采气
+    {label:'采气', items:[
+      {nm:'气云采集加速器 IV',lv:55,qty:2},{nm:'小型采气提取器 I',lv:1,qty:10}
+    ]},
+    // 打捞
+    {label:'打捞', items:[
+      {nm:'大型打捞臂 III',lv:35,qty:3},{nm:'小型打捞臂 I',lv:1,qty:12}
+    ]},
+    // 考古
+    {label:'考古', items:[
+      {nm:'考古分析仪 IV',lv:55,qty:2},{nm:'考古解码器 I',lv:1,qty:9}
+    ]},
+    // 改装件
+    {label:'改装件', items:[
+      {nm:'护盾容量改装件 V',lv:80,qty:1},{nm:'采矿速度改装件 IV',lv:55,qty:3}
+    ]}
+  ]},
+  '舰船组件':{ groups:[
+    {label:'舰船组件', items:[
+      {nm:'护卫舰组件',lv:1,qty:20},{nm:'驱逐舰组件',lv:15,qty:11},{nm:'巡洋舰组件',lv:35,qty:6},{nm:'战列舰组件',lv:55,qty:3}
+    ]}
+  ]}
+};
+
+// ---------- 组内排序 ----------
+function sortGroup(group, topCat){
+  const items = group.items.slice();
+  const byLevelAsc = (a,b)=> (COLLECT[a.nm]??a.lv??999) - (COLLECT[b.nm]??b.lv??999) || b.qty-a.qty || a.nm.localeCompare(b.nm);
+  const byLevelDesc = (a,b)=> (b.lv??0)-(a.lv??0) || b.qty-a.qty || a.nm.localeCompare(b.nm);
+  if(topCat==='矿物'||topCat==='行星产物'||topCat==='气体'||topCat==='月矿') return items.sort(byLevelAsc);
+  if(topCat==='舰船装备') return items.sort(byLevelDesc);
+  if(topCat==='舰船组件') return items.sort((a,b)=>(a.lv-b.lv)||b.qty-a.qty);
+  return items.sort((a,b)=> a.nm.localeCompare(b.nm)||b.qty-a.qty);
+}
+
+// ---------- 渲染 ----------
+function fmtQty(n){ return n>=10000 ? (n/10000).toFixed(1)+'万' : n.toLocaleString(); }
+function cardHTML(it){
+  const lvTxt = (it.lv && it.lv>0) ? `Lv${it.lv}` : '';
+  return `<div class="card"><span class="tag">${it.tag||''}</span>
+    <div class="nm">${it.nm}</div>${lvTxt?`<div class="lv">${lvTxt}</div>`:''}
+    <div class="qty">${fmtQty(it.qty)}</div></div>`;
+}
+function render(container){
+  let html='';
+  for(const top of TOP_ORDER){
+    const block = DATA[top]; if(!block) continue;
+    html += `<div class="top-head">${top}</div>`;
+    for(const g of block.groups){
+      const sorted = sortGroup(g, top);
+      if(g.label){
+        html += `<div class="sub-head">${g.label}<span class="cnt">${sorted.length}</span></div>`;
+      }
+      html += `<div class="cluster"><div class="grid">`;
+      html += sorted.map(cardHTML).join('');
+      html += `</div></div>`;
+    }
+  }
+  container.innerHTML = html;
+}
+render(document.getElementById('pcScroll'));
+render(document.getElementById('phoneScroll'));
+</script>
+</body>
+</html>

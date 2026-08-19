@@ -31,6 +31,21 @@
     const fn = G("emitOfflineGameEvent");
     if (typeof fn === "function") fn(type, payload, meta);
   }
+  // 离线战斗队列终结（fail-closed）：找不到 finalizeCombatQueueItem 时不得伪报 queue-target-reached，
+  // 必须上报错误并保留当前队列/战斗进度/剩余离线时间，返回 false；成功返回 true。
+  function finishOfflineCombatQueueItem(state, nowRef) {
+    const ts = (nowRef && typeof nowRef.t === "number") ? nowRef.t : (typeof Date !== "undefined" ? Date.now() : 0);
+    const fin = G("finalizeCombatQueueItem");
+    if (typeof fin !== "function") {
+      const msg = "离线战斗队列终结函数 finalizeCombatQueueItem 未导出，队列项无法推进（已保留当前队列与战斗进度，等待登录后处理）";
+      const rg = G("RuntimeGuard");
+      if (rg && typeof rg.report === "function") rg.report(new Error(msg), { source: "offline-combat", fatal: false, kind: "queue-finalize" });
+      else if (typeof console !== "undefined") console.error("[offline-combat] " + msg);
+      return false;
+    }
+    fin(state, ts);
+    return true;
+  }
   // 期望值 RNG：calcCombatDamageVariance 在 r=0.5 时 = 0.90+(0.5+0.5)*0.10 = 1.0
   function EXPECT() { return 0.5; }
   // 确定性掉落 RNG（Batch R 的 combat.randomState）
@@ -272,7 +287,7 @@
         if (s.fuel < repFuel) continue;
         if (c.hp[cb.target] < c.maxHp[cb.target]) {
           const repMult = (boosterRep && boosterRep[cb.target]) ? boosterRep[cb.target] : 1;
-          const heal = Math.round(cb.amount * (m.multiplier || 1) * G("calcRepairMult")(cb.target, state) * repMult);
+          const heal = Math.round(cb.amount * (m.multiplier || 1) * G("calcRepairMult")(cb.target, state, c.hp.structure / c.maxHp.structure) * repMult);
           c.hp[cb.target] = Math.min(c.maxHp[cb.target], c.hp[cb.target] + heal);
           s.fuel = Math.max(0, s.fuel - repFuel);
           grantXp(state, "defense", 1);
@@ -378,14 +393,16 @@
   // ---- 普通星带结算 ----
   function simulateBelt(state, segSec, s, nowRef) {
     const c = state.combat;
-    const zone = G("getCombatEncounterZone")(c);
-    if (!zone) { s.stopReason = "no-zone"; return; }
     s.mode = "belt";
+    if (!c.active) { s.stopReason = "inactive"; return 0; }
     let budgetMs = segSec * 1000;
-    let waveNum = c.wave && c.wave >= 1 ? c.wave : 1;
-    const maxWave = zone.maxWave || 99;
 
     while (budgetMs > 0 && c.active) {
+      // zone/waveNum 在循环内重算以支持队列下一项续战（combat→combat 打到正确星带）
+      const zone = G("getCombatEncounterZone")(c);
+      if (!zone) { s.stopReason = "no-zone"; return budgetMs / 1000; }
+      let waveNum = c.wave && c.wave >= 1 ? c.wave : 1;
+      const maxWave = zone.maxWave || 99;
       // 每波重新读状态 + 生成波次（确定性 RNG）
       const rng = detRng(c);
       const built = G("buildCombatWave")(zone, waveNum, rng, c);
@@ -437,10 +454,12 @@
           state.resumeAfterRepair.queueWavesDone = c.queueWavesDone;
         }
         if (c.queueWavesDone >= c.queueWavesTarget) {
-          const fin = G("finalizeCombatQueueItem");
-          if (typeof fin === "function") fin(state, nowRef.t);
+          const ok = finishOfflineCombatQueueItem(state, nowRef);
+          if (!ok) { s.stopReason = s.stopReason || "queue-finalize-error"; return budgetMs / 1000; }
           s.stopReason = "queue-target-reached";
-          return;
+          // 下一项若为战斗（c.active 仍为 true）则本循环续清；否则 c.active 已 false，
+          // 循环退出后由离线时间轴交接给生产结算，继续消耗剩余离线时间。
+          continue;
         }
       }
       c.wave = waveNum;
@@ -452,6 +471,7 @@
     }
     if (!c.active) s.stopReason = s.stopReason || "resolved";
     else s.stopReason = s.stopReason || "time";
+    return budgetMs / 1000;
   }
 
   // ---- 死亡空间连刷结算 ----
@@ -546,17 +566,18 @@
           state.resumeAfterRepair.queueEntriesDone = c.queueEntriesDone;
         }
         if (c.queueEntriesDone >= c.queueEntriesTarget) {
-          const fin = G("finalizeCombatQueueItem");
-          if (typeof fin === "function") fin(state, nowRef.t);
+          const ok = finishOfflineCombatQueueItem(state, nowRef);
+          if (!ok) { s.stopReason = s.stopReason || "queue-finalize-error"; return budgetMs / 1000; }
           s.stopReason = "queue-target-reached";
-          return;
+          return budgetMs / 1000;
         }
         // 未达标：手动重入下一入场（消耗密钥），绕过既有链 break 以便继续清场
         const RRd = G("ResourceRegistry");
         if (!RRd || RRd.get(state, "special:" + site.ticketMaterial) < 1) {
-          const fin = G("finalizeCombatQueueItem");
-          if (typeof fin === "function") fin(state, nowRef.t);
-          s.stopReason = "no-keys"; return;
+          const ok = finishOfflineCombatQueueItem(state, nowRef);
+          if (!ok) { s.stopReason = "queue-finalize-error"; return budgetMs / 1000; }
+          s.stopReason = "no-keys";
+          return budgetMs / 1000;
         }
         const nw = G("buildDeathspaceWave")(site, 1, detRng(c), c);
         const nen = nw.enemies.map(e => ({ id:e.id, hit:e.hit, hp:{shield:e.hp.shield,armor:e.hp.armor,structure:e.hp.structure}, dodge:e.dodge, baseDamage:e.baseDamage, kind:e.kind, iskDrop:e.iskDrop, xpDrop:e.xpDrop, deathspaceLeader:Boolean(e.deathspaceLeader), deathspaceWave:1, _rewarded:false }));
@@ -583,6 +604,7 @@
         break; // 连刷正常完成，不自动转普通星带
       }
     }
+    return budgetMs / 1000;
   }
 
   function handleDefeat(state, s, nowRef, zone, fromMode) {
@@ -645,18 +667,20 @@
           s.runsDetail.push({ token: c.runToken, sortieToken: tutToken, zoneId: c.zone, mode: c.mode, wavesCleared: 0, defeated: false, zoneClears: 0 });
         }
       }
-      if (!s.activeAtStart) { s.stopReason = "inactive"; return; } // 离线前无有效战斗，跳过
+      if (!s.activeAtStart) { s.stopReason = "inactive"; return 0; } // 离线前无有效战斗，跳过；段内时间已由生产结算接管
       const nowRef = s.endedAtRef;
       const segStart = nowRef.t;
-      // 按当前模式模拟
+      // 按当前模式模拟；left = 段内未被战斗消耗的剩余秒数，交回时间轴给生产结算
+      let left = 0;
       if (state.combat.mode === "deathspace" || state.combat.deathspaceChainPending) {
-        simulateDeathspace(state, segSec, s, nowRef);
+        left = simulateDeathspace(state, segSec, s, nowRef);
       } else if (state.combat.active) {
-        simulateBelt(state, segSec, s, nowRef);
+        left = simulateBelt(state, segSec, s, nowRef);
       }
       s.endedAt = nowRef.t;
       s.simulatedSeconds = Math.round((nowRef.t - s.startedAt) / 1000);
       if (s.stopReason === null) s.stopReason = "time";
+      return left;
     },
 
     // 离线结算结束（applyOfflineGains 内、offline:settlementCompleted 之前）调用一次
@@ -836,6 +860,12 @@
     if (isoUsed > 0) {
       RR.spend(state, "planetary:同位素", isoUsed);
       addResource(s, "planetary:同位素", -isoUsed);
+    }
+    // 打捞臂燃料消耗（装备即收，按总击毁数；开主动×3）；与同位素同机制 flush。
+    const salvageFuelPK = (typeof getSalvageFuelPerKill === "function") ? getSalvageFuelPerKill(state) : 0;
+    if (salvageFuelPK > 0 && (s.kills || 0) > 0) {
+      const fuelAmt = salvageFuelPK * s.kills * (state.combat && state.combat.salvageArmActive ? 3 : 1);
+      if (fuelAmt > 0) { RR.spend(state, "consumable:fuel", fuelAmt); addResource(s, "consumable:fuel", -fuelAmt); }
     }
     // 2) 区域特殊掉落
     for (const zoneId in da.zoneSpecial) {

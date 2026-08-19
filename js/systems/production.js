@@ -46,6 +46,8 @@ for (const material of STAR_BELT_DATA_MATERIALS) {
 for (const material of DEATHSPACE_TICKET_MATERIALS) ITEM_ICONS[material] = "🎫";
 for (const material of DEATHSPACE_LOOT_MATERIALS) ITEM_ICONS[material] = material.includes("协议") ? "📜" : "💠";
 for (const material of SUPERCAPITAL_DATA_MATERIALS) ITEM_ICONS[material] = "🧬";
+// 校准基体（考古产出的 calibration: 命名空间资源）给统一图标，避免仓库卡退化为 📦
+for (const calibName of ["校准基体 I 型","校准基体 II 型","校准基体 III 型","校准基体 IV 型","校准基体 V 型"]) ITEM_ICONS[calibName] = "⚗️";
 SHIP_COMPONENT_RECIPES.forEach(recipe => {
   if (recipe.id.includes("integrated_hull")) ITEM_ICONS[recipe.name] = "🏗️";
   else if (recipe.id.includes("power_core")) ITEM_ICONS[recipe.name] = "⚙️";

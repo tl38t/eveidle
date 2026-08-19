@@ -15,7 +15,10 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
 const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(match => match[1]).filter(source =>
-  !source.includes("/ui/") && !["actions.js", "tick.js", "offline.js", "persistence.js"].some(file => source.endsWith("/" + file))
+  // 排除判定同样需先去掉 URL 查询参数（如 ./js/core/offline.js?v=7），否则 endsWith 不匹配、
+  // offline.js/actions.js/tick.js/persistence.js 既被循环加载又被手动加载 → 重复声明报错。
+  // 仅修改测试加载器，不改动任何生产代码。
+  !source.includes("/ui/") && !["actions.js", "tick.js", "offline.js", "persistence.js"].some(file => source.replace(/\?.*$/, "").endsWith("/" + file))
 );
 
 const noop = () => {};
@@ -42,7 +45,9 @@ sandbox.refreshVisiblePanelAfterAction = noop;
 sandbox.showToast = noop;
 vm.createContext(sandbox);
 for (const source of scriptSources) {
-  vm.runInContext(fs.readFileSync(path.resolve(root, source.replace(/^\.\//, "")), "utf8"), sandbox, { filename:source });
+  // 读取磁盘前必须去掉 URL 查询参数（如 js/core/speed-config.js?v=2），否则路径含 ? 导致读取失败。
+  // 仅修改测试加载器，不改动任何生产代码。
+  vm.runInContext(fs.readFileSync(path.resolve(root, source.replace(/^\.\//, "").replace(/\?.*$/, "")), "utf8"), sandbox, { filename:source });
 }
 // 手动加载动作层、离线结算层、在线 tick 层（只定义函数，无加载期副作用）
 vm.runInContext(fs.readFileSync(path.resolve(root, "js/core/offline.js"), "utf8"), sandbox, { filename:"js/core/offline.js" });

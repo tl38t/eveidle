@@ -3535,13 +3535,13 @@ function runManufacturing() {
   ];
   const EXP_CAPITAL_IDS = ["firmament", "heavy_bastion", "riftbreaker", "orca", "illuminator"];
   const EXP_SUPERCAPITAL_IDS = ["starcrown", "eternal_fortress", "arbiter"];
-  const EXP_CAPITAL_NAMES = ["天穹级", "重垒级", "裂界级", "逆戟鲸级", "启明级"];
+  const EXP_CAPITAL_NAMES = ["天穹级", "重垒级", "裂界级", "山海级", "启明级"];
   const EXP_SUPERCAPITAL_NAMES = ["星冕级", "恒城级", "裁决级"];
   const MANU_IDS = ["C01", "C02", "C03", "C04", "C05", "C06", "C07", "C08", "C09", "C10", "C12", "C13"];
   const EXPECTED_MFG_COND = {
     C01: "制造首个舰船部件", C02: "总装首艘舰船",
     C03: "总装首艘 天穹级", C04: "总装首艘 重垒级", C05: "总装首艘 裂界级",
-    C06: "总装首艘 逆戟鲸级", C07: "总装首艘 启明级", C08: "总装首艘 星冕级",
+    C06: "总装首艘 山海级", C07:  "总装首艘 启明级", C08: "总装首艘 星冕级",
     C09: "总装首艘 恒城级", C10: "总装首艘 裁决级",
     C12: "累计建造 50 艘旗舰", C13: "累计建造 25 艘超级旗舰",
   };
@@ -4178,10 +4178,10 @@ function runEquipment() {
   const rigFrozen = Object.isFrozen(RD.RIG_RECIPE_IDS) &&
     RD.RIG_RECIPE_IDS.length === 45 && new Set(RD.RIG_RECIPE_IDS).size === 45;
   const fuelFrozen = Object.isFrozen(RD.FUEL_RECIPE_IDS) &&
-    RD.FUEL_RECIPE_IDS.length === 2 && new Set(RD.FUEL_RECIPE_IDS).size === 2;
+    RD.FUEL_RECIPE_IDS.length === 3 && new Set(RD.FUEL_RECIPE_IDS).size === 3;
   const ammoFrozen = Object.isFrozen(RD.AMMUNITION_RECIPE_IDS) &&
     RD.AMMUNITION_RECIPE_IDS.length === 3 && new Set(RD.AMMUNITION_RECIPE_IDS).size === 3;
-  ok("[eq12b] 四配方 ID 数组内容/长度/唯一性/冻结精确（NON_RIG=117 / RIG=45 / FUEL=2 / AMMO=3）",
+  ok("[eq12b] 四配方 ID 数组内容/长度/唯一性/冻结精确（NON_RIG=117 / RIG=45 / FUEL=3 / AMMO=3）",
     nonRigFrozen && rigFrozen && fuelFrozen && ammoFrozen);
   if (!RD || !SYS || !Array.isArray(RD.EQUIPMENT_RULES)) return;
 
@@ -4225,9 +4225,9 @@ function runEquipment() {
 
   const fuelFromSrc = arOk ? ar.filter((r) => r.category === "fuel").map((r) => r.id).sort() : [];
   const setF = new Set(fuelFromSrc), setFf = new Set(RD.FUEL_RECIPE_IDS.slice().sort());
-  const eq15ok = arOk && setF.size === 2 && setFf.size === 2 &&
+  const eq15ok = arOk && setF.size === 3 && setFf.size === 3 &&
     [...setF].every((id) => setFf.has(id)) && [...setFf].every((id) => setF.has(id));
-  ok("[eq15] FUEL_RECIPE_IDS(2) 与 AMMO_ENG_RECIPES.category==='fuel' 双向集合相等", eq15ok);
+  ok("[eq15] FUEL_RECIPE_IDS(3) 与 AMMO_ENG_RECIPES.category==='fuel' 双向集合相等", eq15ok);
   const ammoFromSrc = arOk ? ar.filter((r) => r.category === "ammunition").map((r) => r.id).sort() : [];
   const setA = new Set(ammoFromSrc), setAf = new Set(RD.AMMUNITION_RECIPE_IDS.slice().sort());
   const eq16ok = arOk && setA.size === 3 && setAf.size === 3 &&
@@ -4247,7 +4247,7 @@ function runEquipment() {
       rD13.recipeIds.some((id, i) => id !== RD.NON_RIG_EQUIPMENT_RECIPE_IDS[i])) eq18ok = false;
   const rD14 = RD.EQUIPMENT_RULES_BY_ID["D14"];
   if (!rD14 || rD14.type !== "equipment-recipe-set-any" ||
-      !Array.isArray(rD14.recipeIds) || rD14.recipeIds.length !== 2 || rD14.minValue !== 1 ||
+      !Array.isArray(rD14.recipeIds) || rD14.recipeIds.length !== 3 || rD14.minValue !== 1 ||
       rD14.recipeIds.some((id, i) => id !== RD.FUEL_RECIPE_IDS[i])) eq18ok = false;
   const rD15 = RD.EQUIPMENT_RULES_BY_ID["D15"];
   if (!rD15 || rD15.type !== "equipment-recipe-set-any" ||

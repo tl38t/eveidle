@@ -198,15 +198,11 @@ function computeVolleyFuel(state, zone) {
     if (!(fc > 0)) continue;
     volleyFuel += Math.max(1, Math.round(fc * getCombatFuelMultiplierFromState(state, zone)));
   }
-  // 同位素标记打捞臂：主动打捞开启时，一轮齐射燃料消耗翻倍（与离线共用本函数，两端一致）。
-  if (state && state.combat && state.combat.salvageArmActive && typeof hasSalvageArmEquipped === "function" && hasSalvageArmEquipped(state)) {
-    volleyFuel *= 2;
-  }
   return volleyFuel;
 }
 
-function calcRepairMult(target, state) {
-  return getCombatRepairMultiplierFromState(state || gameState, target);
+function calcRepairMult(target, state, structureRatio) {
+  return getCombatRepairMultiplierFromState(state || gameState, target, undefined, structureRatio);
 }
 
 function calcCL() {
@@ -687,6 +683,12 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   // 货柜系统：敌方船被击坠低概率掉货柜（死亡空间不掉落）；内容待玩家开箱揭晓。
   const cargoDrop = deathspace ? null : (typeof rollCargoDrop === "function" ? rollCargoDrop(enemy, zone, roll, state) : null);
   if (cargoDrop) c.lastLoot += " · 货柜" + cargoDrop.size + " ×1";
+  // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。
+  const salvageFuelPK = (typeof getSalvageFuelPerKill === "function") ? getSalvageFuelPerKill(state) : 0;
+  if (salvageFuelPK > 0) {
+    const salvageFuelAmt = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
+    ResourceRegistry.spend(state, "consumable:fuel", salvageFuelAmt);
+  }
   // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才触发；死亡空间不触发，与货柜一致）
   if (!deathspace && state.combat.salvageArmActive && typeof hasSalvageArmEquipped === "function" && hasSalvageArmEquipped(state)) {
     const isoCost = getSalvageComponentQty(enemy.kind); // 1/2/3，与组件数量一致
@@ -1150,9 +1152,9 @@ function advanceCombatRound(state, context) {
     const rep = module.equipment.combat;
     const repFuelCost = Math.max(1, Math.round((rep.fuelCost || 1) * calcFuelMult(zone, state)));
     if (ResourceRegistry.get(state, "consumable:fuel") < repFuelCost) continue;
-    if (c.hp[rep.target] < c.maxHp[rep.target]) {
+    if (  c.hp[rep.target] < c.maxHp[rep.target]) {
       const repMult = (boosterRep && boosterRep[rep.target]) ? boosterRep[rep.target] : 1;
-      const healAmount = Math.round(rep.amount * (module.multiplier || 1) * calcRepairMult(rep.target, state) * repMult);
+      const healAmount = Math.round(rep.amount * (module.multiplier || 1) * calcRepairMult(rep.target, state, c.hp.structure / c.maxHp.structure) * repMult);
       c.hp[rep.target] = Math.min(c.maxHp[rep.target], c.hp[rep.target] + healAmount);
       ResourceRegistry.spend(state, "consumable:fuel", repFuelCost);
       // 防御经验

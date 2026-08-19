@@ -233,7 +233,7 @@ const ResourceRegistry = (() => {
   }
 
   function getInventoryTotal(state) {
-    const namespaces = ["ore", "mineral", "planetary", "gas", "moon", "special", "component"];
+    const namespaces = ["ore", "mineral", "planetary", "gas", "moon", "special", "calibration", "component"];
     const stackables = namespaces.reduce((total, namespace) =>
       total + listStateEntries(state, namespace).reduce((sum, entry) => sum + entry.quantity, 0), 0);
     const equipmentStrings = state && state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory.length : 0;

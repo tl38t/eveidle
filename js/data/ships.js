@@ -142,7 +142,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 100 },
     fuelEfficiency: 0.95,
     slots: { high: 2, mid: 1, low: 2, rig: 1 },
-    bonuses: { structureCapacity: 0.10, cannonDamage: 0.05, speed: 0.10 },
+    bonuses: { structureCapacity: 0.10, cannonDamage: 0.05, speed: 0.10, structureRepair: 2.00, structureEmergencyRepair: 1.00 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "starter", isDefault: true }
   },
@@ -178,7 +178,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 160 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 1, low: 3, rig: 1 },
-    bonuses: { structureCapacity: 0.15, cannonDamage: 0.10, speed: 0.15, structureRepair: 2.00, hitBonus: 10 },
+    bonuses: { structureCapacity: 0.15, cannonDamage: 0.10, speed: 0.15, structureRepair: 2.00, hitBonus: 10, structureEmergencyRepair: 1.00 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "shipEngineering", level: 15 }
   },
@@ -214,7 +214,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 160 },
     fuelEfficiency: 0.90,
     slots: { high: 3, mid: 1, low: 3, rig: 1 },
-    bonuses: { structureCapacity: 0.20, cannonDamage: 0.15, speed: 0.15, structureRepair: 2.00, hitBonus: 10 },
+    bonuses: { structureCapacity: 0.20, cannonDamage: 0.15, speed: 0.15, structureRepair: 2.00, hitBonus: 10, structureEmergencyRepair: 1.00 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "blueprint", costLP: 60, level: 20 }
   },
@@ -250,7 +250,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 240 },
     fuelEfficiency: 0.85,
     slots: { high: 4, mid: 2, low: 4, rig: 2 },
-    bonuses: { structureCapacity: 0.20, cannonDamage: 0.15, speed: 0.15, structureRepair: 2.00, hitBonus: 15 },
+    bonuses: { structureCapacity: 0.20, cannonDamage: 0.15, speed: 0.15, structureRepair: 2.00, hitBonus: 15, structureEmergencyRepair: 1.00 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "shipEngineering", level: 35 }
   },
@@ -286,7 +286,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 240 },
     fuelEfficiency: 0.85,
     slots: { high: 4, mid: 2, low: 4, rig: 2 },
-    bonuses: { structureCapacity: 0.25, cannonDamage: 0.20, speed: 0.15, structureRepair: 2.00, hitBonus: 15 },
+    bonuses: { structureCapacity: 0.25, cannonDamage: 0.20, speed: 0.15, structureRepair: 2.00, hitBonus: 15, structureEmergencyRepair: 1.00 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "blueprint", costLP: 100, level: 40 }
   },
@@ -322,7 +322,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 390 },
     fuelEfficiency: 0.80,
     slots: { high: 5, mid: 2, low: 5, rig: 3 },
-    bonuses: { structureCapacity: 0.25, cannonDamage: 0.20, speed: 0.15, structureRepair: 2.00, hitBonus: 20 },
+    bonuses: { structureCapacity: 0.25, cannonDamage: 0.20, speed: 0.15, structureRepair: 2.00, hitBonus: 20, structureEmergencyRepair: 1.00 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "shipEngineering", level: 55 }
   },
@@ -358,7 +358,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 390 },
     fuelEfficiency: 0.80,
     slots: { high: 5, mid: 2, low: 5, rig: 3 },
-    bonuses: { structureCapacity: 0.30, cannonDamage: 0.25, speed: 0.15, structureRepair: 2.00, hitBonus: 20 },
+    bonuses: { structureCapacity: 0.30, cannonDamage: 0.25, speed: 0.15, structureRepair: 2.00, hitBonus: 20, structureEmergencyRepair: 1.00 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "blueprint", costLP: 150, level: 60 }
   },
@@ -396,7 +396,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 620 },
     fuelEfficiency: 0.73,
     slots: { high: 6, mid: 2, low: 6, rig: 4 },
-    bonuses: { structureCapacity: 0.30, cannonDamage: 0.25, speed: 0.15, structureRepair: 2.00, hitBonus: 25 },
+    bonuses: { structureCapacity: 0.30, cannonDamage: 0.25, speed: 0.15, structureRepair: 2.00, hitBonus: 25, structureEmergencyRepair: 1.00 },
     capitalTrait: { id:"structure_overdrive", name:"结构过载", description:"每损失10%结构，火炮最终伤害提高3%，最多7层", perLayer:0.03, maxLayers:7 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "shipEngineering", level: 80 }
@@ -435,7 +435,7 @@ const STARTER_SHIPS = {
     capacitor: { capacity: 820 },
     fuelEfficiency: 0.67,
     slots: { high: 7, mid: 3, low: 7, rig: 5 },
-    bonuses: { structureCapacity: 0.35, cannonDamage: 0.30, speed: 0.15, structureRepair: 2.00, hitBonus: 30 },
+    bonuses: { structureCapacity: 0.35, cannonDamage: 0.30, speed: 0.15, structureRepair: 2.00, hitBonus: 30, structureEmergencyRepair: 1.00 },
     capitalTrait: { id:"structure_overdrive", name:"强化结构过载", description:"每损失10%结构，火炮最终伤害提高4%，最多8层", perLayer:0.04, maxLayers:8 },
     recommendedWeapon: "cannon", counterFaction: "sansha",
     unlock: { type: "blueprint", costLP: 1000, level: 90 }

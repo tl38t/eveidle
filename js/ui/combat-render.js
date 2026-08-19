@@ -63,7 +63,7 @@ function renderInstalledCombatControls(display) {
 }
 
 // 同位素标记打捞臂：战斗界面开关（仅已装备打捞臂时显示）。
-// 开=燃料×2 + 每击毁消耗同位素 + 打捞舰船组件；关=仅被动提升货柜掉率。
+// 开=消耗被动三倍燃料+同位素+掉落同级舰船组件；关=仅被动：消耗基础燃料提高货柜掉落。
 function renderCombatSalvageToggle() {
   const title = document.getElementById("combat-salvage-title");
   const row = document.getElementById("combat-salvage-arm-row");
@@ -80,8 +80,8 @@ function renderCombatSalvageToggle() {
   const active = gameState.combat.salvageArmActive === true;
   const isoHave = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "planetary:同位素") : 0;
   const label = active
-    ? "主动打捞：开（燃料×2 · 每击毁消耗同位素 · 打捞舰船组件）"
-    : "主动打捞：关（仅被动提升货柜掉率）";
+    ? "主动打捞：开（消耗被动三倍燃料及同位素，几率获得同级舰船组件）"
+    : "主动打捞：关（仅被动：消耗基础燃料提高货柜掉落）";
   const btnStyle = "width:100%;text-align:left;padding:7px 10px;border-radius:6px;cursor:pointer;font-size:12px;box-sizing:border-box;border:1px solid " +
     (active ? "#3fd07a" : "#3a4a5a") + ";background:" + (active ? "rgba(63,208,122,.16)" : "rgba(255,255,255,.04)") +
     ";color:" + (active ? "#8ff0b5" : "#9fb3c8") + ";";
@@ -137,7 +137,7 @@ function renderCombatLiveDisplay(display) {
   renderCombatAmmoLoadout(gameState);
 }
 
-// 弹药装载面板：列出每型弹药各实例（按档降序），玩家勾选「参战」控制是否带入战斗
+// 弹药装载面板：列出每型弹药各实例（按档降序），玩家勾选「已装载」控制是否带入战斗
 function renderCombatAmmoLoadout(state) {
   const wrap = document.getElementById("combat-ammo-loadout");
   if (!wrap) return;
@@ -152,7 +152,7 @@ function renderCombatAmmoLoadout(state) {
       const tierTag = s.tier === "T2"
         ? '<span class="ammo-tier-tag t2">⚡T2 · 伤害/命中 +10%</span>'
         : '<span class="ammo-tier-tag t1">T1</span>';
-      return `<div class="ammo-stack">${tierTag}<span class="ammo-stack-name">${escHtml(s.name)}</span><span class="ammo-stack-qty">×${s.qty.toLocaleString()}</span><button class="ammo-load-toggle${on ? " on" : ""}" data-ammo-id="${escHtml(s.id)}">${on ? "参战" : "卸下"}</button></div>`;
+      return `<div class="ammo-stack">${tierTag}<span class="ammo-stack-name">${escHtml(s.name)}</span><span class="ammo-stack-qty">×${s.qty.toLocaleString()}</span><button class="ammo-load-toggle${on ? " on" : ""}" data-ammo-id="${escHtml(s.id)}">${on ? "已装载" : "未装载"}</button></div>`;
     }).join("");
     groups.push(`<div class="ammo-type-group"><div class="ammo-type-name">${AMMO_TYPE_NAMES[type]}</div><div class="ammo-stacks">${stackHtml}</div></div>`);
   }
@@ -162,7 +162,7 @@ function renderCombatAmmoLoadout(state) {
       const id = btn.getAttribute("data-ammo-id");
       const st = (state.ammo || []).find(s => s.id === id);
       if (!st) return;
-      st.loaded = (st.loaded === false); // 切换参战/卸下
+      st.loaded = (st.loaded === false); // 切换已装载/未装载
       if (typeof renderCombatPanel === "function") renderCombatPanel();
     });
   });
@@ -299,7 +299,7 @@ function renderCombatPanel(now) {
 }
 
 // 掉落预览（Phase 3D 其他任务）：基于 getCombatDropPreview 纯函数渲染当前选中星带/死亡空间的
-// 可能掉落物与概率。展示加密数据/特殊掉落/装备专用数据/通行密钥/首领战利品/战术材料/货柜，不含 ISK/LP 经济与成功率。
+// 可能掉落物与概率。展示势力密钥/特殊掉落/装备专用数据/通行密钥/首领战利品/战术材料/货柜，不含 ISK/LP 经济与成功率。
 // 战斗掉落行点击 → 打开对应物品卡片：dropId → 描述符（含货柜 fromCombat 标记）。
 // 本渲染内聚合 name/icon，避免属性注入。
 let _combatDropMeta = {};
@@ -371,7 +371,7 @@ function renderCombatDropPreview(display) {
   };
 
   if (preview.mode === "deathspace") {
-    rows.push(`<div class="drop-mode-tag deathspace">死亡空间 · 不掉落加密数据 / 特殊掉落 / 通行密钥</div>`);
+    rows.push(`<div class="drop-mode-tag deathspace">死亡空间 · 不掉落势力密钥 / 特殊掉落 / 通行密钥</div>`);
     if (Array.isArray(preview.leaderLoot) && preview.leaderLoot.length > 0) {
       rows.push(`<div class="drop-group-title">💠 首领战利品（每波 BOSS 击破时结算）</div>`);
       for (const loot of preview.leaderLoot) {
@@ -387,24 +387,24 @@ function renderCombatDropPreview(display) {
     rows.push(`<div class="drop-mode-tag belt">海盗星带</div>`);
     if (preview.encryptedData) {
       const e = preview.encryptedData;
-      rows.push(row("🔐", e.material, `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data", "encryptedData"));
+      rows.push(row("🔐", getResourceDisplayName("special:" + e.material), `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data", "encryptedData"));
     } else {
-      rows.push(row("🔐", "加密数据", "本星带禁用掉落", "drop-none"));
+      rows.push(row("🔐", "势力密钥", "本星带禁用掉落", "drop-none"));
     }
     if (Array.isArray(preview.zoneSpecialDrops) && preview.zoneSpecialDrops.length > 0) {
       rows.push(`<div class="drop-group-title">⭐ 特殊掉落（outer/deep 独有）</div>`);
       for (const sd of preview.zoneSpecialDrops) {
-        rows.push(row("⭐", sd.material, `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", "special:" + sd.material));
+        rows.push(row("⭐", getResourceDisplayName("special:" + sd.material), `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", "special:" + sd.material));
       }
     }
     if (preview.ticketDrop) {
       const t = preview.ticketDrop;
-      rows.push(row("🎫", t.material, `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket", "ticket"));
+      rows.push(row("🎫", getResourceDisplayName("special:" + t.material), `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket", "ticket"));
     }
     if (Array.isArray(preview.gearDrops) && preview.gearDrops.length > 0) {
       rows.push(`<div class="drop-group-title">🔧 装备专用数据（精英/BOSS 掉落）</div>`);
       for (const gd of preview.gearDrops) {
-        rows.push(row("🔧", gd.material, `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear", "gear:" + gd.material));
+        rows.push(row("🔧", getResourceDisplayName("special:" + gd.material), `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear", "gear:" + gd.material));
       }
     }
     if (preview.tacticalMaterial) {
