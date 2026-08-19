@@ -2169,11 +2169,19 @@ function computeCargoSortMeta(item, componentLevelByName){
     if(id.indexOf("calibration:") === 0){
       subRank = 0; subLabel = "校准基体";
       const m = id.match(/_([iv]+)_calib$/); primary = romanToNum(m ? m[1] : "");
-    } else { subRank = 1; subLabel = "其他文物"; primary = 0; secondary = nm; }
+    } else if(/密钥/.test(nm)){ subRank = 1; subLabel = "战斗密钥"; primary = 0; secondary = nm; }        // 势力密钥(劫团低阶密钥等) + 通行密钥
+    else if(/协议/.test(nm)){ subRank = 2; subLabel = "协议材料"; primary = 0; secondary = nm; }          // 死亡空间首领协议
+    else if(/战术残液/.test(nm)){ subRank = 3; subLabel = "战术残液"; primary = 0; secondary = nm; }
+    else if(/核心/.test(nm)){ subRank = 4; subLabel = "核心素材"; primary = 0; secondary = nm; }          // 校准核心 + 空间站核心
+    else if(/生产许可/.test(nm)){ subRank = 5; subLabel = "装备生产许可"; primary = 0; secondary = nm; }  // 苍穹劫团装备生产许可 D/C/B/A 等
+    else if(/神经植入体/.test(nm)){ subRank = 6; subLabel = "神经植入体"; primary = 0; secondary = nm; }
+    else if(/数据/.test(nm)){ subRank = 7; subLabel = "舰船数据"; primary = 0; secondary = nm; }          // 天穹/重垒/裂界 深层舰船数据
+    else { subRank = 9; subLabel = "其他掉落"; primary = 0; secondary = nm; }
   } else if(cat === "consumable"){
     if(nm === "燃料单元"){ subRank = 0; subLabel = "燃料"; }
-    else if(/弹药|导弹/.test(nm)){
-      const tier = (nm.match(/T(\d+)/) || [,"1"])[1];
+    else if(item.ammoTier != null || /弹/.test(nm)){
+      const tierRaw = item.ammoTier || (nm.match(/T(\d+)/) || [,"1"])[1];
+      const tier = String(tierRaw).replace(/^T/i, "") || "1";
       subRank = 10 + Number(tier); subLabel = "弹药 T" + tier; secondary = nm.replace(/\s*T\d+.*$/,"");
     }
     else if(nm === "纳米维修膏"){ subRank = 2; subLabel = "维修耗材"; }
@@ -2182,7 +2190,8 @@ function computeCargoSortMeta(item, componentLevelByName){
       const sizeOrder = { S:0, M:1, L:2, XL:3 };
       subRank = 3; subLabel = "容器"; primary = sizeOrder[size] != null ? sizeOrder[size] : 1;
     }
-    else { subRank = 9; subLabel = "其它"; secondary = nm; }
+    else if(id && id.indexOf("booster:") === 0){ subRank = 4; subLabel = "增强剂"; primary = 0; secondary = nm; }
+    else { subRank = 99; subLabel = "其它"; secondary = nm; }
   } else if(cat === "equipment"){
     if(item.isEquipment){
       const eq = EQUIPMENT_DB[item.itemId];
@@ -2275,14 +2284,28 @@ function getCargoDisplayState(state, filter) {
             const qty = Number(s && s.qty) || 0;
             if (qty <= 0) continue;
             const nm = (s && s.name) || (typeof ammoDisplayName === "function" ? ammoDisplayName(s && s.type, s && s.tier) : (AMMO_TYPE_NAMES[s && s.type] || "弹药"));
-            byName[nm] = (byName[nm] || 0) + qty;
+            const tier = (s && s.tier) || "T1";
+            const prev = byName[nm];
+            if (prev == null) byName[nm] = { qty, ammoTier: tier };
+            else byName[nm].qty += qty;
           }
           return byName;
         })(),
         { "纳米维修膏":ResourceRegistry.get(state, "consumable:repairPaste") }
       ),
       // 货柜复用与 special 一致的形状 {qty,id}，id 保留 special:货柜* 以保证开箱功能
-      Object.fromEntries(cargoEntries.map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }]))
+      Object.fromEntries(cargoEntries.map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }])),
+      // 增强剂：库存存于 state.boosters.inventory（裸 id 键），此前不在任何 ITEM_CATEGORIES、仓库完全不显示；
+      // 此处并入「消耗品」标签展示（id 保留 booster:xxx 以便详情弹窗与来源判定）。
+      (function () {
+        const inv = (state.boosters && state.boosters.inventory) || {};
+        const out = {};
+        for (const r of (typeof BOOSTER_RECIPES !== "undefined" ? BOOSTER_RECIPES : [])) {
+          const q = Number(inv[r.id]) || 0;
+          if (q > 0) out[r.name] = { qty: q, id: r.itemId };
+        }
+        return out;
+      })()
     ),
     equipment:equipmentSource
   };
@@ -2297,15 +2320,17 @@ function getCargoDisplayState(state, filter) {
       const quantity = Number(rawEntry && typeof rawEntry === "object" ? rawEntry.qty : rawEntry) || 0;
       if (quantity <= 0) continue;
       const equipment = category === "equipment" ? equipmentByName[name] : null;
-      const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : "📦";
       const isEquip = category === "equipment" && !!equipment;
       const isComponent = category === "equipment" && !equipment;
       // 虚拟筛选：装备页只显真装备，组件页只显舰船组件
       if (selectedFilter === "equipment" && isComponent) continue;
       if (selectedFilter === "component" && !isComponent) continue;
       const categoryLabel = isComponent ? (CARGO_CATEGORY_LABEL.component || "组件") : (CARGO_CATEGORY_LABEL[category] || category);
-      // 物品真实 id（货柜为 special:货柜*，用于下方来源覆写与开箱弹窗判定）
+      // 物品真实 id（货柜为 special:货柜*、增强剂为 booster:*，用于下方来源覆写与开箱弹窗判定）
       const itemId = (rawEntry && typeof rawEntry === "object" && rawEntry.id) || null;
+      // 弹药档位（由弹药实例 s.tier 带出，名字无可识别档位时不靠名字猜）
+      const ammoTier = (rawEntry && typeof rawEntry === "object" && rawEntry.ammoTier) || null;
+      const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : (itemId && itemId.indexOf("booster:") === 0 ? "💉" : "📦");
       let source = isEquip
         ? { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" }
         : isComponent
@@ -2327,11 +2352,17 @@ function getCargoDisplayState(state, filter) {
         source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
         description = "校准材料。由考古探索获取，是改装件制造的核心耗材，在装备工程的各档 rig 配方中消耗。";
       }
+      // 增强剂（booster: 命名空间）归入「消耗品」标签，来源是增强剂制造而非装备工程，纠正来源与说明
+      if (itemId && itemId.indexOf("booster:") === 0) {
+        source = { pageId:"boosterEngineering", pageLabel:"增强剂制造", icon:"fa-solid fa-flask" };
+        description = "增强剂。由增强剂制造产出，可临时提升采矿、采气、冶炼、考古或增强剂产出效率，是作业与探险的核心消耗品。";
+      }
       items.push({
         category,
         categoryLabel,
         name,
         quantity,
+        ammoTier,
         id: itemId,
         icon:ITEM_ICONS[name] || fallbackIcon,
         details:equipment ? getEquipmentAttributeText(equipment) : "",
