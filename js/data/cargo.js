@@ -98,6 +98,12 @@ const ENEMY_CARGO_CLASS = {
 };
 
 function getEnemyCargoClass(faction, enemyKey) {
+  if (!enemyKey) {
+    // 防御：船级 key 缺失时不再静默兜底成护卫级（曾因离线敌人快照漏拷 type 导致所有离线星带掉 S 货柜）。
+    // 明确告警，便于定位缺失来源，而非悄悄降级。
+    if (typeof console !== "undefined" && console.warn) console.warn("[cargo] getEnemyCargoClass: enemyKey 缺失 faction=" + faction + "，兜底 frigate");
+    return "frigate";
+  }
   const map = ENEMY_CARGO_CLASS[faction];
   return (map && map[enemyKey]) || "frigate";
 }

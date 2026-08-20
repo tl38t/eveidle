@@ -407,7 +407,7 @@
       const rng = detRng(c);
       const built = G("buildCombatWave")(zone, waveNum, rng, c);
       const enemies = built.enemies.map(e => ({
-        id: e.id, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
+        id: e.id, type: e.type, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
         dodge: e.dodge, baseDamage: e.baseDamage, kind: e.kind, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
         level: e.level,
         deathspaceLeader: false, deathspaceWave: 0, _rewarded: false
@@ -502,7 +502,7 @@
         const rng = detRng(c);
         const built = G("buildDeathspaceWave")(site, 1, rng, c);
         const enemies = built.enemies.map(e => ({
-          id: e.id, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
+          id: e.id, type: e.type, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
           dodge: e.dodge, baseDamage: e.baseDamage, kind: e.kind, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
           deathspaceLeader: Boolean(e.deathspaceLeader), deathspaceWave: e.deathspaceWave || 1, _rewarded: false
         }));
