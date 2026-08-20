@@ -704,7 +704,8 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
         c.lastSalvage.hits++;
         const tier = getSalvageComponentTier(enemy.level);
         const ids = (typeof SALVAGE_COMPONENT_IDS !== "undefined" && SALVAGE_COMPONENT_IDS[tier]) || SALVAGE_COMPONENT_IDS[""];
-        const compId = ids[Math.floor(roll() * ids.length)];
+        // 选组件用独立随机源，避免与战斗掉落 rng 同相位锁定导致恒为某一类（如动力核心）
+        const compId = ids[Math.floor(Math.random() * ids.length)];
         const qty = isoCost;
         ResourceRegistry.add(state, "component:" + compId, qty);
         c.lastSalvage.components.push(compId + "×" + qty);

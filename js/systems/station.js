@@ -48,10 +48,25 @@ const STATION_BODY_PLANS = Object.freeze({
       "mineral:超新星诺克石": 2000,
       "planetary:同位素": 300      // 策划 6.2 本体 Lv.3 行星材料 300（冰行星产出=同位素）
     })
+  }),
+  4: Object.freeze({
+    level: 4,
+    name: "深空要塞",
+    durationMs: 28800000,         // 8h（时长每级翻倍 1→2→4→8h）
+    isk: 32000000,                // 星币每级 ×4（50万→200万→800万→3200万）
+    materials: Object.freeze({
+      "mineral:三钛合金": 90000,   // 标准钛材
+      "mineral:类晶体胶矿": 5000,  // 晶格聚合物
+      "mineral:同位聚合体": 5000,  // 同位复材
+      "mineral:超新星诺克石": 4000,// 诺瓦陶金
+      "mineral:基腹断岩": 1500,    // 重锆晶材（Lv.4 新引入稀有矿）
+      "mineral:超噬矿": 800       // 奇点合金（Lv.4 新引入稀有矿）
+    }),
+    desc: "升至深空要塞后将解锁建造「军团议事大厅」的资格（需对应内容授权）。"
   })
 });
 
-const STATION_MAX_BODY_LEVEL = 3;
+const STATION_MAX_BODY_LEVEL = 4;
 
 // 本体等级 → 中文名（0 = 尚未建造）。
 function getStationBodyName(level) {
@@ -280,6 +295,7 @@ function getStationBodyDisplayState(state, now) {
   const nextLevel = atMax ? null : bodyLevel + 1;
   const nextPlan = nextLevel ? STATION_BODY_PLANS[nextLevel] : null;
   const nextName = nextPlan ? nextPlan.name : null;
+  const nextDesc = nextPlan ? (nextPlan.desc || null) : null;
   const nextCost = nextPlan ? buildStationCostSnapshot(nextPlan) : null;
 
   const rawC = (s && s.construction) ? s.construction : null;
@@ -338,6 +354,7 @@ function getStationBodyDisplayState(state, now) {
     bodyName: bodyName,
     nextLevel: nextLevel,
     nextName: nextName,
+    nextDesc: nextDesc,
     currentConstruction: currentConstruction,
     remainingMs: remainingMs,
     progress: progress,
@@ -1497,7 +1514,7 @@ function getStationBuildingEffectsDisplayState(state) {
 }
 
 // ---- 综合后勤倍率（Phase 3C-7，系数 B 扩展）----
-// Lv.0=×1, Lv.1=×1.03, Lv.2=×1.08, Lv.3=×1.15；断油=×1；非法 bodyLevel/NaN/Infinity fail-closed ×1
+// Lv.0=×1, Lv.1=×1.03, Lv.2=×1.08, Lv.3=×1.15, Lv.4=×1.24；断油=×1；非法 bodyLevel/NaN/Infinity fail-closed ×1
 // 独立速度乘区，仅缩短周期时间，不改变产量/XP/材料/掉落/成功率
 // 系数 B（2026-08-06）：传入 coreTag 且对应空间站核心已获取并持有库存时，该制造线额外 +10%（加算，非乘算）。
 const STATION_CORE_RESOURCE = {
@@ -1512,9 +1529,9 @@ function getStationLogisticsBaseMultiplier(state, coreTag) {
   const s = state && state.station;
   if (!s) return 1;
   let bodyLevel = Math.floor(Number(s.bodyLevel));
-  if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 3) return 1;
+  if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 4) return 1;
   if (!isStationOperational(state)) return 1;
-  const table = {0: 1, 1: 1.03, 2: 1.08, 3: 1.15};
+  const table = {0: 1, 1: 1.03, 2: 1.08, 3: 1.15, 4: 1.24};
   const base = table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
   let mult = base;
   // 系数 B：携带对应空间站核心（已获取且库存持有）时该制造线 +10%（加算，叠在本体基础倍率上）
@@ -1556,12 +1573,13 @@ function getStationPageDisplayState(state, now) {
   const bodyRaw = (typeof getStationBodyDisplayState === "function") ? getStationBodyDisplayState(state, renderNow) : {};
   // 补齐 body nextCostRows/durationMs/blockedText
   const bodyLevel = Number(bodyRaw.bodyLevel) || 0;
-  const nextLevel = bodyLevel < 3 ? bodyLevel + 1 : null;
+  const nextLevel = bodyLevel < STATION_MAX_BODY_LEVEL ? bodyLevel + 1 : null;
   const nextPlan = nextLevel && STATION_BODY_PLANS[nextLevel];
-  const atMax = bodyLevel >= 3;
+  const atMax = bodyLevel >= STATION_MAX_BODY_LEVEL;
   const body = {
     bodyLevel, bodyName: bodyRaw.bodyName || "未建立",
     nextLevel, nextName: nextPlan ? nextPlan.name : null,
+    nextDesc: nextPlan ? (nextPlan.desc || null) : null,
     currentConstruction: bodyRaw.currentConstruction || null,
     remainingMs: bodyRaw.remainingMs || 0,
     nextCostRows: nextPlan ? buildStationCostRows(state, nextPlan.isk, nextPlan.materials) : [],

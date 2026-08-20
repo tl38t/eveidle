@@ -112,6 +112,14 @@ function renderStationPage(now) {
     } else costEl.textContent = "";
   }
 
+  // 升级预览备注（如 Lv.4 解锁军团议事大厅）
+  var noteEl = document.getElementById("station-upgrade-note");
+  if (noteEl) {
+    var note = (display.body.nextDesc && !display.body.currentConstruction) ? display.body.nextDesc : "";
+    noteEl.textContent = note;
+    noteEl.style.display = note ? "" : "none";
+  }
+
   // ---- B. 维护 ----
   setText("station-maintenance-points", (display.maintenance.maintenancePoints || 0));
   setText("station-fuel-remaining", (display.maintenance.fuelRemaining || 0).toLocaleString());
