@@ -14,19 +14,39 @@
 //          `--mode release` 完全不注入探针，输出 deep-space-idle-taptap-rc{N}.zip。
 //          RC 号由 tools/rc-counter.txt 持久化：release 每次 +1，selftest 复用当前号；
 //          release 模式会内部生成同名 selftest 包供跨模式一致性校验。
+//
+// 共享能力抽取（Phase C）：确定性构建核心（换行规范化、archive/worktree 来源读取、
+// 确定性 ZIP、manifest、一致性比较）位于 tools/lib/release-runtime.mjs。
+// 本文件保留 TapTap 专属：RC 计数器、ZIP 命名、文件白名单、CDN 本地化、
+// 探针注入、包验证、输出目录、selftest/release 模式。
+//
+// 换行规范（Phase C / C.1）：所有明确文本发布文件（index.html/css/js/images/vendor
+// 的 .html/.css/.js/.mjs/.json/.txt/.svg/.xml）在入包前统一 CRLF/孤立 CR -> LF，
+// 使 archive（commit LF）与 worktree（工作区 CRLF）两种来源字节一致。archive 模式
+// 游戏文件、vendor、探针均来自指定 source SHA 的 commit 树（git archive 给出 LF）；
+// worktree 模式从工作区读取并走同一 TEXT_NORMALIZER 管线（CRLF->LF）。两类模式
+// 输出字节一致；二进制字体/图片等保持原字节；无 vendor CSS 例外。
 
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import {
+  sha256,
+  normalizeTextBytes,
+  gitArchiveBuffer,
+  loadCommitFiles,
+  loadWorktreeFiles,
+  createFileManifest,
+  createDeterministicZip,
+  compareBuildResults,
+} from "./lib/release-runtime.mjs";
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
 
 const REPO = path.resolve(process.cwd());
 const OUTDIR = "D:/EVE-IDLE/TAPTAP-H5-OUTPUT";
 const PKG_TOP = "deep-space-idle";
-const ASSETS_SRC = path.join(REPO, "assets", "vendor", "taptap-h5");
 const PROBE_SRC = path.join(REPO, "tools", "taptap-compat-probe.mjs");
 const FIXED_DATE = new Date(Date.UTC(2024, 0, 1, 0, 0, 0));
 const MAX_BYTES = 300 * 1024 * 1024;
@@ -92,7 +112,6 @@ function checkRepoState() {
   if (!wtClean) throw new Error("tracked 工作树不干净（git diff 非空）");
 }
 
-const sha256 = (buf) => crypto.createHash("sha256").update(buf).digest("hex");
 const fail = (m) => { throw new Error(m); };
 
 // ---------- 白名单 ----------
@@ -117,41 +136,11 @@ function isWhitelisted(rel) {
   return false;
 }
 
-// ---------- git archive ----------
-function gitArchiveZip(outPath, sha) {
-  const r = spawnSync(
-    "git",
-    ["-c", "core.autocrlf=false", "-c", "core.eol=lf", "archive", "--format=zip", "-o", outPath, sha],
-    { cwd: REPO, encoding: "buffer" }
-  );
-  if (r.status !== 0) fail("git archive 失败: " + (r.stderr || r.stdout).toString());
-}
-
-// ---------- 读取资源目录为 Map<rel, Buffer> ----------
-function walkDirToMap(dir, baseRel, map) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const e of entries) {
-    const abs = path.join(dir, e.name);
-    const rel = baseRel ? baseRel + "/" + e.name : e.name;
-    if (e.isDirectory()) walkDirToMap(abs, rel, map);
-    else if (e.isFile()) map.set(rel.split(path.sep).join("/"), fs.readFileSync(abs));
-  }
-}
-
-function loadWhitelistedWorktree(map) {
-  const indexPath = path.join(REPO, "index.html");
-  if (!fs.existsSync(indexPath)) fail("工作区缺少 index.html");
-  map.set("index.html", fs.readFileSync(indexPath));
-  for (const dirName of ["css", "js", "images"]) {
-    const dir = path.join(REPO, dirName);
-    if (!fs.existsSync(dir)) continue;
-    const candidates = new Map();
-    walkDirToMap(dir, dirName, candidates);
-    for (const [rel, buffer] of candidates) {
-      if (isWhitelisted(rel)) map.set(rel, buffer);
-    }
-  }
-}
+// ---------- 来源读取（archive / worktree 共用换行规范化管线）----------
+// 所有明确文本发布文件（含 vendor CSS/TXT）统一 CRLF/孤立 CR -> LF，
+// 使 archive（commit LF）与 worktree（工作区 CRLF）两种来源在确定性打包前字节一致。
+// 无 vendor CSS 例外；二进制字体/图片等保持原字节（normalizeTextBytes 按扩展名白名单处理）。
+const TEXT_NORMALIZER = (rel, buf) => normalizeTextBytes(rel, buf);
 
 // ---------- 本地化 index.html ----------
 function localizeIndexHtml(html, includeProbe) {
@@ -205,32 +194,50 @@ function collectRefs(rel, content) {
 
 // ---------- 单次构建 ----------
 async function buildOnce(SOURCE_SHA, includeProbe) {
-  const stage = path.join(OUTDIR, "_stage");
-  fs.rmSync(stage, { recursive: true, force: true });
-  fs.mkdirSync(stage, { recursive: true });
   const map = new Map();
+  let commitFiles = null; // archive 模式缓存 commit 树 Map（已换行规范化），供 vendor 复用
+
   if (WORKTREE_SELFTEST) {
-    loadWhitelistedWorktree(map);
+    // 游戏运行文件（index.html/css/js/images 白名单）从工作区读取 + 换行规范化
+    const wt = loadWorktreeFiles(REPO, ["index.html", "css", "js", "images"], {
+      fileFilter: isWhitelisted,
+      transform: TEXT_NORMALIZER,
+    });
+    for (const [rel, buf] of wt) map.set(rel, buf);
   } else {
-    const archivePath = path.join(stage, "_archive.zip");
-    gitArchiveZip(archivePath, SOURCE_SHA);
-    const zip = await JSZip.loadAsync(fs.readFileSync(archivePath));
-    for (const [rel, file] of Object.entries(zip.files)) {
-      if (file.dir) continue;
-      const r = rel.split("/").join("/");
-      if (!isWhitelisted(r)) continue;
-      map.set(r, await file.async("nodebuffer"));
+    // 游戏运行文件 + 探针均来自指定 source SHA（commit 树），归一化后不做工作区覆盖
+    const archiveBuf = gitArchiveBuffer(REPO, SOURCE_SHA);
+    const all = await loadCommitFiles(archiveBuf, JSZip, { transform: TEXT_NORMALIZER });
+    commitFiles = all;
+    for (const [rel, buf] of all) {
+      if (isWhitelisted(rel)) map.set(rel, buf);
+    }
+    if (includeProbe) {
+      const probe = all.get("tools/taptap-compat-probe.mjs");
+      if (!probe) fail("探针源文件缺失（commit 中无 tools/taptap-compat-probe.mjs）");
+      map.set("taptap-compat-probe.mjs", probe);
     }
   }
 
-  // 本地化资源（递归复制，含许可证文本）
-  if (!fs.existsSync(ASSETS_SRC)) fail("本地化资源缺失: " + ASSETS_SRC);
-  walkDirToMap(ASSETS_SRC, "assets/vendor/taptap-h5", map);
+  // 本地化资源（assets/vendor/taptap-h5/**）——来源纯度修正（Phase C.1）
+  //  archive 模式：来自指定 source SHA 的 commit 树（commitFiles 已含、已换行规范化），
+  //    不再从工作区读取，消除 core.autocrlf 导致的跨机器换行不确定性。
+  //  worktree-selftest 模式：从工作区读取并走同一 TEXT_NORMALIZER 管线（CRLF->LF），
+  //    与 archive 模式输出字节一致；二进制字体/图片保持原字节。
+  //  两类模式统一为 LF，无 vendor CSS 的 CRLF 例外。
+  if (WORKTREE_SELFTEST) {
+    const vendor = loadWorktreeFiles(REPO, ["assets/vendor/taptap-h5"], { transform: TEXT_NORMALIZER });
+    for (const [rel, buf] of vendor) map.set(rel, buf);
+  } else {
+    for (const [rel, buf] of commitFiles) {
+      if (rel.startsWith("assets/vendor/taptap-h5/")) map.set(rel, buf);
+    }
+  }
 
-  // 探针
-  if (includeProbe) {
+  // 探针（worktree 模式从工作区读取并规范化；archive 模式已在上方从 commit 树注入）
+  if (includeProbe && WORKTREE_SELFTEST) {
     if (!fs.existsSync(PROBE_SRC)) fail("探针源文件缺失: " + PROBE_SRC);
-    map.set("taptap-compat-probe.mjs", fs.readFileSync(PROBE_SRC));
+    map.set("taptap-compat-probe.mjs", normalizeTextBytes("taptap-compat-probe.mjs", fs.readFileSync(PROBE_SRC)));
   }
 
   // 本地化 index.html
@@ -240,31 +247,10 @@ async function buildOnce(SOURCE_SHA, includeProbe) {
   // 排序键（确定性）
   const keys = [...map.keys()].sort((a, b) => a.localeCompare(b));
 
-  // 生成 ZIP（仅一个顶层目录 deep-space-idle/）
-  const out = new JSZip();
-  for (const k of keys) {
-    out.file(PKG_TOP + "/" + k, map.get(k), { date: FIXED_DATE });
-  }
-  // 强制所有条目（含 JSZip 自动生成的目录条目）使用固定日期，保证字节级确定性
-  for (const name of Object.keys(out.files)) {
-    out.files[name].date = FIXED_DATE;
-  }
-  const buffer = await out.generateAsync({
-    type: "nodebuffer",
-    compression: "DEFLATE",
-    compressionOptions: { level: 9 },
-    platform: 0,
-    dosDates: true,
-  });
+  // 确定性 ZIP + manifest
+  const buffer = await createDeterministicZip(JSZip, keys, map, PKG_TOP, FIXED_DATE);
+  const manifest = createFileManifest(keys, map, PKG_TOP);
 
-  const manifest = keys.map((k) => ({
-    arc: PKG_TOP + "/" + k,
-    rel: k,
-    size: map.get(k).length,
-    sha256: sha256(map.get(k)),
-  }));
-
-  fs.rmSync(stage, { recursive: true, force: true });
   return { buffer, manifest, count: keys.length };
 }
 
@@ -503,14 +489,12 @@ function verifyPackage(buffer, mode, includeProbe) {
   for (const r of v2) { console.log((r.pass ? "PASS " : "FAIL ") + r.name); if (!r.pass) allPass = false; }
 
   // 14) 两次构建一致
-  const listSame = JSON.stringify(b1.manifest.map((m) => m.arc)) === JSON.stringify(b2.manifest.map((m) => m.arc));
-  const hashSame = b1.manifest.every((m, i) => m.sha256 === b2.manifest[i].sha256);
-  const zipSame = b1.buffer.length === b2.buffer.length && sha256(b1.buffer) === sha256(b2.buffer);
+  const det = compareBuildResults(b1, b2);
   console.log("\n--- 确定性 ---");
-  console.log((listSame ? "PASS " : "FAIL ") + "两次文件清单一致 (" + b1.count + " 项)");
-  console.log((hashSame ? "PASS " : "FAIL ") + "两次各文件 SHA-256 一致");
-  console.log((zipSame ? "PASS " : "FAIL ") + "两次最终 ZIP SHA-256 一致 = " + sha256(b1.buffer));
-  if (!listSame || !hashSame || !zipSame) allPass = false;
+  console.log((det.listSame ? "PASS " : "FAIL ") + "两次文件清单一致 (" + det.count + " 项)");
+  console.log((det.hashSame ? "PASS " : "FAIL ") + "两次各文件 SHA-256 一致");
+  console.log((det.zipSame ? "PASS " : "FAIL ") + "两次最终 ZIP SHA-256 一致 = " + det.zipSha256);
+  if (!det.listSame || !det.hashSame || !det.zipSame) allPass = false;
 
   // 15) 写出最终 ZIP
   const finalPath = path.join(OUTDIR, ZIP_NAME);
