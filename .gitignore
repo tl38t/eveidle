@@ -1,7 +1,5 @@
-# 依赖与本地安装（仅用于 node 回归测试，非项目源码）
+# 依赖与本地安装（node_modules 不入库；package.json / package-lock.json 为构建工具清单，随基线入库）
 node_modules/
-package-lock.json
-package.json
 
 # 项目记忆（个人/会话级，非源码）
 .workbuddy/

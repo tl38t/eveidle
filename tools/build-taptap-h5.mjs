@@ -21,7 +21,7 @@ import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
-const JSZip = require("C:/Users/Administrator/.workbuddy/binaries/node/workspace/node_modules/jszip/lib/index.js");
+const JSZip = require("jszip");
 
 const REPO = path.resolve(process.cwd());
 const OUTDIR = "D:/EVE-IDLE/TAPTAP-H5-OUTPUT";
