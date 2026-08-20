@@ -1049,7 +1049,7 @@ function advanceCombatRound(state, context) {
       volleyAmmoProps[type] = getAmmoTierProps(r.tier);
     }
     const capSkill = state.skills.capacitorManagement;
-    if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", volleyFuel * 0.3); }
+    if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", volleyFuel * 0.3, "combat"); }
 
     for (const module of weapons) {
       const equipment = module.equipment;
@@ -1081,9 +1081,9 @@ function advanceCombatRound(state, context) {
       }
       if (playEffects) playAttackFX(true, combat.weaponType, damage);
       const weaponSkill = state.skills[weapon.skillKey];
-      if (weaponSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weapon.skillKey, 2); }
+      if (weaponSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weapon.skillKey, 2, "combat"); }
       const targetingSkill = state.skills.targeting;
-      if (targetingSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "targeting", 1); }
+      if (targetingSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "targeting", 1, "combat"); }
     }
     // Batch C-12（返修）：只有 amount 为有限正数才 emit；全部 miss/0 实伤不发射
     const amountThisVolley = c.runDamageDealt - prevRunDamage;
@@ -1127,11 +1127,11 @@ function advanceCombatRound(state, context) {
     enemyVolley.hits.push({ enemyId:attacker.id, damage:actualDamage });
     if (playEffects) playEnemyAttackFX(c.enemies.indexOf(attacker), attackOrder, actualDamage);
 
-    if (damageTaken.shield > 0) { const s = state.skills.shieldOperation; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "shieldOperation", 1); } }
-    if (damageTaken.armor > 0) { const s = state.skills.armorReinforcement; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "armorReinforcement", 1); } }
-    if (damageTaken.structure > 0) { const s = state.skills.hullEngineering; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "hullEngineering", 1); } }
+    if (damageTaken.shield > 0) { const s = state.skills.shieldOperation; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "shieldOperation", 1, "combat"); } }
+    if (damageTaken.armor > 0) { const s = state.skills.armorReinforcement; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "armorReinforcement", 1, "combat"); } }
+    if (damageTaken.structure > 0) { const s = state.skills.hullEngineering; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "hullEngineering", 1, "combat"); } }
     if (damageTaken.shield + damageTaken.armor + damageTaken.structure > 0) {
-      const s = state.skills.piloting; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "piloting", 1); }
+      const s = state.skills.piloting; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "piloting", 1, "combat"); }
     }
     if (c.hp.structure <= 0) {
       beginCombatRecovery(state, context);
@@ -1158,7 +1158,7 @@ function advanceCombatRound(state, context) {
       c.hp[rep.target] = Math.min(c.maxHp[rep.target], c.hp[rep.target] + healAmount);
       ResourceRegistry.spend(state, "consumable:fuel", repFuelCost);
       // 防御经验
-      const s = state.skills.defense; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "defense", 1); }
+      const s = state.skills.defense; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "defense", 1, "combat"); }
     }
   }
   resolveCombatWaveVictory(zone, rng, emit, state);

@@ -121,8 +121,15 @@ function gameTick() {
         // 脑插·采矿双生：4% 概率本次产出×2（双倍矿物/调度加成之后）
         if (Math.random() < getImplantDoubleOutputChance(gameState, "mining")) quantity *= 2;
         ResourceRegistry.add(gameState, resourceId, quantity);
+        // 伴生富集改装件：概率额外获得铁硅原矿（独立奖励，不参与双倍/脑插/调度，不给 XP）
+        if (typeof rollRigRichBonus === "function") {
+          const richQty = rollRigRichBonus(gameState, "mining", area);
+          if (richQty > 0 && typeof GameEvents !== "undefined") {
+            GameEvents.emit("mining:richBonus", { area:area.name, resourceId:"ore:凡晶石", quantity:richQty }, { offline:false });
+          }
+        }
         // XP 始终只加一次（双倍不影响 XP）
-        s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
+        addSkillXpToState(gameState, "mining", area.baseXP, { job:"mining" }); actionCompleted = true;
         GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
         if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
           GameEvents.emit("station:dispatchBonus", { kind:"mining", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.miningCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });
@@ -151,7 +158,7 @@ function gameTick() {
         // 增强剂·冶炼产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率本次产出×2
         if (boosterEff && boosterEff.doubleSmeltChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleSmeltChance)) output *= 2;
         ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, output);
-        s.xp += recipe.baseXP; gameState._dirty = true; actionCompleted = true;
+        addSkillXpToState(gameState, "refining", recipe.baseXP, { job:"refining" }); actionCompleted = true;
         GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:1, outputQuantity:output, xp:recipe.baseXP }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
@@ -179,7 +186,14 @@ function gameTick() {
         // 增强剂·采气产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率本次额外产出 +1（与离线 add 模型一致）
         if (boosterEff && boosterEff.doubleGasChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleGasChance)) quantity += 1;
         ResourceRegistry.add(gameState, resourceId, quantity);
-        s.xp += area.baseXP; gameState._dirty = true; actionCompleted = true;
+        // 伴生富集改装件：概率额外获得粗制富勒烯（独立奖励，不参与双倍/脑插/调度，不给 XP）
+        if (typeof rollRigRichBonus === "function") {
+          const richQty = rollRigRichBonus(gameState, "gasHarvesting", area);
+          if (richQty > 0 && typeof GameEvents !== "undefined") {
+            GameEvents.emit("gas:richBonus", { area:area.name, resourceId:"gas:粗制富勒烯", quantity:richQty }, { offline:false });
+          }
+        }
+        addSkillXpToState(gameState, "gasHarvesting", area.baseXP, { job:"gasHarvesting" }); actionCompleted = true;
         GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
         if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
           GameEvents.emit("station:dispatchBonus", { kind:"gas", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.gasCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });

@@ -222,8 +222,15 @@ function deductMatsMultiple(cost, cycles) {
 }
 
 function addOfflineSkillXp(skillKey, amount) {
+  if (amount <= 0) return;
+  // 复用在线统一钩子：job 默认取 skillKey（离线的三个生产技能 key 恰为 shipAssignments 的 job 键），
+  // 从而离线同样享受「该船指派工作」的经验改装件加成 + 全局增强剂倍率。
+  if (typeof addSkillXpToState === "function") {
+    addSkillXpToState(gameState, skillKey, amount, { job: skillKey, offline:true, source:"offline-settlement" });
+    return;
+  }
   const skill = gameState.skills[skillKey];
-  if (!skill || amount <= 0) return;
+  if (!skill) return;
   skill.xp += amount;
   checkLevelUp(skillKey, {
     offline:true,
@@ -276,6 +283,14 @@ function getOfflineActionDescriptor() {
           }
         }
         ResourceRegistry.add(gameState, dispatchResId, totalOre);
+        // 伴生富集改装件：逐周期独立掷骰（与脑插双生同模式，与在线一致；奖励不参与双倍/调度、不给 XP）
+        let richTotal = 0;
+        if (typeof rollRigRichBonus === "function") {
+          for (let i = 0; i < cycles; i++) richTotal += rollRigRichBonus(gameState, "mining", area);
+          if (richTotal > 0 && typeof emitOfflineGameEvent === "function") {
+            emitOfflineGameEvent("mining:richBonus", { area:area.name, resourceId:"ore:凡晶石", quantity:richTotal });
+          }
+        }
         // XP 始终按实际采集次数计算（双倍不增加 XP）
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
         emitOfflineGameEvent("mining:completed", { area:area.name, mode:area.mode, resourceId:dispatchResId, quantity:totalOre, cycles, xp:cycles * area.baseXP });
@@ -355,6 +370,14 @@ function getOfflineActionDescriptor() {
           }
         }
         ResourceRegistry.add(gameState, dispatchResId, qty);
+        // 伴生富集改装件：逐周期独立掷骰（与在线一致；奖励不参与双倍/调度、不给 XP）
+        let richTotal = 0;
+        if (typeof rollRigRichBonus === "function") {
+          for (let i = 0; i < cycles; i++) richTotal += rollRigRichBonus(gameState, "gasHarvesting", area);
+          if (richTotal > 0 && typeof emitOfflineGameEvent === "function") {
+            emitOfflineGameEvent("gas:richBonus", { area:area.name, resourceId:"gas:粗制富勒烯", quantity:richTotal });
+          }
+        }
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;
         emitOfflineGameEvent("gas:completed", { area:area.name, resourceId:dispatchResId, quantity:qty, cycles, xp:cycles * area.baseXP });
         if (dispatchBonus > 0 && typeof emitOfflineGameEvent === "function") {

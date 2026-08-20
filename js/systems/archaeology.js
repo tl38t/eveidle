@@ -515,13 +515,13 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
   const config = shipRef ? getShipConfigById(shipRef.shipId) : null;
   const shipFuelMultiplier = (config && Number.isFinite(config.fuelEfficiency)) ? config.fuelEfficiency : 1;
 
-  // 改装件燃料减免乘数（rigs.js 提供 getRigModifiers；未加载 / 无改装件时为 1）
-  let rigFuelReduction = 0;
+  // 电容回充改装件（原考古燃料效率）：与船体折扣「加算」（折扣%相加 = 船体乘子减去改装件省油值），全船战斗/考古一致。
+  let rigFuelSaving = 0;
   if (typeof getRigModifiers === "function" && shipRef) {
     const mods = getRigModifiers(state, shipRef) || {};
-    rigFuelReduction = Number(mods.archaeologyFuelEfficiency) || 0;
+    rigFuelSaving = Number(mods.archaeologyFuelEfficiency) || 0;
   }
-  const rigFuelMultiplier = Math.max(0, 1 - Math.max(0, rigFuelReduction));
+  const combinedShipMultiplier = Math.max(0, shipFuelMultiplier - rigFuelSaving);
 
   // 电容管理技能(capacitorManagement)对所有燃料路径统一生效，降低燃料消耗；与战斗路径 skill 乘子一致。
   const capSkillLevel = (typeof getCombatSkillLevelFromState === "function")
@@ -530,7 +530,7 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
   const capFactor = 1 / (1 + capSkillLevel * 0.02);
 
   // 生燃料成本（未取整）；也是长期平均消耗
-  const rawFuelCost = Math.max(0, baseFuel * shipFuelMultiplier * rigFuelMultiplier * capFactor);
+  const rawFuelCost = Math.max(0, baseFuel * combinedShipMultiplier * capFactor);
   const savingPerCycle = Math.max(0, baseFuel - rawFuelCost);
 
   // 归一化上一次余量到 [0,1)
@@ -551,7 +551,7 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
   return {
     baseFuel,
     shipFuelMultiplier,
-    rigFuelMultiplier,
+    combinedShipMultiplier,
     capFactor,
     rawFuelCost,
     savingPerCycle,
@@ -643,7 +643,7 @@ function resolveArchaeologyCycle(state, now, randomValue, eventMeta) {
     let archExpMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["archExp"])) : 1;
     if (!Number.isFinite(archExpMult) || archExpMult <= 0) archExpMult = 1;
     const grantedXp = site.xp * archExpMult;
-    addSkillXpToState(state, "archaeology", grantedXp, { source:"archaeology" });
+    addSkillXpToState(state, "archaeology", grantedXp, { source:"archaeology", job:"archaeology" });
     const fitted = getArchaeologyFittedBonuses(state, instance);
     const rng = (randomValue === "offline" || typeof randomValue === "function")
       ? (typeof randomValue === "function" ? randomValue : Math.random)
@@ -846,7 +846,7 @@ function getArchaeologyDisplayState(state, now) {
     const scanStrength = computeArchaeologyScanStrength(state, instance, effectiveProbeId);
     const failureReduction = 1 - (1 - shipReduction) * (1 - Math.min(0.60, fittedB.stabilizer || 0));
     const fuelSt = getArchaeologyFuelCostState(state, null, instance);
-    const fuelMultiplier = (fuelSt.shipFuelMultiplier || 1) * (fuelSt.rigFuelMultiplier || 1) * (fuelSt.capFactor || 1);
+    const fuelMultiplier = (fuelSt.combinedShipMultiplier || 1) * (fuelSt.capFactor || 1);
     const fitting = (typeof getFittingFromInstance === "function") ? getFittingFromInstance(instance) : (instance.fitted || {});
     const slotsCfg = (config && config.slots) || {};
     const slotCell = (slot) => ({
@@ -864,6 +864,8 @@ function getArchaeologyDisplayState(state, now) {
       scanStrength,
       failureReduction,
       fuelMultiplier,
+      // 电容回充比率：消耗乘子的折扣视角（1 − 实际消耗比率），与 taptap 竖屏「电容回充 X%」口径一致
+      capRecharge: Math.max(0, 1 - (fuelMultiplier || 1)),
       slots: { high: slotCell("high"), mid: slotCell("mid"), low: slotCell("low"), rig: slotCell("rig") },
       equipBonuses
     };

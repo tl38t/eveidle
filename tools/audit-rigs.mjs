@@ -21,7 +21,7 @@ while ((m = re.exec(html))) scripts.push(m[1].replace(/\?.*$/, "").replace(/^\.\
 const UI_EXCLUDE = [
   "js/ui/error-boundary.js","js/ui/action-modal.js","js/ui/shell-render.js",
   "js/ui/manufacturing-render.js","js/ui/combat-render.js","js/ui/planetary-render.js",
-  "js/ui/archaeology-render.js","js/ui/render.js","js/core/runtime.js"
+  "js/ui/archaeology-render.js","js/ui/render.js","js/core/runtime.js","js/ui/taptap-portrait.js"
 ];
 const logicScripts = scripts.filter(s => !UI_EXCLUDE.includes(s));
 
@@ -114,12 +114,12 @@ const SUFFIX=["i","ii","iii","iv","v"];
 const ROMAN=["I","II","III","IV","V"];
 
 /* ================= A 数据完整性 ================= */
-section("A 数据完整性（45 件定义）");
+section("A 数据完整性（60 件定义）");
 {
-  ok(Array.isArray(W.RIG_SERIES)&&W.RIG_SERIES.length===9, "A1 RIG_SERIES 恰 9 系列");
+  ok(Array.isArray(W.RIG_SERIES)&&W.RIG_SERIES.length===12, "A1 RIG_SERIES 恰 12 系列");
   ok(Array.isArray(W.RIG_TIER_META)&&W.RIG_TIER_META.length===5, "A2 RIG_TIER_META 恰 5 档");
   const rigDefs=Object.values(W.EQUIPMENT_DB).filter(d=>d.slot==="rig");
-  ok(rigDefs.length===45, `A3 EQUIPMENT_DB 恰 45 件 rig（实际 ${rigDefs.length}）`);
+  ok(rigDefs.length===60, `A3 EQUIPMENT_DB 恰 60 件 rig（实际 ${rigDefs.length}）`);
   const LEVELS=[1,15,35,55,80];
   for(const series of W.RIG_SERIES){
     for(let t=0;t<5;t++){
@@ -143,7 +143,7 @@ section("A 数据完整性（45 件定义）");
 section("B 制造门槛");
 {
   const recipes=W.EQUIPMENT_ENGINEERING_RECIPES.filter(r=>r.category==="rigs");
-  ok(recipes.length===45, `B1 装备工程改装件配方恰 45 条（实际 ${recipes.length}）`);
+  ok(recipes.length===60, `B1 装备工程改装件配方恰 60 条（实际 ${recipes.length}）`);
   ok(recipes.every(r=>!r.requiresBlueprint), "B2 全部无需蓝图");
   ok(W.EQUIPMENT_ENGINEERING_CATEGORIES.some(c=>c.id==="rigs"&&c.name==="改装件"), "B3 分类表含「改装件」");
   const CALIB_QTY={I:1,II:1,III:2,IV:2,V:3};
@@ -551,7 +551,7 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
     ok(Boolean(art)&&dn===art.name&&!String(dn).startsWith("calibration:"),
       `K calibration:${key} displayName=「${art?art.name:"?"}」（实际「${dn}」）`);
   }
-  // K5 45 件配方详情材料行均携带 displayName 且不向 UI 暴露 calibration: 内部键
+  // K5 55 件配方详情材料行均携带 displayName 且不向 UI 暴露 calibration: 内部键
   {
     const st=freshState();
     st.skills.equipmentEngineering={lvl:80,xp:0};
@@ -568,9 +568,9 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
         if(String(m.displayName).startsWith("calibration:")) clean=false;
       }
     }
-    ok(selectedOk, "K 45 件配方均可通过筛选态精确选中");
-    ok(withDisplay, "K 45 件配方详情材料均携带 displayName");
-    ok(clean, "K 45 件配方详情 displayName 均不暴露 calibration: 内部键");
+    ok(selectedOk, "K 55 件配方均可通过筛选态精确选中");
+    ok(withDisplay, "K 55 件配方详情材料均携带 displayName");
+    ok(clean, "K 55 件配方详情 displayName 均不暴露 calibration: 内部键");
   }
   // K6 rigCandidates 按槽位过滤：占用槽允许同系列升级、空槽过滤同组
   {

@@ -187,7 +187,7 @@
   // ---- XP（直接调 state-aware 函数，无事件；每波后重读技能）----
   function grantXp(state, skillId, amount) {
     const fn = G("addStationModifiedCombatXp");
-    if (typeof fn === "function" && amount) fn(state, skillId, amount);
+    if (typeof fn === "function" && amount) fn(state, skillId, amount, "combat");
   }
 
   // ---- 单波等效模拟（期望伤害，不重放 RNG）----

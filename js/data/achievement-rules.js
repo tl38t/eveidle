@@ -442,7 +442,7 @@
   //  四个 ID 集合与 js/data/equipment.js（EQUIPMENT_RECIPES）及
   //  js/data/ammunition.js（AMMO_ENG_RECIPES）双向完全相等（审计 eq12–eq17 交叉证明）。
   //  NON_RIG 含「显式非 rig 装备」+「死亡空间派生 ded_* 装备」（slot 非 rig），
-  //  与 RIG（9 系列 × 5 档 = 45）零交集。
+  //  与 RIG（11 系列 × 5 档 = 55）零交集。
   // ==========================================================================
 
   // 非 rig 装备配方 ID（顺序冻结，精确对应 EQUIPMENT_RECIPES.filter(slot!=="rig")）
@@ -566,7 +566,7 @@
     "t5_mining_laser",
   ]);
 
-  // 改装件配方 ID（顺序冻结，精确对应 EQUIPMENT_RECIPES.filter(slot==="rig")，9 系列 × 5 档 = 45）
+  // 改装件配方 ID（顺序冻结，精确对应 EQUIPMENT_RECIPES.filter(slot==="rig")，11 系列 × 5 档 = 55）
   const RIG_RECIPE_IDS = Object.freeze([
     "rig_archaeology_fuel_i",
     "rig_archaeology_fuel_ii",
@@ -588,11 +588,21 @@
     "rig_armor_capacity_iii",
     "rig_armor_capacity_iv",
     "rig_armor_capacity_v",
+    "rig_gas_rich_i",
+    "rig_gas_rich_ii",
+    "rig_gas_rich_iii",
+    "rig_gas_rich_iv",
+    "rig_gas_rich_v",
     "rig_gas_speed_i",
     "rig_gas_speed_ii",
     "rig_gas_speed_iii",
     "rig_gas_speed_iv",
     "rig_gas_speed_v",
+    "rig_mining_rich_i",
+    "rig_mining_rich_ii",
+    "rig_mining_rich_iii",
+    "rig_mining_rich_iv",
+    "rig_mining_rich_v",
     "rig_mining_speed_i",
     "rig_mining_speed_ii",
     "rig_mining_speed_iii",
@@ -613,6 +623,11 @@
     "rig_structure_capacity_iii",
     "rig_structure_capacity_iv",
     "rig_structure_capacity_v",
+    "rig_skill_xp_i",
+    "rig_skill_xp_ii",
+    "rig_skill_xp_iii",
+    "rig_skill_xp_iv",
+    "rig_skill_xp_v",
   ]);
 
   // 燃料配方 ID（顺序冻结，精确对应 AMMO_ENG_RECIPES.category==="fuel"）
@@ -645,7 +660,7 @@
   }
 
   // 6 条规则（顺序即求值顺序）：D13 非 rig 装备任一、D14 燃料任一、D15 弹药任一、D16 装备强化累计、
-  // D17 rig 任一、D18 rig 全部 45 件（Batch C-13 新增；recipeIds 直接复用冻结的 RIG_RECIPE_IDS，不另立副本）
+  // D17 rig 任一、D18 rig 全部 55 件（Batch C-13 新增；recipeIds 直接复用冻结的 RIG_RECIPE_IDS，不另立副本）
   const EQUIPMENT_RULES = Object.freeze([
     equipmentRecipeSetAnyRule("D13", NON_RIG_EQUIPMENT_RECIPE_IDS, 1),
     equipmentRecipeSetAnyRule("D14", FUEL_RECIPE_IDS, 1),

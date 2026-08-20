@@ -1274,7 +1274,11 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     runningRecipe:{ ...runningRecipe, cost:{ ...(runningRecipe.cost || {}) }, inputEquipment:runningRecipe.inputEquipment ? { ...runningRecipe.inputEquipment } : null, output:{ ...runningRecipe.output } },
     recipes:visibleRecipes.map(recipe => {
       const equipment = recipe.output.type === "equipment" ? EQUIPMENT_DB[recipe.output.itemId] : null;
-      const attributes = equipment ? getEquipmentAttributeLines(equipment).slice(1, 3).join(" · ") : getEquipEngOutputText(recipe).replace("产出：", "");
+      const attributes = equipment
+        ? (equipment.slot === "rig" && equipment.effectSummary
+            ? equipment.effectSummary
+            : getEquipmentAttributeLines(equipment).slice(1, 3).join(" · "))
+        : getEquipEngOutputText(recipe).replace("产出：", "");
       const slot = equipment ? (EQUIPMENT_SLOT_NAMES[equipment.slot] || "装备") : recipe.output.type === "fuel" ? "消耗品" : "弹药";
       return {
         id:recipe.id,
@@ -1297,7 +1301,11 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
       title:selectedRecipe.name,
       tier:getEquipEngTierLabel(selectedRecipe),
       equipment:selectedEquipment ? { id:selectedEquipment.id, name:selectedEquipment.name } : null,
-      attributes:selectedEquipment ? getEquipmentAttributeLines(selectedEquipment) : [],
+      attributes:selectedEquipment
+        ? (selectedEquipment.slot === "rig" && selectedEquipment.effectSummary
+            ? [selectedEquipment.effectSummary]
+            : getEquipmentAttributeLines(selectedEquipment))
+        : [],
       materials:detailMaterials,
       equipmentInputs:detailEquipmentInputs,
       outputText:getEquipEngOutputText(selectedRecipe),
@@ -1717,13 +1725,20 @@ function getCombatPlayerDodgeFromState(state, context) {
 }
 
 function getCombatFuelMultiplierFromState(state, zone, context) {
-  const ship = getActiveCombatShipState(state).config;
+  const activeShip = getActiveCombatShipState(state);
+  const ship = activeShip.config;
   const selectedZone = zone || COMBAT_ZONES.find(item => item.id === (state.combat && state.combat.zone));
   const shipMultiplier = Number.isFinite(ship.fuelEfficiency) ? ship.fuelEfficiency : 1;
   const zoneMultiplier = selectedZone && Number.isFinite(selectedZone.fuelMult) ? selectedZone.fuelMult : 1;
-  // 舰船级燃料折扣 = 船体燃料效率(fuelEfficiency)；电容管理技能(capacitorManagement)对所有燃料路径统一生效（考古见 getArchaeologyFuelCostState）。
+  // 电容回充改装件（原考古燃料效率）：与船体燃料折扣「加算」（折扣%相加 = 船体乘子直接减去改装件省油值），全船战斗/考古一致。
+  let rigFuelSaving = 0;
+  if (typeof getRigModifiers === "function" && activeShip.instance) {
+    rigFuelSaving = Number((getRigModifiers(state, activeShip.instance) || {}).archaeologyFuelEfficiency) || 0;
+  }
+  const combinedShipMultiplier = Math.max(0, shipMultiplier - rigFuelSaving);
+  // 电容管理技能(capacitorManagement)对所有燃料路径统一生效（考古见 getArchaeologyFuelCostState）。
   return calculateCombatStatFromState(state, "fuelMultiplier", 1, [
-    { operation:"multiply", value:shipMultiplier, priority:10, source:"ship" },
+    { operation:"multiply", value:combinedShipMultiplier, priority:10, source:"ship" },
     { operation:"multiply", value:zoneMultiplier, priority:20, source:"zone" },
     { operation:"multiply", value:1 / (1 + getCombatSkillLevelFromState(state, "capacitorManagement") * 0.02), priority:30, source:"skill" }
   ], { ...(context || {}), actor:"player", zoneId:selectedZone && selectedZone.id });
@@ -2526,7 +2541,10 @@ function getEquipmentEnhancementListDisplayState(state) {
   for (const [itemId, group] of groups) {
     const eq = EQUIPMENT_DB[itemId];
     if (!eq) continue;
-    if (eq.slot === "rig") continue; // 改装件不参与强化（安装即消耗，无 enhancementLevel），不进强化列表
+    // 改装件(rig)纳入强化列表展示，但标记 isRig 且 canEnhance=false（安装即生效、无 enhancementLevel），归入「未强化」筛选；其强化相关字段置默认。
+    // 分组维度对齐仓库「全部」小分类：装备功能组（武器/维修/采矿/采气/打捞/考古/改装件/其他）
+    const groupLabel = getEquipmentFunctionGroup(eq);
+    const groupRank = EQUIP_FUNCTION_ORDER[groupLabel] != null ? EQUIP_FUNCTION_ORDER[groupLabel] : 99;
 
     // 按等级分桶（未安装 / 已安装）
     const byLevel = new Map();
@@ -2551,30 +2569,47 @@ function getEquipmentEnhancementListDisplayState(state) {
       if (level === 0 && group.inventoryRefs.length) targetRef = group.inventoryRefs[0];
       else if (at.uninstalled.length) targetRef = at.uninstalled[0].instanceId;
 
-      const display = getEquipmentEnhancementDisplayState(eq, level, engLevel);
-      const costRows = buildCostRows(display);
-      const extraRows = buildExtraRows(display, itemId);
-      const canEnhance = targetRef ? canEnhanceFor(eq, level, targetRef) : false;
+      const isRig = eq.slot === "rig";
+      let display, costRows, extraRows, canEnhance;
+      let multiplier = 1, bonusPercent = 0, previewMultiplier = 1, previewBonusPercent = 0, successPercent = 0, successBreakdown = null, isMilestone = false;
+      if (isRig) {
+        costRows = []; extraRows = []; canEnhance = false;
+      } else {
+        display = getEquipmentEnhancementDisplayState(eq, level, engLevel);
+        costRows = buildCostRows(display);
+        extraRows = buildExtraRows(display, itemId);
+        canEnhance = targetRef ? canEnhanceFor(eq, level, targetRef) : false;
+        multiplier = display.multiplier;
+        bonusPercent = Math.round((display.multiplier - 1) * 1000) / 10;
+        previewMultiplier = display.previewMultiplier;
+        previewBonusPercent = Math.round((display.previewMultiplier - 1) * 1000) / 10;
+        successPercent = Math.round(display.success * 1000) / 10;
+        successBreakdown = display.successBreakdown;
+        isMilestone = display.isMilestone;
+      }
 
       entries.push({
         itemId,
         name: eq.name,
         icon: ITEM_ICONS[eq.name] || "📦",
         slot: eq.slot,
-        category: getEquipmentEnhancementCategory(eq),
-        categoryLabel: CATEGORY_LABEL[getEquipmentEnhancementCategory(eq)] || "其它",
+        isRig,
+        category: isRig ? "rig" : getEquipmentEnhancementCategory(eq),
+        categoryLabel: isRig ? "改装件" : (CATEGORY_LABEL[getEquipmentEnhancementCategory(eq)] || "其它"),
+        groupLabel,
+        groupRank,
         level,
         isUnenhanced: level === 0,
         stockCount,
         installedCount,
         totalCount: stockCount + installedCount,
-        multiplier: display.multiplier,
-        bonusPercent: Math.round((display.multiplier - 1) * 1000) / 10,
-        previewMultiplier: display.previewMultiplier,
-        previewBonusPercent: Math.round((display.previewMultiplier - 1) * 1000) / 10,
-        successPercent: Math.round(display.success * 1000) / 10,
-        successBreakdown: display.successBreakdown,
-        isMilestone: display.isMilestone,
+        multiplier,
+        bonusPercent,
+        previewMultiplier,
+        previewBonusPercent,
+        successPercent,
+        successBreakdown,
+        isMilestone,
         costRows,
         extraRows,
         canEnhance,
@@ -2587,7 +2622,7 @@ function getEquipmentEnhancementListDisplayState(state) {
     }
   }
   entries.sort((a, b) =>
-    (CATEGORY_LABEL[a.category] || "其它").localeCompare(CATEGORY_LABEL[b.category] || "其它", "zh") ||
+    (a.groupRank != null ? a.groupRank : 99) - (b.groupRank != null ? b.groupRank : 99) ||
     a.name.localeCompare(b.name, "zh") ||
     a.level - b.level);
   return { entries };

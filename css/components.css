@@ -371,15 +371,34 @@
   /* ===== 装备强化面板（牛牛式：按型号×等级单元格 + 居中弹窗） ===== */
   .equipment-enhancement-list {
     display: flex; flex-direction: column; gap: 8px;
-    overflow-y: auto; flex: 1; min-height: 0;
+    flex: 1; min-height: 0;
   }
   .eem-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .eem-search { flex: 1; min-width: 140px; max-width: 260px; }
   .eem-filters { display: inline-flex; flex-wrap: wrap; border: 1px solid #1c2632; border-radius: 5px; overflow: hidden; }
   .eem-filters .seg-tab { --seg-accent: #d4a843; padding: 5px 12px; }
+  /* 外层滚动容器（原 equip-enh-grid 的滚动职责迁移至此；DOM id 保持 equip-enh-grid） */
+  .equip-enh-scroll {
+    display: block; overflow-y: auto; flex: 1; min-height: 0; padding-right: 2px;
+  }
+  /* 分组区块：按 categoryLabel 聚合，块间有可见分隔线 */
+  .equip-enh-group { margin-top: 14px; }
+  .equip-enh-group:first-child { margin-top: 0; }
+  .equip-enh-group + .equip-enh-group { border-top: 1px solid #26323f; padding-top: 14px; }
+  .equip-enh-group-head {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 8px;
+    background: linear-gradient(180deg, #0f141e 72%, rgba(15,20,30,0.92));
+    padding: 6px 2px; margin: -2px 0 8px;
+  }
+  .equip-enh-group-head .g-accent { width: 3px; height: 15px; border-radius: 2px; background: #d4a843; }
+  .equip-enh-group-head .g-name { font-weight: 700; color: #e6edf4; font-size: 13px; }
+  .equip-enh-group-head .g-count { font-size: 11px; color: #6a7a8e; border: 1px solid #273b4d; border-radius: 10px; padding: 0 7px; }
+  .equip-enh-group-head .g-sub { font-size: 11px; color: #6a7a8e; margin-left: auto; }
+  /* 内层卡片网格（原 equip-enh-grid 的网格职责保留） */
   .equip-enh-grid {
     display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 8px; overflow-y: auto; align-content: start; flex: 1; min-height: 0; padding-right: 2px;
+    gap: 8px; align-content: start;
   }
   .equip-enh-cell {
     background: #0f141e; border: 1px solid #1a2535; border-radius: 6px; padding: 8px;

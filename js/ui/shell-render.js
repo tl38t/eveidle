@@ -274,7 +274,7 @@ function renderEquipmentEnhancementList(visible) {
          ${filters.map(([id,label]) => `<button class="seg-tab eem-filter${equipEnhanceFilter===id?" active":""}" data-equip-filter="${id}">${label}</button>`).join("")}
        </div>
      </div>
-     <div class="equip-enh-grid" id="equip-enh-grid"></div>`;
+     <div class="equip-enh-scroll" id="equip-enh-grid"></div>`;
   renderEquipEnhanceGrid();
 }
 
@@ -283,15 +283,43 @@ function renderEquipEnhanceGrid() {
   const display = getEquipmentEnhancementListDisplayState(gameState);
   const term = (equipEnhanceSearch || "").trim().toLowerCase();
   const filtered = display.entries.filter(e => {
-    if (equipEnhanceFilter === "enhanceable" && e.stockCount === 0) return false;
-    if (equipEnhanceFilter === "installed" && e.installedCount === 0) return false;
+    if (equipEnhanceFilter === "enhanceable" && !e.canEnhance) return false;
+    if (equipEnhanceFilter === "installed" && (e.installedCount === 0 || e.isRig)) return false;
     if (equipEnhanceFilter === "unenhanced" && e.level !== 0) return false;
-    if (term && !(e.name.toLowerCase().includes(term) || (e.categoryLabel || "").toLowerCase().includes(term))) return false;
+    if (term && !(e.name.toLowerCase().includes(term) || (e.groupLabel || "").toLowerCase().includes(term))) return false;
     return true;
   });
-  grid.innerHTML = filtered.length
-    ? filtered.map(equipCellHtml).join("")
-    : `<div class="cargo-empty">没有符合条件的装备</div>`;
+  if (!filtered.length) { grid.innerHTML = `<div class="cargo-empty">没有符合条件的装备</div>`; return; }
+
+  // 分组维度对齐仓库「全部」小分类：装备功能组（武器/维修/采矿/采气/打捞/考古/改装件/其他），按 EQUIP_FUNCTION_ORDER 排序
+  const GROUP_ORDER = ["武器","维修","采矿","采气","打捞","考古","改装件","其他"];
+  const GROUP_SUB = {
+    "武器":"主炮 / 无人机", "维修":"护盾 / 装甲 / 结构维修", "采矿":"采矿激光增益",
+    "采气":"采气激光增益", "打捞":"残骸打捞效率", "考古":"异常空间扫描 / 解码",
+    "改装件":"安装即生效 · 不可强化", "其他":"其他增效装备"
+  };
+  const byCat = new Map();
+  for (const e of filtered) {
+    const cat = e.groupLabel || "其他";
+    if (!byCat.has(cat)) byCat.set(cat, []);
+    byCat.get(cat).push(e);
+  }
+  const ordered = GROUP_ORDER.filter(c => byCat.has(c))
+    .concat([...byCat.keys()].filter(c => !GROUP_ORDER.includes(c)));
+
+  grid.innerHTML = ordered.map(cat => {
+    const items = byCat.get(cat);
+    const cells = items.map(equipCellHtml).join("");
+    return `<section class="equip-enh-group">
+      <div class="equip-enh-group-head">
+        <span class="g-accent"></span>
+        <span class="g-name">${escapeAchievementText(cat)}</span>
+        <span class="g-count">${items.length} 件</span>
+        <span class="g-sub">${GROUP_SUB[cat] || ""}</span>
+      </div>
+      <div class="equip-enh-grid">${cells}</div>
+    </section>`;
+  }).join("");
 }
 
 function equipCellHtml(e) {
@@ -300,7 +328,7 @@ function equipCellHtml(e) {
   if (e.stockCount > 0) badges.push(`<span class="eem-badge stock">库存 ${e.stockCount}</span>`);
   if (e.installedCount > 0) badges.push(`<span class="eem-badge installed">已装 ${e.installedCount}</span>`);
   if (e.isMilestone) badges.push(`<span class="eem-badge milestone">里程碑</span>`);
-  const lockCls = e.stockCount === 0 ? " locked" : (e.canEnhance ? "" : " nores");
+  const lockCls = e.stockCount === 0 ? " locked" : ((!e.isRig && !e.canEnhance) ? " nores" : "");
   return `<div class="equip-enh-cell${lockCls}" data-equip-cell="${encodeURIComponent(e.itemId)}|${e.level}" title="点击查看强化详情">
     <div class="eec-icon">${e.icon}</div>
     <div class="eec-info">
@@ -314,10 +342,31 @@ function equipCellHtml(e) {
 
 function openEquipEnhanceModal(itemId, level) {
   const display = getEquipmentEnhancementListDisplayState(gameState);
-  const cell = display.entries.find(e => e.itemId === itemId && e.level === level);
-  if (!cell) { closeEquipEnhanceModal(); return; }
+  let cell = display.entries.find(e => e.itemId === itemId && e.level === level);
+  if (!cell) {
+    // 改装件不在强化列表：造一个虚拟 cell 让弹窗能正常渲染（强化区块走 isRig 分支隐藏）
+    const eqEnt = EQUIPMENT_DB[itemId];
+    if (!eqEnt || eqEnt.slot !== "rig") { closeEquipEnhanceModal(); return; }
+    const inventory = gameState.equipment && Array.isArray(gameState.equipment.inventory) ? gameState.equipment.inventory : [];
+    const instances = gameState.equipment && Array.isArray(gameState.equipment.instances) ? gameState.equipment.instances : [];
+    const stockCount = inventory.filter(ref => ref === itemId).length;
+    const installedCount = instances.filter(inst => inst && inst.itemId === itemId && !inst.destroyed).length;
+    cell = {
+      itemId, level: 0, isUnenhanced: true,
+      name: eqEnt.name,
+      icon: (typeof ITEM_ICONS !== "undefined" && ITEM_ICONS[eqEnt.name]) || "📦",
+      categoryLabel: "改装件",
+      bonusPercent: 0, previewBonusPercent: 0, successPercent: 0,
+      costRows: [], extraRows: [], isMilestone: false,
+      canEnhance: false, targetRef: null,
+      stockCount, installedCount, totalCount: stockCount + installedCount,
+      installedShips: []
+    };
+  }
   equipEnhanceModal = { itemId, level };
   const eqEnt = EQUIPMENT_DB[cell.itemId];
+  // 改装件不参与装备强化（安装即消耗、无 enhancementLevel）：隐藏升级段与强化按钮，只展示物品介绍与库存/出产信息
+  const isRig = eqEnt && eqEnt.slot === "rig";
   const descText = eqEnt ? getEquipmentAttributeText(eqEnt, "\n") : "";
   const src = { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" };
   let backdrop = document.getElementById("equip-enhance-modal");
@@ -336,20 +385,34 @@ function openEquipEnhanceModal(itemId, level) {
   const nextLabel = cell.isUnenhanced ? "+1" : `+${cell.level + 1}`;
   const costHtml = cell.costRows.map(r => `<span class="eem-cost${r.enough ? "" : " insufficient"}">${escapeAchievementText(r.name)} ${r.need}<small>(${r.stock})</small></span>`).join("");
   const extraHtml = cell.extraRows.length ? `<div class="eem-extra">${cell.extraRows.map(r => `<span class="eem-cost${r.enough ? "" : " insufficient"}">${escapeAchievementText(r.label)} ×${r.need}<small>(${r.have})</small></span>`).join("")}</div>` : "";
-  const milestoneHint = cell.isMilestone ? `<div class="eem-milestone-hint">下一里程碑：Lv.${cell.level + 1}（+${cell.previewBonusPercent}% 加成）</div>` : "";
-  const stockHtml = cell.stockCount
-    ? `<div class="eem-status-row"><span class="eem-dot stock">库存</span><span>${cell.stockCount} 件 ${levelLabel}（未装载，可强化）</span></div>`
-    : `<div class="eem-status-row"><span class="eem-dot none">无库存</span><span>无未装载件 —— 需先到船坞卸载已装载的 ${levelLabel} 装备</span></div>`;
+  const milestoneHint = cell.isMilestone && !isRig ? `<div class="eem-milestone-hint">下一里程碑：Lv.${cell.level + 1}（+${cell.previewBonusPercent}% 加成）</div>` : "";
+  const stockHtml = isRig
+    ? (cell.stockCount
+        ? `<div class="eem-status-row"><span class="eem-dot stock">库存</span><span>${cell.stockCount} 件（未装载，可装备到舰船）</span></div>`
+        : `<div class="eem-status-row"><span class="eem-dot none">无库存</span><span>无未装载件 —— 需先到装备工程制造</span></div>`)
+    : (cell.stockCount
+        ? `<div class="eem-status-row"><span class="eem-dot stock">库存</span><span>${cell.stockCount} 件 ${levelLabel}（未装载，可强化）</span></div>`
+        : `<div class="eem-status-row"><span class="eem-dot none">无库存</span><span>无未装载件 —— 需先到船坞卸载已装载的 ${levelLabel} 装备</span></div>`);
   const installedHtml = cell.installedCount
-    ? `<div class="eem-status-row"><span class="eem-dot installed">已装载</span><span>已装载 ${cell.installedCount} 件 ${levelLabel}（在船上）</span></div>
+    ? `<div class="eem-status-row"><span class="eem-dot installed">已装载</span><span>已装载 ${cell.installedCount} 件${isRig ? "" : " " + levelLabel}${isRig ? "" : "（在船上）"}</span></div>
        <div class="eem-installed-ships">🔒 ${cell.installedShips.map(s => escapeAchievementText(s)).join("、")}</div>`
     : "";
   const locked = cell.stockCount === 0;
   const lockAttr = locked ? "disabled" : "";
   const btnLabel = locked ? "无可用件可强化" : `强化 ${levelCode} → ${nextLabel}`;
   const btnDisabled = (locked || !cell.canEnhance) ? "disabled" : "";
-  const btnWarn = (!locked && !cell.canEnhance) ? `<div class="eem-warn">材料不足或缺少里程碑耗材，无法强化</div>` : "";
+  const btnWarn = isRig || (locked || cell.canEnhance) ? "" : `<div class="eem-warn">材料不足或缺少里程碑耗材，无法强化</div>`;
   const targetRefAttr = cell.targetRef ? encodeURIComponent(cell.targetRef) : "";
+  const upgradeHtml = isRig ? "" : `
+        <div class="eem-upgrade">
+          <div class="eem-upgrade-title">升级 ${levelCode} → ${nextLabel}</div>
+          <div class="eem-row"><span>当前加成</span><b>+${cell.bonusPercent}%</b></div>
+          <div class="eem-row"><span>升级后加成</span><b>+${cell.previewBonusPercent}%</b></div>
+          <div class="eem-row"><span>成功率</span><b style="color:${rateColor}">${cell.successPercent}%</b></div>
+          <div class="eem-costs-label">消耗材料</div>
+          <div class="eem-costs">${costHtml}${extraHtml}</div>
+        </div>`;
+  const enhanceBtnHtml = isRig ? "" : `<button class="btn primary eem-enhance" data-enhance-target="${targetRefAttr}" ${btnDisabled}>${btnLabel}</button>`;
 
   backdrop.innerHTML = `
     <div class="equip-enh-modal" role="dialog" aria-modal="true">
@@ -365,14 +428,7 @@ function openEquipEnhanceModal(itemId, level) {
       <div class="eem-body">
         <div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(descText)}</div></div>
         <div class="eem-status">${stockHtml}${installedHtml}</div>
-        <div class="eem-upgrade">
-          <div class="eem-upgrade-title">升级 ${levelCode} → ${nextLabel}</div>
-          <div class="eem-row"><span>当前加成</span><b>+${cell.bonusPercent}%</b></div>
-          <div class="eem-row"><span>升级后加成</span><b>+${cell.previewBonusPercent}%</b></div>
-          <div class="eem-row"><span>成功率</span><b style="color:${rateColor}">${cell.successPercent}%</b></div>
-          <div class="eem-costs-label">消耗材料</div>
-          <div class="eem-costs">${costHtml}${extraHtml}</div>
-        </div>
+        ${upgradeHtml}
         <div class="eem-section"><h3 class="eem-sec-title">出产位置</h3>
           <div class="eem-source"><span class="eem-src-icon"><i class="${src.icon}"></i></span>
             <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
@@ -384,7 +440,7 @@ function openEquipEnhanceModal(itemId, level) {
         <div class="eem-foot-actions">
           <button class="btn eem-discard" data-discard-target="${targetRefAttr}" ${lockAttr}>丢弃</button>
           <button class="btn eem-dismantle" data-dismantle-target="${targetRefAttr}" ${lockAttr}>拆解</button>
-          <button class="btn primary eem-enhance" data-enhance-target="${targetRefAttr}" ${btnDisabled}>${btnLabel}</button>
+          ${enhanceBtnHtml}
         </div>
       </div>
     </div>`;
@@ -706,6 +762,12 @@ function closeCargoContentCard() {
 /* 通用物品详情弹窗：装备 → 解析到强化弹窗（含强化+介绍+出产）；非装备 → 介绍+出产 */
 function openItemDetailModal(item) {
   if (item.category === "equipment" && item.itemId) {
+    // 改装件不在强化列表（不参与装备强化），绕过 getEquipmentEnhancementListDisplayState.entries 直接打开
+    const eqEnt = EQUIPMENT_DB[item.itemId];
+    if (eqEnt && eqEnt.slot === "rig") {
+      openEquipEnhanceModal(item.itemId, 0);
+      return;
+    }
     const disp = getEquipmentEnhancementListDisplayState(gameState);
     const entries = disp.entries.filter(e => e.itemId === item.itemId);
     if (entries.length) {
@@ -3141,7 +3203,13 @@ function renderTutorialWidget() {
 
   const display = getTutorialWidgetDisplay();
   if (!display) {
+    // display 为 null 的两种情形：① 启动早期 TutorialSystem 尚未挂到 window/globalThis；
+    // ② gameState.tutorial 尚未就绪（存档异步加载 / 对账未完成）。此时 #tutorial-widget 在 index.html
+    // 中默认可见（无 hidden 属性），若仅清空内部内容后提前返回会留下「空壳」卡片（仅标题与收起按钮），
+    // 与「全部完成后仍跳出来、切页后消失」的反馈吻合。统一改为隐藏，待下次有效渲染（如切页 / 系统就绪）
+    // 再据 display.allCompleted 判定显隐，从根源消除空壳闪现。
     twSet(progressEl, ""); twSet(tabsEl, ""); twSet(dialogueEl, ""); twSet(objectiveEl, ""); twSet(actionsEl, "");
+    if (widget) widget.hidden = true;
     return;
   }
 
@@ -3301,6 +3369,22 @@ function ensureTutorialWidgetUpdateUIWrap() {
 // 安装事件监听器与交互委托（仅一次）
 function installTutorialWidgetListeners() {
   if (_tutorialWidgetListenersInstalled) return;
+  // 启动落定后重渲：SaveManager.bootstrap() 是异步的（本地读档仅同步探测，真正把存档
+  // Object.assign 进 gameState 发生在 _applySelectedEnvelope，晚于 render.js 的首帧渲染）。
+  // 因此首帧 renderTutorialWidget 读到的是「默认未加载」的 gameState → 全任务 locked →
+  // allCompleted=false → 卡片误显且此后无自动重渲（tick 不调用 updateUI），只能手动收起。
+  // 监听 bootstatechange，在存档落定（ready / local-only / error）后立刻用加载态重渲，
+  // 让「全已完成」的玩家卡片正确隐藏，消除刷新误弹。
+  const _bsTarget = (typeof window !== "undefined") ? window
+    : (typeof globalThis !== "undefined" ? globalThis : null);
+  if (_bsTarget && typeof _bsTarget.addEventListener === "function") {
+    _bsTarget.addEventListener("bootstatechange", function (e) {
+      const st = e && e.detail && e.detail.state;
+      if (st === "ready" || st === "local-only" || st === "error") {
+        try { renderTutorialWidget(); } catch (err) { /* 启动期重渲失败不得中断流程 */ }
+      }
+    });
+  }
   const GE = (typeof GameEvents !== "undefined" && GameEvents) || (typeof window !== "undefined" && window.GameEvents) || (typeof globalThis !== "undefined" && globalThis.GameEvents) || null;
   if (GE && typeof GE.on === "function") {
     // 仅监听 5 个具体事件，绝不监听 "*" 通配；监听器只安装一次

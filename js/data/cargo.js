@@ -224,6 +224,14 @@ const CARGO_BLUEPRINT_BY_SIZE = {
   ]
 };
 
+// 货柜增强剂蓝图：精工(neural_booster_r)→M/L/XL，传奇(neural_booster_l)→L/XL（与「M+ / L+ 货柜」一致）。
+// 与装备蓝图并列同走 BP 奖励档；发放逻辑 grantBoosterBlueprintFromCargo 镜像装备（已拥有折算功勋，S200/M320/L520/XL840）。
+const CARGO_BOOSTER_BLUEPRINT_BY_SIZE = {
+  M:  [ { id: "neural_booster_r", weight: 1.2, booster: true } ],
+  L:  [ { id: "neural_booster_r", weight: 1.2, booster: true }, { id: "neural_booster_l", weight: 0.8, booster: true } ],
+  XL: [ { id: "neural_booster_r", weight: 1.2, booster: true }, { id: "neural_booster_l", weight: 0.8, booster: true } ]
+};
+
 function cargoItemId(size) { return "special:货柜" + size; }
 
 // 加权抽取：items = [{id, weight}]，返回选中项
@@ -286,6 +294,28 @@ function grantEquipmentBlueprintFromCargo(state, equipmentId, size, rng) {
     GameEvents.emit("blueprint:acquired", { ownershipKey: key, blueprintKind: "equipment", productId: equipmentId }, { timestamp: Date.now(), source: "cargo", offline: false });
   }
   return { id: "blueprint:" + equipmentId, blueprint: true, equipmentId, name: eq.name + "蓝图" };
+}
+
+// 货柜开出增强剂蓝图：复用 ownedBlueprints 唯一事实源（前缀 "booster:"，与装备 "equipment:" 区分）。
+// 未拥有写入 ownedBlueprints + blueprint:acquired 事件；已拥有折算 loot:lp 安慰奖（按货柜尺寸缩放），杜绝废掉落。
+function grantBoosterBlueprintFromCargo(state, recipeId, size, rng) {
+  const recipe = (typeof getBoosterRecipe === "function") ? getBoosterRecipe(recipeId) : null;
+  if (!recipe) return null;
+  const key = getBoosterBlueprintOwnershipKey(recipeId);
+  const owned = hasBoosterBlueprintFromState(state, recipeId);
+  if (owned) {
+    const mul = CARGO_T1_SIZE_MUL[size] || 1;
+    const base = Math.max(1, Math.round(200 * mul)); // S200/M320/L520/XL840
+    const item = cargoGrantLoot(state, "lp", base, rng);
+    return { id: "loot:lp", qty: base, loot: true, name: item.name, kind: "lp", dupBlueprint: true };
+  }
+  if (!Array.isArray(state.ownedBlueprints)) state.ownedBlueprints = [];
+  state.ownedBlueprints.push(key);
+  state._dirty = true;
+  if (typeof GameEvents !== "undefined") {
+    GameEvents.emit("blueprint:acquired", { ownershipKey: key, blueprintKind: "booster", productId: recipeId }, { timestamp: Date.now(), source: "cargo", offline: false });
+  }
+  return { id: "booster:" + recipeId, blueprint: true, boosterId: recipeId, name: (recipe.name || recipeId) + "蓝图" };
 }
 
 // T1 保底三选一：行星材料（按尺寸三~六选一）/ 战术残液 / 星币战利品，等权随机其一，数额按尺寸缩放。
@@ -358,8 +388,12 @@ function getCargoDropInfo(size) {
   const sz = CARGO_SIZES.includes(size) ? size : "S";
   const sizeLabel = { S: "小型", M: "中型", L: "大型", XL: "超大型" }[sz];
   const tierWeights = CARGO_SIZE_TIER_WEIGHTS[sz];
-  const bpRaw = CARGO_BLUEPRINT_BY_SIZE[sz] || [];
+  const bpRaw = (CARGO_BLUEPRINT_BY_SIZE[sz] || []).concat(CARGO_BOOSTER_BLUEPRINT_BY_SIZE[sz] || []);
   const blueprints = bpRaw.map(b => {
+    if (b.booster) {
+      const rec = (typeof getBoosterRecipe === "function") ? getBoosterRecipe(b.id) : null;
+      return { id: b.id, name: (rec ? rec.name : b.id) + "蓝图" };
+    }
     const eqId = b.id.slice("blueprint:".length);
     let name = eqId + "蓝图";
     if (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB && EQUIPMENT_DB[eqId]) {
@@ -477,12 +511,18 @@ function openCargoContainer(state, size, rng) {
   for (let i = 0; i < rolls; i++) {
       const tier = cargoWeightedPick(tierItems, rng).id;
       if (tier === "BP") {
-        // 尺寸化装备蓝图奖励档：D→S / C→M / B→L / A→XL（按装备生产许可档位）；复用既有蓝图发放逻辑。
-        const bpPool = CARGO_BLUEPRINT_BY_SIZE[size] || [];
+        // 尺寸化蓝图奖励档：装备蓝图（D→S / C→M / B→L / A→XL）+ 增强剂蓝图（精工 M+ / 传奇 L+）；
+        // 二者并列合并为同一 BP 池，每次抽取其一；发放逻辑分别走 grantEquipmentBlueprintFromCargo / grantBoosterBlueprintFromCargo。
+        const bpPool = (CARGO_BLUEPRINT_BY_SIZE[size] || []).concat(CARGO_BOOSTER_BLUEPRINT_BY_SIZE[size] || []);
         if (!bpPool.length) continue;
         const bpEntry = cargoWeightedPick(bpPool, rng);
-        const equipmentId = bpEntry.id.slice("blueprint:".length);
-        const bpRes = grantEquipmentBlueprintFromCargo(state, equipmentId, size, rng);
+        let bpRes;
+        if (bpEntry.booster) {
+          bpRes = grantBoosterBlueprintFromCargo(state, bpEntry.id, size, rng);
+        } else {
+          const equipmentId = bpEntry.id.slice("blueprint:".length);
+          bpRes = grantEquipmentBlueprintFromCargo(state, equipmentId, size, rng);
+        }
         if (bpRes) { bpRes.tier = "BP"; out.push(bpRes); }
         continue;
       }

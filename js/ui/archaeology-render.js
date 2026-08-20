@@ -94,7 +94,7 @@ function renderArchaeologyPage(now) {
           <div class="arch-attr-grid">
             <div class="arch-attr"><span class="arch-attr-label">扫描强度</span><span class="arch-attr-value">${Math.round(ship.attrs.scanStrength)}</span></div>
             <div class="arch-attr"><span class="arch-attr-label">失败反噬减免</span><span class="arch-attr-value">${Math.round(ship.attrs.failureReduction * 100)}%</span></div>
-            <div class="arch-attr"><span class="arch-attr-label">燃料效率</span><span class="arch-attr-value">${ship.attrs.fuelMultiplier.toFixed(2)}</span></div>
+            <div class="arch-attr"><span class="arch-attr-label">电容回充</span><span class="arch-attr-value">${Math.round((Number(ship.attrs.capRecharge) || 0) * 100)}%</span></div>
             <div class="arch-attr"><span class="arch-attr-label">槽位占用</span><span class="arch-attr-value arch-attr-slots">高${ship.attrs.slots.high.used}/${ship.attrs.slots.high.cap} · 中${ship.attrs.slots.mid.used}/${ship.attrs.slots.mid.cap} · 低${ship.attrs.slots.low.used}/${ship.attrs.slots.low.cap} · 改${ship.attrs.slots.rig.used}/${ship.attrs.slots.rig.cap}</span></div>
           </div>
           ${ship.attrs.equipBonuses && (ship.attrs.equipBonuses.decoder > 0 || ship.attrs.equipBonuses.nonFatalAvoid > 0 || ship.attrs.equipBonuses.copyChance > 0 || ship.attrs.equipBonuses.cycleReduction > 0) ? `

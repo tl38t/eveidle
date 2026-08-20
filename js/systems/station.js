@@ -798,7 +798,7 @@ function processSmeltingAutoLine(state, line, multiplier, offline) {
   ResourceRegistry.spend(state, oreId, cycles);
   ResourceRegistry.add(state, mineralId, cycles * outputPerCycle);
   const xpGained = cycles * recipe.baseXP;
-  addSkillXpToState(state, "refining", xpGained, { source:"station-auto-line", offline });
+  addSkillXpToState(state, "refining", xpGained, { source:"station-auto-line", offline, job:"refining" });
   state._dirty = true;
 
   emitStationEvent("station:autoLineCompleted", {
@@ -1335,7 +1335,7 @@ const COMBAT_SKILL_WHITELIST = Object.freeze([
   "piloting", "defense"
 ]);
 
-function addStationModifiedCombatXp(state, skillId, baseXp) {
+function addStationModifiedCombatXp(state, skillId, baseXp, job) {
   // 非白名单技能不加成：既不吃作战指挥中心倍率，也不吃 combatExp 科研
   if (!COMBAT_SKILL_WHITELIST.includes(skillId)) {
     return addSkillXpToState(state, skillId, baseXp, { source:"station-combat-command" });
@@ -1350,7 +1350,7 @@ function addStationModifiedCombatXp(state, skillId, baseXp) {
   const researchAdjustedBase = baseXp * researchMultiplier;
   const mult = getStationCombatXpMultiplier(state);
   const totalXp = researchAdjustedBase * mult;
-  const gained = addSkillXpToState(state, skillId, totalXp, { source:"station-combat-command" });
+  const gained = addSkillXpToState(state, skillId, totalXp, { source:"station-combat-command", job: job || "combat" });
   // 只有真实空间站倍率 > 1 才算「空间站加成」；仅科研生效时不得伪报该事件。
   // payload.baseXp 用 researchAdjustedBase，保证 baseXp × multiplier === actualXp 的数学关系成立。
   if (mult > 1 && gained > researchAdjustedBase) {

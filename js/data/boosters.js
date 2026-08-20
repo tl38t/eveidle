@@ -38,7 +38,9 @@ const BOOSTER_SERIES = Object.freeze({
   assembly_coordinator:    { id:"assembly_coordinator",    name:"装配协调剂",     category:"ship",     slot:"shipSpeed",   effectType:"shipSpeed" },
   precision_rationing:     { id:"precision_rationing",     name:"精密配给剂",     category:"ship",     slot:"shipYield",   effectType:"shipMaterialDiscount" },
   reaction_accelerant:     { id:"reaction_accelerant",     name:"反应加速介质",   category:"booster",  slot:"boosterSpeed", effectType:"boosterSpeed" },
-  reaction_chain_proliferation: { id:"reaction_chain_proliferation", name:"反应链增殖剂", category:"booster", slot:"boosterYield", effectType:"boosterDouble" }
+  reaction_chain_proliferation: { id:"reaction_chain_proliferation", name:"反应链增殖剂", category:"booster", slot:"boosterYield", effectType:"boosterDouble" },
+  // —— 技能训练 · 神经训练催化器（全局技能经验获取增强；effectType:skillXpMultiplier）——
+  neural_booster: { id:"neural_booster", name:"神经训练催化器", category:"training", slot:"skillXp", effectType:"skillXpMultiplier" }
 });
 
 const BOOSTER_CATEGORY_META = Object.freeze([
@@ -49,7 +51,8 @@ const BOOSTER_CATEGORY_META = Object.freeze([
   { id:"ship",         name:"舰船工程" },
   { id:"booster",      name:"增幅剂制造" },
   { id:"combatWeapon", name:"战斗武器" },
-  { id:"combatRepair", name:"战斗维修" }
+  { id:"combatRepair", name:"战斗维修" },
+  { id:"training",     name:"技能训练" }
 ]);
 
 // 高频战斗掉落材料 5 档（§7）。securityLayer 映射到 COMBAT_FORMATION_POOLS 的层级键。
@@ -146,7 +149,14 @@ const BOOSTER_DEFS = [
   // 反应链增殖剂：增幅剂产量翻倍概率
   ["reaction_chain_proliferation","n",40, 74, 14,"同位素",3,"special:活性战术凝胶",4,"boosterDouble",0.10,"boosterYield",true],
   ["reaction_chain_proliferation","r",80,134, 79,"等离子体",3,"special:高能战术萃取物",4,"boosterDouble",0.20,"boosterYield",true],
-  ["reaction_chain_proliferation","l",96,158,350,"生物质",5,"special:极化战术介质",7,"boosterDouble",0.30,"boosterYield",true]
+  ["reaction_chain_proliferation","l",96,158,350,"生物质",5,"special:极化战术介质",7,"boosterDouble",0.30,"boosterYield",true],
+  // ---- 技能训练（神经训练催化器，全局技能经验获取增强；普通直解锁，精工/传奇需货柜蓝图）----
+  // 普通：直解锁（requiresBlueprint:false），不进任何考古/货柜蓝图池
+  ["neural_booster","n",42,64,16,"同位素",3,"special:活性战术凝胶",4,"skillXpMultiplier",0.05,"skillXp",false,"gas:氦同位素",4],
+  // 精工：需蓝图，M/L/XL 货柜掉落
+  ["neural_booster","r",82,124,82,"等离子体",3,"special:高能战术萃取物",4,"skillXpMultiplier",0.10,"skillXp",true,"gas:氢同位素",4],
+  // 传奇：需蓝图，L/XL 货柜掉落
+  ["neural_booster","l",98,148,358,"生物质",5,"special:极化战术介质",7,"skillXpMultiplier",0.15,"skillXp",true,"gas:聚合气体",2]
 ];
 
 // 由唯一事实来源展开为 BOOSTER_ITEMS（map）与 BOOSTER_RECIPES（array），二者一一对应 30 条。
@@ -154,7 +164,7 @@ const BOOSTER_ITEMS = {};
 const BOOSTER_RECIPES = [];
 (function buildBoosterTables() {
   for (const def of BOOSTER_DEFS) {
-    const [seriesKey, qualityKey, level, time, xp, planetName, planetQty, secondKey, secondQty, effectType, effectValue, slot, requiresBlueprint=false] = def;
+    const [seriesKey, qualityKey, level, time, xp, planetName, planetQty, secondKey, secondQty, effectType, effectValue, slot, requiresBlueprint=false, thirdKey=null, thirdQty=0] = def;
     const series = BOOSTER_SERIES[seriesKey];
     const quality = BOOSTER_QUALITIES[qualityKey];
     const id = seriesKey + "_" + qualityKey;               // 例：mining_lubricant_n
@@ -195,7 +205,8 @@ const BOOSTER_RECIPES = [];
       xp,
       cost:{
         ["planetary:" + planetName]:planetQty,
-        [secondKey]:secondQty
+        [secondKey]:secondQty,
+        ...(thirdKey ? { [thirdKey]: thirdQty } : {})
       },
       output:{ type:"booster", itemId, qty:1 },
       durationMs:BOOSTER_DURATION_MS,
@@ -221,6 +232,7 @@ function describeBoosterEffect(effectType, value) {
     case "shipMaterialDiscount": return "舰船材料 -" + Math.round(value * 100) + "%（激活期间配方等级门槛 +5）";
     case "boosterSpeed":      return "增幅剂制造速度 +" + Math.round(value * 100) + "%";
     case "boosterDouble":     return "增幅剂产量翻倍概率 " + Math.round(value * 100) + "%";
+    case "skillXpMultiplier": return "技能经验获取 +" + Math.round(value * 100) + "%";
     default:                  return effectType + " " + value;
   }
 }
@@ -232,7 +244,8 @@ const BOOSTER_SLOTS = Object.freeze([
   "smeltSpeed", "smeltYield",
   "shipSpeed", "shipYield",
   "boosterSpeed", "boosterYield",
-  "combatWeapon", "combatRepair"
+  "combatWeapon", "combatRepair",
+  "skillXp"
 ]);
 
 function getBoosterItem(id) {

@@ -131,13 +131,13 @@ const EQUIPMENT_DB = {
 };
 
 /* ================================================================
-   改装件（rig）系统 — 9 系列 × 5 档 = 45 件
+   改装件（rig）系统 — 12 系列 × 5 档 = 60 件
    见 RIG_SYSTEM_IMPLEMENTATION_PLAN.md 第二/三/五节。
-   数据由下方配置程序化生成并合并入 EQUIPMENT_DB（避免 45 行手写重复）。
+   数据由下方配置程序化生成并合并入 EQUIPMENT_DB（避免 55 行手写重复）。
    ================================================================ */
-// 9 系列：stackGroup 唯一，bonusKey 为效果字段，rigCategory 用于装备工程子分类。
+// 11 系列：stackGroup 唯一，bonusKey 为效果字段，rigCategory 用于装备工程子分类。
 // 档位曲线遵循「谐振（堆叠）规范」：同一 stackGroup 内第 3 件同级改装件的实际增量严格低于下一级单件值。
-//   - 战斗 / 工业 6 系列封顶 15% → [0.05, 0.07, 0.09, 0.12, 0.15]
+//   - 战斗 / 工业 8 系列封顶 15% → [0.05, 0.07, 0.09, 0.12, 0.15]
 //   - 考古 3 系列封顶 20%      → [0.08, 0.11, 0.14, 0.17, 0.20]
 // 同系列可重复装配，但后续装配受 EVE 谐振惩罚（见 rigs.js getRigStackPenalty）实际效果递减。
 const RIG_SERIES = [
@@ -149,10 +149,21 @@ const RIG_SERIES = [
   { stackGroup:"rig_mining_speed",             label:"采矿速度",   rigCategory:"industry",    bonusKey:"miningEfficiency",               values:[0.05, 0.07, 0.09, 0.12, 0.15] },
   { stackGroup:"rig_gas_speed",                label:"采气速度",   rigCategory:"industry",    bonusKey:"gasEfficiency",                  values:[0.05, 0.07, 0.09, 0.12, 0.15] },
   { stackGroup:"rig_smelting_speed",           label:"冶炼速度",   rigCategory:"industry",    bonusKey:"smeltingSpeed",                  values:[0.05, 0.07, 0.09, 0.12, 0.15] },
+  // 伴生富集（2026-08-19 新增）：采集周期概率额外获得基准矿（采矿=铁硅原矿 ore:凡晶石 / 采气=粗制富勒烯），
+  // 数量 = round(当前区域 baseTime ÷ 基准区域 baseTime) 下限 1；奖励独立，不参与双倍/脑插/调度，不给 XP。
+  // 效果摘要 effectSummary 由 buildRigDefinitions 按 bonusKey + values[t] 动态生成（每档位显示该档具体概率）。
+  { stackGroup:"rig_mining_rich",              label:"伴生矿物采集", rigCategory:"industry",  bonusKey:"miningRichChance",               values:[0.05, 0.07, 0.09, 0.12, 0.15],
+    desc:"采矿周期完成时，有 {chance} 概率额外获得一批铁硅原矿，数量按当前矿带与铁硅原矿带的采集时间比折算（如艾克诺岩带≈19 单位、铷月岩带≈36 单位）。同系列可重复装配，受谐振惩罚。" },
+  { stackGroup:"rig_gas_rich",                 label:"伴生气云采集", rigCategory:"industry",  bonusKey:"gasRichChance",                  values:[0.05, 0.07, 0.09, 0.12, 0.15],
+    desc:"采气周期完成时，有 {chance} 概率额外获得一批粗制富勒烯，数量按当前云团与富勒烯云团的采集时间比折算（如超纯聚合气体云团≈15 单位）。同系列可重复装配，受谐振惩罚。" },
   // 考古（扫描增益 / 燃料减免 / 干扰缩短，减免类以正数存储）
   { stackGroup:"rig_archaeology_scan",         label:"扫描强度",   rigCategory:"archaeology", bonusKey:"archaeologyScanPercent",         values:[0.08, 0.11, 0.14, 0.17, 0.20] },
-  { stackGroup:"rig_archaeology_fuel",         label:"考古燃料效率", rigCategory:"archaeology", bonusKey:"archaeologyFuelEfficiency",       values:[0.08, 0.11, 0.14, 0.17, 0.20] },
-  { stackGroup:"rig_archaeology_interference", label:"考古干扰缩短", rigCategory:"archaeology", bonusKey:"archaeologyInterferenceReduction", values:[0.08, 0.11, 0.14, 0.17, 0.20] }
+  { stackGroup:"rig_archaeology_fuel",         label:"电容回充",       rigCategory:"capacitor",   bonusKey:"archaeologyFuelEfficiency",       values:[0.04, 0.055, 0.07, 0.085, 0.10] },
+  { stackGroup:"rig_archaeology_interference", label:"考古干扰缩短", rigCategory:"archaeology", bonusKey:"archaeologyInterferenceReduction", values:[0.08, 0.11, 0.14, 0.17, 0.20] },
+  // 技能训练（神经训练改装件）：提升本舰被指派工作（采矿/采气/冶炼/考古/战斗）的技能经验获取；
+  // 仅作用于该舰指派的工作，不外溢（见 systems/production.js addSkillXpToState 的 job 判定）。
+  { stackGroup:"rig_skill_xp", label:"神经训练改装件", rigCategory:"training", bonusKey:"skillXpBonus", values:[0.05, 0.07, 0.09, 0.12, 0.15],
+    desc:"装备于改装件槽，使本舰被指派工作（采矿/采气/冶炼/考古/战斗）的技能经验获取 +{chance}。同系列可重复装配，受谐振惩罚。" }
 ];
 // 5 档：等级门槛、耗时、经验、校准材料需求、精炼矿物成本（材料来源见 PLAN 5.2）。
 const RIG_TIER_META = [
@@ -164,6 +175,8 @@ const RIG_TIER_META = [
 ];
 
 function buildRigDefinitions() {
+  // 伴生富集系列的效果摘要：按 bonusKey 自动映射奖励物名，按 values[t] 显示该档具体概率
+  const RICH_BONUS_LABEL = { miningRichChance:"铁硅原矿", gasRichChance:"粗制富勒烯", skillXpBonus:"技能经验" };
   const defs = {};
   for (const series of RIG_SERIES) {
     for (let t = 0; t < RIG_TIER_META.length; t++) {
@@ -172,6 +185,14 @@ function buildRigDefinitions() {
       // 成本 = 精炼矿物（按名）+ 校准材料（按 calibration: 命名空间 id）
       const cost = { ...meta.minerals };
       cost["calibration:" + meta.calib] = meta.calibQty;
+      const summaryName = RICH_BONUS_LABEL[series.bonusKey];
+      const chancePct = Math.round(series.values[t] * 100);
+      const effectSummary = summaryName
+        ? (series.bonusKey === "skillXpBonus"
+            ? ("技能经验获取 +" + chancePct + "%")
+            : ("每周期 " + chancePct + "% 几率额外获得定量" + summaryName))
+        : "";
+      const description = (series.desc || "").replace(/\{chance\}/g, chancePct + "%");
       defs[id] = {
         id,
         name: series.label + "改装件 " + meta.roman,
@@ -183,6 +204,8 @@ function buildRigDefinitions() {
         rigCategory: series.rigCategory,
         rigTier: meta.roman,
         cost,
+        description: description,
+        effectSummary,
         bonuses: { [series.bonusKey]: series.values[t] }
       };
     }
@@ -511,12 +534,14 @@ const EQUIPMENT_BONUS_NAMES = {
   archaeologyCycleReduction:"考古周期缩短",
   archaeologyNonFatalAvoid:"非致命免伤",
   archaeologyCopyChance:"复制焦点概率",
-  archaeologyFuelEfficiency:"考古燃料效率",
-  archaeologyInterferenceReduction:"考古干扰缩短"
+  archaeologyFuelEfficiency:"电容回充",
+  archaeologyInterferenceReduction:"考古干扰缩短",
+  miningRichChance:"伴生富集触发",
+  gasRichChance:"伴生富集触发"
 };
 // rig 百分比减免类：以正数存储，展示为 -X%
-const RIG_REDUCTION_BONUS_KEYS = ["archaeologyFuelEfficiency", "archaeologyInterferenceReduction"];
-const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","structureCapacityPercent","smeltingSpeed","archaeologyScanPercent"];
+const RIG_REDUCTION_BONUS_KEYS = ["archaeologyInterferenceReduction"];
+const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","structureCapacityPercent","smeltingSpeed","archaeologyScanPercent","archaeologyFuelEfficiency","miningRichChance","gasRichChance"];
 
 const ARCHAEOLOGY_REDUCTION_BONUS_KEYS = ["archaeologyStabilizer", "archaeologyCycleReduction"];
 const ARCHAEOLOGY_PERCENT_BONUS_KEYS = ["archaeologyDecoder", "archaeologyNonFatalAvoid", "archaeologyCopyChance"];
@@ -541,10 +566,6 @@ function getEquipmentAttributeLines(equipmentRef) {
   for (const [key, value] of Object.entries(eq.bonuses || {})) {
     lines.push((EQUIPMENT_BONUS_NAMES[key] || key) + " " + formatEquipmentBonusValue(key, value));
   }
-  // 改装件信息卡片：说明同舰同系列装配的谐振（堆叠）惩罚
-  if (eq.slot === "rig") {
-    lines.push("谐振效应：同一舰船装配相同改装件时，后装配的改装件会因谐振效应降低实际效果（同系列第 2 件起实际加成比例递减）。");
-  }
   if (eq.combat && eq.combat.kind === "weapon") {
     const weaponNames = { laser:"激光", missile:"导弹", cannon:"射弹" };
     lines.push("武器类型：" + (weaponNames[eq.combat.weaponType] || eq.combat.weaponType));
@@ -562,6 +583,8 @@ function getEquipmentAttributeLines(equipmentRef) {
     lines.push("被动：消耗燃料（" + (eq.salvageFuelPerKill || 0) + "/艘）提高货柜掉落。");
     lines.push("主动：消耗被动三倍燃料及同位素，有几率获得与击毁舰船同级舰船组件（几率按打捞效率计算）");
   }
+  // 装备描述（rig 等带 description 字段时追加为独立行，供仓库卡片/详情弹窗展示）
+  if (eq.description) lines.push(eq.description);
   return lines;
 }
 

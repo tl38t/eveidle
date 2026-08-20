@@ -70,7 +70,25 @@ function checkLevelUpFromState(state, skillKey, eventMeta) {
 
 function addSkillXpToState(state, skillKey, amount, eventMeta) {
   if (!state || !state.skills || !state.skills[skillKey]) return 0;
-  const gained = Math.max(0, Number(amount) || 0);
+  const meta = eventMeta || {};
+  let gained = Math.max(0, Number(amount) || 0);
+  // 经验改装件（rig_skill_xp）：仅加成该船被指派的工作（job），不外溢到其他船/其他工作。
+  // job 为 shipAssignments 的键（mining/gasHarvesting/refining/archaeology/combat）；无 job 则 rig 不生效。
+  if (meta.job && typeof getAssignedShipState === "function" && typeof getRigModifiers === "function") {
+    const assigned = getAssignedShipState(state, meta.job);
+    if (assigned && assigned.instance) {
+      const mods = getRigModifiers(state, assigned.instance) || {};
+      const rigBonus = Number(mods.skillXpBonus) || 0;
+      if (rigBonus) gained = gained * (1 + rigBonus);
+    }
+  }
+  // 神经训练催化器（全局增强剂）：所有技能经验共用同一乘区（与 rig 独立相乘）。
+  if (typeof getBoosterEffectState === "function") {
+    const eff = getBoosterEffectState(state);
+    const booster = eff && Number(eff.skillXpMultiplier) ? eff.skillXpMultiplier : 1;
+    if (booster && booster !== 1) gained = gained * booster;
+  }
+  gained = Math.max(0, gained);
   state.skills[skillKey].xp = (Number(state.skills[skillKey].xp) || 0) + gained;
   checkLevelUpFromState(state, skillKey, eventMeta);
   state._dirty = true;
@@ -135,6 +153,31 @@ function getShipEngineeringEfficiency() { const lvl = gameState.skills.shipEngin
 
 function getGasArea() { const name = gameState.currentAction.gasArea; return GAS_AREAS.find(a => a.name === name) || GAS_AREAS[0]; }
 function getBestGasArea() { const lv = gameState.skills.gasHarvesting.lvl; let best = GAS_AREAS[0]; for (const a of GAS_AREAS) { if (lv >= a.level) best = a; else break; } return best; }
+
+// 伴生富集改装件（rig_mining_rich / rig_gas_rich）：采集周期结算的概率性基准矿奖励。
+// 在线（tick.js）与离线（offline.js）共用：读装配舰 rig 聚合几率（miningRichChance/gasRichChance）掷骰，
+// 命中则额外发放基准矿（采矿=铁硅原矿 ore:凡晶石 / 采气=粗制富勒烯 gas:粗制富勒烯），
+// 数量 = max(1, round(当前区域 baseTime ÷ 基准区域 baseTime))。
+// 奖励独立：不参与双倍矿/脑插双生/调度加成，不给 XP。返回发放数量（未触发为 0）。
+const RIG_RICH_BASE_AREA_TIME = { mining: 15, gasHarvesting: 22.5 }; // 凡晶石带 15s / 富勒烯云团 22.5s
+function rollRigRichBonus(state, actionKey, area) {
+  const baseTime = RIG_RICH_BASE_AREA_TIME[actionKey];
+  if (!baseTime || !state || !area || !(Number(area.baseTime) > 0)) return 0;
+  const chanceKey = actionKey === "mining" ? "miningRichChance" : "gasRichChance";
+  const bonusResId = actionKey === "mining" ? "ore:凡晶石" : "gas:粗制富勒烯";
+  let instance = null;
+  if (typeof getAssignedShipInstance === "function") {
+    try { instance = getAssignedShipInstance(actionKey); } catch (e) { instance = null; }
+  }
+  if (!instance || typeof getRigModifiers !== "function") return 0;
+  if (typeof ResourceRegistry === "undefined" || typeof ResourceRegistry.add !== "function") return 0;
+  const mods = getRigModifiers(state, instance) || {};
+  const chance = Number(mods[chanceKey]) || 0;
+  if (!(chance > 0) || Math.random() >= chance) return 0;
+  const qty = Math.max(1, Math.round(Number(area.baseTime) / baseTime));
+  ResourceRegistry.add(state, bonusResId, qty);
+  return qty;
+}
 
 function getSmeltingRecipe() { const name = gameState.currentAction.smeltingArea; return SMELTING_RECIPES.find(r => r.name === name) || SMELTING_RECIPES[0]; }
 function hasMoonMiningEquipment() {

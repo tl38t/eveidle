@@ -36,9 +36,9 @@
 //                      D13 非 rig 装备任一 / D14 燃料任一 / D15 弹药任一 /
 //                      D16 装备强化累计（statistics v2 新增
 //                      equipmentEnhancementAttempts）/ D17 rig 任一 /
-//                      D18 集齐全部 45 件改装件（equipment-recipe-set-all，
+//                      D18 集齐全部 55 件改装件（equipment-recipe-set-all，
 //                      唯一权威源 statistics.production.manufactured）；
-//                      NON_RIG=117 / RIG=45 / FUEL=2 / AMMO=3 四集合与
+//                      NON_RIG=117 / RIG=55 / FUEL=3 / AMMO=3 四集合与
 //                      equipment.js·ammunition.js 双向交叉 / EQUIPMENT_RULES=6 全
 //                      freeze / statistics
 //                      v1→v2 迁移清洗幂等 / station:autoLineCompleted 装备线
@@ -4104,7 +4104,7 @@ function runEquipment() {
   const EQUIP_IDS = ["D13", "D14", "D15", "D16", "D17", "D18"];
   const EXPECTED_EQUIP_COND = {
     D13: "首次装备制造", D14: "首次燃料制造", D15: "首次弹药制造",
-    D16: "首次装备强化", D17: "制造首件改装件", D18: "集齐全部 45 件改装件",
+    D16: "首次装备强化", D17: "制造首件改装件", D18: "集齐全部 60 件改装件",
   };
   const EQUIP_DATA_PATH = path.join(ROOT, "js", "data", "equipment.js");
   const AMMO_DATA_PATH = path.join(ROOT, "js", "data", "ammunition.js");
@@ -4176,12 +4176,12 @@ function runEquipment() {
     new Set(RD.NON_RIG_EQUIPMENT_RECIPE_IDS).size === 117 &&
     RD.NON_RIG_EQUIPMENT_RECIPE_IDS.every((id, i) => typeof id === "string" && id.length > 0);
   const rigFrozen = Object.isFrozen(RD.RIG_RECIPE_IDS) &&
-    RD.RIG_RECIPE_IDS.length === 45 && new Set(RD.RIG_RECIPE_IDS).size === 45;
+    RD.RIG_RECIPE_IDS.length === 55 && new Set(RD.RIG_RECIPE_IDS).size === 55;
   const fuelFrozen = Object.isFrozen(RD.FUEL_RECIPE_IDS) &&
     RD.FUEL_RECIPE_IDS.length === 3 && new Set(RD.FUEL_RECIPE_IDS).size === 3;
   const ammoFrozen = Object.isFrozen(RD.AMMUNITION_RECIPE_IDS) &&
     RD.AMMUNITION_RECIPE_IDS.length === 3 && new Set(RD.AMMUNITION_RECIPE_IDS).size === 3;
-  ok("[eq12b] 四配方 ID 数组内容/长度/唯一性/冻结精确（NON_RIG=117 / RIG=45 / FUEL=3 / AMMO=3）",
+  ok("[eq12b] 四配方 ID 数组内容/长度/唯一性/冻结精确（NON_RIG=117 / RIG=55 / FUEL=3 / AMMO=3）",
     nonRigFrozen && rigFrozen && fuelFrozen && ammoFrozen);
   if (!RD || !SYS || !Array.isArray(RD.EQUIPMENT_RULES)) return;
 
@@ -4216,9 +4216,9 @@ function runEquipment() {
   ok("[eq12] NON_RIG_EQUIPMENT_RECIPE_IDS(117) 与 EQUIPMENT_RECIPES.filter(slot!=='rig') 双向集合相等",
     eq12ok);
   const setR = new Set(rigFromSrc), setRf = new Set(RD.RIG_RECIPE_IDS.slice().sort());
-  const eq13ok = erOk && setR.size === 45 && setRf.size === 45 &&
+  const eq13ok = erOk && setR.size === 55 && setRf.size === 55 &&
     [...setR].every((id) => setRf.has(id)) && [...setRf].every((id) => setR.has(id));
-  ok("[eq13] RIG_RECIPE_IDS(45) 与 EQUIPMENT_RECIPES.filter(slot==='rig') 双向集合精确相等",
+  ok("[eq13] RIG_RECIPE_IDS(55) 与 EQUIPMENT_RECIPES.filter(slot==='rig') 双向集合精确相等",
     eq13ok);
   const intersectNR = RD.NON_RIG_EQUIPMENT_RECIPE_IDS.filter((id) => RD.RIG_RECIPE_IDS.includes(id));
   ok("[eq14] NON_RIG 与 RIG 两集合零交集", intersectNR.length === 0);
@@ -4258,7 +4258,7 @@ function runEquipment() {
       rD16.totalKey !== "equipmentEnhancementAttempts" || rD16.minValue !== 1) eq18ok = false;
   const rD17 = RD.EQUIPMENT_RULES_BY_ID["D17"];
   if (!rD17 || rD17.type !== "equipment-recipe-set-any" ||
-      !Array.isArray(rD17.recipeIds) || rD17.recipeIds.length !== 45 || rD17.minValue !== 1 ||
+      !Array.isArray(rD17.recipeIds) || rD17.recipeIds.length !== 55 || rD17.minValue !== 1 ||
       rD17.recipeIds.some((id, i) => id !== RD.RIG_RECIPE_IDS[i])) eq18ok = false;
   ok("[eq18] D13–D17 映射逐项精确（type / 目标 recipeIds / totalKey / minValue）", eq18ok);
 
@@ -4348,7 +4348,7 @@ function runEquipment() {
     if (!(r0.ok && r0.unlockedIds.length === 0 &&
           r1.ok && r1.unlockedIds.length === 1 && r1.unlockedIds[0] === "D17")) eq26ok = false;
   }
-  ok("[eq26] D17：45 个 rig 配方各自 0→0 项、1→恰 {D17}（逐项边界）", eq26ok);
+  ok("[eq26] D17：55 个 rig 配方各自 0→0 项、1→恰 {D17}（逐项边界）", eq26ok);
 
   // rig 不解锁 D13；fuel/ammo/probe 不解锁 D13；probe 不解锁 D15
   const sRigNotD13 = makeEquipmentState(sb, { "rig_mining_speed_i": 1 }, 0);
@@ -4382,7 +4382,7 @@ function runEquipment() {
   for (const id of RD.AMMUNITION_RECIPE_IDS) sFullE.statistics.production.manufactured[id] = 1;
   for (const id of RD.RIG_RECIPE_IDS) sFullE.statistics.production.manufactured[id] = 1;
   const rFullE = evaluateE(sFullE, 2000);
-  // Batch C-13：全 45 件 rig 均置 1，D17（任一）与 D18（全部）同时达成 → 恰 6 项
+  // Batch C-13：全 55 件 rig 均置 1，D17（任一）与 D18（全部）同时达成 → 恰 6 项
   ok("[eq29] 全满统计单次求值恰好解锁 D13–D18（6 项，不少不多），且全部 unlockedAt=2000",
     rFullE.unlockedIds.length === 6 &&
     EQUIP_IDS.every((id) => sFullE.achievements.unlockedAtById[id] === 2000));
@@ -4677,7 +4677,7 @@ function runEquipment() {
     const pRecE = freshE.timeline.filter((e) => e.fn === "evaluateProductionAchievementRules");
     const cRecE = freshE.timeline.filter((e) => e.fn === "evaluateCombatAchievementRules");
     const mRecE = freshE.timeline.filter((e) => e.fn === "evaluateManufacturingAchievementRules");
-    // C-13：装备求值器自身仍解锁 0 项（D18 需 45/45 改装件）；全局解锁集恰为 {I01}
+    // C-13：装备求值器自身仍解锁 0 项（D18 需 55/55 改装件）；全局解锁集恰为 {I01}
     ok("[eq52b] 新游戏 autoLoad 装备对账恰好一次、atMs=登录冻结 Date.now()、ok=true、装备解锁 0 项",
       eRec.length === 1 && eRec[0].atMs === FROZEN_NOW &&
       eRec[0].result && eRec[0].result.ok === true && eRec[0].result.unlockedIds.length === 0 &&

@@ -336,6 +336,8 @@ function getBoosterEffectState(state) {
     shipMaterialDiscount: 0,
     boosterSpeedMultiplier: 1,
     doubleBoosterChance: 0,
+    // 技能训练（神经训练催化器）：全局技能经验获取乘区（与 rig 的 skillXpBonus 独立相乘）。
+    skillXpMultiplier: 1,
     activeEntries: {}
   };
   var slots = (Array.isArray(BOOSTER_SLOTS) ? BOOSTER_SLOTS : []);
@@ -413,6 +415,9 @@ function getBoosterEffectState(state) {
         if (bv > eff.doubleBoosterChance) eff.doubleBoosterChance = bv;
         break;
       }
+      case "skillXpMultiplier":
+        eff.skillXpMultiplier *= (1 + Number(item.effectValue));
+        break;
     }
   }
   return eff;
