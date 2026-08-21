@@ -986,7 +986,7 @@ section("E5 三条线同时运行");
   const r1 = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"smelting" }, Date.now());
   ok(r1.changed === true, "E5 冶炼线启动成功");
 
-  G.station.autoLines.equipment.selectedTargetId = "t1_mining_laser";
+  G.station.autoLines.equipment.selectedTargetId = "fuel_t1";
   const r2 = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
   ok(r2.changed === true, "E5 装备线启动成功");
 
@@ -1000,7 +1000,7 @@ section("E5 三条线同时运行");
 
   // 三线并行不冲突
   ok(G.station.autoLines.smelting.startedTargetId === "凡晶石带", "E5 冶炼 target");
-  ok(G.station.autoLines.equipment.startedTargetId === "t1_mining_laser", "E5 装备 target");
+  ok(G.station.autoLines.equipment.startedTargetId === "fuel_t1", "E5 装备 target");
   ok(G.station.autoLines.booster.startedTargetId === "mining_lubricant_n", "E5 增强剂 target");
 })();
 
@@ -1183,30 +1183,30 @@ section("E12 运行中选B → startedTarget 不变");
   bSetBody(3); bResetBuildings(); resetAutoLines();
   G.station.buildings.equipment_factory = 1;
   G.skills.equipmentEngineering.lvl = 80;
-  G.station.autoLines.equipment.selectedTargetId = "t1_mining_laser";
+  G.station.autoLines.equipment.selectedTargetId = "fuel_t1";
   W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
-  ok(G.station.autoLines.equipment.startedTargetId === "t1_mining_laser", "E12 启动后 startedTarget=t1_mining_laser");
+  ok(G.station.autoLines.equipment.startedTargetId === "fuel_t1", "E12 启动后 startedTarget=fuel_t1");
 
   // 运行时改 selectedTarget
-  W.dispatchGameAction(G, { type:"station/selectAutoLineTarget", lineId:"equipment", targetId:"t1_small_laser" }, Date.now());
-  ok(G.station.autoLines.equipment.selectedTargetId === "t1_small_laser", "E12 selectedTarget 改为 t1_small_laser");
-  ok(G.station.autoLines.equipment.startedTargetId === "t1_mining_laser", "E12 startedTarget 仍为 t1_mining_laser（未被更改）");
+  W.dispatchGameAction(G, { type:"station/selectAutoLineTarget", lineId:"equipment", targetId:"ammo_laser" }, Date.now());
+  ok(G.station.autoLines.equipment.selectedTargetId === "ammo_laser", "E12 selectedTarget 改为 ammo_laser");
+  ok(G.station.autoLines.equipment.startedTargetId === "fuel_t1", "E12 startedTarget 仍为 fuel_t1（未被更改）");
 })();
 
 // ---- E13 停止后重新开始才用 B ----
 section("E13 停止后重启用新目标");
 (() => {
   ok(G.station.autoLines.equipment.enabled === true, "E13 当前线仍运行");
-  ok(G.station.autoLines.equipment.selectedTargetId === "t1_small_laser", "E13 selectedTarget=t1_small_laser");
+  ok(G.station.autoLines.equipment.selectedTargetId === "ammo_laser", "E13 selectedTarget=ammo_laser");
 
   // 停止
   W.dispatchGameAction(G, { type:"station/stopAutoLine", lineId:"equipment" }, Date.now());
   ok(G.station.autoLines.equipment.enabled === false, "E13 停止后 enabled=false");
   ok(G.station.autoLines.equipment.stoppedReason === "user-stopped", "E13 stoppedReason=user-stopped");
 
-  // 重新启动（selectedTarget 已经是 t1_small_laser）
+  // 重新启动（selectedTarget 已经是 ammo_laser）
   W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
-  ok(G.station.autoLines.equipment.startedTargetId === "t1_small_laser", "E13 重启后 startedTarget=t1_small_laser");
+  ok(G.station.autoLines.equipment.startedTargetId === "ammo_laser", "E13 重启后 startedTarget=ammo_laser");
   ok(G.station.autoLines.equipment.enabled === true, "E13 重启后 enabled=true");
   ok(G.station.autoLines.equipment.stoppedReason === null, "E13 restart 清空 stoppedReason");
 })();
@@ -1238,12 +1238,19 @@ section("E14 舰船配方不得进装备线");
   const r4 = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
   ok(r4.changed === false && r4.reason === "unknown-recipe", "E14 舰船部件配方 functional_system 被拒 → unknown-recipe");
 
-  // 有效装备配方可通过（需先确保线不在运行状态）
+  // 消耗品配方可通过（白名单 fuel/ammunition/probes）
+  G.station.autoLines.equipment.enabled = false;
+  G.station.autoLines.equipment.startedTargetId = null;
+  G.station.autoLines.equipment.selectedTargetId = "fuel_t1";
+  const r5 = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
+  ok(r5.changed === true, "E14 消耗品配方 fuel_t1 可通过");
+
+  // 可装配装备（无 category，不在白名单）被拒 → target-not-allowed（白名单正面测试）
   G.station.autoLines.equipment.enabled = false;
   G.station.autoLines.equipment.startedTargetId = null;
   G.station.autoLines.equipment.selectedTargetId = "t1_mining_laser";
-  const r5 = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
-  ok(r5.changed === true, "E14 装备配方 t1_mining_laser 可通过");
+  const r6 = W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
+  ok(r6.changed === false && r6.reason === "target-not-allowed", "E14 可装配装备 t1_mining_laser 被拒 → target-not-allowed");
 })();
 
 // ---- E15 在线/离线产出 XP 一致性 ----
@@ -1450,19 +1457,26 @@ section("E20 离线装备材料不足");
   bSetBody(3); bResetBuildings(); resetAutoLines();
   G.station.buildings.equipment_factory = 1;
   G.skills.equipmentEngineering.lvl = 80;
-  G.station.autoLines.equipment.selectedTargetId = "t1_mining_laser";
+  // 装备自动线白名单（fuel/ammunition/probes）：目标须为消耗品配方
+  G.station.autoLines.equipment.selectedTargetId = "fuel_t1";
   W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"equipment" }, Date.now());
-  RR.set(G,"三钛合金", 0);
+  // 清 fuel_t1 成本材料（粗制富勒烯），裸名经 ResourceRegistry 解析为正式 ref
+  const fuelRefE20 = RR.resolveMaterialIds("粗制富勒烯")[0];
+  if (fuelRefE20) RR.set(G, fuelRefE20, 0);
+  // 确保空间站 operational（有燃料），避免断油闸门在进入产线处理前跳过
+  G.station.maintenance.fuelRemaining = 100000000;
   G.station.autoLines.equipment.lastTick = Date.now() - 3600000;
   G.station.autoLines.equipment.progress = 100;
   const stoppedE20 = [];
   const unsubE20 = W.GameEvents.on("station:autoLineStopped", e => { stoppedE20.push(e); });
   W.processAutoLines(G, Date.now(), true);
   ok(stoppedE20.length === 1, "E20 第一次处理 → 停止事件恰好1次（实际 " + stoppedE20.length + "）");
-  ok(stoppedE20[0].payload.lineId === "equipment", "E20 lineId=equipment");
-  ok(stoppedE20[0].payload.reason === "insufficient-materials", "E20 reason=insufficient-materials");
-  ok(stoppedE20[0].payload.offline === true, "E20 payload.offline=true");
-  ok(stoppedE20[0].meta.offline === true, "E20 meta.offline=true");
+  if (stoppedE20.length === 1) {
+    ok(stoppedE20[0].payload.lineId === "equipment", "E20 lineId=equipment");
+    ok(stoppedE20[0].payload.reason === "insufficient-materials", "E20 reason=insufficient-materials");
+    ok(stoppedE20[0].payload.offline === true, "E20 payload.offline=true");
+    ok(stoppedE20[0].meta.offline === true, "E20 meta.offline=true");
+  }
   W.processAutoLines(G, Date.now(), true);
   ok(stoppedE20.length === 1, "E20 第二次处理 → 停止事件仍只有 1 次");
   unsubE20();
@@ -1478,16 +1492,20 @@ section("E21 离线增强剂材料不足");
   W.dispatchGameAction(G, { type:"station/startAutoLine", lineId:"booster" }, Date.now());
   RR.set(G,"planetary:重金属", 0);
   RR.set(G,"special:战术残液", 0);
+  // 确保空间站 operational（有燃料），避免断油闸门在进入产线处理前跳过
+  G.station.maintenance.fuelRemaining = 100000000;
   G.station.autoLines.booster.lastTick = Date.now() - 3600000;
   G.station.autoLines.booster.progress = 100;
   const stoppedE21 = [];
   const unsubE21 = W.GameEvents.on("station:autoLineStopped", e => { stoppedE21.push(e); });
   W.processAutoLines(G, Date.now(), true);
   ok(stoppedE21.length === 1, "E21 第一次处理 → 停止事件恰好1次（实际 " + stoppedE21.length + "）");
-  ok(stoppedE21[0].payload.lineId === "booster", "E21 lineId=booster");
-  ok(stoppedE21[0].payload.reason === "insufficient-materials", "E21 reason=insufficient-materials");
-  ok(stoppedE21[0].payload.offline === true, "E21 payload.offline=true");
-  ok(stoppedE21[0].meta.offline === true, "E21 meta.offline=true");
+  if (stoppedE21.length === 1) {
+    ok(stoppedE21[0].payload.lineId === "booster", "E21 lineId=booster");
+    ok(stoppedE21[0].payload.reason === "insufficient-materials", "E21 reason=insufficient-materials");
+    ok(stoppedE21[0].payload.offline === true, "E21 payload.offline=true");
+    ok(stoppedE21[0].meta.offline === true, "E21 meta.offline=true");
+  }
   W.processAutoLines(G, Date.now(), true);
   ok(stoppedE21.length === 1, "E21 第二次处理 → 停止事件仍只有 1 次");
   unsubE21();
