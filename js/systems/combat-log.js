@@ -205,8 +205,10 @@ if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.on === 
   GameEvents.on("combat:enemyDefeated", function (e) {
     if (!e) return;
     combatLogInc("kills", 1);
-    if (e.enemyKind === "elite") combatLogInc("eliteKills", 1);
-    else if (e.enemyKind === "boss") combatLogInc("bossKills", 1);
+    // GameEvents.emit 传入的是完整 event 对象（{type, payload, meta, ...}），payload 在 e.payload 里。
+    const ek = e.payload && e.payload.enemyKind;
+    if (ek === "elite") combatLogInc("eliteKills", 1);
+    else if (ek === "boss") combatLogInc("bossKills", 1);
   });
   GameEvents.on("combat:waveCleared", function () { combatLogInc("waves", 1); });
   GameEvents.on("combat:zoneCleared", function () { combatLogInc("zones", 1); });
@@ -218,5 +220,5 @@ if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.on === 
     combatLogInc("defeats", 1);
   });
   // 离线战斗聚合结算：合并非资源计数器（ISK/LP/产物由库存快照差得出）
-  GameEvents.on("offline:combatSettled", function (payload) { combatLogMergeOffline(payload); });
+  GameEvents.on("offline:combatSettled", function (e) { combatLogMergeOffline(e && e.payload); });
 }
