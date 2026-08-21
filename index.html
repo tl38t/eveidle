@@ -9,9 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=7">
-<link rel="stylesheet" href="./css/panels.css?v=10">
+<link rel="stylesheet" href="./css/panels.css?v=11">
 <link rel="stylesheet" href="./css/combat.css?v=2">
-<link rel="stylesheet" href="./css/components.css?v=16">
+<link rel="stylesheet" href="./css/components.css?v=21">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=13">
 <script type="importmap">
 {
@@ -603,6 +603,7 @@
           </div>
           <div class="combat-engagement-group">
             <span class="combat-wave">第 <span class="cw-num" id="combat-wave-num">1</span>/<span id="combat-wave-max">20</span> 波 · <span id="combat-clear-label">已肃清</span> <span id="combat-clear-count">0</span></span>
+            <button class="btn combat-log-btn" id="btn-combat-log" type="button">📜 战斗日志</button>
             <div class="combat-queue-control" id="combat-queue-control">
               <label for="combat-queue-count">战斗次数</label>
               <input type="number" id="combat-queue-count" class="chain-input" min="1" max="99999" step="1" value="1" />
@@ -1058,10 +1059,11 @@
   <script defer src="./js/data/combat.js?v=3"></script>
   <script defer src="./js/data/cargo.js?v=7"></script>
   <script defer src="./js/data/implants.js?v=2"></script>
-  <script defer src="./js/data/equipment.js?v=10"></script>
+  <script defer src="./js/data/equipment.js?v=11"></script>
+  <script defer src="./js/systems/combat-drop-craft.js?v=4"></script>
   <script defer src="./js/data/ammunition.js?v=2"></script>
   <script defer src="./js/data/archaeology.js?v=3"></script>
-  <script defer src="./js/data/research.js?v=3"></script>
+  <script defer src="./js/data/research.js?v=4"></script>
   <script defer src="./js/core/research-state.js?v=2"></script>
   <script defer src="./js/data/achievements.js?v=4"></script>
   <script defer src="./js/data/achievement-rules.js?v=5"></script>
@@ -1082,25 +1084,26 @@
   <script defer src="./js/systems/rigs.js?v=4"></script>
   <script defer src="./js/systems/archaeology.js?v=8"></script>
   <script defer src="./js/systems/planetary.js?v=2"></script>
-  <script defer src="./js/systems/station.js?v=7"></script>
+  <script defer src="./js/systems/station.js?v=9"></script>
   <script defer src="./js/ui/action-modal.js?v=6"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
-  <script defer src="./js/systems/combat.js?v=6"></script>
+  <script defer src="./js/systems/combat.js?v=8"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=28"></script>
-  <script defer src="./js/core/actions.js?v=11"></script>
+  <script defer src="./js/core/selectors.js?v=33"></script>
+  <script defer src="./js/core/actions.js?v=13"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=27"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=11"></script>
-  <script defer src="./js/ui/combat-render.js?v=12"></script>
+  <script defer src="./js/ui/shell-render.js?v=35"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=15"></script>
+  <script defer src="./js/ui/combat-render.js?v=19"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=7"></script>
   <script defer src="./js/ui/booster-render.js?v=5"></script>
   <script defer src="./js/ui/station-render.js?v=3"></script>
   <script defer src="./js/core/tick.js?v=7"></script>
-  <script defer src="./js/core/offline.js?v=9"></script>
+  <script defer src="./js/core/offline.js?v=10"></script>
   <script defer src="./js/systems/offline-combat.js?v=4"></script>
+  <script defer src="./js/systems/combat-log.js?v=2"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=2"></script>
   <script defer src="./js/platform/local-mirror-contract.js?v=2"></script>
@@ -1119,7 +1122,7 @@
   <script defer src="./js/core/persistence.js?v=11"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=3"></script>
   <script defer src="./js/ui/render.js?v=8"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=10"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=11"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">

@@ -354,7 +354,7 @@ const BoosterStateActions = {
     if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) return { changed:false, reason:"invalid-slot" };
     const item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
     if (!item) return { changed:false, reason:"unknown-item" };
-    if (item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
+    if (!item.universal && item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
     const active = state.boosters && state.boosters.active;
     if (!active) return { changed:false, reason:"no-state" };
     const existing = active[slot];
@@ -365,12 +365,14 @@ const BoosterStateActions = {
     // 库存校验
     const inv = ResourceRegistry.get(state, item.itemId);
     if (!(inv >= 1)) return { changed:false, reason:"insufficient-inventory" };
-    // 同系列冲突
+    // 同系列冲突 / 同类别通用件冲突
     for (const s of BOOSTER_SLOTS) {
       const e = active[s];
       if (!e || s === slot) continue;
       const existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
-      if (existingItem && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
+      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
+      // 通用件（神经）：同一类别（同一经验技能域）槽位只能装一个
+      if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) return { changed:false, reason:"category-conflict" };
     }
     // 原子提交
     ResourceRegistry.spend(state, item.itemId, 1);
@@ -403,7 +405,7 @@ const BoosterStateActions = {
     if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) return { changed:false, reason:"invalid-slot" };
     const item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
     if (!item) return { changed:false, reason:"unknown-item" };
-    if (item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
+    if (!item.universal && item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
     const active = state.boosters && state.boosters.active;
     if (!active) return { changed:false, reason:"no-state" };
     const existing = active[slot];
@@ -412,12 +414,14 @@ const BoosterStateActions = {
     // 先校验新库存（原子拒绝），原槽完全不変
     const inv = ResourceRegistry.get(state, item.itemId);
     if (!(inv >= 1)) return { changed:false, reason:"insufficient-inventory" };
-    // 同系列冲突
+    // 同系列冲突 / 同类别通用件冲突
     for (const s of BOOSTER_SLOTS) {
       const e = active[s];
       if (!e || s === slot) continue;
       const existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
-      if (existingItem && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
+      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
+      // 通用件（神经）：同一类别（同一经验技能域）槽位只能装一个
+      if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) return { changed:false, reason:"category-conflict" };
     }
     const oldItemId = existing.itemId;
     // 原子提交
@@ -879,6 +883,7 @@ function getQueueItemConfigForState(item) {
     else { config.shipSubAction = "component"; config.shipCompTarget = "integrated_hull"; }
   } else if (skill === "equipmentEngineering") {
     config.equipEngTarget = EQUIPMENT_ENGINEERING_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target)?.id || "t1_mining_laser";
+    if (item.equipEngInputLevel !== undefined) config.equipEngInputLevel = item.equipEngInputLevel;
   } else if (skill === "archaeology") {
     config.archaeologyTarget = item.target;
   } else if (skill === "boosterEngineering") {
@@ -901,6 +906,7 @@ function applyQueueConfigToState(state, config, now) {
   if (config.shipCompTarget) { action.shipCompTarget = config.shipCompTarget; action.startedShipCompTarget = config.shipCompTarget; }
   if (config.shipAsmTarget) { action.shipAsmTarget = config.shipAsmTarget; action.startedShipAsmTarget = config.shipAsmTarget; }
   if (config.equipEngTarget) { action.equipEngTarget = config.equipEngTarget; action.startedEquipEngTarget = config.equipEngTarget; }
+  if (config.equipEngInputLevel !== undefined) action.equipEngInputLevel = config.equipEngInputLevel;
   if (config.archaeologyTarget) {
     action.archaeologyTarget = config.archaeologyTarget;
     action.startedArchaeologyTarget = config.archaeologyTarget;
@@ -1296,7 +1302,7 @@ const ShellStateActions = {
 
   // Batch R（E 项·舰船拆解）：只读报价已由 selector 展示；此处执行拆解。
   // 拒绝：未知 / 已分配 / 执行中 / 维修中 / 带装备或 rig（与 selector 共用 getShipDismantleBlockReason）。
-  // 归还 = getShipDismantleQuote（每项 floor(总量×0.5)），按 refId 精确入账；
+  // 归还 = getShipDismantleQuote（每项 floor(总量×回收率)），按 refId 精确入账；
   // 不归还蓝图 / XP / 强化等级 / 装备（装备经 has-fitting 拒绝后天然不残留）。
   disassembleShip(state, instanceId, now) {
     const instance = getShipInstanceFromState(state, instanceId);
@@ -1308,7 +1314,7 @@ const ShellStateActions = {
     if (blocked) return { changed:false, reason:blocked };
     const recipe = SHIP_ASSEMBLY_RECIPES.find(item => item.shipId === instance.shipId) || null;
     if (!recipe) return { changed:false, reason:"no-dismantle-recipe" };
-    const preview = getShipDismantleQuote(recipe, config, instance.enhancementLevel);
+    const preview = getShipDismantleQuote(recipe, config, instance.enhancementLevel, getReclaimRate(state));
     // 归还材料（quote 条目已过滤 returned<=0；refId 为空则跳过该条目，避免无锚点材料丢失）。
     // refundedResources 以 canonical ref（资源权威键）→ 实际归还数量映射，与真实入账严格一致。
     const refundedResources = {};
@@ -1369,7 +1375,7 @@ const ShellStateActions = {
     return { changed:true, itemId };
   },
 
-  /* ---- Batch S·装备管理：装备拆解（返还约 50% 材料 + 整件逐件 50% 掷骰；isk 不返还） ---- */
+  /* ---- Batch S·装备管理：装备拆解（按冶炼回收率返还材料 + 整件逐件按回收率掷骰；isk 不返还） ---- */
   dismantleEquipment(state, targetRef, now) {
     const resolved = resolveEquipmentReference(state, targetRef);
     if (!resolved) return { changed:false, reason:"unknown-equipment" };
@@ -1377,7 +1383,8 @@ const ShellStateActions = {
     const itemId = resolved.itemId;
     const eqDef = resolved.definition;
     const level = resolved.enhancementLevel;
-    const quote = getEquipmentDismantleQuote(eqDef, level);
+    const reclaimRate = getReclaimRate(state);
+    const quote = getEquipmentDismantleQuote(eqDef, level, reclaimRate);
     const refundedResources = {};
     for (const entry of quote.materials) {
       if (entry.refId) {
@@ -1387,7 +1394,7 @@ const ShellStateActions = {
     }
     const returnedItems = [];
     for (const wi of quote.wholeItems) {
-      if (Math.random() < 0.5) {
+      if (Math.random() < reclaimRate) {
         if (wi.type === "sameType") {
           if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
           state.equipment.inventory.push(wi.id);
@@ -1420,6 +1427,28 @@ const ShellStateActions = {
       }, { offline:false, source:"equipment-dismantle" });
     }
     return { changed:true, itemId, returned:quote.materials, returnedItems };
+  },
+
+  /* ---- Batch S·舰船工程·部件车间：组件拆解（按冶炼回收率归还 cost 材料；组件无强化、无整件耗材） ---- */
+  dismantleComponent(state, componentId, now) {
+    if (!componentId) return { changed:false, reason:"unknown-component" };
+    const key = "component:" + componentId;
+    if (ResourceRegistry.get(state, key) < 1) return { changed:false, reason:"no-component" };
+    const reclaimRate = getReclaimRate(state);
+    const quote = getComponentDismantleQuote(componentId, reclaimRate);
+    ResourceRegistry.spend(state, key, 1);
+    const refundedResources = {};
+    for (const entry of quote) {
+      if (entry.refId) {
+        ResourceRegistry.add(state, entry.refId, entry.returned);
+        refundedResources[entry.refId] = (refundedResources[entry.refId] || 0) + entry.returned;
+      }
+    }
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined" && typeof GameEvents.emit === "function") {
+      GameEvents.emit("component:dismantled", { componentId, refundedResources }, { offline:false, source:"component-dismantle" });
+    }
+    return { changed:true, componentId, returned:quote };
   },
 
   setDiscardConfirmation(state, enabled) {
@@ -1573,13 +1602,14 @@ const ShellStateActions = {
     if (queue.items.length >= queue.config.maxSize) return { changed:false, reason:"queue-full" };
     const count = item.count === -1 ? -1 : Math.max(1, Number(item.count) || 1);
     const last = !front ? queue.items[queue.items.length - 1] : null;
-    if (last && last.skill === item.skill && last.target === item.target) {
+    if (last && last.skill === item.skill && last.target === item.target && (last.equipEngInputLevel || 0) === (item.equipEngInputLevel || 0)) {
       last.count = last.count === -1 || count === -1 ? -1 : (Number(last.count) || 1) + count;
       if (queue.status.isRunning && queue.status.activeIndex === queue.items.length - 1) state.currentAction.batchRemaining = last.count;
       state._dirty = true;
       return { changed:true, merged:true, item:last };
     }
     const queueItem = { id:"q_" + now + "_" + queue.items.length, skill:item.skill, target:item.target, label:item.label || item.target, count };
+    if (item.equipEngInputLevel !== undefined) queueItem.equipEngInputLevel = item.equipEngInputLevel;
     if (front) queue.items.unshift(queueItem); else queue.items.push(queueItem);
     if (front && queue.status.isRunning && queue.status.activeIndex >= 0) queue.status.activeIndex++;
     state._dirty = true;
@@ -1691,13 +1721,24 @@ const ShellStateActions = {
   }
 };
 
-// 从装配槽移除一个装备引用：实例置 installedOn=null（双池，不退回 inventory）；旧式字符串退回 inventory。
+// 从装配槽移除一个装备引用：
+// · +0 白板实例 → 删除实例并退回 inventory（可被制造/再次安装）
+// · 强化实例（enhancementLevel>0）→ 保留实例，仅置 installedOn=null（强化等级不丢失）
+// · 旧式字符串引用 → 退回 inventory
 function detachEquipmentRefFromFitting(state, ref) {
   if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
   if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
+  if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
   const instance = isEquipmentInstanceId(state, ref) ? getEquipmentInstanceById(state, ref) : null;
   if (instance) {
-    instance.installedOn = null;
+    const level = Math.max(0, Math.floor(Number(instance.enhancementLevel) || 0));
+    if (level === 0) {
+      const idx = state.equipment.instances.indexOf(instance);
+      if (idx >= 0) state.equipment.instances.splice(idx, 1);
+      state.equipment.inventory.push(instance.itemId);
+    } else {
+      instance.installedOn = null;
+    }
   } else if (typeof ref === "string") {
     state.equipment.inventory.push(ref);
   }
@@ -2104,6 +2145,7 @@ const StationStateActions = {
   if (action.type === "equipment/enhance") return enhanceEquipment(state, action.targetRef, action.randomValue);
   if (action.type === "equipment/discard") return ShellStateActions.discardEquipment(state, action.targetRef, actionTime);
   if (action.type === "equipment/dismantle") return ShellStateActions.dismantleEquipment(state, action.targetRef, actionTime);
+  if (action.type === "component/dismantle") return ShellStateActions.dismantleComponent(state, action.componentId, actionTime);
   if (action.type === "hangar/clearIndustrialShip") return ShellStateActions.clearIndustrialShip(state);
   if (action.type === "settings/setShipEnhancementConfirmation") return ShellStateActions.setShipEnhancementConfirmation(state, action.enabled);
   if (action.type === "settings/setDiscardConfirmation") return ShellStateActions.setDiscardConfirmation(state, action.enabled);

@@ -655,10 +655,12 @@ function getEquipmentMaxCyclesFromState(state, recipe) {
     max = Math.min(max, Math.floor(getMaterialStockFromState(state, material) / quantity));
   }
   if (recipe.inputEquipment) {
-    const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
+    const itemId = recipe.inputEquipment.itemId;
     const quantity = Math.max(1, Number(recipe.inputEquipment.quantity) || 1);
-    const stock = inventory.filter(itemId => itemId === recipe.inputEquipment.itemId).length;
-    max = Math.min(max, Math.floor(stock / quantity));
+    const level = getEquipEngInputLevelFromState(state, recipe);
+    const groups = getGroupedInputEquipmentCandidates(state, itemId);
+    const available = groups[level] || 0;
+    max = Math.min(max, Math.floor(available / quantity));
   }
   return Number.isFinite(max) ? Math.max(0, max) : 0;
 }
@@ -1119,6 +1121,10 @@ function getShipEngineeringDisplayState(state, now) {
       return { material, quantity, stock, enough:stock >= quantity };
     }),
     componentInventory:SHIP_COMPONENT_RECIPES.map(recipe => ({ id:recipe.id, name:recipe.name, quantity:Number(componentInventory[recipe.id]) || 0 })),
+    componentDismantle:{
+      reclaimRate:getReclaimRate(state),
+      reclaimPercent:Math.round(getReclaimRate(state) * 100)
+    },
     currentAssembly:(function () {
       const el = getAssemblyEligibility(currentAssembly);
       return {
@@ -1242,11 +1248,24 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   });
   const detailEquipmentInputs = selectedRecipe.inputEquipment ? (() => {
     const item = EQUIPMENT_DB[selectedRecipe.inputEquipment.itemId];
-    const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
     const quantity = Math.max(1, Number(selectedRecipe.inputEquipment.quantity) || 1);
-    const stock = inventory.filter(itemId => itemId === selectedRecipe.inputEquipment.itemId).length;
-    return [{ itemId:selectedRecipe.inputEquipment.itemId, name:item ? item.name : selectedRecipe.inputEquipment.itemId, quantity, stock, enough:stock >= quantity }];
-  })() : [];
+    const groups = getGroupedInputEquipmentCandidates(state, selectedRecipe.inputEquipment.itemId);
+    const levels = Object.keys(groups).map(Number).sort((a, b) => a - b);
+    const chosenLevel = getEquipEngInputLevelFromState(state, selectedRecipe);
+    return {
+      itemId:selectedRecipe.inputEquipment.itemId,
+      name:item ? item.name : selectedRecipe.inputEquipment.itemId,
+      quantity,
+      total:levels.reduce((s, l) => s + groups[l], 0),
+      chosenLevel,
+      groups:levels.map(level => ({
+        level,
+        count:groups[level],
+        outputLevel:getEquipEngInputInheritance(level),
+        enough:groups[level] >= quantity
+      }))
+    };
+  })() : null;
 
   return {
     kind:"equipmentEngineering",
@@ -2264,6 +2283,7 @@ function getCargoDisplayState(state, filter) {
   else if (ITEM_CATEGORIES[filter]) selectedFilter = filter;
   else selectedFilter = "all";
   const componentNames = Object.fromEntries(SHIP_COMPONENT_RECIPES.map(recipe => [recipe.id, recipe.name]));
+  const componentIdByName = Object.fromEntries(SHIP_COMPONENT_RECIPES.map(recipe => [recipe.name, recipe.id]));
   const resources = state.resources || {};
   const equipmentSource = {};
   for (const { definition, quantity } of ResourceRegistry.listStateEntries(state, "component")) equipmentSource[componentNames[definition.key] || definition.name] = quantity;
@@ -2281,6 +2301,22 @@ function getCargoDisplayState(state, filter) {
   // 按需求改挂到「消耗品」标签展示：仅调整仓库视图归类，物品 id 保持不变，
   // 故开箱弹窗（openItemDetailModal 按 id 前缀判定）、考古/战斗掉落与存档逻辑均不受影响。
   const specialEntries = ResourceRegistry.listStateEntries(state, "special");
+  // Keep combat gear licenses visible in the warehouse even when an older
+  // save/resource registry did not enumerate the newer gear material keys.
+  // The canonical keys are still special:<material>; this is only a read-side
+  // catalog fallback and does not create inventory or alter quantities.
+  const gearMaterialNames = (typeof GEAR_DATA_MATERIALS !== "undefined" && Array.isArray(GEAR_DATA_MATERIALS))
+    ? GEAR_DATA_MATERIALS : [];
+  const knownSpecialIds = new Set(specialEntries.map(entry => entry.definition.id));
+  for (const materialName of gearMaterialNames) {
+    const id = "special:" + materialName;
+    if (knownSpecialIds.has(id)) continue;
+    const quantity = ResourceRegistry.get(state, id);
+    if (quantity > 0) {
+      const definition = ResourceRegistry.getDefinition(id);
+      if (definition) specialEntries.push({ definition, quantity });
+    }
+  }
   // 校准基体（calibration: 命名空间，存于 state.calibrations 池）此前无仓库桶，导致完全不可见；
   // 并入「特殊物资」标签展示（来历实为考古，下方逐件纠正来源/说明）。
   const calibrationEntries = ResourceRegistry.listStateEntries(state, "calibration");
@@ -2295,7 +2331,12 @@ function getCargoDisplayState(state, filter) {
       [
         ...specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") !== 0),  // 货柜改由 consumable 收纳
         ...calibrationEntries
-      ].map(entry => [getResourceDisplayName(entry.definition.id), { qty: entry.quantity, id: entry.definition.id }])
+      ].map(entry => {
+        const id = entry.definition.id;
+        const key = entry.definition.key;
+        const voucher = (typeof ARCHAEOLOGY_VOUCHERS !== "undefined" && ARCHAEOLOGY_VOUCHERS[key]) ? ARCHAEOLOGY_VOUCHERS[key] : null;
+        return [voucher && voucher.name ? voucher.name : (entry.definition.name || getResourceDisplayName(id)), { qty: entry.quantity, id }];
+      })
     ),
     consumable:Object.assign(
       Object.assign(
@@ -2392,9 +2433,19 @@ function getCargoDisplayState(state, filter) {
         details:equipment ? getEquipmentAttributeText(equipment) : "",
         isEquipment:isEquip,
         itemId:isEquip ? equipment.id : null,
+        componentId: isComponent ? (componentIdByName[name] || null) : null,
         description,
         source
       });
+      const warehouseItem = items[items.length - 1];
+      if (itemId && itemId.indexOf("special:voucher_") === 0) {
+        warehouseItem.categoryLabel = "考古凭证";
+        warehouseItem.source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
+        warehouseItem.description = "考古探索获得的永久回收凭证，持有后会提升对应回收收益。";
+      }
+      if (itemId && itemId.indexOf("special:") === 0 && itemId.indexOf("special:voucher_") !== 0 && typeof getMaterialCraftables === "function") {
+        warehouseItem.craftables = getMaterialCraftables(itemId, state);
+      }
     }
   }
   // 仓库自动排序：顶层分类固定顺序 → 小分类 → 组内排序键（资源按采集等级升序；装备组内按等级降序；数量仅作同级 tiebreaker）
@@ -2754,12 +2805,37 @@ function getBlueprintStoreDisplayState(state, selectedCategory) {
 }
 
 /* ================================================================
+   拆解统一回收率：随冶炼技能等级（skills.refining.lvl）变化。
+   rate = min(1.0, 0.35 + 0.002 × (lvl − 1))。
+   冶炼1级=35%，每级+0.2%，326级封顶100%（低冶炼玩家回收更少，倒逼练冶炼）。
+   ================================================================ */
+function getDismantleReclaimRate(refiningLvl) {
+  const lvl = Math.max(1, Math.floor(Number(refiningLvl) || 1));
+  return Math.min(1.0, 0.35 + 0.002 * (lvl - 1));
+}
+
+// 最终拆解回收率 = 冶炼技能基线 + 科研「拆解回收工程」加成（reclaim 组，additivePp），封顶 100%。
+// 科研加成与技能基线叠加后统一钳制，避免任一项单独封顶造成加成被吞。
+function getReclaimRate(state) {
+  const base = getDismantleReclaimRate(getRefiningLevel(state));
+  const researchBonus = (typeof ResearchState !== "undefined" && typeof ResearchState.getResearchBonusValue === "function")
+    ? Number(ResearchState.getResearchBonusValue(state, "reclaim")) || 0
+    : 0;
+  return Math.min(1.0, base + researchBonus);
+}
+
+function getRefiningLevel(state) {
+  return Math.max(0, Math.floor(Number(state && state.skills && state.skills.refining && state.skills.refining.lvl) || 0));
+}
+
+/* ================================================================
    舰船拆解只读报价（Batch R · E 项）
    SHIP_ASSEMBLY_RECIPES.componentCost → SHIP_COMPONENT_RECIPES.cost 折算为基础材料，
-   再合并 assembly 的 materialCost（纯名键），同材料合计后每项 floor(总量 × 0.5) 归还。
+   再合并 assembly 的 materialCost（纯名键），同材料合计后每项 floor(总量 × rate) 归还。
    只读纯计算，不触碰 state；refId 取材料名跨命名空间聚合的第一个命名空间 id（归还锚点）。
+   reclaimRate 默认 0.5（向后兼容），实际调用方应传入 getDismantleReclaimRate(冶炼等级)。
    ================================================================ */
-function getShipDismantleQuote(recipe, config, enhancementLevel) {
+function getShipDismantleQuote(recipe, config, enhancementLevel, reclaimRate) {
   if (!recipe || typeof recipe !== "object") return [];
   // key -> { total, kind, id? }：material = 基础材料名；component = 舰船强化组件（refId 取 component:<id>）
   const costMap = {};
@@ -2798,7 +2874,7 @@ function getShipDismantleQuote(recipe, config, enhancementLevel) {
           ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
         name = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(name) : name;
       }
-      return { name, refId, total:info.total, returned:Math.floor(info.total * 0.5) };
+      return { name, refId, total:info.total, returned:Math.floor(info.total * (reclaimRate != null ? reclaimRate : 0.5)) };
     })
     .filter(entry => entry.returned > 0)
     .sort((a, b) => b.returned - a.returned || a.name.localeCompare(b.name, "zh-CN"));
@@ -2832,11 +2908,12 @@ const SHIP_DISMANTLE_BLOCK_TEXT = {
 
 /* ================================================================
    装备拆解只读报价（Batch S·装备管理）
-   矿物：基础制造材料（eq.cost 全部，含非精炼）+ 逐级成功强化精炼矿物消耗，合计后每项 floor(×0.5)。
-   整件耗材（同型装备 / DED 核心 / 协议）：来自逐级里程碑额外消耗，逐件列出，拆解时独立 50% 掷骰（不在此处结算）。
+   矿物：基础制造材料（eq.cost 全部，含非精炼）+ 逐级成功强化精炼矿物消耗，合计后每项 floor(×rate)。
+   整件耗材（同型装备 / DED 核心 / 协议）：来自逐级里程碑额外消耗，逐件列出，拆解时独立 rate 掷骰（不在此处结算）。
    只读纯计算，不触碰 state。
+   reclaimRate 默认 0.5（向后兼容），实际调用方应传入 getDismantleReclaimRate(冶炼等级)。
    ================================================================ */
-function getEquipmentDismantleQuote(equipment, level) {
+function getEquipmentDismantleQuote(equipment, level, reclaimRate) {
   if (!equipment) return { materials:[], wholeItems:[] };
   const L = Math.max(0, Math.floor(Number(level) || 0));
   const minerals = {};
@@ -2856,11 +2933,32 @@ function getEquipmentDismantleQuote(equipment, level) {
       const refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
         ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
       const label = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(name) : name;
-      return { name:label, refId, total, returned: Math.floor(total * 0.5) };
+      return { name:label, refId, total, returned: Math.floor(total * (reclaimRate != null ? reclaimRate : 0.5)) };
     })
     .filter(entry => entry.returned > 0)
     .sort((a, b) => b.returned - a.returned || a.name.localeCompare(b.name, "zh-CN"));
   return { materials, wholeItems };
+}
+
+/* ================================================================
+   组件拆解只读报价（Batch S·舰船工程·部件车间）
+   组件无强化、无整件耗材：直接反查 SHIP_COMPONENT_RECIPES 取 cost，每项 floor(总量 × rate) 归还材料。
+   只读纯计算，不触碰 state。
+   ================================================================ */
+function getComponentDismantleQuote(componentId, reclaimRate) {
+  const recipe = (typeof SHIP_COMPONENT_RECIPES !== "undefined")
+    ? SHIP_COMPONENT_RECIPES.find(item => item.id === componentId) : null;
+  if (!recipe) return [];
+  const rate = (reclaimRate != null) ? reclaimRate : 0.5;
+  return Object.entries(recipe.cost || {})
+    .map(([name, total]) => {
+      const refId = (typeof ResourceRegistry !== "undefined" && typeof ResourceRegistry.resolveMaterialIds === "function")
+        ? (ResourceRegistry.resolveMaterialIds(name)[0] || null) : null;
+      const label = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(name) : name;
+      return { name:label, refId, total:Number(total), returned: Math.floor(Number(total) * rate) };
+    })
+    .filter(entry => entry.returned > 0)
+    .sort((a, b) => b.returned - a.returned || a.name.localeCompare(b.name, "zh-CN"));
 }
 
 // 装备拆解/丢弃阻塞判定（与 Action 共用唯一口径）：null = 可操作；否则 reason key。
@@ -2914,7 +3012,7 @@ function getHangarDisplayState(state, now) {
       // Batch R（E 项·舰船拆解）：只读报价 + 阻塞判定（与 Action 共用 getShipDismantleBlockReason）
       const dismantleRecipe = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.shipId === instance.shipId) || null;
       const dismantleBlocked = getShipDismantleBlockReason(state, instance, now);
-      const dismantlePreview = dismantleRecipe ? getShipDismantleQuote(dismantleRecipe, config, enhancementLevel) : [];
+      const dismantlePreview = dismantleRecipe ? getShipDismantleQuote(dismantleRecipe, config, enhancementLevel, getReclaimRate(state)) : [];
       const role = getShipEnhancementRole(config);
       const hpBefore = { ...config.hp };
       const hp = Object.fromEntries(Object.entries(config.hp).map(([layer, value]) => [layer, Math.round(value * enhancementBonuses.hpMultiplier)]));
@@ -2976,7 +3074,9 @@ function getHangarDisplayState(state, now) {
           preview:dismantlePreview,
           canDismantle:Boolean(dismantleRecipe) && !dismantleBlocked,
           blockedReason:dismantleBlocked || "",
-          blockedText:dismantleBlocked ? (SHIP_DISMANTLE_BLOCK_TEXT[dismantleBlocked] || "当前无法拆解") : ""
+          blockedText:dismantleBlocked ? (SHIP_DISMANTLE_BLOCK_TEXT[dismantleBlocked] || "当前无法拆解") : "",
+          reclaimRate:getReclaimRate(state),
+          reclaimPercent:Math.round(getReclaimRate(state) * 100)
         },
         assignments:Object.keys(actionNames).map(actionKey => {
           const restriction = getShipAssignmentRestriction(config, actionKey, actionKey === "combat" && thisRepairing, instance, state);

@@ -85,7 +85,7 @@ function addSkillXpToState(state, skillKey, amount, eventMeta) {
   // 神经训练催化器（全局增强剂）：所有技能经验共用同一乘区（与 rig 独立相乘）。
   if (typeof getBoosterEffectState === "function") {
     const eff = getBoosterEffectState(state);
-    const booster = eff && Number(eff.skillXpMultiplier) ? eff.skillXpMultiplier : 1;
+    const booster = (eff && eff.skillXpMultBySkill) ? (Number(eff.skillXpMultBySkill[skillKey]) || 1) : 1;
     if (booster && booster !== 1) gained = gained * booster;
   }
   gained = Math.max(0, gained);

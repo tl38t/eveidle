@@ -44,6 +44,17 @@ function getActionBoosterSlots(actionKey) {
   }
 }
 
+/* 槽位 → 技能经验键映射（经验茶模型：神经增强剂装在哪类槽，只加成该类行动的技能经验）。 */
+var BOOSTER_SLOT_XP_SKILL = {
+  miningSpeed:"mining", miningYield:"mining",
+  archaeologySpeed:"archaeology", archaeologyRare:"archaeology",
+  gasSpeed:"gasHarvesting", gasYield:"gasHarvesting",
+  smeltSpeed:"refining", smeltYield:"refining",
+  shipSpeed:"shipEngineering", shipYield:"shipEngineering",
+  boosterSpeed:"boosterEngineering", boosterYield:"boosterEngineering",
+  combatWeapon:"combat", combatRepair:"combat"
+};
+
 /* ----------------------------------------------------------------
    装备校验（只用 inventory 检查，不修改状态）
    ---------------------------------------------------------------- */
@@ -53,7 +64,7 @@ function canEquipBooster(state, slot, itemId) {
   }
   const item = getBoosterItemFromState(state, itemId);
   if (!item) return { ok:false, reason:"unknown-item" };
-  if (item.slot !== slot) return { ok:false, reason:"slot-mismatch" };
+  if (!item.universal && item.slot !== slot) return { ok:false, reason:"slot-mismatch" };
   const inv = ResourceRegistry.get(state, item.itemId);
   if (!(inv >= 1)) return { ok:false, reason:"insufficient-inventory" };
   // 同系列不同品质互斥（不测试期同时装备两个同系列）
@@ -62,8 +73,14 @@ function canEquipBooster(state, slot, itemId) {
     const e = active[s];
     if (!e) continue;
     const existing = getBoosterItemFromState(state, e.itemId);
-    if (existing && existing.series === item.series && s !== slot) {
+    if (existing && !existing.universal && !item.universal && existing.series === item.series && s !== slot) {
       return { ok:false, reason:"series-conflict" };
+    }
+    // 通用件（神经）：同一类别（同一经验技能域）的槽位只能装一个
+    if (existing && existing.universal && item.universal && s !== slot) {
+      if (BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) {
+        return { ok:false, reason:"category-conflict" };
+      }
     }
   }
   return { ok:true };
@@ -302,7 +319,6 @@ function tickBoosterTimers(state, now) {
     applyBoosterTimeConsumption(state, "boosterSpeed", elapsed, now);
     applyBoosterTimeConsumption(state, "boosterYield", elapsed, now);
   }
-
   // 无论是否消耗，lastTick 必须推进（防止恢复后追扣）
   boosters.lastTick = now;
 }
@@ -336,8 +352,9 @@ function getBoosterEffectState(state) {
     shipMaterialDiscount: 0,
     boosterSpeedMultiplier: 1,
     doubleBoosterChance: 0,
-    // 技能训练（神经训练催化器）：全局技能经验获取乘区（与 rig 的 skillXpBonus 独立相乘）。
-    skillXpMultiplier: 1,
+    // 技能训练（神经训练催化器 · 经验茶模型）：按技能分桶的技能经验乘区，
+    // 神经增强剂装在哪类槽，只加成该桶（与 rig 的 skillXpBonus 独立相乘）。
+    skillXpMultBySkill: { mining:1, archaeology:1, gasHarvesting:1, refining:1, shipEngineering:1, boosterEngineering:1, combat:1 },
     activeEntries: {}
   };
   var slots = (Array.isArray(BOOSTER_SLOTS) ? BOOSTER_SLOTS : []);
@@ -415,9 +432,14 @@ function getBoosterEffectState(state) {
         if (bv > eff.doubleBoosterChance) eff.doubleBoosterChance = bv;
         break;
       }
-      case "skillXpMultiplier":
-        eff.skillXpMultiplier *= (1 + Number(item.effectValue));
+      case "skillXpMultiplier": {
+        // 经验茶模型：神经增强剂装在哪类槽，只加成该类行动经验（slot→skill 作用域化）。
+        var xpSkill = BOOSTER_SLOT_XP_SKILL[slot];
+        if (xpSkill && eff.skillXpMultBySkill[xpSkill] !== undefined) {
+          eff.skillXpMultBySkill[xpSkill] *= (1 + Number(item.effectValue));
+        }
         break;
+      }
     }
   }
   return eff;

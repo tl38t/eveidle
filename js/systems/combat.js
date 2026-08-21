@@ -319,6 +319,27 @@ function resetCombatRunState(combat) {
   combat.runSequence = prev + 1;
   combat.runToken = makeRunToken(combat);
   combat.enemyInstanceSeq = 0;
+  // 战斗日志：新 run 初始化本场累计（在线 + 离线合并，直到用户停止战斗）。
+  // 开局拍库存与技能快照，供打开日志时按差值惰性算出产物 / 经验净增，避免逐帧记录开销。
+  const rl = (combat.runLog && typeof combat.runLog === "object") ? combat.runLog : (combat.runLog = {});
+  const now0 = (typeof Date !== "undefined") ? Date.now() : 0;
+  rl.startedAt = now0;
+  rl.lastActivityAt = now0;
+  rl.runToken = combat.runToken;
+  rl.waves = 0; rl.zones = 0; rl.dsWaves = 0; rl.dsClears = 0;
+  rl.kills = 0; rl.eliteKills = 0; rl.bossKills = 0; rl.defeats = 0;
+  rl.isk = 0; rl.lp = 0;
+  // 战斗技能经验累计器：仅累计「战斗授予」的经验（经 addStationModifiedCombatXp），
+  // 不含空间站授予的非战斗经验。打开日志时读取，见 combat-log.js 的钩子。
+  rl.skillXp = {};
+  rl.invStartSnapshot = (typeof createInventorySnapshot === "function" && typeof gameState !== "undefined" && gameState) ? createInventorySnapshot(gameState) : null;
+  rl.startSkills = {};
+  if (typeof gameState !== "undefined" && gameState && gameState.skills) {
+    for (const k of Object.keys(gameState.skills)) {
+      const s = gameState.skills[k];
+      rl.startSkills[k] = { xp: s ? (Number(s.xp) || 0) : 0, lvl: s ? (Number(s.lvl) || 1) : 1 };
+    }
+  }
 }
 
 function getDeathspaceById(deathspaceId) {

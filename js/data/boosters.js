@@ -39,8 +39,9 @@ const BOOSTER_SERIES = Object.freeze({
   precision_rationing:     { id:"precision_rationing",     name:"精密配给剂",     category:"ship",     slot:"shipYield",   effectType:"shipMaterialDiscount" },
   reaction_accelerant:     { id:"reaction_accelerant",     name:"反应加速介质",   category:"booster",  slot:"boosterSpeed", effectType:"boosterSpeed" },
   reaction_chain_proliferation: { id:"reaction_chain_proliferation", name:"反应链增殖剂", category:"booster", slot:"boosterYield", effectType:"boosterDouble" },
-  // —— 技能训练 · 神经训练催化器（全局技能经验获取增强；effectType:skillXpMultiplier）——
-  neural_booster: { id:"neural_booster", name:"神经训练催化器", category:"training", slot:"skillXp", effectType:"skillXpMultiplier" }
+  // —— 技能训练 · 神经训练催化器（经验茶模型：通用件 universal，可装入任意类别槽，只加成该槽对应类别的技能经验；effectType:skillXpMultiplier）——
+  // —— 技能训练 · 神经训练催化器（经验茶模型：通用件 universal，可装入任意类别槽，只加成该槽对应类别的技能经验）——
+  neural_booster: { id:"neural_booster", name:"神经训练催化器", category:"training", slot:"any", effectType:"skillXpMultiplier" }
 });
 
 const BOOSTER_CATEGORY_META = Object.freeze([
@@ -152,11 +153,11 @@ const BOOSTER_DEFS = [
   ["reaction_chain_proliferation","l",96,158,350,"生物质",5,"special:极化战术介质",7,"boosterDouble",0.30,"boosterYield",true],
   // ---- 技能训练（神经训练催化器，全局技能经验获取增强；普通直解锁，精工/传奇需货柜蓝图）----
   // 普通：直解锁（requiresBlueprint:false），不进任何考古/货柜蓝图池
-  ["neural_booster","n",42,64,16,"同位素",3,"special:活性战术凝胶",4,"skillXpMultiplier",0.05,"skillXp",false,"gas:氦同位素",4],
+  ["neural_booster","n",42,64,16,"同位素",3,"special:活性战术凝胶",4,"skillXpMultiplier",0.05,"any",false,"gas:氦同位素",4],
   // 精工：需蓝图，M/L/XL 货柜掉落
-  ["neural_booster","r",82,124,82,"等离子体",3,"special:高能战术萃取物",4,"skillXpMultiplier",0.10,"skillXp",true,"gas:氢同位素",4],
+  ["neural_booster","r",82,124,82,"等离子体",3,"special:高能战术萃取物",4,"skillXpMultiplier",0.10,"any",true,"gas:氢同位素",4],
   // 传奇：需蓝图，L/XL 货柜掉落
-  ["neural_booster","l",98,148,358,"生物质",5,"special:极化战术介质",7,"skillXpMultiplier",0.15,"skillXp",true,"gas:聚合气体",2]
+  ["neural_booster","l",98,148,358,"生物质",5,"special:极化战术介质",7,"skillXpMultiplier",0.15,"any",true,"gas:聚合气体",2]
 ];
 
 // 由唯一事实来源展开为 BOOSTER_ITEMS（map）与 BOOSTER_RECIPES（array），二者一一对应 30 条。
@@ -181,7 +182,8 @@ const BOOSTER_RECIPES = [];
       qualityName:quality.name,
       level,
       durationMs:BOOSTER_DURATION_MS,
-      slot,
+      slot: (slot === "any" ? null : slot),
+      universal: (slot === "any"),
       effectType,
       effectValue,
       weaponType:series.weaponType || null,
@@ -232,7 +234,7 @@ function describeBoosterEffect(effectType, value) {
     case "shipMaterialDiscount": return "舰船材料 -" + Math.round(value * 100) + "%（激活期间配方等级门槛 +5）";
     case "boosterSpeed":      return "增幅剂制造速度 +" + Math.round(value * 100) + "%";
     case "boosterDouble":     return "增幅剂产量翻倍概率 " + Math.round(value * 100) + "%";
-    case "skillXpMultiplier": return "技能经验获取 +" + Math.round(value * 100) + "%";
+    case "skillXpMultiplier": return "对应类别技能经验 +" + Math.round(value * 100) + "%（按装备槽位作用域化）";
     default:                  return effectType + " " + value;
   }
 }
@@ -244,8 +246,7 @@ const BOOSTER_SLOTS = Object.freeze([
   "smeltSpeed", "smeltYield",
   "shipSpeed", "shipYield",
   "boosterSpeed", "boosterYield",
-  "combatWeapon", "combatRepair",
-  "skillXp"
+  "combatWeapon", "combatRepair"
 ]);
 
 function getBoosterItem(id) {

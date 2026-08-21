@@ -480,6 +480,18 @@ function normalizeEquipmentState(state) {
 
   state.equipment.instances = validInstances;
 
+  // 迁移旧档/修复：未安装的 +0 白板实例转回 inventory（制造只读 inventory；强化过的实例保留）。
+  // 注意 rig 实例已在上面被过滤掉，不会进入此处。
+  const remainingInstances = [];
+  for (const inst of state.equipment.instances) {
+    if (!inst.installedOn && (inst.enhancementLevel || 0) === 0) {
+      state.equipment.inventory.push(inst.itemId);
+    } else {
+      remainingInstances.push(inst);
+    }
+  }
+  state.equipment.instances = remainingInstances;
+
   // 清理 inventory：只保留合法的 itemId 字符串
   state.equipment.inventory = state.equipment.inventory.filter(id => typeof id === "string" && Boolean(EQUIPMENT_DB[id]));
 

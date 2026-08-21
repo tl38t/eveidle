@@ -883,6 +883,8 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
 
   let maxFromInput = cyclesByTime;
   if (recipe.inputEquipment) {
+    // 显式护栏：自动线只消耗 inventory 字符串池中的 +0 装备，绝不触碰 instances（强化件永留实例池）。
+    // 且 inputEquipment 配方（死亡空间类）本就不在 EQUIPMENT_AUTO_LINE_CATEGORIES 白名单内，此处为双保险。
     const inv = (state.equipment && Array.isArray(state.equipment.inventory)) ? state.equipment.inventory : [];
     const need = Math.max(1, Number(recipe.inputEquipment.quantity) || 1);
     maxFromInput = Math.floor(inv.filter(id => id === recipe.inputEquipment.itemId).length / need);
@@ -1071,8 +1073,8 @@ function processAutoLines(state, now, offline) {
     }
 
     // 仅 operational 段累积进度并结算。自动线最终倍率 = buildingMultiplier × stationLogisticsMultiplier
-    // 冶炼自动线补挂「空间站冶炼核心」+10%（与手动冶炼一致；装备/增强剂自动线不挂，核心本就是冶炼核心）
-    const stationLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, lineId === "smelting" ? "smelt" : undefined) : 1;
+    // 系数 B：装备厂房/增强剂厂房自动线接入对应核心（equipEng/booster），冶炼线保持 smelt。
+    const stationLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, LINE_CORE_TAG[lineId]) : 1;
     // 研究批次 G · autoline 组：自动化协议提速（只加速周期，材料消耗与单周期产量完全不变）
     let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
     if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
@@ -1111,8 +1113,8 @@ function getStationBuildingSpeedMultiplier(state, buildingId) {
 function getStationAutoLineCycleDuration(state, lineId, recipe) {
   if (!recipe) return 0;
   const buildingMult = getStationBuildingSpeedMultiplier(state, AUTO_LINE_CONFIG[lineId].buildingId);
-  // 冶炼自动线补挂「空间站冶炼核心」+10%（与手动冶炼/实际结算一致）；装备/增强剂自动线不挂
-  const logisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, lineId === "smelting" ? "smelt" : undefined) : 1;
+  // 系数 B：装备厂房/增强剂厂房自动线接入对应核心（equipEng/booster），冶炼线保持 smelt。
+  const logisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, LINE_CORE_TAG[lineId]) : 1;
   // 研究批次 G · autoline 组：与 processAutoLines 完全同式，UI 显示周期 = 实际结算周期
   let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
   if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
@@ -1387,10 +1389,19 @@ function getShipyardSpeedMultiplier(state) {
 
 function getShipyardSavingRate(state) {
   const lvl = getStationBuildingLevel(state, "shipyard");
-  if (lvl >= 3) return 0.10;
-  if (lvl === 2) return 0.06;
-  if (lvl === 1) return 0.03;
-  return 0;
+  let rate = 0;
+  if (lvl >= 3) rate = 0.10;
+  else if (lvl === 2) rate = 0.06;
+  else if (lvl === 1) rate = 0.03;
+  // 系数 B（shipEng）：空间站船坞核心已获取并持有库存时，部件制造材料消耗额外降低 5%（与船坞等级节省加算）。
+  // 仅作用于部件制造（部件车间），不作用于总装；与 getShipyardProductionQuote 共用此唯一入口。
+  if (state && state.stationCoresObtained && state.stationCoresObtained.shipEng) {
+    const held = (typeof ResourceRegistry !== "undefined")
+      ? Number(ResourceRegistry.get(state, STATION_CORE_RESOURCE.shipEng)) || 0
+      : 0;
+    if (held > 0) rate += 0.05;
+  }
+  return rate;
 }
 
 function getShipyardLevel(state) {
@@ -1523,6 +1534,10 @@ const STATION_CORE_RESOURCE = {
   equipEng:"special:空间站装备制造核心",
   booster: "special:空间站增强剂制造核心",
 };
+// coreTag → 自动线 lineId 映射：决定系数 B 接入哪条自动线。
+// 冶炼/装备制造/增强剂三条自动线走 getStationLogisticsMultiplier；船坞(shipyard)的的核心加成不在此映射，
+// 而是并入 getShipyardSavingRate（部件制造材料消耗 -5%，与船坞等级节省加算）。
+const LINE_CORE_TAG = { smelting: "smelt", equipment: "equipEng", booster: "booster" };
 // 基础物流倍率：不含 GAME_SPEED（十倍速），但保留「空间站运行状态 + 核心加成语义」。
 // 用于成就判定（H13）等不应被速度开关扭曲的场景（speed=10 时 Lv.1 的 1.03 不会被放大成 10.3）。
 function getStationLogisticsBaseMultiplier(state, coreTag) {

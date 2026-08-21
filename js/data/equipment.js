@@ -13,8 +13,8 @@ const EQUIPMENT_DB = {
   "t3_gas_harvester": { id:"t3_gas_harvester", name:"重型气云采集器",  slot:"high", level:35, time:60, xp:40, cost:{"三钛合金":200,"稳定富勒烯":8,"氦同位素":5}, bonuses:{gasEfficiency:0.30} },
   "t4_mining_laser":  { id:"t4_mining_laser",  name:"大型采矿激光器",  slot:"high", level:55, time:100, xp:75, cost:{"三钛合金":500,"超新星诺克石":30,"等离子体":15,"钷":5}, bonuses:{miningEfficiency:0.50} },
   "t4_gas_harvester": { id:"t4_gas_harvester", name:"大型气云采集器",  slot:"high", level:55, time:100, xp:75, cost:{"三钛合金":500,"氢同位素":5,"高纯富勒烯":10}, bonuses:{gasEfficiency:0.50} },
-  "t5_mining_laser":  { id:"t5_mining_laser",  name:"旗舰采矿激光器",  slot:"high", level:80, time:180, xp:130, cost:{"三钛合金":1200,"超噬矿":20,"铷":10,"磁场聚合物":30}, bonuses:{miningEfficiency:0.80} },
-  "t5_gas_harvester": { id:"t5_gas_harvester", name:"旗舰气云采集器",  slot:"high", level:80, time:180, xp:130, cost:{"三钛合金":1200,"超纯聚合气体":3,"铷":5}, bonuses:{gasEfficiency:0.80} },
+  "t5_mining_laser":  { id:"t5_mining_laser", shipTypes:["industrial_capital"], name:"旗舰采矿激光器",  slot:"high", level:80, time:180, xp:130, cost:{"三钛合金":1200,"超噬矿":20,"铷":10,"磁场聚合物":30}, bonuses:{miningEfficiency:0.80} },
+  "t5_gas_harvester": { id:"t5_gas_harvester", shipTypes:["industrial_capital"], name:"旗舰气云采集器",  slot:"high", level:80, time:180, xp:130, cost:{"三钛合金":1200,"超纯聚合气体":3,"铷":5}, bonuses:{gasEfficiency:0.80} },
   "t1_small_laser": { id:"t1_small_laser", name:"小型激光炮 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类晶体胶矿":12}, bonuses:{}, combat:{kind:"weapon",weaponType:"laser",baseDamage:120,baseHit:100,fuelCost:3,ammoCost:1} },
   "t1_light_missile_launcher": { id:"t1_light_missile_launcher", name:"轻型导弹发射器 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类银超金属":12}, bonuses:{}, combat:{kind:"weapon",weaponType:"missile",baseDamage:100,baseHit:130,fuelCost:1,ammoCost:1} },
   "t1_small_cannon": { id:"t1_small_cannon", name:"小型射弹炮 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类银超金属":10}, bonuses:{}, combat:{kind:"weapon",weaponType:"cannon",baseDamage:80,baseHit:80,fuelCost:2,ammoCost:1} },
@@ -35,7 +35,7 @@ const EQUIPMENT_DB = {
   "blood_servant_drone_link_sacrifice": { id:"blood_servant_drone_link_sacrifice", name:"赤誓仆从无人机指挥链路·献祭型", slot:"mid", level:25, time:45, xp:30, cost:{"三钛合金":150,"类银超金属":50,"赤誓教团装备生产许可C":5,"类晶体胶矿":15}, bonuses:{miningEfficiency:0.13,gasEfficiency:0.13}, faction:"blood", requiresBlueprint:true },
   "alliance_drone_link": { id:"alliance_drone_link", name:"联盟无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":420,"类银超金属":144,"同位聚合体":24}, bonuses:{miningEfficiency:0.12,gasEfficiency:0.12}, faction:"alliance", requiresBlueprint:true },
   "t4_drone_link": { id:"t4_drone_link", name:"深空无人机指挥链路", slot:"mid", level:55, time:100, xp:75, cost:{"三钛合金":600,"超新星诺克石":25,"等离子体":15,"钷":5}, bonuses:{miningEfficiency:0.16,gasEfficiency:0.16} },
-  "t5_drone_core": { id:"t5_drone_core", name:"旗舰无人机指挥核心", slot:"mid", level:80, time:180, xp:130, cost:{"三钛合金":1400,"超噬矿":20,"铷":8,"超纯聚合气体":2,"磁场聚合物":30}, bonuses:{miningEfficiency:0.25,gasEfficiency:0.25} },
+  "t5_drone_core": { id:"t5_drone_core", shipTypes:["industrial_capital"], name:"旗舰无人机指挥核心", slot:"mid", level:80, time:180, xp:130, cost:{"三钛合金":1400,"超噬矿":20,"铷":8,"超纯聚合气体":2,"磁场聚合物":30}, bonuses:{miningEfficiency:0.25,gasEfficiency:0.25} },
   "shield_ext_small":  { id:"shield_ext_small",  name:"小型护盾扩展",   slot:"mid", level:1, time:15, xp:6,  cost:{"三钛合金":50,"类银超金属":20},  bonuses:{shieldCapacity:50} },
   "t1_shield_booster": { id:"t1_shield_booster", name:"小型护盾回充器 I", slot:"mid", level:1, time:18, xp:10, cost:{"三钛合金":35,"类银超金属":15}, bonuses:{}, combat:{kind:"repair",target:"shield",amount:30,fuelCost:1} },
   "t1_medium_shield_booster": { id:"t1_medium_shield_booster", name:"中型护盾回充器 I", slot:"mid", level:35, time:42, xp:30, cost:{"三钛合金":120,"类银超金属":40,"同位素":8}, bonuses:{}, combat:{kind:"repair",target:"shield",amount:60,fuelCost:2} },
@@ -69,13 +69,13 @@ const EQUIPMENT_DB = {
   "sansha_drone_link_outpost": { id:"sansha_drone_link_outpost", name:"静默无人机指挥链路·前哨型", slot:"mid", level:10, time:30, xp:15, cost:{"三钛合金":40,"类银超金属":15,"静默集群装备生产许可D":3}, bonuses:{miningEfficiency:0.08,gasEfficiency:0.08}, faction:"sansha", requiresBlueprint:true },
 
   "alliance_mineral_assimilation": { id:"alliance_mineral_assimilation", name:"联盟矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1320,"超新星诺克石":60,"铷":6,"等离子体":30}, bonuses:{miningLaserEfficiency:0.80}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
-  "t5_mining_booster": { id:"t5_mining_booster", name:"旗舰采矿提升核心", slot:"low", level:80,time:200,xp:150,cost:{"三钛合金":2000,"超噬矿":35,"铷":15,"磁场聚合物":50}, bonuses:{miningLaserEfficiency:0.90} },
+  "t5_mining_booster": { id:"t5_mining_booster", shipTypes:["industrial_capital"], name:"旗舰采矿提升核心", slot:"low", level:80,time:200,xp:150,cost:{"三钛合金":2000,"超噬矿":35,"铷":15,"磁场聚合物":50}, bonuses:{miningLaserEfficiency:0.90} },
   "t1_gas_booster":    { id:"t1_gas_booster",    name:"T1采气提升器",  slot:"low", level:10,time:20, xp:12, cost:{"三钛合金":50,"粗制富勒烯":20},  bonuses:{gasLaserEfficiency:0.10} },
   // ===== 采气提升器（对标采矿提升器，低槽 gasLaserEfficiency） =====
   "t2_gas_booster":    { id:"t2_gas_booster",    name:"中型采气提升器",  slot:"low", level:15,time:35,  xp:20,  cost:{"三钛合金":160, "稳定富勒烯":60,   "类晶体胶矿":15}, bonuses:{gasLaserEfficiency:0.30} },
   "t3_gas_booster":    { id:"t3_gas_booster",    name:"重型采气提升器",  slot:"low", level:35,time:60,  xp:40,  cost:{"三钛合金":400, "稳定富勒烯":150,  "同位聚合体":30,"重金属":15}, bonuses:{gasLaserEfficiency:0.50} },
   "t4_gas_booster":    { id:"t4_gas_booster",    name:"大型采气提升器",  slot:"low", level:55,time:110, xp:80,  cost:{"三钛合金":900,"等离子体":25,"高纯富勒烯":55,"钷":5}, bonuses:{gasLaserEfficiency:0.70} },
-  "t5_gas_booster":    { id:"t5_gas_booster",    name:"旗舰采气提升核心", slot:"low", level:80,time:200, xp:150, cost:{"三钛合金":2000,"超纯聚合气体":35, "铷":15, "磁场聚合物":50}, bonuses:{gasLaserEfficiency:0.90} },
+  "t5_gas_booster":    { id:"t5_gas_booster", shipTypes:["industrial_capital"],    name:"旗舰采气提升核心", slot:"low", level:80,time:200, xp:150, cost:{"三钛合金":2000,"超纯聚合气体":35, "铷":15, "磁场聚合物":50}, bonuses:{gasLaserEfficiency:0.90} },
   // ===== 势力采气提升器（对标势力采矿提升器，气体同化注入器系，需蓝图） =====
   "sansha_gas_assimilation":  { id:"sansha_gas_assimilation",  name:"静默气体同化注入器",       slot:"low", level:65,time:130,xp:95,  cost:{"三钛合金":1100,"聚合气体":50, "铷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{gasLaserEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
   "angel_gas_assimilation_outpost": { id:"angel_gas_assimilation_outpost", name:"苍穹劫团气体同化注入器·前哨型", slot:"low", level:10,time:30, xp:15, cost:{"三钛合金":80, "稳定富勒烯":20, "苍穹劫团装备生产许可D":3}, bonuses:{gasLaserEfficiency:0.35}, faction:"angel", requiresBlueprint:true },
@@ -89,7 +89,7 @@ const EQUIPMENT_DB = {
   "t2_salvage_arm":    { id:"t2_salvage_arm",    name:"中型同位素标记打捞臂", slot:"low", level:15, time:35,  xp:20,  cost:{"三钛合金":160, "同位素":60,  "类晶体胶矿":15}, bonuses:{salvageEfficiency:0.30}, salvageFuelPerKill:4 },
   "t3_salvage_arm":    { id:"t3_salvage_arm",    name:"重型同位素标记打捞臂", slot:"low", level:35, time:60,  xp:40,  cost:{"三钛合金":400, "等离子体":150, "同位素":30, "重金属":15}, bonuses:{salvageEfficiency:0.50}, salvageFuelPerKill:6 },
   "t4_salvage_arm":    { id:"t4_salvage_arm",    name:"大型同位素标记打捞臂", slot:"low", level:55, time:110, xp:80,  cost:{"三钛合金":900,"生物质":45,"等离子体":25,"钷":5}, bonuses:{salvageEfficiency:0.70}, salvageFuelPerKill:8 },
-  "t5_salvage_arm":    { id:"t5_salvage_arm",    name:"旗舰同位素标记打捞核心", slot:"low", level:80, time:200, xp:150, cost:{"三钛合金":2000,"磁场聚合物":35, "铷":15, "生物质":50}, bonuses:{salvageEfficiency:0.90}, salvageFuelPerKill:10 },
+  "t5_salvage_arm":    { id:"t5_salvage_arm", shipTypes:["industrial_capital"],    name:"旗舰同位素标记打捞核心", slot:"low", level:80, time:200, xp:150, cost:{"三钛合金":2000,"磁场聚合物":35, "铷":15, "生物质":50}, bonuses:{salvageEfficiency:0.90}, salvageFuelPerKill:10 },
   // ===== 势力同位素标记打捞臂（对标势力采矿/采气提升器，残骸打捞注入器系，需蓝图；渠道逐件对标矿提孪生件：货柜 S/M/L + LP_STORE + STAR_BELT） =====
   "sansha_salvage_injector":  { id:"sansha_salvage_injector",  name:"静默残骸打捞注入器",       slot:"low", level:65, time:130, xp:95,  cost:{"三钛合金":1100,"等离子体":50, "铷":5, "生物质":25, "静默集群装备生产许可A":10}, bonuses:{salvageEfficiency:0.80}, salvageFuelPerKill:8, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
   "angel_salvage_injector_outpost": { id:"angel_salvage_injector_outpost", name:"苍穹劫团残骸打捞注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80, "稀有气体":20, "苍穹劫团装备生产许可D":3}, bonuses:{salvageEfficiency:0.35}, salvageFuelPerKill:2, faction:"angel", requiresBlueprint:true },
@@ -572,13 +572,14 @@ function getEquipmentAttributeLines(equipmentRef) {
     lines.push("基础伤害：" + eq.combat.baseDamage);
     lines.push("每轮消耗：燃料 " + eq.combat.fuelCost + " / 弹药 " + eq.combat.ammoCost);
     if (eq.combat.aoe && eq.combat.aoe.description) lines.push(eq.combat.aoe.description);
-    if (Array.isArray(eq.shipTypes)) lines.push("适用舰体：旗舰 / 超级旗舰");
   } else if (eq.combat && eq.combat.kind === "repair") {
     const targetNames = { shield:"护盾", armor:"装甲", structure:"结构" };
     lines.push("自动维修：" + (targetNames[eq.combat.target] || eq.combat.target) + " +" + eq.combat.amount);
     lines.push("触发消耗：燃料 " + eq.combat.fuelCost);
-    if (Array.isArray(eq.shipTypes)) lines.push("适用舰体：旗舰 / 超级旗舰");
   }
+  // 适用舰体（旗舰限定）由 shipTypes 数据驱动：覆盖战斗/工业所有限定件，不再硬编码且不再漏工业旗舰
+  const shipFlag = getShipTypesFlag(eq.shipTypes);
+  if (shipFlag) lines.push("适用舰体：" + shipFlag.label);
   if (eq.bonuses && typeof eq.bonuses.salvageEfficiency === "number") {
     lines.push("被动：消耗燃料（" + (eq.salvageFuelPerKill || 0) + "/艘）提高货柜掉落。");
     lines.push("主动：消耗被动三倍燃料及同位素，有几率获得与击毁舰船同级舰船组件（几率按打捞效率计算）");
@@ -590,6 +591,35 @@ function getEquipmentAttributeLines(equipmentRef) {
 
 function getEquipmentAttributeText(equipmentRef, separator) {
   return getEquipmentAttributeLines(equipmentRef).join(separator || " · ");
+}
+
+// 旗舰限定角标：由 shipTypes 数据驱动（非名字判定）。返回 {kind,label} 或 null。
+// kind: "combat"（战斗旗舰/超级旗舰） | "ind"（工业旗舰）；label 用于提示文案。
+function getShipTypesFlag(shipTypes) {
+  if (!Array.isArray(shipTypes) || shipTypes.length === 0) return null;
+  const combat = shipTypes.includes("capital") || shipTypes.includes("supercapital");
+  const ind = shipTypes.includes("industrial_capital");
+  if (combat && ind) return { kind: "combat", label: "战斗旗舰 / 超级旗舰 / 工业旗舰" };
+  if (combat) return { kind: "combat", label: "战斗旗舰 / 超级旗舰" };
+  if (ind) return { kind: "ind", label: "工业旗舰" };
+  return null;
+}
+
+// 返回角标 HTML（受控字符串，内容由上方数据生成，不含外部输入）。
+// variant: "cargo"（仓库大卡/强化列表，右上角带文字） | "ee"（装备工程小卡，左上角纯图标小药丸）。
+// 不含 tabindex：角标可能嵌在 <button>（装备工程卡）内，嵌套可聚焦元素属无效 HTML；
+// 移动端点按提示由全局委托（toggle .tap-open）实现，桌面由 :hover 实现。
+function getShipTypesFlagBadge(shipTypes, variant) {
+  const f = getShipTypesFlag(shipTypes);
+  if (!f) return "";
+  const isCombat = f.kind === "combat";
+  const icon = isCombat ? "🚩" : "🏭";
+  const tip = "仅可装备于：<b>" + f.label + "</b>";
+  if (variant === "ee") {
+    return '<span class="ee-flag ' + f.kind + '">' + icon + '<span class="tip">' + tip + "</span></span>";
+  }
+  const text = isCombat ? "战斗旗舰" : "工业旗舰";
+  return '<span class="flag-badge ' + f.kind + '">' + icon + " " + text + '<span class="tip">' + tip + "</span></span>";
 }
 
 const DEFAULT_COMBAT_FITTINGS = {

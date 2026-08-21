@@ -116,13 +116,13 @@ async function runData() {
   // =========================================================================
   // 1. 数据保真
   // =========================================================================
-  ok(ResearchData.NODES.length === 38, `移植 NODES 数量应为 38，实际 ${ResearchData.NODES.length}`);
-  ok(frozen.NODES.length === 38, `冻结源 NODES 数量应为 38，实际 ${frozen.NODES.length}`);
+  ok(ResearchData.NODES.length === 39, `移植 NODES 数量应为 39，实际 ${ResearchData.NODES.length}`);
+  ok(frozen.NODES.length === 39, `冻结源 NODES 数量应为 39，实际 ${frozen.NODES.length}`);
   ok(deepEq(ResearchData.WEIGHTS, frozen.WEIGHTS), "WEIGHTS 必须与冻结源逐字段一致");
   ok(deepEq(ResearchData.RANK_MULT, frozen.RANK_MULT), "RANK_MULT 必须与冻结源逐字段一致");
   ok(ResearchData.TARGET_SECONDS === frozen.TARGET_SECONDS, "TARGET_SECONDS 必须与冻结源一致");
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "UNIT 必须与冻结源一致");
-  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 150, `STEP_COUNT 应为 150，实际 ${ResearchData.STEP_COUNT}`);
+  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 155, `STEP_COUNT 应为 155，实际 ${ResearchData.STEP_COUNT}`);
 
   const frozenById = new Map();
   for (const n of frozen.NODES) frozenById.set(n.id, n);
@@ -156,7 +156,7 @@ async function runData() {
   ok(ResearchData.NODES.every((n) => frozenById.has(n.id)), "移植 NODES 不得含冻结源之外的 id");
 
   // =========================================================================
-  // 2. 31 组双向集合相等
+  // 2. 32 组双向集合相等
   // =========================================================================
   const dataGroups = new Set();
   for (const n of ResearchData.NODES) {
@@ -168,8 +168,8 @@ async function runData() {
   }
   const mappedGroups = new Set(Object.keys(ResearchData.RESEARCH_BONUS_CONSUMERS));
 
-  ok(dataGroups.size === 31, `数据侧唯一 group 应为 31，实际 ${dataGroups.size}`);
-  ok(mappedGroups.size === 31, `映射注册表 group 应为 31，实际 ${mappedGroups.size}`);
+  ok(dataGroups.size === 32, `数据侧唯一 group 应为 32，实际 ${dataGroups.size}`);
+  ok(mappedGroups.size === 32, `映射注册表 group 应为 32，实际 ${mappedGroups.size}`);
   ok(setEqual(dataGroups, mappedGroups), "数据 group 与映射 group 必须双向相等（无漏/无多/无拼写漂移）");
   ok(setEqual(dataGroups, frozenGroups), "数据 group 须与冻结源 group 集合一致");
   ok(setEqual(mappedGroups, frozenGroups), "映射 group 须与冻结源 group 集合一致");
@@ -218,6 +218,7 @@ async function runData() {
     "selectors.getCombatDamageMultiplierFromState",
     "selectors.getCombatMaxHpFromState",
     "selectors.getCombatRepairMultiplierFromState",
+    "selectors.getReclaimRate",
   ]);
   const KIND_SET = new Set(["multiplier", "additivePp", "reduceFraction"]);
 

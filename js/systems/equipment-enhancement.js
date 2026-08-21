@@ -201,7 +201,7 @@ function findDonorInventoryIndex(state, itemId, excludeIndex) {
 /* ---- 拆解报价辅助：按「只算成功」反推累计消耗（失败尝试不计入）。
        强化等级仅在成功时 +1，故 total = 逐级 L=1..level 之和：
        · minerals：每次精炼矿物消耗（仅精炼，剔除非精炼）
-       · wholeItems：每个 5 倍数里程碑的同型装备 / DED 核心 / 协议（逐件列表，供拆解时独立 50% 掷骰） ---- */
+       · wholeItems：每个 5 倍数里程碑的同型装备 / DED 核心 / 协议（逐件列表，供拆解时按冶炼回收率独立掷骰） ---- */
 function getEquipmentEnhancementSuccessCostSummary(equipment, level) {
   const L = Math.max(0, Math.floor(Number(level) || 0));
   const minerals = {};
@@ -217,6 +217,39 @@ function getEquipmentEnhancementSuccessCostSummary(equipment, level) {
     }
   }
   return { minerals, wholeItems };
+}
+
+/* ---- 制造输入装备分组候选（双池合并，排除已安装） ----
+   返回 { [enhancementLevel]: 可用数量 }：
+     · +0 来自 inventory 字符串池
+     · ≥1 来自 instances 按 enhancementLevel 分桶
+   所有消耗 / 展示 / UI 的单一真相源。 */
+function getGroupedInputEquipmentCandidates(state, itemId) {
+  const out = {};
+  const inventory = state && state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
+  const base = inventory.filter(id => id === itemId).length;
+  if (base > 0) out[0] = (out[0] || 0) + base;
+  const instances = getEquipmentInstanceList(state).filter(instance =>
+    instance.itemId === itemId && !instance.installedOn);
+  for (const inst of instances) {
+    const lvl = Math.max(0, Math.floor(Number(inst.enhancementLevel) || 0));
+    out[lvl] = (out[lvl] || 0) + 1;
+  }
+  return out;
+}
+
+/* ---- 读取当前装备工程 action 选定的输入强化等级（默认 0） ---- */
+function getEquipEngInputLevelFromState(state, recipe) {
+  if (!recipe || !recipe.inputEquipment) return 0;
+  const ca = state && state.currentAction;
+  const lv = ca && ca.equipEngInputLevel;
+  if (lv === undefined || lv === null || !Number.isFinite(Number(lv))) return 0;
+  return Math.max(0, Math.floor(Number(lv)));
+}
+
+/* ---- 输入强化继承：floor(L/3)（L<3 继承为 0） ---- */
+function getEquipEngInputInheritance(level) {
+  return Math.max(0, Math.floor(Number(level) / 3));
 }
 
 window.EquipmentEnhancement = Object.freeze({
@@ -241,5 +274,8 @@ window.EquipmentEnhancement = Object.freeze({
   getEquipmentInstanceById,
   getUninstalledEquipmentInstances,
   getEquipmentOwnedCount,
-  findDonorInventoryIndex
+  findDonorInventoryIndex,
+  getGroupedInputEquipmentCandidates,
+  getEquipEngInputLevelFromState,
+  getEquipEngInputInheritance
 });

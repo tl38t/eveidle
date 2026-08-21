@@ -21,7 +21,7 @@ const WEIGHTS = [1, 3, 9, 27, 81];
 //   绝对值会被 UNIT 归一化，相对值决定各领域时间占比
 const RANK_MULT = {
   foundation: 0.6,   // 4 个单级基础科技
-  industry: 1.0,     // 工业（7 项数值）
+  industry: 1.0,     // 工业（8 项数值）
   exploration: 0.9,  // 探索（5 项数值）
   combat: 1.1,       // 战斗（11 项数值）
   logistics: 0.9,    // 后勤（5 项数值）
@@ -29,7 +29,7 @@ const RANK_MULT = {
 };
 
 // ---------------------------------------------------------------------------
-//  2. 节点数据（38 个）
+//  2. 节点数据（39 个）
 //     category: foundation / industry / exploration / combat / logistics / protocol
 //     era:      0(基础) 1(应用) 2(工程) 3(尖端) 4(协议与集成)
 //     type:     foundation / numeric / protocol
@@ -71,7 +71,7 @@ const NODES = [
     description: "自动化系统与反馈控制理论。提升考古效率。",
   },
 
-  // ===== 工业数值科技（7 个五级） =====
+  // ===== 工业数值科技（8 个五级） =====
   {
     id: "mine", name: "采矿理论", category: "industry", era: 1, type: "numeric",
     maxLevel: 5, rank: RANK_MULT.industry, prerequisites: [{ id: "syseng", level: 1 }],
@@ -120,6 +120,13 @@ const NODES = [
     effects: ["舰船总装效率 +1.2%", "舰船总装效率 +2.4%", "舰船总装效率 +3.6%", "舰船总装效率 +4.8%", "舰船总装效率 +6%"],
     bonus: { group: "shipAsm", perLevel: 1.2, unit: "%" },
     description: "加速舰船总装生产线。",
+  },
+  {
+    id: "reclaim", name: "拆解回收工程", category: "industry", era: 2, type: "numeric",
+    maxLevel: 5, rank: RANK_MULT.industry, prerequisites: [{ id: "smelt", level: 3 }, { id: "equipeng", level: 3 }],
+    effects: ["拆解回收率 +1%", "拆解回收率 +2%", "拆解回收率 +3%", "拆解回收率 +4%", "拆解回收率 +5%"],
+    bonus: { group: "reclaim", perLevel: 1, unit: "%" },
+    description: "优化残骸与组件的逆向拆解工艺，提高材料归还比例。",
   },
 
   // ===== 探索数值科技（5 个五级） =====

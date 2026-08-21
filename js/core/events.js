@@ -42,7 +42,7 @@ const GameEventContracts = (() => {
     "equipment:enhancementAttempted": { required:["instanceId", "itemId", "category", "fromLevel", "toLevel", "chance", "success", "xp"], numbers:["fromLevel", "toLevel", "chance", "xp"] },
     // 物品丢弃（Batch S·装备管理）：装备实例或库存字符串被永久移除后 emit；库存字符串无 instanceId，nullable。
     "equipment:discarded": { required:["itemId", "instanceId"], numbers:[], nullable:["instanceId"] },
-    // 装备拆解（Batch S·装备管理）：返还约 50% 材料（refundedResources）+ 整件耗材逐件 50% 掷骰返还（returnedItems）；isk 不返还；instanceId nullable。
+    // 装备拆解（Batch S·装备管理）：按冶炼回收率返还材料（refundedResources）+ 整件耗材逐件按回收率掷骰返还（returnedItems）；isk 不返还；instanceId nullable。
     "equipment:dismantled": { required:["itemId", "instanceId", "refundedResources", "returnedItems"], numbers:[], nullable:["instanceId"] },
     "rig:manufactured": { required:["rigId", "quantity"], numbers:["quantity"] },
     "rig:fitted": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },

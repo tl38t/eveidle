@@ -282,8 +282,9 @@
       ? '<div class="tp-dismantle-blocked">⚠ ' + d.blockedText + "</div>"
       : "";
     var btn = '<button class="tp-dismantle-btn btn danger" data-dismantle-ship="' + ship.instanceId + '" ' + (d.canDismantle ? "" : "disabled") + ">🗑 拆解此舰船（不可恢复）</button>";
+    var reclaimPct = (d.reclaimPercent != null) ? d.reclaimPercent : 50;
     return '<div class="tp-dismantle-card">'
-      + '<div class="tp-dismantle-warn">拆解后舰船将<b>永久消失</b>，仅归还约 50% 已消耗材料：</div>'
+      + '<div class="tp-dismantle-warn">拆解后舰船将<b>永久消失</b>，仅按冶炼回收率归还约 ' + reclaimPct + '% 已消耗材料：</div>'
       + '<ul class="tp-dismantle-preview">' + (preview || '<li class="tp-dismantle-item">无材料可归还</li>') + "</ul>"
       + blocked
       + btn

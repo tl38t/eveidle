@@ -64,7 +64,11 @@ function renderShipCompInventory(display) {
   display = display || getShipEngineeringDisplayState(gameState, Date.now());
   const grid = document.getElementById("ship-comp-inventory");
   if (!grid) return;
-  grid.innerHTML = display.componentInventory.map(item => `<div class="ship-comp-item"><span class="sci-name">${item.name}</span><span class="sci-qty${item.quantity === 0 ? " zero" : ""}">×${item.quantity}</span></div>`).join("");
+  const rate = (display.componentDismantle && display.componentDismantle.reclaimPercent != null) ? display.componentDismantle.reclaimPercent : 50;
+  grid.innerHTML = display.componentInventory.map(item => {
+    const btn = item.quantity > 0 ? `<button type="button" class="sci-dismantle" data-comp-dismantle="${item.id}" title="拆解此组件（回收约 ${rate}% 材料）">拆解</button>` : "";
+    return `<div class="ship-comp-item"><span class="sci-name">${item.name}</span><span class="sci-qty${item.quantity === 0 ? " zero" : ""}">×${item.quantity}</span>${btn}</div>`;
+  }).join("");
 }
 
 function renderShipAsmLineTabs(display) {
@@ -284,8 +288,11 @@ function renderEquipEngRecipeGrid(display) {
     const blueprintLocked = recipe.requiresBlueprint && !recipe.hasRequiredBlueprint;
     const statusCls = recipe.unlocked ? "can-build" : ("lock-tag" + (blueprintLocked ? "" : " lvl"));
     const statusTxt = recipe.unlocked ? "可制造" : ("🔒 " + (blueprintLocked ? "需蓝图" : "Lv." + recipe.level + " 解锁"));
+    const flagBadge = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[recipe.id])
+      ? getShipTypesFlagBadge(EQUIPMENT_DB[recipe.id].shipTypes, "ee") : "";
     return `<button class="equipeng-recipe-card${recipe.selected ? " selected" : ""}${locked ? " locked" : ""}" data-recipe="${recipe.id}">
     ${locked ? '<span class="lock-badge">🔒</span>' : ""}
+    ${flagBadge}
     <span class="equipeng-card-top"><span>${recipe.tier} · ${recipe.slot}</span><span class="${statusCls}">${statusTxt}</span></span>
     <span class="equipeng-card-icon"><i class="${recipe.icon}"></i></span><strong>${recipe.name}</strong><span class="equipeng-card-attributes">${recipe.attributes}</span>
     <span class="equipeng-card-bottom"><span>${recipe.actualTime.toFixed(1)}s · ${recipe.xp} XP</span><span>库存 ${recipe.ownedCount.toLocaleString()}</span></span></button>`;
@@ -297,7 +304,15 @@ function renderEquipEngDetail(display) {
   const tier = document.getElementById("equipeng-detail-tier"); if (tier) tier.textContent = display.detail.tier;
   const body = document.getElementById("equipeng-detail-body"); if (!body) return;
   const attributes = display.detail.attributes.length ? `<div class="equipeng-detail-section"><span class="equipeng-detail-label">装备属性</span><div class="equipeng-attribute-list">${display.detail.attributes.map(line => `<span>${line}</span>`).join("")}</div></div>` : "";
-  const equipmentInputs = display.detail.equipmentInputs.map(item => `<div class="equipeng-material${item.enough ? " enough" : " short"}"><span><i class="fa-solid fa-box"></i>${item.name}</span><strong>×${item.quantity}</strong><small>未装配库存 ${item.stock.toLocaleString()}</small></div>`).join("");
+  const equipmentInputs = display.detail.equipmentInputs ? (() => {
+    const ei = display.detail.equipmentInputs;
+    const rows = ei.groups.map(g => {
+      const cls = g.count >= ei.quantity ? " enough" : " short";
+      const sel = g.level === ei.chosenLevel ? " selected-input" : "";
+      return `<div class="equipeng-material${cls}${sel}"><span><i class="fa-solid fa-box"></i>${twEsc(ei.name)} +${g.level}</span><strong>×${ei.quantity}</strong><small>可用 ${g.count.toLocaleString()} · 产出 +${g.outputLevel}</small></div>`;
+    }).join("");
+    return `<div class="equipeng-input-note">需选择输入装备强化等级（点击「开始制造」弹窗选取）</div>${rows}`;
+  })() : "";
   const materials = display.detail.materials.map(item => {
     const key = item.material;
     const name = item.displayName || item.name || getResourceDisplayName(item.material);
@@ -436,9 +451,145 @@ function renderEquipEngPage(now) {
     }
     renderEquipEngPage();
   });
-  const start = document.getElementById("btn-start-equipeng"); if (start) start.addEventListener("click", () => showActionConfirm("equipmentEngineering"));
+  const start = document.getElementById("btn-start-equipeng"); if (start) start.addEventListener("click", () => {
+    const recipe = getEquipEngRecipe();
+    if (recipe && recipe.inputEquipment) showEquipEngInputPicker(recipe);
+    else showActionConfirm("equipmentEngineering");
+  });
   const stop = document.getElementById("btn-stop-equipeng"); if (stop) stop.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"manufacturing/stop" }, Date.now());
     if (result.changed) updateUI();
   });
+  const compInv = document.getElementById("ship-comp-inventory");
+  if (compInv) compInv.addEventListener("click", event => {
+    const btn = event.target.closest("[data-comp-dismantle]"); if (!btn) return;
+    openComponentDismantleModal(btn.dataset.compDismantle);
+  });
 })();
+
+/* ================================================================
+   组件拆解弹窗（部件车间库存项 → 确认拆解，按冶炼回收率归还材料）
+   ================================================================ */
+function openComponentDismantleModal(componentId, onDone) {
+  const recipe = (typeof SHIP_COMPONENT_RECIPES !== "undefined") ? SHIP_COMPONENT_RECIPES.find(item => item.id === componentId) : null;
+  if (!recipe) { if (typeof showToast === "function") showToast("未知组件"); return; }
+  if (ResourceRegistry.get(gameState, "component:" + componentId) < 1) { if (typeof showToast === "function") showToast("该组件库存不足"); return; }
+  const rate = getReclaimRate(gameState);
+  const quote = getComponentDismantleQuote(componentId, rate);
+  const name = recipe.name;
+  const materialLines = (quote || []).map(e => e.name + "×" + e.returned).join("、");
+  const percent = Math.round(rate * 100);
+  const bodyHtml =
+    '<p class="dlg-body">拆解 1 件「' + escapeAchievementText(name) + '」将按冶炼回收率返还约 ' + percent + '% 材料：</p>' +
+    '<p class="dlg-body">' + (materialLines || "无材料") + '</p>' +
+    '<p class="dlg-body dlg-warn">组件拆解后消失，不可恢复。强化消耗的星币不返还。</p>';
+  const doDismantle = () => {
+    const result = dispatchGameAction(gameState, { type:"component/dismantle", componentId }, Date.now());
+    if (!result.changed) { if (typeof showToast === "function") showToast(result.reason === "no-component" ? "组件不足，无法拆解" : "拆解失败"); return; }
+    const returnedText = (result.returned || []).map(e => e.name + "×" + e.returned).join("、");
+    if (typeof showToast === "function") showToast("已拆解 " + name + (returnedText ? "，归还：" + returnedText : "，无返还"));
+    if (typeof updateUI === "function") updateUI();
+    if (typeof onDone === "function") onDone();
+  };
+  if (typeof getSettingsDisplayState === "function" && getSettingsDisplayState(gameState).confirmDismantle && typeof showDangerConfirm === "function") {
+    showDangerConfirm("🗑 拆解组件", bodyHtml, "确认拆解", doDismantle);
+  } else {
+    doDismantle();
+  }
+}
+
+/* ================================================================
+   输入装备选择弹窗（手动制造消耗舰船装备时按强化等级分组选取）
+   ================================================================ */
+function showEquipEngInputPicker(recipe) {
+  const itemId = recipe.inputEquipment.itemId;
+  const quantity = Math.max(1, Number(recipe.inputEquipment.quantity) || 1);
+  const groups = getGroupedInputEquipmentCandidates(gameState, itemId);
+  const levels = Object.keys(groups).map(Number).sort((a, b) => b - a);
+  const itemName = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[itemId]) ? EQUIPMENT_DB[itemId].name : itemId;
+  if (!levels.length) {
+    if (typeof showToast === "function") showToast("没有可用的「" + itemName + "」输入装备");
+    return;
+  }
+  const firstEnough = levels.find(l => groups[l] >= quantity);
+  let selectedLevel = (firstEnough !== undefined) ? firstEnough : levels[0];
+  let cycles = 1;
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.id = "eq-input-picker-overlay";
+  overlay.innerHTML = ''
+    + '<div class="modal-box" style="width:440px;">'
+    + '  <h3>选择输入装备<span class="modal-close" id="eq-input-picker-close">✕</span></h3>'
+    + '  <div class="action-info">'
+    + '    <div class="ai-row"><span class="ai-label">配方：</span><span class="ai-value">' + twEsc(recipe.name) + '</span></div>'
+    + '    <div class="ai-row"><span class="ai-label">每次消耗：</span><span class="ai-value">' + twEsc(itemName) + ' ×' + quantity + '</span></div>'
+    + '    <div class="ai-row"><span class="ai-label">强化继承：</span><span class="ai-value">floor(等级/3) 向下取整</span></div>'
+    + '  </div>'
+    + '  <div id="eq-input-picker-groups"></div>'
+    + '  <div class="action-input-row"><label>制造次数</label><input type="number" id="eq-input-picker-count" min="1" value="1" /><span class="ai-max" id="eq-input-picker-max"></span></div>'
+    + '  <div class="action-summary" id="eq-input-picker-summary"></div>'
+    + '  <div class="modal-actions"><button class="btn" id="eq-input-picker-cancel">取消</button><button class="btn primary" id="eq-input-picker-confirm">确认制造</button></div>'
+    + '</div>';
+  document.body.appendChild(overlay);
+
+  const groupsEl = overlay.querySelector("#eq-input-picker-groups");
+  const countEl = overlay.querySelector("#eq-input-picker-count");
+  const maxEl = overlay.querySelector("#eq-input-picker-max");
+  const summaryEl = overlay.querySelector("#eq-input-picker-summary");
+
+  function renderGroups() {
+    groupsEl.innerHTML = levels.map(level => {
+      const count = groups[level];
+      const outLevel = Math.floor(level / 3);
+      const disabled = count < quantity;
+      const sel = level === selectedLevel ? " selected-input" : "";
+      const enoughCls = disabled ? " short" : " enough";
+      return '<div class="equipeng-material' + enoughCls + sel + (disabled ? " locked" : "") + '" data-level="' + level + '" style="cursor:' + (disabled ? "not-allowed" : "pointer") + '">'
+        + '<span><i class="fa-solid fa-box"></i>' + twEsc(itemName) + ' +' + level + '</span>'
+        + '<strong>×' + quantity + '</strong>'
+        + '<small>可用 ' + count.toLocaleString() + ' · 产出 +' + outLevel + '</small></div>';
+    }).join("");
+    groupsEl.querySelectorAll("[data-level]").forEach(el => {
+      const l = Number(el.dataset.level);
+      if (groups[l] < quantity) return;
+      el.addEventListener("click", () => { selectedLevel = l; updateMax(); renderGroups(); });
+    });
+  }
+  function updateMax() {
+    const max = Math.floor(groups[selectedLevel] / quantity);
+    if (cycles > max) cycles = max;
+    if (cycles < 1) cycles = 1;
+    countEl.value = cycles;
+    countEl.max = String(max);
+    maxEl.textContent = "（最多 " + max + " 次）";
+    const outLevel = Math.floor(selectedLevel / 3);
+    summaryEl.innerHTML = '<span class="ai-label">将消耗：</span>' + twEsc(itemName) + ' +' + selectedLevel + ' ×' + (quantity * cycles) + ' → 产出 +' + outLevel + ' ×' + cycles;
+  }
+  countEl.addEventListener("input", () => {
+    let v = parseInt(countEl.value || "1");
+    const max = Math.floor(groups[selectedLevel] / quantity);
+    if (!Number.isFinite(v) || v < 1) v = 1;
+    if (v > max) v = max;
+    cycles = v; countEl.value = String(v); updateMax();
+  });
+
+  function close() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }
+  overlay.querySelector("#eq-input-picker-close").addEventListener("click", close);
+  overlay.querySelector("#eq-input-picker-cancel").addEventListener("click", close);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) close(); });
+  overlay.querySelector("#eq-input-picker-confirm").addEventListener("click", () => {
+    const max = Math.floor(groups[selectedLevel] / quantity);
+    const finalCount = Math.min(Math.max(1, cycles), Math.max(1, max));
+    const result = dispatchGameAction(gameState, { type:"queue/add", item:{ skill:"equipmentEngineering", target:recipe.id, label:recipe.name, count:finalCount, equipEngInputLevel:selectedLevel }, front:true }, Date.now());
+    if (result && result.changed) {
+      if (typeof startQueue === "function") startQueue();
+      if (typeof updateUI === "function") updateUI();
+      if (typeof showToast === "function") showToast("已加入制造队列（输入 +" + selectedLevel + " ×" + finalCount + "）：" + recipe.name);
+    }
+    close();
+  });
+
+  renderGroups();
+  updateMax();
+}

@@ -402,7 +402,7 @@
   }
   .equip-enh-cell {
     background: #0f141e; border: 1px solid #1a2535; border-radius: 6px; padding: 8px;
-    display: flex; flex-direction: column; gap: 6px; cursor: pointer;
+    display: flex; flex-direction: column; gap: 6px; cursor: pointer; position: relative;
     transition: border-color .12s, transform .08s, background .12s;
   }
   .equip-enh-cell:hover { border-color: #5da8d4; background: #121b27; transform: translateY(-1px); }
@@ -421,6 +421,52 @@
   .eem-badge.milestone { color: #e57a7a; border-color: #5a2a2a; }
   .eec-count { color: #9fb0c4; font-size: 11px; }
   .equipment-enhancement-list .cargo-empty { color: #6a7a8e; padding: 24px; text-align: center; }
+
+  /* ---- 旗舰限定角标（由 shipTypes 数据驱动；与 🔒 锁定角标共存） ---- */
+  /* cargo：仓库大卡右上角带文字药丸；ee：装备工程/强化小卡左上角纯图标小圆 */
+  .flag-badge, .ee-flag { position: absolute; z-index: 3; line-height: 1; }
+  .flag-badge {
+    top: 6px; right: 6px;
+    display: inline-flex; align-items: center; gap: 3px;
+    font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 10px;
+    color: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.45); white-space: nowrap;
+  }
+  .flag-badge.combat { background: linear-gradient(135deg,#c79f33,#e8c25a); color: #3a2c06; }
+  .flag-badge.ind { background: linear-gradient(135deg,#3a7ad4,#5da8e8); }
+  .ee-flag {
+    top: 5px; left: 5px;
+    display: inline-grid; place-items: center;
+    width: 20px; height: 20px; border-radius: 50%; font-size: 11px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.45);
+  }
+  .ee-flag.combat { background: rgba(212,168,67,.95); }
+  .ee-flag.ind { background: rgba(93,168,232,.95); }
+  /* 提示浮层：默认隐藏；桌面 :hover 显示，移动端点按（.tap-open）显示 */
+  .tip {
+    display: none; position: absolute; z-index: 60;
+    left: 50%; transform: translateX(-50%); top: calc(100% + 6px);
+    padding: 5px 9px; border-radius: 6px;
+    background: #0b121b; border: 1px solid #2a3a4d; color: #d8e2ec;
+    font-size: 11px; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    pointer-events: none;
+  }
+  .tip::before {
+    content: ""; position: absolute; top: -5px; left: 50%; transform: translateX(-50%);
+    border: 5px solid transparent; border-bottom-color: #2a3a4d;
+  }
+  .tip b { color: #e8d8a0; font-weight: 700; }
+  /* 装备工程卡 overflow:hidden：ee 浮层改为左对齐、向右展开，避免被裁切 */
+  .ee-flag .tip { left: 0; transform: none; }
+  .ee-flag .tip::before { left: 10px; transform: none; }
+  @media (hover: hover) {
+    .flag-badge:hover .tip, .ee-flag:hover .tip { display: block; }
+  }
+  .flag-badge.tap-open .tip, .ee-flag.tap-open .tip { display: block; }
+
+  /* 装备工程配方卡：角标回到左上角，让顶部「Tier · 槽位」行内缩避让；
+     下移会压中间大图标，故改为文字让位。🔒 仍在右上，互不冲突。 */
+  .equipeng-recipe-card .ee-flag { top: 5px; left: 5px; }
+  .ee-flag + .equipeng-card-top { padding-left: 26px; }
 
   /* ---- 强化弹窗 ---- */
   .equip-enh-modal-backdrop {
@@ -474,6 +520,17 @@
   .eem-src-label { font-size: 11px; color: #6a7a8e; }
   .eem-src-page { font-size: 14px; font-weight: 600; color: #dde4ea; }
   .eem-jump { width: 100%; justify-content: center; margin-top: 2px; }
+
+  /* 战斗掉落材料 → 可制造 / 可用途 */
+  .eem-craft-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+  .eem-craft-row { display: grid; grid-template-columns: 1fr auto auto; align-items: center; gap: 10px; background: #0b1118; border: 1px solid #1c2632; border-radius: 6px; padding: 8px 10px; }
+  .eem-craft-name { font-size: 13px; font-weight: 600; color: #dde4ea; }
+  .eem-craft-type { font-size: 11px; color: #8a98a8; background: #131b24; border: 1px solid #243140; border-radius: 4px; padding: 2px 7px; white-space: nowrap; }
+  .eem-craft-bp { font-size: 11px; font-weight: 600; white-space: nowrap; padding: 2px 8px; border-radius: 4px; }
+  .eem-craft-bp.unlocked { color: #7ee0a0; background: rgba(46,160,87,.15); border: 1px solid rgba(46,160,87,.4); }
+  .eem-craft-bp.locked { color: #e0b36a; background: rgba(200,140,40,.13); border: 1px solid rgba(200,140,40,.35); }
+  .eem-craft-bp.free { color: #7fa8d4; background: rgba(60,120,180,.13); border: 1px solid rgba(60,120,180,.35); }
+  .eem-craft-empty { font-size: 12px; color: #6a7a8e; padding: 6px 2px; }
 
 
   /* ===== 采矿效率与进度 ===== */
@@ -604,6 +661,80 @@
   .reward-result-card { cursor: default; }
   .reward-result-empty { text-align: center; color: #6a7a8e; padding: 24px 0; font-size: 13px; }
 
+  /* ===== 战斗日志按钮（战斗信息行） ===== */
+  .combat-wave { display: none; }
+  .btn.combat-log-btn {
+    display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+    background: linear-gradient(180deg,#1c2740,#141d30); color: #5da8d4;
+    border: 1px solid #2b3c5e; border-radius: 8px; padding: 6px 13px;
+    font-size: 13px; font-weight: 600; white-space: nowrap;
+    transition: transform .08s, border-color .12s, box-shadow .12s;
+  }
+  .btn.combat-log-btn:hover { border-color: #5da8d4; box-shadow: 0 0 0 2px rgba(93,168,212,.18); }
+  .btn.combat-log-btn:active { transform: translateY(1px); }
+
+  /* ===== 战斗日志弹窗 ===== */
+  .combat-log-modal { width: 600px; max-width: 94vw; }
+  .cl-tag {
+    display: inline-block; background: #16243c; color: #5da8d4;
+    border: 1px solid #2b3c5e; border-radius: 5px; padding: 1px 7px; margin-right: 6px; font-size: 11px;
+  }
+  .cl-sec { display: flex; flex-direction: column; gap: 10px; }
+  .cl-sec-title {
+    font-size: 12px; font-weight: 700; color: #d4a843; letter-spacing: .5px;
+    display: flex; align-items: center; gap: 8px; margin: 0;
+  }
+  .cl-sec-title::before { content: ""; width: 4px; height: 14px; background: #d4a843; border-radius: 2px; display: inline-block; }
+  .cl-stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .cl-stat {
+    background: #0b1118; border: 1px solid #1c2632; border-radius: 8px; padding: 9px 11px;
+  }
+  .cl-stat .k { font-size: 11px; color: #6a7a8e; margin-bottom: 4px; }
+  .cl-stat .v { font-size: 17px; font-weight: 700; color: #c8d0d8; }
+  .cl-stat .v.gold { color: #d4a843; }
+  .cl-stat .v.green { color: #6fb86f; }
+  .cl-stat .v.blue { color: #5da8d4; }
+  .cl-stat.warn { background: rgba(224,136,126,.08); border-color: rgba(224,136,126,.4); }
+  .cl-stat.warn .v { color: #e8a06a; }
+  .cl-xp-list { display: flex; flex-direction: column; gap: 7px; }
+  .cl-xp-row {
+    display: grid; grid-template-columns: 130px 1fr auto; align-items: center; gap: 10px;
+    background: #0b1118; border: 1px solid #1c2632; border-radius: 8px; padding: 8px 12px;
+  }
+  .cl-xp-name { font-weight: 600; font-size: 13px; color: #c8d0d8; }
+  .cl-xp-bar { height: 8px; background: #0a0f18; border-radius: 5px; overflow: hidden; border: 1px solid #1a2535; }
+  .cl-xp-bar > span { display: block; height: 100%; background: linear-gradient(90deg,#3a78c2,#5da8d4); }
+  .cl-xp-val { font-size: 14px; font-weight: 700; color: #6fb86f; white-space: nowrap; text-align: right; }
+  .cl-xp-val .cl-lvl { display: block; font-size: 11px; color: #6a7a8e; font-weight: 500; }
+  .cl-xp-val .cl-lvl-up { color: #d4a843; }
+  .cl-empty { text-align: center; color: #6a7a8e; padding: 18px 8px; font-size: 13px; line-height: 1.6; }
+  .cl-empty.small { padding: 10px 8px; font-size: 12.5px; }
+
+  @media (max-width: 560px) {
+    .combat-log-modal { width: 96vw; }
+    .cl-stat-grid { grid-template-columns: repeat(2, 1fr); }
+    .cl-xp-row { grid-template-columns: 92px 1fr; }
+    .cl-xp-val { grid-column: 1 / -1; text-align: left; }
+  }
+
+  /* 离线结算弹窗·战斗汇总块 */
+  .reward-combat-block {
+    background: #0b1118; border: 1px solid #1c2632; border-radius: 8px;
+    padding: 10px 12px; display: flex; flex-direction: column; gap: 8px;
+  }
+  .reward-combat-block.warn { border-color: #5a3f2a; background: #1a120c; }
+  .reward-combat-block .rcb-head { display: flex; align-items: center; gap: 6px; color: #c8d0d8; font-weight: 600; font-size: 13px; }
+  .reward-combat-block .rcb-icon { font-size: 15px; }
+  .reward-combat-block .rcb-stats { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+  .reward-combat-block .rcb-stat {
+    display: flex; flex-direction: column; min-width: 66px;
+    background: #0f1822; border: 1px solid #1f2b3a; border-radius: 5px; padding: 5px 8px;
+  }
+  .reward-combat-block .rcb-stat span { font-size: 10px; color: #6a7a8e; }
+  .reward-combat-block .rcb-stat b { font-size: 14px; color: #c8d0d8; font-weight: 700; }
+  .reward-combat-block .rcb-note { font-size: 11px; color: #8aa0b8; line-height: 1.5; }
+  .reward-combat-block.warn .rcb-note { color: #e0a87e; }
+
   /* ===== 部署弹窗模态 ===== */
   .modal-overlay {
     position: fixed; top: 0; left: 0; width: 100%; height: 100%;
@@ -654,6 +785,8 @@
   .ship-comp-item .sci-name { color: #8899aa; flex: 1; }
   .ship-comp-item .sci-qty { color: #e8d8a0; font-weight: 600; }
   .ship-comp-item .sci-qty.zero { color: #3a4a5a; }
+  .ship-comp-item .sci-dismantle { margin-left: 4px; padding: 2px 8px; font-size: 11px; border: 1px solid #5a2a2a; background: #2a1414; color: #e08a8a; border-radius: 3px; cursor: pointer; }
+  .ship-comp-item .sci-dismantle:hover { background: #3a1818; color: #ffb0b0; }
   .ship-synth-controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
   .ship-attr-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 6px; }
   .ship-attr-item { padding: 4px 6px; background: #0f141e; border: 1px solid #1a2535; border-radius: 3px; font-size: 11px; text-align: center; }
@@ -671,6 +804,11 @@
   .ship-cost-list { font-size: 11px; color: #8899aa; margin-top: 4px; }
   .ship-cost-list .enough { color: #7ac87a; }
   .ship-cost-list .short { color: #d94a4a; }
+
+  /* ===== 输入装备选择弹窗 ===== */
+  .equipeng-input-note { font-size: 11px; color: #6a7a8e; margin-bottom: 6px; }
+  .equipeng-material.selected-input { border-color: #d4a843; background: #1a1a10; }
+  .equipeng-material.locked { opacity: 0.4; }
 
   /* ===== 执行确认弹窗 ===== */
   #action-modal .modal-box { width: 400px; }

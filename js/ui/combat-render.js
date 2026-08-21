@@ -307,8 +307,30 @@ function combatDropToItem(dropId) {
   const meta = _combatDropMeta[dropId];
   const name = meta ? meta.name : dropId;
   const icon = meta ? meta.icon : "📦";
-  if (dropId.indexOf("cargo:") === 0) {
-    const size = dropId.slice("cargo:".length);
+  if (dropId.indexOf("special:空间站") === 0 && dropId.indexOf("核心") > 0) {
+    const coreKey = dropId.slice("special:".length);
+    const owned = (typeof ResourceRegistry !== "undefined" && typeof gameState !== "undefined")
+      ? ResourceRegistry.get(gameState, dropId) : 0;
+    // 系数 B 各核心效果：冶炼/装备/增强剂走自动线 +10% 速度；船坞核心使部件制造材料消耗额外 -5%（复用船坞节省率）。
+    const coreDesc = {
+      "空间站冶炼核心": "【冶炼制造线】效率 +10%（系数 B）",
+      "空间站船坞核心": "【舰船船坞·部件制造】材料消耗额外降低 5%（仅部件车间生效，与船坞等级节省加算）",
+      "空间站装备制造核心": "【装备制造线】效率 +10%（系数 B）",
+      "空间站增强剂制造核心": "【增强剂制造线】效率 +10%（系数 B）"
+    }[coreKey] || "【对应制造线】效率 +10%（系数 B）";
+    return {
+      id: dropId,
+      name: coreKey,
+      icon: "🌟",
+      categoryLabel: "空间站核心",
+      quantity: owned,
+      fromCombat: true,
+      description: `空间站建设核心材料。${coreDesc}。全游戏唯一掉落，获得后该星带不再产出此核心。`,
+      source: { pageId: "combat", pageLabel: "战斗掉落", icon: "fa-solid fa-crosshairs" }
+    };
+  }
+  if (dropId.indexOf("cargo:") === 0 || dropId.indexOf("special:货柜") === 0) {
+    const size = dropId.indexOf("cargo:") === 0 ? dropId.slice("cargo:".length) : dropId.slice("special:货柜".length);
     const sizeLabel = { S: "小型", M: "中型", L: "大型", XL: "超大型" }[size] || size;
     const owned = (typeof ResourceRegistry !== "undefined" && typeof gameState !== "undefined")
       ? ResourceRegistry.get(gameState, "special:货柜" + size) : 0;
@@ -322,6 +344,34 @@ function combatDropToItem(dropId) {
       description: "击坠敌人有概率掉落的低概率宝箱。开箱后按尺寸权重随机获得行星材料、晶体弹药、脑插或装备蓝图等奖励，尺寸越大奖励越丰厚。",
       source: { pageId: "combat", pageLabel: "战斗掉落", icon: "fa-solid fa-crosshairs" }
     };
+  }
+  // 通用 special: / gear: 战斗掉落材料 → 计算「可制造 / 可用途」并标注蓝图解锁状态。
+  // gear: 仅用于装备生产许可等「装备专用数据」行，底层资源权威键仍是 special:<材料>。
+  if (dropId.indexOf("special:") === 0 || dropId.indexOf("gear:") === 0) {
+    const materialName = dropId.indexOf("special:") === 0
+      ? dropId.slice("special:".length)
+      : dropId.slice("gear:".length);
+    const resourceId = "special:" + materialName;
+    const category = (typeof getCombatDropCategory === "function") ? getCombatDropCategory(materialName) : "战斗掉落";
+    const craftables = (typeof getMaterialCraftables === "function") ? getMaterialCraftables(materialName, gameState) : [];
+    const knownCategory = category === "加密数据" || category === "装备生产许可" || category === "死亡空间校准核心" || category === "死亡空间协议";
+    if (craftables.length > 0 || knownCategory) {
+      const owned = (typeof ResourceRegistry !== "undefined" && typeof gameState !== "undefined")
+        ? ResourceRegistry.get(gameState, resourceId) : 0;
+      const description = (typeof getCombatDropCraftDescription === "function")
+        ? getCombatDropCraftDescription(materialName, category, craftables) : "战斗掉落物：击坠敌人后有概率获得。";
+      return {
+        id: resourceId,
+        name: name,
+        icon: icon,
+        categoryLabel: category,
+        quantity: owned,
+        fromCombat: true,
+        description: description,
+        source: { pageId: "combat", pageLabel: "战斗掉落", icon: "fa-solid fa-crosshairs" },
+        craftables: craftables
+      };
+    }
   }
   return {
     name: name,
@@ -375,7 +425,10 @@ function renderCombatDropPreview(display) {
     if (Array.isArray(preview.leaderLoot) && preview.leaderLoot.length > 0) {
       rows.push(`<div class="drop-group-title">💠 首领战利品（每波 BOSS 击破时结算）</div>`);
       for (const loot of preview.leaderLoot) {
-        rows.push(row("🟣", getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）` + (loot.isFinal ? ` · 最终层追加 📜 ${getResourceDisplayName(loot.protocolMaterial)} ${pct(loot.protocolChance)}（极稀有）` : ""), "drop-leader", "leader:" + loot.coreMaterial));
+        rows.push(row("🟣", getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）`, "drop-leader", "special:" + loot.coreMaterial));
+        if (loot.isFinal && loot.protocolMaterial) {
+          rows.push(row("📜", getResourceDisplayName(loot.protocolMaterial), `最终层「${loot.name}」协议 ${pct(loot.protocolChance)}（极稀有）`, "drop-leader", "special:" + loot.protocolMaterial));
+        }
       }
     }
     if (preview.tacticalMaterial) {
@@ -387,7 +440,7 @@ function renderCombatDropPreview(display) {
     rows.push(`<div class="drop-mode-tag belt">海盗星带</div>`);
     if (preview.encryptedData) {
       const e = preview.encryptedData;
-      rows.push(row("🔐", getResourceDisplayName("special:" + e.material), `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data", "encryptedData"));
+      rows.push(row("🔐", getResourceDisplayName("special:" + e.material), `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data", "special:" + e.material));
     } else {
       rows.push(row("🔐", "势力密钥", "本星带禁用掉落", "drop-none"));
     }
@@ -405,6 +458,12 @@ function renderCombatDropPreview(display) {
       rows.push(`<div class="drop-group-title">🔧 装备专用数据（精英/BOSS 掉落）</div>`);
       for (const gd of preview.gearDrops) {
         rows.push(row("🔧", getResourceDisplayName("special:" + gd.material), `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear", "gear:" + gd.material));
+      }
+    }
+    if (Array.isArray(preview.stationCoreDrops) && preview.stationCoreDrops.length > 0) {
+      rows.push(`<div class="drop-group-title">🌟 空间站核心（唯一掉落）</div>`);
+      for (const sc of preview.stationCoreDrops) {
+        rows.push(row("🌟", getResourceDisplayName(sc.resourceId), `精英 ${pct(sc.eliteChance)} · BOSS ${pct(sc.bossChance)}（每枚 ×${sc.qty}）· 全游戏唯一`, "drop-core", sc.resourceId));
       }
     }
     if (preview.tacticalMaterial) {
@@ -778,5 +837,8 @@ function closeCombat3DPopup() {
   const stop = document.getElementById("btn-stop-combat"); if (stop) stop.addEventListener("click", stopCombatEncounter);
   const chainBtn = document.getElementById("btn-start-combat-chain"); if (chainBtn) chainBtn.addEventListener("click", () => {
     if (typeof showActionConfirm === "function") showActionConfirm("combatDeathspace");
+  });
+  const logBtn = document.getElementById("btn-combat-log"); if (logBtn) logBtn.addEventListener("click", () => {
+    if (typeof openCombatLogModal === "function") openCombatLogModal();
   });
 })();

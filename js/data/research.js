@@ -3,7 +3,7 @@
 //  研究系统数据层 —— 批次 A
 //
 //  从 tools/research-tree-data.mjs【无损移植】的冻结数据：
-//    NODES（38 节点）、WEIGHTS、RANK_MULT、TARGET_SECONDS、UNIT、前置关系。
+//    NODES（39 节点）、WEIGHTS、RANK_MULT、TARGET_SECONDS、UNIT、前置关系。
 //  数据逐字段与冻结源一致，不重新计算、不改名、不调整数值。
 //  本文件为纯数据，不直接接入任何游戏运行逻辑；批次 A 仅新增此文件，
 //  不修改 index.html / state.js / persistence.js / 任何其他既有文件。
@@ -78,7 +78,7 @@ const NODES = [
     description: "自动化系统与反馈控制理论。提升考古效率。",
   },
 
-  // ===== 工业数值科技（7 个五级） =====
+  // ===== 工业数值科技（8 个五级） =====
   {
     id: "mine", name: "采矿理论", category: "industry", era: 1, type: "numeric",
     maxLevel: 5, rank: RANK_MULT.industry, prerequisites: [{ id: "syseng", level: 1 }],
@@ -127,6 +127,13 @@ const NODES = [
     effects: ["舰船总装效率 +1.2%", "舰船总装效率 +2.4%", "舰船总装效率 +3.6%", "舰船总装效率 +4.8%", "舰船总装效率 +6%"],
     bonus: { group: "shipAsm", perLevel: 1.2, unit: "%" },
     description: "加速舰船总装生产线。",
+  },
+  {
+    id: "reclaim", name: "拆解回收工程", category: "industry", era: 2, type: "numeric",
+    maxLevel: 5, rank: RANK_MULT.industry, prerequisites: [{ id: "smelt", level: 3 }, { id: "equipeng", level: 3 }],
+    effects: ["拆解回收率 +1%", "拆解回收率 +2%", "拆解回收率 +3%", "拆解回收率 +4%", "拆解回收率 +5%"],
+    bonus: { group: "reclaim", perLevel: 1, unit: "%" },
+    description: "优化残骸与组件的逆向拆解工艺，提高材料归还比例。",
   },
 
   // ===== 探索数值科技（5 个五级） =====
@@ -385,7 +392,7 @@ function buildSteps() {
 const STEP_COUNT = NODES.reduce((s, n) => s + n.maxLevel, 0);
 
 // ---------------------------------------------------------------------------
-//  5. group → 真实消费点映射注册表（§6A，31 个唯一 bonus.group）
+//  5. group → 真实消费点映射注册表（§6A，32 个唯一 bonus.group）
 //
 //  仅描述“每个 group 的加成作用于哪些真实消费点”，本批次【不接入】这些消费点。
 //  机器可读：每个 group 作为键列出其消费点；合并展示行（分武器伤害 /
@@ -440,6 +447,9 @@ const RESEARCH_BONUS_CONSUMERS = {
   ],
   shipAsm: [
     { target: "selectors.getShipEngineeringSpeedBreakdown", kind: "multiplier", groups: ["allMfg", "shipAsm"] },
+  ],
+  reclaim: [
+    { target: "selectors.getReclaimRate", kind: "additivePp", groups: ["reclaim"] },
   ],
 
   // —— 探索 ——

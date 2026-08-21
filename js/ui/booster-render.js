@@ -158,15 +158,17 @@ function renderBoosterInventory(display) {
   }
   // 需要 slot 信息：从 BOOSTER_ITEMS 获取
   var itemSlots = {};
+  var itemUniversal = {};
   if (typeof BOOSTER_ITEMS !== "undefined") {
     for (var key in BOOSTER_ITEMS) {
       var it = BOOSTER_ITEMS[key];
-      if (it) itemSlots[it.itemId || it.id] = it.slot || "";
+      if (it) { itemSlots[it.itemId || it.id] = it.slot || ""; itemUniversal[it.itemId || it.id] = !!it.universal; }
     }
   }
   grid.innerHTML = display.inventoryCards.map(function(card) {
     var slotName = itemSlots[card.itemId] || itemSlots[card.id] || "";
-    return '<div class="equipeng-recipe-card" data-booster-item="' + (card.itemId || card.id) + '" data-booster-slot="' + slotName + '" style="cursor:pointer;" title="点击装载到对应槽位">' +
+    var isUniversal = itemUniversal[card.itemId] || itemUniversal[card.id] || false;
+    return '<div class="equipeng-recipe-card" data-booster-item="' + (card.itemId || card.id) + '" data-booster-slot="' + slotName + '"' + (isUniversal ? ' data-booster-universal="1"' : '') + ' style="cursor:pointer;" title="' + (isUniversal ? "点击选择槽位装载" : "点击装载到对应槽位") + '">' +
       '<span class="equipeng-card-top"><span>' + card.qualityName + " · " + card.seriesName + '</span><span class="can-build">×' + card.quantity.toLocaleString() + '</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-flask-vial"></i></span><strong>' + card.displayName + '</strong>' +
       '<span class="equipeng-card-attributes">' + card.effectText + ' · 持续 ' + card.durationSeconds + 's</span>' +
@@ -287,29 +289,8 @@ function renderBoosterPage(now) {
       // 检查该槽是否已被占用
       var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
       var existing = active[slot];
-      // 如果有多选，让用户选择
-      if (compatibleItems.length === 1) {
-        var item = compatibleItems[0];
-        if (item.inv <= 0) { showBoosterToast("库存不足", true); return; }
-        if (existing) {
-          showDangerConfirm("⚠ 替换增强剂",
-            "<p class=\"dlg-body\">当前槽位已装载增强剂。替换后当前瓶剩余时间将作废，且不会返还。</p>",
-            "确认替换",
-            function() {
-              var result = dispatchGameAction(gameState, { type:"booster/replace", slot:slot, itemId:item.id }, Date.now());
-              if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
-              else { showBoosterToast(result.reason || "替换失败", true); }
-            });
-          return;
-        } else {
-          var result = dispatchGameAction(gameState, { type:"booster/equip", slot:slot, itemId:item.id }, Date.now());
-          if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
-          else { showBoosterToast(result.reason || "装载失败", true); }
-        }
-      } else {
-        // 多选：弹出选择界面
-        showBoosterSlotPicker(slot, compatibleItems, existing);
-      }
+      // 始终弹出选择界面（即使只有一个候选项），由用户点按钮确认装备/替换
+      showBoosterSlotPicker(slot, compatibleItems, existing);
     });
   }
 
@@ -321,10 +302,14 @@ function renderBoosterPage(now) {
       if (!card) return;
       var itemId = card.dataset.boosterItem;
       var slot = card.dataset.boosterSlot;
-      if (!itemId || !slot) return;
+      var isUniversal = card.dataset.boosterUniversal === "1";
+      if (!itemId) return;
       // 检查库存
       var inv = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, itemId) : 0;
       if (!(inv >= 1)) { showBoosterToast("库存不足，无法装载", true); return; }
+      // 通用件（神经训练催化器）：弹出槽位选择器，由用户选择装载到哪类槽
+      if (isUniversal) { showUniversalBoosterSlotPicker(itemId, inv); return; }
+      if (!slot) return;
       // 检查槽位状态
       var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
       var existing = active[slot];
@@ -367,14 +352,16 @@ function getCompatibleBoosterItems(slot) {
     // 用裸 id 查找
     var item = (typeof getBoosterItem === "function") ? getBoosterItem(key) : null;
     if (!item) continue;
-    if (item.slot !== slot) continue;
-    // 同系列冲突检查
+    if (!item.universal && item.slot !== slot) continue;
+    // 同系列冲突检查（通用件不参与系列互斥，可跨槽多槽共存）
     var conflict = false;
     for (var s = 0; s < BOOSTER_SLOTS.length; s++) {
       var e = active[BOOSTER_SLOTS[s]];
       if (!e || BOOSTER_SLOTS[s] === slot) continue;
       var existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
-      if (existingItem && existingItem.series === item.series) { conflict = true; break; }
+      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) { conflict = true; break; }
+      // 通用件（神经）：同一类别槽位只能装一个
+      if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[BOOSTER_SLOTS[s]] === BOOSTER_SLOT_XP_SKILL[slot]) { conflict = true; break; }
     }
     if (conflict) continue;
     result.push({ id:item.itemId, name:item.name, quality:item.quality, qualityName:item.qualityName, effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue) : "", inv:qty });
@@ -427,6 +414,111 @@ function showBoosterSlotPicker(slot, items, existingEntry) {
   var closeBtn = document.createElement("button");
   closeBtn.textContent = "取消";
   closeBtn.style.cssText = "margin-top:10px;padding:6px 16px;border-radius:4px;border:1px solid #3a5a6a;background:transparent;color:#8a9aae;cursor:pointer;width:100%;";
+  closeBtn.addEventListener("click", function() { overlay.remove(); });
+  box.appendChild(closeBtn);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+}
+
+/* ---- 辅助：通用增强剂（神经训练催化器）装备槽位选择器 ---- */
+var BOOSTER_SLOT_FRIENDLY = {
+  miningSpeed:"采矿 · 速度", miningYield:"采矿 · 产量",
+  archaeologySpeed:"考古 · 速度", archaeologyRare:"考古 · 稀有",
+  combatWeapon:"战斗 · 武器", combatRepair:"战斗 · 维修",
+  gasSpeed:"采气 · 速度", gasYield:"采气 · 产量",
+  smeltSpeed:"冶炼 · 速度", smeltYield:"冶炼 · 产量",
+  shipSpeed:"舰船 · 速度", shipYield:"舰船 · 材料",
+  boosterSpeed:"增幅剂 · 速度", boosterYield:"增幅剂 · 产量"
+};
+function showUniversalBoosterSlotPicker(itemId, inv) {
+  var existingOverlay = document.querySelector(".booster-picker-overlay");
+  if (existingOverlay) existingOverlay.remove();
+  var overlay = document.createElement("div");
+  overlay.className = "booster-picker-overlay";
+  overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;";
+  var box = document.createElement("div");
+  box.style.cssText = "background:#1a2a3a;border:1px solid #3a5a6a;border-radius:8px;padding:20px;max-width:460px;width:92%;max-height:78vh;overflow-y:auto;";
+  var title = document.createElement("div");
+  title.style.cssText = "font-size:14px;font-weight:bold;color:#7dd3fc;margin-bottom:6px;";
+  title.textContent = "神经训练催化器 — 选择装备槽位";
+  box.appendChild(title);
+  var sub = document.createElement("div");
+  sub.style.cssText = "font-size:12px;color:#8a9aae;margin-bottom:12px;line-height:1.5;";
+  sub.textContent = "装入某类槽后，只加成该槽对应类别的技能经验；各类槽可分别装备一个，可多槽同时生效。";
+  box.appendChild(sub);
+
+  var GROUPS = [
+    { label:"采矿", slots:["miningSpeed","miningYield"] },
+    { label:"考古", slots:["archaeologySpeed","archaeologyRare"] },
+    { label:"战斗", slots:["combatWeapon","combatRepair"] },
+    { label:"采气", slots:["gasSpeed","gasYield"] },
+    { label:"冶炼", slots:["smeltSpeed","smeltYield"] },
+    { label:"舰船工程", slots:["shipSpeed","shipYield"] },
+    { label:"增幅剂制造", slots:["boosterSpeed","boosterYield"] }
+  ];
+  var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
+
+  function doEquip(slot, occupiedEntry) {
+    overlay.remove();
+    if (occupiedEntry) {
+      showDangerConfirm("⚠ 替换增强剂",
+        "<p class=\"dlg-body\">当前槽位已装载增强剂。替换后当前瓶剩余时间将作废，且不会返还。</p>",
+        "确认替换",
+        function() {
+          var result = dispatchGameAction(gameState, { type:"booster/replace", slot:slot, itemId:itemId }, Date.now());
+          if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
+          else { showBoosterToast(result.reason || "替换失败", true); }
+        });
+    } else {
+      var result = dispatchGameAction(gameState, { type:"booster/equip", slot:slot, itemId:itemId }, Date.now());
+      if (result.changed) { renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
+      else { showBoosterToast(result.reason || "装载失败", true); }
+    }
+  }
+
+  for (var g = 0; g < GROUPS.length; g++) {
+    var group = GROUPS[g];
+    var gh = document.createElement("div");
+    gh.style.cssText = "font-size:12px;color:#8a9aae;margin:10px 0 4px;";
+    gh.textContent = group.label;
+    box.appendChild(gh);
+    for (var s = 0; s < group.slots.length; s++) {
+      (function(slot) {
+        var entry = active[slot];
+        var occupied = !!(entry && entry.itemId);
+        // 同类别已装神经（在其它槽）→ 该类别不能再装第二个神经，禁用
+        var catBlocked = false;
+        var cat = BOOSTER_SLOT_XP_SKILL[slot];
+        for (var z = 0; z < BOOSTER_SLOTS.length; z++) {
+          var zs = BOOSTER_SLOTS[z];
+          if (zs === slot) continue;
+          if (BOOSTER_SLOT_XP_SKILL[zs] !== cat) continue;
+          var ze = active[zs];
+          if (ze && ze.itemId) {
+            var zi = (typeof getBoosterItem === "function") ? getBoosterItem(ze.itemId) : null;
+            if (zi && zi.universal) { catBlocked = true; break; }
+          }
+        }
+        var statusText;
+        if (catBlocked) {
+          statusText = "同类别已装神经";
+        } else if (occupied) {
+          var oi = (typeof getBoosterItem === "function") ? getBoosterItem(entry.itemId) : null;
+          statusText = (oi ? oi.name : entry.itemId) + " · 已装载";
+        } else {
+          statusText = "空槽";
+        }
+        var row = document.createElement("div");
+        row.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 12px;margin-bottom:6px;background:#0f1a2a;border:1px solid #2a3a4a;border-radius:4px;" + (catBlocked ? "opacity:0.45;cursor:not-allowed;" : "cursor:pointer;");
+        row.innerHTML = '<span>' + (BOOSTER_SLOT_FRIENDLY[slot] || slot) + '</span><span style="font-size:12px;color:' + (catBlocked ? "#8a9aae" : (occupied ? "#f0857b" : "#7dd3fc")) + ';">' + statusText + '</span>';
+        if (!catBlocked) row.addEventListener("click", function() { doEquip(slot, occupied ? entry : null); });
+        box.appendChild(row);
+      })(group.slots[s]);
+    }
+  }
+  var closeBtn = document.createElement("button");
+  closeBtn.textContent = "取消";
+  closeBtn.style.cssText = "margin-top:12px;padding:6px 16px;border-radius:4px;border:1px solid #3a5a6a;background:transparent;color:#8a9aae;cursor:pointer;width:100%;";
   closeBtn.addEventListener("click", function() { overlay.remove(); });
   box.appendChild(closeBtn);
   overlay.appendChild(box);

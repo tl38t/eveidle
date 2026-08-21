@@ -192,25 +192,48 @@ function getEquipEngOwnedCount(recipe) {
   return getEquipmentOwnedCountFromState(gameState, recipe);
 }
 
-function hasEnoughEquipEngInputs(recipe, cycles) {
+function hasEnoughEquipEngInputs(recipe, cycles, chosenLevel) {
   const count = Math.max(1, Number(cycles) || 1);
   if (!ResourceRegistry.canAffordCost(gameState, recipe.cost, count)) return false;
   if (!recipe.inputEquipment) return true;
-  const inventory = gameState.equipment && Array.isArray(gameState.equipment.inventory) ? gameState.equipment.inventory : [];
+  const level = (chosenLevel === undefined || chosenLevel === null)
+    ? getEquipEngInputLevelFromState(gameState, recipe)
+    : Math.max(0, Math.floor(Number(chosenLevel)));
+  const itemId = recipe.inputEquipment.itemId;
   const required = Math.max(1, Number(recipe.inputEquipment.quantity) || 1) * count;
-  return inventory.filter(itemId => itemId === recipe.inputEquipment.itemId).length >= required;
+  const groups = getGroupedInputEquipmentCandidates(gameState, itemId);
+  return (groups[level] || 0) >= required;
 }
 
-function deductEquipEngInputs(recipe, cycles) {
+function deductEquipEngInputs(recipe, cycles, chosenLevel) {
   const count = Math.max(1, Number(cycles) || 1);
-  if (!hasEnoughEquipEngInputs(recipe, count)) return false;
+  if (!hasEnoughEquipEngInputs(recipe, count, chosenLevel)) return false;
   ResourceRegistry.spendCost(gameState, recipe.cost, count);
-  if (recipe.inputEquipment) {
-    const required = Math.max(1, Number(recipe.inputEquipment.quantity) || 1) * count;
+  if (!recipe.inputEquipment) return true;
+  const level = (chosenLevel === undefined || chosenLevel === null)
+    ? getEquipEngInputLevelFromState(gameState, recipe)
+    : Math.max(0, Math.floor(Number(chosenLevel)));
+  const itemId = recipe.inputEquipment.itemId;
+  const required = Math.max(1, Number(recipe.inputEquipment.quantity) || 1) * count;
+  if (!gameState.equipment) gameState.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+  if (level === 0) {
+    const inventory = gameState.equipment.inventory || (gameState.equipment.inventory = []);
     for (let index = 0; index < required; index++) {
-      const inventoryIndex = gameState.equipment.inventory.indexOf(recipe.inputEquipment.itemId);
-      gameState.equipment.inventory.splice(inventoryIndex, 1);
+      const inventoryIndex = inventory.indexOf(itemId);
+      if (inventoryIndex >= 0) inventory.splice(inventoryIndex, 1);
     }
+  } else {
+    const removeIds = [];
+    let removed = 0;
+    for (const inst of gameState.equipment.instances) {
+      if (removed >= required) break;
+      if (inst.itemId === itemId && Math.max(0, Math.floor(Number(inst.enhancementLevel) || 0)) === level && !inst.installedOn) {
+        removeIds.push(inst.instanceId); removed++;
+      }
+    }
+    if (removed < required) return false; // 安全保护（理论上 hasEnough 已拦截）
+    const removeSet = new Set(removeIds);
+    gameState.equipment.instances = gameState.equipment.instances.filter(inst => !removeSet.has(inst.instanceId));
   }
   return true;
 }
@@ -269,13 +292,28 @@ function getEquipEngOutputHtml(recipe) {
   return '产出：<span class="equip-output-name" title="' + attributes + '">' + recipe.name + "</span> ×" + recipe.output.qty + "（" + slotName + "）";
 }
 
-function applyEquipEngOutput(recipe, cycles) {
+function applyEquipEngOutput(recipe, cycles, chosenLevel) {
   const output = recipe.output;
-  const total = output.qty * cycles;
+  const count = Math.max(1, Number(cycles) || 1);
+  const total = output.qty * count;
   if (output.type === "equipment") {
-    if (!gameState.equipment) gameState.equipment = { inventory:[] };
-    if (!Array.isArray(gameState.equipment.inventory)) gameState.equipment.inventory = [];
-    for (let index = 0; index < cycles; index++) gameState.equipment.inventory.push(output.itemId);
+    if (!gameState.equipment) gameState.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+    const level = (chosenLevel === undefined || chosenLevel === null)
+      ? getEquipEngInputLevelFromState(gameState, recipe)
+      : Math.max(0, Math.floor(Number(chosenLevel)));
+    const outLevel = Math.max(0, Math.floor(level / 3));
+    if (recipe.inputEquipment && outLevel > 0) {
+      // 继承强化：产出为带等级的实例（强化件永留 instances 池，不回流 inventory）
+      if (!Array.isArray(gameState.equipment.instances)) gameState.equipment.instances = [];
+      for (let index = 0; index < total; index++) {
+        const instanceId = allocateEquipmentInstanceId(gameState);
+        gameState.equipment.instances.push({ instanceId, itemId:output.itemId, enhancementLevel:outLevel, installedOn:null });
+      }
+    } else {
+      // +0（或未消耗输入装备的普通配方）：维持库存字符串池（与既有 +0 模型一致）
+      if (!Array.isArray(gameState.equipment.inventory)) gameState.equipment.inventory = [];
+      for (let index = 0; index < total; index++) gameState.equipment.inventory.push(output.itemId);
+    }
   } else if (output.type === "fuel") {
     ResourceRegistry.add(gameState, "consumable:fuel", total);
   } else if (output.type === "ammo") {

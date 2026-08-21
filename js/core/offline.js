@@ -36,7 +36,7 @@ function emitOfflineGameEvent(type, payload, meta) {
 // seconds = 离线秒数；gains = 8 计数器（各技能完成次数）；items = 结算前后 canonical
 // 库存快照 diff 出的「最终净获得物品」（无则回退纯文字信息，兼容旧调用方）。
 // 删除自动关闭计时：仅显式关闭按钮 / 点击背景 / Escape 可关闭。
-function showOfflineToast(seconds, gains, items) {
+function showOfflineToast(seconds, gains, items, combatSummary) {
   const min = Math.floor(seconds / 60); const sec = Math.floor(seconds % 60);
   const timeStr = min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
   const labels = {
@@ -50,12 +50,30 @@ function showOfflineToast(seconds, gains, items) {
     .map(([key, label]) => `${label} +${gains[key]} 次`).join("  ");
   const subtitle = `离线 ${timeStr}，已自动结算${detail ? "：" + detail : ""}` +
     (Array.isArray(items) && items.length ? ` · 共获得 ${items.length} 类物品` : "");
+  // 离线战斗汇总：聚合 flush 返回的 payload（wavesByZone / zoneClearsByZone 为分区计数对象）
+  let combat = null;
+  if (combatSummary && typeof combatSummary === "object") {
+    const sumObj = (o) => (o && typeof o === "object")
+      ? Object.values(o).reduce((a, b) => a + (Number(b) || 0), 0) : 0;
+    const reason = combatSummary.stopReason;
+    const warnReasons = ["ammo", "resources", "repairing", "level-locked", "no-weapons", "no-keys", "no-zone", "no-site", "queue-finalize-error"];
+    combat = {
+      waves: sumObj(combatSummary.wavesByZone),
+      zoneClears: sumObj(combatSummary.zoneClearsByZone),
+      kills: Number(combatSummary.kills) || 0,
+      defeats: Number(combatSummary.defeats) || 0,
+      maxWave: Number(combatSummary.maxWaveReached) || 0,
+      stopReason: reason,
+      warn: (Number(combatSummary.defeats) || 0) > 0 || warnReasons.indexOf(reason) >= 0
+    };
+  }
   if (typeof openRewardResultModal === "function") {
     openRewardResultModal({
       title:"⏳ 离线结算完成",
       subtitle,
       items:Array.isArray(items) ? items : [],
-      emptyText:detail ? "本次离线没有新增可展示物品" : "离线时长过短，未产生结算"
+      emptyText:detail ? "本次离线没有新增可展示物品" : "离线时长过短，未产生结算",
+      combat
     });
     return;
   }
@@ -1200,9 +1218,12 @@ function applyOfflineGains(rawSeconds, context) {
     // normalizedRawSeconds（非负有限 number、未封顶、不整数化），settledSeconds 为实际
     // 结算秒数（已按 MAX_OFFLINE_SECONDS 封顶）。禁止此处再做 Number()/|| 0 等宽松转换。
     // Batch S：离线战斗聚合事件（必须早于 settlementCompleted，全离线恰一次）
+    let combatSummary = null;
     if (typeof OfflineCombatSystem !== "undefined") {
-      OfflineCombatSystem.flush(gameState, { runId, gains, offlineEnd: Date.now() });
+      combatSummary = OfflineCombatSystem.flush(gameState, { runId, gains, offlineEnd: Date.now() });
     }
+    // 离线战斗汇总透传给结算弹窗（不污染 gains，否则 Object.values(gains).reduce 求和会把对象当数 → NaN）
+    if (context && typeof context === "object") context.combatSummary = combatSummary;
     emitOfflineGameEvent("offline:settlementCompleted", {
       rawSeconds: normalizedRawSeconds,
       settledSeconds: seconds
@@ -1242,8 +1263,9 @@ function calculateOfflineGains() {
   let gains;
   // Batch R（B 项）：结算前后 canonical 库存快照，diff 出「最终净获得物品」供持久弹窗展示
   const beforeSnapshot = createInventorySnapshot(gameState);
+  const offlineCtx = { runId:"offline_" + lastActive.toString(36) + "_" + now.toString(36) };
   try {
-    gains = applyOfflineGains(elapsed, { runId:"offline_" + lastActive.toString(36) + "_" + now.toString(36) });
+    gains = applyOfflineGains(elapsed, offlineCtx);
   } catch (e) {
     return;
   }
@@ -1251,7 +1273,7 @@ function calculateOfflineGains() {
   gameState.currentAction.lastProgressUpdate = now;
   gameState.lastActiveTime = now;
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (totalGains > 0 || netItems.length > 0) showOfflineToast(elapsed, gains, netItems);
+  if (totalGains > 0 || netItems.length > 0) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary);
   gameState._dirty = true;
   SaveManager.save();
 }
@@ -1259,12 +1281,13 @@ function calculateOfflineGains() {
 function forceOfflineTest(seconds) {
   if (!seconds || seconds <= 0) { console.log("用法：forceOfflineTest(60) — 模拟离线 60 秒"); return; }
   const beforeSnapshot = createInventorySnapshot(gameState);
-  const gains = applyOfflineGains(seconds, { runId:"offline_test_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36) });
+  const offlineCtx = { runId:"offline_test_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36) };
+  const gains = applyOfflineGains(seconds, offlineCtx);
   const netItems = splitOfflineDispatchBonus(diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState)));
   gameState.currentAction.lastProgressUpdate = Date.now();
   gameState.lastActiveTime = Date.now(); gameState._dirty = true;
   const total = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (total > 0 || netItems.length > 0) showOfflineToast(seconds, gains, netItems);
+  if (total > 0 || netItems.length > 0) showOfflineToast(seconds, gains, netItems, offlineCtx.combatSummary);
   console.log("[离线测试] 完成", gains);
   updateUI();
   return gains;

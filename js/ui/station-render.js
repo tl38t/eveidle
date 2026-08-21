@@ -277,11 +277,11 @@ function computeStationAlOptsSig(autoLines) {
 // 自动线下拉分组：按 recipe.category 聚成 <optgroup>（仿装备制造页标签）。
 // 原生 select + optgroup，不引入新渲染路径，上一轮修好的「下拉不被误关」逻辑原样生效。
 // 选项集签名（computeStationAlOptsSig）只认 id + 蓝图锁状态，category 不参与 → 分组不影响重建判定。
-var AUTO_LINE_CATEGORY_ORDER = ["smelting","fuel","ammunition","probes","mining","archaeology","combatWeapon","combatRepair","gas","refining","ship","booster"];
+var AUTO_LINE_CATEGORY_ORDER = ["smelting","fuel","ammunition","probes","mining","archaeology","combatWeapon","combatRepair","gas","refining","ship","booster","training"];
 var AUTO_LINE_CATEGORY_LABELS = {
   smelting:"原矿冶炼", fuel:"燃料", ammunition:"弹药", probes:"探针",
   mining:"采矿", archaeology:"考古", combatWeapon:"战斗武器", combatRepair:"战斗维修",
-  gas:"采气", refining:"冶炼", ship:"舰船工程", booster:"增幅剂制造"
+  gas:"采气", refining:"冶炼", ship:"舰船工程", booster:"增幅剂制造", training:"技能训练"
 };
 function renderAutoLineOptions(options, selectedId) {
   if (!options || !options.length) return '<option value="">（无可生产配方）</option>';
