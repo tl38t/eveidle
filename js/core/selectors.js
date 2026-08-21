@@ -719,7 +719,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.title = icons.equipmentEngineering + " " + (SKILL_LABEL.equipmentEngineering || "装备工程");
     result.duration = recipe.time / display.efficiency;
     result.requirements = [
-      ...display.detail.equipmentInputs.map(item => ({ resourceId:"equipment:" + item.itemId, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
+      ...(display.detail.equipmentInputs || []).map(item => ({ resourceId:"equipment:" + item.itemId, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
       ...display.detail.materials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
     // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
