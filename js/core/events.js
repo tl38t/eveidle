@@ -201,7 +201,7 @@ const GameEventContracts = (() => {
     return { valid:errors.length === 0, registered:true, errors };
   }
 
-  function has(type) { return Object.hasOwn(definitions, type); }
+  function has(type) { return Object.prototype.hasOwnProperty.call(definitions, type); }
   function list() { return Object.keys(definitions); }
 
   return Object.freeze({ schemaVersion:1, has, list, normalize, validate });

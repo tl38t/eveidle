@@ -1481,7 +1481,7 @@ const SaveManager = {
   // Batch Q 定点返修：三态语义见 isLegacySaveSource() 注释。默认 null＝尚未读到任何存档（真正的全新游戏），
   // 绝不能默认 false——false 表示「确实读到了一份没有 tutorial 字段的老档」，会让全新开局被误判并补发 rifter。
   _lastLoadSourceHadTutorial: null,
-  load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.hasOwn(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
+  load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.prototype.hasOwnProperty.call(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.prototype.hasOwnProperty.call(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
   exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "DeepSpaceIdle_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
   importData(jsonString) {
     // 定点返修：直接调用入口防御（与文件选择器 file.size 双重守卫）。
@@ -1503,9 +1503,9 @@ const SaveManager = {
       // 新手任务 Batch O：必须在 Object.assign 之前对**原始存档对象**判定 tutorial 字段是否存在。
       const sourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial");
       this._lastLoadSourceHadTutorial = sourceHadTutorial;
-      gameState.statistics = Object.hasOwn(data, "statistics") ? data.statistics : null;
+      gameState.statistics = Object.prototype.hasOwnProperty.call(data, "statistics") ? data.statistics : null;
       Object.assign(gameState, data);
-      if (!Object.hasOwn(data, "settings")) gameState.settings = {};
+      if (!Object.prototype.hasOwnProperty.call(data, "settings")) gameState.settings = {};
       normalizeQueueState(gameState);
       ensureUserSettingsState(gameState);
       ensureStatisticsState(gameState);
@@ -1809,9 +1809,9 @@ const SaveManager = {
     const previousMarker = this._lastLoadSourceHadTutorial;
     try {
       this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(payload, "tutorial");
-      gameState.statistics = Object.hasOwn(payload, "statistics") ? payload.statistics : null;
+      gameState.statistics = Object.prototype.hasOwnProperty.call(payload, "statistics") ? payload.statistics : null;
       Object.assign(gameState, payload);
-      if (!Object.hasOwn(payload, "settings")) gameState.settings = {};
+      if (!Object.prototype.hasOwnProperty.call(payload, "settings")) gameState.settings = {};
       normalizeQueueState(gameState);
       applyLegacyStartupFieldMigrations();
       normalizeAndMigratePayload({ isLegacy: this._lastLoadSourceHadTutorial !== true, now: Date.now() });
