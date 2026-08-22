@@ -579,7 +579,7 @@ function resetStationDispatchCounters(state, kind) {
 /* ----------------------------------------------------------------
    行星管控中心（Planetary Control Center）
      · Lv.1 启用行星自动收取（装满即收：本地仓储达 6h 上限时移入库存并清零，不自动续期）
-     · Lv.2/3 额外 +1/+2 行星槽位（受 slots = min(5, ...) 上限约束）
+     · Lv.2/3 额外 +1/+2 行星槽位（与脑插同乘区，同步突破硬上限 5，即上限=5+加成）
    ---------------------------------------------------------------- */
 function getStationPlanetarySlotBonus(state) {
   const lvl = getStationBuildingLevel(state, "planetary_control");

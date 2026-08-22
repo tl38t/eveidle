@@ -285,12 +285,15 @@ var AUTO_LINE_CATEGORY_LABELS = {
 };
 function renderAutoLineOptions(options, selectedId) {
   if (!options || !options.length) return '<option value="">（无可生产配方）</option>';
+  // 强制空占位：移动端原生 select 若默认选中唯一/第一个实际 option，用户再点选同一项不会触发 change，
+  // 导致 selectedTargetId 永远为 null、启动按钮被 no-target-selected 锁住。
+  var placeholder = '<option value=""' + (!selectedId ? ' selected' : '') + ' disabled>请选择生产目标</option>';
   var buckets = {};
   options.forEach(function(t) {
     var c = t.category || "other";
     (buckets[c] = buckets[c] || []).push(t);
   });
-  return AUTO_LINE_CATEGORY_ORDER.filter(function(c){ return buckets[c] && buckets[c].length; }).map(function(cat) {
+  return placeholder + AUTO_LINE_CATEGORY_ORDER.filter(function(c){ return buckets[c] && buckets[c].length; }).map(function(cat) {
     var label = AUTO_LINE_CATEGORY_LABELS[cat] || cat;
     var inner = buckets[cat].map(function(t) {
       var sel = t.id === selectedId ? " selected" : "";

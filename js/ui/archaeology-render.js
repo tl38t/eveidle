@@ -9,7 +9,7 @@
 const ARCH_FOCUS_META = {
   a: { key:"coin",  icon:"◉", title:"星币焦点", sub:"偏向可回收商业物资",
        yieldTitle:"商业回收物资", yieldCopy:"常规成功偏向可回收为星币的物品；不会改变蓝图、凭证、探针或脑插概率。" },
-  b: { key:"merit", icon:"✦", title:"功勋焦点", sub:"偏向军警与联盟档案",
+  b: { key:"merit", icon:"✦", title:"功勋焦点", sub:"偏向军警与银河联盟档案",
        yieldTitle:"军警功勋档案", yieldCopy:"常规成功偏向可回收为功勋的档案；不会改变蓝图、凭证、探针或脑插概率。" },
   c: { key:"cargo", icon:"▣", title:"货柜焦点", sub:"偏向未开启标准货柜",
        yieldTitle:"舰队密封货柜", yieldCopy:"常规成功偏向未开启货柜；货柜内容仍由统一货柜系统决定。" }

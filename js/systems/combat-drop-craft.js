@@ -85,9 +85,19 @@ function getMaterialCraftables(materialName, state) {
       if (bp && bp.dataMaterial === materialName && bp.equipmentId) {
         const bpKey = "equipment:" + bp.equipmentId;
         const req = true;
+        const product = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[bp.equipmentId]) ? EQUIPMENT_DB[bp.equipmentId] : null;
+        // LP_STORE_BLUEPRINTS.dataMaterial is the blueprint purchase/unlock
+        // cost, not a manufacturing input. Only show the product here when
+        // its actual production recipe consumes this material.
+        const productionCost = product && product.cost ? product.cost : null;
+        const productionQty = productionCost
+          ? (Number(productionCost[materialName]) || Number(productionCost["special:" + materialName]) || 0)
+          : 0;
+        if (productionQty <= 0) continue;
         out.push({
-          name: bp.name || bpKey,
-          type: "联盟蓝图",
+          name: product && product.name ? product.name : (bp.name || bpKey).replace(/蓝图$/u, ""),
+          type: "装备",
+          type: "银河联盟蓝图",
           bpKey: bpKey,
           requiresBlueprint: req,
           unlocked: _isBlueprintUnlocked(bpKey, req, state)
@@ -107,8 +117,8 @@ function getMaterialCraftables(materialName, state) {
       if (!eq || !eq.cost) continue;
       const qty = Number(eq.cost[bareKey]) || Number(eq.cost[specialKey]);
       if (!qty || qty <= 0) continue;
-      if (seen[id]) continue;
       const bpKey = "equipment:" + id;
+      if (seen[id] || seen[bpKey]) continue;
       const req = !!eq.requiresBlueprint;
       out.push({
         name: eq.name || id,
@@ -130,9 +140,9 @@ function getMaterialCraftables(materialName, state) {
 function getCombatDropCraftDescription(materialName, category, craftables) {
   switch (category) {
     case "加密数据":
-      return "加密数据（显示名可能已被替换）：用于舰船总装材料与联盟蓝图解锁。下列为消耗该加密数据的舰船与联盟装备蓝图。";
+      return "加密数据（显示名可能已被替换）：用于舰船总装材料与银河联盟蓝图解锁。下列为消耗该加密数据的舰船与银河联盟装备蓝图。";
     case "装备生产许可":
-      return "势力 / 联盟装备制造所需的许可材料。下列为消耗该许可的装备配方。";
+      return "势力 / 银河联盟装备制造所需的许可材料。下列为消耗该许可的装备配方。";
     case "死亡空间校准核心":
       return "死亡空间掉落的核心材料，用于制造对应死亡空间 DED 装备（普通型与监督者改良型）。";
     case "死亡空间协议":

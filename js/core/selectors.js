@@ -1535,7 +1535,6 @@ function getInstalledCombatModulesFromState(state) {
 // 默认读取出战战斗舰；考古等其它岗位可传入对应舰船实例（该实例直接含 .fitting）。
 // 主动打捞（消耗同位素 + 打捞舰船组件）由 combat.js 在 state.combat.salvageArmActive 开启时触发。
 function getSalvageEfficiency(state, shipInstance) {
-  state = state || (typeof gameState !== "undefined" ? gameState : null);
   if (!state) return 0;
   const ship = shipInstance || getActiveCombatShipState(state);
   if (!ship) return 0;
@@ -1557,7 +1556,6 @@ function getSalvageEfficiency(state, shipInstance) {
 // 打捞臂燃料消耗（每击毁一艘）：汇总已装备打捞臂的 salvageFuelPerKill 总和（装备即生效，与开关无关）。
 // 主动打捞（state.combat.salvageArmActive）时该基准 ×3，由 combat.js / offline-combat.js 在击毁处应用。
 function getSalvageFuelPerKill(state, shipInstance) {
-  state = state || (typeof gameState !== "undefined" ? gameState : null);
   if (!state) return 0;
   const ship = shipInstance || getActiveCombatShipState(state);
   if (!ship) return 0;
@@ -1973,15 +1971,18 @@ function getPlanetaryCapacityState(state) {
   const deployments = state.planetary && Array.isArray(state.planetary.deployments) ? state.planetary.deployments : [];
   // 脑插·行星扩展（货柜 T3 来源）：+1 行星槽（硬上限同步 +1）
   const implantPlanetSlot = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).planetSlot : 0;
-  const planetSlotCap = 5 + implantPlanetSlot;
+  // 空间站·行星管控中心 Lv2/Lv3：+1/+2 行星槽（与脑插同乘区，硬上限同步叠加）
+  const stationPlanetarySlotBonus = (typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0;
+  const bonusSlots = implantPlanetSlot + stationPlanetarySlotBonus;
+  const planetSlotCap = 5 + bonusSlots;
   return {
     level,
     xp,
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
     usedSlots:deployments.length,
-    // 新手期保底 2 个行星槽位（Lv1-19 = 2），后续曲线不变：Lv20-29=3 / Lv30-39=4 / Lv40+=5；空间站加成仍叠加，硬上限 5
-    slots:Math.min(planetSlotCap, Math.max(2, 1 + Math.floor(level / 10)) + ((typeof getStationPlanetarySlotBonus === "function") ? getStationPlanetarySlotBonus(state) : 0) + implantPlanetSlot),
+    // 新手期保底 2 个行星槽位（Lv1-19 = 2），后续曲线：Lv20-29=3 / Lv30-39=4 / Lv40+=5；脑插与空间站加成同步叠加并突破硬上限
+    slots:Math.min(planetSlotCap, Math.max(2, 1 + Math.floor(level / 10)) + bonusSlots),
     maxSlots:planetSlotCap
   };
 }
@@ -2582,7 +2583,7 @@ function getEquipmentEnhancementListDisplayState(state) {
     return true;
   };
 
-  const CATEGORY_LABEL = { normal:"通用", faction:"势力", alliance:"联盟", "deathspace-standard":"死亡空间", "deathspace-supervisor":"死亡空间(监督者)", "deathspace":"死亡空间", unknown:"其它" };
+  const CATEGORY_LABEL = { normal:"通用", faction:"势力", alliance:"银河联盟", "deathspace-standard":"死亡空间", "deathspace-supervisor":"死亡空间(监督者)", "deathspace":"死亡空间", unknown:"其它" };
   const entries = [];
   const groups = new Map();
   const ensure = itemId => { if (!groups.has(itemId)) groups.set(itemId, { itemId, inventoryRefs:[], instances:[] }); return groups.get(itemId); };
@@ -2758,7 +2759,7 @@ function getBlueprintEquipmentPreview(item) {
     const input = EQUIPMENT_DB[recipe.inputEquipment.itemId];
     inputs.push((input ? input.name : recipe.inputEquipment.itemId) + "×" + recipe.inputEquipment.quantity);
   }
-  for (const [material, quantity] of Object.entries(recipe.cost || {})) inputs.push(material + "×" + quantity);
+  for (const [material, quantity] of Object.entries(recipe.cost || {})) inputs.push(getResourceDisplayName(material) + "×" + quantity);
   return {
     productName:equipment.name,
     previewLines:[

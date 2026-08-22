@@ -8,8 +8,12 @@ const GameEventContracts = (() => {
   const cycleEvents = new Set(["mining:completed", "refining:completed", "gas:completed", "manufacturing:completed"]);
   const definitions = Object.freeze({
     "mining:completed": { required:["area", "mode", "resourceId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
+    // 富矿奖励（mining:richBonus）：ore 为资源权威键，quantity 为奖励数量。
+    "mining:richBonus": { required:["area", "resourceId", "ore", "quantity"], numbers:["quantity"] },
     "refining:completed": { required:["recipe", "inputId", "outputId", "inputQuantity", "outputQuantity", "cycles", "xp"], numbers:["inputQuantity", "outputQuantity", "cycles", "xp"] },
     "gas:completed": { required:["area", "resourceId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
+    // 富气奖励（gas:richBonus）：gas 为资源权威键，quantity 为奖励数量。
+    "gas:richBonus": { required:["area", "resourceId", "gas", "quantity"], numbers:["quantity"] },
     "planetary:completed": { required:["deploymentId", "planetType", "resourceId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
     "planetary:deployed": { required:["deploymentId", "planetType", "constructionISK", "constructionResources"], numbers:["constructionISK"] },
     "planetary:renewed": { required:["deploymentId", "planetType", "maintenanceISK", "expiresAt"], numbers:["maintenanceISK", "expiresAt"] },
@@ -44,6 +48,8 @@ const GameEventContracts = (() => {
     "equipment:discarded": { required:["itemId", "instanceId"], numbers:[], nullable:["instanceId"] },
     // 装备拆解（Batch S·装备管理）：按冶炼回收率返还材料（refundedResources）+ 整件耗材逐件按回收率掷骰返还（returnedItems）；isk 不返还；instanceId nullable。
     "equipment:dismantled": { required:["itemId", "instanceId", "refundedResources", "returnedItems"], numbers:[], nullable:["instanceId"] },
+    // 部件拆解（component-dismantle source）：按回收率返还材料（refundedResources）；与 equipment:dismantled 区分（后者为整件装备拆解，含 returnedItems）。
+    "component:dismantled": { required:["componentId", "refundedResources"], numbers:[], nullable:[] },
     "rig:manufactured": { required:["rigId", "quantity"], numbers:["quantity"] },
     "rig:fitted": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
     "rig:destroyed": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },

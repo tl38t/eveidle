@@ -20,7 +20,8 @@
   const FACTION_NAMES = Object.freeze({
     angel: "苍穹劫团",
     blood: "赤誓教团",
-    sansha: "静默集群"
+    sansha: "静默集群",
+    alliance: "银河联盟"
   });
   const FACTION_EN_NAMES = Object.freeze({
     angel: "Skybreak Marauders",
