@@ -505,7 +505,9 @@ function renderBoardContent(container, state, vm) {
 // 主入口：渲染整个排行榜页（浏览器）
 export function renderLeaderboardPage() {
   const panel = document.getElementById("leaderboard-panel");
-  if (document.body && document.body.dataset.currentPage && document.body.dataset.currentPage !== "leaderboard") {
+  // 榜单是独立页面：只要当前页面不是 leaderboard，就强制隐藏并停止异步渲染。
+  // 不能把“缺少 currentPage 标记”当成可见，否则模块异步加载时会把榜单插到采集/仓库页面下。
+  if (!document.body || document.body.dataset.currentPage !== "leaderboard") {
     if (panel) panel.style.display = "none";
     return;
   }

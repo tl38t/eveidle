@@ -59,6 +59,9 @@ function renderCurrentNavigation() {
     : null;
   const panelId = navigation.standalonePanel || shellStandalonePanel || navigation.specializedSkillPanel;
   if (panelId) { const panel = document.getElementById(panelId); if (panel) panel.style.display = ""; }
+  // 额外硬闸：排行榜不能与技能/仓库等页面并存可见。
+  const leaderboardPanel = document.getElementById("leaderboard-panel");
+  if (leaderboardPanel && navigation.page !== "leaderboard") leaderboardPanel.style.display = "none";
   document.querySelectorAll(".sidebar .nav-item").forEach(item => item.classList.remove("active"));
   const activeSelector = navigation.activeNav.type === "skill" ? `.sidebar .nav-item[data-skill="${navigation.activeNav.value}"]` : `.sidebar .nav-item[data-page="${navigation.activeNav.value}"]`;
   const active = document.querySelector(activeSelector); if (active) active.classList.add("active");
