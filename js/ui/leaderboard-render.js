@@ -415,7 +415,8 @@ function renderBoardContent(container, state, vm) {
     html += `<div class="${cls}">`;
     html += `<span class="lb-c-rank">${r.rank}</span>`;
     html += `<span class="lb-c-name">${escHtml(r.name)}${r.isCurrentPlayer ? ' <span class="lb-you">你</span>' : ""}</span>`;
-    html += `<span class="lb-c-lvl">Lv.${escHtml(r.level)}</span>`;
+    const displayLevel = (r.level !== null && r.level !== undefined && Number.isFinite(Number(r.level))) ? Number(r.level) : 1;
+    html += `<span class="lb-c-lvl">Lv.${escHtml(displayLevel)}</span>`;
     html += `<span class="lb-c-xp">${fmtNum(r.xp)}</span>`;
     html += `<span class="lb-c-time">${fmtTs(r.updatedAt)}</span>`;
     html += `</div>`;

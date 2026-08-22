@@ -328,8 +328,9 @@
               const rows = list.map(function (item, idx) {
                 return {
                   rank: idx + 1,
-                  name: (item.user && item.user.name) || item.name || item.nickname || ("玩家" + (idx + 1)),
-                  level: item.level != null ? item.level : null,
+                  name: (item.user && (item.user.name || item.user.nickname || item.user.nickName || item.user.displayName)) || item.name || item.nickname || item.nickName || item.displayName || ("玩家" + (idx + 1)),
+                  // TapTap 数值型排行榜标准返回 score，不保证返回 level；缺失时显示初始等级，避免出现空的“Lv.”。
+                  level: item.level != null ? item.level : 1,
                   xp: item.score != null ? item.score : null,
                   score: item.score != null ? item.score : null,
                   updatedAt: item.updatedAt || null,
