@@ -1754,6 +1754,24 @@ function getStationPageDisplayState(state, now) {
 
   const logistics = (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : {};
 
+  // ---- 空间站核心加成（展示层）----
+  // 读 stationCoresObtained[coreTag] + 库存持有，输出四核心激活状态与效果文案。
+  var coreEffectDefs = [
+    { coreTag:"smelt",   label:"冶炼核心",   effectText:"自动线 +10%" },
+    { coreTag:"shipEng", label:"船坞核心",   effectText:"部件制造材料 -5%" },
+    { coreTag:"equipEng",label:"装备制造核心", effectText:"自动线 +10%" },
+    { coreTag:"booster", label:"增强剂核心", effectText:"自动线 +10%" }
+  ];
+  var obtainedMap = state.stationCoresObtained || {};
+  var coreEffects = coreEffectDefs.map(function(c) {
+    var obtained = obtainedMap[c.coreTag] === true;
+    var held = (typeof ResourceRegistry !== "undefined" && STATION_CORE_RESOURCE[c.coreTag])
+      ? (Number(ResourceRegistry.get(state, STATION_CORE_RESOURCE[c.coreTag])) || 0)
+      : 0;
+    var active = obtained && held > 0;
+    return { coreTag:c.coreTag, label:c.label, effectText:c.effectText, obtained:obtained, held:held, active:active };
+  });
+
   // corporation 读 state.corporation
   var corp = state.corporation || {};
   const corporation = {
@@ -1764,7 +1782,7 @@ function getStationPageDisplayState(state, now) {
     statusText: "军团 NPC 工作、战斗编队与任务系统为 DLC 预留，当前未开放"
   };
 
-  return { body, maintenance, buildings, autoLines, effects:effectRows, logistics, corporation };
+  return { body, maintenance, buildings, autoLines, effects:effectRows, logistics, corporation, coreEffects };
 }
 
 function buildStationCostRows(state, isk, materials) {

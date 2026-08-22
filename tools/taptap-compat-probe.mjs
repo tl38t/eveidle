@@ -7,6 +7,7 @@
 //  - 通过现有 importmap 执行 import * as THREE from "three"。
 
 const PROBE_KEY = "deep_space_idle_taptap_probe_v1";
+const BUILD_ID = "RC16-5-APIID-DIAG-20260822";
 
 // 设备镜像恢复自检的独立测试键（与游戏正式存档键 eve_idle_save 完全隔离）。
 const RECOVERY_PROBE_KEY = "deep_space_idle_mirror_recovery_probe";
@@ -111,7 +112,7 @@ function buildPanel() {
   dot.style.background = allPass ? "#5fe39a" : "#ff8585";
   const title = document.createElement("span");
   title.className = "tp-title";
-  title.textContent = "TapTap H5 探针";
+  title.textContent = "TapTap H5 探针 · " + BUILD_ID;
   const toggle = document.createElement("span");
   toggle.className = "tp-toggle";
   toggle.textContent = "收起 ▾";

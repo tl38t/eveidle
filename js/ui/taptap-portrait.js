@@ -364,6 +364,9 @@
     if (!_tpHangarFilter) _tpHangarFilter = "all";
 
     if (!display.ships.length) { root.innerHTML = tpEmptyHTML(); root.setAttribute("data-current-ship", ""); return; }
+    // 保存横向滚动位置，避免周期结束时 innerHTML 重建导致 scrollLeft 归零
+    var _oldSel = root.querySelector(".tp-hangar-selector");
+    var _savedScrollLeft = _oldSel ? _oldSel.scrollLeft : 0;
     var ship = null;
     display.ships.forEach(function (s) { if (s.instanceId === _tpCurrentShipId) ship = s; });
     if (!ship) ship = display.ships[0];
@@ -378,6 +381,9 @@
       + tpSelectorHTML(display, ship)
       + tpTabsHTML()
       + '<div class="tp-hangar-tabbody">' + tpTabBodyHTML(display, ship) + "</div>";
+    // 恢复横向滚动位置
+    var _newSel = root.querySelector(".tp-hangar-selector");
+    if (_newSel && _savedScrollLeft > 0) _newSel.scrollLeft = _savedScrollLeft;
   }
   function hookHangar() {
     tpEnsureRoot(document.getElementById("hangar-panel"));

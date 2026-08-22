@@ -990,7 +990,10 @@ function isValidPaidConstruction(c) {
   if (typeof c.kind === "string") {
     if (c.kind !== "body" && c.kind !== "building") return false;
     const targetLevel = Math.floor(Number(c.targetLevel));
-    if (!Number.isFinite(targetLevel) || targetLevel < 1 || targetLevel > 3) return false;
+    const maxBodyLevel = (typeof window !== "undefined" && window.StationSystem && Number.isFinite(window.StationSystem.STATION_MAX_BODY_LEVEL))
+      ? window.StationSystem.STATION_MAX_BODY_LEVEL
+      : 4;
+    if (!Number.isFinite(targetLevel) || targetLevel < 1 || targetLevel > maxBodyLevel) return false;
     const startedAt = Number(c.startedAt);
     const completesAt = Number(c.completesAt);
     const durationMs = Number(c.durationMs);

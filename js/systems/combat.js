@@ -328,11 +328,14 @@ function resetCombatRunState(combat) {
   rl.runToken = combat.runToken;
   rl.waves = 0; rl.zones = 0; rl.dsWaves = 0; rl.dsClears = 0;
   rl.kills = 0; rl.eliteKills = 0; rl.bossKills = 0; rl.defeats = 0;
-  rl.isk = 0; rl.lp = 0;
+  // v2：本场战斗收益累计器（仅统计战斗系统自身产生的收益，彻底弃用库存快照差）。
+  rl.lootAccountingVersion = 2;
+  rl.lootGained = {};
+  rl.iskGained = 0;
+  rl.lpGained = 0;
   // 战斗技能经验累计器：仅累计「战斗授予」的经验（经 addStationModifiedCombatXp），
   // 不含空间站授予的非战斗经验。打开日志时读取，见 combat-log.js 的钩子。
   rl.skillXp = {};
-  rl.invStartSnapshot = (typeof createInventorySnapshot === "function" && typeof gameState !== "undefined" && gameState) ? createInventorySnapshot(gameState) : null;
   rl.startSkills = {};
   if (typeof gameState !== "undefined" && gameState && gameState.skills) {
     for (const k of Object.keys(gameState.skills)) {
@@ -681,30 +684,39 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const c = state.combat;
   const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
   const roll = (typeof rng === "function") ? rng : Math.random;
+  // v2：标准化战利品字典（仅记录战斗系统自身发放的正向奖励；ISK 也在此汇总）。
+  const lootGained = {};
+  const addLoot = (resourceId, quantity) => {
+    const q = Number(quantity) || 0;
+    if (resourceId && q > 0) lootGained[resourceId] = (lootGained[resourceId] || 0) + q;
+  };
   const isk = Math.round(enemy.iskDrop * zone.iskMulti);
   ResourceRegistry.add(state, "currency:isk", isk);
+  addLoot("currency:isk", isk);
   enemy.defeated = true;
   enemy.rewarded = true;
   c.lastLoot = getCombatCurrencyDisplayName("isk", "星币") + " " + isk.toLocaleString();
   const deathspace = c.mode === "deathspace" ? getDeathspaceById(c.deathspaceId) : null;
   const dataDrop = deathspace ? null : rollFactionEncryptedDataDrop(zone.faction, enemy.kind, roll(), zone, state);
-  if (dataDrop) c.lastLoot += " · " + dataDrop.material + " ×" + dataDrop.qty;
+  if (dataDrop) { c.lastLoot += " · " + dataDrop.material + " ×" + dataDrop.qty; addLoot("special:" + dataDrop.material, dataDrop.qty); }
   const zoneSpecialConfigs = deathspace ? [] : getCombatZoneSpecialDropConfigs(zone);
   const specialValues = zoneSpecialConfigs.map(() => roll());
   const zoneSpecialDrops = deathspace ? [] : rollCombatZoneSpecialDrops(zone, enemy.kind, specialValues, state);
-  for (const drop of zoneSpecialDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
+  for (const drop of zoneSpecialDrops) { c.lastLoot += " · " + drop.material + " ×" + drop.qty; addLoot(drop.resourceId, drop.qty); }
   const gearConfigs = deathspace ? [] : getGearDropConfigs(zone);
   const gearValues = gearConfigs.map(() => roll());
   const gearDrops = deathspace ? [] : rollGearDrops(zone, enemy.kind, gearValues, state);
-  for (const drop of gearDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
+  for (const drop of gearDrops) { c.lastLoot += " · " + drop.material + " ×" + drop.qty; addLoot(drop.resourceId, drop.qty); }
   const coreDrop = deathspace ? null : rollStationCoreDrop(zone, enemy.kind, roll(), state);
-  if (coreDrop) c.lastLoot += " · " + coreDrop.material + " ×" + coreDrop.qty;
+  if (coreDrop) { c.lastLoot += " · " + coreDrop.material + " ×" + coreDrop.qty; addLoot(coreDrop.resourceId, coreDrop.qty); }
   const ticketDrop = deathspace ? null : rollDeathspaceTicketDrop(zone, enemy.kind, roll(), state);
-  if (ticketDrop) c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty;
+  if (ticketDrop) { c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty; addLoot("special:" + ticketDrop.material, ticketDrop.qty); }
   // 货柜系统：敌方船被击坠低概率掉货柜（死亡空间不掉落）；内容待玩家开箱揭晓。
+  // 注意：货柜本身计入 lootGained，但箱内奖励发生在「开箱」动作里（cargo.js），不在此记录，
+  // 故战斗中开箱收益不会污染战斗日志。
   const cargoDrop = deathspace ? null : (typeof rollCargoDrop === "function" ? rollCargoDrop(enemy, zone, roll, state) : null);
-  if (cargoDrop) c.lastLoot += " · 货柜" + cargoDrop.size + " ×1";
-  // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。
+  if (cargoDrop) { c.lastLoot += " · 货柜" + cargoDrop.size + " ×1"; addLoot(cargoDrop.itemId || ("cargo:" + cargoDrop.size), 1); }
+  // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。负消耗不进 lootGained。
   const salvageFuelPK = (typeof getSalvageFuelPerKill === "function") ? getSalvageFuelPerKill(state) : 0;
   if (salvageFuelPK > 0) {
     const salvageFuelAmt = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
@@ -729,6 +741,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
         const compId = ids[Math.floor(Math.random() * ids.length)];
         const qty = isoCost;
         ResourceRegistry.add(state, "component:" + compId, qty);
+        addLoot("component:" + compId, qty); // 主动打捞组件计入战斗日志
         c.lastSalvage.components.push(compId + "×" + qty);
         c.lastLoot += " · 残骸组件 " + compId + " ×" + qty;
       }
@@ -737,13 +750,14 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const coreRoll = roll();
   const protoRoll = roll();
   const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave, coreRoll, protoRoll, state) : [];
-  for (const drop of deathspaceDrops) c.lastLoot += " · " + drop.material + " ×" + drop.qty;
+  for (const drop of deathspaceDrops) { c.lastLoot += " · " + drop.material + " ×" + drop.qty; addLoot("special:" + drop.material, drop.qty); }
   // 增强剂系统 Phase 2A：战术材料掉落（星带与死亡空间同规则，对所有 kind 开放）。
   // 纯函数 rollTacticalMaterialDrop 仅计算；此处负责发奖、事件与展示。
   const tacticalDrop = rollTacticalMaterialDrop(zone, enemy.kind, roll);
   let tacticalEvent = null;
   if (tacticalDrop) {
     ResourceRegistry.add(state, "special:" + tacticalDrop.materialId, tacticalDrop.quantity);
+    addLoot("special:" + tacticalDrop.materialId, tacticalDrop.quantity);
     tacticalEvent = {
       zoneId: zone.id,
       deathspaceId: deathspace ? deathspace.id : null,
@@ -764,8 +778,8 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   c.totalKills++;
   if (enemy.kind === "elite") c.runEliteKills = (c.runEliteKills || 0) + 1;
   syncCurrentCombatTarget(c, state);
-  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop });
-  return { isk, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop };
+  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, lootGained, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop });
+  return { isk, lootGained, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop };
 }
 
 // 定点返修：战斗内货币显示统一入口（纯读，不写 gameState）。
@@ -795,7 +809,9 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
     c.lastLoot += " · " + getCombatCurrencyDisplayName("lp", "功勋") + " +" + clearLp;
     c.lastStatus = "死亡空间全通 · " + site.name;
     // Batch C-12（返修）：先 emit deathspaceCleared，再清零 runDamage
-    doEmit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearCount:c.deathspaceClears[site.id] });
+    // 注意：payload.lp 保留为「每波×波数 + 全通」合计，仅供兼容旧逻辑读取；
+    // 新增独立 clearLp 字段供战斗日志只累计全通额外 LP，避免与每波 LP 重复计算。
+    doEmit("combat:deathspaceCleared", { deathspaceId:site.id, name:site.name, lp:waveLp * site.maxWave + clearLp, clearLp: clearLp, clearCount:c.deathspaceClears[site.id] });
     c.runDamageDealt = 0;
     c.runDamageTaken = 0;
     // 队列感知：入场清场完成计 1 次；达标则终结队列项，否则直接重入下一入场。

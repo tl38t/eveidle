@@ -9,6 +9,12 @@ let blueprintStoreCategory = "ships";
 let orbitShipId = null;
 let orbitSelectedIndex = null;
 
+window.addEventListener("leaderboard:ready", function() {
+  if (currentPage === "leaderboard" && typeof window.renderLeaderboardPage === "function") {
+    window.renderLeaderboardPage();
+  }
+});
+
 function showToast(message) {
   const existing = document.querySelector(".queue-toast"); if (existing) existing.remove();
   const toast = document.createElement("div"); toast.className = "offline-toast queue-toast"; toast.textContent = message;
@@ -17,7 +23,7 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
@@ -39,6 +45,7 @@ function renderCombatSkillGroup() {
 
 function renderCurrentNavigation() {
   const navigation = getNavigationDisplayState(currentPage, currentView);
+  document.body.dataset.currentPage = navigation.page;
   renderCombatSkillGroup();
   getManagedPanels().forEach(panel => { panel.style.display = "none"; });
   getGenericSkillPanels().forEach(panel => { panel.style.display = navigation.page === "skill" ? "" : "none"; });
@@ -48,6 +55,7 @@ function renderCurrentNavigation() {
   // 由外壳层补独立页映射，其余显隐/高亮完全复用现有导航体系。
   const shellStandalonePanel = navigation.page === "achievements" ? "achievements-panel"
     : navigation.page === "research" ? "research-panel"
+    : navigation.page === "leaderboard" ? "leaderboard-panel"
     : null;
   const panelId = navigation.standalonePanel || shellStandalonePanel || navigation.specializedSkillPanel;
   if (panelId) { const panel = document.getElementById(panelId); if (panel) panel.style.display = ""; }
@@ -69,6 +77,15 @@ function renderCurrentNavigation() {
   else if (navigation.page === "hangar") renderHangarPanel();
   else if (navigation.page === "station") { renderStationPage(); }
   else if (navigation.page === "blueprints" || navigation.page === "lpstore") renderBlueprintStore();
+  else if (navigation.page === "leaderboard") {
+    // leaderboard-render.js is an ES module and may finish after this classic
+    // shell script. Never call an unresolved bare identifier here.
+    if (typeof window.renderLeaderboardPage === "function") window.renderLeaderboardPage();
+    else {
+      const panel = document.getElementById("leaderboard-panel");
+      if (panel) panel.dataset.leaderboardPending = "true";
+    }
+  }
 
   // 3D 层（ES module）通常晚于本函数首次执行才就绪：若尚未加载，
   // 注册一次性监听，待 ship3d:ready 后重渲当前页，补上 3D 内容。

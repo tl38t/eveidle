@@ -9,8 +9,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=7">
-<link rel="stylesheet" href="./css/panels.css?v=11">
-<link rel="stylesheet" href="./css/combat.css?v=2">
+<link rel="stylesheet" href="./css/panels.css?v=13">
+<link rel="stylesheet" href="./css/combat.css?v=8">
 <link rel="stylesheet" href="./css/components.css?v=21">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=13">
 <script type="importmap">
@@ -102,6 +102,53 @@
   .deathspace-chain-control .chain-input:focus { outline:none; border-color:#38bdf8; }
   .deathspace-chain-control .chain-unit { font-size:13px; color:#9fb3c4; }
   .deathspace-chain-control .deathspace-chain-status { font-size:12px; color:#7fd; margin-left:2px; }
+
+  /* ===== 标准服技能排行榜（第二阶段本地 UI）===== */
+  .lb-layout { display:flex; gap:14px; align-items:flex-start; min-height:0; }
+  .lb-sidebar { flex:0 0 188px; max-width:188px; max-height:62vh; overflow-y:auto; padding-right:6px; border-right:1px solid #1d2c3c; }
+  .lb-content { flex:1 1 auto; min-width:0; max-height:62vh; overflow-y:auto; padding-left:4px; }
+  .lb-group-title { font-size:12px; color:#7d8da0; margin:10px 0 4px; padding-left:6px; letter-spacing:1px; }
+  .lb-group-title:first-child { margin-top:0; }
+  .lb-board-item { display:block; width:100%; text-align:left; padding:7px 10px; margin:2px 0; border:1px solid transparent; border-radius:6px; background:transparent; color:#bcd0e2; font-size:13.5px; cursor:pointer; }
+  .lb-board-item:hover { border-color:#2a3a4a; background:#0d1622; }
+  .lb-board-item.active { border-color:#38bdf8; background:rgba(56,189,248,.14); color:#7dd3fc; box-shadow:inset 0 -2px 0 #38bdf8; }
+  .lb-modes { display:flex; gap:8px; margin-bottom:10px; }
+  .lb-mode { padding:7px 14px; border:1px solid #2a3a4a; border-radius:7px; background:transparent; color:#8a9aae; font-size:13px; cursor:pointer; }
+  .lb-mode.active { border-color:#38bdf8; background:rgba(56,189,248,.15); color:#7dd3fc; }
+  .lb-mode:disabled { opacity:.45; cursor:not-allowed; }
+  .lb-local-banner { display:flex; align-items:center; gap:6px; padding:8px 11px; margin-bottom:10px; border-radius:8px; font-size:12.5px; color:#f0c27b; background:rgba(240,194,123,.10); border:1px solid rgba(240,194,123,.28); }
+  .lb-provider-status { display:flex; align-items:center; gap:7px; padding:7px 11px; margin-bottom:10px; border-radius:8px; font-size:12.5px; }
+  .lb-provider-status .lb-ps-dot { width:8px; height:8px; border-radius:50%; flex:0 0 auto; }
+  .lb-ps-local { color:#9fb3c4; background:rgba(159,179,196,.08); border:1px solid rgba(159,179,196,.22); }
+  .lb-ps-local .lb-ps-dot { background:#f0c27b; box-shadow:0 0 6px rgba(240,194,123,.6); }
+  .lb-ps-connected { color:#86efac; background:rgba(134,239,172,.08); border:1px solid rgba(134,239,172,.22); }
+  .lb-ps-connected .lb-ps-dot { background:#86efac; box-shadow:0 0 6px rgba(134,239,172,.6); }
+  .lb-ps-err { color:#fca5a5; font-size:11px; }
+  .lb-board-name { font-size:16px; font-weight:600; color:#e6eef6; }
+  .lb-board-meta { font-size:12px; color:#7d8da0; margin-top:2px; }
+  .lb-table { margin-top:10px; border:1px solid #1d2c3c; border-radius:9px; overflow:hidden; }
+  .lb-row { display:grid; grid-template-columns:42px 1fr 70px 120px 160px; gap:8px; padding:8px 12px; align-items:center; font-size:13px; border-bottom:1px solid #16222f; }
+  .lb-row:last-child { border-bottom:none; }
+  .lb-head { background:#0d1622; color:#7d8da0; font-size:12px; }
+  .lb-current-player { background:rgba(56,189,248,.12); box-shadow:inset 2px 0 0 #38bdf8; }
+  .lb-you { display:inline-block; margin-left:6px; padding:1px 7px; font-size:10px; border-radius:8px; background:#38bdf8; color:#04223a; font-weight:700; }
+  .lb-snap-bar { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; font-size:12px; color:#9fb3c4; }
+  .lb-snap-ok { color:#5fd39a; }
+  .lb-snap-none { color:#e0913a; }
+  .lb-stale { color:#e5705a; }
+  .lb-fresh { color:#5fd39a; }
+  .lb-newer { color:#7dd3fc; }
+  .lb-actions { display:flex; gap:10px; margin-top:14px; flex-wrap:wrap; }
+  .lb-empty { padding:30px; text-align:center; color:#5a6a7a; font-size:13px; }
+
+  /* 移动端竖屏：左右分栏改为上下堆叠、各自可滚动、不遮挡底部导航 */
+  @media (max-width: 900px) {
+    .lb-layout { flex-direction:column; }
+    .lb-sidebar { flex:1 1 auto; max-width:none; width:100%; max-height:30vh; border-right:none; border-bottom:1px solid #1d2c3c; padding-right:0; padding-bottom:6px; }
+    .lb-content { max-height:none; width:100%; padding-left:0; }
+    .lb-row { grid-template-columns:34px 1fr 54px 84px 96px; gap:5px; padding:7px 8px; font-size:11.5px; }
+    .lb-c-time { font-size:10px; }
+  }
 </style>
 </head>
 <body>
@@ -155,6 +202,9 @@
     <div class="nav-item" data-page="station">
       <span class="nav-icon"><i class="fa-regular fa-building"></i></span> 空间站
     </div>
+    <div class="nav-item" data-page="research">
+      <span class="nav-icon"><i class="fa-solid fa-flask-vial"></i></span> 研究
+    </div>
     <div class="nav-item" data-page="queue">
       <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> 动作队列
     </div>
@@ -164,8 +214,8 @@
     <div class="nav-item" data-page="achievements">
       <span class="nav-icon"><i class="fa-solid fa-trophy"></i></span> 成就
     </div>
-    <div class="nav-item" data-page="research">
-      <span class="nav-icon"><i class="fa-solid fa-flask-vial"></i></span> 研究
+    <div class="nav-item" data-page="leaderboard">
+      <span class="nav-icon"><i class="fa-solid fa-ranking-star"></i></span> 排行榜
     </div>
     <div class="nav-divider"></div>
     <div class="nav-item" data-skill="mining">
@@ -658,24 +708,34 @@
           </div>
         </div>
 
-        <div class="combat-telemetry-row">
-          <div class="combat-resource-row" id="combat-resource-row">
-            <span class="combat-telemetry-label">舰船补给</span>
-            <span>⛽ 燃料 <b id="combat-fuel-val">0</b></span>
-            <span>🔫 激光弹 <b id="combat-ammo-laser">0</b></span>
-            <span>🚀 导弹 <b id="combat-ammo-missile">0</b></span>
-            <span>💣 炮台弹 <b id="combat-ammo-cannon">0</b></span>
+        <details class="combat-supply-panel" id="combat-supply-panel" open>
+          <summary>
+            <span class="csp-title">🎯 战斗补给</span>
+            <span class="csp-brief">
+              <span class="csp-item">⛽<b id="combat-fuel-val">0</b></span>
+              <span class="csp-item">🔫<b id="combat-ammo-laser">0</b></span>
+              <span class="csp-item">🚀<b id="combat-ammo-missile">0</b></span>
+              <span class="csp-item">💣<b id="combat-ammo-cannon">0</b></span>
+            </span>
+          </summary>
+          <div class="csp-body">
+            <div class="combat-skill-row" id="combat-skill-row">
+              <span class="combat-telemetry-label">舰长数据</span>
+              战斗等级 <b id="combat-cl-val">0</b> · 激光 Lv.<span id="combat-laser-lv">1</span> · 炮台 Lv.<span id="combat-cannon-lv">1</span> · 导弹 Lv.<span id="combat-missile-lv">1</span> · 锁定 Lv.<span id="combat-target-lv">1</span>
+            </div>
+            <div class="combat-ammo-loadout" id="combat-ammo-loadout"></div>
           </div>
-          <div class="combat-skill-row" id="combat-skill-row">
-            <span class="combat-telemetry-label">舰长数据</span>
-            战斗等级 <b id="combat-cl-val">0</b> · 激光 Lv.<span id="combat-laser-lv">1</span> · 炮台 Lv.<span id="combat-cannon-lv">1</span> · 导弹 Lv.<span id="combat-missile-lv">1</span> · 锁定 Lv.<span id="combat-target-lv">1</span>
-          </div>
-        </div>
+        </details>
 
-        <div class="combat-ammo-loadout" id="combat-ammo-loadout"></div>
-
-        <!-- EVE 风格舰船控制台：左控制、中环带、右装备 -->
-        <div class="combat-command-console">
+        <!-- EVE 风格舰船控制台：左控制、中环带、右装备（可折叠） -->
+        <details class="combat-command-console" id="combat-command-console" open>
+          <summary class="ccc-summary" title="点击折叠/展开控制台">
+            <span class="ccc-title-text">战斗控制台</span>
+            <span class="ccc-summary-ship" id="ccc-ship-name">—</span>
+            <span class="ccc-summary-wave" id="ccc-wave-info">待命</span>
+            <div class="ccc-summary-ring-mini" id="ccc-ring-legend"></div>
+          </summary>
+          <div class="ccc-body">
           <div class="combat-control-bank">
             <div class="combat-console-title">已安装武器</div>
             <div class="combat-weapon-row" id="combat-weapon-row"></div>
@@ -706,7 +766,8 @@
             <div class="combat-console-title">当前舰船装备</div>
             <div class="combat-equipment-grid" id="combat-equipment-grid"></div>
           </div>
-        </div>
+          </div><!-- /.ccc-body -->
+        </details>
 
         <div class="combat-rewards" id="combat-rewards" style="display:none;"></div>
         <div id="combat-fx-layer" style="position:absolute;inset:0;pointer-events:none;z-index:10;"></div>
@@ -755,51 +816,73 @@
         <span id="station-status" class="text-muted"></span>
       </div>
       <div class="panel-body">
-        <!-- A. 总览 -->
-        <div class="station-section">
-          <h3>空间站总览</h3>
-          <div class="station-overview">
-            <span id="station-body-name">未建立</span>
-            <span id="station-body-level">Lv.0</span>
-            <span id="station-logistics-summary"></span>
+        <!-- A + B 合并：空间站总览（可折叠） -->
+        <details class="station-ops-panel" id="station-ops-panel" open>
+          <summary>
+            <span class="sop-title">🏗️ 空间站总览</span>
+            <div class="sop-brief">
+              <span class="sop-tag" id="station-ops-status">运行中</span>
+              <span class="sop-brief-item" id="station-ops-build"></span>
+              <span class="sop-sep">|</span>
+              <span class="sop-brief-item">⛽<b id="station-ops-fuel">0</b></span>
+            </div>
+          </summary>
+          <div class="sop-body">
+          <!-- A. 总览 -->
+          <div class="station-section">
+            <div class="station-overview">
+              <span id="station-body-name">未建立</span>
+              <span id="station-body-level">Lv.0</span>
+              <span id="station-logistics-summary"></span>
+            </div>
+            <div class="station-explain">
+              <b>这是你的永久基地。</b>升级本体可解锁更高的附属建筑等级，并提升「综合后勤」全局产出倍率；
+              本体需持续消耗<b>维护燃料</b>才能维持全部产出——断油后本体与七座建筑停效（舰船船坞例外）。
+            </div>
+            <div class="station-construction">
+              <div class="progress-bar"><div class="fill" id="station-construction-fill" style="width:0%"></div></div>
+              <span id="station-construction-text">就绪</span>
+              <div id="station-upgrade-cost" class="station-cost-rows"></div>
+              <div id="station-upgrade-note" class="station-upgrade-note"></div>
+              <button class="btn primary" id="btn-station-upgrade-body">升级</button>
+            </div>
           </div>
-          <div class="station-explain">
-            <b>这是你的永久基地。</b>升级本体可解锁更高的附属建筑等级，并提升「综合后勤」全局产出倍率；
-            本体需持续消耗<b>维护燃料</b>才能维持全部产出——断油后本体与七座建筑停效（舰船船坞例外）。
+          <!-- B. 维护 -->
+          <div class="station-section">
+            <h3>维护燃料</h3>
+            <div>维护点数：<span id="station-maintenance-points">0</span></div>
+            <div>燃料：<span id="station-fuel-remaining">0</span></div>
+            <div>预计剩余：<span id="station-fuel-remaining-ms">-</span></div>
+            <div class="station-explain">维护点数决定可升级的建筑等级上限；本体与附属建筑持续消耗<b>维护燃料</b>，燃料耗尽前「预计剩余」显示可维持时长。燃料不足时全部停效，可随时用<b>一键补给</b>补充燃料维持运转。</div>
+            <div class="station-fuel-notes">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
+            <button class="btn primary" id="btn-station-refill">一键补给</button>
           </div>
-          <div class="station-construction">
-            <div class="progress-bar"><div class="fill" id="station-construction-fill" style="width:0%"></div></div>
-            <span id="station-construction-text">就绪</span>
-            <div id="station-upgrade-cost" class="station-cost-rows"></div>
-            <div id="station-upgrade-note" class="station-upgrade-note"></div>
-            <button class="btn primary" id="btn-station-upgrade-body">升级</button>
-          </div>
-        </div>
-        <!-- B. 维护 -->
-        <div class="station-section">
-          <h3>维护燃料</h3>
-          <div>维护点数：<span id="station-maintenance-points">0</span></div>
-          <div>燃料：<span id="station-fuel-remaining">0</span></div>
-          <div>预计剩余：<span id="station-fuel-remaining-ms">-</span></div>
-          <div class="station-explain">维护点数决定可升级的建筑等级上限；本体与附属建筑持续消耗<b>维护燃料</b>，燃料耗尽前「预计剩余」显示可维持时长。燃料不足时全部停效，可随时用<b>一键补给</b>补充燃料维持运转。</div>
-          <div class="station-fuel-notes">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
-          <button class="btn primary" id="btn-station-refill">一键补给</button>
-        </div>
+          </div><!-- /.sop-body -->
+        </details>
         <!-- C. 建筑 -->
-        <div class="station-section">
-          <h3>附属建筑</h3>
-          <div id="station-buildings-grid" class="station-buildings-grid"></div>
-        </div>
+        <details class="station-ops-panel" id="station-buildings-panel" open>
+          <summary>
+            <span class="sop-title">🏗 附属建筑</span>
+          </summary>
+          <div class="sop-body">
+            <div id="station-buildings-grid" class="station-buildings-grid"></div>
+          </div>
+        </details>
         <!-- D. 自动线 -->
-        <div class="station-section">
-          <h3>自动生产线</h3>
-          <div class="station-explain">由对应建筑（冶炼精炼厂 / 装备制造厂 / 增强剂制造厂）提供倍率加成，可无人值守持续生产。选择产物后启动，按「建筑 × 后勤 × 综合」倍率加速产出。</div>
-          <div id="station-auto-lines"></div>
-        </div>
+        <details class="station-ops-panel" id="station-auto-lines-panel" open>
+          <summary>
+            <span class="sop-title">⚙ 自动生产线</span>
+          </summary>
+          <div class="sop-body">
+            <div class="station-explain">由对应建筑（冶炼精炼厂 / 装备制造厂 / 增强剂制造厂）提供倍率加成，可无人值守持续生产。选择产物后启动，按「建筑 × 后勤 × 综合」倍率加速产出。</div>
+            <div id="station-auto-lines"></div>
+          </div>
+        </details>
         <!-- E. 效果 -->
         <div class="station-section">
           <h3>当前效果</h3>
           <div id="station-effects-list"></div>
+          <div id="station-cores-list" class="station-cores"></div>
         </div>
         <!-- F. 军团 -->
         <div class="station-section">
@@ -928,6 +1011,20 @@
           <div class="ach-filter-row" id="achievements-status-tabs"></div>
         </section>
         <div class="achievements-grid" id="achievements-grid"></div>
+      </div>
+    </div>
+
+    <!-- ===== 标准服技能排行榜（第二阶段：本地 UI + 本地快照）===== -->
+    <div class="panel leaderboard-panel" id="leaderboard-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-ranking-star"></i> 标准服技能排行榜</span>
+        <span class="text-muted">本地预览 · 未连接平台</span>
+      </div>
+      <div class="panel-body">
+        <div class="lb-layout">
+          <aside class="lb-sidebar" id="lb-board-list" aria-label="榜单列表"></aside>
+          <section class="lb-content" id="lb-board-content" aria-label="榜单内容"></section>
+        </div>
       </div>
     </div>
 
@@ -1084,7 +1181,7 @@
   <script defer src="./js/systems/rigs.js?v=4"></script>
   <script defer src="./js/systems/archaeology.js?v=8"></script>
   <script defer src="./js/systems/planetary.js?v=2"></script>
-  <script defer src="./js/systems/station.js?v=9"></script>
+  <script defer src="./js/systems/station.js?v=10"></script>
   <script defer src="./js/ui/action-modal.js?v=6"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
@@ -1093,24 +1190,29 @@
   <script defer src="./js/core/selectors.js?v=34"></script>
   <script defer src="./js/core/actions.js?v=13"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=35"></script>
+  <script defer src="./js/ui/shell-render.js?v=38"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=15"></script>
-  <script defer src="./js/ui/combat-render.js?v=19"></script>
+  <script defer src="./js/ui/combat-render.js?v=22"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=7"></script>
   <script defer src="./js/ui/booster-render.js?v=5"></script>
-  <script defer src="./js/ui/station-render.js?v=3"></script>
+  <script defer src="./js/ui/station-render.js?v=5"></script>
   <script defer src="./js/core/tick.js?v=7"></script>
   <script defer src="./js/core/offline.js?v=10"></script>
   <script defer src="./js/systems/offline-combat.js?v=4"></script>
   <script defer src="./js/systems/combat-log.js?v=3"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=2"></script>
+  <script defer src="./js/platform/leaderboard-platform-config.js?v=5"></script>
+  <script defer src="./js/platform/leaderboard-provider-contract.js?v=1"></script>
   <script defer src="./js/platform/local-mirror-contract.js?v=2"></script>
   <script defer src="./js/core/save-envelope.js?v=2"></script>
   <script defer src="./js/platform/providers/noop-cloud-provider.js?v=2"></script>
   <script defer src="./js/platform/providers/noop-achievement-provider.js?v=2"></script>
   <script defer src="./js/platform/providers/noop-local-mirror-provider.js?v=2"></script>
+  <script defer src="./js/platform/providers/noop-leaderboard-provider.js?v=1"></script>
+  <script defer src="./js/platform/providers/taptap-leaderboard-provider.js?v=2"></script>
+  <script defer src="./js/platform/providers/steam-leaderboard-provider.js?v=1"></script>
   <script defer src="./js/platform/taptap/taptap-cloud-provider.js?v=2"></script>
   <script defer src="./js/platform/taptap/taptap-achievement-provider.js?v=2"></script>
   <script defer src="./js/platform/taptap/taptap-local-mirror-provider.js?v=7"></script>
@@ -1119,8 +1221,10 @@
   <script defer src="./js/core/local-mirror-service.js?v=2"></script>
   <script defer src="./js/data/platform-achievement-map.js?v=2"></script>
   <script defer src="./js/core/achievement-sync-service.js?v=2"></script>
+  <script defer src="./js/core/leaderboard-sync-service.js?v=1"></script>
   <script defer src="./js/core/persistence.js?v=11"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=3"></script>
+  <script type="module" src="./js/ui/leaderboard-render.js?v=5"></script>
   <script defer src="./js/ui/render.js?v=8"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=11"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>

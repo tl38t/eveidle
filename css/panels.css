@@ -16,6 +16,46 @@
   .station-panel .panel-body { max-height: none; overflow-y: visible; }
   .station-section { margin-bottom: 20px; padding: 12px; background: rgba(20,40,55,0.5); border-radius: 6px; }
   .station-section h3 { margin: 0 0 10px; font-size: 14px; color: #8ab4d6; }
+
+  /* ── 空间站总览合并折叠面板（统一 ▸/▾ 箭头）── */
+  details.station-ops-panel {
+    list-style: none;
+    margin-bottom: 20px;
+    background: rgba(20,40,55,0.5);
+    border: 1px solid rgba(48,66,84,0.6);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  details.station-ops-panel > summary {
+    cursor: pointer; user-select: none;
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    outline: none;
+  }
+  details.station-ops-panel > summary::-webkit-details-marker { display: none; }
+  details.station-ops-panel > summary::before {
+    content: "▸"; color: #54bce8; font-size: 12px;
+    margin-right: 4px; transition: transform .15s; flex-shrink: 0;
+  }
+  details.station-ops-panel[open] > summary::before { content: "▾"; }
+  .sop-title { font-size: 14px; font-weight: 700; color: #8ab4d6; white-space: nowrap; }
+  .sop-brief { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #9fb4c6; font-weight: 400; overflow: hidden; }
+  .sop-brief-item { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+  .sop-brief-item b { color: #d9c477; font-weight: 700; }
+  .sop-sep { color: rgba(91,113,132,0.5); }
+  .sop-tag {
+    padding: 1px 8px; border-radius: 4px; font-size: 10px; font-weight: 700;
+    background: rgba(111,224,154,0.14); color: #6fe09a; white-space: nowrap;
+  }
+  .sop-tag.warn { background: rgba(200,80,64,0.16); color: #e8766a; }
+  .sop-tag.idle { background: rgba(122,136,150,0.14); color: #8fa6bd; }
+  /* 展开时隐藏摘要，只留标题 */
+  details.station-ops-panel[open] > summary > .sop-brief { display: none; }
+  .sop-body { padding: 0 12px 12px; }
+  /* body 内子 section 去掉外层卡片样式（已包在圆角面板内） */
+  .sop-body > .station-section { background: transparent; padding: 12px 0; margin-bottom: 0; border-bottom: 1px solid rgba(91,113,132,0.2); border-radius: 0; }
+  .sop-body > .station-section:last-child { border-bottom: 0; }
+
   .station-overview { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 6px 0; font-family: var(--font-ui); }
   .station-buildings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; }
   .station-building-card { background: rgba(30,55,75,0.6); border: 1px solid #2a4a5e; border-radius: 6px; padding: 10px; }
@@ -48,6 +88,12 @@
   .effect-active { color: #7ab87a; background: rgba(40,100,40,0.2); }
   .effect-inactive { color: #b07a7a; background: rgba(100,40,40,0.2); }
   .effect-shipyard-exception { color: #b8b87a; background: rgba(100,100,40,0.2); }
+  /* 空间站核心加成分组（2026-08-22 新增展示） */
+  .station-cores { margin-top: 10px; padding: 10px 12px; background: rgba(56, 161, 105, 0.12); border: 1px solid rgba(56, 161, 105, 0.3); border-radius: 6px; }
+  .station-cores-title { font-size: 12px; color: #9ae6b4; margin-bottom: 8px; font-weight: 500; }
+  .station-cores-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 12px; font-size: 12px; }
+  .station-cores-grid .core-active { color: #7ab87a; }
+  .station-cores-grid .core-inactive { color: #718096; }
   .cost-enough { color: #7ab87a; }
   .cost-short { color: #b07a7a; }
   .station-cost-rows { font-size: 11px; color: #8a9ab0; margin: 4px 0; }

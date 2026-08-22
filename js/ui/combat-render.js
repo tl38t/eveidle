@@ -110,9 +110,9 @@ function renderCombatLiveDisplay(display) {
   renderCombatEnemyPanel(display); updateCombatRing(display);
   const rewards = document.getElementById("combat-rewards"); if (rewards) { rewards.style.display = display.showRewards ? "" : "none"; if (display.showRewards) rewards.textContent = display.runStatus; }
   text("combat-fuel-val", display.supplies.fuel.toLocaleString());
-  text("combat-ammo-laser", getSelectedCount(gameState, "laser").toLocaleString() + (getSelectedHasT2(gameState, "laser") ? " ⚡T2" : ""));
-  text("combat-ammo-missile", getSelectedCount(gameState, "missile").toLocaleString() + (getSelectedHasT2(gameState, "missile") ? " ⚡T2" : ""));
-  text("combat-ammo-cannon", getSelectedCount(gameState, "cannon").toLocaleString() + (getSelectedHasT2(gameState, "cannon") ? " ⚡T2" : ""));
+  text("combat-ammo-laser", getSelectedCount(gameState, "laser").toLocaleString());
+  text("combat-ammo-missile", getSelectedCount(gameState, "missile").toLocaleString());
+  text("combat-ammo-cannon", getSelectedCount(gameState, "cannon").toLocaleString());
   const start = document.getElementById("btn-start-combat"); const stop = document.getElementById("btn-stop-combat");
   if (start) { start.style.display = display.controls.showStart ? "" : "none"; start.disabled = display.controls.startDisabled; start.textContent = display.controls.startText; }
   if (stop) stop.style.display = display.controls.showStop ? "" : "none";
@@ -141,6 +141,16 @@ function renderCombatLiveDisplay(display) {
 function renderCombatAmmoLoadout(state) {
   const wrap = document.getElementById("combat-ammo-loadout");
   if (!wrap) return;
+  // 折叠即跳过渲染：合并面板（combat-supply-panel）关闭时跳过 innerHTML 写入，解放每 tick/周期开销。
+  // 展开时由 details 的 toggle 事件触发单次补渲染。
+  const panel = document.getElementById("combat-supply-panel");
+  if (panel && !panel.open) { wrap._needsRender = true; return; }
+  if (panel && !panel._ammoCollapseBound) {
+    panel._ammoCollapseBound = true;
+    panel.addEventListener("toggle", function () {
+      if (panel.open && wrap._needsRender) { wrap._needsRender = false; renderCombatAmmoLoadout(state); }
+    });
+  }
   const types = ["laser", "missile", "cannon"];
   const groups = [];
   for (const type of types) {
@@ -291,6 +301,19 @@ function renderCombatPanel(now) {
   const playerImage = document.getElementById("combat-player-image"); if (playerImage && !playerImage.querySelector("#combat-player-3d")) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("combat-cl-val", display.level); text("combat-laser-lv", display.skills.laser); text("combat-cannon-lv", display.skills.cannon); text("combat-missile-lv", display.skills.missile); text("combat-target-lv", display.skills.targeting);
+  // 控制台折叠摘要：无论展开/折叠都更新 summary 行（船名 + 波次 + HP 百分比）
+  const cccShip = document.getElementById("ccc-ship-name"); if (cccShip) cccShip.textContent = display.player.name;
+  const cccWave = document.getElementById("ccc-wave-info"); if (cccWave) cccWave.textContent = display.active ? "WAVE " + display.wave + "/" + display.maxWave : "待命";
+  const cccLegend = document.getElementById("ccc-ring-legend");
+  if (cccLegend) cccLegend.innerHTML = ["shield","armor","structure"].map(function(k){var p=Math.round((display.player.hp[k]||0)/(display.player.maxHp[k]||1)*100);return '<span class="'+k+'">'+p+'%</span>';}).join("");
+  const ccc = document.getElementById("combat-command-console");
+  if (!ccc || ccc.open === false) {
+    // 折叠时跳过控制台内部所有重量级渲染（武器行/装备网格/维修/打捞臂/DOM 写入）
+    renderCombatLiveDisplay(display); /* 轻量：只写 text node */
+    mountCombat3D(display);
+    renderCombatDropPreview(display);
+    return display;
+  }
   renderInstalledCombatControls(display); renderCombatEquipmentRack(display); renderCombatLiveDisplay(display);
   renderCombatSalvageToggle();
   mountCombat3D(display);
@@ -387,6 +410,19 @@ function renderCombatDropPreview(display) {
   const body = document.getElementById("combat-drop-preview");
   const zoneLabel = document.getElementById("combat-drop-preview-zone");
   if (!body || !wrap) return;
+  // 折叠即跳过渲染：details 关闭时跳过 getCombatDropPreview 纯函数计算 + innerHTML 写入，
+  // 解放每 tick/每周期触发的 DOM 重写开销。展开时由 toggle 事件触发单次补渲染。
+  if (!wrap.open) { wrap._needsRender = true; return; }
+  // 绑定 toggle：用户展开时若标记了待渲染则立即补一次（仅补一次，不循环）
+  if (!wrap._collapseBound) {
+    wrap._collapseBound = true;
+    wrap.addEventListener("toggle", function () {
+      if (wrap.open && wrap._needsRender) {
+        wrap._needsRender = false;
+        renderCombatDropPreview(display);
+      }
+    });
+  }
   if (!body._cargoDropBound) {
     body._cargoDropBound = true;
     body.addEventListener("click", e => {

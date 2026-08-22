@@ -75,6 +75,7 @@
         maxWaveReached: 0,
         iskDelta: 0, lpDelta: 0,
         resourceNet: {},
+        lootGained: {}, // v2：仅累计战斗自身产生的正向掉落（负耗不进），供战斗日志使用
         runs: 0, runsDetail: [],
         firstCrossings: {
           firstKill: null, firstWaveClear: null, firstZoneClear: null,
@@ -182,6 +183,8 @@
   function addResource(s, id, delta) {
     if (!delta) return;
     s.resourceNet[id] = (s.resourceNet[id] || 0) + delta;
+    // v2：正向掉落累计进 lootGained（燃料/弹药/同位素等负消耗 delta<0，自然不进）。
+    if (delta > 0 && id) s.lootGained[id] = (s.lootGained[id] || 0) + delta;
   }
 
   // ---- XP（直接调 state-aware 函数，无事件；每波后重读技能）----
@@ -244,7 +247,8 @@
         }
         s.totalDamageDealt += roundDealt;
         if (roundDealt > s.maxSingleHit) s.maxSingleHit = roundDealt;
-        consumeVolleyVirtual(inputs, zone, s);
+        const volleyFuel = consumeVolleyVirtual(inputs, zone, s);
+        grantXp(state, "capacitorManagement", volleyFuel * 0.3);
       }
       // 结算本波被击毁的敌人（玩家先手 + AOE）
       for (const e of enemies) {
@@ -739,6 +743,7 @@
         iskDelta: s.iskDelta,
         lpDelta: s.lpDelta,
         resourceNet: s.resourceNet,
+        lootGained: s.lootGained,
         runs: s.runs,
         runsDetail: s.runsDetail,
         firstCrossings: s.firstCrossings,

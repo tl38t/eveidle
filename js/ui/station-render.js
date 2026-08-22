@@ -80,6 +80,8 @@ function renderStationPage(now) {
   else if (!display.maintenance.operational) setText("station-status", "燃料不足");
   else setText("station-status", "运行中");
 
+  updateStationOpsSummary(display);
+
   // 建设进度
   var pFill = document.getElementById("station-construction-fill");
   var pText = document.getElementById("station-construction-text");
@@ -209,6 +211,25 @@ function renderStationPage(now) {
     }).join("");
   }
 
+  // ---- E2. 空间站核心加成 ----
+  var coreEl = document.getElementById("station-cores-list");
+  if (coreEl) {
+    var cores = display.coreEffects || [];
+    var ownedCount = cores.filter(function(c){ return c.active; }).length;
+    if (cores.length > 0) {
+      var rowsHtml = cores.map(function(c) {
+        var dot = c.active ? "●" : "○";
+        var cls = c.active ? " core-active" : " core-inactive";
+        return '<span class="' + cls + '">' + dot + " " + c.label + " " + (c.active ? c.effectText : "未激活") + '</span>';
+      }).join("");
+      coreEl.innerHTML =
+        '<div class="station-cores-title">空间站核心加成 ' + ownedCount + "/" + cores.length + "</div>" +
+        '<div class="station-cores-grid">' + rowsHtml + "</div>";
+    } else {
+      coreEl.innerHTML = "";
+    }
+  }
+
   // ---- F. 军团 ----
   setText("station-corp-name", display.corporation.name || "未成立");
   if (display.corporation.foundedAt) setText("station-corp-founded", new Date(display.corporation.foundedAt).toLocaleDateString());
@@ -216,6 +237,35 @@ function renderStationPage(now) {
   setText("station-corp-dlc", display.corporation.statusText || "DLC 预留");
   // 同步结构签名：用于 live updater 判断是否需要整页重渲染（节流时间戳/签名均不进 gameState/存档）。
   _stationSig = computeStationSig(display);
+}
+
+// 折叠面板摘要（空间站总览）：状态标签 + 建设状态 + 燃料量
+function updateStationOpsSummary(display) {
+  var statusEl = document.getElementById("station-ops-status");
+  var buildEl = document.getElementById("station-ops-build");
+  var fuelEl = document.getElementById("station-ops-fuel");
+  if (!statusEl && !buildEl && !fuelEl) return;
+
+  // 状态标签
+  var status, statusCls;
+  if (!display.body.bodyLevel || display.body.bodyLevel === 0) { status = "未建立"; statusCls = "idle"; }
+  else if (!display.maintenance.operational) { status = "燃料不足"; statusCls = "warn"; }
+  else { status = "运行中"; statusCls = ""; }
+  if (statusEl) { statusEl.textContent = status; statusEl.className = "sop-tag" + (statusCls ? " " + statusCls : ""); }
+
+  // 建设状态
+  if (buildEl) {
+    if (display.body.currentConstruction) {
+      buildEl.textContent = "建设中 · 剩余 " + fmtDuration(display.body.remainingMs || 0);
+    } else if (display.body.bodyLevel && display.body.bodyLevel > 0) {
+      buildEl.textContent = "Lv." + display.body.bodyLevel;
+    } else {
+      buildEl.textContent = "";
+    }
+  }
+
+  // 燃料量
+  if (fuelEl) fuelEl.textContent = (display.maintenance.fuelRemaining || 0).toLocaleString();
 }
 
 function setText(id, val) { var el = document.getElementById(id); if (el) el.textContent = val; }
@@ -334,6 +384,8 @@ function updateStationLiveUI(now) {
 function liveUpdateStationFields(display, now) {
   var t = Number(now) || Date.now();
   display = display || getStationPageDisplayState(gameState, t);
+
+  updateStationOpsSummary(display);
 
   // ---- 建设倒计时 + 进度条（随时间变化）----
   var pFill = document.getElementById("station-construction-fill");
