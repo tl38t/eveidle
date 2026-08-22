@@ -338,6 +338,25 @@ function fmtNum(n) {
   return v.toLocaleString("en-US");
 }
 
+// TapTap 榜单只返回分数（XP），通常不返回游戏技能等级。用游戏真实的
+// xpForLevel 阈值把累计 XP 反推为展示等级；平台有明确 level 时优先使用平台值。
+function deriveLevelFromXp(xp) {
+  let total = Number(xp);
+  if (!Number.isFinite(total) || total < 0) return 1;
+  let level = 1;
+  try {
+    while (level < 100) {
+      const need = (typeof xpForLevel === "function")
+        ? Number(xpForLevel(level + 1))
+        : Math.floor(100 * Math.pow(1.1, level));
+      if (!Number.isFinite(need) || need <= 0 || total < need) break;
+      total -= need;
+      level += 1;
+    }
+  } catch (e) { /* 保持 Lv.1 安全降级 */ }
+  return level;
+}
+
 // 渲染左侧动态榜单列表（按分组）
 function renderBoardList(container, vm) {
   container.innerHTML = "";
@@ -415,7 +434,8 @@ function renderBoardContent(container, state, vm) {
     html += `<div class="${cls}">`;
     html += `<span class="lb-c-rank">${r.rank}</span>`;
     html += `<span class="lb-c-name">${escHtml(r.name)}${r.isCurrentPlayer ? ' <span class="lb-you">你</span>' : ""}</span>`;
-    const displayLevel = (r.level !== null && r.level !== undefined && Number.isFinite(Number(r.level))) ? Number(r.level) : 1;
+    const displayLevel = (r.level !== null && r.level !== undefined && Number.isFinite(Number(r.level)))
+      ? Number(r.level) : deriveLevelFromXp(r.xp);
     html += `<span class="lb-c-lvl">Lv.${escHtml(displayLevel)}</span>`;
     html += `<span class="lb-c-xp">${fmtNum(r.xp)}</span>`;
     html += `<span class="lb-c-time">${fmtTs(r.updatedAt)}</span>`;

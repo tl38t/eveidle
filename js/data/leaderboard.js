@@ -145,6 +145,17 @@ function safeSkillLevel(skills, skillId) {
   return Math.floor(lvl);
 }
 
+// state.skills[id].xp 是当前等级内的经验。排行榜分数必须使用累计总经验，
+// 否则不同等级玩家会被错误地当成 Lv.1/低等级比较。
+function cumulativeSkillXp(skills, skillId) {
+  const level = safeSkillLevel(skills, skillId);
+  let total = safeSkillXp(skills, skillId);
+  for (let lv = 1; lv < level; lv++) {
+    total += Math.floor(100 * Math.pow(1.1, lv)); // xpForLevel(lv + 1)
+  }
+  return total;
+}
+
 // ---- 返回字段统一形状 ----
 function makeEntry(boardId, name, score, level, xp, updatedAt) {
   return {
@@ -169,7 +180,7 @@ function readUpdatedAt(state) {
 
 // ---- 单项榜：skill:<skillId> ----
 function singleBoardEntry(reg, skills, updatedAt) {
-  const xp = safeSkillXp(skills, reg.id);
+  const xp = cumulativeSkillXp(skills, reg.id);
   const lvl = safeSkillLevel(skills, reg.id);
   return makeEntry("skill:" + reg.id, reg.name, xp, lvl, xp, updatedAt);
 }
@@ -181,7 +192,7 @@ function aggregateBoardEntry(boardId, name, registry, skills, categoryFilter, up
   let maxLevel = 0;
   for (const reg of registry) {
     if (categoryFilter && reg.category !== categoryFilter) continue;
-    totalXp += safeSkillXp(skills, reg.id);
+    totalXp += cumulativeSkillXp(skills, reg.id);
     const l = safeSkillLevel(skills, reg.id);
     if (l > maxLevel) maxLevel = l;
   }

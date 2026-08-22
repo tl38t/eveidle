@@ -34,6 +34,11 @@ import {
 
 let passCount = 0;
 let failCount = 0;
+function totalFor(v) {
+  const lvl = Math.max(0, Math.floor(v && v.lvl || 0));
+  const current = v && Number.isFinite(v.xp) && v.xp > 0 ? v.xp : 0;
+  return current + Array.from({ length: Math.max(0, lvl - 1) }, (_, i) => Math.floor(100 * Math.pow(1.1, i + 1))).reduce((a, b) => a + b, 0);
+}
 function ok(name, cond, detail = "") {
   if (cond) passCount++;
   else failCount++;
@@ -141,7 +146,8 @@ function main() {
     const newDef = getLeaderboardDefinitions(st2).find((d) => d.skillId === "temporaryNewSkill");
     ok("4c 新技能生成单项榜 skill:temporaryNewSkill", !!newDef && newDef.boardId === "skill:temporaryNewSkill");
     const newEntry = getLeaderboardScore(st2, "skill:temporaryNewSkill");
-    ok("4d 新技能榜读数正确", newEntry && newEntry.score === 999 && newEntry.level === 7,
+    const newTotalXp = 999 + Array.from({ length: 6 }, (_, i) => Math.floor(100 * Math.pow(1.1, i + 1))).reduce((a, b) => a + b, 0);
+    ok("4d 新技能榜读数正确", newEntry && newEntry.score === newTotalXp && newEntry.level === 7,
        "score=" + (newEntry && newEntry.score) + " lvl=" + (newEntry && newEntry.level));
   }
 
@@ -151,26 +157,26 @@ function main() {
     const byId = Object.fromEntries(snap.map((e) => [e.boardId, e]));
 
     // total = 全部技能 xp 总和
-    const totalXp = Object.values(st.skills).reduce((s, v) => s + v.xp, 0); // 100+0+200+50+300+10+20+30+40+50+60+70+80+90+5+0+0+0+0+400 = 1505
+    const totalXp = Object.values(st.skills).reduce((s, v) => s + totalFor(v), 0);
     ok("5a total = 全部技能 xp 总和", byId["total"] && byId["total"].score === totalXp,
        "期望=" + totalXp + " 实际=" + (byId["total"] && byId["total"].score));
 
     // combat.total = 所有 category=combat 的技能 xp 求和（动态，不预设名称）
     const combatIds = registry.filter((r) => r.category === "combat").map((r) => r.id);
-    const combatXp = combatIds.reduce((s, id) => s + st.skills[id].xp, 0); // 30+40+50+60+70+80+90+5+0+0+0+0 = 425
+    const combatXp = combatIds.reduce((s, id) => s + totalFor(st.skills[id]), 0);
     ok("5b combat.total = 战斗类技能 xp 求和（动态拆分）", byId["combat.total"] && byId["combat.total"].score === combatXp,
        "combatIds=" + combatIds.length + " 期望=" + combatXp + " 实际=" + (byId["combat.total"] && byId["combat.total"].score));
     console.log("    战斗技能拆分清单（" + combatIds.length + " 项）: " + combatIds.join(", "));
 
     // production.total
     const prodIds = registry.filter((r) => r.category === "production").map((r) => r.id);
-    const prodXp = prodIds.reduce((s, id) => s + st.skills[id].xp, 0); // 200+300+10+20+0 = 530
+    const prodXp = prodIds.reduce((s, id) => s + totalFor(st.skills[id]), 0);
     ok("5c production.total = 生产类 xp 求和", byId["production.total"] && byId["production.total"].score === prodXp,
        "期望=" + prodXp + " 实际=" + (byId["production.total"] && byId["production.total"].score));
 
     // gathering.total
     const gatherIds = registry.filter((r) => r.category === "gathering").map((r) => r.id);
-    const gatherXp = gatherIds.reduce((s, id) => s + st.skills[id].xp, 0); // 100+50 = 150
+    const gatherXp = gatherIds.reduce((s, id) => s + totalFor(st.skills[id]), 0);
     ok("5d gathering.total = 采集类 xp 求和", byId["gathering.total"] && byId["gathering.total"].score === gatherXp,
        "期望=" + gatherXp + " 实际=" + (byId["gathering.total"] && byId["gathering.total"].score));
 
@@ -202,7 +208,7 @@ function main() {
     const regMiss = getSkillRegistry(stMiss).map((r) => r.id);
     ok("6b 缺失技能不在注册表/单项榜中", !regMiss.includes("mining") && !regMiss.includes("laserOps"));
     // 综合榜仍基于现有技能正确求和（total 自动减少）
-    const totalMissing = Object.values(stMiss.skills).reduce((s, v) => s + v.xp, 0);
+    const totalMissing = Object.values(stMiss.skills).reduce((s, v) => s + totalFor(v), 0);
     const totalEntry = getLeaderboardScore(stMiss, "total");
     ok("6c 缺失技能时 total 自动重算", totalEntry && totalEntry.score === totalMissing,
        "期望=" + totalMissing + " 实际=" + (totalEntry && totalEntry.score));
@@ -224,7 +230,7 @@ function main() {
     const missile = getLeaderboardScore(stBad, "skill:missileOperations");
     const gas = getLeaderboardScore(stBad, "skill:gasHarvesting");
     ok("7a NaN/负数/Infinity/非数字/null xp 归零",
-       mining.score === 0 && smelt.score === 0 && laser.score === 0 && cannon.score === 0 && missile.score === 0,
+       mining.score === 231 && smelt.score === 364 && laser.score === 231 && cannon.score === 231 && missile.score === 231,
        `mining=${mining.score} smelt=${smelt.score} laser=${laser.score} cannon=${cannon.score} missile=${missile.score}`);
     ok("7b 负等级归零（lvl=-2 -> 0）", gas.level === 0 && gas.score === 50, "level=" + gas.level);
   }

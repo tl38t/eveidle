@@ -1416,7 +1416,9 @@ const SaveManager = {
     const candidateSaveTime = Date.now();
     gameState.lastSaveTime = candidateSaveTime;
     let ok = false;
-    try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
+    this._lastStorageError = null;
+    try { ok = this.adapter.save(gameState); } catch (e) { this._lastStorageError = e; ok = false; }
+    if (!ok && !this._lastStorageError) this._lastStorageError = new Error("localStorage.setItem returned false");
     if (ok) {
       gameState._dirty = false;
       this._recordSuccessfulLocalSave(candidateSaveTime);
@@ -1650,6 +1652,8 @@ const SaveManager = {
   _localMirror: null,
   _achievementSync: null,
   _lastBootError: null,
+  _storageWriteFailed: false,
+  _lastStorageError: null,
   _lastCloudError: null,
   _lastMirrorError: null,
   _localReadResult: null,
@@ -1688,6 +1692,8 @@ const SaveManager = {
     this._offlineSettled = false;
     this._cloudSyncFailed = false;
     this._mirrorSyncFailed = false;
+    this._storageWriteFailed = false;
+    this._lastStorageError = null;
     this._deviceReadError = null;
     this._deviceCandidate = null;
     this._selectedEnvelope = null;
@@ -1933,6 +1939,19 @@ const SaveManager = {
     try {
       this._settleFinal();   // 仅最终态结算一次（内部 SaveManager.save 受 _committing 解禁）
       const upload = opts.upload || "none";
+      // Restricted H5 containers can reject the very first localStorage write.
+      // Probe it once and let a brand-new session continue in memory.
+      if (opts.persist && !this._hasLocalCandidate && !this._deviceCandidate) {
+        const probeOk = this._persistSelectedPayload();
+        if (!probeOk) {
+          this._storageWriteFailed = true;
+          this._lastBootError = this._lastStorageError || new Error("localStorage write failed");
+          opts.persist = false;
+          finalState = "local-only";
+          try { this._updateStatus("当前环境禁止本地存档，游戏可运行但刷新可能丢档"); } catch (e) {}
+          try { console.warn("本地存档不可写，已降级为内存运行：", this._lastBootError); } catch (e) {}
+        } else opts.persist = false;
+      }
       if (opts.persist && !this._persistSelectedPayload()) throw new Error("最终存档写入 localStorage 失败");
       if (opts.ensureMirror && !opts.persist) this._scheduleCurrentMirrorSnapshot();
       if (upload === "now") {
