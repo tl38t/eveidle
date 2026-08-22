@@ -721,7 +721,9 @@ const CombatStateActions = {
     // 死亡空间队列项：战败即计 1 次入场（queueEntriesDone+1），修好重入下一入场。
     const qActive = Boolean(state.combat.queueItemId);
     const qDs = qActive && state.combat.queueEntriesTarget > 0 && state.combat.mode === "deathspace";
-    state.resumeAfterRepair = {
+    // 只有队列驱动的出击才允许维修完成后自动续战。
+    // 手动出击失败后不应留下“续战”意图，否则玩家清空队列后仍会被重新拉回战斗。
+    state.resumeAfterRepair = qActive ? {
       type:"combat",
       returnZoneId,
       defeatedMode:failedDeathspace ? "deathspace" : "belt",
@@ -732,7 +734,7 @@ const CombatStateActions = {
       queueWavesDone: qActive ? state.combat.queueWavesDone : 0,
       queueEntriesTarget: qActive ? state.combat.queueEntriesTarget : 0,
       queueEntriesDone: qActive ? (state.combat.queueEntriesDone + (qDs ? 1 : 0)) : 0
-    };
+    } : null;
     Object.assign(state.combat, {
       active:false,
       enemies:[],

@@ -950,6 +950,20 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
 function tryResumeCombatAfterRepair() {
   const r = gameState.resumeAfterRepair;
   if (!r || r.type !== "combat") return false;
+  // 续战只能由仍然存在且运行中的战斗队列项触发。
+  // 不接受无 queueItemId 的旧/手动标记，避免清空队列后维修完成又自动开战。
+  if (!r.queueItemId) {
+    gameState.resumeAfterRepair = null;
+    return false;
+  }
+  const queue = gameState.queue;
+  const queueItem = queue && Array.isArray(queue.items)
+    ? queue.items.find(item => item && item.id === r.queueItemId)
+    : null;
+  if (!queueItem || !queue.status || queue.status.isRunning === false) {
+    gameState.resumeAfterRepair = null;
+    return false;
+  }
   gameState.resumeAfterRepair = null; // 一次性消费，避免重复触发
   const now = Date.now();
   const c = gameState.combat;
