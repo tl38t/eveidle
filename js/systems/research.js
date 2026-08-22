@@ -196,6 +196,73 @@
   }
 
   // -------------------------------------------------------------------------
+  // 级联入队（一键补齐前置）：把「使 techId 达到 targetLevel」所需的全部步骤
+  //   按顺序入队（前置在前、自身在后，天然满足「恰好下一等级」校验）。
+  //   - targetLevel 仍由调用方传入（通常 = 详情面板 nextTarget）。
+  //   - 依赖展开：逐项递归补齐前置科技到 prerequisites[i].level，再补齐目标自身
+  //     current+1 .. targetLevel；同级多次引用（含已排队/已完成的）由 projection 去重。
+  //   - 逐个调用 enqueueResearch（每次重算投影），不重复造轮子、不破坏既有不变式。
+  //   - 返回 { ok, enqueued, skipped, failed, queueFull, reason }：
+  //       enqueued 实际入队的 key 列表；skipped 已存在/已完成的（非致命）；
+  //       failed 真实失败（应为空，拓扑序保证前置已满足）；queueFull 触顶中止。
+  // -------------------------------------------------------------------------
+  function enqueueResearchCascade(state, techId, targetLevel) {
+    const node = getResearchNode(techId);
+    if (!node) return { ok: false, reason: "UNKNOWN_TECH", enqueued: [], skipped: [], failed: [] };
+    if (!Number.isInteger(targetLevel) || targetLevel < 1 || targetLevel > node.maxLevel) {
+      return { ok: false, reason: "LEVEL_OUT_OF_RANGE", enqueued: [], skipped: [], failed: [] };
+    }
+
+    // 收集步骤（拓扑序）：先递归前置，再自身层级。
+    const projected = buildProjectedResearchLevels(state);
+    const steps = [];
+    (function gather(id, tgt) {
+      const n = getResearchNode(id);
+      if (!n) return;
+      const cur = Number(projected[id]) || 0;
+      if (tgt <= cur) return; // 已满足（含已排队/已完成）→ 跳过
+      for (const p of (n.prerequisites || [])) {
+        gather(p.id, p.level); // 先铺前置链（含其前置）
+      }
+      for (let lv = cur + 1; lv <= tgt; lv++) {
+        const k = id + "@" + lv;
+        if (!steps.includes(k)) steps.push(k); // 跨分支去重
+      }
+    })(techId, targetLevel);
+
+    const enqueued = [];
+    const skipped = [];
+    const failed = [];
+    let queueFull = false;
+    for (const key of steps) {
+      const parsed = parseResearchStepKey(key);
+      if (!parsed) continue;
+      const res = enqueueResearch(state, parsed.techId, parsed.targetLevel);
+      if (res.ok) {
+        enqueued.push(key);
+      } else if (res.reason === "ALREADY_QUEUED" || res.reason === "ALREADY_COMPLETED" || res.reason === "ALREADY_ACTIVE") {
+        skipped.push(key);
+      } else if (res.reason === "QUEUE_FULL") {
+        queueFull = true;
+        failed.push(key + "(队列已满)");
+        break; // 容量硬上限，后续步骤无法再入队
+      } else {
+        failed.push(key + "(" + res.reason + ")"); // 不应到达：拓扑序保证前置已满足
+        break;
+      }
+    }
+    const realOk = failed.length === 0;
+    return {
+      ok: realOk,
+      enqueued,
+      skipped,
+      failed,
+      queueFull,
+      reason: realOk ? null : (queueFull ? "QUEUE_FULL" : "PARTIAL"),
+    };
+  }
+
+  // -------------------------------------------------------------------------
   // 私有启动原语（批次 C，防递归核心）：不做任何时间结算。
   //   职责仅为：真实 completedLevels 校验 → 冻结 duration → 创建 activeResearch，
   //   remainingSeconds = baseDuration，startedAt = atMs（仅展示）。
@@ -682,6 +749,7 @@
     isStepValidAgainst,
     buildProjectedResearchLevels,
     enqueueResearch,
+    enqueueResearchCascade,
     startResearch,
     startNextFromQueue,
     // 批次 C：在线/离线统一时间结算

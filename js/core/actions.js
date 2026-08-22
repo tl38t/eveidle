@@ -2044,6 +2044,11 @@ const StationStateActions = {
       if (!RS || typeof RS.enqueueResearch !== "function") return { changed: false, reason: "not-available" };
       return researchActionResult(RS.enqueueResearch(state, techId, targetLevel, now));
     },
+    enqueueCascade(state, techId,  targetLevel, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.enqueueResearchCascade !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.enqueueResearchCascade(state, techId, targetLevel, now));
+    },
     cancel(state, now) {
       const RS = getResearchSystemRef();
       if (!RS || typeof RS.cancelResearch !== "function") return { changed: false, reason: "not-available" };
@@ -2177,6 +2182,7 @@ const StationStateActions = {
   // 研究系统 Batch F：所有操作经 ResearchSystem 公开 API，actionTime 透传
   if (action.type === "research/start") return ResearchStateActions.start(state, action.techId, action.targetLevel, actionTime);
   if (action.type === "research/enqueue") return ResearchStateActions.enqueue(state, action.techId, action.targetLevel, actionTime);
+  if (action.type === "research/enqueueCascade") return ResearchStateActions.enqueueCascade(state, action.techId, action.targetLevel, actionTime);
   if (action.type === "research/cancel") return ResearchStateActions.cancel(state, actionTime);
   if (action.type === "research/applyHours") return ResearchStateActions.applyHours(state, action.hours, actionTime);
   if (action.type === "research/removeQueued") return ResearchStateActions.removeQueued(state, action.stepKey, actionTime);

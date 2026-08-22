@@ -160,12 +160,18 @@ function main() {
     const totalXp = Object.values(st.skills).reduce((s, v) => s + totalFor(v), 0);
     ok("5a total = 全部技能 xp 总和", byId["total"] && byId["total"].score === totalXp,
        "期望=" + totalXp + " 实际=" + (byId["total"] && byId["total"].score));
+    const totalLevel = registry.reduce((s, r) => s + (Number.isFinite(Number(st.skills[r.id] && st.skills[r.id].lvl)) && Number(st.skills[r.id].lvl) > 0 ? Number(st.skills[r.id].lvl) : 0), 0);
+    ok("5a-level total 等级 = 全部技能等级之和", byId["total"] && byId["total"].level === totalLevel,
+       "期望=" + totalLevel + " 实际=" + (byId["total"] && byId["total"].level));
 
     // combat.total = 所有 category=combat 的技能 xp 求和（动态，不预设名称）
     const combatIds = registry.filter((r) => r.category === "combat").map((r) => r.id);
     const combatXp = combatIds.reduce((s, id) => s + totalFor(st.skills[id]), 0);
+    const combatLevel = combatIds.reduce((s, id) => s + (Number(st.skills[id] && st.skills[id].lvl) || 0), 0);
     ok("5b combat.total = 战斗类技能 xp 求和（动态拆分）", byId["combat.total"] && byId["combat.total"].score === combatXp,
        "combatIds=" + combatIds.length + " 期望=" + combatXp + " 实际=" + (byId["combat.total"] && byId["combat.total"].score));
+    ok("5b-level combat.total 等级 = 战斗技能等级之和", byId["combat.total"] && byId["combat.total"].level === combatLevel,
+       "期望=" + combatLevel + " 实际=" + (byId["combat.total"] && byId["combat.total"].level));
     console.log("    战斗技能拆分清单（" + combatIds.length + " 项）: " + combatIds.join(", "));
 
     // production.total

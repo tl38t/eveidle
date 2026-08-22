@@ -720,7 +720,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.duration = recipe.time / display.efficiency;
     result.requirements = [
       ...(display.detail.equipmentInputs || []).map(item => ({ resourceId:"equipment:" + item.itemId, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
-      ...display.detail.materials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
+      ...(display.detail.materials || []).map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
     // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
     result.maxCount = 99999999;
@@ -739,7 +739,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     const recipe = display.currentComponent;
     result.title = icons.shipComp + " " + recipe.name;
     result.duration = display.componentActualTime; // 唯一周期公式（含船坞倍率）
-    result.requirements = display.componentMaterials.map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }));
+    result.requirements = (display.componentMaterials || []).map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }));
     const _shipCompMatMax = result.requirements.reduce((max, item) => Math.min(max, Math.floor(item.stock / item.quantity)), 999999);
     // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
     result.maxCount = 99999999;
@@ -756,8 +756,8 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.title = icons.shipAsm + " " + recipe.name;
     result.duration = display.assemblyActualTime; // 唯一周期公式（含船坞倍率）
     result.requirements = [
-      ...display.assemblyComponents.map(item => ({ resourceId:"component:" + item.id, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
-      ...display.assemblyMaterials.map(item => ({ resourceId:item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
+      ...(display.assemblyComponents || []).map(item => ({ resourceId:"component:" + item.id, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
+      ...(display.assemblyMaterials || []).map(item => ({ resourceId:item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
     // 缺料时 assemblyMaxCycles 为 0：超量预排放开硬限制（noCap），弹窗不再因缺料禁用“加入队列”，
     // 仅以 materialHint 提示当前可产批数；运行期 skipOnFail 在材料不足时切下一项。
@@ -822,7 +822,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     // getBoosterManufacturingDisplayState 不返回 selectedRecipeCosts/detail/maxCount/blockedReason
     // recipe 是 card 对象（displayName 而非 name, 无 .output），使用 materialRows 构建 requirements
     if (recipe && Array.isArray(recipe.materialRows) && recipe.materialRows.length) {
-      result.requirements = recipe.materialRows.map(row => ({
+      result.requirements = (recipe.materialRows || []).map(row => ({
         resourceId:row.reference, name:row.displayName || row.reference,
         quantity:row.required, stock:row.stock, enough:row.enough
       }));
@@ -3022,6 +3022,10 @@ function getHangarDisplayState(state, now) {
       const nextScanMul = Number(nextEnhancementBonuses.archaeologyScanMultiplier) || 1;
       const scanBase = archaeology ? (Number(config.bonuses && config.bonuses.archaeologyScanStrength) || 0) : 0;
       const failureReduction = archaeology ? (Number(config.bonuses && config.bonuses.archaeologyFailureDamageReduction) || 0) : 0;
+      const smeltMultiplier = (typeof getShipEnhancementSmeltMultiplier === "function")
+        ? getShipEnhancementSmeltMultiplier(config, enhancementLevel) : 1;
+      const nextSmeltMultiplier = (typeof getShipEnhancementSmeltMultiplier === "function")
+        ? getShipEnhancementSmeltMultiplier(config, enhancementLevel + 1) : 1;
       return {
         instanceId:instance.instanceId,
         shipId:instance.shipId,
@@ -3059,6 +3063,8 @@ function getHangarDisplayState(state, now) {
           nextHpGain:nextEnhancementBonuses.hpMultiplier - enhancementBonuses.hpMultiplier,
           nextDamageGain:(nextEnhancementBonuses.damageMultiplier || 1) - (enhancementBonuses.damageMultiplier || 1),
           nextIndustryGain:(nextEnhancementBonuses.industryMultiplier || 1) - (enhancementBonuses.industryMultiplier || 1),
+          smeltBonus:smeltMultiplier - 1,
+          nextSmeltGain:nextSmeltMultiplier - smeltMultiplier,
           scanBonus:scanMul - 1,
           nextScanGain:nextScanMul - scanMul,
           scanStrengthBase:scanBase,

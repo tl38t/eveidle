@@ -2144,15 +2144,17 @@ function renderResearchDetail(research, RD, RS, model) {
   } else if (status === "queued") {
     actionsHtml = '<div class="rt-d-row">已加入队列</div>';
   } else {
-    const disabled = status === "locked" ? " disabled" : "";
+    // 「立即研究」在前置未满足（locked）时仍禁用（start 不补前置）；
+    // 「加入队列」始终可用：available 时等同原行为，locked 时自动补齐前置链。
+    const startDisabled = status === "locked" ? " disabled" : "";
     const unmet = (node.prerequisites || []).filter(p => (Number(completedLevels[p.id]) || 0) < p.level)
       .map(p => { const pn = RS && RS.getResearchNode ? RS.getResearchNode(p.id) : null; return (pn ? pn.name : p.id) + " " + toRoman(p.level); });
     actionsHtml =
       '<div class="rt-d-actions">' +
-        '<button class="research-btn primary" data-detail-action="start" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + disabled + '>立即研究 ' + toRoman(nextTarget) + '</button>' +
-        '<button class="research-btn" data-detail-action="enqueue" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + disabled + '>加入队列</button>' +
+        '<button class="research-btn primary" data-detail-action="start" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + startDisabled + '>立即研究 ' + toRoman(nextTarget) + '</button>' +
+        '<button class="research-btn" data-detail-action="enqueue" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '">加入队列</button>' +
       '</div>' +
-      (status === "locked" ? '<div class="rt-d-hint">缺少前置：' + escapeAchievementText(unmet.join("、") || "—") + '</div>' : "");
+      (status === "locked" ? '<div class="rt-d-hint">将自动补齐前置：' + escapeAchievementText(unmet.join("、") || "—") + '</div>' : "");
   }
 
   el.innerHTML =
@@ -2543,10 +2545,17 @@ function onResearchDetailClick(event) {
   const techId = btn.dataset.techId;
   const targetLevel = Number(btn.dataset.level);
   if (!techId || !Number.isInteger(targetLevel)) return;
-  const type = action === "start" ? "research/start" : action === "enqueue" ? "research/enqueue" : null;
+  const type = action === "start" ? "research/start" : action === "enqueue" ? "research/enqueueCascade" : null;
   if (!type) return;
   const result = dispatchGameAction(gameState, { type, techId, targetLevel }, Date.now());
   if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+  if (type === "research/enqueueCascade" && result.enqueued && result.enqueued.length) {
+    let msg = "已加入队列（共 " + result.enqueued.length + " 项";
+    if (result.skipped && result.skipped.length) msg += "，跳过 " + result.skipped.length + " 项已存在";
+    if (result.queueFull) msg += "，队列已满未排后续";
+    msg += "）";
+    showToast(msg);
+  }
   renderResearchPage();
 }
 
@@ -2712,7 +2721,9 @@ function getEnhancementBonusText(enhancement) {
       "%（" + enhancement.scanStrengthBase + "→" + enhancement.scanStrength + "） · 失败反噬减免 " + Math.round(enhancement.failureReduction * 100) + "%（固定）";
   }
   const label = enhancement.role === "gas" ? "采气效率" : enhancement.role === "industry-dual" ? "采矿/采气效率" : "采矿效率";
-  return label + " +" + (enhancement.industryBonus * 100).toFixed(1) + "%";
+  const smeltText = Number(enhancement.smeltBonus) > 0
+    ? " · 自身冶炼效率 +" + (enhancement.smeltBonus * 100).toFixed(1) + "%" : "";
+  return label + " +" + (enhancement.industryBonus * 100).toFixed(1) + "%" + smeltText;
 }
 
 function getEnhancementNextText(enhancement) {
@@ -2723,7 +2734,9 @@ function getEnhancementNextText(enhancement) {
   if (enhancement.role === "archaeology") {
     return "下一级：生命 +" + (enhancement.nextHpGain * 100).toFixed(1) + "% · 扫描强度 +" + (enhancement.nextScanGain * 100).toFixed(1) + "%";
   }
-  return "下一级：最终采集效率 +" + (enhancement.nextIndustryGain * 100).toFixed(1) + "%";
+  const smeltText = Number(enhancement.nextSmeltGain) > 0
+    ? " · 自身冶炼效率 +" + (enhancement.nextSmeltGain * 100).toFixed(1) + "%" : "";
+  return "下一级：最终采集效率 +" + (enhancement.nextIndustryGain * 100).toFixed(1) + "%" + smeltText;
 }
 
 /* ================================================================

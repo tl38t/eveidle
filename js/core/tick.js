@@ -125,12 +125,12 @@ function gameTick() {
         if (typeof rollRigRichBonus === "function") {
           const richQty = rollRigRichBonus(gameState, "mining", area);
           if (richQty > 0 && typeof GameEvents !== "undefined") {
-            GameEvents.emit("mining:richBonus", { area:area.name, resourceId:"ore:凡晶石", quantity:richQty }, { offline:false });
+            GameEvents.emit("mining:richBonus", { area:area.name, resourceId, ore:area.ore, quantity:richQty }, { offline:false });
           }
         }
         // XP 始终只加一次（双倍不影响 XP）
         addSkillXpToState(gameState, "mining", area.baseXP, { job:"mining" }); actionCompleted = true;
-        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
+        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId, quantity:quantity, cycles:1, xp:area.baseXP }, { offline:false });
         if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
           GameEvents.emit("station:dispatchBonus", { kind:"mining", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.miningCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });
         }
@@ -159,7 +159,7 @@ function gameTick() {
         if (boosterEff && boosterEff.doubleSmeltChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleSmeltChance)) output *= 2;
         ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, output);
         addSkillXpToState(gameState, "refining", recipe.baseXP, { job:"refining" }); actionCompleted = true;
-        GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:1, outputQuantity:output, xp:recipe.baseXP }, { offline:false });
+        GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:1, outputQuantity:output, cycles:1, xp:recipe.baseXP }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
@@ -190,11 +190,11 @@ function gameTick() {
         if (typeof rollRigRichBonus === "function") {
           const richQty = rollRigRichBonus(gameState, "gasHarvesting", area);
           if (richQty > 0 && typeof GameEvents !== "undefined") {
-            GameEvents.emit("gas:richBonus", { area:area.name, resourceId:"gas:粗制富勒烯", quantity:richQty }, { offline:false });
+            GameEvents.emit("gas:richBonus", { area:area.name, resourceId, gas:area.gas, quantity:richQty }, { offline:false });
           }
         }
         addSkillXpToState(gameState, "gasHarvesting", area.baseXP, { job:"gasHarvesting" }); actionCompleted = true;
-        GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:quantity, xp:area.baseXP }, { offline:false });
+        GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:quantity, cycles:1, xp:area.baseXP }, { offline:false });
         if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
           GameEvents.emit("station:dispatchBonus", { kind:"gas", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.gasCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });
         }
@@ -216,7 +216,7 @@ function gameTick() {
         deductEquipEngInputs(recipe, 1);
         applyEquipEngOutput(recipe, 1);
         s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-        GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, time:recipe.time, xp:recipe.xp }, { offline:false });
+        GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
         if (recipe.slot === "rig") GameEvents.emit("rig:manufactured", { rigId:recipe.output.itemId, quantity:recipe.output.qty }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
@@ -241,7 +241,7 @@ function gameTick() {
           deductShipCompMats(shipCompCost, recipe.id);
           ResourceRegistry.add(gameState, "component:" + recipe.id, 1);
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-          GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, time:recipe.time, xp:recipe.xp }, { offline:false });
+          GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
@@ -268,7 +268,7 @@ function gameTick() {
           if (!gameState.inventory.ships) gameState.inventory.ships = [];
           gameState.inventory.ships.push(createShipInstance(recipe.shipId));
           s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
-          GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, time:recipe.time, xp:recipe.xp }, { offline:false });
+          GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });

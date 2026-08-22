@@ -551,7 +551,7 @@ const INDUSTRIAL_SHIPS = {
     dodge: 8, speed: 100, targeting: 80,
     capacitor: { capacity: 300 },
     fuelEfficiency: 0.80,
-    slots: { high: 4, mid: 4, low: 1, rig: 3 },
+    slots: { high: 4, mid: 4, low: 2, rig: 3 },
     bonuses: { miningLaserEfficiency: 1.8, gasLaserEfficiency: 1.8, fleetMiningSpeed: 0.20, smeltingSpeed: 0.30 },
     unlock: { type: "shipEngineering", level: 80 }
   }

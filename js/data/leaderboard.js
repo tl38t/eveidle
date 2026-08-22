@@ -162,7 +162,7 @@ function makeEntry(boardId, name, score, level, xp, updatedAt) {
     boardId,
     name,
     score,        // 该榜汇总 xp（聚合榜为求和，单项榜为对应技能 xp）
-    level,        // 单项榜=对应技能 lvl；聚合榜=组成技能最高 lvl（只读，不重算）
+    level,        // 单项榜=对应技能 lvl；聚合榜=组成技能 lvl 之和（只读，不重算）
     xp,           // 该榜汇总 xp（与 score 同值；保留字段便于前端直接取 xp）
     updatedAt,    // state 透传的时间戳（未提供则为 null，不自行生成/不写入）
     platformGroup: "standard",
@@ -189,14 +189,14 @@ function singleBoardEntry(reg, skills, updatedAt) {
 // categoryFilter: null=全部；或 "combat"/"gathering"/"production"/"research"
 function aggregateBoardEntry(boardId, name, registry, skills, categoryFilter, updatedAt) {
   let totalXp = 0;
-  let maxLevel = 0;
+  let totalLevel = 0;
   for (const reg of registry) {
     if (categoryFilter && reg.category !== categoryFilter) continue;
     totalXp += cumulativeSkillXp(skills, reg.id);
     const l = safeSkillLevel(skills, reg.id);
-    if (l > maxLevel) maxLevel = l;
+    totalLevel += l;
   }
-  return makeEntry(boardId, name, totalXp, maxLevel, totalXp, updatedAt);
+  return makeEntry(boardId, name, totalXp, totalLevel, totalXp, updatedAt);
 }
 
 // 综合榜定义（固定，不替代任何单项榜）
