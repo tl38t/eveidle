@@ -99,7 +99,7 @@ function renderBoosterDetail(display) {
 }
 
 /* ---- 已装载增强剂区域 ---- */
-function renderBoosterEquippedArea(display) {
+function renderBoosterEquippedArea(display, actionKey) {
   var area = document.getElementById("booster-equipped-area");
   var countEl = document.getElementById("booster-equipped-count");
   if (!area) return;
@@ -108,18 +108,21 @@ function renderBoosterEquippedArea(display) {
     area.innerHTML = '<div class="equipeng-empty">暂无已装载增强剂</div>';
     return;
   }
+  var groups = actionKey && typeof getActionBoosterSlots === "function"
+    ? display.groups.filter(function(group) { return getActionBoosterSlots(actionKey).indexOf(group.slots[0].slot) >= 0; })
+    : display.groups;
   var totalSlots = 0;
   var filled = 0;
-  for (var g = 0; g < display.groups.length; g++) {
-    totalSlots += display.groups[g].slots.length;
-    for (var s = 0; s < display.groups[g].slots.length; s++) {
-      if (!display.groups[g].slots[s].empty) filled++;
+  for (var g = 0; g < groups.length; g++) {
+    totalSlots += groups[g].slots.length;
+    for (var s = 0; s < groups[g].slots.length; s++) {
+      if (!groups[g].slots[s].empty) filled++;
     }
   }
   if (countEl) countEl.textContent = filled + " / " + totalSlots + " 槽";
   var html = "";
-  for (var g = 0; g < display.groups.length; g++) {
-    var group = display.groups[g];
+  for (var g = 0; g < groups.length; g++) {
+    var group = groups[g];
     var slotCards = "";
     for (var s = 0; s < group.slots.length; s++) {
       var slot = group.slots[s];
@@ -145,6 +148,96 @@ function renderBoosterEquippedArea(display) {
   }
   area.innerHTML = html || '<div class="equipeng-empty">暂无已装载增强剂</div>';
 }
+
+// 将对应行动的两个增强剂槽位就地显示在行动页面内。
+function renderActionBoosterSlots(actionKey, containerId) {
+  var area = document.getElementById(containerId);
+  if (!area) return;
+  // Always append after the existing action UI, regardless of the placeholder's HTML position.
+  var panelBody = area.closest(".panel-body");
+  if (panelBody && containerId !== "booster-equipped-area" && area.parentNode !== panelBody) panelBody.appendChild(area);
+  var slots = (typeof getActionBoosterSlots === "function") ? getActionBoosterSlots(actionKey) : [];
+  var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
+  if (!slots.length) { area.innerHTML = ""; return; }
+  var labels = { miningSpeed:"速度", miningYield:"产量", archaeologySpeed:"速度", archaeologyRare:"稀有", gasSpeed:"速度", gasYield:"产量", smeltSpeed:"速度", smeltYield:"产量", shipSpeed:"速度", shipYield:"产量", boosterSpeed:"速度", boosterYield:"产量", combatWeapon:"武器", combatRepair:"维修" };
+  var html = '<div class="action-booster-title"><span>增强剂</span><span>点击空槽装载 · 点击已装备槽更换</span></div><div class="action-booster-grid">';
+  slots.forEach(function(slot) {
+    var entry = active[slot];
+    var item = entry && typeof getBoosterItem === "function" ? getBoosterItem(entry.itemId) : null;
+    if (!item) {
+      html += '<div class="action-booster-slot action-booster-slot-empty" data-action-booster-slot="' + slot + '"><strong>' + (labels[slot] || slot) + '</strong><span>＋ 装载增强剂</span></div>';
+      return;
+    }
+    var remaining = Math.max(0, Number(entry.remainingMs) || 0);
+    html += '<div class="action-booster-slot" data-action-booster-slot="' + slot + '"><strong>' + (labels[slot] || slot) + ' · ' + item.name + '</strong><span>' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : "") + '</span><small>剩余 ' + Math.ceil(remaining / 1000) + 's · 点击更换</small></div>';
+  });
+  area.innerHTML = html + '</div>';
+}
+
+// Keep action-page slots visually consistent with the original booster cards.
+function renderActionBoosterSlots(actionKey, containerId) {
+  var area = document.getElementById(containerId);
+  var panel = area ? area.closest(".panel") : document.getElementById(
+    actionKey === "equipmentEngineering" ? "equipeng-panel" :
+    actionKey === "shipEngineering" ? "shipeng-panel" :
+    actionKey === "combat" ? "combat-panel" : null
+  );
+  var panelBody = panel ? panel.querySelector(".panel-body") : null;
+  if (!area && panelBody) {
+    area = document.createElement("div");
+    area.id = containerId;
+    area.className = "action-booster-slots";
+    panelBody.appendChild(area);
+  }
+  if (!area) return;
+  if (panelBody && containerId !== "booster-equipped-area" && area.parentNode !== panelBody) panelBody.appendChild(area);
+  var slots = (typeof getActionBoosterSlots === "function") ? getActionBoosterSlots(actionKey) : [];
+  var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
+  if (!slots.length) { area.innerHTML = ""; return; }
+  var html = '<div class="action-booster-grid">';
+  slots.forEach(function(slot) {
+    var entry = active[slot];
+    var item = entry && typeof getBoosterItem === "function" ? getBoosterItem(entry.itemId) : null;
+    if (!item) {
+      html += '<div class="equipeng-recipe-card action-booster-local-card action-booster-slot-empty" data-action-booster-slot="' + slot + '" title="Click to load a booster">' +
+        '<span class="equipeng-card-top"><span>\u589e\u5f3a\u5242\u69fd</span><span class="can-build">\u5f85\u88c5\u8f7d</span></span>' +
+        '<span class="equipeng-card-icon"><i class="fa-solid fa-flask-vial"></i></span><strong>\u88c5\u8f7d\u589e\u5f3a\u5242</strong>' +
+        '<span class="equipeng-card-attributes">\u70b9\u51fb\u4ece\u4ed3\u5e93\u9009\u62e9</span><span class="equipeng-card-bottom"><span>\u7a7a\u69fd</span></span></div>';
+      return;
+    }
+    var remaining = Math.max(0, Number(entry.remainingMs) || 0);
+    var inventory = (gameState.boosters && gameState.boosters.inventory && gameState.boosters.inventory[item.itemId]) || 0;
+    html += '<div class="equipeng-recipe-card action-booster-local-card" data-action-booster-slot="' + slot + '" title="Click to replace this booster">' +
+      '<span class="equipeng-card-top"><span>' + (item.qualityName || "\u589e\u5f3a\u5242") + ' · ' + item.name + '</span><span class="can-build">\u751f\u6548</span></span>' +
+      '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span><strong>' + item.name + '</strong>' +
+      '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : "") + ' · \u5269\u4f59 ' + Math.ceil(remaining / 1000) + 's</span>' +
+      '<span class="equipeng-card-bottom"><span>\u5e93\u5b58 ' + Number(inventory).toLocaleString() + '</span><button type="button" class="booster-unequip-btn action-booster-unequip-btn" data-action-booster-unequip="1" data-booster-slot="' + slot + '">\u5378\u4e0b</button></span></div>';
+  });
+  area.innerHTML = html + '</div>';
+}
+
+(function bindActionBoosterSlots() {
+  document.addEventListener("click", function(event) {
+    var unequipBtn = event.target.closest("[data-action-booster-unequip]");
+    if (unequipBtn) {
+      var unequipSlot = unequipBtn.getAttribute("data-booster-slot");
+      if (!unequipSlot) return;
+      showDangerConfirm("\u5378\u4e0b\u589e\u5f3a\u5242", "<p class=\"dlg-body\">\u786e\u5b9a\u5378\u4e0b\u8be5\u589e\u5f3a\u5242\uff1f\u5f53\u524d\u5269\u4f59\u65f6\u95f4\u5c06\u4f5c\u5e9f\u3002</p>", "\u786e\u8ba4\u5378\u4e0b", function() {
+        var result = dispatchGameAction(gameState, { type:"booster/unequip", slot:unequipSlot }, Date.now());
+        if (result.changed) { if (typeof updateUI === "function") updateUI(); }
+        else { showBoosterToast(result.reason || "\u5378\u4e0b\u5931\u8d25", true); }
+      });
+      return;
+    }
+    var card = event.target.closest("[data-action-booster-slot]");
+    if (!card) return;
+    var slot = card.getAttribute("data-action-booster-slot");
+    var compatible = getCompatibleBoosterItems(slot);
+    if (!compatible.length) { showBoosterToast("没有适合该槽位的库存增强剂", true); return; }
+    var active = getActiveBoosterState(gameState);
+    showBoosterSlotPicker(slot, compatible, active[slot] || null);
+  });
+})();
 
 /* ---- 库存卡片 ---- */
 function renderBoosterInventory(display) {
@@ -202,7 +295,7 @@ function renderBoosterPage(now) {
   renderBoosterDetail(display);
   renderBoosterInventory(display);
   var boosterDisplay = (typeof getBoosterDisplayState === "function") ? getBoosterDisplayState(gameState, now) : null;
-  renderBoosterEquippedArea(boosterDisplay);
+  renderBoosterEquippedArea(boosterDisplay, "boosterEngineering");
   var row = document.getElementById("booster-progress-row"); if (row) row.style.display = display.isRunning ? "" : "none";
   if (typeof drawSkillBar === "function") drawSkillBar(document.getElementById("bar-booster"), display.progress.percent, "purple");
   var eta = document.getElementById("booster-eta"); if (eta) eta.textContent = display.progress.etaText;
@@ -244,7 +337,10 @@ function renderBoosterPage(now) {
     var card = event.target.closest("[data-booster-recipe]");
     if (!card || card.disabled) return;
     var result = dispatchGameAction(gameState, { type:"booster/selectRecipe", recipeId:card.dataset.boosterRecipe }, Date.now());
-    if (result.changed) renderBoosterPage();
+    if (result.changed) {
+      renderBoosterPage();
+      showActionConfirm("boosterEngineering");
+    }
   });
   // 开始制造
   var start = document.getElementById("btn-start-booster");
@@ -364,7 +460,7 @@ function getCompatibleBoosterItems(slot) {
       if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[BOOSTER_SLOTS[s]] === BOOSTER_SLOT_XP_SKILL[slot]) { conflict = true; break; }
     }
     if (conflict) continue;
-    result.push({ id:item.itemId, name:item.name, quality:item.quality, qualityName:item.qualityName, effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue) : "", inv:qty });
+    result.push({ id:item.itemId, name:item.name, quality:item.quality, qualityName:item.qualityName, effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : "", inv:qty });
   }
   result.sort(function(a, b) { return (a.name || "").localeCompare(b.name || "", "zh-Hans-CN"); });
   return result;

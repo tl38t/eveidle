@@ -306,7 +306,7 @@ function getOfflineActionDescriptor() {
         if (typeof rollRigRichBonus === "function") {
           for (let i = 0; i < cycles; i++) richTotal += rollRigRichBonus(gameState, "mining", area);
           if (richTotal > 0 && typeof emitOfflineGameEvent === "function") {
-            emitOfflineGameEvent("mining:richBonus", { area:area.name, resourceId:"ore:凡晶石", quantity:richTotal });
+            emitOfflineGameEvent("mining:richBonus", { area:area.name, resourceId:dispatchResId, ore:area.ore, quantity:richTotal });
           }
         }
         // XP 始终按实际采集次数计算（双倍不增加 XP）
@@ -393,7 +393,7 @@ function getOfflineActionDescriptor() {
         if (typeof rollRigRichBonus === "function") {
           for (let i = 0; i < cycles; i++) richTotal += rollRigRichBonus(gameState, "gasHarvesting", area);
           if (richTotal > 0 && typeof emitOfflineGameEvent === "function") {
-            emitOfflineGameEvent("gas:richBonus", { area:area.name, resourceId:"gas:粗制富勒烯", quantity:richTotal });
+            emitOfflineGameEvent("gas:richBonus", { area:area.name, resourceId:dispatchResId, gas:area.gas, quantity:richTotal });
           }
         }
         addOfflineSkillXp(key, cycles * area.baseXP); gains[key] += cycles;

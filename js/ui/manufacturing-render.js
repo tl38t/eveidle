@@ -277,6 +277,15 @@ function renderEquipEngRigFilters(display) {
     '<span style="font-size:12px;color:#6a7a8e;">系列</span>' + display.rigFilters.seriesList.map(item => button(item)).join("");
 }
 
+function renderEquipEngSubTabs(display) {
+  const container = document.getElementById("equipeng-subtabs"); if (!container) return;
+  if (!display.subTabs) { container.style.display = "none"; container.innerHTML = ""; return; }
+  container.style.display = "flex"; // flex-wrap:wrap（见 index.html 内联样式），窄窗口自动换行不遮挡
+  const button = (item) => `<button class="equipeng-subtab-btn${item.selected ? " selected" : ""}" data-equipeng-subtab="${item.id}" role="tab" aria-selected="${item.selected}" style="padding:3px 10px;border-radius:4px;font-size:12px;cursor:pointer;border:1px solid ${item.selected ? "#38bdf8" : "#2a3a4a"};background:${item.selected ? "rgba(56,189,248,.15)" : "transparent"};color:${item.selected ? "#7dd3fc" : "#8a9aae"};">${item.name} <span style="opacity:.6;font-size:11px;">${item.count}</span></button>`;
+  container.innerHTML =
+    '<span style="font-size:12px;color:#6a7a8e;">细分</span>' + display.subTabs.list.map(item => button(item)).join("");
+}
+
 function renderEquipEngRecipeGrid(display) {
   const state = display || getEquipmentEngineeringDisplayState(gameState, Date.now(), equipEngSearchTerm);
   const grid = document.getElementById("equipeng-recipe-grid"); if (!grid) return;
@@ -349,6 +358,7 @@ function renderEquipEngPage(now) {
   const fill = document.getElementById("equipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   renderEquipEngTabs(display);
   renderEquipEngRigFilters(display);
+  renderEquipEngSubTabs(display);
   renderEquipEngRecipeGrid(display);
   renderEquipEngDetail(display);
   const search = document.getElementById("equipeng-search-input"); if (search && search.value !== equipEngSearchTerm) search.value = equipEngSearchTerm;
@@ -430,7 +440,10 @@ function renderEquipEngPage(now) {
     const card = event.target.closest("[data-recipe]");
     if (!card || card.disabled) return;
     const result = switchEquipEngTarget(card.dataset.recipe);
-    if (result.changed) renderEquipEngPage();
+    if (result.changed) {
+      renderEquipEngPage();
+      showActionConfirm("equipmentEngineering");
+    }
   });
   const rigFilters = document.getElementById("equipeng-rig-filters");
   if (rigFilters) rigFilters.addEventListener("click", event => {
@@ -438,6 +451,13 @@ function renderEquipEngPage(now) {
     if (!seriesButton) return;
     const payload = { type:"manufacturing/selectEquipEngRigFilter", series: seriesButton.dataset.rigSeries };
     const result = dispatchGameAction(gameState, payload, Date.now());
+    if (result.changed) renderEquipEngPage();
+  });
+  const subTabs = document.getElementById("equipeng-subtabs");
+  if (subTabs) subTabs.addEventListener("click", event => {
+    const btn = event.target.closest("[data-equipeng-subtab]");
+    if (!btn) return;
+    const result = dispatchGameAction(gameState, { type:"manufacturing/selectEquipEngSubTab", subTab: btn.dataset.equipengSubtab }, Date.now());
     if (result.changed) renderEquipEngPage();
   });
   const search = document.getElementById("equipeng-search-input");

@@ -287,7 +287,7 @@ const ARCHAEOLOGY_COMMON_WEIGHTS = Object.freeze([0.6, 0.3, 0.1]);
 
 // ---- 稳定器/译码器上限 ----
 const ARCHAEOLOGY_STABILIZER_CAP = 0.60;   // 信号稳定器减免总和上限
-const ARCHAEOLOGY_DECODER_CAP = 0.75;      // 文物译码器额外普通文物概率上限
+const ARCHAEOLOGY_DECODER_CAP = 0.75;      // 文物译码器稀有发现掉率加成上限（作为乘子 1+cap，即最多 +75% 稀有掉率）
 
 // ---- 反噬信号干扰最短时长 ----
 const ARCHAEOLOGY_SIGNAL_MIN_SECONDS = 3;

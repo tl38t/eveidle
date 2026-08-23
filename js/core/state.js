@@ -55,6 +55,7 @@ const gameState = {
     equipEngTarget: "t1_mining_laser",
     equipEngCategory: "mining",
     equipEngRigSeries: RIG_ENGINEERING_SERIES[0].id,
+    equipEngSubTab: {},
     startedEquipEngTarget: "",
     shipCompTarget: "integrated_hull",
     startedShipCompTarget: "",

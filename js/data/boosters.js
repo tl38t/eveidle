@@ -188,7 +188,7 @@ const BOOSTER_RECIPES = [];
       effectValue,
       weaponType:series.weaponType || null,
       repairTarget:series.repairTarget || null,
-      description:name + "：" + describeBoosterEffect(effectType, effectValue)
+      description:name + "：" + describeBoosterEffect(effectType, effectValue, series.repairTarget)
     };
     BOOSTER_ITEMS[id] = item;
     BOOSTER_RECIPES.push({
@@ -212,20 +212,23 @@ const BOOSTER_RECIPES = [];
       },
       output:{ type:"booster", itemId, qty:1 },
       durationMs:BOOSTER_DURATION_MS,
-      effect:{ type:effectType, value:effectValue, slot },
+      effect:{ type:effectType, value:effectValue, slot, repairTarget:series.repairTarget || null },
       requiresBlueprint: !!requiresBlueprint
     });
   }
 })();
 
-function describeBoosterEffect(effectType, value) {
+function describeBoosterEffect(effectType, value, repairTarget) {
   switch (effectType) {
     case "miningSpeed":       return "采矿速度 +" + Math.round(value * 100) + "%";
     case "doubleMineral":     return "矿物翻倍概率 " + Math.round(value * 100) + "%";
     case "archaeologySpeed":  return "考古周期 " + Math.round(value * 100) + "%";
     case "rareShift":         return "稀有发现 ×" + value.toFixed(2);
     case "damageMultiplier":  return "武器伤害 +" + Math.round(value * 100) + "%";
-    case "repairAmount":      return "维修量 +" + Math.round(value * 100) + "%";
+    case "repairAmount": {
+      const targetNames = { shield:"护盾", armor:"装甲", structure:"结构" };
+      return (targetNames[repairTarget] || "维修") + "维修量 +" + Math.round(value * 100) + "%";
+    }
     case "gasSpeed":          return "采气速度 +" + Math.round(value * 100) + "%";
     case "gasDouble":         return "采气产量翻倍概率 " + Math.round(value * 100) + "%";
     case "smeltSpeed":        return "冶炼速度 +" + Math.round(value * 100) + "%";

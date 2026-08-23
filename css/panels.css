@@ -113,6 +113,19 @@
     --seg-accent: #69c0ed; --seg-active-text: #d9f1ff;
     --seg-active-bg: linear-gradient(180deg, #2e5f8d, #244c71);
   }
+  .equipeng-subtabs {
+    display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+    padding: 6px 2px; margin-top: -2px;
+  }
+  .equipeng-subtab-btn {
+    padding: 3px 10px; border-radius: 4px; font-size: 12px; cursor: pointer;
+    border: 1px solid #2a3a4a; background: transparent; color: #8a9aae;
+    transition: border-color .15s, background .15s, color .15s;
+  }
+  .equipeng-subtab-btn:hover { border-color: #466580; color: #bcc5d0; }
+  .equipeng-subtab-btn.selected {
+    border-color: #38bdf8; background: rgba(56,189,248,.15); color: #7dd3fc;
+  }
   .equipeng-workspace {
     display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(310px, .95fr);
     gap: 10px; margin-top: 10px;

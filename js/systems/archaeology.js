@@ -322,10 +322,6 @@ function resolveArchaeologyRegularYield(state, site, location, focus, fitted, rn
       ResourceRegistry.add(state, "artifact:" + art.id, 1);
       found.push(art);
       if (bonusIsk > 0) ResourceRegistry.add(state, "currency:isk", bonusIsk);
-      if (fitted && fitted.decoder > 0 && rng() < fitted.decoder) {
-        const extra = commons[weightedPick(commonWeights, rng)];
-        if (extra) { ResourceRegistry.add(state, "artifact:" + extra.id, 1); found.push(extra); }
-      }
     }
   } else if (chosen === "merit") {
     const lp = getArchaeologyArtifactsByTier(site.tier).find(a => a.category === "lp");
@@ -452,7 +448,9 @@ function resolveArchaeologyRare(state, site, location, tier, fitted, rng, isOffl
   const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state) : null;
   const rareShiftMul = (boosterEff && Number.isFinite(boosterEff.rareShiftMultiplier)) ? boosterEff.rareShiftMultiplier : 1;
   const implantUnique = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).archaeology.unique : 1;
-  const effectiveRareRate = Math.min(0.99, (location.rareRate || 0) * rareShiftMul * implantUnique);
+  // 文物译码器：作为稀有发现掉率的乘子（1+加成），与增强剂 rareShift、脑插 unique 同乘。
+  const decoderMul = 1 + (fitted && fitted.decoder ? fitted.decoder : 0);
+  const effectiveRareRate = Math.min(0.99, (location.rareRate || 0) * rareShiftMul * implantUnique * decoderMul);
   const offline = Boolean(isOffline);
   if (rng() >= effectiveRareRate) return null;
   const weights = location.rareWeights || {};
@@ -962,11 +960,11 @@ function getArchaeologyDisplayState(state, now) {
         effectiveCalibrationRate: Number(calibRatePct),
         effectiveLpMultiplier: effectiveLpMult,
         expectedCommonIsk: (cw[0]*commonArts[0].iskValue+cw[1]*commonArts[1].iskValue+cw[2]*commonArts[2].iskValue),
-        expectedCommonIskPerSuccess: (cw[0]*commonArts[0].iskValue+cw[1]*commonArts[1].iskValue+cw[2]*commonArts[2].iskValue) * (1 + fitted.decoder),
-        expectedUniqueIskPerSuccess: boostedRate * (uniqueArts.reduce((s,a)=>s+a.iskValue,0) / Math.max(1, uniqueArts.length)),
+        expectedCommonIskPerSuccess: (cw[0]*commonArts[0].iskValue+cw[1]*commonArts[1].iskValue+cw[2]*commonArts[2].iskValue),
+        expectedUniqueIskPerSuccess: Math.min(0.99, boostedRate * (1 + fitted.decoder)) * (uniqueArts.reduce((s,a)=>s+a.iskValue,0) / Math.max(1, uniqueArts.length)),
         expectedIskPerCycle: successChance * (
-          (cw[0]*commonArts[0].iskValue+cw[1]*commonArts[1].iskValue+cw[2]*commonArts[2].iskValue) * (1 + fitted.decoder)
-          + boostedRate * (uniqueArts.reduce((s,a)=>s+a.iskValue,0) / Math.max(1, uniqueArts.length))
+          (cw[0]*commonArts[0].iskValue+cw[1]*commonArts[1].iskValue+cw[2]*commonArts[2].iskValue)
+          + Math.min(0.99, boostedRate * (1 + fitted.decoder)) * (uniqueArts.reduce((s,a)=>s+a.iskValue,0) / Math.max(1, uniqueArts.length))
         ),
         expectedLpPerCycle: successChance * Number(lpChancePct)/100 * (lpArt ? lpArt.lpValue : 0),
         expectedCalibPerCycle: successChance * effectiveCalibRate * calibAmount

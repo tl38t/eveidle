@@ -24,6 +24,10 @@ function getInstalledCombatRepairers(state) {
   return getInstalledCombatModules(state).filter(module => module.equipment.combat.kind === "repair");
 }
 
+function getInstalledCombatDamageControls(state) {
+  return getInstalledCombatModules(state).filter(module => module.equipment && module.equipment.combat && module.equipment.combat.kind === "damageControl");
+}
+
 function getCombatRecoveryRemaining(state, now) {
   const g = (state && state.combat) ? state : gameState;
   // 仅用于「未显式传入 now」的显示查询（如 verify/浏览器面板）；权威战斗路径（updateCombatRecovery）
@@ -719,7 +723,10 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。负消耗不进 lootGained。
   const salvageFuelPK = (typeof getSalvageFuelPerKill === "function") ? getSalvageFuelPerKill(state) : 0;
   if (salvageFuelPK > 0) {
-    const salvageFuelAmt = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
+    const salvageBase = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
+    const fuelMultiplier = (typeof getCombatFuelMultiplierFromState === "function")
+      ? getCombatFuelMultiplierFromState(state, zone) : 1;
+    const salvageFuelAmt = Math.max(1, Math.round(salvageBase * fuelMultiplier));
     ResourceRegistry.spend(state, "consumable:fuel", salvageFuelAmt);
   }
   // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才触发；死亡空间不触发，与货柜一致）
@@ -1054,6 +1061,17 @@ function advanceCombatRound(state, context) {
   if (!ship || !shipInstance) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-ship" };
   const weapons = getInstalledCombatWeapons(state);
   const repairers = getInstalledCombatRepairers(state);
+  // 损伤控制单元：每轮在敌人行动前结算在线状态（扣燃料），求和全局减伤并封顶 50%
+  const damageControls = getInstalledCombatDamageControls(state);
+  let dcReduction = 0;
+  for (const dc of damageControls) {
+    const dcFuelCost = Math.max(1, Math.round((dc.equipment.combat.fuelCost || 1) * calcFuelMult(zone, state)));
+    if (ResourceRegistry.get(state, "consumable:fuel") >= dcFuelCost) {
+      ResourceRegistry.spend(state, "consumable:fuel", dcFuelCost);
+      dcReduction += (dc.equipment.bonuses && dc.equipment.bonuses.globalDamageReduction) || 0;
+    }
+  }
+  dcReduction = Math.min(0.5, dcReduction);
   let enemy = syncCurrentCombatTarget(c, state);
   if (!enemy) {
     resolveCombatWaveVictory(zone, rng, emit, state);
@@ -1167,7 +1185,8 @@ function advanceCombatRound(state, context) {
     const mitigation = applyCapitalShieldMitigation(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
     if (mitigation.shieldHitUsed) shieldHitsUsed++;
     const enemyDmg = Math.max(0, Math.round(mitigation.damage));
-    const damageTaken = applyLayeredCombatDamage(c.hp, enemyDmg);
+    const reducedDmg = dcReduction > 0 ? Math.max(0, Math.round(enemyDmg * (1 - dcReduction))) : enemyDmg;
+    const damageTaken = applyLayeredCombatDamage(c.hp, reducedDmg);
     armorDamageTaken += damageTaken.armor;
     // Batch C-12：累计玩家实际承受伤害
     c.runDamageTaken = (typeof c.runDamageTaken === "number" ? c.runDamageTaken : 0) + damageTaken.shield + damageTaken.armor + damageTaken.structure;

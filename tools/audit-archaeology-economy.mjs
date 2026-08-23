@@ -123,8 +123,8 @@ function audit(site){
   ok(r.wallS===wallS,`${site.id} 墙钟${r.wallS}===主动${r.actS}+干扰${r.intS}+维修${r.repS}`);
 
   // ==== 与纯预览交叉验证（真实生产选择器 getArchaeologyDisplayState）====
-  // 预览给出「每次成功期望 ISK」(=普通×(1+译码器) + 有效独特率×独特均值)，与本 profile 权重/倍率同源；
-  // 用真实 succ 折算，真实 ISK 应落在 3% 偏差内。此路径同时校验普通权重、译码器、profile 独特倍率。
+  // 预览给出「每次成功期望 ISK」(=普通(不含译码器) + 有效独特率×(1+译码器)×独特均值)，与本 profile 权重/倍率同源；
+  // 用真实 succ 折算，真实 ISK 应落在 3% 偏差内。此路径同时校验普通权重、译码器(稀有乘子)、profile 独特倍率。
   const dispState=mkState(tid).g;
   dispState.skills.archaeology={lvl:T[tid].level,xp:0};
   const disp=fDisplay(dispState,1000000);

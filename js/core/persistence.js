@@ -868,7 +868,8 @@ function migrateBoosterState() {
     let rawId = entry.itemId;
     if (typeof rawId === "string" && rawId.startsWith("booster:")) rawId = rawId.slice("booster:".length);
     const item = (typeof getBoosterItem === "function") ? getBoosterItem(rawId) : null;
-    if (!item || item.slot !== slot) { b.active[slot] = null; continue; }
+    // Universal boosters (for example the neural training catalyst) may occupy any slot.
+    if (!item || (!item.universal && item.slot !== slot)) { b.active[slot] = null; continue; }
     const remainingMs = Number(entry.remainingMs);
     if (!Number.isFinite(remainingMs) || remainingMs <= 0) { b.active[slot] = null; continue; }
     // 存储完整 itemId（含 booster: 前缀），供 ResourceRegistry 寻址
@@ -1259,6 +1260,20 @@ function computeGameStateChecksum(state) {
   } catch (e) { return ""; }
 }
 
+// 修复早期版本将月矿钷错误写入普通矿石池的问题。幂等迁移：保留数量，
+// 合并到正确的 moon:钷 后删除非法 ore:钷，避免旧键继续出现在仓库。
+function migrateLegacyPromethiumOre(state = gameState) {
+  if (!state || !state.resources) return false;
+  const ores = state.resources.ores && typeof state.resources.ores === "object" ? state.resources.ores : null;
+  if (!ores || !Object.prototype.hasOwnProperty.call(ores, "钷")) return false;
+  const qty = Math.max(0, Number(ores.钷) || 0);
+  delete ores.钷;
+  if (qty <= 0) return true;
+  if (!state.resources.moonOres || typeof state.resources.moonOres !== "object") state.resources.moonOres = {};
+  state.resources.moonOres.钷 = Math.max(0, Number(state.resources.moonOres.钷) || 0) + qty;
+  return true;
+}
+
 // 旧档字段补齐（仅 startup 读档且确为旧档时由 bootstrap 调用）。原 autoLoad restored
 // 分支逐字保留，确保旧档兼容行为不变。
 function applyLegacyStartupFieldMigrations() {
@@ -1282,6 +1297,7 @@ function applyLegacyStartupFieldMigrations() {
     delete gameState.skills.gunnery;
     if (!gameState.resources.gases) gameState.resources.gases = {};
     migrateMoonMiningState();
+    migrateLegacyPromethiumOre(gameState);
     if (gameState.resources.fuel === undefined) gameState.resources.fuel = 1000;
     if (typeof migrateLegacyAmmunition === "function") migrateLegacyAmmunition(gameState);
     if (!gameState.currentAction.gasArea) gameState.currentAction.gasArea = "富勒烯云团";
@@ -1350,6 +1366,7 @@ function normalizeAndMigratePayload(ctx) {
   const now = ctx.now || Date.now();
   migrateAmmunitionEngineeringState();
   migrateMoonMiningState();
+  migrateLegacyPromethiumOre(gameState);
   migrateDeathspaceState();
   migrateBoosterState();
   finalizeEquipmentStateAfterLegacyMigrations(gameState);

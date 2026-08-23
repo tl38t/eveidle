@@ -277,6 +277,29 @@
   .cargo-card[data-cat="月球"] { border-left: 3px solid #d4a87a; }
   .cargo-card[data-cat="组件"] { border-left: 3px solid #a0a8b8; }
   .cargo-card[data-cat="消耗品"] { border-left: 3px solid #e8d8a0; }
+  .action-booster-slots { margin-top: 12px; padding: 8px 0; }
+  .action-booster-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:#d6c786; font-size:13px; }
+  .action-booster-title span:last-child { color:#71839a; font-size:11px; }
+  .action-booster-grid { display:grid; grid-template-columns:repeat(2, minmax(180px, 260px)); justify-content:start; gap:8px; }
+  .action-booster-slot { min-height:52px; padding:8px 10px; border:1px solid #2d4a61; border-radius:6px; background:rgba(23,42,58,.72); cursor:pointer; transition:border-color .15s, background .15s; }
+  .action-booster-slot:hover { border-color:#68b8e6; background:rgba(31,59,79,.88); }
+  .action-booster-slot strong, .action-booster-slot span, .action-booster-slot small { display:block; }
+  .action-booster-slot strong { color:#dfe9f2; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .action-booster-slot span { color:#7dd3fc; font-size:12px; margin-top:4px; }
+  .action-booster-slot small { color:#71839a; font-size:10px; margin-top:3px; }
+  .action-booster-slot-empty { border-style:dashed; color:#8ea1b5; text-align:center; }
+  .action-booster-slot-empty strong { color:#9fb4c6; }
+  .action-booster-slot-empty span { color:#71839a; }
+  @media (max-width: 560px) { .action-booster-grid { grid-template-columns:1fr; } }
+  .action-booster-local-card { cursor:pointer; min-width:0; }
+  .action-booster-local-card { min-height:52px; max-height:72px; }
+  .action-booster-local-card .equipeng-card-icon { display:none; }
+  .action-booster-local-card > strong { padding:2px 6px; font-size:11px; }
+  .action-booster-local-card .equipeng-card-attributes { height:auto; padding:2px 6px 3px; font-size:9px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .action-booster-local-card .equipeng-card-top,
+  .action-booster-local-card .equipeng-card-bottom { padding:3px 6px; font-size:8px; }
+  .action-booster-local-card .equipeng-card-bottom { display:flex; align-items:center; justify-content:space-between; gap:6px; }
+  .action-booster-unequip-btn { flex:0 0 auto; padding:1px 5px; border:1px solid #8a3a3a; border-radius:3px; background:#3a1a1a; color:#f0857b; font-size:9px; cursor:pointer; }
   .cargo-card[data-cat="交易品"] { border-left: 3px solid #e0a85d; }
 
   /* 仓库自动排序：顶层吸顶标题 / 小分类标题条 / 缩进簇（#cargo-list 保持 grid，标题与簇横跨整行，内部再嵌 grid） */

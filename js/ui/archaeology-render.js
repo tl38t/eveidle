@@ -100,7 +100,7 @@ function renderArchaeologyPage(now) {
           ${ship.attrs.equipBonuses && (ship.attrs.equipBonuses.decoder > 0 || ship.attrs.equipBonuses.nonFatalAvoid > 0 || ship.attrs.equipBonuses.copyChance > 0 || ship.attrs.equipBonuses.cycleReduction > 0) ? `
           <div class="arch-attr-chips">
             <span class="arch-chips-title">装备加成</span>
-            ${ship.attrs.equipBonuses.decoder > 0 ? `<span class="arch-chip">译码 +${Math.round(ship.attrs.equipBonuses.decoder * 100)}%</span>` : ""}
+            ${ship.attrs.equipBonuses.decoder > 0 ? `<span class="arch-chip">稀有 +${Math.round(ship.attrs.equipBonuses.decoder * 100)}%</span>` : ""}
             ${ship.attrs.equipBonuses.nonFatalAvoid > 0 ? `<span class="arch-chip">免伤 ${Math.round(ship.attrs.equipBonuses.nonFatalAvoid * 100)}%</span>` : ""}
             ${ship.attrs.equipBonuses.copyChance > 0 ? `<span class="arch-chip">复制 ${Math.round(ship.attrs.equipBonuses.copyChance * 100)}%</span>` : ""}
             ${ship.attrs.equipBonuses.cycleReduction > 0 ? `<span class="arch-chip">周期 -${Math.round(ship.attrs.equipBonuses.cycleReduction * 100)}%</span>` : ""}
@@ -319,9 +319,11 @@ function renderArchaeologyPage(now) {
       <aside class="arch-col arch-col-loot">${rareArchive}</aside>
     </div>
     ${logSection}
+    <div id="archaeology-action-booster-slots" class="action-booster-slots" aria-label="考古增强剂槽位"></div>
   `;
 
   bindArchaeologyEvents(body);
+  if (typeof renderActionBoosterSlots === "function") renderActionBoosterSlots("archaeology", "archaeology-action-booster-slots");
   return display;
 }
 

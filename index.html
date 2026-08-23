@@ -386,6 +386,7 @@
           </div>
         </div>
         <div class="skill-actions mt-8">
+          <div id="action-booster-slots" class="action-booster-slots" aria-label="当前行动增强剂槽位"></div>
           <button class="btn danger" id="btn-stop">停止</button>
           <button class="btn" id="btn-switch-skill">切换技能</button>
           <button class="btn primary" id="btn-start-mine" style="display:none;">▶ 开始采矿</button>
@@ -442,6 +443,7 @@
 
     <!-- 舰船工程面板 -->
     <div class="panel" id="shipeng-panel" style="display:none;">
+      <div id="ship-action-booster-slots" class="action-booster-slots" aria-label="舰船工程增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">🚀 舰船工程</span>
         <span class="text-muted" id="shipeng-header-status">待命</span>
@@ -536,6 +538,7 @@
         <div class="equipeng-queue-summary" id="equipeng-queue-summary">制造队列 0 / 20</div>
         <div class="equipeng-category-tabs" id="equipeng-category-tabs" role="tablist" aria-label="装备工程分类"></div>
         <div class="equipeng-rig-filters" id="equipeng-rig-filters" style="display:none;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;"></div>
+        <div class="equipeng-subtabs" id="equipeng-subtabs" style="display:none;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;"></div>
         <div class="equipeng-workspace">
           <section class="equipeng-catalog">
             <div class="equipeng-catalog-header">
@@ -624,6 +627,7 @@
 
     <!-- 战斗面板 -->
     <div class="panel combat-panel" id="combat-panel" style="display:none;">
+      <div id="combat-action-booster-slots" class="action-booster-slots" aria-label="战斗增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">⚔ 战斗行动</span>
         <span id="combat-header-info" class="text-muted">待命</span>
@@ -1185,7 +1189,7 @@
   <script defer src="./js/ui/action-modal.js?v=6"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
-  <script defer src="./js/systems/combat.js?v=8"></script>
+  <script defer src="./js/systems/combat.js?v=9"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
   <script defer src="./js/core/selectors.js?v=35"></script>
   <script defer src="./js/core/actions.js?v=13"></script>
@@ -1222,7 +1226,7 @@
   <script defer src="./js/data/platform-achievement-map.js?v=2"></script>
   <script defer src="./js/core/achievement-sync-service.js?v=2"></script>
   <script defer src="./js/core/leaderboard-sync-service.js?v=1"></script>
-  <script defer src="./js/core/persistence.js?v=11"></script>
+  <script defer src="./js/core/persistence.js?v=12"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=3"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
   <script defer src="./js/ui/render.js?v=8"></script>

@@ -1226,12 +1226,33 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const rigSeries = isRigCategory
     ? (RIG_ENGINEERING_SERIES.find(s => s.id === action.equipEngRigSeries) || RIG_ENGINEERING_SERIES[0])
     : null;
-  const filteredRecipes = isRigCategory
-    ? categoryRecipes.filter(recipe => recipe.stackGroup === rigSeries.id)
-    : categoryRecipes;
+  // 三级标签：仅 weapons/defense/collect_boost/archaeology 启用，按二级分类记忆所选子标签。
+  const usesSubTabs = Boolean(EQUIPMENT_ENGINEERING_SUBTABS[category.id]);
+  const selectedSubTab = usesSubTabs ? ((action.equipEngSubTab && action.equipEngSubTab[category.id]) || "all") : null;
+  let filteredRecipes;
+  if (isRigCategory) {
+    filteredRecipes = categoryRecipes.filter(recipe => recipe.stackGroup === rigSeries.id);
+  } else if (usesSubTabs) {
+    filteredRecipes = categoryRecipes.filter(recipe => selectedSubTab === "all" || getEquipEngSubtabId(recipe) === selectedSubTab);
+  } else {
+    filteredRecipes = categoryRecipes;
+  }
   const visibleRecipes = filteredRecipes.filter(recipe => !normalizedSearch || recipe.name.toLocaleLowerCase().includes(normalizedSearch));
-  // 改装件页：切换分类/档位/搜索时详情自动落到第一个可见配方（不影响其他类别既有行为）
-  const selectionPool = isRigCategory ? (visibleRecipes.length ? visibleRecipes : filteredRecipes) : categoryRecipes;
+  // 三级标签显示态：仅启用三级的二级分类构建；各子标签计数基于整类（不受当前搜索影响）。
+  const subTabs = usesSubTabs ? {
+    categoryId: category.id,
+    selected: selectedSubTab,
+    list: EQUIPMENT_ENGINEERING_SUBTABS[category.id].map(item => ({
+      id:item.id,
+      name:item.name,
+      count: item.id === "all"
+        ? categoryRecipes.length
+        : categoryRecipes.filter(recipe => getEquipEngSubtabId(recipe) === item.id).length,
+      selected: item.id === selectedSubTab
+    }))
+  } : null;
+  // 改装件页 / 三级标签页：切换分类/档位/子标签/搜索时详情自动落到第一个可见配方
+  const selectionPool = (isRigCategory || usesSubTabs) ? (visibleRecipes.length ? visibleRecipes : filteredRecipes) : categoryRecipes;
   const selectedRecipe = selectionPool.find(recipe => recipe.id === requestedRecipe.id) ||
     selectionPool.find(recipe => level >= recipe.level) || selectionPool[0] || categoryRecipes[0] || requestedRecipe;
   const active = Boolean(action.active && action.skill === "equipmentEngineering");
@@ -1288,6 +1309,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
       series:rigSeries.id,
       seriesList:RIG_ENGINEERING_SERIES.map(s => ({ id:s.id, name:s.name, rigCategory:s.rigCategory, selected:s.id === rigSeries.id }))
     } : null,
+    subTabs: subTabs,
     visibleCount:visibleRecipes.length,
     selectedRecipe:{ ...selectedRecipe, cost:{ ...(selectedRecipe.cost || {}) }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output }, unlocked:level >= selectedRecipe.level && selectedHasRequiredBlueprint, hasRequiredBlueprint:selectedHasRequiredBlueprint },
     runningRecipe:{ ...runningRecipe, cost:{ ...(runningRecipe.cost || {}) }, inputEquipment:runningRecipe.inputEquipment ? { ...runningRecipe.inputEquipment } : null, output:{ ...runningRecipe.output } },
@@ -1413,7 +1435,7 @@ function getBoosterManufacturingDisplayState(state, now) {
       time:recipe.time,
       effectiveTime:recipe.time / efficiency,
       durationSeconds:Math.round((recipe.durationMs || BOOSTER_DURATION_MS) / 1000),
-      effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(recipe.effect.type, recipe.effect.value) : "",
+      effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(recipe.effect.type, recipe.effect.value, recipe.effect.repairTarget) : "",
       materialRows,
       required:materialRows.reduce((sum, row) => sum + row.required, 0),
       owned,
@@ -1444,7 +1466,7 @@ function getBoosterManufacturingDisplayState(state, now) {
         category:item.category,
         quantity:qty,
         durationSeconds:Math.round((item.durationMs || BOOSTER_DURATION_MS) / 1000),
-        effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue) : ""
+        effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : ""
       };
     })
     .filter(Boolean)
@@ -1765,6 +1787,18 @@ function getCombatRepairMultiplierFromState(state, target, context, structureRat
   const ship = getActiveCombatShipState(state).config;
   const roleBonus = ship.bonuses && target ? (ship.bonuses[target + "Repair"] || 0) : 0;
   let shipRepairMult = 1 + roleBonus;
+  // 装备层维修量加成：遍历已装 fitting 装备的 bonuses[target+"Repair"]（损伤控制单元中槽的 shieldRepair/armorRepair/structureRepair），
+  // 与舰船层同属乘区内加法项（装备 DCU 的维修量加成此前未被消费，此处补全）
+  if (target) {
+    const mods = getInstalledCombatModulesFromState(state);
+    let equipRepairBonus = 0;
+    for (const m of mods) {
+      if (m.bonuses && typeof m.bonuses[target + "Repair"] === "number") {
+        equipRepairBonus += m.bonuses[target + "Repair"];
+      }
+    }
+    if (equipRepairBonus !== 0) shipRepairMult += equipRepairBonus;
+  }
   // 结构系船体紧急维修：结构层低于 70% 时，结构维修加成额外 +structureEmergencyRepair（现状 +100%，即 +200%→+300%）；仅作用于结构层
   if (target === "structure" && typeof structureRatio === "number" && structureRatio < 0.7 && ship.bonuses && typeof ship.bonuses.structureEmergencyRepair === "number") {
     shipRepairMult += ship.bonuses.structureEmergencyRepair;

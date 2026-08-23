@@ -16,8 +16,8 @@ const EQUIPMENT_DB = {
   "t5_mining_laser":  { id:"t5_mining_laser", shipTypes:["industrial_capital"], name:"旗舰采矿激光器",  slot:"high", level:80, time:180, xp:130, cost:{"三钛合金":1200,"超噬矿":20,"铷":10,"磁场聚合物":30}, bonuses:{miningEfficiency:0.80} },
   "t5_gas_harvester": { id:"t5_gas_harvester", shipTypes:["industrial_capital"], name:"旗舰气云采集器",  slot:"high", level:80, time:180, xp:130, cost:{"三钛合金":1200,"超纯聚合气体":3,"铷":5}, bonuses:{gasEfficiency:0.80} },
   "t1_small_laser": { id:"t1_small_laser", name:"小型激光炮 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类晶体胶矿":12}, bonuses:{}, combat:{kind:"weapon",weaponType:"laser",baseDamage:120,baseHit:100,fuelCost:3,ammoCost:1} },
-  "t1_light_missile_launcher": { id:"t1_light_missile_launcher", name:"轻型导弹发射器 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类银超金属":12}, bonuses:{}, combat:{kind:"weapon",weaponType:"missile",baseDamage:100,baseHit:130,fuelCost:1,ammoCost:1} },
-  "t1_small_cannon": { id:"t1_small_cannon", name:"小型射弹炮 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类银超金属":10}, bonuses:{}, combat:{kind:"weapon",weaponType:"cannon",baseDamage:80,baseHit:80,fuelCost:2,ammoCost:1} },
+  "t1_light_missile_launcher": { id:"t1_light_missile_launcher", name:"轻型导弹发射器 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类银超金属":12}, bonuses:{}, combat:{kind:"weapon",weaponType:"missile",baseDamage:100,baseHit:130,fuelCost:2,ammoCost:1} },
+  "t1_small_cannon": { id:"t1_small_cannon", name:"小型射弹炮 I", slot:"high", level:1, time:20, xp:12, cost:{"三钛合金":45,"类银超金属":10}, bonuses:{}, combat:{kind:"weapon",weaponType:"cannon",baseDamage:80,baseHit:80,fuelCost:1,ammoCost:1} },
   "t1_medium_laser": { id:"t1_medium_laser", name:"中型激光炮 I", slot:"high", level:35, time:45, xp:35, cost:{"三钛合金":150,"类晶体胶矿":40,"同位聚合体":10,"同位素":5}, bonuses:{}, combat:{kind:"weapon",weaponType:"laser",baseDamage:240,baseHit:100,fuelCost:6,ammoCost:1} },
   "t1_heavy_missile_launcher": { id:"t1_heavy_missile_launcher", name:"重型导弹发射器 I", slot:"high", level:35, time:45, xp:35, cost:{"三钛合金":150,"类银超金属":40,"同位聚合体":10,"稀有气体":8}, bonuses:{}, combat:{kind:"weapon",weaponType:"missile",baseDamage:200,baseHit:130,fuelCost:2,ammoCost:1} },
   "t1_medium_cannon": { id:"t1_medium_cannon", name:"中型射弹炮 I", slot:"high", level:35, time:45, xp:35, cost:{"三钛合金":150,"同位聚合体":35,"重金属":8}, bonuses:{}, combat:{kind:"weapon",weaponType:"cannon",baseDamage:160,baseHit:80,fuelCost:4,ammoCost:1} },
@@ -110,7 +110,7 @@ const EQUIPMENT_DB = {
   "archaeo_stabilizer_iii":{id:"archaeo_stabilizer_iii",name:"信号稳定器 III",slot:"mid",level:35, time:70, xp:60, cost:{"三钛合金":400,"类银超金属":150,"同位聚合体":25,"重金属":12}, bonuses:{archaeologyStabilizer:0.11}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
   "archaeo_stabilizer_iv":{ id:"archaeo_stabilizer_iv",name:"信号稳定器 IV",slot:"mid", level:55, time:120,xp:110,cost:{"三钛合金":900,"超新星诺克石":40,"等离子体":20,"钷":5}, bonuses:{archaeologyStabilizer:0.14}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
   "archaeo_stabilizer_v": { id:"archaeo_stabilizer_v", name:"信号稳定器 V", slot:"mid", level:80, time:200,xp:180,cost:{"三钛合金":2000,"超噬矿":15,"铷":10,"磁场聚合物":40}, bonuses:{archaeologyStabilizer:0.17}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
-  // 低槽：文物译码器 — 额外普通 ISK 文物概率（总和上限 75%）
+  // 低槽：文物译码器 — 稀有发现掉率加成（乘子 1+加成，总和上限 75%）
   "archaeo_decoder_i": { id:"archaeo_decoder_i", name:"文物译码器 I", slot:"low", level:1,  time:20, xp:14, cost:{"三钛合金":40,"类晶体胶矿":15}, bonuses:{archaeologyDecoder:0.10}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
   "archaeo_decoder_ii":{ id:"archaeo_decoder_ii",name:"文物译码器 II",slot:"low", level:15, time:40, xp:35, cost:{"三钛合金":160,"重金属":8,"类晶体胶矿":50}, bonuses:{archaeologyDecoder:0.14}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
   "archaeo_decoder_iii":{id:"archaeo_decoder_iii",name:"文物译码器 III",slot:"low",level:35, time:70, xp:60, cost:{"三钛合金":400,"同位聚合体":105,"稀有气体":8}, bonuses:{archaeologyDecoder:0.18}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true },
@@ -125,9 +125,18 @@ const EQUIPMENT_DB = {
   // 中槽：信号稳定器 — 反噬减免 + 非致命免伤
   "archaeo_stabilizer_station_ii": { id:"archaeo_stabilizer_station_ii", name:"环站信号稳定器 II", slot:"mid", level:15, time:45, xp:40, cost:{"三钛合金":200,"类银超金属":80,"类晶体胶矿":20}, bonuses:{archaeologyStabilizer:0.08, archaeologyNonFatalAvoid:0.05}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
   "archaeo_stabilizer_pioneer_v": { id:"archaeo_stabilizer_pioneer_v", name:"先驱信号稳定器 V", slot:"mid", level:80, time:210,xp:190,cost:{"三钛合金":2200,"超噬矿":20,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyStabilizer:0.20, archaeologyNonFatalAvoid:0.12}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
-  // 低槽：文物译码器 — 常规掉落加成 + 复制焦点结果
+  // 低槽：文物译码器 — 稀有发现掉率加成 + 复制焦点结果（蓝图变体）
   "archaeo_decoder_fleet_iii": { id:"archaeo_decoder_fleet_iii", name:"舰墓文物译码器 III", slot:"low", level:35, time:75, xp:65, cost:{"三钛合金":450,"同位聚合体":120,"稀有气体":10}, bonuses:{archaeologyDecoder:0.19, archaeologyCopyChance:0.04}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
-  "archaeo_decoder_pioneer_v": { id:"archaeo_decoder_pioneer_v", name:"先驱文物译码器 V", slot:"low", level:80, time:210,xp:190,cost:{"三钛合金":2200,"同位聚合体":500,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyDecoder:0.28, archaeologyCopyChance:0.07}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true }
+  "archaeo_decoder_pioneer_v": { id:"archaeo_decoder_pioneer_v", name:"先驱文物译码器 V", slot:"low", level:80, time:210,xp:190,cost:{"三钛合金":2200,"同位聚合体":500,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyDecoder:0.28, archaeologyCopyChance:0.07}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
+
+  // ===== 损伤控制单元（中槽主动耗燃料，全局减伤乘区；燃料=ceil(2/3×护盾回充器)，走 calcFuelMult 自动吃电容减免） =====
+  "t1_damage_control": { id:"t1_damage_control", name:"小型损伤控制单元 I", slot:"mid", level:1, time:18, xp:10, cost:{"三钛合金":35,"类银超金属":15}, bonuses:{globalDamageReduction:0.05}, combat:{kind:"damageControl",fuelCost:1} },
+  "t1_medium_damage_control": { id:"t1_medium_damage_control", name:"中型损伤控制单元 I", slot:"mid", level:35, time:42, xp:30, cost:{"三钛合金":120,"类银超金属":40,"同位素":8}, bonuses:{globalDamageReduction:0.08}, combat:{kind:"damageControl",fuelCost:2} },
+  "t1_large_damage_control": { id:"t1_large_damage_control", name:"大型损伤控制单元 I", slot:"mid", level:55, time:65, xp:50, cost:{"三钛合金":240,"类银超金属":80,"超新星诺克石":10,"同位素":12}, bonuses:{globalDamageReduction:0.12}, combat:{kind:"damageControl",fuelCost:3} },
+  "t1_capital_damage_control": { id:"t1_capital_damage_control", name:"旗舰级损伤控制阵列 I", slot:"mid", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":6,"铷":1,"同位素":8,"磁场聚合物":8}, bonuses:{globalDamageReduction:0.18}, shipTypes:["capital","supercapital"], combat:{kind:"damageControl",fuelCost:4} },
+  // 势力损伤控制单元：angel 吃死许可B（lv45，对标大型档）/ blood 吃死许可D（lv10，对标前哨型）；蓝图由 sourceZoneId 自动派生
+  "angel_damage_control": { id:"angel_damage_control", name:"苍穹劫团损伤控制单元", slot:"mid", level:45, time:55, xp:45, cost:{"三钛合金":240,"类银超金属":80,"超新星诺克石":10,"苍穹劫团装备生产许可B":5}, bonuses:{globalDamageReduction:0.12,shieldRepair:0.01}, combat:{kind:"damageControl",fuelCost:3}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
+  "blood_damage_control": { id:"blood_damage_control", name:"赤誓教团损伤控制单元", slot:"mid", level:10, time:22, xp:12, cost:{"三钛合金":60,"类银超金属":20,"赤誓教团装备生产许可D":5}, bonuses:{globalDamageReduction:0.08,armorRepair:0.03}, combat:{kind:"damageControl",fuelCost:1}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
 };
 
 /* ================================================================
@@ -442,7 +451,8 @@ function getEquipmentRecipeCategory(equipment) {
   if (equipment.slot === "rig") return "rigs";
   if (equipment.archaeology) return "archaeology";
   if (equipment.combat && equipment.combat.kind === "weapon") return "weapons";
-  if ((equipment.combat && equipment.combat.kind === "repair") || equipment.id === "shield_ext_small") return "defense";
+  // 损伤控制单元（damageControl）属防御类，归「防御维修」；与护盾扩展/回充器/装甲维修器同标签。
+  if ((equipment.combat && (equipment.combat.kind === "repair" || equipment.combat.kind === "damageControl")) || equipment.id === "shield_ext_small") return "defense";
   if (equipment.id.includes("drone")) return "drones";
   // 工业采集类按功能细分为三个顶层分类：采矿装备 / 采气装备 / 采集增益
   if (equipment.slot === "high") {
@@ -451,6 +461,38 @@ function getEquipmentRecipeCategory(equipment) {
   }
   if (equipment.slot === "low" && equipment.bonuses && (equipment.bonuses.miningLaserEfficiency || equipment.bonuses.gasLaserEfficiency || equipment.bonuses.salvageEfficiency)) return "collect_boost";
   return "mining";
+}
+
+// 装备工程三级标签：根据配方判定其所属三级子分类（仅 weapons/defense/collect_boost/archaeology 启用）。
+// 返回值须与 EQUIPMENT_ENGINEERING_SUBTABS[category.id] 中的某个子标签 id 一致；不匹配任何细分则返回 "all"。
+function getEquipEngSubtabId(recipe) {
+  const eq = EQUIPMENT_DB[recipe.id];
+  if (!eq) return "all";
+  switch (recipe.category) {
+    case "weapons":
+      return (eq.combat && eq.combat.weaponType) || "all";
+    case "defense":
+      if (eq.combat && eq.combat.kind === "damageControl") return "damageControl";
+      if (eq.id === "shield_ext_small") return "shield";
+      if (eq.combat && eq.combat.kind === "repair") return eq.combat.target || "all";
+      return "all";
+    case "collect_boost":
+      if (eq.bonuses) {
+        if (typeof eq.bonuses.miningLaserEfficiency === "number") return "mining";
+        if (typeof eq.bonuses.gasLaserEfficiency === "number") return "gas";
+        if (typeof eq.bonuses.salvageEfficiency === "number") return "salvage";
+      }
+      return "all";
+    case "archaeology":
+      if (eq.bonuses) {
+        if (typeof eq.bonuses.archaeologyScan === "number") return "analyzer";
+        if (typeof eq.bonuses.archaeologyStabilizer === "number") return "stabilizer";
+        if (typeof eq.bonuses.archaeologyDecoder === "number") return "decoder";
+      }
+      return "all";
+    default:
+      return "all";
+  }
 }
 
 // 装备蓝图来源提示：基于权威目录判定，不再用 recipe.faction / sourceZoneId 猜测来源。
@@ -530,14 +572,18 @@ const EQUIPMENT_BONUS_NAMES = {
   archaeologyScan:"扫描强度",
   archaeologyScanPercent:"扫描强度",
   archaeologyStabilizer:"失败反噬减免",
-  archaeologyDecoder:"文物掉落加成",
+  archaeologyDecoder:"稀有发现掉率加成",
   archaeologyCycleReduction:"考古周期缩短",
   archaeologyNonFatalAvoid:"非致命免伤",
   archaeologyCopyChance:"复制焦点概率",
   archaeologyFuelEfficiency:"电容回充",
   archaeologyInterferenceReduction:"考古干扰缩短",
   miningRichChance:"伴生富集触发",
-  gasRichChance:"伴生富集触发"
+  gasRichChance:"伴生富集触发",
+  globalDamageReduction:"全局减伤",
+  shieldRepair:"护盾维修量",
+  armorRepair:"装甲维修量",
+  structureRepair:"结构维修量"
 };
 // rig 百分比减免类：以正数存储，展示为 -X%
 const RIG_REDUCTION_BONUS_KEYS = ["archaeologyInterferenceReduction"];
@@ -545,6 +591,7 @@ const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","
 
 const ARCHAEOLOGY_REDUCTION_BONUS_KEYS = ["archaeologyStabilizer", "archaeologyCycleReduction"];
 const ARCHAEOLOGY_PERCENT_BONUS_KEYS = ["archaeologyDecoder", "archaeologyNonFatalAvoid", "archaeologyCopyChance"];
+const REPAIR_PERCENT_BONUS_KEYS = ["globalDamageReduction", "shieldRepair", "armorRepair", "structureRepair"];
 
 function formatEquipmentBonusValue(key, value) {
   if (["miningEfficiency","gasEfficiency","miningBonus","gasBonus","miningLaserEfficiency","gasLaserEfficiency","salvageEfficiency"].includes(key)) {
@@ -554,6 +601,9 @@ function formatEquipmentBonusValue(key, value) {
     return "-" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
   if (RIG_PERCENT_BONUS_KEYS.includes(key) || ARCHAEOLOGY_PERCENT_BONUS_KEYS.includes(key)) {
+    return "+" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
+  }
+  if (REPAIR_PERCENT_BONUS_KEYS.includes(key)) {
     return "+" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
   return "+" + value;

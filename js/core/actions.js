@@ -246,6 +246,27 @@ const ManufacturingStateActions = {
     return { changed:true, series };
   },
 
+  // 三级标签：按二级分类记忆所选子标签（equipEngSubTab[categoryId]）。
+  // 只改筛选状态与 equipEngTarget（详情落到第一个可见配方），不改变制造中产物。
+  selectEquipEngSubTab(state, payload) {
+    const action = state.currentAction;
+    const categoryId = action.equipEngCategory;
+    if (!EQUIPMENT_ENGINEERING_SUBTABS[categoryId]) return { changed:false, reason:"category-has-no-subtabs" };
+    const subTab = payload.subTab !== undefined ? payload.subTab : "all";
+    if (!EQUIPMENT_ENGINEERING_SUBTABS[categoryId].some(item => item.id === subTab)) return { changed:false, reason:"unknown-subtab" };
+    if (!action.equipEngSubTab) action.equipEngSubTab = {};
+    action.equipEngSubTab[categoryId] = subTab;
+    const filtered = EQUIPMENT_ENGINEERING_RECIPES.filter(recipe =>
+      recipe.category === categoryId && (subTab === "all" || getEquipEngSubtabId(recipe) === subTab));
+    const current = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
+    if (!filtered.some(recipe => recipe.id === current.id)) {
+      const next = filtered.find(recipe => (state.skills.equipmentEngineering.lvl || 1) >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || filtered[0];
+      if (next) action.equipEngTarget = next.id;
+    }
+    state._dirty = true;
+    return { changed:true, subTab };
+  },
+
   selectEquipmentRecipe(state, recipeId) {
     const recipe = EQUIPMENT_ENGINEERING_RECIPES.find(item => item.id === recipeId);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
@@ -2110,6 +2131,7 @@ const StationStateActions = {
   if (action.type === "manufacturing/selectEquipmentCategory") return ManufacturingStateActions.selectEquipmentCategory(state, action.categoryId);
   if (action.type === "manufacturing/selectEquipmentRecipe") return ManufacturingStateActions.selectEquipmentRecipe(state, action.recipeId);
   if (action.type === "manufacturing/selectEquipEngRigFilter") return ManufacturingStateActions.selectEquipEngRigFilter(state, action);
+  if (action.type === "manufacturing/selectEquipEngSubTab") return ManufacturingStateActions.selectEquipEngSubTab(state, action);
   if (action.type === "manufacturing/stop") return ManufacturingStateActions.stop(state, actionTime);
   if (action.type === "booster/selectCategory") return BoosterStateActions.selectCategory(state, action.categoryId);
   if (action.type === "booster/selectQualityFilter") return BoosterStateActions.selectQualityFilter(state, action.quality);

@@ -316,16 +316,24 @@ function updateUI(now) {
       const eep = document.getElementById("equipeng-panel"); if (eep) eep.style.display = "";
       const sc = document.querySelector('.skill-current'); if (sc) sc.style.display = "none";
       renderEquipEngPage();
+      renderActionBoosterSlots(viewKey, "equipeng-action-booster-slots");
     } else if (viewKey === "boosterEngineering") {
       const bp = document.getElementById("booster-panel"); if (bp) bp.style.display = "";
       const sc = document.querySelector('.skill-current'); if (sc) sc.style.display = "none";
       renderBoosterPage(renderTime);
+      renderActionBoosterSlots(viewKey, "booster-equipped-area");
     } else if (viewKey === "combat") {
       const combatPanel = document.getElementById("combat-panel");
       if (combatPanel) combatPanel.style.display = "";
       const sc = document.querySelector('.skill-current'); if (sc) sc.style.display = "none";
       renderCombatPanel();
     }
+  }
+  if (typeof renderActionBoosterSlots === "function") {
+    if (viewKey === "mining" || viewKey === "refining" || viewKey === "gasHarvesting") renderActionBoosterSlots(viewKey, "action-booster-slots");
+    else if (viewKey === "shipEngineering") renderActionBoosterSlots(viewKey, "ship-action-booster-slots");
+    else if (viewKey === "combat") renderActionBoosterSlots(viewKey, "combat-action-booster-slots");
+    else if (viewKey === "archaeology") renderActionBoosterSlots(viewKey, "archaeology-action-booster-slots");
   }
 
   const fillEl = document.querySelector('.skill-current .fill.exp'); if (fillEl) fillEl.style.width = shell.xpPercent + "%";
