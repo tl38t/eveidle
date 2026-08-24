@@ -183,7 +183,17 @@ function diffInventorySnapshot(before, after) {
   }
   for (const key of Object.keys(after.blueprints)) {
     const delta = after.blueprints[key] - (before.blueprints[key] || 0);
-    if (delta > 0) items.push({ id:"blueprint:" + key, blueprint:true, name:key + "蓝图", quantity:delta, categoryLabel:"蓝图", source });
+    if (delta > 0) {
+      let blueprintName = key;
+      if (key.startsWith("equipment:") && typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) {
+        const equipment = EQUIPMENT_DB[key.slice("equipment:".length)];
+        if (equipment && equipment.name) blueprintName = equipment.name;
+      } else if (key.startsWith("booster:") && typeof getBoosterRecipe === "function") {
+        const recipe = getBoosterRecipe(key.slice("booster:".length));
+        if (recipe && recipe.name) blueprintName = recipe.name;
+      }
+      items.push({ id:"blueprint:" + key, blueprint:true, name:blueprintName + "蓝图", quantity:delta, categoryLabel:"蓝图", source });
+    }
   }
   for (const key of Object.keys(after.loot)) {
     const entry = after.loot[key];
@@ -324,7 +334,11 @@ function getOfflineActionDescriptor() {
     const recipe = SMELTING_RECIPES.find(r => r.name === recipeName || r.outputMineral === recipeName) || SMELTING_RECIPES[0];
     if (!recipe) return null;
     const smeltingState = getSmeltingDisplayState(gameState, Date.now());
-    const eff = smeltingState.efficiency; const output = Math.max(1, Math.floor(recipe.baseOutput * getRefiningOutputMultiplier(smeltingState.level)));
+    // 军团 NPC 冶炼速度(refiningSpeed)：放大冶炼效率（与采矿/采气同处理），加速结算。
+    const legionRefine = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+      ? LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.refining : 1;
+    const eff = smeltingState.efficiency * legionRefine;
+    const output = Math.max(1, Math.floor(recipe.baseOutput * getRefiningOutputMultiplier(smeltingState.level)));
     return {
       key, duration: recipe.baseTime / eff,
       maxCycles() {
@@ -1151,6 +1165,12 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     //    首个在线 tick 追算整段断油时间。
     if (typeof processAutoLines === "function") {
       processAutoLines(gameState, segEnd, true);
+    }
+
+    // 3.5) 军团 NPC 系统（军团 DLC）：离线同样走统一 tickLegionNpc 结算（候选刷新/工资/经验），
+    // 按 segEnd 时间戳推进，与在线共用同一边界，绝不重复扣薪/重复生成候选。
+    if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.tickLegionNpc === "function") {
+      LEGION_NPC.tickLegionNpc(gameState, { now: segEnd });
     }
 
     // 4) 扣除该段燃料（仅 operational 段真实消耗）

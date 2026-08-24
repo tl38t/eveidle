@@ -1633,3 +1633,11 @@ p(L)          = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
 - `css/components.css` / `css/taptap-portrait.css`：`#equipSelectOptions` 加 `max-height` + `overflow-y: auto`，桌面限高 `min(420px,60vh)`、移动端限高 `min(360px,50vh)`；新增 `.eq-count` 金色计数样式。
 
 **验证**：`tools/audit-features-abcde.mjs` 新增 E+ 区域 8 断言，PASS 从 75 升至 83，FAIL 仍为 2（既有 verify.mjs 脚本计数与 audit-resume-after-repair.mjs mock 问题），EXIT=0。
+
+### 进度码与开发期字段校验（2026-08-24）
+
+**实现**：`js/core/save-codec.js` 新增 `DSI1P.` 进度码（紧凑 JSON + gzip + base64url），仅导出永久进度白名单；导入采用合并模式，保留当前行动等瞬态状态，兼容原 `DSI1.` 完整存档码。粘贴入口改为多行文本框，适配 TapTap WebView。
+
+**开发期校验**：增加 `IGNORED_TOP_KEYS` 与 `warnUncapturedTopKeys`，仅 localhost 或 `?savecodecdebug` 开启，发现新增且未归类的顶层字段时告警；正式环境不输出告警、不改变存档行为。
+
+**验证**：`_codec_profile_test.mjs` 覆盖白名单提取、瞬态字段排除、编解码往返、合并导入与异常输入；本次生成工作区自测包，未 commit、未 push。

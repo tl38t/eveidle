@@ -620,12 +620,13 @@ const ARCHAEOLOGY_SHIPS = {
 };
 
 // 暴露给 3D 外观层（js/ui/ship3d.js，ES module）读取。仅挂到 window，不改原有经典脚本语义。
-if (typeof window !== "undefined") {
-  window.SHIP_DATA = {
-    STARTER_SHIPS,
-    INDUSTRIAL_SHIPS,
-    ARCHAEOLOGY_SHIPS,
-    SHIP_BLUEPRINTS,
-    SHIP_ASSEMBLY_RECIPES
-  };
-}
+const SHIP_DATA = {
+  STARTER_SHIPS,
+  INDUSTRIAL_SHIPS,
+  ARCHAEOLOGY_SHIPS,
+  SHIP_BLUEPRINTS,
+  SHIP_ASSEMBLY_RECIPES
+};
+if (typeof window !== "undefined") window.SHIP_DATA = SHIP_DATA;
+// 增补 Node 导出（仅供测试 / legion-npc 查 shipId→type），不改动任何舰船数值与浏览器语义。
+if (typeof module !== "undefined" && module.exports) module.exports = { SHIP_DATA: SHIP_DATA };

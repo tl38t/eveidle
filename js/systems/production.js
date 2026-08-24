@@ -58,7 +58,9 @@ function xpForLevel(lv) { return Math.floor(100 * Math.pow(1.1, lv - 1)); }
 
 function checkLevelUpFromState(state, skillKey, eventMeta) {
   const s = state.skills[skillKey];
-  while (s.lvl < 99) {
+  // 无等级上限：经验足够就一直升级，直到 XP 不足。
+  // 守卫 Number.isFinite 防止异常 XP（Infinity/NaN）造成死循环。
+  while (Number.isFinite(s.xp) && s.xp >= xpForLevel(s.lvl + 1)) {
     const need = xpForLevel(s.lvl + 1);
     if (s.xp < need) break;
     s.xp -= need;
@@ -89,6 +91,11 @@ function addSkillXpToState(state, skillKey, amount, eventMeta) {
     if (booster && booster !== 1) gained = gained * booster;
   }
   gained = Math.max(0, gained);
+  // 军团 NPC「薪资统筹」之外的「训练教范(xpGain)」：玩家经验加成（不影响 NPC 等级曲线）。
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    const lp = LEGION_NPC.getLegionContributionSnapshot(state).multipliers.playerXp;
+    if (lp && lp !== 1) gained = gained * lp;
+  }
   state.skills[skillKey].xp = (Number(state.skills[skillKey].xp) || 0) + gained;
   checkLevelUpFromState(state, skillKey, eventMeta);
   state._dirty = true;
@@ -146,9 +153,21 @@ function getProductionEfficiencyTooltip(actionKey, targetName, baseTime) {
   return buildProductionEfficiencyTooltip(getProductionEfficiencyState(gameState, actionKey), targetName, baseTime);
 }
 
-function getMiningEfficiency() { return getProductionEfficiencyBreakdown("mining").total; }
+function getMiningEfficiency() {
+  let base = getProductionEfficiencyBreakdown("mining").total;
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    base = base * LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.mining;
+  }
+  return base;
+}
 function getSmeltingEfficiency() { return getSmeltingDisplayState(gameState, Date.now()).efficiency; }
-function getGasEfficiency() { return getProductionEfficiencyBreakdown("gasHarvesting").total; }
+function getGasEfficiency() {
+  let base = getProductionEfficiencyBreakdown("gasHarvesting").total;
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    base = base * LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.gas;
+  }
+  return base;
+}
 function getShipEngineeringEfficiency() { const lvl = gameState.skills.shipEngineering.lvl; return 1 * (1 + lvl * 0.02); }
 
 function getGasArea() { const name = gameState.currentAction.gasArea; return GAS_AREAS.find(a => a.name === name) || GAS_AREAS[0]; }

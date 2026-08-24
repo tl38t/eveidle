@@ -28,7 +28,7 @@ const ProductionStateActions = {
     action.miningMode = area.mode;
     if (area.mode === "moon") action.moonMiningArea = area.name;
     else action.normalMiningArea = area.name;
-    if (!action.active || action.skill !== "mining") {
+    if (!action.active) {
       action.progress = 0;
       action.lastProgressUpdate = now;
     }
@@ -59,7 +59,7 @@ const ProductionStateActions = {
     if ((state.skills.refining.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
     const action = state.currentAction;
     action.smeltingArea = recipe.name;
-    if (!action.active || action.skill !== "refining") {
+    if (!action.active) {
       action.progress = 0;
       action.lastProgressUpdate = now;
     }
@@ -74,7 +74,7 @@ const ProductionStateActions = {
     const action = state.currentAction;
     const prevArea = action.gasArea;
     action.gasArea = area.name;
-    if (!action.active || action.skill !== "gasHarvesting") {
+    if (!action.active) {
       action.progress = 0;
       action.lastProgressUpdate = now;
     }
@@ -375,7 +375,8 @@ const BoosterStateActions = {
     if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) return { changed:false, reason:"invalid-slot" };
     const item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
     if (!item) return { changed:false, reason:"unknown-item" };
-    if (!item.universal && item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
+    if (typeof isBoosterCompatibleWithSlot === "function" && !isBoosterCompatibleWithSlot(item, slot)) return { changed:false, reason:"slot-mismatch" };
+    if (typeof isBoosterCompatibleWithSlot !== "function" && !item.universal && item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
     const active = state.boosters && state.boosters.active;
     if (!active) return { changed:false, reason:"no-state" };
     const existing = active[slot];
@@ -426,7 +427,8 @@ const BoosterStateActions = {
     if (!Array.isArray(BOOSTER_SLOTS) || !BOOSTER_SLOTS.includes(slot)) return { changed:false, reason:"invalid-slot" };
     const item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
     if (!item) return { changed:false, reason:"unknown-item" };
-    if (!item.universal && item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
+    if (typeof isBoosterCompatibleWithSlot === "function" && !isBoosterCompatibleWithSlot(item, slot)) return { changed:false, reason:"slot-mismatch" };
+    if (typeof isBoosterCompatibleWithSlot !== "function" && !item.universal && item.slot !== slot) return { changed:false, reason:"slot-mismatch" };
     const active = state.boosters && state.boosters.active;
     if (!active) return { changed:false, reason:"no-state" };
     const existing = active[slot];

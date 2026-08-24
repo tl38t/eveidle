@@ -168,7 +168,11 @@ function getEquipEngEfficiency() {
   // 研究批次 G：与 selectors.getEquipmentEngineeringDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
   const researchMult = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "equip"]) : 1;
-  return skillMult * stationMult * researchMult;
+  let total = skillMult * stationMult * researchMult;
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    total *= LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.equipment;
+  }
+  return total;
 }
 
 function getEquipEngCategoryDefinition(categoryId) {
@@ -341,7 +345,11 @@ function getBoosterEfficiency() {
   const implantBoosterEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(gameState).boosterEff : 1;
   // 增强剂·增强剂制造速度（考古重制 Phase B · 考古蓝图产出）：效率 × 速度乘区
   const boosterSpeedMult = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState).boosterSpeedMultiplier : 1;
-  return skillMult * stationMult * researchMult * implantBoosterEff * boosterSpeedMult;
+  let total = skillMult * stationMult * researchMult * implantBoosterEff * boosterSpeedMult;
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    total *= LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.booster;
+  }
+  return total;
 }
 
 function getSelectedBoosterRecipe() {

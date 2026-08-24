@@ -60,6 +60,11 @@ function renderSidebar(sidebarState) {
     if (el.title !== title) el.title = title;
   });
   if (typeof renderCombatSkillGroup === "function") renderCombatSkillGroup();
+  // 军团侧边栏标签：仅在「空间站本体 ≥ Lv.3 且已建造军团议事大厅」时显示。
+  var legionNav = document.getElementById("nav-legion");
+  if (legionNav && typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible) {
+    legionNav.style.display = LegionRender.isLegionTabVisible(gameState) ? "" : "none";
+  }
 }
 
 /* ================================================================
@@ -390,6 +395,7 @@ function updateLiveUI(nowArg) {
   // 节流与展示态计算已分别约束在 updateStationLiveUI / updateResearchLiveUI 内部。
   if (currentPage === "station" && typeof updateStationLiveUI === "function") updateStationLiveUI(now);
   else if (currentPage === "research" && typeof updateResearchLiveUI === "function") updateResearchLiveUI(now);
+  else if (currentPage === "legion" && typeof LegionRender !== "undefined" && LegionRender.renderLegionSection) LegionRender.renderLegionSection(now);
 }
 
 function refreshVisiblePanelAfterAction() {

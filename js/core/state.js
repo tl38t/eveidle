@@ -8,7 +8,8 @@ const STATION_BUILDING_IDS = [
   "booster_factory",    // 增强剂制造厂
   "archaeology_lab",    // 考古实验室
   "combat_command",     // 作战指挥中心
-  "shipyard"            // 舰船船坞
+  "shipyard",           // 舰船船坞
+  "legion_hall"         // 军团议事大厅（军团 DLC；9 号建筑，计入管理 NPC XP 总量，不计入燃料维护点数）
 ];
 
 // ---- gameState 主状态对象 ----
@@ -139,6 +140,8 @@ const gameState = {
       smeltYield: null,
       shipSpeed: null,
       shipYield: null,
+      equipmentSpeed: null,
+      equipmentYield: null,
       boosterSpeed: null,
       boosterYield: null,
       combatWeapon: null,
@@ -167,6 +170,20 @@ const gameState = {
     name: "",
     foundedAt: 0,
     dlc: { npcWorkers:false, combatWings:false }
+  },
+
+  // 军团 DLC —— NPC 招募 / 贡献 / 工资 / 经验 稳定可迁移状态（由 legion-npc.js 读取与写入）。
+  // 激活条件：station.bodyLevel >= 2 且 legion_hall(议事大厅) 已建成(等级 >= 1)。
+  // 总人数上限 = 6 + (议事大厅等级 - 1) + 军团科技等级，封顶 15（含玩家本人）。
+  legion: {
+    candidates: [],            // 当前候选人批次
+    npcs: [],                  // 已招募 NPC（不含玩家）
+    candidateRefreshAt: 0,     // 下一次自然刷新时间戳（0 = 未排程）
+    manualRefreshCount: 0,     // 当前 4h 周期内已手动刷新次数
+    manualRefreshCycleStartedAt: 0,
+    lastSalarySettlementAt: 0, // 上次工资结算边界（0 = 未排程）
+    lastXpSettlementAt: 0,     // 上次经验结算边界（0 = 未排程）
+    technologyLevel: 0         // 军团科技等级（逐步开放 NPC 等级上限，最高 LV70）
   },
 
   upgrades: {},

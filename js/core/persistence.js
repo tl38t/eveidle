@@ -869,7 +869,10 @@ function migrateBoosterState() {
     if (typeof rawId === "string" && rawId.startsWith("booster:")) rawId = rawId.slice("booster:".length);
     const item = (typeof getBoosterItem === "function") ? getBoosterItem(rawId) : null;
     // Universal boosters (for example the neural training catalyst) may occupy any slot.
-    if (!item || (!item.universal && item.slot !== slot)) { b.active[slot] = null; continue; }
+    const compatible = (typeof isBoosterCompatibleWithSlot === "function")
+      ? isBoosterCompatibleWithSlot(item, slot)
+      : !!item && (item.universal || item.slot === slot);
+    if (!item || !compatible) { b.active[slot] = null; continue; }
     const remainingMs = Number(entry.remainingMs);
     if (!Number.isFinite(remainingMs) || remainingMs <= 0) { b.active[slot] = null; continue; }
     // 存储完整 itemId（含 booster: 前缀），供 ResourceRegistry 寻址
@@ -1022,16 +1025,16 @@ function normalizeStationState(state) {
   const s = state.station;
   if (!Number.isFinite(Number(s.version)) || Number(s.version) < 1) s.version = 1;
 
-  // bodyLevel：越界/NaN/负数 → 0（合法范围 0~3）
+  // bodyLevel：越界/NaN/负数 → 0（合法范围 0~5；军团 DLC 实际可建上限由 startStationBodyConstruction 的 DLC 门槛约束，此处仅做绝对硬上限，绝不向下篡改已建等级）
   const bl = Math.floor(Number(s.bodyLevel));
-  s.bodyLevel = (Number.isFinite(bl) && bl >= 0 && bl <= 3) ? bl : 0;
+  s.bodyLevel = (Number.isFinite(bl) && bl >= 0 && bl <= 5) ? bl : 0;
 
-  // buildings：仅保留已知 ID，越界/NaN → 0，未知 ID → 丢弃
+  // buildings：仅保留已知 ID（含 legion_hall），越界/NaN → 0，未知 ID → 丢弃
   const cleaned = {};
   const rawBuildings = (s.buildings && typeof s.buildings === "object") ? s.buildings : {};
   for (const id of STATION_BUILDING_IDS) {
     const lvl = Math.floor(Number(rawBuildings[id]));
-    cleaned[id] = (Number.isFinite(lvl) && lvl >= 0 && lvl <= 3) ? lvl : 0;
+    cleaned[id] = (Number.isFinite(lvl) && lvl >= 0 && lvl <= 5) ? lvl : 0;
   }
   s.buildings = cleaned;
 
@@ -1121,6 +1124,42 @@ function migrateStationCorporationState() {
 window.normalizeStationState = normalizeStationState;
 window.normalizeCorporationState = normalizeCorporationState;
 window.migrateStationCorporationState = migrateStationCorporationState;
+
+// 军团 DLC —— 旧档迁移 + 字段归一。
+// 幂等：仅补默认字段、数组化、NPC 字段补全；不删除资源/建筑/队列/候选人/NPC，不降级等级。
+function normalizeLegionState(state) {
+  if (!state || typeof state !== "object") return;
+  if (!state.legion || typeof state.legion !== "object") {
+    state.legion = {
+      candidates: [], npcs: [], candidateRefreshAt: 0, manualRefreshCount: 0,
+      manualRefreshCycleStartedAt: 0, lastSalarySettlementAt: 0, lastXpSettlementAt: 0,
+      technologyLevel: 0
+    };
+    state._dirty = true;
+    return;
+  }
+  const L = state.legion;
+  let dirty = false;
+  if (!Array.isArray(L.candidates)) { L.candidates = []; dirty = true; }
+  if (!Array.isArray(L.npcs)) { L.npcs = []; dirty = true; }
+  if (typeof L.candidateRefreshAt !== "number") { L.candidateRefreshAt = 0; dirty = true; }
+  if (typeof L.manualRefreshCount !== "number") { L.manualRefreshCount = 0; dirty = true; }
+  if (typeof L.manualRefreshCycleStartedAt !== "number") { L.manualRefreshCycleStartedAt = 0; dirty = true; }
+  if (typeof L.lastSalarySettlementAt !== "number") { L.lastSalarySettlementAt = 0; dirty = true; }
+  if (typeof L.lastXpSettlementAt !== "number") { L.lastXpSettlementAt = 0; dirty = true; }
+  if (typeof L.technologyLevel !== "number") { L.technologyLevel = 0; dirty = true; }
+  // NPC 字段补全（薪资状态缺省 paid；保留等级/经验，不重置）
+  (L.npcs || []).forEach(function (n) {
+    if (!n) return;
+    if (typeof n.level !== "number") { n.level = 1; dirty = true; }
+    if (typeof n.xp !== "number") { n.xp = 0; dirty = true; }
+    if (n.salaryState !== "paid" && n.salaryState !== "overdue") { n.salaryState = "paid"; dirty = true; }
+    if (n.boundShipInstanceId === undefined) { n.boundShipInstanceId = null; dirty = true; }
+    if (!Array.isArray(n.dialogueHistory)) { n.dialogueHistory = []; dirty = true; }
+  });
+  if (dirty) state._dirty = true;
+}
+window.normalizeLegionState = normalizeLegionState;
 
 // ================================================================
 //  行星部署幂等规范化（autoLoad 与 importData 共用）
@@ -1372,6 +1411,7 @@ function normalizeAndMigratePayload(ctx) {
   finalizeEquipmentStateAfterLegacyMigrations(gameState);
   migrateUnlimitedInventoryState();
   normalizePlanetaryState(gameState);
+  normalizeLegionState(gameState);
   delete gameState.planetaryDeployments;
   if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
     ResearchState.migrateResearchState(gameState);
@@ -1452,6 +1492,43 @@ const SaveManager = {
     if (footer) footer.textContent = "存档：保存失败";
     return false;
   },
+  // 用户明确确认导入后，允许在启动门禁尚未同步完成的短窗口内写入本地存档。
+  // 普通自动保存仍严格遵守 isBootBlocked()，避免启动冲突时污染存档。
+  saveAfterExplicitImport() {
+    const wasCommitting = this._committing;
+    this._committing = true;
+    try { return this.save(); }
+    finally { this._committing = wasCommitting; }
+  },
+  async persistExplicitImport() {
+    if (!this.saveAfterExplicitImport()) {
+      const detail = this._lastStorageError && this._lastStorageError.message
+        ? "：" + this._lastStorageError.message : "";
+      throw new Error("导入后本地落盘失败" + detail);
+    }
+
+    // TapTap 设备备份是异步写入的。导入流程必须等它完成，否则退出/重启时
+    // 启动选择器可能读到旧的 current/previous 备份并覆盖刚导入的 localStorage。
+    if (this._lastMirrorWritePromise) {
+      const mirrorOk = await this._lastMirrorWritePromise;
+      if (!mirrorOk) throw new Error("导入后设备备份失败");
+    }
+
+    // 云端上传立即尝试，但云端失败不能回滚已经成功写入的本地进度。
+    const cs = this._cloudSave;
+    if (cs && cs.isAvailable && cs.isAvailable() && cs.uploadNow) {
+      try {
+        const result = await cs.uploadNow(gameState, "import");
+        if (!result || !result.ok) {
+          this._cloudSyncFailed = true;
+          this._updateStatus("进度码已保存到本地，但云端同步失败，可稍后重试");
+        }
+      } catch (_) {
+        this._cloudSyncFailed = true;
+        this._updateStatus("进度码已保存到本地，但云端同步失败，可稍后重试");
+      }
+    }
+  },
   _recordSuccessfulLocalSave(savedAt) {
     // local revision is device metadata, not a cloud-only counter. Keep advancing it even
     // when the cloud provider is unavailable so mirror generations remain comparable.
@@ -1467,6 +1544,7 @@ const SaveManager = {
         if (cs.isAvailable && cs.isAvailable() && cs.markDirty) cs.markDirty("auto");
       }
     } catch (e) { /* metadata failure must not turn a successful local save into failure */ }
+    this._lastMirrorWritePromise = Promise.resolve(true);
     try {
       const mirror = this._localMirror;
       if (mirror && mirror.isAvailable && mirror.isAvailable() && typeof SaveEnvelope !== "undefined") {
@@ -1477,19 +1555,22 @@ const SaveManager = {
           deviceId: getOrCreateDeviceId(),
           gameSaveVersion: SaveEnvelope.GAME_SAVE_SCHEMA_VERSION
         });
-        Promise.resolve(mirror.scheduleWrite(envelope)).then(() => {
+        this._lastMirrorWritePromise = Promise.resolve(mirror.scheduleWrite(envelope)).then(() => {
           this._lastMirrorError = null;
           this._mirrorSyncFailed = false;
           this._refreshCloudSaveStatus && this._refreshCloudSaveStatus();
+          return true;
         }).catch((err) => {
           this._lastMirrorError = err;
           this._mirrorSyncFailed = true;
           this._refreshCloudSaveStatus && this._refreshCloudSaveStatus();
+          return false;
         });
       }
     } catch (e) {
       this._lastMirrorError = e;
       this._mirrorSyncFailed = true;
+      this._lastMirrorWritePromise = Promise.resolve(false);
     }
   },
   // 新手任务 Batch O：sourceHadTutorial 必须在 Object.assign 之前、对**原始存档对象**判定，
@@ -1500,7 +1581,7 @@ const SaveManager = {
   _lastLoadSourceHadTutorial: null,
   load() { const data = this.adapter.load(); if (data) { this._lastLoadSourceHadTutorial = Object.prototype.hasOwnProperty.call(data, "tutorial"); gameState.statistics = Object.prototype.hasOwnProperty.call(data, "statistics") ? data.statistics : null; Object.assign(gameState, data); if (!Object.prototype.hasOwnProperty.call(data, "settings")) gameState.settings = {}; normalizeQueueState(gameState); ensureUserSettingsState(gameState); ensureStatisticsState(gameState); gameState._dirty = false; return true; } this._lastLoadSourceHadTutorial = null; return false; },
   exportData() { const json = this.adapter.export(gameState); const blob = new Blob([json], { type: "application/json" }); const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "DeepSpaceIdle_Save.json"; a.click(); URL.revokeObjectURL(url); this._updateStatus("存档已导出"); },
-  importData(jsonString) {
+  async importData(jsonString) {
     // 定点返修：直接调用入口防御（与文件选择器 file.size 双重守卫）。
     // 命中即返回 false，不进入事务、不快照、不触碰 gameState / 本地存档。
     if (typeof jsonString !== "string" || jsonString.length > MAX_IMPORT_SAVE_BYTES) { alert("导入失败：存档格式无效"); return false; }
@@ -1547,7 +1628,7 @@ const SaveManager = {
       updateUI();
       // 全流程成功：先释放事务标志，再做唯一一次最终落盘（此前所有内部 save 均被 _importTransaction 抑制）。
       this._importTransaction = false;
-      if (!this.save()) throw new Error("导入后落盘失败");
+      await this.persistExplicitImport();
       return true;
     } catch (e) {
       // 异常安全回滚：就地还原导入前内存态与来源标记，释放事务标志，保留本地原存档。
@@ -1560,6 +1641,95 @@ const SaveManager = {
       return false;
     }
   },
+
+  // 进度码合并导入：只把白名单字段写回当前 gameState 的对应子树，其余状态（当前行动 / 考古 / 设置等）原样保留。
+  // 与 importData 的整档替换不同，绝不会删除未包含在进度码中的字段。
+  async importProfileData(data) {
+    if (this._importTransaction) return false;
+    if (!data || typeof data !== "object" || Array.isArray(data)) { alert("导入失败：进度码格式无效"); return false; }
+    if (!validateImportedSavePayload(data)) { alert("导入失败：进度码格式无效"); return false; }
+    if (typeof ClipboardSaveCodec === "undefined" || typeof ClipboardSaveCodec.mergeProfile !== "function") { alert("导入失败：存档编解码器未加载"); return false; }
+    const preImportSnapshot = createSerializableGameStateSnapshot(gameState);
+    const preImportSourceHadTutorial = this._lastLoadSourceHadTutorial;
+    this._importTransaction = true;
+    try {
+      ClipboardSaveCodec.mergeProfile(gameState, data);
+      normalizeQueueState(gameState);
+      ensureUserSettingsState(gameState);
+      ensureStatisticsState(gameState);
+      if (typeof normalizeEquipmentState === "function") normalizeEquipmentState(gameState);
+      if (!gameState.migrations) gameState.migrations = {};
+      normalizeAndMigratePayload({ isLegacy: false, now: Date.now() });
+      activateRestoredState({ settleOffline: false }); // 不重复结算离线收益，仅做状态补齐/迁移
+      gameState._dirty = false;
+      gameState.currentAction.progress = 0;
+      gameState.currentAction.lastProgressUpdate = Date.now();
+      window.gameState = gameState;
+      currentPage = "skill";
+      switchPage("skill");
+      this._updateStatus("进度码已合并导入（核心进度已覆盖，其余保持不变）");
+      updateUI();
+      this._importTransaction = false;
+      await this.persistExplicitImport();
+      return true;
+    } catch (e) {
+      try { restoreSerializableGameStateSnapshot(gameState, preImportSnapshot); this._lastLoadSourceHadTutorial = preImportSourceHadTutorial; } catch (_) { /* 回滚自身异常安全 */ }
+      this._importTransaction = false;
+      alert("进度码导入失败：" + (e && e.message ? e.message : "未知错误"));
+      return false;
+    }
+  },
+
+  // 导入框（textarea 模态）：取代 prompt()，可承载大段文本、手机 webview 也能用。
+  _openCodeImportModal() {
+    let overlay = document.getElementById("save-code-import-overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "save-code-import-overlay";
+      overlay.style.cssText = "position:fixed;inset:0;background:rgba(8,12,20,.55);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
+      const box = document.createElement("div");
+      box.style.cssText = "background:#fff;color:#1c2530;width:min(560px,94vw);max-height:88vh;overflow:auto;border-radius:14px;padding:18px 18px 16px;box-shadow:0 12px 48px rgba(0,0,0,.35);";
+      box.innerHTML =
+        '<div style="font-weight:700;font-size:15px;margin-bottom:4px;">粘贴存档 / 进度码</div>' +
+        '<div style="font-size:12px;color:#6a7a8e;margin-bottom:10px;">支持「进度码（DSI1P.）」「完整存档码（DSI1.）」或文件导出的明文 JSON。粘贴后点导入，不会立即覆盖，确认无误才写入。</div>' +
+        '<textarea id="save-code-import-text" style="width:100%;height:210px;box-sizing:border-box;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.4;resize:vertical;"></textarea>' +
+        '<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">' +
+        '<button class="btn" id="save-code-import-cancel" type="button">取消</button>' +
+        '<button class="btn btn-primary" id="save-code-import-confirm" type="button">导入</button>' +
+        '</div>';
+      overlay.appendChild(box);
+      document.body.appendChild(overlay);
+      overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.style.display = "none"; });
+      box.querySelector("#save-code-import-cancel").addEventListener("click", () => { overlay.style.display = "none"; });
+      box.querySelector("#save-code-import-confirm").addEventListener("click", () => { SaveManager._confirmCodeImport(overlay); });
+    }
+    const ta = overlay.querySelector("#save-code-import-text");
+    ta.value = "";
+    overlay.style.display = "flex";
+    setTimeout(() => { try { ta.focus(); } catch (_) {} }, 0);
+  },
+
+  _confirmCodeImport(overlay) {
+    const ta = overlay.querySelector("#save-code-import-text");
+    const text = (ta && ta.value || "").trim();
+    if (!text) { this._updateStatus("未粘贴任何内容"); return; }
+    overlay.style.display = "none";
+    (async () => {
+      try {
+        const result = await ClipboardSaveCodec.decode(text);
+        const data = result && result.data;
+        if (result && result.kind === "profile") {
+          this.importProfileData(data);
+        } else {
+          // full / raw：走整档替换（与文件导入同路径）
+          this.importData(typeof data === "string" ? data : JSON.stringify(data));
+        }
+      } catch (err) {
+        this._updateStatus("导入失败：" + (err && err.message ? err.message : err));
+      }
+    })();
+  },
+
   setAdapter(newAdapter) { this.adapter = newAdapter; },
   // 删除存档：在「存档管理」页通过带警告的二次确认弹窗调用，确认后清空本地存档并重启到全新开局。
   deleteSave() {
@@ -2180,6 +2350,35 @@ function getAchievementSyncService() {
         btnImport = document.getElementById("btn-import-save"), fileInput = document.getElementById("import-file-input");
   if (btnSave) btnSave.addEventListener("click", () => SaveManager.save());
   if (btnExport) btnExport.addEventListener("click", () => SaveManager.exportData());
+  const copyCode = document.getElementById("btn-copy-save-code");
+  if (copyCode) copyCode.addEventListener("click", async () => {
+    try {
+      if (typeof ClipboardSaveCodec === "undefined") throw new Error("存档编码器未加载");
+      // 进度码：仅抽取永久进度白名单 + 紧凑 JSON，比整档短很多，且合并导入不误删现有档。
+      const code = await ClipboardSaveCodec.encode(ClipboardSaveCodec.extractProfile(gameState), { profile: true });
+      try { await navigator.clipboard.writeText(code); }
+      catch (_) { const ta=document.createElement("textarea"); ta.value=code; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); if(!document.execCommand("copy")) throw new Error("剪贴板权限被拒绝"); ta.remove(); }
+      SaveManager._updateStatus("进度码已复制到剪贴板（仅核心进度，非完整存档；仅混淆压缩，不是加密）");
+    } catch(e) { SaveManager._updateStatus("复制进度码失败："+(e.message||e)); }
+  });
+  const pasteCode = document.getElementById("btn-paste-save-code");
+  if (pasteCode) pasteCode.addEventListener("click", () => { try { SaveManager._openCodeImportModal(); } catch(e) { SaveManager._updateStatus("打开导入框失败："+(e.message||e)); } });
+  const rescueRaw = document.getElementById("btn-rescue-raw-save");
+  if (rescueRaw) rescueRaw.addEventListener("click", async () => {
+    try {
+      let raw = localStorage.getItem("eve_idle_save"), source = raw ? "localStorage" : "";
+      if (!raw && SaveManager._localMirror && SaveManager._localMirror.readSlots) {
+        const slots = await SaveManager._localMirror.readSlots();
+        const hit = (slots || []).find(x => x && x.status === "ok" && x.data);
+        if (hit) { raw = hit.data; source = "TapTap设备备份/" + (hit.slot || "unknown"); }
+      }
+      if (!raw) throw new Error("本地原始存档不存在");
+      // 抢救：原样复制原始串（不做编码包裹），交给修复工具按原始格式处理。
+      try { await navigator.clipboard.writeText(raw); }
+      catch (_) { const ta=document.createElement("textarea"); ta.value=raw; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); if(!document.execCommand("copy")) throw new Error("剪贴板权限被拒绝"); ta.remove(); }
+      SaveManager._updateStatus("原始存档已复制（未校验、未修改，可交给修复工具处理）");
+    } catch(e) { SaveManager._updateStatus("抢救失败："+(e.message||e)); }
+  });
   if (btnImport) btnImport.addEventListener("click", () => fileInput && fileInput.click());
   if (fileInput) fileInput.addEventListener("change", (e) => { const file = e.target.files[0]; if (!file) return; if (file.size > MAX_IMPORT_SAVE_BYTES) { fileInput.value = ""; alert("存档文件超过 10 MB，已拒绝导入"); return; } const reader = new FileReader(); reader.onload = (ev) => { SaveManager.importData(ev.target.result); fileInput.value = ""; }; reader.readAsText(file); });
   const btnDelete = document.getElementById("btn-delete-save");

@@ -450,7 +450,7 @@ function getCompatibleBoosterItems(slot) {
     // 用裸 id 查找
     var item = (typeof getBoosterItem === "function") ? getBoosterItem(key) : null;
     if (!item) continue;
-    if (!item.universal && item.slot !== slot) continue;
+    if (typeof isBoosterCompatibleWithSlot === "function" ? !isBoosterCompatibleWithSlot(item, slot) : (!item.universal && item.slot !== slot)) continue;
     // 同系列冲突检查（通用件不参与系列互斥，可跨槽多槽共存）
     var conflict = false;
     for (var s = 0; s < BOOSTER_SLOTS.length; s++) {
@@ -520,6 +520,7 @@ function showBoosterSlotPicker(slot, items, existingEntry) {
 
 /* ---- 辅助：通用增强剂（神经训练催化器）装备槽位选择器 ---- */
 var BOOSTER_SLOT_FRIENDLY = {
+  equipmentSpeed:"\u88c5\u5907\u5de5\u7a0b \u00b7 \u901f\u5ea6", equipmentYield:"\u88c5\u5907\u5de5\u7a0b \u00b7 \u4ea7\u91cf",
   miningSpeed:"采矿 · 速度", miningYield:"采矿 · 产量",
   archaeologySpeed:"考古 · 速度", archaeologyRare:"考古 · 稀有",
   combatWeapon:"战斗 · 武器", combatRepair:"战斗 · 维修",
@@ -528,6 +529,15 @@ var BOOSTER_SLOT_FRIENDLY = {
   shipSpeed:"舰船 · 速度", shipYield:"舰船 · 材料",
   boosterSpeed:"增幅剂 · 速度", boosterYield:"增幅剂 · 产量"
 };
+Object.keys(BOOSTER_SLOT_FRIENDLY).forEach(function(slot) {
+  var action = (typeof BOOSTER_SLOT_XP_SKILL !== "undefined") ? BOOSTER_SLOT_XP_SKILL[slot] : null;
+  var labels = {
+    mining:"\u91c7\u77ff", archaeology:"\u8003\u53e4", gasHarvesting:"\u91c7\u6c14", refining:"\u51b6\u70bc",
+    shipEngineering:"\u8230\u8239\u5de5\u7a0b", equipmentEngineering:"\u88c5\u5907\u5de5\u7a0b", boosterEngineering:"\u589e\u5f3a\u5242\u5236\u9020", combat:"\u6218\u6597"
+  };
+  if (action && labels[action]) BOOSTER_SLOT_FRIENDLY[slot] = labels[action] + " \u00b7 \u589e\u5f3a\u5242\u69fd";
+});
+
 function showUniversalBoosterSlotPicker(itemId, inv) {
   var existingOverlay = document.querySelector(".booster-picker-overlay");
   if (existingOverlay) existingOverlay.remove();
@@ -546,6 +556,7 @@ function showUniversalBoosterSlotPicker(itemId, inv) {
   box.appendChild(sub);
 
   var GROUPS = [
+    { label:"\u88c5\u5907\u5de5\u7a0b", slots:["equipmentSpeed","equipmentYield"] },
     { label:"采矿", slots:["miningSpeed","miningYield"] },
     { label:"考古", slots:["archaeologySpeed","archaeologyRare"] },
     { label:"战斗", slots:["combatWeapon","combatRepair"] },

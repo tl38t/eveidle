@@ -62,7 +62,12 @@ function initStationUI() {
       else renderStationPage(Date.now());
     });
   }
+
 }
+
+
+  // —— 军团 DLC：事件委托交给独立模块（绑定幂等；模块缺失不影响主内容）——
+  if (typeof LegionEvents !== "undefined" && LegionEvents.bind) LegionEvents.bind();
 
 function renderStationPage(now) {
   if (!StationUI.initDone) initStationUI();
@@ -235,6 +240,7 @@ function renderStationPage(now) {
   if (display.corporation.foundedAt) setText("station-corp-founded", new Date(display.corporation.foundedAt).toLocaleDateString());
   else setText("station-corp-founded", "-");
   setText("station-corp-dlc", display.corporation.statusText || "DLC 预留");
+  // 军团已迁出为独立侧边栏页面；此处不再渲染军团区块。
   // 同步结构签名：用于 live updater 判断是否需要整页重渲染（节流时间戳/签名均不进 gameState/存档）。
   _stationSig = computeStationSig(display);
 }
@@ -459,4 +465,30 @@ function liveUpdateStationFields(display, now) {
     var multEl = document.getElementById("al-mult-" + al.lineId);
     if (multEl) setLiveText(multEl, "建筑 ×" + al.buildingMultiplier.toFixed(2) + " · 后勤 ×" + al.logisticsMultiplier.toFixed(2) + " · 综合 ×" + al.effectiveMultiplier.toFixed(2));
   });
+}
+
+// ================================================================
+// 军团 DLC —— 面板渲染与交互
+// ----------------------------------------------------------------
+// 与既有 UI 一致：只读 getLegionContributionSnapshot / getLegionCandidateRefreshState / 直接读 gameState.legion；
+// 所有文案类展示（如招募台词）一律经 getNpcDialogue，不在此硬编码字符串。
+// 交互经事件委托（已在 initStationUI 绑定），动作后统一 renderStationPage 重建。
+// ================================================================
+
+// 仅在「随真实动作/结算变化、需重建卡片」时重建候选人/NPC 卡片；倒计时等时间字段不进签名。
+var _legionSig = "";
+
+function getShipDisplayName(shipId) {
+  if (!shipId) return "";
+  if (typeof getShipConfigById === "function") {
+    var cfg = getShipConfigById(shipId);
+    if (cfg && cfg.name) return cfg.name;
+  }
+  if (typeof SHIP_DATA !== "undefined") {
+    for (var _k in SHIP_DATA) {
+      var _coll = SHIP_DATA[_k];
+      if (_coll && typeof _coll === "object" && _coll[shipId] && _coll[shipId].name) return _coll[shipId].name;
+    }
+  }
+  return shipId;
 }

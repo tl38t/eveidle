@@ -441,8 +441,16 @@ function spawnCombatEnemy(randomFn) {
 // ============================================================================
 // 纯掉落配置读取（只读生产掉落配置，不发奖/不读写全局状态）
 // 生产 roll* 系列与预览 getCombatDropPreview 共用，确保概率/材料/数量单一事实来源。
-// 注意：encryptedDataChances 覆盖必须用显式 != null 判断，禁止用 || 覆盖合法的 0 概率。
+// 注意：encryptedDataChances  覆盖必须用显式 != null 判断，禁止用 || 覆盖合法的 0 概率。
 // ============================================================================
+
+// 军团 NPC 稀有掉落加成（lootSearch）：仅放大精英/Boss 稀有掉落概率，不放大普通掉落。
+function getLegionCombatDropMult(state) {
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    return LEGION_NPC.getLegionContributionSnapshot(state || gameState).multipliers.combatDrop;
+  }
+  return 1;
+}
 
 // 战术材料掉落配置：层级由 zone.formationPool 映射（死亡空间复用 sourceZone 的 formationPool）。
 //   普通怪 70% × 1；精英 100% × 2~3；Boss 100% × 6~10。
@@ -524,7 +532,7 @@ function rollFactionEncryptedDataDrop(factionId, enemyKind, randomValue, zone, s
   const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
   if (!chance) return null;
   const roll = randomValue === undefined ? Math.random() : randomValue;
-  if (roll >= chance) return null;
+  if (roll >= chance * getLegionCombatDropMult(state)) return null;
   ResourceRegistry.add(state, "special:" + cfg.material, cfg.qty);
   return { material: cfg.material, qty: cfg.qty };
 }
@@ -541,9 +549,9 @@ function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues, state) {
     const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
     const roll = values[index] !== undefined ? values[index] :
       typeof randomValues === "number" ? randomValues : Math.random();
-    if (!cfg.resourceId || roll >= chance) continue;
+    if (!cfg.resourceId || roll >= chance * getLegionCombatDropMult(state)) continue;
     ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
-    drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty, rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
+    drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty,  rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
   }
   return drops;
 }
@@ -572,7 +580,7 @@ function rollGearDrops(zone, enemyKind, randomValues, state) {
     const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
     const roll = values[index] !== undefined ? values[index] :
       typeof randomValues === "number" ? randomValues : Math.random();
-    if (!cfg.resourceId || roll >= chance) continue;
+    if (!cfg.resourceId || roll >= chance * getLegionCombatDropMult(state)) continue;
     ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
     drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty, rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
   }
@@ -601,8 +609,10 @@ function rollStationCoreDrop(zone, enemyKind, randomValue, state) {
   const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
   if (!chance) return null;
   const roll = randomValue === undefined ? Math.random() : randomValue;
-  if (roll >= chance) return null;
+  if (roll >= chance * getLegionCombatDropMult(state)) return null;
   ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
+
+
   state.stationCoresObtained[cfg.coreId] = true;
   return { coreId: cfg.coreId, material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty };
 }

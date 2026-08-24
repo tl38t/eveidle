@@ -202,6 +202,9 @@
     <div class="nav-item" data-page="station">
       <span class="nav-icon"><i class="fa-regular fa-building"></i></span> 空间站
     </div>
+    <div class="nav-item" data-page="legion" id="nav-legion" style="display:none;">
+      <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> 军团
+    </div>
     <div class="nav-item" data-page="research">
       <span class="nav-icon"><i class="fa-solid fa-flask-vial"></i></span> 研究
     </div>
@@ -519,6 +522,7 @@
 
     <!-- 装备工程面板 -->
     <div class="panel" id="equipeng-panel" style="display:none;">
+      <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">🔧 装备工程</span>
         <span class="text-muted" id="equipeng-status-text">待命</span>
@@ -888,12 +892,35 @@
           <div id="station-effects-list"></div>
           <div id="station-cores-list" class="station-cores"></div>
         </div>
-        <!-- F. 军团 -->
-        <div class="station-section">
-          <h3>军团 DLC 预留</h3>
-          <div>名称：<span id="station-corp-name">未成立</span></div>
-          <div>成立时间：<span id="station-corp-founded">-</span></div>
-          <div id="station-corp-dlc">DLC 预留</div>
+      </div>
+    </div>
+
+    <!-- 军团面板（独立页：本体 Lv.3 且已建军团议事大厅后，侧边栏才显示入口） -->
+    <div class="panel legion-panel" id="legion-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title">🛡️ 军团</span>
+        <span id="legion-panel-status" class="text-muted"></span>
+      </div>
+      <div class="panel-body">
+        <div class="station-section" id="legion-section" style="display:none;">
+          <h3>军团大厅 <span id="legion-status-tag" class="text-muted"></span></h3>
+          <div id="legion-hall" class="legion-hall"></div>
+          <div id="legion-summary" class="legion-summary"></div>
+          <div id="legion-contribution" class="legion-contribution"></div>
+          <div class="legion-columns">
+            <div class="legion-col">
+              <h4>招募候选人
+                <button id="btn-legion-refresh" class="btn-mini" type="button">手动刷新</button>
+                <span id="legion-refresh-info" class="text-muted"></span>
+              </h4>
+              <div id="legion-candidates" class="legion-candidates"></div>
+            </div>
+            <div class="legion-col">
+              <h4>已招募 NPC</h4>
+              <div id="legion-npcs" class="legion-npcs"></div>
+            </div>
+          </div>
+          <div id="legion-msg" class="legion-msg"></div>
         </div>
       </div>
     </div>
@@ -937,8 +964,8 @@
           <button class="btn" id="btn-import-save">📤 导入存档</button>
           <button class="btn btn-danger" id="btn-delete-save" title="清空并删除本地存档（不可恢复）">🗑 删除存档</button>
     <input type="file" id="import-file-input" accept=".json" style="display:none;">
-    <button class="btn" id="btn-copy-save-code">📋 复制短存档</button>
-    <button class="btn" id="btn-paste-save-code">📎 粘贴短存档</button>
+    <button class="btn" id="btn-copy-save-code">📋 复制进度码</button>
+    <button class="btn" id="btn-paste-save-code">📎 粘贴进度码</button>
     <button class="btn btn-warn" id="btn-rescue-raw-save">🆘 抢救原始存档</button>
         </div>
         <div class="save-info" id="save-info" style="margin-top:12px;font-size:12px;color:#6a7a8e;"></div>
@@ -1189,21 +1216,28 @@
   <script defer src="./js/systems/archaeology.js?v=8"></script>
   <script defer src="./js/systems/planetary.js?v=2"></script>
   <script defer src="./js/systems/station.js?v=10"></script>
+  <script defer src="./js/data/legion/npc-names.js?v=1"></script>
+  <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
+  <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
+  <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
+  <script defer src="./js/systems/legion-npc.js?v=1"></script>
   <script defer src="./js/ui/action-modal.js?v=6"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
   <script defer src="./js/systems/combat.js?v=9"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=35"></script>
+  <script defer src="./js/core/selectors.js?v=36"></script>
   <script defer src="./js/core/actions.js?v=13"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=40"></script>
+  <script defer src="./js/ui/shell-render.js?v=42"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=15"></script>
   <script defer src="./js/ui/combat-render.js?v=22"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=7"></script>
   <script defer src="./js/ui/booster-render.js?v=6"></script>
-  <script defer src="./js/ui/station-render.js?v=5"></script>
+  <script defer src="./js/ui/station-render.js?v=7"></script>
+  <script defer src="./js/ui/legion-render.js?v=1"></script>
+  <script defer src="./js/ui/legion-events.js?v=1"></script>
   <script defer src="./js/core/tick.js?v=8"></script>
   <script defer src="./js/core/offline.js?v=10"></script>
   <script defer src="./js/systems/offline-combat.js?v=4"></script>
@@ -1233,7 +1267,7 @@
   <script defer src="./js/core/persistence.js?v=12"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=3"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
-  <script defer src="./js/ui/render.js?v=8"></script>
+  <script defer src="./js/ui/render.js?v=9"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=11"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">

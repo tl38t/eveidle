@@ -104,7 +104,13 @@ function getArchaeologyCycleSeconds(state, site) {
     cycleReduction = Math.min(0.50, fitted.cycleReduction || 0);
   }
   // 解析速度 +10% 等价于周期 ÷1.10（越小越快）
-  return base * archSpeedEff / archLogisticsMult / researchMult / implantSpeed * (1 - cycleReduction);
+  let cycle = base * archSpeedEff / archLogisticsMult / researchMult / implantSpeed * (1 - cycleReduction);
+  // 军团 NPC「遗迹解析(archaeologySpeed)」：加速 → 周期 ÷ 倍率（越小越快）
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    const m = LEGION_NPC.getLegionContributionSnapshot(state).multipliers.archaeologySpeed;
+    if (m && m > 1) cycle = cycle / m;
+  }
+  return cycle;
 }
 
 // ---- 舰船 HP 存取 ----
@@ -450,7 +456,10 @@ function resolveArchaeologyRare(state, site, location, tier, fitted, rng, isOffl
   const implantUnique = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).archaeology.unique : 1;
   // 文物译码器：作为稀有发现掉率的乘子（1+加成），与增强剂 rareShift、脑插 unique 同乘。
   const decoderMul = 1 + (fitted && fitted.decoder ? fitted.decoder : 0);
-  const effectiveRareRate = Math.min(0.99, (location.rareRate || 0) * rareShiftMul * implantUnique * decoderMul);
+  // 军团 NPC 考古稀有加成（archaeologyLoot）：与增强剂/脑插同乘，放大稀有发现概率。
+  const legionDrop = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+    ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers.archaeologyDrop : 1;
+  const effectiveRareRate = Math.min(0.99, (location.rareRate || 0) * rareShiftMul * implantUnique * decoderMul * legionDrop);
   const offline = Boolean(isOffline);
   if (rng() >= effectiveRareRate) return null;
   const weights = location.rareWeights || {};
@@ -527,8 +536,14 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
     : ((state && state.skills && state.skills.capacitorManagement && state.skills.capacitorManagement.lvl) || 0);
   const capFactor = 1 / (1 + capSkillLevel * 0.02);
 
+  // 军团 NPC 电容管理(capacitorManagement)加成：同样降低考古燃料，与战斗路径 multiplier.fuelSave 一致。
+  let legionFuelSave = 1;
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    legionFuelSave = LEGION_NPC.getLegionContributionSnapshot(state).multipliers.fuelSave;
+  }
+
   // 生燃料成本（未取整）；也是长期平均消耗
-  const rawFuelCost = Math.max(0, baseFuel * combinedShipMultiplier * capFactor);
+  const rawFuelCost = Math.max(0, baseFuel * combinedShipMultiplier * capFactor * legionFuelSave);
   const savingPerCycle = Math.max(0, baseFuel - rawFuelCost);
 
   // 归一化上一次余量到 [0,1)

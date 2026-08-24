@@ -16,6 +16,20 @@
   .station-panel .panel-body { max-height: none; overflow-y: visible; }
   .station-section { margin-bottom: 20px; padding: 12px; background: rgba(20,40,55,0.5); border-radius: 6px; }
   .station-section h3 { margin: 0 0 10px; font-size: 14px; color: #8ab4d6; }
+  .legion-summary { font-size: 13px; margin-bottom: 8px; }
+  .legion-summary span { margin-right: 14px; white-space: nowrap; }
+  .legion-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .legion-col h4 { font-size: 13px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
+  .legion-col .btn-mini { font-size: 11px; padding: 2px 8px; cursor: pointer; border-radius: 4px; border: 1px solid rgba(138,180,214,0.5); background: rgba(40,70,95,0.6); color: #cfe3f5; }
+  .legion-card { background: rgba(12,28,40,0.6); border: 1px solid rgba(48,66,84,0.7); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 12px; }
+  .legion-card .lc-name { font-weight: 600; color: #cfe3f5; }
+  .legion-card .lc-meta { color: #8a9bb0; margin: 4px 0; }
+  .legion-card .lc-actions { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .legion-card select { font-size: 11px; }
+  .legion-card button { font-size: 11px; padding: 2px 8px; cursor: pointer; border-radius: 4px; border: 1px solid rgba(138,180,214,0.5); background: rgba(40,70,95,0.6); color: #cfe3f5; }
+  .legion-msg { font-size: 12px; margin-top: 8px; min-height: 16px; color: #e8c06a; }
+  .legion-warn { color: #e8645a; }
+  @media (max-width: 640px) { .legion-columns { grid-template-columns: 1fr; } }
 
   /* ── 空间站总览合并折叠面板（统一 ▸/▾ 箭头）── */
   details.station-ops-panel {

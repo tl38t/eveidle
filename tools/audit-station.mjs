@@ -100,7 +100,7 @@ const G=W.gameState;
 const RR=W.ResourceRegistry;
 const PLANS=W.StationSystem.STATION_BODY_PLANS;
 
-const KNOWN = ["resource_dispatch","planetary_control","smelting_refinery","equipment_factory","booster_factory","archaeology_lab","combat_command","shipyard"];
+const KNOWN = ["resource_dispatch","planetary_control","smelting_refinery","equipment_factory","booster_factory","archaeology_lab","combat_command","shipyard","legion_hall"];
 
 let pass=0, fail=0;
 const failures=[];
@@ -172,17 +172,18 @@ section("A3 bodyLevel 边界");
 const setBL = v => { G.station.bodyLevel = v; W.normalizeStationState(G); return G.station.bodyLevel; };
 ok(setBL(NaN) === 0, "NaN → 0");
 ok(setBL(-3) === 0, "-3 → 0");
-ok(setBL(5) === 0, "5(越界) → 0");
+ok(setBL(6) === 0, "6(越界,绝对上限5) → 0");
+ok(setBL(5) === 5, "5(满级绝对上限) → 5");
 ok(setBL(2) === 2, "2 → 2");
 ok(setBL(3) === 3, "3 → 3");
 
 section("A4 buildings 清理");
-G.station.buildings = { smelting_refinery: 2, ghost_building: 9, archaeology_lab: NaN, combat_command: 5 };
+G.station.buildings = { smelting_refinery: 2, ghost_building: 9, archaeology_lab: NaN, combat_command: 6 };
 W.normalizeStationState(G);
 ok(G.station.buildings.ghost_building === undefined, "未知 ID ghost_building 被丢弃");
 ok(G.station.buildings.smelting_refinery === 2, "合法 ID 保留 2");
 ok(G.station.buildings.archaeology_lab === 0, "NaN → 0");
-ok(G.station.buildings.combat_command === 0, "越界 5 → 0");
+ok(G.station.buildings.combat_command === 0, "越界 6 → 0");
 ok(KNOWN.every(id => id in G.station.buildings), "所有已知 ID 仍存在于 buildings");
 
 section("A5 construction 处理（旧结构兼容不放宽）");
@@ -214,6 +215,10 @@ ok(G.corporation.version === 1, "version 非法 → 1");
 ok(G.corporation.name === "", "name 非字符串 → 空串");
 ok(G.corporation.foundedAt === 0, "foundedAt 非法 → 0");
 ok(G.corporation.dlc.npcWorkers === true && G.corporation.dlc.combatWings === false, "dlc 布尔归一化");
+// 复位 DLC 标记，避免泄漏到后续 B/C 基线测试（基线测试默认无 DLC：本体/建筑上限 LV3）
+G.corporation.dlc.npcWorkers = false;
+G.corporation.dlc.combatWings = false;
+if (G.station.dlc) { G.station.dlc.npcWorkers = false; G.station.dlc.combatWings = false; }
 
 section("A8 幂等性");
 const beforeA = JSON.stringify(G.station) + "|" + JSON.stringify(G.corporation);
@@ -293,9 +298,11 @@ for (const target of [1,2,3]) {
   ok(G.station.bodyLevel === target && G.station.construction === null, "完成后 bodyLevel=" + target + " 且 construction 清空");
   onlineCompletedCount++;
 }
-ok(G.station.bodyLevel === 3, "顺序推进至满级 Lv.3");
+ok(G.station.bodyLevel === 3, "顺序推进至 Lv.3");
+// 本体上限现为 Lv.5（DLC 门禁未生效，上限暂行 5）：验证抵 Lv.5 后再开工被拒
+resetStation(5);
 const rMax = start(Date.now());
-ok(rMax.changed === false && rMax.reason === "max-level", "Lv.3 后再次开工 → max-level（返回满级）");
+ok(rMax.changed === false && rMax.reason === "max-level", "Lv.5 后再次开工 → max-level（返回满级）");
 const startedEv = events.filter(e=>e.t==="started");
 const completedEv = events.filter(e=>e.t==="completed");
 const upgradedEv = events.filter(e=>e.t==="upgraded");
@@ -319,10 +326,10 @@ ok(rcOff2.changed === false, "离线连续调用不重复完成");
 ok(events.filter(e=>e.t==="completed").length === 1 && events.filter(e=>e.t==="upgraded").length === 1, "离线完成仅派发一次 completed+upgraded");
 ok(events.filter(e=>e.t==="completed")[0].meta.offline === true && events.filter(e=>e.t==="upgraded")[0].meta.offline === true, "离线事件 meta.offline===true");
 
-// ---- B7 跳级/降级/Lv3 续升拒绝 ----
-section("B7 跳级/降级/Lv3 续升拒绝");
-resetStation(3); fundBig();
-ok(start(Date.now()).reason === "max-level", "Lv.3 续升被拒（max-level）");
+// ---- B7 跳级/降级/Lv5 续升拒绝 ----
+section("B7 跳级/降级/Lv5 续升拒绝");
+resetStation(5); fundBig();
+ok(start(Date.now()).reason === "max-level", "Lv.5 续升被拒（max-level）");
 // 跳级：bodyLevel=0，篡改 construction.targetLevel=2 → 完成时 level-mismatch，不升级
 resetStation(0);
 G.station.construction = { kind:"body", targetLevel:2, startedAt: Date.now()-10*HOUR, completesAt: Date.now()-5*HOUR, durationMs:2*HOUR, paid:true, costSnapshot:{isk:0,materials:{}} };
@@ -441,8 +448,8 @@ ok(checkDisplayClean(d2,"d2") && d2.canStart === true && d2.blockedReason === nu
 start(Date.now());
 const d3 = display();
 ok(checkDisplayClean(d3,"d3") && d3.currentConstruction && d3.currentConstruction.targetLevel === 1 && d3.remainingMs > 0 && d3.progress >= 0 && d3.progress <= 1 && d3.canStart === false && d3.blockedReason === "construction-in-progress", "显示态(进行中) 有 currentConstruction/remainingMs/progress");
-// 状态4：满级
-resetStation(3); G.station.construction = null;
+// 状态4：满级（本体上限现行 Lv.5）
+resetStation(5); G.station.construction = null;
 const d4 = display();
 ok(checkDisplayClean(d4,"d4") && d4.nextLevel === null && d4.nextName === null && d4.nextCost === null && d4.canStart === false && d4.blockedReason === "max-level", "显示态(满级) nextLevel/nextCost=null/max-level");
 
@@ -489,7 +496,7 @@ ok(BLEVEL[3].isk === 500000, "建筑 Lv.3 ISK=500,000");
 ok(BLEVEL[3].durationMs === 3600000, "建筑 Lv.3 时长 1h");
 ok(BLEVEL[3].materials["mineral:三钛合金"]===5000 && BLEVEL[3].materials["mineral:类晶体胶矿"]===500 && BLEVEL[3].materials["mineral:同位聚合体"]===312 && BLEVEL[3].materials["mineral:超新星诺克石"]===250 && BLEVEL[3].materials["mineral:基腹断岩"]===125 && BLEVEL[3].materials["mineral:超噬矿"]===62 && BLEVEL[3].materials["moon:铪"]===375 && BLEVEL[3].materials["gas:高纯富勒烯"]===250 && BLEVEL[3].materials["planetary:磁场聚合物"]===24 && Object.keys(BLEVEL[3].materials).length===9, "建筑 Lv.3=三钛5000+类晶体500+同位聚合体312+超新星250+基腹断岩125+超噬62+月矿铪375+高纯富勒烯250+磁场聚合物24（9项）");
 // 精炼厂 Lv.1 专属覆盖：其余七座建筑仍共用共享分级成本表（每座三级完全相同）。
-const OTHER7 = KNOWN.filter(id => id !== "smelting_refinery");
+const OTHER7 = KNOWN.filter(id => id !== "smelting_refinery" && id !== "legion_hall");
 ok(OTHER7.every(id => BPLANS[id] === BLEVEL), "其余七座建筑每座三级共用同一套共享分级成本表");
 ok(BPLANS["smelting_refinery"] !== BLEVEL, "精炼厂使用专属（覆盖）计划，不复用共享表对象");
 ok(OTHER7.every(id => BPLANS[id][1] === BLEVEL[1]), "其余七座建筑 Lv.1 == 共享 Lv.1（标准钛材2500/银镍合金94/镓125/稳定富勒烯150/同位素38/生物质25）");
@@ -518,7 +525,7 @@ ok(G.station.construction && G.station.construction.paid===true && G.station.con
 // ---- C4 逐种资源不足原子拒绝 ----
 // 注意：建筑从 lvl-1 起步升级到 lvl（故需先置 buildingLevel=lvl-1，本体等级>=lvl）。
 section("C4 建筑逐种资源不足原子拒绝");
-for (const id of KNOWN) {
+for (const id of KNOWN.filter(x => x !== "legion_hall")) {
   for (const lvl of [1,2,3]) {
     const plan = BPLANS[id][lvl];
     const setup = () => { bSetBody(lvl); bResetBuildings(); G.station.buildings[id] = lvl - 1; G.station.construction = null; };
@@ -691,9 +698,9 @@ for (const target of [1,2,3]) {
   ok(rc2.changed === false, "建筑连续 tick 不重复完成 target="+target);
   ok(G.station.buildings.resource_dispatch===target && G.station.construction===null, "完成后 buildings.resource_dispatch="+target);
 }
-ok(G.station.buildings.resource_dispatch===3, "建筑顺序至满级 Lv.3");
+ok(G.station.buildings.resource_dispatch===3, "建筑顺序至本体约束上限 Lv.3（本体 Lv3 限制建筑 ≤ Lv3）");
 const rMaxB = bStart("resource_dispatch", Date.now());
-ok(rMaxB.changed===false && rMaxB.reason==="max-level", "建筑 Lv.3 后 → max-level");
+ok(rMaxB.changed===false && rMaxB.reason==="body-level-cap", "建筑 Lv.3 + 本体 Lv.3 → 受本体等级约束无法续升(body-level-cap)");
 const bStarted = events.filter(e=>e.t==="started");
 const bCompleted = events.filter(e=>e.t==="completed");
 const bUpgraded = events.filter(e=>e.t==="bupgraded");

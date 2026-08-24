@@ -245,7 +245,10 @@ function renderArchaeologyPage(now) {
     if (selectedLocation.credential) itemIds.push(selectedLocation.credential);
     const itemRows = itemIds.map(id => {
       const isVoucher = typeof id === "string" && id.indexOf("voucher_") === 0;
-      return rewardRow(isVoucher ? "◆" : "⌁", archBlueprintName(id), isVoucher ? "唯一永久回收凭证" : "直接获得的消耗型探针", isVoucher ? "unique" : "rare", false);
+      const isOwned = isVoucher && typeof ResourceRegistry !== "undefined"
+        ? ResourceRegistry.get(gameState, "special:" + id) > 0
+        : false;
+      return rewardRow(isVoucher ? "◆" : "⌁", archBlueprintName(id), isVoucher ? (isOwned ? "已拥有 · 唯一永久回收凭证" : "唯一永久回收凭证") : "直接获得的消耗型探针", isVoucher ? "unique" : "rare", isOwned);
     }).join("");
 
     // 脑插信号：能力探测（中央目录无专属标签时回退说明）

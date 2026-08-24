@@ -52,21 +52,46 @@ const STATION_BODY_PLANS = Object.freeze({
   4: Object.freeze({
     level: 4,
     name: "深空要塞",
-    durationMs: 28800000,         // 8h（时长每级翻倍 1→2→4→8h）
-    isk: 32000000,                // 星币每级 ×4（50万→200万→800万→3200万）
+    durationMs: 28800000,         // 8h
+    isk: 30000000,                // 星币 30M
     materials: Object.freeze({
-      "mineral:三钛合金": 90000,   // 标准钛材
-      "mineral:类晶体胶矿": 5000,  // 晶格聚合物
-      "mineral:同位聚合体": 5000,  // 同位复材
-      "mineral:超新星诺克石": 4000,// 诺瓦陶金
-      "mineral:基腹断岩": 1500,    // 重锆晶材（Lv.4 新引入稀有矿）
-      "mineral:超噬矿": 800       // 奇点合金（Lv.4 新引入稀有矿）
+      "mineral:三钛合金": 120000,
+      "mineral:类晶体胶矿": 12000,
+      "mineral:同位聚合体": 7000,
+      "mineral:超新星诺克石": 4000,
+      "mineral:基腹断岩": 500,
+      "mineral:超噬矿": 180,
+      "moon:铪": 1000,
+      "moon:铷": 50,
+      "gas:高纯富勒烯": 600,
+      "planetary:磁场聚合物": 100
     }),
     desc: "升至深空要塞后将解锁建造「军团议事大厅」的资格（需对应内容授权）。"
+  }),
+  5: Object.freeze({
+    level: 5,
+    name: "星域枢纽",
+    durationMs: 57600000,         // 16h
+    isk: 100000000,               // 星币 100M
+    materials: Object.freeze({
+      "mineral:三钛合金": 250000,
+      "mineral:类晶体胶矿": 25000,
+      "mineral:同位聚合体": 15000,
+      "mineral:超新星诺克石": 9000,
+      "mineral:基腹断岩": 1200,
+      "mineral:超噬矿": 500,
+      "moon:铷": 150,
+      "mineral:莫尔石": 25,
+      "gas:超纯聚合气体": 30,
+      "planetary:磁场聚合物": 300
+    }),
+    desc: "升至星域枢纽后军团议事大厅可升至满级（需对应内容授权）。"
   })
 });
 
-const STATION_MAX_BODY_LEVEL = 4;
+// 本体绝对等级上限（迁移/完成校验用的硬上限）。实际可建上限由 DLC 决定：
+// 无 DLC → 3（见 getStationMaxBodyLevel）；有 DLC → 5。
+const STATION_MAX_BODY_LEVEL = 5;
 
 // 本体等级 → 中文名（0 = 尚未建造）。
 function getStationBodyName(level) {
@@ -80,7 +105,10 @@ function getStationBodyName(level) {
 function buildStationCostSnapshot(plan) {
   const materials = {};
   for (const [reference, quantity] of Object.entries(plan.materials || {})) materials[reference] = quantity;
-  return { isk: plan.isk, materials };
+  const snap = { isk: plan.isk, materials };
+  const lp = Number(plan.lp) || 0;
+  if (lp > 0) snap.lp = lp;
+  return snap;
 }
 
 // 事件派发：统一带 source=station 与 offline 语义（在线/离线一致）。
@@ -125,7 +153,7 @@ function startStationBodyConstruction(state, nowOverride) {
   if (s.construction) return { changed: false, reason: "construction-in-progress" };
 
   const currentLevel = Math.floor(Number(s.bodyLevel)) || 0;
-  if (currentLevel >= STATION_MAX_BODY_LEVEL) return { changed: false, reason: "max-level" };
+  if (currentLevel >= getStationMaxBodyLevel(state)) return { changed: false, reason: "max-level" };
 
   const targetLevel = currentLevel + 1;
   const plan = STATION_BODY_PLANS[targetLevel];
@@ -290,7 +318,7 @@ function getStationBodyDisplayState(state, now) {
   const s = (state && typeof state === "object" && state.station && typeof state.station === "object") ? state.station : null;
   const bodyLevel = s ? (Math.floor(Number(s.bodyLevel)) || 0) : 0;
   const bodyName = getStationBodyName(bodyLevel);
-  const atMax = bodyLevel >= STATION_MAX_BODY_LEVEL;
+  const atMax = bodyLevel >= getStationMaxBodyLevel(state);
 
   const nextLevel = atMax ? null : bodyLevel + 1;
   const nextPlan = nextLevel ? STATION_BODY_PLANS[nextLevel] : null;
@@ -388,7 +416,7 @@ const STATION_BUILDING_NAMES = Object.freeze({
   shipyard: "舰船船坞"
 });
 
-const STATION_MAX_BUILDING_LEVEL = 3;
+const STATION_MAX_BUILDING_LEVEL = 5;
 
 // 单座建筑分级成本（严格取自策划 6.2 单座建筑表；时间取自 2.3 节 15min/30min/1h）。
 // 行星材料按用户决策「严格按阶段总表拆分」：
@@ -436,6 +464,41 @@ const STATION_BUILDING_LEVEL_PLANS = Object.freeze({
       "gas:高纯富勒烯": 250,
       "planetary:磁场聚合物": 24
     })
+  }),
+  // 公共建筑 Lv.4 / Lv.5（军团 DLC 扩展；每座共用同一套分级成本，冶炼精炼厂 Lv.1 仍用专属覆盖）。
+  // ⚠️ 材料单调性：Lv.4 基腹断岩 = 200（非 100），否则相对 Lv.3 的 125 出现材料倒挂（违反「每级材料 ≥ 上一级」）。
+  4: Object.freeze({
+    level: 4,
+    durationMs: 7200000, // 2h
+    isk: 2000000,
+    materials: Object.freeze({
+      "mineral:三钛合金": 12000,
+      "mineral:类晶体胶矿": 2000,
+      "mineral:同位聚合体": 1000,
+      "mineral:超新星诺克石": 600,
+      "mineral:基腹断岩": 200,   // MUST be 200（材料倒挂修复点）
+      "mineral:超噬矿": 70,      // ≥ Lv.3 的 62，保持每档材料单调递增
+      "moon:铪": 500,
+      "gas:高纯富勒烯": 300,
+      "planetary:磁场聚合物": 50
+    })
+  }),
+  5: Object.freeze({
+    level: 5,
+    durationMs: 14400000, // 4h
+    isk: 8000000,
+    materials: Object.freeze({
+      "mineral:三钛合金": 30000,
+      "mineral:类晶体胶矿": 5000,
+      "mineral:同位聚合体": 2500,
+      "mineral:超新星诺克石": 1500,
+      "mineral:基腹断岩": 300,
+      "mineral:超噬矿": 120,
+      "moon:铷": 50,
+      "mineral:莫尔石": 5,
+      "gas:超纯聚合气体": 10,
+      "planetary:磁场聚合物": 120
+    })
   })
 });
 
@@ -453,11 +516,104 @@ const STATION_SMELTING_REFINERY_LV1_PLAN = Object.freeze({
   })
 });
 
+// 军团议事大厅（legion_hall）分级成本表：专属覆盖（含功勋 lp 消耗 + 不同材料配比）。
+// 解锁门槛在 startStationBuildingConstruction / 显示态 中统一判定：
+//   · 必须持有 DLC（state.station.dlc.npcWorkers 或 state.corporation.dlc.npcWorkers）
+//   · Hall Lv1 需本体 ≥ Lv2；Hall Lv2~Lv5 受「建筑等级 ≤ 本体等级」通用门槛约束
+// 功勋 = currency:lp（标量货币），随 ISK + 材料一次性原子扣减。
+const STATION_LEGION_HALL_PLANS = Object.freeze({
+  1: Object.freeze({
+    level: 1,
+    durationMs: 7200000,          // 2h
+    isk: 3000000,                 // 星币 3M
+    lp: 100,                      // 功勋 100
+    materials: Object.freeze({
+      "mineral:三钛合金": 25000,
+      "mineral:类晶体胶矿": 2500,
+      "mineral:同位聚合体": 800,
+      "mineral:超新星诺克石": 300,
+      "moon:铂": 500,
+      "gas:稳定富勒烯": 300,
+      "planetary:同位素": 100
+    })
+  }),
+  2: Object.freeze({
+    level: 2,
+    durationMs: 14400000,         // 4h
+    isk: 6000000,                 // 星币 6M
+    lp: 250,                      // 功勋 250
+    materials: Object.freeze({
+      "mineral:三钛合金": 40000,
+      "mineral:类晶体胶矿": 4000,
+      "mineral:同位聚合体": 1500,
+      "mineral:超新星诺克石": 800,
+      "moon:铪": 600,
+      "gas:高纯富勒烯": 300,
+      "planetary:磁场聚合物": 50
+    })
+  }),
+  3: Object.freeze({
+    level: 3,
+    durationMs: 28800000,         // 8h
+    isk: 15000000,                // 星币 15M
+    lp: 500,                      // 功勋 500
+    materials: Object.freeze({
+      "mineral:三钛合金": 70000,
+      "mineral:类晶体胶矿": 6000,
+      "mineral:同位聚合体": 3000,
+      "mineral:超新星诺克石": 1500,
+      "mineral:基腹断岩": 300,
+      "moon:铪": 1000,
+      "moon:铷": 30,
+      "gas:高纯富勒烯": 600,
+      "planetary:磁场聚合物": 120
+    })
+  }),
+  4: Object.freeze({
+    level: 4,
+    durationMs: 43200000,         // 12h
+    isk: 35000000,                // 星币 35M
+    lp: 1000,                     // 功勋 1000
+    materials: Object.freeze({
+      "mineral:三钛合金": 120000,
+      "mineral:类晶体胶矿": 10000,
+      "mineral:同位聚合体": 5000,
+      "mineral:超新星诺克石": 3000,
+      "mineral:基腹断岩": 700,
+      "mineral:超噬矿": 250,
+      "moon:铷": 80,
+      "gas:聚合气体": 1000,
+      "planetary:磁场聚合物": 200
+    })
+  }),
+  5: Object.freeze({
+    level: 5,
+    durationMs: 86400000,         // 24h
+    isk: 80000000,                // 星币 80M
+    lp: 2000,                     // 功勋 2000
+    materials: Object.freeze({
+      "mineral:三钛合金": 200000,
+      "mineral:类晶体胶矿": 18000,
+      "mineral:同位聚合体": 10000,
+      "mineral:超新星诺克石": 6000,
+      "mineral:基腹断岩": 1200,
+      "mineral:超噬矿": 500,
+      "moon:铷": 150,
+      "mineral:莫尔石": 15,
+      "gas:超纯聚合气体": 25,
+      "planetary:磁场聚合物": 400
+    })
+  })
+});
+
 // 八建筑分级成本表：默认共用 STATION_BUILDING_LEVEL_PLANS；精炼厂 Lv.1 以专属计划覆盖（其余等级不变）。
+// legion_hall 走专属 STATION_LEGION_HALL_PLANS（含功勋成本）。
 const STATION_BUILDING_PLANS = Object.freeze(
   Object.fromEntries(STATION_BUILDING_ID_LIST.map(id => [id,
     id === "smelting_refinery"
-      ? Object.freeze({ 1: STATION_SMELTING_REFINERY_LV1_PLAN, 2: STATION_BUILDING_LEVEL_PLANS[2], 3: STATION_BUILDING_LEVEL_PLANS[3] })
+      ? Object.freeze({ 1: STATION_SMELTING_REFINERY_LV1_PLAN, 2: STATION_BUILDING_LEVEL_PLANS[2], 3: STATION_BUILDING_LEVEL_PLANS[3], 4: STATION_BUILDING_LEVEL_PLANS[4], 5: STATION_BUILDING_LEVEL_PLANS[5] })
+      : id === "legion_hall"
+      ? STATION_LEGION_HALL_PLANS
       : STATION_BUILDING_LEVEL_PLANS
   ]))
 );
@@ -491,15 +647,28 @@ function startStationBuildingConstruction(state, buildingId, nowOverride) {
   if (currentLevel >= STATION_MAX_BUILDING_LEVEL) return { changed: false, reason: "max-level" };
 
   const targetLevel = currentLevel + 1;
+
+  // ⚠️ DLC 授权门禁当前未实际生效（接口 getStationDlcNpcWorkers 保留，待接入）。
+  // 原「legion_hall 需 DLC」「targetLevel>=4 需 DLC」两道 dlc-required 拦截已暂时移除，
+  // 改由本体/建筑等级上限与下方通用 body-level-cap 约束 Lv4/Lv5 与大厅的可建性。
+  // 军团议事大厅 Lv1 需本体 ≥ Lv2（Lv2~Lv5 的本体门槛由下方通用 body-level-cap 统一约束）。
+  if (buildingId === "legion_hall" && targetLevel === 1 && bodyLevel < 2) {
+    return { changed: false, reason: "body-level-cap" };
+  }
   if (targetLevel > bodyLevel) return { changed: false, reason: "body-level-cap" };
 
   const plan = STATION_BUILDING_PLANS[buildingId] && STATION_BUILDING_PLANS[buildingId][targetLevel];
   if (!plan) return { changed: false, reason: "no-plan" };
 
+  // 预校验：ISK + 功勋(lp) + 每种材料（均不产生副作用）
   if (ResourceRegistry.get(state, "currency:isk") < plan.isk) return { changed: false, reason: "insufficient-isk" };
+  const lpCost = Number(plan.lp) || 0;
+  if (lpCost > 0 && ResourceRegistry.get(state, "currency:lp") < lpCost) return { changed: false, reason: "insufficient-lp" };
   if (!ResourceRegistry.canAffordCost(state, plan.materials)) return { changed: false, reason: "insufficient-materials" };
 
+  // 原子扣费：三项均已预校验通过，保证均成功（ISK 标量 + 功勋标量 + 材料命名空间）
   ResourceRegistry.spend(state, "currency:isk", plan.isk);
+  if (lpCost > 0) ResourceRegistry.spend(state, "currency:lp", lpCost);
   ResourceRegistry.spendCost(state, plan.materials);
 
   const startedAt = Number.isFinite(Number(nowOverride)) ? Number(nowOverride) : Date.now();
@@ -631,8 +800,11 @@ function getStationBuildingDisplayState(state, buildingId) {
   let canUpgrade = false, blockedReason = null;
   if (isConstructingThis) blockedReason = "construction-in-progress";
   else if (atMax) blockedReason = "max-level";
+  // ⚠️ DLC 门禁未生效：原 legion_hall dlc-required 分支已移除（见 startStationBuildingConstruction）。
+  else if (buildingId === "legion_hall" && nextLevel === 1 && bodyLevel < 2) blockedReason = "body-level-cap";
   else if (nextLevel > bodyLevel) blockedReason = "body-level-cap";
   else if (ResourceRegistry.get(state, "currency:isk") < nextPlan.isk) blockedReason = "insufficient-isk";
+  else if (Number(nextPlan.lp) > 0 && ResourceRegistry.get(state, "currency:lp") < nextPlan.lp) blockedReason = "insufficient-lp";
   else if (!ResourceRegistry.canAffordCost(state, nextPlan.materials)) blockedReason = "insufficient-materials";
   else canUpgrade = true;
 
@@ -784,7 +956,9 @@ function processSmeltingAutoLine(state, line, multiplier, offline) {
     ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
 
   const skillEfficiency = 1 + (Number(state.skills.refining && state.skills.refining.lvl) || 1) * 0.02;
-  const efficiency = (1 + shipBonus + rigBonus) * multiplier * shipEnhanceSmelt;
+  const legionRefine = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+    ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers.refining : 1;
+  const efficiency = (1 + shipBonus + rigBonus) * multiplier * shipEnhanceSmelt * legionRefine;
   const cycleTimeSec = recipe.baseTime / Math.max(0.001, efficiency);
   const outputPerCycle = Math.max(1, Math.floor(recipe.baseOutput * skillEfficiency));
   const oreId = "ore:" + recipe.consumeOre;
@@ -1036,6 +1210,14 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
    离线 / 在线通过 offline 参数控制事件的 meta 标记。
    幂等：已停止（enabled===false 且有 stoppedReason）的线不处理。
    ---------------------------------------------------------------- */
+// 军团 NPC 自动线速度加成（autolineSpeed）：与建造/后勤/科研同乘，只加速周期，不改材料与单周期产量。
+function getLegionAutoLineMultiplier(state) {
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    return LEGION_NPC.getLegionContributionSnapshot(state).multipliers.autoline;
+  }
+  return 1;
+}
+
 function processAutoLines(state, now, offline) {
   if (!state || !state.station || !state.station.autoLines) return 0;
   const s = state.station;
@@ -1078,7 +1260,7 @@ function processAutoLines(state, now, offline) {
     // 研究批次 G · autoline 组：自动化协议提速（只加速周期，材料消耗与单周期产量完全不变）
     let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
     if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
-    const multiplier = buildingMultiplier * stationLogisticsMult * autoLineResearchMult;
+    const multiplier = buildingMultiplier * stationLogisticsMult * autoLineResearchMult * getLegionAutoLineMultiplier(state);
     line.progress = (line.progress || 0) + cappedMs / 1000;
     line.lastTick = now;
 
@@ -1118,7 +1300,7 @@ function getStationAutoLineCycleDuration(state, lineId, recipe) {
   // 研究批次 G · autoline 组：与 processAutoLines 完全同式，UI 显示周期 = 实际结算周期
   let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
   if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
-  const mult = Math.max(0.001, buildingMult * logisticsMult * autoLineResearchMult);
+  const mult = Math.max(0.001, buildingMult * logisticsMult * autoLineResearchMult * getLegionAutoLineMultiplier(state));
   if (lineId === "smelting") {
     const assigned = (typeof getAssignedShipState === "function") ? getAssignedShipState(state, "refining") : { config:null, instance:null };
     const shipBonus = (assigned.config && assigned.config.bonuses) ? (assigned.config.bonuses.smeltingSpeed || 0) : 0;
@@ -1220,11 +1402,58 @@ function getStationMaintenancePoints(state) {
   const bodyLvl = Math.floor(Number(s.bodyLevel)) || 0;
   let sum = bodyLvl;
   for (const id of STATION_BUILDING_ID_LIST) {
-    if (id === "shipyard") continue;
+    // 舰船船坞不增加燃料维护点数；军团议事大厅为「管理 NPC」建筑，亦不计入燃料维护点数。
+    if (id === "shipyard" || id === "legion_hall") continue;
     const lvl = Math.floor(Number(s.buildings && s.buildings[id])) || 0;
     sum += lvl;
   }
   return sum;
+}
+
+/* ----------------------------------------------------------------
+   军团 DLC 内容授权接口（复用既有 content-permission 接口，禁止在站点系统内硬编码平台判断）。
+   DLC 由平台在运行时注入，存档不持久化（save-codec 已剥离 station.dlc / corporation.dlc），
+   两种位置任一为真即视为已授权（平台可能写其中一处）。
+   ---------------------------------------------------------------- */
+// 开发期：DLC 授权恒放行（军团入口恒定开启）。接回正式 DLC 门禁时，将本常量置 false 并恢复下方真实读取。
+const LEGION_DLC_DEV_BYPASS = true;
+function getStationDlcNpcWorkers(state) {
+  if (LEGION_DLC_DEV_BYPASS) return true;
+  const sDlc = state && state.station && state.station.dlc;
+  const cDlc = state && state.corporation && state.corporation.dlc;
+  return Boolean((sDlc && sDlc.npcWorkers) || (cDlc && cDlc.npcWorkers));
+}
+
+// 本体实际可建等级上限：当前 DLC 授权门禁未实际生效（接口 getStationDlcNpcWorkers 保留，待平台接入），
+// 故本体上限暂行 STATION_MAX_BODY_LEVEL（=5），让 Lv.4/Lv.5 在 body/cap 规则下可建。
+// ⚠️ 待 DLC 门禁真正生效时，此处应改回 `getStationDlcNpcWorkers(state) ? STATION_MAX_BODY_LEVEL : 3`。
+function getStationMaxBodyLevel(state) {
+  return STATION_MAX_BODY_LEVEL;
+}
+
+// 管理 NPC 经验总量：九座建筑（含舰船船坞与原八座 + 军团议事大厅）等级之和，最大 9×5 = 45。
+// 与燃料维护点数不同——此处计入全部九座建筑（含舰船船坞），hall 作为第九座。
+function getStationManagementNpcXpTotal(state) {
+  const s = state && state.station;
+  if (!s) return 0;
+  let sum = 0;
+  for (const id of STATION_BUILDING_ID_LIST) {
+    const lvl = Math.floor(Number(s.buildings && s.buildings[id])) || 0;
+    sum += Math.max(0, Math.min(STATION_MAX_BUILDING_LEVEL, lvl));
+  }
+  return sum;
+}
+
+// 管理 NPC 经验倍率（基于九座建筑等级总量，0~45）：
+//   0~8 → 0.5×；9~17 → 1.0×；18~26 → 1.5×；27~35 → 2.0×；36~44 → 2.5×；45 → 3.0×
+function getStationManagementNpcXpMultiplier(state) {
+  const total = getStationManagementNpcXpTotal(state);
+  if (total >= 45) return 3.0;
+  if (total >= 36) return 2.5;
+  if (total >= 27) return 2.0;
+  if (total >= 18) return 1.5;
+  if (total >= 9) return 1.0;
+  return 0.5;
 }
 
 function getStationFuelBurnRatePerMs(points) {
@@ -1588,9 +1817,9 @@ function getStationPageDisplayState(state, now) {
   const bodyRaw = (typeof getStationBodyDisplayState === "function") ? getStationBodyDisplayState(state, renderNow) : {};
   // 补齐 body nextCostRows/durationMs/blockedText
   const bodyLevel = Number(bodyRaw.bodyLevel) || 0;
-  const nextLevel = bodyLevel < STATION_MAX_BODY_LEVEL ? bodyLevel + 1 : null;
+  const nextLevel = bodyLevel < getStationMaxBodyLevel(state) ? bodyLevel + 1 : null;
   const nextPlan = nextLevel && STATION_BODY_PLANS[nextLevel];
-  const atMax = bodyLevel >= STATION_MAX_BODY_LEVEL;
+  const atMax = bodyLevel >= getStationMaxBodyLevel(state);
   const body = {
     bodyLevel, bodyName: bodyRaw.bodyName || "未建立",
     nextLevel, nextName: nextPlan ? nextPlan.name : null,
@@ -1608,15 +1837,15 @@ function getStationPageDisplayState(state, now) {
 
   const buildingsRaw = (typeof getStationBuildingsDisplayState === "function") ? getStationBuildingsDisplayState(state, renderNow) : [];
   const buildings = (buildingsRaw || []).map(function(b) {
-    const plan = b.nextPlan || (b.level < 3 ? getStationBuildingPlan(b.buildingId, b.level + 1) : null);
+    const plan = b.nextPlan || (b.level < STATION_MAX_BUILDING_LEVEL ? getStationBuildingPlan(b.buildingId, b.level + 1) : null);
     return {
       buildingId: b.buildingId, name: b.name || b.buildingId,
-      level: b.level || 0, nextLevel: b.level < 3 ? b.level + 1 : null,
+      level: b.level || 0, nextLevel: b.level < STATION_MAX_BUILDING_LEVEL ? b.level + 1 : null,
       isConstructingThis: b.isConstructingThis || false,
       effectText: b.effectText || "",
       nextEffectText: b.nextEffectText || (plan ? plan.effectText || "" : ""),
       durationMs: plan ? getStationConstructionDurationMs(state, plan) : 0,
-      nextCostRows: plan ? buildStationCostRows(state, plan.isk, plan.materials) : [],
+      nextCostRows: plan ? buildStationCostRows(state, plan.isk, plan.materials, plan.lp) : [],
       canUpgrade: b.canUpgrade || false,
       blockedReason: b.blockedReason || null,
       blockedText: b.blockedText || null
@@ -1785,12 +2014,17 @@ function getStationPageDisplayState(state, now) {
   return { body, maintenance, buildings, autoLines, effects:effectRows, logistics, corporation, coreEffects };
 }
 
-function buildStationCostRows(state, isk, materials) {
+function buildStationCostRows(state, isk, materials, lp) {
   var rows = [];
   if (Number.isFinite(isk) && isk > 0) {
     var haveIsk = 0;
     if (ResourceRegistry && ResourceRegistry.get) haveIsk = ResourceRegistry.get(state, "currency:isk");
     rows.push({ ref:"currency:isk", displayName:"星币", quantity:isk, have:haveIsk, enough:haveIsk >= isk });
+  }
+  if (Number.isFinite(lp) && lp > 0) {
+    var haveLp = 0;
+    if (ResourceRegistry && ResourceRegistry.get) haveLp = ResourceRegistry.get(state, "currency:lp");
+    rows.push({ ref:"currency:lp", displayName:"功勋", quantity:lp, have:haveLp, enough:haveLp >= lp });
   }
   if (materials && typeof materials === "object") {
     for (var ref in materials) {
@@ -1820,6 +2054,7 @@ const StationSystem = {
   STATION_MAX_BUILDING_LEVEL,
   STATION_BUILDING_LEVEL_PLANS,
   STATION_BUILDING_PLANS,
+  STATION_LEGION_HALL_PLANS,
   AUTO_LINE_IDS,
   AUTO_LINE_CONFIG,
   getStationBodyName,
@@ -1853,6 +2088,11 @@ const StationSystem = {
   getStationFuelBurnRatePerMs,
   getStationEffectiveFuelBurnRatePerMs,
   getStationConstructionDurationMs,
+  // 军团 DLC 内容授权接口 + 管理 NPC 经验倍率
+  getStationDlcNpcWorkers,
+  getStationMaxBodyLevel,
+  getStationManagementNpcXpTotal,
+  getStationManagementNpcXpMultiplier,
   isStationOperational,
   settleStationMaintenance,
   getStationRefillMaintenanceState,
@@ -1900,6 +2140,11 @@ if (typeof window !== "undefined") {
   // 研究批次 G：燃料实耗（fuel 组）与建设时长（build 组）的唯一计算层
   window.getStationEffectiveFuelBurnRatePerMs = getStationEffectiveFuelBurnRatePerMs;
   window.getStationConstructionDurationMs = getStationConstructionDurationMs;
+  // 军团 DLC 内容授权接口 + 管理 NPC 经验倍率
+  window.getStationDlcNpcWorkers = getStationDlcNpcWorkers;
+  window.getStationMaxBodyLevel = getStationMaxBodyLevel;
+  window.getStationManagementNpcXpTotal = getStationManagementNpcXpTotal;
+  window.getStationManagementNpcXpMultiplier = getStationManagementNpcXpMultiplier;
   window.isStationOperational = isStationOperational;
   window.settleStationMaintenance = settleStationMaintenance;
   window.getStationRefillMaintenanceState = getStationRefillMaintenanceState;

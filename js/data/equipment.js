@@ -136,7 +136,7 @@ const EQUIPMENT_DB = {
   "t1_capital_damage_control": { id:"t1_capital_damage_control", name:"旗舰级损伤控制阵列 I", slot:"mid", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":6,"铷":1,"同位素":8,"磁场聚合物":8}, bonuses:{globalDamageReduction:0.18}, shipTypes:["capital","supercapital"], combat:{kind:"damageControl",fuelCost:4} },
   // 势力损伤控制单元：angel 吃死许可B（lv45，对标大型档）/ blood 吃死许可D（lv10，对标前哨型）；蓝图由 sourceZoneId 自动派生
   "angel_damage_control": { id:"angel_damage_control", name:"苍穹劫团损伤控制单元", slot:"mid", level:45, time:55, xp:45, cost:{"三钛合金":240,"类银超金属":80,"超新星诺克石":10,"苍穹劫团装备生产许可B":5}, bonuses:{globalDamageReduction:0.12,shieldRepair:0.01}, combat:{kind:"damageControl",fuelCost:3}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
-  "blood_damage_control": { id:"blood_damage_control", name:"赤誓教团损伤控制单元", slot:"mid", level:10, time:22, xp:12, cost:{"三钛合金":60,"类银超金属":20,"赤誓教团装备生产许可D":5}, bonuses:{globalDamageReduction:0.08,armorRepair:0.03}, combat:{kind:"damageControl",fuelCost:1}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
+  "blood_damage_control": { id:"blood_damage_control", name:"赤誓教团损伤控制单元", slot:"mid", level:10, time:22, xp:12, cost:{"三钛合金":60,"类银超金属":20,"赤誓教团装备生产许可B":5}, bonuses:{globalDamageReduction:0.08,armorRepair:0.03}, combat:{kind:"damageControl",fuelCost:1}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
 };
 
 /* ================================================================
@@ -420,6 +420,16 @@ function hasEquipmentBlueprintFromState(state, equipmentId) {
 function equipmentRecipeHasRequiredBlueprint(state, recipe) {
   return !recipe || !recipe.requiresBlueprint || hasEquipmentBlueprintFromState(state, recipe.id);
 }
+
+function getEquipmentBlueprintSourceHint(equipment) {
+  if (!equipment) return "蓝图商店购买";
+  if (equipment.archaeology === true) return "考古探索获取蓝图";
+  if (equipment.sourceDeathspaceId) return "深空清剿蓝图商店购买";
+  if (equipment.sourceZoneId) return "星带蓝图商店购买";
+  return "蓝图商店购买";
+}
+
+window.getEquipmentBlueprintSourceHint = getEquipmentBlueprintSourceHint;
 
 function getLPStoreCatalogItems() {
   const equipmentItems = Object.values(EQUIPMENT_DB)

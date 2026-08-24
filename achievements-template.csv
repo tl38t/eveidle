@@ -185,7 +185,7 @@ I10,经济,"持有 奇点合金 各 ≥ 1,000",铜,否,待命名成就 · I10,,p
 I01,经济,"持有 1,000,000 星币",铜,否,待命名成就 · I01,,placeholder,,"{""type"":""research-hours"",""hours"":0.5}",否,,,
 I02,经济,"持有 100,000,000 星币",银,否,待命名成就 · I02,,placeholder,,"{""type"":""research-hours"",""hours"":1}",否,,,
 I03,经济,"持有 1,000,000,000 星币",金,否,待命名成就 · I03,,placeholder,,"{""type"":""research-hours"",""hours"":2}",否,,,
-I11,经济,集齐全部月矿材料(铷/暗质晶核/等离子体/磁场聚合物),银,否,待命名成就 · I11,,placeholder,,"{""type"":""research-hours"",""hours"":1}",否,,,
+I11,经济,"集齐4种高级战略材料：月矿·铷、莫尔石、行星产物·等离子体、行星产物·磁场聚合物（各≥1）",银,否,待命名成就 · I11,,placeholder,,"{""type"":""research-hours"",""hours"":1}",否,,,
 I12,经济,"物资总量首次突破 1,000,000",银,否,待命名成就 · I12,,placeholder,,"{""type"":""research-hours"",""hours"":1}",否,,,
 J01,综合,累计在线 24 小时,铜,否,待命名成就 · J01,,placeholder,,"{""type"":""research-hours"",""hours"":0.5}",否,,,
 J02,综合,累计在线 7 天,银,否,待命名成就 · J02,,placeholder,,"{""type"":""research-hours"",""hours"":1}",否,,,

@@ -732,7 +732,9 @@ function getActionConfirmationDisplayState(state, target, now) {
     else result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
     result.canOpen = display.level >= recipe.level && display.detail.hasRequiredBlueprint;
     const blueprintLocked = display.detail.requiresBlueprint && !display.detail.hasRequiredBlueprint;
-    result.blockedText = result.canOpen ? "" : blueprintLocked ? "需要先在蓝图商店购买" + recipe.name + "蓝图" : "需要装备工程等级 Lv." + recipe.level;
+    result.blockedText = result.canOpen ? "" : blueprintLocked
+      ? "需要" + getEquipmentBlueprintSourceHint(recipe) + "：" + recipe.name + "蓝图"
+      : "需要装备工程等级 Lv." + recipe.level;
     result.queue = { skill:"equipmentEngineering", target:recipe.id, label:recipe.name };
   } else if (target === "shipComp") {
     const display = getShipEngineeringDisplayState(state, now);
@@ -896,9 +898,16 @@ function getShipEngineeringSpeedBreakdown(state, kind) {
     researchMultiplier = Number(ResearchState.getResearchMultiplier(state, kind === "component" ? ["allMfg", "shipComp"] : ["allMfg", "shipAsm"]));
   }
   if (!Number.isFinite(researchMultiplier) || researchMultiplier <= 0) researchMultiplier = 1;
+  // 军团 NPC「舰构工程(shipEngineering)」：加速舰船部件与整船建造 → 周期 ÷ 倍率（越小越快）。
+  // 复用既有舰船工程速度乘区，不复制制造公式；经统一贡献接口读取，模块缺失时安全回退 ×1。
+  let legionMultiplier = 1;
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    legionMultiplier = Number(LEGION_NPC.getLegionContributionSnapshot(state).multipliers.shipManufacturing);
+  }
+  if (!Number.isFinite(legionMultiplier) || legionMultiplier <= 0) legionMultiplier = 1;
   return {
-    skillMultiplier, shipyardMultiplier, stationLogisticsMultiplier, researchMultiplier,
-    totalSpeedMultiplier: skillMultiplier * shipyardMultiplier * stationLogisticsMultiplier * researchMultiplier
+    skillMultiplier, shipyardMultiplier, stationLogisticsMultiplier, researchMultiplier, legionMultiplier,
+    totalSpeedMultiplier: skillMultiplier * shipyardMultiplier * stationLogisticsMultiplier * researchMultiplier * legionMultiplier
   };
 }
 
@@ -915,7 +924,7 @@ function getShipEngineeringCycleDuration(state, recipe) {
   const implantShipMfgEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).shipMfgEff : 1;
   // 增强剂·舰船工程速度（考古重制 Phase B · 考古蓝图产出）：周期 ÷ 速度乘区
   const boosterShipSpeed = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).shipSpeedMultiplier : 1;
-  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier / implantShipMfgEff / boosterShipSpeed;
+  return base / speed.skillMultiplier / speed.shipyardMultiplier / speed.stationLogisticsMultiplier / speed.researchMultiplier / speed.legionMultiplier / implantShipMfgEff / boosterShipSpeed;
 }
 
 // 唯一舰船总装资格判定：与 actions.js 的 startShipAssembly 阻塞优先级完全一致。
@@ -1692,6 +1701,10 @@ function getCombatMaxHpFromState(state, context) {
   // 脑插（99 级生产技能成就）：独立乘区，与船体/技能/装备/强化/rig/科研相乘
   const implantHp = (typeof getImplantBonuses === "function")
     ? getImplantBonuses(state).hpCap : { shield:1, armor:1, structure:1 };
+  // 军团 NPC 防御加成（shieldOperation/armorReinforcement/hullEngineering）：独立乘区，与科研相乘。
+  const legion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+    ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers : null;
+  const legionHp = legion ? { shield:legion.shieldHp, armor:legion.armorHp, structure:legion.hullHp } : { shield:1, armor:1, structure:1 };
   return {
     shield:Math.round(calculateCombatStatFromState(state, "maxHp", ship.hp.shield, [
       { operation:"multiply", value:1 + (bonuses.shieldCapacity || 0), priority:10, source:"ship" },
@@ -1699,6 +1712,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"add", value:flat.shield, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.shieldCapacityPercent || 0), priority:50, source:"rig" },
+      // 军团 NPC 防御加成（独立乘区，科研之前）
+      { operation:"multiply", value:legionHp.shield, priority:55, source:"legion" },
       // 研究批次 H：科研聚合乘子作用在船体/技能/装备平段/强化/rig 之后的最终 HP 上
       ...getCombatResearchModifierList(state, "maxHp", "shield"),
       { operation:"multiply", value:implantHp.shield || 1, priority:60, source:"implant" }
@@ -1709,6 +1724,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"add", value:flat.armor, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.armorCapacityPercent || 0), priority:50, source:"rig" },
+      // 军团 NPC 防御加成（独立乘区，科研之前）
+      { operation:"multiply", value:legionHp.armor, priority: 55, source:"legion" },
       ...getCombatResearchModifierList(state, "maxHp", "armor"),
       { operation:"multiply", value:implantHp.armor || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"armor" })),
@@ -1718,6 +1735,8 @@ function getCombatMaxHpFromState(state, context) {
       { operation:"add", value:flat.structure, priority:30, source:"equipment" },
       { operation:"multiply", value:enhancement.hpMultiplier, priority:40, source:"enhancement" },
       { operation:"multiply", value:1 + (rigMods.structureCapacityPercent || 0), priority:50, source:"rig" },
+      // 军团 NPC 防御加成（独立乘区，科研之前）
+      { operation:"multiply", value:legionHp.structure, priority:55, source:"legion" },
       ...getCombatResearchModifierList(state, "maxHp", "structure"),
       { operation:"multiply", value:implantHp.structure || 1, priority:60, source:"implant" }
     ], { ...(context || {}), actor:"player", layer:"structure" }))
@@ -1746,10 +1765,20 @@ function getCombatDamageMultiplierFromState(state, weaponType, context) {
   // 脑插（99 级生产技能成就）：独立乘区，与技能/船体/强化/科研相乘
   const implantMult = (typeof getImplantBonuses === "function")
     ? (getImplantBonuses(state).weaponDamage[weaponType] || 1) : 1;
+  // 军团 NPC 武器加成（laserOps/projectileOps/missileOperations）：与技能/科研独立相乘。
+  const legion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+    ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers : null;
+  const legionDmg = legion
+    ? (weaponType === "missile" ? legion.missileDamage
+       : (weaponType === "cannon" || weaponType === "proj") ? legion.projectileDamage
+       : legion.laserDamage)
+    : 1;
   return calculateCombatStatFromState(state, "damageMultiplier", 1, [
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, config.skillKey) * 0.02, priority:10, source:"skill" },
     { operation:"multiply", value:1 + shipBonus, priority:20, source:"ship" },
     { operation:"multiply", value:enhancement.damageMultiplier, priority:30, source:"enhancement" },
+    // 军团 NPC 武器加成（在技能/船体/强化之后、科研之前作为独立乘区）
+    { operation:"multiply", value:legionDmg, priority:40, source:"legion" },
     // 研究批次 H：武器科研聚合乘子（技能/船体/强化之后只乘一次；未知 weaponType 上方已提前返回 1）
     ...getCombatResearchModifierList(state, "damageMultiplier", weaponType),
     { operation:"multiply", value:implantMult, priority:60, source:"implant" }
@@ -1775,11 +1804,16 @@ function getCombatFuelMultiplierFromState(state, zone, context) {
     rigFuelSaving = Number((getRigModifiers(state, activeShip.instance) || {}).archaeologyFuelEfficiency) || 0;
   }
   const combinedShipMultiplier = Math.max(0, shipMultiplier - rigFuelSaving);
+  // 军团 NPC 电容管理(capacitorManagement)加成：与考古路径 multiplier.fuelSave 一致，进一步降低燃料消耗。
+  const legion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+    ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers : null;
+  const legionFuelSave = legion ? legion.fuelSave : 1;
   // 电容管理技能(capacitorManagement)对所有燃料路径统一生效（考古见 getArchaeologyFuelCostState）。
   return calculateCombatStatFromState(state, "fuelMultiplier", 1, [
     { operation:"multiply", value:combinedShipMultiplier, priority:10, source:"ship" },
     { operation:"multiply", value:zoneMultiplier, priority:20, source:"zone" },
-    { operation:"multiply", value:1 / (1 + getCombatSkillLevelFromState(state, "capacitorManagement") * 0.02), priority:30, source:"skill" }
+    { operation:"multiply", value:1 / (1 + getCombatSkillLevelFromState(state, "capacitorManagement") * 0.02), priority:30, source:"skill" },
+    { operation:"multiply", value:legionFuelSave, priority:40, source:"legion" }
   ], { ...(context || {}), actor:"player", zoneId:selectedZone && selectedZone.id });
 }
 
@@ -2036,9 +2070,12 @@ function getPlanetOutputIntervalFromState(state, type) {
   // 研究批次 G：行星生产提速 → 周期 ÷ 乘子（在线 planetaryTick 与离线 settleOfflinePlanets 共用此唯一入口）
   let researchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["planProd"])) : 1;
   if (!Number.isFinite(researchMult) || researchMult <= 0) researchMult = 1;
-  // 脑插·行星加速（货柜 T3 来源）：周期 ÷1.05（加速 +5%）
+  // 脑插·行星加速（货柜 T,3 来源）：周期 ÷1.05（加速 +5%）
   const implantPlanetSpeed = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).planetSpeed : 1;
-  return config ? config.interval / (1 + level * 0.02) / stationMult / researchMult / implantPlanetSpeed : 10;
+  // 军团 NPC 行星统筹(planetaryIndustry)：与科研/脑插同处周期除法，加速行星产出。
+  const legionPlanet = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+    ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers.planetary : 1;
+  return config ? config.interval / (1 + level * 0.02) / stationMult / researchMult / implantPlanetSpeed / legionPlanet : 10;
 }
 
 // 研究批次 G · planCost（reduceFraction）：行星续期费唯一公式。
@@ -3389,7 +3426,7 @@ function getStatisticsDisplayState(state) {
 }
 
 function getNavigationDisplayState(page, view) {
-  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel" };
+  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel" };
   const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", combat:"combat-panel" };
   const selectedPage = page || "skill";
   const selectedView = view || "mining";

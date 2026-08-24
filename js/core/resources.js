@@ -292,6 +292,9 @@ registerLegacyResourceCategory("planetary", ITEM_CATEGORIES.planetary, "planetar
 registerLegacyResourceCategory("gas", ITEM_CATEGORIES.gases, "gases");
 registerLegacyResourceCategory("moon", ITEM_CATEGORIES.moon, "moon");
 registerLegacyResourceCategory("special", ITEM_CATEGORIES.special, "special");
+if (typeof CARGO_SIZES !== "undefined") {
+  for (const size of CARGO_SIZES) ResourceRegistry.register({ namespace:"special", key:"货柜" + size, name:"货柜" + size, category:"special" });
+}
 
 ResourceRegistry.register({ namespace:"currency", key:"isk", name:"ISK", scalarKey:"isk", category:"currency" });
 ResourceRegistry.register({ namespace:"currency", key:"lp", name:"LP", scalarKey:"lp", category:"currency" });
@@ -308,6 +311,9 @@ for (const recipe of SHIP_COMPONENT_RECIPES) {
 // 考古探针 / 文物 / 校准材料 资源登记（考古.js 已先于本文件加载，故 ARCHAEOLOGY_PROBES / ARCHAEOLOGY_ARTIFACTS 已就绪）
 if (typeof ARCHAEOLOGY_PROBES !== "undefined") {
   for (const probe of ARCHAEOLOGY_PROBES) ResourceRegistry.register({ namespace:"probe", key:probe.id, name:probe.name, category:"probes" });
+}
+if (typeof ARCHAEOLOGY_RESTORED_PROBES !== "undefined") {
+  for (const probe of ARCHAEOLOGY_RESTORED_PROBES) ResourceRegistry.register({ namespace:"probe", key:probe.id, name:probe.name, category:"probes" });
 }
 if (typeof ARCHAEOLOGY_ARTIFACTS !== "undefined") {
   for (const artifact of ARCHAEOLOGY_ARTIFACTS) {

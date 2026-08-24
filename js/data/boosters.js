@@ -248,6 +248,7 @@ const BOOSTER_SLOTS = Object.freeze([
   "gasSpeed", "gasYield",
   "smeltSpeed", "smeltYield",
   "shipSpeed", "shipYield",
+  "equipmentSpeed", "equipmentYield",
   "boosterSpeed", "boosterYield",
   "combatWeapon", "combatRepair"
 ]);

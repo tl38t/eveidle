@@ -215,7 +215,7 @@ function gameTick() {
         gameState.currentAction.progress -= actualTime;
         deductEquipEngInputs(recipe, 1);
         applyEquipEngOutput(recipe, 1);
-        s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
+        addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
         GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
         if (recipe.slot === "rig") GameEvents.emit("rig:manufactured", { rigId:recipe.output.itemId, quantity:recipe.output.qty }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
@@ -240,7 +240,7 @@ function gameTick() {
           gameState.currentAction.progress -= actualTime;
           deductShipCompMats(shipCompCost, recipe.id);
           ResourceRegistry.add(gameState, "component:" + recipe.id, 1);
-          s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
+          addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
           GameEvents.emit("manufacturing:completed", { branch:"component", recipeId:recipe.id, resourceId:"component:" + recipe.id, quantity:1, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
@@ -267,7 +267,7 @@ function gameTick() {
           deductShipAssemblyComponents(recipe);
           if (!gameState.inventory.ships) gameState.inventory.ships = [];
           gameState.inventory.ships.push(createShipInstance(recipe.shipId));
-          s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
+          addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
           GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
@@ -364,7 +364,7 @@ function gameTick() {
         if (Math.random() < getImplantDoubleOutputChance(gameState, "booster")) boosterQty += 1;
         if (boosterEff && boosterEff.doubleBoosterChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleBoosterChance)) boosterQty += 1;
         applyBoosterOutput(recipe, boosterQty);
-        s.xp += recipe.xp; gameState._dirty = true; actionCompleted = true;
+        addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
         GameEvents.emit("booster:manufactured", { recipeId:recipe.id, itemId:recipe.output.itemId, series:recipe.series, quality:recipe.quality, quantity: recipe.output.qty * boosterQty, time:recipe.time, xpGained:recipe.xp, offline:false }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
@@ -381,6 +381,12 @@ function gameTick() {
 
   // 空间站自动线（Phase 3C-5）：独立于 currentAction，每条线自跟踪时间
   if (typeof processAutoLines === "function") processAutoLines(gameState, Date.now(), false);
+
+  // 军团 NPC 系统（军团 DLC）：候选刷新 / 工资结算 / 经验结算。
+  // 内部按时间戳去重（同一时刻不重复刷新/扣薪/加 XP），仅在系统激活时生效；不引入额外定时器。
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.tickLegionNpc === "function") {
+    LEGION_NPC.tickLegionNpc(gameState, { now: Date.now() });
+  }
 
   gameState.lastActiveTime = Date.now();
   updateLiveUI();

@@ -23,12 +23,14 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  return [...document.querySelectorAll('.content > .panel:not(#cargo-panel):not(#save-panel):not(#settings-panel):not(#statistics-panel):not(#achievements-panel):not(#planetary-panel):not(#archaeology-panel):not(#shipeng-panel):not(#equipeng-panel):not(#booster-panel):not(#queue-panel):not(#combat-panel):not(#hangar-panel):not(#station-panel):not(#blueprintstore-panel):not(#research-panel)')];
+  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel"];
+  const notChain = managedIds.map(id => `:not(#${id})`).join("");
+  return [...document.querySelectorAll('.content > .panel' + notChain)];
 }
 
 function renderCombatSkillGroup() {
@@ -79,6 +81,7 @@ function renderCurrentNavigation() {
   else if (navigation.page === "combat") renderCombatPanel();
   else if (navigation.page === "hangar") renderHangarPanel();
   else if (navigation.page === "station") { renderStationPage(); }
+  else if (navigation.page === "legion") { renderLegionPage(); }
   else if (navigation.page === "blueprints" || navigation.page === "lpstore") renderBlueprintStore();
   else if (navigation.page === "leaderboard") {
     // leaderboard-render.js is an ES module and may finish after this classic
@@ -102,6 +105,14 @@ function renderCurrentNavigation() {
   }
   // Batch P：每次页面切换（含 skill 页经 updateUI）都刷新引导小部件
   renderTutorialWidget();
+}
+
+function renderLegionPage() {
+  // 军团已独立为侧边栏页面；复用既有渲染函数（按签名决定是否重建卡片）。
+  if (typeof LegionEvents !== "undefined" && LegionEvents.bind) LegionEvents.bind();
+  if (typeof LegionRender !== "undefined" && LegionRender.renderLegionSection) {
+    LegionRender.renderLegionSection(Date.now());
+  }
 }
 
 function switchPage(page) {
@@ -1039,6 +1050,14 @@ function normalizeRewardItem(entry) {
     // 再回落资源显示名解析（getResourceDisplayName 内部走 DisplayNames），最后原始 id。
     if (entry.implant && typeof IMPLANT_DB !== "undefined" && IMPLANT_DB && IMPLANT_DB[rid]) {
       name = IMPLANT_DB[rid].name || rid;
+    } else if (rid.indexOf("booster:") === 0 && typeof getBoosterRecipe === "function") {
+      const recipe = getBoosterRecipe(rid);
+      name = recipe ? (recipe.name || rid) + "蓝图" : "";
+    } else if (rid.indexOf("probe:") === 0 && typeof getArchaeologyProbe === "function") {
+      const probe = getArchaeologyProbe(rid.slice("probe:".length));
+      name = probe ? (probe.name || rid) : "";
+    } else if (rid.indexOf("special:货柜") === 0) {
+      name = rid.slice("special:".length);
     } else if (rid.indexOf("blueprint:") === 0 && typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) {
       const eq = EQUIPMENT_DB[rid.slice("blueprint:".length)];
       name = (eq && eq.name ? eq.name : rid.slice("blueprint:".length)) + "蓝图";

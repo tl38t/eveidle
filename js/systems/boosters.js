@@ -39,6 +39,7 @@ function getActionBoosterSlots(actionKey) {
     case "gasHarvesting": return ["gasSpeed", "gasYield"];
     case "refining": return ["smeltSpeed", "smeltYield"];
     case "shipEngineering": return ["shipSpeed", "shipYield"];
+    case "equipmentEngineering": return ["equipmentSpeed", "equipmentYield"];
     case "boosterEngineering": return ["boosterSpeed", "boosterYield"];
     default: return [];
   }
@@ -51,9 +52,41 @@ var BOOSTER_SLOT_XP_SKILL = {
   gasSpeed:"gasHarvesting", gasYield:"gasHarvesting",
   smeltSpeed:"refining", smeltYield:"refining",
   shipSpeed:"shipEngineering", shipYield:"shipEngineering",
+  equipmentSpeed:"equipmentEngineering", equipmentYield:"equipmentEngineering",
   boosterSpeed:"boosterEngineering", boosterYield:"boosterEngineering",
   combatWeapon:"combat", combatRepair:"combat"
 };
+
+/* 战斗经验实际加到的子技能键集合。与 station.js 的 COMBAT_SKILL_WHITELIST 保持一致
+   （此处无法跨文件 import，故镜像；若 station.js 清单变更，这里也要同步）。
+   神经增强剂装在 combatWeapon/combatRepair 槽只写入 skillXpMultBySkill["combat"]，
+   而 state.skills 不存在 "combat" 主键——战斗经验落在这些子技能上，故需广播。 */
+var COMBAT_XP_SKILL_KEYS = [
+  "capacitorManagement", "laserOps", "cannonOps", "missileOperations",
+  "targeting", "shieldOperation", "armorReinforcement", "hullEngineering",
+  "piloting", "defense"
+];
+
+// 每个行动的两个槽位都是同一行动类别的通用槽；槽位名称仅保留用于存档兼容。
+var BOOSTER_SLOT_ACTION = {
+  miningSpeed:"mining", miningYield:"mining",
+  archaeologySpeed:"archaeology", archaeologyRare:"archaeology",
+  gasSpeed:"gas", gasYield:"gas",
+  smeltSpeed:"refining", smeltYield:"refining",
+  shipSpeed:"ship", shipYield:"ship",
+  equipmentSpeed:"equipmentEngineering", equipmentYield:"equipmentEngineering",
+  boosterSpeed:"booster", boosterYield:"booster",
+  combatWeapon:"combat", combatRepair:"combat"
+};
+
+function isBoosterCompatibleWithSlot(item, slot) {
+  if (!item) return false;
+  if (item.universal) return true;
+  const action = BOOSTER_SLOT_ACTION[slot];
+  if (!action) return item.slot === slot;
+  if (action === "combat") return item.category === "combatWeapon" || item.category === "combatRepair";
+  return item.category === action;
+}
 
 /* ----------------------------------------------------------------
    装备校验（只用 inventory 检查，不修改状态）
@@ -64,7 +97,7 @@ function canEquipBooster(state, slot, itemId) {
   }
   const item = getBoosterItemFromState(state, itemId);
   if (!item) return { ok:false, reason:"unknown-item" };
-  if (!item.universal && item.slot !== slot) return { ok:false, reason:"slot-mismatch" };
+  if (!isBoosterCompatibleWithSlot(item, slot)) return { ok:false, reason:"slot-mismatch" };
   const inv = ResourceRegistry.get(state, item.itemId);
   if (!(inv >= 1)) return { ok:false, reason:"insufficient-inventory" };
   // 同系列不同品质互斥（不测试期同时装备两个同系列）
@@ -263,7 +296,7 @@ function tickBoosterTimers(state, now) {
   var running = (action && action.active) ? action.skill : null;
 
   var runMining = false, runArch = false, runCombat = false;
-  var runGas = false, runSmelt = false, runShip = false, runBooster = false;
+  var runGas = false, runSmelt = false, runShip = false, runEquipment = false, runBooster = false;
 
   if (running === "mining") {
     var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;
@@ -286,6 +319,8 @@ function tickBoosterTimers(state, now) {
     runSmelt = true;
   } else if (running === "shipEngineering") {
     runShip = true;
+  } else if (running === "equipmentEngineering") {
+    runEquipment = true;
   } else if (running === "boosterEngineering") {
     runBooster = true;
   }
@@ -314,6 +349,10 @@ function tickBoosterTimers(state, now) {
   if (runShip) {
     applyBoosterTimeConsumption(state, "shipSpeed", elapsed, now);
     applyBoosterTimeConsumption(state, "shipYield", elapsed, now);
+  }
+  if (runEquipment) {
+    applyBoosterTimeConsumption(state, "equipmentSpeed", elapsed, now);
+    applyBoosterTimeConsumption(state, "equipmentYield", elapsed, now);
   }
   if (runBooster) {
     applyBoosterTimeConsumption(state, "boosterSpeed", elapsed, now);
@@ -354,7 +393,7 @@ function getBoosterEffectState(state) {
     doubleBoosterChance: 0,
     // 技能训练（神经训练催化器 · 经验茶模型）：按技能分桶的技能经验乘区，
     // 神经增强剂装在哪类槽，只加成该桶（与 rig 的 skillXpBonus 独立相乘）。
-    skillXpMultBySkill: { mining:1, archaeology:1, gasHarvesting:1, refining:1, shipEngineering:1, boosterEngineering:1, combat:1 },
+    skillXpMultBySkill: { mining:1, archaeology:1, gasHarvesting:1, refining:1, shipEngineering:1, equipmentEngineering:1, boosterEngineering:1, combat:1 },
     activeEntries: {}
   };
   var slots = (Array.isArray(BOOSTER_SLOTS) ? BOOSTER_SLOTS : []);
@@ -442,6 +481,19 @@ function getBoosterEffectState(state) {
       }
     }
   }
+  // 战斗神经加成广播：神经增强剂装在 combatWeapon/combatRepair 槽，写入
+  // skillXpMultBySkill["combat"]；但 state.skills 中不存在 "combat" 主键，战斗经验
+  // 实际加在白名单子技能上（见 COMBAT_XP_SKILL_KEYS）。把 "combat" 桶乘区广播到全部
+  // 战斗子技能键，使在线/离线战斗经验正确吃到神经加成。rig 改装件 rig_skill_xp 不含
+  // 战斗子技能，不会误加 rig 加成。
+  var combatMult = Number(eff.skillXpMultBySkill.combat) || 1;
+  if (combatMult !== 1) {
+    for (var c = 0; c < COMBAT_XP_SKILL_KEYS.length; c++) {
+      var ck = COMBAT_XP_SKILL_KEYS[c];
+      var cur = Number(eff.skillXpMultBySkill[ck]) || 1;
+      eff.skillXpMultBySkill[ck] = cur * combatMult;
+    }
+  }
   return eff;
 }
 
@@ -516,8 +568,22 @@ function getShipBuildingQuote(state, recipe, context) {
   } else {
     cost = baseCost;
   }
+  // 军团 NPC「舰材回收(shipComponentCostReduce)」：在（已含增强剂折扣后）的 cost 上再按比例减免，
+  // 每个材料最低保留 1（不破下限）。确定性余数机制由 getShipyardProductionQuote 内部处理，这里只降基数。
+  if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
+    const mult = LEGION_NPC.getLegionContributionSnapshot(state).multipliers.shipComponentCost;
+    if (mult && mult < 1) {
+      const reduced = {};
+      for (const mat in cost) {
+        if (!Object.prototype.hasOwnProperty.call(cost, mat)) continue;
+        const v = Math.max(1, Math.ceil(cost[mat] * mult));
+        reduced[mat] = v;
+      }
+      cost = reduced;
+    }
+  }
   var levelGate = active ? (Number(recipe.level) || 0) + 5 : (Number(recipe.level) || 0);
-  return { cost: cost, levelGate: levelGate, discounted: active };
+  return { cost: cost, levelGate: levelGate, discounted: active || (typeof LEGION_NPC !== "undefined") };
 }
 
 /* ----------------------------------------------------------------
@@ -558,6 +624,7 @@ function getBoosterDisplayState(state, now) {
   var active = getActiveBoosterState(state);
   var effect = getBoosterEffectState(state);
   var groups = {
+    equipment: { label:"\u88c5\u5907\u5de5\u7a0b", slots:["equipmentSpeed","equipmentYield"] },
     mining:   { label:"采矿",   slots:["miningSpeed","miningYield"] },
     archaeology: { label:"考古", slots:["archaeologySpeed","archaeologyRare"] },
     combat:   { label:"战斗",   slots:["combatWeapon","combatRepair"] },
@@ -654,6 +721,7 @@ window.getBoosterItemFromState = getBoosterItemFromState;
 window.getActiveBoosterState = getActiveBoosterState;
 window.normalizeActiveBoosterEntry = normalizeActiveBoosterEntry;
 window.getActionBoosterSlots = getActionBoosterSlots;
+window.isBoosterCompatibleWithSlot = isBoosterCompatibleWithSlot;
 window.canEquipBooster = canEquipBooster;
 window.checkBoosterValidTarget = checkBoosterValidTarget;
 window.calculateBoosterTimeConsumption = calculateBoosterTimeConsumption;
