@@ -141,7 +141,7 @@ function renderBoosterEquippedArea(display, actionKey) {
           '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span>' +
           '<strong>' + slot.name + '</strong>' +
           '<span class="equipeng-card-attributes">' + slot.effectText + ' · 剩余 ' + slot.remainingText + '</span>' +
-          '<span class="equipeng-card-bottom"><span style="font-size:11px;">库存 ' + (slot.inventory || 0).toLocaleString() + '</span><button class="booster-unequip-btn" data-booster-slot="' + slot.slot + '" style="margin-left:6px;padding:2px 8px;border-radius:3px;border:1px solid #8a3a3a;background:#3a1a1a;color:#f0857b;font-size:11px;cursor:pointer;">卸下</button></span></div>';
+          '<span class="equipeng-card-bottom"><span style="font-size:11px;">备用库存 ' + (slot.inventory || 0).toLocaleString() + ' · 当前瓶 1</span><button class="booster-unequip-btn" data-booster-slot="' + slot.slot + '" style="margin-left:6px;padding:2px 8px;border-radius:3px;border:1px solid #8a3a3a;background:#3a1a1a;color:#f0857b;font-size:11px;cursor:pointer;">卸下</button></span></div>';
       }
     }
     html += '<div style="margin-bottom:8px;"><div style="font-size:12px;color:#8a9aae;margin-bottom:4px;">' + group.label + '</div>' + slotCards + '</div>';
@@ -295,7 +295,8 @@ function renderBoosterPage(now) {
   renderBoosterDetail(display);
   renderBoosterInventory(display);
   var boosterDisplay = (typeof getBoosterDisplayState === "function") ? getBoosterDisplayState(gameState, now) : null;
-  renderBoosterEquippedArea(boosterDisplay, "boosterEngineering");
+  // 制造页是增强剂总览，应展示所有已装载槽位；行动页再按 actionKey 过滤到对应的两个槽位。
+  renderBoosterEquippedArea(boosterDisplay);
   var row = document.getElementById("booster-progress-row"); if (row) row.style.display = display.isRunning ? "" : "none";
   if (typeof drawSkillBar === "function") drawSkillBar(document.getElementById("bar-booster"), display.progress.percent, "purple");
   var eta = document.getElementById("booster-eta"); if (eta) eta.textContent = display.progress.etaText;

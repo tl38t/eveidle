@@ -88,7 +88,12 @@ const ResourceRegistry = (() => {
     if (!definition) return 0;
     if (definition.pool) {
       const container = getPoolContainer(state, definition, false);
-      return container ? Number(container[definition.key]) || 0 : 0;
+      if (!container) return 0;
+      // 兼容迁移前的增强剂库存：旧存档可能仍使用 booster:<id> 作为对象键。
+      const value = container[definition.key];
+      if (value !== undefined) return Number(value) || 0;
+      if (definition.namespace === "booster") return Number(container["booster:" + definition.key]) || 0;
+      return 0;
     }
     const resources = getResources(state);
     return resources ? Number(resources[definition.scalarKey]) || 0 : 0;
@@ -101,8 +106,12 @@ const ResourceRegistry = (() => {
     if (definition.pool) {
       const container = getPoolContainer(state, definition, true);
       if (!container) return false;
-      const previousValue = Number(container[definition.key]) || 0;
+      const legacyKey = definition.namespace === "booster" ? "booster:" + definition.key : null;
+      const previousValue = container[definition.key] !== undefined
+        ? Number(container[definition.key]) || 0
+        : (legacyKey ? Number(container[legacyKey]) || 0 : 0);
       container[definition.key] = value;
+      if (legacyKey && legacyKey !== definition.key) delete container[legacyKey];
       // 仅在真实改变（值不同）时 emit 一次；add/spend/spendMaterial/spendCost 经 set 自然得到一次事件
       if (value !== previousValue && typeof GameEvents !== "undefined") {
         GameEvents.emit("resource:changed", { resourceId:id, previousValue, value, delta:Math.abs(value - previousValue) }, { source:"resource-registry" });
