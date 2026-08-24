@@ -936,7 +936,10 @@
           <button class="btn" id="btn-export-save">📥 导出存档</button>
           <button class="btn" id="btn-import-save">📤 导入存档</button>
           <button class="btn btn-danger" id="btn-delete-save" title="清空并删除本地存档（不可恢复）">🗑 删除存档</button>
-          <input type="file" id="import-file-input" accept=".json" style="display:none;">
+    <input type="file" id="import-file-input" accept=".json" style="display:none;">
+    <button class="btn" id="btn-copy-save-code">📋 复制短存档</button>
+    <button class="btn" id="btn-paste-save-code">📎 粘贴短存档</button>
+    <button class="btn btn-warn" id="btn-rescue-raw-save">🆘 抢救原始存档</button>
         </div>
         <div class="save-info" id="save-info" style="margin-top:12px;font-size:12px;color:#6a7a8e;"></div>
         <!-- P1-3：云存档管理（状态 / 时间戳 / 同步操作 / 删除） -->
@@ -1211,6 +1214,7 @@
   <script defer src="./js/platform/leaderboard-provider-contract.js?v=1"></script>
   <script defer src="./js/platform/local-mirror-contract.js?v=2"></script>
   <script defer src="./js/core/save-envelope.js?v=2"></script>
+  <script defer src="./js/core/save-codec.js?v=3"></script>
   <script defer src="./js/platform/providers/noop-cloud-provider.js?v=2"></script>
   <script defer src="./js/platform/providers/noop-achievement-provider.js?v=2"></script>
   <script defer src="./js/platform/providers/noop-local-mirror-provider.js?v=2"></script>
