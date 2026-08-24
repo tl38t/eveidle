@@ -206,7 +206,8 @@ function renderActionBoosterSlots(actionKey, containerId) {
       return;
     }
     var remaining = Math.max(0, Number(entry.remainingMs) || 0);
-    var inventory = (gameState.boosters && gameState.boosters.inventory && gameState.boosters.inventory[item.itemId]) || 0;
+    // 库存实际按裸 id 存储于 boosters.inventory；通过 ResourceRegistry 读取可兼容 booster: 前缀旧存档。
+    var inventory = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, item.itemId) : 0;
     html += '<div class="equipeng-recipe-card action-booster-local-card" data-action-booster-slot="' + slot + '" title="Click to replace this booster">' +
       '<span class="equipeng-card-top"><span>' + (item.qualityName || "\u589e\u5f3a\u5242") + ' · ' + item.name + '</span><span class="can-build">\u751f\u6548</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span><strong>' + item.name + '</strong>' +
