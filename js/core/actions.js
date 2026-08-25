@@ -1962,7 +1962,7 @@ const StationStateActions = {
     }
 
     // 检查配方等级门槛（装备自动线含配给剂激活期间的 +N 门槛）
-    const eeL  = (lineId === "equipment") ? getEffectiveSkillLevel(state, "equipmentEngineering") : 99;
+    const eeLvl = (lineId === "equipment") ? getEffectiveSkillLevel(state, "equipmentEngineering") : 99;
     const bLvl = (lineId === "booster") ? getEffectiveSkillLevel(state, "boosterEngineering") : 99;
     const sLvl = (lineId === "smelting") ? getEffectiveSkillLevel(state, "refining") : 99;
     const eqGate = (lineId === "equipment") ? ((typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, recipe).levelGate : (Number(recipe.level) || 0)) : 99;
