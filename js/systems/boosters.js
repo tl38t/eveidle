@@ -79,9 +79,26 @@ var BOOSTER_SLOT_ACTION = {
   combatWeapon:"combat", combatRepair:"combat"
 };
 
+// 槽位 → 技能显示名（用于装备态描述：技能超载协议装在哪个槽就显示哪个技能）。
+function getSkillLabelForSlot(slot) {
+  var action = BOOSTER_SLOT_ACTION[slot];
+  if (!action) return "装备槽对应技能";
+  if (action === "combat") return "战斗";
+  var meta = BOOSTER_CATEGORY_META.find(function(c) { return c.id === action; });
+  return meta ? meta.name : "装备槽对应技能";
+}
+
 function isBoosterCompatibleWithSlot(item, slot) {
   if (!item) return false;
-  if (item.universal) return true;
+  if (item.universal) {
+    // 技能超载协议（skillLevelBonus）只允许采集/制造类槽，禁止进入战斗槽
+    // （战斗槽映射到 combat，不在 7 个受加成技能内，装了等于白装）。
+    if (item.effectType === "skillLevelBonus") {
+      const action = BOOSTER_SLOT_ACTION[slot];
+      return !!action && action !== "combat";
+    }
+    return true;
+  }
   const action = BOOSTER_SLOT_ACTION[slot];
   if (!action) return item.slot === slot;
   if (action === "combat") return item.category === "combatWeapon" || item.category === "combatRepair";
@@ -133,6 +150,7 @@ function checkBoosterValidTarget(state, item) {
   if (item.effectType === "gasSpeed" || item.effectType === "gasDouble" ||
       item.effectType === "smeltSpeed" || item.effectType === "smeltDouble" ||
       item.effectType === "shipSpeed" || item.effectType === "shipMaterialDiscount" ||
+      item.effectType === "equipmentSpeed" || item.effectType === "skillLevelBonus" ||
       item.effectType === "boosterSpeed" || item.effectType === "boosterDouble") {
     return true;
   }
@@ -353,6 +371,8 @@ function tickBoosterTimers(state, now) {
   if (runEquipment) {
     applyBoosterTimeConsumption(state, "equipmentSpeed", elapsed, now);
     applyBoosterTimeConsumption(state, "equipmentYield", elapsed, now);
+    // 方案1：精密配给剂（shipYield）为舰船/装备制造通用减料瓶，装备工程运行时也消耗其计时
+    applyBoosterTimeConsumption(state, "shipYield", elapsed, now);
   }
   if (runBooster) {
     applyBoosterTimeConsumption(state, "boosterSpeed", elapsed, now);
@@ -373,6 +393,21 @@ function tickBoosterTimers(state, now) {
      repairMultiplier         { shield, armor, structure }
      activeEntries            { [slot]: { itemId, name, quality, effectType, effectValue, remainingMs } }
    ---------------------------------------------------------------- */
+// 临时技能等级（技能超载协议）：基础等级 + 当前生效的 skillLevelBySkill[技能]；离线/在线共用同一入口。
+// 所有"采集制造"技能的等级门槛/效率读取都应走此函数，确保增强剂起效期间可制造更高级道具。
+// 作用域按槽位：装在哪个槽，仅该槽对应技能获得临时等级；多瓶取 MAX（同一技能内），不跨技能叠加。
+function getEffectiveSkillLevel(state, key) {
+  var g = (state && state.skills) ? state : ((typeof gameState !== "undefined") ? gameState : null);
+  if (!g || !g.skills) return 1;
+  var base = (g.skills[key] && Number(g.skills[key].lvl)) || 1;
+  var bonus = 0;
+  if (typeof getBoosterEffectState === "function") {
+    var eff = getBoosterEffectState(g);
+    bonus = Number(eff.skillLevelBySkill && eff.skillLevelBySkill[key]) || 0;
+  }
+  return base + bonus;
+}
+
 function getBoosterEffectState(state) {
   var active = getActiveBoosterState(state);
   var eff = {
@@ -388,7 +423,11 @@ function getBoosterEffectState(state) {
     smeltSpeedMultiplier: 1,
     doubleSmeltChance: 0,
     shipSpeedMultiplier: 1,
+    equipmentSpeedMultiplier: 1,
     shipMaterialDiscount: 0,
+    materialDiscountLevelGate: 0,
+    // 技能超载协议：仅装在对应槽位的技能获得临时等级；键为该技能的技能键。
+    skillLevelBySkill: { mining:0, gasHarvesting:0, refining:0, shipEngineering:0, equipmentEngineering:0, boosterEngineering:0, archaeology:0 },
     boosterSpeedMultiplier: 1,
     doubleBoosterChance: 0,
     // 技能训练（神经训练催化器 · 经验茶模型）：按技能分桶的技能经验乘区，
@@ -458,9 +497,23 @@ function getBoosterEffectState(state) {
       case "shipSpeed":
         eff.shipSpeedMultiplier *= (1 + Number(item.effectValue));
         break;
+      case "equipmentSpeed":
+        eff.equipmentSpeedMultiplier *= (1 + Number(item.effectValue));
+        break;
       case "shipMaterialDiscount": {
         var dv = Number(item.effectValue) || 0;
         if (dv > eff.shipMaterialDiscount) eff.shipMaterialDiscount = dv;
+        var lg = Number(item.levelGate) || 0;
+        if (lg > (eff.materialDiscountLevelGate || 0)) eff.materialDiscountLevelGate = lg;
+        break;
+      }
+      case "skillLevelBonus": {
+        // 按槽位作用域：装在哪个槽，仅该槽对应技能获得临时等级（与神经增强剂的经验茶模型同构）。
+        var sB = Number(item.effectValue) || 0;
+        var sSkill = BOOSTER_SLOT_XP_SKILL[slot];
+        if (sSkill && eff.skillLevelBySkill[sSkill] !== undefined) {
+          if (sB > eff.skillLevelBySkill[sSkill]) eff.skillLevelBySkill[sSkill] = sB;
+        }
         break;
       }
       case "boosterSpeed":
@@ -582,8 +635,39 @@ function getShipBuildingQuote(state, recipe, context) {
       cost = reduced;
     }
   }
-  var levelGate = active ? (Number(recipe.level) || 0) + 5 : (Number(recipe.level) || 0);
+  var gateBonus = eff ? ((eff.materialDiscountLevelGate || 0) + (eff.skillLevelBySkill ? (eff.skillLevelBySkill.shipEngineering || 0) : 0)) : 0;
+  var levelGate = (Number(recipe.level) || 0) + gateBonus;
   return { cost: cost, levelGate: levelGate, discounted: active || (typeof LEGION_NPC !== "undefined") };
+}
+
+/* ----------------------------------------------------------------
+   装备工程报价（镜像 getShipBuildingQuote，考古重制 Phase B · 精密配给剂通用化）
+   激活期间（getBoosterEffectState().shipMaterialDiscount > 0，来源即精工/传奇·精密配给剂）：
+     - 配方材料成本严格 ceil(base × 0.9)（逐条，单件至少 1）
+     - 配方等级门槛 + materialDiscountLevelGate
+   装备无军团材料减耗键（军团对装备仅有速度乘数 equipmentManufacturingSpeed），故不叠 LEGION 成本减免。
+   覆盖在线 / 离线 / 队列 / 空间站自动线四类调用点（与舰船同构）。
+   ---------------------------------------------------------------- */
+function getEquipEngBuildingQuote(state, recipe) {
+  if (!recipe) return { cost: {}, levelGate: 0, discounted: false };
+  var eff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state) : null;
+  var active = !!(eff && eff.shipMaterialDiscount > 0);
+  var baseCost = recipe.cost || {};
+  var cost;
+  if (active) {
+    cost = {};
+    for (var mat in baseCost) {
+      if (!Object.prototype.hasOwnProperty.call(baseCost, mat)) continue;
+      var c = Math.ceil(Number(baseCost[mat]) * 0.9);
+      if (!(c >= 1)) c = 1;
+      cost[mat] = c;
+    }
+  } else {
+    cost = baseCost;
+  }
+  var gateBonus = eff ? ((eff.materialDiscountLevelGate || 0) + (eff.skillLevelBySkill ? (eff.skillLevelBySkill.equipmentEngineering || 0) : 0)) : 0;
+  var levelGate = (Number(recipe.level) || 0) + gateBonus;
+  return { cost: cost, levelGate: levelGate, discounted: active };
 }
 
 /* ----------------------------------------------------------------
@@ -598,7 +682,9 @@ function getBoosterSlotStatus(state, slot, item, remainingMs, now) {
   var action = state.currentAction;
   var running = action && action.active ? action.skill : null;
   var relevantSlots = getActionBoosterSlots(running);
-  if (!relevantSlots.indexOf || relevantSlots.indexOf(slot) < 0) return "paused";
+  // 精密配给剂（shipYield）为舰船/装备制造通用减料瓶：舰船或装备运行时均视为相关槽
+  var relevantBySharedDiscount = (slot === "shipYield") && (running === "shipEngineering" || running === "equipmentEngineering");
+  if (!relevantBySharedDiscount && (!relevantSlots.indexOf || relevantSlots.indexOf(slot) < 0)) return "paused";
   // 行动运行中，检查是否暂停
   if (running === "mining") {
     var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;
@@ -657,7 +743,7 @@ function getBoosterDisplayState(state, now) {
             quality: item.quality,
             qualityName: item.qualityName || "",
             effectText: (typeof describeBoosterEffect === "function")
-              ? describeBoosterEffect(item.effectType, item.effectValue) : "",
+              ? describeBoosterEffect(item.effectType, item.effectValue, null, item.levelGate, getSkillLabelForSlot(slot)) : "",
             remainingMs: remainingMs,
             remainingText: (remainingMs > 0) ? (mm + ":" + String(ss).padStart(2, "0")) : "耗尽",
             inventory: inv,
@@ -728,12 +814,15 @@ window.calculateBoosterTimeConsumption = calculateBoosterTimeConsumption;
 window.applyBoosterTimeConsumption = applyBoosterTimeConsumption;
 window.tickBoosterTimers = tickBoosterTimers;
 window.getBoosterEffectState = getBoosterEffectState;
+window.getEffectiveSkillLevel = getEffectiveSkillLevel;
 window.rollDoubleMineral = rollDoubleMineral;
 window.getBoosterArchaeologyEffectiveUniqueRate = getBoosterArchaeologyEffectiveUniqueRate;
 window.getShipMaterialDiscountMultiplier = getShipMaterialDiscountMultiplier;
 window.getShipBuildingQuote = getShipBuildingQuote;
+window.getEquipEngBuildingQuote = getEquipEngBuildingQuote;
 window.discountCost = discountCost;
 window.getBoosterDisplayState = getBoosterDisplayState;
 window.getBoosterSlotStatus = getBoosterSlotStatus;
 window.getBoosterTotalRemainingSeconds = getBoosterTotalRemainingSeconds;
 window.settleOfflineBoosters = settleOfflineBoosters;
+window.getSkillLabelForSlot = getSkillLabelForSlot;

@@ -508,7 +508,7 @@ console.log("\n=== E. UI 显示态 ===");
   ok(Array.isArray(disp.sites), "E2 sites 是数组");
   eq(disp.sites.length, 15, "E3 15 个遗迹");
   ok(Array.isArray(disp.probes), "E4 probes 是数组");
-  eq(disp.probes.length, 3, "E5 3 种探针");
+  eq(disp.probes.length, (sandbox.ARCHAEOLOGY_ALL_PROBES || {length:5}).length, "E5 探针数=完整表(基础3+复原2)");
   ok(disp.assignedShip === null || typeof disp.assignedShip === "object", "E6 assignedShip 合法");
   // 无 NaN/undefined
   for (const site of disp.sites) {

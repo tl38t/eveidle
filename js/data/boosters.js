@@ -36,12 +36,16 @@ const BOOSTER_SERIES = Object.freeze({
   high_temp_flux:          { id:"high_temp_flux",          name:"高温助熔剂",     category:"refining", slot:"smeltSpeed",  effectType:"smeltSpeed" },
   lattice_proliferation:   { id:"lattice_proliferation",   name:"晶格增殖剂",     category:"refining", slot:"smeltYield",  effectType:"smeltDouble" },
   assembly_coordinator:    { id:"assembly_coordinator",    name:"装配协调剂",     category:"ship",     slot:"shipSpeed",   effectType:"shipSpeed" },
-  precision_rationing:     { id:"precision_rationing",     name:"精密配给剂",     category:"ship",     slot:"shipYield",   effectType:"shipMaterialDiscount" },
+  precision_rationing:     { id:"precision_rationing",     name:"精密配给剂",     category:["ship","equipment"], slot:"shipYield",   effectType:"shipMaterialDiscount" },
+  // 装备总装协调剂：装备工程提速（直解锁；耗时统一 180s；镜像舰船装配协调剂）
+  equipment_assembly:      { id:"equipment_assembly",      name:"装备总装协调剂", category:"equipment", slot:"equipmentSpeed", effectType:"equipmentSpeed" },
   reaction_accelerant:     { id:"reaction_accelerant",     name:"反应加速介质",   category:"booster",  slot:"boosterSpeed", effectType:"boosterSpeed" },
   reaction_chain_proliferation: { id:"reaction_chain_proliferation", name:"反应链增殖剂", category:"booster", slot:"boosterYield", effectType:"boosterDouble" },
   // —— 技能训练 · 神经训练催化器（经验茶模型：通用件 universal，可装入任意类别槽，只加成该槽对应类别的技能经验；effectType:skillXpMultiplier）——
   // —— 技能训练 · 神经训练催化器（经验茶模型：通用件 universal，可装入任意类别槽，只加成该槽对应类别的技能经验）——
-  neural_booster: { id:"neural_booster", name:"神经训练催化器", category:"training", slot:"any", effectType:"skillXpMultiplier" }
+  neural_booster: { id:"neural_booster", name:"神经训练催化器", category:"training", slot:"any", effectType:"skillXpMultiplier" },
+  // —— 技能超载协议（通用件 universal，可装入任意类别槽）：临时提升全部采集/制造技能等级，起效期间可制造/采集更高级道具，离线同样生效 ——
+  skill_overdrive: { id:"skill_overdrive", name:"技能超载协议", category:["mining","gas","archaeology","refining","ship","equipment","booster"], slot:"any", effectType:"skillLevelBonus" }
 });
 
 const BOOSTER_CATEGORY_META = Object.freeze([
@@ -50,6 +54,7 @@ const BOOSTER_CATEGORY_META = Object.freeze([
   { id:"gas",          name:"采气" },
   { id:"refining",     name:"冶炼" },
   { id:"ship",         name:"舰船工程" },
+  { id:"equipment",    name:"装备制造" },
   { id:"booster",      name:"增幅剂制造" },
   { id:"combatWeapon", name:"战斗武器" },
   { id:"combatRepair", name:"战斗维修" },
@@ -139,10 +144,14 @@ const BOOSTER_DEFS = [
   ["assembly_coordinator","n",37, 70, 10,"同位素",3,"special:活性战术凝胶",4,"shipSpeed",0.08,"shipSpeed",true],
   ["assembly_coordinator","r",77,130, 75,"等离子体",3,"special:高能战术萃取物",4,"shipSpeed",0.18,"shipSpeed",true],
   ["assembly_coordinator","l",93,154,338,"生物质",5,"special:极化战术介质",7,"shipSpeed",0.30,"shipSpeed",true],
-  // 精密配给剂：舰船材料九折（品质仅改持续时间）
-  ["precision_rationing","n",38, 71, 12,"同位素",3,"special:活性战术凝胶",4,"shipMaterialDiscount",0.10,"shipYield",true],
-  ["precision_rationing","r",78,131, 76,"等离子体",3,"special:高能战术萃取物",4,"shipMaterialDiscount",0.10,"shipYield",true],
-  ["precision_rationing","l",94,155,342,"生物质",5,"special:极化战术介质",7,"shipMaterialDiscount",0.10,"shipYield",true],
+  // 精密配给剂：舰船/装备制造通用材料减料（普通-10%/门槛+5、精工-12%/门槛+7、传奇-15%/门槛+10；精工/传奇耗时180s）
+  ["precision_rationing","n",38, 180, 12,"同位素",3,"special:活性战术凝胶",4,"shipMaterialDiscount",0.10,"shipYield",true,null,       0,5],
+  ["precision_rationing","r",78,180, 76,"等离子体",3,"special:高能战术萃取物",4,"shipMaterialDiscount",0.12,"shipYield",true,null,0,7],
+  ["precision_rationing","l",94,180,342,"生物质",5,"special:极化战术介质",7,"shipMaterialDiscount",0.15,"shipYield",true,null,0,10],
+  // 装备总装协调剂：装备工程速度（直解锁；耗时统一 180s；镜像舰船装配协调剂 +8%/+18%/+30%）
+  ["equipment_assembly","n",38,180, 11,"同位素",3,"special:活性战术凝胶",4,"equipmentSpeed",0.08,"equipmentSpeed",false],
+  ["equipment_assembly","r",78,180, 76,"等离子体",3,"special:高能战术萃取物",4,"equipmentSpeed",0.18,"equipmentSpeed",false],
+  ["equipment_assembly","l",94,180,342,"生物质",5,"special:极化战术介质",7,"equipmentSpeed",0.30,"equipmentSpeed",false],
   // 反应加速介质：增幅剂制造速度
   ["reaction_accelerant","n",39, 73, 13,"同位素",3,"special:活性战术凝胶",4,"boosterSpeed",0.08,"boosterSpeed",true],
   ["reaction_accelerant","r",79,133, 78,"等离子体",3,"special:高能战术萃取物",4,"boosterSpeed",0.18,"boosterSpeed",true],
@@ -157,7 +166,11 @@ const BOOSTER_DEFS = [
   // 精工：需蓝图，M/L/XL 货柜掉落
   ["neural_booster","r",82,124,82,"等离子体",3,"special:高能战术萃取物",4,"skillXpMultiplier",0.10,"any",true,"gas:氢同位素",4],
   // 传奇：需蓝图，L/XL 货柜掉落
-  ["neural_booster","l",98,148,358,"生物质",5,"special:极化战术介质",7,"skillXpMultiplier",0.15,"any",true,"gas:聚合气体",2]
+  ["neural_booster","l",98,148, 358,"生物质",5,"special:极化战术介质",7,"skillXpMultiplier",0.15,"any",true,"gas:聚合气体",2],
+  // ---- 技能超载协议（通用件 universal，全部采集/制造技能临时 +等级；直解锁；180s）----
+  ["skill_overdrive","n",30,180, 18,"同位素",3,"special:活性战术凝胶",4,"skillLevelBonus",3,"any",false,null,0,0],
+  ["skill_overdrive","r",70,180, 88,"等离子体",3,"special:高能战术萃取物",4,"skillLevelBonus",5,"any",false,null,0,0],
+  ["skill_overdrive","l",92,180,376,"生物质",5,"special:极化战术介质",7,"skillLevelBonus",7,"any",false,null,0,0]
 ];
 
 // 由唯一事实来源展开为 BOOSTER_ITEMS（map）与 BOOSTER_RECIPES（array），二者一一对应 30 条。
@@ -165,7 +178,7 @@ const BOOSTER_ITEMS = {};
 const BOOSTER_RECIPES = [];
 (function buildBoosterTables() {
   for (const def of BOOSTER_DEFS) {
-    const [seriesKey, qualityKey, level, time, xp, planetName, planetQty, secondKey, secondQty, effectType, effectValue, slot, requiresBlueprint=false, thirdKey=null, thirdQty=0] = def;
+    const [seriesKey, qualityKey, level, time, xp, planetName, planetQty, secondKey, secondQty, effectType, effectValue, slot, requiresBlueprint=false, thirdKey=null, thirdQty=0, levelGateBonus=0] = def;
     const series = BOOSTER_SERIES[seriesKey];
     const quality = BOOSTER_QUALITIES[qualityKey];
     const id = seriesKey + "_" + qualityKey;               // 例：mining_lubricant_n
@@ -186,9 +199,10 @@ const BOOSTER_RECIPES = [];
       universal: (slot === "any"),
       effectType,
       effectValue,
+      levelGate: levelGateBonus,
       weaponType:series.weaponType || null,
       repairTarget:series.repairTarget || null,
-      description:name + "：" + describeBoosterEffect(effectType, effectValue, series.repairTarget)
+      description:name + "：" + describeBoosterEffect(effectType, effectValue, series.repairTarget, levelGateBonus)
     };
     BOOSTER_ITEMS[id] = item;
     BOOSTER_RECIPES.push({
@@ -218,7 +232,7 @@ const BOOSTER_RECIPES = [];
   }
 })();
 
-function describeBoosterEffect(effectType, value, repairTarget) {
+function describeBoosterEffect(effectType, value, repairTarget, levelGateBonus, slotSkill) {
   switch (effectType) {
     case "miningSpeed":       return "采矿速度 +" + Math.round(value * 100) + "%";
     case "doubleMineral":     return "矿物翻倍概率 " + Math.round(value * 100) + "%";
@@ -234,10 +248,12 @@ function describeBoosterEffect(effectType, value, repairTarget) {
     case "smeltSpeed":        return "冶炼速度 +" + Math.round(value * 100) + "%";
     case "smeltDouble":       return "冶炼产量翻倍概率 " + Math.round(value * 100) + "%";
     case "shipSpeed":         return "舰船工程速度 +" + Math.round(value * 100) + "%";
-    case "shipMaterialDiscount": return "舰船材料 -" + Math.round(value * 100) + "%（激活期间配方等级门槛 +5）";
+    case "equipmentSpeed":     return "装备工程速度 +" + Math.round(value * 100) + "%";
+    case "shipMaterialDiscount": return "制造材料减免（舰船工程与装备制造通用） -" + Math.round(value * 100) + "%（激活期间配方等级门槛 +" + (Number(levelGateBonus) || 0) + "）";
     case "boosterSpeed":      return "增幅剂制造速度 +" + Math.round(value * 100) + "%";
     case "boosterDouble":     return "增幅剂产量翻倍概率 " + Math.round(value * 100) + "%";
     case "skillXpMultiplier": return "对应类别技能经验 +" + Math.round(value * 100) + "%（按装备槽位作用域化）";
+  case "skillLevelBonus":   return (slotSkill || "装备槽对应技能") + "等级 +" + Math.round(value) + "（临时，离线生效）";
     default:                  return effectType + " " + value;
   }
 }

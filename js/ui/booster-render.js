@@ -169,7 +169,7 @@ function renderActionBoosterSlots(actionKey, containerId) {
       return;
     }
     var remaining = Math.max(0, Number(entry.remainingMs) || 0);
-    html += '<div class="action-booster-slot" data-action-booster-slot="' + slot + '"><strong>' + (labels[slot] || slot) + ' · ' + item.name + '</strong><span>' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : "") + '</span><small>剩余 ' + Math.ceil(remaining / 1000) + 's · 点击更换</small></div>';
+    html += '<div class="action-booster-slot" data-action-booster-slot="' + slot + '"><strong>' + (labels[slot] || slot) + ' · ' + item.name + '</strong><span>' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, null, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span><small>剩余 ' + Math.ceil(remaining / 1000) + 's · 点击更换</small></div>';
   });
   area.innerHTML = html + '</div>';
 }
@@ -211,7 +211,7 @@ function renderActionBoosterSlots(actionKey, containerId) {
     html += '<div class="equipeng-recipe-card action-booster-local-card" data-action-booster-slot="' + slot + '" title="Click to replace this booster">' +
       '<span class="equipeng-card-top"><span>' + (item.qualityName || "\u589e\u5f3a\u5242") + ' · ' + item.name + '</span><span class="can-build">\u751f\u6548</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span><strong>' + item.name + '</strong>' +
-      '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : "") + ' · \u5269\u4f59 ' + Math.ceil(remaining / 1000) + 's</span>' +
+      '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, null, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + ' · \u5269\u4f59 ' + Math.ceil(remaining / 1000) + 's</span>' +
       '<span class="equipeng-card-bottom"><span>\u5e93\u5b58 ' + Number(inventory).toLocaleString() + '</span><button type="button" class="booster-unequip-btn action-booster-unequip-btn" data-action-booster-unequip="1" data-booster-slot="' + slot + '">\u5378\u4e0b</button></span></div>';
   });
   area.innerHTML = html + '</div>';
@@ -302,17 +302,22 @@ function renderBoosterPage(now) {
   if (typeof drawSkillBar === "function") drawSkillBar(document.getElementById("bar-booster"), display.progress.percent, "purple");
   var eta = document.getElementById("booster-eta"); if (eta) eta.textContent = display.progress.etaText;
   var status = document.getElementById("booster-status-text"); if (status) status.textContent = display.statusText;
+  // 仿装备制造：正在制造 A、当前选中 B（targetChanged）时，隐藏"停止"、显示"切换制造"；
+  // 选中==在跑时显示停止；完全未跑时显示开始。
+  var targetChanged = Boolean(display.isRunning && display.runningRecipeId && display.selectedRecipe && display.runningRecipeId !== display.selectedRecipe.id);
   var start = document.getElementById("btn-start-booster"); if (start) {
-    start.style.display = display.isRunning ? "none" : "";
+    start.style.display = (display.isRunning && !targetChanged) ? "none" : "";
     start.disabled = !display.canStart;
     // 未解锁也可选中预览；启动按钮按舰船总装逻辑显示锁定原因（需蓝图 / 等级），不再只是置灰。
     if (!display.canStart && display.selectedRecipe) {
       start.textContent = "🔒 " + (display.selectedRecipe.lockedReason || "无法制造");
-    } else if (!display.isRunning) {
+    } else if (targetChanged) {
+      start.textContent = "▶ 切换制造";
+    } else {
       start.textContent = "▶ 开始制造";
     }
   }
-  var stop = document.getElementById("btn-stop-booster"); if (stop) stop.style.display = display.isRunning ? "" : "none";
+  var stop = document.getElementById("btn-stop-booster"); if (stop) stop.style.display = (display.isRunning && !targetChanged) ? "" : "none";
 }
 
 /* ---- 事件绑定 ---- */
@@ -339,10 +344,7 @@ function renderBoosterPage(now) {
     var card = event.target.closest("[data-booster-recipe]");
     if (!card || card.disabled) return;
     var result = dispatchGameAction(gameState, { type:"booster/selectRecipe", recipeId:card.dataset.boosterRecipe }, Date.now());
-    if (result.changed) {
-      renderBoosterPage();
-      showActionConfirm("boosterEngineering");
-    }
+    if (result.changed) renderBoosterPage();
   });
   // 开始制造
   var start = document.getElementById("btn-start-booster");
@@ -541,6 +543,8 @@ Object.keys(BOOSTER_SLOT_FRIENDLY).forEach(function(slot) {
 function showUniversalBoosterSlotPicker(itemId, inv) {
   var existingOverlay = document.querySelector(".booster-picker-overlay");
   if (existingOverlay) existingOverlay.remove();
+  var item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
+  var isSkillOverdrive = !!(item && item.effectType === "skillLevelBonus");
   var overlay = document.createElement("div");
   overlay.className = "booster-picker-overlay";
   overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;";
@@ -548,23 +552,27 @@ function showUniversalBoosterSlotPicker(itemId, inv) {
   box.style.cssText = "background:#1a2a3a;border:1px solid #3a5a6a;border-radius:8px;padding:20px;max-width:460px;width:92%;max-height:78vh;overflow-y:auto;";
   var title = document.createElement("div");
   title.style.cssText = "font-size:14px;font-weight:bold;color:#7dd3fc;margin-bottom:6px;";
-  title.textContent = "神经训练催化器 — 选择装备槽位";
+  title.textContent = (item ? item.name : "增强剂") + " — 选择装备槽位";
   box.appendChild(title);
   var sub = document.createElement("div");
   sub.style.cssText = "font-size:12px;color:#8a9aae;margin-bottom:12px;line-height:1.5;";
-  sub.textContent = "装入某类槽后，只加成该槽对应类别的技能经验；各类槽可分别装备一个，可多槽同时生效。";
+  sub.textContent = isSkillOverdrive
+    ? "装入某类槽后，只加成该槽对应技能的临时等级；各类槽可分别装备一个，可多槽同时生效。不能装在战斗槽。"
+    : "装入某类槽后，只加成该槽对应类别的技能经验；各类槽可分别装备一个，可多槽同时生效。";
   box.appendChild(sub);
 
   var GROUPS = [
     { label:"\u88c5\u5907\u5de5\u7a0b", slots:["equipmentSpeed","equipmentYield"] },
     { label:"采矿", slots:["miningSpeed","miningYield"] },
     { label:"考古", slots:["archaeologySpeed","archaeologyRare"] },
-    { label:"战斗", slots:["combatWeapon","combatRepair"] },
     { label:"采气", slots:["gasSpeed","gasYield"] },
     { label:"冶炼", slots:["smeltSpeed","smeltYield"] },
     { label:"舰船工程", slots:["shipSpeed","shipYield"] },
     { label:"增幅剂制造", slots:["boosterSpeed","boosterYield"] }
   ];
+  if (!isSkillOverdrive) {
+    GROUPS.push({ label:"战斗", slots:["combatWeapon","combatRepair"] });
+  }
   var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
 
   function doEquip(slot, occupiedEntry) {

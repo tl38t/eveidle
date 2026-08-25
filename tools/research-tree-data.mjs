@@ -29,7 +29,7 @@ const RANK_MULT = {
 };
 
 // ---------------------------------------------------------------------------
-//  2. 节点数据（39 个）
+//  2. 节点数据（45 个：39 主研究 + 6 军团分支）
 //     category: foundation / industry / exploration / combat / logistics / protocol
 //     era:      0(基础) 1(应用) 2(工程) 3(尖端) 4(协议与集成)
 //     type:     foundation / numeric / protocol
@@ -303,7 +303,7 @@ const NODES = [
     id: "planauto", name: "行星维护自动化", category: "protocol", era: 4, type: "protocol",
     maxLevel: 1, rank: RANK_MULT.protocol,
     prerequisites: [{ id: "planfin", level: 5 }, { id: "planind", level: 5 }, { id: "fuellog", level: 4 }, { id: "autocon", level: 1 }],
-    effects: ["自动续费 保留最低ISK"],
+    effects: ["自动续费，保留最低星币"],
     bonus: null,
     description: "每个基地独立开启自动续费。",
   },
@@ -311,17 +311,17 @@ const NODES = [
     id: "autosell", name: "文物自动出售协议", category: "protocol", era: 4, type: "protocol",
     maxLevel: 1, rank: RANK_MULT.protocol,
     prerequisites: [{ id: "dataarch", level: 4 }, { id: "planfin", level: 4 }],
-    effects: ["自动出售文物 获得ISK"],
+    effects: ["自动出售文物，获得星币"],
     bonus: null,
-    description: "自动出售可换ISK的文物。",
+    description: "自动出售可回收为星币的物品。",
   },
   {
     id: "autoconv", name: "文物自动兑换协议", category: "protocol", era: 4, type: "protocol",
     maxLevel: 1, rank: RANK_MULT.protocol,
     prerequisites: [{ id: "dataarch", level: 5 }, { id: "planfin", level: 4 }],
-    effects: ["自动兑换文物 获得LP"],
+    effects: ["自动兑换文物，获得功勋"],
     bonus: null,
-    description: "自动兑换可换LP的文物。",
+    description: "自动兑换可回收为功勋的物品。",
   },
   {
     id: "autorepair", name: "野外自动维修协议", category: "protocol", era: 4, type: "protocol",
@@ -331,6 +331,62 @@ const NODES = [
     bonus: null,
     description: "考古失败受伤时触发，消耗燃料自动维修。",
   },
+
+  // ===== 军团研究分支（6 个，contentPack="legion"；接入现有研究系统，非独立系统） =====
+  {
+    id: "legion_foundation", name: "军团基础架构", category: "legion", era: 0, type: "foundation",
+    contentPack: "legion",
+    maxLevel: 1, rank: 0.6, prerequisites: [{ id: "syseng", level: 1 }, { id: "dataan", level: 1 }],
+    effects: ["解锁军团研究分支"],
+    bonus: null,
+    description: "建立军团指挥与科研体系，解锁军团研究分支。",
+  },
+  {
+    id: "legion_staffing", name: "军团征募编制", category: "legion", era: 1, type: "numeric",
+    contentPack: "legion",
+    maxLevel: 5, rank: 1.0, prerequisites: [{ id: "legion_foundation", level: 1 }],
+    effects: ["军团总人数上限 +1", "军团总人数上限 +2", "军团总人数上限 +3", "军团总人数上限 +4", "军团总人数上限 +5"],
+    bonus: { group: "legionNpcCapacity", perLevel: 1, unit: "count" },
+    description: "扩编征募体系，每级提升军团总人数上限 +1（含玩家本人）。",
+  },
+  {
+    id: "legion_training", name: "军团训练条令", category: "legion", era: 2, type: "numeric",
+    contentPack: "legion",
+    maxLevel: 5, rank: 1.0, prerequisites: [{ id: "legion_foundation", level: 1 }, { id: "dataarch", level: 2 }],
+    effects: ["NPC 等级上限 +10", "NPC 等级上限 +20", "NPC 等级上限 +30", "NPC 等级上限 +40", "NPC 等级上限 +50"],
+    bonus: { group: "legionNpcLevelCap", perLevel: 10, unit: "count" },
+    description: "制定 NPC 训练条令，每级提升 NPC 等级上限 +10。",
+  },
+  {
+    id: "legion_doctrine", name: "军团作战学说", category: "legion", era: 2, type: "numeric",
+    contentPack: "legion",
+    maxLevel: 5, rank: 1.0, prerequisites: [{ id: "legion_foundation", level: 1 }, { id: "combat", level: 2 }],
+    effects: ["NPC 经验获取 +2%", "NPC 经验获取 +4%", "NPC 经验获取 +6%", "NPC 经验获取 +8%", "NPC 经验获取 +10%"],
+    bonus: { group: "legionNpcXp", perLevel: 2, unit: "%" },
+    description: "完善作战学说，每级提升 NPC 经验获取 +2%。",
+  },
+  {
+    id: "legion_dual_squad", name: "双人战斗小队", category: "protocol", era: 4, type: "protocol",
+    contentPack: "legion",
+    maxLevel: 1, rank: 2.5, prerequisites: [
+      { id: "legion_staffing", level: 3 }, { id: "legion_training", level: 3 },
+      { id: "legion_doctrine", level: 3 }, { id: "combat", level: 3 },
+    ],
+    effects: ["解锁两人 NPC 战斗小队"],
+    bonus: null,
+    description: "解锁两名 NPC 协同出战的战斗小队编制（仅解锁，不含小队战斗逻辑）。",
+  },
+  {
+    id: "legion_triple_squad", name: "三人战斗小队", category: "protocol", era: 4, type: "protocol",
+    contentPack: "legion",
+    maxLevel: 1, rank: 2.5, prerequisites: [
+      { id: "legion_dual_squad", level: 1 }, { id: "legion_staffing", level: 5 },
+      { id: "legion_training", level: 5 }, { id: "combat", level: 5 },
+    ],
+    effects: ["解锁第三名 NPC 战斗成员"],
+    bonus: null,
+    description: "在双人小队基础上解锁第三名 NPC 战斗成员（仅解锁，不含小队战斗逻辑）。",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -338,10 +394,11 @@ const NODES = [
 //     duration(step) = UNIT × WEIGHTS[level-1] × RANK_MULT[category]
 //     UNIT 由总目标时间反推，保证无加速全树 = 90 天（误差 < 1 分钟）
 // ---------------------------------------------------------------------------
-function totalWeight() {
+function baseWeight() {
   let w = 0;
   for (const n of NODES) {
-    const rank = RANK_MULT[n.category];
+    if (n.contentPack === "legion") continue; // 军团节点不计入基础权重
+    const rank = (typeof n.rank === "number") ? n.rank : (RANK_MULT[n.category] || 0);
     if (!rank) throw new Error("未知 category: " + n.category + " @ " + n.id);
     for (let lvl = 1; lvl <= n.maxLevel; lvl++) {
       w += WEIGHTS[lvl - 1] * rank;
@@ -350,12 +407,13 @@ function totalWeight() {
   return w;
 }
 
-const TOTAL_WEIGHT = totalWeight();
+const BASE_TOTAL_WEIGHT = baseWeight();
+const TOTAL_WEIGHT = BASE_TOTAL_WEIGHT;
 const UNIT = TARGET_SECONDS / TOTAL_WEIGHT;
 
 // 填充每个节点的 durationByLevel（秒，由公式生成）
 for (const n of NODES) {
-  const rank = RANK_MULT[n.category];
+  const rank = (typeof n.rank === "number") ? n.rank : (RANK_MULT[n.category] || 0);
   const arr = [];
   for (let lvl = 1; lvl <= n.maxLevel; lvl++) {
     arr.push(UNIT * WEIGHTS[lvl - 1] * rank);
@@ -397,6 +455,6 @@ export {
   RANK_MULT,
   NODES,
   TOTAL_WEIGHT,
+  BASE_TOTAL_WEIGHT,
   UNIT,
-  totalWeight,
 };

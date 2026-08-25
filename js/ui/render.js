@@ -52,11 +52,11 @@ function renderSidebar(sidebarState) {
     if (!skillKey) return;
     const s = byKey.get(skillKey);
     if (!s) return;
-    const levelText = "Lv." + s.level;
-    const levelClass = "nav-lv " + s.levelClass;
+    const levelText = "Lv." + s.level + (s.boosted ? " (+" + (s.level - s.baseLevel) + ")" : "");
+    const levelClass = "nav-lv " + s.levelClass + (s.boosted ? " nav-lv-boosted" : "");
     if (lvSpan.textContent !== levelText) lvSpan.textContent = levelText;
     if (lvSpan.className !== levelClass) lvSpan.className = levelClass;
-    const title = s.tooltip || ("经验：" + Math.floor(s.xp).toLocaleString() + " / " + s.xpNeeded.toLocaleString() + "\n────────\n" + (SKILL_DESC[skillKey] || "提升此技能等级"));
+    const title = s.tooltip || ("经验：" + Math.floor(s.xp).toLocaleString() + " / " + s.xpNeeded.toLocaleString() + "\n────────\n" + (SKILL_DESC[skillKey] || "提升此技能等级") + (s.boosted ? "\n⚡ 增强剂临时 +" + (s.level - s.baseLevel) : ""));
     if (el.title !== title) el.title = title;
   });
   if (typeof renderCombatSkillGroup === "function") renderCombatSkillGroup();

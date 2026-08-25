@@ -337,6 +337,14 @@
     return (typeof v === "number") ? v : 0;
   }
 
+  // 安全读取研究系统状态层（避免对 research-state.js 的硬依赖）。
+  // 缺失时返回 null，调用方据此走安全回退（加成=0）。
+  function getResearchStateApi() {
+    if (typeof globalThis !== "undefined" && globalThis.ResearchState) return globalThis.ResearchState;
+    if (typeof window !== "undefined" && window.ResearchState) return window.ResearchState;
+    return null;
+  }
+
   // 激活条件：本体 >= 2 且 议事大厅已建成(等级 >= 1)。DLC 授权门禁：未授权则不激活
   // （不生成候选 / 不结算工资 / 不增加经验 / 不提供军团贡献）。接口缺失时视为放行，避免硬依赖。
   function isLegionSystemActive(state) {
@@ -354,11 +362,15 @@
     return (L && Array.isArray(L.npcs)) ? L.npcs.length : 0;
   }
 
-  // 总人数上限（含玩家本人）：6 + (大厅等级 - 1) + 科技等级，封顶 15。
+  // 总人数上限（含玩家本人）：6 + (大厅等级 - 1) + 研究加成(legionNpcCapacity)，封顶 15。
+  // 原 state.legion.technologyLevel 已不提供数值效果（仅为旧档兼容保留字段），
+  // 现统一经 ResearchState 读取研究效果。
   function getLegionNpcCapacity(state) {
     const hall = getHallLevel(state);
-    const tech = (state && state.legion) ? (state.legion.technologyLevel || 0) : 0;
-    let cap = 6 + (hall - 1) + tech;
+    const RS = getResearchStateApi();
+    const tech = RS ? RS.getResearchBonusRaw(state, "legionNpcCapacity") : 0;
+    let cap = 6 + (hall - 1) + (tech || 0);
+    if (!Number.isFinite(cap)) cap = 6 + (hall - 1);
     if (cap > 15) cap = 15;
     if (cap < 0) cap = 0;
     return cap;
@@ -465,10 +477,13 @@
   // —— 等级 / 经验 ——
   // LVn → LVn+1 所需经验
   function xpCostForLevel(n) { return 100 + 5 * (n - 1); }
-  // 等级上限：默认 20；每级科技 +5；最高 70（不写死到 NPC 数据）
+  // 等级上限：默认 20；研究加成(legionNpcLevelCap) 每点 +10；最高 70。
+  // 原 state.legion.technologyLevel 已不提供数值效果。
   function getLegionNpcLevelCap(state) {
-    const tech = (state && state.legion) ? (state.legion.technologyLevel || 0) : 0;
-    let cap = 20 + tech * 5;
+    const RS = getResearchStateApi();
+    const tech = RS ? RS.getResearchBonusRaw(state, "legionNpcLevelCap") : 0;
+    let cap = 20 + (tech || 0);
+    if (!Number.isFinite(cap)) cap = 20;
     if (cap > 70) cap = 70;
     if (cap < 20) cap = 20;
     return cap;
@@ -491,11 +506,18 @@
     }
     if (npc.level >= cap) npc.xp = 0; // 达上限不再累计
   }
+  // 研究经验乘子（仅作战学说 legionNpcXp）：1 + 研究加成 fraction。
+  // 缺失研究系统或军团未激活时返回 1（即不提供额外加成，安全回退）。
+  function getLegionNpcResearchXpMultiplier(state) {
+    const RS = getResearchStateApi();
+    if (!RS) return 1;
+    return 1 + RS.getResearchBonusValue(state, "legionNpcXp");
+  }
   // 纯计算：某 NPC 在 hours 内获得的经验（0 表示欠薪/未激活）
   function calculateLegionNpcXp(state, npc, hours, opts) {
     if (!isLegionSystemActive(state)) return 0;
     if (!npc || npc.salaryState !== "paid") return 0; // 仅工资正常时
-    const mult = getNpcXpMultiplier(state, npc);
+    const mult = getNpcXpMultiplier(state, npc) * getLegionNpcResearchXpMultiplier(state);
     return BASE_XP_PER_HOUR * (Number(hours) || 0) * mult;
   }
 
@@ -929,6 +951,7 @@
     getLegionNpcShipXpMultiplier: getLegionNpcShipXpMultiplier,
     getNpcXpMultiplier: getNpcXpMultiplier,
     getLegionNpcLevelCap: getLegionNpcLevelCap,
+    getLegionNpcResearchXpMultiplier: getLegionNpcResearchXpMultiplier,
     getLegionNpcSkillRawValue: getLegionNpcSkillRawValue,
     isLegionSystemActive: isLegionSystemActive,
     getHallLevel: getHallLevel,

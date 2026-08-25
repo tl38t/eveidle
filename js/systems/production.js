@@ -111,7 +111,7 @@ function getMiningArea() { return getMiningAreaByName(gameState.currentAction.ar
 function getRunningMiningArea() { return getMiningAreaByName(gameState.currentAction.startedArea || gameState.currentAction.area) || MINING_AREAS[0]; }
 function getMiningAreasForMode(mode) { return mode === "moon" ? MOON_MINING_AREAS : MINING_AREAS; }
 function getBestMiningArea(mode) {
-  const areas = getMiningAreasForMode(mode || "normal"); const lv = gameState.skills.mining.lvl;
+  const areas = getMiningAreasForMode(mode || "normal"); const lv = getEffectiveSkillLevel(gameState, "mining");
   let best = areas[0]; for (const area of areas) { if (lv >= area.level) best = area; else break; } return best;
 }
 
@@ -168,10 +168,10 @@ function getGasEfficiency() {
   }
   return base;
 }
-function getShipEngineeringEfficiency() { const lvl = gameState.skills.shipEngineering.lvl; return 1 * (1 + lvl * 0.02); }
+function getShipEngineeringEfficiency() { const lvl = getEffectiveSkillLevel(gameState, "shipEngineering"); return 1 * (1 + lvl * 0.02); }
 
 function getGasArea() { const name = gameState.currentAction.gasArea; return GAS_AREAS.find(a => a.name === name) || GAS_AREAS[0]; }
-function getBestGasArea() { const lv = gameState.skills.gasHarvesting.lvl; let best = GAS_AREAS[0]; for (const a of GAS_AREAS) { if (lv >= a.level) best = a; else break; } return best; }
+function getBestGasArea() { const lv = getEffectiveSkillLevel(gameState, "gasHarvesting"); let best = GAS_AREAS[0]; for (const a of GAS_AREAS) { if (lv >= a.level) best = a; else break; } return best; }
 
 // 伴生富集改装件（rig_mining_rich / rig_gas_rich）：采集周期结算的概率性基准矿奖励。
 // 在线（tick.js）与离线（offline.js）共用：读装配舰 rig 聚合几率（miningRichChance/gasRichChance）掷骰，

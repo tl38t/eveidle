@@ -10,7 +10,7 @@ const ProductionStateActions = {
     if (getMiningAreaByName(state.currentAction.area)) return { changed:false, reason:"already-valid" };
     const mode = state.currentAction.miningMode === "moon" ? "moon" : "normal";
     const areas = mode === "moon" ? MOON_MINING_AREAS : MINING_AREAS;
-    const level = Number(state.skills.mining && state.skills.mining.lvl) || 1;
+    const level = getEffectiveSkillLevel(state, "mining");
     let bestArea = areas[0];
     for (const area of areas) { if (level >= area.level) bestArea = area; else break; }
     state.currentAction.area = bestArea.name;
@@ -21,7 +21,7 @@ const ProductionStateActions = {
   selectMiningArea(state, areaName, now) {
     const area = getMiningAreaByName(areaName);
     if (!area) return { changed:false, reason:"unknown-area" };
-    if ((state.skills.mining.lvl || 1) < area.level) return { changed:false, reason:"level-locked" };
+    if (getEffectiveSkillLevel(state, "mining") < area.level) return { changed:false, reason:"level-locked" };
     const action = state.currentAction;
     const prevArea = action.area;
     action.area = area.name;
@@ -45,7 +45,7 @@ const ProductionStateActions = {
     const savedName = mode === "moon" ? action.moonMiningArea : action.normalMiningArea;
     const savedArea = getMiningAreaByName(savedName);
     const areas = mode === "moon" ? MOON_MINING_AREAS : MINING_AREAS;
-    const level = Number(state.skills.mining && state.skills.mining.lvl) || 1;
+    const level = getEffectiveSkillLevel(state, "mining");
     let bestArea = areas[0];
     for (const area of areas) { if (level >= area.level) bestArea = area; else break; }
     action.area = savedArea && savedArea.mode === mode ? savedArea.name : bestArea.name;
@@ -56,7 +56,7 @@ const ProductionStateActions = {
   selectSmeltingRecipe(state, areaName, now) {
     const recipe = SMELTING_RECIPES.find(item => item.name === areaName);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
-    if ((state.skills.refining.lvl || 1) < recipe.level) return { changed:false, reason:"level-locked" };
+    if (getEffectiveSkillLevel(state, "refining") < recipe.level) return { changed:false, reason:"level-locked" };
     const action = state.currentAction;
     action.smeltingArea = recipe.name;
     if (!action.active) {
@@ -70,7 +70,7 @@ const ProductionStateActions = {
   selectGasArea(state, areaName, now) {
     const area = GAS_AREAS.find(item => item.name === areaName);
     if (!area) return { changed:false, reason:"unknown-area" };
-    if ((state.skills.gasHarvesting.lvl || 1) < area.level) return { changed:false, reason:"level-locked" };
+    if (getEffectiveSkillLevel(state, "gasHarvesting") < area.level) return { changed:false, reason:"level-locked" };
     const action = state.currentAction;
     const prevArea = action.gasArea;
     action.gasArea = area.name;
@@ -171,7 +171,7 @@ const ManufacturingStateActions = {
     const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === state.currentAction.shipCompTarget) || SHIP_COMPONENT_RECIPES[0];
     // 精密配给剂（考古重制 Phase B · precision_rationing）：激活期间配方等级门槛 +5（组件/总装同公式）。
     const shipBuildingQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"component" }) : { levelGate: recipe.level };
-    if ((state.skills.shipEngineering.lvl || 1) < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
+    if (getEffectiveSkillLevel(state, "shipEngineering") < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
     // 船坞等级门槛
     if (typeof canManufactureAtShipyard === "function" && !canManufactureAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
     Object.assign(state.currentAction, {
@@ -192,7 +192,7 @@ const ManufacturingStateActions = {
     if (!hasBlueprint) return { changed:false, reason:"blueprint-locked" };
     // 精密配给剂（考古重制 Phase B · precision_rationing）：激活期间配方等级门槛 +5（组件/总装同公式）。
     const shipBuildingQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"assembly" }) : { levelGate: recipe.level };
-    if ((state.skills.shipEngineering.lvl || 1) < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
+    if (getEffectiveSkillLevel(state, "shipEngineering") < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
     // 船坞等级门槛
     if (typeof canAssembleAtShipyard === "function" && !canAssembleAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
     if (getShipAssemblyMaxCyclesFromState(state, recipe) < 1) return { changed:false, reason:"insufficient-components" };
@@ -220,7 +220,7 @@ const ManufacturingStateActions = {
     const recipes = EQUIPMENT_ENGINEERING_RECIPES.filter(recipe => recipe.category === category.id);
     const current = getEquipmentEngineeringRecipe(state.currentAction.equipEngTarget || "t1_mining_laser");
     if (!recipes.some(recipe => recipe.id === current.id)) {
-      const next = recipes.find(recipe => (state.skills.equipmentEngineering.lvl || 1) >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || recipes[0];
+      const next = recipes.find(recipe => getEffectiveSkillLevel(state, "equipmentEngineering") >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || recipes[0];
       if (next) state.currentAction.equipEngTarget = next.id;
     }
     state._dirty = true;
@@ -239,7 +239,7 @@ const ManufacturingStateActions = {
       recipe.category === "rigs" && recipe.stackGroup === series);
     const current = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
     if (!filtered.some(recipe => recipe.id === current.id)) {
-      const next = filtered.find(recipe => (state.skills.equipmentEngineering.lvl || 1) >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || filtered[0];
+      const next = filtered.find(recipe => getEffectiveSkillLevel(state, "equipmentEngineering") >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || filtered[0];
       if (next) action.equipEngTarget = next.id;
     }
     state._dirty = true;
@@ -260,7 +260,7 @@ const ManufacturingStateActions = {
       recipe.category === categoryId && (subTab === "all" || getEquipEngSubtabId(recipe) === subTab));
     const current = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
     if (!filtered.some(recipe => recipe.id === current.id)) {
-      const next = filtered.find(recipe => (state.skills.equipmentEngineering.lvl || 1) >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || filtered[0];
+      const next = filtered.find(recipe => getEffectiveSkillLevel(state, "equipmentEngineering") >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe)) || filtered[0];
       if (next) action.equipEngTarget = next.id;
     }
     state._dirty = true;
@@ -328,7 +328,14 @@ const BoosterStateActions = {
     const action = state.currentAction;
     action.boosterRecipeTarget = recipe.id;
     const series = BOOSTER_SERIES[recipe.series];
-    if (series) action.boosterCategory = series.category;
+    if (series) {
+      const cats = Array.isArray(series.category) ? series.category : [series.category];
+      // 共享分类的瓶（如精密配给剂同时归于舰船工程与装备制造）：保持当前所在标签，
+      // 避免从装备制造点击它时强制跳回 category[0]（舰船工程）。
+      if (!action.boosterCategory || !cats.includes(action.boosterCategory)) {
+        action.boosterCategory = cats[0];
+      }
+    }
     state._dirty = true;
     return { changed:true, recipe };
   },
@@ -338,7 +345,7 @@ const BoosterStateActions = {
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
     if (!isBoosterRecipeUnlocked(recipe)) {
       // 区分失败原因：等级不足 vs 缺蓝图（考古重做的新增 24 张 requiresBlueprint 配方）
-      const lvl = (state.skills && state.skills.boosterEngineering && state.skills.boosterEngineering.lvl) || 1;
+      const lvl = getEffectiveSkillLevel(state, "boosterEngineering");
       const reason = (lvl < recipe.level) ? "level-locked" : "blueprint-locked";
       return { changed:false, reason };
     }
@@ -952,7 +959,7 @@ function canStartArchaeology(state, now) {
   const arch = state.archaeology;
   const site = getArchaeologySite(arch.activeSiteId);
   if (!site) return { ok:false, reason:"no-site" };
-  if ((state.skills.archaeology.lvl || 1) < site.level) return { ok:false, reason:"level-locked" };
+  if (getEffectiveSkillLevel(state, "archaeology") < site.level) return { ok:false, reason:"level-locked" };
   // 按舰船实例隔离的维修态：仅当前编入的考古舰实例维修中会阻断启动（不再使用全局 repairUntil）。
   const archInstanceId = state.shipAssignments && state.shipAssignments.archaeology;
   const archRepair = (arch.repairsByInstanceId && archInstanceId) ? arch.repairsByInstanceId[archInstanceId] : null;
@@ -1299,7 +1306,7 @@ const ShellStateActions = {
     if (iskCost > 0) ResourceRegistry.spend(state, "currency:isk", iskCost);
 
     const fromLevel = normalizeShipEnhancementLevel(instance.enhancementLevel);
-    const skillLevel = Number(state.skills.shipEngineering && state.skills.shipEngineering.lvl) || 1;
+    const skillLevel = getEffectiveSkillLevel(state, "shipEngineering");
     const chance = getShipEnhancementSuccessChance(skillLevel, tier.level, fromLevel);
     const roll = Number.isFinite(Number(randomValue)) ? Math.max(0, Math.min(0.999999999, Number(randomValue))) : Math.random();
     const success = roll < chance;
@@ -1806,7 +1813,7 @@ function enhanceEquipment(state, targetRef, randomValue) {
   if (!eq) return { changed:false, reason:"unknown-equipment" };
   if (eq.slot === "rig") return { changed:false, reason:"rig-not-enhanceable" }; // 改装件不参与强化
 
-  const engLevel = Number(state.skills && state.skills.equipmentEngineering && state.skills.equipmentEngineering.lvl) || 1;
+  const engLevel = getEffectiveSkillLevel(state, "equipmentEngineering");
   const currentLevel = targetInstance ? Math.max(0, Number(targetInstance.enhancementLevel) || 0) : 0;
   const display = getEquipmentEnhancementDisplayState(eq, currentLevel, engLevel);
   const needDonor = Boolean(display.extra.sameTypeItemId);
@@ -1944,11 +1951,12 @@ const StationStateActions = {
       if (!hasBp) return { changed:false, reason:"blueprint-locked" };
     }
 
-    // 检查配方等级门槛
-    const eeLvl = (lineId === "equipment") ? (Number(state.skills.equipmentEngineering && state.skills.equipmentEngineering.lvl) || 1) : 99;
-    const bLvl = (lineId === "booster") ? (Number(state.skills.boosterEngineering && state.skills.boosterEngineering.lvl) || 1) : 99;
-    const sLvl = (lineId === "smelting") ? (Number(state.skills.refining && state.skills.refining.lvl) || 1) : 99;
-    const levelCheck = (lineId === "equipment") ? (eeLvl < recipe.level) : (lineId === "booster") ? (bLvl < recipe.level) : (lineId === "smelting") ? (sLvl < recipe.level) : false;
+    // 检查配方等级门槛（装备自动线含配给剂激活期间的 +N 门槛）
+    const eeL  = (lineId === "equipment") ? getEffectiveSkillLevel(state, "equipmentEngineering") : 99;
+    const bLvl = (lineId === "booster") ? getEffectiveSkillLevel(state, "boosterEngineering") : 99;
+    const sLvl = (lineId === "smelting") ? getEffectiveSkillLevel(state, "refining") : 99;
+    const eqGate = (lineId === "equipment") ? ((typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, recipe).levelGate : (Number(recipe.level) || 0)) : 99;
+    const levelCheck = (lineId === "equipment") ? (eeLvl < eqGate) : (lineId === "booster") ? (bLvl < recipe.level) : (lineId === "smelting") ? (sLvl < recipe.level) : false;
     if (levelCheck) return { changed:false, reason:"level-locked" };
 
     // 如果正在运行另一个目标，拒绝
@@ -1968,6 +1976,7 @@ const StationStateActions = {
     line.selectedTargetId = targetId;
     line.stoppedReason = null;
     line.progress = 0;
+    line.producedQty = 0;
     line.lastTick = now;
     state._dirty = true;
 
@@ -2000,6 +2009,31 @@ const StationStateActions = {
     }
 
     return { changed:true, lineId, targetId };
+  },
+
+  // 设置自动线生产数量（targetQuantity）：0/≤0/空 = 无限（旧行为，消耗全部原料）。
+  // 正整数 = 本次目标产量（按产出物件数），达到后自动停止。运行中若已达标新目标则立即停。
+  setAutoLineQuantity(state, lineId, quantity) {
+    if (!AUTO_LINE_IDS.includes(lineId)) return { changed:false, reason:"unknown-line" };
+    const s = state.station;
+    if (!s || !s.autoLines || !s.autoLines[lineId]) return { changed:false, reason:"no-state" };
+    const line = s.autoLines[lineId];
+    const q = Number(quantity);
+    const target = (Number.isFinite(q) && q >= 1) ? Math.floor(q) : 0; // 0 = 无限
+    line.targetQuantity = target;
+    // 运行中且已达标新目标：立即停（避免继续生产）
+    if (line.enabled && !line.stoppedReason && target > 0 && (line.producedQty || 0) >= target) {
+      line.enabled = false;
+      line.stoppedReason = "target-reached";
+      if (typeof GameEvents !== "undefined") {
+        GameEvents.emit("station:autoLineStopped", {
+          lineId, targetId:line.startedTargetId, reason:"target-reached",
+          quantity:line.producedQty, xp:0, offline:false
+        }, { source:"station", offline:false });
+      }
+    }
+    state._dirty = true;
+    return { changed:true, lineId, targetQuantity:target };
   },
 
   // 一键补给维护燃料
@@ -2200,6 +2234,7 @@ const StationStateActions = {
   if (action.type === "station/selectAutoLineTarget") return StationStateActions.selectAutoLineTarget(state, action.lineId, action.targetId);
   if (action.type === "station/startAutoLine") return StationStateActions.startAutoLine(state, action.lineId, actionTime);
   if (action.type === "station/stopAutoLine") return StationStateActions.stopAutoLine(state, action.lineId, actionTime);
+  if (action.type === "station/setAutoLineQuantity") return StationStateActions.setAutoLineQuantity(state, action.lineId, action.quantity);
   if (action.type === "station/refillMaintenance") return StationStateActions.refillMaintenance(state, actionTime);
   if (action.type === "station/startBodyConstruction") return StationStateActions.startBodyConstruction(state, actionTime);
   if (action.type === "station/startBuildingConstruction") return StationStateActions.startBuildingConstruction(state, action.buildingId, actionTime);
@@ -2277,7 +2312,7 @@ const ArchaeologyStateActions = {
     const site = getArchaeologySite(siteId);
     if (!site) return { changed:false, reason:"unknown-site" };
     if (state.currentAction.active && state.currentAction.skill === "archaeology") return { changed:false, reason:"action-running" };
-    if ((state.skills.archaeology.lvl || 1) < site.level) return { changed:false, reason:"level-locked" };
+    if (getEffectiveSkillLevel(state, "archaeology") < site.level) return { changed:false, reason:"level-locked" };
     state.archaeology.activeSiteId = site.id;
     state._dirty = true;
     return { changed:true, site };
@@ -2286,7 +2321,7 @@ const ArchaeologyStateActions = {
     const probe = getArchaeologyProbe(probeId);
     if (!probe) return { changed:false, reason:"unknown-probe" };
     if (state.currentAction.active && state.currentAction.skill === "archaeology") return { changed:false, reason:"action-running" };
-    if ((state.skills.archaeology.lvl || 1) < probe.level) return { changed:false, reason:"level-locked" };
+    if (getEffectiveSkillLevel(state, "archaeology") < probe.level) return { changed:false, reason:"level-locked" };
     state.archaeology.activeProbeId = probe.id;
     state._dirty = true;
     return { changed:true, probe };

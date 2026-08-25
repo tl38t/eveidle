@@ -892,7 +892,7 @@ function getArchaeologyDisplayState(state, now) {
     const fuelStock = ResourceRegistry.get(state, "consumable:fuel");
     const fuelState = getArchaeologyFuelCostState(state, site, instance);
     const probeState = getArchaeologyProbeCostState(state);
-    const canStart = isArchaeologyShip && (state.skills.archaeology.lvl || 1) >= site.level
+    const canStart = isArchaeologyShip && getEffectiveSkillLevel(state, "archaeology") >= site.level
       && probeStock >= probeState.chargedProbe && fuelStock >= fuelState.chargedFuel && !repairing && !interference && !isArchActive;
     // 地点 profile
     const profile = getSiteEffectiveProfile(site, tier) || {};
@@ -957,10 +957,10 @@ function getArchaeologyDisplayState(state, now) {
       probeSavedNext: probeState.savedWholeProbe,
       interferenceSec,
       effectiveBacklash,
-      levelLocked: (state.skills.archaeology.lvl || 1) < site.level,
+      levelLocked: getEffectiveSkillLevel(state, "archaeology") < site.level,
       actionLocked: isArchActive && effectiveSiteId !== site.id,
       runningTarget: isArchActive && effectiveSiteId === site.id,
-      locked: (state.skills.archaeology.lvl || 1) < site.level || (isArchActive && effectiveSiteId !== site.id),
+      locked: getEffectiveSkillLevel(state, "archaeology") < site.level || (isArchActive && effectiveSiteId !== site.id),
       selected: effectiveSiteId === site.id,
       canStart,
       drops: {
@@ -1002,13 +1002,13 @@ function getArchaeologyDisplayState(state, now) {
   }
   const shipFuelEfficiency = (config && Number.isFinite(config.fuelEfficiency)) ? config.fuelEfficiency : 1;
 
-  const probes = ARCHAEOLOGY_PROBES.map(probe => ({
+  const probes = ARCHAEOLOGY_ALL_PROBES.map(probe => ({
     id: probe.id, name: probe.name, level: probe.level, scanBonus: probe.scanBonus,
     stock: ResourceRegistry.get(state, "probe:" + probe.id),
     selected: effectiveProbeId === probe.id,
-    levelLocked: (state.skills.archaeology.lvl || 1) < probe.level,
+    levelLocked: getEffectiveSkillLevel(state, "archaeology") < probe.level,
     actionLocked: isArchActive,
-    locked: (state.skills.archaeology.lvl || 1) < probe.level || isArchActive
+    locked: getEffectiveSkillLevel(state, "archaeology") < probe.level || isArchActive
   }));
 
   // 文物库存（按类别聚合）

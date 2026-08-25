@@ -58,6 +58,31 @@
     return node.durationByLevel[targetLevel - 1];
   }
 
+  // 军团研究分支外部门禁（可用性 / 内容门禁，非前置科技）：
+  //   本体等级 >= 2 且 军团议事大厅已建成(等级 >= 1) 且 军团 DLC 授权通过。
+  //   DLC 接口缺失时视为放行（避免硬依赖；接入正式 DLC 后由该接口真实判定）。
+  //   legion 分支锁定时：不能开始 / 不能入队；主研究树完全不受影响。
+  function isLegionResearchUnlocked(state) {
+    const bodyLevel = state && state.station ? (state.station.bodyLevel || 0) : 0;
+    if (bodyLevel < 2) return false;
+    const b = state && state.station && state.station.buildings;
+    const hall = b && b.legion_hall;
+    if (!(typeof hall === "number" && hall >= 1)) return false;
+    if (typeof getStationDlcNpcWorkers === "function" && !getStationDlcNpcWorkers(state)) return false;
+    return true;
+  }
+
+  // 人类可读的未解锁原因（供 UI 展示）；已解锁返回空串。
+  function getLegionResearchLockReason(state) {
+    const bodyLevel = state && state.station ? (state.station.bodyLevel || 0) : 0;
+    if (bodyLevel < 2) return "需要 本体等级 ≥ 2（当前 " + bodyLevel + "）";
+    const b = state && state.station && state.station.buildings;
+    const hall = b && b.legion_hall;
+    if (!(typeof hall === "number" && hall >= 1)) return "需要建造 军团大厅（legion_hall）≥ 1 级";
+    if (typeof getStationDlcNpcWorkers === "function" && !getStationDlcNpcWorkers(state)) return "需要 军团 DLC 授权";
+    return "";
+  }
+
   // -------------------------------------------------------------------------
   // 持久化标记（批次 C 返修）：成功状态变更后置 state._dirty=true，
   // 沿用现有 setInterval 自动保存（约 5s 周期），不在此处直接调用 SaveManager。
@@ -154,6 +179,10 @@
     if (!node) return { ok: false, reason: "UNKNOWN_TECH" };
     if (!Number.isInteger(targetLevel) || targetLevel < 1 || targetLevel > node.maxLevel) {
       return { ok: false, reason: "LEVEL_OUT_OF_RANGE" };
+    }
+    // 军团分支外部门禁：未解锁则禁止入队（不影响主研究树）
+    if (node.contentPack === "legion" && !isLegionResearchUnlocked(state)) {
+      return { ok: false, reason: "LEGION_LOCKED" };
     }
 
     const projected = buildProjectedResearchLevels(state);
@@ -280,6 +309,10 @@
     if (!node) return { ok: false, reason: "UNKNOWN_TECH" };
     if (!Number.isInteger(targetLevel) || targetLevel < 1 || targetLevel > node.maxLevel) {
       return { ok: false, reason: "LEVEL_OUT_OF_RANGE" };
+    }
+    // 军团分支外部门禁：未解锁则禁止开始（不影响主研究树）
+    if (node.contentPack === "legion" && !isLegionResearchUnlocked(state)) {
+      return { ok: false, reason: "LEGION_LOCKED" };
     }
     const completed = (research.completedLevels && typeof research.completedLevels === "object" && !Array.isArray(research.completedLevels))
       ? research.completedLevels : {};
@@ -750,6 +783,8 @@
     buildProjectedResearchLevels,
     enqueueResearch,
     enqueueResearchCascade,
+    isLegionResearchUnlocked,
+    getLegionResearchLockReason,
     startResearch,
     startNextFromQueue,
     // 批次 C：在线/离线统一时间结算

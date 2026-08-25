@@ -215,10 +215,13 @@ function getSidebarDisplayState(state) {
           "当前：⌊(" + combatLevel.attack + " + " + combatLevel.defense + ") ÷ 2⌋ = Lv." + combatLevel.level
       };
     }
-    const level = Number(skill.lvl) || 1;
+    const base = Number(skill.lvl) || 1;
+    const level = (typeof getEffectiveSkillLevel === "function") ? getEffectiveSkillLevel(state, key) : base;
     return {
       key,
       level,
+      baseLevel: base,
+      boosted: level > base,
       xp:Number(skill.xp) || 0,
       xpNeeded:xpForLevel(level + 1),
       levelClass:level >= 60 ? "lv-high" : level >= 20 ? "lv-mid" : "lv-low"
@@ -278,12 +281,13 @@ function getCurrentActivityDisplayState(state, now) {
   const renderNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   const duration = key === "combat" ? 0 : (Number(action.refDuration) || 0);
   const progress = getProgressDisplayState(action, key, duration, renderNow);
+  const effLevel = (typeof getEffectiveSkillLevel === "function") ? getEffectiveSkillLevel(state, key) : (Number(skill.lvl) || 1);
   return {
     active:true,
     key,
-    level:Number(skill.lvl) || 1,
+    level:effLevel,
     detail,
-    text:(icons[key] || "▶") + " " + (SKILL_LABEL[key] || key) + " Lv." + (Number(skill.lvl) || 1) + " · " + detail + " · 进行中",
+    text:(icons[key] || "▶") + " " + (SKILL_LABEL[key] || key) + " Lv." + effLevel + " · " + detail + " · 进行中",
     progressPercent:progress.percent,
     progressActive:progress.active
   };
@@ -301,7 +305,7 @@ function getProductionEfficiencyState(state, actionKey) {
   const secondaryKey = isMining ? "miningBonus" : "gasBonus";
   const amplifierKey = isMining ? "miningLaserEfficiency" : "gasLaserEfficiency";
   const skill = state.skills[skillKey] || { lvl:1 };
-  const level = Number(skill.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, skillKey);
   const skillMultiplier = 1 + level * 0.02;
   const assigned = getAssignedShipState(state, actionKey);
   const fitting = getFittingFromInstance(assigned.instance);
@@ -474,7 +478,7 @@ function getMoonMiningAccessState(state) {
 }
 
 function getMiningRequirementState(state, area) {
-  const level = Number(state.skills.mining && state.skills.mining.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, "mining");
   if (!area || level < area.level) return { available:false, text:"需要采矿 Lv." + (area ? area.level : 1) };
   if (area.mode === "moon") {
     const access = getMoonMiningAccessState(state);
@@ -495,7 +499,7 @@ function getMiningDisplayState(state, now) {
   const progress = getProgressDisplayState(action, "mining", runningDuration, now);
   const targetChanged = progress.active && current.name !== running.name;
   const requirement = getMiningRequirementState(state, current);
-  const level = Number(state.skills.mining && state.skills.mining.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, "mining");
   // Batch L：显示层统一替换星带名（内部 area.name 仍是 action.area / queue target 逻辑键，保持原值）
   return {
     kind:"mining",
@@ -537,7 +541,7 @@ function getSmeltingDisplayState(state, now) {
   const action = state.currentAction;
   const current = SMELTING_RECIPES.find(recipe => recipe.name === action.smeltingArea) || SMELTING_RECIPES[0];
   const running = SMELTING_RECIPES.find(recipe => recipe.name === (action.startedSmeltingArea || action.smeltingArea)) || current;
-  const level = Number(state.skills.refining && state.skills.refining.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, "refining");
   const assigned = getAssignedShipState(state, "refining");
   const shipBonus = assigned.config && assigned.config.bonuses ? (assigned.config.bonuses.smeltingSpeed || 0) : 0;
   // 改装件冶炼速度加成（rig smeltingSpeed，加法并入船体加成）
@@ -594,7 +598,7 @@ function getGasDisplayState(state, now) {
   const action = state.currentAction;
   const current = getAreaByName(GAS_AREAS, action.gasArea);
   const running = getAreaByName(GAS_AREAS, action.startedGasArea || action.gasArea);
-  const level = Number(state.skills.gasHarvesting && state.skills.gasHarvesting.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, "gasHarvesting");
   const efficiency = getProductionEfficiencyState(state, "gasHarvesting");
   const progress = getProgressDisplayState(action, "gasHarvesting", running.baseTime / efficiency.total, now);
   const targetChanged = progress.active && current.name !== running.name;
@@ -650,8 +654,9 @@ function getEquipmentOwnedCountFromState(state, recipe) {
 }
 
 function getEquipmentMaxCyclesFromState(state, recipe) {
+  const cost = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, recipe).cost : (recipe.cost || {});
   let max = Infinity;
-  for (const [material, quantity] of Object.entries(recipe.cost || {})) {
+  for (const [material, quantity] of Object.entries(cost)) {
     max = Math.min(max, Math.floor(getMaterialStockFromState(state, material) / quantity));
   }
   if (recipe.inputEquipment) {
@@ -719,7 +724,15 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.title = icons.equipmentEngineering + " " + (SKILL_LABEL.equipmentEngineering || "装备工程");
     result.duration = recipe.time / display.efficiency;
     result.requirements = [
-      ...(display.detail.equipmentInputs || []).map(item => ({ resourceId:"equipment:" + item.itemId, name:item.name, quantity:item.quantity, stock:item.stock, enough:item.enough })),
+      ...(display.detail.equipmentInputs
+        ? [{
+            resourceId:"equipment:" + display.detail.equipmentInputs.itemId,
+            name:display.detail.equipmentInputs.name,
+            quantity:display.detail.equipmentInputs.quantity,
+            stock:display.detail.equipmentInputs.total,
+            enough:display.detail.equipmentInputs.total >= display.detail.equipmentInputs.quantity
+          }]
+        : []),
       ...(display.detail.materials || []).map(item => ({ resourceId:ResourceRegistry.resolveMaterialIds(item.material)[0] || item.material, name:item.material, displayName:getResourceDisplayName(item.material), quantity:item.quantity, stock:item.stock, enough:item.enough }))
     ];
     // 超量预排：放开“按当前材料算上限”的硬限制（见 refining 分支说明）。
@@ -886,7 +899,7 @@ function getActionConfirmationDisplayState(state, target, now) {
 // 研究批次 G：kind = "component" | "assembly" 时追加科研乘子（组件只吃 shipComp，总装只吃 shipAsm，
 // 两者共享 allMfg 根加成但互不串味）；kind 省略时科研乘子为 1，保持既有调用点行为不变。
 function getShipEngineeringSpeedBreakdown(state, kind) {
-  const lvl = state && state.skills && state.skills.shipEngineering ? Number(state.skills.shipEngineering.lvl) : NaN;
+  const lvl = getEffectiveSkillLevel(state, "shipEngineering");
   let skillMultiplier = 1 + lvl * 0.02;
   if (!Number.isFinite(skillMultiplier) || skillMultiplier <= 0) skillMultiplier = 1;
   let shipyardMultiplier = (typeof getShipyardSpeedMultiplier === "function") ? Number(getShipyardSpeedMultiplier(state)) : 1;
@@ -939,7 +952,7 @@ function getShipAssemblyEligibility(state, recipe) {
     assemblyUnlocked:false, canStartAssembly:false
   };
   if (!recipe) return fallback;
-  const level = Number((state.skills && state.skills.shipEngineering && state.skills.shipEngineering.lvl) || 1);
+  const level = getEffectiveSkillLevel(state, "shipEngineering");
   const owned = new Set(state.ownedBlueprints || []);
   // 等级必须使用 getShipBuildingQuote 返回的实际 levelGate（兼容增强剂带来的等级门槛变化）。
   const requiresBlueprint = shipAssemblyRequiresBlueprint(recipe);
@@ -973,7 +986,7 @@ function getShipAssemblyEligibility(state, recipe) {
 function getShipEngineeringDisplayState(state, now) {
   const action = state.currentAction;
   const skill = state.skills.shipEngineering || { lvl:1, xp:0 };
-  const level = Number(skill.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, "shipEngineering");
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
   const speed = getShipEngineeringSpeedBreakdown(state);
@@ -1217,13 +1230,15 @@ function getShipEngineeringSpeedBreakdownText(display) {
 function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const action = state.currentAction;
   const skill = state.skills.equipmentEngineering || { lvl:1, xp:0 };
-  const level = Number(skill.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, "equipmentEngineering");
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(level + 1);
   // 研究批次 G：装备工程科研唯一乘子 = 1 + (allMfg + equip)；与 tick/离线的 getEquipEngEfficiency 同一 API、同一结果
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "equip"]) : 1;
-  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state, "equipEng") * researchMultiplier;
+  // 装备总装协调剂（equipmentSpeed）：激活期间缩短装备制造耗时，与舰船 shipSpeed 同一乘区模型。
+  const equipmentBoosterSpeed = (typeof getBoosterEffectState === "function") ? (getBoosterEffectState(state).equipmentSpeedMultiplier || 1) : 1;
+  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state, "equipEng") * researchMultiplier * equipmentBoosterSpeed;
   const requestedRecipe = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
   const savedCategory = EQUIPMENT_ENGINEERING_CATEGORIES.find(category => category.id === action.equipEngCategory);
   const category = savedCategory || getEquipEngCategoryDefinition(requestedRecipe.category);
@@ -1271,7 +1286,11 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningRecipe.time / efficiency };
   const selectedEquipment = selectedRecipe.output.type === "equipment" ? EQUIPMENT_DB[selectedRecipe.output.itemId] : null;
   const selectedHasRequiredBlueprint = equipmentRecipeHasRequiredBlueprint(state, selectedRecipe);
-  const detailMaterials = Object.entries(selectedRecipe.cost || {}).map(([material, quantity]) => {
+  // 精密配给剂（舰船/装备制造通用减料）报价：激活期间材料成本×0.9、配方等级门槛+N
+  const eqQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, selectedRecipe) : { cost: selectedRecipe.cost || {}, levelGate: selectedRecipe.level };
+  const runningQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, runningRecipe) : { cost: runningRecipe.cost || {}, levelGate: runningRecipe.level };
+  const activeGate = Math.max(0, eqQuote.levelGate - selectedRecipe.level); // 激活期间额外门槛（+0 未激活）
+  const detailMaterials = Object.entries(eqQuote.cost).map(([material, quantity]) => {
     const stock = getMaterialStockFromState(state, material);
     // material 保留内部键（namespace:itemId 或中文名），displayName 供 UI 展示（内部键解析为真实中文名）
     return { material, displayName:getResourceDisplayName(material), quantity, stock, enough:stock >= quantity };
@@ -1302,8 +1321,9 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     level,
     xp,
     xpNeeded,
-    xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
+    xpPercent:Math.min( 100, Math.floor(xp / xpNeeded * 100)),
     efficiency,
+    boosterSpeedMultiplier: equipmentBoosterSpeed,
     stationLogisticsMultiplier: getStationLogisticsMultiplier(state),
     stationLogistics: (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : null,
     stationLogisticsBonusRate: getStationLogisticsMultiplier(state) - 1,
@@ -1320,8 +1340,8 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     } : null,
     subTabs: subTabs,
     visibleCount:visibleRecipes.length,
-    selectedRecipe:{ ...selectedRecipe, cost:{ ...(selectedRecipe.cost || {}) }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output }, unlocked:level >= selectedRecipe.level && selectedHasRequiredBlueprint, hasRequiredBlueprint:selectedHasRequiredBlueprint },
-    runningRecipe:{ ...runningRecipe, cost:{ ...(runningRecipe.cost || {}) }, inputEquipment:runningRecipe.inputEquipment ? { ...runningRecipe.inputEquipment } : null, output:{ ...runningRecipe.output } },
+    selectedRecipe:{ ...selectedRecipe, cost:{ ...eqQuote.cost }, inputEquipment:selectedRecipe.inputEquipment ? { ...selectedRecipe.inputEquipment } : null, output:{ ...selectedRecipe.output }, unlocked:level >= selectedRecipe.level + activeGate && selectedHasRequiredBlueprint, hasRequiredBlueprint:selectedHasRequiredBlueprint },
+    runningRecipe:{ ...runningRecipe, cost:{ ...runningQuote.cost }, inputEquipment:runningRecipe.inputEquipment ? { ...runningRecipe.inputEquipment } : null, output:{ ...runningRecipe.output } },
     recipes:visibleRecipes.map(recipe => {
       const equipment = recipe.output.type === "equipment" ? EQUIPMENT_DB[recipe.output.itemId] : null;
       const attributes = equipment
@@ -1341,7 +1361,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
         attributes:attributes || "基础制造配方",
         requiresBlueprint:Boolean(recipe.requiresBlueprint),
         hasRequiredBlueprint:equipmentRecipeHasRequiredBlueprint(state, recipe),
-        unlocked:level >= recipe.level && equipmentRecipeHasRequiredBlueprint(state, recipe),
+        unlocked:level >= recipe.level + activeGate && equipmentRecipeHasRequiredBlueprint(state, recipe),
         selected:recipe.id === selectedRecipe.id,
         actualTime:recipe.time / efficiency,
         ownedCount:getEquipmentOwnedCountFromState(state, recipe)
@@ -1383,7 +1403,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
 function getBoosterManufacturingDisplayState(state, now) {
   const action = state.currentAction;
   const skill = state.skills.boosterEngineering || { lvl:1, xp:0 };
-  const level = Number(skill.lvl) || 1;
+  const level = getEffectiveSkillLevel(state, "boosterEngineering");
   const xp = Number(skill.xp) || 0;
   const xpRequired = xpForLevel(level + 1);
   // 研究批次 G：增强剂制造科研唯一乘子 = 1 + (allMfg + booster)；与 tick/离线的 getBoosterEfficiency 同一 API、同一结果
@@ -1406,7 +1426,9 @@ function getBoosterManufacturingDisplayState(state, now) {
 
   const filteredRecipes = BOOSTER_RECIPES.filter(recipe => {
     const series = BOOSTER_SERIES[recipe.series];
-    if (!series || series.category !== categoryId) return false;
+    if (!series) return false;
+    const cats = Array.isArray(series.category) ? series.category : [series.category];
+    if (!cats.includes(categoryId)) return false;
     if (qualityFilter !== "all" && recipe.quality !== qualityFilter) return false;
     return true;
   });
@@ -1888,7 +1910,11 @@ function getCombatDisplayState(state, now) {
   const enemies = Array.isArray(combat.enemies) ? combat.enemies : [];
   const targetIndex = target ? Math.max(0, enemies.indexOf(target)) : -1;
   const derivedMaxHp = getCombatMaxHpFromState(state, { now, zoneId:zone.id });
-  const maxHp = combat.maxHp && Number.isFinite(combat.maxHp.structure) ? { ...combat.maxHp } : { ...derivedMaxHp };
+  // 修复：maxHp 也必须像 hp 一样只在「战斗中」(combat.active) 使用缓存的 combat.maxHp。
+  // 旧逻辑只要 combat.maxHp 存在（任何一场打过的战斗都会留缓存）就优先用旧值，
+  // 导致切换出战舰后待命页仍显示上一次战斗的（旧舰）上限，强化/换舰在战斗页"看起来不生效"。
+  // 待命/出战前页面必须按当前出战舰实时重算 derivedMaxHp，才能反映强化与换舰。
+  const maxHp = combat.active && combat.maxHp && Number.isFinite(combat.maxHp.structure) ? { ...combat.maxHp } : { ...derivedMaxHp };
   // 非战斗态下 combat.hp 是上一场交战的残留（可能 structure=0），不应作为舰体当前血量展示。
   // 待命/战斗前页面应显示满血（准备出战）；战斗中才使用 combat.hp 实时受损值。
   const hp = combat.active && combat.hp && Number.isFinite(combat.hp.structure) ? { ...combat.hp } : { ...maxHp };
@@ -2306,6 +2332,7 @@ function computeCargoSortMeta(item, componentLevelByName){
       subRank = 3; subLabel = "容器"; primary = sizeOrder[size] != null ? sizeOrder[size] : 1;
     }
     else if(id && id.indexOf("booster:") === 0){ subRank = 4; subLabel = "增强剂"; primary = 0; secondary = nm; }
+    else if(id && id.indexOf("probe:") === 0){ subRank = 5; subLabel = "考古探针"; primary = 0; secondary = nm; }
     else { subRank = 99; subLabel = "其它"; secondary = nm; }
   } else if(cat === "equipment"){
     if(item.isEquipment){
@@ -2442,6 +2469,19 @@ function getCargoDisplayState(state, filter) {
           if (q > 0) out[r.name] = { qty: q, id: r.itemId };
         }
         return out;
+      })(),
+      // 考古探针（probe: 命名空间，含 3 基础 + 2 复原）：并入「消耗品」标签展示
+      // （id 保留 probe:<id> 以便详情弹窗与考古消耗判定；基础探针可制造、复原探针由考古掉落）。
+      (function () {
+        const out = {};
+        for (const entry of ResourceRegistry.listStateEntries(state, "probe")) {
+          const q = Number(entry.quantity) || 0;
+          if (q <= 0) continue;
+          const probe = (typeof getArchaeologyProbe === "function") ? getArchaeologyProbe(entry.definition.key) : null;
+          const nm = (probe && probe.name) || entry.definition.name || (typeof getResourceDisplayName === "function" ? getResourceDisplayName(entry.definition.id) : entry.definition.id);
+          out[nm] = { qty: q, id: entry.definition.id };
+        }
+        return out;
       })()
     ),
     equipment:equipmentSource
@@ -2467,7 +2507,7 @@ function getCargoDisplayState(state, filter) {
       const itemId = (rawEntry && typeof rawEntry === "object" && rawEntry.id) || null;
       // 弹药档位（由弹药实例 s.tier 带出，名字无可识别档位时不靠名字猜）
       const ammoTier = (rawEntry && typeof rawEntry === "object" && rawEntry.ammoTier) || null;
-      const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : (itemId && itemId.indexOf("booster:") === 0 ? "💉" : "📦");
+      const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : (itemId && itemId.indexOf("booster:") === 0 ? "💉" : itemId && itemId.indexOf("probe:") === 0 ? "🔭" : "📦");
       let source = isEquip
         ? { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" }
         : isComponent
@@ -2493,6 +2533,11 @@ function getCargoDisplayState(state, filter) {
       if (itemId && itemId.indexOf("booster:") === 0) {
         source = { pageId:"boosterEngineering", pageLabel:"增强剂制造", icon:"fa-solid fa-flask" };
         description = "增强剂。由增强剂制造产出，可临时提升采矿、采气、冶炼、考古或增强剂产出效率，是作业与探险的核心消耗品。";
+      }
+      // 考古探针（probe: 命名空间）归入「消耗品」标签，来源是考古探索/装备工程，纠正来源与说明
+      if (itemId && itemId.indexOf("probe:") === 0) {
+        source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
+        description = "考古探针。在考古界面装备后提升扫描强度，单次考古作业消耗 1 枚；基础探针可在装备工程制造，复原探针由考古稀有掉落获取。";
       }
       items.push({
         category,
@@ -2616,7 +2661,7 @@ function getTradeGoodsDisplayState(state) {
 /* ---- 仓库装备强化列表展示态（双池：inventory 字符串 + instances） ---- */
 function getEquipmentEnhancementListDisplayState(state) {
   if (typeof getEquipmentEnhancementCategory !== "function") return { entries:[] };
-  const engLevel = Number(state.skills && state.skills.equipmentEngineering && state.skills.equipmentEngineering.lvl) || 1;
+  const engLevel = getEffectiveSkillLevel(state, "equipmentEngineering");
   const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
   const instances = state.equipment && Array.isArray(state.equipment.instances) ? state.equipment.instances : [];
 
@@ -2897,7 +2942,7 @@ function getReclaimRate(state) {
 }
 
 function getRefiningLevel(state) {
-  return Math.max(0, Math.floor(Number(state && state.skills && state.skills.refining && state.skills.refining.lvl) || 0));
+  return Math.max(0, Math.floor(getEffectiveSkillLevel(state, "refining")));
 }
 
 /* ================================================================
@@ -3078,7 +3123,7 @@ function getHangarDisplayState(state, now) {
       const iskCost = getShipEnhancementIskCost(config);
       const iskStock = ResourceRegistry.get(state, "currency:isk");
       const iskEnough = iskStock >= iskCost;
-      const skillLevel = Number(state.skills.shipEngineering && state.skills.shipEngineering.lvl) || 1;
+      const skillLevel = getEffectiveSkillLevel(state, "shipEngineering");
       const chance = tier ? getShipEnhancementSuccessChance(skillLevel, tier.level, enhancementLevel) : 0;
       const breakdown = tier ? getShipEnhancementSuccessBreakdown(skillLevel, tier.level, enhancementLevel) : null;
       // Batch R（E 项·舰船拆解）：只读报价 + 阻塞判定（与 Action 共用 getShipDismantleBlockReason）

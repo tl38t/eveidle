@@ -320,6 +320,29 @@
     return total / 100; // 统一分数化
   }
 
+  // 原始汇总（不 ÷100）：用于「整数计数」类加成（军团总人数上限、NPC 等级上限等），
+  // 这些 group 的 unit 为 "count"，perLevel/flat 即实际整数增量，不应被分数化。
+  // 注意：消费方（legion-npc.js）只应调用此函数读取整数类加成，
+  // 百分比类（unit "%"，如 NPC 经验获取）仍走 getResearchBonusValue（÷100 生成 fraction）。
+  function getResearchBonusRaw(state, group) {
+    const completed =
+      state && state.research && state.research.completedLevels && typeof state.research.completedLevels === "object"
+        ? state.research.completedLevels
+        : {};
+    const nodes = RD ? RD.NODES : [];
+    let total = 0;
+    for (const n of nodes) {
+      if (!n.bonus || n.bonus.group !== group) continue;
+      const lvl = completed[n.id] || 0;
+      if (n.bonus.flat != null) {
+        if (lvl >= 1) total += n.bonus.flat;
+      } else {
+        total += lvl * n.bonus.perLevel;
+      }
+    }
+    return total; // 原始整数/数值，不 ÷100
+  }
+
   // 同类科研加成先加法汇总（纯加法）
   function getResearchCombinedBonus(state, groups) {
     let sum = 0;
@@ -343,6 +366,7 @@
     INTSHIP_MAX_QUANTITY,
     INTSHIP_MAX_EVENT_IDS,
     getResearchBonusValue,
+    getResearchBonusRaw,
     getResearchCombinedBonus,
     getResearchMultiplier,
   };

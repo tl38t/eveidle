@@ -157,9 +157,9 @@ const gameState = {
     buildings: Object.fromEntries(STATION_BUILDING_IDS.map(id => [id, 0])),
     maintenance: { tier: "standard", fuelRemaining: 0, lastRefillAt: 0 },
     autoLines: {
-      smelting:    { enabled:false, operatorId:null },
-      equipment:   { enabled:false, operatorId:null },
-      booster:     { enabled:false, operatorId:null }
+      smelting:    { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 },
+      equipment:   { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 },
+      booster:     { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 }
     },
     shipyard: { unlockedFlagship:false, unlockedSupercapital:false, savingsLedger:{} },
     dlc: { npcWorkers:false, combatWings:false }

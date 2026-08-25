@@ -1731,25 +1731,42 @@ const RESEARCH_ERA_META = [
   { index: 4, label: "时代 V", sub: "协议与集成", color: "#4a2a6a" }
 ];
 const RT_LAYOUT = { COL_X0: 20, COL_W: 280, BOX_W: 204, BOX_H: 76, TOP: 98, ROW_H: 88, PAD_B: 28 };
-const RESEARCH_STATUS_LABEL = { completed: "已完成", active: "研究中", queued: "已排队", available: "可研究", locked: "前置未满足" };
+const RESEARCH_STATUS_LABEL = { completed: "已完成", active: "研究中", queued: "已排队", available: "可研究", locked: "前置未满足", "branch-locked": "分支未解锁" };
 const RESEARCH_EDGE_ARROW = { met: "#3fd0c0", projected: "#4a8ed6", unmet: "#3a4a5e" };
 const RESEARCH_CATEGORY_LABEL = {
   protocol: "协议", foundation: "基础", industry: "工业", combat: "战斗",
-  archaeology: "考古", manufacturing: "制造", logistics: "后勤", planetary: "行星", ship: "舰船"
+  archaeology: "考古", manufacturing: "制造", logistics: "后勤", planetary: "行星", ship: "舰船",
+  legion: "军团"
 };
 
 // 纯读模型：不写 gameState，不调用 processResearchUntil。
+// 主研究树（contentPack !== "legion"）保持原有坐标与布局完全不变；
+// 军团分支（contentPack === "legion"）单独成区，位于主树下方，独立显示、不跨区连线。
 function buildResearchTreeModel(research, RD, RS) {
   const catalog = (RD && Array.isArray(RD.NODES)) ? RD.NODES : [];
   const L = RT_LAYOUT;
   const projected = (RS && RS.buildProjectedResearchLevels) ? RS.buildProjectedResearchLevels(gameState) : (research.completedLevels || {});
   const completedLevels = research.completedLevels || {};
   const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
-  const rowCursor = {};
+  const isLegionUnlocked = (RS && typeof RS.isLegionResearchUnlocked === "function")
+    ? RS.isLegionResearchUnlocked(gameState) : true;
+  const legionLockReason = (RS && typeof RS.getLegionResearchLockReason === "function")
+    ? RS.getLegionResearchLockReason(gameState) : "";
+
+  // 拆分主树与军团分支（保持各自在原 NODES 中的相对顺序）
+  const mainCatalog = [];
+  const legionCatalog = [];
+  for (const node of catalog) {
+    if (node.contentPack === "legion") legionCatalog.push(node);
+    else mainCatalog.push(node);
+  }
+
   const viewById = {};
   const nodes = [];
-  // 同时代内严格保持 ResearchData.NODES 的原始顺序
-  for (const node of catalog) {
+
+  // ===== 主研究树布局（坐标与原实现逐像素一致） =====
+  const rowCursor = {};
+  for (const node of mainCatalog) {
     const era = Number(node.era) || 0;
     const row = rowCursor[era] || 0;
     rowCursor[era] = row + 1;
@@ -1778,6 +1795,7 @@ function buildResearchTreeModel(research, RD, RS) {
       y: L.TOP + row * L.ROW_H,
       type: node.type,
       category: node.category,
+      contentPack: node.contentPack || null,
       status: st.status,
       statusLabel: RESEARCH_STATUS_LABEL[st.status] || st.status,
       completed: st.completed,
@@ -1793,13 +1811,77 @@ function buildResearchTreeModel(research, RD, RS) {
     viewById[node.id] = view;
     nodes.push(view);
   }
-  // 连线：逐节点逐前置动态生成，边数恒等于 Σ node.prerequisites.length
+
+  // ===== 军团分支布局（独立区域，主树下方） =====
+  const LEGION_HEADER_H = 54;
+  const LEGION_GAP = 40;
+  let mainMaxRows = 1;
+  for (const era of RESEARCH_ERA_META) {
+    const c = rowCursor[era.index] || 0;
+    if (c > mainMaxRows) mainMaxRows = c;
+  }
+  const mainHeight = L.TOP + mainMaxRows * L.ROW_H + L.PAD_B;
+  const legionOriginY = mainHeight + LEGION_GAP + LEGION_HEADER_H;
+
+  const legionRowCursor = {};
+  for (const node of legionCatalog) {
+    const era = Number(node.era) || 0;
+    const row = legionRowCursor[era] || 0;
+    legionRowCursor[era] = row + 1;
+    const st = getNodeResearchState(node, projected, research);
+    let status = st.status;
+    let statusLabel = RESEARCH_STATUS_LABEL[status] || status;
+    if (!isLegionUnlocked) { status = "branch-locked"; statusLabel = RESEARCH_STATUS_LABEL["branch-locked"]; }
+    const isProtocol = node.type === "protocol" || node.category === "protocol";
+    const isSingle = !isProtocol && node.maxLevel === 1;
+    const levelMarks = [];
+    if (!isProtocol && node.maxLevel > 1 && isLegionUnlocked) {
+      const done = Number(completedLevels[node.id]) || 0;
+      for (let lv = 1; lv <= node.maxLevel; lv += 1) {
+        if (lv <= done) levelMarks.push("filled");
+        else if (st.activeLevel === lv) levelMarks.push("active");
+        else if (queue.indexOf(node.id + "@" + lv) >= 0) levelMarks.push("queued");
+        else levelMarks.push("empty");
+      }
+    }
+    const nextDuration = (isLegionUnlocked && RS && RS.getResearchDuration && st.nextTarget <= node.maxLevel)
+      ? RS.getResearchDuration(node.id, st.nextTarget) : null;
+    const effects = Array.isArray(node.effects) ? node.effects : [];
+    const view = {
+      id: node.id,
+      name: node.name,
+      era,
+      row,
+      x: L.COL_X0 + era * L.COL_W + (L.COL_W - L.BOX_W) / 2,
+      y: legionOriginY + row * L.ROW_H,
+      type: node.type,
+      category: node.category,
+      contentPack: node.contentPack || null,
+      status,
+      statusLabel,
+      completed: st.completed,
+      activeLevel: st.activeLevel,
+      nextTarget: st.nextTarget,
+      maxLevel: node.maxLevel,
+      isProtocol,
+      isSingle,
+      levelMarks,
+      nextDurationSeconds: (nextDuration != null && isFinite(nextDuration)) ? nextDuration : null,
+      shortEffect: effects.length ? String(effects[Math.min(Math.max(st.nextTarget, 1) - 1, effects.length - 1)]) : ""
+    };
+    viewById[node.id] = view;
+    nodes.push(view);
+  }
+
+  // ===== 连线：仅同区内部连线，跨区（主↔军团）不画边，详情区以文字呈现前置 =====
   const edges = [];
   for (const node of catalog) {
+    const nodeLegion = node.contentPack === "legion";
     for (const prereq of (node.prerequisites || [])) {
       const from = viewById[prereq.id];
       const to = viewById[node.id];
       if (!from || !to) continue;
+      if ((from.contentPack === "legion") !== nodeLegion) continue; // 跨区跳过
       const realLevel = Number(completedLevels[prereq.id]) || 0;
       const projLevel = Number(projected[prereq.id]) || 0;
       const state = realLevel >= prereq.level ? "met" : (projLevel >= prereq.level ? "projected" : "unmet");
@@ -1820,18 +1902,35 @@ function buildResearchTreeModel(research, RD, RS) {
       });
     }
   }
+
   const eras = RESEARCH_ERA_META.map(meta => ({
     index: meta.index, label: meta.label, sub: meta.sub, color: meta.color, count: rowCursor[meta.index] || 0
   }));
   let maxRows = 1;
   for (const era of eras) if (era.count > maxRows) maxRows = era.count;
+  let legionMaxRows = 1;
+  for (const era of RESEARCH_ERA_META) {
+    const c = legionRowCursor[era.index] || 0;
+    if (c > legionMaxRows) legionMaxRows = c;
+  }
+  const legionHeight = legionCatalog.length
+    ? (legionOriginY + legionMaxRows * L.ROW_H + L.PAD_B)
+    : mainHeight;
   return {
     nodes,
     edges,
     eras,
     maxRows,
     width: L.COL_X0 * 2 + RESEARCH_ERA_META.length * L.COL_W,
-    height: L.TOP + maxRows * L.ROW_H + L.PAD_B
+    height: legionHeight,
+    mainHeight,
+    legionRegion: {
+      top: legionOriginY - LEGION_HEADER_H,
+      headerHeight: LEGION_HEADER_H,
+      count: legionCatalog.length,
+      unlocked: isLegionUnlocked,
+      lockReason: isLegionUnlocked ? "" : (legionLockReason || "需 本体 Lv.2 + 军团大厅 Lv.1")
+    }
   };
 }
 
@@ -1846,12 +1945,15 @@ function renderResearchNodeHtml(view) {
   const L = RT_LAYOUT;
   let cls = "rt-node rt-node--" + view.status;
   if (view.isProtocol) cls += " rt-node--protocol";
+  if (view.contentPack === "legion") cls += " rt-node--legion";
   let badge = "";
   if (view.isProtocol) badge = '<span class="rt-badge rt-badge--protocol">协议</span>';
+  else if (view.contentPack === "legion") badge = '<span class="rt-badge rt-badge--legion">军团</span>';
   else if (view.isSingle) badge = '<span class="rt-badge rt-badge--single">单级</span>';
   let flag = "";
   if (view.status === "active") flag = '<span class="rt-flag rt-flag--active">研究中</span>';
   else if (view.status === "queued") flag = '<span class="rt-flag rt-flag--queued">已排队</span>';
+  else if (view.status === "branch-locked") flag = '<span class="rt-flag rt-flag--branch-locked">分支未解锁</span>';
   const pips = view.levelMarks.length
     ? '<div class="rt-node-pips">' + view.levelMarks.map(m => '<span class="rt-pip rt-pip--' + m + '"></span>').join("") + '</div>'
     : "";
@@ -1883,7 +1985,7 @@ function renderResearchTree(model) {
   if (!model || !model.nodes.length) { el.innerHTML = ""; return; }
   const L = RT_LAYOUT;
   const bands = model.eras.map(era =>
-    '<div class="rt-era-band" style="left:' + (L.COL_X0 + era.index * L.COL_W) + 'px;width:' + (L.COL_W - 8) + 'px;height:' + model.height + 'px;"></div>'
+    '<div class="rt-era-band" style="left:' + (L.COL_X0 + era.index * L.COL_W) + 'px;width:' + (L.COL_W - 8) + 'px;height:' + (model.mainHeight || model.height) + 'px;"></div>'
   ).join("");
   const heads = model.eras.map(era =>
     '<div class="rt-era-head" style="left:' + (L.COL_X0 + era.index * L.COL_W) + 'px;top:8px;width:' + (L.COL_W - 8) + 'px;background:' + era.color + ';">' +
@@ -1902,6 +2004,16 @@ function renderResearchTree(model) {
       ' data-required-level="' + edge.requiredLevel + '"' +
       ' marker-end="url(#rt-arrow-' + edge.state + ')"></path>'
   ).join("");
+  // 军团分支独立区域头部（位于主树下方；锁定时提示解锁条件）
+  const legionRegion = model.legionRegion;
+  const legionHead = (legionRegion && legionRegion.count > 0)
+    ? '<div class="rt-legion-head" style="left:' + L.COL_X0 + 'px;top:' + legionRegion.top + 'px;width:' + (model.width - L.COL_X0 * 2) + 'px;">' +
+        '<span class="rt-legion-head-title">军团研究分支</span>' +
+        (legionRegion.unlocked
+          ? '<span class="rt-legion-head-state rt-legion-head-state--open">已解锁</span>'
+          : '<span class="rt-legion-head-state rt-legion-head-state--locked">未解锁：' + escapeAchievementText(legionRegion.lockReason || "需 本体 Lv.2 + 军团大厅 Lv.1") + '</span>') +
+      '</div>'
+    : "";
   el.innerHTML =
     '<div class="rt-stage" style="width:' + model.width + 'px;height:' + model.height + 'px;">' +
       bands +
@@ -1909,6 +2021,7 @@ function renderResearchTree(model) {
         defs + paths +
       '</svg>' +
       heads +
+      legionHead +
       model.nodes.map(renderResearchNodeHtml).join("") +
     '</div>';
 }
@@ -2118,6 +2231,9 @@ function renderResearchDetail(research, RD, RS, model) {
   const nextTarget = view ? view.nextTarget : completed + 1;
   const eraMeta = RESEARCH_ERA_META[Number(node.era) || 0] || { label: "时代 ?", sub: "" };
   const categoryLabel = RESEARCH_CATEGORY_LABEL[node.category] || node.category || "—";
+  const isLegion = node.contentPack === "legion";
+  const branchLockReason = (isLegion && status === "branch-locked" && RS && typeof RS.getLegionResearchLockReason === "function")
+    ? RS.getLegionResearchLockReason(gameState) : "";
   const effects = Array.isArray(node.effects) ? node.effects : [];
 
   const effectRows = effects.map((text, i) => {
@@ -2163,17 +2279,23 @@ function renderResearchDetail(research, RD, RS, model) {
   } else if (status === "queued") {
     actionsHtml = '<div class="rt-d-row">已加入队列</div>';
   } else {
-    // 「立即研究」在前置未满足（locked）时仍禁用（start 不补前置）；
-    // 「加入队列」始终可用：available 时等同原行为，locked 时自动补齐前置链。
-    const startDisabled = status === "locked" ? " disabled" : "";
-    const unmet = (node.prerequisites || []).filter(p => (Number(completedLevels[p.id]) || 0) < p.level)
-      .map(p => { const pn = RS && RS.getResearchNode ? RS.getResearchNode(p.id) : null; return (pn ? pn.name : p.id) + " " + toRoman(p.level); });
-    actionsHtml =
-      '<div class="rt-d-actions">' +
-        '<button class="research-btn primary" data-detail-action="start" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + startDisabled + '>立即研究 ' + toRoman(nextTarget) + '</button>' +
-        '<button class="research-btn" data-detail-action="enqueue" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '">加入队列</button>' +
-      '</div>' +
-      (status === "locked" ? '<div class="rt-d-hint">将自动补齐前置：' + escapeAchievementText(unmet.join("、") || "—") + '</div>' : "");
+    if (status === "branch-locked") {
+      // 军团分支外部条件未达成：禁用操作并提示解锁条件（主研究树完全不受影响）
+      actionsHtml = '<div class="rt-d-hint rt-d-hint--locked">分支未解锁：' +
+        escapeAchievementText(branchLockReason || "需 本体 Lv.2 + 军团大厅 Lv.1") + '</div>';
+    } else {
+      // 「立即研究」在前置未满足（locked）时仍禁用（start 不补前置）；
+      // 「加入队列」始终可用：available 时等同原行为，locked 时自动补齐前置链。
+      const startDisabled = status === "locked" ? " disabled" : "";
+      const unmet = (node.prerequisites || []).filter(p => (Number(completedLevels[p.id]) || 0) < p.level)
+        .map(p => { const pn = RS && RS.getResearchNode ? RS.getResearchNode(p.id) : null; return (pn ? pn.name : p.id) + " " + toRoman(p.level); });
+      actionsHtml =
+        '<div class="rt-d-actions">' +
+          '<button class="research-btn primary" data-detail-action="start" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + startDisabled + '>立即研究 ' + toRoman(nextTarget) + '</button>' +
+          '<button class="research-btn" data-detail-action="enqueue" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '">加入队列</button>' +
+        '</div>' +
+        (status === "locked" ? '<div class="rt-d-hint">将自动补齐前置：' + escapeAchievementText(unmet.join("、") || "—") + '</div>' : "");
+    }
   }
 
   el.innerHTML =
@@ -2956,7 +3078,7 @@ function enhanceEquipmentFromWarehouse(targetRef, onDone) {
   if (!resolved) { showToast("装备不存在"); if (typeof onDone === "function") onDone(null); return false; }
   const definition = resolved.definition;
   const fromLevel = resolved.enhancementLevel;
-  const engLevel = Number(gameState.skills && gameState.skills.equipmentEngineering && gameState.skills.equipmentEngineering.lvl) || 1;
+  const engLevel = getEffectiveSkillLevel(gameState, "equipmentEngineering");
   const preview = getEquipmentEnhancementDisplayState(definition, fromLevel, engLevel);
   const doEnhance = () => {
     const result = dispatchGameAction(gameState, { type:"equipment/enhance", targetRef }, Date.now());

@@ -252,6 +252,13 @@
   .nav-lv.lv-low  { color: #4a5a6a; background: rgba(74, 90, 106, 0.15); }
   .nav-lv.lv-mid  { color: #5da8d4; background: rgba(93, 168, 212, 0.15); }
   .nav-lv.lv-high { color: #d4a843; background: rgba(212, 168, 67, 0.15); text-shadow: 0 0 20px rgba(212, 168, 67, 0.1); }
+  /* 增强剂临时等级（技能超载协议）：叠加显示并高亮提示 */
+  .nav-lv.nav-lv-boosted {
+    color: #6ee7a8 !important;
+    background: rgba(110, 231, 168, 0.18) !important;
+    box-shadow: 0 0 14px rgba(110, 231, 168, 0.35);
+    font-weight: 700;
+  }
 
   /* ===== 主内容区 ===== */
   .content {
@@ -694,6 +701,7 @@
   .rt-d-pre-row--unmet { color: #d68a4a; }
   .rt-d-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   .rt-d-hint { font-size: 11px; color: #d0a030; font-style: italic; margin-top: 8px; }
+  .rt-d-hint--locked { color: #e6a0a0; font-style: normal; font-weight: 600; }
   .rt-d-empty { color: #7d8899; font-style: italic; }
 
   .section-title {
@@ -791,6 +799,37 @@
   .rt-node--protocol.rt-node--available { background: #2a2010; border-color: #c0a040; color: #e0c890; }
   .rt-node--protocol.rt-node--locked { background: #1c1608; border-color: #4a3810; color: #a89058; }
   .rt-node--protocol .rt-node-eff { color: #c8a860; }
+
+  /* 军团分支节点（contentPack==="legion"）：金紫描边，与协议/主树明显区分 */
+  .rt-badge--legion { background: #7a5fb0; color: #f3ecff; }
+  .rt-node--legion { border-color: #7a5fb0; }
+  .rt-node--legion.rt-node--completed { background: #2e1d4a; border-color: #b78fff; color: #efe6ff; }
+  .rt-node--legion.rt-node--active { background: #2a1a4a; border-color: #c2a0ff; color: #efe6ff; }
+  .rt-node--legion.rt-node--queued { background: #271a40; border-color: #9a7fd6; color: #e6dcff; }
+  .rt-node--legion.rt-node--available { background: #211a2e; border-color: #8a6fb0; color: #e0d4f0; }
+  .rt-node--legion.rt-node--locked { background: #18131f; border-color: #3a2f4a; color: #a090b8; }
+  .rt-node--legion .rt-node-eff { color: #b89ad6; }
+
+  /* 分支未解锁：整块暗红描边，强调“外部条件未达成” */
+  .rt-node--branch-locked {
+    background: #1c1418; border-color: #6a2a3a; color: #b8909a;
+    box-shadow: inset 0 0 0 1px rgba(150, 60, 80, 0.5);
+  }
+  .rt-node--branch-locked .rt-node-eff { color: #8a6070; }
+  .rt-flag--branch-locked { background: #8a3a4a; color: #ffe6ea; }
+
+  /* 军团分支独立区域头部 */
+  .rt-legion-head {
+    position: absolute; z-index: 3;
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-radius: 8px;
+    background: linear-gradient(90deg, rgba(122, 95, 176, 0.22), rgba(122, 95, 176, 0.06));
+    border: 1px solid rgba(150, 120, 200, 0.4); border-bottom: none;
+    font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #e9e0ff;
+  }
+  .rt-legion-head-state { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 8px; }
+  .rt-legion-head-state--open { background: #2e8f5a; color: #e6fff0; }
+  .rt-legion-head-state--locked { background: #6a2a3a; color: #ffe6ea; }
 
   .rt-node--faded { opacity: 0.32; }
   .rt-node--linked { box-shadow: 0 0 0 2px rgba(106, 208, 255, 0.5); z-index: 8; }

@@ -892,7 +892,8 @@ function migrateBoosterState() {
     if (!recipeValid) a.boosterRecipeTarget = "mining_lubricant_n";
     const recipe = (typeof getBoosterRecipe === "function") ? getBoosterRecipe(a.boosterRecipeTarget) : null;
     if (!a.boosterCategory && recipe && typeof BOOSTER_SERIES !== "undefined") {
-      a.boosterCategory = (BOOSTER_SERIES[recipe.series] || {}).category || "mining";
+      const sc = (BOOSTER_SERIES[recipe.series] || {}).category;
+      a.boosterCategory = (Array.isArray(sc) ? sc[0] : sc) || "mining";
     }
     if (!a.boosterCategory) a.boosterCategory = "mining";
     if (!["all", "n", "r", "l"].includes(a.boosterQualityFilter)) a.boosterQualityFilter = "all";
@@ -1067,6 +1068,12 @@ function normalizeStationState(state) {
     s.autoLines[key].lastTick = Number.isFinite(Number(s.autoLines[key].lastTick)) ? Number(s.autoLines[key].lastTick) : 0;
     const rawStop = s.autoLines[key].stoppedReason;
     s.autoLines[key].stoppedReason = (rawStop === null || typeof rawStop === "string") ? rawStop : null;
+    // 生产数量：targetQuantity 正整数 = 目标产量（按产出件数），0/∞ = 无限（消耗全部原料）
+    const rawTq = Number(s.autoLines[key].targetQuantity);
+    s.autoLines[key].targetQuantity = (Number.isFinite(rawTq) && rawTq >= 1) ? Math.floor(rawTq) : 0;
+    // 累计已产件数：非负整数
+    const rawPq = Number(s.autoLines[key].producedQty);
+    s.autoLines[key].producedQty = (Number.isFinite(rawPq) && rawPq >= 0) ? Math.floor(rawPq) : 0;
   }
 
   // shipyard：材料节省余数，限制在 [0,1)；只保留合法资源 key

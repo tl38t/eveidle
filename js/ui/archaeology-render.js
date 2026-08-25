@@ -122,7 +122,7 @@ function renderArchaeologyPage(now) {
 
   // ---- 左栏：5 个地点 ----
   const locationCards = (typeof ARCHAEOLOGY_LOCATIONS !== "undefined" ? ARCHAEOLOGY_LOCATIONS : []).map(loc => {
-    const lv = gameState.skills.archaeology.lvl || 1;
+    const lv = getEffectiveSkillLevel(gameState, "archaeology");
     const locked = lv < loc.level;
     const isSel = loc.tier === selectedTier;
     const cargoSizes = (loc.cargoWeights || []).map(c => c.size).join(" / ");

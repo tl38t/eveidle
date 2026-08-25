@@ -116,13 +116,13 @@ async function runData() {
   // =========================================================================
   // 1. 数据保真
   // =========================================================================
-  ok(ResearchData.NODES.length === 39, `移植 NODES 数量应为 39，实际 ${ResearchData.NODES.length}`);
-  ok(frozen.NODES.length === 39, `冻结源 NODES 数量应为 39，实际 ${frozen.NODES.length}`);
+  ok(ResearchData.NODES.length === 45, `移植 NODES 数量应为 45（39 主研究 + 6 军团），实际 ${ResearchData.NODES.length}`);
+  ok(frozen.NODES.length === 45, `冻结源 NODES 数量应为 45（39 主研究 + 6 军团），实际 ${frozen.NODES.length}`);
   ok(deepEq(ResearchData.WEIGHTS, frozen.WEIGHTS), "WEIGHTS 必须与冻结源逐字段一致");
   ok(deepEq(ResearchData.RANK_MULT, frozen.RANK_MULT), "RANK_MULT 必须与冻结源逐字段一致");
   ok(ResearchData.TARGET_SECONDS === frozen.TARGET_SECONDS, "TARGET_SECONDS 必须与冻结源一致");
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "UNIT 必须与冻结源一致");
-  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 155, `STEP_COUNT 应为 155，实际 ${ResearchData.STEP_COUNT}`);
+  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 173, `STEP_COUNT 应为 173（155 主研究 + 18 军团），实际 ${ResearchData.STEP_COUNT}`);
 
   const frozenById = new Map();
   for (const n of frozen.NODES) frozenById.set(n.id, n);
@@ -168,8 +168,8 @@ async function runData() {
   }
   const mappedGroups = new Set(Object.keys(ResearchData.RESEARCH_BONUS_CONSUMERS));
 
-  ok(dataGroups.size === 32, `数据侧唯一 group 应为 32，实际 ${dataGroups.size}`);
-  ok(mappedGroups.size === 32, `映射注册表 group 应为 32，实际 ${mappedGroups.size}`);
+  ok(dataGroups.size === 35, `数据侧唯一 group 应为 35（32 + 3 军团组），实际 ${dataGroups.size}`);
+  ok(mappedGroups.size === 35, `映射注册表 group 应为 35（32 + 3 军团组），实际 ${mappedGroups.size}`);
   ok(setEqual(dataGroups, mappedGroups), "数据 group 与映射 group 必须双向相等（无漏/无多/无拼写漂移）");
   ok(setEqual(dataGroups, frozenGroups), "数据 group 须与冻结源 group 集合一致");
   ok(setEqual(mappedGroups, frozenGroups), "映射 group 须与冻结源 group 集合一致");
@@ -219,6 +219,9 @@ async function runData() {
     "selectors.getCombatMaxHpFromState",
     "selectors.getCombatRepairMultiplierFromState",
     "selectors.getReclaimRate",
+    "LEGION_NPC.getLegionNpcCapacity",
+    "LEGION_NPC.getLegionNpcLevelCap",
+    "LEGION_NPC.getLegionNpcResearchXpMultiplier",
   ]);
   const KIND_SET = new Set(["multiplier", "additivePp", "reduceFraction"]);
 
@@ -310,6 +313,61 @@ async function runData() {
   }
   // 11) 主动维修
   ok(tHas("repair", "selectors.getCombatRepairMultiplierFromState"), "repair 必须指向 selectors.getCombatRepairMultiplierFromState");
+
+  // =========================================================================
+  // 2d. 军团研究分支接入断言（接入现有研究系统，非独立系统）
+  // =========================================================================
+  const legionNodes = ResearchData.NODES.filter((n) => n.contentPack === "legion");
+  ok(legionNodes.length === 6, `军团分支节点必须为 6（4 数值/基础 + 2 协议），实际 ${legionNodes.length}`);
+  ok(ResearchData.NODES.length === 39 + 6, `全量节点须为 39 主研究 + 6 军团 = 45，实际 ${ResearchData.NODES.length}`);
+
+  const mainNodes = ResearchData.NODES.filter((n) => n.contentPack !== "legion");
+  ok(mainNodes.length === 39, `主研究节点须保持 39 不变，实际 ${mainNodes.length}`);
+
+  // 军团节点不得改变 UNIT（BASE_TOTAL_WEIGHT 排除军团节点）
+  close(ResearchData.UNIT, frozen.UNIT, 1e-9, "军团接入后 UNIT 必须与冻结源（仅主树）一致");
+
+  const legionNumById = {};
+  for (const n of legionNodes) legionNumById[n.id] = n;
+
+  // 数值节点时长 = UNIT × WEIGHTS × rank(1.0)
+  for (const id of ["legion_staffing", "legion_training", "legion_doctrine"]) {
+    const n = legionNumById[id];
+    ok(!!n && n.type === "numeric" && n.maxLevel === 5 && n.rank === 1.0, `${id} 须为 rank=1.0 的五级数值节点`);
+    for (let lv = 1; lv <= 5; lv += 1) {
+      const expect = ResearchData.UNIT * ResearchData.WEIGHTS[lv - 1] * 1.0;
+      ok(Math.abs(n.durationByLevel[lv - 1] - expect) <= 1e-6,
+        `${id} Lv.${lv} 时长须 = UNIT×WEIGHTS[${lv - 1}]×1.0（实际 ${n.durationByLevel[lv - 1]}）`);
+    }
+  }
+  // 基础节点 foundation rank=0.6，maxLevel=1
+  const foundation = legionNumById.legion_foundation;
+  ok(!!foundation && foundation.type === "foundation" && foundation.maxLevel === 1 && foundation.rank === 0.6,
+    "legion_foundation 须为 rank=0.6 的单级基础节点");
+  ok(Math.abs(foundation.durationByLevel[0] - ResearchData.UNIT * ResearchData.WEIGHTS[0] * 0.6) <= 1e-6,
+    "legion_foundation 时长须 = UNIT×WEIGHTS[0]×0.6");
+
+  // 协议节点 dual/triple rank=2.5，maxLevel=1
+  for (const id of ["legion_dual_squad", "legion_triple_squad"]) {
+    const n = legionNumById[id];
+    ok(!!n && n.type === "protocol" && n.maxLevel === 1 && n.rank === 2.5, `${id} 须为 rank=2.5 的单级协议节点`);
+    ok(Math.abs(n.durationByLevel[0] - ResearchData.UNIT * ResearchData.WEIGHTS[0] * 2.5) <= 1e-6,
+      `${id} 时长须 = UNIT×WEIGHTS[0]×2.5`);
+  }
+
+  // 时长不得为 NaN / Infinity / 负数
+  let durationFails = 0;
+  for (const n of ResearchData.NODES) {
+    for (const d of n.durationByLevel) {
+      if (!isFinite(d) || d <= 0) { ok(false, `节点 ${n.id} 时长非法: ${d}`); durationFails += 1; }
+    }
+  }
+  ok(durationFails === 0, `全部节点时长须有限且为正（失败 ${durationFails} 处）`);
+
+  // 新加成组全部映射且指向 LEGION_NPC 真实消费入口
+  ok(tHas("legionNpcCapacity", "LEGION_NPC.getLegionNpcCapacity"), "legionNpcCapacity 必须指向 LEGION_NPC.getLegionNpcCapacity");
+  ok(tHas("legionNpcLevelCap", "LEGION_NPC.getLegionNpcLevelCap"), "legionNpcLevelCap 必须指向 LEGION_NPC.getLegionNpcLevelCap");
+  ok(tHas("legionNpcXp", "LEGION_NPC.getLegionNpcResearchXpMultiplier"), "legionNpcXp 必须指向 LEGION_NPC.getLegionNpcResearchXpMultiplier");
 
   // =========================================================================
   // 3. 图结构校验
@@ -591,12 +649,15 @@ function buildFullGameSandbox(saveJson) {
   MockCanvasContext.prototype.getImageData = (x, y, w, h) => ({ data: new Uint8ClampedArray(w * h * 4), width: w, height: h });
 
   const classList = { add: noop, remove: noop, toggle: noop, contains: () => false };
+  // 父节点桩：render.js initHoverInfo 会访问 el.parentElement.querySelector/appendChild
+  const parentStub = { querySelector: () => null, appendChild: noop, removeChild: noop, remove: noop, insertBefore: noop, firstChild: null };
   const makeElement = () => ({
     addEventListener: noop, appendChild: noop, classList, click: noop, closest: () => null,
     dataset: {}, focus: noop, getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100 }),
     getContext: () => new MockCanvasContext(), innerHTML: "", offsetHeight: 24, offsetWidth: 560,
     querySelector: () => makeElement(), querySelectorAll: () => [], remove: noop, select: noop,
-    style: {}, textContent: "", value: "1", setAttribute: noop,
+    insertBefore: noop, firstChild: null, lastChild: null,
+    parentElement: parentStub, parentNode: parentStub, style: {}, textContent: "", value: "1", setAttribute: noop,
   });
   const documentMock = {
     addEventListener: noop, body: makeElement(), createElement: () => makeElement(),
@@ -617,6 +678,9 @@ function buildFullGameSandbox(saveJson) {
     setInterval: noop, setTimeout: noop, clearTimeout: noop, clearInterval: noop,
     URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noop },
     Date: FrozenDate,
+    matchMedia: () => ({ matches: false, addEventListener: noop, removeEventListener: noop, addListener: noop, removeListener: noop }),
+    MutationObserver: class { observe() {} disconnect() {} takeRecords() { return []; } },
+    innerWidth: 1280, innerHeight: 800,
     window: null,
   };
   sandbox.window = sandbox;
@@ -1531,6 +1595,28 @@ async function runSettle() {
     ok(st._dirty === false,
        "[settle][dirty] 无 active 仅推进空闲锚点时不强制 _dirty（避免每 tick 自动保存）");
     ok(r.lastProcessedAt === NOW, "[settle][dirty] 空闲锚点仍应推进到 now");
+  }
+  // D9: 军团分支锁定态不得影响主研究；军团节点入队/启动须拒绝 LEGION_LOCKED
+  {
+    const r = freshResearch(0);
+    const st = makeState(r); // 无 station → bodyLevel=0 → 军团分支锁定
+    const mainRes = ResearchSystem.enqueueResearch(st, "syseng", 1);
+    ok(mainRes.ok === true, "[settle][legion-gate] 军团锁定时主研究仍可入队（实际 " + JSON.stringify(mainRes) + "）");
+    const legionRes = ResearchSystem.enqueueResearch(st, "legion_staffing", 1);
+    ok(legionRes.ok === false && legionRes.reason === "LEGION_LOCKED",
+      "[settle][legion-gate] 军团锁定时军团节点入队须拒绝 LEGION_LOCKED（实际 " + JSON.stringify(legionRes) + "）");
+    const beginRes = ResearchSystem.startResearch(st, "legion_staffing", 1, 0);
+    ok(beginRes.ok === false && beginRes.reason === "LEGION_LOCKED",
+      "[settle][legion-gate] 军团锁定时军团节点启动须拒绝 LEGION_LOCKED（实际 " + JSON.stringify(beginRes) + "）");
+  }
+  // D10: 解除锁定（本体≥2 + 军团大厅≥1）后军团节点可入队
+  {
+    const r = freshResearch(0);
+    r.completedLevels = { legion_foundation: 1 }; // 满足 legion_staffing 前置
+    const st = makeState(r);
+    st.station = { bodyLevel: 3, buildings: { legion_hall: 1 } };
+    const legionRes = ResearchSystem.enqueueResearch(st, "legion_staffing", 1);
+    ok(legionRes.ok === true, "[settle][legion-gate] 解除锁定后军团节点可入队（实际 " + JSON.stringify(legionRes) + "）");
   }
 
   // --- B. 空槽但队列非空：普通时间推进不得擅自启动队列 ---

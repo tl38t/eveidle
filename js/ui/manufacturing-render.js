@@ -440,10 +440,7 @@ function renderEquipEngPage(now) {
     const card = event.target.closest("[data-recipe]");
     if (!card || card.disabled) return;
     const result = switchEquipEngTarget(card.dataset.recipe);
-    if (result.changed) {
-      renderEquipEngPage();
-      showActionConfirm("equipmentEngineering");
-    }
+    if (result.changed) renderEquipEngPage();
   });
   const rigFilters = document.getElementById("equipeng-rig-filters");
   if (rigFilters) rigFilters.addEventListener("click", event => {

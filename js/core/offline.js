@@ -460,7 +460,7 @@ function getOfflineActionDescriptor() {
     // 精密配给剂（考古重制 Phase B · precision_rationing）：每周期重新读取权威报价/门槛函数；
     // 等级不足返回 0 周期 / 零副作用 apply（与组件同原则，杜绝门槛绕过）。
     const getAsmQuote = () => (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"assembly" }) : { cost: recipe.materialCost || {}, levelGate: recipe.level };
-    const asmLevel = () => Number((gameState.skills.shipEngineering || {}).lvl) || 1;
+    const asmLevel = () => getEffectiveSkillLevel(gameState, "shipEngineering");
     return {
       key, duration: getShipEngineeringCycleDuration(gameState, recipe), // 唯一周期公式（技能×船坞，与在线 tick 一致）
       maxCycles() {
@@ -483,11 +483,12 @@ function getOfflineActionDescriptor() {
     const recipe = getRunningEquipEngRecipe(); if (!recipe) return null;
     return {
       key, duration: recipe.time / getEquipEngEfficiency(),
-      maxCycles: () => !equipmentRecipeHasRequiredBlueprint(gameState, recipe) ? 0 : recipe.output.type === "equipment"
-        ? recipe.inputEquipment ? getEquipEngMaxCycles(recipe) : getEquipEngMaxCycles(recipe)
-        : getEquipEngMaxCycles(recipe),
+      maxCycles: () => !equipmentRecipeHasRequiredBlueprint(gameState, recipe) ? 0 : getEquipEngMaxCycles(recipe),
       apply(cycles, gains) {
-        deductEquipEngInputs(recipe, cycles);
+        const eqQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(gameState, recipe) : { cost: recipe.cost, levelGate: recipe.level };
+        const eeLvl = getEffectiveSkillLevel(gameState, "equipmentEngineering");
+        if (eeLvl < eqQuote.levelGate) return; // 等级不足：零副作用
+        deductEquipEngInputs(recipe, cycles, undefined, eqQuote.cost);
         applyEquipEngOutput(recipe, cycles);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
         emitOfflineGameEvent("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:cycles * recipe.output.qty, time:recipe.time, cycles, xp:cycles * recipe.xp });

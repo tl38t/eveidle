@@ -205,15 +205,18 @@ function gameTick() {
     } else if (key === "equipmentEngineering") {
       const recipe = getRunningEquipEngRecipe(); if (!recipe) { resetActionProgress(); gameState.currentAction.active = false; updateUI(); return; }
       if (!equipmentRecipeHasRequiredBlueprint(gameState, recipe)) { stopOrSkip(); updateUI(); return; }
-      if (!hasEnoughEquipEngInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
       const eff = getEquipEngEfficiency(); const actualTime = recipe.time / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now(); const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
-        if (!hasEnoughEquipEngInputs(recipe, 1)) { stopOrSkip(); updateUI(); return; }
+        // 每周期提交前重新读取权威报价/门槛：配给剂可能中途激活（门槛 +N）或耗尽（恢复原规则）。
+        const eqQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(gameState, recipe) : { cost: recipe.cost, levelGate: recipe.level };
+        const eeLvl = getEffectiveSkillLevel(gameState, "equipmentEngineering");
+        if (eeLvl < eqQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
+        if (!hasEnoughEquipEngInputs(recipe, 1, undefined, eqQuote.cost)) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime;
-        deductEquipEngInputs(recipe, 1);
+        deductEquipEngInputs(recipe, 1, undefined, eqQuote.cost);
         applyEquipEngOutput(recipe, 1);
         addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
         GameEvents.emit("manufacturing:completed", { branch:"equipment", recipeId:recipe.id, productType:recipe.output.type, quantity:recipe.output.qty, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
@@ -234,7 +237,7 @@ function gameTick() {
           // 每周期提交前重新读取权威报价/门槛：配给剂可能中途激活（门槛 +5）或耗尽（恢复原规则）。
           const shipCompQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"component" }) : { cost: recipe.cost, levelGate: recipe.level };
           const shipCompCost = shipCompQuote.cost;
-          const shipCompLevel = Number((gameState.skills.shipEngineering || {}).lvl) || 1;
+          const shipCompLevel = getEffectiveSkillLevel(gameState, "shipEngineering");
           if (shipCompLevel < shipCompQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
           if (!hasEnoughShipCompMats(shipCompCost, recipe.id)) { stopOrSkip(); updateUI(); return; }
           gameState.currentAction.progress -= actualTime;
@@ -260,7 +263,7 @@ function gameTick() {
         while (gameState.currentAction.progress >= actualTime) {
           // 每周期提交前重新读取权威报价/门槛：配给剂可能中途激活（门槛 +5）或耗尽（恢复原规则）。
           const asmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"assembly" }) : { levelGate: recipe.level };
-          const asmLevel = Number((gameState.skills.shipEngineering || {}).lvl) || 1;
+          const asmLevel = getEffectiveSkillLevel(gameState, "shipEngineering");
           if (asmLevel < asmQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
           if (!hasEnoughShipAssemblyComponents(recipe)) { stopOrSkip(); updateUI(); return; }
           gameState.currentAction.progress -= actualTime;

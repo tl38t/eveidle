@@ -6,6 +6,28 @@
 
 var StationUI = { initDone: false };
 
+// 升级/建造材料成本网格：材料(左) | 需要(右) | 持有(右) 三列对齐；可选表头与耗时行。
+function renderStationCostGrid(rows, opts) {
+  opts = opts || {};
+  if (!rows || !rows.length) return "";
+  var html = "";
+  if (opts.header) {
+    html += '<span class="c-th">材料</span><span class="c-th c-tr">需要</span><span class="c-th c-tr">持有</span>';
+  }
+  var haveLabel = !opts.header; // 无表头时保留「持有」字样以免歧义
+  html += rows.map(function(r) {
+    var cls = r.enough ? "cost-enough" : "cost-short";
+    var have = haveLabel ? ("持有 " + r.have) : ("" + r.have);
+    return '<span class="c-name ' + cls + '">' + r.displayName + '</span>' +
+           '<span class="c-need ' + cls + '">×' + r.quantity + '</span>' +
+           '<span class="c-have ' + cls + '">' + have + '</span>';
+  }).join("");
+  if (opts.durationMs) {
+    html += '<span class="c-dur">⏱ 耗时 ' + fmtDuration(opts.durationMs) + '</span>';
+  }
+  return html;
+}
+
 function initStationUI() {
   if (StationUI.initDone) return;
   StationUI.initDone = true;
@@ -18,8 +40,17 @@ function initStationUI() {
 
   document.getElementById("btn-station-refill").addEventListener("click", function() {
     var r = dispatchGameAction(gameState, { type:"station/refillMaintenance" }, Date.now());
-    if (!r.changed) showToast("补给失败：" + (r.reason || "未知错误"));
-    else renderStationPage(Date.now());
+    if (!r.changed) {
+      var msg;
+      switch (r.reason) {
+        case "maintenance-not-needed": msg = "燃料还充足，暂无需补给（剩余不足 24 小时时才开放）。"; break;
+        case "insufficient-fuel": msg = "仓库燃料单元不足，无法补给（需 " + (r.fuelCost || 0) + "，持有 " + (r.fuelStock || 0) + "）。"; break;
+        case "station-not-built": msg = "空间站尚未建立，无法补给。"; break;
+        case "no-station": msg = "空间站不可用，无法补给。"; break;
+        default: msg = "补给失败：" + (r.reason || "未知错误");
+      }
+      showToast(msg);
+    } else renderStationPage(Date.now());
   });
 
   // 事件委托（绑定一次，幂等）：容器是 index.html 静态节点，innerHTML 替换不影响委托，
@@ -28,6 +59,13 @@ function initStationUI() {
   if (alDiv && !alDiv._stationDelegated) {
     alDiv._stationDelegated = true;
     alDiv.addEventListener("change", function(e) {
+      var qty = e.target.closest("input[data-al-qty]");
+      if (qty) {
+        var r2 = dispatchGameAction(gameState, { type:"station/setAutoLineQuantity", lineId:qty.getAttribute("data-al-qty"), quantity:qty.value }, Date.now());
+        if (!r2.changed) { showToast("设置生产数量失败：" + (r2.reason || "未知错误")); return; }
+        renderStationPage(Date.now());
+        return;
+      }
       var sel = e.target.closest("select[data-line]");
       if (!sel) return;
       var r = dispatchGameAction(gameState, { type:"station/selectAutoLineTarget", lineId:sel.getAttribute("data-line"), targetId:sel.value }, Date.now());
@@ -35,11 +73,31 @@ function initStationUI() {
       // 轻量即时刷新（不重建下拉框，避免打断焦点）；selectedTargetId 不进结构签名，不会触发整页。
       liveUpdateStationFields(getStationPageDisplayState(gameState, Date.now()), Date.now());
     });
+    // 输入框实时写入（每次按键即写 state，比依赖 change/失焦更及时，移动端也可靠）：
+    // 未启动时即时刷新「目标：X 件」文案，避免「填了数却看不到生效」的困惑。
+    alDiv.addEventListener("input", function(e) {
+      var qty = e.target.closest("input[data-al-qty]");
+      if (!qty) return;
+      var r = dispatchGameAction(gameState, { type:"station/setAutoLineQuantity", lineId:qty.getAttribute("data-al-qty"), quantity:Number(qty.value) }, Date.now());
+      if (!r.changed && r.reason && r.reason !== "no-state" && r.reason !== "unknown-line") {
+        showToast("设置生产数量失败：" + (r.reason || "未知错误"));
+      }
+      liveUpdateStationFields(getStationPageDisplayState(gameState, Date.now()), Date.now());
+    });
     alDiv.addEventListener("click", function(e) {
       var btn = e.target.closest("button[data-line]");
       if (!btn) return;
       var lineId = btn.getAttribute("data-line");
       if (btn.classList.contains("al-start")) {
+        // 启动前先把该线输入框的当前值抓进 state（兜底）：避免「直接在输入框填数后点启动、
+        // 而 input 的 change 事件未及时触发」导致目标数量丢失、仍以无限模式运行。
+        var qInput = alDiv.querySelector('input[data-al-qty="' + lineId + '"]');
+        if (qInput) {
+          var r0 = dispatchGameAction(gameState, { type:"station/setAutoLineQuantity", lineId:lineId, quantity:Number(qInput.value) }, Date.now());
+          if (!r0.changed && r0.reason && r0.reason !== "no-state" && r0.reason !== "unknown-line") {
+            showToast("设置生产数量失败：" + (r0.reason || "未知错误"));
+          }
+        }
         var r = dispatchGameAction(gameState, { type:"station/startAutoLine", lineId:lineId }, Date.now());
         if (!r.changed) { showToast("启动失败：" + (r.reason || "未知错误")); return; }
       } else if (btn.classList.contains("al-stop")) {
@@ -113,9 +171,7 @@ function renderStationPage(now) {
   var costEl = document.getElementById("station-upgrade-cost");
   if (costEl) {
     if (display.body.nextCostRows && display.body.nextCostRows.length) {
-      costEl.innerHTML = display.body.nextCostRows.map(function(r) {
-        return '<span class="' + (r.enough ? "cost-enough" : "cost-short") + '">' + r.displayName + ' ×' + r.quantity + ' <small>（持有 ' + r.have + '）</small></span>';
-      }).join(" · ") + ' · 时间 ' + fmtDuration(display.body.durationMs);
+      costEl.innerHTML = renderStationCostGrid(display.body.nextCostRows, { header: true, durationMs: display.body.durationMs });
     } else costEl.textContent = "";
   }
 
@@ -131,10 +187,48 @@ function renderStationPage(now) {
   setText("station-maintenance-points", (display.maintenance.maintenancePoints || 0));
   setText("station-fuel-remaining", (display.maintenance.fuelRemaining || 0).toLocaleString());
   setText("station-fuel-remaining-ms", display.maintenance.remainingText || "-");
+  var mInfo = display.maintenance;
   var refBtn = document.getElementById("btn-station-refill");
+  var infoEl = document.getElementById("station-refill-info");
+  // 不可用时的友好原因（替代原“无需补给”技术感文案）
+  var blockedHint = "";
+  if (!mInfo.canRefill) {
+    if (mInfo.blockedReason === "maintenance-not-needed") {
+      blockedHint = "燃料还充足（剩余约 " + (mInfo.remainingText || "-") + "），不足 24 小时时才开放补给。";
+    } else if (mInfo.blockedReason === "station-not-built" || mInfo.blockedReason === "no-station") {
+      blockedHint = "空间站尚未建立，无法补给。";
+    } else {
+      blockedHint = "当前无法补给。";
+    }
+  }
+  // 仓库燃料是否够本次补给（避免点了才报“仓库不足”）
+  var needFuel = Number(mInfo.refillFuelCost) || 0;
+  var haveFuel = Number(mInfo.warehouseFuel) || 0;
+  var stockShort = mInfo.canRefill && needFuel > haveFuel;
   if (refBtn) {
-    refBtn.disabled = !display.maintenance.canRefill;
-    refBtn.textContent = display.maintenance.canRefill ? "一键补给" : (display.maintenance.blockedText || "无需补给");
+    if (stockShort) {
+      refBtn.disabled = true;
+      refBtn.textContent = "仓库燃料不足";
+    } else if (mInfo.canRefill) {
+      refBtn.disabled = false;
+      refBtn.textContent = "一键补给（需 " + needFuel.toLocaleString() + "）";
+    } else {
+      refBtn.disabled = true;
+      refBtn.textContent = "无需补给";
+    }
+  }
+  if (infoEl) {
+    if (stockShort) {
+      infoEl.className = "station-refill-info warn";
+      infoEl.textContent = "本次补给需 " + needFuel.toLocaleString() + " 燃料，但仓库仅 " + haveFuel.toLocaleString() +
+        "（仓库 › 消耗品 › 燃料单元）。请先制造或获取燃料后再补给。";
+    } else if (mInfo.canRefill) {
+      infoEl.className = "station-refill-info ok";
+      infoEl.textContent = "本次补给需 " + needFuel.toLocaleString() + " 燃料（仓库持有 " + haveFuel.toLocaleString() + "），补给后约可维持一周。";
+    } else {
+      infoEl.className = "station-refill-info";
+      infoEl.textContent = blockedHint;
+    }
   }
 
   // ---- C. 建筑 ----
@@ -155,10 +249,7 @@ function renderStationPage(now) {
       var bt = b.blockedText || blockReasonText(b.blockedReason);
       var costHtml = "";
       if (b.nextCostRows && b.nextCostRows.length) {
-        costHtml = b.nextCostRows.map(function(r) {
-          return '<span class="' + (r.enough ? "cost-enough" : "cost-short") + '">' + r.displayName + ' ×' + r.quantity + ' <small>（' + r.have + '）</small></span>';
-        }).join(" · ");
-        if (b.durationMs) costHtml += ' · ' + fmtDuration(b.durationMs);
+        costHtml = renderStationCostGrid(b.nextCostRows, { durationMs: b.durationMs });
       }
       var purposeHtml = STATION_BUILDING_PURPOSE[b.buildingId]
         ? '<div class="sbc-purpose">' + STATION_BUILDING_PURPOSE[b.buildingId] + '</div>'
@@ -186,17 +277,26 @@ function renderStationPage(now) {
         var opts = renderAutoLineOptions(al.targetOptions, al.selectedTargetId);
         var statAl = al.running ? "运行中" : (al.stoppedText || "已停止");
         if (al.stoppedReason === "insufficient-materials") statAl = "材料不足";
-        if (al.stoppedReason === "user-stopped") statAl = "已停止";
-        if (al.stoppedReason === "target-not-allowed") statAl = "目标不在产线范围";
+        else if (al.stoppedReason === "user-stopped") statAl = "已停止";
+        else if (al.stoppedReason === "target-not-allowed") statAl = "目标不在产线范围";
+        else if (al.stoppedReason === "target-reached") statAl = "已达目标";
         // 只显示正式中文名称：未选择时显示"未选择"，查不到配方时显示态已给出"未知配方"。
         // 绝不回退 selectedTargetId/startedTargetId，避免内部 recipeId 泄漏到界面。
         var selName = al.selectedTargetName || "未选择";
         var startName = al.startedTargetName || "";
+        var prodText = "";
+        if (al.running || al.stoppedReason === "target-reached") {
+          prodText = al.targetQuantity > 0 ? ("已产 " + al.producedQty + " / " + al.targetQuantity) : ("已产 " + al.producedQty + "（无限）");
+        } else if (al.targetQuantity > 0) {
+          prodText = "目标：" + al.targetQuantity + " 件";
+        }
         return '<div class="station-al-card" id="al-card-' + al.lineId + '"><div class="sal-header"><strong>' + (al.name || al.lineId) + '</strong></div>' +
           '<div class="sal-mult" id="al-mult-' + al.lineId + '">建筑 ×' + al.buildingMultiplier.toFixed(2) + ' · 后勤 ×' + al.logisticsMultiplier.toFixed(2) + ' · 综合 ×' + al.effectiveMultiplier.toFixed(2) + '</div>' +
           '<div class="sal-select"><select data-line="' + al.lineId + '" class="u-select">' + opts + '</select></div>' +
+          '<div class="sal-qty">生产数量 <input type="number" min="1" class="al-qty" data-al-qty="' + al.lineId + '" value="' + (al.targetQuantity ? al.targetQuantity : '') + '" placeholder="∞ 全部原料"></div>' +
           '<div class="sal-targets" id="al-targets-' + al.lineId + '">选中：' + selName + (startName ? ' · 运行：' + startName : '') + '</div>' +
           '<div class="sal-status" id="al-status-' + al.lineId + '">状态：' + statAl + '</div>' +
+          '<div class="sal-produced" id="al-produced-' + al.lineId + '">' + prodText + '</div>' +
           (al.cycleDurationMs ? '<div class="al-progress-wrap"><div class="progress-bar"><div class="fill al-fill" id="al-fill-' + al.lineId + '" style="width:' + (al.progressRatio * 100).toFixed(0) + '%"></div></div><div class="sal-progress" id="al-progress-' + al.lineId + '">周期 ' + (al.cycleDurationMs / 1000).toFixed(1) + 's · 进度 ' + (al.progressRatio * 100).toFixed(0) + '%</div></div>' : '') +
           '<button class="btn sm al-start" id="al-start-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStart ? '' : ' disabled') + '>' + (al.running ? '已启动' : '启动') + '</button>' +
           '<button class="btn sm al-stop" id="al-stop-' + al.lineId + '" data-line="' + al.lineId + '"' + (al.canStop ? '' : ' disabled') + '>停止</button></div>';
@@ -443,7 +543,18 @@ function liveUpdateStationFields(display, now) {
       if (al.stoppedReason === "insufficient-materials") st = "材料不足";
       else if (al.stoppedReason === "user-stopped") st = "已停止";
       else if (al.stoppedReason === "target-not-allowed") st = "目标不在产线范围";
+      else if (al.stoppedReason === "target-reached") st = "已达目标";
       setLiveText(statEl, "状态：" + st);
+    }
+    var prodEl = document.getElementById("al-produced-" + al.lineId);
+    if (prodEl) {
+      var pt = "";
+      if (al.running || al.stoppedReason === "target-reached") {
+        pt = al.targetQuantity > 0 ? ("已产 " + al.producedQty + " / " + al.targetQuantity) : ("已产 " + al.producedQty + "（无限）");
+      } else if (al.targetQuantity > 0) {
+        pt = "目标：" + al.targetQuantity + " 件";
+      }
+      setLiveText(prodEl, pt);
     }
     var tgtEl = document.getElementById("al-targets-" + al.lineId);
     if (tgtEl) {

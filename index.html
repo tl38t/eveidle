@@ -8,8 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=7">
-<link rel="stylesheet" href="./css/panels.css?v=13">
+<link rel="stylesheet" href="./css/base.css?v=8">
+<link rel="stylesheet" href="./css/panels.css?v=14">
 <link rel="stylesheet" href="./css/combat.css?v=8">
 <link rel="stylesheet" href="./css/components.css?v=21">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=13">
@@ -861,9 +861,18 @@
             <div>维护点数：<span id="station-maintenance-points">0</span></div>
             <div>燃料：<span id="station-fuel-remaining">0</span></div>
             <div>预计剩余：<span id="station-fuel-remaining-ms">-</span></div>
-            <div class="station-explain">维护点数决定可升级的建筑等级上限；本体与附属建筑持续消耗<b>维护燃料</b>，燃料耗尽前「预计剩余」显示可维持时长。燃料不足时全部停效，可随时用<b>一键补给</b>补充燃料维持运转。</div>
-            <div class="station-fuel-notes">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
+            <div class="station-explain">维护点数 = <b>本体等级 + 附属建筑等级之和</b>（舰船船坞、军团议事大厅不计入）。每点每周消耗 <b>1500 维护燃料</b>，按真实时间持续燃烧，燃料耗尽后本体与七座建筑全部停效（舰船船坞例外）。可在「仓库 › 消耗品 › 燃料单元」查看与制造燃料。</div>
+            <div class="station-fuel-rules">
+              <b>一键补给规则：</b>
+              <ul>
+                <li>仅当剩余燃料 <b>不足 24 小时</b>时开放补给（按钮置灰即表示燃料还够用，不是坏了）；</li>
+                <li>补给会一次性补到「刚好够烧一周」= 维护点数 × 1500；</li>
+                <li>所需燃料从<b>仓库的燃料单元</b>扣除，仓库不足则补不进去。</li>
+              </ul>
+            </div>
+            <div class="station-refill-info" id="station-refill-info"></div>
             <button class="btn primary" id="btn-station-refill">一键补给</button>
+            <div class="station-fuel-notes">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
           </div>
           </div><!-- /.sop-body -->
         </details>
@@ -1184,62 +1193,62 @@
   <script defer src="./js/data/display-names.js?v=2"></script>
   <script defer src="./js/data/planets.js?v=2"></script>
   <script defer src="./js/data/ships.js?v=9"></script>
-  <script defer src="./js/data/boosters.js?v=6"></script>
-  <script defer src="./js/systems/boosters.js?v=3"></script>
+  <script defer src="./js/data/boosters.js?v=7"></script>
+  <script defer src="./js/systems/boosters.js?v=4"></script>
   <script defer src="./js/systems/recycling.js?v=3"></script>
   <script defer src="./js/data/combat.js?v=4"></script>
   <script defer src="./js/data/cargo.js?v=7"></script>
   <script defer src="./js/data/implants.js?v=2"></script>
-  <script defer src="./js/data/equipment.js?v=12"></script>
+  <script defer src="./js/data/equipment.js?v=13"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=6"></script>
   <script defer src="./js/data/ammunition.js?v=2"></script>
   <script defer src="./js/data/archaeology.js?v=3"></script>
-  <script defer src="./js/data/research.js?v=4"></script>
-  <script defer src="./js/core/research-state.js?v=2"></script>
+  <script defer src="./js/data/research.js?v=5"></script>
+  <script defer src="./js/core/research-state.js?v=3"></script>
   <script defer src="./js/data/achievements.js?v=4"></script>
   <script defer src="./js/data/achievement-rules.js?v=5"></script>
   <script defer src="./js/data/tutorial.js?v=5"></script>
   <script defer src="./js/core/tutorial-state.js?v=3"></script>
   <script defer src="./js/core/achievement-state.js?v=2"></script>
-  <script defer src="./js/core/state.js?v=3"></script>
-  <script defer src="./js/systems/research.js?v=2"></script>
+  <script defer src="./js/core/state.js?v=4"></script>
+  <script defer src="./js/systems/research.js?v=3"></script>
   <script defer src="./js/core/statistics.js?v=3"></script>
   <script defer src="./js/systems/achievements.js?v=3"></script>
-  <script defer src="./js/systems/production.js?v=6"></script>
+  <script defer src="./js/systems/production.js?v=7"></script>
   <script defer src="./js/core/resources.js?v=2"></script>
   <script defer src="./js/systems/tutorial.js?v=7"></script>
-  <script defer src="./js/systems/manufacturing.js?v=4"></script>
+  <script defer src="./js/systems/manufacturing.js?v=5"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=2"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=4"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=2"></script>
   <script defer src="./js/systems/rigs.js?v=4"></script>
-  <script defer src="./js/systems/archaeology.js?v=8"></script>
+  <script defer src="./js/systems/archaeology.js?v=9"></script>
   <script defer src="./js/systems/planetary.js?v=2"></script>
-  <script defer src="./js/systems/station.js?v=10"></script>
+  <script defer src="./js/systems/station.js?v=11"></script>
   <script defer src="./js/data/legion/npc-names.js?v=1"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
-  <script defer src="./js/systems/legion-npc.js?v=1"></script>
+  <script defer src="./js/systems/legion-npc.js?v=2"></script>
   <script defer src="./js/ui/action-modal.js?v=6"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
   <script defer src="./js/systems/combat.js?v=9"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=36"></script>
-  <script defer src="./js/core/actions.js?v=13"></script>
+  <script defer src="./js/core/selectors.js?v=37"></script>
+  <script defer src="./js/core/actions.js?v=14"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=42"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=15"></script>
-  <script defer src="./js/ui/combat-render.js?v=22"></script>
+  <script defer src="./js/ui/shell-render.js?v=43"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=16"></script>
+  <script defer src="./js/ui/combat-render.js?v=23"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
-  <script defer src="./js/ui/archaeology-render.js?v=7"></script>
-  <script defer src="./js/ui/booster-render.js?v=6"></script>
-  <script defer src="./js/ui/station-render.js?v=7"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=8"></script>
+  <script defer src="./js/ui/booster-render.js?v=7"></script>
+  <script defer src="./js/ui/station-render.js?v=8"></script>
   <script defer src="./js/ui/legion-render.js?v=1"></script>
   <script defer src="./js/ui/legion-events.js?v=1"></script>
-  <script defer src="./js/core/tick.js?v=8"></script>
-  <script defer src="./js/core/offline.js?v=10"></script>
+  <script defer src="./js/core/tick.js?v=9"></script>
+  <script defer src="./js/core/offline.js?v=11"></script>
   <script defer src="./js/systems/offline-combat.js?v=4"></script>
   <script defer src="./js/systems/combat-log.js?v=3"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
@@ -1264,10 +1273,10 @@
   <script defer src="./js/data/platform-achievement-map.js?v=2"></script>
   <script defer src="./js/core/achievement-sync-service.js?v=2"></script>
   <script defer src="./js/core/leaderboard-sync-service.js?v=1"></script>
-  <script defer src="./js/core/persistence.js?v=12"></script>
+  <script defer src="./js/core/persistence.js?v=13"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=3"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
-  <script defer src="./js/ui/render.js?v=9"></script>
+  <script defer src="./js/ui/render.js?v=10"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=11"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">

@@ -163,12 +163,14 @@ function getRunningEquipEngRecipe() {
 }
 
 function getEquipEngEfficiency() {
-  const skillMult = 1 + gameState.skills.equipmentEngineering.lvl * 0.02;
+  const skillMult = 1 + getEffectiveSkillLevel(gameState, "equipmentEngineering") * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState, "equipEng")) : 1;
   // 研究批次 G：与 selectors.getEquipmentEngineeringDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
   const researchMult = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(gameState, ["allMfg", "equip"]) : 1;
-  let total = skillMult * stationMult * researchMult;
+  // 装备总装协调剂（equipmentSpeed）：激活期间缩短装备制造耗时；与舰船 shipSpeed 同一乘区模型。
+  const boosterSpeed = (typeof getBoosterEffectState === "function") ? (getBoosterEffectState(gameState).equipmentSpeedMultiplier || 1) : 1;
+  let total = skillMult * stationMult * researchMult * boosterSpeed;
   if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
     total *= LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.equipment;
   }
@@ -196,9 +198,10 @@ function getEquipEngOwnedCount(recipe) {
   return getEquipmentOwnedCountFromState(gameState, recipe);
 }
 
-function hasEnoughEquipEngInputs(recipe, cycles, chosenLevel) {
+function hasEnoughEquipEngInputs(recipe, cycles, chosenLevel, quotedCost) {
   const count = Math.max(1, Number(cycles) || 1);
-  if (!ResourceRegistry.canAffordCost(gameState, recipe.cost, count)) return false;
+  const cost = quotedCost || recipe.cost;
+  if (!ResourceRegistry.canAffordCost(gameState, cost, count)) return false;
   if (!recipe.inputEquipment) return true;
   const level = (chosenLevel === undefined || chosenLevel === null)
     ? getEquipEngInputLevelFromState(gameState, recipe)
@@ -209,10 +212,11 @@ function hasEnoughEquipEngInputs(recipe, cycles, chosenLevel) {
   return (groups[level] || 0) >= required;
 }
 
-function deductEquipEngInputs(recipe, cycles, chosenLevel) {
+function deductEquipEngInputs(recipe, cycles, chosenLevel, quotedCost) {
   const count = Math.max(1, Number(cycles) || 1);
-  if (!hasEnoughEquipEngInputs(recipe, count, chosenLevel)) return false;
-  ResourceRegistry.spendCost(gameState, recipe.cost, count);
+  const cost = quotedCost || recipe.cost;
+  if (!hasEnoughEquipEngInputs(recipe, count, chosenLevel, cost)) return false;
+  ResourceRegistry.spendCost(gameState, cost, count);
   if (!recipe.inputEquipment) return true;
   const level = (chosenLevel === undefined || chosenLevel === null)
     ? getEquipEngInputLevelFromState(gameState, recipe)
@@ -335,7 +339,7 @@ function applyEquipEngOutput(recipe, cycles, chosenLevel) {
    ================================================================ */
 
 function getBoosterEfficiency() {
-  const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
+  const lvl = getEffectiveSkillLevel(gameState, "boosterEngineering");
   const skillMult = 1 + lvl * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState, "booster")) : 1;
   // 研究批次 G：与 selectors.getBoosterManufacturingDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
@@ -362,7 +366,7 @@ function getRunningBoosterRecipe() {
 
 function isBoosterRecipeUnlocked(recipe) {
   if (!recipe) return false;
-  const lvl = (gameState.skills && gameState.skills.boosterEngineering && gameState.skills.boosterEngineering.lvl) || 1;
+  const lvl = getEffectiveSkillLevel(gameState, "boosterEngineering");
   if (lvl < recipe.level) return false;
   // 考古重做：requiresBlueprint 配方（新增 24 张）需对应蓝图解锁；既有 30 张无此标记，仅受等级限制。
   return typeof boosterRecipeHasRequiredBlueprint === "function"
@@ -404,7 +408,9 @@ function applyBoosterOutput(recipe, cycles) {
 function getBoosterCategoryRecipes(categoryId, qualityFilter) {
   return BOOSTER_RECIPES.filter(recipe => {
     const series = BOOSTER_SERIES[recipe.series];
-    if (!series || series.category !== categoryId) return false;
+    if (!series) return false;
+    const cats = Array.isArray(series.category) ? series.category : [series.category];
+    if (!cats.includes(categoryId)) return false;
     if (qualityFilter && qualityFilter !== "all" && recipe.quality !== qualityFilter) return false;
     return true;
   });

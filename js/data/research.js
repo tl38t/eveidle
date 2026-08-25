@@ -36,7 +36,7 @@ const RANK_MULT = {
 };
 
 // ---------------------------------------------------------------------------
-//  2. 节点数据（38 个）—— 与冻结源逐字段一致
+//  2. 节点数据（45 个：39 主研究 + 6 军团分支）—— 与冻结源逐字段一致
 //     category: foundation / industry / exploration / combat / logistics / protocol
 //     era:      0(基础) 1(应用) 2(工程) 3(尖端) 4(协议与集成)
 //     type:     foundation / numeric / protocol
@@ -338,16 +338,73 @@ const NODES = [
     bonus: null,
     description: "考古失败受伤时触发，消耗燃料自动维修。",
   },
+
+  // ===== 军团研究分支（6 个，contentPack="legion"；接入现有研究系统，非独立系统） =====
+  {
+    id: "legion_foundation", name: "军团基础架构", category: "legion", era: 0, type: "foundation",
+    contentPack: "legion",
+    maxLevel: 1, rank: 0.6, prerequisites: [{ id: "syseng", level: 1 }, { id: "dataan", level: 1 }],
+    effects: ["解锁军团研究分支"],
+    bonus: null,
+    description: "建立军团指挥与科研体系，解锁军团研究分支。",
+  },
+  {
+    id: "legion_staffing", name: "军团征募编制", category: "legion", era: 1, type: "numeric",
+    contentPack: "legion",
+    maxLevel: 5, rank: 1.0, prerequisites: [{ id: "legion_foundation", level: 1 }],
+    effects: ["军团总人数上限 +1", "军团总人数上限 +2", "军团总人数上限 +3", "军团总人数上限 +4", "军团总人数上限 +5"],
+    bonus: { group: "legionNpcCapacity", perLevel: 1, unit: "count" },
+    description: "扩编征募体系，每级提升军团总人数上限 +1（含玩家本人）。",
+  },
+  {
+    id: "legion_training", name: "军团训练条令", category: "legion", era: 2, type: "numeric",
+    contentPack: "legion",
+    maxLevel: 5, rank: 1.0, prerequisites: [{ id: "legion_foundation", level: 1 }, { id: "dataarch", level: 2 }],
+    effects: ["NPC 等级上限 +10", "NPC 等级上限 +20", "NPC 等级上限 +30", "NPC 等级上限 +40", "NPC 等级上限 +50"],
+    bonus: { group: "legionNpcLevelCap", perLevel: 10, unit: "count" },
+    description: "制定 NPC 训练条令，每级提升 NPC 等级上限 +10。",
+  },
+  {
+    id: "legion_doctrine", name: "军团作战学说", category: "legion", era: 2, type: "numeric",
+    contentPack: "legion",
+    maxLevel: 5, rank: 1.0, prerequisites: [{ id: "legion_foundation", level: 1 }, { id: "combat", level: 2 }],
+    effects: ["NPC 经验获取 +2%", "NPC 经验获取 +4%", "NPC 经验获取 +6%", "NPC 经验获取 +8%", "NPC 经验获取 +10%"],
+    bonus: { group: "legionNpcXp", perLevel: 2, unit: "%" },
+    description: "完善作战学说，每级提升 NPC 经验获取 +2%。",
+  },
+  {
+    id: "legion_dual_squad", name: "双人战斗小队", category: "protocol", era: 4, type: "protocol",
+    contentPack: "legion",
+    maxLevel: 1, rank: 2.5, prerequisites: [
+      { id: "legion_staffing", level: 3 }, { id: "legion_training", level: 3 },
+      { id: "legion_doctrine", level: 3 }, { id: "combat", level: 3 },
+    ],
+    effects: ["解锁两人 NPC 战斗小队"],
+    bonus: null,
+    description: "解锁两名 NPC 协同出战的战斗小队编制（仅解锁，不含小队战斗逻辑）。",
+  },
+  {
+    id: "legion_triple_squad", name: "三人战斗小队", category: "protocol", era: 4, type: "protocol",
+    contentPack: "legion",
+    maxLevel: 1, rank: 2.5, prerequisites: [
+      { id: "legion_dual_squad", level: 1 }, { id: "legion_staffing", level: 5 },
+      { id: "legion_training", level: 5 }, { id: "combat", level: 5 },
+    ],
+    effects: ["解锁第三名 NPC 战斗成员"],
+    bonus: null,
+    description: "在双人小队基础上解锁第三名 NPC 战斗成员（仅解锁，不含小队战斗逻辑）。",
+  },
 ];
 
 // ---------------------------------------------------------------------------
 //  3. 统一公式推导（与冻结源一致，UNIT 由总目标时间反推）
 //      duration(step) = UNIT × WEIGHTS[level-1] × RANK_MULT[category]
 // ---------------------------------------------------------------------------
-function totalWeight() {
+function baseWeight() {
   let w = 0;
   for (const n of NODES) {
-    const rank = RANK_MULT[n.category];
+    if (n.contentPack === "legion") continue; // 军团节点不计入基础权重
+    const rank = (typeof n.rank === "number") ? n.rank : (RANK_MULT[n.category] || 0);
     if (!rank) throw new Error("未知 category: " + n.category + " @ " + n.id);
     for (let lvl = 1; lvl <= n.maxLevel; lvl++) {
       w += WEIGHTS[lvl - 1] * rank;
@@ -356,17 +413,25 @@ function totalWeight() {
   return w;
 }
 
-const TOTAL_WEIGHT = totalWeight();
+const BASE_TOTAL_WEIGHT = baseWeight();
+const TOTAL_WEIGHT = BASE_TOTAL_WEIGHT;
 const UNIT = TARGET_SECONDS / TOTAL_WEIGHT;
 
 // 填充每个节点的 durationByLevel（秒，由公式生成，与冻结源逐字段一致）
 for (const n of NODES) {
-  const rank = RANK_MULT[n.category];
+  const rank = (typeof n.rank === "number") ? n.rank : (RANK_MULT[n.category] || 0);
   const arr = [];
   for (let lvl = 1; lvl <= n.maxLevel; lvl++) {
     arr.push(UNIT * WEIGHTS[lvl - 1] * rank);
   }
   n.durationByLevel = arr;
+}
+
+// 军团分支追加的总研究时间（秒）：主研究树 ~90 天 + 此值 = 总时间
+let LEGION_ADDITIONAL_SECONDS = 0;
+for (const n of NODES) {
+  if (n.contentPack !== "legion") continue;
+  for (const d of n.durationByLevel) LEGION_ADDITIONAL_SECONDS += d;
 }
 
 // ---------------------------------------------------------------------------
@@ -537,6 +602,18 @@ const RESEARCH_BONUS_CONSUMERS = {
   repair: [
     { target: "selectors.getCombatRepairMultiplierFromState", kind: "multiplier", groups: ["repair"] },
   ],
+
+  // —— 军团分支（消费点 = 军团 NPC 系统，真实函数见 js/systems/legion-npc.js）——
+  //  这三个 group 必须被映射；漏映射审计必须失败（禁止静默 no-op）。
+  legionNpcCapacity: [
+    { target: "LEGION_NPC.getLegionNpcCapacity", kind: "multiplier", groups: ["legionNpcCapacity"] },
+  ],
+  legionNpcLevelCap: [
+    { target: "LEGION_NPC.getLegionNpcLevelCap", kind: "multiplier", groups: ["legionNpcLevelCap"] },
+  ],
+  legionNpcXp: [
+    { target: "LEGION_NPC.getLegionNpcResearchXpMultiplier", kind: "multiplier", groups: ["legionNpcXp"] },
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -549,7 +626,9 @@ const ResearchData = {
   RANK_MULT,
   NODES,
   TOTAL_WEIGHT,
+  BASE_TOTAL_WEIGHT,
   UNIT,
+  LEGION_ADDITIONAL_SECONDS,
   buildSteps,
   STEP_COUNT,
   RESEARCH_BONUS_CONSUMERS,

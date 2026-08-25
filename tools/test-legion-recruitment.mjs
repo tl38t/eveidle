@@ -23,6 +23,12 @@ const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, "..");
 const LEGION_NPC = require(path.join(ROOT, "js/systems/legion-npc.js"));
 
+// 研究数据层 + 状态层：set globalThis.ResearchData / globalThis.ResearchState，
+// 供 NPC 系统经 ResearchState 读取军团研究加成（容量/等级上限/经验乘子）。
+// 顺序敏感：research-state.js 在 IIFE 加载时读取 globalThis.ResearchData。
+require(path.join(ROOT, "js/data/research.js"));       // globalThis.ResearchData
+require(path.join(ROOT, "js/core/research-state.js")); // globalThis.ResearchState（依赖 ResearchData）
+
 // ---------- 测试框架 ----------
 let PASS = 0, FAIL = 0;
 const failures = [];
@@ -117,14 +123,20 @@ console.log("\n[2] 激活门控");
 }
 
 // ================================================================
-// 三、人数上限（6 + (大厅-1) + 科技，封顶 15）
+// 三、人数上限（6 + (大厅-1) + 研究(legion_staffing 每级+1)，封顶 15）
+//   注：旧档 state.legion.technologyLevel 已不再提供数值效果（仅兼容保留）。
 // ================================================================
 console.log("\n[3] 人数上限");
 {
-  eq("大厅1/科技0 = 6", LEGION_NPC.getLegionNpcCapacity(makeState({ hall: 1, legion: { technologyLevel: 0 } })), 6);
-  eq("大厅5/科技0 = 10", LEGION_NPC.getLegionNpcCapacity(makeState({ hall: 5, legion: { technologyLevel: 0 } })), 10);
-  eq("大厅1/科技3 = 9", LEGION_NPC.getLegionNpcCapacity(makeState({ hall: 1, legion: { technologyLevel: 3 } })), 9);
-  eq("大厅10/科技10 = 封顶15", LEGION_NPC.getLegionNpcCapacity(makeState({ hall: 10, legion: { technologyLevel: 10 } })), 15);
+  eq("大厅1/无军团研究 = 6", LEGION_NPC.getLegionNpcCapacity(makeState({ hall: 1, legion: { technologyLevel: 0 } })), 6);
+  eq("大厅5/无军团研究 = 10", LEGION_NPC.getLegionNpcCapacity(makeState({ hall: 5, legion: { technologyLevel: 0 } })), 10);
+  // 旧 technologyLevel 字段不再影响容量（验证“旧档兼容但不生效”）
+  eq("大厅1/旧technologyLevel=3 仍=6", LEGION_NPC.getLegionNpcCapacity(makeState({ hall: 1, legion: { technologyLevel: 3 } })), 6);
+  // 新机制：征募编制研究驱动容量
+  const sStaff3 = makeState({ hall: 1 }); sStaff3.research = { completedLevels: { legion_staffing: 3 } };
+  eq("大厅1 + 征募编制@3 = 9", LEGION_NPC.getLegionNpcCapacity(sStaff3), 9);
+  const sStaffCap = makeState({ hall: 10 }); sStaffCap.research = { completedLevels: { legion_staffing: 5 } };
+  eq("大厅10 + 征募@5 = 封顶15", LEGION_NPC.getLegionNpcCapacity(sStaffCap), 15);
   // 容量-1 = 可招募 NPC 上限（含玩家本人）
   const s = makeState({ hall: 1, isk: 1e9, lp: 1e6 });
   LEGION_NPC.ensureLegionState(s);
@@ -322,7 +334,7 @@ console.log("\n[8] 经验结算");
   eq("overdue XP=0", LEGION_NPC.calculateLegionNpcXp(s, paid, 4), 0);
   paid.salaryState = "paid";
 
-  // 等级上限：tech=0 → cap 20；超大时间不越界
+  // 等级上限：无军团训练研究 → cap 20；超大时间不越界
   const sc = makeState({ hall: 1, legion: { technologyLevel: 0 } });
   sc.legion.npcs.push(makeNpc({ skillId: "laserOps", skillGrade: "D", boundShipInstanceId: "sh_sc" }));
   addShip(sc, "sh_sc", "starcrown"); // supercapital 兼容 combat → mult 3.0
@@ -331,14 +343,15 @@ console.log("\n[8] 经验结算");
   eq("等级封顶 20", sc.legion.npcs[0].level, 20);
   eq("达上限 xp 归零", sc.legion.npcs[0].xp, 0);
 
-  // 科技提升上限（tech=10 → 20+50=70 封顶）
-  const st2 = makeState({ legion: { technologyLevel: 10 } });
+  // 训练条令研究提升上限（legion_training@5 → 20+50=70 封顶）
+  const st2 = makeState({});
+  st2.research = { completedLevels: { legion_training: 5 } };
   st2.legion.npcs.push(makeNpc({ skillId: "laserOps", skillGrade: "D", boundShipInstanceId: "sh_sc2" }));
   addShip(st2, "sh_sc2", "starcrown");
-  eq("tech10 cap=70", LEGION_NPC.getLegionNpcLevelCap(st2), 70);
+  eq("训练条令@5 cap=70", LEGION_NPC.getLegionNpcLevelCap(st2), 70);
   LEGION_NPC.settleLegionNpcExperience(st2, { now: T0 });
   LEGION_NPC.settleLegionNpcExperience(st2, { now: T0 + 1000 * PERIOD });
-  eq("tech10 不超 70", st2.legion.npcs[0].level, 70);
+  eq("训练条令@5 不超 70", st2.legion.npcs[0].level, 70);
 
   // 里程碑：每 10 级触发（mult 3.0，3 周期即破 20 级）
   const sm = makeState({});
