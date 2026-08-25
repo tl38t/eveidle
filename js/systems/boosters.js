@@ -79,7 +79,7 @@ var BOOSTER_SLOT_ACTION = {
   combatWeapon:"combat", combatRepair:"combat"
 };
 
-// 槽位 → 技能显示名（用于装备态描述：技能超载协议装在哪个槽就显示哪个技能）。
+// 槽位 → 技能显示名（用于装备态描述：技能超载催化器装在哪个槽就显示哪个技能）。
 function getSkillLabelForSlot(slot) {
   var action = BOOSTER_SLOT_ACTION[slot];
   if (!action) return "装备槽对应技能";
@@ -91,7 +91,7 @@ function getSkillLabelForSlot(slot) {
 function isBoosterCompatibleWithSlot(item, slot) {
   if (!item) return false;
   if (item.universal) {
-    // 技能超载协议（skillLevelBonus）只允许采集/制造类槽，禁止进入战斗槽
+    // 技能超载催化器（skillLevelBonus）只允许采集/制造类槽，禁止进入战斗槽
     // （战斗槽映射到 combat，不在 7 个受加成技能内，装了等于白装）。
     if (item.effectType === "skillLevelBonus") {
       const action = BOOSTER_SLOT_ACTION[slot];
@@ -393,7 +393,7 @@ function tickBoosterTimers(state, now) {
      repairMultiplier         { shield, armor, structure }
      activeEntries            { [slot]: { itemId, name, quality, effectType, effectValue, remainingMs } }
    ---------------------------------------------------------------- */
-// 临时技能等级（技能超载协议）：基础等级 + 当前生效的 skillLevelBySkill[技能]；离线/在线共用同一入口。
+// 临时技能等级（技能超载催化器）：基础等级 + 当前生效的 skillLevelBySkill[技能]；离线/在线共用同一入口。
 // 所有"采集制造"技能的等级门槛/效率读取都应走此函数，确保增强剂起效期间可制造更高级道具。
 // 作用域按槽位：装在哪个槽，仅该槽对应技能获得临时等级；多瓶取 MAX（同一技能内），不跨技能叠加。
 function getEffectiveSkillLevel(state, key) {
@@ -426,7 +426,7 @@ function getBoosterEffectState(state) {
     equipmentSpeedMultiplier: 1,
     shipMaterialDiscount: 0,
     materialDiscountLevelGate: 0,
-    // 技能超载协议：仅装在对应槽位的技能获得临时等级；键为该技能的技能键。
+    // 技能超载催化器：仅装在对应槽位的技能获得临时等级；键为该技能的技能键。
     skillLevelBySkill: { mining:0, gasHarvesting:0, refining:0, shipEngineering:0, equipmentEngineering:0, boosterEngineering:0, archaeology:0 },
     boosterSpeedMultiplier: 1,
     doubleBoosterChance: 0,

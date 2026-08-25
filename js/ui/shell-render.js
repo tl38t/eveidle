@@ -2277,7 +2277,13 @@ function renderResearchDetail(research, RD, RS, model) {
   } else if (status === "active") {
     actionsHtml = '<div class="rt-d-row">研究中</div>';
   } else if (status === "queued") {
-    actionsHtml = '<div class="rt-d-row">已加入队列</div>';
+    const queuedKey = node.id + "@" + nextTarget;
+    const startDisabled = (research.activeResearch && typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) ? " disabled" : "";
+    actionsHtml =
+      '<div class="rt-d-row">已加入队列（' + toRoman(nextTarget) + '）</div>' +
+      '<div class="rt-d-actions">' +
+        '<button class="research-btn primary" data-detail-action="startQueued" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + startDisabled + '>立即开始</button>' +
+      '</div>';
   } else {
     if (status === "branch-locked") {
       // 军团分支外部条件未达成：禁用操作并提示解锁条件（主研究树完全不受影响）
@@ -2327,10 +2333,15 @@ function renderResearchQueue(research, RD, RS) {
     const name = node ? node.name : techId;
     const dur = (node && RS && RS.getResearchDuration) ? RS.getResearchDuration(techId, level) : null;
     const durText = (dur != null && isFinite(dur)) ? formatResearchDuration(dur) : "—";
+    // 已有活跃研究时禁用"立即开始"（startQueuedResearch 也会拒绝并保留队列）
+    const startDisabled = (research.activeResearch && typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) ? " disabled" : "";
     return '<div class="research-queue-item">' +
       '<div><span class="research-queue-index">#' + (idx + 1) + '</span><b>' + escapeAchievementText(name) + '</b> · Lv.' + level +
         '<div class="research-queue-meta">预计耗时 ' + escapeAchievementText(durText) + '</div></div>' +
-      '<button class="research-btn danger" data-remove-key="' + key + '">移除</button>' +
+      '<div class="research-queue-actions">' +
+        '<button class="research-btn primary" data-start-key="' + escapeAchievementText(key) + '"' + startDisabled + '>立即开始</button>' +
+        '<button class="research-btn danger" data-remove-key="' + escapeAchievementText(key) + '">移除</button>' +
+      '</div>' +
     '</div>';
   }).join("");
   el.innerHTML = html;
@@ -2466,6 +2477,15 @@ function liveUpdateResearchFields(now) {
 
 // ---- 研究页交互（事件委托，全部经 dispatchGameAction） ----
 function onResearchQueueClick(event) {
+  const startBtn = event.target.closest("[data-start-key]");
+  if (startBtn) {
+    const key = startBtn.dataset.startKey;
+    if (!key) return;
+    const result = dispatchGameAction(gameState, { type: "research/startQueued", stepKey: key }, Date.now());
+    if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+    renderResearchPage();
+    return;
+  }
   const btn = event.target.closest("[data-remove-key]");
   if (!btn) return;
   const key = btn.dataset.removeKey;
@@ -2686,6 +2706,13 @@ function onResearchDetailClick(event) {
   const techId = btn.dataset.techId;
   const targetLevel = Number(btn.dataset.level);
   if (!techId || !Number.isInteger(targetLevel)) return;
+  if (action === "startQueued") {
+    const stepKey = techId + "@" + targetLevel;
+    const result = dispatchGameAction(gameState, { type: "research/startQueued", stepKey }, Date.now());
+    if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+    renderResearchPage();
+    return;
+  }
   const type = action === "start" ? "research/start" : action === "enqueue" ? "research/enqueueCascade" : null;
   if (!type) return;
   const result = dispatchGameAction(gameState, { type, techId, targetLevel }, Date.now());

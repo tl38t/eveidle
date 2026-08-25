@@ -360,6 +360,37 @@
   }
 
   // -------------------------------------------------------------------------
+  // 从队列直接开始（用户诉求：排队后无"直接开始"按钮）。
+  //   原子操作：仅当当前无活跃研究时，把指定 stepKey 从 pendingQueue 取出并立即开始；
+  //   若已有活跃研究 → 返回 ALREADY_ACTIVE 且不改动队列（避免丢失已排队项）；
+  //   若 stepKey 不在队列 / 解析失败 → 返回对应 reason；
+  //   成功后才从队列移除该 key（失败保留，避免丢项）。
+  //   复用公共 startResearch（先结算自然时间再启动，绝不覆盖活跃项）。
+  // -------------------------------------------------------------------------
+  function startQueuedResearch(state, stepKey, now) {
+    const research = state && state.research ? state.research : {};
+    if (research.activeResearch !== null && typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) {
+      return { ok: false, reason: "ALREADY_ACTIVE" };
+    }
+    const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+    if (!stepKey || queue.indexOf(stepKey) < 0) {
+      return { ok: false, reason: "NOT_QUEUED" };
+    }
+    const parsed = parseResearchStepKey(stepKey);
+    if (!parsed) {
+      return { ok: false, reason: "BAD_KEY" };
+    }
+    const res = startResearch(state, parsed.techId, parsed.targetLevel, now);
+    if (res && res.ok) {
+      const idx = queue.indexOf(stepKey);
+      if (idx >= 0) queue.splice(idx, 1);
+      markResearchDirty(state);
+      return { ok: true, techId: parsed.techId, targetLevel: parsed.targetLevel, key: stepKey };
+    }
+    return res || { ok: false, reason: "FAILED" };
+  }
+
+  // -------------------------------------------------------------------------
   // 队首真实校验启动（§4.6）：用真实 completedLevels 二次校验。
   //   - 坏格式 / 非法（重复、倒序、缺前置、坏格式）旧档项移除后继续检查下一项。
   //   - 找到第一项真实合法步骤时启动并停止扫描。
@@ -786,6 +817,7 @@
     isLegionResearchUnlocked,
     getLegionResearchLockReason,
     startResearch,
+    startQueuedResearch,
     startNextFromQueue,
     // 批次 C：在线/离线统一时间结算
     processResearchUntil,

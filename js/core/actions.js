@@ -2120,6 +2120,11 @@ const StationStateActions = {
       const RS = getResearchSystemRef();
       if (!RS || typeof RS.removeQueuedResearch !== "function") return { changed: false, reason: "not-available" };
       return researchActionResult(RS.removeQueuedResearch(state, stepKey, now));
+    },
+    startQueued(state, stepKey, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.startQueuedResearch !== "function") return { changed: false, reason: "not-available" };
+      return researchActionResult(RS.startQueuedResearch(state, stepKey, now));
     }
   };
 
@@ -2245,6 +2250,7 @@ const StationStateActions = {
   if (action.type === "research/cancel") return ResearchStateActions.cancel(state, actionTime);
   if (action.type === "research/applyHours") return ResearchStateActions.applyHours(state, action.hours, actionTime);
   if (action.type === "research/removeQueued") return ResearchStateActions.removeQueued(state, action.stepKey, actionTime);
+  if (action.type === "research/startQueued") return ResearchStateActions.startQueued(state, action.stepKey, actionTime);
   // 研究系统 Batch I：自动化协议配置（业务实现全在 js/systems/research-protocols.js，actionTime 原样透传）
   if (action.type === "research/setProtocolEnabled") {
     return (typeof setResearchProtocolEnabled === "function")

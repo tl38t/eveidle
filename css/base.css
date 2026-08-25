@@ -252,7 +252,7 @@
   .nav-lv.lv-low  { color: #4a5a6a; background: rgba(74, 90, 106, 0.15); }
   .nav-lv.lv-mid  { color: #5da8d4; background: rgba(93, 168, 212, 0.15); }
   .nav-lv.lv-high { color: #d4a843; background: rgba(212, 168, 67, 0.15); text-shadow: 0 0 20px rgba(212, 168, 67, 0.1); }
-  /* 增强剂临时等级（技能超载协议）：叠加显示并高亮提示 */
+  /* 增强剂临时等级（技能超载催化器）：叠加显示并高亮提示 */
   .nav-lv.nav-lv-boosted {
     color: #6ee7a8 !important;
     background: rgba(110, 231, 168, 0.18) !important;
@@ -912,6 +912,7 @@
   }
   .research-queue-index { font-family: var(--font-tech, sans-serif); color: #c2a8ff; margin-right: 4px; }
   .research-queue-meta { color: #9fb0c2; font-size: 12px; }
+  .research-queue-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
   /* 移动端：仍是横向科技树；详情区沿用桌面端固定模态（不再覆盖为 static），横向移动只发生在树内部 */
   @media (max-width: 720px) {

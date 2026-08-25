@@ -44,8 +44,8 @@ const BOOSTER_SERIES = Object.freeze({
   // —— 技能训练 · 神经训练催化器（经验茶模型：通用件 universal，可装入任意类别槽，只加成该槽对应类别的技能经验；effectType:skillXpMultiplier）——
   // —— 技能训练 · 神经训练催化器（经验茶模型：通用件 universal，可装入任意类别槽，只加成该槽对应类别的技能经验）——
   neural_booster: { id:"neural_booster", name:"神经训练催化器", category:"training", slot:"any", effectType:"skillXpMultiplier" },
-  // —— 技能超载协议（通用件 universal，可装入任意类别槽）：临时提升全部采集/制造技能等级，起效期间可制造/采集更高级道具，离线同样生效 ——
-  skill_overdrive: { id:"skill_overdrive", name:"技能超载协议", category:["mining","gas","archaeology","refining","ship","equipment","booster"], slot:"any", effectType:"skillLevelBonus" }
+  // —— 技能超载催化器（通用件 universal，可装入任意类别槽）：临时提升全部采集/制造技能等级，起效期间可制造/采集更高级道具，离线同样生效；归入「技能训练」标签，直解锁（无蓝图）——
+  skill_overdrive: { id:"skill_overdrive", name:"技能超载催化器", category:"training", slot:"any", effectType:"skillLevelBonus" }
 });
 
 const BOOSTER_CATEGORY_META = Object.freeze([
@@ -167,7 +167,7 @@ const BOOSTER_DEFS = [
   ["neural_booster","r",82,124,82,"等离子体",3,"special:高能战术萃取物",4,"skillXpMultiplier",0.10,"any",true,"gas:氢同位素",4],
   // 传奇：需蓝图，L/XL 货柜掉落
   ["neural_booster","l",98,148, 358,"生物质",5,"special:极化战术介质",7,"skillXpMultiplier",0.15,"any",true,"gas:聚合气体",2],
-  // ---- 技能超载协议（通用件 universal，全部采集/制造技能临时 +等级；直解锁；180s）----
+  // ---- 技能超载催化器（通用件 universal，全部采集/制造技能临时 +等级；直解锁；归入技能训练；180s）----
   ["skill_overdrive","n",30,180, 18,"同位素",3,"special:活性战术凝胶",4,"skillLevelBonus",3,"any",false,null,0,0],
   ["skill_overdrive","r",70,180, 88,"等离子体",3,"special:高能战术萃取物",4,"skillLevelBonus",5,"any",false,null,0,0],
   ["skill_overdrive","l",92,180,376,"生物质",5,"special:极化战术介质",7,"skillLevelBonus",7,"any",false,null,0,0]
