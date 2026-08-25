@@ -409,6 +409,13 @@ function renderBoosterPage(now) {
       if (!(inv >= 1)) { showBoosterToast("库存不足，无法装载", true); return; }
       // 通用件（神经训练催化器）：弹出槽位选择器，由用户选择装载到哪类槽
       if (isUniversal) { showUniversalBoosterSlotPicker(itemId, inv); return; }
+      // 多分类（数组 category）的非通用件：弹出可选兼容槽位，由用户选择装哪个槽，
+      // 避免被 it.slot 绑死到单一槽（例：精密配给剂可在舰船槽或装备槽二选一）。
+      var cardItem = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
+      if (cardItem && Array.isArray(cardItem.category) && cardItem.category.length > 1) {
+        var compSlots = BOOSTER_SLOTS.filter(function(sl){ return isBoosterCompatibleWithSlot(cardItem, sl); });
+        if (compSlots.length) { showBoosterSlotChoicePicker(itemId, compSlots, inv); return; }
+      }
       if (!slot) return;
       // 检查槽位状态
       var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
@@ -459,7 +466,12 @@ function getCompatibleBoosterItems(slot) {
       var e = active[BOOSTER_SLOTS[s]];
       if (!e || BOOSTER_SLOTS[s] === slot) continue;
       var existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
-      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) { conflict = true; break; }
+      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) {
+        // 同系列：仅同一分类组（如 miningSpeed+miningYield）冲突；跨分类组（ship+equipment）允许
+        var exCat = BOOSTER_SLOT_CATEGORY[BOOSTER_SLOTS[s]];
+        var newCat = BOOSTER_SLOT_CATEGORY[slot];
+        if (exCat && exCat === newCat) { conflict = true; break; }
+      }
       // 通用件（神经）：同一类别槽位只能装一个
       if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[BOOSTER_SLOTS[s]] === BOOSTER_SLOT_XP_SKILL[slot]) { conflict = true; break; }
     }
@@ -539,6 +551,51 @@ Object.keys(BOOSTER_SLOT_FRIENDLY).forEach(function(slot) {
   };
   if (action && labels[action]) BOOSTER_SLOT_FRIENDLY[slot] = labels[action] + " \u00b7 \u589e\u5f3a\u5242\u69fd";
 });
+
+/* 多分类（数组 category）非通用件：点击库存卡片时弹出「选槽位」面板，由用户选择装哪个兼容槽。 */
+function showBoosterSlotChoicePicker(itemId, slots, inv) {
+  var existingOverlay = document.querySelector(".booster-picker-overlay");
+  if (existingOverlay) existingOverlay.remove();
+  var item = (typeof getBoosterItem === "function") ? getBoosterItem(itemId) : null;
+  var overlay = document.createElement("div");
+  overlay.className = "booster-picker-overlay";
+  overlay.style.cssText = "position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.6);z-index:9999;display:flex;align-items:center;justify-content:center;";
+  var box = document.createElement("div");
+  box.style.cssText = "background:#1a2a3a;border:1px solid #3a5a6a;border-radius:8px;padding:20px;max-width:420px;width:90%;max-height:70vh;overflow-y:auto;";
+  var title = document.createElement("div");
+  title.style.cssText = "font-size:14px;font-weight:bold;color:#7dd3fc;margin-bottom:6px;";
+  title.textContent = "选择装载槽位 — " + (item ? item.name : itemId);
+  box.appendChild(title);
+  var sub = document.createElement("div");
+  sub.style.cssText = "font-size:12px;color:#8a9aae;margin-bottom:12px;line-height:1.5;";
+  sub.textContent = "该增强剂可装入以下任一槽位，请选择目标槽。";
+  box.appendChild(sub);
+  var labels = {
+    miningSpeed:"采矿 · 速度", miningYield:"采矿 · 产量",
+    archaeologySpeed:"考古 · 速度", archaeologyRare:"考古 · 稀有",
+    gasSpeed:"采气 · 速度", gasYield:"采气 · 产量",
+    smeltSpeed:"冶炼 · 速度", smeltYield:"冶炼 · 产量",
+    shipSpeed:"舰船工程 · 速度", shipYield:"舰船工程 · 产量",
+    equipmentSpeed:"装备制造 · 速度", equipmentYield:"装备制造 · 产量",
+    boosterSpeed:"增幅剂 · 速度", boosterYield:"增幅剂 · 产量"
+  };
+  slots.forEach(function(slot) {
+    var card = document.createElement("div");
+    card.style.cssText = "display:flex;justify-content:space-between;align-items:center;padding:8px 12px;margin-bottom:6px;background:#0f1a2a;border:1px solid #2a3a4a;border-radius:4px;cursor:pointer;";
+    card.innerHTML = '<span><strong>' + (labels[slot] || slot) + '</strong></span><span style="color:#7dd3fc;font-size:12px;">装载</span>';
+    card.addEventListener("click", function() {
+      overlay.remove();
+      if ((typeof ResourceRegistry !== "undefined") && !(ResourceRegistry.get(gameState, itemId) >= 1)) { showBoosterToast("库存不足", true); return; }
+      var result = dispatchGameAction(gameState, { type:"booster/equip", slot:slot, itemId:itemId }, Date.now());
+      if (result.changed) { if (typeof renderBoosterPage === "function") renderBoosterPage(); if (typeof updateUI === "function") updateUI(); }
+      else { showBoosterToast(result.reason || "装载失败", true); }
+    });
+    box.appendChild(card);
+  });
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  overlay.addEventListener("click", function(ev) { if (ev.target === overlay) overlay.remove(); });
+}
 
 function showUniversalBoosterSlotPicker(itemId, inv) {
   var existingOverlay = document.querySelector(".booster-picker-overlay");

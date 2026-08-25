@@ -394,13 +394,18 @@ const BoosterStateActions = {
     // 库存校验
     const inv = ResourceRegistry.get(state, item.itemId);
     if (!(inv >= 1)) return { changed:false, reason:"insufficient-inventory" };
-    // 同系列冲突 / 同类别通用件冲突
+    // 同系列冲突：同一分类组（采矿/采气/冶炼/舰船/装备/增幅剂/考古/战斗）内同系列互斥；
+    // 跨分类组可共存（如精密配给剂允许同时装在舰船与装备制造槽）。通用件仍按经验技能域互斥。
     for (const s of BOOSTER_SLOTS) {
       const e = active[s];
       if (!e || s === slot) continue;
       const existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
-      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
-      // 通用件（神经）：同一类别（同一经验技能域）槽位只能装一个
+      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) {
+        const newGroup = (typeof BOOSTER_SLOT_CATEGORY !== "undefined" && BOOSTER_SLOT_CATEGORY[slot]) || BOOSTER_SLOT_XP_SKILL[slot] || slot;
+        const oldGroup = (typeof BOOSTER_SLOT_CATEGORY !== "undefined" && BOOSTER_SLOT_CATEGORY[s]) || BOOSTER_SLOT_XP_SKILL[s] || s;
+        if (newGroup === oldGroup) return { changed:false, reason:"series-conflict" };
+      }
+      // 通用件（神经/技能超载）：同一经验技能域槽位只能装一个
       if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) return { changed:false, reason:"category-conflict" };
     }
     // 原子提交
@@ -444,13 +449,18 @@ const BoosterStateActions = {
     // 先校验新库存（原子拒绝），原槽完全不変
     const inv = ResourceRegistry.get(state, item.itemId);
     if (!(inv >= 1)) return { changed:false, reason:"insufficient-inventory" };
-    // 同系列冲突 / 同类别通用件冲突
+    // 同系列冲突：同一分类组（采矿/采气/冶炼/舰船/装备/增幅剂/考古/战斗）内同系列互斥；
+    // 跨分类组可共存（如精密配给剂允许同时装在舰船与装备制造槽）。通用件仍按经验技能域互斥。
     for (const s of BOOSTER_SLOTS) {
       const e = active[s];
       if (!e || s === slot) continue;
       const existingItem = (typeof getBoosterItem === "function") ? getBoosterItem(e.itemId) : null;
-      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) return { changed:false, reason:"series-conflict" };
-      // 通用件（神经）：同一类别（同一经验技能域）槽位只能装一个
+      if (existingItem && !item.universal && !existingItem.universal && existingItem.series === item.series) {
+        const newGroup = (typeof BOOSTER_SLOT_CATEGORY !== "undefined" && BOOSTER_SLOT_CATEGORY[slot]) || BOOSTER_SLOT_XP_SKILL[slot] || slot;
+        const oldGroup = (typeof BOOSTER_SLOT_CATEGORY !== "undefined" && BOOSTER_SLOT_CATEGORY[s]) || BOOSTER_SLOT_XP_SKILL[s] || s;
+        if (newGroup === oldGroup) return { changed:false, reason:"series-conflict" };
+      }
+      // 通用件（神经/技能超载）：同一经验技能域槽位只能装一个
       if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) return { changed:false, reason:"category-conflict" };
     }
     const oldItemId = existing.itemId;

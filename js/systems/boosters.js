@@ -79,6 +79,20 @@ var BOOSTER_SLOT_ACTION = {
   combatWeapon:"combat", combatRepair:"combat"
 };
 
+/* 槽位 → 分类 id（与 BOOSTER_CATEGORY_META 的 id 严格一致）。
+   注意：equipment 槽的 action 是技能键 "equipmentEngineering"，而分类 id 是 "equipment"，
+   两者不等价，故单独建一张「槽位→分类」映射供兼容性判定使用，避免字符串误判。 */
+var BOOSTER_SLOT_CATEGORY = {
+  miningSpeed:"mining", miningYield:"mining",
+  archaeologySpeed:"archaeology", archaeologyRare:"archaeology",
+  gasSpeed:"gas", gasYield:"gas",
+  smeltSpeed:"refining", smeltYield:"refining",
+  shipSpeed:"ship", shipYield:"ship",
+  equipmentSpeed:"equipment", equipmentYield:"equipment",
+  boosterSpeed:"booster", boosterYield:"booster",
+  combatWeapon:"combatWeapon", combatRepair:"combatRepair"
+};
+
 // 槽位 → 技能显示名（用于装备态描述：技能超载催化器装在哪个槽就显示哪个技能）。
 function getSkillLabelForSlot(slot) {
   var action = BOOSTER_SLOT_ACTION[slot];
@@ -99,10 +113,11 @@ function isBoosterCompatibleWithSlot(item, slot) {
     }
     return true;
   }
-  const action = BOOSTER_SLOT_ACTION[slot];
-  if (!action) return item.slot === slot;
-  if (action === "combat") return item.category === "combatWeapon" || item.category === "combatRepair";
-  return item.category === action;
+  // 非通用件：用「槽位 → 分类 id」判断，支持数组分类（如精密配给剂同时归属 ship + equipment）。
+  const slotCat = BOOSTER_SLOT_CATEGORY[slot];
+  if (!slotCat) return item.slot === slot;
+  const cats = Array.isArray(item.category) ? item.category : [item.category];
+  return cats.indexOf(slotCat) !== -1;
 }
 
 /* ----------------------------------------------------------------
@@ -117,14 +132,17 @@ function canEquipBooster(state, slot, itemId) {
   if (!isBoosterCompatibleWithSlot(item, slot)) return { ok:false, reason:"slot-mismatch" };
   const inv = ResourceRegistry.get(state, item.itemId);
   if (!(inv >= 1)) return { ok:false, reason:"insufficient-inventory" };
-  // 同系列不同品质互斥（不测试期同时装备两个同系列）
+  // 同系列冲突：仅当两槽属于同一分类组（如 miningSpeed+miningYield 同属 mining）才禁止；
+  // 跨分类组（如 ship+equipment，典型如精密配给剂）允许共存——其效果取 MAX，不会叠加。
   const active = getActiveBoosterState(state);
   for (const s of BOOSTER_SLOTS) {
     const e = active[s];
-    if (!e) continue;
+    if (!e || s === slot) continue;
     const existing = getBoosterItemFromState(state, e.itemId);
-    if (existing && !existing.universal && !item.universal && existing.series === item.series && s !== slot) {
-      return { ok:false, reason:"series-conflict" };
+    if (existing && !existing.universal && !item.universal && existing.series === item.series) {
+      const existingCat = BOOSTER_SLOT_CATEGORY[s];
+      const newCat = BOOSTER_SLOT_CATEGORY[slot];
+      if (existingCat && existingCat === newCat) return { ok:false, reason:"series-conflict" };
     }
     // 通用件（神经）：同一类别（同一经验技能域）的槽位只能装一个
     if (existing && existing.universal && item.universal && s !== slot) {
