@@ -559,15 +559,11 @@ function openCargoContainer(state, size, rng) {
       } else {
         if (entry.id.startsWith("implant_")) {
           // 脑插：授予 state.implants（账号全局被动，拥有即永久生效）；不入库存、不随尺寸缩放。
-          // 已拥有时 grantImplant 返回 null：不显示为“新掉落”，而是折算为可直接使用的功勋(currency:lp)，
-          // 金额按货柜尺寸缩放（S200/M320/L520/XL840，与装备蓝图重复折算一致），杜绝废掉落——玩家永远有得拿。
+          // 重复脑插：grantImplant 内部已转化为 1 个小型脑突触加速提取剂（5 分钟），不再折算功勋。
+          const iname = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB && IMPLANT_DB[entry.id]) ? IMPLANT_DB[entry.id].name : entry.id;
           const newlyGranted = (typeof grantImplant === "function") ? grantImplant(state, entry.id) : entry.id;
           if (newlyGranted === null) {
-            const mul = CARGO_T1_SIZE_MUL[size] || 1;
-            const base = Math.max(1, Math.round(200 * mul));
-            if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, "currency:lp", base);
-            const iname = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB && IMPLANT_DB[entry.id]) ? IMPLANT_DB[entry.id].name : entry.id;
-            grants = [{ tier, id: "implantsalvage:" + entry.id, qty: base, implant: true, implantId: entry.id, salvage: true, name: iname + "（重复·折算功勋）", icon: "🎖", categoryLabel: "重复折算" }];
+            grants = [{ tier, id: "implantdup:" + entry.id, qty: 1, extractor: "small", name: iname + "（重复·脑突触加速提取剂）", icon: "💉", categoryLabel: "重复转化" }];
           } else {
             grants = [{ tier, id: entry.id, qty: 1, implant: true, implantId: entry.id }];
           }

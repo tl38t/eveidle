@@ -54,6 +54,8 @@
         connected: !!(ps && ps.connected),
         mode: (ps && ps.mode) || "local-only",
         lastError: (ps && ps.lastError) || null,
+        lastAdError: (ps && ps.lastAdError) || null,
+        adUnitId: (ps && ps.adUnitId) || null,
         platformName: (ps && ps.platformName) || "local"
       };
     } else {
@@ -62,6 +64,25 @@
   };
 
   AdService.prototype.getProviderStatus = function () {
+    // 运行时重探测：TapTap 运行时注入 window.tap 的时机不确定，可能晚于游戏脚本初始化。
+    // 若初始化时误判为 local-only/error，这里在每次查询时若检测到平台已可用，则重建 provider，
+    // 使广告入口与真实广告能力最终一致（只重建一次：重建后 mode 变为 taptap，外层 if 不再触发）。
+    if (this._status.mode === "local-only" || this._status.mode === "error") {
+      try {
+        const Config = (typeof window !== "undefined") && window.AdPlatformConfig;
+        if (Config && typeof Config.detectTapTapAvailable === "function" && Config.detectTapTapAvailable()) {
+          const picked = AdService.selectProvider();
+          if (picked && picked.provider) {
+            this.provider = picked.provider;
+            this.platform = picked.platform;
+            this._initialized = false;
+            const self = this;
+            const r = this.init();
+            if (r && typeof r.catch === "function") r.catch(function () { /* 忽略 */ });
+          }
+        }
+      } catch (e) { /* 不阻塞页面 */ }
+    }
     this._updateStatus();
     return this._status;
   };
@@ -152,4 +173,52 @@
   } catch (e) {
     // 极端异常下不阻塞页面其余逻辑。
   }
+})();
+
+/* ================================================================
+   业务层公共入口（开发/生产均可直调，不修改任何游戏状态）
+
+   window.showRewardedAd(slotKey, handlers)
+     - slotKey: 广告位名，默认 "rewarded_default"
+     - handlers: { onReward(res), onSkip(res), onError(err), onLoad() }
+     - 仅当 res.isEnded === true 才触发 onReward（发奖）；
+       中途关闭触发 onSkip；加载/展示失败触发 onError。
+     - 返回 Promise<{ ok, status, rewarded, reason }>。
+
+   window.getAdStatus()
+     - 返回当前广告 provider 状态（mode: "local-only" | "taptap" 等）。
+   ================================================================ */
+(function () {
+  "use strict";
+  try {
+    if (typeof window === "undefined") return;
+
+    window.showRewardedAd = function (slotKey, handlers) {
+      handlers = handlers || {};
+      let svc = window.__adService__;
+      if (!svc && window.AdService) svc = window.AdService.create();
+      if (!svc) {
+        const err = new Error("AdService 未初始化");
+        if (typeof handlers.onError === "function") handlers.onError(err);
+        return Promise.resolve({ ok: false, status: "error", rewarded: false, reason: "no-service" });
+      }
+      return svc.showRewardedVideo(slotKey || "rewarded_default", {
+        onLoad: function () { if (typeof handlers.onLoad === "function") handlers.onLoad(); },
+        onClose: function (res) {
+          if (res && res.isEnded) {
+            if (typeof handlers.onReward === "function") handlers.onReward(res);
+          } else {
+            if (typeof handlers.onSkip === "function") handlers.onSkip(res);
+          }
+        },
+        onError: function (err) { if (typeof handlers.onError === "function") handlers.onError(err); }
+      });
+    };
+
+    window.getAdStatus = function () {
+      const svc = window.__adService__;
+      if (!svc || typeof svc.getProviderStatus !== "function") return { mode: "uninitialized" };
+      return svc.getProviderStatus();
+    };
+  } catch (e) { /* 不阻塞页面 */ }
 })();

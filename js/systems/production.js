@@ -96,6 +96,9 @@ function addSkillXpToState(state, skillKey, amount, eventMeta) {
     const lp = LEGION_NPC.getLegionContributionSnapshot(state).multipliers.playerXp;
     if (lp && lp !== 1) gained = gained * lp;
   }
+  // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时作用于技能经验（生产+战斗均经此入口）。
+  const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
+  if (adbm && adbm !== 1) gained = gained * adbm;
   state.skills[skillKey].xp = (Number(state.skills[skillKey].xp) || 0) + gained;
   checkLevelUpFromState(state, skillKey, eventMeta);
   state._dirty = true;
@@ -154,7 +157,7 @@ function getProductionEfficiencyTooltip(actionKey, targetName, baseTime) {
 }
 
 function getMiningEfficiency() {
-  let base = getProductionEfficiencyBreakdown("mining").total;
+  let base = getProductionEfficiencyBreakdown("mining").total; // 已含脑突触加速剂(adBuffMult，注入于 getProductionEfficiencyState.total)
   if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
     base = base * LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.mining;
   }
@@ -162,7 +165,7 @@ function getMiningEfficiency() {
 }
 function getSmeltingEfficiency() { return getSmeltingDisplayState(gameState, Date.now()).efficiency; }
 function getGasEfficiency() {
-  let base = getProductionEfficiencyBreakdown("gasHarvesting").total;
+  let base = getProductionEfficiencyBreakdown("gasHarvesting").total; // 已含脑突触加速剂(adBuffMult，注入于 getProductionEfficiencyState.total)
   if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
     base = base * LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.gas;
   }

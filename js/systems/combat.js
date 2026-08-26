@@ -1150,7 +1150,10 @@ function advanceCombatRound(state, context) {
       const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
       const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
       const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
-      const damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult, rng);
+      let damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult, rng);
+      // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅作用于玩家→敌人伤害（敌人→玩家伤害不享受）。
+      const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
+      if (adbm && adbm !== 1) damage = Math.round(damage * adbm);
       const dealt = applyLayeredCombatDamage(enemy.hp, damage);
       const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
       c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;

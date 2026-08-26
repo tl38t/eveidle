@@ -45,7 +45,9 @@
   }
 
   function TaptapAdProvider() {
-    this._lastError = null;
+    this._lastError = null;       // 字符串：初始化/配置类错误
+    this._lastAdError = null;     // 对象：最近一次 SDK onError / load-show 失败的原始错误（结构化）
+    this._usedAdUnitId = null;    // 最近一次请求实际使用的 adUnitId
     this._mode = "local-only";
     this._connected = false;
     this._available = false;
@@ -81,6 +83,7 @@
       this._lastError = "ad-unit-id-missing:" + String(slotKey);
       return null;
     }
+    this._usedAdUnitId = adUnitId;
     if (this._ads[slotKey]) return this._ads[slotKey];
 
     const tap = getTap();
@@ -95,6 +98,10 @@
       this._ads[slotKey] = ad;
       this._loaded[slotKey] = false;
 
+      // 创建后立即预加载；TapTap 文档说组件会自动拉取，但沙盒/真机经常出现首次 show() 无素材，
+      // 主动 load() 可让 onLoad/onError 提前触发，后续 show() 更稳。
+      try { ad.load(); } catch (e) { /* ignore: load 失败由 onError 处理 */ }
+
       ad.onLoad(function () {
         self._loaded[slotKey] = true;
         try {
@@ -107,7 +114,7 @@
 
       ad.onError(function (err) {
         self._loaded[slotKey] = false;
-        self._lastError = err && err.errMsg ? err.errMsg : String(err);
+        self._recordAdError(err, slotKey);
         const pending = self._pending[slotKey];
         if (pending) {
           self._pending[slotKey] = null;
@@ -147,7 +154,7 @@
 
       return ad;
     } catch (e) {
-      this._lastError = String(e && e.message ? e.message : e);
+      this._recordAdError(e, slotKey);
       return null;
     }
   };
@@ -208,7 +215,7 @@
             ad.load()
               .then(function () { return ad.show(); })
               .catch(function (err) {
-                self._lastError = err && err.errMsg ? err.errMsg : String(err);
+                self._recordAdError(err, slotKey);
                 const pending = self._pending[slotKey];
                 if (pending) {
                   self._pending[slotKey] = null;
@@ -242,11 +249,29 @@
     });
   };
 
+  // 结构化记录一次广告失败：保留原始 errMsg/errCode，并标注本次请求实际用的 adUnitId。
+  TaptapAdProvider.prototype._recordAdError = function (err, slotKey) {
+    const cfg = getConfig();
+    const adUnitId = (cfg && typeof cfg.resolveAdUnitId === "function") ? cfg.resolveAdUnitId(slotKey) : null;
+    this._usedAdUnitId = adUnitId;
+    this._lastError = (err && err.errMsg) ? err.errMsg : (err ? String(err) : "unknown");
+    this._lastAdError = {
+      time: Date.now(),
+      slotKey: slotKey || null,
+      adUnitId: adUnitId,
+      errMsg: (err && err.errMsg) ? err.errMsg : (err ? String(err) : ""),
+      errCode: (err && err.errCode != null) ? err.errCode : null,
+      raw: err || null
+    };
+  };
+
   TaptapAdProvider.prototype.getProviderStatus = function () {
     return {
       connected: this._connected,
       mode: this._mode,
       lastError: this._lastError,
+      lastAdError: this._lastAdError,
+      adUnitId: this._usedAdUnitId,
       platformName: "taptap",
       message: this._connected
         ? "已连接 TapTap 激励视频广告"

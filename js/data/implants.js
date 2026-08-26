@@ -325,7 +325,11 @@ function getImplantBonuses(state) {
 function grantImplant(state, id) {
   if (!id || !IMPLANT_DB[id]) return null;
   if (!state.implants || typeof state.implants !== "object") state.implants = {};
-  if (state.implants[id]) return null;
+  if (state.implants[id]) {
+    // 重复脑插：转化为 1 个小型脑突触加速提取剂（5 分钟），不再折算功勋。
+    if (typeof addExtractor === "function") addExtractor(state, "small", 1);
+    return null;
+  }
   state.implants[id] = true;
   return id;
 }

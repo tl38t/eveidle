@@ -368,6 +368,10 @@ function getProductionEfficiencyState(state, actionKey) {
   const droneRigMultiplier = 1 + droneRigBase;
   primaryBonus = highTotal * droneRigMultiplier + flatPrimary;
 
+  // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效；注入 total 单一源头，
+  // 展示(getMiningDisplayState/getGasDisplayState)与真实产出(getMiningEfficiency/getGasEfficiency 经 breakdown→state)共用，避免重复乘。
+  const adBuffMult = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
+
   return {
     actionKey,
     level,
@@ -394,7 +398,9 @@ function getProductionEfficiencyState(state, actionKey) {
     boosterGasSpeed: (isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1,
     // 增强剂·采矿速度：独立乘区，仅采矿生效（修复：详情面板此前在计算与连乘式中漏算该项）
     boosterMiningSpeed: (isMining && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).miningSpeedMultiplier : 1,
-    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier * ((typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1) * ((isMining && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).miningSpeedMultiplier : 1) * ((isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1)
+    // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（见上方局部 adBuffMult）。
+    adBuffMult,
+    total:skillMultiplier * (1 + primaryBonus) * (1 + secondaryBonus) * enhancement.industryMultiplier * (1 + fleetSupport.bonus) * getStationLogisticsMultiplier(state) * researchMultiplier * ((typeof getImplantBonuses === "function") ? getImplantBonuses(state).collect[isMining ? "mining" : "gas"] : 1) * ((isMining && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).miningSpeedMultiplier : 1) * ((isGas && typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).gasSpeedMultiplier : 1) * adBuffMult
   };
 }
 
@@ -438,10 +444,14 @@ function buildProductionEfficiencyTooltip(display, targetName, baseTime) {
     const pct = Math.round((boosterMult - 1) * 100);
     lines.push("增强剂·" + (isMining ? "采矿速度" : "采气速度") + "：" + (pct > 0 ? "+" : "") + pct + "%（" + (isMining ? "纳米采掘润滑剂" : "气云流变剂") + "，仅生效档位，不叠加）");
   }
-  // 最终效率连乘式（含脑插 / 增强剂，确保与 total 数值一致）
+  // 脑突触加速剂（广告增益，独立乘区，已计入 total）
+  const adBuff = Number(display.adBuffMult) || 1;
+  if (adBuff !== 1) lines.push("脑突触加速剂：×" + adBuff.toFixed(2));
+  // 最终效率连乘式（含脑插 / 增强剂 / 脑突触，确保与 total 数值一致）
   let chain = display.skillMultiplier.toFixed(2) + " × " + (1 + display.primaryBonus).toFixed(3) + " × " + (1 + display.secondaryBonus).toFixed(3) + " × " + display.enhancementMultiplier.toFixed(3) + " × " + (1 + display.fleetSupportBonus).toFixed(3) + " × " + logMult.toFixed(3) + " × " + researchMult.toFixed(3);
   if (implantMult !== 1) chain += " × " + implantMult.toFixed(3);
   if (boosterMult !== 1) chain += " × " + boosterMult.toFixed(3);
+  if (adBuff !== 1) chain += " × " + adBuff.toFixed(2);
   lines.push("最终效率：" + chain + " = " + display.total.toFixed(2) + "x");
   const targetLabel = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(targetName) : targetName;
   lines.push("", "当前目标：" + targetLabel, "基础时间：" + baseTime + "s", "实际时间：" + (baseTime / display.total).toFixed(1) + "s");
@@ -560,7 +570,10 @@ function getSmeltingDisplayState(state, now) {
   // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
   const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
     ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
-  const efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt;
+  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt;
+  // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（冶炼速度/产出均经此 efficiency）。
+  const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
+  if (adbm && adbm !== 1) efficiency = efficiency * adbm;
   const progress = getProgressDisplayState(action, "refining", running.baseTime / efficiency, now);
   const targetChanged = progress.active && current.name !== running.name;
   const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
