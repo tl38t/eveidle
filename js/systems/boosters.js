@@ -443,7 +443,9 @@ function getBoosterEffectState(state) {
     shipSpeedMultiplier: 1,
     equipmentSpeedMultiplier: 1,
     shipMaterialDiscount: 0,
-    materialDiscountLevelGate: 0,
+    shipMaterialLevelGate: 0,
+    equipMaterialDiscount: 0,
+    equipMaterialLevelGate: 0,
     // 技能超载催化器：仅装在对应槽位的技能获得临时等级；键为该技能的技能键。
     skillLevelBySkill: { mining:0, gasHarvesting:0, refining:0, shipEngineering:0, equipmentEngineering:0, boosterEngineering:0, archaeology:0 },
     boosterSpeedMultiplier: 1,
@@ -519,10 +521,14 @@ function getBoosterEffectState(state) {
         eff.equipmentSpeedMultiplier *= (1 + Number(item.effectValue));
         break;
       case "shipMaterialDiscount": {
+        // 按槽位作用域拆分：ship 槽(shipSpeed/shipYield)只影响舰船制造，
+        // equipment 槽(equipmentSpeed/equipmentYield)只影响装备制造；
+        // 避免装在装备槽却抬升舰船制造门槛、或在舰船界面卸载后门槛仍残留。
         var dv = Number(item.effectValue) || 0;
-        if (dv > eff.shipMaterialDiscount) eff.shipMaterialDiscount = dv;
         var lg = Number(item.levelGate) || 0;
-        if (lg > (eff.materialDiscountLevelGate || 0)) eff.materialDiscountLevelGate = lg;
+        var grp = (slot === "shipSpeed" || slot === "shipYield") ? "ship" : "equip";
+        if (dv > eff[grp + "MaterialDiscount"]) eff[grp + "MaterialDiscount"] = dv;
+        if (lg > eff[grp + "MaterialLevelGate"]) eff[grp + "MaterialLevelGate"] = lg;
         break;
       }
       case "skillLevelBonus": {
@@ -655,24 +661,24 @@ function getShipBuildingQuote(state, recipe, context) {
   }
   // 技能超载(skillLevelBonus)的临时等级由 getEffectiveSkillLevel 在「玩家侧」体现，
   // 不得再加入门槛，否则与玩家等级加成相互抵消、跨不过门槛（用户反馈 bug）。
-  // 门槛仅受精密配给剂的 materialDiscountLevelGate 影响。
-  var gateBonus = eff ? (eff.materialDiscountLevelGate || 0) : 0;
+  // 门槛仅受舰船槽精密配给剂的 shipMaterialLevelGate 影响（装备槽不抬升舰船门槛）。
+  var gateBonus = eff ? (eff.shipMaterialLevelGate || 0) : 0;
   var levelGate = (Number(recipe.level) || 0) + gateBonus;
   return { cost: cost, levelGate: levelGate, discounted: active || (typeof LEGION_NPC !== "undefined") };
 }
 
 /* ----------------------------------------------------------------
    装备工程报价（镜像 getShipBuildingQuote，考古重制 Phase B · 精密配给剂通用化）
-   激活期间（getBoosterEffectState().shipMaterialDiscount > 0，来源即精工/传奇·精密配给剂）：
+   激活期间（getBoosterEffectState().equipMaterialDiscount > 0，来源即精工/传奇·精密配给剂装在装备槽）：
      - 配方材料成本严格 ceil(base × 0.9)（逐条，单件至少 1）
-     - 配方等级门槛 + materialDiscountLevelGate
+     - 配方等级门槛 + equipMaterialLevelGate
    装备无军团材料减耗键（军团对装备仅有速度乘数 equipmentManufacturingSpeed），故不叠 LEGION 成本减免。
    覆盖在线 / 离线 / 队列 / 空间站自动线四类调用点（与舰船同构）。
    ---------------------------------------------------------------- */
 function getEquipEngBuildingQuote(state, recipe) {
   if (!recipe) return { cost: {}, levelGate: 0, discounted: false };
   var eff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state) : null;
-  var active = !!(eff && eff.shipMaterialDiscount > 0);
+  var active = !!(eff && eff.equipMaterialDiscount > 0);
   var baseCost = recipe.cost || {};
   var cost;
   if (active) {
@@ -687,7 +693,8 @@ function getEquipEngBuildingQuote(state, recipe) {
     cost = baseCost;
   }
   // 同上：技能超载临时等级在玩家侧(getEffectiveSkillLevel)体现，门槛不得再加。
-  var gateBonus = eff ? (eff.materialDiscountLevelGate || 0) : 0;
+  // 门槛仅受装备槽精密配给剂的 equipMaterialLevelGate 影响（舰船槽不抬升装备门槛）。
+  var gateBonus = eff ? (eff.equipMaterialLevelGate || 0) : 0;
   var levelGate = (Number(recipe.level) || 0) + gateBonus;
   return { cost: cost, levelGate: levelGate, discounted: active };
 }

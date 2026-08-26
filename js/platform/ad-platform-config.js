@@ -15,11 +15,16 @@
   "use strict";
 
   // ---- 聚合广告位：本地 slotKey -> TapTap adUnitId ----
-  // 注意：真实 adUnitId 必须在 Dirichlet 媒体管理平台「推广位」创建后获取。
+  // 注意：真实 adUnitId 来自 Dirichlet 媒体管理平台「推广位」创建后生成。
   // 此处的 ID 是字符串，直接来自后台；未配置前保持空字符串或占位符。
+  // 取值已由 TapTap MCP check_ads_status 服务端核验（2026-08-26）：
+  //   游戏方向 screen_orientation=1（竖屏），匹配竖屏位 type=2 => 1054324
+  //   横屏位 type=1 => 1054323（备用，如后续推出横屏版再切为 default）
   const TAPTAP_AD_SLOTS = Object.freeze({
-    // 激励视频默认位：深空放置 · 边疆纪元 - 激励广告
-    rewarded_default: "1062738"
+    // 激励视频默认位（竖屏）：深空放置 · 边疆纪元 - 激励广告
+    rewarded_default: "1054324",
+    // 横屏激励视频位（备用）
+    rewarded_landscape: "1054323"
   });
 
   // 占位符前缀：运行时若 adUnitId 仍为此类占位，视为「配置缺失」。

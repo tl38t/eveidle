@@ -56,7 +56,7 @@
       return { title: "广告无填充 (no fill)", detail: "该广告位当前没有可投放素材。检查测试广告是否已生效、OAID 是否匹配当前设备。" };
     }
     if (/ad[_]?unit|广告位.*(无效|未|错)|invalid.*id|未配置|不存在/i.test(raw)) {
-      return { title: "广告位 ID 无效 / 未配置", detail: "代码当前使用的 adUnitId = 1062738。请确认你在 Dirichlet 新建的测试广告位 ID 也是 1062738；若不同，把新 ID 发我，我改代码后重新打包。" };
+      return { title: "广告位 ID 无效 / 未配置", detail: "代码当前使用的竖屏 adUnitId = 1054324（横屏备用 1054323），均由 TapTap MCP check_ads_status 核验。若后台仍提示无效，请确认 Dirichlet 推广位 1054324 已生效且横竖屏类型匹配；若后台实际 ID 不同，把新 ID 发我，我改代码后重新打包。" };
     }
     if (/timeout|超时|load/i.test(raw)) {
       return { title: "广告加载超时 / 失败", detail: "素材拉取问题，多为网络或无填充。可重试一次；若一直如此，本质仍是 200001 类无填充。" };
