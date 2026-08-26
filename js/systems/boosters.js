@@ -653,7 +653,10 @@ function getShipBuildingQuote(state, recipe, context) {
       cost = reduced;
     }
   }
-  var gateBonus = eff ? ((eff.materialDiscountLevelGate || 0) + (eff.skillLevelBySkill ? (eff.skillLevelBySkill.shipEngineering || 0) : 0)) : 0;
+  // 技能超载(skillLevelBonus)的临时等级由 getEffectiveSkillLevel 在「玩家侧」体现，
+  // 不得再加入门槛，否则与玩家等级加成相互抵消、跨不过门槛（用户反馈 bug）。
+  // 门槛仅受精密配给剂的 materialDiscountLevelGate 影响。
+  var gateBonus = eff ? (eff.materialDiscountLevelGate || 0) : 0;
   var levelGate = (Number(recipe.level) || 0) + gateBonus;
   return { cost: cost, levelGate: levelGate, discounted: active || (typeof LEGION_NPC !== "undefined") };
 }
@@ -683,7 +686,8 @@ function getEquipEngBuildingQuote(state, recipe) {
   } else {
     cost = baseCost;
   }
-  var gateBonus = eff ? ((eff.materialDiscountLevelGate || 0) + (eff.skillLevelBySkill ? (eff.skillLevelBySkill.equipmentEngineering || 0) : 0)) : 0;
+  // 同上：技能超载临时等级在玩家侧(getEffectiveSkillLevel)体现，门槛不得再加。
+  var gateBonus = eff ? (eff.materialDiscountLevelGate || 0) : 0;
   var levelGate = (Number(recipe.level) || 0) + gateBonus;
   return { cost: cost, levelGate: levelGate, discounted: active };
 }
