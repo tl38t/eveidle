@@ -50,6 +50,10 @@ const RR = vm.runInContext("ResourceRegistry", sandbox);
 const advanceCombatRound = vm.runInContext("advanceCombatRound", sandbox);
 const OfflineCombatSystem = vm.runInContext("OfflineCombatSystem", sandbox);
 const getCombatMaxHpFromState = vm.runInContext("getCombatMaxHpFromState", sandbox);
+const calcCombatMaxHp = vm.runInContext("calcCombatMaxHp", sandbox);
+const buildCombatWave = vm.runInContext("buildCombatWave", sandbox);
+const getCombatEncounterZone = vm.runInContext("getCombatEncounterZone", sandbox);
+const nextCombatRandom = vm.runInContext("nextCombatRandom", sandbox);
 
 function baseState() {
   const st = JSON.parse(JSON.stringify(vm.runInContext("gameState", sandbox)));
@@ -81,7 +85,9 @@ function equip(st, shipId, fitting, zone) {
   st.combat.randomState = { seed: 99, counterLo: 0, counterHi: 0 };
   st.combat.runToken = "run_" + shipId;
   st.combat.runWeaponTypes = [];
-  const maxHp = getCombatMaxHpFromState(st);
+  // 用与战斗引擎一致的 calcCombatMaxHp 初始化血量（getCombatMaxHpFromState 与战斗内 maxHp 计算不同源，
+  // 会导致离线「残血开战」、维修阈值错位，使对照失真）
+  const maxHp = calcCombatMaxHp(undefined, undefined, st);
   st.combat.maxHp = { ...maxHp };
   st.combat.hp = { ...maxHp };
   st.combat.salvageArmActive = false;
@@ -91,14 +97,37 @@ function equip(st, shipId, fitting, zone) {
   RR.set(st, "consumable:fuel", 1e9);
 }
 
+// 初始化在线战斗：生成第一波编队（用与离线一致的 nextCombatRandom 编队生成 RNG），
+// 复刻 actions.start 的核心状态（runToken/enemies/currentEnemy/wave/hp=maxHp/active）。
+// 这样 advanceCombatRound 才能真打（否则空 enemies 直接 wave-cleared 不推进，回合恒 0）。
+function initCombatOnline(st, zoneId) {
+  const zone = getCombatEncounterZone(st.combat);
+  if (!zone) throw new Error("initCombatOnline: 找不到 zone " + zoneId);
+  const rng = () => nextCombatRandom(st.combat);
+  const wave = buildCombatWave(zone, 1, rng, st.combat);
+  const newToken = "run_" + zoneId + "_" + (st.combat.randomState ? st.combat.randomState.seed : 1);
+  st.combat.runToken = newToken;
+  const stamped = (wave.enemies || []).map((e, i) => Object.assign({}, e, { id: newToken + "_e" + i }));
+  st.combat.enemies = stamped;
+  st.combat.currentEnemy = stamped[0] || null;
+  st.combat.wave = 1;
+  st.combat.runDamageDealt = 0; st.combat.runDamageTaken = 0;
+  st.combat.runWeaponTypes = [];
+  st.combat.hp = { ...st.combat.maxHp };
+  st.combat.active = true;
+  st.combat.lastEnemyVolley = null;
+}
+
 function runOnlineSeed(st, maxRounds, withDCU, seed) {
-  const nextRng = () => vm.runInContext("nextCombatRandom", sandbox)(st.combat);
+  initCombatOnline(st, st.combat.zone);
+  const nextRng = () => nextCombatRandom(st.combat); // 真实随机（统计对照用）
   let now = 1_000_000;
   let defeated = false, rounds = 0, totalTaken = 0;
   for (let i = 0; i < maxRounds; i++) {
     if (!st.combat.active) break;
     const r = advanceCombatRound(st, { now, rng: nextRng, emit: noop, offline:false });
-    if (r && r.advanced && st.combat.lastEnemyVolley) totalTaken += st.combat.lastEnemyVolley.totalDamage;
+    if (r && r.advanced) rounds++;
+    if (st.combat.lastEnemyVolley && typeof st.combat.lastEnemyVolley.totalDamage === "number") totalTaken += st.combat.lastEnemyVolley.totalDamage;
     now += 1000;
     if (st.combat.hp.structure <= 0) { defeated = true; break; }
   }
@@ -107,12 +136,15 @@ function runOnlineSeed(st, maxRounds, withDCU, seed) {
 
 function runOnline(st, maxRounds, withDCU, seed) {
   if (typeof seed === "number") return runOnlineSeed(st, maxRounds, withDCU, seed);
+  initCombatOnline(st, st.combat.zone);
   let now = 1_000_000;
   let defeated = false, rounds = 0, totalTaken = 0;
+  // 固定 rng=0.5（期望值，方差 1.0），与离线 simulateWave 的 EXPECT 严格一致，剥离伤害随机性做纯净 A/B
   for (let i = 0; i < maxRounds; i++) {
     if (!st.combat.active) break;
     const r = advanceCombatRound(st, { now, rng: () => 0.5, emit: noop, offline:false });
-    if (r && r.advanced && st.combat.lastEnemyVolley) totalTaken += st.combat.lastEnemyVolley.totalDamage;
+    if (r && r.advanced) rounds++;
+    if (st.combat.lastEnemyVolley && typeof st.combat.lastEnemyVolley.totalDamage === "number") totalTaken += st.combat.lastEnemyVolley.totalDamage;
     now += 1000;
     if (st.combat.hp.structure <= 0) { defeated = true; break; }
   }
@@ -156,6 +188,23 @@ function scenario(name, shipId, fitting, zone, seconds) {
   let sC = baseState(); equip(sC, shipId, fitting, zone);
   const rC = runOffline(sC, seconds);
 
+  // 调试：直接对比在线/离线第一波编队构成（独立副本，seed 一致，不污染主流程）
+  try {
+    const z0 = getCombatEncounterZone(sA.combat);
+    const dmyA = JSON.parse(JSON.stringify(sA)); dmyA.combat.randomState = { seed: 99, counterLo: 0, counterHi: 0 };
+    const wA2 = buildCombatWave(z0, 1, () => nextCombatRandom(dmyA.combat), dmyA.combat);
+    const dmyC = JSON.parse(JSON.stringify(sC)); dmyC.combat.randomState = { seed: 99, counterLo: 0, counterHi: 0 };
+    const wC2 = buildCombatWave(z0, 1, () => nextCombatRandom(dmyC.combat), dmyC.combat);
+    const sum = (arr) => arr.reduce((a, e) => a + (e.baseDamage || 0), 0);
+    console.log(`  [编队] 在线第一波=${wA2.enemies.length}人 baseDmg=${sum(wA2.enemies)} | 离线第一波=${wC2.enemies.length}人 baseDmg=${sum(wC2.enemies)}`);
+    const calcCombatMaxHp = vm.runInContext("calcCombatMaxHp", sandbox);
+    const cmA = calcCombatMaxHp(undefined, undefined, sA);
+    const cmC = calcCombatMaxHp(undefined, undefined, sC);
+    console.log(`  [calcMaxHp] 在线 S/A/H=${cmA.shield}/${cmA.armor}/${cmA.structure} | 离线 S/A/H=${cmC.shield}/${cmC.armor}/${cmC.structure}`);
+    const getInstalledCombatRepairers = vm.runInContext("getInstalledCombatRepairers", sandbox);
+    console.log(`  [repairers] 在线=${getInstalledCombatRepairers(sA).length} | 离线=${getInstalledCombatRepairers(sC).length}`);
+  } catch (e) { console.log("  [调试失败]", e.message); }
+
   console.log(`  在线(带DCU)   :`); show("online+DCU", rA);
   console.log(`  在线(无DCU)   :`); show("online-DCU(≈离线应有)", rB);
   console.log(`  离线引擎      :`); show("OFFLINE", rC);
@@ -171,6 +220,7 @@ function scenario(name, shipId, fitting, zone, seconds) {
     console.log(`  >> 本轮两者结局一致（DCU减伤未造成分歧，可能星带过易/过硬，见承伤差）。`);
   }
   const diff = rC.totalTaken - rA.totalTaken;
+  console.log(`  [玩家伤害] 在线 runDamageDealt=${Math.round(sA.combat.runDamageDealt)} | 离线 totalDamageDealt=${Math.round(rC.totalDealt)}`);
   console.log(`  离线承伤 - 在线(+DCU)承伤 = ${Math.round(diff)}  (离线多承受 ${rA.totalTaken>0?((diff/rA.totalTaken*100).toFixed(0)):"?"}% 伤害)`);
 }
 
