@@ -295,6 +295,12 @@ registerLegacyResourceCategory("special", ITEM_CATEGORIES.special, "special");
 if (typeof CARGO_SIZES !== "undefined") {
   for (const size of CARGO_SIZES) ResourceRegistry.register({ namespace:"special", key:"货柜" + size, name:"货柜" + size, category:"special" });
 }
+// 五档战术材料（T1 已由 ITEM_CATEGORIES.special 注册；T2–T5 在此显式注册，确保货柜/增强剂面板显示干净中文名而非 raw id）
+for (const _tm of [
+  "战术残液", "活性战术凝胶", "高能战术萃取物", "极化战术介质", "深层适应性样本"
+]) {
+  ResourceRegistry.register({ namespace:"special", key:_tm, name:_tm, category:"special" });
+}
 
 ResourceRegistry.register({ namespace:"currency", key:"isk", name:"ISK", scalarKey:"isk", category:"currency" });
 ResourceRegistry.register({ namespace:"currency", key:"lp", name:"LP", scalarKey:"lp", category:"currency" });

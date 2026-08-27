@@ -8,11 +8,11 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=9">
-<link rel="stylesheet" href="./css/panels.css?v=14">
+<link rel="stylesheet" href="./css/base.css?v=10">
+<link rel="stylesheet" href="./css/panels.css?v=15">
 <link rel="stylesheet" href="./css/combat.css?v=8">
 <link rel="stylesheet" href="./css/components.css?v=21">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=13">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=14">
 <script type="importmap">
 {
   "imports": {
@@ -147,11 +147,14 @@
     .lb-sidebar { flex:1 1 auto; max-width:none; width:100%; max-height:30vh; border-right:none; border-bottom:1px solid #1d2c3c; padding-right:0; padding-bottom:6px; }
     .lb-content { max-height:none; width:100%; padding-left:0; }
     .lb-row { grid-template-columns:34px 1fr 54px 84px 96px; gap:5px; padding:7px 8px; font-size:11.5px; }
-    .lb-c-time { font-size:10px; }
-  }
+  .lb-c-time { font-size:10px; }
+}
+/* 启动期间隐藏主游戏界面，避免初始假数据闪现（本地读取优化） */
+.boot-loading .topbar,
+.boot-loading .main-container { display:none !important; }
 </style>
 </head>
-<body>
+<body class="boot-loading">
 
 <!-- ===== 顶部状态栏 ===== -->
 <header class="topbar">
@@ -1235,21 +1238,21 @@
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
   <script defer src="./js/systems/combat.js?v=10"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=40"></script>
+  <script defer src="./js/core/selectors.js?v=43"></script>
   <script defer src="./js/core/actions.js?v=17"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
   <script defer src="./js/ui/shell-render.js?v=44"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=16"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=19"></script>
   <script defer src="./js/ui/combat-render.js?v=23"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
-  <script defer src="./js/ui/archaeology-render.js?v=8"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=10"></script>
   <script defer src="./js/ui/booster-render.js?v=8"></script>
   <script defer src="./js/ui/station-render.js?v=8"></script>
   <script defer src="./js/ui/legion-render.js?v=1"></script>
   <script defer src="./js/ui/legion-events.js?v=1"></script>
-  <script defer src="./js/core/tick.js?v=9"></script>
-  <script defer src="./js/core/offline.js?v=11"></script>
-  <script defer src="./js/systems/offline-combat.js?v=4"></script>
+  <script defer src="./js/core/tick.js?v=10"></script>
+  <script defer src="./js/core/offline.js?v=12"></script>
+  <script defer src="./js/systems/offline-combat.js?v=5"></script>
   <script defer src="./js/systems/combat-log.js?v=3"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=2"></script>
@@ -1278,10 +1281,10 @@
   <script defer src="./js/core/achievement-sync-service.js?v=2"></script>
   <script defer src="./js/core/leaderboard-sync-service.js?v=1"></script>
   <script defer src="./js/core/ad-service.js?v=4"></script>
-  <script defer src="./js/systems/ad-buff.js?v=2"></script>
-  <script defer src="./js/ui/ad-buff-widget.js?v=12"></script>
-  <script defer src="./js/core/persistence.js?v=13"></script>
-  <script defer src="./js/core/bootstrap-launch.js?v=3"></script>
+  <script defer src="./js/systems/ad-buff.js?v=3"></script>
+  <script defer src="./js/ui/ad-buff-widget.js?v=16"></script>
+  <script defer src="./js/core/persistence.js?v=14"></script>
+  <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
   <script defer src="./js/ui/render.js?v=10"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=11"></script>

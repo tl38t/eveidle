@@ -276,11 +276,7 @@ function renderBoosterPage(now) {
   var efficiency = document.getElementById("booster-eff-display");
   if (efficiency) {
     efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
-    var skillMult = (1 + display.level * 0.02);
-    efficiency.title = "技能速度：1 × (1 + Lv." + display.level + " × 0.02) = " + skillMult.toFixed(2) + "x"
-      + "\n空间站综合后勤：×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）"
-      + "\n科研加成：×" + (display.researchMultiplier || 1).toFixed(3)
-      + "\n最终效率：" + display.efficiency.toFixed(2) + "x";
+    efficiency.title = getBoosterEngineeringEfficiencyBreakdown(display);
   }
   var bsLog = document.getElementById("booster-logistics");
   if (bsLog) {

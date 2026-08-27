@@ -704,12 +704,14 @@ function startStationBuildingConstruction(state, buildingId, nowOverride) {
 
 /* ----------------------------------------------------------------
    资源调度中心（Resource Dispatch Center）— 勘探指令
-   每 20/14/10 次真实采矿/采气行动，额外获得 1 次产出（不增 XP）。
+   每 20/14/10/9/8 次真实采矿/采气行动，额外获得 1 次产出（不增 XP）。
    计数器入 station.dispatch（miningCount / gasCount），切换矿带/气体带清零。
    ---------------------------------------------------------------- */
 function getStationDispatchThreshold(state) {
   const lvl = getStationBuildingLevel(state, "resource_dispatch");
-  if (lvl >= 3) return 10;
+  if (lvl >= 5) return 8;
+  if (lvl === 4) return 9;
+  if (lvl === 3) return 10;
   if (lvl === 2) return 14;
   if (lvl === 1) return 20;
   return 0;
@@ -748,11 +750,13 @@ function resetStationDispatchCounters(state, kind) {
 /* ----------------------------------------------------------------
    行星管控中心（Planetary Control Center）
      · Lv.1 启用行星自动收取（装满即收：本地仓储达 6h 上限时移入库存并清零，不自动续期）
-     · Lv.2/3 额外 +1/+2 行星槽位（与脑插同乘区，同步突破硬上限 5，即上限=5+加成）
+     · Lv.2/3/4/5 额外 +1/+2/+3/+4 行星槽位（与脑插同乘区，同步突破硬上限 5，即上限=5+加成）
    ---------------------------------------------------------------- */
 function getStationPlanetarySlotBonus(state) {
   const lvl = getStationBuildingLevel(state, "planetary_control");
-  if (lvl >= 3) return 2;
+  if (lvl >= 5) return 4;
+  if (lvl === 4) return 3;
+  if (lvl === 3) return 2;
   if (lvl === 2) return 1;
   return 0;
 }
@@ -888,10 +892,8 @@ function getStationAutoLineInfo(state, lineId) {
   if (!cfg) return null;
   const buildingLevel = getStationBuildingLevel(state, cfg.buildingId);
   const buildingName = STATION_BUILDING_NAMES[cfg.buildingId] || cfg.buildingId;
-  let multiplier = 0;
-  if (buildingLevel >= 3) multiplier = 1.30;
-  else if (buildingLevel === 2) multiplier = 1.15;
-  else if (buildingLevel === 1) multiplier = 1.00;
+  // 复用建筑速度倍率表（Lv.1–5 一致），消除 UI 显示与自动线结算的分叉
+  const multiplier = getStationBuildingSpeedMultiplier(state, cfg.buildingId);
   const unlocked = buildingLevel >= 1;
   const s = state && state.station;
   const line = s && s.autoLines && s.autoLines[lineId];
@@ -1055,9 +1057,8 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   }
 
   // 自动线不乘技能速度：cycleTime = recipe.time / multiplier
-  // 装备总装协调剂（equipmentSpeed）：激活期间缩短装备制造耗时，与手动/离线同乘区。
-  const equipmentBoosterSpeed = (typeof getBoosterEffectState === "function") ? (getBoosterEffectState(state).equipmentSpeedMultiplier || 1) : 1;
-  const cycleTimeSec = recipe.time / Math.max(0.001, multiplier * equipmentBoosterSpeed);
+  // 装备总装协调剂（equipmentSpeed）仅作用于「手动装备制造」（manufacturing.js / selectors.js），自动线不消费增强剂。
+  const cycleTimeSec = recipe.time / Math.max(0.001, multiplier);
 
   let remainingSec = line.progress || 0;
   const cyclesByTime = Math.floor(remainingSec / cycleTimeSec);
@@ -1338,7 +1339,9 @@ function processAutoLines(state, now, offline) {
    ---------------------------------------------------------------- */
 function getStationBuildingSpeedMultiplier(state, buildingId) {
   const lvl = getStationBuildingLevel(state, buildingId);
-  if (lvl >= 3) return 1.30;
+  if (lvl >= 5) return 1.50;
+  if (lvl === 4) return 1.40;
+  if (lvl === 3) return 1.30;
   if (lvl === 2) return 1.15;
   if (lvl === 1) return 1.00;
   return 0;
@@ -1621,7 +1624,9 @@ function getStationMaintenanceDisplayState(state, now) {
 function getArchaeologyLabMultiplier(state) {
   if (!isStationOperational(state)) return 1;
   const lvl = getStationBuildingLevel(state, "archaeology_lab");
-  if (lvl >= 3) return 1.15;
+  if (lvl >= 5) return 1.25;
+  if (lvl === 4) return 1.20;
+  if (lvl === 3) return 1.15;
   if (lvl === 2) return 1.10;
   if (lvl === 1) return 1.05;
   return 1;
@@ -1631,7 +1636,9 @@ function getArchaeologyLabMultiplier(state) {
 function getStationCombatXpMultiplier(state) {
   if (!isStationOperational(state)) return 1;
   const lvl = getStationBuildingLevel(state, "combat_command");
-  if (lvl >= 3) return 1.30;
+  if (lvl >= 5) return 1.50;
+  if (lvl === 4) return 1.40;
+  if (lvl === 3) return 1.30;
   if (lvl === 2) return 1.20;
   if (lvl === 1) return 1.10;
   return 1;
@@ -1830,9 +1837,9 @@ function getStationLogisticsBaseMultiplier(state, coreTag) {
   const s = state && state.station;
   if (!s) return 1;
   let bodyLevel = Math.floor(Number(s.bodyLevel));
-  if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 4) return 1;
+  if (!Number.isFinite(bodyLevel) || bodyLevel < 0 || bodyLevel > 5) return 1;
   if (!isStationOperational(state)) return 1;
-  const table = {0: 1, 1: 1.03, 2: 1.08, 3: 1.15, 4: 1.24};
+  const table = {0: 1, 1: 1.03, 2: 1.08, 3: 1.15, 4: 1.24, 5: 1.35};
   const base = table[bodyLevel] !== undefined ? table[bodyLevel] : 1;
   let mult = base;
   // 系数 B：携带对应空间站核心（已获取且库存持有）时该制造线 +10%（加算，叠在本体基础倍率上）

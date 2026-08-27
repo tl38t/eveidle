@@ -74,14 +74,31 @@
     probeTimer = setInterval(renderProbe, 1000);
   }
 
-  // ---- 顶部状态区：插入到 .brand（标题）之后 ----
+  // ---- 顶部状态区 ----
+  let ensureAttempts = 0;
+  const MAX_ENSURE_ATTEMPTS = 40; // 最多等约 4 秒（taptap-portrait.js 通常 <100ms 就创建）
   function ensureDom() {
     if (wrapEl) return;
-    const brand = document.querySelector(".topbar .brand") || document.querySelector(".brand");
-    if (!brand) { setTimeout(ensureDom, 300); return; }
-    wrapEl = document.createElement("span");
+    const topbar = document.querySelector(".topbar");
+    if (!topbar) { setTimeout(ensureDom, 200); return; }
+
+    // 竖屏模式：#tp-activity-strip 由 taptap-portrait.js 运行时创建。
+    // ad-buff-widget.js 在 index.html 中排在它前面，初始化时可能还没创建，
+    // 必须轮询等待，不能立刻 fallback 到 .topbar，否则状态条会压住主内容区。
+    const isMobile = (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
+    const actStrip = document.getElementById("tp-activity-strip");
+    if (isMobile && !actStrip) {
+      ensureAttempts++;
+      if (ensureAttempts <= MAX_ENSURE_ATTEMPTS) {
+        setTimeout(ensureDom, 100);
+        return;
+      }
+      // 超时仍无活动条：可能是非预期环境，继续 fallback 到顶栏
+    }
+
+    wrapEl = document.createElement("div");
     wrapEl.setAttribute("data-adb-wrap", "1");
-    wrapEl.style.cssText = "display:inline-flex;align-items:center;gap:8px;margin-left:14px;font:12px/1.4 system-ui,-apple-system,'Microsoft YaHei',sans-serif;";
+    wrapEl.style.cssText = "display:flex;align-items:center;gap:8px;font:12px/1.4 system-ui,-apple-system,'Microsoft YaHei',sans-serif;";
 
     statusEl = document.createElement("span");
     statusEl.setAttribute("data-adb-status", "1");
@@ -98,7 +115,19 @@
 
     wrapEl.appendChild(statusEl);
     wrapEl.appendChild(pauseBtn);
-    brand.insertAdjacentElement("afterend", wrapEl);
+
+    if (actStrip) {
+      // 竖屏模式：把状态条放进活动条里，ResizeObserver 会自动把它的真实高度
+      // 算进 --tp-activity-h，主内容区（动作条）自然下移，不会重叠。
+      wrapEl.style.cssText += ";padding:6px 14px;border-bottom:1px solid rgba(30,42,56,0.6);background:linear-gradient(180deg,rgba(16,24,36,0.97),rgba(10,15,22,0.97));";
+      actStrip.insertBefore(wrapEl, actStrip.firstChild);
+      // 立即同步一次高度，避免 ResizeObserver 触发前主内容没下移
+      try { if (window.__tpSyncActivityOffset) window.__tpSyncActivityOffset(); } catch (e) {}
+    } else {
+      // 桌面模式：直接塞进顶栏末尾（顶栏高度随内容撑开，内容区位于顶栏下方，不会重叠）
+      wrapEl.style.cssText += ";margin:4px 0 0 0;";
+      topbar.appendChild(wrapEl);
+    }
   }
 
   function onPauseClick() {

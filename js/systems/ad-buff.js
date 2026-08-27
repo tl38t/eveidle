@@ -21,13 +21,15 @@ function getAdBuffState(state) {
   return s.adBuffs;
 }
 
-// 当前独立乘区倍率（仅增益激活且未暂停期间为 1.3，否则 1.0）
-function getAdBuffMultiplier(state) {
+// 当前独立乘区倍率（仅增益激活且未暂停期间为 1.3，否则 1.0）。
+// atTime 可选：离线结算传入虚拟时间戳，避免用 Date.now() 误判过去/未来是否生效。
+function getAdBuffMultiplier(state, atTime) {
   const b = getAdBuffState(state);
   if (!b) return 1.0;
   const end = Number(b[AD_BUFF_KEY]) || 0;
   const paused = !!b.pausedAt;
-  return (end > Date.now() && !paused) ? AD_BUFF_MULTIPLIER : 1.0;
+  const ref = (typeof atTime === "number" && Number.isFinite(atTime)) ? atTime : Date.now();
+  return (end > ref && !paused) ? AD_BUFF_MULTIPLIER : 1.0;
 }
 
 // 剩余毫秒（0 表示未激活/已过期）。暂停时返回冻结剩余（endAt - pausedAt）。

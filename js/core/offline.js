@@ -342,9 +342,13 @@ function getOfflineActionDescriptor() {
     return {
       key, duration: recipe.baseTime / eff,
       maxCycles() {
+        // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效（含离线期间过期）。
+        if (getEffectiveSkillLevel(gameState, "refining") < recipe.level) return 0;
         return ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
       },
       apply(cycles, gains) {
+        // 等级不足：零副作用（不扣料/不产出/不加 XP/不 emit）。
+        if (getEffectiveSkillLevel(gameState, "refining") < recipe.level) return;
         // 脑插·冶炼双生：3% 概率该 cycle 产出×2（逐 cycle 独立掷骰）
         const implantDoubleRefine = (typeof getImplantDoubleOutputChance === "function") ? getImplantDoubleOutputChance(gameState, "refining") : 0;
         let outQty = cycles * output;
@@ -373,8 +377,14 @@ function getOfflineActionDescriptor() {
     if (!area) return null;
     return {
       key, duration: area.baseTime / getGasEfficiency(),
-      maxCycles: () => Infinity,
+      maxCycles: () => {
+        // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效（含离线期间过期）。
+        if (getEffectiveSkillLevel(gameState, "gasHarvesting") < area.level) return 0;
+        return Infinity;
+      },
       apply(cycles, gains) {
+        // 等级不足：零副作用。
+        if (getEffectiveSkillLevel(gameState, "gasHarvesting") < area.level) return;
         // 脑插·采气双生：4% 概率该 cycle 产出×2（逐 cycle 独立掷骰）
         const implantDoubleGas = (typeof getImplantDoubleOutputChance === "function") ? getImplantDoubleOutputChance(gameState, "gas") : 0;
         let qty = cycles;
@@ -424,7 +434,7 @@ function getOfflineActionDescriptor() {
     // 精密配给剂（考古重制 Phase B · precision_rationing）：每周期重新读取权威报价/门槛函数；
     // 配给剂可能在读档/离线结算时已激活（门槛 +5），等级不足返回 0 周期 / 零副作用 apply。
     const getCompQuote = () => (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(gameState, recipe, { kind:"component" }) : { cost: recipe.cost, levelGate: recipe.level };
-    const compLevel = () => Number((gameState.skills.shipEngineering || {}).lvl) || 1;
+    const compLevel = () => getEffectiveSkillLevel(gameState, "shipEngineering");
     return {
       key, duration: getShipEngineeringCycleDuration(gameState, recipe), // 唯一周期公式（技能×船坞，与在线 tick 一致）
       maxCycles: () => {
@@ -543,6 +553,8 @@ function getOfflineActionDescriptor() {
     return {
       key, duration: archCycleSeconds,
       maxCycles() {
+        // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效（含离线期间过期）。
+        if (getEffectiveSkillLevel(gameState, "archaeology") < site.level) return 0;
         const probeStock = ResourceRegistry.get(gameState, "probe:" + probeId);
         const fuelStock = ResourceRegistry.get(gameState, "consumable:fuel");
         // 用唯一计算层的长期平均燃料作为除数（含船体 fuelEfficiency + 改装件减免），
@@ -558,6 +570,8 @@ function getOfflineActionDescriptor() {
         return Math.max(0, Math.min(probeCapacity, Math.floor(fuelStock / perCycle) + 2));
       },
       apply(cycles, gains) {
+        // 等级不足：零副作用（不推进任何周期）。
+        if (getEffectiveSkillLevel(gameState, "archaeology") < site.level) return;
         let done = 0;
         const durMs = archCycleSeconds * 1000;
         const repairState = gameState.archaeology.repairsByInstanceId && gameState.archaeology.repairsByInstanceId[instanceId];
@@ -605,6 +619,9 @@ function getOfflineActionDescriptor() {
         let stopped = false, reason = "";
 
         while (wallBudgetMs > 1) {
+          // 0) 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效（含离线期间过期）；
+          //    等级不足立即零副作用停止（不推进时间/资源/队列）。
+          if (getEffectiveSkillLevel(gameState, "archaeology") < site.level) { stopped = true; reason = "level-locked"; break; }
           // 1) 维修优先：按墙钟消耗，不扣行动预算/增强剂，不推进进度（按舰实例隔离）
           const repairState = arch.repairsByInstanceId && arch.repairsByInstanceId[instanceId];
           if (repairState && Number(repairState.until) > virtualNow) {
@@ -986,8 +1003,8 @@ function settleOfflineActions(seconds, gains) {
     if (timeBySkill) timeBySkill[currentSkill] = (timeBySkill[currentSkill] || 0) + cycleTime;
     gameState.currentAction.progress = 0;
 
-    // Consume booster time: mining/archaeology only.
-    // Combat boosters frozen offline; refining/gas/manufacturing don't consume.
+    // 消耗增强剂时间：所有采集/制造/考古类行动离线均按 relevantSlots 分段消耗（与在线一致）。
+    // 战斗增强剂离线冻结（combat 不在 relevantSlots 计算列表内），不参与离线消耗。
     if (cycleTime > 0 && relevantSlots.length > 0 && typeof applyBoosterTimeConsumption === "function") {
       const consumedMs = Math.ceil(cycleTime * 1000);
       for (const slot of relevantSlots) {
@@ -1269,6 +1286,13 @@ function applyOfflineGains(rawSeconds, context) {
 
 function calculateOfflineGains() {
   const now = Date.now();
+  // 离线诊断：打印本次结算的 elapsed，便于确认「标签页恢复 / 启动」是否真的触发了离线追算。
+  // 仅当 elapsed>5（会真正结算）或处于调试开关时打印，避免每次可见性抖动刷屏。
+  const _diagLast = gameState.lastActiveTime || now;
+  const _diagElapsed = Math.floor((now - _diagLast) / 1000);
+  if (_diagElapsed > 5 || /[?&]offlinedebug\b/.test(typeof location !== "undefined" && location.search ? location.search : "")) {
+    console.log("[离线] calculateOfflineGains 触发，elapsed=" + _diagElapsed + "s");
+  }
   // 批次 C：科研离线时间结算 —— 必须在既有 elapsed <= 5 提前 return 之前调用，
   // 复用本函数同一 now（不传 elapsed、不预封顶）。每离线结算仅调用一次；
   // 真实超时封顶在 processResearchUntil 内统一处理。
@@ -1288,6 +1312,8 @@ function calculateOfflineGains() {
   try {
     gains = applyOfflineGains(elapsed, offlineCtx);
   } catch (e) {
+    // 定点返修·离线诊断：原先静默 return 会让整次离线收益消失且无可排查线索。
+    console.error("[离线·applyOfflineGains 异常] elapsed=" + elapsed + "s，本次离线收益未发放。错误：", e && (e.stack || e.message || e));
     return;
   }
   const netItems = splitOfflineDispatchBonus(diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState)));

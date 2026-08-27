@@ -433,11 +433,11 @@ function computeStationAlOptsSig(autoLines) {
 // 自动线下拉分组：按 recipe.category 聚成 <optgroup>（仿装备制造页标签）。
 // 原生 select + optgroup，不引入新渲染路径，上一轮修好的「下拉不被误关」逻辑原样生效。
 // 选项集签名（computeStationAlOptsSig）只认 id + 蓝图锁状态，category 不参与 → 分组不影响重建判定。
-var AUTO_LINE_CATEGORY_ORDER = ["smelting","fuel","ammunition","probes","mining","archaeology","combatWeapon","combatRepair","gas","refining","ship","booster","training"];
+var AUTO_LINE_CATEGORY_ORDER = ["smelting","fuel","ammunition","probes","mining","archaeology","combatWeapon","combatRepair","gas","refining","ship","equipment","booster","training"];
 var AUTO_LINE_CATEGORY_LABELS = {
   smelting:"原矿冶炼", fuel:"燃料", ammunition:"弹药", probes:"探针",
   mining:"采矿", archaeology:"考古", combatWeapon:"战斗武器", combatRepair:"战斗维修",
-  gas:"采气", refining:"冶炼", ship:"舰船工程", booster:"增幅剂制造", training:"技能训练"
+  gas:"采气", refining:"冶炼", ship:"舰船工程", equipment:"装备制造", booster:"增幅剂制造", training:"技能训练"
 };
 function renderAutoLineOptions(options, selectedId) {
   if (!options || !options.length) return '<option value="">（无可生产配方）</option>';
@@ -446,8 +446,13 @@ function renderAutoLineOptions(options, selectedId) {
   var placeholder = '<option value=""' + (!selectedId ? ' selected' : '') + ' disabled>请选择生产目标</option>';
   var buckets = {};
   options.forEach(function(t) {
-    var c = t.category || "other";
-    (buckets[c] = buckets[c] || []).push(t);
+    // category 可能是字符串（多数配方）或数组（如精密配给剂 ["ship","equipment"]）。
+    // 数组时需遍历每个元素分别入桶，否则 Array.toString() 得到 "ship,equipment" 这种
+    // 不在 AUTO_LINE_CATEGORY_ORDER 里的 key，导致该配方在自动线下拉里整组静默丢失。
+    var cats = Array.isArray(t.category) ? t.category : [t.category || "other"];
+    cats.forEach(function(c) {
+      (buckets[c] = buckets[c] || []).push(t);
+    });
   });
   return placeholder + AUTO_LINE_CATEGORY_ORDER.filter(function(c){ return buckets[c] && buckets[c].length; }).map(function(cat) {
     var label = AUTO_LINE_CATEGORY_LABELS[cat] || cat;

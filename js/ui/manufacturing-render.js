@@ -224,11 +224,11 @@ function renderShipEngineeringPage(now) {
   const display = getShipEngineeringDisplayState(gameState, Number(now) || Date.now());
   const efficiency = document.getElementById("shipeng-eff-display"); if (efficiency) {
     efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
-    efficiency.title = getShipEngineeringSpeedBreakdownText(display);
+    efficiency.title = getShipEngineeringEfficiencyBreakdown(display);
   }
   const lvNum = document.getElementById("shipeng-lv-num"); if (lvNum) lvNum.textContent = display.level;
   const speedInfo = document.getElementById("shipeng-speed-breakdown");
-  if (speedInfo) speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display);
+  if (speedInfo) { speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display); speedInfo.title = getShipEngineeringEfficiencyBreakdown(display); }
   const fill = document.getElementById("shipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   const xp = document.getElementById("shipeng-exp-value"); if (xp) xp.textContent = display.xp.toLocaleString() + " / " + display.xpNeeded.toLocaleString();
   const status = document.getElementById("shipeng-header-status"); if (status) status.textContent = display.status;
@@ -299,11 +299,20 @@ function renderEquipEngRecipeGrid(display) {
     const statusTxt = recipe.unlocked ? "可制造" : ("🔒 " + (blueprintLocked ? "需蓝图" : "Lv." + recipe.level + " 解锁"));
     const flagBadge = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[recipe.id])
       ? getShipTypesFlagBadge(EQUIPMENT_DB[recipe.id].shipTypes, "ee") : "";
+    // 母本装备（inputEquipment）：像详情页“制造材料”一样直接列在卡片里，
+    // 让玩家在列表层就能看出需先持有对应前置装备。
+    const inputRow = recipe.inputEquipment
+      ? `<div class="equipeng-card-input" style="display:flex;align-items:center;justify-content:space-between;gap:6px;margin:0 10px 6px;padding:5px 8px;border-radius:4px;background:rgba(18,28,40,.55);border:1px solid rgba(48,68,88,.45);font-size:11px;color:#a8b9ca;" title="制造此装备需消耗一件前置装备作为输入">
+          <span style="display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><i class="fa-solid fa-box" style="color:#7dd3fc;font-size:10px;"></i>${twEsc(recipe.inputEquipment.name)}</span>
+          <strong style="color:#d6dce3;white-space:nowrap;">×${recipe.inputEquipment.quantity}</strong>
+        </div>`
+      : "";
     return `<button class="equipeng-recipe-card${recipe.selected ? " selected" : ""}${locked ? " locked" : ""}" data-recipe="${recipe.id}">
     ${locked ? '<span class="lock-badge">🔒</span>' : ""}
     ${flagBadge}
     <span class="equipeng-card-top"><span>${recipe.tier} · ${recipe.slot}</span><span class="${statusCls}">${statusTxt}</span></span>
     <span class="equipeng-card-icon"><i class="${recipe.icon}"></i></span><strong>${recipe.name}</strong><span class="equipeng-card-attributes">${recipe.attributes}</span>
+    ${inputRow}
     <span class="equipeng-card-bottom"><span>${recipe.actualTime.toFixed(1)}s · ${recipe.xp} XP</span><span>库存 ${recipe.ownedCount.toLocaleString()}</span></span></button>`;
   }).join("");
 }
@@ -315,12 +324,14 @@ function renderEquipEngDetail(display) {
   const attributes = display.detail.attributes.length ? `<div class="equipeng-detail-section"><span class="equipeng-detail-label">装备属性</span><div class="equipeng-attribute-list">${display.detail.attributes.map(line => `<span>${line}</span>`).join("")}</div></div>` : "";
   const equipmentInputs = display.detail.equipmentInputs ? (() => {
     const ei = display.detail.equipmentInputs;
+    // 母本装备作为制造材料列表的第一行，明确显示“需消耗一件前置装备”
+    const baseRow = `<div class="equipeng-material"><span><i class="fa-solid fa-box"></i>${twEsc(ei.name)}</span><strong>×${ei.quantity}</strong><small>输入装备 · 制造时消耗</small></div>`;
     const rows = ei.groups.map(g => {
       const cls = g.count >= ei.quantity ? " enough" : " short";
       const sel = g.level === ei.chosenLevel ? " selected-input" : "";
       return `<div class="equipeng-material${cls}${sel}"><span><i class="fa-solid fa-box"></i>${twEsc(ei.name)} +${g.level}</span><strong>×${ei.quantity}</strong><small>可用 ${g.count.toLocaleString()} · 产出 +${g.outputLevel}</small></div>`;
     }).join("");
-    return `<div class="equipeng-input-note">需选择输入装备强化等级（点击「开始制造」弹窗选取）</div>${rows}`;
+    return `<div class="equipeng-input-note">需选择输入装备强化等级（点击「开始制造」弹窗选取）</div>${baseRow}${rows}`;
   })() : "";
   const materials = display.detail.materials.map(item => {
     const key = item.material;
@@ -342,11 +353,7 @@ function renderEquipEngPage(now) {
   const efficiency = document.getElementById("equipeng-eff-display");
   if (efficiency) {
     efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
-    const skillMult = (1 + display.level * 0.02);
-    efficiency.title = "技能速度：1 × (1 + Lv." + display.level + " × 0.02) = " + skillMult.toFixed(2) + "x"
-      + "\n空间站综合后勤：×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）"
-      + "\n科研加成：×" + (display.researchMultiplier || 1).toFixed(3)
-      + "\n最终效率：" + display.efficiency.toFixed(2) + "x";
+    efficiency.title = getEquipmentEngineeringEfficiencyBreakdown(display);
   }
   const eqLog = document.getElementById("equipeng-logistics");
   if (eqLog) {

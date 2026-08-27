@@ -94,6 +94,11 @@
     left: min(74vw, 260px);
     transition: left .25s ease;
   }
+  /* 抽屉打开时侧边栏顶部直接贴顶栏：活动条已右移到侧栏右侧，若仍保留 --tp-activity-h 会在侧栏顶部露出空白 */
+  body.tp-drawer-open .sidebar{
+    top: var(--tp-top-h);
+    transition: top .25s ease;
+  }
 
   body{
     padding-top: calc(var(--tp-top-h) + var(--tp-activity-h));

@@ -268,8 +268,8 @@ function applyBoosterTimeConsumption(state, slot, elapsedMs, now, opts) {
   if (!entry || !entry.itemId) return { consumed:0, depleted:false, events:[] };
   var itemId = entry.itemId;
   var inv = ResourceRegistry.get(state, itemId);
-  var result = calculateBoosterTimeConsumption(entry, elapsedMs, inv);
   var offline = !!(opts && opts.offline);
+  var result = calculateBoosterTimeConsumption(entry, elapsedMs, inv);
 
   // 应用状态变更
   if (result.consumed > 0) {

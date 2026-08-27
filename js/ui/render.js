@@ -135,7 +135,7 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   const efficiency = document.getElementById("smelting-eff-value");
   if (efficiency) {
     efficiency.textContent = display.efficiency.toFixed(2);
-    efficiency.title = "技能速度：1 × (1 + " + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" + (display.shipBonus > 0 ? "\n舰船冶炼加速：" + display.ship.name + " +" + (display.shipBonus * 100).toFixed(0) + "%" : "\n舰船冶炼加速：无") + "\n空间站综合后勤：×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）" + "\n最终速度：" + display.efficiency.toFixed(2) + "x\n\n基础时间：" + display.current.baseTime + "s\n实际时间：" + display.actualTime.toFixed(1) + "s\n产量只受冶炼技能影响，舰船只缩短时间";
+    efficiency.title = getSmeltingEfficiencyBreakdown(display);
   }
   const output = document.getElementById("smelting-output-qty"); if (output) output.textContent = display.output;
   const support = document.getElementById("smelting-ship-support"); if (support) support.textContent = display.shipBonus > 0 ? display.ship.name + " · 速度 +" + (display.shipBonus * 100).toFixed(0) + "%" : "未分配";
@@ -198,25 +198,25 @@ function initHoverInfo() {
     el.appendChild(btn);
     bindInfoBtn(btn, function () { return btn.closest('[data-page],[data-skill]') || btn.parentElement; });
   });
-  // 2) 效率数值：采矿/采气/冶炼 三处注入 ⓘ
-  ['me-value', 'gas-eff-value', 'smelting-eff-value'].forEach(function (id) {
+  // 2) 效率数值：采矿/采气/冶炼/装备制造/增强剂/舰船工程 六处
+  //    —— 数字本体即为点击目标（全平台），点击弹出因子明细弹窗（不再用独立 ⓘ）
+  ['me-value', 'gas-eff-value', 'smelting-eff-value', 'equipeng-eff-display', 'booster-eff-display', 'shipeng-eff-display'].forEach(function (id) {
     const el = document.getElementById(id);
-    if (!el || el.parentElement.querySelector(':scope > .hover-info-btn[data-for="' + id + '"]')) return;
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'hover-info-btn';
-    btn.dataset.for = id;
-    btn.textContent = 'ⓘ';
-    btn.setAttribute('aria-label', '查看效率明细');
-    el.parentElement.appendChild(btn);
-    bindInfoBtn(btn, function () { return document.getElementById(id); });
+    if (!el || el._effClickBound) return;
+    el._effClickBound = true;
+    el.classList.add('eff-clickable');
+    el.addEventListener('click', function (e) {
+      e.stopPropagation(); // 避免触发侧边栏导航 / 抽屉关闭等冒泡监听
+      showEffModal(el);
+    });
   });
   // 3) 事件委托：点浮层之外即收起（ⓘ 自身已在捕获阶段 stopPropagation，不会误触此处关闭）
   document.addEventListener('click', function (e) {
     if (!e.target.closest('.hover-info-pop')) hideHoverInfoPop();
+    if (!e.target.closest('.eff-modal')) hideEffModal();
   });
   document.addEventListener('keydown', function (e) {
-    if (e.key === 'Escape') hideHoverInfoPop();
+    if (e.key === 'Escape') { hideHoverInfoPop(); hideEffModal(); }
   });
 }
 
@@ -246,6 +246,35 @@ function showHoverInfoPop(target, anchor) {
 }
 function hideHoverInfoPop() {
   if (_hoverInfoPop) { _hoverInfoPop.remove(); _hoverInfoPop = null; _hoverInfoAnchor = null; }
+}
+
+/* ================================================================
+   效率因子明细弹窗（全平台点击效率数字触发，居中模态）
+   —— 替代原「效率 ⓘ」方案：数字本体即点击目标，PC / 手机一致。
+   ================================================================ */
+let _effModal = null;
+function showEffModal(target) {
+  if (!target) return;
+  const text = (typeof target.title === 'string') ? target.title : (target.getAttribute('title') || '');
+  if (!text) return;
+  hideEffModal();
+  const overlay = document.createElement('div');
+  overlay.className = 'eff-modal-overlay';
+  const pop = document.createElement('div');
+  pop.className = 'eff-modal';
+  const h = document.createElement('h3'); h.textContent = '效率因子明细';
+  const body = document.createElement('div'); body.className = 'eff-modal-body'; body.textContent = text;
+  const btn = document.createElement('button'); btn.className = 'eff-modal-close'; btn.type = 'button'; btn.textContent = '知道了';
+  btn.addEventListener('click', function (e) { e.stopPropagation(); hideEffModal(); });
+  pop.appendChild(h); pop.appendChild(body); pop.appendChild(btn);
+  overlay.appendChild(pop);
+  overlay.addEventListener('click', function (e) { if (e.target === overlay) hideEffModal(); });
+  document.body.appendChild(overlay);
+  _effModal = overlay;
+  requestAnimationFrame(function () { overlay.classList.add('show'); });
+}
+function hideEffModal() {
+  if (_effModal) { _effModal.remove(); _effModal = null; }
 }
 
 if (document.readyState === 'loading') {

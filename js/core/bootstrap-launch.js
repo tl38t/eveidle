@@ -61,13 +61,20 @@
     if (h > 0) return h + " 小时 " + m + " 分";
     return m + " 分";
   }
-  function conflictSummarySection(label, src) {
+  function conflictSummarySection(label, src, isRecommended) {
     const wrap = document.createElement("div");
-    wrap.style.cssText = "flex:1;min-width:240px;text-align:left;background:rgba(255,255,255,.05);border:1px solid #243044;border-radius:10px;padding:14px;";
+    wrap.style.cssText = "flex:1;min-width:240px;text-align:left;background:rgba(255,255,255,.05);border:1px solid #243044;border-radius:10px;padding:14px;" +
+      (isRecommended ? "border-color:#16a085;outline:2px solid rgba(22,160,133,.6);" : "");
     const h = document.createElement("div");
     h.textContent = label;
     h.style.cssText = "font-size:15px;font-weight:700;margin-bottom:8px;color:#9fd0ff;";
     wrap.appendChild(h);
+    if (isRecommended) {
+      const tag = document.createElement("div");
+      tag.textContent = "✓ 推荐（进度更靠前）";
+      tag.style.cssText = "display:inline-block;margin-bottom:10px;padding:3px 8px;font-size:12px;font-weight:700;border-radius:6px;background:rgba(22,160,133,.18);color:#3fe0b0;";
+      wrap.appendChild(tag);
+    }
     const rows = [
       ["存档时间", fmtConflictTime(src.time)],
       ["游玩时长", fmtConflictDuration(src.playSeconds)],
@@ -155,6 +162,54 @@
     } catch (e) { /* ignore */ }
   }
 
+  // 依据「游玩时长优先、其次存档时间」判断哪份存档进度更靠前，返回 "local" / "cloud" / null。
+  function pickRecommended(local, cloud) {
+    const L = local || {}, C = cloud || {};
+    const ls = (typeof L.playSeconds === "number") ? L.playSeconds : 0;
+    const cs = (typeof C.playSeconds === "number") ? C.playSeconds : 0;
+    const DIFF = 60; // 秒：时长差异阈值，避免噪声误判
+    if (cs - ls > DIFF) return "cloud";
+    if (ls - cs > DIFF) return "local";
+    const lt = (typeof L.time === "number") ? L.time : 0;
+    const ct = (typeof C.time === "number") ? C.time : 0;
+    if (ct - lt > 1000) return "cloud";
+    if (lt - ct > 1000) return "local";
+    return null;
+  }
+
+  // 第1条保险层：玩家选「本地」覆盖云端，但云端进度更靠前 → 强制二次确认，防手滑删长档。
+  function showConfirmOverwriteCloud(onConfirm) {
+    try {
+      const box = document.createElement("div");
+      box.id = "boot-conflict-overwrite-cloud";
+      box.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(8,10,18,.98);color:#e8ecf4;" +
+        "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;" +
+        "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center;";
+      const h = document.createElement("div");
+      h.textContent = "⚠ 云端存档进度更靠前";
+      h.style.cssText = "font-size:18px;font-weight:700;";
+      const p = document.createElement("div");
+      p.textContent = "你选择的「本地存档」游玩时长 / 更新时间比云端更短。确认要用本地覆盖云端吗？此操作会覆盖云端存档，不可撤销。建议先「导出云端备份」。";
+      p.style.cssText = "max-width:520px;line-height:1.7;opacity:.9;font-size:14px;";
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:6px;";
+      const cancel = document.createElement("button");
+      cancel.textContent = "取消";
+      cancel.style.cssText = "min-width:140px;padding:12px 16px;font-size:15px;border:0;border-radius:8px;cursor:pointer;background:#33415c;color:#e8ecf4;";
+      const ok = document.createElement("button");
+      ok.textContent = "仍用本地覆盖云端";
+      ok.style.cssText = "min-width:160px;padding:12px 16px;font-size:15px;border:0;border-radius:8px;cursor:pointer;background:#e0533d;color:#fff;";
+      cancel.addEventListener("click", function () { if (box.parentNode) box.parentNode.removeChild(box); });
+      ok.addEventListener("click", function () { if (box.parentNode) box.parentNode.removeChild(box); onConfirm(); });
+      row.appendChild(cancel); row.appendChild(ok);
+      box.appendChild(h); box.appendChild(p); box.appendChild(row);
+      if (document.body) document.body.appendChild(box);
+    } catch (e) {
+      // 极端兜底：确认浮层建不出也允许继续，绝不阻断启动。
+      onConfirm();
+    }
+  }
+
   function showConflictChoice() {
     try {
       if (document.getElementById("boot-conflict-choice")) return;
@@ -168,15 +223,20 @@
       const h = document.createElement("h1");
       h.textContent = "检测到云端存档冲突";
       h.style.cssText = "font-size:22px;margin:0 0 8px;";
+      const localSum = summarizeLocal();
+      const cloudSum = summarizeCloud();
+      const recommended = pickRecommended(localSum, cloudSum);
+
       const p = document.createElement("p");
-      p.textContent = "本地存档与云端存档均已修改且内容不同。请选择使用哪一份（选择后另一份将被覆盖，不可撤销）。建议先导出两份备份再选择。";
+      p.textContent = "本地存档与云端存档均已修改且内容不同。请选择使用哪一份（选择后另一份将被覆盖，不可撤销）。建议先导出两份备份再选择。" +
+        (recommended ? "系统已按「游玩时长 / 存档时间」推荐「" + (recommended === "local" ? "本地" : "云端") + "」存档（绿色标记）。" : "两份进度接近，请仔细核对后再选择。");
       p.style.cssText = "max-width:620px;line-height:1.6;opacity:.85;margin:0 0 18px;";
 
       // 明细：本地 vs 云端
       const detailRow = document.createElement("div");
       detailRow.style.cssText = "display:flex;gap:16px;flex-wrap:wrap;justify-content:center;max-width:720px;width:100%;margin-bottom:8px;";
-      detailRow.appendChild(conflictSummarySection("本地存档", summarizeLocal()));
-      detailRow.appendChild(conflictSummarySection("云端存档", summarizeCloud()));
+      detailRow.appendChild(conflictSummarySection("本地存档", localSum, recommended === "local"));
+      detailRow.appendChild(conflictSummarySection("云端存档", cloudSum, recommended === "cloud"));
 
       // 导出备份按钮（仅真实触发后才显示「已导出」）
       const exportRow = document.createElement("div");
@@ -214,6 +274,15 @@
       cloudBtn.style.cssText = btnStyle + "background:#16a085;color:#fff;";
       const choose = function (choice, btn) {
         if (overlay._resolving) return;
+        // 第1条保险层：选本地覆盖云端，但云端进度更靠前 → 先二次确认，防手滑删长档
+        if (choice === "local" && recommended === "cloud") {
+          showConfirmOverwriteCloud(function () { proceedChoice(choice, btn); });
+          return;
+        }
+        proceedChoice(choice, btn);
+      };
+      function proceedChoice(choice, btn) {
+        if (overlay._resolving) return;
         overlay._resolving = true;
         localBtn.disabled = true; cloudBtn.disabled = true;
         btn.textContent = (choice === "local" ? "使用本地存档" : "使用云端存档") + "：处理中…";
@@ -228,7 +297,7 @@
           localBtn.style.opacity = "1"; cloudBtn.style.opacity = "1";
           showConflictError(err);
         });
-      };
+      }
       localBtn.addEventListener("click", function () { choose("local", localBtn); });
       cloudBtn.addEventListener("click", function () { choose("cloud", cloudBtn); });
       const row = document.createElement("div");
@@ -261,11 +330,83 @@
     } catch (e) { /* ignore */ }
   }
 
-  // 监听 boot 状态：awaiting-choice 弹出冲突浮层；ready / error 收起（决定·六 / ·十）。
+  // 启动浮层样式（spinner 等），仅注入一次。
+  function ensureBootOverlayStyle() {
+    try {
+      if (document.getElementById("boot-overlay-style")) return;
+      var s = document.createElement("style");
+      s.id = "boot-overlay-style";
+      s.textContent = "@keyframes boot-spin{to{transform:rotate(360deg);}}" +
+        ".boot-spinner{width:42px;height:42px;border:4px solid rgba(255,255,255,.15);border-top-color:#7fe3ff;border-radius:50%;animation:boot-spin .9s linear infinite;}" +
+        ".boot-overlay{position:fixed;inset:0;z-index:99990;background:rgba(8,10,18,.97);color:#e8ecf4;" +
+        "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;" +
+        "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center;}";
+      if (document.head) document.head.appendChild(s);
+    } catch (e) { /* ignore */ }
+  }
+
+  // 通用加载浮层（loading 态）：避免启动期间底层空界面闪现。
+  function showBootLoading(msg) {
+    ensureBootOverlayStyle();
+    try {
+      var overlay = document.getElementById("boot-loading");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "boot-loading";
+        overlay.className = "boot-overlay";
+        overlay.innerHTML = '<div class="boot-spinner"></div><div id="boot-loading-msg" style="font-size:15px;opacity:.85;"></div>';
+        if (document.body) document.body.appendChild(overlay);
+      }
+      var m = document.getElementById("boot-loading-msg");
+      if (m) m.textContent = msg || "正在加载存档…";
+    } catch (e) { /* ignore */ }
+  }
+  function hideBootLoading() {
+    try { var el = document.getElementById("boot-loading"); if (el && el.parentNode) el.parentNode.removeChild(el); } catch (e) {}
+  }
+
+  // 等待云存档浮层（awaiting-cloud 态）：连接中 + 超时后开放"新建账号"按钮。
+  function showAwaitingCloud() {
+    ensureBootOverlayStyle();
+    try {
+      var overlay = document.getElementById("boot-await-cloud");
+      if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "boot-await-cloud";
+        overlay.className = "boot-overlay";
+        overlay.innerHTML =
+          '<div class="boot-spinner"></div>' +
+          '<div style="font-size:16px;font-weight:600;">正在连接云存档…</div>' +
+          '<div style="font-size:13px;opacity:.7;max-width:440px;line-height:1.6;">未检测到本机存档，正在尝试读取你的云端存档（最长等待约 15 秒）。若长时间无法连接，可选择新建账号开始游戏。</div>' +
+          '<button id="boot-new-account" class="btn" style="min-width:180px;padding:12px 18px;font-size:15px;border:0;border-radius:8px;cursor:pointer;background:#2f6df6;color:#fff;opacity:.5;pointer-events:none;">新建账号</button>';
+        if (document.body) document.body.appendChild(overlay);
+        var btn = document.getElementById("boot-new-account");
+        if (btn) btn.addEventListener("click", function () {
+          if (typeof SaveManager !== "undefined" && SaveManager.beginFreshAccount) SaveManager.beginFreshAccount();
+        });
+      }
+      var b = document.getElementById("boot-new-account");
+      if (b) {
+        var can = (typeof SaveManager !== "undefined" && SaveManager.canBeginFreshAccount) ? SaveManager.canBeginFreshAccount() : false;
+        b.disabled = !can;
+        b.style.opacity = can ? "1" : ".5";
+        b.style.pointerEvents = can ? "auto" : "none";
+        b.textContent = can ? "新建账号" : "正在连接云存档…（稍候可新建）";
+      }
+    } catch (e) { /* ignore */ }
+  }
+  function hideAwaitingCloud() {
+    try { var el = document.getElementById("boot-await-cloud"); if (el && el.parentNode) el.parentNode.removeChild(el); } catch (e) {}
+  }
+
+  // 监听 boot 状态：loading 显示加载浮层；awaiting-choice 弹冲突浮层；awaiting-cloud 弹等待云浮层；
+  // ready / local-only / error 收起（决定·六 / ·十）。
   function onBootState(e) {
     var st = e && e.detail && e.detail.state;
-    if (st === "awaiting-choice") showConflictChoice();
-    else if (st === "ready" || st === "error") hideConflictChoice();
+    if (st === "loading") showBootLoading();
+    else if (st === "awaiting-choice") showConflictChoice();
+    else if (st === "awaiting-cloud") { hideBootLoading(); showAwaitingCloud(); }
+    else if (st === "ready" || st === "local-only" || st === "error") { hideConflictChoice(); hideAwaitingCloud(); hideBootLoading(); if (document.body) document.body.classList.remove("boot-loading"); }
   }
 
   function launch() {
@@ -290,6 +431,15 @@
       bootPromise.catch(function (err) { console.error("BOOT FATAL", err); showFatalBootError(err); });
     }
   }
+
+  // 第4条 fail-safe：若 30s 内任何原因未解除 boot-loading（极端分支漏发状态），强制揭开主界面，避免永久空屏。
+  setTimeout(function () {
+    try {
+      if (document.body && document.body.classList.contains("boot-loading")) {
+        document.body.classList.remove("boot-loading");
+      }
+    } catch (e) {}
+  }, 30000);
 
   if (typeof document !== "undefined") {
     if (typeof window !== "undefined" && window.addEventListener) {

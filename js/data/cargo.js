@@ -199,6 +199,34 @@ const CARGO_POOLS = {
   ]
 };
 
+// 货柜高阶战术材料（涓流补充；战斗仍是主来源，按安全层掉落）。
+// 按玩家等级门槛锁定，避免低等级过早拿到用不到的高阶材料；数量随货柜尺寸缩放（mul，与矿物/弹药同口径），保持「高级货柜数量放大」的向下兼容且整体量级为「一点」的辅助定位。
+// 货柜 T1 通用池的「战术材料」候选（按需从 rollCargoT1 的 tactical 分支抽取其一）。
+// 基础残液全尺寸可出；高阶按「货柜尺寸梯度」解锁（纯尺寸门槛，不卡战斗等级）：
+//   活性战术凝胶：尺寸 ≥ M
+//   高能战术萃取物：尺寸 ≥ L
+//   极化战术介质：  尺寸 ≥ XL
+// 数量均按 CARGO_T1_SIZE_MUL 随尺寸缩放。战斗仍是高阶主来源，货柜只做涓流补充。
+const CARGO_T1_SIZE_RANK = { S: 1, M: 2, L: 3, XL: 4 };
+const CARGO_T1_TACTICAL = {
+  "special:战术残液":       { qty: [180, 210], weight: 6, minSizeRank: 1 },
+  "special:活性战术凝胶":   { qty: [30, 60],   weight: 2, minSizeRank: 2 },
+  "special:高能战术萃取物": { qty: [15, 35],   weight: 2, minSizeRank: 3 },
+  "special:极化战术介质":   { qty: [8, 20],    weight: 2, minSizeRank: 4 },
+};
+// 按尺寸梯度过滤出当前可出的战术材料候选列表（仅尺寸门槛，无战斗等级限制）。
+function getCargoT1TacticalChoices(size, state) {
+  const rk = CARGO_T1_SIZE_RANK[size] || 1;
+  const out = [];
+  for (const id of Object.keys(CARGO_T1_TACTICAL)) {
+    const def = CARGO_T1_TACTICAL[id];
+    if (rk >= def.minSizeRank) {
+      out.push({ id, qty: def.qty, weight: def.weight });
+    }
+  }
+  return out;
+}
+
 // 货柜装备蓝图：按「装备生产许可」档位(D/C/B/A) 分配到对应尺寸货柜，作为独立 BP 奖励档（与 T1–T4 并列）。
 // D(lv10 前哨型)→S · C(lv25)→M · B(lv45)→L · A(lv65 破阵/铁血/枢纽型)→XL。各蓝图沿用 1.5 权重。
 // 发放逻辑复用 grantEquipmentBlueprintFromCargo：未拥有写入 ownedBlueprints；已拥有折算 loot:lp（按尺寸缩放）。
@@ -346,10 +374,13 @@ function rollCargoT1(state, size, rng) {
     if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, pId, qty);
     out.push({ tier: "T1", id: pId, qty });
   } else if (pick === "tactical") {
-    // 战术残液（≈20 分钟战斗 farm 量）
-    const qty = scaledQty(CARGO_T1_QTY.tactical);
-    if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, "special:战术残液", qty);
-    out.push({ tier: "T1", id: "special:战术残液", qty });
+    // 战术材料候选：基础残液全尺寸可出；高阶按尺寸梯度解锁（见 CARGO_T1_TACTICAL）
+    const choices = getCargoT1TacticalChoices(size, state);
+    const chosen = (choices.length ? cargoWeightedPick(choices, rng).id : "special:战术残液");
+    const def = CARGO_T1_TACTICAL[chosen];
+    const qty = scaledQty(def.qty);
+    if (typeof ResourceRegistry !== "undefined") ResourceRegistry.add(state, chosen, qty);
+    out.push({ tier: "T1", id: chosen, qty });
   } else {
     // 星币 → 具名战利品（出售换星币；不直接入账）
     const qty = scaledQty(CARGO_T1_QTY.isk);
@@ -388,9 +419,10 @@ function getCargoDropConfigs(zone) {
 }
 
 // 货柜出率详情（仓库卡片 + 战斗点击查看用）。返回一个结构化对象，供渲染层直接消费，不硬编码。
-// 返回：{ size, sizeLabel, tierWeights, blueprints:[{id,name}], content:{T1:[{id,name,kind,qtyText}], T2, T3, T4} }
+// 返回：{ size, sizeLabel, tierWeights, blueprints:[{id,name}], content:{T1:[{id,name, @kind,qtyText}], T2, T3, T4} }
 // 注意：T4 在 S 尺寸权重为 0（超小货柜不出脑插），渲染层据此灰显即可，不附加任何口语标注。
-function getCargoDropInfo(size) {
+// state 可选：传入则按等级门槛过滤高阶战术材料（未解锁档不展示，与真实开箱一致）；缺省不展示战术材料（测试/预览兼容）。
+function getCargoDropInfo(size, state) {
   const sz = CARGO_SIZES.includes(size) ? size : "S";
   const sizeLabel = { S: "小型", M: "中型", L: "大型", XL: "超大型" }[sz];
   const tierWeights = CARGO_SIZE_TIER_WEIGHTS[sz];
@@ -461,7 +493,8 @@ function getCargoDropInfo(size) {
     return "";
   }
   function poolItems(tier) {
-    return (CARGO_POOLS[tier] || []).map(e => ({ id: e.id, name: entryName(e.id), kind: entryKind(e.id), qtyText: qtyText(e) }));
+    const base = (CARGO_POOLS[tier] || []).map(e => ({ id: e.id, name: entryName(e.id), kind: entryKind(e.id), qtyText: qtyText(e) }));
+    return base;
   }
 
   // T1：尺寸化行星材料三~六选一 + 战术残液 + 星币战利品（数额随尺寸缩放）
@@ -473,7 +506,12 @@ function getCargoDropInfo(size) {
     t1.push({ id: pId, name: entryName(pId), kind: "resource", qtyText: lo + "~" + hi });
   }
   const tm = CARGO_T1_SIZE_MUL[sz] || 1;
-  t1.push({ id: "special:战术残液", name: "战术残液", kind: "resource", qtyText: Math.floor(CARGO_T1_QTY.tactical[0] * tm) + "~" + Math.floor(CARGO_T1_QTY.tactical[1] * tm) });
+  // 战术材料候选（按尺寸梯度过滤，与真实开箱一致）：基础残液全尺寸可出，高阶需更大货柜
+  for (const tc of getCargoT1TacticalChoices(sz, state)) {
+    const range = CARGO_T1_TACTICAL[tc.id].qty;
+    const lo = Math.floor(range[0] * tm), hi = Math.floor(range[1] * tm);
+    t1.push({ id: tc.id, name: entryName(tc.id), kind: "resource", qtyText: lo + "~" + hi });
+  }
   t1.push({ id: "loot:isk", name: "星币战利品（具名）", kind: "loot", qtyText: Math.floor(CARGO_T1_QTY.isk[0] * tm).toLocaleString() + "~" + Math.floor(CARGO_T1_QTY.isk[1] * tm).toLocaleString() });
 
   return {
@@ -537,7 +575,7 @@ function openCargoContainer(state, size, rng) {
     if (tier === "T1") {
       grants = rollCargoT1(state, size, rng);
     } else {
-      const pool = (CARGO_SIZE_POOLS[size] && CARGO_SIZE_POOLS[size][tier]) || CARGO_POOLS[tier];
+      let pool = (CARGO_SIZE_POOLS[size] && CARGO_SIZE_POOLS[size][tier]) || CARGO_POOLS[tier];
       if (!pool || !pool.length) continue;
       const entry = cargoWeightedPick(pool, rng);
       const qty = cargoRollQty(entry, rng);

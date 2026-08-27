@@ -285,7 +285,7 @@ function renderImplantTab(display) {
 /* 仓库物品方块卡点击 → 通用物品弹窗（装备=介绍+强化+出产；非装备=介绍+出产） */
 let currentCargoItems = [];
 let cargoCardBound = false;
-// 货柜出率区：内容条目 / 蓝图条目点击 → 打开独立小卡片（叠在货柜卡上，不覆盖）
+// 货柜出率区：内容条目 / 蓝图条目点击 → 复用通用物品卡（openItemDetailModal）
 
 /* 旗舰限定角标：移动端点按提示（桌面由 CSS :hover 处理）。
    点击角标本身 → 切换 .tap-open 并显示提示，且阻止冒泡（避免触发行/卡点击打开弹窗）；
@@ -308,6 +308,8 @@ if (!window.__flagTapBound) {
 }
 let currentCargoContentItems = [];
 let currentCargoBlueprintItems = [];
+let currentRewardItems = [];
+let rewardCardBound = false;
 
 /* ---- 装备强化：按 (型号, 等级) 折叠成单元格 + 居中弹窗（牛牛式） ---- */
 let equipEnhanceFilter = "all";     // all | enhanceable | installed | unenhanced
@@ -716,25 +718,155 @@ document.addEventListener("click", event => {
   openMaterialDetail(link.dataset.matKey, link.dataset.matName || link.textContent);
 });
 
-/* ---- 货柜出率区：仓库卡片 / 战斗点击查看共用 ---- */
-// 把内容条目转成可打开的小卡片描述符
+/* ---- 货柜出率区：复用仓库物品卡（openItemDetailModal）渲染 ---- */
+// 把内容条目转成通用物品描述符，直接从仓库映射取图标/分类/介绍/来源，不再手写模板句。
+// sizeLabel/tierLabel 仅作数量提示，不参与描述文案。
 function cargoContentDescriptor(it, sizeLabel, tierLabel) {
-  let icon = "📦", categoryLabel = "物资";
-  if (it.kind === "implant") { icon = "🧠"; categoryLabel = "脑插"; }
-  else if (it.kind === "blueprint") { icon = "📜"; categoryLabel = "蓝图"; }
-  else if (it.kind === "ammo") { icon = "🔫"; categoryLabel = "弹药"; }
-  else if (it.kind === "loot") { icon = "💰"; categoryLabel = "战利品"; }
-  const desc = "货柜（" + sizeLabel + "）「" + tierLabel + "」档可能开出的物品。" + (it.qtyText ? (" 数量参考：" + it.qtyText + "。") : "");
-  return {
-    name: it.name, icon: icon, categoryLabel: categoryLabel, description: desc,
-    source: { pageId: "cargo", pageLabel: "货柜掉落", icon: "fa-solid fa-box-open" }
-  };
+  const kind = it.kind || "resource";
+  const id = it.id || "";
+  const name = it.name || (typeof getResourceDisplayName === "function" ? getResourceDisplayName(id) : id);
+  // 图标：优先仓库 ITEM_ICONS，回退 kind 默认
+  const icon = (typeof ITEM_ICONS !== "undefined" && ITEM_ICONS[name]) ||
+    ({ implant: "🧠", blueprint: "📜", ammo: "🔫", loot: "💰" }[kind] || "📦");
+  // 资源按 id 前缀还原仓库分类键（CARGO_DESC/CARGO_SOURCE/CARGO_CATEGORY_LABEL 的索引键）
+  let catKey = kind;
+  if (kind === "resource") {
+    if (id.indexOf("ore:") === 0) catKey = "ore";
+    else if (id.indexOf("mineral:") === 0) catKey = "mineral";
+    else if (id.indexOf("planetary:") === 0) catKey = "planetary";
+    else if (id.indexOf("gases:") === 0) catKey = "gases";
+    else if (id.indexOf("moon:") === 0) catKey = "moon";
+    else if (id.indexOf("special:") === 0) catKey = "special";
+    else if (id.indexOf("calibration:") === 0) catKey = "special";
+    else if (id.indexOf("booster:") === 0) catKey = "consumable";
+    else if (id.indexOf("probe:") === 0) catKey = "consumable";
+  }
+  const categoryLabel = (typeof CARGO_CATEGORY_LABEL !== "undefined" && CARGO_CATEGORY_LABEL[catKey]) ||
+    ({ implant: "脑插", blueprint: "蓝图", ammo: "弹药", loot: "战利品" }[kind] || "物资");
+  // 来源：优先仓库 CARGO_SOURCE；特殊命名空间（calibration/booster/probe）覆盖，与仓库一致
+  let source;
+  if (kind === "blueprint") source = { pageId: "equipmentEngineering", pageLabel: "装备工程", icon: "fa-solid fa-gears" };
+  else if (kind === "implant" || kind === "loot") source = { pageId: "combat", pageLabel: "战斗", icon: "fa-solid fa-crosshairs" };
+  else if (id.indexOf("calibration:") === 0) source = { pageId: "archaeology", pageLabel: "考古", icon: "fa-solid fa-digging" };
+  else if (id.indexOf("booster:") === 0) source = { pageId: "boosterEngineering", pageLabel: "增强剂制造", icon: "fa-solid fa-flask" };
+  else if (id.indexOf("probe:") === 0) source = { pageId: "archaeology", pageLabel: "考古", icon: "fa-solid fa-digging" };
+  else source = (typeof CARGO_SOURCE !== "undefined" && CARGO_SOURCE[catKey]) ||
+    { pageId: "combat", pageLabel: "战斗", icon: "fa-solid fa-crosshairs" };
+  // 介绍：蓝图/脑插给专用说明，其余取自仓库 CARGO_DESC（按分类）
+  let description;
+  if (kind === "blueprint") description = "货柜掉落的装备生产许可蓝图，持有后可在装备工程页制造对应装备。";
+  else if (kind === "implant") description = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB[id] && IMPLANT_DB[id].desc) || "神经植入体。装备后提供被动增益，账号全局生效。";
+  else description = (typeof CARGO_DESC !== "undefined" && CARGO_DESC[catKey]) || "货柜开启可能获得的物品。";
+  const out = { id, name, icon, categoryLabel, description, source };
+  // 资源类补「可制造 / 可用途」，与仓库卡片一致（仅在仓库存在映射时）
+  if (kind === "resource" && typeof getMaterialCraftables === "function") {
+    out.craftables = getMaterialCraftables(id, (typeof gameState !== "undefined" ? gameState : null));
+  }
+  return out;
+}
+
+// 货柜蓝图 → 直接展示「制造出来的装备」静态信息卡（不含强化页）
+function openBlueprintProductModal(eq, blueprintName) {
+  if (!eq) return;
+  let backdrop = document.getElementById("item-detail-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "item-detail-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) closeItemDetailModal(); });
+    backdrop._esc = e => { if (e.key === "Escape" && backdrop.style.display === "flex") closeItemDetailModal(); };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  const slotLabel = { high: "高槽", mid: "中槽", low: "低槽" }[eq.slot] || "装备";
+  let typeLabel = "工业装备";
+  if (eq.combat) {
+    if (eq.combat.kind === "weapon") typeLabel = ({ laser: "激光武器", missile: "导弹武器", cannon: "射弹武器" }[eq.combat.weaponType] || "武器");
+    else if (eq.combat.kind === "repair") typeLabel = ({ shield: "护盾维修", armor: "装甲维修", structure: "结构维修" }[eq.combat.target] || "维修装备");
+  } else if (eq.bonuses) {
+    if (eq.bonuses.miningEfficiency || eq.bonuses.gasEfficiency || eq.bonuses.miningLaserEfficiency || eq.bonuses.gasLaserEfficiency) typeLabel = "采矿/工业装备";
+  }
+  const bonusLabels = { miningEfficiency: "采矿效率", gasEfficiency: "气云效率", miningLaserEfficiency: "采矿激光效率", gasLaserEfficiency: "气云激光效率", shieldCapacity: "护盾容量" };
+  const bonusLines = [];
+  if (eq.bonuses) for (const k in eq.bonuses) bonusLines.push((bonusLabels[k] || k) + " +" + Math.round(eq.bonuses[k] * 100) + "%");
+  const combatLines = [];
+  if (eq.combat && eq.combat.kind === "weapon") {
+    combatLines.push("基础伤害 " + eq.combat.baseDamage + " / 命中 " + eq.combat.baseHit);
+    if (eq.combat.aoe && eq.combat.aoe.description) combatLines.push(eq.combat.aoe.description);
+  } else if (eq.combat && eq.combat.kind === "repair") {
+    combatLines.push("恢复 " + eq.combat.amount + " (" + ({ shield: "护盾", armor: "装甲", structure: "结构" }[eq.combat.target] || "HULL") + ")");
+  }
+  const costLines = [];
+  if (eq.cost) for (const m in eq.cost) costLines.push((typeof getResourceDisplayName === "function" ? getResourceDisplayName(m) : m) + " ×" + eq.cost[m]);
+  const sections = [];
+  sections.push(`<div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(blueprintName || eq.name)} 对应的装备。持有蓝图后可在「装备工程」页制造并使用。</div></div>`);
+  if (bonusLines.length) sections.push(`<div class="eem-section"><h3 class="eem-sec-title">装备属性</h3><div class="eem-desc">${bonusLines.map(x => `<div>${escapeAchievementText(x)}</div>`).join("")}</div></div>`);
+  if (combatLines.length) sections.push(`<div class="eem-section"><h3 class="eem-sec-title">战斗属性</h3><div class="eem-desc">${combatLines.map(x => `<div>${escapeAchievementText(x)}</div>`).join("")}</div></div>`);
+  if (costLines.length) sections.push(`<div class="eem-section"><h3 class="eem-sec-title">制造材料</h3><div class="eem-craft-list">${costLines.map(x => `<div class="eem-craft-row"><span class="eem-craft-name">${escapeAchievementText(x)}</span></div>`).join("")}</div></div>`);
+  sections.push(`<div class="eem-section"><h3 class="eem-sec-title">出产位置</h3><div class="eem-source"><span class="eem-src-icon"><i class="fa-solid fa-gears"></i></span><span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">装备工程</span></span></div><button class="btn primary eem-jump" data-idm-jump="equipmentEngineering">跳转至「装备工程」页面</button></div>`);
+  backdrop.innerHTML = `<div class="equip-enh-modal" role="dialog" aria-modal="true">
+    <div class="eem-head">
+      <span class="eem-icon">🔧</span>
+      <div class="eem-title-wrap"><div class="eem-title">${escapeAchievementText(eq.name)}</div><div class="eem-sub">${slotLabel} · ${typeLabel} · 需等级 ${eq.level || 1}</div></div>
+      <button class="eem-close" data-idm-close aria-label="关闭">✕</button>
+    </div>
+    <div class="eem-body">${sections.join("")}</div>
+  </div>`;
+  backdrop.style.display = "flex";
+  const closeBtn = backdrop.querySelector("[data-idm-close]");
+  if (closeBtn) closeBtn.addEventListener("click", closeItemDetailModal);
+  const jumpBtn = backdrop.querySelector("[data-idm-jump]");
+  if (jumpBtn) jumpBtn.addEventListener("click", () => { closeItemDetailModal(); twGoToTarget(jumpBtn.dataset.idmJump); });
+}
+
+// 货柜增强剂蓝图 → 直接展示「制造出来的增强剂」静态信息卡（不含强化页）
+function openBoosterProductModal(recipe, blueprintName) {
+  if (!recipe) {
+    // recipe 缺失时回退到通用蓝图卡，避免点开空白
+    openItemDetailModal({ id: "booster:" + (blueprintName || ""), name: blueprintName || "增强剂蓝图", icon: "📜", categoryLabel: "蓝图", description: "货柜掉落的增强剂生产许可蓝图，持有后可在增强剂制造页制造对应增强剂。", source: { pageId: "boosterEngineering", pageLabel: "增强剂制造", icon: "fa-solid fa-flask" } });
+    return;
+  }
+  let backdrop = document.getElementById("item-detail-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "item-detail-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) closeItemDetailModal(); });
+    backdrop._esc = e => { if (e.key === "Escape" && backdrop.style.display === "flex") closeItemDetailModal(); };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  const catMeta = (typeof BOOSTER_CATEGORY_META !== "undefined")
+    ? BOOSTER_CATEGORY_META.find(m => m.id === recipe.category) : null;
+  const catLabel = catMeta ? catMeta.name : "增强剂";
+  const itemInfo = (typeof getBoosterItem === "function") ? getBoosterItem(recipe.id) : null;
+  const effectText = (itemInfo && itemInfo.description) || (recipe.effect && typeof describeBoosterEffect === "function" ? describeBoosterEffect(recipe.effect.type, recipe.effect.value, recipe.effect.repairTarget, 0) : "");
+  const costLines = [];
+  if (recipe.cost) for (const m in recipe.cost) costLines.push((typeof getResourceDisplayName === "function" ? getResourceDisplayName(m) : m) + " ×" + recipe.cost[m]);
+  const sections = [];
+  sections.push(`<div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(blueprintName || recipe.name)} 对应的增强剂。持有蓝图后可在「增强剂制造」页制造并使用。</div></div>`);
+  if (effectText) sections.push(`<div class="eem-section"><h3 class="eem-sec-title">增强剂效果</h3><div class="eem-desc">${escapeAchievementText(effectText)}</div></div>`);
+  if (costLines.length) sections.push(`<div class="eem-section"><h3 class="eem-sec-title">制造材料</h3><div class="eem-craft-list">${costLines.map(x => `<div class="eem-craft-row"><span class="eem-craft-name">${escapeAchievementText(x)}</span></div>`).join("")}</div></div>`);
+  sections.push(`<div class="eem-section"><h3 class="eem-sec-title">出产位置</h3><div class="eem-source"><span class="eem-src-icon"><i class="fa-solid fa-flask"></i></span><span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">增强剂制造</span></span></div><button class="btn primary eem-jump" data-idm-jump="boosterEngineering">跳转至「增强剂制造」页面</button></div>`);
+  backdrop.innerHTML = `<div class="equip-enh-modal" role="dialog" aria-modal="true">
+    <div class="eem-head">
+      <span class="eem-icon">💉</span>
+      <div class="eem-title-wrap"><div class="eem-title">${escapeAchievementText(recipe.name)}</div><div class="eem-sub">${escapeAchievementText(catLabel)}增强剂 · 需等级 ${recipe.level || 1}</div></div>
+      <button class="eem-close" data-idm-close aria-label="关闭">✕</button>
+    </div>
+    <div class="eem-body">${sections.join("")}</div>
+  </div>`;
+  backdrop.style.display = "flex";
+  const closeBtn = backdrop.querySelector("[data-idm-close]");
+  if (closeBtn) closeBtn.addEventListener("click", closeItemDetailModal);
+  const jumpBtn = backdrop.querySelector("[data-idm-jump]");
+  if (jumpBtn) jumpBtn.addEventListener("click", () => { closeItemDetailModal(); twGoToTarget(jumpBtn.dataset.idmJump); });
 }
 
 // 货柜出率区 HTML（权重 + 蓝图清单 + 各档内容）。不显示基础掉落概率与抽取次数。
 function cargoDropRateSectionHTML(size) {
   if (typeof getCargoDropInfo !== "function") return "";
-  const info = getCargoDropInfo(size);
+  const info = getCargoDropInfo(size, (typeof gameState !== "undefined" ? gameState : null));
   if (!info) return "";
   const weights = info.tierWeights || {};
   const total = Object.values(weights).reduce((a, b) => a + (Number(b) || 0), 0) || 1;
@@ -780,48 +912,6 @@ function cargoDropRateSectionHTML(size) {
     </div>`;
 }
 
-// 货柜内容/蓝图 点击 → 独立小卡片（叠在货柜详情卡上，关闭后回到货柜卡）
-function openCargoContentCard(desc) {
-  if (!desc) return;
-  let backdrop = document.getElementById("cargo-content-modal");
-  if (!backdrop) {
-    backdrop = document.createElement("div");
-    backdrop.id = "cargo-content-modal";
-    backdrop.className = "equip-enh-modal-backdrop";
-    document.body.appendChild(backdrop);
-    backdrop.addEventListener("click", e => { if (e.target === backdrop) closeCargoContentCard(); });
-    backdrop._esc = e => { if (e.key === "Escape" && backdrop.style.display === "flex") closeCargoContentCard(); };
-    document.addEventListener("keydown", backdrop._esc);
-  }
-  const src = desc.source || { pageLabel: "获得" };
-  const descText = typeof desc.description === "string" ? desc.description : "";
-  backdrop.innerHTML = `
-    <div class="equip-enh-modal" role="dialog" aria-modal="true">
-      <div class="eem-head">
-        <span class="eem-icon">${desc.icon || "📦"}</span>
-        <div class="eem-title-wrap">
-          <div class="eem-title">${escapeAchievementText(desc.name)}</div>
-          <div class="eem-sub">${escapeAchievementText(desc.categoryLabel || "")}</div>
-        </div>
-        <button class="eem-close" data-cc-close aria-label="关闭">✕</button>
-      </div>
-      <div class="eem-body">
-        ${descText ? `<div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(descText)}</div></div>` : ""}
-        <div class="eem-section"><h3 class="eem-sec-title">出产位置</h3>
-          <div class="eem-source"><span class="eem-src-icon"><i class="${src.icon || "fa-solid fa-box-open"}"></i></span>
-            <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
-        </div>
-      </div>
-    </div>`;
-  backdrop.style.display = "flex";
-  const closeBtn = backdrop.querySelector("[data-cc-close]");
-  if (closeBtn) closeBtn.addEventListener("click", closeCargoContentCard);
-}
-function closeCargoContentCard() {
-  const backdrop = document.getElementById("cargo-content-modal");
-  if (backdrop) backdrop.style.display = "none";
-}
-
 /* 通用物品详情弹窗：装备 → 解析到强化弹窗（含强化+介绍+出产）；非装备 → 介绍+出产 */
 function openItemDetailModal(item) {
   if (item.category === "equipment" && item.itemId) {
@@ -850,14 +940,25 @@ function openItemDetailModal(item) {
     backdrop.addEventListener("click", event => { if (event.target === backdrop) closeItemDetailModal(); });
     backdrop._esc = event => { if (event.key === "Escape" && backdrop.style.display === "flex") closeItemDetailModal(); };
     document.addEventListener("keydown", backdrop._esc);
-    // 货柜出率区：内容条目 / 蓝图条目点击 → 打开独立小卡片（叠在货柜卡上，不覆盖）
+    // 货柜出率区：内容条目 / 蓝图条目点击 → 复用通用物品卡（与仓库同款 openItemDetailModal）
     backdrop.addEventListener("click", event => {
       const ci = event.target.closest(".cargo-content-item[data-cci]");
-      if (ci) { const d = currentCargoContentItems[Number(ci.dataset.cci)]; if (d) openCargoContentCard(d); return; }
+      if (ci) { const d = currentCargoContentItems[Number(ci.dataset.cci)]; if (d) openItemDetailModal(d); return; }
       const bi = event.target.closest(".cargo-content-item.bp[data-cbi]");
       if (bi) {
         const b = currentCargoBlueprintItems[Number(bi.dataset.cbi)];
-        if (b) openCargoContentCard({ name: b.name, icon: "📜", categoryLabel: "蓝图", description: "货柜掉落的装备生产许可蓝图，持有后可在装备工程页制造对应装备。", source: { pageId: "cargo", pageLabel: "货柜掉落", icon: "fa-solid fa-box-open" } });
+        if (b) {
+          if (b.id && b.id.indexOf("blueprint:") === 0) {
+            // 装备蓝图 → 直接展示造出的装备（不含强化页）
+            const eqId = b.id.slice("blueprint:".length);
+            const eq = (typeof EQUIPMENT_DB !== "undefined") ? EQUIPMENT_DB[eqId] : null;
+            openBlueprintProductModal(eq, b.name);
+          } else {
+            // 增强剂蓝图 → 直接展示造出的增强剂（不含强化页）
+            const rec = (typeof getBoosterRecipe === "function") ? getBoosterRecipe(b.id) : null;
+            openBoosterProductModal(rec, b.name);
+          }
+        }
         return;
       }
     });
@@ -1171,8 +1272,30 @@ function openRewardResultModal(options) {
     backdrop.addEventListener("click", event => { if (event.target === backdrop) closeRewardResultModal(); });
     backdrop._esc = event => { if (event.key === "Escape" && backdrop.style.display === "flex") closeRewardResultModal(); };
     document.addEventListener("keydown", backdrop._esc);
+    // 开箱结果卡片点击：蓝图 → 实际造出的装备/增强剂；其余 → 仓库同款物品卡
+    backdrop.addEventListener("click", event => {
+      const card = event.target.closest(".cargo-card[data-rrc]");
+      if (!card) return;
+      const item = currentRewardItems[Number(card.dataset.rrc)];
+      if (!item) return;
+      const ref = item.ref || (item.id || "");
+      if (ref.indexOf("blueprint:") === 0) {
+        const eq = (typeof EQUIPMENT_DB !== "undefined") ? EQUIPMENT_DB[ref.slice("blueprint:".length)] : null;
+        openBlueprintProductModal(eq, item.name);
+      } else if (ref.indexOf("booster:") === 0) {
+        const rec = (typeof getBoosterRecipe === "function") ? getBoosterRecipe(ref.slice("booster:".length)) : null;
+        openBoosterProductModal(rec, item.name);
+      } else {
+        let kind = "resource";
+        if (ref.indexOf("implant:") === 0) kind = "implant";
+        else if (ref.indexOf("ammo:") === 0) kind = "ammo";
+        else if (ref.indexOf("loot:") === 0) kind = "loot";
+        openItemDetailModal(cargoContentDescriptor({ kind, id: ref, name: item.name }));
+      }
+    });
   }
-  const cards = items.map(item => buildCargoCardHTML(item, { extraClass:"reward-result-card" })).join("");
+  currentRewardItems = items;
+  const cards = items.map((item, idx) => buildCargoCardHTML(item, { extraClass:"reward-result-card", dataAttr:'data-rrc="'+idx+'"' })).join("");
   const emptyText = opt.emptyText || "本次没有获得可展示的物品";
   backdrop.innerHTML = `
     <div class="equip-enh-modal reward-result-modal" role="dialog" aria-modal="true">
@@ -1238,7 +1361,7 @@ function openCombatLogModal() {
     stat("击杀", log.kills.toLocaleString()),
     stat("精英 / BOSS", log.eliteKills.toLocaleString() + " / " + log.bossKills.toLocaleString()),
     stat("被击败", log.defeats.toLocaleString(), log.defeats > 0 ? "warn" : ""),
-    stat("ISK / LP", fmtIsk(log.isk) + " / " + log.lp.toLocaleString())
+    stat("星币 / 功勋", fmtIsk(log.isk) + " / " + log.lp.toLocaleString())
   ].join("");
 
   // 技能经验

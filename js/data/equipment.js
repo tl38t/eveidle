@@ -125,7 +125,7 @@ const EQUIPMENT_DB = {
   // 中槽：信号稳定器 — 反噬减免 + 非致命免伤
   "archaeo_stabilizer_station_ii": { id:"archaeo_stabilizer_station_ii", name:"环站信号稳定器 II", slot:"mid", level:15, time:45, xp:40, cost:{"三钛合金":200,"类银超金属":80,"类晶体胶矿":20}, bonuses:{archaeologyStabilizer:0.08, archaeologyNonFatalAvoid:0.05}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
   "archaeo_stabilizer_pioneer_v": { id:"archaeo_stabilizer_pioneer_v", name:"先驱信号稳定器 V", slot:"mid", level:80, time:210,xp:190,cost:{"三钛合金":2200,"超噬矿":20,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyStabilizer:0.20, archaeologyNonFatalAvoid:0.12}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
-  // 低槽：文物译码器 — 稀有发现掉率加成 + 复制焦点结果（蓝图变体）
+  // 低槽：文物译码器 — 稀有发现掉率加成 + 货柜焦点额外掉落一个货柜
   "archaeo_decoder_fleet_iii": { id:"archaeo_decoder_fleet_iii", name:"舰墓文物译码器 III", slot:"low", level:35, time:75, xp:65, cost:{"三钛合金":450,"同位聚合体":120,"稀有气体":10}, bonuses:{archaeologyDecoder:0.19, archaeologyCopyChance:0.04}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
   "archaeo_decoder_pioneer_v": { id:"archaeo_decoder_pioneer_v", name:"先驱文物译码器 V", slot:"low", level:80, time:210,xp:190,cost:{"三钛合金":2200,"同位聚合体":500,"铷":12,"磁场聚合物":50}, bonuses:{archaeologyDecoder:0.28, archaeologyCopyChance:0.07}, shipTypes:ARCHAEOLOGY_SHIP_TYPES, archaeology:true, requiresBlueprint:true },
 
@@ -585,7 +585,7 @@ const EQUIPMENT_BONUS_NAMES = {
   archaeologyDecoder:"稀有发现掉率加成",
   archaeologyCycleReduction:"考古周期缩短",
   archaeologyNonFatalAvoid:"非致命免伤",
-  archaeologyCopyChance:"复制焦点概率",
+  archaeologyCopyChance:"货柜额外掉落",
   archaeologyFuelEfficiency:"电容回充",
   archaeologyInterferenceReduction:"考古干扰缩短",
   miningRichChance:"伴生富集触发",

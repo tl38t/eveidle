@@ -102,7 +102,7 @@ function renderArchaeologyPage(now) {
             <span class="arch-chips-title">装备加成</span>
             ${ship.attrs.equipBonuses.decoder > 0 ? `<span class="arch-chip">稀有 +${Math.round(ship.attrs.equipBonuses.decoder * 100)}%</span>` : ""}
             ${ship.attrs.equipBonuses.nonFatalAvoid > 0 ? `<span class="arch-chip">免伤 ${Math.round(ship.attrs.equipBonuses.nonFatalAvoid * 100)}%</span>` : ""}
-            ${ship.attrs.equipBonuses.copyChance > 0 ? `<span class="arch-chip">复制 ${Math.round(ship.attrs.equipBonuses.copyChance * 100)}%</span>` : ""}
+            ${ship.attrs.equipBonuses.copyChance > 0 ? `<span class="arch-chip">额外货柜 ${Math.round(ship.attrs.equipBonuses.copyChance * 100)}%</span>` : ""}
             ${ship.attrs.equipBonuses.cycleReduction > 0 ? `<span class="arch-chip">周期 -${Math.round(ship.attrs.equipBonuses.cycleReduction * 100)}%</span>` : ""}
           </div>` : ""}
         </div>` : ""}
@@ -259,6 +259,123 @@ function renderArchaeologyPage(now) {
     }
     const implantRows = rewardRow("◇", "脑插信号", implantNote, "", false);
 
+    // ---- 本地点全部掉落概率预览：常规 / 校准 / 稀有池 完整分解（考古重做后稳定建模） ----
+    // source of truth 完全沿用 getArchaeologyDisplayState 的 drops.* 与 preview.*，
+    // 已含 profile / 译码器 / 增强剂 / 脑插 / 军团全部乘子与上限。
+    const drops = selectedSite.drops || {};
+    const preview = selectedSite.preview || {};
+    const focus = selectedFocus;
+    const focusLabel = (focus === "a") ? "当前焦点：星币" : (focus === "b") ? "当前焦点：功勋" : "当前焦点：货柜";
+    const rareShiftMul = (typeof getBoosterEffectState === "function") ? Number(getBoosterEffectState(gameState).rareShiftMultiplier) || 1 : 1;
+    const implantUnique = (typeof getImplantBonuses === "function") ? Number(getImplantBonuses(gameState).archaeology.unique) || 1 : 1;
+    const fittedDecoder = (typeof getArchaeologyFittedBonuses === "function") ? Number(getArchaeologyFittedBonuses(gameState, ship && ship.instanceId ? ship.instanceId : null).decoder) || 0 : 0;
+    const decoderMul = 1 + fittedDecoder;
+    const legionDrop = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+      ? Number(LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.archaeologyDrop) || 1 : 1;
+    const baseRare = Number(selectedLocation.rareRate) || 0;
+    const effectiveRareRate = Math.min(0.99, baseRare * rareShiftMul * implantUnique * decoderMul * legionDrop);
+    const rareWeights = selectedLocation.rareWeights || {};
+    const totalRareW = Object.values(rareWeights).reduce((s, x) => s + (Number(x) || 0), 0);
+
+    function dropRow(kind, name, pct, cls) {
+      const pctText = (typeof pct === "number" && isFinite(pct)) ? (pct < 0.01 ? pct.toFixed(3) + "%" : pct.toFixed(2) + "%") : (pct || "—");
+      return `<tr${cls ? ' class="' + cls + '"' : ""}><td class="arch-kind">${kind}</td><td class="arch-name">${name}<span class="arch-pct-mob">${pctText}</span></td><td class="arch-pct">${pctText}</td></tr>`;
+    }
+
+    // 焦点权重：决定常规回报种类的总概率（星币=coin / 功勋=merit / 货柜=cargo）
+    const focusWeights = (typeof ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS !== "undefined")
+      ? (ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS[focus] || ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS.a)
+      : { coin:0.70, merit:0.15, cargo:0.15 };
+
+    // 三个掉落分组：普通考古发现 / 稀有考古发现 / 校准基体（UI 一致，均为「小标题 + 表格」）
+
+    // ---- 普通考古发现：星币 + 功勋（受焦点权重影响） ----
+    const regularRows = [];
+    const uniqueItems = (drops.unique && drops.unique.items) || [];
+    let uniqueExp = 0;
+    if (uniqueItems.length) {
+      const boost = drops.unique.boostedPct; // %（独立命中）
+      uniqueExp = uniqueItems.reduce((s, it) => s + (boost / 100) * (Number(it.iskValue) || 0), 0);
+    }
+    const coinPct = (focusWeights.coin * 100).toFixed(2);
+    const expText = uniqueExp > 0
+      ? (coinPct + "% + " + Math.round(uniqueExp).toLocaleString() + " 星币/次")
+      : (coinPct + "%");
+    regularRows.push(dropRow(
+      "星币掉落物",
+      "<span style='color:#7e91a3'>×" + uniqueItems.length + " 独特</span> · 星币文物<span style='color:#7e91a3'>（×3 种）</span>",
+      expText, ""
+    ));
+    if (drops.lp && drops.lp.item) {
+      regularRows.push(dropRow(
+        "功勋掉落物",
+        drops.lp.item.name + " <span style='color:#7e91a3'>· " + (drops.lp.item.lpValue || 0).toLocaleString() + " 功勋</span>",
+        focusWeights.merit * 100, "rare-pool"
+      ));
+    }
+
+    // ---- 稀有考古发现：稀有池（6 类），每次解析独立掷骰，按池内权重分配 ----
+    const rareCats = [
+      { key:"blueprint",   name:"技术蓝图" },
+      { key:"booster",     name:"增幅剂蓝图" },
+      { key:"probe",       name:"复原强化探针" },
+      { key:"credential",  name:"功能凭证" },
+      { key:"implant",     name:"脑插" },
+      { key:"extractorSmall", name:"脑突触加速剂（小型·5分）" }
+    ];
+    const rareRows = [];
+    if (baseRare > 0) {
+      rareCats.forEach(c => {
+        const w = Number(rareWeights[c.key]) || 0;
+        if (w <= 0) return;
+        const overall = effectiveRareRate * 100 * (w / totalRareW);
+        rareRows.push(dropRow(
+          "稀有",
+          c.name,
+          Number(overall.toFixed(3)) >= 0.01 ? overall.toFixed(2) + "%" : overall.toFixed(3) + "%",
+          "rare-pool"
+        ));
+      });
+    }
+
+    // ---- 校准基体：独立分组，不进普通/稀有表，避免重复 ----
+    const calibRows = [];
+    if (drops.calibration && drops.calibration.item) {
+      calibRows.push(dropRow(
+        "校准材料",
+        drops.calibration.item.name + " <span style='color:#7e91a3'>· 命中 +" + drops.calibration.amount + " 个/次</span>",
+        Number(drops.calibration.ratePct).toFixed(2) + "%", "calib-row"
+      ));
+    }
+
+    const regularSection = `
+      <section class="arch-drop-preview">
+        <div class="arch-reward-head" style="margin-top:14px"><b>普通考古发现</b><span>${focusLabel}</span></div>
+        <table class="arch-drop-table">
+          <thead><tr><th>类型</th><th>物品</th><th style="text-align:right">概率</th></tr></thead>
+          <tbody>${regularRows.join("")}</tbody>
+        </table>
+      </section>`;
+
+    const rareSection = `
+      <section class="arch-drop-preview">
+        <div class="arch-reward-head" style="margin-top:14px"><b>稀有考古发现</b><span>总命中率 <b style="color:#b39add">${(effectiveRareRate * 100).toFixed(2)}%</b></span></div>
+        <table class="arch-drop-table">
+          <thead><tr><th>类型</th><th>物品</th><th style="text-align:right">概率</th></tr></thead>
+          <tbody>${rareRows.length ? rareRows.join("") : '<tr><td colspan="3" class="arch-reward-note">本地点无稀有发现</td></tr>'}</tbody>
+        </table>
+      </section>`;
+
+    const calibSection = `
+      <section class="arch-drop-preview">
+        <div class="arch-reward-head" style="margin-top:14px"><b>校准基体</b><span>用于改装件制造</span></div>
+        <table class="arch-drop-table">
+          <thead><tr><th>类型</th><th>物品</th><th style="text-align:right">概率</th></tr></thead>
+          <tbody>${calibRows.length ? calibRows.join("") : '<tr><td colspan="3" class="arch-reward-note">本地点无校准材料</td></tr>'}</tbody>
+        </table>
+        ${drops.calibration && drops.calibration.item ? `<div class="arch-calib-notes">每周期期望 ${(Number(preview.expectedCalibPerCycle) || 0).toFixed(2)} 个 · 校准材料用于改装件制造。</div>` : ""}
+      </section>`;
+
     rareArchive = `
       <p class="arch-eyebrow">当前地点 · 稀有档案</p>
       <div class="arch-reward-grid">
@@ -275,7 +392,9 @@ function renderArchaeologyPage(now) {
           <div class="arch-reward-list">${implantRows}</div>
         </section>
       </div>
-      <div class="arch-calibration"><b>校准材料</b><br>用于<b>改装件制造</b>：rig 配方在装备工程消耗 <code>calibration:art_&lt;tier&gt;_calib</code>。本次重做不改变其掉落概率与数量。</div>
+      ${regularSection}
+      ${rareSection}
+      ${calibSection}
     `;
   }
 

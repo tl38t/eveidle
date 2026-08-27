@@ -110,7 +110,7 @@
   function bump(obj, key, n) { obj[key] = (obj[key] || 0) + (n || 1); }
 
   // ---- 读取战斗输入（每波开始从真实状态重读，符合指令三）----
-  function readInputs(state) {
+  function readInputs(state, nowRef) {
     const combat = state.combat;
     const ship = G("getActiveShip")(state);
     const shipInstance = G("getActiveCombatShipInstance")(state);
@@ -123,7 +123,11 @@
     const booster = (typeof G("getBoosterEffectState") === "function") ? G("getBoosterEffectState")(state) : null;
     const boosterDmg = booster ? booster.weaponDamageMultiplier : null;
     const boosterRep = booster ? booster.repairMultiplier : null;
-    return { ship, shipInstance, zone, faction, weapons, repairers, maxHp, playerDodge, boosterDmg, boosterRep };
+    // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，离线战斗按虚拟时间 nowRef.t 判断是否生效，
+    // 避免 getAdBuffMultiplier 默认取 Date.now() 导致过去/未来时段判断错误。
+    const adBuffRef = (nowRef && typeof nowRef.t === "number") ? nowRef.t : undefined;
+    const adBuffMult = (typeof G("getAdBuffMultiplier") === "function") ? G("getAdBuffMultiplier")(state, adBuffRef) : 1;
+    return { ship, shipInstance, zone, faction, weapons, repairers, maxHp, playerDodge, boosterDmg, boosterRep, adBuffMult };
   }
 
   // ---- 虚拟弹药/燃料（会话级，跨段累计）----
@@ -197,7 +201,7 @@
   // enemies: 本波敌人数组（结构 {hp:{shield,armor,structure}, hit, dodge, baseDamage, kind, iskDrop, xpDrop, deathspaceLeader?, deathspaceWave?, id}）—— hit 必填，敌方反击 calcCombatDamage(attacker.hit,...) 依赖它
   // 返回 {outcome:'cleared'|'defeated', rounds, kills:[]}
   function simulateWave(state, enemies, zone, isDeathspace, site, s, nowRef) {
-    const inputs = readInputs(state);
+    const inputs = readInputs(state, nowRef);
     const c = state.combat;
     c.maxHp = inputs.maxHp;
     // 钳制当前 HP 不超 maxHp
@@ -229,7 +233,10 @@
           else if (weapon.counterType === "structure" && current.hp.shield <= 0 && current.hp.armor <= 0 && current.hp.structure > 0) counterMult = 1.25;
           const traitMult = G("getCapitalWeaponTraitMultiplier")(inputs.ship, cb.weaponType, c.hp, c.maxHp);
           const wbm = (inputs.boosterDmg && inputs.boosterDmg[cb.weaponType]) ? inputs.boosterDmg[cb.weaponType] : 1;
-          const dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, EXPECT);
+          let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, EXPECT);
+          // 脑突触加速剂独立乘区（与在线 combat.js 同步）
+          const adbm = inputs.adBuffMult || 1;
+          if (adbm && adbm !== 1) dmg = Math.round(dmg * adbm);
           const dealt = G("applyLayeredCombatDamage")(current.hp, dmg);
           const total = dealt.shield + dealt.armor + dealt.structure;
           roundDealt += total;
@@ -301,10 +308,11 @@
       rounds++;
       nowRef.t += ROUND_SECONDS * 1000;
       advanceBoosterTime(state, ROUND_SECONDS * 1000, nowRef.t);
-      // 重新读取（技能可能升级、HP 变化）
-      const ni = readInputs(state);
+      // 重新读取（技能可能升级、HP 变化、增强剂/ad-buff 时间推进）
+      const ni = readInputs(state, nowRef);
       inputs.maxHp = ni.maxHp; inputs.playerDodge = ni.playerDodge;
       inputs.boosterDmg = ni.boosterDmg; inputs.boosterRep = ni.boosterRep;
+      inputs.adBuffMult = ni.adBuffMult;
       current = living()[0] || null;
     }
   }
@@ -469,7 +477,7 @@
       c.wave = waveNum;
       // 资源不足 → 停止进攻（敌人仍会造成伤害已在 simulateWave 内处理；此处判定无法继续开火）
       if (budgetMs <= 0) { s.stopReason = "time"; return; }
-      const inputs = readInputs(state);
+      const inputs = readInputs(state, nowRef);
       ensureVirtualAmmoFuel(state, s);
       if (!canFireVirtual(inputs, zone, s, state)) { s.stopReason = (s.blockedBy === "ammo") ? "ammo" : "resources"; return; }
     }

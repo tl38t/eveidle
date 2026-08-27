@@ -594,6 +594,8 @@ function getSmeltingDisplayState(state, now) {
     rigBonus,
     shipEnhanceSmelt,
     boosterSmeltSpeed,
+    implantRefineEff,
+    adBuffMult: adbm,
     actualTime:current.baseTime / efficiency,
     output:Math.max(1, Math.floor(current.baseOutput * getRefiningOutputMultiplier(level))),
     stock,
@@ -663,6 +665,13 @@ function getEquipmentOwnedCountFromState(state, recipe) {
       instances.filter(instance => instance.itemId === recipe.output.itemId).length;
   }
   if (recipe.output.type === "fuel") return ResourceRegistry.get(state, "consumable:fuel");
+  if (recipe.output.type === "probe") return ResourceRegistry.get(state, "probe:" + recipe.output.itemId);
+  if (recipe.output.type === "ammo") {
+    const t = recipe.output.tier || "T1";
+    return (state.ammo || [])
+      .filter(s => s.type === recipe.output.weapon && s.tier === t)
+      .reduce((a, s) => a + (Number(s.qty) || 0), 0);
+  }
   return getAmmoCount(state, recipe.output.weapon);
 }
 
@@ -931,9 +940,14 @@ function getShipEngineeringSpeedBreakdown(state, kind) {
     legionMultiplier = Number(LEGION_NPC.getLegionContributionSnapshot(state).multipliers.shipManufacturing);
   }
   if (!Number.isFinite(legionMultiplier) || legionMultiplier <= 0) legionMultiplier = 1;
+  // 脑插·舰船制造增效（死亡空间 6/10 来源）：周期 ÷1.06（效率 +6%）
+  const implantShipMfgEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).shipMfgEff : 1;
+  // 增强剂·舰船工程速度（考古重制 Phase B · 考古蓝图产出）：周期 ÷ 速度乘区
+  const boosterShipSpeed = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).shipSpeedMultiplier : 1;
   return {
     skillMultiplier, shipyardMultiplier, stationLogisticsMultiplier, researchMultiplier, legionMultiplier,
-    totalSpeedMultiplier: skillMultiplier * shipyardMultiplier * stationLogisticsMultiplier * researchMultiplier * legionMultiplier
+    implantShipMfgEff, boosterShipSpeed,
+    totalSpeedMultiplier: skillMultiplier * shipyardMultiplier * stationLogisticsMultiplier * researchMultiplier * legionMultiplier * implantShipMfgEff * boosterShipSpeed
   };
 }
 
@@ -1127,6 +1141,9 @@ function getShipEngineeringDisplayState(state, now) {
     shipyardMultiplier:speed.shipyardMultiplier,
     stationLogisticsMultiplier:speed.stationLogisticsMultiplier,
     stationLogistics: (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : null,
+    legionMultiplier:speed.legionMultiplier,
+    implantShipMfgEff:speed.implantShipMfgEff,
+    boosterShipSpeed:speed.boosterShipSpeed,
     totalSpeedMultiplier:speed.totalSpeedMultiplier,
     componentResearchMultiplier:componentSpeed.researchMultiplier,
     assemblyResearchMultiplier:assemblySpeed.researchMultiplier,
@@ -1227,17 +1244,84 @@ function getShipEngineeringDisplayState(state, now) {
 }
 
 function getShipEngineeringSpeedBreakdownText(display) {
+  const isAssembly = display.subView === "assembly";
+  const researchMult = isAssembly ? (display.assemblyResearchMultiplier || 1) : (display.componentResearchMultiplier || 1);
   const sl = display.stationLogistics || {};
-  const sm = Number(display.skillMultiplier || display.efficiency) || 1;
-  const ym = Number(display.shipyardMultiplier) || 1;
-  const lm = Number(sl.multiplier) || 1;
-  const total = Number(display.efficiency) || (sm * ym * lm);
-  const parts = ["技能 ×" + sm.toFixed(2), "船坞 ×" + ym.toFixed(2)];
-  const logPart = (sl.bodyLevel > 0 && sl.operational)
-    ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）"
-    : "后勤 ×" + lm.toFixed(2) + "（" + (sl.text || "未建立") + "）";
-  parts.push(logPart);
-  return parts.join(" · ") + " · 最终 ×" + total.toFixed(2);
+  const slText = (sl.bodyLevel > 0 && sl.operational) ? (Math.round((display.stationLogisticsMultiplier - 1) * 100) + "%") : (sl.text || "未建立");
+  const parts = [
+    "技能 ×" + (display.skillMultiplier || 1).toFixed(2),
+    "船坞 ×" + (display.shipyardMultiplier || 1).toFixed(2),
+    "后勤 ×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + slText + "）",
+    "科研 ×" + researchMult.toFixed(3) + "（" + (isAssembly ? "总装" : "组件") + "）"
+  ];
+  if ((display.legionMultiplier || 1) !== 1) parts.push("军团 ×" + display.legionMultiplier.toFixed(3));
+  if ((display.implantShipMfgEff || 1) !== 1) parts.push("脑插 ×" + display.implantShipMfgEff.toFixed(3));
+  if ((display.boosterShipSpeed || 1) !== 1) parts.push("增强剂 ×" + display.boosterShipSpeed.toFixed(3));
+  return parts.join(" · ") + " · 最终 ×" + (display.efficiency || 1).toFixed(2);
+}
+
+// ---- 统一效率明细渲染（与采矿 buildProductionEfficiencyTooltip 同风格）----
+// formatEfficiencyBreakdown：将有序因子 entries（{label, detail}）拼成多行文本，末尾附"最终效率 = Xx"。
+// 各生产的 breakdown 函数统一消费它，确保因子展示在线/离线一致，并为手机端 ⓘ 浮层提供内容。
+function formatEfficiencyBreakdown(entries, finalValue) {
+  const lines = entries.map(e => (e.detail ? (e.label + "：" + e.detail) : e.label));
+  lines.push("最终效率：" + (typeof finalValue === "number" ? finalValue.toFixed(2) : Number(finalValue || 0).toFixed(2)) + "x");
+  return lines.join("\n");
+}
+
+// 冶炼效率明细（补全：改装件 / 科研 / 脑插·冶炼 / 增强剂·冶炼速度 / 舰船强化 / 脑突触）
+function getSmeltingEfficiencyBreakdown(display) {
+  const ship = (display.shipBonus > 0 || display.rigBonus > 0)
+    ? "舰船 +" + (display.shipBonus * 100).toFixed(0) + "%" + (display.rigBonus > 0 ? " · 改装件 +" + (display.rigBonus * 100).toFixed(0) + "%" : "")
+    : "无";
+  const entries = [
+    { label: "技能速度", detail: "1 × (1 + Lv." + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" },
+    { label: "舰船冶炼加速", detail: ship },
+    { label: "舰队/船坞后勤", detail: "×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）" },
+    { label: "科研加成", detail: "×" + (display.researchMultiplier || 1).toFixed(3) },
+    { label: "舰船强化", detail: "×" + (display.shipEnhanceSmelt || 1).toFixed(3) }
+  ];
+  if ((display.implantRefineEff || 1) !== 1) entries.push({ label: "脑插·冶炼增效", detail: "×" + display.implantRefineEff.toFixed(3) + "（+6%）" });
+  if ((display.boosterSmeltSpeed || 1) !== 1) entries.push({ label: "增强剂·冶炼速度", detail: "×" + display.boosterSmeltSpeed.toFixed(3) });
+  if ((display.adBuffMult || 1) !== 1) entries.push({ label: "脑突触加速剂", detail: "×" + display.adBuffMult.toFixed(2) });
+  return formatEfficiencyBreakdown(entries, display.efficiency);
+}
+
+// 装备工程效率明细（补全：装备总装协调剂）
+function getEquipmentEngineeringEfficiencyBreakdown(display) {
+  const entries = [
+    { label: "技能速度", detail: "1 × (1 + Lv." + display.level + " × 0.02) = " + (1 + display.level * 0.02).toFixed(2) + "x" },
+    { label: "舰队/船坞后勤", detail: "×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）" },
+    { label: "科研加成", detail: "×" + (display.researchMultiplier || 1).toFixed(3) }
+  ];
+  if ((display.boosterSpeedMultiplier || 1) !== 1) entries.push({ label: "装备总装协调剂", detail: "×" + display.boosterSpeedMultiplier.toFixed(3) });
+  return formatEfficiencyBreakdown(entries, display.efficiency);
+}
+
+// 增强剂制造效率明细（公式仅技能 / 后勤 / 科研三项，此处统一格式呈现）
+function getBoosterEngineeringEfficiencyBreakdown(display) {
+  const entries = [
+    { label: "技能速度", detail: "1 × (1 + Lv." + display.level + " × 0.02) = " + (1 + display.level * 0.02).toFixed(2) + "x" },
+    { label: "舰队/船坞后勤", detail: "×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）" },
+    { label: "科研加成", detail: "×" + (display.researchMultiplier || 1).toFixed(3) }
+  ];
+  return formatEfficiencyBreakdown(entries, display.efficiency);
+}
+
+// 舰船工程效率明细（补全：科研[组件/总装线] / 军团·舰构 / 脑插·舰船制造 / 增强剂·舰船工程速度）
+function getShipEngineeringEfficiencyBreakdown(display) {
+  const isAssembly = display.subView === "assembly";
+  const researchMult = isAssembly ? (display.assemblyResearchMultiplier || 1) : (display.componentResearchMultiplier || 1);
+  const entries = [
+    { label: "技能", detail: "×" + (display.skillMultiplier || 1).toFixed(2) },
+    { label: "船坞", detail: "×" + (display.shipyardMultiplier || 1).toFixed(2) },
+    { label: "后勤", detail: "×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）" },
+    { label: "科研加成", detail: "×" + researchMult.toFixed(3) + "（" + (isAssembly ? "总装线" : "组件线") + "）" }
+  ];
+  if ((display.legionMultiplier || 1) !== 1) entries.push({ label: "军团·舰构工程", detail: "×" + display.legionMultiplier.toFixed(3) });
+  if ((display.implantShipMfgEff || 1) !== 1) entries.push({ label: "脑插·舰船制造", detail: "×" + display.implantShipMfgEff.toFixed(3) + "（+6%）" });
+  if ((display.boosterShipSpeed || 1) !== 1) entries.push({ label: "增强剂·舰船工程速度", detail: "×" + display.boosterShipSpeed.toFixed(3) });
+  return formatEfficiencyBreakdown(entries, display.efficiency);
 }
 
 function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
@@ -1377,7 +1461,12 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
         unlocked:level >= recipe.level + activeGate && equipmentRecipeHasRequiredBlueprint(state, recipe),
         selected:recipe.id === selectedRecipe.id,
         actualTime:recipe.time / efficiency,
-        ownedCount:getEquipmentOwnedCountFromState(state, recipe)
+        ownedCount:getEquipmentOwnedCountFromState(state, recipe),
+        inputEquipment:recipe.inputEquipment ? {
+          itemId:recipe.inputEquipment.itemId,
+          name:(EQUIPMENT_DB[recipe.inputEquipment.itemId] && EQUIPMENT_DB[recipe.inputEquipment.itemId].name) || recipe.inputEquipment.itemId,
+          quantity:Math.max(1, Number(recipe.inputEquipment.quantity) || 1)
+        } : null
       };
     }),
     detail:{
@@ -2332,20 +2421,21 @@ function computeCargoSortMeta(item, componentLevelByName){
     else if(/数据/.test(nm)){ subRank = 8; subLabel = "舰船数据"; primary = 0; secondary = nm; }          // 天穹/重垒/裂界 深层舰船数据
     else { subRank = 9; subLabel = "其他掉落"; primary = 0; secondary = nm; }
   } else if(cat === "consumable"){
-    if(nm === "燃料单元"){ subRank = 0; subLabel = "燃料"; }
-    else if(item.ammoTier != null || /弹/.test(nm)){
+    // 玩家要求：仓库-消耗品页面把「弹药」小标签摆在第一个。
+    if(item.ammoTier != null || /弹/.test(nm)){
       const tierRaw = item.ammoTier || (nm.match(/T(\d+)/) || [,"1"])[1];
       const tier = String(tierRaw).replace(/^T/i, "") || "1";
-      subRank = 10 + Number(tier); subLabel = "弹药 T" + tier; secondary = nm.replace(/\s*T\d+.*$/,"");
+      subRank = Number(tier) - 1; subLabel = "弹药 T" + tier; secondary = nm.replace(/\s*T\d+.*$/,"");
     }
-    else if(nm === "纳米维修膏"){ subRank = 2; subLabel = "维修耗材"; }
+    else if(nm === "燃料单元"){ subRank = 10; subLabel = "燃料"; }
+    else if(nm === "纳米维修膏"){ subRank = 11; subLabel = "维修耗材"; }
     else if(/货柜/.test(nm)){
       const size = (nm.match(/货柜\s*(S|M|L|XL)/) || [,"M"])[1];
       const sizeOrder = { S:0, M:1, L:2, XL:3 };
-      subRank = 3; subLabel = "容器"; primary = sizeOrder[size] != null ? sizeOrder[size] : 1;
+      subRank = 12; subLabel = "容器"; primary = sizeOrder[size] != null ? sizeOrder[size] : 1;
     }
-    else if(id && id.indexOf("booster:") === 0){ subRank = 4; subLabel = "增强剂"; primary = 0; secondary = nm; }
-    else if(id && id.indexOf("probe:") === 0){ subRank = 5; subLabel = "考古探针"; primary = 0; secondary = nm; }
+    else if(id && id.indexOf("booster:") === 0){ subRank = 13; subLabel = "增强剂"; primary = 0; secondary = nm; }
+    else if(id && id.indexOf("probe:") === 0){ subRank = 14; subLabel = "考古探针"; primary = 0; secondary = nm; }
     else { subRank = 99; subLabel = "其它"; secondary = nm; }
   } else if(cat === "equipment"){
     if(item.isEquipment){
@@ -2447,7 +2537,10 @@ function getCargoDisplayState(state, filter) {
         const id = entry.definition.id;
         const key = entry.definition.key;
         const voucher = (typeof ARCHAEOLOGY_VOUCHERS !== "undefined" && ARCHAEOLOGY_VOUCHERS[key]) ? ARCHAEOLOGY_VOUCHERS[key] : null;
-        return [voucher && voucher.name ? voucher.name : (entry.definition.name || getResourceDisplayName(id)), { qty: entry.quantity, id }];
+        // 与掉落预览/制造页统一：特殊物资优先用 getResourceDisplayName 解析后的显示名（已含势力密钥/通行密钥的原创映射），
+        // 仅当解析为空时回落到 definition.name（特殊物品注册时 name 等于内部键，直显会与掉落列表对不上）。
+        const dispName = getResourceDisplayName(id);
+        return [voucher && voucher.name ? voucher.name : (dispName || entry.definition.name), { qty: entry.quantity, id }];
       })
     ),
     consumable:Object.assign(

@@ -144,14 +144,14 @@ const BOOSTER_DEFS = [
   ["assembly_coordinator","n",37, 70, 10,"同位素",3,"special:活性战术凝胶",4,"shipSpeed",0.08,"shipSpeed",true],
   ["assembly_coordinator","r",77,130, 75,"等离子体",3,"special:高能战术萃取物",4,"shipSpeed",0.18,"shipSpeed",true],
   ["assembly_coordinator","l",93,154,338,"生物质",5,"special:极化战术介质",7,"shipSpeed",0.30,"shipSpeed",true],
-  // 精密配给剂：舰船/装备制造通用材料减料（普通-10%/门槛+5、精工-12%/门槛+7、传奇-15%/门槛+10；精工/传奇耗时180s）
-  ["precision_rationing","n",38, 180, 12,"同位素",3,"special:活性战术凝胶",4,"shipMaterialDiscount",0.10,"shipYield",true,null,       0,5],
-  ["precision_rationing","r",78,180, 76,"等离子体",3,"special:高能战术萃取物",4,"shipMaterialDiscount",0.12,"shipYield",true,null,0,7],
-  ["precision_rationing","l",94,180,342,"生物质",5,"special:极化战术介质",7,"shipMaterialDiscount",0.15,"shipYield",true,null,0,10],
-  // 装备总装协调剂：装备工程速度（直解锁；耗时统一 180s；镜像舰船装配协调剂 +8%/+18%/+30%）
-  ["equipment_assembly","n",38,180, 11,"同位素",3,"special:活性战术凝胶",4,"equipmentSpeed",0.08,"equipmentSpeed",false],
-  ["equipment_assembly","r",78,180, 76,"等离子体",3,"special:高能战术萃取物",4,"equipmentSpeed",0.18,"equipmentSpeed",false],
-  ["equipment_assembly","l",94,180,342,"生物质",5,"special:极化战术介质",7,"equipmentSpeed",0.30,"equipmentSpeed",false],
+  // 精密配给剂：舰船/装备制造通用材料减料（普通-10%/门槛+5、精工-12%/门槛+7、传奇-15%/门槛+10；耗时70/130/154s，需蓝图递增）
+  ["precision_rationing","n",38, 70, 12,"同位素",3,"special:活性战术凝胶",4,"shipMaterialDiscount",0.10,"shipYield",true,null,       0,5],
+  ["precision_rationing","r",78,130, 76,"等离子体",3,"special:高能战术萃取物",4,"shipMaterialDiscount",0.12,"shipYield",true,null,0,7],
+  ["precision_rationing","l",94,154,342,"生物质",5,"special:极化战术介质",7,"shipMaterialDiscount",0.15,"shipYield",true,null,0,10],
+  // 装备总装协调剂：装备工程速度（直解锁；耗时 70/130/154s；镜像舰船装配协调剂 +8%/+18%/+30%）
+  ["equipment_assembly","n",38, 70, 11,"同位素",3,"special:活性战术凝胶",4,"equipmentSpeed",0.08,"equipmentSpeed",false],
+  ["equipment_assembly","r",78,130, 76,"等离子体",3,"special:高能战术萃取物",4,"equipmentSpeed",0.18,"equipmentSpeed",false],
+  ["equipment_assembly","l",94,154,342,"生物质",5,"special:极化战术介质",7,"equipmentSpeed",0.30,"equipmentSpeed",false],
   // 反应加速介质：增幅剂制造速度
   ["reaction_accelerant","n",39, 73, 13,"同位素",3,"special:活性战术凝胶",4,"boosterSpeed",0.08,"boosterSpeed",true],
   ["reaction_accelerant","r",79,133, 78,"等离子体",3,"special:高能战术萃取物",4,"boosterSpeed",0.18,"boosterSpeed",true],

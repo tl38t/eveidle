@@ -398,11 +398,9 @@ function grantRareCategory(state, site, location, key, rng, ctx) {
       }, { offline, source:"archaeology" });
     }
   };
-  if (key === "starPack") {
-    const t = getArchaeologyTierConfig(site.tier);
-    const u = (t && Array.isArray(t.uniqueISK)) ? (t.uniqueISK[1] || t.uniqueISK[0] || 0) : 0;
-    ResourceRegistry.add(state, "currency:isk", u);
-    return { kind:"starPack", isk: u };
+  if (key === "extractorSmall") {
+    if (typeof addExtractor === "function") addExtractor(state, "small", 1);
+    return { kind:"extractorSmall", type:"small" };
   }
   if (key === "probe") {
     const pool = location.probeBlueprints || [];
@@ -469,12 +467,12 @@ function resolveArchaeologyRare(state, site, location, tier, fitted, rng, isOffl
     { key:"probe", w: weights.probe || 0 },
     { key:"credential", w: weights.credential || 0 },
     { key:"implant", w: weights.implant || 0 },
-    { key:"starPack", w: weights.starPack || 0 }
+    { key:"extractorSmall", w: weights.extractorSmall || 0 }
   ];
   const totalW = cats.reduce((s, c) => s + c.w, 0);
   if (totalW <= 0) return null;
   const roll = rng() * totalW;
-  let acc = 0, chosenKey = "starPack";
+  let acc = 0, chosenKey = "extractorSmall";
   for (const c of cats) { acc += c.w; if (roll < acc) { chosenKey = c.key; break; } }
   return grantRareCategory(state, site, location, chosenKey, rng, { offline });
 }

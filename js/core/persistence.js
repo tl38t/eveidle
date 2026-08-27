@@ -1858,6 +1858,16 @@ const SaveManager = {
   _hasLocalCandidate: false,   // adapter.load() 是否真实返回本地存档（P0-5：不得硬编码 true）
   _offlineSettled: false,      // 离线结算守卫：整个启动会话仅允许一次（P0-4）
   _committing: false,          // 启动事务标志：_commitFinal 期间临时解禁 save()，使离线结算落盘不被门禁拦截
+  // 等待云存档（awaiting-cloud）相关运行时状态：
+  _awaitCloudResolver: null,   // bootstrap 挂起 Promise 的 resolve，云连上或玩家新建账号后放行
+  _awaitCloudPoll: null,       // 轮询云端 setTimeout 句柄
+  _awaitCloudTimeout: null,    // 连接窗口超时句柄（到点后开放"新建账号"）
+  _awaitCloudDeadline: 0,      // 连接窗口截止时间（隐藏"新建账号"按钮的窗口）
+  _awaitCloudStopAt: 0,        // 整体停止轮询的截止时间（避免无限定时器）
+  _canBeginFresh: false,       // 连接窗口已过、允许玩家点"新建账号"
+  _intentionallyFresh: false,  // 玩家主动新建账号标记（防止云连上后静默覆盖）
+  _cloudOverwritePrompted: false, // 新建后检测到云档、是否已弹过覆盖确认（仅一次）
+  _postFreshStopAt: 0,         // 新建后继续探测云档的截止时间
   _cloudSyncFailed: false,     // 云端查询/下载失败标记：local-only/ready 但需向用户提示同步失败（P0-6）
   _mirrorSyncFailed: false,
   getBootState() { return this._bootState; },
@@ -1883,6 +1893,11 @@ const SaveManager = {
     if (this._bootStarted) return this._bootPromise || Promise.resolve();
     this._bootStarted = true;
     this._bootState = "loading";
+    // 调试开关：?debugawaitcloud=1 强制走 awaiting-cloud 路径（无本地存档时），便于本地预览等待云存档界面。
+    try {
+      const qs = (typeof location !== "undefined" && location.search) || "";
+      this._debugForceAwaitCloud = /[?&]debugawaitcloud=1\b/.test(qs);
+    } catch (e) { this._debugForceAwaitCloud = false; }
     this._offlineSettled = false;
     this._cloudSyncFailed = false;
     this._mirrorSyncFailed = false;
@@ -1926,23 +1941,32 @@ const SaveManager = {
       return payload ? { status: "ok", payload: payload } : { status: "none" };
     } catch (e) { return { status: "error", error: e }; }
   },
+  _initProviderWithTimeout(provider, ms) {
+    if (!provider || typeof provider.init !== "function") return Promise.resolve(false);
+    // 防御性兜底：单个 provider 的 init() 若挂起（如云 SDK mock 不回调 success/fail），
+    // 超时即降级为不可用，避免 bootstrap 永久卡在 loading（游戏不启动、无离线结算）。
+    return Promise.race([
+      Promise.resolve().then(function () { return provider.init(); }),
+      new Promise(function (res) { setTimeout(function () { res(false); }, ms || 5000); })
+    ]).catch(function () { return false; });
+  },
   _initCloudAndAchievement() {
     const self = this;
     const tasks = [];
     try {
       const cs = getCloudSaveService();
       self._cloudSave = cs;
-      if (cs) tasks.push(Promise.resolve(cs.init()));
+      if (cs) tasks.push(self._initProviderWithTimeout(cs, 5000));
     } catch (e) { /* 无云 provider 支持 → 跳过 */ }
     try {
       const mirror = getLocalMirrorService();
       self._localMirror = mirror;
-      if (mirror) tasks.push(Promise.resolve(mirror.init()));
+      if (mirror) tasks.push(self._initProviderWithTimeout(mirror, 5000));
     } catch (e) { self._lastMirrorError = e; self._mirrorSyncFailed = true; }
     try {
       const as = getAchievementSyncService();
       self._achievementSync = as;
-      if (as) tasks.push(Promise.resolve(as.init()));
+      if (as) tasks.push(self._initProviderWithTimeout(as, 5000));
     } catch (e) { /* 无成就 provider 支持 → 跳过 */ }
     return Promise.all(tasks.map(function (t) { return t.catch(function () { return false; }); }))
       .then(function () { return true; });
@@ -2028,6 +2052,10 @@ const SaveManager = {
     const self = this;
     const cs = this._cloudSave;
     const device = this._deviceCandidate;
+    // 调试：强制无本地候选时进入 awaiting-cloud（仅 ?debugawaitcloud=1 生效）。
+    if (this._debugForceAwaitCloud && !device) {
+      return this._enterAwaitingCloud();
+    }
     if (!cs || !cs.isAvailable()) {
       if (device) {
         this._applySelectedEnvelope(device.envelope, device.source);
@@ -2049,7 +2077,9 @@ const SaveManager = {
             self._applySelectedEnvelope(device.envelope, device.source);
             return self._commitFinal("local-only", { persist: device.source !== "local", upload: "none", ensureMirror: true });
           } else {
-            return self._failBoot(self._lastCloudError);
+            // 无本地候选且云端查询失败：不自动开空白档、不进错误页。
+            // 进入 awaiting-cloud 等待态：轮询云端，连上则直接采用；超时则允许玩家新建账号。
+            return self._enterAwaitingCloud();
           }
         }
         const hasCloud = !!(fetched && fetched.status === "ok" && fetched.envelope);
@@ -2096,6 +2126,138 @@ const SaveManager = {
     this._emitBootState();
     return false;
   },
+  // ---- awaiting-cloud：无本地候选 + 云端查询失败时的等待态 ----
+  // 不自动开空白档、不进错误页。轮询云端最多 AWAIT_CLOUD_MAX_WAIT_MS 隐藏"新建账号"；
+  // 连上则直接采用云端存档落定 ready；超时则开放"新建账号"按钮（仍后台继续探测，
+  // 若玩家之后新建账号且云端连上，弹确认覆盖，绝不静默覆盖）。
+  _enterAwaitingCloud() {
+    const self = this;
+    this._clearAwaitCloudTimers();
+    this._bootState = "awaiting-cloud";
+    this._canBeginFresh = false;
+    this._awaitCloudDeadline = Date.now() + (this._debugForceAwaitCloud ? 3000 : AWAIT_CLOUD_MAX_WAIT_MS);
+    this._awaitCloudStopAt = Date.now() + AWAIT_CLOUD_STOP_MS;
+    this._emitBootState();
+    const attempt = function () {
+      const cs = self._cloudSave;
+      const now = Date.now();
+      if (now > self._awaitCloudStopAt) {
+        // 连接窗口彻底结束：开放"新建账号"并不阻塞 bootstrap（绝不永久卡在 awaiting-cloud）。
+        self._clearAwaitCloudTimers();
+        self._enableFreshAccount();
+        if (self._awaitCloudResolver) { const r = self._awaitCloudResolver; self._awaitCloudResolver = null; r(true); }
+        return;
+      }
+      if (!cs || !cs.isAvailable || !cs.isAvailable()) {
+        self._awaitCloudPoll = setTimeout(attempt, AWAIT_CLOUD_POLL_MS);
+        return;
+      }
+      // 防御：云档查询若挂起（SDK 不回调 success/fail），超时即降级为"无云档"，
+      // 开放新建账号并继续轮询，绝不永久冻结 bootstrap（否则游戏卡在 awaiting-cloud + 无离线）。
+      Promise.race([
+        Promise.resolve(cs.fetchCloudEnvelope()),
+        new Promise(function (res) {
+          setTimeout(function () { res({ status: "error", error: new Error("fetchCloudEnvelope 超时未回调") }); }, AWAIT_CLOUD_FETCH_MS);
+        })
+      ]).then(function (f) {
+        if (f && f.status === "ok" && f.envelope) {
+          try {
+            self._clearAwaitCloudTimers();
+            self._applySelectedEnvelope(f.envelope, "cloud");
+            self._syncLastCloudChecksum(f.envelope.checksum);
+            if (self._awaitCloudResolver) { const r = self._awaitCloudResolver; self._awaitCloudResolver = null; r(true); }
+            self._commitFinal("ready", { persist: true, upload: "none", ensureMirror: true });
+          } catch (err) {
+            // 云档异常（损坏/迁移失败）：记录并开放新建，不阻塞、不抛致命错误页。
+            console.error("AWAIT-CLOUD apply failed", err);
+            self._lastCloudError = err;
+            self._clearAwaitCloudTimers();
+            self._enableFreshAccount();
+            if (self._awaitCloudResolver) { const r = self._awaitCloudResolver; self._awaitCloudResolver = null; r(true); }
+          }
+          return;
+        }
+        if (now >= self._awaitCloudDeadline && !self._canBeginFresh) self._enableFreshAccount();
+        self._awaitCloudPoll = setTimeout(attempt, AWAIT_CLOUD_POLL_MS);
+      }).catch(function () {
+        if (now >= self._awaitCloudDeadline && !self._canBeginFresh) self._enableFreshAccount();
+        self._awaitCloudPoll = setTimeout(attempt, AWAIT_CLOUD_POLL_MS);
+      });
+    };
+    attempt();
+    return new Promise(function (resolve) { self._awaitCloudResolver = resolve; });
+  },
+  _enableFreshAccount() {
+    if (this._canBeginFresh) return;
+    this._canBeginFresh = true;
+    this._emitBootState(); // 重新触发 UI：显示"新建账号"按钮
+  },
+  canBeginFreshAccount() { return this._canBeginFresh; },
+  _clearAwaitCloudTimers() {
+    if (this._awaitCloudPoll) { clearTimeout(this._awaitCloudPoll); this._awaitCloudPoll = null; }
+    if (this._awaitCloudTimeout) { clearTimeout(this._awaitCloudTimeout); this._awaitCloudTimeout = null; }
+  },
+  // 玩家在 awaiting-cloud 主动新建账号：落定空白档（含一次离线结算），并启动"新建后云档探测"。
+  beginFreshAccount() {
+    if (this._bootState !== "awaiting-cloud" && this._bootState !== "loading") return Promise.resolve(false);
+    this._clearAwaitCloudTimers();
+    this._prepareFreshState();
+    this._intentionallyFresh = true;
+    if (this._awaitCloudResolver) { const r = this._awaitCloudResolver; this._awaitCloudResolver = null; r(true); }
+    const self = this;
+    return this._commitFinal("ready", { persist: true, upload: "none", ensureMirror: true }).then(function () {
+      self._startPostFreshCloudWatch();
+      return true;
+    });
+  },
+  // 新建账号后继续后台探测云端：若发现云档，弹确认覆盖（仅一次），绝不静默覆盖。
+  _startPostFreshCloudWatch() {
+    const self = this;
+    if (this._cloudOverwritePrompted) return;
+    const cs = this._cloudSave;
+    if (!cs || !cs.isAvailable || !cs.isAvailable()) return;
+    this._postFreshStopAt = Date.now() + AWAIT_CLOUD_STOP_MS;
+    const poll = function () {
+      if (self._cloudOverwritePrompted) return;
+      if (Date.now() > self._postFreshStopAt) return;
+      Promise.resolve(cs.fetchCloudEnvelope()).then(function (f) {
+        if (f && f.status === "ok" && f.envelope) {
+          self._cloudOverwritePrompted = true;
+          self._promptCloudOverwrite(f.envelope);
+          return;
+        }
+        if (Date.now() <= self._postFreshStopAt) setTimeout(poll, AWAIT_CLOUD_POLL_MS);
+      }).catch(function () {
+        if (Date.now() <= self._postFreshStopAt) setTimeout(poll, AWAIT_CLOUD_POLL_MS);
+      });
+    };
+    setTimeout(poll, AWAIT_CLOUD_POLL_MS);
+  },
+  _promptCloudOverwrite(envelope) {
+    try {
+      if (typeof showDangerConfirm !== "function") { this._applyCloudOverwrite(envelope); return; }
+      showDangerConfirm(
+        "发现云端存档",
+        "<p class=\"dlg-body\">检测到你的账号在云端存在存档。是否用云端存档覆盖当前新建的进度？覆盖后当前新号进度无法恢复。</p>",
+        "覆盖并恢复云端",
+        () => { this._applyCloudOverwrite(envelope); }
+      );
+    } catch (e) { /* 非致命 */ }
+  },
+  _applyCloudOverwrite(envelope) {
+    try {
+      this._applySelectedEnvelope(envelope, "cloud");
+      this._syncLastCloudChecksum(envelope.checksum);
+      this._intentionallyFresh = false;
+      this._offlineSettled = false; // 重新结算云档离线收益（推进云档 lastActiveTime）
+      this._settleFinal();
+      this._updateStatus("已用云端存档覆盖当前新号");
+      if (typeof updateUI === "function") updateUI();
+      else if (typeof requestRender === "function") requestRender();
+    } catch (e) {
+      this._updateStatus("云端覆盖失败：" + ((e && e.message) ? e.message : String(e)));
+    }
+  },
   _reconcileAchievements() {
     const as = this._achievementSync;
     if (!as || !as.isAvailable()) return;
@@ -2122,8 +2284,15 @@ const SaveManager = {
     this._offlineSettled = true;
     try {
       if (typeof calculateOfflineGains === "function") calculateOfflineGains();
+      else console.warn("[离线] calculateOfflineGains 未定义，启动结算被跳过（脚本加载顺序/离线模块缺失？）");
     } catch (e) {
       // 离线结算失败不致命，但 guard 已置位避免重复执行。
+      // 定点返修·离线诊断：原先静默吞掉，导致「完全没离线」却无任何报错。改为明确告警并打印 elapsed/栈，便于定位。
+      try {
+        const _la = (typeof gameState !== "undefined" && gameState && gameState.lastActiveTime) || 0;
+        const _el = _la ? Math.floor((Date.now() - _la) / 1000) : -1;
+        console.error("[离线·启动结算异常] elapsed≈" + _el + "s，本次离线收益未发放。错误：", e && (e.stack || e.message || e));
+      } catch (_) {}
     }
   },
   _commitFinal(finalState, opts) {
@@ -2272,6 +2441,12 @@ window.addEventListener("beforeunload", () => { if (typeof SaveManager !== "unde
 // 这些单例在 bootstrap 运行时（所有平台脚本已加载）才构造，避免在脚本加载顺序之前访问
 // CloudSaveService / TapTapCloudProvider 等尚未定义的符号。web / Noop 环境下 provider 初始化
 // 返回 false，服务不可用，启动直接降级为本地模式。
+
+// awaiting-cloud 等待云存档的计时参数（决定·十 补充：无本地+云失败时不自动开空白档）。
+const AWAIT_CLOUD_MAX_WAIT_MS = 15000;  // 连接窗口：期间隐藏"新建账号"按钮，纯等待云端
+const AWAIT_CLOUD_POLL_MS = 3000;       // 轮询云端间隔
+const AWAIT_CLOUD_STOP_MS = 120000;     // 整体停止轮询上限（约 2 分钟，避免无限定时器）
+const AWAIT_CLOUD_FETCH_MS = 8000;      // 单次云档查询超时：SDK 不回调 success/fail 时降级，绝不永久冻结 bootstrap
 
 const SYNC_META_KEY = "deep_space_idle_sync_meta";
 const ACH_LEDGER_KEY = "deep_space_idle_achievement_ledger";
@@ -2529,7 +2704,13 @@ function getAchievementSyncService() {
   SaveManager._refreshCloudSaveStatus();
 })();
 
-document.addEventListener("visibilitychange", () => { if (SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return; if (!document.hidden) calculateOfflineGains(); });
+document.addEventListener("visibilitychange", () => {
+  if (SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return;
+  if (!document.hidden) {
+    try { calculateOfflineGains(); }
+    catch (e) { console.error("[离线·标签页恢复结算异常] 本次后台时长未被结算。错误：", e && (e.stack || e.message || e)); }
+  }
+});
 
 // 战斗按钮事件
 (function bindCombatButtons() {

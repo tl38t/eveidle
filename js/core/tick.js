@@ -141,6 +141,8 @@ function gameTick() {
     } else if (key === "refining") {
       const recipeName = gameState.currentAction.startedSmeltingArea || gameState.currentAction.smeltingArea;
       const recipe = SMELTING_RECIPES.find(r => r.name === recipeName) || SMELTING_RECIPES[0]; if (!recipe) return;
+      // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效，等级不足零副作用停止。
+      if (getEffectiveSkillLevel(gameState, "refining") < recipe.level) { stopOrSkip(); updateUI(); return; }
       const stock = ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
       if (stock < 1) { stopOrSkip(); updateUI(); return; }
       const smeltingState = getSmeltingDisplayState(gameState, Date.now());
@@ -167,6 +169,8 @@ function gameTick() {
     } else if (key === "gasHarvesting") {
       const gasName = gameState.currentAction.startedGasArea || gameState.currentAction.gasArea;
       const area = GAS_AREAS.find(a => a.name === gasName) || GAS_AREAS[0]; if (!area) return;
+      // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效，等级不足零副作用停止。
+      if (getEffectiveSkillLevel(gameState, "gasHarvesting") < area.level) { stopOrSkip(); updateUI(); return; }
       const eff = getGasEfficiency(); const actualTime = area.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now();
@@ -306,6 +310,11 @@ function gameTick() {
     if (repairing) { gameState.currentAction.progress = 0; updateUI(); return; }
     // 信号干扰中：暂停并清空进度
     if (arch.interferenceUntil > now) { gameState.currentAction.progress = 0; updateUI(); return; }
+
+    // 运行时重校验技能门槛与启动条件：超载催化剂等增强剂可能中途失效（等级不足），
+    // 或探针/燃料耗尽；任一不满足则零副作用停止。与维修恢复后的校验共用 canStartArchaeology。
+    const _archChk = (typeof canStartArchaeology === "function") ? canStartArchaeology(gameState, now) : { ok:true };
+    if (!_archChk.ok) { stopOrSkip(); updateUI(); return; }
 
     // 考古周期唯一公式（研究批次 G · archEff）：base × 增强剂 ÷ 空间站后勤 ÷ 科研倍率。
     // 在线 tick / 离线 descriptor / 离线时间账本 / 显示态四处共用 getArchaeologyCycleSeconds，禁止此处再算第二套。

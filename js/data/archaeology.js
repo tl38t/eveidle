@@ -185,7 +185,7 @@ const ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS = Object.freeze({
 // foci: 三焦点 → 15 个旧 site ID（保留兼容）。
 // cargoWeights: 货柜尺寸分布（PLAN §4）。
 // rareRate: 每次成功周期的稀有发现率（PLAN §7）。
-// rareWeights: 稀有发现内部权重 {blueprint, booster, probe, credential, implant, starPack}（PLAN §7）。
+// rareWeights: 稀有发现内部权重 {blueprint, booster, probe, credential, implant, extractorSmall}（PLAN §7）。
 // equipmentBlueprints: 本地点考古装备蓝图池（equipmentId 列表）。
 // boosterBlueprints: 本地点增幅剂蓝图池（booster recipeId 列表）。
 // probeBlueprints: 本地点复原强化探针池（probeId 列表；可重复掉落，不按拥有过滤）。
@@ -197,7 +197,7 @@ const ARCHAEOLOGY_LOCATIONS = Object.freeze([
     foci: { a:"site_i_a", b:"site_i_b", c:"site_i_c" },
     cargoWeights: [ { size:"S", weight:95 }, { size:"M", weight:5 } ],
     rareRate: 0.020,
-    rareWeights: { blueprint:20, booster:60, probe:0, credential:0, implant:0, starPack:20 },
+    rareWeights: { blueprint:20, booster:60, probe:0, credential:0, implant:0, extractorSmall:20 },
     equipmentBlueprints: [ "archaeo_analyzer_frontier_i" ],
     boosterBlueprints: [ "gas_rheology_n", "fullerene_nucleation_n", "high_temp_flux_n", "lattice_proliferation_n" ],
     probeBlueprints: [],
@@ -209,7 +209,7 @@ const ARCHAEOLOGY_LOCATIONS = Object.freeze([
     foci: { a:"site_ii_a", b:"site_ii_b", c:"site_ii_c" },
     cargoWeights: [ { size:"S", weight:45 }, { size:"M", weight:50 }, { size:"L", weight:5 } ],
     rareRate: 0.015,
-    rareWeights: { blueprint:15, booster:45, probe:25, credential:5, implant:10, starPack:0 },
+    rareWeights: { blueprint:15, booster:45, probe:25, credential:5, implant:10, extractorSmall:0 },
     equipmentBlueprints: [ "archaeo_stabilizer_station_ii" ],
     boosterBlueprints: [ "assembly_coordinator_n", "precision_rationing_n", "reaction_accelerant_n", "reaction_chain_proliferation_n" ],
     probeBlueprints: [ "restored_probe_ii" ],
@@ -221,7 +221,7 @@ const ARCHAEOLOGY_LOCATIONS = Object.freeze([
     foci: { a:"site_iii_a", b:"site_iii_b", c:"site_iii_c" },
     cargoWeights: [ { size:"M", weight:85 }, { size:"L", weight:15 } ],
     rareRate: 0.010,
-    rareWeights: { blueprint:15, booster:40, probe:25, credential:5, implant:15, starPack:0 },
+    rareWeights: { blueprint:15, booster:40, probe:25, credential:5, implant:15, extractorSmall:0 },
     equipmentBlueprints: [ "archaeo_decoder_fleet_iii" ],
     boosterBlueprints: [ "gas_rheology_r", "fullerene_nucleation_r", "high_temp_flux_r", "lattice_proliferation_r" ],
     probeBlueprints: [ "restored_probe_ii" ],
@@ -233,7 +233,7 @@ const ARCHAEOLOGY_LOCATIONS = Object.freeze([
     foci: { a:"site_iv_a", b:"site_iv_b", c:"site_iv_c" },
     cargoWeights: [ { size:"M", weight:35 }, { size:"L", weight:60 }, { size:"XL", weight:5 } ],
     rareRate: 0.0075,
-    rareWeights: { blueprint:15, booster:40, probe:25, credential:0, implant:20, starPack:0 },
+    rareWeights: { blueprint:15, booster:40, probe:25, credential:0, implant:20, extractorSmall:0 },
     equipmentBlueprints: [ "archaeo_analyzer_forbidden_iv" ],
     boosterBlueprints: [ "assembly_coordinator_r", "precision_rationing_r", "reaction_accelerant_r", "reaction_chain_proliferation_r" ],
     probeBlueprints: [ "restored_deep_probe_iii" ],
@@ -245,7 +245,7 @@ const ARCHAEOLOGY_LOCATIONS = Object.freeze([
     foci: { a:"site_v_a", b:"site_v_b", c:"site_v_c" },
     cargoWeights: [ { size:"L", weight:70 }, { size:"XL", weight:30 } ],
     rareRate: 0.005,
-    rareWeights: { blueprint:20, booster:40, probe:20, credential:0, implant:20, starPack:0 },
+    rareWeights: { blueprint:20, booster:40, probe:20, credential:0, implant:20, extractorSmall:0 },
     equipmentBlueprints: [ "archaeo_analyzer_pioneer_v", "archaeo_stabilizer_pioneer_v", "archaeo_decoder_pioneer_v" ],
     boosterBlueprints: [
       "gas_rheology_l", "fullerene_nucleation_l", "high_temp_flux_l", "lattice_proliferation_l",

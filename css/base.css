@@ -23,6 +23,7 @@
   /* ===== 顶部状态栏 ===== */
   .topbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
     padding: 8px 20px;
@@ -33,6 +34,11 @@
     box-shadow: 0 2px 20px rgba(0, 0, 0, 0.4);
     position: relative;
     z-index: 10;
+  }
+  /* 桌面端：广告/脑突触加速状态条独占 .topbar 一整行，避免挤占资源/动作条 */
+  .topbar > [data-adb-wrap] {
+    flex-basis: 100%;
+    margin-bottom: 8px;
   }
   .topbar::after {
     content: '';
@@ -243,6 +249,41 @@
     box-shadow: 0 8px 24px rgba(0,0,0,.55);
     white-space: pre-line;
     pointer-events: auto;
+  }
+
+  /* 效率数字：全平台可点（PC / 手机一致），点击弹因子明细弹窗 ——2026-08-26 */
+  .eff-clickable {
+    cursor: pointer;
+    text-decoration: underline dotted #4ea1ff;
+    text-underline-offset: 3px;
+  }
+  .eff-clickable:hover, .eff-clickable:active { background: rgba(74, 142, 214, 0.14); border-radius: 4px; }
+
+  .eff-modal-overlay {
+    position: fixed; inset: 0; z-index: 10000;
+    background: rgba(0,0,0,.55);
+    display: none; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  .eff-modal-overlay.show { display: flex; }
+  .eff-modal {
+    background: #202c44; color: #e6ecf7;
+    border: 1px solid #2c3a57; border-radius: 12px;
+    max-width: 340px; width: 100%;
+    padding: 18px 18px 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,.5);
+  }
+  .eff-modal h3 { margin: 0 0 10px; font-size: 15px; color: #4ea1ff; }
+  .eff-modal-body {
+    white-space: pre-line;
+    font-size: 13px; line-height: 1.85;
+    font-variant-numeric: tabular-nums;
+  }
+  .eff-modal-close {
+    margin-top: 14px; width: 100%; padding: 10px;
+    border: none; border-radius: 8px;
+    background: #4ea1ff; color: #04122b;
+    font-weight: 700; font-size: 14px; cursor: pointer;
   }
   .combat-nav-toggle[aria-expanded="true"] .combat-nav-chevron { transform: rotate(180deg); color: #d4a843; }
   .combat-skill-group { display: none; }
