@@ -270,20 +270,28 @@
     background: #202c44; color: #e6ecf7;
     border: 1px solid #2c3a57; border-radius: 12px;
     max-width: 340px; width: 100%;
+    max-height: 80vh;                /* 限制最大高度为视口 80%，超出时内部 body 滚动而非整体溢出 */
+    display: flex; flex-direction: column;
     padding: 18px 18px 14px;
     box-shadow: 0 12px 40px rgba(0,0,0,.5);
   }
-  .eff-modal h3 { margin: 0 0 10px; font-size: 15px; color: #4ea1ff; }
+  .eff-modal h3 { margin: 0 0 10px; font-size: 15px; color: #4ea1ff; flex: 0 0 auto; }
   .eff-modal-body {
     white-space: pre-line;
     font-size: 13px; line-height: 1.85;
     font-variant-numeric: tabular-nums;
+    overflow-y: auto;               /* 长内容纵向滚动 */
+    flex: 1 1 auto; min-height: 0;   /* flex 子项需 min-height:0 才能正确收缩并触发 overflow */
+    /* 让滚动条贴近右侧边缘、不挤压文本 */
+    margin: 0 -6px;
+    padding: 0 6px;
   }
   .eff-modal-close {
     margin-top: 14px; width: 100%; padding: 10px;
     border: none; border-radius: 8px;
     background: #4ea1ff; color: #04122b;
     font-weight: 700; font-size: 14px; cursor: pointer;
+    flex: 0 0 auto;                  /* 关闭按钮固定在底部，不随 body 滚动 */
   }
   .combat-nav-toggle[aria-expanded="true"] .combat-nav-chevron { transform: rotate(180deg); color: #d4a843; }
   .combat-skill-group { display: none; }

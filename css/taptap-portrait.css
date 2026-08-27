@@ -445,7 +445,7 @@
 
   /* 装备弹窗移动端专用响应式（仅在 ≤820px）：全屏工作区，无大片空白 */
   .equip-modal-overlay{ z-index:10000; background:rgba(4,8,14,.92); }
-  .equip-ship-modal{ width:100%; max-width:none; height:auto; max-height:100dvh; border-radius:0; padding:0; display:flex; flex-direction:column; overflow:hidden; background:#0c1622; }
+  .equip-ship-modal{ width:100%; max-width:none; height:auto; max-height:100%; border-radius:0; padding:0; display:flex; flex-direction:column; overflow-y:auto; -webkit-overflow-scrolling:touch; background:#0c1622; }
   .equip-modal-close{ top:0; right:0; width:44px; height:44px; line-height:44px; font-size:26px; z-index:9; color:#cfe; background:rgba(0,0,0,.25); }
   .equip-ship-modal .modal-title{ position:sticky; top:0; padding:14px 52px 12px 16px; background:#0c1622; z-index:8; border-bottom:1px solid #16222f; font-size:16px; }
   .equip-ship-modal .modal-sub{ position:static; padding:4px 16px 10px; background:#0c1622; z-index:8; color:#8aa0b4; font-size:12px; margin-top:0; border-bottom:1px solid #16222f; }
@@ -459,7 +459,7 @@
   .tp-orbit-center-fb{ display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; }
   .tp-orbit-center-fb-ico{ font-size:44px; filter:drop-shadow(0 0 12px rgba(74,144,217,.4)); }
   .tp-orbit-center-fb-txt{ font-size:11px; color:#8aa0b4; }
-  .equip-library{ flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch; margin:10px 12px; padding:10px 12px; background:rgba(0,0,0,.2); border-radius:8px; border:1px solid #16222f; }
+  .equip-library{ flex:0 0 auto; overflow-y:visible; margin:10px 12px; padding:10px 12px; background:rgba(0,0,0,.2); border-radius:8px; border:1px solid #16222f; }
   .ship-stats{ display:grid; grid-template-columns:repeat(2,1fr); gap:6px; margin:0 12px 10px; padding:10px 14px; background:rgba(0,0,0,.3); border-radius:8px; border:1px solid #16222f; }
   .modal-actions{ position:sticky; bottom:0; flex:0 0 auto; background:#0c1622; border-top:1px solid #16222f; padding:12px; z-index:8; display:flex; gap:10px; justify-content:center; }
 
