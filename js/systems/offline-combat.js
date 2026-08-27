@@ -184,6 +184,24 @@
   // computeVolleyFuel 需要 state；用模块级 _stateRef 捕获当前 state
   let _stateRef = null;
 
+  // ---- 损伤控制单元（DCU）减伤：与在线 combat.js:1075-1084,1201 严格一致 ----
+  // 每个 DCU 按 fuelCost*calcFuelMult 消耗虚拟燃料（会话级 s.fuel，flush 一次性 apply），
+  // 求和 globalDamageReduction 后封顶 50%；返回该轮玩家承伤的减伤系数。
+  function computeDcReduction(state, zone, s) {
+    const dcs = G("getInstalledCombatDamageControls")(state);
+    if (!dcs || dcs.length === 0) return 0;
+    let dc = 0;
+    for (const m of dcs) {
+      const cb = m.equipment && m.equipment.combat;
+      if (!cb) continue;
+      const fuelCost = Math.max(1, Math.round((cb.fuelCost || 1) * G("calcFuelMult")(zone, state)));
+      if (s.fuel < fuelCost) continue; // 燃料不足则该 DCU 本轮不生效（与在线一致）
+      s.fuel = Math.max(0, s.fuel - fuelCost);
+      dc += (m.equipment.bonuses && m.equipment.bonuses.globalDamageReduction) || 0;
+    }
+    return Math.min(0.5, dc);
+  }
+
   function addResource(s, id, delta) {
     if (!delta) return;
     s.resourceNet[id] = (s.resourceNet[id] || 0) + delta;
@@ -216,6 +234,7 @@
 
     while (true) {
       if (rounds >= MAX_WAVE_ROUNDS) { return { outcome: "cleared", rounds, kills }; }
+      const dcReduction = computeDcReduction(state, zone, s);
       const fire = canFireVirtual(inputs, zone, s, state);
       if (fire) {
         let roundDealt = 0;
@@ -272,14 +291,17 @@
       const ship = inputs.ship;
       let shieldHitsUsed = 0;
       let roundTaken = 0;
+      let armorDamageTaken = 0;
       for (const attacker of living()) {
         const raw = G("calcCombatDamage")(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, EXPECT);
         const mit = G("applyCapitalShieldMitigation")(ship, raw, shieldHitsUsed, c.hp.shield);
         if (mit.shieldHitUsed) shieldHitsUsed++;
-        const enemyDmg = Math.max(0, Math.round(mit.damage));
+        let enemyDmg = Math.max(0, Math.round(mit.damage));
+        if (dcReduction > 0) enemyDmg = Math.max(0, Math.round(enemyDmg * (1 - dcReduction)));
         const dmg = G("applyLayeredCombatDamage")(c.hp, enemyDmg);
         const actual = dmg.shield + dmg.armor + dmg.structure;
         roundTaken += actual;
+        armorDamageTaken += dmg.armor;
         if (dmg.shield > 0) grantXp(state, "shieldOperation", 1);
         if (dmg.armor > 0) grantXp(state, "armorReinforcement", 1);
         if (dmg.structure > 0) grantXp(state, "hullEngineering", 1);
@@ -290,6 +312,12 @@
         }
       }
       s.totalDamageTaken += roundTaken;
+      // 反应装甲回修（资本舰 reactive_armor 特质；与在线 combat.js:1226-1231 一致）
+      const reactiveArmorRepair = G("getCapitalReactiveArmorRepair")(ship, armorDamageTaken, c.maxHp.armor);
+      if (reactiveArmorRepair > 0 && c.hp.armor < c.maxHp.armor) {
+        const restored = Math.min(reactiveArmorRepair, c.maxHp.armor - c.hp.armor);
+        c.hp.armor += restored;
+      }
       // 维修（仅读真实维修装备；满血层不扣维修燃料，与在线一致）
       const boosterRep = inputs.boosterRep;
       for (const m of inputs.repairers) {
