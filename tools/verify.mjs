@@ -170,6 +170,13 @@ const optionalIds = new Set([
   "boot-fatal-error",
   "boot-conflict-choice",
   "boot-conflict-error",
+  // 动态创建的 ID：boot-overlay-style / boot-loading / boot-loading-msg / boot-await-cloud / boot-new-account
+  // 同由 js/core/bootstrap-launch.js 运行时创建/销毁（启动遮罩样式、加载文案、云端等待浮层、新建账号按钮），禁止静态化到 index.html。
+  "boot-overlay-style",
+  "boot-loading",
+  "boot-loading-msg",
+  "boot-await-cloud",
+  "boot-new-account",
   // 动态创建的 ID：cargo-content-modal 由 js/ui/shell-render.js 运行时创建（货柜内容弹窗背景层）
   "cargo-content-modal",
   // 动态创建的 ID：combat-log-modal 由 js/ui/shell-render.js 运行时创建（战斗日志弹窗背景层）

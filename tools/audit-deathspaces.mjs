@@ -4,7 +4,7 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const context = vm.createContext({});
+const context = vm.createContext({ window: {} });
 for (const file of ["js/data/ships.js", "js/data/combat.js", "js/data/equipment.js"]) {
   vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), context, { filename:file });
 }
