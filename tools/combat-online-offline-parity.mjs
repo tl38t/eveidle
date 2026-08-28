@@ -36,10 +36,40 @@ for (const src of scriptSources) {
 }
 
 // 锁定增益/随机双倍/UI 副作用，保证公平
+// getBoosterEffectState 改为读取 state.boosters.active（如玩家主动装战斗槽），
+// 缺省按无增益处理。Ad Buff、checkLevelUp、UI 等副作用继续屏蔽。
 vm.runInContext(`
   globalThis.__fakeNow = 1000000;
   Date.now = () => globalThis.__fakeNow;
-  getBoosterEffectState = () => ({ weaponDamageMultiplier:{laser:1,missile:1,cannon:1}, repairMultiplier:{shield:1,armor:1,structure:1} });
+  getBoosterEffectState = (state) => {
+    const out = {
+      miningSpeedMultiplier: 1, doubleMineralChance: 0,
+      archaeologySpeedMultiplier: 1, rareShiftMultiplier: 1,
+      weaponDamageMultiplier: { laser:1, missile:1, cannon:1 },
+      repairMultiplier: { shield:1, armor:1, structure:1 },
+      gasSpeedMultiplier: 1, doubleGasChance: 0,
+      smeltSpeedMultiplier: 1, doubleSmeltChance: 0,
+      shipSpeedMultiplier: 1, equipmentSpeedMultiplier: 1,
+      shipMaterialDiscount: 0, shipMaterialLevelGate: 0,
+      equipMaterialDiscount: 0, equipMaterialLevelGate: 0,
+      skillLevelBySkill: {}, boosterSpeedMultiplier: 1, doubleBoosterChance: 0,
+      skillXpMultBySkill: {}, activeEntries: {}
+    };
+    const active = (state && state.boosters && state.boosters.active) || {};
+    const getItem = (typeof getBoosterItem === "function") ? getBoosterItem : null;
+    for (const slot in active) {
+      const entry = active[slot];
+      if (!entry || !entry.itemId || !(entry.remainingMs > 0)) continue;
+      const item = getItem ? getItem(entry.itemId) : null;
+      if (!item) continue;
+      if (item.effectType === "damageMultiplier" && item.weaponType && item.weaponType in out.weaponDamageMultiplier) {
+        out.weaponDamageMultiplier[item.weaponType] *= (1 + Number(item.effectValue));
+      } else if (item.effectType === "repairAmount" && item.repairTarget && item.repairTarget in out.repairMultiplier) {
+        out.repairMultiplier[item.repairTarget] *= (1 + Number(item.effectValue));
+      }
+    }
+    return out;
+  };
   getAdBuffMultiplier = () => 1;
   checkLevelUp = () => {};
   updateUI = () => {}; updateLiveUI = () => {}; refreshVisiblePanelAfterAction = () => {};
@@ -95,6 +125,84 @@ function equip(st, shipId, fitting, zone) {
   if (fitting.missile) st.ammo.push({ id:"am2", type:"missile", tier:"T1", name:"导弹", props:{dmgMult:1,hitMult:1}, qty:1e9, loaded:true });
   if (fitting.cannon) st.ammo.push({ id:"am3", type:"cannon", tier:"T1", name:"炮台弹药", props:{dmgMult:1,hitMult:1}, qty:1e9, loaded:true });
   RR.set(st, "consumable:fuel", 1e9);
+}
+
+// 装备 + 每实例强化等级（enh 数组下标对应 fitting 的下标，缺省 0）。
+// 字符串 fitting 直接用（旧接口）；对象 fitting {id, enhancementLevel} 创建真实 instance。
+function equipEnhanced(st, shipId, fittingSpec, zone) {
+  const slots = ["high","mid","low","rig"];
+  const fitted = { high:[], mid:[], low:[], rig:[] };
+  st.equipment = st.equipment || { instances: [] };
+  for (const slot of slots) {
+    const arr = fittingSpec[slot] || [];
+    arr.forEach((entry, idx) => {
+      if (typeof entry === "string") {
+        fitted[slot].push(entry);
+      } else {
+        const instId = `${slot}_${entry.id}_${idx}_test`;
+        st.equipment.instances.push({
+          instanceId: instId,
+          itemId: entry.id,
+          installedOn: "ship_test_1",
+          enhancementLevel: entry.enhancementLevel || 0
+        });
+        fitted[slot].push(instId);
+      }
+    });
+  }
+  const inst = {
+    shipId, instanceId: "ship_test_1", builtAt: 1,
+    fitted, enhancementLevel: 0
+  };
+  st.inventory = st.inventory || {};
+  st.inventory.ships = [inst];
+  st.shipAssignments = st.shipAssignments || {};
+  st.shipAssignments.combat = "ship_test_1";
+  st.combat.activeShip = "ship_test_1";
+  st.combat.active = true;
+  st.combat.mode = "belt";
+  st.combat.zone = zone;
+  st.combat.wave = 1;
+  st.combat.enemies = [];
+  st.combat.currentEnemy = null;
+  st.combat.deathspaceChainPending = false;
+  st.combat.deathspaceId = null;
+  st.combat.repairs = {};
+  st.combat.randomState = { seed: 99, counterLo: 0, counterHi: 0 };
+  st.combat.runToken = "run_" + shipId;
+  st.combat.runWeaponTypes = [];
+  const maxHp = calcCombatMaxHp(undefined, undefined, st);
+  st.combat.maxHp = { ...maxHp };
+  st.combat.hp = { ...maxHp };
+  st.combat.salvageArmActive = false;
+  st.ammo = [{ id:"am1", type:"laser", tier:"T1", name:"激光晶体弹药", props:{dmgMult:1,hitMult:1}, qty: 1e9, loaded:true }];
+  if (fittingSpec.missile) st.ammo.push({ id:"am2", type:"missile", tier:"T1", name:"导弹", props:{dmgMult:1,hitMult:1}, qty:1e9, loaded:true });
+  if (fittingSpec.cannon) st.ammo.push({ id:"am3", type:"cannon", tier:"T1", name:"炮台弹药", props:{dmgMult:1,hitMult:1}, qty:1e9, loaded:true });
+  RR.set(st, "consumable:fuel", 1e9);
+}
+
+// 设置战斗技能等级（按玩家报告数值）。
+function setPlayerSkills(st, levels) {
+  st.skills = st.skills || {};
+  for (const [k, v] of Object.entries(levels)) {
+    st.skills[k] = st.skills[k] || { lvl:1, xp:0 };
+    st.skills[k].lvl = v;
+    st.skills[k].xp = 0;
+  }
+}
+
+// 把战斗槽增强剂塞到 state.boosters.active（itemId 用 "booster:<series>_<quality>" 格式）。
+function setCombatBoosters(st, weaponSeries, weaponQuality, repairSeries, repairQuality) {
+  st.boosters = st.boosters || { active:{} };
+  st.boosters.active = st.boosters.active || {};
+  if (weaponSeries) st.boosters.active.combatWeapon = { itemId: `booster:${weaponSeries}_${weaponQuality}`, remainingMs: 600_000 };
+  if (repairSeries) st.boosters.active.combatRepair = { itemId: `booster:${repairSeries}_${repairQuality}`, remainingMs: 600_000 };
+}
+
+// 清除战斗槽增强剂（用作「无增强剂」对照）。
+function clearCombatBoosters(st) {
+  if (!st.boosters) return;
+  st.boosters.active = {};
 }
 
 // 初始化在线战斗：生成第一波编队（用与离线一致的 nextCombatRandom 编队生成 RNG），
@@ -286,3 +394,200 @@ seedSweep("护卫舰+DCU(0.36)", "rifter",
 seedSweep("旗舰+DCU+反应装甲", "heavy_bastion",
   { high:["t1_capital_laser"], mid:["t1_capital_shield_array","t1_capital_damage_control","t1_capital_damage_control"], low:["t1_capital_armor_array"] },
   "angel_outpost", 180, 15);
+
+// ============================================================================
+// 玩家真实场景（QQ 群友报告）— 苍勤 = angel_warfront（CL55 准入，最高级苍穹图）
+// ============================================================================
+// 配装：曜光级 + 5 大型激光 + 5 大型盾修 + 2 大型打捞臂，所有模块强化+10。
+// 技能：战斗 55 / 激光 63 / 锁定 56 / 护盾 48 / 操舵 48 / 电容 52 / 防御 51。
+// 增强剂：2 级输出药（laser_coolant r +14% 激光伤害）+ 3 级盾修药（shield_recharge l +45% 护盾维修）。
+// 玩家原话："刚好卡着能秒的情况当时"
+const PLAYER_LEVELS = {
+  combat:55, laserOps:63, targeting:56, shieldOperation:48,
+  piloting:48, capacitorManagement:52, defense:51, shipEngineering:55
+};
+const PLAYER_FITTING = {
+  high: Array.from({length:5}, (_,i) => ({ id:"t1_large_laser", enhancementLevel:10 })),
+  mid:  Array.from({length:5}, (_,i) => ({ id:"t1_large_shield_booster", enhancementLevel:10 })),
+  low:  Array.from({length:2}, (_,i) => ({ id:"t4_salvage_arm", enhancementLevel:10 })),
+  rig:  []
+};
+
+// 用玩家的配装在线跑离线跑（单种子，确定性）— 5 个时长梯度
+function playerScenario(seconds, withBooster) {
+  const name = `玩家真实场景 | sunlance | angel_warfront | 时限=${seconds}s | 增强剂=${withBooster?"开":"关"}`;
+  console.log(`\n========== ${name} ==========`);
+  // 在线（玩家配装）
+  let sA = baseState();
+  equipEnhanced(sA, "sunlance", PLAYER_FITTING, "angel_warfront");
+  setPlayerSkills(sA, PLAYER_LEVELS);
+  if (withBooster) setCombatBoosters(sA, "laser_coolant", "r", "shield_recharge", "l");
+  else clearCombatBoosters(sA);
+  const rA = runOnline(sA, seconds, true);
+  // 离线
+  let sC = baseState();
+  equipEnhanced(sC, "sunlance", PLAYER_FITTING, "angel_warfront");
+  setPlayerSkills(sC, PLAYER_LEVELS);
+  if (withBooster) setCombatBoosters(sC, "laser_coolant", "r", "shield_recharge", "l");
+  else clearCombatBoosters(sC);
+  const rC = runOffline(sC, seconds);
+
+  console.log(`  在线(玩家配装)  :`); show("ONLINE-player", rA);
+  console.log(`  离线引擎(玩家配装):`); show("OFFLINE-player", rC);
+
+  const diff = rC.totalTaken - rA.totalTaken;
+  const pct = rA.totalTaken>0 ? ((diff/rA.totalTaken*100).toFixed(0)) : "?";
+  console.log(`  离线承伤 - 在线承伤 = ${Math.round(diff)} (${pct}%)`);
+
+  // 调试：编队 / 模块 / 期望 DPS
+  try {
+    const z0 = getCombatEncounterZone(sA.combat);
+    const dmy = JSON.parse(JSON.stringify(sA));
+    dmy.combat.randomState = { seed: 99, counterLo: 0, counterHi: 0 };
+    const w0 = buildCombatWave(z0, 1, () => nextCombatRandom(dmy.combat), dmy.combat);
+    const sum = (arr) => arr.reduce((a, e) => a + (e.baseDamage || 0), 0);
+    console.log(`  [编队] 第 1 波 ${w0.enemies.length} 敌 baseDmg=${sum(w0.enemies)} | 种类: ${w0.enemies.map(e=>e.name).slice(0,3).join("/")}...`);
+    console.log(`  [玩家炮面板] 激光 5 门 baseDmg 480 × (1+0.2 ship) × (1+0.05 enh10) × (1+0.14 booster) ≈ ${Math.round(5*480*1.2*1.1*1.14)} 期望/轮`);
+    const eff = vm.runInContext("getBoosterEffectState", sandbox)(sA);
+    console.log(`  [增强剂生效] 激光伤害乘区=${eff.weaponDamageMultiplier.laser.toFixed(2)} | 护盾维修乘区=${eff.repairMultiplier.shield.toFixed(2)}`);
+  } catch (e) { console.log("  [调试失败]", e.message); }
+}
+
+playerScenario(60, true);
+playerScenario(120, true);
+playerScenario(180, true);
+playerScenario(300, true);
+
+// 不开增强剂的对照 — 看是否「无增强剂玩家也爆」
+playerScenario(180, false);
+
+// 多种子统计：玩家配装在 angel_warfront 的在线/离线存活率
+function playerSeedSweep(seconds, seeds, withBooster) {
+  console.log(`\n========== 玩家配装 多种子存活率对照 (angel_warfront, 时限=${seconds}s, 增强剂=${withBooster?"开":"关"}, ${seeds} 种子) ==========`);
+  let onSurv=0, offSurv=0, onRounds=0, offRounds=0;
+  for (let i=0;i<seeds;i++){
+    const seed = 1000 + i*7;
+    let sA = baseState();
+    equipEnhanced(sA, "sunlance", PLAYER_FITTING, "angel_warfront");
+    setPlayerSkills(sA, PLAYER_LEVELS);
+    if (withBooster) setCombatBoosters(sA, "laser_coolant", "r", "shield_recharge", "l");
+    else clearCombatBoosters(sA);
+    sA.combat.randomState = { seed, counterLo:0, counterHi:0 };
+    const rA = runOnline(sA, seconds, true, seed);
+    let sC = baseState();
+    equipEnhanced(sC, "sunlance", PLAYER_FITTING, "angel_warfront");
+    setPlayerSkills(sC, PLAYER_LEVELS);
+    if (withBooster) setCombatBoosters(sC, "laser_coolant", "r", "shield_recharge", "l");
+    else clearCombatBoosters(sC);
+    sC.combat.randomState = { seed, counterLo:0, counterHi:0 };
+    const rC = runOffline(sC, seconds);
+    if(!rA.defeated) { onSurv++; onRounds += rA.rounds; }
+    if(!rC.defeated) { offSurv++; offRounds += (typeof rC.rounds === "number" ? rC.rounds : 0); }
+  }
+  console.log(`  在线存活 ${onSurv}/${seeds}（平均 ${(onRounds/Math.max(onSurv,1)).toFixed(1)} 轮）`);
+  console.log(`  离线存活 ${offSurv}/${seeds}（平均 ${(offRounds/Math.max(offSurv,1)).toFixed(1)} 轮）`);
+  if (offSurv < onSurv) {
+    console.log(`  >>> 离线存活率明显低于在线（差 ${onSurv - offSurv}/${seeds}），这是用户报告的『在线能打过离线爆船』`);
+  } else {
+    console.log(`  => 离线存活率不低于在线，玩家报告的『离线爆船』未复现`);
+  }
+}
+
+playerSeedSweep(180, 10, true);
+playerSeedSweep(60, 10, true);
+
+// ============================================================================
+// 轨迹对照：玩家配装，在线/离线逐轮 HP/承伤对比（定位分叉点）
+// ============================================================================
+function tracePlayerScenario(seconds) {
+  console.log(`\n========== 轨迹对照 | sunlance | angel_warfront | ${seconds}s ==========`);
+  // 在线：逐轮打印（每 10 轮 + 最后 5 轮）
+  let sA = baseState();
+  equipEnhanced(sA, "sunlance", PLAYER_FITTING, "angel_warfront");
+  setPlayerSkills(sA, PLAYER_LEVELS);
+  setCombatBoosters(sA, "laser_coolant", "r", "shield_recharge", "l");
+  initCombatOnline(sA, sA.combat.zone);
+  let now = 1_000_000;
+  const onTrace = [];
+  for (let i = 0; i < seconds; i++) {
+    if (!sA.combat.active) break;
+    const r = advanceCombatRound(sA, { now, rng: () => 0.5, emit: noop, offline:false });
+    now += 1000;
+    const hp = sA.combat.hp;
+    const taken = sA.combat.lastEnemyVolley ? sA.combat.lastEnemyVolley.totalDamage : 0;
+    const line = `ON  wave=${sA.combat.wave} r=${i+1} hpS=${Math.round(hp.shield)}/A${Math.round(hp.armor)}/H${Math.round(hp.structure)} taken=${Math.round(taken)} enemies=${(sA.combat.enemies||[]).filter(e=>e.hp.structure>0).length}`;
+    onTrace.push(line);
+    if (sA.combat.hp.structure <= 0) { onTrace.push(`ON  *** 爆船 @r=${i+1}`); break; }
+  }
+  // 离线：__traceOffline 钩子
+  let sC = baseState();
+  equipEnhanced(sC, "sunlance", PLAYER_FITTING, "angel_warfront");
+  setPlayerSkills(sC, PLAYER_LEVELS);
+  setCombatBoosters(sC, "laser_coolant", "r", "shield_recharge", "l");
+  const offTrace = [];
+  vm.runInContext("globalThis.__traceOffline = (line) => globalThis.__offTracePush(line)", sandbox);
+  sandbox.__offTracePush = (line) => offTrace.push(line);
+  const rC = runOffline(sC, seconds);
+  vm.runInContext("delete globalThis.__traceOffline", sandbox);
+
+  const dump = (arr, label) => {
+    console.log(`--- ${label}（每 10 轮 + 末 8 行）---`);
+    const head = arr.filter((_, idx) => (idx % 10 === 9));
+    const tail = arr.slice(-8);
+    for (const l of head) console.log("  " + l);
+    console.log("  ......");
+    for (const l of tail) console.log("  " + l);
+  };
+  dump(onTrace, "在线");
+  dump(offTrace, "离线");
+  console.log(`  在线结局=${onTrace.some(l=>l.includes("爆船"))?"爆船":"存活"} | 离线结局=${rC.defeated?"爆船("+rC.stopReason+")":"存活"}`);
+}
+tracePlayerScenario(180);
+
+// ============================================================================
+// 同种子真随机轨迹对照：在线(nextCombatRandom) vs 离线(detRng)
+// ============================================================================
+function traceSeedScenario(seed, seconds) {
+  console.log(`\n========== 种子=${seed} 真随机轨迹 | sunlance | angel_warfront | ${seconds}s ==========`);
+  let sA = baseState();
+  equipEnhanced(sA, "sunlance", PLAYER_FITTING, "angel_warfront");
+  setPlayerSkills(sA, PLAYER_LEVELS);
+  setCombatBoosters(sA, "laser_coolant", "r", "shield_recharge", "l");
+  sA.combat.randomState = { seed, counterLo:0, counterHi:0 };
+  const rA = runOnline(sA, seconds, true, seed);
+  // 统计在线编队规模分布
+  const onForm = {};
+  {
+    let sD = baseState();
+    equipEnhanced(sD, "sunlance", PLAYER_FITTING, "angel_warfront");
+    setPlayerSkills(sD, PLAYER_LEVELS);
+    setCombatBoosters(sD, "laser_coolant", "r", "shield_recharge", "l");
+    sD.combat.randomState = { seed, counterLo:0, counterHi:0 };
+    // 重放：波次流与在线一致需要逐波消费相同 rng——此处仅统计在线战斗里实际出现的波次规模
+  }
+  let sC = baseState();
+  equipEnhanced(sC, "sunlance", PLAYER_FITTING, "angel_warfront");
+  setPlayerSkills(sC, PLAYER_LEVELS);
+  setCombatBoosters(sC, "laser_coolant", "r", "shield_recharge", "l");
+  sC.combat.randomState = { seed, counterLo:0, counterHi:0 };
+  const offTrace = [];
+  vm.runInContext("globalThis.__traceOffline = (line) => globalThis.__offTracePush(line)", sandbox);
+  sandbox.__offTracePush = (line) => offTrace.push(line);
+  const rC = runOffline(sC, seconds);
+  vm.runInContext("delete globalThis.__traceOffline", sandbox);
+
+  const onByWave = {};
+  // 从 runOnline 无法拿到逐波信息（advanceCombatRound 内部推进），改为直接在结果中汇总
+  const offByWave = {};
+  for (const l of offTrace) {
+    const m = l.match(/wave=(\d+).*taken=(\d+)/);
+    if (m) { const w = m[1]; offByWave[w] = offByWave[w] || { rounds:0, taken:0, max:0 }; offByWave[w].rounds++; offByWave[w].taken += Number(m[2]); offByWave[w].max = Math.max(offByWave[w].max, Number(m[2])); }
+  }
+  console.log(`  在线: 爆船=${rA.defeated} 回合=${rA.rounds} 承伤=${Math.round(rA.totalTaken)}`);
+  console.log(`  离线: 爆船=${rC.defeated} 承伤=${Math.round(rC.totalTaken)} stop=${rC.stopReason}`);
+  const waves = Object.keys(offByWave).slice(0, 30);
+  console.log(`  离线逐波承伤（波: 轮数/累计/单轮最大）:`);
+  for (const w of waves) { const d = offByWave[w]; console.log(`    wave=${w}: ${d.rounds}轮 累计${d.taken} 单轮最大${d.max}`); }
+}
+traceSeedScenario(1000, 180);
+traceSeedScenario(1007, 180);

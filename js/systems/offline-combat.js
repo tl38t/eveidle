@@ -283,9 +283,6 @@
           kills.push(e);
         }
       }
-      if (living().length === 0) {
-        return { outcome: "cleared", rounds: rounds + 1, kills };
-      }
       // 敌人反击
       const playerDodge = G("calcPlayerDodge")(undefined, state);
       const ship = inputs.ship;
@@ -331,6 +328,12 @@
           s.fuel = Math.max(0, s.fuel - repFuel);
           grantXp(state, "defense", 1);
         }
+      }
+      // 清波判定移至维修之后（2026-08-28 修复）：在线 advanceCombatRound 的顺序是
+      // 玩家攻击→击杀结算→敌人反击→反应装甲→维修→清波生成新波，清波轮照常维修；
+      // 离线旧逻辑在维修前提前 return，导致每波漏一轮维修，临界配装离线系统性更易爆船。
+      if (living().length === 0) {
+        return { outcome: "cleared", rounds: rounds + 1, kills };
       }
       // 推进回合与虚拟时间
       rounds++;
