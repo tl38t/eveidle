@@ -9,10 +9,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=11">
-<link rel="stylesheet" href="./css/panels.css?v=15">
+<link rel="stylesheet" href="./css/panels.css?v=16">
 <link rel="stylesheet" href="./css/combat.css?v=8">
-<link rel="stylesheet" href="./css/components.css?v=21">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=15">
+<link rel="stylesheet" href="./css/components.css?v=22">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=18">
 <script type="importmap">
 {
   "imports": {
@@ -958,6 +958,7 @@
           <span class="cargo-tab" data-filter="implant">脑插</span>
           <span class="cargo-tab" data-filter="trade">交易品</span>
         </div>
+        <div class="cargo-subtabs" id="cargo-subtabs" style="display:none;"></div>
         <div class="cargo-list" id="cargo-list">    </div>
         <div class="equipment-enhancement-list" id="equipment-enhancement-list" style="display:none;"></div>
   </div>
@@ -1157,6 +1158,7 @@
     <h3 id="action-modal-title">开始执行 <span class="modal-close" id="action-modal-close">✕</span></h3>
     <div class="action-info" id="action-modal-info"></div>
     <div class="action-resources" id="action-modal-resources"></div>
+    <div class="action-warn" id="action-modal-warn"></div>
     <div class="action-input-row">
       <label for="action-batch-count">执行</label>
       <input type="number" id="action-batch-count" value="1" min="1" max="1">
@@ -1199,10 +1201,10 @@
   <script defer src="./js/data/boosters.js?v=8"></script>
   <script defer src="./js/systems/boosters.js?v=7"></script>
   <script defer src="./js/systems/recycling.js?v=3"></script>
-  <script defer src="./js/data/combat.js?v=4"></script>
+  <script defer src="./js/data/combat.js?v=5"></script>
   <script defer src="./js/data/cargo.js?v=8"></script>
   <script defer src="./js/data/implants.js?v=3"></script>
-  <script defer src="./js/data/equipment.js?v=13"></script>
+  <script defer src="./js/data/equipment.js?v=19"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=6"></script>
   <script defer src="./js/data/ammunition.js?v=2"></script>
   <script defer src="./js/data/archaeology.js?v=3"></script>
@@ -1233,17 +1235,17 @@
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
   <script defer src="./js/systems/legion-npc.js?v=2"></script>
-  <script defer src="./js/ui/action-modal.js?v=6"></script>
+  <script defer src="./js/ui/action-modal.js?v=8"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
-  <script defer src="./js/systems/combat.js?v=10"></script>
+  <script defer src="./js/systems/combat.js?v=11"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=43"></script>
-  <script defer src="./js/core/actions.js?v=17"></script>
+  <script defer src="./js/core/selectors.js?v=48"></script>
+  <script defer src="./js/core/actions.js?v=18"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=44"></script>
+  <script defer src="./js/ui/shell-render.js?v=48"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=19"></script>
-  <script defer src="./js/ui/combat-render.js?v=23"></script>
+  <script defer src="./js/ui/combat-render.js?v=25"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=10"></script>
   <script defer src="./js/ui/booster-render.js?v=8"></script>
@@ -1286,7 +1288,7 @@
   <script defer src="./js/core/persistence.js?v=14"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
-  <script defer src="./js/ui/render.js?v=10"></script>
+  <script defer src="./js/ui/render.js?v=11"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=11"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">

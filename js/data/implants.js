@@ -279,10 +279,14 @@ const IMPLANT_DROP_REF_MINING = 20;   // 最低级采矿区 凡晶石带 baseTim
 const IMPLANT_DROP_INV_MFG = 10000;
 const IMPLANT_DROP_REF_MFG = 30;      // 装备制造 T1 基准时长
 
-// 考古：每次成功按该次实际解析周期掷骰 p = (cycleSeconds / REF_ARCH) / INV_ARCH。
-// 每小时期望命中 = 3600 / (REF_ARCH × INV_ARCH)，与遗址档位/玩家效率无关，单枚 ~30h（= REF_ARCH×INV_ARCH/3600/3600 小时）。
-const IMPLANT_DROP_INV_ARCH = 810000;
-const IMPLANT_DROP_REF_ARCH = 480;    // 基准解析周期标度（T1 量级）
+// 考古：每次成功周期（archaeology:success 由 resolveArchaeologyCycle 逐周期发射，离线亦逐周期，故每周期掷一次、cycles 恒为 1）按该次实际解析周期掷骰 p = (cycleSeconds / REF_ARCH) / INV_ARCH。
+// 每小时期望命中 = 3600 / (REF_ARCH × INV_ARCH)，与遗址档位/玩家效率无关；p 随 cycle 线性增长 → 五档遗址（30/60/120/180/300s）单跑概率随周期放大、每小时期望恒定（时间公平，无高阶双奖励）。
+// 2026-08-28 重构：旧 INV_ARCH=810000 使每小时期望≈9.3e-6（≈10⁵h/枚，实际近乎不掉）。
+//   定标：制造 REF×INV = 30×10000 = 300000 ≈ 83h/枚，但制造流程无痛，考古单次周期远长且几乎无周期减免装备，
+//   故考古按 40h/枚定标 → REF×INV = 3600×40 = 144000 → INV_ARCH = 144000/480 = 300。
+//   结果：每枚每小时期望 0.025（≈40h/枚），4 枚合计≈10h 出任意一枚；各档位每小时期望一致。
+const IMPLANT_DROP_INV_ARCH = 300;
+const IMPLANT_DROP_REF_ARCH = 480;    // 解析周期归一化基准（常量，仅为 REF×INV=144000 服务；真实 site.time 为 30–300s）
 // 死亡空间：仅 6/10 三处清场按固定概率掉落舰船制造脑插（离线不重发该事件，故仅在线清场掉落）。
 const IMPLANT_SHIP_MFG_DEATHSPACES = ["angel_ded_6_10", "blood_ded_6_10", "sansha_ded_6_10"];
 const IMPLANT_SHIP_MFG_DROP_CHANCE = 0.05;
@@ -462,8 +466,9 @@ function announceImplant(id) {
   GE.on("booster:manufactured", onBoosterManufactured);
   GE.on("boosters:manufactured", onBoosterManufactured);
 
-  // 考古成功 → 采集四枚（每次成功独立掷骰；在线一次 / 离线一次 resolve，天然按 cycles 对齐）。
+  // 考古成功 → 采集四枚（每成功周期独立掷骰一次；archaeology:success 由 resolveArchaeologyCycle 逐周期发射，离线亦逐周期，故 cycles 恒为 1，无需按批量缩放）。
   // p 用该次实际解析周期（含效率/科研/增强剂提速），使每小时期望命中与玩家效率无关。
+  // 已拥有不再跳过：命中时经 grantImplant 重复分支转换为 1 个小型脑突触加速提取剂（与货柜重复脑插同款转化）。
   GE.on("archaeology:success", function (event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st || !event) return;
@@ -475,7 +480,16 @@ function announceImplant(id) {
       : (site && Number(site.time) > 0 ? Number(site.time) : IMPLANT_DROP_REF_ARCH);
     const p = (cyc / IMPLANT_DROP_REF_ARCH) / IMPLANT_DROP_INV_ARCH;
     const targets = ["implant_collect_mining", "implant_collect_gas", "implant_double_mining", "implant_double_gas"];
+    if (!st.implants || typeof st.implants !== "object") st.implants = {};
     for (const tid of targets) {
+      if (st.implants[tid]) {
+        // 已拥有：仍按同概率掷骰，命中即转换（grantImplant 对已拥有 id 内部加 1 个小型提取剂）。
+        if (p > 0 && Math.random() < p) {
+          grantImplant(st, tid);
+          if (typeof showToast === "function") showToast("🧠 重复脑插已转换为小型脑突触加速提取剂");
+        }
+        continue;
+      }
       const id = tryDropFromAction(st, tid, p, 1);
       if (id) announceImplant(id);
     }

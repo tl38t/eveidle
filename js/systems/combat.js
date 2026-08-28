@@ -1306,12 +1306,10 @@ function beginDeathspaceRun(state, options, context) {
   emit("combat:deathspaceEntered", {
     deathspaceId:site.id, zoneId:site.sourceZoneId, faction:site.faction, tier:site.dedTier
   }, { timestamp:now, source:"combat", offline:Boolean(context.offline) });
-  // 问题1：进入死亡空间前同样做燃料校验（非阻断 warning）。
+  // 进入死亡空间前同样做补给预检（非阻断）：弹药/燃料提示由 getCombatSupplyWarning 统一计算。
   const dsZone = COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || COMBAT_ZONES[0];
-  const dsVolleyFuel = computeVolleyFuel(state, dsZone);
-  const dsFuel = ResourceRegistry.get(state, "consumable:fuel");
-  const dsWarning = (dsVolleyFuel > 0 && dsFuel < dsVolleyFuel) ? "low-fuel" : null;
-  return { changed:true, site, warning:dsWarning };
+  const supplyWarning = getCombatSupplyWarning(state, dsZone);
+  return { changed:true, site, supplyWarning };
 }
 
 // 在线 combatTick：薄包装。先执行 recovery / 连刷 pending 语义，再每 tick 恰好一次调用

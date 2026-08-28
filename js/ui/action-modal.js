@@ -39,6 +39,21 @@ function renderActionConfirmation(display) {
   if (display.outputText) requirementRows.push(`<div class="ar-row" style="color:#e8d8a0;margin-top:4px;">产出：${display.outputText}</div>`);
   resEl.innerHTML = requirementRows.join("");
 
+  // 战斗补给预检提示（非阻断）：在确认/加入队列按钮上方显示弹药/燃料不足警告。
+  const warnEl = document.getElementById("action-modal-warn");
+  if (warnEl) {
+    const sw = display.supplyWarn;
+    const wl = [];
+    if (sw) {
+      if (sw.ammo === "none") wl.push('<div class="aw-row aw-none">⚠ 未装备弹药，战斗将无法开火</div>');
+      else if (sw.ammo === "wrong") wl.push('<div class="aw-row aw-none">⚠ 弹药类型错误，已装填弹药与当前武器不匹配</div>');
+      else if (sw.ammo === "low") wl.push('<div class="aw-row aw-low">⚠ 已装填弹药仅够约 ' + sw.ammoVolleys + ' 次齐射（≤100）</div>');
+      if (sw.fuel === "none") wl.push('<div class="aw-row aw-none">⚠ 燃料库存为 0，武器无法开火</div>');
+      else if (sw.fuel === "low") wl.push('<div class="aw-row aw-low">⚠ 燃料仅够约 ' + sw.fuelRounds + ' 轮满负荷行动（≤100）</div>');
+    }
+    warnEl.innerHTML = wl.join("");
+  }
+
   _actionConfirmDisplay = display;
   input.value = 1;
   const infinityBtn = document.getElementById("action-batch-infinity");

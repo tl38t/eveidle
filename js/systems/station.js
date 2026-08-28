@@ -816,13 +816,13 @@ function getStationBuildingDisplayState(state, buildingId) {
   var effectText = "";
   if (level >= 1) {
     switch (buildingId) {
-      case "resource_dispatch": effectText = "勘探指令阈值 " + [20,14,10][Math.min(2, level-1)]; break;
-      case "planetary_control": effectText = "自动收取·槽位+" + [0,1,2][Math.min(2, level-1)]; break;
-      case "smelting_refinery": effectText = "自动线 ×" + [1,1.15,1.3][Math.min(2, level-1)].toFixed(2); break;
-      case "equipment_factory": effectText = "自动线 ×" + [1,1.15,1.3][Math.min(2, level-1)].toFixed(2); break;
-      case "booster_factory":   effectText = "自动线 ×" + [1,1.15,1.3][Math.min(2, level-1)].toFixed(2); break;
-      case "archaeology_lab":   effectText = "独特文物 ×" + [1,1.05,1.10,1.15][Math.min(3, level)].toFixed(2); break;
-      case "combat_command":    effectText = "战斗XP ×" + [1,1.10,1.20,1.30][Math.min(3, level)].toFixed(2); break;
+      case "resource_dispatch": effectText = "勘探指令阈值 " + [20,14,10,9,8][Math.min(4, level-1)]; break;
+      case "planetary_control": effectText = "自动收取·槽位+" + [0,1, 2,3,4][Math.min(4, level-1)]; break;
+      case "smelting_refinery": effectText = "自动线 ×" + [1,1.15,1.30,1.40,1.50][Math.min(4, level-1)].toFixed(2); break;
+      case "equipment_factory": effectText = "自动线 ×" + [1,1.15,1.30,1.40,1.50][Math.min(4, level-1)].toFixed(2); break;
+      case "booster_factory":   effectText = "自动线 ×" + [1,1.15,1.30,1.40,1.50][Math.min(4, level-1)].toFixed(2); break;
+      case "archaeology_lab":   effectText = "独特文物 ×" + [1,1.05,1.10,1.15,1.20,1.25][Math.min(5, level)].toFixed(2); break;
+      case "combat_command":    effectText = "战斗XP ×" + [1,1.10,1.20,1.30,1.40,1.50][Math.min(5, level)].toFixed(2); break;
       case "shipyard":          effectText = "速度×" + [1,1.05,1.15,1.30,1.40,1.50][Math.min(5, level)].toFixed(2) + "·节省" + [0,2,4,6,8,10][Math.min(5, level)] + "%"; break;
     }
   } else {
@@ -833,13 +833,13 @@ function getStationBuildingDisplayState(state, buildingId) {
   var nextEffectText = "";
   if (nextLevel && nextLevel >= 1) {
     switch (buildingId) {
-      case "resource_dispatch": nextEffectText = "→ 勘探指令阈值 " + [20,14,10][Math.min(2, nextLevel-1)]; break;
-      case "planetary_control": nextEffectText = "→ 槽位+" + [0,1,2][Math.min(2, nextLevel-1)]; break;
-      case "smelting_refinery": nextEffectText = "→ 自动线 ×" + [1,1.15,1.3][Math.min(2, nextLevel-1)].toFixed(2); break;
-      case "equipment_factory": nextEffectText = "→ 自动线 ×" + [1,1.15,1.3][Math.min(2, nextLevel-1)].toFixed(2); break;
-      case "booster_factory":   nextEffectText = "→ 自动线 ×" + [1,1.15,1.3][Math.min(2, nextLevel-1)].toFixed(2); break;
-      case "archaeology_lab":   nextEffectText = "→ 独特文物 ×" + [1,1.05,1.10,1.15][Math.min(3, nextLevel)].toFixed(2); break;
-      case "combat_command":    nextEffectText = "→ 战斗XP ×" + [1,1.10,1.20,1.30][Math.min(3, nextLevel)].toFixed(2); break;
+      case "resource_dispatch": nextEffectText = "→ 勘探指令阈值 " + [20,14,10,9,8][Math.min(4, nextLevel-1)]; break;
+      case "planetary_control": nextEffectText = "→ 槽位+" + [0,1,2,3,4][Math.min(4, nextLevel-1)]; break;
+      case "smelting_refinery": nextEffectText = "→ 自动线 ×" + [1,1.15,1.30,1.40,1.50][Math.min(4, nextLevel-1)].toFixed(2); break;
+      case "equipment_factory": nextEffectText = "→ 自动线 ×" + [1,1.15,1.30,1.40,1.50][Math.min(4, nextLevel-1)].toFixed(2); break;
+      case "booster_factory":   nextEffectText = "→ 自动线 ×" + [1,1.15,1.30,1.40,1.50][Math.min(4, nextLevel-1)].toFixed(2); break;
+      case "archaeology_lab":   nextEffectText = "→ 独特文物 ×" + [1,1.05,1.10,1.15,1.20,1.25][Math.min(5, nextLevel)].toFixed(2); break;
+      case "combat_command":    nextEffectText = "→ 战斗XP ×" + [1,1.10,1.20,1.30,1.40,1.50][Math.min(5, nextLevel)].toFixed(2); break;
       case "shipyard":          nextEffectText = "→ 速度×" + [1,1.05,1.15,1.30,1.40,1.50][Math.min(5, nextLevel)].toFixed(2) + "·节省" + [0,2,4,6,8,10][Math.min(5, nextLevel)] + "%"; break;
     }
   }

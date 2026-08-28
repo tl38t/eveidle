@@ -359,18 +359,9 @@ function resolveArchaeologyCalibration(state, site, tier, rng) {
   return null;
 }
 
-// ---- 脑插能力探测（绝不伪造第二套脑插 ID 体系） ----
-// 中央 IMPLANT_DB 当前无 tier/domain 标签，故默认返回 null → 稀有池清空转星币补偿。
-// 若未来中央系统提供 getArchaeologyImplantPool(state, location)，在此桥接其返回的真实可发放 ID。
-function tryGetArchaeologyImplantDrop(state, location, rng) {
-  if (typeof getArchaeologyImplantPool === "function") {
-    const pool = getArchaeologyImplantPool(state, location) || [];
-    const owned = state.implants || {};
-    const avail = pool.filter(id => !owned[id]);
-    if (avail.length) return avail[Math.floor(rng() * avail.length) % avail.length];
-  }
-  return null;
-}
+// ---- 脑插能力探测（已移除，2026-08-28） ----
+// 旧 tryGetArchaeologyImplantDrop / 稀有池「脑插」类别已整体删除：考古脑插改为
+// archaeology:success 事件监听独立掉落（见 js/data/implants.js），不占稀有池、不再恒折星币补偿。
 
 // 复原强化探针掉落数量（需求 #2）：按地点档位 II/III/IV/V = 2–4 / 4–8 / 2–4 / 5–10；
 // 复原探针扫描 +15/+30 与等级 15/35 沿用数据定义，不在此调整（已与基础 II/III 一致）；
@@ -398,10 +389,6 @@ function grantRareCategory(state, site, location, key, rng, ctx) {
       }, { offline, source:"archaeology" });
     }
   };
-  if (key === "extractorSmall") {
-    if (typeof addExtractor === "function") addExtractor(state, "small", 1);
-    return { kind:"extractorSmall", type:"small" };
-  }
   if (key === "probe") {
     const pool = location.probeBlueprints || [];
     if (!pool.length) return compensate();
@@ -419,12 +406,6 @@ function grantRareCategory(state, site, location, key, rng, ctx) {
     ResourceRegistry.add(state, "special:" + id, 1);
     if (typeof GameEvents !== "undefined") GameEvents.emit("archaeology:credentialGranted", { voucherId:id, siteId:site.id, tier:site.tier }, { offline, source:"archaeology" });
     return { kind:"credential", voucherId:id };
-  }
-  if (key === "implant") {
-    const implantId = tryGetArchaeologyImplantDrop(state, location, rng);
-    if (!implantId) return compensate();
-    if (typeof grantImplant === "function") { grantImplant(state, implantId); return { kind:"implant", implantId }; }
-    return compensate();
   }
   if (key === "equip") {
     const owned = new Set((state.ownedBlueprints || []));
@@ -465,15 +446,14 @@ function resolveArchaeologyRare(state, site, location, tier, fitted, rng, isOffl
     { key:"equip", w: weights.blueprint || 0 },
     { key:"booster", w: weights.booster || 0 },
     { key:"probe", w: weights.probe || 0 },
-    { key:"credential", w: weights.credential || 0 },
-    { key:"implant", w: weights.implant || 0 },
-    { key:"extractorSmall", w: weights.extractorSmall || 0 }
+    { key:"credential", w: weights.credential || 0 }
   ];
   const totalW = cats.reduce((s, c) => s + c.w, 0);
   if (totalW <= 0) return null;
   const roll = rng() * totalW;
-  let acc = 0, chosenKey = "extractorSmall";
+  let acc = 0, chosenKey = null;
   for (const c of cats) { acc += c.w; if (roll < acc) { chosenKey = c.key; break; } }
+  if (!chosenKey) return null;
   return grantRareCategory(state, site, location, chosenKey, rng, { offline });
 }
 
@@ -1065,7 +1045,6 @@ window.resolveArchaeologyCalibration = resolveArchaeologyCalibration;
 window.pickCargoSize = pickCargoSize;
 window.grantRareCategory = grantRareCategory;
 window.rollProbeDropQuantity = rollProbeDropQuantity;
-window.tryGetArchaeologyImplantDrop = tryGetArchaeologyImplantDrop;
 window.getArchaeologyFuelCostState = getArchaeologyFuelCostState;
 // 研究批次 G：考古三个唯一计算层（成功率 / 周期 / 探针累计器）
 window.getArchaeologyFinalSuccessChance = getArchaeologyFinalSuccessChance;

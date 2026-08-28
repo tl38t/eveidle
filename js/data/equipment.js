@@ -7,8 +7,8 @@ const EQUIPMENT_DB = {
   "t2_gas_harvester": { id:"t2_gas_harvester", name:"中型气云采集器",  slot:"high", level:15, time:35, xp:20, cost:{"三钛合金":80,"稳定富勒烯":10}, bonuses:{gasEfficiency:0.15} },
   "raider_mining_laser": { id:"raider_mining_laser", name:"银河联盟采矿激光器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":120,"类银超金属":48}, bonuses:{miningEfficiency:0.20}, faction:"alliance", requiresBlueprint:true },
   "raider_gas_harvester": { id:"raider_gas_harvester", name:"银河联盟气云采集器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":120,"稳定富勒烯":15}, bonuses:{gasEfficiency:0.20}, faction:"alliance", requiresBlueprint:true },
-  "angel_mining_laser": { id:"angel_mining_laser", name:"苍穹劫团联合采矿激光器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"类银超金属":40,"苍穹劫团装备生产许可C":5}, bonuses:{miningEfficiency:0.28}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
-  "angel_gas_harvester": { id:"angel_gas_harvester", name:"苍穹劫团联合气云采集器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"稳定富勒烯":12,"苍穹劫团装备生产许可C":5}, bonuses:{gasEfficiency:0.28}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
+  "angel_mining_laser": { id:"angel_mining_laser", name:"苍穹劫团联合采矿激光器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"类银超金属":40,"苍穹劫团装备生产许可C":5}, bonuses:{miningEfficiency:0.22}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
+  "angel_gas_harvester": { id:"angel_gas_harvester", name:"苍穹劫团联合气云采集器", slot:"high", level:25, time:45, xp:30, cost:{"三钛合金":100,"稳定富勒烯":12,"苍穹劫团装备生产许可C":5}, bonuses:{gasEfficiency:0.22}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
   "t3_mining_laser":  { id:"t3_mining_laser",  name:"重型采矿激光器",  slot:"high", level:35, time:60, xp:40, cost:{"三钛合金":200,"类银超金属":80,"同位聚合体":20,"重金属":10}, bonuses:{miningEfficiency:0.30} },
   "t3_gas_harvester": { id:"t3_gas_harvester", name:"重型气云采集器",  slot:"high", level:35, time:60, xp:40, cost:{"三钛合金":200,"稳定富勒烯":8,"氦同位素":5}, bonuses:{gasEfficiency:0.30} },
   "t4_mining_laser":  { id:"t4_mining_laser",  name:"大型采矿激光器",  slot:"high", level:55, time:100, xp:75, cost:{"三钛合金":500,"超新星诺克石":30,"等离子体":15,"钷":5}, bonuses:{miningEfficiency:0.50} },
@@ -31,9 +31,9 @@ const EQUIPMENT_DB = {
   "t1_drone_control": { id:"t1_drone_control", name:"T1无人机控制单元", slot:"mid", level:1, time:20, xp:10, cost:{"三钛合金":25,"类银超金属":8}, bonuses:{miningEfficiency:0.02,gasEfficiency:0.02} },
   "t2_drone_link": { id:"t2_drone_link", name:"协同无人机指挥链路", slot:"mid", level:15, time:35, xp:20, cost:{"三钛合金":100,"类银超金属":35,"类晶体胶矿":10,"稳定富勒烯":5}, bonuses:{miningEfficiency:0.05,gasEfficiency:0.05} },
   "t3_drone_link": { id:"t3_drone_link", name:"高级无人机指挥链路", slot:"mid", level:35, time:60, xp:40, cost:{"三钛合金":250,"类银超金属":90,"同位聚合体":20,"稳定富勒烯":5,"稀有气体":10}, bonuses:{miningEfficiency:0.10,gasEfficiency:0.10} },
-  "blood_servant_drone_link": { id:"blood_servant_drone_link", name:"赤誓仆从无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":350,"类银超金属":120,"同位聚合体":20,"赤誓教团装备生产许可B":8}, bonuses:{miningEfficiency:0.12,gasEfficiency:0.12}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
-  "blood_servant_drone_link_sacrifice": { id:"blood_servant_drone_link_sacrifice", name:"赤誓仆从无人机指挥链路·献祭型", slot:"mid", level:25, time:45, xp:30, cost:{"三钛合金":150,"类银超金属":50,"赤誓教团装备生产许可C":5,"类晶体胶矿":15}, bonuses:{miningEfficiency:0.13,gasEfficiency:0.13}, faction:"blood", requiresBlueprint:true },
-  "alliance_drone_link": { id:"alliance_drone_link", name:"银河联盟无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":420,"类银超金属":144,"同位聚合体":24}, bonuses:{miningEfficiency:0.12,gasEfficiency:0.12}, faction:"alliance", requiresBlueprint:true },
+  "blood_servant_drone_link": { id:"blood_servant_drone_link", name:"赤誓仆从无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":350,"类银超金属":120,"同位聚合体":20,"赤誓教团装备生产许可B":8}, bonuses:{miningEfficiency:0.13,gasEfficiency:0.13}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
+  "blood_servant_drone_link_sacrifice": { id:"blood_servant_drone_link_sacrifice", name:"赤誓仆从无人机指挥链路·献祭型", slot:"mid", level:25, time:45, xp:30, cost:{"三钛合金":150,"类银超金属":50,"赤誓教团装备生产许可C":5,"类晶体胶矿":15}, bonuses:{miningEfficiency:0.08,gasEfficiency:0.08}, faction:"blood", requiresBlueprint:true },
+  "alliance_drone_link": { id:"alliance_drone_link", name:"银河联盟无人机指挥链路", slot:"mid", level:45, time:75, xp:55, cost:{"三钛合金":420,"类银超金属":144,"同位聚合体":24}, bonuses:{miningEfficiency:0.13,gasEfficiency:0.13}, faction:"alliance", requiresBlueprint:true },
   "t4_drone_link": { id:"t4_drone_link", name:"深空无人机指挥链路", slot:"mid", level:55, time:100, xp:75, cost:{"三钛合金":600,"超新星诺克石":25,"等离子体":15,"钷":5}, bonuses:{miningEfficiency:0.16,gasEfficiency:0.16} },
   "t5_drone_core": { id:"t5_drone_core", shipTypes:["industrial_capital"], name:"旗舰无人机指挥核心", slot:"mid", level:80, time:180, xp:130, cost:{"三钛合金":1400,"超噬矿":20,"铷":8,"超纯聚合气体":2,"磁场聚合物":30}, bonuses:{miningEfficiency:0.25,gasEfficiency:0.25} },
   "shield_ext_small":  { id:"shield_ext_small",  name:"小型护盾扩展",   slot:"mid", level:1, time:15, xp:6,  cost:{"三钛合金":50,"类银超金属":20},  bonuses:{shieldCapacity:50} },
@@ -54,19 +54,19 @@ const EQUIPMENT_DB = {
   "t2_mining_booster": { id:"t2_mining_booster", name:"中型采矿提升器", slot:"low", level:15,time:35, xp:20, cost:{"三钛合金":160,"类银超金属":60,"类晶体胶矿":15}, bonuses:{miningLaserEfficiency:0.30} },
   "t3_mining_booster": { id:"t3_mining_booster", name:"重型采矿提升器", slot:"low", level:35,time:60, xp:40, cost:{"三钛合金":400,"类银超金属":150,"同位聚合体":30,"重金属":15}, bonuses:{miningLaserEfficiency:0.50} },
   "t4_mining_booster": { id:"t4_mining_booster", name:"大型采矿提升器", slot:"low", level:55,time:110,xp:80, cost:{"三钛合金":900,"超新星诺克石":45,"等离子体":25,"钷":5}, bonuses:{miningLaserEfficiency:0.70} },
-  "sansha_mineral_assimilation": { id:"sansha_mineral_assimilation", name:"矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1100,"超新星诺克石":50,"铷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{miningLaserEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "sansha_mineral_assimilation": { id:"sansha_mineral_assimilation", name:"矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1100,"超新星诺克石":50,"钷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{miningLaserEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
   // ===== 新增星带势力生产装备（材料按档位分级：D=1.0-0.8 / C=0.7-0.5 / B=0.4-0.3 / A=0.2-0.1） =====
-  "angel_mining_laser_outpost": { id:"angel_mining_laser_outpost", name:"苍穹劫团采矿激光器·前哨型", slot:"high", level:10, time:30, xp:15, cost:{"三钛合金":60,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningEfficiency:0.20}, faction:"angel", requiresBlueprint:true },
-  "angel_mineral_assimilation_outpost": { id:"angel_mineral_assimilation_outpost", name:"苍穹劫团矿物同化注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningLaserEfficiency:0.35}, faction:"angel", requiresBlueprint:true },
-  "angel_drone_link_war": { id:"angel_drone_link_war", name:"苍穹劫团无人机指挥链路·破阵型", slot:"mid", level:65, time:130, xp:95, cost:{"三钛合金":900,"超新星诺克石":35,"铷":2,"等离子体":20,"苍穹劫团装备生产许可A":10}, bonuses:{miningEfficiency:0.30,gasEfficiency:0.30,miningLaserEfficiency:0.30,gasLaserEfficiency:0.30}, faction:"angel", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "angel_mining_laser_outpost": { id:"angel_mining_laser_outpost", name:"苍穹劫团采矿激光器·前哨型", slot:"high", level:10, time:30, xp:15, cost:{"三钛合金":60,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningEfficiency:0.10}, faction:"angel", requiresBlueprint:true },
+  "angel_mineral_assimilation_outpost": { id:"angel_mineral_assimilation_outpost", name:"苍穹劫团矿物同化注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningLaserEfficiency:0.20}, faction:"angel", requiresBlueprint:true },
+  "angel_drone_link_war": { id:"angel_drone_link_war", name:"苍穹劫团无人机指挥链路·破阵型", slot:"mid", level:65, time:130, xp:95, cost:{"三钛合金":900,"超新星诺克石":35,"钷":2,"等离子体":20,"苍穹劫团装备生产许可A":10}, bonuses:{miningEfficiency:0.20,gasEfficiency:0.20,miningLaserEfficiency:0.80,gasLaserEfficiency:0.80}, faction:"angel", shipTypes:["industrial_capital"], requiresBlueprint:true },
   "blood_drone_link_sacrifice": { id:"blood_drone_link_sacrifice", name:"赤誓仆从无人机指挥链路·献祭型", slot:"mid", level:25, time:45, xp:30, cost:{"三钛合金":150,"类银超金属":50,"赤誓教团装备生产许可C":5,"类晶体胶矿":15}, bonuses:{miningEfficiency:0.08,gasEfficiency:0.08}, faction:"blood", sourceZoneId:"blood_sacrifice", requiresBlueprint:true },
-  "blood_mining_laser_hunt": { id:"blood_mining_laser_hunt", name:"赤誓采矿激光器·猎杀型", slot:"high", level:45, time:75, xp:55, cost:{"三钛合金":300,"类银超金属":100,"同位聚合体":20,"重金属":15,"赤誓教团装备生产许可B":8}, bonuses:{miningEfficiency:0.60}, faction:"blood", requiresBlueprint:true },
-  "blood_mineral_assimilation_nexus": { id:"blood_mineral_assimilation_nexus", name:"赤誓矿物同化注入器·枢纽型", slot:"low", level:45, time:75, xp:55, cost:{"三钛合金":600,"超新星诺克石":35,"等离子体":15,"赤誓教团装备生产许可B":8,"钷":5}, bonuses:{miningLaserEfficiency:0.85}, faction:"blood", requiresBlueprint:true },
-  "blood_gas_harvester_iron": { id:"blood_gas_harvester_iron", name:"赤誓气云采集器·铁血型", slot:"high", level:65, time:130, xp:95, cost:{"三钛合金":700,"聚合气体":15,"氢同位素":10,"赤誓教团装备生产许可A":10}, bonuses:{gasEfficiency:0.90,gasLaserEfficiency:0.30}, faction:"blood", shipTypes:["industrial_capital"], requiresBlueprint:true },
-  "sansha_mineral_assimilation_node": { id:"sansha_mineral_assimilation_node", name:"矿物同化注入器·节点型", slot:"low", level:25, time:45, xp:30, cost:{"三钛合金":300,"类银超金属":100,"静默集群装备生产许可C":5,"类晶体胶矿":20}, bonuses:{miningLaserEfficiency:0.55}, faction:"sansha", requiresBlueprint:true },
-  "sansha_gas_harvester_nexus": { id:"sansha_gas_harvester_nexus", name:"静默气云采集器·枢纽型", slot:"high", level:45, time:75, xp:55, cost:{"三钛合金":300,"稳定富勒烯":15,"氦同位素":10,"静默集群装备生产许可B":8}, bonuses:{gasEfficiency:0.60}, faction:"sansha", requiresBlueprint:true },
-  "sansha_mining_laser_war": { id:"sansha_mining_laser_war", name:"静默采矿激光器·破阵型", slot:"high", level:65, time:130, xp:95, cost:{"三钛合金":700,"超新星诺克石":40,"铷":4,"等离子体":20,"静默集群装备生产许可A":10}, bonuses:{miningEfficiency:0.90,miningLaserEfficiency:0.30}, faction:"sansha", shipTypes:["industrial_capital"], requiresBlueprint:true },
-  "sansha_drone_link_outpost": { id:"sansha_drone_link_outpost", name:"静默无人机指挥链路·前哨型", slot:"mid", level:10, time:30, xp:15, cost:{"三钛合金":40,"类银超金属":15,"静默集群装备生产许可D":3}, bonuses:{miningEfficiency:0.08,gasEfficiency:0.08}, faction:"sansha", requiresBlueprint:true },
+  "blood_mining_laser_hunt": { id:"blood_mining_laser_hunt", name:"赤誓采矿激光器·猎杀型", slot:"high", level:45, time:75, xp:55, cost:{"三钛合金":300,"类银超金属":100,"同位聚合体":20,"重金属":15,"赤誓教团装备生产许可B":8}, bonuses:{miningEfficiency:0.40}, faction:"blood", requiresBlueprint:true },
+  "blood_mineral_assimilation_nexus": { id:"blood_mineral_assimilation_nexus", name:"赤誓矿物同化注入器·枢纽型", slot:"low", level:45, time:75, xp:55, cost:{"三钛合金":600,"同位聚合体":25,"重金属":15,"赤誓教团装备生产许可B":8,"氦同位素":10}, bonuses:{miningLaserEfficiency:0.60}, faction:"blood", requiresBlueprint:true },
+  "blood_gas_harvester_iron": { id:"blood_gas_harvester_iron", name:"赤誓气云采集器·铁血型", slot:"high", level:65, time:130, xp:95, cost:{"三钛合金":700,"氢同位素":15,"氦同位素":10,"赤誓教团装备生产许可A":10}, bonuses:{gasEfficiency:0.65,gasLaserEfficiency:0.80}, faction:"blood", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "sansha_mineral_assimilation_node": { id:"sansha_mineral_assimilation_node", name:"矿物同化注入器·节点型", slot:"low", level:25, time:45, xp:30, cost:{"三钛合金":300,"类银超金属":100,"静默集群装备生产许可C":5,"类晶体胶矿":20}, bonuses:{miningLaserEfficiency:0.40}, faction:"sansha", requiresBlueprint:true },
+  "sansha_gas_harvester_nexus": { id:"sansha_gas_harvester_nexus", name:"静默气云采集器·枢纽型", slot:"high", level:45, time:75, xp:55, cost:{"三钛合金":300,"稳定富勒烯":15,"氦同位素":10,"静默集群装备生产许可B":8}, bonuses:{gasEfficiency:0.40}, faction:"sansha", requiresBlueprint:true },
+  "sansha_mining_laser_war": { id:"sansha_mining_laser_war", name:"静默采矿激光器·破阵型", slot:"high", level:65, time:130, xp:95, cost:{"三钛合金":700,"超新星诺克石":40,"钷":4,"等离子体":20,"静默集群装备生产许可A":10}, bonuses:{miningEfficiency:0.65,miningLaserEfficiency:0.80}, faction:"sansha", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "sansha_drone_link_outpost": { id:"sansha_drone_link_outpost", name:"静默无人机指挥链路·前哨型", slot:"mid", level:10, time:30, xp:15, cost:{"三钛合金":40,"类银超金属":15,"静默集群装备生产许可D":3}, bonuses:{miningEfficiency:0.04,gasEfficiency:0.04}, faction:"sansha", requiresBlueprint:true },
 
   "alliance_mineral_assimilation": { id:"alliance_mineral_assimilation", name:"银河联盟矿物同化注入器", slot:"low", level:65,time:130,xp:95, cost:{"三钛合金":1320,"超新星诺克石":60,"铷":6,"等离子体":30}, bonuses:{miningLaserEfficiency:0.80}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
   "t5_mining_booster": { id:"t5_mining_booster", shipTypes:["industrial_capital"], name:"旗舰采矿提升核心", slot:"low", level:80,time:200,xp:150,cost:{"三钛合金":2000,"超噬矿":35,"铷":15,"磁场聚合物":50}, bonuses:{miningLaserEfficiency:0.90} },
@@ -77,10 +77,10 @@ const EQUIPMENT_DB = {
   "t4_gas_booster":    { id:"t4_gas_booster",    name:"大型采气提升器",  slot:"low", level:55,time:110, xp:80,  cost:{"三钛合金":900,"等离子体":25,"高纯富勒烯":55,"钷":5}, bonuses:{gasLaserEfficiency:0.70} },
   "t5_gas_booster":    { id:"t5_gas_booster", shipTypes:["industrial_capital"],    name:"旗舰采气提升核心", slot:"low", level:80,time:200, xp:150, cost:{"三钛合金":2000,"超纯聚合气体":35, "铷":15, "磁场聚合物":50}, bonuses:{gasLaserEfficiency:0.90} },
   // ===== 势力采气提升器（对标势力采矿提升器，气体同化注入器系，需蓝图） =====
-  "sansha_gas_assimilation":  { id:"sansha_gas_assimilation",  name:"静默气体同化注入器",       slot:"low", level:65,time:130,xp:95,  cost:{"三钛合金":1100,"聚合气体":50, "铷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{gasLaserEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
-  "angel_gas_assimilation_outpost": { id:"angel_gas_assimilation_outpost", name:"苍穹劫团气体同化注入器·前哨型", slot:"low", level:10,time:30, xp:15, cost:{"三钛合金":80, "稳定富勒烯":20, "苍穹劫团装备生产许可D":3}, bonuses:{gasLaserEfficiency:0.35}, faction:"angel", requiresBlueprint:true },
-  "blood_gas_assimilation_nexus":  { id:"blood_gas_assimilation_nexus",  name:"赤誓气体同化注入器·枢纽型",   slot:"low", level:45,time:75, xp:55,  cost:{"三钛合金":600,"等离子体":15,"赤誓教团装备生产许可B":8,"高纯富勒烯":45,"钷":5}, bonuses:{gasLaserEfficiency:0.85}, faction:"blood", requiresBlueprint:true },
-  "sansha_gas_assimilation_node":  { id:"sansha_gas_assimilation_node",  name:"静默气体同化注入器·节点型",   slot:"low", level:25,time:45, xp:30,  cost:{"三钛合金":300,"稳定富勒烯":100,"静默集群装备生产许可C":5,"类晶体胶矿":20}, bonuses:{gasLaserEfficiency:0.55}, faction:"sansha", requiresBlueprint:true },
+  "sansha_gas_assimilation":  { id:"sansha_gas_assimilation",  name:"静默气体同化注入器",       slot:"low", level:65,time:130,xp:95,  cost:{"三钛合金":1100,"高纯富勒烯":50,"钷":5,"等离子体":25,"静默集群装备生产许可A":10}, bonuses:{gasLaserEfficiency:0.80}, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "angel_gas_assimilation_outpost": { id:"angel_gas_assimilation_outpost", name:"苍穹劫团气体同化注入器·前哨型", slot:"low", level:10,time:30, xp:15, cost:{"三钛合金":80, "稳定富勒烯":20, "苍穹劫团装备生产许可D":3}, bonuses:{gasLaserEfficiency:0.20}, faction:"angel", requiresBlueprint:true },
+  "blood_gas_assimilation_nexus":  { id:"blood_gas_assimilation_nexus",  name:"赤誓气体同化注入器·枢纽型",   slot:"low", level:45,time:75, xp:55,  cost:{"三钛合金":600,"同位聚合体":15,"氦同位素":15,"赤誓教团装备生产许可B":8}, bonuses:{gasLaserEfficiency:0.60}, faction:"blood", requiresBlueprint:true },
+  "sansha_gas_assimilation_node":  { id:"sansha_gas_assimilation_node",  name:"静默气体同化注入器·节点型",   slot:"low", level:25,time:45, xp:30,  cost:{"三钛合金":300,"稳定富勒烯":100,"静默集群装备生产许可C":5,"类晶体胶矿":20}, bonuses:{gasLaserEfficiency:0.40}, faction:"sansha", requiresBlueprint:true },
   "alliance_gas_assimilation": { id:"alliance_gas_assimilation", name:"银河联盟气体同化注入器",     slot:"low", level:65,time:130,xp:95,  cost:{"三钛合金":1320,"聚合气体":60, "铷":6,"等离子体":30}, bonuses:{gasLaserEfficiency:0.80}, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
 
   // ===== 同位素标记打捞臂（对标采矿/采气提升器，低槽 salvageEfficiency；装备即生效提升货柜掉率；
@@ -91,10 +91,10 @@ const EQUIPMENT_DB = {
   "t4_salvage_arm":    { id:"t4_salvage_arm",    name:"大型同位素标记打捞臂", slot:"low", level:55, time:110, xp:80,  cost:{"三钛合金":900,"生物质":45,"等离子体":25,"钷":5}, bonuses:{salvageEfficiency:0.70}, salvageFuelPerKill:8 },
   "t5_salvage_arm":    { id:"t5_salvage_arm", shipTypes:["industrial_capital"],    name:"旗舰同位素标记打捞核心", slot:"low", level:80, time:200, xp:150, cost:{"三钛合金":2000,"磁场聚合物":35, "铷":15, "生物质":50}, bonuses:{salvageEfficiency:0.90}, salvageFuelPerKill:10 },
   // ===== 势力同位素标记打捞臂（对标势力采矿/采气提升器，残骸打捞注入器系，需蓝图；渠道逐件对标矿提孪生件：货柜 S/M/L + LP_STORE + STAR_BELT） =====
-  "sansha_salvage_injector":  { id:"sansha_salvage_injector",  name:"静默残骸打捞注入器",       slot:"low", level:65, time:130, xp:95,  cost:{"三钛合金":1100,"等离子体":50, "铷":5, "生物质":25, "静默集群装备生产许可A":10}, bonuses:{salvageEfficiency:0.80}, salvageFuelPerKill:8, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
-  "angel_salvage_injector_outpost": { id:"angel_salvage_injector_outpost", name:"苍穹劫团残骸打捞注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80, "稀有气体":20, "苍穹劫团装备生产许可D":3}, bonuses:{salvageEfficiency:0.35}, salvageFuelPerKill:2, faction:"angel", requiresBlueprint:true },
-  "blood_salvage_injector_nexus":  { id:"blood_salvage_injector_nexus",  name:"赤誓残骸打捞注入器·枢纽型",   slot:"low", level:45, time:75, xp:55,  cost:{"三钛合金":600,"等离子体":55,"赤誓教团装备生产许可B":8,"钷":5}, bonuses:{salvageEfficiency:0.85}, salvageFuelPerKill:8, faction:"blood", requiresBlueprint:true },
-  "sansha_salvage_injector_node":  { id:"sansha_salvage_injector_node",  name:"静默残骸打捞注入器·节点型",   slot:"low", level:25, time:45, xp:30,  cost:{"三钛合金":300,"同位素":100,"静默集群装备生产许可C":5,"类晶体胶矿":20}, bonuses:{salvageEfficiency:0.55}, salvageFuelPerKill:4, faction:"sansha", requiresBlueprint:true },
+  "sansha_salvage_injector":  { id:"sansha_salvage_injector",  name:"静默残骸打捞注入器",       slot:"low", level:65, time:130, xp:95,  cost:{"三钛合金":1100,"等离子体":50,"钷":5,"生物质":25,"静默集群装备生产许可A":10}, bonuses:{salvageEfficiency:0.80}, salvageFuelPerKill:8, faction:"sansha", sourceZoneId:"sansha_command_matrix", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "angel_salvage_injector_outpost": { id:"angel_salvage_injector_outpost", name:"苍穹劫团残骸打捞注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80, "稀有气体":20, "苍穹劫团装备生产许可D":3}, bonuses:{salvageEfficiency:0.20}, salvageFuelPerKill:2, faction:"angel", requiresBlueprint:true },
+  "blood_salvage_injector_nexus":  { id:"blood_salvage_injector_nexus",  name:"赤誓残骸打捞注入器·枢纽型",   slot:"low", level:45, time:75, xp:55,  cost:{"三钛合金":600,"同位聚合体":25,"重金属":15,"赤誓教团装备生产许可B":8}, bonuses:{salvageEfficiency:0.60}, salvageFuelPerKill:8, faction:"blood", requiresBlueprint:true },
+  "sansha_salvage_injector_node":  { id:"sansha_salvage_injector_node",  name:"静默残骸打捞注入器·节点型",   slot:"low", level:25, time:45, xp:30,  cost:{"三钛合金":300,"同位素":100,"静默集群装备生产许可C":5,"类晶体胶矿":20}, bonuses:{salvageEfficiency:0.40}, salvageFuelPerKill:4, faction:"sansha", requiresBlueprint:true },
   "alliance_salvage_injector": { id:"alliance_salvage_injector", name:"银河联盟残骸打捞注入器",     slot:"low", level:65, time:130, xp:95,  cost:{"三钛合金":1320,"铷":6,"生物质":105}, bonuses:{salvageEfficiency:0.80}, salvageFuelPerKill:8, faction:"alliance", shipTypes:["industrial_capital"], requiresBlueprint:true },
 
   // ===== 考古装备（仅考古舰可装备，不可用于战斗，不可安装战斗装备） =====
@@ -135,8 +135,14 @@ const EQUIPMENT_DB = {
   "t1_large_damage_control": { id:"t1_large_damage_control", name:"大型损伤控制单元 I", slot:"mid", level:55, time:65, xp:50, cost:{"三钛合金":240,"类银超金属":80,"超新星诺克石":10,"同位素":12}, bonuses:{globalDamageReduction:0.12}, combat:{kind:"damageControl",fuelCost:3} },
   "t1_capital_damage_control": { id:"t1_capital_damage_control", name:"旗舰级损伤控制阵列 I", slot:"mid", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":6,"铷":1,"同位素":8,"磁场聚合物":8}, bonuses:{globalDamageReduction:0.18}, shipTypes:["capital","supercapital"], combat:{kind:"damageControl",fuelCost:4} },
   // 势力损伤控制单元：angel 吃死许可B（lv45，对标大型档）/ blood 吃死许可D（lv10，对标前哨型）；蓝图由 sourceZoneId 自动派生
-  "angel_damage_control": { id:"angel_damage_control", name:"苍穹劫团损伤控制单元", slot:"mid", level:45, time:55, xp:45, cost:{"三钛合金":240,"类银超金属":80,"超新星诺克石":10,"苍穹劫团装备生产许可B":5}, bonuses:{globalDamageReduction:0.12,shieldRepair:0.01}, combat:{kind:"damageControl",fuelCost:3}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
+  "angel_damage_control": { id:"angel_damage_control", name:"苍穹劫团损伤控制单元", slot:"mid", level:45, time:55, xp:45, cost:{"三钛合金":240,"类银超金属":80,"同位聚合体":10,"苍穹劫团装备生产许可B":5}, bonuses:{globalDamageReduction:0.12,shieldRepair:0.01}, combat:{kind:"damageControl",fuelCost:3}, faction:"angel", sourceZoneId:"angel_corridor", requiresBlueprint:true },
   "blood_damage_control": { id:"blood_damage_control", name:"赤誓教团损伤控制单元", slot:"mid", level:10, time:22, xp:12, cost:{"三钛合金":60,"类银超金属":20,"赤誓教团装备生产许可B":5}, bonuses:{globalDamageReduction:0.08,armorRepair:0.03}, combat:{kind:"damageControl",fuelCost:1}, faction:"blood", sourceZoneId:"blood_cathedral", requiresBlueprint:true },
+
+  "angel_mining_gas_apoc": { id:"angel_mining_gas_apoc", name:"苍穹劫团采矿·气云采集器·终焉型", slot:"high", level:85, time:200, xp:150, cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"苍穹劫团装备生产许可S":10}, bonuses:{miningEfficiency:1.0,gasEfficiency:1.0}, faction:"angel", sourceZoneId:"angel_outer_reach", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "angel_drone_link_apoc": { id:"angel_drone_link_apoc", name:"苍穹劫团无人机指挥链路·终焉型", slot:"mid", level:85, time:200, xp:150,  cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"苍穹劫团装备生产许可S":10}, bonuses:{miningEfficiency:0.35,gasEfficiency:0.35}, faction:"angel", sourceZoneId:"angel_outer_reach", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "blood_mineral_assimilation_apoc": { id:"blood_mineral_assimilation_apoc", name:"赤誓矿物同化注入器·终焉型", slot:"low", level:85, time:200, xp:150, cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"赤誓教团装备生产许可S":10}, bonuses:{miningLaserEfficiency:1.1}, faction:"blood", sourceZoneId:"blood_outer_reliquary", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "blood_salvage_injector_apoc": { id:"blood_salvage_injector_apoc", name:"赤誓残骸打捞注入器·终焉型", slot:"low", level:85, time:200, xp:150, cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"赤誓教团装备生产许可S":10}, bonuses:{salvageEfficiency:1.1}, salvageFuelPerKill:10, faction:"blood", sourceZoneId:"blood_outer_reliquary", shipTypes:["industrial_capital"], requiresBlueprint:true },
+  "sansha_gas_assimilation_apoc": { id:"sansha_gas_assimilation_apoc", name:"静默集群气体同化注入器·终焉型", slot:"low", level:85, time:200, xp:150, cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"静默集群装备生产许可S":10}, bonuses:{gasLaserEfficiency:1.1}, faction:"sansha", sourceZoneId:"sansha_outer_array", shipTypes:["industrial_capital"], requiresBlueprint:true },
 };
 
 /* ================================================================
@@ -232,16 +238,18 @@ function canFitEquipmentOnShip(equipmentRef, shipConfig) {
 }
 
 const DEATHSPACE_EQUIPMENT_TIERS = Object.freeze({
-  2:{ level:10, effect:1.12, coreRequired:2, materialMultiplier:1.0, time:30, xp:18 },
-  3:{ level:25, effect:1.20, coreRequired:4, materialMultiplier:1.5, time:50, xp:32 },
-  4:{ level:45, effect:1.28, coreRequired:6, materialMultiplier:2.0, time:80, xp:55 },
-  6:{ level:65, effect:1.35, coreRequired:10, materialMultiplier:2.5, time:120, xp:90 }
+  // 设计锚点（2026-08-28 定稿）：标准型 = 通关船级T1 ×1.10；监督者型 = 下一阶船级T1 ×1.03 余量
+  // tier2/3/4/6 通关船级 = 驱逐(small)/巡洋(medium)/战列(large)/旗舰(capital)
+  2:{ level:10, effect:1.10, supEffect:2.05, coreRequired:2, materialMultiplier:1.0, time:30, xp:18 },
+  3:{ level:40, effect:1.10, supEffect:2.05, coreRequired:4, materialMultiplier:1.5, time:50, xp:32 },
+  4:{ level:60, effect:1.10, supEffect:1.30, coreRequired:6, materialMultiplier:2.0, time:80, xp:55 },
+  6:{ level:85, effect:1.10, supEffect:1.35, coreRequired:10, materialMultiplier:2.5, time:120, xp:90 }
 });
 
 const DEATHSPACE_EQUIPMENT_ROUTES = Object.freeze({
-  angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型"}, weapon:{2:"t1_small_laser",3:"t1_small_laser",4:"t1_medium_laser",6:"t1_large_laser"}, repair:{2:"t1_shield_booster",3:"t1_shield_booster",4:"t1_medium_shield_booster",6:"t1_large_shield_booster"} },
-  blood:{ prefix:{2:"科尔普斯试制",3:"科尔普斯强化",4:"科尔普斯精锐",6:"科尔普斯A型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_light_missile_launcher",4:"t1_heavy_missile_launcher",6:"t1_cruise_missile_launcher"}, repair:{2:"t1_armor_repairer",3:"t1_armor_repairer",4:"t1_medium_armor_repairer",6:"t1_large_armor_repairer"} },
-  sansha:{ prefix:{2:"森屠斯试制",3:"森屠斯强化",4:"森屠斯精锐",6:"森屠斯A型"}, weapon:{2:"t1_small_cannon",3:"t1_small_cannon",4:"t1_medium_cannon",6:"t1_large_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_structure_repairer",4:"t1_medium_structure_repairer",6:"t1_large_structure_repairer"} }
+  angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型"}, weapon:{2:"t1_small_laser",3:"t1_medium_laser",4:"t1_large_laser",6:"t1_capital_laser"}, repair:{2:"t1_shield_booster",3:"t1_medium_shield_booster",4:"t1_large_shield_booster",6:"t1_capital_shield_array"} },
+  blood:{ prefix:{2:"科尔普斯试制",3:"科尔普斯强化",4:"科尔普斯精锐",6:"科尔普斯A型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_heavy_missile_launcher",4:"t1_cruise_missile_launcher",6:"t1_capital_missile_array"}, repair:{2:"t1_armor_repairer",3:"t1_medium_armor_repairer",4:"t1_large_armor_repairer",6:"t1_capital_armor_array"} },
+  sansha:{ prefix:{2:"森屠斯试制",3:"森屠斯强化",4:"森屠斯精锐",6:"森屠斯A型"}, weapon:{2:"t1_small_cannon",3:"t1_medium_cannon",4:"t1_large_cannon",6:"t1_capital_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_medium_structure_repairer",4:"t1_large_structure_repairer",6:"t1_capital_structure_array"} }
 });
 
 function scaleDeathspaceEquipmentCost(cost, multiplier) {
@@ -264,11 +272,14 @@ function createDeathspaceEquipmentDefinition(site, role, baseItemId, tierConfig)
     deathspaceTier:site.dedTier, deathspaceVariant:"standard", sourceDeathspaceId:site.id, requiresBlueprint:true,
     inputEquipment:{ itemId:baseItemId, quantity:1 }
   };
+  // 继承基础件的船型门禁（旗舰级 base 限 capital/supercapital）
+  if (Array.isArray(base.shipTypes) && base.shipTypes.length > 0) standard.shipTypes = [...base.shipTypes];
 
   const improvedId = "ded_" + site.faction + "_" + site.dedTier + "_" + role + "_supervisor";
-  const improvedCombat = { ...standardCombat };
-  if (improvedCombat.kind === "weapon") improvedCombat.baseDamage = Math.round(improvedCombat.baseDamage * 1.10);
-  else improvedCombat.amount = Math.round(improvedCombat.amount * 1.10);
+  // 监督者型直接从基础件按 supEffect 缩放（而非在标准型上再乘），确保锚点数值精确
+  const improvedCombat = { ...base.combat };
+  if (improvedCombat.kind === "weapon") improvedCombat.baseDamage = Math.round(improvedCombat.baseDamage * (tierConfig.supEffect || 1.10));
+  else improvedCombat.amount = Math.round(improvedCombat.amount * (tierConfig.supEffect || 1.10));
   const improvedCost = scaleDeathspaceEquipmentCost(base.cost, Math.max(1, tierConfig.materialMultiplier * 0.75));
   improvedCost[site.coreMaterial] = Math.max(1, Math.ceil(tierConfig.coreRequired / 2));
   improvedCost[site.protocolMaterial] = 1;
@@ -279,6 +290,7 @@ function createDeathspaceEquipmentDefinition(site, role, baseItemId, tierConfig)
     deathspaceTier:site.dedTier, deathspaceVariant:"supervisor", sourceDeathspaceId:site.id, requiresBlueprint:true,
     inputEquipment:{ itemId:standardId, quantity:1 }
   };
+  if (standard.shipTypes) improved.shipTypes = [...standard.shipTypes];
   return [standard, improved];
 }
 
@@ -383,7 +395,7 @@ const STAR_BELT_EQUIPMENT_BLUEPRINTS = Object.values(EQUIPMENT_DB)
     const zone = COMBAT_ZONES.find(item => item.id === equipment.sourceZoneId);
     return {
       id:equipment.id + "_blueprint", name:equipment.name + "蓝图", kind:"equipmentBlueprint", equipmentId:equipment.id,
-      lpPrice:getZoneBlueprintPrice(equipment.sourceZoneId, 2), sourceZoneId:equipment.sourceZoneId
+      lpPrice:getZoneBlueprintPrice(equipment.sourceZoneId, 10), sourceZoneId:equipment.sourceZoneId
     };
   });
 
@@ -394,7 +406,7 @@ const DEATHSPACE_EQUIPMENT_BLUEPRINTS = Object.values(EQUIPMENT_DB)
     const fullClearLP = getDeathspaceFullClearLP(equipment.sourceDeathspaceId);
     return {
       id:equipment.id + "_blueprint", name:equipment.name + "蓝图", kind:"equipmentBlueprint", equipmentId:equipment.id,
-      lpPrice:fullClearLP * 2, sourceDeathspaceId:equipment.sourceDeathspaceId, deathspaceTier:equipment.deathspaceTier
+      lpPrice:fullClearLP * 10, sourceDeathspaceId:equipment.sourceDeathspaceId, deathspaceTier:equipment.deathspaceTier
     };
   });
 
@@ -549,7 +561,7 @@ const LP_STORE_EQUIPMENT_IDS = (function () {
 
 function getEquipmentBlueprintSourceHint(recipe) {
   if (!recipe || !recipe.id) return "获取蓝图";
-  if (recipe.sourceDeathspaceId) return "深空清剿获取蓝图";
+  if (recipe.sourceDeathspaceId) return "深空清剿蓝图商店购买";
   if (recipe.category === "archaeology") return "考古勘探获取蓝图";
   if (getCargoBlueprintEquipmentIds().has(recipe.id)) return "开启货柜获取蓝图";
   if (LP_STORE_EQUIPMENT_IDS.has(recipe.id)) return "在蓝图商店用功勋购买蓝图";

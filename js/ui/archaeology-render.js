@@ -8,9 +8,9 @@
 // 焦点元数据（a=星币 b=功勋 c=货柜），与 ARCHAEOLOGY_FOCUS_REGULAR_WEIGHTS 对应
 const ARCH_FOCUS_META = {
   a: { key:"coin",  icon:"◉", title:"星币焦点", sub:"偏向可回收商业物资",
-       yieldTitle:"商业回收物资", yieldCopy:"常规成功偏向可回收为星币的物品；不会改变蓝图、凭证、探针或脑插概率。" },
+       yieldTitle:"商业回收物资", yieldCopy:"常规成功偏向可回收为星币的物品；不会改变蓝图、凭证或探针概率。" },
   b: { key:"merit", icon:"✦", title:"功勋焦点", sub:"偏向军警与银河联盟档案",
-       yieldTitle:"军警功勋档案", yieldCopy:"常规成功偏向可回收为功勋的档案；不会改变蓝图、凭证、探针或脑插概率。" },
+       yieldTitle:"军警功勋档案", yieldCopy:"常规成功偏向可回收为功勋的档案；不会改变蓝图、凭证或探针概率。" },
   c: { key:"cargo", icon:"▣", title:"货柜焦点", sub:"偏向未开启标准货柜",
        yieldTitle:"舰队密封货柜", yieldCopy:"常规成功偏向未开启货柜；货柜内容仍由统一货柜系统决定。" }
 };
@@ -158,7 +158,7 @@ function renderArchaeologyPage(now) {
     const maxW = sizes.reduce((m, c) => Math.max(m, c.weight), 0);
     yieldBody = `<div class="arch-cargo-mix">${sizes.map(c => `<span class="arch-cargo-pill${c.weight === maxW ? " main" : ""}">${c.size}</span>`).join("")}</div>`;
   } else if (selectedFocus === "a" && selectedSite && selectedSite.drops) {
-    yieldBody = `<p class="arch-yield-sub">常规成功 → 星币文物（低 / 中 / 高三档，按档内权重抽取）</p>`;
+    yieldBody = `<p class="arch-yield-sub">常规成功 → 地点专属星币文物</p>`;
   } else if (selectedFocus === "b" && selectedSite && selectedSite.drops) {
     yieldBody = `<p class="arch-yield-sub">常规成功 → 功勋文物（固定功勋值）</p>`;
   }
@@ -251,13 +251,7 @@ function renderArchaeologyPage(now) {
       return rewardRow(isVoucher ? "◆" : "⌁", archBlueprintName(id), isVoucher ? (isOwned ? "已拥有 · 唯一永久回收凭证" : "唯一永久回收凭证") : "直接获得的消耗型探针", isVoucher ? "unique" : "rare", isOwned);
     }).join("");
 
-    // 脑插信号：能力探测（中央目录无专属标签时回退说明）
-    let implantNote = "具体 ID 由中央脑插目录按稀有权重提供";
-    if (typeof tryGetArchaeologyImplantDrop === "function") {
-      const probe = tryGetArchaeologyImplantDrop(gameState, selectedLocation, Math.random);
-      if (probe && probe.implantId) implantNote = "可能掉落：" + probe.implantId;
-    }
-    const implantRows = rewardRow("◇", "脑插信号", implantNote, "", false);
+    // 脑插信号卡（已移除，2026-08-28）：考古脑插走独立事件掉落，改在下方「脑插掉落」表展示真实概率。
 
     // ---- 本地点全部掉落概率预览：常规 / 校准 / 稀有池 完整分解（考古重做后稳定建模） ----
     // source of truth 完全沿用 getArchaeologyDisplayState 的 drops.* 与 preview.*，
@@ -289,23 +283,15 @@ function renderArchaeologyPage(now) {
 
     // 三个掉落分组：普通考古发现 / 稀有考古发现 / 校准基体（UI 一致，均为「小标题 + 表格」）
 
-    // ---- 普通考古发现：星币 + 功勋（受焦点权重影响） ----
+    // ---- 普通考古发现：星币文物（合并独特文物为单一地点专属池，2026-08-28）+ 功勋 + 货柜（受焦点权重影响） ----
     const regularRows = [];
+    const commonItems = (drops.common && drops.common.items) || [];
     const uniqueItems = (drops.unique && drops.unique.items) || [];
-    let uniqueExp = 0;
-    if (uniqueItems.length) {
-      const boost = drops.unique.boostedPct; // %（独立命中）
-      uniqueExp = uniqueItems.reduce((s, it) => s + (boost / 100) * (Number(it.iskValue) || 0), 0);
-    }
-    const coinPct = (focusWeights.coin * 100).toFixed(2);
-    const expText = uniqueExp > 0
-      ? (coinPct + "% + " + Math.round(uniqueExp).toLocaleString() + " 星币/次")
-      : (coinPct + "%");
-    regularRows.push(dropRow(
-      "星币掉落物",
-      "<span style='color:#7e91a3'>×" + uniqueItems.length + " 独特</span> · 星币文物<span style='color:#7e91a3'>（×3 种）</span>",
-      expText, ""
-    ));
+    const allArts = commonItems.concat(uniqueItems);
+    const artListText = allArts.length
+      ? allArts.map(a => a.name + " " + (Number(a.iskValue) || 0).toLocaleString()).join("、")
+      : "星币文物";
+    regularRows.push(dropRow("星币掉落物", artListText, focusWeights.coin * 100, ""));
     if (drops.lp && drops.lp.item) {
       regularRows.push(dropRow(
         "功勋掉落物",
@@ -313,15 +299,19 @@ function renderArchaeologyPage(now) {
         focusWeights.merit * 100, "rare-pool"
       ));
     }
+    // 货柜掉落：尺寸文字可点击（复用战斗/仓库同款物品弹窗查看该尺寸货柜出率）
+    const cargoChips = (selectedLocation.cargoWeights || []).map(c =>
+      `<span class="cargo-chip" data-size="${c.size}">货柜${c.size}</span>`).join("");
+    regularRows.push(dropRow("货柜掉落", "未开启货柜 " + cargoChips, focusWeights.cargo * 100, ""));
 
-    // ---- 稀有考古发现：稀有池（6 类），每次解析独立掷骰，按池内权重分配 ----
+    // ---- 稀有考古发现：稀有池（4 类），每次解析独立掷骰，按池内权重分配 ----
+    // 2026-08-28：extractorSmall（与重复脑插转化定位冲突）与 implant（改为事件独立掉落）
+    // 均已从稀有池移除，数据层 rareWeights 同步删键。
     const rareCats = [
       { key:"blueprint",   name:"技术蓝图" },
       { key:"booster",     name:"增幅剂蓝图" },
       { key:"probe",       name:"复原强化探针" },
-      { key:"credential",  name:"功能凭证" },
-      { key:"implant",     name:"脑插" },
-      { key:"extractorSmall", name:"脑突触加速剂（小型·5分）" }
+      { key:"credential",  name:"功能凭证" }
     ];
     const rareRows = [];
     if (baseRare > 0) {
@@ -366,6 +356,35 @@ function renderArchaeologyPage(now) {
         </table>
       </section>`;
 
+    // ---- 脑插掉落（独立事件路径，2026-08-28）：4 枚采集脑插，每次成功周期独立掷骰 ----
+    // 概率公式与 js/data/implants.js 掉落监听同源：p = 实际周期 / REF_ARCH / INV_ARCH。
+    const archCycleSec = Number(selectedSite.actualCycleTime) || 0;
+    const ARCH_IMPLANT_REF = (typeof IMPLANT_DROP_REF_ARCH !== "undefined") ? IMPLANT_DROP_REF_ARCH : 480;
+    const ARCH_IMPLANT_INV = (typeof IMPLANT_DROP_INV_ARCH !== "undefined") ? IMPLANT_DROP_INV_ARCH : 300;
+    const pImplantPerCycle = archCycleSec > 0 ? (archCycleSec / ARCH_IMPLANT_REF) / ARCH_IMPLANT_INV : 0;
+    const ARCH_IMPLANT_TARGETS = [
+      { id:"implant_collect_mining", name:"采集·采矿增效植入体", desc:"采矿效率 +3%" },
+      { id:"implant_collect_gas",    name:"采集·采气增效植入体", desc:"采气效率 +3%" },
+      { id:"implant_double_mining",  name:"采集·采矿双生植入体", desc:"采矿 4% 概率产出 ×2" },
+      { id:"implant_double_gas",     name:"采集·采气双生植入体", desc:"采气 4% 概率产出 ×2" }
+    ];
+    const implantDropRows = ARCH_IMPLANT_TARGETS.map(t => {
+      const db = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB[t.id]) || {};
+      return dropRow(
+        "脑插掉落",
+        (db.name || t.name) + " <span style='color:#7e91a3'>· " + (db.desc || t.desc) + " · 已拥有则转换为脑突触加速剂（小）</span>",
+        (pImplantPerCycle * 100).toFixed(3) + "%", "implant-row"
+      );
+    }).join("");
+    const implantSection = `
+      <section class="arch-drop-preview">
+        <div class="arch-reward-head" style="margin-top:14px"><b>脑插掉落</b><span>独立事件路径 · 每次成功独立掷骰</span></div>
+        <table class="arch-drop-table">
+          <thead><tr><th>类型</th><th>物品</th><th style="text-align:right">概率</th></tr></thead>
+          <tbody>${implantDropRows}</tbody>
+        </table>
+      </section>`;
+
     const calibSection = `
       <section class="arch-drop-preview">
         <div class="arch-reward-head" style="margin-top:14px"><b>校准基体</b><span>用于改装件制造</span></div>
@@ -373,7 +392,6 @@ function renderArchaeologyPage(now) {
           <thead><tr><th>类型</th><th>物品</th><th style="text-align:right">概率</th></tr></thead>
           <tbody>${calibRows.length ? calibRows.join("") : '<tr><td colspan="3" class="arch-reward-note">本地点无校准材料</td></tr>'}</tbody>
         </table>
-        ${drops.calibration && drops.calibration.item ? `<div class="arch-calib-notes">每周期期望 ${(Number(preview.expectedCalibPerCycle) || 0).toFixed(2)} 个 · 校准材料用于改装件制造。</div>` : ""}
       </section>`;
 
     rareArchive = `
@@ -387,13 +405,10 @@ function renderArchaeologyPage(now) {
           <div class="arch-reward-head"><b>实物发现</b><span>三个焦点概率相同</span></div>
           <div class="arch-reward-list">${itemRows || '<div class="arch-reward-note">本地点无实物掉落</div>'}</div>
         </section>
-        <section class="arch-reward-section">
-          <div class="arch-reward-head"><b>脑插信号</b><span>由中央脑插目录提供</span></div>
-          <div class="arch-reward-list">${implantRows}</div>
-        </section>
       </div>
       ${regularSection}
       ${rareSection}
+      ${implantSection}
       ${calibSection}
     `;
   }
@@ -435,7 +450,7 @@ function renderArchaeologyPage(now) {
       <aside class="arch-col arch-col-locations">
         <p class="arch-eyebrow">勘探区域 · 5</p>
         <div class="arch-location-list">${locationCards}</div>
-        <div class="arch-side-note">地点决定稀有池；星币、功勋、货柜三个焦点只改变常规回报。切换焦点不会改变蓝图、强化探针、凭证或脑插概率。</div>
+        <div class="arch-side-note">地点决定稀有池；星币、功勋、货柜三个焦点只改变常规回报。切换焦点不会改变蓝图、强化探针或凭证概率。脑插为独立事件掉落，同样不受焦点影响。</div>
       </aside>
       <section class="arch-col arch-col-detail">${detailColumn}</section>
       <aside class="arch-col arch-col-loot">${rareArchive}</aside>
@@ -446,6 +461,28 @@ function renderArchaeologyPage(now) {
 
   bindArchaeologyEvents(body);
   if (typeof renderActionBoosterSlots === "function") renderActionBoosterSlots("archaeology", "archaeology-action-booster-slots");
+
+  // 货柜尺寸 chips → 复用战斗/仓库同款物品弹窗（openItemDetailModal 内含货柜出率区 cargoDropRateSectionHTML）。
+  // fromCombat=true 仅用于隐藏开箱操作区：此处是纯出率预览，开箱仍走仓库。
+  body.querySelectorAll(".cargo-chip[data-size]").forEach(ch => {
+    ch.addEventListener("click", () => {
+      if (typeof openItemDetailModal !== "function") return;
+      const size = ch.dataset.size;
+      const sizeLabel = { S:"小型", M:"中型", L:"大型", XL:"超大型" }[size] || size;
+      const owned = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "special:货柜" + size) : 0;
+      openItemDetailModal({
+        id: "special:货柜" + size,
+        icon: "📦",
+        name: sizeLabel + "货柜",
+        category: "special",
+        categoryLabel: "货柜",
+        description: "未开启的标准货柜，开启后按奖池权重发放内容。",
+        quantity: owned,
+        fromCombat: true,
+        source: { pageId: "archaeology", pageLabel: "考古", icon: "fa-solid fa-satellite" }
+      });
+    });
+  });
   return display;
 }
 

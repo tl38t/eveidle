@@ -831,6 +831,13 @@
 .arch-drop-table tr.rare-pool td.arch-pct { color:#b39add; }
 .arch-drop-table tr.calib-row td.arch-pct { color:#d4a843; }
 .arch-drop-table .arch-pct-mob { display:none; }
+/* 货柜尺寸 chips：点击弹出该尺寸货柜出率（复用战斗/仓库物品弹窗） */
+.arch-drop-table .cargo-chip {
+  display:inline-block; padding:1px 7px; margin:1px 4px 1px 0;
+  border:1px solid #80692f; border-radius:4px;
+  color:#d4a843; background:#1a1710; cursor:pointer; font-size:10px;
+}
+.arch-drop-table .cargo-chip:hover { background:#241f13; border-color:#d4a843; }
 .arch-drop-table tr.rare-head td { background:#15121f; color:#a89ccb; }
 .arch-drop-empty { padding:10px; color:#6c7d8f; font-style:italic; font-size:10.5px; }
 @media (max-width:1080px){ .arch-drop-table { font-size:10.5px; } .arch-drop-table th, .arch-drop-table td { padding:5px 6px; } }

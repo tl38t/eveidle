@@ -540,6 +540,16 @@ function updateCombatLiveUI(now) {
   return display;
 }
 
+// 统一展示战斗补给预检提示（非阻断）。ammo/fuel 各为 null|"none"|"low"。
+function showCombatSupplyWarnings(sw) {
+  if (!sw) return;
+  if (sw.ammo === "none") showToast("⚠ 未装备弹药，将无法开火");
+  else if (sw.ammo === "wrong") showToast("⚠ 弹药类型错误，已装填弹药与当前武器不匹配，将无法开火");
+  else if (sw.ammo === "low") showToast("⚠ 已装填弹药仅够约 " + sw.ammoVolleys + " 次齐射（≤100）");
+  if (sw.fuel === "none") showToast("⚠ 燃料库存为 0，武器无法开火");
+  else if (sw.fuel === "low") showToast("⚠ 燃料仅够约 " + sw.fuelRounds + " 轮满负荷行动（≤100）");
+}
+
 function startCombatEncounter() {
   // 新战斗会话：递增 nonce，让敌方 3D 外观重新随机（每场战斗都不同轮廓/细节）
   if (typeof mountCombat3D === "function") {
@@ -563,7 +573,7 @@ function startCombatEncounter() {
       renderCombatPanel(now); return false;
     }
     showToast("已消耗1枚通行密钥，进入" + deathspace.name);
-    if (result.warning === "low-fuel") showToast("⚠ 燃料不足以完成一轮齐射，部分或全部武器将无法开火");
+    showCombatSupplyWarnings(result.supplyWarning);
     renderCombatPanel(now); updateUI(); return true;
   }
   const zone = COMBAT_ZONES.find(item => item.id === combat.zone) || COMBAT_ZONES[0];
@@ -575,7 +585,7 @@ function startCombatEncounter() {
     else if (result.reason === "no-weapons") showToast("当前战斗舰没有安装武器，请先在船坞装配");
     renderCombatPanel(now); return false;
   }
-  if (result.warning === "low-fuel") showToast("⚠ 燃料不足以完成一轮齐射，部分或全部武器将无法开火");
+  showCombatSupplyWarnings(result.supplyWarning);
   renderCombatPanel(now); updateUI(); return true;
 }
 
@@ -601,7 +611,7 @@ function startDeathspaceChainEncounter() {
     renderCombatPanel(now); return;
   }
   showToast("连刷 " + n + " 次：已消耗1枚通行密钥进入" + result.site.name);
-  if (result.warning === "low-fuel") showToast("⚠ 燃料不足以完成一轮齐射");
+  showCombatSupplyWarnings(result.supplyWarning);
   renderCombatPanel(now); updateUI(); return true;
 }
 

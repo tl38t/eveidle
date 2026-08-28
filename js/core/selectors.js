@@ -904,6 +904,9 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.queue = isDS
       ? { skill:"combat", target:display.deathspace.id, label:display.deathspace.name }
       : { skill:"combat", target:display.zone.id, label:display.zone.name };
+    // 队列战斗项：开战前补给预检（非阻断，展示在确认弹窗按钮上方）。
+    const _swZone = isDS ? (COMBAT_ZONES.find(item => item.id === display.deathspace.sourceZoneId) || COMBAT_ZONES[0]) : display.zone;
+    result.supplyWarn = getCombatSupplyWarning(state, _swZone);
   } else {
     result.canOpen = false;
     result.blockedText = "未知行动";
@@ -2445,15 +2448,16 @@ function computeCargoSortMeta(item, componentLevelByName){
       subLabel = grp;
       primary = -(eq ? (eq.level || 0) : 0); // 组内按等级降序（高强化在前、低强化在后）
     } else {
-      subRank = 8; subLabel = "舰船组件";
       const lvl = componentLevelByName ? componentLevelByName[nm] : undefined;
+      subRank = lvl != null ? lvl : 0;                 // 三级按等级拆分：Lv1/15/35/55/80/90 组件
+      subLabel = "Lv" + (lvl != null ? lvl : 0) + " 组件";
       primary = lvl != null ? lvl : 0;
     }
   }
   return { topRank, topLabel, subRank, subLabel, primary, secondary };
 }
 
-function getCargoDisplayState(state, filter) {
+function getCargoDisplayState(state, filter, subFilter) {
   // 脑插子标签：展示全部 6 枚（拥有/未获得），不依赖 ITEM_CATEGORIES 资源池
   if (filter === "implant") {
     const owned = (state && state.implants) || {};
@@ -2687,11 +2691,24 @@ function getCargoDisplayState(state, filter) {
     if (b.quantity !== a.quantity) return b.quantity - a.quantity;
     return (a.name || "") < (b.name || "") ? -1 : 1;
   });
+  // ===== 三级标签：统计当前二级分类下的小类（subLabel）及数量，供仓库三级导航使用 =====
+  const subMap = new Map();
+  for (const it of items) {
+    if (it.subLabel != null) {
+      const cur = subMap.get(it.subLabel) || { label: it.subLabel, rank: it.subRank, count: 0 };
+      cur.count += 1;
+      subMap.set(it.subLabel, cur);
+    }
+  }
+  const subFilters = [...subMap.values()].sort((a, b) => a.rank - b.rank).map(s => ({ label: s.label, count: s.count }));
+  // 三级过滤：仅在仓库 UI 显式传入 subFilter 时按小类收敛（三级条本身仅在相关二级标签展示）
+  const finalItems = subFilter ? items.filter(it => it.subLabel === subFilter) : items;
   return {
     kind:"cargo",
     filter:selectedFilter,
     total:getInventoryTotalFromState(state),
-    items,
+    items:finalItems,
+    subFilters,
     emptyText:selectedFilter === "all"
       ? "仓库空空如也"
       : selectedFilter === "equipment"
@@ -3441,6 +3458,129 @@ function getShipFittingDisplayState(state, shipRef) {
   };
 }
 
+// 估算队列单项的「单次循环耗时（秒）」。生产类可精确（复用 tick 的周期公式），
+// 战斗类仅当前激活项能用实时 refDuration；队列中尚未执行的战斗无法精确预测 → 返回 null（标「取决于战斗」）。
+// 任何 helper 缺失或 target 找不到都降级返回 null，避免崩溃。
+function estimateQueueItemCycleSeconds(state, item) {
+  const skill = item.skill;
+  const target = item.target;
+  try {
+    if (skill === "mining") {
+      const area = (typeof getMiningAreaByName === "function") ? getMiningAreaByName(target) : null;
+      if (!area) return null;
+      const eff = (typeof getMiningEfficiency === "function") ? getMiningEfficiency() : 1;
+      return area.baseTime / (eff || 1);
+    }
+    if (skill === "refining") {
+      const recipe = (typeof SMELTING_RECIPES !== "undefined") ? SMELTING_RECIPES.find(r => r.name === target) : null;
+      if (!recipe) return null;
+      const eff = (typeof getSmeltingDisplayState === "function") ? getSmeltingDisplayState(state, Date.now()).efficiency : 1;
+      return recipe.baseTime / (eff || 1);
+    }
+    if (skill === "gasHarvesting") {
+      // 队列项 target 既可能是区域名（动作弹窗路径 target=display.current.name），也可能是气体名（直接加入路径 target=area.gas），
+      // 与采矿的 getMiningAreaByName 对称，这里同时接受两种匹配，避免遗漏导致 ETA 算不出。
+      const area = (typeof GAS_AREAS !== "undefined") ? GAS_AREAS.find(a => a.name === target || a.gas === target) : null;
+      if (!area) return null;
+  const eff = (typeof getGasEfficiency === "function") ? getGasEfficiency() : 1;
+  return area.baseTime / (eff || 1);
+}
+    if (skill === "equipmentEngineering") {
+      const recipe = (typeof EQUIPMENT_ENGINEERING_RECIPES !== "undefined") ? EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === target || r.name === target) : null;
+      if (!recipe) return null;
+      const eff = (typeof getEquipEngEfficiency === "function") ? getEquipEngEfficiency() : 1;
+      return recipe.time / (eff || 1);
+    }
+    if (skill === "boosterEngineering") {
+      const recipe = (typeof getBoosterRecipe === "function") ? getBoosterRecipe(target) : null;
+      if (!recipe) return null;
+      const level = getEffectiveSkillLevel(state, "boosterEngineering");
+      const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(state, "booster")) : 1;
+      const researchMult = (typeof ResearchState !== "undefined" && ResearchState.getResearchMultiplier)
+        ? ResearchState.getResearchMultiplier(state, ["allMfg", "booster"]) : 1;
+      const eff = (1 + level * 0.02) * stationMult * researchMult;
+      return recipe.time / (eff || 1);
+    }
+    if (skill === "shipEngineering") {
+      const recipe = ((typeof SHIP_COMPONENT_RECIPES !== "undefined") && SHIP_COMPONENT_RECIPES.find(r => r.name === target))
+        || ((typeof SHIP_ASSEMBLY_RECIPES !== "undefined") && SHIP_ASSEMBLY_RECIPES.find(r => r.name === target)) || null;
+      if (!recipe) return null;
+      return (typeof getShipEngineeringCycleDuration === "function") ? getShipEngineeringCycleDuration(state, recipe) : (recipe.time || 1);
+    }
+    if (skill === "archaeology") {
+      const site = (typeof getArchaeologySite === "function") ? getArchaeologySite(target) : null;
+      if (!site) return null;
+      return (typeof getArchaeologyCycleSeconds === "function") ? getArchaeologyCycleSeconds(state, site) : (site.time || 1);
+    }
+    if (skill === "combat") {
+      const ca = state.currentAction || {};
+      if (ca.skill === "combat" && ca.active && (state.combat && state.combat.queueItemId === item.id)) {
+        return Number(ca.refDuration) || null;
+      }
+      return null; // 队列中未执行的战斗：取决于配装/胜负 → 粗略
+    }
+  } catch (e) { return null; }
+  return null;
+}
+
+// 战斗补给预检：开战前提示「无弹药/弹药低」「无燃料/燃料低」。
+// 弹药必须用 getSelectedCount（已装填量），不能用 getAmmoCount（含未装填库存，会高估）。
+// 燃料以「一轮满负荷」= 一次齐射武器燃料 + Σ DCU 燃料（不含维修，保守）为折算单位。
+// 返回 { ammo:null|"none"|"low", ammoVolleys, fuel:null|"none"|"low", fuelRounds }。
+function getCombatSupplyWarning(state, zone) {
+  const weapons = getInstalledCombatWeapons(state);
+  let ammo = null, ammoVolleys = 0;
+  if (weapons.length > 0) {
+    const byType = {};
+    for (const w of weapons) {
+      const t = w.equipment.combat.weaponType;
+      const cost = w.equipment.combat.ammoCost || 1; // 每齐射该武器耗弹（与 combatTick 同口径）
+      if (!byType[t]) byType[t] = { perVolley:0, selected:getSelectedCount(state, t) };
+      byType[t].perVolley += cost;
+    }
+    let minVolleys = Infinity;
+    let correctLoaded = 0;
+    for (const t in byType) {
+      correctLoaded += byType[t].selected;
+      const v = Math.floor(byType[t].selected / byType[t].perVolley);
+      if (v < minVolleys) minVolleys = v;
+    }
+    if (!Number.isFinite(minVolleys)) minVolleys = 0;
+    const totalLoaded = getSelectedTotal(state);
+    const wrongLoaded = Math.max(0, totalLoaded - correctLoaded);
+    // 区分「完全没装填」与「装填的弹药类型与当前武器不匹配」：
+    // 正确弹药为 0 时，若仍有错误类型装填 → "wrong"(弹药类型错误)；否则 "none"(未装备弹药)。
+    // 正确弹药存在但不足(≤100齐射) → "low"(弹药不足)；此时即便也装了错误弹药也只报不足，不报类型错误。
+    if (correctLoaded === 0) {
+      ammo = wrongLoaded > 0 ? "wrong" : "none";
+      ammoVolleys = 0;
+    } else if (minVolleys <= 100) {
+      ammo = "low";
+      ammoVolleys = minVolleys;
+    } else {
+      ammo = null;
+      ammoVolleys = minVolleys;
+    }
+  }
+  const fuelStock = ResourceRegistry.get(state, "consumable:fuel");
+  const volleyFuel = computeVolleyFuel(state, zone);
+  const fuelMult = getCombatFuelMultiplierFromState(state, zone);
+  let dcuFuel = 0;
+  for (const dc of getInstalledCombatDamageControls(state)) {
+    const fc = (dc.equipment.combat && dc.equipment.combat.fuelCost) || 1;
+    dcuFuel += Math.max(1, Math.round(fc * fuelMult));
+  }
+  const perRound = volleyFuel + dcuFuel;
+  let fuel = null, fuelRounds = 0;
+  if (perRound > 0) {
+    const rounds = Math.floor(fuelStock / perRound);
+    if (fuelStock === 0) { fuel = "none"; fuelRounds = 0; }
+    else if (rounds <= 100) { fuel = "low"; fuelRounds = rounds; }
+    else { fuel = null; fuelRounds = rounds; }
+  }
+  return { ammo, ammoVolleys, fuel, fuelRounds };
+}
+
 function getQueueDisplayState(state) {
   const queue = state.queue || { items:[], config:{}, status:{} };
   const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔" };
@@ -3456,26 +3596,47 @@ function getQueueDisplayState(state) {
     count:Array.isArray(queue.items) ? queue.items.length : 0,
     completedCount:Number(queue.status.completedCount) || 0,
     failCount:Number(queue.status.failCount) || 0,
-    items:(queue.items || []).map((item, index) => {
-      const active = Boolean(queue.status.isRunning && queue.status.activeIndex === index);
-      let countText = item.count === -1 ? "无限" : "剩余 ×" + (item.count || 1) + " 次";
-      if (item.skill === "combat" && active && combat.queueItemId === item.id) {
-        if (combat.queueWavesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueWavesTarget - (combat.queueWavesDone || 0)) + " 波";
-        else if (combat.queueEntriesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueEntriesTarget - (combat.queueEntriesDone || 0)) + " 入场";
-      }
-      return {
-        ...item,
-        index,
-        active,
-        icon:icons[item.skill] || "▶",
-        skillLabel:labels[item.skill] || item.skill,
-        label:transformDisplayText(item.label),
-        countText,
-        canMoveUp:index > 0,
-        canMoveDown:index < queue.items.length - 1,
-        canMoveTop:index > 0 && !(queueRunning && index === queue.status.activeIndex)
-      };
-    })
+    items:(() => {
+      const base = (queue.items || []).map((item, index) => {
+        const active = Boolean(queue.status.isRunning && queue.status.activeIndex === index);
+        let countText = item.count === -1 ? "无限" : "剩余 ×" + (item.count || 1) + " 次";
+        if (item.skill === "combat" && active && combat.queueItemId === item.id) {
+          if (combat.queueWavesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueWavesTarget - (combat.queueWavesDone || 0)) + " 波";
+          else if (combat.queueEntriesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueEntriesTarget - (combat.queueEntriesDone || 0)) + " 入场";
+        }
+        return {
+          ...item,
+          index,
+          active,
+          icon:icons[item.skill] || "▶",
+          skillLabel:labels[item.skill] || item.skill,
+          label:transformDisplayText(item.label),
+          countText,
+          cycleSeconds:estimateQueueItemCycleSeconds(state, item),
+          canMoveUp:index > 0,
+          canMoveDown:index < queue.items.length - 1,
+          canMoveTop:index > 0 && !(queueRunning && index === queue.status.activeIndex)
+        };
+      });
+      // 顺序累加：首个战斗项之后的所有项标「大概」（战斗耗时不可精确预测，会污染后续精度）
+      const firstCombat = base.findIndex(it => it.skill === "combat");
+      let acc = 0;
+      const now = Date.now();
+      return base.map((it, i) => {
+        let etaRemaining = null, etaEndAt = null;
+        if (it.count !== -1 && it.cycleSeconds != null) {
+          const rem = (it.count || 1);
+          const elapsed = it.active ? (state.currentAction ? (state.currentAction.progress || 0) : 0) : 0;
+          const total = Math.max(0, rem * it.cycleSeconds - (it.active ? elapsed : 0));
+          etaRemaining = total;
+          etaEndAt = now + (acc + total) * 1000;
+        }
+        const precise = (firstCombat === -1) || (i < firstCombat);
+        const out = { ...it, etaRemainingSeconds:etaRemaining, etaEndAt, precise };
+        if (it.count !== -1 && it.cycleSeconds != null) acc += (it.count || 1) * it.cycleSeconds;
+        return out;
+      });
+    })()
   };
 }
 

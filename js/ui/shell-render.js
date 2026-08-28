@@ -5,6 +5,7 @@
 let currentPage = "skill";
 let currentView = "mining";
 let cargoFilter = "all";
+let cargoSubFilter = null; // 仓库三级导航：当前二级分类下的小类筛选（null=不过滤）
 let blueprintStoreCategory = "ships";
 let orbitShipId = null;
 let orbitSelectedIndex = null;
@@ -158,26 +159,28 @@ function buildCargoCardHTML(item, opts) {
     `</div>`;
 }
 
-function renderCargoPage(filter) {
-  cargoFilter = filter || cargoFilter || "all";
-  const display = getCargoDisplayState(gameState, cargoFilter);
+function renderCargoPage(filter, subFilter) {
+  if (filter !== undefined) cargoFilter = filter;
+  if (subFilter !== undefined) cargoSubFilter = subFilter;
+  const display = getCargoDisplayState(gameState, cargoFilter, cargoSubFilter);
+  // 脏检查：库存/筛选未变化时跳过 DOM 重建，避免每秒刷新导致的 hover 闪烁（同时保持滚动位置）
+  const sig = cargoSig(display);
+  if (sig === _lastCargoSig) return display;
+  _lastCargoSig = sig;
   const capacity = document.getElementById("cargo-capacity-text"); if (capacity) capacity.textContent = display.filter === "implant" ? ("脑插收集：" + display.total + " / " + display.items.length) : display.filter === "trade" ? ("交易品：" + display.total + " 件") : ("物资总量：" + display.total.toLocaleString());
   document.querySelectorAll(".cargo-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.filter === display.filter));
+  renderCargoSubtabs(display);
   const list = document.getElementById("cargo-list"); if (!list) return display;
+  const before = list.scrollTop;
   const isEquipmentTab = display.filter === "equipment";
   const isImplantTab = display.filter === "implant";
   // 装备页由强化网格接管展示，隐藏冗余的原始物品列表，避免同一批装备名字出现两遍
   list.style.display = isEquipmentTab ? "none" : "";
   if (isImplantTab) {
     renderImplantTab(display);
-    renderEquipmentEnhancementList(false);
-    return display;
-  }
-  if (display.filter === "trade") {
+  } else if (display.filter === "trade") {
     renderTradeTab(display);
-    return display;
-  }
-  if (!isEquipmentTab) {
+  } else if (!isEquipmentTab) {
     currentCargoItems = display.items;
     if (!display.items.length) {
       list.innerHTML = `<div class="cargo-empty">${escapeAchievementText(display.emptyText)}</div>`;
@@ -216,7 +219,41 @@ function renderCargoPage(filter) {
     }
   }
   renderEquipmentEnhancementList(isEquipmentTab);
+  if (list) list.scrollTop = before;
   return display;
+}
+
+// 仓库列表签名：filter / 三级筛选 / 三级分类 / 总量 / 可见物品变化才触发 DOM 重建，避免每秒闪烁
+function cargoSig(d) {
+  const items = d.items || [];
+  return d.filter + "|" + (cargoSubFilter || "") + "|" + (d.total || 0) + "|" +
+    JSON.stringify(d.subFilters || []) + "|" +
+    items.map(i => (i.name || "") + ":" + (i.quantity || 0) + ":" + (i.subLabel || "")).join("|");
+}
+let _lastCargoSig = null;
+let cargoSubtabBound = false;
+function renderCargoSubtabs(display) {
+  const el = document.getElementById("cargo-subtabs");
+  if (!el) return;
+  const showSub = display.filter !== "all" && Array.isArray(display.subFilters) && display.subFilters.length > 1;
+  if (!showSub) {
+    if (el.innerHTML) el.innerHTML = "";
+    el.style.display = "none";
+    return;
+  }
+  const html = display.subFilters.map(s =>
+    `<span class="cargo-subtab${s.label === cargoSubFilter ? " active" : ""}" data-sub="${s.label}">${s.label}<span class="cargo-subtab-cnt">${s.count}</span></span>`
+  ).join("");
+  el.innerHTML = html;
+  el.style.display = "";
+  if (!cargoSubtabBound) {
+    el.addEventListener("click", e => {
+      const t = e.target.closest(".cargo-subtab");
+      if (!t) return;
+      renderCargoPage(cargoFilter, t.dataset.sub);
+    });
+    cargoSubtabBound = true;
+  }
 }
 
 /* ---- 仓库「交易品」子标签：聚合货柜战利品 + 考古文物，顶部一键回收 ---- */
@@ -3449,7 +3486,15 @@ function renderQueuePanel() {
   const status = document.getElementById("queue-status-text"); if (status) status.textContent = display.statusText;
   const loop = document.getElementById("queue-loop-check"); if (loop) loop.checked = display.loopMode;
   const list = document.getElementById("queue-list"); if (!list) return display;
-  list.innerHTML = display.items.length ? display.items.map(item => `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${item.skillLabel} · ${item.label}</span><span class="qi-detail">${item.countText}</span></div><span class="qi-status ${item.active ? "running" : "waiting"}">${item.active ? "执行中" : "等待"}</span><div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div></div>`).join("") : '<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>';
+  list.innerHTML = display.items.length ? display.items.map(item => {
+    let etaHtml;
+    if (item.etaEndAt != null) {
+      etaHtml = `<span class="qi-eta${item.precise ? "" : " rough"}">${item.precise ? "预计 " : "预计≈ "}${escapeAchievementText(formatResearchDateTime(item.etaEndAt))}（${formatResearchDuration(item.etaRemainingSeconds)}后）</span>`;
+    } else {
+      etaHtml = `<span class="qi-eta rough">${item.skill === "combat" && !item.active ? "取决于战斗" : "—"}</span>`;
+    }
+    return `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${item.skillLabel} · ${item.label}</span><span class="qi-detail">${item.countText}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${item.active ? "执行中" : "等待"}</span><div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div></div>`;
+  }).join("") : '<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>';
   return display;
 }
 
@@ -3458,7 +3503,7 @@ function addCurrentToQueue() {
   let target = "", label = "";
   if (skill === "mining") { const area = getMiningArea(); target = area.ore; label = area.ore; }
   else if (skill === "refining") { const recipe = getSmeltingRecipe(); target = recipe.name; label = recipe.consumeOre + "→" + recipe.outputMineral; }
-  else if (skill === "gasHarvesting") { const area = getGasArea(); target = area.gas; label = area.gas; }
+  else if (skill === "gasHarvesting") { const area = getGasArea(); target = area.name; label = area.gas; }
   else if (skill === "shipEngineering") { const recipe = gameState.currentAction.shipSubAction === "assembly" ? getShipAsmRecipe() : getShipCompRecipe(); target = recipe.name; label = recipe.name; }
   else if (skill === "equipmentEngineering") { const recipe = getEquipEngRecipe(); target = recipe.id; label = recipe.name; }
   else if (skill === "archaeology") { const arch = gameState.archaeology; const site = arch.activeSiteId; if (site) { target = site; label = getArchaeologySite(site)?.name || site; } }
@@ -3984,7 +4029,7 @@ function installTutorialWidgetListeners() {
     }
     if (item.dataset.skill && gameState.skills[item.dataset.skill]) switchSkill(item.dataset.skill); else if (item.dataset.page) switchPage(item.dataset.page);
   }));
-  document.querySelectorAll(".cargo-tab").forEach(tab => tab.addEventListener("click", () => renderCargoPage(tab.dataset.filter)));
+  document.querySelectorAll(".cargo-tab").forEach(tab => tab.addEventListener("click", () => renderCargoPage(tab.dataset.filter, null)));
   const headerCargoItem = document.querySelector(".topbar .resources .res-item.cargo-item");
   if (headerCargoItem) headerCargoItem.addEventListener("click", () => switchPage("cargo"));
   const blueprintTabs = document.getElementById("blueprintstore-tabs"); if (blueprintTabs) blueprintTabs.addEventListener("click", event => {

@@ -425,6 +425,23 @@ function updateLiveUI(nowArg) {
   if (currentPage === "station" && typeof updateStationLiveUI === "function") updateStationLiveUI(now);
   else if (currentPage === "research" && typeof updateResearchLiveUI === "function") updateResearchLiveUI(now);
   else if (currentPage === "legion" && typeof LegionRender !== "undefined" && LegionRender.renderLegionSection) LegionRender.renderLegionSection(now);
+  // 仓库 / 机库 / 队列：停留页实时刷新；用 withPreservedScroll 避免「回到顶部」(回版头)。
+  else if (currentPage === "cargo") withPreservedScroll(() => renderCargoPage());
+  else if (currentPage === "hangar") withPreservedScroll(() => renderHangarPanel());
+  else if (currentPage === "queue") withPreservedScroll(() => renderQueuePanel());
+}
+
+// 重建面板时保留滚动位置：用于原先「整体 innerHTML 重建」的页面（仓库/机库/队列），
+// 使其停留可见时也能实时刷新，而不会因 DOM 重建导致滚动位置归零（回版头）。
+function withPreservedScroll(repaint) {
+  const ids = ["cargo-list", "hangar-panel", "hangar-ship-grid", "queue-list"];
+  const prev = {};
+  ids.forEach(id => { const e = document.getElementById(id); prev[id] = e ? (parseFloat(e.scrollTop) || 0) : 0; });
+  const de = document.scrollingElement || document.documentElement;
+  const docPrev = de ? (parseFloat(de.scrollTop) || 0) : 0;
+  repaint();
+  ids.forEach(id => { const e = document.getElementById(id); if (e) e.scrollTop = prev[id]; });
+  if (de) de.scrollTop = docPrev;
 }
 
 function refreshVisiblePanelAfterAction() {

@@ -644,12 +644,9 @@ const CombatStateActions = {
     state.combat.lastEnemyVolley = null;
     state.resumeAfterRepair = null; // 手动/自动重新出击：清除待恢复标记
     state._dirty = true;
-    // 问题1：出击前燃料校验（非阻断）。复用 combat.js 的 computeVolleyFuel（与开火结算同公式）。
-    const zoneObj = display.zone;
-    const volleyFuel = computeVolleyFuel(state, zoneObj);
-    const fuelNow = ResourceRegistry.get(state, "consumable:fuel");
-    const warning = (volleyFuel > 0 && fuelNow < volleyFuel) ? "low-fuel" : null;
-    return { changed:true, warning };
+    // 出击前补给预检（非阻断）：弹药/燃料提示由 getCombatSupplyWarning 统一计算。
+    const supplyWarning = getCombatSupplyWarning(state, display.zone);
+    return { changed:true, supplyWarning };
   },
 
   enterDeathspace(state, deathspaceId, enemies, formationId, now) {
@@ -674,7 +671,7 @@ const CombatStateActions = {
       offline:false
     });
     if (!res.changed) return { changed:false, reason:res.reason, ticketMaterial:res.ticketMaterial, requiredCL:res.requiredCL, remaining:res.remaining };
-    return { changed:true, site:res.site, warning:res.warning };
+    return { changed:true, site:res.site, supplyWarning:res.supplyWarning };
   },
 
   // 连续挑战：消耗首枚密钥进入，并设定后续自动续跑次数（N-1）。
@@ -699,7 +696,7 @@ const CombatStateActions = {
       state.combat.deathspaceChainPending = false;
       return { changed:false, reason:res.reason, ticketMaterial:res.ticketMaterial, requiredCL:res.requiredCL, remaining:res.remaining };
     }
-    return { changed:true, site, remaining:state.combat.deathspaceChainRemaining, warning:res.warning };
+    return { changed:true, site, remaining:state.combat.deathspaceChainRemaining, supplyWarning:res.supplyWarning };
   },
 
   cancelDeathspaceChain(state) {
