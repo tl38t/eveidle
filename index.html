@@ -42,6 +42,36 @@
 .shipeng-comp-detail, .shipeng-asm-detail { margin-top:0; }
 @media (min-width: 900px) { .shipeng-split-right { position:sticky; top:8px; } }
 @media (max-width: 900px) { .shipeng-split { flex-direction:column; } .shipeng-split-right { flex:1 1 auto; max-width:none; width:100%; } }
+
+/* 部件车间：与装备制造页 .equipeng-workspace 完全同构的 grid 布局，操作栏跨整宽钉底。
+   ⚠️ 成立的唯一前提：sticky 的最近滚动祖先不能是 overflow:hidden 的 .panel。
+   .panel 默认 overflow:hidden（css/base.css:329），会成为 sticky 的滚动容器却无法滚动，
+   导致 position:sticky 直接退化为 static（表现为"按钮不随行"）。
+   装备工程/考古/增强剂三个面板已在 css/panels.css:2-4 用 overflow:visible 放行，
+   舰船工程面板此前漏了这一条 —— 见下方 #shipeng-panel。 */
+#shipeng-comp-view.shipeng-split { display:grid; grid-template-columns:minmax(0,1fr) minmax(310px,380px); gap:18px; align-items:stretch; }
+#shipeng-comp-view .shipeng-split-right { align-self:start; position:sticky; top:8px; }
+#shipeng-comp-view .shipeng-comp-detail { max-height:calc(100vh - 96px - 76px); overflow:auto; padding:12px; background:#0b1119; border:1px solid #1f2d3c; border-radius:4px; }
+/* sticky 前提：把舰船工程面板的滚动交回 .content（与 #equipeng-panel 对齐） */
+#shipeng-panel { overflow: visible; }
+.shipcomp-actions { grid-column:1 / -1; position:sticky; bottom:0; z-index:5; display:flex; gap:8px; align-items:center; padding:12px 14px; background:#0b1119; border-top:1px solid #1f2d3c; border-radius:0 0 4px 4px; box-shadow:0 -3px 10px rgba(0,0,0,.45); }
+.shipcomp-actions .btn { flex:1; min-height:38px; }
+.shipcomp-actions .btn:disabled { opacity:.35; pointer-events:none; }
+.shipcomp-actions .ship-progress-row { margin-top:0; flex:1; }
+.shipcomp-actions .ship-progress-row canvas { max-width:100%; height:auto; display:block; }
+
+/* 组件库存折叠面板 */
+.shipcomp-inventory-section { margin-top:10px; border:1px solid #1f2d3c; border-radius:4px; background:#0b1119; overflow:hidden; }
+.shipcomp-inv-toggle { width:100%; display:flex; align-items:center; gap:8px; padding:8px 10px; background:#101e2b; border:none; border-bottom:1px solid #1f2d3c; color:#c8d0d8; font-size:12px; cursor:pointer; font-family:inherit; }
+.shipcomp-inv-toggle:hover { background:#142536; }
+.shipcomp-inv-arrow { display:inline-block; transition:transform .2s; color:#7dd3fc; }
+.shipcomp-inventory-section.collapsed .shipcomp-inv-arrow { transform:rotate(-90deg); }
+.shipcomp-inventory-section.collapsed .ship-comp-grid { display:none; }
+.shipcomp-inv-label { font-weight:600; }
+.shipcomp-inv-hint { margin-left:auto; color:#6a7a8e; font-size:11px; }
+#shipeng-comp-view .ship-comp-grid { padding:6px; }
+/* 窄屏回退单列（与 .equipeng-workspace 的 media 规则对齐）；右栏不再钉顶避免遮挡，操作栏仍钉底 */
+@media (max-width:900px) { #shipeng-comp-view.shipeng-split { grid-template-columns:1fr; } #shipeng-comp-view .shipeng-split-right { position:static; max-width:none; } }
 .shipeng-comp-card, .shipeng-asm-card { display:flex; flex-direction:column; gap:5px; padding:10px; border:1px solid #1f2e3d; border-radius:9px; background:#0c151f; text-align:left; cursor:pointer; position:relative; color:#cdd9e5; }
 .shipeng-comp-card:hover, .shipeng-asm-card:hover { border-color:#38bdf8; }
 .shipeng-comp-card.selected, .shipeng-asm-card.selected { border-color:#38bdf8; background:rgba(56,189,248,.12); box-shadow:0 0 0 1px #38bdf8; }
@@ -482,13 +512,24 @@
           <div class="shipeng-split-right">
             <div class="shipeng-comp-detail" id="shipeng-comp-detail">
               <div class="ship-cost-list" id="shipcomp-cost"></div>
-              <div class="ship-comp-grid" id="ship-comp-inventory"></div>
-              <button class="btn primary build-btn" id="btn-start-shipcomp">⚙ 制造</button>
-              <div class="ship-progress-row" id="shipcomp-progress-row" style="display:none;">
-                <span class="sp-label">制造进度</span>
-                <canvas class="skill-canvas-bar" id="bar-shipcomp" width="560" height="24"></canvas>
-                <span class="mp-eta" id="shipcomp-eta">0s</span>
+              <!-- 组件库存：可折叠，标题栏提供折叠/展开切换 -->
+              <div class="shipcomp-inventory-section" id="shipcomp-inventory-section">
+                <button type="button" class="shipcomp-inv-toggle" id="shipcomp-inv-toggle" aria-expanded="true">
+                  <span class="shipcomp-inv-arrow">▾</span>
+                  <span class="shipcomp-inv-label">组件库存</span>
+                  <span class="shipcomp-inv-hint" id="shipcomp-inv-count">0 种</span>
+                </button>
+                <div class="ship-comp-grid" id="ship-comp-inventory"></div>
               </div>
+            </div>
+          </div>
+          <!-- 制造操作栏：与装备制造页 equipeng-detail-actions 对齐，跨整宽钉在视口底部 -->
+          <div class="shipcomp-actions" id="shipcomp-actions">
+            <button class="btn primary build-btn" id="btn-start-shipcomp">⚙ 制造</button>
+            <div class="ship-progress-row" id="shipcomp-progress-row" style="display:none;">
+              <span class="sp-label">制造进度</span>
+              <canvas class="skill-canvas-bar" id="bar-shipcomp" width="560" height="24"></canvas>
+              <span class="mp-eta" id="shipcomp-eta">0s</span>
             </div>
           </div>
         </div>
@@ -1204,7 +1245,7 @@
   <script defer src="./js/data/combat.js?v=5"></script>
   <script defer src="./js/data/cargo.js?v=8"></script>
   <script defer src="./js/data/implants.js?v=3"></script>
-  <script defer src="./js/data/equipment.js?v=19"></script>
+  <script defer src="./js/data/equipment.js?v=20"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=6"></script>
   <script defer src="./js/data/ammunition.js?v=2"></script>
   <script defer src="./js/data/archaeology.js?v=3"></script>
@@ -1224,7 +1265,7 @@
   <script defer src="./js/systems/tutorial.js?v=7"></script>
   <script defer src="./js/systems/manufacturing.js?v=5"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=2"></script>
-  <script defer src="./js/systems/ship-enhancement.js?v=4"></script>
+  <script defer src="./js/systems/ship-enhancement.js?v=5"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=2"></script>
   <script defer src="./js/systems/rigs.js?v=4"></script>
   <script defer src="./js/systems/archaeology.js?v=9"></script>
@@ -1243,8 +1284,8 @@
   <script defer src="./js/core/selectors.js?v=48"></script>
   <script defer src="./js/core/actions.js?v=18"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=48"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=19"></script>
+  <script defer src="./js/ui/shell-render.js?v=49"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=20"></script>
   <script defer src="./js/ui/combat-render.js?v=25"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=10"></script>

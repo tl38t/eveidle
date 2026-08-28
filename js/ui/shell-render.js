@@ -3048,6 +3048,12 @@ function getEnhancementBonusText(enhancement) {
     return "生命 +" + (enhancement.hpBonus * 100).toFixed(1) + "% · 扫描强度 +" + (enhancement.scanBonus * 100).toFixed(1) +
       "%（" + enhancement.scanStrengthBase + "→" + enhancement.scanStrength + "） · 失败反噬减免 " + Math.round(enhancement.failureReduction * 100) + "%（固定）";
   }
+  // 工业支援舰：自身不下矿，工业乘子只作用于船体自带的冶炼能力 —— 不显示采集类文案。
+  if (enhancement.role === "support") {
+    return Number(enhancement.smeltBonus) > 0
+      ? "自身冶炼效率 +" + (enhancement.smeltBonus * 100).toFixed(1) + "%"
+      : "该舰船强化不提供采集加成";
+  }
   const label = enhancement.role === "gas" ? "采气效率" : enhancement.role === "industry-dual" ? "采矿/采气效率" : "采矿效率";
   const smeltText = Number(enhancement.smeltBonus) > 0
     ? " · 自身冶炼效率 +" + (enhancement.smeltBonus * 100).toFixed(1) + "%" : "";
@@ -3061,6 +3067,12 @@ function getEnhancementNextText(enhancement) {
   }
   if (enhancement.role === "archaeology") {
     return "下一级：生命 +" + (enhancement.nextHpGain * 100).toFixed(1) + "% · 扫描强度 +" + (enhancement.nextScanGain * 100).toFixed(1) + "%";
+  }
+  // 工业支援舰：自身不下矿，下一级同样只体现冶炼成长。
+  if (enhancement.role === "support") {
+    return Number(enhancement.nextSmeltGain) > 0
+      ? "下一级：自身冶炼效率 +" + (enhancement.nextSmeltGain * 100).toFixed(1) + "%"
+      : "";
   }
   const smeltText = Number(enhancement.nextSmeltGain) > 0
     ? " · 自身冶炼效率 +" + (enhancement.nextSmeltGain * 100).toFixed(1) + "%" : "";

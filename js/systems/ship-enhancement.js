@@ -52,7 +52,11 @@ function getShipEnhancementRole(shipConfig) {
   const bonuses = shipConfig.bonuses || {};
   if (bonuses.miningLaserEfficiency && bonuses.gasLaserEfficiency) return "industry-dual";
   if (bonuses.gasLaserEfficiency) return "gas";
-  return "mining";
+  if (bonuses.miningLaserEfficiency) return "mining";
+  // 工业支援舰（如驮星级）：船体没有采矿/采气效能，自身不下矿（fleetMiningExcludesSelf），
+  // 强化的工业乘子只对其「船体自带的冶炼能力」生效。
+  // 此前此处无差别兜底为 "mining"，导致 UI 显示「采矿效率 +X%」但该船根本不能采矿 —— 纯误导。
+  return "support";
 }
 
 function getShipEnhancementCost(shipConfig) {
@@ -105,9 +109,18 @@ function getShipEnhancementFailureXp(shipConfig) {
 
 // 冶炼侧舰船强化乘子：仅享受工业强化幅度的 50%（采矿/采气为全幅 industryMultiplier）。
 // 非工业船 industryMultiplier 恒为 1 → 本函数返回 1，对战斗/考古船无副作用。
+//
+// 2026-08-28 定标（冶炼加成收归「船体自带冶炼能力」的舰船）：
+//   仅当船体自带 bonuses.smeltingSpeed > 0（当前为 驮星级 0.25 / 山海级 0.30）时才给冶炼侧加成。
+//   其余工业舰（拓岩/凿岩/岩脊/巨像/捕云/采集者/云舶）即使靠「冶炼速度改装件」取得冶炼岗位资格，
+//   其强化也不再提供冶炼加成 —— 强化冶炼收益只属于真正的冶炼船，避免给纯采集舰喂无效/误导加成。
+//   注：冶炼「岗位资格」仍可由改装件提供（见 selectors.js getShipAssignmentRestriction），
+//       本函数只决定「强化的冶炼乘子」，两者互不冲突：装冶炼 rig 可冶炼，但不吃强化冶炼加成。
 const SHIP_ENHANCE_SMELT_RATIO = 0.5;
 
 function getShipEnhancementSmeltMultiplier(shipConfig, enhancementLevel) {
+  const hullSmelt = Number(shipConfig && shipConfig.bonuses && shipConfig.bonuses.smeltingSpeed) || 0;
+  if (!(hullSmelt > 0)) return 1; // 船体无冶炼能力 → 强化不提供冶炼加成（UI 侧 smeltBonus=0，文案自动不显示）
   const b = getShipEnhancementBonuses(shipConfig, enhancementLevel);
   const full = (b && b.industryMultiplier) || 1;
   return 1 + (full - 1) * SHIP_ENHANCE_SMELT_RATIO;

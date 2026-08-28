@@ -69,6 +69,8 @@ function renderShipCompInventory(display) {
     const btn = item.quantity > 0 ? `<button type="button" class="sci-dismantle" data-comp-dismantle="${item.id}" title="拆解此组件（回收约 ${rate}% 材料）">拆解</button>` : "";
     return `<div class="ship-comp-item"><span class="sci-name">${item.name}</span><span class="sci-qty${item.quantity === 0 ? " zero" : ""}">×${item.quantity}</span>${btn}</div>`;
   }).join("");
+  const countEl = document.getElementById("shipcomp-inv-count");
+  if (countEl) countEl.textContent = (display.componentInventory.length || 0) + " 种";
 }
 
 function renderShipAsmLineTabs(display) {
@@ -488,6 +490,13 @@ function renderEquipEngPage(now) {
   if (compInv) compInv.addEventListener("click", event => {
     const btn = event.target.closest("[data-comp-dismantle]"); if (!btn) return;
     openComponentDismantleModal(btn.dataset.compDismantle);
+  });
+  const invToggle = document.getElementById("shipcomp-inv-toggle");
+  if (invToggle) invToggle.addEventListener("click", () => {
+    const section = document.getElementById("shipcomp-inventory-section");
+    if (!section) return;
+    const collapsed = section.classList.toggle("collapsed");
+    invToggle.setAttribute("aria-expanded", String(!collapsed));
   });
 })();
 
