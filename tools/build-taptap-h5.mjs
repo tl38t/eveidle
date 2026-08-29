@@ -444,9 +444,9 @@ function verifyPackage(buffer, mode, includeProbe) {
 // ---------- 主流程 ----------
 (async () => {
   // 2) 计算 RC 号：release 包每次 +1；selftest/worktree 复用当前号（不 +1）
+  // 注意：release 的 +1 延迟到 selftest 内部构建校验通过后再写入，避免 repo/SHA/selftest 失败时跳号。
   if (MODE === "release") {
     CURRENT_RC = readRcCounter() + 1;
-    writeRcCounter(CURRENT_RC);
   } else {
     CURRENT_RC = readRcCounter();
   }
@@ -491,6 +491,8 @@ function verifyPackage(buffer, mode, includeProbe) {
     }
     fs.writeFileSync(path.join(OUTDIR, "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip"), sBuild.buffer);
     console.log("[SELFTEST] 已生成匹配 selftest 包以供跨模式校验");
+    // release 内部 selftest 通过后再持久化 RC 号，避免前面任何失败导致跳号
+    writeRcCounter(CURRENT_RC);
   }
 
   console.log("\n--- 第一次构建 ---");
