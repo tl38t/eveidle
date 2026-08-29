@@ -346,8 +346,13 @@ function renderEquipEngDetail(display) {
   const lockBanner = (selRecipe && !selRecipe.unlocked)
     ? `<div class="lock-banner"><span class="lb-icon">🔒</span><span>${blueprintLocked ? ("未解锁：需蓝图解锁（" + (typeof getEquipmentBlueprintSourceHint === "function" ? getEquipmentBlueprintSourceHint(selRecipe) : "考古掉落获取蓝图") + "）") : ("未解锁：装备工程 Lv." + selRecipe.level + " 解锁")}</span></div>`
     : "";
+  // 限次抄本（BPC）：显式展示剩余流程数，避免玩家误以为只要有材料就能无限造。
+  const bpcRuns = display.detail.blueprintRuns;
+  const bpcRunsRow = (typeof bpcRuns === "number")
+    ? `<span class="equipeng-bpc-runs">抄本剩余流程 <strong>${bpcRuns.toLocaleString()}</strong> 次 · 流程用尽后抄本消失，需在蓝图商店重新购买</span>`
+    : "";
   body.innerHTML = `${lockBanner}${running}${attributes}<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">${equipmentInputs}${materials}</div></div>
-    <div class="equipeng-detail-section equipeng-manufacture-summary"><span>${getEquipEngOutputHtmlFromDisplay(display)}</span><span>单次耗时 ${display.detail.actualTime.toFixed(1)}s（基础 ${display.detail.baseTime}s）</span><span>装备工程经验 +${display.detail.xp}</span><span>按当前库存最多制造 ${display.detail.maxCycles.toLocaleString()} 次</span></div>`;
+    <div class="equipeng-detail-section equipeng-manufacture-summary"><span>${getEquipEngOutputHtmlFromDisplay(display)}</span><span>单次耗时 ${display.detail.actualTime.toFixed(1)}s（基础 ${display.detail.baseTime}s）</span><span>装备工程经验 +${display.detail.xp}</span><span>按当前库存最多制造 ${display.detail.maxCycles.toLocaleString()} 次</span>${bpcRunsRow}</div>`;
 }
 
 function renderEquipEngPage(now) {

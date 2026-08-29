@@ -175,6 +175,7 @@ const RIG_SERIES = [
   { stackGroup:"rig_archaeology_scan",         label:"扫描强度",   rigCategory:"archaeology", bonusKey:"archaeologyScanPercent",         values:[0.08, 0.11, 0.14, 0.17, 0.20] },
   { stackGroup:"rig_archaeology_fuel",         label:"电容回充",       rigCategory:"capacitor",   bonusKey:"archaeologyFuelEfficiency",       values:[0.04, 0.055, 0.07, 0.085, 0.10] },
   { stackGroup:"rig_archaeology_interference", label:"考古干扰缩短", rigCategory:"archaeology", bonusKey:"archaeologyInterferenceReduction", values:[0.08, 0.11, 0.14, 0.17, 0.20] },
+  { stackGroup:"rig_archaeology_speed",        label:"遗迹速掘",     rigCategory:"archaeology", bonusKey:"archaeologyCycleReductionPercent", values:[0.08, 0.11, 0.14, 0.17, 0.20] },
   // 技能训练（神经训练改装件）：提升本舰被指派工作（采矿/采气/冶炼/考古/战斗）的技能经验获取；
   // 仅作用于该舰指派的工作，不外溢（见 systems/production.js addSkillXpToState 的 job 判定）。
   { stackGroup:"rig_skill_xp", label:"神经训练改装件", rigCategory:"training", bonusKey:"skillXpBonus", values:[0.05, 0.07, 0.09, 0.12, 0.15],
@@ -410,10 +411,22 @@ const DEATHSPACE_EQUIPMENT_BLUEPRINTS = Object.values(EQUIPMENT_DB)
     };
   });
 
+// ---- 势力探针限次抄本（BPC）----
+// 功勋商店按「流程数」购买：1 流程 = 1 生产周期 = 20 枚探针；流程用尽后抄本消失、可再次购买。
+// 显式列出而不从 AMMO_ENG_RECIPES 派生：ammunition.js 在 equipment.js 之后加载，加载期不可引用。
+const FACTION_PROBE_BLUEPRINTS = Object.freeze([
+  { id:"probe_faction_i_blueprint",   name:"苍穹劫团考古探针·掠空型 抄本", recipeId:"probe_faction_i",   perRunPrice:50,  level:1  },
+  { id:"probe_faction_ii_blueprint",  name:"赤誓教团考古探针·血誓型 抄本", recipeId:"probe_faction_ii",  perRunPrice:100, level:35 },
+  { id:"probe_faction_iii_blueprint", name:"静默集群考古探针·同化型 抄本", recipeId:"probe_faction_iii", perRunPrice:150, level:70 }
+]);
+// 单次可购买流程数上限（线性计价：总价 = 每流程单价 × 流程数）
+const PROBE_BLUEPRINT_MAX_RUNS_PER_PURCHASE = 999;
+
 const BLUEPRINT_STORE_CATEGORIES = Object.freeze([
   { id:"ships", name:"舰船蓝图", icon:"fa-solid fa-ship" },
   { id:"alliance", name:"银河联盟装备", icon:"fa-solid fa-star" },
   { id:"faction", name:"势力装备", icon:"fa-solid fa-flag" },
+  { id:"probes", name:"势力探针抄本", icon:"fa-solid fa-crosshairs" },
   { id:"deathspace-2", name:"深空清剿 2/10", icon:"fa-solid fa-dungeon" },
   { id:"deathspace-3", name:"深空清剿 3/10", icon:"fa-solid fa-dungeon" },
   { id:"deathspace-4", name:"深空清剿 4/10", icon:"fa-solid fa-dungeon" },
@@ -430,8 +443,57 @@ function hasEquipmentBlueprintFromState(state, equipmentId) {
 }
 
 function equipmentRecipeHasRequiredBlueprint(state, recipe) {
-  return !recipe || !recipe.requiresBlueprint || hasEquipmentBlueprintFromState(state, recipe.id);
+  return manufacturingRecipeHasBlueprint(state, recipe);
 }
+
+// ---- 限次蓝图抄本（BPC）类别感知门控 ----
+// 考古探针配方（category "probes" + requiresBlueprint）的所有权不在永久 BPO 库 ownedBlueprints，
+// 而在限次抄本库 blueprintCharges["probe:<recipeId>"]（按流程次数计，用完消失、须重买）。
+// 装备自动线（station.js）与手动装备工程/行动槽（actions.js、tick.js）共用以下函数，
+// 故「流程次数门控」只需在此维护一份，两条产线同时生效。
+function isProbeBlueprintRecipe(recipe) {
+  return Boolean(recipe) && recipe.requiresBlueprint === true && recipe.category === "probes";
+}
+
+function getManufacturingBlueprintKey(recipe) {
+  return "probe:" + recipe.id;
+}
+
+// 该制造配方当前是否持有可用蓝图（BPO 永久 / BPC 剩余流程 > 0）
+function manufacturingRecipeHasBlueprint(state, recipe) {
+  if (!recipe || recipe.requiresBlueprint !== true) return true;
+  if (isProbeBlueprintRecipe(recipe)) {
+    return (typeof hasBlueprintAvailable === "function")
+      ? hasBlueprintAvailable(state, getManufacturingBlueprintKey(recipe))
+      : false;
+  }
+  return hasEquipmentBlueprintFromState(state, recipe.id);
+}
+
+// BPC 配方本次结算最多可完成的周期数（受剩余流程次数限制；非 BPC 配方无限制）
+function manufacturingMaxCyclesByBlueprint(state, recipe) {
+  if (!isProbeBlueprintRecipe(recipe)) return Infinity;
+  return (typeof getBlueprintRuns === "function")
+    ? getBlueprintRuns(state, getManufacturingBlueprintKey(recipe)) : 0;
+}
+
+// 预留（消耗）cycles 个流程。非 BPC 配方恒 true。
+// 返回 false = 流程不足，调用方必须零副作用停止（此时尚未扣料、尚未产出，故无需退还逻辑）。
+// 原子性（全有或全无）：可用流程不足时**一个都不扣**——
+// 若直接调用 reserveBlueprintRuns，它会按存量部分预留，失败时白扣掉剩余流程。
+function manufacturingReserveBlueprintRuns(state, recipe, cycles) {
+  if (!isProbeBlueprintRecipe(recipe)) return true;
+  const want = Math.max(1, Math.floor(Number(cycles) || 1));
+  if (typeof getBlueprintRuns !== "function" || typeof reserveBlueprintRuns !== "function") return false;
+  if (getBlueprintRuns(state, getManufacturingBlueprintKey(recipe)) < want) return false;
+  return reserveBlueprintRuns(state, getManufacturingBlueprintKey(recipe), want) === want;
+}
+
+window.isProbeBlueprintRecipe = isProbeBlueprintRecipe;
+window.getManufacturingBlueprintKey = getManufacturingBlueprintKey;
+window.manufacturingRecipeHasBlueprint = manufacturingRecipeHasBlueprint;
+window.manufacturingMaxCyclesByBlueprint = manufacturingMaxCyclesByBlueprint;
+window.manufacturingReserveBlueprintRuns = manufacturingReserveBlueprintRuns;
 
 function getEquipmentBlueprintSourceHint(equipment) {
   if (!equipment) return "蓝图商店购买";
@@ -466,7 +528,15 @@ function getBlueprintStoreCatalogItems() {
       ...item, price:item.lpPrice, currency:"lp",
       category:item.deathspaceTier ? "deathspace-" + item.deathspaceTier : EQUIPMENT_DB[item.equipmentId].faction === "alliance" ? "alliance" : "faction"
     }));
-  return [...shipItems, ...equipmentItems];
+  // 势力探针限次抄本（BPC）：consumable = 可重复购买（流程用尽后允许再买），按流程数线性计价
+  const probeItems = FACTION_PROBE_BLUEPRINTS.map(bp => ({
+    id:bp.id, name:bp.name, kind:"probeBlueprint", blueprintId:"probe:" + bp.recipeId,
+    recipeId:bp.recipeId, level:bp.level,
+    category:"probes", price:bp.perRunPrice, perRunPrice:bp.perRunPrice, currency:"lp",
+    consumable:true, maxRunsPerPurchase:PROBE_BLUEPRINT_MAX_RUNS_PER_PURCHASE,
+    description:"限次抄本（BPC）：按流程数购买，1 流程 = 1 生产周期 = 20 枚；流程用尽后抄本消失，可再次购买。"
+  }));
+  return [...shipItems, ...equipmentItems, ...probeItems];
 }
 
 function getEquipmentRecipeCategory(equipment) {
@@ -596,6 +666,7 @@ const EQUIPMENT_BONUS_NAMES = {
   archaeologyStabilizer:"失败反噬减免",
   archaeologyDecoder:"稀有发现掉率加成",
   archaeologyCycleReduction:"考古周期缩短",
+  archaeologyCycleReductionPercent:"考古周期缩短",
   archaeologyNonFatalAvoid:"非致命免伤",
   archaeologyCopyChance:"货柜额外掉落",
   archaeologyFuelEfficiency:"电容回充",
@@ -608,7 +679,7 @@ const EQUIPMENT_BONUS_NAMES = {
   structureRepair:"结构维修量"
 };
 // rig 百分比减免类：以正数存储，展示为 -X%
-const RIG_REDUCTION_BONUS_KEYS = ["archaeologyInterferenceReduction"];
+const RIG_REDUCTION_BONUS_KEYS = ["archaeologyInterferenceReduction", "archaeologyCycleReductionPercent"];
 const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","structureCapacityPercent","smeltingSpeed","archaeologyScanPercent","archaeologyFuelEfficiency","miningRichChance","gasRichChance"];
 
 const ARCHAEOLOGY_REDUCTION_BONUS_KEYS = ["archaeologyStabilizer", "archaeologyCycleReduction"];

@@ -219,6 +219,10 @@ function gameTick() {
         const eeLvl = getEffectiveSkillLevel(gameState, "equipmentEngineering");
         if (eeLvl < eqQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
         if (!hasEnoughEquipEngInputs(recipe, 1, undefined, eqQuote.cost)) { stopOrSkip(); updateUI(); return; }
+        // 限次抄本（BPC）：探针类配方每完成 1 周期预留 1 流程。
+        // 位置在「材料校验之后、产出提交之前」→ 材料不足时上面已零副作用停止，不会白扣流程（无需退还逻辑）。
+        // 预留与提交相邻，故手动线与自动线不会抢到同一流程（并发双重占用不可能发生）。
+        if (!manufacturingReserveBlueprintRuns(gameState, recipe, 1)) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime;
         deductEquipEngInputs(recipe, 1, undefined, eqQuote.cost);
         applyEquipEngOutput(recipe, 1);

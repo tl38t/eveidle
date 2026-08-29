@@ -33,6 +33,78 @@
   .legion-warn { color: #e8645a; }
   @media (max-width: 640px) { .legion-columns { grid-template-columns: 1fr; } }
 
+  /* ── 军团面板 UI 改版（2026-08-29）：chips 状态条 / stat 卡 / 升级卡 / 加成分组 ── */
+  .lg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+  .lg-chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 11px; border-radius: 11px;
+    background: rgba(40,70,95,.55); border: 1px solid rgba(80,120,160,.35); font-size: 11px; color: #cfe3f5; }
+  .lg-chip i { font-size: 10px; color: #7ab0d8; }
+  .lg-chip b { color: #e8d8a0; font-family: var(--font-ui); }
+  .lg-chip.warn { background: rgba(200,80,64,.16); border-color: rgba(200,90,70,.4); color: #e8766a; }
+  .lg-chip.warn b { color: #ff9a8a; }
+
+  .legion-stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .legion-stat { background: rgba(20,40,55,.55); border: 1px solid rgba(48,66,84,.7); border-radius: 6px; padding: 10px 13px; }
+  .legion-stat .ls-label { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #8a9bb0; }
+  .legion-stat .ls-label i { color: #d4a843; font-size: 11px; width: 14px; text-align: center; }
+  .legion-stat .ls-value { font-size: 21px; font-weight: 700; color: #e8d8a0; font-family: var(--font-ui); line-height: 1.25; }
+  .legion-stat .ls-value small { font-size: 12px; color: #8a9bb0; font-weight: 400; }
+  .legion-stat .ls-sub { font-size: 10px; color: #5a8aaa; }
+
+  .legion-upgrade-card { background: rgba(20,40,55,.55); border: 1px solid rgba(48,66,84,.7); border-radius: 6px; padding: 13px 15px; margin-bottom: 16px; }
+  .legion-upgrade-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .legion-upgrade-head .lu-title { font-size: 15px; font-weight: 700; color: #e8d8a0; }
+  .legion-upgrade-head .lu-arrow { color: #5a8aaa; font-size: 13px; }
+  .legion-upgrade-head .lu-meta { font-size: 11px; color: #8a9bb0; }
+  .legion-upgrade-body { display: grid; grid-template-columns: 1fr auto; gap: 14px; align-items: start; }
+  .lu-cost-title { font-size: 10px; color: #627589; margin-bottom: 5px; }
+  .lu-currency { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 7px; font-size: 12px; color: #9fb4c6; }
+  .lu-currency b { color: #d8e1e9; font-family: var(--font-ui); }
+  .legion-mat-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 3px 16px; }
+  .legion-mat { display: flex; justify-content: space-between; gap: 8px; font-size: 11.5px; color: #8a9bb0; border-bottom: 1px dashed rgba(91,113,132,.18); padding: 2px 0; }
+  .legion-mat b { font-family: var(--font-ui); font-weight: 600; }
+  .legion-mat.enough b { color: #cfe3f5; }
+  .legion-mat.short b { color: #e8766a; }
+  .lu-side { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; min-width: 150px; }
+  .lu-time { font-size: 11px; color: #8a9bb0; }
+  .lu-time b { color: #d4a843; font-family: var(--font-ui); }
+
+  .legion-contrib-title { display: flex; align-items: baseline; gap: 8px; margin: 4px 0 6px; font-size: 13px; color: #d4a843; font-weight: 700; }
+  .legion-contrib-title small { font-size: 10px; color: #5a8aaa; font-weight: 400; }
+  .lc-contrib-group { background: rgba(20,40,55,.4); border: 1px solid rgba(48,66,84,.5); border-radius: 6px; padding: 8px 12px 10px; margin-bottom: 8px; }
+  .lc-contrib-group-title { font-size: 12px; color: #8ab4d6; margin-bottom: 5px; display: flex; align-items: center; gap: 6px; }
+  .lc-contrib-group-title i { color: #7ab0d8; font-size: 11px; }
+  .lc-contrib-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 20px; }
+  .lc-contrib-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 11.5px; color: #9fb4c6; border-bottom: 1px dashed rgba(91,113,132,.15); padding: 3px 0; }
+  .lc-contrib-val { color: #4db8b8; font-weight: 700; font-family: var(--font-ui); }
+  .lc-contrib-zero { color: #5a6a7a; }
+  details.lg-all-zero { margin-top: 6px; font-size: 11px; color: #5a8aaa; }
+  details.lg-all-zero summary { cursor: pointer; }
+  details.lg-all-zero .lc-contrib-grid { margin-top: 6px; }
+  @media (max-width: 640px) {
+    .legion-upgrade-body { grid-template-columns: 1fr; }
+    .lu-side { align-items: stretch; }
+  }
+
+  /* ── 军团详情弹窗（候选人 / 已招募 NPC，2026-08-29）── */
+  .lc-detail-section { margin-bottom: 10px; }
+  .lc-detail-label { font-size: 10px; color: #627589; margin-bottom: 4px; }
+  .lc-detail-line { font-size: 12px; color: #b8c4d2; line-height: 1.6; }
+  .lc-detail-progress { display: flex; flex-direction: column; gap: 3px; margin: 6px 0 10px; }
+  .lc-detail-progress span { font-size: 11px; color: #8a9bb0; }
+  .lc-xp-note { color: #6f8197; font-size: 11px; margin-left: 2px; }
+  .lc-grade-table { display: flex; flex-direction: column; gap: 3px; margin-top: 6px; }
+  .lc-grade-row { display: grid; grid-template-columns: 24px 1fr 1fr auto; gap: 8px; align-items: center; font-size: 11.5px; color: #9fb4c6; padding: 4px 8px; border-radius: 4px; background: rgba(16,30,42,.5); }
+  .lc-grade-row.current { background: rgba(212,168,67,.12); border: 1px solid rgba(212,168,67,.3); color: #e6d3a3; }
+  .lc-grade-tag { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; border-radius: 4px; font-weight: 700; font-size: 11px; color: #0e141d; background: #8fa6bd; padding: 0 4px; }
+  .lc-grade-row.current .lc-grade-tag { background: #d4a843; }
+  .lc-grade-cur { font-size: 10px; color: #d4a843; font-weight: 700; }
+  .legion-modal-title .lc-grade-tag { vertical-align: middle; margin-left: 6px; }
+  /* 军团 NPC 技能档位颜色：D 灰 / C 绿 / B 蓝 / A 紫 */
+  .lc-grade-tag.grade-D { background: #8a9bb0; }
+  .lc-grade-tag.grade-C { background: #5cb85c; }
+  .lc-grade-tag.grade-B { background: #4d9bd4; }
+  .lc-grade-tag.grade-A { background: #9b6ed4; }
+
   /* ── 空间站总览合并折叠面板（统一 ▸/▾ 箭头）── */
   details.station-ops-panel {
     list-style: none;
@@ -293,6 +365,13 @@
   .mat-link:hover { filter: brightness(1.25); border-bottom-style: solid; }
   .mat-link:focus-visible { outline: 1px solid #5da8d4; outline-offset: 1px; }
   .equipeng-manufacture-summary { color: #8193a5; line-height: 1.45; }
+  /* 限次抄本（BPC）剩余流程提示 */
+  .equipeng-bpc-runs {
+    margin-top: 2px; padding: 6px 8px; border-radius: 4px;
+    background: rgba(212,168,67,.10); border: 1px solid rgba(212,168,67,.28);
+    color: #e6d3a3; font-size: 10.5px; line-height: 1.4;
+  }
+  .equipeng-bpc-runs strong { color: #d4a843; font-size: 13px; font-family: var(--font-ui); }
   .equipeng-running-note {
     padding: 8px 10px; color: #70bce6; background: rgba(28,73,101,.3);
     border: 1px solid rgba(81,154,197,.35); border-radius: 4px; font-size: 10px; line-height: 1.4;
@@ -384,7 +463,24 @@
   .blueprint-preview-lines p { margin: 0; color: #8e9ead; font-size: 10px; line-height: 1.45; overflow-wrap: anywhere; }
   .lpstore-card.owned { border-color: #36563d; background: linear-gradient(145deg,#13251b,#0e1813); }
   .lpstore-card.owned .lpstore-card-icon { color: #77c982; border-color: rgba(119,201,130,.25); background: rgba(119,201,130,.08); }
+  .lpstore-buy { white-space: nowrap; }
   .lpstore-buy:disabled { opacity: .35; pointer-events: none; }
+  /* 限次抄本（BPC）购买弹窗 */
+  .probe-bp-modal { width: 420px; }
+  .probe-bp-body { gap: 16px; }
+  .probe-bp-info { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .probe-bp-info > div { background: rgba(16,30,42,0.6); border: 1px solid rgba(48,72,96,0.5); border-radius: 6px; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
+  .probe-bp-info > div > span { color: #6a8aa6; font-size: 11px; }
+  .probe-bp-info > div > strong { color: #d8e1e9; font-size: 15px; font-family: var(--font-ui); }
+  .probe-bp-qty { display: flex; flex-direction: column; gap: 6px; }
+  .probe-bp-qty label { color: #b0c4d8; font-size: 12px; }
+  .probe-bp-runs-input { width: 100%; box-sizing: border-box; background: #111d27; color: #d8e1e9; border: 1px solid #2a4a5e; border-radius: 6px; padding: 8px 10px; font-family: 'Rajdhani', sans-serif; font-size: 16px; text-align: center; }
+  .probe-bp-runs-input:focus { border-color: #5da8d4; box-shadow: 0 0 0 2px rgba(93,168,212,0.18); outline: none; }
+  .probe-bp-qty small { color: #6a8aa6; font-size: 11px; }
+  .probe-bp-total { color: #b0c4d8; font-size: 13px; text-align: right; }
+  .probe-bp-total strong { color: #e8d8a0; font-size: 18px; font-family: var(--font-ui); }
+  .probe-bp-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+  .probe-bp-actions .btn { min-width: 90px; }
   @media (max-width:700px) {
     .lpstore-grid { grid-template-columns:1fr; }
     .lpstore-card { grid-template-columns:48px minmax(0,1fr); }
@@ -926,4 +1022,99 @@
   .arch-run-stats { grid-template-columns:1fr 1fr; }
   .arch-col-loot .arch-reward-grid { display:block; }
   .arch-reward-section + .arch-reward-section { margin-top:15px; }
+}
+
+/* ===== 军团 DLC 弹窗（舰船绑定 / 二次确认） ===== */
+.legion-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  background: rgba(4, 8, 14, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.legion-modal {
+  background: #0d1118;
+  border: 1px solid #2a3545;
+  border-radius: 10px;
+  width: min(520px, 92vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  box-shadow: 0 16px 50px rgba(0,0,0,.55);
+  display: flex;
+  flex-direction: column;
+  color: #c8d8e8;
+}
+.legion-modal-title {
+  padding: 14px 16px;
+  font-size: 15px;
+  font-weight: 700;
+  color: #e8d8a0;
+  border-bottom: 1px solid #2a3545;
+}
+.legion-modal-body {
+  padding: 12px 16px;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.legion-modal-foot {
+  padding: 12px 16px;
+  border-top: 1px solid #2a3545;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.legion-modal .btn-mini {
+  font-size: 12px;
+  padding: 5px 12px;
+}
+.lc-ship-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(42,53,69,.5);
+}
+.lc-ship-row:last-child { border-bottom: none; }
+.lc-ship-name { color: #d6e2ee; font-weight: 600; }
+.lc-ship-tier { color: #8a9bb0; font-size: 12px; }
+.lc-ship-role { color: #8a9bb0; font-size: 11px; }
+.lc-ship-compat { font-size: 12px; font-weight: 600; }
+.lc-ship-disabled { opacity: .5; }
+.lc-ship-disabled .btn { opacity: .4; cursor: not-allowed; pointer-events: none; }
+.legion-ok { color: #7ac87a; }
+.legion-warn { color: #e8645a; }
+/* —— 经验获取规则弹窗 —— */
+.lc-rule-block { margin-bottom: 14px; }
+.lc-rule-block:last-child { margin-bottom: 0; }
+.lc-rule-block h4 { margin: 0 0 6px; font-size: 12px; color: #e8d8a0; font-weight: 700; }
+.lc-rule-block p { margin: 0; font-size: 12px; color: #b8c4d2; line-height: 1.65; }
+.lc-rule-block p b.legion-ok { font-weight: 700; }
+.lc-rule-ships { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 6px; }
+.lc-rule-ship { background: rgba(16,30,42,.55); border: 1px solid #2a3545; border-radius: 6px; padding: 8px; font-size: 11px; color: #9fb4c6; line-height: 1.6; }
+.lc-rule-ship b { font-size: 12px; }
+.lc-rule-ship small { color: #627589; font-size: 10px; }
+.lc-rule-ship.industrial { border-left: 3px solid #7ad0a8; }
+.lc-rule-ship.industrial b { color: #7ad0a8; }
+.lc-rule-ship.combat { border-left: 3px solid #e8645a; }
+.lc-rule-ship.combat b { color: #e8645a; }
+.lc-rule-ship.archaeology { border-left: 3px solid #c49ef0; }
+.lc-rule-ship.archaeology b { color: #c49ef0; }
+@media (max-width: 560px) {
+  .lc-rule-ships { grid-template-columns: 1fr; }
+}
+@media (max-width: 640px) {
+  .lc-ship-row {
+    grid-template-columns: 1fr auto;
+    gap: 6px 10px;
+    padding: 10px 0;
+  }
+  .lc-ship-name { grid-column: 1; }
+  .lc-ship-tier { grid-column: 1; }
+  .lc-ship-role { grid-column: 1; }
+  .lc-ship-compat { grid-column: 1; font-size: 12px; }
+  .lc-ship-row .btn { grid-column: 2; grid-row: 1 / span 4; align-self: center; }
 }

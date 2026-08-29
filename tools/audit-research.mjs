@@ -116,13 +116,13 @@ async function runData() {
   // =========================================================================
   // 1. 数据保真
   // =========================================================================
-  ok(ResearchData.NODES.length === 45, `移植 NODES 数量应为 45（39 主研究 + 6 军团），实际 ${ResearchData.NODES.length}`);
-  ok(frozen.NODES.length === 45, `冻结源 NODES 数量应为 45（39 主研究 + 6 军团），实际 ${frozen.NODES.length}`);
+  ok(ResearchData.NODES.length === 46, `移植 NODES 数量应为 46（40 主研究 + 6 军团），实际 ${ResearchData.NODES.length}`);
+  ok(frozen.NODES.length === 46, `冻结源 NODES 数量应为 46（40 主研究 + 6 军团），实际 ${frozen.NODES.length}`);
   ok(deepEq(ResearchData.WEIGHTS, frozen.WEIGHTS), "WEIGHTS 必须与冻结源逐字段一致");
   ok(deepEq(ResearchData.RANK_MULT, frozen.RANK_MULT), "RANK_MULT 必须与冻结源逐字段一致");
   ok(ResearchData.TARGET_SECONDS === frozen.TARGET_SECONDS, "TARGET_SECONDS 必须与冻结源一致");
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "UNIT 必须与冻结源一致");
-  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 173, `STEP_COUNT 应为 173（155 主研究 + 18 军团），实际 ${ResearchData.STEP_COUNT}`);
+  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 178, `STEP_COUNT 应为 178（160 主研究 + 18 军团），实际 ${ResearchData.STEP_COUNT}`);
 
   const frozenById = new Map();
   for (const n of frozen.NODES) frozenById.set(n.id, n);
@@ -319,10 +319,10 @@ async function runData() {
   // =========================================================================
   const legionNodes = ResearchData.NODES.filter((n) => n.contentPack === "legion");
   ok(legionNodes.length === 6, `军团分支节点必须为 6（4 数值/基础 + 2 协议），实际 ${legionNodes.length}`);
-  ok(ResearchData.NODES.length === 39 + 6, `全量节点须为 39 主研究 + 6 军团 = 45，实际 ${ResearchData.NODES.length}`);
+  ok(ResearchData.NODES.length === 40 + 6, `全量节点须为 40 主研究 + 6 军团 = 46，实际 ${ResearchData.NODES.length}`);
 
   const mainNodes = ResearchData.NODES.filter((n) => n.contentPack !== "legion");
-  ok(mainNodes.length === 39, `主研究节点须保持 39 不变，实际 ${mainNodes.length}`);
+  ok(mainNodes.length === 40, `主研究节点须保持 40 不变，实际 ${mainNodes.length}`);
 
   // 军团节点不得改变 UNIT（BASE_TOTAL_WEIGHT 排除军团节点）
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "军团接入后 UNIT 必须与冻结源（仅主树）一致");

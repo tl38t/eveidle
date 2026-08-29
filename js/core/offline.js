@@ -493,11 +493,15 @@ function getOfflineActionDescriptor() {
     const recipe = getRunningEquipEngRecipe(); if (!recipe) return null;
     return {
       key, duration: recipe.time / getEquipEngEfficiency(),
-      maxCycles: () => !equipmentRecipeHasRequiredBlueprint(gameState, recipe) ? 0 : getEquipEngMaxCycles(recipe),
+      // 限次抄本（BPC）：无蓝图则 0；探针类配方可完成周期数再受剩余流程次数限制（非 BPC 返回 Infinity）。
+      maxCycles: () => !equipmentRecipeHasRequiredBlueprint(gameState, recipe) ? 0
+        : Math.min(getEquipEngMaxCycles(recipe), manufacturingMaxCyclesByBlueprint(gameState, recipe)),
       apply(cycles, gains) {
         const eqQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(gameState, recipe) : { cost: recipe.cost, levelGate: recipe.level };
         const eeLvl = getEffectiveSkillLevel(gameState, "equipmentEngineering");
         if (eeLvl < eqQuote.levelGate) return; // 等级不足：零副作用
+        // 预留抄本流程（BPC）：与产出提交相邻，材料/周期数已由 maxCycles 保证，不会白扣。
+        if (!manufacturingReserveBlueprintRuns(gameState, recipe, cycles)) return;
         deductEquipEngInputs(recipe, cycles, undefined, eqQuote.cost);
         applyEquipEngOutput(recipe, cycles);
         addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;

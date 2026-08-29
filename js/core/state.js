@@ -189,6 +189,11 @@ const gameState = {
   upgrades: {},
   ownedBlueprints: [],
 
+  // 限次蓝图抄本（BPC）剩余流程次数：{ [blueprintId]: runs }。
+  // 与 ownedBlueprints（永久 BPO，string[]）严格分离，互不污染；
+  // 旧档无此字段恒为 {}，无需迁移。语义与 API 见 js/core/blueprint-runs.js。
+  blueprintCharges: {},
+
   // 考古重做：永久回收凭证已改为 special:voucher_<id> 资源（见 ARCHAEOLOGY_VOUCHERS），
   // 不再保留 state.vouchers 第二套布尔账本。旧档由 persistence.migrateArchaeologyState 兼容迁移。
 

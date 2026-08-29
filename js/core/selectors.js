@@ -1489,7 +1489,16 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
       xp:selectedRecipe.xp,
       requiresBlueprint:Boolean(selectedRecipe.requiresBlueprint),
       hasRequiredBlueprint:selectedHasRequiredBlueprint,
-      maxCycles:getEquipmentMaxCyclesFromState(state, selectedRecipe),
+      // 限次抄本（BPC）：可完成周期数同时受材料与剩余流程数约束（非 BPC 返回 Infinity，无影响）。
+      // 与离线结算 offline.js equipmentEngineering.maxCycles 保持一致，避免详情页虚报可制造次数。
+      maxCycles:Math.min(
+        getEquipmentMaxCyclesFromState(state, selectedRecipe),
+        (typeof manufacturingMaxCyclesByBlueprint === "function") ? manufacturingMaxCyclesByBlueprint(state, selectedRecipe) : Infinity
+      ),
+      // 仅 BPC 配方为非 null，供 UI 展示「抄本剩余流程 N」。
+      blueprintRuns:(typeof isProbeBlueprintRecipe === "function" && isProbeBlueprintRecipe(selectedRecipe))
+        ? ((typeof manufacturingMaxCyclesByBlueprint === "function") ? manufacturingMaxCyclesByBlueprint(state, selectedRecipe) : 0)
+        : null,
       runningNote:active ? { name:runningRecipe.name, targetDiffers:runningRecipe.id !== selectedRecipe.id } : null
     },
     canStart:level >= selectedRecipe.level && selectedHasRequiredBlueprint,
@@ -2143,6 +2152,7 @@ function getCombatDropPreview(state, options) {
       sourceZoneId: sourceZone.id, sourceZoneName: sourceZone.name,
       encryptedData: null, zoneSpecialDrops: null, ticketDrop: null, gearDrops: null, stationCoreDrops: null, cargoDrops: null,
       leaderLoot: getDeathspaceLeaderLootConfigs(site),
+      probeDrop: (typeof getDeathspaceProbeDropConfig === "function") ? getDeathspaceProbeDropConfig(site) : null,
       tacticalMaterial: getTacticalMaterialDropConfig(sourceZone)
     };
   }
@@ -3025,20 +3035,35 @@ function getBlueprintStoreDisplayState(state, selectedCategory) {
       count:catalog.filter(item => item.category === category.id).length
     })),
     items:catalog.filter(item => item.category === categoryId).map(item => {
-      const owned = item.kind === "shipBlueprint"
+      // 限次抄本（BPC，势力探针）：不走「已拥有」语义 —— 流程用尽后可反复购买，owned 恒 false。
+      const isProbeBpc = item.kind === "probeBlueprint";
+      const remainingRuns = (isProbeBpc && typeof getBlueprintRuns === "function")
+        ? getBlueprintRuns(state, item.blueprintId) : null;
+      const owned = isProbeBpc ? false : (item.kind === "shipBlueprint"
         ? ownedBlueprints.has(item.shipId)
-        : hasEquipmentBlueprintFromState(state, item.equipmentId);
+        : hasEquipmentBlueprintFromState(state, item.equipmentId));
       const balance = item.currency === "lp" ? lp : isk;
-      const preview = item.kind === "shipBlueprint" ? getBlueprintShipPreview(item) : getBlueprintEquipmentPreview(item);
+      const preview = item.kind === "shipBlueprint" ? getBlueprintShipPreview(item)
+        : isProbeBpc ? {
+            productName:String(item.name || "").replace(/ 抄本$/, ""),
+            previewLines:[
+              { label:"产出", value:"20 枚 / 流程" },
+              { label:"每流程", value:item.perRunPrice + " 功勋" },
+              { label:"剩余流程", value:String(remainingRuns || 0) }
+            ]
+          }
+        : getBlueprintEquipmentPreview(item);
+      const priceText = item.price.toLocaleString() + " " + displayCurrencyName(item.currency === "lp" ? "lp" : "isk", item.currency === "lp" ? "功勋" : "星币");
       return {
         ...item,
         owned,
+        remainingRuns,
         canBuy:!owned && balance >= item.price,
         productName:preview.productName,
         previewLines:preview.previewLines,
-        priceText:item.price.toLocaleString() + " " + displayCurrencyName(item.currency === "lp" ? "lp" : "isk", item.currency === "lp" ? "功勋" : "星币"),
-        purchaseText:owned ? "已拥有" : item.price.toLocaleString() + " " + displayCurrencyName(item.currency === "lp" ? "lp" : "isk", item.currency === "lp" ? "功勋" : "星币") + " 购买",
-        icon:item.kind === "shipBlueprint" ? "fa-solid fa-ship" : item.deathspaceTier ? "fa-solid fa-dungeon" : "fa-solid fa-scroll"
+        priceText:isProbeBpc ? priceText + " / 流程" : priceText,
+        purchaseText:owned ? "已拥有" : (isProbeBpc ? "购买 · " + item.perRunPrice + " 功勋/流程" : priceText + " 购买"),
+        icon:item.kind === "shipBlueprint" ? "fa-solid fa-ship" : isProbeBpc ? "fa-solid fa-crosshairs" : item.deathspaceTier ? "fa-solid fa-dungeon" : "fa-solid fa-scroll"
       };
     })
   };

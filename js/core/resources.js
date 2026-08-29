@@ -321,6 +321,11 @@ if (typeof ARCHAEOLOGY_PROBES !== "undefined") {
 if (typeof ARCHAEOLOGY_RESTORED_PROBES !== "undefined") {
   for (const probe of ARCHAEOLOGY_RESTORED_PROBES) ResourceRegistry.register({ namespace:"probe", key:probe.id, name:probe.name, category:"probes" });
 }
+// 势力增强探针（限次抄本 BPC 制造）。未注册会走 getDefinition 的自动注册兜底：
+// 库存读写仍可用，但 name 退化为原始 id（"faction_probe_i"），导致制造产出文案与仓库显示错名。
+if (typeof ARCHAEOLOGY_FACTION_PROBES !== "undefined") {
+  for (const probe of ARCHAEOLOGY_FACTION_PROBES) ResourceRegistry.register({ namespace:"probe", key:probe.id, name:probe.name, category:"probes" });
+}
 if (typeof ARCHAEOLOGY_ARTIFACTS !== "undefined") {
   for (const artifact of ARCHAEOLOGY_ARTIFACTS) {
     const namespace = artifact.category === "calibration" ? "calibration" : "artifact";

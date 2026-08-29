@@ -13,7 +13,13 @@ const AMMO_ENG_RECIPES = [
   // 考古探针（弹药/燃料类，不可安装、不可强化）
   { id:"probe_core_i",    name:"标准考古探针 I",  level:1,  time:15, xp:20, category:"probes", cost:{"三钛合金":40},                output:{type:"probe", itemId:"core_probe_i",    qty:20} },
   { id:"probe_enhanced_ii",name:"强化考古探针 II", level:35, time:35, xp:80, category:"probes", cost:{"三钛合金":200,"类晶体胶矿":60}, output:{type:"probe", itemId:"enhanced_probe_ii", qty:20} },
-  { id:"probe_deep_iii",  name:"深空考古探针 III", level:70, time:75, xp:200,category:"probes", cost:{"三钛合金":600,"超噬矿":10,"铷":3}, output:{type:"probe", itemId:"deep_probe_iii",  qty:20} }
+  { id:"probe_deep_iii",  name:"深空考古探针 III", level:70, time:75, xp:200,category:"probes", cost:{"三钛合金":600,"超噬矿":10,"铷":3}, output:{type:"probe", itemId:"deep_probe_iii",  qty:20} },
+  // 势力增强探针：需限次抄本 BPC（"probe:<id>"，功勋商店按流程购买）+ 势力制造许可作材料。
+  // 1 流程 = 1 生产周期 = 20 枚；抄本流程耗尽即消失、须重买。语义见 js/core/blueprint-runs.js。
+  // 三档分属三势力，命名与许可同源：I=苍穹劫团(D×1) / II=赤誓教团(C×2) / III=静默集群(B×3)。
+  { id:"probe_faction_i",   name:"苍穹劫团考古探针·掠空型", level:1,  time:15, xp:20,  category:"probes", requiresBlueprint:true, cost:{"三钛合金":40,  "苍穹劫团装备生产许可D":1}, output:{type:"probe", itemId:"faction_probe_i",   qty:20} },
+  { id:"probe_faction_ii",  name:"赤誓教团考古探针·血誓型", level:35, time:35, xp:80,  category:"probes", requiresBlueprint:true, cost:{"三钛合金":200, "类晶体胶矿":60, "赤誓教团装备生产许可C":2}, output:{type:"probe", itemId:"faction_probe_ii",  qty:20} },
+  { id:"probe_faction_iii", name:"静默集群考古探针·同化型", level:70, time:75, xp:200, category:"probes", requiresBlueprint:true, cost:{"三钛合金":600, "超噬矿":10, "铷":3, "静默集群装备生产许可B":3}, output:{type:"probe", itemId:"faction_probe_iii", qty:20} }
 ];
 
 const EQUIPMENT_ENGINEERING_CATEGORIES = [

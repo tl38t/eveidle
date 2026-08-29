@@ -679,6 +679,23 @@ function rollTacticalMaterialDrop(zone, enemyKind, randomFn) {
   };
 }
 
+// 死亡空间：势力考古探针「本体」掉落（与功勋商店的限次抄本 BPC 并行，给不花功勋的 farm 路径）。
+// 与星带各类掉落不同，本函数**普通小怪也会掉**（概率 = 首领的 1/4）：死亡空间每波只有
+// 1 个首领、小怪才是数量主体（tier4/6 为 6 小怪 + 5 首领），只挂首领会让产出过低。
+// 与其余 roll* 一致：纯计算 + ResourceRegistry 直接入池，军团掉落倍率同样生效。
+function rollDeathspaceProbeDrop(deathspace, enemyKind, randomValue, state) {
+  state = state || gameState;
+  if (!deathspace || typeof getDeathspaceProbeDropConfig !== "function") return null;
+  const cfg = getDeathspaceProbeDropConfig(deathspace);
+  if (!cfg) return null;
+  const chance = enemyKind === "boss" ? cfg.bossChance : cfg.normalChance;
+  if (!chance) return null;
+  const roll = randomValue === undefined ? Math.random() : randomValue;
+  if (roll >= chance * getLegionCombatDropMult(state)) return null;
+  ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
+  return { resourceId: cfg.resourceId, material: cfg.material, qty: cfg.qty };
+}
+
 function applyLayeredCombatDamage(hp, amount) {
   let remaining = Math.max(0, amount);
   const dealt = { shield:0, armor:0, structure:0 };
@@ -730,6 +747,9 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   // 故战斗中开箱收益不会污染战斗日志。
   const cargoDrop = deathspace ? null : (typeof rollCargoDrop === "function" ? rollCargoDrop(enemy, zone, roll, state) : null);
   if (cargoDrop) { c.lastLoot += " · 货柜" + cargoDrop.size + " ×1"; addLoot(cargoDrop.itemId || ("cargo:" + cargoDrop.size), 1); }
+  // 势力考古探针本体：仅死亡空间掉落（星带不掉），给不花功勋的 farm 路径。
+  const probeDrop = deathspace ? rollDeathspaceProbeDrop(deathspace, enemy.kind, roll(), state) : null;
+  if (probeDrop) { c.lastLoot += " · " + probeDrop.material + " ×" + probeDrop.qty; addLoot(probeDrop.resourceId, probeDrop.qty); }
   // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。负消耗不进 lootGained。
   const salvageFuelPK = (typeof getSalvageFuelPerKill === "function") ? getSalvageFuelPerKill(state) : 0;
   if (salvageFuelPK > 0) {

@@ -244,10 +244,14 @@ let W, G, LR, LE, els;
   ok(paidNpc.boundShipInstanceId === inst2, "二次确认后更换成功");
   ok(G.inventory.ships.filter(s => s.instanceId === instId).length === 0, "旧舰船被销毁");
 
-  // 解雇后释放位置
+  // 解雇需二次确认 → 确认后释放位置
   const cntBefore = G.legion.npcs.length;
   fire(els.get("legion-npcs"), "click", fakeBtn("data-legion-dismiss", overdue.npcId));
-  ok(G.legion.npcs.length === cntBefore - 1, "解雇后人数位置释放");
+  const dismissModal = findModal(W);
+  ok(dismissModal && /确认解雇/.test(dismissModal.innerHTML), "解雇需要二次确认弹窗");
+  ok(G.legion.npcs.length === cntBefore, "未点确认前不执行解雇");
+  fire(dismissModal, "click", fakeBtn("data-confirm-yes", ""));
+  ok(G.legion.npcs.length === cntBefore - 1, "确认后解雇，人数位置释放");
 
   // 贡献总览：含采矿效率递减最终值 / 无 NPC 显示零贡献
   resetLegion();
@@ -258,7 +262,7 @@ let W, G, LR, LE, els;
   // 无有效 NPC
   resetLegion();
   LR.renderLegionContribution(LP.getLegionContributionSnapshot(G));
-  ok(/暂无军团贡献/.test(els.get("legion-contribution").innerHTML), "无 NPC 时显示暂无军团贡献");
+  ok(/暂无军团加成/.test(els.get("legion-contribution").innerHTML), "无 NPC 时显示暂无军团加成引导文案");
 }
 
 // ===== 场景 19-22：台词不重复 / 重复绑定 / 防重复 / 无报错 =====

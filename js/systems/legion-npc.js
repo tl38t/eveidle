@@ -919,6 +919,8 @@
     getSkillById: getSkillById,
     getPersonalityById: getPersonalityById,
     getSkillShipClass: getSkillShipClass,
+    getShipTypeDef: getShipTypeDef,
+    getShipRole: getShipRole,
     isShipClassCompatible: isShipClassCompatible,
     // 随机（可注入）
     rollNpcSkillGrade: rollNpcSkillGrade,

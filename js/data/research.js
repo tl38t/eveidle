@@ -17,8 +17,13 @@
 // ---------------------------------------------------------------------------
 //  1. 时间模型常量（与冻结源逐字段一致，不得改动数值）
 // ---------------------------------------------------------------------------
-const DAYS = 90;
-const TARGET_SECONDS = DAYS * 24 * 3600; // 7,776,000 秒
+// 主研究树时间预算。原为 90 天，因 UNIT = TARGET_SECONDS / TOTAL_WEIGHT 会随主树节点增加而等比
+// 压缩所有节点时长，新增「深层遗迹解析(deeparch)」后为保持各节点时长与冻结源一致（不压缩），
+// 将预算上调为 90 × (新总权重 3647.4 / 旧总权重 3538.5) ≈ 92.7698 天。
+// 注意：此值为让 UNIT 精确回到 2197.5413310724884 的反解值，勿随意四舍五入（审计容差 1e-9）。
+// 若后续再往主树加节点，需按同样比例再次上调 DAYS，否则新节点仍会等比压缩全树。
+const DAYS = 92.76981771937261;
+const TARGET_SECONDS = DAYS * 24 * 3600; // ≈ 8,015,312 秒（约 92.77 天）
 
 // 等级时间权重（A 组）：I 很快 → V 占据大部分时间
 //   索引 0 = I, 1 = II, 2 = III, 3 = IV, 4 = V
@@ -143,6 +148,13 @@ const NODES = [
     effects: ["考古效率 +1.2%", "考古效率 +2.4%", "考古效率 +3.6%", "考古效率 +4.8%", "考古效率 +6%"],
     bonus: { group: "archEff", perLevel: 1.2, unit: "%" },
     description: "提升考古扫描与分析速度。",
+  },
+  {
+    id: "deeparch", name: "深层遗迹解析", category: "exploration", era: 2, type: "numeric",
+    maxLevel: 5, rank: RANK_MULT.exploration, prerequisites: [{ id: "arch", level: 5 }],
+    effects: ["考古效率 +2.4%", "考古效率 +4.8%", "考古效率 +7.2%", "考古效率 +9.6%", "考古效率 +12%"],
+    bonus: { group: "archEff", perLevel: 2.4, unit: "%" },
+    description: "深层遗迹的高密度数据结构解析，大幅压缩考古周期。",
   },
   {
     id: "signal", name: "信号解析", category: "exploration", era: 1, type: "numeric",

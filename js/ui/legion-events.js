@@ -43,8 +43,29 @@
     _modalEl = overlay;
     overlay.addEventListener("click", function (e) {
       if (e.target === overlay) closeModal();
+      else if (e.target.closest("[data-modal-close]")) closeModal();
     });
     return overlay;
+  }
+
+  // —— 详情弹窗（候选人 / 已招募 NPC）：点击卡片空白处弹出，按钮事件不受影响 ——
+  function openDetailModal(innerHtml) {
+    openModal(innerHtml +
+      '<div class="legion-modal-foot"><button class="btn secondary" data-modal-close>关闭</button></div>');
+  }
+  function openCandidateDetail(candId) {
+    if (!hasLegion() || !LegionRender.buildCandidateDetailHtml) return;
+    var st = getState();
+    var cand = ((st.legion && st.legion.candidates) || []).filter(function (c) { return c.npcId === candId; })[0];
+    if (!cand) { msg("候选人不存在"); return; }
+    openDetailModal(LegionRender.buildCandidateDetailHtml(cand));
+  }
+  function openNpcDetail(npcId) {
+    if (!hasLegion() || !LegionRender.buildNpcDetailHtml) return;
+    var st = getState();
+    var npc = ((st.legion && st.legion.npcs) || []).filter(function (n) { return n.npcId === npcId; })[0];
+    if (!npc) { msg("NPC 不存在"); return; }
+    openDetailModal(LegionRender.buildNpcDetailHtml(npc));
   }
 
   // —— 舰船绑定/更换模态 ——
@@ -64,16 +85,18 @@
 
     var rows = owned.map(function (s) {
       var type = (hasLegion() && LEGION_NPC.getShipTypeDef) ? LEGION_NPC.getShipTypeDef(s.shipId) : null;
-      var cls = (hasLegion() && LEGION_NPC.getSkillShipClass) ? LEGION_NPC.getSkillShipClass(npc.skillId) : null;
-      var compat = (hasLegion() && LEGION_NPC.isShipClassCompatible) ? LEGION_NPC.isShipClassCompatible(npc.skillId, type) : true;
+      var role = (hasLegion() && LEGION_NPC.getShipRole) ? LEGION_NPC.getShipRole(type) : null;
+      var compat = (hasLegion() && LEGION_NPC.isShipClassCompatible) ? LEGION_NPC.isShipClassCompatible(npc.skillId, role) : true;
       var disabled = boundOthers[s.instanceId] ? " disabled" : "";
       var sel = (s.instanceId === npc.boundShipInstanceId) ? " selected" : "";
       var nameFn = (typeof LegionRender !== "undefined" && LegionRender.getShipDisplayName) ? LegionRender.getShipDisplayName : function (id) { return id; };
+      var roleLabel = { industrial: "工业舰", combat: "战斗舰", archaeology: "考古舰" }[role] || "—";
       return '<div class="lc-ship-row' + (disabled ? ' lc-ship-disabled' : '') + '">' +
-        '<span>' + nameFn(s.shipId) + '</span>' +
+        '<span class="lc-ship-name">' + nameFn(s.shipId) + '</span>' +
         '<span class="lc-ship-tier">' + shipTierLabelLocal(type) + '</span>' +
-        '<span class="' + (compat ? 'legion-ok' : 'legion-warn') + '">' + (compat ? '兼容' : '不兼容') + '</span>' +
-        '<button class="btn-mini" data-ship-pick="' + s.instanceId + '"' + disabled + sel + '>' +
+        '<span class="lc-ship-role">适配：' + roleLabel + '</span>' +
+        '<span class="' + (compat ? 'legion-ok' : 'legion-warn') + ' lc-ship-compat">' + (compat ? '适配' : '不适配') + '</span>' +
+        '<button class="btn ' + (sel ? ' secondary' : ' primary') + '" data-ship-pick="' + s.instanceId + '"' + disabled + '>' +
           (sel ? '已绑定' : (disabled ? '已占用' : '选择')) + '</button>' +
         '</div>';
     }).join("");
@@ -81,7 +104,7 @@
     openModal(
       '<div class="legion-modal-title">为 ' + escapeHtml(npc.name) + ' 选择舰船</div>' +
       '<div class="legion-modal-body">' + (rows || '<div class="legion-warn">没有可绑定舰船</div>') + '</div>' +
-      '<div class="legion-modal-foot"><button class="btn-mini" data-ship-cancel>取消</button></div>'
+      '<div class="legion-modal-foot"><button class="btn secondary" data-ship-cancel>取消</button></div>'
     );
 
     _modalEl.addEventListener("click", function (e) {
@@ -127,8 +150,8 @@
         '<div class="legion-modal-title">确认更换舰船</div>' +
         '<div class="legion-modal-body">更换后会<b>销毁</b>原绑定舰船（不返还），确认？</div>' +
         '<div class="legion-modal-foot">' +
-          '<button class="btn-mini" data-confirm-yes>确认更换</button>' +
-          '<button class="btn-mini" data-confirm-no>取消</button>' +
+          '<button class="btn primary" data-confirm-yes>确认更换</button>' +
+          '<button class="btn secondary" data-confirm-no>取消</button>' +
         '</div>'
       );
       _modalEl.addEventListener("click", function (e) {
@@ -138,6 +161,15 @@
     } else {
       commit();
     }
+  }
+
+  // 解雇执行（已过二次确认）：仅调 dismissLegionNpc，不改状态以外的东西
+  function doDismissNpc(npc, npcId) {
+    var r = LEGION_NPC.dismissLegionNpc(getState(), npcId);
+    if (!r.changed) { msg("解雇失败：" + (r.reason || "未知错误")); return; }
+    var dl = (npc) ? line(npc, "dismiss", { now: Date.now() }) : "";
+    msg("已解雇 " + (npc ? npc.name : "NPC") + (npc && npc.boundShipInstanceId ? "（其舰船一并销毁）" : "") + (dl ? "：" + dl : ""));
+    render();
   }
 
   function escapeHtml(s) {
@@ -181,6 +213,15 @@
       });
     }
 
+    // 「经验获取规则」弹窗
+    var ruleBtn = document.getElementById("btn-legion-xp-rule");
+    if (ruleBtn && !ruleBtn._legionDelegated) {
+      ruleBtn._legionDelegated = true;
+      ruleBtn.addEventListener("click", function () {
+        if (typeof LegionRender !== "undefined" && LegionRender.buildXpRuleHtml) openModal(LegionRender.buildXpRuleHtml());
+      });
+    }
+
     var hallEl = document.getElementById("legion-hall");
     if (hallEl && !hallEl._legionDelegated) {
       hallEl._legionDelegated = true;
@@ -211,7 +252,12 @@
       candBox._legionDelegated = true;
       candBox.addEventListener("click", function (e) {
         var btn = e.target.closest("button[data-legion-recruit]");
-        if (!btn) return;
+        if (!btn) {
+          // 点卡片空白处 → 候选人详情
+          var card = e.target.closest("[data-legion-cand-detail]");
+          if (card && !e.target.closest("button")) openCandidateDetail(card.getAttribute("data-legion-cand-detail"));
+          return;
+        }
         guard("recruit", function () {
           if (!hasLegion() || !LEGION_NPC.recruitLegionNpc) return;
           var cid = btn.getAttribute("data-legion-recruit");
@@ -247,12 +293,29 @@
             if (!hasLegion() || !LEGION_NPC.dismissLegionNpc) return;
             var npcId = dismiss.getAttribute("data-legion-dismiss");
             var npc = (getState().legion && getState().legion.npcs || []).filter(function (n) { return n.npcId === npcId; })[0];
-            var r = LEGION_NPC.dismissLegionNpc(getState(), npcId);
-            if (!r.changed) { msg("解雇失败：" + (r.reason || "未知错误")); return; }
-            var dl = (npc) ? line(npc, "dismiss", { now: Date.now() }) : "";
-            msg("已解雇 " + (npc ? npc.name : "NPC") + (npc && npc.boundShipInstanceId ? "（其舰船一并销毁）" : "") + (dl ? "：" + dl : ""));
-            render();
+            if (!npc) { msg("NPC 不存在"); return; }
+            var shipNote = npc.boundShipInstanceId
+              ? '<br><br>该 NPC 绑定的舰船将<b>一并销毁</b>（不返还）。'
+              : '';
+            openModal(
+              '<div class="legion-modal-title"><i class="fa-solid fa-user-slash"></i> 确认解雇</div>' +
+              '<div class="legion-modal-body">确定解雇 <b>' + escapeHtml(npc.name) + '</b> 吗？解雇后不可恢复。' + shipNote + '</div>' +
+              '<div class="legion-modal-foot">' +
+                '<button class="btn danger" data-confirm-yes>确认解雇</button>' +
+                '<button class="btn secondary" data-confirm-no>取消</button>' +
+              '</div>'
+            );
+            _modalEl.addEventListener("click", function (ev) {
+              if (ev.target.closest("button[data-confirm-yes]")) { closeModal(); doDismissNpc(npc, npcId); }
+              else if (ev.target.closest("button[data-confirm-no]")) closeModal();
+            });
           });
+          return;
+        }
+        // 点卡片空白处 → NPC 详情
+        if (!e.target.closest("button")) {
+          var npcCard = e.target.closest("[data-legion-npc-detail]");
+          if (npcCard) openNpcDetail(npcCard.getAttribute("data-legion-npc-detail"));
         }
       });
     }

@@ -97,14 +97,32 @@ function getArchaeologyCycleSeconds(state, site) {
   const implantSpeed = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).archaeology.speed : 1;
   // 考古装备蓝图（遗迹分析仪）周期减免：与扫描同源，受 50% 上限约束，全处唯一公式。
   let cycleReduction = 0;
+  // 遗迹速掘改装件周期减免：谐振惩罚已由 getRigModifiers 计入，无成长封顶。
+  let rigCycleReduction = 0;
+  // 势力增强探针周期减免：仅该系列带 cycleReduction（5%/10%/15%），基础/复原探针恒为 0。
+  let probeCycleReduction = 0;
   const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
   const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
   if (instance) {
     const fitted = getArchaeologyFittedBonuses(state, instance);
     cycleReduction = Math.min(0.50, fitted.cycleReduction || 0);
+    if (typeof getRigModifiers === "function") {
+      const rigMods = getRigModifiers(state, instance) || {};
+      rigCycleReduction = Number(rigMods.archaeologyCycleReductionPercent) || 0;
+    }
   }
+  // 激活探针：运行中锁定 startedProbeId，待命时用 activeProbeId（与显示态 :841 同一推导）。
+  const archState = state.archaeology || {};
+  const archRunning = Boolean(state.currentAction && state.currentAction.active && state.currentAction.skill === "archaeology");
+  const effectiveProbeId = archRunning ? (archState.startedProbeId || archState.activeProbeId) : archState.activeProbeId;
+  if (effectiveProbeId && typeof getArchaeologyProbe === "function") {
+    const probe = getArchaeologyProbe(effectiveProbeId);
+    probeCycleReduction = Number(probe && probe.cycleReduction) || 0;
+  }
+  // 总减免：高槽分析仪池封顶 0.50 + 改装件无封顶 + 探针；工程下限 0.95 防周期 ≤0/负。
+  const totalReduction = Math.min(0.95, cycleReduction + rigCycleReduction + probeCycleReduction);
   // 解析速度 +10% 等价于周期 ÷1.10（越小越快）
-  let cycle = base * archSpeedEff / archLogisticsMult / researchMult / implantSpeed * (1 - cycleReduction);
+  let cycle = base * archSpeedEff / archLogisticsMult / researchMult / implantSpeed * (1 - totalReduction);
   // 军团 NPC「遗迹解析(archaeologySpeed)」：加速 → 周期 ÷ 倍率（越小越快）
   if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
     const m = LEGION_NPC.getLegionContributionSnapshot(state).multipliers.archaeologySpeed;
@@ -275,8 +293,10 @@ function applyArchaeologyDamage(hp, amount) {
 // ---- 信号干扰时长 ----
 // interferenceReduction：改装件 archaeologyInterferenceReduction 缩短比例（0~0.9），
 // 先按比例缩短再取 MIN 下限，保证干扰永不为零。
+// ARCHAEOLOGY_INTERFERENCE_RATIO：失败后信号干扰锁屏占基础周期比例（原为 0.25，下调至 0.15）。
+const ARCHAEOLOGY_INTERFERENCE_RATIO = 0.15;
 function getArchaeologyInterferenceSeconds(site, interferenceReduction) {
-  const base = Math.round(site.time * 0.25);
+  const base = Math.round(site.time * ARCHAEOLOGY_INTERFERENCE_RATIO);
   const reduction = Math.max(0, Math.min(0.90, Number(interferenceReduction) || 0));
   const reduced = Math.round(base * (1 - reduction));
   return Math.max(ARCHAEOLOGY_SIGNAL_MIN_SECONDS, reduced);

@@ -10,10 +10,14 @@ function makeRng(s){let st=s>>>0;return()=>{st=(Math.imul(st,1664525)+1013904223
 class MC{} for(const n of["arc","beginPath","clearRect","clip","fill","fillRect","fillText","lineTo","moveTo","rect","restore","save","scale","setTransform","stroke","strokeText"])MC.prototype[n]=noop;
 MC.prototype.createImageData=(w,h)=>({data:new Uint8ClampedArray(w*h*4),width:w,height:h}); MC.prototype.createRadialGradient=()=>({addColorStop:noop}); MC.prototype.getImageData=()=>({data:new Uint8ClampedArray(4)}); MC.prototype.roundRect=noop;
 const cl={add:noop,remove:noop,toggle:noop,contains:()=>false};
-const me=()=>({addEventListener:noop,appendChild:noop,classList:cl,click:noop,closest:()=>null,dataset:{},focus:noop,getBoundingClientRect:()=>({left:0,top:0,width:100,height:100}),getContext:()=>new MC(),innerHTML:"",offsetHeight:24,offsetWidth:560,querySelector:()=>me(),querySelectorAll:()=>[],remove:noop,select:noop,style:{},textContent:"",value:"1"});
+// 桩补全（2026-08-29）：Batch P 教程小部件 renderTutorialWidget 会对元素调 setAttribute /
+// removeAttribute / contains / setProperty，此前桩缺这些方法导致审计在 shell-render 阶段即崩。
+const me=()=>({addEventListener:noop,appendChild:noop,append:noop,classList:cl,click:noop,closest:()=>null,contains:()=>false,dataset:{},focus:noop,getBoundingClientRect:()=>({left:0,top:0,width:100,height:100}),getContext:()=>new MC(),innerHTML:"",insertBefore:noop,offsetHeight:24,offsetWidth:560,parentNode:{insertBefore:noop,appendChild:noop,removeChild:noop,classList:cl},querySelector:()=>me(),querySelectorAll:()=>[],remove:noop,removeAttribute:noop,removeChild:noop,select:noop,setAttribute:noop,style:{setProperty:noop},textContent:"",value:"1"});
 // 持久元素捕获（供 UI 渲染测试读取 innerHTML）
-const els={}; const getEl=id=>{ if(!els[id]) els[id]=me(); return els[id]; };
-const sb=vm.createContext({alert:noop,Blob,confirm:()=>true,CanvasRenderingContext2D:MC,console,document:{addEventListener:noop,body:me(),createElement:()=>me(),createElementNS:()=>({...me(),setAttribute:noop}),getElementById:getEl,querySelector:()=>me(),querySelectorAll:()=>[]},FileReader:class{},Image:class{},localStorage:{getItem:()=>null,setItem:noop},requestAnimationFrame:noop,setInterval:noop,setTimeout:noop,clearTimeout:noop,URL:{createObjectURL:()=>"blob:mock",revokeObjectURL:noop},window:null}); sb.window=sb; sb.window.addEventListener=noop;
+// combat-drop-preview-wrap 是 details 元素：renderCombatDropPreview 的「折叠即跳过渲染」
+// 优化会读 wrap.open，桩默认 undefined → 提前 return 0 字符（2026-08-29 桩补全：默认展开）。
+const els={}; const getEl=id=>{ if(!els[id]){ els[id]=me(); if(id==="combat-drop-preview-wrap") els[id].open=true; } return els[id]; };
+const sb=vm.createContext({alert:noop,Blob,confirm:()=>true,CanvasRenderingContext2D:MC,console,document:{addEventListener:noop,body:me(),createElement:()=>me(),createElementNS:()=>({...me(),setAttribute:noop}),getElementById:getEl,querySelector:()=>me(),querySelectorAll:()=>[]},FileReader:class{},Image:class{},localStorage:{getItem:()=>null,setItem:noop},matchMedia:()=>({matches:false,addEventListener:noop,addListener:noop,removeListener:noop}),MutationObserver:class{observe(){}disconnect(){}takeRecords(){return[]}},requestAnimationFrame:noop,setInterval:noop,setTimeout:noop,clearTimeout:noop,URL:{createObjectURL:()=>"blob:mock",revokeObjectURL:noop},window:null}); sb.window=sb; sb.window.addEventListener=noop;
 const srcs=[...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(m=>m[1].replace(/\?.*$/,"").replace(/^\.\//,""));
 for(const s of srcs) vm.runInContext(fs.readFileSync(path.resolve(root,s),"utf8"),sb,{filename:s});
 const $=c=>vm.runInContext(c,sb);
@@ -180,6 +184,9 @@ ok(bad.mode==="deathspace" && bad.reason==="unknown-deathspace",`非法 deathspa
 
 // ==== 七、UI 渲染（renderCombatDropPreview）不抛错且含关键字段 ====
 section("【七、UI 渲染 renderCombatDropPreview】");
+// 桩补全（2026-08-29）：renderCombatDropPreview 的「折叠即跳过渲染」优化会先读
+// wrap.open（details 元素属性），桩对象默认 undefined → 提前 return 导致 0 字符。展开状态为 true。
+if (els["combat-drop-preview-wrap"]) els["combat-drop-preview-wrap"].open = true;
 const fRenderUI=$("renderCombatDropPreview");
 // 重置 gameState 到 clean（函数内部使用 sandbox gameState）
 const dispBelt=fDisplay($("gameState"),Date.now());

@@ -1050,8 +1050,9 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   const eeLvl = getEffectiveSkillLevel(state, "equipmentEngineering");
   if (eeLvl < eqQuote.levelGate) { stopAutoLineInternal(state, "equipment", "level-locked", offline); return { cycles:0 }; }
 
-  // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过
-  if (recipe.requiresBlueprint === true && !hasEquipmentBlueprintFromState(state, recipe.id)) {
+  // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过。
+  // 探针类走限次抄本 BPC：要求剩余流程 > 0（见 manufacturingRecipeHasBlueprint）。
+  if (!manufacturingRecipeHasBlueprint(state, recipe)) {
     stopAutoLineInternal(state, "equipment", "blueprint-locked", offline);
     return { cycles:0 };
   }
@@ -1108,9 +1109,24 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
     return { cycles:0 };
   }
 
-  // 原子执行：扣料（配给剂折扣后）+ 产出 + XP + 事件
+  // 限次抄本（BPC）：探针类配方可完成的周期数受剩余流程次数限制；归零即停线。
+  const bpcMaxCycles = manufacturingMaxCyclesByBlueprint(state, recipe);
+  if (bpcMaxCycles <= 0) {
+    stopAutoLineInternal(state, "equipment", "blueprint-runs-depleted", offline);
+    line.progress = remainingSec;
+    return { cycles:0 };
+  }
+  if (bpcMaxCycles < cycles) cycles = bpcMaxCycles;
+
+  // 原子执行：扣料（配给剂折扣后）+ 预留抄本流程 + 产出 + XP + 事件
   if (!ResourceRegistry.canAffordCost(state, eqQuote.cost, cycles)) {
     stopAutoLineInternal(state, "equipment", "insufficient-materials", offline);
+    line.progress = remainingSec;
+    return { cycles:0 };
+  }
+  // 材料校验通过后才预留流程：材料不足 → 上面已零副作用停止，不会白扣流程（无需退还）。
+  if (!manufacturingReserveBlueprintRuns(state, recipe, cycles)) {
+    stopAutoLineInternal(state, "equipment", "blueprint-runs-depleted", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
@@ -1406,7 +1422,7 @@ function getStationAutoLineDisplayState(state, lineId) {
       const recipe = pool && pool.find(r => r.id === selId);
       if (recipe && recipe.requiresBlueprint === true) {
         blueprintOk = lineId === "equipment"
-          ? hasEquipmentBlueprintFromState(state, recipe.id)
+          ? manufacturingRecipeHasBlueprint(state, recipe)
           : hasBoosterBlueprintFromState(state, recipe.id);
       }
       // 产线白名单（仅 equipment 线）：非消耗品目标禁止启动
@@ -1964,7 +1980,7 @@ function getStationPageDisplayState(state, now) {
       if (cfg.lineId === "equipment" || cfg.lineId === "booster") {
         opt.requiresBlueprint = !!r.requiresBlueprint;
         opt.hasRequiredBlueprint = opt.requiresBlueprint
-          ? (cfg.lineId === "equipment" ? hasEquipmentBlueprintFromState(state, r.id) : hasBoosterBlueprintFromState(state, r.id))
+          ? (cfg.lineId === "equipment" ? manufacturingRecipeHasBlueprint(state, r) : hasBoosterBlueprintFromState(state, r.id))
           : true;
       }
       return opt;
@@ -1993,6 +2009,10 @@ function getStationPageDisplayState(state, now) {
       selectedTargetName: selectedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, selectedTarget), cfg.lineId) : null,
       startedTargetId: startedTarget,
       startedTargetName: startedTarget ? autoLineTargetName(findAutoLineRecipe(cfg, startedTarget), cfg.lineId) : null,
+      // 限次抄本（BPC）：运行中优先、否则选中的探针配方剩余流程数（非 BPC 恒 null），供 UI 显示。
+      selectedBlueprintRuns: (matchedRecipe && typeof isProbeBlueprintRecipe === "function" && isProbeBlueprintRecipe(matchedRecipe))
+        ? ((typeof manufacturingMaxCyclesByBlueprint === "function") ? manufacturingMaxCyclesByBlueprint(state, matchedRecipe) : 0)
+        : null,
       running: running,
       // 必须透传 targetQuantity / producedQty：核心结算按这两个字段停止，
       // 但 UI 显示态若不携带，prodText 会误判为「无限」。

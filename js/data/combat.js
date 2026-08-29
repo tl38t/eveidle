@@ -318,6 +318,33 @@ const NEURAL_IMPLANT_MATERIALS = ["神经植入体·攻击", "神经植入体·�
 const TACTICAL_MATERIAL_IDS = typeof TACTICAL_MATERIALS !== "undefined" ? TACTICAL_MATERIALS.map(material => material.id) : [];
 const COMBAT_SPECIAL_MATERIALS = [...STAR_BELT_DATA_MATERIALS, ...DEATHSPACE_TICKET_MATERIALS, ...DEATHSPACE_LOOT_MATERIALS, ...SUPERCAPITAL_DATA_MATERIALS, ...GEAR_DATA_MATERIALS, ...STATION_CORE_MATERIALS, ...CARGO_CONTAINER_MATERIALS, ...NEURAL_IMPLANT_MATERIALS, ...TACTICAL_MATERIAL_IDS];
 
+// 势力考古探针掉落（死亡空间产出「探针本体」；功勋商店卖的是「限次抄本 BPC」，两条路径并行）。
+// 绑定规则：按敌人势力绑定档位 —— 命名与掉落同源（苍穹劫团的副本掉苍穹劫团探针），
+// 再按副本 tier 缩放概率与数量；tier 门槛保证高级探针需打高级本
+// （angel 全档 / blood 自 tier3 起 / sansha 自 tier4 起）。
+// 资源走 "probe:<id>" 命名空间（resources.js 已注册），故**无需**并入 COMBAT_SPECIAL_MATERIALS。
+const DEATHSPACE_PROBE_NORMAL_RATIO = 0.25; // 小怪概率 = 首领概率 × 该系数
+const DEATHSPACE_PROBE_DROPS = {
+  angel:  { resourceId:"probe:faction_probe_i",   material:"苍穹劫团考古探针·掠空型", byTier:{ 2:{boss:0.08,qty:1}, 3:{boss:0.10,qty:2}, 4:{boss:0.12,qty:2}, 6:{boss:0.15,qty:3} } },
+  blood:  { resourceId:"probe:faction_probe_ii",  material:"赤誓教团考古探针·血誓型", byTier:{ 3:{boss:0.08,qty:1}, 4:{boss:0.10,qty:2}, 6:{boss:0.13,qty:2} } },
+  sansha: { resourceId:"probe:faction_probe_iii", material:"静默集群考古探针·同化型", byTier:{ 4:{boss:0.07,qty:1}, 6:{boss:0.10,qty:2} } }
+};
+// 取某副本的探针掉落配置（无配置 → null，表示该副本不掉探针）
+function getDeathspaceProbeDropConfig(site) {
+  if (!site) return null;
+  const entry = DEATHSPACE_PROBE_DROPS[site.faction];
+  if (!entry) return null;
+  const tierCfg = entry.byTier[site.dedTier];
+  if (!tierCfg) return null;
+  return {
+    resourceId: entry.resourceId,
+    material: entry.material,
+    qty: Math.max(1, Number(tierCfg.qty) || 1),
+    bossChance: Number(tierCfg.boss) || 0,
+    normalChance: (Number(tierCfg.boss) || 0) * DEATHSPACE_PROBE_NORMAL_RATIO
+  };
+}
+
 // 势力装备只通过装备工程制造；战斗仅掉落对应加密数据。
 const FACTION_ENCRYPTED_DATA_DROPS = {
   angel:  { material:"天使初级加密数据", chances:{elite:0.005,boss:0.035}, qty:1 },

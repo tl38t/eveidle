@@ -65,7 +65,9 @@
   }
 
   // 广告失败后自动弹出故障面板（大白话），无需用户去翻 ⚙。
+  // 仅在调试模式下启用诊断探针；生产环境只走原有 toast 提示。
   function showAdFault(err) {
+    if (!DEBUG) return;
     ensureProbe();
     probeFaultMode = true;
     try { if (typeof getAdStatus === "function") getAdStatus(); } catch (e) {}
@@ -103,9 +105,9 @@
     statusEl = document.createElement("span");
     statusEl.setAttribute("data-adb-status", "1");
     statusEl.style.cssText = "white-space:nowrap;color:#7fe3ff;cursor:pointer;";
-    statusEl.title = "脑突触加速：点击管理注入 / 获取；长按打开广告诊断";
+    statusEl.title = "脑突触加速：点击管理注入 / 获取；" + (DEBUG ? "长按打开广告诊断" : "");
     statusEl.addEventListener("click", openModal);
-    attachProbeTrigger(statusEl);
+    if (DEBUG) attachProbeTrigger(statusEl);
 
     pauseBtn = document.createElement("button");
     pauseBtn.setAttribute("data-adb-pause", "1");
@@ -485,7 +487,7 @@
   function init() {
     if (typeof document === "undefined" || !document.body) { setTimeout(init, 200); return; }
     ensureDom();
-    ensureProbe();
+    if (DEBUG) ensureProbe();
     update();
     if (updater) clearInterval(updater);
     updater = setInterval(update, 1000);

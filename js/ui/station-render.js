@@ -280,10 +280,9 @@ function renderStationPage(now) {
         else if (al.stoppedReason === "user-stopped") statAl = "已停止";
         else if (al.stoppedReason === "target-not-allowed") statAl = "目标不在产线范围";
         else if (al.stoppedReason === "target-reached") statAl = "已达目标";
-        // 只显示正式中文名称：未选择时显示"未选择"，查不到配方时显示态已给出"未知配方"。
-        // 绝不回退 selectedTargetId/startedTargetId，避免内部 recipeId 泄漏到界面。
-        var selName = al.selectedTargetName || "未选择";
-        var startName = al.startedTargetName || "";
+        else if (al.stoppedReason === "blueprint-runs-depleted") statAl = "抄本流程已用尽";
+        // 「选中 / 运行」行统一由 autoLineTargetsText 生成（只显示正式中文名，
+        // 绝不回退 selectedTargetId/startedTargetId，避免内部 recipeId 泄漏到界面）。
         var prodText = "";
         if (al.running || al.stoppedReason === "target-reached") {
           prodText = al.targetQuantity > 0 ? ("已产 " + al.producedQty + " / " + al.targetQuantity) : ("已产 " + al.producedQty + "（无限）");
@@ -294,7 +293,7 @@ function renderStationPage(now) {
           '<div class="sal-mult" id="al-mult-' + al.lineId + '">建筑 ×' + al.buildingMultiplier.toFixed(2) + ' · 后勤 ×' + al.logisticsMultiplier.toFixed(2) + ' · 综合 ×' + al.effectiveMultiplier.toFixed(2) + '</div>' +
           '<div class="sal-select"><select data-line="' + al.lineId + '" class="u-select">' + opts + '</select></div>' +
           '<div class="sal-qty">生产数量 <input type="number" min="1" class="al-qty" data-al-qty="' + al.lineId + '" value="' + (al.targetQuantity ? al.targetQuantity : '') + '" placeholder="∞ 全部原料"></div>' +
-          '<div class="sal-targets" id="al-targets-' + al.lineId + '">选中：' + selName + (startName ? ' · 运行：' + startName : '') + '</div>' +
+          '<div class="sal-targets" id="al-targets-' + al.lineId + '">' + autoLineTargetsText(al) + '</div>' +
           '<div class="sal-status" id="al-status-' + al.lineId + '">状态：' + statAl + '</div>' +
           '<div class="sal-produced" id="al-produced-' + al.lineId + '">' + prodText + '</div>' +
           (al.cycleDurationMs ? '<div class="al-progress-wrap"><div class="progress-bar"><div class="fill al-fill" id="al-fill-' + al.lineId + '" style="width:' + (al.progressRatio * 100).toFixed(0) + '%"></div></div><div class="sal-progress" id="al-progress-' + al.lineId + '">周期 ' + (al.cycleDurationMs / 1000).toFixed(1) + 's · 进度 ' + (al.progressRatio * 100).toFixed(0) + '%</div></div>' : '') +
@@ -389,6 +388,16 @@ function fmtDuration(ms) {
   var m = Math.floor((sec % 3600) / 60);
   var s = sec % 60;
   return [h ? h + "h" : "", m ? m + "m" : "", s + "s"].filter(Boolean).join(" ");
+}
+
+// 自动线「选中 / 运行」行文案（初始渲染与 live 更新共用，杜绝两处不一致）。
+// 限次抄本（BPC）追加剩余流程数，避免玩家误以为只要有材料就能一直产。
+function autoLineTargetsText(al) {
+  var selName = al.selectedTargetName || "未选择";
+  var startName = al.startedTargetName || "";
+  var text = "选中：" + selName + (startName ? " · 运行：" + startName : "");
+  if (typeof al.selectedBlueprintRuns === "number") text += " · 抄本剩余 " + al.selectedBlueprintRuns + " 流程";
+  return text;
 }
 
 /* ================================================================
@@ -549,6 +558,7 @@ function liveUpdateStationFields(display, now) {
       else if (al.stoppedReason === "user-stopped") st = "已停止";
       else if (al.stoppedReason === "target-not-allowed") st = "目标不在产线范围";
       else if (al.stoppedReason === "target-reached") st = "已达目标";
+      else if (al.stoppedReason === "blueprint-runs-depleted") st = "抄本流程已用尽";
       setLiveText(statEl, "状态：" + st);
     }
     var prodEl = document.getElementById("al-produced-" + al.lineId);
@@ -563,9 +573,7 @@ function liveUpdateStationFields(display, now) {
     }
     var tgtEl = document.getElementById("al-targets-" + al.lineId);
     if (tgtEl) {
-      var selName = al.selectedTargetName || "未选择";
-      var startName = al.startedTargetName || "";
-      setLiveText(tgtEl, "选中：" + selName + (startName ? " · 运行：" + startName : ""));
+      setLiveText(tgtEl, autoLineTargetsText(al));
     }
     var progEl = document.getElementById("al-progress-" + al.lineId);
     if (progEl) {

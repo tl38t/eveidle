@@ -66,13 +66,13 @@
     overlay.className = "tp-drawer-overlay";
     mainContainer.appendChild(overlay);
 
-    /* 底部五项导航：复用现有 switchPage / switchSkill */
+    /* 底部五项导航：复用现有 switchPage / switchPage */
     var nav = document.createElement("nav");
     nav.className = "tp-bottom-nav";
     var items = [
-      ["总览", "fa-house", "overview"],
       ["船坞", "fa-ship", "hangar"],
       ["仓库", "fa-warehouse", "cargo"],
+      ["战斗", "fa-crosshairs", "combat"],
       ["队列", "fa-list-check", "queue"],
       ["更多", "fa-bars", "more"]
     ];
@@ -100,10 +100,7 @@
       nav.querySelectorAll("button").forEach(function (x) { x.classList.remove("active"); });
       if (k === "more") { b.classList.add("active"); openDrawer(); return; }
       b.classList.add("active");
-      if (window.switchPage) {
-        if (k === "overview") window.switchPage("skill");
-        else window.switchPage(k);
-      }
+      if (window.switchPage) window.switchPage(k);
       closeDrawer();
     });
 

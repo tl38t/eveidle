@@ -133,6 +133,16 @@ const ARCHAEOLOGY_PROBES = Object.freeze([
   { id:"deep_probe_iii",  name:"深空考古探针 III", level:70, scanBonus:20, batchSize:20, craftTime:75,  economyCostISK:7800,  cost:{ "三钛合金":600, "超噬矿":10, "铷":3 } }
 ]);
 
+// ---- 3 种势力增强探针（限次抄本 BPC 制造，消费势力制造许可） ----
+// 与基础 I/II/III 一一对应：scanBonus 保持不变，额外新增 cycleReduction 5%/10%/15%。
+// 制造需限次抄本（功勋商店买 N 流程；1 流程 = 1 生产周期 = 20 枚），见 js/core/blueprint-runs.js。
+// 三档分属三个势力，命名随所需生产许可归属：I=苍穹劫团(D) / II=赤誓教团(C) / III=静默集群(B)。
+const ARCHAEOLOGY_FACTION_PROBES = Object.freeze([
+  { id:"faction_probe_i",   name:"苍穹劫团考古探针·掠空型", level:1,  scanBonus:0,  cycleReduction:0.05, batchSize:20, craftTime:15, economyCostISK:1200,  cost:{ "三钛合金":40 } },
+  { id:"faction_probe_ii",  name:"赤誓教团考古探针·血誓型", level:35, scanBonus:10, cycleReduction:0.10, batchSize:20, craftTime:35, economyCostISK:6800,  cost:{ "三钛合金":200, "类晶体胶矿":60 } },
+  { id:"faction_probe_iii", name:"静默集群考古探针·同化型", level:70, scanBonus:20, cycleReduction:0.15, batchSize:20, craftTime:75, economyCostISK:32000, cost:{ "三钛合金":600, "超噬矿":10, "铷":3 } }
+]);
+
 // ---- 两种复原强化探针（直接掉落、不可制造、可消耗，科研节省同样适用） ----
 // 标准探针 I 扫描加成为 0，不设计无意义的 1.5 倍版本。
 // restored_probe_ii = +15（基础 +10 的 1.5 倍）；restored_deep_probe_iii = +30（基础 +20 的 1.5 倍）。
@@ -142,7 +152,7 @@ const ARCHAEOLOGY_RESTORED_PROBES = Object.freeze([
 ]);
 
 // 探针完整表（基础 + 复原）：运行时枚举用。
-const ARCHAEOLOGY_ALL_PROBES = Object.freeze(ARCHAEOLOGY_PROBES.concat(ARCHAEOLOGY_RESTORED_PROBES));
+const ARCHAEOLOGY_ALL_PROBES = Object.freeze(ARCHAEOLOGY_PROBES.concat(ARCHAEOLOGY_FACTION_PROBES).concat(ARCHAEOLOGY_RESTORED_PROBES));
 
 function getArchaeologyProbe(probeId) {
   return ARCHAEOLOGY_ALL_PROBES.find(probe => probe.id === probeId) || null;

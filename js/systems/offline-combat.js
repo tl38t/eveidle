@@ -94,6 +94,7 @@
           leader: {},      // key: siteId -> [{wave, isFinal, core, proto}]
           stationCore: {}, // key: zoneId -> {elite, boss}（Tier3 四核心，唯一产出）
           cargo: {},       // key: zoneId -> { class -> {normal, elite, boss} }（货柜，按船级+kind 计数）
+          probe: {},       // key: siteId -> {resourceId, qty, normal, boss}（死亡空间势力探针本体）
           tactical: { normal: 0, elite: 0, boss: 0 }
         },
         activeAtStart: false
@@ -391,6 +392,15 @@
         }
       }
       // 死亡空间无 faction data / ticket / zone special（与 roll* 一致）
+      // 势力考古探针本体（死亡空间专属；小怪也掉，概率 = 首领 × 1/4，flush 时确定性重滚）
+      const pcfg = G("getDeathspaceProbeDropConfig")(site);
+      if (pcfg) {
+        const pv = (da.probe[site.id] = da.probe[site.id] || {
+          resourceId: pcfg.resourceId, qty: pcfg.qty,
+          normalChance: pcfg.normalChance, bossChance: pcfg.bossChance, normal: 0, boss: 0
+        });
+        pv[enemy.deathspaceLeader ? "boss" : "normal"]++;
+      }
     } else if (zone) {
       if (enemy.kind === "elite" || enemy.kind === "boss") {
         (da.factionData[zone.id] = da.factionData[zone.id] || { elite: 0, boss: 0 });
@@ -875,6 +885,14 @@
           }
         }
       }
+    }
+    // 1.75) 死亡空间势力考古探针本体（小怪 / 首领各自概率，确定性重滚）
+    for (const siteId in da.probe) {
+      const pv = da.probe[siteId];
+      if (!pv) continue;
+      const n = (pv.normal ? batchCount(pv.normal, pv.normalChance, rng) : 0)
+              + (pv.boss ? batchCount(pv.boss, pv.bossChance, rng) : 0);
+      if (n > 0) { RR.add(state, pv.resourceId, pv.qty * n); addResource(s, pv.resourceId, pv.qty * n); }
     }
     // 1.8) 同位素标记打捞臂：主动打捞舰船组件（按敌舰等级档位，确定性重滚；同位素消耗已在 recordKill 按会话虚拟余额门控）
     const salvageBonus2 = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;

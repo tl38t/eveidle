@@ -86,7 +86,27 @@ const ProductionStateActions = {
 };
 
 const ManufacturingStateActions = {
-  buyBlueprint(state, blueprintId, now) {
+  buyBlueprint(state, blueprintId, now, quantity) {
+    // 限次抄本（BPC）：势力探针抄本按「流程数」线性计价；流程用尽后抄本消失，
+    // 因此**不做**「已拥有」守卫，允许重复购买（与永久 BPO 的唯一行为差异）。
+    if (typeof FACTION_PROBE_BLUEPRINTS !== "undefined") {
+      const probeBp = FACTION_PROBE_BLUEPRINTS.find(item => item.id === blueprintId);
+      if (probeBp) {
+        const maxRuns = (typeof PROBE_BLUEPRINT_MAX_RUNS_PER_PURCHASE === "number") ? PROBE_BLUEPRINT_MAX_RUNS_PER_PURCHASE : 999;
+        const runs = Math.min(maxRuns, Math.max(1, Math.floor(Number(quantity) || 1)));
+        const price = probeBp.perRunPrice * runs;
+        if (typeof grantBlueprintRuns !== "function") return { changed:false, reason:"bpc-not-ready" };
+        if (ResourceRegistry.get(state, "currency:lp") < price) return { changed:false, reason:"insufficient-lp" };
+        ResourceRegistry.spend(state, "currency:lp", price);
+        const totalRuns = grantBlueprintRuns(state, "probe:" + probeBp.recipeId, runs);
+        state._dirty = true;
+        if (typeof GameEvents !== "undefined") {
+          const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+          GameEvents.emit("blueprint:acquired", { ownershipKey:"probe:" + probeBp.recipeId, blueprintKind:"probeBpc", productId:probeBp.recipeId, runs }, { timestamp: ts, source:"blueprint-store", offline:false });
+        }
+        return { changed:true, blueprint:probeBp, runs, totalRuns, price };
+      }
+    }
     const blueprint = SHIP_BLUEPRINTS.find(item => item.id === blueprintId);
     if (!blueprint) return { changed:false, reason:"unknown-blueprint" };
     if ((state.ownedBlueprints || []).includes(blueprint.shipId)) return { changed:false, reason:"already-owned" };
@@ -1910,9 +1930,10 @@ const StationStateActions = {
       return { changed:false, reason:"target-not-allowed" };
     }
     // 蓝图限制：equipment / booster 自动线需对应蓝图（与装备工程页一致，防止绕过）
+    // 探针类走限次抄本 BPC（要求剩余流程 > 0），见 manufacturingRecipeHasBlueprint。
     if ((lineId === "equipment" || lineId === "booster") && recipe.requiresBlueprint === true) {
       const hasBp = (lineId === "equipment")
-        ? hasEquipmentBlueprintFromState(state, recipe.id)
+        ? manufacturingRecipeHasBlueprint(state, recipe)
         : hasBoosterBlueprintFromState(state, recipe.id);
       if (!hasBp) return { changed:false, reason:"blueprint-locked" };
     }
@@ -1951,9 +1972,10 @@ const StationStateActions = {
     }
 
     // 蓝图限制：equipment / booster 自动线需对应蓝图（与装备工程页一致，防止绕过）
+    // 探针类走限次抄本 BPC（要求剩余流程 > 0），见 manufacturingRecipeHasBlueprint。
     if ((lineId === "equipment" || lineId === "booster") && recipe.requiresBlueprint === true) {
       const hasBp = (lineId === "equipment")
-        ? hasEquipmentBlueprintFromState(state, recipe.id)
+        ? manufacturingRecipeHasBlueprint(state, recipe)
         : hasBoosterBlueprintFromState(state, recipe.id);
       if (!hasBp) return { changed:false, reason:"blueprint-locked" };
     }
@@ -2167,7 +2189,7 @@ const StationStateActions = {
   if (action.type === "production/selectMiningMode") return ProductionStateActions.selectMiningMode(state, action.mode);
   if (action.type === "production/selectSmeltingRecipe") return ProductionStateActions.selectSmeltingRecipe(state, action.areaName, actionTime);
   if (action.type === "production/selectGasArea") return ProductionStateActions.selectGasArea(state, action.areaName, actionTime);
-  if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId, actionTime);
+  if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId, actionTime, action.quantity);
   if (action.type === "manufacturing/selectShipComponent") return ManufacturingStateActions.selectShipComponent(state, action.componentId);
   if (action.type === "manufacturing/selectShipAssembly") return ManufacturingStateActions.selectShipAssembly(state, action.recipeId);
   if (action.type === "manufacturing/selectShipEngSubView") return ManufacturingStateActions.selectShipEngSubView(state, action.view);

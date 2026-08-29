@@ -9,7 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=11">
-<link rel="stylesheet" href="./css/panels.css?v=16">
+<link rel="stylesheet" href="./css/panels.css?v=25">
 <link rel="stylesheet" href="./css/combat.css?v=8">
 <link rel="stylesheet" href="./css/components.css?v=22">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=18">
@@ -94,6 +94,24 @@
 .shipeng-asm-flavor { margin:0; padding-left:8px; border-left:3px solid #38bdf8; color:#aebccb; font-size:12.5px; line-height:1.5; }
 .build-btn { width:100%; margin-top:10px; }
 .build-btn:disabled { opacity:.55; cursor:not-allowed; }
+/* 总装详情：合成按钮钉底随行（与部件车间 .shipcomp-actions / 装备工程 .equipeng-detail-actions 同套路）。
+   配色对齐 .btn.primary（深底绿字），仅做不透明化——钉底悬浮时不能透出下层文字。
+   前提 #shipeng-panel { overflow:visible } 已在下方满足。 */
+#shipeng-asm-detail #btn-start-shipasm {
+  position: sticky; bottom: 0; z-index: 5;
+  margin-top: 12px; padding: 11px 0;
+  background: #1a2a20;
+  border: 1px solid rgba(58, 90, 58, 0.7);
+  color: #7ac87a;
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.5);
+}
+#shipeng-asm-detail #btn-start-shipasm:hover { background: #223a2a; }
+#shipeng-asm-detail #btn-start-shipasm:disabled {
+  background: #151d28;
+  border-color: rgba(42, 53, 69, 0.6);
+  color: #5b6976; opacity: 1;
+  box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.3);
+}
 .shipeng-asm-pager { display:flex; align-items:center; justify-content:center; gap:14px; margin:12px 0 4px; }
 .shipeng-pager-btn { padding:6px 14px; border:1px solid #2a3a4a; border-radius:6px; background:transparent; color:#bcd0e2; font-size:13px; cursor:pointer; }
 .shipeng-pager-btn:disabled { opacity:.4; cursor:not-allowed; }
@@ -962,14 +980,16 @@
           <div id="legion-contribution" class="legion-contribution"></div>
           <div class="legion-columns">
             <div class="legion-col">
-              <h4>招募候选人
+              <h4><i class="fa-solid fa-user-plus" style="color:#7ab0d8"></i> 招募候选人
                 <button id="btn-legion-refresh" class="btn-mini" type="button">手动刷新</button>
                 <span id="legion-refresh-info" class="text-muted"></span>
               </h4>
               <div id="legion-candidates" class="legion-candidates"></div>
             </div>
             <div class="legion-col">
-              <h4>已招募 NPC</h4>
+              <h4><i class="fa-solid fa-id-badge" style="color:#7ab0d8"></i> 已招募 NPC
+                <button id="btn-legion-xp-rule" class="btn-mini" type="button" style="margin-left:8px;">经验获取规则</button>
+              </h4>
               <div id="legion-npcs" class="legion-npcs"></div>
             </div>
           </div>
@@ -1242,60 +1262,61 @@
   <script defer src="./js/data/boosters.js?v=8"></script>
   <script defer src="./js/systems/boosters.js?v=7"></script>
   <script defer src="./js/systems/recycling.js?v=3"></script>
-  <script defer src="./js/data/combat.js?v=5"></script>
+  <script defer src="./js/data/combat.js?v=6"></script>
   <script defer src="./js/data/cargo.js?v=8"></script>
   <script defer src="./js/data/implants.js?v=3"></script>
-  <script defer src="./js/data/equipment.js?v=20"></script>
+  <script defer src="./js/data/equipment.js?v=23"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=6"></script>
-  <script defer src="./js/data/ammunition.js?v=2"></script>
-  <script defer src="./js/data/archaeology.js?v=3"></script>
-  <script defer src="./js/data/research.js?v=5"></script>
+  <script defer src="./js/data/ammunition.js?v=4"></script>
+  <script defer src="./js/data/archaeology.js?v=5"></script>
+  <script defer src="./js/data/research.js?v=6"></script>
   <script defer src="./js/core/research-state.js?v=3"></script>
   <script defer src="./js/data/achievements.js?v=4"></script>
   <script defer src="./js/data/achievement-rules.js?v=5"></script>
   <script defer src="./js/data/tutorial.js?v=5"></script>
   <script defer src="./js/core/tutorial-state.js?v=3"></script>
   <script defer src="./js/core/achievement-state.js?v=2"></script>
-  <script defer src="./js/core/state.js?v=4"></script>
+  <script defer src="./js/core/state.js?v=5"></script>
+  <script defer src="./js/core/blueprint-runs.js?v=1"></script>
   <script defer src="./js/systems/research.js?v=4"></script>
   <script defer src="./js/core/statistics.js?v=3"></script>
   <script defer src="./js/systems/achievements.js?v=3"></script>
   <script defer src="./js/systems/production.js?v=9"></script>
-  <script defer src="./js/core/resources.js?v=2"></script>
+  <script defer src="./js/core/resources.js?v=3"></script>
   <script defer src="./js/systems/tutorial.js?v=7"></script>
   <script defer src="./js/systems/manufacturing.js?v=5"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=2"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=5"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=2"></script>
   <script defer src="./js/systems/rigs.js?v=4"></script>
-  <script defer src="./js/systems/archaeology.js?v=9"></script>
+  <script defer src="./js/systems/archaeology.js?v=10"></script>
   <script defer src="./js/systems/planetary.js?v=2"></script>
-  <script defer src="./js/systems/station.js?v=11"></script>
+  <script defer src="./js/systems/station.js?v=13"></script>
   <script defer src="./js/data/legion/npc-names.js?v=1"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
-  <script defer src="./js/systems/legion-npc.js?v=2"></script>
+  <script defer src="./js/systems/legion-npc.js?v=4"></script>
   <script defer src="./js/ui/action-modal.js?v=8"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
-  <script defer src="./js/systems/combat.js?v=11"></script>
+  <script defer src="./js/systems/combat.js?v=12"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=48"></script>
-  <script defer src="./js/core/actions.js?v=18"></script>
+  <script defer src="./js/core/selectors.js?v=51"></script>
+  <script defer src="./js/core/actions.js?v=21"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=49"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=20"></script>
-  <script defer src="./js/ui/combat-render.js?v=25"></script>
+  <script defer src="./js/ui/shell-render.js?v=53"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
+  <script defer src="./js/ui/combat-render.js?v=26"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=10"></script>
   <script defer src="./js/ui/booster-render.js?v=8"></script>
-  <script defer src="./js/ui/station-render.js?v=8"></script>
-  <script defer src="./js/ui/legion-render.js?v=1"></script>
-  <script defer src="./js/ui/legion-events.js?v=1"></script>
-  <script defer src="./js/core/tick.js?v=10"></script>
-  <script defer src="./js/core/offline.js?v=12"></script>
-  <script defer src="./js/systems/offline-combat.js?v=5"></script>
+  <script defer src="./js/ui/station-render.js?v=10"></script>
+  <script defer src="./js/ui/legion-render.js?v=9"></script>
+  <script defer src="./js/ui/legion-events.js?v=6"></script>
+  <script defer src="./js/core/tick.js?v=11"></script>
+  <script defer src="./js/core/offline.js?v=13"></script>
+  <script defer src="./js/systems/offline-combat.js?v=6"></script>
   <script defer src="./js/systems/combat-log.js?v=3"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=2"></script>
@@ -1305,7 +1326,7 @@
   <script defer src="./js/platform/ad-provider-contract.js?v=1"></script>
   <script defer src="./js/platform/local-mirror-contract.js?v=2"></script>
   <script defer src="./js/core/save-envelope.js?v=2"></script>
-  <script defer src="./js/core/save-codec.js?v=3"></script>
+  <script defer src="./js/core/save-codec.js?v=4"></script>
   <script defer src="./js/platform/providers/noop-cloud-provider.js?v=2"></script>
   <script defer src="./js/platform/providers/noop-achievement-provider.js?v=2"></script>
   <script defer src="./js/platform/providers/noop-local-mirror-provider.js?v=2"></script>
@@ -1325,12 +1346,12 @@
   <script defer src="./js/core/leaderboard-sync-service.js?v=1"></script>
   <script defer src="./js/core/ad-service.js?v=4"></script>
   <script defer src="./js/systems/ad-buff.js?v=3"></script>
-  <script defer src="./js/ui/ad-buff-widget.js?v=16"></script>
+  <script defer src="./js/ui/ad-buff-widget.js?v=17"></script>
   <script defer src="./js/core/persistence.js?v=14"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
   <script defer src="./js/ui/render.js?v=11"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=11"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=12"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">

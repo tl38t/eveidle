@@ -235,7 +235,10 @@ let cargoSubtabBound = false;
 function renderCargoSubtabs(display) {
   const el = document.getElementById("cargo-subtabs");
   if (!el) return;
-  const showSub = display.filter !== "all" && Array.isArray(display.subFilters) && display.subFilters.length > 1;
+  // 装备页：强化网格（equipment-enhancement-list）已按武器/维修/采矿/采气等功能组分组，
+  // 这排三级小类条与之一一重复 → 隐藏，避免同页出现两套标签（用户 2026-08-29 反馈）。
+  const showSub = display.filter !== "all" && display.filter !== "equipment"
+    && Array.isArray(display.subFilters) && display.subFilters.length > 1;
   if (!showSub) {
     if (el.innerHTML) el.innerHTML = "";
     el.style.display = "none";
@@ -362,6 +365,9 @@ function renderEquipmentEnhancementList(visible) {
     panel.innerHTML = `<div class="cargo-empty">暂无可强化装备（制造或获取装备后将显示于此）</div>`;
     return;
   }
+  // 保存滚动位置：行动完成/周期刷新会经 renderCargoPanel 重进这里，整块 innerHTML 重建会把列表拉回顶部
+  const _oldEnhGrid = document.getElementById("equip-enh-grid");
+  const _savedEnhScrollTop = _oldEnhGrid ? _oldEnhGrid.scrollTop : 0;
   const filters = [["all","全部"],["enhanceable","可强化"],["installed","已装载"],["unenhanced","未强化"]];
   panel.innerHTML =
     `<div class="eem-toolbar">
@@ -372,6 +378,8 @@ function renderEquipmentEnhancementList(visible) {
      </div>
      <div class="equip-enh-scroll" id="equip-enh-grid"></div>`;
   renderEquipEnhanceGrid();
+  const _newEnhGrid = document.getElementById("equip-enh-grid");
+  if (_newEnhGrid && _savedEnhScrollTop > 0) _newEnhGrid.scrollTop = _savedEnhScrollTop;
 }
 
 function renderEquipEnhanceGrid() {
@@ -1490,7 +1498,11 @@ function renderBlueprintStore() {
   const tabs = document.getElementById("blueprintstore-tabs");
   if (tabs) tabs.innerHTML = display.categories.map(category => `<button class="blueprintstore-tab${category.selected ? " active" : ""}" data-blueprint-category="${category.id}"><i class="${category.icon}"></i><span>${category.name}</span><small>${category.count}</small></button>`).join("");
   const grid = document.getElementById("blueprintstore-grid"); if (!grid) return display;
-  grid.innerHTML = display.items.map(item => `<div class="lpstore-card blueprint-preview-card${item.owned ? " owned" : ""}"><div class="lpstore-card-icon"><i class="${item.icon}"></i></div><div class="lpstore-card-info"><strong>${item.name}</strong><div class="blueprint-product"><span>可制造</span><b>${item.productName}</b></div><div class="blueprint-preview-lines">${item.previewLines.map(line => `<div><span>${line.label}</span><p>${line.value}</p></div>`).join("")}</div><small>${item.owned ? "永久蓝图已拥有" : "蓝图价格 · " + item.priceText}</small></div><button class="btn primary lpstore-buy" data-blueprint-item="${item.id}" data-blueprint-kind="${item.kind}" ${item.canBuy ? "" : "disabled"}>${item.purchaseText}</button></div>`).join("");
+  grid.innerHTML = display.items.map(item => {
+    const noteText = item.owned ? "永久蓝图已拥有"
+      : (item.kind === "probeBlueprint" ? "限次抄本 · " + item.priceText : "蓝图价格 · " + item.priceText);
+    return `<div class="lpstore-card blueprint-preview-card${item.owned ? " owned" : ""}"><div class="lpstore-card-icon"><i class="${item.icon}"></i></div><div class="lpstore-card-info"><strong>${item.name}</strong><div class="blueprint-product"><span>可制造</span><b>${item.productName}</b></div><div class="blueprint-preview-lines">${item.previewLines.map(line => `<div><span>${line.label}</span><p>${line.value}</p></div>`).join("")}</div><small>${noteText}</small></div><button class="btn primary lpstore-buy" data-blueprint-item="${item.id}" data-blueprint-kind="${item.kind}" ${item.canBuy ? "" : "disabled"}>${item.purchaseText}</button></div>`;
+  }).join("");
   return display;
 }
 
@@ -3011,17 +3023,111 @@ function buyLPStoreItem(itemId) {
 }
 
 function buyBlueprintStoreItem(itemId, kind) {
-  const result = kind === "shipBlueprint"
-    ? dispatchGameAction(gameState, { type:"manufacturing/buyBlueprint", blueprintId:itemId }, Date.now())
-    : dispatchGameAction(gameState, { type:"shell/buyLPItem", equipmentId:itemId }, Date.now());
+  if (kind === "probeBlueprint") { openProbeBlueprintPurchaseModal(itemId); return; }
+  let result;
+  if (kind === "shipBlueprint") {
+    result = dispatchGameAction(gameState, { type:"manufacturing/buyBlueprint", blueprintId:itemId }, Date.now());
+  } else {
+    result = dispatchGameAction(gameState, { type:"shell/buyLPItem", equipmentId:itemId }, Date.now());
+  }
   if (!result.changed) {
     if (result.reason === "insufficient-lp") showToast("功勋不足");
     else if (result.reason === "insufficient-isk") showToast("星币不足");
     else if (result.reason === "already-owned") showToast("该蓝图已拥有");
     return false;
   }
-  showToast("已购买：" + (result.blueprint ? result.blueprint.name + "蓝图" : result.item.name));
+  if (kind === "probeBlueprint") showToast("已购买：" + result.blueprint.name + " ×" + result.runs + " 流程");
+  else showToast("已购买：" + (result.blueprint ? result.blueprint.name + "蓝图" : result.item.name));
   renderBlueprintStore(); updateUI(); return true;
+}
+
+// 势力探针限次抄本（BPC）购买弹窗：在弹窗内选择流程数，再确认购买。
+let _probeBpPurchaseItemId = null;
+function ensureProbeBlueprintPurchaseModal() {
+  let backdrop = document.getElementById("probe-bp-purchase-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "probe-bp-purchase-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) closeProbeBlueprintPurchaseModal(); });
+    backdrop._esc = e => { if (e.key === "Escape" && backdrop.style.display === "flex") closeProbeBlueprintPurchaseModal(); };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  return backdrop;
+}
+function closeProbeBlueprintPurchaseModal() {
+  const backdrop = document.getElementById("probe-bp-purchase-modal");
+  if (backdrop) { backdrop.style.display = "none"; backdrop.innerHTML = ""; }
+  _probeBpPurchaseItemId = null;
+}
+function confirmProbeBlueprintPurchase() {
+  if (!_probeBpPurchaseItemId) return;
+  const input = document.getElementById("probe-bp-runs-input");
+  const runs = input ? Math.max(1, Math.floor(Number(input.value) || 1)) : 1;
+  const result = dispatchGameAction(gameState, { type:"manufacturing/buyBlueprint", blueprintId:_probeBpPurchaseItemId, quantity:runs }, Date.now());
+  closeProbeBlueprintPurchaseModal();
+  if (!result || !result.changed) {
+    if (result && result.reason === "insufficient-lp") showToast("功勋不足");
+    else if (result && result.reason === "insufficient-isk") showToast("星币不足");
+    else showToast("购买失败");
+    return;
+  }
+  showToast("已购买：" + result.blueprint.name + " ×" + result.runs + " 流程");
+  renderBlueprintStore(); updateUI();
+}
+function updateProbeBlueprintTotal() {
+  const input = document.getElementById("probe-bp-runs-input");
+  const totalEl = document.getElementById("probe-bp-total");
+  const priceEl = document.getElementById("probe-bp-unit-price");
+  if (!input || !totalEl || !priceEl) return;
+  const unitPrice = Number(priceEl.dataset.price) || 0;
+  const max = Number(input.max) || 999;
+  let runs = Math.max(1, Math.floor(Number(input.value) || 1));
+  if (runs > max) runs = max;
+  input.value = runs;
+  totalEl.textContent = (unitPrice * runs).toLocaleString();
+}
+function openProbeBlueprintPurchaseModal(itemId) {
+  const display = getBlueprintStoreDisplayState(gameState, blueprintStoreCategory);
+  const item = display.items.find(i => i.id === itemId);
+  if (!item) return;
+  _probeBpPurchaseItemId = itemId;
+  const backdrop = ensureProbeBlueprintPurchaseModal();
+  const maxRuns = item.maxRunsPerPurchase || 999;
+  const unitPrice = item.price || 0;
+  const currencyName = item.currency === "lp" ? "功勋" : "星币";
+  backdrop.innerHTML = `
+    <div class="equip-enh-modal probe-bp-modal" role="dialog" aria-modal="true">
+      <div class="eem-head">
+        <span class="eem-icon"><i class="${item.icon}"></i></span>
+        <div class="eem-title-wrap"><div class="eem-title">购买 ${escapeAchievementText(item.name)}</div><div class="eem-sub">限次抄本 · 1 流程 = 20 枚探针</div></div>
+        <button class="eem-close" data-probe-bp-close aria-label="关闭">✕</button>
+      </div>
+      <div class="eem-body probe-bp-body">
+        <div class="probe-bp-info">
+          <div><span>当前剩余流程</span><strong>${item.remainingRuns || 0}</strong></div>
+          <div><span>单价</span><strong id="probe-bp-unit-price" data-price="${unitPrice}">${unitPrice.toLocaleString()} ${currencyName} / 流程</strong></div>
+        </div>
+        <div class="probe-bp-qty">
+          <label for="probe-bp-runs-input">购买流程数</label>
+          <input type="number" id="probe-bp-runs-input" class="probe-bp-runs-input" min="1" max="${maxRuns}" value="1">
+          <small>单次上限 ${maxRuns} 流程</small>
+        </div>
+        <div class="probe-bp-total">总计：<strong id="probe-bp-total">${unitPrice.toLocaleString()}</strong> ${currencyName}</div>
+        <div class="probe-bp-actions">
+          <button class="btn secondary" data-probe-bp-close>取消</button>
+          <button class="btn primary" data-probe-bp-confirm>确认购买</button>
+        </div>
+      </div>
+    </div>`;
+  backdrop.style.display = "flex";
+  const input = document.getElementById("probe-bp-runs-input");
+  if (input) {
+    input.addEventListener("input", updateProbeBlueprintTotal);
+    input.addEventListener("change", updateProbeBlueprintTotal);
+  }
+  updateProbeBlueprintTotal();
 }
 
 function getHangarBonusText(bonuses) {
@@ -4051,6 +4157,11 @@ function installTutorialWidgetListeners() {
   const blueprintGrid = document.getElementById("blueprintstore-grid"); if (blueprintGrid) blueprintGrid.addEventListener("click", event => {
     const button = event.target.closest("[data-blueprint-item]");
     if (button && !button.disabled) buyBlueprintStoreItem(button.dataset.blueprintItem, button.dataset.blueprintKind);
+  });
+  // 势力探针抄本（BPC）购买弹窗委托
+  document.addEventListener("click", event => {
+    if (event.target.closest("[data-probe-bp-close]")) { closeProbeBlueprintPurchaseModal(); return; }
+    if (event.target.closest("[data-probe-bp-confirm]")) { confirmProbeBlueprintPurchase(); }
   });
   const hangar = document.getElementById("hangar-ship-grid"); if (hangar) hangar.addEventListener("click", event => {
     const dismantleBtn = event.target.closest("[data-dismantle-ship]");

@@ -65,7 +65,7 @@
   const PROFILE_TOP_KEYS = [
     "resources", "stationCoresObtained", "ammo", "implants", "skills",
     "inventory", "equipment", "boosters", "station", "shipyard", "corporation", "legion",
-    "upgrades", "ownedBlueprints", "tutorial", "research", "achievements",
+    "upgrades", "ownedBlueprints", "blueprintCharges", "tutorial", "research", "achievements",
     "combat", "shipAssignments", "settings", "migrations", "queue"
   ];
 

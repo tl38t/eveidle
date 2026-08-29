@@ -472,6 +472,11 @@ function renderCombatDropPreview(display) {
       rows.push(`<div class="drop-group-title">🧪 战术材料（所有敌人）</div>`);
       rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical", "tactical"));
     }
+    if (preview.probeDrop) {
+      const pb = preview.probeDrop;
+      rows.push(`<div class="drop-group-title">🔬 势力考古探针（小怪与 BOSS 均掉落）</div>`);
+      rows.push(row("🔬", getResourceDisplayName(pb.resourceId), `BOSS ${pct(pb.bossChance)} · 小怪 ${pct(pb.normalChance)}（每次 ×${pb.qty}）`, "drop-probe", pb.resourceId));
+    }
   } else {
     rows.push(`<div class="drop-mode-tag belt">海盗星带</div>`);
     if (preview.encryptedData) {
