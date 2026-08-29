@@ -9,6 +9,8 @@
 (function (root) {
   var MOD = {};
   var _legionSig = "";
+  var _legionContribSig = "";
+  var _legionContribOpen = false;
 
   function getState() { return (typeof gameState !== "undefined") ? gameState : null; }
 
@@ -135,7 +137,7 @@
       var ships = (st && st.inventory && Array.isArray(st.inventory.ships)) ? st.inventory.ships : [];
       var inst = ships.filter(function (s) { return s.instanceId === npc.boundShipInstanceId; })[0];
       if (!inst) {
-        xpNote = "（舰船已销毁）";
+        xpNote = "（舰船不可用）";
         shipNote = "";
       } else {
         var type = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getShipTypeDef)
@@ -379,6 +381,7 @@
       chip("fa-solid fa-money-bill-wave", '工资正常 <b>' + snap.salary.paidNpcCount + '</b> · 欠薪 <b>' + overdue + '</b>', overdue > 0) +
       chip("fa-solid fa-rotate", '下次刷新 <b>' + refreshTxt + '</b>') +
       chip("fa-solid fa-coins", '手动刷新 ' + cost.isk.toLocaleString() + ' 星币 / ' + cost.lp + ' 功勋') +
+      chip("fa-solid fa-wallet", '工人总工资 <b>' + (snap.salary.totalWage || 0).toLocaleString() + '</b>') +
       chip("fa-solid fa-hourglass-half", '下次结算 <b>' + salaryTxt + '</b>');
   };
 
@@ -460,7 +463,7 @@
         shipHtml = getShipDisplayName(inst.shipId) + '（' + shipTierLabel(type) + '）' +
           ' · <span class="' + (compat ? 'legion-ok' : 'legion-warn') + '">' + (compat ? '适配' : '不适配') + '</span>';
       } else {
-        shipHtml = '（舰船已销毁）';
+        shipHtml = '（舰船不可用）';
       }
     }
     return '<div class="legion-modal-title"><i class="fa-solid fa-id-badge"></i> ' + escapeDetailHtml(npc.name) +
@@ -491,6 +494,7 @@
       var skillLabel = skill ? skill.name : c.skillId;
       var catLabel = skillCategoryName(skill && skill.category);
       return '<div class="legion-card lc-detail-open" data-legion-cand-detail="' + c.npcId + '" style="cursor:pointer;" title="点击查看详情">' +
+        '<span class="lc-detail-hint" data-legion-cand-detail="' + c.npcId + '" title="点击查看详情">详情</span>' +
         '<div class="lc-name">' + c.name + ' ' + gradeTagHtml(grade) + '</div>' +
         '<div class="lc-meta">' + legionPersonalityName(c.personalityId) + '</div>' +
         '<div class="lc-meta">技能：' + skillLabel + '（' + catLabel + '）</div>' +
@@ -537,7 +541,7 @@
           compatHtml = ' · <span class="' + (compat ? 'legion-ok' : 'legion-warn') + '">' + (compat ? '适配' : '不适配') + '</span>';
           shipHtml = getShipDisplayName(inst.shipId) + '（' + tier + '）';
         } else {
-          shipHtml = '（舰船已销毁）';
+          shipHtml = '（舰船不可用）';
         }
       }
 
@@ -546,6 +550,7 @@
         ? ' · <span class="legion-warn">技能暂停 · 经验暂停</span>' : '';
 
       return '<div class="legion-card lc-detail-open" data-legion-npc-detail="' + n.npcId + '" style="cursor:pointer;" title="点击查看详情">' +
+        '<span class="lc-detail-hint" data-legion-npc-detail="' + n.npcId + '" title="点击查看详情">详情</span>' +
         '<div class="lc-name">' + n.name + ' ' + gradeTagHtml(grade) + '</div>' +
         '<div class="lc-meta">' + legionPersonalityName(n.personalityId) + ' · ' + skillLabel + ' · Lv.' + n.level + '（上限 ' + cap + '）</div>' +
         '<div class="lc-meta">XP ' + (n.xp || 0) + ' / ' + need + ' · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></div>' +
@@ -595,11 +600,27 @@
     var el = document.getElementById("legion-contribution");
     if (!el) return;
     var e = snap && snap.effects;
-    if (!e) { el.innerHTML = ''; return; }
+    if (!e) { el.innerHTML = ''; _legionContribSig = ""; return; }
     if (snap.activeNpcCount <= 0) {
       el.innerHTML = '<div class="legion-warn">暂无军团加成 —— 派遣 NPC 并按时发薪后，加成在此生效。</div>';
+      _legionContribSig = ""; return;
+    }
+
+    // 贡献面板每 tick 都会收到通知，但加成数值不常变化；用签名避免频繁重建 innerHTML，
+    // 否则 <details> 的展开态会被每次重建瞬间清空（用户看到的“查看全部”点开后立即收起）。
+    var sigParts = [String(snap.activeNpcCount || 0)];
+    LEGION_CONTRIB_GROUPS.forEach(function (g) {
+      g.rows.forEach(function (pair) { sigParts.push(pair[0] + ":" + (Number(e[pair[0]]) || 0).toFixed(4)); });
+    });
+    var newSig = sigParts.join("|");
+    var details = el.querySelector("details.lg-all-zero");
+    if (details) _legionContribOpen = details.open;
+    if (newSig === _legionContribSig && el.innerHTML) {
+      // 内容未变，保持现有 DOM（包括 <details> 展开态），不再重写。
       return;
     }
+    _legionContribSig = newSig;
+
     var total = 0;
     var html = '<div class="legion-contrib-title"><i class="fa-solid fa-chart-line"></i> 军团加成' +
       '<small title="同类加成收益递减：多条同类加成同时生效时，实际收益按递减曲线结算">已应用同类递减</small></div>';
@@ -623,6 +644,8 @@
         '<div class="lc-contrib-grid">' + zeroRows + '</div></details>';
     }
     el.innerHTML = html;
+    var details2 = el.querySelector("details.lg-all-zero");
+    if (details2) details2.open = _legionContribOpen;
   };
   function countActive(e) {
     var n = 0;

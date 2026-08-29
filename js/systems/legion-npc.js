@@ -587,13 +587,19 @@
     const L = ensureLegionState(state);
     const npc = (L.npcs || []).filter(function (n) { return n && n.npcId === npcId; })[0];
     if (!npc) return { changed: false, reason: "npc-not-found" };
+
+    // 空值/空字符串表示卸下当前舰船（舰船归还机库，不销毁）
+    if (shipInstanceId == null || shipInstanceId === "") {
+      npc.boundShipInstanceId = null;
+      return { changed: true };
+    }
+
     const ship = findShipInstance(state, shipInstanceId);
     if (!ship) return { changed: false, reason: "ship-not-found" };
     const inUse = (L.npcs || []).some(function (n) { return n.npcId !== npcId && n.boundShipInstanceId === shipInstanceId; });
     if (inUse) return { changed: false, reason: "ship-in-use" }; // 已被其他 NPC 绑定
-    const old = npc.boundShipInstanceId;
     npc.boundShipInstanceId = shipInstanceId;
-    if (old && old !== shipInstanceId) destroyShipInstance(state, old); // 旧舰船销毁（不返还）
+    // 旧绑定舰船直接解绑归还机库，不再销毁
     return { changed: true };
   }
 
@@ -603,7 +609,7 @@
     const idx = (L.npcs || []).findIndex(function (n) { return n && n.npcId === npcId; });
     if (idx < 0) return { changed: false, reason: "npc-not-found" };
     const npc = L.npcs[idx];
-    if (npc.boundShipInstanceId) destroyShipInstance(state, npc.boundShipInstanceId); // 绑定舰船一并销毁
+    // 解雇仅移除 NPC，绑定舰船归还机库，不再销毁
     L.npcs.splice(idx, 1); // 立即释放人数位置；不返还任何资源
     return { changed: true, npc: npc };
   }

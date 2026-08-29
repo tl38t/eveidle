@@ -95,6 +95,7 @@
 
   function getSpecialItemDisplayName(key) {
     if (typeof key !== "string" || !key) return null;
+    // 1) 旧势力名前缀（天使/血袭者/萨沙）→ 替换为新势力显示名；加密数据单独映射为「简称+阶位+密钥」。
     for (const factionKey of Object.keys(FACTION_LEGACY_PREFIX)) {
       const legacy = FACTION_LEGACY_PREFIX[factionKey];
       if (!key.startsWith(legacy)) continue;
@@ -103,6 +104,10 @@
         return FACTION_SHORT[factionKey] + ENCRYPTED_DATA_TIERS[tierMatch[1]] + "密钥";
       }
       return FACTION_DISPLAY_PREFIX[factionKey] + key.slice(legacy.length);
+    }
+    // 2) 新势力显示名前缀（苍穹劫团/赤誓教团/静默集群）→ key 本身已经是显示名，直接返回。
+    for (const displayPrefix of Object.values(FACTION_DISPLAY_PREFIX)) {
+      if (key.startsWith(displayPrefix)) return key;
     }
     return null;
   }

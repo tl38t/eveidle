@@ -49,7 +49,7 @@ const EQUIPMENT_DB = {
   "t1_large_structure_repairer": { id:"t1_large_structure_repairer", name:"大型结构修理器 I", slot:"low", level:55, time:65, xp:50, cost:{"三钛合金":260,"类银超金属":50,"超新星诺克石":12,"稀有气体":10}, bonuses:{}, combat:{kind:"repair",target:"structure",amount:40,fuelCost:4} },
   "t1_capital_shield_array": { id:"t1_capital_shield_array", name:"旗舰级护盾回充阵列 I", slot:"mid", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":6,"铷":1,"同位素":8,"磁场聚合物":8}, bonuses:{}, shipTypes:["capital","supercapital"], combat:{kind:"repair",target:"shield",amount:150,fuelCost:5} },
   "t1_capital_armor_array": { id:"t1_capital_armor_array", name:"旗舰级装甲维修阵列 I", slot:"low", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":9,"超噬矿":6,"铷":1,"重金属":10,"等离子体":6}, bonuses:{}, shipTypes:["capital","supercapital"], combat:{kind:"repair",target:"armor",amount:100,fuelCost:5} },
-  "t1_capital_structure_array": { id:"t1_capital_structure_array", name:"旗舰级结构修复阵列 I", slot:"low", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":7,"铷":1,"稀有气体":8,"磁场聚合物":6}, bonuses:{}, shipTypes:["capital","supercapital"], combat:{kind:"repair",target:"structure",amount:50,fuelCost:15} },
+  "t1_capital_structure_array": { id:"t1_capital_structure_array", name:"旗舰级结构修复阵列 I", slot:"low", level:80, time:160, xp:110, cost:{"三钛合金":400,"基腹断岩":8,"超噬矿":7,"铷":1,"稀有气体":8,"磁场聚合物":6}, bonuses:{}, shipTypes:["capital","supercapital"], combat:{kind:"repair",target:"structure",amount:50,fuelCost:5} },
   "t1_mining_booster": { id:"t1_mining_booster", name:"T1采矿提升器",  slot:"low", level:10,time:20, xp:12, cost:{"三钛合金":50,"类银超金属":20}, bonuses:{miningLaserEfficiency:0.10} },
   "t2_mining_booster": { id:"t2_mining_booster", name:"中型采矿提升器", slot:"low", level:15,time:35, xp:20, cost:{"三钛合金":160,"类银超金属":60,"类晶体胶矿":15}, bonuses:{miningLaserEfficiency:0.30} },
   "t3_mining_booster": { id:"t3_mining_booster", name:"重型采矿提升器", slot:"low", level:35,time:60, xp:40, cost:{"三钛合金":400,"类银超金属":150,"同位聚合体":30,"重金属":15}, bonuses:{miningLaserEfficiency:0.50} },
@@ -742,14 +742,20 @@ function getShipTypesFlag(shipTypes) {
   if (!Array.isArray(shipTypes) || shipTypes.length === 0) return null;
   const combat = shipTypes.includes("capital") || shipTypes.includes("supercapital");
   const ind = shipTypes.includes("industrial_capital");
-  const archaeology = shipTypes.includes("archaeology_capital");
-  if (!combat && !ind && !archaeology) return null;
+  const archaeologyCapital = shipTypes.includes("archaeology_capital");
+  // 全档考古舰型（护卫/驱逐/巡洋/战列）存在 → 适配全部考古舰，而非仅旗舰
+  const archaeologyAll = shipTypes.some(function (t) {
+    return t === "archaeology_frigate" || t === "archaeology_destroyer" ||
+           t === "archaeology_cruiser" || t === "archaeology_battleship";
+  });
+  if (!combat && !ind && !archaeologyCapital && !archaeologyAll) return null;
   const parts = [];
   if (combat) parts.push("战斗旗舰 / 超级旗舰");
   if (ind) parts.push("工业旗舰");
-  if (archaeology) parts.push("考古旗舰");
-  const kind = (combat || archaeology) ? "combat" : "ind";
-  return { kind, label: parts.join(" / ") };
+  if (archaeologyCapital && !archaeologyAll) parts.push("考古旗舰");
+  if (archaeologyAll) parts.push("考古舰");
+  const kind = (combat || archaeologyCapital || archaeologyAll) ? "combat" : "ind";
+  return { kind, label: parts.join(" / "), archaeologyAll: archaeologyAll };
 }
 
 // 返回角标 HTML（受控字符串，内容由上方数据生成，不含外部输入）。
@@ -767,6 +773,7 @@ function getShipTypesFlagBadge(shipTypes, variant) {
   }
   let text;
   if (isInd) text = "工业旗舰";
+  else if (f.archaeologyAll && !shipTypes.includes("capital")) text = "考古舰";
   else if (shipTypes.includes("capital") && shipTypes.includes("archaeology_capital")) text = "战斗/考古旗舰";
   else if (shipTypes.includes("archaeology_capital")) text = "考古旗舰";
   else text = "战斗旗舰";
