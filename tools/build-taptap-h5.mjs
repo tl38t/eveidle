@@ -240,6 +240,16 @@ async function buildOnce(SOURCE_SHA, includeProbe) {
     map.set("taptap-compat-probe.mjs", normalizeTextBytes("taptap-compat-probe.mjs", fs.readFileSync(PROBE_SRC)));
   }
 
+  // ---- 广告调试探针门控（release/selftest 包强制关闭本地调试开关）----
+  // ad-buff-widget.js 在本地开发时允许 ?debugAd=1 / localStorage.debugAd=1 唤出广告诊断浮层；
+  // 发布包必须忽略这些用户可调开关，避免诊断浮层在用户侧显示。
+  const ADBUFF_REL = "js/ui/ad-buff-widget.js";
+  if (map.has(ADBUFF_REL)) {
+    let c = map.get(ADBUFF_REL).toString("utf8");
+    c = c.replace(/const\s+DEBUG\s*=\s*isAdDebug\s*\(\s*\)\s*;/, "const DEBUG = false;");
+    map.set(ADBUFF_REL, Buffer.from(c, "utf8"));
+  }
+
   // 本地化 index.html
   if (!map.has("index.html")) fail("包内缺少 index.html");
   map.set("index.html", Buffer.from(localizeIndexHtml(map.get("index.html").toString("utf8"), includeProbe), "utf8"));
@@ -325,6 +335,12 @@ function verifyPackage(buffer, mode, includeProbe) {
       }
       ok("release: 运行文件不含 window.QA", !qaGlobalHit);
       ok("release: 运行文件不含 ?qa= 场景入口", !qaSceneHit);
+
+      // release 专属：广告调试探针必须被强制关闭（防止 localStorage/URL debugAd=1 在发布包唤出诊断浮层）
+      const adBuffFile = PKG_TOP + "/js/ui/ad-buff-widget.js";
+      const adBuffContent = set.has(adBuffFile) ? await z.file(adBuffFile).async("string") : "";
+      ok("release: 广告调试探针已关闭",
+        /const\s+DEBUG\s*=\s*false\s*;/.test(adBuffContent) && !/const\s+DEBUG\s*=\s*isAdDebug\s*\(\s*\)\s*;/.test(adBuffContent));
 
       // 跨模式比对：与 selftest 产物证明“唯一差异=探针文件+index.html 注入标签”
       const selftestZip = path.join(OUTDIR, "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip");

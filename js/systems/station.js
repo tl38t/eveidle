@@ -1880,7 +1880,7 @@ function getStationLogisticsDisplayState(state) {
   const s = state && state.station;
   const bodyLevel = s ? (Math.floor(Number(s.bodyLevel)) || 0) : 0;
   const operational = isStationOperational(state);
-  const multiplier = getStationLogisticsMultiplier(state);
+  const multiplier = getStationLogisticsBaseMultiplier(state);
   const bonusRate = multiplier - 1;
   const bodyName = getStationBodyName(bodyLevel);
   let disabledReason = null;
@@ -2043,15 +2043,15 @@ function getStationPageDisplayState(state, now) {
   var lvl = function(id) { return getStationBuildingLevel(state, id); };
   var buildingNames = { resource_dispatch:"资源调度中心", planetary_control:"行星管控中心", smelting_refinery:"冶炼精炼厂", equipment_factory:"装备制造厂", booster_factory:"增强剂制造厂", archaeology_lab:"考古实验室", combat_command:"作战指挥中心", shipyard:"舰船船坞" };
   // 综合后勤只依赖本体等级和燃料，不依赖资源调度中心
-  var bodyLevelForLogistics = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state) : 1;
-  var logisticsActive = op && bodyLevelForLogistics > 1;
+  var bodyLevelForLogistics = (typeof getStationLogisticsBaseMultiplier === "function") ? getStationLogisticsBaseMultiplier(state) : 1;
+  var logisticsActive = op && bodyLevel > 0;
   var effectDefs = [
-    { id:"logistics", name:"综合后勤", bid:null, text:logisticsActive?"综合后勤 ×"+bodyLevelForLogistics.toFixed(2):(bodyLevelForLogistics>1?"综合后勤 ×"+bodyLevelForLogistics.toFixed(2)+"（燃料不足）":"综合后勤 ×1.00（未建立）") },
-    { id:"dispatch", name:"资源调度中心", bid:"resource_dispatch", text:lvl("resource_dispatch")>=1?"勘探指令阈值 "+[20,14,10][Math.min(2,lvl("resource_dispatch")-1)]:"未建造" },
-    { id:"planetary", name:"行星管控中心", bid:"planetary_control", text:lvl("planetary_control")>=1?"自动收取·槽位+"+[0,1,2][Math.min(2,lvl("planetary_control")-1)]:"未建造" },
-    { id:"smelting", name:"冶炼精炼厂", bid:"smelting_refinery", text:lvl("smelting_refinery")>=1?"自动线 ×"+[1,1.15,1.3][Math.min(2,lvl("smelting_refinery")-1)].toFixed(2):"未建造" },
-    { id:"equipment", name:"装备制造厂", bid:"equipment_factory", text:lvl("equipment_factory")>=1?"自动线 ×"+[1,1.15,1.3][Math.min(2,lvl("equipment_factory")-1)].toFixed(2):"未建造" },
-    { id:"booster", name:"增强剂制造厂", bid:"booster_factory", text:lvl("booster_factory")>=1?"自动线 ×"+[1,1.15,1.3][Math.min(2,lvl("booster_factory")-1)].toFixed(2):"未建造" },
+    { id:"logistics", name:"综合后勤", bid:null, text:(bodyLevel >= 1 ? (op ? "综合后勤 ×"+bodyLevelForLogistics.toFixed(2) : "综合后勤 ×1.00（燃料不足）") : "综合后勤 ×1.00（未建立）") },
+    { id:"dispatch", name:"资源调度中心", bid:"resource_dispatch", text:lvl("resource_dispatch")>=1?"勘探指令阈值 "+[20,14,10,9,8][Math.min(4,lvl("resource_dispatch")-1)]:"未建造" },
+    { id:"planetary", name:"行星管控中心", bid:"planetary_control", text:lvl("planetary_control")>=1?"自动收取·槽位+"+[0,1,2,3,4][Math.min(4,lvl("planetary_control")-1)]:"未建造" },
+    { id:"smelting", name:"冶炼精炼厂", bid:"smelting_refinery", text:lvl("smelting_refinery")>=1?"自动线 ×"+[1,1.15,1.30,1.40,1.50][Math.min(4,lvl("smelting_refinery")-1)].toFixed(2):"未建造" },
+    { id:"equipment", name:"装备制造厂", bid:"equipment_factory", text:lvl("equipment_factory")>=1?"自动线 ×"+[1,1.15,1.30,1.40,1.50][Math.min(4,lvl("equipment_factory")-1)].toFixed(2):"未建造" },
+    { id:"booster", name:"增强剂制造厂", bid:"booster_factory", text:lvl("booster_factory")>=1?"自动线 ×"+[1,1.15,1.30,1.40,1.50][Math.min(4,lvl("booster_factory")-1)].toFixed(2):"未建造" },
     { id:"archaeology", name:"考古实验室", bid:"archaeology_lab", text:lvl("archaeology_lab")>=1?"独特文物倍率 ×"+((effectsRaw.archaeologyLabMultiplier||1)).toFixed(2):"未建造" },
     { id:"combat", name:"作战指挥中心", bid:"combat_command", text:lvl("combat_command")>=1?"战斗XP ×"+((effectsRaw.combatXpMultiplier||1)).toFixed(2):"未建造" },
     { id:"shipyard", name:"舰船船坞", bid:"shipyard", text:lvl("shipyard")>=1?"速度 ×"+((effectsRaw.shipyardSpeedMultiplier||1)).toFixed(2)+"·节省 "+(Math.round((effectsRaw.shipyardSavingRate||0)*100))+"%":"未建造", shipyardException:true }
