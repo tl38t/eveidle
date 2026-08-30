@@ -986,5 +986,12 @@
   .alliance-create-row input { flex: 1; min-width: 0; border: 1px solid #38516b; border-radius: 6px; background: #0b1724; color: #e8f4ff; padding: 9px 10px; }
   .alliance-list-title { margin-top: 24px; }
   .alliance-list-row { display: flex; justify-content: space-between; align-items: center; }
+  .alliance-cloud-modal { display: none; position: fixed; z-index: 1200; inset: 0; padding: 3vh 3vw; background: rgba(2, 7, 14, .82); }
+  .alliance-cloud-modal.is-open { display: flex; align-items: stretch; justify-content: center; }
+  .alliance-cloud-dialog { display: flex; flex-direction: column; width: min(920px, 100%); min-height: 0; overflow: hidden; border: 1px solid #42698b; border-radius: 12px; background: #0b1421; box-shadow: 0 18px 60px rgba(0,0,0,.55); }
+  .alliance-cloud-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; color: #eaf6ff; font-weight: 700; border-bottom: 1px solid #26384d; }
+  #alliance-cloud-frame { flex: 1 1 auto; width: 100%; min-height: 560px; border: 0; background: #0b1220; }
+  @media (max-width: 640px) { .alliance-cloud-modal { padding: 0; } .alliance-cloud-dialog { border-radius: 0; } #alliance-cloud-frame { min-height: 100vh; } }
   .alliance-msg { min-height: 18px; }
   .alliance-id { margin-top: 18px; word-break: break-all; }
+  .alliance-diagnostic { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-height: 260px; overflow: auto; padding: 12px; border: 1px solid #38516b; border-radius: 8px; background: rgba(5, 13, 23, .9); color: #bfe8ff; font: 12px/1.6 monospace; }
