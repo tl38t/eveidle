@@ -21,8 +21,7 @@
   function request(path, options) {
     options = options || {};
     options.headers = Object.assign({
-      "Content-Type": "application/json",
-      "apikey": PUBLISHABLE_KEY
+      "Content-Type": "application/json"
     }, options.headers || {});
     return fetch(BASE_URL + path, options).then(function (response) {
       return response.text().then(function (text) {
