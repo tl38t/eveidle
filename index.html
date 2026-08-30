@@ -1007,8 +1007,14 @@
 
     <!-- 仓库面板 -->
     <div class="panel alliance-panel" id="alliance-panel" style="display:none;">
-      <div class="panel-header"><span class="panel-title"><i class="fa-solid fa-people-group"></i> 联盟大厅</span><span id="alliance-msg" class="text-muted">未连接</span></div>
+      <div class="panel-header"><span class="panel-title"><i class="fa-solid fa-people-group"></i> 联盟大厅</span><span><button class="btn secondary" id="btn-open-cloud-test">打开云端联盟</button> <button class="btn secondary" id="btn-alliance-diagnose">网络诊断</button> <span id="alliance-msg" class="text-muted">未连接</span></span></div>
       <div class="panel-body"><div id="alliance-content"></div></div>
+    </div>
+    <div class="alliance-cloud-modal" id="alliance-cloud-modal" aria-hidden="true">
+      <div class="alliance-cloud-dialog" role="dialog" aria-label="云端联盟">
+        <div class="alliance-cloud-toolbar"><span>云端联盟</span><button class="btn secondary" id="btn-close-cloud-alliance">关闭</button></div>
+        <iframe id="alliance-cloud-frame" title="云端联盟页面" loading="lazy"></iframe>
+      </div>
     </div>
 
     <div class="panel cargo-panel" id="cargo-panel" style="display:none;">
@@ -1327,9 +1333,9 @@
   <script defer src="./js/ui/station-render.js?v=10"></script>
   <script defer src="./js/ui/legion-render.js?v=13"></script>
   <script defer src="./js/ui/legion-events.js?v=11"></script>
-  <script defer src="./js/platform/alliance-api.js?v=1"></script>
+  <script defer src="./js/platform/alliance-api.js?v=3"></script>
   <script defer src="./js/platform/alliance-policy.js?v=1"></script>
-  <script defer src="./js/ui/alliance-render.js?v=1"></script>
+  <script defer src="./js/ui/alliance-render.js?v=7"></script>
   <script defer src="./js/core/tick.js?v=12"></script>
   <script defer src="./js/core/offline.js?v=14"></script>
   <script defer src="./js/systems/offline-combat.js?v=8"></script>

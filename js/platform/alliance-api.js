@@ -27,14 +27,17 @@
       return response.text().then(function (text) {
         var body = text ? JSON.parse(text) : null;
         if (!response.ok) {
-          throw new Error(body && (body.message || body.error || body.error_description) || "联盟服务器请求失败（" + response.status + "）");
+          var failure = new Error(body && (body.message || body.error || body.error_description) || "联盟服务器请求失败（" + response.status + "）");
+          failure.status = response.status;
+          throw failure;
         }
         return body;
       });
     });
   }
 
-  function getAccessToken() {
+  function getAccessToken(forceRefresh) {
+    if (forceRefresh) localStorage.removeItem(tokenKey);
     var cached = localStorage.getItem(tokenKey);
     if (cached) return Promise.resolve(cached);
     return request("/auth/v1/signin/anonymously", {
@@ -54,6 +57,15 @@
       options = options || {};
       options.headers = Object.assign({ Authorization: "Bearer " + token }, options.headers || {});
       return request(path, options);
+    }).catch(function (error) {
+      if (error && error.status === 401) {
+        return getAccessToken(true).then(function (freshToken) {
+          options = options || {};
+          options.headers = Object.assign({ Authorization: "Bearer " + freshToken }, options.headers || {});
+          return request(path, options);
+        });
+      }
+      throw error;
     });
   }
 
@@ -121,12 +133,36 @@
     };
   }
 
+  function diagnose() {
+    var report = {
+      protocol: root.location && root.location.protocol || "unknown",
+      userAgent: root.navigator && root.navigator.userAgent || "unknown",
+      endpoint: BASE_URL,
+      deviceId: getPlayerId(),
+      steps: []
+    };
+    function step(name, fn) {
+      var started = Date.now();
+      return Promise.resolve().then(fn).then(function (value) {
+        report.steps.push({ name: name, ok: true, ms: Date.now() - started, detail: value || "OK" });
+        return value;
+      }).catch(function (error) {
+        report.steps.push({ name: name, ok: false, ms: Date.now() - started, detail: error && error.message || String(error) });
+        return null;
+      });
+    }
+    return step("匿名登录", getAccessToken)
+      .then(function (token) { return token ? step("联盟列表读取", listAlliances) : null; })
+      .then(function () { return report; });
+  }
+
   root.AllianceApi = {
     isOnline: function () { return true; },
     getPlayerId: getPlayerId,
     getAlliance: getAlliance,
     listAlliances: listAlliances,
     createAlliance: createAlliance,
-    joinAlliance: joinAlliance
+    joinAlliance: joinAlliance,
+    diagnose: diagnose
   };
 })(typeof window !== "undefined" ? window : globalThis);
