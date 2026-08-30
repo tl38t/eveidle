@@ -1334,6 +1334,15 @@ function getShipEngineeringEfficiencyBreakdown(display) {
   return formatEfficiencyBreakdown(entries, display.efficiency);
 }
 
+// 考古探针在装备制造页的简述/详述（数据来自 js/data/archaeology.js）。
+function getProbeAttributeSummary(probeId, compact) {
+  const probe = (typeof getArchaeologyProbe === "function") ? getArchaeologyProbe(probeId) : null;
+  if (!probe) return compact ? "探针" : [];
+  const scan = "扫描强度 +" + probe.scanBonus;
+  const cycle = (probe.cycleReduction ? " · 考古周期 -" + Math.round(probe.cycleReduction * 100) + "%" : "");
+  return compact ? (scan + cycle) : (probe.cycleReduction ? [scan, "考古周期 -" + Math.round(probe.cycleReduction * 100) + "%"] : [scan]);
+}
+
 function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const action = state.currentAction;
   const skill = state.skills.equipmentEngineering || { lvl:1, xp:0 };
@@ -1451,11 +1460,12 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     runningRecipe:{ ...runningRecipe, cost:{ ...runningQuote.cost }, inputEquipment:runningRecipe.inputEquipment ? { ...runningRecipe.inputEquipment } : null, output:{ ...runningRecipe.output } },
     recipes:visibleRecipes.map(recipe => {
       const equipment = recipe.output.type === "equipment" ? EQUIPMENT_DB[recipe.output.itemId] : null;
+      const probe = (recipe.output.type === "probe") ? getProbeAttributeSummary(recipe.output.itemId, true) : null;
       const attributes = equipment
         ? (equipment.slot === "rig" && equipment.effectSummary
             ? equipment.effectSummary
             : getEquipmentAttributeLines(equipment).slice(1, 3).join(" · "))
-        : getEquipEngOutputText(recipe).replace("产出：", "");
+        : (probe || getEquipEngOutputText(recipe).replace("产出：", ""));
       const slot = equipment ? (EQUIPMENT_SLOT_NAMES[equipment.slot] || "装备") : recipe.output.type === "fuel" ? "消耗品" : "弹药";
       return {
         id:recipe.id,
@@ -1487,7 +1497,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
         ? (selectedEquipment.slot === "rig" && selectedEquipment.effectSummary
             ? [selectedEquipment.effectSummary]
             : getEquipmentAttributeLines(selectedEquipment))
-        : [],
+        : (selectedRecipe.output.type === "probe" ? getProbeAttributeSummary(selectedRecipe.output.itemId, false) : []),
       materials:detailMaterials,
       equipmentInputs:detailEquipmentInputs,
       outputText:getEquipEngOutputText(selectedRecipe),

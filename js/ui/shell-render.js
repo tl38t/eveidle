@@ -118,6 +118,18 @@ function renderLegionPage() {
 }
 
 function switchPage(page) {
+  // 修复（TapTap 竖屏战斗入口）：战斗不是独立页，而是技能视图。
+  // 旧逻辑 switchPage("combat") 会把 currentPage 设成非标准值 "combat"，
+  // 而 updateLiveUI 的实循环门禁只认 currentPage==="skill" && currentView==="combat"，
+  // 导致从竖屏底部导航进战斗页后按钮/敌人/血条永不刷新（队列开战尤其明显——
+  // startCombatQueueItem 不主动重渲，全靠实循环补帧）。此处归一化到技能视图，
+  // 与桌面侧栏 data-skill="combat" → switchSkill("combat") 路径完全对齐。
+  if (page === "combat") {
+    currentPage = "skill";
+    currentView = "combat";
+    renderCurrentNavigation();
+    return;
+  }
   currentPage = page === "skill" ? "skill" : page;
   renderCurrentNavigation();
 }
