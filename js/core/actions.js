@@ -663,6 +663,11 @@ const CombatStateActions = {
     state.combat.lastStatus = "";
     state.combat.lastEnemyVolley = null;
     state.resumeAfterRepair = null; // 手动/自动重新出击：清除待恢复标记
+    // M5：开战入口接线——把战前选择固化为本场小队成员（无选择时保持玩家单舰，零副作用）
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD &&
+        typeof LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers === "function") {
+      LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers(state, { now: now });
+    }
     state._dirty = true;
     // 出击前补给预检（非阻断）：弹药/燃料提示由 getCombatSupplyWarning 统一计算。
     const supplyWarning = getCombatSupplyWarning(state, display.zone);
@@ -733,6 +738,10 @@ const CombatStateActions = {
     if (!state.combat.active && !(state.currentAction.active && state.currentAction.skill === "combat") && !hasPendingResume) return { changed:false, reason:"not-active" };
     const maxHp = getCombatMaxHpFromState(state);
     const abandonedDeathspace = state.combat.mode === "deathspace";
+    // M3：玩家主动停止战斗 → 清理小队临时状态并释放占用（NPC 修复状态保留在本体）
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled) {
+      LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
+    }
     state.currentAction.active = false;
     Object.assign(state.combat, {
       active:false,
@@ -762,6 +771,10 @@ const CombatStateActions = {
   beginRecovery(state, now) {
     const activeShip = getActiveCombatShipState(state);
     const failedDeathspace = state.combat.mode === "deathspace";
+    // M3：玩家舰船被击毁 → 清理小队临时状态、释放占用；NPC 的 destroyed/repairUntil/combatHp 保留在本体
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled) {
+      LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
+    }
     const destroyedShipId = activeShip.instance ? activeShip.instance.instanceId : null;
     const failedDeathspaceId = failedDeathspace ? (state.combat.deathspaceId || null) : null;
     // 维修后自动恢复（Phase 3D 修正）：重创即本轮失败并清零遭遇；无论普通星带还是死亡空间，
@@ -1289,6 +1302,10 @@ const ShellStateActions = {
     if (state.combat && isShipUnderRepair(state, instanceId, now)) return { changed:false, reason:"repairing" };
     const config = getShipConfigById(instance.shipId);
     if (!config) return { changed:false, reason:"unknown-ship" };
+    // 已绑定军团 NPC 的舰船不可作为玩家战斗舰（与 toggleShipAssignment 共用守护）。
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip) {
+      if (LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip(state, instanceId)) return { changed:false, reason:"npc-bound" };
+    }
     if (!state.shipAssignments) state.shipAssignments = {};
     const activeSkill = state.currentAction && state.currentAction.active ? state.currentAction.skill : null;
     if (activeSkill && state.shipAssignments[activeSkill] === instance.instanceId && activeSkill !== "combat") return { changed:false, reason:"ship-active" };
@@ -1526,6 +1543,10 @@ const ShellStateActions = {
     const instance = getShipInstanceFromState(state, instanceId);
     const config = instance ? getShipConfigById(instance.shipId) : null;
     if (!instance || !config || !["high", "mid", "low", "rig"].includes(slot)) return { changed:false, reason:"invalid-slot" };
+    // 新增：已绑定军团 NPC 的舰船禁止在船坞装配/改装（避免误改 NPC 战斗配装）。须先在军团内卸下。
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip) {
+      if (LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip(state, instanceId)) return { changed:false, reason:"npc-bound" };
+    }
     const activeCombat = state.combat && state.combat.active && getActiveCombatShipState(state).instance;
     if (activeCombat && activeCombat.instanceId === instance.instanceId) return { changed:false, reason:"combat-active" };
     if (slotIndex < 0 || slotIndex >= (config.slots[slot] || 0)) return { changed:false, reason:"invalid-slot" };
@@ -1567,6 +1588,10 @@ const ShellStateActions = {
   resetFitting(state, instanceId) {
     const instance = getShipInstanceFromState(state, instanceId);
     if (!instance) return { changed:false, reason:"unknown-ship" };
+    // 新增：已绑定军团 NPC 的舰船禁止在船坞重置配装
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip) {
+      if (LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip(state, instanceId)) return { changed:false, reason:"npc-bound" };
+    }
     const activeCombat = state.combat && state.combat.active && getActiveCombatShipState(state).instance;
     if (activeCombat && activeCombat.instanceId === instance.instanceId) return { changed:false, reason:"combat-active" };
     if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };

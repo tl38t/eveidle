@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>小队 HUD Demo · 双 NPC 方块 + 实时血条</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    :root {
+      --bg: #0b1118;
+      --panel: rgba(14, 24, 36, .92);
+      --panel-border: #24384d;
+      --text: #dceeff;
+      --text-dim: #8297ab;
+      --shield: #3f8fd0;
+      --armor: #c9a227;
+      --structure: #b5533f;
+      --ok: #7fd7a4;
+      --warn: #e0b062;
+      --danger: #e08a8a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #070d14 0%, #0f1b28 100%);
+      color: var(--text);
+      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 24px;
+    }
+    h1 { font-size: 18px; margin: 0 0 6px; letter-spacing: .5px; }
+    p.hint { color: var(--text-dim); font-size: 13px; margin: 0 0 18px; }
+
+    /* 模拟战斗面板容器 */
+    .mock-combat-panel {
+      width: min(960px, 100%);
+      background: rgba(9, 16, 24, .9);
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      padding: 18px;
+      position: relative;
+    }
+
+    /* 小队 HUD：竖直堆叠在玩家左侧 */
+    .squad-hud {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+    }
+    .squad-member {
+      width: 100%;
+      background: linear-gradient(180deg, rgba(20, 36, 54, .95) 0%, rgba(12, 22, 34, .98) 100%);
+      border: 1px solid var(--panel-border);
+      border-left: 3px solid var(--shield);
+      border-radius: 8px;
+      padding: 8px 10px;
+      position: relative;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    .squad-member.active { border-left-color: var(--ok); box-shadow: 0 0 0 1px rgba(127, 215, 164, .15); }
+    .squad-member.destroyed { border-left-color: var(--danger); opacity: .6; }
+    .squad-member.empty { border-left-color: var(--text-dim); opacity: .75; }
+
+    .squad-member-head {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 6px;
+    }
+    .squad-member-avatar {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: rgba(63, 143, 208, .18);
+      color: var(--shield);
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 13px;
+    }
+    .squad-member.active .squad-member-avatar { background: rgba(127, 215, 164, .18); color: var(--ok); }
+    .squad-member.destroyed .squad-member-avatar { background: rgba(176, 83, 63, .18); color: var(--danger); }
+    .squad-member-name {
+      font-size: 13px; font-weight: 600;
+      flex: 1; min-width: 0;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .squad-member-lv { font-size: 10px; color: var(--text-dim); }
+
+    /* 下拉选择 */
+    .squad-member select {
+      width: 100%;
+      background: rgba(7, 13, 20, .9);
+      color: var(--text);
+      border: 1px solid #2a3f55;
+      border-radius: 5px;
+      padding: 4px 6px;
+      font-size: 12px;
+      margin-bottom: 7px;
+      cursor: pointer;
+      outline: none;
+    }
+    .squad-member select option { background: #0b1520; }
+    .squad-member select:disabled { opacity: .55; cursor: not-allowed; }
+
+    /* 三条小血条 */
+    .mini-bars {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .mini-bar {
+      display: grid;
+      grid-template-columns: 26px 1fr 34px;
+      align-items: center;
+      gap: 5px;
+      font-size: 10px;
+      color: var(--text-dim);
+    }
+    .mini-bar-track {
+      height: 5px;
+      background: rgba(0, 0, 0, .35);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .mini-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width .25s ease-out;
+    }
+    .mini-bar-fill.shield { background: var(--shield); box-shadow: 0 0 4px rgba(63, 143, 208, .45); }
+    .mini-bar-fill.armor { background: var(--armor); }
+    .mini-bar-fill.structure { background: var(--structure); }
+    .mini-bar-val { text-align: right; color: var(--text); font-variant-numeric: tabular-nums; }
+
+    .squad-member-status {
+      margin-top: 6px;
+      font-size: 10px;
+      display: flex; align-items: center; gap: 5px;
+      color: var(--text-dim);
+    }
+    .squad-member-status .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: var(--ok);
+    }
+    .squad-member.destroyed .squad-member-status { color: var(--danger); }
+    .squad-member.destroyed .squad-member-status .dot { background: var(--danger); }
+
+    /* 模拟主战场区域：左小队、中玩家、右敌人 */
+    .mock-arena {
+      display: grid;
+      grid-template-columns: 180px 1fr 64px 1fr;
+      gap: 12px;
+      min-height: 260px;
+      align-items: center;
+    }
+    .mock-side {
+      border: 1px dashed rgba(56, 81, 107, .5);
+      border-radius: 8px;
+      padding: 20px;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 13px;
+    }
+    .mock-center { text-align: center; font-size: 24px; color: var(--text-dim); }
+
+    /* 玩家左侧的小队列 */
+    .squad-column {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      gap: 14px;
+      height: 100%;
+      min-height: 220px;
+      padding: 0 6px;
+    }
+    .squad-column-label {
+      font-size: 11px;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      text-align: center;
+      margin-bottom: 4px;
+    }
+
+    /* 控制区 */
+    .demo-controls {
+      margin-top: 18px;
+      display: flex; flex-wrap: wrap; gap: 10px;
+      align-items: center;
+    }
+    .demo-controls button {
+      background: rgba(63, 143, 208, .14);
+      border: 1px solid rgba(63, 143, 208, .45);
+      color: var(--text);
+      border-radius: 6px;
+      padding: 7px 12px;
+      font-size: 13px;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .demo-controls button:hover { background: rgba(63, 143, 208, .26); }
+    .demo-controls button.danger { background: rgba(176, 83, 63, .14); border-color: rgba(176, 83, 63, .5); }
+    .demo-controls button.danger:hover { background: rgba(176, 83, 63, .26); }
+    .demo-controls button.primary { background: rgba(127, 215, 164, .14); border-color: rgba(127, 215, 164, .45); }
+    .demo-controls button.primary:hover { background: rgba(127, 215, 164, .26); }
+    .demo-note { color: var(--text-dim); font-size: 12px; margin-left: auto; }
+
+    /* 动画：受击闪红 */
+    @keyframes hitFlash {
+      0% { box-shadow: inset 0 0 0 0 rgba(224, 90, 90, 0); }
+      30% { box-shadow: inset 0 0 18px 2px rgba(224, 90, 90, .35); }
+      100% { box-shadow: inset 0 0 0 0 rgba(224, 90, 90, 0); }
+    }
+    .squad-member.hit { animation: hitFlash .35s ease-out; }
+  </style>
+</head>
+<body>
+  <h1><i class="fa-solid fa-people-group"></i> 小队 HUD 方案 Demo</h1>
+  <p class="hint">两个 NPC 方块放在战场右侧，战斗中实时刷新血量；下拉菜单切换出战角色。</p>
+
+  <div class="mock-combat-panel">
+    <div class="mock-arena">
+      <!-- 玩家左侧：小队列 -->
+      <div class="squad-column">
+        <div class="squad-column-label"><i class="fa-solid fa-people-group"></i> 战斗小队</div>
+        <div class="squad-hud" id="squad-hud">
+          <!-- 由 JS 渲染 -->
+        </div>
+      </div>
+
+      <div class="mock-side">
+        <div style="font-size:12px;color:#8297ab;margin-bottom:6px;">PILOT VESSEL</div>
+        玩家舰船 / 环带 HP 区域
+      </div>
+      <div class="mock-center">⚔️</div>
+      <div class="mock-side">敌方目标区域</div>
+    </div>
+  </div>
+
+  <div class="demo-controls">
+    <button onclick="simDamage()">模拟 NPC 受击</button>
+    <button class="primary" onclick="simRepair()">模拟 NPC 修盾</button>
+    <button class="danger" onclick="simDeath()">模拟 NPC 爆船</button>
+    <button onclick="resetDemo()">重置</button>
+    <span class="demo-note">提示：下拉切人、按钮模拟实时血量变化。</span>
+  </div>
+
+  <script>
+    // 模拟数据：候选 NPC 列表
+    const candidates = [
+      { npcId: "npc-1", name: "泽诺锋", level: 50, skill: "激光火控", ship: "苍穹级", active: true,
+        hp: { shield: 2639, armor: 4243, structure: 4243 },
+        maxHp: { shield: 2639, armor: 4243, structure: 4243 } },
+      { npcId: "npc-2", name: "崔嵬", level: 1, skill: "电容节流", ship: "天穹级", active: true,
+        hp: { shield: 2636, armor: 3960, structure: 3960 },
+        maxHp: { shield: 2636, armor: 3960, structure: 3960 } },
+      { npcId: "npc-3", name: "艾拉", level: 12, skill: "导弹精修", ship: "雷光级", active: false,
+        hp: { shield: 1800, armor: 3200, structure: 3200 },
+        maxHp: { shield: 1800, armor: 3200, structure: 3200 } },
+      { npcId: "npc-4", name: "凯恩", level: 8, skill: "炮台操控", ship: "裂谷级", active: false,
+        hp: { shield: 2100, armor: 2800, structure: 2800 },
+        maxHp: { shield: 2100, armor: 2800, structure: 2800 } }
+    ];
+
+    // 当前两个槽位
+    let slots = [candidates[0], candidates[1]];
+
+    function pct(cur, max) {
+      return max > 0 ? Math.max(0, Math.min(100, Math.round(cur / max * 100))) : 0;
+    }
+
+    function renderSquadHud() {
+      const host = document.getElementById("squad-hud");
+      host.innerHTML = slots.map((npc, idx) => renderMember(npc, idx)).join("");
+      bindSelects();
+    }
+
+    function renderMember(npc, idx) {
+      if (!npc) {
+        return `<div class="squad-member empty">
+          <div class="squad-member-head"><span class="squad-member-avatar">—</span><span class="squad-member-name">未选择</span></div>
+          <select data-slot="${idx}"><option value="">选择 NPC 出战</option>${candidateOptions(null)}</select>
+          <div class="mini-bars"><div class="mini-bar"><span>护盾</span><div class="mini-bar-track"><div class="mini-bar-fill shield" style="width:0%"></div></div><span class="mini-bar-val">—</span></div></div>
+        </div>`;
+      }
+      const destroyed = npc.hp.structure <= 0;
+      const cls = destroyed ? "destroyed" : (npc.active ? "active" : "");
+      const avatar = destroyed ? "💀" : "🛡️";
+      const statusText = destroyed ? "已爆船 · 等待修复" : (npc.active ? "出战中" : "待命");
+      return `<div class="squad-member ${cls}" id="member-${idx}" data-idx="${idx}">
+        <div class="squad-member-head">
+          <span class="squad-member-avatar">${avatar}</span>
+          <span class="squad-member-name">${esc(npc.name)}</span>
+          <span class="squad-member-lv">Lv.${npc.level}</span>
+        </div>
+        <select data-slot="${idx}" ${npc.active ? "disabled" : ""}>
+          <option value="">选择 NPC 出战</option>
+          ${candidateOptions(npc.npcId)}
+        </select>
+        <div class="mini-bars">
+          ${barRow("护盾", "shield", npc.hp.shield, npc.maxHp.shield)}
+          ${barRow("装甲", "armor", npc.hp.armor, npc.maxHp.armor)}
+          ${barRow("结构", "structure", npc.hp.structure, npc.maxHp.structure)}
+        </div>
+        <div class="squad-member-status"><span class="dot"></span>${statusText}</div>
+      </div>`;
+    }
+
+    function barRow(label, key, cur, max) {
+      return `<div class="mini-bar">
+        <span>${label}</span>
+        <div class="mini-bar-track"><div class="mini-bar-fill ${key}" style="width:${pct(cur, max)}%"></div></div>
+        <span class="mini-bar-val">${cur}</span>
+      </div>`;
+    }
+
+    function candidateOptions(selectedId) {
+      return candidates.map(c => {
+        const inOther = slots.some((s, i) => s && s.npcId === c.npcId && c.npcId !== selectedId);
+        const disabled = inOther ? " disabled" : "";
+        const selected = c.npcId === selectedId ? " selected" : "";
+        return `<option value="${c.npcId}"${selected}${disabled}>${esc(c.name)} Lv.${c.level} · ${esc(c.skill)} · ${esc(c.ship)}</option>`;
+      }).join("");
+    }
+
+    function bindSelects() {
+      document.querySelectorAll(".squad-member select").forEach(sel => {
+        sel.onchange = () => {
+          const idx = Number(sel.dataset.slot);
+          const id = sel.value;
+          if (!id) {
+            slots[idx] = null;
+          } else {
+            const pick = candidates.find(c => c.npcId === id);
+            slots[idx] = pick ? { ...pick } : null;
+          }
+          renderSquadHud();
+        };
+      });
+    }
+
+    function updateBars(idx) {
+      const npc = slots[idx];
+      if (!npc) return;
+      const el = document.getElementById("member-" + idx);
+      if (!el) return;
+      const destroyed = npc.hp.structure <= 0;
+      el.className = "squad-member " + (destroyed ? "destroyed" : (npc.active ? "active" : ""));
+      const status = el.querySelector(".squad-member-status");
+      if (status) {
+        status.innerHTML = `<span class="dot"></span>${destroyed ? "已爆船 · 等待修复" : "出战中"}`;
+      }
+      ["shield", "armor", "structure"].forEach(key => {
+        const fill = el.querySelector(".mini-bar-fill." + key);
+        const val = el.querySelector(".mini-bar-fill." + key + " + .mini-bar-val");
+        if (fill) fill.style.width = pct(npc.hp[key], npc.maxHp[key]) + "%";
+        if (val) val.textContent = npc.hp[key];
+      });
+    }
+
+    function esc(s) { return String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+
+    // 模拟交互
+    function simDamage() {
+      slots.forEach((npc, idx) => {
+        if (!npc || npc.hp.structure <= 0) return;
+        npc.hp.shield = Math.max(0, npc.hp.shield - Math.floor(Math.random() * 400 + 200));
+        npc.hp.armor = Math.max(0, npc.hp.armor - Math.floor(Math.random() * 300 + 100));
+        npc.hp.structure = Math.max(0, npc.hp.structure - Math.floor(Math.random() * 80));
+        const el = document.getElementById("member-" + idx);
+        if (el) { el.classList.remove("hit"); void el.offsetWidth; el.classList.add("hit"); }
+        updateBars(idx);
+      });
+    }
+
+    function simRepair() {
+      slots.forEach((npc, idx) => {
+        if (!npc || npc.hp.structure <= 0) return;
+        npc.hp.shield = Math.min(npc.maxHp.shield, npc.hp.shield + Math.floor(Math.random() * 300 + 200));
+        updateBars(idx);
+      });
+    }
+
+    function simDeath() {
+      const live = slots.map((n, i) => n && n.hp.structure > 0 ? i : -1).filter(i => i >= 0);
+      if (!live.length) return;
+      const idx = live[Math.floor(Math.random() * live.length)];
+      slots[idx].hp.shield = 0;
+      slots[idx].hp.armor = 0;
+      slots[idx].hp.structure = 0;
+      updateBars(idx);
+    }
+
+    function resetDemo() {
+      slots = [candidates[0], candidates[1]];
+      candidates.forEach(c => { c.hp = { ...c.maxHp }; });
+      renderSquadHud();
+    }
+
+    renderSquadHud();
+  </script>
+</body>
+</html>

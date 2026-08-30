@@ -242,7 +242,7 @@ let W, G, LR, LE, els;
   ok(confirmModal && /确认更换/.test(confirmModal.innerHTML), "更换舰船需要二次确认弹窗");
   fire(confirmModal, "click", fakeBtn("data-confirm-yes", ""));
   ok(paidNpc.boundShipInstanceId === inst2, "二次确认后更换成功");
-  ok(G.inventory.ships.filter(s => s.instanceId === instId).length === 0, "旧舰船被销毁");
+  ok(G.inventory.ships.filter(s => s.instanceId === instId).length === 1, "旧舰船归还机库（不再销毁）");
 
   // 解雇需二次确认 → 确认后释放位置
   const cntBefore = G.legion.npcs.length;
@@ -290,6 +290,93 @@ section("19-22 台词不重复 / 重复绑定事件 / 防重复点击 / 无新�
     W.LegionRender.renderLegionSection(Date.now());
   } catch (e) { threw = true; console.error(e); }
   ok(!threw && W.__guardReports.length === 0, "渲染无新增错误 / RuntimeErrorGuard 无记录");
+}
+
+// ===== 场景 23-25：战斗面板小队区域（M5） =====
+section("23-25 战斗面板小队区域（M5）");
+{
+  const { sandbox: W, els } = load([]);
+  const G = W.gameState; const LP = W.LEGION_NPC; const SQ = W.LEGION_COMBAT_SQUAD;
+  G.station.bodyLevel = 5; G.station.buildings = { legion_hall: 1 }; G.station.dlc = { npcWorkers: true };
+  ok(typeof SQ === "object" && typeof W.renderCombatSquadSection === "function", "小队模块与渲染函数已加载");
+
+  // 容器存在（index.html 增量补丁）
+  ok(!!els.get("combat-squad-section"), "战斗面板存在小队容器 #combat-squad-section");
+
+  // 造 2 名战斗 NPC（带舰带武器）
+  const mkShip = (id, high) => ({ shipId: "rifter", instanceId: id, builtAt: 1, fitted: { high: high || [], mid: [], low: [], rig: [] }, enhancementLevel: 0 });
+  G.inventory.ships = [mkShip("p1", ["t1_small_laser"]), mkShip("n1", ["t1_small_laser"]), mkShip("n2", ["t1_small_laser"])];
+  G.shipAssignments = { combat: "p1" };
+  G.ammo = [{ id: "am1", type: "laser", tier: "T1", name: "激光晶体弹药", props: { dmgMult: 1, hitMult: 1 }, qty: 999, loaded: true }];
+  G.resources.fuel = 5000;
+  G.legion.npcs = [
+    LP.createNpc({ npcId: "cn1", name: "阿尔法", skillId: "laserOps", skillGrade: "B", level: 20, boundShipInstanceId: "n1" }),
+    LP.createNpc({ npcId: "cn2", name: "贝塔", skillId: "missileOperations", skillGrade: "C", level: 40, boundShipInstanceId: "n2" })
+  ];
+  G.research = G.research || {}; G.research.completedLevels = {};
+
+  // 未解锁协议 → 提示锁定且无可选项（容量0不渲染下拉）
+  W.renderCombatSquadSection(Date.now());
+  let html = els.get("combat-squad-section").innerHTML;
+  ok(/双人协议未解锁/.test(html) && /只能玩家单舰战斗/.test(html), "未解锁：显示协议锁定原因");
+  ok((html.match(/class="lcs-slot-select"/g) || []).length === 0, "未解锁：容量0，无选角下拉");
+
+  // 解锁双人 → 可选 1 名（渲染 1 个下拉）
+  G.research.completedLevels.legion_dual_squad = 1;
+  W.renderCombatSquadSection(Date.now());
+  html = els.get("combat-squad-section").innerHTML;
+  ok(/双人协议已解锁/.test(html) && /上限 2 人/.test(html), "解锁双人：显示可选 1 名（上限含玩家2人）");
+  ok((html.match(/class="lcs-slot-select"/g) || []).length === 1, "解锁双人：渲染 1 个选角下拉");
+  ok(/阿尔法/.test(html) && /Lv\.20/.test(html), "下拉含 NPC 名字与等级");
+
+  // 选择 → 走 API 写入，不直接改 state
+  SQ.setLegionSquadSelection(G, ["cn1"], { now: Date.now() });
+  W.renderCombatSquadSection(Date.now());
+  html = els.get("combat-squad-section").innerHTML;
+  ok((html.match(/<option value="cn1"[^>]*selected/g) || []).length === 1, "已选 NPC 在下拉中回显为 selected");
+  ok(SQ.getLegionSquadSelection(G).length === 1, "选择经 API 写入 pendingNpcIds");
+
+  // 防重复绑定：同一 NPC 传入多次仍只有 1 个
+  SQ.setLegionSquadSelection(G, ["cn1", "cn1", "cn1"], { now: Date.now() });
+  ok(SQ.getLegionSquadSelection(G).length === 1, "UI 侧防重复绑定（重复勾选只算一人）");
+
+  // 开战 → 渲染锁定成员，禁止修改（下拉 disabled）
+  SQ.startLegionSquadBattleWithMembers(G, { now: Date.now() });
+  W.renderCombatSquadSection(Date.now());
+  html = els.get("combat-squad-section").innerHTML;
+  ok(/战斗进行中/.test(html), "战斗中：显示成员与舰船已锁定提示");
+  ok(/出战中/.test(html), "战斗中：成员徽章为出战中");
+  ok(/disabled/.test(html), "战斗中：选角下拉禁用（战后才能改）");
+
+  // 爆船 → 显示修复倒计时与「在岗但暂时无法参战」
+  SQ.handleLegionNpcDestroyed(G, "cn1", Date.now());
+  W.renderCombatSquadSection(Date.now());
+  html = els.get("combat-squad-section").innerHTML;
+  ok(/已爆船/.test(html) && /修复 \d+s/.test(html), "爆船：显示已爆船与修复倒计时");
+  ok(/在岗，但暂时无法参战/.test(html), "爆船：显示在岗但暂时无法参战");
+
+  // 修复完成 → 本场不归队（D4），提示下一场可参战
+  SQ.completeLegionNpcRepair(G, "cn1", Date.now() + 180000);
+  W.renderCombatSquadSection(Date.now() + 180000);
+  html = els.get("combat-squad-section").innerHTML;
+  ok(/修复完成：本场已退出，下一场可参战/.test(html), "修复完成：本场不归队，提示下一场可参战");
+  // 战后（squad 已清理）→ 恢复可参战
+  SQ.endLegionSquadBattle(G);
+  W.renderCombatSquadSection(Date.now() + 180000);
+  html = els.get("combat-squad-section").innerHTML;
+  ok(/可参战/.test(html), "战斗结束后：修复完成的 NPC 恢复可参战");
+
+  // 欠薪文案（方块只渲染已选中的 NPC，故设在当前出战选择 cn1 上）
+  SQ.endLegionSquadBattle(G);
+  G.legion.npcs[0].salaryState = "overdue"; // cn1 为当前选择
+  W.renderCombatSquadSection(Date.now() + 180000);
+  html = els.get("combat-squad-section").innerHTML;
+  ok(/欠薪/.test(html), "欠薪：显示欠薪状态文案");
+
+  // 渲染无异常
+  let threw = false;
+  try { W.renderCombatSquadSection(Date.now()); W.renderCombatPanel(Date.now()); } catch (e) { threw = true; console.error(e); }
+  ok(!threw, "小队区域与战斗面板整体渲染无异常");
 }
 
 console.log("\n军团 UI 测试：PASS=" + pass + "  FAIL=" + fail);

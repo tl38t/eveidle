@@ -12,12 +12,13 @@ function getActiveCombatShipInstance(state) {
 
 const COMBAT_RECOVERY_MS = 180000;
 
-function getInstalledCombatModules(state) {
-  return getInstalledCombatModulesFromState(state || gameState).map(module => ({ id:module.id, itemId:module.itemId, instance:module.instance, enhancementLevel:module.enhancementLevel, multiplier:module.multiplier, equipment:EQUIPMENT_DB[module.itemId], slot:module.slot }));
+// M3：options = { shipInstanceId, excludeImplants }（军团 NPC 战斗小队）；缺省行为不变。
+function getInstalledCombatModules(state, options) {
+  return getInstalledCombatModulesFromState(state || gameState, options).map(module => ({ id:module.id, itemId:module.itemId, instance:module.instance, enhancementLevel:module.enhancementLevel, multiplier:module.multiplier, equipment:EQUIPMENT_DB[module.itemId], slot:module.slot }));
 }
 
-function getInstalledCombatWeapons(state) {
-  return getInstalledCombatModules(state).filter(module => module.equipment.combat.kind === "weapon");
+function getInstalledCombatWeapons(state, options) {
+  return getInstalledCombatModules(state, options).filter(module => module.equipment.combat.kind === "weapon");
 }
 
 function getInstalledCombatRepairers(state) {
@@ -180,19 +181,71 @@ function calcCombatMaxHp(ship, shipInstance, state) {
   return getCombatMaxHpFromState(state || gameState);
 }
 
-function calcPlayerDodge(ship, state) {
-  return getCombatPlayerDodgeFromState(state || gameState);
+// ============================================================================
+// M3：军团 NPC 战斗小队接入（薄包装，全部在 legion-combat-squad.js 实现）
+//   - 三个包装函数在非小队模式（combat.squad.enabled !== true）或模块缺失时零副作用，
+//     保证单舰战斗行为与 M3 之前逐字节一致。
+//   - 顺序遵循 M3 规格：玩家舰船状态 → NPC 成员状态 → 玩家+NPC 攻击 → 敌人对小队攻击
+//     → NPC 受伤爆船退出 → 敌人击毁检查 → 玩家击毁检查 → 保存战斗状态。
+// ============================================================================
+function isLegionSquadBattle(state) {
+  const c = state && state.combat;
+  return Boolean(c && c.squad && c.squad.enabled === true
+    && typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD);
 }
 
-function calcFuelMult(zone, state) {
-  return getCombatFuelMultiplierFromState(state || gameState, zone);
+function syncLegionSquadMembers(state, now) {
+  if (!isLegionSquadBattle(state)) return null;
+  return LEGION_COMBAT_SQUAD.syncLegionSquadMembers(state, { now: now });
+}
+
+function processLegionNpcAttack(state, context) {
+  if (!isLegionSquadBattle(state)) return null;
+  return LEGION_COMBAT_SQUAD.processLegionNpcAttack(state, context);
+}
+
+// 敌人一次攻击的落点结算：非小队模式返回 null（调用方走原有玩家受伤路径）
+function processLegionEnemyAttack(state, context) {
+  if (!isLegionSquadBattle(state)) return null;
+  return LEGION_COMBAT_SQUAD.processLegionEnemyAttack(state, context);
+}
+
+// 战斗不再进行（撤退/清波结束/战败）时清理小队临时状态并释放占用
+function endLegionSquadBattleIfInactive(state) {
+  const c = state && state.combat;
+  if (!c) return false;
+  if (c.active) return false;
+  if (!c.squad || !c.squad.enabled) return false;
+  if (typeof LEGION_COMBAT_SQUAD === "undefined" || !LEGION_COMBAT_SQUAD) return false;
+  return Boolean(LEGION_COMBAT_SQUAD.endLegionSquadBattle(state).changed);
+}
+
+function calcPlayerDodge(ship, state, options) {
+  return getCombatPlayerDodgeFromState(state || gameState, undefined, options);
+}
+
+function calcFuelMult(zone, state, options) {
+  return getCombatFuelMultiplierFromState(state || gameState, zone, undefined, options);
+}
+
+// 武器克制倍率（护盾/装甲/结构 命中对应层 ×1.25）：玩家与军团 NPC 共用唯一口径，
+// 禁止各写一份（M3 抽取；行为与抽取前逐值一致）。
+function calcWeaponCounterMultiplier(weaponType, targetHp) {
+  const weapon = WEAPON_CONFIG[weaponType];
+  if (!weapon || !targetHp) return 1.0;
+  if (weapon.counterType === "shield" && targetHp.shield > 0) return 1.25;
+  if (weapon.counterType === "armor" && targetHp.shield <= 0 && targetHp.armor > 0) return 1.25;
+  if (weapon.counterType === "structure" && targetHp.shield <= 0 && targetHp.armor <= 0 && targetHp.structure > 0) return 1.25;
+  return 1.0;
 }
 
 // 计算当前已装武器完成「一轮齐射」所需燃料，复用与 combatTick 完全相同的公式
 // （Math.max(1, round(fuelCost * fuelMult)) 逐武器累加）。禁止另写一套公式。
 // 供 Action 层出击前燃料校验与 combatTick 开火结算共用，确保两者一致。
-function computeVolleyFuel(state, zone) {
-  const modules = getInstalledCombatModulesFromState(state);
+// M3：options = { shipInstanceId, excludeImplants } 时按指定舰船实例计算（NPC 绑定舰）；
+// 缺省保持玩家当前出战舰行为（与 combatTick 结算一致）。禁止另写一套公式。
+function computeVolleyFuel(state, zone, options) {
+  const modules = getInstalledCombatModulesFromState(state, options);
   const weapons = modules.filter(m => m.combat && m.combat.kind === "weapon");
   let volleyFuel = 0;
   for (const module of weapons) {
@@ -200,7 +253,7 @@ function computeVolleyFuel(state, zone) {
     // 与 combatTick 实际逐 tick 消耗（同用本函数）保持一致，避免 fuelCost:0 武器被误算成需 1 燃料。
     const fc = module.combat && module.combat.fuelCost;
     if (!(fc > 0)) continue;
-    volleyFuel += Math.max(1, Math.round(fc * getCombatFuelMultiplierFromState(state, zone)));
+    volleyFuel += Math.max(1, Math.round(fc * getCombatFuelMultiplierFromState(state, zone, undefined, options)));
   }
   return volleyFuel;
 }
@@ -1106,7 +1159,7 @@ function advanceCombatRound(state, context) {
   if (!enemy) {
     resolveCombatWaveVictory(zone, rng, emit, state);
     enemy = syncCurrentCombatTarget(c, state);
-    if (!enemy) return { ok:true, advanced:false, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"wave-cleared" };
+    if (!enemy) { endLegionSquadBattleIfInactive(state); return { ok:true, advanced:false, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"wave-cleared" }; }
   }
 
   // 动态刷新 maxHp（技能升级后自动增长）
@@ -1116,6 +1169,10 @@ function advanceCombatRound(state, context) {
   if (c.hp.armor   > c.maxHp.armor)   c.hp.armor   = c.maxHp.armor;
   if (c.hp.structure > c.maxHp.structure) c.hp.structure = c.maxHp.structure;
 
+  // M3 步骤 2：处理 NPC 成员状态（初始化 HP / 剔除失效引用 / 推进修复倒计时）。
+  // 非小队模式（squad.enabled !== true）下无任何副作用。
+  syncLegionSquadMembers(state, now);
+
   // 弹药耗尽撤退：所有已装载弹药都无法供给任何需弹武器 → 结束战斗（撤退，保留已得战利品）
   const needsAmmoWeapons = weapons.filter(m => (m.equipment.combat.ammoCost || 1) > 0);
   if (needsAmmoWeapons.length > 0 && !needsAmmoWeapons.some(m => hasSelectedAmmo(state, m.equipment.combat.weaponType))) {
@@ -1123,6 +1180,7 @@ function advanceCombatRound(state, context) {
     c.enemies = []; c.currentEnemy = null;
     c.lastStatus = "弹药耗尽，撤退";
     c.runDamageDealt = 0; c.runDamageTaken = 0;
+    endLegionSquadBattleIfInactive(state);
     return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"ammo-depleted" };
   }
 
@@ -1163,10 +1221,8 @@ function advanceCombatRound(state, context) {
       const ammoProps = volleyAmmoProps[combat.weaponType] || getAmmoTierProps("T1");
       const playerHit = calcPlayerHit(combat.weaponType, equipment, state) * ammoProps.hitMult;
       const dmgMult = calcPlayerDmgMult(combat.weaponType, state);
-      let counterMult = 1.0;
-      if (weapon.counterType === "shield" && enemy.hp.shield > 0) counterMult = 1.25;
-      else if (weapon.counterType === "armor" && enemy.hp.shield <= 0 && enemy.hp.armor > 0) counterMult = 1.25;
-      else if (weapon.counterType === "structure" && enemy.hp.shield <= 0 && enemy.hp.armor <= 0 && enemy.hp.structure > 0) counterMult = 1.25;
+      // M3：克制倍率统一走 calcWeaponCounterMultiplier（玩家与军团 NPC 共用同一口径）
+      const counterMult = calcWeaponCounterMultiplier(combat.weaponType, enemy.hp);
       const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
       const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
       const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
@@ -1202,6 +1258,22 @@ function advanceCombatRound(state, context) {
     c.lastStatus = "弹药不足，整轮武器未能开火";
   }
 
+  // M3 步骤 3（后半）：NPC 与玩家攻击同一目标（combat.currentEnemy）。
+  // 放在原「玩家击毁结算」之前，保证 NPC 造成的击毁同样走原有奖励结算入口。
+  // 非小队模式下本函数直接返回，不产生任何状态变化。
+  const squadResult = processLegionNpcAttack(state, { now: now, offline: Boolean(context.offline), rng: rng, zone: zone, emit: emit });
+  // 在线模式下为每个实际造成伤害的 NPC 飘一个独立伤害数字（暗红 / 橙红交替）。
+  // 这同时回答了「NPC 是否参战」：只要本轮敌方区出现暗红/橙红数字，即代表对应 NPC 已开火。
+  if (playEffects && typeof playAttackFX === "function" && squadResult && squadResult.perNpc) {
+    let squadIdx = 0;
+    for (const p of squadResult.perNpc) {
+      if (p && typeof p.damage === "number" && p.damage > 0) {
+        playAttackFX(true, null, p.damage, squadIdx, "squad", squadIdx % 2 === 1);
+        squadIdx += 1;
+      }
+    }
+  }
+
   // 玩家先手与AOE击毁的所有敌舰均立即结算，本轮不再反击。
   for (const defeated of c.enemies.filter(item => item && !item.rewarded && item.hp && item.hp.structure <= 0)) {
     resolveCombatEnemyDefeat(defeated, zone, rng, emit, state);
@@ -1219,26 +1291,38 @@ function advanceCombatRound(state, context) {
     if (mitigation.shieldHitUsed) shieldHitsUsed++;
     const enemyDmg = Math.max(0, Math.round(mitigation.damage));
     const reducedDmg = dcReduction > 0 ? Math.max(0, Math.round(enemyDmg * (1 - dcReduction))) : enemyDmg;
-    const damageTaken = applyLayeredCombatDamage(c.hp, reducedDmg);
-    armorDamageTaken += damageTaken.armor;
-    // Batch C-12：累计玩家实际承受伤害
-    c.runDamageTaken = (typeof c.runDamageTaken === "number" ? c.runDamageTaken : 0) + damageTaken.shield + damageTaken.armor + damageTaken.structure;
+    // M3 步骤 4/5：敌人每次攻击单独选目标（玩家 + 存活 NPC 等概率）。
+    // squadHit 为 null 表示非小队模式 → 完全沿用原有玩家受伤路径（行为不变）。
+    const squadHit = processLegionEnemyAttack(state, { damage: reducedDmg, now: now, rng: rng, emit: emit });
+    const damageTaken = squadHit ? squadHit.dealt : applyLayeredCombatDamage(c.hp, reducedDmg);
+    const hitNpc = Boolean(squadHit && squadHit.kind === "npc");
+    if (!hitNpc) armorDamageTaken += damageTaken.armor;
+    // Batch C-12：累计玩家实际承受伤害（NPC 承受的伤害不计入玩家承伤）
+    if (!hitNpc) {
+      c.runDamageTaken = (typeof c.runDamageTaken === "number" ? c.runDamageTaken : 0) + damageTaken.shield + damageTaken.armor + damageTaken.structure;
+    }
     enemyVolley.mitigatedDamage += Math.round(mitigation.mitigated);
     const actualDamage = damageTaken.shield + damageTaken.armor + damageTaken.structure;
     const attackOrder = enemyVolley.attackers;
     enemyVolley.attackers++;
     enemyVolley.totalDamage += actualDamage;
-    enemyVolley.hits.push({ enemyId:attacker.id, damage:actualDamage });
+    enemyVolley.hits.push(squadHit
+      ? { enemyId:attacker.id, damage:actualDamage, target:squadHit.kind, npcId:squadHit.npcId || null }
+      : { enemyId:attacker.id, damage:actualDamage });
     if (playEffects) playEnemyAttackFX(c.enemies.indexOf(attacker), attackOrder, actualDamage);
 
-    if (damageTaken.shield > 0) { const s = state.skills.shieldOperation; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "shieldOperation", 1, "combat"); } }
-    if (damageTaken.armor > 0) { const s = state.skills.armorReinforcement; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "armorReinforcement", 1, "combat"); } }
-    if (damageTaken.structure > 0) { const s = state.skills.hullEngineering; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "hullEngineering", 1, "combat"); } }
-    if (damageTaken.shield + damageTaken.armor + damageTaken.structure > 0) {
-      const s = state.skills.piloting; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "piloting", 1, "combat"); }
+    // 防御经验只来自玩家实际承受的伤害（NPC 受伤不给玩家发放，避免按人数放大经验）
+    if (!hitNpc) {
+      if (damageTaken.shield > 0) { const s = state.skills.shieldOperation; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "shieldOperation", 1, "combat"); } }
+      if (damageTaken.armor > 0) { const s = state.skills.armorReinforcement; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "armorReinforcement", 1, "combat"); } }
+      if (damageTaken.structure > 0) { const s = state.skills.hullEngineering; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "hullEngineering", 1, "combat"); } }
+      if (damageTaken.shield + damageTaken.armor + damageTaken.structure > 0) {
+        const s = state.skills.piloting; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "piloting", 1, "combat"); }
+      }
     }
     if (c.hp.structure <= 0) {
       beginCombatRecovery(state, context);
+      endLegionSquadBattleIfInactive(state); // M3 步骤 9：沿用原有失败逻辑，清理小队、保留 NPC 修复状态
       return { ok:true, advanced:true, active:false, pending:Boolean(c.deathspaceChainPending), recovering:true, reason:"defeated" };
     }
   }
@@ -1265,7 +1349,14 @@ function advanceCombatRound(state, context) {
       const s = state.skills.defense; if (s && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "defense", 1, "combat"); }
     }
   }
+
+  // M5 修复：NPC 绑定舰维修件在战斗中生效（与玩家维修对称）。离线模式由 offline-combat.js 自行调用。
+  if (!context.offline && typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.repairLegionSquadNpcs) {
+    LEGION_COMBAT_SQUAD.repairLegionSquadNpcs(state, { now: now, zone: zone });
+  }
+
   resolveCombatWaveVictory(zone, rng, emit, state);
+  endLegionSquadBattleIfInactive(state); // M3 步骤 9：清波后若战斗已结束则清理小队（连刷续跑时保持启用）
   state._dirty = true;
   return { ok:true, advanced:true, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:c.active ? "ongoing" : "cleared" };
 }
@@ -1322,6 +1413,11 @@ function beginDeathspaceRun(state, options, context) {
   });
   state.currentAction.skill = "combat";
   state.currentAction.active = true;
+  // M5：开战入口接线（死亡空间首轮 / 连刷续跑共用本原语；连刷续跑沿用既有小队，不重复开战）
+  if (!opts.continuation && typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD &&
+      typeof LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers === "function") {
+    LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers(state, { now: now });
+  }
   state._dirty = true;
   emit("combat:deathspaceEntered", {
     deathspaceId:site.id, zoneId:site.sourceZoneId, faction:site.faction, tier:site.dedTier

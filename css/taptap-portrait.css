@@ -398,6 +398,10 @@
   .tp-box-t{ font-size:11px; color:#7d8a99; margin-bottom:3px; }
   .tp-box-b{ font-size:13px; color:#cdd9e5; line-height:1.5; }
   .tp-repair-box{ border-color:rgba(217,140,60,.4); }
+  .tp-htag.tp-bound{ background:rgba(224,80,80,.2); color:#ff8585; }
+  .tp-bound-box{ border-color:rgba(224,80,80,.45); background:rgba(224,80,80,.08); }
+  .tp-bound-box .tp-box-b{ color:#ffb0b0; }
+  .tp-chip-bound{ margin-left:2px; font-size:11px; }
   .tp-empty{ font-size:13px; color:#5a6a7a; padding:10px 4px; text-align:center; }
 
   .tp-fit-list{ display:flex; flex-direction:column; gap:6px; }

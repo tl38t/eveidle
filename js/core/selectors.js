@@ -95,6 +95,10 @@ function getShipRoleName(shipId) {
 function getShipAssignmentRestriction(config, actionKey, combatRecoveryActive, instance, state) {
   const bonuses = config && config.bonuses ? config.bonuses : {};
   if (!["combat", "mining", "gasHarvesting", "refining", "archaeology"].includes(actionKey)) return { reason:"unsupported-task", text:"该任务不需要分配舰船岗位" };
+  // 已绑定军团 NPC 的舰船不可再指派给玩家任何岗位（含战斗舰），须先在军团面板卸下。
+  if (state && instance && typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip) {
+    if (LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip(state, instance.instanceId)) return { reason:"npc-bound", text:"舰船已绑定军团 NPC，卸下后方可指派" };
+  }
   if (actionKey === "combat" && combatRecoveryActive) return { reason:"repairing", text:"舰船自动维修中" };
   if (actionKey === "mining" && !(bonuses.miningLaserEfficiency > 0)) return { reason:"unsupported-mining", text:"该舰船没有采矿岗位" };
   if (actionKey === "gasHarvesting" && !(bonuses.gasLaserEfficiency > 0)) return { reason:"unsupported-gas", text:"该舰船没有采气岗位" };
@@ -843,11 +847,14 @@ function getActionConfirmationDisplayState(state, target, now) {
       canOpen = Boolean(site && !arch.repairing && !arch.interference);
     }
     result.title = "🔍 " + (SKILL_LABEL.archaeology || "考古");
-    // 实际周期时间含 archaeologySpeed 增强剂倍率 ÷ 空间站综合后勤倍率
+    // 实际周期时间：与在线 tick / 离线结算 / 考古页面显示态共用 getArchaeologyCycleSeconds，
+    // 确保增强剂、空间站后勤、考古科研、脑插、遗迹分析仪周期缩短、军团 NPC 加成等全部生效。
     const archSpeedEff = (typeof getBoosterEffectState === "function")
       ? (getBoosterEffectState(state).archaeologySpeedMultiplier || 1) : 1;
     const archLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(state)) : 1;
-    result.duration = site ? site.time * archSpeedEff / archLogisticsMult : 1;
+    result.duration = (typeof getArchaeologyCycleSeconds === "function" && site)
+      ? getArchaeologyCycleSeconds(state, site)
+      : (site ? site.time * archSpeedEff / archLogisticsMult : 1);
     result.canOpen = canOpen;
     result.blockedText = canOpen ? "" : blockedText;
     result.queue = site ? { skill:"archaeology", target:site.id, label:site.name } : null;
@@ -1664,19 +1671,27 @@ function getCombatSkillLevelFromState(state, key) {
   return Number(state && state.skills && state.skills[key] && state.skills[key].lvl) || 1;
 }
 
-function getActiveCombatShipState(state) {
+function getActiveCombatShipState(state, options) {
   const ships = state && state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
-  const assignedRef = state && state.shipAssignments ? state.shipAssignments.combat : null;
-  const activeRef = state && state.combat ? state.combat.activeShip : null;
-  const instance = getShipInstanceFromState(state, assignedRef) || getShipInstanceFromState(state, activeRef) || ships[0] || null;
+  let instance = null;
+  if (options && options.shipInstanceId) {
+    // M2 军团 NPC 战斗小队：显式舰船实例解析（NPC 绑定舰）。
+    // 找不到即 null，绝不回退到玩家当前出战舰 —— 防止把玩家舰船属性算进 NPC。
+    instance = getShipInstanceFromState(state, options.shipInstanceId) || null;
+  } else {
+    const assignedRef = state && state.shipAssignments ? state.shipAssignments.combat : null;
+    const activeRef = state && state.combat ? state.combat.activeShip : null;
+    instance = getShipInstanceFromState(state, assignedRef) || getShipInstanceFromState(state, activeRef) || ships[0] || null;
+  }
   // 问题修复：玩家无拥有舰（instance 为 null）时 config 返回 null，不再 fallback 到 STARTER_SHIPS.rifter
   // （旧逻辑会在新存档/无舰时凭空造出"星矛级"幽灵舰，与机库不一致）。无舰时由各显示层按 hasShip 处理。
   const config = instance ? (getShipConfigById(instance.shipId) || STARTER_SHIPS.rifter) : null;
   return { instance, config, fitting:getFittingFromInstance(instance) };
 }
 
-function getInstalledCombatModulesFromState(state) {
-  const activeShip = getActiveCombatShipState(state);
+function getInstalledCombatModulesFromState(state, options) {
+  // M3：options.shipInstanceId → 按指定实例（NPC 绑定舰）读装配；缺省保持当前出战舰行为
+  const activeShip = getActiveCombatShipState(state, options);
   const modules = [];
   for (const slot of ["high", "mid", "low", "rig"]) {
     for (const ref of activeShip.fitting[slot]) {
@@ -1812,8 +1827,11 @@ function getCombatResearchModifierList(state, stat, key) {
   }];
 }
 
-function getCombatMaxHpFromState(state, context) {
-  const activeShip = getActiveCombatShipState(state);
+function getCombatMaxHpFromState(state, context, options) {
+  // M2：options = { shipInstanceId, excludeImplants }（军团 NPC 战斗小队）。
+  //   shipInstanceId  → 显式按实例计算（NPC 绑定舰）；缺省保持原行为（当前出战舰）。
+  //   excludeImplants → 跳过脑插乘区（NPC 不吃玩家脑插）；缺省保持原行为。
+  const activeShip = getActiveCombatShipState(state, options);
   const ship = activeShip.config;
   // 玩家无拥有战斗舰（新存档/未指派）时无可计算的船体 HP：返回战斗系统自身的默认上限，避免崩溃。
   if (!activeShip.instance) {
@@ -1834,8 +1852,9 @@ function getCombatMaxHpFromState(state, context) {
   // 改装件容量加成（护盾/装甲/结构 *Percent），乘算在最终 HP 上（含装备平段 + 强化）
   const rigMods = (activeShip.instance && typeof getRigModifiers === "function")
     ? getRigModifiers(state, activeShip.instance) : {};
-  // 脑插（99 级生产技能成就）：独立乘区，与船体/技能/装备/强化/rig/科研相乘
-  const implantHp = (typeof getImplantBonuses === "function")
+  // 脑插（99 级生产技能成就）：独立乘区，与船体/技能/装备/强化/rig/科研相乘。
+  // M2：excludeImplants=true 时跳过（NPC 不计入脑插）。
+  const implantHp = (!(options && options.excludeImplants) && typeof getImplantBonuses === "function")
     ? getImplantBonuses(state).hpCap : { shield:1, armor:1, structure:1 };
   // 军团 NPC 防御加成（shieldOperation/armorReinforcement/hullEngineering）：独立乘区，与科研相乘。
   const legion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
@@ -1879,10 +1898,11 @@ function getCombatMaxHpFromState(state, context) {
   };
 }
 
-function getCombatWeaponHitFromState(state, weaponType, equipmentCombat, context) {
+function getCombatWeaponHitFromState(state, weaponType, equipmentCombat, context, options) {
   const config = WEAPON_CONFIG[weaponType];
   if (!config) return 100;
-  const ship = getActiveCombatShipState(state).config;
+  // M2：options.shipInstanceId → 显式实例（NPC 绑定舰），缺省保持当前出战舰行为
+  const ship = getActiveCombatShipState(state, options).config;
   const baseHit = equipmentCombat && equipmentCombat.baseHit !== undefined ? equipmentCombat.baseHit : config.baseHit;
   return calculateCombatStatFromState(state, "hit", baseHit, [
     { operation:"add", value:getCombatSkillLevelFromState(state, config.skillKey) * 4, priority:10, source:"weapon-skill" },
@@ -1891,15 +1911,17 @@ function getCombatWeaponHitFromState(state, weaponType, equipmentCombat, context
   ], { ...(context || {}), actor:"player", weaponType });
 }
 
-function getCombatDamageMultiplierFromState(state, weaponType, context) {
+function getCombatDamageMultiplierFromState(state, weaponType, context, options) {
   const config = WEAPON_CONFIG[weaponType];
   if (!config) return 1;
-  const activeShip = getActiveCombatShipState(state);
+  // M2：options = { shipInstanceId, excludeImplants }（军团 NPC 战斗小队）
+  const activeShip = getActiveCombatShipState(state, options);
   const ship = activeShip.config;
   const shipBonus = ship.bonuses ? (ship.bonuses[weaponType + "Damage"] || 0) : 0;
   const enhancement = getShipEnhancementBonuses(ship, activeShip.instance && activeShip.instance.enhancementLevel);
-  // 脑插（99 级生产技能成就）：独立乘区，与技能/船体/强化/科研相乘
-  const implantMult = (typeof getImplantBonuses === "function")
+  // 脑插（99 级生产技能成就）：独立乘区，与技能/船体/强化/科研相乘。
+  // M2：excludeImplants=true 时跳过（NPC 不计入脑插）。
+  const implantMult = (!(options && options.excludeImplants) && typeof getImplantBonuses === "function")
     ? (getImplantBonuses(state).weaponDamage[weaponType] || 1) : 1;
   // 军团 NPC 武器加成（laserOps/projectileOps/missileOperations）：与技能/科研独立相乘。
   const legion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
@@ -1921,15 +1943,17 @@ function getCombatDamageMultiplierFromState(state, weaponType, context) {
   ], { ...(context || {}), actor:"player", weaponType });
 }
 
-function getCombatPlayerDodgeFromState(state, context) {
-  const ship = getActiveCombatShipState(state).config;
+function getCombatPlayerDodgeFromState(state, context, options) {
+  // M2：options.shipInstanceId → 显式实例（NPC 绑定舰），缺省保持当前出战舰行为
+  const ship = getActiveCombatShipState(state, options).config;
   return calculateCombatStatFromState(state, "dodge", ship.dodge || 20, [
     { operation:"add", value:getCombatSkillLevelFromState(state, "piloting"), priority:10, source:"skill" }
   ], { ...(context || {}), actor:"player" });
 }
 
-function getCombatFuelMultiplierFromState(state, zone, context) {
-  const activeShip = getActiveCombatShipState(state);
+function getCombatFuelMultiplierFromState(state, zone, context, options) {
+  // M2：options.shipInstanceId → 显式实例（NPC 绑定舰），缺省保持当前出战舰行为
+  const activeShip = getActiveCombatShipState(state, options);
   const ship = activeShip.config;
   const selectedZone = zone || COMBAT_ZONES.find(item => item.id === (state.combat && state.combat.zone));
   const shipMultiplier = Number.isFinite(ship.fuelEfficiency) ? ship.fuelEfficiency : 1;
@@ -3150,6 +3174,16 @@ function getShipDismantleQuote(recipe, config, enhancementLevel, reclaimRate) {
 function getShipDismantleBlockReason(state, instance, now) {
   if (!instance) return "unknown-ship";
   if (!getShipConfigById(instance.shipId)) return "unknown-ship";
+  // 新增（用户需求）：凡已绑定军团 NPC 的舰船，无论 NPC 是否战斗/修复，一律禁止拆解，须先在军团面板卸下。
+  if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip) {
+    if (LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip(state, instance.instanceId)) return "npc-bound";
+  }
+  // 军团 NPC 战斗小队（M1）：绑定 NPC 战斗占用 / 爆船修复期间禁止拆解。
+  // 口径唯一来源 js/systems/legion-combat-squad.js getShipCombatLockReason；模块缺失时静默跳过（安全回退）。
+  if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.getShipCombatLockReason) {
+    const legionLock = LEGION_COMBAT_SQUAD.getShipCombatLockReason(state, instance.instanceId, now);
+    if (legionLock) return legionLock;
+  }
   const assignments = state.shipAssignments || {};
   if (Object.keys(assignments).some(key => assignments[key] === instance.instanceId)) return "ship-assigned";
   const activeCombat = state.combat && state.combat.active ? getActiveCombatShipState(state).instance : null;
@@ -3168,6 +3202,9 @@ const SHIP_DISMANTLE_BLOCK_TEXT = {
   "ship-assigned":"舰船正在执行岗位任务",
   "ship-active":"舰船正在执行中，停止当前任务后才能拆解",
   "repairing":"舰船正在维修中，维修完成后才能拆解",
+  "npc-combat":"舰船被军团 NPC 战斗小队占用，战斗结束后才能拆解",
+  "npc-repairing":"舰船正在军团 NPC 修复中，修复完成后才能拆解",
+  "npc-bound":"舰船已绑定军团 NPC，请在军团面板中先卸下再拆解",
   "has-fitting":"舰船仍装配有装备或改装件，先全部卸下"
 };
 
@@ -3247,6 +3284,12 @@ function getHangarDisplayState(state, now) {
     ships:ships.map(instance => {
       const config = getShipConfigById(instance.shipId);
       if (!config) return { instanceId:instance.instanceId, shipId:instance.shipId, unknown:true };
+      // 是否已绑定军团 NPC（用于船坞徽标 + 拆解/改装拦截提示）
+      let boundNpc = null;
+      if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip) {
+        const npc = LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip(state, instance.instanceId);
+        if (npc) boundNpc = { npcId: npc.npcId, name: npc.name };
+      }
       // 问题2：per-ship 维修——每艘舰按自身 instanceId 显示维修状态，而非全局单槽。
       const thisRepairing = isShipUnderRepair(state, instance.instanceId, now);
       const thisRepairUntil = getShipRepairUntil(state, instance.instanceId);
@@ -3292,6 +3335,7 @@ function getHangarDisplayState(state, now) {
         ? getShipEnhancementSmeltMultiplier(config, enhancementLevel + 1) : 1;
       return {
         instanceId:instance.instanceId,
+        boundNpc:boundNpc,
         shipId:instance.shipId,
         name:config.name,
         tier:config.tier,
@@ -3763,7 +3807,7 @@ function getStatisticsDisplayState(state) {
 }
 
 function getNavigationDisplayState(page, view) {
-  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel" };
+  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel", alliance:"alliance-panel" };
   const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", combat:"combat-panel" };
   const selectedPage = page || "skill";
   const selectedView = view || "mining";

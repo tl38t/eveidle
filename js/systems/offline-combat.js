@@ -147,6 +147,20 @@
       const cur = getSelectedCount(state, type);
       s.ammo[type] = cur; s.ammoInit[type] = cur;
     }
+    // M4：军团 NPC 战斗小队——虚拟弹药池必须并集播种「玩家武器类型 ∪ 小队 NPC 武器类型」，
+    // 否则玩家用激光、NPC 用导弹时 s.ammo["missile"] 不存在 → NPC 恒判 0 弹药静默停火。
+    // flush 遍历 ammoInit 键统一 apply，扩种后自动纳入净消耗，不会重复扣费。
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD &&
+        state.combat.squad && state.combat.squad.enabled === true &&
+        typeof LEGION_COMBAT_SQUAD.getSquadAmmoRequirements === "function") {
+      const squadAmmo = LEGION_COMBAT_SQUAD.getSquadAmmoRequirements(state, { zone: G("getCombatEncounterZone")(state.combat) });
+      for (const type in squadAmmo) {
+        if (!(type in s.ammoInit)) {
+          const cur = getSelectedCount(state, type);
+          s.ammo[type] = cur; s.ammoInit[type] = cur;
+        }
+      }
+    }
     s.fuel = RR.get(state, "consumable:fuel");
     s.fuelInit = s.fuel;
     // 同位素标记打捞臂：主动打捞同位素消耗（会话级虚拟余额，跨段累计，flush 一次性 apply；与燃料同机制）
@@ -277,6 +291,13 @@
         const volleyFuel = consumeVolleyVirtual(inputs, zone, s);
         grantXp(state, "capacitorManagement", volleyFuel * 0.3);
       }
+      // M4：NPC 与玩家同目标开火（与在线同一顺序：玩家→NPC→击杀结算），虚拟弹药/燃料走同一原语
+      if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled === true) {
+        LEGION_COMBAT_SQUAD.processLegionNpcAttack(state, {
+          now: nowRef.t, offline: true, zone: zone, virtual: s, randomFn: EXPECT
+        });
+        LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(state, nowRef.t);
+      }
       // 结算本波被击毁的敌人（玩家先手 + AOE）
       for (const e of enemies) {
         if (e && e.hp && e.hp.structure <= 0 && !e._rewarded) {
@@ -291,6 +312,32 @@
       let roundTaken = 0;
       let armorDamageTaken = 0;
       for (const attacker of living()) {
+        // M4 小队模式：D1 期望分摊——每个有效目标用自身防御/闪避/减伤算期望伤害后取 1/N。
+        // 玩家与 NPC 的护盾/装甲/结构与减伤（含 NPC 自身 DCU 与资本舰特质）逐个独立计算，
+        // 绝不用「统一伤害 ÷ N」。非小队模式完全走原路径（行为不变）。
+        if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled === true) {
+          const res = LEGION_COMBAT_SQUAD.processLegionEnemyAttack(state, {
+            damage: 0, distribute: true, now: nowRef.t, zone: zone, virtual: s, randomFn: EXPECT,
+            attacker: attacker, playerDodge: playerDodge, playerShipConfig: ship,
+            shieldHitsUsed: shieldHitsUsed, dcReduction: dcReduction
+          });
+          const playerHit = (res.hits || []).find(h => h.kind === "player");
+          const actual = playerHit && playerHit.dealt
+            ? playerHit.dealt.shield + playerHit.dealt.armor + playerHit.dealt.structure : 0;
+          const pdmg = playerHit && playerHit.dealt ? playerHit.dealt : { shield: 0, armor: 0, structure: 0 };
+          roundTaken += actual;
+          armorDamageTaken += pdmg.armor;
+          // 防御经验只来自玩家实际承受的伤害（NPC 承受的不发放，与在线一致）
+          if (pdmg.shield > 0) grantXp(state, "shieldOperation", 1);
+          if (pdmg.armor > 0) grantXp(state, "armorReinforcement", 1);
+          if (pdmg.structure > 0) grantXp(state, "hullEngineering", 1);
+          if (actual > 0) grantXp(state, "piloting", 1);
+          if (c.hp.structure <= 0) {
+            s.totalDamageTaken += roundTaken;
+            return { outcome: "defeated", rounds: rounds + 1, kills };
+          }
+          continue;
+        }
         const raw = G("calcCombatDamage")(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, EXPECT);
         const mit = G("applyCapitalShieldMitigation")(ship, raw, shieldHitsUsed, c.hp.shield);
         if (mit.shieldHitUsed) shieldHitsUsed++;
@@ -330,6 +377,10 @@
           grantXp(state, "defense", 1);
         }
       }
+      // M5 修复：NPC 绑定舰维修件在离线战斗中同样生效（与在线、与玩家对称）。
+      // 复用离线会话燃料池 s（与玩家维修、NPC 攻击共用同一 s.fuel；下一个离线 tick 才 flush 到库存）。
+      const npcRepFn = G("repairLegionSquadNpcs");
+      if (npcRepFn) npcRepFn(state, { now: nowRef.t, zone: zone, offline: true, virtual: s });
       // 清波判定移至维修之后（2026-08-28 修复）：在线 advanceCombatRound 的顺序是
       // 玩家攻击→击杀结算→敌人反击→反应装甲→维修→清波生成新波，清波轮照常维修；
       // 离线旧逻辑在维修前提前 return，导致每波漏一轮维修，临界配装离线系统性更易爆船。
@@ -664,6 +715,12 @@
     const c = state.combat;
     // 战败：repairUntil = 虚拟战败时刻 + 180000
     const defeatNow = nowRef.t;
+    // M4：玩家舰船被击毁 → 清理小队临时状态并释放占用；
+    // NPC 的 destroyed / repairUntil / combatHp 保留在 state.legion.npcs[]（不删除 NPC、不动绑定舰）
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && c.squad && c.squad.enabled) {
+      LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(state, defeatNow);
+      LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
+    }
     // 剩余离线时间 = 整段离线虚拟结束点 - 战败时刻（offlineEnd 由 offline.js 注入；
     // 未注入时退化为 0，安全保留维修中状态，不误判完成）
     const remainMs = (typeof s.offlineEnd === "number") ? Math.max(0, s.offlineEnd - defeatNow) : 0;
@@ -733,6 +790,15 @@
       s.endedAt = nowRef.t;
       s.simulatedSeconds = Math.round((nowRef.t - s.startedAt) / 1000);
       if (s.stopReason === null) s.stopReason = "time";
+      // M4：段末按虚拟时间推进 NPC 修复（到期才恢复，幂等；时间倒退不提前修复），
+      // 并在本段战斗已终止（清波/战败/队列达标，且无连刷待续）时清理小队临时状态。
+      if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD) {
+        LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(state, nowRef.t);
+        const c2 = state.combat;
+        if (c2.squad && c2.squad.enabled && !c2.active && !c2.deathspaceChainPending) {
+          LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
+        }
+      }
       return left;
     },
 

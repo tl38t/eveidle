@@ -163,7 +163,8 @@
     var duty = ship.assignedActions.length ? ship.assignedActions.map(function (k) { return display.actionNames[k]; }).join(" · ") : "无岗位";
     var dutyTag = '<span class="tp-htag tp-duty">📋 ' + duty + "</span>";
     var repair = ship.repairing ? '<span class="tp-htag tp-repair">🔧 维修中 · 剩 ' + ship.repairRemaining + "s</span>" : "";
-    return '<div class="tp-hangar-meta">' + roleTag + lvTag + dutyTag + repair + "</div>";
+    var bound = ship.boundNpc ? '<span class="tp-htag tp-bound">🛡️ 已绑定 ' + ship.boundNpc.name + "</span>" : "";
+    return '<div class="tp-hangar-meta">' + roleTag + lvTag + dutyTag + repair + bound + "</div>";
   }
   function tpSelectorHTML(display, ship) {
     var filtered = tpFilterShips(display, _tpHangarFilter);
@@ -172,13 +173,14 @@
       var cur = s.instanceId === ship.instanceId ? " current" : "";
       var dot = '<span class="tp-chip-dot ' + r.cls + '"></span>';
       var assigned = s.assignedActions.length ? '<span class="tp-chip-assigned" title="已指派">●</span>' : "";
+      var bound = s.boundNpc ? '<span class="tp-chip-bound" title="已绑定军团 NPC">🛡️</span>' : "";
       var thumb = null;
       try { thumb = window.getHangarThumb ? window.getHangarThumb(s.shipId) : null; } catch (e) {}
       var thumbHtml = '<span class="tp-chip-vis">'
         + '<span class="tp-chip-ico">' + (s.industrial ? "🏭" : s.archaeology ? "🛰️" : "🚀") + '</span>'
         + (thumb ? '<img class="tp-chip-thumb" src="' + thumb + '" alt="" onerror="this.style.display=\'none\'">' : '')
         + '</span>';
-      return '<button class="tp-hangar-chip' + cur + '" data-ship-chip="' + s.instanceId + '">' + thumbHtml + '<span class="tp-chip-name">' + s.name + '</span><span class="tp-chip-lv">+' + s.enhancement.level + '</span>' + dot + assigned + "</button>";
+      return '<button class="tp-hangar-chip' + cur + '" data-ship-chip="' + s.instanceId + '">' + thumbHtml + '<span class="tp-chip-name">' + s.name + '</span><span class="tp-chip-lv">+' + s.enhancement.level + '</span>' + dot + assigned + bound + "</button>";
     }).join("");
     return '<div class="tp-hangar-selector">' + chips + "</div>";
   }
@@ -200,7 +202,8 @@
     var task = ship.assignedActions.length ? ship.assignedActions.map(function (k) { return display.actionNames[k]; }).join(" · ") : "";
     var taskHtml = task ? '<div class="tp-box"><div class="tp-box-t">当前任务</div><div class="tp-box-b">' + task + "</div></div>" : '<div class="tp-empty">无当前任务</div>';
     var repairHtml = ship.repairing ? '<div class="tp-box tp-repair-box"><div class="tp-box-t">维修状态</div><div class="tp-box-b">🔧 自动维修中 · 剩余 ' + ship.repairRemaining + " 秒</div></div>" : "";
-    return tpStatsHTML(ship) + bonusHtml + taskHtml + repairHtml;
+    var boundHtml = ship.boundNpc ? '<div class="tp-box tp-bound-box"><div class="tp-box-t">🛡️ 军团 NPC 占用</div><div class="tp-box-b">该舰船已绑定军团 NPC：' + ship.boundNpc.name + '。须在军团面板中先卸下，才能改装 / 拆解 / 指派为玩家战斗舰。</div></div>' : "";
+    return tpStatsHTML(ship) + bonusHtml + taskHtml + repairHtml + boundHtml;
   }
   function tpFittingHTML(display, ship) {
     var fit = null;
@@ -419,7 +422,7 @@
         if (act) {
           var res = window.dispatchGameAction(window.gameState, { type: "hangar/toggleAssignment", instanceId: act.getAttribute("data-sid"), actionKey: act.getAttribute("data-ship-action") }, Date.now());
           if (!res.changed) {
-            var msgs = { "repairing": "舰船自动维修中，暂时不能更换战斗舰", "unsupported-mining": "该舰船没有采矿岗位", "unsupported-gas": "该舰船没有采气岗位", "unsupported-archaeology": "该舰船没有考古扫描能力", "unsupported-refining": "只有工业支援舰可以承担冶炼岗位", "unsupported-task": "该任务不需要分配舰船岗位", "ship-active": "舰船正在执行任务，停止当前任务后才能重新分配" };
+            var msgs = { "repairing": "舰船自动维修中，暂时不能更换战斗舰", "unsupported-mining": "该舰船没有采矿岗位", "unsupported-gas": "该舰船没有采气岗位", "unsupported-archaeology": "该舰船没有考古扫描能力", "unsupported-refining": "只有工业支援舰可以承担冶炼岗位", "unsupported-task": "该任务不需要分配舰船岗位", "ship-active": "舰船正在执行任务，停止当前任务后才能重新分配", "npc-bound": "该舰船已绑定军团 NPC，须先在军团面板卸下才能指派" };
             if (window.showToast) window.showToast(msgs[res.reason] || "分配失败");
           } else { window.renderHangarPanel(); if (window.renderCombatPanel) window.renderCombatPanel(); }
           return;

@@ -404,6 +404,12 @@ function gameTick() {
     LEGION_NPC.tickLegionNpc(gameState, { now: Date.now() });
   }
 
+  // 军团 NPC 战斗小队（DLC）：在线期间持续推进爆船修复倒计时；
+  // 修复完成后由 completeLegionNpcRepair 恢复 combatHp 至满血。幂等调用。
+  if (typeof LEGION_COMBAT_SQUAD !== "undefined" && typeof LEGION_COMBAT_SQUAD.tickLegionSquadRepairs === "function") {
+    LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(gameState, Date.now());
+  }
+
   gameState.lastActiveTime = Date.now();
   updateLiveUI();
   if (actionCompleted) refreshVisiblePanelAfterAction();

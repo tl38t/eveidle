@@ -94,8 +94,10 @@
       var roleLabel = { industrial: "工业舰", combat: "战斗舰", archaeology: "考古舰" }[role] || "—";
       var btnText = isBound ? '卸下' : (disabled ? '已占用' : '选择');
       var pickValue = isBound ? "" : s.instanceId;
+      var enhanceLevel = Math.max(0, Math.floor(Number(s.enhancementLevel) || 0));
+      var enhanceHtml = enhanceLevel > 0 ? '<span class="lc-ship-enhance">+' + enhanceLevel + '</span>' : '';
       return '<div class="lc-ship-row' + (disabled ? ' lc-ship-disabled' : '') + '">' +
-        '<span class="lc-ship-name">' + nameFn(s.shipId) + '</span>' +
+        '<span class="lc-ship-name">' + nameFn(s.shipId) + enhanceHtml + '</span>' +
         '<span class="lc-ship-tier">' + shipTierLabelLocal(type) + '</span>' +
         '<span class="lc-ship-role">适配：' + roleLabel + '</span>' +
         '<span class="' + (compat ? 'legion-ok' : 'legion-warn') + ' lc-ship-compat">' + (compat ? '适配' : '不适配') + '</span>' +
@@ -143,7 +145,7 @@
         if (e.target.closest("button[data-confirm-unbind]")) {
           closeModal();
           var ur = LEGION_NPC.assignLegionNpcShip(st, npcId, null);
-          if (!ur.changed) { msg("卸下失败：" + (ur.reason || "未知错误")); render(); return; }
+          if (!ur.changed) { msg("卸下失败：" + (ur.reason === "npc-combat-locked" ? "NPC 正在战斗或修复中，暂不可卸下舰船" : (ur.reason || "未知错误"))); render(); return; }
           msg(line(npc, "shipUnbound", { now: Date.now() }) || "已卸下舰船，飞船已归还机库");
           render();
         } else if (e.target.closest("button[data-confirm-no]")) {
@@ -158,7 +160,9 @@
     function commit() {
       var r = LEGION_NPC.assignLegionNpcShip(st, npcId, shipInstanceId);
       if (!r.changed) {
-        if (r.reason === "ship-in-use") msg("该舰船已被其他 NPC 绑定");
+        if (r.reason === "npc-combat-locked") msg("NPC 正在战斗或修复中，暂不可绑定/卸下舰船");
+        else if (r.reason === "ship-in-use") msg("该舰船已被其他 NPC 绑定");
+        else if (r.reason === "ship-is-combat") msg("该舰船正在作为你的战斗舰出战，请先在战斗面板卸下再绑定");
         else if (r.reason === "ship-not-found") msg("舰船不存在");
         else if (r.reason === "npc-not-found") msg("NPC 不存在");
         else msg("更换舰船失败：" + (r.reason || "未知错误"));

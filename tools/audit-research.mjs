@@ -16,9 +16,9 @@
 //  存在性伪测试 / 只验非空的宽泛检查）：
 //    - --data / --queue / --settle(逻辑)：VM 轻沙箱直接运行研究三文件，无需 index.html。
 //    - --state 真实路径项：按 index.html 实际 <script defer> 顺序全量加载
-//      45 个脚本到 VM 沙箱（mock DOM/localStorage），对 SaveManager.importData
+//      46 个脚本到 VM 沙箱（mock DOM/localStorage），对 SaveManager.importData
 //      与 autoLoad 做真实调用观测（spy + 迁移效果双重证据）。
-//    - --settle 真实路径项：同样全量加载 45 脚本，对 ResearchSystem.processResearchUntil
+//    - --settle 真实路径项：同样全量加载 46 脚本，对 ResearchSystem.processResearchUntil
 //      安装 spy，真实调用 gameTick / calculateOfflineGains 观测结算接线（每函数恰好一次）。
 //    - 时间基准统一 FROZEN_NOW（冻结 Date.now），消除时序偶发。
 //

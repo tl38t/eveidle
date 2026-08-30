@@ -255,7 +255,20 @@ const gameState = {
     queueWavesTarget: 0,    // 普通星带：目标清波数（= 队列项 count）
     queueWavesDone: 0,      // 普通星带：已清波数（跨维修累计，达标即终结队列项并推进）
     queueEntriesTarget: 0,  // 死亡空间：目标入场次数（= 队列项 count）
-    queueEntriesDone: 0     // 死亡空间：已完成入场数（清场或战败均计 1 次）
+    queueEntriesDone: 0,    // 死亡空间：已完成入场数（清场或战败均计 1 次）
+    // 军团 NPC 战斗小队（M1，2026-08-29）：战斗临时状态，战斗结束由 endLegionSquadBattle 清理。
+    // 结构与幂等迁移唯一口径在 js/systems/legion-combat-squad.js（createDefaultSquad / ensureCombatSquadState）。
+    // 注意：NPC 修复状态（destroyed/repairUntil/combatHp）的权威来源是 state.legion.npcs[]，不在这里。
+    squad: {
+      enabled: false,   // 本场战斗是否启用小队
+      members: [],      // NPC 成员引用：{ npcId, shipInstanceId, active, destroyedInBattle }
+      targetId: null,   // 与玩家同步的当前目标（M3 写入）
+      battleId: null,   // 本次小队战斗标识
+      lastRound: null,  // 本回合小队结果临时快照（战斗结束清理）
+      pendingNpcIds: [] // 战前选择的 NPC（M5；开战时固化为 members，战斗中锁定不可改）
+    },
+    // 军团 NPC 小队本场累计输出伤害（M3；独立于 runDamageDealt，避免小队人数放大玩家统计/成就口径）
+    runSquadDamageDealt: 0
   },
 
   settings: {

@@ -926,6 +926,7 @@
   .hangar-ship-actions { margin-top: 9px; }
   .hangar-ship-repair { margin-top: 8px; padding: 5px 8px; border: 1px solid #6a5a2a; border-radius: 4px; background: rgba(212,168,67,0.08); color: #e0b94a; font-size: 12px; }
   .hangar-ship-repair .repair-remaining { font-weight: bold; }
+  .hangar-ship-bound-npc { margin-top: 8px; padding: 5px 8px; border: 1px solid #7a3b3b; border-radius: 4px; background: rgba(180,60,60,0.10); color: #ff8585; font-size: 12px; }
 
   /* ===== 设置 ===== */
   .settings-section { max-width: 760px; border: 1px solid #223243; border-radius: 6px; background: #0d141e; overflow: hidden; }
@@ -977,3 +978,13 @@
   .runtime-error-boundary pre { max-height: 150px; overflow: auto; white-space: pre-wrap; color: #bd9da0; font: 10px/1.45 Consolas, monospace; }
   .reb-actions { display: flex; gap: 8px; margin-top: 10px; }
   .reb-actions button { padding: 5px 10px; border: 1px solid #7e3b42; border-radius: 4px; background: #32171a; color: #f0b7bc; cursor: pointer; font-family: inherit; }
+  .alliance-empty, .alliance-card, .alliance-list-row { border: 1px solid #26384d; border-radius: 10px; background: rgba(16, 29, 44, .72); padding: 16px; margin-bottom: 14px; }
+  .alliance-empty-title, .alliance-card-title, .alliance-list-title { color: #dceeff; font-weight: 700; margin-bottom: 8px; }
+  .alliance-empty-sub, .alliance-meta, .alliance-id { color: #8297ab; font-size: 12px; }
+  .alliance-name { color: #73c8f1; font-size: 24px; font-weight: 700; margin: 8px 0; }
+  .alliance-create-row { display: flex; gap: 8px; margin-top: 16px; max-width: 520px; }
+  .alliance-create-row input { flex: 1; min-width: 0; border: 1px solid #38516b; border-radius: 6px; background: #0b1724; color: #e8f4ff; padding: 9px 10px; }
+  .alliance-list-title { margin-top: 24px; }
+  .alliance-list-row { display: flex; justify-content: space-between; align-items: center; }
+  .alliance-msg { min-height: 18px; }
+  .alliance-id { margin-top: 18px; word-break: break-all; }

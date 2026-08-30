@@ -9,10 +9,10 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=11">
-<link rel="stylesheet" href="./css/panels.css?v=26">
-<link rel="stylesheet" href="./css/combat.css?v=8">
-<link rel="stylesheet" href="./css/components.css?v=22">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=18">
+<link rel="stylesheet" href="./css/panels.css?v=30">
+<link rel="stylesheet" href="./css/combat.css?v=11">
+<link rel="stylesheet" href="./css/components.css?v=23">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=19">
 <script type="importmap">
 {
   "imports": {
@@ -255,6 +255,9 @@
     </div>
     <div class="nav-item" data-page="legion" id="nav-legion" style="display:none;">
       <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> 军团
+    </div>
+    <div class="nav-item" data-page="alliance" id="nav-alliance">
+      <span class="nav-icon"><i class="fa-solid fa-people-group"></i></span> 联盟
     </div>
     <div class="nav-item" data-page="research">
       <span class="nav-icon"><i class="fa-solid fa-flask-vial"></i></span> 研究
@@ -750,13 +753,17 @@
         <!-- 战术战场：左我 右敌，待命时敌方保持扫描占位 -->
         <div class="combat-arena">
           <div class="combat-player-side">
-            <div class="combat-side-kicker">PILOT VESSEL</div>
-            <div class="combat-side-name" id="combat-player-ship">星矛级</div>
-            <div class="health-bars health-bars-sm" id="combat-player-bars"></div>
-            <div class="combat-side-image" id="combat-player-image">
-              <div class="combat-ship-placeholder"><span>🚀</span></div>
+            <!-- 军团 NPC 战斗小队（M5）：玩家槽左侧两个 NPC 方块 + 下拉选角 + 实时血条 -->
+            <div class="combat-squad-column" id="combat-squad-section"></div>
+            <div class="combat-player-main">
+              <div class="combat-side-kicker">PILOT VESSEL</div>
+              <div class="combat-side-name" id="combat-player-ship">星矛级</div>
+              <div class="health-bars health-bars-sm" id="combat-player-bars"></div>
+              <div class="combat-side-image" id="combat-player-image">
+                <div class="combat-ship-placeholder"><span>🚀</span></div>
+              </div>
+              <div class="combat-side-stats" id="combat-player-stats">武器伤害:— · 航速:—</div>
             </div>
-            <div class="combat-side-stats" id="combat-player-stats">武器伤害:— · 航速:—</div>
           </div>
 
           <div class="combat-lock-column">
@@ -999,6 +1006,11 @@
     </div>
 
     <!-- 仓库面板 -->
+    <div class="panel alliance-panel" id="alliance-panel" style="display:none;">
+      <div class="panel-header"><span class="panel-title"><i class="fa-solid fa-people-group"></i> 联盟大厅</span><span id="alliance-msg" class="text-muted">未连接</span></div>
+      <div class="panel-body"><div id="alliance-content"></div></div>
+    </div>
+
     <div class="panel cargo-panel" id="cargo-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">📦 仓库</span>
@@ -1265,7 +1277,7 @@
   <script defer src="./js/data/combat.js?v=6"></script>
   <script defer src="./js/data/cargo.js?v=8"></script>
   <script defer src="./js/data/implants.js?v=3"></script>
-  <script defer src="./js/data/equipment.js?v=25"></script>
+  <script defer src="./js/data/equipment.js?v=26"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=6"></script>
   <script defer src="./js/data/ammunition.js?v=4"></script>
   <script defer src="./js/data/archaeology.js?v=5"></script>
@@ -1276,7 +1288,7 @@
   <script defer src="./js/data/tutorial.js?v=5"></script>
   <script defer src="./js/core/tutorial-state.js?v=3"></script>
   <script defer src="./js/core/achievement-state.js?v=2"></script>
-  <script defer src="./js/core/state.js?v=5"></script>
+  <script defer src="./js/core/state.js?v=6"></script>
   <script defer src="./js/core/blueprint-runs.js?v=1"></script>
   <script defer src="./js/systems/research.js?v=4"></script>
   <script defer src="./js/core/statistics.js?v=3"></script>
@@ -1296,27 +1308,31 @@
   <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
-  <script defer src="./js/systems/legion-npc.js?v=5"></script>
+  <script defer src="./js/systems/legion-npc.js?v=7"></script>
+  <script defer src="./js/systems/legion-combat-squad.js?v=4"></script>
   <script defer src="./js/ui/action-modal.js?v=8"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
-  <script defer src="./js/systems/combat.js?v=12"></script>
+  <script defer src="./js/systems/combat.js?v=15"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=51"></script>
-  <script defer src="./js/core/actions.js?v=21"></script>
+  <script defer src="./js/core/selectors.js?v=54"></script>
+  <script defer src="./js/core/actions.js?v=24"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=53"></script>
+  <script defer src="./js/ui/shell-render.js?v=55"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
-  <script defer src="./js/ui/combat-render.js?v=26"></script>
+  <script defer src="./js/ui/combat-render.js?v=30"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=10"></script>
   <script defer src="./js/ui/booster-render.js?v=8"></script>
   <script defer src="./js/ui/station-render.js?v=10"></script>
-  <script defer src="./js/ui/legion-render.js?v=12"></script>
-  <script defer src="./js/ui/legion-events.js?v=8"></script>
-  <script defer src="./js/core/tick.js?v=11"></script>
-  <script defer src="./js/core/offline.js?v=13"></script>
-  <script defer src="./js/systems/offline-combat.js?v=6"></script>
+  <script defer src="./js/ui/legion-render.js?v=13"></script>
+  <script defer src="./js/ui/legion-events.js?v=11"></script>
+  <script defer src="./js/platform/alliance-api.js?v=1"></script>
+  <script defer src="./js/platform/alliance-policy.js?v=1"></script>
+  <script defer src="./js/ui/alliance-render.js?v=1"></script>
+  <script defer src="./js/core/tick.js?v=12"></script>
+  <script defer src="./js/core/offline.js?v=14"></script>
+  <script defer src="./js/systems/offline-combat.js?v=8"></script>
   <script defer src="./js/systems/combat-log.js?v=3"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=2"></script>
@@ -1347,11 +1363,11 @@
   <script defer src="./js/core/ad-service.js?v=4"></script>
   <script defer src="./js/systems/ad-buff.js?v=3"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=17"></script>
-  <script defer src="./js/core/persistence.js?v=14"></script>
+  <script defer src="./js/core/persistence.js?v=15"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
   <script defer src="./js/ui/render.js?v=11"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=12"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=14"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">

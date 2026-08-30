@@ -24,12 +24,12 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "alliance-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel"];
+  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "alliance-panel"];
   const notChain = managedIds.map(id => `:not(#${id})`).join("");
   return [...document.querySelectorAll('.content > .panel' + notChain)];
 }
@@ -83,6 +83,7 @@ function renderCurrentNavigation() {
   else if (navigation.page === "hangar") renderHangarPanel();
   else if (navigation.page === "station") { renderStationPage(); }
   else if (navigation.page === "legion") { renderLegionPage(); }
+  else if (navigation.page === "alliance") { if (typeof window.renderAlliancePage === "function") window.renderAlliancePage(); }
   else if (navigation.page === "blueprints" || navigation.page === "lpstore") renderBlueprintStore();
   else if (navigation.page === "leaderboard") {
     // leaderboard-render.js is an ES module and may finish after this classic
@@ -3281,6 +3282,7 @@ function renderHangarPanel() {
       <div class="hangar-ship-stats"><span class="hss-item"><span class="hss-label">护盾</span><span class="hss-val">${ship.hp.shield}</span></span><span class="hss-item"><span class="hss-label">装甲</span><span class="hss-val">${ship.hp.armor}</span></span><span class="hss-item"><span class="hss-label">结构</span><span class="hss-val">${ship.hp.structure}</span></span><span class="hss-item"><span class="hss-label">闪避</span><span class="hss-val">${ship.dodge}</span></span><span class="hss-item"><span class="hss-label">速度</span><span class="hss-val">${ship.speed}</span></span></div>
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
       ${ship.repairing ? `<div class="hangar-ship-repair" data-repair-ship="${ship.instanceId}">🔧 自动维修中 · 剩余 <span class="repair-remaining">${ship.repairRemaining}</span> 秒</div>` : ""}
+      ${ship.boundNpc ? `<div class="hangar-ship-bound-npc" title="该舰船已绑定军团 NPC ${escapeAchievementText(ship.boundNpc.name)}，在军团面板卸下前不可在船坞改装或拆解">🛡️ 已绑定军团 NPC：${escapeAchievementText(ship.boundNpc.name)}</div>` : ""}
       <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}${iskCostLine}</div><div class="enhance-roll"><span>成功率 <b>${enhancement.chancePercent}%</b></span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div></div>
       <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button>${dismantleBtn}</div></div>`;
   }).join("");
@@ -3436,7 +3438,7 @@ function enhanceEquipmentFromWarehouse(targetRef, onDone) {
 
 function equipShip(shipRef) {
   const result = dispatchGameAction(gameState, { type:"hangar/equipCombatShip", instanceId:shipRef }, Date.now());
-  if (!result.changed) { if (result.reason === "repairing") showToast("舰船自动维修中，暂时不能更换战斗舰"); return false; }
+  if (!result.changed) { if (result.reason === "repairing") showToast("舰船自动维修中，暂时不能更换战斗舰"); else if (result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能装备出击"); return false; }
   renderHangarPanel(); renderCombatPanel(); showToast(result.config.name + " 已装备，准备出击！"); return true;
 }
 
@@ -3534,6 +3536,7 @@ function updateOrbitStats() {
 // 改装件安装结果处理：提示 + 刷新装配面板
 function handleRigFitResult(res) {
   if (!res.changed && res.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");
+  else if (!res.changed && res.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能改装/拆解");
   else if (!res.changed && res.reason === "slot-occupied") showToast("该改装槽已被占用");
   else if (!res.changed && res.reason === "equipment-unavailable") showToast("仓库中没有该改装件");
   else if (!res.changed && res.reason) showToast("操作失败：" + res.reason);
@@ -4177,7 +4180,8 @@ function installTutorialWidgetListeners() {
       else if (!result.changed && result.reason === "unsupported-archaeology") showToast("该舰船没有考古扫描能力");
       else if (!result.changed && result.reason === "unsupported-refining") showToast("只有工业支援舰可以承担冶炼岗位");
       else if (!result.changed && result.reason === "unsupported-task") showToast("该任务不需要分配舰船岗位");
-      else if (!result.changed && result.reason === "ship-active") showToast("舰船正在执行任务，停止当前任务后才能重新分配");
+      else       if (!result.changed && result.reason === "ship-active") showToast("舰船正在执行任务，停止当前任务后才能重新分配");
+      else if (!result.changed && result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能指派");
       if (result.changed) { renderHangarPanel(); renderCombatPanel(); }
       return;
     }
@@ -4245,6 +4249,7 @@ function installTutorialWidgetListeners() {
       else if (!result.changed && result.reason === "incompatible-equipment") showToast("该装备只能安装在旗舰或超级旗舰上");
       else if (!result.changed && result.reason === "equipment-unavailable") showToast("该装备不存在或已被使用");
       else if (!result.changed && result.reason === "equipment-installed") showToast("该装备已安装在其他舰船上");
+      else if (!result.changed && result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能改装");
       else if (!result.changed && result.reason) showToast("操作失败：" + result.reason);
     }
     const panel = document.getElementById("equipSelectPanel"); if (panel) panel.classList.remove("active");
@@ -4268,6 +4273,7 @@ function installTutorialWidgetListeners() {
     showDangerConfirm("⚠ 清空所有装备", body, "确认清空", () => {
       const result = dispatchGameAction(gameState, { type:"hangar/resetFitting", instanceId:orbitShipId }, Date.now());
       if (result.changed) { buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel(); }
+      else if (result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能清空配装");
     });
   });
   const queueList = document.getElementById("queue-list"); if (queueList) queueList.addEventListener("click", event => {

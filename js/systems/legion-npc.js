@@ -94,8 +94,37 @@
       xp: partial.xp != null ? partial.xp : 0,
       boundShipInstanceId: partial.boundShipInstanceId != null ? partial.boundShipInstanceId : null,
       salaryState: partial.salaryState != null ? partial.salaryState : "paid",
-      dialogueHistory: Array.isArray(partial.dialogueHistory) ? partial.dialogueHistory.slice() : []
+      dialogueHistory: Array.isArray(partial.dialogueHistory) ? partial.dialogueHistory.slice() : [],
+      // —— 战斗小队持久化字段（M1，2026-08-29）——
+      // 修复状态权威来源在本体：destroyed / repairUntil / combatHp 不随战斗结束清理。
+      // 新招募 NPC 恒为默认值；旧档 NPC 由 ensureLegionState 幂等补齐。
+      destroyed: partial.destroyed != null ? Boolean(partial.destroyed) : false,
+      repairUntil: partial.repairUntil != null ? partial.repairUntil : null,
+      occupiedByCombat: partial.occupiedByCombat != null ? Boolean(partial.occupiedByCombat) : false,
+      combatHp: normalizeNpcCombatHp(partial.combatHp)
     };
+  }
+
+  // combatHp 归一化：{ shield, armor, structure }，非战斗中恒 null（由战斗系统写入临时值）
+  function normalizeNpcCombatHp(combatHp) {
+    const base = { shield: null, armor: null, structure: null };
+    if (!combatHp || typeof combatHp !== "object") return base;
+    ["shield", "armor", "structure"].forEach(function (k) {
+      base[k] = combatHp[k] != null ? combatHp[k] : null;
+    });
+    return base;
+  }
+
+  // NPC 是否被战斗/修复锁定（解雇、换舰等管理操作共享此口径）：
+  //   occupiedByCombat=true → 战斗占用中；destroyed / repairUntil 未到期 → 爆船修复期间。
+  // 注意与 legion-combat-squad.getShipCombatLockReason 的舰船锁定口径保持语义一致。
+  function isLegionNpcCombatLocked(npc, now) {
+    if (!npc) return false;
+    if (npc.occupiedByCombat) return true;
+    if (npc.destroyed) return true;
+    const until = Number(npc.repairUntil);
+    if (Number.isFinite(until) && until > (typeof now === "number" && Number.isFinite(now) ? now : Date.now())) return true;
+    return false;
   }
 
   // —— 生成唯一 npcId ——
@@ -328,7 +357,19 @@
     if (typeof L.lastSalarySettlementAt !== "number") L.lastSalarySettlementAt = 0;
     if (typeof L.lastXpSettlementAt !== "number") L.lastXpSettlementAt = 0;
     if (typeof L.technologyLevel !== "number") L.technologyLevel = 0;
+    // 战斗小队持久化字段（M1）：旧档 NPC 幂等补默认值（destroyed/repairUntil/occupiedByCombat/combatHp）。
+    if (Array.isArray(L.npcs)) L.npcs.forEach(function (n) { if (n && typeof n === "object") ensureNpcCombatFields(n); });
     return L;
+  }
+
+  // 单个 NPC 战斗字段幂等归一化（ensureLegionState 内部使用；legion-combat-squad.js 另有等价实现）
+  function ensureNpcCombatFields(npc) {
+    if (npc.destroyed === undefined) npc.destroyed = false;
+    if (npc.repairUntil === undefined) npc.repairUntil = null;
+    if (npc.occupiedByCombat === undefined) npc.occupiedByCombat = false;
+    if (!npc.combatHp || typeof npc.combatHp !== "object") npc.combatHp = { shield: null, armor: null, structure: null };
+    ["shield", "armor", "structure"].forEach(function (k) { if (npc.combatHp[k] === undefined) npc.combatHp[k] = null; });
+    return npc;
   }
 
   function getHallLevel(state) {
@@ -587,6 +628,8 @@
     const L = ensureLegionState(state);
     const npc = (L.npcs || []).filter(function (n) { return n && n.npcId === npcId; })[0];
     if (!npc) return { changed: false, reason: "npc-not-found" };
+    // 占用保护（M1）：战斗占用 / 爆船修复期间禁止换舰或卸舰（接口级，非仅 UI 禁用）
+    if (isLegionNpcCombatLocked(npc)) return { changed: false, reason: "npc-combat-locked" };
 
     // 空值/空字符串表示卸下当前舰船（舰船归还机库，不销毁）
     if (shipInstanceId == null || shipInstanceId === "") {
@@ -598,6 +641,9 @@
     if (!ship) return { changed: false, reason: "ship-not-found" };
     const inUse = (L.npcs || []).some(function (n) { return n.npcId !== npcId && n.boundShipInstanceId === shipInstanceId; });
     if (inUse) return { changed: false, reason: "ship-in-use" }; // 已被其他 NPC 绑定
+    // 反向保护：该舰船正在作为玩家战斗舰出战，禁止绑给 NPC（避免同一艘船被双方同时占用）。
+    const playerCombatId = (state.shipAssignments && state.shipAssignments.combat) || (state.combat && state.combat.activeShip);
+    if (playerCombatId === shipInstanceId) return { changed: false, reason: "ship-is-combat" };
     npc.boundShipInstanceId = shipInstanceId;
     // 旧绑定舰船直接解绑归还机库，不再销毁
     return { changed: true };
@@ -609,6 +655,8 @@
     const idx = (L.npcs || []).findIndex(function (n) { return n && n.npcId === npcId; });
     if (idx < 0) return { changed: false, reason: "npc-not-found" };
     const npc = L.npcs[idx];
+    // 占用保护（M1）：战斗占用 / 爆船修复期间禁止解雇（接口级，非仅 UI 禁用）
+    if (isLegionNpcCombatLocked(npc)) return { changed: false, reason: "npc-combat-locked" };
     // 解雇仅移除 NPC，绑定舰船归还机库，不再销毁
     L.npcs.splice(idx, 1); // 立即释放人数位置；不返还任何资源
     return { changed: true, npc: npc };
@@ -961,6 +1009,7 @@
     getLegionNpcLevelCap: getLegionNpcLevelCap,
     getLegionNpcResearchXpMultiplier: getLegionNpcResearchXpMultiplier,
     getLegionNpcSkillRawValue: getLegionNpcSkillRawValue,
+    isLegionNpcCombatLocked: isLegionNpcCombatLocked,
     isLegionSystemActive: isLegionSystemActive,
     getHallLevel: getHallLevel,
     tickLegionNpc: tickLegionNpc

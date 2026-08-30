@@ -526,6 +526,8 @@
       var cap = LEGION_NPC.getLegionNpcLevelCap(st);
       var need = 100 + 5 * (n.level - 1);   // LVn→LVn+1 所需经验（轻量阈值，非递减公式）
       var note = npcXpNoteHtml(st, n);
+      // 战斗中/修复中：禁止在军团内绑定或解绑舰船（与 assignLegionNpcShip 的 isLegionNpcCombatLocked 一致）
+      var combatLocked = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.isLegionNpcCombatLocked && LEGION_NPC.isLegionNpcCombatLocked(n));
 
       // 舰船信息
       var shipHtml = '无舰船';
@@ -557,7 +559,7 @@
         '<div class="lc-meta">绑定舰船：' + shipHtml + note.shipNote + compatHtml + '</div>' +
         '<div class="lc-meta">每 4h 工资：' + (LEGION_NPC.WAGE[grade] || 0).toLocaleString() + ' · <span class="' + ss.cls + '">' + ss.text + '</span>' + pauseTxt + '</div>' +
         '<div class="lc-actions">' +
-          '<button class="btn-mini" data-legion-bind-ship="' + n.npcId + '">绑定/更换舰船</button>' +
+          '<button class="btn-mini" data-legion-bind-ship="' + n.npcId + '"' + (combatLocked ? ' disabled title="NPC 战斗中或修复中，暂不可绑定或卸下舰船"' : '') + '>绑定/更换舰船</button>' +
           '<button class="btn-mini" data-legion-dismiss="' + n.npcId + '">解雇</button>' +
         '</div>' +
         '</div>';

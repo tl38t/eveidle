@@ -204,6 +204,24 @@ function migrateCombatEquipmentState() {
   if (!Number.isFinite(Number(combat.wave)) || combat.wave < 1 || combat.wave > 20) combat.wave = 1;
   if (combat.currentFormation === undefined) combat.currentFormation = "";
   if (!Array.isArray(combat.enemies)) combat.enemies = [];
+  // 军团 NPC 战斗小队（M1，2026-08-29）：旧档缺 squad 时补默认结构（幂等，纯归一化）。
+  // 结构唯一口径与 legion-combat-squad.js 的 ensureCombatSquadState 一致；
+  // NPC 本体修复字段由 legion-npc.js 的 ensureLegionState 负责，此处不触碰 state.legion。
+  if (!combat.squad || typeof combat.squad !== "object" || Array.isArray(combat.squad)) {
+    combat.squad = { enabled: false, members: [], targetId: null, battleId: null, lastRound: null, pendingNpcIds: [] };
+  } else {
+    if (typeof combat.squad.enabled !== "boolean") combat.squad.enabled = false;
+    if (!Array.isArray(combat.squad.members)) combat.squad.members = [];
+    else combat.squad.members = combat.squad.members.filter(m => m && typeof m === "object" && m.npcId != null);
+    if (combat.squad.targetId === undefined) combat.squad.targetId = null;
+    if (combat.squad.battleId === undefined) combat.squad.battleId = null;
+    if (combat.squad.lastRound === undefined) combat.squad.lastRound = null;
+    // M5：战前选择（旧档缺失补空数组，幂等）
+    if (!Array.isArray(combat.squad.pendingNpcIds)) combat.squad.pendingNpcIds = [];
+    else combat.squad.pendingNpcIds = combat.squad.pendingNpcIds.filter(id => typeof id === "string" && id);
+  }
+  // M3：小队累计输出伤害（独立于 runDamageDealt，避免按人数放大玩家统计口径）
+  if (!Number.isFinite(Number(combat.runSquadDamageDealt))) combat.runSquadDamageDealt = 0;
   if (!gameState.migrations.combatBeltsV2) {
     combat.active = false;
     combat.enemies = [];

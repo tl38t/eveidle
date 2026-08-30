@@ -267,10 +267,141 @@ function mountCombat3D(display) {
   } catch (err) { console.error("[combat] 敌人 3D 渲染失败", err); }
 }
 
+// ================================================================
+// 军团 NPC 战斗小队（M5）—— 战斗面板小队区域
+// 只读渲染 + 事件委托；所有状态变更统一走 LEGION_COMBAT_SQUAD 的 action/system 接口，
+// UI 绝不直接改 state.combat.squad 或 NPC 字段。
+// ================================================================
+function legionSquadApi() {
+  return (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD) ? LEGION_COMBAT_SQUAD : null;
+}
+function squadEscape(text) {
+  return String(text == null ? "" : text)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+function squadHpBars(hp, maxHp) {
+  if (!hp || !maxHp) return "";
+  return ["shield", "armor", "structure"].map(function (key) {
+    const cur = Math.max(0, Number(hp[key]) || 0);
+    const max = Math.max(1, Number(maxHp[key]) || 1);
+    const pct = Math.max(0, Math.min(100, Math.round(cur / max * 100)));
+    return '<span class="lcs-hp ' + key + '"><i style="width:' + pct + '%"></i><em>' + cur + "/" + max + "</em></span>";
+  }).join("");
+}
+function renderCombatSquadSection(now) {
+  const host = document.getElementById("combat-squad-section");
+  if (!host) return;
+  const api = legionSquadApi();
+  if (!api || typeof api.getLegionCombatSquadUiState !== "function") { host.innerHTML = ""; host.style.display = "none"; return; }
+  const t = Number(now) || Date.now();
+  const ui = api.getLegionCombatSquadUiState(gameState, { now: t });
+  const combatNpcs = (ui.candidates || []).filter(c => c.isCombatSkill);
+  host.style.display = "";
+  // 协议行
+  const proto = ui.tripleUnlocked ? "三人协议已解锁" : (ui.dualUnlocked ? "双人协议已解锁" : "双人协议未解锁");
+  const protoHint = ui.tripleUnlocked ? "最多可选 2 名战斗 NPC" : (ui.dualUnlocked ? "最多可选 1 名战斗 NPC（三人协议未解锁）" : "未研究「双人战斗小队」：只能玩家单舰战斗");
+  const head = '<div class="lcs-head">' +
+    '<span class="lcs-title"><i class="fa-solid fa-people-group"></i> 战斗小队</span>' +
+    '<span class="lcs-proto' + (ui.dualUnlocked ? " on" : " off") + '">' + squadEscape(proto) + "</span>" +
+    '<span class="lcs-count">上限 ' + (ui.capacity + 1) + " 人（含玩家）</span>" +
+    "</div>";
+  if (combatNpcs.length === 0) {
+    host.innerHTML = head + '<div class="lcs-empty">暂无战斗技能 NPC；招募并绑定战斗舰、安装武器后即可编入小队。</div>';
+    return;
+  }
+  const capacity = Math.max(0, ui.capacity);
+  if (capacity === 0) {
+    host.innerHTML = head + '<div class="lcs-note warn">' + squadEscape(protoHint) + "：只能玩家单舰战斗。</div>";
+    return;
+  }
+  const selection = (ui.selection || []).filter(Boolean);
+  // 槽位数 = 当前协议容量（1 或 2），按 selection 顺序映射到各槽位
+  const slotNpcs = [];
+  for (let i = 0; i < capacity; i++) {
+    const id = selection[i];
+    slotNpcs.push(id ? combatNpcs.find(c => c.npcId === id) || null : null);
+  }
+  const slotsHtml = slotNpcs.map(function (npc, idx) {
+    return renderSquadSlot(npc, idx, combatNpcs, selection, ui);
+  }).join("");
+  const lockedNote = ui.active ? '<div class="lcs-note">战斗进行中：成员与舰船已锁定，不可更换。</div>' : "";
+  host.innerHTML = head + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote;
+}
+
+// 单个 NPC 方块（玩家左侧）：头像 + 名字 + 下拉选角 + 三色实时血条 + 状态徽标
+function renderSquadSlot(npc, idx, allNpcs, selection, ui) {
+  const locked = ui.active;
+  const options = ['<option value="">— 选择 NPC —</option>'].concat(allNpcs.map(function (c) {
+    const otherSelected = selection.indexOf(c.npcId) >= 0 && (!npc || c.npcId !== npc.npcId);
+    const selected = npc && c.npcId === npc.npcId;
+    return '<option value="' + squadEscape(c.npcId) + '"' + (selected ? " selected" : "") + (otherSelected ? " disabled" : "") + ">" +
+      squadEscape(c.name) + " Lv." + Number(c.level || 1) + " · " + squadEscape(c.skillName || "") + (c.shipName ? " · " + squadEscape(c.shipName) : "") + "</option>";
+  })).join("");
+  const badges = [];
+  if (npc) {
+    if (npc.inSquad && !npc.destroyedInBattle) badges.push('<span class="lcs-badge ok">出战中</span>');
+    if (npc.destroyedInBattle) badges.push('<span class="lcs-badge bad">已爆船</span>');
+    if (npc.repair && npc.repair.repairing) badges.push('<span class="lcs-badge warn">修复 ' + Math.ceil(npc.repair.remaining / 1000) + "s</span>");
+    if (npc.salaryState && npc.salaryState !== "paid") badges.push('<span class="lcs-badge warn">欠薪</span>');
+  }
+  const avatar = npc ? (npc.destroyedInBattle ? "💀" : "🛡️") : "➕";
+  const cls = npc ? (npc.destroyedInBattle ? " destroyed" : (npc.inSquad && !npc.destroyedInBattle ? " active" : "")) : " empty";
+  let bars = '<div class="lcs-bars-empty">未参战</div>';
+  if (npc && npc.hp && npc.maxHp) {
+    bars = ["shield", "armor", "structure"].map(function (key) {
+      const cur = Math.max(0, Number(npc.hp[key]) || 0);
+      const max = Math.max(1, Number(npc.maxHp[key]) || 1);
+      const pct = Math.max(0, Math.min(100, Math.round(cur / max * 100)));
+      const label = key === "shield" ? "护盾" : (key === "armor" ? "装甲" : "结构");
+      return '<div class="lcs-mini-bar"><span class="lcs-mini-label">' + label + '</span><div class="lcs-mini-track"><div class="lcs-mini-fill ' + key + '" style="width:' + pct + '%"></div></div><span class="lcs-mini-val">' + cur + "</span></div>";
+    }).join("");
+  }
+  const statusText = npc ? squadEscape(npc.statusText || "") : "";
+  return '<div class="lcs-slot' + (cls ? " " + cls : "") + '" id="lcs-slot-' + idx + '">' +
+    '<div class="lcs-slot-head">' +
+      '<span class="lcs-slot-avatar">' + avatar + "</span>" +
+      '<span class="lcs-slot-name">' + (npc ? squadEscape(npc.name) + ' <small>Lv.' + Number(npc.level || 1) + "</small>" : "空位 " + (idx + 1)) + "</span>" +
+    "</div>" +
+    '<select class="lcs-slot-select" data-slot="' + idx + '"' + (locked ? " disabled" : "") + ">" + options + "</select>" +
+    '<div class="lcs-mini-bars">' + bars + "</div>" +
+    (badges.length ? '<div class="lcs-slot-badges">' + badges.join("") + "</div>" : "") +
+    (statusText ? '<div class="lcs-slot-status">' + statusText + "</div>" : "") +
+    "</div>";
+}
+function bindCombatSquadUI() {
+  const host = document.getElementById("combat-squad-section");
+  if (!host) return;
+  // 用 once 绑定防止重复累加（bindCombatUI 在启动期可能调用多次）
+  if (host._squadBound) return;
+  host._squadBound = true;
+  host.addEventListener("change", function (event) {
+    const sel = event.target && event.target.closest ? event.target.closest(".lcs-slot-select") : null;
+    if (!sel) return;
+    const api = legionSquadApi();
+    if (!api || typeof api.setLegionSquadSelection !== "function") return;
+    // 收集所有槽位下拉的当前值，组装成 selection 集合（去重、按容量由 API 钳制）
+    const selects = host.querySelectorAll(".lcs-slot-select");
+    const next = [];
+    selects.forEach(function (s) {
+      const v = s.value;
+      if (v && next.indexOf(v) < 0) next.push(v);
+    });
+    const res = api.setLegionSquadSelection(gameState, next, { now: Date.now() });
+    if (res.changed === false && res.reason) {
+      if (typeof showToast === "function") {
+        const reason = api.JOIN_REASONS && api.JOIN_REASONS[res.reason] ? api.JOIN_REASONS[res.reason] : res.reason;
+        showToast("⚠ " + reason);
+      }
+    }
+    renderCombatSquadSection(Date.now());
+  });
+}
+
 function renderCombatPanel(now) {
   const renderTime = Number(now) || Date.now();
   updateCombatRecovery(renderTime);
   const display = getCombatDisplayState(gameState, renderTime);
+  renderCombatSquadSection(renderTime);
   document.querySelectorAll("[data-combat-mode]").forEach(button => button.classList.toggle("active", button.dataset.combatMode === display.mode));
   const zoneSelector = document.getElementById("combat-zone-selector"); if (zoneSelector) zoneSelector.style.display = display.mode === "belt" ? "" : "none";
   const deathspacePanel = document.getElementById("deathspace-selector-panel"); if (deathspacePanel) deathspacePanel.style.display = display.mode === "deathspace" ? "" : "none";
@@ -635,12 +766,15 @@ onCombatEvent(event => {
    战斗攻击特效
    ================================================================ */
 
-function playAttackFX(isPlayer, weapon, dmg, damageIndex) {
+// source: "player" | "enemy" | "squad"（NPC 小队攻击，命中敌人区，颜色区分）
+// alt: 仅 source==="squad" 时生效，切换暗红 / 橙红两色，便于区分不同 NPC
+function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt) {
+  source = source || (isPlayer ? "player" : "enemy");
   const fxLayer = document.getElementById("combat-fx-layer");
   if (!fxLayer) return;
 
   // --- 闪边 ---
-  if (isPlayer) {
+  if (source === "player" || source === "squad") {
     const enemySec = document.getElementById("combat-enemy-section");
     if (enemySec) {
       enemySec.classList.remove("enemy-hit-flash");
@@ -656,8 +790,8 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex) {
     }
   }
 
-  // --- 光束 ---
-  if (isPlayer && weapon) {
+  // --- 光束（仅玩家武器，NPC 小队不画光束）---
+  if (source === "player" && weapon) {
     const beam = document.createElement("div");
     const beamMap = { laser: "beam-laser", cannon: "beam-cannon", missile: "beam-rocket" };
     beam.className = "fx-beam " + (beamMap[weapon] || "beam-laser");
@@ -696,14 +830,21 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex) {
   if (dmg !== undefined && dmg > 0) {
     const el = document.createElement("div");
     el.className = "fx-dmg";
+    if (source === "squad") {
+      el.classList.add("squad");
+      if (alt) el.classList.add("squad-alt");
+    }
     el.textContent = "−" + Math.round(dmg);
-    if (isPlayer) {
+    if (source === "player" || source === "squad") {
       const enemySec = document.getElementById("combat-enemy-section");
       if (enemySec) {
         const rect = enemySec.getBoundingClientRect();
         const fxr = fxLayer.getBoundingClientRect();
-        el.style.left = (rect.left + rect.width * 0.6 - fxr.left) + "px";
-        el.style.top  = (rect.top  + rect.height * 0.3 - fxr.top + (damageIndex || 0) * 18) + "px";
+        // NPC 小队数字略低于玩家数字并向下排布，避免重叠
+        const baseTop = (source === "squad") ? 0.46 : 0.30;
+        const idx = Number(damageIndex) || 0;
+        el.style.left = (rect.left + rect.width * 0.6 - fxr.left + idx * 6) + "px";
+        el.style.top  = (rect.top + rect.height * baseTop - fxr.top + idx * 20) + "px";
       } else {
         el.style.left = "60%"; el.style.top = "30%";
       }
@@ -719,7 +860,7 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex) {
       }
     }
     fxLayer.appendChild(el);
-    setTimeout(() => el.remove(), 620);
+    setTimeout(() => el.remove(), 1150);
   }
 }
 
@@ -892,4 +1033,6 @@ function closeCombat3DPopup() {
   const logBtn = document.getElementById("btn-combat-log"); if (logBtn) logBtn.addEventListener("click", () => {
     if (typeof openCombatLogModal === "function") openCombatLogModal();
   });
+  // 军团 NPC 战斗小队（M5）：小队区域选择事件（渲染由 renderCombatPanel 驱动）
+  bindCombatSquadUI();
 })();

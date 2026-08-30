@@ -1194,6 +1194,13 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.tickLegionNpc === "function") {
       LEGION_NPC.tickLegionNpc(gameState, { now: segEnd });
     }
+    // 3.6) 军团战斗小队（M4）：每段按 segEnd 推进 NPC 舰船修复倒计时，与战斗结算段共用
+    // tickLegionSquadRepairs（幂等，仅 repairUntil 到期者恢复；时间倒退不提前修复）。
+    // 覆盖「本段无战斗结算」的场景（战斗未激活 / 已转入生产），保证离线期间修复正常流逝。
+    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD &&
+        typeof LEGION_COMBAT_SQUAD.tickLegionSquadRepairs === "function") {
+      LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(gameState, segEnd);
+    }
 
     // 4) 扣除该段燃料（仅 operational 段真实消耗）
     if (segOperational && typeof settleStationMaintenance === "function") {

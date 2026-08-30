@@ -58,7 +58,11 @@ const EQUIPMENT_DB = {
   // ===== 新增星带势力生产装备（材料按档位分级：D=1.0-0.8 / C=0.7-0.5 / B=0.4-0.3 / A=0.2-0.1） =====
   "angel_mining_laser_outpost": { id:"angel_mining_laser_outpost", name:"苍穹劫团采矿激光器·前哨型", slot:"high", level:10, time:30, xp:15, cost:{"三钛合金":60,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningEfficiency:0.10}, faction:"angel", requiresBlueprint:true },
   "angel_mineral_assimilation_outpost": { id:"angel_mineral_assimilation_outpost", name:"苍穹劫团矿物同化注入器·前哨型", slot:"low", level:10, time:30, xp:15, cost:{"三钛合金":80,"类银超金属":20,"苍穹劫团装备生产许可D":3}, bonuses:{miningLaserEfficiency:0.20}, faction:"angel", requiresBlueprint:true },
-  "angel_drone_link_war": { id:"angel_drone_link_war", name:"苍穹劫团无人机指挥链路·破阵型", slot:"mid", level:65, time:130, xp:95, cost:{"三钛合金":900,"超新星诺克石":35,"钷":2,"等离子体":20,"苍穹劫团装备生产许可A":10}, bonuses:{miningEfficiency:0.20,gasEfficiency:0.20,miningLaserEfficiency:0.80,gasLaserEfficiency:0.80}, faction:"angel", requiresBlueprint:true },
+  // 「破阵型」为无人机指挥链路，效果走无人机链路的独立采集效率乘区；
+  // 此前同时带了 miningLaserEfficiency/gasLaserEfficiency（高槽采集器放大），
+  // 但结算层把「带放大的势力中槽件」基础效率降级为平加，导致面板双加成而实际偏弱。
+  // 用户拍板方案 A：移除高槽放大，只保留独立采集效率，与普通无人机链路同口径。
+  "angel_drone_link_war": { id:"angel_drone_link_war", name:"苍穹劫团无人机指挥链路·破阵型", slot:"mid", level:65, time:130, xp:95, cost:{"三钛合金":900,"超新星诺克石":35,"钷":2,"等离子体":20,"苍穹劫团装备生产许可A":10}, bonuses:{miningEfficiency:0.20,gasEfficiency:0.20}, faction:"angel", requiresBlueprint:true },
   "blood_drone_link_sacrifice": { id:"blood_drone_link_sacrifice", name:"赤誓仆从无人机指挥链路·献祭型", slot:"mid", level:25, time:45, xp:30, cost:{"三钛合金":150,"类银超金属":50,"赤誓教团装备生产许可C":5,"类晶体胶矿":15}, bonuses:{miningEfficiency:0.08,gasEfficiency:0.08}, faction:"blood", sourceZoneId:"blood_sacrifice", requiresBlueprint:true },
   "blood_mining_laser_hunt": { id:"blood_mining_laser_hunt", name:"赤誓采矿激光器·猎杀型", slot:"high", level:45, time:75, xp:55, cost:{"三钛合金":300,"类银超金属":100,"同位聚合体":20,"重金属":15,"赤誓教团装备生产许可B":8}, bonuses:{miningEfficiency:0.40}, faction:"blood", requiresBlueprint:true },
   "blood_mineral_assimilation_nexus": { id:"blood_mineral_assimilation_nexus", name:"赤誓矿物同化注入器·枢纽型", slot:"low", level:45, time:75, xp:55, cost:{"三钛合金":600,"同位聚合体":25,"重金属":15,"赤誓教团装备生产许可B":8,"氦同位素":10}, bonuses:{miningLaserEfficiency:0.60}, faction:"blood", requiresBlueprint:true },
@@ -737,25 +741,18 @@ function getEquipmentAttributeText(equipmentRef, separator) {
 }
 
 // 旗舰限定角标：由 shipTypes 数据驱动（非名字判定）。返回 {kind,label} 或 null。
-// kind: "combat"（战斗/考古旗舰） | "ind"（工业旗舰）；label 用于提示文案。
+// kind: "combat"（战斗旗舰） | "ind"（工业旗舰）；label 用于提示文案。
+// 考古舰型（archaeology_*）不显示角标。
 function getShipTypesFlag(shipTypes) {
   if (!Array.isArray(shipTypes) || shipTypes.length === 0) return null;
   const combat = shipTypes.includes("capital") || shipTypes.includes("supercapital");
   const ind = shipTypes.includes("industrial_capital");
-  const archaeologyCapital = shipTypes.includes("archaeology_capital");
-  // 全档考古舰型（护卫/驱逐/巡洋/战列）存在 → 适配全部考古舰，而非仅旗舰
-  const archaeologyAll = shipTypes.some(function (t) {
-    return t === "archaeology_frigate" || t === "archaeology_destroyer" ||
-           t === "archaeology_cruiser" || t === "archaeology_battleship";
-  });
-  if (!combat && !ind && !archaeologyCapital && !archaeologyAll) return null;
+  if (!combat && !ind) return null;
   const parts = [];
   if (combat) parts.push("战斗旗舰 / 超级旗舰");
   if (ind) parts.push("工业旗舰");
-  if (archaeologyCapital && !archaeologyAll) parts.push("考古旗舰");
-  if (archaeologyAll) parts.push("考古舰");
-  const kind = (combat || archaeologyCapital || archaeologyAll) ? "combat" : "ind";
-  return { kind, label: parts.join(" / "), archaeologyAll: archaeologyAll };
+  const kind = combat ? "combat" : "ind";
+  return { kind, label: parts.join(" / ") };
 }
 
 // 返回角标 HTML（受控字符串，内容由上方数据生成，不含外部输入）。
@@ -771,12 +768,7 @@ function getShipTypesFlagBadge(shipTypes, variant) {
   if (variant === "ee") {
     return '<span class="ee-flag ' + f.kind + '">' + icon + '<span class="tip">' + tip + "</span></span>";
   }
-  let text;
-  if (isInd) text = "工业旗舰";
-  else if (f.archaeologyAll && !shipTypes.includes("capital")) text = "考古舰";
-  else if (shipTypes.includes("capital") && shipTypes.includes("archaeology_capital")) text = "战斗/考古旗舰";
-  else if (shipTypes.includes("archaeology_capital")) text = "考古旗舰";
-  else text = "战斗旗舰";
+  const text = isInd ? "工业旗舰" : "战斗旗舰";
   return '<span class="flag-badge ' + f.kind + '">' + icon + " " + text + '<span class="tip">' + tip + "</span></span>";
 }
 

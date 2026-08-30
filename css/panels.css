@@ -1074,7 +1074,7 @@
 }
 .lc-ship-row {
   display: grid;
-  grid-template-columns: 1fr auto auto auto auto;
+  grid-template-columns: 1fr auto auto auto auto auto;
   gap: 10px;
   align-items: center;
   padding: 8px 0;
@@ -1082,6 +1082,18 @@
 }
 .lc-ship-row:last-child { border-bottom: none; }
 .lc-ship-name { color: #d6e2ee; font-weight: 600; }
+.lc-ship-enhance {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(212,168,67,.18);
+  border: 1px solid rgba(212,168,67,.45);
+  color: #e8c660;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
 .lc-ship-tier { color: #8a9bb0; font-size: 12px; }
 .lc-ship-role { color: #8a9bb0; font-size: 11px; }
 .lc-ship-compat { font-size: 12px; font-weight: 600; }
@@ -1119,4 +1131,128 @@
   .lc-ship-role { grid-column: 1; }
   .lc-ship-compat { grid-column: 1; font-size: 12px; }
   .lc-ship-row .btn { grid-column: 2; grid-row: 1 / span 4; align-self: center; }
+}
+
+/* ================================================================
+   军团 NPC 战斗小队（M5）—— 战斗面板小队区域
+   追加区块，不改动既有规则（含 panels.css 顶部 overflow 放行白名单）。
+   ================================================================ */
+.combat-squad-section { border:1px solid #26384d; border-radius:10px; background:rgba(16,29,44,.72); padding:12px 14px; margin:10px 0; }
+.lcs-head { display:flex; flex-wrap:wrap; align-items:baseline; gap:10px; margin-bottom:8px; }
+.lcs-title { color:#dceeff; font-weight:700; }
+.lcs-proto { font-size:12px; }
+.lcs-proto.on { color:#7fd7a4; }
+.lcs-proto.off { color:#8297ab; }
+.lcs-count { font-size:12px; color:#8297ab; margin-left:auto; }
+.lcs-empty, .lcs-note { font-size:12px; color:#8297ab; margin-top:6px; }
+.lcs-note.warn { color:#e0b062; }
+.lcs-row { display:flex; gap:10px; align-items:flex-start; padding:8px 6px; border-top:1px solid rgba(56,81,107,.5); cursor:pointer; }
+.lcs-row:first-of-type { border-top:none; }
+.lcs-row.dis { opacity:.6; cursor:not-allowed; }
+.lcs-row.in { background:rgba(115,200,241,.08); }
+.lcs-row input[type="checkbox"] { margin-top:3px; }
+.lcs-main { display:flex; flex-direction:column; gap:3px; flex:1; min-width:0; }
+.lcs-name { color:#e8f4ff; font-weight:600; }
+.lcs-name small { color:#8297ab; font-weight:400; margin-left:4px; }
+.lcs-meta { font-size:12px; color:#9fb4c8; }
+.lcs-bars { display:flex; gap:6px; margin:3px 0; }
+.lcs-hp { position:relative; flex:1; height:12px; border-radius:6px; background:#0b1724; overflow:hidden; display:block; }
+.lcs-hp i { position:absolute; inset:0 auto 0 0; display:block; }
+.lcs-hp.shield i { background:#3f8fd0; }
+.lcs-hp.armor i { background:#c9a227; }
+.lcs-hp.structure i { background:#b5533f; }
+.lcs-hp em { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-style:normal; font-size:10px; color:#e8f4ff; text-shadow:0 1px 2px rgba(0,0,0,.7); }
+.lcs-bars-empty { font-size:12px; color:#8297ab; }
+.lcs-status { font-size:12px; }
+.lcs-status.ok { color:#7fd7a4; }
+.lcs-status.warn { color:#e0b062; }
+.lcs-badges { display:flex; flex-direction:column; gap:4px; }
+.lcs-badge { font-size:11px; padding:1px 6px; border-radius:8px; border:1px solid #38516b; color:#9fb4c8; white-space:nowrap; }
+.lcs-badge.ok { border-color:#3d7f5f; color:#7fd7a4; }
+.lcs-badge.warn { border-color:#8a6b2f; color:#e0b062; }
+.lcs-badge.bad { border-color:#8a3f3f; color:#e08a8a; }
+@media (max-width:640px) {
+  .lcs-row { flex-direction:column; }
+  .lcs-badges { flex-direction:row; flex-wrap:wrap; }
+}
+
+/* ===== 军团 NPC 战斗小队方块（玩家左侧，仿僚机列队） ===== */
+.combat-squad-column {
+  flex: 0 0 176px;
+  max-width: 176px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 10px;
+  align-self: stretch;
+  padding: 6px 4px;
+}
+.combat-squad-column .lcs-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.lcs-slot {
+  background: linear-gradient(180deg, rgba(20,36,54,.95) 0%, rgba(12,22,34,.98) 100%);
+  border: 1px solid #26384d;
+  border-left: 3px solid #3f8fd0;
+  border-radius: 8px;
+  padding: 8px 9px;
+  transition: border-color .2s, box-shadow .2s;
+}
+.lcs-slot.active { border-left-color: #7fd7a4; box-shadow: 0 0 0 1px rgba(127,215,164,.15); }
+.lcs-slot.destroyed { border-left-color: #e08a8a; opacity: .6; }
+.lcs-slot.empty { border-left-color: #8297ab; opacity: .8; }
+.lcs-slot-head { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+.lcs-slot-avatar {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: rgba(63,143,208,.18); color: #3f8fd0;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; flex-shrink: 0;
+}
+.lcs-slot.active .lcs-slot-avatar { background: rgba(127,215,164,.18); color: #7fd7a4; }
+.lcs-slot.destroyed .lcs-slot-avatar { background: rgba(224,138,138,.18); color: #e08a8a; }
+.lcs-slot-name { font-size: 13px; font-weight: 600; color: #e8f4ff; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lcs-slot-name small { color: #8297ab; font-weight: 400; margin-left: 4px; }
+.lcs-slot-select {
+  width: 100%; margin-bottom: 7px;
+  background: rgba(7,13,20,.9); color: #dceeff;
+  border: 1px solid #2a3f55; border-radius: 5px;
+  padding: 4px 6px; font-size: 12px; cursor: pointer; outline: none;
+}
+.lcs-slot-select:disabled { opacity: .55; cursor: not-allowed; }
+.lcs-slot-select option { background: #0b1520; }
+.lcs-mini-bars { display: flex; flex-direction: column; gap: 4px; }
+.lcs-mini-bar { display: grid; grid-template-columns: 30px 1fr 34px; align-items: center; gap: 5px; font-size: 10px; color: #8297ab; }
+.lcs-mini-track { height: 5px; background: rgba(0,0,0,.35); border-radius: 3px; overflow: hidden; }
+.lcs-mini-fill { height: 100%; border-radius: 3px; transition: width .25s ease-out; }
+.lcs-mini-fill.shield { background: #3f8fd0; box-shadow: 0 0 4px rgba(63,143,208,.45); }
+.lcs-mini-fill.armor { background: #c9a227; }
+.lcs-mini-fill.structure { background: #b5533f; }
+.lcs-mini-val { text-align: right; color: #e8f4ff; font-variant-numeric: tabular-nums; }
+.lcs-bars-empty { font-size: 11px; color: #8297ab; margin: 3px 0; }
+.lcs-slot-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.lcs-slot-status { font-size: 10px; color: #9fb4c8; margin-top: 4px; }
+
+/* 窄屏：玩家槽与小队列上下堆叠，方块横排 */
+@media (max-width: 720px) {
+  .combat-player-side { flex-direction: column; align-items: center; gap: 10px; }
+  .combat-squad-column { flex: 0 0 auto; width: 100%; max-width: 100%; flex-direction: column; align-items: stretch; padding: 4px 0; }
+  .combat-squad-column .lcs-head { margin-bottom: 6px; flex-wrap: nowrap; overflow: hidden; }
+  .combat-squad-column .lcs-title { font-size: 13px; flex-shrink: 0; }
+  .combat-squad-column .lcs-proto { font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .combat-squad-column .lcs-count { display: none; }
+  .combat-squad-column .lcs-slots { flex-direction: row; gap: 8px; }
+  .lcs-slot { flex: 1; min-width: 0; padding: 6px 7px; }
+  .lcs-slot-name { font-size: 12px; }
+  .lcs-slot-select { font-size: 11px; padding: 3px 4px; }
+  .lcs-mini-bar { grid-template-columns: 24px 1fr 28px; gap: 3px; font-size: 9px; }
+  .lcs-mini-val { font-size: 9px; }
+  .lcs-slot-avatar { width: 22px; height: 22px; font-size: 11px; }
+}
+
+/* 超窄屏：方块竖直堆叠，避免血条被压得过扁 */
+@media (max-width: 400px) {
+  .combat-squad-column .lcs-slots { flex-direction: column; }
+  .lcs-slot { width: 100%; }
 }
