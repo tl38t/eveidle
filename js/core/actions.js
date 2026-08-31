@@ -731,13 +731,20 @@ const CombatStateActions = {
     return { changed:true };
   },
 
-  stop(state) {
+  stop(state, now) {
     // 玩家主动停止：即便当前处于维修中（combat 非活跃、无战斗行动），只要存在待恢复标记，
     // 也允许停止以取消"维修完成后自动出击"。这是策划要求（重创后可主动放弃自动返回）。
     const hasPendingResume = Boolean(state.resumeAfterRepair && state.resumeAfterRepair.type === "combat");
     if (!state.combat.active && !(state.currentAction.active && state.currentAction.skill === "combat") && !hasPendingResume) return { changed:false, reason:"not-active" };
     const maxHp = getCombatMaxHpFromState(state);
     const abandonedDeathspace = state.combat.mode === "deathspace";
+    // 队列驱动的战斗停止时必须同步暂停队列；否则切页触发离线结算时，
+    // settleOfflineActions 会因 isRunning=true 重新启动这场战斗。
+    const queueWasRunning = Boolean(state.queue && state.queue.status && state.queue.status.isRunning);
+    if (queueWasRunning) {
+      state.queue.status.isRunning = false;
+      state.queue.status.activeIndex = -1;
+    }
     // M3：玩家主动停止战斗 → 清理小队临时状态并释放占用（NPC 修复状态保留在本体）
     if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled) {
       LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
@@ -759,8 +766,11 @@ const CombatStateActions = {
       lastEnemyVolley:null,
       runWeaponTypes:[],
       runWeaponTypesZone:null,
-      runDamageDealt:0, runDamageTaken:0
+      runDamageDealt:0, runDamageTaken:0,
+      queueItemId:null, queueWavesTarget:0, queueWavesDone:0,
+      queueEntriesTarget:0, queueEntriesDone:0
     });
+    state.currentAction.batchRemaining = 0;
     state.resumeAfterRepair = null; // 玩家主动停止：取消待恢复（含维修中取消自动出击）
     state.combat.deathspaceChainRemaining = 0; // 手动停止战斗：连刷链一并取消
     state.combat.deathspaceChainPending = false;
@@ -2249,9 +2259,14 @@ const StationStateActions = {
   if (action.type === "combat/enterDeathspace") return CombatStateActions.enterDeathspace(state, action.deathspaceId, action.enemies, action.formationId, actionTime);
   if (action.type === "combat/startDeathspaceChain") return CombatStateActions.startDeathspaceChain(state, action.count, actionTime);
   if (action.type === "combat/cancelDeathspaceChain") return CombatStateActions.cancelDeathspaceChain(state);
-  if (action.type === "combat/stop") return tutorialNote(state, action, CombatStateActions.stop(state), actionTime);
+  if (action.type === "combat/stop") return tutorialNote(state, action, CombatStateActions.stop(state, actionTime), actionTime);
   if (action.type === "combat/beginRecovery") return CombatStateActions.beginRecovery(state, actionTime);
   if (action.type === "combat/finishRecovery") return CombatStateActions.finishRecovery(state, actionTime);
+  if (action.type === "legion/paySalaries") {
+    return (typeof LEGION_NPC !== "undefined" && LEGION_NPC.payLegionNpcSalariesNow)
+      ? LEGION_NPC.payLegionNpcSalariesNow(state, { now: actionTime })
+      : { changed:false, reason:"legion-unavailable" };
+  }
   if (action.type === "planetary/deploy") return PlanetaryStateActions.deploy(state, action.planetType, actionTime);
   if (action.type === "planetary/collect") return PlanetaryStateActions.collect(state, action.id);
   if (action.type === "planetary/renew") return PlanetaryStateActions.renew(state, action.id, actionTime);

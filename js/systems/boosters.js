@@ -444,8 +444,10 @@ function getBoosterEffectState(state) {
     equipmentSpeedMultiplier: 1,
     shipMaterialDiscount: 0,
     shipMaterialLevelGate: 0,
+    shipMaterialRoundDown: false,
     equipMaterialDiscount: 0,
     equipMaterialLevelGate: 0,
+    equipMaterialRoundDown: false,
     // 技能超载催化器：仅装在对应槽位的技能获得临时等级；键为该技能的技能键。
     skillLevelBySkill: { mining:0, gasHarvesting:0, refining:0, shipEngineering:0, equipmentEngineering:0, boosterEngineering:0, archaeology:0 },
     boosterSpeedMultiplier: 1,
@@ -527,7 +529,10 @@ function getBoosterEffectState(state) {
         var dv = Number(item.effectValue) || 0;
         var lg = Number(item.levelGate) || 0;
         var grp = (slot === "shipSpeed" || slot === "shipYield") ? "ship" : "equip";
-        if (dv > eff[grp + "MaterialDiscount"]) eff[grp + "MaterialDiscount"] = dv;
+        if (dv > eff[grp + "MaterialDiscount"]) {
+          eff[grp + "MaterialDiscount"] = dv;
+          eff[grp + "MaterialRoundDown"] = item.quality === "r" || item.quality === "l";
+        }
         if (lg > eff[grp + "MaterialLevelGate"]) eff[grp + "MaterialLevelGate"] = lg;
         break;
       }
@@ -621,7 +626,7 @@ function discountCost(cost, mult) {
 /* ----------------------------------------------------------------
    精密配给剂（precision_rationing）统一报价 / 门槛函数（考古重制 Phase B）
    激活期间（getBoosterEffectState().shipMaterialDiscount > 0）：
-     - 组件 / 总装真实材料成本严格 ceil(base × 0.9)（逐条，单件至少 1）
+     - 组件 / 总装真实材料成本按当前品质折扣计算（逐条向上取整，单件至少 1）
      - 配方等级门槛 +5
    覆盖在线 / 离线 / 队列 / intship 四类调用点（队列与 intship 复用同一制造描述符）。
    增强剂耗尽后 effectState 归零，本函数实时读状态，下一原子周期自动恢复原成本原门槛。
@@ -638,7 +643,10 @@ function getShipBuildingQuote(state, recipe, context) {
     cost = {};
     for (var mat in baseCost) {
       if (!Object.prototype.hasOwnProperty.call(baseCost, mat)) continue;
-      var c = Math.ceil(Number(baseCost[mat]) * 0.9);
+      var discount = Number(eff.shipMaterialDiscount) || 0;
+      if (discount > 0.95) discount = 0.95;
+      var raw = Number(baseCost[mat]) * (1 - discount);
+      var c = eff.shipMaterialRoundDown ? Math.floor(raw) : Math.ceil(raw);
       if (!(c >= 1)) c = 1;
       cost[mat] = c;
     }
@@ -670,7 +678,7 @@ function getShipBuildingQuote(state, recipe, context) {
 /* ----------------------------------------------------------------
    装备工程报价（镜像 getShipBuildingQuote，考古重制 Phase B · 精密配给剂通用化）
    激活期间（getBoosterEffectState().equipMaterialDiscount > 0，来源即精工/传奇·精密配给剂装在装备槽）：
-     - 配方材料成本严格 ceil(base × 0.9)（逐条，单件至少 1）
+     - 配方材料成本按当前品质折扣计算（逐条向上取整，单件至少 1）
      - 配方等级门槛 + equipMaterialLevelGate
    装备无军团材料减耗键（军团对装备仅有速度乘数 equipmentManufacturingSpeed），故不叠 LEGION 成本减免。
    覆盖在线 / 离线 / 队列 / 空间站自动线四类调用点（与舰船同构）。
@@ -685,7 +693,10 @@ function getEquipEngBuildingQuote(state, recipe) {
     cost = {};
     for (var mat in baseCost) {
       if (!Object.prototype.hasOwnProperty.call(baseCost, mat)) continue;
-      var c = Math.ceil(Number(baseCost[mat]) * 0.9);
+      var discount = Number(eff.equipMaterialDiscount) || 0;
+      if (discount > 0.95) discount = 0.95;
+      var raw = Number(baseCost[mat]) * (1 - discount);
+      var c = eff.equipMaterialRoundDown ? Math.floor(raw) : Math.ceil(raw);
       if (!(c >= 1)) c = 1;
       cost[mat] = c;
     }

@@ -348,6 +348,19 @@ section("23-25 战斗面板小队区域（M5）");
   ok(/出战中/.test(html), "战斗中：成员徽章为出战中");
   ok(/disabled/.test(html), "战斗中：选角下拉禁用（战后才能改）");
 
+  // M6 Phase 3：战斗中展示逐员目标与开火顺序
+  G.combat.enemies = [{ id: "ui-A", name: "目标 A" }, { id: "ui-B", name: "目标 B" }];
+  G.combat.squad.targetId = "ui-B";
+  G.combat.squad.lastRound = { attacked: 2, totalDamage: 10, targetId: "ui-B", perNpc: [
+    { npcId: "cn1", targetId: "ui-A", damage: 4 },
+    { npcId: "cn2", targetId: "ui-B", damage: 6 }
+  ] };
+  W.renderCombatSquadSection(Date.now());
+  html = els.get("combat-squad-section").innerHTML;
+  ok(/本轮开火顺序/.test(html), "M6 UI：显示本轮开火顺序");
+  ok(/目标 A/.test(html) && /目标 B/.test(html), "M6 UI：显示每名 NPC 的当前目标");
+  ok(/当前目标：ui-B/.test(html), "M6 UI：显示共享指针的当前目标");
+
   // 爆船 → 显示修复倒计时与「在岗但暂时无法参战」
   SQ.handleLegionNpcDestroyed(G, "cn1", Date.now());
   W.renderCombatSquadSection(Date.now());

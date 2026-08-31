@@ -352,6 +352,29 @@
         }
       });
     }
+
+    var summary = document.getElementById("legion-summary");
+    if (summary && !summary._legionPayDelegated) {
+      summary._legionPayDelegated = true;
+      summary.addEventListener("click", function (e) {
+        var btn = e.target.closest("button[data-legion-pay-salaries]");
+        if (!btn) return;
+        guard("pay-salaries", function () {
+          if (!hasLegion() || !LEGION_NPC.payLegionNpcSalariesNow) return;
+          var r = (typeof dispatchGameAction === "function")
+            ? dispatchGameAction(getState(), { type:"legion/paySalaries" }, Date.now())
+            : LEGION_NPC.payLegionNpcSalariesNow(getState(), { now:Date.now() });
+          if (!r.changed) {
+            if (r.reason === "insufficient-isk") msg("星币不足，还需要 " + Math.max(0, Math.ceil((r.totalDue || 0) - (r.currentIsk || 0))).toLocaleString() + " 星币");
+            else if (r.reason === "no-overdue") msg("当前没有欠薪 NPC");
+            else msg("补发失败：" + (r.reason || "未知错误"));
+            return;
+          }
+          msg("已补发全体 NPC 一周期工资，共 " + Math.ceil(r.totalDue || 0).toLocaleString() + " 星币");
+          render();
+        });
+      });
+    }
   };
 
   MOD.closeModal = closeModal;

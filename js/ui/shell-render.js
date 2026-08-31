@@ -24,12 +24,12 @@ function showToast(message) {
 }
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "alliance-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "alliance-panel"];
+  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel"];
   const notChain = managedIds.map(id => `:not(#${id})`).join("");
   return [...document.querySelectorAll('.content > .panel' + notChain)];
 }
@@ -47,6 +47,7 @@ function renderCombatSkillGroup() {
 }
 
 function renderCurrentNavigation() {
+  if (currentPage === "starmap" && (!gameState || typeof LegionRender === "undefined" || !LegionRender.isLegionTabVisible || !LegionRender.isLegionTabVisible(gameState))) currentPage = "skill";
   const navigation = getNavigationDisplayState(currentPage, currentView);
   document.body.dataset.currentPage = navigation.page;
   renderCombatSkillGroup();
@@ -83,6 +84,7 @@ function renderCurrentNavigation() {
   else if (navigation.page === "hangar") renderHangarPanel();
   else if (navigation.page === "station") { renderStationPage(); }
   else if (navigation.page === "legion") { renderLegionPage(); }
+  else if (navigation.page === "starmap") { renderStarmapPage(); }
   else if (navigation.page === "alliance") { if (typeof window.renderAlliancePage === "function") window.renderAlliancePage(); }
   else if (navigation.page === "blueprints" || navigation.page === "lpstore") renderBlueprintStore();
   else if (navigation.page === "leaderboard") {
@@ -107,6 +109,14 @@ function renderCurrentNavigation() {
   }
   // Batch P：每次页面切换（含 skill 页经 updateUI）都刷新引导小部件
   renderTutorialWidget();
+}
+
+function renderStarmapPage() {
+  const frame = document.getElementById("legion-starmap-frame");
+  if (!frame) return;
+  const active = typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible && LegionRender.isLegionTabVisible(gameState);
+  const panel = frame.closest(".panel");
+  if (panel) panel.style.display = active ? "" : "none";
 }
 
 function renderLegionPage() {
@@ -251,7 +261,7 @@ function renderCargoSubtabs(display) {
   // 装备页：强化网格（equipment-enhancement-list）已按武器/维修/采矿/采气等功能组分组，
   // 这排三级小类条与之一一重复 → 隐藏，避免同页出现两套标签（用户 2026-08-29 反馈）。
   const showSub = display.filter !== "all" && display.filter !== "equipment"
-    && Array.isArray(display.subFilters) && display.subFilters.length > 1;
+    && Array.isArray(display.subFilters) && display.subFilters.length > 0;
   if (!showSub) {
     if (el.innerHTML) el.innerHTML = "";
     el.style.display = "none";
@@ -3525,10 +3535,14 @@ function openOrbitSelect(index) {
         : "";
       const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁；同系列可重复装配，但后续装配受谐振效应影响，实际效果递减</div>';
       options.innerHTML = hint + destroyButton + (stacks.length
-        ? stacks.map(item => `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.enhancementLevel ? " +" + item.enhancementLevel : ""}${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`).join("")
+        ? stacks.map(item => `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`).join("")
         : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
     } else {
-      options.innerHTML = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>' + stacks.map(item => `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.enhancementLevel ? " +" + item.enhancementLevel : ""}${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`).join("");
+      options.innerHTML = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>' + stacks.map(item => {
+        const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
+        const levelText = level > 0 ? `+${level}` : "未强化";
+        return `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name} <span class="eq-enhancement-level">· ${levelText}</span>${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`;
+      }).join("");
     }
   panel.style.left = "auto"; panel.style.right = "-10px"; panel.style.top = "50%"; panel.style.transform = "translateY(-50%)"; panel.classList.add("active");
 }
@@ -3536,7 +3550,13 @@ function openOrbitSelect(index) {
 function updateOrbitLibrary() {
   const display = getShipFittingDisplayState(gameState, orbitShipId); const container = document.getElementById("equipLibrary");
   if (!display || !container) return;
-  container.innerHTML = display.equipped.length ? display.equipped.map(item => `<span class="el-item">${item.icon} ${item.name}</span>`).join("") : '<span class="el-item" style="color:#4a5a6a;">暂无装备</span>';
+  container.innerHTML = display.equipped.length ? display.equipped.map(item => {
+    const definition = EQUIPMENT_DB[item.id];
+    const isRig = definition && definition.slot === "rig";
+    const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
+    const levelText = isRig ? "" : (level > 0 ? `· +${level}` : "· 未强化");
+    return `<span class="el-item">${item.icon} ${item.name} <span class="el-enhancement-level">${levelText}</span></span>`;
+  }).join("") : '<span class="el-item" style="color:#4a5a6a;">暂无装备</span>';
 }
 
 function updateOrbitStats() {

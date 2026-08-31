@@ -158,6 +158,20 @@
     return { xpNote: xpNote, shipNote: shipNote };
   }
 
+  function npcXpLiveHtml(st, npc) {
+    var rate = LEGION_NPC.calculateLegionNpcXpPerSecond
+      ? LEGION_NPC.calculateLegionNpcXpPerSecond(st, npc) : 0;
+    var xp = Number(npc.xp) || 0;
+    var need = 100 + 5 * ((Number(npc.level) || 1) - 1);
+    var cap = LEGION_NPC.getLegionNpcLevelCap(st);
+    if ((Number(npc.level) || 1) >= cap) return '<span class="legion-ok">已达等级上限</span>';
+    if (npc.salaryState !== "paid") return '<span class="legion-warn">经验暂停：工资未正常</span>';
+    if (!(rate > 0)) return '<span class="legion-warn">经验暂停：当前无有效经验来源</span>';
+    var eta = Math.max(0, (need - xp) / rate);
+    var etaText = eta >= 60 ? Math.floor(eta / 60) + "分" + Math.floor(eta % 60) + "秒" : Math.ceil(eta) + "秒";
+    return '<span class="legion-ok">经验获取中 · +' + rate.toFixed(3) + ' XP/s · 预计升级 ' + etaText + '</span>';
+  }
+
   // ================================================================
   // 入口（空间站页面顶部）：始终可见；不满足时显示锁定原因。
   // ================================================================
@@ -207,8 +221,8 @@
       _legionSig = sig;
       MOD.renderLegionHall(now);
       MOD.renderLegionCandidates(rs);
-      MOD.renderLegionNpcs(snap);
     }
+    MOD.renderLegionNpcs(snap);
     MOD.renderLegionSummary(now, snap, rs);
     MOD.renderLegionContribution(snap);
   };
@@ -371,6 +385,8 @@
     var nextSalary = (L && L.lastSalarySettlementAt ? L.lastSalarySettlementAt : now) + LEGION_NPC.SETTLEMENT_PERIOD_MS;
     var salaryTxt = nextSalary > now ? fmtDuration(nextSalary - now) : "结算中";
     var overdue = snap.salary.overdueNpcCount || 0;
+    var payQuote = LEGION_NPC.getLegionNpcSalaryQuote ? LEGION_NPC.getLegionNpcSalaryQuote(getState()) : null;
+    var payAmount = payQuote ? Math.ceil(payQuote.totalDue || 0).toLocaleString() : "—";
 
     function chip(icon, html, warn) {
       return '<span class="lg-chip' + (warn ? ' warn' : '') + '"><i class="' + icon + '"></i>' + html + '</span>';
@@ -382,6 +398,7 @@
       chip("fa-solid fa-rotate", '下次刷新 <b>' + refreshTxt + '</b>') +
       chip("fa-solid fa-coins", '手动刷新 ' + cost.isk.toLocaleString() + ' 星币 / ' + cost.lp + ' 功勋') +
       chip("fa-solid fa-wallet", '工人总工资 <b>' + (snap.salary.totalWage || 0).toLocaleString() + '</b>') +
+      (overdue > 0 ? '<button class="btn primary legion-pay-salary" data-legion-pay-salaries>立即补发工资（' + payAmount + '）</button>' : '') +
       chip("fa-solid fa-hourglass-half", '下次结算 <b>' + salaryTxt + '</b>');
   };
 
@@ -410,12 +427,14 @@
     return rows ? '<div class="lc-grade-table">' + rows + '</div>' : '';
   }
   // 详情弹窗内容（候选 / 已招募共用骨架），由 legion-events 调 openModal 呈现。
-  function skillSectionHtml(skillId, currentGrade) {
+  function skillSectionHtml(skillId, currentGrade, currentLevel) {
     var skill = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getSkillById) ? LEGION_NPC.getSkillById(skillId) : null;
     if (!skill) return '';
     return '<div class="lc-detail-section"><div class="lc-detail-label">技能 · ' + escapeDetailHtml(skill.name) +
       '（' + skillCategoryName(skill.category) + ' · ' + escapeDetailHtml(skill.type || "") + '）</div>' +
       (skill.effect ? '<div class="lc-detail-line">' + escapeDetailHtml(skill.effect) + '</div>' : '') +
+      (typeof currentLevel === "number" && LEGION_NPC.getLegionNpcSkillRawValue
+        ? '<div class="lc-detail-line">当前等级效果：+' + LEGION_NPC.getLegionNpcSkillRawValue({ skillId:skillId, skillGrade:currentGrade, level:currentLevel }) + '%</div>' : '') +
       skillGradeRowsHtml(skill, currentGrade) + '</div>';
   }
   function escapeDetailHtml(s) {
@@ -472,7 +491,8 @@
       '<div class="lc-detail-line">' + escapeDetailHtml(legionPersonalityName(npc.personalityId)) + ' · Lv.' + npc.level + '（上限 ' + cap + '）</div>' +
       '<div class="lc-detail-progress"><div class="progress-bar"><div class="fill" style="width:' + xpPct.toFixed(0) + '%"></div></div>' +
       '<span>XP ' + xp.toLocaleString() + ' / ' + need.toLocaleString() + ' · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></span></div>' +
-      skillSectionHtml(npc.skillId, grade) +
+      '<div class="lc-detail-line">' + npcXpLiveHtml(st, npc) + '</div>' +
+      skillSectionHtml(npc.skillId, grade, npc.level) +
       '<div class="lc-detail-section"><div class="lc-detail-label">当前贡献</div>' +
       '<div class="lc-detail-line">技能贡献：' + escapeDetailHtml(legionSkillName(npc.skillId)) + ' +' + (skillRaw || 0) + '</div></div>' +
       '<div class="lc-detail-section"><div class="lc-detail-label">舰船与工资</div>' +
@@ -558,6 +578,7 @@
         '<div class="lc-meta">XP ' + (n.xp || 0) + ' / ' + need + ' · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></div>' +
         '<div class="lc-meta">绑定舰船：' + shipHtml + note.shipNote + compatHtml + '</div>' +
         '<div class="lc-meta">每 4h 工资：' + (LEGION_NPC.WAGE[grade] || 0).toLocaleString() + ' · <span class="' + ss.cls + '">' + ss.text + '</span>' + pauseTxt + '</div>' +
+        '<div class="lc-meta">' + npcXpLiveHtml(st, n) + '</div>' +
         '<div class="lc-actions">' +
           '<button class="btn-mini" data-legion-bind-ship="' + n.npcId + '"' + (combatLocked ? ' disabled title="NPC 战斗中或修复中，暂不可绑定或卸下舰船"' : '') + '>绑定/更换舰船</button>' +
           '<button class="btn-mini" data-legion-dismiss="' + n.npcId + '">解雇</button>' +

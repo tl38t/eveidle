@@ -1392,7 +1392,7 @@ if (sandbox.gameState.equipment.inventory.length !== equipmentCount + 1 || resou
 // 且势力名由 血袭者/萨沙 改为 赤誓教团/静默集群，见 combat.js gearDrops 与 equipment.js 配方）。
 const bloodLinkRecipe = sandbox.getEquipmentEngineeringRecipe("blood_servant_drone_link");
 const sanshaBoosterRecipe = sandbox.getEquipmentEngineeringRecipe("sansha_mineral_assimilation");
-if (bloodLinkRecipe.level !== 45 || bloodLinkRecipe.cost["赤誓教团装备生产许可B"] !== 8 || sanshaBoosterRecipe.level !== 65 || sanshaBoosterRecipe.cost["静默集群装备生产许可A"] !== 10) {
+if (bloodLinkRecipe.level !== 45 || bloodLinkRecipe.cost["赤誓教团装备生产许可B"] !== 5 || sanshaBoosterRecipe.level !== 65 || sanshaBoosterRecipe.cost["静默集群装备生产许可A"] !== 6) {
   throw new Error("势力装备配方等级或生产许可需求不正确");
 }
 for (const [material, qty] of Object.entries(bloodLinkRecipe.cost)) {
@@ -1585,7 +1585,7 @@ if (angelMiningRecipe.id !== "angel_mining_laser" || angelGasRecipe.id !== "ange
     angelMiningLaser.bonuses.miningEfficiency !== allianceMiningLaser.bonuses.miningEfficiency ||
     angelGasHarvester.bonuses.gasEfficiency !== allianceGasHarvester.bonuses.gasEfficiency ||
     angelMiningRecipe.level !== 25 || angelGasRecipe.level !== 25 ||
-    angelMiningRecipe.cost["苍穹劫团装备生产许可C"] !== 5 || angelGasRecipe.cost["苍穹劫团装备生产许可C"] !== 5 ||
+    angelMiningRecipe.cost["苍穹劫团装备生产许可C"] !== 3 || angelGasRecipe.cost["苍穹劫团装备生产许可C"] !== 3 ||
     angelMiningRecipe.category !== "mining" || angelGasRecipe.category !== "gas") {
   throw new Error("天使联合采集装备没有保持联盟装备属性或未正确接入数据制造配方");
 }
@@ -9505,13 +9505,16 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   if (pq.I !== 1 || pq.II !== 2 || pq.III !== 4 || pq.IV !== 2 || pq.V !== 5) throw new Error("探针数量下界不符：实 " + JSON.stringify(pq));
   if (pq.IIhi !== 4) throw new Error("探针数量上界不符(II rng=0.999 应4)：实 " + pq.IIhi);
 
-  // 3) 精密配给剂：组件/总装 ceil(base×0.9) 且等级门槛 +5；未激活恢复原值原门槛
+  // 3) 精密配给剂：普通品质组件/总装 ceil(base×0.9) 且等级门槛 +5；未激活恢复原值原门槛
   vm.runInContext("if(!gameState.boosters) gameState.boosters={}; if(!gameState.boosters.active) gameState.boosters.active={}; gameState.boosters.active.shipYield={itemId:'precision_rationing', remainingMs:600000};", sandbox);
   const compA = vm.runInContext("getShipBuildingQuote(gameState, {cost:{'mineral:三钛合金':100,'mineral:类银超金属':30}, level:10}, {kind:'component'})", sandbox);
   if (compA.cost['mineral:三钛合金'] !== 90 || compA.cost['mineral:类银超金属'] !== 27) throw new Error("组件九折ceil不符：实 " + JSON.stringify(compA.cost));
   if (compA.levelGate !== 15) throw new Error("组件 +5 门槛不符(期望15)：实 " + compA.levelGate);
   const asmA = vm.runInContext("getShipBuildingQuote(gameState, {materialCost:{'mineral:三钛合金':50}, level:20}, {kind:'assembly'})", sandbox);
   if (asmA.cost['mineral:三钛合金'] !== 45 || asmA.levelGate !== 25) throw new Error("总装九折/+5 不符：实 " + JSON.stringify(asmA));
+  vm.runInContext("gameState.boosters.active.shipYield={itemId:'precision_rationing_r', remainingMs:600000};", sandbox);
+  const compR = vm.runInContext("getShipBuildingQuote(gameState, {cost:{'mineral:三钛合金':100}, level:10}, {kind:'component'})", sandbox);
+  if (compR.cost['mineral:三钛合金'] !== 88 || compR.levelGate !== 17) throw new Error("精工品质应按12%折扣/+7门槛：实 " + JSON.stringify(compR));
   vm.runInContext("gameState.boosters.active.shipYield={itemId:'precision_rationing', remainingMs:0};", sandbox);
   const comp0 = vm.runInContext("getShipBuildingQuote(gameState, {cost:{'mineral:三钛合金':100}, level:10}, {kind:'component'})", sandbox);
   if (comp0.cost['mineral:三钛合金'] !== 100 || comp0.levelGate !== 10) throw new Error("未激活应恢复原值/原门槛：实 " + JSON.stringify(comp0));
@@ -9597,7 +9600,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   if (!/更换考古舰/.test(html2)) throw new Error("维修分支未渲染『更换考古舰』入口");
   if (!/自动维修中/.test(html2)) throw new Error("维修分支未显示倒计时");
 
-  console.log("考古重做定点返修验收通过（2026-08-09）：回收×1.10 / 探针数量(II2-4·III4-8·IV2-4·V5-10·I1-1) / 精密配给剂九折ceil+5门槛(组件·总装·未激活恢复) / 在线增强剂双产事件与库存一致 / 按舰维修canStart阻断(他舰不阻断)·离线{timestamp:virtualNow}透传 / 移动端≤760px block / UI收口(回收舱报价·无未来用途·无独立凭证区·校准材料真实用途·维修分支更换考古舰+倒计时)");
+  console.log("考古重做定点返修验收通过（2026-08-09）：回收×1.10 / 探针数量(II2-4·III4-8·IV2-4·V5-10·I1-1) / 精密配给剂按品质折扣ceil+门槛(组件·总装·未激活恢复) / 在线增强剂双产事件与库存一致 / 按舰维修canStart阻断(他舰不阻断)·离线{timestamp:virtualNow}透传 / 移动端≤760px block / UI收口(回收舱报价·无未来用途·无独立凭证区·校准材料真实用途·维修分支更换考古舰+倒计时)");
 }
 // === 考古重做定点返修验收 END ===
 

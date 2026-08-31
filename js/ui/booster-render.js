@@ -59,7 +59,7 @@ function renderBoosterRecipeGrid(display) {
       (locked ? '<span class="lock-badge">🔒</span>' : "") +
       '<span class="equipeng-card-top"><span>' + recipe.qualityName + " · " + recipe.seriesName + '</span><span class="' + statusClass + '">' + statusLabel + '</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-syringe"></i></span><strong>' + recipe.displayName + '</strong>' +
-      '<span class="equipeng-card-attributes">' + recipe.effectText + ' · 持续 ' + recipe.durationSeconds + 's</span>' +
+      '<span class="equipeng-card-attributes"><span class="booster-gate">增强剂制造 Lv.' + recipe.level + (recipe.levelGateBonus ? ' · 舰船/装备配方激活时门槛各 +' + recipe.levelGateBonus : '') + '</span><br>' + recipe.effectText + ' · 持续 ' + recipe.durationSeconds + 's</span>' +
       '<span class="equipeng-card-bottom"><span>' + recipe.effectiveTime.toFixed(1) + 's · ' + recipe.xp + ' XP</span><span>库存 ' + recipe.owned.toLocaleString() + '</span></span></button>';
   }).join("");
 }
@@ -92,7 +92,7 @@ function renderBoosterDetail(display) {
     ? '<div class="lock-banner"><span class="lb-icon">🔒</span><span>' + (recipe.requiresBlueprint && !recipe.hasRequiredBlueprint ? "未解锁：需蓝图解锁（考古掉落获取蓝图）" : ("未解锁：增强剂制造 Lv." + recipe.level + " 解锁")) + '</span></div>'
     : "";
   body.innerHTML = running +
-    '<div class="equipeng-detail-section"><span class="equipeng-detail-label">效果</span><div class="equipeng-attribute-list"><span>' + recipe.effectText + '</span><span>每瓶持续 ' + recipe.durationSeconds + 's</span></div></div>' +
+    '<div class="equipeng-detail-section"><span class="equipeng-detail-label">效果与门槛</span><div class="equipeng-attribute-list"><span>制造本剂：增强剂制造 Lv.' + recipe.level + '</span>' + (recipe.levelGateBonus ? '<span>激活期间：舰船制造配方等级门槛 +' + recipe.levelGateBonus + '</span><span>激活期间：装备制造配方等级门槛 +' + recipe.levelGateBonus + '</span>' : '') + '<span>' + recipe.effectText + '</span><span>每瓶持续 ' + recipe.durationSeconds + 's</span></div></div>' +
     '<div class="equipeng-detail-section"><span class="equipeng-detail-label">制造材料</span><div class="equipeng-material-list">' + materials + '</div></div>' +
     '<div class="equipeng-detail-section equipeng-manufacture-summary"><span>产出：' + recipe.displayName + ' ×1</span><span>单次耗时 ' + recipe.effectiveTime.toFixed(1) + 's（基础 ' + recipe.time + 's）</span><span>增强剂制造经验 +' + recipe.xp + '</span></div>' +
     lockNote;

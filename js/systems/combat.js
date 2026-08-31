@@ -371,7 +371,9 @@ function makeRunToken(combat) {
 
 // 新 run：runSequence +1（保证 token 唯一）、刷新 runToken、重置敌人序号。
 // 续入链（continuation）不调用，沿用既有 runToken / runSequence / 敌人序号连续性。
-function resetCombatRunState(combat) {
+function resetCombatRunState(combat, options) {
+  options = options || {};
+  const preserveQueueLog = options.preserveQueueLog === true;
   const prev = (typeof combat.runSequence === "number" && Number.isSafeInteger(combat.runSequence) && combat.runSequence >= 0) ? combat.runSequence : 0;
   combat.runSequence = prev + 1;
   combat.runToken = makeRunToken(combat);
@@ -380,24 +382,27 @@ function resetCombatRunState(combat) {
   // 开局拍库存与技能快照，供打开日志时按差值惰性算出产物 / 经验净增，避免逐帧记录开销。
   const rl = (combat.runLog && typeof combat.runLog === "object") ? combat.runLog : (combat.runLog = {});
   const now0 = (typeof Date !== "undefined") ? Date.now() : 0;
-  rl.startedAt = now0;
+  if (!preserveQueueLog || !rl.startedAt) rl.startedAt = now0;
   rl.lastActivityAt = now0;
   rl.runToken = combat.runToken;
-  rl.waves = 0; rl.zones = 0; rl.dsWaves = 0; rl.dsClears = 0;
-  rl.kills = 0; rl.eliteKills = 0; rl.bossKills = 0; rl.defeats = 0;
-  // v2：本场战斗收益累计器（仅统计战斗系统自身产生的收益，彻底弃用库存快照差）。
-  rl.lootAccountingVersion = 2;
-  rl.lootGained = {};
-  rl.iskGained = 0;
-  rl.lpGained = 0;
-  // 战斗技能经验累计器：仅累计「战斗授予」的经验（经 addStationModifiedCombatXp），
-  // 不含空间站授予的非战斗经验。打开日志时读取，见 combat-log.js 的钩子。
-  rl.skillXp = {};
-  rl.startSkills = {};
-  if (typeof gameState !== "undefined" && gameState && gameState.skills) {
-    for (const k of Object.keys(gameState.skills)) {
-      const s = gameState.skills[k];
-      rl.startSkills[k] = { xp: s ? (Number(s.xp) || 0) : 0, lvl: s ? (Number(s.lvl) || 1) : 1 };
+  if (!preserveQueueLog) {
+    rl.queueItemId = null;
+    rl.waves = 0; rl.zones = 0; rl.dsWaves = 0; rl.dsClears = 0;
+    rl.kills = 0; rl.eliteKills = 0; rl.bossKills = 0; rl.defeats = 0;
+    // v2：本场战斗收益累计器（仅统计战斗系统自身产生的收益，彻底弃用库存快照差）。
+    rl.lootAccountingVersion = 2;
+    rl.lootGained = {};
+    rl.iskGained = 0;
+    rl.lpGained = 0;
+    // 战斗技能经验累计器：仅累计「战斗授予」的经验（经 addStationModifiedCombatXp），
+    // 不含空间站授予的非战斗经验。打开日志时读取，见 combat-log.js 的钩子。
+    rl.skillXp = {};
+    rl.startSkills = {};
+    if (typeof gameState !== "undefined" && gameState && gameState.skills) {
+      for (const k of Object.keys(gameState.skills)) {
+        const s = gameState.skills[k];
+        rl.startSkills[k] = { xp: s ? (Number(s.xp) || 0) : 0, lvl: s ? (Number(s.lvl) || 1) : 1 };
+      }
     }
   }
 }
@@ -1122,6 +1127,19 @@ function tryResumeCombatAfterRepair() {
 //   掉落/清波/战败维修/死亡空间连刷），不另写公式、不做平均化。
 //   返回 { ok, advanced, active, pending, recovering, reason }。
 // ============================================================================
+// M6 阶段 1：给定当前目标，返回数组顺序中下一个「存活（structure>0 且未 defeated）」的敌人。
+// 线性向后扫描（不回绕）；无则 null（攻击者停止）。仅依赖 c.enemies 顺序，不触碰任何状态。
+function getNextLivingEnemy(c, fromEnemy) {
+  const enemies = (c && c.enemies) ? c.enemies : [];
+  const startIdx = fromEnemy ? enemies.indexOf(fromEnemy) : -1;
+  const start = startIdx >= 0 ? startIdx + 1 : 0;
+  for (let i = start; i < enemies.length; i++) {
+    const e = enemies[i];
+    if (e && !e.defeated && e.hp && e.hp.structure > 0) return e;
+  }
+  return null;
+}
+
 function advanceCombatRound(state, context) {
   context = context || {};
   const emit = (typeof context.emit === "function") ? context.emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
@@ -1194,81 +1212,134 @@ function advanceCombatRound(state, context) {
   const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => getSelectedCount(state, type) >= amount);
   const canFire = weapons.length > 0 && enoughFuel && enoughAmmo;
 
-  if (canFire) {
-    // Batch C-11：真实开火前清洗/切区检测（仅普通星带模式登记；死亡空间不参与 E21–E23）
-    if (c.mode !== "deathspace") normalizeCombatRunWeaponTypes(c, zone.id);
-    // Batch C-12：记录本轮开火前清洗 runDamage 并捕获快照
-    normalizeCombatRunDamage(c);
-    const prevRunDamage = c.runDamageDealt;
-    ResourceRegistry.spend(state, "consumable:fuel", volleyFuel);
-    const volleyAmmoProps = {};
-    for (const [type, amount] of Object.entries(ammoRequired)) {
-      const r = consumeAmmoForType(state, type, amount);
-      volleyAmmoProps[type] = getAmmoTierProps(r.tier);
-    }
-    const capSkill = state.skills.capacitorManagement;
-    if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", volleyFuel * 0.3, "combat"); }
+  // —— 玩家齐射（抽离为可复用的单次开火单元，目标由调用方指定）——
+  function firePlayerVolley(target) {
+    const enemy = target; // 别名：复用下方既有玩家开火逻辑（含 AOE/克制/脑突触/飘字），不再直接引用回合级 currentEnemy
+    if (canFire) {
+      // Batch C-11：真实开火前清洗/切区检测（仅普通星带模式登记；死亡空间不参与 E21–E23）
+      if (c.mode !== "deathspace") normalizeCombatRunWeaponTypes(c, zone.id);
+      // Batch C-12：记录本轮开火前清洗 runDamage 并捕获快照
+      normalizeCombatRunDamage(c);
+      const prevRunDamage = c.runDamageDealt;
+      ResourceRegistry.spend(state, "consumable:fuel", volleyFuel);
+      const volleyAmmoProps = {};
+      for (const [type, amount] of Object.entries(ammoRequired)) {
+        const r = consumeAmmoForType(state, type, amount);
+        volleyAmmoProps[type] = getAmmoTierProps(r.tier);
+      }
+      const capSkill = state.skills.capacitorManagement;
+      if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", volleyFuel * 0.3, "combat"); }
 
-    for (const module of weapons) {
-      const equipment = module.equipment;
-      const combat = equipment.combat;
-      const weapon = WEAPON_CONFIG[combat.weaponType];
-      if (!weapon) continue;
-      // Batch C-11：真实攻击结算才登记武器类型（WEAPON_CONFIG 命中即为合法类型），去重追加
-      if (c.mode !== "deathspace" && c.runWeaponTypes.indexOf(combat.weaponType) === -1) {
-        c.runWeaponTypes.push(combat.weaponType);
+      for (const module of weapons) {
+        const equipment = module.equipment;
+        const combat = equipment.combat;
+        const weapon = WEAPON_CONFIG[combat.weaponType];
+        if (!weapon) continue;
+        // Batch C-11：真实攻击结算才登记武器类型（WEAPON_CONFIG 命中即为合法类型），去重追加
+        if (c.mode !== "deathspace" && c.runWeaponTypes.indexOf(combat.weaponType) === -1) {
+          c.runWeaponTypes.push(combat.weaponType);
+        }
+        const ammoProps = volleyAmmoProps[combat.weaponType] || getAmmoTierProps("T1");
+        const playerHit = calcPlayerHit(combat.weaponType, equipment, state) * ammoProps.hitMult;
+        const dmgMult = calcPlayerDmgMult(combat.weaponType, state);
+        // M3：克制倍率统一走 calcWeaponCounterMultiplier（玩家与军团 NPC 共用同一口径）
+        const counterMult = calcWeaponCounterMultiplier(combat.weaponType, enemy.hp);
+        const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
+        const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
+        const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
+        let damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult, rng);
+        // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅作用于玩家→敌人伤害（敌人→玩家伤害不享受）。
+        const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
+        if (adbm && adbm !== 1) damage = Math.round(damage * adbm);
+        const dealt = applyLayeredCombatDamage(enemy.hp, damage);
+        const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
+        c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;
+        for (const areaTarget of getCapitalAreaDamageTargets(c.enemies, enemy, combat.aoe)) {
+          const areaDamage = Math.max(1, Math.round(damage * areaTarget.multiplier));
+          const areaDealt = applyLayeredCombatDamage(areaTarget.enemy.hp, areaDamage);
+          c.runDamageDealt += areaDealt.shield + areaDealt.armor + areaDealt.structure;
+        }
+        if (playEffects) playAttackFX(true, combat.weaponType, damage, 0, "player", false, enemy);
+        const weaponSkill = state.skills[weapon.skillKey];
+        if (weaponSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weapon.skillKey, 2, "combat"); }
+        const targetingSkill = state.skills.targeting;
+        if (targetingSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "targeting", 1, "combat"); }
       }
-      const ammoProps = volleyAmmoProps[combat.weaponType] || getAmmoTierProps("T1");
-      const playerHit = calcPlayerHit(combat.weaponType, equipment, state) * ammoProps.hitMult;
-      const dmgMult = calcPlayerDmgMult(combat.weaponType, state);
-      // M3：克制倍率统一走 calcWeaponCounterMultiplier（玩家与军团 NPC 共用同一口径）
-      const counterMult = calcWeaponCounterMultiplier(combat.weaponType, enemy.hp);
-      const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
-      const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
-      const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
-      let damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult, rng);
-      // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅作用于玩家→敌人伤害（敌人→玩家伤害不享受）。
-      const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
-      if (adbm && adbm !== 1) damage = Math.round(damage * adbm);
-      const dealt = applyLayeredCombatDamage(enemy.hp, damage);
-      const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
-      c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;
-      for (const areaTarget of getCapitalAreaDamageTargets(c.enemies, enemy, combat.aoe)) {
-        const areaDamage = Math.max(1, Math.round(damage * areaTarget.multiplier));
-        const areaDealt = applyLayeredCombatDamage(areaTarget.enemy.hp, areaDamage);
-        c.runDamageDealt += areaDealt.shield + areaDealt.armor + areaDealt.structure;
+      // Batch C-12（返修）：只有 amount 为有限正数才 emit；全部 miss/0 实伤不发射
+      const amountThisVolley = c.runDamageDealt - prevRunDamage;
+      if (typeof amountThisVolley === "number" && Number.isFinite(amountThisVolley) && amountThisVolley > 0) {
+        emit("combat:damageDealt", { zoneId:zone.id, mode:c.mode, amount:amountThisVolley, runTotal:c.runDamageDealt });
       }
-      if (playEffects) playAttackFX(true, combat.weaponType, damage);
-      const weaponSkill = state.skills[weapon.skillKey];
-      if (weaponSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weapon.skillKey, 2, "combat"); }
-      const targetingSkill = state.skills.targeting;
-      if (targetingSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "targeting", 1, "combat"); }
+      c.lastStatus = "";
+    } else if (weapons.length === 0) {
+      c.lastStatus = "未安装战斗武器，无法攻击";
+    } else if (!enoughFuel) {
+      c.lastStatus = "燃料不足，整轮武器未能开火";
+    } else {
+      c.lastStatus = "弹药不足，整轮武器未能开火";
     }
-    // Batch C-12（返修）：只有 amount 为有限正数才 emit；全部 miss/0 实伤不发射
-    const amountThisVolley = c.runDamageDealt - prevRunDamage;
-    if (typeof amountThisVolley === "number" && Number.isFinite(amountThisVolley) && amountThisVolley > 0) {
-      emit("combat:damageDealt", { zoneId:zone.id, mode:c.mode, amount:amountThisVolley, runTotal:c.runDamageDealt });
-    }
-    c.lastStatus = "";
-  } else if (weapons.length === 0) {
-    c.lastStatus = "未安装战斗武器，无法攻击";
-  } else if (!enoughFuel) {
-    c.lastStatus = "燃料不足，整轮武器未能开火";
-  } else {
-    c.lastStatus = "弹药不足，整轮武器未能开火";
   }
 
-  // M3 步骤 3（后半）：NPC 与玩家攻击同一目标（combat.currentEnemy）。
-  // 放在原「玩家击毁结算」之前，保证 NPC 造成的击毁同样走原有奖励结算入口。
-  // 非小队模式下本函数直接返回，不产生任何状态变化。
-  const squadResult = processLegionNpcAttack(state, { now: now, offline: Boolean(context.offline), rng: rng, zone: zone, emit: emit });
-  // 在线模式下为每个实际造成伤害的 NPC 飘一个独立伤害数字（暗红 / 橙红交替）。
-  // 这同时回答了「NPC 是否参战」：只要本轮敌方区出现暗红/橙红数字，即代表对应 NPC 已开火。
-  if (playEffects && typeof playAttackFX === "function" && squadResult && squadResult.perNpc) {
+  // M6 阶段 1：玩家与 NPC 按统一顺序依次攻击（共享目标指针，目标死亡立即切换到下一个存活敌人）。
+  // 保留全部既有规则：燃料/弹药/维修/欠薪/爆船跳过、击毁奖励幂等结算（resolveCombatEnemyDefeat）、敌人反击。
+  // 离线路径（offline-combat.js / simulateWave）仍调用 processLegionNpcAttack（同步集火），此处仅改在线。
+  const squadApi = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD) ? LEGION_COMBAT_SQUAD : null;
+  const npcFireMembers = (squadApi && typeof squadApi.getEligibleSquadFireMembers === "function")
+    ? squadApi.getEligibleSquadFireMembers(state, now)
+    : [];
+  const firers = [{ kind: "player" }];
+  for (const m of npcFireMembers) firers.push({ kind: "npc", member: m });
+
+  const perNpc = [];
+  let squadAttacked = 0;
+  let squadTotalDamage = 0;
+  let lastTargetId = null;
+  let ptr = enemy; // 共享目标指针：从已同步的当前目标起
+
+  for (const firer of firers) {
+    // 目标死亡 → 立即推进到下一个存活敌人；跳过（无弹/无油/维修/爆船）不推进指针。
+    if (!ptr || ptr.defeated || (ptr.hp && ptr.hp.structure <= 0)) {
+      ptr = getNextLivingEnemy(c, ptr);
+    }
+    if (!ptr) break; // 无存活目标：停止攻击（敌人反击阶段照常）
+    if (firer.kind === "player") {
+      firePlayerVolley(ptr);
+      if (ptr && ptr.id != null) lastTargetId = ptr.id;
+    } else {
+      const entry = squadApi.fireSingleNpcMember(state, context, firer.member, ptr, perNpc, rng);
+      if (entry && !entry.skipped) {
+        squadAttacked += 1;
+        squadTotalDamage += (entry.damage || 0);
+        lastTargetId = (ptr && ptr.id != null) ? ptr.id : lastTargetId;
+      } else if (entry && entry.skipped) {
+        // 中途跳过：指针不推进，记录本次目标用于 UI
+        lastTargetId = (ptr && ptr.id != null) ? ptr.id : lastTargetId;
+      }
+    }
+  }
+
+  // 小队聚合结算（与 processLegionNpcAttack 同口径）
+  if (squadApi && squadApi.ensureCombatSquadState) {
+    const sq = squadApi.ensureCombatSquadState(state);
+    if (sq) {
+      sq.targetId = lastTargetId;
+      sq.lastRound = {
+        attacked: squadAttacked,
+        totalDamage: squadTotalDamage,
+        perNpc: perNpc,
+        targetId: lastTargetId,
+        now: now
+      };
+    }
+  }
+  c.runSquadDamageDealt = (typeof c.runSquadDamageDealt === "number" ? c.runSquadDamageDealt : 0) + squadTotalDamage;
+
+  // 在线模式：为每个实际造成伤害的 NPC 飘一个独立伤害数字
+  if (playEffects && typeof playAttackFX === "function") {
     let squadIdx = 0;
-    for (const p of squadResult.perNpc) {
+    for (const p of perNpc) {
       if (p && typeof p.damage === "number" && p.damage > 0) {
-        playAttackFX(true, null, p.damage, squadIdx, "squad", squadIdx % 2 === 1);
+        playAttackFX(true, null, p.damage, squadIdx, "squad", squadIdx % 2 === 1, p.targetId);
         squadIdx += 1;
       }
     }
@@ -1309,7 +1380,7 @@ function advanceCombatRound(state, context) {
     enemyVolley.hits.push(squadHit
       ? { enemyId:attacker.id, damage:actualDamage, target:squadHit.kind, npcId:squadHit.npcId || null }
       : { enemyId:attacker.id, damage:actualDamage });
-    if (playEffects) playEnemyAttackFX(c.enemies.indexOf(attacker), attackOrder, actualDamage);
+    if (playEffects) playEnemyAttackFX(c.enemies.indexOf(attacker), attackOrder, actualDamage, squadHit ? { kind:squadHit.kind, npcId:squadHit.npcId || null } : { kind:"player" });
 
     // 防御经验只来自玩家实际承受的伤害（NPC 受伤不给玩家发放，避免按人数放大经验）
     if (!hitNpc) {
@@ -1390,7 +1461,12 @@ function beginDeathspaceRun(state, options, context) {
   // 续跑（continuation）沿用既有 runToken / runSequence，敌人序号继续递增。
   // 编队/敌人统一在入口内用「当前 run 的 RNG 与 token」权威生成，杜绝 UI 预生成的旧 token 敌人误入新 run。
   if (!opts.continuation) {
-    resetCombatRunState(state.combat);
+    // 动作队列的同一死亡空间项可能连续进入多个副本；这些入场属于同一条用户动作，
+    // 日志必须累计，而不是每消耗一枚钥匙就把上一把清空。手动重新进入仍会正常新建日志。
+    const queueItemId = state.combat.queueItemId;
+    const preserveQueueLog = Boolean(queueItemId && state.combat.runLog && state.combat.runLog.queueItemId === queueItemId);
+    resetCombatRunState(state.combat, { preserveQueueLog });
+    if (queueItemId && state.combat.runLog) state.combat.runLog.queueItemId = queueItemId;
     // 新 run 开战前将玩家舰血量重置为满血：上一场残留受损 hp 不应带入新 run（惨胜残血会导致
     // 开战即被击败、立即进维修）。维修态已由上方 isShipUnderRepair 拦截，此处仅初始化健康舰满血。
     const _maxHp = (typeof getCombatMaxHpFromState === "function") ? getCombatMaxHpFromState(state)

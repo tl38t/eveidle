@@ -344,7 +344,7 @@
     if (!state.legion || typeof state.legion !== "object") {
       state.legion = {
         candidates: [], npcs: [], candidateRefreshAt: 0, manualRefreshCount: 0,
-        manualRefreshCycleStartedAt: 0, lastSalarySettlementAt: 0, lastXpSettlementAt: 0,
+        manualRefreshCycleStartedAt: 0, lastSalarySettlementAt: 0, lastXpSettlementAt: 0, lastXpAt: 0,
         technologyLevel: 0
       };
     }
@@ -356,6 +356,7 @@
     if (typeof L.manualRefreshCycleStartedAt !== "number") L.manualRefreshCycleStartedAt = 0;
     if (typeof L.lastSalarySettlementAt !== "number") L.lastSalarySettlementAt = 0;
     if (typeof L.lastXpSettlementAt !== "number") L.lastXpSettlementAt = 0;
+    if (typeof L.lastXpAt !== "number") L.lastXpAt = L.lastXpSettlementAt > 0 ? L.lastXpSettlementAt : 0;
     if (typeof L.technologyLevel !== "number") L.technologyLevel = 0;
     // 战斗小队持久化字段（M1）：旧档 NPC 幂等补默认值（destroyed/repairUntil/occupiedByCombat/combatHp）。
     if (Array.isArray(L.npcs)) L.npcs.forEach(function (n) { if (n && typeof n === "object") ensureNpcCombatFields(n); });
@@ -561,6 +562,9 @@
     const mult = getNpcXpMultiplier(state, npc) * getLegionNpcResearchXpMultiplier(state);
     return BASE_XP_PER_HOUR * (Number(hours) || 0) * mult;
   }
+  function calculateLegionNpcXpPerSecond(state, npc) {
+    return calculateLegionNpcXp(state, npc, 1 / 3600);
+  }
 
   // —— 候选人刷新 ——
   function refreshLegionNpcCandidates(state, opts) {
@@ -663,6 +667,13 @@
   }
 
   // —— 工资结算（按 4h 周期逐次结算，在线/离线一致）——
+  function getLegionNpcSalaryQuote(state) {
+    const L = ensureLegionState(state);
+    const gross = (L.npcs || []).reduce(function (sum, n) { return sum + (WAGE[n.skillGrade] || 0); }, 0);
+    const reducePct = getLegionWageReductionPct(state);
+    return { gross: gross, reductionPercent: reducePct, totalDue: Math.max(0, gross * (1 - reducePct / 100)) };
+  }
+
   function settleLegionNpcSalaries(state, opts) {
     opts = opts || {};
     if (!isLegionSystemActive(state)) return { settled: false, reason: "inactive", paidNpcIds: [], overdueNpcIds: [], totalPaid: 0, nextSettlementAt: 0 };
@@ -702,25 +713,47 @@
     };
   }
 
+  // 手动补发：无论距离自动结算还有多久，都按全体 NPC 的完整一周期工资收取。
+  // 不移动 lastSalarySettlementAt，避免手动补发后自动结算时间被意外顺延。
+  function payLegionNpcSalariesNow(state, opts) {
+    opts = opts || {};
+    if (!isLegionSystemActive(state)) return { changed: false, reason: "inactive", totalDue: 0 };
+    const L = ensureLegionState(state);
+    const overdue = (L.npcs || []).filter(function (n) { return n.salaryState !== "paid"; });
+    if (!overdue.length) return { changed: false, reason: "no-overdue", totalDue: 0 };
+    const quote = getLegionNpcSalaryQuote(state);
+    const totalDue = quote.totalDue;
+    const isk = getCurrency(state, "currency:isk");
+    if (isk < totalDue) return { changed: false, reason: "insufficient-isk", totalDue: totalDue, currentIsk: isk };
+    if (totalDue > 0) spendCurrency(state, "currency:isk", totalDue);
+    (L.npcs || []).forEach(function (n) { n.salaryState = "paid"; });
+    state._dirty = true;
+    return { changed: true, totalDue: totalDue, paidNpcIds: (L.npcs || []).map(function (n) { return n.npcId; }) };
+  }
+
   // —— 经验结算（按 4h 周期逐次结算；仅工资正常者获得经验）——
   function settleLegionNpcExperience(state, opts) {
     opts = opts || {};
-    if (!isLegionSystemActive(state)) return { settled: false, reason: "inactive", periods: 0, totalXpGained: 0, leveledUpNpcIds: [], milestones: [] };
+    if (!isLegionSystemActive(state)) return { settled: false, reason: "inactive", seconds: 0, periods: 0, totalXpGained: 0, leveledUpNpcIds: [], milestones: [] };
     const L = ensureLegionState(state);
     const now = (typeof opts.now === "number") ? opts.now : Date.now();
-    if (L.lastXpSettlementAt <= 0) {
+    if (L.lastXpAt <= 0) {
+      L.lastXpAt = now;
       L.lastXpSettlementAt = now;
-      return { settled: false, reason: "scheduled", periods: 0, totalXpGained: 0, leveledUpNpcIds: [], milestones: [] };
+      return { settled: false, reason: "scheduled", seconds: 0, periods: 0, totalXpGained: 0, leveledUpNpcIds: [], milestones: [] };
     }
+    const elapsedSeconds = Math.max(0, Math.min(86400, (now - L.lastXpAt) / 1000));
+    if (!(elapsedSeconds > 0)) return { settled: false, reason: "no-time", seconds: 0, periods: 0, totalXpGained: 0, leveledUpNpcIds: [], milestones: [] };
+    L.lastXpAt = now;
+    L.lastXpSettlementAt = now;
     const cap = getLegionNpcLevelCap(state);
     let periods = 0, totalXp = 0;
     const leveledUpNpcIds = [], milestones = [];
-    while (now >= L.lastXpSettlementAt + SETTLEMENT_PERIOD_MS) {
-      L.lastXpSettlementAt += SETTLEMENT_PERIOD_MS;
-      periods += 1;
+    if (elapsedSeconds > 0) {
+      periods = 0;
       for (const npc of (L.npcs || [])) {
         if (npc.salaryState !== "paid") continue; // 欠薪 → 0 经验
-        const gained = calculateLegionNpcXp(state, npc, HOURS_PER_PERIOD, opts);
+        const gained = calculateLegionNpcXp(state, npc, elapsedSeconds / 3600, opts);
         totalXp += gained;
         const before = npc.level;
         applyLegionNpcXp(npc, gained, cap);
@@ -730,7 +763,7 @@
         }
       }
     }
-    return { settled: periods > 0, periods: periods, totalXpGained: totalXp, leveledUpNpcIds: leveledUpNpcIds, milestones: milestones };
+    return { settled: totalXp > 0, seconds: elapsedSeconds, periods: periods, totalXpGained: totalXp, leveledUpNpcIds: leveledUpNpcIds, milestones: milestones };
   }
 
   // —— 技能效果聚合（同类递减；前 5 个完整，第 6 个起 1/(1+0.25*(数量-5))）——
@@ -948,7 +981,7 @@
     res.candidates = refreshLegionNpcCandidates(state, { now: now, rng: rng });
   }
   if (L.lastSalarySettlementAt <= 0) L.lastSalarySettlementAt = now;
-  if (L.lastXpSettlementAt <= 0) L.lastXpSettlementAt = now;
+  if (L.lastXpAt <= 0) L.lastXpAt = L.lastXpSettlementAt > 0 ? L.lastXpSettlementAt : now;
     res.salaries = settleLegionNpcSalaries(state, { now: now });
     res.experience = settleLegionNpcExperience(state, { now: now });
     return res;
@@ -996,7 +1029,10 @@
     manuallyRefreshLegionNpcCandidates: manuallyRefreshLegionNpcCandidates,
     recruitLegionNpc: recruitLegionNpc,
     settleLegionNpcSalaries: settleLegionNpcSalaries,
+    getLegionNpcSalaryQuote: getLegionNpcSalaryQuote,
+    payLegionNpcSalariesNow: payLegionNpcSalariesNow,
     calculateLegionNpcXp: calculateLegionNpcXp,
+    calculateLegionNpcXpPerSecond: calculateLegionNpcXpPerSecond,
     settleLegionNpcExperience: settleLegionNpcExperience,
     assignLegionNpcShip: assignLegionNpcShip,
     dismissLegionNpc: dismissLegionNpc,

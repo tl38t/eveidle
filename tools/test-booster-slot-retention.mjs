@@ -365,6 +365,28 @@ function isNullSlot(g, slot) { const e = g.boosters.active[slot]; return e === n
   check("X10: 纯函数不含加速因子", rNormal.consumed === 1 && rNormal.depleted === false);
 }
 
+// ============================================================
+// 18) precision_rationing rounding: normal ceil, refined/legendary floor, minimum 1
+// ============================================================
+{
+  const g = freshState();
+  setupSlot(g, "shipYield", "precision_rationing_n", DUR, 0);
+  const normal = sandbox.getShipBuildingQuote(g, {cost:{m:30}, level:10}, {kind:"component"});
+  check("material rounding: normal 30×90% => 27", normal.cost.m === 27);
+  setupSlot(g, "shipYield", "precision_rationing_r", DUR, 0);
+  const refined = sandbox.getShipBuildingQuote(g, {cost:{m:30}, level:10}, {kind:"component"});
+  check("material rounding: refined 30×88% => 26", refined.cost.m === 26);
+  setupSlot(g, "shipYield", "precision_rationing_l", DUR, 0);
+  const legendary = sandbox.getShipBuildingQuote(g, {cost:{m:30}, level:10}, {kind:"component"});
+  check("material rounding: legendary 30×85% => 25", legendary.cost.m === 25);
+  const tiny = sandbox.getShipBuildingQuote(g, {cost:{m:1}, level:10}, {kind:"component"});
+  check("material rounding: minimum per material is 1", tiny.cost.m === 1);
+  g.boosters.active = {};
+  setupSlot(g, "equipmentYield", "precision_rationing_r", DUR, 0);
+  const equip = sandbox.getEquipEngBuildingQuote(g, {cost:{m:30}, level:10});
+  check("material rounding: equipment refined 30×88% => 26", equip.cost.m === 26);
+}
+
 console.log("\n========================================");
 console.log("增强剂槽位保留回归测试");
 console.log("PASS = " + pass + "  FAIL = " + fail + "  TOTAL = " + (pass + fail));

@@ -103,6 +103,7 @@ function renderCombatEquipmentRack(display) {
 }
 
 function renderCombatLiveDisplay(display) {
+  renderCombatCrewSummary(display);
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("combat-header-info", display.headerText); text("combat-wave-num", display.wave); text("combat-wave-max", display.maxWave); text("combat-clear-label", display.encounterMode === "deathspace" ? "已全通" : "已肃清"); text("combat-clear-count", display.clearCount); text("combat-lock-state", display.lockText); text("combat-player-ship", display.player.name);
   const playerBars = document.getElementById("combat-player-bars"); if (playerBars) playerBars.innerHTML = renderHPBars(display.player.hp, display.player.maxHp);
@@ -324,8 +325,53 @@ function renderCombatSquadSection(now) {
   const slotsHtml = slotNpcs.map(function (npc, idx) {
     return renderSquadSlot(npc, idx, combatNpcs, selection, ui);
   }).join("");
+  const orderHtml = ui.active ? renderSquadFireOrder(ui) : "";
   const lockedNote = ui.active ? '<div class="lcs-note">战斗进行中：成员与舰船已锁定，不可更换。</div>' : "";
-  host.innerHTML = head + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote;
+  host.innerHTML = head + orderHtml + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote;
+}
+
+let combatConfigShipKey = "player";
+
+function getCombatConfigForShip(display, shipKey) {
+  if (!shipKey || shipKey === "player" || typeof getInstalledCombatModulesFromState !== "function") {
+    return { weapons: display.weapons, repairers: display.repairers, equipmentRack: display.equipmentRack };
+  }
+  const crew = getCombatCrewSummary(display);
+  const item = crew.items.find(function (entry) { return entry.key === shipKey; });
+  if (!item || !item.shipInstanceId) return { weapons: display.weapons, repairers: display.repairers, equipmentRack: display.equipmentRack };
+  const modules = getInstalledCombatModulesFromState(gameState, { shipInstanceId: item.shipInstanceId, excludeImplants: true });
+  const slotNames = { high: "高槽", mid: "中槽", low: "低槽", rig: "改装" };
+  const toModule = function (module) { return { ...module, icon: module.combat && module.combat.kind === "weapon" ? "⚡" : "◉" }; };
+  return {
+    weapons: modules.filter(function (module) { return module.combat && module.combat.kind === "weapon"; }).map(toModule),
+    repairers: modules.filter(function (module) { return module.combat && module.combat.kind === "repair"; }).map(toModule),
+    equipmentRack: modules.map(function (module, index) { return { name: module.name, slotName: slotNames[module.slot] || module.slot, index: index, attributes: "NPC 舰船配置", empty: false }; })
+  };
+}
+
+function renderCombatConfig(display) {
+  const config = getCombatConfigForShip(display, combatConfigShipKey);
+  renderInstalledCombatControls(config);
+  renderCombatEquipmentRack(config);
+}
+
+function renderSquadFireOrder(ui) {
+  const round = ui && ui.lastRound;
+  const entries = round && Array.isArray(round.perNpc) ? round.perNpc : [];
+  if (!entries.length) return '<div class="lcs-fire-order"><span class="lcs-fire-order-title">本轮开火顺序</span><span class="lcs-fire-order-empty">等待开火</span></div>';
+  const enemyById = {};
+  const enemies = gameState && gameState.combat && Array.isArray(gameState.combat.enemies) ? gameState.combat.enemies : [];
+  enemies.forEach(function (enemy) { if (enemy && enemy.id != null) enemyById[enemy.id] = enemy; });
+  const nameByNpc = {};
+  (ui.candidates || []).forEach(function (candidate) { if (candidate && candidate.npcId != null) nameByNpc[candidate.npcId] = candidate.name || candidate.npcId; });
+  const rows = entries.map(function (entry, idx) {
+    const npcName = nameByNpc[entry.npcId] || entry.npcId || ("NPC " + (idx + 1));
+    const target = entry.targetId != null ? enemyById[entry.targetId] : null;
+    const targetName = target ? (target.name || target.type || target.kind || entry.targetId) : (entry.skipped ? "跳过：" + entry.skipped : "无目标");
+    const cls = entry.skipped ? " skipped" : "";
+    return '<span class="lcs-fire-order-item' + cls + '"><b>' + (idx + 1) + '</b> ' + squadEscape(npcName) + ' → ' + squadEscape(String(targetName)) + '</span>';
+  }).join("");
+  return '<div class="lcs-fire-order"><span class="lcs-fire-order-title">本轮开火顺序</span><span class="lcs-fire-order-current">当前目标：' + squadEscape(String(ui.currentTargetId || round.targetId || "无")) + '</span><div class="lcs-fire-order-list">' + rows + '</div></div>';
 }
 
 // 单个 NPC 方块（玩家左侧）：头像 + 名字 + 下拉选角 + 三色实时血条 + 状态徽标
@@ -357,7 +403,7 @@ function renderSquadSlot(npc, idx, allNpcs, selection, ui) {
     }).join("");
   }
   const statusText = npc ? squadEscape(npc.statusText || "") : "";
-  return '<div class="lcs-slot' + (cls ? " " + cls : "") + '" id="lcs-slot-' + idx + '">' +
+  return '<div class="lcs-slot' + (cls ? " " + cls : "") + '" id="lcs-slot-' + idx + '"' + (npc ? ' data-npc-id="' + squadEscape(npc.npcId) + '"' : '') + '>' +
     '<div class="lcs-slot-head">' +
       '<span class="lcs-slot-avatar">' + avatar + "</span>" +
       '<span class="lcs-slot-name">' + (npc ? squadEscape(npc.name) + ' <small>Lv.' + Number(npc.level || 1) + "</small>" : "空位 " + (idx + 1)) + "</span>" +
@@ -433,7 +479,7 @@ function renderCombatPanel(now) {
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("combat-cl-val", display.level); text("combat-laser-lv", display.skills.laser); text("combat-cannon-lv", display.skills.cannon); text("combat-missile-lv", display.skills.missile); text("combat-target-lv", display.skills.targeting);
   // 控制台折叠摘要：无论展开/折叠都更新 summary 行（船名 + 波次 + HP 百分比）
-  const cccShip = document.getElementById("ccc-ship-name"); if (cccShip) cccShip.textContent = display.player.name;
+  const crew = renderCombatCrewSummary(display);
   const cccWave = document.getElementById("ccc-wave-info"); if (cccWave) cccWave.textContent = display.active ? "WAVE " + display.wave + "/" + display.maxWave : "待命";
   const cccLegend = document.getElementById("ccc-ring-legend");
   if (cccLegend) cccLegend.innerHTML = ["shield","armor","structure"].map(function(k){var p=Math.round((display.player.hp[k]||0)/(display.player.maxHp[k]||1)*100);return '<span class="'+k+'">'+p+'%</span>';}).join("");
@@ -445,7 +491,7 @@ function renderCombatPanel(now) {
     renderCombatDropPreview(display);
     return display;
   }
-  renderInstalledCombatControls(display); renderCombatEquipmentRack(display); renderCombatLiveDisplay(display);
+  renderCombatConfig(display); renderCombatLiveDisplay(display);
   renderCombatSalvageToggle();
   mountCombat3D(display);
   renderCombatDropPreview(display);
@@ -673,7 +719,60 @@ function updateCombatLiveUI(now) {
   // 主渲染循环每帧只画进度条/行星动画，并不重渲战斗面板，3D 此前只在进入面板时渲染一次。
   if (display.active) mountCombat3D(display);
   renderCombatLiveDisplay(display);
+  // 在线 combatTick 每秒走这里；小队卡片也必须同步重绘，才能实时显示 NPC 受伤/爆船状态。
+  renderCombatSquadSection(renderTime);
   return display;
+}
+
+function getCombatCrewSummary(display) {
+  const items = [{
+    key: "player",
+    role: "玩家",
+    name: display && display.player ? (display.player.name || "玩家舰") : "玩家舰",
+    hp: display && display.player ? display.player.hp : null,
+    maxHp: display && display.player ? display.player.maxHp : null,
+    destroyed: false
+  }];
+  const api = legionSquadApi();
+  if (api && typeof api.getLegionCombatSquadUiState === "function") {
+    const ui = api.getLegionCombatSquadUiState(gameState, { now: Date.now() });
+    const selected = new Set(Array.isArray(ui.selection) ? ui.selection : []);
+    (ui.candidates || []).filter(function (candidate) {
+      if (!candidate) return false;
+      return ui.active ? candidate.inSquad : selected.has(candidate.npcId);
+    }).forEach(function (candidate) {
+      items.push({
+        key: candidate.npcId,
+        shipInstanceId: candidate.shipInstanceId,
+        role: ui.active ? "NPC" : "预备",
+        name: candidate.shipName || candidate.name || candidate.npcId,
+        hp: candidate.hp,
+        maxHp: candidate.maxHp,
+        destroyed: Boolean(candidate.destroyedInBattle)
+      });
+    });
+  }
+  return {
+    items: items,
+    summary: items.map(function (item) { return item.name + (item.destroyed ? "（爆船）" : ""); }).join(" · ")
+  };
+}
+
+function renderCombatCrewSummary(display) {
+  const crew = getCombatCrewSummary(display);
+  const cccShip = document.getElementById("ccc-ship-name");
+  if (cccShip) { cccShip.textContent = crew.summary; cccShip.title = crew.summary; }
+  const cccCrew = document.getElementById("ccc-crew-status");
+  if (cccCrew) cccCrew.innerHTML = crew.items.map(function (item) {
+    return '<button type="button" class="ccc-crew-item' + (item.destroyed ? ' destroyed' : '') + (item.key === combatConfigShipKey ? ' selected' : '') + '" data-crew-config="' + squadEscape(item.key) + '"><div class="ccc-crew-name"><b>' + squadEscape(item.role) + '</b> ' + squadEscape(item.name) + '</div><div class="ccc-crew-hp">' + squadHpBars(item.hp, item.maxHp) + '</div></button>';
+  }).join("");
+  if (cccCrew) cccCrew.querySelectorAll("[data-crew-config]").forEach(function (button) {
+    button.addEventListener("click", function () {
+      combatConfigShipKey = button.getAttribute("data-crew-config") || "player";
+      renderCombatPanel(Date.now());
+    });
+  });
+  return crew;
 }
 
 // 统一展示战斗补给预检提示（非阻断）。ammo/fuel 各为 null|"none"|"low"。
@@ -768,7 +867,7 @@ onCombatEvent(event => {
 
 // source: "player" | "enemy" | "squad"（NPC 小队攻击，命中敌人区，颜色区分）
 // alt: 仅 source==="squad" 时生效，切换暗红 / 橙红两色，便于区分不同 NPC
-function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt) {
+function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt, targetRef) {
   source = source || (isPlayer ? "player" : "enemy");
   const fxLayer = document.getElementById("combat-fx-layer");
   if (!fxLayer) return;
@@ -837,24 +936,50 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt) {
     el.textContent = "−" + Math.round(dmg);
     if (source === "player" || source === "squad") {
       const enemySec = document.getElementById("combat-enemy-section");
-      if (enemySec) {
-        const rect = enemySec.getBoundingClientRect();
+      let targetEl = null;
+      if (targetRef != null) {
+        const targetId = typeof targetRef === "object" ? targetRef.id : targetRef;
+        const enemies = gameState && gameState.combat && Array.isArray(gameState.combat.enemies) ? gameState.combat.enemies : [];
+        const targetIndex = enemies.findIndex(enemy => enemy && String(enemy.id) === String(targetId));
+        const cards = document.querySelectorAll(".combat-enemy-card");
+        if (targetIndex >= 0 && cards[targetIndex]) targetEl = cards[targetIndex];
+      }
+      if (targetEl || enemySec) {
+        const rect = (targetEl || enemySec).getBoundingClientRect();
         const fxr = fxLayer.getBoundingClientRect();
         // NPC 小队数字略低于玩家数字并向下排布，避免重叠
-        const baseTop = (source === "squad") ? 0.46 : 0.30;
         const idx = Number(damageIndex) || 0;
-        el.style.left = (rect.left + rect.width * 0.6 - fxr.left + idx * 6) + "px";
-        el.style.top  = (rect.top + rect.height * baseTop - fxr.top + idx * 20) + "px";
+        if (targetEl) {
+          el.style.left = (rect.left + rect.width * 0.5 - fxr.left + (idx % 3 - 1) * 12) + "px";
+          el.style.top  = (rect.top - fxr.top - 4 + (idx % 2) * 12) + "px";
+        } else {
+          const baseTop = (source === "squad") ? 0.46 : 0.30;
+          el.style.left = (rect.left + rect.width * 0.6 - fxr.left + idx * 6) + "px";
+          el.style.top  = (rect.top + rect.height * baseTop - fxr.top + idx * 20) + "px";
+        }
       } else {
         el.style.left = "60%"; el.style.top = "30%";
       }
     } else {
+      let targetEl = null;
+      if (targetRef && typeof targetRef === "object" && targetRef.kind === "npc" && targetRef.npcId != null) {
+        const slots = document.querySelectorAll(".lcs-slot[data-npc-id]");
+        for (const slot of slots) {
+          if (String(slot.getAttribute("data-npc-id")) === String(targetRef.npcId)) { targetEl = slot; break; }
+        }
+      }
       const playerSec = document.querySelector(".combat-player-side");
-      if (playerSec) {
-        const rect = playerSec.getBoundingClientRect();
+      if (targetEl || playerSec) {
+        const rect = (targetEl || playerSec).getBoundingClientRect();
         const fxr = fxLayer.getBoundingClientRect();
-        el.style.left = (rect.left + rect.width * 0.6 - fxr.left) + "px";
-        el.style.top  = (rect.top  + rect.height * 0.3 - fxr.top) + "px";
+        if (targetEl) {
+          el.classList.add("npc-hit");
+          el.style.left = (rect.left + rect.width * 0.5 - fxr.left) + "px";
+          el.style.top  = (rect.top - fxr.top - 4) + "px";
+        } else {
+          el.style.left = (rect.left + rect.width * 0.6 - fxr.left) + "px";
+          el.style.top  = (rect.top  + rect.height * 0.3 - fxr.top) + "px";
+        }
       } else {
         el.style.left = "20%"; el.style.top = "30%";
       }
@@ -864,7 +989,7 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt) {
   }
 }
 
-function playEnemyAttackFX(enemyIndex, attackOrder, dmg) {
+function playEnemyAttackFX(enemyIndex, attackOrder, dmg, targetRef) {
   setTimeout(() => {
     const cards = document.querySelectorAll(".combat-enemy-card");
     const card = cards && cards[enemyIndex];
@@ -874,7 +999,7 @@ function playEnemyAttackFX(enemyIndex, attackOrder, dmg) {
       card.classList.add("attacking");
       setTimeout(() => card.classList.remove("attacking"), 260);
     }
-    playAttackFX(false, null, dmg, attackOrder);
+    playAttackFX(false, null, dmg, attackOrder, "enemy", false, targetRef);
   }, attackOrder * 110);
 }
 

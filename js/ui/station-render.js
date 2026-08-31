@@ -143,6 +143,12 @@ function renderStationPage(now) {
   else if (!display.maintenance.operational) setText("station-status", "燃料不足");
   else setText("station-status", "运行中");
 
+  var allianceBonusRate = Number(display.logistics.allianceBonusRate) || 0;
+  if (allianceBonusRate > 0) {
+    var logisticsSummaryEl = document.getElementById("station-logistics-summary");
+    if (logisticsSummaryEl) logisticsSummaryEl.textContent += "（联盟人数+" + allianceBonusRate.toFixed(2) + "）";
+  }
+
   updateStationOpsSummary(display);
 
   // 建设进度

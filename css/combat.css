@@ -707,6 +707,17 @@
   details.combat-command-console {
     position: relative;
   }
+  details.combat-command-console > .ccc-summary {
+    grid-column: 1 / -1;
+  }
+  details.combat-command-console > .ccc-body {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: minmax(250px,1fr) 230px minmax(270px,1fr);
+    align-items: stretch;
+    gap: 12px;
+    min-width: 0;
+  }
   /* 展开时：summary 作为面板标题栏 */
   details.combat-command-console[open] > .ccc-summary {
     padding: 8px 12px 4px;
@@ -744,7 +755,29 @@
     color: #ffd27d;
     font-size: 13px;
     min-width: 60px;
+    max-width: 42%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
+  .ccc-crew-status {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 5px 12px;
+    padding: 7px 10px;
+    border-bottom: 1px solid rgba(48,66,84,0.55);
+    color: #9fb4c8;
+    font-size: 10px;
+  }
+  .ccc-crew-item { min-width: 0; padding: 5px 8px; border: 1px solid rgba(48,66,84,0.65); background: rgba(15,25,35,0.72); color: inherit; text-align: left; cursor: pointer; }
+  .ccc-crew-item:hover, .ccc-crew-item.selected { border-color: #54bce8; background: rgba(35,72,96,0.35); }
+  .ccc-crew-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ccc-crew-item b { color: #d4a843; font-weight: 600; margin-right: 4px; }
+  .ccc-crew-hp { margin-top: 4px; }
+  .ccc-crew-hp .lcs-hp { height: 4px; margin: 2px 0; }
+  .ccc-crew-hp .lcs-hp em { display: none; }
+  .ccc-crew-item.destroyed { color: #c06a62; text-decoration: line-through; }
   .ccc-summary-wave {
     color: #7a8896;
     font-size: 11px;
@@ -913,7 +946,7 @@
   }
 
   @media (max-width: 980px) {
-    .combat-command-console { grid-template-columns: minmax(220px,1fr) 210px; }
+    details.combat-command-console > .ccc-body { grid-template-columns: minmax(220px,1fr) 210px; }
     .combat-equipment-rack { grid-column: 1 / -1; }
     .combat-equipment-grid { grid-template-columns: repeat(3,minmax(0,1fr)); max-height: none; }
   }
@@ -932,7 +965,7 @@
     .combat-side-image { height: 145px; }
     .combat-enemy-formation { flex-wrap: wrap; }
     .combat-enemy-card { flex-basis: calc(50% - 5px); max-width: calc(50% - 5px); }
-    .combat-command-console { grid-template-columns: 1fr; }
+    details.combat-command-console > .ccc-body { grid-template-columns: 1fr; }
     .combat-ring-module { order: -1; min-height: 230px; border: 0; }
     .combat-equipment-rack { grid-column: auto; }
     .combat-equipment-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }

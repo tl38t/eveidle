@@ -1849,6 +1849,15 @@ const STATION_CORE_RESOURCE = {
 const LINE_CORE_TAG = { smelting: "smelt", equipment: "equipEng", booster: "booster" };
 // 基础物流倍率：不含 GAME_SPEED（十倍速），但保留「空间站运行状态 + 核心加成语义」。
 // 用于成就判定（H13）等不应被速度开关扭曲的场景（speed=10 时 Lv.1 的 1.03 不会被放大成 10.3）。
+function getAllianceMemberLogisticsBonus(state) {
+  const alliance = state && state.alliance;
+  const memberCount = alliance && alliance.isMember === true ? Math.floor(Number(alliance.memberCount)) : 0;
+  if (memberCount >= 10) return 0.30;
+  if (memberCount >= 5) return 0.20;
+  if (memberCount >= 1) return 0.10;
+  return 0;
+}
+
 function getStationLogisticsBaseMultiplier(state, coreTag) {
   const s = state && state.station;
   if (!s) return 1;
@@ -1866,6 +1875,10 @@ function getStationLogisticsBaseMultiplier(state, coreTag) {
       : 0;
     if (obtained[coreTag] && held > 0) mult += 0.10;
   }
+  // 联盟后勤：只读取游戏从云端回传并落入存档的联盟摘要；成员人数档位为
+  // 1–4 人 +0.10、5–9 人 +0.20、10 人 +0.30，和空间站本体/核心加算。
+  // 不在联盟或联盟数据无效时为 0；联盟加成不绕过空间站未建立/断油状态。
+  mult += getAllianceMemberLogisticsBonus(state);
   return mult;
 }
 // 生产用物流倍率：基础倍率 × 十倍速开关（仅缩放产出周期，冷却/到期仍实时）。
@@ -1881,6 +1894,7 @@ function getStationLogisticsDisplayState(state) {
   const bodyLevel = s ? (Math.floor(Number(s.bodyLevel)) || 0) : 0;
   const operational = isStationOperational(state);
   const multiplier = getStationLogisticsBaseMultiplier(state);
+  const allianceBonusRate = getAllianceMemberLogisticsBonus(state);
   const bonusRate = multiplier - 1;
   const bodyName = getStationBodyName(bodyLevel);
   let disabledReason = null;
@@ -1888,7 +1902,7 @@ function getStationLogisticsDisplayState(state) {
   if (bodyLevel === 0) { disabledReason = "no-station"; text = "未建立"; }
   else if (!operational) { disabledReason = "no-fuel"; text = "燃料不足"; }
   else { text = "+" + Math.round(bonusRate * 100) + "%"; }
-  return { bodyLevel, bodyName, operational, bonusRate, multiplier, disabledReason, text };
+  return { bodyLevel, bodyName, operational, bonusRate, multiplier, allianceBonusRate, disabledReason, text };
 }
 
 // Phase 3C-8：统一空间站页面显示态

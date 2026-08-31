@@ -425,11 +425,11 @@
       gap: 6px;
     }
     .equipeng-recipe-card {
-      min-height: 120px; max-height: 140px;
+      min-height: 142px; max-height: none;
     }
     .equipeng-card-icon { height: 40px; font-size: 24px; }
-    .equipeng-recipe-card > strong { padding: 2px 6px; font-size: 11px; }
-    .equipeng-card-attributes { height: auto; padding: 2px 6px 4px; font-size: 9px; }
+    .equipeng-recipe-card > strong { min-height: 30px; padding: 2px 6px; font-size: 11px; line-height: 1.3; white-space: normal; overflow: visible; text-overflow: clip; }
+    .equipeng-card-attributes { height: auto; min-height: 42px; padding: 2px 6px 4px; font-size: 9px; line-height: 1.35; overflow: visible; }
     .equipeng-card-top, .equipeng-card-bottom { padding: 3px 6px; font-size: 8px; }
     .lock-badge { width: 18px; height: 18px; font-size: 10px; top: 4px; right: 4px; }
   }
@@ -1233,6 +1233,14 @@
 .lcs-bars-empty { font-size: 11px; color: #8297ab; margin: 3px 0; }
 .lcs-slot-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .lcs-slot-status { font-size: 10px; color: #9fb4c8; margin-top: 4px; }
+.lcs-fire-order { margin: 6px 0 8px; padding: 6px 8px; border: 1px solid rgba(56,81,107,.55); border-radius: 5px; background: rgba(8,20,32,.55); font-size: 11px; }
+.lcs-fire-order-title { color: #dceeff; font-weight: 600; margin-right: 8px; }
+.lcs-fire-order-current { color: #8297ab; }
+.lcs-fire-order-list { display: flex; flex-wrap: wrap; gap: 5px 10px; margin-top: 5px; }
+.lcs-fire-order-item { color: #9fb4c8; white-space: nowrap; }
+.lcs-fire-order-item b { color: #7fd7a4; }
+.lcs-fire-order-item.skipped { color: #e0b062; }
+.lcs-fire-order-empty { color: #8297ab; }
 
 /* 窄屏：玩家槽与小队列上下堆叠，方块横排 */
 @media (max-width: 720px) {

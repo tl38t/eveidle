@@ -351,7 +351,11 @@
     if (!verdict.ok) return { changed: false, reason: verdict.reason };
     const npc = findNpc(state, npcId);
     npc.occupiedByCombat = true;
-    ensureNpcCombatHp(state, npc, resolveNow(opts)); // 入队即按满血初始化（战斗开始新的一场）
+    const entryHp = ensureNpcCombatHp(state, npc, resolveNow(opts)); // 入队即按满血初始化（战斗开始新的一场）
+    if (entryHp && !npc.destroyed && entryHp.shield <= 0 && entryHp.armor <= 0 && entryHp.structure <= 0) {
+      const stats = getLegionNpcCombatStats(state, npc.npcId, {});
+      if (stats.ok && stats.maxHp) npc.combatHp = { shield: stats.maxHp.shield, armor: stats.maxHp.armor, structure: stats.maxHp.structure };
+    }
     squad.members.push({
       npcId: npc.npcId,
       shipInstanceId: npc.boundShipInstanceId, // 锁定本舰：战斗期间不可更换
@@ -754,6 +758,19 @@
       squadEnabled: active,
       lockedReason: dual ? null : "dual-squad-locked",
       selection: getLegionSquadSelection(state),
+      currentTargetId: squad && squad.targetId != null ? squad.targetId : null,
+      lastRound: squad && squad.lastRound ? {
+        attacked: Number(squad.lastRound.attacked) || 0,
+        totalDamage: Number(squad.lastRound.totalDamage) || 0,
+        targetId: squad.lastRound.targetId != null ? squad.lastRound.targetId : null,
+        now: Number(squad.lastRound.now) || null,
+        perNpc: Array.isArray(squad.lastRound.perNpc) ? squad.lastRound.perNpc.map(function (entry) {
+          return { npcId: entry && entry.npcId != null ? entry.npcId : null,
+            targetId: entry && entry.targetId != null ? entry.targetId : null,
+            damage: Number(entry && entry.damage) || 0,
+            skipped: entry && entry.skipped ? String(entry.skipped) : null };
+        }) : []
+      } : null,
       candidates: []
     };
     if (!state || !state.legion || !Array.isArray(state.legion.npcs)) return out;
@@ -801,6 +818,13 @@
       else if (inSquad && member && member.destroyedInBattle) statusText = "修复完成：本场已退出，下一场可参战"; // D4：不自动归队当前战斗
       else if (inSquad && overdue) statusText = "欠薪：当前战斗保留，战斗结束后不可再次参战";
       else if (verdict.reason) statusText = (JOIN_REASONS[verdict.reason] || verdict.reason) + (overdue ? "（欠薪）" : "");
+      // 非战斗状态下 combatHp 的三层值为 null；UI 应显示绑定舰船的满血，
+      // 不能把 null 经过 Number(null) 渲染成 0。战斗中的 0 则必须保留。
+      const displayHp = (stats && stats.ok && stats.maxHp) ? {
+        shield: npc.combatHp && npc.combatHp.shield != null ? npc.combatHp.shield : stats.maxHp.shield,
+        armor: npc.combatHp && npc.combatHp.armor != null ? npc.combatHp.armor : stats.maxHp.armor,
+        structure: npc.combatHp && npc.combatHp.structure != null ? npc.combatHp.structure : stats.maxHp.structure
+      } : null;
       out.candidates.push({
         npcId: npc.npcId,
         name: npc.name,
@@ -816,7 +840,7 @@
         weaponTypes: weaponTypes,
         ammo: ammo,
         fuelRounds: fuelRounds,
-        hp: (stats && stats.ok && npc.combatHp) ? { ...npc.combatHp } : null,
+        hp: displayHp,
         maxHp: (stats && stats.ok) ? stats.maxHp : null,
         repair: { repairing: repair.repairing, remaining: repair.remaining, until: repair.until },
         eligible: Boolean(verdict.ok),
@@ -852,7 +876,120 @@
     return out;
   }
 
-  // —— NPC 攻击（步骤 3）：目标恒为玩家当前 combat.currentEnemy ——
+  // —— 单个 NPC 成员对指定目标开火（M6 复用单元）——
+  // 抽取自原 processLegionNpcAttack 的单体开火体：燃料/弹药校验、伤害结算、累加到 perNpc。
+  // 不复制公式；欠薪/修复/爆船跳过规则全部原样保留。调用方负责提供存活目标（enemy）并维护
+  // 「共享目标指针」；本函数假定 enemy 存活，防御性 no-target 仅作兜底。
+  function fireSingleNpcMember(state, context, member, enemy, perNpcArr, rng) {
+    context = context || {};
+    const ctx = context;
+    const c = state && state.combat;
+    const squad = ensureCombatSquadState(state);
+    if (!c || !squad || !squad.enabled || !member || member.npcId == null) {
+      if (perNpcArr) perNpcArr.push({ npcId: member && member.npcId != null ? member.npcId : null, skipped: "squad-disabled" });
+      return null;
+    }
+    const now = resolveNow(context);
+    if (member.active !== true || member.destroyedInBattle) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "inactive" }); return null; }
+    const npc = findNpc(state, member.npcId);
+    if (!npc) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "npc-missing" }); return null; }
+    ensureLegionNpcCombatFields(npc);
+    if (npc.destroyed) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "destroyed" }); return null; }
+    const until = Number(npc.repairUntil);
+    if (Number.isFinite(until) && until > now) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "repairing" }); return null; }
+    // 防御性：调用方必须传入存活目标；若已阵亡则跳过（在线循环不会触发，离线路径亦无此情形）
+    if (!enemy || enemy.defeated || (enemy.hp && enemy.hp.structure <= 0)) {
+      if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-target" });
+      return null;
+    }
+    const calcDamage = getGlobalFn("calcCombatDamage");
+    const applyLayers = getGlobalFn("applyLayeredCombatDamage");
+    const weaponsFn = getGlobalFn("getInstalledCombatWeapons");
+    const fuelFn = getGlobalFn("computeVolleyFuel");
+    const counterFn = getGlobalFn("calcWeaponCounterMultiplier");
+    const ammoConsume = getGlobalFn("consumeAmmoForType");
+    const ammoCount = getGlobalFn("getSelectedCount");
+    const ammoProps = getGlobalFn("getAmmoTierProps");
+    const registry = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry
+      : (typeof globalThis !== "undefined" ? globalThis.ResourceRegistry : null);
+    const resourceReady = (ctx && ctx.virtual) ? true : Boolean(registry);
+    if (!calcDamage || !applyLayers || !weaponsFn || !fuelFn || !counterFn || !ammoConsume || !ammoCount || !ammoProps || !resourceReady) {
+      if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "combat-api-unavailable" });
+      return null;
+    }
+    const zone = context.zone || (getGlobalFn("getCombatEncounterZone") ? getGlobalFn("getCombatEncounterZone")(c) : null);
+    const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone });
+    if (!stats.ok) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "stats-unavailable" }); return null; }
+    const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
+    const modules = (weaponsFn(state, shipOpts) || []).filter(m => m && m.equipment && m.equipment.combat);
+    if (modules.length === 0) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-weapon" }); return null; }
+
+    const ammoRequired = {};
+    for (const m of modules) {
+      const combat = m.equipment.combat;
+      ammoRequired[combat.weaponType] = (ammoRequired[combat.weaponType] || 0) + (combat.ammoCost || 1);
+    }
+    const volleyFuel = fuelFn(state, zone, shipOpts);
+    if (!fuelAvailable(ctx, state, volleyFuel)) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-fuel" }); return null; }
+    const ammoOk = Object.keys(ammoRequired).every(type => ammoAvailable(ctx, state, type, ammoRequired[type]));
+    if (!ammoOk) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-ammo" }); return null; }
+
+    spendFuel(ctx, state, volleyFuel); // 每个真实燃料周期只扣一次（虚拟/真实同一入口）
+    const ammoByType = {};
+    for (const type of Object.keys(ammoRequired)) {
+      const tier = ammoTierFor(ctx, state, type); // D2：已装载栈最高档
+      spendAmmo(ctx, state, type, ammoRequired[type]); // 每次真实开火只扣一次
+      ammoByType[type] = ammoProps(tier);
+    }
+
+    const useRng = (typeof rng === "function") ? rng : resolveBattleRng(context, state);
+    let damage = 0;
+    for (const m of modules) {
+      const combat = m.equipment.combat;
+      const ammo = ammoByType[combat.weaponType] || ammoProps("T1");
+      const hitSel = getCombatSelector("getCombatWeaponHitFromState");
+      const dmgSel = getCombatSelector("getCombatDamageMultiplierFromState");
+      const hit = (hitSel ? hitSel(state, combat.weaponType, combat, undefined, shipOpts) : 100) * ammo.hitMult;
+      const dmgMult = dmgSel ? dmgSel(state, combat.weaponType, undefined, shipOpts) : 1;
+      const counterMult = counterFn(combat.weaponType, enemy.hp);
+      const dealt = applyLayers(enemy.hp, calcDamage(
+        hit, enemy.dodge,
+        combat.baseDamage * (m.multiplier || 1),
+        counterMult * dmgMult * stats.levelDamageMultiplier * ammo.dmgMult,
+        useRng
+      ));
+      damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
+    }
+    const entry = { npcId: member.npcId, damage: damage, fuelSpent: volleyFuel, ammoSpent: ammoRequired, levelDamageMultiplier: stats.levelDamageMultiplier, targetId: enemy.id != null ? enemy.id : null };
+    if (perNpcArr) perNpcArr.push(entry);
+    return entry;
+  }
+
+  // —— 可参战的开火者次序（M6 在线顺序循环使用）——
+  // 仅过滤「本场绝对无法开火」的早期守卫（失活/爆船/修复中/缺 NPC），与 processLegionNpcAttack
+  // 顶部一致；弹药/燃料/武器缺失等「中途跳过」交由 fireSingleNpcMember 处理并记入 perNpc。
+  function getEligibleSquadFireMembers(state, now) {
+    const squad = ensureCombatSquadState(state);
+    if (!squad || !squad.enabled || !Array.isArray(squad.members)) return [];
+    const t = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+    const out = [];
+    for (const member of squad.members) {
+      if (!member || member.npcId == null) continue;
+      if (member.active !== true || member.destroyedInBattle) continue;
+      const npc = findNpc(state, member.npcId);
+      if (!npc) continue;
+      ensureLegionNpcCombatFields(npc);
+      if (npc.destroyed) continue;
+      const until = Number(npc.repairUntil);
+      if (Number.isFinite(until) && until > t) continue;
+      out.push(member);
+    }
+    return out;
+  }
+
+  // —— NPC 攻击（步骤 3）：目标恒为玩家当前 combat.currentEnemy（M6 前行为，保持单元语义）——
+  // M6 在线分步换目标由 combat.js 的 advanceCombatRound 统一顺序循环负责；本函数仍用于
+  // 离线路径（offline-combat.js simulateWave）与单元测试，语义保持不变：全体成员打同一 currentEnemy。
   function processLegionNpcAttack(state, context) {
     context = context || {};
     const ctx = context; // 虚拟资源注入上下文（M4）
@@ -889,8 +1026,9 @@
     const perNpc = [];
     let totalDamage = 0;
     let attacked = 0;
-
-    for (const member of (squad.members || []).slice()) {
+    const members = (squad.members || []).slice();
+    for (const member of members) {
+      // 早期守卫（与 M6 前一致：静默跳过，不入 perNpc）
       if (!member || member.npcId == null) continue;
       if (member.active !== true || member.destroyedInBattle) continue;
       const npc = findNpc(state, member.npcId);
@@ -899,52 +1037,9 @@
       if (npc.destroyed) continue;
       const until = Number(npc.repairUntil);
       if (Number.isFinite(until) && until > now) continue;
-      // 欠薪（overdue）：本场战斗成员已锁定 → 仍可完成当前战斗（战后不可再加入）
-      const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone });
-      if (!stats.ok) { perNpc.push({ npcId: npc.npcId, skipped: "stats-unavailable" }); continue; }
-      const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
-      const modules = (weaponsFn(state, shipOpts) || []).filter(m => m && m.equipment && m.equipment.combat);
-      if (modules.length === 0) { perNpc.push({ npcId: npc.npcId, skipped: "no-weapon" }); continue; }
-
-      // 弹药需求（按武器类型聚合）与整轮燃料（复用参数化 computeVolleyFuel）
-      const ammoRequired = {};
-      for (const m of modules) {
-        const combat = m.equipment.combat;
-        ammoRequired[combat.weaponType] = (ammoRequired[combat.weaponType] || 0) + (combat.ammoCost || 1);
-      }
-      const volleyFuel = fuelFn(state, zone, shipOpts);
-      if (!fuelAvailable(ctx, state, volleyFuel)) { perNpc.push({ npcId: npc.npcId, skipped: "no-fuel" }); continue; }
-      const ammoOk = Object.keys(ammoRequired).every(type => ammoAvailable(ctx, state, type, ammoRequired[type]));
-      if (!ammoOk) { perNpc.push({ npcId: npc.npcId, skipped: "no-ammo" }); continue; }
-
-      spendFuel(ctx, state, volleyFuel); // 每个真实燃料周期只扣一次（虚拟/真实同一入口）
-      const ammoByType = {};
-      for (const type of Object.keys(ammoRequired)) {
-        const tier = ammoTierFor(ctx, state, type); // D2：已装载栈最高档
-        spendAmmo(ctx, state, type, ammoRequired[type]); // 每次真实开火只扣一次
-        ammoByType[type] = ammoProps(tier);
-      }
-
-      let damage = 0;
-      for (const m of modules) {
-        const combat = m.equipment.combat;
-        const ammo = ammoByType[combat.weaponType] || ammoProps("T1");
-        const hitSel = getCombatSelector("getCombatWeaponHitFromState");
-        const dmgSel = getCombatSelector("getCombatDamageMultiplierFromState");
-        const hit = (hitSel ? hitSel(state, combat.weaponType, combat, undefined, shipOpts) : 100) * ammo.hitMult;
-        const dmgMult = dmgSel ? dmgSel(state, combat.weaponType, undefined, shipOpts) : 1;
-        const counterMult = counterFn(combat.weaponType, enemy.hp);
-        const dealt = applyLayers(enemy.hp, calcDamage(
-          hit, enemy.dodge,
-          combat.baseDamage * (m.multiplier || 1),
-          counterMult * dmgMult * stats.levelDamageMultiplier * ammo.dmgMult,
-          rng
-        ));
-        damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
-      }
-      attacked += 1;
-      totalDamage += damage;
-      perNpc.push({ npcId: npc.npcId, damage: damage, fuelSpent: volleyFuel, ammoSpent: ammoRequired, levelDamageMultiplier: stats.levelDamageMultiplier });
+      // 复用单体开火单元（目标恒为 currentEnemy；M6 在线分步由 combat.js 统一循环负责）
+      const entry = fireSingleNpcMember(state, context, member, enemy, perNpc, rng);
+      if (entry && !entry.skipped) { attacked += 1; totalDamage += entry.damage; }
     }
 
     c.runSquadDamageDealt = (typeof c.runSquadDamageDealt === "number" ? c.runSquadDamageDealt : 0) + totalDamage;
@@ -1060,6 +1155,31 @@
     // ---- 模式 A：在线逐次随机 ----
     const rng = resolveBattleRng(context, state);
     const target = selectLegionCombatTarget(state, rng);
+    if (context.offlineExact === true) {
+      if (target.kind !== "npc") {
+        const dealt = applyLayers(c.hp, dmg);
+        return { kind: "player", npcId: null, dealt: dealt, applied: true, targetCount: target.targetCount,
+          hits: [{ kind: "player", npcId: null, damage: dmg, dealt: dealt }] };
+      }
+      const res = applyLegionNpcDamage(state, target.npcId, dmg, { now: context.now, rng: rng });
+      return { kind: "npc", npcId: target.npcId, dealt: res.dealt, applied: res.applied,
+        destroyed: Boolean(res.destroyed), targetCount: target.targetCount, reason: res.reason,
+        hits: [{ kind: "npc", npcId: target.npcId, damage: dmg, dealt: res.dealt, destroyed: Boolean(res.destroyed) }] };
+    }
+    // 离线 M6：每个敌人每轮只落到一个实际目标，但伤害仍需按 attacker 现场计算；
+    // 不能沿用在线调用方传入的 damage（离线传 0，仅用于触发共用原语）。
+    if (context.offlineActual === true) {
+      if (!context.attacker || !(Number(context.attacker.baseDamage) > 0)) {
+        return { kind: target.kind, npcId: target.npcId || null, dealt: empty, applied: false,
+          targetCount: target.targetCount, hits: [] };
+      }
+      const hit = resolveTargetDamage(state, target, context, 0, 1);
+      return {
+        kind: hit.kind, npcId: hit.npcId || null, dealt: hit.dealt || empty, applied: true,
+        targetCount: target.targetCount, destroyed: Boolean(hit.destroyed),
+        hits: [{ kind: hit.kind, npcId: hit.npcId || null, damage: hit.damage || 0, dealt: hit.dealt || empty, destroyed: Boolean(hit.destroyed) }]
+      };
+    }
     if (target.kind !== "npc") {
       return { kind: "player", npcId: null, dealt: applyLayers(c.hp, dmg), applied: true, targetCount: target.targetCount, hits: [{ kind: "player", npcId: null, damage: dmg }] };
     }
@@ -1132,10 +1252,12 @@
       if (!cb) continue;
       const mult = fuelMultFn ? fuelMultFn(zone, state, shipOpts) : 1;
       const cost = Math.max(1, Math.round((cb.fuelCost || 1) * mult));
-      if (!spendFuelVirtual(ctx, cost)) {
-        if (!fuelAvailable(ctx, state, cost)) continue; // 燃料不足则该 DCU 本轮不生效（与在线一致）
+      if (ctx && ctx.virtual) {
+        if (!spendFuelVirtual(ctx, cost)) continue;
+      } else {
+        if (!fuelAvailable(ctx, state, cost)) continue;
+        spendFuel(ctx, state, cost);
       }
-      spendFuel(ctx, state, cost);
       dc += (m.equipment.bonuses && m.equipment.bonuses.globalDamageReduction) || 0;
     }
     return Math.min(0.5, dc);
@@ -1309,6 +1431,8 @@
     selectLegionCombatTarget: selectLegionCombatTarget,
     getLegionCombatTargets: getLegionCombatTargets,
     processLegionNpcAttack: processLegionNpcAttack,
+    fireSingleNpcMember: fireSingleNpcMember,
+    getEligibleSquadFireMembers: getEligibleSquadFireMembers,
     repairLegionSquadNpcs: repairLegionSquadNpcs,
     processLegionEnemyAttack: processLegionEnemyAttack,
     applyLegionNpcDamage: applyLegionNpcDamage,

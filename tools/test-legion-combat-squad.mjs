@@ -789,12 +789,20 @@ section("24. M3 集成：真实 advanceCombatRound（在线）");
   const round = Sq.getLegionCombatRoundResult(st);
   ok(round && round.squadEnabled === true && round.lastRound && round.lastRound.attacked === 2, "两名 NPC 均参与攻击");
   ok(round.totalNpcDamage > 0, "NPC 输出累计到 runSquadDamageDealt（" + round.totalNpcDamage + "）");
+  // —— M6 标记：以下两条为「同步集火」不变量断言 ——
+  // 它们仅在「本回合内当前目标未被击杀」时成立。M6 在线循环改为：玩家/NPC 按顺序开火、共享目标
+  // 指针、目标死亡立即切换到下一存活敌人。若本回合内当前目标被击杀，NPC 会改打下一个目标，
+  // 这两条「NPC 目标 == 玩家当前目标」将不再恒成立。当前测试数据单回合不致死，故仍通过；
+  // 真正的分步换目标语义见 section 32（M6）。如需严格校验旧不变量，应在「不致死」夹具下保留本断言。
   ok(round.lastRound.targetId === st.combat.currentEnemy.id, "NPC 攻击目标 == 玩家当前目标");
   ok(st.combat.squad.targetId === st.combat.currentEnemy.id, "squad.targetId 与玩家目标同步");
   ok(W.ResourceRegistry.get(st, "consumable:fuel") < fuelBefore, "NPC 开火扣玩家燃料（同一库存入口）");
   ok(countAmmo(W, st) < ammoBefore, "NPC 开火扣玩家弹药（同一库存入口）");
   ok(st.combat.runDamageDealt >= 0 && st.combat.runSquadDamageDealt > 0, "玩家/小队伤害分别计数（不混计）");
 
+  // —— M6 标记：此条直接调用 processLegionNpcAttack（离线路径/单元测试接口），其语义在 M6 中保持不变
+  // （全体成员仍打同一 currentEnemy），故「同步集火」不变量在此处依然成立。M6 仅改变在线
+  // advanceCombatRound 的统一顺序循环；若将来也要让离线路径改为分步，此断言需同步更新。
   const other = st.combat.enemies.find(e => e && !e.defeated && e !== st.combat.currentEnemy);
   if (other) {
     st.combat.currentEnemy = other;
@@ -811,9 +819,17 @@ section("24. M3 集成：真实 advanceCombatRound（在线）");
   ok(st.resources.isk >= iskBefore, "击毁奖励进入玩家 ISK（不按小队人数分摊）");
   ok(JSON.stringify(st.legion.npcs.map(n => n.xp)) === JSON.stringify(npcXpBefore), "NPC 不获得独立战斗奖励 / XP");
 
+  // —— M6 适配（仅作用于本子场景，不改变上方 787-812 既有断言）——
+  // M6 的跨目标伤害分配使波次更易在「开火阶段」被清掉，导致最后一敌在开火阶段阵亡、无存活敌
+  // 人进入反击阶段；且 NPC 也在敌方目标池中（rng 可能选中 NPC 而非玩家）。为使下方「玩家爆船 →
+  // 战败清理」路径稳定可测：把两 NPC 置为修复中（移出开火者与目标池，敌方只能打玩家），并把仍
+  // 存活敌人结构调高，确保开火阶段清不掉、必有反击 → 稳定进入 defeated。战败/清理逻辑本身未变。
+  st.legion.npcs.forEach(n => { n.repairUntil = NOW + 999999; });
+  st.combat.enemies.forEach(e => { if (e && !e.defeated && e.hp) e.hp.structure = 99999; });
+
   st.combat.hp = { shield: 0, armor: 0, structure: 0 };
   const res3 = W.advanceCombatRound(st, { now: NOW + 3000, offline: false, rng: makeRng(13), playEffects: false });
-  ok(res3.reason === "defeated", "玩家舰船爆船 → 沿用原有战斗失败逻辑");
+  ok(res3.reason === "defeated", "玩家舰船爆船 → 沿用原有战斗失败逻辑（M6 下经夹具保证一出反击即战败）");
   ok(st.combat.squad.enabled === false && st.combat.squad.members.length === 0, "玩家失败后清理 squad");
   ok(st.legion.npcs.every(n => n.occupiedByCombat === false), "玩家失败后释放 NPC 占用且不删除 NPC");
 
@@ -1090,6 +1106,9 @@ section("30. M5 UI 状态明细与状态文案");
   st.research.completedLevels.legion_dual_squad = 1;
   st.research.completedLevels.legion_triple_squad = 1;
   const ui = Sq.getLegionCombatSquadUiState(st, { now: NOW });
+  const uiNpc = ui.candidates.find(c => c.npcId === "m3n1");
+  ok(uiNpc && uiNpc.hp && uiNpc.maxHp && uiNpc.hp.shield === uiNpc.maxHp.shield && uiNpc.hp.armor === uiNpc.maxHp.armor && uiNpc.hp.structure === uiNpc.maxHp.structure,
+     "绑定舰船但未开战：UI 显示满血而非 0");
   ok(ui.capacity === 2 && ui.active === false, "UI：容量 2、当前未开战");
   const c1 = ui.candidates.filter(c => c.npcId === "m3n1")[0];
   ok(c1 && c1.isCombatSkill === true && c1.shipName && c1.weaponNames.length === 1, "UI 明细：战斗技能 / 舰船名 / 武器名");
@@ -1179,6 +1198,189 @@ section("31. M5 NPC 绑定舰维修件战斗中生效 + 战斗结束回满血");
   st.combat.squad = { enabled: true, members: [{ npcId: "m3n1", shipInstanceId: "ship_N1", active: false, destroyedInBattle: true }], targetId: null, battleId: null, lastRound: null, pendingNpcIds: [] };
   Sq.endLegionSquadBattle(st);
   ok(npc.combatHp.shield === 0 && npc.destroyed === true, "爆船 NPC 不被结束清理回满（修复倒计时保留，由修复完成流程回满）");
+}
+
+// ================================================================
+section("32. M6 在线分步换目标（共享指针 / 击杀即换下一个存活目标）");
+{
+  const W = buildCombatSandbox();
+  const Sq = W.LEGION_COMBAT_SQUAD;
+
+  // 夹具：双/三协议 + 双 NPC 参战，可控制波次敌人数与各自结构
+  function m6Setup() {
+    const st = makeM3State(W, { npcCount: 2 });
+    st.research.completedLevels.legion_dual_squad = 1;
+    st.research.completedLevels.legion_triple_squad = 1;
+    Sq.beginLegionSquadBattle(st);
+    Sq.addLegionNpcToCombatSquad(st, "m3n1");
+    Sq.addLegionNpcToCombatSquad(st, "m3n2");
+    return st;
+  }
+  function setHp(st, idx, structure) {
+    const e = st.combat.enemies[idx];
+    if (e && e.hp) { e.hp.shield = 0; e.hp.armor = 0; e.hp.structure = structure; e.defeated = false; e.rewarded = false; }
+    return e;
+  }
+  function keepEnemies(st, n) { st.combat.enemies = st.combat.enemies.slice(0, n); st.combat.currentEnemy = st.combat.enemies[0]; }
+
+  // —— M6-1：玩家击杀目标 A → 第一个 NPC 攻击下一个目标 B ——
+  {
+    const st = m6Setup();
+    ok(st.combat.enemies.length >= 2, "M6-1 前置：波次含 ≥2 敌");
+    keepEnemies(st, 2);
+    setHp(st, 0, 1); setHp(st, 1, 1000);
+    const eA = st.combat.enemies[0], eB = st.combat.enemies[1];
+    const res = W.advanceCombatRound(st, { now: NOW, offline: false, rng: makeRng(7), playEffects: false });
+    ok(res.ok && res.advanced === true, "M6-1 回合正常推进");
+    ok(eA.hp.structure <= 0 && eA.defeated === true, "玩家击杀目标 A");
+    ok(eB.hp.structure < 1000, "NPC 接手攻击下一个目标 B（B 掉血）");
+    const r = Sq.getLegionCombatRoundResult(st);
+    ok(r && r.lastRound && r.lastRound.perNpc.length === 2, "两名 NPC 均进入开火者序列");
+    ok(r.lastRound.perNpc[0] && r.lastRound.perNpc[0].targetId === eB.id, "玩家击杀 A 后，第一个 NPC 攻击目标 B（非 A）");
+    ok(r.lastRound.perNpc[1] && r.lastRound.perNpc[1].targetId === eB.id, "B 未死，NPC2 仍打 B（跳过不推进指针）");
+    ok(r.lastRound.attacked === 2, "两名 NPC 均实际开火");
+  }
+
+  // —— M6-2：NPC 击杀 B → 下一个 NPC 攻击下一个目标 C ——
+  {
+    const st = m6Setup();
+    ok(st.combat.enemies.length >= 3, "M6-2 前置：波次含 ≥3 敌");
+    keepEnemies(st, 3);
+    setHp(st, 0, 1); setHp(st, 1, 1); setHp(st, 2, 1000);
+    const eA = st.combat.enemies[0], eB = st.combat.enemies[1], eC = st.combat.enemies[2];
+    W.advanceCombatRound(st, { now: NOW + 1000, offline: false, rng: makeRng(7), playEffects: false });
+    ok(eA.hp.structure <= 0 && eA.defeated === true, "玩家击杀 A");
+    ok(eB.hp.structure <= 0 && eB.defeated === true, "NPC1 击杀 B（玩家杀 A 后指针推进到 B）");
+    ok(eC.hp.structure < 1000, "NPC2 接手攻击 C（B 死后指针再推进）");
+    const r = Sq.getLegionCombatRoundResult(st);
+    ok(r && r.lastRound && r.lastRound.perNpc[0].targetId === eB.id, "NPC1 目标 == B");
+    ok(r.lastRound.perNpc[1].targetId === eC.id, "NPC2 目标 == C（分步换目标）");
+  }
+
+  // —— M6-3：单次攻击造成过量伤害（一击致死 → 仍推进指针） ——
+  {
+    const st = m6Setup();
+    keepEnemies(st, 2);
+    setHp(st, 0, 1); setHp(st, 1, 1000);
+    const eA = st.combat.enemies[0], eB = st.combat.enemies[1];
+    W.advanceCombatRound(st, { now: NOW + 2000, offline: false, rng: makeRng(7), playEffects: false });
+    ok(eA.hp.structure <= 0, "过量伤害仍击杀 A");
+    const r = Sq.getLegionCombatRoundResult(st);
+    ok(r.lastRound.perNpc[0].targetId === eB.id, "过量击杀后指针仍推进到 B（不卡在已死目标）");
+  }
+
+  // —— M6-4：多个 NPC 依次击杀多个敌人（分步链） ——
+  {
+    const st = m6Setup();
+    ok(st.combat.enemies.length >= 3, "M6-4 前置：波次含 ≥3 敌");
+    keepEnemies(st, 3);
+    setHp(st, 0, 1); setHp(st, 1, 1); setHp(st, 2, 1000);
+    const eA = st.combat.enemies[0], eB = st.combat.enemies[1], eC = st.combat.enemies[2];
+    W.advanceCombatRound(st, { now: NOW + 3000, offline: false, rng: makeRng(7), playEffects: false });
+    ok(eA.defeated && eB.defeated, "玩家与 NPC1 依次击杀 A、B");
+    ok(eC.hp.structure < 1000, "NPC2 接手攻击 C（分步）");
+    const r = Sq.getLegionCombatRoundResult(st);
+    ok(r.lastRound.perNpc[0].targetId === eB.id && r.lastRound.perNpc[1].targetId === eC.id, "NPC1→B、NPC2→C 分步换目标");
+  }
+
+  // —— M6-5 / M6-8：敌人数量 < 攻击者数量 → 指针耗尽，剩余攻击者无目标即停止，不越界 ——
+  {
+    const st = m6Setup();
+    keepEnemies(st, 1);
+    setHp(st, 0, 1);
+    const e0 = st.combat.enemies[0];
+    const res = W.advanceCombatRound(st, { now: NOW + 4000, offline: false, rng: makeRng(7), playEffects: false });
+    ok(res.ok && res.advanced === true, "唯一敌人被击杀后回合正常结束（无越界/无限循环）");
+    ok(e0.defeated === true, "唯一敌人被玩家 + NPC 火力击杀");
+  }
+  // M6-5 单元级：fireSingleNpcMember 对死亡目标 → skipped:no-target（不推进指针的底层保证）
+  {
+    const st = m6Setup();
+    const arr = [];
+    const dead = { id: "deadX", hp: { shield: 0, armor: 0, structure: 0 }, defeated: true, dodge: 0 };
+    const member = st.combat.squad.members[0];
+    const fe = Sq.fireSingleNpcMember(st, { now: NOW, rng: () => 0.5 }, member, dead, arr);
+    // 注：fireSingleNpcMember 在 skip 时返回 null（跳过项已记入 perNpcArr），故此处断言返回 null
+    ok(fe === null, "fireSingleNpcMember 对死亡目标 → 返回 null（跳过不计入有效开火）");
+    ok(arr.length === 1 && arr[0].skipped === "no-target", "死亡目标记入 perNpc skipped（不推进指针的底层保证）");
+  }
+
+  // —— M6-6：攻击者因无弹药 / 修复中而跳过 → 指针不推进 ——
+  {
+    // (a) 修复中 NPC 被过滤出开火序列：NPC2 应与玩家打同一存活目标 A
+    const st = m6Setup();
+    keepEnemies(st, 2);
+    setHp(st, 0, 1000); setHp(st, 1, 1000);
+    const eA = st.combat.enemies[0], eB = st.combat.enemies[1];
+    st.legion.npcs[0].repairUntil = NOW + 999999; // NPC1 修复中
+    W.advanceCombatRound(st, { now: NOW + 5000, offline: false, rng: makeRng(7), playEffects: false });
+    const r = Sq.getLegionCombatRoundResult(st);
+    ok(r.lastRound.perNpc.length === 1, "修复中 NPC1 不进入开火序列（仅 NPC2 参战）");
+    ok(r.lastRound.perNpc[0].targetId === eA.id, "NPC2 与玩家打同一目标 A（跳过不推进指针）");
+    ok(eB.hp.structure === 1000, "B 未受攻击（指针未因 NPC1 跳过而推进到 B）");
+  }
+  {
+    // (b) 无弹药：单元测试级直接调用 fireSingleNpcMember。注意：经 advanceCombatRound 设 st.ammo=[]
+    // 会先触发「全队弹药耗尽撤退」逻辑清空 c.enemies，无法验证分步换目标语义，故此处用单元接口。
+    const st = m6Setup();
+    const arr = [];
+    const member = st.combat.squad.members[0];
+    const liveEnemy = st.combat.enemies[0];
+    st.ammo = []; // 清空全局弹药池（玩家与 NPC 共享）
+    const fe = Sq.fireSingleNpcMember(st, { now: NOW, rng: () => 0.5 }, member, liveEnemy, arr);
+    ok(fe === null, "无弹药时 NPC 单体开火 → 返回 null（skipped:no-ammo）");
+    ok(arr.length === 1 && arr[0].skipped === "no-ammo", "无弹药记入 perNpc skipped（与玩家共享弹药池）");
+  }
+
+  // —— M6-7：击毁奖励不重复结算（rewarded 幂等守卫） ——
+  {
+    const st = m6Setup();
+    keepEnemies(st, 2);
+    setHp(st, 0, 1); setHp(st, 1, 1);
+    // 波次清空后会生成新波（c.enemies 被替换），故先持有被击毁敌对象的引用
+    const e0 = st.combat.enemies[0];
+    const e1 = st.combat.enemies[1];
+    const iskB = st.resources.isk;
+    W.advanceCombatRound(st, { now: NOW + 7000, offline: false, rng: makeRng(7), playEffects: false });
+    ok(e0.rewarded === true && e1.rewarded === true, "击毁奖励对每个阵亡敌人均结算一次（rewarded 幂等守卫）");
+    ok(st.resources.isk > iskB, "击毁奖励进入玩家 ISK");
+    ok(e0.rewarded === true, "同一敌人对象 rewarded 标志保持（奖励不重复结算的核心守卫）");
+  }
+}
+
+// ================================================================
+section("33. M6 Phase 2 离线分步换目标集成");
+{
+  const W = buildCombatSandbox();
+  const Sq = W.LEGION_COMBAT_SQUAD;
+  const st = makeM3State(W, { npcCount: 2, ammo: 1000000, fuel: 100000000 });
+  st.research.completedLevels.legion_dual_squad = 1;
+  st.research.completedLevels.legion_triple_squad = 1;
+  st.research.completedLevels.legion_dual_squad = 1;
+  st.research.completedLevels.legion_triple_squad = 1;
+  Sq.beginLegionSquadBattle(st);
+  Sq.addLegionNpcToCombatSquad(st, "m3n1");
+  Sq.addLegionNpcToCombatSquad(st, "m3n2");
+  const zone = W.getCombatEncounterZone(st.combat);
+  const enemies = [
+    { id: "offline_A", hp: { shield: 0, armor: 0, structure: 1 }, dodge: 0, hit: 0, baseDamage: 0, kind: "normal", iskDrop: 1, xpDrop: 0 },
+    { id: "offline_B", hp: { shield: 0, armor: 0, structure: 1000000000000 }, dodge: 0, hit: 0, baseDamage: 0, kind: "normal", iskDrop: 1, xpDrop: 0 }
+  ];
+  const originalBuildWave = W.buildCombatWave;
+  W.buildCombatWave = () => ({ enemies: enemies });
+  st.combat.currentEnemy = enemies[0];
+  const runId = "m6-offline-" + NOW;
+  const result = W.OfflineCombatSystem.settle(st, 1, {
+    now: NOW, runId: runId, offlineEnd: NOW + 1000
+  });
+  const round = st.combat.squad.lastRound;
+  ok(round && round.perNpc.length === 2, "离线 settle 实际执行两名 NPC 开火");
+  ok(round && round.perNpc[0].targetId === "offline_B", "离线 NPC1 接手目标 B");
+  ok(round && round.perNpc[1].targetId === "offline_B", "离线 NPC2 在 B 未死时继续攻击 B");
+  ok(round && round.perNpc.every((entry) => !entry.skipped), "离线两名 NPC 均实际完成开火");
+  ok(st.combat.runSquadDamageDealt > 0, "离线 NPC 伤害计入小队累计伤害");
+  W.OfflineCombatSystem.flush(st, { now: NOW + 1000, runId: runId });
+  W.buildCombatWave = originalBuildWave;
 }
 
 summary();

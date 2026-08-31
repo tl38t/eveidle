@@ -227,6 +227,7 @@ const BOOSTER_RECIPES = [];
       output:{ type:"booster", itemId, qty:1 },
       durationMs:BOOSTER_DURATION_MS,
       effect:{ type:effectType, value:effectValue, slot, repairTarget:series.repairTarget || null },
+      levelGateBonus:Math.max(0, Number(levelGateBonus) || 0),
       requiresBlueprint: !!requiresBlueprint
     });
   }
@@ -249,7 +250,7 @@ function describeBoosterEffect(effectType, value, repairTarget, levelGateBonus, 
     case "smeltDouble":       return "冶炼产量翻倍概率 " + Math.round(value * 100) + "%";
     case "shipSpeed":         return "舰船工程速度 +" + Math.round(value * 100) + "%";
     case "equipmentSpeed":     return "装备工程速度 +" + Math.round(value * 100) + "%";
-    case "shipMaterialDiscount": return "制造材料减免（舰船工程与装备制造通用） -" + Math.round(value * 100) + "%（激活期间配方等级门槛 +" + (Number(levelGateBonus) || 0) + "）";
+    case "shipMaterialDiscount": return "制造材料减免（舰船工程与装备制造通用） -" + Math.round(value * 100) + "%（激活期间舰船/装备制造配方等级门槛各 +" + (Number(levelGateBonus) || 0) + "）";
     case "boosterSpeed":      return "增幅剂制造速度 +" + Math.round(value * 100) + "%";
     case "boosterDouble":     return "增幅剂产量翻倍概率 " + Math.round(value * 100) + "%";
     case "skillXpMultiplier": return "对应类别技能经验 +" + Math.round(value * 100) + "%（按装备槽位作用域化）";

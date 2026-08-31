@@ -196,6 +196,22 @@ var paidInc = 10_000_000 - G.resources.isk;
 ok(paidJump===paidInc && paidJump===2*LP.WAGE.D, "离线跳 8h 与分三次 tick 扣薪一致（"+paidJump+"=="+paidInc+"=="+2*LP.WAGE.D+"）");
 
 // ================================================================
+// 6b. NPC 经验按秒实时增长；欠薪暂停；不再等待四小时批次
+// ================================================================
+section("6b NPC 经验按秒增长");
+resetLegion(); ensureActive(); addNpc("mining", "D");
+G.legion.npcs[0].salaryState = "paid";
+LP.tickLegionNpc(G, { now:t0 });
+var xpBefore6b = G.legion.npcs[0].xp;
+LP.tickLegionNpc(G, { now:t0 + 1000 });
+var xpAfterOneSecond6b = G.legion.npcs[0].xp;
+ok(xpAfterOneSecond6b > xpBefore6b, "1 秒后 NPC XP 应增加（" + xpBefore6b + "→" + xpAfterOneSecond6b + "）");
+var xpPaid6b = xpAfterOneSecond6b;
+G.legion.npcs[0].salaryState = "overdue";
+LP.tickLegionNpc(G, { now:t0 + 2000 });
+ok(G.legion.npcs[0].xp === xpPaid6b, "欠薪后 XP 应暂停增长");
+
+// ================================================================
 // 7. 欠薪时该 NPC 不计入贡献
 // ================================================================
 section("7 欠薪不计入贡献");

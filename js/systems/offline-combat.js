@@ -48,6 +48,20 @@
   }
   // 期望值 RNG：calcCombatDamageVariance 在 r=0.5 时 = 0.90+(0.5+0.5)*0.10 = 1.0
   function EXPECT() { return 0.5; }
+  // 离线伤害仍取期望值，但命中判定必须消耗一次战斗 RNG，保持后续目标选择序列与在线一致。
+  function expectedCombatRng(state) {
+    return function () {
+      const next = G("nextCombatRandom");
+      if (next && state && state.combat) next(state.combat);
+      return 0.5;
+    };
+  }
+  function actualCombatRng(state) {
+    return function () {
+      const next = G("nextCombatRandom");
+      return next && state && state.combat ? next(state.combat) : 0.5;
+    };
+  }
   // 确定性掉落 RNG（Batch R 的 combat.randomState）
   function detRng(combat) {
     return function () { return G("nextCombatRandom")(combat); };
@@ -236,6 +250,8 @@
   function simulateWave(state, enemies, zone, isDeathspace, site, s, nowRef) {
     const inputs = readInputs(state, nowRef);
     const c = state.combat;
+    const expectedRng = expectedCombatRng(state);
+    const actualRng = actualCombatRng(state);
     c.maxHp = inputs.maxHp;
     // 钳制当前 HP 不超 maxHp
     if (c.hp.shield > c.maxHp.shield) c.hp.shield = c.maxHp.shield;
@@ -267,7 +283,7 @@
           else if (weapon.counterType === "structure" && current.hp.shield <= 0 && current.hp.armor <= 0 && current.hp.structure > 0) counterMult = 1.25;
           const traitMult = G("getCapitalWeaponTraitMultiplier")(inputs.ship, cb.weaponType, c.hp, c.maxHp);
           const wbm = (inputs.boosterDmg && inputs.boosterDmg[cb.weaponType]) ? inputs.boosterDmg[cb.weaponType] : 1;
-          let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, EXPECT);
+          let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, expectedRng);
           // 脑突触加速剂独立乘区（与在线 combat.js 同步）
           const adbm = inputs.adBuffMult || 1;
           if (adbm && adbm !== 1) dmg = Math.round(dmg * adbm);
@@ -291,11 +307,52 @@
         const volleyFuel = consumeVolleyVirtual(inputs, zone, s);
         grantXp(state, "capacitorManagement", volleyFuel * 0.3);
       }
-      // M4：NPC 与玩家同目标开火（与在线同一顺序：玩家→NPC→击杀结算），虚拟弹药/燃料走同一原语
+      // M6 Phase 2：离线也按攻击者顺序换目标。
+      // 玩家是一名攻击者（整轮齐射），随后每名 NPC 各自开火；只有当前目标被击杀才推进。
+      // 这里不调用 processLegionNpcAttack，因为该兼容接口的契约仍是“全体 NPC 打 currentEnemy”。
       if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled === true) {
-        LEGION_COMBAT_SQUAD.processLegionNpcAttack(state, {
-          now: nowRef.t, offline: true, zone: zone, virtual: s, randomFn: EXPECT
-        });
+        const squad = state.combat.squad;
+        const nextLiving = (fromEnemy) => {
+          const start = fromEnemy ? enemies.indexOf(fromEnemy) + 1 : 0;
+          for (let i = Math.max(0, start); i < enemies.length; i++) {
+            const candidate = enemies[i];
+            if (candidate && candidate.hp && candidate.hp.structure > 0 && !candidate.defeated) return candidate;
+          }
+          return null;
+        };
+        const advanceTarget = () => {
+          if (current && current.hp && current.hp.structure <= 0) current = nextLiving(current);
+          else if (!current || current.defeated) current = nextLiving(current);
+          if (squad) squad.targetId = current && current.id != null ? current.id : null;
+        };
+        const npcPerRound = [];
+        let npcAttacked = 0;
+        let npcDamage = 0;
+        advanceTarget();
+        const members = typeof LEGION_COMBAT_SQUAD.getEligibleSquadFireMembers === "function"
+          ? LEGION_COMBAT_SQUAD.getEligibleSquadFireMembers(state, nowRef.t)
+          : [];
+        for (const member of members) {
+          if (!current) break;
+          squad.targetId = current.id != null ? current.id : null;
+          const entry = LEGION_COMBAT_SQUAD.fireSingleNpcMember(state, {
+            now: nowRef.t, offline: true, zone: zone, virtual: s, randomFn: expectedRng
+          }, member, current, npcPerRound, expectedRng);
+          if (entry && !entry.skipped) {
+            npcAttacked += 1;
+            npcDamage += entry.damage || 0;
+          }
+          advanceTarget();
+        }
+        s.npcDamageDealt = (s.npcDamageDealt || 0) + npcDamage;
+        state.combat.runSquadDamageDealt = (typeof state.combat.runSquadDamageDealt === "number" ? state.combat.runSquadDamageDealt : 0) + npcDamage;
+        squad.lastRound = {
+          attacked: npcAttacked,
+          totalDamage: npcDamage,
+          perNpc: npcPerRound,
+          targetId: squad.targetId,
+          now: nowRef.t
+        };
         LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(state, nowRef.t);
       }
       // 结算本波被击毁的敌人（玩家先手 + AOE）
@@ -316,14 +373,20 @@
         // 玩家与 NPC 的护盾/装甲/结构与减伤（含 NPC 自身 DCU 与资本舰特质）逐个独立计算，
         // 绝不用「统一伤害 ÷ N」。非小队模式完全走原路径（行为不变）。
         if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled === true) {
+          if (!(Number(attacker.baseDamage) > 0)) continue;
+          const rawEnemyDamage = G("calcCombatDamage")(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, actualRng);
+          const mitigation = G("applyCapitalShieldMitigation")(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
+          if (mitigation.shieldHitUsed) shieldHitsUsed++;
+          const enemyDmg = Math.max(0, Math.round(mitigation.damage));
+          const reducedDmg = dcReduction > 0 ? Math.max(0, Math.round(enemyDmg * (1 - dcReduction))) : enemyDmg;
           const res = LEGION_COMBAT_SQUAD.processLegionEnemyAttack(state, {
-            damage: 0, distribute: true, now: nowRef.t, zone: zone, virtual: s, randomFn: EXPECT,
+            damage: reducedDmg, offlineExact: true, now: nowRef.t, zone: zone, virtual: s, rng: actualRng,
             attacker: attacker, playerDodge: playerDodge, playerShipConfig: ship,
             shieldHitsUsed: shieldHitsUsed, dcReduction: dcReduction
           });
           const playerHit = (res.hits || []).find(h => h.kind === "player");
-          const actual = playerHit && playerHit.dealt
-            ? playerHit.dealt.shield + playerHit.dealt.armor + playerHit.dealt.structure : 0;
+          const actual = (res.hits || []).reduce((sum, h) => sum + (h.dealt
+            ? h.dealt.shield + h.dealt.armor + h.dealt.structure : 0), 0);
           const pdmg = playerHit && playerHit.dealt ? playerHit.dealt : { shield: 0, armor: 0, structure: 0 };
           roundTaken += actual;
           armorDamageTaken += pdmg.armor;
@@ -338,7 +401,7 @@
           }
           continue;
         }
-        const raw = G("calcCombatDamage")(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, EXPECT);
+        const raw = G("calcCombatDamage")(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, expectedRng);
         const mit = G("applyCapitalShieldMitigation")(ship, raw, shieldHitsUsed, c.hp.shield);
         if (mit.shieldHitUsed) shieldHitsUsed++;
         let enemyDmg = Math.max(0, Math.round(mit.damage));
@@ -379,7 +442,10 @@
       }
       // M5 修复：NPC 绑定舰维修件在离线战斗中同样生效（与在线、与玩家对称）。
       // 复用离线会话燃料池 s（与玩家维修、NPC 攻击共用同一 s.fuel；下一个离线 tick 才 flush 到库存）。
-      const npcRepFn = G("repairLegionSquadNpcs");
+      // NPC 维修函数属于小队命名空间，不是全局函数；离线此前通过 G() 查找始终为空，
+      // 导致 NPC 只承伤不维修，最终在短时间内爆船。与在线路径统一走导出原语。
+      const npcRepFn = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD)
+        ? LEGION_COMBAT_SQUAD.repairLegionSquadNpcs : null;
       if (npcRepFn) npcRepFn(state, { now: nowRef.t, zone: zone, offline: true, virtual: s });
       // 清波判定移至维修之后（2026-08-28 修复）：在线 advanceCombatRound 的顺序是
       // 玩家攻击→击杀结算→敌人反击→反应装甲→维修→清波生成新波，清波轮照常维修；

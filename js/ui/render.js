@@ -65,6 +65,10 @@ function renderSidebar(sidebarState) {
   if (legionNav && typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible) {
     legionNav.style.display = LegionRender.isLegionTabVisible(gameState) ? "" : "none";
   }
+  var starmapNav = document.getElementById("nav-starmap");
+  if (starmapNav && typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible) {
+    starmapNav.style.display = LegionRender.isLegionTabVisible(gameState) ? "" : "none";
+  }
 }
 
 /* ================================================================

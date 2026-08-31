@@ -571,10 +571,12 @@ function getSmeltingDisplayState(state, now) {
   const implantRefineEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).refiningEff : 1;
   // 增强剂·冶炼速度（考古重制 Phase B · 考古蓝图产出）：独立乘区
   const boosterSmeltSpeed = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).smeltSpeedMultiplier : 1;
+  const legionRefine = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+    ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers.refining : 1;
   // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
   const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
     ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
-  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt;
+  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt * legionRefine;
   // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（冶炼速度/产出均经此 efficiency）。
   const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
   if (adbm && adbm !== 1) efficiency = efficiency * adbm;
@@ -598,6 +600,7 @@ function getSmeltingDisplayState(state, now) {
     rigBonus,
     shipEnhanceSmelt,
     boosterSmeltSpeed,
+    legionRefine,
     implantRefineEff,
     adBuffMult: adbm,
     actualTime:current.baseTime / efficiency,
@@ -1293,6 +1296,7 @@ function getSmeltingEfficiencyBreakdown(display) {
   ];
   if ((display.implantRefineEff || 1) !== 1) entries.push({ label: "脑插·冶炼增效", detail: "×" + display.implantRefineEff.toFixed(3) + "（+6%）" });
   if ((display.boosterSmeltSpeed || 1) !== 1) entries.push({ label: "增强剂·冶炼速度", detail: "×" + display.boosterSmeltSpeed.toFixed(3) });
+  if ((display.legionRefine || 1) !== 1) entries.push({ label: "军团 NPC·熔炉调谐", detail: "×" + display.legionRefine.toFixed(3) + "（已计入最终效率）" });
   if ((display.adBuffMult || 1) !== 1) entries.push({ label: "脑突触加速剂", detail: "×" + display.adBuffMult.toFixed(2) });
   return formatEfficiencyBreakdown(entries, display.efficiency);
 }
@@ -1402,7 +1406,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningRecipe.time / efficiency };
   const selectedEquipment = selectedRecipe.output.type === "equipment" ? EQUIPMENT_DB[selectedRecipe.output.itemId] : null;
   const selectedHasRequiredBlueprint = equipmentRecipeHasRequiredBlueprint(state, selectedRecipe);
-  // 精密配给剂（舰船/装备制造通用减料）报价：激活期间材料成本×0.9、配方等级门槛+N
+  // 精密配给剂（舰船/装备制造通用减料）报价：激活期间按当前品质折扣计算、配方等级门槛+N
   const eqQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, selectedRecipe) : { cost: selectedRecipe.cost || {}, levelGate: selectedRecipe.level };
   const runningQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, runningRecipe) : { cost: runningRecipe.cost || {}, levelGate: runningRecipe.level };
   const activeGate = Math.max(0, eqQuote.levelGate - selectedRecipe.level); // 激活期间额外门槛（+0 未激活）
@@ -1597,7 +1601,8 @@ function getBoosterManufacturingDisplayState(state, now) {
       time:recipe.time,
       effectiveTime:recipe.time / efficiency,
       durationSeconds:Math.round((recipe.durationMs || BOOSTER_DURATION_MS) / 1000),
-      effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(recipe.effect.type, recipe.effect.value, recipe.effect.repairTarget) : "",
+       effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(recipe.effect.type, recipe.effect.value, recipe.effect.repairTarget, recipe.levelGateBonus) : "",
+       levelGateBonus:Math.max(0, Number(recipe.levelGateBonus) || 0),
       materialRows,
       required:materialRows.reduce((sum, row) => sum + row.required, 0),
       owned,
@@ -1628,7 +1633,8 @@ function getBoosterManufacturingDisplayState(state, now) {
         category:item.category,
         quantity:qty,
         durationSeconds:Math.round((item.durationMs || BOOSTER_DURATION_MS) / 1000),
-        effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : ""
+         effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, item.levelGateBonus) : "",
+         levelGateBonus:Math.max(0, Number(item.levelGateBonus) || 0)
       };
     })
     .filter(Boolean)
@@ -2571,15 +2577,24 @@ function getCargoDisplayState(state, filter, subFilter) {
   // 并入「特殊物资」标签展示（来历实为考古，下方逐件纠正来源/说明）。
   const calibrationEntries = ResourceRegistry.listStateEntries(state, "calibration");
   const cargoEntries = specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") === 0);
+  // 暗质晶核的内部键历史上位于 mineral 命名空间，但它没有冶炼配方，
+  // 只由外环侵袭区特殊掉落，且用于高级舰船/势力装备制造；仓库显示归入特殊物资。
+  const darkMatterCore = ResourceRegistry.get(state, "mineral:莫尔石");
+  const darkMatterCoreEntry = darkMatterCore > 0
+    ? { definition: ResourceRegistry.getDefinition("mineral:莫尔石"), quantity: darkMatterCore }
+    : null;
   const sources = {
     ore:Object.fromEntries(ResourceRegistry.listStateEntries(state, "ore").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
-    mineral:Object.fromEntries(ResourceRegistry.listStateEntries(state, "mineral").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
+    mineral:Object.fromEntries(ResourceRegistry.listStateEntries(state, "mineral")
+      .filter(entry => entry.definition.id !== "mineral:莫尔石")
+      .map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     planetary:Object.fromEntries(ResourceRegistry.listStateEntries(state, "planetary").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     gases:Object.fromEntries(ResourceRegistry.listStateEntries(state, "gas").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     moon:Object.fromEntries(ResourceRegistry.listStateEntries(state, "moon").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     special:Object.fromEntries(
       [
         ...specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") !== 0),  // 货柜改由 consumable 收纳
+        ...(darkMatterCoreEntry ? [darkMatterCoreEntry] : []),
         ...calibrationEntries
       ].map(entry => {
         const id = entry.definition.id;
@@ -2709,6 +2724,12 @@ function getCargoDisplayState(state, filter, subFilter) {
         source
       });
       const warehouseItem = items[items.length - 1];
+      // 暗质晶核：内部仍是 mineral:莫尔石，但仓库显示为高级战略材料，来源是外环侵袭区。
+      if (itemId === "mineral:莫尔石") {
+        warehouseItem.categoryLabel = "高级战略材料";
+        warehouseItem.source = { pageId:"combat", pageLabel:"外环侵袭区", icon:"fa-solid fa-crosshairs" };
+        warehouseItem.description = "高级战略材料。由外环侵袭区的精英与首领敌人掉落，用于高级舰船构件与势力装备制造。";
+      }
       if (itemId && itemId.indexOf("special:voucher_") === 0) {
         warehouseItem.categoryLabel = "考古凭证";
         warehouseItem.source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
@@ -3537,8 +3558,10 @@ function getShipFittingDisplayState(state, shipRef) {
   };
 }
 
-// 估算队列单项的「单次循环耗时（秒）」。生产类可精确（复用 tick 的周期公式），
-// 战斗类仅当前激活项能用实时 refDuration；队列中尚未执行的战斗无法精确预测 → 返回 null（标「取决于战斗」）。
+// 估算队列单项的「单次循环耗时（秒）」。生产类可精确（复用 tick 的周期公式）。
+// 战斗没有固定周期：一波由敌方编队、实际命中、维修/爆船等状态决定，不能把
+// currentAction.refDuration（可能残留自上一个生产动作）当成战斗耗时，否则会把
+// 一波错误地乘上队列次数，显示出没有依据的完成时间。
 // 任何 helper 缺失或 target 找不到都降级返回 null，避免崩溃。
 function estimateQueueItemCycleSeconds(state, item) {
   const skill = item.skill;
@@ -3592,11 +3615,7 @@ function estimateQueueItemCycleSeconds(state, item) {
       return (typeof getArchaeologyCycleSeconds === "function") ? getArchaeologyCycleSeconds(state, site) : (site.time || 1);
     }
     if (skill === "combat") {
-      const ca = state.currentAction || {};
-      if (ca.skill === "combat" && ca.active && (state.combat && state.combat.queueItemId === item.id)) {
-        return Number(ca.refDuration) || null;
-      }
-      return null; // 队列中未执行的战斗：取决于配装/胜负 → 粗略
+      return null; // 战斗：只显示剩余波数/入场数，不伪造固定秒数 ETA
     }
   } catch (e) { return null; }
   return null;
