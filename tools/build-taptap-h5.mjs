@@ -123,6 +123,9 @@ function isWhitelisted(rel) {
   // 精确许可证白名单（修复 release 对白名单 .txt 许可证的遗漏）
   if (rel === "js/vendor/LICENSE_THREE.txt") return true;
   if (rel === "index.html") return true;
+  // 军团星图：index.html 星图面板以 iframe 引用该 Demo，须随包发布，否则打包后必然 404。
+  // 已校验：无 CDN 外链、无探针 key、无测试文案、无 window.QA / ?qa= 入口。
+  if (rel === "legion-starmap-html5-demo.html") return true;
   if (/^css\/[^/]+\.css$/.test(rel)) {
     const base = rel.split("/").pop().toLowerCase();
     if (base === "ship-lab.css" || base === "three-demo.css") return false;
