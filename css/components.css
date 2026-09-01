@@ -388,6 +388,12 @@
   .cargo-content-item:hover { border-color: #8aa0c6; color: #fff; }
   .cargo-content-item.bp { border-color: #3a3a5a; color: #b0a0e0; }
   .cargo-content-item .cci-qty { font-style: normal; color: #6a7a8e; font-size: 10px; }
+  .cargo-content-item.bp.owned { opacity: .55; border-style: dashed; }
+  .cargo-content-item.bp .bp-owned-tag {
+    font-style: normal; font-size: .72em; color: #5fcf80;
+    border: 1px solid #2f7; border-radius: 6px; padding: 0 4px; margin-left: 4px;
+    letter-spacing: .04em;
+  }
   .cargo-tier-block { margin-bottom: 8px; }
   .cargo-tier-label { font-size: 11px; color: #8aa0c6; margin-bottom: 2px; font-weight: 700; }
   .cargo-tier-items { display: flex; flex-wrap: wrap; }
@@ -397,7 +403,7 @@
     border-radius: 6px; padding: 8px; display: flex; gap: 8px; align-items: center;
     min-height: 60px; min-width: 0; box-sizing: border-box; overflow: hidden;
     transition: border-color .15s, transform .15s, box-shadow .15s;
-    border-left: 3px solid #6a7a8e;
+    border-left: 3px solid #6a7a8e; cursor: pointer;
   }
   .implant-card.owned { border-left-color: #7ad4b0; background: #0f1714; }
   .implant-card.locked { opacity: 0.5; filter: grayscale(0.6); }
@@ -949,6 +955,8 @@
   .setting-switch input:checked + .setting-switch-track { border-color: #4a91b8; background: rgba(54, 139, 184, .25); box-shadow: 0 0 10px rgba(72, 164, 211, .12); }
   .setting-switch input:checked + .setting-switch-track::after { left: 25px; background: #78cdf8; box-shadow: 0 0 7px rgba(120, 205, 248, .45); }
   .setting-switch input:focus-visible + .setting-switch-track { outline: 2px solid #d4a843; outline-offset: 2px; }
+  /* 设置项：纯展示类（如版本号），右侧只读值 */
+  .setting-value { flex: 0 0 auto; color: #78cdf8; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: .02em; padding-left: 12px; text-align: right; }
 
   /* ===== 统计档案 ===== */
   .statistics-note { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; padding: 9px 12px; border: 1px solid #26394b; border-radius: 5px; color: #7890a7; background: rgba(32, 66, 91, .14); font-size: 11px; }

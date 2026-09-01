@@ -122,7 +122,7 @@ const COMBAT_ZONES = [
   { id:"angel_outpost",  name:"苍穹劫团前哨站",  faction:"angel",  secLevel:"1.0-0.8", level:1, icon:"👹", enemyPool:{normal:["scout"],elite:["raider"],boss:["commander"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, encryptedDataMaterial:"天使初级加密数据", gearDrops:[{resourceId:"special:苍穹劫团装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
   { id:"blood_hideout",  name:"赤誓教团隐蔽所", faction:"blood",  secLevel:"1.0-0.8", level:1, icon:"🧛", enemyPool:{normal:["acolyte"],elite:["priest"],boss:["cardinal"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, encryptedDataMaterial:"血袭者初级加密数据", gearDrops:[{resourceId:"special:赤誓教团装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
   { id:"sansha_outpost", name:"静默集群哨站",     faction:"sansha", secLevel:"1.0-0.8", level:1, icon:"🤖", enemyPool:{normal:["drone"],elite:["sentinel"],boss:["overlord"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, encryptedDataMaterial:"萨沙初级加密数据", gearDrops:[{resourceId:"special:静默集群装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
-  { id:"angel_corridor", name:"苍穹劫团劫掠走廊", faction:"angel", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"👹", enemyPool:{normal:["patrol_destroyer"],elite:["raider_destroyer"],boss:["hunter_commander"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.2, encryptedDataMaterial:"天使低级加密数据", gearDrops:[{resourceId:"special:苍穹劫团装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}},{resourceId:"special:苍穹劫团装备生产许可B", qty:1, chances:{elite:0.01,boss:0.07}}] },
+  { id:"angel_corridor", name:"苍穹劫团劫掠走廊", faction:"angel", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"👹", enemyPool:{normal:["patrol_destroyer"],elite:["raider_destroyer"],boss:["hunter_commander"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.2, encryptedDataMaterial:"天使低级加密数据", gearDrops:[{resourceId:"special:苍穹劫团装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
   { id:"blood_sacrifice", name:"赤誓教团献祭场", faction:"blood", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"🧛", enemyPool:{normal:["ritual_destroyer"],elite:["blood_destroyer"],boss:["high_priest"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.2, encryptedDataMaterial:"血袭者低级加密数据", gearDrops:[{resourceId:"special:赤誓教团装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
   { id:"sansha_node", name:"静默集群控制节点", faction:"sansha", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"🤖", enemyPool:{normal:["control_destroyer"],elite:["sentinel_destroyer"],boss:["control_overlord"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.2, encryptedDataMaterial:"萨沙低级加密数据", gearDrops:[{resourceId:"special:静默集群装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
   { id:"angel_hunting_ground", name:"苍穹劫团猎杀空域", faction:"angel", secLevel:"0.4-0.3", level:40, requiredCL:35, icon:"👹", enemyPool:{normal:["strike_cruiser"],elite:["war_cruiser"],boss:["fleet_commander"]}, formationPool:"lowsec", bossEscortCount:1, maxWave:20, clearLp:10, iskMulti:2.0, fuelMult:1.4, encryptedDataMaterial:"天使中级加密数据", stationCoreDrops:[{coreId:"smelt", resourceId:"special:空间站冶炼核心", qty:1, chances:{elite:0.000794,boss:0.00397}}] },
@@ -163,7 +163,7 @@ const DEATHSPACE_DATABASE = [
     waves:[
       { name:"补给站外围警戒官", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.08 },
       { name:"补给线路主管", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.12 },
-      { name:"吉斯特补给站监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.25, final:true }
+      { name:"劫团补给站监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.25, final:true }
     ]
   },
   {
@@ -174,7 +174,7 @@ const DEATHSPACE_DATABASE = [
     waves:[
       { name:"地窖外围侍祭", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.08 },
       { name:"仪式主持者", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.12 },
-      { name:"科尔普斯地窖监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.25, final:true }
+      { name:"赤誓地窖监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.25, final:true }
     ]
   },
   {
@@ -185,7 +185,7 @@ const DEATHSPACE_DATABASE = [
     waves:[
       { name:"哨所外围控制官", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.08 },
       { name:"同步节点主管", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.12 },
-      { name:"森屠斯哨所监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.25, final:true }
+      { name:"静默哨所监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.25, final:true }
     ]
   },
   {
@@ -197,7 +197,7 @@ const DEATHSPACE_DATABASE = [
       { name:"船坞外围警戒官", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.08 },
       { name:"泊位防卫主管", hpMult:0.98, damageMult:0.98, escortNormal:1, coreChance:0.12 },
       { name:"劫掠舰队协调官", hpMult:1.12, damageMult:1.12, escortNormal:1, coreChance:0.17 },
-      { name:"吉斯特船坞监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.28, final:true }
+      { name:"劫团船坞监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.28, final:true }
     ]
   },
   {
@@ -209,7 +209,7 @@ const DEATHSPACE_DATABASE = [
       { name:"圣所外围侍从", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.08 },
       { name:"献祭仪轨主管", hpMult:0.98, damageMult:0.98, escortNormal:1, coreChance:0.12 },
       { name:"深红教团协调官", hpMult:1.12, damageMult:1.12, escortNormal:1, coreChance:0.17 },
-      { name:"科尔普斯圣所监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.28, final:true }
+      { name:"赤誓圣所监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.28, final:true }
     ]
   },
   {
@@ -221,7 +221,7 @@ const DEATHSPACE_DATABASE = [
       { name:"节点外围控制官", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.08 },
       { name:"同步阵列主管", hpMult:0.98, damageMult:0.98, escortNormal:1, coreChance:0.12 },
       { name:"控制集群协调官", hpMult:1.12, damageMult:1.12, escortNormal:1, coreChance:0.17 },
-      { name:"森屠斯节点监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.28, final:true }
+      { name:"静默节点监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.28, final:true }
     ]
   },
   {
@@ -234,7 +234,7 @@ const DEATHSPACE_DATABASE = [
       { name:"舰队调度主管", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.12 },
       { name:"火力节点协调官", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.16 },
       { name:"核心舰队统领", hpMult:1.15, damageMult:1.15, escortNormal:1, coreChance:0.20 },
-      { name:"吉斯特集结区监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.29, final:true }
+      { name:"劫团集结区监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.29, final:true }
     ]
   },
   {
@@ -247,7 +247,7 @@ const DEATHSPACE_DATABASE = [
       { name:"圣坛防卫主管", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.12 },
       { name:"深红舰队协调官", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.16 },
       { name:"核心圣坛统领", hpMult:1.15, damageMult:1.15, escortNormal:1, coreChance:0.20 },
-      { name:"科尔普斯修道院监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.29, final:true }
+      { name:"赤誓修道院监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.29, final:true }
     ]
   },
   {
@@ -260,7 +260,7 @@ const DEATHSPACE_DATABASE = [
       { name:"同化矩阵主管", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.12 },
       { name:"控制集群协调官", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.16 },
       { name:"核心节点统领", hpMult:1.15, damageMult:1.15, escortNormal:1, coreChance:0.20 },
-      { name:"森屠斯中枢监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.29, final:true }
+      { name:"静默中枢监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.29, final:true }
     ]
   },
   {
@@ -273,7 +273,7 @@ const DEATHSPACE_DATABASE = [
       { name:"防御节点主管", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.15 },
       { name:"舰队协调官", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.18 },
       { name:"核心守卫统领", hpMult:1.15, damageMult:1.15, escortNormal:1, coreChance:0.22 },
-      { name:"吉斯特复合体监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.35, final:true }
+      { name:"劫团复合体监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.35, final:true }
     ]
   },
   {
@@ -286,7 +286,7 @@ const DEATHSPACE_DATABASE = [
       { name:"船坞防卫主管", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.15 },
       { name:"深红舰队协调官", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.18 },
       { name:"核心圣堂统领", hpMult:1.15, damageMult:1.15, escortNormal:1, coreChance:0.22 },
-      { name:"科尔普斯造船厂监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.35, final:true }
+      { name:"赤誓造船厂监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.35, final:true }
     ]
   },
   {
@@ -299,7 +299,7 @@ const DEATHSPACE_DATABASE = [
       { name:"防御矩阵主管", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.15 },
       { name:"战争节点协调官", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.18 },
       { name:"核心设施统领", hpMult:1.15, damageMult:1.15, escortNormal:1, coreChance:0.22 },
-      { name:"森屠斯战争设施监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.35, final:true }
+      { name:"静默战争设施监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.35, final:true }
     ]
   }
 ];

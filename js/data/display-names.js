@@ -35,6 +35,9 @@
   // 旧势力名前缀（用于任意以势力名开头的特殊材料键：加密数据 / 死亡空间门票 / 战利品 / 旗舰数据）
   const FACTION_LEGACY_PREFIX = Object.freeze({ angel: "天使", blood: "血袭者", sansha: "萨沙" });
   const FACTION_DISPLAY_PREFIX = Object.freeze({ angel: "苍穹劫团", blood: "赤誓教团", sansha: "静默集群" });
+  // 死亡空间核心 / 协议材料中的旧势力前缀（吉斯特=苍穹劫团 / 科尔普斯=赤誓教团 / 森屠斯=静默集群）。
+  // 采用与 DED 装备名前缀一致的缩写（劫团 / 赤誓 / 静默），仅作显示层替换，内部材料键永久保持原值。
+  const FACTION_MATERIAL_LEGACY_PREFIX = Object.freeze({ 吉斯特: "劫团", 科尔普斯: "赤誓", 森屠斯: "静默" });
 
   // ---- C. 七类矿石（内部库存键为旧中文键，保持）----
   const ORE_NAMES = Object.freeze({
@@ -108,6 +111,11 @@
     // 2) 新势力显示名前缀（苍穹劫团/赤誓教团/静默集群）→ key 本身已经是显示名，直接返回。
     for (const displayPrefix of Object.values(FACTION_DISPLAY_PREFIX)) {
       if (key.startsWith(displayPrefix)) return key;
+    }
+    // 3) 死亡空间核心 / 协议材料旧势力前缀（吉斯特/科尔普斯/森屠斯）→ 对齐 DED 装备名缩写（劫团/赤誓/静默）。
+    for (const factionKey of Object.keys(FACTION_MATERIAL_LEGACY_PREFIX)) {
+      const legacy = FACTION_MATERIAL_LEGACY_PREFIX[factionKey];
+      if (key.startsWith(factionKey)) return legacy + key.slice(factionKey.length);
     }
     return null;
   }

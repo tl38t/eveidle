@@ -961,6 +961,19 @@
       damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
     }
     const entry = { npcId: member.npcId, damage: damage, fuelSpent: volleyFuel, ammoSpent: ammoRequired, levelDamageMultiplier: stats.levelDamageMultiplier, targetId: enemy.id != null ? enemy.id : null };
+    // 玩家出资 NPC 燃料/弹药 → 玩家获得与自身开火同口径的战斗经验（套用玩家经验倍率链）
+    const addXp = getGlobalFn("addStationModifiedCombatXp") || (typeof addStationModifiedCombatXp !== "undefined" ? addStationModifiedCombatXp : null);
+    if (addXp && state.skills) {
+      const WC = (typeof WEAPON_CONFIG !== "undefined") ? WEAPON_CONFIG : null;
+      for (const m of modules) {
+        const cb = m.equipment.combat;
+        const wcfg = WC ? WC[cb.weaponType] : null;
+        const sk = wcfg ? wcfg.skillKey : null;
+        if (sk && state.skills[sk]) addXp(state, sk, 2, "combat");
+        if (state.skills.targeting) addXp(state, "targeting", 1, "combat");
+      }
+      if (state.skills.capacitorManagement) addXp(state, "capacitorManagement", volleyFuel * 0.3, "combat");
+    }
     if (perNpcArr) perNpcArr.push(entry);
     return entry;
   }
@@ -1100,7 +1113,12 @@
         const before = hp[rep.target];
         hp[rep.target] = Math.min(maxHp[rep.target], hp[rep.target] + healAmount);
         const gained = hp[rep.target] - before;
-        if (gained > 0) { totalHeal += gained; repaired += 1; spendFuel(ctx, state, repFuelCost); }
+        if (gained > 0) {
+          totalHeal += gained; repaired += 1; spendFuel(ctx, state, repFuelCost);
+          // 玩家出资 NPC 维修燃料 → 玩家获得与自身维修同口径的防御经验
+          const addXp = getGlobalFn("addStationModifiedCombatXp") || (typeof addStationModifiedCombatXp !== "undefined" ? addStationModifiedCombatXp : null);
+          if (addXp && state.skills && state.skills.defense) addXp(state, "defense", 1, "combat");
+        }
       }
     }
     if (repaired > 0) markDirty(state);
@@ -1114,6 +1132,18 @@
   //      ① 取当前存活目标数 N；② 每个目标用**自身**闪避/减伤/资本舰护盾缓解算期望伤害；
   //      ③ 该目标获得 1/N 的期望伤害；④ 分别写入各自 HP；⑤ NPC 爆船后从后续攻击包的目标池移除。
   //      绝不用「统一伤害 ÷ N」：玩家与 NPC 的护盾/装甲/结构与减伤属性不同，必须逐个计算。
+  // 玩家出资 NPC 承伤 → 玩家获得与自身挨打同口径的防御经验（套用玩家经验倍率链）
+  function grantPlayerDefenseXpFromNpcDamage(state, dealt) {
+    if (!dealt || !state || !state.skills) return;
+    const addXp = getGlobalFn("addStationModifiedCombatXp") || (typeof addStationModifiedCombatXp !== "undefined" ? addStationModifiedCombatXp : null);
+    if (!addXp) return;
+    const total = (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
+    if (dealt.shield > 0 && state.skills.shieldOperation) addXp(state, "shieldOperation", 1, "combat");
+    if (dealt.armor > 0 && state.skills.armorReinforcement) addXp(state, "armorReinforcement", 1, "combat");
+    if (dealt.structure > 0 && state.skills.hullEngineering) addXp(state, "hullEngineering", 1, "combat");
+    if (total > 0 && state.skills.piloting) addXp(state, "piloting", 1, "combat");
+  }
+
   function processLegionEnemyAttack(state, context) {
     context = context || {};
     const c = state && state.combat;
@@ -1138,6 +1168,7 @@
         const dealt = resolveTargetDamage(state, t, context, dmg, n);
         if (dealt.kind === "npc") {
           if (dealt.destroyed) destroyedAny = true;
+          grantPlayerDefenseXpFromNpcDamage(state, dealt.dealt);
         }
         hits.push({ kind: dealt.kind, npcId: dealt.npcId || null, damage: dealt.damage, dealt: dealt.dealt, destroyed: Boolean(dealt.destroyed) });
         totalDealt = {
@@ -1162,6 +1193,7 @@
           hits: [{ kind: "player", npcId: null, damage: dmg, dealt: dealt }] };
       }
       const res = applyLegionNpcDamage(state, target.npcId, dmg, { now: context.now, rng: rng });
+      grantPlayerDefenseXpFromNpcDamage(state, res.dealt);
       return { kind: "npc", npcId: target.npcId, dealt: res.dealt, applied: res.applied,
         destroyed: Boolean(res.destroyed), targetCount: target.targetCount, reason: res.reason,
         hits: [{ kind: "npc", npcId: target.npcId, damage: dmg, dealt: res.dealt, destroyed: Boolean(res.destroyed) }] };
@@ -1174,6 +1206,7 @@
           targetCount: target.targetCount, hits: [] };
       }
       const hit = resolveTargetDamage(state, target, context, 0, 1);
+      if (hit.kind === "npc") grantPlayerDefenseXpFromNpcDamage(state, hit.dealt);
       return {
         kind: hit.kind, npcId: hit.npcId || null, dealt: hit.dealt || empty, applied: true,
         targetCount: target.targetCount, destroyed: Boolean(hit.destroyed),
@@ -1184,6 +1217,7 @@
       return { kind: "player", npcId: null, dealt: applyLayers(c.hp, dmg), applied: true, targetCount: target.targetCount, hits: [{ kind: "player", npcId: null, damage: dmg }] };
     }
     const res = applyLegionNpcDamage(state, target.npcId, dmg, { now: context.now, rng: rng });
+    grantPlayerDefenseXpFromNpcDamage(state, res.dealt);
     return {
       kind: "npc", npcId: target.npcId, dealt: res.dealt, applied: res.applied,
       destroyed: Boolean(res.destroyed), targetCount: target.targetCount, reason: res.reason,

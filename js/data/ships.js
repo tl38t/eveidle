@@ -1,5 +1,5 @@
 // ---- 舰船工程：T1 部件配方表 ----
-const SHIP_COMPONENT_RECIPES = [
+var SHIP_COMPONENT_RECIPES = [
   { id:"integrated_hull", name:"综合舰体组件", level:1, time:63, xp:44, cost:{ "三钛合金":40, "类银超金属":6, "重金属":7, "稀有气体":4 } },
   { id:"power_core", name:"动力控制核心", level:1, time:42, xp:30, cost:{ "三钛合金":28, "类银超金属":6, "稀有气体":5 } },
   { id:"functional_system", name:"舰船功能组件", level:1, time:18, xp:12, cost:{ "三钛合金":14, "类银超金属":1, "重金属":2 } },

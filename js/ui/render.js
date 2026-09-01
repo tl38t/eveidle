@@ -378,6 +378,8 @@ function updateUI(now) {
   const expVal = document.querySelector('.skill-current .exp-value'); if (expVal) expVal.textContent = shell.xp.toLocaleString() + " / " + shell.xpNeeded.toLocaleString();
   renderGlobalDisplay(getGlobalDisplayState(gameState));
   renderSidebar(getSidebarDisplayState(gameState));
+  // 已打开的确认弹窗随状态变化（装/卸增强剂、船坞升级完成等）实时刷新消耗/耗时
+  if (typeof refreshActionConfirmation === "function") refreshActionConfirmation();
 }
 
 function setLiveText(element, value) {

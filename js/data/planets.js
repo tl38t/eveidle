@@ -2,7 +2,7 @@
 // 正式首版经济：首次建设消耗 constructionCost（ISK + 三钛合金），维护期统一 24h（maintenanceDuration=86400）。
 // 到期后停产，需手动支付 maintenanceCostISK 续期（续期只耗 ISK，不再耗三钛）。无等级/升级系统。
 // 旧字段 costISK / costTrit 已移除；三钛合金资源寻址采用真实 ResourceRegistry key "mineral:三钛合金"。
-const PLANET_TYPES = [
+var PLANET_TYPES = [
   { id:"lava",      name:"熔岩行星",   icon:"🌋", output:"重金属",     level:1,  interval:10, constructionCost:{ isk:138000,   resources:{ "mineral:三钛合金":100  } }, maintenanceCostISK:46000,   maintenanceDuration:86400 },
   { id:"gas",       name:"气态行星",   icon:"💨", output:"稀有气体",   level:1,  interval:10, constructionCost:{ isk:138000,   resources:{ "mineral:三钛合金":100  } }, maintenanceCostISK:46000,   maintenanceDuration:86400 },
   { id:"ice",       name:"冰行星",     icon:"❄️", output:"同位素",     level:20, interval:15, constructionCost:{ isk:249000,   resources:{ "mineral:三钛合金":150  } }, maintenanceCostISK:83000,   maintenanceDuration:86400 },

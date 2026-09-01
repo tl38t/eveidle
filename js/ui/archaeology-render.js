@@ -237,7 +237,7 @@ function renderArchaeologyPage(now) {
       const ownedKey = b.kind === "equipment" ? "equipment:" + b.id : (b.kind === "booster" ? "booster:" + b.id : null);
       const isOwned = ownedKey ? owned.has(ownedKey) : false;
       const sub = i === 0 ? "地点标志性蓝图" : "未拥有时进入有效蓝图池";
-      return rewardRow("⌘", archBlueprintName(b.id), isOwned ? ("已拥有 · " + sub) : sub, i === 0 ? "epic" : "rare", isOwned);
+      return rewardRow("⌘", archBlueprintName(b.id), sub, i === 0 ? "epic" : "rare", isOwned);
     }).join("");
 
     const itemIds = [];
@@ -248,7 +248,7 @@ function renderArchaeologyPage(now) {
       const isOwned = isVoucher && typeof ResourceRegistry !== "undefined"
         ? ResourceRegistry.get(gameState, "special:" + id) > 0
         : false;
-      return rewardRow(isVoucher ? "◆" : "⌁", archBlueprintName(id), isVoucher ? (isOwned ? "已拥有 · 唯一永久回收凭证" : "唯一永久回收凭证") : "直接获得的消耗型探针", isVoucher ? "unique" : "rare", isOwned);
+      return rewardRow(isVoucher ? "◆" : "⌁", archBlueprintName(id), isVoucher ? "唯一永久回收凭证" : "直接获得的消耗型探针", isVoucher ? "unique" : "rare", isOwned);
     }).join("");
 
     // 脑插信号卡（已移除，2026-08-28）：考古脑插走独立事件掉落，改在下方「脑插掉落」表展示真实概率。
@@ -490,9 +490,10 @@ function rewardRow(icon, name, sub, rarity, owned) {
   const rarityCls = (rarity === "unique" || rarity === "epic" || rarity === "rare") ? " " + rarity : "";
   const dim = owned ? " arch-reward-owned" : "";
   const rarityLabel = rarity === "unique" ? "唯一" : rarity === "epic" ? "极稀有" : rarity === "rare" ? "稀有" : "";
+  const badge = owned ? ' <i class="arch-owned-badge">已获得</i>' : "";
   return `<div class="arch-reward${dim}">
     <span class="arch-reward-icon">${icon}</span>
-    <div><b>${name}</b><small>${sub}</small></div>
+    <div><b>${name}${badge}</b><small>${sub}</small></div>
     ${rarityLabel ? `<span class="arch-rarity${rarityCls}">${rarityLabel}</span>` : ""}
   </div>`;
 }

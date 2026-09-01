@@ -1383,4 +1383,49 @@ section("33. M6 Phase 2 离线分步换目标集成");
   W.buildCombatWave = originalBuildWave;
 }
 
+// ================================================================
+section("33. M6 玩家吃 NPC 战斗经验（出资方收获，机制回归锁定）");
+{
+  const W = buildCombatSandbox();
+  const Sq = W.LEGION_COMBAT_SQUAD;
+  const st = makeM3State(W, { npcCount: 1 });
+  st.research.completedLevels.legion_dual_squad = 1;
+  st.research.completedLevels.legion_triple_squad = 1;
+  Sq.beginLegionSquadBattle(st);
+  Sq.addLegionNpcToCombatSquad(st, "m3n1");
+  const zone = W.getCombatEncounterZone(st.combat);
+  const enemy = st.combat.enemies[0];
+  const xp = (id) => (st.skills[id] && st.skills[id].xp) || 0;
+  const defTotal = () => xp("shieldOperation") + xp("armorReinforcement") + xp("hullEngineering");
+
+  // —— A. NPC 开火 → 玩家获得武器/瞄准/电容经验（与自身开火同口径） ——
+  {
+    const bLaser = xp("laserOps"), bTarget = xp("targeting"), bCap = xp("capacitorManagement");
+    const member = st.combat.squad.members[0];
+    const fe = Sq.fireSingleNpcMember(st, { now: NOW, rng: () => 0.5 }, member, enemy, []);
+    ok(fe !== null, "NPC 成功开火（返回开火记录）");
+    ok(xp("laserOps") - bLaser === 2, "NPC 开火 → 玩家 laserOps +2（每武器模块）");
+    ok(xp("targeting") - bTarget === 1, "NPC 开火 → 玩家 targeting +1（每武器模块）");
+    ok(xp("capacitorManagement") - bCap > 0, "NPC 开火 → 玩家 capacitorManagement 随耗油增加");
+  }
+
+  // —— B. NPC 承伤 → 玩家获得防御经验（反转原 !hitNpc 守卫） ——
+  {
+    const bDef = defTotal(), bPilot = xp("piloting");
+    const res = Sq.processLegionEnemyAttack(st, {
+      damage: 0, distribute: true, now: NOW, zone: zone, randomFn: () => 0.5,
+      attacker: { hit: 100, baseDamage: 300 }, playerDodge: W.calcPlayerDodge(undefined, st),
+      playerShipConfig: W.getActiveShip(st), dcReduction: 0
+    });
+    ok(res.distributed === true && res.targetCount >= 2, "分摊模式调用成功（玩家 + NPC 多目标）");
+    ok(defTotal() - bDef >= 1, "NPC 承伤 → 玩家防御层经验至少 +1");
+    ok(xp("piloting") - bPilot === 1, "NPC 承伤 → 玩家 piloting +1（总承伤>0）");
+  }
+
+  // 注：NPC 维修 → 玩家 defense +1 的路径与玩家自身维修完全同构（repairLegionSquadNpcs
+  // 内 `if (gained>0)` 分支调用 addStationModifiedCombatXp(state,"defense",1,"combat")），
+  // 因沙箱内 NPC 血量由 ensureNpcCombatHp 每次重置为满，难以在不引入易碎夹具下稳定触发，
+  // 故由代码审查 + 现有玩家维修经验测试（test-offline-combat-queue 等）共同覆盖。
+}
+
 summary();

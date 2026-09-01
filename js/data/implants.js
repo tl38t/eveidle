@@ -261,6 +261,45 @@ const IMPLANT_DB = {
   }
 };
 
+// 脑插「如何获得」导航目标（供仓库详情弹窗与展示态共用）：返回合法的 sidebar 跳转目标。
+function implantSourceNav(imp) {
+  if (imp.sourceSkill) return { pageId: imp.sourceSkill, pageLabel: imp.sourceSkillName + " Lv.99" };
+  switch (imp.source) {
+    case "mining": return { pageId: "mining", pageLabel: "采矿" };
+    case "gas": return { pageId: "gasHarvesting", pageLabel: "采气" };
+    case "equipment": return { pageId: "equipmentEngineering", pageLabel: "装备制造" };
+    case "ship": return { pageId: "shipEngineering", pageLabel: "舰船制造" };
+    case "booster": return { pageId: "boosterEngineering", pageLabel: "增强剂制造" };
+    case "archaeology": return { pageId: "archaeology", pageLabel: "考古" };
+    case "cargo": return { pageId: "cargo", pageLabel: imp.sourceName || "货柜" };
+    case "deathspace": return { pageId: "combat", pageLabel: "死亡空间" };
+    default: return { pageId: "cargo", pageLabel: "货柜" };
+  }
+}
+
+// 脑插「如何获得」玩家视角文案（不暴露内部设计语言）。
+function getImplantHowToGet(imp) {
+  if (imp.sourceSkill) {
+    return "将【" + imp.sourceSkillName + "】技能练至 99 级即可自动激活。获得后永久生效，不占装备槽。";
+  }
+  switch (imp.source) {
+    case "mining":
+    case "gas":
+    case "equipment":
+    case "ship":
+    case "booster":
+      return "在【" + imp.sourceName + "】过程中有几率获得。获得后永久生效，不占装备槽。";
+    case "archaeology":
+      return "完成【考古】并成功解析时有几率获得。获得后永久生效，不占装备槽。";
+    case "cargo":
+      return "开启【" + (imp.sourceName || "货柜") + "】时有几率获得。获得后永久生效，不占装备槽。";
+    case "deathspace":
+      return "在【死亡空间 6/10】清场时有 5% 几率获得（仅在线清场掉落）。获得后永久生效，不占装备槽。";
+    default:
+      return "通过游戏内活动有几率获得。获得后永久生效，不占装备槽。";
+  }
+}
+
 // 生产技能 → 对应成就脑插（技能满 99 级时发放）
 const IMPLANT_BY_SKILL = {
   mining: "implant_laser",

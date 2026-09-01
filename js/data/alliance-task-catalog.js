@@ -6,7 +6,13 @@
   function valueByLevel(level) { return Math.min(100, Math.round(12 + Math.sqrt(level / 90) * 88)); }
   function make(category, skill, item, amount, time) {
     var level = levelValue(item);
-    return { category: category, skill: skill, materialId: item.id || item.materialId || item.ore || item.gas || item.name, materialName: item.materialName || item.name || item.ore || item.gas, amount: amount, requiredLevel: level, standardTimeSec: Math.max(1, Number(time) || 1) * amount, materialValue: valueByLevel(level), faction: Boolean(item.faction), deathspace: Boolean(item.deathspace || item.sourceZoneId && String(item.sourceZoneId).indexOf("death") >= 0), isShip: Boolean(item.isShip) };
+    var materialId = item.id || item.materialId || item.ore || item.gas || item.name;
+    var rawName = item.materialName || item.name || item.ore || item.gas;
+    var materialName = rawName;
+    if (root.DisplayNames && typeof root.DisplayNames.getResourceRefName === "function") {
+      materialName = root.DisplayNames.getResourceRefName(materialId, rawName);
+    }
+    return { category: category, skill: skill, materialId: materialId, materialName: materialName, amount: amount, requiredLevel: level, standardTimeSec: Math.max(1, Number(time) || 1) * amount, materialValue: valueByLevel(level), faction: Boolean(item.faction), deathspace: Boolean(item.deathspace || item.sourceZoneId && String(item.sourceZoneId).indexOf("death") >= 0), isShip: Boolean(item.isShip) };
   }
 
   function buildRuntimeCatalog(env) {

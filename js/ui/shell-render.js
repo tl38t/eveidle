@@ -334,15 +334,22 @@ function renderImplantTab(display) {
   list.innerHTML = display.items.map(item => {
     const cls = item.owned ? " owned" : " locked";
     const status = item.owned ? "已激活" : ("未获得" + (item.source && item.source.pageLabel ? "（" + item.source.pageLabel + "）" : ""));
-    return `<div class="implant-card${cls}" data-implant="${item.id}">
-      <div class="ic-icon">${item.owned ? item.icon : "🔒"}</div>
-      <div class="ic-body">
-        <div class="ic-name">${escapeAchievementText(item.name)}</div>
-        <div class="ic-bonus">${escapeAchievementText(item.desc)}</div>
-        <div class="ic-status">${escapeAchievementText(status)}</div>
-      </div>
-    </div>`;
+    return `<div class="implant-card${cls}" data-implant="${item.id}" role="button" tabindex="0" title="点击查看如何获得">\n` +
+      `      <div class="ic-icon">${item.owned ? item.icon : "🔒"}</div>\n` +
+      `      <div class="ic-body">\n` +
+      `        <div class="ic-name">${escapeAchievementText(item.name)}</div>\n` +
+      `        <div class="ic-bonus">${escapeAchievementText(item.desc)}</div>\n` +
+      `        <div class="ic-status">${escapeAchievementText(status)}</div>\n` +
+      `      </div>\n` +
+      `    </div>`;
   }).join("");
+  list.querySelectorAll(".implant-card").forEach(card => {
+    const id = card.dataset.implant;
+    card.addEventListener("click", () => openImplantDetailModal(id));
+    card.addEventListener("keydown", e => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openImplantDetailModal(id); }
+    });
+  });
 }
 
 /* 仓库物品方块卡点击 → 通用物品弹窗（装备=介绍+强化+出产；非装备=介绍+出产） */
@@ -931,6 +938,23 @@ function openBoosterProductModal(recipe, blueprintName) {
   if (jumpBtn) jumpBtn.addEventListener("click", () => { closeItemDetailModal(); twGoToTarget(jumpBtn.dataset.idmJump); });
 }
 
+// 货柜蓝图是否已获得：装备前缀 blueprint:<eqId> → equipment:<eqId>；增强剂 id=<recId> → booster:<recId>
+// 复用 cargo.js 的权威判定函数，避免 key 前缀写错。
+function isCargoBlueprintOwned(b) {
+  if (!b || typeof b.id !== "string") return false;
+  const st = (typeof gameState !== "undefined") ? gameState : null;
+  if (!st || !Array.isArray(st.ownedBlueprints)) return false;
+  if (b.id.indexOf("blueprint:") === 0) {
+    const eqId = b.id.slice("blueprint:".length);
+    return (typeof hasEquipmentBlueprintFromState === "function")
+      ? hasEquipmentBlueprintFromState(st, eqId)
+      : st.ownedBlueprints.includes("equipment:" + eqId);
+  }
+  return (typeof hasBoosterBlueprintFromState === "function")
+    ? hasBoosterBlueprintFromState(st, b.id)
+    : st.ownedBlueprints.includes("booster:" + b.id);
+}
+
 // 货柜出率区 HTML（权重 + 蓝图清单 + 各档内容）。不显示基础掉落概率与抽取次数。
 function cargoDropRateSectionHTML(size) {
   if (typeof getCargoDropInfo !== "function") return "";
@@ -952,11 +976,14 @@ function cargoDropRateSectionHTML(size) {
     return `<span class="cargo-w-chip ${tierClass[t] || ""}${w <= 0 ? " zero" : ""}">${label} ${w <= 0 ? "不出" : pct(w)}</span>`;
   }).join("");
 
-  // 蓝图清单（具体名，按尺寸分配，不写档位代号）
+  // 蓝图清单（具体名，按尺寸分配，不写档位代号）；已获得的加灰色虚框 + 「已获得」徽章
   const bpItems = (info.blueprints || []).map(b => {
     const idx = currentCargoBlueprintItems.length;
     currentCargoBlueprintItems.push(b);
-    return `<span class="cargo-content-item bp" data-cbi="${idx}">📜 ${escapeAchievementText(b.name)}</span>`;
+    const owned = isCargoBlueprintOwned(b);
+    const cls = "cargo-content-item bp" + (owned ? " owned" : "");
+    const tag = owned ? ' <i class="bp-owned-tag">已获得</i>' : "";
+    return `<span class="${cls}" data-cbi="${idx}">📜 ${escapeAchievementText(b.name)}${tag}</span>`;
   }).join("");
 
   // 各档具体内容（可点击查看）
@@ -981,6 +1008,23 @@ function cargoDropRateSectionHTML(size) {
 }
 
 /* 通用物品详情弹窗：装备 → 解析到强化弹窗（含强化+介绍+出产）；非装备 → 介绍+出产 */
+/* 仓库脑插卡片点击 → 详情弹窗（复用通用物品卡），重点展示「如何获得」 */
+function openImplantDetailModal(id) {
+  const imp = (typeof IMPLANT_DB !== "undefined") ? IMPLANT_DB[id] : null;
+  if (!imp) return;
+  const nav = (typeof implantSourceNav === "function") ? implantSourceNav(imp) : { pageId: "cargo", pageLabel: "货柜" };
+  const how = (typeof getImplantHowToGet === "function") ? getImplantHowToGet(imp) : "";
+  openItemDetailModal({
+    id: "implant:" + id,
+    name: imp.name,
+    icon: imp.icon,
+    categoryLabel: "脑插",
+    description: imp.desc,
+    howToGet: how,
+    source: nav
+  });
+}
+
 function openItemDetailModal(item) {
   if (item.category === "equipment" && item.itemId) {
     // 改装件不在强化列表（不参与装备强化），绕过 getEquipmentEnhancementListDisplayState.entries 直接打开
@@ -1048,6 +1092,7 @@ function openItemDetailModal(item) {
       </div>
       <div class="eem-body">
         <div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(item.description)}</div></div>
+        ${item.howToGet ? `<div class="eem-section"><h3 class="eem-sec-title">如何获得</h3><div class="eem-desc">${escapeAchievementText(item.howToGet)}</div></div>` : ""}
         <div class="eem-section"><h3 class="eem-sec-title">出产位置</h3>
           <div class="eem-source"><span class="eem-src-icon"><i class="${src.icon}"></i></span>
             <span class="eem-src-text"><span class="eem-src-label">获取 / 出产页面</span><br><span class="eem-src-page">${escapeAchievementText(src.pageLabel)}</span></span></div>
@@ -1541,6 +1586,9 @@ function renderSettingsPage() {
   if (discardCb) discardCb.checked = display.confirmDiscard;
   const dismantleCb = document.getElementById("setting-dismantle-confirm");
   if (dismantleCb) dismantleCb.checked = display.confirmDismantle;
+  // 关于：展示构建版本号（由构建脚本注入 window.GAME_VERSION；未构建时回退基线）
+  const verEl = document.getElementById("setting-game-version");
+  if (verEl) verEl.textContent = "V" + (typeof window.GAME_VERSION === "string" && window.GAME_VERSION ? window.GAME_VERSION : "0.7.1");
   return display;
 }
 

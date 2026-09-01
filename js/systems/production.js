@@ -1,4 +1,4 @@
-const MINING_AREAS = [
+var MINING_AREAS = [
   { name: "凡晶石带",   ore: "凡晶石", mode:"normal", level: 1,  baseTime: 15,   baseXP: 10,  color:"#b5a37d" },
   { name: "灼烧岩带",   ore: "灼烧岩", mode:"normal", level: 10, baseTime: 30,   baseXP: 30,  color:"#b66b47" },
   { name: "水硼砂带",   ore: "水硼砂", mode:"normal", level: 20, baseTime: 52.5, baseXP: 70,  color:"#79b4ca" },
@@ -118,7 +118,7 @@ function getBestMiningArea(mode) {
   let best = areas[0]; for (const area of areas) { if (lv >= area.level) best = area; else break; } return best;
 }
 
-const SMELTING_RECIPES = [
+var SMELTING_RECIPES = [
   { name: "凡晶石带",   consumeOre: "凡晶石", outputMineral: "三钛合金",     level: 1,  baseTime: 10,   baseOutput: 1, baseXP: 10  },
   { name: "灼烧岩带",   consumeOre: "灼烧岩", outputMineral: "类银超金属",   level: 10, baseTime: 20,   baseOutput: 1, baseXP: 30  },
   { name: "水硼砂带",   consumeOre: "水硼砂", outputMineral: "类晶体胶矿",   level: 20, baseTime: 35,   baseOutput: 1, baseXP: 70  },
@@ -129,7 +129,7 @@ const SMELTING_RECIPES = [
 ];
 
 // ---- 气体采集区域配置表 ----
-const GAS_AREAS = [
+var GAS_AREAS = [
   { name: "富勒烯云团",     gas: "粗制富勒烯",   level: 1,  baseTime: 22.5, baseXP: 10  },
   { name: "氦同位素云团",   gas: "氦同位素",     level: 10, baseTime: 45,   baseXP: 40  },
   { name: "稳定富勒烯云团", gas: "稳定富勒烯",   level: 20, baseTime: 75,   baseXP: 80  },

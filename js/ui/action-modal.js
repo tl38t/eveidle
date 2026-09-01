@@ -10,7 +10,8 @@ function hideActionConfirm() {
   _actionConfirmDisplay = null;
 }
 
-function renderActionConfirmation(display) {
+function renderActionConfirmation(display, opts) {
+  opts = opts || {};
   if (!display || !display.canOpen) {
     showToast(display && display.blockedText ? display.blockedText : "当前行动不可用");
     return false;
@@ -55,7 +56,7 @@ function renderActionConfirmation(display) {
   }
 
   _actionConfirmDisplay = display;
-  input.value = 1;
+  if (!opts.preserveCount) input.value = 1;
   const infinityBtn = document.getElementById("action-batch-infinity");
   if (infinityBtn) infinityBtn.classList.remove("selected");
   input.max = noCap ? 99999999 : maxCount;
@@ -89,9 +90,32 @@ function renderActionConfirmation(display) {
   };
 
   document.getElementById("action-modal").classList.remove("hidden");
-  input.focus();
-  input.select();
+  if (!opts.preserveFocus) { input.focus(); input.select(); }
   return true;
+}
+
+// 已打开的确认弹窗在状态变化（装/卸增强剂、船坞升级完成等）后重新计算并重绘，
+// 避免弹窗内消耗/耗时停留在打开瞬间的旧值（船坞减耗、增强剂减料均不生效的假象）。
+// 保留用户已输入的数量，且不抢焦点（由 updateUI 在事件驱动下调用，不每帧触发）。
+function refreshActionConfirmation() {
+  const modal = document.getElementById("action-modal");
+  if (!modal || modal.classList.contains("hidden") || !_actionConfirmDisplay) return;
+  const target = _actionConfirmDisplay.target;
+  const input = document.getElementById("action-batch-count");
+  const oldCount = input ? input.value : "1";
+  const fresh = getActionConfirmationDisplayState(gameState, target, Date.now());
+  // 资源耗尽等导致不可用时不再弹 toast（避免每次事件刷新都提示），保留弹窗原内容。
+  if (!fresh.canOpen) return;
+  renderActionConfirmation(fresh, { preserveCount:true, preserveFocus:true });
+  if (input && oldCount != null) {
+    const noCap = !!fresh.noCap;
+    let v = Math.max(1, parseInt(oldCount) || 1);
+    const mc = Number(fresh.maxCount);
+    if (!noCap && mc > 0) v = Math.min(mc, v);
+    input.value = v;
+    const sumEl = document.getElementById("action-modal-summary");
+    if (sumEl) sumEl.innerHTML = `<span class="ai-label">总耗时：</span>${fresh.combat ? "视战斗情况而定" : "约 " + formatDuration(fresh.duration * v)}`;
+  }
 }
 
 function showActionConfirm(skillKey) {

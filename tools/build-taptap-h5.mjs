@@ -91,6 +91,34 @@ function writeRcCounter(n) { fs.writeFileSync(COUNTER_PATH, String(n)); }
 let ZIP_NAME = "";      // 在 main 流程中按 RC 计算
 let CURRENT_RC = 0;     // 当前构建使用的 RC 号
 
+// ---- 展示版本号（给玩家看的版本，如 0.7.1）----
+// 规则：每次封包最后一位 +1；但同一自然日内无论封包多少次只 +1 一次。
+// 存于 tools/build-version.json（加入 .gitignore，纯本地、不进包、不进仓库，与 rc-counter.txt 同策略）。
+const VERSION_PATH = path.join(REPO, "tools", "build-version.json");
+let BUILD_VERSION = "0.7.1";
+function readBuildVersion() {
+  try {
+    const o = JSON.parse(fs.readFileSync(VERSION_PATH, "utf8"));
+    if (o && typeof o.version === "string") {
+      return { version: o.version, lastBumpDate: typeof o.lastBumpDate === "string" ? o.lastBumpDate : "" };
+    }
+  } catch (_) { /* 缺失则回退基线 0.7.1 */ }
+  return { version: "0.7.1", lastBumpDate: "" };
+}
+function writeBuildVersion(v) { fs.writeFileSync(VERSION_PATH, JSON.stringify(v, null, 2) + "\n"); }
+function todayLocalDate() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function bumpPatch(version) {
+  const m = /^(\d+)\.(\d+)\.(\d+)$/.exec(version || "");
+  if (!m) return "0.7.1";
+  return `${Number(m[1])}.${Number(m[2])}.${Number(m[3]) + 1}`;
+}
+
 // ---- 来源 SHA（--source-sha，必须 == 当前 HEAD）----
 function parseSourceSha() {
   const idx = process.argv.findIndex((a) => a === "--source-sha" || a.startsWith("--source-sha="));
@@ -257,6 +285,15 @@ async function buildOnce(SOURCE_SHA, includeProbe) {
   // 本地化 index.html
   if (!map.has("index.html")) fail("包内缺少 index.html");
   map.set("index.html", Buffer.from(localizeIndexHtml(map.get("index.html").toString("utf8"), includeProbe), "utf8"));
+
+  // 注入展示版本号（window.GAME_VERSION）：替换 index.html 中的占位声明
+  if (map.has("index.html")) {
+    const vhtml = map.get("index.html").toString("utf8").replace(
+      /window\.GAME_VERSION\s*=\s*"[^"]*";/,
+      `window.GAME_VERSION = "${BUILD_VERSION}";`
+    );
+    map.set("index.html", Buffer.from(vhtml, "utf8"));
+  }
 
   // 排序键（确定性）
   const keys = [...map.keys()].sort((a, b) => a.localeCompare(b));
@@ -454,6 +491,25 @@ function verifyPackage(buffer, mode, includeProbe) {
   } else {
     CURRENT_RC = readRcCounter();
   }
+
+  // 计算展示版本号：仅 release 正式包才 +1，同一自然日仅 +1 一次（首次封包即从 0.7.1 -> 0.7.2）。
+  // selftest / worktree 自测包不递增，仅读取当前版本号用于显示。
+  if (MODE === "release") {
+    const verState = readBuildVersion();
+    const todayStr = todayLocalDate();
+    if (todayStr !== verState.lastBumpDate) {
+      BUILD_VERSION = bumpPatch(verState.version);
+      writeBuildVersion({ version: BUILD_VERSION, lastBumpDate: todayStr });
+      console.log("[VERSION] 构建版本递增: " + verState.version + " -> " + BUILD_VERSION + "（" + todayStr + "）");
+    } else {
+      BUILD_VERSION = verState.version;
+      console.log("[VERSION] 构建版本（今日已递增，沿用）: " + BUILD_VERSION);
+    }
+  } else {
+    BUILD_VERSION = readBuildVersion().version;
+    console.log("[VERSION] 自测包不递增版本，沿用当前: " + BUILD_VERSION);
+  }
+
   ZIP_NAME = MODE === "release"
     ? "deep-space-idle-taptap-rc" + CURRENT_RC + ".zip"
     : WORKTREE_SELFTEST

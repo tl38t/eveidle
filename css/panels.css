@@ -917,6 +917,11 @@
 .arch-rarity.rare { color:#82add0; border-color:#315775; }
 .arch-rarity.epic { color:#b39add; border-color:#5a4777; }
 .arch-rarity.unique { color:#e0bd64; border-color:#6e5827; }
+.arch-owned-badge {
+  font-style:normal; font-size:8px; color:#5fcf80;
+  border:1px solid #2f7; border-radius:6px; padding:0 4px; margin-left:5px;
+  letter-spacing:.04em; vertical-align:middle;
+}
 .arch-reward-note { padding:8px; color:#556779; font-size:10px; }
 .arch-calibration {
   margin-top:12px; padding:11px 12px;

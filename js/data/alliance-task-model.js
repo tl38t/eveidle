@@ -73,15 +73,22 @@
     var rand = random(seedFor(playerId, serverDate));
     var pool = (catalog || []).filter(function (item) { return eligible(item, state); });
     if (!pool.length) return [];
-    var tasks = [], available = pool.slice();
+    var tasks = [], available = pool.slice(), categoryCounts = {};
     for (var i = 0; i < 5; i++) {
       // 材料池够用时不重复派发；低等级导致候选不足时才允许回填重复。
       if (!available.length) available = pool.slice();
-      var itemIndex = Math.floor(rand() * available.length);
-      var item = available[itemIndex];
-      if (pool.length >= 5) available.splice(itemIndex, 1);
+      var balanced = available.filter(function (candidate) {
+        return (categoryCounts[candidate.category] || 0) < 2;
+      });
+      var candidates = balanced.length ? balanced : available;
+      var itemIndex = Math.floor(rand() * candidates.length);
+      var item = candidates[itemIndex];
+      var availableIndex = available.indexOf(item);
+      if (pool.length >= 5 && availableIndex >= 0) available.splice(availableIndex, 1);
+      categoryCounts[item.category] = (categoryCounts[item.category] || 0) + 1;
       var tier = chooseTier(rand, skillLevel(state, item.skill));
       tasks.push({
+        taskKey: String(serverDate || "") + ":" + String(i + 1) + ":" + String(item.materialId),
         slot: i + 1, category: item.category, skill: item.skill, materialId: item.materialId,
         materialName: item.materialName, requiredAmount: item.amount, requiredLevel: item.requiredLevel,
         standardTimeSec: item.standardTimeSec, materialValue: item.materialValue, difficulty: tier,

@@ -9,3 +9,5 @@ logs/
 
 # 本地 RC 计数器（构建脚本自动维护，不进仓库）
 tools/rc-counter.txt
+# 本地展示版本号（构建脚本自动维护，不进仓库；与 rc-counter.txt 同策略）
+tools/build-version.json

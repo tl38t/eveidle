@@ -264,8 +264,8 @@ const DEATHSPACE_EQUIPMENT_TIERS = Object.freeze({
 
 const DEATHSPACE_EQUIPMENT_ROUTES = Object.freeze({
   angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型"}, weapon:{2:"t1_small_laser",3:"t1_medium_laser",4:"t1_large_laser",6:"t1_capital_laser"}, repair:{2:"t1_shield_booster",3:"t1_medium_shield_booster",4:"t1_large_shield_booster",6:"t1_capital_shield_array"} },
-  blood:{ prefix:{2:"科尔普斯试制",3:"科尔普斯强化",4:"科尔普斯精锐",6:"科尔普斯A型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_heavy_missile_launcher",4:"t1_cruise_missile_launcher",6:"t1_capital_missile_array"}, repair:{2:"t1_armor_repairer",3:"t1_medium_armor_repairer",4:"t1_large_armor_repairer",6:"t1_capital_armor_array"} },
-  sansha:{ prefix:{2:"森屠斯试制",3:"森屠斯强化",4:"森屠斯精锐",6:"森屠斯A型"}, weapon:{2:"t1_small_cannon",3:"t1_medium_cannon",4:"t1_large_cannon",6:"t1_capital_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_medium_structure_repairer",4:"t1_large_structure_repairer",6:"t1_capital_structure_array"} }
+  blood:{ prefix:{2:"赤誓试制",3:"赤誓强化",4:"赤誓精锐",6:"赤誓A型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_heavy_missile_launcher",4:"t1_cruise_missile_launcher",6:"t1_capital_missile_array"}, repair:{2:"t1_armor_repairer",3:"t1_medium_armor_repairer",4:"t1_large_armor_repairer",6:"t1_capital_armor_array"} },
+  sansha:{ prefix:{2:"静默试制",3:"静默强化",4:"静默精锐",6:"静默A型"}, weapon:{2:"t1_small_cannon",3:"t1_medium_cannon",4:"t1_large_cannon",6:"t1_capital_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_medium_structure_repairer",4:"t1_large_structure_repairer",6:"t1_capital_structure_array"} }
 });
 
 function scaleDeathspaceEquipmentCost(cost, multiplier) {
@@ -653,7 +653,7 @@ function getEquipmentBlueprintSourceHint(recipe) {
   return "获取蓝图";
 }
 
-const EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly).map(eq => ({
+var EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly).map(eq => ({
   id:eq.id, name:eq.name, level:eq.level, time:eq.time, xp:eq.xp,
   cost:eq.cost, slot:eq.slot, faction:eq.faction || "", requiresBlueprint:Boolean(eq.requiresBlueprint),
   inputEquipment:eq.inputEquipment ? { ...eq.inputEquipment } : null,

@@ -1181,10 +1181,16 @@ function getShipEngineeringDisplayState(state, now) {
       const q = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"component" }) : { levelGate:recipe.level };
       return { ...recipe, unlocked:level >= q.levelGate, selected:recipe.id === currentComponent.id };
     }),
-    componentMaterials:Object.entries(compQuote.cost).map(([material, quantity]) => {
-      const stock = getMaterialStockFromState(state, material);
-      return { material, quantity, stock, enough:stock >= quantity };
-    }),
+    componentMaterials:(function () {
+      const shipyardOn = (typeof getShipyardSavingRate === "function") ? getShipyardSavingRate(state) > 0 : false;
+      const quote = shipyardOn ? getShipyardProductionQuote(state, { materialCost: compQuote.cost }, 1) : null;
+      const payable = quote ? quote.payable : compQuote.cost;
+      return Object.entries(compQuote.cost).map(([material, baseQuantity]) => {
+        const quantity = payable[material] != null ? payable[material] : baseQuantity;
+        const stock = getMaterialStockFromState(state, material);
+        return { material, quantity, baseQuantity, stock, enough:stock >= quantity };
+      });
+    })(),
     componentInventory:SHIP_COMPONENT_RECIPES.map(recipe => ({ id:recipe.id, name:recipe.name, quantity:Number(componentInventory[recipe.id]) || 0 })),
     componentDismantle:{
       reclaimRate:getReclaimRate(state),
@@ -2520,7 +2526,7 @@ function getCargoDisplayState(state, filter, subFilter) {
       category: "implant",
       categoryLabel: "脑插",
       quantity: owned[imp.id] ? 1 : 0,
-      source: { pageId: "skill", pageLabel: imp.sourceSkillName + " Lv.99" }
+      source: implantSourceNav(imp)
     }));
     return {
       kind: "cargo",
@@ -2853,9 +2859,21 @@ function getEquipmentEnhancementListDisplayState(state) {
   const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
   const instances = state.equipment && Array.isArray(state.equipment.instances) ? state.equipment.instances : [];
 
+  // Batch IP：强化消耗材料（精炼矿物）的内部 key（如"三钛合金"）需经显示名映射，
+  // 避免在 UI 上露出 EVE 原名。先尝试 key 本身，再尝试 mineral: 命名空间。
+  const formatEnhancementMaterialName = key => {
+    if (typeof getResourceDisplayName === "function") {
+      const mapped = getResourceDisplayName(key);
+      if (mapped !== key) return mapped;
+      const mineralMapped = getResourceDisplayName("mineral:" + key);
+      if (mineralMapped !== key && mineralMapped !== "mineral:" + key) return mineralMapped;
+    }
+    return key;
+  };
+
   const buildCostRows = display => Object.entries(display.cost).map(([mineral, qty]) => {
     const stock = ResourceRegistry.getMaterialStock(state, mineral);
-    return { name:mineral, need:qty, stock, enough:stock >= qty };
+    return { name:formatEnhancementMaterialName(mineral), need:qty, stock, enough:stock >= qty };
   });
   const buildExtraRows = (display, itemId) => {
     const rows = [];
@@ -2865,11 +2883,11 @@ function getEquipmentEnhancementListDisplayState(state) {
     }
     if (display.extra.core) {
       const stock = ResourceRegistry.getMaterialStock(state, display.extra.core);
-      rows.push({ label:display.extra.core, need:1, have:stock, enough:stock >= 1 });
+      rows.push({ label:formatEnhancementMaterialName(display.extra.core), need:1, have:stock, enough:stock >= 1 });
     }
     if (display.extra.protocol) {
       const stock = ResourceRegistry.getMaterialStock(state, display.extra.protocol);
-      rows.push({ label:display.extra.protocol, need:1, have:stock, enough:stock >= 1 });
+      rows.push({ label:formatEnhancementMaterialName(display.extra.protocol), need:1, have:stock, enough:stock >= 1 });
     }
     return rows;
   };
