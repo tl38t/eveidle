@@ -498,6 +498,54 @@ const BoosterStateActions = {
   }
 };
 
+/* ------------------------------------------------------------------
+   战斗会话统一收口（2026-09-01）
+   战斗结束有 4 条路径：主动停止 stop() / 被击毁 beginRecovery() /
+   队列切换作业 executeQueueItemForState() / 换战斗舰 equipCombatShip()。
+   原先各路径各清各的，导致行为分叉 —— 最关键的 queue.status 只在 stop() 里清了，
+   其余路径漏清后，offline.js settleOfflineActions 会因
+   (isRunning && items.length && !currentAction.active) 重新执行队列项，
+   而舰此时在 180s 维修中、启动校验失败，队列便永久卡在「执行中」。
+
+   opts.pauseQueue 语义（重要）：
+     true（默认）—— 战斗被打断（主动停 / 被击毁 / 战斗中换舰），队列项已无法继续，
+                     必须同步暂停队列，否则离线结算会把它重启。
+     false        —— 队列正常切换到下一项，队列必须继续跑，绝不能清。
+   ------------------------------------------------------------------ */
+function endCombatSession(state, reason, opts) {
+  opts = opts || {};
+  if (!state || !state.combat) return;
+  if (opts.pauseQueue !== false && state.queue && state.queue.status) {
+    state.queue.status.isRunning = false;
+    state.queue.status.activeIndex = -1;
+  }
+  Object.assign(state.combat, {
+    active:false,
+    enemies:[],
+    currentEnemy:null,
+    wave:1,
+    totalKills:0,
+    runEliteKills:0,
+    currentFormation:"",
+    lastEnemyVolley:null,
+    deathspaceChainRemaining:0,
+    deathspaceChainPending:false
+  });
+  // 被击毁时这些进度字段要带进 resumeAfterRepair（维修后自动续战），不能清。
+  if (reason !== "destroyed") {
+    Object.assign(state.combat, {
+      queueItemId:null, queueWavesTarget:0, queueWavesDone:0,
+      queueEntriesTarget:0, queueEntriesDone:0
+    });
+  }
+  // M3：释放军团 NPC 小队临时状态（NPC 的 destroyed/repairUntil 保留在本体）
+  if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD
+      && state.combat.squad && state.combat.squad.enabled) {
+    LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
+  }
+  state._dirty = true;
+}
+
 const CombatStateActions = {
   selectMode(state, mode) {
     if (mode !== "belt" && mode !== "deathspace") return { changed:false, reason:"unknown-mode" };
@@ -738,42 +786,22 @@ const CombatStateActions = {
     if (!state.combat.active && !(state.currentAction.active && state.currentAction.skill === "combat") && !hasPendingResume) return { changed:false, reason:"not-active" };
     const maxHp = getCombatMaxHpFromState(state);
     const abandonedDeathspace = state.combat.mode === "deathspace";
-    // 队列驱动的战斗停止时必须同步暂停队列；否则切页触发离线结算时，
-    // settleOfflineActions 会因 isRunning=true 重新启动这场战斗。
-    const queueWasRunning = Boolean(state.queue && state.queue.status && state.queue.status.isRunning);
-    if (queueWasRunning) {
-      state.queue.status.isRunning = false;
-      state.queue.status.activeIndex = -1;
-    }
-    // M3：玩家主动停止战斗 → 清理小队临时状态并释放占用（NPC 修复状态保留在本体）
-    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled) {
-      LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
-    }
+    // 统一收口：清队列运行状态（否则切页触发离线结算时 settleOfflineActions 会重启这场战斗）
+    // + 战斗核心状态 + 军团小队释放。
+    endCombatSession(state, "stop");
     state.currentAction.active = false;
     Object.assign(state.combat, {
-      active:false,
       hp:{ ...maxHp },
       maxHp:{ ...maxHp },
-      enemies:[],
-      currentEnemy:null,
-      wave:1,
-      totalKills:0,
-      runEliteKills:0,
-      currentFormation:"",
       lastLoot:"",
       lastSpecialLoot:"",
       lastStatus:abandonedDeathspace ? "已撤离死亡空间，通行密钥不返还" : "",
-      lastEnemyVolley:null,
       runWeaponTypes:[],
       runWeaponTypesZone:null,
-      runDamageDealt:0, runDamageTaken:0,
-      queueItemId:null, queueWavesTarget:0, queueWavesDone:0,
-      queueEntriesTarget:0, queueEntriesDone:0
+      runDamageDealt:0, runDamageTaken:0
     });
     state.currentAction.batchRemaining = 0;
     state.resumeAfterRepair = null; // 玩家主动停止：取消待恢复（含维修中取消自动出击）
-    state.combat.deathspaceChainRemaining = 0; // 手动停止战斗：连刷链一并取消
-    state.combat.deathspaceChainPending = false;
     state._dirty = true;
     return { changed:true, abandonedDeathspace, cancelledResume:hasPendingResume };
   },
@@ -781,10 +809,7 @@ const CombatStateActions = {
   beginRecovery(state, now) {
     const activeShip = getActiveCombatShipState(state);
     const failedDeathspace = state.combat.mode === "deathspace";
-    // M3：玩家舰船被击毁 → 清理小队临时状态、释放占用；NPC 的 destroyed/repairUntil/combatHp 保留在本体
-    if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled) {
-      LEGION_COMBAT_SQUAD.endLegionSquadBattle(state);
-    }
+    // 军团小队释放由下方 endCombatSession() 统一处理。
     const destroyedShipId = activeShip.instance ? activeShip.instance.instanceId : null;
     const failedDeathspaceId = failedDeathspace ? (state.combat.deathspaceId || null) : null;
     // 维修后自动恢复（Phase 3D 修正）：重创即本轮失败并清零遭遇；无论普通星带还是死亡空间，
@@ -815,17 +840,16 @@ const CombatStateActions = {
       queueEntriesTarget: qActive ? state.combat.queueEntriesTarget : 0,
       queueEntriesDone: qActive ? (state.combat.queueEntriesDone + (qDs ? 1 : 0)) : 0
     } : null;
+    // 统一收口（reason="destroyed"：保留 queueWaves*/queueEntries* 供维修后自动续战）。
+    //
+    // pauseQueue 必须为 false —— 被击毁时队列项并未结束，只是「舰进维修、等待续战」：
+    //   tryResumeCombatAfterRepair() 要求 queue.status.isRunning === true 才允许续战，
+    //   若此处清成 false，维修 180s 结束后将无法自动续战，队列驱动的战斗就彻底断了。
+    // 那原先「切页 → 离线结算重启战斗 → 舰在维修启动失败 → 队列卡死」的 bug 怎么解？
+    //   改在 settleOfflineActions 判断：存在 resumeAfterRepair(type=combat) 时不重启
+    //   （见 offline.js）—— 把「队列在跑但正等维修」与「队列空闲待执行」区分开。
+    endCombatSession(state, "destroyed", { pauseQueue:false });
     Object.assign(state.combat, {
-      active:false,
-      enemies:[],
-      currentEnemy:null,
-      wave:1,
-      totalKills:0,
-      runEliteKills:0,
-      currentFormation:"",
-      lastEnemyVolley:null,
-      deathspaceChainRemaining:0,
-      deathspaceChainPending:false,
       lastStatus:failedDeathspace
         ? "攻略失败，密钥不返还；维修完成后返回来源星带。"
         : "本轮肃清失败，维修完成后返回该星带。"
@@ -1090,20 +1114,15 @@ function executeQueueItemForState(state, item, now) {
   //       currentAction，这里对称地让其他 action 启动时收尾战斗。
   if (state.combat && state.combat.active) {
     const maxHp = getCombatMaxHpFromState(state);
+    // pauseQueue:false —— 这里是队列正常切换到下一项（如战斗→冶炼），
+    // 队列必须继续跑，绝不能清 isRunning，否则会把整个队列误停。
+    endCombatSession(state, "queue-switch", { pauseQueue:false });
     Object.assign(state.combat, {
-      active:false,
       hp:{ ...maxHp },
       maxHp:{ ...maxHp },
-      enemies:[],
-      currentEnemy:null,
-      wave:1,
-      totalKills:0,
-      runEliteKills:0,
-      currentFormation:"",
       lastLoot:"",
       lastSpecialLoot:"",
       lastStatus:"已切换至其他作业，战斗停止",
-      lastEnemyVolley:null,
       runWeaponTypes:[],
       runWeaponTypesZone:null,
       runDamageDealt:0, runDamageTaken:0
@@ -1329,7 +1348,16 @@ const ShellStateActions = {
     // 避免战斗面板长期显示"完成后返回战斗"误导。
     if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat") state.resumeAfterRepair = null;
     const maxHp = getCombatMaxHpFromState(state);
-    Object.assign(state.combat, { hp:{ ...maxHp }, maxHp:{ ...maxHp }, weapon:config.recommendedWeapon || "laser", enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0, currentFormation:"", runWeaponTypes:[], runWeaponTypesZone:state.combat.zone||null, runDamageDealt:0, runDamageTaken:0, active:false });
+    // 只有「战斗进行中换舰」才算打断战斗，需要同步暂停队列（否则战斗停了队列还在执行中）。
+    // 非战斗状态换舰时队列可能在跑其它作业（采矿/冶炼），绝不能清 —— 故按 wasInCombat 传参。
+    const wasInCombat = Boolean(state.combat.active);
+    endCombatSession(state, "ship-swap", { pauseQueue: wasInCombat });
+    Object.assign(state.combat, {
+      hp:{ ...maxHp },
+      maxHp:{ ...maxHp },
+      weapon:config.recommendedWeapon || "laser",
+      runWeaponTypesZone: state.combat.zone || null
+    });
     state._dirty = true;
     return { changed:true, instance, config };
   },

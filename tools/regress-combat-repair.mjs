@@ -18,7 +18,10 @@ while ((m = re.exec(html))) scriptSources.push(m[1].replace(/\?.*$/, "").replace
 const UI_EXCLUDE = new Set([
   "js/ui/error-boundary.js", "js/ui/action-modal.js", "js/ui/shell-render.js",
   "js/ui/manufacturing-render.js", "js/ui/combat-render.js", "js/ui/planetary-render.js",
-  "js/ui/archaeology-render.js", "js/ui/booster-render.js", "js/ui/render.js", "js/core/runtime.js"
+  "js/ui/archaeology-render.js", "js/ui/booster-render.js", "js/ui/render.js", "js/core/runtime.js",
+  // 2026-09-01：这两个脚本在加载期就需要真实 DOM 结构（parentNode / insertBefore），
+  // 会把整个测试打崩（此前本测试实际一直跑不起来）。逻辑层用不到，一并排除。
+  "js/ui/taptap-portrait.js", "js/ui/ad-buff-widget.js"
 ]);
 const logicSources = scriptSources.filter((s) => !UI_EXCLUDE.has(s));
 
@@ -172,17 +175,19 @@ const NOW = 1_000_000_000_000;
   RR.set(G, "consumable:fuel", 0);
   const low = DGA(G, { type: "combat/start", enemies: [{ id: "d1", hp: 10 }], formationId: "belt_1" }, NOW);
   ok(low.changed === true, "场景4a: 0燃料出击仍成功(changed=true，非阻断)");
-  ok(low.warning === "low-fuel", "场景4a: 0燃料应返回 warning=low-fuel");
-  // 4b 燃料充足 → 无 warning
+  // 2026-09-01 修正：真实契约是 result.supplyWarning = { ammo, fuel, fuelRounds }，
+  // fuel 取值 null|"low"|"none"（不是此前断言的 result.warning === "low-fuel"，该字段从未存在）。
+  ok(low.supplyWarning && low.supplyWarning.fuel === "none", "场景4a: 0燃料应返回 supplyWarning.fuel='none'");
+  // 4b 燃料充足 → 无告警
   RR.set(G, "consumable:fuel", 1000);
   const okFuel = DGA(G, { type: "combat/start", enemies: [{ id: "d2", hp: 10 }], formationId: "belt_1" }, NOW);
-  ok(okFuel.changed === true && okFuel.warning == null, "场景4b: 充足燃料出击无 warning");
+  ok(okFuel.changed === true && okFuel.supplyWarning && okFuel.supplyWarning.fuel == null, "场景4b: 充足燃料出击无燃料告警");
   // 4c 拆掉武器 → 返回 no-weapons（changed:false，不应误报 low-fuel）
   G.inventory.ships[0].fitted.high = [];
   RR.set(G, "consumable:fuel", 0);
   const noW = DGA(G, { type: "combat/start", enemies: [{ id: "d3", hp: 10 }], formationId: "belt_1" }, NOW);
   ok(noW.changed === false && noW.reason === "no-weapons", "场景4c: 无武器返回 no-weapons");
-  ok(noW.warning == null, "场景4c: 无武器不应误报 low-fuel");
+  ok(noW.supplyWarning == null, "场景4c: 无武器不应误报燃料告警（无 supplyWarning）");
 })();
 
 // 场景5：存档序列化（JSON 往返）+ 重新迁移，repairs 不丢、幂等
@@ -251,10 +256,18 @@ const NOW = 1_000_000_000_000;
   ok(vf > 0, "场景8: 单把 t1_small_laser 的 volleyFuel 应 >0（实际 " + vf + "）");
   RR.set(G, "consumable:fuel", vf - 1);
   const low1 = DGA(G, { type: "combat/start", enemies: [{ id: "b1", hp: 10 }], formationId: "belt_1" }, NOW);
-  ok(low1.changed === true && low1.warning === "low-fuel", "场景8a: fuel=volley-1 出击成功且返回 low-fuel 非阻断告警");
+  ok(low1.changed === true && low1.supplyWarning && low1.supplyWarning.fuel === "low", "场景8a: fuel=volley-1 出击成功且返回 supplyWarning.fuel='low'（非阻断）");
+  // 8b：告警阈值是「≤100 轮满负荷」（见 getCombatSupplyWarning 与 UI 文案
+  // “燃料仅够约 N 轮满负荷行动（≤100）”）。fuel=volley 只够约 1 轮，远低于阈值，
+  // 因此仍属 low —— 原断言期望「volley 即无告警」是错的边界假设。
   RR.set(G, "consumable:fuel", vf);
-  const ok1 = DGA(G, { type: "combat/start", enemies: [{ id: "b2", hp: 10 }], formationId: "belt_1" }, NOW);
-  ok(ok1.changed === true && ok1.warning == null, "场景8b: fuel=volley 出击成功且无 warning");
+  const okVolley = DGA(G, { type: "combat/start", enemies: [{ id: "b2", hp: 10 }], formationId: "belt_1" }, NOW);
+  ok(okVolley.changed === true && okVolley.supplyWarning && okVolley.supplyWarning.fuel === "low",
+    "场景8b: fuel=volley（约1轮，远低于100轮阈值）仍返回 low");
+  // 真正「无告警」要用远超阈值的量（>100 轮）
+  RR.set(G, "consumable:fuel", vf * 101);
+  const ok1 = DGA(G, { type: "combat/start", enemies: [{ id: "b2b", hp: 10 }], formationId: "belt_1" }, NOW);
+  ok(ok1.changed === true && ok1.supplyWarning && ok1.supplyWarning.fuel == null, "场景8b: 燃料充足(>100轮)无燃料告警");
 
   // 8c：混合武器（两把激光）→ volley=2*vf；fuel 仅够一把 → 仍告警且不阻断
   ensureFixture(); resetCombat();
@@ -265,7 +278,7 @@ const NOW = 1_000_000_000_000;
   ok(vfMixed >= vfSingle * 2 - 0.001, "场景8c: 两把激光 volleyFuel 约为单把两倍（实际 " + vfMixed + "）");
   RR.set(G, "consumable:fuel", vfSingle); // 仅够一把的量
   const mixed = DGA(G, { type: "combat/start", enemies: [{ id: "b3", hp: 10 }], formationId: "belt_1" }, NOW);
-  ok(mixed.changed === true && mixed.warning === "low-fuel", "场景8c: 混合武器仅部分可负担，仍告警 low-fuel 且不阻断");
+  ok(mixed.changed === true && mixed.supplyWarning && mixed.supplyWarning.fuel === "low", "场景8c: 混合武器仅部分可负担，仍返回 supplyWarning.fuel='low' 且不阻断");
 
   // 8d：全武器不耗燃料 → fuel=0 也不误报
   ensureFixture(); resetCombat();
@@ -276,7 +289,7 @@ const NOW = 1_000_000_000_000;
   ok(vf0 === 0, "场景8d: 全武器不耗燃料时 volleyFuel 应为 0（实际 " + vf0 + "）");
   RR.set(G, "consumable:fuel", 0);
   const z = DGA(G, { type: "combat/start", enemies: [{ id: "b4", hp: 10 }], formationId: "belt_1" }, NOW);
-  ok(z.changed === true && z.warning == null, "场景8d: 全武器不耗燃料 + fuel=0 不误报 low-fuel");
+  ok(z.changed === true && z.supplyWarning && z.supplyWarning.fuel == null, "场景8d: 全武器不耗燃料 + fuel=0 不误报燃料告警");
 
   // 8e：死亡空间同样覆盖 volley-1 / volley
   ensureFixture(); resetCombat();
@@ -286,10 +299,15 @@ const NOW = 1_000_000_000_000;
   const vfds = ctx("computeVolleyFuel(gameState, COMBAT_ZONES[0])");
   RR.set(G, "consumable:fuel", vfds - 1);
   const dlow = DGA(G, { type: "combat/enterDeathspace", deathspaceId: dsId, enemies: [{ id: "d1", hp: 10 }], formationId: "ds_1" }, NOW);
-  ok(dlow.changed === true && dlow.warning === "low-fuel", "场景8e: 死亡空间 fuel=volley-1 返回 low-fuel 非阻断告警");
+  ok(dlow.changed === true && dlow.supplyWarning && dlow.supplyWarning.fuel === "low", "场景8e: 死亡空间 fuel=volley-1 返回 supplyWarning.fuel='low' 非阻断告警");
+  // 与 8b 同理：volley 量（约1轮）低于 100 轮阈值，仍属 low；无告警需 >100 轮
   RR.set(G, "consumable:fuel", vfds);
-  const dok = DGA(G, { type: "combat/enterDeathspace", deathspaceId: dsId, enemies: [{ id: "d2", hp: 10 }], formationId: "ds_1" }, NOW);
-  ok(dok.changed === true && dok.warning == null, "场景8e: 死亡空间 fuel=volley 无 warning");
+  const dokVolley = DGA(G, { type: "combat/enterDeathspace", deathspaceId: dsId, enemies: [{ id: "d2", hp: 10 }], formationId: "ds_1" }, NOW);
+  ok(dokVolley.changed === true && dokVolley.supplyWarning && dokVolley.supplyWarning.fuel === "low",
+    "场景8e: 死亡空间 fuel=volley（约1轮）仍返回 low");
+  RR.set(G, "consumable:fuel", vfds * 101);
+  const dok = DGA(G, { type: "combat/enterDeathspace", deathspaceId: dsId, enemies: [{ id: "d3", hp: 10 }], formationId: "ds_1" }, NOW);
+  ok(dok.changed === true && dok.supplyWarning && dok.supplyWarning.fuel == null, "场景8e: 死亡空间 燃料充足(>100轮)无燃料告警");
 })();
 
 // 场景9：正式存档迁移入口清理非法实例ID/时间戳，幂等，旧字段清零（问题2 三）
@@ -343,6 +361,12 @@ const NOW = 1_000_000_000_000;
 // 注意：无参路径默认 Date.now()（真实时钟），故 beginRecovery 也必须用真实时钟，二者口径一致。
 (function scenario11() {
   ensureFixture(); resetCombat();
+  // 2026-09-01 修正夹具：resumeAfterRepair 只在「队列驱动出击」时写入
+  // （beginRecovery 注释：手动出击失败不应留下续战意图，否则玩家清空队列后会被重新拉回战斗）。
+  // 原夹具未模拟队列驱动，导致标记必然为 null，断言不可能通过。
+  G.combat.queueItemId = "q_test_11";
+  G.combat.queueWavesTarget = 5;
+  G.combat.queueWavesDone = 1;
   const realNow = Date.now();
   DGA(G, { type: "combat/beginRecovery" }, realNow);
   ok(G.combat.repairs.ship_A === realNow + 180000, "场景11: A被毁后 repairs[ship_A] 写入 realNow+180000");
@@ -366,6 +390,10 @@ const NOW = 1_000_000_000_000;
 // 对照：不换舰时 A 到期仍应正常自动恢复（验证清理改动未破坏合法 auto-resume）。
 (function scenario12() {
   ensureFixture(); resetCombat();
+  // 与场景11 同理：必须是队列驱动出击才会有待恢复标记
+  G.combat.queueItemId = "q_test_12";
+  G.combat.queueWavesTarget = 5;
+  G.combat.queueWavesDone = 1;
   G.combat.activeShip = "ship_A";
   DGA(G, { type: "combat/beginRecovery" }, NOW);
   ok(G.combat.repairs.ship_A === NOW + 180000, "场景12: A被毁 repairs[ship_A]=now+180000");
@@ -384,7 +412,21 @@ const NOW = 1_000_000_000_000;
 
   // 对照：不换舰，A 到期应正常 auto-resume（确保清理改动未破坏合法路径）
   ensureFixture(); resetCombat();
+  // 与场景11/12 同理：auto-resume 依赖「队列驱动出击」留下的待恢复标记。
+  // 且 tryResumeCombatAfterRepair 会到 queue.items 里按 id 查找该队列项、
+  // 并要求 queue.status.isRunning === true，故必须构造真实队列项（否则续战被拒）。
+  G.combat.queueItemId = "q_test_12c";
+  G.combat.queueWavesTarget = 5;
+  G.combat.queueWavesDone = 1;
+  // 增量修改：保留 G.queue 原有字段（maxSize 等），整体替换会破坏后续场景（如场景14 的 queue/add）
+  if (!G.queue) G.queue = { items: [], status: {} };
+  if (!Array.isArray(G.queue.items)) G.queue.items = [];
+  G.queue.items = [{ id: "q_test_12c", skill: "combat", target: ctx("COMBAT_ZONES[0].id"), label: "战斗", count: 5 }];
+  G.queue.status = Object.assign({}, G.queue.status, { isRunning: true, activeIndex: 0, completedCount: 0, failCount: 0 });
   G.skills.combat = { lvl: 999 }; // 确保星带等级解锁，auto-resume 的 combat/start 能成功
+  // 续战要回到来源星带（beginRecovery 的 returnZoneId 取自 combat.zone），
+  // 缺 zone 会导致 auto-resume 的 combat/start 找不到目标而失败。
+  G.combat.zone = ctx("COMBAT_ZONES[0].id");
   G.combat.activeShip = "ship_A";
   DGA(G, { type: "combat/beginRecovery" }, NOW);
   sandbox.updateCombatRecovery(NOW + 180000 + 1);
@@ -429,6 +471,9 @@ const NOW = 1_000_000_000_000;
 //         修复落点：executeQueueItemForState 常规技能分支（actions.js）启动非战斗 action 前先收尾战斗。
 (function scenario14() {
   ensureFixture(); resetCombat();
+  // 重置队列：场景12(对照)遗留的战斗队列项（isRunning=true/activeIndex=0）会让
+  // 本场景的 queue/start 先去执行那个战斗项而不是采矿，必须清干净。
+  if (G.queue) { G.queue.items = []; G.queue.status = Object.assign({}, G.queue.status, { isRunning: false, activeIndex: -1, completedCount: 0, failCount: 0 }); }
   DGA(G, { type: "hangar/equipCombatShip", instanceId: "ship_A" });
   // 模拟战斗中（专注"战斗中启动其他 action"的收尾逻辑，不依赖 combat/start 诸多门槛）
   G.combat.active = true;

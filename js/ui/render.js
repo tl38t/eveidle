@@ -494,6 +494,7 @@ setInterval(runScheduledGameTick, 1000);
 
 let _lastProgressFrame = 0;
 let _lastPlanetFrame = 0;
+let _lastBoosterFrame = 0;
 (function renderLoop(frameTime) {
   RuntimeGuard.runRecoverable("renderLoop", () => {
   const visible = !document.hidden;
@@ -535,6 +536,13 @@ let _lastPlanetFrame = 0;
     const elapsedFrames = _lastPlanetFrame ? Math.min(5, (frameTime - _lastPlanetFrame) / (1000 / 60)) : 1;
     _lastPlanetFrame = frameTime;
     updatePlanetaryAnimationFrame(frameTime, elapsedFrames);
+  }
+
+  // 增强剂槽「剩余 Xs」：updateUI 是事件驱动的（不会每秒触发），常驻/吸顶后
+  // 数字会长时间不动。这里 1s 节流只改写文本节点，值未变化时跳过（成本可忽略）。
+  if (visible && frameTime - _lastBoosterFrame >= 1000) {
+    _lastBoosterFrame = frameTime;
+    if (typeof refreshBoosterSlotTimers === "function") refreshBoosterSlotTimers();
   }
   });
 

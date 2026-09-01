@@ -151,6 +151,9 @@ function renderStationPage(now) {
 
   updateStationOpsSummary(display);
 
+  // 军团入口卡（空间站页底部）：激活/锁定态随存档进度变化，整页渲染时同步刷新。
+  if (typeof LegionRender !== "undefined" && LegionRender.renderLegionEntry) LegionRender.renderLegionEntry(now);
+
   // 建设进度
   var pFill = document.getElementById("station-construction-fill");
   var pText = document.getElementById("station-construction-text");
@@ -545,6 +548,9 @@ function liveUpdateStationFields(display, now) {
     var st = (!display.body.bodyLevel || display.body.bodyLevel === 0) ? "未建立" : (!display.maintenance.operational ? "燃料不足" : "运行中");
     setLiveText(statusEl, st);
   }
+
+  // 军团入口卡：大厅施工完成（离线结算/事件后）状态可能翻转，轻量每秒同步。
+  if (typeof LegionRender !== "undefined" && LegionRender.renderLegionEntry) LegionRender.renderLegionEntry(t);
 
   // ---- 建筑（等级/在建为结构态；此处仅同步按钮 disabled 与文字，绝不重建，避免丢焦点）----
   (display.buildings || []).forEach(function(b) {

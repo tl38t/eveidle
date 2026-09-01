@@ -855,7 +855,12 @@ function syncQueueCurrentAction(state) {
 
 function settleOfflineActions(seconds, gains) {
   const queue = gameState.queue;
-  if (queue && queue.status.isRunning && queue.items.length > 0 && !gameState.currentAction.active) {
+  // 2026-09-01：战斗舰被击毁后，队列仍在运行（isRunning=true 是维修后自动续战的前提，
+  // 见 tryResumeCombatAfterRepair），但此刻玩家处于「等待 180s 维修」状态而非空闲。
+  // 若不排除这种情况，这里会立刻重新执行该战斗队列项 → 舰在维修中启动校验失败
+  // → 队列永久卡在「执行中」且战斗永远起不来。故有 combat 待恢复标记时跳过重启。
+  const awaitingRepair = Boolean(gameState.resumeAfterRepair && gameState.resumeAfterRepair.type === "combat");
+  if (queue && queue.status.isRunning && queue.items.length > 0 && !gameState.currentAction.active && !awaitingRepair) {
     let index = queue.status.activeIndex;
     if (index < 0 || index >= queue.items.length) index = 0;
     queue.status.activeIndex = index;

@@ -220,10 +220,13 @@
     if (entry && !entry._legionDelegated) {
       entry._legionDelegated = true;
       entry.addEventListener("click", function () {
-        if (entry.className.indexOf("legion-entry-active") >= 0) {
-          var sec = document.getElementById("legion-section");
-          if (sec) sec.scrollIntoView({ behavior: "smooth", block: "start" });
-        }
+        if (entry.className.indexOf("legion-entry-active") < 0) return;
+        // 军团区块已独立为侧边栏页面（#legion-section 在 #legion-panel 内），
+        // 入口卡在空间站页 → 直接切页；switchPage 为 shell 层全局函数，
+        // 沙箱/测试环境可能未加载，缺省时回退滚动（保留旧语义，绝不抛错）。
+        if (typeof switchPage === "function") { switchPage("legion"); return; }
+        var sec = document.getElementById("legion-section");
+        if (sec) sec.scrollIntoView({ behavior: "smooth", block: "start" });
       });
     }
 

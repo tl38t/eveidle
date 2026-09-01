@@ -2,6 +2,10 @@
   #equipeng-panel { overflow: visible; }
   #archaeology-panel { overflow: visible; }
   #booster-panel { overflow: visible; }
+  /* sticky 放行：#shipeng-panel 内含吸顶的增强剂槽，overflow 必须为 visible
+     否则 position:sticky 认不到 .content 这个真正的滚动祖先。
+     #combat-panel 不需要（该页槽位已改为固定插在补给与控制台之间，不吸顶）。 */
+  #shipeng-panel { overflow: visible; }
   #equipeng-panel .panel-body { position: relative; }
   #booster-panel .panel-body { position: relative; }
   #equipeng-panel .equipeng-info { padding-right: 130px; }
@@ -34,6 +38,20 @@
   .legion-msg { font-size: 12px; margin-top: 8px; min-height: 16px; color: #e8c06a; }
   .legion-warn { color: #e8645a; }
   @media (max-width: 640px) { .legion-columns { grid-template-columns: 1fr; } }
+
+  /* ── 军团入口卡（空间站页底部 → 军团页跳转；激活态可点，锁定态只读展示原因） ── */
+  .legion-entry { display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+    border-radius: 6px; border: 1px solid rgba(48,66,84,.7); background: rgba(12,28,40,.6); }
+  .legion-entry .legion-entry-icon { font-size: 20px; width: 26px; text-align: center; }
+  .legion-entry .legion-entry-title { font-size: 14px; font-weight: 700; color: #cfe3f5; }
+  .legion-entry .legion-entry-sub { font-size: 11px; color: #8a9bb0; margin-left: auto; text-align: right; }
+  .legion-entry-active { cursor: pointer; border-color: rgba(80,140,190,.55); background: rgba(24,50,72,.6); }
+  @media (hover: hover) { .legion-entry-active:hover { border-color: rgba(120,180,230,.8); background: rgba(30,60,86,.7); } }
+  .legion-entry-active:active { background: rgba(20,42,60,.8); }
+  .legion-entry-active .legion-entry-sub { color: #7ab0d8; }
+  .legion-entry-locked { cursor: default; opacity: .82; }
+  .legion-entry-locked .legion-entry-title { color: #8a9bb0; }
+  .legion-entry-locked .legion-entry-sub { color: #e8a06a; }
 
   /* ── 军团面板 UI 改版（2026-08-29）：chips 状态条 / stat 卡 / 升级卡 / 加成分组 ── */
   .lg-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }

@@ -270,6 +270,22 @@ ok(Math.abs(NPC.calculateLegionNpcXp(stActiveDoctrine5, npcPaid, 10, {}) - expec
 const stNoDoctrine = rsLegion({ buildings: { legion_hall: 1, combat_command: 5, shipyard: 5 } });
 ok(Math.abs(NPC.calculateLegionNpcXp(stNoDoctrine, npcPaid, 10, {}) - 100 * 10 * 1.0 * 1.0) < 1e-6, "无研究 → 仅管理倍率（预期 1000 XP）");
 
+// 13i 舰船尺寸 XP 倍率档位（含 2026-09-01 新增 support 档：驮星级 industrial_support 曾兜底 0.5 与未绑定同值）
+{
+  const stShip = rsLegion({ bodyLevel: 5, buildings: { legion_hall: 1 } });
+  const mkNpc = (shipInstanceId) => ({ skillId: "mining", salaryState: "paid", level: 1, xp: 0, boundShipInstanceId: shipInstanceId });
+  stShip.inventory = stShip.inventory || {}; stShip.inventory.ships = [
+    { instanceId: "i-dolphin", shipId: "dolphin" },   // industrial_support → support 档
+    { instanceId: "i-orca", shipId: "orca" },          // industrial_capital → capital 档
+    { instanceId: "i-combat", shipId: "atron" }        // 战斗舰（不匹配 industrial → 惩罚）
+  ];
+  ok(Math.abs(NPC.getNpcXpMultiplier(stShip, mkNpc("i-dolphin")) - 1.6) < 1e-9, "支援舰档：驮星级(industrial_support) → 1.6（对齐 support≈cruiser）");
+  ok(Math.abs(NPC.getNpcXpMultiplier(stShip, mkNpc("i-orca")) - 2.5) < 1e-9, "旗舰档：山海级(industrial_capital) → 2.5");
+  // atron=frigate（tier 1.0）× 不匹配惩罚 0.5 = 0.5（getShipTierMult 未导出，tier 值取自 SHIP_TIER_MULT 表）
+  ok(Math.abs(NPC.getNpcXpMultiplier(stShip, mkNpc("i-combat")) - 0.5) < 1e-9, "不匹配舰船（闪刃级 frigate）→ tier×0.5 惩罚");
+  ok(Math.abs(NPC.getNpcXpMultiplier(stShip, mkNpc(null)) - 0.5) < 1e-9, "未绑定 → 兜底 0.5（≠支援舰 1.6，修复同值问题）");
+}
+
 // 13i 旧档 technologyLevel 字段不再提供数值效果
 ok(NPC.getLegionNpcCapacity(rsLegion({ hall: 1, technologyLevel: 99 })) === 6,
   "旧 technologyLevel=99 不影响容量（仍为 6）");

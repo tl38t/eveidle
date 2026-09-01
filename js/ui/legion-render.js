@@ -22,14 +22,15 @@
     return LEGION_NPC.isLegionSystemActive(state || getState());
   }
 
-  // 侧边栏「军团」标签可见性：本体 ≥ Lv.3 且已建造军团议事大厅。
+  // 侧边栏「军团」标签可见性：本体 ≥ Lv.2 且已建造军团议事大厅（2026-09-01 由 Lv.3 下调，
+  // 与大厅建造门槛 / isLegionSystemActive 对齐——建完大厅即可进，消除「功能已激活、侧栏无入口」断档）。
   // 与 getStationDlcNpcWorkers（开发期恒放行）无关 —— 仅决定是否显示入口标签。
   MOD.isLegionTabVisible = function (state) {
     var st = state || getState();
     if (!st) return false;
     var bodyLevel = (st.station && st.station.bodyLevel) || 0;
     var hall = (st.station && st.station.buildings && st.station.buildings.legion_hall) || 0;
-    return bodyLevel >= 3 && hall >= 1;
+    return bodyLevel >= 2 && hall >= 1;
   };
 
   // —— 文案（统一接口；不连续重复由 getNpcDialogue 内部保证） ——
@@ -74,7 +75,7 @@
   }
 
   var TIER_LABEL = {
-    frigate: "护卫舰", destroyer: "驱逐舰", cruiser: "巡洋舰",
+    frigate: "护卫舰", support: "支援舰", destroyer: "驱逐舰", cruiser: "巡洋舰",
     battleship: "战列舰", capital: "旗舰", supercapital: "超级旗舰"
   };
   function shipTierLabel(type) {
@@ -173,7 +174,10 @@
   }
 
   // ================================================================
-  // 入口（空间站页面顶部）：始终可见；不满足时显示锁定原因。
+  // 入口（空间站页底部）：始终可见；不满足时显示锁定原因。
+  // 激活后点击由 LegionEvents 切换到军团页。
+  // 带签名守卫：liveUpdateStationFields 每秒调用，内容未变时跳过 innerHTML 写入
+  // （与 station-render「轻量只读刷新、绝不重建子节点」契约对齐）。
   // ================================================================
   MOD.renderLegionEntry = function (now) {
     var el = document.getElementById("legion-entry");
@@ -181,6 +185,7 @@
     var st = getState();
     if (!st) { el.style.display = "none"; return; }
     var active = isActive(st);
+    var html;
     if (!active) {
       var reasons = [];
       var bodyLevel = (st.station && st.station.bodyLevel) || 0;
@@ -188,18 +193,21 @@
       if (bodyLevel < 2) reasons.push("需空间站本体 ≥ Lv.2");
       else if (hall < 1) reasons.push("需建造军团议事大厅");
       else if (typeof getStationDlcNpcWorkers === "function" && !getStationDlcNpcWorkers(st)) reasons.push("需军团 DLC 授权");
-      el.className = "legion-entry legion-entry-locked";
-      el.innerHTML = '<span class="legion-entry-icon">🔒</span>' +
+      html = '<span class="legion-entry-icon">🔒</span>' +
         '<span class="legion-entry-title">军团大厅</span>' +
         '<span class="legion-entry-sub">未解锁：' + (reasons.join(" · ") || "条件不足") + '</span>';
+      el.className = "legion-entry legion-entry-locked";
       el.style.cursor = "default";
-      return;
+    } else {
+      html = '<span class="legion-entry-icon">🛡️</span>' +
+        '<span class="legion-entry-title">军团大厅</span>' +
+        '<span class="legion-entry-sub">已激活 · 点击进入军团页</span>';
+      el.className = "legion-entry legion-entry-active";
+      el.style.cursor = "pointer";
     }
-    el.className = "legion-entry legion-entry-active";
-    el.innerHTML = '<span class="legion-entry-icon">🛡️</span>' +
-      '<span class="legion-entry-title">军团大厅</span>' +
-      '<span class="legion-entry-sub">已激活 · 点击展开并管理</span>';
-    el.style.cursor = "pointer";
+    if (el._legionEntryHtml === html) return;
+    el._legionEntryHtml = html;
+    el.innerHTML = html;
   };
 
   // ================================================================
@@ -323,9 +331,10 @@
 
       html += '<div class="legion-upgrade-card">';
       html += '<div class="legion-upgrade-head"><span class="lu-title">议事大厅升级</span>' +
-        '<span class="lu-title">Lv.' + cur + ' <span class="lu-arrow">→</span> Lv.' + target + '</span>' +
-        '<span class="lu-meta"><i class="fa-solid fa-triangle-exclamation" style="color:#d4a843"></i> 需空间站本体 Lv.' + target +
-        '（当前 Lv.' + bodyLevel + (bodyLevel >= target ? '，已满足' : '') + '）</span></div>';
+        '<span class="lu-title">Lv.' + cur + ' <span class="lu-arrow">→</span> Lv.' + target + '</span></div>';
+      // 门槛文案已删（空间站页已明示「建筑等级 ≤ 本体等级」）；按钮判定必须与
+      // station.js 的真实门禁一致：大厅 Lv.1 需本体 ≥ Lv.2（station.js:655 特判），其余 targetLevel ≤ bodyLevel。
+      var bodyNeed = (target === 1) ? 2 : target;
 
       if (plan) {
         var dur = (typeof StationSystem !== "undefined" && StationSystem.getStationConstructionDurationMs)
@@ -360,7 +369,7 @@
           '<button class="btn primary" data-legion-upgrade-hall disabled>建设中 ' + pct.toFixed(0) + '%</button>' +
           '</div></div>';
         html += '<div class="station-construction"><div class="progress-bar"><div class="fill" style="width:' + pct.toFixed(0) + '%"></div></div></div>';
-      } else if (bodyLevel < target) {
+      } else if (bodyLevel < bodyNeed) {
         html += '<button class="btn primary" data-legion-upgrade-hall disabled>本体等级不足</button>';
       } else {
         html += '<button class="btn primary" data-legion-upgrade-hall>开始升级</button>';

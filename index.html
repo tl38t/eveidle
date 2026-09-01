@@ -9,9 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=11">
-  <link rel="stylesheet" href="./css/panels.css?v=32">
+  <link rel="stylesheet" href="./css/panels.css?v=35">
   <link rel="stylesheet" href="./css/combat.css?v=17">
-<link rel="stylesheet" href="./css/components.css?v=23">
+<link rel="stylesheet" href="./css/components.css?v=26">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=19">
 <script type="importmap">
 {
@@ -503,12 +503,12 @@
 
     <!-- 舰船工程面板 -->
     <div class="panel" id="shipeng-panel" style="display:none;">
-      <div id="ship-action-booster-slots" class="action-booster-slots" aria-label="舰船工程增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">🚀 舰船工程</span>
         <span class="text-muted" id="shipeng-header-status">待命</span>
       </div>
       <div class="panel-body">
+        <div id="ship-action-booster-slots" class="action-booster-slots" aria-label="舰船工程增强剂槽位"></div>
         <!-- 效率 + 经验条 -->
         <div class="exp-row" style="margin-bottom:10px;">
           <span class="exp-label">舰船工程</span>
@@ -590,12 +590,12 @@
 
     <!-- 装备工程面板 -->
     <div class="panel" id="equipeng-panel" style="display:none;">
-      <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">🔧 装备工程</span>
         <span class="text-muted" id="equipeng-status-text">待命</span>
       </div>
       <div class="panel-body">
+        <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位"></div>
         <div class="skill-info equipeng-info">
           <span class="skill-name">装备工程</span>
           <span class="skill-level">等级 <span class="lv-num" id="equipeng-lv-num">1</span></span>
@@ -699,7 +699,6 @@
 
     <!-- 战斗面板 -->
     <div class="panel combat-panel" id="combat-panel" style="display:none;">
-      <div id="combat-action-booster-slots" class="action-booster-slots" aria-label="战斗增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">⚔ 战斗行动</span>
         <span id="combat-header-info" class="text-muted">待命</span>
@@ -806,6 +805,8 @@
             <div class="combat-ammo-loadout" id="combat-ammo-loadout"></div>
           </div>
         </details>
+
+        <div id="combat-action-booster-slots" class="action-booster-slots" aria-label="战斗增强剂槽位"></div>
 
         <!-- EVE 风格舰船控制台：左控制、中环带、右装备（可折叠） -->
         <details class="combat-command-console" id="combat-command-console" open>
@@ -974,10 +975,16 @@
           <div id="station-effects-list"></div>
           <div id="station-cores-list" class="station-cores"></div>
         </div>
+        <!-- F. 军团入口：始终渲染，由 LegionRender.renderLegionEntry 决定激活/锁定态；
+             激活（本体≥Lv.2 且大厅已建）后点击进入军团页。此前 #legion-entry 元素缺失导致
+             本体 Lv.2 建完大厅后系统已激活却无处进入（侧栏标签要 Lv.3），此卡为原设计补落地。 -->
+        <div class="station-section">
+          <div id="legion-entry" class="legion-entry"></div>
+        </div>
       </div>
     </div>
 
-    <!-- 军团面板（独立页：本体 Lv.3 且已建军团议事大厅后，侧边栏才显示入口） -->
+    <!-- 军团面板（独立页：本体 Lv.2 且已建军团议事大厅后，侧边栏即显示入口；点击军团大厅入口卡也可进入） -->
     <div class="panel legion-panel" id="legion-panel" style="display:none;">
       <div class="panel-header">
         <span class="panel-title">🛡️ 军团</span>
@@ -1015,7 +1022,7 @@
         <span class="text-muted">军团远征网络</span>
       </div>
       <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap.html?v=1" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap.html?v=3" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
       </div>
     </div>
 
@@ -1328,7 +1335,7 @@
   <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
-  <script defer src="./js/systems/legion-npc.js?v=8"></script>
+  <script defer src="./js/systems/legion-npc.js?v=9"></script>
   <script defer src="./js/systems/legion-combat-squad.js?v=7"></script>
   <script defer src="./js/ui/action-modal.js?v=8"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
@@ -1336,17 +1343,17 @@
   <script defer src="./js/systems/combat.js?v=17"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
   <script defer src="./js/core/selectors.js?v=58"></script>
-  <script defer src="./js/core/actions.js?v=26"></script>
+  <script defer src="./js/core/actions.js?v=27"></script>
   <script defer src="./js/systems/research-protocols.js?v=3"></script>
   <script defer src="./js/ui/shell-render.js?v=57"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
   <script defer src="./js/ui/combat-render.js?v=38"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=10"></script>
-  <script defer src="./js/ui/booster-render.js?v=10"></script>
-  <script defer src="./js/ui/station-render.js?v=10"></script>
-  <script defer src="./js/ui/legion-render.js?v=14"></script>
-  <script defer src="./js/ui/legion-events.js?v=12"></script>
+  <script defer src="./js/ui/booster-render.js?v=12"></script>
+  <script defer src="./js/ui/station-render.js?v=11"></script>
+  <script defer src="./js/ui/legion-render.js?v=17"></script>
+  <script defer src="./js/ui/legion-events.js?v=13"></script>
    <script defer src="./js/platform/alliance-api.js?v=3"></script>
    <script defer src="./js/platform/alliance-policy.js?v=1"></script>
    <script defer src="./js/data/alliance-task-model.js?v=1"></script>
@@ -1388,7 +1395,7 @@
   <script defer src="./js/core/persistence.js?v=15"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
-  <script defer src="./js/ui/render.js?v=12"></script>
+  <script defer src="./js/ui/render.js?v=13"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=14"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">

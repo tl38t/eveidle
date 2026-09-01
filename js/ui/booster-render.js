@@ -183,14 +183,16 @@ function renderActionBoosterSlots(actionKey, containerId) {
     actionKey === "combat" ? "combat-panel" : null
   );
   var panelBody = panel ? panel.querySelector(".panel-body") : null;
+  // 兜底：容器被某次面板重绘销毁时重建（实测正常路径不会触发）。
+  // 注意不要再无条件 appendChild —— 那会把容器甩到 panel-body 末尾，
+  // 长面板（战斗面板 2600+px）里槽位会沉到玩家滚不到的位置（2026-09-01 修复）。
   if (!area && panelBody) {
     area = document.createElement("div");
     area.id = containerId;
     area.className = "action-booster-slots";
-    panelBody.appendChild(area);
+    panelBody.insertBefore(area, panelBody.firstChild);
   }
   if (!area) return;
-  if (panelBody && containerId !== "booster-equipped-area" && area.parentNode !== panelBody) panelBody.appendChild(area);
   var slots = (typeof getActionBoosterSlots === "function") ? getActionBoosterSlots(actionKey) : [];
   var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
   if (!slots.length) { area.innerHTML = ""; return; }
@@ -202,7 +204,8 @@ function renderActionBoosterSlots(actionKey, containerId) {
       html += '<div class="equipeng-recipe-card action-booster-local-card action-booster-slot-empty" data-action-booster-slot="' + slot + '" title="Click to load a booster">' +
         '<span class="equipeng-card-top"><span>\u589e\u5f3a\u5242\u69fd</span><span class="can-build">\u5f85\u88c5\u8f7d</span></span>' +
         '<span class="equipeng-card-icon"><i class="fa-solid fa-flask-vial"></i></span><strong>\u88c5\u8f7d\u589e\u5f3a\u5242</strong>' +
-        '<span class="equipeng-card-attributes">\u70b9\u51fb\u4ece\u4ed3\u5e93\u9009\u62e9</span><span class="equipeng-card-bottom"><span>\u7a7a\u69fd</span></span></div>';
+        '<span class="equipeng-card-attributes">\u70b9\u51fb\u4ece\u4ed3\u5e93\u9009\u62e9</span>' +
+      '<div class="action-booster-meta"><span class="action-booster-meta-text">\u7a7a\u69fd</span></div></div>';
       return;
     }
     var remaining = Math.max(0, Number(entry.remainingMs) || 0);
@@ -211,10 +214,42 @@ function renderActionBoosterSlots(actionKey, containerId) {
     html += '<div class="equipeng-recipe-card action-booster-local-card" data-action-booster-slot="' + slot + '" title="Click to replace this booster">' +
       '<span class="equipeng-card-top"><span>' + (item.qualityName || "\u589e\u5f3a\u5242") + ' · ' + item.name + '</span><span class="can-build">\u751f\u6548</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span><strong>' + item.name + '</strong>' +
-      '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, null, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + ' · \u5269\u4f59 ' + Math.ceil(remaining / 1000) + 's</span>' +
-      '<span class="equipeng-card-bottom"><span>\u5e93\u5b58 ' + Number(inventory).toLocaleString() + '</span><button type="button" class="booster-unequip-btn action-booster-unequip-btn" data-action-booster-unequip="1" data-booster-slot="' + slot + '">\u5378\u4e0b</button></span></div>';
+      '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, null, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span>' +
+      // 剩余时间 / 库存 / 卸下独立成行：原实现塞在 .equipeng-card-bottom 内，
+      // 受 .action-booster-local-card 的 max-height:72px + overflow:hidden 裁切，
+      // 手机端卸下按钮整颗被裁掉、剩余秒数被 ellipsis 截断（2026-09-01 修复）。
+      '<div class="action-booster-meta">' +
+        '<span class="action-booster-meta-text">\u5269\u4f59 ' + Math.ceil(remaining / 1000) + 's \u00b7 \u5e93\u5b58 ' + Number(inventory).toLocaleString() + '</span>' +
+        '<button type="button" class="booster-unequip-btn action-booster-unequip-btn" data-action-booster-unequip="1" data-booster-slot="' + slot + '">\u5378\u4e0b</button>' +
+      '</div></div>';
   });
   area.innerHTML = html + '</div>';
+}
+
+/* ----------------------------------------------------------------
+   剩余时间实时刷新（2026-09-01）
+   updateUI 是纯事件驱动（实测 12.8s 内自动调用 0 次），槽位做成常驻/吸顶后
+   用户会盯着「剩余 Xs」看，却长时间不动。这里只改写已有的文本节点，
+   不重建 DOM、不碰 innerHTML，且值未变化时直接跳过 —— 每秒调用一次成本可忽略。
+   ---------------------------------------------------------------- */
+function refreshBoosterSlotTimers() {
+  var nodes = document.querySelectorAll(".action-booster-slots .action-booster-meta-text");
+  if (!nodes.length) return;
+  var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
+  for (var i = 0; i < nodes.length; i++) {
+    var node = nodes[i];
+    var card = node.closest ? node.closest("[data-action-booster-slot]") : null;
+    if (!card) continue;
+    var slot = card.getAttribute("data-action-booster-slot");
+    var entry = active[slot];
+    if (!entry) continue;
+    var item = (typeof getBoosterItem === "function") ? getBoosterItem(entry.itemId) : null;
+    if (!item) continue;
+    var remaining = Math.max(0, Number(entry.remainingMs) || 0);
+    var inventory = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, item.itemId) : 0;
+    var text = "\u5269\u4f59 " + Math.ceil(remaining / 1000) + "s \u00b7 \u5e93\u5b58 " + Number(inventory).toLocaleString();
+    if (node.textContent !== text) node.textContent = text;
+  }
 }
 
 (function bindActionBoosterSlots() {

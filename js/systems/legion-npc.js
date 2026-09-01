@@ -301,8 +301,12 @@
   const MANUAL_REFRESH_MAX_MULT = 16;
 
   // 舰船尺寸阶级 → 经验倍率（按 type 后缀判定）
+  // support = 工业支援舰（驮星级 industrial_support，全游戏唯一）；尺寸定位对齐
+  // render3d/ShipContext.js 的「support ≈ cruiser（巡洋尺寸）」既有约定 → 取巡洋档 1.6。
+  // 缺此档时兜底 0.5 会与「未绑定」同值，曾导致"UI 显示适配生效、经验实际不动"。
   const SHIP_TIER_MULT = {
     frigate: 1.0,
+    support: 1.6,
     destroyer: 1.25,
     cruiser: 1.6,
     battleship: 2.0,

@@ -159,9 +159,11 @@ section("8.5 侧边栏标签显隐");
   G.station.buildings = {};
   G.station.bodyLevel = 1;
   ok(LR.isLegionTabVisible(G) === false, "本体 Lv.1 → 标签隐藏");
-  G.station.bodyLevel = 3;
-  ok(LR.isLegionTabVisible(G) === false, "本体 Lv.3 但议事大厅未建 → 标签隐藏");
+  G.station.bodyLevel = 2;
+  ok(LR.isLegionTabVisible(G) === false, "本体 Lv.2 但议事大厅未建 → 标签隐藏");
   G.station.buildings.legion_hall = 1;
+  ok(LR.isLegionTabVisible(G) === true, "本体 Lv.2 且已建议事大厅 → 标签显示（2026-09-01 门槛 Lv.3→Lv.2）");
+  G.station.bodyLevel = 3;
   ok(LR.isLegionTabVisible(G) === true, "本体 Lv.3 且已建议事大厅 → 标签显示");
 }
 

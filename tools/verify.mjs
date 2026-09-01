@@ -186,11 +186,10 @@ const optionalIds = new Set([
   // 动态创建的 ID：btn-salvage-arm-toggle 由 js/ui/combat-render.js 运行时 innerHTML 创建（打捞臂切换按钮）
   "btn-salvage-arm-toggle",
   // 动态创建的 ID：save-code-import-overlay 由 js/core/persistence.js 的 _openCodeImportModal 运行时 createElement 创建（存档/进度码导入覆盖层）
-  "save-code-import-overlay",
-  // 运行时入口元素：legion-entry 由 js/ui/legion-render.js 的 renderLegionEntry 通过 getElementById 引用并渲染，
-  // 仅在军团 DLC 激活（本体 >= Lv.2 且已建军团议事大厅）时显示；缺失时由 if(!el) return 静默降级，不崩溃。
-  // 该元素由军团 DLC 子系统在对应 UI 落点注入，不属于静态 index.html。
-  "legion-entry"
+  "save-code-import-overlay"
+  // 注：legion-entry（军团入口卡）已补落地为 index.html 静态元素（空间站页底部，2026-09-01）。
+  // 它同时保留在本可选列表中无害；DOM ID 基线数字与实际（HEAD=391 / 工作树=392）长期脱节，
+  // 属既有阻塞，待统一收敛时一并校正（届时需把下方 370 系基线 +1 计入本元素）。
 ]);
 const missingIds = [...literalIdReferences].filter((id) => !htmlIds.has(id) && !optionalIds.has(id));
 if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missingIds.join(", ")}`);
