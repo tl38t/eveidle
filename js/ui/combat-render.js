@@ -298,6 +298,26 @@ function renderCombatSquadSection(now) {
   const ui = api.getLegionCombatSquadUiState(gameState, { now: t });
   const combatNpcs = (ui.candidates || []).filter(c => c.isCombatSkill);
   host.style.display = "";
+  const capacity = Math.max(0, ui.capacity);
+  const selection = (ui.selection || []).filter(Boolean);
+  const active = Boolean(ui.active);
+  // 结构签名：仅这些维度变化才需整体重建（含原生 <select>）。
+  // 空闲（未交战）且签名未变时直接返回 —— 否则 updateCombatLiveUI 每秒 innerHTML 重建会
+  // 把用户刚打开的「挑选 NPC 上场」下拉瞬间销毁（闪退）。交战中（active）仍需每秒重建以刷新血条/状态。
+  // 注意：修复倒计时只取布尔（修复中/否），不取剩余秒数，避免空闲时每秒都因秒数变化而重建。
+  const structSig = [
+    capacity,
+    combatNpcs.map(function (c) {
+      return [c.npcId, c.level || 0, c.shipName || "", c.inSquad ? "S" : "-", c.destroyedInBattle ? "D" : "-",
+        (c.repair && c.repair.repairing) ? "R" : "-", c.salaryState || "", c.skillName || ""].join(":");
+    }).join(","),
+    selection.join(","),
+    active ? "A" : "I",
+    combatNpcs.length
+  ].join("|");
+  if (!active && structSig === host._squadStructSig) return; // 空闲且结构未变：保留打开态的下拉，不重建
+  host._squadStructSig = structSig;
+
   // 协议行
   const proto = ui.tripleUnlocked ? "三人协议已解锁" : (ui.dualUnlocked ? "双人协议已解锁" : "双人协议未解锁");
   const protoHint = ui.tripleUnlocked ? "最多可选 2 名战斗 NPC" : (ui.dualUnlocked ? "最多可选 1 名战斗 NPC（三人协议未解锁）" : "未研究「双人战斗小队」：只能玩家单舰战斗");
@@ -310,12 +330,10 @@ function renderCombatSquadSection(now) {
     host.innerHTML = head + '<div class="lcs-empty">暂无战斗技能 NPC；招募并绑定战斗舰、安装武器后即可编入小队。</div>';
     return;
   }
-  const capacity = Math.max(0, ui.capacity);
   if (capacity === 0) {
     host.innerHTML = head + '<div class="lcs-note warn">' + squadEscape(protoHint) + "：只能玩家单舰战斗。</div>";
     return;
   }
-  const selection = (ui.selection || []).filter(Boolean);
   // 槽位数 = 当前协议容量（1 或 2），按 selection 顺序映射到各槽位
   const slotNpcs = [];
   for (let i = 0; i < capacity; i++) {
@@ -325,8 +343,8 @@ function renderCombatSquadSection(now) {
   const slotsHtml = slotNpcs.map(function (npc, idx) {
     return renderSquadSlot(npc, idx, combatNpcs, selection, ui);
   }).join("");
-  const orderHtml = ui.active ? renderSquadFireOrder(ui) : "";
-  const lockedNote = ui.active ? '<div class="lcs-note">战斗进行中：成员与舰船已锁定，不可更换。</div>' : "";
+  const orderHtml = active ? renderSquadFireOrder(ui) : "";
+  const lockedNote = active ? '<div class="lcs-note">战斗进行中：成员与舰船已锁定，不可更换。</div>' : "";
   host.innerHTML = head + orderHtml + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote;
 }
 
@@ -665,7 +683,7 @@ function renderCombatDropPreview(display) {
     if (Array.isArray(preview.zoneSpecialDrops) && preview.zoneSpecialDrops.length > 0) {
       rows.push(`<div class="drop-group-title">⭐ 特殊掉落（outer/deep 独有）</div>`);
       for (const sd of preview.zoneSpecialDrops) {
-        rows.push(row("⭐", getResourceDisplayName("special:" + sd.material), `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", "special:" + sd.material));
+        rows.push(row("⭐", getResourceDisplayName(sd.resourceId), `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", sd.resourceId));
       }
     }
     if (preview.ticketDrop) {
