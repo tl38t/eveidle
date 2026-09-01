@@ -323,18 +323,6 @@
   .action-booster-meta-text { min-width:0; color:#7dd3fc; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .action-booster-meta .booster-unequip-btn { flex:0 0 auto; }
   .action-booster-unequip-btn { flex:0 0 auto; padding:1px 5px; border:1px solid #8a3a3a; border-radius:3px; background:#3a1a1a; color:#f0857b; font-size:9px; cursor:pointer; }
-  /* 窄屏：增强剂槽吸顶随行（2026-09-01）
-     生效前提：祖先链 overflow 必须为 visible —— #combat-panel / #shipeng-panel
-     已加入 panels.css 顶部放行白名单。sticky 元素必须有不透明背景，
-     否则滚动时下方内容会透上来。桌面端空间充足，不需要吸顶。 */
-  @media (max-width: 720px) {
-    .action-booster-slots { position:sticky; top:0; z-index:60; margin-top:0;
-      padding:6px 0 8px; background:#101a26; box-shadow:0 6px 12px rgba(0,0,0,.45); }
-    /* 战斗页不随行：槽位固定插在「战斗补给」与「战斗控制台」之间（2026-09-01 用户要求）。
-       ID 选择器优先级高于 .action-booster-slots，覆盖上面的吸顶规则。 */
-    #combat-action-booster-slots { position:static; margin-top:10px; padding:8px 0;
-      background:transparent; box-shadow:none; }
-  }
   .cargo-card[data-cat="交易品"] { border-left: 3px solid #e0a85d; }
 
   /* 仓库自动排序：顶层吸顶标题 / 小分类标题条 / 缩进簇（#cargo-list 保持 grid，标题与簇横跨整行，内部再嵌 grid） */

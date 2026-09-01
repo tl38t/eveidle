@@ -184,15 +184,17 @@ function renderActionBoosterSlots(actionKey, containerId) {
   );
   var panelBody = panel ? panel.querySelector(".panel-body") : null;
   // 兜底：容器被某次面板重绘销毁时重建（实测正常路径不会触发）。
-  // 注意不要再无条件 appendChild —— 那会把容器甩到 panel-body 末尾，
-  // 长面板（战斗面板 2600+px）里槽位会沉到玩家滚不到的位置（2026-09-01 修复）。
   if (!area && panelBody) {
     area = document.createElement("div");
     area.id = containerId;
     area.className = "action-booster-slots";
-    panelBody.insertBefore(area, panelBody.firstChild);
+    panelBody.appendChild(area);
   }
   if (!area) return;
+  // 原始搬移行为（2026-09-01 回滚恢复）：容器每次渲染归位到 panel-body 末尾。
+  // 唯二例外：booster-equipped-area（增强剂制造页自有位置）、
+  // combat-action-booster-slots（战斗页槽位由用户指定固定在「战斗补给」与「战斗控制台」之间，不可搬移）。
+  if (panelBody && containerId !== "booster-equipped-area" && containerId !== "combat-action-booster-slots" && area.parentNode !== panelBody) panelBody.appendChild(area);
   var slots = (typeof getActionBoosterSlots === "function") ? getActionBoosterSlots(actionKey) : [];
   var active = (typeof getActiveBoosterState === "function") ? getActiveBoosterState(gameState) : {};
   if (!slots.length) { area.innerHTML = ""; return; }

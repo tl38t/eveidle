@@ -9,9 +9,9 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=Rajdhani:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=11">
-  <link rel="stylesheet" href="./css/panels.css?v=35">
+  <link rel="stylesheet" href="./css/panels.css?v=36">
   <link rel="stylesheet" href="./css/combat.css?v=17">
-<link rel="stylesheet" href="./css/components.css?v=26">
+<link rel="stylesheet" href="./css/components.css?v=27">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=19">
 <script type="importmap">
 {
@@ -503,12 +503,12 @@
 
     <!-- 舰船工程面板 -->
     <div class="panel" id="shipeng-panel" style="display:none;">
+      <div id="ship-action-booster-slots" class="action-booster-slots" aria-label="舰船工程增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">🚀 舰船工程</span>
         <span class="text-muted" id="shipeng-header-status">待命</span>
       </div>
       <div class="panel-body">
-        <div id="ship-action-booster-slots" class="action-booster-slots" aria-label="舰船工程增强剂槽位"></div>
         <!-- 效率 + 经验条 -->
         <div class="exp-row" style="margin-bottom:10px;">
           <span class="exp-label">舰船工程</span>
@@ -590,12 +590,12 @@
 
     <!-- 装备工程面板 -->
     <div class="panel" id="equipeng-panel" style="display:none;">
+      <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位"></div>
       <div class="panel-header">
         <span class="panel-title">🔧 装备工程</span>
         <span class="text-muted" id="equipeng-status-text">待命</span>
       </div>
       <div class="panel-body">
-        <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位"></div>
         <div class="skill-info equipeng-info">
           <span class="skill-name">装备工程</span>
           <span class="skill-level">等级 <span class="lv-num" id="equipeng-lv-num">1</span></span>
@@ -1350,9 +1350,9 @@
   <script defer src="./js/ui/combat-render.js?v=38"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=10"></script>
-  <script defer src="./js/ui/booster-render.js?v=12"></script>
+  <script defer src="./js/ui/booster-render.js?v=13"></script>
   <script defer src="./js/ui/station-render.js?v=11"></script>
-  <script defer src="./js/ui/legion-render.js?v=17"></script>
+  <script defer src="./js/ui/legion-render.js?v=18"></script>
   <script defer src="./js/ui/legion-events.js?v=13"></script>
    <script defer src="./js/platform/alliance-api.js?v=3"></script>
    <script defer src="./js/platform/alliance-policy.js?v=1"></script>

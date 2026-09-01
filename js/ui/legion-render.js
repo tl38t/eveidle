@@ -173,6 +173,18 @@
     return '<span class="legion-ok">经验获取中 · +' + rate.toFixed(3) + ' XP/s · 预计升级 ' + etaText + '</span>';
   }
 
+  // 与 npcXpLiveHtml 同源，但复用卡片建立时算好的 rate/need/cap，不再重新计算经验倍率，
+  // 用于每秒轻量改写，避免重复 O(S) 舰船扫描。
+  function npcXpLiveHtmlFromData(st, npc, rate, need, cap) {
+    var xp = Number(npc.xp) || 0;
+    if ((Number(npc.level) || 1) >= cap) return '<span class="legion-ok">已达等级上限</span>';
+    if (npc.salaryState !== "paid") return '<span class="legion-warn">经验暂停：工资未正常</span>';
+    if (!(rate > 0)) return '<span class="legion-warn">经验暂停：当前无有效经验来源</span>';
+    var eta = Math.max(0, (need - xp) / rate);
+    var etaText = eta >= 60 ? Math.floor(eta / 60) + "分" + Math.floor(eta % 60) + "秒" : Math.ceil(eta) + "秒";
+    return '<span class="legion-ok">经验获取中 · +' + rate.toFixed(3) + ' XP/s · 预计升级 ' + etaText + '</span>';
+  }
+
   // ================================================================
   // 入口（空间站页底部）：始终可见；不满足时显示锁定原因。
   // 激活后点击由 LegionEvents 切换到军团页。
@@ -219,7 +231,7 @@
     var st = getState();
     var active = isActive(st);
     section.style.display = active ? "" : "none";
-    if (!active) { _legionSig = ""; return; }
+    if (!active) { _legionSig = ""; _legionNpcStructSig = ""; return; }
 
     var snap = LEGION_NPC.getLegionContributionSnapshot(st);
     var rs = LEGION_NPC.getLegionCandidateRefreshState(st);
@@ -499,7 +511,7 @@
       '<div class="legion-modal-body">' +
       '<div class="lc-detail-line">' + escapeDetailHtml(legionPersonalityName(npc.personalityId)) + ' · Lv.' + npc.level + '（上限 ' + cap + '）</div>' +
       '<div class="lc-detail-progress"><div class="progress-bar"><div class="fill" style="width:' + xpPct.toFixed(0) + '%"></div></div>' +
-      '<span>XP ' + xp.toLocaleString() + ' / ' + need.toLocaleString() + ' · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></span></div>' +
+      '<span>XP ' + Math.floor(xp).toLocaleString() + ' / ' + need.toLocaleString() + ' · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></span></div>' +
       '<div class="lc-detail-line">' + npcXpLiveHtml(st, npc) + '</div>' +
       skillSectionHtml(npc.skillId, grade, npc.level) +
       '<div class="lc-detail-section"><div class="lc-detail-label">当前贡献</div>' +
@@ -536,12 +548,33 @@
   // ================================================================
   // NPC 列表
   // ================================================================
+  // ================================================================
+  // NPC 列表
+  // 性能：原先每 tick（每秒）都整体 innerHTML 重建整张 NPC 列表，且每张卡内反复调用
+  // getNpcXpMultiplier / npcXpNoteHtml / npcXpLiveHtml（各自都含对 state.inventory.ships
+  // 的线性扫描），NPC 数 × 舰船数 的 O(N·S) 重型计算每帧都跑一遍 + 频繁 DOM 重建 → 卡顿。
+  // 改为：结构签名守卫——仅在 招募/解雇/升级/换舰/工资状态 变化时重建卡片；
+  // 实时经验数字由 updateLegionNpcLive 每秒只改写文本节点（O(N)，无舰船扫描、无 innerHTML 重建），
+  // 倍率/ETA 复用卡片建立时算好的 data-rate/data-need。
+  // ================================================================
+  var _legionNpcStructSig = "";
   MOD.renderLegionNpcs = function (snap) {
     var el = document.getElementById("legion-npcs");
     if (!el) return;
     var st = getState();
     var npcs = (st && st.legion && st.legion.npcs) || [];
-    if (!npcs.length) { el.innerHTML = '<div class="legion-warn">暂无 NPC，先招募候选人。</div>'; return; }
+    if (!npcs.length) { el.innerHTML = '<div class="legion-warn">暂无 NPC，先招募候选人。</div>'; _legionNpcStructSig = ""; return; }
+
+    // 结构签名：招募/解雇/升级/换舰/工资状态 任一变化才重建（实时 xp 数字不计）。
+    var structSig = npcs.map(function (n) {
+      return n.npcId + ":" + (n.skillGrade || "") + ":" + n.level + ":" + (n.salaryState || "") + ":" + (n.boundShipInstanceId || "-") + ":" + (n.skillId || "");
+    }).join("|");
+    if (structSig === _legionNpcStructSig && el.innerHTML) {
+      // 结构未变：仅轻量刷新实时经验文本，避免整段重建。
+      MOD.updateLegionNpcLive();
+      return;
+    }
+    _legionNpcStructSig = structSig;
 
     // 已绑定给其他 NPC 的舰船 → 不可重复选择
     var boundOthers = {};
@@ -580,20 +613,60 @@
       var pauseTxt = (n.salaryState !== "paid")
         ? ' · <span class="legion-warn">技能暂停 · 经验暂停</span>' : '';
 
-      return '<div class="legion-card lc-detail-open" data-legion-npc-detail="' + n.npcId + '" style="cursor:pointer;" title="点击查看详情">' +
+      // 经验倍率（结构恒定，建立时算一次，存 dataset 供每秒轻量改写 ETA 用）
+      var rate = LEGION_NPC.calculateLegionNpcXpPerSecond ? LEGION_NPC.calculateLegionNpcXpPerSecond(st, n) : 0;
+
+      return '<div class="legion-card lc-detail-open" data-legion-npc-detail="' + n.npcId + '" data-npc-id="' + n.npcId + '" ' +
+        'data-rate="' + rate + '" data-need="' + need + '" data-cap="' + cap + '" ' +
+        'style="cursor:pointer;" title="点击查看详情">' +
         '<span class="lc-detail-hint" data-legion-npc-detail="' + n.npcId + '" title="点击查看详情">详情</span>' +
         '<div class="lc-name">' + n.name + ' ' + gradeTagHtml(grade) + '</div>' +
         '<div class="lc-meta">' + legionPersonalityName(n.personalityId) + ' · ' + skillLabel + ' · Lv.' + n.level + '（上限 ' + cap + '）</div>' +
-        '<div class="lc-meta">XP ' + (n.xp || 0) + ' / ' + need + ' · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></div>' +
+        '<div class="lc-meta">XP <span class="lc-xp-cur">' + Math.floor(Number(n.xp) || 0) + '</span> / <span class="lc-xp-need">' + need + '</span> · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></div>' +
         '<div class="lc-meta">绑定舰船：' + shipHtml + note.shipNote + compatHtml + '</div>' +
         '<div class="lc-meta">每 4h 工资：' + (LEGION_NPC.WAGE[grade] || 0).toLocaleString() + ' · <span class="' + ss.cls + '">' + ss.text + '</span>' + pauseTxt + '</div>' +
-        '<div class="lc-meta">' + npcXpLiveHtml(st, n) + '</div>' +
+        '<div class="lc-meta"><span class="lc-xp-live">' + npcXpLiveHtmlFromData(st, n, rate, need, cap) + '</span></div>' +
         '<div class="lc-actions">' +
           '<button class="btn-mini" data-legion-bind-ship="' + n.npcId + '"' + (combatLocked ? ' disabled title="NPC 战斗中或修复中，暂不可绑定或卸下舰船"' : '') + '>绑定/更换舰船</button>' +
           '<button class="btn-mini" data-legion-dismiss="' + n.npcId + '">解雇</button>' +
         '</div>' +
         '</div>';
     }).join("");
+
+    MOD.updateLegionNpcLive();
+  };
+
+  // 每秒轻量改写：仅更新 XP 计数与「经验获取中」行的文本节点。
+  // O(N) 纯算术，无舰船扫描、无 innerHTML 重建（避免整段重排）。
+  MOD.updateLegionNpcLive = function () {
+    var st = getState();
+    if (!st || !st.legion) return;
+    var npcsById = {};
+    (st.legion.npcs || []).forEach(function (n) { npcsById[n.npcId] = n; });
+    var container = document.getElementById("legion-npcs");
+    if (!container) return;
+    var cards = container.querySelectorAll(".legion-card[data-npc-id]");
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var id = card.getAttribute("data-npc-id");
+      var n = npcsById[id];
+      if (!n) continue; // 已被解雇，下次结构重建会清理
+      var rate = parseFloat(card.getAttribute("data-rate")) || 0;
+      var need = parseInt(card.getAttribute("data-need"), 10) || 100;
+      var cap = parseInt(card.getAttribute("data-cap"), 10) || 20;
+
+      var xp = Math.floor(Number(n.xp) || 0);
+      var xpCur = card.querySelector(".lc-xp-cur");
+      if (xpCur && xpCur.textContent !== String(xp)) xpCur.textContent = xp;
+      var xpNeed = card.querySelector(".lc-xp-need");
+      if (xpNeed && xpNeed.textContent !== String(need)) xpNeed.textContent = need;
+
+      var liveEl = card.querySelector(".lc-xp-live");
+      if (liveEl) {
+        var html = npcXpLiveHtmlFromData(st, n, rate, need, cap);
+        if (liveEl.innerHTML !== html) liveEl.innerHTML = html;
+      }
+    }
   };
 
   // ================================================================

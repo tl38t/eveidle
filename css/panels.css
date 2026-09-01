@@ -2,10 +2,6 @@
   #equipeng-panel { overflow: visible; }
   #archaeology-panel { overflow: visible; }
   #booster-panel { overflow: visible; }
-  /* sticky 放行：#shipeng-panel 内含吸顶的增强剂槽，overflow 必须为 visible
-     否则 position:sticky 认不到 .content 这个真正的滚动祖先。
-     #combat-panel 不需要（该页槽位已改为固定插在补给与控制台之间，不吸顶）。 */
-  #shipeng-panel { overflow: visible; }
   #equipeng-panel .panel-body { position: relative; }
   #booster-panel .panel-body { position: relative; }
   #equipeng-panel .equipeng-info { padding-right: 130px; }
