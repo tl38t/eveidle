@@ -262,6 +262,8 @@ const gameState = {
     squad: {
       enabled: false,   // 本场战斗是否启用小队
       members: [],      // NPC 成员引用：{ npcId, shipInstanceId, active, destroyedInBattle }
+      deployables: [],  // 已部署部署物实例：{ deployableId, name }（与 members 共享小队容量，战斗循环不碰）
+      deployableStorage: [], // 已拥有但未部署的部署物（deployableId 列表；部署=生效，取消部署=召回）
       targetId: null,   // 与玩家同步的当前目标（M3 写入）
       battleId: null,   // 本次小队战斗标识
       lastRound: null,  // 本回合小队结果临时快照（战斗结束清理）
@@ -305,11 +307,41 @@ function ensureUserSettingsState(state) {
   else state.settings.confirmDiscard = Boolean(state.settings.confirmDiscard);
   if (state.settings.confirmDismantle === undefined) state.settings.confirmDismantle = true;
   else state.settings.confirmDismantle = Boolean(state.settings.confirmDismantle);
+  // 外接大型精炼泵供料开关（全局，作用于冶炼舰上全部泵件；默认开启。开关只影响下一炉）
+  if (state.settings.refineryPumpEnabled === undefined) state.settings.refineryPumpEnabled = true;
+  else state.settings.refineryPumpEnabled = Boolean(state.settings.refineryPumpEnabled);
   return state.settings;
 }
 
 function createEmptyFitting() {
   return { high: [], mid: [], low: [], rig: [] };
+}
+
+// 修复（2026-09-02）：fitted 数组长度必须等于 shipConfig.slots 的槽数。
+// 旧 createEmptyFitting 返回长度全 0 的数组，导致 firstFreeUnlockedSlot 恒 -1，
+// 新船连精炼泵（需另两类槽各 1 空闲格）都无法安装。
+function getShipSlotCounts(shipId) {
+  const data = (typeof window !== "undefined" && window.SHIP_DATA) || null;
+  if (!data) return null;
+  for (const group of Object.values(data)) {
+    if (!group || typeof group !== "object") continue;
+    const s = group[shipId];
+    if (s && s.slots) return s.slots;
+  }
+  return null;
+}
+
+// 按 shipConfig.slots 构造/补齐 fitted；只补齐不裁剪，绝不丢玩家已有装备。
+function buildFittedBySlots(shipId, existing) {
+  const slots = getShipSlotCounts(shipId) || {};
+  const out = { high: [], mid: [], low: [], rig: [] };
+  for (const slot of ["high", "mid", "low", "rig"]) {
+    const cur = Array.isArray(existing && existing[slot]) ? existing[slot].slice() : [];
+    const n = Math.max(0, Number(slots[slot]) || 0);
+    while (cur.length < n) cur.push(null);
+    out[slot] = cur;
+  }
+  return out;
 }
 
 function normalizeFitting(fitted) {
@@ -326,7 +358,7 @@ function createShipInstance(shipId, builtAt) {
     shipId,
     instanceId: "ship_" + timestamp + "_" + Math.random().toString(36).slice(2, 8),
     builtAt: timestamp,
-    fitted: createEmptyFitting(),
+    fitted: buildFittedBySlots(shipId, null),
     enhancementLevel: 0
   };
 }
@@ -340,7 +372,8 @@ function ensureShipInstances() {
     while (usedIds.has(instanceId)) instanceId += "_" + index;
     ship.instanceId = instanceId;
     usedIds.add(instanceId);
-    ship.fitted = normalizeFitting(ship.fitted);
+    // 旧存档迁移：fitted 长度不足的船在此补齐（只补不裁，已有装备保留）
+    ship.fitted = buildFittedBySlots(ship.shipId, ship.fitted);
     ship.enhancementLevel = Math.max(0, Math.floor(Number(ship.enhancementLevel) || 0));
   });
 }

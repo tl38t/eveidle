@@ -417,6 +417,11 @@
             <span class="me-label">冶炼舰：</span>
             <span id="smelting-ship-support" style="color:#71c7ec;font-weight:600;">未分配</span>
           </div>
+          <div class="smelting-info-row" id="smelting-pump-row" style="display:none;">
+            <span class="me-label">精炼泵：</span>
+            <span id="smelting-pump-state" style="color:#c4b5fd;font-weight:600;">未安装</span>
+            <button id="smelting-pump-toggle" class="pump-toggle-btn" title="关闭后泵不消耗等离子体、冶炼速度加成失效；只影响下一炉">开启中</button>
+          </div>
           <div class="smelting-info-row">
             <span class="me-label">周期：</span>
             <span id="smelting-cycle-times">20.0s → 20.0s</span>
@@ -1024,7 +1029,7 @@
         <span class="text-muted">军团远征网络</span>
       </div>
       <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap.html?v=3" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap.html?v=5" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
       </div>
     </div>
 
@@ -1324,7 +1329,7 @@
   <script defer src="./js/data/tutorial.js?v=5"></script>
   <script defer src="./js/core/tutorial-state.js?v=3"></script>
   <script defer src="./js/core/achievement-state.js?v=2"></script>
-  <script defer src="./js/core/state.js?v=6"></script>
+  <script defer src="./js/core/state.js?v=7"></script>
   <script defer src="./js/core/blueprint-runs.js?v=1"></script>
   <script defer src="./js/systems/research.js?v=4"></script>
   <script defer src="./js/core/statistics.js?v=3"></script>
@@ -1351,7 +1356,7 @@
   <script defer src="./js/systems/capital-combat.js?v=2"></script>
   <script defer src="./js/systems/combat.js?v=17"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=61"></script>
+  <script defer src="./js/core/selectors.js?v=62"></script>
   <script defer src="./js/core/actions.js?v=27"></script>
   <script defer src="./js/systems/research-protocols.js?v=4"></script>
   <script defer src="./js/ui/shell-render.js?v=60"></script>
@@ -1400,7 +1405,7 @@
   <script defer src="./js/core/leaderboard-sync-service.js?v=1"></script>
   <script defer src="./js/core/ad-service.js?v=4"></script>
   <script defer src="./js/systems/ad-buff.js?v=3"></script>
-  <script defer src="./js/ui/ad-buff-widget.js?v=17"></script>
+  <script defer src="./js/ui/ad-buff-widget.js?v=18"></script>
   <script defer src="./js/core/persistence.js?v=15"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>

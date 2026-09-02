@@ -1030,3 +1030,12 @@
   .alliance-msg { min-height: 18px; }
   .alliance-id { margin-top: 18px; word-break: break-all; }
   .alliance-diagnostic { white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; max-height: 260px; overflow: auto; padding: 12px; border: 1px solid #38516b; border-radius: 8px; background: rgba(5, 13, 23, .9); color: #bfe8ff; font: 12px/1.6 monospace; }
+
+  /* ===== 外接大型精炼泵（2026-09-02）：冶炼面板开关按钮 + 装备环带管路接口锁定态 ===== */
+  .pump-toggle-btn { margin-left: auto; padding: 2px 12px; border-radius: 4px; border: 1px solid rgba(167,139,250,0.45); background: rgba(60,45,110,0.35); color: #c4b5fd; font-family: 'Rajdhani', sans-serif; font-weight: 600; font-size: 11px; cursor: pointer; transition: all 0.2s; }
+  .pump-toggle-btn:hover { background: rgba(90,70,160,0.5); box-shadow: 0 0 10px rgba(167,139,250,0.25); }
+  .slot-segment.linked { cursor: help; }
+  .slot-segment.linked .slot-bg-locked { fill: rgba(167,139,250,0.20); stroke: rgba(167,139,250,0.55); stroke-width: 1.5; stroke-dasharray: 3 2; }
+  .slot-segment.linked .slot-icon { fill: rgba(196,181,253,0.9); }
+  .equip-select-panel .pump-locked-hint { padding: 6px 8px; font-size: 11px; line-height: 1.6; color: #c4b5fd; }
+  .equip-select-panel .equip-option.disabled-option { opacity: 0.45; cursor: not-allowed; }

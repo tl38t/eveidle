@@ -51,7 +51,8 @@ const SHIP_ASSEMBLY_LINES = [
   { id:"armor_missile", name:"装甲导弹系" },
   { id:"structure_cannon", name:"结构火炮系" },
   { id:"industrial", name:"工业系" },
-  { id:"archaeology", name:"考古系" }
+  { id:"archaeology", name:"考古系" },
+  { id:"special", name:"特殊" }
 ];
 const SHIP_ASSEMBLY_PAGE_SIZE = 20;
 const SHIP_INDUSTRIAL_IDS = new Set(["miner_frigate","gas_frigate","miner_destroyer","gas_destroyer","miner_cruiser","gas_cruiser","miner_battleship","gas_battleship","dolphin","orca"]);
@@ -67,10 +68,13 @@ function getShipComponentClass(recipeId) {
   return "integrated";
 }
 
-function getShipAssemblyLine(shipId) {
+function getShipAssemblyLine(shipIdOrRecipe) {
+  if (shipIdOrRecipe && typeof shipIdOrRecipe === "object" && shipIdOrRecipe.productKind === "deployable") return "special";
+  const recipe = (shipIdOrRecipe && typeof shipIdOrRecipe === "object") ? shipIdOrRecipe : null;
+  const shipId = (recipe ? recipe.shipId : shipIdOrRecipe) || "";
   if (SHIP_INDUSTRIAL_IDS.has(shipId)) return "industrial";
   if (SHIP_ARCHAEOLOGY_IDS.has(shipId)) return "archaeology";
-  const cfg = getShipConfigById(shipId);
+  const cfg = shipId ? getShipConfigById(shipId) : null;
   const weapon = cfg && cfg.recommendedWeapon;
   if (weapon === "missile") return "armor_missile";
   if (weapon === "cannon") return "structure_cannon";
@@ -81,7 +85,11 @@ function getShipAssemblyLine(shipId) {
   return "shield_laser";
 }
 
-function getShipRoleName(shipId) {
+function getShipRoleName(shipIdOrRecipe) {
+  if (shipIdOrRecipe && typeof shipIdOrRecipe === "object" && shipIdOrRecipe.productKind === "deployable") return "部署物";
+  const recipe = (shipIdOrRecipe && typeof shipIdOrRecipe === "object") ? shipIdOrRecipe : null;
+  const shipId = recipe ? recipe.shipId : shipIdOrRecipe;
+  if (typeof shipId !== "string" || !shipId) return "舰船";
   if (shipId.startsWith("miner_")) return "矿石采集工业舰";
   if (shipId.startsWith("gas_")) return "气体采集工业舰";
   if (shipId === "dolphin") return "工业支援巡洋舰";
@@ -103,14 +111,18 @@ function getShipAssignmentRestriction(config, actionKey, combatRecoveryActive, i
   if (actionKey === "mining" && !(bonuses.miningLaserEfficiency > 0)) return { reason:"unsupported-mining", text:"该舰船没有采矿岗位" };
   if (actionKey === "gasHarvesting" && !(bonuses.gasLaserEfficiency > 0)) return { reason:"unsupported-gas", text:"该舰船没有采气岗位" };
   if (actionKey === "refining") {
-    // 冶炼资格 = 船体自带 smeltingSpeed + 改装件（冶炼速度 rig）提供的 smeltingSpeed 之和。
+    // 冶炼资格 = 船体自带 smeltingSpeed + 改装件（冶炼速度 rig）+ 外接大型精炼泵（供料中）之和。
     // 任一来源提供冶炼效率即可承担冶炼岗位（呼应"只要带冶炼效率提升就行"）。
     let smelt = Number(bonuses.smeltingSpeed) || 0;
     if (instance && state && typeof getRigModifiers === "function") {
       const rigMods = getRigModifiers(state, instance) || {};
       smelt += Number(rigMods.smeltingSpeed) || 0;
     }
-    if (!(smelt > 0)) return { reason:"unsupported-refining", text:"该舰船没有冶炼能力（需船体或改装件提供冶炼速度）" };
+    if (instance && state && typeof getPumpModifiers === "function") {
+      const pumpMods = getPumpModifiers(state, instance);
+      smelt += Number(pumpMods.bonus) || 0;
+    }
+    if (!(smelt > 0)) return { reason:"unsupported-refining", text:"该舰船没有冶炼能力（需船体、改装件或精炼泵提供冶炼速度）" };
   }
   if (actionKey === "archaeology" && !((bonuses.archaeologyScanStrength || 0) > 0)) return { reason:"unsupported-archaeology", text:"该舰船没有考古扫描能力" };
   return null;
@@ -221,13 +233,17 @@ function getSidebarDisplayState(state) {
     }
     const base = Number(skill.lvl) || 1;
     const level = (typeof getEffectiveSkillLevel === "function") ? getEffectiveSkillLevel(state, key) : base;
+    const xp = Number(skill.xp) || 0;
+    const xpNeeded = xpForLevel(base + 1);  // 经验进度严格按基础等级，不随临时 +N 变空
     return {
       key,
       level,
       baseLevel: base,
       boosted: level > base,
-      xp:Number(skill.xp) || 0,
-      xpNeeded:xpForLevel(level + 1),
+      bonusLevels: Math.max(0, level - base),
+      xp,
+      xpNeeded,
+      xpPercent: Math.min(100, Math.floor(xp / xpNeeded * 100)),
       levelClass:level >= 60 ? "lv-high" : level >= 20 ? "lv-mid" : "lv-low"
     };
   });
@@ -236,15 +252,19 @@ function getSidebarDisplayState(state) {
 function getSkillShellDisplayState(state, viewKey) {
   const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔", archaeology:"🛰️" };
   const skill = state.skills[viewKey] || { lvl:1, xp:0 };
-  const level = Number(skill.lvl) || 1;
+  const baseLevel = Number(skill.lvl) || 1;
+  const level = (typeof getEffectiveSkillLevel === "function") ? (getEffectiveSkillLevel(state, viewKey) || baseLevel) : baseLevel;
   const xp = Number(skill.xp) || 0;
-  const xpNeeded = xpForLevel(level + 1);
+  const xpNeeded = xpForLevel(baseLevel + 1);  // 经验进度严格按基础等级，不随临时 +N 变空
   const running = Boolean(state.currentAction.active && state.currentAction.skill === viewKey);
   return {
     key:viewKey,
     name:SKILL_LABEL[viewKey] || viewKey,
     icon:icons[viewKey] || "▶",
     level,
+    baseLevel,
+    boosted: level > baseLevel,
+    bonusLevels: Math.max(0, level - baseLevel),
     xp,
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
@@ -551,6 +571,44 @@ function getRefiningOutputMultiplier(level) {
   return 1;
 }
 
+// ---- 外接大型精炼泵（slot:"any" 多槽占用件）公共结算 ----
+// 件数 = 冶炼舰 fitted 高/中/低数组中的泵锚位引用数（每件泵仅锚位 1 条引用，天然每泵计 1 次）。
+// 生效条件：全局开关开启（settings.refineryPumpEnabled，默认 true）且等离子体库存 ≥ 件数（每炉每件扣 1）。
+// 断料/关闭时 bonus=0，冶炼不中断（供料是增益条件而非运转前提）。
+function getPumpModifiers(state, instance) {
+  const result = { count:0, bonus:0, fuelPerCycle:0, resourceId:"planetary:等离子体", stock:0, enabled:true, active:false };
+  if (!state || !instance || !instance.fitted || typeof EQUIPMENT_DB === "undefined" || !EQUIPMENT_DB) return result;
+  const def = EQUIPMENT_DB["refinery_pump"];
+  if (!def || !def.pump) return result;
+  // 修复（2026-09-02）：强化无效 —— 旧实现用 def.bonuses.smeltingSpeed 基础值 × 数量，
+  // 完全没读各泵实例的 enhancementLevel。现逐台泵按自身强化等级应用效果倍率。
+  const enhanceMult = (typeof getEquipmentEnhancementEffectMultiplier === "function")
+    ? getEquipmentEnhancementEffectMultiplier : (l => 1);
+  const pumpBase = (Number(def.bonuses && def.bonuses.smeltingSpeed) || 0);
+  let bonusSum = 0;
+  for (const slotKey of ["high", "mid", "low"]) {
+    const arr = instance.fitted[slotKey];
+    if (!Array.isArray(arr)) continue;
+    for (const ref of arr) {
+      if (!ref) continue;
+      const inst = (typeof getEquipmentInstanceById === "function") ? getEquipmentInstanceById(state, ref) : null;
+      const itemId = inst ? inst.itemId : ref;
+      if (itemId === "refinery_pump") {
+        result.count += 1;
+        bonusSum += pumpBase * (inst ? enhanceMult(inst.enhancementLevel) : 1);
+      }
+    }
+  }
+  result.fuelPerCycle = result.count * ((def.fuel && Number(def.fuel.perCycle)) || 1);
+  if (def.fuel && def.fuel.resourceId) result.resourceId = def.fuel.resourceId;
+  const settings = (typeof ensureUserSettingsState === "function") ? ensureUserSettingsState(state) : null;
+  result.enabled = !(settings && settings.refineryPumpEnabled === false);
+  result.stock = ResourceRegistry.get(state, result.resourceId);
+  result.active = result.enabled && result.count > 0 && result.stock >= result.fuelPerCycle;
+  result.bonus = result.active ? bonusSum : 0;
+  return result;
+}
+
 function getSmeltingDisplayState(state, now) {
   const action = state.currentAction;
   const current = SMELTING_RECIPES.find(recipe => recipe.name === action.smeltingArea) || SMELTING_RECIPES[0];
@@ -562,6 +620,10 @@ function getSmeltingDisplayState(state, now) {
   const rigMods = (assigned.instance && typeof getRigModifiers === "function")
     ? getRigModifiers(state, assigned.instance) : {};
   const rigBonus = rigMods.smeltingSpeed || 0;
+  // 外接大型精炼泵：+10%/件 加算并入同一加法区（断料/关闭时为 0，冶炼不中断）
+  const pumpMods = (assigned.instance && typeof getPumpModifiers === "function")
+    ? getPumpModifiers(state, assigned.instance) : { count:0, bonus:0, fuelPerCycle:0, resourceId:"planetary:等离子体", stock:0, enabled:true, active:false };
+  const pumpBonus = pumpMods.bonus || 0;
   const skillEfficiency = 1 + level * 0.02;
   const stationLogisticsMultiplier = getStationLogisticsMultiplier(state, "smelt");
   // 研究批次 G：冶炼科研唯一乘子 = 1 + (allMfg + smelt)（加法汇总，绝不逐项连乘）
@@ -576,7 +638,7 @@ function getSmeltingDisplayState(state, now) {
   // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
   const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
     ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
-  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt * legionRefine;
+  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus + pumpBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt * legionRefine;
   // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（冶炼速度/产出均经此 efficiency）。
   const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
   if (adbm && adbm !== 1) efficiency = efficiency * adbm;
@@ -598,6 +660,7 @@ function getSmeltingDisplayState(state, now) {
     ship:assigned.config ? { id:assigned.config.id, name:assigned.config.name } : null,
     shipBonus,
     rigBonus,
+    pump: pumpMods,
     shipEnhanceSmelt,
     boosterSmeltSpeed,
     legionRefine,
@@ -1122,8 +1185,8 @@ function getShipEngineeringDisplayState(state, now) {
         assemblyUnlocked:el.assemblyUnlocked,
         assemblyBlockReason:el.assemblyBlockReason,
         unlocked:el.assemblyUnlocked,
-        line:getShipAssemblyLine(recipe.shipId),
-        role:getShipRoleName(recipe.shipId),
+        line:getShipAssemblyLine(recipe),
+        role:getShipRoleName(recipe),
         tier:(getShipConfigById(recipe.shipId) || {}).tier,
         hybrid:SHIP_HYBRID_IDS.has(recipe.shipId)
       };
@@ -1139,7 +1202,7 @@ function getShipEngineeringDisplayState(state, now) {
       shipyardRequiredLevel:item.shipyardRequiredLevel, hasComponents:item.hasComponents, assemblyBlockReason:item.assemblyBlockReason,
       selected:item.recipe.id === currentAssembly.id, role:item.role, tier:item.tier, hybrid:item.hybrid
     }));
-  const shipRole = getShipRoleName(currentAssembly.shipId);
+  const shipRole = getShipRoleName(currentAssembly);
   const shipFlavor = selectedShip ? selectedShip.flavor : "";
   const hybridSelected = SHIP_HYBRID_IDS.has(currentAssembly.shipId);
 
@@ -1290,16 +1353,25 @@ function formatEfficiencyBreakdown(entries, finalValue) {
 
 // 冶炼效率明细（补全：改装件 / 科研 / 脑插·冶炼 / 增强剂·冶炼速度 / 舰船强化 / 脑突触）
 function getSmeltingEfficiencyBreakdown(display) {
-  const ship = (display.shipBonus > 0 || display.rigBonus > 0)
-    ? "舰船 +" + (display.shipBonus * 100).toFixed(0) + "%" + (display.rigBonus > 0 ? " · 改装件 +" + (display.rigBonus * 100).toFixed(0) + "%" : "")
+  const pump = display.pump || null;
+  const pumpText = (pump && pump.count > 0)
+    ? (pump.active
+        ? "外接大型精炼泵 ×" + pump.count + " · +" + (pump.bonus * 100).toFixed(0) + "%（每炉扣 " + pump.resourceId.replace("planetary:", "") + " ×" + pump.fuelPerCycle + "）"
+        : (pump.enabled ? "外接大型精炼泵 ×" + pump.count + " · 断料失效（需 " + pump.resourceId.replace("planetary:", "") + " ≥" + pump.fuelPerCycle + "）" : "外接大型精炼泵 ×" + pump.count + " · 已关闭"))
+    : null;
+  const ship = (display.shipBonus > 0 || display.rigBonus > 0 || (pump && pump.bonus > 0))
+    ? "舰船 +" + (display.shipBonus * 100).toFixed(0) + "%" + (display.rigBonus > 0 ? " · 改装件 +" + (display.rigBonus * 100).toFixed(0) + "%" : "") + (pump && pump.bonus > 0 ? " · 精炼泵 +" + (pump.bonus * 100).toFixed(0) + "%" : "")
     : "无";
   const entries = [
     { label: "技能速度", detail: "1 × (1 + Lv." + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" },
-    { label: "舰船冶炼加速", detail: ship },
+    { label: "舰船冶炼加速", detail: ship }
+  ];
+  if (pumpText) entries.push({ label: "精炼泵供料", detail: pumpText });
+  entries.push(
     { label: "舰队/船坞后勤", detail: "×" + (display.stationLogisticsMultiplier || 1).toFixed(2) + "（" + ((display.stationLogistics && display.stationLogistics.text) || "未建立") + "）" },
     { label: "科研加成", detail: "×" + (display.researchMultiplier || 1).toFixed(3) },
     { label: "舰船强化", detail: "×" + (display.shipEnhanceSmelt || 1).toFixed(3) }
-  ];
+  );
   if ((display.implantRefineEff || 1) !== 1) entries.push({ label: "脑插·冶炼增效", detail: "×" + display.implantRefineEff.toFixed(3) + "（+6%）" });
   if ((display.boosterSmeltSpeed || 1) !== 1) entries.push({ label: "增强剂·冶炼速度", detail: "×" + display.boosterSmeltSpeed.toFixed(3) });
   if ((display.legionRefine || 1) !== 1) entries.push({ label: "军团 NPC·熔炉调谐", detail: "×" + display.legionRefine.toFixed(3) + "（已计入最终效率）" });
@@ -1356,9 +1428,10 @@ function getProbeAttributeSummary(probeId, compact) {
 function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   const action = state.currentAction;
   const skill = state.skills.equipmentEngineering || { lvl:1, xp:0 };
-  const level = getEffectiveSkillLevel(state, "equipmentEngineering");
+  const baseLevel = Number(skill.lvl) || 1;
+  const level = (typeof getEffectiveSkillLevel === "function") ? getEffectiveSkillLevel(state, "equipmentEngineering") : baseLevel;
   const xp = Number(skill.xp) || 0;
-  const xpNeeded = xpForLevel(level + 1);
+  const xpNeeded = xpForLevel(baseLevel + 1);  // 经验进度严格按基础等级，不随临时 +N 变空
   // 研究批次 G：装备工程科研唯一乘子 = 1 + (allMfg + equip)；与 tick/离线的 getEquipEngEfficiency 同一 API、同一结果
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "equip"]) : 1;
@@ -1445,6 +1518,9 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
   return {
     kind:"equipmentEngineering",
     level,
+    baseLevel,
+    boosted: level > baseLevel,
+    bonusLevels: Math.max(0, level - baseLevel),
     xp,
     xpNeeded,
     xpPercent:Math.min( 100, Math.floor(xp / xpNeeded * 100)),
@@ -1753,6 +1829,10 @@ function getSalvageEfficiency(state, shipInstance) {
       if (item && item.bonuses) total += (item.bonuses.salvageEfficiency || 0) * (resolved.multiplier || 1);
     }
   }
+  // 激光定向打捞单元（MTU）：部署即平加 salvageEfficiency（无强化等级、不乘装备 multiplier）。
+  // 仅 active（燃料充足）时计入；断料回基准（货柜/组件掉率不再放大）。getMtuModifiers 内部已判燃料。
+  const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+  if (mtu && mtu.active) total += mtu.salvage;
   return total;
 }
 
@@ -1779,6 +1859,46 @@ function getSalvageFuelPerKill(state, shipInstance) {
 
 function hasSalvageArmEquipped(state) {
   return getSalvageEfficiency(state) > 0;
+}
+
+// 部署物定义查询（浏览器走经典脚本顶层 const DEPLOYABLES_DB，Node 走 globalThis）。
+function getDeployableDefinition(deployableId) {
+  if (typeof DEPLOYABLES_DB !== "undefined" && DEPLOYABLES_DB) return DEPLOYABLES_DB[deployableId] || null;
+  if (typeof globalThis !== "undefined" && globalThis.DEPLOYABLES_DB) return globalThis.DEPLOYABLES_DB[deployableId] || null;
+  return null;
+}
+
+// 激光定向打捞单元（MTU）增益聚合器（唯一口径；在线/离线战斗共用）。
+//   - 部署物存于 state.combat.squad.deployables[]，与 NPC 成员共享小队容量，但战斗循环不碰它（非战斗单位）。
+//   - 断料（consumable:fuel ≤ 0）时 active=false，所有增益回基准（货柜/组件/星币/功勋不放大、不扣费）。
+// 返回字段：
+//   count        已部署单元数（≤1）
+//   salvage      平加进 getSalvageEfficiency 的 salvageEfficiency 之和（active 时才 >0）
+//   iskBonus     星币加成比例之和（active 时才 >0）
+//   lpBonus      功勋加成比例之和（active 时才 >0）
+//   fuelPerKill  每击毁一艘的扣燃料（= Σ fuelPerKill × 战斗燃料倍率），断料时为 0
+//   active       是否生效（已部署且燃料充足）
+//   outOfFuel    已部署但燃料不足
+function getMtuModifiers(state) {
+  const empty = { count:0, salvage:0, iskBonus:0, lpBonus:0, fuelPerKill:0, active:false, outOfFuel:false };
+  const sq = state && state.combat && state.combat.squad;
+  if (!sq || !Array.isArray(sq.deployables) || sq.deployables.length === 0) return empty;
+  const fuelStock = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? ResourceRegistry.get(state, "consumable:fuel") : 0;
+  // 每击毁一艘扣一次燃料；燃料≤0 → 视为断料，全部增益暂停（不崩溃、不消失、不扣费）。
+  const active = fuelStock >= 1;
+  const fuelMult = (typeof getCombatFuelMultiplierFromState === "function") ? getCombatFuelMultiplierFromState(state) : 1;
+  let salvage = 0, iskBonus = 0, lpBonus = 0, fuelPerKill = 0;
+  for (const d of sq.deployables) {
+    const def = getDeployableDefinition(d.deployableId);
+    if (!def) continue;
+    const gainMult = active ? 1 : 0;
+    salvage += (def.salvageEfficiency || 0) * gainMult;
+    iskBonus += (def.iskBonus || 0) * gainMult;
+    lpBonus += (def.lpBonus || 0) * gainMult;
+    // 燃料基准始终含倍率；仅 active 时本场才扣（断料时不扣）。
+    fuelPerKill += (def.fuelPerKill || 0) * (active ? fuelMult : 0);
+  }
+  return { count: sq.deployables.length, salvage, iskBonus, lpBonus, fuelPerKill, active, outOfFuel: !active };
 }
 
 function getCombatLevelFromState(state) {
@@ -3522,11 +3642,16 @@ function getShipFittingDisplayState(state, shipRef) {
     const equipmentRef = enabled ? fitting[type][slotIndex] || null : null;
     const resolved = equipmentRef ? resolveEquipmentReference(state, equipmentRef) : null;
     const equipment = resolved ? resolved.definition : null;
+    // 管路接口：本格为空但被某件已安装精炼泵的 reserves 锁定（fitted 值为 null）
+    const lockedBy = (enabled && !equipmentRef && Array.isArray(state.equipment && state.equipment.instances))
+      ? (state.equipment.instances.find(inst => inst && inst.installedOn === instance.instanceId && inst.reserves && inst.reserves[type] === slotIndex) || null)
+      : null;
     orbitSlots.push({
       index, type, slotIndex, enabled, equipmentRef, equipmentId: resolved ? resolved.itemId : null,
       enhancementLevel: resolved ? resolved.enhancementLevel : 0,
       name: equipment ? equipment.name : "", icon: equipment ? ITEM_ICONS[equipment.name] || "📦" : null,
-      installedInstanceId: resolved && resolved.instance ? resolved.instance.instanceId : null
+      installedInstanceId: resolved && resolved.instance ? resolved.instance.instanceId : null,
+      lockedBy: lockedBy ? lockedBy.instanceId : null
     });
   }
   const equippedIds = Object.values(fitting).flat().filter(Boolean);
@@ -3536,7 +3661,7 @@ function getShipFittingDisplayState(state, shipRef) {
     // 1. 来自 inventory 字符串池的候选
     const fromInventory = inventory.filter(id => {
       const eq = EQUIPMENT_DB[id];
-      if (!eq || eq.slot !== slot || !canFitEquipmentOnShip(eq, config)) return false;
+      if (!eq || (eq.slot !== slot && eq.slot !== "any") || !canFitEquipmentOnShip(eq, config)) return false;
       if (slot === "rig" && typeof canFitRig === "function" && !canFitRig(state, instance, id).ok) return false;
       return true;
     }).map(id => ({ id, itemId:id, name:EQUIPMENT_DB[id].name, icon:ITEM_ICONS[EQUIPMENT_DB[id].name] || "📦", enhancementLevel:0, isInstance:false }));
@@ -3547,7 +3672,7 @@ function getShipFittingDisplayState(state, shipRef) {
       fromInstances = freeInsts.map(inst => {
         const itemId = inst.itemId;
         const eq = EQUIPMENT_DB[itemId];
-        if (!eq || eq.slot !== slot || !canFitEquipmentOnShip(eq, config)) return null;
+        if (!eq || (eq.slot !== slot && eq.slot !== "any") || !canFitEquipmentOnShip(eq, config)) return null;
         return { id:inst.instanceId, itemId, name:eq.name, icon:ITEM_ICONS[eq.name] || "📦", enhancementLevel:Math.max(0, Number(inst.enhancementLevel) || 0), isInstance:true };
       }).filter(Boolean);
     }

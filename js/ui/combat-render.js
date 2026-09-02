@@ -313,7 +313,9 @@ function renderCombatSquadSection(now) {
     }).join(","),
     selection.join(","),
     active ? "A" : "I",
-    combatNpcs.length
+    combatNpcs.length,
+    "D:" + (ui.deployedCount || 0) + "/" + (ui.deployableStorage ? ui.deployableStorage.length : 0),
+    "F:" + (typeof ResourceRegistry !== "undefined" ? ResourceRegistry.get(gameState, "consumable:fuel") : 0)
   ].join("|");
   if (!active && structSig === host._squadStructSig) return; // 空闲且结构未变：保留打开态的下拉，不重建
   host._squadStructSig = structSig;
@@ -331,21 +333,32 @@ function renderCombatSquadSection(now) {
     return;
   }
   if (capacity === 0) {
-    host.innerHTML = head + '<div class="lcs-note warn">' + squadEscape(protoHint) + "：只能玩家单舰战斗。</div>";
+    host.innerHTML = head + '<div class="lcs-note warn">' + squadEscape(protoHint) + "：只能玩家单舰战斗。</div>" + renderSquadDeployables(ui, 0);
     return;
   }
-  // 槽位数 = 当前协议容量（1 或 2），按 selection 顺序映射到各槽位
-  const slotNpcs = [];
+  // 槽位数 = 当前协议容量（1 或 2），按 selection 顺序映射到各槽位。
+  // selection 项可能是 npcId 或 "deployable:<id>"（部署物前缀）；两者都视为占一格。
+  const PREFIX = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD.MTU_DEPLOYABLE_PREFIX) || "deployable:";
+  const slotEntries = [];
   for (let i = 0; i < capacity; i++) {
     const id = selection[i];
-    slotNpcs.push(id ? combatNpcs.find(c => c.npcId === id) || null : null);
+    if (!id) { slotEntries.push({ kind: "empty" }); continue; }
+    if (typeof id === "string" && id.indexOf(PREFIX) === 0) {
+      const did = id.substring(PREFIX.length);
+      const dep = (ui.deployables || []).find(d => d.deployableId === did);
+      slotEntries.push({ kind: "deployable", deployableId: did, name: dep ? dep.name : did });
+    } else {
+      const npc = combatNpcs.find(c => c.npcId === id);
+      slotEntries.push({ kind: "npc", npc: npc || null, id: id });
+    }
   }
-  const slotsHtml = slotNpcs.map(function (npc, idx) {
-    return renderSquadSlot(npc, idx, combatNpcs, selection, ui);
+  const slotsHtml = slotEntries.map(function (entry, idx) {
+    return renderSquadSlot(entry, idx, combatNpcs, selection, ui, PREFIX);
   }).join("");
   const orderHtml = active ? renderSquadFireOrder(ui) : "";
   const lockedNote = active ? '<div class="lcs-note">战斗进行中：成员与舰船已锁定，不可更换。</div>' : "";
-  host.innerHTML = head + orderHtml + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote;
+  const deployHtml = renderSquadDeployables(ui, capacity);
+  host.innerHTML = head + orderHtml + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote + deployHtml;
 }
 
 let combatConfigShipKey = "player";
@@ -392,45 +405,134 @@ function renderSquadFireOrder(ui) {
   return '<div class="lcs-fire-order"><span class="lcs-fire-order-title">本轮开火顺序</span><span class="lcs-fire-order-current">当前目标：' + squadEscape(String(ui.currentTargetId || round.targetId || "无")) + '</span><div class="lcs-fire-order-list">' + rows + '</div></div>';
 }
 
-// 单个 NPC 方块（玩家左侧）：头像 + 名字 + 下拉选角 + 三色实时血条 + 状态徽标
-function renderSquadSlot(npc, idx, allNpcs, selection, ui) {
+// 单个 NPC 方块（玩家左侧）：头像 + 名字 + 下拉选角 + 三色实时血条 + 状态徽标。
+// entry 可能为：{kind:"empty"} | {kind:"npc", npc, id} | {kind:"deployable", deployableId, name}
+function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
   const locked = ui.active;
-  const options = ['<option value="">— 选择 NPC —</option>'].concat(allNpcs.map(function (c) {
-    const otherSelected = selection.indexOf(c.npcId) >= 0 && (!npc || c.npcId !== npc.npcId);
-    const selected = npc && c.npcId === npc.npcId;
+  const kind = entry ? entry.kind : "empty";
+  const selfValue = (kind === "npc") ? entry.id
+                  : (kind === "deployable") ? (prefix + entry.deployableId)
+                  : "";
+  // deployable 选项在每个槽都常驻：让玩家从任一空槽切到 MTU，已装备也允许重选/取消。
+  // 当已装备在另一槽 → 本槽 disabled；本容量已满 → 本槽 disabled（除非 selfValue 就是它，表示可以"取消"）。
+  const deployableId = "laser_directional_salvage_unit";
+  const depValue = prefix + deployableId;
+  const depSelected = selfValue === depValue;
+  const depElsewhereSelected = selection.indexOf(depValue) >= 0 && selfValue !== depValue;
+  // 已被占用的槽位数（NPC + deployable 都算）
+  const usedSlotsNow = (ui.selection ? (ui.selection || []).filter(Boolean).length : 0);
+  const capacity = Math.max(0, ui.capacity);
+  // 容量门控：仅阻止"空槽再塞 MTU 且容量已满"。
+  // NPC→MTU 同槽互换是等量替换（数据层 setLegionSquadSelection 整组 REPLACE），永远允许，玩家看见 disabled 才奇怪。
+  const capacityWouldOverflow = !depSelected && kind === "empty" && usedSlotsNow >= capacity;
+  const depDisabled = !depSelected && (depElsewhereSelected || capacityWouldOverflow);
+  const npcOptions = allNpcs.map(function (c) {
+    const otherSelected = selection.indexOf(c.npcId) >= 0 && selfValue !== c.npcId;
+    const selected = kind === "npc" && entry.id === c.npcId;
     return '<option value="' + squadEscape(c.npcId) + '"' + (selected ? " selected" : "") + (otherSelected ? " disabled" : "") + ">" +
       squadEscape(c.name) + " Lv." + Number(c.level || 1) + " · " + squadEscape(c.skillName || "") + (c.shipName ? " · " + squadEscape(c.shipName) : "") + "</option>";
-  })).join("");
-  const badges = [];
-  if (npc) {
+  }).join("");
+  const deployableOption = '<option value="' + squadEscape(depValue) + '"' + (depSelected ? " selected" : "") + (depDisabled ? " disabled" : "") + ">🛰️ " + squadEscape("激光定向打捞单元") + " · 部署物</option>";
+  const options = ['<option value="">— 选择 NPC —</option>', deployableOption].concat(npcOptions).join("");
+  let avatar = "➕";
+  let nameText = "空位 " + (idx + 1);
+  let badges = [];
+  let cls = " empty";
+  let bars = '<div class="lcs-bars-empty">未参战</div>';
+  let statusText = "";
+  let dataAttr = "";
+  if (kind === "npc" && entry.npc) {
+    const npc = entry.npc;
+    avatar = npc.destroyedInBattle ? "💀" : "🛡️";
+    nameText = squadEscape(npc.name) + ' <small>Lv.' + Number(npc.level || 1) + "</small>";
     if (npc.inSquad && !npc.destroyedInBattle) badges.push('<span class="lcs-badge ok">出战中</span>');
     if (npc.destroyedInBattle) badges.push('<span class="lcs-badge bad">已爆船</span>');
     if (npc.repair && npc.repair.repairing) badges.push('<span class="lcs-badge warn">修复 ' + Math.ceil(npc.repair.remaining / 1000) + "s</span>");
     if (npc.salaryState && npc.salaryState !== "paid") badges.push('<span class="lcs-badge warn">欠薪</span>');
+    cls = npc.destroyedInBattle ? " destroyed" : (npc.inSquad && !npc.destroyedInBattle ? " active" : "");
+    if (npc.hp && npc.maxHp) {
+      bars = ["shield", "armor", "structure"].map(function (key) {
+        const cur = Math.max(0, Number(npc.hp[key]) || 0);
+        const max = Math.max(1, Number(npc.maxHp[key]) || 1);
+        const pct = Math.max(0, Math.min(100, Math.round(cur / max * 100)));
+        const label = key === "shield" ? "护盾" : (key === "armor" ? "装甲" : "结构");
+        return '<div class="lcs-mini-bar"><span class="lcs-mini-label">' + label + '</span><div class="lcs-mini-track"><div class="lcs-mini-fill ' + key + '" style="width:' + pct + '%"></div></div><span class="lcs-mini-val">' + cur + "</span></div>";
+      }).join("");
+    }
+    statusText = npc.statusText || "";
+    dataAttr = ' data-npc-id="' + squadEscape(npc.npcId) + '"';
+  } else if (kind === "deployable") {
+    // 部署物形态：🛰️ + 名 + 锁的 select（deployable selected），不显示 NPC 血条
+    avatar = "🛰️";
+    nameText = squadEscape(entry.name || entry.deployableId);
+    cls = " active deployable";
+    const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(entry.deployableId) : null;
+    const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(gameState) : null;
+    const activeMtu = !!(mtu && mtu.active);
+    badges.push('<span class="lcs-badge ' + (activeMtu ? "ok" : "warn") + '">' + (activeMtu ? "部署中（生效）" : "已部署（断料暂停）") + "</span>");
+    const fuelCost = mtu ? Math.max(1, Math.round(mtu.fuelPerKill)) : 0;
+    const eff = def ? ("货柜×" + (1 + def.salvageEfficiency).toFixed(1) + " · 星币/功勋+" + Math.round(def.iskBonus * 100) + "%") : "部署物";
+    statusText = squadEscape(eff) + " · 每击毁 −燃料" + fuelCost;
+    bars = '<div class="lcs-deploy-stats">' +
+      '<span class="lcs-stat"><b>货柜</b>×' + (def ? (1 + def.salvageEfficiency).toFixed(1) : "—") + '</span>' +
+      '<span class="lcs-stat"><b>星币</b>+' + Math.round((def ? def.iskBonus : 0) * 100) + '%</span>' +
+      '<span class="lcs-stat"><b>功勋</b>+' + Math.round((def ? def.lpBonus : 0) * 100) + '%</span>' +
+      '</div>';
+    dataAttr = ' data-deployable-id="' + squadEscape(entry.deployableId) + '"';
+  } else if (kind === "empty" && usedSlotsNow >= capacity && capacity > 0) {
+    statusText = "本槽已被占用（小队容量已满 " + capacity + " 格）";
   }
-  const avatar = npc ? (npc.destroyedInBattle ? "💀" : "🛡️") : "➕";
-  const cls = npc ? (npc.destroyedInBattle ? " destroyed" : (npc.inSquad && !npc.destroyedInBattle ? " active" : "")) : " empty";
-  let bars = '<div class="lcs-bars-empty">未参战</div>';
-  if (npc && npc.hp && npc.maxHp) {
-    bars = ["shield", "armor", "structure"].map(function (key) {
-      const cur = Math.max(0, Number(npc.hp[key]) || 0);
-      const max = Math.max(1, Number(npc.maxHp[key]) || 1);
-      const pct = Math.max(0, Math.min(100, Math.round(cur / max * 100)));
-      const label = key === "shield" ? "护盾" : (key === "armor" ? "装甲" : "结构");
-      return '<div class="lcs-mini-bar"><span class="lcs-mini-label">' + label + '</span><div class="lcs-mini-track"><div class="lcs-mini-fill ' + key + '" style="width:' + pct + '%"></div></div><span class="lcs-mini-val">' + cur + "</span></div>";
-    }).join("");
-  }
-  const statusText = npc ? squadEscape(npc.statusText || "") : "";
-  return '<div class="lcs-slot' + (cls ? " " + cls : "") + '" id="lcs-slot-' + idx + '"' + (npc ? ' data-npc-id="' + squadEscape(npc.npcId) + '"' : '') + '>' +
+  return '<div class="lcs-slot' + (cls ? " " + cls : "") + '" id="lcs-slot-' + idx + '"' + dataAttr + '>' +
     '<div class="lcs-slot-head">' +
       '<span class="lcs-slot-avatar">' + avatar + "</span>" +
-      '<span class="lcs-slot-name">' + (npc ? squadEscape(npc.name) + ' <small>Lv.' + Number(npc.level || 1) + "</small>" : "空位 " + (idx + 1)) + "</span>" +
+      '<span class="lcs-slot-name">' + nameText + "</span>" +
     "</div>" +
     '<select class="lcs-slot-select" data-slot="' + idx + '"' + (locked ? " disabled" : "") + ">" + options + "</select>" +
     '<div class="lcs-mini-bars">' + bars + "</div>" +
     (badges.length ? '<div class="lcs-slot-badges">' + badges.join("") + "</div>" : "") +
     (statusText ? '<div class="lcs-slot-status">' + statusText + "</div>" : "") +
     "</div>";
+}
+// 部署物（激光定向打捞单元）面板：已部署（生效/断料）+ 库存可部署；部署=生效，取消部署=召回。
+function renderSquadDeployables(ui, capacity) {
+  const deployed = (ui && ui.deployables) || [];
+  const storage = (ui && ui.deployableStorage) || [];
+  const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(gameState) : null;
+  let html = '<div class="lcs-deployables">';
+  html += '<div class="lcs-deploy-title"><i>🛰️</i> 部署物（激光定向打捞单元）</div>';
+  if (deployed.length === 0 && storage.length === 0) {
+    html += '<div class="lcs-deploy-empty">未拥有；请于舰船总装「特殊」线制造。占用小队 1 格，提高战利品产出、消耗燃料。</div>';
+    html += "</div>";
+    return html;
+  }
+  deployed.forEach(function (d) {
+    const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(d.deployableId) : null;
+    const active = !!(mtu && mtu.active);
+    const fuelCost = mtu ? Math.max(1, Math.round(mtu.fuelPerKill)) : (def ? def.fuelPerKill : 0);
+    const eff = def ? ("货柜×" + (1 + def.salvageEfficiency).toFixed(1) + " · 星币/功勋+" + Math.round(def.iskBonus * 100) + "%") : "";
+    html += '<div class="lcs-deploy-card deployed' + (active ? "" : " outoffuel") + '">' +
+      '<span class="lcs-deploy-name">' + squadEscape(d.name) + "</span>" +
+      '<span class="lcs-deploy-effects">' + squadEscape(eff) + " · 每击毁 -燃料" + fuelCost + "</span>" +
+      '<span class="lcs-deploy-status ' + (active ? "on" : "off") + '">' + (active ? "生效中" : "断料暂停") + "</span>" +
+      '<button class="lcs-deploy-btn undeploy" data-undeploy="' + squadEscape(d.deployableId) + '">取消部署</button>' +
+      "</div>";
+  });
+  if (storage.length > 0) {
+    const used = (ui.selection ? ui.selection.length : 0) + deployed.length;
+    const canDeploy = (capacity || 0) > 0 && used < (capacity || 0);
+    storage.forEach(function (id) {
+      const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(id) : null;
+      const defName = def ? def.name : id;
+      html += '<div class="lcs-deploy-card stored">' +
+        '<span class="lcs-deploy-name">' + squadEscape(defName) + "</span>" +
+        '<span class="lcs-deploy-effects">已拥有 · 待部署</span>' +
+        '<button class="lcs-deploy-btn deploy" data-deploy="' + squadEscape(id) + '"' + (canDeploy ? "" : " disabled") + ">部署（占 1 格）</button>" +
+        "</div>";
+    });
+    if (!canDeploy) html += '<div class="lcs-deploy-hint">小队格位不足：需空出 1 个共享格（与 NPC 成员互斥）才能部署。</div>';
+  }
+  html += "</div>";
+  return html;
 }
 function bindCombatSquadUI() {
   const host = document.getElementById("combat-squad-section");
@@ -456,6 +558,26 @@ function bindCombatSquadUI() {
         const reason = api.JOIN_REASONS && api.JOIN_REASONS[res.reason] ? api.JOIN_REASONS[res.reason] : res.reason;
         showToast("⚠ " + reason);
       }
+    }
+    renderCombatSquadSection(Date.now());
+  });
+  // 部署物：部署 / 取消部署（事件委托，点击）
+  host.addEventListener("click", function (event) {
+    const btn = event.target && event.target.closest ? event.target.closest("[data-deploy],[data-undeploy]") : null;
+    if (!btn || btn.disabled) return;
+    const api = legionSquadApi();
+    if (!api) return;
+    let res = null;
+    if (btn.dataset.undeploy) {
+      const fn = api.undeployDeployable;
+      if (typeof fn === "function") res = fn(gameState, btn.dataset.undeploy);
+    } else if (btn.dataset.deploy) {
+      const fn = api.deployDeployable;
+      if (typeof fn === "function") res = fn(gameState, btn.dataset.deploy);
+    }
+    if (res && res.changed === false && res.reason && typeof showToast === "function") {
+      const reason = api.JOIN_REASONS && api.JOIN_REASONS[res.reason] ? api.JOIN_REASONS[res.reason] : res.reason;
+      showToast("⚠ " + reason);
     }
     renderCombatSquadSection(Date.now());
   });

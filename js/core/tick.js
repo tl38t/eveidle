@@ -154,6 +154,13 @@ function gameTick() {
       while (gameState.currentAction.progress >= actualTime) {
         if (ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre) < 1) { stopOrSkip(); updateUI(); return; }
         gameState.currentAction.progress -= actualTime; ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, 1);
+        // 外接大型精炼泵供料：每炉每件扣 1（扣前重检库存；断料时下一 tick 效率自动回落，不中断当前炉）
+        if (smeltingState.pump && smeltingState.pump.count > 0 && smeltingState.pump.enabled) {
+          const pumpNeed = smeltingState.pump.fuelPerCycle;
+          if (ResourceRegistry.get(gameState, smeltingState.pump.resourceId) >= pumpNeed) {
+            ResourceRegistry.spend(gameState, smeltingState.pump.resourceId, pumpNeed);
+          }
+        }
         let output = Math.max(1, Math.floor(recipe.baseOutput * getRefiningOutputMultiplier(smeltingState.level)));
         // 脑插·冶炼双生：3% 概率本次产出×2
         if (Math.random() < getImplantDoubleOutputChance(gameState, "refining")) output *= 2;
@@ -276,10 +283,22 @@ function gameTick() {
           if (!hasEnoughShipAssemblyComponents(recipe)) { stopOrSkip(); updateUI(); return; }
           gameState.currentAction.progress -= actualTime;
           deductShipAssemblyComponents(recipe);
-          if (!gameState.inventory.ships) gameState.inventory.ships = [];
-          gameState.inventory.ships.push(createShipInstance(recipe.shipId));
-          addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
-          GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
+          if (recipe.productKind === "deployable") {
+            // 部署物产出：注入小队部署槽（自动部署；满则召回库存）。不进 inventory.ships。
+            if (!gameState.combat.squad.deployables) gameState.combat.squad.deployables = [];
+            if (!gameState.combat.squad.deployableStorage) gameState.combat.squad.deployableStorage = [];
+            const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(recipe.deployableId) : null;
+            const where = gameState.combat.squad.deployables.length < 1 ? "deployed" : "storage";
+            if (where === "deployed") gameState.combat.squad.deployables.push({ deployableId: recipe.deployableId, name: def ? def.name : recipe.name });
+            else if (!gameState.combat.squad.deployableStorage.includes(recipe.deployableId)) gameState.combat.squad.deployableStorage.push(recipe.deployableId);
+            addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
+            GameEvents.emit("manufacturing:completed", { branch:"deployable", recipeId:recipe.id, deployableId:recipe.deployableId, where, quantity:1, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
+          } else {
+            if (!gameState.inventory.ships) gameState.inventory.ships = [];
+            gameState.inventory.ships.push(createShipInstance(recipe.shipId));
+            addSkillXpToState(gameState, key, recipe.xp, { job: key }); actionCompleted = true;
+            GameEvents.emit("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:1, cycles:1, time:recipe.time, xp:recipe.xp }, { offline:false });
+          }
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });

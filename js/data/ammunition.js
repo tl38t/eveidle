@@ -25,6 +25,7 @@ const AMMO_ENG_RECIPES = [
 const EQUIPMENT_ENGINEERING_CATEGORIES = [
   { id:"mining", name:"采矿装备", icon:"fa-solid fa-gem" },
   { id:"gas", name:"采气装备", icon:"fa-solid fa-cloud" },
+  { id:"smelting", name:"冶炼装备", icon:"fa-solid fa-fire" },
   { id:"collect_boost", name:"采集增益", icon:"fa-solid fa-arrow-up" },
   { id:"drones", name:"无人机", icon:"fa-solid fa-satellite-dish" },
   { id:"weapons", name:"武器系统", icon:"fa-solid fa-crosshairs" },

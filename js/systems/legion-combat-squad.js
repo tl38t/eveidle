@@ -59,7 +59,7 @@
   // —— 小队默认结构（唯一事实来源；state.js 默认值与本函数保持一致）——
   // lastRound：本回合小队结果临时快照（战斗结束清理），不参与存档语义。
   function createDefaultSquad() {
-    return { enabled: false, members: [], targetId: null, battleId: null, lastRound: null, pendingNpcIds: [] };
+    return { enabled: false, members: [], deployables: [], deployableStorage: [], targetId: null, battleId: null, lastRound: null, pendingNpcIds: [] };
   }
 
   // —— state.combat.squad 幂等迁移（旧档缺字段补默认值；重复调用结果不变）——
@@ -81,6 +81,12 @@
       const kept = s.members.filter(m => m && typeof m === "object" && m.npcId != null);
       if (kept.length !== s.members.length) { s.members = kept; touched = true; }
     }
+    if (!Array.isArray(s.deployables)) { s.deployables = []; touched = true; }
+    else {
+      const dk = s.deployables.filter(d => d && typeof d === "object" && d.deployableId != null);
+      if (dk.length !== s.deployables.length) { s.deployables = dk; touched = true; }
+    }
+    if (!Array.isArray(s.deployableStorage)) { s.deployableStorage = []; touched = true; }
     if (s.targetId === undefined) { s.targetId = null; touched = true; }
     if (s.battleId === undefined) { s.battleId = null; touched = true; }
     if (s.lastRound === undefined) { s.lastRound = null; touched = true; }
@@ -383,6 +389,56 @@
     return { changed: true };
   }
 
+  // —— 部署物（激光定向打捞单元等）：容量共享原语 ——
+  // 最大部署数 1；与 NPC 成员共享 state.combat.squad 容量（members.length + deployables.length ≤ capacity）。
+  // 制造完成：优先自动部署，满则转入 deployableStorage（召回待部署，不丢失）。
+  const MTU_MAX_DEPLOYED = 1;
+  // NPC select 选项里"虚拟装备一台激光定向打捞单元"的特殊 id 前缀（与 npcId 同空间）。
+  // 走向：拆给 setLegionSquadSelection 的 deployable 同步分支（不动 storage；与"工程制造+手动部署"双轨制）。
+  const MTU_DEPLOYABLE_PREFIX = "deployable:";
+  function addDeployableToSquad(state, deployableId) {
+    const squad = ensureCombatSquadState(state);
+    if (!squad || !deployableId) return { changed: false, reason: "no-squad" };
+    const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(deployableId) : null;
+    const name = def ? def.name : deployableId;
+    if (squad.deployables.length < MTU_MAX_DEPLOYED) {
+      squad.deployables.push({ deployableId: deployableId, name: name });
+      markDirty(state);
+      return { changed: true, where: "deployed", deployableId: deployableId };
+    }
+    if (!squad.deployableStorage.includes(deployableId)) squad.deployableStorage.push(deployableId);
+    markDirty(state);
+    return { changed: true, where: "storage", deployableId: deployableId };
+  }
+
+  // 从库存部署（占用 1 个共享格；与 NPC 成员互斥抢格）
+  function deployDeployable(state, deployableId) {
+    const squad = ensureCombatSquadState(state);
+    if (!squad || !deployableId) return { changed: false, reason: "no-squad" };
+    if (squad.deployables.length >= MTU_MAX_DEPLOYED) return { changed: false, reason: "deploy-full" };
+    const idx = squad.deployableStorage.indexOf(deployableId);
+    if (idx < 0) return { changed: false, reason: "not-in-storage" };
+    const capacity = getLegionSquadCapacity(state);
+    if (squad.members.length + squad.deployables.length >= capacity) return { changed: false, reason: "squad-full" };
+    squad.deployableStorage.splice(idx, 1);
+    const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(deployableId) : null;
+    squad.deployables.push({ deployableId: deployableId, name: def ? def.name : deployableId });
+    markDirty(state);
+    return { changed: true, deployableId: deployableId };
+  }
+
+  // 取消部署（召回库存；部署=生效，取消部署=关闭）
+  function undeployDeployable(state, deployableId) {
+    const squad = ensureCombatSquadState(state);
+    if (!squad || !deployableId) return { changed: false, reason: "no-squad" };
+    const idx = squad.deployables.findIndex(d => d && d.deployableId === deployableId);
+    if (idx < 0) return { changed: false, reason: "not-deployed" };
+    squad.deployables.splice(idx, 1);
+    if (!squad.deployableStorage.includes(deployableId)) squad.deployableStorage.push(deployableId);
+    markDirty(state);
+    return { changed: true, deployableId: deployableId };
+  }
+
   // 结束小队战斗：清理 squad 临时状态；不清理 NPC 本体的 destroyed / repairUntil / 舰船 HP
   function endLegionSquadBattle(state) {
     const squad = ensureCombatSquadState(state);
@@ -427,6 +483,9 @@
         npcId: m.npcId, shipInstanceId: m.shipInstanceId,
         active: Boolean(m.active), destroyedInBattle: Boolean(m.destroyedInBattle)
       })),
+      deployables: squad.deployables.map(d => ({ deployableId: d.deployableId, name: d.name })),
+      deployableStorage: squad.deployableStorage.slice(),
+      deployedCount: squad.deployables.length,
       capacity: getLegionSquadCapacity(state),
       dualUnlocked: isLegionDualSquadUnlocked(state),
       tripleUnlocked: isLegionTripleSquadUnlocked(state)
@@ -687,29 +746,65 @@
     return squad.pendingNpcIds.slice();
   }
 
-  // 战前选择：写入 squad.pendingNpcIds。战斗中（squad.enabled）禁止修改（成员锁定）。
-  // 防重复绑定：同次调用去重 + 按容量钳制 + 统一走 canLegionNpcJoinCombat 资格口径。
+  // 战前选择：写入 squad.pendingNpcIds，并按 MTU_DEPLOYABLE_PREFIX 同时维护 deployables。
+  // 战斗中（squad.enabled）禁止修改（成员锁定）。
+  // 防重复绑定：同次调用去重 + 按容量钳制（NPC + deployable 共享 capacity）+ 统一走 canLegionNpcJoinCombat 资格口径。
+  // deployable 语义：以"本次 requested 的 deployable id 列表"为权威；旧 deployable id 不在新列表里就剔除。
+  //   这样：玩家切走 select 里 deployable 的那项 → 对应 MTU 自动从 deployables 消失（与"虚拟装备"语义一致）。
+  //   双轨制保留：工程制造完成的 `addDeployableToSquad`（自动部署或入 storage）和手动 `deployDeployable`
+  //   仍然走 storage 路径，与本函数的"虚拟装备"互不干扰。
   function setLegionSquadSelection(state, npcIds, opts) {
     opts = opts || {};
     const squad = ensureCombatSquadState(state);
-    if (!squad) return { changed: false, reason: "no-state", npcIds: [], skipped: [] };
-    if (squad.enabled) return { changed: false, reason: "squad-locked", npcIds: getLegionSquadSelection(state), skipped: [] };
+    if (!squad) return { changed: false, reason: "no-state", npcIds: [], deployableIds: [], skipped: [] };
+    if (squad.enabled) return { changed: false, reason: "squad-locked", npcIds: getLegionSquadSelection(state), deployableIds: (Array.isArray(squad.deployables) ? squad.deployables.map(d => d.deployableId) : []), skipped: [] };
     const capacity = getLegionSquadCapacity(state);
-    if (capacity <= 0) return { changed: false, reason: "dual-squad-locked", npcIds: [], skipped: [] };
+    if (capacity <= 0) return { changed: false, reason: "dual-squad-locked", npcIds: [], deployableIds: [], skipped: [] };
     const requested = Array.isArray(npcIds) ? npcIds : [npcIds];
-    const accepted = [];
-    const skipped = [];
+    // 拆分 NPC vs deployable（用 MTU_DEPLOYABLE_PREFIX 前缀识别）。null/空跳过。
+    const npcReq = [];
+    const depReq = [];
     for (const id of requested) {
       if (id == null) continue;
-      if (accepted.indexOf(id) >= 0) continue; // 防重复绑定
-      if (accepted.length >= capacity) { skipped.push({ npcId: id, reason: "squad-full" }); continue; }
+      if (typeof id === "string" && id.indexOf(MTU_DEPLOYABLE_PREFIX) === 0) {
+        const rest = id.substring(MTU_DEPLOYABLE_PREFIX.length);
+        if (rest && depReq.indexOf(rest) < 0) depReq.push(rest);
+      } else if (typeof id === "string" || typeof id === "number") {
+        if (npcReq.indexOf(id) < 0) npcReq.push(id);
+      }
+    }
+    // deployable 集合：以本次 depReq 为权威（去重 + 硬上限 MTU_MAX_DEPLOYED 截断）。
+    const depHardCap = Math.min(MTU_MAX_DEPLOYED, capacity);
+    const cappedDep = depReq.slice(0, depHardCap);
+    const skippedDep = depReq.slice(depHardCap).map(did => ({ kind: "deployable", deployableId: did, reason: "deploy-full" }));
+    // NPC 入选：剩余容量 = capacity - cappedDep.length（deployable 已占的）
+    const accepted = [];
+    const skipped = [];
+    const seen = new Set();
+    for (const id of npcReq) {
+      if (seen.has(id)) continue; // 防重复
+      if (accepted.length + cappedDep.length >= capacity) {
+        skipped.push({ kind: "npc", npcId: id, reason: "squad-full" });
+        continue;
+      }
       const verdict = canLegionNpcJoinCombat(state, id, opts);
-      if (!verdict.ok) { skipped.push({ npcId: id, reason: verdict.reason }); continue; }
+      if (!verdict.ok) { skipped.push({ kind: "npc", npcId: id, reason: verdict.reason }); continue; }
+      seen.add(id);
       accepted.push(id);
     }
+    // 写入 pendingNpcIds
     squad.pendingNpcIds = accepted;
+    // 同步 deployables：以本次 cappedDep 为权威——旧 deployable id 没在 cappedDep 就被淘汰。
+    const curIds = (Array.isArray(squad.deployables) ? squad.deployables : []).map(d => d.deployableId);
+    const curSame = curIds.length === cappedDep.length && curIds.every((v, i) => v === cappedDep[i]);
+    if (!curSame) {
+      squad.deployables = cappedDep.map(id => {
+        const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(id) : null;
+        return { deployableId: id, name: def ? def.name : id };
+      });
+    }
     markDirty(state);
-    return { changed: true, npcIds: accepted.slice(), skipped: skipped };
+    return { changed: true, npcIds: accepted.slice(), deployableIds: cappedDep.slice(), skipped: skipped.concat(skippedDep) };
   }
 
   function clearLegionSquadSelection(state) {
@@ -758,7 +853,18 @@
       active: active,
       squadEnabled: active,
       lockedReason: dual ? null : "dual-squad-locked",
-      selection: getLegionSquadSelection(state),
+      // UI 用的合并选择：先 NPC（pendingNpcIds）+ deployable（已虚拟装备的 MTU）。deployable 用 "deployable:<id>" 前缀。
+      selection: (function(){
+        const npcSel = getLegionSquadSelection(state);
+        const depSel = squad && Array.isArray(squad.deployables)
+          ? squad.deployables.map(d => MTU_DEPLOYABLE_PREFIX + d.deployableId).filter(Boolean)
+          : [];
+        return npcSel.concat(depSel);
+      })(),
+      deployables: squad ? squad.deployables.map(d => ({ deployableId: d.deployableId, name: d.name })) : [],
+      deployableStorage: squad ? squad.deployableStorage.slice() : [],
+      deployedCount: squad ? squad.deployables.length : 0,
+      maxDeploy: MTU_MAX_DEPLOYED,
       currentTargetId: squad && squad.targetId != null ? squad.targetId : null,
       lastRound: squad && squad.lastRound ? {
         attacked: Number(squad.lastRound.attacked) || 0,
@@ -1457,6 +1563,12 @@
     addLegionNpcToCombatSquad: addLegionNpcToCombatSquad,
     removeLegionNpcFromCombatSquad: removeLegionNpcFromCombatSquad,
     endLegionSquadBattle: endLegionSquadBattle,
+    // 部署物（激光定向打捞单元等）操作
+    addDeployableToSquad: addDeployableToSquad,
+    deployDeployable: deployDeployable,
+    undeployDeployable: undeployDeployable,
+    MTU_MAX_DEPLOYED: MTU_MAX_DEPLOYED,
+    MTU_DEPLOYABLE_PREFIX: MTU_DEPLOYABLE_PREFIX,
     // 只读快照
     getLegionCombatSquadState: getLegionCombatSquadState,
     // M2：伤害倍率 / 舰船属性（显式实例 + 排除脑插）

@@ -89,8 +89,25 @@ const SHIP_ASSEMBLY_RECIPES = [
   { id:"tracer", name:"追迹级", shipId:"tracer", level:15, time:45, xp:60, requiresBlueprint:false, componentCost:{destroyer_integrated_hull:3,destroyer_power_core:3,destroyer_functional_system:4} },
   { id:"starmap", name:"星图级", shipId:"starmap", level:35, time:70, xp:100, requiresBlueprint:false, componentCost:{cruiser_integrated_hull:4,cruiser_power_core:5,cruiser_functional_system:4} },
   { id:"farscope", name:"远镜级", shipId:"farscope", level:55, time:100, xp:160, requiresBlueprint:false, componentCost:{battleship_integrated_hull:6,battleship_power_core:5,battleship_functional_system:5} },
-  { id:"illuminator", name:"启明级", shipId:"illuminator", level:80, time:320, xp:500, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:10} }
+  { id:"illuminator", name:"启明级", shipId:"illuminator", level:80, time:320, xp:500, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:10} },
+  // ---- 部署物：激光定向打捞单元（占据小队 1 格，独立产出战利品增益，消耗燃料；经「特殊」线产出，非舰船）----
+  { id:"laser_directional_salvage_unit", name:"激光定向打捞单元", productKind:"deployable", deployableId:"laser_directional_salvage_unit", level:55, time:110, xp:80, requiresBlueprint:false, materialCost:{ "三钛合金":5400, "生物质":270, "等离子体":150, "钷":30 } }
 ];
+
+// ---- 部署物定义表（经舰船总装「特殊」线产出，非舰船；实例存于 state.combat.squad.deployables[]）----
+// 复用三个大型同位素标记打捞器（salvageEfficiency 0.70）之和 = 2.10 → 货柜/组件掉率 ×3.1。
+// 断料（consumable:fuel ≤ 0）时全部增益暂停：货柜/组件/星币/功勋回基准，不扣费、不消失。
+const DEPLOYABLES_DB = {
+  laser_directional_salvage_unit: {
+    id: "laser_directional_salvage_unit",
+    name: "激光定向打捞单元",
+    salvageEfficiency: 2.10, // 货柜/组件掉率（加算进 getSalvageEfficiency 的 Σ）
+    iskBonus: 0.10,          // +10% 星币（每击毁一艘）
+    lpBonus: 0.10,           // +10% 功勋（清波/全通/清区）
+    fuelPerKill: 120         // 每击毁一艘扣一次燃料 = 5 × 大型打捞臂燃料(8) × 3(开启态) = 120，再乘战斗燃料倍率（含电容/区域/军团/舰船）
+  }
+};
+if (typeof window !== "undefined") window.DEPLOYABLES_DB = DEPLOYABLES_DB;
 
 // ---- 舰船工程：新手战舰属性表（参照第7节） ----
 const STARTER_SHIPS = {
@@ -629,4 +646,4 @@ const SHIP_DATA = {
 };
 if (typeof window !== "undefined") window.SHIP_DATA = SHIP_DATA;
 // 增补 Node 导出（仅供测试 / legion-npc 查 shipId→type），不改动任何舰船数值与浏览器语义。
-if (typeof module !== "undefined" && module.exports) module.exports = { SHIP_DATA: SHIP_DATA };
+if (typeof module !== "undefined" && module.exports) module.exports = { SHIP_DATA: SHIP_DATA, DEPLOYABLES_DB: DEPLOYABLES_DB };

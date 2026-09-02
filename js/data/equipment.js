@@ -147,6 +147,17 @@ const EQUIPMENT_DB = {
   "blood_mineral_assimilation_apoc": { id:"blood_mineral_assimilation_apoc", name:"赤誓矿物同化注入器·终焉型", slot:"low", level:85, time:200, xp:150, cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"赤誓教团装备生产许可S":10}, bonuses:{miningLaserEfficiency:1.1}, faction:"blood", sourceZoneId:"blood_outer_reliquary", shipTypes:["industrial_capital"], requiresBlueprint:true },
   "blood_salvage_injector_apoc": { id:"blood_salvage_injector_apoc", name:"赤誓残骸打捞注入器·终焉型", slot:"low", level:85, time:200, xp:150, cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"赤誓教团装备生产许可S":10}, bonuses:{salvageEfficiency:1.1}, salvageFuelPerKill:10, faction:"blood", sourceZoneId:"blood_outer_reliquary", shipTypes:["capital","supercapital","archaeology_capital"], requiresBlueprint:true },
   "sansha_gas_assimilation_apoc": { id:"sansha_gas_assimilation_apoc", name:"静默集群气体同化注入器·终焉型", slot:"low", level:85, time:200, xp:150, cost:{"三钛合金":2000,"超噬矿":40,"铷":15,"磁场聚合物":50,"莫尔石":5,"静默集群装备生产许可S":10}, bonuses:{gasLaserEfficiency:1.1}, faction:"sansha", sourceZoneId:"sansha_outer_array", shipTypes:["industrial_capital"], requiresBlueprint:true },
+
+  // ===== 外接大型精炼泵（2026-09-02 定稿）：可安装于高/中/低槽任意一格（slot:"any"），
+  //   安装时锁定另两类槽各 1 个空闲格作为管路接口（装备实例 anchor/reserves 记录，聚合器零改动）。
+  //   冶炼速度 +10% 可叠加，与船体/改装同一加法区；每冶炼周期消耗等离子体 ×1/件（fuel 字段），
+  //   断料自动降级不中断冶炼；可在冶炼面板「精炼泵」行开关（开关只影响下一炉）。
+  "refinery_pump": { id:"refinery_pump", name:"外接大型精炼泵", slot:"any", level:40, time:100, xp:70,
+    cost:{"三钛合金":450,"类银超金属":160,"同位聚合体":36,"稀有气体":18,"等离子体":30},
+    bonuses:{smeltingSpeed:0.10},
+    shipTypes:["industrial_frigate","industrial_destroyer","industrial_cruiser","industrial_support","industrial_battleship","industrial_capital"],
+    fuel:{ resourceId:"planetary:等离子体", perCycle:1 },
+    pump:true },
 };
 
 // 势力装备许可经济平衡：档位许可消耗与掉落节奏同步（D/C/B/A/S = 2/3/5/6/8）。
@@ -557,6 +568,7 @@ function getBlueprintStoreCatalogItems() {
 function getEquipmentRecipeCategory(equipment) {
   if (equipment.slot === "rig") return "rigs";
   if (equipment.archaeology) return "archaeology";
+  if (equipment.pump) return "smelting"; // 外接大型精炼泵：冶炼装备顶层分类
   if (equipment.combat && equipment.combat.kind === "weapon") return "weapons";
   // 损伤控制单元（damageControl）属防御类，归「防御维修」；与护盾扩展/回充器/装甲维修器同标签。
   if ((equipment.combat && (equipment.combat.kind === "repair" || equipment.combat.kind === "damageControl")) || equipment.id === "shield_ext_small") return "defense";
@@ -662,7 +674,7 @@ var EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly).
   category:getEquipmentRecipeCategory(eq)
 }));
 
-const EQUIPMENT_SLOT_NAMES = { high:"高槽", mid:"中槽", low:"低槽", rig:"改装槽" };
+const EQUIPMENT_SLOT_NAMES = { high:"高槽", mid:"中槽", low:"低槽", rig:"改装槽", any:"高/中/低任意" };
 const EQUIPMENT_BONUS_NAMES = {
   miningEfficiency:"采矿效率",
   gasEfficiency:"气体采集效率",
@@ -721,6 +733,12 @@ function getEquipmentAttributeLines(equipmentRef) {
   const eq = typeof equipmentRef === "string" ? EQUIPMENT_DB[equipmentRef] : equipmentRef;
   if (!eq) return [];
   const lines = ["槽位：" + (EQUIPMENT_SLOT_NAMES[eq.slot] || eq.slot)];
+  // 外接大型精炼泵：多槽占用 + 供料说明（2026-09-02 定稿）
+  if (eq.pump) {
+    lines.push("占用：高、中、低槽各一格（1 格安装 + 2 格管路接口）");
+    lines.push("供料：每冶炼周期消耗 " + eq.fuel.resourceId.replace("planetary:", "") + " ×" + eq.fuel.perCycle + " / 件");
+    lines.push("断料自动失效，可在冶炼面板「精炼泵」行开关；多件叠加，效果与消耗同步叠加。");
+  }
   for (const [key, value] of Object.entries(eq.bonuses || {})) {
     lines.push((EQUIPMENT_BONUS_NAMES[key] || key) + " " + formatEquipmentBonusValue(key, value));
   }
@@ -754,8 +772,12 @@ function getEquipmentAttributeText(equipmentRef, separator) {
 // 旗舰限定角标：由 shipTypes 数据驱动（非名字判定）。返回 {kind,label} 或 null。
 // kind: "combat"（战斗旗舰） | "ind"（工业旗舰）；label 用于提示文案。
 // 考古舰型（archaeology_*）不显示角标。
+// 全工业舰（6 类 industrial_* 全含，如外接大型精炼泵）显示「工业舰」角标，不误标为工业旗舰。
+const ALL_INDUSTRIAL_SHIP_TYPES = ["industrial_frigate", "industrial_destroyer", "industrial_cruiser", "industrial_support", "industrial_battleship", "industrial_capital"];
 function getShipTypesFlag(shipTypes) {
   if (!Array.isArray(shipTypes) || shipTypes.length === 0) return null;
+  const allIndustrial = ALL_INDUSTRIAL_SHIP_TYPES.every(t => shipTypes.includes(t));
+  if (allIndustrial) return { kind:"ind", label:"全部工业舰", allIndustrial:true };
   const combat = shipTypes.includes("capital") || shipTypes.includes("supercapital");
   const ind = shipTypes.includes("industrial_capital");
   if (!combat && !ind) return null;
@@ -773,13 +795,16 @@ function getShipTypesFlag(shipTypes) {
 function getShipTypesFlagBadge(shipTypes, variant) {
   const f = getShipTypesFlag(shipTypes);
   if (!f) return "";
+  // 全工业舰（如外接大型精炼泵）不显示角标：工业舰通用件无限定语义（用户 2026-09-02 拍板），
+  // 属性行「适用舰体：全部工业舰」文字仍保留。
+  if (f.allIndustrial) return "";
   const isInd = f.kind === "ind";
   const icon = isInd ? "🏭" : "🚩";
   const tip = "仅可装备于：<b>" + f.label + "</b>";
   if (variant === "ee") {
     return '<span class="ee-flag ' + f.kind + '">' + icon + '<span class="tip">' + tip + "</span></span>";
   }
-  const text = isInd ? "工业旗舰" : "战斗旗舰";
+  const text = f.allIndustrial ? "工业舰" : (isInd ? "工业旗舰" : "战斗旗舰");
   return '<span class="flag-badge ' + f.kind + '">' + icon + " " + text + '<span class="tip">' + tip + "</span></span>";
 }
 

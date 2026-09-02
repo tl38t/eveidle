@@ -853,15 +853,16 @@ function openBlueprintProductModal(eq, blueprintName) {
     backdrop._esc = e => { if (e.key === "Escape" && backdrop.style.display === "flex") closeItemDetailModal(); };
     document.addEventListener("keydown", backdrop._esc);
   }
-  const slotLabel = { high: "高槽", mid: "中槽", low: "低槽" }[eq.slot] || "装备";
+  const slotLabel = { high: "高槽", mid: "中槽", low: "低槽", any: "高/中/低任意" }[eq.slot] || "装备";
   let typeLabel = "工业装备";
+  if (eq.pump) typeLabel = "冶炼装备";
   if (eq.combat) {
     if (eq.combat.kind === "weapon") typeLabel = ({ laser: "激光武器", missile: "导弹武器", cannon: "射弹武器" }[eq.combat.weaponType] || "武器");
     else if (eq.combat.kind === "repair") typeLabel = ({ shield: "护盾维修", armor: "装甲维修", structure: "结构维修" }[eq.combat.target] || "维修装备");
   } else if (eq.bonuses) {
-    if (eq.bonuses.miningEfficiency || eq.bonuses.gasEfficiency || eq.bonuses.miningLaserEfficiency || eq.bonuses.gasLaserEfficiency) typeLabel = "采矿/工业装备";
+    if (eq.pump || eq.bonuses.miningEfficiency || eq.bonuses.gasEfficiency || eq.bonuses.miningLaserEfficiency || eq.bonuses.gasLaserEfficiency) typeLabel = "采矿/工业装备";
   }
-  const bonusLabels = { miningEfficiency: "采矿效率", gasEfficiency: "气云效率", miningLaserEfficiency: "采矿激光效率", gasLaserEfficiency: "气云激光效率", shieldCapacity: "护盾容量" };
+  const bonusLabels = { miningEfficiency: "采矿效率", gasEfficiency: "气云效率", miningLaserEfficiency: "采矿激光效率", gasLaserEfficiency: "气云激光效率", shieldCapacity: "护盾容量", smeltingSpeed: "冶炼速度" };
   const bonusLines = [];
   if (eq.bonuses) for (const k in eq.bonuses) bonusLines.push((bonusLabels[k] || k) + " +" + Math.round(eq.bonuses[k] * 100) + "%");
   const combatLines = [];
@@ -3563,9 +3564,11 @@ function buildOrbit() {
   for (const ring of [180, 210, 150]) { const circle = document.createElementNS(namespace, "circle"); circle.setAttribute("cx", center); circle.setAttribute("cy", center); circle.setAttribute("r", ring); circle.setAttribute("class", ring === 180 ? "orbit-ring-glow" : ring === 210 ? "orbit-ring-outer" : "orbit-ring-inner"); svg.appendChild(circle); }
   display.orbitSlots.forEach(slot => {
     const angle = slot.index * segment - Math.PI / 2 + segment / 2;
-    const group = document.createElementNS(namespace, "g"); group.setAttribute("class", "slot-segment " + slot.type + (slot.enabled ? "" : " disabled"));
-    const marker = document.createElementNS(namespace, "circle"); marker.setAttribute("cx", center + radius * Math.cos(angle)); marker.setAttribute("cy", center + radius * Math.sin(angle)); marker.setAttribute("r", 22); marker.setAttribute("class", slot.equipmentId ? "slot-bg-active" : "slot-bg"); group.appendChild(marker);
-    const label = document.createElementNS(namespace, "text"); label.setAttribute("x", center + radius * Math.cos(angle)); label.setAttribute("y", center + radius * Math.sin(angle) + 5); label.setAttribute("text-anchor", "middle"); label.setAttribute("class", "slot-icon"); label.textContent = slot.icon || ORBIT_TYPE_ICONS[slot.type]; group.appendChild(label);
+    // 外接大型精炼泵管路接口：本格为空但被某泵 reserves 锁定 → 紫色虚线 🔗 态（可点击查看占用来源）
+    const isLinked = slot.enabled && !slot.equipmentId && slot.lockedBy;
+    const group = document.createElementNS(namespace, "g"); group.setAttribute("class", "slot-segment " + slot.type + (slot.enabled ? (isLinked ? " linked" : "") : " disabled"));
+    const marker = document.createElementNS(namespace, "circle"); marker.setAttribute("cx", center + radius * Math.cos(angle)); marker.setAttribute("cy", center + radius * Math.sin(angle)); marker.setAttribute("r", 22); marker.setAttribute("class", slot.equipmentId ? "slot-bg-active" : (isLinked ? "slot-bg-locked" : "slot-bg")); group.appendChild(marker);
+    const label = document.createElementNS(namespace, "text"); label.setAttribute("x", center + radius * Math.cos(angle)); label.setAttribute("y", center + radius * Math.sin(angle) + 5); label.setAttribute("text-anchor", "middle"); label.setAttribute("class", "slot-icon"); label.textContent = isLinked ? "🔗" : (slot.icon || ORBIT_TYPE_ICONS[slot.type]); group.appendChild(label);
     if (slot.enabled) group.addEventListener("click", event => { event.stopPropagation(); openOrbitSelect(slot.index); });
     svg.appendChild(group);
   });
@@ -3668,10 +3671,21 @@ function openOrbitSelect(index) {
       options.innerHTML = currentBar + hint + destroyButton + (stacks.length
         ? stacks.map(item => renderEquipOptionDuo(item, curEq, true)).join("")
         : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
+    } else if (slot.enabled && !slot.equipmentId && slot.lockedBy) {
+      // 外接大型精炼泵管路接口：只读说明（fitted 值为 null，由泵实例 reserves 锁定）
+      const pumpInst = (state.equipment && Array.isArray(state.equipment.instances))
+        ? state.equipment.instances.find(inst => inst && inst.instanceId === slot.lockedBy) : null;
+      const pumpName = (pumpInst && EQUIPMENT_DB[pumpInst.itemId] && EQUIPMENT_DB[pumpInst.itemId].name) || "外接大型精炼泵";
+      options.innerHTML = currentBar +
+        '<div class="pump-locked-hint">🔗 本格为<b>管路接口</b>，被 ' + pumpName + "（" + slot.lockedBy + "）锁定。<br>卸下对应精炼泵后自动释放，fitted 值保持 null。</div>";
     } else {
       // 「卸下装备」置底，避免占据首屏视线
       const unequipBtn = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>';
-      options.innerHTML = currentBar + stacks.map(item => renderEquipOptionDuo(item, curEq, false)).join("") + unequipBtn;
+      // 精炼泵安装提示：任意高/中/低槽可装，安装时锁定另两类槽各 1 格
+      const pumpHint = (stacks.some(item => { const def = EQUIPMENT_DB[item.itemId]; return def && def.pump; }))
+        ? '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 外接大型精炼泵可安装于任意槽位，安装时将锁定另两类槽各 1 个空闲格作为管路接口</div>'
+        : "";
+      options.innerHTML = currentBar + pumpHint + stacks.map(item => renderEquipOptionDuo(item, curEq, false)).join("") + unequipBtn;
     }
   panel.style.left = "auto"; panel.style.right = "-10px"; panel.style.top = "50%"; panel.style.transform = "translateY(-50%)"; panel.classList.add("active");
 }
@@ -4411,6 +4425,8 @@ function installTutorialWidgetListeners() {
       else if (!result.changed && result.reason === "equipment-unavailable") showToast("该装备不存在或已被使用");
       else if (!result.changed && result.reason === "equipment-installed") showToast("该装备已安装在其他舰船上");
       else if (!result.changed && result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能改装");
+      else if (!result.changed && result.reason === "slot-reserved") showToast("该槽位是精炼泵的管路接口，卸下对应精炼泵后方可使用");
+      else if (!result.changed && result.reason === "no-pipe-slot") showToast("安装失败：另两类槽需各有 1 个空闲格作为精炼泵管路接口");
       else if (!result.changed && result.reason) showToast("操作失败：" + result.reason);
     }
     const panel = document.getElementById("equipSelectPanel"); if (panel) panel.classList.remove("active");

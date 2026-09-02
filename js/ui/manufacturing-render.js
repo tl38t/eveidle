@@ -367,7 +367,7 @@ function renderEquipEngPage(now) {
     const lm = display.stationLogisticsMultiplier || 1;
     eqLog.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2);
   }
-  const level = document.getElementById("equipeng-lv-num"); if (level) level.textContent = display.level;
+  const level = document.getElementById("equipeng-lv-num"); if (level) level.textContent = display.level + (display.boosted ? " (+" + display.bonusLevels + ")" : "");
   const xp = document.getElementById("equipeng-exp-value"); if (xp) xp.textContent = Math.floor(display.xp).toLocaleString() + " / " + display.xpNeeded.toLocaleString();
   const fill = document.getElementById("equipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   renderEquipEngTabs(display);

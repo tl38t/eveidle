@@ -773,13 +773,16 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const c = state.combat;
   const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
   const roll = (typeof rng === "function") ? rng : Math.random;
+  // 激光定向打捞单元（MTU）增益：部署即生效（断料 active=false 全部回基准）。
+  const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
   // v2：标准化战利品字典（仅记录战斗系统自身发放的正向奖励；ISK 也在此汇总）。
   const lootGained = {};
   const addLoot = (resourceId, quantity) => {
     const q = Number(quantity) || 0;
     if (resourceId && q > 0) lootGained[resourceId] = (lootGained[resourceId] || 0) + q;
   };
-  const isk = Math.round(enemy.iskDrop * zone.iskMulti);
+  // 星币：MTU +10%（断料不放大，iskBonus 已为 0）
+  const isk = Math.round(enemy.iskDrop * zone.iskMulti * (1 + (mtu ? mtu.iskBonus : 0)));
   ResourceRegistry.add(state, "currency:isk", isk);
   addLoot("currency:isk", isk);
   enemy.defeated = true;
@@ -817,6 +820,11 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     const salvageFuelAmt = Math.max(1, Math.round(salvageBase * fuelMultiplier));
     ResourceRegistry.spend(state, "consumable:fuel", salvageFuelAmt);
   }
+  // 激光定向打捞单元（MTU）：每击毁一艘扣一次燃料（= Σ fuelPerKill × 战斗燃料倍率）；断料 active=false → 不扣。
+  if (mtu && mtu.active && mtu.fuelPerKill > 0) {
+    const mtuFuelAmt = Math.max(1, Math.round(mtu.fuelPerKill));
+    ResourceRegistry.spend(state, "consumable:fuel", mtuFuelAmt);
+  }
   // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才触发；死亡空间不触发，与货柜一致）
   if (!deathspace && state.combat.salvageArmActive && typeof hasSalvageArmEquipped === "function" && hasSalvageArmEquipped(state)) {
     const isoCost = getSalvageComponentQty(enemy.kind); // 1/2/3，与组件数量一致
@@ -840,6 +848,25 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
         c.lastSalvage.components.push(compId + "×" + qty);
         c.lastLoot += " · 残骸组件 " + compId + " ×" + qty;
       }
+    }
+  }
+  // 激光定向打捞单元（MTU）：部署即独立产出舰船组件，不依赖打捞臂/同位素/主动开关；断料不触发。
+  // 掉率与打捞臂同公式 min(base*(1+getSalvageEfficiency),0.5)，getSalvageEfficiency 已含 MTU 的 2.10（叠加打捞臂）。
+  if (!deathspace && mtu && mtu.active && mtu.count > 0) {
+    c.lastSalvage = c.lastSalvage || { attempts:0, hits:0, isoSpent:0, components:[] };
+    c.lastSalvage.attempts++;
+    const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[enemy.kind]) || 0;
+    const chance = Math.min(baseChance * (1 + getSalvageEfficiency(state)), 0.5);
+    if (roll() < chance) {
+      c.lastSalvage.hits++;
+      const tier = getSalvageComponentTier(enemy.level);
+      const ids = (typeof SALVAGE_COMPONENT_IDS !== "undefined" && SALVAGE_COMPONENT_IDS[tier]) || SALVAGE_COMPONENT_IDS[""];
+      const compId = ids[Math.floor(Math.random() * ids.length)];
+      const qty = getSalvageComponentQty(enemy.kind);
+      ResourceRegistry.add(state, "component:" + compId, qty);
+      addLoot("component:" + compId, qty);
+      c.lastSalvage.components.push(compId + "×" + qty);
+      c.lastLoot += " · 残骸组件 " + compId + " ×" + qty;
     }
   }
   const coreRoll = roll();
@@ -892,12 +919,15 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
   const c = state.combat;
   const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
   const theRng = (typeof rng === "function") ? rng : Math.random;
-  const waveLp = site.waveLp || 0;
+  // MTU 功勋 +10%（断料不放大）
+  const mtuLp = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+  const mtuLpMult = (mtuLp && mtuLp.active && mtuLp.lpBonus > 0) ? (1 + mtuLp.lpBonus) : 1;
+  const waveLp = Math.round((site.waveLp || 0) * mtuLpMult);
   ResourceRegistry.add(state, "currency:lp", waveLp);
   c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + getCombatCurrencyDisplayName("lp", "功勋") + " +" + waveLp;
   doEmit("combat:deathspaceWaveCleared", { deathspaceId:site.id, zoneId:zone.id, wave:c.wave, lp:waveLp });
   if (c.wave >= site.maxWave) {
-    const clearLp = site.clearLpBonus || 0;
+    const clearLp = Math.round((site.clearLpBonus || 0) * mtuLpMult);
     ResourceRegistry.add(state, "currency:lp", clearLp);
     if (!c.deathspaceClears || typeof c.deathspaceClears !== "object") c.deathspaceClears = {};
     c.deathspaceClears[site.id] = (c.deathspaceClears[site.id] || 0) + 1;
@@ -992,6 +1022,9 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   const c = state.combat;
   const doEmit = (typeof emit === "function") ? emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {});
   const theRng = (typeof rng === "function") ? rng : Math.random;
+  // MTU 功勋 +10%（断料不放大）
+  const mtuLp = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+  const mtuLpMult = (mtuLp && mtuLp.active && mtuLp.lpBonus > 0) ? (1 + mtuLp.lpBonus) : 1;
   if (getLivingCombatEnemies(c).length > 0) return false;
   // 普通星带并入队列：每清一波累计 queueWavesDone（跨维修累计），达标即终结队列项并推进。
   if (c.queueItemId && c.queueWavesTarget > 0) {
@@ -1010,7 +1043,7 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   }
   const maxWave = zone.maxWave || 20;
   if (c.wave >= maxWave) {
-    const lp = zone.clearLp || 0;
+    const lp = Math.round((zone.clearLp || 0) * mtuLpMult);
     ResourceRegistry.add(state, "currency:lp", lp);
     if (!c.zoneClears || typeof c.zoneClears !== "object") c.zoneClears = {};
     c.zoneClears[zone.id] = (c.zoneClears[zone.id] || 0) + 1;

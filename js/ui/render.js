@@ -143,6 +143,23 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   }
   const output = document.getElementById("smelting-output-qty"); if (output) output.textContent = display.output;
   const support = document.getElementById("smelting-ship-support"); if (support) support.textContent = display.shipBonus > 0 ? display.ship.name + " · 速度 +" + (display.shipBonus * 100).toFixed(0) + "%" : "未分配";
+  // 外接大型精炼泵：状态行 + 供料开关（仅在冶炼舰已安装泵时显示该行）
+  const pumpRow = document.getElementById("smelting-pump-row");
+  const pumpState = document.getElementById("smelting-pump-state");
+  const pumpToggle = document.getElementById("smelting-pump-toggle");
+  if (pumpRow) pumpRow.style.display = (display.pump && display.pump.count > 0) ? "flex" : "none";
+  if (pumpState && display.pump) {
+    const p = display.pump;
+    const fuelName = String(p.resourceId || "").replace("planetary:", "");
+    if (!p.enabled) pumpState.textContent = "已关闭（不消耗" + fuelName + "）";
+    else if (p.active) pumpState.textContent = "×" + p.count + " · 供料中 +" + (p.bonus * 100).toFixed(0) + "%（每炉扣 " + fuelName + " ×" + p.fuelPerCycle + "）";
+    else pumpState.textContent = "×" + p.count + " · 断料失效（需 " + fuelName + " ≥" + p.fuelPerCycle + "）";
+    pumpState.style.color = p.active ? "#a7f3d0" : (p.enabled ? "#f0b4a0" : "#8a9bb0");
+  }
+  if (pumpToggle && display.pump) {
+    pumpToggle.textContent = display.pump.enabled ? "开启中" : "已关闭";
+    pumpToggle.style.display = display.pump.count > 0 ? "" : "none";
+  }
   const cycleTimes = document.getElementById("smelting-cycle-times");
   if (cycleTimes) cycleTimes.textContent = display.current.baseTime.toFixed(1) + "s → " + display.actualTime.toFixed(1) + "s";
   const outputNote = document.getElementById("smelting-output-note"); if (outputNote) outputNote.textContent = "支援舰只缩短冶炼周期，单次仍产出 " + display.output;
@@ -336,7 +353,7 @@ function updateUI(now) {
     const safeText = String(activity.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
     activityEl.innerHTML = safeText + bar;
   }
-  const levelEl = document.querySelector('.skill-current .lv-num'); if (levelEl) levelEl.textContent = shell.level;
+  const levelEl = document.querySelector('.skill-current .lv-num'); if (levelEl) levelEl.textContent = shell.level + (shell.boosted ? " (+" + shell.bonusLevels + ")" : "");
   const areaEl = document.querySelector('.skill-current .skill-area');
   const outEl = document.querySelector('.skill-current .skill-output');
   ["mining-area-select", "mining-stats", "smelting-area-select", "smelting-stats", "gas-area-select", "gas-stats"].forEach(id => { const element = document.getElementById(id); if (element) element.style.display = "none"; });
@@ -481,6 +498,13 @@ function refreshVisiblePanelAfterAction() {
   const startShipCompBtn = document.getElementById("btn-start-shipcomp"); const startShipAsmBtn = document.getElementById("btn-start-shipasm");
   if (startShipCompBtn) startShipCompBtn.addEventListener("click", showShipCompConfirm);
   if (startShipAsmBtn) startShipAsmBtn.addEventListener("click", showShipAsmConfirm);
+  // 外接大型精炼泵供料开关（全局设置；只影响下一炉）
+  const pumpToggleBtn = document.getElementById("smelting-pump-toggle");
+  if (pumpToggleBtn) pumpToggleBtn.addEventListener("click", () => {
+    const current = !(gameState.settings && gameState.settings.refineryPumpEnabled === false);
+    dispatchGameAction(gameState, { type:"settings/setRefineryPumpEnabled", enabled:!current }, Date.now());
+    updateUI();
+  });
 })();
 
 dispatchGameAction(gameState, { type:"production/ensureMiningArea" }, Date.now());

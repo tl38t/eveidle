@@ -165,11 +165,12 @@ const ManufacturingStateActions = {
   selectShipAsmLine(state, line) {
     if (!SHIP_ASSEMBLY_LINES.some(item => item.id === line)) return { changed:false, reason:"unknown-line" };
     const currentRecipe = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === state.currentAction.shipAsmTarget);
-    const currentLine = currentRecipe ? getShipAssemblyLine(currentRecipe.shipId) : null;
+    // 传 recipe 对象（而非 recipe.shipId），让 deployable（无 shipId）能落到「特殊」线
+    const currentLine = currentRecipe ? getShipAssemblyLine(currentRecipe) : null;
     state.currentAction.shipAsmLine = line;
     state.currentAction.shipAsmPage = 0;
     if (currentLine !== line) {
-      const first = SHIP_ASSEMBLY_RECIPES.find(recipe => getShipAssemblyLine(recipe.shipId) === line);
+      const first = SHIP_ASSEMBLY_RECIPES.find(recipe => getShipAssemblyLine(recipe) === line);
       if (first) state.currentAction.shipAsmTarget = first.id;
     }
     state._dirty = true;
@@ -178,7 +179,7 @@ const ManufacturingStateActions = {
 
   selectShipAsmPage(state, page) {
     const line = state.currentAction.shipAsmLine || "shield_laser";
-    const total = SHIP_ASSEMBLY_RECIPES.filter(recipe => getShipAssemblyLine(recipe.shipId) === line).length;
+    const total = SHIP_ASSEMBLY_RECIPES.filter(recipe => getShipAssemblyLine(recipe) === line).length;
     const pageCount = Math.max(1, Math.ceil(total / SHIP_ASSEMBLY_PAGE_SIZE));
     const next = Math.min(Math.max(0, Number(page) | 0), pageCount - 1);
     if (state.currentAction.shipAsmPage === next) return { changed:false, reason:"same" };
@@ -226,6 +227,25 @@ const ManufacturingStateActions = {
     });
     state._dirty = true;
     return { changed:true, recipe };
+  },
+
+  // ---- 部署物（激光定向打捞单元）：部署 / 取消部署 ----
+  // 部署=生效（占用小队 1 格，与 NPC 成员抢格）；取消部署=召回库存（关闭增益）。
+  deployDeployable(state, deployableId) {
+    const fn = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD.deployDeployable)
+      || (typeof globalThis !== "undefined" && globalThis.LEGION_COMBAT_SQUAD && globalThis.LEGION_COMBAT_SQUAD.deployDeployable);
+    if (!fn) return { changed:false, reason:"unavailable" };
+    const res = fn(state, deployableId);
+    if (res && res.changed) { state._dirty = true; }
+    return res;
+  },
+  undeployDeployable(state, deployableId) {
+    const fn = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD.undeployDeployable)
+      || (typeof globalThis !== "undefined" && globalThis.LEGION_COMBAT_SQUAD && globalThis.LEGION_COMBAT_SQUAD.undeployDeployable);
+    if (!fn) return { changed:false, reason:"unavailable" };
+    const res = fn(state, deployableId);
+    if (res && res.changed) { state._dirty = true; }
+    return res;
   },
 
   selectEquipmentCategory(state, categoryId) {
@@ -1577,6 +1597,13 @@ const ShellStateActions = {
     return { changed:true, enabled:Boolean(enabled) };
   },
 
+  /* ---- 外接大型精炼泵供料开关：全局设置，作用于冶炼舰上全部泵件；只影响下一炉 ---- */
+  setRefineryPumpEnabled(state, enabled) {
+    ensureUserSettingsState(state).refineryPumpEnabled = Boolean(enabled);
+    state._dirty = true;
+    return { changed:true, enabled:Boolean(enabled) };
+  },
+
   setFittingSlot(state, instanceId, slot, slotIndex, equipmentRef) {
     const instance = getShipInstanceFromState(state, instanceId);
     const config = instance ? getShipConfigById(instance.shipId) : null;
@@ -1597,9 +1624,25 @@ const ShellStateActions = {
     if (equipmentRef) {
       const resolved = resolveEquipmentReference(state, equipmentRef);
       const equipment = resolved && resolved.definition;
-      if (!equipment || equipment.slot !== slot) return { changed:false, reason:"equipment-unavailable" };
+      // slot:"any"（外接大型精炼泵）：允许安装到高/中/低任意一格
+      if (!equipment || (equipment.slot !== slot && equipment.slot !== "any")) return { changed:false, reason:"equipment-unavailable" };
       if (!canFitEquipmentOnShip(equipment, config)) return { changed:false, reason:"incompatible-equipment" };
       let targetInstance = resolved && resolved.instance;
+      if (targetInstance && targetInstance.installedOn) return { changed:false, reason:"equipment-installed" };
+      // 拒绝类校验必须全部先于库存扣减（否则拒绝路径会泄漏库存/产生游离实例）：
+      // ① 普通装备不可写入被精炼泵 reserves 锁定的管路接口格（泵自身走锚位写入，不受此限）
+      if (!equipment.pump && isSlotLockedByPump(state, instance.instanceId, slot, slotIndex)) {
+        return { changed:false, reason:"slot-reserved" };
+      }
+      // ② 外接大型精炼泵：预检另两类槽是否各有 1 个「空且未锁定」格（detach previous 只会释放更多空位，预检通过即保证可安装）
+      if (equipment.pump) {
+        for (const otherSlot of ["high", "mid", "low"]) {
+          if (otherSlot === slot) continue;
+          if (firstFreeUnlockedSlot(state, instance, otherSlot) < 0) {
+            return { changed:false, reason:"no-pipe-slot" };
+          }
+        }
+      }
       if (!targetInstance) {
         const inventoryIndex = state.equipment.inventory.indexOf(equipmentRef);
         if (inventoryIndex < 0) return { changed:false, reason:"equipment-unavailable" };
@@ -1608,13 +1651,30 @@ const ShellStateActions = {
         targetInstance = { instanceId:newId, itemId:equipmentRef, enhancementLevel:0, installedOn:null };
         state.equipment.instances.push(targetInstance);
       }
-      if (targetInstance.installedOn) return { changed:false, reason:"equipment-installed" };
       targetInstance.installedOn = instance.instanceId;
       // 改装件：记录装配顺序序号（rigSeq），供谐振（堆叠）惩罚按装配先后排序。同系列允许重复装配。
       if (slot === "rig") { state._rigSeq = (state._rigSeq || 0) + 1; targetInstance.rigSeq = state._rigSeq; }
-      // rig 槽的旧件=销毁（删除实例，不归还）；其他槽=归还 inventory
+      // rig 槽的旧件=销毁（删除实例，不归还）；其他槽=归还 inventory（泵由 detach 联动释放 reserves）
       if (previous) { if (slot === "rig") destroyRigRefFromFitting(state, previous); else detachEquipmentRefFromFitting(state, previous); }
       instance.fitted[slot][slotIndex] = targetInstance.instanceId;
+      // 预检已通过，此处正式定位管路接口（previous 释放后空位只会更多，失败按防御式回滚处理）
+      if (equipment.pump) {
+        const others = ["high", "mid", "low"].filter(key => key !== slot);
+        const reserves = {};
+        for (const otherSlot of others) {
+          const freeIdx = firstFreeUnlockedSlot(state, instance, otherSlot);
+          if (freeIdx < 0) {
+            instance.fitted[slot][slotIndex] = null;
+            targetInstance.installedOn = null;
+            targetInstance.anchor = null;
+            targetInstance.reserves = null;
+            return { changed:false, reason:"no-pipe-slot" };
+          }
+          reserves[otherSlot] = freeIdx;
+        }
+        targetInstance.anchor = { slot, idx:slotIndex };
+        targetInstance.reserves = reserves;
+      }
     } else {
       if (previous) { if (slot === "rig") destroyRigRefFromFitting(state, previous); else detachEquipmentRefFromFitting(state, previous); }
       instance.fitted[slot][slotIndex] = null;
@@ -1853,6 +1913,9 @@ function detachEquipmentRefFromFitting(state, ref) {
   if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
   const instance = isEquipmentInstanceId(state, ref) ? getEquipmentInstanceById(state, ref) : null;
   if (instance) {
+    // 外接大型精炼泵：卸下前先清空其锚位引用与 reserves 锁定（替换/拆解/重置共用此路径）
+    const pumpDef = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) ? EQUIPMENT_DB[instance.itemId] : null;
+    if (pumpDef && pumpDef.pump) clearPumpFittingRefs(state, instance);
     const level = Math.max(0, Math.floor(Number(instance.enhancementLevel) || 0));
     if (level === 0) {
       const idx = state.equipment.instances.indexOf(instance);
@@ -1866,10 +1929,43 @@ function detachEquipmentRefFromFitting(state, ref) {
   }
 }
 
+// ===== 外接大型精炼泵（slot:"any" 多槽占用）辅助函数 =====
+// 判定某舰某槽格是否被已安装精炼泵的 reserves（管路接口）锁定。锁定格 fitted 值为 null。
+function isSlotLockedByPump(state, shipInstanceId, slot, slotIndex) {
+  if (!state || !state.equipment || !Array.isArray(state.equipment.instances)) return false;
+  return state.equipment.instances.some(inst =>
+    inst && inst.installedOn === shipInstanceId && inst.reserves && inst.reserves[slot] === slotIndex);
+}
+// 在某舰某槽类中找第一个「空且未被 reserves 锁定」的格索引；无则返回 -1。
+function firstFreeUnlockedSlot(state, shipInstance, slot) {
+  if (!shipInstance || !shipInstance.fitted) return -1;
+  const arr = shipInstance.fitted[slot];
+  if (!Array.isArray(arr)) return -1;
+  for (let i = 0; i < arr.length; i++) {
+    if (!arr[i] && !isSlotLockedByPump(state, shipInstance.instanceId, slot, i)) return i;
+  }
+  return -1;
+}
+// 清空精炼泵在其安装舰 fitted 中的锚位引用与 reserves（fitted 锚位清 null，实例记录归零）。
+function clearPumpFittingRefs(state, pumpInstance) {
+  if (!pumpInstance || !pumpInstance.installedOn) return;
+  const ship = getShipInstanceFromState(state, pumpInstance.installedOn);
+  if (ship && ship.fitted) {
+    for (const k of ["high", "mid", "low"]) {
+      const arr = ship.fitted[k];
+      if (!Array.isArray(arr)) continue;
+      for (let i = 0; i < arr.length; i++) {
+        if (arr[i] === pumpInstance.instanceId) arr[i] = null;
+      }
+    }
+  }
+  pumpInstance.anchor = null;
+  pumpInstance.reserves = null;
+}
+
 // 改装件销毁：拆卸即销毁——实例从 equipment.instances 中彻底删除，绝不归还 inventory。
 // 用于 rig 槽的替换/清除/重置。ref 为 instanceId（正常）或 legacy string（仅丢弃）。
-function destroyRigRefFromFitting(state, ref) {
-  if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+function destroyRigRefFromFitting(state, ref) {  if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
   if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
   if (isEquipmentInstanceId(state, ref)) {
     const index = state.equipment.instances.findIndex(entry => String(entry.instanceId) === String(ref));
@@ -2261,6 +2357,8 @@ const StationStateActions = {
   if (action.type === "manufacturing/selectShipAsmPage") return ManufacturingStateActions.selectShipAsmPage(state, action.page);
   if (action.type === "manufacturing/startShipComponent") return ManufacturingStateActions.startShipComponent(state, actionTime);
   if (action.type === "manufacturing/startShipAssembly") return ManufacturingStateActions.startShipAssembly(state, actionTime);
+  if (action.type === "manufacturing/deployDeployable") return ManufacturingStateActions.deployDeployable(state, action.deployableId);
+  if (action.type === "manufacturing/undeployDeployable") return ManufacturingStateActions.undeployDeployable(state, action.deployableId);
   if (action.type === "manufacturing/selectEquipmentCategory") return ManufacturingStateActions.selectEquipmentCategory(state, action.categoryId);
   if (action.type === "manufacturing/selectEquipmentRecipe") return ManufacturingStateActions.selectEquipmentRecipe(state, action.recipeId);
   if (action.type === "manufacturing/selectEquipEngRigFilter") return ManufacturingStateActions.selectEquipEngRigFilter(state, action);
@@ -2317,6 +2415,7 @@ const StationStateActions = {
   if (action.type === "settings/setShipEnhancementConfirmation") return ShellStateActions.setShipEnhancementConfirmation(state, action.enabled);
   if (action.type === "settings/setDiscardConfirmation") return ShellStateActions.setDiscardConfirmation(state, action.enabled);
   if (action.type === "settings/setDismantleConfirmation") return ShellStateActions.setDismantleConfirmation(state, action.enabled);
+  if (action.type === "settings/setRefineryPumpEnabled") return ShellStateActions.setRefineryPumpEnabled(state, action.enabled);
   if (action.type === "settings/toggleCombatSkills") return ShellStateActions.toggleCombatSkills(state);
   if (action.type === "queue/add") return ShellStateActions.queueAdd(state, action.item, actionTime, action.front);
   if (action.type === "queue/remove") return ShellStateActions.queueRemove(state, action.index, actionTime);

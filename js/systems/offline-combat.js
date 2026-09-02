@@ -493,11 +493,16 @@
       const fk = s.killsByFactionKind[zone.faction] = s.killsByFactionKind[zone.faction] || { normal: 0, elite: 0, boss: 0 };
       bump(fk, enemy.kind, 1);
     }
-    // ISK（确定性：iskDrop*iskMulti）
-    const isk = Math.round((enemy.iskDrop || 0) * (zone ? zone.iskMulti : 1));
+    // ISK（确定性：iskDrop*iskMulti）；MTU +10%（断料不放大，iskBonus 已为 0）
+    const mtuMod = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+    const iskMult = (mtuMod && mtuMod.active && mtuMod.iskBonus > 0) ? (1 + mtuMod.iskBonus) : 1;
+    const isk = Math.round((enemy.iskDrop || 0) * (zone ? zone.iskMulti : 1) * iskMult);
     s.iskDelta += isk;
-    // LP（若有）
-    if (typeof enemy.lpDrop === "number") s.lpDelta += Math.round(enemy.lpDrop * (zone ? (zone.lpMulti || 1) : 1));
+    // LP（若有）；MTU +10%（断料不放大）
+    if (typeof enemy.lpDrop === "number") {
+      const lpMult = (mtuMod && mtuMod.active && mtuMod.lpBonus > 0) ? (1 + mtuMod.lpBonus) : 1;
+      s.lpDelta += Math.round(enemy.lpDrop * (zone ? (zone.lpMulti || 1) : 1) * lpMult);
+    }
     // 掉落累计（按 category 记录 N 与精英/Boss 细分）
     const da = s.dropAccum;
     if (isDeathspace && site) {
@@ -553,6 +558,14 @@
         const tk = (sk[tier] = sk[tier] || { normal: 0, elite: 0, boss: 0 });
         tk[enemy.kind] = (tk[enemy.kind] || 0) + 1;
       }
+    }
+    // 激光定向打捞单元（MTU）：部署即独立产出舰船组件（不依赖打捞臂/同位素/主动开关）；断料不记录。
+    // 仅记录按档位+kind 的尝试计数，flush 时与打捞臂同公式确定性重滚（getSalvageEfficiency 已含 MTU 的 2.10）。
+    if (!isDeathspace && mtuMod && mtuMod.active && mtuMod.count > 0) {
+      const tier = (typeof getSalvageComponentTier === "function") ? getSalvageComponentTier(enemy.level) : "";
+      const mk = (s.mtuSalvageByTier = s.mtuSalvageByTier || {});
+      const tk = (mk[tier] = mk[tier] || { normal: 0, elite: 0, boss: 0 });
+      tk[enemy.kind] = (tk[enemy.kind] || 0) + 1;
     }
     // 战术材料（按 kind 累计 N；期望数量在 flush 计算）
     if (enemy.kind === "elite") da.tactical.elite++;
@@ -612,7 +625,10 @@
         waveNum++;
       } else {
         bump(s.zoneClearsByZone, zone.id, 1);
-        s.lpDelta += (zone.clearLp || 0); // 对齐在线 resolveCombatWaveVictory 的清区 LP（belt 敌无 lpDrop，离线 LP 仅此来源）
+        // 对齐在线 resolveCombatWaveVictory 的清区 LP（belt 敌无 lpDrop，离线 LP 仅此来源）；MTU +10%
+        const mtuLpMod = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+        const mtuLpMult = (mtuLpMod && mtuLpMod.active && mtuLpMod.lpBonus > 0) ? (1 + mtuLpMod.lpBonus) : 1;
+        s.lpDelta += Math.round((zone.clearLp || 0) * mtuLpMult);
         recordFirst(s, "firstZoneClear", nowRef.t);
         waveNum = 1; // 从第 1 波继续（不自动换区）
       }
@@ -1058,6 +1074,29 @@
         }
       }
     }
+    // 1.82) 激光定向打捞单元（MTU）独立产出舰船组件（确定性重滚；不消耗同位素；flush 时仍按当前 getSalvageEfficiency 含 MTU 2.10 放大）
+    const mb = s.mtuSalvageByTier;
+    if (mb) {
+      const mtuSalvageBonus = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+      for (const tier in mb) {
+        const ids = (typeof SALVAGE_COMPONENT_IDS !== "undefined" && SALVAGE_COMPONENT_IDS[tier]) || null;
+        if (!ids) continue;
+        const tk = mb[tier];
+        for (const kind of ["normal", "elite", "boss"]) {
+          const n = tk[kind] || 0;
+          if (!n) continue;
+          const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
+          const chance = Math.min(baseChance * (1 + mtuSalvageBonus), 0.5);
+          const drops = batchCount(n, chance, rng);
+          const qty = (typeof getSalvageComponentQty === "function") ? getSalvageComponentQty(kind) : 1;
+          for (let d = 0; d < drops; d++) {
+            const compId = ids[Math.floor(rng() * ids.length)];
+            RR.add(state, "component:" + compId, qty);
+            addResource(s, "component:" + compId, qty);
+          }
+        }
+      }
+    }
     // 主动打捞同位素消耗（每击毁扣，开状态才记；flush 一次性 apply，与燃料同机制）
     const isoUsed = (s.isoInit || 0) - (s.iso || 0);
     if (isoUsed > 0) {
@@ -1069,6 +1108,13 @@
     if (salvageFuelPK > 0 && (s.kills || 0) > 0) {
       const fuelAmt = salvageFuelPK * s.kills * (state.combat && state.combat.salvageArmActive ? 3 : 1);
       if (fuelAmt > 0) { RR.spend(state, "consumable:fuel", fuelAmt); addResource(s, "consumable:fuel", -fuelAmt); }
+    }
+    // 激光定向打捞单元（MTU）燃料消耗：每击毁一艘扣一次（= Σ fuelPerKill × 战斗燃料倍率），按总击毁数 flush；
+    // 仅 active（flush 时燃料充足）才扣，与在线战斗一致。
+    const mtuFuelMod = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+    if (mtuFuelMod && mtuFuelMod.active && mtuFuelMod.fuelPerKill > 0 && (s.kills || 0) > 0) {
+      const mtuFuelAmt = Math.max(1, Math.round(mtuFuelMod.fuelPerKill)) * s.kills;
+      if (mtuFuelAmt > 0) { RR.spend(state, "consumable:fuel", mtuFuelAmt); addResource(s, "consumable:fuel", -mtuFuelAmt); }
     }
     // 2) 区域特殊掉落
     for (const zoneId in da.zoneSpecial) {

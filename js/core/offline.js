@@ -364,6 +364,14 @@ function getOfflineActionDescriptor() {
           }
         }
         ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, cycles);
+        // 外接大型精炼泵供料（离线）：每炉每件扣 1，按实际库存扣 min(本段炉数, 可供炉数)；
+        // 断料后由下一段 descriptor 重建时自动按无泵效率折算（getSmeltingDisplayState 泵项归零）。
+        if (smeltingState.pump && smeltingState.pump.count > 0 && smeltingState.pump.enabled) {
+          const pumpNeed = smeltingState.pump.fuelPerCycle;
+          const pumpStock = ResourceRegistry.get(gameState, smeltingState.pump.resourceId);
+          const pumpCycles = Math.min(cycles, Math.floor(pumpStock / pumpNeed));
+          if (pumpCycles > 0) ResourceRegistry.spend(gameState, smeltingState.pump.resourceId, pumpCycles * pumpNeed);
+        }
         ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, outQty);
         addOfflineSkillXp(key, cycles * recipe.baseXP); gains[key] += cycles;
         emitOfflineGameEvent("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:cycles, outputQuantity:outQty, cycles, xp:cycles * recipe.baseXP });

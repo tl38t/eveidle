@@ -96,9 +96,11 @@ function addSkillXpToState(state, skillKey, amount, eventMeta) {
     const lp = LEGION_NPC.getLegionContributionSnapshot(state).multipliers.playerXp;
     if (lp && lp !== 1) gained = gained * lp;
   }
-  // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时作用于技能经验（生产+战斗均经此入口）。
+  // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时作用于【战斗技能经验】。
+  // 判定：战斗经验统一经 addStationModifiedCombatXp 入口，其 meta.source === "station-combat-command"；
+  // 生产/考古/制造等非战斗技能经验（mining/refining/gasHarvesting/archaeology/装备工程…）不享受该增益。
   const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
-  if (adbm && adbm !== 1) gained = gained * adbm;
+  if (adbm && adbm !== 1 && meta && meta.source === "station-combat-command") gained = gained * adbm;
   state.skills[skillKey].xp = (Number(state.skills[skillKey].xp) || 0) + gained;
   checkLevelUpFromState(state, skillKey, eventMeta);
   state._dirty = true;

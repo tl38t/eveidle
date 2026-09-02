@@ -152,11 +152,33 @@
     const taptapAvail = (typeof window !== "undefined" && window.AdPlatformConfig && typeof window.AdPlatformConfig.detectTapTapAvailable === "function")
       ? window.AdPlatformConfig.detectTapTapAvailable() : false;
     const isTaptap = mode === "taptap" || taptapAvail;
-    const pastGrace = DEBUG ? true : Date.now() - bootTime > BOOT_GRACE_MS;
-    if (!DEBUG && (!isTaptap || !pastGrace)) { if (wrapEl) wrapEl.style.display = "none"; showProbeBadge(); return; }
+    // 非 TapTap 环境（无广告平台）→ 整块隐藏；
+    // TapTap 环境 → 入口常驻可见，仅启动后 60 秒审核宽限内不可交互（符合「首次启动 60 秒内不出现广告」）。
+    if (!DEBUG && !isTaptap) { if (wrapEl) wrapEl.style.display = "none"; showProbeBadge(); return; }
     if (wrapEl) wrapEl.style.display = "inline-flex";
     // 入口显示时仍保留一个低调的小探针点，方便诊断广告加载失败。
     showProbeBadge(true);
+
+    const graceLeftMs = DEBUG ? 0 : Math.max(0, BOOT_GRACE_MS - (Date.now() - bootTime));
+    if (graceLeftMs > 0) {
+      // 宽限内：可见但置灰、不可点击，并提示剩余秒数（update 每秒刷新，倒计时自然递减）。
+      // 若已有生效中的增益（存档恢复），仍照常显示其剩余时间，只是不可交互。
+      const g = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { active: false, paused: false, remainingMs: 0 };
+      const base = (g.active || g.paused)
+        ? "🧠 脑突触加速 " + (g.paused ? "⏸ " : "⚡ ") + fmt(g.remainingMs)
+        : "🧠 脑突触加速 —";
+      statusEl.textContent = base + " · " + Math.ceil(graceLeftMs / 1000) + "s 后可获取";
+      statusEl.style.color = "#6b7c8f";
+      statusEl.style.cursor = "not-allowed";
+      statusEl.style.opacity = ".55";
+      statusEl.style.pointerEvents = "none";
+      pauseBtn.style.display = "none";
+      return;
+    }
+    // 过宽限：恢复可交互
+    statusEl.style.cursor = "pointer";
+    statusEl.style.opacity = "";
+    statusEl.style.pointerEvents = "";
 
     const st = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { active: false, paused: false, remainingMs: 0 };
     if (st.active || st.paused) {
@@ -369,7 +391,7 @@
 
     const intro = document.createElement("div");
     intro.style.cssText = "font-size:13px;color:#aebccb;line-height:1.7;margin-bottom:12px;";
-    intro.innerHTML = "看完<b>联盟泛银河娱乐广播</b>，或转化重复脑插，可获得<b>脑突触加速提取剂</b>。<br>注入后生效：<b>采矿 / 采气 / 冶炼效率、玩家战斗伤害、技能经验 ×1.3</b>。<br>大型提取剂 30 分钟（看广告获取），小型提取剂 5 分钟（重复脑插转化）。";
+    intro.innerHTML = "看完<b>联盟泛银河娱乐广播</b>，或转化重复脑插，可获得<b>脑突触加速提取剂</b>。<br>注入后生效：<b>采矿 / 采气 / 冶炼效率、玩家战斗伤害、战斗技能经验 ×1.3</b>。<br>大型提取剂 30 分钟（看广告获取），小型提取剂 5 分钟（重复脑插转化）。";
     box.appendChild(intro);
 
     const st = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { extractors: { large: 0, small: 0 }, canWatch: false, dailyCount: 0, dailyCap: 10 };

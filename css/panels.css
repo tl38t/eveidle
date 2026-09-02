@@ -1255,6 +1255,9 @@
 .lcs-mini-fill.structure { background: #b5533f; }
 .lcs-mini-val { text-align: right; color: #e8f4ff; font-variant-numeric: tabular-nums; }
 .lcs-bars-empty { font-size: 11px; color: #8297ab; margin: 3px 0; }
+.lcs-deploy-stats { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 4px 0 2px; font-size: 11px; color: #cfe1f5; }
+.lcs-deploy-stats .lcs-stat { display: inline-flex; align-items: baseline; gap: 3px; padding: 2px 6px; border-radius: 9px; background: rgba(56,81,107,.32); border: 1px solid rgba(127,184,232,.32); }
+.lcs-deploy-stats .lcs-stat b { font-size: 10px; color: #8297ab; font-weight: 500; }
 .lcs-slot-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .lcs-slot-status { font-size: 10px; color: #9fb4c8; margin-top: 4px; }
 .lcs-fire-order { margin: 6px 0 8px; padding: 6px 8px; border: 1px solid rgba(56,81,107,.55); border-radius: 5px; background: rgba(8,20,32,.55); font-size: 11px; }
