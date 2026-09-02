@@ -296,6 +296,13 @@
   // 每 4 小时工资（按技能等级）
   const WAGE = { A: 600000, B: 350000, C: 200000, D: 100000 };
 
+  // —— 集结（muster）—— 玩家主动让单个 NPC 收拢待命：技能与经验立即停效、停止计薪。
+  // 与「欠薪（overdue）」严格区分：集结是玩家主动选择、不产生欠款；欠薪是星币不足的负面状态。
+  // 字段 npc.mustered 缺省 false，旧存档由 persistence 回填。
+  function isNpcMustered(npc) { return !!(npc && npc.mustered); }
+  // 是否「在岗」：未集结 且 工资正常 —— 两条件同时成立才提供贡献 / 计薪。
+  function isNpcWorking(npc) { return !!npc && !npc.mustered && npc.salaryState === "paid"; }
+
   // 手动刷新基础费用与翻倍上限（1/2/4/8/16 倍）
   const MANUAL_REFRESH_BASE = { isk: 1000000, lp: 50 };
   const MANUAL_REFRESH_MAX_MULT = 16;
@@ -362,8 +369,13 @@
     if (typeof L.lastXpSettlementAt !== "number") L.lastXpSettlementAt = 0;
     if (typeof L.lastXpAt !== "number") L.lastXpAt = L.lastXpSettlementAt > 0 ? L.lastXpSettlementAt : 0;
     if (typeof L.technologyLevel !== "number") L.technologyLevel = 0;
-    // 战斗小队持久化字段（M1）：旧档 NPC 幂等补默认值（destroyed/repairUntil/occupiedByCombat/combatHp）。
-    if (Array.isArray(L.npcs)) L.npcs.forEach(function (n) { if (n && typeof n === "object") ensureNpcCombatFields(n); });
+    // 战斗小队持久化字段（M1）+ 集结字段（muster）：旧档 NPC 幂等补默认值。
+    // 注：persistence.js 属冻结文件，NPC 字段补全统一在此完成，不改 persistence。
+    if (Array.isArray(L.npcs)) L.npcs.forEach(function (n) {
+      if (!n || typeof n !== "object") return;
+      ensureNpcCombatFields(n);
+      if (typeof n.mustered !== "boolean") n.mustered = false;
+    });
     return L;
   }
 
@@ -562,7 +574,7 @@
   // 纯计算：某 NPC 在 hours 内获得的经验（0 表示欠薪/未激活）
   function calculateLegionNpcXp(state, npc, hours, opts) {
     if (!isLegionSystemActive(state)) return 0;
-    if (!npc || npc.salaryState !== "paid") return 0; // 仅工资正常时
+    if (!isNpcWorking(npc)) return 0; // 集结中 / 欠薪 → 不计经验
     const mult = getNpcXpMultiplier(state, npc) * getLegionNpcResearchXpMultiplier(state);
     return BASE_XP_PER_HOUR * (Number(hours) || 0) * mult;
   }
@@ -624,7 +636,7 @@
       personalityId: candidate.personalityId,
       skillId: candidate.skillId,
       skillGrade: candidate.skillGrade,
-      level: 1, xp: 0, boundShipInstanceId: null, salaryState: "paid", dialogueHistory: []
+      level: 1, xp: 0, boundShipInstanceId: null, salaryState: "paid", mustered: false, dialogueHistory: []
     });
     L.npcs.push(npc);
     L.candidates = (L.candidates || []).filter(function (c) { return c.npcId !== candidateId; }); // 移除该候选人
@@ -694,27 +706,72 @@
     while (now >= L.lastSalarySettlementAt + SETTLEMENT_PERIOD_MS) {
       L.lastSalarySettlementAt += SETTLEMENT_PERIOD_MS;
       periods += 1;
-      const total = (L.npcs || []).reduce(function (s, n) { return s + (WAGE[n.skillGrade] || 0); }, 0);
+      // 计薪名单只含「未集结」的 NPC —— 集结者已停止计薪，不参与本期分摊。
+      const active = (L.npcs || []).filter(function (n) { return !isNpcMustered(n); });
+      const total = active.reduce(function (s, n) { return s + (WAGE[n.skillGrade] || 0); }, 0);
       const actual = Math.max(0, total * (1 - reducePct / 100)); // 减免后实际应付（下限 0）
       const isk = getCurrency(state, "currency:isk");
       if (actual >= 0 && isk >= actual) {
         if (actual > 0) spendCurrency(state, "currency:isk", actual); // 一次性扣除实际工资
-        (L.npcs || []).forEach(function (n) { n.salaryState = "paid"; });
+        active.forEach(function (n) { n.salaryState = "paid"; });
         totalPaid += actual;
       } else {
-        (L.npcs || []).forEach(function (n) { n.salaryState = "overdue"; }); // 星币不足 → 全部欠薪，不扣部分工资
+        active.forEach(function (n) { n.salaryState = "overdue"; }); // 星币不足 → 在岗者全部欠薪，不扣部分工资
       }
     }
-    const paidNpcIds = [], overdueNpcIds = [];
-    (L.npcs || []).forEach(function (n) { if (n.salaryState === "paid") paidNpcIds.push(n.npcId); else overdueNpcIds.push(n.npcId); });
+    const paidNpcIds = [], overdueNpcIds = [], musteredNpcIds = [];
+    (L.npcs || []).forEach(function (n) {
+      if (isNpcMustered(n)) musteredNpcIds.push(n.npcId);
+      else if (n.salaryState === "paid") paidNpcIds.push(n.npcId);
+      else overdueNpcIds.push(n.npcId);
+    });
     return {
       settled: periods > 0,
       periods: periods,
       paidNpcIds: paidNpcIds,
       overdueNpcIds: overdueNpcIds,
+      musteredNpcIds: musteredNpcIds,
       totalPaid: totalPaid,
       nextSettlementAt: L.lastSalarySettlementAt + SETTLEMENT_PERIOD_MS
     };
+  }
+
+  // 本期已付费周期的剩余时长（ms）；未排程时为 0。
+  function getLegionSalaryPeriodRemaining(state, opts) {
+    const L = getLegionState(state);
+    if (!L || !(L.lastSalarySettlementAt > 0)) return 0;
+    const now = (opts && typeof opts.now === "number") ? opts.now : Date.now();
+    return Math.max(0, L.lastSalarySettlementAt + SETTLEMENT_PERIOD_MS - now);
+  }
+
+  // 切换单个 NPC 的集结状态（每 NPC 独立）。
+  //   mustered=true  → 集结：技能与经验立即停效、立即停止计薪；本期已付工资**不退还**（沉没成本）。
+  //   mustered=false → 恢复：按本期剩余时长**比例补付**工资。
+  //     比例补付是必需的：若恢复不付费，玩家可「结算前集结 → 过了结算点立即恢复」白嫖一整期。
+  function setLegionNpcMuster(state, npcId, mustered, opts) {
+    opts = opts || {};
+    if (!isLegionSystemActive(state)) return { changed: false, reason: "inactive" };
+    const L = ensureLegionState(state);
+    const now = (typeof opts.now === "number") ? opts.now : Date.now();
+    const npc = (L.npcs || []).find(function (n) { return n.npcId === npcId; });
+    if (!npc) return { changed: false, reason: "not-found" };
+    if (!!mustered === !!npc.mustered) return { changed: false, reason: "no-change" };
+    if (mustered) {
+      npc.mustered = true; // 已付工资沉没，不做任何退还
+      state._dirty = true;
+      return { changed: true, npcId: npcId, mustered: true, refunded: 0 };
+    }
+    const remainMs = getLegionSalaryPeriodRemaining(state, { now: now });
+    const ratio = Math.max(0, Math.min(1, remainMs / SETTLEMENT_PERIOD_MS));
+    const reducePct = getLegionWageReductionPct(state);
+    const due = Math.max(0, (WAGE[npc.skillGrade] || 0) * (1 - reducePct / 100) * ratio);
+    const isk = getCurrency(state, "currency:isk");
+    if (isk < due) return { changed: false, reason: "insufficient-isk", totalDue: due, currentIsk: isk };
+    if (due > 0) spendCurrency(state, "currency:isk", due);
+    npc.mustered = false;
+    npc.salaryState = "paid";
+    state._dirty = true;
+    return { changed: true, npcId: npcId, mustered: false, totalDue: due };
   }
 
   // 手动补发：无论距离自动结算还有多久，都按全体 NPC 的完整一周期工资收取。
@@ -781,7 +838,7 @@
     const contributions = [];
     const byCat = { production: [], combat: [], archaeology: [], management: [] };
     (L.npcs || []).forEach(function (n) {
-      if (n.salaryState !== "paid") return; // 欠薪不计入
+      if (!isNpcWorking(n)) return; // 集结中 / 欠薪不计入
       const sk = getSkillById(n.skillId);
       if (sk && byCat[sk.category]) byCat[sk.category].push(n);
     });
@@ -794,9 +851,9 @@
         contributions.push({ npcId: n.npcId, skillId: n.skillId, category: cat, rawValue: raw, factor: factor, effective: raw * factor, counted: true });
       });
     });
-    // 欠薪 NPC 也记录（counted:false）
+    // 集结中 / 欠薪 NPC 也记录（counted:false）
     (L.npcs || []).forEach(function (n) {
-      if (n.salaryState === "paid") return;
+      if (isNpcWorking(n)) return;
       const sk = getSkillById(n.skillId);
       if (sk) contributions.push({ npcId: n.npcId, skillId: n.skillId, category: sk.category, rawValue: getLegionNpcSkillRawValue(n), factor: 0, effective: 0, counted: false });
     });
@@ -849,7 +906,8 @@
     const sig = [
       (L.technologyLevel || 0),
       (L.npcs || []).map(function (n) {
-        return [n.npcId, n.salaryState, n.level, n.skillGrade, n.skillId, n.boundShipInstanceId].join(":");
+        // 集结状态必须进签名：否则切换集结后快照命中缓存，被集结 NPC 的加成会继续生效。
+        return [n.npcId, n.salaryState, n.level, n.skillGrade, n.skillId, n.boundShipInstanceId, n.mustered ? "M" : "-"].join(":");
       }).join("|"),
       MANAGEMENT_BUILDING_IDS.map(function (id) { return b[id] || 0; }).join(",")
     ].join("#");
@@ -896,7 +954,7 @@
 
     const byCat = { production: [], combat: [], archaeology: [], management: [] };
     (L.npcs || []).forEach(function (n) {
-      if (n.salaryState !== "paid") return; // 欠薪不计入
+      if (!isNpcWorking(n)) return; // 集结中 / 欠薪不计入
       const sk = getSkillById(n.skillId);
       if (sk && byCat[sk.category]) byCat[sk.category].push(n);
     });
@@ -911,9 +969,10 @@
       });
     });
 
-    // 工资汇总
-    let totalWage = 0, paidNpcCount = 0, overdueNpcCount = 0;
+    // 工资汇总：集结中的 NPC 立即停止计薪，不计入在岗数与应付工资
+    let totalWage = 0, paidNpcCount = 0, overdueNpcCount = 0, musteredNpcCount = 0;
     (L.npcs || []).forEach(function (n) {
+      if (isNpcMustered(n)) { musteredNpcCount++; return; }
       if (n.salaryState === "paid") { paidNpcCount++; totalWage += WAGE[n.skillGrade] || 0; }
       else overdueNpcCount++;
     });
@@ -930,7 +989,7 @@
       totalNpcCount: (L.npcs || []).length,
       skillCounts: { production: byCat.production.length, combat: byCat.combat.length, archaeology: byCat.archaeology.length, management: byCat.management.length },
       effects: eff,
-      salary: { totalWage: totalWage, paidNpcCount: paidNpcCount, overdueNpcCount: overdueNpcCount },
+      salary: { totalWage: totalWage, paidNpcCount: paidNpcCount, overdueNpcCount: overdueNpcCount, musteredNpcCount: musteredNpcCount },
       management: { buildingLevelSum: buildingLevelSum, xpMultiplier: getLegionNpcManagementXpMultiplier(state) },
       // 便捷乘子（供系统直接乘用，避免各自再算）
       multipliers: {
@@ -1035,6 +1094,10 @@
     settleLegionNpcSalaries: settleLegionNpcSalaries,
     getLegionNpcSalaryQuote: getLegionNpcSalaryQuote,
     payLegionNpcSalariesNow: payLegionNpcSalariesNow,
+    setLegionNpcMuster: setLegionNpcMuster,
+    getLegionSalaryPeriodRemaining: getLegionSalaryPeriodRemaining,
+    isNpcMustered: isNpcMustered,
+    isNpcWorking: isNpcWorking,
     calculateLegionNpcXp: calculateLegionNpcXp,
     calculateLegionNpcXpPerSecond: calculateLegionNpcXpPerSecond,
     settleLegionNpcExperience: settleLegionNpcExperience,

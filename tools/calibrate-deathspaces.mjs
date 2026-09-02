@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const context = vm.createContext({});
+// 游戏数据脚本同时暴露浏览器 window API；校准工具在 Node VM 中加载时补齐同一全局别名。
+context.window = context;
+context.globalThis = context;
 for (const file of ["js/data/ships.js", "js/data/combat.js", "js/data/equipment.js"]) {
   vm.runInContext(fs.readFileSync(path.join(root, file), "utf8"), context, { filename:file });
 }

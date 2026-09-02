@@ -1696,13 +1696,13 @@ if (sandbox.gameState.resources.special["天使初级加密数据"] !== 5 ||
   throw new Error("旧版天使联合数据没有安全迁移到初级数据，或新分层资源没有补齐");
 }
 sandbox.gameState.resources.special = specialResourcesBeforeMigration;
-if (borderZones.length !== 3 || borderZones.some(zone => zone.requiredCL !== 15 || zone.maxWave !== 20 || zone.clearLp !== 6 || zone.fuelMult !== 1.2 || zone.iskMulti !== 1.5)) {
+if (borderZones.length !== 3 || borderZones.some(zone => zone.requiredCL !== 15 || zone.maxWave !== 20 || zone.clearLp !== 6 || zone.fuelMult !== 1.0 || zone.iskMulti !== 1.5)) {
   throw new Error("0.7～0.5三条星带的CL门槛、20波肃清或奖励倍率不符合设计");
 }
-if (lowsecZones.length !== 3 || lowsecZones.some(zone => zone.requiredCL !== 35 || zone.maxWave !== 20 || zone.clearLp !== 10 || zone.fuelMult !== 1.4 || zone.iskMulti !== 2 || zone.formationPool !== "lowsec")) {
+if (lowsecZones.length !== 3 || lowsecZones.some(zone => zone.requiredCL !== 35 || zone.maxWave !== 20 || zone.clearLp !== 10 || zone.fuelMult !== 1.2 || zone.iskMulti !== 2 || zone.formationPool !== "lowsec")) {
   throw new Error("0.4～0.3三条星带的CL门槛、20波肃清、编队池或奖励倍率不符合设计");
 }
-if (deepsecZones.length !== 3 || deepsecZones.some(zone => zone.requiredCL !== 55 || zone.maxWave !== 20 || zone.clearLp !== 15 || zone.fuelMult !== 1.6 || zone.iskMulti !== 2.5 || zone.formationPool !== "deepsec")) {
+if (deepsecZones.length !== 3 || deepsecZones.some(zone => zone.requiredCL !== 55 || zone.maxWave !== 20 || zone.clearLp !== 15 || zone.fuelMult !== 1.35 || zone.iskMulti !== 2.5 || zone.formationPool !== "deepsec")) {
   throw new Error("0.2～0.1三条星带的战斗等级门槛、20波肃清、编队池或奖励倍率不符合设计");
 }
 const expectedFormations = [

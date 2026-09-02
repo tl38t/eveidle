@@ -258,7 +258,7 @@
     parts.push("M:" + (L.manualRefreshCount || 0));
     parts.push("R:" + (L.candidateRefreshAt || 0));
     (L.npcs || []).forEach(function (n) {
-      parts.push("N:" + n.npcId + ":" + (n.skillGrade || "") + ":" + n.level + ":" + (n.salaryState || "") + ":" + (n.boundShipInstanceId || "-"));
+      parts.push("N:" + n.npcId + ":" + (n.skillGrade || "") + ":" + n.level + ":" + (n.salaryState || "") + ":" + (n.boundShipInstanceId || "-") + ":" + (n.mustered ? "M" : "-"));
     });
     parts.push("B:" + (st.station && st.station.buildings && st.station.buildings.legion_hall));
     return parts.join("|");
@@ -321,7 +321,7 @@
       '<div class="ls-sub">' + (cur >= maxLv ? '已满级' : '建设进度 ' + cur + '/' + maxLv + ' 级') + '</div></div>';
     html += '<div class="legion-stat"><div class="ls-label"><i class="fa-solid fa-users"></i>军团人数</div>' +
       '<div class="ls-value">' + totalNpc + ' <small>/ ' + npcCap + '</small></div>' +
-      '<div class="ls-sub">上限 = 6 + 大厅等级 + 研究加成</div></div>';
+      '<div class="ls-sub">可招募上限 = 5 + (大厅等级 - 1) + 研究加成</div></div>';
     html += '<div class="legion-stat"><div class="ls-label"><i class="fa-solid fa-flask"></i>军团研究</div>' +
       '<div class="ls-value">+' + researchBonus + ' <small>上限</small></div>' +
       '<div class="ls-sub">' + (researchBonus > 0 ? '研究树军团分支加成' : '研究树军团分支可提升') + '</div></div>';
@@ -567,7 +567,7 @@
 
     // 结构签名：招募/解雇/升级/换舰/工资状态 任一变化才重建（实时 xp 数字不计）。
     var structSig = npcs.map(function (n) {
-      return n.npcId + ":" + (n.skillGrade || "") + ":" + n.level + ":" + (n.salaryState || "") + ":" + (n.boundShipInstanceId || "-") + ":" + (n.skillId || "");
+      return n.npcId + ":" + (n.skillGrade || "") + ":" + n.level + ":" + (n.salaryState || "") + ":" + (n.boundShipInstanceId || "-") + ":" + (n.mustered ? "M" : "-") + ":" + (n.skillId || "");
     }).join("|");
     if (structSig === _legionNpcStructSig && el.innerHTML) {
       // 结构未变：仅轻量刷新实时经验文本，避免整段重建。
@@ -581,7 +581,12 @@
     npcs.forEach(function (n) { if (n.boundShipInstanceId) boundOthers[n.boundShipInstanceId] = n.npcId; });
     var ships = (st.inventory && Array.isArray(st.inventory.ships)) ? st.inventory.ships : [];
 
-    el.innerHTML = npcs.map(function (n) {
+    // 排序：在岗在前、集结待命的置底（同组内保持原顺序）
+    var ordered = npcs.slice().sort(function (a, b) {
+      return (a.mustered ? 1 : 0) - (b.mustered ? 1 : 0);
+    });
+
+    el.innerHTML = ordered.map(function (n) {
       var grade = n.skillGrade || "D";
       var xpMult = LEGION_NPC.getNpcXpMultiplier(st, n);
       var ss = salaryStatus(n);
@@ -610,8 +615,10 @@
       }
 
       var skillLabel = legionSkillName(n.skillId);
-      var pauseTxt = (n.salaryState !== "paid")
-        ? ' · <span class="legion-warn">技能暂停 · 经验暂停</span>' : '';
+      // 集结（主动待命）与欠薪（星币不足）是两种不同状态，文案分开
+      var pauseTxt = "";
+      if (n.mustered) pauseTxt = ' · <span class="legion-warn">待命 · 技能暂停 · 经验暂停 · 停止计薪</span>';
+      else if (n.salaryState !== "paid") pauseTxt = ' · <span class="legion-warn">欠薪 · 技能暂停 · 经验暂停</span>';
 
       // 经验倍率（结构恒定，建立时算一次，存 dataset 供每秒轻量改写 ETA 用）
       var rate = LEGION_NPC.calculateLegionNpcXpPerSecond ? LEGION_NPC.calculateLegionNpcXpPerSecond(st, n) : 0;
@@ -628,6 +635,7 @@
         '<div class="lc-meta"><span class="lc-xp-live">' + npcXpLiveHtmlFromData(st, n, rate, need, cap) + '</span></div>' +
         '<div class="lc-actions">' +
           '<button class="btn-mini" data-legion-bind-ship="' + n.npcId + '"' + (combatLocked ? ' disabled title="NPC 战斗中或修复中，暂不可绑定或卸下舰船"' : '') + '>绑定/更换舰船</button>' +
+          '<button class="legion-badge ' + (n.mustered ? "off" : "on") + '" data-legion-muster="' + n.npcId + '" data-muster="' + (n.mustered ? "0" : "1") + '" title="点击切换在岗 / 待命">' + (n.mustered ? "待命" : "在岗") + '</button>' +
           '<button class="btn-mini" data-legion-dismiss="' + n.npcId + '">解雇</button>' +
         '</div>' +
         '</div>';

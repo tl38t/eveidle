@@ -1007,6 +1007,7 @@
   .drop-row.drop-tactical .drop-name { color: #79e0c4; }
   .drop-row.drop-cargo .drop-name { color: #ffbf5c; }
   .drop-row.drop-gear .drop-name { color: #86e19a; }
+  .drop-row.drop-implant .drop-name { color: #9fd0ff; }
 
   /* ---- 弹药装载面板 ---- */
   .combat-ammo-loadout {

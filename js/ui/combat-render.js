@@ -461,6 +461,17 @@ function bindCombatSquadUI() {
   });
 }
 
+// 战区烈度分级：按 zone.fuelMult（燃料消耗系数）映射 5 档标签。
+// 1.0=极低(无环境耗油) / 1.2=低 / 1.35=中 / 1.6=高 / 1.8=极高。
+function zoneIntensityLabel(fuelMult) {
+  const m = Number(fuelMult) || 1;
+  if (m <= 1.05) return { label: "极低", cls: "c-gray" };
+  if (m <= 1.25) return { label: "低", cls: "c-green" };
+  if (m <= 1.45) return { label: "中", cls: "c-yellow" };
+  if (m <= 1.7) return { label: "高", cls: "c-orange" };
+  return { label: "极高", cls: "c-red" };
+}
+
 function renderCombatPanel(now) {
   const renderTime = Number(now) || Date.now();
   updateCombatRecovery(renderTime);
@@ -482,6 +493,13 @@ function renderCombatPanel(now) {
   const deathspaceGrid = document.getElementById("deathspace-grid");
   if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${getResourceDisplayName(site.ticketMaterial)} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} ${DisplayNames.getCurrencyName("lp")} · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} ${DisplayNames.getCurrencyName("lp")} · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${getResourceDisplayName(site.coreMaterial)} · 📜 ${getResourceDisplayName(site.protocolMaterial)} 2%</small></button>`).join("");
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
+  const intensityEl = document.getElementById("combat-zone-intensity");
+  if (intensityEl) {
+    const curZone = COMBAT_ZONES.find(z => z.id === (gameState.combat && gameState.combat.zone)) || display.zone || null;
+    const it = curZone ? zoneIntensityLabel(curZone.fuelMult) : null;
+    if (it) { intensityEl.textContent = `战区烈度：${it.label}（燃料消耗×${curZone.fuelMult}）`; intensityEl.className = "zone-intensity " + it.cls; }
+    else intensityEl.textContent = "";
+  }
   const targetingControl = document.getElementById("capital-targeting-control");
   const targetingSelect = document.getElementById("capital-targeting-select");
   const traitSummary = document.getElementById("capital-trait-summary");
@@ -492,7 +510,12 @@ function renderCombatPanel(now) {
   }
   if (traitSummary) { traitSummary.textContent = display.targeting.trait ? display.targeting.trait.name + " · " + display.targeting.trait.description : ""; traitSummary.title = traitSummary.textContent; }
   const zoneContent = document.getElementById("combat-zone-dropdown-content");
-  if (zoneContent) zoneContent.innerHTML = display.zones.map(zone => `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span></div>`).join("");
+  if (zoneContent) zoneContent.innerHTML = display.zones.map(zone => {
+    const zObj = COMBAT_ZONES.find(z => z.id === zone.id);
+    const it = zObj ? zoneIntensityLabel(zObj.fuelMult) : null;
+    const intHtml = it ? `<span class="area-intensity ${it.cls}">战区烈度：${it.label} · 燃料消耗×${zObj.fuelMult}</span>` : "";
+    return `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span>${intHtml}</div>`;
+  }).join("");
   const playerImage = document.getElementById("combat-player-image"); if (playerImage && !playerImage.querySelector("#combat-player-3d")) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("combat-cl-val", display.level); text("combat-laser-lv", display.skills.laser); text("combat-cannon-lv", display.skills.cannon); text("combat-missile-lv", display.skills.missile); text("combat-target-lv", display.skills.targeting);
@@ -525,6 +548,17 @@ function combatDropToItem(dropId) {
   const meta = _combatDropMeta[dropId];
   const name = meta ? meta.name : dropId;
   const icon = meta ? meta.icon : "📦";
+  // 脑插卡片（死亡空间掉落预览点击）：直接读 IMPLANT_DB 定义
+  if (dropId && (typeof IMPLANT_DB !== "undefined") && IMPLANT_DB[dropId]) {
+    const imp = IMPLANT_DB[dropId];
+    return {
+      id: dropId,
+      name: imp.name,
+      icon: imp.icon || "🧠",
+      description: (imp.desc || "") + (imp.sourceName ? "（来源：" + imp.sourceName + "）" : "") + "；在线与离线清场均有概率掉落。",
+      source: { pageId: imp.source === "deathspace" ? "combat" : (imp.source || "combat"), pageLabel: "脑插", icon: "🧠" }
+    };
+  }
   if (dropId.indexOf("special:空间站") === 0 && dropId.indexOf("核心") > 0) {
     const coreKey = dropId.slice("special:".length);
     const owned = (typeof ResourceRegistry !== "undefined" && typeof gameState !== "undefined")
@@ -671,6 +705,11 @@ function renderCombatDropPreview(display) {
       const pb = preview.probeDrop;
       rows.push(`<div class="drop-group-title">🔬 势力考古探针（小怪与 BOSS 均掉落）</div>`);
       rows.push(row("🔬", getResourceDisplayName(pb.resourceId), `BOSS ${pct(pb.bossChance)} · 小怪 ${pct(pb.normalChance)}（每次 ×${pb.qty}）`, "drop-probe", pb.resourceId));
+    }
+    if (preview.implantDrop) {
+      const imp = preview.implantDrop;
+      rows.push(`<div class="drop-group-title">🧠 脑插掉落（全通时结算 · 在线/离线同概率）</div>`);
+      rows.push(row("🧠", imp.name, `全通 ${pct(imp.chance)}（固定概率）`, "drop-implant", imp.id));
     }
   } else {
     rows.push(`<div class="drop-mode-tag belt">海盗星带</div>`);

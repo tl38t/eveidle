@@ -2192,6 +2192,20 @@ function getCombatDropPreview(state, options) {
     if (!site) return { mode: "deathspace", valid: false, reason: "unknown-deathspace" };
     const sourceZone = COMBAT_ZONES.find(item => item.id === site.sourceZoneId);
     if (!sourceZone) return { mode: "deathspace", valid: false, reason: "unknown-source-zone" };
+    // 死亡空间 6/10 三处清场额外掉落舰船制造脑插（在线/离线同概率，固定 5%）。
+    let implantDrop = null;
+    if (typeof IMPLANT_SHIP_MFG_DEATHSPACES !== "undefined" && IMPLANT_SHIP_MFG_DEATHSPACES.indexOf(site.id) !== -1) {
+      const _impId = "implant_ship_mfg";
+      const _impDef = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB[_impId]) ? IMPLANT_DB[_impId] : null;
+      implantDrop = {
+        id: _impId,
+        name: _impDef ? _impDef.name : "舰构·精通植入体",
+        icon: _impDef ? (_impDef.icon || "🚢") : "🚢",
+        desc: _impDef ? _impDef.desc : "舰船制造效率 +6%",
+        sourceName: _impDef ? _impDef.sourceName : "死亡空间 6/10",
+        chance: (typeof IMPLANT_SHIP_MFG_DROP_CHANCE !== "undefined") ? IMPLANT_SHIP_MFG_DROP_CHANCE : 0.05
+      };
+    }
     return {
       mode: "deathspace", valid: true,
       deathspaceId: site.id, name: site.name, faction: site.faction,
@@ -2199,7 +2213,8 @@ function getCombatDropPreview(state, options) {
       encryptedData: null, zoneSpecialDrops: null, ticketDrop: null, gearDrops: null, stationCoreDrops: null, cargoDrops: null,
       leaderLoot: getDeathspaceLeaderLootConfigs(site),
       probeDrop: (typeof getDeathspaceProbeDropConfig === "function") ? getDeathspaceProbeDropConfig(site) : null,
-      tacticalMaterial: getTacticalMaterialDropConfig(sourceZone)
+      tacticalMaterial: getTacticalMaterialDropConfig(sourceZone),
+      implantDrop: implantDrop
     };
   }
 

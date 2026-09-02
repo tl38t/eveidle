@@ -316,6 +316,57 @@
     if (npcBox && !npcBox._legionDelegated) {
       npcBox._legionDelegated = true;
       npcBox.addEventListener("click", function (e) {
+        // 集结 / 自由活动（每 NPC 独立）。两种情况都弹确认框：
+        //   集结 —— 每次都弹，显示本期剩余时长并提示「不退还」
+        //   恢复 —— 提示按剩余时长比例补付工资（堵「结算前集结、过了点再恢复」的套利）
+        var muster = e.target.closest("button[data-legion-muster]");
+        if (muster) {
+          guard("muster-" + muster.getAttribute("data-legion-muster"), function () {
+            if (!hasLegion() || !LEGION_NPC.setLegionNpcMuster) return;
+            var npcId = muster.getAttribute("data-legion-muster");
+            var toMuster = muster.getAttribute("data-muster") === "1";
+            var npc = (getState().legion && getState().legion.npcs || []).filter(function (n) { return n.npcId === npcId; })[0];
+            if (!npc) { msg("NPC 不存在"); return; }
+            var wage = (LEGION_NPC.WAGE && LEGION_NPC.WAGE[npc.skillGrade]) || 0;
+            var body, yesText;
+            if (toMuster) {
+              var remain = (LEGION_NPC.getLegionSalaryPeriodRemaining ? LEGION_NPC.getLegionSalaryPeriodRemaining(getState()) : 0);
+              var rMin = Math.floor(remain / 60000);
+              body = "确定让 <b>" + escapeHtml(npc.name) + "</b> 待命吗？" +
+                "<br><br>待命后该 NPC 的<b>技能与经验立即停止</b>，并<b>停止计薪</b>（每 4h 省下 " + wage.toLocaleString() + " 星币）。" +
+                "<br><br><span class=\"legion-warn\">本期工资已支付，中途待命或提前在岗均不退还剩余时长" +
+                (remain > 0 ? "（剩余 " + Math.floor(rMin / 60) + " 小时 " + (rMin % 60) + " 分）" : "") + "。</span>";
+              yesText = "确认待命";
+            } else {
+              body = "确定让 <b>" + escapeHtml(npc.name) + "</b> 切换为在岗吗？" +
+                "<br><br>将按本期剩余时长<b>比例补付工资</b>，支付后立刻恢复技能与经验。";
+              yesText = "确认在岗";
+            }
+            openModal(
+              '<div class="legion-modal-title"><i class="fa-solid fa-people-group"></i> ' + (toMuster ? "确认待命" : "确认在岗") + "</div>" +
+              '<div class="legion-modal-body">' + body + "</div>" +
+              '<div class="legion-modal-foot">' +
+                '<button class="btn primary" data-confirm-yes>' + yesText + "</button>" +
+                '<button class="btn secondary" data-confirm-no>取消</button>' +
+              "</div>"
+            );
+            _modalEl.addEventListener("click", function (ev) {
+              if (!ev.target.closest("button[data-confirm-yes]")) {
+                if (ev.target.closest("button[data-confirm-no]")) closeModal();
+                return;
+              }
+              closeModal();
+              var res = LEGION_NPC.setLegionNpcMuster(getState(), npcId, toMuster);
+              if (!res || !res.changed) {
+                if (res && res.reason === "insufficient-isk") msg("星币不足，无法在岗（需 " + Math.ceil(res.totalDue).toLocaleString() + " 星币）");
+                else msg("操作失败");
+                return;
+              }
+              msg(toMuster ? "已切换为待命，停止计薪" : ("已切换为在岗" + (res.totalDue > 0 ? "，补付 " + Math.ceil(res.totalDue).toLocaleString() + " 星币" : "")));
+            });
+          });
+          return;
+        }
         var bind = e.target.closest("button[data-legion-bind-ship]");
         if (bind) {
           guard("bind-" + bind.getAttribute("data-legion-bind-ship"), function () {

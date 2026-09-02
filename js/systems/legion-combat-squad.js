@@ -235,6 +235,7 @@
 
     const skill = NPC.getSkillById ? NPC.getSkillById(npc.skillId) : null;
     if (!skill || skill.category !== "combat") return { ok: false, reason: "not-combat" };
+    if (npc.mustered) return { ok: false, reason: "muster" }; // 集结待命：主动停效，不可参战
     if (npc.salaryState !== "paid") return { ok: false, reason: "salary-overdue" };
 
     if (!npc.boundShipInstanceId) return { ok: false, reason: "no-ship" };

@@ -284,17 +284,27 @@ function getImplantHowToGet(imp) {
   }
   switch (imp.source) {
     case "mining":
+      return "在【" + imp.sourceName + "】过程中有几率获得（如铁硅原矿带 0.000109%，铷月岩带 0.003906%）。获得后永久生效，不占装备槽。";
     case "gas":
+      return "在【" + imp.sourceName + "】过程中有几率获得（如富勒烯云团 0.000163%，超纯聚合气体云团 0.002441%）。获得后永久生效，不占装备槽。";
     case "equipment":
+      return "在【" + imp.sourceName + "】过程中有几率获得（如 15 秒配方 0.005%，如 210 秒配方 0.07%）。获得后永久生效，不占装备槽。";
     case "ship":
+      return "在【" + imp.sourceName + "】过程中有几率获得（如 18 秒组件 0.006%，如 630 秒组件 0.21%）。获得后永久生效，不占装备槽。";
     case "booster":
-      return "在【" + imp.sourceName + "】过程中有几率获得。获得后永久生效，不占装备槽。";
+      return "在【" + imp.sourceName + "】过程中有几率获得（如 21 秒配方 0.007%，如 180 秒配方 0.06%）。获得后永久生效，不占装备槽。";
     case "archaeology":
-      return "完成【考古】并成功解析时有几率获得。获得后永久生效，不占装备槽。";
-    case "cargo":
-      return "开启【" + (imp.sourceName || "货柜") + "】时有几率获得。获得后永久生效，不占装备槽。";
+      return "完成【考古】解析成功时有几率获得，单次概率按解析周期计算：30 秒档 0.021% ～ 300 秒档 0.208%（周期越长几率越高）。获得后永久生效，不占装备槽。";
+    case "cargo": {
+      // 货柜按尺寸分档；T4 在小型货柜权重为 0，故不列小型档。
+      const isT4 = String(imp.sourceName || "").indexOf("T4") !== -1;
+      const bySize = isT4
+        ? "中型 0.23% / 大型 1.81% / 超大型 6.55%"
+        : "小型 0.77% / 中型 1.68% / 大型 5.68% / 超大型 10.75%";
+      return "开启【" + (imp.sourceName || "货柜") + "】时有几率获得（" + bySize + "，按货柜尺寸）。获得后永久生效，不占装备槽。";
+    }
     case "deathspace":
-      return "在【死亡空间 6/10】清场时有 5% 几率获得（仅在线清场掉落）。获得后永久生效，不占装备槽。";
+      return "在【死亡空间 6/10】清场时有 5% 几率获得。获得后永久生效，不占装备槽。";
     default:
       return "通过游戏内活动有几率获得。获得后永久生效，不占装备槽。";
   }
@@ -318,14 +328,20 @@ const IMPLANT_DROP_REF_MINING = 20;   // 最低级采矿区 凡晶石带 baseTim
 const IMPLANT_DROP_INV_MFG = 10000;
 const IMPLANT_DROP_REF_MFG = 30;      // 装备制造 T1 基准时长
 
-// 考古：每次成功周期（archaeology:success 由 resolveArchaeologyCycle 逐周期发射，离线亦逐周期，故每周期掷一次、cycles 恒为 1）按该次实际解析周期掷骰 p = (cycleSeconds / REF_ARCH) / INV_ARCH。
-// 每小时期望命中 = 3600 / (REF_ARCH × INV_ARCH)，与遗址档位/玩家效率无关；p 随 cycle 线性增长 → 五档遗址（30/60/120/180/300s）单跑概率随周期放大、每小时期望恒定（时间公平，无高阶双奖励）。
-// 2026-08-28 重构：旧 INV_ARCH=810000 使每小时期望≈9.3e-6（≈10⁵h/枚，实际近乎不掉）。
-//   定标：制造 REF×INV = 30×10000 = 300000 ≈ 83h/枚，但制造流程无痛，考古单次周期远长且几乎无周期减免装备，
-//   故考古按 40h/枚定标 → REF×INV = 3600×40 = 144000 → INV_ARCH = 144000/480 = 300。
-//   结果：每枚每小时期望 0.025（≈40h/枚），4 枚合计≈10h 出任意一枚；各档位每小时期望一致。
-const IMPLANT_DROP_INV_ARCH = 300;
-const IMPLANT_DROP_REF_ARCH = 480;    // 解析周期归一化基准（常量，仅为 REF×INV=144000 服务；真实 site.time 为 30–300s）
+// 考古：每次成功周期（archaeology:success 由 resolveArchaeologyCycle 逐周期发射，离线亦逐周期，故每周期掷一次、cycles 恒为 1）
+// 按**遗址档位时长**掷骰 p = (site.time / REF_ARCH) / INV_ARCH —— 概率恒定，不随玩家效率 / 实际周期波动。
+// 2026-09-02 重构（用户拍板「概率要保持一致」）：
+//   旧公式取 getArchaeologyCycleSeconds（含增强剂/后勤/科研/脑插/分析仪/改装件/探针/军团全部减免），
+//   玩家越强单次概率越低 —— 同一遗址的显示值随效率不断缩水（30s 档 0.0208% → 0.006%），
+//   玩家无法建立稳定预期，且数字随自身成长反向变化，观感等同 bug。
+//   现改为按 site.time 定值：概率对同一遗址恒定，玩家效率的收益改由「每小时解析次数变多」体现。
+//   定标：战列级考古船（远镜级 · 4×先驱分析仪 V + 3×遗迹速掘 I 型 + 同化探针 + archEff 满级 + 解析脑插）
+//        综合效率 E≈3.18 倍，目标 40h/枚（每小时期望 0.025）
+//        → REF×INV = 144000 × E ≈ 458000 → INV_ARCH = 458000 / 480 ≈ 955。
+//   实测期望：I 型 40.0h / II 型 33.0h / III 型 25.9h / IV 型 18.8h / V 型 11.8h（配置越好越快）。
+//   注：档位间仍时间公平（p ∝ site.time，实际周期 ∝ site.time，两者抵消），每小时期望与遗址档位无关。
+const IMPLANT_DROP_INV_ARCH = 955;
+const IMPLANT_DROP_REF_ARCH = 480;    // 解析周期归一化基准（常量，仅为 REF×INV 服务；真实 site.time 为 30–300s）
 // 死亡空间：仅 6/10 三处清场按固定概率掉落舰船制造脑插（离线不重发该事件，故仅在线清场掉落）。
 const IMPLANT_SHIP_MFG_DEATHSPACES = ["angel_ded_6_10", "blood_ded_6_10", "sansha_ded_6_10"];
 const IMPLANT_SHIP_MFG_DROP_CHANCE = 0.05;
@@ -514,9 +530,8 @@ function announceImplant(id) {
     const siteId = event.siteId;
     const site = (typeof getArchaeologySiteById === "function") ? getArchaeologySiteById(siteId)
       : (typeof ARCHAEOLOGY_SITES !== "undefined" ? ARCHAEOLOGY_SITES.find(s => s.id === siteId) : null);
-    const cyc = (typeof getArchaeologyCycleSeconds === "function" && site)
-      ? getArchaeologyCycleSeconds(st, site)
-      : (site && Number(site.time) > 0 ? Number(site.time) : IMPLANT_DROP_REF_ARCH);
+    // 概率恒定：按「遗址档位时长」掷骰，不应用玩家效率减免（与 UI 显示同源，见 archaeology-render.js）。
+    const cyc = (site && Number(site.time) > 0) ? Number(site.time) : IMPLANT_DROP_REF_ARCH;
     const p = (cyc / IMPLANT_DROP_REF_ARCH) / IMPLANT_DROP_INV_ARCH;
     const targets = ["implant_collect_mining", "implant_collect_gas", "implant_double_mining", "implant_double_gas"];
     if (!st.implants || typeof st.implants !== "object") st.implants = {};
@@ -535,12 +550,24 @@ function announceImplant(id) {
   });
 
   // 死亡空间（仅 6/10 三处清场）→ 舰船制造脑插，固定 5%。
-  // 离线不重发 combat:deathspaceCleared，故仅在线清场掉落。
+  // 在线（combat:deathspaceCleared）与离线（offline-combat.js 清场统计点）共用同一函数，确保同概率掉落、离线亦掉落。
+  // rng 为可选随机源：在线传 Math.random（默认），离线传 detRng(c) 走离线确定性 RNG（不重发 deathspaceCleared 事件，避免 LP/清场双计）。
+  function rollDeathspaceImplantDrop(state, deathspaceId, rng) {
+    if (!state || !deathspaceId) return null;
+    if (IMPLANT_SHIP_MFG_DEATHSPACES.indexOf(deathspaceId) === -1) return null;
+    if (state.implants && state.implants.implant_ship_mfg) return null; // 已拥有不再掉落（与 tryDropFromAction 一致，避免重复脑插转提取剂双计）
+    const roll = (typeof rng === "function") ? rng() : Math.random();
+    if (!(roll < IMPLANT_SHIP_MFG_DROP_CHANCE)) return null;
+    const id = grantImplant(state, "implant_ship_mfg");
+    if (id) announceImplant(id);
+    return id;
+  }
+  if (typeof globalThis !== "undefined") globalThis.rollDeathspaceImplantDrop = rollDeathspaceImplantDrop;
+  if (typeof window !== "undefined" && window !== globalThis) window.rollDeathspaceImplantDrop = rollDeathspaceImplantDrop;
+
   GE.on("combat:deathspaceCleared", function (event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st || !event) return;
-    if (IMPLANT_SHIP_MFG_DEATHSPACES.indexOf(event.deathspaceId) === -1) return;
-    const id = tryDropFromAction(st, "implant_ship_mfg", IMPLANT_SHIP_MFG_DROP_CHANCE, 1);
-    if (id) announceImplant(id);
+    rollDeathspaceImplantDrop(st, event.deathspaceId);
   });
 })();

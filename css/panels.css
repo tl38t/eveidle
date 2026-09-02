@@ -31,6 +31,11 @@
   .legion-card .lc-actions { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .legion-card select { font-size: 11px; }
   .legion-card button { font-size: 11px; padding: 2px 8px; cursor: pointer; border-radius: 4px; border: 1px solid rgba(138,180,214,0.5); background: rgba(40,70,95,0.6); color: #cfe3f5; }
+  /* 集结 / 在岗徽章 —— 状态显示 + 点击切换（绿=在岗 / 灰=待命） */
+  .legion-card .legion-badge { font-size: 11px; padding: 3px 10px; border-radius: 5px; cursor: pointer; font-family: inherit; font-weight: 500; border: 1px solid; background: transparent; }
+  .legion-card .legion-badge.on  { color: #5cb85c; border-color: rgba(92,184,92,0.55);  background: rgba(40,100,55,0.25); }
+  .legion-card .legion-badge.off { color: #8a9bb0; border-color: rgba(120,140,160,0.45); background: rgba(60,75,90,0.25); }
+  .legion-card .legion-badge:hover { filter: brightness(1.15); }
   .legion-msg { font-size: 12px; margin-top: 8px; min-height: 16px; color: #e8c06a; }
   .legion-warn { color: #e8645a; }
   @media (max-width: 640px) { .legion-columns { grid-template-columns: 1fr; } }

@@ -130,6 +130,11 @@ function setPlanetAutoRenew(state, deploymentId, enabled, minIskReserve, actionT
   if (!isResearchProtocolUnlocked(state, "planauto")) {
     return { changed:false, reason:RESEARCH_PROTOCOL_REASONS.PROTOCOL_LOCKED };
   }
+  // 开启（enabled=true）必须协议总开关也已启用，否则续期逻辑不会生效（静默失败）；
+  // 关闭（enabled=false）不受此限制，允许随时收回配置。
+  if (enabled && !isResearchProtocolEnabled(state, "planauto")) {
+    return { changed:false, reason:RESEARCH_PROTOCOL_REASONS.PROTOCOL_DISABLED };
+  }
   if (typeof enabled !== "boolean") return { changed:false, reason:RESEARCH_PROTOCOL_REASONS.INVALID_ENABLED };
   // 储备金：必须是有限、非负 number；数字字符串 / NaN / Infinity / 负数 / 对象 / 布尔一律拒绝
   if (typeof minIskReserve !== "number" || !isFinite(minIskReserve) || minIskReserve < 0) {

@@ -2294,7 +2294,14 @@ function renderResearchProtocolPanelHtml(display) {
     parts.push('<div class="rt-d-hint research-protocol-scope">' + escapeAchievementText(display.scopeText) + '</div>');
   }
   if (display.protocolId === "planauto") {
+    const active = display.active === true;
     parts.push('<div class="rt-d-lab">行星基地（逐个独立配置）</div>');
+    if (!active) {
+      const why = !display.unlocked
+        ? "需先在研究树点亮「行星维护自动化」"
+        : "需先开启上方「协议总开关 ｜ 启用协议」";
+      parts.push('<div class="rt-d-hint research-protocol-gate">自动续期暂未生效：' + escapeAchievementText(why) + "。开启后下方按钮才可配置。</div>");
+    }
     const deployments = Array.isArray(display.deployments) ? display.deployments : [];
     if (!deployments.length) {
       parts.push('<div class="rt-d-row">当前没有行星基地</div>');
@@ -2305,22 +2312,23 @@ function renderResearchProtocolPanelHtml(display) {
         const timeText = (dep.running ? "到期时间 " : "已到期于 ") + formatAchievementUnlockTime(dep.expiresAt);
         const metaText = "续期费用 " + Math.round(Number(dep.renewCostISK) || 0).toLocaleString("zh-CN") +
           " 星币 ｜ 自动续期：" + (on ? "已开启" : "已关闭");
-        return '<div class="research-protocol-planet" data-deployment-row="' + idAttr + '" data-deployment-current="' + (on ? "true" : "false") + '">' +
+        const disabledAttr = active ? "" : " disabled";
+        return '<div class="research-protocol-planet' + (active ? "" : " research-protocol-planet--muted") + '" data-deployment-row="' + idAttr + '" data-deployment-current="' + (on ? "true" : "false") + '">' +
           '<div class="research-protocol-planet-head">' +
             escapeAchievementText((dep.planetIcon ? dep.planetIcon + " " : "") + dep.planetName + " ｜ " + dep.statusText + " ｜ " + timeText) +
           '</div>' +
           '<div class="research-protocol-planet-meta">' + escapeAchievementText(metaText) + '</div>' +
           '<div class="research-protocol-planet-ctrl">' +
-            '<button class="research-btn' + (on ? " danger" : "") + '" type="button"' +
+            '<button class="research-btn' + (on ? " danger" : "") + '" type="button"' + disabledAttr +
               ' data-detail-action="planauto-toggle" data-deployment-id="' + idAttr + '"' +
               ' data-deployment-enabled="' + (on ? "false" : "true") + '">' +
               (on ? "关闭自动续期" : "开启自动续期") +
             '</button>' +
             '<label class="research-protocol-reserve-label">最低星币储备' +
               '<input class="research-protocol-reserve" type="number" min="0" step="1" value="' +
-                escapeAchievementText(String(Number(dep.minIskReserve) || 0)) + '" data-protocol-reserve>' +
+                escapeAchievementText(String(Number(dep.minIskReserve) || 0)) + '" data-protocol-reserve' + disabledAttr + '>' +
             '</label>' +
-            '<button class="research-btn" type="button" data-detail-action="planauto-reserve" data-deployment-id="' + idAttr + '">保存储备</button>' +
+            '<button class="research-btn" type="button" data-detail-action="planauto-reserve" data-deployment-id="' + idAttr + '"' + disabledAttr + '>保存储备</button>' +
           '</div>' +
         '</div>';
       }).join(""));
@@ -3564,6 +3572,79 @@ function buildOrbit() {
   const ship = document.createElementNS(namespace, "text"); ship.setAttribute("x", center); ship.setAttribute("y", center + 10); ship.setAttribute("text-anchor", "middle"); ship.setAttribute("class", "ship-icon"); ship.textContent = "🚀"; svg.appendChild(ship);
 }
 
+// ---- 装备选择列表 · 数值摘要（手机端空间有限，第二行只放最主要的一条）----
+function equipmentStatSummary(eq) {
+  if (!eq) return "";
+  if (eq.combat && eq.combat.kind === "weapon") return "伤害 " + (Number(eq.combat.baseDamage) || 0);
+  if (eq.combat && eq.combat.kind === "repair") return "恢复 " + (Number(eq.combat.amount) || 0);
+  if (eq.bonuses) {
+    const labels = { miningEfficiency: "采矿效率", gasEfficiency: "气云效率", miningLaserEfficiency: "采矿激光效率", gasLaserEfficiency: "气云激光效率", shieldCapacity: "护盾容量" };
+    for (const k in eq.bonuses) {
+      const v = Number(eq.bonuses[k]) || 0;
+      if (v) return (labels[k] || k) + " +" + Math.round(v * 100) + "%";
+    }
+  }
+  return "";
+}
+// 可比较数值：武器取伤害、维修取恢复量、其余取第一个加成（转成百分比数值）
+function equipmentStatNumber(eq) {
+  if (!eq) return null;
+  if (eq.combat && eq.combat.kind === "weapon") return Number(eq.combat.baseDamage) || 0;
+  if (eq.combat && eq.combat.kind === "repair") return Number(eq.combat.amount) || 0;
+  if (eq.bonuses) {
+    for (const k in eq.bonuses) { const v = Number(eq.bonuses[k]) || 0; if (v) return Math.round(v * 1000) / 10; }
+  }
+  return null;
+}
+// 与当前槽的差值：仅当两者「量纲相同」时才比较，避免伤害与采集效率互比
+function equipmentStatDelta(eq, curEq) {
+  if (!eq || !curEq) return null;
+  const kindOf = e => (e.combat && e.combat.kind) || (e.bonuses ? Object.keys(e.bonuses)[0] : null);
+  if (kindOf(eq) !== kindOf(curEq)) return null;
+  const a = equipmentStatNumber(eq), b = equipmentStatNumber(curEq);
+  if (a == null || b == null) return null;
+  return Math.round((a - b) * 10) / 10;
+}
+// 档位文本：由 id 前缀 t1_ / t2_ 推导；势力 / 联盟装备无前缀则不显示
+function equipmentTierText(eq) {
+  const m = String((eq && eq.id) || "").match(/^t(\d+)_/);
+  return m ? "T" + m[1] : "";
+}
+// 当前槽对照条（列表顶部固定，始终可见）
+function renderEquipCurrentBar(display, slot) {
+  const labelMap = { high: "高槽", mid: "中槽", low: "低槽", rig: "改装件" };
+  const label = labelMap[slot.type] || "装备";
+  const idx = (slot.slotIndex != null) ? " " + (Number(slot.slotIndex) + 1) : "";
+  const curEq = slot.equipmentId ? EQUIPMENT_DB[slot.equipmentId] : null;
+  if (!curEq) {
+    return '<div class="equip-current is-empty"><span class="ec-label">' + label + idx + ' · 当前</span><span class="ec-main">空槽 · 未安装</span></div>';
+  }
+  const equippedItem = (display.equipped || []).find(it => it.id === slot.equipmentId) || null;
+  const level = Math.max(0, Math.floor(Number(equippedItem && equippedItem.enhancementLevel) || 0));
+  const levelText = level > 0 ? " · +" + level : " · 未强化";
+  return '<div class="equip-current"><span class="ec-label">' + label + idx + ' · 当前</span>' +
+    '<span class="ec-main">' + (curEq.icon || "") + " " + curEq.name + " · " + equipmentStatSummary(curEq) + levelText + "</span></div>";
+}
+// 两行布局选项（方案 A）：行 1 图标 + 名称 + 状态徽章；行 2 核心数值（含与当前槽差值）· 档位 · 改造
+function renderEquipOptionDuo(item, curEq, isRig) {
+  const eq = EQUIPMENT_DB[item.ids[0]] || null;
+  const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
+  const levelText = level > 0 ? "+" + level : "未强化";
+  const summary = equipmentStatSummary(eq);
+  const delta = equipmentStatDelta(eq, curEq);
+  const deltaHtml = (delta == null || delta === 0) ? ""
+    : ' <span class="' + (delta > 0 ? "eq-up" : "eq-down") + '">(' + (delta > 0 ? "+" : "") + delta + ")</span>";
+  const tier = equipmentTierText(eq);
+  const tierHtml = tier ? " · " + tier : "";
+  const fitted = !!curEq && curEq.id === item.ids[0] && !isRig;
+  const badge = fitted ? '<span class="eq-badge fitted">已装</span>' : '<span class="eq-badge">未装</span>';
+  const countHtml = item.count > 1 ? ' <span class="eq-count">×' + item.count + "</span>" : "";
+  return '<button class="equip-option duo' + (fitted ? " is-fitted" : "") + '" data-equip="' + item.ids[0] + '">' +
+    '<span class="eq-row1"><span class="eq-icon">' + item.icon + '</span><span class="eq-name">' + item.name + "</span>" + badge + "</span>" +
+    '<span class="eq-row2">' + summary + deltaHtml + tierHtml + ' · <span class="' + (level > 0 ? "eq-up" : "") + '">' + levelText + "</span>" + countHtml + "</span>" +
+    "</button>";
+}
+
 function openOrbitSelect(index) {
   const display = getShipFittingDisplayState(gameState, orbitShipId); if (!display) return;
   const slot = display.orbitSlots.find(item => item.index === index); if (!slot || !slot.enabled) return;
@@ -3576,21 +3657,21 @@ function openOrbitSelect(index) {
     const stacks = slot.type === "rig"
       ? ((display.rigStackCandidates && display.rigStackCandidates[slot.slotIndex]) || [])
       : (display.inventoryStacksBySlot && display.inventoryStacksBySlot[slot.type]) || [];
+    const curEq = slot.equipmentId ? EQUIPMENT_DB[slot.equipmentId] : null;
+    const currentBar = renderEquipCurrentBar(display, slot);
     if (slot.type === "rig") {
       // 改装件槽：拆卸即销毁（不返还库存）。占用槽提供"销毁"按钮；替换=旧件销毁+新件安装。
       const destroyButton = slot.equipmentId
         ? '<button class="equip-option empty-option" data-rig-destroy="1"><span class="eq-icon">🗑</span><span class="eq-name">销毁改装件（不返还）</span></button>'
         : "";
       const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁；同系列可重复装配，但后续装配受谐振效应影响，实际效果递减</div>';
-      options.innerHTML = hint + destroyButton + (stacks.length
-        ? stacks.map(item => `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name}${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`).join("")
+      options.innerHTML = currentBar + hint + destroyButton + (stacks.length
+        ? stacks.map(item => renderEquipOptionDuo(item, curEq, true)).join("")
         : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
     } else {
-      options.innerHTML = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>' + stacks.map(item => {
-        const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
-        const levelText = level > 0 ? `+${level}` : "未强化";
-        return `<button class="equip-option" data-equip="${item.ids[0]}"><span class="eq-icon">${item.icon}</span><span class="eq-name">${item.name} <span class="eq-enhancement-level">· ${levelText}</span>${item.count > 1 ? " <span class=\"eq-count\">×" + item.count + "</span>" : ""}</span></button>`;
-      }).join("");
+      // 「卸下装备」置底，避免占据首屏视线
+      const unequipBtn = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>';
+      options.innerHTML = currentBar + stacks.map(item => renderEquipOptionDuo(item, curEq, false)).join("") + unequipBtn;
     }
   panel.style.left = "auto"; panel.style.right = "-10px"; panel.style.top = "50%"; panel.style.transform = "translateY(-50%)"; panel.classList.add("active");
 }

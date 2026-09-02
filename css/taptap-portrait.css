@@ -329,6 +329,37 @@
   .equip-select-panel .equip-option-hint{ color:#8a6d3b; }
   .equip-select-panel #equipSelectOptions{ max-height:min(360px, 50vh); overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; padding-right:4px; }
   .equip-select-panel .eq-count{ color:#d4a843; font-weight:600; margin-left:4px; }
+
+  /* 方案 A（移动端）：两行布局 + 当前槽对照条
+     关键修复：上面的 .eq-name 是 nowrap + ellipsis，长装备名在窄屏会被省略号截断；
+     两行布局下改为 normal + visible，让名称换行完整显示，不再被吃掉。 */
+  .equip-select-panel .equip-option.duo{ display:block; padding:9px 12px; min-height:52px; }
+  .equip-select-panel .equip-option.duo .eq-row1{ display:flex; align-items:center; gap:10px; }
+  .equip-select-panel .equip-option.duo .eq-row1 .eq-name{
+    flex:1 1 auto; min-width:0;
+    overflow:visible; text-overflow:clip; white-space:normal; word-break:break-word; line-height:1.35;
+  }
+  .equip-select-panel .equip-option.duo .eq-row2{ margin-top:3px; padding-left:38px; font-size:12px; color:#8a9bb0; line-height:1.35; }
+  .equip-select-panel .equip-option.duo.is-fitted{ border-left:3px solid rgba(92,184,92,.8); }
+  .equip-select-panel .eq-badge{ flex:0 0 auto; font-size:11px; padding:1px 7px; border-radius:4px; color:#5cb85c; border:1px solid rgba(92,184,92,.6); background:rgba(40,100,55,.25); font-style:normal; }
+  .equip-select-panel .eq-badge.fitted{ color:#8a9bb0; border-color:rgba(120,140,160,.5); background:rgba(60,75,90,.25); }
+  .equip-select-panel .equip-current{ padding:8px 12px; margin:6px 0 10px; border-radius:8px; background:rgba(40,70,95,.45); border:1px solid rgba(138,180,214,.3); }
+  .equip-select-panel .equip-current .ec-label{ display:block; font-size:11px; color:#8ab4d6; }
+  .equip-select-panel .equip-current .ec-main{ display:block; font-size:13px; color:#cfe3f5; margin-top:2px; line-height:1.35; }
+  .equip-select-panel .equip-current.is-empty .ec-main{ color:#6b7c8f; }
+  .equip-select-panel .eq-up{ color:#5cb85c; }
+  .equip-select-panel .eq-down{ color:#e8645a; }
+
+  /* 病根：生产 .equip-select-panel 默认 max-width:220px，手机上内容区仅 ~188px，
+     扣掉 28px 图标 + 10px gap 后名称只剩 ~150px，长装备名必然被截断。
+     移动端放宽到接近屏宽，并改为水平居中 —— JS 在 openOrbitSelect 里写了
+     right:-10px 的内联定位，宽面板靠右会溢出屏幕，故需 !important 覆盖。 */
+  .equip-select-panel{
+    min-width:0; max-width:none;
+    width:min(360px, calc(100vw - 24px));
+    left:50% !important; right:auto !important;
+    transform:translate(-50%,-50%) !important;
+  }
 }
 
 /* ============ 船坞移动端「单舰焦点」重构 ============ */

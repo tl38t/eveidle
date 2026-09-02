@@ -357,11 +357,13 @@ function renderArchaeologyPage(now) {
       </section>`;
 
     // ---- 脑插掉落（独立事件路径，2026-08-28）：4 枚采集脑插，每次成功周期独立掷骰 ----
-    // 概率公式与 js/data/implants.js 掉落监听同源：p = 实际周期 / REF_ARCH / INV_ARCH。
-    const archCycleSec = Number(selectedSite.actualCycleTime) || 0;
+    // 概率公式与 js/data/implants.js 掉落监听同源：p = 遗址档位时长 / REF_ARCH / INV_ARCH。
+    // 2026-09-02：改用 site.time（档位时长，恒定）而非 actualCycleTime（含玩家效率减免），
+    // 保证同一遗址显示的概率不随玩家效率变化，且与 implants.js 的实际掷骰完全一致。
+    const archSiteTime = Number(selectedSite.time) || 0;
     const ARCH_IMPLANT_REF = (typeof IMPLANT_DROP_REF_ARCH !== "undefined") ? IMPLANT_DROP_REF_ARCH : 480;
-    const ARCH_IMPLANT_INV = (typeof IMPLANT_DROP_INV_ARCH !== "undefined") ? IMPLANT_DROP_INV_ARCH : 300;
-    const pImplantPerCycle = archCycleSec > 0 ? (archCycleSec / ARCH_IMPLANT_REF) / ARCH_IMPLANT_INV : 0;
+    const ARCH_IMPLANT_INV = (typeof IMPLANT_DROP_INV_ARCH !== "undefined") ? IMPLANT_DROP_INV_ARCH : 955;
+    const pImplantPerCycle = archSiteTime > 0 ? (archSiteTime / ARCH_IMPLANT_REF) / ARCH_IMPLANT_INV : 0;
     const ARCH_IMPLANT_TARGETS = [
       { id:"implant_collect_mining", name:"采集·采矿增效植入体", desc:"采矿效率 +3%" },
       { id:"implant_collect_gas",    name:"采集·采气增效植入体", desc:"采气效率 +3%" },
@@ -373,7 +375,7 @@ function renderArchaeologyPage(now) {
       return dropRow(
         "脑插掉落",
         (db.name || t.name) + " <span style='color:#7e91a3'>· " + (db.desc || t.desc) + " · 已拥有则转换为脑突触加速剂（小）</span>",
-        (pImplantPerCycle * 100).toFixed(3) + "%", "implant-row"
+        (pImplantPerCycle * 100).toFixed(4) + "%", "implant-row"
       );
     }).join("");
     const implantSection = `

@@ -728,6 +728,9 @@
       // 整条死亡空间通关
       bump(s.deathspaceClearsById, site.id, 1);
       recordFirst(s, "firstDeathspaceClear", nowRef.t);
+      // 离线死亡空间清场同样掉落舰船制造脑插（与在线同概率 5%；用离线确定性 RNG 掷骰，避免重发 combat:deathspaceCleared 事件导致 LP/清场双计）
+      const _rollDsImplant = G("rollDeathspaceImplantDrop");
+      if (typeof _rollDsImplant === "function") _rollDsImplant(state, site.id, detRng(c));
       // 队列感知：死亡空间每全通一次计 1 入场（与在线 resolveDeathspaceWaveVictory 一致）；
       // 达标则停止离线模拟并终结队列项；未达标则手动重入下一入场（消耗密钥），由 queueEntries 接管连刷计数。
       if (c.queueItemId && c.queueEntriesTarget > 0) {
@@ -956,6 +959,12 @@
     const c = state.combat;
     const rng = detRng(c);
     const da = s.dropAccum;
+    // 军团 NPC 稀有掉落加成（与在线 roll* 系列同一倍率，只放大精英/Boss 稀有掉落）：
+    // 离线结算同样生效，在线/离线口径一致。概率封顶 1 —— 在线每击毁 1 敌最多掉 1 份，
+    // 离线批量重滚不得算出多于击杀数的份数（倍率 > 1 时 batchCount 会溢出）。
+    const legionDropFn = G("getLegionCombatDropMult");
+    const legionMult = (typeof legionDropFn === "function") ? legionDropFn(state) : 1;
+    const legionChance = p => Math.min((Number(p) || 0) * legionMult, 1);
     // 1) 势力加密数据
     for (const zoneId in da.factionData) {
       const zone = COMBAT_ZONES.find(z => z.id === zoneId);
@@ -963,8 +972,8 @@
       const cfg = G("getEncryptedDataDropConfig")(zone);
       if (!cfg) continue;
       const fd = da.factionData[zoneId];
-      if (fd.elite) { const n = batchCount(fd.elite, cfg.eliteChance, rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
-      if (fd.boss) { const n = batchCount(fd.boss, cfg.bossChance, rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
+      if (fd.elite) { const n = batchCount(fd.elite, legionChance(cfg.eliteChance), rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
+      if (fd.boss) { const n = batchCount(fd.boss, legionChance(cfg.bossChance), rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
     }
     // 1.5) 装备专用料（Tier2，zone-bound；死亡空间不计入，复用 elite/boss 计数）
     for (const zoneId in da.factionData) {
@@ -974,8 +983,8 @@
       if (!gearConfigs.length) continue;
       const fd = da.factionData[zoneId];
       for (const cfg of gearConfigs) {
-        if (fd.elite) { const n = batchCount(fd.elite, cfg.eliteChance, rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
-        if (fd.boss) { const n = batchCount(fd.boss, cfg.bossChance, rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
+        if (fd.elite) { const n = batchCount(fd.elite, legionChance(cfg.eliteChance), rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
+        if (fd.boss) { const n = batchCount(fd.boss, legionChance(cfg.bossChance), rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
       }
     }
     // 1.6) 空间站四核心（Tier3，唯一产出；死亡空间不计入，复用 elite/boss 计数）
@@ -988,7 +997,7 @@
       const cc = da.stationCore[zoneId];
       for (const cfg of coreConfigs) {
         if (obtainedCores[cfg.coreId]) continue;
-        const n = (cc.elite ? batchCount(cc.elite, cfg.eliteChance, rng) : 0) + (cc.boss ? batchCount(cc.boss, cfg.bossChance, rng) : 0);
+        const n = (cc.elite ? batchCount(cc.elite, legionChance(cfg.eliteChance), rng) : 0) + (cc.boss ? batchCount(cc.boss, legionChance(cfg.bossChance), rng) : 0);
         if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty); addResource(s, cfg.resourceId, cfg.qty); obtainedCores[cfg.coreId] = true; break; }
       }
     }
@@ -1022,8 +1031,8 @@
     for (const siteId in da.probe) {
       const pv = da.probe[siteId];
       if (!pv) continue;
-      const n = (pv.normal ? batchCount(pv.normal, pv.normalChance, rng) : 0)
-              + (pv.boss ? batchCount(pv.boss, pv.bossChance, rng) : 0);
+      const n = (pv.normal ? batchCount(pv.normal, legionChance(pv.normalChance), rng) : 0)
+              + (pv.boss ? batchCount(pv.boss, legionChance(pv.bossChance), rng) : 0);
       if (n > 0) { RR.add(state, pv.resourceId, pv.qty * n); addResource(s, pv.resourceId, pv.qty * n); }
     }
     // 1.8) 同位素标记打捞臂：主动打捞舰船组件（按敌舰等级档位，确定性重滚；同位素消耗已在 recordKill 按会话虚拟余额门控）
@@ -1072,7 +1081,7 @@
       for (const e of entries) {
         const cfg = configs.find(cc => cc.resourceId === e.resourceId);
         if (!cfg) continue;
-        const chance = e.kind === "boss" ? cfg.bossChance : (e.kind === "elite" ? cfg.eliteChance : 0);
+        const chance = e.kind === "boss" ? legionChance(cfg.bossChance) : (e.kind === "elite" ? legionChance(cfg.eliteChance) : 0);
         if (!chance) continue;
         byRes[e.resourceId] = byRes[e.resourceId] || { qty: cfg.qty, n: 0, chance };
         byRes[e.resourceId].n++;

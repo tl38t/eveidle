@@ -222,6 +222,14 @@
   .area-dropdown-content .area-option.selected { color: #d4a843; }
   .area-dropdown-content .area-option.locked { color: #3a4a5a; font-style: italic; }
   .area-dropdown-content .area-option .area-req { font-size: 10px; color: #4a5a6a; margin-left: 8px; }
+  /* 战区烈度标签：按燃料消耗系数分级配色 */
+  .area-intensity { font-size: 10px; margin-left: 8px; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
+  .zone-intensity { font-size: 12px; padding: 2px 8px; border-radius: 8px; white-space: nowrap; align-self: center; }
+  .area-intensity.c-gray, .zone-intensity.c-gray { background: #e5e7eb; color: #374151; }
+  .area-intensity.c-green, .zone-intensity.c-green { background: #dcfce7; color: #166534; }
+  .area-intensity.c-yellow, .zone-intensity.c-yellow { background: #fef9c3; color: #854d0e; }
+  .area-intensity.c-orange, .zone-intensity.c-orange { background: #ffedd5; color: #9a3412; }
+  .area-intensity.c-red, .zone-intensity.c-red { background: #fee2e2; color: #991b1b; }
 
   /* ===== 工业卡片：手机端紧凑网格（对齐银河奶牛放置风格，一屏内不滚动显示全部） ===== */
   @media (max-width: 720px) {
@@ -667,6 +675,19 @@
   .equip-select-panel .equip-option.empty-option:hover { background: rgba(74,74,74,0.1); }
   .equip-select-panel #equipSelectOptions { max-height: min(420px, 60vh); overflow-y: auto; padding-right: 4px; }
   .equip-select-panel .eq-count { color: #d4a843; font-weight: 600; margin-left: 4px; }
+  /* 方案 A：两行布局 + 当前槽对照条 —— 解决手机端装备文本被截断、且不显示当前槽内装备的问题 */
+  .equip-select-panel .equip-option.duo { display: block; padding: 7px 8px; }
+  .equip-select-panel .equip-option.duo .eq-row1 { display: flex; align-items: center; gap: 10px; }
+  .equip-select-panel .equip-option.duo .eq-row2 { margin-top: 2px; padding-left: 38px; font-size: 11px; color: #7d8fa3; }
+  .equip-select-panel .equip-option.duo.is-fitted { border-left: 2px solid rgba(92,184,92,0.7); }
+  .equip-select-panel .eq-badge { flex-shrink: 0; font-size: 10px; padding: 1px 6px; border-radius: 3px; color: #5cb85c; border: 1px solid rgba(92,184,92,0.55); background: rgba(40,100,55,0.2); font-style: normal; }
+  .equip-select-panel .eq-badge.fitted { color: #8a9bb0; border-color: rgba(120,140,160,0.45); background: rgba(60,75,90,0.2); }
+  .equip-select-panel .equip-current { padding: 6px 8px; margin-bottom: 6px; border-radius: 4px; background: rgba(40,70,95,0.45); border: 1px solid rgba(138,180,214,0.3); }
+  .equip-select-panel .equip-current .ec-label { display: block; font-size: 10px; color: #8ab4d6; }
+  .equip-select-panel .equip-current .ec-main { display: block; font-size: 12px; color: #cfe3f5; margin-top: 1px; }
+  .equip-select-panel .equip-current.is-empty .ec-main { color: #6b7c8f; }
+  .equip-select-panel .eq-up { color: #5cb85c; }
+  .equip-select-panel .eq-down { color: #e8645a; }
   .equip-library { margin-top: 12px; padding: 10px 12px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid rgba(26,37,53,0.1); }
   .equip-library .el-title { font-size: 10px; color: #4a5a6a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
   .equip-library .el-items { display: flex; gap: 6px; flex-wrap: wrap; }

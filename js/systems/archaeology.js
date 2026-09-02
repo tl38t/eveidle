@@ -136,10 +136,10 @@ function getArchaeologyShipHp(state, instanceId) {
   if (!state.archaeology.shipHp) state.archaeology.shipHp = {};
   let hp = state.archaeology.shipHp[instanceId];
   if (hp) return hp;
-  const instance = getShipInstanceFromState(state, instanceId);
-  const config = instance ? getShipConfigById(instance.shipId) : null;
-  hp = config
-    ? { shield: config.hp.shield, armor: config.hp.armor, structure: config.hp.structure }
+  // 开局满血 = 强化满血（与 getArchaeologyShipMaxHp 同源，含强化 hpMultiplier）
+  const maxHp = getArchaeologyShipMaxHp(state, instanceId);
+  hp = maxHp
+    ? { shield: maxHp.shield, armor: maxHp.armor, structure: maxHp.structure }
     : { shield: 0, armor: 0, structure: 0 };
   state.archaeology.shipHp[instanceId] = hp;
   return hp;
@@ -147,10 +147,9 @@ function getArchaeologyShipHp(state, instanceId) {
 
 function resetArchaeologyShipHp(state, instanceId) {
   if (!state.archaeology.shipHp) state.archaeology.shipHp = {};
-  const instance = getShipInstanceFromState(state, instanceId);
-  const config = instance ? getShipConfigById(instance.shipId) : null;
-  if (!config) return;
-  state.archaeology.shipHp[instanceId] = { shield: config.hp.shield, armor: config.hp.armor, structure: config.hp.structure };
+  const maxHp = getArchaeologyShipMaxHp(state, instanceId);
+  if (!maxHp) return;
+  state.archaeology.shipHp[instanceId] = { shield: maxHp.shield, armor: maxHp.armor, structure: maxHp.structure };
 }
 
 // ================================================================
@@ -167,16 +166,19 @@ const ARCHAEOLOGY_FIELD_REPAIR_REASONS = {
   FULL_HP: "FULL_HP"
 };
 
-// 三层最大生命：与 resetArchaeologyShipHp 逐层同源（getShipConfigById(instance.shipId).hp）。
+// 三层最大生命：与 resetArchaeologyShipHp / getArchaeologyShipHp 逐层同源（getShipConfigById(instance.shipId).hp），
+// 并乘舰船强化 hpMultiplier（与战斗侧 getCombatMaxHpFromState priority 40 同口径），使考古舰强化增加的血量在考古中生效。
 // 不修改 state；未知舰船安全返回三层 0。
 function getArchaeologyShipMaxHp(state, instanceId) {
   const instance = getShipInstanceFromState(state, instanceId);
   const config = instance ? getShipConfigById(instance.shipId) : null;
   if (!config || !config.hp) return { shield:0, armor:0, structure:0 };
+  const enh = (typeof getShipEnhancementBonuses === "function") ? getShipEnhancementBonuses(config, instance.enhancementLevel || 0) : null;
+  const hpMult = (enh && enh.hpMultiplier) ? Number(enh.hpMultiplier) : 1;
   return {
-    shield: Number(config.hp.shield) || 0,
-    armor: Number(config.hp.armor) || 0,
-    structure: Number(config.hp.structure) || 0
+    shield: Math.round(Number(config.hp.shield) * hpMult) || 0,
+    armor: Math.round(Number(config.hp.armor) * hpMult) || 0,
+    structure: Math.round(Number(config.hp.structure) * hpMult) || 0
   };
 }
 
@@ -836,7 +838,7 @@ function getArchaeologyDisplayState(state, now) {
     type: config ? config.type : "",
     archaeology: isArchaeologyShip,
     hp: instanceId ? getArchaeologyShipHp(state, instanceId) : null,
-    maxHp: config ? { ...config.hp } : null
+    maxHp: config ? getArchaeologyShipMaxHp(state, instanceId) : null
   } : null;
 
   // 按舰隔离维修态：仅当前考古舰实例的维修阻断/续跑
