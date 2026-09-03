@@ -439,6 +439,40 @@
     return { changed: true, deployableId: deployableId };
   }
 
+  // 部署物拆解（按舰船拆解公式回收材料）：仅允许「库存中（未部署）」的部署物。
+  // 归还 = getShipDismantleQuote(recipe, null, 0, 冶炼回收率) 逐项 floor(总量×rate)；与舰船拆解同源同口径。
+  // 已部署（生效中）的须先取消部署才能回收，避免"在用即退料"。
+  function dismantleDeployable(state, deployableId) {
+    const squad = ensureCombatSquadState(state);
+    if (!squad || !deployableId) return { changed: false, reason: "no-squad" };
+    if (Array.isArray(squad.deployables) && squad.deployables.some(d => d && d.deployableId === deployableId)) {
+      return { changed: false, reason: "deployed" };
+    }
+    const idx = (squad.deployableStorage || []).indexOf(deployableId);
+    if (idx < 0) return { changed: false, reason: "not-in-storage" };
+    const recipe = (typeof SHIP_ASSEMBLY_RECIPES !== "undefined")
+      ? SHIP_ASSEMBLY_RECIPES.find(r => r.deployableId === deployableId) : null;
+    if (!recipe) return { changed: false, reason: "no-recipe" };
+    const reclaimRate = (typeof getReclaimRate === "function") ? getReclaimRate(state) : 0.5;
+    const preview = getShipDismantleQuote(recipe, null, 0, reclaimRate);
+    const refundedResources = {};
+    for (const entry of preview) {
+      if (entry.refId) {
+        ResourceRegistry.add(state, entry.refId, entry.returned);
+        refundedResources[entry.refId] = (refundedResources[entry.refId] || 0) + entry.returned;
+      }
+    }
+    squad.deployableStorage.splice(idx, 1);
+    markDirty(state);
+    if (typeof GameEvents !== "undefined") {
+      GameEvents.emit("item:recycled", {
+        totalBase: preview.reduce((s, e) => s + (Number(e.total) || 0), 0),
+        totalFinal: preview.reduce((s, e) => s + (Number(e.returned) || 0), 0)
+      }, { offline: false, source: "deployable-dismantle" });
+    }
+    return { changed: true, deployableId: deployableId, returned: preview, refundedResources: refundedResources };
+  }
+
   // 结束小队战斗：清理 squad 临时状态；不清理 NPC 本体的 destroyed / repairUntil / 舰船 HP
   function endLegionSquadBattle(state) {
     const squad = ensureCombatSquadState(state);
@@ -774,9 +808,19 @@
       }
     }
     // deployable 集合：以本次 depReq 为权威（去重 + 硬上限 MTU_MAX_DEPLOYED 截断）。
+    // 防御纵深：未拥有的部署物（不在 deployableStorage 且未处于已部署）一律拒绝，杜绝"未制造即部署"漏洞。
+    const ownedDep = [];
+    const skippedDep = [];
+    for (const did of depReq) {
+      const isOwned = (squad.deployableStorage || []).indexOf(did) >= 0
+        || (Array.isArray(squad.deployables) && squad.deployables.some(d => d && d.deployableId === did));
+      if (isOwned) { if (ownedDep.indexOf(did) < 0) ownedDep.push(did); }
+      else skippedDep.push({ kind: "deployable", deployableId: did, reason: "not-owned" });
+    }
     const depHardCap = Math.min(MTU_MAX_DEPLOYED, capacity);
-    const cappedDep = depReq.slice(0, depHardCap);
-    const skippedDep = depReq.slice(depHardCap).map(did => ({ kind: "deployable", deployableId: did, reason: "deploy-full" }));
+    const cappedDep = ownedDep.slice(0, depHardCap);
+    // 已拥有但超出硬上限（容量满）的部署物也进 skipped（与旧 deploy-full 语义一致）。
+    ownedDep.slice(depHardCap).forEach(did => skippedDep.push({ kind: "deployable", deployableId: did, reason: "deploy-full" }));
     // NPC 入选：剩余容量 = capacity - cappedDep.length（deployable 已占的）
     const accepted = [];
     const skipped = [];
@@ -1567,10 +1611,12 @@
     addDeployableToSquad: addDeployableToSquad,
     deployDeployable: deployDeployable,
     undeployDeployable: undeployDeployable,
+    dismantleDeployable: dismantleDeployable,
     MTU_MAX_DEPLOYED: MTU_MAX_DEPLOYED,
     MTU_DEPLOYABLE_PREFIX: MTU_DEPLOYABLE_PREFIX,
     // 只读快照
     getLegionCombatSquadState: getLegionCombatSquadState,
+    getLegionSquadCapacity: getLegionSquadCapacity,
     // M2：伤害倍率 / 舰船属性（显式实例 + 排除脑插）
     getLegionNpcDamageMultiplier: getLegionNpcDamageMultiplier,
     getLegionNpcCombatStats: getLegionNpcCombatStats,

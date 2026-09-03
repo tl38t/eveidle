@@ -734,6 +734,22 @@
   .reward-result-card { cursor: default; }
   .reward-result-empty { text-align: center; color: #6a7a8e; padding: 24px 0; font-size: 13px; }
 
+  /* 离线结算弹窗·获得 / 消耗 分区 */
+  .rr-section { margin-bottom: 10px; }
+  .rr-section:last-child { margin-bottom: 0; }
+  .rr-section-title {
+    font-size: 12px; font-weight: 700; letter-spacing: .3px; margin: 2px 2px 7px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .rr-gained > .rr-section-title { color: #6fb86f; }
+  .rr-consumed > .rr-section-title { color: #e8736e; }
+  .reward-result-card.consumed {
+    border-color: rgba(232,115,110,.5);
+    background: rgba(232,115,110,.07);
+  }
+  .reward-result-card.consumed .cc-qty { color: #e8736e; font-weight: 700; }
+  .reward-result-card.consumed .cc-cat { color: #c98a87; }
+
   /* ===== 战斗日志按钮（战斗信息行） ===== */
   .combat-wave { display: none; }
   .btn.combat-log-btn {

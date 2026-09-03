@@ -1363,6 +1363,7 @@ function humanizeOfflineStopReason(reason) {
 function openRewardResultModal(options) {
   const opt = options && typeof options === "object" ? options : {};
   const items = Array.isArray(opt.items) ? opt.items : [];
+  const consumed = Array.isArray(opt.consumed) ? opt.consumed : [];
   // 离线战斗汇总块（opt.combat 由 showOfflineToast 透传）
   const c = opt.combat;
   const combatHtml = c ? `
@@ -1408,8 +1409,13 @@ function openRewardResultModal(options) {
       }
     });
   }
-  currentRewardItems = items;
+  currentRewardItems = items.concat(consumed);
   const cards = items.map((item, idx) => buildCargoCardHTML(item, { extraClass:"reward-result-card", dataAttr:'data-rrc="'+idx+'"' })).join("");
+  const consumedCards = consumed.map((item, i) => buildCargoCardHTML(item, {
+    extraClass:"reward-result-card consumed",
+    dataAttr:'data-rrc="'+(items.length + i)+'"',
+    qtyText:"−×" + (Number(item.quantity) > 0 ? item.quantity : 1).toLocaleString()
+  })).join("");
   const emptyText = opt.emptyText || "本次没有获得可展示的物品";
   backdrop.innerHTML = `
     <div class="equip-enh-modal reward-result-modal" role="dialog" aria-modal="true">
@@ -1423,7 +1429,9 @@ function openRewardResultModal(options) {
       </div>
       <div class="eem-body">
         ${combatHtml}
-        ${items.length ? `<div class="reward-result-grid">${cards}</div>` : `<div class="reward-result-empty">${escapeAchievementText(emptyText)}</div>`}
+        ${items.length || consumed.length ? "" : `<div class="reward-result-empty">${escapeAchievementText(emptyText)}</div>`}
+        ${items.length ? `<div class="rr-section rr-gained"><div class="rr-section-title">📥 获得（${items.length}）</div><div class="reward-result-grid">${cards}</div></div>` : ""}
+        ${consumed.length ? `<div class="rr-section rr-consumed"><div class="rr-section-title">📤 消耗 / 损失（${consumed.length}）</div><div class="reward-result-grid">${consumedCards}</div></div>` : ""}
       </div>
     </div>`;
   backdrop.style.display = "flex";
@@ -3332,10 +3340,21 @@ function renderHangarPanel() {
   const panel = document.getElementById("hangar-panel");
   if (panel) panel.style.display = "flex";
   const display = getHangarDisplayState(gameState, Date.now());
-  const info = document.getElementById("hangar-header-info"); if (info) info.textContent = "已拥有 " + display.count + " 艘舰船";
+  bindHangarUI();
+  const tabsEl = document.getElementById("hangar-tabs");
+  if (tabsEl) tabsEl.innerHTML = display.tabs.map(t => `<button class="hangar-tab${t.selected ? " active" : ""}" data-hangartab="${t.id}">${t.name}</button>`).join("");
+  // 「特殊」线：展示部署物（激光定向打捞单元等，与舰船工程「特殊」线一致），不展示舰船
+  if (display.activeTab === "special") {
+    renderHangarDeployables(display);
+    return display;
+  }
+  // 按当前舰船工程线过滤库存舰船（其余线为对应系列）
+  const lineName = (display.tabs.find(function (t) { return t.id === display.activeTab; }) || { name: display.activeTab }).name;
+  const lineShips = display.ships.filter(function (s) { return !s.unknown && getShipAssemblyLine((s.shipId) || "") === display.activeTab; });
+  const info = document.getElementById("hangar-header-info"); if (info) info.textContent = "「" + lineName + "」已拥有 " + lineShips.length + " 艘舰船";
   const grid = document.getElementById("hangar-ship-grid"); const empty = document.getElementById("hangar-empty");
   if (!grid) return display;
-  if (!display.ships.length) { grid.innerHTML = ""; if (empty) empty.style.display = ""; return display; }
+  if (!lineShips.length) { grid.innerHTML = ""; if (empty) empty.style.display = ""; return display; }
   if (empty) empty.style.display = "none";
   grid.innerHTML = display.ships.map(ship => {
     if (ship.unknown) return "";
@@ -3366,6 +3385,90 @@ function renderHangarPanel() {
       <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button>${dismantleBtn}</div></div>`;
   }).join("");
   return display;
+}
+
+// 船坞「部署物」标签：展示已部署（生效/断料）+ 库存可部署；部署/取消部署复用 manufacturing/* 动作。
+function renderHangarDeployables(display) {
+  const dv = display.deployableView;
+  const info = document.getElementById("hangar-header-info");
+  if (info) info.textContent = "部署物 · 已部署 " + dv.deployed.length + " / 库存 " + dv.deployableStorage.length;
+  const grid = document.getElementById("hangar-ship-grid"); const empty = document.getElementById("hangar-empty");
+  if (!grid) return;
+  if (empty) empty.style.display = "none";
+  const mtu = dv.mtu;
+  let html = '<div class="lcs-deployables">';
+  html += '<div class="lcs-deploy-title"><i>🛰️</i> 部署物（激光定向打捞单元）</div>';
+  if (dv.deployed.length === 0 && dv.deployableStorage.length === 0) {
+    html += '<div class="lcs-deploy-empty">未拥有；请于舰船总装「特殊」线制造。占用小队 1 格，提高战利品产出、消耗燃料。</div></div>';
+    grid.innerHTML = html; return;
+  }
+  const canDeploy = dv.capacity > 0 && dv.usedSlots < dv.capacity;
+  dv.deployed.forEach(function (d) {
+    const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(d.deployableId) : null;
+    const active = !!(mtu && mtu.active);
+    const fuelCost = mtu ? Math.max(1, Math.round(mtu.fuelPerKill)) : (def ? def.fuelPerKill : 0);
+    const eff = def ? ("货柜×" + (1 + def.salvageEfficiency).toFixed(1) + " · 星币/功勋+" + Math.round(def.iskBonus * 100) + "%") : "";
+    html += '<div class="lcs-deploy-card deployed' + (active ? "" : " outoffuel") + '">' +
+      '<span class="lcs-deploy-name">' + escapeAchievementText(d.name) + '</span>' +
+      '<span class="lcs-deploy-effects">' + escapeAchievementText(eff) + ' · 每击毁 -燃料' + fuelCost + '</span>' +
+      '<span class="lcs-deploy-status ' + (active ? "on" : "off") + '">' + (active ? "生效中" : "断料暂停") + '</span>' +
+      '<button class="lcs-deploy-btn undeploy" data-undeploy="' + escapeAchievementText(d.deployableId) + '">取消部署</button>' +
+      '</div>';
+  });
+  if (dv.deployableStorage.length > 0) {
+    const disMap = {};
+    (dv.dismantle && dv.dismantle.items ? dv.dismantle.items : []).forEach(function (it) { disMap[it.deployableId] = it; });
+    const reclaimPct = (dv.dismantle && dv.dismantle.reclaimPercent != null) ? dv.dismantle.reclaimPercent : 50;
+    dv.deployableStorage.forEach(function (id) {
+      const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(id) : null;
+      const defName = def ? def.name : id;
+      const dis = disMap[id];
+      const canDis = !!(dis && dis.canDismantle);
+      const disPreview = (dis && dis.preview && dis.preview.length)
+        ? dis.preview.map(function (e) { return e.name + "×" + e.returned; }).join(" · ")
+        : "无";
+      html += '<div class="lcs-deploy-card stored">' +
+        '<span class="lcs-deploy-name">' + escapeAchievementText(defName) + '</span>' +
+        '<span class="lcs-deploy-effects">已拥有 · 待部署</span>' +
+        '<button class="lcs-deploy-btn deploy" data-deploy="' + escapeAchievementText(id) + '"' + (canDeploy ? "" : " disabled") + '>部署（占 1 格）</button>' +
+        '<button class="lcs-deploy-btn recycle" data-dismantle-deployable="' + escapeAchievementText(id) + '"' + (canDis ? "" : " disabled") +
+          ' title="拆解回收（冶炼回收 ' + reclaimPct + '%）：' + escapeAchievementText(disPreview) + '">♻ 回收</button>' +
+        '</div>';
+    });
+    if (!canDeploy) html += '<div class="lcs-deploy-hint">小队格位不足：需空出 1 个共享格（与 NPC 成员互斥）才能部署。</div>';
+  }
+  html += '</div>';
+  grid.innerHTML = html;
+}
+
+// 船坞标签切换 + 部署物部署/取消部署（事件委托，一次性绑定防重复）
+function bindHangarUI() {
+  const panel = document.getElementById("hangar-panel");
+  if (!panel || panel._hangarBound) return;
+  panel._hangarBound = true;
+  panel.addEventListener("click", function (event) {
+    if (!event.target || !event.target.closest) return;
+    const tabBtn = event.target.closest("[data-hangartab]");
+    if (tabBtn) {
+      const result = dispatchGameAction(gameState, { type:"manufacturing/selectHangarTab", tab:tabBtn.dataset.hangartab }, Date.now());
+      if (result.changed) renderHangarPanel();
+      return;
+    }
+    const dBtn = event.target.closest("[data-deploy],[data-undeploy],[data-dismantle-deployable]");
+    if (!dBtn || dBtn.disabled) return;
+    let res = null;
+    if (dBtn.dataset.undeploy) res = dispatchGameAction(gameState, { type:"manufacturing/undeployDeployable", deployableId:dBtn.dataset.undeploy }, Date.now());
+    else if (dBtn.dataset.deploy) res = dispatchGameAction(gameState, { type:"manufacturing/deployDeployable", deployableId:dBtn.dataset.deploy }, Date.now());
+    else if (dBtn.dataset.dismantleDeployable) res = dispatchGameAction(gameState, { type:"manufacturing/dismantleDeployable", deployableId:dBtn.dataset.dismantleDeployable }, Date.now());
+    if (res && res.changed === false && res.reason) {
+      const msg = { "deploy-full":"部署位已满", "not-in-storage":"不在库存", "squad-full":"小队格位不足", "not-deployed":"未部署", "no-squad":"无战斗小队", "deployed":"已部署中，先取消部署再回收", "no-recipe":"无拆解配方", "not-owned":"未拥有" };
+      showToast("⚠ " + (msg[res.reason] || res.reason));
+    } else if (res && res.changed && res.refundedResources) {
+      const parts = Object.keys(res.refundedResources).map(function (k) { return k + "×" + res.refundedResources[k]; });
+      showToast("♻ 已回收：" + (parts.join(" · ") || "无"));
+    }
+    renderHangarPanel(); renderCombatPanel();
+  });
 }
 
 function enhanceShipFromHangar(instanceId) {

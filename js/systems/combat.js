@@ -503,11 +503,18 @@ function spawnCombatEnemy(randomFn) {
 // ============================================================================
 
 // 军团 NPC 稀有掉落加成（lootSearch）：仅放大精英/Boss 稀有掉落概率，不放大普通掉落。
+// 2026-09-02：并入 MTU（激光定向打捞单元）rareDropBonus 0.05 —— 部署供能时战斗稀有掉率 ×1.05，
+// 覆盖下方全部稀有掷骰（含死亡空间首领核心/协议，用户拍板的加速）。
 function getLegionCombatDropMult(state) {
+  let mult = 1;
   if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
-    return LEGION_NPC.getLegionContributionSnapshot(state || gameState).multipliers.combatDrop;
+    mult *= LEGION_NPC.getLegionContributionSnapshot(state || gameState).multipliers.combatDrop;
   }
-  return 1;
+  if (typeof getMtuModifiers === "function") {
+    const mtu = getMtuModifiers(state || gameState);
+    if (mtu && mtu.rareDropBonus) mult *= (1 + mtu.rareDropBonus);
+  }
+  return mult;
 }
 
 // 战术材料掉落配置：层级由 zone.formationPool 映射（死亡空间复用 sourceZone 的 formationPool）。
@@ -694,14 +701,16 @@ function rollDeathspaceLeaderLoot(site, wave, coreRandomValue, protocolRandomVal
   const waveConfig = configs[Math.max(0, wave - 1)];
   if (!waveConfig) return [];
   const drops = [];
+  // 2026-09-02：核心/协议接入稀有掉率总乘子（军团 lootSearch + MTU rareDropBonus，用户拍板）
+  const rareMult = getLegionCombatDropMult(state);
   const coreRoll = coreRandomValue === undefined ? Math.random() : coreRandomValue;
-  if (coreRoll < waveConfig.coreChance) {
+  if (coreRoll < waveConfig.coreChance * rareMult) {
     ResourceRegistry.add(state, "special:" + site.coreMaterial, 1);
     drops.push({ material: site.coreMaterial, qty: 1, rarity: "rare" });
   }
   if (waveConfig.isFinal) {
     const protocolRoll = protocolRandomValue === undefined ? Math.random() : protocolRandomValue;
-    if (protocolRoll < waveConfig.protocolChance) {
+    if (protocolRoll < waveConfig.protocolChance * rareMult) {
       ResourceRegistry.add(state, "special:" + site.protocolMaterial, 1);
       drops.push({ material: site.protocolMaterial, qty: 1, rarity: "veryRare" });
     }

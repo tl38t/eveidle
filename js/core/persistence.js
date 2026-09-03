@@ -1377,6 +1377,7 @@ function applyLegacyStartupFieldMigrations() {
     if (!gameState.currentAction.shipEngSubView) gameState.currentAction.shipEngSubView = "component";
     if (!gameState.currentAction.shipCompClass) gameState.currentAction.shipCompClass = "integrated";
     if (!gameState.currentAction.shipAsmLine) gameState.currentAction.shipAsmLine = "shield_laser";
+    if (!gameState.currentAction.hangarTab) gameState.currentAction.hangarTab = "shield_laser";
     if (gameState.currentAction.shipAsmPage === undefined) gameState.currentAction.shipAsmPage = 0;
     if (gameState.currentAction.batchRemaining === undefined) gameState.currentAction.batchRemaining = 0;
     // Batch C-14A（J05）：队列规范化已收口于 SaveManager.load 内的 normalizeQueueState（含旧档 maxSize=20→25），

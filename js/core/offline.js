@@ -36,7 +36,7 @@ function emitOfflineGameEvent(type, payload, meta) {
 // seconds = 离线秒数；gains = 8 计数器（各技能完成次数）；items = 结算前后 canonical
 // 库存快照 diff 出的「最终净获得物品」（无则回退纯文字信息，兼容旧调用方）。
 // 删除自动关闭计时：仅显式关闭按钮 / 点击背景 / Escape 可关闭。
-function showOfflineToast(seconds, gains, items, combatSummary) {
+function showOfflineToast(seconds, gains, items, combatSummary, consumed) {
   const min = Math.floor(seconds / 60); const sec = Math.floor(seconds % 60);
   const timeStr = min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
   const labels = {
@@ -48,8 +48,10 @@ function showOfflineToast(seconds, gains, items, combatSummary) {
   const detail = Object.entries(labels)
     .filter(([key]) => (gains[key] || 0) > 0)
     .map(([key, label]) => `${label} +${gains[key]} 次`).join("  ");
+  const consumedCount = Array.isArray(consumed) ? consumed.length : 0;
   const subtitle = `离线 ${timeStr}，已自动结算${detail ? "：" + detail : ""}` +
-    (Array.isArray(items) && items.length ? ` · 共获得 ${items.length} 类物品` : "");
+    (Array.isArray(items) && items.length ? ` · 获得 ${items.length} 类` : "") +
+    (consumedCount ? ` · 消耗 ${consumedCount} 类` : "");
   // 离线战斗汇总：聚合 flush 返回的 payload（wavesByZone / zoneClearsByZone 为分区计数对象）
   let combat = null;
   if (combatSummary && typeof combatSummary === "object") {
@@ -72,6 +74,7 @@ function showOfflineToast(seconds, gains, items, combatSummary) {
       title:"⏳ 离线结算完成",
       subtitle,
       items:Array.isArray(items) ? items : [],
+      consumed:Array.isArray(consumed) ? consumed : [],
       emptyText:detail ? "本次离线没有新增可展示物品" : "离线时长过短，未产生结算",
       combat
     });
@@ -139,75 +142,94 @@ function createInventorySnapshot(state) {
   return snap;
 }
 
-// 仅取正差额（最终净获得），丢弃消耗/减少项；输出 normalizeRewardItem 兼容的条目。
+// 结算前后库存快照 diff：返回 { gained, consumed }。
+// gained = 正差额（最终净获得）；consumed = 负差额（消耗 / 损失，quantity 取绝对值、带 consumed 标记）。
+// 两者均输出 normalizeRewardItem / buildCargoCardHTML 兼容的条目，供结算弹窗分两个区分别展示。
+// 关键：所有类别均取 before/after 键并集，保证「降到 0」的消耗（如离线把燃料烧光）也能被捕获，
+// 而非因 after 中该键消失而被遗漏。
 function diffInventorySnapshot(before, after) {
-  const items = [];
+  const gained = [];
+  const consumed = [];
   const source = { pageLabel:"离线收益" };
-  for (const id of Object.keys(after.res)) {
-    const delta = after.res[id] - (before.res[id] || 0);
-    if (delta > 0) {
-      const nm = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(id) : id;
-      items.push({ id, name:nm, quantity:delta, categoryLabel:"物资", source });
-    }
-  }
   const ammoTypeNames = (typeof AMMO_TYPE_NAMES !== "undefined" && AMMO_TYPE_NAMES) ? AMMO_TYPE_NAMES : { laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" };
-  for (const key of Object.keys(after.ammo)) {
-    const delta = after.ammo[key] - (before.ammo[key] || 0);
-    if (delta > 0) {
-      const sep = key.indexOf("|");
-      const type = sep >= 0 ? key.slice(0, sep) : key;
-      const tier = sep >= 0 ? key.slice(sep + 1) : "T1";
-      items.push({
-        id:"ammo:" + key, ammo:true, weaponType:type,
-        name:(ammoTypeNames[type] || type) + (tier === "T2" ? "（T2）" : ""),
-        quantity:delta, categoryLabel:"弹药", source
-      });
-    }
-  }
   const eqDb = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) ? EQUIPMENT_DB : null;
-  for (const itemId of Object.keys(after.equipment)) {
-    const delta = after.equipment[itemId] - (before.equipment[itemId] || 0);
-    if (delta > 0) {
-      const eq = eqDb ? eqDb[itemId] : null;
-      items.push({ id:itemId, name:eq && eq.name ? eq.name : itemId, quantity:delta, categoryLabel:"装备", source });
-    }
-  }
-  // 舰船按 shipId 逐项输出具体舰型（ship:<shipId> + 正式舰名 + 数量），而非笼统总数。
   const shipDb = (typeof getShipConfigById === "function") ? getShipConfigById : null;
-  for (const shipId of Object.keys(after.ships)) {
-    const delta = after.ships[shipId] - (before.ships[shipId] || 0);
-    if (delta > 0) {
-      const cfg = shipDb ? shipDb(shipId) : null;
-      items.push({ id:"ship:" + shipId, shipId, name:(cfg && cfg.name ? cfg.name : shipId), quantity:delta, categoryLabel:"舰船", source });
-    }
-  }
-  for (const key of Object.keys(after.blueprints)) {
-    const delta = after.blueprints[key] - (before.blueprints[key] || 0);
-    if (delta > 0) {
-      let blueprintName = key;
-      if (key.startsWith("equipment:") && typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) {
-        const equipment = EQUIPMENT_DB[key.slice("equipment:".length)];
-        if (equipment && equipment.name) blueprintName = equipment.name;
-      } else if (key.startsWith("booster:") && typeof getBoosterRecipe === "function") {
-        const recipe = getBoosterRecipe(key.slice("booster:".length));
-        if (recipe && recipe.name) blueprintName = recipe.name;
-      }
-      items.push({ id:"blueprint:" + key, blueprint:true, name:blueprintName + "蓝图", quantity:delta, categoryLabel:"蓝图", source });
-    }
-  }
-  for (const key of Object.keys(after.loot)) {
-    const entry = after.loot[key];
-    const beforeEntry = before.loot[key];
-    const delta = entry.count - (beforeEntry ? beforeEntry.count : 0);
-    if (delta > 0) items.push({ id:"loot:" + key, loot:true, kind:entry.kind, name:entry.name || key, quantity:delta, categoryLabel:"战利品", source });
-  }
   const impDb = (typeof IMPLANT_DB !== "undefined" && IMPLANT_DB) ? IMPLANT_DB : null;
-  for (const id of Object.keys(after.implants)) {
-    if (before.implants[id]) continue;
-    const imp = impDb ? impDb[id] : null;
-    items.push({ id, implant:true, name:imp && imp.name ? imp.name : id, quantity:1, categoryLabel:"脑插", source });
+  const resIcon = (id) => (id === "consumable:fuel" ? "⛽" : id === "consumable:repairPaste" ? "🩹" : id === "consumable:warpFuel" ? "🚀" : "");
+
+  // 资源（燃料 / 矿石 / 矿物 / 气体 / 行星产物 …）
+  const resKeys = new Set([...Object.keys(before.res || {}), ...Object.keys(after.res || {})]);
+  for (const id of resKeys) {
+    const delta = (after.res[id] || 0) - (before.res[id] || 0);
+    const nm = (typeof getResourceDisplayName === "function") ? getResourceDisplayName(id) : id;
+    if (delta > 0) gained.push({ id, name:nm, quantity:delta, categoryLabel:"物资", source });
+    else if (delta < 0) consumed.push({ id, name:nm, quantity:-delta, consumed:true, categoryLabel:"物资", icon:resIcon(id), source });
   }
-  return items;
+
+  // 弹药（按 type|tier 聚合）
+  const ammoKeys = new Set([...Object.keys(before.ammo || {}), ...Object.keys(after.ammo || {})]);
+  for (const key of ammoKeys) {
+    const delta = (after.ammo[key] || 0) - (before.ammo[key] || 0);
+    const sep = key.indexOf("|");
+    const type = sep >= 0 ? key.slice(0, sep) : key;
+    const tier = sep >= 0 ? key.slice(sep + 1) : "T1";
+    const nm = (ammoTypeNames[type] || type) + (tier === "T2" ? "（T2）" : "");
+    if (delta > 0) gained.push({ id:"ammo:" + key, ammo:true, weaponType:type, name:nm, quantity:delta, categoryLabel:"弹药", source });
+    else if (delta < 0) consumed.push({ id:"ammo:" + key, ammo:true, weaponType:type, name:nm, quantity:-delta, consumed:true, categoryLabel:"弹药", source });
+  }
+
+  // 装备库存 / 未安装实例
+  const eqKeys = new Set([...Object.keys(before.equipment || {}), ...Object.keys(after.equipment || {})]);
+  for (const itemId of eqKeys) {
+    const delta = (after.equipment[itemId] || 0) - (before.equipment[itemId] || 0);
+    const nm = eqDb ? (eqDb[itemId] && eqDb[itemId].name ? eqDb[itemId].name : itemId) : itemId;
+    if (delta > 0) gained.push({ id:itemId, name:nm, quantity:delta, categoryLabel:"装备", source });
+    else if (delta < 0) consumed.push({ id:itemId, name:nm, quantity:-delta, consumed:true, categoryLabel:"装备", source });
+  }
+
+  // 舰船：按 shipId 逐项；减少视为「损失」（区别于材料消耗）
+  const shipKeys = new Set([...Object.keys(before.ships || {}), ...Object.keys(after.ships || {})]);
+  for (const shipId of shipKeys) {
+    const delta = (after.ships[shipId] || 0) - (before.ships[shipId] || 0);
+    const cfg = shipDb ? shipDb(shipId) : null;
+    const nm = (cfg && cfg.name ? cfg.name : shipId);
+    if (delta > 0) gained.push({ id:"ship:" + shipId, shipId, name:nm, quantity:delta, categoryLabel:"舰船", source });
+    else if (delta < 0) consumed.push({ id:"ship:" + shipId, shipId, name:nm, quantity:-delta, consumed:true, categoryLabel:"损失", source });
+  }
+
+  // 蓝图
+  const bpKeys = new Set([...Object.keys(before.blueprints || {}), ...Object.keys(after.blueprints || {})]);
+  for (const key of bpKeys) {
+    const delta = (after.blueprints[key] || 0) - (before.blueprints[key] || 0);
+    let blueprintName = key;
+    if (key.startsWith("equipment:") && eqDb) { const e = eqDb[key.slice("equipment:".length)]; if (e && e.name) blueprintName = e.name; }
+    else if (key.startsWith("booster:") && typeof getBoosterRecipe === "function") { const r = getBoosterRecipe(key.slice("booster:".length)); if (r && r.name) blueprintName = r.name; }
+    if (delta > 0) gained.push({ id:"blueprint:" + key, blueprint:true, name:blueprintName + "蓝图", quantity:delta, categoryLabel:"蓝图", source });
+    else if (delta < 0) consumed.push({ id:"blueprint:" + key, blueprint:true, name:blueprintName + "蓝图", quantity:-delta, consumed:true, categoryLabel:"蓝图", source });
+  }
+
+  // 货柜具名战利品（按 id 聚合，count 差）
+  const lootKeys = new Set([...Object.keys(before.loot || {}), ...Object.keys(after.loot || {})]);
+  for (const key of lootKeys) {
+    const aEntry = after.loot[key]; const bEntry = before.loot[key];
+    const delta = (aEntry ? aEntry.count : 0) - (bEntry ? bEntry.count : 0);
+    const kind = (aEntry && aEntry.kind) || (bEntry && bEntry.kind);
+    const nm = (aEntry && aEntry.name) || (bEntry && bEntry.name) || key;
+    if (delta > 0) gained.push({ id:"loot:" + key, loot:true, kind, name:nm, quantity:delta, categoryLabel:"战利品", source });
+    else if (delta < 0) consumed.push({ id:"loot:" + key, loot:true, kind, name:nm, quantity:-delta, consumed:true, categoryLabel:"战利品", source });
+  }
+
+  // 脑插（布尔集合：新增即获得、消失即消耗）
+  const impKeys = new Set([...Object.keys(before.implants || {}), ...Object.keys(after.implants || {})]);
+  for (const id of impKeys) {
+    const aHas = !!(after.implants && after.implants[id]);
+    const bHas = !!(before.implants && before.implants[id]);
+    const nm = impDb ? (impDb[id] && impDb[id].name ? impDb[id].name : id) : id;
+    if (aHas && !bHas) gained.push({ id, implant:true, name:nm, quantity:1, categoryLabel:"脑插", source });
+    else if (!aHas && bHas) consumed.push({ id, implant:true, name:nm, quantity:1, consumed:true, categoryLabel:"脑插", source });
+  }
+
+  return { gained, consumed };
 }
 
 // 离线结算·资源调度中心（勘探指令）加成：把并入主矿/气卡的调度加成拆分为独立条目展示，
@@ -1340,11 +1362,13 @@ function calculateOfflineGains() {
     console.error("[离线·applyOfflineGains 异常] elapsed=" + elapsed + "s，本次离线收益未发放。错误：", e && (e.stack || e.message || e));
     return;
   }
-  const netItems = splitOfflineDispatchBonus(diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState)));
+  const diff = diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState));
+  const netItems = splitOfflineDispatchBonus(diff.gained);
+  const consumedItems = diff.consumed;
   gameState.currentAction.lastProgressUpdate = now;
   gameState.lastActiveTime = now;
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (totalGains > 0 || netItems.length > 0) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary);
+  if (totalGains > 0 || netItems.length > 0 || consumedItems.length > 0) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary, consumedItems);
   gameState._dirty = true;
   SaveManager.save();
 }
@@ -1354,11 +1378,13 @@ function forceOfflineTest(seconds) {
   const beforeSnapshot = createInventorySnapshot(gameState);
   const offlineCtx = { runId:"offline_test_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36) };
   const gains = applyOfflineGains(seconds, offlineCtx);
-  const netItems = splitOfflineDispatchBonus(diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState)));
+  const diff = diffInventorySnapshot(beforeSnapshot, createInventorySnapshot(gameState));
+  const netItems = splitOfflineDispatchBonus(diff.gained);
+  const consumedItems = diff.consumed;
   gameState.currentAction.lastProgressUpdate = Date.now();
   gameState.lastActiveTime = Date.now(); gameState._dirty = true;
   const total = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (total > 0 || netItems.length > 0) showOfflineToast(seconds, gains, netItems, offlineCtx.combatSummary);
+  if (total > 0 || netItems.length > 0 || consumedItems.length > 0) showOfflineToast(seconds, gains, netItems, offlineCtx.combatSummary, consumedItems);
   console.log("[离线测试] 完成", gains);
   updateUI();
   return gains;

@@ -67,6 +67,8 @@ const gameState = {
     shipCompClass: "integrated",
     shipAsmLine: "shield_laser",
     shipAsmPage: 0,
+    // 船坞标签：复用舰船工程（总装）SHIP_ASSEMBLY_LINES 六条线；默认护盾激光系
+    hangarTab: "shield_laser",
     batchRemaining: 0,
     startedArea: "",
     startedSmeltingArea: "",

@@ -107,16 +107,29 @@ function renderShipAsmGrid(display) {
 
 function renderShipAsmDetail(display) {
   const wrap = document.getElementById("shipeng-asm-detail"); if (!wrap) return;
-  renderShipAttributes(display.selectedShip);
+  // 部署物（激光定向打捞单元等）走特殊线、无 shipId：渲染部署物属性块（覆盖旧面板，防残留舰船槽位）
+  const isDeployable = !!(display.currentAssembly && display.currentAssembly.productKind === "deployable");
+  if (isDeployable) {
+    renderDeployableAttributes(display);
+  } else {
+    renderShipAttributes(display.selectedShip);
+  }
   mountManufacturing3D(display);
   renderShipAsmCost(display);
   const flavorEl = document.getElementById("shipeng-asm-flavor");
-  if (flavorEl) flavorEl.textContent = display.shipFlavor || "";
+  if (flavorEl) flavorEl.textContent = isDeployable
+    ? (display.currentAssembly.flavor || "激光定向打捞单元：部署后占用小队 1 格，提升战利品产出，战斗中每击毁一艘消耗燃料。非舰船，不占用船坞。")
+    : (display.shipFlavor || "");
   const badges = document.getElementById("shipeng-asm-badges");
   if (badges) {
-    const roleBadge = display.selectedShip ? `<span class="badge">${display.shipRole}</span><span class="badge">舰船工程 Lv.${display.currentAssembly.requiredLevel}+</span>` : "";
-    const hybridBadge = display.hybridSelected ? '<span class="badge hybrid">混血</span>' : "";
-    badges.innerHTML = roleBadge + hybridBadge;
+    if (isDeployable) {
+      const lvl = display.currentAssembly.requiredLevel != null ? display.currentAssembly.requiredLevel : (display.currentAssembly.level != null ? display.currentAssembly.level : "?");
+      badges.innerHTML = '<span class="badge">部署物</span><span class="badge">舰船工程 Lv.' + lvl + '+</span>';
+    } else {
+      const roleBadge = display.selectedShip ? `<span class="badge">${display.shipRole}</span><span class="badge">舰船工程 Lv.${display.currentAssembly.requiredLevel}+</span>` : "";
+      const hybridBadge = display.hybridSelected ? '<span class="badge hybrid">混血</span>' : "";
+      badges.innerHTML = roleBadge + hybridBadge;
+    }
   }
   // 统一消费 getShipAssemblyEligibility 判定；禁止直接读 ownedBlueprints 自行猜测蓝图状态。
   const cur = display.currentAssembly;
@@ -203,6 +216,28 @@ function renderShipAttributes(ship) {
     <div class="ship-attr-item"><span class="sa-label">闪避</span><span class="sa-value">${ship.dodge}</span></div><div class="ship-attr-item"><span class="sa-label">速度</span><span class="sa-value">${ship.speed}</span></div>
     <div class="ship-attr-item"><span class="sa-label">锁定</span><span class="sa-value">${ship.targeting}</span></div><div class="ship-attr-item"><span class="sa-label">电容</span><span class="sa-value">${ship.capacitor.capacity}</span></div>
   </div><div class="ship-attr-bonus">加成：<span>${bonuses}</span></div>${trait}<div style="font-size:11px;color:#6a7a8e;margin-top:2px;">槽位：高${ship.slots.high} · 中${ship.slots.mid} · 低${ship.slots.low} · 改装${ship.slots.rig}${fuelText}</div>`;
+}
+
+// 部署物（激光定向打捞单元等）属性块：覆盖 #ship-attr-display，避免切到部署物时残留上一艘舰船的槽位。
+function renderDeployableAttributes(display) {
+  const element = document.getElementById("ship-attr-display");
+  if (!element) return;
+  const recipe = display.currentAssembly;
+  const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(recipe.deployableId)
+    : (typeof DEPLOYABLES_DB !== "undefined" && DEPLOYABLES_DB ? DEPLOYABLES_DB[recipe.deployableId] : null);
+  const salvage = def ? (1 + def.salvageEfficiency) : 1;
+  const isk = def ? Math.round(def.iskBonus * 100) : 0;
+  const lp = def ? Math.round(def.lpBonus * 100) : 0;
+  const rare = def ? Math.round(def.rareDropBonus * 100) : 0;
+  const fuel = def ? def.fuelPerKill : 0;
+  element.innerHTML = '<div class="ship-attr-grid">' +
+    '<div class="ship-attr-item"><span class="sa-label">货柜/组件</span><span class="sa-value">×' + salvage.toFixed(1) + '</span></div>' +
+    '<div class="ship-attr-item"><span class="sa-label">星币</span><span class="sa-value">+' + isk + '%</span></div>' +
+    '<div class="ship-attr-item"><span class="sa-label">功勋</span><span class="sa-value">+' + lp + '%</span></div>' +
+    '<div class="ship-attr-item"><span class="sa-label">稀有掉率</span><span class="sa-value">+' + rare + '%</span></div>' +
+    '<div class="ship-attr-item"><span class="sa-label">每击毁耗燃料</span><span class="sa-value">' + fuel + '</span></div>' +
+    '<div class="ship-attr-item"><span class="sa-label">占用</span><span class="sa-value">小队 1 格</span></div>' +
+    '</div><div class="ship-attr-bonus" style="color:#f0b67f;">注：此为部署物，非舰船，不占用船坞，仅在战斗小队 / 船坞「部署物」页管理。</div>';
 }
 
 /* ================================================================

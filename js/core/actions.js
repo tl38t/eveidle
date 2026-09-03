@@ -188,6 +188,15 @@ const ManufacturingStateActions = {
     return { changed:true, page:next };
   },
 
+  // 船坞二级标签切换：ships=舰船 / deployables=部署物
+  selectHangarTab(state, tab) {
+    if (!SHIP_ASSEMBLY_LINES.some(function (item) { return item.id === tab; })) return { changed:false, reason:"unknown-tab" };
+    if (state.currentAction.hangarTab === tab) return { changed:false, reason:"same" };
+    state.currentAction.hangarTab = tab;
+    state._dirty = true;
+    return { changed:true, tab };
+  },
+
   startShipComponent(state, now) {
     const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === state.currentAction.shipCompTarget) || SHIP_COMPONENT_RECIPES[0];
     // 精密配给剂（考古重制 Phase B · precision_rationing）：激活期间配方等级门槛 +5（组件/总装同公式）。
@@ -242,6 +251,15 @@ const ManufacturingStateActions = {
   undeployDeployable(state, deployableId) {
     const fn = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD.undeployDeployable)
       || (typeof globalThis !== "undefined" && globalThis.LEGION_COMBAT_SQUAD && globalThis.LEGION_COMBAT_SQUAD.undeployDeployable);
+    if (!fn) return { changed:false, reason:"unavailable" };
+    const res = fn(state, deployableId);
+    if (res && res.changed) { state._dirty = true; }
+    return res;
+  },
+  // 部署物拆解（按舰船公式回收材料）：委托 legion-combat-squad.dismantleDeployable
+  dismantleDeployable(state, deployableId) {
+    const fn = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD.dismantleDeployable)
+      || (typeof globalThis !== "undefined" && globalThis.LEGION_COMBAT_SQUAD && globalThis.LEGION_COMBAT_SQUAD.dismantleDeployable);
     if (!fn) return { changed:false, reason:"unavailable" };
     const res = fn(state, deployableId);
     if (res && res.changed) { state._dirty = true; }
@@ -2359,6 +2377,8 @@ const StationStateActions = {
   if (action.type === "manufacturing/startShipAssembly") return ManufacturingStateActions.startShipAssembly(state, actionTime);
   if (action.type === "manufacturing/deployDeployable") return ManufacturingStateActions.deployDeployable(state, action.deployableId);
   if (action.type === "manufacturing/undeployDeployable") return ManufacturingStateActions.undeployDeployable(state, action.deployableId);
+  if (action.type === "manufacturing/dismantleDeployable") return ManufacturingStateActions.dismantleDeployable(state, action.deployableId);
+  if (action.type === "manufacturing/selectHangarTab") return ManufacturingStateActions.selectHangarTab(state, action.tab);
   if (action.type === "manufacturing/selectEquipmentCategory") return ManufacturingStateActions.selectEquipmentCategory(state, action.categoryId);
   if (action.type === "manufacturing/selectEquipmentRecipe") return ManufacturingStateActions.selectEquipmentRecipe(state, action.recipeId);
   if (action.type === "manufacturing/selectEquipEngRigFilter") return ManufacturingStateActions.selectEquipEngRigFilter(state, action);

@@ -104,6 +104,7 @@ const DEPLOYABLES_DB = {
     salvageEfficiency: 2.10, // 货柜/组件掉率（加算进 getSalvageEfficiency 的 Σ）
     iskBonus: 0.10,          // +10% 星币（每击毁一艘）
     lpBonus: 0.10,           // +10% 功勋（清波/全通/清区）
+    rareDropBonus: 0.05,     // 战斗稀有掉率 +5%（乘区，经 getLegionCombatDropMult 生效；2026-09-02 用户拍板含死亡空间首领核心/协议）
     fuelPerKill: 120         // 每击毁一艘扣一次燃料 = 5 × 大型打捞臂燃料(8) × 3(开启态) = 120，再乘战斗燃料倍率（含电容/区域/军团/舰船）
   }
 };

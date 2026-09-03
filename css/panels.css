@@ -1258,6 +1258,31 @@
 .lcs-deploy-stats { display: flex; flex-wrap: wrap; gap: 4px 8px; padding: 4px 0 2px; font-size: 11px; color: #cfe1f5; }
 .lcs-deploy-stats .lcs-stat { display: inline-flex; align-items: baseline; gap: 3px; padding: 2px 6px; border-radius: 9px; background: rgba(56,81,107,.32); border: 1px solid rgba(127,184,232,.32); }
 .lcs-deploy-stats .lcs-stat b { font-size: 10px; color: #8297ab; font-weight: 500; }
+/* 部署物卡片（船坞「部署物」页与战斗小队面板共用） */
+.lcs-deployables { display: flex; flex-direction: column; gap: 8px; padding: 6px 2px; }
+.lcs-deploy-title { font-size: 13px; font-weight: 600; color: #e8f4ff; display: flex; align-items: center; gap: 6px; }
+.lcs-deploy-title i { font-style: normal; }
+.lcs-deploy-empty { font-size: 12px; color: #8297ab; background: rgba(56,81,107,.18); border: 1px dashed rgba(127,184,232,.3); border-radius: 8px; padding: 10px 12px; line-height: 1.5; }
+.lcs-deploy-card { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: rgba(56,81,107,.16); border: 1px solid rgba(127,184,232,.25); border-radius: 9px; padding: 8px 10px; }
+.lcs-deploy-card.deployed { border-left: 3px solid #7fd7a4; }
+.lcs-deploy-card.deployed.outoffuel { border-left-color: #e0b15a; }
+.lcs-deploy-card.stored { border-left: 3px solid #8297ab; opacity: .9; }
+.lcs-deploy-name { font-weight: 600; color: #e8f4ff; font-size: 13px; }
+.lcs-deploy-effects { font-size: 11px; color: #9fb4c8; flex: 1; min-width: 120px; }
+.lcs-deploy-status { font-size: 11px; padding: 2px 8px; border-radius: 9px; }
+.lcs-deploy-status.on { color: #7fd7a4; background: rgba(127,215,164,.16); }
+.lcs-deploy-status.off { color: #e0b15a; background: rgba(224,177,90,.16); }
+.lcs-deploy-btn { font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid #2a3a4a; background: #16222f; color: #cfe1f5; cursor: pointer; }
+.lcs-deploy-btn.deploy { border-color: #38bdf8; color: #7dd3fc; }
+.lcs-deploy-btn.undeploy { border-color: #e08a8a; color: #f0a8a8; }
+.lcs-deploy-btn.recycle { border-color: #7bbf8a; color: #a7e0b6; }
+.lcs-deploy-btn:disabled { opacity: .5; cursor: not-allowed; }
+.lcs-deploy-hint { font-size: 11px; color: #e0b15a; }
+/* 船坞二级标签（与舰船总装页面一致风格） */
+.hangar-tabs { display: flex; gap: 6px; padding: 8px 12px 0; flex-wrap: wrap; }
+.hangar-tab { font-size: 13px; padding: 6px 14px; border-radius: 7px 7px 0 0; border: 1px solid #1f2d3c; border-bottom: none; background: #0f1a26; color: #8a9aae; cursor: pointer; }
+.hangar-tab.active { background: #16222f; color: #e8f4ff; border-color: #38bdf8; box-shadow: 0 -2px 0 #38bdf8 inset; }
+.hangar-tab:hover { color: #cfe1f5; }
 .lcs-slot-badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .lcs-slot-status { font-size: 10px; color: #9fb4c8; margin-top: 4px; }
 .lcs-fire-order { margin: 6px 0 8px; padding: 6px 8px; border: 1px solid rgba(56,81,107,.55); border-radius: 5px; background: rgba(8,20,32,.55); font-size: 11px; }

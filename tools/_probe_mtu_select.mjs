@@ -158,6 +158,7 @@ const depVal = "deployable:" + id;
 console.log("\n=== 1. 仅选 MTU：squad.deployables = [MTU]，virtual/no storage ===");
 {
   const st = makeState();
+  st.combat.squad.deployableStorage = [id]; // 修正后：需先制造/拥有才能经下拉入队
   const r = LCS.setLegionSquadSelection(st, [depVal]);
   ok(r.changed === true, "返回 changed=true");
   ok(r.deployableIds.length === 1 && r.deployableIds[0] === id, "返回 deployableIds=[MTU]", r);
@@ -166,7 +167,7 @@ console.log("\n=== 1. 仅选 MTU：squad.deployables = [MTU]，virtual/no storag
   // 诊断：JSON 可能因 Date.now/等被丢掉引用 — 用 JSON.stringify 看实际内容
   const dump = JSON.stringify(st.combat.squad.deployables);
   ok(st.combat.squad.deployables[0] && st.combat.squad.deployables[0].deployableId === id, "deployableId 正确", { idx: st.combat.squad.deployables[0], dump });
-  ok(st.combat.squad.deployableStorage.length === 0, "deployableStorage 未被动（虚拟装备不消耗库存）");
+  ok(st.combat.squad.deployableStorage.length === 1 && st.combat.squad.deployableStorage[0] === id, "deployableStorage 未被动（虚拟装备不消耗库存）");
   ok(st.combat.squad.pendingNpcIds.length === 0, "pendingNpcIds=[]");
 }
 
@@ -176,6 +177,7 @@ console.log("\n=== 1. 仅选 MTU：squad.deployables = [MTU]，virtual/no storag
 console.log("\n=== 2. 仅选 NPC：deployables 自动清空（虚拟装备随 selection 权威化） ===");
 {
   const st = makeState({ nNpcs: 2 });
+  st.combat.squad.deployableStorage = [id];
   // 先虚拟装备一台 MTU
   LCS.setLegionSquadSelection(st, [depVal]);
   ok(st.combat.squad.deployables.length === 1, "前置：deployables=[MTU]");
@@ -201,6 +203,7 @@ console.log("\n=== 3. 同时选 NPC + MTU：capacity 校验 ===");
   // 三人协议 capacity=2
   const cap = LCS.getLegionSquadCapacity(st);
   ok(cap === 2, "三人协议容量 = 2（前置）", cap);
+  st.combat.squad.deployableStorage = [id]; // 修正后：需先拥有
 
   // 同时选 1 NPC + 1 MTU → 都接受
   const r = LCS.setLegionSquadSelection(st, ["npc_0", depVal]);
@@ -231,10 +234,13 @@ console.log("\n=== 3. 同时选 NPC + MTU：capacity 校验 ===");
 console.log("\n=== 4. MTU_MAX_DEPLOYED=1：尝试 2 台 deployable，1 接受 1 deploy-full ===");
 {
   const st = makeState();
+  st.combat.squad.deployableStorage = [id];
   const r = LCS.setLegionSquadSelection(st, [depVal, depVal]); // 重复（重复检测会先去重）
   ok(r.deployableIds.length === 1, "同一 id 自动去重 = 1 台");
   // 模拟两个不同 deployable id 但都被 MTU_MAX_DEPLOYED 截
   // （当前仅一个 MTU，但通过 L2.prototype 验证硬上限生效）
+  // 修正后：被截的第二个也需"拥有"才走 deploy-full（否则报 not-owned）
+  st.combat.squad.deployableStorage = [id, "other_dummy"];
   const fakeTwo = [depVal, "deployable:other_dummy"];
   const r2 = LCS.setLegionSquadSelection(st, fakeTwo);
   // 仅 first 接受；如果 first 是 MTU、被截 → 1 接受
@@ -308,6 +314,7 @@ console.log("\n=== 8. ui.selection 仅 deployable ===");
 console.log("\n=== 9. 取消选中 deployable → setLegionSquadSelection 接收空 selection → 装备消失 ===");
 {
   const st = makeState({ nNpcs: 1 });
+  st.combat.squad.deployableStorage = [id];
   LCS.setLegionSquadSelection(st, [depVal]); // 装一台
   ok(st.combat.squad.deployables.length === 1, "已装");
   // UI 重置成「— 选择 NPC —」（value=""），表示该槽取消选择
@@ -322,6 +329,7 @@ console.log("\n=== 9. 取消选中 deployable → setLegionSquadSelection 接收
 console.log("\n=== 10. 成员加入战斗：deployable 不参与 addLegionNpcToCombatSquad 循环 ===");
 {
   const st = makeState({ nNpcs: 2, tripleUnlocked: true }); // cap=2，NPC 与 MTU 可共存
+  st.combat.squad.deployableStorage = [id];
   LCS.setLegionSquadSelection(st, ["npc_0", depVal]);
   // pendingNpcIds 仍然只含 NPC，deployable 不进循环
   ok(st.combat.squad.pendingNpcIds.length === 1 && st.combat.squad.pendingNpcIds[0] === "npc_0", "pendingNpcIds 仅 NPC");
@@ -336,6 +344,7 @@ console.log("\n=== 10. 成员加入战斗：deployable 不参与 addLegionNpcToC
 console.log("\n=== 11. select 路径装备后 getMtuModifiers 立即生效 ===");
 {
   const st = makeState();
+  st.combat.squad.deployableStorage = [id];
   // 加些燃料
   sandbox.__s = st;
   // 已有 5000 fuel via state.resources
@@ -357,11 +366,28 @@ console.log("\n=== 12. 满员下切换 select 项：被顶替的 NPC 自动退�
   // capacity=2，先装 2 NPC
   LCS.setLegionSquadSelection(st, ["npc_0", "npc_1"]);
   ok(st.combat.squad.pendingNpcIds.length === 2, "前置：2 NPC");
+  st.combat.squad.deployableStorage = [id]; // 修正后：需先拥有
   // UI 把 slot 0 从 npc_0 切到 MTU（保留 slot 1 = npc_1）
   const r = LCS.setLegionSquadSelection(st, [depVal, "npc_1"]);
   ok(r.changed === true, "切槽位 changed=true");
   ok(st.combat.squad.pendingNpcIds.length === 1 && st.combat.squad.pendingNpcIds[0] === "npc_1", "npc_0 被顶替");
   ok(st.combat.squad.deployables.length === 1 && st.combat.squad.deployables[0].deployableId === id, "MTU 入队");
+}
+
+// =================================================================
+//  12b. 拥有门控（修复后）：未制造/未拥有的 MTU 不可经下拉入队
+// =================================================================
+console.log("\n=== 12b. 拥有门控：未拥有 MTU 下拉选入被拒（not-owned） ===");
+{
+  const st = makeState(); // 空 deployableStorage / 空 deployables
+  const r = LCS.setLegionSquadSelection(st, [depVal]);
+  ok(r.changed === true, "返回 changed=true（NPC 选择仍处理，仅 MTU 被拒）");
+  ok(st.combat.squad.deployables.length === 0, "未拥有时 deployables 不被写入（漏洞已堵）", st.combat.squad.deployables);
+  ok(Array.isArray(r.skipped) && r.skipped.some(x => x.kind === "deployable" && x.reason === "not-owned"), "skipped 含 not-owned", r.skipped);
+  // 已部署（生效中）也不算 not-owned：注入 deployables 后重选应保持
+  st.combat.squad.deployables = [{ deployableId: id, name: "激光定向打捞单元" }];
+  const r2 = LCS.setLegionSquadSelection(st, [depVal]);
+  ok(st.combat.squad.deployables.length === 1 && !r2.skipped.some(x => x.reason === "not-owned"), "已部署项重选不报 not-owned", st.combat.squad.deployables);
 }
 
 // =================================================================

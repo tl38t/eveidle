@@ -1880,14 +1880,14 @@ function getDeployableDefinition(deployableId) {
 //   active       是否生效（已部署且燃料充足）
 //   outOfFuel    已部署但燃料不足
 function getMtuModifiers(state) {
-  const empty = { count:0, salvage:0, iskBonus:0, lpBonus:0, fuelPerKill:0, active:false, outOfFuel:false };
+  const empty = { count:0, salvage:0, iskBonus:0, lpBonus:0, rareDropBonus:0, fuelPerKill:0, active:false, outOfFuel:false };
   const sq = state && state.combat && state.combat.squad;
   if (!sq || !Array.isArray(sq.deployables) || sq.deployables.length === 0) return empty;
   const fuelStock = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? ResourceRegistry.get(state, "consumable:fuel") : 0;
   // 每击毁一艘扣一次燃料；燃料≤0 → 视为断料，全部增益暂停（不崩溃、不消失、不扣费）。
   const active = fuelStock >= 1;
   const fuelMult = (typeof getCombatFuelMultiplierFromState === "function") ? getCombatFuelMultiplierFromState(state) : 1;
-  let salvage = 0, iskBonus = 0, lpBonus = 0, fuelPerKill = 0;
+  let salvage = 0, iskBonus = 0, lpBonus = 0, rareDropBonus = 0, fuelPerKill = 0;
   for (const d of sq.deployables) {
     const def = getDeployableDefinition(d.deployableId);
     if (!def) continue;
@@ -1895,10 +1895,12 @@ function getMtuModifiers(state) {
     salvage += (def.salvageEfficiency || 0) * gainMult;
     iskBonus += (def.iskBonus || 0) * gainMult;
     lpBonus += (def.lpBonus || 0) * gainMult;
+    // 战斗稀有掉率（乘区 1+x，经 getLegionCombatDropMult 并入全部稀有掷骰，含死亡空间首领核心/协议）
+    rareDropBonus += (def.rareDropBonus || 0) * gainMult;
     // 燃料基准始终含倍率；仅 active 时本场才扣（断料时不扣）。
     fuelPerKill += (def.fuelPerKill || 0) * (active ? fuelMult : 0);
   }
-  return { count: sq.deployables.length, salvage, iskBonus, lpBonus, fuelPerKill, active, outOfFuel: !active };
+  return { count: sq.deployables.length, salvage, iskBonus, lpBonus, rareDropBonus, fuelPerKill, active, outOfFuel: !active };
 }
 
 function getCombatLevelFromState(state) {
@@ -3458,6 +3460,39 @@ function getEquipmentDismantleBlockReason(state, targetRef) {
 
 function getHangarDisplayState(state, now) {
   const assignments = state.shipAssignments || {};
+  // 船坞标签：复用舰船工程（总装）的 SHIP_ASSEMBLY_LINES 六条线划分；
+  // 库存舰船由桌面端 renderHangarPanel 经 getShipAssemblyLine(shipId) 归类，
+  // 部署物（激光定向打捞单元等）归入「特殊」线（与舰船工程一致）。移动端 mobileRenderHangarPanel 仍消费全部 ships。
+  const hangarLineIds = SHIP_ASSEMBLY_LINES.map(function (l) { return l.id; });
+  const _storedHangarTab = (state.currentAction && state.currentAction.hangarTab) || "";
+  const hangarTab = hangarLineIds.indexOf(_storedHangarTab) >= 0 ? _storedHangarTab : "shield_laser";
+  const hangarTabs = SHIP_ASSEMBLY_LINES.map(function (l) {
+    return { id:l.id, name:l.name, selected: hangarTab === l.id };
+  });
+  // 部署物视图（经 state.combat.squad.deployables/deployableStorage，与 NPC 共享小队容量）
+  const squad = (state.combat && state.combat.squad) || { deployables:[], deployableStorage:[], members:[] };
+  const capacity = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.getLegionSquadCapacity)
+    ? LEGION_COMBAT_SQUAD.getLegionSquadCapacity(state) : 0;
+  const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+  // 部署物拆解只读报价（按舰船公式）：仅库存中（未部署）者可回收；已部署须先取消部署。
+  const deployDismantleItems = (squad.deployableStorage || []).map(function (id) {
+    const recipe = (typeof SHIP_ASSEMBLY_RECIPES !== "undefined") ? SHIP_ASSEMBLY_RECIPES.find(r => r.deployableId === id) : null;
+    const preview = recipe ? getShipDismantleQuote(recipe, null, 0, getReclaimRate(state)) : [];
+    const deployed = (squad.deployables || []).some(d => d && d.deployableId === id);
+    return { deployableId:id, name: recipe ? recipe.name : id, preview: preview, canDismantle: Boolean(recipe) && !deployed };
+  });
+  const hangarDeployables = {
+    deployed: (squad.deployables || []).map(d => ({ deployableId:d.deployableId, name:d.name })),
+    deployableStorage: (squad.deployableStorage || []).slice(),
+    capacity: capacity,
+    usedSlots: (squad.members ? squad.members.length : 0) + (squad.deployables ? squad.deployables.length : 0),
+    mtu: mtu ? { active: mtu.active, outOfFuel: mtu.outOfFuel, fuelPerKill: mtu.fuelPerKill } : { active:false, outOfFuel:false, fuelPerKill:0 },
+    fuelStock: (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? ResourceRegistry.get(state, "consumable:fuel") : 0,
+    dismantle: {
+      reclaimPercent: Math.round(getReclaimRate(state) * 100),
+      items: deployDismantleItems
+    }
+  };
   const actionNames = { combat:"⚔ 战斗", mining:"⛏ 采矿", gasHarvesting:"☁ 采气", refining:"🔥 冶炼", archaeology:"🛰 考古" };
   const ships = state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
   return {
@@ -3465,6 +3500,9 @@ function getHangarDisplayState(state, now) {
     count:ships.length,
     actionNames,
     combatRecoveryActive:false,
+    tabs:hangarTabs,
+    activeTab:hangarTab,
+    deployableView:hangarDeployables,
     ships:ships.map(instance => {
       const config = getShipConfigById(instance.shipId);
       if (!config) return { instanceId:instance.instanceId, shipId:instance.shipId, unknown:true };

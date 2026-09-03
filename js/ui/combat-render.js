@@ -419,13 +419,16 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
   const depValue = prefix + deployableId;
   const depSelected = selfValue === depValue;
   const depElsewhereSelected = selection.indexOf(depValue) >= 0 && selfValue !== depValue;
+  // 拥有门控：未制造/未拥有的 MTU 不允许在空槽选入（杜绝"未制造即部署"漏洞）；
+  // 已选中（已部署）或库存中确实拥有时允许。
+  const ownsMtu = depSelected || ((ui.deployableStorage || []).indexOf(deployableId) >= 0);
   // 已被占用的槽位数（NPC + deployable 都算）
   const usedSlotsNow = (ui.selection ? (ui.selection || []).filter(Boolean).length : 0);
   const capacity = Math.max(0, ui.capacity);
   // 容量门控：仅阻止"空槽再塞 MTU 且容量已满"。
   // NPC→MTU 同槽互换是等量替换（数据层 setLegionSquadSelection 整组 REPLACE），永远允许，玩家看见 disabled 才奇怪。
   const capacityWouldOverflow = !depSelected && kind === "empty" && usedSlotsNow >= capacity;
-  const depDisabled = !depSelected && (depElsewhereSelected || capacityWouldOverflow);
+  const depDisabled = !depSelected && (depElsewhereSelected || capacityWouldOverflow || !ownsMtu);
   const npcOptions = allNpcs.map(function (c) {
     const otherSelected = selection.indexOf(c.npcId) >= 0 && selfValue !== c.npcId;
     const selected = kind === "npc" && entry.id === c.npcId;
@@ -520,13 +523,16 @@ function renderSquadDeployables(ui, capacity) {
   if (storage.length > 0) {
     const used = (ui.selection ? ui.selection.length : 0) + deployed.length;
     const canDeploy = (capacity || 0) > 0 && used < (capacity || 0);
+    const deployedIds = (deployed || []).map(function (d) { return d.deployableId; });
     storage.forEach(function (id) {
       const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(id) : null;
       const defName = def ? def.name : id;
+      const canDis = deployedIds.indexOf(id) < 0;
       html += '<div class="lcs-deploy-card stored">' +
         '<span class="lcs-deploy-name">' + squadEscape(defName) + "</span>" +
         '<span class="lcs-deploy-effects">已拥有 · 待部署</span>' +
         '<button class="lcs-deploy-btn deploy" data-deploy="' + squadEscape(id) + '"' + (canDeploy ? "" : " disabled") + ">部署（占 1 格）</button>" +
+        '<button class="lcs-deploy-btn recycle" data-dismantle-deployable="' + squadEscape(id) + '"' + (canDis ? "" : " disabled") + ' title="拆解回收（按冶炼回收率退还材料）">♻ 回收</button>' +
         "</div>";
     });
     if (!canDeploy) html += '<div class="lcs-deploy-hint">小队格位不足：需空出 1 个共享格（与 NPC 成员互斥）才能部署。</div>';
@@ -561,9 +567,9 @@ function bindCombatSquadUI() {
     }
     renderCombatSquadSection(Date.now());
   });
-  // 部署物：部署 / 取消部署（事件委托，点击）
+  // 部署物：部署 / 取消部署 / 拆解回收（事件委托，点击）
   host.addEventListener("click", function (event) {
-    const btn = event.target && event.target.closest ? event.target.closest("[data-deploy],[data-undeploy]") : null;
+    const btn = event.target && event.target.closest ? event.target.closest("[data-deploy],[data-undeploy],[data-dismantle-deployable]") : null;
     if (!btn || btn.disabled) return;
     const api = legionSquadApi();
     if (!api) return;
@@ -574,10 +580,19 @@ function bindCombatSquadUI() {
     } else if (btn.dataset.deploy) {
       const fn = api.deployDeployable;
       if (typeof fn === "function") res = fn(gameState, btn.dataset.deploy);
+    } else if (btn.dataset.dismantleDeployable) {
+      const fn = api.dismantleDeployable;
+      if (typeof fn === "function") res = fn(gameState, btn.dataset.dismantleDeployable);
     }
     if (res && res.changed === false && res.reason && typeof showToast === "function") {
-      const reason = api.JOIN_REASONS && api.JOIN_REASONS[res.reason] ? api.JOIN_REASONS[res.reason] : res.reason;
+      const reasonMap = Object.assign({}, api.JOIN_REASONS || {}, {
+        deployed:"已部署中，先取消部署再回收", "no-recipe":"无拆解配方", "not-in-storage":"不在库存", "no-squad":"无战斗小队"
+      });
+      const reason = reasonMap[res.reason] ? reasonMap[res.reason] : res.reason;
       showToast("⚠ " + reason);
+    } else if (res && res.changed && res.refundedResources && typeof showToast === "function") {
+      const parts = Object.keys(res.refundedResources).map(function (k) { return k + "×" + res.refundedResources[k]; });
+      showToast("♻ 已回收：" + (parts.join(" · ") || "无"));
     }
     renderCombatSquadSection(Date.now());
   });
