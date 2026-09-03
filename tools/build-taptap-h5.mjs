@@ -151,10 +151,14 @@ function isWhitelisted(rel) {
   // 精确许可证白名单（修复 release 对白名单 .txt 许可证的遗漏）
   if (rel === "js/vendor/LICENSE_THREE.txt") return true;
   if (rel === "index.html") return true;
-  // 军团星图：index.html 星图面板以 iframe 引用，须随包发布，否则打包后必然 404。
-  // 命名为 legion-starmap.html（非 *-demo.*）以符合排除清单对原型/演示件的封禁意图。
+  // 军团星图：index.html 星图面板以 iframe 引用 legion-starmap-pure.html，
+  // 该页又引用同目录的 legion-starmap-pure-content.js / -events.js，三者须一并随包发布，否则打包后必然 404。
+  // 2026-09-03：旧文件名 legion-starmap.html 已重命名为 *-pure.html（旧文件已删），
+  // 同步更新白名单；兼容新旧两种命名，避免再次因改名漏包。
+  // 注：两个配套 js 位于仓库根目录，不匹配下方 `^js\/.*\.js$` 规则，必须在此显式放行。
   // 已校验：无 CDN 外链、无探针 key、无测试文案、无 window.QA / ?qa= 入口。
-  if (rel === "legion-starmap.html") return true;
+  if (/^legion-starmap(-pure)?\.html$/.test(rel)) return true;
+  if (/^legion-starmap(-pure)?-(content|events)\.js$/.test(rel)) return true;
   if (/^css\/[^/]+\.css$/.test(rel)) {
     const base = rel.split("/").pop().toLowerCase();
     if (base === "ship-lab.css" || base === "three-demo.css") return false;
