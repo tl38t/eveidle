@@ -301,6 +301,11 @@ function getResearchProtocolDisplayState(state, protocolId) {
     const deployments = (isValidProtocolStateShape(state) && state.planetary && Array.isArray(state.planetary.deployments))
       ? state.planetary.deployments : [];
     const nowRef = Date.now();
+    // 只读预估：面板要告诉玩家「下次到期能不能续上」，判定口径必须与 tryPlanetAutoRenew
+    // （:404-412）严格同源——否则两套公式会漂移。星币是流动的，故为「按当前余额预估」。
+    const currentISK = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get)
+      ? (Number(ResourceRegistry.get(state, "currency:isk")) || 0) : 0;
+    const activeProtocol = isResearchProtocolActive(state, "planauto");
     base.deployments = deployments.map(dep => {
       const config = (typeof PLANET_TYPES !== "undefined")
         ? PLANET_TYPES.find(planet => planet.id === dep.planetType) : null;
@@ -309,6 +314,23 @@ function getResearchProtocolDisplayState(state, protocolId) {
       const expiresAt = deployedAt + durationSec * 1000;
       const auto = (dep.autoRenew && typeof dep.autoRenew === "object" && !Array.isArray(dep.autoRenew)) ? dep.autoRenew : null;
       const running = Boolean(dep.active) && nowRef < expiresAt;
+      const autoRenewEnabled = Boolean(auto && auto.enabled === true);
+      const minIskReserve = (auto && typeof auto.minIskReserve === "number" && isFinite(auto.minIskReserve) && auto.minIskReserve >= 0)
+        ? auto.minIskReserve : 0;
+      const renewCostISK = (config && typeof getPlanetRenewCostISK === "function") ? getPlanetRenewCostISK(state, config) : 0;
+      // 续不上预警：仅在「协议已生效 + 本基地已开自动续期」时才有意义。
+      //   insufficient-isk：余额 < 续期费；reserve-not-met：扣完 < 最低储备（恰好等于放行）。
+      //   shortfall 为「还差多少星币」，供 UI 直接展示。
+      let risk = null, shortfall = 0;
+      if (activeProtocol && autoRenewEnabled) {
+        if (currentISK < renewCostISK) {
+          risk = "insufficient-isk";
+          shortfall = renewCostISK - currentISK;
+        } else if (currentISK - renewCostISK < minIskReserve) {
+          risk = "reserve-not-met";
+          shortfall = minIskReserve - (currentISK - renewCostISK);
+        }
+      }
       return {
         deploymentId: dep.id,
         planetType: dep.planetType,
@@ -317,10 +339,12 @@ function getResearchProtocolDisplayState(state, protocolId) {
         running,
         statusText: running ? "运行中" : "已到期",
         expiresAt,
-        autoRenewEnabled: Boolean(auto && auto.enabled === true),
-        minIskReserve: (auto && typeof auto.minIskReserve === "number" && isFinite(auto.minIskReserve) && auto.minIskReserve >= 0)
-          ? auto.minIskReserve : 0,
-        renewCostISK: (config && typeof getPlanetRenewCostISK === "function") ? getPlanetRenewCostISK(state, config) : 0
+        autoRenewEnabled,
+        minIskReserve,
+        renewCostISK,
+        currentISK,
+        renewRisk: risk,
+        renewShortfall: Math.max(0, Math.round(shortfall))
       };
     });
   } else if (protocolId === "autoenh") {

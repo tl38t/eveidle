@@ -1165,6 +1165,14 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
     quantity:totalQty, xp:xpGained, offline, cycles
   }, { offline });
 
+  // 2026-09-03 补漏：装备自动线此前不发 manufacturing:completed，导致同配方手动队列出脑插、
+  // 自动线不出（口径差）。现对齐手动队列（tick.js）与离线结算（offline.js）字段，
+  // 按 cycles 聚合掷骰 —— 装备线成品（含燃料/弹药/探针消耗品）均计入脑插掉落路径。
+  emitStationEvent("manufacturing:completed", {
+    branch:"equipment", recipeId:recipe.id, productType:output.type,
+    quantity:totalQty, time:recipe.time, cycles, xp:xpGained, offline
+  }, { offline });
+
   if (recipe.slot === "rig") {
     emitStationEvent("rig:manufactured", { rigId:output.itemId, quantity:totalQty }, { offline });
   }

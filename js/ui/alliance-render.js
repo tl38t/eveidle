@@ -11,6 +11,149 @@
     });
   }
 
+  // In-game direct cloud read (desktop first). TapTap keeps working because any
+  // network failure degrades to the cloud-page fallback below.
+  var activeRender = null;
+
+  function withTimeout(promise, ms) {
+    return Promise.race([
+      promise,
+      new Promise(function (_resolve, reject) {
+        setTimeout(function () { reject(new Error("连接超时")); }, ms);
+      })
+    ]);
+  }
+
+  function rememberAlliance(alliance) {
+    if (!root.gameState || !alliance) return;
+    root.gameState.alliance = {
+      isMember: true,
+      allianceId: alliance.id,
+      code: alliance.code,
+      ownerPlayerId: alliance.ownerId || "",
+      ownerName: "",
+      memberCount: Math.max(0, Math.min(10, Number(alliance.memberCount) || 1)),
+      buildingLevel: 0,
+      memberList: []
+    };
+    root.gameState._dirty = true;
+    if (root.SaveManager && root.SaveManager.save) root.SaveManager.save();
+  }
+
+  function renderMemberCard(alliance) {
+    return '<div class="alliance-card"><div class="alliance-card-title">当前联盟（实时）</div>' +
+      '<div class="alliance-name">' + esc(alliance.name || alliance.code) + '</div>' +
+      '<div class="alliance-meta">联盟代码：' + esc(alliance.code) + ' · 成员：' + esc(alliance.memberCount) + '/10<br>联盟 ID：' + esc(alliance.id) + '</div></div>';
+  }
+
+  function renderListView(list) {
+    var rows = list.map(function (a) {
+      var full = Number(a.memberCount) >= 10;
+      return '<div class="alliance-member-row"><span>' + esc(a.name || a.code) + '</span>' +
+        '<span class="text-muted">' + esc(a.memberCount) + '/10</span>' +
+        '<button class="btn secondary alliance-join-btn" data-alliance-id="' + esc(a.id) + '"' + (full ? " disabled" : "") + ' style="margin-left:auto;">' + (full ? "已满" : "加入") + '</button></div>';
+    }).join("");
+    var listHtml = list.length
+      ? '<div class="alliance-card-title">联盟列表（' + list.length + '）</div><div class="alliance-members">' + rows + '</div>'
+      : '<div class="alliance-task-hint">还没有联盟，创建第一个吧。</div>';
+    return '<div class="alliance-card"><div class="alliance-card-title">创建联盟</div>' +
+      '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
+      '<input id="alliance-new-code" maxlength="3" placeholder="例如 EVE" autocomplete="off" style="flex:1;min-width:0;text-transform:uppercase;padding:6px 8px;background:#0a1420;border:1px solid #24405c;border-radius:6px;color:#d8e2ee;">' +
+      '<button class="btn primary" id="alliance-create-btn">建立联盟</button></div>' +
+      '<div class="alliance-task-hint">代码为 1～3 位大写英文字母。</div></div>' +
+      '<div class="alliance-card">' + listHtml + '</div>';
+  }
+
+  function bindListActions(box, msg) {
+    var createBtn = box.querySelector("#alliance-create-btn");
+    var input = box.querySelector("#alliance-new-code");
+    if (createBtn && input) createBtn.onclick = function () {
+      var value = (input.value || "").trim();
+      var check = root.AlliancePolicy && root.AlliancePolicy.validate
+        ? root.AlliancePolicy.validate(value) : { ok: true };
+      if (!check.ok) { if (msg) msg.textContent = check.reason || "联盟代码无效"; return; }
+      createBtn.disabled = true;
+      if (msg) msg.textContent = "创建联盟中…";
+      root.AllianceApi.createAlliance(value).then(function (alliance) {
+        if (msg) msg.textContent = "联盟已创建";
+        rememberAlliance(alliance);
+        startCloudRefresh();
+      }).catch(function (error) {
+        createBtn.disabled = false;
+        if (msg) msg.textContent = "创建失败：" + (error && error.message || error);
+      });
+    };
+    Array.prototype.forEach.call(box.querySelectorAll(".alliance-join-btn"), function (btn) {
+      btn.onclick = function () {
+        btn.disabled = true;
+        if (msg) msg.textContent = "加入联盟中…";
+        root.AllianceApi.joinAlliance(btn.getAttribute("data-alliance-id")).then(function () {
+          if (msg) msg.textContent = "已加入联盟";
+          startCloudRefresh();
+        }).catch(function (error) {
+          btn.disabled = false;
+          if (msg) msg.textContent = "加入失败：" + (error && error.message || error);
+        });
+      };
+    });
+  }
+
+  function startCloudRefresh() {
+    var ctx = activeRender;
+    if (!ctx) return;
+    if (!root.AllianceApi || !root.AllianceApi.getAlliance) {
+      if (ctx.msg) ctx.msg.textContent = "云端联盟已就绪";
+      return;
+    }
+    var box = document.getElementById("alliance-state");
+    if (!box) return;
+    withTimeout(root.AllianceApi.getAlliance(), 8000).then(function (alliance) {
+      if (alliance) {
+        rememberAlliance(alliance);
+        box.innerHTML = renderMemberCard(alliance);
+        if (ctx.msg) ctx.msg.textContent = "已连接云端联盟";
+        return null;
+      }
+      return withTimeout(root.AllianceApi.listAlliances(), 8000).then(function (list) {
+        box.innerHTML = renderListView(list || []);
+        bindListActions(box, ctx.msg);
+        if (ctx.msg) ctx.msg.textContent = "已连接云端（未加入联盟）";
+      });
+    }).catch(function () {
+      box.innerHTML = ctx.fallbackHtml;
+      if (ctx.msg) ctx.msg.textContent = "云端连接失败，已切换云端页模式";
+    });
+  }
+
+  function showDiagnoseOverlay() {
+    var overlay = document.getElementById("alliance-diag-overlay");
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = "alliance-diag-overlay";
+      overlay.style.cssText = "position:fixed;left:0;top:0;right:0;bottom:0;background:rgba(2,8,16,.72);z-index:9999;display:flex;align-items:center;justify-content:center;padding:16px;";
+      overlay.innerHTML = '<div style="background:#0d1826;border:1px solid #24405c;border-radius:10px;max-width:520px;width:100%;max-height:80%;overflow:auto;padding:16px;color:#d8e2ee;font-size:13px;line-height:1.6;">' +
+        '<div style="font-weight:500;margin-bottom:8px;">联盟网络诊断（当前环境实测）</div>' +
+        '<div id="alliance-diag-body">诊断中…</div>' +
+        '<div style="margin-top:12px;text-align:right;"><button class="btn secondary" id="alliance-diag-close">关闭</button></div></div>';
+      document.body.appendChild(overlay);
+      overlay.querySelector("#alliance-diag-close").onclick = function () { overlay.remove(); };
+      overlay.onclick = function (event) { if (event.target === overlay) overlay.remove(); };
+    }
+    var body = overlay.querySelector("#alliance-diag-body");
+    body.textContent = "诊断中…";
+    root.AllianceApi.diagnose().then(function (report) {
+      var rows = (report.steps || []).map(function (step) {
+        return '<div>· ' + esc(step.name) + '：' + (step.ok ? "通过" : "失败") + ' ' + esc(step.detail || "") + '（' + esc(step.ms) + 'ms）</div>';
+      }).join("");
+      body.innerHTML = '<div>页面协议：' + esc(report.protocol) + '</div>' +
+        '<div>接口地址：' + esc(report.endpoint) + '</div>' +
+        '<div>玩家 ID：' + esc(report.deviceId) + '</div>' +
+        '<div style="margin-top:8px;">' + rows + '</div>';
+    }).catch(function (error) {
+      body.textContent = "诊断执行失败：" + (error && error.message || error);
+    });
+  }
+
   function load() {
     var msg = document.getElementById("alliance-msg");
     var content = document.getElementById("alliance-content");
@@ -93,7 +236,8 @@
 
     var diagnoseButton = document.getElementById("btn-alliance-diagnose");
     if (diagnoseButton) diagnoseButton.onclick = function () {
-      root.location.href = url + "&diagnose=1";
+      if (root.AllianceApi && root.AllianceApi.diagnose) showDiagnoseOverlay();
+      else root.location.href = url + "&diagnose=1";
     };
 
     var params = new URLSearchParams(root.location.search);
@@ -184,10 +328,13 @@
     }).join("") : '<div class="alliance-task-hint">尚未生成任务，请先打开一次云端联盟页面。</div>') + '<div class="alliance-task-hint">当前阶段只显示本地材料状态，任务提交验证将在下一步接入。</div></div>';
     var memberHtml = returnedMemberList.length ? '<div class="alliance-card-title">联盟成员</div><div class="alliance-members">' + returnedMemberList.map(function (member) { return '<div class="alliance-member-row"><span>' + esc(member.username || member.playerId) + '</span><span class="text-muted">' + esc(member.playerId) + '</span></div>'; }).join("") + '</div>' : '';
     setTimeout(function () { content.insertAdjacentHTML("beforeend", taskHtml); }, 0);
-    content.innerHTML = returnedCode
+    var fallbackHtml = returnedCode
       ? '<div class="alliance-card"><div class="alliance-card-title">当前联盟（云端回传）</div><div class="alliance-name">' + esc(returnedCode) + '</div><div class="alliance-meta">联盟创建人：' + esc(returnedOwnerName || returnedOwner || "-") + ' · 成员：' + esc(returnedMembers || "0") + '/10<br>联盟 ID：' + esc(returnedId || "-") + '</div>' + memberHtml + '</div>'
       : '<div class="alliance-empty"><div class="alliance-empty-title">联盟数据在云端页面管理</div><div class="alliance-empty-sub">点击“打开云端联盟”查看、创建或加入联盟。返回游戏后会显示云端回传的联盟摘要。</div><div class="alliance-id">当前玩家 ID：' + esc(playerId) + '</div></div>';
-    if (msg) msg.textContent = "云端联盟已就绪";
+    content.innerHTML = '<div id="alliance-state">' + fallbackHtml + '</div>';
+    activeRender = { content: content, msg: msg, fallbackHtml: fallbackHtml, playerId: playerId };
+    if (msg) msg.textContent = "正在连接云端联盟…";
+    startCloudRefresh();
   }
 
   root.renderAlliancePage = load;

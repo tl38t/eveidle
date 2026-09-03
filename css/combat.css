@@ -703,6 +703,27 @@
     content: "▾";
   }
 
+  /* ── 战斗补给告警区（2026-09-03）：常驻、折叠补给面板也可见 ── */
+  .combat-supply-alert {
+    margin: 8px 0 0;
+    padding: 7px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    line-height: 1.6;
+    background: #3a2f16;
+    color: #e8b04a;
+    border: 1px solid #5c4720;
+  }
+  .combat-supply-alert.blocking {
+    background: #45211d;
+    color: #f0a496;
+    border-color: #7a3229;
+  }
+  /* 补给格续航预估与三档状态色 */
+  .csp-note { font-style: normal; font-size: 11px; margin-left: 2px; }
+  .csp-item.csp-warn { color: #e8b04a; }
+  .csp-item.csp-block { color: #e06c5a; }
+
   /* ── 战斗控制台（特殊：展开时 summary 为标题行，折叠时为摘要条）── */
   details.combat-command-console {
     position: relative;

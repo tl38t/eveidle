@@ -905,6 +905,16 @@
   .research-protocol-planet + .research-protocol-planet { margin-top: 6px; }
   .research-protocol-planet-head { font-size: 12px; color: #d6e2ee; }
   .research-protocol-planet-meta { font-size: 11px; color: #8ba0b4; margin-top: 2px; }
+  /* 续不上预警（2026-09-03 玩家反馈）：与 gate 提示区分，用红色调吸睛 */
+  .research-protocol-planet-risk {
+    font-size: 11px; line-height: 1.5; margin-top: 4px;
+    color: #f0b4a0;
+  }
+  /* 自动续期判定规则说明（面板级，全基地共用一句） */
+  .research-protocol-planauto-rule {
+    font-size: 11px; line-height: 1.6; color: #9ab0c4;
+  }
+  .research-protocol-planauto-rule b { color: #d6e2ee; font-weight: 500; }
   .research-protocol-planet-ctrl {
     display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin-top: 6px;
   }
@@ -1001,6 +1011,9 @@
     box-shadow: 0 10px 32px rgba(0, 0, 0, 0.55);
     /* 触屏：整卡统一由 JS 接管手势（拖拽/滚动方向自判），避免浏览器把竖向手势当滚动而中断拖拽 */
     touch-action: none;
+    box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
   }
   .tutorial-widget[hidden] { display: none; }
 
@@ -1060,7 +1073,7 @@
     transition: width 0.25s ease;
   }
 
-  .tutorial-widget .tw-body { display: flex; flex-direction: column; gap: 8px; }
+  .tutorial-widget .tw-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .tutorial-widget.collapsed .tw-body { display: none; }
   .tutorial-widget.collapsed { gap: 0; padding: 8px 11px; }
   /* 收起态：仅保留 header 一行（新手引导 · 已完成 N/M + 展开按钮），其余全部隐藏 */
@@ -1071,10 +1084,10 @@
   .tutorial-widget.collapsed .tw-header { cursor: pointer; }
   .tutorial-widget .tw-mini-num { color: #d4a843; font-weight: 700; }
 
-  .tutorial-widget .tw-tabs { display: flex; gap: 6px; }
+  .tutorial-widget .tw-tabs { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; overflow: hidden; }
   .tutorial-widget .tw-tabs[hidden] { display: none; }
   .tutorial-widget .tw-tab {
-    flex: 1 1 0;
+    flex: 1 1 calc(50% - 6px);
     padding: 4px 6px;
     font-family: var(--font-ui);
     font-size: 12px;
@@ -1083,7 +1096,9 @@
     border: 1px solid rgba(50, 68, 88, 0.7);
     border-radius: 4px;
     cursor: pointer;
-    white-space: nowrap;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    min-width: 0;
     transition: color 0.15s, border-color 0.15s, background 0.15s;
   }
   .tutorial-widget .tw-tab:hover { color: #d9e4f0; border-color: rgba(212, 168, 67, 0.45); }

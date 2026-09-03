@@ -72,6 +72,8 @@ function load(sysExclude) {
     Math, Date, JSON, Object, Array, String, Number, Boolean, isFinite, parseInt, parseFloat,
   };
   sandbox.window = sandbox; sandbox.globalThis = sandbox;
+  // i18n/translator.js（Steam 本地化）在加载期读取 URLSearchParams；Node vm 沙箱无此 Web API，透传宿主实现
+  sandbox.URLSearchParams = URLSearchParams;
   sandbox.addEventListener = () => {}; sandbox.removeEventListener = () => {}; sandbox.dispatchEvent = () => {};
   sandbox.location = { href: "http://localhost/", search: "", hash: "" };
   sandbox.navigator = { userAgent: "node" };

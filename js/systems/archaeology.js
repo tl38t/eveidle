@@ -14,6 +14,11 @@ function archaeologyRandom(randomValue) {
   return Math.random();
 }
 
+// 考古装备强化幅度倍率：全局装备强化公式（1 + 0.005L + 0.025⌊L/5⌋）的「加成部分」×2。
+// 2026-09-03 拍板折中：修复前为每级 +10%（+5 级 = +50%）明显过强；
+// 直接套全局口径（+5 级 = +5%）对考古装备又偏弱，故取 2 倍幅度（+5 级 = +10%）。
+const ARCHAEOLOGY_ENHANCEMENT_SCALE = 2;
+
 // ---- 装备增益解析（含强化倍率，受上限约束） ----
 function getArchaeologyFittedBonuses(state, instance) {
   const fitted = (instance && instance.fitted) || { high:[], mid:[], low:[] };
@@ -25,7 +30,13 @@ function getArchaeologyFittedBonuses(state, instance) {
       if (!resolved) continue;
       const eq = resolved.definition;
       if (!eq || !eq.archaeology) continue;
-      const enh = 1 + 0.1 * (resolved.enhancementLevel || 0);
+      // 修复（2026-09-03）：考古装备强化此前按「每级 +10%」计算（+5 级 → ×1.5，即 +50%），
+      // 与全局装备强化公式（1 + 0.005L + 0.025⌊L/5⌋，+5 级 → ×1.05）差一个数量级。
+      // 现改为复用全局公式、并将其加成部分 ×ARCHAEOLOGY_ENHANCEMENT_SCALE（2）作为考古的折中收益。
+      const baseEnh = (typeof getEquipmentEnhancementEffectMultiplier === "function")
+        ? getEquipmentEnhancementEffectMultiplier(resolved.enhancementLevel || 0)
+        : 1;
+      const enh = 1 + (baseEnh - 1) * ARCHAEOLOGY_ENHANCEMENT_SCALE;
       if (slot === "high" && eq.bonuses && eq.bonuses.archaeologyScan) scan += eq.bonuses.archaeologyScan * enh;
       if (slot === "high" && eq.bonuses && eq.bonuses.archaeologyCycleReduction) cycleReduction += eq.bonuses.archaeologyCycleReduction * enh;
       if (slot === "mid" && eq.bonuses && eq.bonuses.archaeologyStabilizer) stabilizer += eq.bonuses.archaeologyStabilizer * enh;

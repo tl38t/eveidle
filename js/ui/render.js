@@ -155,6 +155,31 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
     else if (p.active) pumpState.textContent = "×" + p.count + " · 供料中 +" + (p.bonus * 100).toFixed(0) + "%（每炉扣 " + fuelName + " ×" + p.fuelPerCycle + "）";
     else pumpState.textContent = "×" + p.count + " · 断料失效（需 " + fuelName + " ≥" + p.fuelPerCycle + "）";
     pumpState.style.color = p.active ? "#a7f3d0" : (p.enabled ? "#f0b4a0" : "#8a9bb0");
+    // 库存余量提示（2026-09-03 用户反馈）：紧跟状态显示剩余等离子体与可供炉数。
+    // 数据来自 display.pump.stock（getPumpModifiers 早已读取）。三态：供料中绿色、
+    // 可供 <20 炉黄色预警、断料橙色（不足一炉）；关闭供料时不显示（不消耗，无意义）。
+    let stockEl = document.getElementById("smelting-pump-stock");
+    if (!stockEl && pumpState.parentNode) {
+      stockEl = document.createElement("span");
+      stockEl.id = "smelting-pump-stock";
+      pumpState.parentNode.insertBefore(stockEl, pumpState.nextSibling);
+    }
+    if (stockEl) {
+      stockEl.textContent = "";
+      if (p.enabled && p.fuelPerCycle > 0) {
+        const cycles = Math.floor((Number(p.stock) || 0) / p.fuelPerCycle);
+        if (p.active && cycles > 0 && cycles < 20) {
+          stockEl.textContent = " · 库存 " + (Number(p.stock) || 0).toLocaleString() + " · 可供 " + cycles + " 炉 ⚠ 即将断料";
+          stockEl.style.color = "#f0d9a0";
+        } else if (p.active) {
+          stockEl.textContent = " · 库存 " + (Number(p.stock) || 0).toLocaleString() + " · 可供 " + cycles.toLocaleString() + " 炉";
+          stockEl.style.color = "#a7f3d0";
+        } else if (!p.active) {
+          stockEl.textContent = " · 库存 " + (Number(p.stock) || 0).toLocaleString() + "（不足一炉）";
+          stockEl.style.color = "#f0b4a0";
+        }
+      }
+    }
   }
   if (pumpToggle && display.pump) {
     pumpToggle.textContent = display.pump.enabled ? "开启中" : "已关闭";

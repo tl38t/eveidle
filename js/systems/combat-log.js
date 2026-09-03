@@ -73,6 +73,51 @@ function combatLogAddSkillXp(skillId, amount) {
   window.addStationModifiedCombatXp = wrapped;
 })();
 
+// 累计本场战斗消耗的燃料（consumable:fuel）。
+// 实现方式与上面的经验 hook 同构：钩住 ResourceRegistry.spend 这一唯一出口。
+// 战斗系统所有扣燃料点——损伤控制单元(combat.js:1213)、武器齐射(:1266)、维修件(:1460)、
+// 打捞臂(:830)、MTU(:835)——全部走 ResourceRegistry.spend(state,"consumable:fuel",n) 形式，
+// 故一处 hook 全覆盖，日后新增耗油装备也无需再改此处。
+// 仅在「战斗上下文」记账，天然排除空间站补给(actions.js:2253)与考古耗油（独立技能）。
+function combatLogAddFuelSpent(amount) {
+  const amt = Number(amount) || 0;
+  if (amt <= 0) return;
+  const rl = ensureCombatRunLog();
+  if (!rl) return;
+  rl.fuelSpent = (Number(rl.fuelSpent) || 0) + amt;
+  rl.lastActivityAt = (typeof Date !== "undefined") ? Date.now() : rl.lastActivityAt;
+}
+
+// 是否处于战斗上下文：在线出击中，或当前主动技能为战斗（含维修/恢复等中间态）。
+// 用 currentAction.active 一并判定，避免战斗暂停期间的非战斗扣费被误记。
+function isCombatLogContext(state) {
+  if (!state) return false;
+  const c = state.combat;
+  if (c && c.active === true) return true;
+  return Boolean(state.currentAction && state.currentAction.active && state.currentAction.skill === "combat");
+}
+
+(function installCombatFuelSpendHook() {
+  if (typeof window === "undefined") return;
+  const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : (window.ResourceRegistry || null);
+  if (!RR || typeof RR.spend !== "function" || RR.spend.__combatLogHooked) return;
+  const orig = RR.spend;
+  const wrapped = function (state, id, quantity) {
+    const result = orig.call(this, state, id, quantity);
+    try {
+      // 仅在实际扣除成功时记账：spend 库存不足时返回 false 且不扣（resources.js:141），
+      // 而打捞臂(combat.js:830) 与 MTU(:835) 两处调用点未做库存预检，
+      // 无条件按 quantity 记账会虚增统计，故以返回值判定、金额取与 spend 内部相同的 cost 口径。
+      if (result !== false && id === "consumable:fuel" && isCombatLogContext(state)) {
+        combatLogAddFuelSpent(Math.max(0, Number(quantity) || 0));
+      }
+    } catch (e) { /* 不干扰主流程 */ }
+    return result;
+  };
+  wrapped.__combatLogHooked = true;
+  RR.spend = wrapped;
+})();
+
 // 确保本场 runLog 存在（旧存档或从未初始化时兜底）。
 // v2：初始化 lootAccountingVersion / lootGained / iskGained / lpGained；不再依赖库存快照差。
 function ensureCombatRunLog() {
@@ -85,7 +130,7 @@ function ensureCombatRunLog() {
       startedAt: now0, lastActivityAt: now0, runToken: combat.runToken,
       waves: 0, zones: 0, dsWaves: 0, dsClears: 0,
       kills: 0, eliteKills: 0, bossKills: 0, defeats: 0,
-      lootGained: {}, iskGained: 0, lpGained: 0,
+      lootGained: {}, iskGained: 0, lpGained: 0, fuelSpent: 0,
       startSkills: {},
       skillXp: {}
     };
@@ -103,6 +148,7 @@ function ensureCombatRunLog() {
     if (!rl.lootGained || typeof rl.lootGained !== "object") rl.lootGained = {};
     if (typeof rl.iskGained !== "number") rl.iskGained = 0;
     if (typeof rl.lpGained !== "number") rl.lpGained = 0;
+    if (typeof rl.fuelSpent !== "number") rl.fuelSpent = 0;
   }
   return combat.runLog;
 }
@@ -176,6 +222,13 @@ function combatLogMergeOffline(payload) {
   if (payload.lootGained && typeof payload.lootGained === "object") combatLogMergeLoot(payload.lootGained);
   if (typeof payload.iskDelta === "number" && payload.iskDelta > 0) combatLogAddIsk(payload.iskDelta);
   if (typeof payload.lpDelta === "number" && payload.lpDelta > 0) combatLogAddLp(payload.lpDelta);
+  // 离线燃料消耗：从 resourceNet 反推（结算时三笔都以负值写入 consumable:fuel：
+  // 主燃料 offline-combat.js:908、打捞臂 :1110、MTU :1117）。
+  // 不用 payload.fuelUsed（:907）——那只是主燃料一笔，会漏掉打捞臂与 MTU。
+  if (payload.resourceNet && typeof payload.resourceNet === "object") {
+    const net = Number(payload.resourceNet["consumable:fuel"]) || 0;
+    if (net < 0) combatLogAddFuelSpent(-net);
+  }
   rl.lastActivityAt = (typeof Date !== "undefined") ? Date.now() : rl.lastActivityAt;
 }
 
@@ -256,6 +309,7 @@ function getCombatLog() {
     defeats: Number(rl.defeats) || 0,
     isk: isk,
     lp: lp,
+    fuelSpent: Number(rl.fuelSpent) || 0,
     loot: loot,
     skills: skills
   };

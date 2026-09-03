@@ -839,8 +839,25 @@
     // 写入 pendingNpcIds
     squad.pendingNpcIds = accepted;
     // 同步 deployables：以本次 cappedDep 为权威——旧 deployable id 没在 cappedDep 就被淘汰。
+    // 2026-09-03 修复（玩家反馈「MTU 卸下来之后就没了」）：此前只整体覆盖 deployables，
+    // 被淘汰的旧 id 直接丢弃、不回库存，玩家在下拉里取消勾选 MTU 就彻底没了。
+    // 现在与 deployDeployable / undeployDeployable 口径归一，保证同一台部署物永远只存在一处：
+    //   ① 淘汰项召回 deployableStorage（去重，已在库存的不重复 push）；
+    //   ② 入选项从 deployableStorage 移除（此前下拉选入不动库存，导致同一台同时存在于
+    //      "已部署"与"库存"两处，玩家可在船坞拆解"库存那台"白拿退款而生效那台仍在）。
+    // ② 无条件执行，兼治历史脏数据（旧存档可能出现 deployed 与 storage 各一份）。
     const curIds = (Array.isArray(squad.deployables) ? squad.deployables : []).map(d => d.deployableId);
     const curSame = curIds.length === cappedDep.length && curIds.every((v, i) => v === cappedDep[i]);
+    if (!Array.isArray(squad.deployableStorage)) squad.deployableStorage = [];
+    for (const did of cappedDep) {
+      const si = squad.deployableStorage.indexOf(did);
+      if (si >= 0) squad.deployableStorage.splice(si, 1);
+    }
+    for (const pid of curIds) {
+      if (cappedDep.indexOf(pid) < 0 && squad.deployableStorage.indexOf(pid) < 0) {
+        squad.deployableStorage.push(pid);
+      }
+    }
     if (!curSame) {
       squad.deployables = cappedDep.map(id => {
         const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(id) : null;

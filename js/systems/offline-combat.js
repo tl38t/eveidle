@@ -850,7 +850,15 @@
         if (typeof context.offlineEnd === "number") s.offlineEnd = context.offlineEnd;
         ensureVirtualAmmoFuel(state, s);
         const c = state.combat;
-        s.activeAtStart = Boolean(c.active) || Boolean(c.deathspaceChainPending);
+        // 修复（2026-09-03）：与在线 tick（tick.js:89-96）同口径 —— 在线仅当
+        // currentAction.skill === "combat"（或死亡空间连刷待续）才驱动 combatTick。
+        // 旧实现只看 combat.active，导致「先开战斗再切考古」（currentAction 已切走、
+        // combat.active 残留 true）时，离线会把同一段时间同时结算给考古和战斗 = 双倍收益。
+        const actKey = (state.currentAction && state.currentAction.skill) || null;
+        const actActive = Boolean(state.currentAction && state.currentAction.active);
+        const dsPendingOffline = actKey === "combat" && Boolean(c.deathspaceChainPending);
+        const actionDrivesCombat = (actKey === "combat" && actActive) || dsPendingOffline;
+        s.activeAtStart = (Boolean(c.active) || Boolean(c.deathspaceChainPending)) && actionDrivesCombat;
         s.mode = c.mode || (c.deathspaceChainPending ? "deathspace" : "belt");
         if (c.active || c.deathspaceChainPending) {
           // 把同一权威教程 sortie token（activeCombatRunToken）与来源星带 zoneId / 战斗模式 带入离线快照：

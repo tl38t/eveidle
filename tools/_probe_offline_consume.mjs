@@ -52,7 +52,7 @@ const localStorageMock = { getItem: () => null, setItem: noop, removeItem: noop 
 const sandbox = {
   alert: noop, Blob, CanvasRenderingContext2D: MockCanvasContext, console, confirm: () => true, document: documentMock,
   FileReader: class {}, localStorage: localStorageMock, requestAnimationFrame: noop, setInterval: noop, setTimeout: noop, clearTimeout: noop,
-  URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noop },
+  URL: { createObjectURL: () => "blob:mock", revokeObjectURL: noop }, URLSearchParams: globalThis.URLSearchParams,
   matchMedia: () => ({ matches: false, media:"", onchange:null, addEventListener: noop, removeEventListener: noop, addListener: noop, removeListener: noop, dispatchEvent: noop }),
   GameEvents: { emit: noop, on: () => () => {}, once: noop, contracts: { has: () => true, validate: () => ({ valid:true, registered:true }) }, listenerCount: () => 0 },
   RuntimeGuard: { report: noop, runCritical: () => ({ ok:true }), resume: () => true, isPaused: () => false, runRecoverable: () => ({ ok:true }) },

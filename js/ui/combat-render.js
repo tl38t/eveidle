@@ -102,6 +102,67 @@ function renderCombatEquipmentRack(display) {
   grid.innerHTML = display.equipmentRack.length ? display.equipmentRack.map(item => `<div class="combat-equip-slot${item.empty ? " empty" : ""}" title="${item.attributes}"><span class="combat-equip-icon">${icons[item.slot]}</span><span class="combat-equip-copy"><span class="combat-equip-name">${item.name}</span><span class="combat-equip-type">${item.slotName} ${item.index + 1}</span></span></div>`).join("") : '<div class="combat-equip-slot empty"><span class="combat-equip-icon">◇</span><span class="combat-equip-copy"><span class="combat-equip-name">暂无槽位</span><span class="combat-equip-type">舰体配置</span></span></div>';
 }
 
+// 战斗补给状态（2026-09-03 玩家反馈「弹窗提示不够明显」）：
+// ① 燃料/弹药加续航预估与三档状态色；② 常驻告警条——与出击 toast 的本质区别是不会自动消失；
+// ③ 断火原因 lastStatus 常驻展示（combat.js 写入该字段后从未渲染，玩家武器哑火却看不到原因）。
+// 告警区动态创建并插到补给面板之前，保证玩家折叠补给面板时依然可见。
+// 判定口径全部复用 getCombatSupplyWarning（出击弹窗同一函数），不新造公式。
+function renderCombatSupplyStatus(display) {
+  const supply = display.supply || null;
+  const panel = document.getElementById("combat-supply-panel");
+  let alertBox = document.getElementById("combat-supply-alert");
+  if (!alertBox && panel && panel.parentNode) {
+    alertBox = document.createElement("div");
+    alertBox.id = "combat-supply-alert";
+    alertBox.className = "combat-supply-alert";
+    panel.parentNode.insertBefore(alertBox, panel);
+  }
+  // 燃料格：数量 + 续航预估 + 三档色
+  const fuelEl = document.getElementById("combat-fuel-val");
+  if (fuelEl) {
+    fuelEl.textContent = Number(display.supplies.fuel || 0).toLocaleString();
+    const item = fuelEl.closest ? fuelEl.closest(".csp-item") : null;
+    const rounds = supply ? (Number(supply.fuelRounds) || 0) : 0;
+    const level = !supply ? "ok" : (supply.fuel === "none" ? "none" : (supply.fuel === "low" ? "low" : "ok"));
+    let note = item ? item.querySelector(".csp-note") : null;
+    if (item && !note) { note = document.createElement("i"); note.className = "csp-note"; item.appendChild(note); }
+    if (note) {
+      note.textContent = level === "none"
+        ? " ⛔"
+        : (" · 约 " + rounds.toLocaleString() + " 轮" + (level === "low" ? " ⚠" : ""));
+      note.style.color = level === "none" ? "#e06c5a" : (level === "low" ? "#e8b04a" : "");
+    }
+  }
+  // 弹药格：仅对当前武器实际使用的类型着状态色，不误标未装备/未使用的类型
+  const ammoIds = { laser:"combat-ammo-laser", missile:"combat-ammo-missile", cannon:"combat-ammo-cannon" };
+  const types = (supply && Array.isArray(supply.ammoTypes)) ? supply.ammoTypes : [];
+  for (const t in ammoIds) {
+    const el = document.getElementById(ammoIds[t]);
+    const item = el && el.closest ? el.closest(".csp-item") : null;
+    if (!item) continue;
+    item.classList.remove("csp-warn", "csp-block");
+    if (!supply || types.indexOf(t) < 0) continue;
+    if (supply.ammo === "none" || supply.ammo === "wrong") item.classList.add("csp-block");
+    else if (supply.ammo === "low") item.classList.add("csp-warn");
+  }
+  if (!alertBox) return;
+  const lines = [];
+  if (supply) {
+    if (supply.fuel === "none") lines.push("⛔ 燃料耗尽，武器无法开火");
+    else if (supply.fuel === "low") lines.push("⚠ 燃料仅够约 " + (Number(supply.fuelRounds) || 0).toLocaleString() + " 轮 —— 请及时补给");
+    if (supply.ammo === "none") lines.push("⛔ 未装备弹药，将无法开火");
+    else if (supply.ammo === "wrong") lines.push("⛔ 弹药类型错误，已装填弹药与当前武器不匹配");
+    else if (supply.ammo === "low") lines.push("⚠ 已装填弹药仅够约 " + (Number(supply.ammoVolleys) || 0).toLocaleString() + " 次齐射");
+  }
+  // 断火原因只在「确实打不了」时展示，避免把上一次战斗的陈旧 lastStatus 一直挂着
+  const blocked = Boolean(supply && (supply.fuel === "none" || supply.ammo === "none" || supply.ammo === "wrong"));
+  if (blocked && display.lastStatus) lines.push("⛔ " + display.lastStatus);
+  const isBlocking = lines.some(s => s.indexOf("⛔") === 0);
+  alertBox.innerHTML = lines.length ? lines.map(s => squadEscape(s)).join("<br>") : "";
+  alertBox.style.display = lines.length ? "" : "none";
+  alertBox.classList.toggle("blocking", isBlocking);
+}
+
 function renderCombatLiveDisplay(display) {
   renderCombatCrewSummary(display);
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
@@ -110,10 +171,7 @@ function renderCombatLiveDisplay(display) {
   text("combat-player-stats", "齐射伤害:" + display.player.volleyDamage + " · 武器:" + display.player.weaponCount + " · 航速:" + display.player.speed);
   renderCombatEnemyPanel(display); updateCombatRing(display);
   const rewards = document.getElementById("combat-rewards"); if (rewards) { rewards.style.display = display.showRewards ? "" : "none"; if (display.showRewards) rewards.textContent = display.runStatus; }
-  text("combat-fuel-val", display.supplies.fuel.toLocaleString());
-  text("combat-ammo-laser", getSelectedCount(gameState, "laser").toLocaleString());
-  text("combat-ammo-missile", getSelectedCount(gameState, "missile").toLocaleString());
-  text("combat-ammo-cannon", getSelectedCount(gameState, "cannon").toLocaleString());
+  renderCombatSupplyStatus(display);
   const start = document.getElementById("btn-start-combat"); const stop = document.getElementById("btn-stop-combat");
   if (start) { start.style.display = display.controls.showStart ? "" : "none"; start.disabled = display.controls.startDisabled; start.textContent = display.controls.startText; }
   if (stop) stop.style.display = display.controls.showStop ? "" : "none";

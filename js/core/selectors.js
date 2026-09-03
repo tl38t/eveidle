@@ -1354,10 +1354,13 @@ function formatEfficiencyBreakdown(entries, finalValue) {
 // 冶炼效率明细（补全：改装件 / 科研 / 脑插·冶炼 / 增强剂·冶炼速度 / 舰船强化 / 脑突触）
 function getSmeltingEfficiencyBreakdown(display) {
   const pump = display.pump || null;
+  // 库存/可供炉数（2026-09-03 用户反馈）：与冶炼面板泵行同口径，Y = floor(stock / fuelPerCycle)。
+  const pumpStock = pump ? (Number(pump.stock) || 0) : 0;
+  const pumpCycles = (pump && pump.fuelPerCycle > 0) ? Math.floor(pumpStock / pump.fuelPerCycle) : 0;
   const pumpText = (pump && pump.count > 0)
     ? (pump.active
-        ? "外接大型精炼泵 ×" + pump.count + " · +" + (pump.bonus * 100).toFixed(0) + "%（每炉扣 " + pump.resourceId.replace("planetary:", "") + " ×" + pump.fuelPerCycle + "）"
-        : (pump.enabled ? "外接大型精炼泵 ×" + pump.count + " · 断料失效（需 " + pump.resourceId.replace("planetary:", "") + " ≥" + pump.fuelPerCycle + "）" : "外接大型精炼泵 ×" + pump.count + " · 已关闭"))
+        ? "外接大型精炼泵 ×" + pump.count + " · +" + (pump.bonus * 100).toFixed(0) + "%（每炉扣 " + pump.resourceId.replace("planetary:", "") + " ×" + pump.fuelPerCycle + "，库存 " + pumpStock.toLocaleString() + " 可供 " + pumpCycles.toLocaleString() + " 炉）"
+        : (pump.enabled ? "外接大型精炼泵 ×" + pump.count + " · 断料失效（需 " + pump.resourceId.replace("planetary:", "") + " ≥" + pump.fuelPerCycle + "，库存 " + pumpStock.toLocaleString() + "）" : "外接大型精炼泵 ×" + pump.count + " · 已关闭"))
     : null;
   const ship = (display.shipBonus > 0 || display.rigBonus > 0 || (pump && pump.bonus > 0))
     ? "舰船 +" + (display.shipBonus * 100).toFixed(0) + "%" + (display.rigBonus > 0 ? " · 改装件 +" + (display.rigBonus * 100).toFixed(0) + "%" : "") + (pump && pump.bonus > 0 ? " · 精炼泵 +" + (pump.bonus * 100).toFixed(0) + "%" : "")
@@ -2290,7 +2293,13 @@ function getCombatDisplayState(state, now) {
     lockText:target ? "目标锁定" : "等待目标",
     runStatus,
     showRewards:Boolean(combat.active && target || combat.lastLoot || combat.lastSpecialLoot || combat.lastStatus),
-    supplies:{ fuel:ResourceRegistry.get(state, "consumable:fuel"), laser:getAmmoCount(state, "laser"), missile:getAmmoCount(state, "missile"), cannon:getAmmoCount(state, "cannon") },
+    // 弹药为「已装填」量（getSelectedCount），与战斗消耗口径一致；总库存另见仓库页。
+    supplies:{ fuel:ResourceRegistry.get(state, "consumable:fuel"), laser:getSelectedCount(state, "laser"), missile:getSelectedCount(state, "missile"), cannon:getSelectedCount(state, "cannon") },
+    // 补给预警（与出击弹窗 getCombatSupplyWarning 同口径）+ 断火原因 lastStatus。
+    // lastStatus 由 combat.js 在无法开火时写入（如「燃料不足，整轮武器未能开火」），
+    // 此前从未渲染到 UI，玩家武器哑火却看不到原因，故在此透出供战斗主界面常驻展示。
+    supply:getCombatSupplyWarning(state, zone),
+    lastStatus:(combat && typeof combat.lastStatus === "string" && combat.lastStatus) ? combat.lastStatus : null,
     weapons:weapons.map(module => ({ ...module, icon:{ laser:"⚡", missile:"🚀", cannon:"💥" }[module.combat.weaponType] || "◆" })),
     repairers:repairers.map(module => ({ ...module })),
     equipmentRack,
@@ -3833,9 +3842,9 @@ function estimateQueueItemCycleSeconds(state, item) {
 // 返回 { ammo:null|"none"|"low", ammoVolleys, fuel:null|"none"|"low", fuelRounds }。
 function getCombatSupplyWarning(state, zone) {
   const weapons = getInstalledCombatWeapons(state);
+  const byType = {};
   let ammo = null, ammoVolleys = 0;
   if (weapons.length > 0) {
-    const byType = {};
     for (const w of weapons) {
       const t = w.equipment.combat.weaponType;
       const cost = w.equipment.combat.ammoCost || 1; // 每齐射该武器耗弹（与 combatTick 同口径）
@@ -3882,7 +3891,8 @@ function getCombatSupplyWarning(state, zone) {
     else if (rounds <= 100) { fuel = "low"; fuelRounds = rounds; }
     else { fuel = null; fuelRounds = rounds; }
   }
-  return { ammo, ammoVolleys, fuel, fuelRounds };
+  // ammoTypes：当前武器实际需要的弹药类型（供 UI 只给相关格子着状态色，不误标未使用的类型）
+  return { ammo, ammoVolleys, fuel, fuelRounds, ammoTypes:Object.keys(byType) };
 }
 
 function getQueueDisplayState(state) {

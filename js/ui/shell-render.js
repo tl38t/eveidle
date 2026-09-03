@@ -1483,7 +1483,8 @@ function openCombatLogModal() {
     stat("击杀", log.kills.toLocaleString()),
     stat("精英 / BOSS", log.eliteKills.toLocaleString() + " / " + log.bossKills.toLocaleString()),
     stat("被击败", log.defeats.toLocaleString(), log.defeats > 0 ? "warn" : ""),
-    stat("星币 / 功勋", fmtIsk(log.isk) + " / " + log.lp.toLocaleString())
+    stat("星币 / 功勋", fmtIsk(log.isk) + " / " + log.lp.toLocaleString()),
+    stat("消耗燃料", (log.fuelSpent || 0).toLocaleString())
   ].join("");
 
   // 技能经验
@@ -2305,6 +2306,9 @@ function renderResearchProtocolPanelHtml(display) {
   if (display.protocolId === "planauto") {
     const active = display.active === true;
     parts.push('<div class="rt-d-lab">行星基地（逐个独立配置）</div>');
+    // 判定规则一句话说明（2026-09-03 玩家反馈「看不懂逻辑、不知道设多少」）：
+    // 讲清自动续期的两条判定与「设 0 即无底线」。纯文本、无 hover 依赖，手机端直接可见。
+    parts.push('<div class="rt-d-hint research-protocol-planauto-rule">到期判定：基地到期那一刻，星币 ≥ 续期费 <b>且</b> 扣费后剩余 ≥ 最低储备，两条都满足才续；任一不满足只停该基地，不动你的星币。<b>最低储备设 0 = 只要付得起就续。</b></div>');
     if (!active) {
       const why = !display.unlocked
         ? "需先在研究树点亮「行星维护自动化」"
@@ -2319,21 +2323,37 @@ function renderResearchProtocolPanelHtml(display) {
         const on = dep.autoRenewEnabled === true;
         const idAttr = escapeAchievementText(String(dep.deploymentId));
         const timeText = (dep.running ? "到期时间 " : "已到期于 ") + formatAchievementUnlockTime(dep.expiresAt);
-        const metaText = "续期费用 " + Math.round(Number(dep.renewCostISK) || 0).toLocaleString("zh-CN") +
+        const costText = Math.round(Number(dep.renewCostISK) || 0).toLocaleString("zh-CN");
+        const metaText = "续期费用 " + costText +
           " 星币 ｜ 自动续期：" + (on ? "已开启" : "已关闭");
         const disabledAttr = active ? "" : " disabled";
+        // 续不上预警（数据层 renewRisk 与 tryPlanetAutoRenew 同口径）。
+        // 仅「协议已生效 + 本基地已开启续期」时展示：关着的行本就不续，预警无意义。
+        // 星币会流动，故统一标注「按当前余额预估」，避免玩家误当成保证。
+        const iskNow = Math.round(Number(dep.currentISK) || 0);
+        const short = Math.round(Number(dep.renewShortfall) || 0);
+        let riskHtml = "";
+        if (on && dep.renewRisk === "insufficient-isk") {
+          riskHtml = '<div class="research-protocol-planet-risk">⚠ 按当前余额 ' + iskNow.toLocaleString("zh-CN") +
+            " 预估，到期续不上：还差 " + short.toLocaleString("zh-CN") + " 星币（续期费 " + costText + "）</div>";
+        } else if (on && dep.renewRisk === "reserve-not-met") {
+          riskHtml = '<div class="research-protocol-planet-risk">⚠ 按当前余额 ' + iskNow.toLocaleString("zh-CN") +
+            " 预估，续期后余额将低于最低储备：还差 " + short.toLocaleString("zh-CN") +
+            " 星币 —— 调低储备或补足星币</div>";
+        }
         return '<div class="research-protocol-planet' + (active ? "" : " research-protocol-planet--muted") + '" data-deployment-row="' + idAttr + '" data-deployment-current="' + (on ? "true" : "false") + '">' +
           '<div class="research-protocol-planet-head">' +
             escapeAchievementText((dep.planetIcon ? dep.planetIcon + " " : "") + dep.planetName + " ｜ " + dep.statusText + " ｜ " + timeText) +
           '</div>' +
           '<div class="research-protocol-planet-meta">' + escapeAchievementText(metaText) + '</div>' +
+          riskHtml +
           '<div class="research-protocol-planet-ctrl">' +
             '<button class="research-btn' + (on ? " danger" : "") + '" type="button"' + disabledAttr +
               ' data-detail-action="planauto-toggle" data-deployment-id="' + idAttr + '"' +
               ' data-deployment-enabled="' + (on ? "false" : "true") + '">' +
               (on ? "关闭自动续期" : "开启自动续期") +
             '</button>' +
-            '<label class="research-protocol-reserve-label">最低星币储备' +
+            '<label class="research-protocol-reserve-label" title="续期后账户至少要剩这么多星币才肯续；设 0 表示不设底线。攒钱办大事时把它设成那笔开销的金额。">最低星币储备（续期后保留）' +
               '<input class="research-protocol-reserve" type="number" min="0" step="1" value="' +
                 escapeAchievementText(String(Number(dep.minIskReserve) || 0)) + '" data-protocol-reserve' + disabledAttr + '>' +
             '</label>' +
