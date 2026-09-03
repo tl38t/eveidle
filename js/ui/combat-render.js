@@ -532,12 +532,14 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
     const activeMtu = !!(mtu && mtu.active);
     badges.push('<span class="lcs-badge ' + (activeMtu ? "ok" : "warn") + '">' + (activeMtu ? "部署中（生效）" : "已部署（断料暂停）") + "</span>");
     const fuelCost = mtu ? Math.max(1, Math.round(mtu.fuelPerKill)) : 0;
-    const eff = def ? ("货柜×" + (1 + def.salvageEfficiency).toFixed(1) + " · 星币/功勋+" + Math.round(def.iskBonus * 100) + "%") : "部署物";
+    const rarePct = def ? Math.round((def.rareDropBonus || 0) * 100) : 0;
+    const eff = def ? ("货柜×" + (1 + def.salvageEfficiency).toFixed(1) + " · 星币/功勋+" + Math.round(def.iskBonus * 100) + "%" + (rarePct > 0 ? " · 稀有掉率+" + rarePct + "%" : "")) : "部署物";
     statusText = squadEscape(eff) + " · 每击毁 −燃料" + fuelCost;
     bars = '<div class="lcs-deploy-stats">' +
       '<span class="lcs-stat"><b>货柜</b>×' + (def ? (1 + def.salvageEfficiency).toFixed(1) : "—") + '</span>' +
       '<span class="lcs-stat"><b>星币</b>+' + Math.round((def ? def.iskBonus : 0) * 100) + '%</span>' +
       '<span class="lcs-stat"><b>功勋</b>+' + Math.round((def ? def.lpBonus : 0) * 100) + '%</span>' +
+      (rarePct > 0 ? '<span class="lcs-stat"><b>稀有掉率</b>+' + rarePct + '%</span>' : "") +
       '</div>';
     dataAttr = ' data-deployable-id="' + squadEscape(entry.deployableId) + '"';
   } else if (kind === "empty" && usedSlotsNow >= capacity && capacity > 0) {
@@ -554,11 +556,10 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
     (statusText ? '<div class="lcs-slot-status">' + statusText + "</div>" : "") +
     "</div>";
 }
-// 部署物（激光定向打捞单元）面板：已部署（生效/断料）+ 库存可部署；部署=生效，取消部署=召回。
+// 部署物（激光定向打捞单元）面板：仅库存可部署（部署/取消部署由上方小队槽位的下拉选择全权管理，已部署卡不在此重复渲染）。
 function renderSquadDeployables(ui, capacity) {
   const deployed = (ui && ui.deployables) || [];
   const storage = (ui && ui.deployableStorage) || [];
-  const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(gameState) : null;
   let html = '<div class="lcs-deployables">';
   html += '<div class="lcs-deploy-title"><i>🛰️</i> 部署物（激光定向打捞单元）</div>';
   if (deployed.length === 0 && storage.length === 0) {
@@ -566,18 +567,12 @@ function renderSquadDeployables(ui, capacity) {
     html += "</div>";
     return html;
   }
-  deployed.forEach(function (d) {
-    const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(d.deployableId) : null;
-    const active = !!(mtu && mtu.active);
-    const fuelCost = mtu ? Math.max(1, Math.round(mtu.fuelPerKill)) : (def ? def.fuelPerKill : 0);
-    const eff = def ? ("货柜×" + (1 + def.salvageEfficiency).toFixed(1) + " · 星币/功勋+" + Math.round(def.iskBonus * 100) + "%") : "";
-    html += '<div class="lcs-deploy-card deployed' + (active ? "" : " outoffuel") + '">' +
-      '<span class="lcs-deploy-name">' + squadEscape(d.name) + "</span>" +
-      '<span class="lcs-deploy-effects">' + squadEscape(eff) + " · 每击毁 -燃料" + fuelCost + "</span>" +
-      '<span class="lcs-deploy-status ' + (active ? "on" : "off") + '">' + (active ? "生效中" : "断料暂停") + "</span>" +
-      '<button class="lcs-deploy-btn undeploy" data-undeploy="' + squadEscape(d.deployableId) + '">取消部署</button>' +
-      "</div>";
-  });
+  // 已部署状态（生效/断料/取消部署）一律看小队槽位卡；此处仅在库存为空时给一行提示。
+  if (storage.length === 0) {
+    html += '<div class="lcs-deploy-empty">库存为空 · ' + deployed.length + " 台已部署（见上方小队槽位）</div>";
+    html += "</div>";
+    return html;
+  }
   if (storage.length > 0) {
     const used = (ui.selection ? ui.selection.length : 0) + deployed.length;
     const canDeploy = (capacity || 0) > 0 && used < (capacity || 0);

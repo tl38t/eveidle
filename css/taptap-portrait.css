@@ -290,7 +290,7 @@
   }
   .cargo-card{ min-width:0; min-height:78px; padding:8px 8px 7px; gap:5px; }
   .cargo-card .cc-icon{ width:28px; height:28px; font-size:15px; }
-  .cargo-card .cc-name{ font-size:12px; line-height:1.2; max-height:2.4em; overflow:hidden; }
+  .cargo-card .cc-name{ font-size:12px; line-height:1.25; /* 不限行数：名字完整换行（截断已移除，避免产物名显示不全） */ }
   .cargo-card .cc-cat{ font-size:9px; padding:0 5px; }
   .cargo-card .cc-qty{ font-size:12px; }
   @media (max-width: 319px){

@@ -93,6 +93,8 @@ function buildCombatSandbox() {
     document, Math, Date, JSON, Object, Array, String, Number, Boolean, isFinite, parseInt, parseFloat
   };
   sandbox.window = sandbox; sandbox.globalThis = sandbox;
+  // i18n/translator.js（Steam 本地化）在加载期读取 URLSearchParams；Node vm 沙箱无此 Web API，透传宿主实现
+  sandbox.URLSearchParams = URLSearchParams;
   sandbox.addEventListener = () => {}; sandbox.removeEventListener = () => {}; sandbox.dispatchEvent = () => {};
   sandbox.location = { href: "http://localhost/", search: "", hash: "" };
   sandbox.navigator = { userAgent: "node" };
@@ -1369,6 +1371,9 @@ section("33. M6 Phase 2 离线分步换目标集成");
   const originalBuildWave = W.buildCombatWave;
   W.buildCombatWave = () => ({ enemies: enemies });
   st.combat.currentEnemy = enemies[0];
+  // 离线双计修复（2026-09-03）后，settle 依赖 currentAction 驱动判定（与在线 tick 同口径）：
+  // 真实流程中玩家开战时 combat.start 会设置 currentAction.skill="combat"，测试构造需对齐。
+  st.currentAction = { active: true, skill: "combat", progress: 0, lastProgressUpdate: NOW };
   const runId = "m6-offline-" + NOW;
   const result = W.OfflineCombatSystem.settle(st, 1, {
     now: NOW, runId: runId, offlineEnd: NOW + 1000

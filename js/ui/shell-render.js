@@ -1475,6 +1475,8 @@ function openCombatLogModal() {
   };
 
   const stat = (k, v, cls) => `<div class="cl-stat${cls ? " " + cls : ""}"><div class="k">${k}</div><div class="v">${v}</div></div>`;
+  // 弹药分账（旧存档/缺省时三项为 0，不回退）
+  const ammoSpent = (log && log.ammoSpent) ? log.ammoSpent : { laser:0, missile:0, cannon:0 };
   const statHtml = [
     stat("清剿波次", log.waves.toLocaleString(), "gold"),
     stat("星带肃清", log.zones.toLocaleString(), "green"),
@@ -1484,7 +1486,12 @@ function openCombatLogModal() {
     stat("精英 / BOSS", log.eliteKills.toLocaleString() + " / " + log.bossKills.toLocaleString()),
     stat("被击败", log.defeats.toLocaleString(), log.defeats > 0 ? "warn" : ""),
     stat("星币 / 功勋", fmtIsk(log.isk) + " / " + log.lp.toLocaleString()),
-    stat("消耗燃料", (log.fuelSpent || 0).toLocaleString())
+    stat("消耗燃料", (log.fuelSpent || 0).toLocaleString()),
+    // 弹药按武器类型分账（激光 / 导弹 / 射弹），在线 + 离线合并，与「在线 + 离线合并」口径一致
+    stat("消耗弹药（激/导/射）",
+      (ammoSpent.laser || 0).toLocaleString() + " / " +
+      (ammoSpent.missile || 0).toLocaleString() + " / " +
+      (ammoSpent.cannon || 0).toLocaleString())
   ].join("");
 
   // 技能经验
@@ -3415,7 +3422,6 @@ function renderHangarDeployables(display) {
   const grid = document.getElementById("hangar-ship-grid"); const empty = document.getElementById("hangar-empty");
   if (!grid) return;
   if (empty) empty.style.display = "none";
-  const mtu = dv.mtu;
   let html = '<div class="lcs-deployables">';
   html += '<div class="lcs-deploy-title"><i>🛰️</i> 部署物（激光定向打捞单元）</div>';
   if (dv.deployed.length === 0 && dv.deployableStorage.length === 0) {
@@ -3423,18 +3429,13 @@ function renderHangarDeployables(display) {
     grid.innerHTML = html; return;
   }
   const canDeploy = dv.capacity > 0 && dv.usedSlots < dv.capacity;
-  dv.deployed.forEach(function (d) {
-    const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(d.deployableId) : null;
-    const active = !!(mtu && mtu.active);
-    const fuelCost = mtu ? Math.max(1, Math.round(mtu.fuelPerKill)) : (def ? def.fuelPerKill : 0);
-    const eff = def ? ("货柜×" + (1 + def.salvageEfficiency).toFixed(1) + " · 星币/功勋+" + Math.round(def.iskBonus * 100) + "%") : "";
-    html += '<div class="lcs-deploy-card deployed' + (active ? "" : " outoffuel") + '">' +
-      '<span class="lcs-deploy-name">' + escapeAchievementText(d.name) + '</span>' +
-      '<span class="lcs-deploy-effects">' + escapeAchievementText(eff) + ' · 每击毁 -燃料' + fuelCost + '</span>' +
-      '<span class="lcs-deploy-status ' + (active ? "on" : "off") + '">' + (active ? "生效中" : "断料暂停") + '</span>' +
-      '<button class="lcs-deploy-btn undeploy" data-undeploy="' + escapeAchievementText(d.deployableId) + '">取消部署</button>' +
-      '</div>';
-  });
+  // 已部署的 MTU 不在此渲染：状态与「取消部署」由军团战斗小队面板全权管理（避免同一张卡两处维护）。
+  if (dv.deployableStorage.length === 0) {
+    html += dv.deployed.length > 0
+      ? '<div class="lcs-deploy-empty">库存为空 · ' + dv.deployed.length + " 台已部署（在军团小队界面管理）</div></div>"
+      : '<div class="lcs-deploy-empty">库存为空</div></div>';
+    grid.innerHTML = html; return;
+  }
   if (dv.deployableStorage.length > 0) {
     const disMap = {};
     (dv.dismantle && dv.dismantle.items ? dv.dismantle.items : []).forEach(function (it) { disMap[it.deployableId] = it; });

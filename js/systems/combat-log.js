@@ -88,6 +88,42 @@ function combatLogAddFuelSpent(amount) {
   rl.lastActivityAt = (typeof Date !== "undefined") ? Date.now() : rl.lastActivityAt;
 }
 
+// 累计本场战斗消耗的弹药（按武器类型 laser / missile / cannon 分账）。
+// 与燃料不同：弹药没有统一的 ResourceRegistry 出口，而是 ammo.js 的两个专用函数：
+//   ① consumeAmmoForType —— 在线齐射（combat.js:1269）
+//   ② applyAmmoDelta     —— 离线战斗虚拟快照 flush 回写净消耗（offline-combat.js:913，见 ammo.js:7 说明）
+// 故两处都钩，在线/离线全覆盖；军团 NPC 走 spendAmmo 虚拟层、不回写真实库存，不计入（避免虚高）。
+const AMMO_LOG_TYPES = ["laser", "missile", "cannon"];
+function combatLogAddAmmoSpent(type, amount) {
+  const amt = Number(amount) || 0;
+  if (amt <= 0) return;
+  if (AMMO_LOG_TYPES.indexOf(type) < 0) return;
+  const rl = ensureCombatRunLog();
+  if (!rl) return;
+  if (!rl.ammoSpent || typeof rl.ammoSpent !== "object") rl.ammoSpent = {};
+  rl.ammoSpent[type] = (Number(rl.ammoSpent[type]) || 0) + amt;
+  rl.lastActivityAt = (typeof Date !== "undefined") ? Date.now() : rl.lastActivityAt;
+}
+
+// 钩住 ammo.js 的两个弹药消耗出口（与上方燃料 hook 同构：仅在战斗上下文记账）。
+(function installCombatAmmoSpendHooks() {
+  if (typeof window === "undefined") return;
+  const targets = ["consumeAmmoForType", "applyAmmoDelta"];
+  for (const name of targets) {
+    const fn = (typeof window[name] === "function") ? window[name] : null;
+    if (!fn || fn.__combatLogHooked) continue;
+    const wrapped = function (state, type, amount) {
+      const result = fn.apply(this, arguments);
+      try {
+        if (isCombatLogContext(state)) combatLogAddAmmoSpent(type, Math.max(0, Number(amount) || 0));
+      } catch (e) { /* 不干扰主流程 */ }
+      return result;
+    };
+    wrapped.__combatLogHooked = true;
+    window[name] = wrapped;
+  }
+})();
+
 // 是否处于战斗上下文：在线出击中，或当前主动技能为战斗（含维修/恢复等中间态）。
 // 用 currentAction.active 一并判定，避免战斗暂停期间的非战斗扣费被误记。
 function isCombatLogContext(state) {
@@ -131,6 +167,7 @@ function ensureCombatRunLog() {
       waves: 0, zones: 0, dsWaves: 0, dsClears: 0,
       kills: 0, eliteKills: 0, bossKills: 0, defeats: 0,
       lootGained: {}, iskGained: 0, lpGained: 0, fuelSpent: 0,
+      ammoSpent: { laser:0, missile:0, cannon:0 },
       startSkills: {},
       skillXp: {}
     };
@@ -149,6 +186,11 @@ function ensureCombatRunLog() {
     if (typeof rl.iskGained !== "number") rl.iskGained = 0;
     if (typeof rl.lpGained !== "number") rl.lpGained = 0;
     if (typeof rl.fuelSpent !== "number") rl.fuelSpent = 0;
+    // 旧存档补齐弹药分账（缺省 0，不回退历史数据）
+    if (!rl.ammoSpent || typeof rl.ammoSpent !== "object") rl.ammoSpent = {};
+    for (const t of AMMO_LOG_TYPES) {
+      if (typeof rl.ammoSpent[t] !== "number") rl.ammoSpent[t] = 0;
+    }
   }
   return combat.runLog;
 }
@@ -310,6 +352,11 @@ function getCombatLog() {
     isk: isk,
     lp: lp,
     fuelSpent: Number(rl.fuelSpent) || 0,
+    ammoSpent: {
+      laser: Number(rl.ammoSpent && rl.ammoSpent.laser) || 0,
+      missile: Number(rl.ammoSpent && rl.ammoSpent.missile) || 0,
+      cannon: Number(rl.ammoSpent && rl.ammoSpent.cannon) || 0
+    },
     loot: loot,
     skills: skills
   };
