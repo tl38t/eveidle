@@ -702,11 +702,10 @@ function renderCombatPanel(now) {
   }
   if (traitSummary) { traitSummary.textContent = display.targeting.trait ? display.targeting.trait.name + " · " + display.targeting.trait.description : ""; traitSummary.title = traitSummary.textContent; }
   const zoneContent = document.getElementById("combat-zone-dropdown-content");
+  // 2026-09-03 用户反馈：手机端下拉行宽不够，烈度标签会把「肃清」数挤没 → 下拉里不再显示烈度
+  //（烈度保留在顶部 #combat-zone-intensity 横幅，选中后仍可见）。
   if (zoneContent) zoneContent.innerHTML = display.zones.map(zone => {
-    const zObj = COMBAT_ZONES.find(z => z.id === zone.id);
-    const it = zObj ? zoneIntensityLabel(zObj.fuelMult) : null;
-    const intHtml = it ? `<span class="area-intensity ${it.cls}">战区烈度：${it.label} · 燃料消耗×${Number(zObj.fuelMult) || 1}</span>` : "";
-    return `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span>${intHtml}</div>`;
+    return `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span></div>`;
   }).join("");
   const playerImage = document.getElementById("combat-player-image"); if (playerImage && !playerImage.querySelector("#combat-player-3d")) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
