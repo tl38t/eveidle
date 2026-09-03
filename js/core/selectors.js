@@ -3494,7 +3494,16 @@ function getHangarDisplayState(state, now) {
     }
   };
   const actionNames = { combat:"⚔ 战斗", mining:"⛏ 采矿", gasHarvesting:"☁ 采气", refining:"🔥 冶炼", archaeology:"🛰 考古" };
-  const ships = state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
+  const shipsRaw = state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
+  // 过滤掉查不到配置的舰船实例（shipId 已失效 / 被改名移除 / 异常写入 undefined）。
+  // 这些实例无 config，原 stub 分支缺失 assignedActions/industrial/archaeology 等字段，
+  // 会令移动端 mobileRenderHangarPanel → tpSelectorHTML 与桌面端 ship.assignedActions 访问直接崩。
+  // 过滤后 display.ships 全为可操作实例，count 同步收窄；控制台仅告警一次，不丢存档数据。
+  const ships = shipsRaw.filter(instance => Boolean(getShipConfigById(instance.shipId)));
+  const unknownCount = shipsRaw.length - ships.length;
+  if (unknownCount > 0 && typeof console !== "undefined" && console.warn) {
+    console.warn("[hangar] 船坞跳过 " + unknownCount + " 个无配置的舰船实例（其 shipId 在 STARTER/INDUSTRIAL/ARCHAEOLOGY 表中均查不到，可能是旧版本船改名/移除或数据迁移未兼容）；实例仍保留在 state.inventory.ships 中，建议清档或拆解。");
+  }
   return {
     kind:"hangar",
     count:ships.length,
@@ -3505,7 +3514,8 @@ function getHangarDisplayState(state, now) {
     deployableView:hangarDeployables,
     ships:ships.map(instance => {
       const config = getShipConfigById(instance.shipId);
-      if (!config) return { instanceId:instance.instanceId, shipId:instance.shipId, unknown:true };
+      // 已在上层过滤，config 必然存在；此处兜底（理论上不会进入）避免 stub 触发 UI 崩溃。
+      if (!config) return null;
       // 是否已绑定军团 NPC（用于船坞徽标 + 拆解/改装拦截提示）
       let boundNpc = null;
       if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.findLegionNpcByBoundShip) {
@@ -3620,7 +3630,7 @@ function getHangarDisplayState(state, now) {
           return { actionKey, name:actionNames[actionKey], active:assignedActions.includes(actionKey), locked:Boolean(restriction), lockedReason:restriction ? restriction.text : "" };
         })
       };
-    })
+    }).filter(Boolean)
   };
 }
 
