@@ -651,10 +651,12 @@ function bindCombatSquadUI() {
   });
 }
 
-// 战区烈度分级：按 zone.fuelMult（燃料消耗系数）映射 5 档标签。
-// 1.0=极低(无环境耗油) / 1.2=低 / 1.35=中 / 1.6=高 / 1.8=极高。
+// 战区烈度分级：按 zone.fuelMult（燃料消耗系数）映射 6 档标签。
+// 0.8=无(新手区，环境省油) / 1.0=极低(无环境耗油) / 1.2=低 / 1.35=中 / 1.6=高 / 1.8=极高。
+// 2026-09-03：新手三区补 fuelMult:0.8（此前漏配导致「燃料消耗×undefined」），并新增「无」档。
 function zoneIntensityLabel(fuelMult) {
   const m = Number(fuelMult) || 1;
+  if (m <= 0.9) return { label: "无", cls: "c-gray" };
   if (m <= 1.05) return { label: "极低", cls: "c-gray" };
   if (m <= 1.25) return { label: "低", cls: "c-green" };
   if (m <= 1.45) return { label: "中", cls: "c-yellow" };
@@ -687,7 +689,7 @@ function renderCombatPanel(now) {
   if (intensityEl) {
     const curZone = COMBAT_ZONES.find(z => z.id === (gameState.combat && gameState.combat.zone)) || display.zone || null;
     const it = curZone ? zoneIntensityLabel(curZone.fuelMult) : null;
-    if (it) { intensityEl.textContent = `战区烈度：${it.label}（燃料消耗×${curZone.fuelMult}）`; intensityEl.className = "zone-intensity " + it.cls; }
+    if (it) { intensityEl.textContent = `战区烈度：${it.label}（燃料消耗×${Number(curZone.fuelMult) || 1}）`; intensityEl.className = "zone-intensity " + it.cls; }
     else intensityEl.textContent = "";
   }
   const targetingControl = document.getElementById("capital-targeting-control");
@@ -703,7 +705,7 @@ function renderCombatPanel(now) {
   if (zoneContent) zoneContent.innerHTML = display.zones.map(zone => {
     const zObj = COMBAT_ZONES.find(z => z.id === zone.id);
     const it = zObj ? zoneIntensityLabel(zObj.fuelMult) : null;
-    const intHtml = it ? `<span class="area-intensity ${it.cls}">战区烈度：${it.label} · 燃料消耗×${zObj.fuelMult}</span>` : "";
+    const intHtml = it ? `<span class="area-intensity ${it.cls}">战区烈度：${it.label} · 燃料消耗×${Number(zObj.fuelMult) || 1}</span>` : "";
     return `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span>${intHtml}</div>`;
   }).join("");
   const playerImage = document.getElementById("combat-player-image"); if (playerImage && !playerImage.querySelector("#combat-player-3d")) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
