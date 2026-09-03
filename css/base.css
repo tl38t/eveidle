@@ -99,20 +99,6 @@
   .topbar .resources .res-item.cargo-item { cursor: pointer; border-radius: 4px; transition: background .15s; }
   .topbar .resources .res-item.cargo-item:hover { background: rgba(136,153,170,.15); }
 
-  .topbar .ore-quick {
-    display: flex;
-    gap: 8px;
-    font-size: 11px;
-  }
-
-  .topbar .ore-quick .ore-icon {
-    background: #1a2330;
-    border: 1px solid #263040;
-    border-radius: 3px;
-    padding: 2px 8px;
-    color: #8899aa;
-  }
-
   /* -- 顶部当前活动小进度条 -- */
   .activity-mini-progress {
     display: inline-block;
@@ -380,7 +366,6 @@
     .topbar .resources .res-item { gap: 3px; }
     .topbar .res-label { display: none; }
     .topbar .res-value { font-size: 13px; }
-    .topbar .ore-quick { display: none; }
 
     .topbar .current-activity {
       order: 3;

@@ -35,7 +35,6 @@
   .topbar .tp-menu-btn{ flex:0 0 auto; width:32px; height:32px; margin:2px 6px 2px 8px; }
   .topbar .brand{ flex:0 0 auto; flex-basis:auto; font-size:13px; line-height:36px; max-width:160px; overflow:hidden; text-overflow:ellipsis; }
   .topbar .current-activity{ display:none; }
-  .topbar .ore-quick{ display:none; }
   /* 第二行：资源整行下沉（flex:1 1 100% 触发换行） */
   .topbar .resources{
     flex:1 1 100%; width:auto; margin-left:0; justify-content:flex-start;

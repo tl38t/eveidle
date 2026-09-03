@@ -356,8 +356,7 @@ function switchMiningMode(mode) {
 function renderGlobalDisplay(display) {
   const iskEl = document.querySelector('.res-value.isk'); if (iskEl) iskEl.textContent = formatCompact(display.isk);
   const lpEl = document.querySelector('.res-value.lp'); if (lpEl) lpEl.textContent = formatCompact(display.lp);
-  const quickEl = document.querySelector('.ore-quick');
-  if (quickEl) quickEl.innerHTML = display.quickOres.length ? display.quickOres.map(item => `<span class="ore-icon">${item.name} × ${item.value.toLocaleString()}</span>`).join("") : '<span class="ore-icon">暂无矿石</span>';
+  // 顶部矿石速览条已移除（2026-09-03 用户拍板「没啥意义，直接删掉」）；quickOres selector 保留不破坏数据面
   const cargoText = document.getElementById("cargo-text");
   if (cargoText) { cargoText.textContent = display.inventory.total.toLocaleString(); }
 }
@@ -454,14 +453,6 @@ function updateLiveUI(nowArg) {
   const cargoText = document.getElementById("cargo-text");
   if (cargoText) {
     setLiveText(cargoText, globalDisplay.inventory.total.toLocaleString());
-  }
-
-  const quickEl = document.querySelector('.ore-quick');
-  if (quickEl) {
-    const html = globalDisplay.quickOres.length
-      ? globalDisplay.quickOres.map(item => `<span class="ore-icon">${item.name} × ${item.value.toLocaleString()}</span>`).join("")
-      : '<span class="ore-icon">暂无矿石</span>';
-    if (quickEl.innerHTML !== html) quickEl.innerHTML = html;
   }
 
   renderSidebar(getSidebarDisplayState(gameState));
