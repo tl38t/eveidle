@@ -428,6 +428,9 @@ function gameTick() {
   if (typeof LEGION_COMBAT_SQUAD !== "undefined" && typeof LEGION_COMBAT_SQUAD.tickLegionSquadRepairs === "function") {
     LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(gameState, Date.now());
   }
+  if (typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.tickLegionStarmapTrial === "function") {
+    LEGION_STARMAP_TRIAL.tickLegionStarmapTrial(gameState, Date.now());
+  }
 
   gameState.lastActiveTime = Date.now();
   updateLiveUI();

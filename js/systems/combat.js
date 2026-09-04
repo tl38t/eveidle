@@ -1494,7 +1494,7 @@ function beginDeathspaceRun(state, options, context) {
   // 问题2：per-ship 维修——仅当「当前战斗舰」正在维修时拒绝出击，健康舰可正常进入。
   const activeShipId = state.combat.activeShip || (getActiveCombatShipState(state).instance && getActiveCombatShipState(state).instance.instanceId) || null;
   if (isShipUnderRepair(state, activeShipId, now)) return { changed:false, reason:"repairing", remaining:Math.ceil((getShipRepairUntil(state, activeShipId) - now) / 1000) };
-  if (getCombatLevelFromState(state) < site.requiredCL) return { changed:false, reason:"level-locked", requiredCL:site.requiredCL };
+  // 门禁已移除：死亡空间战斗等级门槛取消，仅保留密钥门槛（下方 missing-ticket 校验）。
   const weapons = getInstalledCombatModulesFromState(state).filter(module => module.combat && module.combat.kind === "weapon");
   if (weapons.length === 0) return { changed:false, reason:"no-weapons" };
   if (ResourceRegistry.get(state, "special:" + site.ticketMaterial) < 1) return { changed:false, reason:"missing-ticket", ticketMaterial:site.ticketMaterial };

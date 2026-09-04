@@ -140,6 +140,8 @@ function renderCombatSupplyStatus(display) {
     const el = document.getElementById(ammoIds[t]);
     const item = el && el.closest ? el.closest(".csp-item") : null;
     if (!item) continue;
+    const count = Number((display.supplies && display.supplies[t]) || 0);
+    if (el) el.textContent = count.toLocaleString();
     item.classList.remove("csp-warn", "csp-block");
     if (!supply || types.indexOf(t) < 0) continue;
     if (supply.ammo === "none" || supply.ammo === "wrong") item.classList.add("csp-block");
@@ -681,7 +683,7 @@ function renderCombatPanel(now) {
     deathspaceIntroText.classList.toggle("deathspace-browse-notice", display.active);
   }
   const deathspaceTierTabs = document.getElementById("deathspace-tier-tabs");
-  if (deathspaceTierTabs) deathspaceTierTabs.innerHTML = display.deathspaceTiers.map(item => `<button class="deathspace-tier-tab${item.selected ? " active" : ""}${item.unlocked ? "" : " locked"}" data-deathspace-tier="${item.tier}">${item.label}<small>战斗等级 ${item.requiredCL}</small></button>`).join("");
+  if (deathspaceTierTabs) deathspaceTierTabs.innerHTML = display.deathspaceTiers.map(item => `<button class="deathspace-tier-tab${item.selected ? " active" : ""}${item.unlocked ? "" : " locked"}" data-deathspace-tier="${item.tier}">${item.label}<small>推荐战斗等级 ${item.requiredCL}</small></button>`).join("");
   const deathspaceGrid = document.getElementById("deathspace-grid");
   if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${getResourceDisplayName(site.ticketMaterial)} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} ${DisplayNames.getCurrencyName("lp")} · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} ${DisplayNames.getCurrencyName("lp")} · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${getResourceDisplayName(site.coreMaterial)} · 📜 ${getResourceDisplayName(site.protocolMaterial)} 2%</small></button>`).join("");
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
@@ -705,7 +707,7 @@ function renderCombatPanel(now) {
   // 2026-09-03 用户反馈：手机端下拉行宽不够，烈度标签会把「肃清」数挤没 → 下拉里不再显示烈度
   //（烈度保留在顶部 #combat-zone-intensity 横幅，选中后仍可见）。
   if (zoneContent) zoneContent.innerHTML = display.zones.map(zone => {
-    return `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span></div>`;
+    return `<div class="area-option${zone.selected ? " selected" : ""}${zone.locked ? " locked" : ""}" data-zone="${zone.id}">${zone.name} <span class="area-req">安全 ${zone.secLevel}${zone.requiredCL ? " · 推荐战斗等级 " + zone.requiredCL : ""} · 肃清 ${zone.clears}</span></div>`;
   }).join("");
   const playerImage = document.getElementById("combat-player-image"); if (playerImage && !playerImage.querySelector("#combat-player-3d")) playerImage.innerHTML = display.player.image ? `<img src="${display.player.image}" alt="${display.player.name}" style="max-width:100%;max-height:100%;object-fit:contain;">` : '<span class="combat-ship-placeholder">🚀</span>';
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };

@@ -2051,6 +2051,7 @@ function getCombatWeaponHitFromState(state, weaponType, equipmentCombat, context
   // M2：options.shipInstanceId → 显式实例（NPC 绑定舰），缺省保持当前出战舰行为
   const ship = getActiveCombatShipState(state, options).config;
   const baseHit = equipmentCombat && equipmentCombat.baseHit !== undefined ? equipmentCombat.baseHit : config.baseHit;
+  if (!ship) return baseHit;
   return calculateCombatStatFromState(state, "hit", baseHit, [
     { operation:"add", value:getCombatSkillLevelFromState(state, config.skillKey) * 4, priority:10, source:"weapon-skill" },
     { operation:"add", value:getCombatSkillLevelFromState(state, "targeting") * 3, priority:20, source:"targeting" },
@@ -2064,6 +2065,7 @@ function getCombatDamageMultiplierFromState(state, weaponType, context, options)
   // M2：options = { shipInstanceId, excludeImplants }（军团 NPC 战斗小队）
   const activeShip = getActiveCombatShipState(state, options);
   const ship = activeShip.config;
+  if (!ship) return 1;
   const shipBonus = ship.bonuses ? (ship.bonuses[weaponType + "Damage"] || 0) : 0;
   const enhancement = getShipEnhancementBonuses(ship, activeShip.instance && activeShip.instance.enhancementLevel);
   // 脑插（99 级生产技能成就）：独立乘区，与技能/船体/强化/科研相乘。
@@ -2093,6 +2095,7 @@ function getCombatDamageMultiplierFromState(state, weaponType, context, options)
 function getCombatPlayerDodgeFromState(state, context, options) {
   // M2：options.shipInstanceId → 显式实例（NPC 绑定舰），缺省保持当前出战舰行为
   const ship = getActiveCombatShipState(state, options).config;
+  if (!ship) return 20;
   return calculateCombatStatFromState(state, "dodge", ship.dodge || 20, [
     { operation:"add", value:getCombatSkillLevelFromState(state, "piloting"), priority:10, source:"skill" }
   ], { ...(context || {}), actor:"player" });
@@ -2102,6 +2105,9 @@ function getCombatFuelMultiplierFromState(state, zone, context, options) {
   // M2：options.shipInstanceId → 显式实例（NPC 绑定舰），缺省保持当前出战舰行为
   const activeShip = getActiveCombatShipState(state, options);
   const ship = activeShip.config;
+  // 无拥有战斗舰时（新存档/未指派/舰体被拆解）无法计算船体燃料效率，返回默认值 1，
+  // 避免在 supply 预检/updateCombatRecovery 等路径读取 null.fuelEfficiency 崩溃。
+  if (!ship) return 1;
   const selectedZone = zone || COMBAT_ZONES.find(item => item.id === (state.combat && state.combat.zone));
   const shipMultiplier = Number.isFinite(ship.fuelEfficiency) ? ship.fuelEfficiency : 1;
   const zoneMultiplier = selectedZone && Number.isFinite(selectedZone.fuelMult) ? selectedZone.fuelMult : 1;
@@ -2126,6 +2132,7 @@ function getCombatFuelMultiplierFromState(state, zone, context, options) {
 
 function getCombatRepairMultiplierFromState(state, target, context, structureRatio) {
   const ship = getActiveCombatShipState(state).config;
+  if (!ship) return 1;
   const roleBonus = ship.bonuses && target ? (ship.bonuses[target + "Repair"] || 0) : 0;
   let shipRepairMult = 1 + roleBonus;
   // 装备层维修量加成：遍历已装 fitting 装备的 bonuses[target+"Repair"]（损伤控制单元中槽的 shieldRepair/armorRepair/structureRepair），
@@ -2204,7 +2211,8 @@ function getCombatDisplayState(state, now) {
   // 待命/战斗前页面应显示满血（准备出战）；战斗中才使用 combat.hp 实时受损值。
   const hp = combat.active && combat.hp && Number.isFinite(combat.hp.structure) ? { ...combat.hp } : { ...maxHp };
   const requiredLevel = encounterMode === "deathspace" ? encounterDeathspace.requiredCL : (zone.requiredCL || 1);
-  const zoneUnlocked = level >= requiredLevel;
+  // 门禁已移除：星带与死亡空间的战斗等级门槛均取消（死亡空间密钥门槛保留）。
+  const zoneUnlocked = true;
   const volleyDamage = weapons.reduce((total, module) => total + Math.round(module.combat.baseDamage * getCombatDamageMultiplierFromState(state, module.combat.weaponType, { now, zoneId:zone.id })), 0);
   const clears = encounterMode === "deathspace"
     ? combat.deathspaceClears && combat.deathspaceClears[encounterDeathspace.id] || 0
@@ -2267,17 +2275,17 @@ function getCombatDisplayState(state, now) {
       trait:ship ? (ship.capitalTrait ? { ...ship.capitalTrait } : null) : null
     },
     zone:{ ...zone, unlocked:zoneUnlocked },
-    zones:COMBAT_ZONES.map(item => ({ ...item, selected:item.id === zone.id, unlocked:level >= (item.requiredCL || 1), locked:Boolean(combat.active) || level < (item.requiredCL || 1), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
-    deathspace:{ ...deathspace, ticketCount, unlocked:level >= deathspace.requiredCL, clearCount:combat.deathspaceClears && combat.deathspaceClears[deathspace.id] || 0 },
+    zones:COMBAT_ZONES.map(item => ({ ...item, selected:item.id === zone.id, unlocked:true, locked:Boolean(combat.active), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
+    deathspace:{ ...deathspace, ticketCount, unlocked:true, clearCount:combat.deathspaceClears && combat.deathspaceClears[deathspace.id] || 0 },
     deathspaceTiers:[2,3,4,6].map(tier => {
       const sites = DEATHSPACE_DATABASE.filter(site => site.dedTier === tier);
-      return { tier, label:tier + "/10", selected:tier === deathspaceTier, unlocked:sites.some(site => level >= site.requiredCL), requiredCL:sites[0] ? sites[0].requiredCL : 1 };
+      return { tier, label:tier + "/10", selected:tier === deathspaceTier, unlocked:true, requiredCL:sites[0] ? sites[0].requiredCL : 1 };
     }),
     deathspaces:DEATHSPACE_DATABASE.filter(site => site.dedTier === deathspaceTier).map(site => ({
       ...site,
       selected:site.id === deathspace.id,
-      unlocked:level >= site.requiredCL,
-      locked:level < site.requiredCL,
+      unlocked:true,
+      locked:false,
       ticketCount:ResourceRegistry.get(state, "special:" + site.ticketMaterial),
       clears:combat.deathspaceClears && combat.deathspaceClears[site.id] || 0,
       sourceZoneName:(COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || {}).name || site.sourceZoneId

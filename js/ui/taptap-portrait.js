@@ -307,12 +307,50 @@
       + "</div>";
   }
   function tpFiltersHTML() {
-    var tabs = [["all", "全部"], ["combat", "战斗"], ["industrial", "工业"], ["archaeology", "考古"]];
+    var tabs = [["all", "全部"], ["combat", "战斗"], ["industrial", "工业"], ["archaeology", "考古"], ["deployables", "部署物"]];
     return '<div class="tp-hangar-filters">' + tabs.map(function (t) { return '<button class="tp-filter' + (_tpHangarFilter === t[0] ? " active" : "") + '" data-tp-filter="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</div>";
   }
   function tpTabsHTML() {
     var t = [["overview", "概览"], ["fitting", "装备"], ["enhancement", "强化"], ["assignment", "指派"], ["dismantle", "拆解"]];
     return '<div class="tp-hangar-tabs">' + t.map(function (x) { return '<button class="tp-htab' + (_tpHangarTab === x[0] ? " active" : "") + '" data-tp-htab="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>";
+  }
+  // 手机端船坞「部署物」视图（对齐桌面 renderHangarDeployables）：展示库存可部署的 MTU，
+  // 提供部署/回收按钮（已部署的 MTU 由军团小队界面管理，此处不重复渲染）。
+  function tpDeployablesHTML(display) {
+    var dv = display.deployableView;
+    var html = '<div class="lcs-deployables">';
+    html += '<div class="lcs-deploy-title"><i>🛰️</i> 部署物（激光定向打捞单元）</div>';
+    if (dv.deployed.length === 0 && dv.deployableStorage.length === 0) {
+      html += '<div class="lcs-deploy-empty">未拥有；请于舰船总装「特殊」线制造。占用小队 1 格，提高战利品产出、消耗燃料。</div></div>';
+      return html;
+    }
+    var canDeploy = dv.capacity > 0 && dv.usedSlots < dv.capacity;
+    if (dv.deployableStorage.length === 0) {
+      html += dv.deployed.length > 0
+        ? '<div class="lcs-deploy-empty">库存为空 · ' + dv.deployed.length + ' 台已部署（在军团小队界面管理）</div></div>'
+        : '<div class="lcs-deploy-empty">库存为空</div></div>';
+      return html;
+    }
+    var disMap = {};
+    (dv.dismantle && dv.dismantle.items ? dv.dismantle.items : []).forEach(function (it) { disMap[it.deployableId] = it; });
+    var reclaimPct = (dv.dismantle && dv.dismantle.reclaimPercent != null) ? dv.dismantle.reclaimPercent : 50;
+    dv.deployableStorage.forEach(function (id) {
+      var def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(id) : null;
+      var defName = def ? def.name : id;
+      var dis = disMap[id];
+      var canDis = !!(dis && dis.canDismantle);
+      var disPreview = (dis && dis.preview && dis.preview.length) ? dis.preview.map(function (e) { return e.name + "×" + e.returned; }).join(" · ") : "无";
+      html += '<div class="lcs-deploy-card stored">' +
+        '<span class="lcs-deploy-name">' + escapeAchievementText(defName) + '</span>' +
+        '<span class="lcs-deploy-effects">已拥有 · 待部署</span>' +
+        '<button class="lcs-deploy-btn deploy" data-deploy="' + escapeAchievementText(id) + '"' + (canDeploy ? "" : " disabled") + '>部署（占 1 格）</button>' +
+        '<button class="lcs-deploy-btn recycle" data-dismantle-deployable="' + escapeAchievementText(id) + '"' + (canDis ? "" : " disabled") +
+          ' title="拆解回收（冶炼回收 ' + reclaimPct + '%）：' + escapeAchievementText(disPreview) + '">♻ 回收</button>' +
+        '</div>';
+    });
+    if (!canDeploy) html += '<div class="lcs-deploy-hint">小队格位不足：需空出 1 个共享格（与 NPC 成员互斥）才能部署。</div>';
+    html += '</div>';
+    return html;
   }
   /* 装备弹窗环带中央：注入当前舰真实 getHangarThumb 缩略图（移动端）。
      作为 #equipOrbitWrapper 的子节点（svg 的兄弟），不会被 buildOrbit 的 svg.innerHTML="" 清除；
@@ -351,6 +389,13 @@
     if (empty) empty.style.display = "none";
     var root = tpEnsureRoot(panel);
     root.style.display = "block";
+
+    // 手机端「部署物」独立视图：MTU 非舰船，不占船坞，故独立于舰船焦点；即使无舰船也展示。
+    if (_tpHangarFilter === "deployables") {
+      if (info) info.textContent = "部署物 · 已部署 " + display.deployableView.deployed.length + " / 库存 " + display.deployableView.deployableStorage.length;
+      root.innerHTML = tpFiltersHTML() + tpDeployablesHTML(display);
+      return;
+    }
 
     if (!_tpCurrentShipId || !display.ships.some(function (s) { return s.instanceId === _tpCurrentShipId; })) {
       _tpCurrentShipId = display.ships.length ? display.ships[0].instanceId : null;
@@ -416,6 +461,21 @@
         if (dism) {
           if (typeof window.dismantleShipFromHangar === "function") window.dismantleShipFromHangar(dism.getAttribute("data-dismantle-ship"));
           else { console.error("[taptap-portrait] 入口缺失：window.dismantleShipFromHangar 未定义"); if (window.showToast) window.showToast("拆解入口缺失，请刷新或更新客户端"); }
+          return;
+        }
+        var dep = t.closest("[data-deploy],[data-dismantle-deployable]");
+        if (dep && !dep.disabled) {
+          var dRes = null;
+          if (dep.dataset.deploy) dRes = window.dispatchGameAction(window.gameState, { type:"manufacturing/deployDeployable", deployableId: dep.dataset.deploy }, Date.now());
+          else if (dep.dataset.dismantleDeployable) dRes = window.dispatchGameAction(window.gameState, { type:"manufacturing/dismantleDeployable", deployableId: dep.dataset.dismantleDeployable }, Date.now());
+          if (dRes && dRes.changed === false && dRes.reason) {
+            var dMsg = { "deploy-full":"部署位已满", "not-in-storage":"不在库存", "squad-full":"小队格位不足", "not-deployed":"未部署", "no-squad":"无战斗小队", "deployed":"已部署中，先取消部署再回收", "no-recipe":"无拆解配方", "not-owned":"未拥有" };
+            if (window.showToast) window.showToast("⚠ " + (dMsg[dRes.reason] || dRes.reason));
+          } else if (dRes && dRes.changed && dRes.refundedResources) {
+            var dParts = Object.keys(dRes.refundedResources).map(function (k) { return k + "×" + dRes.refundedResources[k]; });
+            if (window.showToast) window.showToast("♻ 已回收：" + (dParts.join(" · ") || "无"));
+          }
+          window.renderHangarPanel(); if (window.renderCombatPanel) window.renderCombatPanel();
           return;
         }
         var act = t.closest("[data-ship-action]");

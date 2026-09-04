@@ -1236,6 +1236,10 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
         typeof LEGION_COMBAT_SQUAD.tickLegionSquadRepairs === "function") {
       LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(gameState, segEnd);
     }
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL &&
+        typeof LEGION_STARMAP_TRIAL.tickLegionStarmapTrial === "function") {
+      LEGION_STARMAP_TRIAL.tickLegionStarmapTrial(gameState, segEnd);
+    }
 
     // 4) 扣除该段燃料（仅 operational 段真实消耗）
     if (segOperational && typeof settleStationMaintenance === "function") {

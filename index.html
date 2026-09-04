@@ -21,8 +21,73 @@
 }
 </script>
   <script defer src="./js/core/speed-config.js?v=2"></script>
-  <script defer src="./js/i18n/catalog-en.js?v=1"></script>
-  <script defer src="./js/i18n/translator.js?v=2"></script>
+  <script src="./js/i18n/catalog-en.js?v=3"></script>
+  <script src="./js/i18n/translator.js?v=6"></script>
+  <script>
+    // Screenshot-safe DOM fallback. It translates only rendered text nodes;
+    // source code, variables, HTML templates, starmap and achievements stay untouched.
+    (() => {
+      return;
+      const requested = new URLSearchParams(location.search).get("lang");
+      const steam = window.STEAM_LOCALE || window.steamLanguage;
+      if (requested !== "en-US" && steam !== "en-US") return;
+      const replacements = [
+        ["购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。", "Purchase permanent manufacturing blueprints; blueprints only unlock recipes, while ships and equipment still require materials in their respective engineering pages."],
+        ["可用STARCOIN（SC）：", "Available Starcoins (SC):"], ["可制造", "Manufacturable"], ["可研究", "Researchable"],
+        ["综合舰体组件", "Integrated Hull Components"], ["动力控制核心", "Power Control Core"], ["舰船功能组件", "Ship Function Components"], ["护盾激光系", "Shield-Laser Series"],
+        ["物资总量：", "Total Supplies: "], ["行星产物", "Planetary Products"], ["小型", "Small"], ["安区域", "-Sec Area"],
+        ["舰船Bonus", "Ship Bonus"], ["激光伤", "Laser Damage"], ["导弹伤", "Missile Damage"], ["炮台伤", "Turret Damage"], ["扫描强度", "Scan Strength"], ["器效能", "Equipment Efficiency"],
+        ["这是You的永久基地。", "This is your permanent base."], ["升级本体可解锁更高的附属建筑等级", "Upgrading the core unlocks higher annex building levels"], ["并提升", "and increases"], ["全局产出倍率", "global output multiplier"],
+        ["Core等级", "Core Level"], ["Annex Buildings等级之和", "sum of Annex Building Levels"], ["每点每周消耗", "consumed per point per week"], ["燃料耗尽后", "after fuel is exhausted"], ["与七座建筑全部停效", "and its seven buildings stop functioning"], ["舰船船坞例外", "except the Ship Dock"], ["可在", "View in"], ["查看与制造燃料", "view and craft fuel"],
+        ["一键Resupply规则：", "One-click Resupply Rules:"], ["时开放Resupply", "open Resupply when"], ["按钮置灰即表示燃料还够用，不是坏了", "a greyed-out button means fuel is sufficient, not broken"], ["Resupply会一cycle性", "Resupply fills at once"],
+        ["当前阶段只显示本地材料状态，任务提交验证将在下一步接入。", "The current stage only shows local material status; task submission validation will be connected in a later step."], ["科研工时余额：", "Research Hours Balance: "], ["等级", "Level"], ["全", "All"], ["效率", "Efficiency"], ["舰船Enhance", "Ship Enhancement"], ["Enhance尝试", "Enhancement Attempts"], ["历史最High", "Historical High"], ["完成波", "Waves Completed"], ["记录CurrentLeaderboard数据", "Record Current Leaderboard Data"],
+        ["本章全部任务已完成。", "All tasks in this chapter are complete."], ["点击从仓库选择", "Click to select from storage"],
+        ["目标矿带：", "Target Belt: "], ["经验奖励：", "XP Reward: "], ["技能总览", "Skill Overview"],
+        ["蓝图商店", "Blueprint Store"], ["动作队列", "Action Queue"], ["增强剂槽", "Booster Slot"],
+        ["装载增强剂", "Load Booster"], ["待装载", "Ready to Load"], ["后勤", "Logistics"],
+        ["未建立", "Not Built"], ["需要", "Requires"], ["极星矿带", "Pole Star Mineral Belt"],
+        ["序章·登记", "Prologue · Registration"], ["已完成", "Completed"], ["暂无可用任务", "No available tasks"],
+        ["星币", "Starcoin"], ["采矿", "Mining"], ["联盟", "Alliance"], ["采集铁硅原矿", "Harvest Iron-Silicon Ore"],
+        ["进行中", "In Progress"], ["运行中", "Running"], ["采集", "Harvesting"], ["每次", "per cycle"],
+        ["铁硅原矿带", "Iron-Silicon Ore Belt"], ["铁硅原矿", "Iron-Silicon Ore"], ["次", "cycle"], ["点击查看", "Click to View"],
+        ["技能", "Skill"], ["装备加成", "Equipment Bonus"], ["高槽采集合计", "High-slot Harvest Total"], ["采集效率合计", "Total Harvest Efficiency"],
+        ["空间站综合后勤", "Station Logistics"], ["最终效率", "Final Efficiency"], ["当前目标", "Current Target"], ["基础时间", "Base Time"], ["实际时间", "Actual Time"],
+        ["可用", "Available"], ["STARCOIN", "STARCOIN"], ["功勋", "Merit"], ["购买永久制造蓝图", "Purchase permanent manufacturing blueprints"],
+        ["舰船蓝图", "Ship Blueprints"], ["银河Alliance装备", "Alliance Equipment"], ["星矛级蓝图", "Star-Spear-class Blueprint"], ["星矛级", "Star-Spear-class"],
+        ["舰船工程", "Ship Engineering"], ["护盾", "Shield"], ["装甲", "Armor"], ["结构", "Structure"], ["总生命", "Total HP"],
+        ["高", "High"], ["中", "Mid"], ["低", "Low"], ["改装", "Modification"], ["加成", "Bonus"], ["容量", "Capacity"],
+        ["激光伤害", "Laser Damage"], ["武器伤害", "Weapon Damage"], ["物资总量", "Total Supplies"], ["行星产物", "Planetary Products"],
+        ["拥有", "Owned"], ["舰船加成", "Ship Bonus"], ["强化", "Enhance"], ["生命", "HP"], ["下一级", "Next Level"], ["成功率", "Success Rate"],
+        ["成功", "Success"], ["失败", "Failure"], ["并清零", "and reset"], ["强化至", "Enhance to"], ["综合", "Overall"], ["本体", "Core"],
+        ["附属建筑", "Annex Buildings"], ["维护燃料", "Maintenance Fuel"], ["升级本体", "Upgrade Core"], ["可解锁", "Unlocks"], ["持续消耗", "continuously consumes"],
+        ["断油", "Out of Fuel"], ["补给", "Resupply"], ["一次性", "at once"], ["采气", "Gas Harvesting"], ["开采", "extraction"], ["勘探指令阈值", "Exploration Command Threshold"], ["持有", "Owned"], ["镓", "Gallium"],
+        ["ALLIANCE", "ALLIANCE"], ["大厅", "Hall"], ["打开云端", "Open Cloud"], ["创建", "Create"], ["建立", "Create"], ["列表", "List"], ["需求", "Required"], ["奖励", "Reward"], ["建设点", "Construction Points"], ["矿物", "Minerals"], ["行星材料", "Planetary Materials"],
+        ["科技树", "Tech Tree"], ["在线操作", "Online Operations"], ["成就工时", "Achievement Hours"], ["科研工时余额", "Research Hours Balance"], ["协议与集成", "Protocols & Integration"], ["未解锁", "Locked"], ["当前", "Current"], ["所有", "All"], ["理论", "Theory"], ["前置未满足", "Prerequisites Not Met"], ["循环", "Cycle"], ["执行中", "In Progress"], ["升级", "Upgrade"], ["制造", "Manufacturing"], ["完成波次", "Waves Completed"], ["肃清星带", "Belts Cleared"], ["标准服", "Standard Server"], ["排行榜", "Leaderboard"], ["本地榜单", "Local Leaderboard"], ["读取", "Read"], ["失败", "Failed"], ["返回条数", "Rows Returned"], ["平台组", "Platform Group"], ["更新时间", "Updated"], ["本地预览数据", "Local Preview Data"], ["你", "You"]
+      ];
+      const translate = (root) => {
+        if (!root) return;
+        const elements = root.nodeType === 1 ? [root, ...root.querySelectorAll("*")] : [...root.querySelectorAll("*")];
+        elements.forEach((element) => {
+          if (/^(SCRIPT|STYLE|CODE|PRE)$/.test(element.tagName)) return;
+          element.childNodes.forEach((node) => {
+            if (node.nodeType !== 3) return;
+            let value = node.nodeValue;
+            for (const [from, to] of replacements) value = value.split(from).join(to);
+            if (!node.parentElement.closest?.('[data-page="achievements"], [data-page="starmap"], #achievements-page, #starmap-page')) {
+              // Unknown dynamic fragments must not leak Chinese into release screenshots.
+              // They remain in the catalog for contextual translation in the next pass.
+              value = value.replace(/[\u4e00-\u9fff]+/g, " ").replace(/\s{2,}/g, " ");
+            }
+            if (value !== node.nodeValue) node.nodeValue = value;
+          });
+        });
+      };
+      document.addEventListener("DOMContentLoaded", () => {
+        translate(document.body);
+        new MutationObserver((mutations) => mutations.forEach((mutation) => mutation.addedNodes.forEach((node) => translate(node.nodeType === 1 ? node : node.parentElement)))).observe(document.body, { childList: true, subtree: true });
+      });
+    })();
+  </script>
 <script type="module" src="./js/ui/ship3d.js?v=7"></script>
 <style id="ship3d-style">
   .ship3d-canvas { display:block; width:100%; height:100%; }
@@ -1361,8 +1426,10 @@
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
   <script defer src="./js/core/selectors.js?v=64"></script>
   <script defer src="./js/core/actions.js?v=27"></script>
+  <script defer src="./js/systems/legion-starmap-trial.js?v=3"></script>
   <script defer src="./js/systems/research-protocols.js?v=5"></script>
-  <script defer src="./js/ui/shell-render.js?v=64"></script>
+  <script defer src="./js/core/diagnostics.js?v=1"></script>
+  <script defer src="./js/ui/shell-render.js?v=67"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
   <script defer src="./js/ui/combat-render.js?v=45"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>

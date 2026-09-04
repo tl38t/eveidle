@@ -157,7 +157,7 @@
   }
   .mining-mode-tab i { margin-right: 6px; }
   .mining-target-scroll { overflow-x: auto; padding-bottom: 4px; scrollbar-color: #31465c #0b1119; }
-  .mining-target-strip { display: flex; flex-wrap: nowrap; gap: 8px; min-width: max-content; }
+  .mining-target-strip { display: flex; flex-wrap: nowrap; gap: 8px; min-width: max-content; align-items: stretch; }
   .mining-target-card {
     position: relative; flex: 1 0 150px; width: 150px; min-height: 188px; padding: 11px 9px 10px;
     display: flex; flex-direction: column; align-items: center; gap: 6px; overflow: hidden;
@@ -172,6 +172,8 @@
   .mining-target-name {
     color:#edf3f8; font-family:var(--font-tech); font-size:17px; font-weight:700;
     letter-spacing:.16em; text-shadow:0 0 10px rgba(141,204,238,.12);
+    min-height:2.4em; line-height:1.2; text-align:center;
+    display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
   }
   .mining-target-visual {
     width:78px; height:78px; display:grid; place-items:center; color:var(--ore-color);
@@ -191,6 +193,7 @@
   .mining-target-state {
     margin-top:auto; color:#86d3f7; font-family:var(--font-tech); font-size:14px;
     line-height:1.4; font-weight:700; letter-spacing:.14em; text-shadow:0 0 9px rgba(121,201,242,.16);
+    min-height:2.8em; width:100%; display:flex; align-items:center; justify-content:center; text-align:center;
   }
   .mining-target-card.selected .mining-target-state { color:#f0c85d; }
   .mining-target-card.locked .mining-target-state { color:#ef8b8b; }
@@ -247,11 +250,11 @@
     }
     /* 小卡上斜角"运行中"丝带会被裁切且显拥挤，改为仅靠状态文字「正在采集」表达 */
     .mining-target-card.running::after { display: none; }
-    .mining-target-name { font-size: 11px; letter-spacing: .06em; }
+    .mining-target-name { font-size: 11px; letter-spacing: .06em; min-height:2.2em; line-height:1.15; }
     .mining-target-visual { width: 44px; height: 44px; font-size: 28px; }
     .mining-target-meta { font-size: 10px; }
     .mining-target-sub { font-size: 9px; }
-    .mining-target-state { font-size: 10px; letter-spacing: .06em; }
+    .mining-target-state { font-size: 10px; letter-spacing: .06em; min-height:2.4em; }
   }
 
   /* ===== 仓库面板 ===== */

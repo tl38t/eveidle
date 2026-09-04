@@ -399,6 +399,22 @@ const BoosterStateActions = {
   },
 
   startManufacturing(state, now, recipeId) {
+    // 与「开考古」对称：制造增强剂前若战斗仍在进行，先干净收尾，避免战斗冻结在最后一帧。
+    if (state.combat && state.combat.active) {
+      const maxHp = getCombatMaxHpFromState(state);
+      endCombatSession(state, "queue-switch", { pauseQueue:false });
+      Object.assign(state.combat, {
+        hp:{ ...maxHp },
+        maxHp:{ ...maxHp },
+        lastLoot:"",
+        lastSpecialLoot:"",
+        lastStatus:"已切换至舰船工程，战斗停止",
+        runWeaponTypes:[],
+        runWeaponTypesZone:null,
+        runDamageDealt:0, runDamageTaken:0
+      });
+      state.resumeAfterRepair = null;
+    }
     const recipe = recipeId ? getBoosterRecipe(recipeId) : (getBoosterRecipe(state.currentAction.boosterRecipeTarget) || BOOSTER_RECIPES[0]);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
     if (!isBoosterRecipeUnlocked(recipe)) {
@@ -624,7 +640,7 @@ const CombatStateActions = {
     const zone = COMBAT_ZONES.find(item => item.id === zoneId);
     if (!zone) return { changed:false, reason:"unknown-zone" };
     if (state.combat.active) return { changed:false, reason:"combat-active" };
-    if (getCombatLevelFromState(state) < (zone.requiredCL || 1)) return { changed:false, reason:"level-locked", requiredCL:zone.requiredCL || 1 };
+    // 门禁已移除：玩家自身战斗等级不再限制星带进出；能否打过由玩家舰+小队实际战力决定。
     Object.assign(state.combat, {
       mode:"belt",
       viewMode:"belt",
@@ -650,7 +666,7 @@ const CombatStateActions = {
   selectDeathspace(state, deathspaceId) {
     const site = DEATHSPACE_DATABASE.find(item => item.id === deathspaceId);
     if (!site) return { changed:false, reason:"unknown-deathspace" };
-    if (getCombatLevelFromState(state) < site.requiredCL) return { changed:false, reason:"level-locked", requiredCL:site.requiredCL };
+    // 门禁已移除：死亡空间战斗等级门槛取消，仅保留密钥门槛（见 beginDeathspaceRun 的 missing-ticket 校验）。
     if (state.combat.active) {
       Object.assign(state.combat, {
         viewMode:"deathspace",
@@ -2359,7 +2375,13 @@ const StationStateActions = {
 
   function dispatchGameAction(state, action, now) {
   if (!state || !action || typeof action.type !== "string") return { changed:false, reason:"invalid-action" };
+  if (typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.getActionLock === "function") {
+    const legionLock = LEGION_STARMAP_TRIAL.getActionLock(state, action);
+    if (legionLock) return legionLock;
+  }
   const actionTime = Number(now) || Date.now();
+  if (action.type === "legion-starmap/startCollectionTrial") return LEGION_STARMAP_TRIAL.startCollectionTrial(state, action.node, actionTime);
+  if (action.type === "legion-starmap/stopCollectionTrial") return LEGION_STARMAP_TRIAL.finishCollectionTrial(state, false, actionTime);
   if (action.type === "action/stop") return ShellStateActions.stopCurrentAction(state, actionTime);
   if (action.type === "production/ensureMiningArea") return ProductionStateActions.ensureMiningArea(state);
   if (action.type === "production/selectMiningArea") return ProductionStateActions.selectMiningArea(state, action.areaName, actionTime);
@@ -2549,6 +2571,24 @@ const ArchaeologyStateActions = {
     return { changed:true, probe };
   },
   start(state, now) {
+    // 与 executeQueueItemForState 的「常规技能」分支对称：开考古前若战斗仍在进行，
+    // 必须先干净收尾战斗；否则 currentAction.skill 被改走后 combatTick 不再被驱动，
+    // 但 combat.active 残留 → 战斗冻结在最后一帧（按钮仍为「停止战斗」）。
+    if (state.combat && state.combat.active) {
+      const maxHp = getCombatMaxHpFromState(state);
+      endCombatSession(state, "queue-switch", { pauseQueue:false });
+      Object.assign(state.combat, {
+        hp:{ ...maxHp },
+        maxHp:{ ...maxHp },
+        lastLoot:"",
+        lastSpecialLoot:"",
+        lastStatus:"已切换至考古，战斗停止",
+        runWeaponTypes:[],
+        runWeaponTypesZone:null,
+        runDamageDealt:0, runDamageTaken:0
+      });
+      state.resumeAfterRepair = null;
+    }
     const check = canStartArchaeology(state, now);
     if (!check.ok) return { changed:false, reason:check.reason };
     const arch = state.archaeology;

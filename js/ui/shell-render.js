@@ -23,6 +23,34 @@ function showToast(message) {
   setTimeout(() => { if (toast.parentNode) toast.remove(); }, 2500);
 }
 
+// 星图 iframe 的动作请求统一回到主页面 dispatch，避免 iframe 自己持有第二份游戏状态。
+window.addEventListener("message", function (event) {
+  const data = event && event.data;
+  if (!data || data.type !== "legion-starmap/start-collection") return;
+  let result;
+  try {
+    result = (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.startCollectionTrial === "function")
+      ? LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, data.node, Date.now())
+      : { changed:false, reason:"starmap-trial-unavailable" };
+    if (result && result.reason === "confirm-stop-action") {
+      const label = result.currentSkill || "当前行动";
+      const confirmed = typeof window.confirm === "function" && window.confirm("当前正在进行：" + label + "。停止后当前进度不返还，是否开始星图试炼？");
+      result = confirmed
+        ? LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, data.node, Date.now(), { confirmed:true })
+        : { changed:false, reason:"action-switch-cancelled" };
+    }
+  } catch (error) {
+    console.error("[星图采集试炼] 启动异常", error);
+    result = { changed:false, reason:"starmap-trial-error" };
+  }
+  if (result.changed && typeof updateUI === "function") updateUI();
+  if (event.source && typeof event.source.postMessage === "function") {
+    const targetOrigin = event.origin && event.origin !== "null" ? event.origin : "*";
+    try { event.source.postMessage({ type:"legion-starmap/trial-result", result }, targetOrigin); }
+    catch (_) { event.source.postMessage({ type:"legion-starmap/trial-result", result }, "*"); }
+  }
+});
+
 function getManagedPanels() {
   const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
@@ -2313,6 +2341,7 @@ function renderResearchProtocolPanelHtml(display) {
   if (display.protocolId === "planauto") {
     const active = display.active === true;
     parts.push('<div class="rt-d-lab">行星基地（逐个独立配置）</div>');
+    parts.push('<button class="research-btn" type="button" data-detail-action="planauto-diagnose">🔍 一键诊断为何不续期</button>');
     // 判定规则一句话说明（2026-09-03 玩家反馈「看不懂逻辑、不知道设多少」）：
     // 讲清自动续期的两条判定与「设 0 即无底线」。纯文本、无 hover 依赖，手机端直接可见。
     parts.push('<div class="rt-d-hint research-protocol-planauto-rule">到期判定：基地到期那一刻，星币 ≥ 续期费 <b>且</b> 扣费后剩余 ≥ 最低储备，两条都满足才续；任一不满足只停该基地，不动你的星币。<b>最低储备设 0 = 只要付得起就续。</b></div>');
@@ -3016,6 +3045,14 @@ function onResearchDetailClick(event) {
 
 // 研究批次 I：协议总开关 / 单基地自动续期 / 最低星币储备（全部走 action 路由）
 function onResearchProtocolAction(action, btn) {
+  if (action === "planauto-diagnose") {
+    if (typeof window !== "undefined" && typeof window.openPlanautoDiagnostics === "function") {
+      window.openPlanautoDiagnostics();
+    } else {
+      showToast("诊断模块未加载");
+    }
+    return;
+  }
   if (action === "protocol-toggle") {
     const protocolId = btn.dataset.protocolId;
     const enabled = btn.dataset.protocolEnabled === "true";
