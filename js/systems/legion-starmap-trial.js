@@ -3,13 +3,33 @@
   "use strict";
   const API = {};
   const LIMIT_SECONDS = 180;
+  let replayTestingEnabled = false;
 
   function ensure(state) {
     if (!state.legion) state.legion = {};
     if (!state.legion.starmap) state.legion.starmap = {};
     const s = state.legion.starmap;
     if (!s.collectionTrial || typeof s.collectionTrial !== "object") {
-      s.collectionTrial = { status:"idle", nodeId:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null };
+      s.collectionTrial = { status:"idle", nodeId:null, lockedNode:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null };
+    }
+    if (!Array.isArray(s.completedNodeIds)) s.completedNodeIds = [];
+    s.completedNodeIds = [...new Set(s.completedNodeIds.map(String))];
+    if (s.collectionTrial.status === "running" && !s.collectionTrial.lockedNode && s.collectionTrial.nodeId != null) {
+      const trial = s.collectionTrial;
+      const inferredBase = Number(trial.amount) > 0 && Number(trial.efficiency) > 0
+        ? Number(trial.requiredSeconds) * Number(trial.efficiency) / Number(trial.amount)
+        : 0;
+      trial.lockedNode = lockNode({
+        id:trial.nodeId, name:trial.resourceId, type:"collection",
+        subtype:trial.kind === "gas" ? "\u91c7\u6c14" : "\u91c7\u77ff",
+        collectionResource:trial.resourceId, collectionKind:trial.kind,
+        collectionAmount:trial.amount, collectionBaseSecondsPerUnit:inferredBase,
+        collectionTimeLimitSeconds:LIMIT_SECONDS
+      });
+    }
+    if (s.collectionTrial.status === "success" && s.collectionTrial.nodeId != null) {
+      const completedId = String(s.collectionTrial.nodeId);
+      if (!s.completedNodeIds.includes(completedId)) s.completedNodeIds.push(completedId);
     }
     return s;
   }
@@ -17,6 +37,17 @@
   function isRunning(state) { return !!(state && ensure(state).collectionTrial.status === "running"); }
   function hasNormalAction(state) { return !!(state && state.currentAction && state.currentAction.active); }
   function resourceKey(node) { return "special:" + String(node.resourceId || node.collectionResource || ""); }
+  function lockNode(node) {
+    if (!node || node.id == null) return null;
+    return {
+      id:node.id, name:String(node.name || ""), type:"collection", subtype:String(node.subtype || ""),
+      collectionResource:String(node.collectionResource || ""), collectionKind:String(node.collectionKind || ""),
+      collectionAmount:Number(node.collectionAmount) || 0,
+      collectionBaseSecondsPerUnit:Number(node.collectionBaseSecondsPerUnit) || 0,
+      collectionTimeLimitSeconds:Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS,
+      collectionEfficiencyTarget:Number(node.collectionEfficiencyTarget) || 0
+    };
+  }
   function readEfficiency(node) {
     const isGas = node.collectionKind === "gas" || node.subtype === "\u91c7\u6c14";
     try {
@@ -28,9 +59,14 @@
   function active(state, node) {
     return !!(state && node && node.type === "collection" && node.collectionResource && Number(node.collectionAmount) > 0 && Number(node.collectionTimeLimitSeconds) > 0);
   }
+  function isNodeCompleted(state, node) {
+    if (!state || !node || node.id == null) return false;
+    return ensure(state).completedNodeIds.includes(String(node.id));
+  }
   function canStart(state, node) {
     if (!state || !active(state, node)) return { ok:false, reason:"invalid-collection-node" };
     if (isRunning(state)) return { ok:false, reason:"starmap-trial-running" };
+    if (isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };
     if (hasNormalAction(state)) return { ok:false, reason:"player-action-running" };
     const eff = readEfficiency(node);
     if (!(eff > 0)) return { ok:false, reason:"no-collection-efficiency", efficiency:eff };
@@ -52,7 +88,7 @@
     const s = ensure(state).collectionTrial;
     const t = Number(now) || Date.now();
     const limit = Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS;
-    Object.assign(s, { status:"running", nodeId:String(node.id), resourceId:String(node.collectionResource), kind:node.collectionKind || node.subtype || "", gathered:0, amount:Number(node.collectionAmount), startedAt:t, endsAt:t + Math.min(check.requiredSeconds, limit) * 1000, requiredSeconds:check.requiredSeconds, efficiency:check.efficiency, result:null });
+    Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockNode(node), resourceId:String(node.collectionResource), kind:node.collectionKind || node.subtype || "", gathered:0, amount:Number(node.collectionAmount), startedAt:t, endsAt:t + limit * 1000, requiredSeconds:check.requiredSeconds, efficiency:check.efficiency, result:null });
     state._dirty = true;
     return { changed:true, trial:{ ...s }, willSucceed:check.willSucceed };
   }
@@ -62,6 +98,11 @@
     s.status = success ? "success" : "failed";
     s.gathered = success ? s.amount : 0;
     s.result = success ? "\u901a\u8fc7" : "\u5931\u8d25";
+    if (success && s.nodeId != null) {
+      const completedId = String(s.nodeId);
+      const completedNodeIds = ensure(state).completedNodeIds;
+      if (!completedNodeIds.includes(completedId)) completedNodeIds.push(completedId);
+    }
     if (success && root.ResourceRegistry && typeof root.ResourceRegistry.add === "function") root.ResourceRegistry.add(state, resourceKey(s), s.amount);
     state._dirty = true;
     return { changed:true, success, trial:{ ...s } };
@@ -69,8 +110,8 @@
   function stop(state) {
     const s = ensure(state).collectionTrial;
     if (s.status !== "running") return { changed:false, reason:"not-running" };
-    s.status = "idle";
-    s.result = "stopped";
+    // 停止是一次完整的试炼重置：不结算、不保留本轮采集量，重新打开时从满额开始。
+    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null });
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }
@@ -83,7 +124,8 @@
     const elapsed = Math.max(0, (t - s.startedAt) / 1000);
     const limit = Math.max(1, Math.min(LIMIT_SECONDS, (s.endsAt - s.startedAt) / 1000));
     s.gathered = Math.min(s.amount, s.amount * Math.min(1, elapsed / Math.max(0.001, s.requiredSeconds)));
-    if (elapsed >= limit) return finish(state, s.requiredSeconds <= limit, t);
+    if (s.requiredSeconds <= limit && elapsed >= s.requiredSeconds) return finish(state, true, t);
+    if (elapsed >= limit) return finish(state, false, t);
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }
@@ -92,14 +134,26 @@
     if (action.type === "legion-starmap/startCollectionTrial" || action.type === "legion-starmap/stopCollectionTrial") return null;
     return /(?:\/start|\/enter|\/begin|^start)/.test(action.type) ? { changed:false, reason:"starmap-trial-running" } : null;
   }
+  function setReplayTestingEnabled(enabled) {
+    replayTestingEnabled = !!enabled;
+    return replayTestingEnabled;
+  }
+  function isReplayTestingEnabled() { return replayTestingEnabled; }
   API.ensureLegionStarmapState = ensure;
   API.isCollectionTrialRunning = isRunning;
+  API.getLockedNode = function (state) {
+    const trial = state && ensure(state).collectionTrial;
+    return trial && trial.status === "running" && trial.lockedNode ? { ...trial.lockedNode } : null;
+  };
   API.canStartCollectionTrial = canStart;
+  API.isNodeCompleted = isNodeCompleted;
   API.startCollectionTrial = start;
   API.tickLegionStarmapTrial = tick;
   API.finishCollectionTrial = finish;
   API.stopCollectionTrial = stop;
   API.getActionLock = actionLock;
+  API.setReplayTestingEnabled = setReplayTestingEnabled;
+  API.isReplayTestingEnabled = isReplayTestingEnabled;
   API.LIMIT_SECONDS = LIMIT_SECONDS;
   root.LEGION_STARMAP_TRIAL = API;
 

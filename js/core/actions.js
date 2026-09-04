@@ -87,27 +87,43 @@ const ProductionStateActions = {
   },
 
   // 熔炼行动下的子模式切换（2026-09-04 新增自动拆解子活动）：smelting | dismantle。
-  // 两种子活动共用单一进度累加器，切换时若正在运行必须先停（reset 进度），否则进度会串台。
+  // 两种子活动共用单一进度累加器；但 refiningSubAction 挂在 currentAction 上，可能与正在运行的
+  // 其它行动（采矿/采气等）共用同一对象——切换「查看用的子模式 tab」绝不应误暂停 / 清零无关行动。
+  // 仅当当前正在运行的恰恰是【熔炼(refining)】本身时才需要先停（reset 进度），否则只记住子模式偏好，
+  // 待真正启动熔炼/拆解时由 applyQueueConfigToState 应用，不碰共享的 active/progress/lastProgressUpdate。
   selectRefiningSubmode(state, submode, now) {
     if (submode !== "smelting" && submode !== "dismantle") return { changed:false, reason:"bad-submode" };
     const action = state.currentAction;
     if (action.refiningSubAction === submode) return { changed:false, reason:"same-mode" };
-    if (action.active) ShellStateActions.stopCurrentAction(state, now);
+    const wasRefiningActive = action.active && action.skill === "refining";
+    if (wasRefiningActive) ShellStateActions.stopCurrentAction(state, now);
     action.refiningSubAction = submode;
-    if (submode === "dismantle") {
-      const valid = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
-        ? SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === action.dismantleTarget) : false;
-      if (!valid) action.dismantleTarget = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES[0]) ? SHIP_COMPONENT_DISMANTLE_RECIPES[0].id : "";
-      action.startedDismantleTarget = action.dismantleTarget;
-      action.progress = 0;
-      action.lastProgressUpdate = now;
+    if (wasRefiningActive) {
+      // 运行中切换子模式：重置该子活动的锁定目标与进度（原逻辑，仅作用于 refining 自身）
+      if (submode === "dismantle") {
+        const valid = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+          ? SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === action.dismantleTarget) : false;
+        if (!valid) action.dismantleTarget = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES[0]) ? SHIP_COMPONENT_DISMANTLE_RECIPES[0].id : "";
+        action.startedDismantleTarget = action.dismantleTarget;
+        action.progress = 0;
+        action.lastProgressUpdate = now;
+      } else {
+        const valid = (typeof SMELTING_RECIPES !== "undefined")
+          ? SMELTING_RECIPES.some(r => r.name === action.smeltingArea) : false;
+        if (!valid) action.smeltingArea = (typeof SMELTING_RECIPES !== "undefined" && SMELTING_RECIPES[0]) ? SMELTING_RECIPES[0].name : "";
+        action.startedSmeltingArea = action.smeltingArea;
+        action.progress = 0;
+        action.lastProgressUpdate = now;
+      }
     } else {
-      const valid = (typeof SMELTING_RECIPES !== "undefined")
-        ? SMELTING_RECIPES.some(r => r.name === action.smeltingArea) : false;
-      if (!valid) action.smeltingArea = (typeof SMELTING_RECIPES !== "undefined" && SMELTING_RECIPES[0]) ? SMELTING_RECIPES[0].name : "";
-      action.startedSmeltingArea = action.smeltingArea;
-      action.progress = 0;
-      action.lastProgressUpdate = now;
+      // 其它行动（采矿/采气…）运行中：仅兜底校验拆解目标有效性，不改动共享运行状态/进度，避免误暂停。
+      if (submode === "dismantle") {
+        const valid = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+          ? SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === action.dismantleTarget) : false;
+        if (!valid) action.dismantleTarget = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES[0]) ? SHIP_COMPONENT_DISMANTLE_RECIPES[0].id : "";
+        // 不设置 startedDismantleTarget：真正启动拆解时由 applyQueueConfigToState 写入
+      }
+      // smelting 分支：smeltingArea 默认值（凡晶石带）始终有效，无需校验
     }
     state._dirty = true;
     return { changed:true, submode };
@@ -1887,7 +1903,10 @@ const ShellStateActions = {
     if (queue.items.length >= queue.config.maxSize) return { changed:false, reason:"queue-full" };
     const count = item.count === -1 ? -1 : Math.max(1, Number(item.count) || 1);
     const last = !front ? queue.items[queue.items.length - 1] : null;
-    if (last && last.skill === item.skill && last.target === item.target && (last.equipEngInputLevel || 0) === (item.equipEngInputLevel || 0)) {
+    // 2026-09-04 修复：熔炼(refining)下存在「冶炼 / 自动拆解」两个子活动，由 item.subAction 区分；
+    // 合并判定必须同时比较 subAction，否则「冶炼」与「拆解」会因 target 不同/相同被错误合并或拆分。
+    // 用 (x || null) 归一 undefined，确保缺省（冶炼）与显式 dismantle 不会跨子活动合并。
+    if (last && last.skill === item.skill && last.target === item.target && (last.subAction || null) === (item.subAction || null) && (last.equipEngInputLevel || 0) === (item.equipEngInputLevel || 0)) {
       last.count = last.count === -1 || count === -1 ? -1 : (Number(last.count) || 1) + count;
       if (queue.status.isRunning && queue.status.activeIndex === queue.items.length - 1) state.currentAction.batchRemaining = last.count;
       state._dirty = true;
@@ -1895,6 +1914,9 @@ const ShellStateActions = {
     }
     const queueItem = { id:"q_" + now + "_" + queue.items.length, skill:item.skill, target:item.target, label:item.label || item.target, count };
     if (item.equipEngInputLevel !== undefined) queueItem.equipEngInputLevel = item.equipEngInputLevel;
+    // 2026-09-04 修复：必须透传 subAction，否则自动拆解(dismantle) 入队后 subAction 丢失，
+    // getQueueItemConfigForState 退化为默认「冶炼」，且 target=组件id 不是合法冶炼配方 → 回落到 SMELTING_RECIPES[0]（炼钛）。
+    if (item.subAction !== undefined) queueItem.subAction = item.subAction;
     if (front) queue.items.unshift(queueItem); else queue.items.push(queueItem);
     if (front && queue.status.isRunning && queue.status.activeIndex >= 0) queue.status.activeIndex++;
     state._dirty = true;

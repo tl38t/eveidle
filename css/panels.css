@@ -1361,6 +1361,8 @@
 .starmap-trial-progress-track{flex:1;height:10px}
 .starmap-trial-progress-text{margin:0;min-width:88px;text-align:right;font-size:13px;color:#9fd0e5}
 .starmap-trial-room-actions{margin-top:4px}
+.starmap-trial-replay-toggle{display:inline-flex;align-items:center;gap:5px;margin-left:8px;color:#7896aa;font-size:12px;cursor:pointer;user-select:none}
+.starmap-trial-replay-toggle input{margin:0;accent-color:#69c7a0}
 @keyframes starmap-ship-drift{0%,100%{transform:translateY(-2px)}50%{transform:translateY(3px)}}
 @keyframes starmap-beam-pulse{0%,100%{opacity:.52;filter:brightness(.9)}50%{opacity:.9;filter:brightness(1.25)}}
 @media(max-width:700px){.starmap-trial-room{padding:18px 14px 22px}.starmap-collection-stage{width:100%!important;grid-template-columns:1fr!important;min-height:0!important;gap:10px!important}.starmap-collection-ship{height:124px!important;width:min(100%,300px);margin:0 auto}.starmap-collection-beams{left:42%!important;right:18%!important;top:calc(48% - 28px)!important}.starmap-collection-counter{flex-wrap:wrap!important}.starmap-trial-efficiency{margin-left:0}.starmap-trial-progress{margin:10px 0;padding:8px 10px}}

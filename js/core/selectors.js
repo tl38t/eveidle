@@ -286,8 +286,17 @@ function getCurrentActivityDisplayState(state, now) {
   }
   if (key === "mining") detail = "采集" + getResourceDisplayName("ore:" + getAreaByName(ALL_MINING_AREAS, action.startedArea || action.area).ore);
   else if (key === "refining") {
-    const recipe = SMELTING_RECIPES.find(item => item.name === (action.startedSmeltingArea || action.smeltingArea)) || SMELTING_RECIPES[0];
-    detail = "冶炼" + getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral);
+    // 2026-09-05：熔炼行动新增自动拆解子活动，状态栏需按 refiningSubAction 显示。
+    if (action.refiningSubAction === "dismantle") {
+      const componentId = action.startedDismantleTarget || action.dismantleTarget;
+      const recipe = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+        ? SHIP_COMPONENT_DISMANTLE_RECIPES.find(item => item.id === componentId) || SHIP_COMPONENT_DISMANTLE_RECIPES[0]
+        : null;
+      detail = "拆解" + (recipe ? recipe.name : "");
+    } else {
+      const recipe = SMELTING_RECIPES.find(item => item.name === (action.startedSmeltingArea || action.smeltingArea)) || SMELTING_RECIPES[0];
+      detail = "冶炼" + getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral);
+    }
   } else if (key === "gasHarvesting") detail = "采集" + getResourceDisplayName("gas:" + getAreaByName(GAS_AREAS, action.startedGasArea || action.gasArea).gas);
   else if (key === "shipEngineering") {
     if (action.shipSubAction === "component") {

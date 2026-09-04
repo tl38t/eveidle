@@ -28,6 +28,29 @@ let starmapTrialRoomVisible = false;
 let starmapShip3dReadyListenerBound = false;
 let starmapTrialRoomRefreshTimer = null;
 
+function syncStarmapCompletedNodes(frame) {
+  const target = frame || document.getElementById("legion-starmap-frame");
+  if (!target || !target.contentWindow) return;
+  const starmap = gameState && gameState.legion && gameState.legion.starmap;
+  const nodeIds = starmap && Array.isArray(starmap.completedNodeIds) ? starmap.completedNodeIds.map(String) : [];
+  target.contentWindow.postMessage({ type:"legion-starmap/completed-nodes", nodeIds }, "*");
+}
+
+function getLockedStarmapTrialNode() {
+  if (typeof LEGION_STARMAP_TRIAL === "undefined" || typeof LEGION_STARMAP_TRIAL.getLockedNode !== "function") return null;
+  return LEGION_STARMAP_TRIAL.getLockedNode(gameState);
+}
+
+function restoreRunningStarmapTrialRoom() {
+  if (starmapTrialRoomNode) return false;
+  const lockedNode = getLockedStarmapTrialNode();
+  if (!lockedNode) return false;
+  starmapTrialRoomNode = lockedNode;
+  starmapTrialRoomVisible = true;
+  setStarmapTrialRoomRefresh(true);
+  return true;
+}
+
 function setStarmapTrialRoomRefresh(active) {
   if (starmapTrialRoomRefreshTimer) {
     clearInterval(starmapTrialRoomRefreshTimer);
@@ -50,6 +73,7 @@ if (!starmapShip3dReadyListenerBound && typeof window !== "undefined" && typeof 
 }
 
 function renderStarmapTrialRoom(now) {
+  restoreRunningStarmapTrialRoom();
   const room = document.getElementById("legion-starmap-trial-room");
   const frame = document.getElementById("legion-starmap-frame");
   if (!room || !frame) return;
@@ -61,8 +85,11 @@ function renderStarmapTrialRoom(now) {
   room.style.display = starmapTrialRoomVisible ? "block" : "none";
   frame.hidden = starmapTrialRoomVisible;
   frame.style.display = starmapTrialRoomVisible ? "none" : "block";
+  syncStarmapCompletedNodes(frame);
   if (!starmapTrialRoomVisible) return;
-  const trial = (gameState.legion && gameState.legion.starmap && gameState.legion.starmap.collectionTrial) || {};
+  const node = starmapTrialRoomNode || {};
+  const storedTrial = (gameState.legion && gameState.legion.starmap && gameState.legion.starmap.collectionTrial) || {};
+  const trial = node.id != null && storedTrial.nodeId != null && String(node.id) === String(storedTrial.nodeId) ? storedTrial : { status:"idle", gathered:0, amount:Number(node.collectionAmount) || 0 };
   const title = document.getElementById("starmap-trial-title");
   const subtitle = document.getElementById("starmap-trial-subtitle");
   const fill = document.getElementById("starmap-trial-progress-fill");
@@ -71,7 +98,7 @@ function renderStarmapTrialRoom(now) {
   const result = document.getElementById("starmap-trial-result");
   const start = document.getElementById("starmap-trial-start");
   const stop = document.getElementById("starmap-trial-stop");
-  const node = starmapTrialRoomNode || {};
+  const replayToggle = document.getElementById("starmap-trial-replay-toggle");
   const amount = Number(trial.amount || node.collectionAmount || 0);
   const gathered = Number(trial.gathered || 0);
   const pct = amount > 0 ? Math.max(0, Math.min(100, gathered / amount * 100)) : 0;
@@ -83,7 +110,10 @@ function renderStarmapTrialRoom(now) {
   if (countdown) countdown.textContent = trial.status === "running" ? "剩余时间：" + remaining + "s" : trial.status === "success" ? "剩余时间：试炼完成" : trial.status === "failed" ? "剩余时间：0s" : "剩余时间：180s";
   if (text) text.textContent = trial.status === "running" ? "进度 " + Math.floor(pct) + "%" : (trial.status === "success" ? "试炼成功" : trial.status === "failed" ? "试炼失败" : "等待开始");
   if (result) result.textContent = trial.result === "stopped" ? "试炼已停止，当前进度不返还。" : trial.status === "success" ? "已完成节点试炼。" : trial.status === "failed" ? "未在时限内完成。" : "";
-  if (start) start.hidden = trial.status === "running";
+  const replayEnabled = typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.isReplayTestingEnabled === "function" && LEGION_STARMAP_TRIAL.isReplayTestingEnabled();
+  const nodeCompleted = typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.isNodeCompleted === "function" && LEGION_STARMAP_TRIAL.isNodeCompleted(gameState, node);
+  if (replayToggle) replayToggle.checked = replayEnabled;
+  if (start) start.hidden = trial.status === "running" || (nodeCompleted && !replayEnabled);
   if (stop) stop.hidden = trial.status !== "running";
   renderStarmapCollectionRoom(node, trial, Number(now) || Date.now());
 }
@@ -180,7 +210,7 @@ function postStarmapTrialResult(event, result) {
 }
 
 function openStarmapTrialRoom(node, event) {
-  starmapTrialRoomNode = node || null;
+  starmapTrialRoomNode = getLockedStarmapTrialNode() || node || null;
   starmapTrialRoomVisible = true;
   setStarmapTrialRoomRefresh(true);
   renderStarmapTrialRoom(Date.now());
@@ -189,7 +219,7 @@ function openStarmapTrialRoom(node, event) {
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(function () { if (starmapTrialRoomVisible) renderStarmapTrialRoom(Date.now()); });
   }
-  postStarmapTrialResult(event, { changed:false, roomOpened:true, nodeId:node && node.id });
+  postStarmapTrialResult(event, { changed:false, roomOpened:true, nodeId:starmapTrialRoomNode && starmapTrialRoomNode.id });
 }
 
 window.addEventListener("message", function (event) {
@@ -4934,12 +4964,19 @@ function installTutorialWidgetListeners() {
     if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL.stopCollectionTrial) LEGION_STARMAP_TRIAL.stopCollectionTrial(gameState);
     updateUI();
   });
+  const replayToggle = document.getElementById("starmap-trial-replay-toggle");
+  if (replayToggle) replayToggle.addEventListener("change", function () {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL.setReplayTestingEnabled) LEGION_STARMAP_TRIAL.setReplayTestingEnabled(replayToggle.checked);
+    renderStarmapTrialRoom(Date.now());
+  });
   const trialBack = document.getElementById("starmap-trial-back");
   if (trialBack) trialBack.addEventListener("click", function () {
     starmapTrialRoomVisible = false;
     setStarmapTrialRoomRefresh(false);
     renderStarmapTrialRoom(Date.now());
   });
+  const starmapFrame = document.getElementById("legion-starmap-frame");
+  if (starmapFrame) starmapFrame.addEventListener("load", function () { syncStarmapCompletedNodes(starmapFrame); });
   document.addEventListener("keydown", event => { const modal = document.getElementById("equipOrbitModal"); if (event.key === "Escape" && modal && modal.classList.contains("active")) closeEquipOrbit(); });
 
   // ---- Batch P：新手引导常驻小部件 —— 事件监听器与交互委托只安装一次 ----

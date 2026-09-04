@@ -8,7 +8,7 @@
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=14">
-  <link rel="stylesheet" href="./css/panels.css?v=47">
+  <link rel="stylesheet" href="./css/panels.css?v=48">
   <link rel="stylesheet" href="./css/combat.css?v=20">
 <link rel="stylesheet" href="./css/components.css?v=33">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=23">
@@ -1132,7 +1132,7 @@
         <span class="text-muted">军团远征网络</span>
       </div>
       <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=3" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=5" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
         <section id="legion-starmap-trial-room" class="starmap-trial-room" hidden>
           <div class="starmap-trial-room-head"><div><h3 id="starmap-trial-title">星图试炼房间</h3><p id="starmap-trial-subtitle"></p></div><button type="button" class="btn secondary" id="starmap-trial-back">返回星图</button></div>
           <div class="starmap-trial-countdown" id="starmap-trial-countdown">剩余时间：180s</div>
@@ -1145,7 +1145,7 @@
             <div class="starmap-collection-counter"><strong id="starmap-trial-remaining">100 / 100</strong><span id="starmap-trial-counter-label">待采集</span><span id="starmap-trial-efficiency" class="starmap-trial-efficiency">采集效率：—</span></div>
             <div class="starmap-collection-progress"><canvas id="starmap-trial-mining-bar" class="skill-canvas-bar" width="560" height="24"></canvas><span id="starmap-trial-mining-eta" class="mp-eta"></span></div>
           </div>
-          <div class="starmap-trial-room-actions"><button type="button" class="btn primary" id="starmap-trial-start">开始试炼</button><button type="button" class="btn danger" id="starmap-trial-stop" hidden>停止试炼</button></div>
+          <div class="starmap-trial-room-actions"><button type="button" class="btn primary" id="starmap-trial-start">开始试炼</button><button type="button" class="btn danger" id="starmap-trial-stop" hidden>停止试炼</button><label class="starmap-trial-replay-toggle"><input type="checkbox" id="starmap-trial-replay-toggle"> 测试：允许重复挑战</label></div>
           <div id="starmap-trial-result" class="text-muted"></div>
         </section>
       </div>
@@ -1484,12 +1484,12 @@
   <script defer src="./js/systems/capital-combat.js?v=3"></script>
   <script defer src="./js/systems/combat.js?v=18"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=69"></script>
-  <script defer src="./js/core/actions.js?v=29"></script>
-  <script defer src="./js/systems/legion-starmap-trial.js?v=4"></script>
+  <script defer src="./js/core/selectors.js?v=70"></script>
+  <script defer src="./js/core/actions.js?v=30"></script>
+  <script defer src="./js/systems/legion-starmap-trial.js?v=9"></script>
   <script defer src="./js/systems/research-protocols.js?v=5"></script>
   <script defer src="./js/core/diagnostics.js?v=1"></script>
-  <script defer src="./js/ui/shell-render.js?v=78"></script>
+  <script defer src="./js/ui/shell-render.js?v=82"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
   <script defer src="./js/ui/combat-render.js?v=49"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>

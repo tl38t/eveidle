@@ -3,6 +3,7 @@
   const title = document.getElementById('title');
   const detail = document.getElementById('detail');
   let down = null;
+  const initialConquered = new Map();
 
   const getModel = () => window.LEGION_STARMAP_CONTENT || window.LEGION_STARMAP_RENDER_MODEL;
   const nodePayload = (n) => ({
@@ -60,6 +61,21 @@
     }
   });
   window.addEventListener('message', (e) => {
+    if (e && e.data && e.data.type === 'legion-starmap/completed-nodes') {
+      const api = getModel();
+      if (!api || !Array.isArray(api.nodes)) return;
+      const completed = new Set(Array.isArray(e.data.nodeIds) ? e.data.nodeIds.map(String) : []);
+      let changed = false;
+      api.nodes.forEach((node) => {
+        const id = String(node.id);
+        if (!initialConquered.has(id)) initialConquered.set(id, !!node.conquered);
+        const conquered = initialConquered.get(id) || completed.has(id);
+        if (!!node.conquered !== conquered) { node.conquered = conquered; changed = true; }
+        node.completedByPlayer = completed.has(id);
+      });
+      if (changed && typeof window.buildLayers === 'function') window.buildLayers();
+      return;
+    }
     const result = e && e.data && e.data.type === 'legion-starmap/trial-result' ? e.data.result : null;
     if (!result) return;
     const button = document.getElementById('starmap-start-trial');
