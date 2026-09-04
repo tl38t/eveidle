@@ -85,7 +85,12 @@ function addSkillXpToState(state, skillKey, amount, eventMeta) {
     }
   }
   // 神经训练催化器（全局增强剂）：所有技能经验共用同一乘区（与 rig 独立相乘）。
-  if (typeof getBoosterEffectState === "function") {
+  // 2026-09-04：meta.skipBooster === true 时跳过本乘区（仅自动拆解使用）。
+  //   背景：增强剂消耗是按【当前活动】分槽计时的（见 boosters.js tickBoosterTimers），
+  //   而加成是按【技能桶】发放的（skillXpMultBySkill[skillKey]）。自动拆解归在熔炼下，
+  //   只消耗熔炼槽，却同时发放舰船工程经验——若舰船那份也吃加成，就成了
+  //   「享受加成却不消耗」的白嫖。故舰船工程那份传 skipBooster，保持「谁消耗谁加成」。
+  if (!meta.skipBooster && typeof getBoosterEffectState === "function") {
     const eff = getBoosterEffectState(state);
     const booster = (eff && eff.skillXpMultBySkill) ? (Number(eff.skillXpMultBySkill[skillKey]) || 1) : 1;
     if (booster && booster !== 1) gained = gained * booster;

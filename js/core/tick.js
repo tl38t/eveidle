@@ -139,6 +139,55 @@ function gameTick() {
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
       if (s.xp > 0) checkLevelUp("mining");
     } else if (key === "refining") {
+      // ===== 2026-09-04：refining 下的子活动分流 —— 自动拆解 =====
+      // 独立处理并提前 return，熔炼逻辑（下方）保持原样、零改动。
+      if (gameState.currentAction.refiningSubAction === "dismantle") {
+        const compId = gameState.currentAction.startedDismantleTarget || gameState.currentAction.dismantleTarget;
+        const dRecipe = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+          ? SHIP_COMPONENT_DISMANTLE_RECIPES.find(r => r.id === compId) : null;
+        if (!dRecipe) { stopOrSkip(); updateUI(); return; }
+        // 运行时重校验技能门槛（与熔炼同款：增强剂可能中途失效，等级不足零副作用停止）
+        if (getEffectiveSkillLevel(gameState, "refining") < dRecipe.level) { stopOrSkip(); updateUI(); return; }
+        // 库存耗尽：零副作用停止，不空转烧时间
+        if (ResourceRegistry.get(gameState, "component:" + dRecipe.id) < 1) { stopOrSkip(); updateUI(); return; }
+        const dState = getDismantleDisplayState(gameState, Date.now());
+        if (!dState) { stopOrSkip(); updateUI(); return; }
+        const dActualTime = dRecipe.baseTime / dState.efficiency;
+        gameState.currentAction.refDuration = dActualTime;
+        const dNow = Date.now();
+        const dDelta = gameDeltaSec(Math.min(5, (dNow - gameState.currentAction.lastProgressUpdate) / 1000));
+        gameState.currentAction.progress += dDelta; gameState.currentAction.lastProgressUpdate = dNow;
+        while (gameState.currentAction.progress >= dActualTime) {
+          if (ResourceRegistry.get(gameState, "component:" + dRecipe.id) < 1) { stopOrSkip(); updateUI(); return; }
+          gameState.currentAction.progress -= dActualTime;
+          ResourceRegistry.spend(gameState, "component:" + dRecipe.id, 1);
+          // 退料：复用组件拆解报价（按冶炼回收率，与手动拆解完全同口径）
+          const quote = getComponentDismantleQuote(dRecipe.id, getReclaimRate(gameState));
+          const refunded = {};
+          for (const entry of quote) {
+            if (entry.refId) {
+              ResourceRegistry.add(gameState, entry.refId, entry.returned);
+              refunded[entry.refId] = (refunded[entry.refId] || 0) + entry.returned;
+            }
+          }
+          // 双份经验：
+          //   舰船工程 —— skipBooster，不吃增强剂。因为本活动只消耗【熔炼槽】的增强剂计时，
+          //                若舰船那份也吃加成就变成白嫖（享受加成却不消耗）。
+          //   熔炼     —— 正常走 addSkillXpToState，吃熔炼增强剂（该槽正在计时，对应一致）。
+          addSkillXpToState(gameState, "shipEngineering", dRecipe.shipXp, { job:"refining", skipBooster:true });
+          addSkillXpToState(gameState, "refining", dRecipe.smeltXp, { job:"refining" });
+          actionCompleted = true;
+          GameEvents.emit("component:autoDismantled", {
+            componentId:dRecipe.id, refundedResources:refunded,
+            xp:{ shipEngineering:dRecipe.shipXp, refining:dRecipe.smeltXp }
+          }, { offline:false, source:"auto-dismantle" });
+          if (completeQueuedActionCycle()) { updateUI(); break; }
+        }
+        if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
+        if (gameState.skills.shipEngineering && gameState.skills.shipEngineering.xp > 0) checkLevelUpFromState(gameState, "shipEngineering");
+        if (gameState.skills.refining && gameState.skills.refining.xp > 0) checkLevelUpFromState(gameState, "refining");
+        return;
+      }
       const recipeName = gameState.currentAction.startedSmeltingArea || gameState.currentAction.smeltingArea;
       const recipe = SMELTING_RECIPES.find(r => r.name === recipeName) || SMELTING_RECIPES[0]; if (!recipe) return;
       // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效，等级不足零副作用停止。

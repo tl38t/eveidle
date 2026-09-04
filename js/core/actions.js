@@ -67,6 +67,52 @@ const ProductionStateActions = {
     return { changed:true, recipe };
   },
 
+  // 自动拆解（2026-09-04 新增）：归在【熔炼】行动下的挂机子活动，选择要拆解的组件。
+  // 与 selectSmeltingRecipe 同构，但**只改选中、不切换运行模式**——
+  // 模式（refiningSubAction）在启动时由 applyQueueConfigToState 设置，
+  // 避免玩家浏览拆解页时打断正在跑的熔炼。
+  selectDismantleComponent(state, componentId, now) {
+    const recipe = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+      ? SHIP_COMPONENT_DISMANTLE_RECIPES.find(item => item.id === componentId) : null;
+    if (!recipe) return { changed:false, reason:"unknown-component" };
+    if (getEffectiveSkillLevel(state, "refining") < recipe.level) return { changed:false, reason:"level-locked" };
+    const action = state.currentAction;
+    action.dismantleTarget = recipe.id;
+    if (!action.active) {
+      action.progress = 0;
+      action.lastProgressUpdate = now;
+    }
+    state._dirty = true;
+    return { changed:true, recipe };
+  },
+
+  // 熔炼行动下的子模式切换（2026-09-04 新增自动拆解子活动）：smelting | dismantle。
+  // 两种子活动共用单一进度累加器，切换时若正在运行必须先停（reset 进度），否则进度会串台。
+  selectRefiningSubmode(state, submode, now) {
+    if (submode !== "smelting" && submode !== "dismantle") return { changed:false, reason:"bad-submode" };
+    const action = state.currentAction;
+    if (action.refiningSubAction === submode) return { changed:false, reason:"same-mode" };
+    if (action.active) ShellStateActions.stopCurrentAction(state, now);
+    action.refiningSubAction = submode;
+    if (submode === "dismantle") {
+      const valid = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+        ? SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === action.dismantleTarget) : false;
+      if (!valid) action.dismantleTarget = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES[0]) ? SHIP_COMPONENT_DISMANTLE_RECIPES[0].id : "";
+      action.startedDismantleTarget = action.dismantleTarget;
+      action.progress = 0;
+      action.lastProgressUpdate = now;
+    } else {
+      const valid = (typeof SMELTING_RECIPES !== "undefined")
+        ? SMELTING_RECIPES.some(r => r.name === action.smeltingArea) : false;
+      if (!valid) action.smeltingArea = (typeof SMELTING_RECIPES !== "undefined" && SMELTING_RECIPES[0]) ? SMELTING_RECIPES[0].name : "";
+      action.startedSmeltingArea = action.smeltingArea;
+      action.progress = 0;
+      action.lastProgressUpdate = now;
+    }
+    state._dirty = true;
+    return { changed:true, submode };
+  },
+
   selectGasArea(state, areaName, now) {
     const area = GAS_AREAS.find(item => item.name === areaName);
     if (!area) return { changed:false, reason:"unknown-area" };
@@ -1033,7 +1079,17 @@ function getQueueItemConfigForState(item) {
   const skill = item.skill === "ammunitionEngineering" ? "equipmentEngineering" : item.skill;
   const config = { skill, progress:0, active:true, batchRemaining:item.count || 1 };
   if (skill === "mining") config.area = item.target;
-  else if (skill === "refining") config.smeltingArea = item.target;
+  else if (skill === "refining") {
+    // 2026-09-04：refining 下有两个子活动（熔炼 / 自动拆解），由 item.subAction 区分。
+    // 缺省为熔炼，保证老存档与既有队列条目行为不变。
+    if (item.subAction === "dismantle") {
+      config.refiningSubAction = "dismantle";
+      config.dismantleTarget = item.target;
+    } else {
+      config.refiningSubAction = "smelting";
+      config.smeltingArea = item.target;
+    }
+  }
   else if (skill === "gasHarvesting") config.gasArea = item.target;
   else if (skill === "shipEngineering") {
     const component = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target);
@@ -1061,6 +1117,10 @@ function applyQueueConfigToState(state, config, now) {
     if (area) { action.miningMode = area.mode; if (area.mode === "moon") action.moonMiningArea = area.name; else action.normalMiningArea = area.name; }
   }
   if (config.smeltingArea) { action.smeltingArea = config.smeltingArea; action.startedSmeltingArea = config.smeltingArea; }
+  // 2026-09-04：熔炼/拆解子模式。切到任一模式都要显式写 refiningSubAction，
+  // 否则从拆解切回熔炼时仍停留在 dismantle，进度与结算会串台。
+  if (config.refiningSubAction) action.refiningSubAction = config.refiningSubAction;
+  if (config.dismantleTarget) { action.dismantleTarget = config.dismantleTarget; action.startedDismantleTarget = config.dismantleTarget; }
   if (config.gasArea) { action.gasArea = config.gasArea; action.startedGasArea = config.gasArea; }
   if (config.shipSubAction) action.shipSubAction = config.shipSubAction;
   if (config.shipCompTarget) { action.shipCompTarget = config.shipCompTarget; action.startedShipCompTarget = config.shipCompTarget; }
@@ -1361,6 +1421,15 @@ const ShellStateActions = {
     const removing = state.shipAssignments[actionKey] === instance.instanceId;
     const activeSkill = state.currentAction && state.currentAction.active ? state.currentAction.skill : null;
     if (activeSkill && state.shipAssignments[activeSkill] === instance.instanceId) return { changed:false, reason:"ship-active" };
+    // 交战中禁止更换战斗舰（方案 A）：撤下「正在打的那艘」已被上面 ship-active 挡住，
+    // 但把「别的船」指派为战斗舰会热切换出战舰而战斗继续（波次/敌人残血/清剿进度全保留），
+    // 与 equipCombatShip（换舰即 endCombatSession + HP 重置为新船满血）语义冲突。
+    // 危害：①中途换强船且保留全部战斗进度；②可绕过「弹药耗尽撤退」；
+    //      ③老船被解除指派后机库显示为空闲，战斗继续时仍可改装/强化/拆解它。
+    // 故战斗中一律拒绝，提示玩家先停止战斗（走 equipCombatShip 会正常打断战斗）。
+    if (actionKey === "combat" && state.combat && state.combat.active && !removing) {
+      return { changed:false, reason:"combat-active" };
+    }
     if (!removing) {
       for (const [assignedAction, assignedId] of Object.entries(state.shipAssignments)) {
         if (assignedId !== instance.instanceId || assignedAction === actionKey) continue;
@@ -2387,6 +2456,8 @@ const StationStateActions = {
   if (action.type === "production/selectMiningArea") return ProductionStateActions.selectMiningArea(state, action.areaName, actionTime);
   if (action.type === "production/selectMiningMode") return ProductionStateActions.selectMiningMode(state, action.mode);
   if (action.type === "production/selectSmeltingRecipe") return ProductionStateActions.selectSmeltingRecipe(state, action.areaName, actionTime);
+  if (action.type === "production/selectDismantleComponent") return ProductionStateActions.selectDismantleComponent(state, action.componentId, actionTime);
+  if (action.type === "production/selectRefiningSubmode") return ProductionStateActions.selectRefiningSubmode(state, action.submode, actionTime);
   if (action.type === "production/selectGasArea") return ProductionStateActions.selectGasArea(state, action.areaName, actionTime);
   if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId, actionTime, action.quantity);
   if (action.type === "manufacturing/selectShipComponent") return ManufacturingStateActions.selectShipComponent(state, action.componentId);

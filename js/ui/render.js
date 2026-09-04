@@ -188,9 +188,64 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   const cycleTimes = document.getElementById("smelting-cycle-times");
   if (cycleTimes) cycleTimes.textContent = display.current.baseTime.toFixed(1) + "s → " + display.actualTime.toFixed(1) + "s";
   const outputNote = document.getElementById("smelting-output-note"); if (outputNote) outputNote.textContent = "支援舰只缩短冶炼周期，单次仍产出 " + display.output;
-  setProductionControls(display, document.getElementById("btn-start-smelt"));
+  const smeltBtn = document.getElementById("btn-start-smelt");
+  if (smeltBtn) smeltBtn.textContent = "▶ 开始冶炼";
+  setProductionControls(display, smeltBtn);
   drawSkillBar(document.getElementById("bar-smelting"), display.progress.percent, "gold");
   const eta = document.getElementById("smelting-eta"); if (eta) eta.textContent = display.progress.etaText;
+}
+
+// 熔炼行动下的子视图分发（2026-09-04 新增自动拆解子活动）：
+// 根据 currentAction.refiningSubAction 在「冶炼」与「自动拆解」间切换，
+// 并管理两者 DOM（子模式 tab、冶炼选区/状态、自动拆解区）的显隐，避免进度串台。
+function renderRefiningDisplay(renderTime, areaEl, outEl) {
+  const submode = (gameState.currentAction && gameState.currentAction.refiningSubAction) || "smelting";
+  const tabs = document.getElementById("refining-submode-tabs");
+  if (tabs) {
+    tabs.style.display = "";
+    tabs.querySelectorAll(".refining-submode-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.submode === submode));
+  }
+  const smeltSelect = document.getElementById("smelting-area-select");
+  const smeltStats = document.getElementById("smelting-stats");
+  const dStats = document.getElementById("auto-dismantle-stats");
+  if (submode === "dismantle") {
+    if (smeltSelect) smeltSelect.style.display = "none";
+    if (smeltStats) smeltStats.style.display = "none";
+    if (dStats) dStats.style.display = "block";
+    renderDismantleDisplay(getDismantleDisplayState(gameState, renderTime), areaEl, outEl);
+  } else {
+    if (dStats) dStats.style.display = "none";
+    renderSmeltingDisplay(getSmeltingDisplayState(gameState, renderTime), areaEl, outEl);
+  }
+}
+
+// 自动拆解显示渲染（归在熔炼行动下的挂机子活动）：组件选择卡片 + 退料预览 + 回收率/经验/周期 + 进度。
+function renderDismantleDisplay(display, areaEl, outEl) {
+  if (!display) return;
+  if (areaEl) areaEl.textContent = "自动拆解：" + display.current.name;
+  if (outEl) outEl.textContent = "回收材料 + 经验";
+  const strip = document.getElementById("auto-dismantle-strip");
+  if (strip) {
+    strip.innerHTML = display.options.map(r => `<button class="mining-target-card${r.selected ? " selected" : ""}${r.locked ? " locked" : ""}" data-dismantle="${r.id}" style="--ore-color:#8fd6a0" ${r.locked ? "disabled" : ""}>
+      <span class="mining-target-name">${r.name}</span><span class="mining-target-visual"><i class="fa-solid fa-recycle"></i></span>
+      <span class="mining-target-meta">Lv.${r.level} · ${r.baseTime}s · 舰船+${r.shipXp}/冶炼+${r.smeltXp}</span>
+      <span class="mining-target-state">${r.locked ? `需要 Lv.${r.level}` : (r.stock > 0 ? "库存 ×" + r.stock : "无库存")}</span></button>`).join("");
+    strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchDismantleComponent(card.dataset.dismantle)));
+  }
+  const quote = document.getElementById("auto-dismantle-quote");
+  if (quote) quote.innerHTML = display.quote.length
+    ? "回收：" + display.quote.map(q => q.name + "×" + q.returned).join(" · ")
+    : "无回收材料";
+  const reclaim = document.getElementById("ad-reclaim"); if (reclaim) reclaim.textContent = display.reclaimPercent + "%";
+  const efficiency = document.getElementById("ad-efficiency"); if (efficiency) { efficiency.textContent = display.efficiency.toFixed(2); if (display.efficiencyTooltip) efficiency.title = display.efficiencyTooltip; }
+  const xpShip = document.getElementById("ad-xp-ship"); if (xpShip) xpShip.textContent = "+" + display.xp.shipEngineering;
+  const xpRef = document.getElementById("ad-xp-refining"); if (xpRef) xpRef.textContent = "+" + display.xp.refining;
+  const cycle = document.getElementById("ad-cycle"); if (cycle) cycle.textContent = display.actualTime.toFixed(1) + "s";
+  const btn = document.getElementById("btn-start-smelt");
+  if (btn) btn.textContent = "▶ 开始自动拆解";
+  setProductionControls(display, btn);
+  drawSkillBar(document.getElementById("bar-auto-dismantle"), display.progress.percent, "gold");
+  const eta = document.getElementById("auto-dismantle-eta"); if (eta) eta.textContent = display.progress.etaText;
 }
 
 function renderGasDisplay(display, areaEl, outEl) {
@@ -246,7 +301,7 @@ function initHoverInfo() {
   });
   // 2) 效率数值：采矿/采气/冶炼/装备制造/增强剂/舰船工程 六处
   //    —— 数字本体即为点击目标（全平台），点击弹出因子明细弹窗（不再用独立 ⓘ）
-  ['me-value', 'gas-eff-value', 'smelting-eff-value', 'equipeng-eff-display', 'booster-eff-display', 'shipeng-eff-display'].forEach(function (id) {
+  ['me-value', 'gas-eff-value', 'smelting-eff-value', 'equipeng-eff-display', 'booster-eff-display', 'shipeng-eff-display', 'ad-efficiency'].forEach(function (id) {
     const el = document.getElementById(id);
     if (!el || el._effClickBound) return;
     el._effClickBound = true;
@@ -341,6 +396,18 @@ function switchSmeltingRecipe(areaName) {
   return result;
 }
 
+function switchDismantleComponent(componentId) {
+  const result = dispatchGameAction(gameState, { type:"production/selectDismantleComponent", componentId }, Date.now());
+  if (result.changed) updateUI();
+  return result;
+}
+
+function switchRefiningSubmode(submode) {
+  const result = dispatchGameAction(gameState, { type:"production/selectRefiningSubmode", submode }, Date.now());
+  if (result.changed) updateUI();
+  return result;
+}
+
 function switchMiningArea(areaName) {
   const result = dispatchGameAction(gameState, { type:"production/selectMiningArea", areaName }, Date.now());
   if (result.changed) updateUI();
@@ -363,6 +430,7 @@ function renderGlobalDisplay(display) {
 
 function updateUI(now) {
   const renderTime = Number(now) || Date.now();
+  if (typeof renderStarmapTrialRoom === "function") renderStarmapTrialRoom(renderTime);
   const viewKey = currentView;
   const shell = getSkillShellDisplayState(gameState, viewKey);
   const panelTitle = document.getElementById("skill-panel-title"); if (panelTitle) panelTitle.textContent = shell.icon + " " + shell.name;
@@ -380,12 +448,12 @@ function updateUI(now) {
   const levelEl = document.querySelector('.skill-current .lv-num'); if (levelEl) levelEl.textContent = shell.level + (shell.boosted ? " (+" + shell.bonusLevels + ")" : "");
   const areaEl = document.querySelector('.skill-current .skill-area');
   const outEl = document.querySelector('.skill-current .skill-output');
-  ["mining-area-select", "mining-stats", "smelting-area-select", "smelting-stats", "gas-area-select", "gas-stats"].forEach(id => { const element = document.getElementById(id); if (element) element.style.display = "none"; });
+  ["mining-area-select", "mining-stats", "smelting-area-select", "smelting-stats", "auto-dismantle-stats", "refining-submode-tabs", "gas-area-select", "gas-stats"].forEach(id => { const element = document.getElementById(id); if (element) element.style.display = "none"; });
   setProductionControls({ showStart:false, showStop:false, canStart:false }, null);
 
   if (currentPage === "skill") {
     if (viewKey === "mining") renderMiningDisplay(getMiningDisplayState(gameState, renderTime), areaEl, outEl);
-    else if (viewKey === "refining") renderSmeltingDisplay(getSmeltingDisplayState(gameState, renderTime), areaEl, outEl);
+    else if (viewKey === "refining") renderRefiningDisplay(renderTime, areaEl, outEl);
     else if (viewKey === "gasHarvesting") renderGasDisplay(getGasDisplayState(gameState, renderTime), areaEl, outEl);
     else if (viewKey === "shipEngineering") {
       const sep = document.getElementById("shipeng-panel"); if (sep) sep.style.display = "";
@@ -444,6 +512,7 @@ function setLiveHTML(element, value) {
 // 统一接收显式 now：整条刷新链路只取一次时间，避免显示态时间不一致。
 function updateLiveUI(nowArg) {
   const now = Number(nowArg) || Date.now();
+  if (typeof renderStarmapTrialRoom === "function") renderStarmapTrialRoom(now);
   const globalDisplay = getGlobalDisplayState(gameState);
   const iskEl = document.querySelector('.res-value.isk');
   const lpEl = document.querySelector('.res-value.lp');
@@ -502,6 +571,7 @@ function refreshVisiblePanelAfterAction() {
 (function bindButtons() {
   const stopBtn = document.getElementById("btn-stop"); const switchBtn = document.getElementById("btn-switch-skill");
   const startSmeltBtn = document.getElementById("btn-start-smelt"); const startMineBtn = document.getElementById("btn-start-mine"); const startGasBtn = document.getElementById("btn-start-gas");
+  document.querySelectorAll(".refining-submode-tab").forEach(tab => tab.addEventListener("click", () => switchRefiningSubmode(tab.dataset.submode)));
   if (stopBtn) stopBtn.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"action/stop" }, Date.now());
     if (result.changed) GameEvents.emit("action:progressReset", { skill:result.skill, shipSubAction:result.shipSubAction });
@@ -547,7 +617,15 @@ let _lastBoosterFrame = 0;
     const pct = progressDisplay.percent;
     const eta = progressDisplay.etaText;
     if (currentPage === "skill" && currentView === key && key === "mining") { drawSkillBar(document.getElementById("bar-mining"), pct, "green"); const e = document.getElementById("mp-eta"); if (e) e.textContent = eta; }
-    else if (currentPage === "skill" && currentView === key && key === "refining") { drawSkillBar(document.getElementById("bar-smelting"), pct, "gold"); const e = document.getElementById("smelting-eta"); if (e) e.textContent = eta; }
+    else if (currentPage === "skill" && currentView === key && key === "refining") {
+      if ((gameState.currentAction.refiningSubAction || "smelting") === "dismantle") {
+        drawSkillBar(document.getElementById("bar-auto-dismantle"), pct, "gold");
+        const e = document.getElementById("auto-dismantle-eta"); if (e) e.textContent = eta;
+      } else {
+        drawSkillBar(document.getElementById("bar-smelting"), pct, "gold");
+        const e = document.getElementById("smelting-eta"); if (e) e.textContent = eta;
+      }
+    }
     else if (currentPage === "skill" && currentView === key && key === "gasHarvesting") { drawSkillBar(document.getElementById("bar-gas"), pct, "green"); const e = document.getElementById("gas-eta"); if (e) e.textContent = eta; }
     else if (currentPage === "skill" && currentView === key && key === "shipEngineering") {
       const sub = gameState.currentAction.shipSubAction || "";

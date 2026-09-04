@@ -96,7 +96,7 @@ function makeState(opts = {}) {
     inventory: { ships: [] },
     shipAssignments: {},
     skills: {},
-    research: { completedLevels: {} },
+    research: { completedLevels: { legion_dual_squad: 1 } },
     settings: {},
     currentAction: { skill: "combat", active: false, batchRemaining: 1, startedAt: 0 }
   };

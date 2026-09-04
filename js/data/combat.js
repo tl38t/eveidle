@@ -119,12 +119,12 @@ const COMBAT_FORMATION_POOLS = {
 };
 
 const COMBAT_ZONES = [
-  { id:"angel_outpost",  name:"苍穹劫团前哨站",  faction:"angel",  secLevel:"1.0-0.8", level:1, icon:"👹", enemyPool:{normal:["scout"],elite:["raider"],boss:["commander"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, fuelMult:0.8, encryptedDataMaterial:"天使初级加密数据", gearDrops:[{resourceId:"special:苍穹劫团装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
-  { id:"blood_hideout",  name:"赤誓教团隐蔽所", faction:"blood",  secLevel:"1.0-0.8", level:1, icon:"🧛", enemyPool:{normal:["acolyte"],elite:["priest"],boss:["cardinal"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, fuelMult:0.8, encryptedDataMaterial:"血袭者初级加密数据", gearDrops:[{resourceId:"special:赤誓教团装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
-  { id:"sansha_outpost", name:"静默集群哨站",     faction:"sansha", secLevel:"1.0-0.8", level:1, icon:"🤖", enemyPool:{normal:["drone"],elite:["sentinel"],boss:["overlord"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, fuelMult:0.8, encryptedDataMaterial:"萨沙初级加密数据", gearDrops:[{resourceId:"special:静默集群装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
-  { id:"angel_corridor", name:"苍穹劫团劫掠走廊", faction:"angel", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"👹", enemyPool:{normal:["patrol_destroyer"],elite:["raider_destroyer"],boss:["hunter_commander"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.0, encryptedDataMaterial:"天使低级加密数据", gearDrops:[{resourceId:"special:苍穹劫团装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
-  { id:"blood_sacrifice", name:"赤誓教团献祭场", faction:"blood", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"🧛", enemyPool:{normal:["ritual_destroyer"],elite:["blood_destroyer"],boss:["high_priest"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.0, encryptedDataMaterial:"血袭者低级加密数据", gearDrops:[{resourceId:"special:赤誓教团装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
-  { id:"sansha_node", name:"静默集群控制节点", faction:"sansha", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"🤖", enemyPool:{normal:["control_destroyer"],elite:["sentinel_destroyer"],boss:["control_overlord"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.0, encryptedDataMaterial:"萨沙低级加密数据", gearDrops:[{resourceId:"special:静默集群装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
+  { id:"angel_outpost",  name:"苍穹劫团前哨站",  faction:"angel",  secLevel:"1.0-0.8", level:1, icon:"👹", enemyPool:{normal:["scout"],elite:["raider"],boss:["commander"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, fuelMult:1, encryptedDataMaterial:"天使初级加密数据", gearDrops:[{resourceId:"special:苍穹劫团装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
+  { id:"blood_hideout",  name:"赤誓教团隐蔽所", faction:"blood",  secLevel:"1.0-0.8", level:1, icon:"🧛", enemyPool:{normal:["acolyte"],elite:["priest"],boss:["cardinal"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, fuelMult:1, encryptedDataMaterial:"血袭者初级加密数据", gearDrops:[{resourceId:"special:赤誓教团装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
+  { id:"sansha_outpost", name:"静默集群哨站",     faction:"sansha", secLevel:"1.0-0.8", level:1, icon:"🤖", enemyPool:{normal:["drone"],elite:["sentinel"],boss:["overlord"]}, formationPool:"highsec", bossEscortCount:1, maxWave:20, clearLp:3, iskMulti:1.0, fuelMult:1, encryptedDataMaterial:"萨沙初级加密数据", gearDrops:[{resourceId:"special:静默集群装备生产许可D", qty:1, chances:{elite:0.01,boss:0.07}}], encryptedDataDisabled:true },
+  { id:"angel_corridor", name:"苍穹劫团劫掠走廊", faction:"angel", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"👹", enemyPool:{normal:["patrol_destroyer"],elite:["raider_destroyer"],boss:["hunter_commander"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.1, encryptedDataMaterial:"天使低级加密数据", gearDrops:[{resourceId:"special:苍穹劫团装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
+  { id:"blood_sacrifice", name:"赤誓教团献祭场", faction:"blood", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"🧛", enemyPool:{normal:["ritual_destroyer"],elite:["blood_destroyer"],boss:["high_priest"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.1, encryptedDataMaterial:"血袭者低级加密数据", gearDrops:[{resourceId:"special:赤誓教团装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
+  { id:"sansha_node", name:"静默集群控制节点", faction:"sansha", secLevel:"0.7-0.5", level:20, requiredCL:15, icon:"🤖", enemyPool:{normal:["control_destroyer"],elite:["sentinel_destroyer"],boss:["control_overlord"]}, formationPool:"bordersec", bossEscortCount:1, maxWave:20, clearLp:6, iskMulti:1.5, fuelMult:1.1, encryptedDataMaterial:"萨沙低级加密数据", gearDrops:[{resourceId:"special:静默集群装备生产许可C", qty:1, chances:{elite:0.01,boss:0.07}}] },
   { id:"angel_hunting_ground", name:"苍穹劫团猎杀空域", faction:"angel", secLevel:"0.4-0.3", level:40, requiredCL:35, icon:"👹", enemyPool:{normal:["strike_cruiser"],elite:["war_cruiser"],boss:["fleet_commander"]}, formationPool:"lowsec", bossEscortCount:1, maxWave:20, clearLp:10, iskMulti:2.0, fuelMult:1.2, encryptedDataMaterial:"天使中级加密数据", stationCoreDrops:[{coreId:"smelt", resourceId:"special:空间站冶炼核心", qty:1, chances:{elite:0.000794,boss:0.00397}}] },
   { id:"blood_cathedral", name:"赤誓教团深红圣堂", faction:"blood", secLevel:"0.4-0.3", level:40, requiredCL:35, icon:"🧛", enemyPool:{normal:["sermon_cruiser"],elite:["sacrament_cruiser"],boss:["blood_archon"]}, formationPool:"lowsec", bossEscortCount:1, maxWave:20, clearLp:10, iskMulti:2.0, fuelMult:1.2, encryptedDataMaterial:"血袭者中级加密数据", gearDrops:[{resourceId:"special:赤誓教团装备生产许可B", qty:1, chances:{elite:0.01,boss:0.04}}] },
   { id:"sansha_nexus", name:"静默集群同化枢纽", faction:"sansha", secLevel:"0.4-0.3", level:40, requiredCL:35, icon:"🤖", enemyPool:{normal:["assimilation_cruiser"],elite:["dominion_cruiser"],boss:["nexus_overlord"]}, formationPool:"lowsec", bossEscortCount:1, maxWave:20, clearLp:10, iskMulti:2.0, fuelMult:1.2, encryptedDataMaterial:"萨沙中级加密数据", gearDrops:[{resourceId:"special:静默集群装备生产许可B", qty:1, chances:{elite:0.01,boss:0.04}}] },
@@ -351,3 +351,33 @@ const FACTION_ENCRYPTED_DATA_DROPS = {
   blood:  { material:"血袭者初级加密数据", chances:{elite:0.005,boss:0.035}, qty:1 },
   sansha: { material:"萨沙初级加密数据", chances:{elite:0.005,boss:0.035}, qty:1 }
 };
+
+/* ===== 战区烈度 → 战斗经验倍率（2026-09-04） =====
+ * 烈度唯一口径 = zone.fuelMult，六档：无1 / 极低1.1 / 低1.2 / 中1.35 / 高1.6 / 极高1.8。
+ * 战斗经验倍率直接等于该烈度系数，与 UI「战区烈度」标签同源
+ * （分档见 combat-render.js zoneIntensityLabel），保证玩家看到的标签与实得加成一致。
+ * 「无」档为 1.0 基准：油耗与经验共用基线，低阶战区不奖不罚。
+ * 作用域：station.js 的 COMBAT_SKILL_WHITELIST 全部 10 个战斗技能
+ *         （含防御向 shieldOperation/armorReinforcement/hullEngineering/defense，用户拍板不排除）。
+ * 死亡空间：继承其 sourceZone 所属星带的烈度（DED 另有独立核心/协议奖励，不额外叠乘）。
+ */
+const ZONE_INTENSITY_XP_FALLBACK = 1;
+
+function getZoneIntensityXpMultiplier(zone) {
+  const m = Number(zone && zone.fuelMult);
+  return Number.isFinite(m) && m > 0 ? m : ZONE_INTENSITY_XP_FALLBACK;
+}
+
+// 当前战斗的「烈度来源战区」：星带取自身；死亡空间继承其 sourceZone。
+function getCurrentCombatIntensityZone(state) {
+  const c = state && state.combat;
+  if (!c) return null;
+  if (c.mode === "deathspace" && c.deathspaceId) {
+    const site = DEATHSPACE_DATABASE.find(item => item.id === c.deathspaceId) || null;
+    if (site && site.sourceZoneId) {
+      const src = COMBAT_ZONES.find(item => item.id === site.sourceZoneId);
+      if (src) return src;
+    }
+  }
+  return COMBAT_ZONES.find(item => item.id === c.zone) || null;
+}

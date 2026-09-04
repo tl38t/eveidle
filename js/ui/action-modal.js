@@ -58,7 +58,7 @@ function renderActionConfirmation(display, opts) {
   _actionConfirmDisplay = display;
   if (!opts.preserveCount) input.value = 1;
   const infinityBtn = document.getElementById("action-batch-infinity");
-  if (infinityBtn) infinityBtn.classList.remove("selected");
+  if (infinityBtn && !opts.preserveCount) infinityBtn.classList.remove("selected");
   input.max = noCap ? 99999999 : maxCount;
   if (noCap) {
     maxEl.textContent = "当前材料可产 " + (Number(display.materialHint) || 0) + " 批（可超量预排）";
@@ -102,19 +102,29 @@ function refreshActionConfirmation() {
   if (!modal || modal.classList.contains("hidden") || !_actionConfirmDisplay) return;
   const target = _actionConfirmDisplay.target;
   const input = document.getElementById("action-batch-count");
+  const infinityBtn = document.getElementById("action-batch-infinity");
   const oldCount = input ? input.value : "1";
+  const wasInfinity = (oldCount === "-1");
   const fresh = getActionConfirmationDisplayState(gameState, target, Date.now());
   // 资源耗尽等导致不可用时不再弹 toast（避免每次事件刷新都提示），保留弹窗原内容。
   if (!fresh.canOpen) return;
   renderActionConfirmation(fresh, { preserveCount:true, preserveFocus:true });
   if (input && oldCount != null) {
-    const noCap = !!fresh.noCap;
-    let v = Math.max(1, parseInt(oldCount) || 1);
-    const mc = Number(fresh.maxCount);
-    if (!noCap && mc > 0) v = Math.min(mc, v);
-    input.value = v;
-    const sumEl = document.getElementById("action-modal-summary");
-    if (sumEl) sumEl.innerHTML = `<span class="ai-label">总耗时：</span>${fresh.combat ? "视战斗情况而定" : "约 " + formatDuration(fresh.duration * v)}`;
+    if (wasInfinity && fresh.unlimited) {
+      // 保持无限状态，避免每次 updateUI 刷新都把 -1 重置回 1。
+      input.value = "-1";
+      if (infinityBtn) infinityBtn.classList.add("selected");
+      const sumEl = document.getElementById("action-modal-summary");
+      if (sumEl) sumEl.innerHTML = '<span class="ai-label">总耗时：</span>∞ 无限';
+    } else {
+      const noCap = !!fresh.noCap;
+      let v = Math.max(1, parseInt(oldCount) || 1);
+      const mc = Number(fresh.maxCount);
+      if (!noCap && mc > 0) v = Math.min(mc, v);
+      input.value = v;
+      const sumEl = document.getElementById("action-modal-summary");
+      if (sumEl) sumEl.innerHTML = `<span class="ai-label">总耗时：</span>${fresh.combat ? "视战斗情况而定" : "约 " + formatDuration(fresh.duration * v)}`;
+    }
   }
 }
 
@@ -159,6 +169,7 @@ function submitActionConfirmation(front) {
     skill:display.queue.skill,
     target:display.queue.target,
     label:display.queue.label,
+    subAction:display.queue.subAction,
     count
   };
   const action = { type:"queue/add", item:queueItem };

@@ -609,10 +609,12 @@ function getPumpModifiers(state, instance) {
   return result;
 }
 
-function getSmeltingDisplayState(state, now) {
-  const action = state.currentAction;
-  const current = SMELTING_RECIPES.find(recipe => recipe.name === action.smeltingArea) || SMELTING_RECIPES[0];
-  const running = SMELTING_RECIPES.find(recipe => recipe.name === (action.startedSmeltingArea || action.smeltingArea)) || current;
+/* 冶炼效率乘区（2026-09-04 从 getSmeltingDisplayState 抽出）
+ * 目的：自动拆解（归在熔炼行动下的子活动）复用同一套速度乘区——
+ *       船体/改装/精炼泵/空间站后勤/科研/脑插/增强剂/军团/舰船强化/脑突触。
+ * 行为：与抽离前的内联实现逐值一致，仅改为函数返回，熔炼侧无任何变化。
+ */
+function getSmeltingEfficiencyForState(state) {
   const level = getEffectiveSkillLevel(state, "refining");
   const assigned = getAssignedShipState(state, "refining");
   const shipBonus = assigned.config && assigned.config.bonuses ? (assigned.config.bonuses.smeltingSpeed || 0) : 0;
@@ -642,7 +644,39 @@ function getSmeltingDisplayState(state, now) {
   // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（冶炼速度/产出均经此 efficiency）。
   const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
   if (adbm && adbm !== 1) efficiency = efficiency * adbm;
-  const progress = getProgressDisplayState(action, "refining", running.baseTime / efficiency, now);
+  return {
+    efficiency, level, assigned, skillEfficiency, shipBonus, rigBonus, rigMods, pumpMods,
+    stationLogisticsMultiplier, researchMultiplier, implantRefineEff, boosterSmeltSpeed,
+    legionRefine, shipEnhanceSmelt, adBuffMult: adbm
+  };
+}
+
+function getSmeltingDisplayState(state, now) {
+  const action = state.currentAction;
+  const current = SMELTING_RECIPES.find(recipe => recipe.name === action.smeltingArea) || SMELTING_RECIPES[0];
+  const running = SMELTING_RECIPES.find(recipe => recipe.name === (action.startedSmeltingArea || action.smeltingArea)) || current;
+  // 2026-09-04：效率乘区改由 getSmeltingEfficiencyForState 计算（与自动拆解共用），此处仅解构。
+  const eff = getSmeltingEfficiencyForState(state);
+  const level = eff.level;
+  const assigned = eff.assigned;
+  const skillEfficiency = eff.skillEfficiency;
+  const shipBonus = eff.shipBonus;
+  const rigBonus = eff.rigBonus;
+  const pumpMods = eff.pumpMods;
+  const stationLogisticsMultiplier = eff.stationLogisticsMultiplier;
+  const researchMultiplier = eff.researchMultiplier;
+  const implantRefineEff = eff.implantRefineEff;
+  const boosterSmeltSpeed = eff.boosterSmeltSpeed;
+  const legionRefine = eff.legionRefine;
+  const shipEnhanceSmelt = eff.shipEnhanceSmelt;
+  const adbm = eff.adBuffMult;
+  const efficiency = eff.efficiency;
+  // 2026-09-04：自动拆解与熔炼共用 skill="refining"，进度是单一累加器，
+  // 必须按子模式隔离，否则从拆解切回熔炼时会显示错误的进度/ETA。缺省为熔炼（老存档兼容）。
+  const isSmeltingMode = (action.refiningSubAction || "smelting") === "smelting";
+  const progress = isSmeltingMode
+    ? getProgressDisplayState(action, "refining", running.baseTime / efficiency, now)
+    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"\u2014", duration:running.baseTime / efficiency };
   const targetChanged = progress.active && current.name !== running.name;
   const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
   const runningStock = ResourceRegistry.get(state, "ore:" + running.consumeOre);
@@ -676,6 +710,66 @@ function getSmeltingDisplayState(state, now) {
     showStop:progress.active && !targetChanged,
     canStart:level >= current.level,
     options:SMELTING_RECIPES.map(recipe => ({ ...recipe, displayName:getAreaDisplayName(recipe.name), locked:level < recipe.level, selected:recipe.name === current.name }))
+  };
+}
+
+/* ================================================================
+   自动拆解显示状态（2026-09-04 新增功能）
+   归在【熔炼 refining】行动下的挂机子活动：每周期自动拆解 1 个舰船组件，
+   按冶炼回收率归还材料，并发放两份经验（舰船工程不吃增强剂 / 熔炼吃增强剂）。
+   速度与熔炼共用同一套乘区（getSmeltingEfficiencyForState），等级门槛沿用组件 level。
+   ================================================================ */
+function getDismantleDisplayState(state, now) {
+  const action = state.currentAction;
+  const recipes = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined") ? SHIP_COMPONENT_DISMANTLE_RECIPES : [];
+  if (!recipes.length) return null;
+  const eff = getSmeltingEfficiencyForState(state);
+  const level = eff.level;
+  const efficiency = eff.efficiency;
+  // 拆解与冶炼共用同一套速度乘区，因子明细直接复用冶炼 breakdown（构造冶炼形状的显示体）。
+  let efficiencyTooltip = "";
+  try {
+    const stationLog = (typeof getStationLogisticsDisplayState === "function") ? getStationLogisticsDisplayState(state) : null;
+    const pumpDisplay = eff.pumpMods ? {
+      stock: eff.pumpMods.stock, fuelPerCycle: eff.pumpMods.fuelPerCycle, count: eff.pumpMods.count,
+      active: eff.pumpMods.active, enabled: eff.pumpMods.enabled, bonus: eff.pumpMods.bonus, resourceId: eff.pumpMods.resourceId
+    } : null;
+    const breakdownDisplay = {
+      level: eff.level, skillEfficiency: eff.skillEfficiency, shipBonus: eff.shipBonus, rigBonus: eff.rigBonus, pump: pumpDisplay,
+      stationLogisticsMultiplier: eff.stationLogisticsMultiplier, stationLogistics: stationLog,
+      researchMultiplier: eff.researchMultiplier, shipEnhanceSmelt: eff.shipEnhanceSmelt,
+      implantRefineEff: eff.implantRefineEff, boosterSmeltSpeed: eff.boosterSmeltSpeed,
+      legionRefine: eff.legionRefine, adBuffMult: eff.adBuffMult, efficiency: efficiency
+    };
+    if (typeof getSmeltingEfficiencyBreakdown === "function") efficiencyTooltip = getSmeltingEfficiencyBreakdown(breakdownDisplay);
+  } catch (_) { efficiencyTooltip = ""; }
+  const current = recipes.find(r => r.id === action.dismantleTarget) || recipes[0];
+  const running = recipes.find(r => r.id === (action.startedDismantleTarget || action.dismantleTarget)) || current;
+  const actualTime = running.baseTime / efficiency;
+  // 与熔炼共用 skill="refining"，按子模式隔离进度（见 getSmeltingDisplayState 同款注释）
+  const isDismantleMode = action.refiningSubAction === "dismantle";
+  const progress = isDismantleMode
+    ? getProgressDisplayState(action, "refining", actualTime, now)
+    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"\u2014", duration:actualTime };
+  const targetChanged = progress.active && current.id !== running.id;
+  const stock = ResourceRegistry.get(state, "component:" + current.id);
+  const runningStock = ResourceRegistry.get(state, "component:" + running.id);
+  const reclaimRate = getReclaimRate(state);
+  const quote = getComponentDismantleQuote(current.id, reclaimRate);
+  const canStart = level >= current.level && stock >= 1;
+  const requirement = canStart ? null
+    : { text: stock < 1 ? ("\u6ca1\u6709\u53ef\u62c6\u89e3\u7684" + current.name) : ("\u9700\u8981\u51b6\u70bc\u7b49\u7ea7 Lv." + current.level) };
+  return {
+    kind: "dismantle",
+    current, running, level, efficiency, efficiencyTooltip, actualTime, progress, targetChanged,
+    stock, runningStock,
+    reclaimRate, reclaimPercent: Math.round(reclaimRate * 100),
+    quote,
+    xp: { shipEngineering: current.shipXp, refining: current.smeltXp },
+    canStart, requirement,
+    showStart: !progress.active || targetChanged,
+    showStop: progress.active && !targetChanged,
+    options: recipes.map(r => ({ ...r, locked: level < r.level, stock: ResourceRegistry.get(state, "component:" + r.id), selected: r.id === current.id }))
   };
 }
 
@@ -787,21 +881,41 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.blockedText = display.requirement.text;
     result.queue = { skill:"mining", target:display.current.name, label:getResourceDisplayName(display.current.ore) };
   } else if (target === "refining") {
-    const display = getSmeltingDisplayState(state, now);
-    const recipe = display.current;
-    result.title = icons.refining + " " + (SKILL_LABEL.refining || "冶炼");
-    result.duration = display.actualTime;
-    result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
-    result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:getResourceDisplayName(recipe.consumeOre), quantity:1, stock:display.stock, enough:display.stock >= 1 }];
-    // 超量预排：放开“按当前材料算上限”的硬限制，数量可超过当前持有；
-    // 运行期由队列 skipOnFail 在材料不足时切下一项（当前项保留、剩余数量续跑）。
-    result.maxCount = 99999999;
-    result.unlimited = true;
-    result.noCap = true;
-    result.materialHint = Math.max(0, display.stock);
-    result.canOpen = display.canStart;
-    result.blockedText = display.canStart ? "" : "需要冶炼等级 Lv." + recipe.level;
-    result.queue = { skill:"refining", target:recipe.name, label:getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral) };
+    const submode = (state.currentAction && state.currentAction.refiningSubAction) || "smelting";
+    if (submode === "dismantle") {
+      // 自动拆解子模式：归在熔炼行动下，复用同一套效率乘区；退料按冶炼回收率，发双份经验。
+      const d = getDismantleDisplayState(state, now);
+      if (!d) { result.canOpen = false; result.blockedText = "暂无可拆解组件"; return result; }
+      const recipe = d.current;
+      result.title = "♻ 自动拆解 · " + recipe.name;
+      result.duration = d.actualTime;
+      result.outputText = "回收 " + recipe.name + " ×1 · 舰船工程+" + d.xp.shipEngineering + " / 冶炼+" + d.xp.refining;
+      result.requirements = [{ resourceId:"component:" + recipe.id, name:recipe.name, quantity:1, stock:d.stock, enough:d.stock >= 1 }];
+      // 超量预排：放开数量硬限制，运行期库存耗尽自动停（见 tick.js / offline.js）。
+      result.maxCount = 99999999;
+      result.unlimited = true;
+      result.noCap = true;
+      result.materialHint = Math.max(0, d.stock);
+      result.canOpen = d.canStart;
+      result.blockedText = d.canStart ? "" : (d.requirement ? d.requirement.text : ("需要冶炼等级 Lv." + recipe.level));
+      result.queue = { skill:"refining", subAction:"dismantle", target:recipe.id, label:recipe.name };
+    } else {
+      const display = getSmeltingDisplayState(state, now);
+      const recipe = display.current;
+      result.title = icons.refining + " " + (SKILL_LABEL.refining || "冶炼");
+      result.duration = display.actualTime;
+      result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
+      result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:getResourceDisplayName(recipe.consumeOre), quantity:1, stock:display.stock, enough:display.stock >= 1 }];
+      // 超量预排：放开“按当前材料算上限”的硬限制，数量可超过当前持有；
+      // 运行期由队列 skipOnFail 在材料不足时切下一项（当前项保留、剩余数量续跑）。
+      result.maxCount = 99999999;
+      result.unlimited = true;
+      result.noCap = true;
+      result.materialHint = Math.max(0, display.stock);
+      result.canOpen = display.canStart;
+      result.blockedText = display.canStart ? "" : "需要冶炼等级 Lv." + recipe.level;
+      result.queue = { skill:"refining", target:recipe.name, label:getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral) };
+    }
   } else if (target === "gasHarvesting") {
     const display = getGasDisplayState(state, now);
     result.title = icons.gasHarvesting + " " + (SKILL_LABEL.gasHarvesting || "气体采集");
@@ -1885,7 +1999,10 @@ function getDeployableDefinition(deployableId) {
 function getMtuModifiers(state) {
   const empty = { count:0, salvage:0, iskBonus:0, lpBonus:0, rareDropBonus:0, fuelPerKill:0, active:false, outOfFuel:false };
   const sq = state && state.combat && state.combat.squad;
-  if (!sq || !Array.isArray(sq.deployables) || sq.deployables.length === 0) return empty;
+  // MTU 依赖小队槽位；未解锁双人/三人协议时（capacity<=0）即使有脏数据也不生效。
+  const capacity = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && LEGION_COMBAT_SQUAD.getLegionSquadCapacity)
+    ? LEGION_COMBAT_SQUAD.getLegionSquadCapacity(state) : 0;
+  if (capacity <= 0 || !sq || !Array.isArray(sq.deployables) || sq.deployables.length === 0) return empty;
   const fuelStock = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? ResourceRegistry.get(state, "consumable:fuel") : 0;
   // 每击毁一艘扣一次燃料；燃料≤0 → 视为断料，全部增益暂停（不崩溃、不消失、不扣费）。
   const active = fuelStock >= 1;
@@ -3477,9 +3594,10 @@ function getEquipmentDismantleBlockReason(state, targetRef) {
 
 function getHangarDisplayState(state, now) {
   const assignments = state.shipAssignments || {};
-  // 船坞标签：复用舰船工程（总装）的 SHIP_ASSEMBLY_LINES 六条线划分；
-  // 库存舰船由桌面端 renderHangarPanel 经 getShipAssemblyLine(shipId) 归类，
-  // 部署物（激光定向打捞单元等）归入「特殊」线（与舰船工程一致）。移动端 mobileRenderHangarPanel 仍消费全部 ships。
+  // 船坞标签：复用舰船工程（总装）的 SHIP_ASSEMBLY_LINES 全部分线（含「特殊」）。
+  // 「特殊」线 = 部署物/激光定向打捞单元，在船坞底部模块管理（不列出舰船）。
+  // 库存舰船由桌面端 renderHangarPanel 经 getShipAssemblyLine(shipId) 归类；
+  // 移动端 mobileRenderHangarPanel 仍消费全部 ships。
   const hangarLineIds = SHIP_ASSEMBLY_LINES.map(function (l) { return l.id; });
   const _storedHangarTab = (state.currentAction && state.currentAction.hangarTab) || "";
   const hangarTab = hangarLineIds.indexOf(_storedHangarTab) >= 0 ? _storedHangarTab : "shield_laser";
@@ -3499,10 +3617,10 @@ function getHangarDisplayState(state, now) {
     return { deployableId:id, name: recipe ? recipe.name : id, preview: preview, canDismantle: Boolean(recipe) && !deployed };
   });
   const hangarDeployables = {
-    deployed: (squad.deployables || []).map(d => ({ deployableId:d.deployableId, name:d.name })),
+    deployed: capacity > 0 ? (squad.deployables || []).map(d => ({ deployableId:d.deployableId, name:d.name })) : [],
     deployableStorage: (squad.deployableStorage || []).slice(),
     capacity: capacity,
-    usedSlots: (squad.members ? squad.members.length : 0) + (squad.deployables ? squad.deployables.length : 0),
+    usedSlots: capacity > 0 ? ((squad.members ? squad.members.length : 0) + (squad.deployables ? squad.deployables.length : 0)) : 0,
     mtu: mtu ? { active: mtu.active, outOfFuel: mtu.outOfFuel, fuelPerKill: mtu.fuelPerKill } : { active:false, outOfFuel:false, fuelPerKill:0 },
     fuelStock: (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? ResourceRegistry.get(state, "consumable:fuel") : 0,
     dismantle: {

@@ -271,12 +271,13 @@ function deductMatsMultiple(cost, cycles) {
   return ResourceRegistry.spendCost(gameState, cost, cycles);
 }
 
-function addOfflineSkillXp(skillKey, amount) {
+function addOfflineSkillXp(skillKey, amount, extraMeta) {
   if (amount <= 0) return;
   // 复用在线统一钩子：job 默认取 skillKey（离线的三个生产技能 key 恰为 shipAssignments 的 job 键），
   // 从而离线同样享受「该船指派工作」的经验改装件加成 + 全局增强剂倍率。
+  // 2026-09-04：extraMeta 为可选的附加 meta（如自动拆解的 skipBooster），缺省时行为与改动前逐值一致。
   if (typeof addSkillXpToState === "function") {
-    addSkillXpToState(gameState, skillKey, amount, { job: skillKey, offline:true, source:"offline-settlement" });
+    addSkillXpToState(gameState, skillKey, amount, Object.assign({ job: skillKey, offline:true, source:"offline-settlement" }, extraMeta || null));
     return;
   }
   const skill = gameState.skills[skillKey];
@@ -352,6 +353,50 @@ function getOfflineActionDescriptor() {
   }
 
   if (key === "refining") {
+    // ===== 2026-09-04：自动拆解子活动（归在熔炼行动下），与在线 tick.js 同口径 =====
+    if (action.refiningSubAction === "dismantle") {
+      const compId = action.startedDismantleTarget || action.dismantleTarget;
+      const dRecipe = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+        ? SHIP_COMPONENT_DISMANTLE_RECIPES.find(r => r.id === compId) : null;
+      if (!dRecipe) return null;
+      const dState = getDismantleDisplayState(gameState, Date.now());
+      if (!dState) return null;
+      // 军团 NPC 冶炼速度(refiningSpeed)：与熔炼同处理，放大效率加速结算。
+      const dLegion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
+        ? LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.refining : 1;
+      const dEff = dState.efficiency * dLegion;
+      const dQuote = getComponentDismantleQuote(dRecipe.id, getReclaimRate(gameState));
+      return {
+        key, duration: dRecipe.baseTime / dEff,
+        maxCycles() {
+          // 运行时重校验技能门槛（含离线期间增强剂过期导致等级回落）
+          if (getEffectiveSkillLevel(gameState, "refining") < dRecipe.level) return 0;
+          // 组件库存耗尽即止（离线时长再长也不会空转）
+          return ResourceRegistry.get(gameState, "component:" + dRecipe.id);
+        },
+        apply(cycles, gains) {
+          if (getEffectiveSkillLevel(gameState, "refining") < dRecipe.level) return;
+          ResourceRegistry.spend(gameState, "component:" + dRecipe.id, cycles);
+          const refunded = {};
+          for (const entry of dQuote) {
+            if (!entry.refId) continue;
+            const amount = entry.returned * cycles;
+            ResourceRegistry.add(gameState, entry.refId, amount);
+            refunded[entry.refId] = (refunded[entry.refId] || 0) + amount;
+          }
+          // 双份经验（与在线完全同口径）：
+          //   舰船工程 —— skipBooster，不吃增强剂（本活动只消耗熔炼槽，避免白嫖）
+          //   熔炼     —— 正常吃熔炼增强剂
+          addOfflineSkillXp("shipEngineering", cycles * dRecipe.shipXp, { skipBooster:true });
+          addOfflineSkillXp("refining", cycles * dRecipe.smeltXp);
+          gains[key] += cycles;
+          emitOfflineGameEvent("component:autoDismantled", {
+            componentId: dRecipe.id, refundedResources: refunded,
+            xp: { shipEngineering: cycles * dRecipe.shipXp, refining: cycles * dRecipe.smeltXp }
+          });
+        }
+      };
+    }
     const recipeName = action.startedSmeltingArea || action.smeltingArea;
     const recipe = SMELTING_RECIPES.find(r => r.name === recipeName || r.outputMineral === recipeName) || SMELTING_RECIPES[0];
     if (!recipe) return null;

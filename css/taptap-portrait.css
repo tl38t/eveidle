@@ -431,6 +431,7 @@
   .tp-htag.tp-bound{ background:rgba(224,80,80,.2); color:#ff8585; }
   .tp-bound-box{ border-color:rgba(224,80,80,.45); background:rgba(224,80,80,.08); }
   .tp-bound-box .tp-box-b{ color:#ffb0b0; }
+  .tp-unbind-btn{ margin-top:8px; }
   .tp-chip-bound{ margin-left:2px; font-size:11px; }
   .tp-empty{ font-size:13px; color:#5a6a7a; padding:10px 4px; text-align:center; }
 

@@ -52,6 +52,11 @@ const gameState = {
     lastProgressUpdate: Date.now(),
     refDuration: 1,
     smeltingArea: "凡晶石带",
+    // 2026-09-04 自动拆解：归在熔炼(refining)行动下的子活动。
+    //   refiningSubAction  "smelting"(默认) | "dismantle"
+    //   dismantleTarget    选中的待拆解组件；startedDismantleTarget 为运行中锁定的组件
+    refiningSubAction: "smelting",
+    dismantleTarget: "integrated_hull",
     gasArea: "富勒烯云团",
     equipEngTarget: "t1_mining_laser",
     equipEngCategory: "mining",
@@ -72,6 +77,7 @@ const gameState = {
     batchRemaining: 0,
     startedArea: "",
     startedSmeltingArea: "",
+    startedDismantleTarget: "",
     startedGasArea: "",
     // 增强剂系统 Phase 2A：boosterRecipeTarget = 当前选中配方；startedBoosterRecipeTarget = 运行中锁定配方（切换选择不改产物）
     boosterRecipeTarget: "mining_lubricant_n",

@@ -745,6 +745,16 @@ function migrateMoonMiningState() {
     action.miningMode = action.miningMode === "moon" ? "moon" : "normal";
     action.area = action.miningMode === "moon" ? action.moonMiningArea : action.normalMiningArea;
   }
+  // 2026-09-04：自动拆解（归在熔炼行动下的子活动）字段归一。
+  // 老存档没有 refiningSubAction → 缺省 "smelting"，保证与改动前行为逐值一致。
+  if (action.refiningSubAction !== "smelting" && action.refiningSubAction !== "dismantle") {
+    action.refiningSubAction = "smelting";
+  }
+  if (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES.length) {
+    const hasDismantleRecipe = (id) => SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === id);
+    if (!hasDismantleRecipe(action.dismantleTarget)) action.dismantleTarget = SHIP_COMPONENT_DISMANTLE_RECIPES[0].id;
+    if (!hasDismantleRecipe(action.startedDismantleTarget)) action.startedDismantleTarget = action.dismantleTarget;
+  }
 }
 
 // Batch R：确定性 RNG 状态迁移辅助（与 combat.js 的 nextCombatRandom 共用同一 JSON 安全结构）。

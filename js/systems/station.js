@@ -1688,13 +1688,20 @@ function addStationModifiedCombatXp(state, skillId, baseXp, job) {
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["combatExp"]) : 1;
   const researchAdjustedBase = baseXp * researchMultiplier;
+  // 战区烈度（第三个独立乘区，2026-09-04）：与科研、空间站指挥中心彼此独立相乘。
+  // 烈度口径 = zone.fuelMult（1 / 1.1 / 1.2 / 1.35 / 1.6 / 1.8）；死亡空间继承来源星带烈度。
+  // 无战区上下文（补给预检等非战斗路径）时回退 1，行为与改动前逐值一致。
+  const zoneIntensityMultiplier = (typeof getZoneIntensityXpMultiplier === "function" && typeof getCurrentCombatIntensityZone === "function")
+    ? getZoneIntensityXpMultiplier(getCurrentCombatIntensityZone(state)) : 1;
+  const zoneAdjustedBase = researchAdjustedBase * zoneIntensityMultiplier;
   const mult = getStationCombatXpMultiplier(state);
-  const totalXp = researchAdjustedBase * mult;
+  const totalXp = zoneAdjustedBase * mult;
   const gained = addSkillXpToState(state, skillId, totalXp, { source:"station-combat-command", job: job || "combat" });
   // 只有真实空间站倍率 > 1 才算「空间站加成」；仅科研生效时不得伪报该事件。
-  // payload.baseXp 用 researchAdjustedBase，保证 baseXp × multiplier === actualXp 的数学关系成立。
-  if (mult > 1 && gained > researchAdjustedBase) {
-    emitStationEvent("station:combatXpBoosted", { skillId, baseXp:researchAdjustedBase, multiplier:mult, actualXp:gained }, { offline:false });
+  // payload.baseXp 用 zoneAdjustedBase（已含科研与战区烈度），
+  // 保证 baseXp × multiplier === actualXp 的数学关系仍然成立。
+  if (mult > 1 && gained > zoneAdjustedBase) {
+    emitStationEvent("station:combatXpBoosted", { skillId, baseXp:zoneAdjustedBase, multiplier:mult, actualXp:gained }, { offline:false });
   }
   return gained;
 }

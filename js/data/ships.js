@@ -20,6 +20,49 @@ var SHIP_COMPONENT_RECIPES = [
   { id:"supercapital_functional_system", name:"超级旗舰舰船功能组件", level:90, time:270, xp:280, cost:{ "三钛合金":170, "基腹断岩":7, "超噬矿":6, "莫尔石":1, "铷":2, "磁场聚合物":6, "聚合气体":2 } }
 ];
 
+/* ---- 自动拆解配方视图（2026-09-04 新增功能）----
+ *
+ * 定位：归在【熔炼 refining】行动下的挂机子活动（对标银河奶牛炼金），走行动条，
+ *       每个周期自动拆解 1 个舰船组件，按冶炼回收率归还材料。
+ *
+ * 时间：制造时间 × 0.5（拆比造快），实际周期再除以熔炼效率（与熔炼同构，
+ *       这样船体/改装/精炼泵/后勤/科研/增强剂等速度加成全部自然生效）。
+ *
+ * 经验（两份，分别发）：
+ *   舰船工程 shipEngineering = 制造经验 × 0.25 ——【不吃增强剂】
+ *       原因：本活动只消耗熔炼槽的增强剂计时，若舰船那份也吃加成就变成白嫖。
+ *       实现时走 addSkillXpToState 的 meta.skipBooster = true。
+ *   熔炼 refining = 基础时间 × 0.5 —— 吃熔炼增强剂（正常走 addSkillXpToState）
+ *       注意：按【基础时间】计而非实际耗时，这样效率越高经验/秒越高，与熔炼一致。
+ *
+ * 为什么熔炼经验按时间算而不是按熔炼档位查表：
+ *   档位映射会让同档内所有组件给同样经验、但耗时差几倍 → 经验/秒最大差 20 倍，
+ *   退化成只拆某一种组件。按时间算则经验/秒恒定（约 0.85~1.05，约为熔炼的 1/3）。
+ *
+ * 退料：复用 selectors.js 的 getComponentDismantleQuote（按 getReclaimRate 冶炼回收率）。
+ */
+const DISMANTLE_TIME_RATIO = 0.5;
+const DISMANTLE_SHIP_XP_RATIO = 0.25;
+const DISMANTLE_SMELT_XP_PER_SECOND = 0.5;
+
+var SHIP_COMPONENT_DISMANTLE_RECIPES = SHIP_COMPONENT_RECIPES.map(function (recipe) {
+  const baseTime = Number(recipe.time) * DISMANTLE_TIME_RATIO;
+  return {
+    id: recipe.id,
+    name: recipe.name,
+    level: recipe.level,
+    baseTime: baseTime,
+    craftTime: Number(recipe.time),
+    craftXp: Number(recipe.xp),
+    shipXp: Math.max(1, Math.round(Number(recipe.xp) * DISMANTLE_SHIP_XP_RATIO)),
+    smeltXp: Math.max(1, Math.round(baseTime * DISMANTLE_SMELT_XP_PER_SECOND))
+  };
+});
+
+function getShipComponentDismantleRecipe(componentId) {
+  return SHIP_COMPONENT_DISMANTLE_RECIPES.find(item => item.id === componentId) || null;
+}
+
 // ---- 舰船工程：蓝图商店 ----
 const SHIP_BLUEPRINTS = [
   { id: "rifter",  name: "星矛级",   shipId: "rifter",  costISK: 50000, level: 1  },

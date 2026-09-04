@@ -66,6 +66,14 @@
     state._dirty = true;
     return { changed:true, success, trial:{ ...s } };
   }
+  function stop(state) {
+    const s = ensure(state).collectionTrial;
+    if (s.status !== "running") return { changed:false, reason:"not-running" };
+    s.status = "idle";
+    s.result = "stopped";
+    state._dirty = true;
+    return { changed:true, trial:{ ...s } };
+  }
   function tick(state, now) {
     if (!state) return { changed:false, reason:"invalid-state" };
     const s = ensure(state).collectionTrial;
@@ -90,6 +98,7 @@
   API.startCollectionTrial = start;
   API.tickLegionStarmapTrial = tick;
   API.finishCollectionTrial = finish;
+  API.stopCollectionTrial = stop;
   API.getActionLock = actionLock;
   API.LIMIT_SECONDS = LIMIT_SECONDS;
   root.LEGION_STARMAP_TRIAL = API;

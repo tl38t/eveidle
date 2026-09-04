@@ -202,7 +202,7 @@
     var task = ship.assignedActions.length ? ship.assignedActions.map(function (k) { return display.actionNames[k]; }).join(" · ") : "";
     var taskHtml = task ? '<div class="tp-box"><div class="tp-box-t">当前任务</div><div class="tp-box-b">' + task + "</div></div>" : '<div class="tp-empty">无当前任务</div>';
     var repairHtml = ship.repairing ? '<div class="tp-box tp-repair-box"><div class="tp-box-t">维修状态</div><div class="tp-box-b">🔧 自动维修中 · 剩余 ' + ship.repairRemaining + " 秒</div></div>" : "";
-    var boundHtml = ship.boundNpc ? '<div class="tp-box tp-bound-box"><div class="tp-box-t">🛡️ 军团 NPC 占用</div><div class="tp-box-b">该舰船已绑定军团 NPC：' + ship.boundNpc.name + '。须在军团面板中先卸下，才能改装 / 拆解 / 指派为玩家战斗舰。</div></div>' : "";
+    var boundHtml = ship.boundNpc ? '<div class="tp-box tp-bound-box"><div class="tp-box-t">🛡️ 军团 NPC 占用</div><div class="tp-box-b">该舰船已绑定军团 NPC：' + ship.boundNpc.name + '。点击「移出小队」卸下后可改装 / 拆解 / 指派。</div><button class="btn warning tp-unbind-btn" data-unbind-npc-ship="' + ship.boundNpc.npcId + '">👤 移出小队</button></div>' : "";
     return tpStatsHTML(ship) + bonusHtml + taskHtml + repairHtml + boundHtml;
   }
   function tpFittingHTML(display, ship) {
@@ -314,8 +314,7 @@
     var t = [["overview", "概览"], ["fitting", "装备"], ["enhancement", "强化"], ["assignment", "指派"], ["dismantle", "拆解"]];
     return '<div class="tp-hangar-tabs">' + t.map(function (x) { return '<button class="tp-htab' + (_tpHangarTab === x[0] ? " active" : "") + '" data-tp-htab="' + x[0] + '">' + x[1] + "</button>"; }).join("") + "</div>";
   }
-  // 手机端船坞「部署物」视图（对齐桌面 renderHangarDeployables）：展示库存可部署的 MTU，
-  // 提供部署/回收按钮（已部署的 MTU 由军团小队界面管理，此处不重复渲染）。
+  // 手机端船坞「部署物」视图（对齐桌面 renderHangarDeployables）：MTU 库存可部署 + 已部署可移出小队。
   function tpDeployablesHTML(display) {
     var dv = display.deployableView;
     var html = '<div class="lcs-deployables">';
@@ -324,11 +323,20 @@
       html += '<div class="lcs-deploy-empty">未拥有；请于舰船总装「特殊」线制造。占用小队 1 格，提高战利品产出、消耗燃料。</div></div>';
       return html;
     }
+    // 已部署的 MTU：提供「移出小队（取消部署）」入口
+    if (dv.deployed.length > 0) {
+      dv.deployed.forEach(function (d) {
+        html += '<div class="lcs-deploy-card deployed">' +
+          '<span class="lcs-deploy-name">' + escapeAchievementText(d.name) + '</span>' +
+          '<span class="lcs-deploy-effects">已部署 · 生效中</span>' +
+          '<button class="lcs-deploy-btn undeploy" data-undeploy="' + escapeAchievementText(d.deployableId) + '">移出小队（取消部署）</button>' +
+          '</div>';
+      });
+    }
     var canDeploy = dv.capacity > 0 && dv.usedSlots < dv.capacity;
     if (dv.deployableStorage.length === 0) {
-      html += dv.deployed.length > 0
-        ? '<div class="lcs-deploy-empty">库存为空 · ' + dv.deployed.length + ' 台已部署（在军团小队界面管理）</div></div>'
-        : '<div class="lcs-deploy-empty">库存为空</div></div>';
+      if (dv.deployed.length === 0) html += '<div class="lcs-deploy-empty">库存为空</div>';
+      html += '</div>';
       return html;
     }
     var disMap = {};
@@ -385,8 +393,10 @@
     if (info) info.textContent = "已拥有 " + display.count + " 艘舰船";
     var grid = document.getElementById("hangar-ship-grid");
     var empty = document.getElementById("hangar-empty");
+    var tabs = document.getElementById("hangar-tabs");
     if (grid) grid.style.display = "none";
     if (empty) empty.style.display = "none";
+    if (tabs) tabs.style.display = "none";
     var root = tpEnsureRoot(panel);
     root.style.display = "block";
 
@@ -439,6 +449,7 @@
       var root = document.getElementById("tp-hangar-root"); if (root) root.style.display = "none";
       var g = document.getElementById("hangar-ship-grid"); if (g) g.style.display = "";
       var em = document.getElementById("hangar-empty"); if (em) em.style.display = "";
+      var tabs2 = document.getElementById("hangar-tabs"); if (tabs2) tabs2.style.display = "";
     };
     var root = document.getElementById("tp-hangar-root");
     if (root && !root.dataset.tpHooked) {
@@ -463,13 +474,20 @@
           else { console.error("[taptap-portrait] 入口缺失：window.dismantleShipFromHangar 未定义"); if (window.showToast) window.showToast("拆解入口缺失，请刷新或更新客户端"); }
           return;
         }
-        var dep = t.closest("[data-deploy],[data-dismantle-deployable]");
+        var unbind = t.closest("[data-unbind-npc-ship]");
+        if (unbind) {
+          if (typeof window.unbindNpcShipFromHangar === "function") window.unbindNpcShipFromHangar(unbind.getAttribute("data-unbind-npc-ship"));
+          else { console.error("[taptap-portrait] 入口缺失：window.unbindNpcShipFromHangar 未定义"); if (window.showToast) window.showToast("移出小队入口缺失，请刷新或更新客户端"); }
+          return;
+        }
+        var dep = t.closest("[data-deploy],[data-undeploy],[data-dismantle-deployable]");
         if (dep && !dep.disabled) {
           var dRes = null;
-          if (dep.dataset.deploy) dRes = window.dispatchGameAction(window.gameState, { type:"manufacturing/deployDeployable", deployableId: dep.dataset.deploy }, Date.now());
+          if (dep.dataset.undeploy) dRes = window.dispatchGameAction(window.gameState, { type:"manufacturing/undeployDeployable", deployableId: dep.dataset.undeploy }, Date.now());
+          else if (dep.dataset.deploy) dRes = window.dispatchGameAction(window.gameState, { type:"manufacturing/deployDeployable", deployableId: dep.dataset.deploy }, Date.now());
           else if (dep.dataset.dismantleDeployable) dRes = window.dispatchGameAction(window.gameState, { type:"manufacturing/dismantleDeployable", deployableId: dep.dataset.dismantleDeployable }, Date.now());
           if (dRes && dRes.changed === false && dRes.reason) {
-            var dMsg = { "deploy-full":"部署位已满", "not-in-storage":"不在库存", "squad-full":"小队格位不足", "not-deployed":"未部署", "no-squad":"无战斗小队", "deployed":"已部署中，先取消部署再回收", "no-recipe":"无拆解配方", "not-owned":"未拥有" };
+            var dMsg = { "deploy-full":"部署位已满", "not-in-storage":"不在库存", "squad-full":"小队格位不足", "not-deployed":"未部署", "no-squad":"无战斗小队", "dual-squad-locked":"双人战斗小队协议未解锁", "deployed":"已部署中，先取消部署再回收", "no-recipe":"无拆解配方", "not-owned":"未拥有" };
             if (window.showToast) window.showToast("⚠ " + (dMsg[dRes.reason] || dRes.reason));
           } else if (dRes && dRes.changed && dRes.refundedResources) {
             var dParts = Object.keys(dRes.refundedResources).map(function (k) { return k + "×" + dRes.refundedResources[k]; });
@@ -482,7 +500,7 @@
         if (act) {
           var res = window.dispatchGameAction(window.gameState, { type: "hangar/toggleAssignment", instanceId: act.getAttribute("data-sid"), actionKey: act.getAttribute("data-ship-action") }, Date.now());
           if (!res.changed) {
-            var msgs = { "repairing": "舰船自动维修中，暂时不能更换战斗舰", "unsupported-mining": "该舰船没有采矿岗位", "unsupported-gas": "该舰船没有采气岗位", "unsupported-archaeology": "该舰船没有考古扫描能力", "unsupported-refining": "只有工业支援舰可以承担冶炼岗位", "unsupported-task": "该任务不需要分配舰船岗位", "ship-active": "舰船正在执行任务，停止当前任务后才能重新分配", "npc-bound": "该舰船已绑定军团 NPC，须先在军团面板卸下才能指派" };
+            var msgs = { "repairing": "舰船自动维修中，暂时不能更换战斗舰", "unsupported-mining": "该舰船没有采矿岗位", "unsupported-gas": "该舰船没有采气岗位", "unsupported-archaeology": "该舰船没有考古扫描能力", "unsupported-refining": "只有工业支援舰可以承担冶炼岗位", "unsupported-task": "该任务不需要分配舰船岗位", "ship-active": "舰船正在执行任务，停止当前任务后才能重新分配", "combat-active": "交战中无法更换战斗舰，请先停止战斗", "npc-bound": "该舰船已绑定军团 NPC，须先在军团面板卸下才能指派" };
             if (window.showToast) window.showToast(msgs[res.reason] || "分配失败");
           } else { window.renderHangarPanel(); if (window.renderCombatPanel) window.renderCombatPanel(); }
           return;

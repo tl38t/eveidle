@@ -1316,3 +1316,51 @@
   .combat-squad-column .lcs-slots { flex-direction: column; }
   .lcs-slot { width: 100%; }
 }
+/* Legion starmap trial room */
+.starmap-trial-room{min-height:760px;padding:28px 32px;background:radial-gradient(circle at 50% 30%,rgba(33,95,125,.28),transparent 55%),#020711;color:#dcecff}
+.starmap-trial-room-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:1px solid #29435a;padding-bottom:18px}
+.starmap-trial-room-head h3{margin:0 0 8px;color:#f4fbff;font-size:24px}
+.starmap-trial-room-head p{margin:0;color:#91abc2}
+.starmap-trial-progress{max-width:720px;margin:120px auto 40px;text-align:center}
+.starmap-trial-countdown{display:block;position:relative;z-index:2;margin:24px auto 8px;text-align:center;color:#ffd36a;font-size:24px;font-weight:700;line-height:1.35;letter-spacing:1px;text-shadow:0 0 14px rgba(255,190,70,.32)}
+.starmap-trial-progress-track{height:18px;border:1px solid #5d8cac;border-radius:12px;background:#071522;overflow:hidden;box-shadow:0 0 24px rgba(75,190,255,.16)}
+.starmap-trial-progress-track>div{height:100%;width:0;background:linear-gradient(90deg,#48b8e8,#9bf2d0);transition:width .2s ease}
+.starmap-trial-progress-text{margin-top:14px;color:#c9e9f8;font-size:18px}
+.starmap-trial-room-actions{text-align:center;display:flex;justify-content:center;gap:12px}
+#starmap-trial-result{text-align:center;margin-top:20px}
+.starmap-trial-efficiency{margin-left:auto;color:#7fd7a4;font-size:13px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
+@media(max-width:700px){.starmap-trial-room{min-height:520px;padding:18px}.starmap-trial-progress{margin:80px auto 30px}}
+
+/* 采集试炼 HUD：舰首 → 资源卡的采集链路，减少空白并强化信息层级。 */
+.starmap-trial-room{min-height:0;padding:24px 28px 28px;background:radial-gradient(circle at 24% 32%,rgba(32,116,153,.22),transparent 36%),linear-gradient(145deg,#07111d,#030914 62%,#061521);border:1px solid #25435d}
+.starmap-trial-room-head{align-items:center;padding-bottom:14px;border-bottom-color:rgba(91,143,177,.28)}
+.starmap-trial-room-head h3{margin:0 0 4px;font-size:22px;letter-spacing:.02em}
+.starmap-trial-room-head p{font-size:13px;color:#7594ad}
+.starmap-trial-room-head .btn{border-color:#315b78;background:#0b2135;color:#b9def5}
+.starmap-trial-countdown{margin:16px auto 10px;padding:7px 18px;width:max-content;min-width:150px;border:1px solid rgba(212,168,67,.55);border-radius:999px;background:linear-gradient(180deg,rgba(77,54,18,.72),rgba(28,22,12,.72));font-size:20px;letter-spacing:.04em;box-shadow:0 0 24px rgba(212,168,67,.12)}
+.starmap-collection-room{margin:10px 0 14px!important;padding:12px!important;border-color:rgba(61,106,135,.7)!important;border-radius:10px!important;background:linear-gradient(135deg,rgba(9,25,39,.96),rgba(3,11,20,.98))!important;box-shadow:0 12px 28px rgba(0,0,0,.24),inset 0 1px rgba(145,218,255,.07)!important}
+.starmap-collection-stage{width:min(100%,600px)!important;min-height:136px!important;margin:0 auto!important;grid-template-columns:300px 220px!important;gap:80px!important}
+.starmap-collection-ship{height:132px!important;border-color:rgba(51,88,113,.72)!important;border-radius:7px!important;background:radial-gradient(ellipse at 42% 50%,rgba(41,111,145,.26),transparent 34%),#030b15!important;box-shadow:inset 0 0 35px rgba(43,141,183,.09)!important}
+.starmap-collection-label{top:9px;bottom:auto;left:10px;background:rgba(3,13,23,.78);border:1px solid rgba(112,185,220,.24);color:#a8cce4;font-size:11px;letter-spacing:.08em}
+.starmap-collection-beams{left:48%!important;right:11%!important;top:calc(50% - 28px)!important;height:56px!important;z-index:2!important}
+.starmap-collection-ship canvas{animation:starmap-ship-drift 3.8s ease-in-out infinite;will-change:transform}
+.starmap-collection-beams i{height:2px;background:linear-gradient(90deg,rgba(101,217,255,0),rgba(101,217,255,.42) 10%,#c8f7ff 67%,rgba(101,217,255,.18));box-shadow:0 0 7px #65d9ff,0 0 18px rgba(101,217,255,.3);opacity:.68;animation:starmap-beam-pulse 1.35s ease-in-out infinite}
+.starmap-collection-beams i::after{content:"";position:absolute;left:13%;right:16%;top:0;height:1px;background:rgba(239,253,255,.92);box-shadow:0 0 4px #fff,0 0 10px #65d9ff;opacity:.72}
+.starmap-resource-card{position:relative;z-index:3;min-height:156px!important;width:auto!important;flex-basis:auto!important;padding:10px 8px 9px!important;gap:4px!important;border-color:#4f7184!important;background:linear-gradient(160deg,rgba(22,57,70,.96),rgba(5,18,28,.98))!important;box-shadow:0 0 25px rgba(71,202,198,.1),inset 0 0 30px rgba(128,230,205,.07)!important}
+.starmap-resource-card .mining-target-name{font-size:15px;letter-spacing:.1em}
+.starmap-resource-card .mining-target-visual{width:54px;height:54px;font-size:38px}
+.starmap-resource-card .mining-target-meta{font-size:12px}
+.starmap-resource-card .mining-target-sub{font-size:10px}
+.starmap-resource-card .mining-target-state{font-size:12px;letter-spacing:.08em;min-height:2.2em}
+.starmap-collection-counter{margin:8px 2px 7px!important;padding:8px 11px!important;border:1px solid rgba(67,107,131,.46)!important;border-radius:7px!important;background:rgba(3,14,24,.58)!important}
+.starmap-collection-counter,.starmap-collection-progress{width:min(100%,600px);margin-left:auto!important;margin-right:auto!important}
+.starmap-collection-counter strong{font-size:19px!important}
+.starmap-trial-efficiency{padding:4px 9px;border:1px solid rgba(127,215,164,.35);border-radius:999px;background:rgba(52,113,82,.14);cursor:help}
+.starmap-collection-progress{padding:1px 1px 0}
+.starmap-trial-progress{display:none!important}
+.starmap-trial-progress-track{flex:1;height:10px}
+.starmap-trial-progress-text{margin:0;min-width:88px;text-align:right;font-size:13px;color:#9fd0e5}
+.starmap-trial-room-actions{margin-top:4px}
+@keyframes starmap-ship-drift{0%,100%{transform:translateY(-2px)}50%{transform:translateY(3px)}}
+@keyframes starmap-beam-pulse{0%,100%{opacity:.52;filter:brightness(.9)}50%{opacity:.9;filter:brightness(1.25)}}
+@media(max-width:700px){.starmap-trial-room{padding:18px 14px 22px}.starmap-collection-stage{width:100%!important;grid-template-columns:1fr!important;min-height:0!important;gap:10px!important}.starmap-collection-ship{height:124px!important;width:min(100%,300px);margin:0 auto}.starmap-collection-beams{left:42%!important;right:18%!important;top:calc(48% - 28px)!important}.starmap-collection-counter{flex-wrap:wrap!important}.starmap-trial-efficiency{margin-left:0}.starmap-trial-progress{margin:10px 0;padding:8px 10px}}

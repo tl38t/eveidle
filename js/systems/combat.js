@@ -394,6 +394,9 @@ function resetCombatRunState(combat, options) {
     rl.lootGained = {};
     rl.iskGained = 0;
     rl.lpGained = 0;
+    // 本场消耗：新 run 开启时重置，避免把上一场的燃料/弹药消耗带进下一场统计。
+    rl.fuelSpent = 0;
+    rl.ammoSpent = { laser:0, missile:0, cannon:0 };
     // 战斗技能经验累计器：仅累计「战斗授予」的经验（经 addStationModifiedCombatXp），
     // 不含空间站授予的非战斗经验。打开日志时读取，见 combat-log.js 的钩子。
     rl.skillXp = {};

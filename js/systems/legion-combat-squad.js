@@ -91,6 +91,22 @@
     if (s.battleId === undefined) { s.battleId = null; touched = true; }
     if (s.lastRound === undefined) { s.lastRound = null; touched = true; }
     if (!Array.isArray(s.pendingNpcIds)) { s.pendingNpcIds = []; touched = true; }
+    // 容量门控：未解锁双人/三人协议时（capacity<=0），MTU 等部署物失去小队槽位，
+    // 强制从 deployables 召回 storage，避免「单舰战斗却享受 MTU 加成」的脏数据漏洞。
+    const capacity = getLegionSquadCapacity(state);
+    if (capacity <= 0) {
+      if (s.enabled) { s.enabled = false; touched = true; }
+      if (!Array.isArray(s.pendingNpcIds) || s.pendingNpcIds.length > 0) { s.pendingNpcIds = []; touched = true; }
+      if (Array.isArray(s.deployables) && s.deployables.length > 0) {
+        for (const d of s.deployables) {
+          if (d && d.deployableId && !s.deployableStorage.includes(d.deployableId)) {
+            s.deployableStorage.push(d.deployableId);
+          }
+        }
+        s.deployables = [];
+        touched = true;
+      }
+    }
     if (touched && typeof state._dirty === "boolean") state._dirty = true;
     return s;
   }
@@ -401,7 +417,9 @@
     if (!squad || !deployableId) return { changed: false, reason: "no-squad" };
     const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(deployableId) : null;
     const name = def ? def.name : deployableId;
-    if (squad.deployables.length < MTU_MAX_DEPLOYED) {
+    const capacity = getLegionSquadCapacity(state);
+    // 未解锁小队协议时无共享槽位，制造完成的部署物只能进库存，不能自动部署。
+    if (capacity > 0 && squad.deployables.length < MTU_MAX_DEPLOYED) {
       squad.deployables.push({ deployableId: deployableId, name: name });
       markDirty(state);
       return { changed: true, where: "deployed", deployableId: deployableId };
@@ -415,10 +433,11 @@
   function deployDeployable(state, deployableId) {
     const squad = ensureCombatSquadState(state);
     if (!squad || !deployableId) return { changed: false, reason: "no-squad" };
+    const capacity = getLegionSquadCapacity(state);
+    if (capacity <= 0) return { changed: false, reason: "dual-squad-locked" };
     if (squad.deployables.length >= MTU_MAX_DEPLOYED) return { changed: false, reason: "deploy-full" };
     const idx = squad.deployableStorage.indexOf(deployableId);
     if (idx < 0) return { changed: false, reason: "not-in-storage" };
-    const capacity = getLegionSquadCapacity(state);
     if (squad.members.length + squad.deployables.length >= capacity) return { changed: false, reason: "squad-full" };
     squad.deployableStorage.splice(idx, 1);
     const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(deployableId) : null;
@@ -509,18 +528,19 @@
   function getLegionCombatSquadState(state) {
     const squad = ensureCombatSquadState(state);
     if (!squad) return null;
+    const capacity = getLegionSquadCapacity(state);
     return {
-      enabled: squad.enabled,
-      battleId: squad.battleId,
-      targetId: squad.targetId,
-      members: squad.members.map(m => ({
+      enabled: capacity > 0 ? squad.enabled : false,
+      battleId: capacity > 0 ? squad.battleId : null,
+      targetId: capacity > 0 ? squad.targetId : null,
+      members: capacity > 0 ? squad.members.map(m => ({
         npcId: m.npcId, shipInstanceId: m.shipInstanceId,
         active: Boolean(m.active), destroyedInBattle: Boolean(m.destroyedInBattle)
-      })),
-      deployables: squad.deployables.map(d => ({ deployableId: d.deployableId, name: d.name })),
+      })) : [],
+      deployables: capacity > 0 ? squad.deployables.map(d => ({ deployableId: d.deployableId, name: d.name })) : [],
       deployableStorage: squad.deployableStorage.slice(),
-      deployedCount: squad.deployables.length,
-      capacity: getLegionSquadCapacity(state),
+      deployedCount: capacity > 0 ? squad.deployables.length : 0,
+      capacity: capacity,
       dualUnlocked: isLegionDualSquadUnlocked(state),
       tripleUnlocked: isLegionTripleSquadUnlocked(state)
     };
@@ -915,16 +935,17 @@
       squadEnabled: active,
       lockedReason: dual ? null : "dual-squad-locked",
       // UI 用的合并选择：先 NPC（pendingNpcIds）+ deployable（已虚拟装备的 MTU）。deployable 用 "deployable:<id>" 前缀。
-      selection: (function(){
+      // 未解锁协议时 capacity<=0，selection 与 deployables 必须为空（由 ensureCombatSquadState 召回 storage）。
+      selection: capacity > 0 ? (function(){
         const npcSel = getLegionSquadSelection(state);
         const depSel = squad && Array.isArray(squad.deployables)
           ? squad.deployables.map(d => MTU_DEPLOYABLE_PREFIX + d.deployableId).filter(Boolean)
           : [];
         return npcSel.concat(depSel);
-      })(),
-      deployables: squad ? squad.deployables.map(d => ({ deployableId: d.deployableId, name: d.name })) : [],
+      })() : [],
+      deployables: (capacity > 0 && squad) ? squad.deployables.map(d => ({ deployableId: d.deployableId, name: d.name })) : [],
       deployableStorage: squad ? squad.deployableStorage.slice() : [],
-      deployedCount: squad ? squad.deployables.length : 0,
+      deployedCount: (capacity > 0 && squad) ? squad.deployables.length : 0,
       maxDeploy: MTU_MAX_DEPLOYED,
       currentTargetId: squad && squad.targetId != null ? squad.targetId : null,
       lastRound: squad && squad.lastRound ? {

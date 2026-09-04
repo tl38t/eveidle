@@ -23,32 +23,185 @@ function showToast(message) {
   setTimeout(() => { if (toast.parentNode) toast.remove(); }, 2500);
 }
 
-// 星图 iframe 的动作请求统一回到主页面 dispatch，避免 iframe 自己持有第二份游戏状态。
+let starmapTrialRoomNode = null;
+let starmapTrialRoomVisible = false;
+let starmapShip3dReadyListenerBound = false;
+let starmapTrialRoomRefreshTimer = null;
+
+function setStarmapTrialRoomRefresh(active) {
+  if (starmapTrialRoomRefreshTimer) {
+    clearInterval(starmapTrialRoomRefreshTimer);
+    starmapTrialRoomRefreshTimer = null;
+  }
+  if (active) {
+    // 试炼房间独立刷新：切到其它页面时，倒计时与采矿进度仍继续可见。
+    starmapTrialRoomRefreshTimer = setInterval(function () {
+      if (!starmapTrialRoomVisible) return;
+      try { renderStarmapTrialRoom(Date.now()); } catch (_) {}
+    }, 250);
+  }
+}
+
+if (!starmapShip3dReadyListenerBound && typeof window !== "undefined" && typeof window.addEventListener === "function") {
+  window.addEventListener("ship3d:ready", function () {
+    if (starmapTrialRoomVisible) renderStarmapTrialRoom(Date.now());
+  });
+  starmapShip3dReadyListenerBound = true;
+}
+
+function renderStarmapTrialRoom(now) {
+  const room = document.getElementById("legion-starmap-trial-room");
+  const frame = document.getElementById("legion-starmap-frame");
+  if (!room || !frame) return;
+  // 星图 iframe 自带内联 style="display:block"（index.html:1092），内联样式优先级高于
+  // [hidden] 的 UA 规则，仅设 hidden 无法隐藏它 —— 必须同时显式写 style.display。
+  // 房间做对称处理：当前无内联样式故 hidden 有效，但日后若给 .starmap-trial-room 加
+  // display:flex 会以完全相同的方式失效，一并免疫。
+  room.hidden = !starmapTrialRoomVisible;
+  room.style.display = starmapTrialRoomVisible ? "block" : "none";
+  frame.hidden = starmapTrialRoomVisible;
+  frame.style.display = starmapTrialRoomVisible ? "none" : "block";
+  if (!starmapTrialRoomVisible) return;
+  const trial = (gameState.legion && gameState.legion.starmap && gameState.legion.starmap.collectionTrial) || {};
+  const title = document.getElementById("starmap-trial-title");
+  const subtitle = document.getElementById("starmap-trial-subtitle");
+  const fill = document.getElementById("starmap-trial-progress-fill");
+  const text = document.getElementById("starmap-trial-progress-text");
+  const countdown = document.getElementById("starmap-trial-countdown");
+  const result = document.getElementById("starmap-trial-result");
+  const start = document.getElementById("starmap-trial-start");
+  const stop = document.getElementById("starmap-trial-stop");
+  const node = starmapTrialRoomNode || {};
+  const amount = Number(trial.amount || node.collectionAmount || 0);
+  const gathered = Number(trial.gathered || 0);
+  const pct = amount > 0 ? Math.max(0, Math.min(100, gathered / amount * 100)) : 0;
+  if (title) title.textContent = node.name ? "星图试炼 · " + node.name : "星图试炼房间";
+  if (subtitle) subtitle.textContent = node.collectionResource ? "目标：" + node.collectionResource + " · 数量：" + amount : "已进入试炼房间，可切换到其他页面后台运行";
+  if (fill) fill.style.width = pct.toFixed(2) + "%";
+  const endAt = Number(trial.endsAt || 0);
+  const remaining = trial.status === "running" && endAt > 0 ? Math.max(0, Math.ceil((endAt - (Number(now) || Date.now())) / 1000)) : 0;
+  if (countdown) countdown.textContent = trial.status === "running" ? "剩余时间：" + remaining + "s" : trial.status === "success" ? "剩余时间：试炼完成" : trial.status === "failed" ? "剩余时间：0s" : "剩余时间：180s";
+  if (text) text.textContent = trial.status === "running" ? "进度 " + Math.floor(pct) + "%" : (trial.status === "success" ? "试炼成功" : trial.status === "failed" ? "试炼失败" : "等待开始");
+  if (result) result.textContent = trial.result === "stopped" ? "试炼已停止，当前进度不返还。" : trial.status === "success" ? "已完成节点试炼。" : trial.status === "failed" ? "未在时限内完成。" : "";
+  if (start) start.hidden = trial.status === "running";
+  if (stop) stop.hidden = trial.status !== "running";
+  renderStarmapCollectionRoom(node, trial, Number(now) || Date.now());
+}
+
+function renderStarmapCollectionRoom(node, trial, now) {
+  const host = document.getElementById("starmap-collection-room");
+  if (!host) return;
+  const isCollection = node && node.type === "collection" && node.collectionResource;
+  host.hidden = !isCollection;
+  if (!isCollection) return;
+  const amount = Math.max(1, Number(trial.amount || node.collectionAmount || 1));
+  const gatheredRaw = Math.max(0, Math.min(amount, Number(trial.gathered) || 0));
+  const gathered = Math.floor(gatheredRaw + 1e-9);
+  const remaining = Math.max(0, amount - gathered);
+  const remainingEl = document.getElementById("starmap-trial-remaining");
+  if (remainingEl) remainingEl.textContent = remaining + " / " + amount;
+  const label = document.getElementById("starmap-trial-counter-label");
+  if (label) label.textContent = trial.status === "running" ? "采集进度" : trial.status === "success" ? "采集完成" : "待采集";
+  const efficiencyEl = document.getElementById("starmap-trial-efficiency");
+  if (efficiencyEl) {
+    let efficiency = Number(trial.efficiency) || 0;
+    let efficiencyBreakdown = "";
+    const actionKey = node.collectionKind === "gas" ? "gasHarvesting" : "mining";
+    try {
+      if (typeof getProductionEfficiencyState === "function") {
+        const display = getProductionEfficiencyState(gameState, actionKey);
+        if (display && Number(display.total) > 0) {
+          if (!(efficiency > 0)) efficiency = Number(display.total);
+          if (typeof buildProductionEfficiencyTooltip === "function") {
+            efficiencyBreakdown = buildProductionEfficiencyTooltip(display, node.collectionResource, Number(node.collectionBaseSecondsPerUnit) || 0);
+          }
+        }
+      }
+    } catch (_) {}
+    if (!(efficiency > 0)) {
+      try {
+        const efficiencyGetter = node.collectionKind === "gas" ? window.getGasEfficiency : window.getMiningEfficiency;
+        if (typeof efficiencyGetter === "function") efficiency = Number(efficiencyGetter()) || 0;
+      } catch (_) {}
+    }
+    efficiencyEl.textContent = efficiency > 0 ? "采集效率：" + efficiency.toFixed(2) + "x" : "采集效率：—";
+    efficiencyEl.title = efficiencyBreakdown;
+    if (efficiencyBreakdown && typeof showEffModal === "function" && !efficiencyEl._effClickBound) {
+      efficiencyEl._effClickBound = true;
+      efficiencyEl.classList.add("eff-clickable");
+      efficiencyEl.addEventListener("click", function (event) {
+        event.stopPropagation();
+        showEffModal(efficiencyEl);
+      });
+    }
+  }
+  const resourceCard = document.getElementById("starmap-trial-resource-card");
+  if (resourceCard) resourceCard.innerHTML = '<span class="mining-target-name">' + escapeAchievementText(node.collectionResource) + '</span><span class="mining-target-visual"><i class="fa-solid ' + (node.collectionKind === "gas" ? "fa-cloud" : "fa-gem") + '"></i></span><span class="mining-target-meta">' + (node.collectionKind === "gas" ? "采气" : "采矿") + ' · 泰坦专属材料</span><span class="mining-target-sub">' + remaining + ' / ' + amount + '</span>';
+  const actionKey = node.collectionKind === "gas" ? "gasHarvesting" : "mining";
+  // 试炼房间必须始终有可视化舰船：优先使用对应采集分配，旧存档/未分配时
+  // 回退到另一种采集分配，再回退到库存中的第一艘工业舰。这个回退只用于显示，
+  // 不改变玩家的分配、效率或行动状态。
+  let assigned = typeof getAssignedShipInstance === "function" ? getAssignedShipInstance(actionKey) : null;
+  if (!assigned && typeof getAssignedShipInstance === "function") assigned = getAssignedShipInstance(actionKey === "mining" ? "gasHarvesting" : "mining");
+  if (!assigned && gameState.inventory && Array.isArray(gameState.inventory.ships) && typeof getShipConfigById === "function") {
+    assigned = gameState.inventory.ships.find(function (ship) {
+      const cfg = getShipConfigById(ship.shipId);
+      return cfg && (typeof getShipAssemblyLine !== "function" || getShipAssemblyLine(ship.shipId) === "industrial");
+    }) || null;
+    // 仅用于房间的视觉兜底：旧存档若无法识别工业舰分类，仍显示已有舰船模型。
+    // 不改变分配、效率或试炼结算，避免“有船但画布空白”。
+    if (!assigned) assigned = gameState.inventory.ships.find(function (ship) { return getShipConfigById(ship.shipId); }) || null;
+  }
+  const shipLabel = document.getElementById("starmap-trial-ship-label");
+  if (shipLabel) shipLabel.textContent = assigned && typeof getShipConfigById === "function" ? ((getShipConfigById(assigned.shipId) || {}).name || "工业舰") : "未找到工业舰";
+  const beams = document.getElementById("starmap-trial-beams");
+  if (beams) {
+    let beamCount = 1;
+    try { const d = getProductionEfficiencyState(gameState, actionKey); beamCount = Math.max(1, (d.equipment || []).filter(e => e.slot === "high").length); } catch (_) {}
+    beams.innerHTML = Array.from({ length: beamCount }, (_, i) => '<i style="--beam-index:' + i + ';--beam-count:' + beamCount + '"></i>').join("");
+  }
+  const cycle = Number(trial.requiredSeconds) > 0 && amount > 0 ? Number(trial.requiredSeconds) / amount : 0;
+  const elapsed = trial.status === "running" ? Math.max(0, (now - Number(trial.startedAt || now)) / 1000) : 0;
+  const cycleElapsed = cycle > 0 ? Math.min(cycle, Math.max(0, elapsed - gathered * cycle)) : 0;
+  const cyclePct = trial.status === "success" ? 100 : cycle > 0 ? cycleElapsed / cycle * 100 : 0;
+  if (typeof drawSkillBar === "function") drawSkillBar(document.getElementById("starmap-trial-mining-bar"), cyclePct, "green");
+  const eta = document.getElementById("starmap-trial-mining-eta");
+  if (eta) eta.textContent = trial.status === "running" && cycle > 0 ? Math.max(0, cycle - cycleElapsed).toFixed(1) + "s" : cycle > 0 ? cycle.toFixed(1) + "s" : "";
+  if (assigned && window.Ship3D && typeof window.Ship3D.buildSpecForShip === "function" && typeof window.Ship3D.ensureViewer === "function" && typeof window.Ship3D.setShips === "function") {
+    const canvas = document.getElementById("starmap-trial-ship-3d");
+    if (canvas) { try { const viewer = window.Ship3D.ensureViewer(canvas, { orbit:false, autoSpin:false, background:0x07111b }); window.Ship3D.setShips(viewer, [{ spec:window.Ship3D.buildSpecForShip(assigned.shipId), position:[0,0,0], scale:1, rotation:[0,0,0], sway:true }]); } catch (_) {} }
+  }
+}
+
+function postStarmapTrialResult(event, result) {
+  if (!event.source || typeof event.source.postMessage !== "function") return;
+  const targetOrigin = event.origin && event.origin !== "null" ? event.origin : "*";
+  try { event.source.postMessage({ type:"legion-starmap/trial-result", result }, targetOrigin); } catch (_) { event.source.postMessage({ type:"legion-starmap/trial-result", result }, "*"); }
+}
+
+function openStarmapTrialRoom(node, event) {
+  starmapTrialRoomNode = node || null;
+  starmapTrialRoomVisible = true;
+  setStarmapTrialRoomRefresh(true);
+  renderStarmapTrialRoom(Date.now());
+  // type=module may finish after this classic defer script; retry after layout settles.
+  setTimeout(function () { if (starmapTrialRoomVisible) renderStarmapTrialRoom(Date.now()); }, 50);
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(function () { if (starmapTrialRoomVisible) renderStarmapTrialRoom(Date.now()); });
+  }
+  postStarmapTrialResult(event, { changed:false, roomOpened:true, nodeId:node && node.id });
+}
+
 window.addEventListener("message", function (event) {
   const data = event && event.data;
-  if (!data || data.type !== "legion-starmap/start-collection") return;
+  if (!data || (data.type !== "legion-starmap/open-room" && data.type !== "legion-starmap/start-collection")) return;
+  if (data.type === "legion-starmap/open-room") { openStarmapTrialRoom(data.node, event); return; }
   let result;
   try {
-    result = (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.startCollectionTrial === "function")
-      ? LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, data.node, Date.now())
-      : { changed:false, reason:"starmap-trial-unavailable" };
-    if (result && result.reason === "confirm-stop-action") {
-      const label = result.currentSkill || "当前行动";
-      const confirmed = typeof window.confirm === "function" && window.confirm("当前正在进行：" + label + "。停止后当前进度不返还，是否开始星图试炼？");
-      result = confirmed
-        ? LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, data.node, Date.now(), { confirmed:true })
-        : { changed:false, reason:"action-switch-cancelled" };
-    }
-  } catch (error) {
-    console.error("[星图采集试炼] 启动异常", error);
-    result = { changed:false, reason:"starmap-trial-error" };
-  }
+    result = (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.startCollectionTrial === "function") ? LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, data.node, Date.now()) : { changed:false, reason:"starmap-trial-unavailable" };
+  } catch (error) { console.error("[星图采集试炼] 启动异常", error); result = { changed:false, reason:"starmap-trial-error" }; }
   if (result.changed && typeof updateUI === "function") updateUI();
-  if (event.source && typeof event.source.postMessage === "function") {
-    const targetOrigin = event.origin && event.origin !== "null" ? event.origin : "*";
-    try { event.source.postMessage({ type:"legion-starmap/trial-result", result }, targetOrigin); }
-    catch (_) { event.source.postMessage({ type:"legion-starmap/trial-result", result }, "*"); }
-  }
+  postStarmapTrialResult(event, result);
 });
 
 function getManagedPanels() {
@@ -892,7 +1045,17 @@ function openBlueprintProductModal(eq, blueprintName) {
   }
   const bonusLabels = { miningEfficiency: "采矿效率", gasEfficiency: "气云效率", miningLaserEfficiency: "采矿激光效率", gasLaserEfficiency: "气云激光效率", shieldCapacity: "护盾容量", smeltingSpeed: "冶炼速度" };
   const bonusLines = [];
-  if (eq.bonuses) for (const k in eq.bonuses) bonusLines.push((bonusLabels[k] || k) + " +" + Math.round(eq.bonuses[k] * 100) + "%");
+  if (eq.bonuses) for (const k in eq.bonuses) {
+    // 优先取权威标签表（含「全局减伤」「护盾维修量」等），否则会退化成原始英文 key
+    const label = (typeof EQUIPMENT_BONUS_NAMES !== "undefined" && EQUIPMENT_BONUS_NAMES[k]) || bonusLabels[k] || k;
+    const value = (typeof formatEquipmentBonusValue === "function") ? formatEquipmentBonusValue(k, eq.bonuses[k]) : ("+" + Math.round(eq.bonuses[k] * 100) + "%");
+    bonusLines.push(label + " " + value);
+  }
+  // 损伤控制单元：同类装备（多件 DCU）的全局减伤合计封顶 50%。
+  // 结算层封顶位置：combat.js:1217 / offline-combat.js:231 / legion-combat-squad.js:1465
+  if (eq.bonuses && typeof eq.bonuses.globalDamageReduction === "number") {
+    bonusLines.push("同类装备叠加上限：减伤 50%");
+  }
   const combatLines = [];
   if (eq.combat && eq.combat.kind === "weapon") {
     combatLines.push("基础伤害 " + eq.combat.baseDamage + " / 命中 " + eq.combat.baseHit);
@@ -1634,6 +1797,24 @@ function renderSettingsPage() {
   // 关于：展示构建版本号（由构建脚本注入 window.GAME_VERSION；未构建时回退基线）
   const verEl = document.getElementById("setting-game-version");
   if (verEl) verEl.textContent = "V" + (typeof window.GAME_VERSION === "string" && window.GAME_VERSION ? window.GAME_VERSION : "0.7.1");
+  // 更新日志：在「当前版本」下方展示最新版本更新内容（数据来自 js/data/changelog.js）
+  const clEl = document.getElementById("setting-changelog");
+  if (clEl) {
+    const log = (typeof window.GAME_CHANGELOG !== "undefined" && window.GAME_CHANGELOG) || [];
+    if (!log.length) { clEl.style.display = "none"; }
+    else {
+      const latest = log[0];
+      let html = '<div class="changelog-head">本次更新内容 · V' + escapeAchievementText(latest.version) + '（' + escapeAchievementText(latest.date || "") + '）</div>';
+      (latest.sections || []).forEach(function (sec) {
+        html += '<div class="changelog-sec">';
+        html += '<div class="changelog-sec-title">' + escapeAchievementText(sec.heading || "") + '</div>';
+        html += '<ul class="changelog-list">';
+        (sec.items || []).forEach(function (it) { html += '<li>' + escapeAchievementText(it) + '</li>'; });
+        html += '</ul></div>';
+      });
+      clEl.innerHTML = html;
+    }
+  }
   return display;
 }
 
@@ -3014,7 +3195,7 @@ function onResearchDetailClick(event) {
   const action = btn.dataset.detailAction;
   // 研究批次 I / J / K：协议配置一律经 dispatchGameAction 派发（UI 不直接改 state、不复制业务判断）
   if (action === "protocol-toggle" || action === "planauto-toggle" || action === "planauto-reserve" ||
-      action === "autoenh-set-max" || action === "autoenh-run" ||
+      action === "planauto-diagnose" || action === "autoenh-set-max" || action === "autoenh-run" ||
       action === "intship-start" || action === "intship-continue" || action === "intship-cancel") {
     onResearchProtocolAction(action, btn);
     return;
@@ -3420,7 +3601,7 @@ function renderHangarPanel() {
   if (!grid) return display;
   if (!lineShips.length) { grid.innerHTML = ""; if (empty) empty.style.display = ""; return display; }
   if (empty) empty.style.display = "none";
-  grid.innerHTML = display.ships.map(ship => {
+  grid.innerHTML = lineShips.map(ship => {
     if (ship.unknown) return "";
     const assignments = ship.assignments.map(item => `<button class="act-tag${item.active ? " on" : ""}${item.locked ? " unavailable" : ""}" data-ship-action="${item.actionKey}" data-sid="${ship.instanceId}" title="${item.lockedReason || (item.active ? "当前唯一任务，点击解除" : "分配至此任务")}" ${item.locked ? "disabled" : ""}>${item.name}</button>`).join("");
     const bonuses = getHangarBonusText(ship.bonuses);
@@ -3444,14 +3625,14 @@ function renderHangarPanel() {
       <div class="hangar-ship-stats"><span class="hss-item"><span class="hss-label">护盾</span><span class="hss-val">${ship.hp.shield}</span></span><span class="hss-item"><span class="hss-label">装甲</span><span class="hss-val">${ship.hp.armor}</span></span><span class="hss-item"><span class="hss-label">结构</span><span class="hss-val">${ship.hp.structure}</span></span><span class="hss-item"><span class="hss-label">闪避</span><span class="hss-val">${ship.dodge}</span></span><span class="hss-item"><span class="hss-label">速度</span><span class="hss-val">${ship.speed}</span></span></div>
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
       ${ship.repairing ? `<div class="hangar-ship-repair" data-repair-ship="${ship.instanceId}">🔧 自动维修中 · 剩余 <span class="repair-remaining">${ship.repairRemaining}</span> 秒</div>` : ""}
-      ${ship.boundNpc ? `<div class="hangar-ship-bound-npc" title="该舰船已绑定军团 NPC ${escapeAchievementText(ship.boundNpc.name)}，在军团面板卸下前不可在船坞改装或拆解">🛡️ 已绑定军团 NPC：${escapeAchievementText(ship.boundNpc.name)}</div>` : ""}
+      ${ship.boundNpc ? `<div class="hangar-ship-bound-npc" title="该舰船已绑定军团 NPC ${escapeAchievementText(ship.boundNpc.name)}，点击「移出小队」可在此卸下">🛡️ 已绑定军团 NPC：${escapeAchievementText(ship.boundNpc.name)}</div>` : ""}
       <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}${iskCostLine}</div><div class="enhance-roll"><span>成功率 <b>${enhancement.chancePercent}%</b></span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div></div>
-      <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button>${dismantleBtn}</div></div>`;
+      <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button>${dismantleBtn}${ship.boundNpc ? `<button class="btn warning hangar-unbind-btn" data-unbind-npc-ship="${ship.boundNpc.npcId}" style="margin-left:6px;" title="将该舰船从军团 NPC 小队中卸下，归还机库">👤 移出小队</button>` : ""}</div></div>`;
   }).join("");
   return display;
 }
 
-// 船坞「部署物」标签：展示已部署（生效/断料）+ 库存可部署；部署/取消部署复用 manufacturing/* 动作。
+// 船坞：部署物（激光定向打捞单元）面板
 function renderHangarDeployables(display) {
   const dv = display.deployableView;
   const info = document.getElementById("hangar-header-info");
@@ -3465,12 +3646,21 @@ function renderHangarDeployables(display) {
     html += '<div class="lcs-deploy-empty">未拥有；请于舰船总装「特殊」线制造。占用小队 1 格，提高战利品产出、消耗燃料。</div></div>';
     grid.innerHTML = html; return;
   }
+  // 已部署的 MTU：在船坞提供「移出小队（取消部署）」入口（与军团小队面板下拉二选一）
+  if (dv.deployed.length > 0) {
+    dv.deployed.forEach(function (d) {
+      html += '<div class="lcs-deploy-card deployed">' +
+        '<span class="lcs-deploy-name">' + escapeAchievementText(d.name) + '</span>' +
+        '<span class="lcs-deploy-effects">已部署 · 生效中</span>' +
+        '<button class="lcs-deploy-btn undeploy" data-undeploy="' + escapeAchievementText(d.deployableId) + '">移出小队（取消部署）</button>' +
+        '</div>';
+    });
+  }
   const canDeploy = dv.capacity > 0 && dv.usedSlots < dv.capacity;
-  // 已部署的 MTU 不在此渲染：状态与「取消部署」由军团战斗小队面板全权管理（避免同一张卡两处维护）。
+  // 库存为空且无可部署项时仅提示
   if (dv.deployableStorage.length === 0) {
-    html += dv.deployed.length > 0
-      ? '<div class="lcs-deploy-empty">库存为空 · ' + dv.deployed.length + " 台已部署（在军团小队界面管理）</div></div>"
-      : '<div class="lcs-deploy-empty">库存为空</div></div>';
+    if (dv.deployed.length === 0) html += '<div class="lcs-deploy-empty">库存为空</div>';
+    html += '</div>';
     grid.innerHTML = html; return;
   }
   if (dv.deployableStorage.length > 0) {
@@ -3573,6 +3763,7 @@ function enhanceShipFromHangar(instanceId) {
 if (typeof window !== "undefined") {
   window.enhanceShipFromHangar = enhanceShipFromHangar;
   window.dismantleShipFromHangar = dismantleShipFromHangar;
+  window.unbindNpcShipFromHangar = unbindNpcShipFromHangar;
 }
 
 // Batch R（E 项·舰船拆解）：二次确认（含归还预览 + 不可恢复警告）→ Action → 重渲染。
@@ -3616,6 +3807,34 @@ function dismantleShipFromHangar(instanceId) {
   showDangerConfirm("🗑 拆解舰船", bodyHtml, "确认拆解", doDismantle, () => {
     console.log("[ship-op][dismantle] cancel", { instanceId: instanceId });
   });
+  return true;
+}
+
+// 船坞：将军团 NPC 绑定的舰船移出小队（卸下），归还机库。
+function unbindNpcShipFromHangar(npcId) {
+  const st = gameState;
+  const L = st && st.legion;
+  const npc = (L && Array.isArray(L.npcs) ? L.npcs : []).find(function (n) { return n && n.npcId === npcId; });
+  if (!npc) { showToast("NPC 不存在"); return false; }
+  if (!npc.boundShipInstanceId) { showToast("该 NPC 未绑定舰船"); return false; }
+  const doUnbind = () => {
+    const result = LEGION_NPC.assignLegionNpcShip(st, npcId, null);
+    if (!result.changed) {
+      const messages = { "npc-not-found":"NPC 不存在", "npc-combat-locked":"NPC 正在战斗或修复中，暂不可卸下舰船" };
+      showToast(messages[result.reason] || "卸下失败");
+      return false;
+    }
+    showToast("已将军团 NPC " + escapeAchievementText(npc.name) + " 移出小队，舰船归还机库");
+    renderHangarPanel();
+    renderCombatPanel();
+    if (typeof renderLegionPage === "function") renderLegionPage();
+    updateUI();
+    return true;
+  };
+  const bodyHtml =
+    '<p class="dlg-body dlg-warn">确认将 ' + escapeAchievementText(npc.name) + ' 移出小队？</p>' +
+    '<p class="dlg-body">卸下后该 NPC 转为未绑定状态，舰船<b>归还机库</b>，可在此改装/拆解/指派。</p>';
+  showDangerConfirm("🛡️ 移出小队", bodyHtml, "确认卸下", doUnbind);
   return true;
 }
 
@@ -4505,6 +4724,8 @@ function installTutorialWidgetListeners() {
   const hangar = document.getElementById("hangar-ship-grid"); if (hangar) hangar.addEventListener("click", event => {
     const dismantleBtn = event.target.closest("[data-dismantle-ship]");
     if (dismantleBtn) { dismantleShipFromHangar(dismantleBtn.dataset.dismantleShip); return; }
+    const unbindBtn = event.target.closest("[data-unbind-npc-ship]");
+    if (unbindBtn) { unbindNpcShipFromHangar(unbindBtn.dataset.unbindNpcShip); return; }
     const enhance = event.target.closest("[data-enhance-ship]");
     if (enhance) { enhanceShipFromHangar(enhance.dataset.enhanceShip); return; }
     const assignment = event.target.closest("[data-ship-action]");
@@ -4517,6 +4738,7 @@ function installTutorialWidgetListeners() {
       else if (!result.changed && result.reason === "unsupported-refining") showToast("只有工业支援舰可以承担冶炼岗位");
       else if (!result.changed && result.reason === "unsupported-task") showToast("该任务不需要分配舰船岗位");
       else       if (!result.changed && result.reason === "ship-active") showToast("舰船正在执行任务，停止当前任务后才能重新分配");
+      else if (!result.changed && result.reason === "combat-active") showToast("交战中无法更换战斗舰，请先停止战斗");
       else if (!result.changed && result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能指派");
       if (result.changed) { renderHangarPanel(); renderCombatPanel(); }
       return;
@@ -4694,6 +4916,30 @@ function installTutorialWidgetListeners() {
   const researchQueueEl = document.getElementById("research-queue"); if (researchQueueEl) researchQueueEl.addEventListener("click", onResearchQueueClick);
   const researchActiveEl = document.getElementById("research-active"); if (researchActiveEl) researchActiveEl.addEventListener("click", onResearchActiveClick);
   const queueModalButton = document.getElementById("action-modal-queue"); if (queueModalButton) queueModalButton.addEventListener("click", queueActionConfirmation);
+  const trialStart = document.getElementById("starmap-trial-start");
+  if (trialStart) trialStart.addEventListener("click", function () {
+    if (!starmapTrialRoomNode || typeof LEGION_STARMAP_TRIAL === "undefined") return;
+    let result = LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, starmapTrialRoomNode, Date.now());
+    if (result && result.reason === "confirm-stop-action") {
+      showDangerConfirm("停止当前行动？", "当前正在进行“" + (result.currentSkill || "当前行动") + "”。停止后当前进度不返还，是否开始星图试炼？", "停止并进入试炼", function () {
+        LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, starmapTrialRoomNode, Date.now(), { confirmed:true });
+        updateUI();
+      });
+      return;
+    }
+    updateUI();
+  });
+  const trialStop = document.getElementById("starmap-trial-stop");
+  if (trialStop) trialStop.addEventListener("click", function () {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL.stopCollectionTrial) LEGION_STARMAP_TRIAL.stopCollectionTrial(gameState);
+    updateUI();
+  });
+  const trialBack = document.getElementById("starmap-trial-back");
+  if (trialBack) trialBack.addEventListener("click", function () {
+    starmapTrialRoomVisible = false;
+    setStarmapTrialRoomRefresh(false);
+    renderStarmapTrialRoom(Date.now());
+  });
   document.addEventListener("keydown", event => { const modal = document.getElementById("equipOrbitModal"); if (event.key === "Escape" && modal && modal.classList.contains("active")) closeEquipOrbit(); });
 
   // ---- Batch P：新手引导常驻小部件 —— 事件监听器与交互委托只安装一次 ----

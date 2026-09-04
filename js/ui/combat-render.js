@@ -10,6 +10,19 @@ function renderHPBars(hp, maxHp) {
   }).join("");
 }
 
+function renderEnemyMiniBars(hp, maxHp) {
+  const layers = [{ key:"shield", label:"护盾", cls:"shield" }, { key:"armor", label:"装甲", cls:"armor" }, { key:"structure", label:"结构", cls:"structure" }];
+  if (!hp || !maxHp) {
+    return '<div class="lcs-mini-bars">' + layers.map(layer =>
+      `<div class="lcs-mini-bar"><span>${layer.label}</span><div class="lcs-mini-track"><div class="lcs-mini-fill ${layer.cls}" style="width:0%"></div></div><span>0%</span></div>`
+    ).join("") + '</div>';
+  }
+  return '<div class="lcs-mini-bars">' + layers.map(layer => {
+    const pct = maxHp[layer.key] > 0 ? Math.max(0, Math.min(100, Math.round(hp[layer.key] / maxHp[layer.key] * 100))) : 0;
+    return `<div class="lcs-mini-bar"><span>${layer.label}</span><div class="lcs-mini-track"><div class="lcs-mini-fill ${layer.cls}" style="width:${pct}%"></div></div><span>${pct}%</span></div>`;
+  }).join("") + '</div>';
+}
+
 function renderCombatEnemyPanel(display) {
   const enemySection = document.getElementById("combat-enemy-section");
   const formation = document.getElementById("combat-enemy-formation");
@@ -19,7 +32,7 @@ function renderCombatEnemyPanel(display) {
   const stats = document.getElementById("combat-enemy-stats");
   const image = document.getElementById("combat-enemy-image");
   const caption = document.getElementById("combat-target-caption");
-  if (formation) formation.innerHTML = display.enemies.map(enemy => `<div class="combat-enemy-card ${enemy.kind || "normal"}${enemy.current ? " target" : ""}${enemy.defeated ? " defeated" : ""}"><div class="combat-enemy-card-head"><span class="combat-enemy-card-icon">${enemy.icon || "◆"}</span><span class="combat-enemy-card-name">${enemy.name}</span><span class="combat-enemy-card-kind">${enemy.kind === "boss" ? "BOSS" : enemy.kind === "elite" ? "精英" : "普通"}</span></div><div class="combat-enemy-card-bar"><span style="width:${enemy.percent}%"></span></div></div>`).join("");
+  if (formation) formation.innerHTML = display.enemies.map(enemy => `<div class="combat-enemy-card ${enemy.kind || "normal"}${enemy.current ? " target" : ""}${enemy.defeated ? " defeated" : ""}"><div class="combat-enemy-card-head"><span class="combat-enemy-card-icon">${enemy.icon || "◆"}</span><span class="combat-enemy-card-name">${enemy.name}</span><span class="combat-enemy-card-kind">${enemy.kind === "boss" ? "BOSS" : enemy.kind === "elite" ? "精英" : "普通"}</span></div>${renderEnemyMiniBars(enemy.hp, enemy.maxHp)}</div>`).join("");
   const target = display.target;
   if (target) {
     if (enemySection) { enemySection.style.display = ""; enemySection.classList.remove("is-scanning"); }
@@ -393,7 +406,8 @@ function renderCombatSquadSection(now) {
     return;
   }
   if (capacity === 0) {
-    host.innerHTML = head + '<div class="lcs-note warn">' + squadEscape(protoHint) + "：只能玩家单舰战斗。</div>" + renderSquadDeployables(ui, 0);
+    // 未解锁小队协议：不渲染部署物面板（MTU 依赖共享槽位）。
+    host.innerHTML = head + '<div class="lcs-note warn">' + squadEscape(protoHint) + "：只能玩家单舰战斗。</div>";
     return;
   }
   // 槽位数 = 当前协议容量（1 或 2），按 selection 顺序映射到各槽位。
@@ -417,8 +431,7 @@ function renderCombatSquadSection(now) {
   }).join("");
   const orderHtml = active ? renderSquadFireOrder(ui) : "";
   const lockedNote = active ? '<div class="lcs-note">战斗进行中：成员与舰船已锁定，不可更换。</div>' : "";
-  const deployHtml = renderSquadDeployables(ui, capacity);
-  host.innerHTML = head + orderHtml + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote + deployHtml;
+  host.innerHTML = head + orderHtml + '<div class="lcs-slots">' + slotsHtml + "</div>" + lockedNote;
 }
 
 let combatConfigShipKey = "player";
@@ -558,43 +571,8 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
     (statusText ? '<div class="lcs-slot-status">' + statusText + "</div>" : "") +
     "</div>";
 }
-// 部署物（激光定向打捞单元）面板：仅库存可部署（部署/取消部署由上方小队槽位的下拉选择全权管理，已部署卡不在此重复渲染）。
-function renderSquadDeployables(ui, capacity) {
-  const deployed = (ui && ui.deployables) || [];
-  const storage = (ui && ui.deployableStorage) || [];
-  let html = '<div class="lcs-deployables">';
-  html += '<div class="lcs-deploy-title"><i>🛰️</i> 部署物（激光定向打捞单元）</div>';
-  if (deployed.length === 0 && storage.length === 0) {
-    html += '<div class="lcs-deploy-empty">未拥有；请于舰船总装「特殊」线制造。占用小队 1 格，提高战利品产出、消耗燃料。</div>';
-    html += "</div>";
-    return html;
-  }
-  // 已部署状态（生效/断料/取消部署）一律看小队槽位卡；此处仅在库存为空时给一行提示。
-  if (storage.length === 0) {
-    html += '<div class="lcs-deploy-empty">库存为空 · ' + deployed.length + " 台已部署（见上方小队槽位）</div>";
-    html += "</div>";
-    return html;
-  }
-  if (storage.length > 0) {
-    const used = (ui.selection ? ui.selection.length : 0) + deployed.length;
-    const canDeploy = (capacity || 0) > 0 && used < (capacity || 0);
-    const deployedIds = (deployed || []).map(function (d) { return d.deployableId; });
-    storage.forEach(function (id) {
-      const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(id) : null;
-      const defName = def ? def.name : id;
-      const canDis = deployedIds.indexOf(id) < 0;
-      html += '<div class="lcs-deploy-card stored">' +
-        '<span class="lcs-deploy-name">' + squadEscape(defName) + "</span>" +
-        '<span class="lcs-deploy-effects">已拥有 · 待部署</span>' +
-        '<button class="lcs-deploy-btn deploy" data-deploy="' + squadEscape(id) + '"' + (canDeploy ? "" : " disabled") + ">部署（占 1 格）</button>" +
-        '<button class="lcs-deploy-btn recycle" data-dismantle-deployable="' + squadEscape(id) + '"' + (canDis ? "" : " disabled") + ' title="拆解回收（按冶炼回收率退还材料）">♻ 回收</button>' +
-        "</div>";
-    });
-    if (!canDeploy) html += '<div class="lcs-deploy-hint">小队格位不足：需空出 1 个共享格（与 NPC 成员互斥）才能部署。</div>';
-  }
-  html += "</div>";
-  return html;
-}
+// 部署物（激光定向打捞单元）的部署/回收/移出小队，统一在船坞「特殊」标签管理；
+// 战斗小队面板仅保留每个槽位的下拉选择（选 MTU 即部署、选空位即取消部署）。
 function bindCombatSquadUI() {
   const host = document.getElementById("combat-squad-section");
   if (!host) return;
@@ -622,46 +600,20 @@ function bindCombatSquadUI() {
     }
     renderCombatSquadSection(Date.now());
   });
-  // 部署物：部署 / 取消部署 / 拆解回收（事件委托，点击）
-  host.addEventListener("click", function (event) {
-    const btn = event.target && event.target.closest ? event.target.closest("[data-deploy],[data-undeploy],[data-dismantle-deployable]") : null;
-    if (!btn || btn.disabled) return;
-    const api = legionSquadApi();
-    if (!api) return;
-    let res = null;
-    if (btn.dataset.undeploy) {
-      const fn = api.undeployDeployable;
-      if (typeof fn === "function") res = fn(gameState, btn.dataset.undeploy);
-    } else if (btn.dataset.deploy) {
-      const fn = api.deployDeployable;
-      if (typeof fn === "function") res = fn(gameState, btn.dataset.deploy);
-    } else if (btn.dataset.dismantleDeployable) {
-      const fn = api.dismantleDeployable;
-      if (typeof fn === "function") res = fn(gameState, btn.dataset.dismantleDeployable);
-    }
-    if (res && res.changed === false && res.reason && typeof showToast === "function") {
-      const reasonMap = Object.assign({}, api.JOIN_REASONS || {}, {
-        deployed:"已部署中，先取消部署再回收", "no-recipe":"无拆解配方", "not-in-storage":"不在库存", "no-squad":"无战斗小队"
-      });
-      const reason = reasonMap[res.reason] ? reasonMap[res.reason] : res.reason;
-      showToast("⚠ " + reason);
-    } else if (res && res.changed && res.refundedResources && typeof showToast === "function") {
-      const parts = Object.keys(res.refundedResources).map(function (k) { return k + "×" + res.refundedResources[k]; });
-      showToast("♻ 已回收：" + (parts.join(" · ") || "无"));
-    }
-    renderCombatSquadSection(Date.now());
-  });
 }
 
 // 战区烈度分级：按 zone.fuelMult（燃料消耗系数）映射 6 档标签。
-// 0.8=无(新手区，环境省油) / 1.0=极低(无环境耗油) / 1.2=低 / 1.35=中 / 1.6=高 / 1.8=极高。
-// 2026-09-03：新手三区补 fuelMult:0.8（此前漏配导致「燃料消耗×undefined」），并新增「无」档。
+// 2026-09-04：六档归一为 1 / 1.1 / 1.2 / 1.35 / 1.6 / 1.8（原为 0.8 / 1.0 / 1.2 / 1.35 / 1.6 / 1.8），
+//   阈值同步改为相邻档中点，否则 1.0 会被判成「极低」、1.1 被判成「低」。
+//   1=无(新手区，无环境加成) / 1.1=极低 / 1.2=低 / 1.35=中 / 1.6=高 / 1.8=极高。
+// 战斗经验倍率 = 同一 fuelMult（见 js/data/combat.js getZoneIntensityXpMultiplier），
+//   故此处标签必须与倍率同源，改档位时两处都要动。
 function zoneIntensityLabel(fuelMult) {
   const m = Number(fuelMult) || 1;
-  if (m <= 0.9) return { label: "无", cls: "c-gray" };
-  if (m <= 1.05) return { label: "极低", cls: "c-gray" };
-  if (m <= 1.25) return { label: "低", cls: "c-green" };
-  if (m <= 1.45) return { label: "中", cls: "c-yellow" };
+  if (m <= 1.05) return { label: "无", cls: "c-gray" };
+  if (m <= 1.15) return { label: "极低", cls: "c-gray" };
+  if (m <= 1.275) return { label: "低", cls: "c-green" };
+  if (m <= 1.475) return { label: "中", cls: "c-yellow" };
   if (m <= 1.7) return { label: "高", cls: "c-orange" };
   return { label: "极高", cls: "c-red" };
 }
@@ -689,9 +641,16 @@ function renderCombatPanel(now) {
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
   const intensityEl = document.getElementById("combat-zone-intensity");
   if (intensityEl) {
-    const curZone = COMBAT_ZONES.find(z => z.id === (gameState.combat && gameState.combat.zone)) || display.zone || null;
+    // 与经验发放同源（死亡空间继承来源星带烈度），保证显示倍率 === 实得倍率；保留原解析作为兜底。
+    const curZone = (typeof getCurrentCombatIntensityZone === "function" ? getCurrentCombatIntensityZone(gameState) : null)
+      || COMBAT_ZONES.find(z => z.id === (gameState.combat && gameState.combat.zone)) || display.zone || null;
     const it = curZone ? zoneIntensityLabel(curZone.fuelMult) : null;
-    if (it) { intensityEl.textContent = `战区烈度：${it.label}（燃料消耗×${Number(curZone.fuelMult) || 1}）`; intensityEl.className = "zone-intensity " + it.cls; }
+    if (it) {
+      const fm = Number(curZone.fuelMult) || 1;
+      const xpMult = (typeof getZoneIntensityXpMultiplier === "function") ? getZoneIntensityXpMultiplier(curZone) : fm;
+      intensityEl.textContent = `战区烈度：${it.label}（燃料消耗×${fm} · 战斗经验×${xpMult}）`;
+      intensityEl.className = "zone-intensity " + it.cls;
+    }
     else intensityEl.textContent = "";
   }
   const targetingControl = document.getElementById("capital-targeting-control");

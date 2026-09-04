@@ -9,7 +9,12 @@ const CAPITAL_TARGETING_MODES = Object.freeze([
   Object.freeze({ id:"elite", name:"优先精英" }),
   Object.freeze({ id:"boss", name:"优先BOSS" }),
   Object.freeze({ id:"highest_damage", name:"优先最高攻击" }),
-  Object.freeze({ id:"lowest_hp", name:"优先最低生命" })
+  Object.freeze({ id:"lowest_hp", name:"优先最低生命" }),
+  // 2026-09-04 客户要求新增：优先最高生命。
+  // 注意：纯单体攻击下清场轮数与「优先最低生命」基本相同（浪费只发生在击杀那一击，与顺序无关），
+  //      但会让敌人存活更久、全程挨满伤害，通常更吃亏；真正有价值的场景是配合旗舰 AOE——
+  //      主攻完整吸进高血量目标不浪费，溅射顺手清掉残血小怪。
+  Object.freeze({ id:"highest_hp", name:"优先最高生命" })
 ]);
 
 function isCapitalCombatShip(shipConfig) {
@@ -44,6 +49,10 @@ function selectCapitalCombatTarget(enemies, mode, shipConfig) {
   }
   if (normalized === "lowest_hp") {
     return living.reduce((selected, enemy) => getCombatEnemyTotalHp(enemy) < getCombatEnemyTotalHp(selected) ? enemy : selected, living[0]);
+  }
+  // 优先最高生命（与 lowest_hp 对称，仅比较符相反）
+  if (normalized === "highest_hp") {
+    return living.reduce((selected, enemy) => getCombatEnemyTotalHp(enemy) > getCombatEnemyTotalHp(selected) ? enemy : selected, living[0]);
   }
   return living[0];
 }

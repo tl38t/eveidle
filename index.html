@@ -8,10 +8,13 @@
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=14">
-  <link rel="stylesheet" href="./css/panels.css?v=38">
-  <link rel="stylesheet" href="./css/combat.css?v=19">
-<link rel="stylesheet" href="./css/components.css?v=30">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=22">
+  <link rel="stylesheet" href="./css/panels.css?v=47">
+  <link rel="stylesheet" href="./css/combat.css?v=20">
+<link rel="stylesheet" href="./css/components.css?v=33">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=23">
+<style id="starmap-collection-room-style">
+.starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
+</style>
 <script type="importmap">
 {
   "imports": {
@@ -20,8 +23,9 @@
   }
 }
 </script>
+  <script defer src="./js/ui/ship3d-loader.js?v=3"></script>
   <script defer src="./js/core/speed-config.js?v=2"></script>
-  <script src="./js/i18n/catalog-en.js?v=3"></script>
+  <script src="./js/i18n/catalog-en.js?v=8"></script>
   <script src="./js/i18n/translator.js?v=6"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
@@ -88,7 +92,6 @@
       });
     })();
   </script>
-<script type="module" src="./js/ui/ship3d.js?v=7"></script>
 <style id="ship3d-style">
   .ship3d-canvas { display:block; width:100%; height:100%; }
   #manufacturing-3d-canvas { width:100%; height:340px; margin-top:8px; border-radius:8px; background:#070d14; }
@@ -457,6 +460,11 @@
             <span class="mp-eta" id="mp-eta">~0.0s</span>
           </div>
         </div>
+        <!-- 冶炼 / 自动拆解 子模式切换（归在熔炼行动下） -->
+        <div class="mining-mode-tabs refining-submode-tabs" id="refining-submode-tabs" style="display:none; margin-bottom:10px;">
+          <button class="mining-mode-tab refining-submode-tab" data-submode="smelting">🔥 冶炼</button>
+          <button class="mining-mode-tab refining-submode-tab" data-submode="dismantle">♻ 自动拆解</button>
+        </div>
         <!-- 冶炼区域选择 -->
         <div class="mining-area-select smelting-area-select" id="smelting-area-select" style="display:none;">
           <span class="area-label">冶炼目标：</span>
@@ -490,6 +498,36 @@
             <span class="mp-label">冶炼进度：</span>
             <canvas class="skill-canvas-bar" id="bar-smelting" width="560" height="24"></canvas>
             <span class="mp-eta" id="smelting-eta">~0.0s</span>
+          </div>
+        </div>
+        <!-- 自动拆解区（归在熔炼行动下的挂机子活动） -->
+        <div class="mining-stats auto-dismantle-stats" id="auto-dismantle-stats" style="display:none;">
+          <div class="ad-comp-select">
+            <span class="me-label">拆解组件：</span>
+            <div class="mining-target-scroll"><div class="mining-target-strip" id="auto-dismantle-strip"></div></div>
+          </div>
+          <div class="ad-quote" id="auto-dismantle-quote"></div>
+          <div class="mining-efficiency">
+            <span class="me-label">拆解效率：</span>
+            <span class="me-value" id="ad-efficiency">1.00</span>
+          </div>
+          <div class="smelting-info-row">
+            <span class="me-label">回收率：</span><span id="ad-reclaim">50%</span>
+          </div>
+          <div class="smelting-info-row">
+            <span class="me-label">舰船工程经验：</span><span class="ad-xp-ship" id="ad-xp-ship">+0</span>
+          </div>
+          <div class="smelting-info-row">
+            <span class="me-label">冶炼经验：</span><span class="ad-xp-refining" id="ad-xp-refining">+0</span>
+          </div>
+          <div class="ad-xp-hint">两份经验来源不同：舰船工程按组件制造经验折算，冶炼按拆解周期折算。</div>
+          <div class="smelting-info-row">
+            <span class="me-label">周期：</span><span id="ad-cycle">—</span>
+          </div>
+          <div class="mining-progress-row">
+            <span class="mp-label">拆解进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-auto-dismantle" width="560" height="24"></canvas>
+            <span class="mp-eta" id="auto-dismantle-eta">~0.0s</span>
           </div>
         </div>
         <!-- 气体采集区域选择 -->
@@ -840,16 +878,20 @@
           </div>
 
           <div class="combat-enemy-side" id="combat-enemy-section">
-            <div class="combat-side-kicker">HOSTILE FORMATION</div>
-            <div class="combat-enemy-formation" id="combat-enemy-formation"></div>
-            <div class="combat-target-caption" id="combat-target-caption">LOCKED TARGET</div>
-            <div class="combat-side-name cst-enemy" id="combat-enemy-name">—</div>
-            <div class="combat-side-type" id="combat-enemy-type"></div>
-            <div class="health-bars health-bars-sm" id="combat-enemy-bars"></div>
-            <div class="combat-side-image" id="combat-enemy-image">
-              <div class="combat-ship-placeholder"><span>👾</span></div>
+            <div class="combat-enemy-main">
+              <div class="combat-target-caption" id="combat-target-caption">LOCKED TARGET</div>
+              <div class="combat-side-name cst-enemy" id="combat-enemy-name">—</div>
+              <div class="combat-side-type" id="combat-enemy-type"></div>
+              <div class="health-bars health-bars-sm" id="combat-enemy-bars"></div>
+              <div class="combat-side-image" id="combat-enemy-image">
+                <div class="combat-ship-placeholder"><span>👾</span></div>
+              </div>
+              <div class="combat-side-stats" id="combat-enemy-stats">威胁等级:— · 基础伤害:—</div>
             </div>
-            <div class="combat-side-stats" id="combat-enemy-stats">威胁等级:— · 基础伤害:—</div>
+            <div class="combat-enemy-formation-column" id="combat-enemy-formation-column">
+              <div class="combat-side-kicker">HOSTILE FORMATION</div>
+              <div class="combat-enemy-formation" id="combat-enemy-formation"></div>
+            </div>
           </div>
         </div>
 
@@ -1089,7 +1131,22 @@
         <span class="text-muted">军团远征网络</span>
       </div>
       <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=2" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=3" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <section id="legion-starmap-trial-room" class="starmap-trial-room" hidden>
+          <div class="starmap-trial-room-head"><div><h3 id="starmap-trial-title">星图试炼房间</h3><p id="starmap-trial-subtitle"></p></div><button type="button" class="btn secondary" id="starmap-trial-back">返回星图</button></div>
+          <div class="starmap-trial-countdown" id="starmap-trial-countdown">剩余时间：180s</div>
+          <div id="starmap-collection-room" class="starmap-collection-room" hidden>
+            <div class="starmap-collection-stage">
+              <div class="starmap-collection-ship"><canvas id="starmap-trial-ship-3d" class="ship3d-canvas" aria-label="Industrial ship"></canvas><span id="starmap-trial-ship-label" class="starmap-collection-label"></span></div>
+              <div id="starmap-trial-beams" class="starmap-collection-beams" aria-hidden="true"></div>
+              <div id="starmap-trial-resource-card" class="mining-target-card selected starmap-resource-card"></div>
+            </div>
+            <div class="starmap-collection-counter"><strong id="starmap-trial-remaining">100 / 100</strong><span id="starmap-trial-counter-label">待采集</span><span id="starmap-trial-efficiency" class="starmap-trial-efficiency">采集效率：—</span></div>
+            <div class="starmap-collection-progress"><canvas id="starmap-trial-mining-bar" class="skill-canvas-bar" width="560" height="24"></canvas><span id="starmap-trial-mining-eta" class="mp-eta"></span></div>
+          </div>
+          <div class="starmap-trial-room-actions"><button type="button" class="btn primary" id="starmap-trial-start">开始试炼</button><button type="button" class="btn danger" id="starmap-trial-stop" hidden>停止试炼</button></div>
+          <div id="starmap-trial-result" class="text-muted"></div>
+        </section>
       </div>
     </div>
 
@@ -1206,6 +1263,7 @@
             <span class="setting-copy"><strong>当前版本</strong></span>
             <span class="setting-value" id="setting-game-version">V0.7.1</span>
           </div>
+          <div class="setting-changelog" id="setting-changelog"></div>
         </div>
       </div>
     </div>
@@ -1379,14 +1437,14 @@
   <script defer src="./js/data/ammo.js?v=5"></script>
   <script defer src="./js/data/display-names.js?v=3"></script>
   <script defer src="./js/data/planets.js?v=3"></script>
-  <script defer src="./js/data/ships.js?v=11"></script>
+  <script defer src="./js/data/ships.js?v=12"></script>
   <script defer src="./js/data/boosters.js?v=10"></script>
   <script defer src="./js/systems/boosters.js?v=7"></script>
   <script defer src="./js/systems/recycling.js?v=3"></script>
-  <script defer src="./js/data/combat.js?v=11"></script>
+  <script defer src="./js/data/combat.js?v=12"></script>
   <script defer src="./js/data/cargo.js?v=8"></script>
   <script defer src="./js/data/implants.js?v=5"></script>
-  <script defer src="./js/data/equipment.js?v=28"></script>
+  <script defer src="./js/data/equipment.js?v=29"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=6"></script>
   <script defer src="./js/data/ammunition.js?v=4"></script>
   <script defer src="./js/data/archaeology.js?v=5"></script>
@@ -1395,14 +1453,15 @@
   <script defer src="./js/data/achievements.js?v=5"></script>
   <script defer src="./js/data/achievement-rules.js?v=5"></script>
   <script defer src="./js/data/tutorial.js?v=5"></script>
+  <script defer src="./js/data/changelog.js?v=1"></script>
   <script defer src="./js/core/tutorial-state.js?v=3"></script>
   <script defer src="./js/core/achievement-state.js?v=2"></script>
-  <script defer src="./js/core/state.js?v=7"></script>
+  <script defer src="./js/core/state.js?v=8"></script>
   <script defer src="./js/core/blueprint-runs.js?v=1"></script>
   <script defer src="./js/systems/research.js?v=4"></script>
   <script defer src="./js/core/statistics.js?v=3"></script>
   <script defer src="./js/systems/achievements.js?v=3"></script>
-  <script defer src="./js/systems/production.js?v=10"></script>
+  <script defer src="./js/systems/production.js?v=11"></script>
   <script defer src="./js/core/resources.js?v=4"></script>
   <script defer src="./js/systems/tutorial.js?v=7"></script>
   <script defer src="./js/systems/manufacturing.js?v=5"></script>
@@ -1412,26 +1471,26 @@
   <script defer src="./js/systems/rigs.js?v=4"></script>
   <script defer src="./js/systems/archaeology.js?v=13"></script>
   <script defer src="./js/systems/planetary.js?v=2"></script>
-  <script defer src="./js/systems/station.js?v=15"></script>
+  <script defer src="./js/systems/station.js?v=16"></script>
   <script defer src="./js/data/legion/npc-names.js?v=1"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
   <script defer src="./js/systems/legion-npc.js?v=10"></script>
-  <script defer src="./js/systems/legion-combat-squad.js?v=10"></script>
-  <script defer src="./js/ui/action-modal.js?v=8"></script>
+  <script defer src="./js/systems/legion-combat-squad.js?v=11"></script>
+  <script defer src="./js/ui/action-modal.js?v=10"></script>
   <script defer src="./js/core/queue.js?v=3"></script>
-  <script defer src="./js/systems/capital-combat.js?v=2"></script>
-  <script defer src="./js/systems/combat.js?v=17"></script>
+  <script defer src="./js/systems/capital-combat.js?v=3"></script>
+  <script defer src="./js/systems/combat.js?v=18"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=64"></script>
-  <script defer src="./js/core/actions.js?v=27"></script>
-  <script defer src="./js/systems/legion-starmap-trial.js?v=3"></script>
+  <script defer src="./js/core/selectors.js?v=69"></script>
+  <script defer src="./js/core/actions.js?v=29"></script>
+  <script defer src="./js/systems/legion-starmap-trial.js?v=4"></script>
   <script defer src="./js/systems/research-protocols.js?v=5"></script>
   <script defer src="./js/core/diagnostics.js?v=1"></script>
-  <script defer src="./js/ui/shell-render.js?v=67"></script>
+  <script defer src="./js/ui/shell-render.js?v=78"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
-  <script defer src="./js/ui/combat-render.js?v=45"></script>
+  <script defer src="./js/ui/combat-render.js?v=49"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=12"></script>
   <script defer src="./js/ui/booster-render.js?v=13"></script>
@@ -1443,8 +1502,8 @@
    <script defer src="./js/data/alliance-task-model.js?v=2"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=2"></script>
    <script defer src="./js/ui/alliance-render.js?v=9"></script>
-  <script defer src="./js/core/tick.js?v=12"></script>
-  <script defer src="./js/core/offline.js?v=14"></script>
+  <script defer src="./js/core/tick.js?v=13"></script>
+  <script defer src="./js/core/offline.js?v=15"></script>
   <script defer src="./js/systems/offline-combat.js?v=11"></script>
   <script defer src="./js/systems/combat-log.js?v=4"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
@@ -1476,11 +1535,11 @@
   <script defer src="./js/core/ad-service.js?v=4"></script>
   <script defer src="./js/systems/ad-buff.js?v=3"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=18"></script>
-  <script defer src="./js/core/persistence.js?v=15"></script>
+  <script defer src="./js/core/persistence.js?v=16"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
-  <script defer src="./js/ui/render.js?v=14"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=14"></script>
+<script defer src="./js/ui/render.js?v=18"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=20"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">
