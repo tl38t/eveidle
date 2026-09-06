@@ -45,11 +45,8 @@
       if (routeAnchors.has(leftId) && !controlledIds.has(rightId)) frontierIds.add(rightId);
       if (routeAnchors.has(rightId) && !controlledIds.has(leftId)) frontierIds.add(leftId);
     });
-    if (initialChoiceLocked) {
-      initialIds.forEach((id) => {
-        if (!completedInitialIds.has(id)) frontierIds.delete(id);
-      });
-    }
+    // 初始三选一：选定起点后，其余两个不再作为初始起点（originIds 仅在零占领时生效），
+    // 但它们作为普通节点保留在图中，可随主线延伸自然打进——不做 frontierIds 硬删。
     const availableIds = controlledIds.size ? frontierIds : originIds;
 
     api.nodes.forEach((node) => {
@@ -97,7 +94,7 @@
       : status === 'available'
         ? (routeState.controlledIds.size
           ? '\u524d\u6cbf\u53ef\u63a8\u8fdb\uff1a\u8be5\u8282\u70b9\u4e0e\u5f53\u524d\u5df2\u5236\u538b\u8282\u70b9\u76f4\u63a5\u8fde\u7ebf\u3002'
-          : '\u521d\u59cb\u524d\u6cbf\uff1a\u963f\u6d1b\u6069\u3001\u827e\u6d1b\u3001\u5229\u5965\u65af\u4e09\u9009\u4e00\uff1b\u5b8c\u6210\u4e00\u4e2a\u540e\u5176\u4f59\u4e24\u4e2a\u9501\u5b9a\u3002')
+          : '\u521d\u59cb\u524d\u6cbf\uff1a\u963f\u6d1b\u6069\u3001\u827e\u6d1b\u3001\u5229\u5965\u65af\u4e09\u9009\u4e00\uff1b\u9009\u5b9a\u8d77\u70b9\u540e\u5176\u4f59\u4e24\u4e2a\u8f6c\u4e3a\u666e\u901a\u8282\u70b9\uff0c\u53ef\u7ecf\u4e3b\u7ebf\u5ef6\u4f38\u6253\u8fdb\u3002')
         : '\u8def\u7ebf\u5df2\u9501\u5b9a\uff1a\u53ea\u80fd\u9009\u62e9\u4e0e\u73a9\u5bb6\u5df2\u5236\u538b\u8282\u70b9\u76f4\u63a5\u8fde\u7ebf\u7684\u4e0b\u4e00\u4e2a\u8282\u70b9\u3002';
     detail.appendChild(hint);
   };

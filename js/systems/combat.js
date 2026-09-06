@@ -820,7 +820,14 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     if (resourceId && q > 0) lootGained[resourceId] = (lootGained[resourceId] || 0) + q;
   };
   // 星币：MTU +10%（断料不放大，iskBonus 已为 0）
-  const isk = Math.round(enemy.iskDrop * zone.iskMulti * (1 + (mtu ? mtu.iskBonus : 0)));
+  // 防御式：任一因子为 undefined/NaN/负数时不再产生 NaN 或负值（与离线路径 offline-combat.js 对齐），
+  // 否则会触发事件契约 isk 必须是非负数的校验，甚至污染玩家星币为 NaN。
+  const rawIsk = Math.round(
+    (Number(enemy.iskDrop) || 0) *
+    (Number(zone && zone.iskMulti) || 1) *
+    (1 + (mtu && Number(mtu.iskBonus) ? mtu.iskBonus : 0))
+  );
+  const isk = Math.max(0, rawIsk);
   ResourceRegistry.add(state, "currency:isk", isk);
   addLoot("currency:isk", isk);
   enemy.defeated = true;
