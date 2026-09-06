@@ -529,7 +529,7 @@ function rollCargoDrop(enemy, zone, rng, state) {
   if (!enemy || !zone) return null;
   // 同位素标记打捞臂：被动提升货柜掉率（装备即生效，与开关无关）；上限 50% 防爆
   const baseChance = CARGO_DROP_CHANCE[enemy.kind] || 0;
-  const salvageBonus = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+  const salvageBonus = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
   const chance = Math.min(baseChance * (1 + salvageBonus), 0.5);
   const roll = (typeof rng === "function" ? rng() : Math.random());
   if (roll >= chance) return null;

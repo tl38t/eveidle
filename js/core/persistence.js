@@ -5,6 +5,50 @@
    业务系统、选择器和UI必须改用 ResourceRegistry，不得复制这里的字段访问。
    ================================================================ */
 
+// Electron-only file mirror. localStorage remains authoritative; TapTap builds
+// do not expose this bridge and keep their existing storage path unchanged.
+const DesktopSaveMirror = (() => {
+  let writeQueue = Promise.resolve();
+  const getBridge = () => {
+    try {
+      const api = typeof window !== "undefined" && window.eveIdleDesktopStorage;
+      return api && typeof api.read === "function" && typeof api.write === "function" ? api : null;
+    } catch (_) { return null; }
+  };
+  return {
+    isAvailable() { return !!getBridge(); },
+    write(raw) {
+      const api = getBridge();
+      if (!api) return Promise.resolve(false);
+      writeQueue = writeQueue.then(() => api.write(String(raw))).then(() => true).catch((error) => {
+        console.warn("[Desktop save mirror] write failed", error);
+        return false;
+      });
+      return writeQueue;
+    },
+    read() {
+      const api = getBridge();
+      if (!api) return Promise.resolve({ status: "unavailable" });
+      return Promise.resolve().then(() => api.read()).then((raw) => raw == null
+        ? { status: "none" } : { status: "ok", raw: String(raw) })
+        .catch((error) => ({ status: "error", error: error }));
+    },
+    remove() {
+      const api = getBridge();
+      if (!api || typeof api.remove !== "function") return Promise.resolve(true);
+      return Promise.resolve().then(() => api.remove()).then(() => true).catch((error) => {
+        console.warn("[Desktop save mirror] remove failed", error);
+        return false;
+      });
+    }
+  };
+})();
+
+function mirrorDesktopSave(data) {
+  if (!DesktopSaveMirror.isAvailable()) return;
+  try { DesktopSaveMirror.write(JSON.stringify(data)); } catch (_) {}
+}
+
 const LocalStorageAdapter = {
   _key: "eve_idle_save",
   save(data) { try { localStorage.setItem(this._key, JSON.stringify(data)); return true; } catch (e) { console.warn("存档失败：", e); return false; } },
@@ -750,6 +794,11 @@ function migrateMoonMiningState() {
   if (action.refiningSubAction !== "smelting" && action.refiningSubAction !== "dismantle") {
     action.refiningSubAction = "smelting";
   }
+  // 2026-09-05：视图态 refiningView 与运行态 refiningSubAction 解耦后的老存档归一。
+  // 老存档没有 refiningView → 跟随运行子模式，保证载入后看到的就是正在跑/上次选中的面板。
+  if (action.refiningView !== "smelting" && action.refiningView !== "dismantle") {
+    action.refiningView = action.refiningSubAction;
+  }
   if (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES.length) {
     const hasDismantleRecipe = (id) => SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === id);
     if (!hasDismantleRecipe(action.dismantleTarget)) action.dismantleTarget = SHIP_COMPONENT_DISMANTLE_RECIPES[0].id;
@@ -993,11 +1042,12 @@ function createDefaultStation() {
     buildings: Object.fromEntries(STATION_BUILDING_IDS.map(id => [id, 0])),
     dispatch: { miningCount: 0, gasCount: 0 },
     maintenance: { fuelRemaining: 0, lastTick: 0, lowFuelNotified: false, depletedNotified: false },
-    autoLines: {
-      smelting:    { enabled:false, operatorId:null, selectedTargetId:null, startedTargetId:null, progress:0, lastTick:0, stoppedReason:null },
-      equipment:   { enabled:false, operatorId:null, selectedTargetId:null, startedTargetId:null, progress:0, lastTick:0, stoppedReason:null },
-      booster:     { enabled:false, operatorId:null, selectedTargetId:null, startedTargetId:null, progress:0, lastTick:0, stoppedReason:null }
-    },
+    autoLines: Object.fromEntries(
+      (typeof AUTO_LINE_IDS !== "undefined" && Array.isArray(AUTO_LINE_IDS)
+        ? AUTO_LINE_IDS
+        : ["smelting","smelting_2","equipment","equipment_2","booster","booster_2"]
+      ).map(k => [k, { enabled:false, operatorId:null, selectedTargetId:null, startedTargetId:null, progress:0, lastTick:0, stoppedReason:null }])
+    ),
     shipyard: { unlockedFlagship:false, unlockedSupercapital:false, savingsLedger:{} },
     dlc: { npcWorkers:false, combatWings:false }
   };
@@ -1082,8 +1132,12 @@ function normalizeStationState(state) {
   // autoLines：三条自动线，operatorId 仅允许 null（首版恒 null）
   // selectedTargetId/startedTargetId: null 或字符串
   // progress: 有限非负; lastTick: 有限; stoppedReason: null 或字符串
+  // 动态覆盖所有自动线（含 Lv.5 解锁的第二条线 smelting_2/equipment_2/booster_2），旧存档缺省自动补默认态
+  const AUTO_LINE_KEYS = (typeof AUTO_LINE_IDS !== "undefined" && Array.isArray(AUTO_LINE_IDS))
+    ? AUTO_LINE_IDS
+    : ["smelting","smelting_2","equipment","equipment_2","booster","booster_2"];
   if (!s.autoLines || typeof s.autoLines !== "object") s.autoLines = {};
-  for (const key of ["smelting", "equipment", "booster"]) {
+  for (const key of AUTO_LINE_KEYS) {
     if (!s.autoLines[key] || typeof s.autoLines[key] !== "object") s.autoLines[key] = {};
     s.autoLines[key].enabled = Boolean(s.autoLines[key].enabled);
     s.autoLines[key].operatorId = null; // Phase 3C 首版无 NPC 操作员
@@ -1168,7 +1222,8 @@ function normalizeLegionState(state) {
     state.legion = {
       candidates: [], npcs: [], candidateRefreshAt: 0, manualRefreshCount: 0,
       manualRefreshCycleStartedAt: 0, lastSalarySettlementAt: 0, lastXpSettlementAt: 0,
-      technologyLevel: 0
+      technologyLevel: 0,
+      starmap: { initialRouteStateVersion: 1, completedNodeIds: [], collectionRewards: {} }
     };
     state._dirty = true;
     return;
@@ -1183,6 +1238,19 @@ function normalizeLegionState(state) {
   if (typeof L.lastSalarySettlementAt !== "number") { L.lastSalarySettlementAt = 0; dirty = true; }
   if (typeof L.lastXpSettlementAt !== "number") { L.lastXpSettlementAt = 0; dirty = true; }
   if (typeof L.technologyLevel !== "number") { L.technologyLevel = 0; dirty = true; }
+  if (!L.starmap || typeof L.starmap !== "object") { L.starmap = {}; dirty = true; }
+  if (!L.starmap.collectionRewards || typeof L.starmap.collectionRewards !== "object" || Array.isArray(L.starmap.collectionRewards)) { L.starmap.collectionRewards = {}; dirty = true; }
+  // 初始路线实装的一次性迁移：只清理星图制压与试炼字段，保留其他军团/玩家存档。
+  if (L.starmap.initialRouteStateVersion !== 1) {
+    L.starmap.completedNodeIds = [];
+    L.starmap.collectionRewards = {};
+    L.starmap.collectionTrial = { status:"idle", nodeId:null, lockedNode:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null };
+    L.starmap.productionTrial = { status:"idle", nodeId:null, submittedAt:0, requirements:[], result:null };
+    L.starmap.archaeologyTrial = { status:"idle", nodeId:null, lockedNode:null, siteId:null, shipInstanceId:null, probeId:null, progress:0, target:14, startedAt:0, endsAt:0, nextScanAt:0, interferenceUntil:0, cycleSeconds:0, scanStrength:0, successChance:0, scans:0, successes:0, rareFinds:0, log:[], result:null };
+    L.starmap.battleTrial = { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null };
+    L.starmap.initialRouteStateVersion = 1;
+    dirty = true;
+  }
   // NPC 字段补全（薪资状态缺省 paid；保留等级/经验，不重置）
   (L.npcs || []).forEach(function (n) {
     if (!n) return;
@@ -1279,14 +1347,14 @@ window.normalizePlanetaryState = normalizePlanetaryState;
 // - items 非数组：归一为 []（不丢弃合法内容，只修正类型）。
 // - config 非普通对象：归一为空对象后补默认字段。
 // - config.maxSize：typeof number && 有限 && >=25 → Math.floor 保留；其余统一设为 25（含 20 等旧档容量，J05 才可解锁）；已有 >25 的合法容量不得缩小。
-// - loopMode / skipOnFail 缺失或类型错误时补现有默认值。
+// - skipOnFail 缺失或类型错误时补现有默认值；loopMode 已于 2026-09-05 随「队列循环模式」移除，旧档残留键直接删除。
 // - status 缺失时补默认结构；不得清空合法旧队列项目。
 // 新游戏路径安全、幂等；旧档 maxSize=20 登录/导入后变为 25，可继续真实追加 21–25 项。
 function normalizeQueueState(state) {
   if (!state.queue || typeof state.queue !== "object" || Array.isArray(state.queue)) {
     state.queue = {
       items: [],
-      config: { maxSize: 25, loopMode: false, skipOnFail: true },
+      config: { maxSize: 25, skipOnFail: true },
       status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 },
     };
     return;
@@ -1301,7 +1369,8 @@ function normalizeQueueState(state) {
   } else {
     state.queue.config.maxSize = 25;
   }
-  if (typeof state.queue.config.loopMode !== "boolean") state.queue.config.loopMode = false;
+  // 2026-09-05：队列「循环模式」已移除，清理旧存档里残留的 loopMode 键。
+  if (state.queue.config.loopMode !== undefined) delete state.queue.config.loopMode;
   if (typeof state.queue.config.skipOnFail !== "boolean") state.queue.config.skipOnFail = true;
   if (!state.queue.status || typeof state.queue.status !== "object" || Array.isArray(state.queue.status)) {
     state.queue.status = { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 };
@@ -1513,6 +1582,7 @@ const SaveManager = {
     try { ok = this.adapter.save(gameState); } catch (e) { this._lastStorageError = e; ok = false; }
     if (!ok && !this._lastStorageError) this._lastStorageError = new Error("localStorage.setItem returned false");
     if (ok) {
+      mirrorDesktopSave(gameState);
       gameState._dirty = false;
       this._recordSuccessfulLocalSave(candidateSaveTime);
       this._updateStatus("已保存 " + new Date(candidateSaveTime).toLocaleTimeString());
@@ -1782,6 +1852,7 @@ const SaveManager = {
       let removed = false;
       try { removed = self.adapter.removeItem(self.adapter._key); } catch (e) { removed = false; }
       if (!removed) throw new Error("localStorage 删除失败");
+      DesktopSaveMirror.remove();
       self._lastLoadSourceHadTutorial = null;
       self._hasLocalCandidate = false;
       self._updateStatus("此设备的本地存档与备份已删除，正在重载…");
@@ -1806,6 +1877,7 @@ const SaveManager = {
         let removed = false;
         try { removed = self.adapter.removeItem(self.adapter._key); } catch (e) { removed = false; }
         if (!removed) throw new Error("localStorage 删除失败");
+        DesktopSaveMirror.remove();
         self._hasLocalCandidate = false;
         self._lastLoadSourceHadTutorial = null;
         self._updateStatus("已永久删除（设备本地+设备备份+云端），正在重载…");
@@ -1949,6 +2021,7 @@ const SaveManager = {
     // Async phase: initialize providers, read mirror, select a device candidate, then
     // query cloud. loading stays blocked throughout.
     this._bootPromise = self._initCloudAndAchievement()
+      .then(function () { return self._hydrateDesktopSave(); })
       .then(function () { return self._readAndSelectDeviceCandidate(); })
       .then(function () { return self._runCloudStartup(); })
       // _runCloudStartup 内部已对最终 payload 做离线结算并落定 ready / local-only。
@@ -1969,6 +2042,26 @@ const SaveManager = {
       const payload = this.adapter.load();
       return payload ? { status: "ok", payload: payload } : { status: "none" };
     } catch (e) { return { status: "error", error: e }; }
+  },
+  _hydrateDesktopSave() {
+    const self = this;
+    if (!DesktopSaveMirror.isAvailable()) return Promise.resolve(false);
+    const local = this._localReadResult || this._readLocalCandidate();
+    if (!local || local.status !== "none") return Promise.resolve(false);
+    return DesktopSaveMirror.read().then(function (result) {
+      if (!result || result.status !== "ok" || !result.raw) return false;
+      try {
+        const payload = self.adapter.import(result.raw);
+        if (!validateImportedSavePayload(payload) || !payload.skills) return false;
+        localStorage.setItem(self.adapter._key, result.raw);
+        self._localReadResult = { status: "ok", payload: payload };
+        self._hasLocalCandidate = true;
+        return true;
+      } catch (error) {
+        console.warn("[Desktop save mirror] invalid save ignored", error);
+        return false;
+      }
+    });
   },
   _initProviderWithTimeout(provider, ms) {
     if (!provider || typeof provider.init !== "function") return Promise.resolve(false);
@@ -2293,6 +2386,7 @@ const SaveManager = {
     try {
       const unlocked = (gameState && gameState.achievements && gameState.achievements.unlockedAtById) || {};
       as.reconcileAll(unlocked);
+      if (typeof as.reconcileProgress === "function") as.reconcileProgress();
     } catch (e) { /* 非致命 */ }
   },
   _syncLastCloudChecksum(checksum) {
@@ -2370,6 +2464,7 @@ const SaveManager = {
     let ok = false;
     try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
     if (ok) {
+      mirrorDesktopSave(gameState);
       gameState._dirty = false;
       this._recordSuccessfulLocalSave(candidateSaveTime);
       try {

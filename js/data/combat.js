@@ -14,12 +14,17 @@ const ENEMY_DATABASE = {
       fleet_commander:{ name:"苍穹劫团舰队指挥官", level:50, kind:"boss", icon:"👺", hp:{shield:14040,armor:630,structure:270}, hit:235,dodge:85,baseDamage:990, iskDrop:8000,xpDrop:630 },
       siege_battleship:{ name:"苍穹劫团攻城战列舰", level:60, kind:"normal", icon:"👹", hp:{shield:5400,armor:2160,structure:1350}, hit:170,dodge:45,baseDamage:930, iskDrop:2000,xpDrop:120 },
       marauder_battleship:{ name:"苍穹劫团掠袭战列舰", level:65, kind:"elite", icon:"👹", hp:{shield:12420,armor:4860,structure:2700}, hit:210,dodge:60,baseDamage:1395, iskDrop:6000,xpDrop:360 },
+      marauder_commander:{ name:"苍穹劫团掠袭指挥舰", level:62, kind:"elite", icon:"👹", hp:{shield:13500,armor:5400,structure:3375}, hit:170,dodge:45,baseDamage:930, auraDamage:1.3, iskDrop:10000,xpDrop:480 },
       war_master:{ name:"苍穹劫团战争主宰", level:70, kind:"boss", icon:"👺", hp:{shield:42120,armor:1890,structure:810}, hit:270,dodge:70,baseDamage:2970, iskDrop:16000,xpDrop:1080 }
       , frontier_capital:{ name:"苍穹劫团边疆旗舰", level:80, kind:"normal", icon:"👹", hp:{shield:15000,armor:6000,structure:3750}, hit:310,dodge:65,baseDamage:1800, iskDrop:4000,xpDrop:200 }
+      , frontier_commander:{ name:"苍穹劫团边疆指挥舰", level:82, kind:"elite", icon:"👹", hp:{shield:37500,armor:15000,structure:9375}, hit:320,dodge:68,baseDamage:1800, auraDamage:1.3, iskDrop:12000,xpDrop:600 }
       , domination_capital:{ name:"苍穹劫团统治旗舰", level:85, kind:"elite", icon:"👹", hp:{shield:34500,armor:13500,structure:7500}, hit:350,dodge:75,baseDamage:2700, iskDrop:12000,xpDrop:600 }
       , outer_reach_overseer:{ name:"苍穹劫团外环督军", level:90, kind:"boss", icon:"👺", hp:{shield:117000,armor:5250,structure:2250}, hit:400,dodge:85,baseDamage:5700, iskDrop:32000,xpDrop:1800 }
       , abyssal_supercapital:{ name:"苍穹劫团深渊超级旗舰", level:90, kind:"normal", icon:"👹", hp:{shield:27000,armor:10800,structure:6750}, hit:380,dodge:75,baseDamage:2900, iskDrop:8000,xpDrop:320 }
       , seraph_supercapital:{ name:"苍穹劫团炽天超级旗舰", level:95, kind:"elite", icon:"👹", hp:{shield:62100,armor:24300,structure:13500}, hit:425,dodge:85,baseDamage:4350, iskDrop:24000,xpDrop:960 }
+      , abyssal_commander:{ name:"苍穹劫团深渊指挥舰", level:92, kind:"elite", icon:"👹", hp:{shield:67500,armor:27000,structure:16875}, hit:380,dodge:75,baseDamage:2900, auraDamage:1.3, iskDrop:20000,xpDrop:800 }
+      , precursor_warden:{ name:"先驱守望者", level:95, kind:"boss", icon:"👁", hp:{shield:200000,armor:120000,structure:80000}, hit:450,dodge:90,baseDamage:3600
+        , bossHealPct:0.04, bossHealEvery:5, enrageMul:1.5, enrageAt:0.3, repairSuppr:0.4, iskDrop:80000,xpDrop:4000 }
       , deep_domain_overlord:{ name:"苍穹劫团深域战争领主", level:99, kind:"boss", icon:"👺", hp:{shield:210600,armor:9450,structure:4050}, hit:480,dodge:95,baseDamage:9000, iskDrop:64000,xpDrop:2880 }
     }
   },
@@ -37,12 +42,15 @@ const ENEMY_DATABASE = {
       blood_archon:{ name:"赤誓教团鲜血执政官", level:50, kind:"boss", icon:"🧛‍♂️", hp:{shield:614,armor:13689,structure:263}, hit:245,dodge:80,baseDamage:840, iskDrop:8000,xpDrop:630 },
       iron_battleship:{ name:"赤誓教团铁血战列舰", level:60, kind:"normal", icon:"🧛", hp:{shield:2106,armor:5265,structure:1317}, hit:180,dodge:40,baseDamage:840, iskDrop:2000,xpDrop:120 },
       apostle_battleship:{ name:"赤誓教团使徒战列舰", level:65, kind:"elite", icon:"🧛", hp:{shield:4740,armor:12111,structure:2634}, hit:220,dodge:55,baseDamage:1260, iskDrop:6000,xpDrop:360 },
+      apostle_commander:{ name:"赤誓教团使徒指挥舰", level:62, kind:"elite", icon:"🧛", hp:{shield:5265,armor:13163,structure:3293}, hit:180,dodge:40,baseDamage:840, auraDamage:1.3, iskDrop:10000,xpDrop:480 },
       blood_sovereign:{ name:"赤誓教团鲜血君王", level:70, kind:"boss", icon:"🧛‍♂️", hp:{shield:1842,armor:41067,structure:789}, hit:280,dodge:65,baseDamage:2570, iskDrop:16000,xpDrop:1080 }
       , covenant_capital:{ name:"赤誓教团盟约旗舰", level:80, kind:"normal", icon:"🧛", hp:{shield:5850,armor:14625,structure:3656}, hit:320,dodge:60,baseDamage:1620, iskDrop:4000,xpDrop:200 }
+      , covenant_commander:{ name:"赤誓教团盟约指挥舰", level:82, kind:"elite", icon:"🧛", hp:{shield:14625,armor:36563,structure:9141}, hit:330,dodge:63,baseDamage:1620, auraDamage:1.3, iskDrop:12000,xpDrop:600 }
       , apostolic_capital:{ name:"赤誓教团使徒旗舰", level:85, kind:"elite", icon:"🧛", hp:{shield:13163,armor:33638,structure:7313}, hit:360,dodge:70,baseDamage:2430, iskDrop:12000,xpDrop:600 }
       , outer_reliquary_overseer:{ name:"赤誓教团外环圣主", level:90, kind:"boss", icon:"🧛‍♂️", hp:{shield:5119,armor:114075,structure:2194}, hit:410,dodge:80,baseDamage:5130, iskDrop:32000,xpDrop:1800 }
       , abyssal_blood_supercapital:{ name:"赤誓教团深渊超级旗舰", level:90, kind:"normal", icon:"🧛", hp:{shield:10530,armor:26325,structure:6581}, hit:390,dodge:70,baseDamage:2610, iskDrop:8000,xpDrop:320 }
       , crimson_supercapital:{ name:"赤誓教团深红超级旗舰", level:95, kind:"elite", icon:"🧛", hp:{shield:23693,armor:60548,structure:13163}, hit:435,dodge:80,baseDamage:3915, iskDrop:24000,xpDrop:960 }
+      , abyssal_blood_commander:{ name:"赤誓教团深渊指挥舰", level:92, kind:"elite", icon:"🧛", hp:{shield:26325,armor:65813,structure:16453}, hit:390,dodge:70,baseDamage:2610, auraDamage:1.3, iskDrop:20000,xpDrop:800 }
       , deep_reliquary_overlord:{ name:"赤誓教团深域大君", level:99, kind:"boss", icon:"🧛‍♂️", hp:{shield:9214,armor:205335,structure:3949}, hit:490,dodge:90,baseDamage:8100, iskDrop:64000,xpDrop:2880 }
     }
   },
@@ -60,12 +68,15 @@ const ENEMY_DATABASE = {
       nexus_overlord:{ name:"静默集群枢纽领主", level:50, kind:"boss", icon:"👾", hp:{shield:630,armor:270,structure:14040}, hit:225,dodge:90,baseDamage:801, iskDrop:8000,xpDrop:630 },
       command_battleship:{ name:"静默集群指令战列舰", level:60, kind:"normal", icon:"🤖", hp:{shield:2160,armor:1350,structure:5400}, hit:160,dodge:50,baseDamage:750, iskDrop:2000,xpDrop:120 },
       domination_battleship:{ name:"静默集群统治战列舰", level:65, kind:"elite", icon:"🤖", hp:{shield:4860,armor:2700,structure:12420}, hit:200,dodge:65,baseDamage:1125, iskDrop:6000,xpDrop:360 },
+      domination_commander:{ name:"静默集群统治指挥舰", level:62, kind:"elite", icon:"🤖", hp:{shield:5400,armor:3375,structure:13500}, hit:160,dodge:50,baseDamage:750, auraDamage:1.3, iskDrop:10000,xpDrop:480 },
       matrix_overlord:{ name:"静默集群矩阵领主", level:70, kind:"boss", icon:"👾", hp:{shield:1890,armor:810,structure:42120}, hit:260,dodge:75,baseDamage:2550, iskDrop:16000,xpDrop:1080 }
       , nexus_capital:{ name:"静默集群枢纽旗舰", level:80, kind:"normal", icon:"🤖", hp:{shield:6000,armor:3750,structure:15000}, hit:300,dodge:70,baseDamage:1440, iskDrop:4000,xpDrop:200 }
+      , nexus_commander:{ name:"静默集群枢纽指挥舰", level:82, kind:"elite", icon:"🤖", hp:{shield:15000,armor:9375,structure:37500}, hit:310,dodge:73,baseDamage:1440, auraDamage:1.3, iskDrop:12000,xpDrop:600 }
       , dominion_capital:{ name:"静默集群支配旗舰", level:85, kind:"elite", icon:"🤖", hp:{shield:13500,armor:7500,structure:34500}, hit:340,dodge:80,baseDamage:2160, iskDrop:12000,xpDrop:600 }
       , outer_array_overseer:{ name:"静默集群外环主脑", level:90, kind:"boss", icon:"👾", hp:{shield:5250,armor:2250,structure:117000}, hit:390,dodge:90,baseDamage:4560, iskDrop:32000,xpDrop:1800 }
       , abyssal_nexus_supercapital:{ name:"静默集群深渊超级旗舰", level:90, kind:"normal", icon:"🤖", hp:{shield:10800,armor:6750,structure:27000}, hit:370,dodge:80,baseDamage:2320, iskDrop:8000,xpDrop:320 }
       , ascendant_supercapital:{ name:"静默集群升格超级旗舰", level:95, kind:"elite", icon:"🤖", hp:{shield:24300,armor:13500,structure:62100}, hit:415,dodge:90,baseDamage:3480, iskDrop:24000,xpDrop:960 }
+      , abyssal_nexus_commander:{ name:"静默集群深渊指挥舰", level:92, kind:"elite", icon:"🤖", hp:{shield:27000,armor:16875,structure:67500}, hit:370,dodge:80,baseDamage:2320, auraDamage:1.3, iskDrop:20000,xpDrop:800 }
       , deep_nexus_overlord:{ name:"静默集群深域主宰", level:99, kind:"boss", icon:"👾", hp:{shield:9450,armor:4050,structure:210600}, hit:470,dodge:100,baseDamage:7200, iskDrop:64000,xpDrop:2880 }
     }
   }
@@ -115,6 +126,25 @@ const COMBAT_FORMATION_POOLS = {
     { id:"3_normal", normal:3, elite:0, chance:0.20 },
     { id:"2_normal_1_elite", normal:2, elite:1, chance:0.35 },
     { id:"3_normal_1_elite", normal:3, elite:1, chance:0.35 }
+  ],
+  // 星图大编队试炼专用池（仅 getBattleTrialWaveZone 消费，普通星带不会用到）。
+  starmap_big: [
+    { id:"5_normal", normal:5, elite:0, chance:1 }
+  ],
+  starmap_deep4: [
+    { id:"3_normal_1_commander", normal:3, elite:1, chance:1 }
+  ],
+  starmap_mid3: [
+    { id:"3_normal", normal:3, elite:0, chance:1 }
+  ],
+  starmap_mid4: [
+    { id:"3_normal_1_commander", normal:3, elite:1, chance:1 }
+  ],
+  starmap_final: [
+    { id:"2n_1c_1b", normal:2, elite:1, boss:1, chance:1 }
+  ],
+  starmap_outer4: [
+    { id:"3_normal_1_commander", normal:3, elite:1, chance:1 }
   ]
 };
 
@@ -134,9 +164,12 @@ const COMBAT_ZONES = [
   , { id:"angel_outer_reach", name:"苍穹劫团外环侵袭区", faction:"angel", secLevel:"0.0外环", level:80, requiredCL:80, icon:"👹", enemyPool:{normal:["frontier_capital"],elite:["domination_capital"],boss:["outer_reach_overseer"]}, formationPool:"nullsec", bossEscortCount:1, maxWave:20, clearLp:25, iskMulti:3.0, fuelMult:1.6, encryptedDataDisabled:true, specialDrops:[{resourceId:"mineral:莫尔石",material:"暗质晶核",qty:1,chances:{elite:0.05,boss:1.0}}], gearDrops:[{resourceId:"special:苍穹劫团装备生产许可S", qty:1, chances:{elite:0.01,boss:0.04}}] }
   , { id:"blood_outer_reliquary", name:"赤誓教团外环圣库", faction:"blood", secLevel:"0.0外环", level:80, requiredCL:80, icon:"🧛", enemyPool:{normal:["covenant_capital"],elite:["apostolic_capital"],boss:["outer_reliquary_overseer"]}, formationPool:"nullsec", bossEscortCount:1, maxWave:20, clearLp:25, iskMulti:3.0, fuelMult:1.6, encryptedDataDisabled:true, specialDrops:[{resourceId:"mineral:莫尔石",material:"暗质晶核",qty:1,chances:{elite:0.05,boss:1.0}}], gearDrops:[{resourceId:"special:赤誓教团装备生产许可S", qty:1, chances:{elite:0.01,boss:0.04}}], stationCoreDrops:[{coreId:"equipEng", resourceId:"special:空间站装备制造核心", qty:1, chances:{elite:0.000610,boss:0.00305}}] }
   , { id:"sansha_outer_array", name:"静默集群外环同化阵列", faction:"sansha", secLevel:"0.0外环", level:80, requiredCL:80, icon:"🤖", enemyPool:{normal:["nexus_capital"],elite:["dominion_capital"],boss:["outer_array_overseer"]}, formationPool:"nullsec", bossEscortCount:1, maxWave:20, clearLp:25, iskMulti:3.0,  fuelMult:1.6, encryptedDataDisabled:true, specialDrops:[{resourceId:"mineral:莫尔石",material:"暗质晶核",qty:1,chances:{elite:0.05,boss:1.0}}], gearDrops:[{resourceId:"special:静默集群装备生产许可S", qty:1, chances:{elite:0.01,boss:0.04}}] }
-  , { id:"angel_deep_domain", name:"苍穹劫团深域王庭", faction:"angel", secLevel:"0.0深层", level:90, requiredCL:90, icon:"👹", enemyPool:{normal:["abyssal_supercapital"],elite:["seraph_supercapital"],boss:["deep_domain_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:1.8, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:天穹深层舰船数据",material:"天穹深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}], stationCoreDrops:[{coreId:"booster", resourceId:"special:空间站增强剂制造核心", qty:1, chances:{elite:0.000546,boss:0.00273}}] }
-  , { id:"blood_deep_reliquary", name:"赤誓教团深域圣殿", faction:"blood", secLevel:"0.0深层", level:90, requiredCL:90, icon:"🧛", enemyPool:{normal:["abyssal_blood_supercapital"],elite:["crimson_supercapital"],boss:["deep_reliquary_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:1.8, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:重垒深层舰船数据",material:"重垒深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}] }
-  , { id:"sansha_deep_nexus", name:"静默集群深域主脑", faction:"sansha", secLevel:"0.0深层", level:90, requiredCL:90, icon:"🤖", enemyPool:{normal:["abyssal_nexus_supercapital"],elite:["ascendant_supercapital"],boss:["deep_nexus_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:1.8, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:裂界深层舰船数据",material:"裂界深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"angel_deep_domain", name:"苍穹劫团深域王庭", faction:"angel", secLevel:"0.0深层", level:90, requiredCL:90, icon:"👹", enemyPool:{normal:["abyssal_supercapital"],elite:["abyssal_commander"],boss:["deep_domain_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:1.8, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:天穹深层舰船数据",material:"天穹深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}], stationCoreDrops:[{coreId:"booster", resourceId:"special:空间站增强剂制造核心", qty:1, chances:{elite:0.000546,boss:0.00273}}] }
+  , { id:"blood_deep_reliquary", name:"赤誓教团深域圣殿", faction:"blood", secLevel:"0.0深层", level:90, requiredCL:90, icon:"🧛", enemyPool:{normal:["abyssal_blood_supercapital"],elite:["abyssal_blood_commander"],boss:["deep_reliquary_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:1.8, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:重垒深层舰船数据",material:"重垒深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"sansha_deep_nexus", name:"静默集群深域主脑", faction:"sansha", secLevel:"0.0深层", level:90, requiredCL:90, icon:"🤖", enemyPool:{normal:["abyssal_nexus_supercapital"],elite:["abyssal_nexus_commander"],boss:["deep_nexus_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:30, iskMulti:4.0, fuelMult:1.8, encryptedDataDisabled:true, specialDrops:[{resourceId:"special:裂界深层舰船数据",material:"裂界深层舰船数据",qty:1,chances:{elite:0.05,boss:1.0}}] }
+  , { id:"precursor_core", name:"先驱文明核心", faction:"angel", secLevel:"最终", level:95, requiredCL:90, icon:"👁", trialOnly:true
+  , enemyPool:{normal:["abyssal_supercapital"],elite:["abyssal_commander"],boss:["precursor_warden"]}, formationPool:"starmap_final"
+  , allowTrialBoss:true, enemyBalance:{hp:1,damage:2.35,boss:{hp:1,damage:1}} }
 ];
 
 
@@ -144,9 +177,16 @@ const ENDGAME_COMBAT_ZONE_BALANCE = Object.freeze({
   angel_outer_reach:Object.freeze({hp:1.728,damage:0.709,boss:Object.freeze({hp:1.18,damage:1.18})}),
   blood_outer_reliquary:Object.freeze({hp:1.24,damage:0.76935,boss:Object.freeze({hp:0.88,damage:0.95})}),
   sansha_outer_array:Object.freeze({hp:1.528,damage:0.69462,boss:Object.freeze({hp:1.05,damage:1.05})}),
-  angel_deep_domain:Object.freeze({hp:1.32275,damage:0.55125,boss:Object.freeze({hp:1.087,damage:1.087})}),
-  blood_deep_reliquary:Object.freeze({hp:1.0871,damage:0.5247,boss:Object.freeze({hp:1.045,damage:1.045})}),
-  sansha_deep_nexus:Object.freeze({hp:1.02544,damage:0.48825,boss:Object.freeze({hp:1.07,damage:1.07})})
+  // 2026-09-05 星图内环重校准（仅内环三战区，外环/中环=80星带维持不变）：
+  // 原 damage 0.55/0.52/0.49 低于 1，敌人打不动旗舰级玩家的护盾回复线（旗舰 6 中槽回盾每轮 ~2.1k）。
+  // 编队升级为 4 舰：3 艘深渊超级旗舰 + 1 艘深渊指挥舰（elite，血量 ×2.5，在场时其余敌舰伤害 +30%，见 auraDamage）。
+  // 全体血量 ×2、damage 1.4 —— 真实引擎标定：推荐编队 2 旗舰 ~74% 通过、剩血 26%、零损 0%；单旗舰 0%。
+  // 注意 damage 1.4 仅对"4 舰+光环"编队成立；若回调敌数需重标（2 舰时 5 倍才等效）。
+  angel_deep_domain:Object.freeze({hp:2.6455,damage:1.4,boss:Object.freeze({hp:1.087,damage:1.087})}),
+  blood_deep_reliquary:Object.freeze({hp:2.1742,damage:1.4,boss:Object.freeze({hp:1.045,damage:1.045})}),
+  sansha_deep_nexus:Object.freeze({hp:2.05088,damage:1.4,boss:Object.freeze({hp:1.07,damage:1.07})}),
+  // 最终核心 BOSS 战区（仅星图试炼 trialOnly；damage 2.35 为三旗舰基线 N=300 标定值）
+  precursor_core:Object.freeze({hp:1.2,damage:1.2,boss:Object.freeze({hp:1,damage:1})})
 });
 for (const zone of COMBAT_ZONES) zone.enemyBalance = ENDGAME_COMBAT_ZONE_BALANCE[zone.id] || null;
 
@@ -307,6 +347,8 @@ const DEATHSPACE_DATABASE = [
 const DEATHSPACE_TICKET_MATERIALS = DEATHSPACE_DATABASE.map(site => site.ticketMaterial);
 const DEATHSPACE_LOOT_MATERIALS = DEATHSPACE_DATABASE.flatMap(site => [site.coreMaterial, site.protocolMaterial]);
 const SUPERCAPITAL_DATA_MATERIALS = ["天穹深层舰船数据", "重垒深层舰船数据", "裂界深层舰船数据"];
+// 军团星图采集节点的四种泰坦专属材料。复用 special 资源池，避免再造第二套库存。
+const STARMAP_TITAN_MATERIALS = ["星骸钛晶", "赫利昂冷凝气", "相位铱核", "虚境裂流"];
 // Tier2 加密数据拆分：4 件势力装备的专属制造料（bare name 即 cost 键；掉落用 "special:"+名）。
 const GEAR_DATA_MATERIALS = ["苍穹劫团装备生产许可D", "苍穹劫团装备生产许可C", "苍穹劫团装备生产许可B", "苍穹劫团装备生产许可A", "苍穹劫团装备生产许可S", "赤誓教团装备生产许可D", "赤誓教团装备生产许可C", "赤誓教团装备生产许可B", "赤誓教团装备生产许可A", "赤誓教团装备生产许可S", "静默集群装备生产许可D", "静默集群装备生产许可C", "静默集群装备生产许可B", "静默集群装备生产许可A", "静默集群装备生产许可S"];
 // Tier3 空间站四核心：特殊物资（非装备），建站+持有才生效，唯一产出。
@@ -316,7 +358,7 @@ const CARGO_CONTAINER_MATERIALS = ["货柜S", "货柜M", "货柜L", "货柜XL"];
 const NEURAL_IMPLANT_MATERIALS = ["神经植入体·攻击", "神经植入体·防御", "神经植入体·工程", "神经植入体·指挥"];
 // 增强剂系统 Phase 2A：5 档高频战术材料并入 special 池（登记于 boosters.js:TACTICAL_MATERIALS，先于本文件加载）。
 const TACTICAL_MATERIAL_IDS = typeof TACTICAL_MATERIALS !== "undefined" ? TACTICAL_MATERIALS.map(material => material.id) : [];
-const COMBAT_SPECIAL_MATERIALS = [...STAR_BELT_DATA_MATERIALS, ...DEATHSPACE_TICKET_MATERIALS, ...DEATHSPACE_LOOT_MATERIALS, ...SUPERCAPITAL_DATA_MATERIALS, ...GEAR_DATA_MATERIALS, ...STATION_CORE_MATERIALS, ...CARGO_CONTAINER_MATERIALS, ...NEURAL_IMPLANT_MATERIALS, ...TACTICAL_MATERIAL_IDS];
+const COMBAT_SPECIAL_MATERIALS = [...STAR_BELT_DATA_MATERIALS, ...DEATHSPACE_TICKET_MATERIALS, ...DEATHSPACE_LOOT_MATERIALS, ...SUPERCAPITAL_DATA_MATERIALS, ...GEAR_DATA_MATERIALS, ...STATION_CORE_MATERIALS, ...CARGO_CONTAINER_MATERIALS, ...NEURAL_IMPLANT_MATERIALS, ...TACTICAL_MATERIAL_IDS, ...STARMAP_TITAN_MATERIALS];
 
 // 势力考古探针掉落（死亡空间产出「探针本体」；功勋商店卖的是「限次抄本 BPC」，两条路径并行）。
 // 绑定规则：按敌人势力绑定档位 —— 命名与掉落同源（苍穹劫团的副本掉苍穹劫团探针），

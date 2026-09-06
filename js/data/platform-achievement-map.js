@@ -7,10 +7,9 @@
      因此“映射内部 ID 集合 === ACHIEVEMENTS 集合”由构造保证，
      机器测试只需验证无孤儿键、无缺漏键。
    - taptap / steam 两列分离：未配置（null）→ 运行时跳过同步，绝不上报未确认的 ID。
-   - 仅当某内部 ID 在 TapTap / Steam 后台真正创建成就并拿到 ID 后，
-     才在下方 OVERRIDES 填入真实平台 ID，同步即自动生效。
-   - 第一阶段：全部留空（null），即“默认不发布 / 不同步”，
-     与 TAPTAP_ACHIEVEMENT_SETUP.csv 的 enabled=false 口径一致。
+   - TapTap 仍只接受下方 OVERRIDES 中人工确认的 ID。
+   - Steam 成就的确认来源是 achievements.js 的 steam.enabled + apiName；
+     enabled 项自动映射为 ACH_XX，未启用项保持 null。
    - G01–G06 为首轮候选（provisional / 非隐藏 / 铜 / 首殖民行星），
      但首轮是否在后台开启由 OVERRIDES + CSV enabled 共同决定。
 
@@ -23,10 +22,7 @@
   const ACH = (typeof ACHIEVEMENTS !== "undefined") ? ACHIEVEMENTS
     : ((typeof AchievementData !== "undefined" && AchievementData.ACHIEVEMENTS) || (root.AchievementData && root.AchievementData.ACHIEVEMENTS) || []);
 
-  // 已确认的平台 ID（在 TapTap / Steam 后台创建成就后，由开发者手动填入）。
-  // 第一阶段交付：全部留空 → 运行时跳过，避免未确认即上报。
-  // 未来开启某成就：例如 G01 在 TapTap 后台拿到 ID "ach_colonize_lava" 后，
-  // 解除下方注释并填入；其 CSV 行的 enabled 同时翻为 true。
+  // 已确认的 TapTap ID（Steam ID 由 achievements.js 的 steam 字段自动提供）。
   const OVERRIDES = Object.freeze({
     // "G01": { taptap: "ach_colonize_lava", steam: null },
     // "G02": { taptap: "ach_colonize_gas",  steam: null },
@@ -44,12 +40,14 @@
     for (let i = 0; i < ACH.length; i++) {
       const a = ACH[i];
       if (!a || !a.id) continue;
-      map[a.id] = { taptap: null, steam: null };
+      const steam = a.steam && a.steam.enabled && typeof a.steam.apiName === "string"
+        ? a.steam.apiName : null;
+      map[a.id] = { taptap: null, steam: steam };
     }
     Object.keys(OVERRIDES).forEach(function (id) {
       if (!Object.prototype.hasOwnProperty.call(map, id)) return; // 防呆：override 引用了不存在的内部 ID
       const o = OVERRIDES[id] || {};
-      map[id] = { taptap: o.taptap || null, steam: o.steam || null };
+      map[id] = { taptap: o.taptap || null, steam: o.steam || map[id].steam || null };
     });
     return map;
   }

@@ -58,6 +58,9 @@ function createDefaultStatisticsState() {
     //   且 previousValue > value，即真实 spend 路径）的差值累计；
     //   禁止从当前余额或旧档余额差猜测历史消耗（旧档迁移后保持 0）。
     economy:{ iskSpent:0, lpSpent:0 },
+    // 历史峰值持有星币（I01–I03 成就语义）：每次 currency:isk 变动后取 max(峰值, 当前余额)。
+    // 旧档无历史峰值事实，初始化为当前余额（合法下界）；新游戏初始余额即计入峰值。
+    peakCredits:0,
     eventLedger:{ processedEventIds:[] }
   };
 }
@@ -304,6 +307,13 @@ function ensureStatisticsState(state) {
     }
   }
   statistics.economy = cleanEconomy;
+  // v11（历史峰值持有）：peakCredits 取「已有峰值」与「当前星币余额」的较大值。
+  // 旧档无历史峰值事实 → 以当前余额作为合法下界；新游戏初始余额即计入峰值（保证 I01 初始即解锁）。
+  // 每次 ensure 都做 max 收敛，幂等且不会丢失已记录的更高峰值。
+  const curIsk = (state && state.resources && Number.isFinite(state.resources.isk)) ? state.resources.isk : 0;
+  const prevPeak = (typeof current.peakCredits === "number" && Number.isFinite(current.peakCredits) && current.peakCredits >= 0)
+    ? current.peakCredits : 0;
+  statistics.peakCredits = (curIsk > prevPeak) ? curIsk : prevPeak;
   // v9 追溯回填（Batch C-14A）：fromVersion<9 时只从已存在的权威事实推导，不臆测。
   //   J05：当前存档 queue.items 的真实长度是「历史曾达到过」的下界 → 取 max。
   //   J03/J04：station.maxOfflineSettlementSeconds 是 offline.js 真实结算过的最长单次秒数，
@@ -511,13 +521,20 @@ function consumeStatisticsEvent(event) {
       break;
     }
     case "resource:changed": {
+      const resourceId = payload.resourceId;
+      const previousValue = payload.previousValue;
+      const value = payload.value;
+      // 历史峰值持有（I01–I03 成就语义）：每次 currency:isk 变动后取 max(峰值, 当前余额)。
+      // 与 iskSpent 的统计口径无关——无论增减都更新峰值；value 为变动后余额。
+      if (resourceId === "currency:isk" && typeof value === "number" && Number.isFinite(value) && value > 0) {
+        const prevPeak = (typeof statistics.peakCredits === "number" && Number.isFinite(statistics.peakCredits))
+          ? statistics.peakCredits : 0;
+        if (value > prevPeak) statistics.peakCredits = value;
+      }
       // Batch R（v10·货币消耗统计）：仅累计 currency:isk / currency:lp 的真实消费
       // （previousValue > value 即 spend 路径，累计差额 previousValue - value）。
       // 其余资源变动 / 充值（previousValue <= value）一律拒绝（handled=false，不 dirty、不增 events）。
       // 不信任 events.js 契约的宽松 number 校验（数字串会放行），此处严格要求 typeof number + 有限。
-      const resourceId = payload.resourceId;
-      const previousValue = payload.previousValue;
-      const value = payload.value;
       if (typeof resourceId !== "string" ||
           (resourceId !== "currency:isk" && resourceId !== "currency:lp") ||
           typeof previousValue !== "number" || !Number.isFinite(previousValue) ||

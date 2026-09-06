@@ -83,7 +83,7 @@
       else if (isk < cost) { verdict = "FAIL"; reason = "星币不足（需 " + cost.toLocaleString("zh-CN") + "，现有 " + Math.floor(isk).toLocaleString("zh-CN") + "）"; }
       else if (isk - cost < reserve) { verdict = "FAIL"; reason = "最低星币储备卡住（需续期后留 " + reserve.toLocaleString("zh-CN") + "，续期后仅剩 " + Math.floor(isk - cost).toLocaleString("zh-CN") + "）"; }
       else if (freeze !== "NONE") { verdict = "FAIL"; reason = "时间锚点冻结（疑似改过系统时间，时间戳落在未来 " + fmtMs(freezeDelta) + " 后才会恢复续期）"; }
-      else if (!dep.active) { verdict = "INFO"; reason = "基地当前未激活（已过期或未部署）"; }
+      else if (!dep.active) { verdict = "INFO"; reason = "基地已过期未激活，但续期条件已全部满足，下次 tick/结算将自动补续期"; }
       else { verdict = "OK"; reason = "条件满足，到期那一刻应自动续期"; }
 
       report.rows.push({

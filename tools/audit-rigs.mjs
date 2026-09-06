@@ -218,14 +218,15 @@ section("C 装配 / 销毁 / 替换");
   st2.equipment.inventory.push("rig_shield_capacity_i");
   r=W.dispatchGameAction(st2,{type:"hangar/fitRig",instanceId:ship2.instanceId,slotIndex:0,rigItemId:"rig_shield_capacity_i"},0);
   ok(r.changed===false && r.reason==="combat-active", "C17 战斗中禁止装 rig");
-  // resetFitting 对 rig=销毁
+  // resetFitting 对 rig=保留（只清普通装备）
   const st3=freshState();
   const ship3=addShip(st3,"rifter");
   fitRig(st3,ship3,"rig_shield_capacity_i",0);
   r=W.dispatchGameAction(st3,{type:"hangar/resetFitting",instanceId:ship3.instanceId},0);
   ok(r.changed===true, "C18 resetFitting 成功");
-  ok(!st3.equipment.inventory.includes("rig_shield_capacity_i"), "C19 resetFitting 对 rig 销毁不返还");
-  ok(!st3.equipment.instances.some(i=>i.itemId==="rig_shield_capacity_i"), "C20 resetFitting 后 rig 实例已删除");
+  ok(ship3.fitted.rig[0], "C19 resetFitting 后 rig 槽仍保留");
+  const keptRigInst=st3.equipment.instances.find(i=>i.itemId==="rig_shield_capacity_i");
+  ok(keptRigInst && keptRigInst.installedOn, "C20 resetFitting 后 rig 实例仍保留并仍安装在该舰");
 }
 
 /* ================= D 普通装备不受影响 ================= */
@@ -237,12 +238,13 @@ section("D 普通装备不受影响");
   let r=W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:"archaeo_analyzer_i"},0);
   ok(r.changed===true, "D1 普通装备安装成功");
   ok(!st.equipment.inventory.includes("archaeo_analyzer_i"), "D2 安装消耗 inventory");
-  // 单件卸载：实例制语义——安装时字符串已升级为实例，卸载后实例保留（installedOn=null），可再装配，不销毁
+  // 单件卸载：+0 白板实例被删除并退回 inventory；强化实例才保留
   r=W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:null},0);
   const detached=st.equipment.instances.find(i=>i.itemId==="archaeo_analyzer_i");
-  ok(r.changed===true && detached && detached.installedOn===null, "D3 普通装备卸载后实例保留且 installedOn=null（不销毁）");
+  ok(r.changed===true && !detached && st.equipment.inventory.includes("archaeo_analyzer_i"),
+    "D3 +0 白板普通装备卸载后实例删除并退回 inventory");
   ok(ship.fitted.high[0]===null, "D3b 卸载后槽位清空");
-  // resetFitting：普通装备实例保留可再用、rig 实例彻底删除
+  // resetFitting：+0 白板普通装备退回 inventory，rig 实例保留
   const st2=freshState();
   const ship2=addShip(st2,"heron");
   st2.equipment.inventory.push("archaeo_analyzer_i");
@@ -250,9 +252,11 @@ section("D 普通装备不受影响");
   fitRig(st2,ship2,"rig_archaeology_scan_i",0);
   W.dispatchGameAction(st2,{type:"hangar/resetFitting",instanceId:ship2.instanceId},0);
   const kept=st2.equipment.instances.find(i=>i.itemId==="archaeo_analyzer_i");
-  ok(kept && kept.installedOn===null, "D4 resetFitting 后普通装备实例保留（installedOn=null，可再装）");
-  ok(!st2.equipment.instances.some(i=>i.itemId==="rig_archaeology_scan_i")
-    && !st2.equipment.inventory.includes("rig_archaeology_scan_i"), "D5 resetFitting 销毁 rig（实例删除且不归还）");
+  ok(!kept && st2.equipment.inventory.includes("archaeo_analyzer_i"),
+    "D4 resetFitting 后 +0 白板普通装备退回 inventory（实例删除）");
+  ok(ship2.fitted.rig[0], "D5 resetFitting 后 rig 槽仍保留");
+  const keptRig=st2.equipment.instances.find(i=>i.itemId==="rig_archaeology_scan_i");
+  ok(keptRig && keptRig.installedOn, "D5 resetFitting 后 rig 实例仍保留并仍安装在该舰");
 }
 
 /* ================= E 效果计算 ================= */
@@ -623,7 +627,7 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
     r=W.dispatchGameAction(st,{type:"hangar/destroyFittedRig",instanceId:ship.instanceId,slotIndex:3},0);
     ok(r.changed===true, "K 启明级第 4 槽可销毁");
   }
-  // K8 清空确认数据源：显示态可枚举已装 rig（名称+同名计数），无 rig 时清单为空
+  // K8 清空确认数据源：显示态仍可枚举已装 rig（现在仅用于提示"将保留"）
   {
     const st=freshState();
     const ship=addShip(st,"illuminator");
@@ -631,18 +635,20 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
     fitRig(st,ship,"rig_archaeology_fuel_i",1);
     const d=W.getShipFittingDisplayState(st,ship.instanceId);
     const fitted=d.orbitSlots.filter(s=>s.type==="rig"&&s.equipmentId).map(s=>s.name);
-    ok(fitted.length===2&&fitted.every(n=>n&&!n.startsWith("rig_")), "K 清空确认清单来自真实显示态（含中文名）");
+    ok(fitted.length===2&&fitted.every(n=>n&&!n.startsWith("rig_")), "K 显示态可枚举已装改装件中文名");
     const st2=freshState();
     const ship2=addShip(st2,"rifter");
     const d2=W.getShipFittingDisplayState(st2,ship2.instanceId);
-    ok(d2.orbitSlots.filter(s=>s.type==="rig"&&s.equipmentId).length===0, "K 无 rig 时销毁清单为空（不显示虚假清单）");
+    ok(d2.orbitSlots.filter(s=>s.type==="rig"&&s.equipmentId).length===0, "K 无 rig 时保留清单为空");
   }
-  // K9 清空确认语义：取消=状态不变；确认=普通装备保留（rig删除）、rig实例销毁
+  // K9 清空确认语义：取消=状态不变；确认=普通装备卸下并保留实例（强化实例），改装件原封保留
   {
     const st=freshState();
     const ship=addShip(st,"illuminator");
-    st.equipment.inventory.push("t1_small_laser"); // setFittingSlot 要求装备先在 inventory
-    W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:"t1_small_laser"},0);
+    // 使用强化实例：+0 白板在卸下/清空时会被删除并退回 inventory，只有强化实例才会保留实例
+    const normalInstanceId="eq_10";
+    st.equipment.instances.push({ instanceId:normalInstanceId, itemId:"t1_small_laser", enhancementLevel:1, installedOn:null });
+    W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:normalInstanceId},0);
     fitRig(st,ship,"rig_shield_capacity_i",0);
     fitRig(st,ship,"rig_archaeology_fuel_i",1);
     const snapBefore=JSON.stringify({fitted:ship.fitted,insts:st.equipment.instances.map(i=>({id:i.instanceId,inst:i.installedOn}))});
@@ -651,13 +657,13 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
     ok(snapBefore===snapCancel, "K 取消清空（不调用 Action）状态完全不变");
     // 确认清空：dispatch hangar/resetFitting
     const r=W.dispatchGameAction(st,{type:"hangar/resetFitting",instanceId:ship.instanceId},0);
-    ok(r.changed===true&&Array.isArray(r.destroyedRigs)&&r.destroyedRigs.length===2, "K 清空返回 2 个被销毁 rig");
-    ok(ship.fitted.rig.every(x=>x===null), "K 清空后 rig 槽全部为空");
-    ok(ship.fitted.high.every(x=>x===null), "K 清空后高槽普通装备也卸下");
-    const normalInst=st.equipment.instances.find(i=>i.itemId==="t1_small_laser");
-    ok(normalInst&&normalInst.installedOn===null, "K 普通装备实例保留且 installedOn=null（未销毁）");
+    ok(r.changed===true&&r.keptRigs===true, "K 清空返回 keptRigs=true");
+    ok(ship.fitted.rig[0]&&ship.fitted.rig[1], "K 清空后 rig 槽仍保留");
+    ok(ship.fitted.high.every(x=>x===null), "K 清空后高槽普通装备卸下");
+    const normalInst=st.equipment.instances.find(i=>i.instanceId===normalInstanceId);
+    ok(normalInst&&normalInst.installedOn===null, "K 强化普通装备实例保留且 installedOn=null（未销毁）");
     const rigInst=st.equipment.instances.filter(i=>i.itemId&&i.itemId.startsWith("rig_"));
-    ok(rigInst.length===0, "K 改装件实例已彻底删除");
+    ok(rigInst.length===2, "K 改装件实例仍保留");
   }
   // K10 全部相关 display state 无 undefined / NaN
   {
@@ -677,33 +683,31 @@ section("K Phase 3B UI 返修（二级筛选 / 中文名 / 装配环 / 候选过
 /* ================= L resetFitting → 候选含游离实例 → 复装 → 保存读取往返 ================= */
 section("L 清空后候选含游离实例，复装复用实例ID，保存读取后一致");
 {
-  // L1 新建状态：安装 t1_small_laser（高槽）和两个 rig
+  // L1 新建状态：安装一个强化 t1_small_laser 实例（+0 白板卸下会被删除，无法测复装）
   const st=freshState();
   const ship=addShip(st,"illuminator");
-  st.equipment.inventory.push("t1_small_laser");
-  W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:"t1_small_laser"},0);
+  const instanceBeforeReset = "eq_10";
+  st.equipment.instances.push({ instanceId:instanceBeforeReset, itemId:"t1_small_laser", enhancementLevel:1, installedOn:null });
+  W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:instanceBeforeReset},0);
   fitRig(st,ship,"rig_shield_capacity_i",0);
   fitRig(st,ship,"rig_archaeology_fuel_i",1);
-  const instanceBeforeReset = ship.fitted.high[0];
-  ok(!!instanceBeforeReset, "L1 t1_small_laser 已安装，fitted.high[0] = instanceId");
-  ok(st.equipment.inventory.indexOf("t1_small_laser") === -1, "L1 安装后 t1_small_laser 已从 inventory 移除");
+  ok(ship.fitted.high[0] === instanceBeforeReset, "L1 强化 t1_small_laser 已安装，fitted.high[0] = instanceId");
   const totalInstCountBeforeReset = st.equipment.instances.length;
 
   // L2 resetFitting
   const r=W.dispatchGameAction(st,{type:"hangar/resetFitting",instanceId:ship.instanceId},0);
-  ok(r.changed===true && Array.isArray(r.destroyedRigs) && r.destroyedRigs.length===2, "L2 resetFitting 返回 2 个被销毁 rig");
+  ok(r.changed===true && r.keptRigs===true, "L2 resetFitting 返回 keptRigs=true");
 
-  // L3 普通装备实例保留且 installedOn=null
+  // L3 强化普通装备实例保留且 installedOn=null
   const normalInst=st.equipment.instances.find(i=>i.instanceId===instanceBeforeReset);
   ok(!!normalInst && normalInst.installedOn===null && normalInst.itemId==="t1_small_laser",
-    "L3 普通装备实例保留，installedOn=null，itemId 未被修改");
+    "L3 强化普通装备实例保留，installedOn=null，itemId 未被修改");
 
-  // L4 rig 实例已删除，装备总数不增加（仅普通装备实例保留，rig 销毁）
+  // L4 rig 实例仍保留；总实例数不变
   const rigInstAfter=st.equipment.instances.filter(i=>i.itemId && i.itemId.startsWith("rig_"));
-  ok(rigInstAfter.length===0, "L4 rig 实例已删除");
-  // 总实例数 = 之前的 totalInstCountBeforeReset（含 rig 实例） - 2(rig 销毁) + 0(无新增)
-  ok(st.equipment.instances.length === totalInstCountBeforeReset - 2,
-    `L4 resetFitting 后装备实例数 = ${totalInstCountBeforeReset} - 2 = ${st.equipment.instances.length}`);
+  ok(rigInstAfter.length===2, "L4 rig 实例仍保留");
+  ok(st.equipment.instances.length === totalInstCountBeforeReset,
+    `L4 resetFitting 后装备实例数不变 = ${st.equipment.instances.length}`);
 
   // L5 getShipFittingDisplayState → inventoryBySlot.high 包含该 instanceId
   const d=W.getShipFittingDisplayState(st,ship.instanceId);
@@ -712,10 +716,10 @@ section("L 清空后候选含游离实例，复装复用实例ID，保存读取�
   const candWithInstanceId=highCandidates.find(c => c.id === normalInst.instanceId);
   ok(!!candWithInstanceId, "L5 inventoryBySlot.high 包含游离实例的 instanceId");
   ok(candWithInstanceId.isInstance===true, "L5 游离实例标记 isInstance=true");
-  // 同时确认 rig 游离实例不会出现（rig 已被删除）
+  // rig 仍安装在舰上，候选列表中不会出现游离 rig 实例
   const rigCandidates=d.inventoryBySlot.rig || [];
   const rigFromInstances=rigCandidates.filter(c => c.isInstance===true);
-  ok(rigFromInstances.length===0, "L5 rig 候选无游离实例（rig 已销毁）");
+  ok(rigFromInstances.length===0, "L5 rig 候选无游离实例（仍安装在舰上）");
 
   // L6 用该 instanceId 重新安装
   const r2=W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:normalInst.instanceId},0);
@@ -723,11 +727,11 @@ section("L 清空后候选含游离实例，复装复用实例ID，保存读取�
   const reFittedId=ship.fitted.high[0];
   ok(reFittedId===normalInst.instanceId, `L6 复装后 fitted.high[0] 引用同一 instanceId（${reFittedId} === ${normalInst.instanceId}）`);
 
-  // L7 装备总数不变（没有产生新实例）
+  // L7 装备总数不变（没有产生新实例；rig 也保留）
   const reInstalled=st.equipment.instances.find(i=>i.instanceId===normalInst.instanceId);
   ok(!!reInstalled && reInstalled.installedOn===ship.instanceId, "L7 复装后同一实例 installedOn 设为本舰");
-  ok(st.equipment.instances.length === totalInstCountBeforeReset - 2,
-    `L7 复装后装备实例数不变（${st.equipment.instances.length} = ${totalInstCountBeforeReset} - 2）`);
+  ok(st.equipment.instances.length === totalInstCountBeforeReset,
+    `L7 复装后装备实例数不变（${st.equipment.instances.length} = ${totalInstCountBeforeReset}）`);
   // inventory 字符串池不应新增副本
   ok(st.equipment.inventory.indexOf("t1_small_laser") === -1, "L7 inventory 无新 t1_small_laser 副本");
 
@@ -751,7 +755,7 @@ section("L 清空后候选含游离实例，复装复用实例ID，保存读取�
   W.dispatchGameAction(saved,{type:"hangar/setFittingSlot",instanceId:loadedShip.instanceId,slot:"high",slotIndex:0,equipmentId:normalInst.instanceId},0);
   ok(saved.inventory.ships[0].fitted.high[0]===normalInst.instanceId, "L9 保存/读取后候选复装成功，引用不变");
 
-  // L10 游离 rig 实例不入候选（边界：rig 拆卸即销毁，fail closed）
+  // L10 rig 实例仍安装在舰上，不会变成游离候选
   {
     const st2=freshState();
     const ship2=addShip(st2,"illuminator");
@@ -759,23 +763,22 @@ section("L 清空后候选含游离实例，复装复用实例ID，保存读取�
     W.dispatchGameAction(st2,{type:"hangar/resetFitting",instanceId:ship2.instanceId},0);
     const d4=W.getShipFittingDisplayState(st2,ship2.instanceId);
     const rigCand=(d4.inventoryBySlot.rig||[]).filter(c=>c.isInstance===true);
-    ok(rigCand.length===0 && st2.equipment.instances.length===0,
-      "L10 拆卸后 rig 实例已删除，不进入 rig 候选");
+    ok(rigCand.length===0 && ship2.fitted.rig[0], "L10 清空后 rig 仍安装在舰上，不进入 rig 游离候选");
   }
 
-  // L11 Action 边界：setFittingSlot 空参数=卸下（不可恢复），非浏览器取消
+  // L11 Action 边界：setFittingSlot 空参数=卸下；强化实例保留，+0 白板删除退回 inventory
   {
     const st3=freshState();
     const ship3=addShip(st3,"illuminator");
-    st3.equipment.inventory.push("t1_small_laser");
-    W.dispatchGameAction(st3,{type:"hangar/setFittingSlot",instanceId:ship3.instanceId,slot:"high",slotIndex:0,equipmentId:"t1_small_laser"},0);
-    const fittedId=ship3.fitted.high[0];
+    const fittedId="eq_10";
+    st3.equipment.instances.push({ instanceId:fittedId, itemId:"t1_small_laser", enhancementLevel:1, installedOn:null });
+    W.dispatchGameAction(st3,{type:"hangar/setFittingSlot",instanceId:ship3.instanceId,slot:"high",slotIndex:0,equipmentId:fittedId},0);
     // 用 null equipmentId 卸下
     const r3=W.dispatchGameAction(st3,{type:"hangar/setFittingSlot",instanceId:ship3.instanceId,slot:"high",slotIndex:0,equipmentId:null},0);
     ok(r3.changed===true, "L11 用 null 卸下装备");
     ok(ship3.fitted.high[0]===null, "L11 卸下后 fitted.high[0] 为 null");
     const instAfter=st3.equipment.instances.find(i=>i.instanceId===fittedId);
-    ok(!!instAfter && instAfter.installedOn===null, "L11 卸下后普通装备实例 installedOn=null，仍然保留");
+    ok(!!instAfter && instAfter.installedOn===null, "L11 卸下后强化普通装备实例 installedOn=null，仍然保留");
   }
 }
 
@@ -804,16 +807,17 @@ section("M 装配面板 stats 正确反映改装件容量倍率");
   checkHP("M3 启明级+结构容量I", "illuminator", ["rig_structure_capacity_i"], 2900, 1100, 832);
   checkHP("M4 启明级+三容量I", "illuminator", ["rig_shield_capacity_i","rig_armor_capacity_i","rig_structure_capacity_i"], 3016, 1144, 832);
 
-  // 拆除/清空后恢复基础显示：装后清空→无 rig 倍率→基础 HP
+  // 拆除后恢复基础显示：装后 destroyFittedRig→无 rig 倍率→基础 HP
+  // （resetFitting 现在保留 rig，不再用于此场景）
   {
     const st=freshState();
     const ship=addShip(st,"illuminator");
     fitRig(st,ship,"rig_shield_capacity_i",0);
-    W.dispatchGameAction(st,{type:"hangar/resetFitting",instanceId:ship.instanceId},0);
+    W.dispatchGameAction(st,{type:"hangar/destroyFittedRig",instanceId:ship.instanceId,slotIndex:0},0);
     const d=W.getShipFittingDisplayState(st,ship.instanceId);
     const s=d.stats;
     ok(s.shield===2900 && s.armor===1100 && s.structure===800,
-      `M5 清空后 HP 恢复基础（${s.shield}/${s.armor}/${s.structure} = 2900/1100/800）`);
+      `M5 拆除 rig 后 HP 恢复基础（${s.shield}/${s.armor}/${s.structure} = 2900/1100/800）`);
   }
 
   // 谐振（堆叠）模型：同 stackGroup（同系列）允许重复装配，但后续装配按 EVE 谐振惩罚实际效果递减
@@ -953,7 +957,7 @@ section("N 旧数字 ID 迁移、浏览器字符串化边界、双激光炮测�
   {
     const st=freshState();
     const ship=addShip(st,"illuminator");
-    st.equipment.instances.push({instanceId:"eq_10",itemId:"t1_small_laser",enhancementLevel:0,installedOn:null});
+    st.equipment.instances.push({instanceId:"eq_10",itemId:"t1_small_laser",enhancementLevel:1,installedOn:null});
     st.equipment.nextInstanceId=20;
     // 安装
     W.dispatchGameAction(st,{type:"hangar/setFittingSlot",instanceId:ship.instanceId,slot:"high",slotIndex:0,equipmentId:"eq_10"},0);
@@ -970,17 +974,18 @@ section("N 旧数字 ID 迁移、浏览器字符串化边界、双激光炮测�
     ok(cand.length===1&&cand[0].isInstance===true,"N21 候选包含该 instanceId");
   }
 
-  // N22-N24: Rig 拆卸销毁规则不变
+  // N22-N24: resetFitting 不清空 rig，仅 destroyFittedRig / replaceFittedRig 才销毁
   {
     const st=freshState();
     const ship=addShip(st,"illuminator");
     fitRig(st,ship,"rig_shield_capacity_i",0);
     W.dispatchGameAction(st,{type:"hangar/resetFitting",instanceId:ship.instanceId},0);
-    ok(st.equipment.instances.length===0,"N22 rig 销毁后实例列表为空");
+    ok(ship.fitted.rig[0], "N22 resetFitting 后 rig 槽仍保留");
+    const rigInst=st.equipment.instances.find(i=>i.itemId==="rig_shield_capacity_i");
+    ok(rigInst && rigInst.installedOn, "N23 rig 实例仍保留并安装在该舰");
     const d=W.getShipFittingDisplayState(st,ship.instanceId);
     const rigCandWithInst=(d.inventoryBySlot.rig||[]).filter(c=>c.isInstance===true);
-    ok(rigCandWithInst.length===0,"N23 rig 候选无游离实例");
-    ok(st.equipment.inventory.indexOf("rig_shield_capacity_i")===-1,"N24 rig 不归还 inventory");
+    ok(rigCandWithInst.length===0,"N24 rig 候选无游离实例（仍安装在舰上）");
   }
 }
 

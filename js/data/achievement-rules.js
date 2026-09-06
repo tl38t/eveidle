@@ -27,7 +27,7 @@
 'use strict';
 
 (function () {
-  // 19 项权威技能键（顺序冻结，精确对应 A01–A21 / A22–A42；已移除 rigEngineering/reverseEngineering 死字段）
+  // 18 项权威技能键（顺序冻结，精确对应 A01–A20 / A21–A42；已移除 rigEngineering/reverseEngineering/drones 死字段）
   const ALL_SKILL_KEYS = Object.freeze([
     "mining",
     "planetaryIndustry",
@@ -46,11 +46,10 @@
     "targeting",
     "piloting",
     "capacitorManagement",
-    "drones",
     "archaeology",
   ]);
 
-  // 11 项战斗技能键（精确对应 A10–A20）
+  // 10 项战斗技能键（精确对应 A10–A19）
   const COMBAT_SKILL_KEYS = Object.freeze([
     "laserOps",
     "cannonOps",
@@ -62,7 +61,6 @@
     "targeting",
     "piloting",
     "capacitorManagement",
-    "drones",
   ]);
 
   function skillRule(achievementId, skill, minLevel) {
@@ -75,9 +73,9 @@
     return Object.freeze({ achievementId, type: "skill-all", keys, minLevel });
   }
 
-  // 46 条规则（顺序即求值顺序）：A01–A42 单技能、A43–A48 组合、C14/F22 分类重复；已移除 A07/A09/A28/A30 四条 rig/reverse 死字段规则
+  // 44 条规则（顺序即求值顺序）：A01–A40 单技能、A41–A46 组合、C14/F22 分类重复；已移除 A07/A09/A28/A30 死字段及 A20/A41 无人机规则
   const SKILL_RULES = Object.freeze([
-    // ---- Lv.50 单技能：A01–A21 ----
+    // ---- Lv.50 单技能：A01–A20 ----
     skillRule("A01", "mining", 50),
     skillRule("A02", "planetaryIndustry", 50),
     skillRule("A03", "refining", 50),
@@ -95,38 +93,29 @@
     skillRule("A17", "targeting", 50),
     skillRule("A18", "piloting", 50),
     skillRule("A19", "capacitorManagement", 50),
-    skillRule("A20", "drones", 50),
-    skillRule("A21", "archaeology", 50),
-    // ---- Lv.99 单技能：A22–A42 ----
-    skillRule("A22", "mining", 99),
-    skillRule("A23", "planetaryIndustry", 99),
-    skillRule("A24", "refining", 99),
-    skillRule("A25", "gasHarvesting", 99),
-    skillRule("A26", "shipEngineering", 99),
-    skillRule("A27", "equipmentEngineering", 99),
-    skillRule("A29", "boosterEngineering", 99),
-    skillRule("A31", "laserOps", 99),
-    skillRule("A32", "cannonOps", 99),
-    skillRule("A33", "missileOperations", 99),
-    skillRule("A34", "defense", 99),
-    skillRule("A35", "shieldOperation", 99),
-    skillRule("A36", "armorReinforcement", 99),
-    skillRule("A37", "hullEngineering", 99),
-    skillRule("A38", "targeting", 99),
-    skillRule("A39", "piloting", 99),
-    skillRule("A40", "capacitorManagement", 99),
-    skillRule("A41", "drones", 99),
-    skillRule("A42", "archaeology", 99),
-    // ---- 组合规则：A43–A48 ----
-    allRule("A43", COMBAT_SKILL_KEYS, 99),
-    countRule("A44", 5, 80),
-    countRule("A45", 10, 90),
-    allRule("A46", ALL_SKILL_KEYS, 50),
-    allRule("A47", COMBAT_SKILL_KEYS, 80),
-    allRule("A48", ALL_SKILL_KEYS, 99),
-    // ---- 分类重复规则（必须与 A26/A42 分别同时解锁）----
-    skillRule("C14", "shipEngineering", 99),
-    skillRule("F22", "archaeology", 99),
+    skillRule("A20", "archaeology", 50),
+    // ---- Lv.99 单技能：A21–A40 ----
+    skillRule("A21", "mining", 99),
+    skillRule("A22", "planetaryIndustry", 99),
+    skillRule("A23", "refining", 99),
+    skillRule("A24", "gasHarvesting", 99),
+    skillRule("A25", "shipEngineering", 99),
+    skillRule("A26", "equipmentEngineering", 99),
+    skillRule("A28", "boosterEngineering", 99),
+    skillRule("A30", "laserOps", 99),
+    skillRule("A31", "cannonOps", 99),
+    skillRule("A32", "missileOperations", 99),
+    skillRule("A33", "defense", 99),
+    skillRule("A34", "shieldOperation", 99),
+    skillRule("A35", "armorReinforcement", 99),
+    skillRule("A36", "hullEngineering", 99),
+    skillRule("A37", "targeting", 99),
+    skillRule("A38", "piloting", 99),
+    skillRule("A39", "capacitorManagement", 99),
+    skillRule("A40", "archaeology", 99),
+    // ---- 组合规则：A41–A46 ----
+    allRule("A46", ALL_SKILL_KEYS, 99),
+    // ---- 分类重复规则（必须与 A26/A40 分别同时解锁）----
   ]);
 
   const SKILL_RULES_BY_ID = {};
@@ -164,20 +153,8 @@
   const PRODUCTION_RULES = Object.freeze([
     // ---- 首次采集矿石：B01–B07 ----
     productionGatheredRule("B01", "ore:凡晶石", 1),
-    productionGatheredRule("B02", "ore:灼烧岩", 1),
-    productionGatheredRule("B03", "ore:水硼砂", 1),
-    productionGatheredRule("B04", "ore:斜长岩", 1),
-    productionGatheredRule("B05", "ore:干焦岩", 1),
-    productionGatheredRule("B06", "ore:灰岩", 1),
-    productionGatheredRule("B07", "ore:艾克诺岩", 1),
     // ---- 首次冶炼矿物：B08–B14 ----
     productionRefinedRule("B08", "mineral:三钛合金", 1),
-    productionRefinedRule("B09", "mineral:类银超金属", 1),
-    productionRefinedRule("B10", "mineral:类晶体胶矿", 1),
-    productionRefinedRule("B11", "mineral:同位聚合体", 1),
-    productionRefinedRule("B12", "mineral:超新星诺克石", 1),
-    productionRefinedRule("B13", "mineral:基腹断岩", 1),
-    productionRefinedRule("B14", "mineral:超噬矿", 1),
     // ---- 累计与气体：B15–B18 ----
     productionTotalRule("B15", "minedUnits", 1000000),
     productionTotalRule("B16", "minedUnits", 100000000),
@@ -308,20 +285,11 @@
     combatZoneClearRule("E17", "blood_deep_reliquary", 1),
     combatZoneClearRule("E18", "sansha_deep_nexus", 1),
     combatAllZonesRule("E19", COMBAT_ZONE_IDS, 1),
-    combatMaxWaveRule("E20", 20),
-    combatWeaponClearRule("E21", COMBAT_WEAPON_TYPES[0], 1), // laser 激光炮
-    combatWeaponClearRule("E22", COMBAT_WEAPON_TYPES[1], 1), // cannon 火炮
-    combatWeaponClearRule("E23", COMBAT_WEAPON_TYPES[2], 1), // missile 导弹
     combatCapitalKillsRule("E24", 1),
     combatSupercapitalKillsRule("E25", 1),
     // Batch C-12：跳过 E28（已删除）
     combatDeathspaceEnterRule("E26", 1),
     combatDeathspaceClearAnyRule("E27", 1),
-    combatFlawlessZoneClearRule("E29", 1),
-    combatSingleBattleDamageRule("E30", 1000000),
-    combatFactionBossKillRule("E31", "angel", 1),
-    combatFactionBossKillRule("E32", "blood", 1),
-    combatFactionBossKillRule("E33", "sansha", 1),
   ]);
 
   // Batch C-12：死亡空间 ID 冻结数组（硬编码，与 DEATHSPACE_DATABASE 12 项双向一致）
@@ -417,7 +385,6 @@
     manufacturingRecipeRule("C08", "starcrown", 1),
     manufacturingRecipeRule("C09", "eternal_fortress", 1),
     manufacturingRecipeRule("C10", "arbiter", 1),
-    manufacturingRecipeSetTotalRule("C12", CAPITAL_SHIP_RECIPE_IDS, 50),
     manufacturingRecipeSetTotalRule("C13", SUPERCAPITAL_SHIP_RECIPE_IDS, 25),
   ]);
 
@@ -667,7 +634,6 @@
     equipmentRecipeSetAnyRule("D15", AMMUNITION_RECIPE_IDS, 1),
     equipmentEnhancementTotalRule("D16", "equipmentEnhancementAttempts", 1),
     equipmentRecipeSetAnyRule("D17", RIG_RECIPE_IDS, 1),
-    equipmentRecipeSetAllRule("D18", RIG_RECIPE_IDS, 1),
   ]);
 
   const EQUIPMENT_RULES_BY_ID = {};
@@ -726,16 +692,6 @@
 
   // 12 条规则（顺序即求值顺序）：D01–D10 各自传奇配方 >=1、D11 总制造 >=1、D12 总制造 >=1000
   const BOOSTER_RULES = Object.freeze([
-    boosterRecipeRule("D01", LEGENDARY_BOOSTER_RECIPE_IDS[0], 1),  // mining_lubricant_l
-    boosterRecipeRule("D02", LEGENDARY_BOOSTER_RECIPE_IDS[1], 1),  // ore_resonance_l
-    boosterRecipeRule("D03", LEGENDARY_BOOSTER_RECIPE_IDS[2], 1),  // relic_solver_l
-    boosterRecipeRule("D04", LEGENDARY_BOOSTER_RECIPE_IDS[3], 1),  // artifact_tracer_l
-    boosterRecipeRule("D05", LEGENDARY_BOOSTER_RECIPE_IDS[4], 1),  // laser_coolant_l
-    boosterRecipeRule("D06", LEGENDARY_BOOSTER_RECIPE_IDS[5], 1),  // missile_catalyst_l
-    boosterRecipeRule("D07", LEGENDARY_BOOSTER_RECIPE_IDS[6], 1),  // cannon_booster_l
-    boosterRecipeRule("D08", LEGENDARY_BOOSTER_RECIPE_IDS[7], 1),  // shield_recharge_l
-    boosterRecipeRule("D09", LEGENDARY_BOOSTER_RECIPE_IDS[8], 1),  // armor_nano_l
-    boosterRecipeRule("D10", LEGENDARY_BOOSTER_RECIPE_IDS[9], 1),  // structure_gel_l
     boosterTotalRule("D11", "boostersManufactured", 1),
     boosterTotalRule("D12", "boostersManufactured", 1000),
   ]);
@@ -807,25 +763,8 @@
   //   F20 累计考古 LP 10000、F21 首次稀有掉落（unique）。
   const ARCHAEOLOGY_RULES = Object.freeze([
     archaeologyTotalRule("F01", "archaeologyAttempts", 1),
-    archaeologySiteRule("F02", ARCHAEOLOGY_SITE_IDS[0], 1),   // site_i_a 失落信标残骸
-    archaeologySiteRule("F03", ARCHAEOLOGY_SITE_IDS[1], 1),   // site_i_b 远古殖民舱
-    archaeologySiteRule("F04", ARCHAEOLOGY_SITE_IDS[2], 1),   // site_i_c 漂流货柜群
-    archaeologySiteRule("F05", ARCHAEOLOGY_SITE_IDS[3], 1),   // site_ii_a 破碎巡防站
-    archaeologySiteRule("F06", ARCHAEOLOGY_SITE_IDS[4], 1),   // site_ii_b 废弃采矿平台
-    archaeologySiteRule("F07", ARCHAEOLOGY_SITE_IDS[5], 1),   // site_ii_c 星图中继塔
-    archaeologySiteRule("F08", ARCHAEOLOGY_SITE_IDS[6], 1),   // site_iii_a 沉睡战列残骸
-    archaeologySiteRule("F09", ARCHAEOLOGY_SITE_IDS[7], 1),   // site_iii_b 湮灭实验室
-    archaeologySiteRule("F10", ARCHAEOLOGY_SITE_IDS[8], 1),   // site_iii_c 深空方尖碑
-    archaeologySiteRule("F11", ARCHAEOLOGY_SITE_IDS[9], 1),   // site_iv_a 湮灭旗舰坟场
-    archaeologySiteRule("F12", ARCHAEOLOGY_SITE_IDS[10], 1),  // site_iv_b 虚空研究所
-    archaeologySiteRule("F13", ARCHAEOLOGY_SITE_IDS[11], 1),  // site_iv_c 远古跃迁枢纽
-    archaeologySiteRule("F14", ARCHAEOLOGY_SITE_IDS[12], 1),  // site_v_a 失落文明圣殿
-    archaeologySiteRule("F15", ARCHAEOLOGY_SITE_IDS[13], 1),  // site_v_b 湮灭母舰核心
-    archaeologySiteRule("F16", ARCHAEOLOGY_SITE_IDS[14], 1),  // site_v_c 深渊观测站
     archaeologyTierSetRule("F17", ARCHAEOLOGY_TIER_KEYS, 1),
     archaeologyTotalRule("F18", "artifactsSold", 1),
-    archaeologyTotalRule("F19", "artifactsSold", 100),
-    archaeologyTotalRule("F20", "archaeologyLpEarned", 10000),
     archaeologyTotalRule("F21", "archaeologyRareFinds", 1),
   ]);
 
@@ -885,8 +824,8 @@
     planetaryColonizedRule("G05", PLANETARY_TYPE_IDS[4], 1), // 温带行星
     planetaryColonizedRule("G06", PLANETARY_TYPE_IDS[5], 1), // 风暴行星
     planetaryConcurrentRule("G07", 5),                        // 同时运营 5 颗行星
-    planetaryTotalRule("G09", "planetaryUnits", 1000000),     // 累计行星产出 1,000,000
-    planetarySlotsRule("G10", 5),                             // 解锁全部行星槽位（slots >= maxSlots）
+    planetaryTotalRule("G08", "planetaryUnits", 1000000),     // 累计行星产出 1,000,000
+    planetarySlotsRule("G09", 5),                             // 解锁全部行星槽位（slots >= maxSlots）
   ]);
 
   const PLANETARY_RULES_BY_ID = {};
@@ -955,11 +894,6 @@
     stationBuildingLevelRule("H08", STATION_BUILDING_IDS_FOR_ACHIEVEMENTS[5], 3),     // 考古实验室 Lv.3
     stationBuildingLevelRule("H09", STATION_BUILDING_IDS_FOR_ACHIEVEMENTS[6], 3),     // 战斗指挥部 Lv.3
     stationBuildingLevelRule("H10", STATION_BUILDING_IDS_FOR_ACHIEVEMENTS[7], 3),     // 旗舰船坞 Lv.3
-    stationStatRule("H11", "constructionCompletions", 1),                             // 首次建设完成
-    stationStatRule("H12", "maxConcurrentAutoLines", 3),                              // 三条自动线同时运行
-    stationLogisticsRule("H13", 1.15),                                                // 物流枢纽满级效果（真实倍率 >= 1.15）
-    stationOfflineExceedsRule("H15", 28800),                                          // 单次离线结算 > 8 小时（严格大于）
-    stationBuildingLevelRule("H16", STATION_BUILDING_IDS_FOR_ACHIEVEMENTS[7], 3),     // 旗舰船坞 Lv.3（与 H10 同条件、独立规则）
   ]);
 
   const STATION_RULES_BY_ID = {};
@@ -1027,6 +961,9 @@
   //  权威来源唯一为 ResourceRegistry 的**当前持有量**（不是累计产出、不读 statistics、
   //  不读事件 payload、不自建第二套计数）。因此卖出/消耗会让进度回落，这是"持有"语义的
   //  必然结果；成就一旦解锁则由 unlockAchievement 幂等保证不回撤。
+  //  例外：I01–I03 使用伪资源 "currency:isk-peak"，由 js/systems/achievements.js 的
+  //  readResourceAmount 桥接至 statistics.peakCredits（历史峰值持有，单调不减），
+  //  故星币类成就按"曾达到过的最高余额"判定，消耗不会使其回落。
   //
   //  资源 ID 必须使用 ResourceRegistry 的真实命名空间（namespace:key），
   //  与 js/systems/production.js 的 ITEM_CATEGORIES 分类严格一致：
@@ -1068,18 +1005,9 @@
 
   // 12 条规则（顺序即求值顺序，I01→I12）
   const ECONOMY_RULES = Object.freeze([
-    economyResourceMinRule("I01", "currency:isk", 1000000),
-    economyResourceMinRule("I02", "currency:isk", 100000000),
-    economyResourceMinRule("I03", "currency:isk", 1000000000),
-    economyResourceMinRule("I04", ECONOMY_MINERAL_RESOURCE_IDS[0], 1000),
-    economyResourceMinRule("I05", ECONOMY_MINERAL_RESOURCE_IDS[1], 1000),
-    economyResourceMinRule("I06", ECONOMY_MINERAL_RESOURCE_IDS[2], 1000),
-    economyResourceMinRule("I07", ECONOMY_MINERAL_RESOURCE_IDS[3], 1000),
-    economyResourceMinRule("I08", ECONOMY_MINERAL_RESOURCE_IDS[4], 1000),
-    economyResourceMinRule("I09", ECONOMY_MINERAL_RESOURCE_IDS[5], 1000),
-    economyResourceMinRule("I10", ECONOMY_MINERAL_RESOURCE_IDS[6], 1000),
-    economyResourceSetAllRule("I11", ECONOMY_COLLECTION_RESOURCE_IDS, 1),
-    economyInventoryTotalRule("I12", 1000000),
+    economyResourceMinRule("I01", "currency:isk-peak", 1000000),
+    economyResourceMinRule("I02", "currency:isk-peak", 100000000),
+    economyResourceMinRule("I03", "currency:isk-peak", 1000000000),
   ]);
 
   const ECONOMY_RULES_BY_ID = {};
@@ -1112,9 +1040,7 @@
     // 累计在线 7 天 = 604800 秒
     generalLifecycleRule("J02", "lifecycle-online-seconds", 604800),
     // 首次真实离线收益结算（offline.js 对 <=5 秒不结算、不发事件）
-    generalLifecycleRule("J03", "lifecycle-offline-settlements", 1),
     // 累计离线结算等价 7 天 = 604800 秒（单次上限 86400，故至少需 7 次满额离线）
-    generalLifecycleRule("J04", "lifecycle-offline-seconds", 604800),
     // 队列历史同时在列达到 25 项
     generalLifecycleRule("J05", "lifecycle-max-queue-items", 25),
     // 首次重创维修后真实恢复出击
@@ -1143,7 +1069,7 @@
   // ==========================================================================
 
   // 三项元成就 ID（顺序冻结，J10→J11→J12；J10/J11 计数时必须排除本集合）
-  const META_ACHIEVEMENT_IDS = Object.freeze(["J10", "J11", "J12"]);
+  const META_ACHIEVEMENT_IDS = Object.freeze(["J07", "J08", "J09"]);
 
   function metaNonMetaCountRule(achievementId, minValue) {
     return Object.freeze({
@@ -1164,9 +1090,9 @@
 
   // 3 条规则（顺序即求值顺序，J10→J11→J12；一次求值允许顺序补齐）
   const META_RULES = Object.freeze([
-    metaNonMetaCountRule("J10", 50),   // 达成 50 项非元成就
-    metaNonMetaCountRule("J11", 100),  // 达成 100 项非元成就
-    metaCatalogCompleteRule("J12"),    // 目录中除 J12 自身外全部成就
+    metaNonMetaCountRule("J07", 50),   // 达成 50 项非元成就
+    metaNonMetaCountRule("J08", 100),  // 达成 100 项非元成就
+    metaCatalogCompleteRule("J09"),    // 目录中除 J12 自身外全部成就
   ]);
 
   const META_RULES_BY_ID = {};

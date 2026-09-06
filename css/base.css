@@ -1218,7 +1218,10 @@
     align-items: center;
     justify-content: center;
     background: rgba(4, 8, 14, 0.7);
-    z-index: 2300;
+    /* 2026-09-05：2300 → 11000。showDangerConfirm 挂在 body 上，必须压过所有业务模态
+       （装备/效率/军团弹窗 10000、部署弹窗 8000、toast 9999），否则从舰船装备弹窗内点
+       「销毁/替换改装件」时，确认框被整套装备弹窗（含其 sticky 底栏）盖住。仍低于错误边界 20000。 */
+    z-index: 11000;
     padding: 16px;
     box-sizing: border-box;
   }

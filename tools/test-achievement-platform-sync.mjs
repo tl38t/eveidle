@@ -37,6 +37,7 @@ function loadInContext(files, extra = []) {
 
 // ---- 上下文 1：真实映射 + Noop provider（第一阶段“不发布”纪律） ----
 const ctx = loadInContext([
+  "js/data/achievements.js",
   "js/data/platform-achievement-map.js",
   "js/platform/providers/noop-achievement-provider.js",
   "js/core/achievement-sync-service.js"
@@ -48,11 +49,14 @@ const initNoop = await svc.init();
 ok(initNoop === false, "Noop 成就 provider 初始化返回 false（不可用）");
 ok(svc.isAvailable() === false, "Noop 服务 isAvailable() === false");
 ok(svc.handleUnlock("A01", Date.now()).skipped === true, "Noop 不可用时 handleUnlock 被跳过");
-// 第一阶段：映射表 OVERRIDES 为空 → 所有内部 ID 在 taptap 列均无平台 ID → 补发对账尝试 0 次。
+const steamIds = MAP.ids().filter((id) => MAP.get(id).steam);
+ok(steamIds.length === 116 && MAP.get("A01").steam === "ACH_A01", "Steam enabled 成就自动映射为 ACH_XX（116 项）");
+ok(MAP.get("A07").steam === null, "未启用 Steam 成就保持 null 映射");
+// TapTap 映射表 OVERRIDES 为空 → taptap 列均无平台 ID → 补发对账尝试 0 次。
 const allUnlocked = {};
 MAP.ids().forEach((id) => { allUnlocked[id] = Date.now(); });
 const attempted = svc.reconcileAll(allUnlocked);
-ok(attempted === 0, "第一阶段 reconcileAll 对所有已解锁成就尝试 0 次（无平台映射 → 跳过）[" + attempted + "]");
+ok(attempted === 0, "TapTap 无平台映射时 reconcileAll 尝试 0 次（跳过）[" + attempted + "]");
 
 // ---- 上下文 2：Mock 映射 + Mock provider（上报逻辑） ----
 const mockCode = `

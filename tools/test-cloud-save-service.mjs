@@ -30,6 +30,8 @@ function loadInContext(files, extra = []) {
   };
   ctx.setInterval = () => 0;
   ctx.clearInterval = () => {};
+  ctx.setTimeout = (fn, ms) => setTimeout(fn, ms);
+  ctx.clearTimeout = (id) => clearTimeout(id);
   vm.createContext(ctx);
   for (const f of files) vm.runInContext(readFileSync(join(repo, f), "utf8"), ctx, { filename: f });
   for (const code of extra) vm.runInContext(code, ctx, { filename: "inline" });
@@ -232,7 +234,32 @@ ok(fetched && fetched.envelope && fetched.envelope.checksum === up.envelope.chec
   ok(result.ok === true && slow.status().dirty === true, "上传期间的新变更在旧上传成功后仍保持 dirty");
 }
 
-// 5) deleteCloud 清除云端标记但绝不触碰本地存档键
+// 5) fetchCloudEnvelope 整体硬超时：provider 挂起时不阻塞启动
+{
+  const hangCode = `
+    function HangProvider() { this.platform = "mock"; }
+    HangProvider.prototype.initialize = function () { return Promise.resolve(true); };
+    HangProvider.prototype.isAvailable = function () { return true; };
+    HangProvider.prototype.listArchives = function () { return new Promise(function () {}); };
+    HangProvider.prototype.downloadArchive = function () { return new Promise(function () {}); };
+    HangProvider.prototype.uploadArchive = function () { return Promise.resolve({ slotName: "auto_save", archiveId: "h" }); };
+    HangProvider.prototype.deleteArchive = function () { return Promise.resolve(true); };
+  `;
+  const hctx = loadInContext([
+    "js/core/save-envelope.js",
+    "js/platform/cloud-save-contract.js",
+    "js/core/cloud-save-service.js"
+  ], [hangCode]);
+  const hangSvc = new hctx.CloudSaveService({ provider: new hctx.HangProvider(), deviceId: "dev-hang", metaStore: null });
+  await hangSvc.init();
+  const start = Date.now();
+  const hangFetched = await hangSvc.fetchCloudEnvelope();
+  const elapsed = Date.now() - start;
+  ok(hangFetched && hangFetched.status === "error", "P0-7：provider 挂起时 fetchCloudEnvelope 返回 {status:'error'}");
+  ok(elapsed >= 14000 && elapsed <= 20000, "P0-7：挂起 provider 在 15s 硬超时内返回（实际 " + elapsed + "ms）");
+}
+
+// 6) deleteCloud 清除云端标记但绝不触碰本地存档键
 await svc.deleteCloud();
 ok(svc.getSyncMeta().lastCloudChecksum === "", "deleteCloud 后 lastCloudChecksum 清空");
 

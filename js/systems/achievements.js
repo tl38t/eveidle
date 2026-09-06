@@ -1509,6 +1509,17 @@
 
   // 读数清洗：非 number / NaN / ±Infinity / 负数一律按 0 处理
   function readResourceAmount(registry, state, resourceId) {
+    // 历史峰值持有（I01–I03）：直接从 statistics.peakCredits 读取，不经 ResourceRegistry
+    // （该字段为累计极值，不对应任何库存池）。仅作只读桥接，不写入 resources。
+    if (resourceId === "currency:isk-peak") {
+      const st = state && state.statistics;
+      if (st && typeof st.peakCredits === "number" && Number.isFinite(st.peakCredits)) {
+        return st.peakCredits > 0 ? st.peakCredits : 0;
+      }
+      // 回退：未接入 statistics（如仅内核沙箱审计）时，按当前星币余额近似历史峰值语义
+      const cur = state && state.resources && typeof state.resources.isk === "number" ? state.resources.isk : 0;
+      return (Number.isFinite(cur) && cur > 0) ? cur : 0;
+    }
     if (!registry || typeof registry.get !== "function" || typeof resourceId !== "string") return 0;
     let raw;
     try {

@@ -92,18 +92,9 @@ function completeQueuedActionCycle() {
 function executeQueueItem(index) {
   const queue = gameState.queue;
   if (index < 0 || index >= queue.items.length) {
-    if (queue.config.loopMode && queue.items.length > 0) {
-      // 循环模式：受失败保护，防止无限同步递归
-      if ((Number(queue.status.failCount) || 0) > queue.items.length * 10) {
-        queue.status.isRunning = false; queue.status.activeIndex = -1;
-        resetActionProgress(); gameState.currentAction.active = false; gameState.currentAction.batchRemaining = 0;
-        return false;
-      }
-      queue.status.activeIndex = 0; queue.status.completedCount++; executeQueueItem(0);
-    } else {
-      queue.status.isRunning = false; queue.status.activeIndex = -1;
-      resetActionProgress(); gameState.currentAction.active = false; gameState.currentAction.batchRemaining = 0;
-    }
+    // 2026-09-05：队列「循环模式」（loopMode）已移除 —— 越界即视为队列跑完，直接停止。
+    queue.status.isRunning = false; queue.status.activeIndex = -1;
+    resetActionProgress(); gameState.currentAction.active = false; gameState.currentAction.batchRemaining = 0;
     return false;
   }
   queue.status.activeIndex = index;
@@ -118,7 +109,7 @@ function advanceQueue() {
   if (!queue || !queue.status.isRunning) return false;
   const nextIndex = queue.status.activeIndex + 1;
   if (nextIndex >= queue.items.length) {
-    if (queue.config.loopMode && queue.items.length > 0) { queue.status.completedCount++; executeQueueItem(0); return true; }
+    // 2026-09-05：循环模式已移除 —— 走到末尾即停止。
     queue.status.isRunning = false; queue.status.activeIndex = -1; return false;
   }
   executeQueueItem(nextIndex); return true;

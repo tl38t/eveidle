@@ -112,7 +112,7 @@ function renderCombatSalvageToggle() {
 function renderCombatEquipmentRack(display) {
   const grid = document.getElementById("combat-equipment-grid"); if (!grid) return;
   const icons = { high:"⚡", mid:"◉", low:"◆", rig:"◇" };
-  grid.innerHTML = display.equipmentRack.length ? display.equipmentRack.map(item => `<div class="combat-equip-slot${item.empty ? " empty" : ""}" title="${item.attributes}"><span class="combat-equip-icon">${icons[item.slot]}</span><span class="combat-equip-copy"><span class="combat-equip-name">${item.name}</span><span class="combat-equip-type">${item.slotName} ${item.index + 1}</span></span></div>`).join("") : '<div class="combat-equip-slot empty"><span class="combat-equip-icon">◇</span><span class="combat-equip-copy"><span class="combat-equip-name">暂无槽位</span><span class="combat-equip-type">舰体配置</span></span></div>';
+  grid.innerHTML = display.equipmentRack.length ? display.equipmentRack.map(item => `<div class="combat-equip-slot${item.empty ? " empty" : ""}" title="${item.attributes}"><span class="combat-equip-icon">${icons[item.slot] || "◇"}</span><span class="combat-equip-copy"><span class="combat-equip-name">${item.name}</span><span class="combat-equip-type">${item.slotName} ${item.index + 1}</span></span></div>`).join("") : '<div class="combat-equip-slot empty"><span class="combat-equip-icon">◇</span><span class="combat-equip-copy"><span class="combat-equip-name">暂无槽位</span><span class="combat-equip-type">舰体配置</span></span></div>';
 }
 
 // 战斗补给状态（2026-09-03 玩家反馈「弹窗提示不够明显」）：
@@ -449,7 +449,9 @@ function getCombatConfigForShip(display, shipKey) {
   return {
     weapons: modules.filter(function (module) { return module.combat && module.combat.kind === "weapon"; }).map(toModule),
     repairers: modules.filter(function (module) { return module.combat && module.combat.kind === "repair"; }).map(toModule),
-    equipmentRack: modules.map(function (module, index) { return { name: module.name, slotName: slotNames[module.slot] || module.slot, index: index, attributes: "NPC 舰船配置", empty: false }; })
+    // 2026-09-05：补 slot 字段——此前漏拷，renderCombatEquipmentRack 的 icons[item.slot] 取到
+    // undefined，模板字符串把字面量 "undefined" 画进图标圆位（用户截图：NPC 预备舰装备卡全显 undefined）。
+    equipmentRack: modules.map(function (module, index) { return { slot: module.slot, name: module.name, slotName: slotNames[module.slot] || module.slot, index: index, attributes: "NPC 舰船配置", empty: false }; })
   };
 }
 
@@ -480,6 +482,19 @@ function renderSquadFireOrder(ui) {
 
 // 单个 NPC 方块（玩家左侧）：头像 + 名字 + 下拉选角 + 三色实时血条 + 状态徽标。
 // entry 可能为：{kind:"empty"} | {kind:"npc", npc, id} | {kind:"deployable", deployableId, name}
+// 小队「伤害倍率」ⓘ（手机端 hover 等价物，方案 C）：
+// 小队行由 innerHTML 动态重建，init 期绑在元素上的监听会随重建丢失，故改用 document 级委托；
+// 捕获阶段 stopPropagation，避免冒泡到 render.js 的「点浮层之外即收起」把刚弹出的浮层立刻关掉。
+(function bindSquadDamageInfo() {
+  document.addEventListener('click', function (e) {
+    const btn = (e.target && e.target.closest) ? e.target.closest('.squad-dmg-info') : null;
+    if (!btn) return;
+    e.stopPropagation();
+    const target = btn.closest('.lcs-badge.dmg');
+    if (target && typeof toggleHoverInfoPop === 'function') toggleHoverInfoPop(target, btn);
+  }, true);
+})();
+
 function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
   const locked = ui.active;
   const kind = entry ? entry.kind : "empty";
@@ -525,6 +540,20 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
     if (npc.destroyedInBattle) badges.push('<span class="lcs-badge bad">已爆船</span>');
     if (npc.repair && npc.repair.repairing) badges.push('<span class="lcs-badge warn">修复 ' + Math.ceil(npc.repair.remaining / 1000) + "s</span>");
     if (npc.salaryState && npc.salaryState !== "paid") badges.push('<span class="lcs-badge warn">欠薪</span>');
+    // 2026-09-05：伤害倍率（随 NPC 等级提升：LV1 30% → LV70 100%）。
+    // 数值由 getLegionCombatSquadUiState 的 candidate.damageMultiplier 提供，但此前 UI 从未渲染，
+    // 玩家无从得知「等级越高打得越疼」。桌面走原生 title hover；手机端由下方 ⓘ 委托给出等价物。
+    const dmgPct = Math.round((Number(npc.damageMultiplier) || 0) * 100);
+    if (dmgPct > 0) {
+      badges.push('<span class="lcs-badge dmg" title="伤害倍率 ' + dmgPct + '%：随 NPC 等级提升，LV1 30% → LV70 100%">伤害 ×' + dmgPct + '%' +
+        '<button type="button" class="hover-info-btn squad-dmg-info" aria-label="查看伤害倍率说明">ⓘ</button></span>');
+    }
+    // 2026-09-05：攻击力（单轮齐射面板伤害）。数值由 getLegionNpcCombatStats.attackPower 提供
+    //（与实弹 volley 同源取模块），口径不含弹药/克制/命中系数/随机浮动，tooltip 说明。
+    const atkVal = Math.round(Number(npc.attackPower) || 0);
+    if (atkVal > 0) {
+      badges.push('<span class="lcs-badge dmg" title="攻击力 ' + atkVal.toLocaleString() + '：单轮齐射面板伤害（含武器强化/技能/等级倍率；未含弹药加成、克制、命中系数与随机浮动）">攻击 ' + atkVal.toLocaleString() + "</span>");
+    }
     cls = npc.destroyedInBattle ? " destroyed" : (npc.inSquad && !npc.destroyedInBattle ? " active" : "");
     if (npc.hp && npc.maxHp) {
       bars = ["shield", "armor", "structure"].map(function (key) {
@@ -1319,6 +1348,7 @@ function closeCombat3DPopup() {
   const modeTabs = document.getElementById("combat-mode-tabs");
   if (modeTabs) modeTabs.addEventListener("click", event => {
     const button = event.target.closest("[data-combat-mode]"); if (!button) return;
+    if (typeof isStarmapBattleTrialViewActive === "function" && isStarmapBattleTrialViewActive()) { showToast("战斗试炼中不可切换模式"); return; }
     dispatchGameAction(gameState, { type:"combat/selectMode", mode:button.dataset.combatMode }, Date.now());
     renderCombatPanel();
   });
@@ -1337,10 +1367,15 @@ function closeCombat3DPopup() {
   });
   const button = document.getElementById("combat-zone-dropbtn"); const content = document.getElementById("combat-zone-dropdown-content");
   if (button && content) {
-    button.addEventListener("click", event => { event.stopPropagation(); renderCombatPanel(); content.classList.toggle("show"); });
+    button.addEventListener("click", event => {
+      event.stopPropagation();
+      if (typeof isStarmapBattleTrialViewActive === "function" && isStarmapBattleTrialViewActive()) { showToast("战斗试炼星带已锁定"); return; }
+      renderCombatPanel(); content.classList.toggle("show");
+    });
     document.addEventListener("click", () => content.classList.remove("show"));
     content.addEventListener("click", event => {
       const option = event.target.closest("[data-zone]"); if (!option) return;
+      if (typeof isStarmapBattleTrialViewActive === "function" && isStarmapBattleTrialViewActive()) { content.classList.remove("show"); return; }
       const result = dispatchGameAction(gameState, { type:"combat/selectZone", zoneId:option.dataset.zone }, Date.now());
       if (!result.changed && result.reason === "combat-active") showToast("交战中不能切换星带，请先停止战斗");
       else if (!result.changed && result.reason === "level-locked") showToast("该星带需要战斗等级 " + result.requiredCL);
@@ -1349,6 +1384,7 @@ function closeCombat3DPopup() {
   }
   const targetingSelect = document.getElementById("capital-targeting-select");
   if (targetingSelect) targetingSelect.addEventListener("change", () => {
+    if (typeof isStarmapBattleTrialViewActive === "function" && isStarmapBattleTrialViewActive()) { renderCombatPanel(); return; }
     const result = dispatchGameAction(gameState, { type:"combat/selectTargetingMode", mode:targetingSelect.value }, Date.now());
     if (!result.changed && result.reason === "combat-active") showToast("交战中不能切换战术索敌模式");
     else if (!result.changed && result.reason === "capital-only") showToast("只有旗舰与超级旗舰可以使用战术索敌");
@@ -1357,11 +1393,16 @@ function closeCombat3DPopup() {
 
 
   const start = document.getElementById("btn-start-combat"); if (start) start.addEventListener("click", () => {
+    if (typeof startStarmapBattleTrialFromCombat === "function" && startStarmapBattleTrialFromCombat()) return;
     const mode = (gameState.combat && gameState.combat.viewMode === "deathspace") ? "deathspace" : "belt";
     if (typeof showActionConfirm === "function") showActionConfirm(mode === "deathspace" ? "combatDeathspace" : "combatBelt");
   });
-  const stop = document.getElementById("btn-stop-combat"); if (stop) stop.addEventListener("click", stopCombatEncounter);
+  const stop = document.getElementById("btn-stop-combat"); if (stop) stop.addEventListener("click", () => {
+    if (typeof stopStarmapBattleTrialFromCombat === "function" && stopStarmapBattleTrialFromCombat()) return;
+    stopCombatEncounter();
+  });
   const chainBtn = document.getElementById("btn-start-combat-chain"); if (chainBtn) chainBtn.addEventListener("click", () => {
+    if (typeof isStarmapBattleTrialViewActive === "function" && isStarmapBattleTrialViewActive()) return;
     if (typeof showActionConfirm === "function") showActionConfirm("combatDeathspace");
   });
   const logBtn = document.getElementById("btn-combat-log"); if (logBtn) logBtn.addEventListener("click", () => {

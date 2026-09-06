@@ -25,15 +25,47 @@ function showToast(message) {
 
 let starmapTrialRoomNode = null;
 let starmapTrialRoomVisible = false;
+let starmapBattleTrialViewVisible = false;
 let starmapShip3dReadyListenerBound = false;
 let starmapTrialRoomRefreshTimer = null;
+let starmapBattleArenaOrigin = null;
 
 function syncStarmapCompletedNodes(frame) {
   const target = frame || document.getElementById("legion-starmap-frame");
   if (!target || !target.contentWindow) return;
-  const starmap = gameState && gameState.legion && gameState.legion.starmap;
+  const now = Date.now();
+  let starmap = gameState && gameState.legion && gameState.legion.starmap;
+  try {
+    const model = target.contentWindow.LEGION_STARMAP_CONTENT || target.contentWindow.LEGION_STARMAP_RENDER_MODEL;
+    const nodes = model && Array.isArray(model.nodes) ? model.nodes : [];
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.syncResidentRewardsForCompletedNodes === "function") {
+      LEGION_STARMAP_TRIAL.syncResidentRewardsForCompletedNodes(gameState, nodes, now);
+      starmap = gameState && gameState.legion && gameState.legion.starmap;
+    }
+  } catch (_) {}
   const nodeIds = starmap && Array.isArray(starmap.completedNodeIds) ? starmap.completedNodeIds.map(String) : [];
   target.contentWindow.postMessage({ type:"legion-starmap/completed-nodes", nodeIds }, "*");
+  let rewards = [];
+  try {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.getCollectionRewardStates === "function") {
+      rewards = LEGION_STARMAP_TRIAL.getCollectionRewardStates(gameState, now);
+    }
+  } catch (_) {}
+  target.contentWindow.postMessage({ type:"legion-starmap/collection-reward-state", rewards }, "*");
+  let productionRewards = [];
+  try {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.getProductionRewardStates === "function") {
+      productionRewards = LEGION_STARMAP_TRIAL.getProductionRewardStates(gameState, now);
+    }
+  } catch (_) {}
+  target.contentWindow.postMessage({ type:"legion-starmap/production-reward-state", rewards:productionRewards }, "*");
+  let archaeologyRewards = [];
+  try {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.getArchaeologyRewardStates === "function") {
+      archaeologyRewards = LEGION_STARMAP_TRIAL.getArchaeologyRewardStates(gameState, now);
+    }
+  } catch (_) {}
+  target.contentWindow.postMessage({ type:"legion-starmap/archaeology-reward-state", rewards:archaeologyRewards }, "*");
 }
 
 function getLockedStarmapTrialNode() {
@@ -46,7 +78,10 @@ function restoreRunningStarmapTrialRoom() {
   const lockedNode = getLockedStarmapTrialNode();
   if (!lockedNode) return false;
   starmapTrialRoomNode = lockedNode;
+  // 战斗试炼直接复用正式 combat-panel；刷新后只恢复节点锁定和后台战斗，
+  // 不再把旧的独立战斗房间重新挂回页面。
   starmapTrialRoomVisible = true;
+  starmapBattleTrialViewVisible = isStarmapBattleTrialNode(lockedNode);
   setStarmapTrialRoomRefresh(true);
   return true;
 }
@@ -59,7 +94,7 @@ function setStarmapTrialRoomRefresh(active) {
   if (active) {
     // 试炼房间独立刷新：切到其它页面时，倒计时与采矿进度仍继续可见。
     starmapTrialRoomRefreshTimer = setInterval(function () {
-      if (!starmapTrialRoomVisible) return;
+      if (!starmapTrialRoomVisible && !starmapBattleTrialViewVisible) return;
       try { renderStarmapTrialRoom(Date.now()); } catch (_) {}
     }, 250);
   }
@@ -67,9 +102,159 @@ function setStarmapTrialRoomRefresh(active) {
 
 if (!starmapShip3dReadyListenerBound && typeof window !== "undefined" && typeof window.addEventListener === "function") {
   window.addEventListener("ship3d:ready", function () {
-    if (starmapTrialRoomVisible) renderStarmapTrialRoom(Date.now());
+    if (starmapTrialRoomVisible || starmapBattleTrialViewVisible) renderStarmapTrialRoom(Date.now());
   });
   starmapShip3dReadyListenerBound = true;
+}
+
+function isStarmapBattleTrialNode(node) {
+  return !!(node && node.type === "battle" && node.battleTrialZoneId);
+}
+
+function getStarmapBattleTrialState() {
+  const starmap = gameState && gameState.legion && gameState.legion.starmap;
+  return starmap && starmap.battleTrial ? starmap.battleTrial : { status:"idle", nodeId:null, enemyCount:0, kills:0, result:null };
+}
+
+function isStarmapBattleTrialViewActive() {
+  return starmapBattleTrialViewVisible && isStarmapBattleTrialNode(starmapTrialRoomNode);
+}
+
+function leaveStarmapBattleTrialView() {
+  if (!isStarmapBattleTrialNode(starmapTrialRoomNode)) return;
+  starmapBattleTrialViewVisible = false;
+  starmapTrialRoomVisible = false;
+  restoreStarmapBattleArena();
+  setStarmapTrialRoomRefresh(false);
+}
+
+function mountStarmapBattleArena() {
+  const slot = document.getElementById("starmap-battle-arena-slot");
+  const arena = document.querySelector("#combat-panel .combat-arena") || (slot && slot.querySelector(".combat-arena"));
+  if (!slot || !arena) return false;
+  if (!starmapBattleArenaOrigin) starmapBattleArenaOrigin = { parent: arena.parentNode, next: arena.nextSibling };
+  if (arena.parentNode !== slot) slot.appendChild(arena);
+  slot.hidden = false;
+  slot.style.display = "block";
+  return true;
+}
+
+function restoreStarmapBattleArena() {
+  const slot = document.getElementById("starmap-battle-arena-slot");
+  const arena = slot && slot.querySelector(".combat-arena");
+  if (!arena) {
+    if (slot) { slot.hidden = true; slot.style.display = "none"; }
+    return false;
+  }
+  const origin = starmapBattleArenaOrigin;
+  if (origin && origin.parent) {
+    origin.parent.insertBefore(arena, origin.next && origin.next.parentNode === origin.parent ? origin.next : null);
+  }
+  if (slot) { slot.hidden = true; slot.style.display = "none"; }
+  return true;
+}
+
+function renderStarmapBattleTrialCombat(now, options) {
+  const node = starmapTrialRoomNode;
+  if (!isStarmapBattleTrialNode(node)) return null;
+  const opts = options || {};
+  const t = Number(now) || Date.now();
+  const trial = getStarmapBattleTrialState();
+  mountStarmapBattleArena();
+  let display = null;
+  if (opts.renderBase !== false) {
+    if (typeof renderCombatPanel === "function") display = renderCombatPanel(t);
+  } else if (typeof updateCombatLiveUI === "function") {
+    display = updateCombatLiveUI(t);
+  } else if (typeof getCombatDisplayState === "function") {
+    display = getCombatDisplayState(gameState, t);
+  }
+  // 这里只复用正式战斗的 arena；倒计时、试炼按钮和结果文字仍由试炼房间外壳渲染。
+  return display;
+
+  const endAt = Number(trial.endsAt) || 0;
+  const remaining = trial.status === "running" && endAt > 0 ? Math.max(0, Math.ceil((endAt - t) / 1000)) : 0;
+  const replayEnabled = typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL.isReplayTestingEnabled && LEGION_STARMAP_TRIAL.isReplayTestingEnabled();
+  const completed = typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL.isNodeCompleted && LEGION_STARMAP_TRIAL.isNodeCompleted(gameState, node);
+  const statusText = trial.status === "running"
+    ? "战斗试炼 · " + (node.name || "当前节点") + " · 剩余时间：" + remaining + "s"
+    : trial.status === "success"
+      ? "战斗试炼 · 已完成"
+      : trial.status === "failed"
+        ? "战斗试炼 · 已失败"
+        : "战斗试炼 · " + (node.name || "当前节点") + " · 待命";
+  const header = document.getElementById("combat-header-info");
+  if (header) header.textContent = statusText;
+
+  const zone = typeof COMBAT_ZONES !== "undefined" && Array.isArray(COMBAT_ZONES)
+    ? COMBAT_ZONES.find(function (entry) { return entry && entry.id === node.battleTrialZoneId; }) : null;
+  const zoneButton = document.getElementById("combat-zone-dropbtn");
+  if (zoneButton) {
+    zoneButton.textContent = (zone ? zone.name : node.battleTrialZoneId) + " · 试炼锁定";
+    zoneButton.disabled = true;
+    zoneButton.setAttribute("aria-disabled", "true");
+  }
+  const zoneContent = document.getElementById("combat-zone-dropdown-content");
+  if (zoneContent) zoneContent.classList.remove("show");
+  const modeTabs = document.getElementById("combat-mode-tabs");
+  if (modeTabs) modeTabs.querySelectorAll("[data-combat-mode]").forEach(function (button) {
+    button.disabled = true;
+    button.setAttribute("aria-disabled", "true");
+  });
+
+  const start = document.getElementById("btn-start-combat");
+  if (start) {
+    start.textContent = "▶ 开始战斗试炼";
+    start.style.display = trial.status === "running" || (completed && !replayEnabled) ? "none" : "";
+    start.disabled = trial.status === "running";
+    start.dataset.starmapTrial = "battle";
+  }
+  const stop = document.getElementById("btn-stop-combat");
+  if (stop) {
+    stop.textContent = "⏹ 停止试炼";
+    stop.style.display = trial.status === "running" ? "" : "none";
+    stop.dataset.starmapTrial = "battle";
+  }
+  const chain = document.getElementById("deathspace-chain-control");
+  if (chain) chain.style.display = "none";
+  const queue = document.getElementById("combat-queue-control");
+  if (queue) queue.style.display = "none";
+
+  return display;
+}
+
+function startStarmapBattleTrialFromCombat() {
+  if (!isStarmapBattleTrialViewActive() || typeof LEGION_STARMAP_TRIAL === "undefined" || typeof LEGION_STARMAP_TRIAL.startBattleTrial !== "function") return false;
+  const node = starmapTrialRoomNode;
+  const result = LEGION_STARMAP_TRIAL.startBattleTrial(gameState, node, Date.now());
+  if (result && result.reason === "confirm-stop-action") {
+    showDangerConfirm("停止当前行动？", "当前正在进行“" + (result.currentSkill || "当前行动") + "”。停止后当前进度不返还，是否开始星图战斗试炼？", "停止并进入试炼", function () {
+      LEGION_STARMAP_TRIAL.startBattleTrial(gameState, node, Date.now(), { confirmed:true });
+      updateUI();
+    });
+    return true;
+  }
+  if (result && !result.changed) {
+    const messages = {
+      "no-combat-ship":"请先在机库指派一艘战斗舰",
+      "no-weapons":"当前战斗舰没有安装武器",
+      "repairing":"战斗舰维修中，暂时无法开始试炼",
+      "combat-running":"战斗中无法开始星图试炼",
+      "starmap-trial-completed":"该节点已完成试炼",
+      "starmap-trial-running":"请先完成当前星图试炼"
+    };
+    showToast(messages[result.reason] || "战斗试炼启动失败");
+  }
+  if (result && result.changed) updateUI();
+  return true;
+}
+
+function stopStarmapBattleTrialFromCombat() {
+  if (!isStarmapBattleTrialViewActive() || typeof LEGION_STARMAP_TRIAL === "undefined" || typeof LEGION_STARMAP_TRIAL.stopBattleTrial !== "function") return false;
+  const result = LEGION_STARMAP_TRIAL.stopBattleTrial(gameState);
+  if (result && !result.changed && result.reason !== "not-running") showToast("当前没有正在运行的战斗试炼");
+  updateUI();
+  return true;
 }
 
 function renderStarmapTrialRoom(now) {
@@ -88,8 +273,18 @@ function renderStarmapTrialRoom(now) {
   syncStarmapCompletedNodes(frame);
   if (!starmapTrialRoomVisible) return;
   const node = starmapTrialRoomNode || {};
+  const isProduction = node.type === "production" && Array.isArray(node.productionRequirements) && node.productionRequirements.length > 0;
+  const isArchaeology = node.type === "archaeology" && !!node.archaeologySiteId;
+  const isBattle = node.type === "battle" && !!node.battleTrialZoneId;
   const storedTrial = (gameState.legion && gameState.legion.starmap && gameState.legion.starmap.collectionTrial) || {};
-  const trial = node.id != null && storedTrial.nodeId != null && String(node.id) === String(storedTrial.nodeId) ? storedTrial : { status:"idle", gathered:0, amount:Number(node.collectionAmount) || 0 };
+  const collectionTrial = node.id != null && storedTrial.nodeId != null && String(node.id) === String(storedTrial.nodeId) ? storedTrial : { status:"idle", gathered:0, amount:Number(node.collectionAmount) || 0 };
+  const storedProductionTrial = (gameState.legion && gameState.legion.starmap && gameState.legion.starmap.productionTrial) || {};
+  const productionTrial = isProduction && node.id != null && storedProductionTrial.nodeId != null && String(node.id) === String(storedProductionTrial.nodeId) ? storedProductionTrial : { status:"idle", result:null };
+  const storedArchaeologyTrial = (gameState.legion && gameState.legion.starmap && gameState.legion.starmap.archaeologyTrial) || {};
+  const archaeologyTrial = isArchaeology && node.id != null && storedArchaeologyTrial.nodeId != null && String(node.id) === String(storedArchaeologyTrial.nodeId) ? storedArchaeologyTrial : { status:"idle", progress:0, target:Number(node.archaeologyTargetProgress) || 14, result:null };
+  const storedBattleTrial = (gameState.legion && gameState.legion.starmap && gameState.legion.starmap.battleTrial) || {};
+  const battleTrial = isBattle && node.id != null && storedBattleTrial.nodeId != null && String(node.id) === String(storedBattleTrial.nodeId) ? storedBattleTrial : { status:"idle", kills:0, enemyCount:Number(node.battleTrialEnemyCount) || 2, result:null };
+  const trial = isArchaeology ? archaeologyTrial : isBattle ? battleTrial : collectionTrial;
   const title = document.getElementById("starmap-trial-title");
   const subtitle = document.getElementById("starmap-trial-subtitle");
   const fill = document.getElementById("starmap-trial-progress-fill");
@@ -99,23 +294,249 @@ function renderStarmapTrialRoom(now) {
   const start = document.getElementById("starmap-trial-start");
   const stop = document.getElementById("starmap-trial-stop");
   const replayToggle = document.getElementById("starmap-trial-replay-toggle");
-  const amount = Number(trial.amount || node.collectionAmount || 0);
-  const gathered = Number(trial.gathered || 0);
+  const amount = isArchaeology ? Math.max(1, Number(trial.target || node.archaeologyTargetProgress) || 14) : isBattle ? Math.max(1, Number(trial.enemyCount || node.battleTrialEnemyCount) || 2) : Number(trial.amount || node.collectionAmount || 0);
+  const gathered = isArchaeology ? Number(trial.progress || 0) : isBattle ? Number(trial.kills || 0) : Number(trial.gathered || 0);
   const pct = amount > 0 ? Math.max(0, Math.min(100, gathered / amount * 100)) : 0;
   if (title) title.textContent = node.name ? "星图试炼 · " + node.name : "星图试炼房间";
-  if (subtitle) subtitle.textContent = node.collectionResource ? "目标：" + node.collectionResource + " · 数量：" + amount : "已进入试炼房间，可切换到其他页面后台运行";
+  if (subtitle) subtitle.textContent = isProduction ? "生产试炼 · " + (node.subtype || "物资提交") + " · 库存验证" : isArchaeology ? "考古试炼 · " + (node.subtype || "遗迹扫描") + " · 180 秒内解析 " + amount + " 点" : isBattle ? "战斗试炼 · " + (node.subtype || "战斗") + " · 复用现有战斗系统，击败 " + amount + " 艘敌舰" : node.collectionResource ? "目标：" + node.collectionResource + " · 数量：" + amount : "已进入试炼房间，可切换到其他页面后台运行";
   if (fill) fill.style.width = pct.toFixed(2) + "%";
   const endAt = Number(trial.endsAt || 0);
   const remaining = trial.status === "running" && endAt > 0 ? Math.max(0, Math.ceil((endAt - (Number(now) || Date.now())) / 1000)) : 0;
-  if (countdown) countdown.textContent = trial.status === "running" ? "剩余时间：" + remaining + "s" : trial.status === "success" ? "剩余时间：试炼完成" : trial.status === "failed" ? "剩余时间：0s" : "剩余时间：180s";
+  if (countdown) {
+    countdown.hidden = isProduction;
+    countdown.style.display = isProduction ? "none" : "block";
+    countdown.textContent = trial.status === "running" ? "剩余时间：" + remaining + "s" : trial.status === "success" ? "剩余时间：试炼完成" : trial.status === "failed" ? "剩余时间：0s" : "剩余时间：180s";
+  }
   if (text) text.textContent = trial.status === "running" ? "进度 " + Math.floor(pct) + "%" : (trial.status === "success" ? "试炼成功" : trial.status === "failed" ? "试炼失败" : "等待开始");
-  if (result) result.textContent = trial.result === "stopped" ? "试炼已停止，当前进度不返还。" : trial.status === "success" ? "已完成节点试炼。" : trial.status === "failed" ? "未在时限内完成。" : "";
+  if (result) result.textContent = isProduction ? (productionTrial.status === "success" ? "物资已交付，节点认证完成。" : "") : isArchaeology ? (trial.status === "success" ? "遗迹信号已完整解析，节点认证完成。" : trial.status === "failed" ? String(trial.result || "未在时限内完成遗迹解析。") : "") : isBattle ? (trial.status === "success" ? "敌方编队已击破，节点认证完成。" : trial.status === "failed" ? String(trial.result || "未在时限内完成战斗试炼。") : "") : trial.result === "stopped" ? "试炼已停止，当前进度不返还。" : trial.status === "success" ? "已完成节点试炼。" : trial.status === "failed" ? "未在时限内完成。" : "";
   const replayEnabled = typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.isReplayTestingEnabled === "function" && LEGION_STARMAP_TRIAL.isReplayTestingEnabled();
   const nodeCompleted = typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.isNodeCompleted === "function" && LEGION_STARMAP_TRIAL.isNodeCompleted(gameState, node);
   if (replayToggle) replayToggle.checked = replayEnabled;
-  if (start) start.hidden = trial.status === "running" || (nodeCompleted && !replayEnabled);
-  if (stop) stop.hidden = trial.status !== "running";
-  renderStarmapCollectionRoom(node, trial, Number(now) || Date.now());
+  if (start) start.hidden = isProduction || trial.status === "running" || (nodeCompleted && !replayEnabled);
+  if (stop) stop.hidden = isProduction || trial.status !== "running";
+  if (isBattle) {
+    ["starmap-collection-room", "starmap-production-room", "starmap-archaeology-room"].forEach(function (id) {
+      const element = document.getElementById(id);
+      if (element) { element.hidden = true; element.style.display = "none"; }
+    });
+    renderStarmapBattleTrialCombat(now);
+    return;
+  }
+  restoreStarmapBattleArena();
+  renderStarmapCollectionRoom(node, collectionTrial, Number(now) || Date.now());
+  renderStarmapProductionRoom(node, productionTrial, nodeCompleted, replayEnabled);
+  renderStarmapArchaeologyRoom(node, archaeologyTrial, Number(now) || Date.now());
+}
+
+function renderStarmapArchaeologyRoom(node, trial, now) {
+  const host = document.getElementById("starmap-archaeology-room");
+  if (!host) return;
+  const isArchaeology = node && node.type === "archaeology" && node.archaeologySiteId;
+  host.hidden = !isArchaeology;
+  host.style.display = isArchaeology ? "block" : "none";
+  if (!isArchaeology) return;
+  const target = Math.max(1, Number(trial.target || node.archaeologyTargetProgress) || 14);
+  const progress = Math.max(0, Math.min(target, Number(trial.progress) || 0));
+  const pct = progress / target * 100;
+  const progressValue = document.getElementById("starmap-archaeology-progress-value");
+  const progressFill = document.getElementById("starmap-archaeology-progress-fill");
+  const status = document.getElementById("starmap-archaeology-status");
+  const scanVisual = document.getElementById("starmap-scan-visual");
+  if (progressValue) progressValue.textContent = Math.floor(progress) + " / " + target;
+  if (progressFill) progressFill.style.width = pct.toFixed(2) + "%";
+  if (status) {
+    const interference = trial.status === "running" && Number(trial.interferenceUntil) > now;
+    status.textContent = trial.status === "success" ? "解析完成" : trial.status === "failed" ? "试炼失败" : interference ? "信号干扰中" : trial.status === "running" ? "扫描进行中" : "等待扫描";
+  }
+  if (scanVisual) scanVisual.classList.toggle("is-running", trial.status === "running");
+  const cycleProgressText = document.getElementById("starmap-archaeology-cycle-progress-text");
+  const cycleProgressFill = document.getElementById("starmap-archaeology-cycle-progress-fill");
+  const cycleProgressTrack = cycleProgressFill && cycleProgressFill.parentElement;
+  const cycleSeconds = Math.max(0, Number(trial.cycleSeconds) || 0);
+  const interferenceRemaining = trial.status === "running" ? Math.max(0, (Number(trial.interferenceUntil) - now) / 1000) : 0;
+  let cyclePct = 0;
+  let cycleProgressLabel = "等待开始";
+  if (trial.status === "running" && interferenceRemaining > 0) {
+    cycleProgressLabel = "信号干扰 " + interferenceRemaining.toFixed(1) + "s";
+  } else if (trial.status === "running" && cycleSeconds > 0 && Number(trial.nextScanAt) > 0) {
+    const cycleStartAt = Number(trial.nextScanAt) - cycleSeconds * 1000;
+    cyclePct = Math.max(0, Math.min(100, (now - cycleStartAt) / (cycleSeconds * 1000) * 100));
+    cycleProgressLabel = Math.max(0, (Number(trial.nextScanAt) - now) / 1000).toFixed(1) + "s";
+  } else if (trial.status === "success") {
+    cyclePct = 100;
+    cycleProgressLabel = "解析完成";
+  } else if (trial.status === "failed") {
+    cycleProgressLabel = "扫描终止";
+  }
+  if (cycleProgressFill) cycleProgressFill.style.width = cyclePct.toFixed(2) + "%";
+  if (cycleProgressText) cycleProgressText.textContent = cycleProgressLabel;
+  if (cycleProgressTrack) cycleProgressTrack.classList.toggle("is-interference", interferenceRemaining > 0);
+  const scan = document.getElementById("starmap-archaeology-scan");
+  const chance = document.getElementById("starmap-archaeology-chance");
+  const cycle = document.getElementById("starmap-archaeology-cycle");
+  const probe = document.getElementById("starmap-archaeology-probe");
+  if (scan) scan.textContent = Number(trial.scanStrength) > 0 ? Number(trial.scanStrength).toFixed(1) : "—";
+  if (chance) chance.textContent = Number.isFinite(Number(trial.successChance)) && Number(trial.scanStrength) > 0 ? (Number(trial.successChance) * 100).toFixed(1) + "%" : "—";
+  if (cycle) cycle.textContent = Number(trial.cycleSeconds) > 0 ? Number(trial.cycleSeconds).toFixed(2) + "s" : "—";
+  if (probe) {
+    const selectedProbeId = trial.status === "running" ? trial.probeId : (gameState.archaeology && gameState.archaeology.activeProbeId);
+    let probeRows = [];
+    try {
+      const display = typeof getArchaeologyDisplayState === "function" ? getArchaeologyDisplayState(gameState, now, { skipShipHp:true }) : null;
+      probeRows = display && Array.isArray(display.probes) ? display.probes : [];
+    } catch (_) {}
+    const probeOptions = probeRows.map(function (row) {
+      const locked = !!row.levelLocked;
+      const empty = !(Number(row.stock) > 0);
+      return { value:row.id, label:row.name + " ×" + Math.floor(Number(row.stock) || 0) + (locked ? " · 等级不足" : empty ? " · 无库存" : ""), disabled:locked || empty };
+    });
+    const signature = JSON.stringify(probeOptions) + "|" + String(selectedProbeId || "") + "|" + trial.status;
+    if (probe.dataset.signature !== signature) {
+      probe.replaceChildren();
+      probeOptions.forEach(function (row) {
+        const option = document.createElement("option");
+        option.value = row.value; option.textContent = row.label; option.disabled = row.disabled;
+        probe.appendChild(option);
+      });
+      probe.value = selectedProbeId || "";
+      probe.dataset.signature = signature;
+    }
+    probe.disabled = trial.status === "running";
+  }
+  const instanceId = trial.shipInstanceId || (gameState.shipAssignments && gameState.shipAssignments.archaeology);
+  const assigned = instanceId && typeof getShipInstanceFromState === "function" ? getShipInstanceFromState(gameState, instanceId) : null;
+  const shipLabel = document.getElementById("starmap-archaeology-ship-label");
+  const shipConfig = assigned && typeof getShipConfigById === "function" ? getShipConfigById(assigned.shipId) : null;
+  if (shipLabel) shipLabel.textContent = shipConfig && shipConfig.name ? shipConfig.name : "未指派考古舰";
+  const hpHost = document.getElementById("starmap-archaeology-hp");
+  if (hpHost) {
+    let hp = { shield:0, armor:0, structure:0 };
+    let maxHp = shipConfig && shipConfig.hp ? shipConfig.hp : hp;
+    try { if (assigned && typeof getArchaeologyShipMaxHp === "function") maxHp = getArchaeologyShipMaxHp(gameState, instanceId) || maxHp; } catch (_) {}
+    // 考古试炼只显示独立副本 HP。即使正式考古舰当前受损，也从满血最大值开始；
+    // 这里绝不读取 gameState.archaeology.shipHp，避免试炼继承或污染正式舰状态。
+    if (trial && trial.trialShipHp && typeof trial.trialShipHp === "object") hp = trial.trialShipHp;
+    else hp = maxHp;
+    hpHost.replaceChildren();
+    [{ key:"shield", label:"护盾" }, { key:"armor", label:"装甲" }, { key:"structure", label:"结构" }].forEach(function (part) {
+      const current = Math.max(0, Number(hp[part.key]) || 0);
+      const maximum = Math.max(0, Number(maxHp[part.key]) || 0);
+      const row = document.createElement("div");
+      row.className = "starmap-archaeology-hp-row " + part.key;
+      const label = document.createElement("span"); label.textContent = part.label;
+      const track = document.createElement("span"); track.className = "starmap-archaeology-hp-track";
+      const bar = document.createElement("i"); bar.style.width = (maximum > 0 ? Math.min(100, current / maximum * 100) : 0).toFixed(1) + "%"; track.appendChild(bar);
+      const value = document.createElement("b"); value.textContent = Math.floor(current) + " / " + Math.floor(maximum);
+      row.append(label, track, value); hpHost.appendChild(row);
+    });
+  }
+  const logHost = document.getElementById("starmap-archaeology-log");
+  if (logHost) {
+    logHost.replaceChildren();
+    const logs = Array.isArray(trial.log) ? trial.log.slice(0, 5) : [];
+    if (!logs.length) { const empty = document.createElement("span"); empty.textContent = "扫描记录将在试炼开始后显示。"; logHost.appendChild(empty); }
+    logs.forEach(function (entry) {
+      const line = document.createElement("span");
+      line.className = entry.rare ? "rare" : entry.success ? "success" : "failure";
+      line.textContent = entry.text || (entry.success ? "遗迹解析成功" : "扫描失败");
+      logHost.appendChild(line);
+    });
+  }
+  if (assigned && window.Ship3D && typeof window.Ship3D.buildSpecForShip === "function" && typeof window.Ship3D.ensureViewer === "function" && typeof window.Ship3D.setShips === "function") {
+    const canvas = document.getElementById("starmap-archaeology-ship-3d");
+    if (canvas) { try { const viewer = window.Ship3D.ensureViewer(canvas, { orbit:false, autoSpin:false, background:0x07111b }); window.Ship3D.setShips(viewer, [{ spec:window.Ship3D.buildSpecForShip(assigned.shipId), position:[0,0,0], scale:1, rotation:[0,0,0], sway:true }]); } catch (_) {} }
+  }
+}
+
+function renderStarmapProductionRoom(node, trial, nodeCompleted, replayEnabled) {
+  const host = document.getElementById("starmap-production-room");
+  if (!host) return;
+  const isProduction = node && node.type === "production" && Array.isArray(node.productionRequirements) && node.productionRequirements.length > 0;
+  host.hidden = !isProduction;
+  host.style.display = isProduction ? "block" : "none";
+  if (!isProduction) return;
+  const heading = document.getElementById("starmap-production-heading");
+  if (heading) heading.textContent = (node.subtype || "生产") + "物资交付";
+  const requirementsHost = document.getElementById("starmap-production-requirements");
+  let allEnough = true;
+  let requirementStates = node.productionRequirements;
+  try {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.getProductionRequirementState === "function") {
+      requirementStates = LEGION_STARMAP_TRIAL.getProductionRequirementState(gameState, node);
+    }
+  } catch (_) {}
+  if (requirementsHost) {
+    requirementsHost.replaceChildren();
+    requirementStates.forEach(function (requirement) {
+      const resourceId = String(requirement.resourceId || "");
+      const required = Math.max(0, Math.floor(Number(requirement.amount) || 0));
+      const owned = Math.max(0, Number(requirement.owned) || 0);
+      const enough = owned >= required;
+      allEnough = allEnough && enough;
+      let displayName = String(requirement.name || requirement.shipId || requirement.itemId || resourceId);
+      if ((!requirement.kind || requirement.kind === "resource") && resourceId) {
+        try { if (window.ResourceRegistry && typeof ResourceRegistry.getResourceDisplayName === "function") displayName = ResourceRegistry.getResourceDisplayName(resourceId) || displayName; } catch (_) {}
+      }
+      const requirementKind = requirement.kind || "resource";
+      const minEnhancement = Math.max(0, Math.floor(Number(requirement.minEnhancement) || 0));
+      const kindMeta = requirementKind === "ship" ? "舰船成品" : requirementKind === "equipment" ? "装备成品" : resourceId.indexOf("booster:") === 0 ? "增强剂成品" : "冶炼产物";
+      const card = document.createElement("div");
+      card.className = "starmap-production-requirement " + (enough ? "is-ready" : "is-missing");
+      const icon = document.createElement("div");
+      icon.className = "starmap-production-resource-icon";
+      icon.innerHTML = '<i class="fa-solid ' + (requirementKind === "ship" ? "fa-shuttle-space" : requirementKind === "equipment" ? "fa-gears" : resourceId.indexOf("booster:") === 0 ? "fa-flask" : "fa-cubes-stacked") + '"></i>';
+      const copy = document.createElement("div");
+      copy.className = "starmap-production-resource-copy";
+      const name = document.createElement("strong");
+      name.textContent = displayName;
+      const meta = document.createElement("span");
+      meta.textContent = kindMeta + (minEnhancement > 0 ? " · 强化至少 +" + minEnhancement : "") + " · " + (node.ring === "inner" ? "内环" : node.ring === "middle" ? "中环" : "外环") + "认证物资";
+      copy.append(name, meta);
+      const stock = document.createElement("div");
+      stock.className = "starmap-production-stock";
+      const quantity = document.createElement("strong");
+      quantity.textContent = Math.floor(owned) + " / " + required;
+      const state = document.createElement("span");
+      state.textContent = enough ? "库存充足" : "库存不足";
+      stock.append(quantity, state);
+      card.append(icon, copy, stock);
+      requirementsHost.appendChild(card);
+    });
+  }
+  const rewardHost = document.getElementById("starmap-production-reward");
+  const rewardDaily = document.getElementById("starmap-production-reward-daily");
+  const rewardCurrent = document.getElementById("starmap-production-reward-current");
+  const rewardSpec = node.productionReward && typeof node.productionReward === "object" ? node.productionReward : null;
+  let rewardState = null;
+  try {
+    if (nodeCompleted && typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.getProductionRewardState === "function") {
+      rewardState = LEGION_STARMAP_TRIAL.getProductionRewardState(gameState, node.id, Date.now());
+    }
+  } catch (_) {}
+  if (rewardHost && rewardSpec) {
+    rewardHost.hidden = false;
+    rewardHost.style.display = "block";
+    const qualities = Array.isArray(rewardSpec.qualityPool) ? rewardSpec.qualityPool : [];
+    const qualityText = qualities.length === 1 ? (qualities[0] === "l" ? "传奇" : "精工") : "精工 80% / 传奇 20%";
+    if (rewardDaily) rewardDaily.textContent = rewardSpec.kind === "booster" ? "随机" + qualityText + "增强剂 ×" + Number(rewardSpec.dailyAmount || 10) + " / 24h" : "随机矿物 ×" + Number(rewardSpec.dailyAmount || 0) + " / 24h";
+    if (rewardCurrent) {
+      if (!nodeCompleted) rewardCurrent.textContent = "完成节点后开始累计，奖励需要手动收取。";
+      else if (!rewardState) rewardCurrent.textContent = "首次完成奖励已发放，等待奖励账本建立。";
+      else {
+        const pending = Number(rewardState.pendingWholeAmount || 0);
+        rewardCurrent.textContent = "当前批次：" + (rewardState.currentRewardName || "待生成") + " · 距下一结算 " + Number(rewardState.hoursUntilNextReward || 24) + "h · 待领取 " + pending;
+      }
+    }
+  } else if (rewardHost) {
+    rewardHost.hidden = true;
+    rewardHost.style.display = "none";
+  }
+  const submit = document.getElementById("starmap-production-submit");
+  if (submit) {
+    const completedLocked = nodeCompleted && !replayEnabled;
+    submit.disabled = !allEnough || completedLocked;
+    submit.textContent = completedLocked ? "节点已完成" : allEnough ? "提交物资并完成试炼" : "库存不足";
+  }
 }
 
 function renderStarmapCollectionRoom(node, trial, now) {
@@ -209,8 +630,44 @@ function postStarmapTrialResult(event, result) {
   try { event.source.postMessage({ type:"legion-starmap/trial-result", result }, targetOrigin); } catch (_) { event.source.postMessage({ type:"legion-starmap/trial-result", result }, "*"); }
 }
 
+function postStarmapResidentRewardResult(event, result) {
+  if (!event.source || typeof event.source.postMessage !== "function") return;
+  const targetOrigin = event.origin && event.origin !== "null" ? event.origin : "*";
+  try { event.source.postMessage({ type:"legion-starmap/resident-reward-result", result }, targetOrigin); } catch (_) { event.source.postMessage({ type:"legion-starmap/resident-reward-result", result }, "*"); }
+}
+
 function openStarmapTrialRoom(node, event) {
   starmapTrialRoomNode = getLockedStarmapTrialNode() || node || null;
+  if (isStarmapBattleTrialNode(starmapTrialRoomNode)) {
+    starmapTrialRoomVisible = true;
+    starmapBattleTrialViewVisible = true;
+    if (gameState && gameState.combat) gameState.combat.zone = starmapTrialRoomNode.battleTrialZoneId;
+    currentPage = "starmap";
+    setStarmapTrialRoomRefresh(true);
+    renderCurrentNavigation();
+    renderStarmapTrialRoom(Date.now());
+    setTimeout(function () { if (starmapTrialRoomVisible) renderStarmapTrialRoom(Date.now()); }, 50);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(function () {
+      if (starmapTrialRoomVisible) renderStarmapTrialRoom(Date.now());
+    });
+    postStarmapTrialResult(event, { changed:false, roomOpened:true, nodeId:starmapTrialRoomNode && starmapTrialRoomNode.id, view:"trial-room" });
+    return;
+    // 战斗试炼的“房间”就是正式战斗页本身：切换到同一个 combat-panel，
+    // 只把星图节点对应的星带锁定，不再显示任何第二套战斗 DOM。
+    starmapTrialRoomVisible = false;
+    starmapBattleTrialViewVisible = true;
+    if (gameState && gameState.combat) gameState.combat.zone = starmapTrialRoomNode.battleTrialZoneId;
+    currentPage = "skill";
+    currentView = "combat";
+    setStarmapTrialRoomRefresh(true);
+    renderCurrentNavigation();
+    setTimeout(function () { if (isStarmapBattleTrialViewActive()) renderStarmapBattleTrialCombat(Date.now()); }, 50);
+    if (typeof requestAnimationFrame === "function") requestAnimationFrame(function () {
+      if (isStarmapBattleTrialViewActive()) renderStarmapBattleTrialCombat(Date.now());
+    });
+    postStarmapTrialResult(event, { changed:false, roomOpened:true, nodeId:starmapTrialRoomNode && starmapTrialRoomNode.id, view:"combat-panel" });
+    return;
+  }
   starmapTrialRoomVisible = true;
   setStarmapTrialRoomRefresh(true);
   renderStarmapTrialRoom(Date.now());
@@ -224,8 +681,24 @@ function openStarmapTrialRoom(node, event) {
 
 window.addEventListener("message", function (event) {
   const data = event && event.data;
-  if (!data || (data.type !== "legion-starmap/open-room" && data.type !== "legion-starmap/start-collection")) return;
+  if (!data || (data.type !== "legion-starmap/open-room" && data.type !== "legion-starmap/start-collection" && data.type !== "legion-starmap/collect-resident-rewards")) return;
   if (data.type === "legion-starmap/open-room") { openStarmapTrialRoom(data.node, event); return; }
+  if (data.type === "legion-starmap/collect-resident-rewards") {
+    let result;
+    try {
+      result = (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.collectAllResidentRewards === "function")
+        ? LEGION_STARMAP_TRIAL.collectAllResidentRewards(gameState, Date.now())
+        : { changed:false, reason:"starmap-trial-unavailable" };
+    } catch (error) {
+      console.error("[星图驻留奖励] 领取异常", error);
+      result = { changed:false, reason:"starmap-resident-reward-error" };
+    }
+    if (result.changed && typeof updateUI === "function") updateUI();
+    syncStarmapCompletedNodes();
+    postStarmapResidentRewardResult(event, result);
+    if (!result.changed && result.reason === "resident-reward-empty") showToast("当前没有可领取的星图驻留奖励");
+    return;
+  }
   let result;
   try {
     result = (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.startCollectionTrial === "function") ? LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, data.node, Date.now()) : { changed:false, reason:"starmap-trial-unavailable" };
@@ -259,6 +732,7 @@ function renderCombatSkillGroup() {
 
 function renderCurrentNavigation() {
   if (currentPage === "starmap" && (!gameState || typeof LegionRender === "undefined" || !LegionRender.isLegionTabVisible || !LegionRender.isLegionTabVisible(gameState))) currentPage = "skill";
+  const battleTrialView = isStarmapBattleTrialViewActive();
   const navigation = getNavigationDisplayState(currentPage, currentView);
   document.body.dataset.currentPage = navigation.page;
   renderCombatSkillGroup();
@@ -281,7 +755,10 @@ function renderCurrentNavigation() {
   const activeSelector = navigation.activeNav.type === "skill" ? `.sidebar .nav-item[data-skill="${navigation.activeNav.value}"]` : `.sidebar .nav-item[data-page="${navigation.activeNav.value}"]`;
   const active = document.querySelector(activeSelector); if (active) active.classList.add("active");
 
-  if (navigation.page === "skill") updateUI();
+  if (navigation.page === "skill") {
+    updateUI();
+    if (battleTrialView) renderStarmapBattleTrialCombat(Date.now(), { renderBase:false });
+  }
   else if (navigation.page === "cargo") renderCargoPage(cargoFilter);
   else if (navigation.page === "save") SaveManager._updateStatus("就绪");
   else if (navigation.page === "settings") renderSettingsPage();
@@ -328,6 +805,7 @@ function renderStarmapPage() {
   const active = typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible && LegionRender.isLegionTabVisible(gameState);
   const panel = frame.closest(".panel");
   if (panel) panel.style.display = active ? "" : "none";
+  syncStarmapCompletedNodes(frame);
 }
 
 function renderLegionPage() {
@@ -346,6 +824,7 @@ function switchPage(page) {
   // startCombatQueueItem 不主动重渲，全靠实循环补帧）。此处归一化到技能视图，
   // 与桌面侧栏 data-skill="combat" → switchSkill("combat") 路径完全对齐。
   if (page === "combat") {
+    if (isStarmapBattleTrialViewActive()) leaveStarmapBattleTrialView();
     currentPage = "skill";
     currentView = "combat";
     renderCurrentNavigation();
@@ -356,6 +835,7 @@ function switchPage(page) {
 }
 
 function switchSkill(skillKey) {
+  if (skillKey === "combat" && isStarmapBattleTrialViewActive()) leaveStarmapBattleTrialView();
   currentPage = "skill";
   currentView = skillKey;
   renderCurrentNavigation();
@@ -940,6 +1420,7 @@ const MATERIAL_SOURCE = {
   gases:      { pageId:"gasHarvesting",     pageLabel:"气体采集", icon:"fa-solid fa-wind",       emoji:"💨" },
   moon:       { pageId:"mining",            pageLabel:"采矿",     icon:"fa-solid fa-moon",       emoji:"🌑" },
   special:    { pageId:"combat",            pageLabel:"战斗",     icon:"fa-solid fa-crosshairs", emoji:"⚔️" },
+  starmap:    { pageId:"starmap",           pageLabel:"星图",     icon:"fa-solid fa-star",       emoji:"✦" },
   consumable: { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears", emoji:"🔧" },
   component:  { pageId:"shipEngineering",   pageLabel:"舰船工程", icon:"fa-solid fa-rocket",  emoji:"🛠️" },
   archaeology:{ pageId:"archaeology",       pageLabel:"考古",     icon:"fa-solid fa-digging", emoji:"🏺" }
@@ -958,6 +1439,8 @@ const SOURCE_BY_NAMESPACE = {
 };
 function getMaterialSourceInfo(key) {
   if (typeof key !== "string") return MATERIAL_SOURCE.mineral;
+  const materialName = key.indexOf(":") >= 0 ? key.slice(key.indexOf(":") + 1) : key;
+  if (typeof STARMAP_TITAN_MATERIALS !== "undefined" && Array.isArray(STARMAP_TITAN_MATERIALS) && STARMAP_TITAN_MATERIALS.includes(materialName)) return MATERIAL_SOURCE.starmap;
   // 优先使用权威资源定义：resolveMaterialIds 同时覆盖 namespace:itemId 与纯中文名（跨命名空间按名聚合），
   // 再取 getDefinition 的 namespace 映射到来源分类。镓/铂/铪/铷（月矿）→ 采矿，行星材料 → 行星开发，气体 → 气体采集。
   const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : null;
@@ -1648,6 +2131,7 @@ function openRewardResultModal(options) {
         </div>
         <button class="eem-close" data-rrm-close aria-label="关闭">✕</button>
       </div>
+      ${opt.notice ? `<div class="reward-result-notice">${escapeAchievementText(opt.notice)}</div>` : ""}
       <div class="eem-body">
         ${combatHtml}
         ${items.length || consumed.length ? "" : `<div class="reward-result-empty">${escapeAchievementText(emptyText)}</div>`}
@@ -4034,27 +4518,40 @@ function renderEquipCurrentBar(display, slot) {
   }
   const equippedItem = (display.equipped || []).find(it => it.id === slot.equipmentId) || null;
   const level = Math.max(0, Math.floor(Number(equippedItem && equippedItem.enhancementLevel) || 0));
-  const levelText = level > 0 ? " · +" + level : " · 未强化";
+  const levelHtml = '<span class="' + (level > 0 ? "eq-up" : "") + '">' + (level > 0 ? "强化 +" + level : "未强化") + "</span>";
+  const summary = equipmentStatSummary(curEq);
+  const parts = [];
+  if (summary) parts.push(summary);
+  parts.push(levelHtml);
+  const row2 = parts.join(' <span class="eq-sep">·</span> ');
   return '<div class="equip-current"><span class="ec-label">' + label + idx + ' · 当前</span>' +
-    '<span class="ec-main">' + (curEq.icon || "") + " " + curEq.name + " · " + equipmentStatSummary(curEq) + levelText + "</span></div>";
+    '<span class="ec-main">' + (curEq.icon || "") + " " + curEq.name + '</span>' +
+    '<span class="ec-sub">' + row2 + "</span></div>";
 }
-// 两行布局选项（方案 A）：行 1 图标 + 名称 + 状态徽章；行 2 核心数值（含与当前槽差值）· 档位 · 改造
+// 两行布局选项：行1 图标+名称+状态徽章+数量；行2 核心数值·档位·改造
 function renderEquipOptionDuo(item, curEq, isRig) {
   const eq = EQUIPMENT_DB[item.ids[0]] || null;
   const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
-  const levelText = level > 0 ? "+" + level : "未强化";
+  const levelHtml = '<span class="' + (level > 0 ? "eq-up" : "") + '">' + (level > 0 ? "强化 +" + level : "未强化") + "</span>";
   const summary = equipmentStatSummary(eq);
   const delta = equipmentStatDelta(eq, curEq);
   const deltaHtml = (delta == null || delta === 0) ? ""
-    : ' <span class="' + (delta > 0 ? "eq-up" : "eq-down") + '">(' + (delta > 0 ? "+" : "") + delta + ")</span>";
+    : '<span class="' + (delta > 0 ? "eq-up" : "eq-down") + '">(' + (delta > 0 ? "+" : "") + delta + ")</span>";
   const tier = equipmentTierText(eq);
-  const tierHtml = tier ? " · " + tier : "";
   const fitted = !!curEq && curEq.id === item.ids[0] && !isRig;
   const badge = fitted ? '<span class="eq-badge fitted">已装</span>' : '<span class="eq-badge">未装</span>';
-  const countHtml = item.count > 1 ? ' <span class="eq-count">×' + item.count + "</span>" : "";
+  const countHtml = item.count > 1 ? '<span class="eq-count">×' + item.count + "</span>" : "";
+
+  const parts = [];
+  if (summary) parts.push(summary);
+  if (deltaHtml) parts.push(deltaHtml);
+  if (tier) parts.push(tier);
+  parts.push(levelHtml);
+
+  const row2 = parts.join(' <span class="eq-sep">·</span> ');
   return '<button class="equip-option duo' + (fitted ? " is-fitted" : "") + '" data-equip="' + item.ids[0] + '">' +
-    '<span class="eq-row1"><span class="eq-icon">' + item.icon + '</span><span class="eq-name">' + item.name + "</span>" + badge + "</span>" +
-    '<span class="eq-row2">' + summary + deltaHtml + tierHtml + ' · <span class="' + (level > 0 ? "eq-up" : "") + '">' + levelText + "</span>" + countHtml + "</span>" +
+    '<span class="eq-row1"><span class="eq-icon">' + item.icon + '</span><span class="eq-name">' + item.name + "</span>" + badge + countHtml + "</span>" +
+    '<span class="eq-row2">' + row2 + "</span>" +
     "</button>";
 }
 
@@ -4075,12 +4572,12 @@ function openOrbitSelect(index) {
     if (slot.type === "rig") {
       // 改装件槽：拆卸即销毁（不返还库存）。占用槽提供"销毁"按钮；替换=旧件销毁+新件安装。
       const destroyButton = slot.equipmentId
-        ? '<button class="equip-option empty-option" data-rig-destroy="1"><span class="eq-icon">🗑</span><span class="eq-name">销毁改装件（不返还）</span></button>'
+        ? '<button class="equip-option rig-destroy-btn" data-rig-destroy="1"><span class="eq-icon">🗑</span><span class="eq-name">销毁改装件（不返还）</span></button>'
         : "";
-      const hint = '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 改装件安装后拆卸/替换即销毁；同系列可重复装配，但后续装配受谐振效应影响，实际效果递减</div>';
+      const hint = '<div class="equip-option-hint">⚠ 改装件安装后拆卸/替换即销毁；同系列可重复装配，但后续装配受谐振效应影响，实际效果递减</div>';
       options.innerHTML = currentBar + hint + destroyButton + (stacks.length
         ? stacks.map(item => renderEquipOptionDuo(item, curEq, true)).join("")
-        : '<div class="equip-option-hint" style="padding:6px 10px;font-size:12px;color:#4a5a6a;">仓库中没有可安装的改装件</div>');
+        : '<div class="equip-option-hint empty-hint">仓库中没有可安装的改装件</div>');
     } else if (slot.enabled && !slot.equipmentId && slot.lockedBy) {
       // 外接大型精炼泵管路接口：只读说明（fitted 值为 null，由泵实例 reserves 锁定）
       const pumpInst = (state.equipment && Array.isArray(state.equipment.instances))
@@ -4090,10 +4587,10 @@ function openOrbitSelect(index) {
         '<div class="pump-locked-hint">🔗 本格为<b>管路接口</b>，被 ' + pumpName + "（" + slot.lockedBy + "）锁定。<br>卸下对应精炼泵后自动释放，fitted 值保持 null。</div>";
     } else {
       // 「卸下装备」置底，避免占据首屏视线
-      const unequipBtn = '<button class="equip-option empty-option" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>';
+      const unequipBtn = '<button class="equip-option unequip-btn" data-equip=""><span class="eq-icon">○</span><span class="eq-name">卸下装备</span></button>';
       // 精炼泵安装提示：任意高/中/低槽可装，安装时锁定另两类槽各 1 格
       const pumpHint = (stacks.some(item => { const def = EQUIPMENT_DB[item.itemId]; return def && def.pump; }))
-        ? '<div class="equip-option-hint" style="padding:6px 10px;font-size:11px;color:#8a6d3b;">⚠ 外接大型精炼泵可安装于任意槽位，安装时将锁定另两类槽各 1 个空闲格作为管路接口</div>'
+        ? '<div class="equip-option-hint">⚠ 外接大型精炼泵可安装于任意槽位，安装时将锁定另两类槽各 1 个空闲格作为管路接口</div>'
         : "";
       options.innerHTML = currentBar + pumpHint + stacks.map(item => renderEquipOptionDuo(item, curEq, false)).join("") + unequipBtn;
     }
@@ -4165,7 +4662,7 @@ function showRigResonanceModal(preview, def, onConfirm) {
       '<h3>⚡ 谐振效应提示</h3>' +
       '<div class="rig-resonance-body">' +
         '你正在安装第 <b>' + preview.newPosition + '</b> 个「<b>' + seriesLabel + '</b>」改装件。<br>' +
-        '同一舰船重复装配同系列改装件，后装配的改装件会因<b>谐振效应</b>降低实际效果。' +
+        '同一舰船重复装配同系列改装件时，实际效果按改装件<b>数值从大到小</b>递减（数值最大者吃满效，其余受<b>谐振效应</b>惩罚）；与安装先后无关。' +
         '<div class="rig-resonance-note">「' + bonusLabel + '」名义效果 ' + pct(preview.baseValue) + '，实际生效量见下：</div>' +
         '<div class="rig-resonance-grid">' +
           '<span class="k">本件名义效果</span><span class="v">+' + pct(preview.baseValue) + '</span>' +
@@ -4190,7 +4687,6 @@ function showRigResonanceModal(preview, def, onConfirm) {
 function renderQueuePanel() {
   const display = getQueueDisplayState(gameState);
   const status = document.getElementById("queue-status-text"); if (status) status.textContent = display.statusText;
-  const loop = document.getElementById("queue-loop-check"); if (loop) loop.checked = display.loopMode;
   const list = document.getElementById("queue-list"); if (!list) return display;
   list.innerHTML = display.items.length ? display.items.map(item => {
     let etaHtml;
@@ -4847,10 +5343,19 @@ function installTutorialWidgetListeners() {
   });
   const orbitClose = document.getElementById("equipOrbitClose"); if (orbitClose) orbitClose.addEventListener("click", closeEquipOrbit);
   const orbitDone = document.getElementById("equipDoneBtn"); if (orbitDone) orbitDone.addEventListener("click", closeEquipOrbit);
-  const orbitModal = document.getElementById("equipOrbitModal"); if (orbitModal) orbitModal.addEventListener("click", event => { if (event.target === orbitModal) closeEquipOrbit(); });
+  const orbitModal = document.getElementById("equipOrbitModal"); if (orbitModal) orbitModal.addEventListener("click", event => {
+    if (event.target === orbitModal) { closeEquipOrbit(); return; }
+    // 选装侧栏打开时点空白处（面板外、且非槽位）收起侧栏，退回轨道视图（不再被迫选/卸）
+    const selPanel = document.getElementById("equipSelectPanel");
+    if (selPanel && selPanel.classList.contains("active") && !selPanel.contains(event.target) && !event.target.closest(".slot-segment")) {
+      selPanel.classList.remove("active");
+    }
+  });
+  const equipSelectClose = document.getElementById("equipSelectClose"); if (equipSelectClose) equipSelectClose.addEventListener("click", () => {
+    const selPanel = document.getElementById("equipSelectPanel"); if (selPanel) selPanel.classList.remove("active");
+  });
   const orbitReset = document.getElementById("equipResetBtn"); if (orbitReset) orbitReset.addEventListener("click", () => {
     if (!orbitShipId) return;
-    // 从真实显示态读取已装改装件，逐件列出即将销毁的名称（同名合并计数）。
     const display = getShipFittingDisplayState(gameState, orbitShipId); if (!display) return;
     const fittedRigNames = display.orbitSlots.filter(slot => slot.type === "rig" && slot.equipmentId).map(slot => slot.name || slot.equipmentId);
     let body = "<p class=\"dlg-body\">确定清空所有装备吗？<br><br>普通装备将返还仓库（保留为未安装实例）。</p>";
@@ -4858,7 +5363,7 @@ function installTutorialWidgetListeners() {
       const counts = new Map();
       for (const name of fittedRigNames) counts.set(name, (counts.get(name) || 0) + 1);
       const lines = [...counts.entries()].map(([name, count]) => "· " + name + (count > 1 ? " ×" + count : ""));
-      body += "<p class=\"dlg-body dlg-warn\">⚠ 以下改装件将被永久销毁（不返还）：<br>" + lines.join("<br>") + "</p>";
+      body += "<p class=\"dlg-body dlg-info\">改装件将保留：" + lines.join("、") + "</p>";
     }
     showDangerConfirm("⚠ 清空所有装备", body, "确认清空", () => {
       const result = dispatchGameAction(gameState, { type:"hangar/resetFitting", instanceId:orbitShipId }, Date.now());
@@ -4880,7 +5385,6 @@ function installTutorialWidgetListeners() {
       "确认清空",
       () => { clearQueue(); renderQueuePanel(); });
   });
-  const loop = document.getElementById("queue-loop-check"); if (loop) loop.addEventListener("change", () => dispatchGameAction(gameState, { type:"queue/setLoop", enabled:loop.checked }, Date.now()));
   const enhancementConfirm = document.getElementById("setting-enhancement-confirm"); if (enhancementConfirm) enhancementConfirm.addEventListener("change", () => {
     const result = dispatchGameAction(gameState, { type:"settings/setShipEnhancementConfirmation", enabled:enhancementConfirm.checked }, Date.now());
     if (result.changed) { renderSettingsPage(); showToast(result.enabled ? "舰船强化确认提示已开启" : "舰船强化确认提示已关闭"); }
@@ -4949,19 +5453,40 @@ function installTutorialWidgetListeners() {
   const trialStart = document.getElementById("starmap-trial-start");
   if (trialStart) trialStart.addEventListener("click", function () {
     if (!starmapTrialRoomNode || typeof LEGION_STARMAP_TRIAL === "undefined") return;
-    let result = LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, starmapTrialRoomNode, Date.now());
+    const isArchaeology = starmapTrialRoomNode.type === "archaeology";
+    const isBattle = starmapTrialRoomNode.type === "battle";
+    const startTrial = isArchaeology ? LEGION_STARMAP_TRIAL.startArchaeologyTrial : isBattle ? LEGION_STARMAP_TRIAL.startBattleTrial : LEGION_STARMAP_TRIAL.startCollectionTrial;
+    if (typeof startTrial !== "function") return;
+    let result = startTrial.call(LEGION_STARMAP_TRIAL, gameState, starmapTrialRoomNode, Date.now());
     if (result && result.reason === "confirm-stop-action") {
       showDangerConfirm("停止当前行动？", "当前正在进行“" + (result.currentSkill || "当前行动") + "”。停止后当前进度不返还，是否开始星图试炼？", "停止并进入试炼", function () {
-        LEGION_STARMAP_TRIAL.startCollectionTrial(gameState, starmapTrialRoomNode, Date.now(), { confirmed:true });
+        startTrial.call(LEGION_STARMAP_TRIAL, gameState, starmapTrialRoomNode, Date.now(), { confirmed:true });
         updateUI();
       });
       return;
+    }
+    if (result && !result.changed) {
+      if (result.reason === "no-archaeology-ship") showToast("请先在机库指派一艘考古舰");
+      else if (result.reason === "no-combat-ship") showToast("请先在机库指派一艘战斗舰");
+      else if (result.reason === "no-weapons") showToast("当前战斗舰没有安装武器");
+      else if (result.reason === "repairing") showToast("战斗舰维修中，还需 " + (result.remaining || 0) + " 秒");
+      else if (result.reason === "combat-unavailable") showToast("战斗系统尚未就绪");
+      else if (result.reason === "insufficient-probe") showToast("当前探针库存不足");
+      else if (result.reason === "insufficient-fuel") showToast("燃料不足，无法开始扫描");
+      else if (result.reason === "starmap-trial-completed") showToast("该节点已经完成");
+      else if (result.reason === "combat-running") showToast("战斗中无法开始星图试炼");
+      else if (result.reason === "starmap-trial-running") showToast("请先完成当前星图试炼");
+      else showToast(isArchaeology ? "考古试炼启动失败" : isBattle ? "战斗试炼启动失败" : "采集试炼启动失败");
     }
     updateUI();
   });
   const trialStop = document.getElementById("starmap-trial-stop");
   if (trialStop) trialStop.addEventListener("click", function () {
-    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL.stopCollectionTrial) LEGION_STARMAP_TRIAL.stopCollectionTrial(gameState);
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined") {
+      if (starmapTrialRoomNode && starmapTrialRoomNode.type === "archaeology" && LEGION_STARMAP_TRIAL.stopArchaeologyTrial) LEGION_STARMAP_TRIAL.stopArchaeologyTrial(gameState);
+      else if (starmapTrialRoomNode && starmapTrialRoomNode.type === "battle" && LEGION_STARMAP_TRIAL.stopBattleTrial) LEGION_STARMAP_TRIAL.stopBattleTrial(gameState);
+      else if (LEGION_STARMAP_TRIAL.stopCollectionTrial) LEGION_STARMAP_TRIAL.stopCollectionTrial(gameState);
+    }
     updateUI();
   });
   const replayToggle = document.getElementById("starmap-trial-replay-toggle");
@@ -4969,8 +5494,33 @@ function installTutorialWidgetListeners() {
     if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL.setReplayTestingEnabled) LEGION_STARMAP_TRIAL.setReplayTestingEnabled(replayToggle.checked);
     renderStarmapTrialRoom(Date.now());
   });
+  const archaeologyProbe = document.getElementById("starmap-archaeology-probe");
+  if (archaeologyProbe) archaeologyProbe.addEventListener("change", function () {
+    if (typeof dispatchGameAction !== "function") return;
+    const result = dispatchGameAction(gameState, { type:"archaeology/selectProbe", probeId:archaeologyProbe.value }, Date.now());
+    if (!result.changed) showToast(result.reason === "starmap-trial-running" ? "试炼进行中，探针已锁定" : "无法选择该探针");
+    renderStarmapTrialRoom(Date.now());
+  });
+  const productionSubmit = document.getElementById("starmap-production-submit");
+  if (productionSubmit) productionSubmit.addEventListener("click", function () {
+    if (!starmapTrialRoomNode || typeof LEGION_STARMAP_TRIAL === "undefined" || typeof LEGION_STARMAP_TRIAL.submitProductionTrial !== "function") return;
+    const submitResult = LEGION_STARMAP_TRIAL.submitProductionTrial(gameState, starmapTrialRoomNode, Date.now());
+    if (!submitResult.changed) {
+      if (submitResult.reason === "insufficient-production-materials") showToast("仓库中的提交物资不足");
+      else if (submitResult.reason === "starmap-trial-completed") showToast("该节点已经完成");
+      else if (submitResult.reason === "starmap-trial-running") showToast("请先完成当前采集试炼");
+      else showToast("生产试炼提交失败");
+    }
+    updateUI();
+  });
   const trialBack = document.getElementById("starmap-trial-back");
   if (trialBack) trialBack.addEventListener("click", function () {
+    if (isStarmapBattleTrialViewActive()) {
+      leaveStarmapBattleTrialView();
+      currentPage = "starmap";
+      renderCurrentNavigation();
+      return;
+    }
     starmapTrialRoomVisible = false;
     setStarmapTrialRoomRefresh(false);
     renderStarmapTrialRoom(Date.now());

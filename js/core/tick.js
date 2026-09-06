@@ -78,6 +78,12 @@ function gameTick() {
   }
 
   updateCombatRecovery();
+  // 星图试炼是唯一主动行动。必须在任何 currentAction 分支结算前清除残留行动/运行队列，
+  // 防止刷新恢复或旧存档同时推进冶炼、采矿等普通行动。
+  if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL &&
+      typeof LEGION_STARMAP_TRIAL.enforceExclusiveActionState === "function") {
+    LEGION_STARMAP_TRIAL.enforceExclusiveActionState(gameState, Date.now());
+  }
   // Batch K：intship 一体化造船——每 tick 对账，作业已不驱动 currentAction 时落为 stopped/preempted
   if (typeof reconcileIntshipRuntime === "function") reconcileIntshipRuntime(gameState, Date.now());
   let actionCompleted = false;
@@ -186,8 +192,7 @@ function gameTick() {
         if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
         if (gameState.skills.shipEngineering && gameState.skills.shipEngineering.xp > 0) checkLevelUpFromState(gameState, "shipEngineering");
         if (gameState.skills.refining && gameState.skills.refining.xp > 0) checkLevelUpFromState(gameState, "refining");
-        return;
-      }
+      } else {
       const recipeName = gameState.currentAction.startedSmeltingArea || gameState.currentAction.smeltingArea;
       const recipe = SMELTING_RECIPES.find(r => r.name === recipeName) || SMELTING_RECIPES[0]; if (!recipe) return;
       // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效，等级不足零副作用停止。
@@ -222,6 +227,7 @@ function gameTick() {
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
       if (s.xp > 0) checkLevelUp("refining");
+      } // end smelting-else
     } else if (key === "gasHarvesting") {
       const gasName = gameState.currentAction.startedGasArea || gameState.currentAction.gasArea;
       const area = GAS_AREAS.find(a => a.name === gasName) || GAS_AREAS[0]; if (!area) return;

@@ -86,38 +86,33 @@ const ProductionStateActions = {
     return { changed:true, recipe };
   },
 
-  // 熔炼行动下的子模式切换（2026-09-04 新增自动拆解子活动）：smelting | dismantle。
-  // 两种子活动共用单一进度累加器；但 refiningSubAction 挂在 currentAction 上，可能与正在运行的
-  // 其它行动（采矿/采气等）共用同一对象——切换「查看用的子模式 tab」绝不应误暂停 / 清零无关行动。
-  // 仅当当前正在运行的恰恰是【熔炼(refining)】本身时才需要先停（reset 进度），否则只记住子模式偏好，
-  // 待真正启动熔炼/拆解时由 applyQueueConfigToState 应用，不碰共享的 active/progress/lastProgressUpdate。
-  selectRefiningSubmode(state, submode, now) {
-    if (submode !== "smelting" && submode !== "dismantle") return { changed:false, reason:"bad-submode" };
+  // ── 2026-09-05：冶炼子面板「视图」与「运行子模式」解耦（月矿式体验）──────────────────
+  // 背景：采矿的 普通矿↔月矿 同属 skill="mining"，且 tick 循环是【统一】的（按当前 area 自适应），
+  //   故采普通矿时可边跑边看/切月矿面板而作业不中断。冶炼的 冶炼↔拆解 虽同属 skill="refining"，
+  //   tick 里却是【两条分叉循环】（吃不同资源、查不同配方、算法不同），又共用同一个 progress 累加器，
+  //   中途切换会让进度被错误的算法解释 → 必须重置进度，才表现为「停掉当前作业」。
+  // 因此拆成两个职责分明的动作：
+  //   selectRefiningView   → 只换「查看哪个面板」，【永不中断 / 永不重置】任何运行中的作业。
+  //   switchRefiningRunMode → 显式切换「运行哪个子模式」（点「切换到X」按钮），会重置进度后继续跑。
+  // ==========================================================================================
+
+  // 切换冶炼子面板的【视图】（tab 点击）。运行中切 tab 只改 refiningView，
+  // 绝不触碰 active / progress / lastProgressUpdate / startedXxx —— 这是「月矿式」的核心。
+  //   · 精炼未运行：视图与运行子模式保持同步（此时点 tab 即选定待启动的子活动）。
+  //   · 精炼运行中：两者可以不同（查看 A、跑着 B），要换跑哪个须点「切换到X」按钮。
+  selectRefiningView(state, view) {
+    if (view !== "smelting" && view !== "dismantle") return { changed:false, reason:"bad-submode" };
     const action = state.currentAction;
-    if (action.refiningSubAction === submode) return { changed:false, reason:"same-mode" };
-    const wasRefiningActive = action.active && action.skill === "refining";
-    if (wasRefiningActive) ShellStateActions.stopCurrentAction(state, now);
-    action.refiningSubAction = submode;
-    if (wasRefiningActive) {
-      // 运行中切换子模式：重置该子活动的锁定目标与进度（原逻辑，仅作用于 refining 自身）
-      if (submode === "dismantle") {
-        const valid = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
-          ? SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === action.dismantleTarget) : false;
-        if (!valid) action.dismantleTarget = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES[0]) ? SHIP_COMPONENT_DISMANTLE_RECIPES[0].id : "";
-        action.startedDismantleTarget = action.dismantleTarget;
-        action.progress = 0;
-        action.lastProgressUpdate = now;
-      } else {
-        const valid = (typeof SMELTING_RECIPES !== "undefined")
-          ? SMELTING_RECIPES.some(r => r.name === action.smeltingArea) : false;
-        if (!valid) action.smeltingArea = (typeof SMELTING_RECIPES !== "undefined" && SMELTING_RECIPES[0]) ? SMELTING_RECIPES[0].name : "";
-        action.startedSmeltingArea = action.smeltingArea;
-        action.progress = 0;
-        action.lastProgressUpdate = now;
-      }
-    } else {
-      // 其它行动（采矿/采气…）运行中：仅兜底校验拆解目标有效性，不改动共享运行状态/进度，避免误暂停。
-      if (submode === "dismantle") {
+    const isRefiningActive = Boolean(action.active && action.skill === "refining");
+    const prevView = action.refiningView === "dismantle" ? "dismantle" : "smelting";
+    if (prevView === view && (isRefiningActive || action.refiningSubAction === view)) {
+      return { changed:false, reason:"same-mode" };
+    }
+    action.refiningView = view;
+    // 仅【精炼未运行】时同步运行子模式；运行中一律不碰共享运行状态。
+    if (!isRefiningActive) {
+      action.refiningSubAction = view;
+      if (view === "dismantle") {
         const valid = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
           ? SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === action.dismantleTarget) : false;
         if (!valid) action.dismantleTarget = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES[0]) ? SHIP_COMPONENT_DISMANTLE_RECIPES[0].id : "";
@@ -125,6 +120,33 @@ const ProductionStateActions = {
       }
       // smelting 分支：smeltingArea 默认值（凡晶石带）始终有效，无需校验
     }
+    state._dirty = true;
+    return { changed:true, view };
+  },
+
+  // 显式切换【运行子模式】（点「切换到X」按钮）。前提：精炼正在运行。
+  // 两条 tick 循环算法不同却共用同一 progress 累加器，无法无缝接续 → 重置进度后按新子模式继续跑，
+  // 保持 active=true（不用 stopCurrentAction，避免用户还要再点一次启动）。
+  switchRefiningRunMode(state, submode, now) {
+    if (submode !== "smelting" && submode !== "dismantle") return { changed:false, reason:"bad-submode" };
+    const action = state.currentAction;
+    if (!(action.active && action.skill === "refining")) return { changed:false, reason:"refining-not-active" };
+    if (action.refiningSubAction === submode) return { changed:false, reason:"same-mode" };
+    action.refiningSubAction = submode;
+    action.refiningView = submode;
+    if (submode === "dismantle") {
+      const valid = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+        ? SHIP_COMPONENT_DISMANTLE_RECIPES.some(r => r.id === action.dismantleTarget) : false;
+      if (!valid) action.dismantleTarget = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined" && SHIP_COMPONENT_DISMANTLE_RECIPES[0]) ? SHIP_COMPONENT_DISMANTLE_RECIPES[0].id : "";
+      action.startedDismantleTarget = action.dismantleTarget;
+    } else {
+      const valid = (typeof SMELTING_RECIPES !== "undefined")
+        ? SMELTING_RECIPES.some(r => r.name === action.smeltingArea) : false;
+      if (!valid) action.smeltingArea = (typeof SMELTING_RECIPES !== "undefined" && SMELTING_RECIPES[0]) ? SMELTING_RECIPES[0].name : "";
+      action.startedSmeltingArea = action.smeltingArea;
+    }
+    action.progress = 0;
+    action.lastProgressUpdate = now;
     state._dirty = true;
     return { changed:true, submode };
   },
@@ -1135,7 +1157,11 @@ function applyQueueConfigToState(state, config, now) {
   if (config.smeltingArea) { action.smeltingArea = config.smeltingArea; action.startedSmeltingArea = config.smeltingArea; }
   // 2026-09-04：熔炼/拆解子模式。切到任一模式都要显式写 refiningSubAction，
   // 否则从拆解切回熔炼时仍停留在 dismantle，进度与结算会串台。
-  if (config.refiningSubAction) action.refiningSubAction = config.refiningSubAction;
+  if (config.refiningSubAction) {
+    action.refiningSubAction = config.refiningSubAction;
+    // 2026-09-05：队列切换运行子模式时视图同步跟随，避免出现「在跑拆解却显示冶炼面板」的错位。
+    action.refiningView = config.refiningSubAction;
+  }
   if (config.dismantleTarget) { action.dismantleTarget = config.dismantleTarget; action.startedDismantleTarget = config.dismantleTarget; }
   if (config.gasArea) { action.gasArea = config.gasArea; action.startedGasArea = config.gasArea; }
   if (config.shipSubAction) action.shipSubAction = config.shipSubAction;
@@ -1332,6 +1358,29 @@ function setCombatQueueResume(state) {
     defeatedMode: (c.mode === "deathspace") ? "deathspace" : "belt",
     shipInstanceId: c.activeShip
   };
+}
+
+// 2026-09-05 修复：把已完成的波次/入场次数从【耐久】的队列项 count 里扣掉。
+// 背景（bug）：战斗不走 completeQueuedActionCycle（tick.js:102 只调 combatTick），item.count 从不递减，
+// 进度只活在易失的 combat.queueWavesDone / queueEntriesDone 里；而 startCombatQueueItem 每次启动都会
+// 把它们归零并重新以 item.count 为目标 → 停止 / 插队后重启，剩余次数又变回入队时的原始值
+// （挂 5000 次、刷掉 100 波，停止重启后仍显示 5000）。
+// 修法：每完成 1 波 / 1 次入场就同步扣减 item.count，使耐久计数恒等于真实剩余。
+//   · count === -1（无限）不扣减，保持 -1。
+//   · 终结仍由 finalizeCombatQueueItem 负责（战斗不调 completeQueuedActionCycle，故无双重扣减/重复 splice）。
+function consumeCombatQueueItemCount(state, amount) {
+  const c = state && state.combat;
+  if (!c || !c.queueItemId) return false;
+  const queue = state.queue;
+  if (!queue || !Array.isArray(queue.items)) return false;
+  const item = queue.items.find(it => it && it.id === c.queueItemId);
+  if (!item) return false;
+  if (item.count === -1) return false; // 无限：不扣减
+  const n = Number(amount) || 0;
+  if (n <= 0) return false;
+  item.count = Math.max(0, (Number(item.count) || 1) - n);
+  state._dirty = true;
+  return true;
 }
 
 // 战斗队列项达标终结：关闭战斗、清字段、推进队列到下一项（与普通队列项推进逻辑一致）。
@@ -1814,26 +1863,17 @@ const ShellStateActions = {
     if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
     if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
     const fitting = instance.fitted || { high:[], mid:[], low:[], rig:[] };
-    const destroyedRigs = [];
-    for (const slot of ["high", "mid", "low", "rig"]) {
+    // 2026-09-06：清空装备改为只卸下普通装备，保留改装件（rig）。
+    for (const slot of ["high", "mid", "low"]) {
       if (!Array.isArray(fitting[slot])) continue;
       for (let i = 0; i < fitting[slot].length; i++) {
         const ref = fitting[slot][i];
-        if (ref) {
-          if (slot === "rig") {
-            // 重置对 rig 槽=销毁（不归还）。先记录 rigId/stackGroup 供事件与调用方使用。
-            const resolved = resolveEquipmentReference(state, ref);
-            if (resolved && resolved.definition) destroyedRigs.push({ rigId:resolved.itemId, stackGroup:resolved.definition.stackGroup || "", slotIndex:i });
-            destroyRigRefFromFitting(state, ref);
-          } else {
-            detachEquipmentRefFromFitting(state, ref);
-          }
-        }
+        if (ref) detachEquipmentRefFromFitting(state, ref);
         fitting[slot][i] = null;
       }
     }
     state._dirty = true;
-    return { changed:true, destroyedRigs };
+    return { changed:true, keptRigs:true };
   },
 
   // 安装改装件（目标槽必须为空；占用请用 replaceFittedRig）。安装即从 inventory 消耗。
@@ -2020,12 +2060,8 @@ const ShellStateActions = {
     state.queue.status.completedCount = 0; state.queue.status.failCount = 0;
     state._dirty = true;
     return { changed:true };
-  },
-
-  queueSetLoop(state, enabled) {
-    state.queue.config.loopMode = Boolean(enabled); state._dirty = true;
-    return { changed:true, enabled:Boolean(enabled) };
   }
+  // 2026-09-05：queueSetLoop（队列「循环模式」开关）已随该功能一并移除。
 };
 
 // 从装配槽移除一个装备引用：
@@ -2234,10 +2270,11 @@ const StationStateActions = {
     if (!s || !s.autoLines || !s.autoLines[lineId]) return { changed:false, reason:"no-state" };
     const line = s.autoLines[lineId];
 
-    // 必须在运行状态的线才能启动（不管 enabled、clear stoppedReason）
+    // 必须在运行状态、且建筑达到该线解锁等级的线才能启动
+    const cfg = AUTO_LINE_CONFIG[lineId];
     const buildingLevel = (typeof getStationBuildingLevel === "function")
-      ? getStationBuildingLevel(state, AUTO_LINE_CONFIG[lineId].buildingId) : 0;
-    if (buildingLevel < 1) return { changed:false, reason:"building-required" };
+      ? getStationBuildingLevel(state, cfg.buildingId) : 0;
+    if (buildingLevel < (cfg.unlockLevel || 1)) return { changed:false, reason: (cfg.unlockLevel > 1 ? "line-locked" : "building-required") };
 
     const targetId = line.selectedTargetId;
     if (!targetId) return { changed:false, reason:"no-target-selected" };
@@ -2479,7 +2516,9 @@ const StationStateActions = {
   if (action.type === "production/selectMiningMode") return ProductionStateActions.selectMiningMode(state, action.mode);
   if (action.type === "production/selectSmeltingRecipe") return ProductionStateActions.selectSmeltingRecipe(state, action.areaName, actionTime);
   if (action.type === "production/selectDismantleComponent") return ProductionStateActions.selectDismantleComponent(state, action.componentId, actionTime);
-  if (action.type === "production/selectRefiningSubmode") return ProductionStateActions.selectRefiningSubmode(state, action.submode, actionTime);
+  // 2026-09-05：原 production/selectRefiningSubmode 拆成视图/运行两个动作。
+  if (action.type === "production/selectRefiningView") return ProductionStateActions.selectRefiningView(state, action.submode);
+  if (action.type === "production/switchRefiningRunMode") return ProductionStateActions.switchRefiningRunMode(state, action.submode, actionTime);
   if (action.type === "production/selectGasArea") return ProductionStateActions.selectGasArea(state, action.areaName, actionTime);
   if (action.type === "manufacturing/buyBlueprint") return ManufacturingStateActions.buyBlueprint(state, action.blueprintId, actionTime, action.quantity);
   if (action.type === "manufacturing/selectShipComponent") return ManufacturingStateActions.selectShipComponent(state, action.componentId);
@@ -2559,7 +2598,7 @@ const StationStateActions = {
   if (action.type === "queue/start") return ShellStateActions.queueStart(state, actionTime);
   if (action.type === "queue/stop") return ShellStateActions.queueStop(state, actionTime);
   if (action.type === "queue/clear") return ShellStateActions.queueClear(state, actionTime);
-  if (action.type === "queue/setLoop") return ShellStateActions.queueSetLoop(state, action.enabled);
+  // 2026-09-05：queue/setLoop 已随「队列循环模式」移除。
   if (action.type === "archaeology/selectSite") return ArchaeologyStateActions.selectSite(state, action.siteId);
   if (action.type === "archaeology/selectProbe") return ArchaeologyStateActions.selectProbe(state, action.probeId);
   if (action.type === "archaeology/start") return ArchaeologyStateActions.start(state, actionTime);
@@ -2725,5 +2764,9 @@ window.executeQueueItemForState = executeQueueItemForState;
 // （此前未导出导致 G("finalizeCombatQueueItem") 为 undefined，离线战斗达标后无法推进队列项）。
 window.finalizeCombatQueueItem = finalizeCombatQueueItem;
 globalThis.finalizeCombatQueueItem = finalizeCombatQueueItem;
+// 2026-09-05：战斗队列进度回写，同样显式导出供 offline-combat.js 的 G() 解析（离线也要扣减）。
+
+window.consumeCombatQueueItemCount = consumeCombatQueueItemCount;
+globalThis.consumeCombatQueueItemCount = consumeCombatQueueItemCount;
 window.setCombatQueueResume = setCombatQueueResume;
 globalThis.setCombatQueueResume = setCombatQueueResume;

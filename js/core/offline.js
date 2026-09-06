@@ -36,7 +36,7 @@ function emitOfflineGameEvent(type, payload, meta) {
 // seconds = 离线秒数；gains = 8 计数器（各技能完成次数）；items = 结算前后 canonical
 // 库存快照 diff 出的「最终净获得物品」（无则回退纯文字信息，兼容旧调用方）。
 // 删除自动关闭计时：仅显式关闭按钮 / 点击背景 / Escape 可关闭。
-function showOfflineToast(seconds, gains, items, combatSummary, consumed) {
+function showOfflineToast(seconds, gains, items, combatSummary, consumed, settlementErrors) {
   const min = Math.floor(seconds / 60); const sec = Math.floor(seconds % 60);
   const timeStr = min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
   const labels = {
@@ -69,6 +69,13 @@ function showOfflineToast(seconds, gains, items, combatSummary, consumed) {
       warn: (Number(combatSummary.defeats) || 0) > 0 || warnReasons.indexOf(reason) >= 0
     };
   }
+  // 部分结算失败提示：单子系统异常被「弹性结算」隔离时，玩家至少知道发生了什么、收益没全丢
+  let notice = null;
+  if (Array.isArray(settlementErrors) && settlementErrors.length) {
+    const names = { timeline: "生产结算", combat: "离线战斗" };
+    const parts = settlementErrors.map(se => names[(se && se.subsystem) || ""] || (se && se.subsystem) || "未知子系统");
+    notice = "⚠ 部分结算失败：" + parts.join("、") + "异常（已尽量结算其余离线收益；可重启重试或联系客服）";
+  }
   if (typeof openRewardResultModal === "function") {
     openRewardResultModal({
       title:"⏳ 离线结算完成",
@@ -76,7 +83,8 @@ function showOfflineToast(seconds, gains, items, combatSummary, consumed) {
       items:Array.isArray(items) ? items : [],
       consumed:Array.isArray(consumed) ? consumed : [],
       emptyText:detail ? "本次离线没有新增可展示物品" : "离线时长过短，未产生结算",
-      combat
+      combat,
+      notice
     });
     return;
   }
@@ -796,12 +804,9 @@ function advanceOfflineQueue() {
   if (!queue || !queue.status.isRunning || queue.items.length === 0) return false;
   let nextIndex = queue.status.activeIndex + 1;
   if (nextIndex >= queue.items.length) {
-    if (!queue.config.loopMode) {
-      queue.status.isRunning = false; queue.status.activeIndex = -1;
-      return false;
-    }
-    queue.status.completedCount++;
-    nextIndex = 0;
+    // 2026-09-05：队列「循环模式」（loopMode）已移除 —— 走到末尾即停止。
+    queue.status.isRunning = false; queue.status.activeIndex = -1;
+    return false;
   }
   queue.status.activeIndex = nextIndex;
   executeQueueItemForState(gameState, queue.items[nextIndex], Date.now());
@@ -1131,23 +1136,38 @@ function settleOfflinePlanets(seconds, gains, segmentEnd) {
   const now = segmentEnd || Date.now();
   const offlineStart = now - seconds * 1000;
   for (const deployment of gameState.planetary.deployments) {
-    if (!deployment.active) continue; // 已到期：跳过，且不重复触发 expired
-    // 研究批次 I · planauto：离线与在线共用同一个「单 deployment 时间轴」入口
-    // （产出结算 / 精确到期判定 / 逐周期自动续期全部在 advancePlanetDeploymentTimeline 内完成）。
-    // 离线区间从离线起点（= now - 离线秒数，受 MAX_OFFLINE_SECONDS 上限约束）起算。
-    const res = advancePlanetDeploymentTimeline(gameState, deployment, offlineStart, now, {
-      offline:true,
-      emit:(type, payload, eventMeta) => emitOfflineGameEvent(type, payload, eventMeta),
-      // 空间站自动收取（Phase 3C-4/6）：storage>=storageMax 时移入库存并清零
-      collect:(dep, storageMax) => (typeof applyStationAutoCollect === "function" && dep.storage >= storageMax)
-        ? applyStationAutoCollect(gameState, dep, storageMax, true) : 0
-    });
-    if (res.cycles > 0) {
-      gameState.skills.planetaryIndustry.xp += res.cycles;
-      gains.planetaryIndustry += res.cycles;
-      gameState._dirty = true;
+    let res;
+    if (deployment.active) {
+      // 研究批次 I · planauto：离线与在线共用同一个「单 deployment 时间轴」入口
+      // （产出结算 / 精确到期判定 / 逐周期自动续期全部在 advancePlanetDeploymentTimeline 内完成）。
+      // 离线区间从离线起点（= now - 离线秒数，受 MAX_OFFLINE_SECONDS 上限约束）起算。
+      res = advancePlanetDeploymentTimeline(gameState, deployment, offlineStart, now, {
+        offline:true,
+        emit:(type, payload, eventMeta) => emitOfflineGameEvent(type, payload, eventMeta),
+        // 空间站自动收取（Phase 3C-4/6）：storage>=storageMax 时移入库存并清零
+        collect:(dep, storageMax) => (typeof applyStationAutoCollect === "function" && dep.storage >= storageMax)
+          ? applyStationAutoCollect(gameState, dep, storageMax, true) : 0
+      });
+    } else {
+      // 补续期：已过期但仍开启自动续期的基地，离线结算时一并尝试续费
+      // （与在线 tick 同款缺陷修复——一次性失败不重试会导致永久停摆）。
+      if (tryRenewExpiredDeployment(gameState, deployment, now, true)) {
+        res = advancePlanetDeploymentTimeline(gameState, deployment, deployment.lastTick, now, {
+          offline:true,
+          emit:(type, payload, eventMeta) => emitOfflineGameEvent(type, payload, eventMeta),
+          collect:(dep, storageMax) => (typeof applyStationAutoCollect === "function" && dep.storage >= storageMax)
+            ? applyStationAutoCollect(gameState, dep, storageMax, true) : 0
+        });
+      }
     }
-    if (res.renewals > 0) gameState._dirty = true;
+    if (res) {
+      if (res.cycles > 0) {
+        gameState.skills.planetaryIndustry.xp += res.cycles;
+        gains.planetaryIndustry += res.cycles;
+        gameState._dirty = true;
+      }
+      if (res.renewals > 0) gameState._dirty = true;
+    }
   }
   if (gains.planetaryIndustry > 0) {
     checkLevelUp("planetaryIndustry", {
@@ -1327,10 +1347,20 @@ function applyOfflineGains(rawSeconds, context) {
     combat: 0
   };
   if (seconds <= 5) return gains;
-  // 定点返修 P1-C：结算前对 gameState 做全量快照；若 settle/flush/emit 任一阶段抛异常，
-  // 在 catch 中就地还原结算前 gameState（不前进 lastActiveTime、不落盘半应用状态），
-  // 仅向 RuntimeGuard 报告一次后 rethrow，由调用方决定是否继续。
-  const settlementSnapshot = createSerializableGameStateSnapshot(gameState);
+  // 刷新恢复到星图试炼时，先关闭旧 currentAction 与动作队列，再进入生产离线时间轴。
+  // 行星、科研和空间站等独立被动系统不受影响。
+  if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL &&
+      typeof LEGION_STARMAP_TRIAL.enforceExclusiveActionState === "function") {
+    LEGION_STARMAP_TRIAL.enforceExclusiveActionState(gameState, Date.now() - seconds * 1000);
+  }
+  // 弹性结算（定点返修 P-离线·根因修复）：
+  // 原实现把「生产时间轴 + 战斗 flush + 完成事件」包在一个 try 里，任一抛异常就整段
+  // restore 回滚并 rethrow，导致调用方（calculateOfflineGains）在 catch 里 return，
+  // 既跳过 lastActiveTime 推进、又不弹窗 → 离线收益**永久丢失**（且无法自查）。
+  // 现改为：settleOfflineTimeline（生产）与 OfflineCombatSystem.flush（战斗）**各自独立**
+  // try/catch + 各自快照回滚，单子系统失败只回滚该子系统本身、不影响另一子系统入账；
+  // applyOfflineGains 不再向上 rethrow，彻底消除「静默吞异常 → 永久丢收益」。
+  // 失败仅通过 context.settlementErrors 上报，由结算弹窗展示「部分结算失败」提示。
   // 初始化考古虚拟时间
   gameState._archVirtualNowMs = Date.now() - seconds * 1000;
   const previousBatch = _offlineEventBatch;
@@ -1338,36 +1368,56 @@ function applyOfflineGains(rawSeconds, context) {
     ? context.runId
     : "offline_" + Math.round(Date.now() - seconds * 1000).toString(36) + "_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36);
   _offlineEventBatch = { runId, sequence:0 };
+  const subsystemErrors = [];
+  let combatSummary = null;
   try {
-    // 唯一协调入口：按燃料/施工分段时间轴
-    // Batch S：把本离线会话唯一 runId 一并传入时间轴，使 OfflineCombatSystem.settle
-    // 与末尾 flush 用同一 runId 寻址同一会话聚合器（否则 settle 落到 "offline_undefined"
-    // 而 flush 用真实 runId，会话错配 → 不发射聚合事件）。
-    settleOfflineTimeline(seconds, gains, Object.assign({}, context, { runId: runId }));
-    // Batch C-9：真实结算成功完成后、_offlineEventBatch 恢复前，严格 emit 一次唯一完成事件
-    // （沿用同一 runId/eventId 链）。settleOfflineTimeline 抛出异常时不会执行到此行，
-    // 不伪造完成事件。calculateOfflineGains / forceOfflineTest / 直接 applyOfflineGains
-    // 均经由本入口，禁止在其他位置复制发射。rawSeconds 使用入口处唯一严格归一化结果
-    // normalizedRawSeconds（非负有限 number、未封顶、不整数化），settledSeconds 为实际
-    // 结算秒数（已按 MAX_OFFLINE_SECONDS 封顶）。禁止此处再做 Number()/|| 0 等宽松转换。
-    // Batch S：离线战斗聚合事件（必须早于 settlementCompleted，全离线恰一次）
-    let combatSummary = null;
-    if (typeof OfflineCombatSystem !== "undefined") {
-      combatSummary = OfflineCombatSystem.flush(gameState, { runId, gains, offlineEnd: Date.now() });
+    // 子系统 A：生产时间轴（采矿/冶炼/气体/工程/行星/科研离线）
+    const _gainsBeforeTimeline = Object.assign({}, gains);
+    const _snapBeforeTimeline = createSerializableGameStateSnapshot(gameState);
+    try {
+      // 唯一协调入口：按燃料/施工分段时间轴
+      // Batch S：把本离线会话唯一 runId 一并传入时间轴，使 OfflineCombatSystem.settle
+      // 与末尾 flush 用同一 runId 寻址同一会话聚合器（否则会话错配 → 不发射聚合事件）。
+      settleOfflineTimeline(seconds, gains, Object.assign({}, context, { runId: runId }));
+    } catch (e) {
+      // 仅回滚本子系统：还原到进入时间轴前的快照，不影响战斗子系统后续入账
+      try { restoreSerializableGameStateSnapshot(gameState, _snapBeforeTimeline); } catch (_) {}
+      Object.assign(gains, _gainsBeforeTimeline);
+      subsystemErrors.push({ subsystem: "timeline", error: e });
+      if (typeof RuntimeGuard !== "undefined" && RuntimeGuard && typeof RuntimeGuard.report === "function")
+        RuntimeGuard.report(e, { source: "offline:timeline", fatal: false, kind: "offline-settlement" });
     }
+
+    // 子系统 B：离线战斗 flush（必须早于 settlementCompleted，全离线恰一次）
+    const _gainsBeforeCombat = Object.assign({}, gains);
+    const _snapBeforeCombat = createSerializableGameStateSnapshot(gameState);
+    try {
+      if (typeof OfflineCombatSystem !== "undefined") {
+        combatSummary = OfflineCombatSystem.flush(gameState, { runId, gains, offlineEnd: Date.now() });
+      }
+    } catch (e) {
+      // 仅回滚本子系统：还原到进入战斗前的快照（含已成功的生产），不影响生产入账
+      try { restoreSerializableGameStateSnapshot(gameState, _snapBeforeCombat); } catch (_) {}
+      Object.assign(gains, _gainsBeforeCombat);
+      combatSummary = null;
+      subsystemErrors.push({ subsystem: "combat", error: e });
+      if (typeof RuntimeGuard !== "undefined" && RuntimeGuard && typeof RuntimeGuard.report === "function")
+        RuntimeGuard.report(e, { source: "offline:combat", fatal: false, kind: "offline-settlement" });
+    }
+
     // 离线战斗汇总透传给结算弹窗（不污染 gains，否则 Object.values(gains).reduce 求和会把对象当数 → NaN）
-    if (context && typeof context === "object") context.combatSummary = combatSummary;
-    emitOfflineGameEvent("offline:settlementCompleted", {
-      rawSeconds: normalizedRawSeconds,
-      settledSeconds: seconds
-    });
-  } catch (e) {
-    // 异常安全回滚：就地还原结算前 gameState（finally 负责还原 batch 与清理虚拟时间）。
-    try { restoreSerializableGameStateSnapshot(gameState, settlementSnapshot); } catch (restoreErr) { /* 还原异常安全 */ }
-    if (typeof RuntimeGuard !== "undefined" && RuntimeGuard && typeof RuntimeGuard.report === "function") {
-      RuntimeGuard.report(e, { source:"offline:settlement", fatal:false, kind:"offline-settlement" });
+    if (context && typeof context === "object") {
+      context.combatSummary = combatSummary;
+      if (subsystemErrors.length) context.settlementErrors = subsystemErrors;
     }
-    throw e;
+    // 结算完成事件：至少一子系统成功才发，避免伪造「全部完成」；partial 标注供下游区分
+    if (subsystemErrors.length < 2) {
+      emitOfflineGameEvent("offline:settlementCompleted", {
+        rawSeconds: normalizedRawSeconds,
+        settledSeconds: seconds,
+        partial: subsystemErrors.length > 0
+      });
+    }
   } finally {
     _offlineEventBatch = previousBatch;
     delete gameState._archVirtualNowMs;
@@ -1417,7 +1467,7 @@ function calculateOfflineGains() {
   gameState.currentAction.lastProgressUpdate = now;
   gameState.lastActiveTime = now;
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (totalGains > 0 || netItems.length > 0 || consumedItems.length > 0) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary, consumedItems);
+  if (totalGains > 0 || netItems.length > 0 || consumedItems.length > 0) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary, consumedItems, offlineCtx.settlementErrors);
   gameState._dirty = true;
   SaveManager.save();
 }

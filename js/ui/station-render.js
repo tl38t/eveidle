@@ -283,6 +283,12 @@ function renderStationPage(now) {
     var alOptsSig = computeStationAlOptsSig(display.autoLines);
     if (alOptsSig !== _stationAlOptsSig) {
       alDiv.innerHTML = display.autoLines.map(function(al) {
+        // 未解锁的第二条自动线（需建筑 Lv.5）：渲染锁定卡，仅显示解锁条件
+        if (al.locked) {
+          return '<div class="station-al-card sal-locked" id="al-card-' + al.lineId + '">' +
+            '<div class="sal-header"><strong>' + (al.name || al.lineId) + '</strong></div>' +
+            '<div class="sal-locked-banner">🔒 ' + (al.unlockHint || "未解锁") + '</div></div>';
+        }
         var opts = renderAutoLineOptions(al.targetOptions, al.selectedTargetId);
         var statAl = al.running ? "运行中" : (al.stoppedText || "已停止");
         if (al.stoppedReason === "insufficient-materials") statAl = "材料不足";

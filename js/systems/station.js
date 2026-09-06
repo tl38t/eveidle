@@ -875,16 +875,19 @@ function getStationBuildingsDisplayState(state) {
    operatorId 首版恒 null。
    ---------------------------------------------------------------- */
 
-const AUTO_LINE_IDS = ["smelting", "equipment", "booster"];
+const AUTO_LINE_IDS = ["smelting", "smelting_2", "equipment", "equipment_2", "booster", "booster_2"];
 
 // 装备自动线产线白名单：仅生产消耗品（燃料 / 弹药 / 考古探针）。
 // 可装配装备一律不出现在装备自动线（手动制造页不受影响，仍可造全部装备）。
 const EQUIPMENT_AUTO_LINE_CATEGORIES = Object.freeze(["fuel", "ammunition", "probes"]);
 
 const AUTO_LINE_CONFIG = Object.freeze({
-  smelting:  { buildingId:"smelting_refinery",  name:"冶炼自动线" },
-  equipment: { buildingId:"equipment_factory",  name:"装备自动线" },
-  booster:   { buildingId:"booster_factory",    name:"增强剂自动线" }
+  smelting:   { buildingId:"smelting_refinery",  name:"冶炼自动线",    kind:"smelting",   unlockLevel:1 },
+  smelting_2: { buildingId:"smelting_refinery",  name:"冶炼自动线 II", kind:"smelting",   unlockLevel:5 },
+  equipment:  { buildingId:"equipment_factory",  name:"装备自动线",    kind:"equipment",  unlockLevel:1 },
+  equipment_2:{ buildingId:"equipment_factory",  name:"装备自动线 II", kind:"equipment",  unlockLevel:5 },
+  booster:    { buildingId:"booster_factory",    name:"增强剂自动线",  kind:"booster",    unlockLevel:1 },
+  booster_2:  { buildingId:"booster_factory",    name:"增强剂自动线 II", kind:"booster",  unlockLevel:5 }
 });
 
 function getStationAutoLineInfo(state, lineId) {
@@ -894,7 +897,9 @@ function getStationAutoLineInfo(state, lineId) {
   const buildingName = STATION_BUILDING_NAMES[cfg.buildingId] || cfg.buildingId;
   // 复用建筑速度倍率表（Lv.1–5 一致），消除 UI 显示与自动线结算的分叉
   const multiplier = getStationBuildingSpeedMultiplier(state, cfg.buildingId);
-  const unlocked = buildingLevel >= 1;
+  // 第二条自动线（unlockLevel>=2）需建筑达到对应等级才解锁（主 1 级、副 5 级）
+  const unlockLevel = cfg.unlockLevel || 1;
+  const unlocked = buildingLevel >= unlockLevel;
   const s = state && state.station;
   const line = s && s.autoLines && s.autoLines[lineId];
   return {
@@ -903,6 +908,7 @@ function getStationAutoLineInfo(state, lineId) {
     buildingName,
     buildingLevel,
     unlocked,
+    unlockLevel,
     multiplier,
     enabled: line ? Boolean(line.enabled) : false,
     selectedTargetId: line ? line.selectedTargetId : null,
@@ -939,13 +945,13 @@ function stopAutoLineInternal(state, lineId, reason, offline) {
    效率 = (1 + shipBonus + rigBonus) × buildingMultiplier（不乘 refining 等级速度）。
    产出量 = Math.max(1, floor(baseOutput × skillEfficiency))（技能经验仍影响单次产出）。
    ---------------------------------------------------------------- */
-function processSmeltingAutoLine(state, line, multiplier, offline) {
+function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
   const recipe = SMELTING_RECIPES.find(r => r.name === line.startedTargetId);
-  if (!recipe) { stopAutoLineInternal(state, "smelting", "unknown-recipe", offline); return { cycles:0 }; }
+  if (!recipe) { stopAutoLineInternal(state, lineId, "unknown-recipe", offline); return { cycles:0 }; }
 
   // 防御性等级检查：旧存档中可能启用了非法高级配方
   const sLvl = getEffectiveSkillLevel(state, "refining");
-  if (sLvl < recipe.level) { stopAutoLineInternal(state, "smelting", "level-locked", offline); return { cycles:0 }; }
+  if (sLvl < recipe.level) { stopAutoLineInternal(state, lineId, "level-locked", offline); return { cycles:0 }; }
 
   // 获取舰船与改装件加成（与手动冶炼同源）
   const assigned = (typeof getAssignedShipState === "function") ? getAssignedShipState(state, "refining") : { config:null, instance:null };
@@ -1032,7 +1038,7 @@ function processSmeltingAutoLine(state, line, multiplier, offline) {
    仍检查配方等级门槛。
    禁止舰船部件（shipComponents/shipAssembly 类配方）。
    ---------------------------------------------------------------- */
-function processEquipmentAutoLine(state, line, multiplier, offline) {
+function processEquipmentAutoLine(state, lineId, line, multiplier, offline) {
   const recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === line.startedTargetId);
   if (!recipe) { stopAutoLineInternal(state, "equipment", "unknown-recipe", offline); return { cycles:0 }; }
 
@@ -1042,7 +1048,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   // 产线白名单兜底：装备自动线仅允许消耗品类（燃料/弹药/探针），
   // 防止旧存档 / 非法 dispatch 让可装配装备目标继续生产
   if (EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
-    stopAutoLineInternal(state, "equipment", "target-not-allowed", offline);
+    stopAutoLineInternal(state, lineId, "target-not-allowed", offline);
     return { cycles:0 };
   }
 
@@ -1053,7 +1059,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过。
   // 探针类走限次抄本 BPC：要求剩余流程 > 0（见 manufacturingRecipeHasBlueprint）。
   if (!manufacturingRecipeHasBlueprint(state, recipe)) {
-    stopAutoLineInternal(state, "equipment", "blueprint-locked", offline);
+    stopAutoLineInternal(state, lineId, "blueprint-locked", offline);
     return { cycles:0 };
   }
 
@@ -1095,7 +1101,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   if (line.targetQuantity && line.targetQuantity > 0) {
     const remainingQty = line.targetQuantity - (line.producedQty || 0);
     if (remainingQty <= 0) {
-      stopAutoLineInternal(state, "equipment", "target-reached", offline);
+      stopAutoLineInternal(state, lineId, "target-reached", offline);
       line.progress = remainingSec;
       return { cycles:0 };
     }
@@ -1104,7 +1110,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   }
 
   if (cycles <= 0) {
-    stopAutoLineInternal(state, "equipment", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
@@ -1112,7 +1118,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   // 限次抄本（BPC）：探针类配方可完成的周期数受剩余流程次数限制；归零即停线。
   const bpcMaxCycles = manufacturingMaxCyclesByBlueprint(state, recipe);
   if (bpcMaxCycles <= 0) {
-    stopAutoLineInternal(state, "equipment", "blueprint-runs-depleted", offline);
+    stopAutoLineInternal(state, lineId, "blueprint-runs-depleted", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
@@ -1120,13 +1126,13 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
 
   // 原子执行：扣料（配给剂折扣后）+ 预留抄本流程 + 产出 + XP + 事件
   if (!ResourceRegistry.canAffordCost(state, eqQuote.cost, cycles)) {
-    stopAutoLineInternal(state, "equipment", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
   // 材料校验通过后才预留流程：材料不足 → 上面已零副作用停止，不会白扣流程（无需退还）。
   if (!manufacturingReserveBlueprintRuns(state, recipe, cycles)) {
-    stopAutoLineInternal(state, "equipment", "blueprint-runs-depleted", offline);
+    stopAutoLineInternal(state, lineId, "blueprint-runs-depleted", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
@@ -1161,7 +1167,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   state._dirty = true;
 
   emitStationEvent("station:autoLineCompleted", {
-    lineId:"equipment", targetId:recipe.id,
+    lineId:lineId, targetId:recipe.id,
     quantity:totalQty, xp:xpGained, offline, cycles
   }, { offline });
 
@@ -1180,9 +1186,9 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
   // 停止判定：达标（按产出件数）优先；否则材料不足则安全停止
   const targetDone = line.targetQuantity && line.targetQuantity > 0 && (line.producedQty || 0) >= line.targetQuantity;
   if (targetDone) {
-    stopAutoLineInternal(state, "equipment", "target-reached", offline);
+    stopAutoLineInternal(state, lineId, "target-reached", offline);
   } else if (cycles < cyclesByTime) {
-    stopAutoLineInternal(state, "equipment", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
   }
 
   line.progress = remainingSec;
@@ -1194,7 +1200,7 @@ function processEquipmentAutoLine(state, line, multiplier, offline) {
    使用真实 BOOSTER_RECIPES。每周期只生产一瓶。
    不乘 boosterEngineering 等级速度，但检查配方等级门槛。
    ---------------------------------------------------------------- */
-function processBoosterAutoLine(state, line, multiplier, offline) {
+function processBoosterAutoLine(state, lineId, line, multiplier, offline) {
   const recipe = BOOSTER_RECIPES.find(r => r.id === line.startedTargetId);
   if (!recipe) { stopAutoLineInternal(state, "booster", "unknown-recipe", offline); return { cycles:0 }; }
 
@@ -1204,7 +1210,7 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
 
   // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过
   if (recipe.requiresBlueprint === true && !hasBoosterBlueprintFromState(state, recipe.id)) {
-    stopAutoLineInternal(state, "booster", "blueprint-locked", offline);
+    stopAutoLineInternal(state, lineId, "blueprint-locked", offline);
     return { cycles:0 };
   }
 
@@ -1235,7 +1241,7 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
   if (line.targetQuantity && line.targetQuantity > 0) {
     const remainingQty = line.targetQuantity - (line.producedQty || 0);
     if (remainingQty <= 0) {
-      stopAutoLineInternal(state, "booster", "target-reached", offline);
+      stopAutoLineInternal(state, lineId, "target-reached", offline);
       line.progress = remainingSec;
       return { cycles:0 };
     }
@@ -1244,14 +1250,14 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
   }
 
   if (cycles <= 0) {
-    stopAutoLineInternal(state, "booster", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
 
   // 原子执行：扣料 + 产出 + XP + 事件
   if (!ResourceRegistry.canAffordCost(state, recipe.cost, cycles)) {
-    stopAutoLineInternal(state, "booster", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
@@ -1265,7 +1271,7 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
   state._dirty = true;
 
   emitStationEvent("station:autoLineCompleted", {
-    lineId:"booster", targetId:recipe.id,
+    lineId:lineId, targetId:recipe.id,
     quantity:cycles * recipe.output.qty, xp:xpGained, offline, cycles
   }, { offline });
 
@@ -1278,9 +1284,9 @@ function processBoosterAutoLine(state, line, multiplier, offline) {
   // 停止判定：达标（按产出件数）优先；否则材料不足则安全停止
   const targetDone = line.targetQuantity && line.targetQuantity > 0 && (line.producedQty || 0) >= line.targetQuantity;
   if (targetDone) {
-    stopAutoLineInternal(state, "booster", "target-reached", offline);
+    stopAutoLineInternal(state, lineId, "target-reached", offline);
   } else if (cycles < cyclesByTime) {
-    stopAutoLineInternal(state, "booster", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
   }
 
   line.progress = remainingSec;
@@ -1307,7 +1313,18 @@ function processAutoLines(state, now, offline) {
   let totalCycles = 0;
   for (const lineId of AUTO_LINE_IDS) {
     const line = s.autoLines[lineId];
-    if (!line || !line.enabled || !line.startedTargetId || line.stoppedReason) continue;
+    if (!line) continue;
+    const cfg = AUTO_LINE_CONFIG[lineId];
+    if (!cfg) continue;
+    // 第二条自动线（unlockLevel>=2）需建筑达到对应等级；未解锁则跳过，曾启用则安全停止
+    if (getStationBuildingLevel(state, cfg.buildingId) < cfg.unlockLevel) {
+      if (line.enabled && !line.stoppedReason) {
+        line.lastTick = now;
+        stopAutoLineInternal(state, lineId, "line-locked", offline);
+      }
+      continue;
+    }
+    if (!line.enabled || !line.startedTargetId || line.stoppedReason) continue;
     if (line.lastTick > 0 && now <= line.lastTick) continue;
     const elapsedMs = line.lastTick > 0 ? Math.max(0, now - line.lastTick) : 0;
     if (elapsedMs <= 0 && line.lastTick > 0) continue;
@@ -1348,9 +1365,9 @@ function processAutoLines(state, now, offline) {
     line.lastTick = now;
 
     let result;
-    if (lineId === "smelting") result = processSmeltingAutoLine(state, line, multiplier, offline);
-    else if (lineId === "equipment") result = processEquipmentAutoLine(state, line, multiplier, offline);
-    else if (lineId === "booster") result = processBoosterAutoLine(state, line, multiplier, offline);
+    if (cfg.kind === "smelting") result = processSmeltingAutoLine(state, lineId, line, multiplier, offline);
+    else if (cfg.kind === "equipment") result = processEquipmentAutoLine(state, lineId, line, multiplier, offline);
+    else if (cfg.kind === "booster") result = processBoosterAutoLine(state, lineId, line, multiplier, offline);
 
     if (result && result.cycles > 0) totalCycles += result.cycles;
   }
@@ -1386,7 +1403,8 @@ function getStationAutoLineCycleDuration(state, lineId, recipe) {
   let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
   if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
   const mult = Math.max(0.001, buildingMult * logisticsMult * autoLineResearchMult * getLegionAutoLineMultiplier(state));
-  if (lineId === "smelting") {
+  const cfgCD = AUTO_LINE_CONFIG[lineId];
+  if (cfgCD && cfgCD.kind === "smelting") {
     const assigned = (typeof getAssignedShipState === "function") ? getAssignedShipState(state, "refining") : { config:null, instance:null };
     const shipBonus = (assigned.config && assigned.config.bonuses) ? (assigned.config.bonuses.smeltingSpeed || 0) : 0;
     const rigMods = (assigned.instance && typeof getRigModifiers === "function") ? getRigModifiers(state, assigned.instance) : {};
@@ -1415,7 +1433,7 @@ function getStationAutoLineDisplayState(state, lineId) {
   let canStart = false;
   let blockedReason = null;
   if (!info.unlocked) {
-    blockedReason = "building-required";
+    blockedReason = info.unlockLevel > 1 ? "line-locked" : "building-required";
   } else if (info.enabled && info.startedTargetId) {
     blockedReason = "already-running";
   } else if (!info.selectedTargetId) {
@@ -1461,6 +1479,9 @@ function getStationAutoLineDisplayState(state, lineId) {
     running: info.enabled && !!info.startedTargetId,
     progress: info.progress,
     canStart,
+    locked: !info.unlocked && info.unlockLevel > 1,
+    unlockHint: (!info.unlocked && info.unlockLevel > 1) ? ("需 " + info.buildingName + " Lv." + info.unlockLevel + " 解锁") : null,
+    unlockLevel: info.unlockLevel,
     blockedReason,
     stoppedReason: info.stoppedReason,
     materialState,
@@ -1962,12 +1983,18 @@ function getStationPageDisplayState(state, now) {
   });
 
   // Generate auto-line display from real recipe pools
+  // 由 AUTO_LINE_CONFIG 派生：主/副线共享 kind 的配方池；副线（unlockLevel>=2）未达建筑等级时 locked。
   var autoLines = [];
-  var alConfigs = [
-    { lineId:"smelting", buildingId:"smelting_refinery", recipePool:typeof SMELTING_RECIPES!="undefined"?SMELTING_RECIPES:[], keyFn:function(r){return r.name;}, skillKey:"refining", category:"smelting" },
-    { lineId:"equipment", buildingId:"equipment_factory", recipePool:typeof EQUIPMENT_ENGINEERING_RECIPES!="undefined"?EQUIPMENT_ENGINEERING_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"equipmentEngineering", excludeShip:true, allowedCategories:EQUIPMENT_AUTO_LINE_CATEGORIES },
-    { lineId:"booster", buildingId:"booster_factory", recipePool:typeof BOOSTER_RECIPES!="undefined"?BOOSTER_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"boosterEngineering" }
-  ];
+  var AL_KIND_DEFS = {
+    smelting:   { recipePool:typeof SMELTING_RECIPES!="undefined"?SMELTING_RECIPES:[], keyFn:function(r){return r.name;}, skillKey:"refining", category:"smelting" },
+    equipment:  { recipePool:typeof EQUIPMENT_ENGINEERING_RECIPES!="undefined"?EQUIPMENT_ENGINEERING_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"equipmentEngineering", excludeShip:true, allowedCategories:EQUIPMENT_AUTO_LINE_CATEGORIES },
+    booster:    { recipePool:typeof BOOSTER_RECIPES!="undefined"?BOOSTER_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"boosterEngineering" }
+  };
+  var alConfigs = AUTO_LINE_IDS.map(function(lineId) {
+    var cfg = AUTO_LINE_CONFIG[lineId];
+    var kd = AL_KIND_DEFS[cfg.kind];
+    return Object.assign({ lineId:lineId, buildingId:cfg.buildingId, unlockLevel:cfg.unlockLevel || 1 }, kd);
+  });
   // 自动线目标显示名解析：只认配方的正式中文名称字段（recipe.name）。
   // 查不到配方、或配方缺正式名称时一律返回"未知配方"——绝不用内部 recipeId 兜底，
   // 避免 mining_lubricant_n 这类内部 ID 泄漏到界面。id 只作稳定 option.value 与调试用。
@@ -1996,7 +2023,13 @@ function getStationPageDisplayState(state, now) {
   autoLines = alConfigs.map(function(cfg) {
     var line = state.station && state.station.autoLines ? state.station.autoLines[cfg.lineId] : null;
     var skillLvl = Number(state.skills[cfg.skillKey] && state.skills[cfg.skillKey].lvl) || 1;
-    var targets = cfg.recipePool.filter(function(r) {
+    // 解锁门槛：副线（unlockLevel>=2）需建筑达到对应等级；未解锁时锁定，不渲染可生产配方。
+    var unlockLevel = cfg.unlockLevel || 1;
+    var bldLevel = getStationBuildingLevel(state, cfg.buildingId);
+    var locked = bldLevel < unlockLevel;
+    var buildingName = STATION_BUILDING_NAMES[cfg.buildingId] || cfg.buildingId;
+    var unlockHint = locked ? ("需 " + buildingName + " Lv." + unlockLevel + " 解锁") : null;
+    var targets = locked ? [] : cfg.recipePool.filter(function(r) {
       if (cfg.excludeShip && (r.category === "ship" || r.category === "shipComponent")) return false;
       // 产线白名单：装备自动线仅显示消耗品类（燃料/弹药/探针）
       if (cfg.allowedCategories && cfg.allowedCategories.indexOf(r.category) === -1) return false;
@@ -2043,6 +2076,9 @@ function getStationPageDisplayState(state, now) {
         ? ((typeof manufacturingMaxCyclesByBlueprint === "function") ? manufacturingMaxCyclesByBlueprint(state, matchedRecipe) : 0)
         : null,
       running: running,
+      locked: locked,
+      unlockHint: unlockHint,
+      unlockLevel: unlockLevel,
       // 必须透传 targetQuantity / producedQty：核心结算按这两个字段停止，
       // 但 UI 显示态若不携带，prodText 会误判为「无限」。
       targetQuantity: (baseDisplay && baseDisplay.targetQuantity) || 0,

@@ -620,6 +620,23 @@
       });
     }
 
+    // 2026-09-05：面板攻击力（单轮齐射基准伤害）
+    //   = Σ [combat.baseDamage × 模块强化倍率(m.multiplier) × 武器类型伤害倍率(技能/改装等 selDmgMult)] × NPC等级伤害倍率
+    // 与实弹 volley 同源取模块（getInstalledCombatWeapons + 同一 shipOpts，见 processLegionNpcVolley），杜绝公式双写。
+    // 刻意不含：弹药 dmgMult / 克制倍率 / 命中-闪避系数 / 0.9~1.1 随机浮动 —— 均依赖目标或弹药池，面板口径排除。
+    let attackPower = 0;
+    const volleyWeaponsFn = getCombatSelector("getInstalledCombatWeapons");
+    if (volleyWeaponsFn) {
+      const mods = volleyWeaponsFn(state, shipOpts) || [];
+      for (const m of mods) {
+        const cb = m && m.equipment && m.equipment.combat;
+        if (!cb) continue;
+        attackPower += (Number(cb.baseDamage) || 0) * (Number(m.multiplier) || 1)
+          * (Number(selDmgMult(state, cb.weaponType, undefined, shipOpts)) || 1);
+      }
+    }
+    attackPower = Math.round(attackPower * getLegionNpcDamageMultiplier(npc));
+
     return {
       ok: true,
       npcId: npc.npcId,
@@ -631,6 +648,7 @@
       dodge: dodge,
       fuelMultiplier: fuelMultiplier,
       weapons: weapons,
+      attackPower: attackPower,
       levelDamageMultiplier: getLegionNpcDamageMultiplier(npc),
       excludeImplants: true
     };
@@ -1022,6 +1040,7 @@
         skillName: skill ? skill.name : npc.skillId,
         isCombatSkill: isCombatSkill,
         damageMultiplier: getLegionNpcDamageMultiplier(npc),
+        attackPower: (stats && stats.ok) ? (Number(stats.attackPower) || 0) : 0,
         salaryState: npc.salaryState,
         shipInstanceId: npc.boundShipInstanceId,
         shipName: shipCfg ? (shipCfg.name || npc.shipId) : null,

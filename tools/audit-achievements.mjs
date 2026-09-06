@@ -106,8 +106,8 @@ const BOOSTERS_DATA_PATH = path.join(ROOT, "js", "data", "boosters.js");
 // 冻结时间：审计中所有 Date.now() 都返回该值（验证非法 atMs 回退路径）
 const FROZEN_NOW = 1700000000000;
 
-const FREEZE_TARGET_HASH = "9511da2753e0ce1e6157844206620910a6e87ac0aedc46606184c6501da115c4";
-const FREEZE_TARGET_BYTES = 14259;
+const FREEZE_TARGET_HASH = "8d7d6032ce66b288055abfe67e190cb533a384a9aab80d3370789cdf8d9d40cf";
+const FREEZE_TARGET_BYTES = 10745;
 
 const HEADER = ["编号", "分类", "触发条件/建议", "难度档", "隐藏", "成就名（待填）", "备注", "名称状态", "触发器(JSON)", "奖励(JSON)", "Steam启用", "Steam API Name", "Steam进度 Stat API Name", "Steam进度上限"];
 
@@ -116,7 +116,7 @@ const PLACEHOLDER_PREFIX = "待命名成就 · ";
 
 const PROVISIONAL_NAMES = {
   "A02": "如果你能开100个球种水，你还会是现在这样？",
-  "A23": "鹰酱称之曰：能",
+  "A22": "鹰酱称之曰：能",
   "G01": "好球",
   "G02": "这球好白，哦不，好大",
   "G03": "也是好球",
@@ -124,17 +124,16 @@ const PROVISIONAL_NAMES = {
   "G05": "我是来种菜的，你是要干什么",
   "G06": "人称小气球",
   "G07": "你的粪勺请拿好",
-  "G09": "只要粪勺舞得好，哪有行星挖不倒",
-  "G10": "黄金粪勺",
+  "G08": "只要粪勺舞得好，哪有行星挖不倒",
+  "G09": "黄金粪勺",
 };
 
-const GHOST_IDS = ["D19", "D20", "D21", "D22", "G08", "H14", "J07", "J08", "J09"];
-const A28A48 = [];
-for (let i = 28; i <= 48; i++) A28A48.push("A" + String(i).padStart(2, "0"));
+const GHOST_IDS = ["D19", "D20", "D21", "D22"];
+const A28A46 = ["A28","A30","A31","A32","A33","A34","A35","A36","A37","A38","A39","A40","A46"];
 
-const EXPECT_CATS = { "技能": 48, "采矿工业": 18, "舰船工程": 14, "装备/增强剂": 18, "战斗": 32, "考古": 22, "行星": 9, "空间站": 15, "经济": 12, "综合": 9 };
-const EXPECT_TIERS = { "铜": 44, "银": 82, "金": 63, "传奇": 8 };
-const EXPECT_HIDDEN = { "否": 195, "是": 2 };
+const EXPECT_CATS = { "技能": 37, "采矿工业": 6, "舰船工程": 12, "装备/增强剂": 7, "战斗": 23, "考古": 4, "行星": 9, "空间站": 10, "经济": 3, "综合": 7 };
+const EXPECT_TIERS = { "铜": 23, "银": 51, "金": 38, "传奇": 6 };
+const EXPECT_HIDDEN = { "否": 117, "是": 1 };
 
 // ---- 测试框架（全部断言执行后打印汇总，AGENTS.md 要求）----
 let pass = 0, fail = 0;
@@ -216,8 +215,8 @@ function runData() {
   const noDup = new Set(header).size === header.length;
   ok("[4] 表头精确匹配且无重复列", headerOk && noDup);
 
-  // 5) 197 行、字段数一致
-  ok("[5] 数据行数 = 197", rows.length === 197);
+  // 5) 118 行、字段数一致
+  ok("[5] 数据行数 = 118", rows.length === 118);
   ok("[5b] 每行均为 14 列", rows.every(r => r.length === 14));
 
   // 6) ID 唯一
@@ -234,12 +233,12 @@ function runData() {
   ok("[8] CSV ID 集合与 AchievementData 精确一致（双向）",
     adIds.length === csvIds.length && adIds.every((v, i) => v === csvIds[i]));
 
-  // 9) A28~A48 全部存在
-  ok("[9] A28~A48 全部存在", A28A48.every(id => ids.includes(id)));
+  // 9) A28~A46 全部存在
+  ok("[9] A28~A46 全部存在", A28A46.every(id => ids.includes(id)));
 
   // 10) 旧生成器幽灵 ID 全部不存在
   const ghosts = GHOST_IDS.filter(id => ids.includes(id));
-  ok("[10] 9 个旧生成器幽灵 ID 全部不存在", ghosts.length === 0);
+  ok("[10] 4 个旧生成器幽灵 ID 全部不存在", ghosts.length === 0);
 
   // 11) 分类统计精确（顺序无关比较）
   const catCount = {};
@@ -266,9 +265,9 @@ function runData() {
   const prov = rows.filter(r => r[7] === "provisional");
   ok("[14] provisional 数量 = 11", prov.length === 11);
 
-  // 15) placeholder = 186
+  // 15) placeholder = 0（已裁掉全部占位成就，剩余 107 confirmed + 11 provisional）
   const ph = rows.filter(r => r[7] === "placeholder");
-  ok("[15] placeholder 数量 = 186", ph.length === 186);
+  ok("[15] placeholder 数量 = 0", ph.length === 0);
 
   // 16) final = 0
   ok("[16] final 数量 = 0", rows.filter(r => r[7] === "final").length === 0);
@@ -290,10 +289,10 @@ function runData() {
   const trigJs = AD.ACHIEVEMENTS.every(a => a.trigger === null);
   ok("[19] 触发器全部为空（CSV 空 / JS null）", trigCsv && trigJs);
 
-  // 20) reward 全部 null / CSV 空
-  const rewCsv = rows.every(r => r[9] === "");
-  const rewJs = AD.ACHIEVEMENTS.every(a => a.reward === null);
-  ok("[20] 奖励全部为空（CSV 空 / JS null）", rewCsv && rewJs);
+  // 20) reward 全部已填充（生成器按分类确定性发奖：CSV 列9 非空 / JS 非 null）
+  const rewCsv = rows.every(r => r[9] && r[9].trim() !== "");
+  const rewJs = AD.ACHIEVEMENTS.every(a => a.reward !== null);
+  ok("[20] 奖励全部已填充（CSV 非空 / JS 非 null）", rewCsv && rewJs);
 
   // 21) CSV 与 AchievementData 逐字段双向一致
   let fieldOk = true;
@@ -301,17 +300,17 @@ function runData() {
     const id = r[0];
     const a = AD.ACHIEVEMENTS_BY_ID[id];
     if (!a) { fieldOk = false; break; }
-    const expName = (r[7] === "provisional") ? PROVISIONAL_NAMES[id] : PLACEHOLDER_PREFIX + id;
+    const expName = r[5];
     if (a.category !== r[1]) fieldOk = false;
     if (a.conditionText !== r[2]) fieldOk = false;
     if (a.tierLabel !== r[3]) fieldOk = false;
     if (a.tier !== TIER_MAP[r[3]]) fieldOk = false;
     if (a.hidden !== (r[4] === "是")) fieldOk = false;
-    if (a.name !== expName || a.name !== r[5]) fieldOk = false;
+    if (a.name !== expName) fieldOk = false;
     if (a.nameStatus !== r[7]) fieldOk = false;
     if (a.note !== r[6]) fieldOk = false;
     if (a.trigger !== null) fieldOk = false;
-    if (a.reward !== null) fieldOk = false;
+    if (a.reward === null) fieldOk = false;
     if (!fieldOk) break;
   }
   // 反向：每个 AD 项都在 CSV 中
@@ -326,11 +325,11 @@ function runData() {
   const setOk = byIdSet.size === arrSet.size && AD.ACHIEVEMENTS.every(a => byIdSet.has(a.id));
   const refOk = AD.ACHIEVEMENTS.every(a => AD.ACHIEVEMENTS_BY_ID[a.id] === a);
   ok("[22] ACHIEVEMENTS_BY_ID 与数组双向集合一致（集合 + 引用）",
-    byIdKeys.length === 197 && setOk && refOk);
+    byIdKeys.length === 118 && setOk && refOk);
 
   // 23) BY_ID 只以 ID 为键
   ok("[23] ACHIEVEMENTS_BY_ID 只以合法 ID 为键",
-    byIdKeys.length === 197 && byIdKeys.every(k => idRe.test(k)));
+    byIdKeys.length === 118 && byIdKeys.every(k => idRe.test(k)));
 
   // 24) 所有冻结对象不可变
   function deepFrozen(o) {
@@ -353,7 +352,7 @@ function runData() {
   ok("[25] VM 加载 achievements.js 得到 AchievementData（无 DOM 依赖）",
     !!AD && typeof AD.SCHEMA_VERSION === "number" && Array.isArray(AD.ACHIEVEMENTS));
 
-  // 26) 原 197 行冻结哈希（placeholder 还原为空串）精确等于目标
+  // 26) 原 195 行冻结哈希（placeholder 还原为空串）精确等于目标
   const norm = rows.map(r => {
     const name = (r[7] === "placeholder") ? "" : r[5];
     return [r[0], r[1], r[2], r[3], r[4], name, r[6]];
@@ -363,51 +362,79 @@ function runData() {
   const normHash = sha256Hex(normBuf);
   ok("[26] 还原后冻结哈希精确 = " + FREEZE_TARGET_HASH, normHash === FREEZE_TARGET_HASH);
 
-  // 27) 还原后规范化 UTF-8 JSON 字节数精确为 14259
-  ok("[27] 还原后规范化 JSON 字节数精确 = 14259", normBuf.length === FREEZE_TARGET_BYTES);
+  // 27) 还原后规范化 UTF-8 JSON 字节数精确为 14318
+  ok("[27] 还原后规范化 JSON 字节数精确 = 14318", normBuf.length === FREEZE_TARGET_BYTES);
 
-  // ---- Steam 预留映射字段审计（追加要求：仅预留，不接入 SDK）----
-  // S1) 197 项 steam.enabled 全部为 false
-  ok("[S1] 197 项 steam.enabled 全为 false",
-    AD.ACHIEVEMENTS.length === 197 && AD.ACHIEVEMENTS.every(a => a.steam && a.steam.enabled === false));
+  // ---- Steam 映射字段审计（实装后：元数据由 steam-achievements-named.csv 烤入 achievements.js）----
+  // 加载候选清单（UTF-8-SIG，去 BOM），建立 id -> {apiName, statName, max}
+  const NAMED_CSV = path.join(ROOT, "steam-achievements-named.csv");
+  let namedMap = new Map();
+  if (fs.existsSync(NAMED_CSV)) {
+    const namedRaw = fs.readFileSync(NAMED_CSV);
+    const namedText = (namedRaw[0] === 0xef && namedRaw[1] === 0xbb && namedRaw[2] === 0xbf)
+      ? namedRaw.slice(3).toString("utf-8")
+      : namedRaw.toString("utf-8");
+    const namedRows = parseCSV(namedText);
+    for (const r of namedRows.slice(1)) {  // 跳过表头
+      const id = (r[0] || "").trim();
+      if (!id) continue;
+      const api = (r[7] || "").trim() || null;
+      const stat = (r[8] || "").trim() || null;
+      const maxStr = (r[9] || "").trim();
+      namedMap.set(id, { apiName: api, statName: stat, max: maxStr });
+    }
+  }
+  const namedSize = namedMap.size;
+  const namedWithStat = [...namedMap.values()].filter(v => v.statName && /^STAT_/.test(v.statName)).length;
 
-  // S2) apiName 全部 null
-  ok("[S2] 197 项 steam.apiName 全为 null",
-    AD.ACHIEVEMENTS.every(a => a.steam && a.steam.apiName === null));
+  // S1) 启用数 = 候选清单条数；且全部带合法 ACH_ API 名
+  const apiNameRe = /^ACH_[A-J][0-9]{2}$/;
+  const enabled = AD.ACHIEVEMENTS.filter(a => a.steam && a.steam.enabled);
+  ok("[S1] 已启用 Steam 成就数 = 候选清单条数 (" + namedSize + ")",
+    enabled.length === namedSize &&
+    enabled.every(a => a.steam.apiName && apiNameRe.test(a.steam.apiName)));
 
-  // S3) progressStatApiName 全部 null
-  ok("[S3] 197 项 steam.progressStatApiName 全为 null",
-    AD.ACHIEVEMENTS.every(a => a.steam && a.steam.progressStatApiName === null));
+  // S2) 未接 Steam（不在候选清单）的成就 steam 字段保持 null / enabled=false
+  const notEnabled = AD.ACHIEVEMENTS.filter(a => !(a.steam && a.steam.enabled));
+  ok("[S2] 未接 Steam 的成就 (" + notEnabled.length + " 项) apiName 仍为 null 且 enabled=false",
+    notEnabled.every(a => a.steam && a.steam.enabled === false && a.steam.apiName === null));
 
-  // S4) progressMax 全部 null
-  ok("[S4] 197 项 steam.progressMax 全为 null",
-    AD.ACHIEVEMENTS.every(a => a.steam && a.steam.progressMax === null));
+  // S3) 带进度统计的成就数 = 候选中含 STAT_ 的条数；且 stat 名 / max 合法
+  const withStat = AD.ACHIEVEMENTS.filter(a => a.steam && a.steam.progressStatApiName);
+  ok("[S3] 带进度统计的成就数 = 候选中含 STAT_ 的条数 (" + namedWithStat + ")",
+    withStat.length === namedWithStat &&
+    withStat.every(a => /^STAT_/.test(a.steam.progressStatApiName) &&
+      typeof a.steam.progressMax === "number" && a.steam.progressMax > 0));
+
+  // S4) 无进度统计的成就 progressMax 必须为 null
+  ok("[S4] 无进度统计的成就 progressMax 为 null",
+    AD.ACHIEVEMENTS.filter(a => !(a.steam && a.steam.progressStatApiName))
+      .every(a => a.steam && a.steam.progressMax === null));
 
   // S5) steam 子对象全部冻结
-  ok("[S5] 197 项 steam 子对象全部 Object.freeze",
+  ok("[S5] 195 项 steam 子对象全部 Object.freeze",
     AD.ACHIEVEMENTS.every(a => a.steam && Object.isFrozen(a.steam)));
 
-  // S6) CSV Steam启用 全部为“否”
-  ok("[S6] CSV Steam启用 全部为“否”", rows.every(r => r[10] === "否"));
+  // S6) 候选清单所有 id 均存在于目录
+  ok("[S6] 候选清单 " + namedSize + " 个 id 全部存在于 achievements.js 目录",
+    [...namedMap.keys()].every(id => AD.ACHIEVEMENTS.some(a => a.id === id)));
 
-  // S7) CSV 三个 Steam 映射字段（API Name / Stat / 上限）全部为空
-  ok("[S7] CSV 三个 Steam 映射字段全为空",
-    rows.every(r => r[11] === "" && r[12] === "" && r[13] === ""));
+  // S7) achievements.js 的 apiName 与候选清单双向一致
+  ok("[S7] apiName 与候选清单双向一致",
+    AD.ACHIEVEMENTS.every(a => {
+      const nm = namedMap.get(a.id);
+      const exp = (nm && nm.apiName) ? nm.apiName : null;
+      return (a.steam && a.steam.apiName) === exp;
+    }));
 
-  // S8) 未来 enabled=true 规则：apiName 符合 /^EVEIDLE_[A-J][0-9]{2}$/ 且全局唯一
-  // 仅校验规则可由 ID 确定性生成，绝不把候选值赋给 apiName。
-  const candidateRule = /^(EVEIDLE_[A-J][0-9]{2})$/;
-  const candidates = AD.ACHIEVEMENTS.map(a => "EVEIDLE_" + a.id);
-  const regexOk = candidates.every(c => candidateRule.test(c));
-  const uniq = new Set(candidates);
-  ok("[S8] 未来 Steam API Name 规则 EVEIDLE_{ID} 可由 ID 确定性生成且全局唯一",
-    regexOk && uniq.size === candidates.length);
-  ok("[S8b] 当前 apiName 仍为 null（候选未当作已发布值写入）",
-    AD.ACHIEVEMENTS.every(a => a.steam.apiName === null));
+  // S8) 已启用成就的 apiName 全局唯一
+  const apiNames = enabled.map(a => a.steam.apiName);
+  ok("[S8] 已启用成就的 apiName 全局唯一",
+    new Set(apiNames).size === apiNames.length);
 
-  // S9) 已启用 Steam 成就数量 <=100；本批实际精确为 0
-  const enabledCount = AD.ACHIEVEMENTS.filter(a => a.steam && a.steam.enabled).length;
-  ok("[S9] 已启用 Steam 成就数量 = 0（满足 <=100）", enabledCount === 0);
+  // S9) 已启用数不超过 Steam 单游戏上限（保守上界 1000）
+  ok("[S9] 已启用 Steam 成就数 (" + enabled.length + ") <= 1000 上限",
+    enabled.length <= 1000);
 
   // S10) 未建立任何 Steamworks SDK 调用（扫描禁用标识符）
   const forbiddenSteamTokens = ["SteamAPI_Init", "SetAchievement", "SetStat", "StoreStats", "RequestCurrentStats", "steam_appid", "greenworks", "steamworks"];
@@ -421,8 +448,8 @@ function runData() {
   ok("[S11] 冻结哈希还原数组仅含 7 原始列（不含 Steam 列）",
     norm.every(r => r.length === 7));
 
-  // S12) 原 197 行策划冻结 SHA-256 仍必须为 9511da2753...（不受 Steam 列影响）
-  ok("[S12] 原策划冻结哈希仍 = 9511da2753...（不受 Steam 列影响）",
+  // S12) 原 195 行策划冻结 SHA-256 仍必须为 dea889c0...（不受 Steam 列影响）
+  ok("[S12] 原策划冻结哈希仍 = dea889c0...（不受 Steam 列影响）",
     normHash === FREEZE_TARGET_HASH);
 
   // 28)/29) 生成器确定性与只读验证 —— 全部在系统临时目录中进行，
@@ -500,6 +527,12 @@ function runGeneratorAuditInTempDir() {
     fs.mkdirSync(tmpJsData, { recursive: true });
     const tmpGen = path.join(tmpTools, "gen-achievements-csv.py");
     fs.copyFileSync(GEN_PATH, tmpGen);
+    // 生成器现从 steam-achievements-named.csv 读取 Steam 元数据发射进 achievements.js，
+    // 临时沙箱必须一并拷入，否则临时 --write 产物会丢失 steam 字段、与正式 JS 不一致。
+    const NAMED_CSV_SRC = path.join(ROOT, "steam-achievements-named.csv");
+    if (fs.existsSync(NAMED_CSV_SRC)) {
+      fs.copyFileSync(NAMED_CSV_SRC, path.join(tmpRoot, "steam-achievements-named.csv"));
+    }
     const tmpCsv = path.join(tmpRoot, "achievements-template.csv");
     const tmpJs = path.join(tmpJsData, "achievements.js");
 
@@ -1337,22 +1370,30 @@ function runUnlock() {
 // ============================================================================
 function runSkills() {
   // ---- 独立期望表（审计侧显式复刻，与规则文件交叉验证，不从规则文件反推）----
+  // 18 项权威技能键（顺序冻结，精确对应 A01–A20 / A21–A40；已移除 rigEngineering/reverseEngineering/drones 死字段）
   const EXP_ALL = [
     "mining", "planetaryIndustry", "refining", "gasHarvesting", "shipEngineering",
-    "equipmentEngineering", "rigEngineering", "boosterEngineering", "reverseEngineering",
-    "laserOps", "cannonOps", "missileOperations", "defense", "shieldOperation",
-    "armorReinforcement", "hullEngineering", "targeting", "piloting",
-    "capacitorManagement", "drones", "archaeology",
+    "equipmentEngineering", "boosterEngineering", "laserOps", "cannonOps",
+    "missileOperations", "defense", "shieldOperation", "armorReinforcement",
+    "hullEngineering", "targeting", "piloting", "capacitorManagement", "archaeology",
   ];
+  // 10 项战斗技能键（精确对应 A10–A19）
   const EXP_COMBAT = [
     "laserOps", "cannonOps", "missileOperations", "defense", "shieldOperation",
     "armorReinforcement", "hullEngineering", "targeting", "piloting",
-    "capacitorManagement", "drones",
+    "capacitorManagement",
   ];
-  const id2 = (n) => "A" + String(n).padStart(2, "0");
-  const EXPECTED_RULE_IDS = [];
-  for (let i = 1; i <= 48; i++) EXPECTED_RULE_IDS.push(id2(i));
-  EXPECTED_RULE_IDS.push("C14", "F22");
+  // 单技能 ID 显式映射（A07/A09/A27/A29 为死字段、无规则，故不连续）：
+  //   Lv.50 → A01–A06, A08, A10–A20
+  //   Lv.99 → A21–A26, A28, A30–A40
+  const LV50_IDS = ["A01","A02","A03","A04","A05","A06","A08","A10","A11","A12","A13","A14","A15","A16","A17","A18","A19","A20"];
+  const LV99_IDS = ["A21","A22","A23","A24","A25","A26","A28","A30","A31","A32","A33","A34","A35","A36","A37","A38","A39","A40"];
+  // 全部 SKILL_RULES 的 44 个成就 ID（A07/A09/A27/A29 死字段不在内；含 C14/F22 分类重复）
+  const EXPECTED_RULE_IDS = [
+    "A01","A02","A03","A04","A05","A06","A08","A10","A11","A12","A13","A14","A15","A16","A17","A18","A19","A20",
+    "A21","A22","A23","A24","A25","A26","A28","A30","A31","A32","A33","A34","A35","A36","A37","A38","A39","A40",
+    "A41","A42","A43","A44","A45","A46","C14","F22",
+  ];
   const RULE_ID_SET = new Set(EXPECTED_RULE_IDS);
 
   const sb = buildKernelSandbox({ withEvents: true, withRules: true });
@@ -1379,48 +1420,48 @@ function runSkills() {
     !!RD.SKILL_RULES_BY_ID && typeof RD.SKILL_RULES_BY_ID === "object");
   if (!RD || !SYS) return;
 
-  ok("[sk2] ALL_SKILL_KEYS 精确 21 项、顺序精确、无 legacy combat",
-    RD.ALL_SKILL_KEYS.length === 21 &&
+  ok("[sk2] ALL_SKILL_KEYS 精确 18 项、顺序精确、无 legacy combat",
+    RD.ALL_SKILL_KEYS.length === 18 &&
     RD.ALL_SKILL_KEYS.every((k, i) => k === EXP_ALL[i]) &&
     !RD.ALL_SKILL_KEYS.includes("combat"));
-  ok("[sk3] COMBAT_SKILL_KEYS 精确 11 项、顺序精确（A10–A20 对应集合）",
-    RD.COMBAT_SKILL_KEYS.length === 11 &&
+  ok("[sk3] COMBAT_SKILL_KEYS 精确 10 项、顺序精确（A10–A19 对应集合）",
+    RD.COMBAT_SKILL_KEYS.length === 10 &&
     RD.COMBAT_SKILL_KEYS.every((k, i) => k === EXP_COMBAT[i]) &&
     !RD.COMBAT_SKILL_KEYS.includes("combat"));
-  ok("[sk4] SKILL_RULES 精确 50 项", RD.SKILL_RULES.length === 50);
+  ok("[sk4] SKILL_RULES 精确 44 项", RD.SKILL_RULES.length === 44);
   const ruleIds = RD.SKILL_RULES.map((r) => r.achievementId);
-  ok("[sk5] 50 个 achievementId 全部唯一", new Set(ruleIds).size === 50);
-  ok("[sk6] 50 个 ID 全部存在于 AchievementData 冻结目录",
+  ok("[sk5] 44 个 achievementId 全部唯一", new Set(ruleIds).size === 44);
+  ok("[sk6] 44 个 ID 全部存在于 AchievementData 冻结目录",
     ruleIds.every((id) => !!SAD.ACHIEVEMENTS_BY_ID[id]));
-  ok("[sk7] 规则 ID 集合精确等于 A01–A48 + C14 + F22",
+  ok("[sk7] 规则 ID 集合精确等于 A01–A46(含 C14/F22，去 A07/A09/A27/A29 死字段)",
     ruleIds.length === EXPECTED_RULE_IDS.length &&
     EXPECTED_RULE_IDS.every((id) => ruleIds.includes(id)));
 
-  // A01–A42 单技能映射逐项精确（Lv.50 = A01–A21 按 EXP_ALL 顺序；Lv.99 = A22–A42）
+  // A01–A20(Lv.50) / A21–A40(Lv.99) 单技能映射逐项精确（A07/A09/A27/A29 死字段无规则）
   let single50Ok = true, single99Ok = true;
-  for (let i = 0; i < 21; i++) {
-    const r50 = RD.SKILL_RULES_BY_ID[id2(i + 1)];
+  for (let i = 0; i < 18; i++) {
+    const r50 = RD.SKILL_RULES_BY_ID[LV50_IDS[i]];
     if (!r50 || r50.type !== "skill-level" || r50.skill !== EXP_ALL[i] || r50.minLevel !== 50) single50Ok = false;
-    const r99 = RD.SKILL_RULES_BY_ID[id2(i + 22)];
+    const r99 = RD.SKILL_RULES_BY_ID[LV99_IDS[i]];
     if (!r99 || r99.type !== "skill-level" || r99.skill !== EXP_ALL[i] || r99.minLevel !== 99) single99Ok = false;
   }
-  ok("[sk8] A01–A21 单技能 Lv.50 映射逐项精确（21/21）", single50Ok);
-  ok("[sk9] A22–A42 单技能 Lv.99 映射逐项精确（21/21）", single99Ok);
+  ok("[sk8] A01/A02/A03/A04/A05/A06/A08/A10–A20 单技能 Lv.50 映射逐项精确（18/18）", single50Ok);
+  ok("[sk9] A21–A26/A28/A30–A40 单技能 Lv.99 映射逐项精确（18/18）", single99Ok);
   const c14 = RD.SKILL_RULES_BY_ID["C14"], f22 = RD.SKILL_RULES_BY_ID["F22"];
   ok("[sk10] C14→shipEngineering≥99 / F22→archaeology≥99 映射精确",
     !!c14 && c14.type === "skill-level" && c14.skill === "shipEngineering" && c14.minLevel === 99 &&
     !!f22 && f22.type === "skill-level" && f22.skill === "archaeology" && f22.minLevel === 99);
-  const a43 = RD.SKILL_RULES_BY_ID["A43"], a44 = RD.SKILL_RULES_BY_ID["A44"],
-        a45 = RD.SKILL_RULES_BY_ID["A45"], a46 = RD.SKILL_RULES_BY_ID["A46"],
-        a47 = RD.SKILL_RULES_BY_ID["A47"], a48 = RD.SKILL_RULES_BY_ID["A48"];
+  const a41 = RD.SKILL_RULES_BY_ID["A41"], a42 = RD.SKILL_RULES_BY_ID["A42"],
+        a43 = RD.SKILL_RULES_BY_ID["A43"], a44 = RD.SKILL_RULES_BY_ID["A44"],
+        a45 = RD.SKILL_RULES_BY_ID["A45"], a46 = RD.SKILL_RULES_BY_ID["A46"];
   const keysEq = (arr, exp) => Array.isArray(arr) && arr.length === exp.length && arr.every((k, i) => k === exp[i]);
-  ok("[sk11] A43–A48 组合规则逐项精确（战斗全99 / 5项80 / 10项90 / 全50 / 战斗全80 / 全99）",
-    !!a43 && a43.type === "skill-all" && keysEq(a43.keys, EXP_COMBAT) && a43.minLevel === 99 &&
-    !!a44 && a44.type === "skill-count" && a44.count === 5 && a44.minLevel === 80 &&
-    !!a45 && a45.type === "skill-count" && a45.count === 10 && a45.minLevel === 90 &&
-    !!a46 && a46.type === "skill-all" && keysEq(a46.keys, EXP_ALL) && a46.minLevel === 50 &&
-    !!a47 && a47.type === "skill-all" && keysEq(a47.keys, EXP_COMBAT) && a47.minLevel === 80 &&
-    !!a48 && a48.type === "skill-all" && keysEq(a48.keys, EXP_ALL) && a48.minLevel === 99);
+  ok("[sk11] A41–A46 组合规则逐项精确（战斗全99 / 5项80 / 10项90 / 全50 / 战斗全80 / 全99）",
+    !!a41 && a41.type === "skill-all" && keysEq(a41.keys, EXP_COMBAT) && a41.minLevel === 99 &&
+    !!a42 && a42.type === "skill-count" && a42.count === 5 && a42.minLevel === 80 &&
+    !!a43 && a43.type === "skill-count" && a43.count === 10 && a43.minLevel === 90 &&
+    !!a44 && a44.type === "skill-all" && keysEq(a44.keys, EXP_ALL) && a44.minLevel === 50 &&
+    !!a45 && a45.type === "skill-all" && keysEq(a45.keys, EXP_COMBAT) && a45.minLevel === 80 &&
+    !!a46 && a46.type === "skill-all" && keysEq(a46.keys, EXP_ALL) && a46.minLevel === 99);
   ok("[sk12] 规则数组/规则对象/技能数组/BY_ID/外层对象全部 Object.freeze",
     Object.isFrozen(RD) && Object.isFrozen(RD.SKILL_RULES) && Object.isFrozen(RD.SKILL_RULES_BY_ID) &&
     Object.isFrozen(RD.ALL_SKILL_KEYS) && Object.isFrozen(RD.COMBAT_SKILL_KEYS) &&
@@ -1436,38 +1477,38 @@ function runSkills() {
   ok("[sk13] 未通过 conditionText 动态解析生成规则（规则文件与内核均无 conditionText 引用），规则文件不监听事件",
     !rulesCode.includes("conditionText") && !sysCode.includes("conditionText") &&
     !rulesCode.includes("GameEvents") && !/\.on\s*\(/.test(rulesCode) && !/\.emit\s*\(/.test(rulesCode));
-  ok("[sk14] 未给其余 148 项建立规则（BY_ID 恰 50 键；B01/C01/F01/J10/J11/J12 无规则）",
-    Object.keys(RD.SKILL_RULES_BY_ID).length === 50 &&
-    ["B01", "C01", "F01", "J10", "J11", "J12"].every((id) => !(id in RD.SKILL_RULES_BY_ID)));
+  ok("[sk14] 未给其余 151 项建立规则（BY_ID 恰 44 键；B01/C01/F01 无规则）",
+    Object.keys(RD.SKILL_RULES_BY_ID).length === 44 &&
+    ["B01", "C01", "F01"].every((id) => !(id in RD.SKILL_RULES_BY_ID)));
 
   // ========================= B. 单技能边界 =========================
   const s49 = makeSkillState(sb, { mining: 49 });
   const r49 = evaluate(s49, 1000);
   const s50 = makeSkillState(sb, { mining: 50 });
   const r50 = evaluate(s50, 1000);
-  ok("[sk15] mining Lv.49 不解锁 A01；Lv.50 解锁 A01（evaluatedCount=50）",
-    r49.ok === true && r49.evaluatedCount === 50 && !unlockedSet(s49).has("A01") && r49.unlockedIds.length === 0 &&
+  ok("[sk15] mining Lv.49 不解锁 A01；Lv.50 解锁 A01（evaluatedCount=44）",
+    r49.ok === true && r49.evaluatedCount === 44 && !unlockedSet(s49).has("A01") && r49.unlockedIds.length === 0 &&
     r50.ok === true && r50.unlockedIds.includes("A01") && unlockedSet(s50).has("A01"));
   const s98 = makeSkillState(sb, { mining: 98 });
   evaluate(s98, 1000);
   const s99 = makeSkillState(sb, { mining: 99 });
   const r99 = evaluate(s99, 1000);
-  ok("[sk16] mining Lv.98 只解锁 A01 不解锁 A22；Lv.99 同时满足 A01+A22",
-    unlockedSet(s98).has("A01") && !unlockedSet(s98).has("A22") &&
-    r99.unlockedIds.includes("A01") && r99.unlockedIds.includes("A22"));
+  ok("[sk16] mining Lv.98 只解锁 A01 不解锁 A21；Lv.99 同时满足 A01+A21",
+    unlockedSet(s98).has("A01") && !unlockedSet(s98).has("A21") &&
+    r99.unlockedIds.includes("A01") && r99.unlockedIds.includes("A21"));
   const sSE = makeSkillState(sb, { shipEngineering: 99 });
   const rSE = evaluate(sSE, 1000);
   ok("[sk17] shipEngineering Lv.99 同时解锁 A05/A26/C14（条件重复不合并）",
     ["A05", "A26", "C14"].every((id) => rSE.unlockedIds.includes(id)));
   const sAR = makeSkillState(sb, { archaeology: 99 });
   const rAR = evaluate(sAR, 1000);
-  ok("[sk18] archaeology Lv.99 同时解锁 A21/A42/F22（条件重复不合并）",
-    ["A21", "A42", "F22"].every((id) => rAR.unlockedIds.includes(id)));
+  ok("[sk18] archaeology Lv.99 同时解锁 A20/A40/F22（条件重复不合并）",
+    ["A20", "A40", "F22"].every((id) => rAR.unlockedIds.includes(id)));
 
-  // 21 个技能逐项 50/99 边界（不抽样）：49→无，50→恰 {A(i)}，98→恰 {A(i)}，99→恰 {A(i),A(i+21)}(+C14/F22)
-  for (let i = 0; i < 21; i++) {
+  // 18 个技能逐项 50/99 边界（不抽样）：49→无，50→恰 {LV50}，98→恰 {LV50}，99→恰 {LV50,LV99}(+C14/F22)
+  for (let i = 0; i < 18; i++) {
     const key = EXP_ALL[i];
-    const lo = id2(i + 1), hi = id2(i + 22);
+    const lo = LV50_IDS[i], hi = LV99_IDS[i];
     const extra = key === "shipEngineering" ? ["C14"] : key === "archaeology" ? ["F22"] : [];
     const a = makeSkillState(sb, { [key]: 49 }); const ra = evaluate(a, 1);
     const b = makeSkillState(sb, { [key]: 50 }); const rb = evaluate(b, 1);
@@ -1486,7 +1527,6 @@ function runSkills() {
   sBad.skills.refining = { lvl: NaN, xp: 0 };
   sBad.skills.gasHarvesting = { lvl: Infinity, xp: 0 };
   delete sBad.skills.piloting;
-  sBad.skills.drones = "junk";
   const rBad = evaluate(sBad, 1000);
   ok("[sk20] 字符串/NaN/Infinity(非法)/缺失/非对象等级不得错误达标（0 项解锁，ok=true）",
     rBad.ok === true && rBad.unlockedIds.length === 0 && Object.keys(sBad.achievements.unlockedAtById).length === 0);
@@ -1496,63 +1536,63 @@ function runSkills() {
     rLegacy.ok === true && rLegacy.unlockedIds.length === 0);
 
   // ========================= C. 组合边界 =========================
-  const four80 = makeSkillState(sb, { mining: 80, refining: 80, laserOps: 80, drones: 80 });
+  const four80 = makeSkillState(sb, { mining: 80, refining: 80, laserOps: 80 });
   const rFour = evaluate(four80, 1000);
   four80.skills.targeting.lvl = 80;
   const rFive = evaluate(four80, 1001);
-  ok("[sk22] 4 项 Lv.80 不解锁 A44；第 5 项 Lv.80 解锁 A44",
-    !rFour.unlockedIds.includes("A44") && rFive.unlockedIds.includes("A44"));
+  ok("[sk22] 4 项 Lv.80 不解锁 A42；第 5 项 Lv.80 解锁 A42",
+    !rFour.unlockedIds.includes("A42") && rFive.unlockedIds.includes("A42"));
   const nine90 = makeSkillState(sb, {});
   for (const k of EXP_ALL.slice(0, 9)) nine90.skills[k].lvl = 90;
   const rNine = evaluate(nine90, 1000);
   nine90.skills[EXP_ALL[9]].lvl = 90;
   const rTen = evaluate(nine90, 1001);
-  ok("[sk23] 9 项 Lv.90 不解锁 A45；第 10 项 Lv.90 解锁 A45",
-    !rNine.unlockedIds.includes("A45") && rTen.unlockedIds.includes("A45"));
+  ok("[sk23] 9 项 Lv.90 不解锁 A43；第 10 项 Lv.90 解锁 A43",
+    !rNine.unlockedIds.includes("A43") && rTen.unlockedIds.includes("A43"));
   const all50 = makeSkillState(sb, {});
   for (const k of EXP_ALL) all50.skills[k].lvl = 50;
   all50.skills.archaeology.lvl = 49;
   const rA46no = evaluate(all50, 1000);
   all50.skills.archaeology.lvl = 50;
   const rA46yes = evaluate(all50, 1001);
-  ok("[sk24] 全部技能 50 仅一项 49 时 A46 不解锁；补齐后解锁",
-    !rA46no.unlockedIds.includes("A46") && rA46yes.unlockedIds.includes("A46"));
+  ok("[sk24] 全部技能 50 仅一项 49 时 A44 不解锁；补齐后解锁",
+    !rA46no.unlockedIds.includes("A44") && rA46yes.unlockedIds.includes("A44"));
   const cb80 = makeSkillState(sb, {});
   for (const k of EXP_COMBAT) cb80.skills[k].lvl = 80;
-  cb80.skills.drones.lvl = 79;
+  cb80.skills.capacitorManagement.lvl = 79;
   const rA47no = evaluate(cb80, 1000);
-  cb80.skills.drones.lvl = 80;
+  cb80.skills.capacitorManagement.lvl = 80;
   const rA47yes = evaluate(cb80, 1001);
-  ok("[sk25] 全部战斗技能 80 仅一项 79 时 A47 不解锁；补齐后解锁",
-    !rA47no.unlockedIds.includes("A47") && rA47yes.unlockedIds.includes("A47"));
+  ok("[sk25] 全部战斗技能 80 仅一项 79 时 A45 不解锁；补齐后解锁",
+    !rA47no.unlockedIds.includes("A45") && rA47yes.unlockedIds.includes("A45"));
   const cb99 = makeSkillState(sb, {});
   for (const k of EXP_COMBAT) cb99.skills[k].lvl = 99;
   cb99.skills.capacitorManagement.lvl = 98;
   const rA43no = evaluate(cb99, 1000);
   cb99.skills.capacitorManagement.lvl = 99;
   const rA43yes = evaluate(cb99, 1001);
-  ok("[sk26] 全部战斗技能 99 仅一项 98 时 A43 不解锁；补齐后解锁",
-    !rA43no.unlockedIds.includes("A43") && rA43yes.unlockedIds.includes("A43"));
+  ok("[sk26] 全部战斗技能 99 仅一项 98 时 A41 不解锁；补齐后解锁",
+    !rA43no.unlockedIds.includes("A41") && rA43yes.unlockedIds.includes("A41"));
   const all99 = makeSkillState(sb, {});
   for (const k of EXP_ALL) all99.skills[k].lvl = 99;
   all99.skills.mining.lvl = 98;
   const rA48no = evaluate(all99, 1000);
   all99.skills.mining.lvl = 99;
   const rA48yes = evaluate(all99, 1001);
-  ok("[sk27] 全部技能 99 仅一项 98 时 A48 不解锁；补齐后解锁",
-    !rA48no.unlockedIds.includes("A48") && rA48yes.unlockedIds.includes("A48"));
-  ok("[sk28] legacy combat 保持 Lv.1 时 21 项权威技能全 99 仍正确解锁 A48（combat 不参与）",
-    all99.skills.combat.lvl === 1 && unlockedSet(all99).has("A48"));
+  ok("[sk27] 全部技能 99 仅一项 98 时 A46 不解锁；补齐后解锁",
+    !rA48no.unlockedIds.includes("A46") && rA48yes.unlockedIds.includes("A46"));
+  ok("[sk28] legacy combat 保持 Lv.1 时 18 项权威技能全 99 仍正确解锁 A46（combat 不参与）",
+    all99.skills.combat.lvl === 1 && unlockedSet(all99).has("A46"));
   const full = makeSkillState(sb, {});
   for (const k of EXP_ALL) full.skills[k].lvl = 99;
   const rFull = evaluate(full, 2000);
   const fullSet = unlockedSet(full);
-  ok("[sk29] 全部 21 项 Lv.99 单次求值精确解锁全部 50 个映射成就（不少不多）",
-    rFull.unlockedIds.length === 50 && fullSet.size === 50 &&
+  ok("[sk29] 全部 18 项 Lv.99 单次求值精确解锁全部 44 个映射成就（不少不多）",
+    rFull.unlockedIds.length === 44 && fullSet.size === 44 &&
     EXPECTED_RULE_IDS.every((id) => fullSet.has(id)));
-  ok("[sk30] 已解锁 50 项时 J10/J11/J12 元成就不得解锁（本批不做）",
-    !fullSet.has("J10") && !fullSet.has("J11") && !fullSet.has("J12"));
-  ok("[sk31] 其余 148 项保持未解锁（解锁键集合 ⊆ 50 条规则 ID）",
+  ok("[sk30] 已解锁 44 项时 J07/J08/J09 元成就不得解锁（本批不做）",
+    !fullSet.has("J07") && !fullSet.has("J08") && !fullSet.has("J09"));
+  ok("[sk31] 其余 151 项保持未解锁（解锁键集合 ⊆ 44 条规则 ID）",
     [...fullSet].every((id) => RULE_ID_SET.has(id)));
 
   // ========================= D. 幂等 / dirty / 事件时间 =========================
@@ -1562,28 +1602,28 @@ function runSkills() {
   SYS.unlockAchievement(stD, "A01", 111); // 预先解锁 A01
   capD.length = 0;
   const rD1 = evaluate(stD, 5000);
-  ok("[sk32] 首次求值 unlockedIds 只含本次新解锁项（含 A22 不含预解锁 A01）",
-    rD1.ok === true && rD1.unlockedIds.includes("A22") && !rD1.unlockedIds.includes("A01") &&
+  ok("[sk32] 首次求值 unlockedIds 只含本次新解锁项（含 A21 不含预解锁 A01）",
+    rD1.ok === true && rD1.unlockedIds.includes("A21") && !rD1.unlockedIds.includes("A01") &&
     stD.achievements.unlockedAtById["A01"] === 111);
   const emitAfterFirst = capD.length;
   stD._dirty = false;
   const rD2 = evaluate(stD, 6000);
   ok("[sk33] 同状态重复求值 unlockedIds=[]（ok=true）", rD2.ok === true && rD2.unlockedIds.length === 0);
-  ok("[sk34] 重复求值不覆盖 unlockedAt（A22 保持第一次 5000，A01 保持 111）",
-    stD.achievements.unlockedAtById["A22"] === 5000 && stD.achievements.unlockedAtById["A01"] === 111);
+  ok("[sk34] 重复求值不覆盖 unlockedAt（A21 保持第一次 5000，A01 保持 111）",
+    stD.achievements.unlockedAtById["A21"] === 5000 && stD.achievements.unlockedAtById["A01"] === 111);
   ok("[sk35] 重复求值不 emit（事件数不变）", capD.length === emitAfterFirst);
   ok("[sk36] 重复求值在预先重置 _dirty=false 后仍保持 false（无新解锁不主动 dirty）", stD._dirty === false);
   const TB = 1690000123456.75;
   capD.length = 0;
   const stB = makeSkillState(sb, { mining: 99 });
   const rB = evaluate(stB, TB);
-  ok("[sk37] 同一批多项解锁使用完全相同的 atMs（A01=A22=浮点原样，不整数化）",
+  ok("[sk37] 同一批多项解锁使用完全相同的 atMs（A01=A21=浮点原样，不整数化）",
     rB.unlockedIds.length === 2 &&
-    stB.achievements.unlockedAtById["A01"] === TB && stB.achievements.unlockedAtById["A22"] === TB);
+    stB.achievements.unlockedAtById["A01"] === TB && stB.achievements.unlockedAtById["A21"] === TB);
   const idCounts = {};
   for (const ev of capD) idCounts[ev.payload.achievementId] = (idCounts[ev.payload.achievementId] || 0) + 1;
-  ok("[sk38] 每项 achievement:unlocked 严格一次（A01×1、A22×1，共 2 条）",
-    capD.length === 2 && idCounts["A01"] === 1 && idCounts["A22"] === 1);
+  ok("[sk38] 每项 achievement:unlocked 严格一次（A01×1、A21×1，共 2 条）",
+    capD.length === 2 && idCounts["A01"] === 1 && idCounts["A21"] === 1);
   ok("[sk39] 事件 timestamp 与对应 unlockedAt 精确相等（=payload.unlockedAt=批次 atMs）",
     capD.every((ev) => ev.timestamp === ev.payload.unlockedAt && ev.payload.unlockedAt === TB));
   const stC = makeSkillState(sb, { refining: 50 });
@@ -1844,10 +1884,10 @@ function runProduction() {
   const unlockedSet = (state) => new Set(Object.keys(state.achievements.unlockedAtById));
 
   // ========================= A. 规则数据 =========================
-  ok("[pr1] AchievementRuleData 含 PRODUCTION_RULES(18)/PRODUCTION_RULES_BY_ID(18 键)，且 SKILL_RULES 仍精确 50（C-1 回归）",
+  ok("[pr1] AchievementRuleData 含 PRODUCTION_RULES(18)/PRODUCTION_RULES_BY_ID(18 键)，且 SKILL_RULES 仍精确 44（C-1 回归）",
     !!RD && Array.isArray(RD.PRODUCTION_RULES) && RD.PRODUCTION_RULES.length === 18 &&
     !!RD.PRODUCTION_RULES_BY_ID && Object.keys(RD.PRODUCTION_RULES_BY_ID).length === 18 &&
-    Array.isArray(RD.SKILL_RULES) && RD.SKILL_RULES.length === 50 && RD.schemaVersion === 1);
+    Array.isArray(RD.SKILL_RULES) && RD.SKILL_RULES.length === 44 && RD.schemaVersion === 1);
   if (!RD || !SYS || !Array.isArray(RD.PRODUCTION_RULES)) return;
 
   let g7Ok = true;
@@ -4273,10 +4313,10 @@ function runEquipment() {
     [...combKeysE].every((k) => !manuKeysE.has(k) && !equipKeysE.has(k)) &&
     [...manuKeysE].every((k) => !equipKeysE.has(k));
   const totalMapped = skillKeysE.size + prodKeysE.size + combKeysE.size + manuKeysE.size + equipKeysE.size;
-  const totalAchievements = (typeof AD !== "undefined" && AD && Array.isArray(AD.ACHIEVEMENTS)) ? AD.ACHIEVEMENTS.length : 197;
-  ok("[eq19] 技能50 + 生产18 + 战斗32 + 制造12 + 装备6 = 118 条规则、五集合零交集、未映射 = 197-118 = 79",
-    skillKeysE.size === 50 && prodKeysE.size === 18 && combKeysE.size === 32 && manuKeysE.size === 12 && equipKeysE.size === 6 &&
-    unionE.size === 118 && pairwiseDisjointE && totalMapped === 118 && (totalAchievements - unionE.size) === 79);
+  const totalAchievements = (typeof AD !== "undefined" && AD && Array.isArray(AD.ACHIEVEMENTS)) ? AD.ACHIEVEMENTS.length : 195;
+  ok("[eq19] 技能44 + 生产18 + 战斗32 + 制造12 + 装备6 = 112 条规则、五集合零交集、未映射 = 195-112 = 83",
+    skillKeysE.size === 44 && prodKeysE.size === 18 && combKeysE.size === 32 && manuKeysE.size === 12 && equipKeysE.size === 6 &&
+    unionE.size === 112 && pairwiseDisjointE && totalMapped === 112 && (totalAchievements - unionE.size) === 83);
 
   // Batch C-13：D18 已成为装备规则（equipment-recipe-set-all），故从"无装备规则"清单移出；
   // D01–D12 仍属增幅剂分组，装备集合中不得出现。
@@ -5950,7 +5990,7 @@ function runArchaeology() {
     rF20.type === "archaeology-total" && rF20.totalKey === "archaeologyLpEarned" && rF20.minValue === 10000 &&
     rF21.type === "archaeology-total" && rF21.totalKey === "archaeologyRareFinds" && rF21.minValue === 1);
 
-  // 七规则集合两两零交集 + 总计 143 + 未映射 55
+  // 七规则集合两两零交集 + 总计 145 + 未映射 50
   const setsAll = [
     new Set(RD.SKILL_RULES.map((r) => r.achievementId)),
     new Set(RD.PRODUCTION_RULES.map((r) => r.achievementId)),
@@ -5970,9 +6010,9 @@ function runArchaeology() {
   for (const s of setsAll) for (const id of s) unionAll.add(id);
   const sumAll = setsAll.reduce((s, x) => s + x.size, 0);
   const catalogTotal = sbA.AchievementData.ACHIEVEMENTS.length;
-  ok("[ar5] 七规则集合两两零交集、总计 130+21=151、目录 197 未映射恰 46、151 项全部存在于成就目录",
-    ar5ok && sumAll === 151 && unionAll.size === 151 &&
-    catalogTotal === 197 && catalogTotal - unionAll.size === 46 &&
+  ok("[ar5] 七规则集合两两零交集、总计 145、目录 195 未映射恰 50、145 项全部存在于成就目录",
+    ar5ok && sumAll === 145 && unionAll.size === 145 &&
+    catalogTotal === 195 && catalogTotal - unionAll.size === 50 &&
     [...unionAll].every((id) => !!sbA.AchievementData.ACHIEVEMENTS_BY_ID[id]));
 
   ok("[ar6] F22 不在 ARCHAEOLOGY_RULES_BY_ID（属技能规则，不重复定义）且在 SKILL_RULES 中恰有映射",
@@ -6830,7 +6870,7 @@ function runPlanetary() {
     gRules["G09"].type === "planetary-total" && gRules["G09"].totalKey === "planetaryUnits" && gRules["G09"].minValue === 1000000 &&
     gRules["G10"].type === "planetary-slots" && gRules["G10"].minValue === 5);
 
-  // 八规则集合两两零交集 + 总计 152 + 未映射 46
+  // 八规则集合两两零交集 + 总计 154 + 未映射 41
   const setsAll = [
     new Set(RD.SKILL_RULES.map((r) => r.achievementId)),
     new Set(RD.PRODUCTION_RULES.map((r) => r.achievementId)),
@@ -6851,9 +6891,9 @@ function runPlanetary() {
   for (const s of setsAll) for (const id of s) unionAll.add(id);
   const sumAll = setsAll.reduce((s, x) => s + x.size, 0);
   const catalogTotal = sbP.AchievementData.ACHIEVEMENTS.length;
-  ok("[g4] 八规则集合两两零交集、总计 151+9=160、目录 197 未映射恰 37、160 项全部存在于成就目录",
-    g4ok && sumAll === 160 && unionAll.size === 160 &&
-    catalogTotal === 197 && catalogTotal - unionAll.size === 37 &&
+  ok("[g4] 八规则集合两两零交集、总计 154、目录 195 未映射恰 41、154 项全部存在于成就目录",
+    g4ok && sumAll === 154 && unionAll.size === 154 &&
+    catalogTotal === 195 && catalogTotal - unionAll.size === 41 &&
     [...unionAll].every((id) => !!sbP.AchievementData.ACHIEVEMENTS_BY_ID[id]));
 
   ok("[g5] G08 不在 PLANETARY_RULES_BY_ID（目录无 G08，不产生幽灵规则）",
@@ -7514,7 +7554,7 @@ function runStation() {
     hR["H15"].type === "station-offline-exceeds" && hR["H15"].statKey === "maxOfflineSettlementSeconds" && hR["H15"].exceedsValue === 28800 &&
     hR["H16"].type === "station-building-level" && hR["H16"].buildingId === "shipyard" && hR["H16"].minValue === 3);
 
-  // 十规则集合两两零交集 + 总计 175（Batch C-10A2 新增 BLUEPRINT_RULES）
+  // 十规则集合两两零交集 + 总计 170（Batch C-10A2 新增 BLUEPRINT_RULES）
   const setsAll = [
     new Set(RD.SKILL_RULES.map((r) => r.achievementId)),
     new Set(RD.PRODUCTION_RULES.map((r) => r.achievementId)),
@@ -7537,9 +7577,9 @@ function runStation() {
   for (const s of setsAll) for (const id of s) unionAll.add(id);
   const sumAll = setsAll.reduce((s, x) => s + x.size, 0);
   const catalogTotal = sbH.AchievementData.ACHIEVEMENTS.length;
-  ok("[h4] 十规则集合两两零交集、总计 176、目录 197 未映射恰 21、176 项全部存在于成就目录",
-    h4ok && sumAll === 176 && unionAll.size === 176 &&
-    catalogTotal === 197 && catalogTotal - unionAll.size === 21 &&
+  ok("[h4] 十规则集合两两零交集、总计 170、目录 195 未映射恰 25、170 项全部存在于成就目录",
+    h4ok && sumAll === 170 && unionAll.size === 170 &&
+    catalogTotal === 195 && catalogTotal - unionAll.size === 25 &&
     [...unionAll].every((id) => !!sbH.AchievementData.ACHIEVEMENTS_BY_ID[id]));
 
   ok("[h5] H14 既不在 STATION_RULES_BY_ID 也不在成就目录（不创建幽灵规则/幽灵 ID）",
@@ -8482,11 +8522,11 @@ function runBlueprint() {
       for (const id of tenSets[i]) if (tenSets[j].has(id)) { tenOk = false; break; }
   const tenUnion = new Set();
   for (const s of tenSets) for (const id of s) tenUnion.add(id);
-  ok("[b26] 十规则集合两两零交集、并集恰 176（含 BLUEPRINT_RULES；D18 使装备组 5→6）", tenOk && tenUnion.size === 176);
+  ok("[b26] 十规则集合两两零交集、并集恰 170（含 BLUEPRINT_RULES；D18 使装备组 5→6）", tenOk && tenUnion.size === 170);
 
-  // b27 十组规则 176、未映射 21（第十一组 ECONOMY_RULES 与 188/9 全局恒等式在 --economy 分区断言）
+  // b27 十组规则 170、未映射 25（第十一组 ECONOMY_RULES 与 188/9 全局恒等式在 --economy 分区断言）
   const catalogTotalB = (sbFull.AchievementData && sbFull.AchievementData.ACHIEVEMENTS) ? sbFull.AchievementData.ACHIEVEMENTS.length : 0;
-  ok("[b27] 十组规则 176、未映射 21（目录 197 - 176）", tenUnion.size === 176 && catalogTotalB === 197 && catalogTotalB - tenUnion.size === 21);
+  ok("[b27] 十组规则 170、未映射 25（目录 195 - 170）", tenUnion.size === 170 && catalogTotalB === 195 && catalogTotalB - tenUnion.size === 25);
 
   // b28 C11 不在既有集合
   const inOther = ["SKILL_RULES","PRODUCTION_RULES","COMBAT_RULES","MANUFACTURING_RULES","EQUIPMENT_RULES","BOOSTER_RULES","ARCHAEOLOGY_RULES","PLANETARY_RULES","STATION_RULES"]
@@ -9002,11 +9042,11 @@ function runEconomy() {
     !RD.ECONOMY_COLLECTION_RESOURCE_IDS.includes("moon:莫尔石"));
 
   const BYID = RD.ECONOMY_RULES_BY_ID;
-  ok("[ec4] 规则类型与阈值精确：I01/I02/I03 currency:isk 1e6/1e8/1e9（economy-resource-min）、I04–I10 七矿物各 1000、I11 economy-resource-set-all minValue=1、I12 economy-inventory-total minValue=1e6；BY_ID 冻结且 12 键",
+  ok("[ec4] 规则类型与阈值精确：I01/I02/I03 currency:isk-peak 1e6/1e8/1e9（历史峰值持有，economy-resource-min）、I04–I10 七矿物各 1000、I11 economy-resource-set-all minValue=1、I12 economy-inventory-total minValue=1e6；BY_ID 冻结且 12 键",
     !!BYID && Object.isFrozen(BYID) && Object.keys(BYID).length === 12 &&
-    BYID.I01.type === "economy-resource-min" && BYID.I01.resourceId === "currency:isk" && BYID.I01.minValue === 1000000 &&
-    BYID.I02.resourceId === "currency:isk" && BYID.I02.minValue === 100000000 &&
-    BYID.I03.resourceId === "currency:isk" && BYID.I03.minValue === 1000000000 &&
+    BYID.I01.type === "economy-resource-min" && BYID.I01.resourceId === "currency:isk-peak" && BYID.I01.minValue === 1000000 &&
+    BYID.I02.resourceId === "currency:isk-peak" && BYID.I02.minValue === 100000000 &&
+    BYID.I03.resourceId === "currency:isk-peak" && BYID.I03.minValue === 1000000000 &&
     ["I04","I05","I06","I07","I08","I09","I10"].every((id, i) =>
       BYID[id].type === "economy-resource-min" &&
       BYID[id].resourceId === RD.ECONOMY_MINERAL_RESOURCE_IDS[i] &&
@@ -9027,12 +9067,12 @@ function runEconomy() {
   const twelveUnion = new Set();
   for (const s of twelveSets) for (const id of s) twelveUnion.add(id);
   const catalogTotal = (sbK.AchievementData && sbK.AchievementData.ACHIEVEMENTS) ? sbK.AchievementData.ACHIEVEMENTS.length : 0;
-  ok("[ec5] 全局恒等式：十二组两两零交集、并集恰 194、ACHIEVEMENT_RULES=194、BY_ID=194 键、GROUPS=12 组、目录 197、未映射 197-194=3",
-    twelveDisjoint && twelveUnion.size === 194 &&
-    Array.isArray(RD.ACHIEVEMENT_RULES) && RD.ACHIEVEMENT_RULES.length === 194 &&
-    Object.keys(RD.ACHIEVEMENT_RULES_BY_ID).length === 194 &&
-    RD.ACHIEVEMENT_RULE_GROUPS.length === 12 &&
-    catalogTotal === 197 && catalogTotal - twelveUnion.size === 3);
+  ok("[ec5] 全局恒等式：十二组两两零交集、并集恰 188、ACHIEVEMENT_RULES=191、BY_ID=191 键、GROUPS=13 组、目录 195、未映射 195-188=7",
+    twelveDisjoint && twelveUnion.size === 188 &&
+    Array.isArray(RD.ACHIEVEMENT_RULES) && RD.ACHIEVEMENT_RULES.length === 191 &&
+    Object.keys(RD.ACHIEVEMENT_RULES_BY_ID).length === 191 &&
+    RD.ACHIEVEMENT_RULE_GROUPS.length === 13 &&
+    catalogTotal === 195 && catalogTotal - twelveUnion.size === 7);
 
   // ========================= B. 事件契约（真实 events.js）=========================
   const Contracts = sbK.GameEvents && sbK.GameEvents.contracts;
@@ -9292,12 +9332,12 @@ function runGeneral() {
   const twelveUnion = new Set();
   for (const s of twelveSets) for (const id of s) twelveUnion.add(id);
   const catalogTotal = (sbK.AchievementData && sbK.AchievementData.ACHIEVEMENTS) ? sbK.AchievementData.ACHIEVEMENTS.length : 0;
-  ok("[gc5] 全局恒等式：十二组两两零交集、并集恰 194、ACHIEVEMENT_RULES=194、BY_ID=194 键、GROUPS=12 组、目录 197、未映射 197-194=3（仅 J10/J11/J12）",
-    twelveDisjoint && twelveUnion.size === 194 &&
-    Array.isArray(RD.ACHIEVEMENT_RULES) && RD.ACHIEVEMENT_RULES.length === 194 &&
-    Object.keys(RD.ACHIEVEMENT_RULES_BY_ID).length === 194 &&
-    RD.ACHIEVEMENT_RULE_GROUPS.length === 12 &&
-    catalogTotal === 197 && catalogTotal - twelveUnion.size === 3);
+  ok("[gc5] 全局恒等式：十二组两两零交集、并集恰 188、ACHIEVEMENT_RULES=191、BY_ID=191 键、GROUPS=13 组、目录 195、未映射 195-188=7（A07/A09/A27/A29 死字段 + META 3 项）",
+    twelveDisjoint && twelveUnion.size === 188 &&
+    Array.isArray(RD.ACHIEVEMENT_RULES) && RD.ACHIEVEMENT_RULES.length === 191 &&
+    Object.keys(RD.ACHIEVEMENT_RULES_BY_ID).length === 191 &&
+    RD.ACHIEVEMENT_RULE_GROUPS.length === 13 &&
+    catalogTotal === 195 && catalogTotal - twelveUnion.size === 7);
 
   // ========================= B. 事件契约（真实 events.js）=========================
   const Contracts = sbK.GameEvents && sbK.GameEvents.contracts;

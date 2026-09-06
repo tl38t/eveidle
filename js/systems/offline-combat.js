@@ -265,6 +265,11 @@
 
     while (true) {
       if (rounds >= MAX_WAVE_ROUNDS) { return { outcome: "cleared", rounds, kills }; }
+      // 与在线 advanceCombatRound 同口径：刷新/切页后若战斗舰已是 0 结构，
+      // 不能再让离线模拟先执行一轮玩家/NPC 开火，再把敌方血量继续扣掉。
+      if (c.hp && Number(c.hp.structure) <= 0) {
+        return { outcome: "defeated", rounds, kills };
+      }
       const dcReduction = computeDcReduction(state, zone, s);
       const fire = canFireVirtual(inputs, zone, s, state);
       if (fire) {
@@ -368,13 +373,22 @@
       let shieldHitsUsed = 0;
       let roundTaken = 0;
       let armorDamageTaken = 0;
-      for (const attacker of living()) {
+      const livingAttackers = living();
+      // 指挥舰光环：指挥舰在场时，其余敌舰伤害 ×auraDamage（与在线 combat.js 同口径，指挥舰自身不加成）。
+      const enemyAuraMult = livingAttackers.reduce((maxAura, e) => Math.max(maxAura, e.auraDamage || 1), 1);
+      const enemyEnrageMult = (e) => {
+        if (!e || !e.enrageMul || !e.maxHp || !e.hp) return 1;
+        const ratio = (e.hp.shield + e.hp.armor + e.hp.structure) / Math.max(1, e.maxHp.shield + e.maxHp.armor + e.maxHp.structure);
+        return ratio < (Number(e.enrageAt) || 0.3) ? e.enrageMul : 1;
+      };
+      for (const attacker of livingAttackers) {
         // M4 小队模式：D1 期望分摊——每个有效目标用自身防御/闪避/减伤算期望伤害后取 1/N。
         // 玩家与 NPC 的护盾/装甲/结构与减伤（含 NPC 自身 DCU 与资本舰特质）逐个独立计算，
         // 绝不用「统一伤害 ÷ N」。非小队模式完全走原路径（行为不变）。
         if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled === true) {
           if (!(Number(attacker.baseDamage) > 0)) continue;
-          const rawEnemyDamage = G("calcCombatDamage")(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, actualRng);
+          const atkMultSquad = (attacker.auraDamage ? 1 : enemyAuraMult) * enemyEnrageMult(attacker);
+          const rawEnemyDamage = G("calcCombatDamage")(attacker.hit, playerDodge, (attacker.baseDamage || 1) * atkMultSquad, 1.0, actualRng);
           const mitigation = G("applyCapitalShieldMitigation")(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
           if (mitigation.shieldHitUsed) shieldHitsUsed++;
           const enemyDmg = Math.max(0, Math.round(mitigation.damage));
@@ -401,7 +415,8 @@
           }
           continue;
         }
-        const raw = G("calcCombatDamage")(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, expectedRng);
+        const atkMultSolo = (attacker.auraDamage ? 1 : enemyAuraMult) * enemyEnrageMult(attacker);
+        const raw = G("calcCombatDamage")(attacker.hit, playerDodge, (attacker.baseDamage || 1) * atkMultSolo, 1.0, expectedRng);
         const mit = G("applyCapitalShieldMitigation")(ship, raw, shieldHitsUsed, c.hp.shield);
         if (mit.shieldHitUsed) shieldHitsUsed++;
         let enemyDmg = Math.max(0, Math.round(mit.damage));
@@ -450,6 +465,17 @@
       // 清波判定移至维修之后（2026-08-28 修复）：在线 advanceCombatRound 的顺序是
       // 玩家攻击→击杀结算→敌人反击→反应装甲→维修→清波生成新波，清波轮照常维修；
       // 离线旧逻辑在维修前提前 return，导致每波漏一轮维修，临界配装离线系统性更易爆船。
+      // 相位重构（与在线 combat.js 同口径）：每 bossHealEvery 轮回复 bossHealPct 最大总血。
+      for (const e of enemies) {
+        if (!e || e.kind !== "boss" || !e.bossHealPct || !e.hp || e.hp.structure <= 0) continue;
+        const every = Math.max(1, Number(e.bossHealEvery) || 5);
+        if ((rounds + 1) % every !== 0) continue;
+        if (!e.maxHp) continue;
+        const maxTotal = e.maxHp.shield + e.maxHp.armor + e.maxHp.structure;
+        let rem = maxTotal * e.bossHealPct;
+        const addL = (k) => { const cap = e.maxHp[k] - e.hp[k]; const add = Math.max(0, Math.min(cap, rem)); e.hp[k] += add; rem -= add; };
+        addL("shield"); addL("armor"); addL("structure");
+      }
       if (living().length === 0) {
         return { outcome: "cleared", rounds: rounds + 1, kills };
       }
@@ -549,7 +575,7 @@
       cargoClsMap[enemy.kind]++;
     }
     // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才记录；死亡空间不触发，与货柜一致）
-    if (!isDeathspace && state.combat.salvageArmActive && (typeof getSalvageEfficiency === "function" ? getSalvageEfficiency(state) : 0) > 0) {
+    if (!isDeathspace && state.combat.salvageArmActive && (typeof getSquadSalvageEfficiency === "function" ? getSquadSalvageEfficiency(state) : 0) > 0) {
       const isoCost = (typeof getSalvageComponentQty === "function") ? getSalvageComponentQty(enemy.kind) : 1; // 1/2/3
       if ((s.iso || 0) >= isoCost) {
         s.iso -= isoCost;
@@ -591,7 +617,9 @@
       const built = G("buildCombatWave")(zone, waveNum, rng, c);
       const enemies = built.enemies.map(e => ({
         id: e.id, type: e.type, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
-        dodge: e.dodge, baseDamage: e.baseDamage, kind: e.kind, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
+        dodge: e.dodge, baseDamage: e.baseDamage, auraDamage: e.auraDamage || 0, kind: e.kind,
+        bossHealPct: e.bossHealPct || 0, bossHealEvery: e.bossHealEvery || 5, enrageMul: e.enrageMul || 0, enrageAt: e.enrageAt || 0.3,
+        maxHp: e.maxHp ? { shield: e.maxHp.shield, armor: e.maxHp.armor, structure: e.maxHp.structure } : null, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
         level: e.level,
         deathspaceLeader: false, deathspaceWave: 0, _rewarded: false
       }));
@@ -636,6 +664,10 @@
       // 达标则停止离线模拟并终结队列项（受时间/资源约束，离线最多清到目标即停）。
       if (c.queueItemId && c.queueWavesTarget > 0) {
         c.queueWavesDone = (c.queueWavesDone || 0) + 1;
+        // 2026-09-05：同步扣减耐久队列项计数（与在线 resolveCombatWaveVictory 一致），
+        // 保证离线刷掉的波次在停止 / 插队后重启仍然保留，而不是回到入队原值。
+        const consumeWaves = G("consumeCombatQueueItemCount");
+        if (typeof consumeWaves === "function") consumeWaves(state, 1);
         if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat" && state.resumeAfterRepair.queueItemId === c.queueItemId) {
           state.resumeAfterRepair.queueWavesDone = c.queueWavesDone;
         }
@@ -689,7 +721,9 @@
         const built = G("buildDeathspaceWave")(site, 1, rng, c);
         const enemies = built.enemies.map(e => ({
           id: e.id, type: e.type, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
-          dodge: e.dodge, baseDamage: e.baseDamage, kind: e.kind, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
+          dodge: e.dodge, baseDamage: e.baseDamage, auraDamage: e.auraDamage || 0, kind: e.kind,
+        bossHealPct: e.bossHealPct || 0, bossHealEvery: e.bossHealEvery || 5, enrageMul: e.enrageMul || 0, enrageAt: e.enrageAt || 0.3,
+        maxHp: e.maxHp ? { shield: e.maxHp.shield, armor: e.maxHp.armor, structure: e.maxHp.structure } : null, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
           deathspaceLeader: Boolean(e.deathspaceLeader), deathspaceWave: e.deathspaceWave || 1, _rewarded: false
         }));
         RR.spend(state, "special:" + site.ticketMaterial, 1);
@@ -716,7 +750,9 @@
         const built = G("buildDeathspaceWave")(site, waveIdx, rng, c);
         const enemies = built.enemies.map(e => ({
           id: e.id, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
-          dodge: e.dodge, baseDamage: e.baseDamage, kind: e.kind, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
+          dodge: e.dodge, baseDamage: e.baseDamage, auraDamage: e.auraDamage || 0, kind: e.kind,
+        bossHealPct: e.bossHealPct || 0, bossHealEvery: e.bossHealEvery || 5, enrageMul: e.enrageMul || 0, enrageAt: e.enrageAt || 0.3,
+        maxHp: e.maxHp ? { shield: e.maxHp.shield, armor: e.maxHp.armor, structure: e.maxHp.structure } : null, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
           deathspaceLeader: Boolean(e.deathspaceLeader), deathspaceWave: waveIdx, _rewarded: false
         }));
         const res = simulateWave(state, enemies, zone, true, site, s, nowRef);
@@ -751,6 +787,9 @@
       // 达标则停止离线模拟并终结队列项；未达标则手动重入下一入场（消耗密钥），由 queueEntries 接管连刷计数。
       if (c.queueItemId && c.queueEntriesTarget > 0) {
         c.queueEntriesDone = (c.queueEntriesDone || 0) + 1;
+        // 2026-09-05：同步扣减耐久队列项计数（与在线死亡空间入场一致）。
+        const consumeEntries = G("consumeCombatQueueItemCount");
+        if (typeof consumeEntries === "function") consumeEntries(state, 1);
         if (state.resumeAfterRepair && state.resumeAfterRepair.type === "combat" && state.resumeAfterRepair.queueItemId === c.queueItemId) {
           state.resumeAfterRepair.queueEntriesDone = c.queueEntriesDone;
         }
@@ -1012,7 +1051,9 @@
       }
     }
     // 1.6) 空间站四核心（Tier3，唯一产出；死亡空间不计入，复用 elite/boss 计数）
+    // 隐藏保底：与在线同口径，出率随星带肃清次数爬升，PITY_MAX 次肃清时必出
     const obtainedCores = state.stationCoresObtained = state.stationCoresObtained || {};
+    const _pityFn = (typeof G === "function") ? G("getStationCorePityChance") : null;
     for (const zoneId in da.stationCore) {
       const zone = COMBAT_ZONES.find(z => z.id === zoneId);
       if (!zone) continue;
@@ -1021,7 +1062,9 @@
       const cc = da.stationCore[zoneId];
       for (const cfg of coreConfigs) {
         if (obtainedCores[cfg.coreId]) continue;
-        const n = (cc.elite ? batchCount(cc.elite, legionChance(cfg.eliteChance), rng) : 0) + (cc.boss ? batchCount(cc.boss, legionChance(cfg.bossChance), rng) : 0);
+        const pElite = _pityFn ? _pityFn(zone, legionChance(cfg.eliteChance), state) : legionChance(cfg.eliteChance);
+        const pBoss = _pityFn ? _pityFn(zone, legionChance(cfg.bossChance), state) : legionChance(cfg.bossChance);
+        const n = (cc.elite ? batchCount(cc.elite, pElite, rng) : 0) + (cc.boss ? batchCount(cc.boss, pBoss, rng) : 0);
         if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty); addResource(s, cfg.resourceId, cfg.qty); obtainedCores[cfg.coreId] = true; break; }
       }
     }
@@ -1038,7 +1081,7 @@
           const n = kindCounts[kind] || 0;
           if (!n) continue;
           // 同位素标记打捞臂：被动提升货柜掉率（与在线 rollCargoDrop 同公式 min(base*(1+b),0.5)）
-          const salvageBonus = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+          const salvageBonus = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
           const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
           const chance = Math.min(baseChance * (1 + salvageBonus), 0.5);
           const drops = batchCount(n, chance, rng);
@@ -1060,7 +1103,7 @@
       if (n > 0) { RR.add(state, pv.resourceId, pv.qty * n); addResource(s, pv.resourceId, pv.qty * n); }
     }
     // 1.8) 同位素标记打捞臂：主动打捞舰船组件（按敌舰等级档位，确定性重滚；同位素消耗已在 recordKill 按会话虚拟余额门控）
-    const salvageBonus2 = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+    const salvageBonus2 = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
     const sb = s.salvageByTier;
     if (sb) {
       for (const tier in sb) {
@@ -1085,7 +1128,7 @@
     // 1.82) 激光定向打捞单元（MTU）独立产出舰船组件（确定性重滚；不消耗同位素；flush 时仍按当前 getSalvageEfficiency 含 MTU 2.10 放大）
     const mb = s.mtuSalvageByTier;
     if (mb) {
-      const mtuSalvageBonus = (typeof getSalvageEfficiency === "function") ? getSalvageEfficiency(state) : 0;
+      const mtuSalvageBonus = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
       for (const tier in mb) {
         const ids = (typeof SALVAGE_COMPONENT_IDS !== "undefined" && SALVAGE_COMPONENT_IDS[tier]) || null;
         if (!ids) continue;
@@ -1112,7 +1155,7 @@
       addResource(s, "planetary:同位素", -isoUsed);
     }
     // 打捞臂燃料消耗（装备即收，按总击毁数；开主动×3）；与同位素同机制 flush。
-    const salvageFuelPK = (typeof getSalvageFuelPerKill === "function") ? getSalvageFuelPerKill(state) : 0;
+    const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
     if (salvageFuelPK > 0 && (s.kills || 0) > 0) {
       const fuelAmt = salvageFuelPK * s.kills * (state.combat && state.combat.salvageArmActive ? 3 : 1);
       if (fuelAmt > 0) { RR.spend(state, "consumable:fuel", fuelAmt); addResource(s, "consumable:fuel", -fuelAmt); }

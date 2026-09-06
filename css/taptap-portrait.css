@@ -348,6 +348,7 @@
   .equip-select-panel .equip-current.is-empty .ec-main{ color:#6b7c8f; }
   .equip-select-panel .eq-up{ color:#5cb85c; }
   .equip-select-panel .eq-down{ color:#e8645a; }
+  .equip-select-panel .eq-sep{ color:#5a6a7a; margin:0 2px; }
 
   /* 病根：生产 .equip-select-panel 默认 max-width:220px，手机上内容区仅 ~188px，
      扣掉 28px 图标 + 10px gap 后名称只剩 ~150px，长装备名必然被截断。
@@ -480,8 +481,8 @@
 
   /* 装备弹窗移动端专用响应式（仅在 ≤820px）：全屏工作区，无大片空白 */
   .equip-modal-overlay{ z-index:10000; background:rgba(4,8,14,.92); }
-  .equip-ship-modal{ width:100%; max-width:none; height:100%; max-height:100%; border-radius:0; padding:0; display:flex; flex-direction:column; overflow:hidden; -webkit-overflow-scrolling:touch; background:#0c1622; }
-  .equip-modal-close{ top:0; right:0; width:44px; height:44px; line-height:44px; font-size:26px; z-index:9; color:#cfe; background:rgba(0,0,0,.25); }
+  .equip-ship-modal{ width:100%; max-width:none; height:100%; max-height:100%; border-radius:0; padding:0; padding-top:env(safe-area-inset-top); display:flex; flex-direction:column; overflow:hidden; -webkit-overflow-scrolling:touch; background:#0c1622; box-sizing:border-box; }
+  .equip-modal-close{ top:env(safe-area-inset-top); right:0; width:44px; height:44px; line-height:44px; font-size:26px; z-index:9; color:#cfe; background:rgba(0,0,0,.25); }
   .equip-ship-modal .modal-title{ flex:0 0 auto; position:sticky; top:0; padding:14px 52px 12px 16px; background:#0c1622; z-index:8; border-bottom:1px solid #16222f; font-size:16px; }
   .equip-ship-modal .modal-sub{ flex:0 0 auto; position:static; padding:4px 16px 10px; background:#0c1622; z-index:8; color:#8aa0b4; font-size:12px; margin-top:0; border-bottom:1px solid #16222f; }
   .orbit-wrapper{ position:relative; width:min(320px,86vw); max-width:none; aspect-ratio:1/1; margin:14px auto 6px; flex:0 0 auto; }

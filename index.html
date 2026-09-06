@@ -7,11 +7,11 @@
 <title>深空放置：边疆纪元</title>
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=14">
-  <link rel="stylesheet" href="./css/panels.css?v=48">
+<link rel="stylesheet" href="./css/base.css?v=15">
+  <link rel="stylesheet" href="./css/panels.css?v=55">
   <link rel="stylesheet" href="./css/combat.css?v=20">
-<link rel="stylesheet" href="./css/components.css?v=33">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=23">
+<link rel="stylesheet" href="./css/components.css?v=37">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=24">
 <style id="starmap-collection-room-style">
 .starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
 </style>
@@ -595,9 +595,6 @@
           <button class="btn primary" id="btn-start-queue">▶ 开始队列</button>
           <button class="btn" id="btn-stop-queue">⏹ 停止</button>
           <button class="btn" id="btn-clear-queue">🗑 清空</button>
-          <label style="display:flex; align-items:center; gap:4px; font-size:12px; color:#8899aa; margin-left:auto;">
-            <input type="checkbox" id="queue-loop-check"> 循环
-          </label>
         </div>
         <div id="queue-list" style="max-height:400px; overflow-y:auto;">
           <div style="text-align:center; color:#4a5a6a; padding:20px; font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>
@@ -1132,10 +1129,11 @@
         <span class="text-muted">军团远征网络</span>
       </div>
       <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=5" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=38" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
         <section id="legion-starmap-trial-room" class="starmap-trial-room" hidden>
           <div class="starmap-trial-room-head"><div><h3 id="starmap-trial-title">星图试炼房间</h3><p id="starmap-trial-subtitle"></p></div><button type="button" class="btn secondary" id="starmap-trial-back">返回星图</button></div>
           <div class="starmap-trial-countdown" id="starmap-trial-countdown">剩余时间：180s</div>
+          <div id="starmap-battle-arena-slot" class="starmap-battle-arena-slot" hidden></div>
           <div id="starmap-collection-room" class="starmap-collection-room" hidden>
             <div class="starmap-collection-stage">
               <div class="starmap-collection-ship"><canvas id="starmap-trial-ship-3d" class="ship3d-canvas" aria-label="Industrial ship"></canvas><span id="starmap-trial-ship-label" class="starmap-collection-label"></span></div>
@@ -1144,6 +1142,41 @@
             </div>
             <div class="starmap-collection-counter"><strong id="starmap-trial-remaining">100 / 100</strong><span id="starmap-trial-counter-label">待采集</span><span id="starmap-trial-efficiency" class="starmap-trial-efficiency">采集效率：—</span></div>
             <div class="starmap-collection-progress"><canvas id="starmap-trial-mining-bar" class="skill-canvas-bar" width="560" height="24"></canvas><span id="starmap-trial-mining-eta" class="mp-eta"></span></div>
+          </div>
+          <div id="starmap-production-room" class="starmap-production-room" hidden>
+            <div class="starmap-production-kicker"><i class="fa-solid fa-fire-flame-curved"></i><span>生产节点认证</span></div>
+            <h4 id="starmap-production-heading">冶炼物资交付</h4>
+            <p class="starmap-production-intro">从真实仓库提交指定生产成品。库存充足时一次性交付并立即完成节点试炼。</p>
+            <div id="starmap-production-requirements" class="starmap-production-requirements"></div>
+            <button type="button" class="btn primary starmap-production-submit" id="starmap-production-submit">提交物资并完成试炼</button>
+            <div id="starmap-production-reward" class="starmap-production-reward">
+              <div class="starmap-production-reward-head"><span><i class="fa-solid fa-clock-rotate-left"></i> 节点驻留奖励</span><strong id="starmap-production-reward-daily">—</strong></div>
+              <div id="starmap-production-reward-current" class="starmap-production-reward-current">完成节点后开始累计，奖励需要手动收取。</div>
+              <div class="text-muted">采集、生产、考古的驻留奖励统一在星图侧栏“星图驻留奖励总览”中提取。</div>
+            </div>
+          </div>
+          <div id="starmap-archaeology-room" class="starmap-archaeology-room" hidden>
+            <div class="starmap-archaeology-stage">
+              <div class="starmap-archaeology-ship-card">
+                <canvas id="starmap-archaeology-ship-3d" class="ship3d-canvas" aria-label="Archaeology ship"></canvas>
+                <span id="starmap-archaeology-ship-label" class="starmap-archaeology-ship-label">未指派考古舰</span>
+                <div class="starmap-archaeology-hp" id="starmap-archaeology-hp"></div>
+              </div>
+              <div class="starmap-archaeology-console">
+                <div class="starmap-scan-visual" id="starmap-scan-visual"><i></i><i></i><i></i><span><i class="fa-solid fa-satellite-dish"></i></span></div>
+                <div class="starmap-archaeology-progress-copy"><strong id="starmap-archaeology-progress-value">0 / 14</strong><span id="starmap-archaeology-status">等待扫描</span></div>
+                <div class="starmap-archaeology-progress-track"><div id="starmap-archaeology-progress-fill"></div></div>
+                <div class="starmap-archaeology-cycle-copy"><span>本次扫描</span><strong id="starmap-archaeology-cycle-progress-text">等待开始</strong></div>
+                <div class="starmap-archaeology-cycle-track"><div id="starmap-archaeology-cycle-progress-fill"></div></div>
+                <div class="starmap-archaeology-stats">
+                  <div><span>扫描强度</span><strong id="starmap-archaeology-scan">—</strong></div>
+                  <div><span>成功率</span><strong id="starmap-archaeology-chance">—</strong></div>
+                  <div><span>扫描周期</span><strong id="starmap-archaeology-cycle">—</strong></div>
+                  <div><label for="starmap-archaeology-probe">选择探针</label><select id="starmap-archaeology-probe" aria-label="选择探针"></select></div>
+                </div>
+              </div>
+            </div>
+            <div id="starmap-archaeology-log" class="starmap-archaeology-log"><span>扫描记录将在试炼开始后显示。</span></div>
           </div>
           <div class="starmap-trial-room-actions"><button type="button" class="btn primary" id="starmap-trial-start">开始试炼</button><button type="button" class="btn danger" id="starmap-trial-stop" hidden>停止试炼</button><label class="starmap-trial-replay-toggle"><input type="checkbox" id="starmap-trial-replay-toggle"> 测试：允许重复挑战</label></div>
           <div id="starmap-trial-result" class="text-muted"></div>
@@ -1353,7 +1386,10 @@
     <div class="orbit-wrapper" id="equipOrbitWrapper">
       <svg viewBox="0 0 500 500" id="equipOrbitSvg"></svg>
       <div class="equip-select-panel" id="equipSelectPanel">
-        <div class="esp-title" id="equipSelectTitle">高槽 · 选择装备</div>
+        <div class="esp-title-row">
+          <span class="esp-title" id="equipSelectTitle">高槽 · 选择装备</span>
+          <button class="esp-close" id="equipSelectClose" aria-label="返回">✕</button>
+        </div>
         <div id="equipSelectOptions"></div>
       </div>
     </div>
@@ -1442,7 +1478,7 @@
   <script defer src="./js/data/boosters.js?v=10"></script>
   <script defer src="./js/systems/boosters.js?v=7"></script>
   <script defer src="./js/systems/recycling.js?v=3"></script>
-  <script defer src="./js/data/combat.js?v=12"></script>
+  <script defer src="./js/data/combat.js?v=31"></script>
   <script defer src="./js/data/cargo.js?v=8"></script>
   <script defer src="./js/data/implants.js?v=5"></script>
   <script defer src="./js/data/equipment.js?v=29"></script>
@@ -1451,18 +1487,18 @@
   <script defer src="./js/data/archaeology.js?v=5"></script>
   <script defer src="./js/data/research.js?v=6"></script>
   <script defer src="./js/core/research-state.js?v=3"></script>
-  <script defer src="./js/data/achievements.js?v=5"></script>
-  <script defer src="./js/data/achievement-rules.js?v=5"></script>
+  <script defer src="./js/data/achievements.js?v=7"></script>
+  <script defer src="./js/data/achievement-rules.js?v=6"></script>
   <script defer src="./js/data/tutorial.js?v=5"></script>
   <script defer src="./js/data/changelog.js?v=1"></script>
   <script defer src="./js/core/tutorial-state.js?v=3"></script>
   <script defer src="./js/core/achievement-state.js?v=2"></script>
-  <script defer src="./js/core/state.js?v=8"></script>
+  <script defer src="./js/core/state.js?v=11"></script>
   <script defer src="./js/core/blueprint-runs.js?v=1"></script>
   <script defer src="./js/systems/research.js?v=4"></script>
   <script defer src="./js/core/statistics.js?v=3"></script>
   <script defer src="./js/systems/achievements.js?v=3"></script>
-  <script defer src="./js/systems/production.js?v=11"></script>
+  <script defer src="./js/systems/production.js?v=12"></script>
   <script defer src="./js/core/resources.js?v=4"></script>
   <script defer src="./js/systems/tutorial.js?v=7"></script>
   <script defer src="./js/systems/manufacturing.js?v=5"></script>
@@ -1470,32 +1506,32 @@
   <script defer src="./js/systems/ship-enhancement.js?v=5"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=2"></script>
   <script defer src="./js/systems/rigs.js?v=4"></script>
-  <script defer src="./js/systems/archaeology.js?v=13"></script>
-  <script defer src="./js/systems/planetary.js?v=2"></script>
-  <script defer src="./js/systems/station.js?v=16"></script>
+  <script defer src="./js/systems/archaeology.js?v=19"></script>
+  <script defer src="./js/systems/planetary.js?v=3"></script>
+  <script defer src="./js/systems/station.js?v=17"></script>
   <script defer src="./js/data/legion/npc-names.js?v=1"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
   <script defer src="./js/systems/legion-npc.js?v=10"></script>
-  <script defer src="./js/systems/legion-combat-squad.js?v=11"></script>
+  <script defer src="./js/systems/legion-combat-squad.js?v=12"></script>
   <script defer src="./js/ui/action-modal.js?v=10"></script>
-  <script defer src="./js/core/queue.js?v=3"></script>
+  <script defer src="./js/core/queue.js?v=4"></script>
   <script defer src="./js/systems/capital-combat.js?v=3"></script>
-  <script defer src="./js/systems/combat.js?v=18"></script>
+  <script defer src="./js/systems/combat.js?v=24"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=70"></script>
-  <script defer src="./js/core/actions.js?v=30"></script>
-  <script defer src="./js/systems/legion-starmap-trial.js?v=9"></script>
+  <script defer src="./js/core/selectors.js?v=75"></script>
+  <script defer src="./js/core/actions.js?v=36"></script>
+  <script defer src="./js/systems/legion-starmap-trial.js?v=31"></script>
   <script defer src="./js/systems/research-protocols.js?v=5"></script>
-  <script defer src="./js/core/diagnostics.js?v=1"></script>
-  <script defer src="./js/ui/shell-render.js?v=82"></script>
+  <script defer src="./js/core/diagnostics.js?v=2"></script>
+  <script defer src="./js/ui/shell-render.js?v=106"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
-  <script defer src="./js/ui/combat-render.js?v=49"></script>
+   <script defer src="./js/ui/combat-render.js?v=53"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
   <script defer src="./js/ui/archaeology-render.js?v=12"></script>
   <script defer src="./js/ui/booster-render.js?v=13"></script>
-  <script defer src="./js/ui/station-render.js?v=11"></script>
+  <script defer src="./js/ui/station-render.js?v=12"></script>
   <script defer src="./js/ui/legion-render.js?v=19"></script>
   <script defer src="./js/ui/legion-events.js?v=14"></script>
    <script defer src="./js/platform/alliance-api.js?v=3"></script>
@@ -1503,9 +1539,9 @@
    <script defer src="./js/data/alliance-task-model.js?v=2"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=2"></script>
    <script defer src="./js/ui/alliance-render.js?v=9"></script>
-  <script defer src="./js/core/tick.js?v=13"></script>
-  <script defer src="./js/core/offline.js?v=15"></script>
-  <script defer src="./js/systems/offline-combat.js?v=11"></script>
+  <script defer src="./js/core/tick.js?v=15"></script>
+  <script defer src="./js/core/offline.js?v=19"></script>
+  <script defer src="./js/systems/offline-combat.js?v=16"></script>
   <script defer src="./js/systems/combat-log.js?v=4"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=2"></script>
@@ -1525,22 +1561,23 @@
   <script defer src="./js/platform/providers/taptap-ad-provider.js?v=4"></script>
   <script defer src="./js/platform/providers/steam-leaderboard-provider.js?v=1"></script>
   <script defer src="./js/platform/taptap/taptap-cloud-provider.js?v=2"></script>
-  <script defer src="./js/platform/taptap/taptap-achievement-provider.js?v=2"></script>
+   <script defer src="./js/platform/taptap/taptap-achievement-provider.js?v=3"></script>
+   <script defer src="./js/platform/steam/steam-achievement-provider.js?v=1"></script>
   <script defer src="./js/platform/taptap/taptap-local-mirror-provider.js?v=7"></script>
   <script defer src="./js/platform/platform-runtime.js?v=3"></script>
-  <script defer src="./js/core/cloud-save-service.js?v=2"></script>
+  <script defer src="./js/core/cloud-save-service.js?v=3"></script>
   <script defer src="./js/core/local-mirror-service.js?v=2"></script>
-  <script defer src="./js/data/platform-achievement-map.js?v=2"></script>
-  <script defer src="./js/core/achievement-sync-service.js?v=2"></script>
+   <script defer src="./js/data/platform-achievement-map.js?v=3"></script>
+   <script defer src="./js/core/achievement-sync-service.js?v=3"></script>
   <script defer src="./js/core/leaderboard-sync-service.js?v=1"></script>
   <script defer src="./js/core/ad-service.js?v=4"></script>
   <script defer src="./js/systems/ad-buff.js?v=3"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=18"></script>
-  <script defer src="./js/core/persistence.js?v=16"></script>
+  <script defer src="./js/core/persistence.js?v=21"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
-<script defer src="./js/ui/render.js?v=18"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=20"></script>
+<script defer src="./js/ui/render.js?v=20"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=21"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">

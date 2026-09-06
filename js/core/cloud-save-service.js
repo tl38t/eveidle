@@ -169,9 +169,21 @@
   CloudSaveService.prototype.fetchCloudEnvelope = function () {
     const self = this;
     if (!this._available || !this.provider) return Promise.resolve({ status: "none" });
-    return this._executeWithRetry(function () {
+    // P0-7：部分 H5 容器（尤其 TapTap 小游戏）在弱网/后台恢复时，云 SDK 的 getArchiveList /
+    // getArchiveData 可能既不 success 也不 fail，导致启动链路永久挂起。此处加整体硬超时，
+    // 超时即视为查询失败，由 persistence 降级为本地存档并继续离线结算，避免玩家一直转圈。
+    const CLOUD_FETCH_TIMEOUT_MS = 15000;
+    const timeoutRace = function (promise, label) {
+      return Promise.race([
+        promise,
+        new Promise(function (_, reject) {
+          setTimeout(function () { reject(new Error(label + " 超时未响应（" + CLOUD_FETCH_TIMEOUT_MS + "ms）")); }, CLOUD_FETCH_TIMEOUT_MS);
+        })
+      ]);
+    };
+    return timeoutRace(this._executeWithRetry(function () {
       return Promise.resolve(self.provider.listArchives());
-    }, "listArchives").then(function (archives) {
+    }, "listArchives"), "listArchives").then(function (archives) {
       const list = Array.isArray(archives) ? archives : [];
       const meta = list.filter(function (a) { return a && a.slotName === self.slotName; })[0] || null;
       if (!meta) {
@@ -182,9 +194,9 @@
       }
       self._cloudArchiveMeta = meta;
       if (typeof meta.revision === "number") self._cloudRevision = meta.revision;
-      return self._executeWithRetry(function () {
+      return timeoutRace(self._executeWithRetry(function () {
         return Promise.resolve(self.provider.downloadArchive(meta));
-      }, "downloadArchive").then(function (envelope) {
+      }, "downloadArchive"), "downloadArchive").then(function (envelope) {
         let parsed = null;
         try {
           parsed = (typeof envelope === "string") ? Envelope.decode(envelope) : Envelope.verify(envelope);

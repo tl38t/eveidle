@@ -132,6 +132,23 @@ function advancePlanetDeploymentTimeline(state, deployment, fromTime, toTime, co
   return { cycles, renewals, renewedISK, expired, collected };
 }
 
+// 研究批次 I · planauto 补续期通道。
+// 背景：在线 planetaryTick 与离线 settleOfflinePlanets 对 active=false 的 deployment 一律跳过，
+// 续期逻辑仅在 advancePlanetDeploymentTimeline 内「跨越到期时刻」那一击触发。一旦该击因瞬时条件
+// 不满足（如星币那一刻偏低）或 tick 粒度错过边界而失败，deployment.active 被置 false，
+// 此后不再被任何 tick/结算触达——即便随后条件已满足（星币充足、开关开、储备达标）也永不再续。
+// 本函数对已过期但仍开启自动续期的 deployment 直接尝试续费（走 tryPlanetAutoRenew → renew，
+// 不重放产出、不依赖旧 lastTick、不改动 storage），成功返回 true 供调用方继续结算。
+function tryRenewExpiredDeployment(state, deployment, atMs, offline) {
+  if (!deployment || typeof deployment !== "object" || deployment.active) return false;
+  const auto = (deployment.autoRenew && typeof deployment.autoRenew === "object" && !Array.isArray(deployment.autoRenew))
+    ? deployment.autoRenew : null;
+  if (!auto || auto.enabled !== true) return false;
+  if (typeof tryPlanetAutoRenew !== "function") return false;
+  const res = tryPlanetAutoRenew(state, deployment, atMs, { offline: Boolean(offline) });
+  return !!(res && res.renewed);
+}
+
 function planetaryTick(tickNow) {
   const deployments = gameState.planetary && Array.isArray(gameState.planetary.deployments) ? gameState.planetary.deployments : [];
   if (!deployments.length) return false;
@@ -139,16 +156,31 @@ function planetaryTick(tickNow) {
   let changed = false;
 
   for (const deployment of deployments) {
-    if (!deployment.active) continue; // 已到期：跳过，且不重复触发 expired
-    const res = advancePlanetDeploymentTimeline(gameState, deployment, deployment.lastTick, now, {
-      offline:false,
-      emit:(type, payload, eventMeta) => GameEvents.emit(type, payload, { offline:false, ...(eventMeta && typeof eventMeta === "object" ? eventMeta : {}) }),
-      // 行星管控中心 Lv.1+：自动收取（装满即收，移入库存并清零本地仓储，不自动续期）
-      collect:(dep, storageMax) => (typeof applyStationAutoCollect === "function")
-        ? applyStationAutoCollect(gameState, dep, storageMax, false) : 0
-    });
-    if (res.cycles > 0) gameState.skills.planetaryIndustry.xp += res.cycles;
-    if (res.cycles > 0 || res.renewals > 0 || res.expired || res.collected > 0) changed = true;
+    let res;
+    if (deployment.active) {
+      res = advancePlanetDeploymentTimeline(gameState, deployment, deployment.lastTick, now, {
+        offline:false,
+        emit:(type, payload, eventMeta) => GameEvents.emit(type, payload, { offline:false, ...(eventMeta && typeof eventMeta === "object" ? eventMeta : {}) }),
+        // 行星管控中心 Lv.1+：自动收取（装满即收，移入库存并清零本地仓储，不自动续期）
+        collect:(dep, storageMax) => (typeof applyStationAutoCollect === "function")
+          ? applyStationAutoCollect(gameState, dep, storageMax, false) : 0
+      });
+    } else {
+      // 研究批次 I · planauto 补续期：已过期但仍开启自动续期的基地，在线 tick 时直接补续费
+      // （修复一次性失败不重试导致永久停摆的设计缺陷）。续期成功后续算时间轴。
+      if (tryRenewExpiredDeployment(gameState, deployment, now, false)) {
+        res = advancePlanetDeploymentTimeline(gameState, deployment, deployment.lastTick, now, {
+          offline:false,
+          emit:(type, payload, eventMeta) => GameEvents.emit(type, payload, { offline:false, ...(eventMeta && typeof eventMeta === "object" ? eventMeta : {}) }),
+          collect:(dep, storageMax) => (typeof applyStationAutoCollect === "function")
+            ? applyStationAutoCollect(gameState, dep, storageMax, false) : 0
+        });
+      }
+    }
+    if (res) {
+      if (res.cycles > 0) gameState.skills.planetaryIndustry.xp += res.cycles;
+      if (res.cycles > 0 || res.renewals > 0 || res.expired || res.collected > 0) changed = true;
+    }
   }
   if (changed) {
     gameState._dirty = true;

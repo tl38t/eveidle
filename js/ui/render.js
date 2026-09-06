@@ -88,6 +88,23 @@ function setProductionControls(display, startButton) {
   if (switchBtn) switchBtn.style.display = display.showStop ? "" : "none";
 }
 
+// 2026-09-05：冶炼子面板「视图」与「运行子模式」解耦后，控制按钮必须同时看两者，
+// 否则会出现「回收跑着、切到冶炼面板却连停止按钮都消失」的问题：
+//   showStart / isSwitch —— 当前【查看】的子模式不是正在【跑】的那个 → 可启动，或切换过去
+//   showStop             —— 精炼行动正在运行 → 不论查看哪个面板，都要能停当前作业
+// 这样回收运行中切到冶炼 tab 只查看、不中断；要真正换跑哪个，须点「切换到X」。
+function refiningControls(display, viewSubmode) {
+  const action = gameState.currentAction;
+  const isRefiningRunning = Boolean(action && action.active && action.skill === "refining");
+  const isRunningThis = isRefiningRunning && ((action.refiningSubAction || "smelting") === viewSubmode);
+  const canStart = Boolean(display && display.canStart);
+  if (isRunningThis) {
+    // 查看的就是正在跑的子模式：沿用原逻辑（含「改了目标需重启」的 targetChanged）
+    return { showStart:Boolean(display.showStart), showStop:Boolean(display.showStop), canStart, isSwitch:false };
+  }
+  return { showStart:true, showStop:isRefiningRunning, canStart, isSwitch:isRefiningRunning };
+}
+
 function renderMiningDisplay(display, areaEl, outEl) {
   if (areaEl) areaEl.textContent = "目标矿带：" + display.current.displayName;
   if (outEl) outEl.textContent = "经验奖励：" + display.current.baseXP + " / 次";
@@ -189,26 +206,28 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   if (cycleTimes) cycleTimes.textContent = display.current.baseTime.toFixed(1) + "s → " + display.actualTime.toFixed(1) + "s";
   const outputNote = document.getElementById("smelting-output-note"); if (outputNote) outputNote.textContent = "支援舰只缩短冶炼周期，单次仍产出 " + display.output;
   const smeltBtn = document.getElementById("btn-start-smelt");
-  if (smeltBtn) smeltBtn.textContent = "▶ 开始冶炼";
-  setProductionControls(display, smeltBtn);
+  const smeltCtl = refiningControls(display, "smelting");
+  if (smeltBtn) smeltBtn.textContent = smeltCtl.isSwitch ? "▶ 切换到冶炼" : "▶ 开始冶炼";
+  setProductionControls(smeltCtl, smeltBtn);
   drawSkillBar(document.getElementById("bar-smelting"), display.progress.percent, "gold");
   const eta = document.getElementById("smelting-eta"); if (eta) eta.textContent = display.progress.etaText;
 }
 
 // 熔炼行动下的子视图分发（2026-09-04 新增自动拆解子活动）：
-// 根据 currentAction.refiningSubAction 在「冶炼」与「自动拆解」间切换，
+// 2026-09-05 起按 currentAction.refiningView（视图态）在「冶炼」与「自动拆解」间切换，
+// 与 refiningSubAction（运行态）解耦：运行中切 tab 只换查看的面板，不中断 / 不重置作业。
 // 并管理两者 DOM（子模式 tab、冶炼选区/状态、自动拆解区）的显隐，避免进度串台。
 function renderRefiningDisplay(renderTime, areaEl, outEl) {
-  const submode = (gameState.currentAction && gameState.currentAction.refiningSubAction) || "smelting";
+  const view = (gameState.currentAction && gameState.currentAction.refiningView === "dismantle") ? "dismantle" : "smelting";
   const tabs = document.getElementById("refining-submode-tabs");
   if (tabs) {
     tabs.style.display = "";
-    tabs.querySelectorAll(".refining-submode-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.submode === submode));
+    tabs.querySelectorAll(".refining-submode-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.submode === view));
   }
   const smeltSelect = document.getElementById("smelting-area-select");
   const smeltStats = document.getElementById("smelting-stats");
   const dStats = document.getElementById("auto-dismantle-stats");
-  if (submode === "dismantle") {
+  if (view === "dismantle") {
     if (smeltSelect) smeltSelect.style.display = "none";
     if (smeltStats) smeltStats.style.display = "none";
     if (dStats) dStats.style.display = "block";
@@ -228,7 +247,7 @@ function renderDismantleDisplay(display, areaEl, outEl) {
   if (strip) {
     strip.innerHTML = display.options.map(r => `<button class="mining-target-card${r.selected ? " selected" : ""}${r.locked ? " locked" : ""}" data-dismantle="${r.id}" style="--ore-color:#8fd6a0" ${r.locked ? "disabled" : ""}>
       <span class="mining-target-name">${r.name}</span><span class="mining-target-visual"><i class="fa-solid fa-recycle"></i></span>
-      <span class="mining-target-meta">Lv.${r.level} · ${r.baseTime}s · 舰船+${r.shipXp}/冶炼+${r.smeltXp}</span>
+      <span class="mining-target-meta">Lv.${r.level} · ${(r.baseTime / (display.efficiency || 1)).toFixed(1)}s · 舰船+${r.shipXp}/冶炼+${r.smeltXp}</span>
       <span class="mining-target-state">${r.locked ? `需要 Lv.${r.level}` : (r.stock > 0 ? "库存 ×" + r.stock : "无库存")}</span></button>`).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchDismantleComponent(card.dataset.dismantle)));
   }
@@ -242,8 +261,9 @@ function renderDismantleDisplay(display, areaEl, outEl) {
   const xpRef = document.getElementById("ad-xp-refining"); if (xpRef) xpRef.textContent = "+" + display.xp.refining;
   const cycle = document.getElementById("ad-cycle"); if (cycle) cycle.textContent = display.actualTime.toFixed(1) + "s";
   const btn = document.getElementById("btn-start-smelt");
-  if (btn) btn.textContent = "▶ 开始自动拆解";
-  setProductionControls(display, btn);
+  const dCtl = refiningControls(display, "dismantle");
+  if (btn) btn.textContent = dCtl.isSwitch ? "▶ 切换到自动拆解" : "▶ 开始自动拆解";
+  setProductionControls(dCtl, btn);
   drawSkillBar(document.getElementById("bar-auto-dismantle"), display.progress.percent, "gold");
   const eta = document.getElementById("auto-dismantle-eta"); if (eta) eta.textContent = display.progress.etaText;
 }
@@ -402,8 +422,10 @@ function switchDismantleComponent(componentId) {
   return result;
 }
 
-function switchRefiningSubmode(submode) {
-  const result = dispatchGameAction(gameState, { type:"production/selectRefiningSubmode", submode }, Date.now());
+// 2026-09-05：tab 只切换【视图】，永不中断 / 重置正在跑的作业（月矿式体验）。
+// 真正换「运行哪个子模式」走 switchRefiningRunMode（点「切换到X」按钮）。
+function switchRefiningView(view) {
+  const result = dispatchGameAction(gameState, { type:"production/selectRefiningView", submode:view }, Date.now());
   if (result.changed) updateUI();
   return result;
 }
@@ -571,7 +593,7 @@ function refreshVisiblePanelAfterAction() {
 (function bindButtons() {
   const stopBtn = document.getElementById("btn-stop"); const switchBtn = document.getElementById("btn-switch-skill");
   const startSmeltBtn = document.getElementById("btn-start-smelt"); const startMineBtn = document.getElementById("btn-start-mine"); const startGasBtn = document.getElementById("btn-start-gas");
-  document.querySelectorAll(".refining-submode-tab").forEach(tab => tab.addEventListener("click", () => switchRefiningSubmode(tab.dataset.submode)));
+  document.querySelectorAll(".refining-submode-tab").forEach(tab => tab.addEventListener("click", () => switchRefiningView(tab.dataset.submode)));
   if (stopBtn) stopBtn.addEventListener("click", () => {
     const result = dispatchGameAction(gameState, { type:"action/stop" }, Date.now());
     if (result.changed) GameEvents.emit("action:progressReset", { skill:result.skill, shipSubAction:result.shipSubAction });
@@ -579,7 +601,19 @@ function refreshVisiblePanelAfterAction() {
   });
   if (switchBtn) switchBtn.addEventListener("click", () => { const order = ["mining","refining","gasHarvesting"]; const idx = order.indexOf(gameState.currentAction.skill); const next = order[(idx + 1) % 3]; switchSkill(next); });
   if (startMineBtn) startMineBtn.addEventListener("click", () => showActionConfirm("mining"));
-  if (startSmeltBtn) startSmeltBtn.addEventListener("click", () => showActionConfirm("refining"));
+  if (startSmeltBtn) startSmeltBtn.addEventListener("click", () => {
+    // 精炼运行中点「切换到X」：显式切换运行子模式（两条 tick 循环算法不同、共用累加器，
+    // 故重置进度后直接按新子模式继续跑，保持 active），不弹启动确认框。
+    const act = gameState.currentAction;
+    const running = Boolean(act && act.active && act.skill === "refining");
+    const view = (act && act.refiningView === "dismantle") ? "dismantle" : "smelting";
+    if (running && (act.refiningSubAction || "smelting") !== view) {
+      dispatchGameAction(gameState, { type:"production/switchRefiningRunMode", submode:view }, Date.now());
+      updateUI();
+      return;
+    }
+    showActionConfirm("refining");
+  });
   if (startGasBtn) startGasBtn.addEventListener("click", () => showActionConfirm("gasHarvesting"));
   const startShipCompBtn = document.getElementById("btn-start-shipcomp"); const startShipAsmBtn = document.getElementById("btn-start-shipasm");
   if (startShipCompBtn) startShipCompBtn.addEventListener("click", showShipCompConfirm);

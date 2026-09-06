@@ -1940,7 +1940,7 @@ function getInstalledCombatModulesFromState(state, options) {
 // 同位素标记打捞臂：汇总已装备打捞臂的 salvageEfficiency 总和（被动放大器，装备即生效，与开关无关）。
 // 默认读取出战战斗舰；考古等其它岗位可传入对应舰船实例（该实例直接含 .fitting）。
 // 主动打捞（消耗同位素 + 打捞舰船组件）由 combat.js 在 state.combat.salvageArmActive 开启时触发。
-function getSalvageEfficiency(state, shipInstance) {
+function getSalvageEfficiency(state, shipInstance, options) {
   if (!state) return 0;
   const ship = shipInstance || getActiveCombatShipState(state);
   if (!ship) return 0;
@@ -1957,7 +1957,8 @@ function getSalvageEfficiency(state, shipInstance) {
   }
   // 激光定向打捞单元（MTU）：部署即平加 salvageEfficiency（无强化等级、不乘装备 multiplier）。
   // 仅 active（燃料充足）时计入；断料回基准（货柜/组件掉率不再放大）。getMtuModifiers 内部已判燃料。
-  const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+  const includeMtu = !options || options.includeMtu !== false;
+  const mtu = includeMtu && (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
   if (mtu && mtu.active) total += mtu.salvage;
   return total;
 }
@@ -1984,7 +1985,42 @@ function getSalvageFuelPerKill(state, shipInstance) {
 }
 
 function hasSalvageArmEquipped(state) {
-  return getSalvageEfficiency(state) > 0;
+  return getSquadSalvageEfficiency(state) > 0;
+}
+
+// 小队打捞能力：玩家出战舰 + 当前参战 NPC 绑定舰。
+// MTU 是小队部署物，只计算一次；NPC 舰船的打捞臂/打捞改装件按各自 fitting 计算。
+function getLegionCombatSalvageShips(state) {
+  const ships = [];
+  const squad = state && state.combat && state.combat.squad;
+  const npcs = state && state.legion && Array.isArray(state.legion.npcs) ? state.legion.npcs : [];
+  const members = squad && Array.isArray(squad.members) ? squad.members : [];
+  const seen = new Set();
+  for (const member of members) {
+    const npc = npcs.find(n => n && n.npcId === member.npcId);
+    const instanceId = npc && npc.boundShipInstanceId;
+    if (!instanceId || seen.has(instanceId)) continue;
+    const ship = getShipInstanceFromState(state, instanceId);
+    if (ship) { ships.push(ship); seen.add(instanceId); }
+  }
+  return ships;
+}
+
+function getSquadSalvageEfficiency(state) {
+  if (!state) return 0;
+  let total = getSalvageEfficiency(state, null, { includeMtu: false });
+  for (const ship of getLegionCombatSalvageShips(state)) {
+    total += getSalvageEfficiency(state, ship, { includeMtu: false });
+  }
+  const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+  return total + (mtu && mtu.active ? mtu.salvage : 0);
+}
+
+function getSquadSalvageFuelPerKill(state) {
+  if (!state) return 0;
+  let total = getSalvageFuelPerKill(state);
+  for (const ship of getLegionCombatSalvageShips(state)) total += getSalvageFuelPerKill(state, ship);
+  return total;
 }
 
 // 部署物定义查询（浏览器走经典脚本顶层 const DEPLOYABLES_DB，Node 走 globalThis）。
@@ -2401,7 +2437,7 @@ function getCombatDisplayState(state, now) {
       trait:ship ? (ship.capitalTrait ? { ...ship.capitalTrait } : null) : null
     },
     zone:{ ...zone, unlocked:zoneUnlocked },
-    zones:COMBAT_ZONES.map(item => ({ ...item, selected:item.id === zone.id, unlocked:true, locked:Boolean(combat.active), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
+    zones:COMBAT_ZONES.filter(item => !item.trialOnly).map(item => ({ ...item, selected:item.id === zone.id, unlocked:true, locked:Boolean(combat.active), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
     deathspace:{ ...deathspace, ticketCount, unlocked:true, clearCount:combat.deathspaceClears && combat.deathspaceClears[deathspace.id] || 0 },
     deathspaceTiers:[2,3,4,6].map(tier => {
       const sites = DEATHSPACE_DATABASE.filter(site => site.dedTier === tier);
@@ -2994,6 +3030,10 @@ function getCargoDisplayState(state, filter, subFilter) {
         source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
         description = "考古探针。在考古界面装备后提升扫描强度，单次考古作业消耗 1 枚；基础探针可在装备工程制造，复原探针由考古稀有掉落获取。";
       }
+      if (itemId && itemId.indexOf("special:") === 0 && typeof STARMAP_TITAN_MATERIALS !== "undefined" && Array.isArray(STARMAP_TITAN_MATERIALS) && STARMAP_TITAN_MATERIALS.includes(itemId.slice("special:".length))) {
+        source = { pageId:"starmap", pageLabel:"星图采集", icon:"fa-solid fa-star" };
+        description = "泰坦专属材料。由已制压的星图采集节点按小时累计，手动领取后用于后续泰坦核心制造。";
+      }
       items.push({
         category,
         categoryLabel,
@@ -3019,7 +3059,16 @@ function getCargoDisplayState(state, filter, subFilter) {
       if (itemId && itemId.indexOf("special:voucher_") === 0) {
         warehouseItem.categoryLabel = "考古凭证";
         warehouseItem.source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
-        warehouseItem.description = "考古探索获得的永久回收凭证，持有后会提升对应回收收益。";
+        const voucherKey = itemId.replace(/^special:/, "");
+        const voucherDef = (typeof ARCHAEOLOGY_VOUCHERS !== "undefined" && ARCHAEOLOGY_VOUCHERS[voucherKey]) ? ARCHAEOLOGY_VOUCHERS[voucherKey] : null;
+        warehouseItem.description = voucherDef && voucherDef.desc
+          ? voucherDef.desc
+          : "考古探索获得的永久回收凭证，持有后会提升对应回收收益。";
+      }
+      if (itemId && itemId.indexOf("special:") === 0 && typeof STARMAP_TITAN_MATERIALS !== "undefined" && Array.isArray(STARMAP_TITAN_MATERIALS) && STARMAP_TITAN_MATERIALS.includes(itemId.slice("special:".length))) {
+        warehouseItem.categoryLabel = "泰坦材料";
+        warehouseItem.source = { pageId:"starmap", pageLabel:"星图采集", icon:"fa-solid fa-star" };
+        warehouseItem.description = "泰坦专属材料。来自星图采集节点；首次完成试炼立即获得一批，之后按首次奖励的96%/24小时累计，并按小时手动领取。";
       }
       if (itemId && itemId.indexOf("special:") === 0 && itemId.indexOf("special:voucher_") !== 0 && typeof getMaterialCraftables === "function") {
         warehouseItem.craftables = getMaterialCraftables(itemId, state);
@@ -4040,7 +4089,6 @@ function getQueueDisplayState(state) {
     kind:"queue",
     running:Boolean(queue.status.isRunning),
     statusText:queue.status.isRunning ? "▶ 运行中" : "空闲",
-    loopMode:Boolean(queue.config.loopMode),
     maxSize:Number(queue.config.maxSize) || 20,
     count:Array.isArray(queue.items) ? queue.items.length : 0,
     completedCount:Number(queue.status.completedCount) || 0,

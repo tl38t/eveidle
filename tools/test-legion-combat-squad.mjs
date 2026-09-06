@@ -1433,4 +1433,24 @@ section("33. M6 玩家吃 NPC 战斗经验（出资方收获，机制回归锁�
   // 故由代码审查 + 现有玩家维修经验测试（test-offline-combat-queue 等）共同覆盖。
 }
 
+// ================================================================
+section("34. Squad salvage: NPC-bound ship salvage modules");
+{
+  const W = buildCombatSandbox();
+  const st = makeM3State(W, { npcCount: 1 });
+  st.inventory.ships.find(s => s.instanceId === "ship_P").fitted.low = ["t1_salvage_arm"];
+  st.inventory.ships.find(s => s.instanceId === "ship_N1").fitted.low = ["t2_salvage_arm"];
+  st.research.completedLevels.legion_dual_squad = 1;
+  SQUAD.beginLegionSquadBattle(st);
+  SQUAD.addLegionNpcToCombatSquad(st, "m3n1");
+  const eff = W.__eval("getSquadSalvageEfficiency")(st);
+  const fuel = W.__eval("getSquadSalvageFuelPerKill")(st);
+  ok(Math.abs(eff - 0.4) < 1e-9, "squad salvage efficiency includes NPC-bound ship");
+  ok(fuel === 6, "squad salvage fuel includes NPC-bound ship");
+  SQUAD.endLegionSquadBattle(st);
+  const solo = makeM3State(W, { npcCount: 1 });
+  solo.inventory.ships.find(s => s.instanceId === "ship_P").fitted.low = ["t1_salvage_arm"];
+  ok(Math.abs(W.__eval("getSquadSalvageEfficiency")(solo) - 0.1) < 1e-9, "without squad, NPC salvage module is not read");
+}
+
 summary();

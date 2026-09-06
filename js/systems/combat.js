@@ -259,7 +259,15 @@ function computeVolleyFuel(state, zone, options) {
 }
 
 function calcRepairMult(target, state, structureRatio) {
-  return getCombatRepairMultiplierFromState(state || gameState, target, undefined, structureRatio);
+  const mult = getCombatRepairMultiplierFromState(state || gameState, target, undefined, structureRatio);
+  // 量子干扰（2026-09-05 最终 BOSS）：存活 BOSS 带 repairSuppr 时压制玩家方回复（离线经 G() 同源继承）。
+  const c = state && state.combat;
+  if (mult > 0 && c && Array.isArray(c.enemies)) {
+    for (const e of c.enemies) {
+      if (e && e.kind === "boss" && e.repairSuppr && e.hp && e.hp.structure > 0) return mult * (1 - e.repairSuppr);
+    }
+  }
+  return mult;
 }
 
 function calcCL() {
@@ -297,10 +305,10 @@ function getCombatFormation(zone, wave, randomFn) {
   let cumulative = 0;
   for (const formation of formations) {
     cumulative += formation.chance;
-    if (value < cumulative) return { ...formation, boss:0 };
+    if (value < cumulative) return { ...formation, boss:zone.allowTrialBoss ? (formation.boss || 0) : 0 };
   }
   const fallback = formations[formations.length - 1];
-  return { ...fallback, boss:0 };
+  return { ...fallback, boss:zone.allowTrialBoss ? (fallback.boss || 0) : 0 };
 }
 
 function getRandomCombatEnemyKey(zone, kind, randomFn) {
@@ -331,6 +339,9 @@ function createCombatEnemy(zone, kind, randomFn, combatState) {
     type:enemyKey, kind:tpl.kind || kind, name:tpl.name, icon:tpl.icon,
     hp:{...scaledHp}, maxHp:{...scaledHp},
     level:tpl.level, hit:tpl.hit, dodge:tpl.dodge, baseDamage:Math.max(1, Math.round((tpl.baseDamage || 1) * damageScale)),
+    auraDamage:tpl.auraDamage || 0,
+    bossHealPct:tpl.bossHealPct || 0, bossHealEvery:tpl.bossHealEvery || 5,
+    enrageMul:tpl.enrageMul || 0, enrageAt:tpl.enrageAt || 0.3, repairSuppr:tpl.repairSuppr || 0,
     iskDrop:tpl.iskDrop, xpDrop:tpl.xpDrop, image:tpl.image,
     defeated:false, rewarded:false
   };
@@ -424,6 +435,9 @@ function getCombatEncounterZone(combat) {
     const site = getDeathspaceById(c.deathspaceId);
     return site ? COMBAT_ZONES.find(zone => zone.id === site.sourceZoneId) || null : null;
   }
+  // 星图试炼续波（2026-09-05）：试炼进行中用 startBattleTrial 缓存的专用波次战区，
+  // 保证第 2 波起与第 1 波同平衡/同编队池；普通星带无此字段，行为不变。
+  if (c && c.trialWaveZone) return c.trialWaveZone;
   return COMBAT_ZONES.find(zone => zone.id === (c && c.zone)) || null;
 }
 
@@ -668,6 +682,17 @@ function getStationCoreDropConfigs(zone) {
   }));
 }
 
+// 隐藏保底（玩家不可见）：星带累计肃清次数越多，四核心出率越高；
+// 达到 STATION_CORE_PITY_MAX 次肃清时下一击必出。仅放大内部掷骰概率，
+// UI / 掉落预览不暴露任何保底信息（基础率照常显示，玩家无感知）。
+const STATION_CORE_PITY_MAX = 2000;
+function getStationCorePityChance(zone, baseChance, state) {
+  const clears = (state && state.combat && state.combat.zoneClears && state.combat.zoneClears[zone.id]) || 0;
+  // 分母取 PITY_MAX-1：第 PITY_MAX 次肃清的终结 BOSS 在掷骰时 clears=PITY_MAX-1，此时即强制必出
+  const t = Math.min(clears, STATION_CORE_PITY_MAX - 1) / (STATION_CORE_PITY_MAX - 1);
+  return Math.min(1, baseChance + (1 - baseChance) * t);
+}
+
 function rollStationCoreDrop(zone, enemyKind, randomValue, state) {
   state = state || gameState;
   if (enemyKind !== "elite" && enemyKind !== "boss") return null;
@@ -676,11 +701,12 @@ function rollStationCoreDrop(zone, enemyKind, randomValue, state) {
   if (!cfg) return null; // 该带核心已获得 → 不再掉落
   const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
   if (!chance) return null;
+  const mult = getLegionCombatDropMult(state);
+  // 隐藏保底：基础率随星带肃清次数线性爬升，PITY_MAX 次肃清时必出（见 getStationCorePityChance）
+  const effChance = getStationCorePityChance(zone, chance * mult, state);
   const roll = randomValue === undefined ? Math.random() : randomValue;
-  if (roll >= chance * getLegionCombatDropMult(state)) return null;
+  if (roll >= effChance) return null;
   ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
-
-
   state.stationCoresObtained[cfg.coreId] = true;
   return { coreId: cfg.coreId, material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty };
 }
@@ -824,7 +850,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const probeDrop = deathspace ? rollDeathspaceProbeDrop(deathspace, enemy.kind, roll(), state) : null;
   if (probeDrop) { c.lastLoot += " · " + probeDrop.material + " ×" + probeDrop.qty; addLoot(probeDrop.resourceId, probeDrop.qty); }
   // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。负消耗不进 lootGained。
-  const salvageFuelPK = (typeof getSalvageFuelPerKill === "function") ? getSalvageFuelPerKill(state) : 0;
+  const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
   if (salvageFuelPK > 0) {
     const salvageBase = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
     const fuelMultiplier = (typeof getCombatFuelMultiplierFromState === "function")
@@ -847,7 +873,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
       c.lastSalvage.attempts++;
       c.lastSalvage.isoSpent += isoCost;
       const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[enemy.kind]) || 0;
-      const chance = Math.min(baseChance * (1 + getSalvageEfficiency(state)), 0.5);
+    const chance = Math.min(baseChance * (1 + getSquadSalvageEfficiency(state)), 0.5);
       if (roll() < chance) {
         c.lastSalvage.hits++;
         const tier = getSalvageComponentTier(enemy.level);
@@ -868,7 +894,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     c.lastSalvage = c.lastSalvage || { attempts:0, hits:0, isoSpent:0, components:[] };
     c.lastSalvage.attempts++;
     const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[enemy.kind]) || 0;
-    const chance = Math.min(baseChance * (1 + getSalvageEfficiency(state)), 0.5);
+      const chance = Math.min(baseChance * (1 + getSquadSalvageEfficiency(state)), 0.5);
     if (roll() < chance) {
       c.lastSalvage.hits++;
       const tier = getSalvageComponentTier(enemy.level);
@@ -953,7 +979,11 @@ function resolveDeathspaceWaveVictory(site, zone, rng, emit, state) {
     c.runDamageTaken = 0;
     // 队列感知：入场清场完成计 1 次；达标则终结队列项，否则直接重入下一入场。
     const entryDone = (c.queueItemId && c.queueEntriesTarget > 0);
-    if (entryDone) c.queueEntriesDone = (c.queueEntriesDone || 0) + 1;
+    if (entryDone) {
+      c.queueEntriesDone = (c.queueEntriesDone || 0) + 1;
+      // 2026-09-05：同步扣减耐久队列项计数（与星带清波同理）。
+      if (typeof consumeCombatQueueItemCount === "function") consumeCombatQueueItemCount(state, 1);
+    }
     c.active = false;
     state.currentAction.active = false;
     c.enemies = [];
@@ -1041,6 +1071,8 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   // 普通星带并入队列：每清一波累计 queueWavesDone（跨维修累计），达标即终结队列项并推进。
   if (c.queueItemId && c.queueWavesTarget > 0) {
     c.queueWavesDone = (c.queueWavesDone || 0) + 1;
+    // 2026-09-05：同步扣减耐久队列项计数，使停止 / 插队后重启仍保留真实剩余（而非回到入队原值）。
+    if (typeof consumeCombatQueueItemCount === "function") consumeCombatQueueItemCount(state, 1);
     if (c.queueWavesDone >= c.queueWavesTarget) {
       // 补发收尾波事件：原本队列终结前直接 return，会吞掉最后一波的 combat:waveCleared，
       // 导致依赖"第4波"的监听（如 C6 教程标记）永远收不到。finalize 前先发一次。
@@ -1197,6 +1229,7 @@ function advanceCombatRound(state, context) {
     return { ok:false, advanced:false, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"invalid-now" };
   }
   if (!c.active) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"inactive" };
+  c.roundSeq = (Number(c.roundSeq) || 0) + 1;
   const zone = getCombatEncounterZone(c);
   if (!zone) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-zone" };
   const faction = ENEMY_DATABASE[zone.faction];
@@ -1205,6 +1238,14 @@ function advanceCombatRound(state, context) {
   const shipInstance = getActiveCombatShipInstance(state);
   // 防御：无拥有战斗舰（理论上 active 时必有舰，此处仅兜底，避免逻辑层凭空造舰导致崩溃）
   if (!ship || !shipInstance) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-ship" };
+  // 战败收口必须先于本轮齐射：上一轮最后一发可能已将玩家舰船打到 0 结构，
+  // 但旧逻辑要到敌方行动阶段才检查，导致下一 tick 仍先执行玩家/军团开火，
+  // 于是出现“我方全灭后敌方继续掉血”。不要让死亡状态进入任何新的攻击轮。
+  if (c.hp && Number(c.hp.structure) <= 0) {
+    const recovered = beginCombatRecovery(state, context);
+    endLegionSquadBattleIfInactive(state);
+    return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:Boolean(recovered), reason:"defeated" };
+  }
   const weapons = getInstalledCombatWeapons(state);
   const repairers = getInstalledCombatRepairers(state);
   // 损伤控制单元：每轮在敌人行动前结算在线状态（扣燃料），求和全局减伤并封顶 50%
@@ -1401,8 +1442,18 @@ function advanceCombatRound(state, context) {
   const enemyVolley = { attackers:0, totalDamage:0, mitigatedDamage:0, armorRestored:0, traitName:capitalTrait ? capitalTrait.name : "", hits:[] };
   let shieldHitsUsed = 0;
   let armorDamageTaken = 0;
-  for (const attacker of getLivingCombatEnemies(c)) {
-    const rawEnemyDamage = calcCombatDamage(attacker.hit, playerDodge, attacker.baseDamage || 1, 1.0, rng);
+  const livingAttackers = getLivingCombatEnemies(c);
+  // 指挥舰光环：指挥舰在场时，其余敌舰伤害 ×auraDamage（指挥舰自身不吃加成）。
+  const enemyAuraMult = livingAttackers.reduce((maxAura, e) => Math.max(maxAura, e.auraDamage || 1), 1);
+  for (const attacker of livingAttackers) {
+    let enemyAttackDamage = (attacker.baseDamage || 1) * (attacker.auraDamage ? 1 : enemyAuraMult);
+    // 濒死狂暴（2026-09-05 最终 BOSS）：BOSS 血量低于 enrageAt 时伤害 ×enrageMul。
+    if (attacker.enrageMul && attacker.maxHp && attacker.hp) {
+      const bossRatio = (attacker.hp.shield + attacker.hp.armor + attacker.hp.structure)
+        / Math.max(1, attacker.maxHp.shield + attacker.maxHp.armor + attacker.maxHp.structure);
+      if (bossRatio < (Number(attacker.enrageAt) || 0.3)) enemyAttackDamage *= attacker.enrageMul;
+    }
+    const rawEnemyDamage = calcCombatDamage(attacker.hit, playerDodge, enemyAttackDamage, 1.0, rng);
     const mitigation = applyCapitalShieldMitigation(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
     if (mitigation.shieldHitUsed) shieldHitsUsed++;
     const enemyDmg = Math.max(0, Math.round(mitigation.damage));
@@ -1443,6 +1494,18 @@ function advanceCombatRound(state, context) {
     }
   }
   c.lastEnemyVolley = enemyVolley;
+  // 相位重构（2026-09-05 最终 BOSS）：每 bossHealEvery 轮回复自身 bossHealPct 最大总血（盾→甲→构顺序）。
+  if (Array.isArray(c.enemies)) {
+    for (const e of c.enemies) {
+      if (!e || e.kind !== "boss" || !e.bossHealPct || !e.hp || e.hp.structure <= 0) continue;
+      const every = Math.max(1, Number(e.bossHealEvery) || 5);
+      if ((Number(c.roundSeq) || 0) % every !== 0) continue;
+      const maxTotal = e.maxHp.shield + e.maxHp.armor + e.maxHp.structure;
+      let rem = maxTotal * e.bossHealPct;
+      const addL = (k) => { const cap = e.maxHp[k] - e.hp[k]; const add = Math.max(0, Math.min(cap, rem)); e.hp[k] += add; rem -= add; };
+      addL("shield"); addL("armor"); addL("structure");
+    }
+  }
   const reactiveArmorRepair = getCapitalReactiveArmorRepair(ship, armorDamageTaken, c.maxHp.armor);
   if (reactiveArmorRepair > 0 && c.hp.armor < c.maxHp.armor) {
     const restored = Math.min(reactiveArmorRepair, c.maxHp.armor - c.hp.armor);

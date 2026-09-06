@@ -53,9 +53,12 @@ const gameState = {
     refDuration: 1,
     smeltingArea: "凡晶石带",
     // 2026-09-04 自动拆解：归在熔炼(refining)行动下的子活动。
-    //   refiningSubAction  "smelting"(默认) | "dismantle"
+    // 2026-09-05 起两个概念分离（「月矿式」：切 tab 只换查看面板，绝不中断作业）：
+    //   refiningSubAction  "smelting"(默认) | "dismantle"  【运行态】实际跑哪个子活动，tick/离线/队列读它
+    //   refiningView       "smelting"(默认) | "dismantle"  【视图态】当前查看哪个子面板，只影响 UI
     //   dismantleTarget    选中的待拆解组件；startedDismantleTarget 为运行中锁定的组件
     refiningSubAction: "smelting",
+    refiningView: "smelting",
     dismantleTarget: "integrated_hull",
     gasArea: "富勒烯云团",
     equipEngTarget: "t1_mining_laser",
@@ -166,8 +169,11 @@ const gameState = {
     maintenance: { tier: "standard", fuelRemaining: 0, lastRefillAt: 0 },
     autoLines: {
       smelting:    { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 },
+      smelting_2:  { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 },
       equipment:   { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 },
-      booster:     { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 }
+      equipment_2: { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 },
+      booster:     { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 },
+      booster_2:   { enabled:false, operatorId:null, targetQuantity:0, producedQty:0 }
     },
     shipyard: { unlockedFlagship:false, unlockedSupercapital:false, savingsLedger:{} },
     dlc: { npcWorkers:false, combatWings:false }
@@ -293,7 +299,7 @@ const gameState = {
   queue: {
     items: [],
     // Batch C-14A（J05）：队列历史首次达 25 项即解锁，故容量下限须 ≥ 25；原为 20 会使 J05 永远不可达（真实 bug）。
-    config: { maxSize: 25, loopMode: false, skipOnFail: true },
+    config: { maxSize: 25, skipOnFail: true },
     status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 }
   },
 

@@ -97,7 +97,8 @@ function getArchaeologyFinalSuccessChance(state, scanStrength, difficulty) {
 
 // 研究批次 G · archEff 组（multiplier）：考古周期唯一公式。
 // 在线 tick / 离线 descriptor / 离线时间账本 / 显示态四处共用，禁止任何一处再算第二套。
-function getArchaeologyCycleSeconds(state, site) {
+function getArchaeologyCycleSeconds(state, site, options) {
+  const opts = options || {};
   const base = site ? Number(site.time) : NaN;
   if (!Number.isFinite(base) || base <= 0) return 1;
   const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state) : null;
@@ -112,7 +113,7 @@ function getArchaeologyCycleSeconds(state, site) {
   let rigCycleReduction = 0;
   // 势力增强探针周期减免：仅该系列带 cycleReduction（5%/10%/15%），基础/复原探针恒为 0。
   let probeCycleReduction = 0;
-  const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
+  const instanceId = opts.instanceId || (state.shipAssignments && state.shipAssignments.archaeology);
   const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
   if (instance) {
     const fitted = getArchaeologyFittedBonuses(state, instance);
@@ -125,7 +126,7 @@ function getArchaeologyCycleSeconds(state, site) {
   // 激活探针：运行中锁定 startedProbeId，待命时用 activeProbeId（与显示态 :841 同一推导）。
   const archState = state.archaeology || {};
   const archRunning = Boolean(state.currentAction && state.currentAction.active && state.currentAction.skill === "archaeology");
-  const effectiveProbeId = archRunning ? (archState.startedProbeId || archState.activeProbeId) : archState.activeProbeId;
+  const effectiveProbeId = opts.probeId || (archRunning ? (archState.startedProbeId || archState.activeProbeId) : archState.activeProbeId);
   if (effectiveProbeId && typeof getArchaeologyProbe === "function") {
     const probe = getArchaeologyProbe(effectiveProbeId);
     probeCycleReduction = Number(probe && probe.cycleReduction) || 0;
@@ -623,15 +624,18 @@ function getArchaeologyProbeCostState(state) {
 }
 
 // ---- 单次挖掘结算（在线/离线共用） ----
-function resolveArchaeologyCycle(state, now, randomValue, eventMeta) {
+function resolveArchaeologyCycle(state, now, randomValue, eventMeta, options) {
+  const opts = options || {};
   const arch = state.archaeology;
-  const siteId = arch.startedSiteId;
-  const probeId = arch.startedProbeId;
-  const site = getArchaeologySite(siteId);
+  const siteId = opts.site && opts.site.id ? opts.site.id : arch.startedSiteId;
+  const probeId = opts.probeId || arch.startedProbeId;
+  const site = opts.site || getArchaeologySite(siteId);
   if (!site) return { success:false, reason:"no-site" };
-  const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
+  const instanceId = opts.instanceId || (state.shipAssignments && state.shipAssignments.archaeology);
   const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
   if (!instance) return { success:false, reason:"no-ship" };
+  const trialHp = opts.trial && opts.trialHp && typeof opts.trialHp === "object" ? opts.trialHp : null;
+  if (opts.trial && !trialHp) return { success:false, reason:"trial-hp-unavailable" };
   // 离线结算透传虚拟完成时间：offline.js 传 { timestamp: virtualNow }；在线/手动为 undefined → Date.now()。
   const isOffline = Boolean(randomValue === "offline");
   const evtMeta = Object.assign({ offline:isOffline }, eventMeta || {});
@@ -660,9 +664,12 @@ function resolveArchaeologyCycle(state, now, randomValue, eventMeta) {
   const roll = archaeologyRandom(randomValue);
   const success = roll < successChance;
 
-  GameEvents.emit("archaeology:attemptCompleted", { siteId:site.id, tier:site.tier, success, successChance }, evtMeta);
+  if (!opts.trial) GameEvents.emit("archaeology:attemptCompleted", { siteId:site.id, tier:site.tier, success, successChance }, evtMeta);
 
   if (success) {
+    // 星图试炼只复用正式成功率、探针/燃料扣减与失败反噬；不生成正式考古经验、文物、
+    // 稀有物、货柜，也不触发正式考古统计或自动出售/兑换协议。
+    if (opts.trial) return { success:true, site, successChance, drops:null, xp:0, protocols:null, trial:true };
     // 研究批次 G · archExp：考古经验 × 唯一科研乘子（在线 tick 与离线结算共用此一处，绝不分别实现）
     let archExpMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["archExp"])) : 1;
     if (!Number.isFinite(archExpMult) || archExpMult <= 0) archExpMult = 1;
@@ -720,7 +727,8 @@ function resolveArchaeologyCycle(state, now, randomValue, eventMeta) {
   const backlashResearchRaw = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchBonusValue(state, "backlash")) : 0;
   const backlashResearchFactor = Math.max(0, 1 - (Number.isFinite(backlashResearchRaw) ? Math.max(0, backlashResearchRaw) : 0));
   const backlash = Math.ceil(site.backlashDamage * (1 - shipReduction) * (1 - fitted.stabilizer) * backlashMult * backlashResearchFactor);
-  const hp = getArchaeologyShipHp(state, instanceId);
+  // 星图考古试炼只接收由试炼状态创建的副本 HP；严禁回退读取正式考古舰当前血量。
+  const hp = opts.trial ? trialHp : getArchaeologyShipHp(state, instanceId);
   // 非致命反噬避免（信号稳定器 II/V 的 archaeologyNonFatalAvoid）：仅当反噬不会致命时生效
   const rngFail = (randomValue === "offline" || typeof randomValue === "function")
     ? (typeof randomValue === "function" ? randomValue : Math.random)
@@ -734,22 +742,24 @@ function resolveArchaeologyCycle(state, now, randomValue, eventMeta) {
     return { success:false, site, successChance, backlash:0, avoided:true };
   }
   const destroyed = applyArchaeologyDamage(hp, backlash);
-  GameEvents.emit("archaeology:failure", { siteId:site.id, tier:site.tier, backlashDamage:backlash }, evtMeta);
+  if (!opts.trial) GameEvents.emit("archaeology:failure", { siteId:site.id, tier:site.tier, backlashDamage:backlash }, evtMeta);
 
   if (destroyed) {
     // 按舰船实例隔离维修态（每舰独立 180s；断线续作上下文存于 resume）
-    if (!arch.repairsByInstanceId) arch.repairsByInstanceId = {};
-    arch.repairsByInstanceId[instanceId] = {
-      until: now + ARCHAEOLOGY_REPAIR_SECONDS * 1000,
-      resume: { siteId: arch.startedSiteId, probeId: arch.startedProbeId }
-    };
-    GameEvents.emit("archaeology:shipDisabled", { instanceId, repairSeconds:ARCHAEOLOGY_REPAIR_SECONDS }, evtMeta);
+    if (!opts.trial) {
+      if (!arch.repairsByInstanceId) arch.repairsByInstanceId = {};
+      arch.repairsByInstanceId[instanceId] = {
+        until: now + ARCHAEOLOGY_REPAIR_SECONDS * 1000,
+        resume: { siteId: arch.startedSiteId, probeId: arch.startedProbeId }
+      };
+      GameEvents.emit("archaeology:shipDisabled", { instanceId, repairSeconds:ARCHAEOLOGY_REPAIR_SECONDS }, evtMeta);
+    }
     return { success:false, site, successChance, backlash, destroyed:true };
   }
   // 非致命反噬：先完成反噬伤害（已写入 hp），destroyed===false 才触发野外自动维修。
   // 在线（tick.js 考古分支）与离线（settleByTime）共用同一函数与同一扣减逻辑。
   const fieldRepairContext = { now, offline:Boolean(randomValue === "offline"), source:"research-protocol" };
-  const fieldRepair = (typeof applyArchaeologyFieldRepair === "function")
+  const fieldRepair = opts.trial ? null : (typeof applyArchaeologyFieldRepair === "function")
     ? applyArchaeologyFieldRepair(state, instanceId, hp, fieldRepairContext) : null;
   return { success:false, site, successChance, backlash, destroyed:false, fieldRepair };
 }
@@ -780,9 +790,10 @@ function sellArchaeologyArtifacts(state, artifactId, quantity, all, context) {
       }
     }
     if (sold === 0) return { changed:false, reason:"nothing-to-sell" };
-    recycleItems(state, [{ currency:"isk", amount: totalIsk }], eventContext);
-    GameEvents.emit("archaeology:artifactsSold", { quantity:sold, totalIsk }, eventContext);
-    return { changed:true, all:true, totalIsk, sold };
+    const quote = recycleItems(state, [{ currency:"isk", amount: totalIsk }], eventContext);
+    const finalIsk = quote.byCurrency.isk ? quote.byCurrency.isk.final : totalIsk;
+    GameEvents.emit("archaeology:artifactsSold", { quantity:sold, totalIsk: finalIsk }, eventContext);
+    return { changed:true, all:true, totalIsk: finalIsk, sold };
   }
 
   const artifact = getArchaeologyArtifact(artifactId);
@@ -792,9 +803,10 @@ function sellArchaeologyArtifacts(state, artifactId, quantity, all, context) {
   if (qty <= 0 || stock < qty) return { changed:false, reason:"insufficient" };
   const iskValue = artifact.iskValue || 0;
   ResourceRegistry.spend(state, "artifact:" + artifactId, qty);
-  recycleItems(state, [{ currency:"isk", amount: iskValue * qty }], eventContext);
-  GameEvents.emit("archaeology:artifactSold", { artifactId, quantity:qty, isk:iskValue * qty }, eventContext);
-  return { changed:true, artifactId, quantity:qty, isk:iskValue * qty };
+  const quote = recycleItems(state, [{ currency:"isk", amount: iskValue * qty }], eventContext);
+  const finalIsk = quote.byCurrency.isk ? quote.byCurrency.isk.final : iskValue * qty;
+  GameEvents.emit("archaeology:artifactSold", { artifactId, quantity:qty, isk: finalIsk }, eventContext);
+  return { changed:true, artifactId, quantity:qty, isk: finalIsk };
 }
 
 function redeemArchaeologyArtifacts(state, artifactId, quantity, all, context) {
@@ -814,9 +826,10 @@ function redeemArchaeologyArtifacts(state, artifactId, quantity, all, context) {
       }
     }
     if (redeemed === 0) return { changed:false, reason:"nothing-to-redeem" };
-    recycleItems(state, [{ currency:"lp", amount: totalLp }], eventContext);
-    GameEvents.emit("archaeology:artifactsRedeemed", { quantity:redeemed, totalLp }, eventContext);
-    return { changed:true, all:true, totalLp, redeemed };
+    const quote = recycleItems(state, [{ currency:"lp", amount: totalLp }], eventContext);
+    const finalLp = quote.byCurrency.lp ? quote.byCurrency.lp.final : totalLp;
+    GameEvents.emit("archaeology:artifactsRedeemed", { quantity:redeemed, totalLp: finalLp }, eventContext);
+    return { changed:true, all:true, totalLp: finalLp, redeemed };
   }
 
   const artifact = getArchaeologyArtifact(artifactId);
@@ -826,14 +839,16 @@ function redeemArchaeologyArtifacts(state, artifactId, quantity, all, context) {
   if (qty <= 0 || stock < qty) return { changed:false, reason:"insufficient" };
   const lpValue = artifact.lpValue || 0;
   ResourceRegistry.spend(state, "artifact:" + artifactId, qty);
-  recycleItems(state, [{ currency:"lp", amount: lpValue * qty }], eventContext);
-  GameEvents.emit("archaeology:artifactRedeemed", { artifactId, quantity:qty, lp:lpValue * qty }, eventContext);
-  return { changed:true, artifactId, quantity:qty, lp:lpValue * qty };
+  const quote = recycleItems(state, [{ currency:"lp", amount: lpValue * qty }], eventContext);
+  const finalLp = quote.byCurrency.lp ? quote.byCurrency.lp.final : lpValue * qty;
+  GameEvents.emit("archaeology:artifactRedeemed", { artifactId, quantity:qty, lp: finalLp }, eventContext);
+  return { changed:true, artifactId, quantity:qty, lp: finalLp };
 }
 
 // ---- 纯展示状态（供 UI） ----
-function getArchaeologyDisplayState(state, now) {
+function getArchaeologyDisplayState(state, now, options) {
   const arch = state.archaeology;
+  const displayOptions = options || {};
   const nowMs = Number(now) || Date.now();
   const instanceId = state.shipAssignments && state.shipAssignments.archaeology;
   const instance = instanceId ? getShipInstanceFromState(state, instanceId) : null;
@@ -848,7 +863,7 @@ function getArchaeologyDisplayState(state, now) {
     name: config ? config.name : instance.shipId,
     type: config ? config.type : "",
     archaeology: isArchaeologyShip,
-    hp: instanceId ? getArchaeologyShipHp(state, instanceId) : null,
+    hp: instanceId && !displayOptions.skipShipHp ? getArchaeologyShipHp(state, instanceId) : null,
     maxHp: config ? getArchaeologyShipMaxHp(state, instanceId) : null
   } : null;
 
@@ -1083,5 +1098,7 @@ window.getArchaeologyFuelCostState = getArchaeologyFuelCostState;
 window.getArchaeologyFinalSuccessChance = getArchaeologyFinalSuccessChance;
 window.getArchaeologyCycleSeconds = getArchaeologyCycleSeconds;
 window.getArchaeologyProbeCostState = getArchaeologyProbeCostState;
+window.getArchaeologyShipHp = getArchaeologyShipHp;
+window.getArchaeologyShipMaxHp = getArchaeologyShipMaxHp;
 window.sellArchaeologyArtifacts = sellArchaeologyArtifacts;
 window.redeemArchaeologyArtifacts = redeemArchaeologyArtifacts;

@@ -447,8 +447,9 @@
       if (onMobile()) { mobileRenderHangarPanel(); return; }
       if (_orig) _orig();
       var root = document.getElementById("tp-hangar-root"); if (root) root.style.display = "none";
+      // 桌面端原始 renderHangarPanel 已根据当前标签线是否拥有舰船正确设置 #hangar-empty 显隐；
+      // 此处仅恢复从移动端切回桌面时被隐藏的网格/标签，不再无条件显示空提示，否则「有船」也会露出该文案。
       var g = document.getElementById("hangar-ship-grid"); if (g) g.style.display = "";
-      var em = document.getElementById("hangar-empty"); if (em) em.style.display = "";
       var tabs2 = document.getElementById("hangar-tabs"); if (tabs2) tabs2.style.display = "";
     };
     var root = document.getElementById("tp-hangar-root");

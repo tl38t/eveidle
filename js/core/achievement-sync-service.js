@@ -3,6 +3,7 @@
 
    职责：
    - 监听现有 achievement:unlocked 事件（权威事实仍来自 gameState）。
+   - Steam 平台按事件后的 statistics 快照上报 12 条进度成就。
    - 将内部成就 ID 经 PlatformAchievementMap 映射到平台 ID 后上报。
    - 平台失败不回滚本地成就与奖励；仅写入重试队列。
    - 启动后遍历 gameState.achievements.unlockedAtById 做补发对账。
@@ -30,6 +31,7 @@
     this.metaStore = opts.metaStore || new InMemoryLedgerStore();
     this._available = false;
     this._ledger = this._loadLedger();   // internalId -> { syncedAt }
+    this._progressLedger = this._loadProgressLedger(); // internalId -> last reported value
     this._retryQueue = [];               // [{ internalId, platformId }]
     this._subscribed = false;
     this._lastError = null;
@@ -42,10 +44,15 @@
     return {};
   };
 
+  AchievementSyncService.prototype._loadProgressLedger = function () {
+    const raw = (this.metaStore && typeof this.metaStore.load === "function") ? this.metaStore.load() : null;
+    return raw && typeof raw === "object" && raw.progress && typeof raw.progress === "object" ? raw.progress : {};
+  };
+
   AchievementSyncService.prototype._persistLedger = function () {
     try {
       if (this.metaStore && typeof this.metaStore.save === "function") {
-        this.metaStore.save({ ledger: this._ledger });
+        this.metaStore.save({ ledger: this._ledger, progress: this._progressLedger });
       }
     } catch (e) { /* 非致命 */ }
   };
@@ -75,10 +82,86 @@
       try {
         const payload = (event && event.payload) || {};
         self.handleUnlock(payload.achievementId, payload.unlockedAt);
+        self._pushAllProgress();
       } catch (e) { /* 监听回调不得影响游戏 */ }
+    });
+    // statistics.js is registered before the persistence-created sync service,
+    // so wildcard listeners observe the authoritative post-event statistics.
+    this._unsubProgress = EVENT_BUS.on("*", function () {
+      try { self._pushAllProgress(); } catch (e) { /* progress is non-critical */ }
     });
     this._subscribed = true;
   };
+
+  AchievementSyncService.prototype._getProgressDefinitions = function () {
+    const list = (typeof ACHIEVEMENTS !== "undefined") ? ACHIEVEMENTS
+      : (root.ACHIEVEMENTS || (root.AchievementData && root.AchievementData.ACHIEVEMENTS) || []);
+    return Array.isArray(list) ? list.filter(function (a) {
+      return a && a.steam && a.steam.enabled && a.steam.progressStatApiName && a.steam.progressMax;
+    }) : [];
+  };
+
+  AchievementSyncService.prototype._readProgressValue = function (internalId) {
+    const state = (typeof gameState !== "undefined") ? gameState : root.gameState;
+    const stats = state && state.statistics;
+    if (!stats) return null;
+    if (internalId === "B15" || internalId === "B16") return Number(stats.totals && stats.totals.minedUnits) || 0;
+    if (internalId === "B18") return Number(stats.totals && stats.totals.gasUnits) || 0;
+    if (internalId === "C13") {
+      const made = stats.production && stats.production.manufactured || {};
+      return ["starcrown", "eternal_fortress", "arbiter"].reduce(function (sum, id) {
+        return sum + (Number(made[id]) || 0);
+      }, 0);
+    }
+    if (internalId === "D12") return Number(stats.totals && stats.totals.boostersManufactured) || 0;
+    if (internalId === "I01" || internalId === "I02" || internalId === "I03") return Number(stats.peakCredits) || 0;
+    if (internalId === "J01" || internalId === "J02") return Number(stats.lifecycle && stats.lifecycle.onlineSeconds) || 0;
+    if (internalId === "J07" || internalId === "J08") {
+      const unlocked = state.achievements && state.achievements.unlockedAtById || {};
+      return Object.keys(unlocked).filter(function (id) { return typeof unlocked[id] === "number" && unlocked[id] >= 0; }).length;
+    }
+    return null;
+  };
+
+  AchievementSyncService.prototype.setProgressFor = function (internalId, current, max) {
+    if (this.platform !== "steam" || !this._available || !this.provider || typeof this.provider.setProgress !== "function") {
+      return Promise.resolve({ skipped: true, reason: "unavailable" });
+    }
+    const list = this._getProgressDefinitions();
+    const def = list.find(function (a) { return a.id === internalId; });
+    if (!def) return Promise.resolve({ skipped: true, reason: "no-progress-definition" });
+    const value = Math.max(0, Number(current) || 0);
+    const limit = Math.max(0, Number(max) || Number(def.steam.progressMax) || 0);
+    if (this._progressLedger[internalId] !== undefined && value <= Number(this._progressLedger[internalId])) {
+      return Promise.resolve({ skipped: true, reason: "not-increased" });
+    }
+    const self = this;
+    return Promise.resolve(this.provider.setProgress(def.steam.progressStatApiName, value, limit)).then(function (ok) {
+      if (ok) {
+        self._progressLedger[internalId] = value;
+        self._persistLedger();
+      }
+      return { ok: !!ok, internalId: internalId, statId: def.steam.progressStatApiName };
+    }).catch(function (error) {
+      self._lastError = error;
+      return { ok: false, internalId: internalId, error: error };
+    });
+  };
+
+  AchievementSyncService.prototype._pushAllProgress = function () {
+    if (this.platform !== "steam" || !this._available) return 0;
+    const self = this;
+    let attempted = 0;
+    this._getProgressDefinitions().forEach(function (def) {
+      const current = self._readProgressValue(def.id);
+      if (current === null) return;
+      attempted++;
+      self.setProgressFor(def.id, current, def.steam.progressMax);
+    });
+    return attempted;
+  };
+
+  AchievementSyncService.prototype.reconcileProgress = function () { return this._pushAllProgress(); };
 
   // 读取某内部成就在当前平台对应的平台 ID；未配置返回 null（调用方跳过）。
   AchievementSyncService.prototype.getPlatformId = function (internalId) {

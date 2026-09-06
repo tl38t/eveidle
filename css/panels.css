@@ -203,6 +203,10 @@
   .btn.sm.al-start:hover:not(:disabled) { background: rgba(34, 58, 42, 0.7); }
   .btn.sm.al-stop:hover:not(:disabled) { background: rgba(58, 34, 34, 0.7); }
   .al-progress-wrap { margin-top: 4px; }
+  /* 未解锁的第二条自动线（需建筑 Lv.5）：锁定卡 */
+  .station-al-card.sal-locked { background: rgba(20,30,42,0.55); border: 1px dashed #2a3a4a; opacity: 0.85; }
+  .station-al-card.sal-locked .sal-header { color: #6b8499; }
+  .sal-locked-banner { font-size: 12px; color: #c9a24a; margin-top: 4px; padding: 6px 8px; background: rgba(201,162,74,0.10); border: 1px solid rgba(201,162,74,0.3); border-radius: 4px; }
   .al-fill { transition: width 1s linear; }
   .station-effect-line { font-size: 12px; padding: 3px 6px; margin: 2px 0; border-radius: 4px; }
   .effect-active { color: #7ab87a; background: rgba(40,100,40,0.2); }
@@ -1195,6 +1199,8 @@
 .lcs-badge.ok { border-color:#3d7f5f; color:#7fd7a4; }
 .lcs-badge.warn { border-color:#8a6b2f; color:#e0b062; }
 .lcs-badge.bad { border-color:#8a3f3f; color:#e08a8a; }
+/* 2026-09-05：伤害倍率（随 NPC 等级提升）。内含手机端 ⓘ 按钮，故需 inline-flex 对齐。 */
+.lcs-badge.dmg { border-color:#5b4a7a; color:#c0a8e0; display:inline-flex; align-items:center; gap:2px; }
 @media (max-width:640px) {
   .lcs-row { flex-direction:column; }
   .lcs-badges { flex-direction:row; flex-wrap:wrap; }
@@ -1338,6 +1344,8 @@
 .starmap-trial-room-head p{font-size:13px;color:#7594ad}
 .starmap-trial-room-head .btn{border-color:#315b78;background:#0b2135;color:#b9def5}
 .starmap-trial-countdown{margin:16px auto 10px;padding:7px 18px;width:max-content;min-width:150px;border:1px solid rgba(212,168,67,.55);border-radius:999px;background:linear-gradient(180deg,rgba(77,54,18,.72),rgba(28,22,12,.72));font-size:20px;letter-spacing:.04em;box-shadow:0 0 24px rgba(212,168,67,.12)}
+.starmap-battle-arena-slot{margin:12px 0 18px}
+.starmap-battle-arena-slot>.combat-arena{margin-bottom:0}
 .starmap-collection-room{margin:10px 0 14px!important;padding:12px!important;border-color:rgba(61,106,135,.7)!important;border-radius:10px!important;background:linear-gradient(135deg,rgba(9,25,39,.96),rgba(3,11,20,.98))!important;box-shadow:0 12px 28px rgba(0,0,0,.24),inset 0 1px rgba(145,218,255,.07)!important}
 .starmap-collection-stage{width:min(100%,600px)!important;min-height:136px!important;margin:0 auto!important;grid-template-columns:300px 220px!important;gap:80px!important}
 .starmap-collection-ship{height:132px!important;border-color:rgba(51,88,113,.72)!important;border-radius:7px!important;background:radial-gradient(ellipse at 42% 50%,rgba(41,111,145,.26),transparent 34%),#030b15!important;box-shadow:inset 0 0 35px rgba(43,141,183,.09)!important}
@@ -1366,3 +1374,44 @@
 @keyframes starmap-ship-drift{0%,100%{transform:translateY(-2px)}50%{transform:translateY(3px)}}
 @keyframes starmap-beam-pulse{0%,100%{opacity:.52;filter:brightness(.9)}50%{opacity:.9;filter:brightness(1.25)}}
 @media(max-width:700px){.starmap-trial-room{padding:18px 14px 22px}.starmap-collection-stage{width:100%!important;grid-template-columns:1fr!important;min-height:0!important;gap:10px!important}.starmap-collection-ship{height:124px!important;width:min(100%,300px);margin:0 auto}.starmap-collection-beams{left:42%!important;right:18%!important;top:calc(48% - 28px)!important}.starmap-collection-counter{flex-wrap:wrap!important}.starmap-trial-efficiency{margin-left:0}.starmap-trial-progress{margin:10px 0;padding:8px 10px}}
+
+/* 生产试炼：提交式认证面板，不复用采集倒计时与采集 HUD。 */
+.starmap-production-room{width:min(100%,720px);margin:28px auto 18px;padding:24px;border:1px solid rgba(77,125,157,.56);border-radius:12px;background:radial-gradient(circle at 12% 0,rgba(255,170,73,.12),transparent 36%),linear-gradient(145deg,rgba(11,29,43,.97),rgba(4,13,23,.98));box-shadow:0 18px 45px rgba(0,0,0,.28),inset 0 1px rgba(180,225,255,.07)}
+.starmap-production-kicker{display:flex;align-items:center;gap:8px;color:#f1ae5e;font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.starmap-production-room h4{margin:10px 0 6px;color:#f4fbff;font-size:22px}
+.starmap-production-intro{margin:0 0 20px;color:#82a0b7;font-size:13px;line-height:1.7}
+.starmap-production-requirements{display:grid;gap:10px;margin-bottom:20px}
+.starmap-production-requirement{display:grid;grid-template-columns:52px minmax(0,1fr) auto;gap:14px;align-items:center;padding:14px 16px;border:1px solid rgba(75,112,137,.46);border-radius:9px;background:rgba(2,12,21,.68);transition:border-color .2s,box-shadow .2s}
+.starmap-production-requirement.is-ready{border-color:rgba(83,190,143,.48);box-shadow:inset 3px 0 #58c995}
+.starmap-production-requirement.is-missing{border-color:rgba(207,111,87,.48);box-shadow:inset 3px 0 #cf6f57}
+.starmap-production-resource-icon{display:grid;place-items:center;width:52px;height:52px;border:1px solid rgba(240,174,94,.42);border-radius:8px;background:linear-gradient(145deg,rgba(117,70,25,.3),rgba(27,29,31,.62));color:#f4b761;font-size:22px}
+.starmap-production-resource-copy{display:flex;min-width:0;flex-direction:column;gap:4px}
+.starmap-production-resource-copy strong{overflow:hidden;color:#e9f6ff;font-size:16px;text-overflow:ellipsis;white-space:nowrap}
+.starmap-production-resource-copy span{color:#708da2;font-size:12px}
+.starmap-production-stock{display:flex;min-width:112px;flex-direction:column;align-items:flex-end;gap:3px}
+.starmap-production-stock strong{color:#dcecff;font-size:17px;font-variant-numeric:tabular-nums}
+.starmap-production-stock span{color:#7fcaa3;font-size:11px}
+.starmap-production-requirement.is-missing .starmap-production-stock span{color:#db846e}
+.starmap-production-submit{display:block;margin:0 auto;min-width:220px}
+.starmap-production-reward{margin-top:16px;padding:12px 14px;border:1px solid rgba(83,126,174,.48);border-radius:9px;background:linear-gradient(135deg,rgba(20,39,66,.72),rgba(5,16,29,.78));box-shadow:inset 0 1px rgba(180,220,255,.06)}
+.starmap-production-reward-head{display:flex;align-items:center;justify-content:space-between;gap:12px;color:#9fc7ee;font-size:12px;letter-spacing:.05em}.starmap-production-reward-head strong{color:#f0d18a;font-size:13px;letter-spacing:0;font-variant-numeric:tabular-nums;white-space:nowrap}
+.starmap-production-reward-current{margin-top:7px;color:#87a8c5;font-size:12px;line-height:1.6}.starmap-production-reward .btn{display:block;margin:9px 0 0 auto;min-width:150px;padding:7px 11px;border-color:#496f9d;background:#122a49;color:#cce5ff;font-size:12px}.starmap-production-reward .btn:disabled{opacity:.58;cursor:not-allowed}
+@media(max-width:700px){.starmap-production-room{margin-top:18px;padding:18px}.starmap-production-requirement{grid-template-columns:44px minmax(0,1fr);padding:12px}.starmap-production-resource-icon{width:44px;height:44px}.starmap-production-stock{grid-column:2;align-items:flex-start}.starmap-production-submit{width:100%;min-width:0}}
+
+/* 考古试炼扫描舱 */
+.starmap-archaeology-room{width:min(100%,860px);margin:18px auto 14px;padding:14px;border:1px solid rgba(73,128,157,.54);border-radius:12px;background:radial-gradient(circle at 70% 35%,rgba(63,166,177,.12),transparent 34%),linear-gradient(145deg,rgba(7,24,37,.98),rgba(2,10,18,.99));box-shadow:0 18px 42px rgba(0,0,0,.3)}
+.starmap-archaeology-stage{display:grid;grid-template-columns:320px minmax(0,1fr);gap:18px;align-items:stretch}
+.starmap-archaeology-ship-card{position:relative;min-height:250px;overflow:hidden;border:1px solid rgba(58,102,128,.58);border-radius:9px;background:radial-gradient(ellipse at 50% 42%,rgba(51,131,154,.24),transparent 36%),#030b14}
+.starmap-archaeology-ship-card canvas{display:block;width:100%;height:175px;animation:starmap-ship-drift 4.2s ease-in-out infinite}
+.starmap-archaeology-ship-label{position:absolute;top:9px;left:10px;padding:3px 8px;border:1px solid rgba(107,180,210,.26);border-radius:4px;background:rgba(2,12,21,.78);color:#abd0e7;font-size:11px}
+.starmap-archaeology-hp{display:grid;gap:5px;padding:9px 12px 12px}
+.starmap-archaeology-hp-row{display:grid;grid-template-columns:42px 1fr 70px;gap:7px;align-items:center;color:#7898ad;font-size:10px}.starmap-archaeology-hp-row b{text-align:right;color:#b9d4e4;font-weight:600;font-variant-numeric:tabular-nums}.starmap-archaeology-hp-track{height:5px;overflow:hidden;border-radius:5px;background:#101c27}.starmap-archaeology-hp-track i{display:block;height:100%;border-radius:inherit}.starmap-archaeology-hp-row.shield i{background:#4ea9df}.starmap-archaeology-hp-row.armor i{background:#d6d9dc}.starmap-archaeology-hp-row.structure i{background:#e09a58}
+.starmap-archaeology-console{padding:18px;border:1px solid rgba(57,101,128,.45);border-radius:9px;background:rgba(2,13,23,.64)}
+.starmap-scan-visual{position:relative;width:150px;height:150px;margin:0 auto 12px}.starmap-scan-visual>i{position:absolute;inset:0;border:1px solid rgba(92,220,214,.38);border-radius:50%;animation:starmap-scan-ring 2.4s ease-out infinite}.starmap-scan-visual>i:nth-child(2){animation-delay:.8s}.starmap-scan-visual>i:nth-child(3){animation-delay:1.6s}.starmap-scan-visual>span{position:absolute;inset:48px;display:grid;place-items:center;border:1px solid rgba(112,231,218,.58);border-radius:50%;background:radial-gradient(circle,rgba(89,214,206,.27),rgba(8,43,54,.72));color:#83e4d7;font-size:22px;box-shadow:0 0 24px rgba(75,210,204,.22)}
+.starmap-scan-visual.is-running>span{animation:starmap-scan-core 1.1s ease-in-out infinite}.starmap-archaeology-progress-copy{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:7px}.starmap-archaeology-progress-copy strong{color:#effcff;font-size:22px}.starmap-archaeology-progress-copy span{color:#7fa5b9;font-size:12px}.starmap-archaeology-progress-track{height:9px;overflow:hidden;border:1px solid rgba(70,134,157,.48);border-radius:8px;background:#07131d}.starmap-archaeology-progress-track>div{height:100%;width:0;background:linear-gradient(90deg,#3e9fc3,#6edbc4);box-shadow:0 0 12px rgba(91,221,202,.34);transition:width .25s ease}
+.starmap-archaeology-cycle-copy{display:flex;justify-content:space-between;align-items:center;margin:12px 1px 5px;color:#688ba0;font-size:11px}.starmap-archaeology-cycle-copy strong{color:#a8cfdf;font-size:11px;font-weight:600;font-variant-numeric:tabular-nums}.starmap-archaeology-cycle-track{height:6px;overflow:hidden;border-radius:6px;background:#07131d;box-shadow:inset 0 0 0 1px rgba(65,116,139,.34)}.starmap-archaeology-cycle-track>div{height:100%;width:0;background:linear-gradient(90deg,#2f7fa6,#64d2c0);box-shadow:0 0 9px rgba(91,221,202,.3);transition:width .18s linear}.starmap-archaeology-cycle-track.is-interference>div{background:linear-gradient(90deg,#8b4d45,#d38a67)}
+.starmap-archaeology-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:14px}.starmap-archaeology-stats>div{display:flex;justify-content:space-between;gap:8px;padding:8px 10px;border:1px solid rgba(54,93,116,.38);border-radius:6px;background:rgba(5,18,28,.58)}.starmap-archaeology-stats span{color:#698aa0;font-size:11px}.starmap-archaeology-stats strong{overflow:hidden;color:#cae9f1;font-size:12px;text-overflow:ellipsis;white-space:nowrap}
+.starmap-archaeology-stats label{color:#698aa0;font-size:11px}.starmap-archaeology-stats select{min-width:0;max-width:155px;border:1px solid rgba(74,132,157,.5);border-radius:4px;background:#071722;color:#cae9f1;font-family:inherit;font-size:11px;font-weight:600}.starmap-archaeology-stats select:disabled{opacity:.68;cursor:not-allowed}
+.starmap-archaeology-log{display:grid;gap:5px;min-height:42px;margin-top:10px;padding:10px 12px;border-top:1px solid rgba(64,105,129,.35);color:#7896aa;font-size:11px}.starmap-archaeology-log .success{color:#78d6ad}.starmap-archaeology-log .rare{color:#f2ca6d}.starmap-archaeology-log .failure{color:#df8975}
+@keyframes starmap-scan-ring{0%{transform:scale(.25);opacity:.9}100%{transform:scale(1);opacity:0}}@keyframes starmap-scan-core{0%,100%{filter:brightness(.9);transform:scale(.96)}50%{filter:brightness(1.35);transform:scale(1.04)}}
+@media(max-width:760px){.starmap-archaeology-stage{grid-template-columns:1fr}.starmap-archaeology-ship-card{min-height:225px}.starmap-archaeology-stats{grid-template-columns:1fr 1fr}}
