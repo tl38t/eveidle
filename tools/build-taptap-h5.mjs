@@ -183,6 +183,9 @@ function localizeIndexHtml(html, includeProbe) {
   let out = html;
   // 移除本地 QA 入口脚本（js/qa-seed.js 仅用于本地验收，禁止进入发布包；无论 selftest/release）
   out = out.replace(/<script[^>]*src=["'][^"']*js\/qa-seed\.js[^"']*["'][^>]*>\s*<\/script>\s*/g, "");
+  // 移除 Steam 适配器引用（合同预留、未签约；js/platform/steam/** 被构建硬排除严禁进 TapTap 包，
+  // 与 qa-seed 同模式在本地化阶段摘除 index.html 引用，使 selftest"引用可在包内找到"通过且不向 TapTap 泄露 Steam 代码）
+  out = out.replace(/<script[^>]*src=["'][^"']*js\/platform\/steam\/[^"']*["'][^>]*>\s*<\/script>\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com">\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com" crossorigin>\s*/g, "");
   out = out.replace(/<link href="https:\/\/fonts\.googleapis\.com\/css2\?family=Orbitron:[^"]*" rel="stylesheet">\s*/g, "");
