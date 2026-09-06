@@ -890,7 +890,12 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.blockedText = display.requirement.text;
     result.queue = { skill:"mining", target:display.current.name, label:getResourceDisplayName(display.current.ore) };
   } else if (target === "refining") {
-    const submode = (state.currentAction && state.currentAction.refiningSubAction) || "smelting";
+    // 2026-09-06 修复：确认弹窗属于【当前查看的子面板】，必须按视图态 refiningView 解析子模式。
+    // 旧逻辑按运行态 refiningSubAction 解析：运行中切 tab（view≠subAction）后再启动/停止，
+    // 分歧残留，玩家在拆解 tab 点「开始自动拆解」会弹出「冶炼」确认并入队冶炼项
+    // （target 走 smeltingArea，缺省回落凡晶石→三钛合金），表现为「拆装备有几率变成炼钛」。
+    const actRef = state.currentAction || {};
+    const submode = actRef.refiningView || actRef.refiningSubAction || "smelting";
     if (submode === "dismantle") {
       // 自动拆解子模式：归在熔炼行动下，复用同一套效率乘区；退料按冶炼回收率，发双份经验。
       const d = getDismantleDisplayState(state, now);

@@ -207,9 +207,10 @@
       items.forEach((item) => addGrouped(extractGrouped, 'production:' + item.rewardId, item.name, item.amount, reward.nodeId));
     });
     playerArchaeologyRewards.forEach((reward) => {
-      const rewardId = String(reward && reward.rewardId || '');
+      // 每日驻留发放「每日档位」（外II/中III/内IV）；分组与提取均以每日档位为准。
+      const rewardId = String((reward && reward.dailyRewardId) || (reward && reward.rewardId) || '');
       if (!rewardId) return;
-      const name = reward.rewardName || displayRewardName(rewardId);
+      const name = reward.dailyRewardName || reward.rewardName || displayRewardName(rewardId);
       addGrouped(dailyGrouped, 'archaeology:' + rewardId, name, reward.dailyAmount, reward.nodeId);
       addGrouped(extractGrouped, 'archaeology:' + rewardId, name, reward.pendingAmount, reward.nodeId);
     });
@@ -308,20 +309,23 @@
       return;
     }
     if (node.type === 'archaeology') {
-      const rewardTier = String(node.archaeologyRewardTier || (node.ring === 'outer' ? 'ii' : node.ring === 'middle' ? 'iii' : 'iv')).toLowerCase();
-      const rewardTierLabel = rewardTier.toUpperCase();
-      const rewardNames = { ii:'校准基体 II 型', iii:'校准基体 III 型', iv:'校准基体 IV 型' };
-      const rewardName = rewardNames[rewardTier] || ('校准基体 ' + rewardTierLabel + ' 型');
+      // 首次档位（外III/中IV/内V）与每日档位（外II/中III/内IV）分离：首页通关发首次档，之后按小时累计发每日档。
+      const firstTier = String(node.archaeologyFirstRewardTier || (node.ring === 'outer' ? 'iii' : node.ring === 'middle' ? 'iv' : 'v')).toLowerCase();
+      const dailyTier = String(node.archaeologyDailyRewardTier || node.archaeologyRewardTier || (node.ring === 'outer' ? 'ii' : node.ring === 'middle' ? 'iii' : 'iv')).toLowerCase();
+      const rewardNames = { ii:'校准基体 II 型', iii:'校准基体 III 型', iv:'校准基体 IV 型', v:'校准基体 V 型' };
+      const firstRewardName = rewardNames[firstTier] || ('校准基体 ' + firstTier.toUpperCase() + ' 型');
+      const dailyRewardName = rewardNames[dailyTier] || ('校准基体 ' + dailyTier.toUpperCase() + ' 型');
       const firstAmount = Math.max(0, Number(node.archaeologyFirstRewardAmount) || (node.ring === 'outer' ? 3 : node.ring === 'middle' ? 6 : 9));
       const dailyAmount = Math.max(0, Number(node.archaeologyDailyRewardAmount) || (node.ring === 'outer' ? 1 : node.ring === 'middle' ? 2 : 3));
       const reward = status === 'owned' ? playerArchaeologyRewards.get(nodeId(node)) : null;
-      appendRewardRow(host, '一次性奖励', rewardName + ' ×' + formatRewardAmount(firstAmount) + '（首次通关）');
-      appendRewardRow(host, '每日奖励', rewardName + ' ×' + formatRewardAmount(dailyAmount) + ' / 24h（每小时累计）');
+      appendRewardRow(host, '一次性奖励', firstRewardName + ' ×' + formatRewardAmount(firstAmount) + '（首次通关）');
+      appendRewardRow(host, '每日奖励', dailyRewardName + ' ×' + formatRewardAmount(dailyAmount) + ' / 24h（每小时累计）');
       if (status !== 'owned') {
         appendRewardRow(host, '当前累计', '0（完成节点后开始累计）', '#9bb2c8');
       } else {
         const pendingAmount = reward ? Number(reward.pendingAmount) || 0 : 0;
-        appendRewardRow(host, '当前累计', rewardName + ' ×' + formatRewardAmount(pendingAmount), pendingAmount > 0 ? '#ffe18a' : '#9bb2c8');
+        const pendingName = (reward && reward.dailyRewardName) || dailyRewardName;
+        appendRewardRow(host, '当前累计', pendingName + ' ×' + formatRewardAmount(pendingAmount), pendingAmount > 0 ? '#ffe18a' : '#9bb2c8');
         appendRewardRow(host, '提取方式', '请使用下方“考古奖励总览”统一提取', '#9bb2c8');
       }
       return;

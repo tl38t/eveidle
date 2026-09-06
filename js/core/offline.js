@@ -565,9 +565,33 @@ function getOfflineActionDescriptor() {
         const q = getAsmQuote();
         if (asmLevel() < q.levelGate) return; // 等级不足：零副作用
         deductShipAssemblyComponents(recipe, cycles);
-        for (let i = 0; i < cycles; i++) gameState.inventory.ships.push(createShipInstance(recipe.shipId));
-        addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
-        emitOfflineGameEvent("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });
+        // 2026-09-06 修复：部署物（激光定向打捞单元等 productKind==="deployable"）离线完成
+        // 必须与在线 tick.js:341 同口径入小队/召回库存。旧代码无此分支，一律
+        // createShipInstance(recipe.shipId) —— 部署物配方没有 shipId，产出 shipId:undefined
+        // 的幽灵船进 inventory.ships，部署物本体丢失（材料已扣）＝玩家反馈「造好的 MTU 被吞」。
+        if (recipe.productKind === "deployable") {
+          const squad = (gameState.combat && gameState.combat.squad) || (gameState.combat.squad = {});
+          if (!Array.isArray(squad.deployables)) squad.deployables = [];
+          if (!Array.isArray(squad.deployableStorage)) squad.deployableStorage = [];
+          const def = (typeof getDeployableDefinition === "function") ? getDeployableDefinition(recipe.deployableId) : null;
+          let deployedCount = 0, storedCount = 0;
+          for (let i = 0; i < cycles; i++) {
+            if (squad.deployables.length < 1) {
+              squad.deployables.push({ deployableId: recipe.deployableId, name: def ? def.name : recipe.name });
+              deployedCount++;
+            } else if (!squad.deployableStorage.includes(recipe.deployableId)) {
+              squad.deployableStorage.push(recipe.deployableId);
+              storedCount++;
+            }
+            // 已部署且库存已持有：部署物为单件设计（storage 按 id 去重），与在线 tick 行为一致，多余周期不重复入库
+          }
+          addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
+          emitOfflineGameEvent("manufacturing:completed", { branch:"deployable", recipeId:recipe.id, deployableId:recipe.deployableId, deployedCount, storedCount, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });
+        } else {
+          for (let i = 0; i < cycles; i++) gameState.inventory.ships.push(createShipInstance(recipe.shipId));
+          addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
+          emitOfflineGameEvent("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });
+        }
       }
     };
   }

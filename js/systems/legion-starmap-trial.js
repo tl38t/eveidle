@@ -10,11 +10,17 @@
   const PRODUCTION_REWARD_HOURS_PER_DAY = 24;
   const ARCHAEOLOGY_REWARD_HOUR_MS = 60 * 60 * 1000;
   const ARCHAEOLOGY_REWARD_HOURS_PER_DAY = 24;
+  // 2026-09-06：首次与每日改为「不同档位各 1 个」——首次比每日高一档，数量恒为 1。
+  // 外环 首次III/每日II，中环 首次IV/每日III，内环 首次V/每日IV。
+  // tier 仍为旧单一档位字段，仅作老存档/缺省兜底。
   const ARCHAEOLOGY_REWARD_BY_RING = {
-    outer:{ tier:"ii", firstRewardAmount:3, dailyAmount:1 },
-    middle:{ tier:"iii", firstRewardAmount:6, dailyAmount:2 },
-    inner:{ tier:"iv", firstRewardAmount:9, dailyAmount:3 }
+    outer:{ tier:"ii", firstTier:"iii", dailyTier:"ii", firstRewardAmount:1, dailyAmount:1 },
+    middle:{ tier:"iii", firstTier:"iv", dailyTier:"iii", firstRewardAmount:1, dailyAmount:1 },
+    inner:{ tier:"iv", firstTier:"v", dailyTier:"iv", firstRewardAmount:1, dailyAmount:1 }
   };
+  // 校准基体合法档位（V 型 2026-09-06 起用于内环首次奖励）。
+  const ARCHAEOLOGY_CALIB_TIERS = ["ii", "iii", "iv", "v"];
+  const ARCHAEOLOGY_CALIB_RE = /^calibration:art_(ii|iii|iv|v)_calib$/;
   // 星图大编队试炼专用：编队池与每战区平衡系数。仅 getBattleTrialWaveZone 消费，
   // 不改写 COMBAT_ZONES / 常规编队池，普通星带完全不受影响。
   const STARMAP_TRIAL_BIG_FORMATION_POOL = "starmap_big";
@@ -37,6 +43,20 @@
     "blood_outer_reliquary|elite":{ formationPool:"starmap_mid4", elitePool:["covenant_commander"], damage:1.62 },
     "sansha_outer_array|elite":{ formationPool:"starmap_mid4", elitePool:["nexus_commander"], damage:1.75 }
   };
+  // 星图战斗试炼奖励（2026-09-06）：一次性 = 星带同级掉落 ×3×5 + 货柜 ×5 + 许可 ×5；
+  // 每日驻留 = 一次性（未 ×5）÷ 5，只发星币与货柜。
+  // 泰坦组件节点（node.titanComponent）与最终核心节点（precursor_core）不参与，保持无掉落无驻留。
+  const BATTLE_TRIAL_DROP_ROLLS = 3;        // 基准份数：等于在同级星带击毁 3 艘同级敌舰
+  const BATTLE_TRIAL_ONCE_SCALE = 5;        // 一次性奖励整体倍率
+  const BATTLE_TRIAL_DAILY_DIVISOR = 5;     // 每日驻留 = 基准 ÷ 5（不参与一次性倍率）
+  const BATTLE_TRIAL_CARGO_COUNT = 5;       // 一次性货柜数量
+  const BATTLE_TRIAL_LICENSE_COUNT = 5;     // 一次性装备生产许可数量
+  const BATTLE_TRIAL_DAILY_CARGO = 0.2;     // 每日货柜（5 天 1 个）
+  const BATTLE_TRIAL_LICENSE_BY_RING = { outer:"A", middle:"S", inner:"S" };
+  const BATTLE_TRIAL_EXCLUDED_ZONE_IDS = ["precursor_core"];
+  const BATTLE_TRIAL_FACTION_LABEL = { angel:"苍穹劫团", blood:"赤誓教团", sansha:"静默集群" };
+  const BATTLE_TRIAL_REWARD_HOURS_PER_DAY = 24;
+  const BATTLE_TRIAL_REWARD_HOUR_MS = 60 * 60 * 1000;
   let replayTestingEnabled = false;
 
   function isValidArchaeologyTrialHp(hp) {
@@ -73,9 +93,13 @@
       const restoredTrialHp = getArchaeologyTrialShipHp(state, s.archaeologyTrial.shipInstanceId);
       if (restoredTrialHp) { s.archaeologyTrial.trialShipHp = restoredTrialHp; state._dirty = true; }
     }
+    if (!s.battleRewards || typeof s.battleRewards !== "object" || Array.isArray(s.battleRewards)) s.battleRewards = {};
     if (!s.battleTrial || typeof s.battleTrial !== "object") {
-      s.battleTrial = { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null };
+      s.battleTrial = { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null, iskPerKill:0, rewardGrantedAt:0, lastRewards:[] };
     }
+    if (!Number(s.battleTrial.iskPerKill)) s.battleTrial.iskPerKill = 0;
+    if (!Number(s.battleTrial.rewardGrantedAt)) s.battleTrial.rewardGrantedAt = 0;
+    if (!Array.isArray(s.battleTrial.lastRewards)) s.battleTrial.lastRewards = [];
     if (s.collectionTrial.status === "running" && !s.collectionTrial.lockedNode && s.collectionTrial.nodeId != null) {
       const trial = s.collectionTrial;
       const inferredBase = Number(trial.amount) > 0 && Number(trial.efficiency) > 0
@@ -230,13 +254,27 @@
   function getArchaeologyRewardSpec(node) {
     if (!node || node.type !== "archaeology") return null;
     const fallback = ARCHAEOLOGY_REWARD_BY_RING[String(node.ring || "outer")] || ARCHAEOLOGY_REWARD_BY_RING.outer;
-    const requestedTier = String(node.archaeologyRewardTier || fallback.tier).toLowerCase();
-    const tier = ["ii", "iii", "iv"].includes(requestedTier) ? requestedTier : fallback.tier;
+    const pickTier = function (value, fallbackTier) {
+      const requested = String(value || "").toLowerCase();
+      return ARCHAEOLOGY_CALIB_TIERS.includes(requested) ? requested : fallbackTier;
+    };
+    // 每日档位：优先新字段，回退环级兜底。注意 node.archaeologyRewardTier 是「站点/难度」档位
+    // （内环为 v），并非奖励档位，严禁用作奖励兜底，否则内环每日会被误判为 v。
+    const dailyTier = pickTier(node.archaeologyDailyRewardTier, fallback.dailyTier);
+    // 首次档位：优先新字段，回退环级兜底（不回退旧 tier，否则老节点会重复拿同档）。
+    const firstTier = pickTier(node.archaeologyFirstRewardTier, fallback.firstTier);
     const firstRewardAmount = Math.max(0, Math.floor(Number(node.archaeologyFirstRewardAmount) || fallback.firstRewardAmount));
     const dailyAmount = Math.max(1, Math.floor(Number(node.archaeologyDailyRewardAmount) || fallback.dailyAmount));
+    const firstRewardId = "calibration:art_" + firstTier + "_calib";
+    const dailyRewardId = "calibration:art_" + dailyTier + "_calib";
     return {
-      tier:tier,
-      rewardId:"calibration:art_" + tier + "_calib",
+      tier:dailyTier,
+      firstTier:firstTier,
+      dailyTier:dailyTier,
+      firstRewardId:firstRewardId,
+      dailyRewardId:dailyRewardId,
+      // rewardId 保留为「首次」档位，兼容旧读取方与老存档。
+      rewardId:firstRewardId,
       firstRewardAmount:firstRewardAmount,
       dailyAmount:dailyAmount,
       hourlyAmount:dailyAmount / ARCHAEOLOGY_REWARD_HOURS_PER_DAY
@@ -248,7 +286,7 @@
       const display = root.ResourceRegistry.getResourceDisplayName(id);
       if (display && display !== id) return display;
     }
-    const match = id.match(/^calibration:art_(ii|iii|iv)_calib$/);
+    const match = id.match(ARCHAEOLOGY_CALIB_RE);
     return match ? "校准基体 " + match[1].toUpperCase() + " 型" : id;
   }
   function createArchaeologyRewardRecord(node, now) {
@@ -259,8 +297,11 @@
       nodeId:String(node.id),
       ring:String(node.ring || "outer"),
       tier:spec.tier,
-      rewardId:spec.rewardId,
-      rewardName:getArchaeologyRewardName(spec.rewardId),
+      rewardId:spec.firstRewardId,
+      rewardName:getArchaeologyRewardName(spec.firstRewardId),
+      firstRewardId:spec.firstRewardId,
+      dailyRewardId:spec.dailyRewardId,
+      dailyRewardName:getArchaeologyRewardName(spec.dailyRewardId),
       firstRewardAmount:spec.firstRewardAmount,
       dailyAmount:spec.dailyAmount,
       hourlyAmount:spec.hourlyAmount,
@@ -274,8 +315,8 @@
   function normalizeArchaeologyRewardRecord(record, nodeId) {
     if (!record || typeof record !== "object") return null;
     const rewardId = String(record.rewardId || "");
-    if (!/^calibration:art_(ii|iii|iv)_calib$/.test(rewardId)) return null;
-    const tier = rewardId.match(/^calibration:art_(ii|iii|iv)_calib$/)[1];
+    if (!/^calibration:art_(ii|iii|iv|v)_calib$/.test(rewardId)) return null;
+    const tier = rewardId.match(/^calibration:art_(ii|iii|iv|v)_calib$/)[1];
     const dailyAmount = Math.max(1, Math.floor(Number(record.dailyAmount) || 0));
     return {
       ...record,
@@ -369,11 +410,14 @@
       if (!reward) return;
       const amount = Math.floor(Math.max(0, Number(reward.pendingAmount) || 0) + 1e-9);
       if (!(amount > 0)) { s.archaeologyRewards[key] = reward; return; }
-      root.ResourceRegistry.add(state, reward.rewardId, amount);
+      // 每日驻留发放「每日档位」（外II/中III/内IV）；首次档位（外III/中IV/内V）仅在通关时一次性发放。
+      const grantedRewardId = reward.dailyRewardId || reward.rewardId;
+      const grantedRewardName = reward.dailyRewardName || reward.rewardName;
+      root.ResourceRegistry.add(state, grantedRewardId, amount);
       reward.pendingAmount = Math.max(0, reward.pendingAmount - amount);
       reward.lastCollectedAt = Number(now) || Date.now();
       s.archaeologyRewards[key] = reward;
-      items.push({ nodeId:key, rewardId:reward.rewardId, name:reward.rewardName, amount:amount });
+      items.push({ nodeId:key, rewardId:grantedRewardId, name:grantedRewardName, amount:amount });
     });
     if (!items.length) return { changed:false, reason:"archaeology-reward-empty", rewards:getArchaeologyRewardStates(state, now) };
     state._dirty = true;
@@ -406,13 +450,21 @@
     if (archaeologyResult && archaeologyResult.changed) (archaeologyResult.items || []).forEach(function (item) {
       items.push({ category:"archaeology", nodeId:item.nodeId, rewardId:item.rewardId, name:item.name, amount:item.amount });
     });
+    const battleStates = getBattleRewardStates(state, t);
+    battleStates.forEach(function (record) {
+      const result = collectBattleReward(state, record.nodeId, t);
+      if (result && result.changed) (result.items || []).forEach(function (item) {
+        items.push({ category:"battle", nodeId:result.nodeId, rewardId:item.rewardId, name:item.name, amount:item.amount });
+      });
+    });
     if (!items.length) {
       return {
         changed:false,
         reason:"resident-reward-empty",
         collectionRewards:getCollectionRewardStates(state, t),
         productionRewards:getProductionRewardStates(state, t),
-        archaeologyRewards:getArchaeologyRewardStates(state, t)
+        archaeologyRewards:getArchaeologyRewardStates(state, t),
+        battleRewards:getBattleRewardStates(state, t)
       };
     }
     state._dirty = true;
@@ -421,7 +473,8 @@
       items:items,
       collectionRewards:getCollectionRewardStates(state, t),
       productionRewards:getProductionRewardStates(state, t),
-      archaeologyRewards:getArchaeologyRewardStates(state, t)
+      archaeologyRewards:getArchaeologyRewardStates(state, t),
+      battleRewards:getBattleRewardStates(state, t)
     };
   }
   function lockNode(node) {
@@ -460,7 +513,9 @@
       type:"battle", subtype:String(node.subtype || "战斗"),
       battleTrialZoneId:String(node.battleTrialZoneId || ""),
       battleTrialEnemyCount:Math.max(1, Number(node.battleTrialEnemyCount) || 2),
-      battleTrialTimeLimitSeconds:Number(node.battleTrialTimeLimitSeconds) || LIMIT_SECONDS
+      battleTrialTimeLimitSeconds:Number(node.battleTrialTimeLimitSeconds) || LIMIT_SECONDS,
+      // 泰坦组件节点不参与战斗试炼奖励（2026-09-06），锁定快照必须带上该标记。
+      titanComponent:node.titanComponent === true
     };
   }
   function readEfficiency(node) {
@@ -550,6 +605,234 @@
     // 试炼精英档（未配置 override 的战区）保持旧行为：全部敌舰使用现有精英敌舰模板。
     return { ...zone, enemyPool:{ ...zone.enemyPool, normal:elitePool, elite:[] } };
   }
+  function isBattleTrialRewardExcluded(node) {
+    if (!node) return true;
+    if (node.titanComponent === true) return true;
+    return BATTLE_TRIAL_EXCLUDED_ZONE_IDS.indexOf(String(node.battleTrialZoneId || "")) >= 0;
+  }
+  function getBattleTrialZoneById(zoneId) {
+    const id = String(zoneId || "");
+    const zones = (typeof COMBAT_ZONES !== "undefined" && Array.isArray(COMBAT_ZONES)) ? COMBAT_ZONES : [];
+    if (!id || !zones.length) return null;
+    for (const entry of zones) { if (entry && String(entry.id) === id) return entry; }
+    return null;
+  }
+  function battleTrialEnemyTypeKey(zone, node) {
+    if (!zone) return "";
+    const tier = node && node.tier === "elite" ? "elite" : "normal";
+    const override = STARMAP_TRIAL_WAVE_OVERRIDES[zone.id + "|" + tier];
+    if (override && Array.isArray(override.elitePool) && override.elitePool.length) return override.elitePool[0];
+    const pool = zone.enemyPool ? (tier === "elite" ? zone.enemyPool.elite : zone.enemyPool.normal) : null;
+    return Array.isArray(pool) && pool.length ? pool[0] : "";
+  }
+  // 同级单艘实得星币：优先取编队中与节点档位同级的敌舰 iskDrop 均值 × 战区 iskMulti。
+  function battleTrialIskPerKill(enemies, node, zone) {
+    const want = node && node.tier === "elite" ? "elite" : "normal";
+    const list = (Array.isArray(enemies) ? enemies : []).filter(function (enemy) {
+      return enemy && enemy.kind === want && Number(enemy.iskDrop) > 0;
+    });
+    const pool = list.length ? list : (Array.isArray(enemies) ? enemies : []).filter(function (enemy) {
+      return enemy && Number(enemy.iskDrop) > 0;
+    });
+    if (!pool.length) return 0;
+    const sum = pool.reduce(function (acc, enemy) { return acc + Number(enemy.iskDrop); }, 0);
+    return Math.round(sum / pool.length * (Number(zone && zone.iskMulti) || 1));
+  }
+  // 未记录编队时（老存档补发）按战区反推：复用生产 createCombatEnemy 取模板 iskDrop。
+  function battleTrialIskPerKillByZone(zone, node) {
+    if (!zone || typeof createCombatEnemy !== "function") return 0;
+    const waveZone = typeof getBattleTrialWaveZone === "function" ? getBattleTrialWaveZone(zone, node) : zone;
+    const kinds = node && node.tier === "elite" ? ["elite", "normal"] : ["normal"];
+    for (const kind of kinds) {
+      const probe = createCombatEnemy(waveZone, kind, Math.random, {});
+      if (probe && Number(probe.iskDrop) > 0) return Math.round(Number(probe.iskDrop) * (Number(waveZone.iskMulti) || 1));
+    }
+    return 0;
+  }
+  function battleTrialLicenseId(zone, node) {
+    if (!zone) return "";
+    const ring = node && BATTLE_TRIAL_LICENSE_BY_RING[node.ring] ? node.ring : "outer";
+    const label = BATTLE_TRIAL_FACTION_LABEL[zone.faction] || BATTLE_TRIAL_FACTION_LABEL.angel;
+    return "special:" + label + "装备生产许可" + (BATTLE_TRIAL_LICENSE_BY_RING[ring] || "A");
+  }
+  // 必掉货柜：第一次 rng 调用返回 0 使掉率判定必中，后续调用仍走真实随机决定尺寸，
+  // 完全复用生产 rollCargoDrop 本身，不另写尺寸与入池逻辑。
+  function grantBattleTrialCargo(state, zone, node) {
+    if (typeof rollCargoDrop !== "function" || !zone) return null;
+    let forced = true;
+    const rng = function () { if (forced) { forced = false; return 0; } return Math.random(); };
+    return rollCargoDrop({ kind:(node && node.tier === "elite" ? "elite" : "normal"), type:battleTrialEnemyTypeKey(zone, node) }, zone, rng, state);
+  }
+  function normalizeBattleRewardRecord(record, nodeId) {
+    if (!record || typeof record !== "object") return null;
+    const dailyIsk = Math.max(0, Math.round(Number(record.dailyIsk) || 0));
+    const dailyCargo = Math.max(0, Number(record.dailyCargo) || 0);
+    return {
+      ...record,
+      nodeId:String(record.nodeId != null ? record.nodeId : nodeId),
+      ring:String(record.ring || "outer"),
+      tier:record.tier === "elite" ? "elite" : "normal",
+      dailyIsk:dailyIsk,
+      hourlyIsk:dailyIsk / BATTLE_TRIAL_REWARD_HOURS_PER_DAY,
+      cargoSize:String(record.cargoSize || ""),
+      dailyCargo:dailyCargo,
+      hourlyCargo:dailyCargo / BATTLE_TRIAL_REWARD_HOURS_PER_DAY,
+      pendingIsk:Math.max(0, Number(record.pendingIsk) || 0),
+      pendingCargo:Math.max(0, Number(record.pendingCargo) || 0),
+      accruedAt:Number(record.accruedAt) || Date.now(),
+      lastCollectedAt:Number(record.lastCollectedAt) || 0
+    };
+  }
+  function accrueBattleRewards(state, now) {
+    if (!state) return { changed:false, rewards:[] };
+    const s = ensure(state);
+    const t = Number(now) || Date.now();
+    let changed = false;
+    Object.keys(s.battleRewards).forEach(function (nodeId) {
+      const normalized = normalizeBattleRewardRecord(s.battleRewards[nodeId], nodeId);
+      if (!normalized) { delete s.battleRewards[nodeId]; changed = true; return; }
+      if (t >= normalized.accruedAt && (normalized.hourlyIsk > 0 || normalized.hourlyCargo > 0)) {
+        const elapsedHours = Math.floor((t - normalized.accruedAt) / BATTLE_TRIAL_REWARD_HOUR_MS);
+        if (elapsedHours > 0) {
+          normalized.pendingIsk += elapsedHours * normalized.hourlyIsk;
+          if (normalized.cargoSize) normalized.pendingCargo += elapsedHours * normalized.hourlyCargo;
+          normalized.accruedAt += elapsedHours * BATTLE_TRIAL_REWARD_HOUR_MS;
+          changed = true;
+        }
+      }
+      if (JSON.stringify(s.battleRewards[nodeId]) !== JSON.stringify(normalized)) changed = true;
+      s.battleRewards[nodeId] = normalized;
+    });
+    if (changed) state._dirty = true;
+    return { changed:changed, rewards:Object.keys(s.battleRewards).map(function (nodeId) {
+      return normalizeBattleRewardRecord(s.battleRewards[nodeId], nodeId);
+    }).filter(Boolean) };
+  }
+  function collectBattleReward(state, nodeId, now) {
+    if (!state || nodeId == null) return { changed:false, reason:"invalid-battle-reward" };
+    accrueBattleRewards(state, now);
+    const s = ensure(state);
+    const key = String(nodeId);
+    const record = normalizeBattleRewardRecord(s.battleRewards[key], key);
+    if (!record) return { changed:false, reason:"battle-reward-not-found" };
+    if (!root.ResourceRegistry || typeof root.ResourceRegistry.add !== "function") return { changed:false, reason:"resource-registry-unavailable" };
+    const t = Number(now) || Date.now();
+    const items = [];
+    const isk = Math.floor(record.pendingIsk + 1e-9);
+    if (isk > 0) {
+      root.ResourceRegistry.add(state, "currency:isk", isk);
+      items.push({ rewardId:"currency:isk", name:"星币", amount:isk });
+    }
+    let cargo = 0;
+    if (record.cargoSize) {
+      cargo = Math.floor(record.pendingCargo + 1e-9);
+      if (cargo > 0) {
+        const itemId = typeof cargoItemId === "function" ? cargoItemId(record.cargoSize) : ("cargo:" + record.cargoSize);
+        root.ResourceRegistry.add(state, itemId, cargo);
+        items.push({ rewardId:itemId, name:"货柜" + record.cargoSize, amount:cargo });
+      }
+    }
+    if (!items.length) return { changed:false, reason:"battle-reward-empty" };
+    record.pendingIsk = Math.max(0, record.pendingIsk - isk);
+    record.pendingCargo = Math.max(0, record.pendingCargo - cargo);
+    record.lastCollectedAt = t;
+    s.battleRewards[key] = record;
+    state._dirty = true;
+    return { changed:true, nodeId:key, items:items };
+  }
+  function getBattleRewardStates(state, now) {
+    return accrueBattleRewards(state, now).rewards.map(function (record) { return { ...record }; });
+  }
+  function getBattleRewardState(state, nodeId, now) {
+    if (!state || nodeId == null) return null;
+    accrueBattleRewards(state, now);
+    const s = ensure(state);
+    return normalizeBattleRewardRecord(s.battleRewards[String(nodeId)], String(nodeId));
+  }
+  // 战斗试炼通关奖励：星带同级掉落 ×15（3 × 5）+ 货柜 ×5 + 许可 ×5，并建每日驻留账本。
+  function grantBattleTrialRewards(state, node, now, options) {
+    if (!state || !node || node.id == null) return null;
+    if (isBattleTrialRewardExcluded(node)) return null;
+    const zone = getBattleTrialZoneById(node.battleTrialZoneId);
+    const registry = root.ResourceRegistry;
+    if (!zone || !registry || typeof registry.add !== "function") return null;
+    const opts = options || {};
+    const t = Number(now) || Date.now();
+    const starmap = ensure(state);
+    const trial = starmap.battleTrial;
+    const key = String(node.id);
+    if (starmap.battleRewards[key]) return null;
+    const kind = node.tier === "elite" ? "elite" : "normal";
+    const rolls = BATTLE_TRIAL_DROP_ROLLS * BATTLE_TRIAL_ONCE_SCALE;
+    let perKill = Math.max(0, Math.round(Number(opts.iskPerKill) || 0));
+    if (!perKill) perKill = Math.max(0, Number(trial.iskPerKill) || 0);
+    if (!perKill) perKill = battleTrialIskPerKillByZone(zone, node);
+    const tally = Object.create(null);
+    const record = function (id, qty, name, alreadyGranted) {
+      if (!id || !(qty > 0)) return;
+      if (!alreadyGranted) registry.add(state, id, qty);
+      if (!tally[id]) tally[id] = { id:id, name:name || id, qty:0 };
+      tally[id].qty += qty;
+    };
+    record("currency:isk", Math.round(perKill * rolls), "星币", false);
+    for (let index = 0; index < rolls; index++) {
+      if (typeof rollFactionEncryptedDataDrop === "function") {
+        const drop = rollFactionEncryptedDataDrop(zone.faction, kind, Math.random(), zone, state);
+        if (drop) record("special:" + drop.material, drop.qty, drop.material, true);
+      }
+      if (typeof rollCombatZoneSpecialDrops === "function") {
+        rollCombatZoneSpecialDrops(zone, kind, [Math.random()], state).forEach(function (drop) {
+          record(drop.resourceId, drop.qty, drop.material, true);
+        });
+      }
+      if (typeof rollGearDrops === "function") {
+        rollGearDrops(zone, kind, [Math.random()], state).forEach(function (drop) {
+          record(drop.resourceId, drop.qty, drop.material, true);
+        });
+      }
+      if (typeof rollStationCoreDrop === "function") {
+        const drop = rollStationCoreDrop(zone, kind, Math.random(), state);
+        if (drop) record(drop.resourceId, drop.qty, drop.material, true);
+      }
+      if (typeof rollDeathspaceTicketDrop === "function") {
+        const drop = rollDeathspaceTicketDrop(zone, kind, Math.random(), state);
+        if (drop) record("special:" + drop.material, drop.qty, drop.material, true);
+      }
+      if (typeof rollTacticalMaterialDrop === "function") {
+        // 战术材料是纯计算函数（自身不发奖），需在此入池。
+        const drop = rollTacticalMaterialDrop(zone, kind, Math.random);
+        if (drop) record("special:" + drop.materialId, drop.quantity, drop.materialName || drop.materialId, false);
+      }
+    }
+    let cargoSize = "";
+    for (let index = 0; index < BATTLE_TRIAL_CARGO_COUNT; index++) {
+      const cargo = grantBattleTrialCargo(state, zone, node);
+      if (!cargo) continue;
+      if (!cargoSize) cargoSize = String(cargo.size || "");
+      record(cargo.itemId || ("cargo:" + cargo.size), 1, "货柜" + cargo.size, true);
+    }
+    const licenseId = battleTrialLicenseId(zone, node);
+    if (licenseId) record(licenseId, BATTLE_TRIAL_LICENSE_COUNT, licenseId.replace(/^special:/, ""), false);
+    const items = Object.keys(tally).map(function (id) { return tally[id]; });
+    starmap.battleRewards[key] = normalizeBattleRewardRecord({
+      nodeId:key,
+      ring:String(node.ring || "outer"),
+      tier:kind,
+      dailyIsk:Math.round(perKill * BATTLE_TRIAL_DROP_ROLLS / BATTLE_TRIAL_DAILY_DIVISOR),
+      cargoSize:cargoSize,
+      dailyCargo:cargoSize ? BATTLE_TRIAL_DAILY_CARGO : 0,
+      pendingIsk:0,
+      pendingCargo:0,
+      accruedAt:t,
+      lastCollectedAt:0
+    }, key);
+    if (!opts.silent) {
+      trial.rewardGrantedAt = t;
+      trial.lastRewards = items;
+    }
+    state._dirty = true;
+    return items;
+  }
   function startBattleTrial(state, node, now, options) {
     const opts = options || {};
     if (state && state.combat && state.combat.active) return { changed:false, reason:"combat-running" };
@@ -580,7 +863,10 @@
     const enemyCount = Math.max(1, Math.min(Number(node.battleTrialEnemyCount) || 2, wave.enemies.length));
     if (!Array.isArray(wave.enemies) || wave.enemies.length < enemyCount) return { changed:false, reason:"missing-formation" };
     combat.trialWaveZone = waveZone;
-    const res = root.dispatchGameAction(state, { type:"combat/start", enemies:wave.enemies.slice(0, enemyCount), formationId:wave.formationId }, t);
+    const trialEnemies = wave.enemies.slice(0, enemyCount);
+    // 同级单艘实得星币：通关奖励按此基数发放，故在开战时随编队一起固化。
+    const trialIskPerKill = battleTrialIskPerKill(trialEnemies, node, waveZone);
+    const res = root.dispatchGameAction(state, { type:"combat/start", enemies:trialEnemies, formationId:wave.formationId }, t);
     if (!res || !res.changed) return { changed:false, reason:res && res.reason || "combat-start-failed", requiredCL:res && res.requiredCL, remaining:res && res.remaining };
     // 小队开战接线（2026-09-06 修复）：与普通星带（actions.js combat/start）和死亡空间同口径——
     // 把战前选择的 NPC（squad.pendingNpcIds）固化为本场小队成员。此前试炼从不拉起小队，
@@ -593,7 +879,8 @@
     const limit = Number(node.battleTrialTimeLimitSeconds) || LIMIT_SECONDS;
     Object.assign(s, {
       status:"running", nodeId:String(node.id), lockedNode:lockBattleNode(node), zoneId:check.zone.id,
-      enemyCount:enemyCount, kills:0, startedAt:t, endsAt:t + limit * 1000, wave:1, result:null
+      enemyCount:enemyCount, kills:0, startedAt:t, endsAt:t + limit * 1000, wave:1, result:null,
+      iskPerKill:trialIskPerKill, rewardGrantedAt:0, lastRewards:[]
     });
     state._dirty = true;
     return { changed:true, trial:{ ...s }, combat:res };
@@ -609,6 +896,11 @@
       const completedId = String(s.nodeId);
       const completed = ensure(state).completedNodeIds;
       if (!completed.includes(completedId)) completed.push(completedId);
+      // 通关奖励（2026-09-06）：星带同级掉落 ×15 + 货柜 ×5 + 许可 ×5，并建立每日驻留账本。
+      // 取开战时的节点快照；泰坦组件节点与核心节点在内部直接跳过。
+      const rewardNode = s.lockedNode || { id:s.nodeId, ring:"outer", tier:"normal", battleTrialZoneId:s.zoneId };
+      const rewards = grantBattleTrialRewards(state, rewardNode, Date.now());
+      if (rewards) s.lastRewards = rewards;
     }
     // 试炼结束（2026-09-06）：参战 NPC 立即满修——destroyed/repairUntil 清除、combatHp 置空重算，
     // 与玩家侧「试炼后即刻满血再战」对齐（此前 NPC 爆船要吃 180 秒修复锁定，下次试炼无法上阵）。
@@ -788,6 +1080,15 @@
           s.archaeologyRewards[key] = record;
           changed = true;
         }
+      }
+      // 战斗节点（2026-09-06 新增奖励）：已认证但从未发过奖励的老存档节点按战区反推基数补发一次，
+      // battleRewards 存在即跳过，保证只补一次。泰坦组件与核心节点内部直接跳过，保持无奖励。
+      if (node.type === "battle" && !s.battleRewards[key]) {
+        grantBattleTrialRewards(state, node, t, {
+          silent:true,
+          iskPerKill:battleTrialIskPerKillByZone(getBattleTrialZoneById(node.battleTrialZoneId), node)
+        });
+        if (s.battleRewards[key]) changed = true;
       }
     });
     if (changed) state._dirty = true;
@@ -1283,6 +1584,12 @@
   API.finishBattleTrial = finishBattleTrial;
   API.stopBattleTrial = stopBattleTrial;
   API.tickBattleTrial = tickBattleTrial;
+  API.isBattleTrialRewardExcluded = isBattleTrialRewardExcluded;
+  API.grantBattleTrialRewards = grantBattleTrialRewards;
+  API.getBattleRewardStates = getBattleRewardStates;
+  API.getBattleRewardState = getBattleRewardState;
+  API.accrueBattleRewards = accrueBattleRewards;
+  API.collectBattleReward = collectBattleReward;
   API.tickLegionStarmapTrial = tick;
   API.finishCollectionTrial = finish;
   API.stopCollectionTrial = stop;

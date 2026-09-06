@@ -1440,19 +1440,21 @@ function getStationAutoLineDisplayState(state, lineId) {
     blockedReason = "no-target-selected";
   } else {
     // 蓝图限制（equipment/booster 线）：选中目标需对应蓝图，否则禁止启动
+    // 2026-09-06 修复：按 kind 分发（旧代码硬编码主线 lineId，副线卡片蓝图/白名单状态失效）
     let blueprintOk = true;
     let categoryOk = true;
     const selId = info.selectedTargetId;
-    if (selId && (lineId === "equipment" || lineId === "booster")) {
-      const pool = lineId === "equipment" ? EQUIPMENT_ENGINEERING_RECIPES : BOOSTER_RECIPES;
+    const dispKind = (AUTO_LINE_CONFIG[lineId] && AUTO_LINE_CONFIG[lineId].kind) || lineId;
+    if (selId && (dispKind === "equipment" || dispKind === "booster")) {
+      const pool = dispKind === "equipment" ? EQUIPMENT_ENGINEERING_RECIPES : BOOSTER_RECIPES;
       const recipe = pool && pool.find(r => r.id === selId);
       if (recipe && recipe.requiresBlueprint === true) {
-        blueprintOk = lineId === "equipment"
+        blueprintOk = dispKind === "equipment"
           ? manufacturingRecipeHasBlueprint(state, recipe)
           : hasBoosterBlueprintFromState(state, recipe.id);
       }
       // 产线白名单（仅 equipment 线）：非消耗品目标禁止启动
-      if (lineId === "equipment" && recipe && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
+      if (dispKind === "equipment" && recipe && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
         categoryOk = false;
       }
     }

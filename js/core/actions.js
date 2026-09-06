@@ -2240,19 +2240,22 @@ const StationStateActions = {
       return { changed:true, lineId, targetId:null };
     }
     // 验证 targetId 属于对应配方池
+    // 2026-09-06 修复：按 AUTO_LINE_CONFIG[lineId].kind 分发（旧代码硬编码主线 lineId，
+    // 导致 smelting_2/equipment_2/booster_2 选配方直接 unknown-recipe 被拒 → 第二条自动线无法使用）。
+    const selKind = (AUTO_LINE_CONFIG[lineId] && AUTO_LINE_CONFIG[lineId].kind) || lineId;
     let recipe;
-    if (lineId === "smelting") recipe = SMELTING_RECIPES.find(r => r.name === targetId);
-    else if (lineId === "equipment") recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === targetId);
-    else if (lineId === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
+    if (selKind === "smelting") recipe = SMELTING_RECIPES.find(r => r.name === targetId);
+    else if (selKind === "equipment") recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === targetId);
+    else if (selKind === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
     // 产线白名单：装备自动线仅允许消耗品类（燃料/弹药/探针），可装配装备不可选为生产目标
-    if (lineId === "equipment" && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
+    if (selKind === "equipment" && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
       return { changed:false, reason:"target-not-allowed" };
     }
     // 蓝图限制：equipment / booster 自动线需对应蓝图（与装备工程页一致，防止绕过）
     // 探针类走限次抄本 BPC（要求剩余流程 > 0），见 manufacturingRecipeHasBlueprint。
-    if ((lineId === "equipment" || lineId === "booster") && recipe.requiresBlueprint === true) {
-      const hasBp = (lineId === "equipment")
+    if ((selKind === "equipment" || selKind === "booster") && recipe.requiresBlueprint === true) {
+      const hasBp = (selKind === "equipment")
         ? manufacturingRecipeHasBlueprint(state, recipe)
         : hasBoosterBlueprintFromState(state, recipe.id);
       if (!hasBp) return { changed:false, reason:"blueprint-locked" };
@@ -2280,33 +2283,36 @@ const StationStateActions = {
     if (!targetId) return { changed:false, reason:"no-target-selected" };
 
     // 检查配方合法（不同线使用不同配方池）
+    // 2026-09-06 修复：按 AUTO_LINE_CONFIG[lineId].kind 分发（旧代码硬编码主线 lineId，
+    // 副线 smelting_2/equipment_2/booster_2 一律落到 unknown-recipe 被拒 → 第二条自动线无法启动）。
+    const startKind = (AUTO_LINE_CONFIG[lineId] && AUTO_LINE_CONFIG[lineId].kind) || lineId;
     let recipe;
-    if (lineId === "smelting") recipe = SMELTING_RECIPES.find(r => r.name === targetId);
-    else if (lineId === "equipment") recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === targetId);
-    else if (lineId === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
+    if (startKind === "smelting") recipe = SMELTING_RECIPES.find(r => r.name === targetId);
+    else if (startKind === "equipment") recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === targetId);
+    else if (startKind === "booster") recipe = BOOSTER_RECIPES.find(r => r.id === targetId);
 
     if (!recipe) return { changed:false, reason:"unknown-recipe" };
 
     // 产线白名单：装备自动线仅允许消耗品类（燃料/弹药/探针），可装配装备不可启动
-    if (lineId === "equipment" && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
+    if (startKind === "equipment" && EQUIPMENT_AUTO_LINE_CATEGORIES.indexOf(recipe.category) === -1) {
       return { changed:false, reason:"target-not-allowed" };
     }
 
     // 蓝图限制：equipment / booster 自动线需对应蓝图（与装备工程页一致，防止绕过）
     // 探针类走限次抄本 BPC（要求剩余流程 > 0），见 manufacturingRecipeHasBlueprint。
-    if ((lineId === "equipment" || lineId === "booster") && recipe.requiresBlueprint === true) {
-      const hasBp = (lineId === "equipment")
+    if ((startKind === "equipment" || startKind === "booster") && recipe.requiresBlueprint === true) {
+      const hasBp = (startKind === "equipment")
         ? manufacturingRecipeHasBlueprint(state, recipe)
         : hasBoosterBlueprintFromState(state, recipe.id);
       if (!hasBp) return { changed:false, reason:"blueprint-locked" };
     }
 
     // 检查配方等级门槛（装备自动线含配给剂激活期间的 +N 门槛）
-    const eeLvl = (lineId === "equipment") ? getEffectiveSkillLevel(state, "equipmentEngineering") : 99;
-    const bLvl = (lineId === "booster") ? getEffectiveSkillLevel(state, "boosterEngineering") : 99;
-    const sLvl = (lineId === "smelting") ? getEffectiveSkillLevel(state, "refining") : 99;
-    const eqGate = (lineId === "equipment") ? ((typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, recipe).levelGate : (Number(recipe.level) || 0)) : 99;
-    const levelCheck = (lineId === "equipment") ? (eeLvl < eqGate) : (lineId === "booster") ? (bLvl < recipe.level) : (lineId === "smelting") ? (sLvl < recipe.level) : false;
+    const eeLvl = (startKind === "equipment") ? getEffectiveSkillLevel(state, "equipmentEngineering") : 99;
+    const bLvl = (startKind === "booster") ? getEffectiveSkillLevel(state, "boosterEngineering") : 99;
+    const sLvl = (startKind === "smelting") ? getEffectiveSkillLevel(state, "refining") : 99;
+    const eqGate = (startKind === "equipment") ? ((typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, recipe).levelGate : (Number(recipe.level) || 0)) : 99;
+    const levelCheck = (startKind === "equipment") ? (eeLvl < eqGate) : (startKind === "booster") ? (bLvl < recipe.level) : (startKind === "smelting") ? (sLvl < recipe.level) : false;
     if (levelCheck) return { changed:false, reason:"level-locked" };
 
     // 如果正在运行另一个目标，拒绝

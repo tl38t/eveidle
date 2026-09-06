@@ -77,7 +77,10 @@ const ENEMY_CARGO_CLASS = {
     strike_cruiser: "cruiser", war_cruiser: "cruiser", fleet_commander: "cruiser",
     siege_battleship: "battleship", marauder_battleship: "battleship", war_master: "battleship",
     frontier_capital: "capital", domination_capital: "capital", outer_reach_overseer: "capital",
-    abyssal_supercapital: "supercapital", seraph_supercapital: "supercapital", deep_domain_overlord: "supercapital"
+    abyssal_supercapital: "supercapital", seraph_supercapital: "supercapital", deep_domain_overlord: "supercapital",
+    // 指挥舰（L62/L82/L92，2026-09-05 起用于星图大编队试炼）：此前未登记船级，
+    // getEnemyCargoClass 兜底成 frigate，导致击坠指挥舰只掉 S 货柜。按同层主力舰补登记。
+    marauder_commander: "battleship", frontier_commander: "capital", abyssal_commander: "supercapital"
   },
   blood: {
     acolyte: "frigate", priest: "frigate", cardinal: "frigate",
@@ -85,7 +88,8 @@ const ENEMY_CARGO_CLASS = {
     sermon_cruiser: "cruiser", sacrament_cruiser: "cruiser", blood_archon: "cruiser",
     iron_battleship: "battleship", apostle_battleship: "battleship", blood_sovereign: "battleship",
     covenant_capital: "capital", apostolic_capital: "capital", outer_reliquary_overseer: "capital",
-    abyssal_blood_supercapital: "supercapital", crimson_supercapital: "supercapital", deep_reliquary_overlord: "supercapital"
+    abyssal_blood_supercapital: "supercapital", crimson_supercapital: "supercapital", deep_reliquary_overlord: "supercapital",
+    apostle_commander: "battleship", covenant_commander: "capital", abyssal_blood_commander: "supercapital"
   },
   sansha: {
     drone: "frigate", sentinel: "frigate", overlord: "frigate",
@@ -93,7 +97,8 @@ const ENEMY_CARGO_CLASS = {
     assimilation_cruiser: "cruiser", dominion_cruiser: "cruiser", nexus_overlord: "cruiser",
     command_battleship: "battleship", domination_battleship: "battleship", matrix_overlord: "battleship",
     nexus_capital: "capital", dominion_capital: "capital", outer_array_overseer: "capital",
-    abyssal_nexus_supercapital: "supercapital", ascendant_supercapital: "supercapital", deep_nexus_overlord: "supercapital"
+    abyssal_nexus_supercapital: "supercapital", ascendant_supercapital: "supercapital", deep_nexus_overlord: "supercapital",
+    domination_commander: "battleship", nexus_commander: "capital", abyssal_nexus_commander: "supercapital"
   }
 };
 

@@ -806,6 +806,47 @@ function migrateMoonMiningState() {
   }
 }
 
+// 2026-09-06：「激光定向打捞单元被吞」存档修复迁移。
+// 根因：旧版 offline.js 总装完成无 productKind==="deployable" 分支，离线完成部署物时
+// createShipInstance(recipe.shipId=undefined) 产出「幽灵船」（shipId 不在 SHIP_DATA）
+// 塞进 inventory.ships，部署物本体丢失、材料已扣。
+// 补偿策略：移除幽灵船（shipId 不在任何 SHIP_DATA 分组中），并按单件设计补偿一台
+// 激光定向打捞单元到部署物仓库（已部署/已持有则只清理幽灵船）。
+// fail-open：SHIP_DATA 不可用时不动 inventory（避免误删正常舰船）。
+function shipIdKnownInShipData(shipId) {
+  if (typeof shipId !== "string" || !shipId) return false;
+  const data = (typeof window !== "undefined" && window.SHIP_DATA)
+    || (typeof globalThis !== "undefined" ? globalThis.SHIP_DATA : null);
+  if (!data) return true;
+  for (const group of Object.values(data)) {
+    if (group && typeof group === "object" && group[shipId]) return true;
+  }
+  return false;
+}
+
+function migrateGhostDeployableShips() {
+  const MTU_ID = "laser_directional_salvage_unit";
+  if (!gameState.inventory || !Array.isArray(gameState.inventory.ships)) return;
+  const ghosts = gameState.inventory.ships.filter(s => !s || !shipIdKnownInShipData(s.shipId));
+  if (!ghosts.length) return;
+  const kept = gameState.inventory.ships.filter(s => s && shipIdKnownInShipData(s.shipId));
+  // 悬挂引用守卫：若战斗/工业现役舰指向被移除的幽灵船，回退到保留列表首艘
+  const keptIds = new Set(kept.map(s => s.instanceId));
+  if (gameState.combat && typeof gameState.combat.activeShip === "string" && !keptIds.has(gameState.combat.activeShip)) {
+    gameState.combat.activeShip = kept.length ? kept[0].instanceId : null;
+  }
+  if (gameState.activeIndustrialShip && !keptIds.has(gameState.activeIndustrialShip)) {
+    gameState.activeIndustrialShip = null;
+  }
+  gameState.inventory.ships = kept;
+  const squad = (gameState.combat && gameState.combat.squad) || (gameState.combat.squad = {});
+  if (!Array.isArray(squad.deployables)) squad.deployables = [];
+  if (!Array.isArray(squad.deployableStorage)) squad.deployableStorage = [];
+  const deployed = squad.deployables.some(d => d && d.deployableId === MTU_ID);
+  if (!deployed && !squad.deployableStorage.includes(MTU_ID)) squad.deployableStorage.push(MTU_ID);
+  gameState._dirty = true;
+}
+
 // Batch R：确定性 RNG 状态迁移辅助（与 combat.js 的 nextCombatRandom 共用同一 JSON 安全结构）。
 // 严格清洗三 uint32；非法（缺失/类型错/越界）整体重建；不使用固定常量 seed、不读取 Date.now。
 function isUint32(v) {
@@ -1510,6 +1551,7 @@ function normalizeAndMigratePayload(ctx) {
   const now = ctx.now || Date.now();
   migrateAmmunitionEngineeringState();
   migrateMoonMiningState();
+  migrateGhostDeployableShips();
   migrateLegacyPromethiumOre(gameState);
   migrateDeathspaceState();
   migrateBoosterState();

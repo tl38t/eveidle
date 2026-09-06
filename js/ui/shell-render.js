@@ -66,6 +66,13 @@ function syncStarmapCompletedNodes(frame) {
     }
   } catch (_) {}
   target.contentWindow.postMessage({ type:"legion-starmap/archaeology-reward-state", rewards:archaeologyRewards }, "*");
+  let battleRewards = [];
+  try {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.getBattleRewardStates === "function") {
+      battleRewards = LEGION_STARMAP_TRIAL.getBattleRewardStates(gameState, now);
+    }
+  } catch (_) {}
+  target.contentWindow.postMessage({ type:"legion-starmap/battle-reward-state", rewards:battleRewards }, "*");
 }
 
 function getLockedStarmapTrialNode() {
@@ -257,6 +264,34 @@ function stopStarmapBattleTrialFromCombat() {
   return true;
 }
 
+function battleTrialRewardText(node, trial) {
+  const api = (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL) ? LEGION_STARMAP_TRIAL : null;
+  if (api && typeof api.isBattleTrialRewardExcluded === "function" && api.isBattleTrialRewardExcluded(node)) {
+    return " 该节点为终局目标，不发放试炼奖励。";
+  }
+  const parts = [];
+  const rewards = Array.isArray(trial.lastRewards) ? trial.lastRewards : [];
+  parts.push(rewards.length
+    ? "战利品：" + rewards.map(function (item) { return String(item.name || item.id) + " ×" + item.qty; }).join("、")
+    : "战利品已发放");
+  let record = null;
+  try {
+    if (api && typeof api.getBattleRewardState === "function" && node.id != null) {
+      record = api.getBattleRewardState(gameState, node.id, Date.now());
+    }
+  } catch (_) {}
+  if (record) {
+    const pending = [];
+    const pendingIsk = Math.floor(Number(record.pendingIsk) || 0);
+    const pendingCargo = Math.floor(Number(record.pendingCargo) || 0);
+    if (pendingIsk > 0) pending.push("星币 " + pendingIsk.toLocaleString());
+    if (pendingCargo > 0 && record.cargoSize) pending.push("货柜" + record.cargoSize + " " + pendingCargo);
+    parts.push("每日驻留：星币 " + Math.round(Number(record.dailyIsk) || 0).toLocaleString() + " + 货柜 " + (Number(record.dailyCargo) || 0) + " 个/日"
+      + (pending.length ? "（待领取：" + pending.join("、") + "）" : ""));
+  }
+  return " " + parts.join(" · ") + "。";
+}
+
 function renderStarmapTrialRoom(now) {
   restoreRunningStarmapTrialRoom();
   const room = document.getElementById("legion-starmap-trial-room");
@@ -308,7 +343,10 @@ function renderStarmapTrialRoom(now) {
     countdown.textContent = trial.status === "running" ? "剩余时间：" + remaining + "s" : trial.status === "success" ? "剩余时间：试炼完成" : trial.status === "failed" ? "剩余时间：0s" : "剩余时间：180s";
   }
   if (text) text.textContent = trial.status === "running" ? "进度 " + Math.floor(pct) + "%" : (trial.status === "success" ? "试炼成功" : trial.status === "failed" ? "试炼失败" : "等待开始");
-  if (result) result.textContent = isProduction ? (productionTrial.status === "success" ? "物资已交付，节点认证完成。" : "") : isArchaeology ? (trial.status === "success" ? "遗迹信号已完整解析，节点认证完成。" : trial.status === "failed" ? String(trial.result || "未在时限内完成遗迹解析。") : "") : isBattle ? (trial.status === "success" ? "敌方编队已击破，节点认证完成。" : trial.status === "failed" ? String(trial.result || "未在时限内完成战斗试炼。") : "") : trial.result === "stopped" ? "试炼已停止，当前进度不返还。" : trial.status === "success" ? "已完成节点试炼。" : trial.status === "failed" ? "未在时限内完成。" : "";
+  if (result) {
+    const baseText = isProduction ? (productionTrial.status === "success" ? "物资已交付，节点认证完成。" : "") : isArchaeology ? (trial.status === "success" ? "遗迹信号已完整解析，节点认证完成。" : trial.status === "failed" ? String(trial.result || "未在时限内完成遗迹解析。") : "") : isBattle ? (trial.status === "success" ? "敌方编队已击破，节点认证完成。" : trial.status === "failed" ? String(trial.result || "未在时限内完成战斗试炼。") : "") : trial.result === "stopped" ? "试炼已停止，当前进度不返还。" : trial.status === "success" ? "已完成节点试炼。" : trial.status === "failed" ? "未在时限内完成。" : "";
+    result.textContent = (isBattle && trial.status === "success") ? baseText + battleTrialRewardText(node, trial) : baseText;
+  }
   const replayEnabled = typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.isReplayTestingEnabled === "function" && LEGION_STARMAP_TRIAL.isReplayTestingEnabled();
   const nodeCompleted = typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.isNodeCompleted === "function" && LEGION_STARMAP_TRIAL.isNodeCompleted(gameState, node);
   if (replayToggle) replayToggle.checked = replayEnabled;
@@ -543,7 +581,11 @@ function renderStarmapCollectionRoom(node, trial, now) {
   const host = document.getElementById("starmap-collection-room");
   if (!host) return;
   const isCollection = node && node.type === "collection" && node.collectionResource;
+  // 显隐必须与生产/考古房间同口径双写（hidden + style.display）：战斗试炼分支隐藏本容器时
+  // 会写入内联 style.display="none"（:356），只清 hidden 清不掉内联样式，
+  // 会导致打过战斗试炼后采集房间只剩头部、舰船/资源卡/进度条整块不可见。
   host.hidden = !isCollection;
+  host.style.display = isCollection ? "block" : "none";
   if (!isCollection) return;
   const amount = Math.max(1, Number(trial.amount || node.collectionAmount || 1));
   const gatheredRaw = Math.max(0, Math.min(amount, Number(trial.gathered) || 0));

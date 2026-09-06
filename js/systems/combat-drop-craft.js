@@ -131,6 +131,38 @@ function getMaterialCraftables(materialName, state) {
     }
   }
 
+  // 4) 增强剂配方：cost 含 "special:<材料>" / "<材料>" / 完整资源键（30 条唯一事实来源 BOOSTER_RECIPES）。
+  // 2026-09-06 补：此前只扫舰船/装备，导致战术材料（战术残液等）与气体的物品详情恒显示
+  // 「当前版本暂无配方消耗此材料」，而实际增强剂制造正是它们的主要去处。
+  // 蓝图归属键与装备同源（booster:<id>，见 getBoosterBlueprintOwnershipKey）。
+  if (typeof BOOSTER_RECIPES !== "undefined" && Array.isArray(BOOSTER_RECIPES)) {
+    for (const recipe of BOOSTER_RECIPES) {
+      if (!recipe || !recipe.cost) continue;
+      // 命名空间无关匹配：配方 cost 的键可能是 special:/gas:/planetary:/mineral: 或裸名，
+      // 统一剥掉前缀后比较，避免气体材料（gas:xxx）查不到用途。
+      let qty = 0;
+      for (const key in recipe.cost) {
+        if (!Object.prototype.hasOwnProperty.call(recipe.cost, key)) continue;
+        const bareKey = key.indexOf(":") >= 0 ? key.slice(key.indexOf(":") + 1) : key;
+        if (bareKey !== materialName && key !== canonical) continue;
+        qty = Number(recipe.cost[key]);
+        break;
+      }
+      if (!qty || qty <= 0) continue;
+      const bpKey = "booster:" + (recipe.id || "");
+      if (seen[bpKey]) continue;
+      const req = !!recipe.requiresBlueprint;
+      out.push({
+        name: recipe.name || bpKey,
+        type: "增强剂",
+        bpKey: bpKey,
+        requiresBlueprint: req,
+        unlocked: _isBlueprintUnlocked(bpKey, req, state)
+      });
+      seen[bpKey] = true;
+    }
+  }
+
   // 同类型按名称排序，稳定输出
   out.sort((a, b) => (a.type === b.type ? (a.name < b.name ? -1 : 1) : (a.type < b.type ? -1 : 1)));
   return out;
