@@ -125,13 +125,16 @@
   };
   const appendRewardRow = (host, label, value, accent) => {
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;gap:8px;align-items:flex-start;margin-top:6px;line-height:1.55';
+    row.className = 'reward-description-row';
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start;margin-top:6px;line-height:1.55;min-width:0;max-width:100%';
     const key = document.createElement('strong');
+    key.className = 'reward-description-key';
     key.textContent = label + '：';
-    key.style.cssText = 'flex:0 0 auto;color:#e5f2ff';
+    key.style.cssText = 'flex:0 1 auto;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;color:#e5f2ff';
     const copy = document.createElement('span');
+    copy.className = 'reward-description-value';
     copy.textContent = value;
-    copy.style.color = accent || '#a8bdd5';
+    copy.style.cssText = 'flex:1 1 120px;min-width:0;max-width:100%;overflow-wrap:anywhere;word-break:break-word;color:' + (accent || '#a8bdd5');
     row.append(key, copy);
     host.appendChild(row);
   };

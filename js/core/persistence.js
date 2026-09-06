@@ -1223,7 +1223,7 @@ function normalizeLegionState(state) {
       candidates: [], npcs: [], candidateRefreshAt: 0, manualRefreshCount: 0,
       manualRefreshCycleStartedAt: 0, lastSalarySettlementAt: 0, lastXpSettlementAt: 0,
       technologyLevel: 0,
-      starmap: { initialRouteStateVersion: 1, completedNodeIds: [], collectionRewards: {} }
+      starmap: { initialRouteStateVersion: 2, completedNodeIds: [], collectionRewards: {} }
     };
     state._dirty = true;
     return;
@@ -1240,15 +1240,15 @@ function normalizeLegionState(state) {
   if (typeof L.technologyLevel !== "number") { L.technologyLevel = 0; dirty = true; }
   if (!L.starmap || typeof L.starmap !== "object") { L.starmap = {}; dirty = true; }
   if (!L.starmap.collectionRewards || typeof L.starmap.collectionRewards !== "object" || Array.isArray(L.starmap.collectionRewards)) { L.starmap.collectionRewards = {}; dirty = true; }
-  // 初始路线实装的一次性迁移：只清理星图制压与试炼字段，保留其他军团/玩家存档。
-  if (L.starmap.initialRouteStateVersion !== 1) {
+  // 初始路线实装 + v2 全量重置的一次性迁移：清空星图制压进度、采集奖励与四个试炼进行中状态，保留其他军团/玩家存档。
+  if (L.starmap.initialRouteStateVersion !== 2) {
     L.starmap.completedNodeIds = [];
     L.starmap.collectionRewards = {};
     L.starmap.collectionTrial = { status:"idle", nodeId:null, lockedNode:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null };
     L.starmap.productionTrial = { status:"idle", nodeId:null, submittedAt:0, requirements:[], result:null };
     L.starmap.archaeologyTrial = { status:"idle", nodeId:null, lockedNode:null, siteId:null, shipInstanceId:null, probeId:null, progress:0, target:14, startedAt:0, endsAt:0, nextScanAt:0, interferenceUntil:0, cycleSeconds:0, scanStrength:0, successChance:0, scans:0, successes:0, rareFinds:0, log:[], result:null };
     L.starmap.battleTrial = { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null };
-    L.starmap.initialRouteStateVersion = 1;
+    L.starmap.initialRouteStateVersion = 2;
     dirty = true;
   }
   // NPC 字段补全（薪资状态缺省 paid；保留等级/经验，不重置）
