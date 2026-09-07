@@ -69,6 +69,11 @@ function renderSidebar(sidebarState) {
   if (starmapNav && typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible) {
     starmapNav.style.display = LegionRender.isLegionTabVisible(gameState) ? "" : "none";
   }
+  // 虫洞入口：星图内裂隙叠加层（js/ui/wormhole-rifts.js）；此处仅控制星图面板上的备用按钮
+  var whEntryBtn = document.getElementById("starmap-wormhole-entry");
+  if (whEntryBtn && typeof WORMHOLE !== "undefined" && WORMHOLE.isUnlocked) {
+    whEntryBtn.style.display = WORMHOLE.isUnlocked(gameState) ? "" : "none";
+  }
 }
 
 /* ================================================================

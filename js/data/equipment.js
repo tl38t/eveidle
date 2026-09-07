@@ -158,6 +158,15 @@ const EQUIPMENT_DB = {
     shipTypes:["industrial_frigate","industrial_destroyer","industrial_cruiser","industrial_support","industrial_battleship","industrial_capital"],
     fuel:{ resourceId:"planetary:等离子体", perCycle:1 },
     pump:true },
+  // ===== 暗流体精炼泵（2026-09-07 定稿，spec §13）：虫洞印记商店图纸解锁（1400 印记，一次性）。
+  //   大型泵上位：冶炼速度 +15%/件（同一加法区，可叠加）；燃料走 special:暗流体助熔触媒 ×1/件/周期，
+  //   断料自动降级不中断冶炼（与大型泵同规则）。制造成本含泰坦材料（星骸钛晶/相位铱核，虫洞采集闭环）。
+  "refinery_pump_dark": { id:"refinery_pump_dark", name:"暗流体精炼泵", slot:"any", level:50, time:200, xp:140,
+    cost:{"三钛合金":800,"类银超金属":400,"同位聚合体":120,"稀有气体":60,"等离子体":80,"星骸钛晶":40,"相位铱核":20},
+    bonuses:{smeltingSpeed:0.15},
+    shipTypes:["industrial_frigate","industrial_destroyer","industrial_cruiser","industrial_support","industrial_battleship","industrial_capital"],
+    fuel:{ resourceId:"special:暗流体助熔触媒", perCycle:1 },
+    pump:true },
 };
 
 // 势力装备许可经济平衡：档位许可消耗与掉落节奏同步（D/C/B/A/S = 2/3/5/6/8）。

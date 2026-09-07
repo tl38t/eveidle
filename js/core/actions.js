@@ -2516,6 +2516,18 @@ const StationStateActions = {
     if (legionLock) return legionLock;
   }
   const actionTime = Number(now) || Date.now();
+  if (typeof action.type === "string" && action.type.indexOf("wormhole/") === 0) {
+    if (typeof WORMHOLE === "undefined") return { changed: false, reason: "wormhole-unavailable" };
+    if (action.type === "wormhole/startRun") return WORMHOLE.startRun(state, action.dailyId, action.opts, actionTime);
+    if (action.type === "wormhole/abandonRun") return WORMHOLE.abandonRun(state, actionTime);
+    if (action.type === "wormhole/dismissRun") return WORMHOLE.dismissRun(state, actionTime);
+    if (action.type === "wormhole/setControl") return WORMHOLE.setControl(state, action.control, actionTime);
+    if (action.type === "wormhole/setTarget") return WORMHOLE.setRunTarget(state, action.nodeId, actionTime);
+    if (action.type === "wormhole/buyUpgrade") return WORMHOLE.buyUpgrade(state, action.id, actionTime);
+    if (action.type === "wormhole/buyItem") return WORMHOLE.buyItem(state, action.id, action.param, actionTime);
+    if (action.type === "wormhole/buyGoods") return WORMHOLE.buyGoods(state, action.id, action.param, actionTime);
+    return { changed: false, reason: "unknown-wormhole-action" };
+  }
   if (action.type === "legion-starmap/startCollectionTrial") return LEGION_STARMAP_TRIAL.startCollectionTrial(state, action.node, actionTime);
   if (action.type === "legion-starmap/stopCollectionTrial") return LEGION_STARMAP_TRIAL.finishCollectionTrial(state, false, actionTime);
   if (action.type === "action/stop") return ShellStateActions.stopCurrentAction(state, actionTime);

@@ -26,8 +26,8 @@
   <script defer src="./js/ui/ship3d-loader.js?v=3"></script>
   <script type="module" src="./js/ui/ship3d.js?v=10"></script>
   <script defer src="./js/core/speed-config.js?v=2"></script>
-  <script src="./js/i18n/catalog-en.js?v=8"></script>
-  <script src="./js/i18n/translator.js?v=6"></script>
+  <script src="./js/i18n/catalog-en.js?v=11"></script>
+  <script src="./js/i18n/translator.js?v=8"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
     // source code, variables, HTML templates, starmap and achievements stay untouched.
@@ -306,7 +306,7 @@
       <span class="nav-icon"><i class="fa-regular fa-compass"></i></span> 技能总览
     </div>
     <div class="nav-item" data-page="blueprints">
-      <span class="nav-icon"><i class="fa-solid fa-scroll"></i></span> 蓝图商店
+      <span class="nav-icon"><i class="fa-solid fa-scroll"></i></span> 商店
     </div>
     <div class="nav-item" data-page="cargo">
       <span class="nav-icon"><i class="fa-solid fa-warehouse"></i></span> 仓库
@@ -988,13 +988,23 @@
     <!-- 蓝图商店面板 -->
     <div class="panel blueprintstore-panel" id="blueprintstore-panel" style="display:none;">
       <div class="panel-header">
-        <span class="panel-title">📜 蓝图商店</span>
+        <span class="panel-title">🛒 商店</span>
         <span class="text-muted" id="blueprintstore-balance">可用星币（SC）：0 · 功勋（MR）：0</span>
       </div>
       <div class="panel-body">
-        <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
-        <div class="blueprintstore-tabs" id="blueprintstore-tabs"></div>
-        <div class="lpstore-grid" id="blueprintstore-grid"></div>
+        <div style="display:flex;gap:8px;margin-bottom:10px">
+          <button type="button" class="btn secondary bpshop-tab active" data-bpshop-tab="blueprint">蓝图</button>
+          <button type="button" class="btn secondary bpshop-tab" data-bpshop-tab="wormhole" id="bpshop-tab-wormhole" style="display:none;">虫洞商店</button>
+        </div>
+        <div id="bpshop-page-blueprint">
+          <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
+          <div class="blueprintstore-tabs" id="blueprintstore-tabs"></div>
+          <div class="lpstore-grid" id="blueprintstore-grid"></div>
+        </div>
+        <div id="bpshop-page-wormhole" style="display:none;">
+          <div class="text-muted" id="bpshop-wh-balance" style="margin-bottom:8px"></div>
+          <div id="bpshop-wh-content"></div>
+        </div>
       </div>
     </div>
 
@@ -1127,9 +1137,13 @@
       <div class="panel-header">
         <span class="panel-title"><i class="fa-solid fa-star"></i> 星图</span>
         <span class="text-muted">军团远征网络</span>
+        <button type="button" class="btn secondary" id="starmap-wormhole-return" style="display:none;margin-left:auto;" title="查看正在进行的虫洞远征">返回远征</button>
+        <button type="button" class="btn secondary" id="starmap-wormhole-entry" style="display:none;margin-left:auto;" title="星图主线通关后开启">
+          <i class="fa-solid fa-circle-notch"></i> 虫洞裂隙
+        </button>
       </div>
       <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=41" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=42" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
         <section id="legion-starmap-trial-room" class="starmap-trial-room" hidden>
           <div class="starmap-trial-room-head"><div><h3 id="starmap-trial-title">星图试炼房间</h3><p id="starmap-trial-subtitle"></p></div><button type="button" class="btn secondary" id="starmap-trial-back">返回星图</button></div>
           <div class="starmap-trial-countdown" id="starmap-trial-countdown">剩余时间：180s</div>
@@ -1185,6 +1199,41 @@
     </div>
 
     <!-- 仓库面板 -->
+    <div class="panel wormhole-panel" id="wormhole-panel" style="display:none;">
+      <div class="panel-header">
+        <span class="panel-title"><i class="fa-solid fa-circle-notch"></i> 虫洞</span>
+        <span class="text-muted" id="wh-token-balance"></span>
+      </div>
+      <div class="panel-body">
+        <div style="display:flex;gap:8px;margin-bottom:12px">
+          <button type="button" class="btn secondary wh-tab active" data-wh-tab="runs">虫洞</button>
+          <button type="button" class="btn secondary wh-tab" data-wh-tab="shop">印记商店</button>
+        </div>
+        <div id="wh-page-runs">
+          <div id="wh-map-wrap" style="display:none;margin-bottom:12px">
+            <canvas id="wh-map" width="1000" height="700" style="width:100%;height:auto;border-radius:10px;background:#050a12"></canvas>
+            <div style="color:#6f88a6;font-size:11.5px;margin-top:5px">未制压 = 黑　·　已制压 = 白　·　跳过 = 暗红　·　当前节点 = 琥珀（外圈为进度）</div>
+          </div>
+          <div id="wh-run-card"></div>
+          <div id="wh-manual-hint" style="display:none;margin-bottom:8px;padding:8px 12px;border:1px solid #7fd8c066;border-radius:8px;background:#0c1a18;color:#7fd8c0;font-size:12px"></div>
+          <section id="wormhole-node-room" class="starmap-trial-room" hidden>
+            <div class="starmap-trial-room-head">
+              <div><h3 id="wormhole-room-title">节点试炼房间</h3><p id="wormhole-room-subtitle"></p></div>
+              <button type="button" class="btn secondary" id="wormhole-room-back">关闭房间</button>
+            </div>
+            <div class="starmap-trial-countdown" id="wormhole-room-countdown">—</div>
+            <div id="wormhole-room-body"></div>
+            <div class="starmap-trial-room-actions"><button type="button" class="btn primary" id="wormhole-room-action" data-wh-goto="" disabled>开始试炼</button></div>
+            <div id="wormhole-room-result" class="text-muted"></div>
+          </section>
+          <div id="wh-dailies"></div>
+          <div id="wh-history"></div>
+        </div>
+        <div id="wh-page-shop" style="display:none;">
+          <div id="wh-shop"></div>
+        </div>
+      </div>
+    </div>
     <div class="panel alliance-panel" id="alliance-panel" style="display:none;">
       <div class="panel-header"><span class="panel-title"><i class="fa-solid fa-people-group"></i> 联盟大厅</span><span><button class="btn secondary" id="btn-open-cloud-test">打开云端联盟</button> <button class="btn secondary" id="btn-alliance-diagnose">网络诊断</button> <span id="alliance-msg" class="text-muted">未连接</span></span></div>
       <div class="panel-body"><div id="alliance-content"></div></div>
@@ -1478,10 +1527,10 @@
   <script defer src="./js/data/boosters.js?v=10"></script>
   <script defer src="./js/systems/boosters.js?v=7"></script>
   <script defer src="./js/systems/recycling.js?v=3"></script>
-  <script defer src="./js/data/combat.js?v=31"></script>
+  <script defer src="./js/data/combat.js?v=32"></script>
   <script defer src="./js/data/cargo.js?v=9"></script>
-  <script defer src="./js/data/implants.js?v=5"></script>
-  <script defer src="./js/data/equipment.js?v=29"></script>
+  <script defer src="./js/data/implants.js?v=6"></script>
+  <script defer src="./js/data/equipment.js?v=30"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=7"></script>
   <script defer src="./js/data/ammunition.js?v=4"></script>
   <script defer src="./js/data/archaeology.js?v=5"></script>
@@ -1513,19 +1562,21 @@
   <script defer src="./js/data/legion/npc-personalities.js?v=1"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=1"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=1"></script>
+  <script defer src="./js/data/wormhole.js?v=1"></script>
   <script defer src="./js/systems/legion-npc.js?v=10"></script>
   <script defer src="./js/systems/legion-combat-squad.js?v=12"></script>
   <script defer src="./js/ui/action-modal.js?v=10"></script>
   <script defer src="./js/core/queue.js?v=4"></script>
   <script defer src="./js/systems/capital-combat.js?v=3"></script>
-  <script defer src="./js/systems/combat.js?v=26"></script>
+  <script defer src="./js/systems/combat.js?v=27"></script>
   <script defer src="./js/core/combat-modifiers.js?v=2"></script>
-  <script defer src="./js/core/selectors.js?v=76"></script>
-  <script defer src="./js/core/actions.js?v=38"></script>
-  <script defer src="./js/systems/legion-starmap-trial.js?v=35"></script>
+  <script defer src="./js/core/selectors.js?v=77"></script>
+  <script defer src="./js/core/actions.js?v=39"></script>
+  <script defer src="./js/systems/legion-starmap-trial.js?v=43"></script>
+  <script defer src="./js/systems/wormhole.js?v=19"></script>
   <script defer src="./js/systems/research-protocols.js?v=5"></script>
   <script defer src="./js/core/diagnostics.js?v=2"></script>
-  <script defer src="./js/ui/shell-render.js?v=108"></script>
+  <script defer src="./js/ui/shell-render.js?v=109"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=21"></script>
    <script defer src="./js/ui/combat-render.js?v=53"></script>
   <script defer src="./js/ui/planetary-render.js?v=2"></script>
@@ -1534,13 +1585,16 @@
   <script defer src="./js/ui/station-render.js?v=13"></script>
   <script defer src="./js/ui/legion-render.js?v=19"></script>
   <script defer src="./js/ui/legion-events.js?v=14"></script>
+  <script defer src="./js/ui/wormhole-render.js?v=8"></script>
+  <script defer src="./js/ui/wormhole-rifts.js?v=3"></script>
+  <script defer src="./js/ui/wormhole-map.js?v=20"></script>
    <script defer src="./js/platform/alliance-api.js?v=3"></script>
    <script defer src="./js/platform/alliance-policy.js?v=1"></script>
    <script defer src="./js/data/alliance-task-model.js?v=2"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=2"></script>
    <script defer src="./js/ui/alliance-render.js?v=9"></script>
-  <script defer src="./js/core/tick.js?v=15"></script>
-  <script defer src="./js/core/offline.js?v=20"></script>
+  <script defer src="./js/core/tick.js?v=16"></script>
+  <script defer src="./js/core/offline.js?v=21"></script>
   <script defer src="./js/systems/offline-combat.js?v=16"></script>
   <script defer src="./js/systems/combat-log.js?v=4"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=2"></script>
@@ -1573,10 +1627,10 @@
   <script defer src="./js/core/ad-service.js?v=4"></script>
   <script defer src="./js/systems/ad-buff.js?v=3"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=18"></script>
-  <script defer src="./js/core/persistence.js?v=23"></script>
+  <script defer src="./js/core/persistence.js?v=24"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=5"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=7"></script>
-<script defer src="./js/ui/render.js?v=20"></script>
+<script defer src="./js/ui/render.js?v=21"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=21"></script>
   <script defer src="./js/qa-seed.js?v=2"></script>
   <div id="hangar-3d-popup">

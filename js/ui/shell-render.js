@@ -750,12 +750,12 @@ window.addEventListener("message", function (event) {
 });
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel"];
+  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel"];
+  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
   const notChain = managedIds.map(id => `:not(#${id})`).join("");
   return [...document.querySelectorAll('.content > .panel' + notChain)];
 }
@@ -816,6 +816,7 @@ function renderCurrentNavigation() {
   else if (navigation.page === "legion") { renderLegionPage(); }
   else if (navigation.page === "starmap") { renderStarmapPage(); }
   else if (navigation.page === "alliance") { if (typeof window.renderAlliancePage === "function") window.renderAlliancePage(); }
+  else if (navigation.page === "wormhole") { if (typeof window.renderWormholePage === "function") window.renderWormholePage(); }
   else if (navigation.page === "blueprints" || navigation.page === "lpstore") renderBlueprintStore();
   else if (navigation.page === "leaderboard") {
     // leaderboard-render.js is an ES module and may finish after this classic
@@ -2335,6 +2336,14 @@ function renderBlueprintStore() {
       : (item.kind === "probeBlueprint" ? "限次抄本 · " + item.priceText : "蓝图价格 · " + item.priceText);
     return `<div class="lpstore-card blueprint-preview-card${item.owned ? " owned" : ""}"><div class="lpstore-card-icon"><i class="${item.icon}"></i></div><div class="lpstore-card-info"><strong>${item.name}</strong><div class="blueprint-product"><span>可制造</span><b>${item.productName}</b></div><div class="blueprint-preview-lines">${item.previewLines.map(line => `<div><span>${line.label}</span><p>${line.value}</p></div>`).join("")}</div><small>${noteText}</small></div><button class="btn primary lpstore-buy" data-blueprint-item="${item.id}" data-blueprint-kind="${item.kind}" ${item.canBuy ? "" : "disabled"}>${item.purchaseText}</button></div>`;
   }).join("");
+  // 商店页「虫洞商店」子标签：可见性随主线门禁；内容每次刷新（双入口之二）
+  const whTabBtn = document.getElementById("bpshop-tab-wormhole");
+  if (whTabBtn) {
+    let whUnlocked = false;
+    try { whUnlocked = typeof WORMHOLE !== "undefined" && gameState && typeof WORMHOLE.isUnlocked === "function" && WORMHOLE.isUnlocked(gameState); } catch (_) { whUnlocked = false; }
+    whTabBtn.style.display = whUnlocked ? "" : "none";
+  }
+  if (typeof window.renderWormholeShopPanel === "function") { try { window.renderWormholeShopPanel(); } catch (_) {} }
   return display;
 }
 

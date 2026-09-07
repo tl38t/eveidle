@@ -486,6 +486,9 @@ function gameTick() {
   if (typeof LEGION_STARMAP_TRIAL !== "undefined" && typeof LEGION_STARMAP_TRIAL.tickLegionStarmapTrial === "function") {
     LEGION_STARMAP_TRIAL.tickLegionStarmapTrial(gameState, Date.now());
   }
+  if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.tickWormhole === "function") {
+    WORMHOLE.tickWormhole(gameState, Date.now());
+  }
 
   gameState.lastActiveTime = Date.now();
   updateLiveUI();

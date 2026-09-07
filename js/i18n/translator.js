@@ -24,7 +24,7 @@
     ["\u94c1\u7845\u539f\u77ff\u5e26", "Iron-Silicon Ore Belt"], ["\u94c1\u7845\u539f\u77ff", "Iron-Silicon Ore"],
     ["\u8fdb\u884c\u4e2d", "In Progress"], ["\u8fd0\u884c\u4e2d", "Running"], ["\u6bcf\u6b21", "per cycle"]
   ];
-  var navLabels = { blueprints: "Blueprint Store", cargo: "Cargo", hangar: "Hangar", station: "Station", legion: "Legion", alliance: "Alliance", research: "Research", queue: "Action Queue", statistics: "Statistics", leaderboard: "Leaderboard", mining: "Mining", gasHarvesting: "Gas Harvesting", refining: "Refining", shipEngineering: "Ship Engineering", equipmentEngineering: "Equipment Engineering", boosterEngineering: "Booster Manufacturing", combat: "Combat", planetary: "Planetary Industry", archaeology: "Archaeology", save: "Save Management", settings: "Settings" };
+  var navLabels = { blueprints: "Shop", cargo: "Cargo", hangar: "Hangar", station: "Station", legion: "Legion", alliance: "Alliance", research: "Research", queue: "Action Queue", statistics: "Statistics", leaderboard: "Leaderboard", mining: "Mining", gasHarvesting: "Gas Harvesting", refining: "Refining", shipEngineering: "Ship Engineering", equipmentEngineering: "Equipment Engineering", boosterEngineering: "Booster Manufacturing", combat: "Combat", planetary: "Planetary Industry", archaeology: "Archaeology", save: "Save Management", settings: "Settings", wormhole: "Wormholes" };
 
   function skip(element) { return !element || /^(SCRIPT|STYLE|CODE|PRE)$/.test(element.tagName) || !!element.closest?.('#achievements-panel, [data-deferred-i18n]'); }
   function translateFromCatalog(text) {

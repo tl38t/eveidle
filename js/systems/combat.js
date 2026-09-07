@@ -699,8 +699,15 @@ function rollStationCoreDrop(zone, enemyKind, randomValue, state) {
   state = state || gameState;
   if (enemyKind !== "elite" && enemyKind !== "boss") return null;
   const obtained = state.stationCoresObtained || {};
-  const cfg = getStationCoreDropConfigs(zone).find(c => !obtained[c.coreId]);
-  if (!cfg) return null; // 该带核心已获得 → 不再掉落
+  // 双判断：obtained 标记缺失，或标记为真但实物库存为 0（历史死锁），都允许继续掉落，
+  // 防止 obtained=true&&held=0 的死锁核心永久不再产出。
+  const cfg = getStationCoreDropConfigs(zone).find(c => {
+    if (!obtained[c.coreId]) return true;
+    const held = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get)
+      ? (ResourceRegistry.get(state, c.resourceId) || 0) : 1;
+    return held < 1;
+  });
+  if (!cfg) return null; // 该带核心已获得且持有实物 → 不再掉落
   const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
   if (!chance) return null;
   const mult = getLegionCombatDropMult(state);
@@ -1142,6 +1149,18 @@ function tryResumeCombatAfterRepair() {
     ? queue.items.find(item => item && item.id === r.queueItemId)
     : null;
   if (!queueItem || !queue.status || queue.status.isRunning === false) {
+    gameState.resumeAfterRepair = null;
+    return false;
+  }
+  // 置顶顶替保护（2026-09-07）：战败等待维修期间，玩家可能已把其他活动（如挖矿）
+  // 置顶/移动顶替了该战斗队列项（queueMoveToTop/queueMove 会改 activeIndex 且不清
+  // 续战标记）。此时维修完成不得无视玩家意图强开战斗——仅当该战斗项仍是队列当前
+  // 激活项时才允许自动续战；否则清掉续战标记安全退出，等队列自然轮转到战斗项时
+  // 按正常队列逻辑执行。若玩家又把战斗项置顶回来（activeIndex 重新指向它），续战照常生效。
+  const activeItem = (queue.status.activeIndex >= 0 && queue.status.activeIndex < queue.items.length)
+    ? queue.items[queue.status.activeIndex]
+    : null;
+  if (!activeItem || activeItem.id !== r.queueItemId) {
     gameState.resumeAfterRepair = null;
     return false;
   }

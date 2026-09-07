@@ -532,15 +532,53 @@ function normalizeEquipmentState(state) {
     }
 
     takenIds.add(finalId);
-    validInstances.push({
+    const rebuilt = {
       instanceId: finalId,
       itemId: inst.itemId,
       enhancementLevel: Math.max(0, Math.floor(Number(inst.enhancementLevel) || 0)),
       installedOn: referencedInstanceIds.has(finalId) ? (referencedByShip.get(finalId) || null) : null
-    });
+    };
+    // 保留所有非标准扩展字段（anchor / reserves / rigSeq 等）：读档重建若只拷贝 4 个标准字段，
+    // 会丢失精炼泵的多槽锚位/管路锁定与改装件装配序，导致 UI 锁定态失效、谐振排序错乱。
+    for (const k of Object.keys(inst)) {
+      if (k === "instanceId" || k === "itemId" || k === "enhancementLevel" || k === "installedOn") continue;
+      rebuilt[k] = inst[k];
+    }
+    validInstances.push(rebuilt);
   }
 
   state.equipment.instances = validInstances;
+
+  // 精炼泵锚位一致性校验（读档后防御式修复）：泵实例的 anchor/reserves 须与实际 fitted 引用吻合，
+  // 否则清空脏锚位与锁定，避免存档损坏时 UI 显示锁死格却能被写入其他装备、或锁定静默失效。
+  {
+    const shipById = new Map();
+    for (const s of ships) if (s && s.instanceId) shipById.set(s.instanceId, s);
+    for (const inst of state.equipment.instances) {
+      const def = EQUIPMENT_DB[inst.itemId];
+      if (!def || !def.pump) continue;
+      const ship = inst.installedOn ? shipById.get(inst.installedOn) : null;
+      let ok = false;
+      if (inst.anchor && inst.reserves && ship && ship.fitted) {
+        const arr = ship.fitted[inst.anchor.slot];
+        ok = Array.isArray(arr) && arr[inst.anchor.idx] === inst.instanceId;
+        if (ok) {
+          for (const k of Object.keys(inst.reserves)) {
+            const ra = ship.fitted[k];
+            if (!Array.isArray(ra) || ra[inst.reserves[k]] !== null) { ok = false; break; }
+          }
+        }
+      }
+      if (!ok) {
+        // 仅解除泵自身脏记录；若 fitted 锚位仍指向本泵但 reserves 损坏，则一并清掉引用以免 UI 显示无锁定的已安装泵。
+        if (ship && inst.anchor && Array.isArray(ship.fitted[inst.anchor.slot]) && ship.fitted[inst.anchor.slot][inst.anchor.idx] === inst.instanceId) {
+          ship.fitted[inst.anchor.slot][inst.anchor.idx] = null;
+        }
+        inst.anchor = null;
+        inst.reserves = null;
+      }
+    }
+  }
 
   // 迁移旧档/修复：未安装的 +0 白板实例转回 inventory（制造只读 inventory；强化过的实例保留）。
   // 注意 rig 实例已在上面被过滤掉，不会进入此处。
@@ -1444,18 +1482,73 @@ function computeGameStateChecksum(state) {
   } catch (e) { return ""; }
 }
 
-// 修复早期版本将月矿钷错误写入普通矿石池的问题。幂等迁移：保留数量，
-// 合并到正确的 moon:钷 后删除非法 ore:钷，避免旧键继续出现在仓库。
+// 修复早期版本将月矿（镓/铂/铪/锇/钷/铷）错误写入普通矿石池的问题。幂等迁移：保留数量，
+// 合并到正确的 moon: 命名空间后删除非法 ore: 键，避免旧键继续出现在仓库。
 function migrateLegacyPromethiumOre(state = gameState) {
   if (!state || !state.resources) return false;
   const ores = state.resources.ores && typeof state.resources.ores === "object" ? state.resources.ores : null;
-  if (!ores || !Object.prototype.hasOwnProperty.call(ores, "钷")) return false;
-  const qty = Math.max(0, Number(ores.钷) || 0);
-  delete ores.钷;
-  if (qty <= 0) return true;
+  if (!ores) return false;
   if (!state.resources.moonOres || typeof state.resources.moonOres !== "object") state.resources.moonOres = {};
-  state.resources.moonOres.钷 = Math.max(0, Number(state.resources.moonOres.钷) || 0) + qty;
-  return true;
+  const MOON_ORE_KEYS = ["镓", "铂", "铪", "锇", "钷", "铷"];
+  let changed = false;
+  for (const mat of MOON_ORE_KEYS) {
+    if (!Object.prototype.hasOwnProperty.call(ores, mat)) continue;
+    const qty = Math.max(0, Number(ores[mat]) || 0);
+    delete ores[mat];
+    state.resources.moonOres[mat] = Math.max(0, Number(state.resources.moonOres[mat]) || 0) + qty;
+    changed = true;
+  }
+  return changed;
+}
+
+// 修复「空间站核心 obtained=true 但实物 special 库存=0」的死锁：早期版本/历史操作可能把
+// obtained 标记置真却未真正入账实物，导致掉落守卫 `!obtained[coreId]` 永久为 false → 再也不掉、
+// UI 永远「未激活」。幂等迁移：对每个 obtained===true 但实物<1 的核心补发至 1。
+const STATION_CORE_COMPAT = [
+  { coreId: "smelt",    resourceId: "special:空间站冶炼核心" },
+  { coreId: "shipEng",  resourceId: "special:空间站船坞核心" },
+  { coreId: "equipEng", resourceId: "special:空间站装备制造核心" },
+  { coreId: "booster",  resourceId: "special:空间站增强剂制造核心" },
+];
+function migrateStationCoreConsistency(state = gameState) {
+  if (!state || !state.resources || typeof state.resources !== "object") return false;
+  if (!state.stationCoresObtained || typeof state.stationCoresObtained !== "object") return false;
+  let changed = false;
+  for (const { coreId, resourceId } of STATION_CORE_COMPAT) {
+    if (state.stationCoresObtained[coreId] !== true) continue; // 仅修复已标记获得但实物缺失的死锁
+    const held = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get)
+      ? (ResourceRegistry.get(state, resourceId) || 0)
+      : 0;
+    if (held >= 1) continue;
+    ResourceRegistry.add(state, resourceId, 1 - held); // 补发至恰好 1，解除死锁
+    changed = true;
+  }
+  return changed;
+}
+
+// 修复：星图战斗试炼残留战区污染普通/离线战斗。f02a204 仅覆盖「会话内主动结束」
+// （endCombatSession / finishBattleTrial 会清空 trialWaveZone），但强退/崩溃时不经过这些
+// 函数，combat.trialWaveZone 原样落盘；重载后离线结算（先于任何 UI 交互）直接吃到星图
+// 5 船编队配置 → 玩家「离线战斗连续阵亡、在线不死」。读档时清理该残留：非试炼进行中则
+// 清空 trialWaveZone/trialPreviousZone，并将卡在试炼星带的 combat.zone 回退到试炼前星带。
+function migrateStaleTrialCombatResidue(state = gameState) {
+  const combat = state && state.combat;
+  if (!combat || typeof combat !== "object") return false;
+  const st = (state.starmap && state.starmap.battleTrial) || {};
+  const running = st.status === "running" && (typeof st.endsAt !== "number" || st.endsAt > Date.now());
+  if (running && combat.trialWaveZone) return false; // 试炼进行中，交由试炼 tick 自行管理
+  let changed = false;
+  if (combat.trialWaveZone !== null || combat.trialPreviousZone !== null) {
+    combat.trialWaveZone = null;
+    combat.trialPreviousZone = null;
+    changed = true;
+  }
+  // combat.zone 若仍卡在试炼星带（试炼未正常结束导致），回退到试炼前玩家选中的普通星带
+  if (!running && st.zoneId && combat.zone === st.zoneId && st.previousZone) {
+    combat.zone = st.previousZone;
+    changed = true;
+  }
+  return changed;
 }
 
 // 旧档字段补齐（仅 startup 读档且确为旧档时由 bootstrap 调用）。原 autoLoad restored
@@ -1482,6 +1575,8 @@ function applyLegacyStartupFieldMigrations() {
     if (!gameState.resources.gases) gameState.resources.gases = {};
     migrateMoonMiningState();
     migrateLegacyPromethiumOre(gameState);
+    migrateStationCoreConsistency(gameState);
+    migrateStaleTrialCombatResidue(gameState);
     if (gameState.resources.fuel === undefined) gameState.resources.fuel = 1000;
     if (typeof migrateLegacyAmmunition === "function") migrateLegacyAmmunition(gameState);
     if (!gameState.currentAction.gasArea) gameState.currentAction.gasArea = "富勒烯云团";
@@ -1553,12 +1648,17 @@ function normalizeAndMigratePayload(ctx) {
   migrateMoonMiningState();
   migrateGhostDeployableShips();
   migrateLegacyPromethiumOre(gameState);
+  migrateStationCoreConsistency(gameState);
+  migrateStaleTrialCombatResidue(gameState);
   migrateDeathspaceState();
   migrateBoosterState();
   finalizeEquipmentStateAfterLegacyMigrations(gameState);
   migrateUnlimitedInventoryState();
   normalizePlanetaryState(gameState);
   normalizeLegionState(gameState);
+  if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.normalizeWormholeState === "function") {
+    WORMHOLE.normalizeWormholeState(gameState);
+  }
   delete gameState.planetaryDeployments;
   if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
     ResearchState.migrateResearchState(gameState);

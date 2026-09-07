@@ -1061,7 +1061,10 @@
       if (!coreConfigs.length) continue;
       const cc = da.stationCore[zoneId];
       for (const cfg of coreConfigs) {
-        if (obtainedCores[cfg.coreId]) continue;
+        // 双判断：obtained 标记为真但实物库存为 0（历史死锁）时也允许继续掉落，防止永久锁死
+        const held = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get)
+          ? (ResourceRegistry.get(state, cfg.resourceId) || 0) : 0;
+        if (obtainedCores[cfg.coreId] && held >= 1) continue;
         const pElite = _pityFn ? _pityFn(zone, legionChance(cfg.eliteChance), state) : legionChance(cfg.eliteChance);
         const pBoss = _pityFn ? _pityFn(zone, legionChance(cfg.bossChance), state) : legionChance(cfg.bossChance);
         const n = (cc.elite ? batchCount(cc.elite, pElite, rng) : 0) + (cc.boss ? batchCount(cc.boss, pBoss, rng) : 0);

@@ -258,6 +258,77 @@ const IMPLANT_DB = {
     mult: 1.06,
     source: "deathspace",
     sourceName: "死亡空间 6/10"
+  },
+
+  // —— 批次四：虚空系（虫洞印记商店独占，2026-09-07）——
+  // 前三枚为虫洞专用效果：getImplantBonuses 不消费，由 js/systems/wormhole.js 直读 state.implants。
+  implant_void_travel: {
+    id: "implant_void_travel",
+    name: "裂隙·折跃植入体",
+    icon: "🌀",
+    desc: "虫洞节点间移动 -2s（虫洞内）",
+    type: "wormholeTravel",
+    source: "wormholeShop",
+    sourceName: "虫洞印记商店"
+  },
+  implant_void_affix: {
+    id: "implant_void_affix",
+    name: "裂隙·屏蔽植入体",
+    icon: "🧿",
+    desc: "虫洞负面词条影响 -5%（虫洞内）",
+    type: "wormholeAffix",
+    source: "wormholeShop",
+    sourceName: "虫洞印记商店"
+  },
+  implant_void_token: {
+    id: "implant_void_token",
+    name: "裂隙·谐振植入体",
+    icon: "💠",
+    desc: "虫洞印记获取 +10%",
+    type: "wormholeToken",
+    source: "wormholeShop",
+    sourceName: "虫洞印记商店"
+  },
+  implant_void_collect: {
+    id: "implant_void_collect",
+    name: "虚空·丰饶植入体",
+    icon: "⛏️",
+    desc: "采矿增效 +3% / 采气增效 +3%",
+    type: "collect",
+    activity: ["mining", "gas"],
+    mult: 1.03,
+    source: "wormholeShop",
+    sourceName: "虫洞印记商店"
+  },
+  implant_void_refine: {
+    id: "implant_void_refine",
+    name: "虚空·熔炉植入体",
+    icon: "🔥",
+    desc: "冶炼增效 +5%",
+    type: "refiningEff",
+    mult: 1.05,
+    source: "wormholeShop",
+    sourceName: "虫洞印记商店"
+  },
+  implant_void_ship: {
+    id: "implant_void_ship",
+    name: "虚空·舰构植入体",
+    icon: "🛠️",
+    desc: "舰船制造增效 +5%",
+    type: "shipMfgEff",
+    mult: 1.05,
+    source: "wormholeShop",
+    sourceName: "虫洞印记商店"
+  },
+  implant_void_scan: {
+    id: "implant_void_scan",
+    name: "虚空·深瞳植入体",
+    icon: "👁️",
+    desc: "考古扫描强度 +8%",
+    type: "archaeologyScan",
+    mult: 1.08,
+    source: "wormholeShop",
+    sourceName: "虫洞印记商店"
   }
 };
 
@@ -370,7 +441,7 @@ function getImplantBonuses(state) {
     else if (imp.type === "archaeologyScan") archaeology.scan *= imp.mult;
     else if (imp.type === "archaeologySpeed") archaeology.speed *= imp.mult;
     else if (imp.type === "archaeologyUnique") archaeology.unique *= imp.mult;
-    else if (imp.type === "collect") collect[imp.activity] *= imp.mult;
+    else if (imp.type === "collect") (Array.isArray(imp.activity) ? imp.activity : [imp.activity]).forEach(function (a) { collect[a] *= imp.mult; });
     else if (imp.type === "refiningEff") refiningEff *= imp.mult;
     else if (imp.type === "planetSpeed") planetSpeed *= imp.mult;
     else if (imp.type === "planetSlot") planetSlot += 1;

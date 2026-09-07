@@ -1267,6 +1267,11 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     if (fuelExhaustAt > currentTime && fuelExhaustAt < nextBoundary) nextBoundary = fuelExhaustAt;
     if (constructionAt > currentTime && constructionAt < nextBoundary) nextBoundary = constructionAt;
 
+    // 7) 虫洞 run 事件 / 熔核过期（spec §5.5 / §13.8）：把段精确切在状态变化点
+    if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.getNextBoundaryMs === "function") {
+      const whBoundary = WORMHOLE.getNextBoundaryMs(gameState);
+      if (whBoundary > currentTime && whBoundary < nextBoundary) nextBoundary = whBoundary;
+    }
     const segEnd = Math.min(nextBoundary, offlineEnd);
     const segMs = segEnd - currentTime;
     if (segMs <= 0.001) {
@@ -1328,6 +1333,9 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL &&
         typeof LEGION_STARMAP_TRIAL.tickLegionStarmapTrial === "function") {
       LEGION_STARMAP_TRIAL.tickLegionStarmapTrial(gameState, segEnd);
+    if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.tickWormhole === "function") {
+      WORMHOLE.tickWormhole(gameState, segEnd);
+    }
     }
 
     // 4) 扣除该段燃料（仅 operational 段真实消耗）

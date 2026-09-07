@@ -359,6 +359,10 @@ const NEURAL_IMPLANT_MATERIALS = ["神经植入体·攻击", "神经植入体·�
 // 增强剂系统 Phase 2A：5 档高频战术材料并入 special 池（登记于 boosters.js:TACTICAL_MATERIALS，先于本文件加载）。
 const TACTICAL_MATERIAL_IDS = typeof TACTICAL_MATERIALS !== "undefined" ? TACTICAL_MATERIALS.map(material => material.id) : [];
 const COMBAT_SPECIAL_MATERIALS = [...STAR_BELT_DATA_MATERIALS, ...DEATHSPACE_TICKET_MATERIALS, ...DEATHSPACE_LOOT_MATERIALS, ...SUPERCAPITAL_DATA_MATERIALS, ...GEAR_DATA_MATERIALS, ...STATION_CORE_MATERIALS, ...CARGO_CONTAINER_MATERIALS, ...NEURAL_IMPLANT_MATERIALS, ...TACTICAL_MATERIAL_IDS, ...STARMAP_TITAN_MATERIALS];
+// 虫洞系统（spec §13）：虫洞印记（商店货币）与暗流体助熔触媒（暗流体泵燃料）。
+// 并入本数组即可被 state.js 默认值与 persistence.js 旧档补齐自动覆盖。
+const WORMHOLE_SPECIAL_MATERIALS = ["虫洞印记", "暗流体助熔触媒"];
+COMBAT_SPECIAL_MATERIALS.push(...WORMHOLE_SPECIAL_MATERIALS);
 
 // 势力考古探针掉落（死亡空间产出「探针本体」；功勋商店卖的是「限次抄本 BPC」，两条路径并行）。
 // 绑定规则：按敌人势力绑定档位 —— 命名与掉落同源（苍穹劫团的副本掉苍穹劫团探针），

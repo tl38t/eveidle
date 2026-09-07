@@ -168,6 +168,25 @@
     if (isBattleRunning(state) && state.combat && state.combat.active) return false;
     return stopNormalActivity(state, now);
   }
+  // 行动槽快照/恢复（与虫洞对称，spec §5.4/§5.5）：试炼开始时拍快照，完成/中止时恢复，
+  // 使玩家之前的挂机 action / 队列在试炼结束后自动续上，而非停在已停止状态。
+  function snapshotAction(state) {
+    const a = state.currentAction || {};
+    return {
+      has: !!(a.active || (state.queue && state.queue.status && state.queue.status.isRunning)),
+      action: a.active ? { skill: a.skill, target: a.target, progress: a.progress, lastProgressUpdate: a.lastProgressUpdate } : null,
+      queueRunning: !!(state.queue && state.queue.status && state.queue.status.isRunning)
+    };
+  }
+  function restoreSnapshot(state, snap, now) {
+    if (!snap) return;
+    const t = Number(now) || Date.now();
+    if (snap.action && state.currentAction) {
+      Object.assign(state.currentAction, snap.action, { active: true, lastProgressUpdate: t });
+    }
+    if (snap.queueRunning && state.queue && state.queue.status) state.queue.status.isRunning = true;
+    state._dirty = true;
+  }
   function resourceKey(node) { return "special:" + String(node.resourceId || node.collectionResource || ""); }
   function getCollectionDailyReward(firstRewardAmount) {
     // 节点长期奖励取首次试炼奖励的 96%，并取整：100 -> 96/日，275 -> 264/日。
@@ -485,7 +504,10 @@
       collectionAmount:Number(node.collectionAmount) || 0,
       collectionBaseSecondsPerUnit:Number(node.collectionBaseSecondsPerUnit) || 0,
       collectionTimeLimitSeconds:Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS,
-      collectionEfficiencyTarget:Number(node.collectionEfficiencyTarget) || 0
+      collectionEfficiencyTarget:Number(node.collectionEfficiencyTarget) || 0,
+      // 虫洞集成：快照必须携带来源与奖励倍率（finish 按 lockedNode 判定缩放/防污染）
+      source:node.source === "wormhole" ? "wormhole" : undefined,
+      collectionRewardMult:Number(node.collectionRewardMult) || undefined
     };
   }
   function lockArchaeologyNode(node) {
@@ -503,7 +525,8 @@
       archaeologyTimeLimitSeconds:Number(node.archaeologyTimeLimitSeconds) || LIMIT_SECONDS,
       archaeologyTargetProgress:Number(node.archaeologyTargetProgress) || 14,
       archaeologyRareRate:Number(node.archaeologyRareRate) || 0.05,
-      archaeologyInterferenceSeconds:Number(node.archaeologyInterferenceSeconds) || 1.5
+      archaeologyInterferenceSeconds:Number(node.archaeologyInterferenceSeconds) || 1.5,
+      source:node.source === "wormhole" ? "wormhole" : undefined
     };
   }
   function lockBattleNode(node) {
@@ -515,7 +538,10 @@
       battleTrialEnemyCount:Math.max(1, Number(node.battleTrialEnemyCount) || 2),
       battleTrialTimeLimitSeconds:Number(node.battleTrialTimeLimitSeconds) || LIMIT_SECONDS,
       // 泰坦组件节点不参与战斗试炼奖励（2026-09-06），锁定快照必须带上该标记。
-      titanComponent:node.titanComponent === true
+      titanComponent:node.titanComponent === true,
+      // 虫洞集成：快照携带来源与奖励倍率（grantBattleTrialRewards 按 lockedNode.whRewardMult 缩放）
+      source:node.source === "wormhole" ? "wormhole" : undefined,
+      whRewardMult:Number(node.whRewardMult) || undefined
     };
   }
   function readEfficiency(node) {
@@ -552,7 +578,7 @@
     const zone = getBattleZone(node);
     if (!zone) return { ok:false, reason:"invalid-battle-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };
+    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
     if (hasNormalActivity(state)) return { ok:false, reason:"player-action-running" };
     const display = getBattleCombatDisplay(state, now, zone.id);
     if (!display || !display.player || !display.player.hasShip) return { ok:false, reason:"no-combat-ship" };
@@ -764,6 +790,15 @@
     if (starmap.battleRewards[key]) return null;
     const kind = node.tier === "elite" ? "elite" : "normal";
     const rolls = BATTLE_TRIAL_DROP_ROLLS * BATTLE_TRIAL_ONCE_SCALE;
+    // 虫洞奖励缩放（2026-09-07）：节点 whRewardMult（0.1 = 星图一次性奖励的 1/10）。
+    // ISK 直接乘；掉落 rolls / 货柜 / 许可按「整数部分 + 余数概率」缩放（5×0.1=0.5 → 50%×1，符合<1转概率规则）。
+    const whMultRaw = Number(node.whRewardMult);
+    const whMult = (Number.isFinite(whMultRaw) && whMultRaw > 0 && whMultRaw !== 1) ? whMultRaw : 1;
+    const whScaled = function (base) {
+      if (whMult === 1) return base;
+      const v = base * whMult, fl = Math.floor(v);
+      return fl + (Math.random() < v - fl ? 1 : 0);
+    };
     let perKill = Math.max(0, Math.round(Number(opts.iskPerKill) || 0));
     if (!perKill) perKill = Math.max(0, Number(trial.iskPerKill) || 0);
     if (!perKill) perKill = battleTrialIskPerKillByZone(zone, node);
@@ -774,8 +809,9 @@
       if (!tally[id]) tally[id] = { id:id, name:name || id, qty:0 };
       tally[id].qty += qty;
     };
-    record("currency:isk", Math.round(perKill * rolls), "星币", false);
-    for (let index = 0; index < rolls; index++) {
+    record("currency:isk", Math.round(perKill * rolls * whMult), "星币", false);
+    const dropRollTimes = whScaled(rolls);
+    for (let index = 0; index < dropRollTimes; index++) {
       if (typeof rollFactionEncryptedDataDrop === "function") {
         const drop = rollFactionEncryptedDataDrop(zone.faction, kind, Math.random(), zone, state);
         if (drop) record("special:" + drop.material, drop.qty, drop.material, true);
@@ -805,14 +841,16 @@
       }
     }
     let cargoSize = "";
-    for (let index = 0; index < BATTLE_TRIAL_CARGO_COUNT; index++) {
+    const cargoTimes = whScaled(BATTLE_TRIAL_CARGO_COUNT);
+    for (let index = 0; index < cargoTimes; index++) {
       const cargo = grantBattleTrialCargo(state, zone, node);
       if (!cargo) continue;
       if (!cargoSize) cargoSize = String(cargo.size || "");
       record(cargo.itemId || ("cargo:" + cargo.size), 1, "货柜" + cargo.size, true);
     }
     const licenseId = battleTrialLicenseId(zone, node);
-    if (licenseId) record(licenseId, BATTLE_TRIAL_LICENSE_COUNT, licenseId.replace(/^special:/, ""), false);
+    const licenseQty = whScaled(BATTLE_TRIAL_LICENSE_COUNT);
+    if (licenseId && licenseQty > 0) record(licenseId, licenseQty, licenseId.replace(/^special:/, ""), false);
     const items = Object.keys(tally).map(function (id) { return tally[id]; });
     starmap.battleRewards[key] = normalizeBattleRewardRecord({
       nodeId:key,
@@ -835,6 +873,7 @@
   }
   function startBattleTrial(state, node, now, options) {
     const opts = options || {};
+    const prevAction = snapshotAction(state);   // 必须在停动作之前拍快照
     if (state && state.combat && state.combat.active) return { changed:false, reason:"combat-running" };
     if (hasNormalActivity(state) && !opts.confirmed) return { changed:false, reason:"confirm-stop-action", currentSkill:state.currentAction && state.currentAction.skill || "current-action" };
     if (hasNormalActivity(state) && opts.confirmed) {
@@ -881,7 +920,7 @@
       status:"running", nodeId:String(node.id), lockedNode:lockBattleNode(node), zoneId:check.zone.id,
       enemyCount:enemyCount, kills:0, startedAt:t, endsAt:t + limit * 1000, wave:1, result:null,
       iskPerKill:trialIskPerKill, rewardGrantedAt:0, lastRewards:[],
-      previousZone:combat.zone || null
+      previousZone:combat.zone || null, prevAction
     });
     state._dirty = true;
     return { changed:true, trial:{ ...s }, combat:res };
@@ -901,7 +940,8 @@
     if (success && s.nodeId != null) {
       const completedId = String(s.nodeId);
       const completed = ensure(state).completedNodeIds;
-      if (!completed.includes(completedId)) completed.push(completedId);
+      // 虫洞节点（source=wormhole）不写星图完成度——完成记账由虫洞系统自己处理
+      if (!(s.lockedNode && s.lockedNode.source === "wormhole") && !completed.includes(completedId)) completed.push(completedId);
       // 通关奖励（2026-09-06）：星带同级掉落 ×15 + 货柜 ×5 + 许可 ×5，并建立每日驻留账本。
       // 取开战时的节点快照；泰坦组件节点与核心节点在内部直接跳过。
       const rewardNode = s.lockedNode || { id:s.nodeId, ring:"outer", tier:"normal", battleTrialZoneId:s.zoneId };
@@ -919,6 +959,7 @@
         npc.combatHp = null;
       }
     }
+    restoreSnapshot(state, s.prevAction, Date.now());   // 完成后恢复此前挂机/队列
     state._dirty = true;
     return { changed:true, success:success, trial:{ ...s } };
   }
@@ -932,7 +973,8 @@
       root.dispatchGameAction(state, { type:"combat/stop" }, Date.now());
     }
     if (previousZone && state && state.combat) state.combat.zone = previousZone;
-    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null, previousZone:null });
+    restoreSnapshot(state, s.prevAction, Date.now());   // 恢复此前挂机/队列（与虫洞中止一致）
+    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null, previousZone:null, prevAction:null });
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }
@@ -1314,7 +1356,7 @@
     const requirements = productionRequirements(node);
     if (!requirements.length) return { ok:false, reason:"invalid-production-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };
+    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
     const stocks = getProductionRequirementState(state, node);
     return { ok:stocks.every(function (entry) { return entry.enough; }), reason:stocks.every(function (entry) { return entry.enough; }) ? null : "insufficient-production-materials", requirements:stocks };
   }
@@ -1354,7 +1396,7 @@
     const site = archaeologySite(node);
     if (!site) return { ok:false, reason:"invalid-archaeology-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };
+    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
     if (hasNormalAction(state)) return { ok:false, reason:"player-action-running" };
     const instance = archaeologyShip(state);
     if (!instance) return { ok:false, reason:"no-archaeology-ship" };
@@ -1369,6 +1411,7 @@
   }
   function startArchaeologyTrial(state, node, now, options) {
     const opts = options || {};
+    const prevAction = snapshotAction(state);   // 必须在停动作之前拍快照
     if (state && state.combat && state.combat.active) return { changed:false, reason:"combat-running" };
     if (hasNormalAction(state) && !opts.confirmed) return { changed:false, reason:"confirm-stop-action", currentSkill:state.currentAction.skill || "current-action" };
     if (hasNormalAction(state) && opts.confirmed) {
@@ -1383,7 +1426,7 @@
     const limit = Number(node.archaeologyTimeLimitSeconds) || LIMIT_SECONDS;
     const trialShipHp = getArchaeologyTrialShipHp(state, check.instance.instanceId);
     if (!trialShipHp) return { changed:false, reason:"archaeology-hp-unavailable" };
-    Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockArchaeologyNode(node), siteId:check.site.id, shipInstanceId:check.instance.instanceId, probeId:check.probeId, trialShipHp:trialShipHp, progress:0, target:Number(node.archaeologyTargetProgress) || 14, startedAt:t, endsAt:t + limit * 1000, nextScanAt:t + check.cycleSeconds * 1000, interferenceUntil:0, cycleSeconds:check.cycleSeconds, scanStrength:check.scanStrength, successChance:check.successChance, scans:0, successes:0, rareFinds:0, log:[], result:null });
+    Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockArchaeologyNode(node), siteId:check.site.id, shipInstanceId:check.instance.instanceId, probeId:check.probeId, trialShipHp:trialShipHp, progress:0, target:Number(node.archaeologyTargetProgress) || 14, startedAt:t, endsAt:t + limit * 1000, nextScanAt:t + check.cycleSeconds * 1000, interferenceUntil:0, cycleSeconds:check.cycleSeconds, scanStrength:check.scanStrength, successChance:check.successChance, scans:0, successes:0, rareFinds:0, log:[], result:null, prevAction });
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }
@@ -1399,9 +1442,11 @@
     if (success && s.nodeId != null) {
       const completedId = String(s.nodeId);
       const firstCompletion = !wasCompleted;
-      if (firstCompletion) starmap.completedNodeIds.push(completedId);
-      if (firstCompletion) rewardResult = initializeArchaeologyReward(state, s.lockedNode, t);
+      const whArch = s.lockedNode && s.lockedNode.source === "wormhole";
+      if (firstCompletion && !whArch) starmap.completedNodeIds.push(completedId);
+      if (firstCompletion && !whArch) rewardResult = initializeArchaeologyReward(state, s.lockedNode, t);
     }
+    restoreSnapshot(state, s.prevAction, now);   // 完成后恢复此前挂机/队列
     state._dirty = true;
     return {
       changed:true,
@@ -1414,7 +1459,8 @@
   function stopArchaeologyTrial(state) {
     const s = ensure(state).archaeologyTrial;
     if (s.status !== "running") return { changed:false, reason:"not-running" };
-    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, siteId:null, shipInstanceId:null, probeId:null, trialShipHp:null, progress:0, target:14, startedAt:0, endsAt:0, nextScanAt:0, interferenceUntil:0, cycleSeconds:0, scanStrength:0, successChance:0, scans:0, successes:0, rareFinds:0, log:[], result:null });
+    restoreSnapshot(state, s.prevAction, Date.now());   // 手动中止也恢复此前挂机/队列
+    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, siteId:null, shipInstanceId:null, probeId:null, trialShipHp:null, progress:0, target:14, startedAt:0, endsAt:0, nextScanAt:0, interferenceUntil:0, cycleSeconds:0, scanStrength:0, successChance:0, scans:0, successes:0, rareFinds:0, log:[], result:null, prevAction:null });
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }
@@ -1464,7 +1510,7 @@
   function canStart(state, node) {
     if (!state || !active(state, node)) return { ok:false, reason:"invalid-collection-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };
+    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
     if (hasNormalAction(state)) return { ok:false, reason:"player-action-running" };
     const eff = readEfficiency(node);
     if (!(eff > 0)) return { ok:false, reason:"no-collection-efficiency", efficiency:eff };
@@ -1475,6 +1521,7 @@
   }
   function start(state, node, now, options) {
     const opts = options || {};
+    const prevAction = snapshotAction(state);   // 必须在停动作之前拍快照
     if (state && state.combat && state.combat.active) return { changed:false, reason:"combat-running" };
     if (hasNormalAction(state) && !opts.confirmed) return { changed:false, reason:"confirm-stop-action", currentSkill:state.currentAction.skill || "current-action" };
     if (hasNormalAction(state) && opts.confirmed) {
@@ -1487,7 +1534,7 @@
     const t = Number(now) || Date.now();
     stopNormalActivity(state, t);
     const limit = Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS;
-    Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockNode(node), resourceId:String(node.collectionResource), kind:node.collectionKind || node.subtype || "", gathered:0, amount:Number(node.collectionAmount), startedAt:t, endsAt:t + limit * 1000, requiredSeconds:check.requiredSeconds, efficiency:check.efficiency, result:null });
+    Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockNode(node), resourceId:String(node.collectionResource), kind:node.collectionKind || node.subtype || "", gathered:0, amount:Number(node.collectionAmount), startedAt:t, endsAt:t + limit * 1000, requiredSeconds:check.requiredSeconds, efficiency:check.efficiency, result:null, prevAction });
     state._dirty = true;
     return { changed:true, trial:{ ...s }, willSucceed:check.willSucceed };
   }
@@ -1503,11 +1550,15 @@
       const completedId = String(s.nodeId);
       const completedNodeIds = starmap.completedNodeIds;
       const firstCompletion = !wasCompleted;
-      if (firstCompletion) completedNodeIds.push(completedId);
-      // 首次试炼产物立即入库；测试重试只复用房间，不重复发放首次奖励。
-      if (firstCompletion) starmap.collectionRewards[completedId] = createCollectionRewardRecord({ id:completedId, resourceId:s.resourceId, collectionResource:s.resourceId, amount:s.amount }, Number(now) || Date.now());
-      if (firstCompletion && root.ResourceRegistry && typeof root.ResourceRegistry.add === "function") root.ResourceRegistry.add(state, resourceKey(s), s.amount);
+      const whColl = s.lockedNode && s.lockedNode.source === "wormhole";
+      // 虫洞采集奖励缩放（collectionRewardMult=0.1 → 1/10）：采集量 100 对标星图节奏，入库只给 1/10
+      const whRewardQty = whColl ? Math.max(0, Math.round(s.amount * (Number(s.lockedNode.collectionRewardMult) || 1))) : s.amount;
+      if (firstCompletion && !whColl) completedNodeIds.push(completedId);
+      // 首次试炼产物立即入库；测试重试只复用房间，不重复发放首次奖励。虫洞不进星图驻留账本。
+      if (firstCompletion && !whColl) starmap.collectionRewards[completedId] = createCollectionRewardRecord({ id:completedId, resourceId:s.resourceId, collectionResource:s.resourceId, amount:s.amount }, Number(now) || Date.now());
+      if (firstCompletion && root.ResourceRegistry && typeof root.ResourceRegistry.add === "function") root.ResourceRegistry.add(state, resourceKey(s), whRewardQty);
     }
+    restoreSnapshot(state, s.prevAction, now);   // 完成后恢复此前挂机/队列
     state._dirty = true;
     return { changed:true, success, trial:{ ...s } };
   }
@@ -1515,7 +1566,8 @@
     const s = ensure(state).collectionTrial;
     if (s.status !== "running") return { changed:false, reason:"not-running" };
     // 停止是一次完整的试炼重置：不结算、不保留本轮采集量，重新打开时从满额开始。
-    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null });
+    restoreSnapshot(state, s.prevAction, Date.now());   // 手动中止也恢复此前挂机/队列
+    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null, prevAction:null });
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }
@@ -1610,6 +1662,15 @@
   API.setReplayTestingEnabled = setReplayTestingEnabled;
   API.isReplayTestingEnabled = isReplayTestingEnabled;
   API.LIMIT_SECONDS = LIMIT_SECONDS;
+  // 虫洞集成：试炼状态快照（浅拷贝；wormhole tick 轮询 status/endsAt，房间 UI 读实时进度）
+  API.getTrialStates = function (state) {
+    const st = ensure(state);
+    return {
+      collection: Object.assign({}, st.collectionTrial),
+      archaeology: Object.assign({}, st.archaeologyTrial),
+      battle: Object.assign({}, st.battleTrial)
+    };
+  };
   root.LEGION_STARMAP_TRIAL = API;
 
 })(typeof window !== "undefined" ? window : globalThis);

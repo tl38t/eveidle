@@ -644,12 +644,16 @@ function getSmeltingEfficiencyForState(state) {
   const implantRefineEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).refiningEff : 1;
   // 增强剂·冶炼速度（考古重制 Phase B · 考古蓝图产出）：独立乘区
   const boosterSmeltSpeed = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).smeltSpeedMultiplier : 1;
+  // 虚空熔核（spec §13.8）：虫洞印记商店时限消耗品，独立乘区（同脑突触范式）；同名不叠加只刷新。
+  // 已知 v1 限制：有效期按墙钟判定；离线追算跨越过期点时由 offline 边界切分兜底（§5.5）。
+  const wormholeSmeltBuff = (state.wormhole && state.wormhole.smeltBuff && state.wormhole.smeltBuff.expiresAt > Date.now())
+    ? (Number(state.wormhole.smeltBuff.mult) || 1) : 1;
   const legionRefine = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
     ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers.refining : 1;
   // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
   const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
     ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
-  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus + pumpBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * shipEnhanceSmelt * legionRefine;
+  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus + pumpBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * wormholeSmeltBuff * shipEnhanceSmelt * legionRefine;
   // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（冶炼速度/产出均经此 efficiency）。
   const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
   if (adbm && adbm !== 1) efficiency = efficiency * adbm;
@@ -2802,7 +2806,9 @@ function computeCargoSortMeta(item, componentLevelByName){
     else { subRank = 9; subLabel = "其他掉落"; primary = 0; secondary = nm; }
   } else if(cat === "consumable"){
     // 玩家要求：仓库-消耗品页面把「弹药」小标签摆在第一个。
-    if(item.ammoTier != null || /弹/.test(nm)){
+    // 增强剂/探针 id 带显式命名空间，名字里可能含「弹」字（如导弹燃烧催化剂），须排除，避免误归弹药。
+    const explicitNs = id && (id.indexOf("booster:") === 0 || id.indexOf("probe:") === 0);
+    if((item.ammoTier != null || /弹/.test(nm)) && !explicitNs){
       const tierRaw = item.ammoTier || (nm.match(/T(\d+)/) || [,"1"])[1];
       const tier = String(tierRaw).replace(/^T/i, "") || "1";
       subRank = Number(tier) - 1; subLabel = "弹药 T" + tier; secondary = nm.replace(/\s*T\d+.*$/,"");
@@ -4240,7 +4246,7 @@ function getStatisticsDisplayState(state) {
 }
 
 function getNavigationDisplayState(page, view) {
-  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel", alliance:"alliance-panel" };
+  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel", alliance:"alliance-panel", wormhole:"wormhole-panel" };
   const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", combat:"combat-panel" };
   const selectedPage = page || "skill";
   const selectedView = view || "mining";

@@ -222,12 +222,12 @@
     }
 
     appendSummaryLabel('当前可提取');
-    const pendingWhole = [...extractGrouped.values()].reduce((sum, entry) => sum + entry.wholeAmount, 0);
+    const pendingWhole = [...extractGrouped.values()].reduce((sum, entry) => sum + Math.floor(entry.amount), 0);
     if (!extractGrouped.size) {
       appendRewardRow(host, '当前状态', '暂无可提取物品。', '#9bb2c8');
     } else {
       extractGrouped.forEach((entry) => {
-        const whole = entry.wholeAmount;
+        const whole = Math.floor(entry.amount);
         appendRewardRow(host, entry.name, '×' + whole + (entry.amount - whole > 1e-9 ? '（累计中：' + formatRewardAmount(entry.amount) + '）' : ''), whole > 0 ? '#ffe18a' : '#9bb2c8');
       });
       if (pendingWhole <= 0) appendRewardRow(host, '提取提示', '目前还没有整单位物品，零数部分会继续累计。', '#9bb2c8');
