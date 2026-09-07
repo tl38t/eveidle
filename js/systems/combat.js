@@ -437,7 +437,9 @@ function getCombatEncounterZone(combat) {
   }
   // 星图试炼续波（2026-09-05）：试炼进行中用 startBattleTrial 缓存的专用波次战区，
   // 保证第 2 波起与第 1 波同平衡/同编队池；普通星带无此字段，行为不变。
-  if (c && c.trialWaveZone) return c.trialWaveZone;
+  // 2026-09-07 保险：只有 trialWaveZone 与当前 combat.zone 匹配时才使用，
+  // 防止试炼残留/强退后普通战斗续波误用试炼战区（如先驱文明核心的 5 船编队）。
+  if (c && c.trialWaveZone && c.trialWaveZone.id === (c && c.zone)) return c.trialWaveZone;
   return COMBAT_ZONES.find(zone => zone.id === (c && c.zone)) || null;
 }
 

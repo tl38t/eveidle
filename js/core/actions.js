@@ -667,7 +667,9 @@ function endCombatSession(state, reason, opts) {
     currentFormation:"",
     lastEnemyVolley:null,
     deathspaceChainRemaining:0,
-    deathspaceChainPending:false
+    deathspaceChainPending:false,
+    trialWaveZone:null,
+    trialPreviousZone:null
   });
   // 被击毁时这些进度字段要带进 resumeAfterRepair（维修后自动续战），不能清。
   if (reason !== "destroyed") {

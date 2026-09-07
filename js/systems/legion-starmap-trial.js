@@ -50,9 +50,9 @@
   const BATTLE_TRIAL_ONCE_SCALE = 5;        // 一次性奖励整体倍率
   const BATTLE_TRIAL_DAILY_DIVISOR = 5;     // 每日驻留 = 基准 ÷ 5（不参与一次性倍率）
   const BATTLE_TRIAL_CARGO_COUNT = 5;       // 一次性货柜数量
-  const BATTLE_TRIAL_LICENSE_COUNT = 5;     // 一次性装备生产许可数量
+  const BATTLE_TRIAL_LICENSE_COUNT = 1;     // 一次性装备生产许可数量（每节点仅 1 张）
   const BATTLE_TRIAL_DAILY_CARGO = 0.2;     // 每日货柜（5 天 1 个）
-  const BATTLE_TRIAL_LICENSE_BY_RING = { outer:"A", middle:"S", inner:"S" };
+  const BATTLE_TRIAL_LICENSE_BY_RING = { outer:"B", middle:"A", inner:"S" };
   const BATTLE_TRIAL_EXCLUDED_ZONE_IDS = ["precursor_core"];
   const BATTLE_TRIAL_FACTION_LABEL = { angel:"苍穹劫团", blood:"赤誓教团", sansha:"静默集群" };
   const BATTLE_TRIAL_REWARD_HOURS_PER_DAY = 24;
@@ -880,14 +880,20 @@
     Object.assign(s, {
       status:"running", nodeId:String(node.id), lockedNode:lockBattleNode(node), zoneId:check.zone.id,
       enemyCount:enemyCount, kills:0, startedAt:t, endsAt:t + limit * 1000, wave:1, result:null,
-      iskPerKill:trialIskPerKill, rewardGrantedAt:0, lastRewards:[]
+      iskPerKill:trialIskPerKill, rewardGrantedAt:0, lastRewards:[],
+      previousZone:combat.zone || null
     });
     state._dirty = true;
     return { changed:true, trial:{ ...s }, combat:res };
   }
   function finishBattleTrial(state, success, reason) {
-    if (state && state.combat) state.combat.trialWaveZone = null;
     const s = ensure(state).battleTrial;
+    if (state && state.combat) {
+      state.combat.trialWaveZone = null;
+      state.combat.trialPreviousZone = null;
+      // 恢复试炼前玩家选中的普通星带，避免后续普通战斗误用试炼战区。
+      if (s && s.previousZone) state.combat.zone = s.previousZone;
+    }
     if (s.status !== "running") return { changed:false, reason:"not-running" };
     s.status = success ? "success" : "failed";
     s.result = success ? "通过" : String(reason || "失败");
@@ -919,10 +925,14 @@
   function stopBattleTrial(state) {
     const s = ensure(state).battleTrial;
     if (s.status !== "running") return { changed:false, reason:"not-running" };
+    // 先保存先前星带；dispatch combat/stop 会走 endCombatSession 清掉 trialPreviousZone，
+    // 因此恢复逻辑依赖 battleTrial 状态里的 previousZone（startBattleTrial 时保存）。
+    const previousZone = s && s.previousZone ? s.previousZone : (state && state.combat && state.combat.trialPreviousZone) || null;
     if (state && state.combat && (state.combat.active || (state.currentAction && state.currentAction.skill === "combat" && state.currentAction.active)) && typeof root.dispatchGameAction === "function") {
       root.dispatchGameAction(state, { type:"combat/stop" }, Date.now());
     }
-    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null });
+    if (previousZone && state && state.combat) state.combat.zone = previousZone;
+    Object.assign(s, { status:"idle", nodeId:null, lockedNode:null, zoneId:null, enemyCount:0, kills:0, startedAt:0, endsAt:0, wave:1, result:null, previousZone:null });
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }

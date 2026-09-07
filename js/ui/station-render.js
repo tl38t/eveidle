@@ -442,15 +442,21 @@ function computeStationSig(display) {
 }
 
 var _stationAlOptsSig = "";
-// 自动线「可选项集合」签名：仅覆盖选项 id 与蓝图锁状态（随建筑解锁 / 蓝图购买变化）。
-// 运行态、进度、启停、倍率均不进此签名（由 liveUpdateStationFields 每秒轻量同步），
-// 因此无关结构变化（本体升级可负担、他线启停、燃料状态）不会触发 select 重建、误关下拉。
+// 自动线「可选项集合」签名：覆盖选项 id、蓝图锁状态，以及【已启动目标 startedTargetId / 运行态 running】。
+// 进度条 <div class="al-progress-wrap"> 仅在 alDiv.innerHTML 整段重建时创建（由本签名触发），
+// liveUpdateStationFields 只更新已存在元素的 width/text，不会新建进度条元素。
+// 旧实现只含「选项 id + 蓝图锁」，不含 startedTargetId/running：
+//   若某条线在「无目标」状态下被建卡（此时 matchedRecipe 为 null → cycleDurationMs=0 → 不生成进度条），
+//   之后「选中+启动」该线时 startedTargetId 变了但签名不变 → 不触发 alDiv 重建 → 进度条元素永不创建
+//   → 表现为「线在跑但没有进度条」（第二条线因较晚启用、建卡时无目标而必现）。
+// 故将 startedTargetId / running 纳入签名：启动/停止/完成会令该线签名变化 → 重建 alDiv → 进度条（重新）生成。
+// 仅该线自身的 start/stop 改动其条目，他线启停 / 本体升级可负担 / 燃料状态均不改变本签名 → 不误关他线下拉。
 function computeStationAlOptsSig(autoLines) {
   if (!autoLines) return "";
   return autoLines.map(function(al) {
     return al.lineId + "[" + (al.targetOptions || []).map(function(t) {
       return t.id + (t.requiresBlueprint && !t.hasRequiredBlueprint ? "L" : "");
-    }).join(",") + "]";
+    }).join(",") + "]" + (al.startedTargetId ? "#" + al.startedTargetId : "") + (al.running ? "*" : "");
   }).join("|");
 }
 
