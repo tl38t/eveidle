@@ -1221,9 +1221,10 @@ function getShipAssemblyEligibility(state, recipe) {
 function getShipEngineeringDisplayState(state, now) {
   const action = state.currentAction;
   const skill = state.skills.shipEngineering || { lvl:1, xp:0 };
+  const baseLevel = Number(skill.lvl) || 1;
   const level = getEffectiveSkillLevel(state, "shipEngineering");
   const xp = Number(skill.xp) || 0;
-  const xpNeeded = xpForLevel(level + 1);
+  const xpNeeded = xpForLevel(baseLevel + 1);  // 经验进度严格按基础等级，不随临时 +N 变贵
   const speed = getShipEngineeringSpeedBreakdown(state);
   // 研究批次 G：组件线 / 总装线各自的完整速度分解（含独立科研乘子），供显示与校验消费
   const componentSpeed = getShipEngineeringSpeedBreakdown(state, "component");
@@ -1341,6 +1342,9 @@ function getShipEngineeringDisplayState(state, now) {
   return {
     kind:"shipEngineering",
     level,
+    baseLevel,
+    boosted: level > baseLevel,
+    bonusLevels: Math.max(0, level - baseLevel),
     xp,
     xpNeeded,
     xpPercent:Math.min(100, Math.floor(xp / xpNeeded * 100)),
@@ -1755,9 +1759,10 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
 function getBoosterManufacturingDisplayState(state, now) {
   const action = state.currentAction;
   const skill = state.skills.boosterEngineering || { lvl:1, xp:0 };
+  const baseLevel = Number(skill.lvl) || 1;
   const level = getEffectiveSkillLevel(state, "boosterEngineering");
   const xp = Number(skill.xp) || 0;
-  const xpRequired = xpForLevel(level + 1);
+  const xpRequired = xpForLevel(baseLevel + 1);  // 经验进度严格按基础等级，不随临时 +N 变贵
   // 研究批次 G：增强剂制造科研唯一乘子 = 1 + (allMfg + booster)；与 tick/离线的 getBoosterEfficiency 同一 API、同一结果
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "booster"]) : 1;
@@ -1872,6 +1877,9 @@ function getBoosterManufacturingDisplayState(state, now) {
     kind:"boosterEngineering",
     skill:"boosterEngineering",
     level,
+    baseLevel,
+    boosted: level > baseLevel,
+    bonusLevels: Math.max(0, level - baseLevel),
     xp,
     xpRequired,
     xpPercent:Math.min(100, Math.floor(xp / xpRequired * 100)),

@@ -146,7 +146,7 @@
       const disabled = runActive || d.status !== "available";
       const statusText = { available: "待探索", running: "远征中", completed: "已通关", failed: "已超时", aborted: "已放弃" }[d.status] || d.status;
       return (
-        '<div style="border:1px solid #2a3d5c;border-radius:10px;padding:12px 14px;margin-bottom:10px">' +
+        '<div style="border:1px solid #5a3d86;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:linear-gradient(135deg,rgba(21,15,40,.96),rgba(7,10,25,.98));box-shadow:inset 0 1px rgba(201,160,255,.12),0 10px 24px rgba(0,0,0,.18)">' +
         '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
         '<div><b style="color:#c9a0ff;font-size:14px">' + esc((window.WORMHOLE_CONFIG && window.WORMHOLE_CONFIG.SIZE_NAMES && window.WORMHOLE_CONFIG.SIZE_NAMES[d.size]) || (d.size + " 节点虫洞")) + '</b>' +
         '<span style="color:#7f97b3;font-size:12px">　' + esc(d.size) + ' 节点虫洞</span>' +

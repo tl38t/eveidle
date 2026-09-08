@@ -563,8 +563,12 @@ const BoosterStateActions = {
         const oldGroup = (typeof BOOSTER_SLOT_CATEGORY !== "undefined" && BOOSTER_SLOT_CATEGORY[s]) || BOOSTER_SLOT_XP_SKILL[s] || s;
         if (newGroup === oldGroup) return { changed:false, reason:"series-conflict" };
       }
-      // 通用件（神经/技能超载）：同一经验技能域槽位只能装一个
-      if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) return { changed:false, reason:"category-conflict" };
+      // 通用件（神经/技能超载）：同一经验技能域内仅禁**同效果类型**共存
+      // （神经 skillXpMultiplier × 超载 skillLevelBonus 机制不重叠，允许同域共存；
+      // 2026-09-08 拍板，与 systems/boosters.js canEquipBooster 同步）
+      if (existingItem && existingItem.universal && item.universal
+          && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]
+          && existingItem.effectType === item.effectType) return { changed:false, reason:"category-conflict" };
     }
     // 原子提交
     ResourceRegistry.spend(state, item.itemId, 1);
@@ -618,8 +622,10 @@ const BoosterStateActions = {
         const oldGroup = (typeof BOOSTER_SLOT_CATEGORY !== "undefined" && BOOSTER_SLOT_CATEGORY[s]) || BOOSTER_SLOT_XP_SKILL[s] || s;
         if (newGroup === oldGroup) return { changed:false, reason:"series-conflict" };
       }
-      // 通用件（神经/技能超载）：同一经验技能域槽位只能装一个
-      if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) return { changed:false, reason:"category-conflict" };
+      // 通用件（神经/技能超载）：同一经验技能域内仅禁**同效果类型**共存（与 equip/canEquipBooster 同步，2026-09-08）
+      if (existingItem && existingItem.universal && item.universal
+          && BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]
+          && existingItem.effectType === item.effectType) return { changed:false, reason:"category-conflict" };
     }
     const oldItemId = existing.itemId;
     // 原子提交

@@ -144,9 +144,14 @@ function canEquipBooster(state, slot, itemId) {
       const newCat = BOOSTER_SLOT_CATEGORY[slot];
       if (existingCat && existingCat === newCat) return { ok:false, reason:"series-conflict" };
     }
-    // 通用件（神经）：同一类别（同一经验技能域）的槽位只能装一个
+    // 通用件：同一技能域内只允许一件**同效果类型**的通用件（防两颗神经同域双吃
+    // 经验乘区、或两颗超载同域重复抬级）。跨效果类型（神经 skillXpMultiplier ×
+    // 超载 skillLevelBonus）机制不重叠（乘经验收入 vs 抬有效等级，且等级不影响
+    // 经验收入），允许同域共存（2026-09-08 拍板，修复超载加入时未区分 effectType
+    // 被一刀切互斥的 RC13 遗留规则）。
     if (existing && existing.universal && item.universal && s !== slot) {
-      if (BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]) {
+      if (BOOSTER_SLOT_XP_SKILL[s] === BOOSTER_SLOT_XP_SKILL[slot]
+          && existing.effectType === item.effectType) {
         return { ok:false, reason:"category-conflict" };
       }
     }

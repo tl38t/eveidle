@@ -26,7 +26,11 @@
     const host = document.getElementById("shipeng-panel"); if (!host) return;
     let tabs = document.getElementById("shipeng-subview-tabs"); if (!tabs) return;
     const boosters = document.getElementById("ship-action-booster-slots");
-    if (boosters && boosters.parentElement === document.querySelector("#shipeng-panel .panel-body")) tabs.after(boosters);
+    // 2026-09-08 卡死修复：#ship-action-booster-slots 与 #shipeng-subview-tabs 同在 .panel-body 内，
+    // tabs.after(boosters) 后 parentElement 不变，原条件恒真 → 每次都真实移动节点 →
+    // 自身 MutationObserver(:46) 无限自触发 → 主线程微任务死循环（开屏即"页面无响应"）。
+    // 修复：已紧跟在 tabs 之后则不再移动（幂等）。
+    if (boosters && boosters.parentElement === document.querySelector("#shipeng-panel .panel-body") && boosters.previousElementSibling !== tabs) tabs.after(boosters);
     if (!tabs.querySelector("[data-titan-subview]")) {
       const b = document.createElement("button"); b.className = "shipeng-subview-tab"; b.dataset.titanSubview = "titan"; b.textContent = "✦ 泰坦组装"; b.type = "button"; tabs.appendChild(b);
       b.addEventListener("click", () => { ensureView(); show("titan"); });

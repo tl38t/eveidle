@@ -263,7 +263,7 @@ function renderShipEngineeringPage(now) {
     efficiency.textContent = "效率：" + display.efficiency.toFixed(2) + "x";
     efficiency.title = getShipEngineeringEfficiencyBreakdown(display);
   }
-  const lvNum = document.getElementById("shipeng-lv-num"); if (lvNum) lvNum.textContent = display.level;
+  const lvNum = document.getElementById("shipeng-lv-num"); if (lvNum) lvNum.textContent = display.level + (display.boosted ? " (+" + display.bonusLevels + ")" : "");
   const speedInfo = document.getElementById("shipeng-speed-breakdown");
   if (speedInfo) { speedInfo.textContent = getShipEngineeringSpeedBreakdownText(display); speedInfo.title = getShipEngineeringEfficiencyBreakdown(display); }
   const fill = document.getElementById("shipeng-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";

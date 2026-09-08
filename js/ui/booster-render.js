@@ -320,7 +320,7 @@ function renderBoosterPage(now) {
     var lm = display.stationLogisticsMultiplier || 1;
     bsLog.textContent = lm > 1 ? "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）" : "后勤 ×" + lm.toFixed(2);
   }
-  var level = document.getElementById("booster-lv-num"); if (level) level.textContent = display.level;
+  var level = document.getElementById("booster-lv-num"); if (level) level.textContent = display.level + (display.boosted ? " (+" + display.bonusLevels + ")" : "");
   var xp = document.getElementById("booster-exp-value"); if (xp) xp.textContent = Math.floor(display.xp).toLocaleString() + " / " + display.xpRequired.toLocaleString();
   var fill = document.getElementById("booster-exp-fill"); if (fill) fill.style.width = display.xpPercent + "%";
   renderBoosterCategoryTabs(display);
@@ -505,8 +505,10 @@ function getCompatibleBoosterItems(slot) {
         var newCat = BOOSTER_SLOT_CATEGORY[slot];
         if (exCat && exCat === newCat) { conflict = true; break; }
       }
-      // 通用件（神经）：同一类别槽位只能装一个
-      if (existingItem && existingItem.universal && item.universal && BOOSTER_SLOT_XP_SKILL[BOOSTER_SLOTS[s]] === BOOSTER_SLOT_XP_SKILL[slot]) { conflict = true; break; }
+      // 通用件（神经/技能超载）：同一经验技能域内仅禁**同效果类型**共存（与 actions.js/boosters.js 同步，2026-09-08）
+      if (existingItem && existingItem.universal && item.universal
+          && BOOSTER_SLOT_XP_SKILL[BOOSTER_SLOTS[s]] === BOOSTER_SLOT_XP_SKILL[slot]
+          && existingItem.effectType === item.effectType) { conflict = true; break; }
     }
     if (conflict) continue;
     result.push({ id:item.itemId, name:item.name, quality:item.quality, qualityName:item.qualityName, effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : "", inv:qty });
