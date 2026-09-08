@@ -1177,19 +1177,25 @@
       const configs = G("getCombatZoneSpecialDropConfigs")(zone);
       const entries = da.zoneSpecial[zoneId];
       // 按 config 聚合每种 material 的精英/Boss 击杀数
+      // 2026-09-08 修复：聚合键由 resourceId 改为 resourceId|kind 分桶。
+      // 原 bug：chance 只取每种 material 第一条入选记录的——若先来的是精英（5%），
+      // 后续 boss（100% 必掉）整批也按 5% 重滚，离线 boss 特殊掉落被大量吞掉
+      // （波及暗质晶核 / 深层舰船数据等 bossChance=1.0 的区域特殊掉落）。
+      // 现与 factionData/ticket 的 elite/boss 分桶口径一致。
       const byRes = {};
       for (const e of entries) {
         const cfg = configs.find(cc => cc.resourceId === e.resourceId);
         if (!cfg) continue;
         const chance = e.kind === "boss" ? legionChance(cfg.bossChance) : (e.kind === "elite" ? legionChance(cfg.eliteChance) : 0);
         if (!chance) continue;
-        byRes[e.resourceId] = byRes[e.resourceId] || { qty: cfg.qty, n: 0, chance };
-        byRes[e.resourceId].n++;
+        const key = e.resourceId + "|" + e.kind;
+        byRes[key] = byRes[key] || { resourceId: e.resourceId, qty: cfg.qty, n: 0, chance };
+        byRes[key].n++;
       }
-      for (const resId in byRes) {
-        const b = byRes[resId];
+      for (const key in byRes) {
+        const b = byRes[key];
         const n = batchCount(b.n, b.chance, rng);
-        if (n > 0) { RR.add(state, resId, b.qty * n); addResource(s, resId, b.qty * n); }
+        if (n > 0) { RR.add(state, b.resourceId, b.qty * n); addResource(s, b.resourceId, b.qty * n); }
       }
     }
     // 3) 通行密钥

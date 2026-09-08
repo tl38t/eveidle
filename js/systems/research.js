@@ -21,7 +21,8 @@
 //      不存在 lastResearchUpdate。startedAt 仅展示。
 //    - 24h（86400s）封顶只在 processResearchUntil 内应用一次；调用方只传
 //      绝对 now，不传 elapsed、不预封顶。超限部分随锚点推到 now 永久丢弃。
-//    - 时钟倒退：elapsed=0，锚点 max() 单调不倒退。
+//    - 时钟倒退：elapsed=0；锚点恒定收口到 now（2026-09-08 反向漂移修复：
+//      玩家快进系统时钟后拨回，锚点曾因 max() 永久卡在未来导致科研冻结）。
 //    - 多步离线完成用虚拟游标 cursorAt：history.completedAt 与下一步
 //      startedAt 均为对应 cursorAt，不写登录时刻。
 //    - 防递归：结算循环内用私有 beginResearchStep 启动原语；公共
@@ -483,7 +484,10 @@
   //       完成整步 → cursorAt += 步耗时；completeResearchStep(cursorAt)；
   //                  startNextFromQueue(cursorAt)（私有原语启动，无递归）
   //       不足整步 → remainingSeconds -= elapsed；cursorAt += elapsed*1000；elapsed=0
-  //     lastProcessedAt = max(oldAnchor, now)            // 无条件推进，单调不倒退
+  //     lastProcessedAt = now                            // 锚点恒定收口到 now：
+  //                                                      // 前向推进与旧 max(oldAnchor, now) 等价；
+  //                                                      // 锚点超前 now（调钟回拨）时校准回 now，防永久冻结
+  //                                                        （2026-09-08 反向漂移修复）
   //   要点：
   //     - activeResearch=null 也推进锚点（不积攒空闲时间；此时不擅自启动队列）。
   //     - 超 24h 部分随锚点推到 now 永久丢弃（不是 oldAnchor+86400）。
@@ -493,6 +497,7 @@
   //     - 只推进科研；不执行任何协议业务。
   // -------------------------------------------------------------------------
   var MAX_RESEARCH_OFFLINE_SECONDS = 86400; // 与 offline.js MAX_OFFLINE_SECONDS 同值；科研链路唯一封顶点
+  var RESEARCH_CLOCK_DRIFT_WARNED = false;  // 反向漂移告警仅会话级一次
 
   function processResearchUntil(state, now, opts) {
     const research = state && state.research ? state.research : null;
@@ -542,8 +547,20 @@
         markResearchDirty(state); // 实际减少 remainingSeconds → 标记待保存
       }
     }
-    // 无条件安全更新：锚点单调推进到 now（超限丢弃 / 空闲期不积攒 / 倒退不下降）
-    research.lastProcessedAt = Math.max(oldAnchor, resolvedNow);
+    // 无条件安全更新：锚点恒定收口到 now（超限丢弃 / 空闲期不积攒）。
+    // 正常推进（now ≥ oldAnchor）：等价于旧的 max(oldAnchor, now)，推进到 now。
+    // 2026-09-08 反向漂移修复：玩家把系统时钟快进后再拨回时 oldAnchor 卡在未来
+    // → rawElapsed 恒 0 → 科研永久冻结。锚点校准回 now（不白给任何 elapsed，
+    // 仅恢复推进能力）。resolvedNow 非正数（异常调用）时保留旧锚点不破坏。
+    if (!RESEARCH_CLOCK_DRIFT_WARNED && oldAnchor - resolvedNow > 60000) {
+      RESEARCH_CLOCK_DRIFT_WARNED = true;
+      try {
+        console.warn("[research] 存档时间锚点超前系统时钟 " +
+          Math.round((oldAnchor - resolvedNow) / 60000) +
+          " 分钟（多为调系统时钟后拨回所致），已自动校准，科研恢复正常推进。");
+      } catch (_) { /* 告警失败不阻塞结算 */ }
+    }
+    research.lastProcessedAt = resolvedNow > 0 ? resolvedNow : oldAnchor;
     return { ok: true, completedSteps };
   }
 

@@ -1356,7 +1356,7 @@ function processAutoLines(state, now, offline) {
 
     // 仅 operational 段累积进度并结算。自动线最终倍率 = buildingMultiplier × stationLogisticsMultiplier
     // 系数 B：装备厂房/增强剂厂房自动线接入对应核心（equipEng/booster），冶炼线保持 smelt。
-    const stationLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, LINE_CORE_TAG[lineId]) : 1;
+    const stationLogisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, LINE_CORE_TAG[cfg.kind]) : 1;
     // 研究批次 G · autoline 组：自动化协议提速（只加速周期，材料消耗与单周期产量完全不变）
     let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
     if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
@@ -1398,7 +1398,7 @@ function getStationAutoLineCycleDuration(state, lineId, recipe) {
   if (!recipe) return 0;
   const buildingMult = getStationBuildingSpeedMultiplier(state, AUTO_LINE_CONFIG[lineId].buildingId);
   // 系数 B：装备厂房/增强剂厂房自动线接入对应核心（equipEng/booster），冶炼线保持 smelt。
-  const logisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, LINE_CORE_TAG[lineId]) : 1;
+  const logisticsMult = (typeof getStationLogisticsMultiplier === "function") ? getStationLogisticsMultiplier(state, LINE_CORE_TAG[AUTO_LINE_CONFIG[lineId].kind]) : 1;
   // 研究批次 G · autoline 组：与 processAutoLines 完全同式，UI 显示周期 = 实际结算周期
   let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
   if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;

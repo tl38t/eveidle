@@ -55,7 +55,39 @@ function accumulateOnlineSessionTime(nowMs) {
   });
 }
 
+// ================================================================
+// 后台节流守卫（2026-09-08）：手机 WebView / 浏览器会把后台页面的 timer 节流到
+// ≥1 次/分钟。被节流唤醒的 tick 若照常执行：行动进度 delta 被 clamp 到 ≤5s（丢时间），
+// 而 tick 末尾 lastActiveTime=now 会把离线结算起点一起烧掉 —— 恢复可见时
+// calculateOfflineGains 的 elapsed≈0，挂后台的整段时间既没有在线进度也没有离线结算。
+// 表现为「出发时 ETA 提前、回到游戏后 ETA 跳回」（军团 NPC 加成等乘区本身并未失效）。
+// 修复：tick 墙钟间隔超过 30s 时改走离线结算管线（applyOfflineGains 按墙钟全额补足，
+// 周期公式与在线共用 getShipEngineeringCycleDuration 等唯一实现，不产生口径分叉）；
+// 短间隔（<10 分钟）静默结算避免 toast 刷屏，长间隔保留离线收益弹窗。
+// 锚点是页面生命周期内的私有变量：页面重载后首个 tick 只建锚、不转离线（离线已由启动路径结算）。
+// ================================================================
+let _throttleGuardLastTickMs = null;
+const THROTTLE_GUARD_GAP_MS = 30 * 1000;
+const THROTTLE_GUARD_SILENT_MAX_MS = 10 * 60 * 1000;
+
 function gameTick() {
+  // 后台节流守卫：必须先于一切按墙钟推进的系统调用（booster/maintenance/research/
+  // auto lines/legion NPC 等），否则它们会把本段时间按真实时间戳结算，与离线管线重复。
+  {
+    const guardNowMs = Date.now();
+    if (_throttleGuardLastTickMs !== null
+        && guardNowMs - _throttleGuardLastTickMs > THROTTLE_GUARD_GAP_MS
+        && typeof calculateOfflineGains === "function") {
+      const gapSilent = (guardNowMs - _throttleGuardLastTickMs) < THROTTLE_GUARD_SILENT_MAX_MS;
+      _throttleGuardLastTickMs = guardNowMs;
+      try { calculateOfflineGains({ silent: gapSilent }); }
+      catch (e) { console.error("[节流守卫·离线结算异常] 本次后台时长未被结算。错误：", e && (e.stack || e.message || e)); }
+      if (typeof updateUI === "function") { try { updateUI(); } catch (e2) {} }
+      return;
+    }
+    _throttleGuardLastTickMs = guardNowMs;
+  }
+
   // Batch C-14A：在线会话时长必须在所有业务提前 return 之前累计，
   // 保证暂停 / 资源不足 / 战斗恢复中等任何分支下在线时长都不丢失。
   accumulateOnlineSessionTime(Date.now());

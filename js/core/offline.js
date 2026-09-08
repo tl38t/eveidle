@@ -1461,7 +1461,12 @@ function applyOfflineGains(rawSeconds, context) {
   return gains;
 }
 
-function calculateOfflineGains() {
+function calculateOfflineGains(options) {
+  // options.silent（2026-09-08 · 后台节流守卫配套）：tick.js 的节流守卫会把被节流的
+  // 大间隔 tick 转交本函数（最短约 1 分钟一次）。此类「挂后台」短结算若每次都弹
+  // 离线收益 toast 会在回台瞬间刷屏，故静默吞掉展示、保留结算与存盘。
+  // 既有调用点（启动 / visibilitychange / 导入）不传 options，行为完全不变。
+  const _silent = !!(options && options.silent === true);
   const now = Date.now();
   // 离线诊断：打印本次结算的 elapsed，便于确认「标签页恢复 / 启动」是否真的触发了离线追算。
   // 仅当 elapsed>5（会真正结算）或处于调试开关时打印，避免每次可见性抖动刷屏。
@@ -1499,7 +1504,7 @@ function calculateOfflineGains() {
   gameState.currentAction.lastProgressUpdate = now;
   gameState.lastActiveTime = now;
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);
-  if (totalGains > 0 || netItems.length > 0 || consumedItems.length > 0) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary, consumedItems, offlineCtx.settlementErrors);
+  if (!_silent && (totalGains > 0 || netItems.length > 0 || consumedItems.length > 0)) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary, consumedItems, offlineCtx.settlementErrors);
   gameState._dirty = true;
   SaveManager.save();
 }

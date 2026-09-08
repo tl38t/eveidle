@@ -228,7 +228,7 @@ const ManufacturingStateActions = {
 
   // ---- 舰船工程 UI 重做（2026-08-04）：一级视图 / 部件分类 / 总装技术线 / 分页 切换 ----
   selectShipEngSubView(state, view) {
-    if (view !== "component" && view !== "assembly") return { changed:false, reason:"bad-subview" };
+      if (view !== "component" && view !== "assembly" && view !== "titan") return { changed:false, reason:"bad-subview" };
     if (state.currentAction.shipEngSubView === view) return { changed:false, reason:"same" };
     state.currentAction.shipEngSubView = view;
     state._dirty = true;

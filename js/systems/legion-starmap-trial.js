@@ -424,19 +424,38 @@
     const s = ensure(state);
     if (!root.ResourceRegistry || typeof root.ResourceRegistry.add !== "function") return { changed:false, reason:"resource-registry-unavailable" };
     const items = [];
+    // 2026-09-08 池化取整修复：同一发放档位（dailyRewardId）跨节点把零头加总后取整发放，
+    // 与驻留面板「当前可提取」的 floor(跨节点合计) 口径一致。两遍贪心：先汇总取整，
+    // 再依次从各节点扣减，余数留在节点继续累计；总发放 = floor(Σraw)，不多发也不吞发。
+    const pools = {};
     Object.keys(s.archaeologyRewards).forEach(function (key) {
       const reward = normalizeArchaeologyRewardRecord(s.archaeologyRewards[key], key);
       if (!reward) return;
-      const amount = Math.floor(Math.max(0, Number(reward.pendingAmount) || 0) + 1e-9);
-      if (!(amount > 0)) { s.archaeologyRewards[key] = reward; return; }
+      s.archaeologyRewards[key] = reward;
       // 每日驻留发放「每日档位」（外II/中III/内IV）；首次档位（外III/中IV/内V）仅在通关时一次性发放。
       const grantedRewardId = reward.dailyRewardId || reward.rewardId;
-      const grantedRewardName = reward.dailyRewardName || reward.rewardName;
-      root.ResourceRegistry.add(state, grantedRewardId, amount);
-      reward.pendingAmount = Math.max(0, reward.pendingAmount - amount);
-      reward.lastCollectedAt = Number(now) || Date.now();
-      s.archaeologyRewards[key] = reward;
-      items.push({ nodeId:key, rewardId:grantedRewardId, name:grantedRewardName, amount:amount });
+      if (!grantedRewardId) return;
+      const pending = Math.max(0, Number(reward.pendingAmount) || 0);
+      if (!(pending > 0)) return;
+      const pool = pools[grantedRewardId] || (pools[grantedRewardId] = { total:0, nodes:[] });
+      pool.total += pending;
+      pool.nodes.push({ key:key, reward:reward, raw:pending });
+    });
+    Object.keys(pools).forEach(function (grantedRewardId) {
+      const pool = pools[grantedRewardId];
+      const grant = Math.floor(pool.total + 1e-9);
+      if (!(grant > 0)) return;
+      root.ResourceRegistry.add(state, grantedRewardId, grant);
+      let remaining = grant;
+      for (let i = 0; i < pool.nodes.length && remaining > 0; i++) {
+        const node = pool.nodes[i];
+        const take = Math.min(node.raw, remaining);
+        node.reward.pendingAmount = node.raw - take;
+        node.reward.lastCollectedAt = Number(now) || Date.now();
+        s.archaeologyRewards[node.key] = node.reward;
+        remaining -= take;
+      }
+      items.push({ nodeId:pool.nodes[0].key, rewardId:grantedRewardId, name:pool.nodes[0].reward.dailyRewardName || pool.nodes[0].reward.rewardName, amount:grant });
     });
     if (!items.length) return { changed:false, reason:"archaeology-reward-empty", rewards:getArchaeologyRewardStates(state, now) };
     state._dirty = true;
@@ -458,12 +477,9 @@
       const result = collectCollectionReward(state, record.nodeId, t);
       if (result && result.changed) items.push({ category:"collection", nodeId:result.nodeId, resourceId:result.resourceId, name:result.resourceId, amount:result.amount });
     });
-    const productionStates = getProductionRewardStates(state, t);
-    productionStates.forEach(function (record) {
-      const result = collectProductionReward(state, record.nodeId, t);
-      if (result && result.changed) (result.items || []).forEach(function (item) {
-        items.push({ category:"production", nodeId:result.nodeId, rewardId:item.rewardId, name:item.name, amount:item.amount });
-      });
+    const productionResult = collectProductionRewardsBatch(state, t);
+    if (productionResult && productionResult.changed) (productionResult.items || []).forEach(function (item) {
+      items.push({ category:"production", nodeId:item.nodeId, rewardId:item.rewardId, name:item.name, amount:item.amount });
     });
     const archaeologyResult = collectArchaeologyRewards(state, t);
     if (archaeologyResult && archaeologyResult.changed) (archaeologyResult.items || []).forEach(function (item) {
@@ -1270,6 +1286,50 @@
     state._dirty = true;
     return { changed:true, nodeId:key, items:items, reward:productionRewardStateView(reward) };
   }
+  function collectProductionRewardsBatch(state, now) {
+    if (!state) return { changed:false, reason:"invalid-production-reward" };
+    accrueProductionRewards(state, now);
+    const s = ensure(state);
+    if (!root.ResourceRegistry || typeof root.ResourceRegistry.add !== "function") return { changed:false, reason:"resource-registry-unavailable" };
+    const items = [];
+    // 2026-09-08 池化取整修复：同一 rewardId 跨节点把零头加总后取整发放，
+    // 与驻留面板「当前可提取」的 floor(跨节点合计) 口径一致。两遍贪心：
+    // 先按 rewardId 汇总取整，再依次从各节点扣减，余数留在节点继续累计；
+    // 总发放 = floor(Σraw)，不多发也不吞发。单节点路径 collectProductionReward 不受影响。
+    const pools = {};
+    Object.keys(s.productionRewards).forEach(function (key) {
+      const reward = normalizeProductionRewardRecord(s.productionRewards[key], key);
+      if (!reward) return;
+      s.productionRewards[key] = reward;
+      Object.keys(reward.pendingByReward || {}).forEach(function (rewardId) {
+        const pending = Math.max(0, Number(reward.pendingByReward[rewardId]) || 0);
+        if (!(pending > 0)) return;
+        const pool = pools[rewardId] || (pools[rewardId] = { total:0, nodes:[] });
+        pool.total += pending;
+        pool.nodes.push({ key:key, reward:reward, raw:pending });
+      });
+    });
+    Object.keys(pools).forEach(function (rewardId) {
+      const pool = pools[rewardId];
+      const grant = Math.floor(pool.total + 1e-9);
+      if (!(grant > 0)) return;
+      root.ResourceRegistry.add(state, rewardId, grant);
+      let remaining = grant;
+      for (let i = 0; i < pool.nodes.length && remaining > 0; i++) {
+        const node = pool.nodes[i];
+        const take = Math.min(node.raw, remaining);
+        const rest = node.raw - take;
+        if (rest > 1e-9) node.reward.pendingByReward[rewardId] = rest;
+        else delete node.reward.pendingByReward[rewardId];
+        if (take > 0) node.reward.lastCollectedAt = Number(now) || Date.now();
+        remaining -= take;
+      }
+      items.push({ nodeId:pool.nodes[0].key, rewardId:rewardId, name:getProductionRewardName(rewardId), amount:grant });
+    });
+    if (!items.length) return { changed:false, reason:"production-reward-empty", rewards:getProductionRewardStates(state, now) };
+    state._dirty = true;
+    return { changed:true, items:items };
+  }
   function productionRequirements(node) {
     if (!node || node.type !== "production" || !Array.isArray(node.productionRequirements)) return [];
     return node.productionRequirements.map(function (entry) {
@@ -1598,7 +1658,13 @@
     if (/^legion-starmap\//.test(action.type)) return null;
     if (isArchaeologyRunning(state) && (action.type === "archaeology/selectProbe" || action.type === "hangar/toggleAssignment")) return { changed:false, reason:"starmap-trial-running" };
     if (isBattleRunning(state) && /^combat\/(?:select|enter|start)/.test(action.type)) return { changed:false, reason:"starmap-trial-running" };
-    return /(?:\/start|\/enter|\/begin|^start)/.test(action.type) ? { changed:false, reason:"starmap-trial-running" } : null;
+    // 试炼占用舰队：只拦舰队侧新动作（战斗/考古开局）。
+    // 旧的一刀切 /(\/start|\/enter|\/begin)/ 误伤基地侧动作——station/startAutoLine（自动线）、
+    // station/startBuildingConstruction（建筑升级）、queue/start、research/start、manufacturing/* 等
+    // 与试炼无冲突，放行（2026-09-08 用户实测：星图试炼中无法启动自动线和升级建筑）。
+    // wormhole/startRun 自带互斥守卫（wormhole.js startRun），无需在此拦截。
+    if (/^combat\/(?:select|enter|start|begin)/.test(action.type) || action.type === "archaeology/start") return { changed:false, reason:"starmap-trial-running" };
+    return null;
   }
   function setReplayTestingEnabled(enabled) {
     replayTestingEnabled = !!enabled;
@@ -1609,6 +1675,7 @@
   API.isCollectionTrialRunning = isRunning;
   API.isArchaeologyTrialRunning = isArchaeologyRunning;
   API.isBattleTrialRunning = isBattleRunning;
+  API.isAnyTrialRunning = isAnyTrialRunning;   // 2026-09-08 补导出：wormhole.startRun 的互斥守卫依赖它（此前未导出，守卫静默跳过，互斥一直靠 actionLock 一刀切硬扛）
   API.enforceExclusiveActionState = enforceExclusiveActionState;
   API.getLockedNode = function (state) {
     if (!state) return null;

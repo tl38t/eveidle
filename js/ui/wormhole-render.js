@@ -128,6 +128,7 @@
   }
 
   /* ---------------- 每日虫洞卡片 ---------------- */
+  const launchControlByDaily = {};   // 出发卡片选路二选一（自动/手动），按虫洞各自记忆
   function renderDailies(view) {
     const box = el("wh-dailies");
     if (!box) return;
@@ -139,6 +140,7 @@
     const countsByDaily = (window.WORMHOLE && typeof window.WORMHOLE.getDailyNodeCounts === "function")
       ? window.WORMHOLE.getDailyNodeCounts(gameState) : {};
     const html = view.dailies.map(d => {
+      const pick = launchControlByDaily[d.id] || "auto";   // 本卡片的选路选择（默认自动）
       const affix = (window.WORMHOLE_AFFIXES || []).find(a => a.id === d.affixId);
       const counts = countsByDaily[d.id] || { battle: "?", collection: "?", archaeology: "?" };
       const disabled = runActive || d.status !== "available";
@@ -153,6 +155,10 @@
         '<span style="color:#7f97b3;font-size:12px">' + statusText + '</span></div>' +
         (affix ? '<div style="margin-top:6px;font-size:12px"><span style="color:#ff9ab5">负面词条 · ' + esc(affix.name) + '</span>　<span style="color:#b58ea0">' + esc(affix.desc) + '</span></div>' : '') +
         '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<span style="display:inline-flex;border:1px solid #23415e;border-radius:6px;overflow:hidden;opacity:' + (disabled ? ".5" : "1") + '">' +
+        '<button type="button" data-wh-pick-control="auto" data-wh-daily-id="' + esc(d.id) + '" style="padding:4px 10px;font-size:12px;border:none;cursor:' + (disabled ? "default" : "pointer") + ';background:' + (pick === "auto" ? "#1d3a5f" : "transparent") + ';color:' + (pick === "auto" ? "#8fd0ff" : "#5f7a99") + ';font-weight:' + (pick === "auto" ? "700" : "400") + '"' + (disabled ? " disabled" : "") + '>自动</button>' +
+        '<button type="button" data-wh-pick-control="manual" data-wh-daily-id="' + esc(d.id) + '" style="padding:4px 10px;font-size:12px;border:none;border-left:1px solid #23415e;cursor:' + (disabled ? "default" : "pointer") + ';background:' + (pick === "manual" ? "#1d3a5f" : "transparent") + ';color:' + (pick === "manual" ? "#7fd8c0" : "#5f7a99") + ';font-weight:' + (pick === "manual" ? "700" : "400") + '"' + (disabled ? " disabled" : "") + '>手动</button>' +
+        '</span>' +
         '<select data-wh-mode="' + esc(d.id) + '" style="background:#0e2033;color:#c7d8ef;border:1px solid #23415e;border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '>' +
         '<option value="full">遍历（全清）</option><option value="rush">直冲终点</option></select>' +
         '<label style="color:#7f97b3;font-size:12px">失败重试</label>' +
@@ -251,7 +257,7 @@
     whBound = true;
 
     document.addEventListener("click", (e) => {
-      const target = e.target.closest("[data-wh-tab],[data-wh-start],[data-wh-abandon],[data-wh-buy-upgrade],[data-wh-buy-item],[data-wh-buy-goods],[data-wh-dismiss],[data-wh-control],[data-wh-goto],[data-wh-action],[data-bpshop-tab]");
+      const target = e.target.closest("[data-wh-tab],[data-wh-start],[data-wh-abandon],[data-wh-buy-upgrade],[data-wh-buy-item],[data-wh-buy-goods],[data-wh-dismiss],[data-wh-control],[data-wh-goto],[data-wh-action],[data-bpshop-tab],[data-wh-pick-control]");
       if (!target) return;
       const panel = el("wormhole-panel");      // 出发/放弃分支需要面板内取模式与重试输入
       const dispatch = (type, payload) => {
@@ -281,7 +287,15 @@
         const id = target.dataset.whStart;
         const modeSel = panel ? panel.querySelector('[data-wh-mode="' + id + '"]') : null;
         const retryIn = panel ? panel.querySelector('[data-wh-retry="' + id + '"]') : null;
-        dispatch("wormhole/startRun", { dailyId: id, opts: { mode: modeSel ? modeSel.value : "full", retryLimit: retryIn ? Number(retryIn.value) || 0 : 0 } });
+        dispatch("wormhole/startRun", { dailyId: id, opts: { mode: modeSel ? modeSel.value : "full", retryLimit: retryIn ? Number(retryIn.value) || 0 : 0, control: launchControlByDaily[id] || "auto" } });
+        return;
+      }
+      if (target.dataset.whPickControl) {
+        // 出发前选路二选一：按虫洞卡片各自记忆（出发时随 startRun 定格），立即重渲刷新高亮
+        const dailyId = target.dataset.whDailyId;
+        if (dailyId) launchControlByDaily[dailyId] = target.dataset.whPickControl === "manual" ? "manual" : "auto";
+        if (typeof updateUI === "function") updateUI();
+        renderWormholePage();
         return;
       }
       if (target.dataset.whDismiss) { dispatch("wormhole/dismissRun", {}); return; }

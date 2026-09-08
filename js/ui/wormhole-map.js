@@ -320,6 +320,29 @@
     return data;
   }
 
+  // —— 战斗 arena 渲染即校正（方案 A：借用正式战斗页 .combat-arena，唯一 DOM） ——
+  // 判定与「进入战斗画面」按钮同口径：battle 节点 && 当前节点 && 未制压未跳过。
+  function shouldMountWhArena(n, isCur, done, skip) {
+    return !!(n && n.type === "battle" && isCur && !done && !skip);
+  }
+  // restore 先行（scaffold innerHTML 重建前必须归还，否则 canvas 连根销毁），mount 随后。
+  function reconcileBattleArena(n, isCur, done, skip) {
+    const api = (typeof window !== "undefined") ? window.STARMAP_BATTLE_ARENA : null;
+    if (!api || typeof api.mountInto !== "function" || typeof api.restoreFrom !== "function") return false;
+    const whSlot = document.getElementById("wormhole-room-arena-slot");
+    const wantMount = shouldMountWhArena(n, isCur, done, skip);
+    if (wantMount) {
+      if (!whSlot) return false;
+      const ok = api.mountInto(whSlot);
+      if (ok) whSlot.style.display = "block";
+      return ok;   // mount 失败时调用方保留「进入战斗画面」跳页兜底
+    }
+    // 不该挂：arena 若被虫洞槽位持有 → 归还（幂等；不在槽位时 no-op）
+    const borrowed = whSlot && whSlot.querySelector(".combat-arena");
+    if (borrowed) api.restoreFrom(whSlot);
+    return false;
+  }
+
   function renderWormholeNodeRoom(view, now) {
     const sec = document.getElementById("wormhole-node-room");
     if (!sec) return false;
@@ -394,6 +417,10 @@
       }
     }
 
+    // —— arena 渲染即校正：先归还（防 scaffold 重建连 canvas 销毁）→ 重建 → 后借用 ——
+    const whWantMount = shouldMountWhArena(n, isCur, done, skip);
+    if (!whWantMount) reconcileBattleArena(n, isCur, done, skip);
+
     // —— 脚手架：仅在切换节点时重建（保住 Ship3D 的 canvas / WebGL 上下文，防渲染帧中断）——
     const body = document.getElementById("wormhole-room-body");
     if (body && body.dataset.whScaffold !== n.id) {
@@ -401,6 +428,8 @@
       body.innerHTML = buildRoomScaffold(n, D);
       hydrateRoomStage(n, state);
     }
+    let whArenaMounted = false;
+    if (whWantMount) whArenaMounted = reconcileBattleArena(n, isCur, done, skip);   // mount（失败时保留跳页兜底）
     updateRoomLive(n, run, state, t, done, skip);   // 每 render：引擎真实数据
 
     const result = document.getElementById("wormhole-room-result");
@@ -424,7 +453,7 @@
         '<div class="starmap-production-reward-head"><span>虫洞印记</span><strong>+5</strong></div></div>';
     }
     if (n.type === "battle") {
-      return '<div class="starmap-battle-arena-slot" style="min-height:0">' +
+      return '<div class="starmap-battle-arena-slot" id="wormhole-room-arena-slot" style="min-height:0">' +
         '<div class="starmap-production-requirements" style="margin-top:8px">' +
         '<div class="wormhole-room-row"><span>敌人配置</span><strong>' + (D.elite ? "精英" : "常规") + ' · ' + ringLabel(n.ring) + '</strong></div>' +
         '<div class="wormhole-room-row"><span>击杀进度</span><strong id="wh-b-kills">0 / ' + (Number(n.battleTrialEnemyCount) || 2) + '</strong></div>' +

@@ -77,7 +77,12 @@ function syncStarmapCompletedNodes(frame) {
 
 function getLockedStarmapTrialNode() {
   if (typeof LEGION_STARMAP_TRIAL === "undefined" || typeof LEGION_STARMAP_TRIAL.getLockedNode !== "function") return null;
-  return LEGION_STARMAP_TRIAL.getLockedNode(gameState);
+  const locked = LEGION_STARMAP_TRIAL.getLockedNode(gameState);
+  // 虫洞战斗/考古/采集节点复用星图试炼引擎（startEngineTrial），运行态同样写在
+  // state.legion.starmap.*Trial 里，lockedNode 快照带 source:"wormhole"。
+  // 星图页不得恢复虫洞的运行中房间（那是虫洞页的职责），只恢复真星图试炼。
+  if (locked && locked.source === "wormhole") return null;
+  return locked;
 }
 
 function restoreRunningStarmapTrialRoom() {
@@ -135,30 +140,47 @@ function leaveStarmapBattleTrialView() {
   setStarmapTrialRoomRefresh(false);
 }
 
-function mountStarmapBattleArena() {
-  const slot = document.getElementById("starmap-battle-arena-slot");
+// 泛化 arena 搬运核心：arena 全局唯一，mountInto 把它搬进任意槽位；
+// 首次搬运时记录原位（starmapBattleArenaOrigin，星图/虫洞共用同一份记录，归还目标一致）。
+function mountBattleArenaIntoElement(slot) {
   const arena = document.querySelector("#combat-panel .combat-arena") || (slot && slot.querySelector(".combat-arena"));
   if (!slot || !arena) return false;
   if (!starmapBattleArenaOrigin) starmapBattleArenaOrigin = { parent: arena.parentNode, next: arena.nextSibling };
   if (arena.parentNode !== slot) slot.appendChild(arena);
-  slot.hidden = false;
-  slot.style.display = "block";
   return true;
 }
 
-function restoreStarmapBattleArena() {
-  const slot = document.getElementById("starmap-battle-arena-slot");
+// 从指定槽位归还 arena 到原位；arena 不在该槽位时为幂等 no-op。
+function restoreBattleArenaFromElement(slot) {
   const arena = slot && slot.querySelector(".combat-arena");
-  if (!arena) {
-    if (slot) { slot.hidden = true; slot.style.display = "none"; }
-    return false;
-  }
+  if (!arena) return false;
   const origin = starmapBattleArenaOrigin;
   if (origin && origin.parent) {
     origin.parent.insertBefore(arena, origin.next && origin.next.parentNode === origin.parent ? origin.next : null);
   }
-  if (slot) { slot.hidden = true; slot.style.display = "none"; }
   return true;
+}
+
+function mountStarmapBattleArena() {
+  const slot = document.getElementById("starmap-battle-arena-slot");
+  const ok = mountBattleArenaIntoElement(slot);
+  if (ok && slot) { slot.hidden = false; slot.style.display = "block"; }
+  return ok;
+}
+
+function restoreStarmapBattleArena() {
+  const slot = document.getElementById("starmap-battle-arena-slot");
+  const hadArena = !!(slot && slot.querySelector(".combat-arena"));
+  restoreBattleArenaFromElement(slot);
+  if (slot) { slot.hidden = true; slot.style.display = "none"; }
+  return hadArena;
+}
+
+// arena 若被虫洞房间借走，切页前归还（渲染即校正之外的事件级兜底；
+// 只处理虫洞槽位——星图借用的生命周期由其自身 leave 流程管理，行为不变）。
+function restoreBattleArenaFromWormholeIfBorrowed() {
+  const whSlot = document.getElementById("wormhole-room-arena-slot");
+  if (whSlot && whSlot.querySelector(".combat-arena")) restoreBattleArenaFromElement(whSlot);
 }
 
 function renderStarmapBattleTrialCombat(now, options) {
@@ -868,6 +890,7 @@ function switchPage(page) {
   // 与桌面侧栏 data-skill="combat" → switchSkill("combat") 路径完全对齐。
   if (page === "combat") {
     if (isStarmapBattleTrialViewActive()) leaveStarmapBattleTrialView();
+    restoreBattleArenaFromWormholeIfBorrowed();   // arena 被虫洞房间借走时，切战斗页前归还
     currentPage = "skill";
     currentView = "combat";
     renderCurrentNavigation();
@@ -1238,7 +1261,7 @@ function openEquipEnhanceModal(itemId, level) {
   const eqEnt = EQUIPMENT_DB[cell.itemId];
   // 改装件不参与装备强化（安装即消耗、无 enhancementLevel）：隐藏升级段与强化按钮，只展示物品介绍与库存/出产信息
   const isRig = eqEnt && eqEnt.slot === "rig";
-  const descText = eqEnt ? getEquipmentAttributeText(eqEnt, "\n") : "";
+  const descText = eqEnt ? getEquipmentAttributeText(eqEnt, "\n", cell.level) : "";
   const src = { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" };
   let backdrop = document.getElementById("equip-enhance-modal");
   if (!backdrop) {
@@ -5583,4 +5606,10 @@ function installTutorialWidgetListeners() {
   // ---- Batch P：新手引导常驻小部件 —— 事件监听器与交互委托只安装一次 ----
   installTutorialWidgetListeners();
   renderTutorialWidget();
+
+  // 虫洞房间借用正式战斗 arena 的搬运接口（wormhole-map.js 渲染即校正调用）。
+  // 星图自身 mount/restore 流程不变，仍走模块内函数。
+  if (typeof window !== "undefined") {
+    window.STARMAP_BATTLE_ARENA = { mountInto: mountBattleArenaIntoElement, restoreFrom: restoreBattleArenaFromElement };
+  }
 })();

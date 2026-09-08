@@ -738,9 +738,32 @@ function formatEquipmentBonusValue(key, value) {
   return "+" + value;
 }
 
-function getEquipmentAttributeLines(equipmentRef) {
+function getEquipmentAttributeLines(equipmentRef, enhancementLevel) {
   const eq = typeof equipmentRef === "string" ? EQUIPMENT_DB[equipmentRef] : equipmentRef;
   if (!eq) return [];
+  // 强化绝对加值：优先取传入等级，其次取实例自身 enhancementLevel；模板无等级则视为 0
+  const enhLevel = (typeof enhancementLevel === "number" && enhancementLevel > 0)
+    ? enhancementLevel
+    : (eq && typeof eq.enhancementLevel === "number" ? eq.enhancementLevel : 0);
+  const enhMult = (typeof getEquipmentEnhancementEffectMultiplier === "function")
+    ? getEquipmentEnhancementEffectMultiplier(enhLevel) : 1;
+  // 把强化乘区折算成绝对加值（不显示百分比），如 600 基础伤害 +10% → "(+60)"
+  const enhAdd = (base) => enhMult > 1 ? " (+" + Math.round(Number(base) * (enhMult - 1)) + ")" : "";
+  // 装备 bonus 的强化贡献：按 bonus 自身单位显示（+X% 或 +N），与基础数值同一味道
+  const enhBonusAdd = (key, value) => {
+    if (enhMult <= 1) return "";
+    const delta = Number(value) * (enhMult - 1);
+    const baseStr = formatEquipmentBonusValue(key, value);
+    if (baseStr.includes("%")) {
+      const deltaPct = Math.round(delta * 1000) / 10; // 1 位小数百分比点
+      if (deltaPct === 0) return "";
+      const sign = baseStr.trim().startsWith("-") ? "-" : "+";
+      return " (" + sign + deltaPct + "%)";
+    }
+    const addAbs = Math.round(delta);
+    if (addAbs === 0) return "";
+    return " (+" + addAbs + ")";
+  };
   const lines = ["槽位：" + (EQUIPMENT_SLOT_NAMES[eq.slot] || eq.slot)];
   // 外接大型精炼泵：多槽占用 + 供料说明（2026-09-02 定稿）
   if (eq.pump) {
@@ -749,17 +772,17 @@ function getEquipmentAttributeLines(equipmentRef) {
     lines.push("断料自动失效，可在冶炼面板「精炼泵」行开关；多件叠加，效果与消耗同步叠加。");
   }
   for (const [key, value] of Object.entries(eq.bonuses || {})) {
-    lines.push((EQUIPMENT_BONUS_NAMES[key] || key) + " " + formatEquipmentBonusValue(key, value));
+    lines.push((EQUIPMENT_BONUS_NAMES[key] || key) + " " + formatEquipmentBonusValue(key, value) + enhBonusAdd(key, value));
   }
   if (eq.combat && eq.combat.kind === "weapon") {
     const weaponNames = { laser:"激光", missile:"导弹", cannon:"射弹" };
     lines.push("武器类型：" + (weaponNames[eq.combat.weaponType] || eq.combat.weaponType));
-    lines.push("基础伤害：" + eq.combat.baseDamage);
+    lines.push("基础伤害：" + eq.combat.baseDamage + enhAdd(eq.combat.baseDamage));
     lines.push("每轮消耗：燃料 " + eq.combat.fuelCost + " / 弹药 " + eq.combat.ammoCost);
     if (eq.combat.aoe && eq.combat.aoe.description) lines.push(eq.combat.aoe.description);
   } else if (eq.combat && eq.combat.kind === "repair") {
     const targetNames = { shield:"护盾", armor:"装甲", structure:"结构" };
-    lines.push("自动维修：" + (targetNames[eq.combat.target] || eq.combat.target) + " +" + eq.combat.amount);
+    lines.push("自动维修：" + (targetNames[eq.combat.target] || eq.combat.target) + " +" + eq.combat.amount + enhAdd(eq.combat.amount));
     lines.push("触发消耗：燃料 " + eq.combat.fuelCost);
   }
   // 适用舰体（旗舰限定）由 shipTypes 数据驱动：覆盖战斗/工业所有限定件，不再硬编码且不再漏工业旗舰
@@ -774,8 +797,8 @@ function getEquipmentAttributeLines(equipmentRef) {
   return lines;
 }
 
-function getEquipmentAttributeText(equipmentRef, separator) {
-  return getEquipmentAttributeLines(equipmentRef).join(separator || " · ");
+function getEquipmentAttributeText(equipmentRef, separator, enhancementLevel) {
+  return getEquipmentAttributeLines(equipmentRef, enhancementLevel).join(separator || " · ");
 }
 
 // 旗舰限定角标：由 shipTypes 数据驱动（非名字判定）。返回 {kind,label} 或 null。

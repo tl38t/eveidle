@@ -2339,6 +2339,22 @@ function getCombatLivingEnemiesFromState(combat) {
   return fallback && !fallback.defeated && fallback.hp && fallback.hp.structure > 0 ? [fallback] : [];
 }
 
+// 虫洞裂隙战斗上下文：远征正停在未制压的战斗节点上（该节点的战斗就是当前正式战斗）。
+// 供战斗页显示「虫洞战斗中」标识与停止按钮防呆；纯读判定，不依赖 WORMHOLE API 导出。
+function isWormholeBattleContext(state) {
+  try {
+    const worm = state && state.wormhole;
+    const run = worm && worm.run;
+    if (!run || run.state !== "running" || run.phase !== "node") return false;
+    const nodeId = run.current || run.parkedAt;
+    if (!nodeId) return false;
+    const daily = (worm.dailies || []).find(d => d && d.id === run.dailyId);
+    const node = daily && (daily.nodes || []).find(n => n && n.id === nodeId);
+    if (!node || node.type !== "battle") return false;
+    return (run.cleared || []).indexOf(nodeId) < 0 && (run.skipped || []).indexOf(nodeId) < 0;
+  } catch (e) { return false; }
+}
+
 function getCombatDisplayState(state, now) {
   const combat = state.combat || {};
   const storedMode = combat.mode === "deathspace" ? "deathspace" : "belt";
@@ -2415,7 +2431,7 @@ function getCombatDisplayState(state, now) {
       const ref = fitted[index] || null;
       const resolved = ref ? resolveEquipmentReference(state, ref) : null;
       const equipment = resolved ? resolved.definition : null;
-      equipmentRack.push({ slot, slotName:slotNames[slot], index, equipmentRef:ref, equipmentId:resolved ? resolved.itemId : null, enhancementLevel:resolved ? resolved.enhancementLevel : 0, name:equipment ? equipment.name : "空槽位", empty:!equipment, attributes:equipment ? getEquipmentAttributeText(equipment, "\n") : slotNames[slot] + "：空槽位" });
+      equipmentRack.push({ slot, slotName:slotNames[slot], index, equipmentRef:ref, equipmentId:resolved ? resolved.itemId : null, enhancementLevel:resolved ? resolved.enhancementLevel : 0, name:equipment ? equipment.name : "空槽位", empty:!equipment, attributes:equipment ? getEquipmentAttributeText(equipment, "\n", resolved ? resolved.enhancementLevel : 0) : slotNames[slot] + "：空槽位" });
     }
   }
 
@@ -2463,6 +2479,7 @@ function getCombatDisplayState(state, now) {
     })),
     recovery:{ active:recoveryRemaining > 0, remaining:recoveryRemaining, until:recoveryUntil },
     player:{ instanceId:hasShip ? activeShip.instance.instanceId : null, name:hasShip ? ship.name : "未装备战斗舰", image:hasShip ? (ship && ship.image ? ship.image : "") : "", hasShip, speed:ship ? (ship.speed || 0) : 0, dodge:hasShip ? getCombatPlayerDodgeFromState(state, { now, zoneId:zone.id }) : 0, hp, maxHp, derivedMaxHp, volleyDamage, weaponCount:weapons.length },
+    wormholeBattle:isWormholeBattleContext(state),
     enemies:enemies.map((enemy, index) => {
       const currentHp = enemy.hp ? enemy.hp.shield + enemy.hp.armor + enemy.hp.structure : 0;
       const maximumHp = enemy.maxHp ? enemy.maxHp.shield + enemy.maxHp.armor + enemy.maxHp.structure : 1;

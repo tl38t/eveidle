@@ -181,7 +181,7 @@ function renderCombatSupplyStatus(display) {
 function renderCombatLiveDisplay(display) {
   renderCombatCrewSummary(display);
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
-  text("combat-header-info", display.headerText); text("combat-wave-num", display.wave); text("combat-wave-max", display.maxWave); text("combat-clear-label", display.encounterMode === "deathspace" ? "已全通" : "已肃清"); text("combat-clear-count", display.clearCount); text("combat-lock-state", display.lockText); text("combat-player-ship", display.player.name);
+  text("combat-header-info", display.wormholeBattle ? "🪐 虫洞裂隙 · " + display.headerText : display.headerText); text("combat-wave-num", display.wave); text("combat-wave-max", display.maxWave); text("combat-clear-label", display.encounterMode === "deathspace" ? "已全通" : "已肃清"); text("combat-clear-count", display.clearCount); text("combat-lock-state", display.lockText); text("combat-player-ship", display.player.name);
   const playerBars = document.getElementById("combat-player-bars"); if (playerBars) playerBars.innerHTML = renderHPBars(display.player.hp, display.player.maxHp);
   text("combat-player-stats", "齐射伤害:" + display.player.volleyDamage + " · 武器:" + display.player.weaponCount + " · 航速:" + display.player.speed);
   renderCombatEnemyPanel(display); updateCombatRing(display);
@@ -189,7 +189,12 @@ function renderCombatLiveDisplay(display) {
   renderCombatSupplyStatus(display);
   const start = document.getElementById("btn-start-combat"); const stop = document.getElementById("btn-stop-combat");
   if (start) { start.style.display = display.controls.showStart ? "" : "none"; start.disabled = display.controls.startDisabled; start.textContent = display.controls.startText; }
-  if (stop) stop.style.display = display.controls.showStop ? "" : "none";
+  if (stop) {
+    stop.style.display = display.controls.showStop ? "" : "none";
+    // 虫洞远征战斗占用正式战斗引擎：停止按钮禁用防误触（终止/放弃请回虫洞远征页操作）
+    if (display.wormholeBattle) { stop.disabled = true; stop.textContent = "虫洞远征战斗中 · 请在远征页操作"; }
+    else { stop.disabled = false; }
+  }
   // 星带/死亡空间共用同一个「开始」按钮触发确认弹窗；死亡空间下隐藏 belt 波次信息
   const waveSpan = document.querySelector(".combat-wave");
   if (waveSpan) waveSpan.style.display = display.mode === "deathspace" ? "none" : "";

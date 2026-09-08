@@ -511,7 +511,7 @@
     const t = nowMs(now);
     applyDailyRefreshIfNeeded(state, t);          // 先刷新，避免 daily 引用被替换
     if (W.run && W.run.state === "running") return { changed: false, reason: "wormhole-run-active" };
-    const starmap = fn("LEGION_STARMAP_TRIAL");
+    const starmap = (root.LEGION_STARMAP_TRIAL && typeof root.LEGION_STARMAP_TRIAL.isAnyTrialRunning === "function") ? root.LEGION_STARMAP_TRIAL : null;   // fn() 只认 function；引擎是对象，曾永远拿不到 → 互斥守卫从未生效
     if (starmap && typeof starmap.isAnyTrialRunning === "function" && starmap.isAnyTrialRunning(state)) return { changed: false, reason: "starmap-trial-running" };
     if (state.combat && state.combat.active) return { changed: false, reason: "combat-running" };
     if (!isUnlocked(state)) return { changed: false, reason: "starmap-not-cleared" };
@@ -519,6 +519,8 @@
     if (!daily) return { changed: false, reason: "unknown-daily" };
     if (daily.status !== "available") return { changed: false, reason: "daily-not-available" };
     const o = opts || {};
+    // 出发卡片上的选路二选一（自动/手动）：随出发定格（不传则继承当前模式）
+    if (o.control === "manual" || o.control === "auto") W.control = o.control;
     const prevAction = snapshotAction(state);   // 必须在停动作之前拍快照
     stopNormalActivity(state, t);
     const mode = o.mode === "rush" ? "rush" : "full";
@@ -546,7 +548,17 @@
       prevAction,
       summary: { isk: 0, titan: 0, relics: 0, tokens: 0, cleared: 0, skipped: 0, retried: 0 }
     };
-    W.run.pendingId = W.run.path.length > 1 ? W.run.path[1] : null;   // 首跳目标（入口必为 path[0]）
+    if ((W.run.control || "auto") === "manual") {
+      // 手动起步：停靠入口、不自动跃迁首跳，等玩家点选（点任意未清节点自动寻路）
+      W.run.phase = "idle";
+      W.run.pendingId = null;
+      W.run.parkedAt = daily.entryNodeId || null;
+      W.run.path = [daily.entryNodeId].filter(Boolean);
+      W.run.cursor = 1;
+      W.run.nextEventAt = t;
+    } else {
+      W.run.pendingId = W.run.path.length > 1 ? W.run.path[1] : null;   // 首跳目标（入口必为 path[0]）
+    }
     W.activeRunId = runId;
     daily.status = "running";
     daily.run = { id: runId };
