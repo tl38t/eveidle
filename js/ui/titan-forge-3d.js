@@ -45,7 +45,7 @@ function mountPreview(el) {
   let lastKey = "";
   function readSelection() {
     const root = el.closest("#shipeng-titan-view") || document;
-    const get = type => root.querySelector(`[data-titan-select="${type}"]`);
+    const get = type => root.querySelector(`[data-titan-fresh="${type}"]`);
     return { hull: get("hull")?.value || "shield", weapon: get("weapon")?.value || "laser", core: get("core")?.value || "blue" };
   }
   function rebuild() {
