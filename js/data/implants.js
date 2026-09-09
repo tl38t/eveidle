@@ -343,6 +343,7 @@ function implantSourceNav(imp) {
     case "booster": return { pageId: "boosterEngineering", pageLabel: "增强剂制造" };
     case "archaeology": return { pageId: "archaeology", pageLabel: "考古" };
     case "cargo": return { pageId: "cargo", pageLabel: imp.sourceName || "货柜" };
+    case "wormholeShop": return { pageId: "wormhole", pageLabel: "虫洞商店" };
     case "deathspace": return { pageId: "combat", pageLabel: "死亡空间" };
     default: return { pageId: "cargo", pageLabel: "货柜" };
   }
@@ -366,6 +367,8 @@ function getImplantHowToGet(imp) {
       return "在【" + imp.sourceName + "】过程中有几率获得（如 21 秒配方 0.007%，如 180 秒配方 0.06%）。获得后永久生效，不占装备槽。";
     case "archaeology":
       return "完成【考古】解析成功时有几率获得，单次概率按解析周期计算：30 秒档 0.021% ～ 300 秒档 0.208%（周期越长几率越高）。获得后永久生效，不占装备槽。";
+    case "wormholeShop":
+      return "在【虫洞商店】使用虫洞印记购买。获得后永久生效，不占装备槽。";
     case "cargo": {
       // 货柜按尺寸分档；T4 在小型货柜权重为 0，故不列小型档。
       const isT4 = String(imp.sourceName || "").indexOf("T4") !== -1;

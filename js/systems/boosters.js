@@ -394,8 +394,10 @@ function tickBoosterTimers(state, now) {
   if (runEquipment) {
     applyBoosterTimeConsumption(state, "equipmentSpeed", elapsed, now);
     applyBoosterTimeConsumption(state, "equipmentYield", elapsed, now);
-    // 方案1：精密配给剂（shipYield）为舰船/装备制造通用减料瓶，装备工程运行时也消耗其计时
-    applyBoosterTimeConsumption(state, "shipYield", elapsed, now);
+    // 注意：不得在此消耗 shipYield（2026-09-09 修复）。增强剂效果按槽位作用域拆分
+    // （船槽只减舰船制造材料、装备槽只减装备制造材料，见 getBoosterEffectState 的
+    // shipMaterialDiscount 分支），装备工程运行时烧船槽计时属于「纯消耗零收益」，
+    // 且与离线结算口径（getActionBoosterSlots，无跨槽特例）不一致。
   }
   if (runBooster) {
     applyBoosterTimeConsumption(state, "boosterSpeed", elapsed, now);
@@ -727,9 +729,9 @@ function getBoosterSlotStatus(state, slot, item, remainingMs, now) {
   var action = state.currentAction;
   var running = action && action.active ? action.skill : null;
   var relevantSlots = getActionBoosterSlots(running);
-  // 精密配给剂（shipYield）为舰船/装备制造通用减料瓶：舰船或装备运行时均视为相关槽
-  var relevantBySharedDiscount = (slot === "shipYield") && (running === "shipEngineering" || running === "equipmentEngineering");
-  if (!relevantBySharedDiscount && (!relevantSlots.indexOf || relevantSlots.indexOf(slot) < 0)) return "paused";
+  // 严格按槽位归属判定（2026-09-09 修复）：船槽只在做船时视为相关，装备工程运行时
+  // 船槽显示「已装载 · 行动暂停」，与计时消耗、离线结算三处口径统一。
+  if (!relevantSlots.indexOf || relevantSlots.indexOf(slot) < 0) return "paused";
   // 行动运行中，检查是否暂停
   if (running === "mining") {
     var area = (typeof getRunningMiningArea === "function") ? getRunningMiningArea() : null;

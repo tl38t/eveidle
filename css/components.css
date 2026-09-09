@@ -264,7 +264,7 @@
     .mining-target-visual { width: 44px; height: 44px; font-size: 28px; }
     .mining-target-meta { font-size: 10px; }
     .mining-target-sub { font-size: 9px; }
-    .mining-target-state { font-size: 10px; letter-spacing: .06em; min-height:2.4em; }
+    .mining-target-state { font-size: 10px; letter-spacing: .06em; min-height:2.4em; overflow:hidden; }
   }
 
   /* ===== 仓库面板 ===== */

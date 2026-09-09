@@ -50,6 +50,9 @@ const GameEventContracts = (() => {
     "equipment:dismantled": { required:["itemId", "instanceId", "refundedResources", "returnedItems"], numbers:[], nullable:["instanceId"] },
     // 部件拆解（component-dismantle source）：按回收率返还材料（refundedResources）；与 equipment:dismantled 区分（后者为整件装备拆解，含 returnedItems）。
     "component:dismantled": { required:["componentId", "refundedResources"], numbers:[], nullable:[] },
+    // 部件自动拆解（制造业自动线，tick.js / offline.js）：component:dismantled 的自动化变体，额外携带双技能经验 xp{shipEngineering, refining}。
+    // 2026-09-09：emit 点此前缺契约登记（verify 发布点扫描暴露的既有缺口），每次自动拆解都会触发 RuntimeGuard event-contract 报告。
+    "component:autoDismantled": { required:["componentId", "refundedResources", "xp"], numbers:[], nullable:[] },
     "rig:manufactured": { required:["rigId", "quantity"], numbers:["quantity"] },
     "rig:fitted": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
     "rig:destroyed": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },

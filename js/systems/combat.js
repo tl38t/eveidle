@@ -1075,6 +1075,26 @@ function normalizeCombatRunDamage(c) {
   c.runDamageTaken = normalize(c.runDamageTaken);
 }
 
+// 2026-09-09：队列模式功勋折算。
+// 原实现里星带功勋唯一来源是「打满 maxWave 波肃清」的 clearLp，而队列模式在打满波次前
+// 就由 finalizeCombatQueueItem 直接终结，导致用队列打 N 波（N < maxWave）的玩家零功勋。
+// 此处按「已清波数 ÷ 满波数」比例折算 clearLp，并扣除本队列会话内已因整轮肃清发放过的
+// 波数（c.queueLpSettledWaves），避免与肃清奖励双计。
+// 例：clearLp=3、maxWave=20 —— 队列打 5 波补 1 点；打满 20 波时肃清分支已给满，此处补 0。
+function grantQueueWaveLp(state, zone, mtuLpMult) {
+  const c = state.combat;
+  const maxWave = zone.maxWave || 20;
+  const done = c.queueWavesDone || 0;
+  const settled = c.queueLpSettledWaves || 0;
+  const rest = done - settled;
+  if (!(zone.clearLp > 0) || rest <= 0) return 0;
+  const lp = Math.round((zone.clearLp * (rest / maxWave)) * mtuLpMult);
+  if (lp <= 0) return 0;
+  ResourceRegistry.add(state, "currency:lp", lp);
+  c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + getCombatCurrencyDisplayName("lp", "功勋") + " +" + lp;
+  return lp;
+}
+
 function resolveCombatWaveVictory(zone, rng, emit, state) {
   state = state || gameState;
   const c = state.combat;
@@ -1093,6 +1113,8 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
       // 补发收尾波事件：原本队列终结前直接 return，会吞掉最后一波的 combat:waveCleared，
       // 导致依赖"第4波"的监听（如 C6 教程标记）永远收不到。finalize 前先发一次。
       doEmit("combat:waveCleared", { zoneId: zone.id, wave: c.wave });
+      // 队列按波折算功勋（补发未走肃清分支的零头波次；已肃清部分不重复计）
+      grantQueueWaveLp(state, zone, mtuLpMult);
       if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
       return false; // 不走后续 spawn，战斗已结束
     }
@@ -1105,6 +1127,10 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
   if (c.wave >= maxWave) {
     const lp = Math.round((zone.clearLp || 0) * mtuLpMult);
     ResourceRegistry.add(state, "currency:lp", lp);
+    // 队列会话内记一次「整轮肃清已折算波数」，供队列终结时扣除，避免同一批波次发两次功勋
+    if (c.queueItemId && c.queueWavesTarget > 0) {
+      c.queueLpSettledWaves = (c.queueLpSettledWaves || 0) + maxWave;
+    }
     if (!c.zoneClears || typeof c.zoneClears !== "object") c.zoneClears = {};
     c.zoneClears[zone.id] = (c.zoneClears[zone.id] || 0) + 1;
     c.lastLoot = (c.lastLoot ? c.lastLoot + " · " : "") + getCombatCurrencyDisplayName("lp", "功勋") + " +" + lp;
@@ -1316,6 +1342,37 @@ function advanceCombatRound(state, context) {
     return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"ammo-depleted" };
   }
 
+  // ---- 泰坦在线接线（阶段 3 步骤 4）：type "titan" 时主武器/核心走泰坦管线，常规装备槽为空 ----
+  // fuelEfficiency 0.85 已含在 calcFuelMult 乘区（selectors.js:2292），此处按 fuelCost 基础值直接乘。
+  const isTitanShip = (typeof isTitanCombatShip === "function") && isTitanCombatShip(ship);
+  const titanWeapon = isTitanShip ? (ship.weapon || null) : null;
+  const titanCore = isTitanShip ? (ship.core || null) : null;
+  const titanTrait = isTitanShip ? ((typeof getTitanCombatTrait === "function") ? getTitanCombatTrait(ship) : null) : null;
+  const titanRound = Number(c.roundSeq) || 1;
+  const titanAura = (titanCore && typeof getTitanCoreAura === "function") ? getTitanCoreAura(titanCore) : null; // 非光环核心返回 null
+  let titanVolleyFuel = 0;
+  let titanAmmoRequired = 0;
+  if (titanWeapon) {
+    const tFuelBase = titanWeapon.fuelCost || 0;
+    if (tFuelBase > 0) titanVolleyFuel = Math.max(1, Math.round(tFuelBase * calcFuelMult(zone, state)));
+    titanAmmoRequired = titanWeapon.ammoCost || 0;
+  }
+  // 核心维持供能（仅统御矩阵 sustain 模式）：每轮随主武器同扣；供能失败 = 主武器一起哑火（光环失效）
+  let titanCoreSustainFuel = 0;
+  if (titanCore && titanCore.consumption && titanCore.consumption.mode === "sustain") {
+    const sustainBase = Math.round((titanWeapon ? (titanWeapon.fuelCost || 0) : 0) * (titanCore.consumption.fuelPctOfVolley || 0));
+    if (sustainBase > 0) titanCoreSustainFuel = Math.max(1, Math.round(sustainBase * calcFuelMult(zone, state)));
+  }
+  // 泰坦弹药耗尽撤退：与常规舰同语义（保留战利品，结束战斗）
+  if (titanWeapon && titanAmmoRequired > 0 && !hasSelectedAmmo(state, titanWeapon.weaponType)) {
+    c.active = false; state.currentAction.active = false;
+    c.enemies = []; c.currentEnemy = null;
+    c.lastStatus = "弹药耗尽，撤退";
+    c.runDamageDealt = 0; c.runDamageTaken = 0;
+    endLegionSquadBattleIfInactive(state);
+    return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"ammo-depleted" };
+  }
+
   const volleyFuel = computeVolleyFuel(state, zone);
   const ammoRequired = {};
   for (const module of weapons) {
@@ -1326,8 +1383,84 @@ function advanceCombatRound(state, context) {
   const enoughAmmo = Object.entries(ammoRequired).every(([type, amount]) => getSelectedCount(state, type) >= amount);
   const canFire = weapons.length > 0 && enoughFuel && enoughAmmo;
 
+  // —— 泰坦齐射（阶段 3 步骤 4）：主武器单发 + 四类附带打击（sweep/layerPierce/extra/retriggerSweep）——
+  // 公式真值全部来自 titans.js / capital-combat.js 纯函数，此处只做接线（资源扣减/乘区串联/入账）。
+  function fireTitanVolley(target) {
+    const enemy = target;
+    const titanFuelNeeded = titanVolleyFuel + titanCoreSustainFuel;
+    const titanAmmoOk = titanAmmoRequired <= 0 || getSelectedCount(state, titanWeapon.weaponType) >= titanAmmoRequired;
+    const canFireTitan = Boolean(titanWeapon)
+      && ResourceRegistry.get(state, "consumable:fuel") >= titanFuelNeeded
+      && titanAmmoOk;
+    if (!canFireTitan) {
+      c.lastStatus = !titanWeapon ? "泰坦主武器缺失，无法攻击"
+        : (!titanAmmoOk ? "弹药不足，整轮武器未能开火" : "燃料不足，整轮武器未能开火");
+      return;
+    }
+    if (c.mode !== "deathspace") normalizeCombatRunWeaponTypes(c, zone.id);
+    normalizeCombatRunDamage(c);
+    const prevRunDamage = c.runDamageDealt;
+    ResourceRegistry.spend(state, "consumable:fuel", titanFuelNeeded);
+    let ammoProps = getAmmoTierProps("T1");
+    if (titanAmmoRequired > 0) {
+      const r = consumeAmmoForType(state, titanWeapon.weaponType, titanAmmoRequired);
+      ammoProps = getAmmoTierProps(r.tier);
+    }
+    const capSkill = state.skills.capacitorManagement;
+    if (capSkill && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "capacitorManagement", titanFuelNeeded * 0.3, "combat"); }
+    if (c.runWeaponTypes.indexOf(titanWeapon.weaponType) === -1) {
+      c.runWeaponTypes.push(titanWeapon.weaponType);
+    }
+
+    const vulnMult = getTitanDamageTakenMultiplier(enemy, titanRound);
+    const targetTotal = enemy.hp.shield + enemy.hp.armor + enemy.hp.structure;
+    const targetMaxHp = enemy.maxHp ? (enemy.maxHp.shield + enemy.maxHp.armor + enemy.maxHp.structure) : targetTotal;
+    const targetHpRatio = targetMaxHp > 0 ? targetTotal / targetMaxHp : 1;
+    const rd = getTitanWeaponRoundDamage(titanWeapon, { round: titanRound, targetHpRatio });
+    // 乘区：克制 × 结构过载(B案,不限武器) × 光环(含泰坦自身) × 易伤 × 弹药档 × 脑突触 × 暴击
+    const counterMult = calcWeaponCounterMultiplier(titanWeapon.weaponType, enemy.hp);
+    const overdriveMult = getTitanStructureOverdriveMultiplier(titanTrait, c.hp, c.maxHp);
+    const selfAuraDmg = titanAura ? (1 + (titanAura.squadDamageBonus || 0)) : 1;
+    const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
+    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult;
+    if (adbm && adbm !== 1) mult *= adbm;
+    mult *= rollTitanCritMultiplier(titanWeapon.crit, rng);
+    const damage = calcCombatDamage(titanWeapon.baseHit, enemy.dodge, rd.mainDamage, mult, rng);
+    const mainDealt = applyLayeredCombatDamage(enemy.hp, damage);
+    const mainTotal = mainDealt.shield + mainDealt.armor + mainDealt.structure;
+    c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + mainTotal;
+
+    const extraRaw = getTitanExtraAttacks(titanWeapon, { round: titanRound, targetHpRatio });
+    const strikes = resolveTitanWeaponStrikes(extraRaw, titanWeapon, c.enemies, enemy, rng);
+    for (const strike of strikes) {
+      const sweepCrit = (strike.kind === "sweep" && titanWeapon.crit && titanWeapon.crit.appliesToSweep)
+        ? rollTitanCritMultiplier(titanWeapon.crit, rng) : 1;
+      let strikeDmg = strike.damage * vulnMult * sweepCrit;
+      if (adbm && adbm !== 1) strikeDmg *= adbm;
+      strikeDmg = Math.max(1, Math.round(strikeDmg));
+      if (strike.kind === "layerPierce") {
+        // 透层：主命中最深层确定起始层，从下一层起吸收（命中结构不触发）；mainDealt 为明细
+        const pd = applyTitanLayerPierceDamage(enemy.hp, mainDealt, strikeDmg);
+        c.runDamageDealt += pd.shield + pd.armor + pd.structure;
+      } else {
+        const d = applyLayeredCombatDamage(strike.enemy.hp, strikeDmg);
+        c.runDamageDealt += d.shield + d.armor + d.structure;
+      }
+    }
+    if (playEffects) playAttackFX(true, titanWeapon.weaponType, mainTotal, 0, "player", false, enemy);
+    const weaponCfg = WEAPON_CONFIG[titanWeapon.weaponType];
+    if (weaponCfg && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weaponCfg.skillKey, 2, "combat"); }
+    if (typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "targeting", 1, "combat"); }
+    const amountThisVolley = c.runDamageDealt - prevRunDamage;
+    if (typeof amountThisVolley === "number" && Number.isFinite(amountThisVolley) && amountThisVolley > 0) {
+      emit("combat:damageDealt", { zoneId:zone.id, mode:c.mode, amount:amountThisVolley, runTotal:c.runDamageDealt });
+    }
+    c.lastStatus = "";
+  }
+
   // —— 玩家齐射（抽离为可复用的单次开火单元，目标由调用方指定）——
   function firePlayerVolley(target) {
+    if (isTitanShip) { fireTitanVolley(target); return; } // 泰坦无常规装备武器，走泰坦管线
     const enemy = target; // 别名：复用下方既有玩家开火逻辑（含 AOE/克制/脑突触/飘字），不再直接引用回合级 currentEnemy
     if (canFire) {
       // Batch C-11：真实开火前清洗/切区检测（仅普通星带模式登记；死亡空间不参与 E21–E23）
@@ -1459,6 +1592,43 @@ function advanceCombatRound(state, context) {
     }
   }
 
+  // —— 泰坦核心触发（末日武器）：每 everyRounds 轮一次；断供跳过本次触发，不阻塞主武器 ——
+  // 眩晕/易伤状态直接写敌对象（titanStunRounds / titanVuln，JSON 可序列化，随战斗快照进离线追算）。
+  if (isTitanShip && titanCore && titanCore.kind !== "aura" && typeof getTitanCoreStrikes === "function") {
+    const coreRaw = getTitanCoreStrikes(titanCore, titanWeapon, { round: titanRound });
+    if (coreRaw.length > 0) {
+      const ccost = titanCore.consumption || {};
+      const coreFuel = (ccost.fuelPctOfVolley > 0 && titanWeapon)
+        ? Math.max(1, Math.round((titanWeapon.fuelCost || 0) * ccost.fuelPctOfVolley * calcFuelMult(zone, state))) : 0;
+      const coreAmmo = ccost.ammoPerTrigger || 0;
+      const coreAmmoOk = coreAmmo <= 0 || (titanWeapon && getSelectedCount(state, titanWeapon.weaponType) >= coreAmmo);
+      const coreAmmoAvailable = (titanWeapon && coreAmmo > 0) ? getSelectedCount(state, titanWeapon.weaponType) : 0;
+      if (hasTitanCoreSupply({ fuel: coreFuel, ammo: coreAmmo }, ResourceRegistry.get(state, "consumable:fuel"), coreAmmoAvailable) && coreAmmoOk) {
+        if (coreFuel > 0) ResourceRegistry.spend(state, "consumable:fuel", coreFuel);
+        if (coreAmmo > 0) consumeAmmoForType(state, titanWeapon.weaponType, coreAmmo);
+        if (!c.titanStunCounts || typeof c.titanStunCounts !== "object") c.titanStunCounts = {};
+        const corePrimary = (c.currentEnemy && !c.currentEnemy.defeated && c.currentEnemy.hp && c.currentEnemy.hp.structure > 0)
+          ? c.currentEnemy : (getLivingCombatEnemies(c)[0] || null);
+        const resolved = resolveTitanCoreStrikes(coreRaw, titanCore, c.enemies, corePrimary, c.titanStunCounts, titanRound, rng);
+        for (const strike of resolved.strikes) {
+          const vulnMult = getTitanDamageTakenMultiplier(strike.enemy, titanRound); // 侵蚀本轮命中即生效
+          const dmg = Math.max(1, Math.round(strike.damage * vulnMult));
+          const dealt = applyLayeredCombatDamage(strike.enemy.hp, dmg);
+          c.runDamageDealt += dealt.shield + dealt.armor + dealt.structure;
+          if (strike.stunned && (titanCore.stunRounds || 0) > 0) {
+            strike.enemy.titanStunRounds = (strike.enemy.titanStunRounds || 0) + titanCore.stunRounds;
+          }
+        }
+        if (playEffects && resolved.strikes.length > 0) {
+          const coreTotal = resolved.strikes.reduce((acc, s) => acc + s.damage, 0);
+          playAttackFX(true, null, coreTotal, 0, "player", false, resolved.strikes[0].enemy);
+        }
+      } else {
+        c.lastStatus = "泰坦核心供能不足，本次触发跳过";
+      }
+    }
+  }
+
   // 玩家先手与AOE击毁的所有敌舰均立即结算，本轮不再反击。
   for (const defeated of c.enemies.filter(item => item && !item.rewarded && item.hp && item.hp.structure <= 0)) {
     resolveCombatEnemyDefeat(defeated, zone, rng, emit, state);
@@ -1470,10 +1640,19 @@ function advanceCombatRound(state, context) {
   const enemyVolley = { attackers:0, totalDamage:0, mitigatedDamage:0, armorRestored:0, traitName:capitalTrait ? capitalTrait.name : "", hits:[] };
   let shieldHitsUsed = 0;
   let armorDamageTaken = 0;
+  let structureDamageTaken = 0;
+  let titanDeflectionTriggers = 0;
   const livingAttackers = getLivingCombatEnemies(c);
   // 指挥舰光环：指挥舰在场时，其余敌舰伤害 ×auraDamage（指挥舰自身不吃加成）。
   const enemyAuraMult = livingAttackers.reduce((maxAura, e) => Math.max(maxAura, e.auraDamage || 1), 1);
   for (const attacker of livingAttackers) {
+    // 天罚裁决眩晕：被晕敌跳过本次攻击（眩晕 1 轮 = 跳过下一次敌方行动），失败伤害照常已在上文结算
+    if (attacker.titanStunRounds > 0) {
+      attacker.titanStunRounds -= 1;
+      enemyVolley.attackers++;
+      enemyVolley.hits.push({ enemyId:attacker.id, damage:0, stunned:true });
+      continue;
+    }
     let enemyAttackDamage = (attacker.baseDamage || 1) * (attacker.auraDamage ? 1 : enemyAuraMult);
     // 濒死狂暴（2026-09-05 最终 BOSS）：BOSS 血量低于 enrageAt 时伤害 ×enrageMul。
     if (attacker.enrageMul && attacker.maxHp && attacker.hp) {
@@ -1482,8 +1661,16 @@ function advanceCombatRound(state, context) {
       if (bossRatio < (Number(attacker.enrageAt) || 0.3)) enemyAttackDamage *= attacker.enrageMul;
     }
     const rawEnemyDamage = calcCombatDamage(attacker.hit, playerDodge, enemyAttackDamage, 1.0, rng);
-    const mitigation = applyCapitalShieldMitigation(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
-    if (mitigation.shieldHitUsed) shieldHitsUsed++;
+    // 泰坦偏导走泰坦版（返回 triggered 供稳态回充计数）；超旗舰船走原路径，行为不变
+    const mitigation = isTitanShip
+      ? applyTitanShieldMitigation(titanTrait, rawEnemyDamage, shieldHitsUsed, c.hp.shield)
+      : applyCapitalShieldMitigation(ship, rawEnemyDamage, shieldHitsUsed, c.hp.shield);
+    if (isTitanShip) {
+      if (c.hp.shield > 0) shieldHitsUsed++; // 盾上命中一律消耗次数（含第 4 次起不触发减伤的命中）
+      if (mitigation.triggered) titanDeflectionTriggers++;
+    } else if (mitigation.shieldHitUsed) {
+      shieldHitsUsed++;
+    }
     const enemyDmg = Math.max(0, Math.round(mitigation.damage));
     const reducedDmg = dcReduction > 0 ? Math.max(0, Math.round(enemyDmg * (1 - dcReduction))) : enemyDmg;
     // M3 步骤 4/5：敌人每次攻击单独选目标（玩家 + 存活 NPC 等概率）。
@@ -1491,7 +1678,7 @@ function advanceCombatRound(state, context) {
     const squadHit = processLegionEnemyAttack(state, { damage: reducedDmg, now: now, rng: rng, emit: emit });
     const damageTaken = squadHit ? squadHit.dealt : applyLayeredCombatDamage(c.hp, reducedDmg);
     const hitNpc = Boolean(squadHit && squadHit.kind === "npc");
-    if (!hitNpc) armorDamageTaken += damageTaken.armor;
+    if (!hitNpc) { armorDamageTaken += damageTaken.armor; structureDamageTaken += damageTaken.structure; }
     // Batch C-12：累计玩家实际承受伤害（NPC 承受的伤害不计入玩家承伤）
     if (!hitNpc) {
       c.runDamageTaken = (typeof c.runDamageTaken === "number" ? c.runDamageTaken : 0) + damageTaken.shield + damageTaken.armor + damageTaken.structure;
@@ -1539,6 +1726,38 @@ function advanceCombatRound(state, context) {
     const restored = Math.min(reactiveArmorRepair, c.maxHp.armor - c.hp.armor);
     c.hp.armor += restored;
     enemyVolley.armorRestored = restored;
+  }
+
+  // —— 泰坦挂钩维修（阶段 3 步骤 4）：基础量 × calcRepairMult 通用乘区 ——
+  // calcRepairMult 已含舰体 bonuses[armorRepair/structureRepair] 与紧急维修(<70% 结构 +100%)（selectors.js:2316/2331），不重复应用。
+  if (isTitanShip && titanTrait) {
+    const titanRepairRatio = c.maxHp.structure > 0 ? c.hp.structure / c.maxHp.structure : 1;
+    if (titanTrait.id === "titan_deflection_shield" && titanDeflectionTriggers > 0 && c.hp.shield < c.maxHp.shield) {
+      const base = getTitanSteadyRechargeRepair(titanTrait, titanDeflectionTriggers, c.maxHp.shield);
+      const restored = Math.min(base * calcRepairMult("shield", state, titanRepairRatio), c.maxHp.shield - c.hp.shield);
+      if (restored > 0) {
+        c.hp.shield += restored;
+        enemyVolley.armorRestored = (enemyVolley.armorRestored || 0) + restored;
+      }
+    }
+    if (titanTrait.id === "titan_reactive_armor" && armorDamageTaken > 0 && c.hp.armor < c.maxHp.armor) {
+      // 应激 min 内不含乘区（consumesRepairMultiplier）：基础 min 先算，乘区在 min 之后显式应用
+      const base = getTitanReactiveArmorRepair(titanTrait, armorDamageTaken, c.maxHp.armor);
+      const restored = Math.min(base * calcRepairMult("armor", state, titanRepairRatio), c.maxHp.armor - c.hp.armor);
+      if (restored > 0) {
+        c.hp.armor += restored;
+        enemyVolley.armorRestored = restored;
+      }
+    }
+    if (titanTrait.id === "titan_structure_overdrive" && structureDamageTaken > 0 && c.hp.structure < c.maxHp.structure) {
+      const layers = Math.min(titanTrait.maxLayers, Math.floor(((1 - titanRepairRatio) + 1e-9) / (titanTrait.thresholdPct || 0.10)));
+      const base = getTitanOverdriveSealRepair(titanTrait, structureDamageTaken, layers);
+      const restored = Math.min(base * calcRepairMult("structure", state, titanRepairRatio), c.maxHp.structure - c.hp.structure);
+      if (restored > 0) {
+        c.hp.structure += restored;
+        enemyVolley.armorRestored = (enemyVolley.armorRestored || 0) + restored;
+      }
+    }
   }
 
   // --- 维修：只读取舰船实际安装的维修装备 ---
@@ -1590,7 +1809,15 @@ function beginDeathspaceRun(state, options, context) {
   if (isShipUnderRepair(state, activeShipId, now)) return { changed:false, reason:"repairing", remaining:Math.ceil((getShipRepairUntil(state, activeShipId) - now) / 1000) };
   // 门禁已移除：死亡空间战斗等级门槛取消，仅保留密钥门槛（下方 missing-ticket 校验）。
   const weapons = getInstalledCombatModulesFromState(state).filter(module => module.combat && module.combat.kind === "weapon");
-  if (weapons.length === 0) return { changed:false, reason:"no-weapons" };
+  // 泰坦特例（2026-09-09）：泰坦无常规装备武器，主武器在 config.weapon 走泰坦管线；
+  // 仅要求主武器存在才放行（与 actions.js CombatStateActions.start 门禁同口径）。
+  if (weapons.length === 0) {
+    const _activeTitan = getActiveCombatShipState(state);
+    const _isTitan = Boolean(_activeTitan && _activeTitan.config
+      && typeof isTitanCombatShip === "function" && isTitanCombatShip(_activeTitan.config)
+      && _activeTitan.config.weapon);
+    if (!_isTitan) return { changed:false, reason:"no-weapons" };
+  }
   if (ResourceRegistry.get(state, "special:" + site.ticketMaterial) < 1) return { changed:false, reason:"missing-ticket", ticketMaterial:site.ticketMaterial };
   // 全部校验通过：仅在此时进入新 run 初始化 / 扣密钥（原子——之前任一 return 均未触达此处）。
   // Batch R 返修：新 run 先刷新 runToken + runSequence（+1）并将 enemyInstanceSeq 归零；

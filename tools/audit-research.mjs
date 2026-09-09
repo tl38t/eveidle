@@ -116,13 +116,13 @@ async function runData() {
   // =========================================================================
   // 1. 数据保真
   // =========================================================================
-  ok(ResearchData.NODES.length === 46, `移植 NODES 数量应为 46（40 主研究 + 6 军团），实际 ${ResearchData.NODES.length}`);
-  ok(frozen.NODES.length === 46, `冻结源 NODES 数量应为 46（40 主研究 + 6 军团），实际 ${frozen.NODES.length}`);
+  ok(ResearchData.NODES.length === 61, `移植 NODES 数量应为 61（40 主研究 + 6 军团 + 15 深空开拓），实际 ${ResearchData.NODES.length}`);
+  ok(frozen.NODES.length === 61, `冻结源 NODES 数量应为 61（40 主研究 + 6 军团 + 15 深空开拓），实际 ${frozen.NODES.length}`);
   ok(deepEq(ResearchData.WEIGHTS, frozen.WEIGHTS), "WEIGHTS 必须与冻结源逐字段一致");
   ok(deepEq(ResearchData.RANK_MULT, frozen.RANK_MULT), "RANK_MULT 必须与冻结源逐字段一致");
   ok(ResearchData.TARGET_SECONDS === frozen.TARGET_SECONDS, "TARGET_SECONDS 必须与冻结源一致");
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "UNIT 必须与冻结源一致");
-  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 178, `STEP_COUNT 应为 178（160 主研究 + 18 军团），实际 ${ResearchData.STEP_COUNT}`);
+  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 237, `STEP_COUNT 应为 237（160 主研究 + 18 军团 + 59 深空开拓），实际 ${ResearchData.STEP_COUNT}`);
 
   const frozenById = new Map();
   for (const n of frozen.NODES) frozenById.set(n.id, n);
@@ -168,8 +168,8 @@ async function runData() {
   }
   const mappedGroups = new Set(Object.keys(ResearchData.RESEARCH_BONUS_CONSUMERS));
 
-  ok(dataGroups.size === 35, `数据侧唯一 group 应为 35（32 + 3 军团组），实际 ${dataGroups.size}`);
-  ok(mappedGroups.size === 35, `映射注册表 group 应为 35（32 + 3 军团组），实际 ${mappedGroups.size}`);
+  ok(dataGroups.size === 46, `数据侧唯一 group 应为 46（32 + 3 军团组 + 11 深空开拓组），实际 ${dataGroups.size}`);
+  ok(mappedGroups.size === 46, `映射注册表 group 应为 46（32 + 3 军团组 + 11 深空开拓组），实际 ${mappedGroups.size}`);
   ok(setEqual(dataGroups, mappedGroups), "数据 group 与映射 group 必须双向相等（无漏/无多/无拼写漂移）");
   ok(setEqual(dataGroups, frozenGroups), "数据 group 须与冻结源 group 集合一致");
   ok(setEqual(mappedGroups, frozenGroups), "映射 group 须与冻结源 group 集合一致");
@@ -222,6 +222,17 @@ async function runData() {
     "LEGION_NPC.getLegionNpcCapacity",
     "LEGION_NPC.getLegionNpcLevelCap",
     "LEGION_NPC.getLegionNpcResearchXpMultiplier",
+    // 深空开拓分支（contentPack="frontier"）真实消费入口
+    "LEGION_STARMAP_TRIAL.getStarmapResidentYieldMultiplier",
+    "LEGION_STARMAP_TRIAL.getStarmapTrialLimitMultiplier",
+    "LEGION_STARMAP_TRIAL.getStarmapBattleDropMultiplier",
+    "LEGION_STARMAP_TRIAL.getStarmapArchCycleMultiplier",
+    "LEGION_STARMAP_TRIAL.getStarmapCollectionEfficiencyMultiplier",
+    "WORMHOLE.getWormholeCombatModifiers",
+    "WORMHOLE.getWormholeNodeTimeMultiplier",
+    "WORMHOLE.getWormholeSupplyMultiplier",
+    "WORMHOLE.getWormholeTokenMultiplier",
+    "WORMHOLE.getWormholeYieldMultiplier",
   ]);
   const KIND_SET = new Set(["multiplier", "additivePp", "reduceFraction"]);
 
@@ -319,10 +330,80 @@ async function runData() {
   // =========================================================================
   const legionNodes = ResearchData.NODES.filter((n) => n.contentPack === "legion");
   ok(legionNodes.length === 6, `军团分支节点必须为 6（4 数值/基础 + 2 协议），实际 ${legionNodes.length}`);
-  ok(ResearchData.NODES.length === 40 + 6, `全量节点须为 40 主研究 + 6 军团 = 46，实际 ${ResearchData.NODES.length}`);
+  ok(ResearchData.NODES.length === 40 + 6 + 15, `全量节点须为 40 主研究 + 6 军团 + 15 深空开拓 = 61，实际 ${ResearchData.NODES.length}`);
 
-  const mainNodes = ResearchData.NODES.filter((n) => n.contentPack !== "legion");
+  // 主研究 = 无 contentPack（军团 / 深空开拓均带 contentPack）
+  const mainNodes = ResearchData.NODES.filter((n) => !n.contentPack);
   ok(mainNodes.length === 40, `主研究节点须保持 40 不变，实际 ${mainNodes.length}`);
+
+  // =========================================================================
+  // 2d-2. 深空开拓研究分支接入断言（星图 7 + 虫洞 8；泰坦线待战斗系统实装）
+  // =========================================================================
+  const frontierNodes = ResearchData.NODES.filter((n) => n.contentPack === "frontier");
+  ok(frontierNodes.length === 15, `深空开拓分支节点必须为 15（星图 7 + 虫洞 8），实际 ${frontierNodes.length}`);
+  const frontierById = {};
+  for (const n of frontierNodes) frontierById[n.id] = n;
+  // 门禁：两条子线共用入口 sm_root；虫洞线另需 sm_limit③ + sm_collect③（外加通关主线，见 ResearchSystem）
+  const whRoot = frontierById.wh_root;
+  ok(!!whRoot && whRoot.maxLevel === 1 && whRoot.rank === 0.6, "wh_root 须为 rank=0.6 的单级基础节点");
+  ok(!!whRoot && whRoot.prerequisites.some(p => p.id === "sm_limit" && p.level === 3) &&
+     whRoot.prerequisites.some(p => p.id === "sm_collect" && p.level === 3),
+    "wh_root 前置须含 sm_limit③ + sm_collect③（驻留产出已后移，虫洞线不得被其拖后）");
+  // 驻留产出后移：sm_yield 不得直挂 sm_root
+  const smYield = frontierById.sm_yield;
+  ok(!!smYield && !smYield.prerequisites.some(p => p.id === "sm_root"), "sm_yield 不得直挂 sm_root（须位于第二层）");
+  ok(!!smYield && smYield.prerequisites.some(p => p.id === "sm_limit" && p.level === 3) &&
+     smYield.prerequisites.some(p => p.id === "sm_collect" && p.level === 3),
+    "sm_yield 前置须为 sm_limit③ + sm_collect③");
+  // 数值节点 rank = 0.9（RANK_MULT.starmap / wormhole）
+  let frontierRankFails = 0;
+  for (const n of frontierNodes) {
+    if (n.type !== "numeric") continue;
+    const expectRank = n.category === "starmap" ? ResearchData.RANK_MULT.starmap : ResearchData.RANK_MULT.wormhole;
+    if (n.rank !== expectRank) { ok(false, `深空开拓数值节点 ${n.id} rank 须 = RANK_MULT.${n.category}（实际 ${n.rank}）`); frontierRankFails += 1; }
+    for (let lv = 1; lv <= n.maxLevel; lv += 1) {
+      const expect = ResearchData.UNIT * ResearchData.WEIGHTS[lv - 1] * expectRank;
+      if (Math.abs(n.durationByLevel[lv - 1] - expect) > 1e-6) {
+        ok(false, `${n.id} Lv.${lv} 时长须 = UNIT×WEIGHTS[${lv - 1}]×${expectRank}（实际 ${n.durationByLevel[lv - 1]}）`);
+        frontierRankFails += 1;
+      }
+    }
+  }
+  ok(frontierRankFails === 0, `深空开拓数值节点 rank/时长校验（失败 ${frontierRankFails} 处）`);
+  // 协议节点：驻留自动领取（sm_autoclaim）/ 自动巡航（wh_autopilot）已实装业务并入表；
+  // 连续试炼（sm_autotrial）需先设计星图试炼队列子系统，2026-09-09 拍板不入表。
+  const frontierProtocols = frontierNodes.filter((n) => n.type === "protocol");
+  ok(frontierProtocols.length === 2, `深空开拓协议节点须为 2（sm_autoclaim + wh_autopilot），实际 ${frontierProtocols.length}`);
+  ok(!frontierById.sm_autotrial, "sm_autotrial（连续试炼）按拍板不得入表");
+  const autoClaim = frontierById.sm_autoclaim;
+  ok(!!autoClaim && autoClaim.maxLevel === 1 && autoClaim.rank === ResearchData.RANK_MULT.protocol && autoClaim.bonus === null,
+    "sm_autoclaim 须为 rank=protocol 的单级无加成协议节点");
+  ok(!!autoClaim && autoClaim.prerequisites.some(p => p.id === "sm_yield" && p.level === 2),
+    "sm_autoclaim 前置须含 sm_yield②");
+  const autoPilot = frontierById.wh_autopilot;
+  ok(!!autoPilot && autoPilot.maxLevel === 1 && autoPilot.rank === ResearchData.RANK_MULT.protocol && autoPilot.bonus === null,
+    "wh_autopilot 须为 rank=protocol 的单级无加成协议节点");
+  ok(!!autoPilot && autoPilot.prerequisites.some(p => p.id === "wh_time" && p.level === 3) &&
+     autoPilot.prerequisites.some(p => p.id === "wh_token" && p.level === 3),
+    "wh_autopilot 前置须含 wh_time③ + wh_token③");
+  // 分支追加时长导出存在且为有限正数（主树时长零影响）
+  ok(isFinite(ResearchData.FRONTIER_ADDITIONAL_SECONDS) && ResearchData.FRONTIER_ADDITIONAL_SECONDS > 0,
+    `FRONTIER_ADDITIONAL_SECONDS 须为正数（实际 ${ResearchData.FRONTIER_ADDITIONAL_SECONDS}）`);
+  ok(Math.abs(ResearchData.FRONTIER_ADDITIONAL_SECONDS - 30.50 * 86400) < 43200,
+    `FRONTIER_ADDITIONAL_SECONDS 须 ≈ 30.5 天（实际 ${(ResearchData.FRONTIER_ADDITIONAL_SECONDS / 86400).toFixed(2)} 天）`);
+
+  // 深空开拓组必须指向真实消费入口（防幽灵键）
+  ok(tHas("starmapYield", "LEGION_STARMAP_TRIAL.getStarmapResidentYieldMultiplier"), "starmapYield 必须指向 LEGION_STARMAP_TRIAL.getStarmapResidentYieldMultiplier");
+  ok(tHas("starmapLimit", "LEGION_STARMAP_TRIAL.getStarmapTrialLimitMultiplier"), "starmapLimit 必须指向 LEGION_STARMAP_TRIAL.getStarmapTrialLimitMultiplier");
+  ok(tHas("starmapBattleDrop", "LEGION_STARMAP_TRIAL.getStarmapBattleDropMultiplier"), "starmapBattleDrop 必须指向 LEGION_STARMAP_TRIAL.getStarmapBattleDropMultiplier");
+  ok(tHas("starmapArchCycle", "LEGION_STARMAP_TRIAL.getStarmapArchCycleMultiplier"), "starmapArchCycle 必须指向 LEGION_STARMAP_TRIAL.getStarmapArchCycleMultiplier");
+  ok(tHas("starmapCollect", "LEGION_STARMAP_TRIAL.getStarmapCollectionEfficiencyMultiplier"), "starmapCollect 必须指向 LEGION_STARMAP_TRIAL.getStarmapCollectionEfficiencyMultiplier");
+  ok(tHas("wormholeDamage", "WORMHOLE.getWormholeCombatModifiers"), "wormholeDamage 必须指向 WORMHOLE.getWormholeCombatModifiers");
+  ok(tHas("wormholeTank", "WORMHOLE.getWormholeCombatModifiers"), "wormholeTank 必须指向 WORMHOLE.getWormholeCombatModifiers");
+  ok(tHas("wormholeNodeTime", "WORMHOLE.getWormholeNodeTimeMultiplier"), "wormholeNodeTime 必须指向 WORMHOLE.getWormholeNodeTimeMultiplier");
+  ok(tHas("wormholeSupply", "WORMHOLE.getWormholeSupplyMultiplier"), "wormholeSupply 必须指向 WORMHOLE.getWormholeSupplyMultiplier");
+  ok(tHas("wormholeToken", "WORMHOLE.getWormholeTokenMultiplier"), "wormholeToken 必须指向 WORMHOLE.getWormholeTokenMultiplier");
+  ok(tHas("wormholeYield", "WORMHOLE.getWormholeYieldMultiplier"), "wormholeYield 必须指向 WORMHOLE.getWormholeYieldMultiplier");
 
   // 军团节点不得改变 UNIT（BASE_TOTAL_WEIGHT 排除军团节点）
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "军团接入后 UNIT 必须与冻结源（仅主树）一致");

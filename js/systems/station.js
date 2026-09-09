@@ -1760,6 +1760,8 @@ function getShipyardLevel(state) {
 // 技能、蓝图、材料门槛继续独立生效
 function canManufactureAtShipyard(state, recipeId) {
   const lvl = getShipyardLevel(state);
+  // 泰坦部件：Lv.3（与泰坦组装面板同门禁，TITAN_UNLOCK.panelGate.shipyardLevel）
+  if (recipeId.startsWith("titan_component_")) return lvl >= 3;
   // 超级旗舰部件：Lv.3
   if (recipeId.startsWith("supercapital_")) return lvl >= 3;
   // 旗舰部件：Lv.2

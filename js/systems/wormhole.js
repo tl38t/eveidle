@@ -97,7 +97,7 @@
       activeRunId: null,
       run: null,
       upgrades: {},              // { travel:2, ... }
-      rerollToday: { key: "", count: 0 },
+      rerollToday: { key: "", count: 0, stock: 0 },
       owned: {},                 // 一次性商品 { darkPumpBlueprint:true }
       history: [],
       stats: { completed: 0, failed: 0, tokensEarned: 0 },
@@ -130,7 +130,8 @@
     if (!(W.nextRefreshAt >= 0)) { W.nextRefreshAt = 0; dirty(); }
     if (typeof W.activeRunId !== "string" && W.activeRunId !== null) { W.activeRunId = null; dirty(); }
     if (!W.upgrades || typeof W.upgrades !== "object") { W.upgrades = {}; dirty(); }
-    if (!W.rerollToday || typeof W.rerollToday !== "object") { W.rerollToday = { key: "", count: 0 }; dirty(); }
+    if (!W.rerollToday || typeof W.rerollToday !== "object") { W.rerollToday = { key: "", count: 0, stock: 0 }; dirty(); }
+    if (!Number.isFinite(Number(W.rerollToday.stock))) { W.rerollToday.stock = 0; dirty(); }
     if (!W.owned || typeof W.owned !== "object") { W.owned = {}; dirty(); }
     if (!Array.isArray(W.history)) { W.history = []; dirty(); }
     if (!W.stats || typeof W.stats !== "object") { W.stats = { completed: 0, failed: 0, tokensEarned: 0 }; dirty(); }
@@ -150,6 +151,21 @@
         W.run = null; W.activeRunId = null; dirty();
       }
     }
+    // 旧存档中的进行中远征没有词条削弱快照：首次归一化时按当前永久升级与既有 run 标记补齐，
+    // 此后购买升级不会追溯改变已经出发的远征。
+    if (W.run && (!W.run.upgradeSnapshot || typeof W.run.upgradeSnapshot !== "object")) {
+      W.run.upgradeSnapshot = Object.assign({}, W.upgrades);
+      dirty();
+    }
+    if (W.run && !Number.isFinite(Number(W.run.affixScale))) {
+      W.run.affixScale = Math.max(0, 1 - 0.08 * Math.max(0, Math.floor(Number(W.upgrades.affix) || 0)))
+        * (W.run.overdrive ? 0.5 : 1) * (W.run.voidAffix ? 0.95 : 1);
+      dirty();
+    }
+    if (W.run) {
+      const activeDaily = W.dailies.find(d => d && d.id === W.run.dailyId);
+      if (activeDaily) applyRepairAffix(state, activeDaily);
+    }
     if (W.activeRunId && (!W.run || W.run.id !== W.activeRunId)) { W.activeRunId = W.run ? W.run.id : null; dirty(); }
     // 旧档：special 池补新资源键（combat.js COMBAT_SPECIAL_MATERIALS 迁移已兜底，这里双保险）
     if (!state.resources) state.resources = {};
@@ -166,23 +182,39 @@
 
   /* ---------------- 升级效果读取 ---------------- */
   function upg(W, id) { return Math.max(0, Math.floor(Number(W.upgrades[id]) || 0)); }
-  function travelSeconds(W) { return Math.max(4, CFG.TRAVEL_SECONDS - upg(W, "travel") - (W.run && W.run.voidTravel ? 2 : 0)); }
+  function runUpg(W, id) {
+    const source = W && W.run && W.run.state === "running" && W.run.upgradeSnapshot
+      ? W.run.upgradeSnapshot : ((W && W.upgrades) || {});
+    return Math.max(0, Math.floor(Number(source[id]) || 0));
+  }
+  function travelSeconds(W) { return Math.max(4, CFG.TRAVEL_SECONDS - runUpg(W, "travel") - (W.run && W.run.voidTravel ? 2 : 0)); }
   function retryLimit(W, run) {
     const base = Math.max(0, Math.floor(Number(run && run.retryLimit) || 0));
     return base + upg(W, "retryLimit") + (run && run.emergency ? 3 : 0);
   }
-  function retryCostMult(W) { return Math.max(0.2, 1 - 0.1 * upg(W, "retryCost")); }
+  function retryCostMult(W) { return Math.max(0.2, 1 - 0.1 * runUpg(W, "retryCost")); }
   function affixResistMult(W) {
-    const m = Math.max(0, 1 - 0.08 * upg(W, "affix")) * (W.run && W.run.overdrive ? 0.5 : 1) * (W.run && W.run.voidAffix ? 0.95 : 1);
+    if (W.run && Number.isFinite(Number(W.run.affixScale))) return Math.max(0, Number(W.run.affixScale));
+    const m = Math.max(0, 1 - 0.08 * runUpg(W, "affix")) * (W.run && W.run.overdrive ? 0.5 : 1) * (W.run && W.run.voidAffix ? 0.95 : 1);
     return m;
   }
   function tokenChance(state, W) {
     const implants = (state && state.implants) || {};
-    return Math.min(0.6, 0.05 * upg(W, "tokenChance")) + (implants.implant_void_token ? 0.10 : 0);
+    return Math.min(0.6, 0.05 * runUpg(W, "tokenChance")) + (implants.implant_void_token ? 0.10 : 0);
   }
   function dailyHoleCount(W) { return CFG.DAILY_COUNT + upg(W, "dailyCount"); }
-  function archSuccessBonus(W) { return 0.015 * upg(W, "archSuccess"); }
-  function collectEffMult(W) { return 1 + 0.02 * upg(W, "collectEff"); }
+  function archSuccessBonus(W) { return 0.015 * runUpg(W, "archSuccess"); }
+  function collectEffMult(W) { return 1 + 0.02 * runUpg(W, "collectEff"); }
+
+  function getWormholeRepairTimeMultiplier(state) {
+    const W = state && state.wormhole;
+    const run = W && W.run;
+    if (!W || !run || run.state !== "running") return 1;
+    const daily = Array.isArray(W.dailies) ? W.dailies.find(d => d && d.id === run.dailyId) : null;
+    const affix = affixById(daily && daily.affixId);
+    if (!affix || !Number.isFinite(Number(affix.repairSuppress))) return 1;
+    return towardNeutral(1.55, 1, affixResistMult(W));
+  }
 
   /* ---------------- 词条覆盖 ---------------- */
   function affixById(id) { return AFFIXES.find(a => a.id === id) || null; }
@@ -197,11 +229,123 @@
     }
     return raw;
   }
-  function nodeTimeLimit(W, daily, type) {
+  function towardNeutral(raw, neutral, scale) {
+    const value = Number(raw);
+    if (!Number.isFinite(value)) return Number(neutral);
+    return Number(neutral) + (value - Number(neutral)) * Math.max(0, Number(scale) || 0);
+  }
+  // 从每日原始节点生成本次远征专用副本。倍率字段向 1 缓释、加值字段向 0 缓释；
+  // 不改写 daily.nodes，保证同一张每日裂隙可在不同永久升级快照下稳定复用。
+  function effectiveTrialNode(W, daily, node) {
+    if (!node || node.kind !== "trial") return node;
+    const affix = affixById(daily && daily.affixId);
+    const scale = affixResistMult(W);
+    const archUpgrade = node.type === "archaeology" ? runUpg(W, "archSuccess") : 0;
+    const collectUpgrade = node.type === "collection" ? runUpg(W, "collectEff") : 0;
+    if ((!affix || scale >= 1) && archUpgrade <= 0 && collectUpgrade <= 0) return node;
+    const out = Object.assign({}, node);
+    const timeProp = { battle: "battleTrialTimeLimitSeconds", collection: "collectionTimeLimitSeconds", archaeology: "archaeologyTimeLimitSeconds" }[node.type];
+    const rawTimeMult = affix && affix.timeMult && affix.timeMult[node.type];
+    if (timeProp && Number.isFinite(Number(rawTimeMult))) {
+      out[timeProp] = Math.max(10, Math.round(CFG.NODE_LIMIT_SECONDS * towardNeutral(rawTimeMult, 1, scale)));
+    }
+    if (node.type === "battle" && affix && Number.isFinite(Number(affix.enemyCountAdd))) {
+      const rawAdd = Number(affix.enemyCountAdd);
+      const baseCount = Math.max(1, Number(node.battleTrialEnemyCount) - rawAdd);
+      out.battleTrialEnemyCount = Math.max(1, Math.round(baseCount + rawAdd * scale));
+    }
+    if (node.type === "collection" && affix && Number.isFinite(Number(affix.collectionAmountMult))) {
+      out.collectionAmount = Math.max(1, Math.round(100 * towardNeutral(affix && affix.collectionAmountMult, 1, scale)));
+    }
+    if (node.type === "collection" && collectUpgrade > 0 && Number(node.collectionBaseSecondsPerUnit) > 0) {
+      out.collectionBaseSecondsPerUnit = Math.max(1, Math.round(Number(node.collectionBaseSecondsPerUnit) / (1 + 0.02 * collectUpgrade)));
+    }
+    if (node.type === "collection" && affix && Number.isFinite(Number(affix.collectionEffMult))) {
+      const collectionEff = towardNeutral(affix.collectionEffMult, 1, scale);
+      if (collectionEff > 0) {
+        out.collectionBaseSecondsPerUnit = Math.max(1, Math.round(Number(out.collectionBaseSecondsPerUnit || node.collectionBaseSecondsPerUnit || 1) / collectionEff));
+      }
+    }
+    if (node.type === "archaeology") {
+      if ((affix && Number.isFinite(Number(affix.successDelta))) || archUpgrade > 0) {
+        const RT = root.WORMHOLE_REAL_TRIAL || {};
+        const tier = ((RT.archSiteByRing || {})[node.ring]) || "iii";
+        const baseDifficulty = Number((RT.archDifficulty || {})[tier]) || 121;
+        const delta = Number(affix && affix.successDelta);
+        const affixDifficulty = Number.isFinite(delta) ? Math.round(baseDifficulty * Math.min(0.5, Math.max(0, -delta * scale))) : 0;
+        const upgradeDifficulty = archUpgrade * 1.5;
+        out.archaeologyDifficulty = Math.max(1, Math.round(baseDifficulty + affixDifficulty - upgradeDifficulty));
+      }
+      if (affix && Number.isFinite(Number(affix.cycleMult))) {
+        out.archaeologyBaseCycleSeconds = Math.max(1, Math.round(10 * towardNeutral(affix.cycleMult, 1, scale)));
+      }
+      if (affix && Number.isFinite(Number(affix.targetAdd))) {
+        out.archaeologyTargetProgress = Math.max(1, 14 + Math.round(Number(affix.targetAdd) * scale));
+      }
+      if (affix && Number.isFinite(Number(affix.interferenceMult))) {
+        out.archaeologyInterferenceSeconds = Math.max(0, 1.5 * towardNeutral(affix.interferenceMult, 1, scale));
+      }
+    }
+    return out;
+  }
+  function getEffectiveTrialNode(state, daily, node) {
+    return effectiveTrialNode(ensure(state), daily, node);
+  }
+  function nodeTimeLimit(W, daily, type, state) {
     const affix = affixById(daily.affixId);
     const tm = affixValue(W, affix, "timeMult") || {};
     const mult = Number(tm[type]) || 1;
-    return Math.max(10, Math.round(CFG.NODE_LIMIT_SECONDS * mult));
+    return Math.max(10, Math.round(CFG.NODE_LIMIT_SECONDS * mult * getWormholeNodeTimeMultiplier(state)));
+  }
+
+  /* ---------------- 深空开拓研究加成（frontier · 虫洞线）----------------
+     统一经 ResearchState 读取；ResearchState 缺失（探针 / 旧档 / 沙箱）时返回中性值 1。
+     作用域：这些乘区只在虫洞远征链路内读取（nodeTimeLimit / 奖励结算 / run 级
+     combat modifier），绝不外溢到普通战斗或星图试炼。
+     与虫洞商店的分工见 docs/RESEARCH_FRONTIER_SPEC_v0.1.md §6.1：商店管机制型
+     （移动秒数 / 重试 / 每日洞数 / 硬保底 / 词条减免），研究只给商店空白的维度。
+     --------------------------------------------------------------------- */
+  function frontierResearchState() {
+    return (typeof root.ResearchState === "object" && root.ResearchState) || null;
+  }
+  function whMultiplier(state, groups) {
+    const RS = frontierResearchState();
+    if (!RS || typeof RS.getResearchMultiplier !== "function") return 1;
+    const v = Number(RS.getResearchMultiplier(state, groups));
+    return (Number.isFinite(v) && v > 0) ? v : 1;
+  }
+  function whReduce(state, group) {
+    const RS = frontierResearchState();
+    if (!RS || typeof RS.getResearchBonusValue !== "function") return 1;
+    const v = Number(RS.getResearchBonusValue(state, group));
+    if (!Number.isFinite(v)) return 1;
+    return Math.max(0, 1 - v);
+  }
+  // 战斗类乘区（伤害 / 三层生命）：以 run 级 combat modifier 写入，见 applyResearchCombatMods
+  function getWormholeCombatModifiers(state) {
+    return {
+      damage: whMultiplier(state, ["wormholeDamage"]),
+      maxHp: whMultiplier(state, ["wormholeTank"]),
+    };
+  }
+  function getWormholeNodeTimeMultiplier(state) { return whMultiplier(state, ["wormholeNodeTime"]); }
+  // 燃料消耗乘区（≤1）：与「燃料翻倍」词条同源路径（fuelMultiplier modifier）
+  function getWormholeSupplyMultiplier(state) { return whReduce(state, "wormholeSupply"); }
+  function getWormholeTokenMultiplier(state) { return whMultiplier(state, ["wormholeToken"]); }
+  function getWormholeYieldMultiplier(state) { return whMultiplier(state, ["wormholeYield"]); }
+  // 印记与脑插 void_token 加法合并后再乘（合计上限 +30%，见规格 §6.3）
+  function getWormholeTokenTotalMultiplier(state) {
+    const implants = (state && state.implants) || {};
+    const implantBonus = implants.implant_void_token ? 0.10 : 0;
+    return Math.min(1.30, 1 + (getWormholeTokenMultiplier(state) - 1) + implantBonus);
+  }
+  // 整数型奖励按乘区缩放：整数部分 + 余数概率（<1 转概率规则，与 whScaled 同口径）
+  function scaleCount(base, mult, rng) {
+    const v = Number(base) * mult;
+    if (!Number.isFinite(v) || v <= 0) return Math.max(0, Math.floor(Number(base) || 0));
+    const fl = Math.floor(v);
+    if (typeof rng !== "function") return Math.round(v);
+    return fl + (rng() < v - fl ? 1 : 0);
   }
 
   /* ---------------- 图生成（星图同源算法） ---------------- */
@@ -458,7 +602,7 @@
     W.dailies = carry.concat(fresh);
     W.lastRefreshKey = key;
     W.nextRefreshAt = nextRefreshAt(now);
-    if (W.rerollToday.key !== key) { W.rerollToday = { key, count: 0 }; }
+    if (W.rerollToday.key !== key) { W.rerollToday = { key, count: 0, stock: 0 }; }
     state._dirty = true;
   }
   function applyDailyRefreshIfNeeded(state, now) {
@@ -529,12 +673,14 @@
     // 出发时定格脑插快照（run 途中购买不回溯）；必须先算再进字面量——构造期间 W.run 仍是上一轮 run
     const voidTravel = !!(state.implants && state.implants.implant_void_travel);
     const voidAffix = !!(state.implants && state.implants.implant_void_affix);
-    const travelSec = Math.max(4, CFG.TRAVEL_SECONDS - upg(W, "travel") - (voidTravel ? 2 : 0));
+    const upgradeSnapshot = Object.assign({}, W.upgrades);
+    const affixScale = Math.max(0, 1 - 0.08 * Number(upgradeSnapshot.affix || 0)) * (voidAffix ? 0.95 : 1);
+    const travelSec = Math.max(4, CFG.TRAVEL_SECONDS - Number(upgradeSnapshot.travel || 0) - (voidTravel ? 2 : 0));
     W.run = {
       id: runId, dailyId: daily.id, mode,
       retryLimit: Math.max(0, Math.min(99, Math.floor(Number(o.retryLimit) || 0))),
       emergency: false, overdrive: false,
-      voidTravel, voidAffix,
+      voidTravel, voidAffix, affixScale, upgradeSnapshot,
       control: W.control || "auto",          // auto=系统选路（遍历/直冲） / manual=玩家点选相邻节点（继承当前模式）
       state: "running",
       startedAt: t, endsAt: t + CFG.RUN_LIMIT_SECONDS * 1000,
@@ -560,10 +706,13 @@
       W.run.pendingId = W.run.path.length > 1 ? W.run.path[1] : null;   // 首跳目标（入口必为 path[0]）
     }
     W.activeRunId = runId;
+    // 出发策略快照：wh_autopilot 自动巡航协议在通关后沿用（模式 / 重试次数 / 选路控制）
+    W.lastStrategy = { mode: W.run.mode, retryLimit: W.run.retryLimit, control: W.run.control || "auto" };
     daily.status = "running";
     daily.run = { id: runId };
     state._dirty = true;
     applyFuelAffix(state, daily);   // 燃料翻倍词条：run 级全局修正（幂等）
+    applyRunResearchMods(state, daily);   // 深空开拓研究：run 级快照（幂等，出发定格不回溯）
     return { changed: true, runId, mode };
   }
   function indexById(daily, id) { return daily.nodes.findIndex(n => n.id === id); }
@@ -571,11 +720,11 @@
   function graphAdj(daily) { const adj = daily.nodes.map(() => []); daily.nodes.forEach((n, i) => (n.links || []).forEach(l => { const j = indexById(daily, l); if (j >= 0) adj[i].push(j); })); return adj; }
 
   /* ---------------- 节点结算参数 ---------------- */
-  function nodeDuration(W, daily, node) {
+  function nodeDuration(W, daily, node, state) {
     if (node.kind === "treasure") return CFG.TREASURE_NODE_SECONDS;
-    return nodeTimeLimit(W, daily, node.type);
+    return nodeTimeLimit(W, daily, node.type, state);
   }
-  function collectionPlan(W, daily, node, now) {
+  function collectionPlan(W, daily, node, now, state) {
     // 采集：确定性完成时刻（required = base*amount/eff），超时则不可能成功
     const base = node.ring === "inner" ? 630 : 81;
     const amount = Math.round(100 * (affixValue(W, affixById(daily.affixId), "collectionAmountMult") || 1));
@@ -586,7 +735,7 @@
     eff *= collectEffMult(W) * (affixValue(W, affixById(daily.affixId), "collectionEffMult") || 1);
     if (!(eff > 0)) eff = 1;
     const required = Math.ceil(base * amount / eff);
-    const limit = nodeTimeLimit(W, daily, "collection");
+    const limit = nodeTimeLimit(W, daily, "collection", state);
     return { amount, required, limit, success: required <= limit, successAt: required <= limit ? required : limit };
   }
   function battleSuccessChance(W, daily, node) {
@@ -624,6 +773,8 @@
     // Token：节点 1 / 宝藏 5，印记谐振 = 概率额外 +1
     let tokens = node.kind === "treasure" ? REW.token.treasure : REW.token.trial;
     if (rng() < tokenChance(state, W)) tokens += 1;
+    // 印记提纯（研究）+ 虚空脑插合并后按「整数 + 余数概率」缩放（1.2 → 20% 概率多 1）
+    tokens = scaleCount(tokens, getWormholeTokenTotalMultiplier(state), rng);
     registryAdd(state, "special:" + CFG.TOKEN_ID, tokens);
     W.stats.tokensEarned += tokens; run.summary.tokens += tokens;
     run.rngState = (run.rngState * 1664525 + 1013904223) >>> 0;
@@ -640,8 +791,30 @@
     if (!daily || daily.affixId !== "fuel") return;
     if (!Array.isArray(state.combat.modifiers)) state.combat.modifiers = [];
     if (state.combat.modifiers.some(m => m && m.source === "wormhole")) return;   // 幂等
-    state.combat.modifiers.push(Object.assign({}, WH_FUEL_MOD));
+    const W = state.wormhole;
+    const affix = affixById(daily.affixId);
+    const rawMult = Number(affix && affix.fuelMult) || WH_FUEL_MOD.value;
+    const value = towardNeutral(rawMult, 1, affixResistMult(W));
+    state.combat.modifiers.push(Object.assign({}, WH_FUEL_MOD, { value }));
     state._dirty = true;
+  }
+  const WH_REPAIR_MOD_SOURCE = "wormhole-repair-affix";
+  function applyRepairAffix(state, daily) {
+    if (!state || !daily || daily.affixId !== "repair") return;
+    if (!state.combat || !Array.isArray(state.combat.modifiers)) return;
+    if (state.combat.modifiers.some(m => m && m.source === WH_REPAIR_MOD_SOURCE)) return;
+    const W = state.wormhole;
+    const affix = affixById(daily.affixId);
+    const suppress = Math.max(0, Math.min(1, Number(affix && affix.repairSuppress) || 0));
+    const value = 1 - suppress * (1 - affixResistMult(W));
+    state.combat.modifiers.push({ stat: "repairMultiplier", operation: "multiply", value, priority: 50, source: WH_REPAIR_MOD_SOURCE });
+    state._dirty = true;
+  }
+  function removeRepairAffix(state) {
+    if (!state || !state.combat || !Array.isArray(state.combat.modifiers)) return;
+    const before = state.combat.modifiers.length;
+    state.combat.modifiers = state.combat.modifiers.filter(m => !(m && m.source === WH_REPAIR_MOD_SOURCE));
+    if (state.combat.modifiers.length !== before) state._dirty = true;
   }
   function removeFuelAffix(state) {
     if (Array.isArray(state.combat.modifiers)) {
@@ -651,22 +824,79 @@
     }
   }
 
+  // 深空开拓研究 · run 级修正（与 WH_FUEL_MOD 同构；source 独立，互不误删）
+  //   出发时定格、结束时移除：
+  //     - 伤害 / 三层生命 / 燃料消耗 走 state.combat.modifiers（持久化，跨刷新 / 离线不掉）。
+  //       燃料与「燃料翻倍」词条是同一 stat（fuelMultiplier），两者相乘而非覆盖。
+  //     - 采集材料产出写回 daily 节点的 collectionRewardMult；基础恒为 0.1
+  //       （enrichDailyNodes 设定），每次出发都从 0.1 重算 → 幂等、无累积。
+  const WH_RESEARCH_MOD_SOURCE = "wormhole-research";
+  function applyRunResearchMods(state, daily) {
+    if (!state.combat || !Array.isArray(state.combat.modifiers)) {
+      if (state.combat) state.combat.modifiers = [];
+      else return;
+    }
+    removeRunResearchMods(state);   // 先清后写：同一 daily 重复出发只保留最新快照
+    const mods = getWormholeCombatModifiers(state);
+    const supply = getWormholeSupplyMultiplier(state);
+    const push = (stat, value) => {
+      if (!Number.isFinite(value) || Math.abs(value - 1) < 1e-9) return;   // 中性值不落盘
+      state.combat.modifiers.push({ stat, operation: "multiply", value, priority: 50, source: WH_RESEARCH_MOD_SOURCE });
+    };
+    push("damageMultiplier", mods.damage);
+    push("maxHp", mods.maxHp);
+    push("fuelMultiplier", supply);
+    applyRunYield(daily, state);
+    if (state.combat.modifiers.some(m => m && m.source === WH_RESEARCH_MOD_SOURCE)) state._dirty = true;
+  }
+  function removeRunResearchMods(state) {
+    if (!state.combat || !Array.isArray(state.combat.modifiers)) return;
+    const before = state.combat.modifiers.length;
+    state.combat.modifiers = state.combat.modifiers.filter(m => !(m && m.source === WH_RESEARCH_MOD_SOURCE));
+    if (state.combat.modifiers.length !== before) state._dirty = true;
+  }
+  function applyRunYield(daily, state) {
+    if (!daily || !Array.isArray(daily.nodes)) return;
+    const mult = getWormholeYieldMultiplier(state);
+    for (const n of daily.nodes) {
+      if (n && n.type === "collection") n.collectionRewardMult = 0.1 * mult;   // 基础恒 0.1 → 幂等
+    }
+  }
+
   function pushRunLog(run, entry) {
     if (!Array.isArray(run.log)) run.log = [];
     run.log.push(entry);
     if (run.log.length > 60) run.log.shift();
   }
 
+  // wh_autopilot 自动巡航协议：远征「通关」后沿用上次策略自动开赴下一个未通关虫洞。
+  //   失败 / 超时 / 主动撤退一律不触发（此时燃料弹药已消耗，连锁出发会持续放血）。
+  //   在线与离线均生效；每日最多 3 个洞，status 流转天然有界，不存在无限链式。
+  function maybeAutoPilot(state, now) {
+    const W = state && state.wormhole;
+    if (!W) return { changed: false, reason: "no-wormhole-state" };
+    const lv = Number(state.research && state.research.completedLevels && state.research.completedLevels.wh_autopilot) || 0;
+    if (lv < 1) return { changed: false, reason: "autopilot-not-researched" };
+    const strat = W.lastStrategy;
+    if (!strat) return { changed: false, reason: "no-last-strategy" };
+    if (W.run && W.run.state === "running") return { changed: false, reason: "run-active" };
+    const next = (W.dailies || []).find(d => d && d.status === "available");
+    if (!next) return { changed: false, reason: "no-available-daily" };
+    return startRun(state, next.id, { mode: strat.mode, retryLimit: strat.retryLimit, control: strat.control }, now);
+  }
   function finishRun(state, outcome, now) {
     const W = state.wormhole, run = W.run, t = nowMs(now);
     stopEngineTrialIfRunning(state);               // 引擎试炼仍在跑（放弃/超时）→ 立即停掉
     removeFuelAffix(state);                        // 任何结局（通关/超时/放弃）都移除 run 级修正
+    removeRepairAffix(state);
+    removeRunResearchMods(state);                  // 深空开拓研究的 run 级战斗/燃料修正同理
     run.state = outcome; run.finishedAt = t;
     const daily = W.dailies.find(d => d.id === run.dailyId);
     if (daily) { daily.status = outcome === "completed" ? "completed" : (outcome === "failed" ? "failed" : "aborted"); daily.run = null; }
     if (outcome === "completed") {
       const size = daily ? daily.size : 9;
-      const bonus = REW.token.clear[size] || 10;
+      // 通关印记同样吃印记提纯（大额整数，四舍五入即可；误差 < 1 枚）
+      const bonus = scaleCount(REW.token.clear[size] || 10, getWormholeTokenTotalMultiplier(state), null);
       registryAdd(state, "special:" + CFG.TOKEN_ID, bonus);
       W.stats.tokensEarned += bonus; run.summary.tokens += bonus;
       W.stats.completed += 1;
@@ -676,6 +906,8 @@
     restoreSnapshot(state, run.prevAction, t);
     W.activeRunId = null;
     state._dirty = true;
+    // 自动巡航：放在 restoreSnapshot 之后 —— 此时玩家原活动已恢复，新 run 的 prevAction 才能正确继承原活动
+    if (outcome === "completed") maybeAutoPilot(state, t);
   }
   function advanceCursor(state, run, daily, now) {
     // cursor 前进到下一个待处理节点；抵达出口则通关
@@ -754,9 +986,9 @@
     run.lastNodeId = node.id;
     if (!run.attempt) run.attempt = 1;
     const W = state.wormhole;
-    if (node.kind === "treasure") { run.nextEventAt = t + nodeDuration(W, daily, node) * 1000; return; }
+    if (node.kind === "treasure") { run.nextEventAt = t + nodeDuration(W, daily, node, state) * 1000; return; }
     // 真实引擎：到达即开战/开扫/开采（成败由引擎与玩家舰船/技能决定；离线由 offline-combat/分段 tick 补算）
-    const res = startEngineTrial(state, node, t);
+    const res = startEngineTrial(state, effectiveTrialNode(W, daily, node), t);
     if (res && res.changed && res.trial) {
       run.nextEventAt = (Number(res.trial.endsAt) || t + 180000) + 50;   // 兜底轮询点；更早结束靠每 tick 轮询
       return;
@@ -946,26 +1178,44 @@
   function buyItem(state, itemId, param, now) {
     const W = ensure(state); const t = nowMs(now);
     const def = SHOP.items[itemId]; if (!def) return { changed: false, reason: "unknown-item" };
-    if (!spendTokens(state, def.price)) return { changed: false, reason: "insufficient-tokens" };
-    state._dirty = true;
     if (itemId === "reroll") {
       const key = dayKey(t);
-      if (W.rerollToday.key !== key) W.rerollToday = { key, count: 0 };
-      if (W.rerollToday.count >= def.perDay) { registryAdd(state, "special:" + CFG.TOKEN_ID, def.price); return { changed: false, reason: "daily-limit" }; }
+      if (W.rerollToday.key !== key) W.rerollToday = { key, count: 0, stock: 0 };
+      if (W.rerollToday.count >= def.perDay) return { changed: false, reason: "daily-limit" };
+      if (!spendTokens(state, def.price)) return { changed: false, reason: "insufficient-tokens" };
       W.rerollToday.count += 1;
-      generateDailies(state, t);
-      return { changed: true, item: itemId };
+      W.rerollToday.stock += 1;
+      state._dirty = true;
+      return { changed: true, item: itemId, stock: W.rerollToday.stock };
     }
+    if (!spendTokens(state, def.price)) return { changed: false, reason: "insufficient-tokens" };
+    state._dirty = true;
     // 其余为"下一次出发"型道具：寄存到 pending
     W.pendingItems = W.pendingItems || {};
     W.pendingItems[itemId] = (W.pendingItems[itemId] || 0) + 1;
     return { changed: true, item: itemId };
   }
+  function useReroll(state, now) {
+    const W = ensure(state); const t = nowMs(now); const key = dayKey(t);
+    if (W.rerollToday.key !== key) W.rerollToday = { key, count: 0, stock: 0 };
+    if (!(W.rerollToday.stock > 0)) return { changed: false, reason: "no-reroll-stock" };
+    W.rerollToday.stock -= 1;
+    generateDailies(state, t);
+    state._dirty = true;
+    return { changed: true, item: "reroll", stock: W.rerollToday.stock };
+  }
   function buyGoods(state, goodsId, param, now) {
     const W = ensure(state); const t = nowMs(now);
     const def = SHOP.goods[goodsId]; if (!def) return { changed: false, reason: "unknown-goods" };
     let price = def.price;
-    if (def.byTier && param && def.byTier[param]) price = def.byTier[param];
+    let licenseChoice = null;
+    if (def.licenseFactions) {
+      const parts = String(param || "").split("|");
+      const faction = parts[0] || ""; const tier = parts[1] || "";
+      if (def.licenseFactions.indexOf(faction) < 0 || !def.byTier || !def.byTier[tier]) return { changed: false, reason: param ? "invalid-choice" : "choice-required" };
+      price = def.byTier[tier];
+      licenseChoice = { faction, tier };
+    } else if (def.byTier && param && def.byTier[param]) price = def.byTier[param];
     if (def.byId && param && def.byId[param]) price = def.byId[param];
     if (def.once && W.owned[goodsId]) return { changed: false, reason: "already-owned" };
     if (!spendTokens(state, price)) return { changed: false, reason: "insufficient-tokens" };
@@ -993,15 +1243,19 @@
       return { changed: true };
     }
     if (goodsId === "catalystPack") { registryAdd(state, root.WORMHOLE_DARK_PUMP.catalystId, def.grant[root.WORMHOLE_DARK_PUMP.catalystId]); return { changed: true }; }
-    if (goodsId === "repairNow") {
-      const c = state.combat;
-      if (c && c.repairs && typeof c.repairs === "object") {
-        for (const k of Object.keys(c.repairs)) delete c.repairs[k];
-        if (c.repairUntil !== undefined) c.repairUntil = 0;
-      }
-      return { changed: true };
-    }
     if (def.grant) { for (const id of Object.keys(def.grant)) registryAdd(state, id, def.grant[id]); return { changed: true }; }
+    if (licenseChoice) {
+      const resourceId = "special:" + licenseChoice.faction + "装备生产许可" + licenseChoice.tier;
+      registryAdd(state, resourceId, 1);
+      return { changed: true, granted: resourceId, quantity: 1 };
+    }
+    if (def.byChoice) {
+      const pick = String(param || "");
+      const choice = def.byChoice[pick];
+      if (!choice) { registryAdd(state, "special:" + CFG.TOKEN_ID, price); return { changed: false, reason: pick ? "invalid-choice" : "choice-required" }; }
+      registryAdd(state, pick, Number(choice.qty) || 0);
+      return { changed: true, granted: pick, quantity: Number(choice.qty) || 0 };
+    }
     if (def.options || def.choose || def.byId || def.byTier) {
       const pick = String(param || "");
       if (!pick) { registryAdd(state, "special:" + CFG.TOKEN_ID, price); return { changed: false, reason: "choice-required" }; }
@@ -1193,7 +1447,9 @@
         path: W.run.path.slice(), summary: W.run.summary
       } : null,
       upgrades: W.upgrades, owned: W.owned, tokens: registryGet(state, "special:" + CFG.TOKEN_ID),
-      nextRefreshAt: W.nextRefreshAt, history: W.history.slice(0, 5), smeltBuff: W.smeltBuff
+      nextRefreshAt: W.nextRefreshAt, history: W.history.slice(0, 5), smeltBuff: W.smeltBuff,
+      pendingItems: Object.assign({}, W.pendingItems || {}),
+      rerollToday: { key: W.rerollToday.key, count: W.rerollToday.count, stock: W.rerollToday.stock }
     };
   }
 
@@ -1201,11 +1457,15 @@
   const API = {
     normalizeWormholeState, applyDailyRefreshIfNeeded, generateDailies,
     canSetTarget,
-    canSetTarget,
     isUnlocked, startRun, abandonRun, dismissRun, setControl, setRunTarget, tickWormhole, getNextBoundaryMs, getDailyNodeCounts,
-    buyUpgrade, buyItem, buyGoods, getWormholeView,
+    buyUpgrade, buyItem, useReroll, buyGoods, getWormholeView, getEffectiveTrialNode,
     upgradePrice, travelSeconds, retryLimit, nodeTimeLimit,
-    dayKey, nextRefreshAt
+    dayKey, nextRefreshAt,
+    // 深空开拓研究（虫洞线）真实消费点：research.js 的 RESEARCH_BONUS_CONSUMERS 指向此处
+    getWormholeCombatModifiers, getWormholeNodeTimeMultiplier, getWormholeSupplyMultiplier,
+    getWormholeTokenMultiplier, getWormholeTokenTotalMultiplier, getWormholeYieldMultiplier,
+    maybeAutoPilot,
+    getWormholeRepairTimeMultiplier
   };
   root.WORMHOLE = API;
 })(typeof window !== "undefined" ? window : globalThis);

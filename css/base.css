@@ -192,6 +192,27 @@
   }
   .sidebar .nav-item.active .nav-icon { opacity: 1; }
 
+  /* ===== 未解锁入口常驻显示：灰化 + 锁标，点击弹条件（军团/星图/虫洞商店） ===== */
+  .ui-lock-icon { display: none; }
+  .ui-locked {
+    opacity: .5;
+    filter: saturate(.35);
+    cursor: not-allowed;
+  }
+  .sidebar .nav-item.ui-locked .ui-lock-icon {
+    display: inline-block;
+    margin-left: auto;
+    font-size: 11px;
+    color: #8b98a8;
+  }
+  .btn.bpshop-tab.ui-locked .ui-lock-icon { display: inline-block; margin-left: 5px; font-size: 10px; }
+  /* 锁定态屏蔽 hover/active 高亮，避免表现为"可点" */
+  @media (hover: hover) {
+    .sidebar .nav-item.ui-locked:hover { background: none; color: #6a7a8e; }
+    .sidebar .nav-item.ui-locked:hover::before { opacity: 0; }
+  }
+  .sidebar .nav-item.ui-locked:active { background: none; }
+
   .sidebar .nav-divider {
     height: 1px;
     background: linear-gradient(90deg, transparent, rgba(26, 36, 52, 0.6), transparent);
@@ -865,6 +886,25 @@
   .rt-legion-head-state--open { background: #2e8f5a; color: #e6fff0; }
   .rt-legion-head-state--locked { background: #6a2a3a; color: #ffe6ea; }
 
+  /* 深空开拓分支（contentPack==="frontier"）：青绿描边，与军团紫明显区分 */
+  .rt-badge--frontier { background: #2e8f7a; color: #e6fff5; }
+  .rt-node--frontier { border-color: #2e8f7a; }
+  .rt-node--frontier.rt-node--completed { background: #12332c; border-color: #5fd8b4; color: #e6fff5; }
+  .rt-node--frontier.rt-node--active { background: #123a30; border-color: #6fe8c0; color: #e6fff5; }
+  .rt-node--frontier.rt-node--queued { background: #113028; border-color: #43b294; color: #ddf5ec; }
+  .rt-node--frontier.rt-node--available { background: #10201d; border-color: #3f9c82; color: #cfe9e0; }
+  .rt-node--frontier.rt-node--locked { background: #0e1614; border-color: #2b4a42; color: #8faea5; }
+  .rt-node--frontier .rt-node-eff { color: #9ad6c4; }
+  /* 深空开拓分支区头（与军团区头同构，换配色） */
+  .rt-frontier-head {
+    position: absolute; z-index: 3;
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-radius: 8px;
+    background: linear-gradient(90deg, rgba(46, 143, 122, 0.22), rgba(46, 143, 122, 0.06));
+    border: 1px solid rgba(95, 216, 180, 0.4); border-bottom: none;
+    font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #e0fff5;
+  }
+
   .rt-node--faded { opacity: 0.32; }
   .rt-node--linked { box-shadow: 0 0 0 2px rgba(106, 208, 255, 0.5); z-index: 8; }
 
@@ -1246,6 +1286,11 @@
   .dlg-warn { color: #e8d8a0; }
   .dlg-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px; }
   .dlg-actions .btn { min-width: 96px; }
+  /* 未解锁入口提示弹窗（复用 dlg 骨架，非危险色调） */
+  .dlg-lock .dlg-title { color: #d4a843; }
+  .dlg-lock-hint { color: #7f8fa3; margin-bottom: 4px; }
+  .dlg-lock-reason { color: #e8d8a0; font-weight: 600; }
+  .dlg-lock-line { padding-left: 2px; }
 
   @media (prefers-reduced-motion: reduce) {
     .btn-danger { transition: none; }

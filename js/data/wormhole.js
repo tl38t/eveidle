@@ -89,8 +89,7 @@
     upgrades: {
       travel:     { name: "空间折叠", desc: "节点间移动 -1s（最低 4s）", base: 150, inc: 150, max: 6 },
       affix:      { name: "深空适应", desc: "词条影响 -8%", base: 300, inc: 200, max: 5 },
-      retryCost:  { name: "稳定锚", desc: "重试消耗 -10%", base: 200, inc: 150, max: 5 },
-      retryLimit: { name: "先遣协议", desc: "重试上限 +1", base: 400, inc: 400, max: 3 },
+      retryCost:  { name: "重试等待时间", desc: "重试等待时间 -10%", base: 200, inc: 150, max: 5 },
       tokenChance:{ name: "印记谐振", desc: "每节点 +5% 概率额外 +1 Token", base: 250, inc: 250, max: 6 },
       archSuccess:{ name: "扫描阵列", desc: "虫洞内考古成功率 +1.5%", base: 250, inc: 200, max: 6 },
       collectEff: { name: "采集矩阵", desc: "虫洞内采集效率 +2%", base: 250, inc: 200, max: 6 },
@@ -98,22 +97,25 @@
       guaranteeBig:{ name: "出货保底", desc: "每日必出一个大洞（17）", base: 3000, inc: 0, max: 1 }
     },
     items: {
-      reroll:    { name: "裂隙重析", desc: "重掷今日全部虫洞", price: 80, perDay: 2 },
-      purify:    { name: "词条净化器", desc: "出发前移除本洞负面词条", price: 120, perRun: 1 },
-      compass:   { name: "词条罗盘", desc: "出发前从 3 个候选词条中三选一", price: 150, perRun: 1 },
+      reroll:    { name: "裂隙重析", desc: "重新生成今日全部虫洞；已完成裂隙将被替换，进行中的远征保留。每日限购 2 次，购买后可在虫洞界面使用。", price: 80, perDay: 2 },
+      purify:    { name: "词条净化器", desc: "出发前移除本洞负面词条", price: 60, perRun: 1 },
       emergency: { name: "应急舱体", desc: "本次 run 重试上限 +3", price: 100, perRun: 1 },
-      overdrive: { name: "虫洞超频注入", desc: "下次 run 词条影响 -50%", price: 90, perRun: 1 }
     },
     goods: {
-      catalystPack:   { name: "暗流体助熔触媒 ×120", price: 100, grant: { "special:暗流体助熔触媒": 120 } },
-      titanPack:      { name: "泰坦材料自选包 ×100", price: 150, choose: "titan", qty: 100 },
-      titanBigPack:   { name: "泰坦材料大包 ×500", price: 1000, choose: "titan", qty: 500 },
-      enhancePack:    { name: "强化材料礼包", price: 150, choose: "enhance" },
-      relicPick:      { name: "稀有考古文物（指定 tier）", price: 180, choose: "relic" },
-      licensePick:    { name: "生产许可（自选势力+档位）", price: 350, choose: "license", byTier: { D: 150, C: 150, B: 250, A: 350, S: 600 } },
-      cargoPick:      { name: "货柜（自选尺寸）", price: 400, byId: { "货柜S": 400, "货柜M": 700, "货柜L": 1200, "货柜XL": 2400 } },
-      shipDataPick:   { name: "深层舰船数据（三舰自选）", price: 800, options: ["天穹深层舰船数据", "重垒深层舰船数据", "裂界深层舰船数据"] },
-      repairNow:      { name: "紧急维修协议", price: 60, effect: "finishRepair" },
+      catalystPack:   { name: "暗流体助熔触媒 ×1000", desc: "暗流体精炼泵专用燃料；每台泵每个冶炼周期消耗 1 个。", price: 50, grant: { "special:暗流体助熔触媒": 1000 } },
+      titanPack:      { name: "泰坦材料自选包（四选一）", price: 100, byChoice: {
+        "special:星骸钛晶": { name: "星骸钛晶", qty: 1000 },
+        "special:赫利昂冷凝气": { name: "赫利昂冷凝气", qty: 1000 },
+        "special:相位铱核": { name: "相位铱核", qty: 50 },
+        "special:虚境裂流": { name: "虚境裂流", qty: 50 }
+      } },
+      calibrationV:   { name: "校准基体 V ×1", price: 180, grant: { "calibration:art_v_calib": 1 } },
+      licensePick:    { name: "生产许可（自选势力+档位）", price: 20,
+        licenseFactions: ["苍穹劫团", "赤誓教团", "静默集群"],
+        byTier: { D: 20, C: 30, B: 50, A: 80, S: 120 }
+      },
+      cargoPick:      { name: "货柜（自选尺寸）", desc: "购买后获得 1 个所选尺寸货柜，可在货柜页面开启。", price: 20, byId: { "货柜S": 20, "货柜M": 40, "货柜L": 90, "货柜XL": 180 } },
+      shipDataPick:   { name: "深层舰船数据自选包 ×10", desc: "三种深层舰船数据任选一种，每次获得 10 个；用于深层舰船与泰坦组件制造。", price: 100, qty: 10, options: ["天穹深层舰船数据", "重垒深层舰船数据", "裂界深层舰船数据"] },
       stationCore:    { name: "空间站核心（四选一）", price: 3000, options: ["空间站冶炼核心", "空间站船坞核心", "空间站装备制造核心", "空间站增强剂制造核心"] },
       darkPumpBlueprint: { name: "暗流体精炼泵图纸", price: 1400, once: true, effect: "grantDarkPumpBlueprint" },
       implantVoidTravel: { name: "脑插·裂隙折跃（节点移动 -2s）", price: 1200, once: true, effect: "implant", implantId: "implant_void_travel" },
@@ -123,8 +125,8 @@
       implantVoidRefine: { name: "脑插·虚空熔炉（冶炼增效 +5%）", price: 2200, once: true, effect: "implant", implantId: "implant_void_refine" },
       implantVoidShip:   { name: "脑插·虚空舰构（舰船制造 +5%）", price: 2200, once: true, effect: "implant", implantId: "implant_void_ship" },
       implantVoidScan:   { name: "脑插·虚空深瞳（考古扫描 +8%）", price: 2000, once: true, effect: "implant", implantId: "implant_void_scan" },
-      meltCore8:  { name: "虚空熔核·标准（8h 冶炼 +10%）", price: 50, effect: "smeltBuff", hours: 8, mult: 1.10 },
-      meltCore24: { name: "虚空熔核·深空（24h 冶炼 +12%）", price: 100, effect: "smeltBuff", hours: 24, mult: 1.12 }
+      meltCore8:  { name: "虚空熔核·标准（8h 冶炼 +10%）", desc: "购买后立即生效：全局冶炼效率 +10%，持续 8 小时；同类效果不叠加，再次购买会覆盖剩余时间。", price: 50, effect: "smeltBuff", hours: 8, mult: 1.10 },
+      meltCore24: { name: "虚空熔核·深空（24h 冶炼 +12%）", desc: "购买后立即生效：全局冶炼效率 +12%，持续 24 小时；同类效果不叠加，再次购买会覆盖剩余时间。", price: 100, effect: "smeltBuff", hours: 24, mult: 1.12 }
     }
   });
 

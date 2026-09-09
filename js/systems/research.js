@@ -74,12 +74,60 @@
   }
 
   // 人类可读的未解锁原因（供 UI 展示）；已解锁返回空串。
+  // 空间站本体等级的人类可读标签：「Lv.2「星堡」」；取不到名称表时退化为「Lv.2」。
+  function stationBodyLabel(level) {
+    const lv = Math.floor(Number(level) || 0);
+    if (lv <= 0) return "尚未建造";
+    let name = "";
+    try {
+      if (typeof STATION !== "undefined" && typeof STATION.getStationBodyName === "function") {
+        name = STATION.getStationBodyName(lv) || "";
+      }
+    } catch (_) { name = ""; }
+    return "Lv." + lv + (name && name !== "未知" ? "「" + name + "」" : "");
+  }
+
+  // 深空开拓研究分支外部门禁（contentPack === "frontier"）。
+  //   两条子线门禁不同（与各自内容的既有前置语义一致）：
+  //     - 星图线（category "starmap"）：星图归属军团内容，沿用军团研究门禁
+  //       （空间站本体 Lv2 + 军团议事大厅 Lv1 + 军团 DLC）。没开星图就不该研究驻留产出，
+  //       否则加成没有真实消费点。
+  //     - 虫洞线（category "wormhole"）：在军团门禁之上再叠加「通关星图主线」，
+  //       与虫洞裂隙的既有硬性前置同语义（WORMHOLE.isUnlocked）。
+  //   WORMHOLE 接口缺失时一律视为未解锁（fail closed），绝不静默放行。
+  function isFrontierResearchUnlocked(state, node) {
+    if (!isLegionResearchUnlocked(state)) return false;
+    if (!node) return true;
+    const category = node.category || "";
+    const isWormholeLine = category === "wormhole" || (typeof node.id === "string" && node.id.indexOf("wh_") === 0);
+    if (!isWormholeLine) return true;
+    const WH = (typeof globalThis !== "undefined" && globalThis.WORMHOLE) ||
+      (typeof window !== "undefined" && window.WORMHOLE) || null;
+    if (!WH || typeof WH.isUnlocked !== "function") return false;
+    return !!WH.isUnlocked(state);
+  }
+
+  // 人类可读的未解锁原因（供 UI 展示）；已解锁返回空串。
+  function getFrontierResearchLockReason(state, node) {
+    const legionReason = getLegionResearchLockReason(state);
+    if (legionReason) return legionReason;
+    if (!node) return "";
+    const category = node.category || "";
+    const isWormholeLine = category === "wormhole" || (typeof node.id === "string" && node.id.indexOf("wh_") === 0);
+    if (!isWormholeLine) return "";
+    const WH = (typeof globalThis !== "undefined" && globalThis.WORMHOLE) ||
+      (typeof window !== "undefined" && window.WORMHOLE) || null;
+    if (!WH || typeof WH.isUnlocked !== "function") return "虫洞系统尚未载入";
+    if (!WH.isUnlocked(state)) return "需先通关星图主线（制压先驱文明核心）";
+    return "";
+  }
+
   function getLegionResearchLockReason(state) {
     const bodyLevel = state && state.station ? (state.station.bodyLevel || 0) : 0;
-    if (bodyLevel < 2) return "需要 本体等级 ≥ 2（当前 " + bodyLevel + "）";
+    if (bodyLevel < 2) return "需要 空间站本体升级至 " + stationBodyLabel(2) + "（当前 " + stationBodyLabel(bodyLevel) + "）";
     const b = state && state.station && state.station.buildings;
     const hall = b && b.legion_hall;
-    if (!(typeof hall === "number" && hall >= 1)) return "需要建造 军团大厅（legion_hall）≥ 1 级";
+    if (!(typeof hall === "number" && hall >= 1)) return "需要在空间站建造「军团议事大厅」（1 级即可）";
     if (typeof getStationDlcNpcWorkers === "function" && !getStationDlcNpcWorkers(state)) return "需要 军团 DLC 授权";
     return "";
   }
@@ -184,6 +232,10 @@
     // 军团分支外部门禁：未解锁则禁止入队（不影响主研究树）
     if (node.contentPack === "legion" && !isLegionResearchUnlocked(state)) {
       return { ok: false, reason: "LEGION_LOCKED" };
+    }
+    // 深空开拓分支外部门禁：未解锁则禁止入队（不影响主研究树 / 军团分支）
+    if (node.contentPack === "frontier" && !isFrontierResearchUnlocked(state, node)) {
+      return { ok: false, reason: "FRONTIER_LOCKED" };
     }
 
     const projected = buildProjectedResearchLevels(state);
@@ -314,6 +366,10 @@
     // 军团分支外部门禁：未解锁则禁止开始（不影响主研究树）
     if (node.contentPack === "legion" && !isLegionResearchUnlocked(state)) {
       return { ok: false, reason: "LEGION_LOCKED" };
+    }
+    // 深空开拓分支外部门禁：未解锁则禁止开始（不影响主研究树 / 军团分支）
+    if (node.contentPack === "frontier" && !isFrontierResearchUnlocked(state, node)) {
+      return { ok: false, reason: "FRONTIER_LOCKED" };
     }
     const completed = (research.completedLevels && typeof research.completedLevels === "object" && !Array.isArray(research.completedLevels))
       ? research.completedLevels : {};
@@ -833,6 +889,8 @@
     enqueueResearchCascade,
     isLegionResearchUnlocked,
     getLegionResearchLockReason,
+    isFrontierResearchUnlocked,
+    getFrontierResearchLockReason,
     startResearch,
     startQueuedResearch,
     startNextFromQueue,

@@ -270,6 +270,17 @@
     const uploadDirtyVersion = this._dirtyVersion;
     this._state = "uploading";
     this._lastUploadAt = Date.now(); // 门禁基准：发起即计时
+    // 2026-09-09 修复（「逆魂」云存档 CHECKSUM_MISMATCH 案根因，实测复现）：
+    // 主因——旧代码把【活 gameState 引用】直接放进 envelope.payload，Envelope.create 同步算完
+    // checksum 后，若上传失败进入退避重试（1s~60s），期间游戏 tick 持续改写活状态，重试时
+    // provider.uploadArchive 才 JSON.stringify(envelope) → 序列化的是已漂移的状态，与 checksum
+    // 必然不一致 → 云端留下永久 CHECKSUM_MISMATCH 毒档。弱网 / 400001 频控（双设备交替在线
+    // 尤其易触发）的上传都走过重试路径。
+    // 次因——活状态若含 undefined 值属性，stableStringify 计入而 JSON.stringify 丢弃，同样失配。
+    // 修复：入口先 JSON 快照（值拷贝），checksum 与序列化从此基于同一冻结对象；
+    // 设备镜像路径此前已用 createSerializableGameStateSnapshot 净化，此处对齐同口径
+    // （内联实现，保持本模块平台无关）。配合 save-envelope stableStringify 双保险。
+    try { payload = JSON.parse(JSON.stringify(payload)); } catch (e) { /* 保持原样，由 Envelope.create 抛错 */ }
     const revision = Math.max(this._syncMeta.localRevision || 0, this._cloudRevision || 0) + 1;
     const savedAt = Date.now();
     const envelope = Envelope.create({

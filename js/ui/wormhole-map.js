@@ -11,17 +11,85 @@
 
   const COL = {
     bg0: "#0b1420", bg1: "#050a12",
-    link: "#1c3350", path: "#3f6fa8",
-    raw: "#0e1822", rawEdge: "#1d2c3c",
-    done: "#f0f7f5", doneEdge: "#cfe6dd",
-    skip: "#3a2420", skipEdge: "#6b443c",
-    cur: "#f0c674", curEdge: "#8a6a1e",
-    tre: "#f0c674", treEdge: "#8a6a1e",
+    link: "rgba(109,126,169,.22)", path: "#a982ec",
+    raw: "rgba(5,10,22,.44)", rawEdge: "rgba(112,91,158,.34)",
+    done: "rgba(188,218,211,.10)", doneEdge: "rgba(127,216,192,.42)",
+    skip: "rgba(80,29,39,.20)", skipEdge: "rgba(211,106,112,.44)",
+    cur: "rgba(105,54,173,.28)", curEdge: "rgba(184,132,255,.72)",
+    tre: "#f0c674", treEdge: "rgba(240,198,116,.50)",
     entry: "#6fd3ff", exit: "#ff8a8a",
     text: "#93aecb"
   };
 
   function esc(s) { return String(s == null ? "" : s); }
+
+  let wormholeBackdropImage = null;
+  if (typeof Image !== "undefined") {
+    try {
+      wormholeBackdropImage = new Image();
+      wormholeBackdropImage.decoding = "async";
+      wormholeBackdropImage.onload = () => {
+        if (typeof window.renderWormholePage === "function") window.renderWormholePage();
+      };
+      wormholeBackdropImage.src = "./demo-assets/wormhole-map-bg.png";
+    } catch (_) { wormholeBackdropImage = null; }
+  }
+
+  function drawWormholeBackdrop(x, W, H, cx, cy, R, t) {
+    const phase = Number(t || 0) * 0.000035;
+    x.save();
+
+    const deepSpace = x.createRadialGradient(W * 0.42, H * 0.34, 24, W * 0.42, H * 0.34, Math.max(W, H));
+    deepSpace.addColorStop(0, "#030611");
+    deepSpace.addColorStop(0.48, "#080719");
+    deepSpace.addColorStop(1, "#02040c");
+    x.fillStyle = deepSpace;
+    x.fillRect(0, 0, W, H);
+
+    if (wormholeBackdropImage && wormholeBackdropImage.complete && wormholeBackdropImage.naturalWidth > 0) {
+      const iw = wormholeBackdropImage.naturalWidth;
+      const ih = wormholeBackdropImage.naturalHeight;
+      const scale = Math.max(W / iw, H / ih);
+      const dw = iw * scale;
+      const dh = ih * scale;
+      x.globalAlpha = 0.76;
+      x.drawImage(wormholeBackdropImage, (W - dw) / 2, (H - dh) / 2, dw, dh);
+      x.globalAlpha = 1;
+    }
+
+    for (let i = 0; i < 72; i++) {
+      const sx = (i * 149 + 43) % W;
+      const sy = (i * 83 + 29) % H;
+      const pulse = 0.42 + Math.sin(phase * 8 + i * 1.71) * 0.22;
+      const size = i % 11 === 0 ? 1.35 : (i % 4 === 0 ? 0.9 : 0.55);
+      x.beginPath();
+      x.arc(sx, sy, size, 0, Math.PI * 2);
+      x.fillStyle = "rgba(207,194,255," + Math.max(0.12, pulse).toFixed(3) + ")";
+      x.fill();
+    }
+
+    const halo = x.createRadialGradient(cx, cy, R * 0.08, cx, cy, R * 1.46);
+    halo.addColorStop(0, "rgba(215,194,255,.13)");
+    halo.addColorStop(0.32, "rgba(143,75,255,.15)");
+    halo.addColorStop(0.72, "rgba(63,30,118,.09)");
+    halo.addColorStop(1, "rgba(12,7,30,0)");
+    x.fillStyle = halo;
+    x.fillRect(0, 0, W, H);
+
+    x.translate(cx, cy);
+    x.rotate(phase);
+    for (let i = 0; i < 5; i++) {
+      const radius = R * (0.46 + i * 0.17);
+      x.beginPath();
+      x.arc(0, 0, radius, i * 0.72, i * 0.72 + Math.PI * (0.68 + i * 0.06));
+      x.strokeStyle = "rgba(166,107,255," + (0.095 - i * 0.012).toFixed(3) + ")";
+      x.lineWidth = 11 - i * 1.4;
+      x.shadowColor = "rgba(143,75,255,.24)";
+      x.shadowBlur = 18;
+      x.stroke();
+    }
+    x.restore();
+  }
 
   let selectedNodeId = null;
   let roomClosed = false;        // 用户关闭房间后停止自动跟随，直到点选节点或开新远征
@@ -59,13 +127,11 @@
     const R = daily.R !== undefined ? daily.R : 248;
 
     x.clearRect(0, 0, W, H);
-    const bg = x.createRadialGradient(cx, cy, 20, cx, cy, R * 1.25);
-    bg.addColorStop(0, COL.bg0); bg.addColorStop(1, COL.bg1);
-    x.fillStyle = bg; x.fillRect(0, 0, W, H);
+    drawWormholeBackdrop(x, W, H, cx, cy, R, t);
 
     // 外边界
     x.beginPath(); x.arc(cx, cy, R, 0, Math.PI * 2);
-    x.strokeStyle = "#16304a"; x.lineWidth = 1.2; x.stroke();
+    x.strokeStyle = "rgba(166,107,255,.58)"; x.lineWidth = 1.2; x.stroke();
 
     // 邻接连线（路径上加亮）
     const pathSet = {};
@@ -101,8 +167,8 @@
       x.beginPath(); x.moveTo(poly[0].x, poly[0].y);
       for (let k = 1; k < poly.length; k++) x.lineTo(poly[k].x, poly[k].y);
       x.closePath();
-      x.fillStyle = fill; x.globalAlpha = done ? 0.95 : 0.9;
-      x.fill(); x.globalAlpha = 1;
+      x.fillStyle = fill; x.globalAlpha = 1;
+      x.fill();
       x.strokeStyle = edge; x.lineWidth = lw; x.stroke();
     });
 
@@ -112,38 +178,55 @@
       const isCur = run.current && n.id === run.current;
       const done = cleared.indexOf(n.id) >= 0 || n.kind === "entry";   // 入口无试炼：出发即制压
       const skip = skipped.indexOf(n.id) >= 0;
-      let label = "·", color = COL.text, labelDrawn = false;
+      let label = "·", color = COL.text, beacon = "#aab8cc";
       if (n.kind === "entry") { label = "入"; color = COL.entry; }
       else if (n.kind === "exit") { label = "出"; color = COL.exit; }
       else if (n.kind === "treasure") { label = "宝"; color = COL.tre; }
-      else if (n.type === "battle") label = "战";
-      else if (n.type === "collection") label = "采";
-      else if (n.type === "archaeology") label = "考";
+      else if (n.type === "battle") { label = "战"; beacon = "#b5c2d4"; }
+      else if (n.type === "collection") { label = "采"; beacon = "#72d8b8"; }
+      else if (n.type === "archaeology") { label = "考"; beacon = "#9eaff0"; }
 
-      if (isCur) color = "#2a1a06";
-      else if (done) color = "#123c30";
+      if (n.kind === "entry") beacon = COL.entry;
+      else if (n.kind === "exit") beacon = COL.exit;
+      else if (n.kind === "treasure") beacon = COL.tre;
+
+      if (isCur) { color = "#f0e5ff"; beacon = "#b982ff"; }
+      else if (done) color = "#d9eee8";
       else if (skip) color = "#c89090";
 
-      // 状态徽章：制压=白描边+绿✓ / 跳过=红描边+✗（碎片底色之外的第二重标识，远看也能分清）
+      // 节点信标：仅改变绘制外观；中心坐标与点击命中半径保持不变。
+      x.save();
+      x.translate(n.x, n.y);
+      x.rotate(Math.PI / 4);
+      x.beginPath(); x.rect(-11, -11, 22, 22);
+      x.fillStyle = isCur ? "rgba(91,42,153,.82)" : (skip ? "rgba(58,20,30,.88)" : "rgba(6,12,25,.88)");
+      x.shadowColor = beacon; x.shadowBlur = isCur ? 18 : 9;
+      x.fill();
+      x.strokeStyle = beacon; x.lineWidth = isCur ? 1.8 : 1.15; x.stroke();
+      x.beginPath(); x.rect(-8, -8, 16, 16);
+      x.strokeStyle = isCur ? "rgba(232,210,255,.52)" : "rgba(224,232,255,.18)";
+      x.lineWidth = 0.7; x.stroke();
+      x.restore();
+
+      x.font = "700 11px 'Segoe UI','Microsoft YaHei',sans-serif";
+      x.fillStyle = color;
+      x.fillText(label, n.x, n.y - 3);
+
+      // 制压/跳过保留第二重状态标识，以小型角标呈现。
       if (done || skip) {
-        x.beginPath(); x.arc(n.x, n.y, 14, 0, Math.PI * 2);
-        x.strokeStyle = done ? "#7fd8c0" : "#d38a67"; x.lineWidth = 2; x.stroke();
-        x.font = "700 11px 'Segoe UI',sans-serif";
+        x.beginPath(); x.arc(n.x + 11, n.y - 11, 5, 0, Math.PI * 2);
+        x.fillStyle = "rgba(4,10,18,.94)"; x.fill();
+        x.strokeStyle = done ? "#7fd8c0" : "#d38a67"; x.lineWidth = 1.2; x.stroke();
+        x.font = "700 7px 'Segoe UI',sans-serif";
         x.fillStyle = done ? "#7fd8c0" : "#d38a67";
-        x.fillText(done ? "✓" : "✗", n.x, n.y - 5);
-        labelDrawn = true;
-      }
-      if (!labelDrawn) {
-        x.font = "600 13px 'Segoe UI','Microsoft YaHei',sans-serif";
-        x.fillStyle = color;
-        x.fillText(label, n.x, n.y - 5);
+        x.fillText(done ? "✓" : "✗", n.x + 11, n.y - 11);
       }
 
       const sub = (n.kind === "trial" && n.ring) ? (n.ring === "outer" ? "外" : n.ring === "middle" ? "中" : "内") : "";
       if (sub) {
         x.font = "10px 'Segoe UI',sans-serif";
-        x.fillStyle = isCur ? "#5a3c10" : (done ? "#4a8f78" : "rgba(147,174,203,.55)");
-        x.fillText(sub, n.x, n.y + 9);
+        x.fillStyle = isCur ? "#d8baff" : (done ? "#80baa9" : "rgba(166,177,207,.62)");
+        x.fillText(sub, n.x, n.y + 8);
       }
     });
 
@@ -268,15 +351,22 @@
     const REW = window.WORMHOLE_REWARDS || {};
     const ring = n.ring || "outer";
     const affix = (window.WORMHOLE_AFFIXES || []).filter(a => a.id === daily.affixId)[0] || null;
-    const upg = (id) => { const Wu = state.wormhole || {}; return Math.max(0, Math.floor(Number((Wu.upgrades || {})[id]) || 0)); };
+  const Wst = state.wormhole || {};
+  const activeUpgrades = Wst.run && Wst.run.state === "running" && Wst.run.upgradeSnapshot
+    ? Wst.run.upgradeSnapshot : (Wst.upgrades || {});
+  const upg = (id) => Math.max(0, Math.floor(Number(activeUpgrades[id]) || 0));
+    const effectiveNode = window.WORMHOLE && typeof window.WORMHOLE.getEffectiveTrialNode === "function"
+      ? window.WORMHOLE.getEffectiveTrialNode(state, daily, n) : n;
     const isCur = run.current && n.id === run.current;
     const frac = (isCur && run.currentStartedAt && run.nextEventAt)
       ? Math.max(0, Math.min(1, (t - run.currentStartedAt) / (run.nextEventAt - run.currentStartedAt))) : 0;
-    const data = { ring, affix, isCur, frac, limit: CFG.NODE_LIMIT_SECONDS || 180 };
+    const limitProp = { battle: "battleTrialTimeLimitSeconds", collection: "collectionTimeLimitSeconds", archaeology: "archaeologyTimeLimitSeconds" }[n.type];
+    const data = { ring, affix, isCur, frac, limit: Number(effectiveNode && effectiveNode[limitProp]) || CFG.NODE_LIMIT_SECONDS || 180 };
 
     if (n.type === "battle") {
       const isk = (REW.battle && REW.battle.isk && REW.battle.isk[ring]) || { normal: 0, elite: 0 };
       data.elite = n.tier === "elite";
+      data.enemyCount = Number(effectiveNode.battleTrialEnemyCount) || 2;
       data.isk = data.elite ? isk.elite : isk.normal;
       data.cargo = (REW.battle && REW.battle.cargoByRing && REW.battle.cargoByRing[ring]) || "货柜";
       data.lic = (REW.battle && REW.battle.licenseTierByRing && REW.battle.licenseTierByRing[ring]) || "A";
@@ -285,19 +375,21 @@
       let p = 0.78 + (cl - (req + (data.elite ? 10 : 0))) * 0.02;
       data.win = Math.max(25, Math.min(95, Math.round(p)));
     } else if (n.type === "collection") {
-      const base = Number(n.collectionBaseSecondsPerUnit) || (ring === "inner" ? 630 : 81);
-      const amount = Number(n.collectionAmount) || 100;   // 引擎字段（富化时已含词条乘数）
+      const base = Number(effectiveNode.collectionBaseSecondsPerUnit) || (ring === "inner" ? 630 : 81);
+      const amount = Number(effectiveNode.collectionAmount) || 100;   // 本次 run 快照字段（已含深空适应缓释）
       let eff = 1;
       const isGas = n.subtype === "gas";
       try {
         eff = isGas ? (Number(getGasEfficiency(state)) || 1) : (Number(getMiningEfficiency(state)) || 1);
       } catch (_) { eff = 1; }
-      eff *= 1 + 0.02 * upg("collectEff");
+      const upgradeEff = 1 + 0.02 * upg("collectEff");
+      eff *= upgradeEff;
       if (affix && affix.collectionEffMult) eff *= affix.collectionEffMult;
       if (!(eff > 0)) eff = 1;
       data.amount = Math.round(amount);
       data.eff = Math.round(eff * 10) / 10;
-      const required = Math.ceil(base * amount / eff);
+      // 有效节点已把采集升级折算进基准秒数；展示效率保留升级后的数值，但不能再次折算耗时。
+      const required = Math.ceil(base * amount / (eff / upgradeEff));
       data.required = required;
       data.mat = isGas ? (((REW.collection.byKind || {}).gas || {})[ring]) || "泰坦材料"
                         : (((REW.collection.byKind || {}).ore || {})[ring]) || "泰坦材料";
@@ -306,13 +398,13 @@
       const spec = (REW.archaeology || {})[ring] || { tier: "iii", chance: 0.15 };
       let p = ({ outer: 0.75, middle: 0.70, inner: 0.62 })[ring] || 0.70;
       p += 0.015 * upg("archSuccess");
-      if (affix && typeof affix.successDelta === "number") p += affix.successDelta;
+      const liveRun = state.wormhole && state.wormhole.run;
+      const affixScale = liveRun && Number.isFinite(Number(liveRun.affixScale)) ? Number(liveRun.affixScale) : 1;
+      if (affix && typeof affix.successDelta === "number") p += affix.successDelta * affixScale;
       data.chance = Math.round(Math.max(0.15, Math.min(0.95, p)) * 100);   // p 是分数：钳位 15%~95%（此前 15 当成百分比 → 显示 1500%）
-      let cycle = 3;
-      if (affix && affix.cycleMult) cycle *= affix.cycleMult;
-      data.cycle = Math.round(cycle * 10) / 10;
-      data.target = 14 + (affix && affix.targetAdd ? affix.targetAdd : 0);
-      data.interf = affix && affix.interferenceMult ? affix.interferenceMult : 1;
+      data.cycle = Math.round((Number(effectiveNode.archaeologyBaseCycleSeconds) || 10) * 10) / 10;
+      data.target = Number(effectiveNode.archaeologyTargetProgress) || 14;
+      data.interf = Math.round((Number(effectiveNode.archaeologyInterferenceSeconds) || 1.5) * 10) / 10;
       data.cycleFrac = (isCur && data.cycle > 0) ? ((t / 1000) % data.cycle) / data.cycle : 0;   // 本次扫描进度
       data.tier = String(spec.tier).toUpperCase();
       data.tierChance = Math.round(spec.chance * 100);
@@ -430,7 +522,7 @@
     }
     let whArenaMounted = false;
     if (whWantMount) whArenaMounted = reconcileBattleArena(n, isCur, done, skip);   // mount（失败时保留跳页兜底）
-    updateRoomLive(n, run, state, t, done, skip);   // 每 render：引擎真实数据
+    updateRoomLive(n, run, state, t, done, skip, D);   // 每 render：引擎真实数据
 
     const result = document.getElementById("wormhole-room-result");
     if (result) {
@@ -456,7 +548,7 @@
       return '<div class="starmap-battle-arena-slot" id="wormhole-room-arena-slot" style="min-height:0">' +
         '<div class="starmap-production-requirements" style="margin-top:8px">' +
         '<div class="wormhole-room-row"><span>敌人配置</span><strong>' + (D.elite ? "精英" : "常规") + ' · ' + ringLabel(n.ring) + '</strong></div>' +
-        '<div class="wormhole-room-row"><span>击杀进度</span><strong id="wh-b-kills">0 / ' + (Number(n.battleTrialEnemyCount) || 2) + '</strong></div>' +
+        '<div class="wormhole-room-row"><span>击杀进度</span><strong id="wh-b-kills">0 / ' + D.enemyCount + '</strong></div>' +
         '<div class="wormhole-room-row"><span>预估胜率</span><strong>' + D.win + '%（真实战斗以实际舰船为准）</strong></div>' +
         '<div class="wormhole-room-row"><span>时限</span><strong>' + D.limit + 's</strong></div>' +
         '<div class="wormhole-room-row"><span>胜利奖励</span><strong>星币 ' + Number(D.isk || 0).toLocaleString() + '</strong></div>' +
@@ -558,7 +650,7 @@
   }
 
   // 实时值：全部读引擎试炼状态（不再用假插值）
-  function updateRoomLive(n, run, state, t, done, skip) {
+  function updateRoomLive(n, run, state, t, done, skip, D) {
     if (n.kind !== "trial") return;
     const T = window.LEGION_STARMAP_TRIAL;
     const trs = T && T.getTrialStates ? T.getTrialStates(state) : null;
@@ -572,11 +664,11 @@
       // ★ 与星图 renderStarmapTrialRoom 完全同口径：
       //   采集条（skill-canvas-bar）= 当前这一单位的采集动作进度（cyclePct），不是整个试炼的进度；
       //   计数器 = 待采集余量（100/100 → 0/100）。
-      const amount = Number(n.collectionAmount) || 100;
+      const amount = Number(D && D.amount) || Number(n.collectionAmount) || 100;
       let shown = 0;
       if (done) shown = amount;
       else if (live) shown = Math.min(amount, Math.floor(Number(live.gathered) || 0));
-      const required = Number((live && live.requiredSeconds) || D0_required_num(n, state));
+      const required = Number((live && live.requiredSeconds) || (D && D.required) || D0_required_num(n, state));
       const cycle = required > 0 && amount > 0 ? required / amount : 0;
       const elapsed = isCur && run.currentStartedAt ? Math.max(0, (t - run.currentStartedAt) / 1000) : (done ? required : 0);
       const cycleElapsed = cycle > 0 ? Math.min(cycle, Math.max(0, elapsed - shown * cycle)) : 0;
@@ -589,7 +681,7 @@
       const eta = document.getElementById("wh-c-eta");
       if (eta) eta.textContent = done ? "已完成" : (skip ? "已跳过" : (live && cycle > 0 ? Math.max(0, cycle - cycleElapsed).toFixed(1) + "s" : ""));
     } else if (n.type === "archaeology") {
-      const target = Number(n.archaeologyTargetProgress) || 14;
+      const target = Number(D && D.target) || Number(n.archaeologyTargetProgress) || 14;
       let prog = done ? target : 0;
       if (live) prog = Math.min(target, Number(live.progress) || 0);
       setText("wh-a-prog", (done ? target : Math.floor(prog)) + " / " + target);
@@ -605,7 +697,7 @@
       if (live && Number(live.successChance) > 0) setText("wh-a-chance", Math.round(Number(live.successChance) * 100) + "%");
       if (live && Number(live.cycleSeconds) > 0) setText("wh-a-cycle", Math.round(Number(live.cycleSeconds) * 10) / 10 + "s");
     } else if (n.type === "battle") {
-      const enemy = Number((live && live.enemyCount) || n.battleTrialEnemyCount) || 0;
+      const enemy = Number((live && live.enemyCount) || (D && D.enemyCount) || n.battleTrialEnemyCount) || 0;
       const kills = live ? Math.min(enemy, Number(live.kills) || 0) : (done ? enemy : 0);
       setText("wh-b-kills", kills + " / " + enemy);
     }

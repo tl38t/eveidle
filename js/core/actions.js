@@ -288,6 +288,11 @@ const ManufacturingStateActions = {
     if (getEffectiveSkillLevel(state, "shipEngineering") < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
     // 船坞等级门槛
     if (typeof canManufactureAtShipyard === "function" && !canManufactureAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
+    // 泰坦组件门禁：制压先驱文明核心 + 分线制压泰坦节点（titans.js isTitanComponentUnlocked）
+    if (typeof isTitanComponentUnlocked === "function") {
+      const titanGate = isTitanComponentUnlocked(state, recipe.id);
+      if (!titanGate.ok) return { changed:false, reason:titanGate.reason || "titan-node-locked" };
+    }
     Object.assign(state.currentAction, {
       skill:"shipEngineering",
       active:true,
@@ -816,7 +821,15 @@ const CombatStateActions = {
     const display = getCombatDisplayState(state, now);
     if (display.recovery.active) return { changed:false, reason:"repairing", remaining:display.recovery.remaining };
     if (!display.zone.unlocked) return { changed:false, reason:"level-locked", requiredCL:display.zone.requiredCL || 1 };
-    if (display.weapons.length === 0) return { changed:false, reason:"no-weapons" };
+    // 泰坦特例（2026-09-09）：泰坦无常规装备武器（display.weapons 恒空），主武器在 ship.weapon，
+    // 走 combat.js 泰坦管线；仅要求主武器存在才放行，否则维持原 no-weapons 拒绝。
+    if (display.weapons.length === 0) {
+      const _active = getActiveCombatShipState(state);
+      const _isTitan = Boolean(_active && _active.config
+        && typeof isTitanCombatShip === "function" && isTitanCombatShip(_active.config)
+        && _active.config.weapon);
+      if (!_isTitan) return { changed:false, reason:"no-weapons" };
+    }
     const living = getCombatLivingEnemiesFromState(state.combat);
     if (living.length === 0) {
       if (!Array.isArray(enemies) || enemies.length === 0) return { changed:false, reason:"missing-formation" };
@@ -1002,9 +1015,12 @@ const CombatStateActions = {
     });
     // 问题2：per-ship 维修——维修状态写入 combat.repairs[destroyedShipId]，不再使用全局 repairUntil。
     // 换舰/出击均不触碰其他舰的维修条目（beginShipRepair 只写被击毁这艘）。
-    beginShipRepair(state, destroyedShipId, now + 180000);
+    const repairMultiplier = (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.getWormholeRepairTimeMultiplier === "function")
+      ? Number(WORMHOLE.getWormholeRepairTimeMultiplier(state)) || 1 : 1;
+    const repairMs = Math.round(180000 * Math.max(1, repairMultiplier));
+    beginShipRepair(state, destroyedShipId, now + repairMs);
     state._dirty = true;
-    return { changed:true, repairShipId:destroyedShipId, repairUntilTs:now + 180000, failedDeathspace, returnZoneId };
+    return { changed:true, repairShipId:destroyedShipId, repairUntilTs:now + repairMs, failedDeathspace, returnZoneId };
   },
 
   finishRecovery(state, now) {
@@ -1309,6 +1325,7 @@ function startCombatQueueItem(state, item, now) {
   state.combat.queueItemId = item.id;
   state.combat.queueWavesTarget = isDeathspace ? 0 : countNum;
   state.combat.queueWavesDone = 0;
+  state.combat.queueLpSettledWaves = 0; // 新队列项：重置「已折算功勋的波数」游标
   state.combat.queueEntriesTarget = isDeathspace ? countNum : 0;
   state.combat.queueEntriesDone = 0;
   if (isDeathspace) {
@@ -1398,6 +1415,7 @@ function finalizeCombatQueueItem(state, now) {
   c.active = false;
   state.currentAction.active = false;
   c.queueItemId = null; c.queueWavesTarget = 0; c.queueWavesDone = 0;
+  c.queueLpSettledWaves = 0; // 队列项终结：清掉功勋折算游标（在线/离线共用此函数）
   c.queueEntriesTarget = 0; c.queueEntriesDone = 0;
   c.deathspaceChainRemaining = 0; c.deathspaceChainPending = false; // 清残留连刷链，避免污染后续作业
   state.resumeAfterRepair = null;
@@ -1742,6 +1760,8 @@ const ShellStateActions = {
   /* ---- Batch S·舰船工程·部件车间：组件拆解（按冶炼回收率归还 cost 材料；组件无强化、无整件耗材） ---- */
   dismantleComponent(state, componentId, now) {
     if (!componentId) return { changed:false, reason:"unknown-component" };
+    // 泰坦组件不可拆解（用户拍板）：600 级精炼料按回收率退料过肥，手动/自动均不允许。
+    if (String(componentId).indexOf("titan_component_") === 0) return { changed:false, reason:"titan-undismantlable" };
     const key = "component:" + componentId;
     if (ResourceRegistry.get(state, key) < 1) return { changed:false, reason:"no-component" };
     const reclaimRate = getReclaimRate(state);
@@ -2531,6 +2551,7 @@ const StationStateActions = {
     if (action.type === "wormhole/setTarget") return WORMHOLE.setRunTarget(state, action.nodeId, actionTime);
     if (action.type === "wormhole/buyUpgrade") return WORMHOLE.buyUpgrade(state, action.id, actionTime);
     if (action.type === "wormhole/buyItem") return WORMHOLE.buyItem(state, action.id, action.param, actionTime);
+    if (action.type === "wormhole/useReroll") return WORMHOLE.useReroll(state, actionTime);
     if (action.type === "wormhole/buyGoods") return WORMHOLE.buyGoods(state, action.id, action.param, actionTime);
     return { changed: false, reason: "unknown-wormhole-action" };
   }

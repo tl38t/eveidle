@@ -1322,6 +1322,80 @@
   .combat-squad-column .lcs-slots { flex-direction: column; }
   .lcs-slot { width: 100%; }
 }
+
+/* 今日裂隙：宽屏三卡并列，中屏两列，窄屏保持单列。 */
+#wh-dailies{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;align-items:stretch}
+#wh-dailies>div{min-width:0;margin-bottom:0!important}
+@media(max-width:1500px){#wh-dailies{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:760px){#wh-dailies{grid-template-columns:minmax(0,1fr)}}
+
+/* 虫洞三阶段：入口 → 星图 → 节点房间；仅消费既有显隐状态，不新增游戏状态。 */
+#wh-page-runs:has(>#wh-map-wrap:not([style*="display:none"]):not([style*="display: none"])){display:flex;flex-direction:column}
+#wh-page-runs:has(>#wh-map-wrap:not([style*="display:none"]):not([style*="display: none"]))>#wh-run-card{order:1}
+#wh-page-runs:has(>#wh-map-wrap:not([style*="display:none"]):not([style*="display: none"]))>#wh-manual-hint{order:2}
+#wh-page-runs:has(>#wh-map-wrap:not([style*="display:none"]):not([style*="display: none"]))>#wh-map-wrap{order:3;margin-bottom:0!important}
+#wh-page-runs:has(>#wh-map-wrap:not([style*="display:none"]):not([style*="display: none"]))>#wormhole-node-room{order:4}
+#wh-page-runs:has(>#wh-map-wrap:not([style*="display:none"]):not([style*="display: none"]))>#wh-dailies,
+#wh-page-runs:has(>#wh-map-wrap:not([style*="display:none"]):not([style*="display: none"]))>#wh-history{display:none}
+#wh-page-runs:has(#wormhole-room-action[style*="display: none"])>#wormhole-node-room{display:none}
+#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"])){display:grid;grid-template-columns:minmax(280px,.72fr) minmax(0,1.28fr);grid-template-areas:"status status" "hint hint" "map room";gap:12px;align-items:start}
+#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"]))>#wh-run-card{grid-area:status}
+#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"]))>#wh-manual-hint{grid-area:hint;margin-bottom:0!important}
+#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"]))>#wh-map-wrap{grid-area:map;position:sticky;top:12px}
+#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"]))>#wormhole-node-room{grid-area:room;margin:0}
+@media(max-width:900px){#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"])){display:block}#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"]))>#wh-map-wrap{display:none!important}#wh-page-runs:has(>#wormhole-node-room:not([hidden]) #wormhole-room-action:not([style*="display:none"]):not([style*="display: none"]))>#wh-manual-hint{margin-bottom:8px!important}}
+
+/* 虫洞商店：沿用蓝图商店的商品网格，以裂隙紫与印记金形成独立主题。 */
+#wh-shop,#bpshop-wh-content{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));align-items:start;gap:10px}
+#bpshop-wh-balance{padding:9px 12px;border:1px solid rgba(166,107,255,.28);border-radius:7px;background:linear-gradient(90deg,rgba(47,27,81,.36),rgba(5,13,26,.64));color:#cbb7e7!important;box-shadow:inset 2px 0 #8f4bff}
+.wh-shop-section-title{grid-column:1/-1;margin:12px 0 0;padding:6px 9px;border-bottom:1px solid rgba(139,99,203,.26);color:#c9a0ff;font-size:12px;letter-spacing:.08em}
+.wh-shop-section-title:first-child{margin-top:0}
+.wh-shop-card{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:12px;height:220px;padding:14px;overflow:hidden;border:1px solid rgba(79,61,119,.58);border-radius:6px;background:radial-gradient(circle at 0 0,rgba(143,75,255,.10),transparent 42%),linear-gradient(145deg,#131a2b,#090f1c);box-shadow:inset 0 1px rgba(219,198,255,.05),0 8px 20px rgba(0,0,0,.16);font-size:12px}
+.wh-shop-card::before{content:"";position:absolute;inset:0 auto 0 0;width:2px;background:linear-gradient(180deg,transparent,#8f4bff,transparent);opacity:.72}
+.wh-shop-card>div:first-child{min-width:0;flex:1;line-height:1.55}
+.wh-shop-card>div:last-child{padding:10px 0 0;border-top:1px solid rgba(105,81,151,.24);line-height:1.8;white-space:normal!important;text-align:left!important}
+.wh-shop-card .btn{min-width:64px;padding:5px 9px;border-color:rgba(111,85,163,.58);background:#16152b;color:#cdbce8}
+.wh-shop-card .btn.primary{border-color:rgba(166,107,255,.62);background:linear-gradient(180deg,#4d307d,#2d1d50);color:#eee5ff}
+.wh-choice-picker{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px}.wh-choice-picker .wh-choice-select{width:100%;min-width:0;height:34px;margin:0;padding:4px 28px 4px 9px;border:1px solid rgba(111,85,163,.62);border-radius:5px;background-color:#11182a;color:#cdbce8;color-scheme:dark;font-family:inherit;font-size:12px;font-weight:600;box-shadow:inset 0 1px rgba(219,198,255,.04);outline:none}.wh-choice-picker .wh-choice-select:hover{border-color:rgba(166,107,255,.72);background-color:#17182e}.wh-choice-picker .wh-choice-select:focus{border-color:#a66bff;box-shadow:0 0 0 2px rgba(143,75,255,.16),inset 0 1px rgba(219,198,255,.06)}.wh-choice-picker .wh-choice-select option{background:#0d1322;color:#d7caeb}
+.wh-shop-good-desc{margin-top:4px;color:#8fa8c3;line-height:1.55}
+.wh-license-picker{display:grid;grid-template-columns:minmax(112px,1fr) minmax(96px,.72fr) auto;align-items:center;gap:7px;min-width:300px}
+.wh-license-picker .wh-license-select{width:auto;min-width:0;height:34px;margin:0;padding:4px 28px 4px 9px;border:1px solid rgba(111,85,163,.62);border-radius:5px;background-color:#11182a;color:#cdbce8;color-scheme:dark;font-family:inherit;font-size:12px;font-weight:600;box-shadow:inset 0 1px rgba(219,198,255,.04);outline:none}
+.wh-license-picker .wh-license-select:hover{border-color:rgba(166,107,255,.72);background-color:#17182e}
+.wh-license-picker .wh-license-select:focus{border-color:#a66bff;box-shadow:0 0 0 2px rgba(143,75,255,.16),inset 0 1px rgba(219,198,255,.06)}
+.wh-license-picker .wh-license-select option{background:#0d1322;color:#d7caeb}
+.wh-shop-blueprint-detail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px 12px;margin-top:8px;padding-top:8px;border-top:1px solid rgba(118,88,166,.25);background:transparent}
+.wh-shop-blueprint-detail>div{display:grid;grid-template-columns:34px minmax(0,1fr);gap:6px;align-items:start}
+.wh-shop-blueprint-detail span{color:#786c8e;font-size:9px}
+.wh-shop-blueprint-detail b{color:#a9a1ba;font-size:10px;font-weight:500;line-height:1.45}
+.wh-shop-blueprint-detail .wh-shop-blueprint-materials{grid-column:1/-1}
+@media(hover:hover){.wh-shop-card{transition:border-color .18s,transform .18s,box-shadow .18s}.wh-shop-card:hover{transform:translateY(-1px);border-color:rgba(166,107,255,.62);box-shadow:inset 0 1px rgba(219,198,255,.08),0 0 22px rgba(143,75,255,.10),0 10px 24px rgba(0,0,0,.20)}}
+@media(max-width:1100px){#wh-shop,#bpshop-wh-content{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:700px){#wh-shop,#bpshop-wh-content{grid-template-columns:1fr}.wh-shop-card{height:220px}.wh-shop-card>div:last-child{padding:9px 0 0;border-top:1px solid rgba(105,81,151,.24);border-left:0;text-align:left!important}.wh-shop-blueprint-detail{grid-template-columns:1fr}.wh-shop-blueprint-detail .wh-shop-blueprint-materials{grid-column:auto}.wh-license-picker{grid-template-columns:1fr 1fr auto;min-width:0}}
+
+/* 蓝图商店：与虫洞商店共用卡片节奏，完整保留产品、预览、来源与购买信息。 */
+#blueprintstore-panel .panel-body{background:radial-gradient(circle at 8% 0,rgba(48,107,150,.08),transparent 32%),linear-gradient(145deg,rgba(7,16,29,.78),rgba(3,9,18,.88))}
+#blueprintstore-panel .bpshop-tab{min-width:86px;border-color:rgba(61,91,122,.62);border-radius:6px;background:#0d1928;color:#7892ad}
+#blueprintstore-panel .bpshop-tab.active{border-color:rgba(88,151,194,.62);background:linear-gradient(180deg,#17314a,#102338);color:#b9d9ee;box-shadow:inset 0 1px rgba(189,226,248,.07),0 0 14px rgba(64,139,184,.08)}
+#bpshop-page-blueprint .lpstore-intro{margin-bottom:12px;padding:9px 12px;border:1px solid rgba(63,93,122,.34);border-radius:7px;background:rgba(7,18,31,.64);color:#718aa3}
+#bpshop-page-blueprint .blueprintstore-tabs{gap:6px;margin-bottom:12px;padding-bottom:8px;border-bottom:1px solid rgba(67,91,117,.28)}
+#bpshop-page-blueprint .blueprintstore-tab{border-color:rgba(62,89,116,.48);border-radius:6px;background:#0b1725;color:#7890a8}
+#bpshop-page-blueprint .blueprintstore-tab.active{border-color:rgba(83,149,193,.62);background:linear-gradient(180deg,#17324b,#102338);color:#b9d9ee;box-shadow:inset 0 -2px #4f9bc7}
+#bpshop-page-blueprint .lpstore-grid{gap:10px}
+#bpshop-page-blueprint .lpstore-card{position:relative;min-height:112px;padding:14px;overflow:hidden;border-color:rgba(50,76,101,.78);border-radius:6px;background:radial-gradient(circle at 0 0,rgba(47,111,153,.08),transparent 42%),linear-gradient(145deg,#152131,#0d1621);box-shadow:inset 0 1px rgba(201,226,243,.04),0 8px 20px rgba(0,0,0,.16)}
+#bpshop-page-blueprint .lpstore-card::before{content:"";position:absolute;inset:0 auto 0 0;width:2px;background:linear-gradient(180deg,transparent,#4389b5,transparent);opacity:.72}
+#bpshop-page-blueprint .lpstore-card-icon{border-color:rgba(212,168,67,.28);background:radial-gradient(circle,rgba(212,168,67,.13),rgba(82,61,20,.05));box-shadow:0 0 16px rgba(212,168,67,.07)}
+#bpshop-page-blueprint .lpstore-card-info{gap:4px}
+#bpshop-page-blueprint .lpstore-card-info strong{color:#eadcae;font-size:13px}
+#bpshop-page-blueprint .blueprint-product{margin:3px 0 5px}
+#bpshop-page-blueprint .blueprint-product span{border-color:rgba(77,151,196,.28);background:rgba(45,119,164,.13);color:#76bce4}
+#bpshop-page-blueprint .blueprint-preview-lines{margin-top:3px;padding:7px 0 0;border:0;border-top:1px solid rgba(67,94,119,.24);border-radius:0;background:transparent}
+#bpshop-page-blueprint .lpstore-buy{min-width:76px;border-color:rgba(65,112,148,.62);border-radius:6px;background:linear-gradient(180deg,#173651,#10273d);color:#c1dcee}
+#bpshop-page-blueprint .lpstore-card.owned{border-color:rgba(67,105,105,.72);background:radial-gradient(circle at 0 0,rgba(70,132,117,.055),transparent 40%),linear-gradient(145deg,#14212e,#0d1620);box-shadow:inset 0 1px rgba(201,226,243,.04),0 8px 20px rgba(0,0,0,.16)}
+#bpshop-page-blueprint .lpstore-card.owned::before{background:linear-gradient(180deg,transparent,#66b89d,transparent);opacity:.58}
+#bpshop-page-blueprint .lpstore-card.owned .lpstore-card-icon{color:#d4b35f;border-color:rgba(111,161,139,.28);background:radial-gradient(circle,rgba(212,168,67,.11),rgba(58,109,91,.045));box-shadow:0 0 14px rgba(95,168,143,.06)}
+@media(hover:hover){#bpshop-page-blueprint .lpstore-card{transition:border-color .18s,transform .18s,box-shadow .18s}#bpshop-page-blueprint .lpstore-card:hover{transform:translateY(-1px);border-color:rgba(72,124,159,.72);box-shadow:inset 0 1px rgba(201,226,243,.06),0 0 20px rgba(55,126,169,.08),0 10px 24px rgba(0,0,0,.20)}}
+@media(max-width:700px){#blueprintstore-panel .bpshop-tab{min-width:0;flex:1}#bpshop-page-blueprint .lpstore-card{min-height:0}}
+
 /* Legion starmap trial room */
 .starmap-trial-room{min-height:760px;padding:28px 32px;background:radial-gradient(circle at 50% 30%,rgba(33,95,125,.28),transparent 55%),#020711;color:#dcecff}
 .starmap-trial-room-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;border-bottom:1px solid #29435a;padding-bottom:18px}
@@ -1374,6 +1448,39 @@
 @keyframes starmap-ship-drift{0%,100%{transform:translateY(-2px)}50%{transform:translateY(3px)}}
 @keyframes starmap-beam-pulse{0%,100%{opacity:.52;filter:brightness(.9)}50%{opacity:.9;filter:brightness(1.25)}}
 @media(max-width:700px){.starmap-trial-room{padding:18px 14px 22px}.starmap-collection-stage{width:100%!important;grid-template-columns:1fr!important;min-height:0!important;gap:10px!important}.starmap-collection-ship{height:124px!important;width:min(100%,300px);margin:0 auto}.starmap-collection-beams{left:42%!important;right:18%!important;top:calc(48% - 28px)!important}.starmap-collection-counter{flex-wrap:wrap!important}.starmap-trial-efficiency{margin-left:0}.starmap-trial-progress{margin:10px 0;padding:8px 10px}}
+
+/* 虫洞试炼仅换环境色：保留星图试炼结构与各类型功能色。 */
+#wormhole-node-room{border-color:rgba(143,75,255,.42);background:radial-gradient(circle at 76% 16%,rgba(143,75,255,.13),transparent 34%),radial-gradient(circle at 18% 62%,rgba(80,45,140,.08),transparent 40%),linear-gradient(145deg,#090d1b,#030711 64%,#0a0717);box-shadow:inset 0 1px rgba(214,190,255,.07),0 0 28px rgba(99,48,177,.09)}
+#wormhole-node-room .starmap-trial-room-head{border-bottom-color:rgba(166,107,255,.26)}
+#wormhole-node-room .starmap-trial-room-head h3{color:#eee7ff;text-shadow:0 0 18px rgba(166,107,255,.18)}
+#wormhole-node-room .starmap-trial-room-head p{color:#8f83aa}
+#wormhole-node-room .starmap-trial-room-head .btn{border-color:rgba(143,104,204,.48);background:#171329;color:#cdbbea}
+#wormhole-node-room .starmap-trial-countdown{border-color:rgba(212,168,67,.48);background:linear-gradient(180deg,rgba(69,48,24,.72),rgba(20,14,29,.82));box-shadow:0 0 22px rgba(212,168,67,.09),0 0 34px rgba(143,75,255,.06)}
+#wormhole-node-room .starmap-collection-room{border-color:rgba(132,86,200,.54)!important;background:radial-gradient(circle at 72% 25%,rgba(126,72,191,.13),transparent 38%),linear-gradient(135deg,rgba(12,20,38,.97),rgba(7,7,20,.99))!important;box-shadow:0 12px 30px rgba(0,0,0,.28),inset 0 1px rgba(201,160,255,.08)!important}
+#wormhole-node-room .starmap-collection-ship{border-color:rgba(106,76,154,.58)!important;background:radial-gradient(ellipse at 50% 50%,rgba(89,64,137,.15),transparent 46%),#040713!important;box-shadow:inset 0 0 36px rgba(79,45,130,.10)!important}
+#wormhole-node-room .starmap-collection-label{border-color:rgba(166,107,255,.28);background:rgba(11,7,24,.82);color:#c9b8e8}
+#wormhole-node-room .starmap-collection-beams i{background:linear-gradient(90deg,rgba(117,217,239,0),rgba(117,217,239,.32) 12%,rgba(201,160,255,.84) 68%,rgba(166,107,255,.12));box-shadow:0 0 7px rgba(201,160,255,.78),0 0 18px rgba(143,75,255,.24)}
+#wormhole-node-room .starmap-collection-beams i::after{background:rgba(239,230,255,.88);box-shadow:0 0 4px #fff,0 0 10px rgba(201,160,255,.78)}
+#wormhole-node-room .starmap-resource-card{border-color:rgba(125,90,177,.64)!important;background:radial-gradient(circle at 50% 30%,rgba(113,66,172,.13),transparent 44%),linear-gradient(160deg,rgba(21,31,49,.97),rgba(8,9,23,.99))!important;box-shadow:0 0 25px rgba(121,72,190,.10),inset 0 0 28px rgba(201,160,255,.05)!important}
+#wormhole-node-room .starmap-collection-counter{border-color:rgba(126,91,177,.44)!important;background:rgba(9,8,24,.62)!important}
+#wormhole-node-room .wormhole-room-row{border-color:rgba(113,82,158,.34);background:rgba(10,9,25,.56)}
+#wormhole-node-room .starmap-archaeology-room{border-color:rgba(132,86,200,.50);background:radial-gradient(circle at 72% 28%,rgba(143,75,255,.12),transparent 38%),linear-gradient(145deg,rgba(12,17,35,.98),rgba(6,6,19,.99));box-shadow:0 18px 42px rgba(0,0,0,.32),inset 0 1px rgba(201,160,255,.07)}
+#wormhole-node-room .starmap-archaeology-ship-card{border-color:rgba(106,76,154,.52);background:radial-gradient(ellipse at 50% 42%,rgba(103,66,159,.17),transparent 40%),#040713}
+#wormhole-node-room .starmap-archaeology-ship-label{border-color:rgba(166,107,255,.30);background:rgba(11,7,24,.82);color:#c9b8e8}
+#wormhole-node-room .starmap-archaeology-hp-row{color:#8e86a5}
+#wormhole-node-room .starmap-archaeology-hp-row b{color:#cfc4e2}
+#wormhole-node-room .starmap-archaeology-console{border-color:rgba(111,78,164,.46);background:radial-gradient(circle at 50% 22%,rgba(112,69,176,.10),transparent 42%),rgba(7,7,22,.68)}
+#wormhole-node-room .starmap-scan-visual>i{border-color:rgba(201,160,255,.34)}
+#wormhole-node-room .starmap-scan-visual>span{border-color:rgba(201,160,255,.62);background:radial-gradient(circle,rgba(143,75,255,.28),rgba(28,15,52,.78));color:#dfcaff;box-shadow:0 0 24px rgba(143,75,255,.24)}
+#wormhole-node-room .starmap-archaeology-progress-copy strong{color:#eee7ff}
+#wormhole-node-room .starmap-archaeology-progress-copy span,#wormhole-node-room .starmap-archaeology-cycle-copy{color:#8f83aa}
+#wormhole-node-room .starmap-archaeology-progress-track{border-color:rgba(125,86,181,.48);background:#0b0918}
+#wormhole-node-room .starmap-archaeology-progress-track>div{background:linear-gradient(90deg,#7650bd,#b991e8);box-shadow:0 0 12px rgba(166,107,255,.32)}
+#wormhole-node-room .starmap-archaeology-cycle-track{background:#0b0918;box-shadow:inset 0 0 0 1px rgba(105,76,148,.38)}
+#wormhole-node-room .starmap-archaeology-cycle-track>div{background:linear-gradient(90deg,#486ea5,#a178d2);box-shadow:0 0 9px rgba(143,75,255,.28)}
+#wormhole-node-room .starmap-archaeology-stats>div{border-color:rgba(103,77,144,.40);background:rgba(11,9,26,.62)}
+#wormhole-node-room .starmap-archaeology-stats span{color:#8e83a5}
+#wormhole-node-room .starmap-archaeology-stats strong{color:#d8cbe8}
 
 /* 生产试炼：提交式认证面板，不复用采集倒计时与采集 HUD。 */
 .starmap-production-room{width:min(100%,720px);margin:28px auto 18px;padding:24px;border:1px solid rgba(77,125,157,.56);border-radius:12px;background:radial-gradient(circle at 12% 0,rgba(255,170,73,.12),transparent 36%),linear-gradient(145deg,rgba(11,29,43,.97),rgba(4,13,23,.98));box-shadow:0 18px 45px rgba(0,0,0,.28),inset 0 1px rgba(180,225,255,.07)}

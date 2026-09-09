@@ -15,8 +15,10 @@ onActionProgressReset(({ skill, shipSubAction }) => {
 });
 
 function renderShipEngSubViewTabs(display) {
+  // 2026-09-09：泰坦组装 tab 收编进状态机（此前 titan-forge-integration 自建 tab + 私有 show()，
+  // 从不写 shipEngSubView，任何重绘都被本渲染器按旧状态弹回总装——双状态源打架根因）。
   const el = document.getElementById("shipeng-subview-tabs"); if (!el) return;
-  const tabs = [{ id:"component", name:"🔩 部件车间" }, { id:"assembly", name:"⚓ 舰船总装" }];
+  const tabs = [{ id:"component", name:"🔩 部件车间" }, { id:"assembly", name:"⚓ 舰船总装" }, { id:"titan", name:"✦ 泰坦组装" }];
   el.innerHTML = tabs.map(tab => `<button class="shipeng-subview-tab${tab.id === display.subView ? " active" : ""}" data-subview="${tab.id}" role="tab" aria-selected="${tab.id === display.subView}">${tab.name}</button>`).join("");
 }
 
@@ -30,7 +32,7 @@ function renderShipCompGrid(display) {
   if (!display.componentGrid.length) { el.innerHTML = '<div class="shipeng-empty">该分类暂无部件</div>'; return; }
   el.innerHTML = display.componentGrid.map(recipe => `
     <button class="shipeng-comp-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-comp="${recipe.id}">
-      <span class="sec-top"><span>${recipe.requiredLevel} 级</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : "Lv." + recipe.requiredLevel + " 解锁"}</span></span>
+      <span class="sec-top"><span>${recipe.requiredLevel} 级</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : (recipe.gateText || ("Lv." + recipe.requiredLevel + " 解锁"))}</span></span>
       <strong>${recipe.name}</strong>
       <span class="sec-cost">${recipe.cost.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`).join(" ")}</span>
       <span class="sec-bottom"><span>${recipe.time}s · ${recipe.xp} XP</span><span>库存 ${recipe.owned}</span></span>
@@ -43,6 +45,7 @@ function renderShipCompDetail(display) {
   const btn = document.getElementById("btn-start-shipcomp");
   if (btn) {
     if (display.canStartComponent) { btn.textContent = "⚙ 制造 " + display.currentComponent.name; }
+    else if (display.componentGateText) { btn.textContent = "🔒 " + display.componentGateText; }
     else { btn.textContent = "🔒 舰船工程 Lv." + display.currentComponent.requiredLevel + " 解锁"; }
     btn.disabled = !display.canStartComponent;
   }
@@ -66,7 +69,9 @@ function renderShipCompInventory(display) {
   if (!grid) return;
   const rate = (display.componentDismantle && display.componentDismantle.reclaimPercent != null) ? display.componentDismantle.reclaimPercent : 50;
   grid.innerHTML = display.componentInventory.map(item => {
-    const btn = item.quantity > 0 ? `<button type="button" class="sci-dismantle" data-comp-dismantle="${item.id}" title="拆解此组件（回收约 ${rate}% 材料）">拆解</button>` : "";
+    // 泰坦组件不可拆解（actions.js dismantleComponent 同步拒绝；600 级精炼料退料过肥）
+    const canDismantle = item.quantity > 0 && String(item.id).indexOf("titan_component_") !== 0;
+    const btn = canDismantle ? `<button type="button" class="sci-dismantle" data-comp-dismantle="${item.id}" title="拆解此组件（回收约 ${rate}% 材料）">拆解</button>` : "";
     return `<div class="ship-comp-item"><span class="sci-name">${item.name}</span><span class="sci-qty${item.quantity === 0 ? " zero" : ""}">×${item.quantity}</span>${btn}</div>`;
   }).join("");
   const countEl = document.getElementById("shipcomp-inv-count");
@@ -282,6 +287,8 @@ function renderShipEngineeringPage(now) {
 
   const compView = document.getElementById("shipeng-comp-view"); if (compView) compView.style.display = display.subView === "component" ? "" : "none";
   const asmView = document.getElementById("shipeng-asm-view"); if (asmView) asmView.style.display = display.subView === "assembly" ? "" : "none";
+  // 泰坦组装视图显隐同口径收编（元素由 titan-forge-integration 懒创建，缺省时其 ensureView 按 state 自设初值）
+  const titanView = document.getElementById("shipeng-titan-view"); if (titanView) titanView.style.display = display.subView === "titan" ? "" : "none";
 
   const componentRow = document.getElementById("shipcomp-progress-row"); if (componentRow) componentRow.style.display = display.componentActive ? "" : "none";
   const assemblyRow = document.getElementById("shipasm-progress-row"); if (assemblyRow) assemblyRow.style.display = display.assemblyActive ? "" : "none";

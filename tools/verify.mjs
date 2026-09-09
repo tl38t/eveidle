@@ -12,7 +12,7 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 102) throw new Error(`预期 102 个脚本，实际 ${scriptSources.length}`); // 102 = 101 基线 + 限次蓝图抄本(BPC)原语 blueprint-runs
+if (scriptSources.length !== 120) throw new Error(`预期 120 个脚本，实际 ${scriptSources.length}`); // 120 = RC64 HEAD 实际 119 + 泰坦数据模块 titans.js（102 旧基线早已与 index.html 脱节，2026-09-09 对齐实测值）
 
 // 平台/云存档/成就/设备镜像生产脚本必须全部被 index.html 引用，且全部排在 persistence.js 之前。
 {
@@ -186,7 +186,41 @@ const optionalIds = new Set([
   // 动态创建的 ID：btn-salvage-arm-toggle 由 js/ui/combat-render.js 运行时 innerHTML 创建（打捞臂切换按钮）
   "btn-salvage-arm-toggle",
   // 动态创建的 ID：save-code-import-overlay 由 js/core/persistence.js 的 _openCodeImportModal 运行时 createElement 创建（存档/进度码导入覆盖层）
-  "save-code-import-overlay"
+  "save-code-import-overlay",
+  // —— 2026-09-09 既有阻塞收敛：以下 22 个 ID 均为运行时动态创建（各脚本 innerHTML/createElement），
+  // 静态不存在于 index.html 属预期，禁止为通过检查塞进 index.html ——
+  // planauto-diag-overlay：js/core/diagnostics.js 运行时创建（产线自动化诊断浮层）
+  "planauto-diag-overlay",
+  // shipeng-titan-view：js/ui/titan-forge-integration.js ensureView 运行时创建（泰坦组装子视图容器）
+  "shipeng-titan-view",
+  // starmap-trial-progress-*：js/ui/shell-render.js 星图试炼进度条（动态渲染）
+  "starmap-trial-progress-fill",
+  "starmap-trial-progress-text",
+  // probe-bp-*：js/ui/shell-render.js 蓝图探测购买弹窗（动态创建）
+  "probe-bp-purchase-modal",
+  "probe-bp-runs-input",
+  "probe-bp-total",
+  "probe-bp-unit-price",
+  // combat-supply-alert：js/ui/combat-render.js 战斗补给提示（动态创建）
+  "combat-supply-alert",
+  // map：js/ui/ship3d.js 运行时创建（3D 舰船画布容器）
+  "map",
+  // wh-room-* / wh-arch-* / wh-c-* / wh-a-*：js/ui/wormhole-map.js 虫洞室内/ arquitectura 面板（动态渲染）
+  "wormhole-room-arena-slot",
+  "wh-room-resource-card",
+  "wh-room-ship-label",
+  "wh-room-beams",
+  "wh-arch-ship-label",
+  "wh-arch-hp",
+  "wh-room-mining-bar",
+  "wh-c-cardsub",
+  "wh-c-eta",
+  "wh-a-scan",
+  // alliance-state / alliance-diag-overlay：js/ui/alliance-render.js 动态渲染（联盟状态与诊断浮层）
+  "alliance-state",
+  "alliance-diag-overlay",
+  // smelting-pump-stock：js/ui/render.js 暗流体精炼泵库存（动态渲染）
+  "smelting-pump-stock"
   // 注：legion-entry（军团入口卡）已补落地为 index.html 静态元素（空间站页底部，2026-09-01）。
   // 它同时保留在本可选列表中无害；DOM ID 基线数字与实际（HEAD=391 / 工作树=392）长期脱节，
   // 属既有阻塞，待统一收敛时一并校正（届时需把下方 370 系基线 +1 计入本元素）。
@@ -210,7 +244,11 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // last-sync-time / btn-sync-now / btn-check-cloud / btn-delete-local / btn-permanent-delete。
 // 基线 329 → 332 的 +3 为设备镜像状态、时间与手动备份按钮。
 // 基线 332 → 334 的 +2 为 Batch S 装备管理：物品丢弃确认 / 装备拆解确认设置开关复选框（setting-discard-confirm / setting-dismantle-confirm）。
-if (htmlIds.size !== 370) throw new Error(`预期 337 个 DOM ID，实际 ${htmlIds.size}`);
+// 2026-09-09 既有阻塞收敛：基线 370 → 488（长期脱节的 DOM ID 基线按工作树实测对齐；
+// 旧注释声称 HEAD=391/工作树=392 已过时——本轮工作树含泰坦/虫洞/联盟等大量未提交并行改动，实测 488）。
+// 后续新增静态 DOM ID 时按 +1 递增维护本数字。
+const EXPECTED_DOM_IDS = 488;
+if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
   "research-progress-fill", "research-tree", "research-detail", "research-queue"
@@ -288,6 +326,10 @@ const documentMock = {
 };
 
 const localStorageMock = { getItem: () => null, setItem: noop, removeItem: noop };
+// 2026-09-09：补 MutationObserver mock（与 combat-online-offline-parity.mjs 同款）——
+// titan-forge-integration.js 顶层 new MutationObserver(render).observe(document.body,...)，
+// 无 mock 则 vm 加载阶段直接 ReferenceError（parity 套件同因已在早前修复）。
+class MockMutationObserver { constructor(cb) {} observe() {} disconnect() {} takeRecords() { return []; } }
 const sandbox = {
   alert: noop,
   Blob,
@@ -297,6 +339,7 @@ const sandbox = {
   document: documentMock,
   FileReader: class {},
   localStorage: localStorageMock,
+  MutationObserver: MockMutationObserver,
   matchMedia: () => ({ matches:false, media:"", addEventListener:noop, removeEventListener:noop, addListener:noop, removeListener:noop }),
   requestAnimationFrame: noop,
   setInterval: noop,

@@ -363,6 +363,10 @@ const COMBAT_SPECIAL_MATERIALS = [...STAR_BELT_DATA_MATERIALS, ...DEATHSPACE_TIC
 // 并入本数组即可被 state.js 默认值与 persistence.js 旧档补齐自动覆盖。
 const WORMHOLE_SPECIAL_MATERIALS = ["虫洞印记", "暗流体助熔触媒"];
 COMBAT_SPECIAL_MATERIALS.push(...WORMHOLE_SPECIAL_MATERIALS);
+// 泰坦精炼材料（titans.js TITAN_SMELTING 产物）：锻星合金（舰体组件/总装料）、熔虚晶体（武器/核心组件料）。
+// 并入 special 池：state.js 默认值播种 + persistence.js 旧档补齐 + resources.js 按名解析（部件车间泰坦配方成本键）。
+const TITAN_REFINED_MATERIALS = ["锻星合金", "熔虚晶体"];
+COMBAT_SPECIAL_MATERIALS.push(...TITAN_REFINED_MATERIALS);
 
 // 势力考古探针掉落（死亡空间产出「探针本体」；功勋商店卖的是「限次抄本 BPC」，两条路径并行）。
 // 绑定规则：按敌人势力绑定档位 —— 命名与掉落同源（苍穹劫团的副本掉苍穹劫团探针），

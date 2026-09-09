@@ -38,6 +38,10 @@ const RANK_MULT = {
   combat: 1.1,       // 战斗（11 项数值）
   logistics: 0.9,    // 后勤（5 项数值）
   protocol: 2.5,     // 6 个单级协议节点
+  // 深空开拓分支（contentPack="frontier"）：数值节点默认档，单一旋钮可整体缩放时长。
+  // 该分支不计入 BASE_TOTAL_WEIGHT（不压缩主树），单独成区。
+  starmap: 0.9,      // 星图线数值节点
+  wormhole: 0.9,     // 虫洞线数值节点
 };
 
 // ---------------------------------------------------------------------------
@@ -406,6 +410,142 @@ const NODES = [
     bonus: null,
     description: "在双人小队基础上解锁第三名 NPC 战斗成员（仅解锁，不含小队战斗逻辑）。",
   },
+
+  // ===== 深空开拓研究分支（contentPack="frontier"）=====
+  //   规格：docs/RESEARCH_FRONTIER_SPEC_v0.1.md
+  //   三条子线共用一个入口 sm_root；泰坦线（tt_*）待泰坦战斗系统实装后另行追加。
+  //   本批次只落「有真实消费点」的节点：数值节点必须能在
+  //   LEGION_STARMAP_TRIAL / WORMHOLE 中找到乘区读取点，禁止幽灵加成。
+  //   协议节点：驻留自动领取（sm_autoclaim）/ 自动巡航（wh_autopilot）业务已实装并入表；
+  //   连续试炼（sm_autotrial）需先设计「星图试炼队列」子系统，2026-09-09 拍板不入表。
+  //
+  // —— A · 星图线（category: starmap）——
+  {
+    id: "sm_root", name: "星图测绘学", category: "starmap", era: 0, type: "foundation",
+    contentPack: "frontier",
+    maxLevel: 1, rank: 0.6, prerequisites: [{ id: "syseng", level: 1 }, { id: "dataan", level: 1 }],
+    effects: ["解锁星图研究线"],
+    bonus: null,
+    description: "建立星图坐标体系与测绘制式，解锁星图研究分支。",
+  },
+  {
+    id: "sm_limit", name: "试炼耐受", category: "starmap", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.starmap, prerequisites: [{ id: "sm_root", level: 1 }],
+    effects: ["星图试炼时限 +3%", "星图试炼时限 +6%", "星图试炼时限 +9%", "星图试炼时限 +12%", "星图试炼时限 +15%"],
+    bonus: { group: "starmapLimit", perLevel: 3, unit: "%" },
+    description: "延长星图试炼的时限窗口（采集 / 考古 / 战斗试炼通用）。",
+  },
+  {
+    id: "sm_arch", name: "遗迹制图", category: "starmap", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.starmap, prerequisites: [{ id: "sm_root", level: 1 }],
+    effects: ["考古扫描周期 -2%", "考古扫描周期 -4%", "考古扫描周期 -6%", "考古扫描周期 -8%", "考古扫描周期 -10%"],
+    bonus: { group: "starmapArchCycle", perLevel: 2, unit: "%", negative: true },
+    description: "缩短星图考古试炼的单次扫描周期。",
+  },
+  {
+    id: "sm_collect", name: "采集编队", category: "starmap", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.starmap, prerequisites: [{ id: "sm_root", level: 1 }],
+    effects: ["采集试炼效率 +2.5%", "采集试炼效率 +5%", "采集试炼效率 +7.5%", "采集试炼效率 +10%", "采集试炼效率 +12.5%"],
+    bonus: { group: "starmapCollect", perLevel: 2.5, unit: "%" },
+    description: "提升星图采集试炼的作业效率（采矿 / 采气通用）。",
+  },
+  {
+    id: "sm_yield", name: "星图驻留学", category: "starmap", era: 2, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.starmap,
+    prerequisites: [{ id: "sm_limit", level: 3 }, { id: "sm_collect", level: 3 }],
+    effects: ["星图驻留产出 +2%", "星图驻留产出 +4%", "星图驻留产出 +6%", "星图驻留产出 +8%", "星图驻留产出 +10%"],
+    bonus: { group: "starmapYield", perLevel: 2, unit: "%" },
+    description: "提升已制压星图节点的长期驻留奖励产出。",
+  },
+  {
+    id: "sm_battle", name: "战利品归纳", category: "starmap", era: 3, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.starmap, prerequisites: [{ id: "sm_yield", level: 3 }],
+    effects: ["战斗试炼掉落 +2%", "战斗试炼掉落 +4%", "战斗试炼掉落 +6%", "战斗试炼掉落 +8%", "战斗试炼掉落 +10%"],
+    bonus: { group: "starmapBattleDrop", perLevel: 2, unit: "%" },
+    description: "提升星图战斗试炼通关时的掉落份数。",
+  },
+  {
+    id: "sm_autoclaim", name: "驻留自动领取协议", category: "starmap", era: 4, type: "protocol",
+    contentPack: "frontier",
+    maxLevel: 1, rank: RANK_MULT.protocol,
+    prerequisites: [{ id: "sm_yield", level: 2 }],
+    effects: ["驻留奖励满 1 小时自动入库"],
+    bonus: null,
+    description: "星图驻留奖励（生产 / 考古 / 采集 / 战斗四类）每累计满 1 小时自动入库，无需手动领取。",
+  },
+
+  // —— B · 虫洞线（category: wormhole）——
+  {
+    id: "wh_root", name: "虚空拓扑学", category: "wormhole", era: 0, type: "foundation",
+    contentPack: "frontier",
+    maxLevel: 1, rank: 0.6,
+    prerequisites: [{ id: "sm_root", level: 1 }, { id: "sm_limit", level: 3 }, { id: "sm_collect", level: 3 }],
+    effects: ["解锁虫洞研究线"],
+    bonus: null,
+    description: "解析虚空裂隙的拓扑结构，解锁虫洞研究分支（需已通关星图主线）。",
+  },
+  {
+    id: "wh_combat", name: "虚空战术", category: "wormhole", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.wormhole, prerequisites: [{ id: "wh_root", level: 1 }],
+    effects: ["虫洞内战斗伤害 +3%", "虫洞内战斗伤害 +6%", "虫洞内战斗伤害 +9%", "虫洞内战斗伤害 +12%", "虫洞内战斗伤害 +15%"],
+    bonus: { group: "wormholeDamage", perLevel: 3, unit: "%" },
+    description: "仅在虫洞远征期间生效的战斗伤害加成。",
+  },
+  {
+    id: "wh_tank", name: "虚空装甲", category: "wormhole", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.wormhole, prerequisites: [{ id: "wh_root", level: 1 }],
+    effects: ["虫洞内三层生命 +2.5%", "虫洞内三层生命 +5%", "虫洞内三层生命 +7.5%", "虫洞内三层生命 +10%", "虫洞内三层生命 +12.5%"],
+    bonus: { group: "wormholeTank", perLevel: 2.5, unit: "%" },
+    description: "仅在虫洞远征期间生效的护盾 / 装甲 / 结构容量加成。",
+  },
+  {
+    id: "wh_time", name: "时空锚定", category: "wormhole", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.wormhole, prerequisites: [{ id: "wh_root", level: 1 }],
+    effects: ["虫洞节点时限 +4%", "虫洞节点时限 +8%", "虫洞节点时限 +12%", "虫洞节点时限 +16%", "虫洞节点时限 +20%"],
+    bonus: { group: "wormholeNodeTime", perLevel: 4, unit: "%" },
+    description: "延长虫洞内单个试炼节点的完成时限。",
+  },
+  {
+    id: "wh_supply", name: "虚空后勤", category: "wormhole", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.wormhole, prerequisites: [{ id: "wh_root", level: 1 }],
+    effects: ["虫洞内燃料消耗 -4%", "虫洞内燃料消耗 -8%", "虫洞内燃料消耗 -12%", "虫洞内燃料消耗 -16%", "虫洞内燃料消耗 -20%"],
+    bonus: { group: "wormholeSupply", perLevel: 4, unit: "%", negative: true },
+    description: "降低虫洞远征期间的燃料消耗。",
+  },
+  {
+    id: "wh_yield", name: "裂隙丰饶", category: "wormhole", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.wormhole, prerequisites: [{ id: "wh_root", level: 1 }],
+    effects: ["虫洞泰坦材料 +3%", "虫洞泰坦材料 +6%", "虫洞泰坦材料 +9%", "虫洞泰坦材料 +12%", "虫洞泰坦材料 +15%"],
+    bonus: { group: "wormholeYield", perLevel: 3, unit: "%" },
+    description: "提升虫洞采集节点的泰坦材料产出。",
+  },
+  {
+    id: "wh_token", name: "印记提纯", category: "wormhole", era: 2, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.wormhole, prerequisites: [{ id: "wh_combat", level: 3 }],
+    effects: ["虫洞印记获取 +4%", "虫洞印记获取 +8%", "虫洞印记获取 +12%", "虫洞印记获取 +16%", "虫洞印记获取 +20%"],
+    bonus: { group: "wormholeToken", perLevel: 4, unit: "%" },
+    description: "提升虫洞印记（Token）获取量；与虚空脑插加法合并后再乘，合计上限 +30%。",
+  },
+  {
+    id: "wh_autopilot", name: "自动巡航协议", category: "wormhole", era: 3, type: "protocol",
+    contentPack: "frontier",
+    maxLevel: 1, rank: RANK_MULT.protocol,
+    prerequisites: [{ id: "wh_time", level: 3 }, { id: "wh_token", level: 3 }],
+    effects: ["通关后按上次策略自动开下一个虫洞"],
+    bonus: null,
+    description: "虫洞远征通关后，自动沿用上一次的选路模式与重试次数开赴下一个未通关的虫洞；失败、超时、主动撤退不触发，在线与离线均生效（当日最多链式 3 个）。",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -415,7 +555,8 @@ const NODES = [
 function baseWeight() {
   let w = 0;
   for (const n of NODES) {
-    if (n.contentPack === "legion") continue; // 军团节点不计入基础权重
+    // 军团 / 深空开拓分支不计入基础权重（不压缩主树各节点时长）
+    if (n.contentPack === "legion" || n.contentPack === "frontier") continue;
     const rank = (typeof n.rank === "number") ? n.rank : (RANK_MULT[n.category] || 0);
     if (!rank) throw new Error("未知 category: " + n.category + " @ " + n.id);
     for (let lvl = 1; lvl <= n.maxLevel; lvl++) {
@@ -444,6 +585,14 @@ let LEGION_ADDITIONAL_SECONDS = 0;
 for (const n of NODES) {
   if (n.contentPack !== "legion") continue;
   for (const d of n.durationByLevel) LEGION_ADDITIONAL_SECONDS += d;
+}
+
+// 深空开拓分支追加的总研究时间（秒，与 LEGION_ADDITIONAL_SECONDS 同构）。
+// 仅含已实装的星图 + 虫洞两线；泰坦线随泰坦战斗系统同期追加。
+let FRONTIER_ADDITIONAL_SECONDS = 0;
+for (const n of NODES) {
+  if (n.contentPack !== "frontier") continue;
+  for (const d of n.durationByLevel) FRONTIER_ADDITIONAL_SECONDS += d;
 }
 
 // ---------------------------------------------------------------------------
@@ -626,6 +775,44 @@ const RESEARCH_BONUS_CONSUMERS = {
   legionNpcXp: [
     { target: "LEGION_NPC.getLegionNpcResearchXpMultiplier", kind: "multiplier", groups: ["legionNpcXp"] },
   ],
+
+  // —— 深空开拓分支 · 星图线（消费点见 js/systems/legion-starmap-trial.js）——
+  starmapYield: [
+    { target: "LEGION_STARMAP_TRIAL.getStarmapResidentYieldMultiplier", kind: "multiplier", groups: ["starmapYield"] },
+  ],
+  starmapLimit: [
+    { target: "LEGION_STARMAP_TRIAL.getStarmapTrialLimitMultiplier", kind: "multiplier", groups: ["starmapLimit"] },
+  ],
+  starmapBattleDrop: [
+    { target: "LEGION_STARMAP_TRIAL.getStarmapBattleDropMultiplier", kind: "multiplier", groups: ["starmapBattleDrop"] },
+  ],
+  starmapArchCycle: [
+    { target: "LEGION_STARMAP_TRIAL.getStarmapArchCycleMultiplier", kind: "reduceFraction", groups: ["starmapArchCycle"] },
+  ],
+  starmapCollect: [
+    { target: "LEGION_STARMAP_TRIAL.getStarmapCollectionEfficiencyMultiplier", kind: "multiplier", groups: ["starmapCollect"] },
+  ],
+
+  // —— 深空开拓分支 · 虫洞线（消费点见 js/systems/wormhole.js）——
+  //   战斗类（伤害 / 三层生命）以 run 级 combat modifier 形式写入，作用域严格限于虫洞远征期间。
+  wormholeDamage: [
+    { target: "WORMHOLE.getWormholeCombatModifiers", kind: "multiplier", groups: ["wormholeDamage"], layer: "damage" },
+  ],
+  wormholeTank: [
+    { target: "WORMHOLE.getWormholeCombatModifiers", kind: "multiplier", groups: ["wormholeTank"], layer: "maxHp" },
+  ],
+  wormholeNodeTime: [
+    { target: "WORMHOLE.getWormholeNodeTimeMultiplier", kind: "multiplier", groups: ["wormholeNodeTime"] },
+  ],
+  wormholeSupply: [
+    { target: "WORMHOLE.getWormholeSupplyMultiplier", kind: "reduceFraction", groups: ["wormholeSupply"] },
+  ],
+  wormholeToken: [
+    { target: "WORMHOLE.getWormholeTokenMultiplier", kind: "multiplier", groups: ["wormholeToken"] },
+  ],
+  wormholeYield: [
+    { target: "WORMHOLE.getWormholeYieldMultiplier", kind: "multiplier", groups: ["wormholeYield"] },
+  ],
 };
 
 // ---------------------------------------------------------------------------
@@ -641,6 +828,7 @@ const ResearchData = {
   BASE_TOTAL_WEIGHT,
   UNIT,
   LEGION_ADDITIONAL_SECONDS,
+  FRONTIER_ADDITIONAL_SECONDS,
   buildSteps,
   STEP_COUNT,
   RESEARCH_BONUS_CONSUMERS,

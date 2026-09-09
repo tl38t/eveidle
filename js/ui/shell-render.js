@@ -1414,6 +1414,49 @@ function showDangerConfirm(title, bodyHtml, confirmLabel, onConfirm, onCancel) {
   return () => close(true);
 }
 
+/* 未解锁入口提示弹窗：复用 .dlg-* 样式（与 showDangerConfirm 同款），单「知道了」+ 可选「前往」跳转。 */
+const LOCK_GOTO_LABEL = { station: "前往空间站", starmap: "前往星图", shipEngineering: "前往舰船工程", research: "前往研究" };
+function showLockDialog(title, reasonText, gotoPage, gotoLabel) {
+  if (document.querySelector(".dlg-backdrop")) return; // 防重入
+  const lines = String(reasonText || "").split("；").filter(s => s.trim());
+  const reasonHtml = lines.length > 1
+    ? lines.map(s => '<div class="dlg-lock-line">· ' + s.trim() + '</div>').join("")
+    : '<div class="dlg-lock-line">' + (reasonText || "") + '</div>';
+  const backdrop = document.createElement("div");
+  backdrop.className = "dlg-backdrop";
+  const box = document.createElement("div");
+  box.className = "dlg-box dlg-lock";
+  box.setAttribute("role", "dialog");
+  box.setAttribute("aria-modal", "true");
+  box.setAttribute("aria-label", title);
+  box.innerHTML =
+    '<div class="dlg-title">🔒 ' + title + ' 未解锁</div>' +
+    '<div class="dlg-body"><div class="dlg-lock-hint">达成以下条件后即可开启：</div>' +
+    '<div class="dlg-lock-reason">' + reasonHtml + '</div></div>' +
+    '<div class="dlg-actions">' +
+    (gotoPage ? '<button type="button" class="btn primary dlg-goto">' + (gotoLabel || (LOCK_GOTO_LABEL[gotoPage] || "前往")) + '</button>' : '') +
+    '<button type="button" class="btn dlg-cancel">知道了</button>' +
+    '</div>';
+  backdrop.appendChild(box);
+  document.body.appendChild(backdrop);
+  const close = () => { if (backdrop.parentNode) backdrop.parentNode.removeChild(backdrop); };
+  box.querySelector(".dlg-cancel").addEventListener("click", close);
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) close(); });
+  const gotoBtn = box.querySelector(".dlg-goto");
+  if (gotoBtn) gotoBtn.addEventListener("click", () => { close(); switchPage(gotoPage); });
+}
+
+/* 锁定入口统一守卫（捕获阶段）：拦截任何带 .ui-locked 的点击，先于业务逻辑，避免逐个入口改监听。 */
+function installLockedEntryGuard() {
+  document.addEventListener("click", (e) => {
+    const el = e.target.closest ? e.target.closest(".ui-locked[data-lock-reason]") : null;
+    if (!el) return;
+    e.preventDefault();
+    e.stopPropagation();
+    showLockDialog(el.dataset.lockTitle || "该功能", el.dataset.lockReason, el.dataset.lockGoto || "");
+  }, true);
+}
+
 function discardEquipmentFromModal(targetRef) {
   const blockReason = getEquipmentDismantleBlockReason(gameState, targetRef);
   if (blockReason === "unknown-equipment") { showToast("装备不存在"); return; }
@@ -2347,10 +2390,25 @@ function combatLogShell(bodyHtml, subHtml) {
     </div>`;
 }
 
+/* 虫洞商店入口锁定态（商店页子标签）：与军团/星图同款常驻显示，条件为「星图主线通关」。
+   军团本身未解锁时，先引导去空间站（否则跳到星图也进不去）。 */
+function getWormholeEntryLockState() {
+  let unlocked = false;
+  try {
+    unlocked = !!(typeof WORMHOLE !== "undefined" && gameState && typeof WORMHOLE.isUnlocked === "function" && WORMHOLE.isUnlocked(gameState));
+  } catch (_) { unlocked = false; }
+  if (unlocked) return { unlocked: true, reason: "", gotoPage: "" };
+  const legion = (typeof getLegionEntryLockState === "function") ? getLegionEntryLockState() : { unlocked: true, reason: "" };
+  if (!legion.unlocked) return { unlocked: false, reason: legion.reason + "；随后制压星图中心节点", gotoPage: "station" };
+  return { unlocked: false, reason: "制压星图中心节点（先驱文明核心）后开启虫洞玩法", gotoPage: "starmap" };
+}
+
 function renderBlueprintStore() {
   const display = getBlueprintStoreDisplayState(gameState, blueprintStoreCategory);
   const balance = document.getElementById("blueprintstore-balance");
   if (balance) balance.textContent = "可用星币（SC）：" + display.balance.isk.toLocaleString() + " · 功勋（MR）：" + display.balance.lp.toLocaleString();
+  const focusedShopSelect = document.activeElement && document.activeElement.matches && document.activeElement.matches("#blueprintstore-panel select");
+  if (focusedShopSelect) return display;
   const tabs = document.getElementById("blueprintstore-tabs");
   if (tabs) tabs.innerHTML = display.categories.map(category => `<button class="blueprintstore-tab${category.selected ? " active" : ""}" data-blueprint-category="${category.id}"><i class="${category.icon}"></i><span>${category.name}</span><small>${category.count}</small></button>`).join("");
   const grid = document.getElementById("blueprintstore-grid"); if (!grid) return display;
@@ -2361,10 +2419,9 @@ function renderBlueprintStore() {
   }).join("");
   // 商店页「虫洞商店」子标签：可见性随主线门禁；内容每次刷新（双入口之二）
   const whTabBtn = document.getElementById("bpshop-tab-wormhole");
-  if (whTabBtn) {
-    let whUnlocked = false;
-    try { whUnlocked = typeof WORMHOLE !== "undefined" && gameState && typeof WORMHOLE.isUnlocked === "function" && WORMHOLE.isUnlocked(gameState); } catch (_) { whUnlocked = false; }
-    whTabBtn.style.display = whUnlocked ? "" : "none";
+  if (whTabBtn && typeof applyLockedEntry === "function") {
+    const whLock = getWormholeEntryLockState();
+    applyLockedEntry("bpshop-tab-wormhole", whLock, whLock.gotoPage);
   }
   if (typeof window.renderWormholeShopPanel === "function") { try { window.renderWormholeShopPanel(); } catch (_) {} }
   return display;
@@ -2642,6 +2699,8 @@ function researchReasonText(reason) {
     SKIP_LEVEL: "必须按顺序逐级研究",
     LEVEL_OUT_OF_RANGE: "等级超出范围",
     UNKNOWN_TECH: "未知科技",
+    // 深空开拓分支门禁（星图线 / 虫洞线条件不同，详情面板给完整文案）
+    FRONTIER_LOCKED: "深空开拓分支未解锁",
     INVALID_HOURS: "投入工时无效",
     INVALID_ACTIVE: "当前研究状态异常",
     NO_RESEARCH_STATE: "研究系统未就绪",
@@ -2793,7 +2852,9 @@ const RESEARCH_EDGE_ARROW = { met: "#3fd0c0", projected: "#4a8ed6", unmet: "#3a4
 const RESEARCH_CATEGORY_LABEL = {
   protocol: "协议", foundation: "基础", industry: "工业", combat: "战斗",
   archaeology: "考古", manufacturing: "制造", logistics: "后勤", planetary: "行星", ship: "舰船",
-  legion: "军团"
+  legion: "军团",
+  // 深空开拓分支（contentPack="frontier"）
+  starmap: "星图", wormhole: "虫洞", titan: "泰坦"
 };
 
 // 纯读模型：不写 gameState，不调用 processResearchUntil。
@@ -2810,13 +2871,20 @@ function buildResearchTreeModel(research, RD, RS) {
   const legionLockReason = (RS && typeof RS.getLegionResearchLockReason === "function")
     ? RS.getLegionResearchLockReason(gameState) : "";
 
-  // 拆分主树与军团分支（保持各自在原 NODES 中的相对顺序）
+  // 拆分主树 / 军团分支 / 深空开拓分支（保持各自在原 NODES 中的相对顺序）
   const mainCatalog = [];
   const legionCatalog = [];
+  const frontierCatalog = [];
   for (const node of catalog) {
     if (node.contentPack === "legion") legionCatalog.push(node);
+    else if (node.contentPack === "frontier") frontierCatalog.push(node);
     else mainCatalog.push(node);
   }
+  // 深空开拓的两条子线门禁不同（星图线 / 虫洞线），按节点逐个判定
+  const isFrontierNodeUnlocked = (node) => (RS && typeof RS.isFrontierResearchUnlocked === "function")
+    ? RS.isFrontierResearchUnlocked(gameState, node) : true;
+  const frontierNodeLockReason = (node) => (RS && typeof RS.getFrontierResearchLockReason === "function")
+    ? RS.getFrontierResearchLockReason(gameState, node) : "";
 
   const viewById = {};
   const nodes = [];
@@ -2869,76 +2937,103 @@ function buildResearchTreeModel(research, RD, RS) {
     nodes.push(view);
   }
 
-  // ===== 军团分支布局（独立区域，主树下方） =====
-  const LEGION_HEADER_H = 54;
-  const LEGION_GAP = 40;
+  // ===== 分支区布局（军团 / 深空开拓，各自独立成区、位于主树下方） =====
+  const BRANCH_HEADER_H = 54;
+  const BRANCH_GAP = 40;
   let mainMaxRows = 1;
   for (const era of RESEARCH_ERA_META) {
     const c = rowCursor[era.index] || 0;
     if (c > mainMaxRows) mainMaxRows = c;
   }
   const mainHeight = L.TOP + mainMaxRows * L.ROW_H + L.PAD_B;
-  const legionOriginY = mainHeight + LEGION_GAP + LEGION_HEADER_H;
 
-  const legionRowCursor = {};
-  for (const node of legionCatalog) {
-    const era = Number(node.era) || 0;
-    const row = legionRowCursor[era] || 0;
-    legionRowCursor[era] = row + 1;
-    const st = getNodeResearchState(node, projected, research);
-    let status = st.status;
-    let statusLabel = RESEARCH_STATUS_LABEL[status] || status;
-    if (!isLegionUnlocked) { status = "branch-locked"; statusLabel = RESEARCH_STATUS_LABEL["branch-locked"]; }
-    const isProtocol = node.type === "protocol" || node.category === "protocol";
-    const isSingle = !isProtocol && node.maxLevel === 1;
-    const levelMarks = [];
-    if (!isProtocol && node.maxLevel > 1 && isLegionUnlocked) {
-      const done = Number(completedLevels[node.id]) || 0;
-      for (let lv = 1; lv <= node.maxLevel; lv += 1) {
-        if (lv <= done) levelMarks.push("filled");
-        else if (st.activeLevel === lv) levelMarks.push("active");
-        else if (queue.indexOf(node.id + "@" + lv) >= 0) levelMarks.push("queued");
-        else levelMarks.push("empty");
+  // 分支区通用布局：按 era 分列、按行堆叠；解锁状态逐节点判定（frontier 两条子线门禁不同）。
+  // 返回 { views, maxRows }；调用方负责把 views 并入全局 viewById / nodes。
+  function layoutBranch(branchNodes, originY, isNodeUnlocked) {
+    const branchRowCursor = {};
+    const views = [];
+    for (const node of branchNodes) {
+      const era = Number(node.era) || 0;
+      const row = branchRowCursor[era] || 0;
+      branchRowCursor[era] = row + 1;
+      const unlocked = isNodeUnlocked(node);
+      const st = getNodeResearchState(node, projected, research);
+      let status = st.status;
+      let statusLabel = RESEARCH_STATUS_LABEL[status] || status;
+      if (!unlocked) { status = "branch-locked"; statusLabel = RESEARCH_STATUS_LABEL["branch-locked"]; }
+      const isProtocol = node.type === "protocol" || node.category === "protocol";
+      const isSingle = !isProtocol && node.maxLevel === 1;
+      const levelMarks = [];
+      if (!isProtocol && node.maxLevel > 1 && unlocked) {
+        const done = Number(completedLevels[node.id]) || 0;
+        for (let lv = 1; lv <= node.maxLevel; lv += 1) {
+          if (lv <= done) levelMarks.push("filled");
+          else if (st.activeLevel === lv) levelMarks.push("active");
+          else if (queue.indexOf(node.id + "@" + lv) >= 0) levelMarks.push("queued");
+          else levelMarks.push("empty");
+        }
       }
+      const nextDuration = (unlocked && RS && RS.getResearchDuration && st.nextTarget <= node.maxLevel)
+        ? RS.getResearchDuration(node.id, st.nextTarget) : null;
+      const effects = Array.isArray(node.effects) ? node.effects : [];
+      views.push({
+        id: node.id,
+        name: node.name,
+        era,
+        row,
+        x: L.COL_X0 + era * L.COL_W + (L.COL_W - L.BOX_W) / 2,
+        y: originY + row * L.ROW_H,
+        type: node.type,
+        category: node.category,
+        contentPack: node.contentPack || null,
+        status,
+        statusLabel,
+        completed: st.completed,
+        activeLevel: st.activeLevel,
+        nextTarget: st.nextTarget,
+        maxLevel: node.maxLevel,
+        isProtocol,
+        isSingle,
+        levelMarks,
+        nextDurationSeconds: (nextDuration != null && isFinite(nextDuration)) ? nextDuration : null,
+        shortEffect: effects.length ? String(effects[Math.min(Math.max(st.nextTarget, 1) - 1, effects.length - 1)]) : ""
+      });
     }
-    const nextDuration = (isLegionUnlocked && RS && RS.getResearchDuration && st.nextTarget <= node.maxLevel)
-      ? RS.getResearchDuration(node.id, st.nextTarget) : null;
-    const effects = Array.isArray(node.effects) ? node.effects : [];
-    const view = {
-      id: node.id,
-      name: node.name,
-      era,
-      row,
-      x: L.COL_X0 + era * L.COL_W + (L.COL_W - L.BOX_W) / 2,
-      y: legionOriginY + row * L.ROW_H,
-      type: node.type,
-      category: node.category,
-      contentPack: node.contentPack || null,
-      status,
-      statusLabel,
-      completed: st.completed,
-      activeLevel: st.activeLevel,
-      nextTarget: st.nextTarget,
-      maxLevel: node.maxLevel,
-      isProtocol,
-      isSingle,
-      levelMarks,
-      nextDurationSeconds: (nextDuration != null && isFinite(nextDuration)) ? nextDuration : null,
-      shortEffect: effects.length ? String(effects[Math.min(Math.max(st.nextTarget, 1) - 1, effects.length - 1)]) : ""
-    };
-    viewById[node.id] = view;
-    nodes.push(view);
+    let maxRows = 1;
+    for (const era of RESEARCH_ERA_META) {
+      const c = branchRowCursor[era.index] || 0;
+      if (c > maxRows) maxRows = c;
+    }
+    return { views, maxRows };
   }
 
-  // ===== 连线：仅同区内部连线，跨区（主↔军团）不画边，详情区以文字呈现前置 =====
+  const legionOriginY = mainHeight + BRANCH_GAP + BRANCH_HEADER_H;
+  const legionLayout = layoutBranch(legionCatalog, legionOriginY, () => isLegionUnlocked);
+  for (const view of legionLayout.views) { viewById[view.id] = view; nodes.push(view); }
+  const legionHeight = legionCatalog.length
+    ? (legionOriginY + legionLayout.maxRows * L.ROW_H + L.PAD_B)
+    : mainHeight;
+
+  // 深空开拓区紧接军团区下方（军团节点为空时贴着主树）
+  const frontierOriginY = legionHeight + BRANCH_GAP + BRANCH_HEADER_H;
+  const frontierLayout = layoutBranch(frontierCatalog, frontierOriginY, isFrontierNodeUnlocked);
+  for (const view of frontierLayout.views) { viewById[view.id] = view; nodes.push(view); }
+  const frontierHeight = frontierCatalog.length
+    ? (frontierOriginY + frontierLayout.maxRows * L.ROW_H + L.PAD_B)
+    : legionHeight;
+
+  // ===== 连线：仅同区内部连线，跨区（主↔军团↔深空开拓）不画边，详情区以文字呈现前置 =====
+  //   注意：三条 branch 区之间也不连线。frontier 内部存在跨子线前置
+  //   （wh_root 需要 sm_limit③ / sm_collect③），这属于同区内部，正常绘制。
+  const packOf = (view) => (view && (view.contentPack === "legion" || view.contentPack === "frontier")) ? view.contentPack : "main";
   const edges = [];
   for (const node of catalog) {
-    const nodeLegion = node.contentPack === "legion";
+    const nodePack = (node.contentPack === "legion" || node.contentPack === "frontier") ? node.contentPack : "main";
     for (const prereq of (node.prerequisites || [])) {
       const from = viewById[prereq.id];
       const to = viewById[node.id];
       if (!from || !to) continue;
-      if ((from.contentPack === "legion") !== nodeLegion) continue; // 跨区跳过
+      if (packOf(from) !== nodePack) continue; // 跨区跳过
       const realLevel = Number(completedLevels[prereq.id]) || 0;
       const projLevel = Number(projected[prereq.id]) || 0;
       const state = realLevel >= prereq.level ? "met" : (projLevel >= prereq.level ? "projected" : "unmet");
@@ -2965,28 +3060,28 @@ function buildResearchTreeModel(research, RD, RS) {
   }));
   let maxRows = 1;
   for (const era of eras) if (era.count > maxRows) maxRows = era.count;
-  let legionMaxRows = 1;
-  for (const era of RESEARCH_ERA_META) {
-    const c = legionRowCursor[era.index] || 0;
-    if (c > legionMaxRows) legionMaxRows = c;
-  }
-  const legionHeight = legionCatalog.length
-    ? (legionOriginY + legionMaxRows * L.ROW_H + L.PAD_B)
-    : mainHeight;
   return {
     nodes,
     edges,
     eras,
     maxRows,
     width: L.COL_X0 * 2 + RESEARCH_ERA_META.length * L.COL_W,
-    height: legionHeight,
+    height: frontierHeight,
     mainHeight,
     legionRegion: {
-      top: legionOriginY - LEGION_HEADER_H,
-      headerHeight: LEGION_HEADER_H,
+      top: legionOriginY - BRANCH_HEADER_H,
+      headerHeight: BRANCH_HEADER_H,
       count: legionCatalog.length,
       unlocked: isLegionUnlocked,
-      lockReason: isLegionUnlocked ? "" : (legionLockReason || "需 本体 Lv.2 + 军团大厅 Lv.1")
+      lockReason: isLegionUnlocked ? "" : (legionLockReason || "需 空间站本体 Lv.2「星堡」+ 军团议事大厅 Lv.1")
+    },
+    frontierRegion: {
+      top: frontierOriginY - BRANCH_HEADER_H,
+      headerHeight: BRANCH_HEADER_H,
+      count: frontierCatalog.length,
+      // 区头只反映「星图线」门禁；虫洞线另有「通关星图主线」条件，见节点自身状态与详情面板
+      unlocked: frontierCatalog.length ? isFrontierNodeUnlocked(frontierCatalog[0]) : false,
+      lockReason: frontierCatalog.length ? (frontierNodeLockReason(frontierCatalog[0]) || "") : ""
     }
   };
 }
@@ -3003,9 +3098,15 @@ function renderResearchNodeHtml(view) {
   let cls = "rt-node rt-node--" + view.status;
   if (view.isProtocol) cls += " rt-node--protocol";
   if (view.contentPack === "legion") cls += " rt-node--legion";
+  if (view.contentPack === "frontier") cls += " rt-node--frontier";
+  if (view.status === "branch-locked") cls += " rt-node--branch-locked";
   let badge = "";
   if (view.isProtocol) badge = '<span class="rt-badge rt-badge--protocol">协议</span>';
   else if (view.contentPack === "legion") badge = '<span class="rt-badge rt-badge--legion">军团</span>';
+  else if (view.contentPack === "frontier") {
+    badge = '<span class="rt-badge rt-badge--frontier">' +
+      escapeAchievementText(view.category === "wormhole" ? "虫洞" : (view.category === "titan" ? "泰坦" : "星图")) + '</span>';
+  }
   else if (view.isSingle) badge = '<span class="rt-badge rt-badge--single">单级</span>';
   let flag = "";
   if (view.status === "active") flag = '<span class="rt-flag rt-flag--active">研究中</span>';
@@ -3068,7 +3169,18 @@ function renderResearchTree(model) {
         '<span class="rt-legion-head-title">军团研究分支</span>' +
         (legionRegion.unlocked
           ? '<span class="rt-legion-head-state rt-legion-head-state--open">已解锁</span>'
-          : '<span class="rt-legion-head-state rt-legion-head-state--locked">未解锁：' + escapeAchievementText(legionRegion.lockReason || "需 本体 Lv.2 + 军团大厅 Lv.1") + '</span>') +
+          : '<span class="rt-legion-head-state rt-legion-head-state--locked">未解锁：' + escapeAchievementText(legionRegion.lockReason || "需 空间站本体 Lv.2「星堡」+ 军团议事大厅 Lv.1") + '</span>') +
+      '</div>'
+    : "";
+  // 深空开拓分支区头（军团区下方）：区头只报星图线门禁，虫洞线条件见节点自身状态
+  const frontierRegion = model.frontierRegion;
+  const frontierHead = (frontierRegion && frontierRegion.count > 0)
+    ? '<div class="rt-frontier-head" style="left:' + L.COL_X0 + 'px;top:' + frontierRegion.top + 'px;width:' + (model.width - L.COL_X0 * 2) + 'px;">' +
+        '<span class="rt-legion-head-title">深空开拓研究分支</span>' +
+        '<span class="rt-legion-head-sub" style="font-size:11px;font-weight:500;opacity:.8;">星图 / 虫洞</span>' +
+        (frontierRegion.unlocked
+          ? '<span class="rt-legion-head-state rt-legion-head-state--open">星图线已解锁</span>'
+          : '<span class="rt-legion-head-state rt-legion-head-state--locked">未解锁：' + escapeAchievementText(frontierRegion.lockReason || "需先解锁军团研究分支") + '</span>') +
       '</div>'
     : "";
   el.innerHTML =
@@ -3079,6 +3191,7 @@ function renderResearchTree(model) {
       '</svg>' +
       heads +
       legionHead +
+      frontierHead +
       model.nodes.map(renderResearchNodeHtml).join("") +
     '</div>';
 }
@@ -3317,8 +3430,11 @@ function renderResearchDetail(research, RD, RS, model) {
   const eraMeta = RESEARCH_ERA_META[Number(node.era) || 0] || { label: "时代 ?", sub: "" };
   const categoryLabel = RESEARCH_CATEGORY_LABEL[node.category] || node.category || "—";
   const isLegion = node.contentPack === "legion";
+  const isFrontier = node.contentPack === "frontier";
   const branchLockReason = (isLegion && status === "branch-locked" && RS && typeof RS.getLegionResearchLockReason === "function")
-    ? RS.getLegionResearchLockReason(gameState) : "";
+    ? RS.getLegionResearchLockReason(gameState)
+    : ((isFrontier && status === "branch-locked" && RS && typeof RS.getFrontierResearchLockReason === "function")
+      ? RS.getFrontierResearchLockReason(gameState, node) : "");
   const effects = Array.isArray(node.effects) ? node.effects : [];
 
   const effectRows = effects.map((text, i) => {
@@ -3371,9 +3487,12 @@ function renderResearchDetail(research, RD, RS, model) {
       '</div>';
   } else {
     if (status === "branch-locked") {
-      // 军团分支外部条件未达成：禁用操作并提示解锁条件（主研究树完全不受影响）
+      // 军团 / 深空开拓分支外部条件未达成：禁用操作并提示解锁条件（主研究树完全不受影响）
+      const fallback = isFrontier
+        ? "需 空间站本体 Lv.2「星堡」+ 军团议事大厅 Lv.1（虫洞线另需通关星图主线）"
+        : "需 空间站本体 Lv.2「星堡」+ 军团议事大厅 Lv.1";
       actionsHtml = '<div class="rt-d-hint rt-d-hint--locked">分支未解锁：' +
-        escapeAchievementText(branchLockReason || "需 本体 Lv.2 + 军团大厅 Lv.1") + '</div>';
+        escapeAchievementText(branchLockReason || fallback) + '</div>';
     } else {
       // 「立即研究」在前置未满足（locked）时仍禁用（start 不补前置）；
       // 「加入队列」始终可用：available 时等同原行为，locked 时自动补齐前置链。
@@ -5297,6 +5416,7 @@ function installTutorialWidgetListeners() {
 }
 
 (function bindShellUI() {
+  installLockedEntryGuard(); // 锁定入口统一拦截（捕获阶段，先于下方业务监听）
   document.querySelectorAll(".sidebar .nav-item[data-skill], .sidebar .nav-item[data-page]").forEach(item => item.addEventListener("click", () => {
     if (item.dataset.combatToggle !== undefined) {
       dispatchGameAction(gameState, { type:"settings/toggleCombatSkills" }, Date.now());

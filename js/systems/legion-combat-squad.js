@@ -624,6 +624,10 @@
     //   = Σ [combat.baseDamage × 模块强化倍率(m.multiplier) × 武器类型伤害倍率(技能/改装等 selDmgMult)] × NPC等级伤害倍率
     // 与实弹 volley 同源取模块（getInstalledCombatWeapons + 同一 shipOpts，见 processLegionNpcVolley），杜绝公式双写。
     // 刻意不含：弹药 dmgMult / 克制倍率 / 命中-闪避系数 / 0.9~1.1 随机浮动 —— 均依赖目标或弹药池，面板口径排除。
+    // 2026-09-09：面板明细（与玩家舰「实战属性」同构）——纯只读，不消耗任何资源、不改任何 state。
+    // 攻击逐件：基础伤害 × 模块强化倍率 × 武器类型倍率 × NPC 等级倍率（与 attackPower 同一循环，杜绝公式双写）。
+    const levelMult = getLegionNpcDamageMultiplier(npc);
+    const attackItems = [];
     let attackPower = 0;
     const volleyWeaponsFn = getCombatSelector("getInstalledCombatWeapons");
     if (volleyWeaponsFn) {
@@ -631,11 +635,59 @@
       for (const m of mods) {
         const cb = m && m.equipment && m.equipment.combat;
         if (!cb) continue;
-        attackPower += (Number(cb.baseDamage) || 0) * (Number(m.multiplier) || 1)
-          * (Number(selDmgMult(state, cb.weaponType, undefined, shipOpts)) || 1);
+        const typeMult = Number(selDmgMult(state, cb.weaponType, undefined, shipOpts)) || 1;
+        const enhancement = Number(m.multiplier) || 1;
+        const raw = (Number(cb.baseDamage) || 0) * enhancement * typeMult;
+        attackPower += raw;
+        attackItems.push({
+          name: (m.equipment && m.equipment.name) || cb.weaponType,
+          weaponType: cb.weaponType,
+          base: Math.round(Number(cb.baseDamage) || 0),
+          enhancement: enhancement,
+          typeMult: typeMult,
+          levelMult: levelMult,
+          value: Math.round(raw * levelMult)
+        });
       }
     }
-    attackPower = Math.round(attackPower * getLegionNpcDamageMultiplier(npc));
+    attackPower = Math.round(attackPower * levelMult);
+
+    // 维修明细：与 repairLegionSquadNpcs 同源（collectNpcRepairUnits），面板按满结构基准估算
+    const repairItems = [];
+    let repairRaw = 0, repairFuel = 0;
+    const repairMultFn = getGlobalFn("calcRepairMult");
+    const boosterRep = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).repairMultiplier : null;
+    for (const u of collectNpcRepairUnits(state, npc, opts.zone)) {
+      const repairMult = repairMultFn ? (Number(repairMultFn(u.target, state, 1)) || 1) : 1;
+      const repMult = (boosterRep && boosterRep[u.target]) ? (Number(boosterRep[u.target]) || 1) : 1;
+      const value = u.amount * u.multiplier * repairMult * repMult;
+      repairRaw += value;
+      repairFuel += u.fuel;
+      repairItems.push({
+        name: u.name, target: u.target, amount: Math.round(u.amount),
+        enhancement: u.multiplier, repairMult: repairMult, repMult: repMult,
+        value: Math.round(value), fuel: u.fuel
+      });
+    }
+
+    // 减伤明细：DCU 多件求和封顶 50%（与 computeNpcDcReduction 同源）+ 偏导护盾（船体特性）
+    const dcUnits = collectNpcDamageControlUnits(state, npc, opts.zone);
+    let dcuRaw = 0, dcFuel = 0;
+    for (const u of dcUnits) { dcuRaw += u.reduction; dcFuel += u.fuel; }
+    const dcu = Math.min(0.5, Math.max(0, dcuRaw));
+    const shipCfgPanel = getShipConfigFor(state, npc.boundShipInstanceId);
+    const trait = shipCfgPanel && shipCfgPanel.capitalTrait ? shipCfgPanel.capitalTrait : null;
+    const isDeflector = Boolean(trait && trait.id && String(trait.id).indexOf("deflection_shield") >= 0);
+    const deflector = isDeflector ? (Number(trait.reduction) || 0) : 0;
+    const deflectorHits = isDeflector ? (Number(trait.shieldHits) || 0) : 0;
+
+    // 燃料明细：武器齐射 / 损伤控制 / 维修 三项分列
+    let fuelWeapon = 0;
+    for (const w of weapons) {
+      const fc = Number(w.fuelCost);
+      if (!(fc > 0)) continue;
+      fuelWeapon += Math.max(1, Math.round(fc * fuelMultiplier));
+    }
 
     return {
       ok: true,
@@ -644,12 +696,42 @@
       level: npc.level,
       shipInstanceId: npc.boundShipInstanceId,
       shipId: ship.shipId,
+      shipName: (shipCfgPanel && shipCfgPanel.name) || ship.shipId,
       maxHp: maxHp,
       dodge: dodge,
       fuelMultiplier: fuelMultiplier,
       weapons: weapons,
       attackPower: attackPower,
-      levelDamageMultiplier: getLegionNpcDamageMultiplier(npc),
+      attack: { total: attackPower, count: attackItems.length, items: attackItems },
+      repair: {
+        total: Math.round(repairRaw), count: repairItems.length, items: repairItems,
+        byTarget: (function () {
+          // 与玩家侧同口径：三层血条独立回充，分层小计供 UI 展示，不做跨层求和
+          const out = {};
+          for (const it of repairItems) {
+            if (!(it.value > 0)) continue;
+            out[it.target] = (out[it.target] || 0) + it.value;
+          }
+          for (const k in out) out[k] = Math.round(out[k]);
+          return out;
+        })()
+      },
+      mitigation: {
+        dcu: dcu,
+        dcuCount: dcUnits.length,
+        deflector: deflector,
+        deflectorHits: deflectorHits,
+        traitName: trait && trait.name ? trait.name : "",
+        combined: 1 - (1 - dcu) * (1 - deflector)
+      },
+      fuel: {
+        weapon: fuelWeapon,
+        damageControl: dcFuel,
+        repair: repairFuel,
+        total: fuelWeapon + dcFuel + repairFuel,
+        mult: fuelMultiplier
+      },
+      levelDamageMultiplier: levelMult,
       excludeImplants: true
     };
   }
@@ -673,6 +755,24 @@
       if (typeof globalThis !== "undefined" && typeof globalThis[name] === "function") return globalThis[name];
     } catch (_) { /* ignore */ }
     return null;
+  }
+
+  // 统御矩阵小队光环（2026-09-09 阶段3步骤6）：玩家出战泰坦且装备光环核心时，
+  // NPC 小队成员伤害 ×(1+squadDamageBonus)、命中 +squadHitBonus。
+  // 在线（processLegionNpcAttack→fireSingleNpcMember）与离线（offline-combat.js 直调
+  // fireSingleNpcMember）共用本函数 → 单点接线双路径自动统计等效。
+  // 光环按配置静态生效（与核心安装绑定），不做供能联动（核心供能仅约束泰坦自身开火）。
+  // 面板口径（getLegionNpcCombatStats.attackPower）刻意不含光环——与该处排除弹药/克制/命中的既定口径一致。
+  function getTitanSquadAura(state) {
+    try {
+      const activeSel = getCombatSelector("getActiveCombatShipState");
+      const isTitanFn = getCombatSelector("isTitanCombatShip");
+      const auraFn = getCombatSelector("getTitanCoreAura");
+      if (!activeSel || !isTitanFn || !auraFn) return null;
+      const active = activeSel(state);
+      if (!active || !active.config || !isTitanFn(active.config)) return null;
+      return auraFn(active.config.core || null);
+    } catch (_) { return null; }
   }
 
   // 随机数解析：opts.rng > 战斗系统既有 nextCombatRandom(c) > Math.random 兜底
@@ -1128,6 +1228,10 @@
     const zone = context.zone || (getGlobalFn("getCombatEncounterZone") ? getGlobalFn("getCombatEncounterZone")(c) : null);
     const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone });
     if (!stats.ok) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "stats-unavailable" }); return null; }
+    // 统御矩阵光环：伤害 ×(1+squadDamageBonus)、命中 +squadHitBonus（仅光环核心非 null）
+    const titanAura = getTitanSquadAura(state);
+    const auraDmgMult = (titanAura && titanAura.squadDamageBonus) ? (1 + Number(titanAura.squadDamageBonus)) : 1;
+    const auraHitBonus = (titanAura && titanAura.squadHitBonus) ? Number(titanAura.squadHitBonus) : 0;
     const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
     const modules = (weaponsFn(state, shipOpts) || []).filter(m => m && m.equipment && m.equipment.combat);
     if (modules.length === 0) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-weapon" }); return null; }
@@ -1157,13 +1261,13 @@
       const ammo = ammoByType[combat.weaponType] || ammoProps("T1");
       const hitSel = getCombatSelector("getCombatWeaponHitFromState");
       const dmgSel = getCombatSelector("getCombatDamageMultiplierFromState");
-      const hit = (hitSel ? hitSel(state, combat.weaponType, combat, undefined, shipOpts) : 100) * ammo.hitMult;
+      const hit = ((hitSel ? hitSel(state, combat.weaponType, combat, undefined, shipOpts) : 100) + auraHitBonus) * ammo.hitMult;
       const dmgMult = dmgSel ? dmgSel(state, combat.weaponType, undefined, shipOpts) : 1;
       const counterMult = counterFn(combat.weaponType, enemy.hp);
       const dealt = applyLayers(enemy.hp, calcDamage(
         hit, enemy.dodge,
         combat.baseDamage * (m.multiplier || 1),
-        counterMult * dmgMult * stats.levelDamageMultiplier * ammo.dmgMult,
+        counterMult * dmgMult * stats.levelDamageMultiplier * ammo.dmgMult * auraDmgMult,
         useRng
       ));
       damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
@@ -1307,22 +1411,20 @@
       const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone });
       if (!stats.ok || !stats.maxHp) continue;
       const maxHp = stats.maxHp;
-      const npcReps = (modulesFn(state, { shipInstanceId: npc.boundShipInstanceId }) || [])
-        .filter(m => m && m.combat && m.combat.kind === "repair" && m.combat.target);
+      // 与战斗页面板明细同源（collectNpcRepairUnits）：同一套模块清单与燃料单价，此处额外扣费。
+      const npcReps = collectNpcRepairUnits(state, npc, zone);
       if (!npcReps.length) continue;
-      for (const m of npcReps) {
-        const rep = m.combat;
+      for (const rep of npcReps) {
         if (hp[rep.target] >= maxHp[rep.target]) continue;
-        const repFuelCost = Math.max(1, Math.round((rep.fuelCost || 1) * fuelMultFn(zone, state)));
-        if (!fuelAvailable(ctx, state, repFuelCost)) continue;
+        if (!fuelAvailable(ctx, state, rep.fuel)) continue;
         const repMult = (boosterRep && boosterRep[rep.target]) ? boosterRep[rep.target] : 1;
-        const healAmount = Math.round(rep.amount * (m.multiplier || 1) * repairMultFn(rep.target, state, hp.structure / maxHp.structure) * repMult);
+        const healAmount = Math.round(rep.amount * rep.multiplier * repairMultFn(rep.target, state, hp.structure / maxHp.structure) * repMult);
         if (healAmount <= 0) continue;
         const before = hp[rep.target];
         hp[rep.target] = Math.min(maxHp[rep.target], hp[rep.target] + healAmount);
         const gained = hp[rep.target] - before;
         if (gained > 0) {
-          totalHeal += gained; repaired += 1; spendFuel(ctx, state, repFuelCost);
+          totalHeal += gained; repaired += 1; spendFuel(ctx, state, rep.fuel);
           // 玩家出资 NPC 维修燃料 → 玩家获得与自身维修同口径的防御经验
           const addXp = getGlobalFn("addStationModifiedCombatXp") || (typeof addStationModifiedCombatXp !== "undefined" ? addStationModifiedCombatXp : null);
           if (addXp && state.skills && state.skills.defense) addXp(state, "defense", 1, "combat");
@@ -1482,25 +1584,19 @@
 
   // NPC 绑定舰的损伤控制单元减伤（D3）：读 NPC 自身 DCU 模块，求和封顶 50%，燃料走同一注入层
   function computeNpcDcReduction(state, npc, zone, ctx) {
-    const dcsFn = getGlobalFn("getInstalledCombatDamageControls");
-    const fuelMultFn = getGlobalFn("calcFuelMult");
-    if (!dcsFn || !npc || !npc.boundShipInstanceId) return 0;
-    const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
-    const dcs = dcsFn(state, shipOpts) || [];
-    if (dcs.length === 0) return 0;
+    // 采集与扣费分离：清单（含每件减伤与燃料单价）由 collectNpcDamageControlUnits 统一给出，
+    // 此处只负责「燃料够不够 → 计入并扣费」的战斗语义，面板口径复用同一清单而不扣费。
+    const units = collectNpcDamageControlUnits(state, npc, zone);
+    if (units.length === 0) return 0;
     let dc = 0;
-    for (const m of dcs) {
-      const cb = m.equipment && m.equipment.combat;
-      if (!cb) continue;
-      const mult = fuelMultFn ? fuelMultFn(zone, state, shipOpts) : 1;
-      const cost = Math.max(1, Math.round((cb.fuelCost || 1) * mult));
+    for (const u of units) {
       if (ctx && ctx.virtual) {
-        if (!spendFuelVirtual(ctx, cost)) continue;
+        if (!spendFuelVirtual(ctx, u.fuel)) continue;
       } else {
-        if (!fuelAvailable(ctx, state, cost)) continue;
-        spendFuel(ctx, state, cost);
+        if (!fuelAvailable(ctx, state, u.fuel)) continue;
+        spendFuel(ctx, state, u.fuel);
       }
-      dc += (m.equipment.bonuses && m.equipment.bonuses.globalDamageReduction) || 0;
+      dc += u.reduction;
     }
     return Math.min(0.5, dc);
   }
@@ -1513,6 +1609,50 @@
     if (byId) return byId(ship.shipId) || null;
     const cfg = getGlobalFn("getShipConfig");
     return cfg ? cfg(ship.shipId) : null;
+  }
+
+  // ================================================================
+  // NPC 绑定舰的「维修件 / 损伤控制单元」只读清单（2026-09-09）
+  // ----------------------------------------------------------------
+  // 战斗结算（repairLegionSquadNpcs / computeNpcDcReduction）与战斗页面板明细
+  // 共用这两个采集函数，保证「面板口径」与「实战口径」永远同一套公式，不会各写一份。
+  // 二者均为纯只读：不扣燃料、不改 state；是否扣燃料由调用方决定。
+  // 口径：显式绑定实例 + 排除脑插（与 getLegionNpcCombatStats 完全一致）。
+  // ================================================================
+  function collectNpcRepairUnits(state, npc, zone) {
+    const modulesFn = getGlobalFn("getInstalledCombatModulesFromState");
+    const fuelMultFn = getGlobalFn("calcFuelMult");
+    if (!modulesFn || !npc || !npc.boundShipInstanceId) return [];
+    const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
+    const mult = fuelMultFn ? fuelMultFn(zone, state) : 1;
+    return (modulesFn(state, shipOpts) || [])
+      .filter(m => m && m.combat && m.combat.kind === "repair" && m.combat.target)
+      .map(m => ({
+        name: m.name || "维修模块",
+        target: m.combat.target,
+        amount: Number(m.combat.amount) || 0,
+        multiplier: Number(m.multiplier) || 1,
+        fuel: Math.max(1, Math.round((Number(m.combat.fuelCost) || 1) * mult))
+      }));
+  }
+
+  function collectNpcDamageControlUnits(state, npc, zone) {
+    const dcsFn = getGlobalFn("getInstalledCombatDamageControls");
+    const fuelMultFn = getGlobalFn("calcFuelMult");
+    if (!dcsFn || !npc || !npc.boundShipInstanceId) return [];
+    const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
+    const mult = fuelMultFn ? fuelMultFn(zone, state, shipOpts) : 1;
+    const out = [];
+    for (const m of (dcsFn(state, shipOpts) || [])) {
+      const cb = m && m.equipment && m.equipment.combat;
+      if (!cb) continue;
+      out.push({
+        name: (m.equipment && m.equipment.name) || "损伤控制单元",
+        reduction: (m.equipment.bonuses && Number(m.equipment.bonuses.globalDamageReduction)) || 0,
+        fuel: Math.max(1, Math.round((cb.fuelCost || 1) * mult))
+      });
+    }
+    return out;
   }
 
   // —— NPC 受伤（独立 HP；不转移给玩家，不修改玩家三层 HP）——

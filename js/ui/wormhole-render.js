@@ -133,12 +133,16 @@
     const box = el("wh-dailies");
     if (!box) return;
     if (!view.unlocked) {
-      box.innerHTML = '<div style="color:#8fa8c3;padding:10px 0">虫洞裂隙尚未显现 —— 制压星图主线（先驱文明核心）后开启。</div>';
+      box.innerHTML = '<div style="color:#8fa8c3;padding:10px 0">虫洞裂隙尚未显现 —— 制压星图中心节点（先驱文明核心）后开启。</div>';
       return;
     }
     const runActive = !!(view.run && view.run.state === "running");
     const countsByDaily = (window.WORMHOLE && typeof window.WORMHOLE.getDailyNodeCounts === "function")
       ? window.WORMHOLE.getDailyNodeCounts(gameState) : {};
+    const reroll = view.rerollToday || { count: 0, stock: 0 };
+    const rerollBar = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;border:1px solid rgba(143,75,255,.30);border-radius:8px;background:rgba(18,13,37,.72);color:#a995c5;font-size:12px">' +
+      '<span>裂隙重析库存：' + Number(reroll.stock || 0) + ' · 今日已购买：' + Number(reroll.count || 0) + '/2</span>' +
+      '<button type="button" class="btn secondary" data-wh-use-reroll' + (!(reroll.stock > 0) ? ' disabled' : '') + '>使用重析</button></div>';
     const html = view.dailies.map(d => {
       const pick = launchControlByDaily[d.id] || "auto";   // 本卡片的选路选择（默认自动）
       const affix = (window.WORMHOLE_AFFIXES || []).find(a => a.id === d.affixId);
@@ -146,28 +150,28 @@
       const disabled = runActive || d.status !== "available";
       const statusText = { available: "待探索", running: "远征中", completed: "已通关", failed: "已超时", aborted: "已放弃" }[d.status] || d.status;
       return (
-        '<div style="border:1px solid #5a3d86;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:linear-gradient(135deg,rgba(21,15,40,.96),rgba(7,10,25,.98));box-shadow:inset 0 1px rgba(201,160,255,.12),0 10px 24px rgba(0,0,0,.18)">' +
+        '<div style="border:1px solid rgba(143,75,255,.48);border-radius:12px;padding:13px 14px;margin-bottom:10px;background:radial-gradient(circle at 92% 0,rgba(166,107,255,.13),transparent 38%),linear-gradient(135deg,rgba(18,13,37,.97),rgba(5,9,22,.99));box-shadow:inset 0 1px rgba(215,194,255,.10),inset 3px 0 rgba(143,75,255,.34),0 10px 26px rgba(0,0,0,.20)">' +
         '<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px">' +
         '<div><b style="color:#c9a0ff;font-size:14px">' + esc((window.WORMHOLE_CONFIG && window.WORMHOLE_CONFIG.SIZE_NAMES && window.WORMHOLE_CONFIG.SIZE_NAMES[d.size]) || (d.size + " 节点虫洞")) + '</b>' +
         '<span style="color:#7f97b3;font-size:12px">　' + esc(d.size) + ' 节点虫洞</span>' +
         '　<span style="color:#8fa8c3;font-size:12px">战斗 ' + counts.battle + (counts.battleElite ? ' · 精英 ' + counts.battleElite : '') + ' / 采集 ' + counts.collection + ' / 考古 ' + counts.archaeology +
         ' · 宝藏 ' + d.treasureCount + '</span></div>' +
-        '<span style="color:#7f97b3;font-size:12px">' + statusText + '</span></div>' +
-        (affix ? '<div style="margin-top:6px;font-size:12px"><span style="color:#ff9ab5">负面词条 · ' + esc(affix.name) + '</span>　<span style="color:#b58ea0">' + esc(affix.desc) + '</span></div>' : '') +
-        '<div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
-        '<span style="display:inline-flex;border:1px solid #23415e;border-radius:6px;overflow:hidden;opacity:' + (disabled ? ".5" : "1") + '">' +
+        '<span style="display:inline-flex;align-items:center;padding:3px 8px;border:1px solid rgba(143,75,255,.28);border-radius:999px;background:rgba(91,50,151,.10);color:#a995c5;font-size:11px;letter-spacing:.04em">' + statusText + '</span></div>' +
+        (affix ? '<div style="margin-top:9px;padding:7px 9px;border:1px solid rgba(192,99,139,.18);border-radius:7px;background:rgba(71,24,48,.10);font-size:12px"><span style="color:#ff9ab5">负面词条 · ' + esc(affix.name) + '</span>　<span style="color:#b58ea0">' + esc(affix.desc) + '</span></div>' : '') +
+        '<div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<span style="display:inline-flex;border:1px solid rgba(94,75,139,.58);border-radius:6px;overflow:hidden;opacity:' + (disabled ? ".5" : "1") + '">' +
         '<button type="button" data-wh-pick-control="auto" data-wh-daily-id="' + esc(d.id) + '" style="padding:4px 10px;font-size:12px;border:none;cursor:' + (disabled ? "default" : "pointer") + ';background:' + (pick === "auto" ? "#1d3a5f" : "transparent") + ';color:' + (pick === "auto" ? "#8fd0ff" : "#5f7a99") + ';font-weight:' + (pick === "auto" ? "700" : "400") + '"' + (disabled ? " disabled" : "") + '>自动</button>' +
-        '<button type="button" data-wh-pick-control="manual" data-wh-daily-id="' + esc(d.id) + '" style="padding:4px 10px;font-size:12px;border:none;border-left:1px solid #23415e;cursor:' + (disabled ? "default" : "pointer") + ';background:' + (pick === "manual" ? "#1d3a5f" : "transparent") + ';color:' + (pick === "manual" ? "#7fd8c0" : "#5f7a99") + ';font-weight:' + (pick === "manual" ? "700" : "400") + '"' + (disabled ? " disabled" : "") + '>手动</button>' +
+        '<button type="button" data-wh-pick-control="manual" data-wh-daily-id="' + esc(d.id) + '" style="padding:4px 10px;font-size:12px;border:none;border-left:1px solid rgba(94,75,139,.58);cursor:' + (disabled ? "default" : "pointer") + ';background:' + (pick === "manual" ? "#1d3a5f" : "transparent") + ';color:' + (pick === "manual" ? "#7fd8c0" : "#5f7a99") + ';font-weight:' + (pick === "manual" ? "700" : "400") + '"' + (disabled ? " disabled" : "") + '>手动</button>' +
         '</span>' +
-        '<select data-wh-mode="' + esc(d.id) + '" style="background:#0e2033;color:#c7d8ef;border:1px solid #23415e;border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '>' +
+        '<select data-wh-mode="' + esc(d.id) + '" style="background:#0c1528;color:#c7d8ef;border:1px solid rgba(94,75,139,.58);border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '>' +
         '<option value="full">遍历（全清）</option><option value="rush">直冲终点</option></select>' +
         '<label style="color:#7f97b3;font-size:12px">失败重试</label>' +
-        '<input data-wh-retry="' + esc(d.id) + '" type="number" min="0" max="99" value="2" style="width:56px;background:#0e2033;color:#c7d8ef;border:1px solid #23415e;border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '/>' +
+        '<input data-wh-retry="' + esc(d.id) + '" type="number" min="0" max="99" value="2" style="width:56px;background:#0c1528;color:#c7d8ef;border:1px solid rgba(94,75,139,.58);border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '/>' +
         '<button type="button" class="btn primary" data-wh-start="' + esc(d.id) + '"' + (disabled ? " disabled" : "") + '>出发</button>' +
         '</div></div>'
       );
     }).join("");
-    box.innerHTML = html;
+    box.innerHTML = rerollBar + html;
   }
 
   /* ---------------- 历史 ---------------- */
@@ -192,44 +196,82 @@
     const buyItem = id => '<button type="button" class="btn" data-wh-buy-item="' + esc(id) + '">购买</button>';
     const buyGoods = (id, param) => '<button type="button" class="btn" data-wh-buy-goods="' + esc(id) + '"' + (param ? ' data-wh-param="' + esc(param) + '"' : '') + '>购买</button>';
 
-    let html = '<h3 style="font-size:13px;color:#8fb4dd;margin:4px 0 6px">永久升级（虫洞内生效）</h3>';
+    let html = '<h3 class="wh-shop-section-title">永久升级（虫洞内生效）</h3>';
     html += Object.keys(S.upgrades).map(id => {
       const u = S.upgrades[id];
       const lv = view.upgrades[id] || 0;
       const maxed = lv >= u.max;
       const price = u.base + u.inc * lv;
-      return '<div style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #10202f;padding:6px 0;font-size:12px">' +
+      return '<div class="wh-shop-card">' +
         '<div><b style="color:#c7d8ef">' + esc(u.name) + '</b> <span style="color:#7f97b3">Lv.' + lv + '/' + u.max + '</span><br><span style="color:#8fa8c3">' + esc(u.desc) + '</span></div>' +
         '<div style="white-space:nowrap;text-align:right">' + (maxed ? '<span style="color:#7fd8c0">已满级</span>' : '<span style="color:#f0c674">' + fmtNum(price) + ' 印记</span><br>' + buyUpg(id)) + '</div></div>';
     }).join("");
 
-    html += '<h3 style="font-size:13px;color:#8fb4dd;margin:14px 0 6px">战略道具</h3>';
-    html += Object.keys(S.items).map(id => {
+    const renderShopItem = id => {
       const it = S.items[id];
-      return '<div style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #10202f;padding:6px 0;font-size:12px">' +
+      const stockCount = id === "reroll" && view.rerollToday ? Number(view.rerollToday.stock || 0) : Number((view.pendingItems || {})[id] || 0);
+      const stock = ' <span style="color:#7fd8c0">库存 ' + stockCount + '</span>';
+      const quota = id === "reroll" && view.rerollToday ? ' <span style="color:#d8b86a">今日限额 ' + Number(view.rerollToday.count || 0) + '/2</span>' : '';
+      return '<div class="wh-shop-card">' +
         '<div><b style="color:#c7d8ef">' + esc(it.name) + '</b><br><span style="color:#8fa8c3">' + esc(it.desc) + '</span></div>' +
-        '<div style="white-space:nowrap;text-align:right"><span style="color:#f0c674">' + fmtNum(it.price) + ' 印记</span><br>' + buyItem(id) + '</div></div>';
-    }).join("");
+        '<div style="white-space:nowrap;text-align:right"><span style="color:#f0c674">' + fmtNum(it.price) + ' 印记</span>' + stock + quota + '<br>' + buyItem(id) + '</div></div>';
+    };
+    const strategicItemIds = Object.keys(S.items);
+    html += '<h3 class="wh-shop-section-title">战略道具</h3>';
+    html += strategicItemIds.map(renderShopItem).join("");
 
-    html += '<h3 style="font-size:13px;color:#8fb4dd;margin:14px 0 6px">物资兑换</h3>';
-    html += Object.keys(S.goods).map(id => {
+    const renderShopGood = id => {
       const g = S.goods[id];
       let priceHtml;
-      if (g.byTier) priceHtml = Object.keys(g.byTier).map(t => buyGoods(id, t) + ' <span style="color:#f0c674">' + t + ' ' + fmtNum(g.byTier[t]) + '</span>').join('　');
-      else if (g.byId) priceHtml = Object.keys(g.byId).map(n => buyGoods(id, n) + ' <span style="color:#f0c674">' + esc(n) + ' ' + fmtNum(g.byId[n]) + '</span>').join('　');
-      else if (g.options) priceHtml = g.options.map(n => buyGoods(id, n) + ' <span style="color:#f0c674">' + esc(n.replace("空间站", "").replace("深层舰船数据", "")) + ' ' + fmtNum(g.price) + '</span>').join('　');
+      const choicePicker = (options, label) => '<div class="wh-choice-picker"><select class="u-select wh-choice-select" data-wh-choice-select aria-label="' + esc(label) + '">' + options.map(o => '<option value="' + esc(o.value) + '">' + esc(o.label) + '</option>').join('') + '</select><button type="button" class="btn" data-wh-buy-choice="' + esc(id) + '">购买</button></div>';
+      if (g.licenseFactions) {
+        const factions = g.licenseFactions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
+        const tiers = Object.keys(g.byTier).map(tier => '<option value="' + esc(tier) + '">' + esc(tier) + ' · ' + fmtNum(g.byTier[tier]) + ' 印记</option>').join('');
+        priceHtml = '<div class="wh-license-picker"><select class="u-select wh-license-select" data-wh-license-faction aria-label="选择生产许可势力">' + factions + '</select>' +
+          '<select class="u-select wh-license-select" data-wh-license-tier aria-label="选择生产许可档位">' + tiers + '</select>' +
+          '<button type="button" class="btn" data-wh-buy-license>购买</button></div>';
+      }
+      else if (g.byChoice) priceHtml = choicePicker(Object.keys(g.byChoice).map(ref => {
+        const choice = g.byChoice[ref];
+        return { value: ref, label: choice.name + ' ×' + fmtNum(choice.qty) + ' · ' + fmtNum(g.price) + ' 印记' };
+      }), '选择购买内容');
+      else if (g.byTier) priceHtml = choicePicker(Object.keys(g.byTier).map(t => ({ value: t, label: t + ' · ' + fmtNum(g.byTier[t]) + ' 印记' })), '选择购买档位');
+      else if (g.byId) priceHtml = choicePicker(Object.keys(g.byId).map(n => ({ value: n, label: n + ' · ' + fmtNum(g.byId[n]) + ' 印记' })), '选择购买内容');
+      else if (g.options) priceHtml = choicePicker(g.options.map(n => ({ value: n, label: n.replace("空间站", "").replace("深层舰船数据", "") + ' · ' + fmtNum(g.price) + ' 印记' })), '选择购买内容');
       else priceHtml = '<span style="color:#f0c674">' + fmtNum(g.price) + ' 印记</span> ' + buyGoods(id);
       const owned = g.once && view.owned && view.owned[id];
-      return '<div style="display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #10202f;padding:6px 0;font-size:12px">' +
-        '<div><b style="color:#c7d8ef">' + esc(g.name) + '</b></div>' +
+      const pumpDef = id === "darkPumpBlueprint" && window.WORMHOLE_DARK_PUMP && typeof EQUIPMENT_DB !== "undefined"
+        ? EQUIPMENT_DB[window.WORMHOLE_DARK_PUMP.equipmentId] : null;
+      let detailHtml = "";
+      if (pumpDef) {
+          const bonusPct = Math.round(Number((pumpDef.bonuses || {}).smeltingSpeed || 0) * 100);
+        const fuelName = String((pumpDef.fuel && pumpDef.fuel.resourceId) || "").replace(/^special:/, "");
+        const materialText = Object.keys(pumpDef.cost || {}).map(name => esc(name) + " ×" + fmtNum(pumpDef.cost[name])).join(" · ");
+        detailHtml = '<div class="wh-shop-blueprint-detail">' +
+          '<div><span>制造</span><b>装备 Lv.' + fmtNum(pumpDef.level) + ' · ' + fmtNum(pumpDef.time) + 's · ' + fmtNum(pumpDef.xp) + ' XP</b></div>' +
+          '<div><span>加成</span><b>冶炼速度 +' + fmtNum(bonusPct) + '% / 件</b></div>' +
+          '<div><span>燃料</span><b>' + esc(fuelName) + ' ×' + fmtNum((pumpDef.fuel && pumpDef.fuel.perCycle) || 0) + ' / 周期</b></div>' +
+          '<div><span>适用</span><b>' + fmtNum((pumpDef.shipTypes || []).length) + ' 类工业舰型</b></div>' +
+          '<div class="wh-shop-blueprint-materials"><span>材料</span><b>' + materialText + '</b></div>' +
+          '</div>';
+      }
+      return '<div class="wh-shop-card">' +
+        '<div><b style="color:#c7d8ef">' + esc(g.name) + '</b>' + (g.desc ? '<div class="wh-shop-good-desc">' + esc(g.desc) + '</div>' : '') + detailHtml + '</div>' +
         '<div style="white-space:nowrap;text-align:right">' + (owned ? '<span style="color:#7fd8c0">已拥有</span>' : priceHtml) + '</div></div>';
-    }).join("");
+    };
+    const implantGoodIds = Object.keys(S.goods).filter(id => S.goods[id].effect === "implant");
+    const materialGoodIds = Object.keys(S.goods).filter(id => S.goods[id].effect !== "implant");
+    html += '<h3 class="wh-shop-section-title">虫洞脑插</h3>';
+    html += implantGoodIds.map(renderShopGood).join("");
+    html += '<h3 class="wh-shop-section-title">物资兑换</h3>';
+    html += materialGoodIds.map(renderShopGood).join("");
 
     return html;
   }
   function renderShop(view) {
     const box = el("wh-shop");
     if (!box) return;
+    if (document.activeElement && document.activeElement.matches && document.activeElement.matches("#wh-shop select")) return;
     box.innerHTML = shopSectionsHtml(view);
   }
 
@@ -240,13 +282,14 @@
     const bal = document.getElementById("bpshop-wh-balance");
     if (typeof WORMHOLE === "undefined" || !window.gameState || typeof WORMHOLE.isUnlocked !== "function" || !WORMHOLE.isUnlocked(gameState)) {
       if (bal) bal.textContent = "";
-      box.innerHTML = '<div style="color:#8fa8c3;padding:10px 0">虫洞裂隙尚未显现 —— 制压星图主线（先驱文明核心）后开启。</div>';
+      box.innerHTML = '<div style="color:#8fa8c3;padding:10px 0">虫洞裂隙尚未显现 —— 制压星图中心节点（先驱文明核心）后开启。</div>';
       return;
     }
     try { WORMHOLE.tickWormhole(gameState, Date.now()); } catch (_) { /* 渲染不阻断 */ }
     const view = WORMHOLE.getWormholeView(gameState, Date.now());
     if (!view) { box.innerHTML = ""; if (bal) bal.textContent = ""; return; }
     if (bal) bal.textContent = "虫洞印记：" + fmtNum(view.tokens) + "　·　下次刷新：" + new Date(view.nextRefreshAt).toLocaleString();
+    if (document.activeElement && document.activeElement.matches && document.activeElement.matches("#bpshop-wh-content select")) return;
     box.innerHTML = shopSectionsHtml(view);
   }
 
@@ -257,13 +300,34 @@
     whBound = true;
 
     document.addEventListener("click", (e) => {
-      const target = e.target.closest("[data-wh-tab],[data-wh-start],[data-wh-abandon],[data-wh-buy-upgrade],[data-wh-buy-item],[data-wh-buy-goods],[data-wh-dismiss],[data-wh-control],[data-wh-goto],[data-wh-action],[data-bpshop-tab],[data-wh-pick-control]");
+      const target = e.target.closest("[data-wh-tab],[data-wh-start],[data-wh-abandon],[data-wh-buy-upgrade],[data-wh-buy-item],[data-wh-buy-goods],[data-wh-buy-license],[data-wh-buy-choice],[data-wh-dismiss],[data-wh-control],[data-wh-goto],[data-wh-action],[data-bpshop-tab],[data-wh-pick-control],[data-wh-use-reroll]");
       if (!target) return;
       const panel = el("wormhole-panel");      // 出发/放弃分支需要面板内取模式与重试输入
       const dispatch = (type, payload) => {
         if (typeof dispatchGameAction !== "function") return;
-        dispatchGameAction(gameState, { type, ...payload }, Date.now());
+        const result = dispatchGameAction(gameState, { type, ...payload }, Date.now());
         if (typeof updateUI === "function") updateUI();
+        if ((type === "wormhole/buyUpgrade" || type === "wormhole/buyItem" || type === "wormhole/buyGoods") && typeof showToast === "function") {
+          const S = window.WORMHOLE_SHOP || { upgrades:{}, items:{}, goods:{} };
+          const def = S.upgrades[payload.id] || S.items[payload.id] || S.goods[payload.id];
+          const name = def && def.name ? def.name : payload.id;
+          if (!result || !result.changed) {
+            const reasons = { "insufficient-tokens":"虫洞印记不足", "already-owned":"该项目已拥有", "choice-required":"请先选择购买内容", "invalid-choice":"购买选项无效", "daily-limit":"今日限额已用完" };
+            showToast("购买失败：" + (reasons[result && result.reason] || (result && result.reason) || "无法购买"));
+          } else {
+            let granted = name;
+            if (type === "wormhole/buyGoods" && def) {
+              if (def.byChoice && def.byChoice[payload.param]) granted = def.byChoice[payload.param].name + " ×" + (def.byChoice[payload.param].qty || 0);
+              else if (def.byId && def.byId[payload.param]) granted = payload.param;
+              else if (def.options && payload.param) granted = payload.param;
+              else if (result.granted && result.granted !== "blueprint") granted = String(result.granted).replace(/^special:/, "");
+            }
+            const view = WORMHOLE.getWormholeView(gameState, Date.now());
+            let extra = " · 剩余 " + fmtNum(view.tokens) + " 印记";
+            if (payload.id === "reroll") extra += " · 今日限额 " + Number(view.rerollToday && view.rerollToday.count || 0) + "/2";
+            showToast("购买成功：" + granted + extra);
+          }
+        }
         renderWormholePage();                 // updateUI 不认识虫洞页，必须自己重渲
       };
       if (target.dataset.bpshopTab) {
@@ -319,6 +383,22 @@
         const box = document.getElementById("wormhole-room-result");
         if (box) box.innerHTML = '<div style="margin-top:8px;font-size:12px;color:#ff9a8a">' + msg + '</div>' + (box.innerHTML || "");
       };
+      const needsPurchaseConfirm = (type, id) => {
+        const S = window.WORMHOLE_SHOP || { upgrades:{}, items:{}, goods:{} };
+        const def = S.upgrades[id] || S.items[id] || S.goods[id];
+        return Boolean(def && (type === "wormhole/buyUpgrade" || def.once || Number(def.price || 0) >= 1000));
+      };
+      const confirmPurchase = (type, id, onConfirm) => {
+        if (!needsPurchaseConfirm(type, id)) return onConfirm();
+        const S = window.WORMHOLE_SHOP || { upgrades:{}, items:{}, goods:{} };
+        const def = S.upgrades[id] || S.items[id] || S.goods[id] || {};
+        const title = String(def.name || id).replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+        if (typeof showDangerConfirm === "function") {
+          showDangerConfirm("确认购买", '<div class="dlg-message">确定购买“' + title + '”吗？</div>', "确认购买", onConfirm);
+        } else {
+          onConfirm();
+        }
+      };
       if (target.dataset.whGoto) {
         const nodeId = target.dataset.whGoto;
         if (!nodeId) return;
@@ -330,9 +410,31 @@
         if (!rt || !rt.changed) showRoomNotice("无法前往该节点：" + ((rt && rt.reason) || "未知原因"));
         return;
       }
-      if (target.dataset.whBuyUpgrade) return dispatch("wormhole/buyUpgrade", { id: target.dataset.whBuyUpgrade });
-      if (target.dataset.whBuyItem) return dispatch("wormhole/buyItem", { id: target.dataset.whBuyItem });
-      if (target.dataset.whBuyGoods) return dispatch("wormhole/buyGoods", { id: target.dataset.whBuyGoods, param: target.dataset.whParam || null });
+      if (target.dataset.whBuyUpgrade) {
+        const id = target.dataset.whBuyUpgrade;
+        return confirmPurchase("wormhole/buyUpgrade", id, () => dispatch("wormhole/buyUpgrade", { id }));
+      }
+      if (target.dataset.whUseReroll !== undefined) return dispatch("wormhole/useReroll", {});
+      if (target.dataset.whBuyItem) {
+        const id = target.dataset.whBuyItem;
+        return confirmPurchase("wormhole/buyItem", id, () => dispatch("wormhole/buyItem", { id }));
+      }
+      if (target.dataset.whBuyLicense !== undefined) {
+        const card = target.closest(".wh-shop-card");
+        const faction = card && card.querySelector("[data-wh-license-faction]");
+        const tier = card && card.querySelector("[data-wh-license-tier]");
+        return dispatch("wormhole/buyGoods", { id: "licensePick", param: (faction ? faction.value : "") + "|" + (tier ? tier.value : "") });
+      }
+      if (target.dataset.whBuyChoice) {
+        const card = target.closest(".wh-shop-card");
+        const choice = card && card.querySelector("[data-wh-choice-select]");
+        const id = target.dataset.whBuyChoice;
+        return confirmPurchase("wormhole/buyGoods", id, () => dispatch("wormhole/buyGoods", { id, param: choice ? choice.value : null }));
+      }
+      if (target.dataset.whBuyGoods) {
+        const id = target.dataset.whBuyGoods;
+        return confirmPurchase("wormhole/buyGoods", id, () => dispatch("wormhole/buyGoods", { id, param: target.dataset.whParam || null }));
+      }
     });
   }
 

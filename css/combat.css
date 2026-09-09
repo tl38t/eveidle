@@ -826,6 +826,143 @@
     color: #7a8896;
     font-size: 11px;
   }
+  /* ── 舰船实战属性整宽行（2026-09-08）：grid-column 1/-1，默认折叠为四个 chip ── */
+  .ccc-actual-stats {
+    grid-column: 1 / -1;
+    min-width: 0;
+    border: 1px solid rgba(84,188,232,0.42);
+    border-radius: 4px;
+    background: rgba(13,26,37,0.72);
+  }
+  .ccc-actual-stats > .cas-summary {
+    list-style: none;
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    padding: 7px 10px;
+  }
+  .ccc-actual-stats > .cas-summary::-webkit-details-marker { display: none; }
+  .ccc-actual-stats > .cas-summary::before {
+    content: "▸";
+    color: #54bce8;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .ccc-actual-stats[open] > .cas-summary::before { content: "▾"; }
+  .cas-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 9px;
+    letter-spacing: 1.2px;
+    text-transform: uppercase;
+    color: #8093a4;
+    flex-shrink: 0;
+  }
+  .cas-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+  .cas-chip {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    border: 1px solid rgba(84,188,232,0.26);
+    background: rgba(8,16,24,0.85);
+    font-size: 11px;
+    color: #8fa6ba;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .cas-chip b { font-weight: 600; font-size: 12px; color: #ffd27d; }
+  .cas-chip.cas-atk b { color: #f0a496; }
+  .cas-chip.cas-rep b { color: #7fd6a8; }
+  /* 修理分层：与游戏内三层血条同色系（护盾蓝 / 装甲金 / 结构红），跨层不做求和 */
+  .cas-rep-shield { color: #5eb8e8 !important; }
+  .cas-rep-armor { color: #e0bc55 !important; }
+  .cas-rep-structure { color: #e07a68 !important; }
+  .cas-chip.cas-rep.multi { gap: 8px; }
+  .cas-sub { color: #6d7f91; font-size: 10px; }
+  .cas-chip.cas-red b { color: #7cc4f0; }
+  .cas-chip.cas-fuel b { color: #e8b04a; }
+  .cas-body { padding: 0 10px 10px; }
+  .cas-group { margin-top: 8px; }
+  .cas-group-title { font-size: 10px; color: #8093a4; letter-spacing: .5px; margin-bottom: 3px; }
+  .cas-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 3px 0;
+    font-size: 11px;
+    color: #9fb4c8;
+    border-top: 1px solid rgba(48,66,84,0.45);
+  }
+  .cas-row:first-child { border-top: none; }
+  .cas-name { color: #cfe6f7; max-width: 44%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cas-expr { color: #6d7f91; font-variant-numeric: tabular-nums; }
+  .cas-val { margin-left: auto; color: #ffd27d; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .cas-total { margin-top: 5px; font-size: 11px; color: #9fb4c8; }
+  .cas-total b { color: #ffd27d; }
+  .cas-note { margin-top: 9px; font-size: 10px; line-height: 1.7; color: #6d7f91; }
+  .cas-empty { padding: 6px 0; font-size: 11px; color: #6d7f91; }
+  /* ── 小队槽「实战属性」按钮（2026-09-09）── */
+  .lcs-stats-btn {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 4px 6px;
+    font-size: 11px;
+    color: #8fd0f0;
+    background: rgba(24,52,72,0.55);
+    border: 1px solid rgba(84,188,232,0.35);
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .lcs-stats-btn:hover, .lcs-stats-btn:active { background: rgba(35,72,96,0.6); border-color: #54bce8; }
+  /* ── 实战属性弹窗（2026-09-09）：小队 NPC 与玩家舰共用 ── */
+  .csm {
+    position: fixed;
+    inset: 0;
+    z-index: 1200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: rgba(4,8,12,0.72);
+  }
+  .csm-box {
+    width: min(560px, 100%);
+    max-height: 84vh;
+    overflow-y: auto;
+    padding: 14px 16px 16px;
+    border: 1px solid rgba(84,188,232,0.5);
+    border-radius: 6px;
+    background: linear-gradient(180deg, rgba(13,22,31,0.98), rgba(7,11,16,0.99));
+    box-shadow: 0 18px 44px rgba(0,0,0,0.5);
+  }
+  .csm-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding-bottom: 8px;
+    margin-bottom: 8px;
+    border-bottom: 1px solid rgba(48,66,84,0.6);
+  }
+  .csm-title { font-size: 13px; font-weight: 700; color: #cfe6f7; }
+  .csm-subtitle { font-size: 11px; color: #8093a4; }
+  .csm-close {
+    margin-left: auto;
+    padding: 0 6px;
+    font-size: 16px;
+    line-height: 1;
+    color: #8093a4;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+  .csm-close:hover { color: #cfe6f7; }
+  .csm-body { min-width: 0; }
   .ccc-summary-ring-mini {
     display: flex;
     gap: 8px;

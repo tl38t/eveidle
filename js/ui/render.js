@@ -60,14 +60,13 @@ function renderSidebar(sidebarState) {
     if (el.title !== title) el.title = title;
   });
   if (typeof renderCombatSkillGroup === "function") renderCombatSkillGroup();
-  // 军团侧边栏标签：仅在「空间站本体 ≥ Lv.3 且已建造军团议事大厅」时显示。
-  var legionNav = document.getElementById("nav-legion");
-  if (legionNav && typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible) {
-    legionNav.style.display = LegionRender.isLegionTabVisible(gameState) ? "" : "none";
-  }
-  var starmapNav = document.getElementById("nav-starmap");
-  if (starmapNav && typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible) {
-    starmapNav.style.display = LegionRender.isLegionTabVisible(gameState) ? "" : "none";
+  // 军团 / 星图：入口常驻显示，未达成条件时灰化锁定（点击由 shell-render 的锁定守卫弹条件）。
+  applyLockedEntry("nav-legion", getLegionEntryLockState(), "station");
+  applyLockedEntry("nav-starmap", getLegionEntryLockState(), "station");
+  // 商店页「虫洞商店」标签同款处理（未进过商店页时也要保持锁定态）
+  if (typeof getWormholeEntryLockState === "function") {
+    const whLock = getWormholeEntryLockState();
+    applyLockedEntry("bpshop-tab-wormhole", whLock, whLock.gotoPage);
   }
   // 虫洞入口：星图内裂隙叠加层（js/ui/wormhole-rifts.js）；此处仅控制星图面板上的备用按钮
   var whEntryBtn = document.getElementById("starmap-wormhole-entry");
@@ -222,6 +221,44 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
 // 2026-09-05 起按 currentAction.refiningView（视图态）在「冶炼」与「自动拆解」间切换，
 // 与 refiningSubAction（运行态）解耦：运行中切 tab 只换查看的面板，不中断 / 不重置作业。
 // 并管理两者 DOM（子模式 tab、冶炼选区/状态、自动拆解区）的显隐，避免进度串台。
+/* 未解锁入口（军团 / 星图 / 虫洞商店）统一锁定态：
+   常驻显示 + 灰化锁标，条件文案带实时进度；点击弹窗由 shell-render 的捕获阶段守卫处理。 */
+function getLegionEntryLockState() {
+  var st = (typeof gameState !== "undefined") ? gameState : null;
+  if (!st) return { unlocked: false, reason: "存档尚未载入" };
+  var unlocked = (typeof LegionRender !== "undefined" && LegionRender.isLegionTabVisible) ? !!LegionRender.isLegionTabVisible(st) : false;
+  if (unlocked) return { unlocked: true, reason: "" };
+  var bodyLevel = (st.station && st.station.bodyLevel) || 0;
+  var hall = (st.station && st.station.buildings && st.station.buildings.legion_hall) || 0;
+  var missing = [];
+  if (bodyLevel < 2) missing.push("空间站本体升级至 Lv.2「星堡」（当前 " + (bodyLevel > 0 ? "Lv." + bodyLevel : "尚未建造") + "）");
+  if (hall < 1) missing.push("在空间站建造「军团议事大厅」");
+  return { unlocked: false, reason: missing.join("；") };
+}
+function applyLockedEntry(id, lock, gotoPage) {
+  var el = document.getElementById(id);
+  if (!el) return;
+  el.classList.toggle("ui-locked", !lock.unlocked);
+  if (lock.unlocked) {
+    delete el.dataset.lockTitle; delete el.dataset.lockReason; delete el.dataset.lockGoto;
+    el.title = "";
+    return;
+  }
+  el.dataset.lockTitle = el.dataset.lockTitle || (el.textContent || "").trim().split(/\s+/)[0] || "未解锁";
+  el.dataset.lockReason = lock.reason;
+  if (gotoPage) el.dataset.lockGoto = gotoPage;
+  el.title = lock.reason;
+}
+
+// 大数紧凑格式（卡片内库存显示）：≥1e8 用亿、≥1e4 用万，其余原样；精确值走 title 悬浮。
+function fmtStockCompact(n) {
+  n = Number(n) || 0;
+  if (n >= 1e12) return (n / 1e12).toFixed(1) + "万亿";
+  if (n >= 1e8) return (n / 1e8).toFixed(1) + "亿";
+  if (n >= 1e4) return (n / 1e4).toFixed(1) + "万";
+  return n.toLocaleString();
+}
+
 function renderRefiningDisplay(renderTime, areaEl, outEl) {
   const view = (gameState.currentAction && gameState.currentAction.refiningView === "dismantle") ? "dismantle" : "smelting";
   const tabs = document.getElementById("refining-submode-tabs");
@@ -252,8 +289,9 @@ function renderDismantleDisplay(display, areaEl, outEl) {
   if (strip) {
     strip.innerHTML = display.options.map(r => `<button class="mining-target-card${r.selected ? " selected" : ""}${r.locked ? " locked" : ""}" data-dismantle="${r.id}" style="--ore-color:#8fd6a0" ${r.locked ? "disabled" : ""}>
       <span class="mining-target-name">${r.name}</span><span class="mining-target-visual"><i class="fa-solid fa-recycle"></i></span>
-      <span class="mining-target-meta">Lv.${r.level} · ${(r.baseTime / (display.efficiency || 1)).toFixed(1)}s · 舰船+${r.shipXp}/冶炼+${r.smeltXp}</span>
-      <span class="mining-target-state">${r.locked ? `需要 Lv.${r.level}` : (r.stock > 0 ? "库存 ×" + r.stock : "无库存")}</span></button>`).join("");
+      <span class="mining-target-meta">Lv.${r.level} · ${(r.baseTime / (display.efficiency || 1)).toFixed(1)}s</span>
+      <span class="mining-target-sub">舰船+${r.shipXp} / 冶炼+${r.smeltXp}</span>
+      <span class="mining-target-state"${r.stock > 0 ? ` title="库存 ${Number(r.stock).toLocaleString()}"` : ""}>${r.locked ? `需要 Lv.${r.level}` : (r.stock > 0 ? "库存 ×" + fmtStockCompact(r.stock) : "无库存")}</span></button>`).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchDismantleComponent(card.dataset.dismantle)));
   }
   const quote = document.getElementById("auto-dismantle-quote");
@@ -264,7 +302,7 @@ function renderDismantleDisplay(display, areaEl, outEl) {
   const efficiency = document.getElementById("ad-efficiency"); if (efficiency) { efficiency.textContent = display.efficiency.toFixed(2); if (display.efficiencyTooltip) efficiency.title = display.efficiencyTooltip; }
   const xpShip = document.getElementById("ad-xp-ship"); if (xpShip) xpShip.textContent = "+" + display.xp.shipEngineering;
   const xpRef = document.getElementById("ad-xp-refining"); if (xpRef) xpRef.textContent = "+" + display.xp.refining;
-  const cycle = document.getElementById("ad-cycle"); if (cycle) cycle.textContent = display.actualTime.toFixed(1) + "s";
+  const cycle = document.getElementById("ad-cycle"); if (cycle) cycle.textContent = display.cycleTime.toFixed(1) + "s";
   const btn = document.getElementById("btn-start-smelt");
   const dCtl = refiningControls(display, "dismantle");
   if (btn) btn.textContent = dCtl.isSwitch ? "▶ 切换到自动拆解" : "▶ 开始自动拆解";

@@ -44,7 +44,8 @@ const SHIP_COMPONENT_CLASSES = [
   { id:"cruiser", name:"巡洋部件" },
   { id:"battleship", name:"战列部件" },
   { id:"capital", name:"旗舰部件" },
-  { id:"supercapital", name:"超级旗舰部件" }
+  { id:"supercapital", name:"超级旗舰部件" },
+  { id:"titan", name:"泰坦部件" }
 ];
 const SHIP_ASSEMBLY_LINES = [
   { id:"shield_laser", name:"护盾激光系" },
@@ -60,6 +61,7 @@ const SHIP_ARCHAEOLOGY_IDS = new Set(["heron","tracer","starmap","farscope","ill
 const SHIP_HYBRID_IDS = new Set(["gale","bloodthorn","umbra","thunder","crimson","nether","dawnbreaker","crimson_bastion","spectre_frame"]);
 
 function getShipComponentClass(recipeId) {
+  if (recipeId.startsWith("titan_component_")) return "titan";
   if (recipeId.startsWith("destroyer_")) return "destroyer";
   if (recipeId.startsWith("cruiser_")) return "cruiser";
   if (recipeId.startsWith("battleship_")) return "battleship";
@@ -758,7 +760,8 @@ function getDismantleDisplayState(state, now) {
   } catch (_) { efficiencyTooltip = ""; }
   const current = recipes.find(r => r.id === action.dismantleTarget) || recipes[0];
   const running = recipes.find(r => r.id === (action.startedDismantleTarget || action.dismantleTarget)) || current;
-  const actualTime = running.baseTime / efficiency;
+  const actualTime = running.baseTime / efficiency; // 进度基准：运行中配方（切卡不中断作业）
+  const cycleTime = current.baseTime / efficiency;  // 显示口径：当前选中卡片的单件周期（弹窗/面板周期用）
   // 与熔炼共用 skill="refining"，按子模式隔离进度（见 getSmeltingDisplayState 同款注释）
   const isDismantleMode = action.refiningSubAction === "dismantle";
   const progress = isDismantleMode
@@ -774,7 +777,7 @@ function getDismantleDisplayState(state, now) {
     : { text: stock < 1 ? ("\u6ca1\u6709\u53ef\u62c6\u89e3\u7684" + current.name) : ("\u9700\u8981\u51b6\u70bc\u7b49\u7ea7 Lv." + current.level) };
   return {
     kind: "dismantle",
-    current, running, level, efficiency, efficiencyTooltip, actualTime, progress, targetChanged,
+    current, running, level, efficiency, efficiencyTooltip, actualTime, cycleTime, progress, targetChanged,
     stock, runningStock,
     reclaimRate, reclaimPercent: Math.round(reclaimRate * 100),
     quote,
@@ -906,7 +909,7 @@ function getActionConfirmationDisplayState(state, target, now) {
       if (!d) { result.canOpen = false; result.blockedText = "暂无可拆解组件"; return result; }
       const recipe = d.current;
       result.title = "♻ 自动拆解 · " + recipe.name;
-      result.duration = d.actualTime;
+      result.duration = d.cycleTime; // 选中配方的单件周期（actualTime 是运行中配方口径，运行中切卡会恒显示旧件）
       result.outputText = "回收 " + recipe.name + " ×1 · 舰船工程+" + d.xp.shipEngineering + " / 冶炼+" + d.xp.refining;
       result.requirements = [{ resourceId:"component:" + recipe.id, name:recipe.name, quantity:1, stock:d.stock, enough:d.stock >= 1 }];
       // 超量预排：放开数量硬限制，运行期库存耗尽自动停（见 tick.js / offline.js）。
@@ -1276,6 +1279,8 @@ function getShipEngineeringDisplayState(state, now) {
     .filter(recipe => getShipComponentClass(recipe.id) === compClass)
     .map(recipe => {
       const cq = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, recipe, { kind:"component" }) : { cost: recipe.cost, levelGate: recipe.level };
+      // 泰坦组件分线制压门禁（titans.js isTitanComponentUnlocked）；非泰坦配方恒 {ok:true}。
+      const titanGate = (typeof isTitanComponentUnlocked === "function") ? isTitanComponentUnlocked(state, recipe.id) : { ok:true };
       const savingRate = (typeof getShipyardSavingRate === "function") ? getShipyardSavingRate(state) : 0;
       const shipyardOn = savingRate > 0;
       const payable = shipyardOn ? getShipyardProductionQuote(state, { materialCost: cq.cost }, 1).payable : cq.cost;
@@ -1287,7 +1292,8 @@ function getShipEngineeringDisplayState(state, now) {
           return { material, quantity, baseQuantity: cq.cost[material] != null ? cq.cost[material] : quantity, stock, enough:stock >= quantity };
         }),
         owned:Number(componentInventory[recipe.id]) || 0,
-        unlocked:level >= cq.levelGate,
+        unlocked:level >= cq.levelGate && titanGate.ok,
+        gateText:titanGate.ok ? "" : (titanGate.text || "泰坦解锁条件未满足"),
         requiredLevel:cq.levelGate,
         selected:recipe.id === currentComponent.id
       };
@@ -1440,7 +1446,12 @@ function getShipEngineeringDisplayState(state, now) {
       return { material, quantity, stock, enough:stock >= quantity };
     }),
     assemblyMaxCycles:getShipAssemblyMaxCyclesFromState(state, currentAssembly),
-    canStartComponent:level >= compQuote.levelGate,
+    canStartComponent:level >= compQuote.levelGate && (typeof isTitanComponentUnlocked !== "function" || isTitanComponentUnlocked(state, currentComponent.id).ok),
+    componentGateText:(function () {
+      if (typeof isTitanComponentUnlocked !== "function") return "";
+      const gate = isTitanComponentUnlocked(state, currentComponent.id);
+      return gate.ok ? "" : (gate.text || "泰坦解锁条件未满足");
+    })(),
     canStartAssembly:getAssemblyEligibility(currentAssembly).canStartAssembly,
     selectedShip:selectedShip ? { ...selectedShip, hp:{ ...selectedShip.hp }, slots:{ ...selectedShip.slots }, bonuses:{ ...selectedShip.bonuses }, capacitor:{ ...selectedShip.capacitor } } : null,
     ownedShips:Object.entries(shipCounts).map(([shipId, quantity]) => {
@@ -2363,6 +2374,125 @@ function isWormholeBattleContext(state) {
   } catch (e) { return false; }
 }
 
+// ================================================================
+// 战斗页「舰船实战属性」面板明细（2026-09-08 新增，纯只读）
+// ----------------------------------------------------------------
+// 口径：与军团 NPC 面板攻击力（getLegionNpcCombatStats.attackPower）严格同源 ——
+//   基础值 × 装备强化倍率(module.multiplier) × 乘区倍率（技能/改装/船体/科研/脑插）。
+// 刻意不含：弹药加成 / 克制倍率 / 命中-闪避系数 / 0.9~1.1 随机浮动 —— 均依赖具体
+//   目标或弹药池，面板口径一律排除，UI 以 ⓘ 说明。
+// 维修按「满结构」基准估算（structureRatio=1），不含结构系船体紧急维修等低血加成。
+// ================================================================
+function getCombatActualStatsFromState(state, context) {
+  context = context || {};
+  const now = Number(context.now);
+  const nowFinite = Number.isFinite(now) ? now : Date.now();
+  const zoneId = context.zoneId || (state && state.combat ? state.combat.zone : null);
+  const zone = COMBAT_ZONES.find(item => item.id === zoneId) || COMBAT_ZONES[0];
+  const cOpts = { now: nowFinite, zoneId: zone.id };
+  const activeShip = getActiveCombatShipState(state);
+  const ship = activeShip.config;
+  const modules = getInstalledCombatModulesFromState(state);
+  const weapons = modules.filter(m => m.combat && m.combat.kind === "weapon");
+  const repairers = modules.filter(m => m.combat && m.combat.kind === "repair");
+  const damageControls = modules.filter(m => m.combat && m.combat.kind === "damageControl");
+  const fuelMult = getCombatFuelMultiplierFromState(state, zone, undefined, undefined);
+  const boosterRep = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).repairMultiplier : null;
+
+  // ── 攻击：Σ 基础伤害 × 装备强化倍率 × 武器类型倍率 ──
+  const attackItems = [];
+  let attackRaw = 0;
+  for (const m of weapons) {
+    const typeMult = Number(getCombatDamageMultiplierFromState(state, m.combat.weaponType, cOpts)) || 1;
+    const enhancement = Number(m.multiplier) || 1;
+    const value = (Number(m.combat.baseDamage) || 0) * enhancement * typeMult;
+    attackRaw += value;
+    attackItems.push({
+      name: m.name || m.combat.weaponType,
+      weaponType: m.combat.weaponType,
+      base: Math.round(Number(m.combat.baseDamage) || 0),
+      enhancement: enhancement,
+      typeMult: typeMult,
+      value: Math.round(value)
+    });
+  }
+
+  // ── 维修：逐模块 回充量 × 强化倍率 × 维修乘区 × 增强剂（满结构基准）──
+  const repairItems = [];
+  let repairRaw = 0;
+  for (const m of repairers) {
+    const target = m.combat.target || "structure";
+    const repairMult = Number(getCombatRepairMultiplierFromState(state, target, undefined, 1)) || 1;
+    const repMult = (boosterRep && boosterRep[target]) ? Number(boosterRep[target]) || 1 : 1;
+    const enhancement = Number(m.multiplier) || 1;
+    const value = (Number(m.combat.amount) || 0) * enhancement * repairMult * repMult;
+    repairRaw += value;
+    repairItems.push({
+      name: m.name || "维修模块",
+      target: target,
+      amount: Math.round(Number(m.combat.amount) || 0),
+      enhancement: enhancement,
+      repairMult: repairMult,
+      repMult: repMult,
+      value: Math.round(value),
+      fuel: Math.max(1, Math.round((Number(m.combat.fuelCost) || 1) * fuelMult))
+    });
+  }
+
+  // ── 减伤：损伤控制单元（多件求和封顶 50%）+ 偏导护盾（仅前 N 次护盾命中，乘法叠加）──
+  let dcuRaw = 0;
+  for (const m of damageControls) dcuRaw += (m.bonuses && Number(m.bonuses.globalDamageReduction)) || 0;
+  const dcu = Math.min(0.5, Math.max(0, dcuRaw));
+  const trait = ship && ship.capitalTrait ? ship.capitalTrait : null;
+  const isDeflector = Boolean(trait && trait.id && String(trait.id).indexOf("deflection_shield") >= 0);
+  const deflector = isDeflector ? (Number(trait.reduction) || 0) : 0;
+  const deflectorHits = isDeflector ? (Number(trait.shieldHits) || 0) : 0;
+  const combined = 1 - (1 - dcu) * (1 - deflector);
+
+  // ── 燃料：每轮齐射（武器）/ 每轮损伤控制 / 每轮维修，三项分列 ──
+  let fuelWeapon = 0;
+  for (const m of weapons) {
+    const fc = Number(m.combat.fuelCost);
+    if (!(fc > 0)) continue; // 不耗燃料武器不计入（与 computeVolleyFuel 同口径）
+    fuelWeapon += Math.max(1, Math.round(fc * fuelMult));
+  }
+  let fuelDamageControl = 0;
+  for (const m of damageControls) fuelDamageControl += Math.max(1, Math.round((Number(m.combat.fuelCost) || 1) * fuelMult));
+  let fuelRepair = 0;
+  for (const m of repairers) fuelRepair += Math.max(1, Math.round((Number(m.combat.fuelCost) || 1) * fuelMult));
+
+  // 维修按层小计：护盾/装甲/结构三条血条独立回充、互不互补，跨层求和没有物理意义，
+  // UI 必须分层展示（合计仅保留给燃料等可加总量）。
+  const repairByTarget = {};
+  for (const it of repairItems) {
+    if (!(it.value > 0)) continue;
+    repairByTarget[it.target] = (repairByTarget[it.target] || 0) + it.value;
+  }
+  for (const k in repairByTarget) repairByTarget[k] = Math.round(repairByTarget[k]);
+
+  return {
+    ok: Boolean(activeShip.instance),
+    shipName: activeShip.instance && ship ? ship.name : "未装备战斗舰",
+    attack: { total: Math.round(attackRaw), count: weapons.length, items: attackItems },
+    repair: { total: Math.round(repairRaw), count: repairers.length, items: repairItems, byTarget: repairByTarget },
+    mitigation: {
+      dcu: dcu,
+      dcuCount: damageControls.length,
+      deflector: deflector,
+      deflectorHits: deflectorHits,
+      traitName: trait && trait.name ? trait.name : "",
+      combined: combined
+    },
+    fuel: {
+      weapon: fuelWeapon,
+      damageControl: fuelDamageControl,
+      repair: fuelRepair,
+      total: fuelWeapon + fuelDamageControl + fuelRepair,
+      mult: fuelMult
+    }
+  };
+}
+
 function getCombatDisplayState(state, now) {
   const combat = state.combat || {};
   const storedMode = combat.mode === "deathspace" ? "deathspace" : "belt";
@@ -2408,7 +2538,9 @@ function getCombatDisplayState(state, now) {
   const requiredLevel = encounterMode === "deathspace" ? encounterDeathspace.requiredCL : (zone.requiredCL || 1);
   // 门禁已移除：星带与死亡空间的战斗等级门槛均取消（死亡空间密钥门槛保留）。
   const zoneUnlocked = true;
-  const volleyDamage = weapons.reduce((total, module) => total + Math.round(module.combat.baseDamage * getCombatDamageMultiplierFromState(state, module.combat.weaponType, { now, zoneId:zone.id })), 0);
+  // 2026-09-08 修复：此前漏乘装备强化倍率 module.multiplier，武器强化后战斗页「齐射伤害」纹丝不动
+  //（实际开火 combat.js firePlayerVolley 是乘了的）。与新增的实战属性面板统一口径补齐。
+  const volleyDamage = weapons.reduce((total, module) => total + Math.round((Number(module.combat.baseDamage) || 0) * (Number(module.multiplier) || 1) * getCombatDamageMultiplierFromState(state, module.combat.weaponType, { now, zoneId:zone.id })), 0);
   const clears = encounterMode === "deathspace"
     ? combat.deathspaceClears && combat.deathspaceClears[encounterDeathspace.id] || 0
     : combat.zoneClears && combat.zoneClears[zone.id] || 0;
@@ -2486,7 +2618,7 @@ function getCombatDisplayState(state, now) {
       sourceZoneName:(COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || {}).name || site.sourceZoneId
     })),
     recovery:{ active:recoveryRemaining > 0, remaining:recoveryRemaining, until:recoveryUntil },
-    player:{ instanceId:hasShip ? activeShip.instance.instanceId : null, name:hasShip ? ship.name : "未装备战斗舰", image:hasShip ? (ship && ship.image ? ship.image : "") : "", hasShip, speed:ship ? (ship.speed || 0) : 0, dodge:hasShip ? getCombatPlayerDodgeFromState(state, { now, zoneId:zone.id }) : 0, hp, maxHp, derivedMaxHp, volleyDamage, weaponCount:weapons.length },
+    player:{ instanceId:hasShip ? activeShip.instance.instanceId : null, name:hasShip ? ship.name : "未装备战斗舰", image:hasShip ? (ship && ship.image ? ship.image : "") : "", hasShip, speed:ship ? (ship.speed || 0) : 0, dodge:hasShip ? getCombatPlayerDodgeFromState(state, { now, zoneId:zone.id }) : 0, hp, maxHp, derivedMaxHp, volleyDamage, weaponCount:weapons.length, actualStats:getCombatActualStatsFromState(state, { now, zoneId:zone.id }) },
     wormholeBattle:isWormholeBattleContext(state),
     enemies:enemies.map((enemy, index) => {
       const currentHp = enemy.hp ? enemy.hp.shield + enemy.hp.armor + enemy.hp.structure : 0;

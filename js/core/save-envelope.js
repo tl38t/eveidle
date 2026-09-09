@@ -25,9 +25,16 @@
 
   // 递归键序无关的稳定序列化：保证相同逻辑内容产生相同字符串，
   // 不依赖 Object.keys 的枚举偶然顺序（不同引擎 / 不同插入顺序可能不同）。
+  // 2026-09-09 修复（「逆魂」云存档 CHECKSUM_MISMATCH 案次因）：
+  // 旧实现对 undefined 值属性会拼出 "key":undefined 片段、对数组空洞会因 join 产生空串，
+  // 而 encode() 的 JSON.stringify 会丢弃 undefined 属性 / 把空洞写成 null ——
+  // 云端 JSON 往返后重算 checksum 必然不等（主因是 cloud-save-service 重试时活引用漂移，见彼处注释）。
+  // 现在与 JSON.stringify 语义严格对齐：undefined/function 属性跳过、undefined 标量与
+  // 数组空洞 → "null"。对不含 undefined 的历史 payload 输出与旧算法逐字节相同（完全向后兼容）。
   function stableStringify(value) {
+    if (value === undefined) return "null";
+    if (typeof value === "function") return "null";
     if (value === null || typeof value !== "object") {
-      // 数字 / 字符串 / 布尔 / undefined 统一经 JSON 处理（undefined → 不输出，由调用方保证结构稳定）。
       return JSON.stringify(value);
     }
     if (Array.isArray(value)) {
@@ -36,10 +43,12 @@
       return "[" + items.join(",") + "]";
     }
     const keys = Object.keys(value).sort();
-    const parts = new Array(keys.length);
+    const parts = [];
     for (let i = 0; i < keys.length; i++) {
       const k = keys[i];
-      parts[i] = JSON.stringify(k) + ":" + stableStringify(value[k]);
+      const v = value[k];
+      if (v === undefined || typeof v === "function") continue; // JSON.stringify 会丢弃该键，校验必须同口径
+      parts.push(JSON.stringify(k) + ":" + stableStringify(v));
     }
     return "{" + parts.join(",") + "}";
   }

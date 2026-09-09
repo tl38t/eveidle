@@ -369,10 +369,9 @@ function getOfflineActionDescriptor() {
       if (!dRecipe) return null;
       const dState = getDismantleDisplayState(gameState, Date.now());
       if (!dState) return null;
-      // 军团 NPC 冶炼速度(refiningSpeed)：与熔炼同处理，放大效率加速结算。
-      const dLegion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
-        ? LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.refining : 1;
-      const dEff = dState.efficiency * dLegion;
+      // 军团 NPC 冶炼乘区：getDismantleDisplayState→getSmeltingEfficiencyForState 的 efficiency 已含
+      // legionRefine（selectors.js），此处不得再乘——2026-09-08 修复离线双计（RC54 起离线速度虚高）。
+      const dEff = dState.efficiency;
       const dQuote = getComponentDismantleQuote(dRecipe.id, getReclaimRate(gameState));
       return {
         key, duration: dRecipe.baseTime / dEff,
@@ -409,10 +408,9 @@ function getOfflineActionDescriptor() {
     const recipe = SMELTING_RECIPES.find(r => r.name === recipeName || r.outputMineral === recipeName) || SMELTING_RECIPES[0];
     if (!recipe) return null;
     const smeltingState = getSmeltingDisplayState(gameState, Date.now());
-    // 军团 NPC 冶炼速度(refiningSpeed)：放大冶炼效率（与采矿/采气同处理），加速结算。
-    const legionRefine = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
-      ? LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.refining : 1;
-    const eff = smeltingState.efficiency * legionRefine;
+    // 军团 NPC 冶炼乘区已在 smeltingState.efficiency 内（getSmeltingEfficiencyForState 含 legionRefine），
+    // 此处不得再乘——2026-09-08 修复离线双计（RC54 起离线冶炼速度虚高）。
+    const eff = smeltingState.efficiency;
     const output = Math.max(1, Math.floor(recipe.baseOutput * getRefiningOutputMultiplier(smeltingState.level)));
     return {
       key, duration: recipe.baseTime / eff,

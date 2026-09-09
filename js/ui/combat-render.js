@@ -178,8 +178,178 @@ function renderCombatSupplyStatus(display) {
   alertBox.classList.toggle("blocking", isBlocking);
 }
 
+// ================================================================
+// 舰船实战属性（2026-09-08）：战斗控制台整宽行
+// 数据全部来自 selectors.getCombatActualStatsFromState（经 display.player.actualStats），
+// UI 不复制任何战斗公式。默认只刷四个 chip；展开（details open）时才渲染分项明细，
+// 避免每帧无谓地重建 DOM。
+// ================================================================
+const CAS_TARGET_NAMES = { shield: "护盾", armor: "装甲", structure: "结构" };
+// 三层血条独立回充、互不互补，chip 必须分层展示（跨层求和没有物理意义）。顺序固定。
+const CAS_REPAIR_LAYERS = [["shield", "护盾"], ["armor", "装甲"], ["structure", "结构"]];
+// 修理 chip：只显示实际装了维修件的层；单层纯数字，多层按层分列并用配色区分。
+function buildRepairChipHtml(repair) {
+  const rep = repair || {};
+  const byTarget = rep.byTarget || {};
+  const parts = CAS_REPAIR_LAYERS
+    .filter(function (e) { return Number(byTarget[e[0]]) > 0; })
+    .map(function (e) { return '<b class="cas-rep-' + e[0] + '">' + e[1] + casFmt(byTarget[e[0]]) + "</b>"; });
+  if (!parts.length) return '<span class="cas-chip cas-rep">修理 <b>—</b></span>';
+  return '<span class="cas-chip cas-rep' + (parts.length > 1 ? " multi" : "") + '">修理 ' + parts.join("") + "</span>";
+}
+function casFmt(value) { return Math.round(Number(value) || 0).toLocaleString(); }
+function casPct(value) { const v = Math.round((Number(value) || 0) * 1000) / 10; return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(1)) + "%"; }
+function casNum(value) { const v = Math.round((Number(value) || 0) * 100) / 100; return (v % 1 === 0 ? v.toFixed(0) : v.toFixed(2)); }
+
+let _lastCombatDisplay = null;
+function renderCombatActualStats(display) {
+  const wrap = document.getElementById("ccc-actual-stats");
+  const chips = document.getElementById("cas-chips");
+  const body = document.getElementById("cas-body");
+  if (!chips) return;
+  if (display) _lastCombatDisplay = display;
+  // 展开时才首次绑定：折叠状态下不重建明细 DOM（战斗每帧都会调用本函数）
+  if (wrap && !wrap._casBound) {
+    wrap._casBound = true;
+    wrap.addEventListener("toggle", function () {
+      if (wrap.open && body && !body.childNodes.length) renderCombatActualStats(_lastCombatDisplay);
+    });
+  }
+  const stats = (display && display.player && display.player.actualStats) ? display.player.actualStats : null;
+  if (!stats || !stats.ok) {
+    chips.innerHTML = '<span class="cas-chip">未装备战斗舰</span>';
+    if (body) body.innerHTML = "";
+    return;
+  }
+  const mi = stats.mitigation || {};
+  const fu = stats.fuel || {};
+  chips.innerHTML =
+    '<span class="cas-chip cas-atk">攻击 <b>' + casFmt(stats.attack.total) + '</b></span>' +
+    buildRepairChipHtml(stats.repair) +
+    '<span class="cas-chip cas-red">减伤 <b>' + casPct(mi.combined) + '</b></span>' +
+    '<span class="cas-chip cas-fuel">燃料 <b>' + casFmt(fu.total) + '</b>/轮</span>';
+  if (!body) return;
+  // 折叠态：清空明细，只刷 chip。展开时由 toggle 监听按最新数据重建（战斗每帧都会调用本函数）
+  if (wrap && !wrap.open) { body.innerHTML = ""; return; }
+  body.innerHTML = buildActualStatsHtml(stats);
+}
+
+// 玩家舰与军团 NPC 共用同一份明细渲染：数据均来自各自系统的只读快照，UI 不复写任何公式。
+// opts: { levelMult（NPC 等级伤害倍率，玩家不传）, excludeImplants（NPC 独立口径） }
+function buildActualStatsHtml(stats, opts) {
+  opts = opts || {};
+  const mi = stats.mitigation || {};
+  const fu = stats.fuel || {};
+  const html = [];
+
+  html.push('<div class="cas-group"><div class="cas-group-title">攻击 · 单轮齐射面板伤害</div>');
+  if (!stats.attack.items.length) html.push('<div class="cas-empty">未安装武器</div>');
+  else {
+    for (const it of stats.attack.items) {
+      html.push('<div class="cas-row"><span class="cas-name">' + squadEscape(it.name) + '</span>' +
+        '<span class="cas-expr">' + casFmt(it.base) + " × 强化 " + casNum(it.enhancement) + " × 类型 " + casNum(it.typeMult) +
+        (it.levelMult !== undefined ? " × 等级 " + casNum(it.levelMult) : "") + '</span>' +
+        '<span class="cas-val">' + casFmt(it.value) + '</span></div>');
+    }
+    html.push('<div class="cas-total">合计 <b>' + casFmt(stats.attack.total) + '</b> / 轮</div>');
+  }
+  html.push('</div>');
+
+  html.push('<div class="cas-group"><div class="cas-group-title">修理 · 每轮回充量</div>');
+  if (!stats.repair.items.length) html.push('<div class="cas-empty">未安装维修模块</div>');
+  else {
+    for (const it of stats.repair.items) {
+      html.push('<div class="cas-row"><span class="cas-name">' + squadEscape(it.name) + '</span>' +
+        '<span class="cas-expr">' + (CAS_TARGET_NAMES[it.target] || it.target) + " " + casFmt(it.amount) +
+        " × 强化 " + casNum(it.enhancement) + " × 乘区 " + casNum(it.repairMult) +
+        (it.repMult !== 1 ? " × 增强剂 " + casNum(it.repMult) : "") + '</span>' +
+        '<span class="cas-val">' + casFmt(it.value) + '</span></div>');
+    }
+    // 与 chip 同口径：三层血条独立回充，不做跨层求和（跨层和没有物理意义）
+    const repByT = (stats.repair && stats.repair.byTarget) || {};
+    const repSeg = CAS_REPAIR_LAYERS
+      .filter(function (e) { return Number(repByT[e[0]]) > 0; })
+      .map(function (e) { return '<b class="cas-rep-' + e[0] + '">' + e[1] + casFmt(repByT[e[0]]) + "</b>"; })
+      .join(" · ");
+    html.push('<div class="cas-total">' + (repSeg || "无有效回充") + " <span class=\"cas-sub\">各层分别回充，不跨层</span></div>");
+  }
+  html.push('</div>');
+
+  html.push('<div class="cas-group"><div class="cas-group-title">减伤 · 承伤减免</div>');
+  html.push('<div class="cas-row"><span class="cas-name">损伤控制单元' + (mi.dcuCount ? " ×" + mi.dcuCount : "") + '</span>' +
+    '<span class="cas-expr">多件求和，封顶 50%</span><span class="cas-val">−' + casPct(mi.dcu) + '</span></div>');
+  if (mi.deflector > 0) {
+    html.push('<div class="cas-row"><span class="cas-name">' + squadEscape(mi.traitName || "偏导护盾") + '</span>' +
+      '<span class="cas-expr">每轮前 ' + (Number(mi.deflectorHits) || 0) + ' 次护盾命中，护盾见底失效</span>' +
+      '<span class="cas-val">−' + casPct(mi.deflector) + '</span></div>');
+  } else {
+    html.push('<div class="cas-row"><span class="cas-name">偏导护盾</span><span class="cas-expr">当前舰船无此特性</span><span class="cas-val">—</span></div>');
+  }
+  html.push('<div class="cas-total">综合减伤 <b>' + casPct(mi.combined) + '</b>（两者乘法叠加）</div>');
+  html.push('</div>');
+
+  html.push('<div class="cas-group"><div class="cas-group-title">燃料 · 每轮消耗</div>');
+  html.push('<div class="cas-row"><span class="cas-name">武器齐射</span><span class="cas-expr">逐件 max(1, 耗量×系数)</span><span class="cas-val">' + casFmt(fu.weapon) + '</span></div>');
+  html.push('<div class="cas-row"><span class="cas-name">损伤控制</span><span class="cas-expr">每轮维持在线</span><span class="cas-val">' + casFmt(fu.damageControl) + '</span></div>');
+  html.push('<div class="cas-row"><span class="cas-name">维修</span><span class="cas-expr">仅在对应层未满时扣</span><span class="cas-val">' + casFmt(fu.repair) + '</span></div>');
+  html.push('<div class="cas-total">合计 <b>' + casFmt(fu.total) + '</b> / 轮（已含战区系数 ×' + casNum(fu.mult) + '）</div>');
+  html.push('</div>');
+
+  const notes = [];
+  if (opts.levelMult !== undefined && opts.levelMult !== null) notes.push("等级伤害倍率 ×" + casNum(opts.levelMult) + "（LV1 30% → LV70 100%）已计入上方攻击。");
+  if (opts.excludeImplants) notes.push("NPC 绑定舰按独立口径计算（排除玩家脑插加成）。");
+  notes.push("面板口径：含装备强化与技能/船体/科研乘区；不含弹药加成、克制倍率、命中-闪避系数与 ±10% 随机浮动。维修按满结构基准估算，不含低血应急加成。");
+  html.push('<div class="cas-note">' + notes.join("<br>") + '</div>');
+
+  return html.join("");
+}
+
+// ── 小队槽「属性」弹窗（2026-09-09）：玩家舰与 NPC 共用同一套明细渲染 ──
+function openCombatStatsModal(title, subtitle, stats, opts) {
+  const modal = document.getElementById("combat-stats-modal");
+  if (!modal) return;
+  const t = document.getElementById("csm-title");
+  const s = document.getElementById("csm-subtitle");
+  const b = document.getElementById("csm-body");
+  if (t) t.textContent = title || "舰船实战属性";
+  if (s) { s.textContent = subtitle || ""; s.style.display = subtitle ? "" : "none"; }
+  if (b) b.innerHTML = stats ? buildActualStatsHtml(stats, opts) : '<div class="cas-empty">暂无数据</div>';
+  modal.hidden = false;
+  modal.style.display = "";
+}
+function closeCombatStatsModal() {
+  const modal = document.getElementById("combat-stats-modal");
+  if (!modal) return;
+  modal.hidden = true;
+  modal.style.display = "none";
+}
+function bindCombatStatsModal() {
+  const modal = document.getElementById("combat-stats-modal");
+  if (!modal || modal._csmBound) return;
+  modal._csmBound = true;
+  modal.addEventListener("click", function (event) {
+    if (event.target === modal || (event.target.closest && event.target.closest("[data-csm-close]"))) closeCombatStatsModal();
+  });
+  document.addEventListener("keydown", function (event) { if (event.key === "Escape") closeCombatStatsModal(); });
+}
+// 打开某个 NPC 小队成员的实战属性弹窗（数据直取军团小队系统，UI 不复制任何公式）
+function openNpcCombatStatsModal(npcId, npcName) {
+  const api = legionSquadApi();
+  if (!api || typeof api.getLegionNpcCombatStats !== "function") return;
+  const zone = (_lastCombatDisplay && _lastCombatDisplay.zone) ? _lastCombatDisplay.zone : null;
+  const stats = api.getLegionNpcCombatStats(gameState, npcId, { zone: zone });
+  if (!stats || !stats.ok) {
+    openCombatStatsModal((npcName || "NPC") + " · 实战属性", stats && stats.reason ? "无法计算：" + stats.reason : "该成员尚未绑定舰船", null);
+    return;
+  }
+  openCombatStatsModal((npcName || stats.name || "NPC") + " · 实战属性",
+    "Lv." + Number(stats.level || 1) + " · " + (stats.shipName || "—"),
+    stats, { levelMult: stats.levelDamageMultiplier, excludeImplants: stats.excludeImplants });
+}
+
 function renderCombatLiveDisplay(display) {
   renderCombatCrewSummary(display);
+  renderCombatActualStats(display);
   const text = (id, value) => { const element = document.getElementById(id); if (element) element.textContent = value; };
   text("combat-header-info", display.wormholeBattle ? "🪐 虫洞裂隙 · " + display.headerText : display.headerText); text("combat-wave-num", display.wave); text("combat-wave-max", display.maxWave); text("combat-clear-label", display.encounterMode === "deathspace" ? "已全通" : "已肃清"); text("combat-clear-count", display.clearCount); text("combat-lock-state", display.lockText); text("combat-player-ship", display.player.name);
   const playerBars = document.getElementById("combat-player-bars"); if (playerBars) playerBars.innerHTML = renderHPBars(display.player.hp, display.player.maxHp);
@@ -594,6 +764,10 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
   } else if (kind === "empty" && usedSlotsNow >= capacity && capacity > 0) {
     statusText = "本槽已被占用（小队容量已满 " + capacity + " 格）";
   }
+  // 2026-09-09：NPC 槽的「实战属性」入口 —— 与玩家舰共用同一个明细弹窗与同一套渲染
+  const statsBtn = (kind === "npc" && entry.npc)
+    ? '<button type="button" class="lcs-stats-btn" data-npc-stats="' + squadEscape(entry.npc.npcId) + '" data-npc-name="' + squadEscape(entry.npc.name) + '">实战属性</button>'
+    : "";
   return '<div class="lcs-slot' + (cls ? " " + cls : "") + '" id="lcs-slot-' + idx + '"' + dataAttr + '>' +
     '<div class="lcs-slot-head">' +
       '<span class="lcs-slot-avatar">' + avatar + "</span>" +
@@ -603,6 +777,7 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
     '<div class="lcs-mini-bars">' + bars + "</div>" +
     (badges.length ? '<div class="lcs-slot-badges">' + badges.join("") + "</div>" : "") +
     (statusText ? '<div class="lcs-slot-status">' + statusText + "</div>" : "") +
+    statsBtn +
     "</div>";
 }
 // 部署物（激光定向打捞单元）的部署/回收/移出小队，统一在船坞「特殊」标签管理；
@@ -613,6 +788,14 @@ function bindCombatSquadUI() {
   // 用 once 绑定防止重复累加（bindCombatUI 在启动期可能调用多次）
   if (host._squadBound) return;
   host._squadBound = true;
+  // 2026-09-09：「实战属性」按钮 —— 打开该 NPC 绑定舰的明细弹窗（数据与玩家舰同源同构）
+  host.addEventListener("click", function (event) {
+    const btn = event.target && event.target.closest ? event.target.closest("[data-npc-stats]") : null;
+    if (!btn) return;
+    event.stopPropagation();
+    bindCombatStatsModal();
+    openNpcCombatStatsModal(btn.getAttribute("data-npc-stats"), btn.getAttribute("data-npc-name"));
+  });
   host.addEventListener("change", function (event) {
     const sel = event.target && event.target.closest ? event.target.closest(".lcs-slot-select") : null;
     if (!sel) return;

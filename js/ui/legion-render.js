@@ -491,6 +491,23 @@
     var xpMult = LEGION_NPC.getNpcXpMultiplier(st, npc);
     var ss = salaryStatus(npc);
     var skillRaw = LEGION_NPC.getLegionNpcSkillRawValue(npc);
+    // 2026-09-09 修复（玩家反馈「弹窗 +1.4 vs 面板 +0.93 数值不对」）：
+    // 详情弹窗此前只显示原始技能值（未应用同类递减），与贡献面板的实际生效值矛盾。
+    // 现从 getLegionNpcSkillEffects 取该 NPC 的递减后生效值，并标注原始值/位次/递减系数。
+    // 所有数值统一保留 2 位小数（原始值走 per 系数累加后可能带浮点尾巴，如 1.9500000000000002）。
+    var fmtContribNum = function (v) { return String(Math.round((Number(v) || 0) * 100) / 100); };
+    var contribLine = ' +' + fmtContribNum(skillRaw);
+    try {
+      var fx = (LEGION_NPC.getLegionNpcSkillEffects) ? LEGION_NPC.getLegionNpcSkillEffects(st) : null;
+      var fxEntry = (fx && fx.contributions) ? fx.contributions.filter(function (c) { return c.npcId === npc.npcId; })[0] : null;
+      if (fxEntry && !fxEntry.counted) {
+        contribLine = ' +' + fmtContribNum(skillRaw) + '（当前未生效 —— 待命或欠薪）';
+      } else if (fxEntry && fxEntry.factor < 1) {
+        var fxRank = 5 + Math.round((1 / fxEntry.factor - 1) / 0.25);
+        contribLine = ' +' + fmtContribNum(fxEntry.effective) +
+          '（原始 +' + fmtContribNum(skillRaw) + ' · 同类第 ' + fxRank + ' 位 · 递减 ×' + fmtContribNum(fxEntry.factor) + '）';
+      }
+    } catch (eFx) { /* 快照不可用时回退显示原始值 */ }
     var note = npcXpNoteHtml(st, npc);
     var shipHtml = '未绑定（点击「绑定/更换舰船」分配）';
     if (npc.boundShipInstanceId) {
@@ -515,7 +532,7 @@
       '<div class="lc-detail-line">' + npcXpLiveHtml(st, npc) + '</div>' +
       skillSectionHtml(npc.skillId, grade, npc.level) +
       '<div class="lc-detail-section"><div class="lc-detail-label">当前贡献</div>' +
-      '<div class="lc-detail-line">技能贡献：' + escapeDetailHtml(legionSkillName(npc.skillId)) + ' +' + (skillRaw || 0) + '</div></div>' +
+      '<div class="lc-detail-line">技能贡献：' + escapeDetailHtml(legionSkillName(npc.skillId)) + contribLine + '</div></div>' +
       '<div class="lc-detail-section"><div class="lc-detail-label">舰船与工资</div>' +
       '<div class="lc-detail-line">绑定舰船：' + shipHtml + note.shipNote + '</div>' +
       '<div class="lc-detail-line">每 4h 工资：' + ((LEGION_NPC.WAGE && LEGION_NPC.WAGE[grade]) || 0).toLocaleString() + ' 星币 · <span class="' + ss.cls + '">' + ss.text + '</span>' +
@@ -705,9 +722,17 @@
       ["archaeologySpeed", "考古速度"], ["archaeologyRareDropBonus", "考古稀有掉率"]
     ] }
   ];
+  // 百分比格式化：贡献值为递减曲线算出的浮点（如 0.30000000000000004），
+  // 直接拼接会显示十几位小数。统一保留 1 位小数、整数不带小数点。
+  function fmtContribPct(val) {
+    var n = Number(val) || 0;
+    if (!Number.isFinite(n)) n = 0;
+    var r = Math.round(n * 10) / 10;
+    return (Math.abs(r % 1) < 1e-9) ? String(r) : r.toFixed(1);
+  }
   function contribRow(label, val, zero) {
     return '<div class="lc-contrib-row' + (zero ? ' lc-contrib-zero' : '') + '"><span>' + label + '</span>' +
-      '<span class="lc-contrib-val">+' + (val || 0) + '%</span></div>';
+      '<span class="lc-contrib-val">+' + fmtContribPct(val) + '%</span></div>';
   }
   MOD.renderLegionContribution = function (snap) {
     var el = document.getElementById("legion-contribution");

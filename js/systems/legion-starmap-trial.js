@@ -187,6 +187,56 @@
     if (snap.queueRunning && state.queue && state.queue.status) state.queue.status.isRunning = true;
     state._dirty = true;
   }
+  /* ================================================================
+     深空开拓研究加成（contentPack="frontier" · 星图线）
+       - 统一经 ResearchState 读取；ResearchState 缺失（探针 / 旧档 / 沙箱）时
+         一律返回中性值 1，绝不抛错、绝不返回 NaN。
+       - 作用域隔离：虫洞来源节点（node.source === "wormhole"）一律不吃星图加成。
+         虫洞有自己的 wormholeXxx 乘区（js/systems/wormhole.js），两套不得叠加，
+         否则同一场虫洞试炼会同时吃到星图线与虫洞线的时限/掉落加成。
+     ================================================================ */
+  function frontierResearchState() {
+    return (typeof root.ResearchState === "object" && root.ResearchState) || null;
+  }
+  function frontierMultiplier(state, groups) {
+    const RS = frontierResearchState();
+    if (!RS || typeof RS.getResearchMultiplier !== "function") return 1;
+    const v = Number(RS.getResearchMultiplier(state, groups));
+    return (Number.isFinite(v) && v > 0) ? v : 1;
+  }
+  function frontierReduce(state, group) {
+    const RS = frontierResearchState();
+    if (!RS || typeof RS.getResearchBonusValue !== "function") return 1;
+    const v = Number(RS.getResearchBonusValue(state, group));
+    if (!Number.isFinite(v)) return 1;
+    return Math.max(0, 1 - v);
+  }
+  function isWormholeSource(node) { return !!(node && node.source === "wormhole"); }
+  // 星图驻留奖励产出乘区（4 类驻留账本共用）
+  function getStarmapResidentYieldMultiplier(state) {
+    return frontierMultiplier(state, ["starmapYield"]);
+  }
+  // 星图试炼时限乘区
+  function getStarmapTrialLimitMultiplier(state, node) {
+    if (isWormholeSource(node)) return 1;
+    return frontierMultiplier(state, ["starmapLimit"]);
+  }
+  // 星图战斗试炼掉落份数乘区
+  function getStarmapBattleDropMultiplier(state, node) {
+    if (isWormholeSource(node)) return 1;
+    return frontierMultiplier(state, ["starmapBattleDrop"]);
+  }
+  // 星图考古扫描周期乘区（≤1，reduceFraction）
+  function getStarmapArchCycleMultiplier(state, node) {
+    if (isWormholeSource(node)) return 1;
+    return frontierReduce(state, "starmapArchCycle");
+  }
+  // 星图采集试炼效率乘区
+  function getStarmapCollectionEfficiencyMultiplier(state, node) {
+    if (isWormholeSource(node)) return 1;
+    return frontierMultiplier(state, ["starmapCollect"]);
+  }
+
   function resourceKey(node) { return "special:" + String(node.resourceId || node.collectionResource || ""); }
   function getCollectionDailyReward(firstRewardAmount) {
     // 节点长期奖励取首次试炼奖励的 96%，并取整：100 -> 96/日，275 -> 264/日。
@@ -238,7 +288,7 @@
       if (normalized.resourceId && normalized.hourlyAmount > 0 && t >= normalized.accruedAt) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / COLLECTION_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
-          normalized.pendingAmount += normalized.hourlyAmount * elapsedHours;
+          normalized.pendingAmount += normalized.hourlyAmount * elapsedHours * getStarmapResidentYieldMultiplier(state);
           normalized.accruedAt += elapsedHours * COLLECTION_REWARD_HOUR_MS;
           normalized.totalAccruedHours += elapsedHours;
           changed = true;
@@ -260,11 +310,15 @@
     const key = String(nodeId);
     const reward = normalizeCollectionRewardRecord(s.collectionRewards[key], key);
     if (!reward) return { changed:false, reason:"collection-reward-not-found" };
-    const amount = Math.max(0, Number(reward.pendingAmount) || 0);
-    if (!(amount > 0)) return { changed:false, reason:"collection-reward-empty", reward:{ ...reward, pendingAmount:0 } };
+    // 取整发放 + 保留零头：星图驻留学加成会让 hourlyAmount 产生小数，
+    // 直接把小数写入资源池会污染库存（battle / production 账本本就按此口径）。
+    // 无加成时 pendingAmount 恒为整数，行为与改动前完全一致。
+    const rawAmount = Math.max(0, Number(reward.pendingAmount) || 0);
+    const amount = Math.floor(rawAmount + 1e-9);
+    if (!(amount > 0)) return { changed:false, reason:"collection-reward-empty", reward:{ ...reward, pendingAmount:rawAmount } };
     if (!root.ResourceRegistry || typeof root.ResourceRegistry.add !== "function") return { changed:false, reason:"resource-registry-unavailable" };
     root.ResourceRegistry.add(state, "special:" + reward.resourceId, amount);
-    reward.pendingAmount = 0;
+    reward.pendingAmount = Math.max(0, rawAmount - amount);
     reward.lastCollectedAt = Number(now) || Date.now();
     s.collectionRewards[key] = reward;
     state._dirty = true;
@@ -376,7 +430,7 @@
       if (normalized.hourlyAmount > 0 && t >= normalized.accruedAt) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / ARCHAEOLOGY_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
-          normalized.pendingAmount += normalized.hourlyAmount * elapsedHours;
+          normalized.pendingAmount += normalized.hourlyAmount * elapsedHours * getStarmapResidentYieldMultiplier(state);
           normalized.accruedAt += elapsedHours * ARCHAEOLOGY_REWARD_HOUR_MS;
           normalized.totalAccruedHours += elapsedHours;
           changed = true;
@@ -736,8 +790,9 @@
       if (t >= normalized.accruedAt && (normalized.hourlyIsk > 0 || normalized.hourlyCargo > 0)) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / BATTLE_TRIAL_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
-          normalized.pendingIsk += elapsedHours * normalized.hourlyIsk;
-          if (normalized.cargoSize) normalized.pendingCargo += elapsedHours * normalized.hourlyCargo;
+          const battleYieldMult = getStarmapResidentYieldMultiplier(state);
+          normalized.pendingIsk += elapsedHours * normalized.hourlyIsk * battleYieldMult;
+          if (normalized.cargoSize) normalized.pendingCargo += elapsedHours * normalized.hourlyCargo * battleYieldMult;
           normalized.accruedAt += elapsedHours * BATTLE_TRIAL_REWARD_HOUR_MS;
           changed = true;
         }
@@ -805,7 +860,8 @@
     const key = String(node.id);
     if (starmap.battleRewards[key]) return null;
     const kind = node.tier === "elite" ? "elite" : "normal";
-    const rolls = BATTLE_TRIAL_DROP_ROLLS * BATTLE_TRIAL_ONCE_SCALE;
+    // 星图战利品归纳：掉落份数 +%（虫洞节点不吃，走 whRewardMult 的 1/10 缩放体系）
+    const rolls = Math.max(1, Math.round(BATTLE_TRIAL_DROP_ROLLS * BATTLE_TRIAL_ONCE_SCALE * getStarmapBattleDropMultiplier(state, node)));
     // 虫洞奖励缩放（2026-09-07）：节点 whRewardMult（0.1 = 星图一次性奖励的 1/10）。
     // ISK 直接乘；掉落 rolls / 货柜 / 许可按「整数部分 + 余数概率」缩放（5×0.1=0.5 → 50%×1，符合<1转概率规则）。
     const whMultRaw = Number(node.whRewardMult);
@@ -931,7 +987,7 @@
       LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers(state, { now: t });
     }
     const s = ensure(state).battleTrial;
-    const limit = Number(node.battleTrialTimeLimitSeconds) || LIMIT_SECONDS;
+    const limit = Math.max(1, Math.round((Number(node.battleTrialTimeLimitSeconds) || LIMIT_SECONDS) * getStarmapTrialLimitMultiplier(state, node)));
     Object.assign(s, {
       status:"running", nodeId:String(node.id), lockedNode:lockBattleNode(node), zoneId:check.zone.id,
       enemyCount:enemyCount, kills:0, startedAt:t, endsAt:t + limit * 1000, wave:1, result:null,
@@ -1216,9 +1272,10 @@
       if (normalized.currentRewardId && normalized.hourlyAmount > 0 && t >= normalized.accruedAt) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / PRODUCTION_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
+          const productionYieldMult = getStarmapResidentYieldMultiplier(state);
           for (let index = 0; index < elapsedHours; index++) {
             const rewardId = normalized.currentRewardId;
-            normalized.pendingByReward[rewardId] = (Number(normalized.pendingByReward[rewardId]) || 0) + normalized.hourlyAmount;
+            normalized.pendingByReward[rewardId] = (Number(normalized.pendingByReward[rewardId]) || 0) + normalized.hourlyAmount * productionYieldMult;
             normalized.cycleHours += 1;
             normalized.totalAccruedHours += 1;
             if (normalized.cycleHours >= PRODUCTION_REWARD_HOURS_PER_DAY) {
@@ -1467,7 +1524,8 @@
     const scanStrength = typeof root.computeArchaeologyScanStrength === "function" ? Number(root.computeArchaeologyScanStrength(state, instance, probeId)) || 0 : 0;
     const successChance = typeof root.getArchaeologyFinalSuccessChance === "function" ? Number(root.getArchaeologyFinalSuccessChance(state, scanStrength, site.difficulty)) || 0 : 0;
     const cycleSeconds = typeof root.getArchaeologyCycleSeconds === "function" ? Number(root.getArchaeologyCycleSeconds(state, site, { instanceId:instance.instanceId, probeId:probeId })) || site.time : site.time;
-    return { ok:true, site:site, instance:instance, probeId:probeId, scanStrength:scanStrength, successChance:successChance, cycleSeconds:Math.max(0.05, cycleSeconds) };
+    // 星图遗迹制图：缩短单次扫描周期（虫洞节点不吃，走各自的 wormholeNodeTime 体系）
+    return { ok:true, site:site, instance:instance, probeId:probeId, scanStrength:scanStrength, successChance:successChance, cycleSeconds:Math.max(0.05, cycleSeconds * getStarmapArchCycleMultiplier(state, node)) };
   }
   function startArchaeologyTrial(state, node, now, options) {
     const opts = options || {};
@@ -1483,7 +1541,7 @@
     const s = ensure(state).archaeologyTrial;
     const t = Number(now) || Date.now();
     stopNormalActivity(state, t);
-    const limit = Number(node.archaeologyTimeLimitSeconds) || LIMIT_SECONDS;
+    const limit = Math.max(1, Math.round((Number(node.archaeologyTimeLimitSeconds) || LIMIT_SECONDS) * getStarmapTrialLimitMultiplier(state, node)));
     const trialShipHp = getArchaeologyTrialShipHp(state, check.instance.instanceId);
     if (!trialShipHp) return { changed:false, reason:"archaeology-hp-unavailable" };
     Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockArchaeologyNode(node), siteId:check.site.id, shipInstanceId:check.instance.instanceId, probeId:check.probeId, trialShipHp:trialShipHp, progress:0, target:Number(node.archaeologyTargetProgress) || 14, startedAt:t, endsAt:t + limit * 1000, nextScanAt:t + check.cycleSeconds * 1000, interferenceUntil:0, cycleSeconds:check.cycleSeconds, scanStrength:check.scanStrength, successChance:check.successChance, scans:0, successes:0, rareFinds:0, log:[], result:null, prevAction });
@@ -1556,7 +1614,8 @@
       }
       const instance = typeof root.getShipInstanceFromState === "function" ? root.getShipInstanceFromState(state, s.shipInstanceId) : null;
       const cycle = typeof root.getArchaeologyCycleSeconds === "function" ? Number(root.getArchaeologyCycleSeconds(state, site, { instanceId:s.shipInstanceId, probeId:s.probeId })) || s.cycleSeconds : s.cycleSeconds;
-      s.cycleSeconds = Math.max(0.05, cycle);
+      // 已锁定的考古节点快照即 node（s.lockedNode），虫洞来源自动取中性值 1
+      s.cycleSeconds = Math.max(0.05, cycle * getStarmapArchCycleMultiplier(state, node));
       s.scanStrength = instance && typeof root.computeArchaeologyScanStrength === "function" ? Number(root.computeArchaeologyScanStrength(state, instance, s.probeId)) || s.scanStrength : s.scanStrength;
       s.successChance = typeof root.getArchaeologyFinalSuccessChance === "function" ? Number(root.getArchaeologyFinalSuccessChance(state, s.scanStrength, site.difficulty)) || s.successChance : s.successChance;
       s.nextScanAt += s.cycleSeconds * 1000;
@@ -1572,12 +1631,16 @@
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
     if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
     if (hasNormalAction(state)) return { ok:false, reason:"player-action-running" };
-    const eff = readEfficiency(node);
+    // 星图采集编队：采集效率 +%（虫洞节点不吃）
+    const collectMult = getStarmapCollectionEfficiencyMultiplier(state, node);
+    const eff = readEfficiency(node) * collectMult;
     if (!(eff > 0)) return { ok:false, reason:"no-collection-efficiency", efficiency:eff };
     const amount = Number(node.collectionAmount);
     const base = Number(node.collectionBaseSecondsPerUnit) || 0;
     const required = base * amount / eff;
-    return { ok:true, efficiency:eff, requiredSeconds:required, willSucceed:required <= Number(node.collectionTimeLimitSeconds || LIMIT_SECONDS) };
+    // 时限读同一乘区：与 start() 的 limit 保持同口径，避免"判定能过、实际超时"
+    const limitSeconds = Math.max(1, Math.round((Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS) * getStarmapTrialLimitMultiplier(state, node)));
+    return { ok:true, efficiency:eff, requiredSeconds:required, willSucceed:required <= limitSeconds };
   }
   function start(state, node, now, options) {
     const opts = options || {};
@@ -1593,7 +1656,7 @@
     const s = ensure(state).collectionTrial;
     const t = Number(now) || Date.now();
     stopNormalActivity(state, t);
-    const limit = Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS;
+    const limit = Math.max(1, Math.round((Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS) * getStarmapTrialLimitMultiplier(state, node)));
     Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockNode(node), resourceId:String(node.collectionResource), kind:node.collectionKind || node.subtype || "", gathered:0, amount:Number(node.collectionAmount), startedAt:t, endsAt:t + limit * 1000, requiredSeconds:check.requiredSeconds, efficiency:check.efficiency, result:null, prevAction });
     state._dirty = true;
     return { changed:true, trial:{ ...s }, willSucceed:check.willSucceed };
@@ -1645,10 +1708,26 @@
     state._dirty = true;
     return { changed:true, trial:{ ...s } };
   }
+  // 研究等级读取：协议节点统一以 state.research.completedLevels[techId] >= 1 为准（与既有 planauto/autosell 一致）
+  function researchLevel(state, techId) {
+    const map = state && state.research && state.research.completedLevels;
+    if (!map || typeof map !== "object") return 0;
+    const lv = Number(map[techId]);
+    return Number.isFinite(lv) ? lv : 0;
+  }
+  // sm_autoclaim 驻留自动领取协议：驻留奖励每累计满 1 小时自动入库（四类账本全覆盖）
+  function isResidentAutoClaimEnabled(state) { return researchLevel(state, "sm_autoclaim") >= 1; }
   function tick(state, now) {
     if (!state) return { changed:false, reason:"invalid-state" };
-    accrueProductionRewards(state, now);
-    accrueArchaeologyRewards(state, now);
+    const accP = accrueProductionRewards(state, now);
+    const accA = accrueArchaeologyRewards(state, now);
+    if (isResidentAutoClaimEnabled(state)) {
+      // 先 accrue 四类再判定：只有真的产生了新的整小时累计才收集，避免每 tick 空跑全量收集
+      const accC = accrueCollectionRewards(state, now);
+      const accB = accrueBattleRewards(state, now);
+      const accrued = (accP && accP.changed) || (accA && accA.changed) || (accC && accC.changed) || (accB && accB.changed);
+      if (accrued) collectAllResidentRewards(state, now);
+    }
     if (isArchaeologyRunning(state)) return tickArchaeologyTrial(state, now);
     if (isBattleRunning(state)) return tickBattleTrial(state, now);
     return tickCollection(state, now);
@@ -1671,6 +1750,8 @@
     return replayTestingEnabled;
   }
   function isReplayTestingEnabled() { return replayTestingEnabled; }
+  API.researchLevel = researchLevel;
+  API.isResidentAutoClaimEnabled = isResidentAutoClaimEnabled;
   API.ensureLegionStarmapState = ensure;
   API.isCollectionTrialRunning = isRunning;
   API.isArchaeologyTrialRunning = isArchaeologyRunning;
@@ -1729,6 +1810,12 @@
   API.setReplayTestingEnabled = setReplayTestingEnabled;
   API.isReplayTestingEnabled = isReplayTestingEnabled;
   API.LIMIT_SECONDS = LIMIT_SECONDS;
+  // 深空开拓研究（星图线）真实消费点：research.js 的 RESEARCH_BONUS_CONSUMERS 指向此处
+  API.getStarmapResidentYieldMultiplier = getStarmapResidentYieldMultiplier;
+  API.getStarmapTrialLimitMultiplier = getStarmapTrialLimitMultiplier;
+  API.getStarmapBattleDropMultiplier = getStarmapBattleDropMultiplier;
+  API.getStarmapArchCycleMultiplier = getStarmapArchCycleMultiplier;
+  API.getStarmapCollectionEfficiencyMultiplier = getStarmapCollectionEfficiencyMultiplier;
   // 虫洞集成：试炼状态快照（浅拷贝；wormhole tick 轮询 status/endsAt，房间 UI 读实时进度）
   API.getTrialStates = function (state) {
     const st = ensure(state);

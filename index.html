@@ -7,10 +7,10 @@
 <title>深空放置：边疆纪元</title>
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=16">
-  <link rel="stylesheet" href="./css/panels.css?v=56">
-  <link rel="stylesheet" href="./css/combat.css?v=21">
-<link rel="stylesheet" href="./css/components.css?v=38">
+<link rel="stylesheet" href="./css/base.css?v=18">
+  <link rel="stylesheet" href="./css/panels.css?v=69">
+  <link rel="stylesheet" href="./css/combat.css?v=24">
+<link rel="stylesheet" href="./css/components.css?v=39">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=25">
 <style id="starmap-collection-room-style">
 .starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
@@ -27,7 +27,7 @@
   <script type="module" src="./js/ui/ship3d.js?v=11"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=3"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=12"></script>
+  <script src="./js/i18n/catalog-en.js?v=16"></script>
   <script src="./js/i18n/translator.js?v=9"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
@@ -117,9 +117,12 @@
 .titan-fresh-preview .titan-preview { min-height:390px; position:relative; overflow:hidden; border:1px solid #294761; border-radius:8px; background:#091522; }
 .titan-forge-canvas { display:block; width:100%; height:100%; min-height:390px; }
 .titan-preview-label { position:absolute; left:12px; top:10px; z-index:1; color:#9fb4c5; font-size:11px; }
-.titan-fresh-summary { display:flex; gap:8px; margin-top:9px; }
-.titan-fresh-summary span { flex:1; padding:8px; border:1px solid #203548; border-radius:5px; color:#9bb4c6; font-size:12px; }
+.titan-fresh-summary { display:flex; gap:8px; margin-top:9px; align-items:stretch; }
+.titan-fresh-summary > div { flex:1; padding:8px 10px; border:1px solid #203548; border-radius:5px; color:#9bb4c6; font-size:12px; line-height:1.55; }
 .titan-fresh-summary b { display:block; color:#d7eaf5; margin-bottom:3px; }
+.titan-fresh-summary .tfs-name { display:block; color:#7fc6ef; margin-bottom:5px; font-weight:600; }
+.titan-fresh-summary .tfs-line { margin-bottom:3px; }
+.titan-fresh-summary .tfs-dim { color:#6d8497; margin-top:4px; padding-top:4px; border-top:1px dashed #1c2f40; }
 @media (max-width:900px) { .titan-forge-fresh-grid { grid-template-columns:1fr; } }
 .shipeng-class-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
 .shipeng-class-tab { padding:5px 13px; border-radius:18px; border:1px solid #2a3a4a; background:transparent; color:#8a9aae; font-size:12.5px; cursor:pointer; }
@@ -337,11 +340,13 @@
     <div class="nav-item" data-page="station">
       <span class="nav-icon"><i class="fa-regular fa-building"></i></span> 空间站
     </div>
-    <div class="nav-item" data-page="legion" id="nav-legion" style="display:none;">
+    <div class="nav-item" data-page="legion" id="nav-legion">
       <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> 军团
+      <i class="fa-solid fa-lock ui-lock-icon" aria-hidden="true"></i>
     </div>
-    <div class="nav-item" data-page="starmap" id="nav-starmap" style="display:none;">
+    <div class="nav-item" data-page="starmap" id="nav-starmap">
       <span class="nav-icon"><i class="fa-solid fa-star"></i></span> 星图
+      <i class="fa-solid fa-lock ui-lock-icon" aria-hidden="true"></i>
     </div>
     <div class="nav-item" data-page="alliance" id="nav-alliance">
       <span class="nav-icon"><i class="fa-solid fa-people-group"></i></span> 联盟
@@ -944,6 +949,15 @@
           </summary>
           <div class="ccc-body">
           <div class="ccc-crew-status" id="ccc-crew-status"></div>
+
+          <!-- 舰船实战属性（2026-09-08）：整宽行，默认折叠为四个 chip，展开看分项 -->
+          <details class="ccc-actual-stats" id="ccc-actual-stats">
+            <summary class="cas-summary">
+              <span class="cas-title">舰船实战属性</span>
+              <span class="cas-chips" id="cas-chips"></span>
+            </summary>
+            <div class="cas-body" id="cas-body"></div>
+          </details>
           <div class="combat-control-bank">
             <div class="combat-console-title">已安装武器</div>
             <div class="combat-weapon-row" id="combat-weapon-row"></div>
@@ -1014,7 +1028,7 @@
       <div class="panel-body">
         <div style="display:flex;gap:8px;margin-bottom:10px">
           <button type="button" class="btn secondary bpshop-tab active" data-bpshop-tab="blueprint">蓝图</button>
-          <button type="button" class="btn secondary bpshop-tab" data-bpshop-tab="wormhole" id="bpshop-tab-wormhole" style="display:none;">虫洞商店</button>
+          <button type="button" class="btn secondary bpshop-tab" data-bpshop-tab="wormhole" id="bpshop-tab-wormhole">虫洞商店</button>
         </div>
         <div id="bpshop-page-blueprint">
           <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
@@ -1537,7 +1551,7 @@
 </aside>
 
   <script defer src="./js/core/runtime.js?v=3"></script>
-  <script defer src="./js/core/events.js?v=4"></script>
+  <script defer src="./js/core/events.js?v=5"></script>
   <script defer src="./js/ui/error-boundary.js?v=3"></script>
   <script defer src="./js/data/base.js?v=3"></script>
   <script defer src="./js/data/ammo.js?v=6"></script>
@@ -1545,16 +1559,16 @@
   <script defer src="./js/data/planets.js?v=4"></script>
   <script defer src="./js/data/ships.js?v=13"></script>
   <script defer src="./js/data/boosters.js?v=11"></script>
-  <script defer src="./js/systems/boosters.js?v=9"></script>
+  <script defer src="./js/systems/boosters.js?v=10"></script>
   <script defer src="./js/systems/recycling.js?v=4"></script>
-  <script defer src="./js/data/combat.js?v=34"></script>
+  <script defer src="./js/data/combat.js?v=35"></script>
   <script defer src="./js/data/cargo.js?v=10"></script>
-  <script defer src="./js/data/implants.js?v=7"></script>
+  <script defer src="./js/data/implants.js?v=8"></script>
   <script defer src="./js/data/equipment.js?v=32"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=8"></script>
   <script defer src="./js/data/ammunition.js?v=5"></script>
   <script defer src="./js/data/archaeology.js?v=6"></script>
-  <script defer src="./js/data/research.js?v=7"></script>
+  <script defer src="./js/data/research.js?v=9"></script>
   <script defer src="./js/core/research-state.js?v=4"></script>
   <script defer src="./js/data/achievements.js?v=8"></script>
   <script defer src="./js/data/achievement-rules.js?v=7"></script>
@@ -1564,7 +1578,7 @@
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=12"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
-  <script defer src="./js/systems/research.js?v=6"></script>
+  <script defer src="./js/systems/research.js?v=8"></script>
   <script defer src="./js/core/statistics.js?v=4"></script>
   <script defer src="./js/systems/achievements.js?v=4"></script>
   <script defer src="./js/systems/production.js?v=13"></script>
@@ -1577,46 +1591,47 @@
   <script defer src="./js/systems/rigs.js?v=5"></script>
   <script defer src="./js/systems/archaeology.js?v=20"></script>
   <script defer src="./js/systems/planetary.js?v=4"></script>
-  <script defer src="./js/systems/station.js?v=20"></script>
+  <script defer src="./js/systems/station.js?v=21"></script>
   <script defer src="./js/data/legion/npc-names.js?v=2"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=2"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=2"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=2"></script>
-  <script defer src="./js/data/wormhole.js?v=2"></script>
+  <script defer src="./js/data/wormhole.js?v=11"></script>
+  <script defer src="./js/data/titans.js?v=2"></script>
   <script defer src="./js/systems/legion-npc.js?v=11"></script>
-  <script defer src="./js/systems/legion-combat-squad.js?v=13"></script>
+  <script defer src="./js/systems/legion-combat-squad.js?v=16"></script>
   <script defer src="./js/ui/action-modal.js?v=11"></script>
   <script defer src="./js/core/queue.js?v=5"></script>
-  <script defer src="./js/systems/capital-combat.js?v=4"></script>
-  <script defer src="./js/systems/combat.js?v=28"></script>
+  <script defer src="./js/systems/capital-combat.js?v=6"></script>
+  <script defer src="./js/systems/combat.js?v=31"></script>
   <script defer src="./js/core/combat-modifiers.js?v=3"></script>
-  <script defer src="./js/core/selectors.js?v=81"></script>
-  <script defer src="./js/core/actions.js?v=41"></script>
-  <script defer src="./js/systems/legion-starmap-trial.js?v=46"></script>
-  <script defer src="./js/systems/wormhole.js?v=22"></script>
+  <script defer src="./js/core/selectors.js?v=85"></script>
+  <script defer src="./js/core/actions.js?v=45"></script>
+  <script defer src="./js/systems/legion-starmap-trial.js?v=48"></script>
+  <script defer src="./js/systems/wormhole.js?v=32"></script>
   <script defer src="./js/systems/research-protocols.js?v=6"></script>
   <script defer src="./js/core/diagnostics.js?v=3"></script>
-  <script defer src="./js/ui/shell-render.js?v=113"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=23"></script>
-  <script defer src="./js/ui/titan-forge-integration.js?v=4"></script>
-   <script defer src="./js/ui/combat-render.js?v=55"></script>
+  <script defer src="./js/ui/shell-render.js?v=119"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=25"></script>
+  <script defer src="./js/ui/titan-forge-integration.js?v=6"></script>
+   <script defer src="./js/ui/combat-render.js?v=58"></script>
   <script defer src="./js/ui/planetary-render.js?v=3"></script>
   <script defer src="./js/ui/archaeology-render.js?v=13"></script>
   <script defer src="./js/ui/booster-render.js?v=16"></script>
   <script defer src="./js/ui/station-render.js?v=14"></script>
-  <script defer src="./js/ui/legion-render.js?v=20"></script>
+  <script defer src="./js/ui/legion-render.js?v=22"></script>
   <script defer src="./js/ui/legion-events.js?v=15"></script>
-  <script defer src="./js/ui/wormhole-render.js?v=12"></script>
+  <script defer src="./js/ui/wormhole-render.js?v=30"></script>
   <script defer src="./js/ui/wormhole-rifts.js?v=4"></script>
-  <script defer src="./js/ui/wormhole-map.js?v=22"></script>
+  <script defer src="./js/ui/wormhole-map.js?v=29"></script>
    <script defer src="./js/platform/alliance-api.js?v=4"></script>
    <script defer src="./js/platform/alliance-policy.js?v=2"></script>
    <script defer src="./js/data/alliance-task-model.js?v=3"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
    <script defer src="./js/ui/alliance-render.js?v=10"></script>
   <script defer src="./js/core/tick.js?v=18"></script>
-  <script defer src="./js/core/offline.js?v=23"></script>
-  <script defer src="./js/systems/offline-combat.js?v=18"></script>
+  <script defer src="./js/core/offline.js?v=24"></script>
+  <script defer src="./js/systems/offline-combat.js?v=21"></script>
   <script defer src="./js/systems/combat-log.js?v=5"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=3"></script>
@@ -1625,7 +1640,7 @@
   <script defer src="./js/platform/leaderboard-provider-contract.js?v=2"></script>
   <script defer src="./js/platform/ad-provider-contract.js?v=2"></script>
   <script defer src="./js/platform/local-mirror-contract.js?v=3"></script>
-  <script defer src="./js/core/save-envelope.js?v=3"></script>
+  <script defer src="./js/core/save-envelope.js?v=4"></script>
   <script defer src="./js/core/save-codec.js?v=5"></script>
   <script defer src="./js/platform/providers/noop-cloud-provider.js?v=3"></script>
   <script defer src="./js/platform/providers/noop-achievement-provider.js?v=3"></script>
@@ -1640,7 +1655,7 @@
    <script defer src="./js/platform/steam/steam-achievement-provider.js?v=2"></script>
   <script defer src="./js/platform/taptap/taptap-local-mirror-provider.js?v=8"></script>
   <script defer src="./js/platform/platform-runtime.js?v=4"></script>
-  <script defer src="./js/core/cloud-save-service.js?v=4"></script>
+  <script defer src="./js/core/cloud-save-service.js?v=5"></script>
   <script defer src="./js/core/local-mirror-service.js?v=3"></script>
    <script defer src="./js/data/platform-achievement-map.js?v=4"></script>
    <script defer src="./js/core/achievement-sync-service.js?v=4"></script>
@@ -1651,7 +1666,7 @@
   <script defer src="./js/core/persistence.js?v=25"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=6"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>
-<script defer src="./js/ui/render.js?v=22"></script>
+<script defer src="./js/ui/render.js?v=26"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=22"></script>
   <script defer src="./js/qa-seed.js?v=3"></script>
   <div id="hangar-3d-popup">
@@ -1668,6 +1683,18 @@
       <div class="popup-name" id="combat-3d-popup-name"></div>
       <canvas id="combat-3d-popup-canvas" class="ship3d-canvas"></canvas>
       <div class="popup-attrs" id="combat-3d-popup-attrs"></div>
+    </div>
+  </div>
+
+  <!-- 舰船实战属性弹窗（2026-09-09）：小队 NPC 槽「实战属性」入口，与控制台整宽行同构 -->
+  <div id="combat-stats-modal" class="csm" hidden style="display:none;">
+    <div class="csm-box">
+      <div class="csm-head">
+        <span class="csm-title" id="csm-title">舰船实战属性</span>
+        <span class="csm-subtitle" id="csm-subtitle"></span>
+        <button type="button" class="csm-close" data-csm-close aria-label="关闭">×</button>
+      </div>
+      <div class="csm-body" id="csm-body"></div>
     </div>
   </div>
 </body>
