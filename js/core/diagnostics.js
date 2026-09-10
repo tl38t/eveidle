@@ -220,6 +220,9 @@
   // 这里改为长度 + 32 位 djb2 摘要，既能比较两侧是否一致，又不泄露内容。
   function digestOf(s) {
     if (typeof s !== "string" || !s.length) return "";
+    // B 修复（2026-09-10）后 sync_meta 里存的就是 64 位摘要本身（16 hex），不再二次哈希，
+    // 直接展示其首个 32 位段，保证诊断报告里看到的值与 sync_meta 现场逐字一致。
+    if (/^[0-9a-f]{16}$/.test(s)) return "#" + s.slice(0, 8) + "(sync_meta 摘要)";
     let h = 5381;
     for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
     return "#" + (h >>> 0).toString(16) + "(len=" + s.length + ")";
@@ -281,9 +284,28 @@
     };
   }
 
+  // 本游戏的键前缀。同一 origin 上可能还有其他小游戏的数据（TapTap 把小游戏托管在
+  // 同一域名下按路径分发，而 localStorage 按 origin 隔离、不看路径）——必须把「不是
+  // 我们的占用」单独算出来，否则会把平台/其他游戏的空间算到本作头上，误导排查。
+  const OWN_KEY_RE = /^(eve_idle_|deep_space_idle_)/;
+
   // localStorage 各键占用（UTF-16 下 1 字符 ≈ 2 字节）。
+  // quotaBytes 是「推断出的实际上限」：容器给的配额并非恒为 5MB（Chromium 已放宽到 10MB），
+  // 写死 5MB 会把已满 10MB 的机器算成 200%，反而误导。取能装下当前总量 + 写盘失败余量中
+  // 最小的候选值作为下限。
+  const QUOTA_CANDIDATES = [5 * 1024 * 1024, 10 * 1024 * 1024, 20 * 1024 * 1024];
+  function inferQuotaBytes(totalBytes) {
+    for (let i = 0; i < QUOTA_CANDIDATES.length; i++) {
+      if (totalBytes <= QUOTA_CANDIDATES[i]) return QUOTA_CANDIDATES[i];
+    }
+    return Math.max(totalBytes, QUOTA_CANDIDATES[QUOTA_CANDIDATES.length - 1]);
+  }
   function scanStorage() {
-    const out = { supported: false, entries: [], totalBytes: 0, totalChars: 0, error: null };
+    const out = {
+      supported: false, entries: [], totalBytes: 0, totalChars: 0, error: null,
+      ownBytes: 0, ownChars: 0, ownKeys: 0, foreignBytes: 0, foreignChars: 0, foreignKeys: 0,
+      topForeign: [], quotaBytes: 0
+    };
     try {
       if (typeof localStorage === "undefined" || !localStorage) return out;
       out.supported = true;
@@ -295,11 +317,18 @@
         let v = null;
         try { v = localStorage.getItem(k); } catch (e) { v = null; }
         const chars = (typeof v === "string") ? v.length : 0;
-        out.entries.push({ key: k, chars: chars, bytes: chars * 2 });
+        const own = OWN_KEY_RE.test(k);
+        out.entries.push({ key: k, chars: chars, bytes: chars * 2, own: own });
       }
       out.entries.sort(function (a, b) { return b.bytes - a.bytes; });
       out.totalChars = out.entries.reduce(function (s, e) { return s + e.chars; }, 0);
       out.totalBytes = out.entries.reduce(function (s, e) { return s + e.bytes; }, 0);
+      out.entries.forEach(function (e) {
+        if (e.own) { out.ownBytes += e.bytes; out.ownChars += e.chars; out.ownKeys++; }
+        else { out.foreignBytes += e.bytes; out.foreignChars += e.chars; out.foreignKeys++; }
+      });
+      out.topForeign = out.entries.filter(function (e) { return !e.own; }).slice(0, 5);
+      out.quotaBytes = inferQuotaBytes(out.totalBytes);
     } catch (e) {
       out.error = describeErr(e);
     }
@@ -473,26 +502,42 @@
 
     // 2. 体积
     const bigChars = Math.max(num(loc.saveKeyChars), num(loc.payloadChars));
-    if (bigChars >= SIZE_FAIL_CHARS) push("FAIL", "存档体积 " + bigChars.toLocaleString("zh-CN") + " 字符（约 " + fmtBytes(bigChars * 2) + "）已逼近 localStorage 常规 5MB 配额，极易触发写盘失败");
+    if (bigChars >= SIZE_FAIL_CHARS) push("FAIL", "存档体积 " + bigChars.toLocaleString("zh-CN") + " 字符（约 " + fmtBytes(bigChars * 2) + "）过大，单键即接近容器配额，极易触发写盘失败");
     else if (bigChars >= SIZE_WARN_CHARS) push("WARN", "存档体积 " + bigChars.toLocaleString("zh-CN") + " 字符（约 " + fmtBytes(bigChars * 2) + "）偏大，建议关注是否存在无上限增长的数组");
     else push("OK", "存档体积正常：" + (bigChars >= 0 ? bigChars.toLocaleString("zh-CN") + " 字符（约 " + fmtBytes(bigChars * 2) + "）" : "无法测量"));
 
-    // 3. localStorage 总占用
+    // 3. localStorage 总占用。配额按实测推断（不写死 5MB：容器可能给到 10MB，
+    //    写死会把已满的 10MB 机器算成 200%，反而误导）。
     if (st.supported && st.totalBytes > 0) {
-      const pct = Math.round(st.totalBytes / LOCAL_QUOTA_BYTES * 100);
-      if (pct >= 100) push("FAIL", "localStorage 总占用 " + fmtBytes(st.totalBytes) + "（估计已达上限的 " + pct + "%）");
-      else if (pct >= 80) push("WARN", "localStorage 总占用 " + fmtBytes(st.totalBytes) + "（估计达上限的 " + pct + "%），余量不足");
-      else push("OK", "localStorage 总占用 " + fmtBytes(st.totalBytes) + "（估计达上限的 " + pct + "%）");
+      const quota = num(st.quotaBytes) || LOCAL_QUOTA_BYTES;
+      const pct = Math.round(st.totalBytes / quota * 100);
+      const attr = "本游戏 " + fmtBytes(st.ownBytes) + "（" + st.ownKeys + " 键）／其他来源 " + fmtBytes(st.foreignBytes) + "（" + st.foreignKeys + " 键）";
+      if (pct >= 95) push("FAIL", "localStorage 总占用 " + fmtBytes(st.totalBytes) + "，已达推断上限 " + fmtBytes(quota) + " 的 " + pct + "%（已写满）—— " + attr);
+      else if (pct >= 80) push("WARN", "localStorage 总占用 " + fmtBytes(st.totalBytes) + "（推断上限 " + fmtBytes(quota) + " 的 " + pct + "%），余量不足 —— " + attr);
+      else push("OK", "localStorage 总占用 " + fmtBytes(st.totalBytes) + "（推断上限 " + fmtBytes(quota) + " 的 " + pct + "%）—— " + attr);
     }
     if (st.error) push("FAIL", "读取 localStorage 本身报错：" + st.error);
 
-    // 3b. 同步元数据键成本：SaveEnvelope.checksum 存的是「全量规范化 payload」而非哈希，
-    //     导致 sync_meta 键几乎与存档本体同体积 → 本地存储成本接近翻倍，提前撞 5MB 配额。
+    // 3a. 他人占用：localStorage 按 origin（域名）共享，不看路径。TapTap 把小游戏托管在
+    //     同一域名下用路径分发，所以同一台设备上其他小游戏的数据会与本作抢同一份配额。
+    if (st.supported && st.foreignBytes > 0) {
+      const share = Math.round(st.foreignBytes / Math.max(1, st.totalBytes) * 100);
+      if (share >= 30 || rep.storageError) {
+        push("FAIL", "本地存储中 " + share + "% 的空间（" + fmtBytes(st.foreignBytes) + "，共 " + st.foreignKeys +
+          " 个键）不属于本游戏 —— 同域名下的其他小游戏与本作共享同一份 localStorage 配额。" +
+          "本作只占 " + fmtBytes(st.ownBytes) + "，即使压到最小也可能写不进去；需清理同域其他数据，或把存档迁到文件系统（不占 localStorage）");
+      }
+    }
+
+    // 3b. 同步元数据键成本：本版本起 sync_meta 只存 64 位校验摘要（B 修复），正常应 < 2KB。
+    //     若仍与存档本体同量级，说明本地还留着旧版本写入的全量 checksum —— 再保存一次即可改写为摘要。
     const metaEntry = (st.entries || []).filter(function (e) { return e.key === "deep_space_idle_sync_meta"; })[0];
     if (metaEntry && loc.saveKeyChars > 0 && metaEntry.chars > loc.saveKeyChars * 0.5) {
       push("WARN", "同步元数据键占 " + metaEntry.chars.toLocaleString("zh-CN") + " 字符，是存档本体（" + loc.saveKeyChars.toLocaleString("zh-CN") + " 字符）的 " +
-        Math.round(metaEntry.chars / loc.saveKeyChars * 100) + "% —— 其中 localChecksum 存的是整份存档的规范化序列化（并非哈希），" +
-        "使本地存储实际成本接近翻倍，会显著提前撞 localStorage 配额并触发写盘失败");
+        Math.round(metaEntry.chars / loc.saveKeyChars * 100) + "% —— 该键正常应小于 2KB（只存校验摘要）。如此体积说明本地仍是旧版本（0.7.10 及以前）" +
+        "写入的全量校验和残留，进入游戏正常保存一次即可自动改写为摘要并释放这部分空间");
+    } else if (metaEntry) {
+      push("OK", "同步元数据键仅占 " + metaEntry.chars.toLocaleString("zh-CN") + " 字符（本版本起只存校验摘要，不再随存档体积膨胀）");
     }
 
     // 4. 云端可用性与同步
@@ -581,8 +626,12 @@
     L.push("  待保存标记 dirty：" + loc.dirty);
     L.push("  最近一次写盘异常：" + (rep.storageError ? rep.storageError.name + (rep.storageError.code ? " code=" + rep.storageError.code : "") + " — " + rep.storageError.message : "无"));
     L.push("");
-    L.push("【本地存储占用】" + (st.supported ? fmtBytes(st.totalBytes) + "（估计上限的 " + Math.round(st.totalBytes / LOCAL_QUOTA_BYTES * 100) + "%）" : "不可用" + (st.error ? "：" + st.error : "")));
-    (st.entries || []).slice(0, 8).forEach(function (e) { L.push("  " + e.key + " → " + e.chars.toLocaleString("zh-CN") + " 字符 / " + fmtBytes(e.bytes)); });
+    const quotaBytes = num(st.quotaBytes) || LOCAL_QUOTA_BYTES;
+    L.push("【本地存储占用】" + (st.supported ? fmtBytes(st.totalBytes) + "（推断上限 " + fmtBytes(quotaBytes) + " 的 " + Math.round(st.totalBytes / quotaBytes * 100) + "%）" : "不可用" + (st.error ? "：" + st.error : "")));
+    if (st.supported) {
+      L.push("  本游戏占用：" + fmtBytes(st.ownBytes) + "（" + st.ownKeys + " 个键） ｜ 非本游戏占用：" + fmtBytes(st.foreignBytes) + "（" + st.foreignKeys + " 个键，与本站点其他小游戏共享同一份配额）");
+    }
+    (st.entries || []).slice(0, 8).forEach(function (e) { L.push("  " + (e.own ? "[本作] " : "[非本作] ") + e.key + " → " + e.chars.toLocaleString("zh-CN") + " 字符 / " + fmtBytes(e.bytes)); });
     if ((st.entries || []).length > 8) L.push("  ... 另有 " + (st.entries.length - 8) + " 个键");
     L.push("");
     L.push("【设备文件备份】" + (rep.mirror && rep.mirror.present ? (rep.mirror.available ? (rep.mirror.syncFailed ? "可用但上次写入失败" : "正常") : "不可用") + " ｜ 上次写入：" + rep.mirror.lastWriteAtText + (rep.mirror.error ? " ｜ 错误：op=" + rep.mirror.error.op + (rep.mirror.error.code ? " code=" + rep.mirror.error.code : "") + " " + rep.mirror.error.message + (rep.mirror.error.file ? " file=" + rep.mirror.error.file : "") : "") : "未挂载"));

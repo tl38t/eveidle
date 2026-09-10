@@ -69,10 +69,45 @@
     };
   };
 
+  // ================== B 修复（2026-09-10）：同步元数据不再持久化整份校验和 ==================
+  // 背景：SaveEnvelope.checksum 是「整份 payload 的 stableStringify」（**不是哈希**，verify() 用全串比对），
+  // 原样写进 sync_meta 的 localChecksum / lastCloudChecksum 两份 → 该键体积 ≈ 2× 存档本体
+  // （客户真机实测：sync_meta 668.5KB / 存档本体 304.3KB = 220%）。在 localStorage 与同域名
+  // 其他 TapTap 小游戏共享 10MB 配额的前提下，这直接把本作推近 QuotaExceededError。
+  // 方案：只存 64 位摘要（16 hex）。三方比对（local / cloud / lastCloud）统一先归一化为摘要，
+  // 语义完全等价（只判等，不需要还原内容）；摘要函数对「已是本摘要格式」的输入幂等返回自身，
+  // 因此旧档（内含全量串）在读取与比较时都能无损迁移，不需要玩家重置存档。
+  const CHECKSUM_DIGEST_RE = /^[0-9a-f]{16}$/;
+  CloudSaveService.checksumDigest = function (value) {
+    if (typeof value !== "string" || !value) return "";
+    if (CHECKSUM_DIGEST_RE.test(value)) return value; // 幂等：已经是摘要
+    // 两个独立的 32 位滚动哈希拼成 64 位，兼顾碰撞率与逐字符成本（存档 30 万字符级，必须便宜）。
+    let h1 = 0x811c9dc5 >>> 0; // FNV-1a offset basis
+    let h2 = 0x9e3779b9 >>> 0; // 独立种子 + 位置扰动，避免同长度不同内容撞车
+    for (let i = 0; i < value.length; i++) {
+      const c = value.charCodeAt(i);
+      h1 = Math.imul(h1 ^ c, 0x01000193) >>> 0;
+      h2 = Math.imul(h2 ^ c, 0x85ebca6b) >>> 0;
+      h2 = (h2 + (i & 0xff)) >>> 0;
+    }
+    const hex8 = function (n) { return ("0000000" + n.toString(16)).slice(-8); };
+    return hex8(h1) + hex8(h2);
+  };
+
+  // 判断一份 sync_meta 是否还是旧版格式（含全量 checksum，需要迁移落盘）。
+  CloudSaveService.prototype._needsChecksumMigration = function (raw) {
+    if (!raw || typeof raw !== "object") return false;
+    const long = function (v) { return typeof v === "string" && v.length > 16; };
+    return long(raw.localChecksum) || long(raw.lastCloudChecksum);
+  };
+
   // 初始化 provider 并载入本地同步元数据。返回是否可用。
   CloudSaveService.prototype.init = function () {
     const self = this;
-    this._syncMeta = this._mergeMeta(this.metaStore.load());
+    const rawMeta = this.metaStore.load();
+    this._syncMeta = this._mergeMeta(rawMeta);
+    // 迁移：旧版 meta 里躺着全量 checksum，读到即立刻把归一化后的短摘要写回，让旧档当场瘦身。
+    if (this._needsChecksumMigration(rawMeta)) this._persistMeta();
     if (this.provider && typeof this.provider.initialize === "function") {
       return Promise.resolve(this.provider.initialize()).then(function (ok) {
         self._available = !!(self.provider && self.provider.isAvailable && self.provider.isAvailable());
@@ -95,8 +130,9 @@
     if (typeof raw.deviceId === "string") base.deviceId = raw.deviceId;
     if (typeof raw.localRevision === "number") base.localRevision = raw.localRevision;
     if (typeof raw.localSavedAt === "number") base.localSavedAt = raw.localSavedAt;
-    if (typeof raw.localChecksum === "string") base.localChecksum = raw.localChecksum;
-    if (typeof raw.lastCloudChecksum === "string") base.lastCloudChecksum = raw.lastCloudChecksum;
+    // B 修复：读入即归一化为短摘要（旧档的全量串在此无损迁移）。
+    if (typeof raw.localChecksum === "string") base.localChecksum = CloudSaveService.checksumDigest(raw.localChecksum);
+    if (typeof raw.lastCloudChecksum === "string") base.lastCloudChecksum = CloudSaveService.checksumDigest(raw.lastCloudChecksum);
     if (typeof raw.lastCloudArchiveId === "string") base.lastCloudArchiveId = raw.lastCloudArchiveId;
     if (typeof raw.lastSuccessfulSyncAt === "number") base.lastSuccessfulSyncAt = raw.lastSuccessfulSyncAt;
     return base;
@@ -222,9 +258,11 @@
     const c = ctx || {};
     const hasLocal = !!c.hasLocal;
     const hasCloud = !!c.hasCloud;
-    const localChecksum = c.localChecksum;
-    const cloudChecksum = c.cloudChecksum;
-    const lastCloudChecksum = c.lastCloudChecksum;
+    // B 修复：三方统一归一化为短摘要后再比对。无论调用方递进来的是全量 checksum（envelope.checksum）
+    // 还是 sync_meta 里的摘要，结果都一致，因此本次改动对调用方零要求、对旧档零破坏。
+    const localChecksum = CloudSaveService.checksumDigest(c.localChecksum);
+    const cloudChecksum = CloudSaveService.checksumDigest(c.cloudChecksum);
+    const lastCloudChecksum = CloudSaveService.checksumDigest(c.lastCloudChecksum);
 
     if (!hasLocal && !hasCloud) return { decision: "new" };
     if (hasLocal && !hasCloud) return { decision: "use-local" };
@@ -303,7 +341,7 @@
         const meta = resultMeta || {};
         self._cloudArchiveMeta = meta;
         if (typeof meta.archiveId === "string") self._syncMeta.lastCloudArchiveId = meta.archiveId;
-        self._syncMeta.lastCloudChecksum = envelope.checksum;
+        self._syncMeta.lastCloudChecksum = CloudSaveService.checksumDigest(envelope.checksum); // B：只存摘要
         self._syncMeta.lastSuccessfulSyncAt = savedAt;
         self._cloudRevision = revision;
         self._dirty = self._dirtyVersion !== uploadDirtyVersion;
@@ -330,7 +368,7 @@
 
   // 将本地校验信息写入 sync_meta（由 persistence 在本地保存成功后调用）。
   CloudSaveService.prototype.recordLocal = function (localChecksum, savedAt, revision) {
-    if (typeof localChecksum === "string") this._syncMeta.localChecksum = localChecksum;
+    if (typeof localChecksum === "string") this._syncMeta.localChecksum = CloudSaveService.checksumDigest(localChecksum); // B：只存摘要
     if (typeof savedAt === "number") this._syncMeta.localSavedAt = savedAt;
     if (typeof revision === "number") this._syncMeta.localRevision = revision;
     if (this.deviceId && !this._syncMeta.deviceId) this._syncMeta.deviceId = this.deviceId;
@@ -338,7 +376,7 @@
   };
 
   CloudSaveService.prototype.recordCloudBaseline = function (checksum, archiveId) {
-    if (typeof checksum === "string") this._syncMeta.lastCloudChecksum = checksum;
+    if (typeof checksum === "string") this._syncMeta.lastCloudChecksum = CloudSaveService.checksumDigest(checksum); // B：只存摘要
     if (typeof archiveId === "string") this._syncMeta.lastCloudArchiveId = archiveId;
     this._persistMeta();
     return this._syncMeta;

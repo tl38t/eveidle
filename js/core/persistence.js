@@ -2574,7 +2574,13 @@ const SaveManager = {
         cs.recordCloudBaseline(checksum || computeGameStateChecksum(gameState));
       } else if (cs && cs.getSyncMeta) {
         const meta = cs.getSyncMeta();
-        if (meta) meta.lastCloudChecksum = checksum || computeGameStateChecksum(gameState);
+        // B 修复（2026-09-10）：sync_meta 只存 64 位摘要，不再存整份 checksum。
+        // 本分支是 recordCloudBaseline 缺失时的兜底（正常不可达），仍统一口径，避免元数据键被撑大。
+        if (meta) {
+          const _raw = checksum || computeGameStateChecksum(gameState);
+          const _d = (typeof CloudSaveService !== "undefined" && CloudSaveService && CloudSaveService.checksumDigest);
+          meta.lastCloudChecksum = _d ? _d(_raw) : _raw;
+        }
       }
     } catch (e) { /* 非致命 */ }
   },

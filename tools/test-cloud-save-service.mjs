@@ -102,7 +102,10 @@ const payload = { skills: { laserOps: { lvl: 1 } }, resources: { isk: 100 } };
 const up = await svc.uploadNow(payload, "auto");
 ok(up.ok === true, "uploadNow 成功");
 ok(!!up.meta && !!up.meta.archiveId, "uploadNow 返回 archiveId");
-ok(svc.getSyncMeta().lastCloudChecksum === up.envelope.checksum, "sync_meta.lastCloudChecksum 已记录");
+// B 修复（2026-09-10）：sync_meta 不再存整份 checksum（它是整份 payload 的 stableStringify，
+// 存两份会让元数据键体积 ≈ 2× 存档本体），改为 64 位摘要；比对时三方统一归一化，语义等价。
+ok(svc.getSyncMeta().lastCloudChecksum === CloudSaveService2.checksumDigest(up.envelope.checksum), "sync_meta.lastCloudChecksum 已记录（B：摘要）");
+ok(svc.getSyncMeta().lastCloudChecksum.length === 16, "B：lastCloudChecksum 为 16 位摘要，不再是全量校验和");
 ok(up.envelope.revision === 1, "首次上传 envelope.revision === 1（max(local,cloud)+1）");
 // localRevision 是「本地存档」计数，仅由 persistence.save() 经 recordLocal 递增（非 uploadNow）。
 svc.recordLocal("chk-local", Date.now(), 1);
