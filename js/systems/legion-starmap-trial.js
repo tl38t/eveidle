@@ -3,6 +3,10 @@
   "use strict";
   const API = {};
   const LIMIT_SECONDS = 180;
+  // 虫洞节点 id 形如 "wnN"（见 js/systems/wormhole.js generateGraph）；星图真节点 id 为纯数字。
+  // 引擎侧一律用「id 前缀 or source」双判识别虫洞节点：source 只在 enrichDailyNodes 生成时写入，
+  // 旧档 daily / 未经 enrich 的路径会缺失 → 单靠 source 会漏判（曾污染星图完成账本 → 奖励静默吞掉）。
+  const WORMHOLE_NODE_ID_RE = /^wn\d+$/;
   const COLLECTION_REWARD_HOUR_MS = 60 * 60 * 1000;
   const COLLECTION_REWARD_DAILY_RATE = 0.96;
   const COLLECTION_REWARD_HOURS_PER_DAY = 24;
@@ -113,7 +117,9 @@
         collectionTimeLimitSeconds:LIMIT_SECONDS
       });
     }
-    if (s.collectionTrial.status === "success" && s.collectionTrial.nodeId != null) {
+    // 虫洞节点（wnN）绝不写入星图完成账本：id 每日复用，写入即「永久拉黑」同名节点（次日 0 发放）。
+    if (s.collectionTrial.status === "success" && s.collectionTrial.nodeId != null &&
+        !isWormholeSource({ id: s.collectionTrial.nodeId, source: s.collectionTrial.lockedNode && s.collectionTrial.lockedNode.source })) {
       const completedId = String(s.collectionTrial.nodeId);
       if (!s.completedNodeIds.includes(completedId)) s.completedNodeIds.push(completedId);
     }
@@ -125,7 +131,8 @@
         battleTrialTimeLimitSeconds:LIMIT_SECONDS
       });
     }
-    if (s.battleTrial.status === "success" && s.battleTrial.nodeId != null) {
+    if (s.battleTrial.status === "success" && s.battleTrial.nodeId != null &&
+        !isWormholeSource({ id: s.battleTrial.nodeId, source: s.battleTrial.lockedNode && s.battleTrial.lockedNode.source })) {
       const completedId = String(s.battleTrial.nodeId);
       if (!s.completedNodeIds.includes(completedId)) s.completedNodeIds.push(completedId);
     }
@@ -211,7 +218,13 @@
     if (!Number.isFinite(v)) return 1;
     return Math.max(0, 1 - v);
   }
-  function isWormholeSource(node) { return !!(node && node.source === "wormhole"); }
+  // 虫洞节点判定（2026-09-10 加固）：显式 source 或 id 前缀 "wnN" 任一命中即为虫洞。
+  // 星图真节点 id 为纯数字，前缀 "wn" 必为虫洞；双判保证旧档缺 source 时仍能正确隔离。
+  function isWormholeSource(node) {
+    if (!node) return false;
+    if (node.source === "wormhole") return true;
+    return node.id != null && WORMHOLE_NODE_ID_RE.test(String(node.id));
+  }
   // 星图驻留奖励产出乘区（4 类驻留账本共用）
   function getStarmapResidentYieldMultiplier(state) {
     return frontierMultiplier(state, ["starmapYield"]);
@@ -648,7 +661,7 @@
     const zone = getBattleZone(node);
     if (!zone) return { ok:false, reason:"invalid-battle-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
+    if (!isWormholeSource(node) && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免（双判：source or wnN id）：完成度归 run.cleared 管
     if (hasNormalActivity(state)) return { ok:false, reason:"player-action-running" };
     const display = getBattleCombatDisplay(state, now, zone.id);
     if (!display || !display.player || !display.player.hasShip) return { ok:false, reason:"no-combat-ship" };
@@ -858,7 +871,10 @@
     const starmap = ensure(state);
     const trial = starmap.battleTrial;
     const key = String(node.id);
-    if (starmap.battleRewards[key]) return null;
+    // 虫洞战斗节点（wnN）与星图战斗账本解耦（2026-09-10）：key 每日复用，若沿用 battleRewards
+    // 去重/记账，首日成功即把同名节点「永久拉黑」（次日 0 发放）。虫洞幂等由 run.grantedKeys 承担。
+    const whBattle = isWormholeSource(node);
+    if (!whBattle && starmap.battleRewards[key]) return null;
     const kind = node.tier === "elite" ? "elite" : "normal";
     // 星图战利品归纳：掉落份数 +%（虫洞节点不吃，走 whRewardMult 的 1/10 缩放体系）
     const rolls = Math.max(1, Math.round(BATTLE_TRIAL_DROP_ROLLS * BATTLE_TRIAL_ONCE_SCALE * getStarmapBattleDropMultiplier(state, node)));
@@ -924,7 +940,8 @@
     const licenseQty = whScaled(BATTLE_TRIAL_LICENSE_COUNT);
     if (licenseId && licenseQty > 0) record(licenseId, licenseQty, licenseId.replace(/^special:/, ""), false);
     const items = Object.keys(tally).map(function (id) { return tally[id]; });
-    starmap.battleRewards[key] = normalizeBattleRewardRecord({
+    // 虫洞战斗节点不写星图战斗账本（wnN 键会被次日复用 → 若写入则「永久拉黑」同名节点）
+    if (!whBattle) starmap.battleRewards[key] = normalizeBattleRewardRecord({
       nodeId:key,
       ring:String(node.ring || "outer"),
       tier:kind,
@@ -1012,8 +1029,8 @@
     if (success && s.nodeId != null) {
       const completedId = String(s.nodeId);
       const completed = ensure(state).completedNodeIds;
-      // 虫洞节点（source=wormhole）不写星图完成度——完成记账由虫洞系统自己处理
-      if (!(s.lockedNode && s.lockedNode.source === "wormhole") && !completed.includes(completedId)) completed.push(completedId);
+      // 虫洞节点（wnN）不写星图完成度——完成记账由虫洞系统自己处理（双判：source or id 前缀）
+      if (!isWormholeSource(s.lockedNode) && !completed.includes(completedId)) completed.push(completedId);
       // 通关奖励（2026-09-06）：星带同级掉落 ×15 + 货柜 ×5 + 许可 ×5，并建立每日驻留账本。
       // 取开战时的节点快照；泰坦组件节点与核心节点在内部直接跳过。
       const rewardNode = s.lockedNode || { id:s.nodeId, ring:"outer", tier:"normal", battleTrialZoneId:s.zoneId };
@@ -1473,7 +1490,7 @@
     const requirements = productionRequirements(node);
     if (!requirements.length) return { ok:false, reason:"invalid-production-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
+    if (!isWormholeSource(node) && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免（双判：source or wnN id）：完成度归 run.cleared 管
     const stocks = getProductionRequirementState(state, node);
     return { ok:stocks.every(function (entry) { return entry.enough; }), reason:stocks.every(function (entry) { return entry.enough; }) ? null : "insufficient-production-materials", requirements:stocks };
   }
@@ -1487,7 +1504,7 @@
     }
     const starmap = ensure(state);
     const completedId = String(node.id);
-    if (!starmap.completedNodeIds.includes(completedId)) starmap.completedNodeIds.push(completedId);
+    if (!isWormholeSource(node) && !starmap.completedNodeIds.includes(completedId)) starmap.completedNodeIds.push(completedId);
     Object.assign(starmap.productionTrial, {
       status:"success", nodeId:completedId, submittedAt:Number(now) || Date.now(),
       requirements:check.requirements.map(function (entry) { return { kind:entry.kind, resourceId:entry.resourceId, itemId:entry.itemId, shipId:entry.shipId, name:entry.name, amount:entry.amount, minEnhancement:entry.minEnhancement }; }),
@@ -1513,7 +1530,7 @@
     const site = archaeologySite(node);
     if (!site) return { ok:false, reason:"invalid-archaeology-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
+    if (!isWormholeSource(node) && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免（双判：source or wnN id）：完成度归 run.cleared 管
     if (hasNormalAction(state)) return { ok:false, reason:"player-action-running" };
     const instance = archaeologyShip(state);
     if (!instance) return { ok:false, reason:"no-archaeology-ship" };
@@ -1560,7 +1577,8 @@
     if (success && s.nodeId != null) {
       const completedId = String(s.nodeId);
       const firstCompletion = !wasCompleted;
-      const whArch = s.lockedNode && s.lockedNode.source === "wormhole";
+      // 虫洞考古：不吃星图首次奖励（文物由虫洞侧 grantNodeRewards 概率发放），也绝不写完成账本。
+      const whArch = isWormholeSource(s.lockedNode) || isWormholeSource({ id: s.nodeId });
       if (firstCompletion && !whArch) starmap.completedNodeIds.push(completedId);
       if (firstCompletion && !whArch) rewardResult = initializeArchaeologyReward(state, s.lockedNode, t);
     }
@@ -1629,7 +1647,7 @@
   function canStart(state, node) {
     if (!state || !active(state, node)) return { ok:false, reason:"invalid-collection-node" };
     if (isAnyTrialRunning(state)) return { ok:false, reason:"starmap-trial-running" };
-    if (node.source !== "wormhole" && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免：完成度归 run.cleared 管
+    if (!isWormholeSource(node) && isNodeCompleted(state, node) && !replayTestingEnabled) return { ok:false, reason:"starmap-trial-completed" };   // 虫洞节点豁免（双判：source or wnN id）：完成度归 run.cleared 管
     if (hasNormalAction(state)) return { ok:false, reason:"player-action-running" };
     // 星图采集编队：采集效率 +%（虫洞节点不吃）
     const collectMult = getStarmapCollectionEfficiencyMultiplier(state, node);
@@ -1672,10 +1690,13 @@
     if (success && s.nodeId != null) {
       const completedId = String(s.nodeId);
       const completedNodeIds = starmap.completedNodeIds;
-      const firstCompletion = !wasCompleted;
-      const whColl = s.lockedNode && s.lockedNode.source === "wormhole";
+      // 虫洞节点与星图完成账本彻底解耦（2026-09-10）：虫洞节点 id 每日复用（wnN），一旦写入
+      // completedNodeIds 就会「永久拉黑」同名节点（次日 firstCompletion=false → 发放行整行跳过 → 0）。
+      // 虫洞的幂等由 run.grantedKeys 保证，无需星图账本 → 虫洞恒定按「首次」结算并发奖。
+      const whColl = isWormholeSource(s.lockedNode) || isWormholeSource({ id: s.nodeId });
+      const firstCompletion = whColl ? true : !wasCompleted;
       // 虫洞采集奖励缩放（collectionRewardMult=0.1 → 1/10）：采集量 100 对标星图节奏，入库只给 1/10
-      const whRewardQty = whColl ? Math.max(0, Math.round(s.amount * (Number(s.lockedNode.collectionRewardMult) || 1))) : s.amount;
+      const whRewardQty = whColl ? Math.max(0, Math.round(s.amount * (Number(s.lockedNode && s.lockedNode.collectionRewardMult) || 1))) : s.amount;
       if (firstCompletion && !whColl) completedNodeIds.push(completedId);
       // 首次试炼产物立即入库；测试重试只复用房间，不重复发放首次奖励。虫洞不进星图驻留账本。
       if (firstCompletion && !whColl) starmap.collectionRewards[completedId] = createCollectionRewardRecord({ id:completedId, resourceId:s.resourceId, collectionResource:s.resourceId, amount:s.amount }, Number(now) || Date.now());

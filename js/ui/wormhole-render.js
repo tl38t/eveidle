@@ -128,10 +128,20 @@
   }
 
   /* ---------------- 每日虫洞卡片 ---------------- */
+  // 表单状态记忆：本页每秒整体重绘（见文件尾 setInterval），若控件值不做记忆就会被冲回默认值。
+  // 这四个 map 与既有 launchControlByDaily 同构，写入点统一挂在 bindOnce 的 input/change 委托上。
   const launchControlByDaily = {};   // 出发卡片选路二选一（自动/手动），按虫洞各自记忆
+  const retryByDaily = {};           // 「失败重试」输入值，按虫洞各自记忆（缺省 "2"）
+  const modeByDaily = {};            // 「遍历/直冲」下拉值，按虫洞各自记忆（缺省 "full"）
+  const choiceByGoods = {};          // 商店「自选购买内容」下拉值，按商品 id 记忆
+  const licenseByGoods = {};         // 商店「生产许可」势力/档位，按商品 id 记忆 { faction, tier }
   function renderDailies(view) {
     const box = el("wh-dailies");
     if (!box) return;
+    // 焦点守卫：玩家正在输入框/下拉里操作时跳过本轮重建，避免打断输入与丢焦点（与 renderShop 同策略）
+    const ae = document.activeElement;
+    if (ae && typeof ae.closest === "function" && ae.closest("#wh-dailies")
+      && (ae.tagName === "INPUT" || ae.tagName === "SELECT")) return;
     if (!view.unlocked) {
       box.innerHTML = '<div style="color:#8fa8c3;padding:10px 0">虫洞裂隙尚未显现 —— 制压星图中心节点（先驱文明核心）后开启。</div>';
       return;
@@ -141,10 +151,12 @@
       ? window.WORMHOLE.getDailyNodeCounts(gameState) : {};
     const reroll = view.rerollToday || { count: 0, stock: 0 };
     const rerollBar = '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin:0 0 10px;padding:8px 10px;border:1px solid rgba(143,75,255,.30);border-radius:8px;background:rgba(18,13,37,.72);color:#a995c5;font-size:12px">' +
-      '<span>裂隙重析库存：' + Number(reroll.stock || 0) + ' · 今日已购买：' + Number(reroll.count || 0) + '/2</span>' +
+      '<span>裂隙重析库存：' + Number(reroll.stock || 0) + ' · 今日已购买：' + Number(reroll.count || 0) + '/2（未用库存跨日保留）</span>' +
       '<button type="button" class="btn secondary" data-wh-use-reroll' + (!(reroll.stock > 0) ? ' disabled' : '') + '>使用重析</button></div>';
     const html = view.dailies.map(d => {
       const pick = launchControlByDaily[d.id] || "auto";   // 本卡片的选路选择（默认自动）
+      const modeVal = modeByDaily[d.id] === "rush" ? "rush" : "full";
+      const retryVal = (retryByDaily[d.id] !== undefined && retryByDaily[d.id] !== "") ? String(retryByDaily[d.id]) : "2";
       const affix = (window.WORMHOLE_AFFIXES || []).find(a => a.id === d.affixId);
       const counts = countsByDaily[d.id] || { battle: "?", collection: "?", archaeology: "?" };
       const disabled = runActive || d.status !== "available";
@@ -164,9 +176,9 @@
         '<button type="button" data-wh-pick-control="manual" data-wh-daily-id="' + esc(d.id) + '" style="padding:4px 10px;font-size:12px;border:none;border-left:1px solid rgba(94,75,139,.58);cursor:' + (disabled ? "default" : "pointer") + ';background:' + (pick === "manual" ? "#1d3a5f" : "transparent") + ';color:' + (pick === "manual" ? "#7fd8c0" : "#5f7a99") + ';font-weight:' + (pick === "manual" ? "700" : "400") + '"' + (disabled ? " disabled" : "") + '>手动</button>' +
         '</span>' +
         '<select data-wh-mode="' + esc(d.id) + '" style="background:#0c1528;color:#c7d8ef;border:1px solid rgba(94,75,139,.58);border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '>' +
-        '<option value="full">遍历（全清）</option><option value="rush">直冲终点</option></select>' +
+        '<option value="full"' + (modeVal === "full" ? " selected" : "") + '>遍历（全清）</option><option value="rush"' + (modeVal === "rush" ? " selected" : "") + '>直冲终点</option></select>' +
         '<label style="color:#7f97b3;font-size:12px">失败重试</label>' +
-        '<input data-wh-retry="' + esc(d.id) + '" type="number" min="0" max="99" value="2" style="width:56px;background:#0c1528;color:#c7d8ef;border:1px solid rgba(94,75,139,.58);border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '/>' +
+        '<input data-wh-retry="' + esc(d.id) + '" type="number" min="0" max="99" value="' + esc(retryVal) + '" style="width:56px;background:#0c1528;color:#c7d8ef;border:1px solid rgba(94,75,139,.58);border-radius:6px;padding:4px 6px;font-size:12px"' + (disabled ? " disabled" : "") + '/>' +
         '<button type="button" class="btn primary" data-wh-start="' + esc(d.id) + '"' + (disabled ? " disabled" : "") + '>出发</button>' +
         '</div></div>'
       );
@@ -223,12 +235,18 @@
     const renderShopGood = id => {
       const g = S.goods[id];
       let priceHtml;
-      const choicePicker = (options, label) => '<div class="wh-choice-picker"><select class="u-select wh-choice-select" data-wh-choice-select aria-label="' + esc(label) + '">' + options.map(o => '<option value="' + esc(o.value) + '">' + esc(o.label) + '</option>').join('') + '</select><button type="button" class="btn" data-wh-buy-choice="' + esc(id) + '">购买</button></div>';
+      const choicePicker = (options, label) => {
+        const cur = choiceByGoods[id];   // 记忆上一次选择，重绘后不丢（本页每秒整体重建）
+        return '<div class="wh-choice-picker"><select class="u-select wh-choice-select" data-wh-choice-select data-wh-choice-for="' + esc(id) + '" aria-label="' + esc(label) + '">' +
+          options.map(o => '<option value="' + esc(o.value) + '"' + (cur === o.value ? " selected" : "") + '>' + esc(o.label) + '</option>').join('') +
+          '</select><button type="button" class="btn" data-wh-buy-choice="' + esc(id) + '">购买</button></div>';
+      };
       if (g.licenseFactions) {
-        const factions = g.licenseFactions.map(name => '<option value="' + esc(name) + '">' + esc(name) + '</option>').join('');
-        const tiers = Object.keys(g.byTier).map(tier => '<option value="' + esc(tier) + '">' + esc(tier) + ' · ' + fmtNum(g.byTier[tier]) + ' 印记</option>').join('');
-        priceHtml = '<div class="wh-license-picker"><select class="u-select wh-license-select" data-wh-license-faction aria-label="选择生产许可势力">' + factions + '</select>' +
-          '<select class="u-select wh-license-select" data-wh-license-tier aria-label="选择生产许可档位">' + tiers + '</select>' +
+        const lic = licenseByGoods[id] || {};
+        const factions = g.licenseFactions.map(name => '<option value="' + esc(name) + '"' + (lic.faction === name ? " selected" : "") + '>' + esc(name) + '</option>').join('');
+        const tiers = Object.keys(g.byTier).map(tier => '<option value="' + esc(tier) + '"' + (lic.tier === tier ? " selected" : "") + '>' + esc(tier) + ' · ' + fmtNum(g.byTier[tier]) + ' 印记</option>').join('');
+        priceHtml = '<div class="wh-license-picker"><select class="u-select wh-license-select" data-wh-license-faction data-wh-license-for="' + esc(id) + '" aria-label="选择生产许可势力">' + factions + '</select>' +
+          '<select class="u-select wh-license-select" data-wh-license-tier data-wh-license-for="' + esc(id) + '" aria-label="选择生产许可档位">' + tiers + '</select>' +
           '<button type="button" class="btn" data-wh-buy-license>购买</button></div>';
       }
       else if (g.byChoice) priceHtml = choicePicker(Object.keys(g.byChoice).map(ref => {
@@ -436,6 +454,23 @@
         return confirmPurchase("wormhole/buyGoods", id, () => dispatch("wormhole/buyGoods", { id, param: target.dataset.whParam || null }));
       }
     });
+
+    // 表单状态记忆 write-back：出发卡片（重试次数 / 遍历直冲）与商店选择器（自选内容 / 生产许可）
+    // 都挂在每秒重建的 innerHTML 上，必须把玩家输入写回模块级 map，否则重绘即丢失。
+    const rememberField = (t) => {
+      if (!t || !t.dataset || !t.tagName) return;
+      const ds = t.dataset;
+      if (ds.whRetry !== undefined) { retryByDaily[ds.whRetry] = t.value; return; }
+      if (ds.whMode !== undefined) { modeByDaily[ds.whMode] = t.value; return; }
+      if (ds.whChoiceFor !== undefined && t.hasAttribute("data-wh-choice-select")) { choiceByGoods[ds.whChoiceFor] = t.value; return; }
+      if (ds.whLicenseFor !== undefined) {
+        const memo = licenseByGoods[ds.whLicenseFor] = licenseByGoods[ds.whLicenseFor] || {};
+        if (t.hasAttribute("data-wh-license-faction")) memo.faction = t.value;
+        else if (t.hasAttribute("data-wh-license-tier")) memo.tier = t.value;
+      }
+    };
+    document.addEventListener("input", (e) => rememberField(e.target));
+    document.addEventListener("change", (e) => rememberField(e.target));
   }
 
   function init() {

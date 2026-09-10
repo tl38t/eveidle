@@ -34,6 +34,8 @@ function getShipConfigById(shipId) {
   return STARTER_SHIPS[shipId]
     || INDUSTRIAL_SHIPS[shipId]
     || (typeof ARCHAEOLOGY_SHIPS !== "undefined" ? ARCHAEOLOGY_SHIPS[shipId] : undefined)
+    // 泰坦（方案 C 运行时注册表）：titans.js 加载晚于本文件，故用 typeof 守卫 + 懒解析自愈。
+    || (typeof resolveTitanConfigByShipId === "function" ? resolveTitanConfigByShipId(shipId) : null)
     || null;
 }
 
@@ -304,6 +306,10 @@ function getCurrentActivityDisplayState(state, now) {
     if (action.shipSubAction === "component") {
       const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === (action.startedShipCompTarget || action.shipCompTarget)) || SHIP_COMPONENT_RECIPES[0];
       detail = "制造" + recipe.name;
+    } else if (action.shipSubAction === "titanAssembly") {
+      // 泰坦总装：shipAsmTarget 为空，配方由 titanAsmCombo 现算（落到 fallback 会错显成「合成山海级」）——2026-09-10 修复
+      const recipe = (typeof getTitanAssemblyRecipe === "function") ? getTitanAssemblyRecipe(action.startedTitanAsmCombo || action.titanAsmCombo) : null;
+      detail = recipe ? recipe.name : "泰坦总装";
     } else {
       const recipe = SHIP_ASSEMBLY_RECIPES.find(item => item.id === (action.startedShipAsmTarget || action.shipAsmTarget)) || SHIP_ASSEMBLY_RECIPES[0];
       detail = "合成" + recipe.name;
@@ -587,16 +593,17 @@ function getRefiningOutputMultiplier(level) {
 // 生效条件：全局开关开启（settings.refineryPumpEnabled，默认 true）且等离子体库存 ≥ 件数（每炉每件扣 1）。
 // 断料/关闭时 bonus=0，冶炼不中断（供料是增益条件而非运转前提）。
 function getPumpModifiers(state, instance) {
-  const result = { count:0, bonus:0, fuelPerCycle:0, resourceId:"planetary:等离子体", stock:0, enabled:true, active:false };
+  const result = { count:0, bonus:0, fuelPerCycle:0, resourceId:"planetary:等离子体", stock:0, enabled:true, active:false, pumps:[] };
   if (!state || !instance || !instance.fitted || typeof EQUIPMENT_DB === "undefined" || !EQUIPMENT_DB) return result;
-  const def = EQUIPMENT_DB["refinery_pump"];
-  if (!def || !def.pump) return result;
   // 修复（2026-09-02）：强化无效 —— 旧实现用 def.bonuses.smeltingSpeed 基础值 × 数量，
   // 完全没读各泵实例的 enhancementLevel。现逐台泵按自身强化等级应用效果倍率。
   const enhanceMult = (typeof getEquipmentEnhancementEffectMultiplier === "function")
     ? getEquipmentEnhancementEffectMultiplier : (l => 1);
-  const pumpBase = (Number(def.bonuses && def.bonuses.smeltingSpeed) || 0);
-  let bonusSum = 0;
+  const settings = (typeof ensureUserSettingsState === "function") ? ensureUserSettingsState(state) : null;
+  const defs = ["refinery_pump", "refinery_pump_dark"]
+    .map(itemId => ({ itemId, def:EQUIPMENT_DB[itemId] }))
+    .filter(entry => entry.def && entry.def.pump);
+  const counts = new Map(defs.map(entry => [entry.itemId, []]));
   for (const slotKey of ["high", "mid", "low"]) {
     const arr = instance.fitted[slotKey];
     if (!Array.isArray(arr)) continue;
@@ -604,19 +611,39 @@ function getPumpModifiers(state, instance) {
       if (!ref) continue;
       const inst = (typeof getEquipmentInstanceById === "function") ? getEquipmentInstanceById(state, ref) : null;
       const itemId = inst ? inst.itemId : ref;
-      if (itemId === "refinery_pump") {
-        result.count += 1;
-        bonusSum += pumpBase * (inst ? enhanceMult(inst.enhancementLevel) : 1);
-      }
+      if (counts.has(itemId)) counts.get(itemId).push(inst);
     }
   }
-  result.fuelPerCycle = result.count * ((def.fuel && Number(def.fuel.perCycle)) || 1);
-  if (def.fuel && def.fuel.resourceId) result.resourceId = def.fuel.resourceId;
-  const settings = (typeof ensureUserSettingsState === "function") ? ensureUserSettingsState(state) : null;
-  result.enabled = !(settings && settings.refineryPumpEnabled === false);
-  result.stock = ResourceRegistry.get(state, result.resourceId);
-  result.active = result.enabled && result.count > 0 && result.stock >= result.fuelPerCycle;
-  result.bonus = result.active ? bonusSum : 0;
+  for (const { itemId, def } of defs) {
+    const instances = counts.get(itemId) || [];
+    const count = instances.length;
+    const resourceId = (def.fuel && def.fuel.resourceId) || "planetary:等离子体";
+    const pumpEnabled = itemId === "refinery_pump_dark"
+      ? !(settings && settings.refineryPumpDarkEnabled === false)
+      : !(settings && settings.refineryPumpEnabled === false);
+    const perPump = (def.fuel && Number(def.fuel.perCycle)) || 1;
+    const fuelPerCycle = count * perPump;
+    const stock = ResourceRegistry.get(state, resourceId);
+    const baseBonus = instances.reduce((sum, inst) => {
+      const base = Number(def.bonuses && def.bonuses.smeltingSpeed) || 0;
+      return sum + base * (inst ? enhanceMult(inst.enhancementLevel) : 1);
+    }, 0);
+    const active = pumpEnabled && count > 0 && stock >= fuelPerCycle;
+    result.pumps.push({ itemId, count, bonus:active ? baseBonus : 0, baseBonus, fuelPerCycle, resourceId, stock, enabled:pumpEnabled, active });
+  }
+  const activePumps = result.pumps.filter(pump => pump.count > 0);
+  result.count = activePumps.reduce((sum, pump) => sum + pump.count, 0);
+  result.bonus = activePumps.reduce((sum, pump) => sum + pump.bonus, 0);
+  result.fuelPerCycle = activePumps.reduce((sum, pump) => sum + pump.fuelPerCycle, 0);
+  result.enabled = activePumps.length > 0 && activePumps.every(pump => pump.enabled);
+  result.active = activePumps.length > 0 && activePumps.every(pump => pump.active);
+  if (activePumps.length === 1) {
+    result.resourceId = activePumps[0].resourceId;
+    result.stock = activePumps[0].stock;
+  } else if (activePumps.length > 1) {
+    result.resourceId = "multiple";
+    result.stock = Math.min(...activePumps.map(pump => pump.stock));
+  }
   return result;
 }
 
@@ -693,8 +720,9 @@ function getSmeltingDisplayState(state, now) {
     ? getProgressDisplayState(action, "refining", running.baseTime / efficiency, now)
     : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"\u2014", duration:running.baseTime / efficiency };
   const targetChanged = progress.active && current.name !== running.name;
-  const stock = ResourceRegistry.get(state, "ore:" + current.consumeOre);
-  const runningStock = ResourceRegistry.get(state, "ore:" + running.consumeOre);
+  // 泰坦双材料（P1 2026-09-10）：库存显示改为「当前可完成周期数」（单输入旧配方 = floor(库存)，逐位等价）
+  const stock = getSmeltingCyclesAvailable(state, current);
+  const runningStock = getSmeltingCyclesAvailable(state, running);
   return {
     kind:"refining",
     current:{ ...current, displayName:getAreaDisplayName(current.name) },
@@ -2332,7 +2360,8 @@ function getCombatRepairMultiplierFromState(state, target, context, structureRat
     let equipRepairBonus = 0;
     for (const m of mods) {
       if (m.bonuses && typeof m.bonuses[target + "Repair"] === "number") {
-        equipRepairBonus += m.bonuses[target + "Repair"];
+        // 2026-09-10 修复：百分比维修加成补乘强化系数（与采矿放大器/容量/打捞效率同口径）
+        equipRepairBonus += m.bonuses[target + "Repair"] * (Number(m.multiplier) || 1);
       }
     }
     if (equipRepairBonus !== 0) shipRepairMult += equipRepairBonus;
@@ -2399,13 +2428,17 @@ function getCombatActualStatsFromState(state, context) {
   const fuelMult = getCombatFuelMultiplierFromState(state, zone, undefined, undefined);
   const boosterRep = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).repairMultiplier : null;
 
-  // ── 攻击：Σ 基础伤害 × 装备强化倍率 × 武器类型倍率 ──
+  // ── 攻击：Σ 基础伤害 × 装备强化倍率 × 武器类型倍率 × 武器增强剂 ──
+  // 2026-09-10 修复：补显示武器增强剂乘区（combat.js L1503 实弹 baseDamage×强化×weaponBoosterMult，
+  // 面板此前漏乘 → 有战斗增强剂时面板攻击低于实弹；与维修行「× 增强剂」同口径）
+  const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
   const attackItems = [];
   let attackRaw = 0;
   for (const m of weapons) {
     const typeMult = Number(getCombatDamageMultiplierFromState(state, m.combat.weaponType, cOpts)) || 1;
     const enhancement = Number(m.multiplier) || 1;
-    const value = (Number(m.combat.baseDamage) || 0) * enhancement * typeMult;
+    const atkBooster = (boosterDmg && boosterDmg[m.combat.weaponType]) ? Number(boosterDmg[m.combat.weaponType]) || 1 : 1;
+    const value = (Number(m.combat.baseDamage) || 0) * enhancement * typeMult * atkBooster;
     attackRaw += value;
     attackItems.push({
       name: m.name || m.combat.weaponType,
@@ -2413,6 +2446,7 @@ function getCombatActualStatsFromState(state, context) {
       base: Math.round(Number(m.combat.baseDamage) || 0),
       enhancement: enhancement,
       typeMult: typeMult,
+      atkBooster: atkBooster,
       value: Math.round(value)
     });
   }
@@ -2441,7 +2475,8 @@ function getCombatActualStatsFromState(state, context) {
 
   // ── 减伤：损伤控制单元（多件求和封顶 50%）+ 偏导护盾（仅前 N 次护盾命中，乘法叠加）──
   let dcuRaw = 0;
-  for (const m of damageControls) dcuRaw += (m.bonuses && Number(m.bonuses.globalDamageReduction)) || 0;
+  // 2026-09-10 修复：面板 DCU 减伤补乘强化系数（与 combat.js/offline-combat.js/legion-combat-squad.js 实战口径同步）
+  for (const m of damageControls) dcuRaw += ((m.bonuses && Number(m.bonuses.globalDamageReduction)) || 0) * (Number(m.multiplier) || 1);
   const dcu = Math.min(0.5, Math.max(0, dcuRaw));
   const trait = ship && ship.capitalTrait ? ship.capitalTrait : null;
   const isDeflector = Boolean(trait && trait.id && String(trait.id).indexOf("deflection_shield") >= 0);
@@ -3670,6 +3705,33 @@ function getRefiningLevel(state) {
    只读纯计算，不触碰 state；refId 取材料名跨命名空间聚合的第一个命名空间 id（归还锚点）。
    reclaimRate 默认 0.5（向后兼容），实际调用方应传入 getDismantleReclaimRate(冶炼等级)。
    ================================================================ */
+// 舰船拆解配方唯一查找口径（2026-09-10 泰坦收口）：
+// 泰坦 shipId 为运行时注册表键（titan__<hull>__<weapon>__<core>），不在 SHIP_ASSEMBLY_RECIPES 内，
+// 须用实例上的 titanCombo 现算虚拟配方（与总装 getTitanAssemblyRecipe 同口径）。
+// 此前两处（机库报价本文件 / disassembleShip）各自 find SHIP_ASSEMBLY_RECIPES → 泰坦恒为 null
+// → 表现「泰坦不可拆解，造错组合永久占机库」，故统一收口到本函数。
+function getShipDismantleRecipeFor(state, instance) {
+  if (!instance) return null;
+  if (typeof SHIP_ASSEMBLY_RECIPES !== "undefined") {
+    const hit = SHIP_ASSEMBLY_RECIPES.find(entry => entry.shipId === instance.shipId);
+    if (hit) return hit;
+  }
+  const config = getShipConfigById(instance.shipId);
+  if (!config || config.type !== "titan") return null;
+  // 注意：parseTitanShipId 返回 {hullId,weaponId,coreId}，而实例上的 titanCombo / 虚拟配方用
+  // {hull,weapon,core}（tick/offline 写入口径）——此处统一归一，避免回退路径拿到 undefined。
+  const raw = instance.titanCombo
+    || (typeof parseTitanShipId === "function" ? parseTitanShipId(instance.shipId) : null);
+  if (!raw) return null;
+  const combo = {
+    hull: raw.hull != null ? raw.hull : raw.hullId,
+    weapon: raw.weapon != null ? raw.weapon : raw.weaponId,
+    core: raw.core != null ? raw.core : raw.coreId
+  };
+  if (!combo.hull || !combo.weapon || !combo.core) return null;
+  return (typeof getTitanAssemblyRecipe === "function") ? (getTitanAssemblyRecipe(combo) || null) : null;
+}
+
 function getShipDismantleQuote(recipe, config, enhancementLevel, reclaimRate) {
   if (!recipe || typeof recipe !== "object") return [];
   // key -> { total, kind, id? }：material = 基础材料名；component = 舰船强化组件（refId 取 component:<id>）
@@ -3694,6 +3756,14 @@ function getShipDismantleQuote(recipe, config, enhancementLevel, reclaimRate) {
     const perLevel = getShipEnhancementCost(config);
     for (const [compId, qty] of Object.entries(perLevel)) {
       add("__component__" + compId, Number(qty) * L, "component", compId);
+    }
+    // 泰坦额外精炼料同样按回收率返还（星币仍不返还）
+    if (typeof getShipEnhancementExtraMaterials === "function") {
+      const perLevelExtra = getShipEnhancementExtraMaterials(config);
+      const strip = (typeof stripResourcePoolPrefix === "function") ? stripResourcePoolPrefix : (v => String(v || ""));
+      for (const [refId, qty] of Object.entries(perLevelExtra)) {
+        add(strip(refId), Number(qty) * L, "material");
+      }
     }
   }
   return Object.entries(costMap)
@@ -3904,6 +3974,19 @@ function getHangarDisplayState(state, now) {
         const stock = ResourceRegistry.get(state, "component:" + id);
         return { id, name:recipe ? recipe.name : id, quantity, stock, enough:stock >= quantity };
       });
+      // 泰坦额外精炼料（special 池，键自带池前缀）并入同一材料清单：UI 与 canEnhance 一并生效
+      const enhancementExtra = (typeof getShipEnhancementExtraMaterials === "function") ? getShipEnhancementExtraMaterials(config) : {};
+      for (const [refId, quantity] of Object.entries(enhancementExtra)) {
+        const stock = ResourceRegistry.get(state, refId);
+        const bare = (typeof stripResourcePoolPrefix === "function") ? stripResourcePoolPrefix(refId) : refId;
+        materials.push({
+          id:refId,
+          name:(typeof getResourceDisplayName === "function") ? getResourceDisplayName(bare) : bare,
+          quantity,
+          stock,
+          enough:stock >= quantity
+        });
+      }
       const iskCost = getShipEnhancementIskCost(config);
       const iskStock = ResourceRegistry.get(state, "currency:isk");
       const iskEnough = iskStock >= iskCost;
@@ -3911,7 +3994,7 @@ function getHangarDisplayState(state, now) {
       const chance = tier ? getShipEnhancementSuccessChance(skillLevel, tier.level, enhancementLevel) : 0;
       const breakdown = tier ? getShipEnhancementSuccessBreakdown(skillLevel, tier.level, enhancementLevel) : null;
       // Batch R（E 项·舰船拆解）：只读报价 + 阻塞判定（与 Action 共用 getShipDismantleBlockReason）
-      const dismantleRecipe = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.shipId === instance.shipId) || null;
+      const dismantleRecipe = getShipDismantleRecipeFor(state, instance);
       const dismantleBlocked = getShipDismantleBlockReason(state, instance, now);
       const dismantlePreview = dismantleRecipe ? getShipDismantleQuote(dismantleRecipe, config, enhancementLevel, getReclaimRate(state)) : [];
       const role = getShipEnhancementRole(config);
@@ -3957,7 +4040,7 @@ function getHangarDisplayState(state, now) {
           iskStock,
           iskEnough,
           busy,
-          canEnhance:Boolean(tier) && !busy && materials.length === 3 && materials.every(item => item.enough) && iskEnough,
+          canEnhance:Boolean(tier) && !busy && materials.length > 0 && materials.every(item => item.enough) && iskEnough,
           hpBonus:enhancementBonuses.hpMultiplier - 1,
           damageBonus:(enhancementBonuses.damageMultiplier || 1) - 1,
           industryBonus:(enhancementBonuses.industryMultiplier || 1) - 1,
@@ -4041,13 +4124,22 @@ function getShipFittingDisplayState(state, shipRef) {
   const fitting = getFittingFromInstance(instance);
   const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
   const slots = { high:config.slots.high || 0, mid:config.slots.mid || 0, low:config.slots.low || 0, rig:config.slots.rig || 0 };
+  // 泰坦：高槽出厂被末日武器占用。highUsable = 玩家可自由使用的高槽数（泰坦现为 0，即全占用）；
+  // 未定义 highUsable 的普通舰船视为全部可用。未来开放更多高槽时，[highUsable, high) 段自动对普通武器开放。
+  const usableHigh = Number.isFinite(Number(config.slots.highUsable)) ? Math.max(0, Number(config.slots.highUsable)) : slots.high;
+  if (config.slots.highUsable !== undefined) slots.highUsable = usableHigh;
+  const doomsdayName = (config.weapon && config.weapon.name) || "末日武器";
+  const doomsdayDesc = (config.core && config.core.name) ? ("核心供能：" + config.core.name) : "";
   const orbitSlots = [];
   const totalOrbitSlots = 24 + slots.rig; // 8高 + 8中 + 8低 + 本舰 rig 槽数（rig 索引从 24 起，随舰船动态；illuminator=28，starcrown=29）
   for (let index = 0; index < totalOrbitSlots; index++) {
     const type = index < 8 ? "high" : index < 16 ? "mid" : index < 24 ? "low" : "rig";
     const start = type === "high" ? 0 : type === "mid" ? 8 : type === "low" ? 16 : 24;
     const slotIndex = index - start;
-    const enabled = slotIndex < slots[type]; // rig 槽已随改装件系统解禁（超出舰船槽数的仍禁用）
+    // 末日武器占用格：[usableHigh, slots.high) 段——显示出来但不可更换（enabled=false 阻断选装面板）
+    const doomsday = type === "high" && slotIndex >= usableHigh && slotIndex < slots.high;
+    let enabled = slotIndex < slots[type]; // rig 槽已随改装件系统解禁（超出舰船槽数的仍禁用）
+    if (doomsday) enabled = false;
     const equipmentRef = enabled ? fitting[type][slotIndex] || null : null;
     const resolved = equipmentRef ? resolveEquipmentReference(state, equipmentRef) : null;
     const equipment = resolved ? resolved.definition : null;
@@ -4058,9 +4150,11 @@ function getShipFittingDisplayState(state, shipRef) {
     orbitSlots.push({
       index, type, slotIndex, enabled, equipmentRef, equipmentId: resolved ? resolved.itemId : null,
       enhancementLevel: resolved ? resolved.enhancementLevel : 0,
-      name: equipment ? equipment.name : "", icon: equipment ? ITEM_ICONS[equipment.name] || "📦" : null,
+      name: doomsday ? doomsdayName : (equipment ? equipment.name : ""),
+      icon: doomsday ? "☄" : (equipment ? ITEM_ICONS[equipment.name] || "📦" : null),
       installedInstanceId: resolved && resolved.instance ? resolved.instance.instanceId : null,
-      lockedBy: lockedBy ? lockedBy.instanceId : null
+      lockedBy: lockedBy ? lockedBy.instanceId : null,
+      doomsday: doomsday ? { name:doomsdayName, desc:doomsdayDesc, locked:true } : null
     });
   }
   const equippedIds = Object.values(fitting).flat().filter(Boolean);
@@ -4283,6 +4377,29 @@ function getQueueDisplayState(state) {
           canMoveTop:index > 0 && !(queueRunning && index === queue.status.activeIndex)
         };
       });
+      // 当前直接动作（不经队列系统启动，如泰坦总装「总装泰坦」按钮、舰船总装「立即开始」）：
+      // 队列页此前完全不可见。追加只读伪条目（isDirect 哨兵，index=-1，禁排序/移除）置于队尾。
+      // 队列运行中不加——此时当前动作由队列驱动，activeIndex 项已表示它，加了会重复。
+      const ca = state.currentAction;
+      if (ca && ca.active && !queue.status.isRunning) {
+        const activity = (typeof getCurrentActivityDisplayState === "function") ? getCurrentActivityDisplayState(state, Date.now()) : null;
+        base.push({
+          id:"__direct_action__",
+          index:-1,
+          isDirect:true,
+          active:true,
+          skill:ca.skill,
+          icon:icons[ca.skill] || "▶",
+          skillLabel:(labels[ca.skill] || SKILL_LABEL[ca.skill] || ca.skill),
+          label:activity ? (activity.detail || "进行中") : "进行中",
+          countText:"手动开始（未入队）",
+          count:1,
+          cycleSeconds:null,
+          canMoveUp:false,
+          canMoveDown:false,
+          canMoveTop:false
+        });
+      }
       // 顺序累加：首个战斗项之后的所有项标「大概」（战斗耗时不可精确预测，会污染后续精度）
       const firstCombat = base.findIndex(it => it.skill === "combat");
       let acc = 0;

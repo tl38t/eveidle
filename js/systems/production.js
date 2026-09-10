@@ -210,6 +210,29 @@ function rollRigRichBonus(state, actionKey, area) {
 }
 
 function getSmeltingRecipe() { const name = gameState.currentAction.smeltingArea; return SMELTING_RECIPES.find(r => r.name === name) || SMELTING_RECIPES[0]; }
+
+// ---- 冶炼配方通用消耗/产出解析（P1 泰坦双材料 2026-09-10）----
+// 旧配方：单输入 consumeOre（ore: 池，每周期 1）；泰坦配方：inputs{材料名:每周期用量}（inputPool 缺省 special:）。
+// 三个执行侧（tick 手动 / offline 离线追算 / station 自动线）与 selectors 库存显示统一经此解析，
+// 单输入旧配方逐位等价（consumeList=[{refId:"ore:X",qty:1}]，cyclesAvailable=floor(库存)）。
+function getSmeltingConsumeList(recipe) {
+  if (!recipe) return [];
+  if (recipe.consumeOre) return [{ refId: "ore:" + recipe.consumeOre, qty: 1 }];
+  if (recipe.inputs) return Object.keys(recipe.inputs).map(name => ({ refId: (recipe.inputPool || "special") + ":" + name, qty: Math.max(1, Number(recipe.inputs[name]) || 1) }));
+  return [];
+}
+function getSmeltingOutputRefId(recipe) { return (recipe.outputPool || "mineral") + ":" + recipe.outputMineral; }
+// 按当前库存可完成的周期数（多输入取各 min(floor(库存/用量))）
+function getSmeltingCyclesAvailable(state, recipe) {
+  const list = getSmeltingConsumeList(recipe);
+  if (list.length === 0) return 0;
+  let min = Infinity;
+  for (const c of list) {
+    const stock = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? ResourceRegistry.get(state, c.refId) : 0;
+    min = Math.min(min, Math.floor(Math.max(0, stock) / c.qty));
+  }
+  return min === Infinity ? 0 : min;
+}
 function hasMoonMiningEquipment() {
   return getMoonMiningAccessState(gameState).hasEquipment;
 }

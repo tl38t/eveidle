@@ -195,6 +195,8 @@ function mapEnhanceUnderlyingReason(underlying) {
     case "ship-active": return R.SHIP_ACTIVE;
     case "enhancement-unavailable": return R.ENHANCEMENT_UNAVAILABLE;
     case "insufficient-components": return R.INSUFFICIENT_COMPONENTS;
+    // 泰坦强化额外精炼料不足（special 池）
+    case "insufficient-materials": return R.INSUFFICIENT_COMPONENTS;
     default: return RESEARCH_PROTOCOL_REASONS.PROTOCOL_DISABLED;
   }
 }
@@ -357,9 +359,14 @@ function getResearchProtocolDisplayState(state, protocolId) {
       const cfg = inst ? getShipConfigById(inst.shipId) : null;
       const tier = cfg ? getShipEnhancementTier(cfg) : null;
       const cost = (tier && typeof getShipEnhancementCost === "function") ? getShipEnhancementCost(cfg) : {};
-      let sufficient = (Object.keys(cost).length === 0);
+      const extraCost = (tier && typeof getShipEnhancementExtraMaterials === "function") ? getShipEnhancementExtraMaterials(cfg) : {};
+      let sufficient = (Object.keys(cost).length === 0 && Object.keys(extraCost).length === 0);
       if (RRI && Object.keys(cost).length) {
         sufficient = Object.entries(cost).every(([id, q]) => RRI.get(state, "component:" + id) >= q);
+      }
+      // 泰坦额外精炼料（键自带池前缀，直接查）
+      if (sufficient && RRI && Object.keys(extraCost).length) {
+        sufficient = Object.entries(extraCost).every(([refId, q]) => RRI.get(state, refId) >= q);
       }
       return {
         instanceId: inst ? inst.instanceId : null,

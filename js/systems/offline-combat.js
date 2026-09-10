@@ -79,6 +79,7 @@
 
   // 会话聚合器：key = offline runId（applyOfflineGains 每次离线结算唯一）
   const _sessions = {};
+  let _predSeq = 0;               // 虫洞试炼预判的临时会话序号
 
   function ensureSession(runId) {
     if (!_sessions[runId]) {
@@ -156,7 +157,11 @@
     const titanWeapon = isTitan ? (ship.weapon || null) : null;
     const titanCore = isTitan ? (ship.core || null) : null;
     const titanTrait = isTitan ? ((typeof G("getTitanCombatTrait") === "function") ? G("getTitanCombatTrait")(ship) : null) : null;
-    const titanAura = (titanCore && typeof G("getTitanCoreAura") === "function") ? G("getTitanCoreAura")(titanCore) : null;
+    // ②-a（2026-09-10 用户拍板）：光环源改为小队聚合（玩家出战舰 + 小队内 NPC 绑定泰坦，stacking=max），
+    // 与在线 combat.js 同口径；LEGION_COMBAT_SQUAD 缺失时回退为原「只读玩家自身核心」。
+    const titanAuraApi = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && typeof LEGION_COMBAT_SQUAD.getTitanSquadAura === "function") ? LEGION_COMBAT_SQUAD : null;
+    const titanAura = titanAuraApi ? titanAuraApi.getTitanSquadAura(state)
+      : ((titanCore && typeof G("getTitanCoreAura") === "function") ? G("getTitanCoreAura")(titanCore) : null);
     return { ship, shipInstance, zone, faction, weapons, repairers, maxHp, playerDodge, boosterDmg, boosterRep, adBuffMult, isTitan, titanWeapon, titanCore, titanTrait, titanAura };
   }
 
@@ -302,15 +307,27 @@
     const targetHpRatio = targetMaxHp > 0 ? targetTotal / targetMaxHp : 1;
     const rd = G("getTitanWeaponRoundDamage")(weapon, { round: titanRound, targetHpRatio: targetHpRatio });
     const vulnMult = G("getTitanDamageTakenMultiplier")(target, titanRound);
-    // 乘区：克制 × 结构过载(B案) × 光环(含泰坦自身) × 易伤 × 弹药档 × 脑突触 × 暴击期望
+    // 乘区：克制 × 结构过载(B案) × 光环(含泰坦自身) × 易伤 × 弹药档 × 武器强化剂 × 脑突触 × 暴击期望
+    // 武器强化剂（2026-09-10 用户拍板 3a）：与在线 fireTitanVolley 同口径，主命中与扫掠/贯穿打击同享。
     const counterMult = G("calcWeaponCounterMultiplier")(weapon.weaponType, target.hp);
     const overdriveMult = G("getTitanStructureOverdriveMultiplier")(titanTrait, c.hp, c.maxHp);
     const selfAuraDmg = titanAura ? (1 + (titanAura.squadDamageBonus || 0)) : 1;
     const adbm = inputs.adBuffMult || 1;
+    const wbm = (inputs.boosterDmg && inputs.boosterDmg[weapon.weaponType]) ? inputs.boosterDmg[weapon.weaponType] : 1;
     const critExp = G("rollTitanCritMultiplier")(weapon.crit, null); // 非函数 rng → 期望乘数
-    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult * critExp;
+    // 全补（2026-09-10 用户拍板）：泰坦三层同吃 getCombatDamageMultiplierFromState（与在线同口径）
+    const titanDmgMult = (typeof G("getCombatDamageMultiplierFromState") === "function")
+      ? G("getCombatDamageMultiplierFromState")(state, weapon.weaponType) : 1;
+    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult * wbm * critExp * titanDmgMult;
     if (adbm && adbm !== 1) mult *= adbm;
-    const damage = G("calcCombatDamage")(weapon.baseHit, target.dodge, rd.mainDamage, mult, expectedRng);
+    // A1（2026-09-10 用户拍板）：命中走与常规武器同一条管线，基数用泰坦自带 baseHit
+    //   （100/130/80 差异化保留），再叠 武器技能×4 + 目标锁定×3 + 船体 hitBonus + 光环 squadHitBonus。
+    const titanHitBase = (typeof G("getCombatWeaponHitFromState") === "function")
+      ? G("getCombatWeaponHitFromState")(state, weapon.weaponType, { baseHit: weapon.baseHit })
+      : (Number(weapon.baseHit) || 100);
+    const titanAuraHitBonus = (titanAura && Number(titanAura.squadHitBonus)) ? Number(titanAura.squadHitBonus) : 0;
+    const titanHit = (titanHitBase + titanAuraHitBonus) * ammoProps.hitMult;
+    const damage = G("calcCombatDamage")(titanHit, target.dodge, rd.mainDamage, mult, expectedRng);
     const mainDealt = G("applyLayeredCombatDamage")(target.hp, damage);
     let roundDealt = mainDealt.shield + mainDealt.armor + mainDealt.structure;
     // 附带打击：retriggerSweep 按期望 chance×damage 预缩放后经 resolver 解析目标（概率门恒通过）
@@ -321,7 +338,7 @@
     const strikes = G("resolveTitanWeaponStrikes")(scaled, weapon, enemies, target, TITAN_ZERO_RNG);
     const sweepCritExp = (weapon.crit && weapon.crit.appliesToSweep) ? critExp : 1;
     for (const strike of strikes) {
-      let strikeDmg = strike.damage * vulnMult * sweepCritExp;
+      let strikeDmg = strike.damage * vulnMult * wbm * sweepCritExp * titanDmgMult;
       if (adbm && adbm !== 1) strikeDmg *= adbm;
       strikeDmg = Math.max(1, Math.round(strikeDmg));
       if (strike.kind === "layerPierce") {
@@ -333,9 +350,9 @@
         roundDealt += d.shield + d.armor + d.structure;
       }
     }
-    // 武器 XP（与在线同口径：武器技能 2 + 瞄准 1）
+    // 武器 XP（与在线同口径：泰坦武器技能 10 + 瞄准 1；普通武器见 fireNormalVolley 为 2）
     const weaponCfg = WEAPON_CONFIG[weapon.weaponType];
-    if (weaponCfg) grantXp(state, weaponCfg.skillKey, 2);
+    if (weaponCfg) grantXp(state, weaponCfg.skillKey, 10);
     grantXp(state, "targeting", 1);
     return roundDealt;
   }
@@ -353,7 +370,8 @@
       const fuelCost = Math.max(1, Math.round((cb.fuelCost || 1) * G("calcFuelMult")(zone, state)));
       if (s.fuel < fuelCost) continue; // 燃料不足则该 DCU 本轮不生效（与在线一致）
       s.fuel = Math.max(0, s.fuel - fuelCost);
-      dc += (m.equipment.bonuses && m.equipment.bonuses.globalDamageReduction) || 0;
+      // 2026-09-10 修复：DCU 减伤补乘强化系数（与在线 combat.js 同步，全局百分比加成口径）
+      dc += ((m.equipment.bonuses && m.equipment.bonuses.globalDamageReduction) || 0) * (Number(m.multiplier) || 1);
     }
     return Math.min(0.5, dc);
   }
@@ -473,7 +491,8 @@
           if (!current) break;
           squad.targetId = current.id != null ? current.id : null;
           const entry = LEGION_COMBAT_SQUAD.fireSingleNpcMember(state, {
-            now: nowRef.t, offline: true, zone: zone, virtual: s, randomFn: expectedRng
+            now: nowRef.t, offline: true, zone: zone, virtual: s, randomFn: expectedRng, round: rounds + 1, // 易伤回合号（3b）：与泰坦齐射同用波内轮号
+            enemies: enemies // C3 泰坦 NPC 输出：副目标解析源，与在线 c.enemies 同口径
           }, member, current, npcPerRound, expectedRng);
           if (entry && !entry.skipped) {
             npcAttacked += 1;
@@ -511,9 +530,13 @@
             const corePrimary = (current && current.hp && current.hp.structure > 0) ? current : (living()[0] || null);
             const resolved = G("resolveTitanCoreStrikes")(coreRaw, inputs.titanCore, enemies, corePrimary, c.titanStunCounts, rounds + 1, detRng(c));
             let coreDealt = 0;
+            const coreAdbm = inputs.adBuffMult || 1; // 脑突触（3c）：与在线核心段同口径
+            // 全补（2026-09-10 用户拍板）：末日核心同吃 dmgMult（与在线 combat.js 同口径）
+            const coreDmgMult = (typeof G("getCombatDamageMultiplierFromState") === "function")
+              ? G("getCombatDamageMultiplierFromState")(state, inputs.titanWeapon.weaponType) : 1;
             for (const strike of resolved.strikes) {
               const vm = G("getTitanDamageTakenMultiplier")(strike.enemy, rounds + 1); // 侵蚀本轮命中即生效
-              const dmg = Math.max(1, Math.round(strike.damage * vm));
+              const dmg = Math.max(1, Math.round(strike.damage * vm * coreAdbm * coreDmgMult));
               const d2 = G("applyLayeredCombatDamage")(strike.enemy.hp, dmg);
               coreDealt += d2.shield + d2.armor + d2.structure;
               if (strike.stunned && (inputs.titanCore.stunRounds || 0) > 0) {
@@ -1236,6 +1259,60 @@
       if (context.gains) context.gains.combat = (context.gains.combat || 0) + s.kills;
       delete _sessions[runId];
       return payload;
+    },
+
+    // ---- 虫洞战斗试炼离线预判（2026-09-10，方案 A）----
+    // 背景：虫洞出发占用行动槽（currentAction.active=false），离线共享战斗内核冻结
+    // （settle 的 actionDrivesCombat 门不通过）→ 战斗试炼只会烧满时限判「超出试炼时限」
+    // （必败 + 慢：8 败节点离线 ≈ 9 × 180s）。本接口用与离线结算完全同口径的 simulateWave
+    // 对试炼开战时固化的敌编队（combat.enemies）做单场预判，供虫洞系统把试炼时长定为
+    // 真实战斗时长、到点按预判结算。只在深克隆上运行（RNG 流/经验/掉落/资源全部隔离），
+    // 绝不污染真实 state。返回 { win, seconds, rounds, kills }；win=false 含战败与超时限。
+    predictTrialWave: function (state, opts) {
+      const predRunId = "whpred_" + (++_predSeq).toString(36);
+      opts = opts || {};
+      try {
+        const c = state && state.combat;
+        if (!c || !c.active) return null;
+        const zoneFn = G("getCombatEncounterZone");
+        const zone = (typeof zoneFn === "function") ? zoneFn(c) : null;
+        if (!zone || !Array.isArray(c.enemies) || c.enemies.length === 0) return null;
+        const maxSeconds = Math.max(1, Number(opts.maxSeconds) || 180);
+        // 深克隆：state 为纯数据（云存档上传同口径 JSON 序列化已验证安全）
+        const snapshot = JSON.parse(JSON.stringify(state));
+        const cc = snapshot.combat;
+        if (!cc || !cc.active) return null;
+        const cloneZone = (typeof zoneFn === "function") ? zoneFn(cc) : zone;
+        // 敌编队映射（与 simulateBelt 的波次映射逐字同口径；_rewarded 复位）
+        const enemies = (cc.enemies || []).map(e => ({
+          id: e.id, type: e.type, hit: e.hit, hp: { shield: e.hp.shield, armor: e.hp.armor, structure: e.hp.structure },
+          dodge: e.dodge, baseDamage: e.baseDamage, auraDamage: e.auraDamage || 0, kind: e.kind,
+          bossHealPct: e.bossHealPct || 0, bossHealEvery: e.bossHealEvery || 5, enrageMul: e.enrageMul || 0, enrageAt: e.enrageAt || 0.3,
+          maxHp: e.maxHp ? { shield: e.maxHp.shield, armor: e.maxHp.armor, structure: e.maxHp.structure } : null, iskDrop: e.iskDrop, xpDrop: e.xpDrop,
+          level: e.level,
+          deathspaceLeader: false, deathspaceWave: 0, _rewarded: false
+        }));
+        if (!enemies.length) return null;
+        const prevRef = _stateRef;
+        _stateRef = snapshot;
+        const s = ensureSession(predRunId);
+        const startT = (Number(opts.now) || Date.now());
+        s.startedAt = startT;
+        s.endedAtRef = { t: startT };
+        ensureVirtualAmmoFuel(snapshot, s);
+        const res = simulateWave(snapshot, enemies, cloneZone, false, null, s, s.endedAtRef);
+        delete _sessions[predRunId];
+        _stateRef = prevRef;
+        const seconds = Math.max(1, Math.round((Number(res.rounds) || 0) * ROUND_SECONDS));
+        const allDead = enemies.every(e => e && e.hp && e.hp.structure <= 0);
+        // 与在线试炼同口径：清完全部试炼敌人即成功；simulateWave 的轮数上限「伪 cleared」
+        //（仍有存活敌）或超出时限（seconds > maxSeconds）一律按失败（与在线烧满时限判负一致）
+        const win = res.outcome === "cleared" && allDead && seconds <= maxSeconds;
+        return { win: win, seconds: Math.min(seconds, maxSeconds), rounds: Number(res.rounds) || 0, kills: (res.kills || []).length };
+      } catch (e) {
+        try { delete _sessions[predRunId]; } catch (_) {}
+        return null;
+      }
     }
   };
 

@@ -969,8 +969,9 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
   const efficiency = (1 + shipBonus + rigBonus) * multiplier * shipEnhanceSmelt * legionRefine;
   const cycleTimeSec = recipe.baseTime / Math.max(0.001, efficiency);
   const outputPerCycle = Math.max(1, Math.floor(recipe.baseOutput * skillEfficiency));
-  const oreId = "ore:" + recipe.consumeOre;
-  const mineralId = "mineral:" + recipe.outputMineral;
+  // 泰坦双材料（P1 2026-09-10）：消耗/产出经通用解析（单输入旧配方逐位等价）。
+  const smeltConsumeList = getSmeltingConsumeList(recipe);
+  const mineralId = getSmeltingOutputRefId(recipe);
 
   // 计算可完成周期（加权前进度）
   let remainingSec = line.progress || 0;
@@ -982,10 +983,9 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
     return { cycles:0 };
   }
 
-  // 材料约束
-  const oreStock = ResourceRegistry.get(state, oreId);
-  const maxCyclesFromOre = Math.floor(oreStock);
-  let cycles = Math.min(cyclesByTime, maxCyclesFromOre);
+  // 材料约束：各输入取 min(floor(库存/用量))，即当前可完成周期数
+  const maxCyclesFromMaterials = getSmeltingCyclesAvailable(state, recipe);
+  let cycles = Math.min(cyclesByTime, maxCyclesFromMaterials);
 
   // 生产数量封顶（按产出件数，0/≤0 = 无限）：达到目标后立即停止
   if (line.targetQuantity && line.targetQuantity > 0) {
@@ -1006,7 +1006,7 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
   }
 
   // 原子执行：扣料 + 产出 + XP + 事件
-  ResourceRegistry.spend(state, oreId, cycles);
+  for (const consumeEntry of smeltConsumeList) ResourceRegistry.spend(state, consumeEntry.refId, consumeEntry.qty * cycles);
   const made = cycles * outputPerCycle;
   ResourceRegistry.add(state, mineralId, made);
   line.producedQty = (line.producedQty || 0) + made;

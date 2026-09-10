@@ -51,7 +51,11 @@ function mirrorDesktopSave(data) {
 
 const LocalStorageAdapter = {
   _key: "eve_idle_save",
-  save(data) { try { localStorage.setItem(this._key, JSON.stringify(data)); return true; } catch (e) { console.warn("存档失败：", e); return false; } },
+  // 定点返修（云存档死局 P0-7）：原实现在 catch 内吞掉异常并返回 false，
+  // 调用方（save / _persistSelectedPayload）拿不到真因 → QuotaExceededError（配额满）
+  // 与 SecurityError（容器禁用本地存储）无法区分。此处保留原始异常供上层读取。
+  _lastError: null,
+  save(data) { try { localStorage.setItem(this._key, JSON.stringify(data)); this._lastError = null; return true; } catch (e) { this._lastError = e; console.warn("存档失败：", e); return false; } },
   // 读取必须区分真正不存在与读取/解析失败；error 绝不能被启动流程当作全新存档。
   readCandidate() {
     let json;
@@ -715,6 +719,17 @@ function finalizeEquipmentStateAfterLegacyMigrations(state) {
   migrateArchaeologyState();
   migrateDeadSkillFields();
   migrateImplants();
+  migratePhantomTopLevelIsk(state);
+}
+
+// 清除顶层幽灵字段 state.isk（ISK 权威存储只有 state.resources.isk）。
+// 2026-09-10 泰坦总装链路曾误写顶层字段（免费造 + 存档污染），链路已修；此处兜底清掉
+// 可能已落盘的残留，防止后续读它的代码再次被污染。幂等：字段不存在时零操作。
+function migratePhantomTopLevelIsk(state) {
+  if (state && Object.prototype.hasOwnProperty.call(state, "isk")) {
+    delete state.isk;
+    state._dirty = true;
+  }
 }
 
 // 移除 rigEngineering / reverseEngineering 两个死字段（仅声明 + 成就占位，
@@ -738,6 +753,8 @@ function migrateImplants() {
   if (!gameState) return;
   if (!gameState.implants || typeof gameState.implants !== "object") gameState.implants = {};
   if (typeof reconcileImplantsFromSkills === "function") reconcileImplantsFromSkills(gameState);
+  // 2026-09-10 补偿补发：四类生产掉落脑插因监听器信封误读从未生效，四技能 ≥80 级一次性补发（幂等）。
+  if (typeof reconcileImplantsFromMastery === "function") reconcileImplantsFromMastery(gameState, 80);
   gameState._dirty = true;
 }
 
@@ -1646,6 +1663,8 @@ function normalizeAndMigratePayload(ctx) {
   const now = ctx.now || Date.now();
   migrateAmmunitionEngineeringState();
   migrateMoonMiningState();
+  // 泰坦注册表必须在幽灵船清理之前填充：否则 shipId 未注册的泰坦会被 shipIdKnownInShipData 判为幽灵船删除。
+  if (typeof registerTitanShipsFromState === "function") registerTitanShipsFromState(gameState);
   migrateGhostDeployableShips();
   migrateLegacyPromethiumOre(gameState);
   migrateStationCoreConsistency(gameState);
@@ -1707,6 +1726,7 @@ const SaveManager = {
   adapter: LocalStorageAdapter,
   _pendingDelete: false,
   _importTransaction: false,
+  _storageFailNotified: false,
   save() {
     // P0-3：启动门禁 fail-closed。idle/loading/awaiting-choice/error 阶段禁止落盘、不清除 _dirty、
     // 不写 eve_idle_save、不写 sync_meta，避免启动事务完成前污染本地存档或触发误上传。
@@ -1722,10 +1742,14 @@ const SaveManager = {
     let ok = false;
     this._lastStorageError = null;
     try { ok = this.adapter.save(gameState); } catch (e) { this._lastStorageError = e; ok = false; }
-    if (!ok && !this._lastStorageError) this._lastStorageError = new Error("localStorage.setItem returned false");
+    if (!ok && !this._lastStorageError) {
+      // adapter 内部吞掉异常并返回 false → 取回真实原因（配额满 / 容器禁用 / 序列化失败）
+      this._lastStorageError = (this.adapter && this.adapter._lastError) || new Error("localStorage.setItem returned false");
+    }
     if (ok) {
       mirrorDesktopSave(gameState);
       gameState._dirty = false;
+      this._storageFailNotified = false; // 恢复成功 → 允许下次失败重新提醒
       this._recordSuccessfulLocalSave(candidateSaveTime);
       this._updateStatus("已保存 " + new Date(candidateSaveTime).toLocaleTimeString());
       const footer = document.getElementById("footer-save");
@@ -1738,6 +1762,17 @@ const SaveManager = {
     this._updateStatus("保存失败，将自动重试");
     const footer = document.getElementById("footer-save");
     if (footer) footer.textContent = "存档：保存失败";
+    // 注：#footer-save 在 index.html 中并不存在（既有死代码），而 #save-status 只在设置页可见，
+    // 因此保存失败此前对玩家完全不可见 —— 正是「以为有云端备份、其实云端很旧」的来源之一。
+    // 这里额外用 toast 让它可见；每轮「成功→失败」只提醒一次，避免 5s 自动保存循环刷屏。
+    if (!this._storageFailNotified) {
+      this._storageFailNotified = true;
+      try {
+        if (typeof window.showToast === "function") {
+          window.showToast("⚠ 存档写入失败，正在自动重试（" + ((this._lastStorageError && this._lastStorageError.name) || "未知原因") + "）");
+        }
+      } catch (e) {}
+    }
     return false;
   },
   // 用户明确确认导入后，允许在启动门禁尚未同步完成的短窗口内写入本地存档。
@@ -2567,20 +2602,25 @@ const SaveManager = {
     try {
       this._settleFinal();   // 仅最终态结算一次（内部 SaveManager.save 受 _committing 解禁）
       const upload = opts.upload || "none";
-      // Restricted H5 containers can reject the very first localStorage write.
-      // Probe it once and let a brand-new session continue in memory.
-      if (opts.persist && !this._hasLocalCandidate && !this._deviceCandidate) {
+      // Restricted H5 containers can reject localStorage writes（配额写满 / 容器禁用本地存储）。
+      // P0-7：旧实现把「探测 + 降级内存运行」限定在「无本地候选的全新会话」，而冲突场景必然带
+      // 本地候选 → 探测条件被跳过 → 直接 throw 中断启动事务 → 玩家被永久卡在启动遮罩（死局）。
+      // 现在统一：任何 persist 请求先探测落盘一次，失败一律降级为「内存运行」放行，绝不抛错卡死。
+      if (opts.persist) {
         const probeOk = this._persistSelectedPayload();
         if (!probeOk) {
           this._storageWriteFailed = true;
           this._lastBootError = this._lastStorageError || new Error("localStorage write failed");
-          opts.persist = false;
           finalState = "local-only";
-          try { this._updateStatus("当前环境禁止本地存档，游戏可运行但刷新可能丢档"); } catch (e) {}
+          const msg = "当前环境禁止本地存档，游戏可运行但刷新可能丢档；建议先复制进度码保底";
+          try { this._updateStatus(msg); } catch (e) {}
+          // 注：#footer-save 在 index.html 中并不存在（既有死代码，写它等于没写），故必须用全局 toast 才能让玩家真正看见。
+          try { if (typeof window.showToast === "function") window.showToast("⚠ " + msg); } catch (e) {}
           try { console.warn("本地存档不可写，已降级为内存运行：", this._lastBootError); } catch (e) {}
-        } else opts.persist = false;
+        }
+        // 沿用旧「探测」分支语义：无论成败都视为已处理，后续不再重复落盘（并触发镜像快照）。
+        opts.persist = false;
       }
-      if (opts.persist && !this._persistSelectedPayload()) throw new Error("最终存档写入 localStorage 失败");
       if (opts.ensureMirror && !opts.persist) this._scheduleCurrentMirrorSnapshot();
       if (upload === "now") {
         const cs = this._cloudSave;
@@ -2604,7 +2644,12 @@ const SaveManager = {
     const candidateSaveTime = Date.now();
     gameState.lastSaveTime = candidateSaveTime;
     let ok = false;
-    try { ok = this.adapter.save(gameState); } catch (e) { ok = false; }
+    // 定点返修（云存档死局 P0-7）：原实现失败时不记录原因，冲突弹窗红字只有结论没有真因。
+    this._lastStorageError = null;
+    try { ok = this.adapter.save(gameState); } catch (e) { this._lastStorageError = e; ok = false; }
+    if (!ok && !this._lastStorageError) {
+      this._lastStorageError = (this.adapter && this.adapter._lastError) || new Error("最终存档写入 localStorage 失败");
+    }
     if (ok) {
       mirrorDesktopSave(gameState);
       gameState._dirty = false;
@@ -2659,36 +2704,40 @@ const SaveManager = {
   resolveCloudConflict(choice) {
     const self = this;
     if (this._bootState !== "awaiting-choice") return Promise.resolve(false);
-    const cs = this._cloudSave;
     // P0-6：_pendingCloudEnvelope 现为 {status,meta,envelope}；仅当确为 ok 且含 envelope 才应用云端。
     const useCloud = (choice === "cloud" && this._pendingCloudEnvelope && this._pendingCloudEnvelope.status === "ok" && this._pendingCloudEnvelope.envelope);
     const useDevice = (choice === "local" && this._pendingDeviceCandidate && this._pendingDeviceCandidate.envelope);
+    if (!useCloud && !useDevice) return Promise.resolve(false);
+    // P0-7：①整条链路（含同步抛错）统一包进 Promise 链，选「本地」不再同步穿出导致 .catch 永不执行；
+    // ②_pending* 只在真正落定成功后才销毁 —— 旧实现在 _commitFinal 之前就清空，失败后重试材料已丢，
+    // 再点任何按钮都返回 false，配合 .then 里的 hideConflictChoice 撤掉遮罩 → 永久阻塞 + 底层 spinner 空转。
     let p;
     if (useCloud) {
-      p = this._applyCloudSave(this._pendingCloudEnvelope.envelope).then(function () {
+      p = Promise.resolve().then(function () {
         // P1-1：冲突选云端 → 写本地 + 同步校验和 + 【不】上传。
-        self._pendingCloudEnvelope = null;
-        self._pendingDeviceCandidate = null;
+        return self._applyCloudSave(self._pendingCloudEnvelope.envelope);
+      }).then(function () {
         return self._commitFinal("ready", { persist: true, upload: "none", ensureMirror: true });
       });
-    } else if (useDevice) {
-      // P1-1：冲突选本地 → 上传本地到云端。
-      self._applySelectedEnvelope(self._pendingDeviceCandidate.envelope, self._pendingDeviceCandidate.source);
-      self._pendingCloudEnvelope = null;
-      self._pendingDeviceCandidate = null;
-      p = self._commitFinal("ready", { persist: true, upload: "now", ensureMirror: true });
     } else {
-      return Promise.resolve(false);
+      p = Promise.resolve().then(function () {
+        // P1-1：冲突选本地 → 上传本地到云端。
+        self._applySelectedEnvelope(self._pendingDeviceCandidate.envelope, self._pendingDeviceCandidate.source);
+        return self._commitFinal("ready", { persist: true, upload: "now", ensureMirror: true });
+      });
     }
     return Promise.resolve(p).then(function () {
+      // 只有走到这里（启动事务真正落定）才销毁重试材料。
+      self._pendingCloudEnvelope = null;
+      self._pendingDeviceCandidate = null;
       if (typeof self._conflictResolver === "function") { const r = self._conflictResolver; self._conflictResolver = null; r(true); }
       return true;
     }).catch(function (err) {
       self._lastBootError = err;
-      // P1-4：冲突处理失败 → 复位 awaiting-choice（保持阻塞，允许玩家重试或先导出备份），绝不静默推进/覆盖。
+      // P1-4：冲突处理失败 → 复位 awaiting-choice（保持阻塞 + 弹窗留在原地 + 重试材料完好），绝不静默推进/覆盖。
       self._bootState = "awaiting-choice";
       self._emitBootState();
-      throw err; // 不调用 _conflictResolver：启动事务继续挂起，游戏保持 blocked，等待玩家重新选择
+      throw err; // 不调用 _conflictResolver：启动事务继续挂起，等待玩家重新选择
     });
   }
 };
@@ -2950,6 +2999,13 @@ function getAchievementSyncService() {
       SaveManager._refreshCloudSaveStatus();
     });
   });
+  // 云存档诊断（无需控制台）：渲染可复制报告，供玩家在沙盒/真机环境自查并回传。
+  const btnCloudDiag = document.getElementById("btn-cloud-diag");
+  if (btnCloudDiag) btnCloudDiag.addEventListener("click", () => {
+    if (typeof window.openCloudSaveDiagnostics !== "function") { alert("诊断模块未加载"); return; }
+    try { window.openCloudSaveDiagnostics(); } catch (e) { alert("诊断失败：" + (e && e.message ? e.message : e)); }
+  });
+
   const btnDeleteLocal = document.getElementById("btn-delete-local");
   if (btnDeleteLocal) btnDeleteLocal.addEventListener("click", () => {
     showDangerConfirm("⚠ 删除本地存档",

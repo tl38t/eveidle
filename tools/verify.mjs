@@ -151,6 +151,8 @@ const optionalIds = new Set([
   "runtime-error-message", "runtime-error-meta", "runtime-error-stack",
   // 动态创建的 ID：bar-archaeology 由 archaeology-render.js 运行时创建 canvas
   "bar-archaeology",
+  // 动态创建的 ID：smelting-pump-toggle-dark 由 render.js 运行时 createElement 追加（暗流体泵开关，HTML 无静态节点）
+  "smelting-pump-toggle-dark",
   // 动态创建的 ID：research-active-* 由 shell-render.js 的 renderResearchActive 运行时 innerHTML 生成
   "research-active-name", "research-active-progress", "research-active-applied",
   "research-active-btn-max", "research-active-btn-cancel",
@@ -191,6 +193,8 @@ const optionalIds = new Set([
   // 静态不存在于 index.html 属预期，禁止为通过检查塞进 index.html ——
   // planauto-diag-overlay：js/core/diagnostics.js 运行时创建（产线自动化诊断浮层）
   "planauto-diag-overlay",
+  // cloud-save-diag-overlay：js/core/diagnostics.js 运行时创建（云存档链路诊断浮层，玩家侧无控制台自查用）
+  "cloud-save-diag-overlay",
   // shipeng-titan-view：js/ui/titan-forge-integration.js ensureView 运行时创建（泰坦组装子视图容器）
   "shipeng-titan-view",
   // starmap-trial-progress-*：js/ui/shell-render.js 星图试炼进度条（动态渲染）
@@ -246,8 +250,10 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // 基线 332 → 334 的 +2 为 Batch S 装备管理：物品丢弃确认 / 装备拆解确认设置开关复选框（setting-discard-confirm / setting-dismantle-confirm）。
 // 2026-09-09 既有阻塞收敛：基线 370 → 488（长期脱节的 DOM ID 基线按工作树实测对齐；
 // 旧注释声称 HEAD=391/工作树=392 已过时——本轮工作树含泰坦/虫洞/联盟等大量未提交并行改动，实测 488）。
+// 2026-09-10 云存档链路诊断 UI：基线 488 → 489（+1，index.html 静态新增 #btn-cloud-diag，
+// 位于 #save-panel 内 #cloud-save-mgmt 操作行；配套运行时浮层 cloud-save-diag-overlay 见上方可选 ID 列表）。
 // 后续新增静态 DOM ID 时按 +1 递增维护本数字。
-const EXPECTED_DOM_IDS = 488;
+const EXPECTED_DOM_IDS = 489;
 if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",

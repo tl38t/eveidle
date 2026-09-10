@@ -318,7 +318,10 @@
     cruiser: 1.6,
     battleship: 2.0,
     capital: 2.5,
-    supercapital: 3.0
+    supercapital: 3.0,
+    // 泰坦（2026-09-10）：尺寸定位在超旗之上，倍率取 5.0（用户拍板）。
+    // 缺此档时兜底 0.5 会与「未绑定」同值（该文件上方已记录过同款事故），必须显式给值。
+    titan: 5.0
   };
   // 管理类技能 NPC 的 9 座建筑等级总和 → 经验倍率分段（与 station 管理倍率一致）
   const MANAGEMENT_XP_TIERS = [

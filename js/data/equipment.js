@@ -269,8 +269,13 @@ Object.assign(EQUIPMENT_DB, buildRigDefinitions());
 function canFitEquipmentOnShip(equipmentRef, shipConfig) {
   const equipment = typeof equipmentRef === "string" ? EQUIPMENT_DB[equipmentRef] : equipmentRef;
   if (!equipment || !shipConfig) return false;
-  return !Array.isArray(equipment.shipTypes) || equipment.shipTypes.length === 0 ||
-    equipment.shipTypes.includes(shipConfig.type);
+  const allowed = equipment.shipTypes;
+  if (!Array.isArray(allowed) || allowed.length === 0) return true;
+  if (allowed.includes(shipConfig.type)) return true;
+  // 泰坦沿用旗舰级装备：中槽/低槽/改装件对普通（旗舰级）装备开放；
+  // 高槽由末日武器出厂占用，经 slots.highUsable 锁死（actions.setFittingSlot 独立拦截），不在此放宽。
+  if (shipConfig.type === "titan" && (allowed.includes("capital") || allowed.includes("supercapital"))) return true;
+  return false;
 }
 
 const DEATHSPACE_EQUIPMENT_TIERS = Object.freeze({

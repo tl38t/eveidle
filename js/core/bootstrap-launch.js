@@ -95,8 +95,38 @@
   function buildSaveSnapshot(state) {
     try { return JSON.stringify(state, null, 2); } catch (e) { return ""; }
   }
+  // 定点返修（云存档死局 P0-7）：沙盒/小游戏容器不支持 a.download，且旧实现无条件 return true，
+  // 会让按钮假报「已导出 ✓」。改为剪贴板优先 —— 剪贴板在 H5 沙盒容器里可用，复制出的存档文本
+  // 既能回传客服，也能用存档页的「粘贴存档 / 进度码」原样恢复。
+  function copyTextToClipboard(text, onDone) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;";
+      if (document.body) document.body.appendChild(ta);
+      try { ta.focus(); } catch (e) {}
+      ta.select();
+      try { if (ta.setSelectionRange) ta.setSelectionRange(0, ta.value.length); } catch (e) {}
+      const ok = !!(document.execCommand && document.execCommand("copy"));
+      if (ta.parentNode) ta.parentNode.removeChild(ta);
+      onDone(ok);
+      return;
+    } catch (e) { /* 落到异步剪贴板 API */ }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { onDone(true); }, function () { onDone(false); });
+        return;
+      }
+    } catch (e) {}
+    onDone(false);
+  }
+  // 仅作附加通道（本机浏览器 / Electron）。返回真实结果，绝不无条件报成功。
   function downloadBackup(filename, text) {
     try {
+      if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return false;
+      const probe = document.createElement("a");
+      if (typeof probe.download === "undefined") return false;
       const blob = new Blob([text], { type: "application/json" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -107,6 +137,15 @@
       setTimeout(function () { try { URL.revokeObjectURL(url); } catch (e) {} }, 2000);
       return true;
     } catch (e) { return false; }
+  }
+  // 统一导出：剪贴板优先 → 失败再尝试下载 → 都失败则如实报错（绝不假报成功）。
+  function exportBackupText(text, btn) {
+    if (!text) { btn.textContent = "无可复制内容"; return; }
+    copyTextToClipboard(text, function (ok) {
+      if (ok) { btn.textContent = "已复制到剪贴板 ✓"; return; }
+      const dl = downloadBackup("save-backup-" + Date.now() + ".json", text);
+      btn.textContent = dl ? "已下载 ✓" : "复制失败，请重试";
+    });
   }
   function summarizeLocal() {
     const pending = SaveManager && SaveManager._pendingDeviceCandidate;
@@ -189,7 +228,7 @@
       h.textContent = "⚠ 云端存档进度更靠前";
       h.style.cssText = "font-size:18px;font-weight:700;";
       const p = document.createElement("div");
-      p.textContent = "你选择的「本地存档」游玩时长 / 更新时间比云端更短。确认要用本地覆盖云端吗？此操作会覆盖云端存档，不可撤销。建议先「导出云端备份」。";
+      p.textContent = "你选择的「本地存档」游玩时长 / 更新时间比云端更短。确认要用本地覆盖云端吗？此操作会覆盖云端存档，不可撤销。建议先「复制云端存档」回传客服。";
       p.style.cssText = "max-width:520px;line-height:1.7;opacity:.9;font-size:14px;";
       const row = document.createElement("div");
       row.style.cssText = "display:flex;gap:14px;flex-wrap:wrap;justify-content:center;margin-top:6px;";
@@ -228,7 +267,7 @@
       const recommended = pickRecommended(localSum, cloudSum);
 
       const p = document.createElement("p");
-      p.textContent = "本地存档与云端存档均已修改且内容不同。请选择使用哪一份（选择后另一份将被覆盖，不可撤销）。建议先导出两份备份再选择。" +
+      p.textContent = "本地存档与云端存档均已修改且内容不同。请选择使用哪一份（选择后另一份将被覆盖，不可撤销）。建议先用下方按钮把两份存档复制到剪贴板回传客服，再选择。" +
         (recommended ? "系统已按「游玩时长 / 存档时间」推荐「" + (recommended === "local" ? "本地" : "云端") + "」存档（绿色标记）。" : "两份进度接近，请仔细核对后再选择。");
       p.style.cssText = "max-width:620px;line-height:1.6;opacity:.85;margin:0 0 18px;";
 
@@ -238,31 +277,40 @@
       detailRow.appendChild(conflictSummarySection("本地存档", localSum, recommended === "local"));
       detailRow.appendChild(conflictSummarySection("云端存档", cloudSum, recommended === "cloud"));
 
-      // 导出备份按钮（仅真实触发后才显示「已导出」）
+      // 复制备份按钮（仅真实复制/下载成功后才显示成功态；沙盒容器不支持下载，故剪贴板优先）
       const exportRow = document.createElement("div");
       exportRow.style.cssText = "display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin-bottom:18px;";
       const expLocal = document.createElement("button");
       expLocal.className = "btn";
-      expLocal.textContent = "导出本地备份";
-      expLocal.style.cssText = "min-width:140px;padding:8px 12px;font-size:13px;border:0;border-radius:8px;cursor:pointer;background:#33415c;color:#e8ecf4;";
+      expLocal.textContent = "📋 复制本地存档";
+      expLocal.style.cssText = "min-width:150px;padding:8px 12px;font-size:13px;border:0;border-radius:8px;cursor:pointer;background:#33415c;color:#e8ecf4;";
       const localPayload = (SaveManager._pendingDeviceCandidate && SaveManager._pendingDeviceCandidate.envelope)
         ? SaveManager._pendingDeviceCandidate.envelope.payload : gameState;
       expLocal.addEventListener("click", function () {
-        const ok = downloadBackup("local-save-backup-" + Date.now() + ".json", buildSaveSnapshot(localPayload));
-        expLocal.textContent = ok ? "已导出 ✓" : "导出失败";
+        exportBackupText(buildSaveSnapshot(localPayload), expLocal);
       });
       const expCloud = document.createElement("button");
       expCloud.className = "btn";
-      expCloud.textContent = "导出云端备份";
-      expCloud.style.cssText = "min-width:140px;padding:8px 12px;font-size:13px;border:0;border-radius:8px;cursor:pointer;background:#33415c;color:#e8ecf4;";
+      expCloud.textContent = "📋 复制云端存档";
+      expCloud.style.cssText = "min-width:150px;padding:8px 12px;font-size:13px;border:0;border-radius:8px;cursor:pointer;background:#33415c;color:#e8ecf4;";
       const cloudPayload = (SaveManager._pendingCloudEnvelope && SaveManager._pendingCloudEnvelope.envelope) ? SaveManager._pendingCloudEnvelope.envelope.payload : null;
       if (!cloudPayload) { expCloud.disabled = true; expCloud.style.opacity = ".5"; expCloud.title = "云端存档不可用"; }
       expCloud.addEventListener("click", function () {
         if (!cloudPayload) return;
-        const ok = downloadBackup("cloud-save-backup-" + Date.now() + ".json", buildSaveSnapshot(cloudPayload));
-        expCloud.textContent = ok ? "已导出 ✓" : "导出失败";
+        exportBackupText(buildSaveSnapshot(cloudPayload), expCloud);
       });
       exportRow.appendChild(expLocal); exportRow.appendChild(expCloud);
+
+      // 诊断信息（无需控制台）：沙盒/真机无法开控制台时，玩家在此一键复制存档链路报告回传。
+      const diagBtn = document.createElement("button");
+      diagBtn.className = "btn";
+      diagBtn.textContent = "🩺 诊断信息";
+      diagBtn.style.cssText = "min-width:140px;padding:8px 12px;font-size:13px;border:0;border-radius:8px;cursor:pointer;background:#33415c;color:#e8ecf4;";
+      diagBtn.addEventListener("click", function () {
+        if (typeof window.openCloudSaveDiagnostics !== "function") { diagBtn.textContent = "诊断模块未加载"; return; }
+        try { window.openCloudSaveDiagnostics(); } catch (e) { diagBtn.textContent = "诊断失败"; }
+      });
+      exportRow.appendChild(diagBtn);
 
       // 选择按钮
       const btnStyle = "min-width:170px;padding:12px 18px;font-size:15px;border:0;border-radius:8px;cursor:pointer;";

@@ -481,10 +481,40 @@ function reconcileImplantsFromSkills(state) {
   for (const skillKey of Object.keys(IMPLANT_BY_SKILL)) {
     const s = state.skills[skillKey];
     if (s && s.lvl >= 99) {
+      // 2026-09-10 修复：已拥有必须跳过——grantImplant 对已拥有 id 会走重复分支转 1 个提取剂，
+      // 此函数每次加载都执行，曾导致「每次重载 +1 小型提取剂」的刷取漏洞。
+      if (state.implants && state.implants[IMPLANT_BY_SKILL[skillKey]]) continue;
       const id = grantImplantForSkill(state, skillKey);
       if (id) granted.push(id);
     }
   }
+  return granted;
+}
+
+// 一次性补偿补发（2026-09-10，用户拍板）：四类生产掉落脑插（阿尔法/贝塔/扫描/解析）因监听器
+// 事件信封误读自实装起从未生效，对【补发上线时】四技能已 ≥80 级的存量玩家一次性补发对应脑插。
+// ⚠️ 仅补偿存量：首次执行后置 state.implantsMasteryCompensationDone=true，此后（含本次上线后才
+// 升到 80 的玩家）不再走此路径——他们通过已修复的正常掉落获取。幂等，读权威 state.skills.lvl。
+function reconcileImplantsFromMastery(state, threshold) {
+  if (!state || state.implantsMasteryCompensationDone) return [];
+  const LV = Number(threshold) > 0 ? Number(threshold) : 80;
+  if (!state.skills) return [];
+  const MAP = {
+    mining:               "implant_repair_alpha",
+    gasHarvesting:        "implant_repair_beta",
+    equipmentEngineering: "implant_arch_scan",
+    shipEngineering:      "implant_arch_speed"
+  };
+  if (!state.implants || typeof state.implants !== "object") state.implants = {};
+  const granted = [];
+  for (const skillKey of Object.keys(MAP)) {
+    const s = state.skills[skillKey];
+    if (!s || !(Number(s.lvl) >= LV)) continue;
+    const id = MAP[skillKey];
+    if (state.implants[id]) continue; // 已拥有：跳过，绝不走 grantImplant 重复分支（防误转提取剂）
+    if (grantImplant(state, id)) granted.push(id);
+  }
+  state.implantsMasteryCompensationDone = true; // 标记本次上线快照已处理，此后新晋 80 级不补
   return granted;
 }
 
@@ -533,10 +563,13 @@ function announceImplant(id) {
     (typeof window !== "undefined" && window.GameEvents) || null;
   if (!GE || typeof GE.on !== "function") return;
   GE.on("skill:levelUp", function (event) {
-    if (!event || (event.level || 0) < 99) return;
+    // 事件总线派发信封对象（{type,payload,meta,...}），业务字段在 event.payload——
+    // 2026-09-10 修复：此前误读信封本体 event.level/event.skill 恒 undefined，实时授予从不触发（靠加载时 reconcile 掩盖）。
+    const ev = (event && event.payload) || {};
+    if ((ev.level || 0) < 99) return;
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st) return;
-    const id = grantImplantForSkill(st, event.skill);
+    const id = grantImplantForSkill(st, ev.skill);
     if (id) announceImplant(id);
   });
 })();
@@ -547,14 +580,20 @@ function announceImplant(id) {
     (typeof window !== "undefined" && window.GameEvents) || null;
   if (!GE || typeof GE.on !== "function") return;
 
+  // 事件总线派发信封对象（{type,payload,meta,...}），业务字段在 event.payload。
+  // 2026-09-10 修复：此前全部监听器误读信封本体（event.area/event.branch/event.cycles 等恒 undefined），
+  // 导致采矿/采气/制造四枚掉落脑插自实装起从未掷骰（硬阻断），考古/增强剂按退化基准率欠掷。
+  function pl(event) { return (event && event.payload) || {}; }
+
   // 采矿 → 阿尔法（维修增强）
   GE.on("mining:completed", function (event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st) return;
-    const bt = getAreaBaseTime(event && event.area, (typeof ALL_MINING_AREAS !== "undefined") ? ALL_MINING_AREAS : undefined);
+    const ev = pl(event);
+    const bt = getAreaBaseTime(ev.area, (typeof ALL_MINING_AREAS !== "undefined") ? ALL_MINING_AREAS : undefined);
     if (!bt) return;
     const p = (bt / IMPLANT_DROP_REF_MINING) / IMPLANT_DROP_INV_MINING;
-    const id = tryDropFromAction(st, "implant_repair_alpha", p, event && event.cycles);
+    const id = tryDropFromAction(st, "implant_repair_alpha", p, ev.cycles);
     if (id) announceImplant(id);
   });
 
@@ -562,10 +601,11 @@ function announceImplant(id) {
   GE.on("gas:completed", function (event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st) return;
-    const bt = getAreaBaseTime(event && event.area, (typeof GAS_AREAS !== "undefined") ? GAS_AREAS : undefined);
+    const ev = pl(event);
+    const bt = getAreaBaseTime(ev.area, (typeof GAS_AREAS !== "undefined") ? GAS_AREAS : undefined);
     if (!bt) return;
     const p = (bt / IMPLANT_DROP_REF_MINING) / IMPLANT_DROP_INV_MINING;
-    const id = tryDropFromAction(st, "implant_repair_beta", p, event && event.cycles);
+    const id = tryDropFromAction(st, "implant_repair_beta", p, ev.cycles);
     if (id) announceImplant(id);
   });
 
@@ -573,13 +613,14 @@ function announceImplant(id) {
   GE.on("manufacturing:completed", function (event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st || !event) return;
+    const ev = pl(event);
     let targetId = null;
-    if (event.branch === "equipment") targetId = "implant_arch_scan";
-    else if (event.branch === "ship" || event.branch === "component") targetId = "implant_arch_speed";
+    if (ev.branch === "equipment") targetId = "implant_arch_scan";
+    else if (ev.branch === "ship" || ev.branch === "component") targetId = "implant_arch_speed";
     else return;
-    const t = Number(event.time) > 0 ? Number(event.time) : IMPLANT_DROP_REF_MFG;
+    const t = Number(ev.time) > 0 ? Number(ev.time) : IMPLANT_DROP_REF_MFG;
     const p = (t / IMPLANT_DROP_REF_MFG) / IMPLANT_DROP_INV_MFG;
-    const id = tryDropFromAction(st, targetId, p, event.cycles);
+    const id = tryDropFromAction(st, targetId, p, ev.cycles);
     if (id) announceImplant(id);
   });
 
@@ -587,9 +628,10 @@ function announceImplant(id) {
   function onBoosterManufactured(event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st || !event) return;
-    const t = Number(event.time) > 0 ? Number(event.time) : IMPLANT_DROP_REF_MFG;
+    const ev = pl(event);
+    const t = Number(ev.time) > 0 ? Number(ev.time) : IMPLANT_DROP_REF_MFG;
     const p = (t / IMPLANT_DROP_REF_MFG) / IMPLANT_DROP_INV_MFG;
-    const id = tryDropFromAction(st, "implant_arch_unique", p, event.cycles);
+    const id = tryDropFromAction(st, "implant_arch_unique", p, ev.cycles);
     if (id) announceImplant(id);
   }
   GE.on("booster:manufactured", onBoosterManufactured);
@@ -601,7 +643,8 @@ function announceImplant(id) {
   GE.on("archaeology:success", function (event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st || !event) return;
-    const siteId = event.siteId;
+    const ev = pl(event);
+    const siteId = ev.siteId;
     const site = (typeof getArchaeologySiteById === "function") ? getArchaeologySiteById(siteId)
       : (typeof ARCHAEOLOGY_SITES !== "undefined" ? ARCHAEOLOGY_SITES.find(s => s.id === siteId) : null);
     // 概率恒定：按「遗址档位时长」掷骰，不应用玩家效率减免（与 UI 显示同源，见 archaeology-render.js）。
@@ -642,6 +685,6 @@ function announceImplant(id) {
   GE.on("combat:deathspaceCleared", function (event) {
     const st = (typeof gameState !== "undefined") ? gameState : null;
     if (!st || !event) return;
-    rollDeathspaceImplantDrop(st, event.deathspaceId);
+    rollDeathspaceImplantDrop(st, pl(event).deathspaceId);
   });
 })();

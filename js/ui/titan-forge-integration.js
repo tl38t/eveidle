@@ -25,11 +25,165 @@
   };
   const fmtNum = n => Number(n || 0).toLocaleString("en-US");
   const pct = x => Math.round((x || 0) * 100);
+  // 全局函数安全取用（数据表/选择器脚本加载晚于本文件时为 undefined）
+  const gfn = name => (typeof window !== "undefined" && typeof window[name] === "function") ? window[name]
+    : (typeof globalThis !== "undefined" && typeof globalThis[name] === "function") ? globalThis[name] : null;
   function getTitanModule(kind, id) {
     const key = TITAN_DATA_ID_MAP[kind] && TITAN_DATA_ID_MAP[kind][id];
     if (!key || typeof window === "undefined") return null;
     const table = kind === "hull" ? window.TITAN_HULLS : kind === "weapon" ? window.TITAN_WEAPONS : window.TITAN_CORES;
     return (table && table[key]) || null;
+  }
+  // ---- 总装真接线（2026-09-10）：本页三个下拉 → state.currentAction.titanAsmCombo → startTitanAssembly ----
+  // 选择器展示 id → 数据表谱系 id（与 buildTitanConfig / getTitanAssemblyRecipe 同口径）
+  // 反向映射：数据表谱系 id → 选择器展示 id（用于从存档恢复下拉选择）
+  const TITAN_OPTION_BY_DATA = { hull:{}, weapon:{}, core:{} };
+  for (const kind of ["hull","weapon","core"]) {
+    for (const optId of Object.keys(TITAN_DATA_ID_MAP[kind])) TITAN_OPTION_BY_DATA[kind][TITAN_DATA_ID_MAP[kind][optId]] = optId;
+  }
+  // 启动后首次从存档恢复组合（2026-09-10 修复：原 syncSelectionFromState 是零调用死代码，
+  // 导致刷新/重进组装页后三个下拉永远回落成默认值，与存档里的 titanAsmCombo 不一致）。
+  // 只做一次性回填：此后 selection 仍是前端唯一真值（change 先改 selection 再写 state），
+  // 不做"每次渲染都从 state 反向覆盖"——那正是历史上弹回总装的双状态源打架问题。
+  let selectionHydrated = false;
+  function hydrateSelectionFromState(el) {
+    if (selectionHydrated) return;
+    const c = (typeof gameState !== "undefined" && gameState.currentAction && gameState.currentAction.titanAsmCombo) || null;
+    if (!c) return; // 存档尚无组合或 gameState 未就绪：保持默认，等下一次渲染 pass
+    if (!el) return; // 视图尚未创建：不消费这次机会
+    selectionHydrated = true;
+    let changed = false;
+    for (const kind of ["hull","weapon","core"]) {
+      const optId = TITAN_OPTION_BY_DATA[kind][c[kind]];
+      if (optId && optId !== selection[kind]) { selection[kind] = optId; changed = true; } // 存档组合优先于默认选择
+    }
+    for (const kind of ["hull","weapon","core"]) {
+      // select.value 不随 selection 自动同步，须显式回写（option 无 selected 属性，默认停在第 1 项）
+      const sel = el.querySelector(`[data-titan-fresh="${kind}"]`);
+      if (sel && sel.value !== selection[kind]) sel.value = selection[kind];
+      const note = el.querySelector(`[data-titan-note="${kind}"]`);
+      if (note) setText(note, find(kind, selection[kind]).note);
+    }
+    if (changed) { updateSummary(el); refreshAssemblyUi(el); }
+  }
+  function comboOf() {
+    return {
+      hull: TITAN_DATA_ID_MAP.hull[selection.hull],
+      weapon: TITAN_DATA_ID_MAP.weapon[selection.weapon],
+      core: TITAN_DATA_ID_MAP.core[selection.core]
+    };
+  }
+  function componentDisplayName(componentId) {
+    const list = (typeof window !== "undefined" && Array.isArray(window.TITAN_COMPONENT_RECIPES)) ? window.TITAN_COMPONENT_RECIPES : [];
+    const hit = list.find(r => r.id === componentId);
+    return hit ? hit.name : componentId;
+  }
+  // 门禁判定：与 actions.startTitanAssembly 阻塞优先级逐条一致（组合→组件解锁→船坞→等级→星币→材料）
+  function evaluateTitanGate() {
+    const recipe = gfn("getTitanAssemblyRecipe") ? gfn("getTitanAssemblyRecipe")(comboOf()) : null;
+    if (!recipe) return { ok:false, label:"组合无效", detail:"", recipe:null };
+    const unlock = gfn("isTitanComponentUnlocked");
+    if (unlock) {
+      for (const cid of Object.keys(recipe.componentCost)) {
+        const gate = unlock(gameState, cid);
+        if (gate && gate.ok === false) return { ok:false, reason:gate.reason || "", label:(gate.text || "未解锁"), detail:componentDisplayName(cid) + " 尚未解锁", recipe };
+      }
+    }
+    const yard = gfn("getShipyardLevel");
+    if (yard && yard(gameState) < recipe.shipyardLevel) {
+      return { ok:false, label:"船坞 Lv." + recipe.shipyardLevel + " 解锁", detail:"当前船坞 Lv." + yard(gameState), recipe };
+    }
+    const lvl = gfn("getEffectiveSkillLevel");
+    if (lvl && lvl(gameState, "shipEngineering") < recipe.level) {
+      return { ok:false, label:"舰船工程 Lv." + recipe.level + " 解锁", detail:"当前 Lv." + lvl(gameState, "shipEngineering"), recipe };
+    }
+    // ISK 权威存储只有 state.resources.isk（顶层 gameState.isk 不存在，读之恒 0 → UI 恒显星币不足）——2026-09-10 修复
+    const isk = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "currency:isk") : 0;
+    if (isk < recipe.isk) return { ok:false, label:"星币不足", detail:"需 " + fmtNum(recipe.isk) + " · 现有 " + fmtNum(isk), recipe };
+    const short = [];
+    for (const [cid, qty] of Object.entries(recipe.componentCost)) {
+      const stock = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "component:" + cid) : 0;
+      if (stock < qty) short.push(componentDisplayName(cid) + "×" + qty);
+    }
+    for (const [name, qty] of Object.entries(recipe.materialCost)) {
+      const stock = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.getMaterialStock(gameState, name) : 0;
+      if (stock < qty) short.push(name + "×" + qty);
+    }
+    if (short.length) return { ok:false, label:"组件不足", detail:"缺少 " + short.join("、"), recipe };
+    return { ok:true, label:"", detail:"", recipe };
+  }
+  // 成本行：部件 + 额外材料 + 星币 + 耗时 + 经验（够/缺着色）
+  function titanCostHtml(recipe) {
+    if (!recipe) return "";
+    const span = (enough, text) => `<span class="${enough ? "enough" : "short"}">${text}</span>`;
+    const parts = Object.entries(recipe.componentCost).map(([cid, qty]) => {
+      const stock = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "component:" + cid) : 0;
+      return span(stock >= qty, componentDisplayName(cid) + "×" + qty);
+    }).join(" + ");
+    const mats = Object.entries(recipe.materialCost).map(([name, qty]) => {
+      const stock = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.getMaterialStock(gameState, name) : 0;
+      return span(stock >= qty, name + "×" + qty);
+    }).join(" + ");
+    const isk = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "currency:isk") : 0;
+    return `部件：${parts}${mats ? ` · 额外材料：${mats}` : ""} · ${span(isk >= recipe.isk, "星币 " + fmtNum(recipe.isk))} · 耗时 ${fmtNum(recipe.time)}s · 经验 ${fmtNum(recipe.xp)}`;
+  }
+  // 幂等写：内容相同则不触碰 DOM（本文件 MutationObserver 驱动 render，避免自触发死循环）
+  function setText(el, s) { if (el && el.textContent !== s) el.textContent = s; }
+  function setHtml(el, h) { if (el && el.innerHTML !== h) el.innerHTML = h; }
+  function setDisabled(el, d) { if (el && el.disabled !== d) el.disabled = d; }
+  // 状态区 + 按钮：运行中显示进度并可停止；未解锁/缺料按门禁文案禁用
+  // startTitanAssembly 失败原因 → 中文提示（与 actions 门禁 reason 一一对应）
+  const FAIL_TEXT = {
+    "invalid-combo":"组合无效",
+    "titan-synthesis-locked":"需制压先驱文明核心",
+    "titan-node-locked":"需制压对应星图分线节点",
+    "shipyard-level-locked":"船坞等级不足",
+    "level-locked":"舰船工程等级不足",
+    "insufficient-isk":"星币不足",
+    "insufficient-components":"组件或材料不足"
+  };
+  // 门禁 → 跳转页（2026-09-10）：只给「玩家该去哪做」的门禁配按钮，缺料缺钱不给（刷材料不是跳转能解决的）
+  const GATE_GOTO = { "titan-synthesis-locked":"starmap", "titan-node-locked":"starmap" };
+  const GOTO_LABEL = { starmap:"前往星图" };
+  function gotoHtml(gate) {
+    const page = gate && GATE_GOTO[gate.reason];
+    if (!page) return "";
+    return '<button type="button" class="btn titan-goto" data-titan-goto="' + page + '">' + (GOTO_LABEL[page] || "前往") + '</button>';
+  }
+  const btnMode = el => (el.querySelector("[data-titan-fresh-build]") || {}).dataset
+    ? (el.querySelector("[data-titan-fresh-build]").dataset.titanMode || "start") : "start";
+  function refreshAssemblyUi(el) {
+    const statusEl = el.querySelector("[data-titan-fresh-status]");
+    const costEl = el.querySelector("[data-titan-asm-cost]");
+    const btn = el.querySelector("[data-titan-fresh-build]");
+    const gotoEl = el.querySelector("[data-titan-asm-goto]");
+    if (!statusEl || !btn) return;
+    const a = (typeof gameState !== "undefined" && gameState.currentAction) || {};
+    const running = a.active && a.shipSubAction === "titanAssembly";
+    const gate = evaluateTitanGate();
+    setHtml(costEl, titanCostHtml(gate.recipe));
+    if (running) {
+      const dur = gfn("getShipEngineeringCycleDuration") ? gfn("getShipEngineeringCycleDuration")(gameState, gate.recipe) : (gate.recipe ? gate.recipe.time : 1);
+      const prog = Math.max(0, Math.min(1, (Number(a.progress) || 0) / (dur || 1)));
+      setText(btn, "⏹ 停止总装（" + Math.floor(prog * 100) + "%）");
+      setDisabled(btn, false);
+      btn.dataset.titanMode = "stop";
+      setText(statusEl, "总装进行中：" + (gate.recipe ? gate.recipe.name : "泰坦") + " · " + Math.floor(prog * 100) + "%");
+      setHtml(gotoEl, "");
+      return;
+    }
+    btn.dataset.titanMode = "start";
+    if (gate.ok) {
+      setText(btn, "⚓ 总装泰坦");
+      setDisabled(btn, false);
+      setText(statusEl, "已选 3 / 3 个组件 · 材料齐备，可开始总装");
+      setHtml(gotoEl, "");
+    } else {
+      setText(btn, "🔒 " + gate.label);
+      setDisabled(btn, true);
+      setText(statusEl, gate.detail ? (gate.label + "：" + gate.detail) : gate.label);
+      setHtml(gotoEl, gotoHtml(gate)); // 幂等写：内容不变不触碰 DOM
+    }
   }
   function titanStatHtml(kind, m) {
     if (kind === "hull") {
@@ -87,19 +241,52 @@
     // 修复：已紧跟在 tabs 之后则不再移动（幂等）。
     if (boosters && boosters.parentElement === document.querySelector("#shipeng-panel .panel-body") && boosters.previousElementSibling !== tabs) tabs.after(boosters);
     ensureView();
+    const view = document.getElementById("shipeng-titan-view");
+    hydrateSelectionFromState(view); // 一次性回填存档组合（幂等；gameState 晚就绪时由后续渲染 pass 补上）
     applyTitanViewVisibility();
+    // 运行中进度/门禁随时间与库存变化：随渲染 pass 幂等刷新（内容不变则不写 DOM）
+    if (view && isTitanSubView()) refreshAssemblyUi(view);
   }
   function ensureView() {
     const panel = document.getElementById("shipeng-panel"); if (!panel || document.getElementById("shipeng-titan-view")) return;
     const el = document.createElement("div"); el.id = "shipeng-titan-view"; el.className = "titan-forge-fresh";
     el.style.display = isTitanSubView() ? "" : "none"; // 懒创建竞态兜底：按 state 设初值，不等下一次渲染 pass
-    el.innerHTML = `<div class="titan-forge-fresh-grid"><div class="titan-forge-fresh-controls"><div class="titan-forge-kicker">TITAN ASSEMBLY</div><h2>泰坦组装</h2><p>从部件车间取得舰体、武器和核心，组合成一架泰坦。</p>${["hull","weapon","core"].map((k,i)=>`<label class="titan-fresh-slot"><span>${String(i+1).padStart(2,"0")} · ${k === "hull" ? "防御舰体" : k === "weapon" ? "攻击模块" : "核心模块"}</span><select class="u-select" data-titan-fresh="${k}">${optionHtml(k)}</select><small data-titan-note="${k}">${find(k, selection[k]).note}</small></label>`).join("")}<button class="btn primary" type="button" data-titan-fresh-build>⚓ 模拟总装泰坦</button><div class="titan-fresh-status" data-titan-fresh-status>已选 3 / 3 个组件 · 可进行原型总装</div></div><div class="titan-forge-fresh-preview"><div class="titan-preview"><span class="titan-preview-label">LIVE TITAN ASSEMBLY</span></div><div class="titan-fresh-summary" data-titan-summary></div></div></div>`;
+    el.innerHTML = `<div class="titan-forge-fresh-grid"><div class="titan-forge-fresh-controls"><div class="titan-forge-kicker">TITAN ASSEMBLY</div><h2>泰坦组装</h2><p>从部件车间取得舰体、武器和核心，组合成一架泰坦。</p>${["hull","weapon","core"].map((k,i)=>`<label class="titan-fresh-slot"><span>${String(i+1).padStart(2,"0")} · ${k === "hull" ? "防御舰体" : k === "weapon" ? "攻击模块" : "核心模块"}</span><select class="u-select" data-titan-fresh="${k}">${optionHtml(k)}</select><small data-titan-note="${k}">${find(k, selection[k]).note}</small></label>`).join("")}<button class="btn primary" type="button" data-titan-fresh-build>⚓ 总装泰坦</button><div class="titan-fresh-status" data-titan-fresh-status>已选 3 / 3 个组件</div><div class="titan-asm-cost" data-titan-asm-cost></div><div class="titan-asm-goto" data-titan-asm-goto></div></div><div class="titan-forge-fresh-preview"><div class="titan-preview"><span class="titan-preview-label">LIVE TITAN ASSEMBLY</span></div><div class="titan-fresh-summary" data-titan-summary></div></div></div>`;
     panel.appendChild(el);
-    el.addEventListener("change", e => { const s=e.target.closest("[data-titan-fresh]"); if(!s)return; selection[s.dataset.titanFresh]=s.value; const n=el.querySelector(`[data-titan-note="${s.dataset.titanFresh}"]`); if(n)n.textContent=find(s.dataset.titanFresh,s.value).note; updateSummary(el); });
-    el.querySelector("[data-titan-fresh-build]").addEventListener("click", () => { el.querySelector("[data-titan-fresh-status]").textContent="原型装配完成：已生成一架泰坦"; });
+    el.addEventListener("change", e => {
+      const s = e.target.closest("[data-titan-fresh]"); if (!s) return;
+      selection[s.dataset.titanFresh] = s.value;
+      const n = el.querySelector(`[data-titan-note="${s.dataset.titanFresh}"]`); if (n) setText(n, find(s.dataset.titanFresh, s.value).note);
+      updateSummary(el);
+      // 回写 state（真值单一来源），再刷新门禁/成本（改选后立即反映该组合的材料缺口）
+      if (typeof dispatchGameAction === "function") dispatchGameAction(gameState, { type:"manufacturing/selectTitanCombo", combo:comboOf() }, Date.now());
+      refreshAssemblyUi(el);
+    });
+    el.querySelector("[data-titan-fresh-build]").addEventListener("click", () => {
+      if (btnMode(el) === "stop") { dispatchGameAction(gameState, { type:"manufacturing/stop" }, Date.now()); refreshAssemblyUi(el); return; }
+      const res = dispatchGameAction(gameState, { type:"manufacturing/startTitanAssembly", combo:comboOf() }, Date.now());
+      if (res && res.changed) { refreshAssemblyUi(el); return; }
+      const statusEl = el.querySelector("[data-titan-fresh-status]");
+      const label = FAIL_TEXT[res && res.reason] || ((res && (res.text || res.reason)) || "无法开始总装");
+      setText(statusEl, "无法开始：" + label);
+    });
+    el.addEventListener("click", e => {
+      const g = e.target.closest("[data-titan-goto]");
+      if (g) {
+        const page = g.getAttribute("data-titan-goto");
+        const go = (typeof switchPage === "function") ? switchPage : (typeof window !== "undefined" && typeof window.switchPage === "function") ? window.switchPage : null;
+        if (go) go(page);
+        return;
+      }
+    });
     updateSummary(el);
+    refreshAssemblyUi(el);
   }
-  function updateSummary(el) { el.querySelector("[data-titan-summary]").innerHTML = ["hull","weapon","core"].map(summaryCardHtml).join(""); }
+  // 幂等写：内容不变不重建节点（本文件由 MutationObserver 驱动 render，裸 innerHTML 赋值会回环）
+  function updateSummary(el) {
+    const host = el.querySelector("[data-titan-summary]"); if (!host) return;
+    setHtml(host, ["hull","weapon","core"].map(summaryCardHtml).join(""));
+  }
   new MutationObserver(render).observe(document.body, { childList:true, subtree:true });
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render); else render();
 })();

@@ -27,7 +27,11 @@ const classList = { add:noop, remove:noop, toggle:noop, contains:()=>false };
 const makeElement = () => ({ addEventListener:noop, appendChild:noop, classList, click:noop, closest:()=>null, dataset:{}, focus:noop, getBoundingClientRect:()=>({left:0,top:0,width:100,height:100}), getContext:()=>new MockCanvasContext(), innerHTML:"", offsetHeight:24, offsetWidth:560, querySelector:()=>makeElement(), querySelectorAll:()=>[], remove:noop, setAttribute:noop, removeAttribute:noop, getAttribute:()=>null, select:noop, style:{}, textContent:"", value:"1" });
 const documentMock = { addEventListener:noop, readyState:"loading", body:makeElement(), createElement:()=>makeElement(), createElementNS:()=>({...makeElement(),setAttribute:noop}), getElementById:()=>makeElement(), querySelector:()=>makeElement(), querySelectorAll:()=>[] };
 const localStorageMock = { getItem:()=>null, setItem:noop, removeItem:noop };
-const sandbox = { alert:noop, Blob, CanvasRenderingContext2D:MockCanvasContext, console, confirm:()=>true, document:documentMock, FileReader:class{}, localStorage:localStorageMock, matchMedia:()=>({matches:false,media:"",addEventListener:noop,removeEventListener:noop,addListener:noop,removeListener:noop}), requestAnimationFrame:noop, setInterval:noop, setTimeout:noop, clearTimeout:noop, URL:{createObjectURL:()=>"blob:mock",revokeObjectURL:noop}, window:null };
+// 2026-09-10：沙箱补 MutationObserver / IntersectionObserver / ResizeObserver 桩。
+// index.html 里的 UI 脚本（如 js/ui/titan-forge-integration.js）在顶层 new MutationObserver(...)，
+// 缺桩会直接 ReferenceError 令本测试整体崩溃（与被测的在线/离线一致性无关）。
+class MockObserver { constructor() {} observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
+const sandbox = { alert:noop, Blob, CanvasRenderingContext2D:MockCanvasContext, console, confirm:()=>true, document:documentMock, FileReader:class{}, localStorage:localStorageMock, matchMedia:()=>({matches:false,media:"",addEventListener:noop,removeEventListener:noop,addListener:noop,removeListener:noop}), MutationObserver:MockObserver, IntersectionObserver:MockObserver, ResizeObserver:MockObserver, requestAnimationFrame:noop, setInterval:noop, setTimeout:noop, clearTimeout:noop, URL:{createObjectURL:()=>"blob:mock",revokeObjectURL:noop}, window:null };
 sandbox.window = sandbox; sandbox.window.addEventListener = noop;
 vm.createContext(sandbox);
 for (const src of scriptSources) {

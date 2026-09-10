@@ -28,6 +28,9 @@ function getShipManufacturingLevel(shipConfig) {
   if (type.includes("destroyer")) return 15;
   if (type === "supercapital") return 90;
   if (type === "capital" || type === "industrial_capital" || type === "archaeology_capital") return 80;
+  // 泰坦（2026-09-10）：制造等级 100，但强化档位沿用超旗档（90）组件/星币/经验，
+  // 不新增第 7 档 —— 泰坦已靠末日武器与特质拉开上限，强化侧不再叠加额外成本层。
+  if (type === "titan") return 100;
   if (type.includes("frigate")) return 1;
   return null;
 }
@@ -64,6 +67,24 @@ function getShipEnhancementCost(shipConfig) {
   return tier ? Object.fromEntries(tier.componentIds.map(id => [id, 1])) : {};
 }
 
+// 舰船强化「额外材料消耗」（2026-09-10 用户拍板）：泰坦不能只吃超旗组件，
+// 每次强化额外消耗泰坦精炼料（special 池：锻星合金 / 熔虚晶体）。
+// 键为**完整资源键**（带池前缀），与上面 componentIds（component: 命名空间）分离，
+// 避免污染既有「cost = 组件 id」的解析约定（拆解返还 / 研究协议均按该约定读表）。
+const SHIP_ENHANCEMENT_EXTRA_MATERIALS = Object.freeze({
+  titan: Object.freeze({ "special:锻星合金": 8, "special:熔虚晶体": 4 })
+});
+// 池前缀剥离：拆解返还等场合需要裸材料名（与 SHIP_COMPONENT_RECIPES.cost 的键同形）
+function stripResourcePoolPrefix(resourceKey) {
+  const text = String(resourceKey || "");
+  const at = text.indexOf(":");
+  return at >= 0 ? text.slice(at + 1) : text;
+}
+function getShipEnhancementExtraMaterials(shipConfig) {
+  const type = String((shipConfig && shipConfig.type) || "");
+  return SHIP_ENHANCEMENT_EXTRA_MATERIALS[type] || {};
+}
+
 // 舰船强化「星币消耗」：按制造等级分层（与组件分层同档），单次固定、不随强化等级递增。
 // 设计锚点：单次 ≈ 该档满装小时收入的 ~2.5%，使 0→20 满强化 ≈ 2 小时 farm 收入，
 // 既给星币持续的后期存在感，又不惩罚（~40 次尝试/小时的收入即可覆盖单次）。
@@ -75,7 +96,15 @@ const SHIP_ENHANCEMENT_ISK_BY_TIER = Object.freeze({
   80: 600000,  // 旗舰
   90: 1000000  // 超级旗舰
 });
+// 泰坦额外档（2026-09-10 用户拍板「星币也要提高」）：泰坦与超旗同处 tier 90，
+// 但成本已由额外精炼料拉开，星币按 2× 单列覆盖，不动超旗及其它档位。
+const SHIP_ENHANCEMENT_ISK_OVERRIDE = Object.freeze({
+  titan: 2000000
+});
 function getShipEnhancementIskCost(shipConfig) {
+  const type = String((shipConfig && shipConfig.type) || "");
+  const override = SHIP_ENHANCEMENT_ISK_OVERRIDE[type];
+  if (override) return override;
   const tier = getShipEnhancementTier(shipConfig);
   return tier ? (SHIP_ENHANCEMENT_ISK_BY_TIER[tier.level] || 0) : 0;
 }
@@ -83,10 +112,22 @@ function getShipEnhancementIskCost(shipConfig) {
 function getShipEnhancementBaseXp(shipConfig) {
   const tier = getShipEnhancementTier(shipConfig);
   if (!tier) return 0;
-  const setXp = tier.componentIds.reduce((sum, id) => {
+  let setXp = tier.componentIds.reduce((sum, id) => {
     const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === id);
     return sum + (recipe ? Number(recipe.xp) || 0 : 0);
   }, 0);
+  // 泰坦（2026-09-10 用户拍板「基础经验也要提高」）：额外消耗泰坦精炼料 → 额外基础经验
+  // = 泰坦三组件配方 XP 和 × 0.5，沿用既有「组件配方 XP 和 ×0.5」同一规则，不新造口径。
+  // 运行时惰性读取（titans.js 晚于本文件加载；未加载时退回常量 2800 = 1000+900+900）。
+  const type = String((shipConfig && shipConfig.type) || "");
+  if (type === "titan") {
+    let trio = 2800;
+    if (typeof TITAN_COMPONENT_COSTS !== "undefined" && TITAN_COMPONENT_COSTS) {
+      const sum = ["hull", "weapon", "core"].reduce((acc, key) => acc + (Number(TITAN_COMPONENT_COSTS[key] && TITAN_COMPONENT_COSTS[key].xp) || 0), 0);
+      if (sum > 0) trio = sum;
+    }
+    setXp += trio;
+  }
   return Math.round(setXp * 0.5);
 }
 
@@ -170,6 +211,8 @@ window.ShipEnhancement = Object.freeze({
   getTier:getShipEnhancementTier,
   getRole:getShipEnhancementRole,
   getCost:getShipEnhancementCost,
+  getExtraMaterials:getShipEnhancementExtraMaterials,
+  stripPoolPrefix:stripResourcePoolPrefix,
   getIskCost:getShipEnhancementIskCost,
   getBaseXp:getShipEnhancementBaseXp,
   getSuccessChance:getShipEnhancementSuccessChance,

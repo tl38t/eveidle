@@ -248,6 +248,7 @@ function buildActualStatsHtml(stats, opts) {
     for (const it of stats.attack.items) {
       html.push('<div class="cas-row"><span class="cas-name">' + squadEscape(it.name) + '</span>' +
         '<span class="cas-expr">' + casFmt(it.base) + " × 强化 " + casNum(it.enhancement) + " × 类型 " + casNum(it.typeMult) +
+        (it.atkBooster !== undefined && it.atkBooster !== 1 ? " × 增强剂 " + casNum(it.atkBooster) : "") +
         (it.levelMult !== undefined ? " × 等级 " + casNum(it.levelMult) : "") + '</span>' +
         '<span class="cas-val">' + casFmt(it.value) + '</span></div>');
     }

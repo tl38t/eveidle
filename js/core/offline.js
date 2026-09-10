@@ -417,7 +417,8 @@ function getOfflineActionDescriptor() {
       maxCycles() {
         // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效（含离线期间过期）。
         if (getEffectiveSkillLevel(gameState, "refining") < recipe.level) return 0;
-        return ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
+        // 泰坦双材料（P1 2026-09-10）：按各输入 min(floor(库存/用量)) 取可用周期数。
+        return getSmeltingCyclesAvailable(gameState, recipe);
       },
       apply(cycles, gains) {
         // 等级不足：零副作用（不扣料/不产出/不加 XP/不 emit）。
@@ -436,7 +437,8 @@ function getOfflineActionDescriptor() {
             if (rollDoubleMineral(boosterEff.doubleSmeltChance)) outQty += output;
           }
         }
-        ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, cycles);
+        // 泰坦双材料（P1 2026-09-10）：消耗经 getSmeltingConsumeList 通用解析（单输入旧配方逐位等价）。
+        for (const consumeEntry of getSmeltingConsumeList(recipe)) ResourceRegistry.spend(gameState, consumeEntry.refId, consumeEntry.qty * cycles);
         // 外接大型精炼泵供料（离线）：每炉每件扣 1，按实际库存扣 min(本段炉数, 可供炉数)；
         // 断料后由下一段 descriptor 重建时自动按无泵效率折算（getSmeltingDisplayState 泵项归零）。
         if (smeltingState.pump && smeltingState.pump.count > 0 && smeltingState.pump.enabled) {
@@ -445,9 +447,10 @@ function getOfflineActionDescriptor() {
           const pumpCycles = Math.min(cycles, Math.floor(pumpStock / pumpNeed));
           if (pumpCycles > 0) ResourceRegistry.spend(gameState, smeltingState.pump.resourceId, pumpCycles * pumpNeed);
         }
-        ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, outQty);
+        const offlineSmeltOutputRefId = getSmeltingOutputRefId(recipe);
+        ResourceRegistry.add(gameState, offlineSmeltOutputRefId, outQty);
         addOfflineSkillXp(key, cycles * recipe.baseXP); gains[key] += cycles;
-        emitOfflineGameEvent("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:cycles, outputQuantity:outQty, cycles, xp:cycles * recipe.baseXP });
+        emitOfflineGameEvent("refining:completed", { recipe:recipe.name, inputId:getSmeltingConsumeList(recipe).map(c => c.refId).join("+"), outputId:offlineSmeltOutputRefId, inputQuantity:getSmeltingConsumeList(recipe).reduce((sum, c) => sum + c.qty, 0) * cycles, outputQuantity:outQty, cycles, xp:cycles * recipe.baseXP });
       }
     };
   }
@@ -590,6 +593,36 @@ function getOfflineActionDescriptor() {
           addOfflineSkillXp(key, cycles * recipe.xp); gains[key] += cycles;
           emitOfflineGameEvent("manufacturing:completed", { branch:"ship", recipeId:recipe.id, shipId:recipe.shipId, quantity:cycles, time:recipe.time, cycles, xp:cycles * recipe.xp });
         }
+      }
+    };
+  }
+
+  // 泰坦总装（P0-b，2026-09-10）：与在线 tick.js titanAssembly 分支同口径——
+  // 同一周期公式、材料/ISK 完成时扣、产出实例带 titanCombo 真值、branch:"titan"。
+  if (key === "shipEngineering" && action.shipSubAction === "titanAssembly") {
+    const tCombo = action.startedTitanAsmCombo || action.titanAsmCombo;
+    const tRecipe = (typeof getTitanAssemblyRecipe === "function") ? getTitanAssemblyRecipe(tCombo) : null;
+    if (!tRecipe) return null;
+    const tLevel = () => getEffectiveSkillLevel(gameState, "shipEngineering");
+    return {
+      key, duration: getShipEngineeringCycleDuration(gameState, tRecipe), // 唯一周期公式（与在线一致）
+      maxCycles() {
+        if (tLevel() < tRecipe.level) return 0;
+        return (typeof getTitanAssemblyMaxCycles === "function") ? getTitanAssemblyMaxCycles(gameState, tRecipe) : 0;
+      },
+      apply(cycles, gains) {
+        if (tLevel() < tRecipe.level) return; // 等级不足：零副作用
+        deductShipAssemblyComponents(tRecipe, cycles);
+        // ISK 权威扣除走 ResourceRegistry（顶层 gameState.isk 不存在，写之是幽灵字段且真钱不扣）——2026-09-10 修复
+        ResourceRegistry.spend(gameState, "currency:isk", tRecipe.isk * cycles);
+        if (!Array.isArray(gameState.inventory.ships)) gameState.inventory.ships = [];
+        for (let i = 0; i < cycles; i++) {
+          const tInst = createShipInstance(tRecipe.shipId);
+          tInst.titanCombo = { hull: tCombo.hull, weapon: tCombo.weapon, core: tCombo.core };
+          gameState.inventory.ships.push(tInst);
+        }
+        addOfflineSkillXp(key, cycles * tRecipe.xp); gains[key] += cycles;
+        emitOfflineGameEvent("manufacturing:completed", { branch:"titan", recipeId:tRecipe.id, shipId:tRecipe.shipId, quantity:cycles, time:tRecipe.time, cycles, xp:cycles * tRecipe.xp });
       }
     };
   }
@@ -921,7 +954,8 @@ function queueItemTargetMatchesAction(state, item, action) {
   if (skill === "mining") return action.area === item.target || action.normalMiningArea === item.target || action.moonMiningArea === item.target;
   if (skill === "refining") return action.smeltingArea === item.target;
   if (skill === "gasHarvesting") return action.gasArea === item.target;
-  if (skill === "shipEngineering") return Boolean(action.shipSubAction) && Boolean(action.shipCompTarget || action.shipAsmTarget);
+  // 泰坦总装没有 shipAsmTarget（目标由 titanAsmCombo 承载），须单独放行，否则离线追算判定为无效行动。
+  if (skill === "shipEngineering") return Boolean(action.shipSubAction) && (Boolean(action.shipCompTarget || action.shipAsmTarget) || action.shipSubAction === "titanAssembly");
   if (skill === "equipmentEngineering") return action.equipEngTarget === item.target;
   if (skill === "boosterEngineering") return action.boosterTarget === item.target;
   return true; // 其他（如 combat 由自身逻辑维护）不强制 target
@@ -1331,9 +1365,9 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL &&
         typeof LEGION_STARMAP_TRIAL.tickLegionStarmapTrial === "function") {
       LEGION_STARMAP_TRIAL.tickLegionStarmapTrial(gameState, segEnd);
+    }
     if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.tickWormhole === "function") {
       WORMHOLE.tickWormhole(gameState, segEnd);
-    }
     }
 
     // 4) 扣除该段燃料（仅 operational 段真实消耗）

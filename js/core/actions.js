@@ -327,6 +327,55 @@ const ManufacturingStateActions = {
     return { changed:true, recipe };
   },
 
+  // ---- 泰坦总装（P0-b，2026-09-10）----
+  // 与常规总装同管线（shipSubAction="titanAssembly"），配方由 combo 现算（见 titans.js
+  // getTitanAssemblyRecipe）：三组件各 1 + 5,000,000 ISK + 锻星合金 200，船坞 Lv3、舰船工程 Lv100。
+  // 门禁与部件车间同口径：制压先驱文明核心 + 对应分线节点；材料在**完成时**扣（与常规总装一致，
+  // 开始只校验，中途耗尽由 tick 零副作用停止）。
+  // 泰坦总装组合选择：只记录选择（不启动行动），供组装页三个下拉回写真值并驱动重绘。
+  // 运行中行动改选不影响本轮（tick 读 startedTitanAsmCombo 快照，与常规总装同口径）。
+  selectTitanCombo(state, combo) {
+    if (!combo || typeof combo !== "object") return { changed:false, reason:"invalid-combo" };
+    const prev = state.currentAction.titanAsmCombo || null;
+    if (prev && prev.hull === combo.hull && prev.weapon === combo.weapon && prev.core === combo.core) {
+      return { changed:false, reason:"unchanged", combo };
+    }
+    state.currentAction.titanAsmCombo = { hull:combo.hull, weapon:combo.weapon, core:combo.core };
+    state._dirty = true;
+    return { changed:true, combo:state.currentAction.titanAsmCombo };
+  },
+  startTitanAssembly(state, now, comboOverride) {
+    const combo = comboOverride || state.currentAction.titanAsmCombo || null;
+    const recipe = (typeof getTitanAssemblyRecipe === "function") ? getTitanAssemblyRecipe(combo) : null;
+    if (!recipe) return { changed:false, reason:"invalid-combo" };
+    if (typeof isTitanComponentUnlocked === "function") {
+      for (const cid of Object.keys(recipe.componentCost)) {
+        const gate = isTitanComponentUnlocked(state, cid);
+        if (gate && gate.ok === false) return { changed:false, reason:gate.reason, text:gate.text };
+      }
+    }
+    if (typeof getShipyardLevel === "function" && getShipyardLevel(state) < recipe.shipyardLevel) {
+      return { changed:false, reason:"shipyard-level-locked" };
+    }
+    if (getEffectiveSkillLevel(state, "shipEngineering") < recipe.level) return { changed:false, reason:"level-locked" };
+    // ISK 权威存储只有 state.resources.isk（顶层 state.isk 不存在，读之恒 0 会把总装永久锁死）——2026-09-10 修复
+    if (ResourceRegistry.get(state, "currency:isk") < recipe.isk) return { changed:false, reason:"insufficient-isk" };
+    if (typeof hasEnoughShipAssemblyComponents === "function" && !hasEnoughShipAssemblyComponents(recipe)) {
+      return { changed:false, reason:"insufficient-components" };
+    }
+    Object.assign(state.currentAction, {
+      skill:"shipEngineering",
+      active:true,
+      shipSubAction:"titanAssembly",
+      titanAsmCombo:{ hull:combo.hull, weapon:combo.weapon, core:combo.core },
+      startedTitanAsmCombo:{ hull:combo.hull, weapon:combo.weapon, core:combo.core },
+      progress:0,
+      lastProgressUpdate:now
+    });
+    state._dirty = true;
+    return { changed:true, recipe };
+  },
+
   // ---- 部署物（激光定向打捞单元）：部署 / 取消部署 ----
   // 部署=生效（占用小队 1 格，与 NPC 成员抢格）；取消部署=召回库存（关闭增益）。
   deployDeployable(state, deployableId) {
@@ -1589,9 +1638,14 @@ const ShellStateActions = {
     if (activeSkill && state.shipAssignments && state.shipAssignments[activeSkill] === instance.instanceId) return { changed:false, reason:"ship-active" };
 
     const cost = getShipEnhancementCost(config);
-    if (!Object.keys(cost).length) return { changed:false, reason:"enhancement-unavailable" };
+    const extraCost = (typeof getShipEnhancementExtraMaterials === "function") ? getShipEnhancementExtraMaterials(config) : {};
+    if (!Object.keys(cost).length && !Object.keys(extraCost).length) return { changed:false, reason:"enhancement-unavailable" };
     if (!Object.entries(cost).every(([id, quantity]) => ResourceRegistry.get(state, "component:" + id) >= quantity)) {
       return { changed:false, reason:"insufficient-components" };
+    }
+    // 泰坦额外精炼料（special 池，键自带池前缀）
+    if (!Object.entries(extraCost).every(([refId, quantity]) => ResourceRegistry.get(state, refId) >= quantity)) {
+      return { changed:false, reason:"insufficient-materials" };
     }
     // 舰船强化新增星币消耗（后期可持续星币 sink）；不足则拒绝，不扣任何材料。
     const iskCost = getShipEnhancementIskCost(config);
@@ -1599,6 +1653,7 @@ const ShellStateActions = {
       return { changed:false, reason:"insufficient-isk" };
     }
     for (const [id, quantity] of Object.entries(cost)) ResourceRegistry.spend(state, "component:" + id, quantity);
+    for (const [refId, quantity] of Object.entries(extraCost)) ResourceRegistry.spend(state, refId, quantity);
     if (iskCost > 0) ResourceRegistry.spend(state, "currency:isk", iskCost);
 
     const fromLevel = normalizeShipEnhancementLevel(instance.enhancementLevel);
@@ -1640,7 +1695,7 @@ const ShellStateActions = {
     const actionTime = Number(now) || Date.now();
     const blocked = getShipDismantleBlockReason(state, instance, actionTime);
     if (blocked) return { changed:false, reason:blocked };
-    const recipe = SHIP_ASSEMBLY_RECIPES.find(item => item.shipId === instance.shipId) || null;
+    const recipe = getShipDismantleRecipeFor(state, instance);
     if (!recipe) return { changed:false, reason:"no-dismantle-recipe" };
     const preview = getShipDismantleQuote(recipe, config, instance.enhancementLevel, getReclaimRate(state));
     // 归还材料（quote 条目已过滤 returned<=0；refId 为空则跳过该条目，避免无锚点材料丢失）。
@@ -1800,6 +1855,12 @@ const ShellStateActions = {
     return { changed:true, enabled:Boolean(enabled) };
   },
 
+  setDarkRefineryPumpEnabled(state, enabled) {
+    ensureUserSettingsState(state).refineryPumpDarkEnabled = Boolean(enabled);
+    state._dirty = true;
+    return { changed:true, enabled:Boolean(enabled) };
+  },
+
   setFittingSlot(state, instanceId, slot, slotIndex, equipmentRef) {
     const instance = getShipInstanceFromState(state, instanceId);
     const config = instance ? getShipConfigById(instance.shipId) : null;
@@ -1811,6 +1872,11 @@ const ShellStateActions = {
     const activeCombat = state.combat && state.combat.active && getActiveCombatShipState(state).instance;
     if (activeCombat && activeCombat.instanceId === instance.instanceId) return { changed:false, reason:"combat-active" };
     if (slotIndex < 0 || slotIndex >= (config.slots[slot] || 0)) return { changed:false, reason:"invalid-slot" };
+    // 泰坦：高槽 [highUsable, high) 段出厂被末日武器占用，禁止写入/卸下普通装备。
+    // 未来数据表抬高 highUsable 后，多出来的高槽自动对普通武器开放（无需改代码）。
+    if (slot === "high" && Number.isFinite(Number(config.slots.highUsable)) && slotIndex >= Number(config.slots.highUsable)) {
+      return { changed:false, reason:"titan-high-locked" };
+    }
     if (!instance.fitted) instance.fitted = { high:[], mid:[], low:[], rig:[] };
     for (const key of ["high", "mid", "low", "rig"]) if (!Array.isArray(instance.fitted[key])) instance.fitted[key] = [];
     if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
@@ -2576,6 +2642,8 @@ const StationStateActions = {
   if (action.type === "manufacturing/selectShipAsmPage") return ManufacturingStateActions.selectShipAsmPage(state, action.page);
   if (action.type === "manufacturing/startShipComponent") return ManufacturingStateActions.startShipComponent(state, actionTime);
   if (action.type === "manufacturing/startShipAssembly") return ManufacturingStateActions.startShipAssembly(state, actionTime);
+  if (action.type === "manufacturing/selectTitanCombo") return ManufacturingStateActions.selectTitanCombo(state, action.combo);
+  if (action.type === "manufacturing/startTitanAssembly") return ManufacturingStateActions.startTitanAssembly(state, actionTime, action.combo);
   if (action.type === "manufacturing/deployDeployable") return ManufacturingStateActions.deployDeployable(state, action.deployableId);
   if (action.type === "manufacturing/undeployDeployable") return ManufacturingStateActions.undeployDeployable(state, action.deployableId);
   if (action.type === "manufacturing/dismantleDeployable") return ManufacturingStateActions.dismantleDeployable(state, action.deployableId);
@@ -2637,6 +2705,7 @@ const StationStateActions = {
   if (action.type === "settings/setDiscardConfirmation") return ShellStateActions.setDiscardConfirmation(state, action.enabled);
   if (action.type === "settings/setDismantleConfirmation") return ShellStateActions.setDismantleConfirmation(state, action.enabled);
   if (action.type === "settings/setRefineryPumpEnabled") return ShellStateActions.setRefineryPumpEnabled(state, action.enabled);
+  if (action.type === "settings/setDarkRefineryPumpEnabled") return ShellStateActions.setDarkRefineryPumpEnabled(state, action.enabled);
   if (action.type === "settings/toggleCombatSkills") return ShellStateActions.toggleCombatSkills(state);
   if (action.type === "queue/add") return ShellStateActions.queueAdd(state, action.item, actionTime, action.front);
   if (action.type === "queue/remove") return ShellStateActions.queueRemove(state, action.index, actionTime);

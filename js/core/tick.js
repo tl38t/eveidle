@@ -229,8 +229,10 @@ function gameTick() {
       const recipe = SMELTING_RECIPES.find(r => r.name === recipeName) || SMELTING_RECIPES[0]; if (!recipe) return;
       // 运行时重校验技能门槛：超载催化剂等增强剂可能中途失效，等级不足零副作用停止。
       if (getEffectiveSkillLevel(gameState, "refining") < recipe.level) { stopOrSkip(); updateUI(); return; }
-      const stock = ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre);
-      if (stock < 1) { stopOrSkip(); updateUI(); return; }
+      // 泰坦双材料（P1 2026-09-10）：消耗经 getSmeltingConsumeList 通用解析（单输入旧配方逐位等价）。
+      if (getSmeltingCyclesAvailable(gameState, recipe) < 1) { stopOrSkip(); updateUI(); return; }
+      const smeltConsumeList = getSmeltingConsumeList(recipe);
+      const smeltOutputRefId = getSmeltingOutputRefId(recipe);
       const smeltingState = getSmeltingDisplayState(gameState, Date.now());
       const eff = smeltingState.efficiency; const actualTime = recipe.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
@@ -238,13 +240,19 @@ function gameTick() {
       const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
       while (gameState.currentAction.progress >= actualTime) {
-        if (ResourceRegistry.get(gameState, "ore:" + recipe.consumeOre) < 1) { stopOrSkip(); updateUI(); return; }
-        gameState.currentAction.progress -= actualTime; ResourceRegistry.spend(gameState, "ore:" + recipe.consumeOre, 1);
-        // 外接大型精炼泵供料：每炉每件扣 1（扣前重检库存；断料时下一 tick 效率自动回落，不中断当前炉）
-        if (smeltingState.pump && smeltingState.pump.count > 0 && smeltingState.pump.enabled) {
-          const pumpNeed = smeltingState.pump.fuelPerCycle;
-          if (ResourceRegistry.get(gameState, smeltingState.pump.resourceId) >= pumpNeed) {
-            ResourceRegistry.spend(gameState, smeltingState.pump.resourceId, pumpNeed);
+        if (getSmeltingCyclesAvailable(gameState, recipe) < 1) { stopOrSkip(); updateUI(); return; }
+        gameState.currentAction.progress -= actualTime;
+        for (const consumeEntry of smeltConsumeList) ResourceRegistry.spend(gameState, consumeEntry.refId, consumeEntry.qty);
+        // 外接大型精炼泵供料：普通泵与暗流体泵分别扣除各自燃料。
+        // 断料时下一 tick 效率自动回落，不中断当前炉。
+        const pumpEntries = smeltingState.pump && Array.isArray(smeltingState.pump.pumps)
+          ? smeltingState.pump.pumps
+          : (smeltingState.pump ? [smeltingState.pump] : []);
+        for (const pump of pumpEntries) {
+          if (!pump || pump.count <= 0 || !pump.enabled) continue;
+          const pumpNeed = Number(pump.fuelPerCycle) || 0;
+          if (pumpNeed > 0 && ResourceRegistry.get(gameState, pump.resourceId) >= pumpNeed) {
+            ResourceRegistry.spend(gameState, pump.resourceId, pumpNeed);
           }
         }
         let output = Math.max(1, Math.floor(recipe.baseOutput * getRefiningOutputMultiplier(smeltingState.level)));
@@ -252,9 +260,9 @@ function gameTick() {
         if (Math.random() < getImplantDoubleOutputChance(gameState, "refining")) output *= 2;
         // 增强剂·冶炼产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率本次产出×2
         if (boosterEff && boosterEff.doubleSmeltChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleSmeltChance)) output *= 2;
-        ResourceRegistry.add(gameState, "mineral:" + recipe.outputMineral, output);
+        ResourceRegistry.add(gameState, smeltOutputRefId, output);
         addSkillXpToState(gameState, "refining", recipe.baseXP, { job:"refining" }); actionCompleted = true;
-        GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:"ore:" + recipe.consumeOre, outputId:"mineral:" + recipe.outputMineral, inputQuantity:1, outputQuantity:output, cycles:1, xp:recipe.baseXP }, { offline:false });
+        GameEvents.emit("refining:completed", { recipe:recipe.name, inputId:smeltConsumeList.map(c => c.refId).join("+"), outputId:smeltOutputRefId, inputQuantity:smeltConsumeList.reduce((sum, c) => sum + c.qty, 0), outputQuantity:output, cycles:1, xp:recipe.baseXP }, { offline:false });
         if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
@@ -388,6 +396,37 @@ function gameTick() {
           }
           if (completeQueuedActionCycle()) {
             // Batch K：intship 阶段推进（队列清空后唯一推进点，非 intship 驱动时内部为无操作）
+            if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
+            updateUI(); break;
+          }
+        }
+        if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
+        if (s.xp > 0) checkLevelUp("shipEngineering");
+      } else if (sub === "titanAssembly") {
+        // 泰坦总装（P0-b）：配方由 combo 现算，材料/ISK 在**完成时**扣（与常规总装同口径）。
+        const tCombo = gameState.currentAction.startedTitanAsmCombo || gameState.currentAction.titanAsmCombo;
+        const tRecipe = (typeof getTitanAssemblyRecipe === "function") ? getTitanAssemblyRecipe(tCombo) : null;
+        if (!tRecipe) { resetActionProgress(); gameState.currentAction.active = false; updateUI(); return; }
+        const tActual = getShipEngineeringCycleDuration(gameState, tRecipe); // 唯一周期公式（技能×船坞×科研×军团×脑插×增强剂）
+        gameState.currentAction.refDuration = tActual;
+        const tNow = Date.now();
+        const tDelta = gameDeltaSec(Math.min(5, (tNow - gameState.currentAction.lastProgressUpdate) / 1000));
+        gameState.currentAction.progress += tDelta; gameState.currentAction.lastProgressUpdate = tNow;
+        while (gameState.currentAction.progress >= tActual) {
+          if (getEffectiveSkillLevel(gameState, "shipEngineering") < tRecipe.level) { stopOrSkip(); updateUI(); return; }
+          // ISK 权威校验/扣除走 ResourceRegistry（顶层 gameState.isk 不存在：读之恒 0 恒跳过、写之造幽灵字段免费造）——2026-09-10 修复
+          if (ResourceRegistry.get(gameState, "currency:isk") < tRecipe.isk) { stopOrSkip(); updateUI(); return; }
+          if (!hasEnoughShipAssemblyComponents(tRecipe)) { stopOrSkip(); updateUI(); return; }
+          gameState.currentAction.progress -= tActual;
+          deductShipAssemblyComponents(tRecipe);
+          ResourceRegistry.spend(gameState, "currency:isk", tRecipe.isk);
+          if (!gameState.inventory.ships) gameState.inventory.ships = [];
+          const tInst = createShipInstance(tRecipe.shipId);
+          tInst.titanCombo = { hull: tCombo.hull, weapon: tCombo.weapon, core: tCombo.core }; // 存档真值（shipId 由此派生）
+          gameState.inventory.ships.push(tInst);
+          addSkillXpToState(gameState, key, tRecipe.xp, { job: key }); actionCompleted = true;
+          GameEvents.emit("manufacturing:completed", { branch:"titan", recipeId:tRecipe.id, shipId:tRecipe.shipId, instanceId:tInst.instanceId, quantity:1, cycles:1, time:tRecipe.time, xp:tRecipe.xp }, { offline:false });
+          if (completeQueuedActionCycle()) {
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
             updateUI(); break;
           }

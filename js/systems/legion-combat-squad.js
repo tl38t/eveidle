@@ -763,15 +763,39 @@
   // fireSingleNpcMember）共用本函数 → 单点接线双路径自动统计等效。
   // 光环按配置静态生效（与核心安装绑定），不做供能联动（核心供能仅约束泰坦自身开火）。
   // 面板口径（getLegionNpcCombatStats.attackPower）刻意不含光环——与该处排除弹药/克制/命中的既定口径一致。
+  // ②-a（2026-09-10 用户拍板）：光环源 = 玩家出战舰 + 小队内每个在岗 NPC 的绑定舰，
+  //   同类光环按配置 stacking="max" 取最高、不叠加。此前只读玩家出战舰，
+  //   导致 NPC 泰坦的统御矩阵对全队（含玩家）零贡献。纯只读，不调用 ensureCombatSquadState。
   function getTitanSquadAura(state) {
     try {
       const activeSel = getCombatSelector("getActiveCombatShipState");
       const isTitanFn = getCombatSelector("isTitanCombatShip");
       const auraFn = getCombatSelector("getTitanCoreAura");
       if (!activeSel || !isTitanFn || !auraFn) return null;
+      let best = null;
+      const consider = (cfg) => {
+        if (!cfg || !isTitanFn(cfg)) return;
+        const a = auraFn(cfg.core || null);
+        if (!a) return;
+        if (!best) { best = a; return; }
+        best = {
+          squadDamageBonus: Math.max(Number(best.squadDamageBonus) || 0, Number(a.squadDamageBonus) || 0),
+          squadHitBonus: Math.max(Number(best.squadHitBonus) || 0, Number(a.squadHitBonus) || 0)
+        };
+      };
       const active = activeSel(state);
-      if (!active || !active.config || !isTitanFn(active.config)) return null;
-      return auraFn(active.config.core || null);
+      if (active && active.config) consider(active.config);
+      const squad = (state && state.combat) ? state.combat.squad : null;
+      if (squad && squad.enabled && Array.isArray(squad.members)) {
+        for (const m of squad.members) {
+          if (!m || m.npcId == null || m.active !== true || m.destroyedInBattle) continue;
+          const npc = findNpc(state, m.npcId);
+          if (!npc || npc.destroyed || !npc.boundShipInstanceId) continue;
+          const inst = activeSel(state, { shipInstanceId: npc.boundShipInstanceId });
+          if (inst && inst.config) consider(inst.config);
+        }
+      }
+      return best;
     } catch (_) { return null; }
   }
 
@@ -1184,6 +1208,65 @@
     return out;
   }
 
+  // —— C3 泰坦 NPC 输出（2026-09-10 用户拍板：与玩家口径完全一致）——
+  // 背景：泰坦的主武器/核心是 buildTitanConfig 按 titanCombo 出厂焊死的组件（config.weapon / config.core），
+  // 不占装配槽，故 getInstalledCombatWeapons 恒返回空 → NPC 绑定泰坦 0 输出。
+  // 做法：合成一个「虚拟武器模块」并入清单，让下面 1200+ 行的通用管线（燃料/弹药/克制/等级/
+  // 光环/易伤/玩家经验）原样覆盖它；L2 附加打击与 L3 末日核心额外接在通用循环之后。
+  //
+  // ⚠️ 触发条件固定为 isTitanCombatShip(config)，**绝不可写成 modules.length === 0**：
+  // 研究科技树「末日武器小型化」抬高 highUsable 后泰坦即可装普通武器，届时虚拟模块必须与
+  // 实装武器并存（push 而非替换），否则泰坦主武器会在装了普通武器后凭空消失。
+  const TITAN_NPC_DAMAGE_SCALE = 1.0; // NPC 侧泰坦输出折扣（1.0 = 与玩家口径完全一致；调平衡改这里）
+  const TITAN_NPC_WEAPON_XP = 10;     // 泰坦武器战斗技能经验（用户拍板：普通武器为 2，泰坦为 10）
+
+  function resolveNpcTitanLoadout(state, shipOpts) {
+    const isTitanFn = getGlobalFn("isTitanCombatShip");
+    const shipStateFn = getGlobalFn("getActiveCombatShipState");
+    if (!isTitanFn || !shipStateFn) return null;
+    const active = shipStateFn(state, shipOpts) || null;
+    const config = active ? active.config : null;
+    if (!isTitanFn(config) || !config.weapon) return null;
+    const traitFn = getGlobalFn("getTitanCombatTrait");
+    return { config: config, weapon: config.weapon, core: config.core || null, trait: traitFn ? traitFn(config) : null };
+  }
+
+  function makeTitanVirtualWeaponModule(weapon) {
+    return {
+      id: "__titan_virtual__",
+      itemId: weapon.id,
+      slot: "high",
+      multiplier: 1,
+      equipment: {
+        id: weapon.id,
+        name: weapon.name,
+        combat: {
+          kind: "weapon",
+          weaponType: weapon.weaponType,
+          baseDamage: weapon.baseDamage,
+          baseHit: weapon.baseHit,
+          ammoCost: weapon.ammoCost,
+          fuelCost: weapon.fuelCost
+        }
+      }
+    };
+  }
+
+  // 泰坦主武器齐射燃料（与 combat.js:1356-1362 玩家侧同口径）：fuelCost × 燃料系数。
+  // 通用 computeVolleyFuel 只累加装配槽模块的 fuelCost，泰坦槽为空 → 恒 0，必须在此补齐。
+  function computeTitanVolleyFuel(state, zone, shipOpts, weapon, core) {
+    const fuelMultFn = getGlobalFn("calcFuelMult");
+    const fm = fuelMultFn ? fuelMultFn(zone, state) : 1;
+    let total = 0;
+    const base = weapon ? (Number(weapon.fuelCost) || 0) : 0;
+    if (base > 0) total += Math.max(1, Math.round(base * fm));
+    if (core && core.consumption && core.consumption.mode === "sustain") {
+      const sustainBase = Math.round(base * (Number(core.consumption.fuelPctOfVolley) || 0));
+      if (sustainBase > 0) total += Math.max(1, Math.round(sustainBase * fm));
+    }
+    return total;
+  }
+
   // —— 单个 NPC 成员对指定目标开火（M6 复用单元）——
   // 抽取自原 processLegionNpcAttack 的单体开火体：燃料/弹药校验、伤害结算、累加到 perNpc。
   // 不复制公式；欠薪/修复/爆船跳过规则全部原样保留。调用方负责提供存活目标（enemy）并维护
@@ -1234,6 +1317,10 @@
     const auraHitBonus = (titanAura && titanAura.squadHitBonus) ? Number(titanAura.squadHitBonus) : 0;
     const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
     const modules = (weaponsFn(state, shipOpts) || []).filter(m => m && m.equipment && m.equipment.combat);
+    // C3：泰坦主武器以虚拟模块并入清单（push 而非替换——末日武器小型化后须与实装武器并存）
+    const npcTitan = resolveNpcTitanLoadout(state, shipOpts);
+    const titanVirtualModule = npcTitan ? makeTitanVirtualWeaponModule(npcTitan.weapon) : null;
+    if (titanVirtualModule) modules.push(titanVirtualModule);
     if (modules.length === 0) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-weapon" }); return null; }
 
     const ammoRequired = {};
@@ -1241,7 +1328,8 @@
       const combat = m.equipment.combat;
       ammoRequired[combat.weaponType] = (ammoRequired[combat.weaponType] || 0) + (combat.ammoCost || 1);
     }
-    const volleyFuel = fuelFn(state, zone, shipOpts);
+    let volleyFuel = fuelFn(state, zone, shipOpts);
+    if (npcTitan) volleyFuel += computeTitanVolleyFuel(state, zone, shipOpts, npcTitan.weapon, npcTitan.core);
     if (!fuelAvailable(ctx, state, volleyFuel)) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-fuel" }); return null; }
     const ammoOk = Object.keys(ammoRequired).every(type => ammoAvailable(ctx, state, type, ammoRequired[type]));
     if (!ammoOk) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "no-ammo" }); return null; }
@@ -1255,7 +1343,54 @@
     }
 
     const useRng = (typeof rng === "function") ? rng : resolveBattleRng(context, state);
+    // 裂界侵蚀易伤（2026-09-10 用户拍板 3b）：设计文案「受击敌受到小队伤害 +12%」——
+    // NPC 绑定舰伤害与泰坦主武器同享易伤乘区；无易伤标记时恒为 1，零回归。
+    // 回合号由调用方经 context.round 传入（在线=c.roundSeq，离线=波内轮号，与各自易伤标记口径一致）。
+    const vulnFn = getGlobalFn("getTitanDamageTakenMultiplier");
+    const vulnMult = vulnFn ? vulnFn(enemy, Number(ctx.round) || 1) : 1;
+    // C3 泰坦专属乘区（与 combat.js:1423-1433 玩家侧同口径）；非泰坦时整块不执行，零回归。
+    const titanRound = Number(ctx.round) || 1;
+    let titanExtraMult = 1;
+    let titanMainDamage = null;
+    let titanBoosterMult = 1; // L2 附加打击同享（与玩家侧同口径）
+    let titanAdbm = 1;
+    let titanTargetHpRatio = 1; // L2 getTitanExtraAttacks 同输入（与 L1 主命中同口径）
+    let titanCritFn = null;     // L2 扫掠暴击复用同一 rollTitanCritMultiplier
+    // 全补（2026-09-10 用户拍板）：泰坦三层同吃 getCombatDamageMultiplierFromState。
+    // L1 主命中已由下方普通武器管线的 dmgMult 自动吃到，故此处**只供 L2/L3 使用**，
+    // 绝不可并入 titanExtraMult（否则 L1 会被乘两次）。
+    let titanDmgMult = 1;
+    if (titanVirtualModule) {
+      const rdFn = getGlobalFn("getTitanWeaponRoundDamage");
+      const targetTotal = (enemy.hp.shield || 0) + (enemy.hp.armor || 0) + (enemy.hp.structure || 0);
+      const targetMaxHp = enemy.maxHp ? ((enemy.maxHp.shield || 0) + (enemy.maxHp.armor || 0) + (enemy.maxHp.structure || 0)) : targetTotal;
+      titanTargetHpRatio = targetMaxHp > 0 ? targetTotal / targetMaxHp : 1;
+      const rd = rdFn ? rdFn(npcTitan.weapon, { round: titanRound, targetHpRatio: titanTargetHpRatio }) : null;
+      if (rd) titanMainDamage = rd.mainDamage;
+      // 结构过载（B 案）：按 NPC 当前 HP 比例；combatHp/maxHp 缺失时退化为 1（不施加）
+      const odFn = getGlobalFn("getTitanStructureOverdriveMultiplier");
+      if (odFn && npcTitan.trait && npc.combatHp && stats.maxHp) {
+        titanExtraMult *= odFn(npcTitan.trait, npc.combatHp, stats.maxHp);
+      }
+      // 武器强化剂：按主武器 weaponType 查表（玩家出资，与玩家管线同口径）
+      const boosterFn = getGlobalFn("getBoosterEffectState");
+      const boosterState = boosterFn ? boosterFn(state).weaponDamageMultiplier : null;
+      if (boosterState && boosterState[npcTitan.weapon.weaponType]) titanBoosterMult = boosterState[npcTitan.weapon.weaponType];
+      titanExtraMult *= titanBoosterMult;
+      // 脑突触加速剂（独立乘区）
+      const adbmFn = getGlobalFn("getAdBuffMultiplier");
+      titanAdbm = adbmFn ? adbmFn(state) : 1;
+      if (titanAdbm && titanAdbm !== 1) titanExtraMult *= titanAdbm;
+      // 泰坦暴击（主命中）
+      titanCritFn = getGlobalFn("rollTitanCritMultiplier");
+      if (titanCritFn) titanExtraMult *= titanCritFn(npcTitan.weapon.crit, useRng);
+      // 全补（2026-09-10 用户拍板）：取与 L1 同一个 dmgMult 值供 L2/L3 使用（不并入 titanExtraMult）
+      const dmgSelTitan = getCombatSelector("getCombatDamageMultiplierFromState");
+      titanDmgMult = dmgSelTitan ? dmgSelTitan(state, npcTitan.weapon.weaponType, undefined, shipOpts) : 1;
+      if (TITAN_NPC_DAMAGE_SCALE !== 1) titanExtraMult *= TITAN_NPC_DAMAGE_SCALE;
+    }
     let damage = 0;
+    let titanMainDealt = null; // 供 L2 贯穿（layerPierce）定位起始层
     for (const m of modules) {
       const combat = m.equipment.combat;
       const ammo = ammoByType[combat.weaponType] || ammoProps("T1");
@@ -1264,13 +1399,86 @@
       const hit = ((hitSel ? hitSel(state, combat.weaponType, combat, undefined, shipOpts) : 100) + auraHitBonus) * ammo.hitMult;
       const dmgMult = dmgSel ? dmgSel(state, combat.weaponType, undefined, shipOpts) : 1;
       const counterMult = counterFn(combat.weaponType, enemy.hp);
+      const isTitanVirtual = (m === titanVirtualModule);
+      const baseDmg = (isTitanVirtual && titanMainDamage != null ? titanMainDamage : combat.baseDamage) * (m.multiplier || 1);
+      const titanMult = isTitanVirtual ? titanExtraMult : 1;
       const dealt = applyLayers(enemy.hp, calcDamage(
         hit, enemy.dodge,
-        combat.baseDamage * (m.multiplier || 1),
-        counterMult * dmgMult * stats.levelDamageMultiplier * ammo.dmgMult * auraDmgMult,
+        baseDmg,
+        counterMult * dmgMult * stats.levelDamageMultiplier * ammo.dmgMult * auraDmgMult * vulnMult * titanMult,
         useRng
       ));
+      if (isTitanVirtual) titanMainDealt = dealt;
       damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
+    }
+    // —— C3 L2：泰坦附加打击（扫掠 / 贯穿 / 暴击 / 破片回响）——
+    // 与 combat.js:1443-1457 玩家侧逐项同口径：strike.damage × 易伤 × 武器强化剂 × 扫掠暴击 × 脑突触。
+    // 注意：玩家侧 L2 **不吃**克制/结构过载/光环/弹药档/等级系数（只吃上面这四项），此处同样不吃，保持一致。
+    // 敌人数组由调用方经 context.enemies 传入（在线 c.enemies / 离线波内 enemies）；缺失时退化为单目标
+    // （living 为空 ⇒ 仅 layerPierce 与打主目标的 extra 生效），不会崩，也不会产生双路径差异。
+    if (titanVirtualModule) {
+      // 敌人数组：L2 附加打击与 L3 末日核心共用（在线 c.enemies / 离线波内 enemies）
+      const enemyList = (ctx && Array.isArray(ctx.enemies) && ctx.enemies.length) ? ctx.enemies : [enemy];
+      const extraFn = getGlobalFn("getTitanExtraAttacks");
+      const strikeFn = getGlobalFn("resolveTitanWeaponStrikes");
+      const pierceFn = getGlobalFn("applyTitanLayerPierceDamage");
+      const extraRaw = extraFn ? extraFn(npcTitan.weapon, { round: titanRound, targetHpRatio: titanTargetHpRatio }) : null;
+      const strikes = strikeFn ? strikeFn(extraRaw, npcTitan.weapon, enemyList, enemy, useRng) : [];
+      for (const strike of strikes) {
+        const sweepCrit = (strike.kind === "sweep" && npcTitan.weapon.crit && npcTitan.weapon.crit.appliesToSweep && titanCritFn)
+          ? titanCritFn(npcTitan.weapon.crit, useRng) : 1;
+        let strikeDmg = (Number(strike.damage) || 0) * vulnMult * titanBoosterMult * sweepCrit * titanDmgMult;
+        if (titanAdbm && titanAdbm !== 1) strikeDmg *= titanAdbm;
+        if (TITAN_NPC_DAMAGE_SCALE !== 1) strikeDmg *= TITAN_NPC_DAMAGE_SCALE;
+        strikeDmg = Math.max(1, Math.round(strikeDmg));
+        let dealt = null;
+        if (strike.kind === "layerPierce") {
+          // 透层：主命中最深触及哪一层，从下一层起吸收；命中结构层则不触发（与玩家侧 applyTitanLayerPierceDamage 同原语）
+          if (pierceFn && titanMainDealt) dealt = pierceFn(enemy.hp, titanMainDealt, strikeDmg);
+        } else if (strike.enemy && strike.enemy.hp) {
+          dealt = applyLayers(strike.enemy.hp, strikeDmg);
+        }
+        if (dealt) damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
+      }
+
+      // —— C3 L3：泰坦末日核心打击（每 everyRounds 轮一次；断供跳过本次触发，不阻塞主武器）——
+      // 与 combat.js:1604-1638 玩家侧同口径：伤害 = strike.damage × 易伤 × 脑突触（**不吃**强化剂/暴击/光环/克制/
+      // 弹药档/等级系数）；眩晕与易伤标记直接写敌对象（与玩家侧同一字段，随战斗快照进离线追算）。
+      // 统御矩阵（kind === "aura"）无打击只给光环，其 sustain 燃料已在 computeTitanVolleyFuel 内随齐射扣除。
+      // 经验：末日武器不计武器技能经验（用户拍板）；电容经验由齐射燃料照常结算（见下方经验段）。
+      const coreStrikesFn = getGlobalFn("getTitanCoreStrikes");
+      const coreResolveFn = getGlobalFn("resolveTitanCoreStrikes");
+      const coreRaw = (npcTitan.core && npcTitan.core.kind !== "aura" && coreStrikesFn)
+        ? coreStrikesFn(npcTitan.core, npcTitan.weapon, { round: titanRound }) : [];
+      if (Array.isArray(coreRaw) && coreRaw.length > 0 && coreResolveFn) {
+        const ccost = npcTitan.core.consumption || {};
+        const coreFuelMultFn = getGlobalFn("calcFuelMult");
+        const coreFm = coreFuelMultFn ? coreFuelMultFn(zone, state) : 1;
+        const coreFuel = (Number(ccost.fuelPctOfVolley) > 0)
+          ? Math.max(1, Math.round((Number(npcTitan.weapon.fuelCost) || 0) * Number(ccost.fuelPctOfVolley) * coreFm)) : 0;
+        const coreAmmo = Number(ccost.ammoPerTrigger) || 0;
+        const coreOk = fuelAvailable(ctx, state, coreFuel)
+          && (coreAmmo <= 0 || ammoAvailable(ctx, state, npcTitan.weapon.weaponType, coreAmmo));
+        if (coreOk) {
+          if (coreFuel > 0) spendFuel(ctx, state, coreFuel);
+          if (coreAmmo > 0) spendAmmo(ctx, state, npcTitan.weapon.weaponType, coreAmmo);
+          // 眩晕递减计数按 NPC 成员持有（多泰坦同队时各自独立）；存于 member 而非 ctx，
+          // 因在线侧每次调用都是 Object.assign({}, context, ...) 的新对象，无法跨轮持久。
+          if (!member.titanStunCounts || typeof member.titanStunCounts !== "object") member.titanStunCounts = {};
+          const resolved = coreResolveFn(coreRaw, npcTitan.core, enemyList, enemy, member.titanStunCounts, titanRound, useRng);
+          for (const strike of (resolved.strikes || [])) {
+            const sv = vulnFn ? vulnFn(strike.enemy, titanRound) : 1; // 侵蚀本轮命中即生效（与玩家侧同）
+            let dmg = (Number(strike.damage) || 0) * sv * titanAdbm * titanDmgMult;
+            if (TITAN_NPC_DAMAGE_SCALE !== 1) dmg *= TITAN_NPC_DAMAGE_SCALE;
+            dmg = Math.max(1, Math.round(dmg));
+            const dealt = (strike.enemy && strike.enemy.hp) ? applyLayers(strike.enemy.hp, dmg) : null;
+            if (dealt) damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
+            if (strike.stunned && (Number(npcTitan.core.stunRounds) || 0) > 0 && strike.enemy) {
+              strike.enemy.titanStunRounds = (Number(strike.enemy.titanStunRounds) || 0) + Number(npcTitan.core.stunRounds);
+            }
+          }
+        }
+      }
     }
     const entry = { npcId: member.npcId, damage: damage, fuelSpent: volleyFuel, ammoSpent: ammoRequired, levelDamageMultiplier: stats.levelDamageMultiplier, targetId: enemy.id != null ? enemy.id : null };
     // 玩家出资 NPC 燃料/弹药 → 玩家获得与自身开火同口径的战斗经验（套用玩家经验倍率链）
@@ -1281,9 +1489,13 @@
         const cb = m.equipment.combat;
         const wcfg = WC ? WC[cb.weaponType] : null;
         const sk = wcfg ? wcfg.skillKey : null;
-        if (sk && state.skills[sk]) addXp(state, sk, 2, "combat");
+        // 泰坦主武器战斗技能经验 = 10（用户拍板；普通武器为 2）。
+        // 末日核心打击（L3）不进本循环 ⇒ 不计武器经验，与用户口径一致。
+        const xpPerWeapon = (m === titanVirtualModule) ? TITAN_NPC_WEAPON_XP : 2;
+        if (sk && state.skills[sk]) addXp(state, sk, xpPerWeapon, "combat");
         if (state.skills.targeting) addXp(state, "targeting", 1, "combat");
       }
+      // 电容经验照算（用户拍板）：与玩家侧同口径 = 齐射燃料 × 0.3（燃料已含泰坦主武器 + 统御矩阵 sustain）
       if (state.skills.capacitorManagement) addXp(state, "capacitorManagement", volleyFuel * 0.3, "combat");
     }
     if (perNpcArr) perNpcArr.push(entry);
@@ -1363,7 +1575,8 @@
       const until = Number(npc.repairUntil);
       if (Number.isFinite(until) && until > now) continue;
       // 复用单体开火单元（目标恒为 currentEnemy；M6 在线分步由 combat.js 统一循环负责）
-      const entry = fireSingleNpcMember(state, context, member, enemy, perNpc, rng);
+      // enemies（C3 泰坦 NPC 输出）：经 context 传入，未传时退化为单目标语义。
+      const entry = fireSingleNpcMember(state, Object.assign({}, context, { enemies: c.enemies }), member, enemy, perNpc, rng);
       if (entry && !entry.skipped) { attacked += 1; totalDamage += entry.damage; }
     }
 
@@ -1648,7 +1861,8 @@
       if (!cb) continue;
       out.push({
         name: (m.equipment && m.equipment.name) || "损伤控制单元",
-        reduction: (m.equipment.bonuses && Number(m.equipment.bonuses.globalDamageReduction)) || 0,
+        // 2026-09-10 修复：NPC 舰 DCU 减伤同样补乘强化系数（与玩家舰口径一致）
+        reduction: ((m.equipment.bonuses && Number(m.equipment.bonuses.globalDamageReduction)) || 0) * (Number(m.multiplier) || 1),
         fuel: Math.max(1, Math.round((cb.fuelCost || 1) * mult))
       });
     }
@@ -1822,6 +2036,8 @@
     getLegionCombatTargets: getLegionCombatTargets,
     processLegionNpcAttack: processLegionNpcAttack,
     fireSingleNpcMember: fireSingleNpcMember,
+    // ②-a：小队泰坦光环聚合（玩家 + NPC，stacking=max），供玩家侧 combat.js 取用
+    getTitanSquadAura: getTitanSquadAura,
     getEligibleSquadFireMembers: getEligibleSquadFireMembers,
     repairLegionSquadNpcs: repairLegionSquadNpcs,
     processLegionEnemyAttack: processLegionEnemyAttack,

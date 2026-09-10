@@ -153,7 +153,7 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
     strip.innerHTML = display.options.map(recipe => `<button class="mining-target-card${recipe.selected ? " selected" : ""}${recipe.locked ? " locked" : ""}" data-area="${recipe.name}" style="--ore-color:#e8b04a" ${recipe.locked ? "disabled" : ""}>
       <span class="mining-target-name">${getResourceDisplayName(recipe.outputMineral)}</span><span class="mining-target-visual"><i class="fa-solid fa-fire"></i></span>
       <span class="mining-target-meta">Lv.${recipe.level} · ${recipe.baseTime}s · ${recipe.baseXP} XP</span>
-      <span class="mining-target-sub">${getResourceDisplayName(recipe.consumeOre)} → ${getResourceDisplayName(recipe.outputMineral)}</span>
+      <span class="mining-target-sub">${(recipe.inputs && !recipe.consumeOre) ? Object.keys(recipe.inputs).map(n => getResourceDisplayName(n) + "×" + recipe.inputs[n]).join(" + ") : getResourceDisplayName(recipe.consumeOre)} → ${getResourceDisplayName(recipe.outputMineral)}</span>
       <span class="mining-target-state">${recipe.locked ? `需要 Lv.${recipe.level}` : recipe.selected ? "已选择" : "可冶炼"}</span></button>`).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchSmeltingRecipe(card.dataset.area)));
   }
@@ -168,14 +168,59 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
   const pumpRow = document.getElementById("smelting-pump-row");
   const pumpState = document.getElementById("smelting-pump-state");
   const pumpToggle = document.getElementById("smelting-pump-toggle");
-  if (pumpRow) pumpRow.style.display = (display.pump && display.pump.count > 0) ? "flex" : "none";
+  let darkPumpToggle = document.getElementById("smelting-pump-toggle-dark");
+  if (!darkPumpToggle && pumpToggle && pumpToggle.parentNode) {
+    darkPumpToggle = document.createElement("button");
+    darkPumpToggle.id = "smelting-pump-toggle-dark";
+    darkPumpToggle.className = "pump-toggle-btn";
+    darkPumpToggle.title = "关闭后暗流体泵不消耗暗流体助熔触媒、冶炼速度加成失效；只影响下一炉";
+    pumpToggle.parentNode.appendChild(darkPumpToggle);
+    darkPumpToggle.addEventListener("click", () => {
+      const current = !(gameState.settings && gameState.settings.refineryPumpDarkEnabled === false);
+      dispatchGameAction(gameState, { type:"settings/setDarkRefineryPumpEnabled", enabled:!current }, Date.now());
+      updateUI();
+    });
+  }
+  const pumpEntries = display.pump && Array.isArray(display.pump.pumps)
+    ? display.pump.pumps.filter(p => p && p.count > 0)
+    : (display.pump && display.pump.count > 0 ? [display.pump] : []);
+  if (pumpRow) pumpRow.style.display = pumpEntries.length > 0 ? "flex" : "none";
   if (pumpState && display.pump) {
-    const p = display.pump;
-    const fuelName = String(p.resourceId || "").replace("planetary:", "");
-    if (!p.enabled) pumpState.textContent = "已关闭（不消耗" + fuelName + "）";
-    else if (p.active) pumpState.textContent = "×" + p.count + " · 供料中 +" + (p.bonus * 100).toFixed(0) + "%（每炉扣 " + fuelName + " ×" + p.fuelPerCycle + "）";
-    else pumpState.textContent = "×" + p.count + " · 断料失效（需 " + fuelName + " ≥" + p.fuelPerCycle + "）";
-    pumpState.style.color = p.active ? "#a7f3d0" : (p.enabled ? "#f0b4a0" : "#8a9bb0");
+    const pumpName = p => p.itemId === "refinery_pump_dark" ? "暗流体泵" : "普通泵";
+    const fuelName = p => String(p.resourceId || "").replace("planetary:", "").replace("special:", "");
+    const stateParts = pumpEntries.map(p => {
+      let text;
+      const stock = (Number(p.stock) || 0).toLocaleString();
+      if (!p.enabled) text = pumpName(p) + " ×" + p.count + " · 已关闭（每次冶炼不消耗" + fuelName(p) + "，库存" + stock + "）";
+      else if (p.active) text = pumpName(p) + " ×" + p.count + " · 供料中 +" + (p.bonus * 100).toFixed(0) + "%（每次冶炼消耗" + p.fuelPerCycle + " " + fuelName(p) + "，库存" + stock + "）";
+      else text = pumpName(p) + " ×" + p.count + " · 断料失效（每次冶炼消耗" + p.fuelPerCycle + " " + fuelName(p) + "，库存" + stock + "）";
+      return { text, pump:p, dark:p.itemId === "refinery_pump_dark", active:p.active, enabled:p.enabled };
+    });
+    pumpState.textContent = "";
+    pumpState.style.display = "flex";
+    pumpState.style.flexDirection = "column";
+    pumpState.style.alignItems = "flex-start";
+    pumpState.style.gap = "3px";
+    stateParts.forEach(part => {
+      const line = document.createElement("span");
+      const color = !part.enabled ? "#8a9bb0" : (part.dark ? "#c9a0ff" : (part.active ? "#a7f3d0" : "#f0b4a0"));
+      line.style.cssText = "display:flex;align-items:center;gap:6px;color:" + color + ";white-space:nowrap;";
+      const text = document.createElement("span");
+      text.textContent = part.text;
+      line.appendChild(text);
+      const button = part.dark ? darkPumpToggle : pumpToggle;
+      if (button) {
+        button.style.marginLeft = "4px";
+        button.style.padding = "1px 7px";
+        button.style.fontSize = "10px";
+        button.style.lineHeight = "1.4";
+        line.appendChild(button);
+      }
+      pumpState.appendChild(line);
+    });
+    pumpState.style.color = "#a7f3d0";
+    pumpState.style.whiteSpace = "normal";
+    pumpState.style.lineHeight = "1.8";
     // 库存余量提示（2026-09-03 用户反馈）：紧跟状态显示剩余等离子体与可供炉数。
     // 数据来自 display.pump.stock（getPumpModifiers 早已读取）。三态：供料中绿色、
     // 可供 <20 炉黄色预警、断料橙色（不足一炉）；关闭供料时不显示（不消耗，无意义）。
@@ -187,24 +232,34 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
     }
     if (stockEl) {
       stockEl.textContent = "";
-      if (p.enabled && p.fuelPerCycle > 0) {
+      stockEl.style.display = "none";
+      const stockParts = pumpEntries.filter(p => p.enabled && p.fuelPerCycle > 0).map(p => {
         const cycles = Math.floor((Number(p.stock) || 0) / p.fuelPerCycle);
-        if (p.active && cycles > 0 && cycles < 20) {
-          stockEl.textContent = " · 库存 " + (Number(p.stock) || 0).toLocaleString() + " · 可供 " + cycles + " 炉 ⚠ 即将断料";
-          stockEl.style.color = "#f0d9a0";
-        } else if (p.active) {
-          stockEl.textContent = " · 库存 " + (Number(p.stock) || 0).toLocaleString() + " · 可供 " + cycles.toLocaleString() + " 炉";
-          stockEl.style.color = "#a7f3d0";
-        } else if (!p.active) {
-          stockEl.textContent = " · 库存 " + (Number(p.stock) || 0).toLocaleString() + "（不足一炉）";
-          stockEl.style.color = "#f0b4a0";
-        }
+        if (p.active && cycles > 0 && cycles < 20) return pumpName(p) + "库存 " + (Number(p.stock) || 0).toLocaleString() + " · 可供 " + cycles + " 炉 ⚠ 即将断料";
+        if (p.active) return pumpName(p) + "库存 " + (Number(p.stock) || 0).toLocaleString() + " · 可供 " + cycles.toLocaleString() + " 炉";
+        return pumpName(p) + "库存 " + (Number(p.stock) || 0).toLocaleString() + "（不足一炉）";
+      });
+      if (stockParts.length > 0) {
+        stockEl.textContent = " · " + stockParts.join("；");
+        stockEl.style.color = pumpEntries.every(p => !p.enabled || p.active) ? "#a7f3d0" : "#f0b4a0";
       }
     }
   }
   if (pumpToggle && display.pump) {
-    pumpToggle.textContent = display.pump.enabled ? "开启中" : "已关闭";
-    pumpToggle.style.display = display.pump.count > 0 ? "" : "none";
+    const normalPump = pumpEntries.find(p => p.itemId === "refinery_pump");
+    pumpToggle.textContent = normalPump && normalPump.enabled ? "普通泵：开启中" : "普通泵：已关闭";
+    pumpToggle.style.borderColor = "rgba(113,199,236,0.55)";
+    pumpToggle.style.background = "rgba(30,75,105,0.45)";
+    pumpToggle.style.color = "#9bdcff";
+    pumpToggle.style.display = pumpEntries.length > 0 ? "" : "none";
+  }
+  if (darkPumpToggle && display.pump) {
+    const darkPump = pumpEntries.find(p => p.itemId === "refinery_pump_dark");
+    darkPumpToggle.textContent = darkPump && darkPump.enabled ? "暗流体泵：开启中" : "暗流体泵：已关闭";
+    darkPumpToggle.style.borderColor = "rgba(201,160,255,0.7)";
+    darkPumpToggle.style.background = "rgba(89,45,145,0.42)";
+    darkPumpToggle.style.color = "#c9a0ff";
+    darkPumpToggle.style.display = darkPump ? "" : "none";
   }
   const cycleTimes = document.getElementById("smelting-cycle-times");
   if (cycleTimes) cycleTimes.textContent = display.current.baseTime.toFixed(1) + "s → " + display.actualTime.toFixed(1) + "s";
@@ -661,7 +716,7 @@ function refreshVisiblePanelAfterAction() {
   const startShipCompBtn = document.getElementById("btn-start-shipcomp"); const startShipAsmBtn = document.getElementById("btn-start-shipasm");
   if (startShipCompBtn) startShipCompBtn.addEventListener("click", showShipCompConfirm);
   if (startShipAsmBtn) startShipAsmBtn.addEventListener("click", showShipAsmConfirm);
-  // 外接大型精炼泵供料开关（全局设置；只影响下一炉）
+  // 外接大型精炼泵供料开关（按泵型独立设置；只影响下一炉）
   const pumpToggleBtn = document.getElementById("smelting-pump-toggle");
   if (pumpToggleBtn) pumpToggleBtn.addEventListener("click", () => {
     const current = !(gameState.settings && gameState.settings.refineryPumpEnabled === false);

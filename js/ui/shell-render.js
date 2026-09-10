@@ -4435,7 +4435,7 @@ function enhanceShipFromHangar(instanceId) {
     console.log("[ship-op][enhance] confirm", { instanceId: instanceId });
     const result = dispatchGameAction(gameState, { type:"hangar/enhanceShip", instanceId }, Date.now());
     if (!result.changed) {
-      const messages = { "insufficient-components":"强化部件不足", "insufficient-isk":"星币不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
+      const messages = { "insufficient-components":"强化部件不足", "insufficient-materials":"泰坦精炼材料不足", "insufficient-isk":"星币不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
       showToast(messages[result.reason] || "强化失败");
       return false;
     }
@@ -4653,10 +4653,16 @@ function buildOrbit() {
     const angle = slot.index * segment - Math.PI / 2 + segment / 2;
     // 外接大型精炼泵管路接口：本格为空但被某泵 reserves 锁定 → 紫色虚线 🔗 态（可点击查看占用来源）
     const isLinked = slot.enabled && !slot.equipmentId && slot.lockedBy;
-    const group = document.createElementNS(namespace, "g"); group.setAttribute("class", "slot-segment " + slot.type + (slot.enabled ? (isLinked ? " linked" : "") : " disabled"));
-    const marker = document.createElementNS(namespace, "circle"); marker.setAttribute("cx", center + radius * Math.cos(angle)); marker.setAttribute("cy", center + radius * Math.sin(angle)); marker.setAttribute("r", 22); marker.setAttribute("class", slot.equipmentId ? "slot-bg-active" : (isLinked ? "slot-bg-locked" : "slot-bg")); group.appendChild(marker);
-    const label = document.createElementNS(namespace, "text"); label.setAttribute("x", center + radius * Math.cos(angle)); label.setAttribute("y", center + radius * Math.sin(angle) + 5); label.setAttribute("text-anchor", "middle"); label.setAttribute("class", "slot-icon"); label.textContent = isLinked ? "🔗" : (slot.icon || ORBIT_TYPE_ICONS[slot.type]); group.appendChild(label);
+    // 泰坦末日武器占用高槽：显示为紫色 ☄ 占位，点击给出说明而不是打开选装面板
+    const isDoomsday = !!(slot.doomsday && slot.doomsday.locked);
+    const group = document.createElementNS(namespace, "g"); group.setAttribute("class", "slot-segment " + slot.type + (slot.enabled ? (isLinked ? " linked" : "") : (isDoomsday ? " doomsday" : " disabled")));
+    const marker = document.createElementNS(namespace, "circle"); marker.setAttribute("cx", center + radius * Math.cos(angle)); marker.setAttribute("cy", center + radius * Math.sin(angle)); marker.setAttribute("r", 22); marker.setAttribute("class", slot.equipmentId ? "slot-bg-active" : ((isLinked || isDoomsday) ? "slot-bg-locked" : "slot-bg")); group.appendChild(marker);
+    const label = document.createElementNS(namespace, "text"); label.setAttribute("x", center + radius * Math.cos(angle)); label.setAttribute("y", center + radius * Math.sin(angle) + 5); label.setAttribute("text-anchor", "middle"); label.setAttribute("class", "slot-icon"); label.textContent = isLinked ? "🔗" : (isDoomsday ? "☄" : (slot.icon || ORBIT_TYPE_ICONS[slot.type])); group.appendChild(label);
     if (slot.enabled) group.addEventListener("click", event => { event.stopPropagation(); openOrbitSelect(slot.index); });
+    else if (isDoomsday) group.addEventListener("click", event => {
+      event.stopPropagation();
+      showToast("末日武器「" + (slot.doomsday.name || "末日武器") + "」出厂占用，不可更换" + (slot.doomsday.desc ? "（" + slot.doomsday.desc + "）" : ""));
+    });
     svg.appendChild(group);
   });
   const ship = document.createElementNS(namespace, "text"); ship.setAttribute("x", center); ship.setAttribute("y", center + 10); ship.setAttribute("text-anchor", "middle"); ship.setAttribute("class", "ship-icon"); ship.textContent = "🚀"; svg.appendChild(ship);
@@ -4888,7 +4894,7 @@ function renderQueuePanel() {
     } else {
       etaHtml = `<span class="qi-eta rough">${item.skill === "combat" && !item.active ? "取决于战斗" : "—"}</span>`;
     }
-    return `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${item.skillLabel} · ${item.label}</span><span class="qi-detail">${item.countText}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${item.active ? "执行中" : "等待"}</span><div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div></div>`;
+    return `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.isDirect ? "▶" : item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${item.skillLabel} · ${item.label}</span><span class="qi-detail">${item.countText}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${item.active ? "执行中" : "等待"}</span>${item.isDirect ? "" : `<div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div>`}</div>`;
   }).join("") : '<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>';
   return display;
 }
@@ -5528,6 +5534,7 @@ function installTutorialWidgetListeners() {
       else if (!result.changed && result.reason === "equipment-unavailable") showToast("该装备不存在或已被使用");
       else if (!result.changed && result.reason === "equipment-installed") showToast("该装备已安装在其他舰船上");
       else if (!result.changed && result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能改装");
+      else if (!result.changed && result.reason === "titan-high-locked") showToast("该高槽为末日武器出厂占用，不可更换");
       else if (!result.changed && result.reason === "slot-reserved") showToast("该槽位是精炼泵的管路接口，卸下对应精炼泵后方可使用");
       else if (!result.changed && result.reason === "no-pipe-slot") showToast("安装失败：另两类槽需各有 1 个空闲格作为精炼泵管路接口");
       else if (!result.changed && result.reason) showToast("操作失败：" + result.reason);
@@ -5568,6 +5575,7 @@ function installTutorialWidgetListeners() {
   const queueList = document.getElementById("queue-list"); if (queueList) queueList.addEventListener("click", event => {
     const button = event.target.closest("[data-queue-action]"); if (!button) return;
     const index = Number(button.dataset.index), action = button.dataset.queueAction;
+    if (!(index >= 0)) return; // 直接动作伪条目（index=-1，无操作按钮）兜底防护
     if (action === "remove") removeFromQueue(index); else if (action === "up") moveQueueItem(index, index - 1); else if (action === "down") moveQueueItem(index, index + 1); else if (action === "top") moveQueueItemToTop(index);
     renderQueuePanel();
   });

@@ -97,9 +97,8 @@
       guaranteeBig:{ name: "出货保底", desc: "每日必出一个大洞（17）", base: 3000, inc: 0, max: 1 }
     },
     items: {
-      reroll:    { name: "裂隙重析", desc: "重新生成今日全部虫洞；已完成裂隙将被替换，进行中的远征保留。每日限购 2 次，购买后可在虫洞界面使用。", price: 80, perDay: 2 },
+      reroll:    { name: "裂隙重析", desc: "重新生成今日全部虫洞；已完成裂隙将被替换，进行中的远征保留。每日限购 2 次，购买后可在虫洞界面使用；未用库存跨日保留，不会过期。", price: 80, perDay: 2 },
       purify:    { name: "词条净化器", desc: "出发前移除本洞负面词条", price: 60, perRun: 1 },
-      emergency: { name: "应急舱体", desc: "本次 run 重试上限 +3", price: 100, perRun: 1 },
     },
     goods: {
       catalystPack:   { name: "暗流体助熔触媒 ×1000", desc: "暗流体精炼泵专用燃料；每台泵每个冶炼周期消耗 1 个。", price: 50, grant: { "special:暗流体助熔触媒": 1000 } },
@@ -138,6 +137,14 @@
     catalystPerCycle: 1
   });
 
+  // —— 退役道具原价表（2026-09-10 「应急舱体」下架） ——
+  // 该道具从未接线（run.emergency 恒为 false，购买只扣印记不产生任何效果），确认退役。
+  // 此处保留原价，仅供 normalizeWormholeState 对旧档「已购未用」库存做一次性退款清算，
+  // 不参与任何 UI 展示与购买流程。
+  const WORMHOLE_RETIRED_ITEMS = Object.freeze({
+    emergency: 100   // 应急舱体（本次 run 重试上限 +3）原始售价
+  });
+
   window.WORMHOLE_CONFIG = WORMHOLE_CONFIG;
   // —— 真实引擎集成（2026-09-07 用户拍板：虫洞试炼 = 星图同款真实引擎） ——
   // 战区映射照抄星图 legion-starmap-pure.html battleTrialZoneByRing；
@@ -164,4 +171,5 @@
   window.WORMHOLE_AFFIXES = WORMHOLE_AFFIXES;
   window.WORMHOLE_SHOP = WORMHOLE_SHOP;
   window.WORMHOLE_DARK_PUMP = WORMHOLE_DARK_PUMP;
+  window.WORMHOLE_RETIRED_ITEMS = WORMHOLE_RETIRED_ITEMS;
 })();

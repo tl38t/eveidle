@@ -7,6 +7,13 @@
 //      盾线只加容量（对齐星冕级惯例，ship 级无 shieldRepair 字段）；甲线容量+维修；结线容量+维修+紧急维修。
 //   3. 高槽 7 格出厂全部被末日武器占用（highUsable=0），后续由泰坦科技线释放（本文件不设计研究侧）。
 //   4. 战斗规则纯函数在本文件底部，阶段 3 由 capital-combat / offline-combat 共同调用，禁止在调用方重写公式。
+//   5. 2026-09-10 武器基伤回归超旗比率：三把主武器 = 20× 旗舰基伤，严格 6:5:4（12000 / 10000 / 8000）。
+//      燃料维持 7 门旗舰负荷（105/70/35）不动 → 每燃料效率回到旗舰自身的 1:1.25:2（不再被放大）。
+//      曙光长矛附加打击同步上调以补偿最高油耗：扫掠 30%→35%、贯穿 20%→25%（其 L2 占比最高）。
+//   6. 2026-09-10 核心组件「真拆开」：部件车间由 7 条（核心 1 条通用件）变 9 条（核心 3 条单线件）。
+//      三核心各绑一条深层数据线（统御矩阵→天穹 / 天罚裁决→重垒 / 裂界侵蚀→裂界），
+//      总装必须用与所选核心同系的组件（getTitanComponentIdFor 同源派生）；三件同门禁 node104、同 Lv/工时/XP。
+//      单艘泰坦深层数据总量不变（仍 180 = 舰体 60 + 武器 60 + 核心 60），只把核心的 20×3 换成单线 60。
 "use strict";
 
 const TITAN_HULLS = {
@@ -63,19 +70,21 @@ const TITAN_WEAPONS = {
   titan_weapon_dawn_spear: {
     id: "titan_weapon_dawn_spear", name: "曙光长矛", weaponType: "laser",
     flavor: "持续输出，每发扫掠切割邻敌，并贯穿目标下一层防御",
-    baseDamage: 10350, baseHit: 100,
+    // 基伤锚点：泰坦主武器 = 20× 旗舰级基伤，三把严格保持旗舰比率 6:5:4（2026-09-10 回归，见文件头约定 5）
+    baseDamage: 12000, baseHit: 100,
     // 资源消耗锚点：单门泰坦主武器 ≈ 等效 7 门旗舰级武器的齐射负荷（7×15，沿用激光:导弹:火炮=3:2:1）；
     // ammoCost 7 = 等效 7 门各 1 发（现网全档 ammoCost:1/门/轮），弹药类型 laser 与现网同池
     fuelCost: 105, ammoCost: 7,
-    // 扫掠光束：沿用超旗激光「每发扫掠」招牌（equipment.js aoe mode:"next"），数值取超旗同档 30%
-    perShotSweep: { id: "sweeping_beam", name: "扫掠光束", mode: "next", damagePct: 0.30, count: 1 },
-    // 贯穿射击：主命中落在某防御层时，额外对下一层防御（盾→甲→甲→结）造成主命中 20% 的伤害；命中结构层（无下一层）不触发
-    extraAttack: { id: "piercing_shot", name: "贯穿射击", trigger: "perShot", kind: "layerPierce", damagePct: 0.20 }
+    // 扫掠光束：沿用超旗激光「每发扫掠」招牌（equipment.js aoe mode:"next"），2026-09-10 由 30% 上调至 35%
+    // （高耗能武器补偿：曙光每燃料效率最低，用扫掠/贯穿放大其多目标与透层价值）
+    perShotSweep: { id: "sweeping_beam", name: "扫掠光束", mode: "next", damagePct: 0.35, count: 1 },
+    // 贯穿射击：主命中落在某防御层时，额外对下一层防御（盾→甲→甲→结）造成主命中 25% 的伤害（2026-09-10 由 20% 上调）；命中结构层（无下一层）不触发
+    extraAttack: { id: "piercing_shot", name: "贯穿射击", trigger: "perShot", kind: "layerPierce", damagePct: 0.25 }
   },
   titan_weapon_skyfire_salvo: {
     id: "titan_weapon_skyfire_salvo", name: "天火齐射", weaponType: "missile",
     flavor: "覆盖型清场压制，齐射覆盖所有副目标，高爆装药周期性重创",
-    baseDamage: 9630, baseHit: 130,
+    baseDamage: 10000, baseHit: 130,
     fuelCost: 70, ammoCost: 7,   // 等效 7 门旗舰导弹（7×10），弹药类型 missile 同池
     // 齐射覆盖：沿用超旗导弹「每发对主目标以外所有存活敌 12%」招牌（equipment.js aoe mode:"all" 0.12）；单敌时无副目标、自然落空
     perShotSweep: { id: "salvo_coverage", name: "齐射覆盖", mode: "all", damagePct: 0.12 },
@@ -85,7 +94,7 @@ const TITAN_WEAPONS = {
   titan_weapon_throne_quake: {
     id: "titan_weapon_throne_quake", name: "震荡王座", weaponType: "cannon",
     flavor: "重炮压制，破片覆盖邻敌并在攻坚期强化，有机会打出第二轮破片",
-    baseDamage: 9000, baseHit: 80,
+    baseDamage: 8000, baseHit: 80,
     fuelCost: 35, ammoCost: 7,   // 等效 7 门旗舰火炮（7×5）
     // 破片齐射：沿用超旗火炮「每发对下两个其他目标」招牌（equipment.js aoe mode:"next" ×2），倍率加强 15%→20%；
     // 主目标血量 >70% 时破片强化到 30%（攻坚期清场，残血期回落）
@@ -167,10 +176,12 @@ const TITAN_SMELTING = Object.freeze({
 // ---- 组件制造成本（精炼形态）----
 // 首艘泰坦瓶颈：熔虚晶体需求 800 ÷ ~61.5/日 ≈ 13 日；锻星合金需求 800 ÷ ~94.7/日 ≈ 8.4 日；
 // 冶炼队列合计 ≈ 3 日串行（可离线）。常规材料 ≈ 超旗舰单艘 ÷3 ×2.2；深层数据按谱系对齐（天穹/重垒/裂界）。
-// ---- 深层舰船数据谱系映射（九组件 materialCost 依据，用户拍板）----
+// ---- 深层舰船数据谱系映射（组件 materialCost 依据，用户拍板）----
 // 舰体=谱系载体（盾→天穹/甲→重垒/结→裂界）；武器沿用超旗推荐武器绑定（星冕↔激光/恒城↔导弹/裁决↔火炮）；
-// 核心（末日武器）吃三线混合各 20（共 60），三条数据线在末日件处收敛。
-// 每组件数据负载均为 60，与超旗舰总装 60/艘 同档；跨谱系组合（如天穹壁垒+震荡王座）自然消耗两条线的数据。
+// 核心（末日武器）2026-09-10 改版：由「三线混合各 20 的一件通用件」拆成三件单线件，
+// 与武器线同序（统御矩阵→天穹 / 天罚裁决→重垒 / 裂界侵蚀→裂界），使「同系泰坦」
+// （如 天穹壁垒 + 曙光长矛 + 统御矩阵）成为可读的完整流派，且总装时必须用对应系的核心件。
+// 每组件数据负载均为 60，与超旗舰总装 60/艘 同档；跨谱系组合自然消耗多条线的数据。
 const TITAN_DATA_LINEAGE = Object.freeze({
   hull: Object.freeze({
     titan_hull_aegis: "天穹深层舰船数据",
@@ -182,7 +193,11 @@ const TITAN_DATA_LINEAGE = Object.freeze({
     titan_weapon_skyfire_salvo: "重垒深层舰船数据",
     titan_weapon_throne_quake: "裂界深层舰船数据"
   }),
-  coreMixed: Object.freeze(["天穹深层舰船数据", "重垒深层舰船数据", "裂界深层舰船数据"])
+  core: Object.freeze({
+    titan_core_command_matrix: "天穹深层舰船数据",
+    titan_core_doom_judgment: "重垒深层舰船数据",
+    titan_core_rift_erosion: "裂界深层舰船数据"
+  })
 });
 
 const TITAN_COMPONENT_COSTS = Object.freeze({
@@ -201,7 +216,7 @@ const TITAN_COMPONENT_COSTS = Object.freeze({
   core: Object.freeze({
     id: "titan_component_core", name: "泰坦核心组件", baseTime: 2700, xp: 900,
     regular: Object.freeze({ "三钛合金": 6500, "超纯聚合气体": 60, "等离子体": 200, "铷": 60, "超噬矿": 220 }),
-    dataKey: "all", dataAmount: 20,                // 三线混合：TITAN_DATA_LINEAGE.coreMixed 各 20（共 60）
+    dataKey: "core", dataAmount: 60,               // 单线 60：按核心谱系查 TITAN_DATA_LINEAGE.core（统御=天穹/天罚=重垒/裂界=裂界）
     refined: Object.freeze({ titan_crystal_meltvoid: 400 })
   }),
   assembly: Object.freeze({
@@ -212,9 +227,9 @@ const TITAN_COMPONENT_COSTS = Object.freeze({
   })
 });
 
-// ---- 部件车间接入（2026-09-09 用户拍板）：7 条静态配方变体 + 门禁 ----
+// ---- 部件车间接入（2026-09-09 用户拍板）：9 条静态配方变体 + 门禁 ----
 // 生成规则：TITAN_COMPONENT_COSTS（常规材料/时间/XP）+ TITAN_DATA_LINEAGE（深层数据谱系）→ SHIP_COMPONENT_RECIPES 静态配方。
-// 谱系决定变体：舰体×3（天穹/重垒/裂界）、武器×3（曙光/天火/震荡）、核心×1（三线各 20 混合）。
+// 谱系决定变体：舰体×3（天穹/重垒/裂界）、武器×3（曙光/天火/震荡）、核心×3（统御/天罚/裂界，2026-09-10 拆单线）。
 // 精炼料按中文名进 cost（special 池按名解析，见 combat.js TITAN_REFINED_MATERIALS 注册）。
 // 时机：本文件晚于 ships.js（拆解表 SHIP_COMPONENT_DISMANTLE_RECIPES 已快照 → 泰坦配方天然不进自动拆解）、
 //       晚于 resources.js（component 注册循环已跑完 → 此处自行注册）、早于 selectors/actions/persistence。
@@ -250,14 +265,18 @@ const TITAN_COMPONENT_RECIPES = (function () {
       cost: Object.assign({}, costs.weapon.regular, { [lineage.weapon[weaponId]]: costs.weapon.dataAmount }, costs.weapon.refined.titan_crystal_meltvoid ? { [TITAN_SMELTED_MATERIAL_NAMES.titan_crystal_meltvoid]: costs.weapon.refined.titan_crystal_meltvoid } : {})
     });
   }
-  // 核心组件 ×1：三线数据各 20 收敛（末日件）
-  recipes.push({
-    id: costs.core.id,
-    name: costs.core.name,
-    level: 100, time: costs.core.baseTime, xp: costs.core.xp,
-    titanLine: "core",
-    cost: Object.assign({}, costs.core.regular, lineage.coreMixed.reduce((acc, dataName) => { acc[dataName] = costs.core.dataAmount; return acc; }, {}), costs.core.refined.titan_crystal_meltvoid ? { [TITAN_SMELTED_MATERIAL_NAMES.titan_crystal_meltvoid]: costs.core.refined.titan_crystal_meltvoid } : {})
-  });
+  // 核心组件 ×3：数据随核心谱系（统御矩阵→天穹数据，余同）。2026-09-10 用户拍板「真拆开」——
+  // 三个核心各有单线归属，总装时消耗的核心件必须与所选核心同系（getTitanComponentIdFor 同源派生）。
+  for (const coreId of Object.keys(TITAN_CORES)) {
+    const core = TITAN_CORES[coreId];
+    recipes.push({
+      id: "titan_component_core_" + coreId.slice("titan_core_".length),
+      name: costs.core.name + "·" + core.name,
+      level: 100, time: costs.core.baseTime, xp: costs.core.xp,
+      titanLine: "core",
+      cost: Object.assign({}, costs.core.regular, { [lineage.core[coreId]]: costs.core.dataAmount }, costs.core.refined.titan_crystal_meltvoid ? { [TITAN_SMELTED_MATERIAL_NAMES.titan_crystal_meltvoid]: costs.core.refined.titan_crystal_meltvoid } : {})
+    });
+  }
   return recipes;
 })();
 
@@ -273,8 +292,37 @@ if (typeof SHIP_COMPONENT_RECIPES !== "undefined" && Array.isArray(SHIP_COMPONEN
   }
 }
 
+// ---- 冶炼接入（P1 阶段4，2026-09-10 用户拍板）：双材料配方追加进 SMELTING_RECIPES ----
+// production.js 先于本文件加载（index.html 数据/系统顺序）→ 此处可安全追加；按名去重防双推。
+// 旧路径兼容：无 consumeOre + inputs 对象；执行侧（tick/offline/station/selectors）统一经
+// production.js getSmeltingConsumeList / getSmeltingCyclesAvailable / getSmeltingOutputRefId 解析，
+// 单输入旧配方逐位等价（consumeList=[{refId:"ore:X",qty:1}]）。
+// 产出走 special: 池（combat.js TITAN_REFINED_MATERIALS 已注册 锻星合金/熔虚晶体）。
+// 注意：equipment-enhancement.js 的 REFINED_MINERALS 在本文件之前收集 → 锻星/熔虚不会混进强化消耗料（刻意）。
+(function appendTitanSmeltingRecipes() {
+  if (typeof SMELTING_RECIPES === "undefined" || !Array.isArray(SMELTING_RECIPES)) return;
+  const defs = [
+    { id: "titan_alloy_forgestar", suffix: "熔锻" },
+    { id: "titan_crystal_meltvoid", suffix: "熔铸" }
+  ];
+  for (const def of defs) {
+    const out = TITAN_SMELTING.outputs[def.id];
+    if (!out) continue;
+    const name = out.name + def.suffix;
+    if (SMELTING_RECIPES.some(r => r && r.name === name)) continue;
+    SMELTING_RECIPES.push({
+      name: name,
+      outputMineral: out.name, outputPool: "special",
+      level: out.skillLevel, baseTime: out.baseTime, baseOutput: out.baseOutput, baseXP: out.baseXP,
+      inputs: Object.assign({}, out.inputs), inputPool: "special",
+      titan: true
+    });
+  }
+})();
+
 // 泰坦组件制造门禁（用户拍板方案 b）：制压先驱文明核心（合成总门禁）+ 分线制压泰坦节点
 // （舰体线 node20 / 武器线 node62 / 核心线 node104）。船坞 Lv3 与工程等级门在 station.js / recipe.level。
+// 三件核心组件（统御/天罚/裂界）同属「末日武器」分线 → 共用 node104 一道门禁（星图只有 20/62/104 三个泰坦节点）。
 // final 节点 id 与 wormhole.js 同口径：优先星图 iframe 广播的 LEGION_STARMAP_FINAL_ID，回退 "200"。
 function isTitanComponentUnlocked(state, recipeId) {
   if (typeof recipeId !== "string" || recipeId.indexOf("titan_component_") !== 0) return { ok:true };
@@ -285,7 +333,7 @@ function isTitanComponentUnlocked(state, recipeId) {
   let gate = null;
   if (recipeId.indexOf("titan_component_hull_") === 0) gate = TITAN_UNLOCK.moduleNodes.defense;
   else if (recipeId.indexOf("titan_component_weapon_") === 0) gate = TITAN_UNLOCK.moduleNodes.weapon;
-  else if (recipeId === "titan_component_core") gate = TITAN_UNLOCK.moduleNodes.core;
+  else if (recipeId.indexOf("titan_component_core") === 0) gate = TITAN_UNLOCK.moduleNodes.core;
   if (gate && !completed.includes(String(gate.nodeId))) return { ok:false, reason:"titan-node-locked", text:"需制压" + gate.label };
   return { ok:true };
 }
@@ -300,16 +348,159 @@ function isTitanComboValid(hullId, weaponId, coreId) {
   return Boolean(TITAN_HULLS[hullId] && TITAN_WEAPONS[weaponId] && TITAN_CORES[coreId]);
 }
 
+// 泰坦实例注册表（方案 C，2026-09-10）
+// ------------------------------------------------------------------
+// 设计：shipId 由组件 id 程序化派生（titan__<hull>__<weapon>__<core>），配置**按需**注册进
+// SHIP_DATA.titan 分组（玩家造过几艘才注册几条，27 封顶）。相比 27 条静态表：
+//   ① 单一真值仍是 buildTitanConfig（改数值立即生效，无第二份派生数据要同步）；
+//   ② getShipConfigById / getShipSlotCounts / 幽灵船清理 全部走 SHIP_DATA 既有路径，零改动；
+//   ③ 存档在实例上另存 titanCombo 真值，shipId 规则即使将来变更也可由 normalize 重算修复。
+const TITAN_SHIP_ID_PREFIX = "titan__";
+const TITAN_SHIP_ID_SEP = "__";
+
+function makeTitanShipId(hullId, weaponId, coreId) {
+  return TITAN_SHIP_ID_PREFIX + hullId + TITAN_SHIP_ID_SEP + weaponId + TITAN_SHIP_ID_SEP + coreId;
+}
+
+/** 反解 shipId → 组件三元组；非法/非泰坦返回 null（组件 id 本身不含双下划线，切分安全）。 */
+function parseTitanShipId(shipId) {
+  if (typeof shipId !== "string" || shipId.indexOf(TITAN_SHIP_ID_PREFIX) !== 0) return null;
+  const parts = shipId.slice(TITAN_SHIP_ID_PREFIX.length).split(TITAN_SHIP_ID_SEP);
+  if (parts.length !== 3) return null;
+  const hullId = parts[0], weaponId = parts[1], coreId = parts[2];
+  if (!isTitanComboValid(hullId, weaponId, coreId)) return null;
+  return { hullId, weaponId, coreId };
+}
+
+/** SHIP_DATA.titan 分组（懒建）。挂载进 SHIP_DATA 使槽位解析/幽灵船清理等既有路径天然认识泰坦。 */
+function getTitanConfigRegistry() {
+  const data = (typeof window !== "undefined" && window.SHIP_DATA)
+    || (typeof SHIP_DATA !== "undefined" ? SHIP_DATA : null);
+  if (!data || typeof data !== "object") return null;
+  if (!data.titan || typeof data.titan !== "object") data.titan = {};
+  return data.titan;
+}
+
+/** 注册（幂等）一个组合并返回其 config；组合非法或 SHIP_DATA 不可用返回 null。 */
+function registerTitanConfig(hullId, weaponId, coreId) {
+  const reg = getTitanConfigRegistry();
+  if (!reg) return null;
+  const shipId = makeTitanShipId(hullId, weaponId, coreId);
+  if (reg[shipId]) return reg[shipId];
+  const cfg = buildTitanConfig(hullId, weaponId, coreId);
+  if (!cfg) return null;
+  reg[shipId] = cfg;
+  return cfg;
+}
+
+/** 懒解析自愈：任何时刻按 shipId 取泰坦配置；注册表缺失时由 shipId 反解重建，非泰坦返回 null。 */
+function resolveTitanConfigByShipId(shipId) {
+  if (typeof shipId !== "string" || shipId.indexOf(TITAN_SHIP_ID_PREFIX) !== 0) return null;
+  const reg = getTitanConfigRegistry();
+  if (!reg) return null;
+  if (reg[shipId]) return reg[shipId];
+  const combo = parseTitanShipId(shipId);
+  if (!combo) return null;
+  return registerTitanConfig(combo.hullId, combo.weaponId, combo.coreId);
+}
+
+/**
+ * 存档归一化钩子（幂等）：遍历机库，按 titanCombo 真值注册配置并修复 shipId。
+ * 必须在 migrateGhostDeployableShips 之前调用——否则未注册的泰坦会被当成幽灵船删除。
+ * @returns {number} 处理的泰坦实例数
+ */
+function registerTitanShipsFromState(state) {
+  const ships = state && state.inventory && Array.isArray(state.inventory.ships) ? state.inventory.ships : [];
+  let count = 0;
+  for (const inst of ships) {
+    if (!inst || typeof inst !== "object") continue;
+    const combo = inst.titanCombo;
+    if (!combo || typeof combo !== "object") continue;
+    const cfg = registerTitanConfig(combo.hull, combo.weapon, combo.core);
+    if (!cfg) continue;
+    if (inst.shipId !== cfg.id) inst.shipId = cfg.id; // shipId 规则修复（真值是 titanCombo）
+    count++;
+  }
+  return count;
+}
+
+// 组件配方 id 与舰体/武器/核心成员 id 的映射（与 TITAN_COMPONENT_RECIPES 生成规则同源）。
+// 三系同名同构：titan_component_<kind>_<成员名去前缀>；核心已按系拆分，必须传 coreId 才拿得到对应件。
+function getTitanComponentIdFor(kind, memberId) {
+  const prefix = kind === "hull" ? "titan_hull_" : kind === "weapon" ? "titan_weapon_" : "titan_core_";
+  const id = String(memberId || "");
+  return "titan_component_" + kind + "_" + id.slice(prefix.length);
+}
+
+/**
+ * 泰坦总装虚拟配方（供 actions/tick/offline 复用既有总装管线）。
+ * 与 SHIP_ASSEMBLY_RECIPES 成员同构：time/xp/componentCost/materialCost，
+ * 额外带 shipId（= 注册表键，随 combo 变化）、titanCombo、shipyardLevel、isk。
+ * ISK 刻意不进 materialCost——精密配给剂只省材料不省钱，避免报价折扣误伤货币。
+ */
+function getTitanAssemblyRecipe(combo) {
+  if (!combo || typeof combo !== "object") return null;
+  const cfg = registerTitanConfig(combo.hull, combo.weapon, combo.core);
+  if (!cfg) return null;
+  const a = TITAN_COMPONENT_COSTS.assembly;
+  const materialCost = {};
+  const forgestarName = (typeof TITAN_SMELTED_MATERIAL_NAMES !== "undefined") ? TITAN_SMELTED_MATERIAL_NAMES.titan_alloy_forgestar : null;
+  if (forgestarName) materialCost[forgestarName] = a.refined.titan_alloy_forgestar;
+  return {
+    id: a.id,
+    name: a.name + "·" + cfg.name,
+    shipId: cfg.id,
+    titanCombo: { hull: combo.hull, weapon: combo.weapon, core: combo.core },
+    level: 100,                    // 与泰坦组件同门槛（封版：船坞 Lv3 + 舰船工程 Lv100）
+    time: a.baseTime,              // 3600s
+    xp: a.xp,                      // 1500
+    shipyardLevel: a.shipyardLevel, // 3
+    isTitan: true,
+    componentCost: {
+      [getTitanComponentIdFor("hull", combo.hull)]: 1,
+      [getTitanComponentIdFor("weapon", combo.weapon)]: 1,
+      [getTitanComponentIdFor("core", combo.core)]: 1
+    },
+    materialCost,
+    isk: a.isk                     // 5,000,000（独立校验/扣除）
+  };
+}
+
+/** 泰坦总装可完成次数（受 ISK + 三组件 + 锻星共同约束）。 */
+function getTitanAssemblyMaxCycles(state, recipe) {
+  if (!recipe) return 0;
+  const r = recipe;
+  // ISK 权威存储只有 state.resources.isk（顶层 state.isk 不存在，读之恒 0 → 离线可完成次数恒 0）——2026-09-10 修复
+  let cycles = r.isk > 0 ? Math.floor(ResourceRegistry.get(state, "currency:isk") / r.isk) : Infinity;
+  if (!Number.isFinite(cycles)) cycles = 0;
+  for (const [id, count] of Object.entries(r.componentCost)) {
+    cycles = Math.min(cycles, Math.floor(ResourceRegistry.get(state, "component:" + id) / count));
+  }
+  for (const [name, qty] of Object.entries(r.materialCost)) {
+    cycles = Math.min(cycles, Math.floor(ResourceRegistry.getMaterialStock(state, name) / qty));
+  }
+  return Math.max(0, Number.isFinite(cycles) ? cycles : 0);
+}
+
 function buildTitanConfig(hullId, weaponId, coreId) {
   if (!isTitanComboValid(hullId, weaponId, coreId)) return null;
   const hull = TITAN_HULLS[hullId];
   const weapon = TITAN_WEAPONS[weaponId];
   const core = TITAN_CORES[coreId];
   return {
-    id: hullId + "_" + weaponId + "_" + coreId,
+    // id 即实例 shipId（注册表键）——与 makeTitanShipId 严格同源，禁止另写拼接规则。
+    id: makeTitanShipId(hullId, weaponId, coreId),
     name: hull.name + "·" + weapon.name + "·" + core.name,
     type: "titan", tier: "泰坦",
     hull, weapon, core,
+    // 组件溯源（机库/装配页显示「这艘泰坦用什么件造的」，同时是存档归一化的真值镜像）
+    hullId: hullId, weaponId: weaponId, coreId: coreId,
+    titanCombo: { hull: hullId, weapon: weaponId, core: coreId },
+    // 普通舰船通用字段（下游机库/装配/战斗通用路径会读，缺失会显示空白或走兜底分支）
+    flavor: hull.flavor || "",
+    recommendedWeapon: weapon.weaponType || "",
+    weaponType: weapon.weaponType || "",
+    unlock: { type: "titan" },
     hp: hull.hp, totalHp: hull.totalHp,
     dodge: hull.dodge, speed: hull.speed, targeting: hull.targeting,
     capacitor: hull.capacitor, fuelEfficiency: hull.fuelEfficiency,
@@ -463,7 +654,17 @@ if (typeof window !== "undefined") {
   window.TITAN_DATA_LINEAGE = TITAN_DATA_LINEAGE;
   window.TITAN_COMPONENT_RECIPES = TITAN_COMPONENT_RECIPES;
   window.isTitanComponentUnlocked = isTitanComponentUnlocked;
+  // 方案 C 注册表接口（selectors / persistence / 组装 action 消费）
+  window.TITAN_SHIP_ID_PREFIX = TITAN_SHIP_ID_PREFIX;
+  window.makeTitanShipId = makeTitanShipId;
+  window.parseTitanShipId = parseTitanShipId;
+  window.registerTitanConfig = registerTitanConfig;
+  window.resolveTitanConfigByShipId = resolveTitanConfigByShipId;
+  window.registerTitanShipsFromState = registerTitanShipsFromState;
+  window.getTitanComponentIdFor = getTitanComponentIdFor;
+  window.getTitanAssemblyRecipe = getTitanAssemblyRecipe;
+  window.getTitanAssemblyMaxCycles = getTitanAssemblyMaxCycles;
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { TITAN_DATA, TITAN_HULLS, TITAN_WEAPONS, TITAN_CORES, TITAN_UNLOCK, TITAN_SMELTING, TITAN_COMPONENT_COSTS, TITAN_DATA_LINEAGE, TITAN_COMPONENT_RECIPES, TITAN_HULL_IDS, TITAN_WEAPON_IDS, TITAN_CORE_IDS, isTitanComboValid, isTitanComponentUnlocked, buildTitanConfig, listTitanCombinations, getTitanWeaponRoundDamage, getTitanExtraAttacks, getTitanCoreAura, getTitanCoreStrikes, getTitanCoreConsumption };
+  module.exports = { TITAN_DATA, TITAN_HULLS, TITAN_WEAPONS, TITAN_CORES, TITAN_UNLOCK, TITAN_SMELTING, TITAN_COMPONENT_COSTS, TITAN_DATA_LINEAGE, TITAN_COMPONENT_RECIPES, TITAN_HULL_IDS, TITAN_WEAPON_IDS, TITAN_CORE_IDS, isTitanComboValid, isTitanComponentUnlocked, buildTitanConfig, listTitanCombinations, getTitanWeaponRoundDamage, getTitanExtraAttacks, getTitanCoreAura, getTitanCoreStrikes, getTitanCoreConsumption, makeTitanShipId, parseTitanShipId, registerTitanConfig, resolveTitanConfigByShipId, registerTitanShipsFromState };
 }

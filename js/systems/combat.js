@@ -1309,7 +1309,10 @@ function advanceCombatRound(state, context) {
     const dcFuelCost = Math.max(1, Math.round((dc.equipment.combat.fuelCost || 1) * calcFuelMult(zone, state)));
     if (ResourceRegistry.get(state, "consumable:fuel") >= dcFuelCost) {
       ResourceRegistry.spend(state, "consumable:fuel", dcFuelCost);
-      dcReduction += (dc.equipment.bonuses && dc.equipment.bonuses.globalDamageReduction) || 0;
+      // 2026-09-10 修复：DCU 百分比加成补乘强化系数。装备百分比加成的全局口径是
+      // 「数值 × 强化倍率」（采矿放大器/容量/打捞效率均如此，selectors.js:361/2002/2203），
+      // 此前 DCU 减伤漏乘，导致强化不提升减伤（玩家反馈「损伤控制的属性没计算强化」）。
+      dcReduction += ((dc.equipment.bonuses && dc.equipment.bonuses.globalDamageReduction) || 0) * (Number(dc.multiplier) || 1);
     }
   }
   dcReduction = Math.min(0.5, dcReduction);
@@ -1349,7 +1352,17 @@ function advanceCombatRound(state, context) {
   const titanCore = isTitanShip ? (ship.core || null) : null;
   const titanTrait = isTitanShip ? ((typeof getTitanCombatTrait === "function") ? getTitanCombatTrait(ship) : null) : null;
   const titanRound = Number(c.roundSeq) || 1;
-  const titanAura = (titanCore && typeof getTitanCoreAura === "function") ? getTitanCoreAura(titanCore) : null; // 非光环核心返回 null
+  // ②-a（2026-09-10 用户拍板）：光环源改为小队聚合（玩家出战舰 + 小队内 NPC 绑定泰坦，stacking=max）。
+  // 此前只读玩家自身核心，NPC 泰坦的统御矩阵对玩家零贡献；缺失时回退为原「只读自身核心」。
+  const titanAuraApi = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD) ? LEGION_COMBAT_SQUAD : null;
+  const titanAura = (titanAuraApi && typeof titanAuraApi.getTitanSquadAura === "function")
+    ? titanAuraApi.getTitanSquadAura(state)
+    : ((titanCore && typeof getTitanCoreAura === "function") ? getTitanCoreAura(titanCore) : null); // 非光环核心返回 null
+  // 全补（2026-09-10 用户拍板）：泰坦三层（L1 主命中 / L2 附加打击 / L3 末日核心）同吃
+  // getCombatDamageMultiplierFromState（技能等级 + 船体 + 强化 + 军团 + 科研 + 脑插）。
+  // 修复前泰坦是全游戏唯一不吃玩家培养回报的舰——普通舰走 calcPlayerDmgMult，泰坦分支漏了。
+  const titanDmgMult = (isTitanShip && titanWeapon && typeof calcPlayerDmgMult === "function")
+    ? calcPlayerDmgMult(titanWeapon.weaponType, state) : 1;
   let titanVolleyFuel = 0;
   let titanAmmoRequired = 0;
   if (titanWeapon) {
@@ -1417,15 +1430,26 @@ function advanceCombatRound(state, context) {
     const targetMaxHp = enemy.maxHp ? (enemy.maxHp.shield + enemy.maxHp.armor + enemy.maxHp.structure) : targetTotal;
     const targetHpRatio = targetMaxHp > 0 ? targetTotal / targetMaxHp : 1;
     const rd = getTitanWeaponRoundDamage(titanWeapon, { round: titanRound, targetHpRatio });
-    // 乘区：克制 × 结构过载(B案,不限武器) × 光环(含泰坦自身) × 易伤 × 弹药档 × 脑突触 × 暴击
+    // 乘区：克制 × 结构过载(B案,不限武器) × 光环(含泰坦自身) × 易伤 × 弹药档 × 武器强化剂 × 脑突触 × 暴击
+    // 武器强化剂（2026-09-10 用户拍板 3a）：与常规武器管线同口径，按主武器 weaponType 查表，主命中与扫掠/贯穿打击同享。
     const counterMult = calcWeaponCounterMultiplier(titanWeapon.weaponType, enemy.hp);
     const overdriveMult = getTitanStructureOverdriveMultiplier(titanTrait, c.hp, c.maxHp);
     const selfAuraDmg = titanAura ? (1 + (titanAura.squadDamageBonus || 0)) : 1;
+    const titanBoosterState = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
+    const weaponBoosterMult = (titanBoosterState && titanBoosterState[titanWeapon.weaponType]) ? titanBoosterState[titanWeapon.weaponType] : 1;
     const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
-    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult;
+    // A1（2026-09-10 用户拍板）：命中走与常规武器同一条管线，基数用泰坦自带 baseHit
+    //   （100/130/80 差异化保留），再叠 武器技能×4 + 目标锁定×3 + 船体 hitBonus + 光环 squadHitBonus。
+    //   修复前用固定 baseHit、不吃船体 +30 与光环 +15，后期 dodge=85 时命中系数只有走管线侧的 0.60。
+    const titanHitBase = (typeof calcPlayerHit === "function")
+      ? calcPlayerHit(titanWeapon.weaponType, { combat: { baseHit: titanWeapon.baseHit } }, state)
+      : (Number(titanWeapon.baseHit) || 100);
+    const titanAuraHitBonus = (titanAura && Number(titanAura.squadHitBonus)) ? Number(titanAura.squadHitBonus) : 0;
+    const titanHit = (titanHitBase + titanAuraHitBonus) * ammoProps.hitMult;
+    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult * weaponBoosterMult * titanDmgMult;
     if (adbm && adbm !== 1) mult *= adbm;
     mult *= rollTitanCritMultiplier(titanWeapon.crit, rng);
-    const damage = calcCombatDamage(titanWeapon.baseHit, enemy.dodge, rd.mainDamage, mult, rng);
+    const damage = calcCombatDamage(titanHit, enemy.dodge, rd.mainDamage, mult, rng);
     const mainDealt = applyLayeredCombatDamage(enemy.hp, damage);
     const mainTotal = mainDealt.shield + mainDealt.armor + mainDealt.structure;
     c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + mainTotal;
@@ -1435,7 +1459,7 @@ function advanceCombatRound(state, context) {
     for (const strike of strikes) {
       const sweepCrit = (strike.kind === "sweep" && titanWeapon.crit && titanWeapon.crit.appliesToSweep)
         ? rollTitanCritMultiplier(titanWeapon.crit, rng) : 1;
-      let strikeDmg = strike.damage * vulnMult * sweepCrit;
+      let strikeDmg = strike.damage * vulnMult * weaponBoosterMult * sweepCrit * titanDmgMult;
       if (adbm && adbm !== 1) strikeDmg *= adbm;
       strikeDmg = Math.max(1, Math.round(strikeDmg));
       if (strike.kind === "layerPierce") {
@@ -1449,7 +1473,8 @@ function advanceCombatRound(state, context) {
     }
     if (playEffects) playAttackFX(true, titanWeapon.weaponType, mainTotal, 0, "player", false, enemy);
     const weaponCfg = WEAPON_CONFIG[titanWeapon.weaponType];
-    if (weaponCfg && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weaponCfg.skillKey, 2, "combat"); }
+    // 泰坦武器经验 10/齐射（普通武器为 2）——与 NPC 侧 legion-combat-squad.js TITAN_NPC_WEAPON_XP 同口径
+    if (weaponCfg && typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, weaponCfg.skillKey, 10, "combat"); }
     if (typeof addStationModifiedCombatXp === "function") { addStationModifiedCombatXp(state, "targeting", 1, "combat"); }
     const amountThisVolley = c.runDamageDealt - prevRunDamage;
     if (typeof amountThisVolley === "number" && Number.isFinite(amountThisVolley) && amountThisVolley > 0) {
@@ -1553,7 +1578,9 @@ function advanceCombatRound(state, context) {
       firePlayerVolley(ptr);
       if (ptr && ptr.id != null) lastTargetId = ptr.id;
     } else {
-      const entry = squadApi.fireSingleNpcMember(state, context, firer.member, ptr, perNpc, rng);
+      // 易伤回合号（3b）：传 c.roundSeq 同口径（与 applyTitanVulnerabilityMark 的标记轮次一致）
+      // enemies（C3 泰坦 NPC 输出）：供泰坦扫掠/贯穿/核心打击解析副目标；未传时退化为单目标语义。
+      const entry = squadApi.fireSingleNpcMember(state, Object.assign({}, context, { round: titanRound, enemies: c.enemies }), firer.member, ptr, perNpc, rng);
       if (entry && !entry.skipped) {
         squadAttacked += 1;
         squadTotalDamage += (entry.damage || 0);
@@ -1610,9 +1637,11 @@ function advanceCombatRound(state, context) {
         const corePrimary = (c.currentEnemy && !c.currentEnemy.defeated && c.currentEnemy.hp && c.currentEnemy.hp.structure > 0)
           ? c.currentEnemy : (getLivingCombatEnemies(c)[0] || null);
         const resolved = resolveTitanCoreStrikes(coreRaw, titanCore, c.enemies, corePrimary, c.titanStunCounts, titanRound, rng);
+        // 脑突触加速剂（2026-09-10 用户拍板 3c）：核心打击与主武器/扫掠同享独立乘区 ×1.3。
+        const coreAdbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
         for (const strike of resolved.strikes) {
           const vulnMult = getTitanDamageTakenMultiplier(strike.enemy, titanRound); // 侵蚀本轮命中即生效
-          const dmg = Math.max(1, Math.round(strike.damage * vulnMult));
+          const dmg = Math.max(1, Math.round(strike.damage * vulnMult * coreAdbm * titanDmgMult));
           const dealt = applyLayeredCombatDamage(strike.enemy.hp, dmg);
           c.runDamageDealt += dealt.shield + dealt.armor + dealt.structure;
           if (strike.stunned && (titanCore.stunRounds || 0) > 0) {

@@ -105,17 +105,20 @@
     };
   }
 
-  // 一次性清洗：早前引擎集成 bug 曾把虫洞节点 id（"n0"~"n17"）写进星图 completedNodeIds，
-  // 导致后续虫洞节点启动被 starmap-trial-completed 拒绝。星图真 id 为纯数字，/^n\d+$/ 必为污染。
+  // 污染清洗（2026-09-10 起每次归一化都跑，不再是一次性）：星图真节点 id 为纯数字，
+  // 历史 "nX" 前缀与本轮 "wnN" 前缀必为虫洞污染。污染会把虫洞节点 id 写进星图完成账本，
+  // 而虫洞节点 id 每日复用 → 同名节点被永久拉黑 → 采集/考古/战斗奖励静默吞掉（0 发放）。
+  // 旧的 idPollutionCleaned 一次性标记已废弃（wn 前缀污染发生在标记之后，一次性清洗救不回来）。
   function cleanStarmapPollution(state) {
+    if (state && state.wormhole && state.wormhole.idPollutionCleaned) {
+      delete state.wormhole.idPollutionCleaned;
+      if (state._dirty !== undefined) state._dirty = true;
+    }
     const st = state && state.legion && state.legion.starmap;
     if (!st || !Array.isArray(st.completedNodeIds)) return;
-    if (state.wormhole && state.wormhole.idPollutionCleaned) return;
     const before = st.completedNodeIds.length;
-    st.completedNodeIds = st.completedNodeIds.filter(id => !/^n\d+$/.test(String(id)));
+    st.completedNodeIds = st.completedNodeIds.filter(id => !/^(n|wn)\d+$/.test(String(id)));
     if (st.completedNodeIds.length !== before && state._dirty !== undefined) state._dirty = true;
-    if (!state.wormhole) state.wormhole = {};
-    state.wormhole.idPollutionCleaned = true;
   }
 
   function normalizeWormholeState(state) {
@@ -133,6 +136,24 @@
     if (!W.rerollToday || typeof W.rerollToday !== "object") { W.rerollToday = { key: "", count: 0, stock: 0 }; dirty(); }
     if (!Number.isFinite(Number(W.rerollToday.stock))) { W.rerollToday.stock = 0; dirty(); }
     if (!W.owned || typeof W.owned !== "object") { W.owned = {}; dirty(); }
+    // 退役道具清算（2026-09-10「应急舱体」下架）：该道具从未接线（run.emergency 恒 false），
+    // 旧档里已购未用的库存按原价一次性退还印记，并移除残留 key。靠 retiredRefunded 标记幂等，
+    // 只跑一次；无残留时不写入任何东西。
+    if (!W.retiredRefunded) {
+      let refund = 0;
+      const retired = (root.WORMHOLE_RETIRED_ITEMS && typeof root.WORMHOLE_RETIRED_ITEMS === "object") ? root.WORMHOLE_RETIRED_ITEMS : {};
+      if (W.pendingItems && typeof W.pendingItems === "object") {
+        for (const id of Object.keys(retired)) {
+          const n = Math.max(0, Math.floor(Number(W.pendingItems[id]) || 0));
+          const unit = Math.max(0, Math.floor(Number(retired[id]) || 0));
+          if (n > 0 && unit > 0) refund += n * unit;
+          if (Object.prototype.hasOwnProperty.call(W.pendingItems, id)) delete W.pendingItems[id];
+        }
+      }
+      W.retiredRefunded = true;
+      if (refund > 0) registryAdd(state, "special:" + CFG.TOKEN_ID, refund);
+      dirty();
+    }
     if (!Array.isArray(W.history)) { W.history = []; dirty(); }
     if (!W.stats || typeof W.stats !== "object") { W.stats = { completed: 0, failed: 0, tokensEarned: 0 }; dirty(); }
     for (const k of ["completed", "failed", "tokensEarned"]) {
@@ -144,6 +165,11 @@
       if (!d || typeof d !== "object") continue;
       if (!Array.isArray(d.nodes)) { d.nodes = []; dirty(); }
       if (typeof d.status !== "string") { d.status = "available"; dirty(); }
+      // 旧档 daily 节点可能缺 source（enrichDailyNodes 仅在生成时写入）→ 补写，保证引擎侧
+      // 虫洞识别（星图加成隔离 / 1/10 奖励缩放 / 完成账本解耦）在旧档上同样生效。
+      for (const n of d.nodes) {
+        if (n && typeof n === "object" && n.source !== "wormhole") { n.source = "wormhole"; dirty(); }
+      }
     }
     // run 结构轻校验：run 存在但缺关键字段 → 判废弃（安全默认，不崩溃）
     if (W.run) {
@@ -190,7 +216,7 @@
   function travelSeconds(W) { return Math.max(4, CFG.TRAVEL_SECONDS - runUpg(W, "travel") - (W.run && W.run.voidTravel ? 2 : 0)); }
   function retryLimit(W, run) {
     const base = Math.max(0, Math.floor(Number(run && run.retryLimit) || 0));
-    return base + upg(W, "retryLimit") + (run && run.emergency ? 3 : 0);
+    return base + upg(W, "retryLimit");
   }
   function retryCostMult(W) { return Math.max(0.2, 1 - 0.1 * runUpg(W, "retryCost")); }
   function affixResistMult(W) {
@@ -602,7 +628,7 @@
     W.dailies = carry.concat(fresh);
     W.lastRefreshKey = key;
     W.nextRefreshAt = nextRefreshAt(now);
-    if (W.rerollToday.key !== key) { W.rerollToday = { key, count: 0, stock: 0 }; }
+    if (W.rerollToday.key !== key) { W.rerollToday = { key, count: 0, stock: Math.max(0, Number(W.rerollToday.stock) || 0) }; }   // 2026-09-10：限购计数日切，已购未用的重析库存跨日保留（玩家报「买了不用第二天就没了」）
     state._dirty = true;
   }
   function applyDailyRefreshIfNeeded(state, now) {
@@ -633,19 +659,39 @@
   }
   function snapshotAction(state) {
     const a = state.currentAction || {};
+    const q = state.queue;
+    const queueRunning = !!(q && q.status && q.status.isRunning);
+    // 2026-09-10 修复（玩家报「虫洞打完后继续已删除的行动」）：额外记录激活队列条目的 id，
+    // 恢复时按 id 重新定位——run 期间玩家可增删/移动队列项，仅靠 isRunning 布尔与瞬时 activeIndex
+    // 会复活已被删除的行动（幽灵行动）或恢复到错位的条目上。
+    const activeItem = (queueRunning && q.items && q.status.activeIndex >= 0 && q.items[q.status.activeIndex]) || null;
     return {
-      has: !!(a.active || (state.queue && state.queue.status && state.queue.status.isRunning)),
+      has: !!(a.active || queueRunning),
       action: a.active ? { skill: a.skill, target: a.target, progress: a.progress, lastProgressUpdate: a.lastProgressUpdate } : null,
-      queueRunning: !!(state.queue && state.queue.status && state.queue.status.isRunning)
+      queueRunning,
+      activeItemId: activeItem ? activeItem.id : null
     };
   }
   function restoreSnapshot(state, snap, now) {
     if (!snap) return;
     const t = nowMs(now);
-    if (snap.action && state.currentAction) {
+    const q = state.queue;
+    // 2026-09-10 修复：队列恢复加存在性校验——
+    // ① 出发时在跑的队列：run 期间玩家删掉了激活条目（queueRemove→queueStop）或删空队列，
+    //    则不再恢复 isRunning（旧行为无条件置 true → 幽灵行动）；
+    // ② 条目仍存在时按 id 重新定位 activeIndex（待执行项增删/移动会使旧 activeIndex 错位）。
+    let queueResumed = false;
+    if (snap.queueRunning && q && q.status && Array.isArray(q.items) && q.items.length) {
+      let idx = -1;
+      if (snap.activeItemId) idx = q.items.findIndex(it => it && it.id === snap.activeItemId);
+      else if (q.status.activeIndex >= 0 && q.status.activeIndex < q.items.length) idx = q.status.activeIndex;
+      if (idx >= 0) { q.status.activeIndex = idx; q.status.isRunning = true; queueResumed = true; }
+    }
+    // currentAction 只在「行动仍有载体」时恢复：出发时走队列的行动，其条目已被删 → 不复活；
+    // 出发时的独立行动（不经队列）→ 照旧恢复。
+    if (snap.action && state.currentAction && ((!snap.queueRunning && snap.has) || queueResumed)) {
       Object.assign(state.currentAction, snap.action, { active: true, lastProgressUpdate: t });
     }
-    if (snap.queueRunning && state.queue && state.queue.status) state.queue.status.isRunning = true;
     state._dirty = true;
   }
 
@@ -679,7 +725,7 @@
     W.run = {
       id: runId, dailyId: daily.id, mode,
       retryLimit: Math.max(0, Math.min(99, Math.floor(Number(o.retryLimit) || 0))),
-      emergency: false, overdrive: false,
+      overdrive: false,
       voidTravel, voidAffix, affixScale, upgradeSnapshot,
       control: W.control || "auto",          // auto=系统选路（遍历/直冲） / manual=玩家点选相邻节点（继承当前模式）
       state: "running",
@@ -991,6 +1037,30 @@
     const res = startEngineTrial(state, effectiveTrialNode(W, daily, node), t);
     if (res && res.changed && res.trial) {
       run.nextEventAt = (Number(res.trial.endsAt) || t + 180000) + 50;   // 兜底轮询点；更早结束靠每 tick 轮询
+      // 离线战斗预判（2026-09-10 方案 A）：离线共享战斗内核冻结（出发已停行动槽），战斗试炼
+      // 只会烧满时限判负。开战即用离线同口径单场模拟预判胜负与真实时长；在线内核会自然先出
+      // 结果（血量指纹变化），预判仅在「到点时战斗画面仍冻结」时兜底结算（见 pollEngineNode）。
+      run.battlePred = null;
+      if (node.type === "battle") {
+        const OCS = root.OfflineCombatSystem;
+        if (OCS && typeof OCS.predictTrialWave === "function") {
+          const trialEndsAt = Number(res.trial.endsAt) || (t + 180000);
+          const pred = OCS.predictTrialWave(state, {
+            enemyCount: res.trial.enemyCount,
+            maxSeconds: Math.max(1, Math.round((trialEndsAt - t) / 1000)),
+            now: t
+          });
+          if (pred && pred.seconds > 0) {
+            run.battlePred = {
+              nodeId: node.id, attempt: run.attempt || 1,
+              endsAt: t + pred.seconds * 1000, win: !!pred.win,
+              fp: combatHpFingerprint(state.combat)
+            };
+            const predWake = t + pred.seconds * 1000 + 50;
+            if (predWake < run.nextEventAt) run.nextEventAt = predWake;
+          }
+        }
+      }
       return;
     }
     // 启动失败（无考古舰/无探针/维修中/战力不足等）→ 重试 → 跳过管线，原因进战报
@@ -1016,17 +1086,50 @@
   }
 
   // 节点轮询：引擎试炼结束 → 制压 / 重试 / 跳过（战斗提前打完不等 deadline）
+  // 战斗画面冻结指纹（2026-09-10）：离线内核不推进 → 血量恒定；任何真实开火（在线）都会
+  // 改变玩家或敌人血量。预判只在该指纹与开战时一致（= 战斗从未推进）时才允许兜底结算。
+  function combatHpFingerprint(c) {
+    try {
+      if (!c || !c.hp) return null;
+      const en = Array.isArray(c.enemies) ? c.enemies.map(e => (e && e.hp) ? [e.hp.shield, e.hp.armor, e.hp.structure] : null) : [];
+      return JSON.stringify({ hp: [c.hp.shield, c.hp.armor, c.hp.structure], en: en });
+    } catch (_) { return null; }
+  }
   function pollEngineNode(state, run, daily, node, t) {
     const T = root.LEGION_STARMAP_TRIAL;
     if (!T || !T.getTrialStates) return { events: 0, busy: true };
-    const tr = T.getTrialStates(state);
-    const trial = node.type === "battle" ? tr.battle : node.type === "archaeology" ? tr.archaeology : tr.collection;
-    if (!trial || trial.nodeId !== String(node.id) || trial.status === "running") {
-      if (trial && trial.nodeId === String(node.id) && trial.status === "running") {
-        run.nextEventAt = Math.max(Number(trial.endsAt) || 0, t + 1000);   // 离线切分边界跟随引擎 deadline
+    let tr = T.getTrialStates(state);
+    let trial = node.type === "battle" ? tr.battle : node.type === "archaeology" ? tr.archaeology : tr.collection;
+    if (trial && trial.nodeId === String(node.id) && trial.status === "running") {
+      // 离线预判结算（2026-09-10 方案 A）：到预判时刻且血量指纹未变（离线内核冻结）→ 按预判收口。
+      // 在线内核会先行自然出结果（血量已变）→ 本分支不触发，行为与旧版完全一致。
+      const pred = run.battlePred;
+      if (pred && pred.nodeId === node.id && Number(pred.endsAt) > 0 && t >= Number(pred.endsAt) && pred.fp) {
+        run.battlePred = null;
+        if (combatHpFingerprint(state.combat) === pred.fp) {
+          const c = state.combat;
+          if (pred.win && c) {
+            // 胜：喂满击杀数，走引擎自身出口（tickBattleTrial → combat/stop → finishBattleTrial(true)）
+            c.totalKills = Math.max(Number(c.totalKills) || 0, Math.max(1, Number(trial.enemyCount) || 1));
+            c.wave = Math.max(1, Number(c.wave) || 1);
+          } else if (!pred.win && c && typeof root.dispatchGameAction === "function") {
+            // 败：与在线超时路径同口径（combat/stop → !combat.active → finishBattleTrial(false)）
+            root.dispatchGameAction(state, { type: "combat/stop" }, t);
+          }
+          try { T.tickBattleTrial(state, t); } catch (_) {}
+          tr = T.getTrialStates(state);
+          trial = node.type === "battle" ? tr.battle : node.type === "archaeology" ? tr.archaeology : tr.collection;
+        }
       }
-      return { events: 0, busy: true };
+      if (trial && trial.nodeId === String(node.id) && trial.status === "running") {
+        const p2 = run.battlePred;
+        let wakeAt = Number(trial.endsAt) || 0;
+        if (p2 && p2.nodeId === node.id && Number(p2.endsAt) > t && Number(p2.endsAt) < wakeAt) wakeAt = Number(p2.endsAt);
+        run.nextEventAt = Math.max(wakeAt, t + 1000);   // 离线切分边界跟随引擎 deadline（有更早预判则取更早）
+        return { events: 0, busy: true };
+      }
     }
+    if (!trial || trial.nodeId !== String(node.id)) return { events: 0, busy: true };
     if (trial.status === "success") {
       run.cleared.push(node.id); run.summary.cleared += 1;
       const gained = grantNodeRewards(state, run, daily, node, run.attempt);
@@ -1180,7 +1283,7 @@
     const def = SHOP.items[itemId]; if (!def) return { changed: false, reason: "unknown-item" };
     if (itemId === "reroll") {
       const key = dayKey(t);
-      if (W.rerollToday.key !== key) W.rerollToday = { key, count: 0, stock: 0 };
+      if (W.rerollToday.key !== key) W.rerollToday = { key, count: 0, stock: Math.max(0, Number(W.rerollToday.stock) || 0) };   // 限购计数日切，库存跨日保留
       if (W.rerollToday.count >= def.perDay) return { changed: false, reason: "daily-limit" };
       if (!spendTokens(state, def.price)) return { changed: false, reason: "insufficient-tokens" };
       W.rerollToday.count += 1;
@@ -1197,7 +1300,7 @@
   }
   function useReroll(state, now) {
     const W = ensure(state); const t = nowMs(now); const key = dayKey(t);
-    if (W.rerollToday.key !== key) W.rerollToday = { key, count: 0, stock: 0 };
+    if (W.rerollToday.key !== key) W.rerollToday = { key, count: 0, stock: Math.max(0, Number(W.rerollToday.stock) || 0) };   // 限购计数日切，库存跨日保留
     if (!(W.rerollToday.stock > 0)) return { changed: false, reason: "no-reroll-stock" };
     W.rerollToday.stock -= 1;
     generateDailies(state, t);
