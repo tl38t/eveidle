@@ -46,13 +46,44 @@
       var isOwner = String(member.playerId) === String(alliance.ownerId);
       return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
         '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "未设置昵称") + '</span>' +
-        '<span class="text-muted" style="flex:0 0 auto;white-space:nowrap;">' + (isOwner ? "盟主" : "成员") + '</span></div>';
+        '<span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap;">' +
+        '<span class="text-muted">' + (isOwner ? "盟主" : "成员") + '</span>' +
+        ((!isOwner && String(alliance.ownerId) === String(root.AllianceApi.getPlayerId()))
+          ? '<button class="btn secondary alliance-transfer-btn" data-target-player="' + esc(member.playerId) + '" style="padding:4px 8px;">转让</button><button class="btn secondary alliance-kick-btn" data-target-player="' + esc(member.playerId) + '" style="padding:4px 8px;">踢出</button>'
+          : '') + '</span></div>';
     }).join("");
     return '<div class="alliance-card"><div class="alliance-card-title">当前联盟（实时）</div>' +
       '<div class="alliance-name">' + esc(alliance.name || alliance.code) + '</div>' +
       '<div class="alliance-meta">联盟代码：' + esc(alliance.code) + ' · 成员：' + esc(alliance.memberCount) + '/10<br>联盟 ID：' + esc(alliance.id) + '</div>' +
       '<div class="alliance-card-title" style="margin-top:12px;">联盟成员</div>' +
       (memberRows || '<div class="alliance-task-hint">暂无成员数据</div>') + '</div>';
+  }
+
+  function bindAdminActions(box, alliance, members, msg) {
+    if (!alliance || String(alliance.ownerId) !== String(root.AllianceApi.getPlayerId())) return;
+    function runAction(button, action, confirmText, successText) {
+      button.onclick = function () {
+        var target = button.getAttribute("data-target-player");
+        if (!confirm(confirmText)) return;
+        button.disabled = true;
+        var session = root.SteamAllianceSession;
+        var tokenPromise = session && typeof session.getToken === "function" ? Promise.resolve(session.getToken()) : Promise.resolve("");
+        tokenPromise.then(function (token) {
+          if (!token && session && typeof session.authenticate === "function") return session.authenticate().then(function (x) { return x.sessionToken; });
+          return token;
+        }).then(function (token) {
+          return fetch(taskGateway, { method: "POST", headers: { "Content-Type": "application/json", "x-alliance-session": token || "" }, body: JSON.stringify({ action: action, allianceId: alliance.id, targetPlayerId: target }) });
+        }).then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.ok) throw new Error(data.error || "踢出成员失败"); return data; }); })
+          .then(function () { if (msg) msg.textContent = successText; startCloudRefresh(); })
+          .catch(function (error) { button.disabled = false; if (msg) msg.textContent = error.message || successText + "失败"; });
+      };
+    }
+    Array.prototype.forEach.call(box.querySelectorAll(".alliance-kick-btn"), function (button) {
+      runAction(button, "kick_member", "确定要踢出这名成员吗？", "成员已踢出");
+    });
+    Array.prototype.forEach.call(box.querySelectorAll(".alliance-transfer-btn"), function (button) {
+      runAction(button, "transfer_leader", "确定要把盟主转让给这名成员吗？转让后你将失去管理权限。", "盟主已转让");
+    });
   }
 
   function renderListView(list) {
@@ -121,6 +152,7 @@
         rememberAlliance(alliance);
         return root.AllianceApi.getMembers(alliance.id).then(function (members) {
           box.innerHTML = renderMemberCard(alliance, members);
+          bindAdminActions(box, alliance, members, ctx.msg);
           if (ctx.msg) ctx.msg.textContent = "已连接云端联盟";
         });
       }
