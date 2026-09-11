@@ -45,7 +45,7 @@
     var memberRows = members.map(function (member) {
       var isOwner = String(member.playerId) === String(alliance.ownerId);
       return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
-        '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + '</span>' +
+        '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "未设置昵称") + '</span>' +
         '<span class="text-muted" style="flex:0 0 auto;white-space:nowrap;">' + (isOwner ? "盟主" : "成员") + '</span></div>';
     }).join("");
     return '<div class="alliance-card"><div class="alliance-card-title">当前联盟（实时）</div>' +

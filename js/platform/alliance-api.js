@@ -30,10 +30,10 @@
       if (!result || !result.ok || !result.steamId) throw new Error("Steam 联盟认证失败");
       var steamId = String(result.steamId);
       localStorage.setItem(playerKey, steamId);
-      return (typeof session.getIdentity === "function" ? session.getIdentity() : Promise.resolve(null)).then(function (identity) {
+        return (typeof session.getIdentity === "function" ? session.getIdentity() : Promise.resolve(null)).then(function (identity) {
         steamPersonaName = identity && identity.personaName ? String(identity.personaName).trim() : "";
         if (!steamPersonaName) return steamId;
-        return upsertPlayerName(steamPersonaName).then(function () { return steamId; });
+        return upsertPlayerName(steamPersonaName).catch(function () { return null; }).then(function () { return steamId; });
       });
     }).catch(function (error) {
       steamSessionPromise = null;
@@ -129,7 +129,7 @@
             var names = {};
             (players || []).forEach(function (player) { names[player.player_id] = player.username || ""; });
             return members.map(function (member) {
-              return { playerId: member.player_id, username: names[member.player_id] || "" };
+              return { playerId: member.player_id, username: names[member.player_id] || (String(member.player_id) === String(getPlayerId()) ? steamPersonaName : "") };
             });
           });
       });
