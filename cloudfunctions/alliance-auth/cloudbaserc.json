@@ -1,0 +1,11 @@
+{
+  "functions": [
+    {
+      "name": "alliance-auth",
+      "type": "HTTP",
+      "handler": "index.main",
+      "public": true,
+      "gatewayPath": "/alliance-auth"
+    }
+  ]
+}
