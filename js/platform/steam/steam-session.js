@@ -1,7 +1,7 @@
 (function (root) {
   "use strict";
 
-  var AUTH_URL = "https://deepspace-d4govx4ikc2e937c5.api.tcloudbasegateway.com/alliance-auth";
+  var AUTH_URL = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/alliance-auth";
   var TOKEN_KEY = "eve_idle_alliance_session_token";
   var IDENTITY = "deep-space-idle-alliance";
 
