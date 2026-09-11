@@ -46,7 +46,7 @@
       var isOwner = String(member.playerId) === String(alliance.ownerId);
       return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
         '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + '</span>' +
-        '<span class="text-muted" style="flex:0 0 auto;white-space:nowrap;">' + (isOwner ? "盟主 · " : "成员 · ") + esc(member.playerId) + '</span></div>';
+        '<span class="text-muted" style="flex:0 0 auto;white-space:nowrap;">' + (isOwner ? "盟主" : "成员") + '</span></div>';
     }).join("");
     return '<div class="alliance-card"><div class="alliance-card-title">当前联盟（实时）</div>' +
       '<div class="alliance-name">' + esc(alliance.name || alliance.code) + '</div>' +
@@ -345,7 +345,7 @@
       var statusClass = submitted ? "alliance-task-done" : (status === "材料足够，可提交" ? "alliance-task-ready" : "alliance-task-locked");
       return '<div class="alliance-task-row"><div><span class="alliance-task-slot">' + esc(task.slot) + '</span><strong>' + esc(task.materialName) + '</strong><div class="alliance-task-meta">' + esc(taskLabels[task.category] || task.category) + ' · 需求 ' + esc(task.requiredAmount) + ' · 奖励 ' + esc(task.rewardPoints) + ' 建设点</div></div><span class="' + statusClass + '">' + status + '</span></div>';
     }).join("") : '<div class="alliance-task-hint">尚未生成任务，请先打开一次云端联盟页面。</div>') + '<div class="alliance-task-hint">当前阶段只显示本地材料状态，任务提交验证将在下一步接入。</div></div>';
-    var memberHtml = returnedMemberList.length ? '<div class="alliance-card-title">联盟成员</div><div class="alliance-members">' + returnedMemberList.map(function (member) { return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;"><span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + '</span><span class="text-muted" style="flex:0 0 auto;white-space:nowrap;">' + esc(member.playerId) + '</span></div>'; }).join("") + '</div>' : '';
+    var memberHtml = returnedMemberList.length ? '<div class="alliance-card-title">联盟成员</div><div class="alliance-members">' + returnedMemberList.map(function (member) { return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;"><span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + '</span></div>'; }).join("") + '</div>' : '';
     setTimeout(function () { content.insertAdjacentHTML("beforeend", taskHtml); }, 0);
     var fallbackHtml = returnedCode
       ? '<div class="alliance-card"><div class="alliance-card-title">当前联盟（云端回传）</div><div class="alliance-name">' + esc(returnedCode) + '</div><div class="alliance-meta">联盟创建人：' + esc(returnedOwnerName || returnedOwner || "-") + ' · 成员：' + esc(returnedMembers || "0") + '/10<br>联盟 ID：' + esc(returnedId || "-") + '</div>' + memberHtml + '</div>'

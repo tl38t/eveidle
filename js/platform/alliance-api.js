@@ -9,6 +9,7 @@
   var playerKey = "eve_idle_alliance_player_id";
   var tokenKey = "eve_idle_alliance_access_token";
   var steamSessionPromise = null;
+  var steamPersonaName = "";
 
   function getPlayerId() {
     var value = localStorage.getItem(playerKey);
@@ -29,12 +30,24 @@
       if (!result || !result.ok || !result.steamId) throw new Error("Steam 联盟认证失败");
       var steamId = String(result.steamId);
       localStorage.setItem(playerKey, steamId);
-      return steamId;
+      return (typeof session.getIdentity === "function" ? session.getIdentity() : Promise.resolve(null)).then(function (identity) {
+        steamPersonaName = identity && identity.personaName ? String(identity.personaName).trim() : "";
+        if (!steamPersonaName) return steamId;
+        return upsertPlayerName(steamPersonaName).then(function () { return steamId; });
+      });
     }).catch(function (error) {
       steamSessionPromise = null;
       throw error;
     });
     return steamSessionPromise;
+  }
+
+  function upsertPlayerName(username) {
+    return authed("/v1/rdb/rest/players", {
+      method: "POST",
+      headers: { Prefer: "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ player_id: getPlayerId(), username: username.slice(0, 32) })
+    });
   }
 
   function request(path, options) {
@@ -197,6 +210,7 @@
   root.AllianceApi = {
     isOnline: function () { return true; },
     getPlayerId: getPlayerId,
+    getPlayerName: function () { return steamPersonaName; },
     initializeSteamIdentity: initializeSteamIdentity,
     getAlliance: getAlliance,
     listAlliances: listAlliances,

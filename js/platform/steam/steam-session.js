@@ -26,6 +26,12 @@
 
   root.SteamAllianceSession = {
     identity: IDENTITY,
+    getIdentity: function () {
+      var steam = bridge();
+      return steam && typeof steam.getIdentity === "function"
+        ? steam.getIdentity()
+        : Promise.resolve(null);
+    },
     getToken: getToken,
     authenticate: authenticate,
     clear: function () { try { root.sessionStorage.removeItem(TOKEN_KEY); } catch (_) {} }
