@@ -8,7 +8,7 @@
 
   function loadShip3D() {
     if (window.Ship3D) return;
-    import("./ship3d.js?v=10").catch(function (error) {
+    import("./ship3d.js?v=12").catch(function (error) {
       console.error("[ship3d] module load failed", error);
     });
   }

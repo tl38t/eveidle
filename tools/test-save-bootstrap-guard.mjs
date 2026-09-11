@@ -126,11 +126,23 @@ function buildContext(opts) {
     // 云服务：按需注入可用 Mock（冲突 / 云端场景），否则 null（本地模式）
     getCloudSaveService = function () {
       if (!${opts.cloud ? "true" : "false"}) return null;
-      const __mode = ${JSON.stringify({ none: !!opts.cloudNone, error: !!opts.cloudError, corrupt: !!opts.cloudCorrupt, conflict: !!opts.forceConflict })};
-      function MockCloudSaveService() { this._meta = { lastCloudChecksum: "" }; this.__uploadCalls = 0; }
+      const __mode = ${JSON.stringify({ none: !!opts.cloudNone, error: !!opts.cloudError, corrupt: !!opts.cloudCorrupt, conflict: !!opts.forceConflict, hang: !!opts.cloudHang })};
+      function MockCloudSaveService() { this._meta = { lastCloudChecksum: "" }; this.__uploadCalls = 0; this.__markDirtyCalls = 0; }
       MockCloudSaveService.prototype.init = function () { return Promise.resolve(true); };
       MockCloudSaveService.prototype.isAvailable = function () { return true; };
-      MockCloudSaveService.prototype.fetchCloudEnvelope = function () {
+      MockCloudSaveService.prototype.fetchCloudEnvelope = function (opts) {
+        // 模拟「云端既不 success 也不 fail」的挂起：TapTap 容器弱网 / 后台恢复时的典型形态，
+        // 也是「登录转圈」报告里最可能的云端实况。修复 A/B 正是针对这种情形。
+        // 注意：必须复刻真实 fetchCloudEnvelope 的 timeoutRace（按 opts.timeoutMs，默认 15000）
+        // 之后才返回显式 error，否则 mock 会绕过被测的关键路径短超时，场景5c 就测不到 B 修复。
+        if (__mode.hang) {
+          const hangMs = (opts && Number(opts.timeoutMs) > 0) ? Number(opts.timeoutMs) : 15000;
+          return new Promise(function (resolve) {
+            setTimeout(function () {
+              resolve({ status: "error", error: new Error("injected cloud hang（" + hangMs + "ms 超时）") });
+            }, hangMs);
+          });
+        }
         if (__mode.error) return Promise.resolve({ status: "error", error: new Error("injected cloud query failure") });
         if (__mode.none) return Promise.resolve({ status: "none" });
         if (__mode.corrupt) return Promise.resolve({ status: "error", error: new Error("injected corrupt download") });
@@ -151,7 +163,7 @@ function buildContext(opts) {
       MockCloudSaveService.prototype.maybeUpload = function () { this.__uploadCalls++; return Promise.resolve({ ok: true }); };
       MockCloudSaveService.prototype.uploadNow = function () { this.__uploadCalls++; return Promise.resolve({ ok: true }); };
       MockCloudSaveService.prototype.recordLocal = function () { this._meta.localRevision = (this._meta.localRevision || 0) + 1; };
-      MockCloudSaveService.prototype.markDirty = function () {};
+      MockCloudSaveService.prototype.markDirty = function () { this.__markDirtyCalls++; };
       return new MockCloudSaveService();
     };
   `;
@@ -223,50 +235,113 @@ console.log("\n[场景3] 本地读档/迁移失败 fail closed → error");
 }
 
 // ===================== 场景 4：冲突暂停 → resolveCloudConflict("local") =====================
-console.log("\n[场景4] 云端冲突 awaiting-choice → resolveCloudConflict(local) → ready");
+console.log("\n[场景4] 本地优先放行 + 后台对账发现冲突 → resolveCloudConflict(local) → 保留本地");
 {
   const { ctx, SaveManager, log } = buildContext({ cloud: true, forceConflict: true, seedLocal: true, failLocal: false });
   const bootP = SaveManager.bootstrap();
-  // 同步段（P0-2）：本地读档完成即返回，但 state 仍为 loading（冲突判定在异步云端段）
-  ok(SaveManager.getBootState() === "loading", "同步段 state=loading（本地先就绪但不提前解阻塞）");
+  // 同步段（P0-2）：本地读档同步返回，state 仍为 loading
+  ok(SaveManager.getBootState() === "loading", "同步段 state=loading（本地读档同步返回）");
   ok(SaveManager.isBootBlocked() === true, "loading 尚未解阻塞");
-  await tick(); // 让异步云端启动链推进到 awaiting-choice
-  ok(SaveManager.getBootState() === "awaiting-choice", "云端决策 = conflict → awaiting-choice");
+  await tick(); // 推进异步链：本地优先放行 ready → 后台对账发现冲突 → awaiting-choice
+  ok(SaveManager.getBootState() === "awaiting-choice", "后台对账发现冲突 → awaiting-choice");
   ok(SaveManager.isBootBlocked() === true, "awaiting-choice 阻塞（暂停 tick/离线/自动存档/成就）");
-  ok(ctx.__settleCalls === 0, "冲突未决前不发生离线结算（P0-4）");
+  // 2026-09-11 登录转圈修复（A）：本地档不再等待云端，放行时即结算一次；
+  // 冲突由后台对账在结算之后发现，因此该计数由 0 变为 1（不再有「冲突未决前不结算」）。
+  ok(ctx.__settleCalls === 1, "本地优先放行时结算一次（后台冲突在结算之后才发现）");
   const resolved = await SaveManager.resolveCloudConflict("local");
   ok(resolved === true, "resolveCloudConflict('local') 返回 true");
   ok(SaveManager.getBootState() === "ready", "选择本地后 state=ready");
   ok(SaveManager.isBootBlocked() === false, "ready 不再阻塞");
   ok(SaveManager._pendingCloudEnvelope === null, "_pendingCloudEnvelope 已清空");
-  ok(ctx.__settleCalls === 1, "选择本地后离线结算恰好一次（P0-4）");
+  ok(ctx.__settleCalls === 1, "保留本地不重复结算（P0-4：结算仍恰好一次）");
   const bootResult = await bootP;
-  ok(bootResult === true, "被挂起的 bootstrap promise 随 resolver 放行 → true");
+  ok(bootResult === true, "bootstrap promise 直接放行 → true（不再挂起等待冲突选择）");
   const seq = dedupeConsecutive(log());
-  ok(JSON.stringify(seq) === JSON.stringify(["loading", "awaiting-choice", "ready"]),
-     "boot:state 序列 = loading→awaiting-choice→ready [" + JSON.stringify(seq) + "]");
+  ok(JSON.stringify(seq) === JSON.stringify(["loading", "ready", "awaiting-choice", "ready"]),
+     "boot:state 序列 = loading→ready→awaiting-choice→ready [" + JSON.stringify(seq) + "]");
 }
 
 // ===================== 场景 5：冲突 → resolveCloudConflict("cloud") 实际落地 =====================
-console.log("\n[场景5] 云端冲突 awaiting-choice → resolveCloudConflict(cloud) → 应用云存档");
+console.log("\n[场景5] 后台冲突 → resolveCloudConflict(cloud) → 写盘 + reload 收敛");
 {
   const { ctx, SaveManager, log } = buildContext({ cloud: true, forceConflict: true, seedLocal: true, failLocal: false });
+  const loc = { reloaded: false, reload() { this.reloaded = true; } };
+  // vm 沙盒拥有自己的全局对象：必须挂在 ctx 上，vm 内的裸 `location` 才可解析。
+  ctx.location = loc;
+  try {
+    SaveManager.bootstrap();
+    await tick();
+    ok(SaveManager.getBootState() === "awaiting-choice", "到达 awaiting-choice");
+    ok(ctx.__settleCalls === 1, "本地优先放行时已结算一次（后台冲突在结算之后才发现）");
+    const resolved = await SaveManager.resolveCloudConflict("cloud");
+    ok(resolved === true, "resolveCloudConflict('cloud') 返回 true");
+    // 2026-09-11 行为变更：此刻游戏已在运行（tick/UI/定时器都持有 gameState），不能原地替换，
+    // 改为「把云档 payload 写入本地主键 + reload」——重载后 localChecksum === cloudChecksum，
+    // 走 identical 分支干净收敛，故此后不再有最终的 ready（收敛点在 reload 之后）。
+    ok(loc.reloaded === true, "已触发 location.reload() 以干净切换到云档");
+    const written = ctx.localStorage.getItem("eve_idle_save");
+    ok(written === JSON.stringify({ skills: {} }),
+       "写入本地的确为云端 payload（而非运行中的 gameState）");
+    ok(SaveManager._cloudSave.__uploadCalls === 0, "P1-1：冲突选云端不向云端回传（__uploadCalls=0）");
+    ok(SaveManager._pendingCloudEnvelope === null, "_pendingCloudEnvelope 已清空");
+    ok(ctx.__settleCalls === 1, "不重复结算（P0-4：结算仍恰好一次）");
+    const seq = dedupeConsecutive(log());
+    ok(seq.indexOf("awaiting-choice") !== -1,
+       "序列含后台对账触发的 awaiting-choice [" + JSON.stringify(seq) + "]");
+  } finally {
+    delete ctx.location;
+  }
+}
+
+// ===================== 场景 5b：本地优先 —— 有本地档时不等待云端（登录转圈修复 A） =====================
+console.log("\n[场景5b] 有本地档 + 云端挂起 → 立即 ready，不等云端（登录转圈修复 A）");
+{
+  const { ctx, SaveManager } = buildContext({ cloud: true, cloudHang: true, seedLocal: true, failLocal: false });
+  const t0 = Date.now();
+  const bootP = SaveManager.bootstrap();
+  await tick();
+  const elapsed = Date.now() - t0;
+  // 修复前：这里会一直停在 loading，直到云端 15s 硬超时才放行 —— 正是玩家反馈的
+  // 「登录的时候明显比以前慢」「现在确实会转一会圈才能登陆」。
+  ok(SaveManager.getBootState() === "ready", "云端挂起时仍立即 ready（不再等待云端查询）");
+  ok(SaveManager.isBootBlocked() === false, "ready 不阻塞（tick / 离线结算 / 自动存档可运行）");
+  ok(ctx.__settleCalls === 1, "放行时完成离线结算恰好一次");
+  ok(SaveManager._backgroundReconcileStarted === true, "云端查询已转入后台对账");
+  const bootResult = await bootP;
+  ok(bootResult === true, "bootstrap promise 立即解析（不被云端挂起拖住）");
+  ok(elapsed < 1000, "端到端启动耗时 < 1s（实际 " + elapsed + "ms，云端挂起无影响）");
+}
+
+// ===================== 场景 5c：无本地档 —— 关键路径 3s 硬超时（登录转圈修复 B） =====================
+console.log("\n[场景5c] 无本地档 + 云端挂起 → 3s 硬超时转 awaiting-cloud（登录转圈修复 B）");
+{
+  const { ctx, SaveManager } = buildContext({ cloud: true, cloudHang: true, seedLocal: false, failLocal: false });
+  // 本场景需要 vm 内真实定时器（fetchCloudEnvelope 的 timeoutRace 依赖它）；
+  // 其余场景保持 noop 桩，避免 top-level 定时器干扰断言。unref 防止测试进程被吊住。
+  ctx.setTimeout = function (fn, ms) {
+    const t = setTimeout(fn, ms);
+    try { if (t && typeof t.unref === "function") t.unref(); } catch (e) {}
+    return t;
+  };
+  const t0 = Date.now();
+  SaveManager.bootstrap();
+  await new Promise((r) => setTimeout(r, 3600));
+  const elapsed = Date.now() - t0;
+  ok(SaveManager.getBootState() === "awaiting-cloud", "超时后进入 awaiting-cloud 等待态");
+  ok(elapsed >= 2800 && elapsed < 6000,
+     "耗时 ≈ CLOUD_BOOT_FETCH_TIMEOUT_MS = 3000ms（实际 " + elapsed + "ms；修复前为 15000ms）");
+}
+
+// ===================== 场景 5d：后台对账 use-local → 静默标记上传（不打扰玩家） =====================
+console.log("\n[场景5d] 后台对账：云端无档 → use-local → 标记待上传（不打扰玩家）");
+{
+  const { ctx, SaveManager } = buildContext({ cloud: true, cloudNone: true, seedLocal: true, failLocal: false });
   SaveManager.bootstrap();
   await tick();
-  ok(SaveManager.getBootState() === "awaiting-choice", "到达 awaiting-choice");
-  ok(ctx.__settleCalls === 0, "冲突未决前不发生离线结算（P0-4）");
-  const resolved = await SaveManager.resolveCloudConflict("cloud");
-  ok(resolved === true, "resolveCloudConflict('cloud') 返回 true");
-  ok(SaveManager.getBootState() === "ready", "应用云存档后 state=ready");
-  // P1-1：使用云端存档 → 写本地 + 同步校验和 + 【不】上传。
-  const written = ctx.localStorage.getItem("eve_idle_save");
-  ok(!!written, "云存档经 _persistSelectedPayload 已写入本地存档键 eve_idle_save");
-  ok(SaveManager._cloudSave.__uploadCalls === 0, "P1-1：冲突选云端不向云端回传（__uploadCalls=0）");
-  ok(SaveManager._pendingCloudEnvelope === null, "_pendingCloudEnvelope 已清空");
-  ok(ctx.__settleCalls === 1, "应用云存档后离线结算恰好一次（P0-4）");
-  const seq = dedupeConsecutive(log());
-  ok(seq.indexOf("awaiting-choice") !== -1 && seq[seq.length - 1] === "ready",
-     "序列含 awaiting-choice 且最终 ready [" + JSON.stringify(seq) + "]");
+  ok(SaveManager.getBootState() === "ready", "立即 ready（本地优先，未等云端）");
+  ok(SaveManager._cloudSave.__markDirtyCalls >= 1, "后台对账判定 use-local → 触发 markDirty（交给既有 30s 自动同步上传）");
+  ok(SaveManager._pendingCloudEnvelope === null, "未进入冲突流程（零打扰）");
+  ok(SaveManager.getBootState() === "ready", "对账不改变已放行状态");
 }
 
 // ===================== 场景 6：isBootBlocked() 纯函数闸门（P0-2 修正） =====================

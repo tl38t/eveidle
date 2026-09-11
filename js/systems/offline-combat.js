@@ -149,7 +149,9 @@
     // 避免 getAdBuffMultiplier 默认取 Date.now() 导致过去/未来时段判断错误。
     const adBuffRef = (nowRef && typeof nowRef.t === "number") ? nowRef.t : undefined;
     const adBuffMult = (typeof G("getAdBuffMultiplier") === "function") ? G("getAdBuffMultiplier")(state, adBuffRef) : 1;
-    // 泰坦离线接线（阶段 3 步骤 5）：type "titan" 时主武器/核心走泰坦管线（常规装备槽为空）。
+    // 泰坦离线接线（阶段 3 步骤 5）：type "titan" 时主武器/核心走泰坦管线。
+    // D2=A（2026-09-11 用户拍板）后 tt_high 释放的高槽可挂常规副武器，inputs.weapons 不再恒为空，
+    // 主武器与副武器分账结算（见 simulateWave 内 convFire / titanMainFire 双 gate）。
     // 公式真值全部来自 titans.js / capital-combat.js 纯函数，此处只做期望值接线：
     //   暴击 → rollTitanCritMultiplier(crit, null) 期望乘数 1 + chance×(multiplier−1)；
     //   破片回响 → 期望 chance×damage 预缩放后经 resolver 解析目标（不经概率掷骰）。
@@ -195,8 +197,9 @@
         }
       }
     }
-    // 泰坦主武器弹药（阶段 3 步骤 5）：泰坦无常规装备武器，getInstalledCombatWeapons 为空，
-    // 弹药池必须补种主武器同池类型（laser/missile/cannon），否则泰坦恒判 0 弹药静默停火。
+    // 泰坦主武器弹药（阶段 3 步骤 5）：主武器为舰体自带、不在 fitting 表内，
+    // getInstalledCombatWeapons 不会包含它，弹药池必须补种主武器同池类型（laser/missile/cannon），
+    // 否则泰坦恒判 0 弹药静默停火。（D2=A 后高槽副武器走常规 weapons 通道，已由上一步播种。）
     const _titanShip = G("getActiveShip")(state);
     if (_titanShip && typeof G("isTitanCombatShip") === "function" && G("isTitanCombatShip")(_titanShip)
         && _titanShip.weapon && (_titanShip.weapon.ammoCost || 0) > 0) {
@@ -416,51 +419,61 @@
         return { outcome: "defeated", rounds, kills };
       }
       const dcReduction = computeDcReduction(state, zone, s);
-      const fire = inputs.isTitan ? canFireTitanVirtual(state, inputs, zone, s) : canFireVirtual(inputs, zone, s, state);
+      // D2=A（2026-09-11 用户拍板）：泰坦主武器（舰体自带）与 tt_high 释放高槽的常规副武器分账结算——
+      // 两条 gate 独立求值（副武器 gate 先算，主武器最后落定 s.ammoTier），任一开火即视为本轮开火；
+      // 副武器缺油缺弹只哑火自己，不影响主武器。常规舰下 convFire === 原单 gate，行为等价。
+      const convFire = canFireVirtual(inputs, zone, s, state);
+      const titanMainFire = inputs.isTitan ? canFireTitanVirtual(state, inputs, zone, s) : false;
+      const fire = inputs.isTitan ? (titanMainFire || convFire) : convFire;
       if (fire) {
         let roundDealt = 0;
-        if (inputs.isTitan) {
-          // 泰坦管线：无常规装备武器，主武器单发 + 四类附带打击（期望值口径）
+        if (inputs.isTitan && titanMainFire) {
+          // 泰坦管线：主武器单发 + 四类附带打击（期望值口径）
           roundDealt = fireTitanVolleyVirtual(state, inputs, current, enemies, zone, s, rounds + 1, expectedRng);
         }
-        for (const m of inputs.weapons) {
-          const cb = m.equipment.combat;
-          const weapon = WEAPON_CONFIG[cb.weaponType];
-          if (!weapon) continue;
-          if (!current) break;
-          const ammoProps = getAmmoTierProps(s.ammoTier[cb.weaponType] || "T1");
-          const playerHit = G("calcPlayerHit")(cb.weaponType, m.equipment, state) * ammoProps.hitMult;
-          const dmgMult = G("calcPlayerDmgMult")(cb.weaponType, state);
-          let counterMult = 1.0;
-          if (weapon.counterType === "shield" && current.hp.shield > 0) counterMult = 1.25;
-          else if (weapon.counterType === "armor" && current.hp.shield <= 0 && current.hp.armor > 0) counterMult = 1.25;
-          else if (weapon.counterType === "structure" && current.hp.shield <= 0 && current.hp.armor <= 0 && current.hp.structure > 0) counterMult = 1.25;
-          const traitMult = G("getCapitalWeaponTraitMultiplier")(inputs.ship, cb.weaponType, c.hp, c.maxHp);
-          const wbm = (inputs.boosterDmg && inputs.boosterDmg[cb.weaponType]) ? inputs.boosterDmg[cb.weaponType] : 1;
-          let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, expectedRng);
-          // 脑突触加速剂独立乘区（与在线 combat.js 同步）
-          const adbm = inputs.adBuffMult || 1;
-          if (adbm && adbm !== 1) dmg = Math.round(dmg * adbm);
-          const dealt = G("applyLayeredCombatDamage")(current.hp, dmg);
-          const total = dealt.shield + dealt.armor + dealt.structure;
-          roundDealt += total;
-          // AOE
-          const targets = G("getCapitalAreaDamageTargets")(enemies, current, weapon.aoe);
-          for (const t of targets) {
-            const ad = Math.max(1, Math.round(dmg * t.multiplier));
-            const ad2 = G("applyLayeredCombatDamage")(t.enemy.hp, ad);
-            roundDealt += ad2.shield + ad2.armor + ad2.structure;
+        if (convFire) {
+          for (const m of inputs.weapons) {
+            const cb = m.equipment.combat;
+            const weapon = WEAPON_CONFIG[cb.weaponType];
+            if (!weapon) continue;
+            if (!current) break;
+            const ammoProps = getAmmoTierProps(s.ammoTier[cb.weaponType] || "T1");
+            const playerHit = G("calcPlayerHit")(cb.weaponType, m.equipment, state) * ammoProps.hitMult;
+            const dmgMult = G("calcPlayerDmgMult")(cb.weaponType, state);
+            let counterMult = 1.0;
+            if (weapon.counterType === "shield" && current.hp.shield > 0) counterMult = 1.25;
+            else if (weapon.counterType === "armor" && current.hp.shield <= 0 && current.hp.armor > 0) counterMult = 1.25;
+            else if (weapon.counterType === "structure" && current.hp.shield <= 0 && current.hp.armor <= 0 && current.hp.structure > 0) counterMult = 1.25;
+            const traitMult = G("getCapitalWeaponTraitMultiplier")(inputs.ship, cb.weaponType, c.hp, c.maxHp);
+            const wbm = (inputs.boosterDmg && inputs.boosterDmg[cb.weaponType]) ? inputs.boosterDmg[cb.weaponType] : 1;
+            let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, expectedRng);
+            // 脑突触加速剂独立乘区（与在线 combat.js 同步）
+            const adbm = inputs.adBuffMult || 1;
+            if (adbm && adbm !== 1) dmg = Math.round(dmg * adbm);
+            const dealt = G("applyLayeredCombatDamage")(current.hp, dmg);
+            const total = dealt.shield + dealt.armor + dealt.structure;
+            roundDealt += total;
+            // AOE
+            const targets = G("getCapitalAreaDamageTargets")(enemies, current, weapon.aoe);
+            for (const t of targets) {
+              const ad = Math.max(1, Math.round(dmg * t.multiplier));
+              const ad2 = G("applyLayeredCombatDamage")(t.enemy.hp, ad);
+              roundDealt += ad2.shield + ad2.armor + ad2.structure;
+            }
+            // 武器技能 XP
+            const wskill = state.skills[weapon.skillKey];
+            if (wskill) grantXp(state, weapon.skillKey, 2);
+            grantXp(state, "targeting", 1);
           }
-          // 武器技能 XP
-          const wskill = state.skills[weapon.skillKey];
-          if (wskill) grantXp(state, weapon.skillKey, 2);
-          grantXp(state, "targeting", 1);
         }
         s.totalDamageDealt += roundDealt;
         if (roundDealt > s.maxSingleHit) s.maxSingleHit = roundDealt;
-        // 泰坦燃料/弹药已在 fireTitanVolleyVirtual 内走虚拟池扣减（computeVolleyFuel 对泰坦返回 0，此处守卫跳过）
-        const volleyFuel = inputs.isTitan ? 0 : consumeVolleyVirtual(inputs, zone, s);
-        grantXp(state, "capacitorManagement", volleyFuel * 0.3);
+        // 副武器（或常规舰全部武器）燃料/弹药走虚拟池扣减；
+        // 泰坦主武器的燃料/弹药已在 fireTitanVolleyVirtual 内自行扣减，不在此重复。
+        if (convFire) {
+          const volleyFuel = consumeVolleyVirtual(inputs, zone, s);
+          grantXp(state, "capacitorManagement", volleyFuel * 0.3);
+        }
       }
       // M6 Phase 2：离线也按攻击者顺序换目标。
       // 玩家是一名攻击者（整轮齐射），随后每名 NPC 各自开火；只有当前目标被击杀才推进。
@@ -934,7 +947,9 @@
       if (budgetMs <= 0) { s.stopReason = "time"; return; }
       const inputs = readInputs(state, nowRef);
       ensureVirtualAmmoFuel(state, s);
-      const canContinue = inputs.isTitan ? canFireTitanVirtual(state, inputs, zone, s) : canFireVirtual(inputs, zone, s, state);
+      // D2=A：与 simulateWave 内每轮 gate 同口径——主武器或常规副武器任一可开火即可继续。
+      const _convOk = canFireVirtual(inputs, zone, s, state);
+      const canContinue = inputs.isTitan ? (canFireTitanVirtual(state, inputs, zone, s) || _convOk) : _convOk;
       if (!canContinue) { s.stopReason = (s.blockedBy === "ammo") ? "ammo" : "resources"; return; }
     }
     if (!c.active) s.stopReason = s.stopReason || "resolved";
@@ -959,7 +974,7 @@
         if (c.deathspaceChainRemaining <= 0) { c.deathspaceChainPending = false; break; }
         // 校验（等级/武器/维修/密钥）
         if (G("getCombatLevelFromState")(state) < site.requiredCL) { c.deathspaceChainPending = false; c.deathspaceChainRemaining = 0; s.stopReason = "level-locked"; break; }
-        // 泰坦无常规装备武器：以「泰坦主武器存在」等价放行（与常规舰武器校验同语义）
+        // 泰坦主武器为舰体自带（不在 fitting 表内）：以「泰坦主武器存在」等价放行（与常规舰武器校验同语义）
         const _chainShip = G("getActiveShip")(state);
         const _chainTitanOk = _chainShip && typeof G("isTitanCombatShip") === "function" && G("isTitanCombatShip")(_chainShip) && Boolean(_chainShip.weapon);
         if (!_chainTitanOk && G("getInstalledCombatWeapons")(state).length === 0) { c.deathspaceChainPending = false; c.deathspaceChainRemaining = 0; s.stopReason = "no-weapons"; break; }

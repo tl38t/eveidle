@@ -242,6 +242,7 @@
       MOD.renderLegionHall(now);
       MOD.renderLegionCandidates(rs);
     }
+    MOD.renderLegionNpcTabs(snap);
     MOD.renderLegionNpcs(snap);
     MOD.renderLegionSummary(now, snap, rs);
     MOD.renderLegionContribution(snap);
@@ -500,12 +501,19 @@
     try {
       var fx = (LEGION_NPC.getLegionNpcSkillEffects) ? LEGION_NPC.getLegionNpcSkillEffects(st) : null;
       var fxEntry = (fx && fx.contributions) ? fx.contributions.filter(function (c) { return c.npcId === npc.npcId; })[0] : null;
+      // skillCounts 只统计「在岗同类」NPC（getLegionContributionSnapshot 已用 isNpcWorking 过滤）。
+      // 用真实人数澄清文案，避免玩家误以为待命/欠薪的团员也推进了递减档。
+      var npcCat = (function () { var s = (LEGION_NPC.getSkillById) ? LEGION_NPC.getSkillById(npc.skillId) : null; return (s && s.category) || "production"; })();
+      var snapForCount = (LEGION_NPC.getLegionContributionSnapshot) ? LEGION_NPC.getLegionContributionSnapshot(st) : null;
+      var workingSameCat = (snapForCount && snapForCount.skillCounts && snapForCount.skillCounts[npcCat]) || 0;
+      var catLabel = skillCategoryName(npcCat);
       if (fxEntry && !fxEntry.counted) {
-        contribLine = ' +' + fmtContribNum(skillRaw) + '（当前未生效 —— 待命或欠薪）';
+        contribLine = ' +' + fmtContribNum(skillRaw) +
+          '（当前未生效 —— 待命或欠薪；' + catLabel + '在岗同类共 ' + workingSameCat + ' 名，不影响他人递减）';
       } else if (fxEntry && fxEntry.factor < 1) {
         var fxRank = 5 + Math.round((1 / fxEntry.factor - 1) / 0.25);
         contribLine = ' +' + fmtContribNum(fxEntry.effective) +
-          '（原始 +' + fmtContribNum(skillRaw) + ' · 同类第 ' + fxRank + ' 位 · 递减 ×' + fmtContribNum(fxEntry.factor) + '）';
+          '（原始 +' + fmtContribNum(skillRaw) + ' · 同类第 ' + fxRank + ' 位 / 共 ' + workingSameCat + ' 名 · 递减 ×' + fmtContribNum(fxEntry.factor) + '）';
       }
     } catch (eFx) { /* 快照不可用时回退显示原始值 */ }
     var note = npcXpNoteHtml(st, npc);
@@ -598,12 +606,22 @@
     npcs.forEach(function (n) { if (n.boundShipInstanceId) boundOthers[n.boundShipInstanceId] = n.npcId; });
     var ships = (st.inventory && Array.isArray(st.inventory.ships)) ? st.inventory.ships : [];
 
-    // 排序：在岗在前、集结待命的置底（同组内保持原顺序）
+    // 排序：先按技能大类（生产/战斗/考古/管理）归类，类内「在岗在前、集结待命置底」。
+    // 二级标签栏只控制显隐（MOD.applyNpcTabFilter），不改变这里的重排顺序。
+    var CAT_ORDER = ["production", "combat", "archaeology", "management"];
+    function catOf(n) {
+      var sk = (LEGION_NPC.getSkillById) ? LEGION_NPC.getSkillById(n.skillId) : null;
+      return (sk && sk.category) || "production";
+    }
     var ordered = npcs.slice().sort(function (a, b) {
+      var ca = CAT_ORDER.indexOf(catOf(a)), cb = CAT_ORDER.indexOf(catOf(b));
+      if (ca !== cb) return ca - cb;
       return (a.mustered ? 1 : 0) - (b.mustered ? 1 : 0);
     });
 
-    el.innerHTML = ordered.map(function (n) {
+    // 单张团员卡 HTML（结构恒定，建立时算一次；实时经验文本由 updateLegionNpcLive 改写）。
+    function npcCardHtml(st, n) {
+      var ships = (st.inventory && Array.isArray(st.inventory.ships)) ? st.inventory.ships : [];
       var grade = n.skillGrade || "D";
       var xpMult = LEGION_NPC.getNpcXpMultiplier(st, n);
       var ss = salaryStatus(n);
@@ -640,7 +658,7 @@
       // 经验倍率（结构恒定，建立时算一次，存 dataset 供每秒轻量改写 ETA 用）
       var rate = LEGION_NPC.calculateLegionNpcXpPerSecond ? LEGION_NPC.calculateLegionNpcXpPerSecond(st, n) : 0;
 
-      return '<div class="legion-card lc-detail-open" data-legion-npc-detail="' + n.npcId + '" data-npc-id="' + n.npcId + '" ' +
+      return '<div class="legion-card lc-detail-open" data-legion-npc-detail="' + n.npcId + '" data-npc-id="' + n.npcId + '" data-cat="' + catOf(n) + '" ' +
         'data-rate="' + rate + '" data-need="' + need + '" data-cap="' + cap + '" ' +
         'style="cursor:pointer;" title="点击查看详情">' +
         '<span class="lc-detail-hint" data-legion-npc-detail="' + n.npcId + '" title="点击查看详情">详情</span>' +
@@ -656,9 +674,83 @@
           '<button class="btn-mini" data-legion-dismiss="' + n.npcId + '">解雇</button>' +
         '</div>' +
         '</div>';
-    }).join("");
+    }
 
+    // 平铺渲染：按技能大类排序、类内「在岗在前」，不再用组头；
+    // 分类切换交由二级标签栏（MOD.applyNpcTabFilter）控制显隐。
+    // 结构签名守卫只认 NPC 状态多集合，这里的重排不影响 MOD.updateLegionNpcLive 按 [data-npc-id] 查卡。
+    el.innerHTML = ordered.map(function (n) { return npcCardHtml(st, n); }).join("");
+
+    MOD.applyNpcTabFilter();
     MOD.updateLegionNpcLive();
+  };
+
+  // ================================================================
+  // 二级分类标签页（全部 / 生产 / 战斗 / 考古 / 管理）
+  // 2026-09-11 由「分组组头」改为标签栏：点击标签只显示该分类团员，默认「全部」平铺。
+  // 显隐由 applyNpcTabFilter 控制（对卡片设 style.display），不重建 DOM，
+  // 因此不影响 updateLegionNpcLive 的 [data-npc-id] 查卡与每秒轻量改写。
+  // ================================================================
+  var _legionNpcTab = "all";        // 当前激活标签：all / production / combat / archaeology / management
+  var _legionNpcTabSig = "";
+  var _legionNpcTabBarBound = false;
+  MOD.renderLegionNpcTabs = function (snap) {
+    var bar = document.getElementById("legion-npc-tabs");
+    if (!bar) return;
+    // 一次性绑定委托点击（按钮会被频繁重建，监听挂父容器上避免重复绑定）。
+    if (!_legionNpcTabBarBound) {
+      _legionNpcTabBarBound = true;
+      bar.addEventListener("click", function (ev) {
+        var btn = ev.target.closest ? ev.target.closest("[data-legion-npc-tab]") : null;
+        if (!btn) return;
+        var cat = btn.getAttribute("data-legion-npc-tab");
+        if (cat === _legionNpcTab) return;
+        _legionNpcTab = cat;
+        MOD.applyNpcTabFilter();
+        MOD.refreshNpcTabActive();
+      });
+    }
+    var npcs = (getState() && getState().legion && getState().legion.npcs) || [];
+    var counts = { all: npcs.length, production: 0, combat: 0, archaeology: 0, management: 0 };
+    npcs.forEach(function (n) {
+      var sk = (LEGION_NPC.getSkillById) ? LEGION_NPC.getSkillById(n.skillId) : null;
+      var cat = (sk && sk.category) || "production";
+      if (counts[cat] != null) counts[cat]++;
+    });
+    var tabs = [
+      { key: "all", label: "全部" },
+      { key: "production", label: skillCategoryName("production") },
+      { key: "combat", label: skillCategoryName("combat") },
+      { key: "archaeology", label: skillCategoryName("archaeology") },
+      { key: "management", label: skillCategoryName("management") }
+    ];
+    var sig = _legionNpcTab + "|" + counts.all + "|" + counts.production + "|" + counts.combat + "|" + counts.archaeology + "|" + counts.management;
+    if (sig === _legionNpcTabSig && bar.innerHTML) return; // 标签与计数未变，跳过重建（保持 hover/点击态稳定）
+    _legionNpcTabSig = sig;
+    bar.innerHTML = tabs.map(function (t) {
+      var sel = (_legionNpcTab === t.key) ? " selected" : "";
+      return '<button type="button" class="legion-npc-tab' + sel + '" data-legion-npc-tab="' + t.key + '">' +
+        t.label + ' <span class="legion-npc-tab-count">' + counts[t.key] + '</span></button>';
+    }).join("");
+  };
+  MOD.refreshNpcTabActive = function () {
+    var bar = document.getElementById("legion-npc-tabs");
+    if (!bar) return;
+    var btns = bar.querySelectorAll("[data-legion-npc-tab]");
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle("selected", btns[i].getAttribute("data-legion-npc-tab") === _legionNpcTab);
+    }
+  };
+  MOD.applyNpcTabFilter = function () {
+    var el = document.getElementById("legion-npcs");
+    if (!el) return;
+    var cat = _legionNpcTab;
+    var cards = el.querySelectorAll(".legion-card[data-npc-id]");
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      var show = (cat === "all") || (card.getAttribute("data-cat") === cat);
+      card.style.display = show ? "" : "none";
+    }
   };
 
   // 每秒轻量改写：仅更新 XP 计数与「经验获取中」行的文本节点。

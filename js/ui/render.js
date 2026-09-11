@@ -153,7 +153,7 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
     strip.innerHTML = display.options.map(recipe => `<button class="mining-target-card${recipe.selected ? " selected" : ""}${recipe.locked ? " locked" : ""}" data-area="${recipe.name}" style="--ore-color:#e8b04a" ${recipe.locked ? "disabled" : ""}>
       <span class="mining-target-name">${getResourceDisplayName(recipe.outputMineral)}</span><span class="mining-target-visual"><i class="fa-solid fa-fire"></i></span>
       <span class="mining-target-meta">Lv.${recipe.level} · ${recipe.baseTime}s · ${recipe.baseXP} XP</span>
-      <span class="mining-target-sub">${(recipe.inputs && !recipe.consumeOre) ? Object.keys(recipe.inputs).map(n => getResourceDisplayName(n) + "×" + recipe.inputs[n]).join(" + ") : getResourceDisplayName(recipe.consumeOre)} → ${getResourceDisplayName(recipe.outputMineral)}</span>
+      <span class="mining-target-sub">${(recipe.inputs && !recipe.consumeOre) ? Object.keys(recipe.inputs).map(n => getResourceDisplayName(n) + "×" + recipe.inputs[n]).join(" + ") : getResourceDisplayName(recipe.consumeOre) + "×1"}</span>
       <span class="mining-target-state">${recipe.locked ? `需要 Lv.${recipe.level}` : recipe.selected ? "已选择" : "可冶炼"}</span></button>`).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchSmeltingRecipe(card.dataset.area)));
   }
@@ -201,12 +201,17 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
     pumpState.style.flexDirection = "column";
     pumpState.style.alignItems = "flex-start";
     pumpState.style.gap = "3px";
+    // 手机端防溢出（2026-09-11 用户反馈）：状态文本远长于面板宽度，
+    // 作为 flex item 必须允许收缩（min-width:0），否则 min-content 撑破容器把开关按钮顶出屏幕。
+    pumpState.style.minWidth = "0";
     stateParts.forEach(part => {
       const line = document.createElement("span");
       const color = !part.enabled ? "#8a9bb0" : (part.dark ? "#c9a0ff" : (part.active ? "#a7f3d0" : "#f0b4a0"));
-      line.style.cssText = "display:flex;align-items:center;gap:6px;color:" + color + ";white-space:nowrap;";
+      // 不再用 white-space:nowrap（手机端会撑出面板）；改为 flex-wrap 允许按钮换行，文本自身可折行。
+      line.style.cssText = "display:flex;align-items:center;gap:6px;flex-wrap:wrap;color:" + color + ";";
       const text = document.createElement("span");
       text.textContent = part.text;
+      text.style.minWidth = "0";
       line.appendChild(text);
       const button = part.dark ? darkPumpToggle : pumpToggle;
       if (button) {

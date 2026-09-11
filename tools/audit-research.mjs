@@ -116,13 +116,13 @@ async function runData() {
   // =========================================================================
   // 1. 数据保真
   // =========================================================================
-  ok(ResearchData.NODES.length === 61, `移植 NODES 数量应为 61（40 主研究 + 6 军团 + 15 深空开拓），实际 ${ResearchData.NODES.length}`);
-  ok(frozen.NODES.length === 61, `冻结源 NODES 数量应为 61（40 主研究 + 6 军团 + 15 深空开拓），实际 ${frozen.NODES.length}`);
+  ok(ResearchData.NODES.length === 71, `移植 NODES 数量应为 71（40 主研究 + 6 军团 + 25 深空开拓），实际 ${ResearchData.NODES.length}`);
+  ok(frozen.NODES.length === 71, `冻结源 NODES 数量应为 71（40 主研究 + 6 军团 + 25 深空开拓），实际 ${frozen.NODES.length}`);
   ok(deepEq(ResearchData.WEIGHTS, frozen.WEIGHTS), "WEIGHTS 必须与冻结源逐字段一致");
   ok(deepEq(ResearchData.RANK_MULT, frozen.RANK_MULT), "RANK_MULT 必须与冻结源逐字段一致");
   ok(ResearchData.TARGET_SECONDS === frozen.TARGET_SECONDS, "TARGET_SECONDS 必须与冻结源一致");
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "UNIT 必须与冻结源一致");
-  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 237, `STEP_COUNT 应为 237（160 主研究 + 18 军团 + 59 深空开拓），实际 ${ResearchData.STEP_COUNT}`);
+  ok(ResearchData.STEP_COUNT === frozen.STEP_COUNT && ResearchData.STEP_COUNT === 262, `STEP_COUNT 应为 262（160 主研究 + 18 军团 + 84 深空开拓），实际 ${ResearchData.STEP_COUNT}`);
 
   const frozenById = new Map();
   for (const n of frozen.NODES) frozenById.set(n.id, n);
@@ -168,8 +168,8 @@ async function runData() {
   }
   const mappedGroups = new Set(Object.keys(ResearchData.RESEARCH_BONUS_CONSUMERS));
 
-  ok(dataGroups.size === 46, `数据侧唯一 group 应为 46（32 + 3 军团组 + 11 深空开拓组），实际 ${dataGroups.size}`);
-  ok(mappedGroups.size === 46, `映射注册表 group 应为 46（32 + 3 军团组 + 11 深空开拓组），实际 ${mappedGroups.size}`);
+  ok(dataGroups.size === 53, `数据侧唯一 group 应为 53（32 + 3 军团组 + 11 深空开拓组 + 7 泰坦组），实际 ${dataGroups.size}`);
+  ok(mappedGroups.size === 53, `映射注册表 group 应为 53（32 + 3 军团组 + 11 深空开拓组 + 7 泰坦组），实际 ${mappedGroups.size}`);
   ok(setEqual(dataGroups, mappedGroups), "数据 group 与映射 group 必须双向相等（无漏/无多/无拼写漂移）");
   ok(setEqual(dataGroups, frozenGroups), "数据 group 须与冻结源 group 集合一致");
   ok(setEqual(mappedGroups, frozenGroups), "映射 group 须与冻结源 group 集合一致");
@@ -218,6 +218,7 @@ async function runData() {
     "selectors.getCombatDamageMultiplierFromState",
     "selectors.getCombatMaxHpFromState",
     "selectors.getCombatRepairMultiplierFromState",
+    "selectors.getCombatFuelMultiplierFromState",
     "selectors.getReclaimRate",
     "LEGION_NPC.getLegionNpcCapacity",
     "LEGION_NPC.getLegionNpcLevelCap",
@@ -233,6 +234,8 @@ async function runData() {
     "WORMHOLE.getWormholeSupplyMultiplier",
     "WORMHOLE.getWormholeTokenMultiplier",
     "WORMHOLE.getWormholeYieldMultiplier",
+    // 泰坦线（category "titan"）真实消费入口：槽位释放唯一入口（titans.js，窗口全局）
+    "TITAN_RESEARCH.refreshTitanSlotResearch",
   ]);
   const KIND_SET = new Set(["multiplier", "additivePp", "reduceFraction"]);
 
@@ -330,17 +333,17 @@ async function runData() {
   // =========================================================================
   const legionNodes = ResearchData.NODES.filter((n) => n.contentPack === "legion");
   ok(legionNodes.length === 6, `军团分支节点必须为 6（4 数值/基础 + 2 协议），实际 ${legionNodes.length}`);
-  ok(ResearchData.NODES.length === 40 + 6 + 15, `全量节点须为 40 主研究 + 6 军团 + 15 深空开拓 = 61，实际 ${ResearchData.NODES.length}`);
+  ok(ResearchData.NODES.length === 40 + 6 + 25, `全量节点须为 40 主研究 + 6 军团 + 25 深空开拓 = 71，实际 ${ResearchData.NODES.length}`);
 
   // 主研究 = 无 contentPack（军团 / 深空开拓均带 contentPack）
   const mainNodes = ResearchData.NODES.filter((n) => !n.contentPack);
   ok(mainNodes.length === 40, `主研究节点须保持 40 不变，实际 ${mainNodes.length}`);
 
   // =========================================================================
-  // 2d-2. 深空开拓研究分支接入断言（星图 7 + 虫洞 8；泰坦线待战斗系统实装）
+  // 2d-2. 深空开拓研究分支接入断言（星图 7 + 虫洞 8 + 泰坦 10）
   // =========================================================================
   const frontierNodes = ResearchData.NODES.filter((n) => n.contentPack === "frontier");
-  ok(frontierNodes.length === 15, `深空开拓分支节点必须为 15（星图 7 + 虫洞 8），实际 ${frontierNodes.length}`);
+  ok(frontierNodes.length === 25, `深空开拓分支节点必须为 25（星图 7 + 虫洞 8 + 泰坦 10），实际 ${frontierNodes.length}`);
   const frontierById = {};
   for (const n of frontierNodes) frontierById[n.id] = n;
   // 门禁：两条子线共用入口 sm_root；虫洞线另需 sm_limit③ + sm_collect③（外加通关主线，见 ResearchSystem）
@@ -355,12 +358,21 @@ async function runData() {
   ok(!!smYield && smYield.prerequisites.some(p => p.id === "sm_limit" && p.level === 3) &&
      smYield.prerequisites.some(p => p.id === "sm_collect" && p.level === 3),
     "sm_yield 前置须为 sm_limit③ + sm_collect③");
-  // 数值节点 rank = 0.9（RANK_MULT.starmap / wormhole）
+  // 数值节点 rank：starmap/wormhole = RANK_MULT.{starmap,wormhole}(0.9)；
+  //   titan 线槽位节点为显式 1.5（规格 §3.3），其余数值节点 = RANK_MULT.titan(0.9)。
+  const titanSlotIds = new Set(["tt_high", "tt_mid", "tt_low", "tt_rig"]);
+  const expectFrontierRank = (n) => {
+    if (n.category === "starmap") return ResearchData.RANK_MULT.starmap;
+    if (n.category === "wormhole") return ResearchData.RANK_MULT.wormhole;
+    if (n.category === "titan") return titanSlotIds.has(n.id) ? 1.5 : ResearchData.RANK_MULT.titan;
+    return null;
+  };
   let frontierRankFails = 0;
   for (const n of frontierNodes) {
     if (n.type !== "numeric") continue;
-    const expectRank = n.category === "starmap" ? ResearchData.RANK_MULT.starmap : ResearchData.RANK_MULT.wormhole;
-    if (n.rank !== expectRank) { ok(false, `深空开拓数值节点 ${n.id} rank 须 = RANK_MULT.${n.category}（实际 ${n.rank}）`); frontierRankFails += 1; }
+    const expectRank = expectFrontierRank(n);
+    if (!(typeof expectRank === "number")) { ok(false, `深空开拓数值节点 ${n.id} category 未知: ${n.category}`); frontierRankFails += 1; continue; }
+    if (n.rank !== expectRank) { ok(false, `深空开拓数值节点 ${n.id} rank 须 = ${expectRank}（实际 ${n.rank}）`); frontierRankFails += 1; }
     for (let lv = 1; lv <= n.maxLevel; lv += 1) {
       const expect = ResearchData.UNIT * ResearchData.WEIGHTS[lv - 1] * expectRank;
       if (Math.abs(n.durationByLevel[lv - 1] - expect) > 1e-6) {
@@ -370,10 +382,11 @@ async function runData() {
     }
   }
   ok(frontierRankFails === 0, `深空开拓数值节点 rank/时长校验（失败 ${frontierRankFails} 处）`);
-  // 协议节点：驻留自动领取（sm_autoclaim）/ 自动巡航（wh_autopilot）已实装业务并入表；
-  // 连续试炼（sm_autotrial）需先设计星图试炼队列子系统，2026-09-09 拍板不入表。
+  // 协议节点：驻留自动领取（sm_autoclaim）/ 自动巡航（wh_autopilot）/ 泰坦材料精算（tt_matcost）/
+  //   先驱科技电容回充协议（tt_cap）均已实装业务并入表；
+  //   连续试炼（sm_autotrial）需先设计星图试炼队列子系统，2026-09-09 拍板不入表。
   const frontierProtocols = frontierNodes.filter((n) => n.type === "protocol");
-  ok(frontierProtocols.length === 2, `深空开拓协议节点须为 2（sm_autoclaim + wh_autopilot），实际 ${frontierProtocols.length}`);
+  ok(frontierProtocols.length === 4, `深空开拓协议节点须为 4（sm_autoclaim + wh_autopilot + tt_matcost + tt_cap），实际 ${frontierProtocols.length}`);
   ok(!frontierById.sm_autotrial, "sm_autotrial（连续试炼）按拍板不得入表");
   const autoClaim = frontierById.sm_autoclaim;
   ok(!!autoClaim && autoClaim.maxLevel === 1 && autoClaim.rank === ResearchData.RANK_MULT.protocol && autoClaim.bonus === null,
@@ -386,11 +399,61 @@ async function runData() {
   ok(!!autoPilot && autoPilot.prerequisites.some(p => p.id === "wh_time" && p.level === 3) &&
      autoPilot.prerequisites.some(p => p.id === "wh_token" && p.level === 3),
     "wh_autopilot 前置须含 wh_time③ + wh_token③");
+
+  // =========================================================================
+  // 2d-3. 泰坦研究线（category "titan"）断言
+  //   根 + 4 槽位 + 3 数值 + 2 协议 = 10 节点；线级门禁（制压先驱核心 + 船坞 Lv3）由 ResearchSystem 判定。
+  // =========================================================================
+  const titanNodes = frontierNodes.filter((n) => n.category === "titan");
+  ok(titanNodes.length === 10, `泰坦线节点必须为 10，实际 ${titanNodes.length}`);
+  const ttRoot = frontierById.tt_root;
+  ok(!!ttRoot && ttRoot.maxLevel === 1 && ttRoot.rank === 0.6 && ttRoot.type === "foundation" && ttRoot.bonus === null,
+    "tt_root 须为 rank=0.6 的单级基础节点（无加成）");
+  ok(!!ttRoot && ttRoot.prerequisites.some(p => p.id === "sm_root" && p.level === 1),
+    "tt_root 前置须含 sm_root①");
+  // 槽位节点：rank 1.5、unit count、前置 tt_root①、maxLevel 与规格一致
+  const titanSlotSpec = { tt_high: 2, tt_mid: 2, tt_low: 2, tt_rig: 1 };
+  for (const [id, maxLevel] of Object.entries(titanSlotSpec)) {
+    const n = frontierById[id];
+    ok(!!n && n.type === "numeric" && n.maxLevel === maxLevel && n.rank === 1.5,
+      `${id} 须为 rank=1.5 的 ${maxLevel} 级数值节点`);
+    ok(!!n && !!n.bonus && n.bonus.unit === "count" && n.bonus.perLevel === 1,
+      `${id} 加成须为 unit="count" 且每级 +1`);
+    ok(!!n && n.prerequisites.some(p => p.id === "tt_root" && p.level === 1), `${id} 前置须含 tt_root①`);
+  }
+  // 数值节点：rank 0.9、5 级、前置 tt_root①、每级 3% 且 group 正确
+  const titanNumericSpec = { tt_eff: "titanConsumption", tt_repair: "titanRepair", tt_forge: "titanForge" };
+  for (const [id, group] of Object.entries(titanNumericSpec)) {
+    const n = frontierById[id];
+    ok(!!n && n.type === "numeric" && n.maxLevel === 5 && n.rank === ResearchData.RANK_MULT.titan,
+      `${id} 须为 rank=RANK_MULT.titan 的 5 级数值节点`);
+    ok(!!n && !!n.bonus && n.bonus.group === group && n.bonus.perLevel === 3,
+      `${id} 加成 group 须为 ${group} 且每级 3%`);
+    ok(!!n && n.prerequisites.some(p => p.id === "tt_root" && p.level === 1), `${id} 前置须含 tt_root①`);
+  }
+  ok(!!frontierById.tt_eff && frontierById.tt_eff.bonus.negative === true, "tt_eff 须标记 negative（消耗折扣）");
+  ok(!!frontierById.tt_forge && frontierById.tt_forge.bonus.negative !== true, "tt_forge 须为正向速度加成（非 negative）");
+  // 协议节点：tt_matcost（前置 tt_forge③）/ tt_cap（前置 tt_eff③），均 rank=protocol、无加成
+  const ttMatcost = frontierById.tt_matcost;
+  ok(!!ttMatcost && ttMatcost.type === "protocol" && ttMatcost.maxLevel === 1 &&
+     ttMatcost.rank === ResearchData.RANK_MULT.protocol && ttMatcost.bonus === null,
+    "tt_matcost 须为 rank=protocol 的单级无加成协议节点");
+  ok(!!ttMatcost && ttMatcost.prerequisites.some(p => p.id === "tt_forge" && p.level === 3),
+    "tt_matcost 前置须含 tt_forge③");
+  const ttCap = frontierById.tt_cap;
+  ok(!!ttCap && ttCap.type === "protocol" && ttCap.maxLevel === 1 &&
+     ttCap.rank === ResearchData.RANK_MULT.protocol && ttCap.bonus === null,
+    "tt_cap 须为 rank=protocol 的单级无加成协议节点");
+  ok(!!ttCap && ttCap.prerequisites.some(p => p.id === "tt_eff" && p.level === 3),
+    "tt_cap 前置须含 tt_eff③");
+  // 泰坦线不得引入 tt_dualdock / 任何未拍板 id（双线船坞已按用户拍板改为材料精算）
+  ok(!frontierById.tt_dualdock, "tt_dualdock（双线船坞）已按拍板改为 tt_matcost，不得入表");
+
   // 分支追加时长导出存在且为有限正数（主树时长零影响）
   ok(isFinite(ResearchData.FRONTIER_ADDITIONAL_SECONDS) && ResearchData.FRONTIER_ADDITIONAL_SECONDS > 0,
     `FRONTIER_ADDITIONAL_SECONDS 须为正数（实际 ${ResearchData.FRONTIER_ADDITIONAL_SECONDS}）`);
-  ok(Math.abs(ResearchData.FRONTIER_ADDITIONAL_SECONDS - 30.50 * 86400) < 43200,
-    `FRONTIER_ADDITIONAL_SECONDS 须 ≈ 30.5 天（实际 ${(ResearchData.FRONTIER_ADDITIONAL_SECONDS / 86400).toFixed(2)} 天）`);
+  ok(Math.abs(ResearchData.FRONTIER_ADDITIONAL_SECONDS - 39.5735 * 86400) < 8640,
+    `FRONTIER_ADDITIONAL_SECONDS 须 ≈ 39.57 天（星图 13.93 + 虫洞 16.70 + 泰坦 8.95），实际 ${(ResearchData.FRONTIER_ADDITIONAL_SECONDS / 86400).toFixed(4)} 天`);
 
   // 深空开拓组必须指向真实消费入口（防幽灵键）
   ok(tHas("starmapYield", "LEGION_STARMAP_TRIAL.getStarmapResidentYieldMultiplier"), "starmapYield 必须指向 LEGION_STARMAP_TRIAL.getStarmapResidentYieldMultiplier");
@@ -404,6 +467,13 @@ async function runData() {
   ok(tHas("wormholeSupply", "WORMHOLE.getWormholeSupplyMultiplier"), "wormholeSupply 必须指向 WORMHOLE.getWormholeSupplyMultiplier");
   ok(tHas("wormholeToken", "WORMHOLE.getWormholeTokenMultiplier"), "wormholeToken 必须指向 WORMHOLE.getWormholeTokenMultiplier");
   ok(tHas("wormholeYield", "WORMHOLE.getWormholeYieldMultiplier"), "wormholeYield 必须指向 WORMHOLE.getWormholeYieldMultiplier");
+  // 泰坦线：槽位组指向槽位释放唯一入口；三个数值组指向既有 selectors 乘区入口
+  for (const g of ["titanHighSlot", "titanMidSlot", "titanLowSlot", "titanRigSlot"]) {
+    ok(tHas(g, "TITAN_RESEARCH.refreshTitanSlotResearch"), `${g} 必须指向 TITAN_RESEARCH.refreshTitanSlotResearch（槽位释放唯一入口）`);
+  }
+  ok(tHas("titanConsumption", "selectors.getCombatFuelMultiplierFromState"), "titanConsumption 必须指向 selectors.getCombatFuelMultiplierFromState（燃料/核心消耗乘区）");
+  ok(tHas("titanRepair", "selectors.getCombatRepairMultiplierFromState"), "titanRepair 必须指向 selectors.getCombatRepairMultiplierFromState（维修量乘区）");
+  ok(tHas("titanForge", "selectors.getShipEngineeringSpeedBreakdown"), "titanForge 必须指向 selectors.getShipEngineeringSpeedBreakdown（制造速度乘区）");
 
   // 军团节点不得改变 UNIT（BASE_TOTAL_WEIGHT 排除军团节点）
   close(ResearchData.UNIT, frozen.UNIT, 1e-9, "军团接入后 UNIT 必须与冻结源（仅主树）一致");
@@ -460,9 +530,12 @@ async function runData() {
   const byId = new Map();
   for (const n of ResearchData.NODES) byId.set(n.id, n);
 
+  // maxLevel 基线为 {1, 5}；唯一例外：泰坦线槽位节点（规格 §3.3 明定 2 级 —— 每级释放 1 格，共 +2）。
+  const TITAN_SLOT_2LVL = new Set(["tt_high", "tt_mid", "tt_low"]);
   for (const n of ResearchData.NODES) {
-    if (n.maxLevel !== 1 && n.maxLevel !== 5) {
-      ok(false, `节点 ${n.id} maxLevel 非法: ${n.maxLevel}（应为 1 或 5）`);
+    const allowed = n.maxLevel === 1 || n.maxLevel === 5 || (n.maxLevel === 2 && TITAN_SLOT_2LVL.has(n.id));
+    if (!allowed) {
+      ok(false, `节点 ${n.id} maxLevel 非法: ${n.maxLevel}（应为 1 或 5；泰坦槽位节点可为 2）`);
       graphFails += 1;
     }
     if ((n.type === "foundation" || n.type === "protocol") && n.maxLevel !== 1) {

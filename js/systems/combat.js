@@ -129,7 +129,7 @@ function beginCombatRecovery(state, context) {
   return result.changed;
 }
 
-const SHIP_TYPE_NAMES = { frigate:"护卫舰", destroyer:"驱逐舰", cruiser:"巡洋舰", battleship:"战列舰", capital:"旗舰", supercapital:"超级旗舰", industrial_frigate:"工业护卫舰", industrial_destroyer:"工业驱逐舰", industrial_cruiser:"工业巡洋舰", industrial_support:"工业支援舰", industrial_battleship:"大型工业舰", industrial_capital:"工业旗舰", archaeology_frigate:"考古护卫舰", archaeology_destroyer:"考古驱逐舰", archaeology_cruiser:"考古巡洋舰", archaeology_battleship:"考古战列舰", archaeology_capital:"考古旗舰" };
+const SHIP_TYPE_NAMES = { frigate:"护卫舰", destroyer:"驱逐舰", cruiser:"巡洋舰", battleship:"战列舰", capital:"旗舰", supercapital:"超级旗舰", industrial_frigate:"工业护卫舰", industrial_destroyer:"工业驱逐舰", industrial_cruiser:"工业巡洋舰", industrial_support:"工业支援舰", industrial_battleship:"大型工业舰", industrial_capital:"工业旗舰", archaeology_frigate:"考古护卫舰", archaeology_destroyer:"考古驱逐舰", archaeology_cruiser:"考古巡洋舰", archaeology_battleship:"考古战列舰", archaeology_capital:"考古旗舰", titan:"泰坦" };
 
 function isIndustrialShip(shipId) {
   return INDUSTRIAL_SHIPS && INDUSTRIAL_SHIPS[shipId] !== undefined;
@@ -1334,18 +1334,7 @@ function advanceCombatRound(state, context) {
   // 非小队模式（squad.enabled !== true）下无任何副作用。
   syncLegionSquadMembers(state, now);
 
-  // 弹药耗尽撤退：所有已装载弹药都无法供给任何需弹武器 → 结束战斗（撤退，保留已得战利品）
-  const needsAmmoWeapons = weapons.filter(m => (m.equipment.combat.ammoCost || 1) > 0);
-  if (needsAmmoWeapons.length > 0 && !needsAmmoWeapons.some(m => hasSelectedAmmo(state, m.equipment.combat.weaponType))) {
-    c.active = false; state.currentAction.active = false;
-    c.enemies = []; c.currentEnemy = null;
-    c.lastStatus = "弹药耗尽，撤退";
-    c.runDamageDealt = 0; c.runDamageTaken = 0;
-    endLegionSquadBattleIfInactive(state);
-    return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"ammo-depleted" };
-  }
-
-  // ---- 泰坦在线接线（阶段 3 步骤 4）：type "titan" 时主武器/核心走泰坦管线，常规装备槽为空 ----
+  // ---- 泰坦在线接线（阶段 3 步骤 4）：type "titan" 时主武器/核心走泰坦管线；D2=A 后高槽副武器亦参战 ----
   // fuelEfficiency 0.85 已含在 calcFuelMult 乘区（selectors.js:2292），此处按 fuelCost 基础值直接乘。
   const isTitanShip = (typeof isTitanCombatShip === "function") && isTitanCombatShip(ship);
   const titanWeapon = isTitanShip ? (ship.weapon || null) : null;
@@ -1376,8 +1365,18 @@ function advanceCombatRound(state, context) {
     const sustainBase = Math.round((titanWeapon ? (titanWeapon.fuelCost || 0) : 0) * (titanCore.consumption.fuelPctOfVolley || 0));
     if (sustainBase > 0) titanCoreSustainFuel = Math.max(1, Math.round(sustainBase * calcFuelMult(zone, state)));
   }
-  // 泰坦弹药耗尽撤退：与常规舰同语义（保留战利品，结束战斗）
-  if (titanWeapon && titanAmmoRequired > 0 && !hasSelectedAmmo(state, titanWeapon.weaponType)) {
+  // 弹药耗尽撤退：所有已装载弹药都无法供给任何需弹武器 → 结束战斗（撤退，保留已得战利品）
+  // D2=A（2026-09-11 用户拍板）：泰坦主武器为舰体自带（决定这艘船还能不能作战），
+  // tt_high 释放出的高槽副武器属附加火力——撤退判据只取主武器，副武器缺弹仅令副武器
+  // 本轮不开火（canFire=false），绝不因此终止整场战斗。
+  // 修复前：needsAmmoWeapons 直接取 weapons（= 泰坦释放高槽里的常规武器），
+  // 泰坦只要挂了异种副武器而该弹种未装载，就会立刻判「弹药耗尽，撤退」。
+  const titanMainNeedsAmmo = Boolean(isTitanShip && titanWeapon && (titanWeapon.ammoCost || 0) > 0);
+  const convAmmoWeapons = isTitanShip ? [] : weapons.filter(m => (m.equipment.combat.ammoCost || 1) > 0);
+  const ammoDepleted = isTitanShip
+    ? (titanMainNeedsAmmo && !hasSelectedAmmo(state, titanWeapon.weaponType))
+    : (convAmmoWeapons.length > 0 && !convAmmoWeapons.some(m => hasSelectedAmmo(state, m.equipment.combat.weaponType)));
+  if (ammoDepleted) {
     c.active = false; state.currentAction.active = false;
     c.enemies = []; c.currentEnemy = null;
     c.lastStatus = "弹药耗尽，撤退";
@@ -1483,9 +1482,9 @@ function advanceCombatRound(state, context) {
     c.lastStatus = "";
   }
 
-  // —— 玩家齐射（抽离为可复用的单次开火单元，目标由调用方指定）——
-  function firePlayerVolley(target) {
-    if (isTitanShip) { fireTitanVolley(target); return; } // 泰坦无常规装备武器，走泰坦管线
+  // —— 常规装备武器齐射（抽离为可复用的单次开火单元，目标由调用方指定）——
+  // 含 AOE / 克制 / 脑突触 / 飘字；D2=A 后泰坦释放高槽的常规副武器亦复用本函数。
+  function fireConventionalVolley(target) {
     const enemy = target; // 别名：复用下方既有玩家开火逻辑（含 AOE/克制/脑突触/飘字），不再直接引用回合级 currentEnemy
     if (canFire) {
       // Batch C-11：真实开火前清洗/切区检测（仅普通星带模式登记；死亡空间不参与 E21–E23）
@@ -1550,6 +1549,24 @@ function advanceCombatRound(state, context) {
     } else {
       c.lastStatus = "弹药不足，整轮武器未能开火";
     }
+  }
+
+  // —— 玩家齐射入口：目标由调用方指定 ——
+  // D2=A（2026-09-11 用户拍板）：泰坦不再早退。主武器（舰体自带）走 fireTitanVolley，
+  // 随后 tt_high 释放高槽里的常规副武器走 fireConventionalVolley，两者独立校验并各自扣减
+  // 燃料/弹药；副武器缺油缺弹只会让副武器本轮哑火，主武器照常输出。
+  function firePlayerVolley(target) {
+    if (isTitanShip) {
+      fireTitanVolley(target);
+      if (weapons.length > 0) {
+        // 主武器已成功开火（lastStatus 为空）时给副武器失败文案加前缀，不覆盖主武器的结果
+        const titanMainStatus = c.lastStatus;
+        fireConventionalVolley(target);
+        if (titanMainStatus === "" && c.lastStatus !== "") c.lastStatus = "副武器：" + c.lastStatus;
+      }
+      return;
+    }
+    fireConventionalVolley(target);
   }
 
   // M6 阶段 1：玩家与 NPC 按统一顺序依次攻击（共享目标指针，目标死亡立即切换到下一个存活敌人）。
@@ -1838,8 +1855,9 @@ function beginDeathspaceRun(state, options, context) {
   if (isShipUnderRepair(state, activeShipId, now)) return { changed:false, reason:"repairing", remaining:Math.ceil((getShipRepairUntil(state, activeShipId) - now) / 1000) };
   // 门禁已移除：死亡空间战斗等级门槛取消，仅保留密钥门槛（下方 missing-ticket 校验）。
   const weapons = getInstalledCombatModulesFromState(state).filter(module => module.combat && module.combat.kind === "weapon");
-  // 泰坦特例（2026-09-09）：泰坦无常规装备武器，主武器在 config.weapon 走泰坦管线；
+  // 泰坦特例（2026-09-09）：泰坦主武器在 config.weapon 走泰坦管线（不在 fitting 表内）；
   // 仅要求主武器存在才放行（与 actions.js CombatStateActions.start 门禁同口径）。
+  // D2=A（2026-09-11）后 tt_high 释放的高槽可挂常规副武器，此时 weapons 非空、天然放行。
   if (weapons.length === 0) {
     const _activeTitan = getActiveCombatShipState(state);
     const _isTitan = Boolean(_activeTitan && _activeTitan.config
@@ -1853,10 +1871,20 @@ function beginDeathspaceRun(state, options, context) {
   // 续跑（continuation）沿用既有 runToken / runSequence，敌人序号继续递增。
   // 编队/敌人统一在入口内用「当前 run 的 RNG 与 token」权威生成，杜绝 UI 预生成的旧 token 敌人误入新 run。
   if (!opts.continuation) {
-    // 动作队列的同一死亡空间项可能连续进入多个副本；这些入场属于同一条用户动作，
-    // 日志必须累计，而不是每消耗一枚钥匙就把上一把清空。手动重新进入仍会正常新建日志。
+    // 方案 A（2026-09-11 @ApplyForProfessor 反馈）：离线恢复 / 同一逻辑战斗会话内不清零日志。
+    // 死亡空间入场时，满足以下任一条件即保留本场累计（preserveQueueLog=true）：
+    //   ① 队列战斗续跑：queueItemId 一致（原逻辑）；
+    //   ② 手动连刷链续跑：无 queueItemId（连刷链非队列），且 runLog.runToken 与当前 combat.runToken
+    //      一致——离线恢复沿用同一 runToken、未重置，故判定为同一场 run 的续跑。
+    // 这样离线结算（combatLogMergeOffline 纯累加）就能在「400 在线 + 100 离线」后显示 500，
+    // 而非被重入清零成 100。注意：玩家主动点「开始战斗」（actions.js:888 combat/start）走另一条
+    // 路径、不传 options，仍恒清零，不受此处影响；此处仅作用于 beginDeathspaceRun 的非 continuation
+    // 入场（玩家点击死亡空间开战 + 离线恢复重入），故玩家手动重开连刷链也会保留累计（符合「不清零」预期）。
     const queueItemId = state.combat.queueItemId;
-    const preserveQueueLog = Boolean(queueItemId && state.combat.runLog && state.combat.runLog.queueItemId === queueItemId);
+    const _rl = state.combat.runLog;
+    const queueMatch = Boolean(queueItemId && _rl && _rl.queueItemId === queueItemId);
+    const chainResume = Boolean(!queueItemId && _rl && _rl.runToken && _rl.runToken === state.combat.runToken);
+    const preserveQueueLog = queueMatch || chainResume;
     resetCombatRunState(state.combat, { preserveQueueLog });
     if (queueItemId && state.combat.runLog) state.combat.runLog.queueItemId = queueItemId;
     // 新 run 开战前将玩家舰血量重置为满血：上一场残留受损 hp 不应带入新 run（惨胜残血会导致

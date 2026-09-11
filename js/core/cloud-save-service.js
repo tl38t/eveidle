@@ -202,13 +202,19 @@
   //   { status:"ok", meta, envelope }         —— 下载 + 解码 + 校验成功
   //   { status:"error", error }               —— 网络/超时/损坏/校验失败（明确区别于 none）
   // 任何失败一律不抛错、绝不覆盖本地；显式 error 让调用方区分「无云档」与「查询失败」。
-  CloudSaveService.prototype.fetchCloudEnvelope = function () {
+  CloudSaveService.prototype.fetchCloudEnvelope = function (opts) {
     const self = this;
     if (!this._available || !this.provider) return Promise.resolve({ status: "none" });
     // P0-7：部分 H5 容器（尤其 TapTap 小游戏）在弱网/后台恢复时，云 SDK 的 getArchiveList /
     // getArchiveData 可能既不 success 也不 fail，导致启动链路永久挂起。此处加整体硬超时，
     // 超时即视为查询失败，由 persistence 降级为本地存档并继续离线结算，避免玩家一直转圈。
-    const CLOUD_FETCH_TIMEOUT_MS = 15000;
+    //
+    // 2026-09-11（登录转圈修复 · B）：超时改为可按调用场景覆盖。启动关键路径只给
+    // CLOUD_BOOT_FETCH_TIMEOUT_MS（3s），因为那条路径在「本地已有可用存档」时本就不该阻塞
+    // 玩家进入游戏；不传 opts 时仍为 15s，awaiting-cloud 轮询等既有场景语义完全不变。
+    const DEFAULT_CLOUD_FETCH_TIMEOUT_MS = 15000;
+    const requestedTimeout = opts && Number(opts.timeoutMs);
+    const CLOUD_FETCH_TIMEOUT_MS = (requestedTimeout > 0) ? requestedTimeout : DEFAULT_CLOUD_FETCH_TIMEOUT_MS;
     const timeoutRace = function (promise, label) {
       return Promise.race([
         promise,

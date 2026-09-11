@@ -381,7 +381,7 @@
   }
 
   function watchReason(st) {
-    if (st.dailyCount >= st.dailyCap) return "今日已看完(" + st.dailyCount + "/" + st.dailyCap + ")";
+    if (st.dailyCount >= st.dailyCap) return "今日额度已用完 " + st.dailyCount + "/" + st.dailyCap + "（与科研工时共用）";
     return "间隔中";
   }
 
@@ -391,15 +391,20 @@
 
     const intro = document.createElement("div");
     intro.style.cssText = "font-size:13px;color:#aebccb;line-height:1.7;margin-bottom:12px;";
-    intro.innerHTML = "看完<b>联盟泛银河娱乐广播</b>，或转化重复脑插，可获得<b>脑突触加速提取剂</b>。<br>注入后生效：<b>采矿 / 采气 / 冶炼效率、玩家战斗伤害、战斗技能经验 ×1.3</b>。<br>大型提取剂 30 分钟（看广告获取），小型提取剂 5 分钟（重复脑插转化）。";
+    intro.innerHTML = "看完<b>联盟泛银河娱乐广播</b>，或转化重复脑插，可获得<b>脑突触加速提取剂</b>。<br>注入后生效：<b>采矿 / 采气 / 冶炼效率、玩家战斗伤害、战斗技能经验 ×1.3</b>。<br>大型提取剂 30 分钟（收看广播获取），小型提取剂 5 分钟（重复脑插转化）。";
     box.appendChild(intro);
 
-    const st = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { extractors: { large: 0, small: 0 }, canWatch: false, dailyCount: 0, dailyCap: 10 };
+    const st = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { extractors: { large: 0, small: 0 }, canWatch: false, dailyCount: 0, dailyCap: 20 };
     const ex = st.extractors || { large: 0, small: 0 };
     const inv = document.createElement("div");
     inv.style.cssText = "font-size:13px;color:#9fd0e8;margin-bottom:14px;padding:8px 10px;border:1px solid #1d2c3c;border-radius:8px;background:#0c1622;";
     inv.textContent = "当前库存：大型 ×" + ex.large + "（30分） · 小型 ×" + ex.small + "（5分）";
     box.appendChild(inv);
+
+    const sharedHint = document.createElement("div");
+    sharedHint.style.cssText = "font-size:12px;color:#8a9aae;margin:-8px 0 14px;line-height:1.6;";
+    sharedHint.textContent = "每日广播额度 " + st.dailyCount + "/" + st.dailyCap + " 次 —— 与「科研工时」共用同一个池，两边消耗的是同一份额度。";
+    box.appendChild(sharedHint);
 
     const total = (typeof getTotalExtractorDurationMs === "function") ? getTotalExtractorDurationMs(gameState) : 0;
     const hasAny = (ex.large + ex.small) > 0;
@@ -488,7 +493,7 @@
       safeToast("🧪 [调试] 已获得大型脑突触加速提取剂 ×1");
       closeModal(); update(); return;
     }
-    if (typeof window.showRewardedAd !== "function") { safeToast("广告功能未就绪"); closeModal(); return; }
+    if (typeof window.showRewardedAd !== "function") { safeToast("广播功能未就绪"); closeModal(); return; }
     closeModal();
     window.showRewardedAd("rewarded_default", {
       onReward() {
@@ -500,7 +505,7 @@
       onSkip() { safeToast("未看完广播，未获得提取剂"); },
       onError(err) {
         const detail = (err && err.errMsg) ? err.errMsg : String(err || "");
-        safeToast("广告加载失败" + (detail ? "：" + detail.slice(0, 80) : ""));
+        safeToast("广播加载失败" + (detail ? "：" + detail.slice(0, 80) : ""));
         showAdFault(err);
       }
     });

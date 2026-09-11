@@ -127,11 +127,19 @@
   function tpRoleOf(ship) {
     if (ship.archaeology) return { key: "archaeology", cls: "role-arch", label: "考古" };
     if (ship.industrial) return { key: "industrial", cls: "role-ind", label: "工业" };
+    if (ship.type === "titan") return { key: "titan", cls: "role-titan", label: "泰坦" };
     return { key: "combat", cls: "role-combat", label: "战斗" };
+  }
+  // 舰型文本：泰坦的 tier 与 typeName 同为「泰坦」，去重避免显示成「泰坦 泰坦」
+  function tpTierText(ship) {
+    if (!ship) return "";
+    return ship.tier === ship.typeName ? String(ship.tier) : (ship.tier + " " + ship.typeName);
   }
   function tpFilterShips(display, filter) {
     var list = display.ships.slice();
-    if (filter === "combat") list = list.filter(function (s) { return !s.industrial && !s.archaeology; });
+    // 泰坦自成一类：从「战斗」里剔除，避免同时出现在两个筛选下（与桌面船坞的独立分线同口径）。
+    if (filter === "combat") list = list.filter(function (s) { return !s.industrial && !s.archaeology && s.type !== "titan"; });
+    else if (filter === "titan") list = list.filter(function (s) { return s.type === "titan"; });
     else if (filter === "industrial") list = list.filter(function (s) { return s.industrial; });
     else if (filter === "archaeology") list = list.filter(function (s) { return s.archaeology; });
     return list;
@@ -148,7 +156,7 @@
     var fb = '<div class="tp-3d-fallback" data-open-3d="' + ship.instanceId + '">'
       + '<span class="tp-3d-fb-ico">' + roleIco + '</span>'
       + '<span class="tp-3d-fb-name">' + ship.name + '</span>'
-      + '<span class="tp-3d-fb-type">' + ship.tier + " " + ship.typeName + '</span>'
+      + '<span class="tp-3d-fb-type">' + tpTierText(ship) + '</span>'
       + '<span class="tp-3d-fb-tip">点击查看 3D</span>'
       + '</div>';
     var u = null;
@@ -306,8 +314,17 @@
       + '<div class="tp-empty-hint">新玩家可按新手引导制造启程级</div>'
       + "</div>";
   }
+  // 分类筛选下无舰船时的空态（区别于「一艘船都没有」的 tpEmptyHTML）
+  function tpFilterEmptyHTML() {
+    return '<div class="tp-hangar-empty">'
+      + '<div class="tp-empty-ship">🔍</div>'
+      + '<div class="tp-empty-title">该分类下暂无舰船</div>'
+      + '<div class="tp-empty-desc">切换上方其它分类查看</div>'
+      + '<button class="tp-empty-cta btn primary" data-go-skill="shipEngineering">前往舰船工程</button>'
+      + "</div>";
+  }
   function tpFiltersHTML() {
-    var tabs = [["all", "全部"], ["combat", "战斗"], ["industrial", "工业"], ["archaeology", "考古"], ["deployables", "部署物"]];
+    var tabs = [["all", "全部"], ["combat", "战斗"], ["titan", "泰坦"], ["industrial", "工业"], ["archaeology", "考古"], ["deployables", "部署物"]];
     return '<div class="tp-hangar-filters">' + tabs.map(function (t) { return '<button class="tp-filter' + (_tpHangarFilter === t[0] ? " active" : "") + '" data-tp-filter="' + t[0] + '">' + t[1] + "</button>"; }).join("") + "</div>";
   }
   function tpTabsHTML() {
@@ -410,15 +427,20 @@
     if (!_tpCurrentShipId || !display.ships.some(function (s) { return s.instanceId === _tpCurrentShipId; })) {
       _tpCurrentShipId = display.ships.length ? display.ships[0].instanceId : null;
     }
-    // 过滤器激活时，若当前舰不在该过滤集合内，则自动选中集合内第一艘
+    // 过滤器激活时，若当前舰不在该过滤集合内，则自动选中集合内第一艘。
+    // 注意：集合可能为空（该分类下一艘都没有）——必须把当前舰一并置空并走空态，
+    // 否则会继续显示已被筛掉的舰船（历史 bug：原判据 `_tpFiltered.length && …` 在空集合时
+    // 跳过切换，导致「战斗」分类下仍显示工业舰 / 泰坦这类被排除的船）。
     var _tpFiltered = tpFilterShips(display, _tpHangarFilter);
-    if (_tpFiltered.length && !_tpFiltered.some(function (s) { return s.instanceId === _tpCurrentShipId; })) {
-      _tpCurrentShipId = _tpFiltered[0].instanceId;
+    if (!_tpFiltered.some(function (s) { return s.instanceId === _tpCurrentShipId; })) {
+      _tpCurrentShipId = _tpFiltered.length ? _tpFiltered[0].instanceId : null;
     }
     if (!_tpHangarTab) _tpHangarTab = "overview";
     if (!_tpHangarFilter) _tpHangarFilter = "all";
 
     if (!display.ships.length) { root.innerHTML = tpEmptyHTML(); root.setAttribute("data-current-ship", ""); return; }
+    // 当前分类下无舰船：保留筛选条（否则无法切回去）+ 分类空态
+    if (!_tpFiltered.length) { root.innerHTML = tpFiltersHTML() + tpFilterEmptyHTML(); root.setAttribute("data-current-ship", ""); return; }
     // 保存横向滚动位置，避免周期结束时 innerHTML 重建导致 scrollLeft 归零
     var _oldSel = root.querySelector(".tp-hangar-selector");
     var _savedScrollLeft = _oldSel ? _oldSel.scrollLeft : 0;
@@ -429,7 +451,7 @@
     root.innerHTML =
       tpFiltersHTML()
       + '<div class="tp-hangar-main">'
-        + '<div class="tp-hangar-main-head"><span class="tp-hangar-name">' + ship.name + '</span><span class="tp-hangar-tier">' + ship.tier + " " + ship.typeName + "</span></div>"
+        + '<div class="tp-hangar-main-head"><span class="tp-hangar-name">' + ship.name + '</span><span class="tp-hangar-tier">' + tpTierText(ship) + "</span></div>"
         + tpShipMeta(display, ship)
         + '<div class="tp-hangar-3d">' + tpHangarThumb(ship) + "</div>"
       + "</div>"

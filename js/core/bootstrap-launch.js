@@ -259,15 +259,20 @@
       overlay.style.cssText = "position:fixed;inset:0;z-index:99998;background:rgba(8,10,18,.96);color:#e8ecf4;" +
         "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
         "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center;overflow:auto;";
+      // 2026-09-11 登录转圈修复：冲突现在可能发生在「游戏已进入之后」（后台对账才发现），
+      // 而非只在启动前。两种时机必须用不同文案，否则玩家会以为游戏没启动成功。
+      const backgroundConflict = !!(typeof SaveManager !== "undefined" && SaveManager && SaveManager._backgroundConflictPending);
       const h = document.createElement("h1");
-      h.textContent = "检测到云端存档冲突";
+      h.textContent = backgroundConflict ? "云端存档与本地进度不一致" : "检测到云端存档冲突";
       h.style.cssText = "font-size:22px;margin:0 0 8px;";
       const localSum = summarizeLocal();
       const cloudSum = summarizeCloud();
       const recommended = pickRecommended(localSum, cloudSum);
 
       const p = document.createElement("p");
-      p.textContent = "本地存档与云端存档均已修改且内容不同。请选择使用哪一份（选择后另一份将被覆盖，不可撤销）。建议先用下方按钮把两份存档复制到剪贴板回传客服，再选择。" +
+      p.textContent = (backgroundConflict
+        ? "已按本地进度进入游戏。后台核对云端时发现两份存档不同，需要你确认使用哪一份（选「使用云端存档」会立即重新载入游戏）。建议先用下方按钮把两份存档复制到剪贴板回传客服，再选择。"
+        : "本地存档与云端存档均已修改且内容不同。请选择使用哪一份（选择后另一份将被覆盖，不可撤销）。建议先用下方按钮把两份存档复制到剪贴板回传客服，再选择。") +
         (recommended ? "系统已按「游玩时长 / 存档时间」推荐「" + (recommended === "local" ? "本地" : "云端") + "」存档（绿色标记）。" : "两份进度接近，请仔细核对后再选择。");
       p.style.cssText = "max-width:620px;line-height:1.6;opacity:.85;margin:0 0 18px;";
 

@@ -77,7 +77,12 @@
 
   function ensure(state) {
     if (!state.legion) state.legion = {};
-    if (!state.legion.starmap) state.legion.starmap = {};
+    if (!state.legion.starmap || typeof state.legion.starmap !== "object" || Array.isArray(state.legion.starmap)) {
+      // 新建 starmap 时直接落 v2 标记：否则老档首次进入新版本时，persistence.normalizeLegionState
+      // 的 `initialRouteStateVersion !== 2` 分支会把 completedNodeIds + collectionRewards +
+      // 四个试炼状态清空一次（一次性丢采集账本）。此处本就是全新空对象，落标记不会跳过任何真实迁移。
+      state.legion.starmap = { initialRouteStateVersion: 2 };
+    }
     const s = state.legion.starmap;
     if (!s.collectionTrial || typeof s.collectionTrial !== "object") {
       s.collectionTrial = { status:"idle", nodeId:null, lockedNode:null, resourceId:null, kind:null, gathered:0, amount:0, startedAt:0, endsAt:0, requiredSeconds:0, efficiency:0, result:null };
@@ -290,6 +295,24 @@
       lastCollectedAt:Number(record.lastCollectedAt) || 0
     };
   }
+  // —— 锚点反向漂移修复（与 research.js processResearchUntil 的 2026-09-08 修复同源）——
+  // 设备时钟被「快进后拨回」时，驻留账本的 accruedAt 会被写到未来，`t >= accruedAt` 守卫恒假
+  // → 累计永久静默冻结：不报错、不抛异常、normalize 不钳制、重开不自愈。
+  // 做法：锚点超前本机时间即夹回 now（冻结期**不补发**，只恢复「继续累计」）。
+  let STARMAP_ANCHOR_DRIFT_WARNED = false;
+  function clampFutureAnchor(record, t, label) {
+    if (!record) return false;
+    const anchor = Number(record.accruedAt);
+    if (!Number.isFinite(anchor) || anchor <= t) return false;
+    record.accruedAt = t;
+    if (!STARMAP_ANCHOR_DRIFT_WARNED) {
+      STARMAP_ANCHOR_DRIFT_WARNED = true;
+      try {
+        console.warn("[legion-starmap] 驻留账本锚点超前本机时间，已夹回 now（时钟回拨修复/" + label + "）：超前 " + ((anchor - t) / 3600000).toFixed(2) + " 小时");
+      } catch (_) {}
+    }
+    return true;
+  }
   function accrueCollectionRewards(state, now) {
     if (!state) return { changed:false, rewards:[] };
     const s = ensure(state);
@@ -298,6 +321,7 @@
     Object.keys(s.collectionRewards).forEach(function (nodeId) {
       const normalized = normalizeCollectionRewardRecord(s.collectionRewards[nodeId], nodeId);
       if (!normalized) { delete s.collectionRewards[nodeId]; changed = true; return; }
+      clampFutureAnchor(normalized, t, "collection");
       if (normalized.resourceId && normalized.hourlyAmount > 0 && t >= normalized.accruedAt) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / COLLECTION_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
@@ -440,6 +464,7 @@
     Object.keys(s.archaeologyRewards).forEach(function (nodeId) {
       const normalized = normalizeArchaeologyRewardRecord(s.archaeologyRewards[nodeId], nodeId);
       if (!normalized) { delete s.archaeologyRewards[nodeId]; changed = true; return; }
+      clampFutureAnchor(normalized, t, "archaeology");
       if (normalized.hourlyAmount > 0 && t >= normalized.accruedAt) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / ARCHAEOLOGY_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
@@ -800,6 +825,7 @@
     Object.keys(s.battleRewards).forEach(function (nodeId) {
       const normalized = normalizeBattleRewardRecord(s.battleRewards[nodeId], nodeId);
       if (!normalized) { delete s.battleRewards[nodeId]; changed = true; return; }
+      clampFutureAnchor(normalized, t, "battle");
       if (t >= normalized.accruedAt && (normalized.hourlyIsk > 0 || normalized.hourlyCargo > 0)) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / BATTLE_TRIAL_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
@@ -1286,6 +1312,7 @@
     Object.keys(s.productionRewards).forEach(function (nodeId) {
       const normalized = normalizeProductionRewardRecord(s.productionRewards[nodeId], nodeId);
       if (!normalized) { delete s.productionRewards[nodeId]; changed = true; return; }
+      clampFutureAnchor(normalized, t, "production");
       if (normalized.currentRewardId && normalized.hourlyAmount > 0 && t >= normalized.accruedAt) {
         const elapsedHours = Math.floor((t - normalized.accruedAt) / PRODUCTION_REWARD_HOUR_MS);
         if (elapsedHours > 0) {
@@ -1675,7 +1702,7 @@
     const t = Number(now) || Date.now();
     stopNormalActivity(state, t);
     const limit = Math.max(1, Math.round((Number(node.collectionTimeLimitSeconds) || LIMIT_SECONDS) * getStarmapTrialLimitMultiplier(state, node)));
-    Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockNode(node), resourceId:String(node.collectionResource), kind:node.collectionKind || node.subtype || "", gathered:0, amount:Number(node.collectionAmount), startedAt:t, endsAt:t + limit * 1000, requiredSeconds:check.requiredSeconds, efficiency:check.efficiency, result:null, prevAction });
+    Object.assign(s, { status:"running", nodeId:String(node.id), lockedNode:lockNode(node), resourceId:String(node.collectionResource), kind:node.collectionKind || node.subtype || "", gathered:0, amount:Number(node.collectionAmount), startedAt:t, endsAt:t + limit * 1000, requiredSeconds:check.requiredSeconds, efficiency:check.efficiency, result:null, prevAction, lastGrant:null });
     state._dirty = true;
     return { changed:true, trial:{ ...s }, willSucceed:check.willSucceed };
   }
@@ -1687,6 +1714,7 @@
     s.status = success ? "success" : "failed";
     s.gathered = success ? s.amount : 0;
     s.result = success ? "\u901a\u8fc7" : "\u5931\u8d25";
+    s.lastGrant = null;   // 本次结算的实际入库量（成功时下方写入；唯一口径，供虫洞 run.summary 记账）
     if (success && s.nodeId != null) {
       const completedId = String(s.nodeId);
       const completedNodeIds = starmap.completedNodeIds;
@@ -1700,7 +1728,12 @@
       if (firstCompletion && !whColl) completedNodeIds.push(completedId);
       // 首次试炼产物立即入库；测试重试只复用房间，不重复发放首次奖励。虫洞不进星图驻留账本。
       if (firstCompletion && !whColl) starmap.collectionRewards[completedId] = createCollectionRewardRecord({ id:completedId, resourceId:s.resourceId, collectionResource:s.resourceId, amount:s.amount }, Number(now) || Date.now());
-      if (firstCompletion && root.ResourceRegistry && typeof root.ResourceRegistry.add === "function") root.ResourceRegistry.add(state, resourceKey(s), whRewardQty);
+      if (firstCompletion && root.ResourceRegistry && typeof root.ResourceRegistry.add === "function") {
+        root.ResourceRegistry.add(state, resourceKey(s), whRewardQty);
+        // 唯一口径回传（2026-09-11）：虫洞 run.summary 的「矿物」直接取这里算出的入库量，
+        // 避免虫洞侧再复刻一份 amount × rewardMult 的公式而产生漂移。
+        s.lastGrant = { nodeId:completedId, resourceId:String(s.resourceId || ""), qty:whRewardQty, wh:whColl === true, at:Number(now) || Date.now() };
+      }
     }
     restoreSnapshot(state, s.prevAction, now);   // 完成后恢复此前挂机/队列
     state._dirty = true;

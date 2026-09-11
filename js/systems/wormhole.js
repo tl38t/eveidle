@@ -738,7 +738,7 @@
       grantedKeys: [], log: [],
       cleared: [], skipped: [], visited: 0, plan: null, pendingId: null,
       prevAction,
-      summary: { isk: 0, titan: 0, relics: 0, tokens: 0, cleared: 0, skipped: 0, retried: 0 }
+      summary: { materials: 0, relics: 0, tokens: 0, cleared: 0, skipped: 0, retried: 0 }
     };
     if ((W.run.control || "auto") === "manual") {
       // 手动起步：停靠入口、不自动跃迁首跳，等玩家点选（点任意未清节点自动寻路）
@@ -815,6 +815,16 @@
     if (node.type === "archaeology") {
       const spec = REW.archaeology[ring];
       if (rng() < spec.chance) { const id = "calibration:art_" + spec.tier + "_calib"; registryAdd(state, id, 1); gained.relic = spec.tier; run.summary.relics += 1; }
+    }
+    // 采集节点：矿物实际入库量由引擎 finish() 算出并挂在 lastGrant（唯一口径）。
+    // 虫洞侧不复刻 amount × collectionRewardMult 公式 —— 那样会与引擎（含词条/产出乘区）漂移。
+    if (node.type === "collection") {
+      const ct = state.legion && state.legion.starmap && state.legion.starmap.collectionTrial;
+      const g = ct && ct.lastGrant;
+      if (g && String(g.nodeId) === String(node.id)) {
+        const qty = Math.max(0, Math.round(Number(g.qty) || 0));
+        if (qty > 0) { gained.material = qty; run.summary.materials = (run.summary.materials || 0) + qty; }
+      }
     }
     // Token：节点 1 / 宝藏 5，印记谐振 = 概率额外 +1
     let tokens = node.kind === "treasure" ? REW.token.treasure : REW.token.trial;
@@ -1344,6 +1354,20 @@
     if (def.effect === "smeltBuff") {
       W.smeltBuff = { expiresAt: t + def.hours * 3600000, mult: def.mult };   // 同名只刷新（覆盖）
       return { changed: true };
+    }
+    if (def.effect === "researchHours") {
+      const secs = (Number(def.hours) || 0) * 3600;
+      const RS = root.ResearchSystem;
+      if (!RS || typeof RS.addResearchHours !== "function") {
+        registryAdd(state, "special:" + CFG.TOKEN_ID, price);
+        return { changed: false, reason: "research-unavailable" };
+      }
+      const r = RS.addResearchHours(state, secs);
+      if (!r.ok) {
+        registryAdd(state, "special:" + CFG.TOKEN_ID, price);
+        return { changed: false, reason: r.reason || "grant-failed" };
+      }
+      return { changed: true, granted: "researchHours", seconds: secs };
     }
     if (goodsId === "catalystPack") { registryAdd(state, root.WORMHOLE_DARK_PUMP.catalystId, def.grant[root.WORMHOLE_DARK_PUMP.catalystId]); return { changed: true }; }
     if (def.grant) { for (const id of Object.keys(def.grant)) registryAdd(state, id, def.grant[id]); return { changed: true }; }

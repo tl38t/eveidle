@@ -11,6 +11,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { buildShip } from "../render3d/shipfactory2/ShipFactory2.js";
+// 泰坦模型工厂（与 titan-forge-3d.js 用同一 URL，避免模块被加载两次）
+import { buildTitan } from "../render3d/titan/TitanFactory.js?v=1";
 
 /* ================================================================
    可复用场景工具（移植自 three-demo.js，统一观感）
@@ -180,7 +182,21 @@ function anchorForFaction(faction) {
 //       · 蓝图舰（unlock.type === "blueprint"）→ 用 counterFaction（angel/blood/sansha）海盗族
 //       · 玩家自造舰（shield/armor/structure 专精）→ 由 recommendedWeapon 映射到 player_shield / player_armor / player_structure
 //   其余字段：hull 取数据里的 type（工业/考古带前缀，ShipContext 会剥离），weapon 取 recommendedWeapon，seed 用 shipId 保证可复现。
+// 泰坦视觉参数解析（真值在 js/data/titans.js 的 getTitanVisualSpec）。
+// 用 window 桥接而非静态 import：titans.js 是经典 <script defer>、本文件是 ES module，
+// 两者加载顺序不保证；此处只在调用期（渲染阶段，boot 之后）取用，不依赖加载先后。
+function resolveTitanVisual(shipId) {
+  if (typeof window === "undefined" || typeof window.getTitanVisualSpec !== "function") return null;
+  try { return window.getTitanVisualSpec(shipId) || null; } catch (_) { return null; }
+}
+
 export function buildSpecForShip(shipId, overrides = {}) {
+  // 泰坦优先：shipId 自带三元组（titan__<hull>__<weapon>__<core>），由数据层反解出
+  // TitanFactory 的下料参数。必须先于 SHIP_DATA 查表 —— 泰坦配置挂在 SHIP_DATA.titan 分组，
+  // 不属于 STARTER/INDUSTRIAL/ARCHAEOLOGY_SHIPS，原逻辑会一路落到护卫舰兜底
+  // （这正是船坞里泰坦显示成护卫舰的原因）。
+  const titan = resolveTitanVisual(shipId);
+  if (titan) return { id: shipId, titan, ...overrides };
   const data = getShipData();
   let def = null, kind = null;
   if (data) {
@@ -234,6 +250,41 @@ export function buildEnemySpec(zoneFaction, level) {
     weapon: weaponForFaction(faction),
     seed: "enemy-" + faction + "-" + hull
   };
+}
+
+// ---- 泰坦模型归一化 ----------------------------------------------------------
+// TitanFactory 与 ShipFactory2 的建模尺度不同量级：泰坦本体最长轴 ~60 单位
+// （实测 shield/laser 62.25、missile/cannon 59.90），而护卫舰 ~11、巡洋舰 ~15。
+// 船坞缩略图用固定相机（position(7.2,4.4,-10.7) / fov 30 / 可视高 ≈7.3 单位），
+// 3D 弹窗的 autoFit 虽自适应该相机，但两者都希望泰坦与普通舰观感一致，
+// 故在这里统一「居中 + 等比缩放到 TITAN_MODEL_TARGET」。
+// TITAN_MODEL_TARGET=15 为实测标定值（2026-09-11，同参复刻缩略图相机逐值比较）：
+// 12.5 偏小、18 尾部出画、15 完整入画且与 gale/巡洋级取景体量相当。
+const TITAN_MODEL_TARGET = 15;
+
+export function buildTitanModel(visual) {
+  const outer = new THREE.Group();
+  const inner = buildTitan(visual.defense, visual.weapon, visual.core);
+  const box = new THREE.Box3().setFromObject(inner);
+  if (!box.isEmpty()) {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+    const s = TITAN_MODEL_TARGET / maxDim;
+    // 注意：缩放挂在 inner 上、平移也换算到「父空间」——这样 outer 自身保持
+    // position/scale 为初值，调用方（setShips 的 group.scale.setScalar / captureThumbnail
+    // 的 ship.rotation）照常作用于外层，不会互相覆盖。
+    inner.scale.setScalar(s);
+    inner.position.set(-center.x * s, -center.y * s, -center.z * s);
+  }
+  outer.add(inner);
+  return outer;
+}
+
+// 唯一模型构建入口：泰坦走 TitanFactory，其余走 ShipFactory2。
+// setShips / captureThumbnail 都必须经此，避免任一路径漏掉泰坦分流。
+function buildModel(spec) {
+  return (spec && spec.titan) ? buildTitanModel(spec.titan) : buildShip(spec);
 }
 
 /* ================================================================
@@ -445,7 +496,7 @@ export function setShips(handle, specs) {
     for (let i = 0; i < list.length; i++) {
       const item = list[i];
       const n = norm[i];
-      const group = buildShip(item.spec);
+      const group = buildModel(item.spec);
       const pos = item.position || [0, 0, 0];
       group.position.set(...pos);
       group.scale.setScalar(n.scale);          // 统一用 effScale：scale=0 已归一为 1，避免 if(item.scale) 忽略导致的漂移
@@ -569,7 +620,7 @@ export function captureThumbnail(spec, opts = {}) {
     pool = ensureThumbRenderer(width, height);
     if (pool.scene.background && pool.scene.background.isColor) pool.scene.background.set(background);
     else pool.scene.background = new THREE.Color(background);
-    ship = buildShip(spec);
+    ship = buildModel(spec);
     ship.rotation.y = angle;
     pool.scene.add(ship);
     pool.renderer.render(pool.scene, pool.camera);
@@ -612,6 +663,7 @@ if (typeof window !== "undefined") {
     window.Ship3D = {
       buildSpecForShip,
       buildEnemySpec,
+      buildTitanModel,
       createViewer,
       setShips,
       setBackground,

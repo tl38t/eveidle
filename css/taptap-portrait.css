@@ -388,6 +388,7 @@
   .tp-htag.role-combat{ background:rgba(217,74,74,.18); color:#ff9a9a; }
   .tp-htag.role-ind{ background:rgba(93,168,212,.18); color:#9fd0f0; }
   .tp-htag.role-arch{ background:rgba(160,140,200,.2); color:#cdbcff; }
+  .tp-htag.role-titan{ background:rgba(212,168,67,.22); color:#f0d78c; }
   .tp-htag.tp-lv{ background:rgba(212,168,67,.18); color:#e7c66a; }
   .tp-htag.tp-duty{ background:rgba(40,55,75,.6); }
   .tp-htag.tp-repair{ background:rgba(217,140,60,.2); color:#ffc078; }
@@ -413,6 +414,7 @@
   .tp-chip-dot.role-combat{ background:#d94a4a; }
   .tp-chip-dot.role-ind{ background:#5da8d4; }
   .tp-chip-dot.role-arch{ background:#a08cc8; }
+  .tp-chip-dot.role-titan{ background:#d4a843; }
   .tp-chip-assigned{ position:absolute; bottom:3px; right:4px; font-size:9px; color:#7ac87a; }
 
   .tp-hangar-tabs{ display:flex; border-top:1px solid #16222f; border-bottom:1px solid #16222f; margin:4px 0; position:relative; z-index:1; background:#0a121e; }

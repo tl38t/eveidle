@@ -127,9 +127,15 @@
     const isk = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "currency:isk") : 0;
     return `部件：${parts}${mats ? ` · 额外材料：${mats}` : ""} · ${span(isk >= recipe.isk, "星币 " + fmtNum(recipe.isk))} · 耗时 ${fmtNum(recipe.time)}s · 经验 ${fmtNum(recipe.xp)}`;
   }
-  // 幂等写：内容相同则不触碰 DOM（本文件 MutationObserver 驱动 render，避免自触发死循环）
-  function setText(el, s) { if (el && el.textContent !== s) el.textContent = s; }
-  function setHtml(el, h) { if (el && el.innerHTML !== h) el.innerHTML = h; }
+  // 幂等写：与「本组件上次写入的值」比较，而不是与实时 DOM 比较。
+  // 2026-09-11 卡死修复：英文态下 i18n 翻译器会把已写入的中文就地替换成英文，于是
+  // el.innerHTML / el.textContent 永远不等于我们期望的中文串 → 每次 render 都真实写 DOM →
+  // 触发本文件 :290 的 MutationObserver(childList, subtree: body) → 再次 render → 无限自触发，
+  // 主线程被占满（命中场景：存档停在泰坦组装子页 + 语言为英文，开屏即"页面无响应"）。
+  // 缓存自身写入值即可彻底断开回环；这三个写点（cost/goto/status/note/summary）均由本文件独占，无外部写入者。
+  const LW = "__titanForgeLastWrite";
+  function setText(el, s) { if (!el) return; if (el[LW + "text"] === s) return; el[LW + "text"] = s; el.textContent = s; }
+  function setHtml(el, h) { if (!el) return; if (el[LW + "html"] === h) return; el[LW + "html"] = h; el.innerHTML = h; }
   function setDisabled(el, d) { if (el && el.disabled !== d) el.disabled = d; }
   // 状态区 + 按钮：运行中显示进度并可停止；未解锁/缺料按门禁文案禁用
   // startTitanAssembly 失败原因 → 中文提示（与 actions 门禁 reason 一一对应）

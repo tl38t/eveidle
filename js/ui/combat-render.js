@@ -75,6 +75,41 @@ function renderInstalledCombatControls(display) {
   if (repairRow) repairRow.innerHTML = display.repairers.length ? display.repairers.map(module => `<span class="repair-toggle on installed">${module.name} · 自动</span>`).join("") : '<span class="combat-module-empty">未安装维修装备</span>';
 }
 
+// 小队打捞效率读数（2026-09-11 新增）。
+// 动机：玩家做「自己 4 件 vs 自己 4 件 + NPC 3 件」对照实验得出「NPC 打捞不生效」的结论，
+// 实际是 NPC 绑定舰根本装不上打捞件（船坞对绑定舰拒装 npc-bound），两次配置完全相同。
+// 界面此前没有任何读数，玩家无法自证 —— 这里把生产口径 getSquadSalvageBreakdown 直接摊开。
+// 口径与 combat.js / offline-combat.js 的 chance = baseChance × (1 + getSquadSalvageEfficiency) 完全一致。
+function renderSquadSalvageReadout() {
+  if (typeof getSquadSalvageBreakdown !== "function") return "";
+  const bd = getSquadSalvageBreakdown(gameState);
+  if (!bd || !(bd.total > 0)) return "";
+  const fmt = (n) => (Math.round(Number(n || 0) * 100) / 100).toFixed(2);
+  const dim = "color:#6d8296;";
+  const val = "color:#8fa6bd;";
+  // NPC 段：0 值不等于「没参战」，要区分「未绑定舰船」与「绑定舰未装打捞件」，否则玩家无法定位。
+  let npcText = "NPC 未参战";
+  let npcColor = "color:#8fa6bd;";
+  if (bd.npcMembers > 0) {
+    let note = "";
+    if (bd.npcShips === 0) { note = "（未绑定舰船）"; npcColor = "color:#ffb454;"; }
+    else if (!(bd.npc > 0)) { note = "（绑定舰未装打捞件）"; npcColor = "color:#ffb454;"; }
+    npcText = `NPC ${bd.npcMembers} 人/${bd.npcShips} 舰 +${fmt(bd.npc)}${note}`;
+  }
+  const mtuText = bd.mtu > 0
+    ? `打捞单元 +${fmt(bd.mtu)}`
+    : (bd.mtuOutOfFuel ? "打捞单元断料" : "打捞单元 0");
+  return `<div style="margin-top:6px;font-size:11px;line-height:1.7;">` +
+    `<span style="${dim}">小队打捞效率</span> <b style="color:#8ff0b5;">${fmt(bd.total)}</b>` +
+    `<span style="${dim}">（组件掉落几率 ×${fmt(1 + bd.total)}）</span><br>` +
+    `<span style="${val}">出战舰 +${fmt(bd.player)}</span>` +
+    `<span style="color:#3a4a5a;"> | </span>` +
+    `<span style="${npcColor}">${npcText}</span>` +
+    `<span style="color:#3a4a5a;"> | </span>` +
+    `<span style="${val}">${mtuText}</span>` +
+    `</div>`;
+}
+
 // 同位素标记打捞臂：战斗界面开关（仅已装备打捞臂时显示）。
 // 开=消耗被动三倍燃料+同位素+掉落同级舰船组件；关=仅被动：消耗基础燃料提高货柜掉落。
 function renderCombatSalvageToggle() {
@@ -99,7 +134,8 @@ function renderCombatSalvageToggle() {
     (active ? "#3fd07a" : "#3a4a5a") + ";background:" + (active ? "rgba(63,208,122,.16)" : "rgba(255,255,255,.04)") +
     ";color:" + (active ? "#8ff0b5" : "#9fb3c8") + ";";
   row.innerHTML = `<button id="btn-salvage-arm-toggle" style="${btnStyle}">${active ? "⦿" : "○"} ${label}</button>` +
-    (active && isoHave <= 0 ? '<span style="color:#ffb454;font-size:11px;margin-left:6px;">⚠ 同位素不足，无法打捞</span>' : '');
+    (active && isoHave <= 0 ? '<span style="color:#ffb454;font-size:11px;margin-left:6px;">⚠ 同位素不足，无法打捞</span>' : '') +
+    renderSquadSalvageReadout();
   const btn = document.getElementById("btn-salvage-arm-toggle");
   if (btn) {
     btn.onclick = () => {

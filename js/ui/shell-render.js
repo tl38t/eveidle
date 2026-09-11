@@ -51,7 +51,15 @@ function syncStarmapCompletedNodes(frame) {
       rewards = LEGION_STARMAP_TRIAL.getCollectionRewardStates(gameState, now);
     }
   } catch (_) {}
-  target.contentWindow.postMessage({ type:"legion-starmap/collection-reward-state", rewards }, "*");
+  // iframe 拿不到 state，必须由 host 透传「驻留自动领取协议」开关：
+  // 开启（sm_autoclaim）后采集 pending 会被立即入库、恒为 0，面板否则永远只显示「暂无可提取」且不解释原因。
+  let residentAutoClaim = false;
+  try {
+    if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.isResidentAutoClaimEnabled === "function") {
+      residentAutoClaim = !!LEGION_STARMAP_TRIAL.isResidentAutoClaimEnabled(gameState);
+    }
+  } catch (_) {}
+  target.contentWindow.postMessage({ type:"legion-starmap/collection-reward-state", rewards, residentAutoClaim:residentAutoClaim }, "*");
   let productionRewards = [];
   try {
     if (typeof LEGION_STARMAP_TRIAL !== "undefined" && LEGION_STARMAP_TRIAL && typeof LEGION_STARMAP_TRIAL.getProductionRewardStates === "function") {
@@ -2486,18 +2494,73 @@ function renderStatisticsPage() {
    ================================================================ */
 const ACHIEVEMENT_TIER_ORDER = ["bronze", "silver", "gold", "legendary"];
 const ACHIEVEMENT_STATUS_FILTERS = [
-  { id: "all", label: "全部" },
-  { id: "unlocked", label: "已解锁" },
-  { id: "locked", label: "未解锁" }
+  { id: "all" },
+  { id: "unlocked" },
+  { id: "locked" }
 ];
 const ACHIEVEMENT_HIDDEN_NAME = "隐藏成就";
 const ACHIEVEMENT_HIDDEN_CONDITION = "达成条件未知";
+const ACHIEVEMENT_PAGE_COPY = Object.freeze({
+  "zh-CN": Object.freeze({
+    title:"成就", subtitle:"Steam 收藏 · 里程碑 · 科研工时奖励", all:"全部",
+    statuses:Object.freeze({ all:"全部", unlocked:"已解锁", locked:"未解锁" }),
+    tiers:Object.freeze({ bronze:"铜", silver:"银", gold:"金", legendary:"传奇" }),
+    categories:Object.freeze({ "技能":"技能", "采矿工业":"采矿工业", "舰船工程":"舰船工程", "装备/增强剂":"装备/增强剂", "战斗":"战斗", "考古":"考古", "行星":"行星", "空间站":"空间站", "经济":"经济", "综合":"综合" }),
+    hiddenName:ACHIEVEMENT_HIDDEN_NAME, hiddenCondition:ACHIEVEMENT_HIDDEN_CONDITION,
+    unlocked:"已解锁", locked:"未解锁", achievedAlt:"成就图标", hiddenAlt:"隐藏成就图标",
+    researchBank:"科研工时余额：", researchHours:"小时", reward:"科研工时 +", noReward:"无科研工时奖励",
+    notAchieved:"尚未达成", empty:"当前筛选条件下没有成就"
+  }),
+  "en-US": Object.freeze({
+    title:"Achievements", subtitle:"Steam Collection · Milestones · Research Time Rewards", all:"All",
+    statuses:Object.freeze({ all:"All", unlocked:"Unlocked", locked:"Locked" }),
+    tiers:Object.freeze({ bronze:"Bronze", silver:"Silver", gold:"Gold", legendary:"Legendary" }),
+    categories:Object.freeze({ "技能":"Skills", "采矿工业":"Mining & Industry", "舰船工程":"Ship Engineering", "装备/增强剂":"Equipment / Boosters", "战斗":"Combat", "考古":"Archaeology", "行星":"Planetary", "空间站":"Station", "经济":"Economy", "综合":"General" }),
+    hiddenName:"Hidden Achievement", hiddenCondition:"Achievement requirements are hidden",
+    unlocked:"Unlocked", locked:"Locked", achievedAlt:"achievement icon", hiddenAlt:"Hidden achievement icon",
+    researchBank:"Research Time Balance: ", researchHours:" hours", reward:"Research Time +", noReward:"No research time reward",
+    notAchieved:"Not yet achieved", empty:"No achievements match the current filters"
+  }),
+  "zh-TW": Object.freeze({
+    title:"成就", subtitle:"Steam 收藏 · 里程碑 · 科研工時獎勵", all:"全部",
+    statuses:Object.freeze({ all:"全部", unlocked:"已解鎖", locked:"未解鎖" }),
+    tiers:Object.freeze({ bronze:"銅", silver:"銀", gold:"金", legendary:"傳奇" }),
+    categories:Object.freeze({ "技能":"技能", "采矿工业":"採礦工業", "舰船工程":"艦船工程", "装备/增强剂":"裝備/增強劑", "战斗":"戰鬥", "考古":"考古", "行星":"行星", "空间站":"太空站", "经济":"經濟", "综合":"綜合" }),
+    hiddenName:"隱藏成就", hiddenCondition:"達成條件未知",
+    unlocked:"已解鎖", locked:"未解鎖", achievedAlt:"成就圖示", hiddenAlt:"隱藏成就圖示",
+    researchBank:"科研工時餘額：", researchHours:"小時", reward:"科研工時 +", noReward:"無科研工時獎勵",
+    notAchieved:"尚未達成", empty:"目前篩選條件下沒有成就"
+  })
+});
 let achievementCategoryFilter = "all";
 let achievementStatusFilter = "all";
 
 function escapeAchievementText(text) {
   const map = { "&":"&amp;", "<":"&lt;", ">":"&gt;", "\"":"&quot;" };
   return String(text === null || text === undefined ? "" : text).replace(/[&<>"]/g, ch => map[ch]);
+}
+
+function getAchievementIconPath(achievementId, unlocked) {
+  const safeId = String(achievementId || "").replace(/[^A-Z0-9]/g, "");
+  return "./assets/achievements/" + (unlocked ? "achieved/" : "unachieved/") + safeId + ".png";
+}
+
+function getAchievementLocaleCode() {
+  const locale = typeof window !== "undefined" && window.I18N && typeof window.I18N.getLocale === "function"
+    ? window.I18N.getLocale() : "zh-CN";
+  return locale === "en-US" || locale === "zh-TW" ? locale : "zh-CN";
+}
+
+function getAchievementPageCopy() {
+  return ACHIEVEMENT_PAGE_COPY[getAchievementLocaleCode()];
+}
+
+function getLocalizedAchievementText(definition) {
+  const localeCode = getAchievementLocaleCode();
+  const locales = (typeof AchievementLocales !== "undefined" && AchievementLocales) ||
+    (typeof window !== "undefined" && window.AchievementLocales) || null;
+  const translated = locales && locales[localeCode] ? locales[localeCode][definition.id] : null;
+  return translated || { name:definition.name, description:definition.conditionText };
 }
 
 function getAchievementCatalogData() {
@@ -2516,7 +2579,7 @@ function getAchievementUnlockTimestamp(achievementId) {
 
 function formatAchievementUnlockTime(ms) {
   if (typeof ms !== "number" || !isFinite(ms) || ms < 0) return "";
-  return new Date(ms).toLocaleString("zh-CN", { hour12:false });
+  return new Date(ms).toLocaleString(getAchievementLocaleCode(), { hour12:false });
 }
 
 // Batch E：成就奖励只读展示辅助（UI 纯读，绝不发放、不修改 state / 目录）。
@@ -2542,8 +2605,9 @@ function formatResearchHoursNumber(hours) {
 
 function formatAchievementRewardText(definition) {
   const hours = readAchievementRewardHours(definition);
-  if (hours === null) return ACHIEVEMENT_NO_REWARD_TEXT;
-  return "科研工时 +" + formatResearchHoursNumber(hours) + "h";
+  const copy = getAchievementPageCopy();
+  if (hours === null) return copy.noReward;
+  return copy.reward + formatResearchHoursNumber(hours) + "h";
 }
 
 // 科研工时余额（秒 → 小时），只读 gameState.research.researchHourBank
@@ -2557,23 +2621,29 @@ function getResearchHourBankSeconds() {
 
 function getAchievementsDisplayState(category, status) {
   const data = getAchievementCatalogData();
+  const copy = getAchievementPageCopy();
   const selectedCategory = category || "all";
   const selectedStatus = ACHIEVEMENT_STATUS_FILTERS.some(item => item.id === status) ? status : "all";
   const bankSeconds = getResearchHourBankSeconds();
   const bankHours = bankSeconds / 3600;
-  const researchBankText = "科研工时余额：" + formatResearchHoursNumber(bankHours) + " 小时";
+  const researchBankText = copy.researchBank + formatResearchHoursNumber(bankHours) + copy.researchHours;
   if (!data) {
     return { total:0, unlocked:0, percentValue:0, percentText:"0.0%", tiers:[], categories:[], statuses:[], cards:[], category:selectedCategory, status:selectedStatus,
       researchBankSeconds:bankSeconds, researchBankHours:bankHours, researchBankText };
   }
   const tiers = ACHIEVEMENT_TIER_ORDER.map(code => ({
-    code, label:(data.TIERS && data.TIERS[code] ? data.TIERS[code].label : code), unlocked:0, total:0
+    code, label:copy.tiers[code] || (data.TIERS && data.TIERS[code] ? data.TIERS[code].label : code), unlocked:0, total:0
   }));
+  // Steam 图鉴只展示已接入平台的 116 项；G08/G09 仍保留在本地成就逻辑中。
+  const definitions = data.ACHIEVEMENTS.filter(definition =>
+    definition && definition.steam && definition.steam.enabled === true
+  );
   const tierByCode = {}; for (const tier of tiers) tierByCode[tier.code] = tier;
   const categoryCounts = {};
   const cards = [];
   let unlocked = 0;
-  for (const definition of data.ACHIEVEMENTS) {
+  for (const definition of definitions) {
+    const localized = getLocalizedAchievementText(definition);
     const unlockedAt = getAchievementUnlockTimestamp(definition.id);
     const isUnlocked = unlockedAt !== null;
     if (isUnlocked) unlocked += 1;
@@ -2589,29 +2659,35 @@ function getAchievementsDisplayState(category, status) {
       id: definition.id,
       category: definition.category,
       tier: definition.tier,
-      tierLabel: definition.tierLabel,
+      tierLabel: copy.tiers[definition.tier] || definition.tierLabel,
       hidden: Boolean(definition.hidden),
       masked,
       unlocked: isUnlocked,
+      iconPath: getAchievementIconPath(definition.id, isUnlocked),
       unlockedAt,
       unlockedAtText: isUnlocked ? formatAchievementUnlockTime(unlockedAt) : "",
-      name: masked ? ACHIEVEMENT_HIDDEN_NAME : definition.name,
-      conditionText: masked ? ACHIEVEMENT_HIDDEN_CONDITION : definition.conditionText,
+      name: masked ? copy.hiddenName : localized.name,
+      conditionText: masked ? copy.hiddenCondition : localized.description,
       // Batch E：奖励文字始终来自冻结目录 reward（隐藏成就也照常显示奖励，不遮蔽）
       rewardHours: readAchievementRewardHours(definition),
       rewardText: formatAchievementRewardText(definition)
     });
   }
-  const total = data.ACHIEVEMENTS.length;
+  const total = definitions.length;
   const percentValue = total ? (unlocked / total) * 100 : 0;
   return {
     total, unlocked, percentValue,
     percentText: percentValue.toFixed(1) + "%",
     tiers,
-    categories: [{ id:"all", label:"全部", count:total, selected:selectedCategory === "all" }].concat(
-      (data.CATEGORIES || []).map(name => ({ id:name, label:name, count:categoryCounts[name] || 0, selected:selectedCategory === name }))
+    categories: [{ id:"all", label:copy.all, count:total, selected:selectedCategory === "all" }].concat(
+      (data.CATEGORIES || []).map(name => ({ id:name, label:copy.categories[name] || name, count:categoryCounts[name] || 0, selected:selectedCategory === name }))
     ),
-    statuses: ACHIEVEMENT_STATUS_FILTERS.map(item => ({ id:item.id, label:item.label, selected:selectedStatus === item.id })),
+    statuses: ACHIEVEMENT_STATUS_FILTERS.map(item => ({
+      id:item.id,
+      label:copy.statuses[item.id],
+      count:item.id === "unlocked" ? unlocked : item.id === "locked" ? total - unlocked : total,
+      selected:selectedStatus === item.id
+    })),
     cards,
     category: selectedCategory,
     status: selectedStatus,
@@ -2624,9 +2700,15 @@ function getAchievementsDisplayState(category, status) {
 function renderAchievementsPage(category, status) {
   achievementCategoryFilter = category === undefined ? achievementCategoryFilter : (category || "all");
   achievementStatusFilter = status === undefined ? achievementStatusFilter : (status || "all");
+  const copy = getAchievementPageCopy();
   const display = getAchievementsDisplayState(achievementCategoryFilter, achievementStatusFilter);
   achievementCategoryFilter = display.category;
   achievementStatusFilter = display.status;
+  const panel = document.getElementById("achievements-panel");
+  const panelTitle = panel && panel.querySelector(".panel-title");
+  const panelSubtitle = panel && panel.querySelector(".panel-header .text-muted");
+  if (panelTitle) panelTitle.innerHTML = `<i class="fa-solid fa-trophy"></i> ${escapeAchievementText(copy.title)}`;
+  if (panelSubtitle) panelSubtitle.textContent = copy.subtitle;
   const count = document.getElementById("achievements-summary-count");
   if (count) count.textContent = display.unlocked + " / " + display.total;
   const percent = document.getElementById("achievements-summary-percent");
@@ -2640,17 +2722,32 @@ function renderAchievementsPage(category, status) {
   const categoryTabs = document.getElementById("achievements-category-tabs");
   if (categoryTabs) categoryTabs.innerHTML = display.categories.map(item => `<button class="ach-tab${item.selected ? " active" : ""}" data-ach-category="${escapeAchievementText(item.id)}">${escapeAchievementText(item.label)}<small>${item.count}</small></button>`).join("");
   const statusTabs = document.getElementById("achievements-status-tabs");
-  if (statusTabs) statusTabs.innerHTML = display.statuses.map(item => `<button class="ach-tab${item.selected ? " active" : ""}" data-ach-status="${escapeAchievementText(item.id)}">${escapeAchievementText(item.label)}</button>`).join("");
+  if (statusTabs) statusTabs.innerHTML = display.statuses.map(item => `<button class="ach-tab${item.selected ? " active" : ""}" data-ach-status="${escapeAchievementText(item.id)}">${escapeAchievementText(item.label)}<small>${item.count}</small></button>`).join("");
   const grid = document.getElementById("achievements-grid");
   if (!grid) return display;
-  grid.innerHTML = display.cards.length ? display.cards.map(card => `<div class="ach-card ${card.unlocked ? "unlocked" : "locked"}${card.masked ? " masked" : ""} tier-${card.tier}" data-ach-id="${escapeAchievementText(card.id)}">
-      <div class="ach-card-head"><span class="ach-card-id">${escapeAchievementText(card.id)}</span><span class="ach-card-tier tier-${card.tier}">${escapeAchievementText(card.tierLabel)}</span><span class="ach-card-cat">${escapeAchievementText(card.category)}</span><span class="ach-card-state">${card.unlocked ? "已解锁" : "未解锁"}</span></div>
-      <div class="ach-card-name">${escapeAchievementText(card.name)}</div>
-      <div class="ach-card-cond">${escapeAchievementText(card.conditionText)}</div>
-      <div class="ach-card-reward">${escapeAchievementText(card.rewardText)}</div>
-      <div class="ach-card-time">${card.unlocked ? "解锁于 " + escapeAchievementText(card.unlockedAtText) : "尚未达成"}</div>
-    </div>`).join("") : `<div class="ach-empty">当前筛选条件下没有成就</div>`;
+  grid.innerHTML = display.cards.length ? display.cards.map(card => `<article class="ach-card ${card.unlocked ? "unlocked" : "locked"}${card.masked ? " masked" : ""} tier-${card.tier}" data-ach-id="${escapeAchievementText(card.id)}">
+      <div class="ach-card-visual">
+        <img class="ach-card-icon" src="${escapeAchievementText(card.iconPath)}" alt="${escapeAchievementText(card.masked ? copy.hiddenAlt : card.name + " " + copy.achievedAlt)}" loading="lazy" decoding="async" draggable="false">
+        <span class="ach-card-status-mark" aria-label="${card.unlocked ? copy.unlocked : copy.locked}"><i class="fa-solid ${card.unlocked ? "fa-check" : "fa-lock"}"></i></span>
+      </div>
+      <div class="ach-card-content">
+        <div class="ach-card-head"><span class="ach-card-id">${escapeAchievementText(card.id)}</span><span class="ach-card-tier tier-${card.tier}">${escapeAchievementText(card.tierLabel)}</span><span class="ach-card-cat">${escapeAchievementText(copy.categories[card.category] || card.category)}</span><span class="ach-card-state">${card.unlocked ? copy.unlocked : copy.locked}</span></div>
+        <div class="ach-card-name">${escapeAchievementText(card.name)}</div>
+        <div class="ach-card-cond">${escapeAchievementText(card.conditionText)}</div>
+        <div class="ach-card-footer">
+          <div class="ach-card-reward"><i class="fa-solid fa-flask-vial"></i>${escapeAchievementText(card.rewardText)}</div>
+          <div class="ach-card-time"><i class="fa-regular ${card.unlocked ? "fa-calendar-check" : "fa-clock"}"></i>${card.unlocked ? escapeAchievementText(card.unlockedAtText) : copy.notAchieved}</div>
+        </div>
+      </div>
+    </article>`).join("") : `<div class="ach-empty"><i class="fa-solid fa-filter-circle-xmark"></i><span>${escapeAchievementText(copy.empty)}</span></div>`;
   return display;
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener("localechange", function () {
+    const panel = document.getElementById("achievements-panel");
+    if (panel && panel.style.display !== "none") renderAchievementsPage();
+  });
 }
 
 // =========================================================================
@@ -3588,6 +3685,23 @@ function renderResearchPage() {
   const RS = getResearchSystem();
   const bankEl = document.getElementById("research-bank");
   if (bankEl) bankEl.textContent = "科研工时余额：" + formatResearchHours((Number(research.researchHourBank) || 0) / 3600);
+  const adCounter = document.getElementById("research-ad-counter");
+  if (adCounter && typeof ResearchAdSystem !== "undefined" && ResearchAdSystem) {
+    const used = ResearchAdSystem.getDailyCount(research);
+    const cap = ResearchAdSystem.getDailyCap();
+    const left = Math.max(0, cap - used);
+    adCounter.textContent = "今日额度 " + used + "/" + cap + "（与脑突触加速共用）";
+    adCounter.title = "泛银河娱乐广播的每日收看次数是一个共享池：脑突触加速与科研工时共用 " + cap +
+      " 次/日，当前已用 " + used + " 次、剩余 " + left + " 次。\n每次完整收看 +1 小时科研工时。";
+    // 共享池当日用尽 → 禁用按钮（跨天重开研究页会自动恢复）
+    const adBtn = document.getElementById("research-ad-btn");
+    if (adBtn) {
+      const exhausted = used >= cap;
+      adBtn.disabled = exhausted;
+      adBtn.style.opacity = exhausted ? ".45" : "";
+      adBtn.style.cursor = exhausted ? "not-allowed" : "";
+    }
+  }
   const model = buildResearchTreeModel(research, RD, RS);
   _researchTreeModel = model;
   renderResearchActive(research, RS);
@@ -3728,6 +3842,45 @@ function onResearchActiveClick(event) {
       console.log("[research] cancel confirm dismissed");
     });
   }
+}
+
+// 科研工时 · 收看泛银河娱乐广播产出按钮（事件委托）。复用现有 window.showRewardedAd 抽象层。
+function onResearchAdClick(event) {
+  const btn = event.target.closest('[data-ad-action="research-hours"]');
+  if (!btn) return;
+  const state = (typeof gameState !== "undefined" && gameState) ? gameState : null;
+  if (!state) return;
+  if (typeof ResearchAdSystem === "undefined" || !ResearchAdSystem) { showToast("广播模块未就绪"); return; }
+  if (!ResearchAdSystem.canWatchResearchAd(state)) {
+    const left = ResearchAdSystem.getDailyRemaining(state);
+    showToast(left <= 0
+      ? "今日广播收看额度已用完（与脑突触加速共用，明日重置）"
+      : "请稍后再试（两次收看间隔需满 60 秒）");
+    return;
+  }
+  // 本地调试：无真 window.tap 时直接发放（与脑突触加速 ad-buff-widget 行为一致）
+  const adDebug = (typeof ResearchAdSystem.isAdDebug === "function") ? ResearchAdSystem.isAdDebug() : false;
+  const modeTaptap = (typeof window.getAdStatus === "function") ? window.getAdStatus().mode === "taptap" : false;
+  if (adDebug && !modeTaptap) {
+    const r = ResearchAdSystem.grantResearchHoursDirect(state, 3600);
+    if (r && r.ok) showToast("🧪 [调试] 收看泛银河娱乐广播获得 1 小时科研工时");
+    renderResearchPage();
+    return;
+  }
+  if (typeof window.showRewardedAd !== "function") { showToast("广播功能未就绪"); return; }
+  ResearchAdSystem.watchAdForResearchHours(state, {
+    onGranted() {
+      const left = ResearchAdSystem.getDailyRemaining(state);
+      showToast("收看泛银河娱乐广播获得 1 小时科研工时（今日剩余 " + left + " 次）");
+      renderResearchPage();
+    },
+    onSkip() { showToast("未完整收看，未获得科研工时"); },
+    onLimit(reason) { showToast(reason === "daily-cap" ? "今日广播收看额度已用完（与脑突触加速共用）" : "请稍后再试（间隔未到）"); },
+    onError(err) {
+      const d = (err && err.errMsg) ? err.errMsg : String(err || "");
+      showToast("广播加载失败" + (d ? "：" + d.slice(0, 80) : ""));
+    }
+  });
 }
 
 // ---- Batch F 视觉返修：画布交互（拖动 / 关联高亮 / 自动定位 / 详情操作） ----
@@ -4328,7 +4481,7 @@ function renderHangarPanel() {
       ? `<button class="btn danger hangar-dismantle-btn" data-dismantle-ship="${ship.instanceId}" ${dismantle.canDismantle ? "" : "disabled"} title="${escapeAchievementText((dismantle.blockedText || "当前无法拆解") + reclaimHint)}" style="margin-left:6px;">🗑 拆解</button>`
       : "";
     return `<div class="hangar-ship-card${ship.assignedActions.length ? " equipped" : ""}">${thumbHtml}
-      <div class="hangar-ship-header"><span class="hsh-icon">${ship.archaeology ? "🛰️" : ship.industrial ? "🏭" : "🚀"}</span><span class="hsh-name">${ship.name}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier} ${ship.typeName}</span><span class="hsh-tier">${ship.archaeology ? "🛰️ 考古" : ship.industrial ? "🏭 工业" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
+      <div class="hangar-ship-header"><span class="hsh-icon">${ship.archaeology ? "🛰️" : ship.industrial ? "🏭" : "🚀"}</span><span class="hsh-name">${ship.name}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier === ship.typeName ? ship.tier : ship.tier + " " + ship.typeName}</span><span class="hsh-tier">${ship.archaeology ? "🛰️ 考古" : ship.industrial ? "🏭 工业" : ship.type === "titan" ? "✦ 泰坦" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
       <div class="hangar-ship-stats"><span class="hss-item"><span class="hss-label">护盾</span><span class="hss-val">${ship.hp.shield}</span></span><span class="hss-item"><span class="hss-label">装甲</span><span class="hss-val">${ship.hp.armor}</span></span><span class="hss-item"><span class="hss-label">结构</span><span class="hss-val">${ship.hp.structure}</span></span><span class="hss-item"><span class="hss-label">闪避</span><span class="hss-val">${ship.dodge}</span></span><span class="hss-item"><span class="hss-label">速度</span><span class="hss-val">${ship.speed}</span></span></div>
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
       ${ship.repairing ? `<div class="hangar-ship-repair" data-repair-ship="${ship.instanceId}">🔧 自动维修中 · 剩余 <span class="repair-remaining">${ship.repairRemaining}</span> 秒</div>` : ""}
@@ -5651,6 +5804,7 @@ function installTutorialWidgetListeners() {
   const researchDetailEl = document.getElementById("research-detail"); if (researchDetailEl) { researchDetailEl.addEventListener("click", onResearchDetailClick); researchDetailEl.addEventListener("keydown", onResearchDetailKey); }
   const researchQueueEl = document.getElementById("research-queue"); if (researchQueueEl) researchQueueEl.addEventListener("click", onResearchQueueClick);
   const researchActiveEl = document.getElementById("research-active"); if (researchActiveEl) researchActiveEl.addEventListener("click", onResearchActiveClick);
+  const researchSummaryEl = document.getElementById("research-summary"); if (researchSummaryEl) researchSummaryEl.addEventListener("click", onResearchAdClick);
   const queueModalButton = document.getElementById("action-modal-queue"); if (queueModalButton) queueModalButton.addEventListener("click", queueActionConfirmation);
   const trialStart = document.getElementById("starmap-trial-start");
   if (trialStart) trialStart.addEventListener("click", function () {

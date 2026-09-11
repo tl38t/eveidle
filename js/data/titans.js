@@ -372,6 +372,31 @@ function parseTitanShipId(shipId) {
   return { hullId, weaponId, coreId };
 }
 
+/* ---- 泰坦 3D 视觉参数（船坞缩略图 / 3D 弹窗与泰坦组装页共用一份真值）----
+ * 映射到 render3d/titan/TitanFactory.js 的 buildTitan(defense, weaponKind, coreKind) 参数域。
+ * 此前只有泰坦组装页（titan-forge-integration.js 的 OPTIONS/TITAN_DATA_ID_MAP）在 UI 侧
+ * 各自维护这份对应关系，船坞侧无从得知泰坦该用哪个模型（buildSpecForShip 查不到 SHIP_DATA.titan
+ * 分组 → 回退成护卫舰）。此处集中成数据层真值，UI 只消费，禁止再各写一份。 */
+const TITAN_VISUAL_PARTS = {
+  titan_hull_aegis: "shield", titan_hull_bulwark: "armor", titan_hull_keelbreaker: "structure",
+  titan_weapon_dawn_spear: "laser", titan_weapon_skyfire_salvo: "missile", titan_weapon_throne_quake: "cannon",
+  titan_core_command_matrix: "blue", titan_core_doom_judgment: "red", titan_core_rift_erosion: "violet"
+};
+
+/**
+ * shipId → { defense, weapon, core }（TitanFactory 参数域）。
+ * 非泰坦 / 组合非法返回 null。UI 侧（船坞 3D）据此选择泰坦模型。
+ */
+function getTitanVisualSpec(shipId) {
+  const parts = parseTitanShipId(shipId);
+  if (!parts) return null;
+  return {
+    defense: TITAN_VISUAL_PARTS[parts.hullId] || "shield",
+    weapon: TITAN_VISUAL_PARTS[parts.weaponId] || "laser",
+    core: TITAN_VISUAL_PARTS[parts.coreId] || "blue"
+  };
+}
+
 /** SHIP_DATA.titan 分组（懒建）。挂载进 SHIP_DATA 使槽位解析/幽灵船清理等既有路径天然认识泰坦。 */
 function getTitanConfigRegistry() {
   const data = (typeof window !== "undefined" && window.SHIP_DATA)
@@ -390,6 +415,8 @@ function registerTitanConfig(hullId, weaponId, coreId) {
   const cfg = buildTitanConfig(hullId, weaponId, coreId);
   if (!cfg) return null;
   reg[shipId] = cfg;
+  // 按当前泰坦研究等级重算槽位（幂等；新建/懒解析出的配置立即带上已研究的槽位释放）。
+  refreshTitanSlotResearch(null);
   return cfg;
 }
 
@@ -477,7 +504,9 @@ function getTitanAssemblyMaxCycles(state, recipe) {
     cycles = Math.min(cycles, Math.floor(ResourceRegistry.get(state, "component:" + id) / count));
   }
   for (const [name, qty] of Object.entries(r.materialCost)) {
-    cycles = Math.min(cycles, Math.floor(ResourceRegistry.getMaterialStock(state, name) / qty));
+    // 必须与真实扣料同源：走「泰坦材料精算」协议缩放，否则离线可完成次数会按旧成本高估。
+    const need = applyTitanMaterialCostResearch(state, name, qty);
+    cycles = Math.min(cycles, Math.floor(ResourceRegistry.getMaterialStock(state, name) / need));
   }
   return Math.max(0, Number.isFinite(cycles) ? cycles : 0);
 }
@@ -504,7 +533,11 @@ function buildTitanConfig(hullId, weaponId, coreId) {
     hp: hull.hp, totalHp: hull.totalHp,
     dodge: hull.dodge, speed: hull.speed, targeting: hull.targeting,
     capacitor: hull.capacitor, fuelEfficiency: hull.fuelEfficiency,
-    slots: hull.slots, bonuses: hull.bonuses, capitalTrait: hull.capitalTrait
+    // slots 必须是**副本**：TITAN_HULLS[*].slots 是只读设计真值，
+    // 泰坦研究线（tt_high 等）会按研究等级原地重写注册表内的 cfg.slots（refreshTitanSlotResearch），
+    // 若共享引用将污染 TITAN_HULLS 单例、并把加成重复累加到后续新建配置上。
+    slots: Object.assign({}, hull.slots),
+    bonuses: hull.bonuses, capitalTrait: hull.capitalTrait
   };
 }
 
@@ -641,8 +674,176 @@ function getTitanCoreConsumption(core, weapon, rounds) {
   };
 }
 
+// ---------------------------------------------------------------------------
+//  泰坦研究线（category "titan"）—— 乘区读取 / 槽位释放 / 协议业务取值
+//
+//  与星图线（legion-starmap-trial.js）/ 虫洞线（wormhole.js）同范式：
+//    - 未研究 = 中性值（乘子 1 / 折扣 0 / 计数 0），绝不抛错、绝不返回 NaN。
+//    - 只读 ResearchState（research-state.js 先于本文件加载，仍做守卫兼容探针）。
+//  节点 ↔ 消费点（见 js/data/research.js RESEARCH_BONUS_CONSUMERS）：
+//    tt_high/mid/low/rig → refreshTitanSlotResearch（槽位真值重算）
+//    tt_eff             → selectors.getCombatFuelMultiplierFromState（泰坦燃料 + 核心消耗，在线/离线同源）
+//    tt_repair          → selectors.getCombatRepairMultiplierFromState（泰坦三层维修量）
+//    tt_forge           → selectors.getShipEngineeringSpeedBreakdown（泰坦组件/总装制造速度）
+//    tt_matcost（协议） → getShipBuildingQuote（材料 −10%，唯一报价漏斗）+ getTitanAssemblyMaxCycles
+//    tt_cap（协议）     → getCombatFuelMultiplierFromState / getArchaeologyFuelCostState（全船燃料 −10%）
+// ---------------------------------------------------------------------------
+function titanResearchApi() {
+  return (typeof globalThis !== "undefined" && globalThis.ResearchState) ||
+         (typeof window !== "undefined" && window.ResearchState) || null;
+}
+// 乘子（≥1）：未研究 → 1
+function titanResearchMultiplier(state, groups) {
+  const RS = titanResearchApi();
+  if (!RS || typeof RS.getResearchMultiplier !== "function") return 1;
+  const v = Number(RS.getResearchMultiplier(state, groups));
+  return (Number.isFinite(v) && v > 0) ? v : 1;
+}
+// 折扣分数（0..1）：未研究 → 0
+function titanResearchBonusValue(state, group) {
+  const RS = titanResearchApi();
+  if (!RS || typeof RS.getResearchBonusValue !== "function") return 0;
+  const v = Number(RS.getResearchBonusValue(state, group));
+  return (Number.isFinite(v) && v > 0) ? v : 0;
+}
+// 原始整数（unit:"count" 的槽位组）：未研究 → 0
+function titanResearchRaw(state, group) {
+  const RS = titanResearchApi();
+  if (!RS || typeof RS.getResearchBonusRaw !== "function") return 0;
+  const v = Number(RS.getResearchBonusRaw(state, group));
+  return Number.isFinite(v) ? v : 0;
+}
+// 协议节点（bonus:null）完成等级（0/1）
+function titanProtocolLevel(state, nodeId) {
+  const completed = state && state.research && state.research.completedLevels;
+  if (!completed || typeof completed !== "object") return 0;
+  return Math.max(0, Number(completed[nodeId]) || 0);
+}
+// 兜底取当前存档（注册/刷新发生在 sanitize 之外时）
+function titanCurrentState(state) {
+  if (state && typeof state === "object") return state;
+  if (typeof gameState !== "undefined" && gameState) return gameState;
+  return (typeof window !== "undefined" && window.gameState) || null;
+}
+
+// 电容回充协议（tt_cap）研究值：与装备「电容回充」改装件满级档同值（equipment.js:211 values[4]=0.10）。
+// 语义为「加算折扣」——与改装件 archaeologyFuelEfficiency 共用同一消费口径，不新增系数。
+const TITAN_CAP_RECHARGE_BONUS = 0.10;
+// 泰坦材料精算协议（tt_matcost）：材料需求 ×0.90。
+const TITAN_MATERIAL_COST_MULT = 0.90;
+// 受「泰坦材料精算」影响的两种泰坦精炼材料（中文名，与组件/总装配方 cost 键一致）。
+const TITAN_MATERIAL_COST_NAMES = Object.freeze([
+  TITAN_SMELTING.outputs.titan_alloy_forgestar.name,   // 锻星合金
+  TITAN_SMELTING.outputs.titan_crystal_meltvoid.name   // 熔虚晶体
+]);
+
+// ---- 槽位研究释放（幂等，原地重算）----
+// TITAN_HULLS[*].slots 是只读设计真值，严禁写入；注册表（SHIP_DATA.titan）内的 cfg.slots 为
+// 可重算副本：每次按「舰体基础槽位 + 研究增量」重写。读点（getShipConfigById / state.getShipSlotCounts /
+// actions.setFittingSlot / selectors.getShipFittingDisplayState / 战斗模块装配）全部读注册表，
+// 故只需刷新注册表即可全链路生效，无需改任何读点。
+//   高槽语义：high = 物理高槽总数（不变），highUsable = 可装普通武器的高槽数；
+//   末日武器占用 [highUsable, high) 段 → tt_high 每级 +1 highUsable，占用 7→5。
+function getTitanSlotBonus(state) {
+  const s = titanCurrentState(state);
+  return {
+    high: titanResearchRaw(s, "titanHighSlot"),
+    mid: titanResearchRaw(s, "titanMidSlot"),
+    low: titanResearchRaw(s, "titanLowSlot"),
+    rig: titanResearchRaw(s, "titanRigSlot")
+  };
+}
+function computeTitanSlotsWithResearch(hullSlots, bonus) {
+  const b = hullSlots || {};
+  const g = bonus || { high: 0, mid: 0, low: 0, rig: 0 };
+  return {
+    high: Number(b.high) || 0,
+    highUsable: (Number(b.highUsable) || 0) + (Number(g.high) || 0),
+    mid: (Number(b.mid) || 0) + (Number(g.mid) || 0),
+    low: (Number(b.low) || 0) + (Number(g.low) || 0),
+    rig: (Number(b.rig) || 0) + (Number(g.rig) || 0)
+  };
+}
+// 刷新注册表内全部泰坦配置的 slots；返回处理条数。任何时刻调用都安全（幂等）。
+function refreshTitanSlotResearch(state) {
+  const reg = getTitanConfigRegistry();
+  if (!reg) return 0;
+  const bonus = getTitanSlotBonus(state);
+  let count = 0;
+  for (const shipId of Object.keys(reg)) {
+    const cfg = reg[shipId];
+    if (!cfg || cfg.type !== "titan") continue;
+    const hull = TITAN_HULLS[cfg.hullId];
+    if (!hull || !hull.slots) continue;
+    const next = computeTitanSlotsWithResearch(hull.slots, bonus);
+    const prev = cfg.slots || {};
+    // 首次注册时 cfg.slots 与 hull.slots 同值但也必须换成独立副本（防污染单例），故不做「相等则跳过」优化。
+    if (prev.high !== next.high || prev.highUsable !== next.highUsable ||
+        prev.mid !== next.mid || prev.low !== next.low || prev.rig !== next.rig) {
+      cfg.slots = next;
+    } else if (cfg.slots === hull.slots) {
+      cfg.slots = next;
+    }
+    count++;
+  }
+  return count;
+}
+
+// ---- 数值节点 getter ----
+// 泰坦燃料 + 核心消耗折扣（tt_eff）：返回加算折扣分数（0..0.15），并入燃料乘区的省油折扣。
+function getTitanFuelConsumptionBonus(state) { return titanResearchBonusValue(state, "titanConsumption"); }
+// 泰坦维修量乘区（tt_repair）：≥1。
+function getTitanRepairMultiplier(state) { return titanResearchMultiplier(state, ["titanRepair"]); }
+// 泰坦组件/总装制造速度乘区（tt_forge）：≥1（与主树 shipComp/shipAsm 同口径，速度乘区）。
+function getTitanForgeSpeedMultiplier(state) { return titanResearchMultiplier(state, ["titanForge"]); }
+// 全船电容回充（tt_cap）：返回加算折扣分数（0 或 0.10）。
+function getCapacitorRechargeBonus(state) { return titanProtocolLevel(state, "tt_cap") >= 1 ? TITAN_CAP_RECHARGE_BONUS : 0; }
+// 泰坦材料精算协议（tt_matcost）是否已完成。
+function isTitanMaterialCostReductionActive(state) { return titanProtocolLevel(state, "tt_matcost") >= 1; }
+/**
+ * 按「泰坦材料精算」协议缩放单个材料需求量（唯一入口，严禁在别处重写 ×0.9）。
+ * 仅作用于两种泰坦精炼材料；其余材料原值返回；取整向上、下限 1。
+ */
+function applyTitanMaterialCostResearch(state, matName, qty) {
+  const q = Number(qty);
+  if (!(q > 0)) return qty;
+  if (TITAN_MATERIAL_COST_NAMES.indexOf(String(matName)) < 0) return qty;
+  if (!isTitanMaterialCostReductionActive(state)) return qty;
+  return Math.max(1, Math.ceil(q * TITAN_MATERIAL_COST_MULT));
+}
+/**
+ * 按「泰坦材料精算」协议缩放整张材料成本表；返回新对象（不改原表，静态配方保持不可变）。
+ */
+function applyTitanMaterialCostResearchToCost(state, cost) {
+  if (!cost || typeof cost !== "object") return cost;
+  if (!isTitanMaterialCostReductionActive(state)) return cost;
+  let touched = false;
+  const out = {};
+  for (const mat of Object.keys(cost)) {
+    if (!Object.prototype.hasOwnProperty.call(cost, mat)) continue;
+    const v = applyTitanMaterialCostResearch(state, mat, cost[mat]);
+    if (v !== cost[mat]) touched = true;
+    out[mat] = v;
+  }
+  return touched ? out : cost;
+}
+
 // 暴露给浏览器（经典脚本语义，与 ships.js 相同）与 Node（测试探针）。
 const TITAN_DATA = { TITAN_HULLS, TITAN_WEAPONS, TITAN_CORES };
+const TITAN_RESEARCH = {
+  getTitanSlotBonus,
+  refreshTitanSlotResearch,
+  getTitanFuelConsumptionBonus,
+  getTitanRepairMultiplier,
+  getTitanForgeSpeedMultiplier,
+  getCapacitorRechargeBonus,
+  isTitanMaterialCostReductionActive,
+  applyTitanMaterialCostResearch,
+  applyTitanMaterialCostResearchToCost,
+  TITAN_CAP_RECHARGE_BONUS,
+  TITAN_MATERIAL_COST_MULT,
+  TITAN_MATERIAL_COST_NAMES
+};
 if (typeof window !== "undefined") {
   window.TITAN_DATA = TITAN_DATA;
   window.TITAN_HULLS = TITAN_HULLS;
@@ -658,13 +859,18 @@ if (typeof window !== "undefined") {
   window.TITAN_SHIP_ID_PREFIX = TITAN_SHIP_ID_PREFIX;
   window.makeTitanShipId = makeTitanShipId;
   window.parseTitanShipId = parseTitanShipId;
+  // 船坞 3D：shipId → TitanFactory 视觉参数（船坞缩略图/3D 弹窗的唯一取值入口）
+  window.TITAN_VISUAL_PARTS = TITAN_VISUAL_PARTS;
+  window.getTitanVisualSpec = getTitanVisualSpec;
   window.registerTitanConfig = registerTitanConfig;
   window.resolveTitanConfigByShipId = resolveTitanConfigByShipId;
   window.registerTitanShipsFromState = registerTitanShipsFromState;
   window.getTitanComponentIdFor = getTitanComponentIdFor;
   window.getTitanAssemblyRecipe = getTitanAssemblyRecipe;
   window.getTitanAssemblyMaxCycles = getTitanAssemblyMaxCycles;
+  // 泰坦研究线（category "titan"）唯一入口：乘区读取 / 槽位释放 / 协议业务取值
+  window.TITAN_RESEARCH = TITAN_RESEARCH;
 }
 if (typeof module !== "undefined" && module.exports) {
-  module.exports = { TITAN_DATA, TITAN_HULLS, TITAN_WEAPONS, TITAN_CORES, TITAN_UNLOCK, TITAN_SMELTING, TITAN_COMPONENT_COSTS, TITAN_DATA_LINEAGE, TITAN_COMPONENT_RECIPES, TITAN_HULL_IDS, TITAN_WEAPON_IDS, TITAN_CORE_IDS, isTitanComboValid, isTitanComponentUnlocked, buildTitanConfig, listTitanCombinations, getTitanWeaponRoundDamage, getTitanExtraAttacks, getTitanCoreAura, getTitanCoreStrikes, getTitanCoreConsumption, makeTitanShipId, parseTitanShipId, registerTitanConfig, resolveTitanConfigByShipId, registerTitanShipsFromState };
+  module.exports = { TITAN_DATA, TITAN_HULLS, TITAN_WEAPONS, TITAN_CORES, TITAN_UNLOCK, TITAN_SMELTING, TITAN_COMPONENT_COSTS, TITAN_DATA_LINEAGE, TITAN_COMPONENT_RECIPES, TITAN_HULL_IDS, TITAN_WEAPON_IDS, TITAN_CORE_IDS, isTitanComboValid, isTitanComponentUnlocked, buildTitanConfig, listTitanCombinations, getTitanWeaponRoundDamage, getTitanExtraAttacks, getTitanCoreAura, getTitanCoreStrikes, getTitanCoreConsumption, makeTitanShipId, parseTitanShipId, TITAN_VISUAL_PARTS, getTitanVisualSpec, registerTitanConfig, resolveTitanConfigByShipId, registerTitanShipsFromState, TITAN_RESEARCH };
 }

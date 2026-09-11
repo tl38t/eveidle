@@ -8,6 +8,8 @@
   let playerCollectionRewards = new Map();
   let playerProductionRewards = new Map();
   let playerArchaeologyRewards = new Map();
+  // 由 host（shell-render.js）透传：驻留自动领取协议（sm_autoclaim）是否已启用。
+  let playerResidentAutoClaim = false;
   let selectedNode = null;
   let routeState = { controlledIds:new Set(), originIds:new Set(), frontierIds:new Set(), availableIds:new Set() };
 
@@ -232,7 +234,14 @@
       });
       if (pendingWhole <= 0) appendRewardRow(host, '提取提示', '目前还没有整单位物品，零数部分会继续累计。', '#9bb2c8');
     }
-    appendRewardButton(host, 'starmap-collect-all-resident-rewards', pendingWhole > 0 ? '提取全部驻留奖励' : '暂无可提取奖励', pendingWhole <= 0, () => {
+    // 已启用「驻留自动领取」（sm_autoclaim）时，累计满 1 小时即自动入库 → 这里必然恒为 0。
+    // 不解释原因的话，玩家会把「没有待提取余量」误判成「每日产出根本没发放」。
+    if (playerResidentAutoClaim) {
+      appendRewardRow(host, '自动领取', pendingWhole > 0
+        ? '已启用「驻留自动领取」：奖励每小时自动入库，下方残留的只是零数部分。'
+        : '已启用「驻留自动领取」：奖励每小时自动入库，因此这里没有待提取余量（无需手动提取）。', '#8fd6a8');
+    }
+    appendRewardButton(host, 'starmap-collect-all-resident-rewards', pendingWhole > 0 ? '提取全部驻留奖励' : (playerResidentAutoClaim ? '自动领取已启用' : '暂无可提取奖励'), pendingWhole <= 0, () => {
       if (window.parent && window.parent !== window) window.parent.postMessage({ type:'legion-starmap/collect-resident-rewards' }, '*');
     });
   };
@@ -518,6 +527,7 @@
   window.addEventListener('message', (e) => {
     if (e && e.data && e.data.type === 'legion-starmap/collection-reward-state') {
       playerCollectionRewards = new Map((Array.isArray(e.data.rewards) ? e.data.rewards : []).map((reward) => [String(reward.nodeId), reward]));
+      playerResidentAutoClaim = !!e.data.residentAutoClaim;
       appendResidentRewardSummary();
       if (selectedNode) appendRewardDescription(selectedNode, getNodeRouteStatus(selectedNode));
       return;

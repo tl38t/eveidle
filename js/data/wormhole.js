@@ -125,7 +125,10 @@
       implantVoidShip:   { name: "脑插·虚空舰构（舰船制造 +5%）", price: 2200, once: true, effect: "implant", implantId: "implant_void_ship" },
       implantVoidScan:   { name: "脑插·虚空深瞳（考古扫描 +8%）", price: 2000, once: true, effect: "implant", implantId: "implant_void_scan" },
       meltCore8:  { name: "虚空熔核·标准（8h 冶炼 +10%）", desc: "购买后立即生效：全局冶炼效率 +10%，持续 8 小时；同类效果不叠加，再次购买会覆盖剩余时间。", price: 50, effect: "smeltBuff", hours: 8, mult: 1.10 },
-      meltCore24: { name: "虚空熔核·深空（24h 冶炼 +12%）", desc: "购买后立即生效：全局冶炼效率 +12%，持续 24 小时；同类效果不叠加，再次购买会覆盖剩余时间。", price: 100, effect: "smeltBuff", hours: 24, mult: 1.12 }
+      meltCore24: { name: "虚空熔核·深空（24h 冶炼 +12%）", desc: "购买后立即生效：全局冶炼效率 +12%，持续 24 小时；同类效果不叠加，再次购买会覆盖剩余时间。", price: 100, effect: "smeltBuff", hours: 24, mult: 1.12 },
+      researchHoursS: { name: "认知萃取注入器·小", desc: "立即获得 1 小时研究工时，注入科研工时池（直接进度，非加速）。", price: 30, effect: "researchHours", hours: 1 },
+      researchHoursM: { name: "认知萃取注入器·中", desc: "立即获得 3 小时研究工时，注入科研工时池（直接进度，非加速）。", price: 80, effect: "researchHours", hours: 3 },
+      researchHoursL: { name: "认知萃取注入器·大", desc: "立即获得 6 小时研究工时，注入科研工时池（直接进度，非加速）。", price: 150, effect: "researchHours", hours: 6 }
     }
   });
 

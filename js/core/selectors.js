@@ -57,6 +57,16 @@ const SHIP_ASSEMBLY_LINES = [
   { id:"archaeology", name:"考古系" },
   { id:"special", name:"特殊" }
 ];
+// 船坞分线 = 舰船工程分线 + 泰坦专属线（插在杂项线「特殊」之前）。
+// 为何不直接并入 SHIP_ASSEMBLY_LINES：舰船工程页（assemblyLineTabs / selectShipAsmLine）
+// 也用同一个常量，而泰坦总装入口在「✦ 泰坦组装」二级视图、配方不在 SHIP_ASSEMBLY_RECIPES 里，
+// 并进去会让舰船工程页多出一个永远为空的「泰坦」标签。故船坞单独持有这份带泰坦的集合。
+const HANGAR_ASSEMBLY_LINES = (function () {
+  const lines = SHIP_ASSEMBLY_LINES.slice();
+  const specialAt = lines.findIndex(function (l) { return l.id === "special"; });
+  lines.splice(specialAt >= 0 ? specialAt : lines.length, 0, { id:"titan", name:"泰坦" });
+  return lines;
+})();
 const SHIP_ASSEMBLY_PAGE_SIZE = 20;
 const SHIP_INDUSTRIAL_IDS = new Set(["miner_frigate","gas_frigate","miner_destroyer","gas_destroyer","miner_cruiser","gas_cruiser","miner_battleship","gas_battleship","dolphin","orca"]);
 const SHIP_ARCHAEOLOGY_IDS = new Set(["heron","tracer","starmap","farscope","illuminator"]);
@@ -79,6 +89,10 @@ function getShipAssemblyLine(shipIdOrRecipe) {
   if (SHIP_INDUSTRIAL_IDS.has(shipId)) return "industrial";
   if (SHIP_ARCHAEOLOGY_IDS.has(shipId)) return "archaeology";
   const cfg = shipId ? getShipConfigById(shipId) : null;
+  // 泰坦：独立分线（船坞专属）。必须早于 recommendedWeapon 判定 —— 否则泰坦会按主武器
+  // 类型被静默塞进护盾激光/装甲导弹/结构火炮系，玩家找不到。舰船工程页的分线集合不含
+  // "titan"，故泰坦总装配方在那里天然不匹配（不会误入总装栅格）。
+  if (cfg && cfg.type === "titan") return "titan";
   const weapon = cfg && cfg.recommendedWeapon;
   if (weapon === "missile") return "armor_missile";
   if (weapon === "cannon") return "structure_cannon";
@@ -954,7 +968,16 @@ function getActionConfirmationDisplayState(state, target, now) {
       result.title = icons.refining + " " + (SKILL_LABEL.refining || "冶炼");
       result.duration = display.actualTime;
       result.outputText = getResourceDisplayName(recipe.outputMineral) + "×" + display.output;
-      result.requirements = [{ resourceId:"ore:" + recipe.consumeOre, name:getResourceDisplayName(recipe.consumeOre), quantity:1, stock:display.stock, enough:display.stock >= 1 }];
+      // 2026-09-10 泰坦双材料（P1 阶段4）：需求行必须走 getSmeltingConsumeList 逐项解析。
+      // 旧写法直读 recipe.consumeOre —— 新配方（titans.js）只有 inputs 对象、没有 consumeOre，
+      // 于是名称 undefined、数量恒 1、库存又按"可完成周期数"错位，表现为确认弹窗「需求：undefined×1」。
+      const consumeList = (typeof getSmeltingConsumeList === "function") ? getSmeltingConsumeList(recipe) : [];
+      result.requirements = consumeList.map(c => {
+        const refId = String(c.refId);
+        const name = refId.slice(refId.indexOf(":") + 1);
+        const stock = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? ResourceRegistry.get(state, refId) : 0;
+        return { resourceId:refId, name, displayName:getResourceDisplayName(name), quantity:c.qty, stock, enough:stock >= c.qty };
+      });
       // 超量预排：放开“按当前材料算上限”的硬限制，数量可超过当前持有；
       // 运行期由队列 skipOnFail 在材料不足时切下一项（当前项保留、剩余数量续跑）。
       result.maxCount = 99999999;
@@ -963,7 +986,7 @@ function getActionConfirmationDisplayState(state, target, now) {
       result.materialHint = Math.max(0, display.stock);
       result.canOpen = display.canStart;
       result.blockedText = display.canStart ? "" : "需要冶炼等级 Lv." + recipe.level;
-      result.queue = { skill:"refining", target:recipe.name, label:getResourceDisplayName(recipe.consumeOre) + "→" + getResourceDisplayName(recipe.outputMineral) };
+      result.queue = { skill:"refining", target:recipe.name, label:(consumeList.length ? consumeList.map(c => getResourceDisplayName(String(c.refId).slice(String(c.refId).indexOf(":") + 1))).join(" + ") : getResourceDisplayName(recipe.consumeOre)) + "→" + getResourceDisplayName(recipe.outputMineral) };
     }
   } else if (target === "gasHarvesting") {
     const display = getGasDisplayState(state, now);
@@ -1157,9 +1180,19 @@ function getActionConfirmationDisplayState(state, target, now) {
 // skillMultiplier = 1 + shipEngineering.lvl × 0.02；shipyardMultiplier = getShipyardSpeedMultiplier(state)（断油仍生效）
 // fail closed：任一倍率非有限正数回退 ×1；base 非有限正数回退 1，绝不产生 NaN/Infinity
 // 注意：只含速度倍率，材料节省率（getShipyardSavingRate）绝不混入此公式
+// 泰坦工程配方判定（组件 / 总装）：泰坦组件配方带 titanLine，泰坦总装配方带 isTitan:true，
+// 另以 id 前缀兜底。仅用于把「泰坦制造工艺(tt_forge)」科研乘子限定在泰坦配方上。
+function isTitanEngineeringRecipe(recipe) {
+  if (!recipe || typeof recipe !== "object") return false;
+  if (recipe.isTitan === true) return true;
+  if (typeof recipe.titanLine === "string" && recipe.titanLine) return true;
+  return typeof recipe.id === "string" && recipe.id.indexOf("titan_component_") === 0;
+}
+
 // 研究批次 G：kind = "component" | "assembly" 时追加科研乘子（组件只吃 shipComp，总装只吃 shipAsm，
 // 两者共享 allMfg 根加成但互不串味）；kind 省略时科研乘子为 1，保持既有调用点行为不变。
-function getShipEngineeringSpeedBreakdown(state, kind) {
+// options.titan = true 时额外叠加「泰坦制造工艺(tt_forge)」——仅泰坦配方，主树配方不受影响。
+function getShipEngineeringSpeedBreakdown(state, kind, options) {
   const lvl = getEffectiveSkillLevel(state, "shipEngineering");
   let skillMultiplier = 1 + lvl * 0.02;
   if (!Number.isFinite(skillMultiplier) || skillMultiplier <= 0) skillMultiplier = 1;
@@ -1169,7 +1202,9 @@ function getShipEngineeringSpeedBreakdown(state, kind) {
   if (!Number.isFinite(stationLogisticsMultiplier) || stationLogisticsMultiplier <= 0) stationLogisticsMultiplier = 1;
   let researchMultiplier = 1;
   if (typeof ResearchState !== "undefined" && (kind === "component" || kind === "assembly")) {
-    researchMultiplier = Number(ResearchState.getResearchMultiplier(state, kind === "component" ? ["allMfg", "shipComp"] : ["allMfg", "shipAsm"]));
+    const researchGroups = kind === "component" ? ["allMfg", "shipComp"] : ["allMfg", "shipAsm"];
+    if (options && options.titan) researchGroups.push("titanForge");
+    researchMultiplier = Number(ResearchState.getResearchMultiplier(state, researchGroups));
   }
   if (!Number.isFinite(researchMultiplier) || researchMultiplier <= 0) researchMultiplier = 1;
   // 军团 NPC「舰构工程(shipEngineering)」：加速舰船部件与整船建造 → 周期 ÷ 倍率（越小越快）。
@@ -1198,7 +1233,8 @@ function getShipEngineeringRecipeKind(recipe) {
 function getShipEngineeringCycleDuration(state, recipe) {
   let base = recipe ? Number(recipe.time) : NaN;
   if (!Number.isFinite(base) || base <= 0) base = 1;
-  const speed = getShipEngineeringSpeedBreakdown(state, getShipEngineeringRecipeKind(recipe));
+  // 泰坦配方额外吃「泰坦制造工艺(tt_forge)」科研乘子（与主树 shipComp/shipAsm 同口径并入 researchMultiplier）。
+  const speed = getShipEngineeringSpeedBreakdown(state, getShipEngineeringRecipeKind(recipe), { titan: isTitanEngineeringRecipe(recipe) });
   // 脑插·舰船制造增效（死亡空间 6/10 来源）：周期 ÷1.06（效率 +6%）
   const implantShipMfgEff = (typeof getImplantBonuses === "function") ? getImplantBonuses(state).shipMfgEff : 1;
   // 增强剂·舰船工程速度（考古重制 Phase B · 考古蓝图产出）：周期 ÷ 速度乘区
@@ -1257,13 +1293,14 @@ function getShipEngineeringDisplayState(state, now) {
   const xp = Number(skill.xp) || 0;
   const xpNeeded = xpForLevel(baseLevel + 1);  // 经验进度严格按基础等级，不随临时 +N 变贵
   const speed = getShipEngineeringSpeedBreakdown(state);
-  // 研究批次 G：组件线 / 总装线各自的完整速度分解（含独立科研乘子），供显示与校验消费
-  const componentSpeed = getShipEngineeringSpeedBreakdown(state, "component");
-  const assemblySpeed = getShipEngineeringSpeedBreakdown(state, "assembly");
   const currentComponent = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === action.shipCompTarget) || SHIP_COMPONENT_RECIPES[0];
   const runningComponent = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === (action.startedShipCompTarget || action.shipCompTarget)) || currentComponent;
   const currentAssembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === action.shipAsmTarget) || SHIP_ASSEMBLY_RECIPES[0];
   const runningAssembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === (action.startedShipAsmTarget || action.shipAsmTarget)) || currentAssembly;
+  // 研究批次 G：组件线 / 总装线各自的完整速度分解（含独立科研乘子），供显示与校验消费。
+  // 泰坦配方（当前选中的那条）额外含 tt_forge，使显示倍率与实际周期严格一致。
+  const componentSpeed = getShipEngineeringSpeedBreakdown(state, "component", { titan: isTitanEngineeringRecipe(currentComponent) });
+  const assemblySpeed = getShipEngineeringSpeedBreakdown(state, "assembly", { titan: isTitanEngineeringRecipe(currentAssembly) });
   // 精密配给剂权威报价（不复制公式）：组件/总装成本与等级门槛统一由此读取，供 UI 显示 / 启动判断一致。
   const compQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, currentComponent, { kind:"component" }) : { cost: currentComponent.cost, levelGate: currentComponent.level };
   const asmQuote = (typeof getShipBuildingQuote === "function") ? getShipBuildingQuote(state, currentAssembly, { kind:"assembly" }) : { cost: currentAssembly.materialCost || {}, levelGate: currentAssembly.level };
@@ -2062,14 +2099,30 @@ function getLegionCombatSalvageShips(state) {
   return ships;
 }
 
-function getSquadSalvageEfficiency(state) {
-  if (!state) return 0;
-  let total = getSalvageEfficiency(state, null, { includeMtu: false });
-  for (const ship of getLegionCombatSalvageShips(state)) {
-    total += getSalvageEfficiency(state, ship, { includeMtu: false });
-  }
+// 小队打捞效率拆分（2026-09-11 新增；UI 读数唯一入口）。
+// 动机：玩家「自己带 4 件 + NPC 带 3 件 → 掉落反而没变」的误判，根源是界面无任何读数，
+// 玩家无法自证 NPC 绑定舰的打捞件是否计入。此处与 getSquadSalvageEfficiency 同源，
+// 保证面板显示的数字与实际掉率公式逐项一致（chance = baseChance × (1 + total)）。
+// 返回字段：player 出战舰 / npc 参战 NPC 绑定舰合计 / npcShips 有效绑定舰数 / npcMembers 在队 NPC 人数 /
+//          mtu 打捞单元平加值（断料为 0）/ mtuOutOfFuel 已部署但断料 / total 合计。
+function getSquadSalvageBreakdown(state) {
+  const result = { player:0, npc:0, npcShips:0, npcMembers:0, mtu:0, mtuOutOfFuel:false, total:0 };
+  if (!state) return result;
+  result.player = getSalvageEfficiency(state, null, { includeMtu: false });
+  const squad = state.combat && state.combat.squad;
+  result.npcMembers = (squad && Array.isArray(squad.members)) ? squad.members.length : 0;
+  const ships = getLegionCombatSalvageShips(state);
+  result.npcShips = ships.length;
+  for (const ship of ships) result.npc += getSalvageEfficiency(state, ship, { includeMtu: false });
   const mtu = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
-  return total + (mtu && mtu.active ? mtu.salvage : 0);
+  result.mtu = (mtu && mtu.active) ? mtu.salvage : 0;
+  result.mtuOutOfFuel = Boolean(mtu && mtu.outOfFuel);
+  result.total = result.player + result.npc + result.mtu;
+  return result;
+}
+
+function getSquadSalvageEfficiency(state) {
+  return getSquadSalvageBreakdown(state).total;
 }
 
 function getSquadSalvageFuelPerKill(state) {
@@ -2334,6 +2387,15 @@ function getCombatFuelMultiplierFromState(state, zone, context, options) {
   if (typeof getRigModifiers === "function" && activeShip.instance) {
     rigFuelSaving = Number((getRigModifiers(state, activeShip.instance) || {}).archaeologyFuelEfficiency) || 0;
   }
+  // 研究·先驱科技电容回充协议（tt_cap，全船）：+10% 电容回充 → 与改装件同口径「加算折扣」，不新增乘区。
+  if (typeof TITAN_RESEARCH !== "undefined" && TITAN_RESEARCH && typeof TITAN_RESEARCH.getCapacitorRechargeBonus === "function") {
+    rigFuelSaving += Number(TITAN_RESEARCH.getCapacitorRechargeBonus(state)) || 0;
+  }
+  // 研究·泰坦推进与供能（tt_eff，仅泰坦出战）：燃料 + 核心消耗折扣，并入同一加算折扣
+  // （泰坦主武器齐射与末日武器核心均经本函数取燃料乘区，故一处生效覆盖两者）。
+  if (ship.type === "titan" && typeof TITAN_RESEARCH !== "undefined" && TITAN_RESEARCH && typeof TITAN_RESEARCH.getTitanFuelConsumptionBonus === "function") {
+    rigFuelSaving += Number(TITAN_RESEARCH.getTitanFuelConsumptionBonus(state)) || 0;
+  }
   const combinedShipMultiplier = Math.max(0, shipMultiplier - rigFuelSaving);
   // 军团 NPC 电容管理(capacitorManagement)加成：与考古路径 multiplier.fuelSave 一致，进一步降低燃料消耗。
   const legion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
@@ -2370,11 +2432,18 @@ function getCombatRepairMultiplierFromState(state, target, context, structureRat
   if (target === "structure" && typeof structureRatio === "number" && structureRatio < 0.7 && ship.bonuses && typeof ship.bonuses.structureEmergencyRepair === "number") {
     shipRepairMult += ship.bonuses.structureEmergencyRepair;
   }
+  // 研究·泰坦维修理论（tt_repair，仅泰坦）：独立乘区（≥1），与技能/船体/主树科研/脑插相乘。
+  let titanRepairMult = 1;
+  if (ship.type === "titan" && typeof TITAN_RESEARCH !== "undefined" && TITAN_RESEARCH && typeof TITAN_RESEARCH.getTitanRepairMultiplier === "function") {
+    const v = Number(TITAN_RESEARCH.getTitanRepairMultiplier(state));
+    if (Number.isFinite(v) && v > 0) titanRepairMult = v;
+  }
   return calculateCombatStatFromState(state, "repairMultiplier", 1, [
     { operation:"multiply", value:1 + getCombatSkillLevelFromState(state, "defense") * 0.02, priority:10, source:"skill" },
     { operation:"multiply", value:shipRepairMult, priority:20, source:"ship" },
     // 研究批次 H：维修科研聚合乘子（defense 技能与船体维修加成之后只乘一次；只放大治疗量）
     ...getCombatResearchModifierList(state, "repairMultiplier", target),
+    { operation:"multiply", value:titanRepairMult, priority:50, source:"research-titan" },
     // 脑插：维修增强植入体（阿尔法/贝塔）独立乘区
     { operation:"multiply", value:(typeof getImplantBonuses === "function") ? getImplantBonuses(state).repair : 1, priority:60, source:"implant" }
   ], { ...(context || {}), actor:"player", layer:target });
@@ -3890,14 +3959,14 @@ function getEquipmentDismantleBlockReason(state, targetRef) {
 
 function getHangarDisplayState(state, now) {
   const assignments = state.shipAssignments || {};
-  // 船坞标签：复用舰船工程（总装）的 SHIP_ASSEMBLY_LINES 全部分线（含「特殊」）。
+  // 船坞标签：舰船工程分线 + 泰坦专属线（HANGAR_ASSEMBLY_LINES，含「特殊」）。
   // 「特殊」线 = 部署物/激光定向打捞单元，在船坞底部模块管理（不列出舰船）。
   // 库存舰船由桌面端 renderHangarPanel 经 getShipAssemblyLine(shipId) 归类；
   // 移动端 mobileRenderHangarPanel 仍消费全部 ships。
-  const hangarLineIds = SHIP_ASSEMBLY_LINES.map(function (l) { return l.id; });
+  const hangarLineIds = HANGAR_ASSEMBLY_LINES.map(function (l) { return l.id; });
   const _storedHangarTab = (state.currentAction && state.currentAction.hangarTab) || "";
   const hangarTab = hangarLineIds.indexOf(_storedHangarTab) >= 0 ? _storedHangarTab : "shield_laser";
-  const hangarTabs = SHIP_ASSEMBLY_LINES.map(function (l) {
+  const hangarTabs = HANGAR_ASSEMBLY_LINES.map(function (l) {
     return { id:l.id, name:l.name, selected: hangarTab === l.id };
   });
   // 部署物视图（经 state.combat.squad.deployables/deployableStorage，与 NPC 共享小队容量）
@@ -4235,6 +4304,19 @@ function estimateQueueItemCycleSeconds(state, item) {
       return area.baseTime / (eff || 1);
     }
     if (skill === "refining") {
+      // 2026-09-11 修复：refining 下有两个子活动（熔炼 / 自动拆解），二者 target 命名空间不同 ——
+      // 熔炼项 target = SMELTING_RECIPES[].name（如「凡晶石带」），
+      // 拆解项 target = 舰船组件 id（如 integrated_hull，见 selectors.js 的 result.queue）。
+      // 旧实现只按冶炼配方名匹配 → 拆解项必然 miss → return null → 队列 ETA 恒显示「—」。
+      // 拆解周期口径与引擎（tick.js / offline.js）完全一致：拆解基础时间 / 冶炼效率，
+      // 因为拆解与熔炼共用同一套速度乘区（getSmeltingEfficiencyForState）。
+      // 两套命名空间无交集（组件 id/名 vs 矿带名），故先查拆解表不会误伤熔炼项。
+      const dismantleRecipe = (typeof SHIP_COMPONENT_DISMANTLE_RECIPES !== "undefined")
+        ? SHIP_COMPONENT_DISMANTLE_RECIPES.find(r => r.id === target || r.name === target) : null;
+      if (dismantleRecipe) {
+        const dEff = (typeof getSmeltingEfficiencyForState === "function") ? getSmeltingEfficiencyForState(state).efficiency : 1;
+        return dismantleRecipe.baseTime / (dEff || 1);
+      }
       const recipe = (typeof SMELTING_RECIPES !== "undefined") ? SMELTING_RECIPES.find(r => r.name === target) : null;
       if (!recipe) return null;
       const eff = (typeof getSmeltingDisplayState === "function") ? getSmeltingDisplayState(state, Date.now()).efficiency : 1;

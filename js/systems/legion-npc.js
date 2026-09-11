@@ -1032,12 +1032,42 @@
   }
 
   // —— 集成入口（在线 tick / 离线结算统一调用）——
+  // 锚点反向漂移修复（与 research.js processResearchUntil 的 2026-09-08 修复同源）：
+  // 设备时钟被「快进后拨回」时，工资/经验/候选人刷新锚点会被写到未来，表现为
+  //   工资    `while (now >= lastSalarySettlementAt + PERIOD)` 恒假 → 整周期跳过
+  //   经验    `elapsedSeconds = max(0, now - lastXpAt)` = 0 → 提前 return，锚点连重置都没有（永久冻结）
+  //   候选人  `now >= candidateRefreshAt` 恒假 → 永不刷新
+  // 均为静默冻结：不报错、normalize 不钳制、重开不自愈。
+  // 做法：锚点超前本机时间即夹回 now（冻结期**不补发**，只恢复「继续推进」）。
+  let LEGION_NPC_ANCHOR_DRIFT_WARNED = false;
+  function clampFutureLegionAnchors(L, now) {
+    if (!L) return false;
+    const keys = ["candidateRefreshAt", "manualRefreshCycleStartedAt", "lastSalarySettlementAt", "lastXpSettlementAt", "lastXpAt"];
+    let maxAhead = 0, clamped = false;
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      const value = Number(L[key]);
+      if (!Number.isFinite(value) || value <= now) continue;
+      maxAhead = Math.max(maxAhead, value - now);
+      L[key] = now;   // 夹回本机时间：恢复推进，且不补发任何冻结期收益
+      clamped = true;
+    }
+    if (clamped && !LEGION_NPC_ANCHOR_DRIFT_WARNED) {
+      LEGION_NPC_ANCHOR_DRIFT_WARNED = true;
+      try {
+        console.warn("[legion-npc] 军团结算锚点超前本机时间，已夹回 now（时钟回拨修复）：超前 " + (maxAhead / 3600000).toFixed(2) + " 小时");
+      } catch (_) {}
+    }
+    return clamped;
+  }
   function tickLegionNpc(state, opts) {
     opts = opts || {};
     if (!isLegionSystemActive(state)) return { active: false };
   const L = ensureLegionState(state);
   const now = (typeof opts.now === "number") ? opts.now : Date.now();
   const rng = resolveRng(opts.rng);
+  // 必须在任何「锚点比较」之前夹回，否则 candidateRefreshAt 超前的档本 tick 仍不刷新。
+  if (clampFutureLegionAnchors(L, now)) state._dirty = true;
   // 首次激活（candidateRefreshAt 未排程）：立即生成一批候选，避免玩家需空等一个完整周期；
   // 否则仅当计时器到期才刷新。两种路径都走 refreshLegionNpcCandidates，重置计数并排程下次。
   const res = { active: true };

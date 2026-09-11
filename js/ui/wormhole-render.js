@@ -85,7 +85,7 @@
       '<button type="button" class="btn secondary" data-wh-abandon="1">放弃远征</button></div>' +
       '<div style="margin-top:6px;color:#8fa8c3;font-size:12px">已制压 ' + r.summary.cleared +
       ' · 跳过 ' + r.summary.skipped + ' · 重试 ' + r.summary.retried +
-      ' · 星币 +' + fmtNum(r.summary.isk) + ' · 泰坦 +' + fmtNum(r.summary.titan) +
+      ' · 矿物 +' + fmtNum(r.summary.materials || 0) +
       ' · 文物 +' + fmtNum(r.summary.relics) + ' · 印记 +' + fmtNum(r.summary.tokens) + '</div>' +
       '<div style="margin-top:4px;font-size:12px;color:#6f88a6">关闭游戏后远征照常推进，回来自动结算。</div>' +
       '</div>';
@@ -101,8 +101,8 @@
       '　<span style="color:#7f97b3;font-size:12px">模式：' + (r.mode === "rush" ? "直冲" : "遍历") + '</span></div>' +
       '<button type="button" class="btn secondary" data-wh-dismiss="1">关闭</button></div>' +
       '<div style="margin-top:6px;color:#8fa8c3;font-size:12px">已制压 ' + r.summary.cleared +
-      ' · 跳过 ' + r.summary.skipped + ' · 星币 +' + fmtNum(r.summary.isk) +
-      ' · 泰坦 +' + fmtNum(r.summary.titan) + ' · 文物 +' + fmtNum(r.summary.relics) +
+      ' · 跳过 ' + r.summary.skipped +
+      ' · 矿物 +' + fmtNum(r.summary.materials || 0) + ' · 文物 +' + fmtNum(r.summary.relics) +
       ' · 印记 +' + fmtNum(r.summary.tokens) + '</div></div>';
   }
 

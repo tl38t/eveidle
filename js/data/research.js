@@ -42,6 +42,7 @@ const RANK_MULT = {
   // 该分支不计入 BASE_TOTAL_WEIGHT（不压缩主树），单独成区。
   starmap: 0.9,      // 星图线数值节点
   wormhole: 0.9,     // 虫洞线数值节点
+  titan: 0.9,        // 泰坦线数值节点
 };
 
 // ---------------------------------------------------------------------------
@@ -546,6 +547,93 @@ const NODES = [
     bonus: null,
     description: "虫洞远征通关后，自动沿用上一次的选路模式与重试次数开赴下一个未通关的虫洞；失败、超时、主动撤退不触发，在线与离线均生效（当日最多链式 3 个）。",
   },
+
+  // —— C · 泰坦线（category: titan）——
+  //   线级门禁不在 prerequisites 里表达（与虫洞线同范式）：需 legion 研究已解锁，另需
+  //   「制压先驱文明核心 + 空间站船坞 Lv3」，由 ResearchSystem.isFrontierResearchUnlocked 判定。
+  //   tt_high/mid/low/rig 为槽位节点（unit "count"，走 getResearchBonusRaw 读原始整数）；
+  //   tt_eff/repair/forge 为数值节点（rank 0.9 = RANK_MULT.titan）；
+  //   tt_matcost / tt_cap 为协议节点（bonus:null，业务为真实机制而非数值）。
+  {
+    id: "tt_root", name: "泰坦工程学", category: "titan", era: 0, type: "foundation",
+    contentPack: "frontier",
+    maxLevel: 1, rank: 0.6, prerequisites: [{ id: "sm_root", level: 1 }],
+    effects: ["解锁泰坦研究线"],
+    bonus: null,
+    description: "解析先驱文明的泰坦建造体系，解锁泰坦研究分支（需已制压先驱文明核心，且空间站船坞 Lv3）。",
+  },
+  {
+    id: "tt_high", name: "末日武器小型化", category: "titan", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 2, rank: 1.5, prerequisites: [{ id: "tt_root", level: 1 }],
+    effects: ["泰坦可用高槽 +1", "泰坦可用高槽 +2"],
+    bonus: { group: "titanHighSlot", perLevel: 1, unit: "count" },
+    description: "压缩末日武器占用体积，每级释放 1 个高槽供普通武器安装（高槽占用 7→5）。",
+  },
+  {
+    id: "tt_mid", name: "中槽扩展", category: "titan", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 2, rank: 1.5, prerequisites: [{ id: "tt_root", level: 1 }],
+    effects: ["泰坦中槽 +1", "泰坦中槽 +2"],
+    bonus: { group: "titanMidSlot", perLevel: 1, unit: "count" },
+    description: "扩展泰坦中槽结构，每级 +1 中槽。",
+  },
+  {
+    id: "tt_low", name: "低槽扩展", category: "titan", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 2, rank: 1.5, prerequisites: [{ id: "tt_root", level: 1 }],
+    effects: ["泰坦低槽 +1", "泰坦低槽 +2"],
+    bonus: { group: "titanLowSlot", perLevel: 1, unit: "count" },
+    description: "扩展泰坦低槽结构，每级 +1 低槽。",
+  },
+  {
+    id: "tt_rig", name: "改装槽扩展", category: "titan", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 1, rank: 1.5, prerequisites: [{ id: "tt_root", level: 1 }],
+    effects: ["泰坦改装槽 +1"],
+    bonus: { group: "titanRigSlot", perLevel: 1, unit: "count" },
+    description: "为泰坦增设 1 个改装槽。",
+  },
+  {
+    id: "tt_eff", name: "泰坦推进与供能", category: "titan", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.titan, prerequisites: [{ id: "tt_root", level: 1 }],
+    effects: ["泰坦燃料 + 核心消耗 -3%", "泰坦燃料 + 核心消耗 -6%", "泰坦燃料 + 核心消耗 -9%", "泰坦燃料 + 核心消耗 -12%", "泰坦燃料 + 核心消耗 -15%"],
+    bonus: { group: "titanConsumption", perLevel: 3, unit: "%", negative: true },
+    description: "优化推进与供能效率，每级降低泰坦主武器齐射与末日武器核心的燃料消耗 3%。",
+  },
+  {
+    id: "tt_repair", name: "泰坦维修理论", category: "titan", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.titan, prerequisites: [{ id: "tt_root", level: 1 }],
+    effects: ["泰坦维修量 +3%", "泰坦维修量 +6%", "泰坦维修量 +9%", "泰坦维修量 +12%", "泰坦维修量 +15%"],
+    bonus: { group: "titanRepair", perLevel: 3, unit: "%" },
+    description: "完善泰坦损伤控制理论，每级提升泰坦三层维修量 3%。",
+  },
+  {
+    id: "tt_forge", name: "泰坦制造工艺", category: "titan", era: 1, type: "numeric",
+    contentPack: "frontier",
+    maxLevel: 5, rank: RANK_MULT.titan, prerequisites: [{ id: "tt_root", level: 1 }],
+    effects: ["泰坦组件/总装制造速度 +3%", "泰坦组件/总装制造速度 +6%", "泰坦组件/总装制造速度 +9%", "泰坦组件/总装制造速度 +12%", "泰坦组件/总装制造速度 +15%"],
+    bonus: { group: "titanForge", perLevel: 3, unit: "%" },
+    description: "改良泰坦组件与总装的制造工艺，每级提升其制造速度 3%（与主树舰船工程科研同口径，均为速度乘区）。",
+  },
+  {
+    id: "tt_matcost", name: "泰坦材料精算", category: "titan", era: 4, type: "protocol",
+    contentPack: "frontier",
+    maxLevel: 1, rank: RANK_MULT.protocol, prerequisites: [{ id: "tt_forge", level: 3 }],
+    effects: ["泰坦材料需求 -10%"],
+    bonus: null,
+    description: "精算泰坦材料的投料配比：锻星合金与熔虚晶体的需求降低 10%（三件组件与泰坦总装一并生效）。",
+  },
+  {
+    id: "tt_cap", name: "先驱科技电容回充协议", category: "titan", era: 4, type: "protocol",
+    contentPack: "frontier",
+    maxLevel: 1, rank: RANK_MULT.protocol, prerequisites: [{ id: "tt_eff", level: 3 }],
+    effects: ["全船电容回充 +10%（燃料消耗 -10%）"],
+    bonus: null,
+    description: "逆向先驱科技的电容回充结构：所有舰船的战斗与考古燃料消耗降低 10%，与「电容回充」改装件同口径加算。",
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -812,6 +900,31 @@ const RESEARCH_BONUS_CONSUMERS = {
   ],
   wormholeYield: [
     { target: "WORMHOLE.getWormholeYieldMultiplier", kind: "multiplier", groups: ["wormholeYield"] },
+  ],
+
+  // —— 深空开拓分支 · 泰坦线（消费点见 js/data/titans.js TITAN_RESEARCH）——
+  //   槽位节点（unit:"count"）：增量写入注册表内泰坦配置的 slots（getResearchBonusRaw 读原始整数）。
+  titanHighSlot: [
+    { target: "TITAN_RESEARCH.refreshTitanSlotResearch", kind: "multiplier", groups: ["titanHighSlot"] },
+  ],
+  titanMidSlot: [
+    { target: "TITAN_RESEARCH.refreshTitanSlotResearch", kind: "multiplier", groups: ["titanMidSlot"] },
+  ],
+  titanLowSlot: [
+    { target: "TITAN_RESEARCH.refreshTitanSlotResearch", kind: "multiplier", groups: ["titanLowSlot"] },
+  ],
+  titanRigSlot: [
+    { target: "TITAN_RESEARCH.refreshTitanSlotResearch", kind: "multiplier", groups: ["titanRigSlot"] },
+  ],
+  //   数值节点：仅泰坦生效（消费点内部按 ship.type === "titan" 判定）。
+  titanConsumption: [
+    { target: "selectors.getCombatFuelMultiplierFromState", kind: "reduceFraction", groups: ["titanConsumption"] },
+  ],
+  titanRepair: [
+    { target: "selectors.getCombatRepairMultiplierFromState", kind: "multiplier", groups: ["titanRepair"] },
+  ],
+  titanForge: [
+    { target: "selectors.getShipEngineeringSpeedBreakdown", kind: "multiplier", groups: ["titanForge"] },
   ],
 };
 

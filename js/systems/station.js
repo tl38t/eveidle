@@ -413,7 +413,8 @@ const STATION_BUILDING_NAMES = Object.freeze({
   booster_factory: "增强剂制造厂",
   archaeology_lab: "考古实验室",
   combat_command: "作战指挥中心",
-  shipyard: "舰船船坞"
+  shipyard: "舰船船坞",
+  legion_hall: "军团议事大厅"
 });
 
 const STATION_MAX_BUILDING_LEVEL = 5;
@@ -824,6 +825,8 @@ function getStationBuildingDisplayState(state, buildingId) {
       case "archaeology_lab":   effectText = "独特文物 ×" + [1,1.05,1.10,1.15,1.20,1.25][Math.min(5, level)].toFixed(2); break;
       case "combat_command":    effectText = "战斗XP ×" + [1,1.10,1.20,1.30,1.40,1.50][Math.min(5, level)].toFixed(2); break;
       case "shipyard":          effectText = "速度×" + [1,1.05,1.15,1.30,1.40,1.50][Math.min(5, level)].toFixed(2) + "·节省" + [0,2,4,6,8,10][Math.min(5, level)] + "%"; break;
+      // 军团议事大厅：唯一数值效果 = 军团可招募人数上限（5 + (大厅等级 - 1)，含研究加成，此处只显示建筑本身贡献）。
+      case "legion_hall":       effectText = "军团可招募上限 " + (level + 4); break;
     }
   } else {
     effectText = "未建造";
@@ -841,6 +844,7 @@ function getStationBuildingDisplayState(state, buildingId) {
       case "archaeology_lab":   nextEffectText = "→ 独特文物 ×" + [1,1.05,1.10,1.15,1.20,1.25][Math.min(5, nextLevel)].toFixed(2); break;
       case "combat_command":    nextEffectText = "→ 战斗XP ×" + [1,1.10,1.20,1.30,1.40,1.50][Math.min(5, nextLevel)].toFixed(2); break;
       case "shipyard":          nextEffectText = "→ 速度×" + [1,1.05,1.15,1.30,1.40,1.50][Math.min(5, nextLevel)].toFixed(2) + "·节省" + [0,2,4,6,8,10][Math.min(5, nextLevel)] + "%"; break;
+      case "legion_hall":       nextEffectText = "→ 可招募上限 " + (nextLevel + 4); break;
     }
   }
 
@@ -2110,7 +2114,7 @@ function getStationPageDisplayState(state, now) {
   var effectsRaw = (typeof getStationBuildingEffectsDisplayState === "function") ? getStationBuildingEffectsDisplayState(state) : {};
   var op = effectsRaw.operational !== false;
   var lvl = function(id) { return getStationBuildingLevel(state, id); };
-  var buildingNames = { resource_dispatch:"资源调度中心", planetary_control:"行星管控中心", smelting_refinery:"冶炼精炼厂", equipment_factory:"装备制造厂", booster_factory:"增强剂制造厂", archaeology_lab:"考古实验室", combat_command:"作战指挥中心", shipyard:"舰船船坞" };
+  // 建筑显示名唯一真值 = STATION_BUILDING_NAMES（此前此处另有一份硬编码副本且缺 legion_hall，已删除以防再次漂移）。
   // 综合后勤只依赖本体等级和燃料，不依赖资源调度中心
   var bodyLevelForLogistics = (typeof getStationLogisticsBaseMultiplier === "function") ? getStationLogisticsBaseMultiplier(state) : 1;
   var logisticsActive = op && bodyLevel > 0;

@@ -273,8 +273,9 @@ const ManufacturingStateActions = {
   },
 
   // 船坞二级标签切换：ships=舰船 / deployables=部署物
+  // 校验集合是船坞专有的 HANGAR_ASSEMBLY_LINES（含"titan"），不是舰船工程的 SHIP_ASSEMBLY_LINES。
   selectHangarTab(state, tab) {
-    if (!SHIP_ASSEMBLY_LINES.some(function (item) { return item.id === tab; })) return { changed:false, reason:"unknown-tab" };
+    if (!HANGAR_ASSEMBLY_LINES.some(function (item) { return item.id === tab; })) return { changed:false, reason:"unknown-tab" };
     if (state.currentAction.hangarTab === tab) return { changed:false, reason:"same" };
     state.currentAction.hangarTab = tab;
     state._dirty = true;

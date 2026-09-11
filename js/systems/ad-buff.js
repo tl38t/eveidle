@@ -1,13 +1,19 @@
 // js/systems/ad-buff.js
 // 脑突触加速剂（广告激励增益）系统。
-// 设计：独立乘区 ×1.3，持续 30 分钟；看完广告(isEnded===true)激活/刷新；每日上限 10 次 + 最小触发间隔 60s。
+// 设计：独立乘区 ×1.3，持续 30 分钟；看完广告(isEnded===true)激活/刷新。
+// 频次：与「科研工时广告」(js/systems/research-ad.js) 共用同一个每日额度池
+//       state.adQuota = { dailyDate, dailyCount, lastWatchAt }，默认 20 次/日 + 60s 最小间隔。
+//       ad-buff.js 是该池的唯一权威实现，research-ad.js 只做薄封装。
 // 作用域：采矿/采气/冶炼效率、玩家战斗伤害、技能经验(仅战斗技能经验，经 addStationModifiedCombatXp 入口；生产/考古/制造等非战斗技能经验不享受)。
 // 明确排除：空间站建筑升级速度、自动线、战斗速度(出手频率)。
 // 纪律：本模块不依赖任何 tap.* / 平台 SDK；平台调用只经 ad-service.js 的 window.showRewardedAd 抽象。
 
 const AD_BUFF_DURATION_MS = 30 * 60 * 1000;     // 30 分钟（旧：看广告直接激活时长；新：仅作展示参考）
-const AD_BUFF_DAILY_CAP = 10;                    // 每日观看上限（客户端计数，UTC+8 跨天清零）
-const AD_BUFF_MIN_INTERVAL_MS = 60 * 1000;       // 最小触发间隔，防连点
+// ---- 广告每日共享额度池（脑突触加速 + 科研工时 共用一个池）----
+const AD_DAILY_TOTAL_CAP = 20;                   // 共享池每日总上限（客户端计数，UTC+8 跨天清零）
+const AD_SHARED_INTERVAL_MS = 60 * 1000;         // 共享池最小触发间隔，防连点黑屏
+const AD_BUFF_DAILY_CAP = AD_DAILY_TOTAL_CAP;    // 兼容旧名：共享池上限
+const AD_BUFF_MIN_INTERVAL_MS = AD_SHARED_INTERVAL_MS; // 兼容旧名：共享池间隔
 const AD_BUFF_MULTIPLIER = 1.3;                  // 独立乘区倍率
 const AD_BUFF_KEY = "cerebralPlasma";
 const AD_BUFF_EXTRACTOR_LARGE_MS = 30 * 60 * 1000;  // 大型提取剂：看广告获取，30 分钟
@@ -125,7 +131,16 @@ function injectAllExtractors(state) {
   return total;
 }
 
-// ---- 每日频次（客户端计数，UTC+8 跨天清零）----
+// ---- 广告每日共享额度池（唯一权威实现）----
+// 存储：state.adQuota = { dailyDate, dailyCount, lastWatchAt }
+// 旧的 state.adBuffs.dailyCount / state.researchAd.dailyCount 从此不再写入，
+// 仅在共享池「首次初始化」时做一次性迁移（见 migrateAdQuota），迁移后绝不回写旧字段。
+function resolveAdState(state) {
+  if (state && typeof state === "object") return state;
+  return (typeof gameState !== "undefined") ? gameState : null;
+}
+
+// UTC+8 当日 key，跨天自动归零。
 function getAdBuffDailyKey(date) {
   const d = date || new Date();
   const utc8 = new Date(d.getTime() + 8 * 3600 * 1000);
@@ -135,34 +150,82 @@ function getAdBuffDailyKey(date) {
   return `${y}-${m}-${day}`;
 }
 
-function getAdBuffDailyCount(state) {
-  const b = getAdBuffState(state);
-  if (!b) return 0;
-  if (b.dailyDate !== getAdBuffDailyKey()) return 0;   // 跨天自动视为 0
-  return Number(b.dailyCount) || 0;
+// 取得/惰性初始化共享池，并在必要时执行一次性迁移。
+function getAdQuotaState(state) {
+  const s = resolveAdState(state);
+  if (!s) return null;
+  let q = s.adQuota;
+  if (!q || typeof q !== "object" || Array.isArray(q)) { q = {}; s.adQuota = q; }
+  migrateAdQuota(s, q);
+  return q;
 }
 
-// 是否还能看一次广告（间隔未到 / 当日已用完 则返回 false）
-function canWatchAd(state) {
-  const b = getAdBuffState(state);
-  if (!b) return false;
-  const now = Date.now();
-  const last = Number(b.lastWatchAt) || 0;
-  if (now - last < AD_BUFF_MIN_INTERVAL_MS) return false;   // 间隔未到
-  if (b.dailyDate !== getAdBuffDailyKey()) return true;     // 新的一天
-  return (Number(b.dailyCount) || 0) < AD_BUFF_DAILY_CAP;
-}
-
-// 成功观看后调用：计当日次数 + 记录最后观看时间（跨天重置）
-function recordAdWatch(state) {
-  const b = getAdBuffState(state);
-  if (!b) return;
+// 一次性迁移：仅当共享池从未初始化（dailyDate 为空）时执行。
+// 起点取「当天已存在的计数」的最大值，保证老玩家今天已看的广告次数不被清零重获；
+// lastWatchAt 同样取最大值，避免迁移瞬间绕过最小间隔。
+function migrateAdQuota(state, q) {
+  if (q.dailyDate) return;
   const key = getAdBuffDailyKey();
-  if (b.dailyDate !== key) { b.dailyDate = key; b.dailyCount = 0; }   // 跨天重置
-  b.dailyCount = (Number(b.dailyCount) || 0) + 1;
-  b.lastWatchAt = Date.now();
-  if (typeof gameState !== "undefined" && gameState) gameState._dirty = true;
+  let seed = 0, lastAt = 0;
+  const b = state.adBuffs;
+  if (b && typeof b === "object" && b.dailyDate === key) {
+    seed = Math.max(seed, Number(b.dailyCount) || 0);
+    lastAt = Math.max(lastAt, Number(b.lastWatchAt) || 0);
+  }
+  const r = state.researchAd;
+  if (r && typeof r === "object" && r.dailyDate === key) {
+    seed = Math.max(seed, Number(r.dailyCount) || 0);
+    lastAt = Math.max(lastAt, Number(r.lastWatchAt) || 0);
+  }
+  q.dailyDate = key;
+  q.dailyCount = Math.min(seed, AD_DAILY_TOTAL_CAP);
+  q.lastWatchAt = lastAt;
+  state._dirty = true;
 }
+
+// 今日已用次数（跨天自动视为 0）。
+function getAdDailyUsed(state) {
+  const q = getAdQuotaState(state);
+  if (!q) return 0;
+  if (q.dailyDate !== getAdBuffDailyKey()) return 0;
+  return Math.min(AD_DAILY_TOTAL_CAP, Number(q.dailyCount) || 0);
+}
+
+// 今日剩余次数。
+function getAdDailyRemaining(state) {
+  return Math.max(0, AD_DAILY_TOTAL_CAP - getAdDailyUsed(state));
+}
+
+function getAdLastWatchAt(state) {
+  const q = getAdQuotaState(state);
+  return q ? (Number(q.lastWatchAt) || 0) : 0;
+}
+
+// 共享池是否还允许再触发一次广告（间隔未到 / 当日已用完 → false）。
+function canUseAdQuota(state) {
+  const q = getAdQuotaState(state);
+  if (!q) return false;
+  if (Date.now() - (Number(q.lastWatchAt) || 0) < AD_SHARED_INTERVAL_MS) return false;
+  return getAdDailyUsed(state) < AD_DAILY_TOTAL_CAP;
+}
+
+// 成功看完广告后调用：共享池 +1 并刷新最后观看时间（跨天自动重置）。
+function consumeAdQuota(state) {
+  const q = getAdQuotaState(state);
+  if (!q) return false;
+  const key = getAdBuffDailyKey();
+  if (q.dailyDate !== key) { q.dailyDate = key; q.dailyCount = 0; }   // 跨天重置
+  q.dailyCount = (Number(q.dailyCount) || 0) + 1;
+  q.lastWatchAt = Date.now();
+  const s = resolveAdState(state);
+  if (s) s._dirty = true;
+  return true;
+}
+
+// ---- 旧接口：签名保持不变，内部改走共享池（ad-buff-widget.js 零改动）----
+function getAdBuffDailyCount(state) { return getAdDailyUsed(state); }
+function canWatchAd(state) { return canUseAdQuota(state); }
+function recordAdWatch(state) { consumeAdQuota(state); }
 
 // 状态快照（供 UI 显示）
 function getAdBuffStatus(state) {
@@ -175,7 +238,9 @@ function getAdBuffStatus(state) {
     remainingMs: getAdBuffRemainingMs(state),
     extractors: getExtractorCounts(state),
     dailyCount: getAdBuffDailyCount(state),
-    dailyCap: AD_BUFF_DAILY_CAP,
+    dailyCap: AD_DAILY_TOTAL_CAP,
+    dailyRemaining: getAdDailyRemaining(state),
+    sharedQuota: true,
     canWatch: canWatchAd(state),
     minIntervalMs: AD_BUFF_MIN_INTERVAL_MS,
     durationMs: AD_BUFF_DURATION_MS,
@@ -204,4 +269,23 @@ if (typeof window !== "undefined") {
   window.injectAllExtractors = injectAllExtractors;
   window.AD_BUFF_EXTRACTOR_LARGE_MS = AD_BUFF_EXTRACTOR_LARGE_MS;
   window.AD_BUFF_EXTRACTOR_SMALL_MS = AD_BUFF_EXTRACTOR_SMALL_MS;
+  // ---- 广告每日共享额度池（脑突触加速 + 科研工时 共用）----
+  window.getAdDailyUsed = getAdDailyUsed;
+  window.getAdDailyRemaining = getAdDailyRemaining;
+  window.getAdLastWatchAt = getAdLastWatchAt;
+  window.canUseAdQuota = canUseAdQuota;
+  window.consumeAdQuota = consumeAdQuota;
+  window.AD_DAILY_TOTAL_CAP = AD_DAILY_TOTAL_CAP;
+  window.AD_SHARED_INTERVAL_MS = AD_SHARED_INTERVAL_MS;
+  // 命名空间入口：research-ad.js 只依赖它，不猜函数名。
+  window.AdDailyQuota = {
+    TOTAL_CAP: AD_DAILY_TOTAL_CAP,
+    INTERVAL_MS: AD_SHARED_INTERVAL_MS,
+    getUsed: getAdDailyUsed,
+    getRemaining: getAdDailyRemaining,
+    getLastWatchAt: getAdLastWatchAt,
+    canUse: canUseAdQuota,
+    consume: consumeAdQuota,
+    getDailyKey: getAdBuffDailyKey
+  };
 }

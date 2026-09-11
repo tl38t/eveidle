@@ -250,7 +250,8 @@ function renderStationPage(now) {
     booster_factory: "提升增强剂自动线的产出倍率，让无人值守的增强剂制造更快。",
     archaeology_lab: "提升考古独特文物的产出倍率，让遗迹勘测更有回报。",
     combat_command: "提升战斗经验获取速度，让练级更高效。",
-    shipyard: "加快舰船建造与强化速度，并节省相应资源；断油也保持生效。"
+    shipyard: "加快舰船建造与强化速度，并节省相应资源；断油也保持生效。",
+    legion_hall: "军团系统的核心建筑：建成后（并满足本体 Lv.2 及以上）解锁军团，可招募 NPC 团员、发放工资并积累经验。每提升 1 级增加 1 个可招募名额，并计入「管理经验倍率」的建筑等级总量；本建筑不计入维护燃料点数。"
   };
   var grid = document.getElementById("station-buildings-grid");
   if (grid) {

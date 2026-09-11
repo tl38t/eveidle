@@ -98,6 +98,7 @@
   function isFrontierResearchUnlocked(state, node) {
     if (!isLegionResearchUnlocked(state)) return false;
     if (!node) return true;
+    if (isTitanResearchLine(node)) return getTitanLineLockReason(state) === "";
     const category = node.category || "";
     const isWormholeLine = category === "wormhole" || (typeof node.id === "string" && node.id.indexOf("wh_") === 0);
     if (!isWormholeLine) return true;
@@ -107,11 +108,33 @@
     return !!WH.isUnlocked(state);
   }
 
+  // 泰坦研究线（category "titan"）判定与门禁：先过军团门禁（调用方已判），
+  // 另需「制压先驱文明核心 + 空间站船坞 Lv3」——读 state 真值，不依赖 titans.js 加载顺序。
+  function isTitanResearchLine(node) {
+    if (!node) return false;
+    if ((node.category || "") === "titan") return true;
+    return typeof node.id === "string" && node.id.indexOf("tt_") === 0;
+  }
+  function getTitanLineLockReason(state) {
+    const L = state && state.legion && state.legion.starmap;
+    const completed = (L && Array.isArray(L.completedNodeIds)) ? L.completedNodeIds.map(String) : [];
+    const finalId = String(
+      (typeof globalThis !== "undefined" && globalThis.LEGION_STARMAP_FINAL_ID) ||
+      (typeof window !== "undefined" && window.LEGION_STARMAP_FINAL_ID) || "200"
+    );
+    if (completed.indexOf(finalId) < 0) return "需先制压先驱文明核心（完成星图主线）";
+    const shipyard = (state && state.station && state.station.buildings)
+      ? (Number(state.station.buildings.shipyard) || 0) : 0;
+    if (shipyard < 3) return "需将空间站船坞升级至 Lv3（当前 Lv" + shipyard + "）";
+    return "";
+  }
+
   // 人类可读的未解锁原因（供 UI 展示）；已解锁返回空串。
   function getFrontierResearchLockReason(state, node) {
     const legionReason = getLegionResearchLockReason(state);
     if (legionReason) return legionReason;
     if (!node) return "";
+    if (isTitanResearchLine(node)) return getTitanLineLockReason(state);
     const category = node.category || "";
     const isWormholeLine = category === "wormhole" || (typeof node.id === "string" && node.id.indexOf("wh_") === 0);
     if (!isWormholeLine) return "";
@@ -516,6 +539,11 @@
     research.history.push({ techId, level, completedAt: safeTs }); // 虚拟游标 / 真实 now
     research.activeResearch = null;
     markResearchDirty(state); // 成功状态变更 → 标记待保存（沿用现有自动保存）
+    // 泰坦研究线槽位节点（tt_high/mid/low/rig）完成后，立即按研究等级重算注册表内泰坦配置的槽位，
+    // 使装配页/战斗模块装配在下一次渲染即生效（幂等；非泰坦节点为无害空转，titans.js 缺载时静默跳过）。
+    if (typeof refreshTitanSlotResearch === "function") {
+      try { refreshTitanSlotResearch(state); } catch (e) { /* 槽位刷新失败不得影响研究结算 */ }
+    }
     // 事件：每个完成步骤严格一次；payload 契约固定为 {techId, level}（不漂移）；
     // 第三参 metadata.timestamp = 完成该步的虚拟游标时间（多步离线各事件时间独立）。
     const GE =
@@ -782,6 +810,33 @@
   }
 
   // -------------------------------------------------------------------------
+  // addResearchHours(state, seconds)
+  //   向科研工时银行追加余额（秒），是「广告 / 虫洞商店 / 成就」三类产路的
+  //   唯一写入入口；消费侧 applyResearchHours 与单步 50% 上限均不变。
+  //   返回 { ok, reason, addedSeconds, bankSeconds }。
+  // -------------------------------------------------------------------------
+  function addResearchHours(state, seconds) {
+    const research = state && state.research ? state.research : null;
+    if (!research || typeof research !== "object" || Array.isArray(research)) {
+      return { ok: false, reason: "NO_RESEARCH_STATE" };
+    }
+    const add = Number(seconds);
+    if (!isFinite(add) || add <= 0) {
+      return { ok: false, reason: "INVALID_SECONDS" };
+    }
+    const bankRaw = research.researchHourBank;
+    const bank = (typeof bankRaw === "number" && isFinite(bankRaw) && bankRaw >= 0) ? bankRaw : 0;
+    const newBank = bank + add;
+    research.researchHourBank = newBank;
+    state._dirty = true;
+    const GE = getEventBus();
+    if (GE && typeof GE.emit === "function") {
+      GE.emit("research:hoursAdded", { seconds: add, bankSeconds: newBank }, { timestamp: Date.now() });
+    }
+    return { ok: true, reason: null, addedSeconds: add, bankSeconds: newBank };
+  }
+
+  // -------------------------------------------------------------------------
   // cancelResearch(state, now)
   //   取消当前研究：进度作废（不写 completedLevels、不写 history、不 emit
   //   research:stepCompleted），已投入的成就科研工时全额退回银行。
@@ -900,6 +955,7 @@
     getResearchProgress,
     // Batch E：科研工时消耗 / 研究取消
     applyResearchHours,
+    addResearchHours,
     cancelResearch,
     // Batch F：移除队列项
     removeQueuedResearch,

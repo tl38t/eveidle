@@ -2184,6 +2184,9 @@ const SaveManager = {
     this._deviceReadError = null;
     this._deviceCandidate = null;
     this._selectedEnvelope = null;
+    // 2026-09-11 登录转圈修复：本地优先放行后的后台云对账标记（见 _startBackgroundCloudReconcile）。
+    this._backgroundReconcileStarted = false;
+    this._backgroundConflictPending = false;
     this._emitBootState();
     const self = this;
     // localStorage remains a synchronous first probe, but is not applied yet. The final
@@ -2364,7 +2367,30 @@ const SaveManager = {
       this._prepareFreshState();
       return this._commitFinal("local-only", { persist: true, upload: "none", ensureMirror: true });
     }
-    return Promise.resolve(cs.fetchCloudEnvelope())
+
+    // ── 本地优先（2026-09-11 登录转圈修复 · A）────────────────────────────────
+    // 已有可用本地候选（localStorage 或设备镜像）时立即放行，不再 await 云端查询。
+    // 原先无条件 `await cs.fetchCloudEnvelope()` 使得云端不通/挂起时，即使本地档完好，
+    // 玩家每次启动也被固定阻塞（最长 15s）——这正是玩家反馈的「登录转圈 / 转一会圈才能登陆」。
+    // 云端查询转为后台对账（_startBackgroundCloudReconcile），只影响「是否需要提示冲突」，
+    // 不再决定玩家能否进入游戏。
+    //
+    // upload 传 "none"：此刻云端状态未知，绝不能在未对账前把本地推上去覆盖云端；
+    // 对账判定 local 更新后，由后台链路触发 markDirty 走既有自动同步。
+    if (device && device.envelope) {
+      this._applySelectedEnvelope(device.envelope, device.source);
+      const committed = this._commitFinal("ready", {
+        persist: device.source !== "local",
+        upload: "none",
+        ensureMirror: true
+      });
+      this._startBackgroundCloudReconcile(device);
+      return committed;
+    }
+
+    // ── 无本地候选（全新玩家 / 换设备 / 本地档被清空）：必须等云端定夺，
+    // 但关键路径超时收紧到 CLOUD_BOOT_FETCH_TIMEOUT_MS（3s），超时即转 awaiting-cloud 等待态。
+    return Promise.resolve(cs.fetchCloudEnvelope({ timeoutMs: CLOUD_BOOT_FETCH_TIMEOUT_MS }))
       .then(function (fetched) {
         // P0-6：fetchCloudEnvelope 返回 {status:"none"|"ok"|"error"} 显式状态，不再以 null 混淆。
         if (fetched && fetched.status === "error") {
@@ -2418,6 +2444,57 @@ const SaveManager = {
         self._prepareFreshState();
         return self._commitFinal("ready", { persist: true, upload: "mark", ensureMirror: true });
       });
+  },
+  // 后台云端对账（A 配套，2026-09-11 登录转圈修复）。
+  // 本地档已放行后静默查询云端，只在「必须由玩家决定」时才弹浮层。
+  // fail-closed 语义不变：任何情况下都不静默覆盖本地或云端。
+  //   identical           → 无事发生（最常见路径，零打扰）
+  //   use-local           → markDirty，交给既有 30s 自动同步把本地推上去
+  //   use-cloud / conflict→ 置 awaiting-choice 弹冲突浮层，由玩家定夺
+  //   查询失败/超时        → 只记录同步状态，绝不打扰玩家（本地档已在正常运行）
+  _startBackgroundCloudReconcile(device) {
+    const self = this;
+    const cs = this._cloudSave;
+    if (!cs || !cs.isAvailable() || !device || !device.envelope) return;
+    if (this._backgroundReconcileStarted) return;
+    this._backgroundReconcileStarted = true;
+    Promise.resolve(cs.fetchCloudEnvelope()).then(function (fetched) {
+      // 期间若已离开终态（玩家手动删档/导入并重载等），放弃本次对账，不干扰玩家。
+      if (self._bootState !== "ready" && self._bootState !== "local-only") return;
+      if (!fetched || fetched.status === "error") {
+        self._cloudSyncFailed = true;
+        self._lastCloudError = (fetched && fetched.error) || new Error("后台云档对账失败");
+        return;
+      }
+      const hasCloud = !!(fetched.status === "ok" && fetched.envelope);
+      const meta = (cs.getSyncMeta && cs.getSyncMeta()) || {};
+      const localChecksum = device.envelope.checksum;
+      const decision = cs.decideResolution({
+        hasLocal: true,
+        hasCloud: hasCloud,
+        localChecksum: localChecksum,
+        cloudChecksum: hasCloud ? (fetched.envelope.checksum || "") : "",
+        lastCloudChecksum: meta.lastCloudChecksum
+      });
+      if (decision.decision === "identical") {
+        self._syncLastCloudChecksum(localChecksum);
+        return;
+      }
+      if (decision.decision === "use-local") {
+        try { cs.markDirty("auto"); } catch (e) {}
+        return;
+      }
+      // use-cloud / conflict：必须由玩家决定 → 弹冲突浮层。此时游戏已在运行，
+      // resolveCloudConflict 会走「后台冲突」分支（写盘 + reload），绝不原地替换运行中的 gameState。
+      self._backgroundConflictPending = true;
+      self._pendingCloudEnvelope = hasCloud ? fetched : null;
+      self._pendingDeviceCandidate = device;
+      self._bootState = "awaiting-choice";
+      self._emitBootState();
+    }).catch(function (err) {
+      self._cloudSyncFailed = true;
+      self._lastCloudError = err;
+    });
   },
   _failBoot(error) {
     this._lastBootError = error || new Error("存档恢复失败");
@@ -2714,6 +2791,12 @@ const SaveManager = {
     const useCloud = (choice === "cloud" && this._pendingCloudEnvelope && this._pendingCloudEnvelope.status === "ok" && this._pendingCloudEnvelope.envelope);
     const useDevice = (choice === "local" && this._pendingDeviceCandidate && this._pendingDeviceCandidate.envelope);
     if (!useCloud && !useDevice) return Promise.resolve(false);
+    // ── 后台对账冲突（2026-09-11 登录转圈修复 · A 配套）────────────────────────
+    // 该场景下游戏已进入 ready 并在运行（tick / UI / 定时器都持有当前 gameState），
+    // 因此绝不能走下面的 _applySelectedEnvelope 原地替换，改为「写盘 + reload」干净收敛。
+    if (this._backgroundConflictPending) {
+      return this._resolveBackgroundConflict(!!useCloud);
+    }
     // P0-7：①整条链路（含同步抛错）统一包进 Promise 链，选「本地」不再同步穿出导致 .catch 永不执行；
     // ②_pending* 只在真正落定成功后才销毁 —— 旧实现在 _commitFinal 之前就清空，失败后重试材料已丢，
     // 再点任何按钮都返回 false，配合 .then 里的 hideConflictChoice 撤掉遮罩 → 永久阻塞 + 底层 spinner 空转。
@@ -2745,6 +2828,54 @@ const SaveManager = {
       self._emitBootState();
       throw err; // 不调用 _conflictResolver：启动事务继续挂起，等待玩家重新选择
     });
+  },
+  // 后台对账冲突收敛（2026-09-11 登录转圈修复 · A 配套）。
+  // 与「启动前冲突」的关键区别：此刻游戏已在运行，gameState 已被 tick / UI / 定时器持有，
+  // 因此「使用云端存档」不能原地替换状态，改为把云档 payload 写入本地主键后 reload ——
+  // 重载后 localChecksum === cloudChecksum，走 identical 分支干净收敛。
+  _resolveBackgroundConflict(useCloud) {
+    const self = this;
+    this._backgroundConflictPending = false;
+    let p;
+    if (useCloud) {
+      p = Promise.resolve().then(function () {
+        const ok = self.adapter.save(self._pendingCloudEnvelope.envelope.payload);
+        if (!ok) {
+          const cause = (self.adapter._lastError && self.adapter._lastError.message) || "未知原因";
+          throw new Error("云端存档写入本地失败：" + cause);
+        }
+        self._syncLastCloudChecksum(self._pendingCloudEnvelope.envelope.checksum);
+        return true;
+      }).then(function () {
+        // 落盘成功 → reload 并以云档启动。reload 是最安全的「切换存档」方式：
+        // 避免在运行中的 tick / 定时器 / UI 持有旧状态时原地换档。
+        try { location.reload(); } catch (e) {}
+        return true;
+      });
+    } else {
+      p = Promise.resolve().then(function () {
+        // 保留本地 → 上传本地覆盖云端（与启动前选「本地」语义一致，同样受 60s 门禁约束）。
+        const cs = self._cloudSave;
+        if (cs && cs.isAvailable && cs.isAvailable()) {
+          try { cs.markDirty("auto"); cs.maybeUpload(gameState, "auto"); } catch (e) {}
+        }
+        self._bootState = "ready";
+        self._emitBootState();
+        return true;
+      });
+    }
+    return Promise.resolve(p).then(function () {
+      self._pendingCloudEnvelope = null;
+      self._pendingDeviceCandidate = null;
+      if (typeof self._conflictResolver === "function") { const r = self._conflictResolver; self._conflictResolver = null; r(true); }
+      return true;
+    }).catch(function (err) {
+      // 覆盖失败：不清 pending、不复位状态，弹窗留在原地允许重试；本地档保持原样，绝不静默丢档。
+      self._lastBootError = err;
+      self._bootState = "awaiting-choice";
+      self._emitBootState();
+      throw err;
+    });
   }
 };
 window.SaveManager = SaveManager;
@@ -2768,6 +2899,11 @@ const AWAIT_CLOUD_MAX_WAIT_MS = 15000;  // 连接窗口：期间隐藏"新建账
 const AWAIT_CLOUD_POLL_MS = 3000;       // 轮询云端间隔
 const AWAIT_CLOUD_STOP_MS = 120000;     // 整体停止轮询上限（约 2 分钟，避免无限定时器）
 const AWAIT_CLOUD_FETCH_MS = 8000;      // 单次云档查询超时：SDK 不回调 success/fail 时降级，绝不永久冻结 bootstrap
+// 2026-09-11 登录转圈修复（B）：启动关键路径（无本地候选、必须等云端）的硬超时。
+// 原先 fetchCloudEnvelope 内部固定 15000ms，导致云端不通时玩家固定等待 15s；收紧到 3000ms，
+// 超时即转 awaiting-cloud 等待态（该态另有 15s/120s 两档，且不再阻塞 bootstrap 主链）。
+// 注意：有本地候选时根本不走这条路径 —— 本地优先，见 _runCloudStartup。
+const CLOUD_BOOT_FETCH_TIMEOUT_MS = 3000;
 
 const SYNC_META_KEY = "deep_space_idle_sync_meta";
 const ACH_LEDGER_KEY = "deep_space_idle_achievement_ledger";

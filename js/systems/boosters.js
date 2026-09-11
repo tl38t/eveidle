@@ -674,6 +674,13 @@ function getShipBuildingQuote(state, recipe, context) {
       cost = reduced;
     }
   }
+  // 研究·泰坦材料精算（tt_matcost，泰坦线协议）：仅缩放两种泰坦精炼材料需求 ×0.90。
+  // 复用唯一入口 TITAN_RESEARCH.applyTitanMaterialCostResearchToCost（非泰坦材料原值返回），
+  // 逐条向上取整、下限 1；不改静态配方表（研究等级可逆）。本函数是组件/总装材料成本的唯一漏斗，
+  // 在线校验 / tick 扣料 / 离线结算 / 队列 / UI 成本展示 / 空间站自动线全部经此生效。
+  if (typeof TITAN_RESEARCH !== "undefined" && TITAN_RESEARCH && typeof TITAN_RESEARCH.applyTitanMaterialCostResearchToCost === "function") {
+    cost = TITAN_RESEARCH.applyTitanMaterialCostResearchToCost(state, cost);
+  }
   // 技能超载(skillLevelBonus)的临时等级由 getEffectiveSkillLevel 在「玩家侧」体现，
   // 不得再加入门槛，否则与玩家等级加成相互抵消、跨不过门槛（用户反馈 bug）。
   // 门槛仅受舰船槽精密配给剂的 shipMaterialLevelGate 影响（装备槽不抬升舰船门槛）。

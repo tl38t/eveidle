@@ -540,6 +540,10 @@ function getArchaeologyFuelCostState(state, site, shipRef) {
     const mods = getRigModifiers(state, shipRef) || {};
     rigFuelSaving = Number(mods.archaeologyFuelEfficiency) || 0;
   }
+  // 研究·先驱科技电容回充协议（tt_cap，全船）：与战斗路径同口径并入加算折扣（+10% 电容回充）。
+  if (typeof TITAN_RESEARCH !== "undefined" && TITAN_RESEARCH && typeof TITAN_RESEARCH.getCapacitorRechargeBonus === "function") {
+    rigFuelSaving += Number(TITAN_RESEARCH.getCapacitorRechargeBonus(state)) || 0;
+  }
   const combinedShipMultiplier = Math.max(0, shipFuelMultiplier - rigFuelSaving);
 
   // 电容管理技能(capacitorManagement)对所有燃料路径统一生效，降低燃料消耗；与战斗路径 skill 乘子一致。

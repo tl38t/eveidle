@@ -13,7 +13,8 @@
   .equipeng-info .skill-level { font-size: 13px; color: #6a7a8e; }
   .equipeng-info .skill-level .lv-num { color: #4db8b8; font-weight: 700; font-size: 16px; }
   .equipeng-info .skill-output { font-size: 14px; font-weight: 700; color: #4db8b8; }
-  .equipeng-info .me-logistics { color: #8a9bb0; font-size: 12px; margin-left: 8px; white-space: nowrap; }
+  /* 同 components.css 的 .me-logistics：去掉 nowrap，允许收缩折行，避免长加成链撑破面板 */
+  .equipeng-info .me-logistics { color: #8a9bb0; font-size: 12px; margin-left: 8px; min-width: 0; overflow-wrap: anywhere; }
   /* ===== 空间站面板（Phase 3C-8）===== */
   .station-panel .panel-body { max-height: none; overflow-y: visible; }
   .station-section { margin-bottom: 20px; padding: 12px; background: rgba(20,40,55,0.5); border-radius: 6px; }
@@ -24,6 +25,17 @@
   .legion-col h4 { font-size: 13px; margin: 0 0 8px; display: flex; align-items: center; gap: 8px; }
   .legion-col .btn-mini { font-size: 11px; padding: 2px 8px; cursor: pointer; border-radius: 4px; border: 1px solid rgba(138,180,214,0.5); background: rgba(40,70,95,0.6); color: #cfe3f5; }
   .legion-card { background: rgba(12,28,40,0.6); border: 1px solid rgba(48,66,84,0.7); border-radius: 6px; padding: 8px; margin-bottom: 8px; font-size: 12px; position: relative; }
+  /* 军团团员二级分类标签页（2026-09-11 由组头改为标签栏：全部/生产/战斗/考古/管理，默认全部） */
+  .legion-npc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+  .legion-npc-tab {
+    padding: 5px 12px; border-radius: 4px; font-size: 12px; cursor: pointer; line-height: 1.4;
+    border: 1px solid #2a3a4a; background: transparent; color: #8a9aae;
+    transition: border-color .15s, background .15s, color .15s;
+    display: inline-flex; align-items: center; gap: 5px; user-select: none;
+  }
+  .legion-npc-tab:hover { border-color: #466580; color: #bcc5d0; }
+  .legion-npc-tab.selected { border-color: #38bdf8; background: rgba(56,189,248,.15); color: #7dd3fc; }
+  .legion-npc-tab-count { font-size: 11px; opacity: .8; }
   .legion-card .lc-name { font-weight: 600; color: #cfe3f5; padding-right: 54px; }
   .legion-card .lc-detail-hint { position: absolute; top: 8px; right: 8px; font-size: 11px; color: #5a8aaa; cursor: pointer; }
   .legion-card .lc-detail-hint:hover { color: #8ab4d6; }
