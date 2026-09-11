@@ -1,0 +1,5 @@
+{
+  "name": "alliance-daily-tasks",
+  "private": true,
+  "engines": { "node": ">=18" }
+}

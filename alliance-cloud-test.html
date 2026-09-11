@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>联盟云端连接测试</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; padding: 24px; background: #0b1220; color: #dceeff; }
+    main { max-width: 720px; margin: auto; }
+    h1 { font-size: 22px; }
+    button { padding: 10px 16px; border: 1px solid #4d78a3; border-radius: 6px; background: #163453; color: #fff; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; padding: 16px; border: 1px solid #294967; border-radius: 8px; background: #07101b; line-height: 1.6; }
+    .ok { color: #79e2a5; } .fail { color: #ff8e8e; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>联盟云端连接测试</h1>
+  <p>本页面只测试 TapTap H5 是否能访问 CloudBase，不读取游戏存档。</p>
+  <button id="run">重新测试</button>
+  <pre id="result">准备测试…</pre>
+</main>
+<script>
+(function () {
+  "use strict";
+  var envId = "deepspace-d4govx4ikc2e937c5";
+  var base = "https://" + envId + ".api.tcloudbasegateway.com";
+  var deviceKey = "eve_idle_cloud_test_device";
+  var output = document.getElementById("result");
+  function deviceId() {
+    var id = localStorage.getItem(deviceKey);
+    if (!id) { id = "cloud_test_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8); localStorage.setItem(deviceKey, id); }
+    return id;
+  }
+  function line(text, ok) { output.innerHTML += '<span class="' + (ok ? 'ok' : 'fail') + '">' + (ok ? '✓ ' : '✗ ') + text.replace(/[&<>"']/g, function (c) { return ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]; }) + '</span>\n'; }
+  function run() {
+    output.textContent = "来源：" + location.origin + "\n接口：" + base + "\n\n";
+    var started = Date.now();
+    fetch(base + "/auth/v1/signin/anonymously", { method: "POST", headers: { "Content-Type": "application/json", "x-device-id": deviceId() }, body: "{}" })
+      .then(function (res) { return res.text().then(function (text) { var body = text ? JSON.parse(text) : {}; if (!res.ok) throw new Error(body.error_description || body.message || ("HTTP " + res.status)); return body; }); })
+      .then(function (auth) {
+        line("匿名登录成功（" + (Date.now() - started) + "ms）", true);
+        return fetch(base + "/v1/rdb/rest/alliances?select=id,code,name,member_count&limit=10", { headers: { "Authorization": "Bearer " + auth.access_token } });
+      })
+      .then(function (res) { return res.text().then(function (text) { var body = text ? JSON.parse(text) : {}; if (!res.ok) throw new Error(body.error_description || body.message || ("HTTP " + res.status)); return body; }); })
+      .then(function (rows) { line("联盟列表读取成功：" + (rows || []).length + " 个联盟", true); line("结论：TapTap 可以访问 CloudBase", true); })
+      .catch(function (error) { line("请求失败：" + (error.message || error), false); line("结论：当前来源仍被网络或跨域策略拦截", false); });
+  }
+  document.getElementById("run").onclick = run;
+  run();
+})();
+</script>
+</body>
+</html>

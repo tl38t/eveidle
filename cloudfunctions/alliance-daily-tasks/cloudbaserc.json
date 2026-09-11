@@ -1,0 +1,11 @@
+{
+  "functions": [
+    {
+      "name": "alliance-daily-tasks",
+      "type": "HTTP",
+      "handler": "index.main",
+      "public": true,
+      "gatewayPath": "/alliance-daily-tasks"
+    }
+  ]
+}
