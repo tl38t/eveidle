@@ -40,10 +40,18 @@
     if (root.SaveManager && root.SaveManager.save) root.SaveManager.save();
   }
 
-  function renderMemberCard(alliance) {
+  function renderMemberCard(alliance, members) {
+    members = members || [];
+    var memberRows = members.map(function (member) {
+      var isOwner = String(member.playerId) === String(alliance.ownerId);
+      return '<div class="alliance-member-row"><span>' + esc(member.username || member.playerId) + '</span>' +
+        '<span class="text-muted">' + (isOwner ? "盟主 · " : "") + esc(member.playerId) + '</span></div>';
+    }).join("");
     return '<div class="alliance-card"><div class="alliance-card-title">当前联盟（实时）</div>' +
       '<div class="alliance-name">' + esc(alliance.name || alliance.code) + '</div>' +
-      '<div class="alliance-meta">联盟代码：' + esc(alliance.code) + ' · 成员：' + esc(alliance.memberCount) + '/10<br>联盟 ID：' + esc(alliance.id) + '</div></div>';
+      '<div class="alliance-meta">联盟代码：' + esc(alliance.code) + ' · 成员：' + esc(alliance.memberCount) + '/10<br>联盟 ID：' + esc(alliance.id) + '</div>' +
+      '<div class="alliance-card-title" style="margin-top:12px;">联盟成员</div>' +
+      (memberRows || '<div class="alliance-task-hint">暂无成员数据</div>') + '</div>';
   }
 
   function renderListView(list) {
@@ -110,9 +118,10 @@
     withTimeout(root.AllianceApi.getAlliance(), 8000).then(function (alliance) {
       if (alliance) {
         rememberAlliance(alliance);
-        box.innerHTML = renderMemberCard(alliance);
-        if (ctx.msg) ctx.msg.textContent = "已连接云端联盟";
-        return null;
+        return root.AllianceApi.getMembers(alliance.id).then(function (members) {
+          box.innerHTML = renderMemberCard(alliance, members);
+          if (ctx.msg) ctx.msg.textContent = "已连接云端联盟";
+        });
       }
       return withTimeout(root.AllianceApi.listAlliances(), 8000).then(function (list) {
         box.innerHTML = renderListView(list || []);

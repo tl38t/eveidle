@@ -103,6 +103,25 @@
       .then(function (rows) { return (rows || []).map(mapAlliance); });
   }
 
+  function getMembers(allianceId) {
+    var id = Number(allianceId);
+    if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(new Error("联盟 ID 无效"));
+    return authed("/v1/rdb/rest/alliance_members?select=player_id&alliance_id=eq." + encodeURIComponent(id) + "&limit=10")
+      .then(function (members) {
+        members = members || [];
+        var ids = members.map(function (member) { return member.player_id; }).filter(Boolean);
+        if (!ids.length) return [];
+        return authed("/v1/rdb/rest/players?select=player_id,username&player_id=in.(" + ids.map(encodeURIComponent).join(",") + ")")
+          .then(function (players) {
+            var names = {};
+            (players || []).forEach(function (player) { names[player.player_id] = player.username || ""; });
+            return members.map(function (member) {
+              return { playerId: member.player_id, username: names[member.player_id] || "" };
+            });
+          });
+      });
+  }
+
   function createAlliance(value) {
     var check = root.AlliancePolicy.validate(value);
     if (!check.ok) return Promise.reject(new Error(check.reason));
@@ -181,6 +200,7 @@
     initializeSteamIdentity: initializeSteamIdentity,
     getAlliance: getAlliance,
     listAlliances: listAlliances,
+    getMembers: getMembers,
     createAlliance: createAlliance,
     joinAlliance: joinAlliance,
     diagnose: diagnose
