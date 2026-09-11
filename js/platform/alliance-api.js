@@ -8,6 +8,7 @@
   var BASE_URL = "https://" + ENV_ID + ".api.tcloudbasegateway.com";
   var playerKey = "eve_idle_alliance_player_id";
   var tokenKey = "eve_idle_alliance_access_token";
+  var steamSessionPromise = null;
 
   function getPlayerId() {
     var value = localStorage.getItem(playerKey);
@@ -16,6 +17,24 @@
       localStorage.setItem(playerKey, value);
     }
     return value;
+  }
+
+  function initializeSteamIdentity() {
+    if (steamSessionPromise) return steamSessionPromise;
+    var session = root.SteamAllianceSession;
+    if (!session || typeof session.authenticate !== "function") {
+      return Promise.reject(new Error("Steam 联盟认证接口不可用"));
+    }
+    steamSessionPromise = session.authenticate().then(function (result) {
+      if (!result || !result.ok || !result.steamId) throw new Error("Steam 联盟认证失败");
+      var steamId = String(result.steamId);
+      localStorage.setItem(playerKey, steamId);
+      return steamId;
+    }).catch(function (error) {
+      steamSessionPromise = null;
+      throw error;
+    });
+    return steamSessionPromise;
   }
 
   function request(path, options) {
@@ -159,6 +178,7 @@
   root.AllianceApi = {
     isOnline: function () { return true; },
     getPlayerId: getPlayerId,
+    initializeSteamIdentity: initializeSteamIdentity,
     getAlliance: getAlliance,
     listAlliances: listAlliances,
     createAlliance: createAlliance,

@@ -159,6 +159,15 @@
     var content = document.getElementById("alliance-content");
     if (!content) return;
 
+    var initialize = root.AllianceApi && root.AllianceApi.initializeSteamIdentity
+      ? root.AllianceApi.initializeSteamIdentity()
+      : Promise.resolve();
+    initialize.catch(function () { return null; }).then(function () {
+      loadAfterIdentity(msg, content);
+    });
+  }
+
+  function loadAfterIdentity(msg, content) {
     var playerId = root.AllianceApi && root.AllianceApi.getPlayerId
       ? root.AllianceApi.getPlayerId()
       : "";
