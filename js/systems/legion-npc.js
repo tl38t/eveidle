@@ -1042,12 +1042,19 @@
   let LEGION_NPC_ANCHOR_DRIFT_WARNED = false;
   function clampFutureLegionAnchors(L, now) {
     if (!L) return false;
+    // candidateRefreshAt 是「下次刷新」锚点，正常应落在 [now, now+CANDIDATE_REFRESH_MS]（一个周期内）；
+    // 仅当超出一个周期（设备时钟被快进后拨回，锚点被写到极远未来）才视为冻结夹回。
+    // 其余锚点（last*At / manualRefreshCycleStartedAt）是「已完成」时间戳，正常应 ≤ now，超过即夹回。
+    const candidateAheadLimit = now + CANDIDATE_REFRESH_MS;
     const keys = ["candidateRefreshAt", "manualRefreshCycleStartedAt", "lastSalarySettlementAt", "lastXpSettlementAt", "lastXpAt"];
     let maxAhead = 0, clamped = false;
     for (let i = 0; i < keys.length; i++) {
       const key = keys[i];
       const value = Number(L[key]);
       if (!Number.isFinite(value) || value <= now) continue;
+      // candidateRefreshAt 允许在 [now, now+周期] 内；其余锚点超过 now 即夹回。
+      const aheadLimit = (key === "candidateRefreshAt") ? candidateAheadLimit : now;
+      if (value <= aheadLimit) continue;
       maxAhead = Math.max(maxAhead, value - now);
       L[key] = now;   // 夹回本机时间：恢复推进，且不补发任何冻结期收益
       clamped = true;
