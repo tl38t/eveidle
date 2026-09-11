@@ -54,7 +54,14 @@ async function verifyTicket(ticketBase64) {
   const response = await fetch("https://partner.steam-api.com/ISteamUserAuth/AuthenticateUserTicket/v1/?" + query);
   const data = await response.json().catch(() => ({}));
   const steamId = data && data.response && data.response.params && data.response.params.steamid;
-  if (!response.ok || !steamId) throw new Error("Steam 认证票据验证失败");
+  if (!response.ok || !steamId) {
+    console.error("Steam ticket verification rejected", {
+      status: response.status,
+      response: data && data.response ? data.response : { error: "invalid_response" }
+    });
+    const reason = data && data.response && (data.response.error || data.response.errorcode);
+    throw new Error(reason ? "Steam 认证票据验证失败：" + reason : "Steam 认证票据验证失败");
+  }
   return String(steamId);
 }
 
