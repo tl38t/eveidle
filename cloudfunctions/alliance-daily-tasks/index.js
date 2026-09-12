@@ -164,7 +164,7 @@ async function submitTask(body) {
   if (!Number.isSafeInteger(allianceId) || allianceId <= 0) throw new Error("联盟 ID 无效");
   if (!Number.isSafeInteger(taskId) || taskId <= 0) throw new Error("任务 ID 无效");
   if (!Number.isFinite(amount) || amount <= 0) throw new Error("提交数量无效");
-  const rows = await db("/rpc/submit_alliance_task", {
+  const rows = await db("/v1/rdb/rest/rpc/submit_alliance_task", {
     method: "POST",
     body: JSON.stringify({
       p_task_id: taskId,
@@ -183,7 +183,7 @@ async function upgradeBuilding(body) {
   const allianceId = Number(body.allianceId);
   if (!Number.isSafeInteger(allianceId) || allianceId <= 0) throw new Error("联盟 ID 无效");
   if (body.buildingType !== "logistics_hub") throw new Error("未知联盟建筑");
-  const rows = await db("/rpc/upgrade_alliance_building", {
+  const rows = await db("/v1/rdb/rest/rpc/upgrade_alliance_building", {
     method: "POST",
     body: JSON.stringify({ p_alliance_id: allianceId, p_player_id: body.playerId, p_building_type: body.buildingType })
   });

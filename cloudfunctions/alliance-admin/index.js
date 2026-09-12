@@ -44,7 +44,7 @@ exports.main = async function main(event) {
     if (!Number.isSafeInteger(allianceId) || allianceId <= 0 || !validId(body.targetPlayerId)) return reply(400, { ok: false, error: "invalid_admin_request" });
     const action = body.action === "kick_member" ? "kick_alliance_member" : body.action === "transfer_leader" ? "transfer_alliance_leader" : "";
     if (!action) return reply(400, { ok: false, error: "unknown_admin_action" });
-    const rows = await db("/rpc/" + action, { method: "POST", body: JSON.stringify({ p_alliance_id: allianceId, p_owner_player_id: owner, p_target_player_id: body.targetPlayerId }) });
+    const rows = await db("/v1/rdb/rest/rpc/" + action, { method: "POST", body: JSON.stringify({ p_alliance_id: allianceId, p_owner_player_id: owner, p_target_player_id: body.targetPlayerId }) });
     return reply(200, { ok: true, action: body.action, result: Array.isArray(rows) ? rows[0] : rows });
   } catch (error) { console.error("alliance-admin", error); return reply(400, { ok: false, error: error.message || "admin_action_failed" }); }
 };
