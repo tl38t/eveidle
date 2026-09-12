@@ -20,8 +20,8 @@ begin
   ) then
     raise exception '只有盟主可以管理成员';
   end if;
-  delete from public.alliance_members
-   where alliance_id = p_alliance_id and player_id = p_target_player_id;
+  delete from public.alliance_members m
+   where m.alliance_id = p_alliance_id and m.player_id = p_target_player_id;
   if not found then raise exception '目标玩家不是联盟成员'; end if;
   return query select p_alliance_id, p_target_player_id, true;
 end;
@@ -48,8 +48,8 @@ begin
     raise exception '只有盟主可以转让联盟';
   end if;
   if not exists (
-    select 1 from public.alliance_members
-     where alliance_id = p_alliance_id and player_id = p_target_player_id
+    select 1 from public.alliance_members m
+     where m.alliance_id = p_alliance_id and m.player_id = p_target_player_id
   ) then
     raise exception '只能转让给联盟成员';
   end if;
