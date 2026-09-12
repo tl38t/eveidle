@@ -23,6 +23,9 @@ begin
   delete from public.alliance_members m
    where m.alliance_id = p_alliance_id and m.player_id = p_target_player_id;
   if not found then raise exception '目标玩家不是联盟成员'; end if;
+  update public.alliances a
+     set member_count = (select count(*) from public.alliance_members m where m.alliance_id = p_alliance_id)
+   where a.id = p_alliance_id;
   return query select p_alliance_id, p_target_player_id, true;
 end;
 $$;
