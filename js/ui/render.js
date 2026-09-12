@@ -450,6 +450,68 @@ function initHoverInfo() {
   document.addEventListener('keydown', function (e) {
     if (e.key === 'Escape') { hideHoverInfoPop(); hideEffModal(); }
   });
+  initGameplayHelp();
+}
+
+const GAMEPLAY_HELP = {
+  '采矿': '1. 选择矿区并开始采集。\n\n2. 采集完成后领取产物，效率会受到技能、装备、增强剂和空间站后勤影响。\n\n3. 升级采矿技能和装备，可以提高产出与采集速度。',
+  '采气': '1. 选择气体区域并开始采集。\n\n2. 采集完成后领取气体，效率会受到技能、装备、增强剂和空间站后勤影响。\n\n3. 升级采气技能和装备，可以提高产出与采集速度。',
+  '冶炼': '1. 选择冶炼配方并准备材料。\n\n2. 开始冶炼后等待完成，产物会进入仓库。\n\n3. 冶炼效率会受到技能、装备、增强剂和联盟冶炼中枢加成影响。',
+  '行星开发': '1. 选择行星并部署生产线。\n\n2. 行星材料会随时间产出，完成后领取并重新部署。\n\n3. 合理安排行星与生产线，是稳定获取行星资源的关键。',
+  '动作队列': '1. 这里显示当前正在执行和等待执行的动作。\n\n2. 动作会按队列顺序完成，完成后可领取对应产物。\n\n3. 队列容量和执行效率会受到相关技能、装备与建筑加成影响。',
+  '舰船工程': '1. 选择舰船蓝图并准备所需材料。\n\n2. 开始制造后等待生产完成，成品会进入仓库。\n\n3. 升级舰船工程技能和相关加成，可以缩短制造时间。',
+  '装备工程': '1. 使用蓝图和材料制造装备、舰船组件及改装件。\n\n2. 制造完成的物品会进入仓库，可在船坞或装备界面使用。\n\n3. 高级配方通常需要更高技能等级和稀有材料。',
+  '增强剂制造': '1. 选择增强剂配方并准备材料。\n\n2. 制造完成后领取增强剂，在对应生产或行动界面装备使用。\n\n3. 增强剂提供限时效率加成，使用前请确认适用领域。',
+  '战斗行动': '1. 选择舰船和战斗区域后开始战斗。\n\n2. 战斗会消耗燃料并持续推进波次，击败敌人可获得材料和战利品。\n\n3. 舰船配置、装备、技能和联盟战斗加成都会影响战斗结果。',
+  '考古行动': '1. 选择考古区域并装备探针。\n\n2. 开始扫描后等待行动完成，成功可获得材料、蓝图和稀有物品。\n\n3. 探针等级和考古加成会影响扫描效率与奖励质量。',
+  '船坞': '1. 查看已拥有的舰船并选择当前使用的舰船。\n\n2. 舰船可以装配装备、组件和改装件。\n\n3. 不同舰船适合不同的采集、制造和战斗场景。',
+  '商店': '1. 浏览并购买可用物品。\n\n2. 购买前确认价格、库存和适用范围。\n\n3. 商店内容会随游戏进度逐步开放。',
+  '空间站管理': '1. 升级空间站设施，获得生产、仓储和后勤加成。\n\n2. 设施升级需要消耗对应资源或建设材料。\n\n3. 设施之间存在协同关系，优先升级当前主要玩法需要的项目。',
+  '军团': '1. 军团是跨玩家的长期成长系统。\n\n2. 通过军团研究、编队和相关玩法获得团队加成。\n\n3. 军团等级和成员贡献会影响可用功能。',
+  '星图': '1. 在星图上探索并解锁采集节点。\n\n2. 节点可提供持续资源或特殊奖励，部分区域需要满足条件后进入。\n\n3. 规划路线和节点分配，可以提高长期收益。',
+  '虫洞': '1. 选择虫洞入口并配置出击舰船。\n\n2. 虫洞行动包含探索、战斗和事件，完成后领取奖励。\n\n3. 注意燃料、舰船状态和当前阶段限制。',
+  '仓库': '1. 查看和整理矿物、装备、蓝图、材料与战利品。\n\n2. 物品可用于制造、装配、任务提交或出售。\n\n3. 定期清理无用物品，为重要材料预留空间。',
+  '存档管理': '1. 保存当前游戏进度，必要时可导出或导入存档。\n\n2. 进行重要操作前建议先保存。\n\n3. 导入存档会覆盖当前进度，请确认文件来源。',
+  '设置': '1. 调整音效、显示、语言和其他游戏选项。\n\n2. 设置会保存在本地，清理浏览器数据可能导致设置重置。\n\n3. 遇到显示或连接问题，可先使用网络诊断。',
+  '统计档案': '1. 查看采集、制造、战斗和资源等历史统计。\n\n2. 统计用于了解成长趋势，不会改变实际游戏状态。',
+  '成就': '1. 完成指定目标即可解锁成就。\n\n2. 成就记录会随进度保存，部分成就需要完成特定玩法或条件。\n\n3. 已解锁成就可在这里查看。',
+  '标准服技能排行榜': '1. 排行榜展示玩家的技能和成长数据。\n\n2. 数据更新可能存在延迟，以云端记录为准。\n\n3. 提升技能等级即可提高对应排名。',
+  '研究': '1. 选择研究项目并投入研究资源。\n\n2. 研究完成后解锁新的配方、能力或玩法。\n\n3. 根据当前发展方向安排研究顺序。'
+};
+
+let _gameplayHelpModal = null;
+function showGameplayHelp(title, message) {
+  if (_gameplayHelpModal) _gameplayHelpModal.remove();
+  const overlay = document.createElement('div');
+  overlay.className = 'gameplay-help-overlay';
+  overlay.innerHTML = '<div class="gameplay-help-modal"><h3></h3><div class="gameplay-help-body"></div><button type="button" class="gameplay-help-close">知道了</button></div>';
+  overlay.querySelector('h3').textContent = title + ' · 玩法说明';
+  overlay.querySelector('.gameplay-help-body').textContent = message;
+  overlay.querySelector('.gameplay-help-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+  _gameplayHelpModal = overlay;
+}
+
+function initGameplayHelp() {
+  if (!document.getElementById('gameplay-help-style')) {
+    const style = document.createElement('style');
+    style.id = 'gameplay-help-style';
+    style.textContent = '.gameplay-help-btn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-left:8px;padding:0;border:1px solid #5d9aca;border-radius:50%;background:#173752;color:#9fddff;font-size:14px;font-weight:800;vertical-align:middle;cursor:pointer}.gameplay-help-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(3,8,15,.78)}.gameplay-help-modal{width:min(520px,94vw);max-height:80vh;overflow:auto;padding:22px;border:1px solid #6ca6c9;border-radius:14px;background:#101b2a;color:#dceeff;box-shadow:0 16px 50px rgba(0,0,0,.55)}.gameplay-help-modal h3{margin:0 0 14px;color:#9fddff;font-size:20px}.gameplay-help-body{white-space:pre-line;color:#b8c9da;font-size:15px;line-height:1.75}.gameplay-help-close{display:block;margin:20px 0 0 auto;padding:8px 18px;border:1px solid #3d7552;border-radius:6px;background:#183523;color:#9be39e;font-weight:700;cursor:pointer}';
+    document.head.appendChild(style);
+  }
+  document.querySelectorAll('.panel-header > .panel-title').forEach(titleNode => {
+    if (titleNode.querySelector('.gameplay-help-btn')) return;
+    const title = titleNode.textContent.replace(/^[^\u4e00-\u9fffA-Za-z]+/, '').trim();
+    if (title.indexOf('联盟大厅') >= 0) return;
+    const key = Object.keys(GAMEPLAY_HELP).find(name => title.indexOf(name) >= 0);
+    if (!key) return;
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'gameplay-help-btn'; button.textContent = '?';
+    button.title = '查看玩法说明'; button.setAttribute('aria-label', key + '玩法说明');
+    button.addEventListener('click', e => { e.stopPropagation(); showGameplayHelp(key, GAMEPLAY_HELP[key]); });
+    titleNode.appendChild(button);
+  });
 }
 
 let _hoverInfoPop = null;
