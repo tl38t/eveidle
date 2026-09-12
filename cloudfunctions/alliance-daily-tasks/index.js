@@ -1,6 +1,5 @@
 "use strict";
 
-const crypto = require("crypto");
 
 /*
  * 联盟每日任务 HTTP 云函数（第一版）
@@ -14,7 +13,6 @@ const crypto = require("crypto");
 const API_BASE = String(process.env.CLOUDBASE_API_BASE || "").replace(/\/$/, "");
 const SERVER_API_KEY = process.env.CLOUDBASE_SERVER_API_KEY || "";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
-const SESSION_SECRET = process.env.ALLIANCE_SESSION_SECRET || "";
 const CATEGORIES = new Set(["mineral", "refining", "gas", "planetary", "booster", "equipment", "ship-component"]);
 const CATEGORY_SKILLS = {
   mineral: "mining",
@@ -70,23 +68,6 @@ function serverDate() {
 
 function validPlayerId(value) {
   return typeof value === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(value);
-}
-
-function sessionPlayerId(event) {
-  const headers = event && event.headers || {};
-  const header = headers["x-alliance-session"] || headers["X-Alliance-Session"] || "";
-  const parts = String(header).split(".");
-  if (!SESSION_SECRET || parts.length !== 3 || parts[0] !== "v1") return "";
-  try {
-    const encoded = parts[1];
-    const expected = crypto.createHmac("sha256", SESSION_SECRET).update(encoded).digest("base64url");
-    const a = Buffer.from(expected);
-    const b = Buffer.from(parts[2]);
-    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return "";
-    const payload = JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
-    if (payload.platform !== "steam" || !payload.sub || Number(payload.exp) <= Math.floor(Date.now() / 1000)) return "";
-    return String(payload.sub);
-  } catch (_) { return ""; }
 }
 
 function rewardPoints(tier, materialValue, standardTimeSec, category) {
@@ -212,42 +193,12 @@ async function upgradeBuilding(body) {
     pointsBalance: row && (row.points_balance == null ? row.pointsBalance : row.points_balance) };
 }
 
-async function kickMember(body, ownerPlayerId) {
-  const allianceId = Number(body.allianceId);
-  if (!Number.isSafeInteger(allianceId) || allianceId <= 0) throw new Error("联盟 ID 无效");
-  if (!validPlayerId(body.targetPlayerId)) throw new Error("目标玩家无效");
-  const rows = await db("/rpc/kick_alliance_member", {
-    method: "POST",
-    body: JSON.stringify({ p_alliance_id: allianceId, p_owner_player_id: ownerPlayerId, p_target_player_id: body.targetPlayerId })
-  });
-  return { allianceId, targetPlayerId: body.targetPlayerId, removed: Boolean((Array.isArray(rows) ? rows[0] : rows) || true) };
-}
-
-async function transferLeader(body, ownerPlayerId) {
-  const allianceId = Number(body.allianceId);
-  if (!Number.isSafeInteger(allianceId) || allianceId <= 0) throw new Error("联盟 ID 无效");
-  if (!validPlayerId(body.targetPlayerId)) throw new Error("目标玩家无效");
-  const rows = await db("/rpc/transfer_alliance_leader", {
-    method: "POST",
-    body: JSON.stringify({ p_alliance_id: allianceId, p_owner_player_id: ownerPlayerId, p_target_player_id: body.targetPlayerId })
-  });
-  return { allianceId, ownerPlayerId: body.targetPlayerId, transferred: Boolean((Array.isArray(rows) ? rows[0] : rows) || true) };
-}
-
 exports.main = async function main(event) {
   const method = String(event && (event.httpMethod || event.requestContext && event.requestContext.http && event.requestContext.http.method) || "POST").toUpperCase();
   if (method === "OPTIONS") return reply(204, {});
   if (method !== "POST") return reply(405, { ok: false, error: "method_not_allowed" });
   try {
     const body = bodyOf(event);
-    if (body.action === "kick_member" || body.action === "transfer_leader") {
-      const ownerPlayerId = sessionPlayerId(event);
-      if (!ownerPlayerId) return reply(401, { ok: false, error: "alliance_session_required" });
-      const result = body.action === "kick_member"
-        ? await kickMember(body, ownerPlayerId)
-        : await transferLeader(body, ownerPlayerId);
-      return reply(200, { ok: true, ...result });
-    }
     if (!validPlayerId(body.playerId)) return reply(400, { ok: false, error: "player_id_invalid" });
     if (body.action === "health") {
       return reply(200, { ok: true, service: "alliance-daily-tasks", serverDate: serverDate() });

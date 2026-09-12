@@ -3,6 +3,7 @@
 
   var cloudOrigin = "https://alliance-deepspace-d4govx4ikc2e937c5.webapps.tcloudbase.com";
   var taskGateway = "https://deepspace-d4govx4ikc2e937c5.api.tcloudbasegateway.com/alliance-daily-tasks";
+  var adminGateway = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/alliance-admin";
   var cloudTaskSyncStarted = false;
 
   function esc(value) {
@@ -72,7 +73,7 @@
           if (!token && session && typeof session.authenticate === "function") return session.authenticate().then(function (x) { return x.sessionToken; });
           return token;
         }).then(function (token) {
-          return fetch(taskGateway, { method: "POST", headers: { "Content-Type": "application/json", "x-alliance-session": token || "" }, body: JSON.stringify({ action: action, allianceId: alliance.id, targetPlayerId: target }) });
+          return fetch(adminGateway, { method: "POST", headers: { "Content-Type": "application/json", "x-alliance-session": token || "" }, body: JSON.stringify({ action: action, allianceId: alliance.id, targetPlayerId: target }) });
         }).then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.ok) throw new Error(data.error || "踢出成员失败"); return data; }); })
           .then(function () { if (msg) msg.textContent = successText; startCloudRefresh(); })
           .catch(function (error) { button.disabled = false; if (msg) msg.textContent = error.message || successText + "失败"; });

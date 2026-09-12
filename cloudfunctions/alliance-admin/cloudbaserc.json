@@ -1,0 +1,1 @@
+{"functions":[{"name":"alliance-admin","type":"HTTP","handler":"index.main","public":true,"gatewayPath":"/alliance-admin"}]}
