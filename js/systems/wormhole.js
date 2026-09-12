@@ -262,15 +262,27 @@
   }
   // 从每日原始节点生成本次远征专用副本。倍率字段向 1 缓释、加值字段向 0 缓释；
   // 不改写 daily.nodes，保证同一张每日裂隙可在不同永久升级快照下稳定复用。
-  function effectiveTrialNode(W, daily, node) {
+  function effectiveTrialNode(W, daily, node, state) {
     if (!node || node.kind !== "trial") return node;
     const affix = affixById(daily && daily.affixId);
     const scale = affixResistMult(W);
     const archUpgrade = node.type === "archaeology" ? runUpg(W, "archSuccess") : 0;
     const collectUpgrade = node.type === "collection" ? runUpg(W, "collectEff") : 0;
-    if ((!affix || scale >= 1) && archUpgrade <= 0 && collectUpgrade <= 0) return node;
-    const out = Object.assign({}, node);
+    // 2026-09-12 修复：虫洞节点时限须叠加「时空锚定」(wh_time / wormholeNodeTime) 研究乘区。
+    // 此前 effectiveTrialNode 只处理词条 timeMult，漏叠 wh_time，导致该项 +4%/级对实际试炼时限完全不生效
+    // （仅 nodeTimeLimit 的规划值含该乘区，引擎启动读的是此处字段）。
+    // getStarmapTrialLimitMultiplier 对虫洞来源返回 1，不会被抵消；星图节点不走此函数，无外溢。
+    const whTimeMult = getWormholeNodeTimeMultiplier(state);
     const timeProp = { battle: "battleTrialTimeLimitSeconds", collection: "collectionTimeLimitSeconds", archaeology: "archaeologyTimeLimitSeconds" }[node.type];
+    const applyTimeMult = function (n) {
+      // 仅虫洞来源节点吃「时空锚定」乘区；星图节点走各自的 getStarmapTrialLimitMultiplier，互不外溢
+      if (node && node.source === "wormhole" && timeProp && n && Number.isFinite(Number(n[timeProp]))) {
+        n[timeProp] = Math.max(10, Math.round(Number(n[timeProp]) * whTimeMult));
+      }
+      return n;
+    };
+    if ((!affix || scale >= 1) && archUpgrade <= 0 && collectUpgrade <= 0) return applyTimeMult(Object.assign({}, node));
+    const out = Object.assign({}, node);
     const rawTimeMult = affix && affix.timeMult && affix.timeMult[node.type];
     if (timeProp && Number.isFinite(Number(rawTimeMult))) {
       out[timeProp] = Math.max(10, Math.round(CFG.NODE_LIMIT_SECONDS * towardNeutral(rawTimeMult, 1, scale)));
@@ -312,10 +324,10 @@
         out.archaeologyInterferenceSeconds = Math.max(0, 1.5 * towardNeutral(affix.interferenceMult, 1, scale));
       }
     }
-    return out;
+    return applyTimeMult(out);
   }
   function getEffectiveTrialNode(state, daily, node) {
-    return effectiveTrialNode(ensure(state), daily, node);
+    return effectiveTrialNode(ensure(state), daily, node, state);
   }
   function nodeTimeLimit(W, daily, type, state) {
     const affix = affixById(daily.affixId);
@@ -1044,7 +1056,7 @@
     const W = state.wormhole;
     if (node.kind === "treasure") { run.nextEventAt = t + nodeDuration(W, daily, node, state) * 1000; return; }
     // 真实引擎：到达即开战/开扫/开采（成败由引擎与玩家舰船/技能决定；离线由 offline-combat/分段 tick 补算）
-    const res = startEngineTrial(state, effectiveTrialNode(W, daily, node), t);
+    const res = startEngineTrial(state, effectiveTrialNode(W, daily, node, state), t);
     if (res && res.changed && res.trial) {
       run.nextEventAt = (Number(res.trial.endsAt) || t + 180000) + 50;   // 兜底轮询点；更早结束靠每 tick 轮询
       // 离线战斗预判（2026-09-10 方案 A）：离线共享战斗内核冻结（出发已停行动槽），战斗试炼

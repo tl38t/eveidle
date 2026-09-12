@@ -1755,7 +1755,9 @@
     const t = Number(now) || Date.now();
     if (t < s.startedAt) return { changed:false, reason:"time-reversed" };
     const elapsed = Math.max(0, (t - s.startedAt) / 1000);
-    const limit = Math.max(1, Math.min(LIMIT_SECONDS, (s.endsAt - s.startedAt) / 1000));
+    // 2026-09-12 修复：时限以 start() 写入的 endsAt - startedAt 为准（已含试炼耐受 sm_limit 等研究乘区）。
+    // 原 Math.min(LIMIT_SECONDS, ...) 把 >180s 的研究加成截断回 180，导致「研究后 196s 试炼、190s 完成却判失败」。
+    const limit = Math.max(1, (s.endsAt - s.startedAt) / 1000);
     s.gathered = Math.min(s.amount, s.amount * Math.min(1, elapsed / Math.max(0.001, s.requiredSeconds)));
     if (s.requiredSeconds <= limit && elapsed >= s.requiredSeconds) return finish(state, true, t);
     if (elapsed >= limit) return finish(state, false, t);
