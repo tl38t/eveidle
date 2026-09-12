@@ -13,65 +13,143 @@
 <body><main>
 <header><h1>联盟大厅</h1><button id="back">返回游戏</button></header>
 <div id="status" class="status">正在连接 CloudBase…</div>
-<section class="panel"><div class="list-title">玩家资料</div><div class="label">显示名称（2～12位中文、英文、数字或下划线）</div><input id="username" maxlength="12" placeholder="请输入用户名" autocomplete="off"><div class="actions"><button class="primary" id="save-username">保存用户名</button></div></section>
+<section class="panel"><div class="list-title">玩家资料</div><div class="label">显示名称（2-12位中文、英文、数字或下划线）</div><input id="username" maxlength="12" placeholder="请输入用户名" autocomplete="off"><div class="actions"><button class="primary" id="save-username">保存用户名</button></div></section>
 <section id="current" class="panel"></section>
 <section id="members" class="panel" hidden><div class="list-title">联盟成员</div><div id="member-list"></div></section>
 <section id="construction" class="panel" hidden><div class="list-title">联盟建设</div><div id="construction-body"></div></section>
 <section id="daily-tasks" class="panel"><div class="list-title">今日建设任务</div><div id="daily-task-list"><div class="empty">等待任务数据…</div></div></section>
 <section class="panel"><div class="list-title">公开联盟</div><div id="list"><div class="empty">正在读取联盟列表…</div></div></section>
-<section class="panel"><div class="list-title">建立联盟</div><div class="label">联盟代码（1～3位大写英文字母）</div><input id="code" maxlength="3" placeholder="例如 EVE" autocomplete="off"><div class="actions"><button class="primary" id="create">建立联盟</button><button id="diagnose">网络诊断</button></div><pre id="diagnostic" class="diagnostic" hidden></pre></section>
+<section class="panel"><div class="list-title">建立联盟</div><div class="label">联盟代码�?�?位大写英文字母）</div><input id="code" maxlength="3" placeholder="例如 EVE" autocomplete="off"><div class="actions"><button class="primary" id="create">建立联盟</button><button id="diagnose">网络诊断</button></div><pre id="diagnostic" class="diagnostic" hidden></pre></section>
 </main><script>
-(function(){"use strict";
-var base="https://deepspace-d4govx4ikc2e937c5.api.tcloudbasegateway.com", functionBase="https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com", playerKey="eve_idle_cloud_player_id", tokenKey="eve_idle_cloud_access_token";
-var status=document.getElementById("status"),currentEl=document.getElementById("current"),listEl=document.getElementById("list"),memberPanel=document.getElementById("members"),memberListEl=document.getElementById("member-list"),constructionPanel=document.getElementById("construction"),constructionBodyEl=document.getElementById("construction-body"),dailyTaskListEl=document.getElementById("daily-task-list"),codeEl=document.getElementById("code"),usernameEl=document.getElementById("username"),token=null,latestAlliance=null,latestMembers=[],latestBuildingLevel=0;
-var qs=new URLSearchParams(location.search), returnUrl=qs.get("returnUrl"), queryId=qs.get("playerId"), playerId=queryId&&/^[A-Za-z0-9_.-]{1,100}$/.test(queryId)?queryId:localStorage.getItem(playerKey);
-if(!playerId){playerId="player_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8);localStorage.setItem(playerKey,playerId)}else localStorage.setItem(playerKey,playerId);
+// Repair nodes lost by legacy malformed markup before the application script
+// attaches handlers. This keeps old CloudBase webapp caches from blanking the page.
+(function(){
+  var main=document.querySelector("main")||document.body;
+  var specs=[
+    ["status","div","status"],["current","section","panel"],["members","section","panel"],
+    ["member-list","div",""],["construction","section","panel"],["construction-body","div",""],
+    ["daily-tasks","section","panel"],["daily-task-list","div",""],["list","div",""],
+    ["diagnostic","pre","diagnostic"],["username","input",""],["code","input",""]
+  ];
+  specs.forEach(function(x){if(!document.getElementById(x[0])){var e=document.createElement(x[1]);e.id=x[0];if(x[2])e.className=x[2];main.appendChild(e);}});
+  var fixedText={"save-username":"保存用户名","status":"正在连接 CloudBase…","diagnostic":""};
+  Object.keys(fixedText).forEach(function(id){var e=document.getElementById(id);if(e&&fixedText[id])e.textContent=fixedText[id];});
+  if(document.title)document.title="联盟大厅";
+  var h=document.querySelector("header h1");if(h)h.textContent="联盟大厅";
+  var back=document.getElementById("back");if(back)back.textContent="返回游戏";
+  var titles=["玩家资料","当前联盟","联盟成员","联盟建设","今日建设任务","公开联盟","建立联盟"];
+  Array.prototype.forEach.call(document.querySelectorAll(".list-title"),function(e,i){if(titles[i])e.textContent=titles[i];});
+  var labels=["显示名称（2-12位中文、英文、数字或下划线）","联盟代码（1-3位大写英文字母）"];
+  Array.prototype.forEach.call(document.querySelectorAll(".label"),function(e,i){if(labels[i])e.textContent=labels[i];});
+  ["save-username","create","diagnose","back"].forEach(function(id){if(!document.getElementById(id)){var b=document.createElement("button");b.id=id;b.textContent=id==="back"?"返回游戏":id==="create"?"建立联盟":id==="diagnose"?"网络诊断":"保存用户名";main.appendChild(b);}});
+})();
+</script><script>(function(){
+"use strict";
+var base="https://deepspace-d4govx4ikc2e937c5.api.tcloudbasegateway.com";
+var functionBase="https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com";
+var playerKey="eve_idle_cloud_player_id",tokenKey="eve_idle_cloud_access_token",token=null;
+var status=document.getElementById("status"),currentEl=document.getElementById("current"),listEl=document.getElementById("list"),memberPanel=document.getElementById("members"),memberListEl=document.getElementById("member-list"),constructionPanel=document.getElementById("construction"),constructionBodyEl=document.getElementById("construction-body"),dailyTaskListEl=document.getElementById("daily-task-list"),codeEl=document.getElementById("code"),usernameEl=document.getElementById("username");
+var qs=new URLSearchParams(location.search),returnUrl=qs.get("returnUrl"),playerId=qs.get("playerId")||localStorage.getItem(playerKey);
+if(!playerId){playerId="player_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8)}localStorage.setItem(playerKey,playerId);
+var latestAlliance=null,latestMembers=[],latestConstruction=null,latestBuildings=[],latestBuildingLevel=0;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
-function renderDailyTasks(serverTasks,serverDate){if(!dailyTaskListEl)return;var raw=qs.get("taskPreview"),date=serverDate||qs.get("taskDate")||"今日",tasks=serverTasks||[];if(!serverTasks){try{tasks=raw?JSON.parse(raw):[]}catch(e){tasks=[]}}var labels={mineral:"矿物采集",gas:"气体采集",planetary:"行星资源",equipment:"装备制造","ship-component":"舰船组件"};if(!tasks.length){dailyTaskListEl.innerHTML='<div class="empty">暂未收到今日任务。请从游戏内重新打开联盟页面。</div>';return}dailyTaskListEl.innerHTML=tasks.map(function(t){var id=t.id||t.task_id;var amount=t.requiredAmount==null?t.required_amount:t.requiredAmount;return'<div class="task-row"><div class="task-slot">'+esc(t.slot)+'</div><div class="task-main"><div class="task-name">'+esc(labels[t.category]||t.category)+' · '+esc(t.materialName||t.material_name||t.materialId||t.material_id)+'</div><div class="task-meta">需求：'+esc(amount)+' · 技能门槛 Lv.'+esc(t.requiredLevel==null?t.required_level:t.requiredLevel)+' · 标准制造/采集时间：'+esc(Math.ceil(Number(t.standardTimeSec==null?t.standard_time_sec:t.standardTimeSec)||0))+' 秒<br>奖励：'+esc(t.rewardPoints==null?t.reward_points:t.rewardPoints)+' 建设点</div></div><div class="task-tier">'+esc(t.difficulty)+'</div>'+(id?'<button class="task-submit" data-task-id="'+esc(id)+'" data-task-amount="'+esc(amount)+'" data-task-category="'+esc(t.category)+'" data-task-material="'+esc(t.materialId||t.material_id||"")+'">提交</button>':'')+'</div>'}).join("")+'<div class="task-note">任务日期：'+esc(date)+'（'+(serverTasks?'云端服务器已固化；提交时回到游戏核验材料':'当前为游戏侧预览，等待云函数部署')+'）</div>';Array.prototype.forEach.call(document.querySelectorAll(".task-submit"),function(b){b.onclick=function(){if(!latestAlliance){status.textContent="请先加入联盟";return}var target=returnUrl,j=target.indexOf("?")>=0?"&":"?";location.href=target+j+"allianceTaskId="+encodeURIComponent(b.getAttribute("data-task-id"))+"&allianceTaskAmount="+encodeURIComponent(b.getAttribute("data-task-amount"))+"&allianceTaskCategory="+encodeURIComponent(b.getAttribute("data-task-category"))+"&allianceTaskMaterial="+encodeURIComponent(b.getAttribute("data-task-material"))+"&allianceId="+encodeURIComponent(latestAlliance.id)}})}
-function syncDailyTasks(){var raw=qs.get("taskPreview"),functionUrl=qs.get("taskFunctionUrl")||functionBase+"/alliance-daily-tasks";if(!raw)return;var preview;try{preview=JSON.parse(raw)}catch(e){return}functionRequest(functionUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({playerId:playerId,taskPreview:preview})}).then(function(r){return r.ok?r.json():Promise.reject(new Error("daily task function unavailable"))}).then(function(result){if(result&&result.ok&&Array.isArray(result.tasks)&&result.tasks.length===5)renderDailyTasks(result.tasks,result.serverDate)}).catch(function(){})}
-function loadConstruction(cur){
-  if(!constructionPanel)return;
-  if(!cur){latestBuildingLevel=0;constructionPanel.hidden=true;return}
-  var constructionUrl="/v1/rdb/rest/alliance_construction?select=alliance_id,points_balance,total_points_earned&alliance_id=eq."+encodeURIComponent(cur.id)+"&limit=1";
-  var buildingUrl="/v1/rdb/rest/alliance_buildings?select=building_type,level,points_spent&alliance_id=eq."+encodeURIComponent(cur.id);
-  Promise.all([api(constructionUrl),api(buildingUrl)]).then(function(v){
-    var balance=v[0]&&v[0][0]||{points_balance:0,total_points_earned:0};
-    var building=(v[1]||[]).find(function(x){return x.building_type==="logistics_hub"})||{level:0,points_spent:0};
-    var isOwner=String(cur.owner_player_id)===String(playerId),costs=[100,250,500,1000,2000],level=Number(building.level)||0;
-    latestBuildingLevel=Math.max(0,Math.min(5,level));
-    var button=level<5&&isOwner?'<button class="primary" id="upgrade-building">升级（'+costs[level]+' 建设点）</button>':level>=5?'<span class="ok">已达最高等级</span>':"";
-    constructionPanel.hidden=false;
-    constructionBodyEl.innerHTML='<div class="meta">当前余额：<b class="building-level">'+esc(balance.points_balance||0)+'</b> 建设点<br>累计获得：'+esc(balance.total_points_earned||0)+' 建设点</div><div class="row"><div class="row-main"><div class="row-name">联盟后勤中继站</div><div class="row-meta">等级：'+esc(level)+'/5 · 已投入：'+esc(building.points_spent||0)+' 建设点<br>成员人数后勤加成仍按 1–4 / 5–9 / 10 人档位加算；建筑等级效果后续接入。</div></div>'+button+'</div><div class="building-note">只有联盟创建人可以升级建筑。升级费用：100 / 250 / 500 / 1000 / 2000。</div>';
-    var up=document.getElementById("upgrade-building");
-    if(!up)return;
-    up.onclick=function(){
-      up.disabled=true;
-      var functionUrl=qs.get("taskFunctionUrl")||functionBase+"/alliance-daily-tasks";
-      functionRequest(functionUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"upgrade_building",playerId:playerId,allianceId:cur.id,buildingType:"logistics_hub"})})
-        .then(function(r){return r.json().then(function(x){if(!r.ok||!x.ok)throw Error(x.error||"升级失败");return x})})
-        .then(function(x){status.textContent="建筑已升级到 Lv."+x.level;return loadConstruction(cur)})
-        .catch(showError)
-        .finally(function(){up.disabled=false});
-    };
-  }).catch(function(){latestBuildingLevel=0;constructionPanel.hidden=true});
-}
-renderDailyTasks();syncDailyTasks();
-function validName(v){return /^[\u4e00-\u9fffA-Za-z0-9_]{2,12}$/.test(v)}
-function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},opt.headers||{});return fetch(base+path,opt).then(function(r){return r.text().then(function(t){var b=t?JSON.parse(t):{};if(!r.ok){var e=new Error(b.error_description||b.message||("HTTP "+r.status));e.status=r.status;throw e}return b})})}
-function auth(force){if(force){token=null;localStorage.removeItem(tokenKey)}if(token)return Promise.resolve(token);token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);return request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(b){token=b.access_token;if(!token)throw Error("匿名登录未返回令牌");localStorage.setItem(tokenKey,token);return token})}
-function api(path,opt){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)}).catch(function(e){if(e.status===401)return auth(true).then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)});throw e})}
-function functionRequest(url,opt){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return fetch(url,opt)})}
-function getCurrent(){return api("/v1/rdb/rest/alliance_members?select=alliance_id&player_id="+encodeURIComponent("eq."+playerId)+"&limit=1").then(function(r){if(!r[0])return null;return api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&id=eq."+r[0].alliance_id+"&limit=1").then(function(a){return a[0]||null})})}
+function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},opt.headers||{});return fetch(base+path,opt).then(function(r){return r.text().then(function(t){var b=t?JSON.parse(t):{};if(!r.ok){var e=new Error(b.message||b.error||("HTTP "+r.status));e.status=r.status;throw e}return b})})}
+function auth(force){if(force){token=null;localStorage.removeItem(tokenKey)}if(token)return Promise.resolve(token);token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);return request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);return token})}
+function api(path,opt){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)}).catch(function(e){if(e.status===401)return auth(true).then(function(){return api(path,opt)});throw e})}
+function fn(url,body){return auth().then(function(t){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify(body||{})})}).then(function(r){return r.json().then(function(x){if(!r.ok||x.ok===false)throw Error(x.error||("HTTP "+r.status));return x})})}
+function getCurrent(){return api("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=eq."+encodeURIComponent(playerId)+"&limit=1").then(function(x){return x[0]?api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&id=eq."+x[0].alliance_id+"&limit=1").then(function(a){return a[0]||null}):null})}
 function getList(){return api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&order=created_at.desc&limit=100")}
-function getMembers(allianceId){return api("/v1/rdb/rest/alliance_members?select=player_id&alliance_id=eq."+encodeURIComponent(allianceId)+"&limit=10")}
-function getNames(ids){ids=ids.filter(Boolean);if(!ids.length)return Promise.resolve({});return api("/v1/rdb/rest/players?select=player_id,username&player_id=in.("+ids.map(encodeURIComponent).join(",")+")").then(function(rows){var out={};(rows||[]).forEach(function(r){out[r.player_id]=r.username});return out})}
-function render(cur,list,names,members){if(cur)cur.owner_username=names[cur.owner_player_id]||"";latestAlliance=cur;latestMembers=members||[];var owner=cur&&names[cur.owner_player_id]||cur&&cur.owner_player_id;var isOwner=cur&&String(cur.owner_player_id)===String(playerId);currentEl.innerHTML=cur?'<div class="label">当前联盟</div><div class="alliance-code">'+esc(cur.code)+'</div><div class="meta">联盟创建人：'+esc(owner)+'<br>当前成员：'+esc(cur.member_count)+'/10<br>联盟 ID：'+esc(cur.id)+'</div><div class="actions"><button class="' +(isOwner?'error':'secondary')+'" id="leave-alliance">'+(isOwner?'解散联盟':'退出联盟')+'</button></div>':'<div class="empty">你还没有加入联盟。可以创建联盟，或加入下面的公开联盟。</div>';memberPanel.hidden=!cur;memberListEl.innerHTML=cur?(members||[]).map(function(m){return'<div class="row"><div class="row-main"><div class="row-name">'+esc(names[m.player_id]||m.player_id)+'</div><div class="row-meta">玩家 ID：'+esc(m.player_id)+(String(m.player_id)===String(cur.owner_player_id)?' · 创建人':'')+'</div></div></div>'}).join(""):"";var leaveButton=document.getElementById("leave-alliance");if(leaveButton)leaveButton.onclick=function(){if(!confirm(isOwner?'确定解散联盟吗？联盟资源也会被删除。':'确定退出联盟吗？联盟资源会保留。'))return;leaveButton.disabled=true;var memberUrl="/v1/rdb/rest/alliance_members?alliance_id=eq."+encodeURIComponent(cur.id);var action=isOwner?api(memberUrl,{method:"DELETE"}).then(function(){return api("/v1/rdb/rest/alliances?id=eq."+encodeURIComponent(cur.id),{method:"DELETE"})}):api(memberUrl+"&player_id=eq."+encodeURIComponent(playerId),{method:"DELETE"});action.then(refresh).catch(function(e){leaveButton.disabled=false;showError(e)})};listEl.innerHTML=list.length?list.map(function(x){var mine=cur&&String(cur.id)===String(x.id),full=Number(x.member_count)>=10;return'<div class="row"><div class="row-main"><div class="row-name">'+esc(x.name)+'</div><div class="row-meta">创建人：'+esc(names[x.owner_player_id]||x.owner_player_id)+'<br>成员：'+esc(x.member_count)+'/10</div></div>'+(mine?'<span class="ok">已加入</span>':cur?"":full?'<span class="error">已满</span>':'<button class="join" data-id="'+esc(x.id)+'">加入</button>')+'</div>'}).join(""): '<div class="empty">暂无公开联盟。</div>';Array.prototype.forEach.call(document.querySelectorAll(".join"),function(b){b.onclick=function(){b.disabled=true;api("/v1/rdb/rest/alliance_members",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({alliance_id:Number(b.dataset.id),player_id:playerId})}).then(refresh).catch(showError)}})}
-function bindTransfer(cur,members,names){if(!cur||String(cur.owner_player_id)!==String(playerId))return;var options=(members||[]).filter(function(m){return String(m.player_id)!==String(playerId)}).map(function(m){return'<option value="'+esc(m.player_id)+'">'+esc(names[m.player_id]||m.player_id)+'</option>'}).join("");if(!options)return;var box=document.createElement("div");box.className="actions";box.innerHTML='<select id="transfer-target" style="padding:10px;border:1px solid #385a78;border-radius:7px;background:#071421;color:#fff">'+options+'</select><button id="transfer-alliance">转让联盟</button>';currentEl.appendChild(box);document.getElementById("transfer-alliance").onclick=function(){var target=document.getElementById("transfer-target").value;if(!confirm("确定把联盟转让给该成员吗？"))return;this.disabled=true;api("/v1/rdb/rest/alliances?id=eq."+encodeURIComponent(cur.id),{method:"PATCH",headers:{Prefer:"return=representation"},body:JSON.stringify({owner_player_id:target})}).then(refresh).catch(function(e){this.disabled=false;showError(e)}.bind(this))}}
-function refresh(){status.textContent="正在读取联盟信息…";return Promise.all([getCurrent(),getList()]).then(function(v){var membersPromise=v[0]?getMembers(v[0].id):Promise.resolve([]);return membersPromise.then(function(ms){var ids=v[1].map(function(x){return x.owner_player_id});if(v[0])ids.push(v[0].owner_player_id);(ms||[]).forEach(function(m){ids.push(m.player_id)});return getNames(ids).then(function(n){(ms||[]).forEach(function(m){m.username=n[m.player_id]||""});render(v[0],v[1]||[],n,ms);bindTransfer(v[0],ms,n);loadConstruction(v[0]);status.textContent="已连接 CloudBase"})})}).catch(showError)}
-function showError(e){status.textContent=e&&e.message||"请求失败"}
-document.getElementById("save-username").onclick=function(){var v=usernameEl.value.trim();if(!validName(v)){status.textContent="用户名需为2～12位中文、英文、数字或下划线";return}this.disabled=true;api("/v1/rdb/rest/players",{method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify({player_id:playerId,username:v})}).then(function(){localStorage.setItem("eve_idle_cloud_username",v);status.textContent="用户名已保存"}).catch(showError).finally(function(){document.getElementById("save-username").disabled=false})};
+function getMembers(id){return api("/v1/rdb/rest/alliance_members?select=player_id&alliance_id=eq."+encodeURIComponent(id)+"&limit=100")}
+function getNames(ids){ids=ids.filter(Boolean);if(!ids.length)return Promise.resolve({});return api("/v1/rdb/rest/players?select=player_id,username&player_id=in.("+ids.map(encodeURIComponent).join(",")+")").then(function(rows){var out={};rows.forEach(function(x){out[x.player_id]=x.username});return out})}
+function showError(e){status.textContent=e&&e.message||"request failed"}
+function modal(title,message,ok){var o=document.createElement("div");o.style.cssText="position:fixed;inset:0;background:rgba(4,8,14,.78);display:flex;align-items:center;justify-content:center;padding:16px;z-index:4000";o.innerHTML='<div style="width:min(420px,94vw);background:#101b2a;border:1px solid #385a78;border-radius:12px;padding:20px;color:#dceeff"><div style="font-size:18px;font-weight:700">'+esc(title)+'</div><div style="color:#a8bacb;line-height:1.6;margin-top:10px">'+esc(message)+'</div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px"><button data-cancel>ȡ��</button><button class="primary" data-ok>ȷ��</button></div></div>';document.body.appendChild(o);o.querySelector("[data-cancel]").onclick=function(){o.remove()};o.querySelector("[data-ok]").onclick=function(){o.remove();ok()};}
+function renderTasks(tasks,date){if(!dailyTaskListEl)return;tasks=Array.isArray(tasks)?tasks:[];var labels={mineral:"����ɼ�",gas:"����ɼ�",planetary:"������Դ",equipment:"װ������","ship-component":"�������"};if(!tasks.length){dailyTaskListEl.innerHTML='<div class="empty">���޽�������</div>';return}dailyTaskListEl.innerHTML=tasks.map(function(t){var id=t.id||t.task_id,amount=t.required_amount==null?t.requiredAmount:t.required_amount,name=t.material_name||t.materialName||t.material_id||t.materialId;return'<div class="task-row"><div class="task-slot">'+esc(t.slot)+'</div><div class="task-main"><div class="task-name">'+esc(labels[t.category]||t.category)+' �� '+esc(name)+'</div><div class="task-meta">���� '+esc(amount)+' �� ���� '+esc(t.reward_points==null?t.rewardPoints:t.reward_points)+' �����</div></div><div class="task-tier">'+esc(t.difficulty||"")+'</div>'+(id?'<button class="task-submit" data-id="'+esc(id)+'">�ύ</button>':"")+'</div>'}).join("")+'<div class="task-note">�������ڣ�'+esc(date||"����")+' �� �ƶ�������ͬ��</div>';Array.prototype.forEach.call(document.querySelectorAll(".task-submit"),function(b){b.onclick=function(){if(!returnUrl){status.textContent="�����Ϸ�ڴ�����ҳ��";return}var sep=returnUrl.indexOf("?")>=0?"&":"?";location.href=returnUrl+sep+"allianceTaskId="+encodeURIComponent(b.dataset.id)+"&allianceId="+encodeURIComponent(latestAlliance&&latestAlliance.id||"")}})}
+function loadTasks(){var date=qs.get("taskDate")||"",url="/v1/rdb/rest/alliance_daily_tasks?select=*&player_id=eq."+encodeURIComponent(playerId)+(date?"&server_date=eq."+encodeURIComponent(date):"")+"&order=slot.asc";api(url).then(function(rows){if(rows.length){renderTasks(rows,date);return}var raw=qs.get("taskPreview");if(!raw){renderTasks([],date);return}return fn(qs.get("taskFunctionUrl")||functionBase+"/alliance-daily-tasks",{playerId:playerId,taskPreview:JSON.parse(raw)}).then(function(x){renderTasks(x.tasks,x.serverDate)})}).catch(function(){renderTasks([],date)})}
+function loadBuildings(a){if(!a){constructionPanel.hidden=true;return}var q="?alliance_id=eq."+encodeURIComponent(a.id);Promise.all([api("/v1/rdb/rest/alliance_construction?select=points_balance,total_points_earned"+q+"&limit=1"),api("/v1/rdb/rest/alliance_buildings?select=building_type,level,points_spent"+q)]).then(function(v){latestConstruction=v[0][0]||{};latestBuildings=v[1]||[];var hq=latestBuildings.find(function(x){return x.building_type==="frontier_hq"||x.building_type==="logistics_hub"})||{level:0};latestBuildingLevel=Number(hq.level)||0;var cap=[10,10,15,20,25,30][Math.max(0,Math.min(5,latestBuildingLevel))];var meta=currentEl.querySelector(".meta");if(meta)meta.innerHTML="��Ա��"+esc(a.member_count)+"/"+cap+"<br>���� ID��"+esc(a.id);constructionPanel.hidden=false;constructionBodyEl.innerHTML='<div class="meta">�������<b class="building-level">'+esc(latestConstruction.points_balance||0)+'</b></div><div class="building-note">�ܲ��ȼ� Lv.'+latestBuildingLevel+' �� ��ǰ��Ա���� '+cap+' ��</div>'}).catch(function(){constructionPanel.hidden=true})}
+function renderCurrent(a,list,names,members){latestAlliance=a;latestMembers=members||[];var owner=a&&names[a.owner_player_id]||a&&a.owner_player_id,isOwner=a&&String(a.owner_player_id)===String(playerId);currentEl.innerHTML=a?'<div class="label">��ǰ����</div><div class="alliance-code">'+esc(a.code)+'</div><div class="meta">������'+esc(owner)+'<br>��Ա��'+esc(a.member_count)+'/10<br>���� ID��'+esc(a.id)+'</div><div class="actions"><button id="leave-alliance">'+(isOwner?"��ɢ����":"�˳�����")+'</button></div>':'<div class="empty">�㻹û�м������ˡ�</div>';memberPanel.hidden=!a;memberListEl.innerHTML=a?(members||[]).map(function(m){return'<div class="row"><div class="row-main"><div class="row-name">'+esc(names[m.player_id]||m.player_id)+'</div></div><div class="row-meta">'+(String(m.player_id)===String(a.owner_player_id)?"����":"��Ա")+'</div></div>'}).join(""):"";if(a){document.getElementById("leave-alliance").onclick=function(){if(isOwner){showError(Error("��������ֱ���˳�������ת������"));return}modal("�˳�����","�˳����Ƴ�������˳�Ա�ʸ�",function(){api("/v1/rdb/rest/rpc/leave_alliance_member",{method:"POST",body:JSON.stringify({p_alliance_id:Number(a.id),p_player_id:playerId})}).then(refresh).catch(showError)})}}listEl.innerHTML=list.length?list.map(function(x){var full=Number(x.member_count)>=10;return'<div class="row"><div class="row-main"><div class="row-name">'+esc(x.name||x.code)+'</div><div class="row-meta">��Ա '+esc(x.member_count)+'/10</div></div>'+(a?"":full?'<span class="error">����</span>':'<button class="join" data-id="'+esc(x.id)+'">����</button>')+'</div>'}).join(""):'<div class="empty">���޹������ˡ�</div>';Array.prototype.forEach.call(document.querySelectorAll(".join"),function(b){b.onclick=function(){api("/v1/rdb/rest/alliance_members",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({alliance_id:Number(b.dataset.id),player_id:playerId})}).then(refresh).catch(showError)}})}
+function refresh(){status.textContent="���ڶ�ȡ������Ϣ��";Promise.all([getCurrent(),getList()]).then(function(v){return Promise.all([Promise.resolve(v),v[0]?getMembers(v[0].id):Promise.resolve([])])}).then(function(v){var a=v[0][0],list=v[0][1],members=v[1],ids=list.map(function(x){return x.owner_player_id}).concat(members.map(function(x){return x.player_id}));if(a)ids.push(a.owner_player_id);return getNames(ids).then(function(n){renderCurrent(a,list,n,members);loadBuildings(a);status.textContent="������ CloudBase"})}).catch(showError)}
+document.getElementById("save-username").onclick=function(){var v=usernameEl.value.trim();if(!/^[\\u4e00-\\u9fffA-Za-z0-9_]{2,12}$/.test(v)){showError(Error("�û�����Ϊ 2-12 λ"));return}api("/v1/rdb/rest/players",{method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify({player_id:playerId,username:v})}).then(function(){localStorage.setItem("eve_idle_cloud_username",v);status.textContent="�û����ѱ���"}).catch(showError)};
 usernameEl.value=localStorage.getItem("eve_idle_cloud_username")||"";
-document.getElementById("create").onclick=function(){var b=this,v=codeEl.value.trim().toUpperCase();if(!/^[A-Z]{1,3}$/.test(v)){status.textContent="联盟代码必须是1～3位大写英文字母";return}b.disabled=true;getCurrent().then(function(x){if(x)throw Error("你已经加入联盟："+x.code);return api("/v1/rdb/rest/alliances",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({code:v,name:v,owner_player_id:playerId})})}).then(function(rows){var a=rows[0]||rows;return api("/v1/rdb/rest/alliance_members",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({alliance_id:a.id,player_id:playerId})})}).then(function(){codeEl.value="";return refresh()}).catch(showError).finally(function(){b.disabled=false})};
-document.getElementById("back").onclick=function(){if(returnUrl){var a=latestAlliance,j=returnUrl.indexOf("?")>=0?"&":"?",ownerName=a&&a.owner_username||"",memberSummary=latestMembers.map(function(m){return{playerId:m.player_id,username:m.username||""}});location.href=returnUrl+j+"allianceId="+encodeURIComponent(a?a.id:"")+"&allianceCode="+encodeURIComponent(a?a.code:"")+"&allianceOwner="+encodeURIComponent(a?a.owner_player_id:"")+"&allianceOwnerName="+encodeURIComponent(ownerName)+"&allianceMembers="+encodeURIComponent(a?a.member_count:"")+"&allianceBuildingLevel="+encodeURIComponent(latestBuildingLevel)+"&allianceMemberList="+encodeURIComponent(JSON.stringify(memberSummary))}else if(history.length>1)history.back()};
-document.getElementById("diagnose").onclick=function(){var o=document.getElementById("diagnostic"),functionUrl=qs.get("taskFunctionUrl")||functionBase+"/alliance-daily-tasks";o.hidden=false;o.textContent="来源："+location.origin+"\n接口："+base+"\n云函数："+functionUrl+"\n\n";auth().then(function(){o.textContent+="✓ 匿名登录成功\n";return getList()}).then(function(r){o.textContent+="✓ 联盟列表读取成功："+r.length+" 个联盟\n";return functionRequest(functionUrl,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"health",playerId:playerId})})}).then(function(r){return r.json().then(function(x){if(!r.ok||!x.ok)throw Error(x.error||("HTTP "+r.status));return x})}).then(function(x){o.textContent+="✓ 每日任务云函数可访问，服务器日期："+x.serverDate}).catch(function(e){o.textContent+="✗ 请求失败："+(e.message||e)})};refresh();
+document.getElementById("create").onclick=function(){var v=codeEl.value.trim().toUpperCase();if(!/^[A-Z]{1,3}$/.test(v)){showError(Error("���˴�����Ϊ 1-3 λ��д��ĸ"));return}api("/v1/rdb/rest/alliances",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({code:v,name:v,owner_player_id:playerId})}).then(function(rows){var a=rows[0]||rows;return api("/v1/rdb/rest/alliance_members",{method:"POST",body:JSON.stringify({alliance_id:a.id,player_id:playerId})})}).then(refresh).catch(showError)};
+document.getElementById("back").onclick=function(){if(!returnUrl){history.back();return}var sep=returnUrl.indexOf("?")>=0?"&":"?",a=latestAlliance;location.href=returnUrl+sep+"allianceId="+encodeURIComponent(a&&a.id||"")+"&allianceCode="+encodeURIComponent(a&&a.code||"")+"&allianceOwner="+encodeURIComponent(a&&a.owner_player_id||"")+"&allianceMembers="+encodeURIComponent(a&&a.member_count||"")+"&allianceBuildingLevel="+encodeURIComponent(latestBuildingLevel)+"&allianceSnapshot="+encodeURIComponent(JSON.stringify({id:a&&a.id||"",code:a&&a.code||"",memberCount:a&&a.member_count||0,construction:latestConstruction||{},buildings:latestBuildings||[],members:latestMembers||[]}))};
+document.getElementById("diagnose").onclick=function(){var o=document.getElementById("diagnostic");o.hidden=false;o.textContent="playerId: "+playerId+"\nbase: "+base+"\n";getList().then(function(x){o.textContent+="alliances: "+x.length+"\n"}).catch(function(e){o.textContent+="error: "+e.message})};
+// Compatibility overrides: keep the cloud page authoritative when returning
+// to the game. The original handlers returned before building data finished
+// loading and omitted task fields required by the game's submit flow.
+function renderTasks(tasks,date){
+  if(!dailyTaskListEl)return;
+  tasks=Array.isArray(tasks)?tasks:[];
+  var labels={mineral:"矿物采集",gas:"气体采集",planetary:"行星资源",equipment:"装备制造","ship-component":"舰船组件",refining:"冶炼材料"};
+  if(!tasks.length){dailyTaskListEl.innerHTML='<div class="empty">暂无建设任务</div>';return;}
+  dailyTaskListEl.innerHTML=tasks.map(function(t){
+    var id=t.id||t.task_id,amount=t.required_amount==null?t.requiredAmount:t.required_amount;
+    var name=t.material_name||t.materialName||t.material_id||t.materialId;
+    var category=t.category||"",material=t.material_id||t.materialId||"";
+    return '<div class="task-row"><div class="task-slot">'+esc(t.slot)+'</div><div class="task-main"><div class="task-name">'+esc(labels[category]||category)+' · '+esc(name)+'</div><div class="task-meta">需求 '+esc(amount)+' · 奖励 '+esc(t.reward_points==null?t.rewardPoints:t.reward_points)+' 建设点</div></div><div class="task-tier">'+esc(t.difficulty||"")+'</div>'+(id?'<button class="task-submit" data-id="'+esc(id)+'">提交</button>':"")+'</div>';
+  }).join("")+'<div class="task-note">任务日期：'+esc(date||"今天")+' · 点击提交后返回游戏扣除材料</div>';
+  Array.prototype.forEach.call(document.querySelectorAll(".task-submit"),function(b){
+    b.onclick=function(){
+      if(!returnUrl){status.textContent="没有可返回的游戏页面";return;}
+      var t=tasks.filter(function(x){return String(x.id||x.task_id)===String(b.dataset.id);})[0]||{};
+      var sep=returnUrl.indexOf("?")>=0?"&":"?";
+      var qs2="allianceTaskId="+encodeURIComponent(b.dataset.id)+"&allianceId="+encodeURIComponent(latestAlliance&&latestAlliance.id||"")+
+        "&allianceTaskAmount="+encodeURIComponent(t.required_amount==null?t.requiredAmount||0:t.required_amount)+
+        "&allianceTaskCategory="+encodeURIComponent(t.category||"")+
+        "&allianceTaskMaterial="+encodeURIComponent(t.material_id||t.materialId||"");
+      location.href=returnUrl+sep+qs2;
+    };
+  });
+}
+function loadBuildings(a){
+  if(!a){constructionPanel.hidden=true;return Promise.resolve([]);}
+  var q="&alliance_id=eq."+encodeURIComponent(a.id);
+  return Promise.all([
+    api("/v1/rdb/rest/alliance_construction?select=points_balance,total_points_earned"+q+"&limit=1"),
+    api("/v1/rdb/rest/alliance_buildings?select=building_type,level,points_spent"+q)
+  ]).then(function(v){
+    latestConstruction=v[0][0]||{};latestBuildings=v[1]||[];
+    var hq=latestBuildings.find(function(x){return x.building_type==="frontier_hq"||x.building_type==="logistics_hub";})||{level:0};
+    latestBuildingLevel=Number(hq.level)||0;
+    var cap=[10,10,15,20,25,30][Math.max(0,Math.min(5,latestBuildingLevel))];
+    var meta=currentEl.querySelector(".meta");
+    if(meta)meta.innerHTML="玩家 ID："+esc(playerId)+"<br>成员："+esc(a.member_count)+"/"+cap+"<br>联盟 ID："+esc(a.id);
+    constructionPanel.hidden=false;
+    constructionBodyEl.innerHTML='<div class="meta">建设点：<b class="building-level">'+esc(latestConstruction.points_balance||0)+'</b></div><div class="building-note">总部等级 Lv.'+latestBuildingLevel+' · 当前成员上限 '+cap+' 人</div>';
+    return latestBuildings;
+  }).catch(function(e){constructionPanel.hidden=true;throw e;});
+}
+function renderCurrent(a,list,names,members){
+  latestAlliance=a;latestMembers=members||[];
+  var owner=a&&names[a.owner_player_id]||a&&a.owner_player_id||"-";
+  var isOwner=a&&String(a.owner_player_id)===String(playerId);
+  currentEl.innerHTML=a
+    ? '<div class="label">当前联盟</div><div class="alliance-code">'+esc(a.code)+'</div><div class="meta">盟主：'+esc(owner)+'<br>当前玩家 ID：'+esc(playerId)+'<br>联盟 ID：'+esc(a.id)+'</div><div class="actions"><button id="leave-alliance">'+(isOwner?'解散联盟':'退出联盟')+'</button></div>'
+    : '<div class="empty">你还没有加入联盟。<br><span class="meta">当前玩家 ID：'+esc(playerId)+'</span></div>';
+  memberPanel.hidden=!a;
+  memberListEl.innerHTML=a?(members||[]).map(function(m){return '<div class="row"><div class="row-main"><div class="row-name">'+esc(names[m.player_id]||m.player_id)+'</div></div><div class="row-meta">'+(String(m.player_id)===String(a.owner_player_id)?'盟主':'成员')+'</div></div>';}).join(""):"";
+  if(a){document.getElementById("leave-alliance").onclick=function(){if(isOwner){showError(Error("盟主不能直接退出，请先转让盟主"));return;}modal("退出联盟","确认要退出该联盟吗？",function(){api("/v1/rdb/rest/rpc/leave_alliance_member",{method:"POST",body:JSON.stringify({p_alliance_id:Number(a.id),p_player_id:playerId})}).then(refresh).catch(showError);});};}
+  listEl.innerHTML=list.length?list.map(function(x){var full=Number(x.member_count)>=10;return '<div class="row"><div class="row-main"><div class="row-name">'+esc(x.name||x.code)+'</div><div class="row-meta">成员 '+esc(x.member_count)+'</div></div>'+(a?'':full?'<span class="error">已满</span>':'<button class="join" data-id="'+esc(x.id)+'">加入</button>')+'</div>';}).join(""):'<div class="empty">暂无公开联盟</div>';
+  Array.prototype.forEach.call(document.querySelectorAll(".join"),function(b){b.onclick=function(){api("/v1/rdb/rest/alliance_members",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({alliance_id:Number(b.dataset.id),player_id:playerId})}).then(refresh).catch(showError);};});
+}
+function refresh(){
+  status.textContent="正在读取联盟信息…";
+  Promise.all([getCurrent(),getList()]).then(function(v){return Promise.all([Promise.resolve(v),v[0]?getMembers(v[0].id):Promise.resolve([])]);}).then(function(v){
+    var a=v[0][0],list=v[0][1],members=v[1],ids=list.map(function(x){return x.owner_player_id;}).concat(members.map(function(x){return x.player_id;}));
+    if(a)ids.push(a.owner_player_id);
+    return getNames(ids).then(function(n){renderCurrent(a,list,n,members);return loadBuildings(a);}).then(function(){status.textContent="已连接 CloudBase";});
+  }).catch(showError);
+}
+document.getElementById("back").onclick=function(){
+  if(!returnUrl){history.back();return;}
+  Promise.resolve(latestAlliance?loadBuildings(latestAlliance):null).catch(function(){return null;}).then(function(){
+    var sep=returnUrl.indexOf("?")>=0?"&":"?",a=latestAlliance;
+    location.href=returnUrl+sep+"allianceId="+encodeURIComponent(a&&a.id||"")+
+      "&allianceCode="+encodeURIComponent(a&&a.code||"")+
+      "&allianceOwner="+encodeURIComponent(a&&a.owner_player_id||"")+
+      "&allianceMembers="+encodeURIComponent(a&&a.member_count||"")+
+      "&allianceBuildingLevel="+encodeURIComponent(latestBuildingLevel)+
+      "&allianceSnapshot="+encodeURIComponent(JSON.stringify({id:a&&a.id||"",code:a&&a.code||"",memberCount:a&&a.member_count||0,construction:latestConstruction||{},buildings:latestBuildings||[],members:latestMembers||[]}));
+  });
+};
+refresh();loadTasks();
 })();</script></body></html>

@@ -366,6 +366,37 @@ function normalizeFitting(fitted) {
   return normalized;
 }
 
+// 越界回收（2026-09-12）：fitted 数组长度超出该舰槽数时，把溢出的引用退回仓库并截断数组。
+// 越界只可能来自旧存档 —— 全局装备栏整块搬运（migrateShipAndEquipmentState）、历史槽数变更、
+// 手工改档。正常装配入口 ShellStateActions.setFittingSlot 有 `slotIndex < config.slots[slot]`
+// 守卫，写不出越界。此前无任何裁剪，越界件被实战与面板全额结算（例：中槽 2 的舰装 3 件损控
+// ⇒ 减伤 0.18×3=0.54 封顶 50%，越界那件真实生效）。
+// 语义：溢出件退回 gameState.equipment.inventory，绝不销毁玩家资产；强化过的件保留实例形态
+// （installedOn 清空），未强化的件退回 itemId。与 detachEquipmentRefFromFitting 同源，不另写一套归还逻辑。
+// 幂等：裁剪后数组长度 == 槽数，再次调用无溢出、不会重复 push。
+function reclaimOverflowFitting(state, ship) {
+  if (!ship || !ship.fitted) return 0;
+  const slots = getShipSlotCounts(ship.shipId);
+  if (!slots) return 0; // 查不到槽数定义 ⇒ 无法判定越界，原样保留（宁可不动，不可误裁）
+  const detach = (typeof detachEquipmentRefFromFitting === "function") ? detachEquipmentRefFromFitting : null;
+  let reclaimed = 0;
+  for (const slot of ["high", "mid", "low", "rig"]) {
+    const arr = ship.fitted[slot];
+    if (!Array.isArray(arr)) continue;
+    const cap = Math.max(0, Number(slots[slot]) || 0);
+    if (arr.length <= cap) continue;
+    const extra = arr.splice(cap, arr.length - cap);
+    for (const ref of extra) {
+      if (!ref) continue;
+      if (detach) detach(state, ref);
+      else if (state && state.equipment && Array.isArray(state.equipment.inventory)) state.equipment.inventory.push(ref);
+      reclaimed++;
+    }
+  }
+  if (reclaimed > 0 && state) state._dirty = true;
+  return reclaimed;
+}
+
 function createShipInstance(shipId, builtAt) {
   const timestamp = builtAt || Date.now();
   return {
@@ -388,6 +419,8 @@ function ensureShipInstances() {
     usedIds.add(instanceId);
     // 旧存档迁移：fitted 长度不足的船在此补齐（只补不裁，已有装备保留）
     ship.fitted = buildFittedBySlots(ship.shipId, ship.fitted);
+    // 补齐后再裁：长度超槽数的越界件退回仓库（顺序不可颠倒，先补后裁才是完整规范化）
+    reclaimOverflowFitting(gameState, ship);
     ship.enhancementLevel = Math.max(0, Math.floor(Number(ship.enhancementLevel) || 0));
   });
 }

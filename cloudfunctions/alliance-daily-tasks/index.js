@@ -67,7 +67,11 @@ function serverDate() {
 }
 
 function validPlayerId(value) {
-  return typeof value === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(value);
+  // Steam IDs are decimal strings, while TapTap openids are commonly
+  // base64-like and may contain '/' and '=' (for example taptap_xxx==).
+  // Keep the value bounded and reject control/whitespace characters, but do
+  // not reject valid platform identifiers before they reach PostgREST.
+  return typeof value === "string" && value.length >= 1 && value.length <= 200 && !/[\u0000-\u0020\u007f]/.test(value);
 }
 
 function rewardPoints(tier, materialValue, standardTimeSec, category) {
@@ -79,8 +83,9 @@ function rewardPoints(tier, materialValue, standardTimeSec, category) {
   return base * multiplier;
 }
 
-function normalizeTasks(input) {
-  if (!Array.isArray(input) || input.length !== 5) throw new Error("每日任务必须恰好有 5 条");
+function normalizeTasks(input, expectedCount) {
+  const count = Math.max(5, Math.min(10, Number(expectedCount) || 5));
+  if (!Array.isArray(input) || input.length !== count) throw new Error("每日任务数量与任务大厅等级不匹配");
   return input.map((task, index) => {
     if (!task || Number(task.slot) !== index + 1) throw new Error("任务槽位无效");
     if (!CATEGORIES.has(task.category) || !TIERS[task.difficulty] || task.skill !== CATEGORY_SKILLS[task.category]) throw new Error("任务类别、技能或难度无效");
@@ -128,7 +133,10 @@ async function db(path, options) {
   const text = await response.text();
   let data = {};
   try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text }; }
-  if (!response.ok) throw new Error("数据库请求失败 HTTP " + response.status);
+  if (!response.ok) {
+    const detail = data && (data.message || data.error || data.hint || data.details);
+    throw new Error("数据库请求失败 HTTP " + response.status + (detail ? ": " + String(detail).slice(0, 240) : ""));
+  }
   return data;
 }
 
@@ -137,10 +145,20 @@ async function readTasks(playerId, date) {
     "&server_date=eq." + encodeURIComponent(date) + "&order=slot.asc", { method: "GET" });
 }
 
+async function taskCountForPlayer(playerId) {
+  const memberships = await db("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=eq." + encodeURIComponent(playerId) + "&limit=1", { method: "GET" });
+  if (!memberships || !memberships[0]) return 5;
+  const buildings = await db("/v1/rdb/rest/alliance_buildings?select=building_type,level&alliance_id=eq." + encodeURIComponent(memberships[0].alliance_id) + "&building_type=in.(mission_hall)&limit=1", { method: "GET" });
+  const level = Math.max(0, Math.min(5, Number(buildings && buildings[0] && buildings[0].level) || 0));
+  return [5, 6, 7, 8, 10][Math.max(0, level - 1)] || 5;
+}
+
 async function ensureTasks(playerId, date, preview) {
+  const expectedCount = await taskCountForPlayer(playerId);
   const existing = await readTasks(playerId, date);
-  if (existing.length === 5) return { tasks: existing, created: false };
-  const tasks = normalizeTasks(preview);
+  if (existing.length === expectedCount) return { tasks: existing, created: false };
+  const tasks = normalizeTasks(preview, expectedCount);
+  const existingSlots = new Set(existing.map(task => Number(task.slot)));
   const rows = tasks.map(task => ({
     player_id: playerId, server_date: date, slot: task.slot,
     category: task.category, skill: task.skill, material_id: task.materialId,
@@ -148,12 +166,14 @@ async function ensureTasks(playerId, date, preview) {
     submitted_amount: 0, difficulty: task.difficulty, reward_points: task.rewardPoints,
     material_value: task.materialValue, standard_time_sec: task.standardTimeSec,
     tactical_tier: task.tacticalTier, status: "open"
-  }));
-  await db("/v1/rdb/rest/alliance_daily_tasks", {
-    method: "POST",
-    headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
-    body: JSON.stringify(rows)
-  });
+  })).filter(row => !existingSlots.has(Number(row.slot)));
+  if (rows.length) {
+    await db("/v1/rdb/rest/alliance_daily_tasks", {
+      method: "POST",
+      headers: { Prefer: "resolution=ignore-duplicates,return=minimal" },
+      body: JSON.stringify(rows)
+    });
+  }
   return { tasks: await readTasks(playerId, date), created: true };
 }
 
@@ -182,10 +202,12 @@ async function submitTask(body) {
 async function upgradeBuilding(body) {
   const allianceId = Number(body.allianceId);
   if (!Number.isSafeInteger(allianceId) || allianceId <= 0) throw new Error("联盟 ID 无效");
-  if (body.buildingType !== "logistics_hub") throw new Error("未知联盟建筑");
+  const buildingType = String(body.buildingType || "").trim().toLowerCase();
+  const allowedBuildingTypes = ["logistics_hub", "frontier_hq", "mission_hall", "combat_command", "refining_core"];
+  if (allowedBuildingTypes.indexOf(buildingType) < 0) throw new Error("未知联盟建筑");
   const rows = await db("/v1/rdb/rest/rpc/upgrade_alliance_building", {
     method: "POST",
-    body: JSON.stringify({ p_alliance_id: allianceId, p_player_id: body.playerId, p_building_type: body.buildingType })
+    body: JSON.stringify({ p_alliance_id: allianceId, p_player_id: body.playerId, p_building_type: buildingType })
   });
   const row = Array.isArray(rows) ? rows[0] : rows;
   return { buildingType: row && (row.building_type == null ? row.buildingType : row.building_type),

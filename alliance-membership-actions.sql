@@ -31,3 +31,30 @@ drop trigger if exists alliance_member_count_sync on public.alliance_members;
 create trigger alliance_member_count_sync
 after insert or delete on public.alliance_members
 for each row execute function public.sync_alliance_member_count();
+
+-- 普通成员退出联盟：通过 SECURITY DEFINER 原子执行，避免客户端直接 DELETE 被 RLS 拒绝。
+-- 盟主不能自行退出，必须先转让盟主或解散联盟。
+create or replace function public.leave_alliance_member(
+  p_alliance_id bigint,
+  p_player_id varchar(100)
+)
+returns table (alliance_id bigint, player_id varchar(100), left_alliance boolean)
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if exists (select 1 from public.alliances a where a.id = p_alliance_id and a.owner_player_id = p_player_id) then
+    raise exception '盟主不能直接退出联盟，请先转让盟主或解散联盟';
+  end if;
+  delete from public.alliance_members m where m.alliance_id = p_alliance_id and m.player_id = p_player_id;
+  if not found then raise exception '玩家不是该联盟成员'; end if;
+  update public.alliances a
+     set member_count = (select count(*) from public.alliance_members m where m.alliance_id = p_alliance_id)
+   where a.id = p_alliance_id;
+  return query select p_alliance_id, p_player_id, true;
+end;
+$$;
+
+revoke all on function public.leave_alliance_member(bigint, varchar) from public;
+grant execute on function public.leave_alliance_member(bigint, varchar) to anon, authenticated;

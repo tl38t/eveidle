@@ -133,7 +133,13 @@ function migrateShipAndEquipmentState() {
       (gameState.combat && gameState.combat.activeShip) || gameState.inventory.ships[0].instanceId;
     const targetShip = getShipInstance(preferredRef) || gameState.inventory.ships[0];
     const targetHasFitting = Object.values(targetShip.fitted || {}).some(items => Array.isArray(items) && items.some(Boolean));
-    if (!targetHasFitting) targetShip.fitted = normalizeFitting(legacyFitted);
+    if (!targetHasFitting) {
+      targetShip.fitted = normalizeFitting(legacyFitted);
+      // 全局装备栏（旧版唯一装备栏）长度与目标舰槽数无关，整块搬运会造出越界数组 ——
+      // 立即按目标舰槽数严格裁剪，溢出件退回仓库（件数守恒，绝不销毁）。此处仍在 itemId
+      // 形态（迁移链后面的 migrateEquipmentInstancesV1 才转实例），退回即入 inventory，语义最干净。
+      reclaimOverflowFitting(gameState, targetShip);
+    }
     else gameState.equipment.inventory.push(...legacyItems);
   }
   delete gameState.equipment.fitted;

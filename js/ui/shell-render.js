@@ -3687,10 +3687,14 @@ function renderResearchPage() {
   if (bankEl) bankEl.textContent = "科研工时余额：" + formatResearchHours((Number(research.researchHourBank) || 0) / 3600);
   const adCounter = document.getElementById("research-ad-counter");
   if (adCounter && typeof ResearchAdSystem !== "undefined" && ResearchAdSystem) {
-    const used = ResearchAdSystem.getDailyCount(research);
+    // 共享额度池的权威存储是【顶层 state.adQuota】（见 js/systems/ad-buff.js getAdQuotaState）。
+    // 这里曾误把 gameState.research 当 state 传进去 → lib 会在 research 上凭空新建一个
+    // 永不消耗的池（dailyCount 恒 0），界面因此永远显示 0/20。必须传顶层 state。
+    const adQuotaState = (typeof gameState !== "undefined" && gameState) ? gameState : research;
+    const used = ResearchAdSystem.getDailyCount(adQuotaState);
     const cap = ResearchAdSystem.getDailyCap();
     const left = Math.max(0, cap - used);
-    adCounter.textContent = "今日额度 " + used + "/" + cap + "（与脑突触加速共用）";
+    adCounter.textContent = "今日额度 已用 " + used + "/" + cap + "（与脑突触加速共用）";
     adCounter.title = "泛银河娱乐广播的每日收看次数是一个共享池：脑突触加速与科研工时共用 " + cap +
       " 次/日，当前已用 " + used + " 次、剩余 " + left + " 次。\n每次完整收看 +1 小时科研工时。";
     // 共享池当日用尽 → 禁用按钮（跨天重开研究页会自动恢复）

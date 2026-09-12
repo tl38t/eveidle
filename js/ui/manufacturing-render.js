@@ -94,6 +94,9 @@ function renderShipAsmGrid(display) {
       if (!recipe.hasRequiredBlueprint) { status = "🔒 需蓝图"; statusCls = "lock-tag"; }
       else if (recipe.assemblyBlockReason === "shipyard-level-locked") { status = "🔒 船坞 Lv." + (recipe.shipyardRequiredLevel || "?") + " 解锁"; statusCls = "lock-tag lvl"; }
       else { status = "🔒 Lv." + recipe.requiredLevel + " 解锁"; statusCls = "lock-tag lvl"; }
+    } else if (recipe.assemblyBlockReason === "deployable-unique") {
+      // 部署物唯一性：永久已解锁但已持有 1 台 —— 显示「已拥有」而非「可建造」。
+      status = "已拥有"; statusCls = "lock-tag";
     } else if (!recipe.hasComponents) {
       status = "材料不足"; statusCls = "no-mat";
     } else {
@@ -149,6 +152,8 @@ function renderShipAsmDetail(display) {
       btn.textContent = "🔒 舰船工程 Lv." + cur.requiredLevel + " 解锁";
     } else if (reason === "shipyard-level-locked") {
       btn.textContent = "🔒 船坞 Lv." + (cur.shipyardRequiredLevel || "?") + " 解锁";
+    } else if (reason === "deployable-unique") {
+      btn.textContent = "已拥有 1 台";
     } else {
       // insufficient-components：缺料不误报为蓝图锁
       btn.textContent = "组件不足";
@@ -161,6 +166,7 @@ function renderShipAsmDetail(display) {
     if (reason === "blueprint-locked") asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>未解锁：需蓝图解锁</span></div>';
     else if (reason === "level-locked") asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>未解锁：舰船工程 Lv.' + cur.requiredLevel + ' 解锁</span></div>';
     else if (reason === "shipyard-level-locked") asmBanner = '<div class="lock-banner"><span class="lb-icon">🔒</span><span>未解锁：船坞 Lv.' + (cur.shipyardRequiredLevel || "?") + ' 解锁</span></div>';
+    else if (reason === "deployable-unique") asmBanner = '<div class="lock-banner"><span class="lb-icon">ℹ</span><span>已拥有该部署物，同时仅能拥有 1 台；如需再造请先拆解现有单元</span></div>';
   }
   const existingBanner = wrap.querySelector(".lock-banner");
   if (existingBanner) existingBanner.remove();

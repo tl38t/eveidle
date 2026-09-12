@@ -639,6 +639,9 @@
   .smelting-info-row { flex-wrap: wrap; min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
   .smelting-info-row > * { min-width: 0; }
   .smelting-info-row > .me-label { flex: 0 0 auto; }
+  .alliance-building-effect-row { margin: 6px 0; padding: 5px 9px; border: 1px solid #31465a; border-radius: 4px; background: rgba(26,52,70,.28); }
+  .alliance-building-effect-row strong { color: #8b9caf; font-size: 12px; }
+  .alliance-building-effect-row strong.active { color: #79d6b0; }
   .mining-progress-row {
     display: flex; align-items: center; gap: 8px; min-width: 0;
   }

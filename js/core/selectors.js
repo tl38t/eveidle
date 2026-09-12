@@ -693,17 +693,19 @@ function getSmeltingEfficiencyForState(state) {
     ? (Number(state.wormhole.smeltBuff.mult) || 1) : 1;
   const legionRefine = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
     ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers.refining : 1;
+  const allianceRefiningBonus = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
+    ? AllianceBuildingConfig.effects(state.alliance.buildings).refiningEfficiencyBonus : 0;
   // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
   const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
     ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
-  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus + pumpBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * wormholeSmeltBuff * shipEnhanceSmelt * legionRefine;
+  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus + pumpBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * wormholeSmeltBuff * shipEnhanceSmelt * legionRefine * (1 + allianceRefiningBonus);
   // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（冶炼速度/产出均经此 efficiency）。
   const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
   if (adbm && adbm !== 1) efficiency = efficiency * adbm;
   return {
     efficiency, level, assigned, skillEfficiency, shipBonus, rigBonus, rigMods, pumpMods,
     stationLogisticsMultiplier, researchMultiplier, implantRefineEff, boosterSmeltSpeed,
-    legionRefine, shipEnhanceSmelt, adBuffMult: adbm
+    legionRefine, shipEnhanceSmelt, allianceRefiningBonus, adBuffMult: adbm
   };
 }
 
@@ -724,6 +726,7 @@ function getSmeltingDisplayState(state, now) {
   const implantRefineEff = eff.implantRefineEff;
   const boosterSmeltSpeed = eff.boosterSmeltSpeed;
   const legionRefine = eff.legionRefine;
+  const allianceRefiningBonus = eff.allianceRefiningBonus || 0;
   const shipEnhanceSmelt = eff.shipEnhanceSmelt;
   const adbm = eff.adBuffMult;
   const efficiency = eff.efficiency;
@@ -755,6 +758,7 @@ function getSmeltingDisplayState(state, now) {
     shipEnhanceSmelt,
     boosterSmeltSpeed,
     legionRefine,
+    allianceRefiningBonus,
     implantRefineEff,
     adBuffMult: adbm,
     actualTime:current.baseTime / efficiency,
@@ -796,7 +800,7 @@ function getDismantleDisplayState(state, now) {
       stationLogisticsMultiplier: eff.stationLogisticsMultiplier, stationLogistics: stationLog,
       researchMultiplier: eff.researchMultiplier, shipEnhanceSmelt: eff.shipEnhanceSmelt,
       implantRefineEff: eff.implantRefineEff, boosterSmeltSpeed: eff.boosterSmeltSpeed,
-      legionRefine: eff.legionRefine, adBuffMult: eff.adBuffMult, efficiency: efficiency
+      legionRefine: eff.legionRefine, allianceRefiningBonus: eff.allianceRefiningBonus, adBuffMult: eff.adBuffMult, efficiency: efficiency
     };
     if (typeof getSmeltingEfficiencyBreakdown === "function") efficiencyTooltip = getSmeltingEfficiencyBreakdown(breakdownDisplay);
   } catch (_) { efficiencyTooltip = ""; }
@@ -875,7 +879,13 @@ function getShipAssemblyMaxCyclesFromState(state, recipe) {
   for (const [material, count] of Object.entries(discounted.materialCost || {})) {
     max = Math.min(max, Math.floor(getMaterialStockFromState(state, material) / count));
   }
-  return Number.isFinite(max) ? Math.max(0, max) : 0;
+  max = Number.isFinite(max) ? Math.max(0, max) : 0;
+  // 部署物为单件唯一实体：已拥有 → 0（不得再造）；未拥有 → 最多 1（一次开工只产 1 台，杜绝多周期吞料）。
+  if (recipe && recipe.productKind === "deployable") {
+    const owned = (typeof isDeployableOwned === "function") ? isDeployableOwned(state, recipe.deployableId) : false;
+    max = owned ? 0 : Math.min(max, 1);
+  }
+  return max;
 }
 
 function getEquipmentOwnedCountFromState(state, recipe) {
@@ -1060,9 +1070,11 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.materialHint = Math.max(0, display.assemblyMaxCycles);
     result.outputText = (display.selectedShip ? display.selectedShip.name : recipe.name) + "×1";
     // 仅「永久解锁」（蓝图+等级+船坞）才允许打开确认弹窗；缺料不阻止打开，由 maxCount=0 体现。
-    result.canOpen = recipe.assemblyUnlocked;
+    // 部署物唯一性：已拥有（已部署/已入库）时同样禁止打开，提示先拆解（与 getShipAssemblyEligibility 同口径）。
+    result.canOpen = recipe.assemblyUnlocked && !recipe.deployableOwned;
     // 与 getShipAssemblyEligibility 同一判定，禁止自行猜测蓝图状态。
-    result.blockedText = recipe.assemblyUnlocked ? "" : (
+    result.blockedText = recipe.deployableOwned ? "已拥有该部署物（同时仅能拥有 1 台）"
+      : recipe.assemblyUnlocked ? "" : (
       recipe.assemblyBlockReason === "blueprint-locked" ? "需要先在蓝图商店购买" + recipe.name + "蓝图"
       : recipe.assemblyBlockReason === "level-locked" ? "需要舰船工程等级 Lv." + recipe.requiredLevel
       : recipe.assemblyBlockReason === "shipyard-level-locked" ? "需要船坞等级 Lv." + (recipe.shipyardRequiredLevel || "?")
@@ -1244,8 +1256,8 @@ function getShipEngineeringCycleDuration(state, recipe) {
 
 // 唯一舰船总装资格判定：与 actions.js 的 startShipAssembly 阻塞优先级完全一致。
 // 供 selectors / 渲染层 / 行动确认统一消费，禁止各自重复猜测。
-//   1. blueprint-locked  2. level-locked  3. shipyard-level-locked  4. insufficient-components  5. null（可开工）
-// assemblyUnlocked 仅表示永久解锁（蓝图 + 技能 + 船坞），不含材料；canStartAssembly 才含材料。
+//   1. blueprint-locked  2. level-locked  3. shipyard-level-locked  4. deployable-unique  5. insufficient-components  6. null（可开工）
+// assemblyUnlocked 仅表示永久解锁（蓝图 + 技能 + 船坞），不含材料；canStartAssembly 才含材料与部署物唯一性。
 function getShipAssemblyEligibility(state, recipe) {
   const fallback = {
     requiresBlueprint:true, hasRequiredBlueprint:false, levelEnough:false, shipyardEnough:false, hasComponents:false,
@@ -1267,21 +1279,27 @@ function getShipAssemblyEligibility(state, recipe) {
   // 材料条件复用 getShipAssemblyMaxCyclesFromState。
   const hasComponents = getShipAssemblyMaxCyclesFromState(state, recipe) > 0;
   let reason = null;
+  // 部署物唯一性：单件实体已拥有（已部署 / 已入库）则不得再造第二台（优先级在材料之前，提示更准确）。
+  const isUniqueDeployable = recipe.productKind === "deployable";
+  const deployableOwned = isUniqueDeployable && (typeof isDeployableOwned === "function") && isDeployableOwned(state, recipe.deployableId);
   if (!hasRequiredBlueprint) reason = "blueprint-locked";
   else if (!levelEnough) reason = "level-locked";
   else if (!shipyardEnough) reason = "shipyard-level-locked";
+  else if (deployableOwned) reason = "deployable-unique";
   else if (!hasComponents) reason = "insufficient-components";
   const assemblyUnlocked = hasRequiredBlueprint && levelEnough && shipyardEnough;
   let blockText = "";
   if (reason === "blueprint-locked") blockText = "未解锁：需蓝图解锁";
   else if (reason === "level-locked") blockText = "未解锁：舰船工程 Lv." + quote.levelGate + " 解锁";
   else if (reason === "shipyard-level-locked") blockText = "未解锁：船坞 Lv." + (shipyardRequiredLevel || "?") + " 解锁";
+  else if (reason === "deployable-unique") blockText = "已拥有该部署物（同时仅能拥有 1 台）";
   else if (reason === "insufficient-components") blockText = "组件/材料不足";
   return {
     requiresBlueprint, hasRequiredBlueprint, levelEnough, shipyardEnough, hasComponents,
     levelGate: quote.levelGate, shipyardRequiredLevel,
+    isUniqueDeployable, deployableOwned,
     assemblyBlockReason: reason, assemblyBlockText: blockText,
-    assemblyUnlocked, canStartAssembly: assemblyUnlocked && hasComponents
+    assemblyUnlocked, canStartAssembly: assemblyUnlocked && hasComponents && !deployableOwned
   };
 }
 
@@ -1481,6 +1499,8 @@ function getShipEngineeringDisplayState(state, now) {
         hasComponents:el.hasComponents,
         assemblyBlockReason:el.assemblyBlockReason,
         assemblyBlockText:el.assemblyBlockText,
+        isUniqueDeployable:el.isUniqueDeployable,
+        deployableOwned:el.deployableOwned,
         assemblyUnlocked:el.assemblyUnlocked
       };
     })(),
@@ -1590,6 +1610,7 @@ function getSmeltingEfficiencyBreakdown(display) {
   if ((display.implantRefineEff || 1) !== 1) entries.push({ label: "脑插·冶炼增效", detail: "×" + display.implantRefineEff.toFixed(3) + "（+6%）" });
   if ((display.boosterSmeltSpeed || 1) !== 1) entries.push({ label: "增强剂·冶炼速度", detail: "×" + display.boosterSmeltSpeed.toFixed(3) });
   if ((display.legionRefine || 1) !== 1) entries.push({ label: "军团 NPC·熔炉调谐", detail: "×" + display.legionRefine.toFixed(3) + "（已计入最终效率）" });
+  if ((display.allianceRefiningBonus || 0) !== 0) entries.push({ label: "联盟冶炼中枢", detail: "×" + (1 + display.allianceRefiningBonus).toFixed(3) + "（+" + (display.allianceRefiningBonus * 100).toFixed(0) + "%，已计入最终效率）" });
   if ((display.adBuffMult || 1) !== 1) entries.push({ label: "脑突触加速剂", detail: "×" + display.adBuffMult.toFixed(2) });
   return formatEfficiencyBreakdown(entries, display.efficiency);
 }
@@ -2010,8 +2031,16 @@ function getInstalledCombatModulesFromState(state, options) {
   // M3：options.shipInstanceId → 按指定实例（NPC 绑定舰）读装配；缺省保持当前出战舰行为
   const activeShip = getActiveCombatShipState(state, options);
   const modules = [];
+  // 边界校断（2026-09-12）：只认前 slots[slot] 格。正常装配入口 setFittingSlot 有 slotIndex 守卫，
+  // 理论上写不出越界，此处兜底旧档/手工改档 —— 保证战斗结算与面板读数「永远不会多算越界件」，
+  // 与 state.js reclaimOverflowFitting 的存档层裁剪构成双保险（无 config 定义的舰不裁，避免误伤）。
+  const slotDefs = (activeShip.config && activeShip.config.slots) ? activeShip.config.slots : null;
   for (const slot of ["high", "mid", "low", "rig"]) {
-    for (const ref of activeShip.fitting[slot]) {
+    const refs = activeShip.fitting[slot] || [];
+    const cap = slotDefs ? Math.max(0, Number(slotDefs[slot]) || 0) : Infinity;
+    const limit = Math.min(refs.length, cap);
+    for (let i = 0; i < limit; i++) {
+      const ref = refs[i];
       const resolved = resolveEquipmentReference(state, ref);
       if (!resolved || !resolved.definition || !resolved.definition.combat) continue;
       modules.push({
@@ -2137,6 +2166,17 @@ function getDeployableDefinition(deployableId) {
   if (typeof DEPLOYABLES_DB !== "undefined" && DEPLOYABLES_DB) return DEPLOYABLES_DB[deployableId] || null;
   if (typeof globalThis !== "undefined" && globalThis.DEPLOYABLES_DB) return globalThis.DEPLOYABLES_DB[deployableId] || null;
   return null;
+}
+
+// 部署物唯一性（唯一真值）：激光定向打捞单元等部署物为「单件实体」——
+// 部署上限 MTU_MAX_DEPLOYED = 1，且库存 deployableStorage 按 id 去重 ⇒ 同时最多持有 1 台。
+// 供总装启动门禁（actions.js）/ 周期上限 / 在线 tick / 离线结算统一消费，禁止各处自行判断。
+function isDeployableOwned(state, deployableId) {
+  if (!deployableId) return false;
+  const sq = state && state.combat && state.combat.squad;
+  if (!sq) return false;
+  if (Array.isArray(sq.deployables) && sq.deployables.some(d => d && d.deployableId === deployableId)) return true;
+  return Array.isArray(sq.deployableStorage) && sq.deployableStorage.includes(deployableId);
 }
 
 // 激光定向打捞单元（MTU）增益聚合器（唯一口径；在线/离线战斗共用）。
@@ -2670,7 +2710,12 @@ function getCombatDisplayState(state, now) {
   const equipmentRack = [];
   for (const slot of ["high", "mid", "low", "rig"]) {
     const fitted = activeShip.fitting[slot];
-    const count = Math.max((ship && ship.slots && ship.slots[slot]) || 0, fitted.length);
+    // 边界校断（2026-09-12）：有槽数定义就严格按槽数渲染 —— 旧逻辑 `Math.max(槽数, fitted.length)`
+    // 会把越界数组撑成多余格子（战斗中显示 3 个中槽损控的假象）。越界件由存档层
+    // state.js reclaimOverflowFitting 裁掉并归还仓库，此处只认槽数。
+    // 无槽数定义（未知舰）才回退按实际数组渲染，避免装备"看不见"。
+    const hasSlotDef = !!(ship && ship.slots && Number.isFinite(Number(ship.slots[slot])));
+    const count = hasSlotDef ? Math.max(0, Number(ship.slots[slot]) || 0) : fitted.length;
     for (let index = 0; index < count; index++) {
       const ref = fitted[index] || null;
       const resolved = ref ? resolveEquipmentReference(state, ref) : null;

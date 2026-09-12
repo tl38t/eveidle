@@ -315,6 +315,10 @@ const ManufacturingStateActions = {
     if (getEffectiveSkillLevel(state, "shipEngineering") < shipBuildingQuote.levelGate) return { changed:false, reason:"level-locked" };
     // 船坞等级门槛
     if (typeof canAssembleAtShipyard === "function" && !canAssembleAtShipyard(state, recipe.id)) return { changed:false, reason:"shipyard-level-locked" };
+    // 部署物唯一性（与 getShipAssemblyEligibility 同优先级）：单件实体已拥有则不得再造第二台。
+    if (recipe.productKind === "deployable" && typeof isDeployableOwned === "function" && isDeployableOwned(state, recipe.deployableId)) {
+      return { changed:false, reason:"deployable-unique" };
+    }
     if (getShipAssemblyMaxCyclesFromState(state, recipe) < 1) return { changed:false, reason:"insufficient-components" };
     Object.assign(state.currentAction, {
       skill:"shipEngineering",

@@ -465,8 +465,9 @@ function consumeStatisticsEvent(event) {
       addStatistic(statistics.production.manufactured, payload.recipeId, payload.quantity);
       break;
     case "station:autoLineCompleted":
-      // 仅空间站「装备」自动线进入装备制造权威统计；smelting/booster/其他 lineId 不写入 manufactured，避免双计数。
-      if (payload.lineId === "equipment") {
+      // 仅空间站「装备」自动线（含副线 equipment_2）进入装备制造权威统计；smelting/booster/其他 lineId 不写入 manufactured，避免双计数。
+      // 2026-09-12 修复：旧代码只认 "equipment"，装备自动线 II 的产出被漏计（走到 else 分支 handled=false）。
+      if (payload.lineId === "equipment" || payload.lineId === "equipment_2") {
         statistics.totals.manufacturingCycles += cycles;
         statistics.totals.manufacturedUnits += Number(payload.quantity) || 0;
         addStatistic(statistics.production.manufactured, payload.targetId, payload.quantity);

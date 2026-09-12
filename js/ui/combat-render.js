@@ -276,6 +276,8 @@ function buildActualStatsHtml(stats, opts) {
   opts = opts || {};
   const mi = stats.mitigation || {};
   const fu = stats.fuel || {};
+  const allianceCombatBonus = (typeof AllianceBuildingConfig !== "undefined" && typeof gameState !== "undefined" && gameState.alliance && gameState.alliance.buildings)
+    ? AllianceBuildingConfig.effects(gameState.alliance.buildings).combatDamageBonus : 0;
   const html = [];
 
   html.push('<div class="cas-group"><div class="cas-group-title">攻击 · 单轮齐射面板伤害</div>');
@@ -333,9 +335,10 @@ function buildActualStatsHtml(stats, opts) {
   html.push('</div>');
 
   const notes = [];
+  if (allianceCombatBonus > 0) notes.push("联盟战斗加成：前线作战指挥部 +" + casPct(allianceCombatBonus) + "，已计入实时玩家伤害。");
   if (opts.levelMult !== undefined && opts.levelMult !== null) notes.push("等级伤害倍率 ×" + casNum(opts.levelMult) + "（LV1 30% → LV70 100%）已计入上方攻击。");
   if (opts.excludeImplants) notes.push("NPC 绑定舰按独立口径计算（排除玩家脑插加成）。");
-  notes.push("面板口径：含装备强化与技能/船体/科研乘区；不含弹药加成、克制倍率、命中-闪避系数与 ±10% 随机浮动。维修按满结构基准估算，不含低血应急加成。");
+  notes.push("面板口径：含装备强化、武器/维修增强剂与技能/船体/科研乘区；不含弹药加成、克制倍率、命中-闪避系数与 ±10% 随机浮动。维修按满结构基准估算，不含低血应急加成。");
   html.push('<div class="cas-note">' + notes.join("<br>") + '</div>');
 
   return html.join("");
@@ -764,7 +767,7 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
     //（与实弹 volley 同源取模块），口径不含弹药/克制/命中系数/随机浮动，tooltip 说明。
     const atkVal = Math.round(Number(npc.attackPower) || 0);
     if (atkVal > 0) {
-      badges.push('<span class="lcs-badge dmg" title="攻击力 ' + atkVal.toLocaleString() + '：单轮齐射面板伤害（含武器强化/技能/等级倍率；未含弹药加成、克制、命中系数与随机浮动）">攻击 ' + atkVal.toLocaleString() + "</span>");
+      badges.push('<span class="lcs-badge dmg" title="攻击力 ' + atkVal.toLocaleString() + '：单轮齐射面板伤害（含武器强化/增强剂/技能/等级倍率；未含弹药加成、克制、命中系数与随机浮动）">攻击 ' + atkVal.toLocaleString() + "</span>");
     }
     cls = npc.destroyedInBattle ? " destroyed" : (npc.inSquad && !npc.destroyedInBattle ? " active" : "");
     if (npc.hp && npc.maxHp) {
@@ -1325,6 +1328,51 @@ onCombatEvent(event => {
 });
 
 /* ================================================================
+   伤害数字行槽分配器（2026-09-12 方案C）
+   ================================================================
+   同一个敌人同一帧可能同时冒出多个数字（玩家 1 + 小队 NPC 2 + 泰坦核心 1 = 最多 4 个）。
+   30px 字号下数字实宽 74~114px，而原横向步进只有 26px ⇒ 数学上必然重叠；
+   且玩家与第 1 名 NPC 传的 damageIndex 都是 0（combat.js 玩家写死 0、squadIdx 从 0 起）⇒ 完全重合。
+   改为「纵向分行堆叠」：每个数字自下而上独占一行（行距 34px = 30px 字高 + 4px 间隙），
+   并左右交替 ±14px 强化「多人同时开火」观感；水平方向居中于目标卡片。
+   行槽按存活数字动态分配，占满上限后轮转复用最早的行位，避免数字列无限向上增长。 */
+
+const DMG_ROW_STEP = 34;    // 行距：30px 字号 + 4px 间隙
+const DMG_ROW_MAX = 4;      // 行数上限（= 同目标同帧最大数字个数）
+const DMG_ROW_LIFE = 2100;  // 行槽占用时长，与元素移除时机（下方 setTimeout）对齐
+const DMG_ROW_SWAY = 14;    // 左右交替幅度
+const DMG_ROW_BASE = -36;   // 首行基准：数字底边落在卡片顶边上方 6px（30px 字高 + 6px 间隙）
+
+const _dmgRowSlots = new Map(); // targetEl -> [{ slot, at }]
+
+function allocDmgRowSlot(targetEl, now) {
+  // 敌方卡片每次渲染都会重建 ⇒ 先剔除已脱离文档的键，避免 Map 长期膨胀
+  if (_dmgRowSlots.size) {
+    for (const key of _dmgRowSlots.keys()) {
+      if (!key || !key.isConnected) _dmgRowSlots.delete(key);
+    }
+  }
+  let arr = _dmgRowSlots.get(targetEl);
+  if (!arr) { arr = []; _dmgRowSlots.set(targetEl, arr); }
+  // 超过存活时长的行位视为空闲（与元素被移除的时机一致）
+  for (let i = arr.length - 1; i >= 0; i--) {
+    if (now - arr[i].at >= DMG_ROW_LIFE) arr.splice(i, 1);
+  }
+  const busy = new Set(arr.map(item => item.slot));
+  let slot = 0;
+  while (slot < DMG_ROW_MAX && busy.has(slot)) slot += 1;
+  if (slot >= DMG_ROW_MAX) {
+    // 行位占满（连续多轮持续开火）：复用最早入队的行位，保证数字列高度有界
+    let oldest = 0;
+    for (let i = 1; i < arr.length; i++) { if (arr[i].at < arr[oldest].at) oldest = i; }
+    slot = arr[oldest].slot;
+    arr.splice(oldest, 1);
+  }
+  arr.push({ slot: slot, at: now });
+  return slot;
+}
+
+/* ================================================================
    战斗攻击特效
    ================================================================ */
 
@@ -1391,6 +1439,7 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt, targetRef
   // --- 伤害数字 ---
   if (dmg !== undefined && dmg > 0) {
     const el = document.createElement("div");
+    let appended = false;   // 目标卡片分支需先挂载再量宽（游离元素 offsetWidth 恒为 0）
     el.className = "fx-dmg";
     if (source === "squad") {
       el.classList.add("squad");
@@ -1410,12 +1459,21 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt, targetRef
       if (targetEl || enemySec) {
         const rect = (targetEl || enemySec).getBoundingClientRect();
         const fxr = fxLayer.getBoundingClientRect();
-        // NPC 小队数字略低于玩家数字并向下排布，避免重叠
-        const idx = Number(damageIndex) || 0;
         if (targetEl) {
-          el.style.left = (rect.left + rect.width * 0.5 - fxr.left + (idx % 3 - 1) * 12) + "px";
-          el.style.top  = (rect.top - fxr.top - 4 + (idx % 2) * 12) + "px";
+          // 方案C：纵向分行（自下而上）+ 左右交替，水平居中于目标卡片
+          const nowFx = (typeof performance !== "undefined" && performance.now) ? performance.now() : Date.now();
+          const slot = allocDmgRowSlot(targetEl, nowFx);
+          fxLayer.appendChild(el);
+          appended = true;
+          const measured = el.offsetWidth;
+          // 面板隐藏时 offsetWidth 为 0 ⇒ 退化为按字符数估算（30px/800 字重下每位 ≈ 17px）
+          const boxW = measured > 0 ? measured : (el.textContent.length * 17);
+          const sway = (slot % 2) ? DMG_ROW_SWAY : -DMG_ROW_SWAY;
+          el.style.left = (rect.left + rect.width * 0.5 - fxr.left - boxW / 2 + sway) + "px";
+          el.style.top  = (rect.top - fxr.top + DMG_ROW_BASE - slot * DMG_ROW_STEP) + "px";
         } else {
+          // 目标卡片解析失败时的兜底：仍按敌方区斜向排布
+          const idx = Number(damageIndex) || 0;
           const baseTop = (source === "squad") ? 0.46 : 0.30;
           el.style.left = (rect.left + rect.width * 0.6 - fxr.left + idx * 6) + "px";
           el.style.top  = (rect.top + rect.height * baseTop - fxr.top + idx * 20) + "px";
@@ -1447,8 +1505,10 @@ function playAttackFX(isPlayer, weapon, dmg, damageIndex, source, alt, targetRef
         el.style.left = "20%"; el.style.top = "30%";
       }
     }
-    fxLayer.appendChild(el);
-    setTimeout(() => el.remove(), 1150);
+    // 目标卡片分支已提前挂载（需先量宽才能居中），此处只处理其余分支
+    if (!appended) fxLayer.appendChild(el);
+    // 与 css/combat.css 的 dmgFloat 时长（2s）对齐，末尾留 100ms 余量
+    setTimeout(() => el.remove(), 2100);
   }
 }
 

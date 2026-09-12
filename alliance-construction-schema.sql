@@ -5,7 +5,7 @@ create table if not exists public.alliance_daily_tasks (
   id bigint generated always as identity primary key,
   player_id varchar(100) not null,
   server_date date not null,
-  slot smallint not null check (slot between 1 and 5),
+  slot smallint not null check (slot between 1 and 10),
   category varchar(32) not null,
   skill varchar(64) not null,
   material_id varchar(120) not null,
@@ -24,6 +24,10 @@ create table if not exists public.alliance_daily_tasks (
 
 create index if not exists alliance_daily_tasks_player_day
   on public.alliance_daily_tasks (player_id, server_date);
+
+-- 任务大厅升级后每日任务可扩展到 6～10 条；兼容早期已建表的旧约束。
+alter table public.alliance_daily_tasks drop constraint if exists alliance_daily_tasks_slot_check;
+alter table public.alliance_daily_tasks add constraint alliance_daily_tasks_slot_check check (slot between 1 and 10);
 
 -- 兼容已经执行过旧版脚本的环境：补充任务对应技能字段。
 alter table public.alliance_daily_tasks

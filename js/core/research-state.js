@@ -290,6 +290,13 @@
       delete r.lastResearchUpdate;
     }
 
+    // 清理历史 bug 残留（幂等）：研究页曾把「广告每日共享额度池」误建在 research 上
+    //   （正确位置是顶层 state.adQuota，见 js/systems/ad-buff.js getAdQuotaState）；
+    //   该幽灵字段恒为 { dailyCount: 0 } 且无任何读取方 → 直接删除，避免随存档一直带着。
+    if (Object.prototype.hasOwnProperty.call(r, "adQuota")) {
+      delete r.adQuota;
+    }
+
     return state;
   }
 

@@ -4,6 +4,13 @@
 //  - 必须从固定提交导出，而非复制当前脏工作区：
 //      git -c core.autocrlf=false -c core.eol=lf archive <SOURCE_SHA>
 //  - 只产出游戏运行必需内容；排除 demo/lab/candidates/capital 原型页/audit/tools/docs 等。
+//    例外（2026-09-12）：`assets/achievements/**` 与 `demo-assets/**` 是生产 JS 字符串拼接引用的
+//    运行期图片（成就图标、虫洞地图背景），必须随包；详见 isWhitelisted()。
+//  - 静态资源漏打双闸 + 对账（2026-09-12 加固）：① isWhitelisted() 按「目录 + 图片后缀」放行；
+//    ② worktree 目录清单（两把独立的锁）③ verifyPackage 的包内完整性断言；④ **静态资源引用对账**
+//    （见 collectSourceUniverse / auditAssetRefCoverage）——遍历包内 JS/CSS 文本里的字符串字面量，
+//    凡是引用了源码树中「媒体目录」的，就要求该目录下媒体文件全部在包内。
+//    ③ 是「已知的两个目录」的白名单式兜底，④ 是**整类漏打**的结构化拦截（新目录自动生效）。
 //  - CDN 替换只发生在“构建后的暂存包 index.html”，不修改工作区正式 index.html。
 //  - 输出目录在仓库外：D:\EVE-IDLE\TAPTAP-H5-OUTPUT\
 //  - ZIP 内仅一个顶层英文目录 deep-space-idle/，其下直接含 index.html。
@@ -134,7 +141,9 @@ function checkRepoState() {
   const branch = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], { cwd: REPO, encoding: "utf8" }).stdout.trim();
   if (branch !== "main") throw new Error("工作分支必须为 main，当前: " + branch);
   const idxClean = spawnSync("git", ["diff", "--cached", "--quiet"], { cwd: REPO }).status === 0;
-  if (!idxClean) throw new Error("staged 非空（git diff --cached 非空）");
+  // selftest 明确从当前工作树读取白名单文件；暂存的成就图标也属于当前工作树内容，
+  // 因此允许 staged 非空。正式 release 仍必须保持 staged 为空。
+  if (!idxClean && !WORKTREE_SELFTEST) throw new Error("staged 非空（git diff --cached 非空）");
   if (WORKTREE_SELFTEST) return;
   const wtClean = spawnSync("git", ["diff", "--quiet"], { cwd: REPO }).status === 0;
   if (!wtClean) throw new Error("tracked 工作树不干净（git diff 非空）");
@@ -169,6 +178,18 @@ function isWhitelisted(rel) {
     return true;
   }
   if (/^images\//.test(rel)) return true;
+  // 静态资源：**字符串拼接路径**，打包器的引用收集看不见（只认 html 的 src/href、css 的 url()、
+  // js 的 from/import）⇒ 白名单漏一行就是整目录静默漏打，且 verifyPackage 也不会报。
+  // 2026-09-12 事故：成就图标 232 张 + 虫洞地图背景图 1 张，rc1→rc70 **所有历史包**全 0 张，
+  // 玩家侧成就页每张卡都是「破图 + alt 文本」。故此处按**目录 + 图片后缀**放行（不逐文件列举，
+  // 避免以后加图时再静默漏打），并在 verifyPackage 里加包内完整性断言兜底。
+  //   - js/ui/shell-render.js:getAchievementIconPath → "./assets/achievements/<achieved|unachieved>/<ID>.png"
+  //   - js/ui/wormhole-map.js:34                → "./demo-assets/wormhole-map-bg.png"
+  //   `..` 一律拒绝（与 verifyPackage 的「无 .. 穿越」断言同向；`.+` 会放过 "../.." 这种段）。
+  if (!rel.includes("..")) {
+    if (/^assets\/achievements\/.+\.(png|webp|jpg|jpeg|gif|svg)$/i.test(rel)) return true;
+    if (/^demo-assets\/.+\.(png|webp|jpg|jpeg|gif|svg)$/i.test(rel)) return true;
+  }
   return false;
 }
 
@@ -231,14 +252,150 @@ function collectRefs(rel, content) {
   return refs.map((r) => resolveRef(baseDir, r)).filter(Boolean);
 }
 
+// ---------- 静态资源引用对账（collectRefs 的补充：字符串拼接路径）----------
+// 起因（2026-09-12 事故）：collectRefs 只认 html 的 src/href、css 的 url()、js 的 from/import，
+// **看不见 JS 里用字符串拼接出来的资源路径**（`"./assets/achievements/" + dir + id + ".png"`）
+// ⇒ 漏打完全静默：`assets/achievements/**`（232 张）与 `demo-assets/**`（1 张）从 rc1 到 rc70
+// 一直没进任何包，玩家侧成就页每张卡都是「破图 + alt 文本」；而 verifyPackage 第 10 条
+// 「本地静态引用均可在包内找到」只遍历 collectRefs 的产物，对拼接路径天然免疫，照样全绿。
+//
+// 规则 = 「媒体目录可达性对账」，**不解析语法、不做 string tokenizer**：
+//   1. 源码树清单 = 工作区 `git ls-files` + `--others --exclude-standard`（排除 node_modules/.git）。
+//      ★ 刻意用**工作区**而非 commit 树：让「新增了图片但忘了 git add / 忘了进白名单」也被抓到
+//        —— 成就图标事故发生时它们正是 untracked。release 模式仍从 commit 树取包内容，
+//        故此项等于「commit 树 vs 工作区」的漂移哨兵。
+//   2. 由源码树里所有**媒体文件**（图片/字体/音视频）推出「媒体目录」集合（含全部祖先；仓库根不算）。
+//   3. 扫**包内** .js/.mjs/.css/.html 的文本，抽**左引号邻接**的路径 token：
+//        匹配「`"` / `'` / `` ` `` 紧跟 seg/seg…」的位置，例 `"./assets/achievements/"`、
+//        `"./demo-assets/wormhole-map-bg.png"`；去掉前导 `./` 或 `/` 后按**目录形态 / 文件形态**
+//        分别展开（详见 referencedPathRefs 的注释）。
+//      ★ 左引号邻接是**误报闸门**：翻译文案 `"Paste archive/progress code"` 与注释
+//        `// …derived from design/titan-three-view-v1.png` 都因路径前是空格而被排除。
+//        （实测：不加此约束会误报 `archive/` 与 `design/` 两个目录，都是正文里的巧合路径。）
+//   4. 两类命中都要求「在包内」：① 被引用的**媒体目录** D ⇒ D 下媒体文件必须全部在包内；
+//        ② 被引用的**具体媒体文件** F（且源码树中确实存在 F）⇒ F 必须在包内。
+//      ★ ①只要求「D 下全部**媒体**」而非「全部文件」：D 里可能混有 .js/.json 等非媒体成员；
+//        ②则给「父目录只有 1 段」的情况精确兜底（`demo-assets/` 就是这种）。
+//      方向是「包内 ⊇ 被引用者」**单向**断言，允许包内多带（多带不报）。
+//
+// 已知边界（有意为之，勿当 bug 修）：
+//   - 注释/文案里写成**带引号**的路径仍会算作引用（如 `// 见 "./assets/x/"`）⇒ 宁可多要求，不漏打。
+//   - 改成非媒体后缀（.bin）或运行时拼装的动态路径本规则看不见，属**新一类**漏打；届时优先扩本函数。
+const MEDIA_EXT_RE = /\.(png|jpe?g|webp|gif|svg|bmp|ico|woff2?|ttf|otf|eot|mp3|ogg|wav|m4a|mp4|webm)$/i;
+const REF_SCANABLE_RE = /\.(js|mjs|css|html)$/i;
+
+// 取工作区源码树文件清单（tracked + untracked-not-ignored）
+function collectSourceUniverse(repo) {
+  const ls = (args) => {
+    const r = spawnSync("git", args, { cwd: repo, encoding: "utf8", maxBuffer: 1 << 28 });
+    if (r.status !== 0) return null;
+    return r.stdout.split("\0").filter(Boolean);
+  };
+  const tracked = ls(["ls-files", "-z"]);
+  const others = ls(["ls-files", "--others", "--exclude-standard", "-z"]);
+  if (tracked === null || others === null) fail("静态资源引用对账：git ls-files 失败（无法枚举工作区）");
+  const all = [...new Set([...tracked, ...others])]
+    .filter((f) => !f.startsWith("node_modules/") && !f.startsWith(".git/"));
+  if (!all.length) fail("静态资源引用对账：工作区文件清单为空");
+  return all;
+}
+
+// 源码树文件清单 → 「媒体目录 → 该目录下媒体文件清单」
+function buildMediaDirIndex(sourceFiles) {
+  const index = new Map();
+  for (const f of sourceFiles) {
+    if (!MEDIA_EXT_RE.test(f)) continue;
+    const parts = f.split("/");
+    for (let i = 1; i < parts.length; i++) {
+      const d = parts.slice(0, i).join("/");
+      if (!index.has(d)) index.set(d, []);
+      index.get(d).push(f);
+    }
+  }
+  return index;
+}
+
+// 包内文本 → 左引号邻接路径 token 解析出的**目录集合**与**整文件集合**。
+// 分两种形态处理（这是落地过程中实测踩出来的：一刀切会把 `demo-assets` 整条保护线漏掉）：
+//   A) 目录形态（token 以 `/` 结尾，作者明写了「这是个目录」，如 `"./assets/achievements/"`）
+//        ⇒ 收该目录本身（**不限深度**）+ 其祖先中深度 ≥ 2 的目录。
+//        祖先也要收，是为了 `"./assets/achievements/achieved/"` 这种写深一层时，
+//        仍能覆盖到 `assets/achievements` 这一级（否则 unachieved/ 会漏出保护网）。
+//   B) 文件形态（如 `"./demo-assets/wormhole-map-bg.png"`）
+//        ⇒ 收**该文件本身** + 其祖先中深度 ≥ 2 的目录。
+//        ★ 刻意**不收**「文件的父目录（若只有 1 段）」：否则只要出现任意 `"./assets/x.png"`，
+//          `assets` 就会变成被引用目录，把 `assets/**` 下一切媒体都变成硬要求 ——
+//          以后新增 `assets/design-notes/x.png`（非运行期资源、不进包）就会误报。
+//        父目录只有 1 段时靠「整文件本身」精确兜底，语义反而更准。
+function referencedPathRefs(content) {
+  const dirs = new Set();
+  const files = new Set();
+  // 注意：正则字面量在函数内求值 ⇒ 每次都是新对象，不受 g 的 lastIndex 状态污染
+  const re = /(["'`])([A-Za-z0-9_@.-]+(?:\/[A-Za-z0-9_@.-]+)+\/?)/g;
+  let m;
+  while ((m = re.exec(content)) !== null) {
+    const raw = m[2];
+    const isDirForm = /\/+$/.test(raw);
+    const t = raw.replace(/^\.\//, "").replace(/^\//, "").replace(/\/+$/, "");
+    if (!t) continue;
+    const parts = t.split("/");
+    if (isDirForm) dirs.add(parts.join("/"));
+    else files.add(parts.join("/"));
+    for (let i = 2; i <= parts.length; i++) dirs.add(parts.slice(0, i).join("/"));
+  }
+  return { dirs, files };
+}
+
+// 主对账。pkg = 包内根相对成员 Set；pkgTexts = [[根相对名, 文本]]；sourceFiles = 源码树清单
+// 两类违规：
+//   dirViolations  ——「被引用的媒体目录 D ⇒ D 下媒体文件必须全部在包内」
+//   fileViolations ——「被引用的具体文件 F（源码树中确实存在）⇒ F 必须在包内」
+function auditAssetRefCoverage(pkg, pkgTexts, sourceFiles) {
+  const srcSet = new Set(sourceFiles || []);
+  const mediaIndex = buildMediaDirIndex(sourceFiles || []);
+  const refDirs = new Map();  // 被引用的媒体目录 -> 触发它的包内文件集合
+  const refFiles = new Map(); // 被引用的具体文件 -> 触发它的包内文件集合
+  for (const [rel, text] of pkgTexts) {
+    const { dirs, files } = referencedPathRefs(text);
+    for (const d of dirs) {
+      if (!mediaIndex.has(d)) continue;
+      if (!refDirs.has(d)) refDirs.set(d, new Set());
+      refDirs.get(d).add(rel);
+    }
+    for (const f of files) {
+      if (!srcSet.has(f) || !MEDIA_EXT_RE.test(f)) continue;
+      if (!refFiles.has(f)) refFiles.set(f, new Set());
+      refFiles.get(f).add(rel);
+    }
+  }
+  const dirViolations = [];
+  for (const [d, srcs] of refDirs) {
+    const expected = mediaIndex.get(d);
+    const missing = expected.filter((f) => !pkg.has(f));
+    if (missing.length) dirViolations.push({ dir: d, total: expected.length, missing, sources: [...srcs].sort() });
+  }
+  const fileViolations = [];
+  for (const [f, srcs] of refFiles) {
+    if (!pkg.has(f)) fileViolations.push({ file: f, sources: [...srcs].sort() });
+  }
+  dirViolations.sort((a, b) => b.missing.length - a.missing.length);
+  fileViolations.sort((a, b) => a.file.localeCompare(b.file));
+  return { refDirs, refFiles, dirViolations, fileViolations, mediaDirCount: mediaIndex.size };
+}
+
 // ---------- 单次构建 ----------
 async function buildOnce(SOURCE_SHA, includeProbe) {
   const map = new Map();
   let commitFiles = null; // archive 模式缓存 commit 树 Map（已换行规范化），供 vendor 复用
 
   if (WORKTREE_SELFTEST) {
-    // 游戏运行文件（index.html/css/js/images 白名单）从工作区读取 + 换行规范化
-    const wt = loadWorktreeFiles(REPO, ["index.html", "css", "js", "images"], {
+    // 游戏运行文件（index.html/css/js/images + 两份字符串拼接引用的静态资源目录）从工作区读取 + 换行规范化。
+    // ⚠️ 此清单与 isWhitelisted() 是**两把独立的锁**：目录不列进来，白名单放行也没用（2026-09-12 事故两侧都漏）。
+    const wt = loadWorktreeFiles(REPO, [
+      "index.html", "css", "js", "images", "assets/achievements", "demo-assets",
+      "legion-starmap-pure.html", "legion-starmap-content.js",
+      "legion-starmap-pure-content.js", "legion-starmap-pure-events.js",
+    ], {
       fileFilter: isWhitelisted,
       transform: TEXT_NORMALIZER,
     });
@@ -313,7 +470,9 @@ async function buildOnce(SOURCE_SHA, includeProbe) {
 }
 
 // ---------- 校验 ----------
-function verifyPackage(buffer, mode, includeProbe) {
+// sourceUniverse：工作区源码树文件清单（用「媒体目录可达性对账」，见 collectSourceUniverse）。
+// 不给默认值：调用方必须显式传入，避免忘记传而让对账静默退化成空转。
+function verifyPackage(buffer, mode, includeProbe, sourceUniverse) {
   const results = [];
   const ok = (name, cond, detail) => results.push({ name, pass: !!cond, detail: detail || "" });
 
@@ -354,6 +513,42 @@ function verifyPackage(buffer, mode, includeProbe) {
     const qaFileHit = entries.filter((e) => /(^|\/)js\/qa-seed\.js$/.test(e));
     ok("QA 隔离: 包内不含 js/qa-seed.js", qaFileHit.length === 0, qaFileHit.join(" | "));
     ok("QA 隔离: 包内 index.html 不引用 qa-seed.js", !/qa-seed\.js/.test(indexTxt));
+
+    // 静态资源完整性（2026-09-12 新增，两种模式都跑）
+    //   起因：js/ui/shell-render.js 用字符串拼接出成就图标路径，打包器的 ref 收集永远看不见它，
+    //   于是 assets/achievements/**（232 张）与 demo-assets/**（1 张）从 rc1 到 rc70 一直静默漏打，
+    //   玩家侧成就页每张卡都是「破图 + alt 文本」，而所有既有断言全绿。
+    //   期望值**不硬编码**（避免重蹈 verify.mjs EXPECTED_SCRIPTS 那种基线腐烂）：直接读**包内**
+    //   js/data/achievements.js，数出 steam.enabled === true 的条目——成就页只渲染这些条目
+    //   （shell-render.js:getAchievementsDisplayState 的 filter），故 achieved/ 与 unachieved/
+    //   各应覆盖其全部 ID；多出来的 ID 也算错（说明图标与目录不同步）。
+    const achCatalogName = PKG_TOP + "/js/data/achievements.js";
+    const achCatalog = set.has(achCatalogName) ? await z.file(achCatalogName).async("string") : "";
+    const expectedAchIds = achCatalog.split("\n")
+      .filter((l) => /Object\.freeze\(\{\s*id:\s*"[A-Z]\d{2}"/.test(l) && /steam:\s*Object\.freeze\(\{\s*enabled:\s*true/.test(l))
+      .map((l) => (l.match(/id:\s*"([A-Z]\d{2})"/) || [])[1])
+      .filter(Boolean);
+    const expectedAchSet = new Set(expectedAchIds);
+    const achPngIds = (sub) => new Set(
+      entries
+        .map((e) => e.match(new RegExp("^" + PKG_TOP + "/assets/achievements/" + sub + "/([A-Z]\\d{2})\\.png$")))
+        .filter(Boolean)
+        .map((m) => m[1])
+    );
+    const achAchieved = achPngIds("achieved");
+    const achUnachieved = achPngIds("unachieved");
+    const missA = [...expectedAchSet].filter((id) => !achAchieved.has(id));
+    const missU = [...expectedAchSet].filter((id) => !achUnachieved.has(id));
+    const extraA = [...achAchieved].filter((id) => !expectedAchSet.has(id));
+    const extraU = [...achUnachieved].filter((id) => !expectedAchSet.has(id));
+    ok("成就图标: 包内目录可解析出期望 ID 集合", expectedAchSet.size > 0, "expected=" + expectedAchSet.size + (achCatalog ? "" : "（包内缺 achievements.js）"));
+    ok("成就图标: achieved/ 覆盖全部期望 ID", missA.length === 0, "命中 " + achAchieved.size + " 缺 " + missA.length + ": " + missA.slice(0, 8).join(","));
+    ok("成就图标: unachieved/ 覆盖全部期望 ID", missU.length === 0, "命中 " + achUnachieved.size + " 缺 " + missU.length + ": " + missU.slice(0, 8).join(","));
+    ok("成就图标: 无目录外多余 ID", extraA.length === 0 && extraU.length === 0, "extra=" + extraA.concat(extraU).slice(0, 8).join(","));
+    // 虫洞地图背景图：js/ui/wormhole-map.js 无条件 new Image().src = "./demo-assets/wormhole-map-bg.png"，
+    // 缺图有径向渐变兜底、**不报错不破图**（所以更难发现），但属预期发布内容 ⇒ 硬断言存在。
+    const whBgName = PKG_TOP + "/demo-assets/wormhole-map-bg.png";
+    ok("虫洞地图背景图在包内", set.has(whBgName), whBgName);
 
     // 8b) release 专属：探针文件 / key 字符串 / 测试文案 / 全包 CDN 零残留
     const probeFile = PKG_TOP + "/taptap-compat-probe.mjs";
@@ -472,6 +667,37 @@ function verifyPackage(buffer, mode, includeProbe) {
       }
     }
     ok("本地静态引用均可在包内找到", missing.length === 0, missing.slice(0, 8).join(" | "));
+
+    // 10b) 静态资源引用对账（2026-09-12 加固）—— 覆盖上一条**看不见**的那一类：
+    //      JS 里字符串拼接出来的资源路径（`"./assets/achievements/" + dir + id + ".png"`）。
+    //      两类断言：①「被引用的媒体目录 ⇒ 其下媒体文件必须全部在包内」；
+    //      ②「被引用的具体媒体文件（源码树中确实存在）⇒ 必须在包内」。
+    //      反向哨兵由第 1 条断言承担：若规则静默失效（源码树清单拿不到 / 正则被改坏），
+    //      被引用目录数会跌到 0 而**报错**，不是变成永真空转 ——
+    //      这正是 verify.mjs 基线腐烂与本次漏打事故的共同教训：**断言本身也要有反向哨兵**。
+    {
+      const pkgRel = new Set(entries.map((e) => (e.startsWith(PKG_TOP + "/") ? e.slice(PKG_TOP.length + 1) : e)));
+      const pkgTexts = [];
+      for (const e of entries) {
+        if (!REF_SCANABLE_RE.test(e)) continue;
+        const rootRel = e.startsWith(PKG_TOP + "/") ? e.slice(PKG_TOP.length + 1) : e;
+        pkgTexts.push([rootRel, await z.file(e).async("string")]);
+      }
+      const audit = auditAssetRefCoverage(pkgRel, pkgTexts, sourceUniverse);
+      ok("静态资源引用对账: 规则有效（被引用媒体目录 ≥ 2）",
+        audit.refDirs.size >= 2,
+        "源码树媒体目录 " + audit.mediaDirCount + "，被引用目录 " + audit.refDirs.size +
+        " / 被引用整文件 " + audit.refFiles.size + "：" + [...audit.refDirs.keys()].sort().join(", "));
+      const refViolations = [
+        ...audit.dirViolations.map((v) =>
+          v.dir + " 缺 " + v.missing.length + "/" + v.total +
+          "（引用自 " + v.sources.slice(0, 2).join(",") + "；例：" + v.missing.slice(0, 3).join(",") + "）"),
+        ...audit.fileViolations.map((v) => v.file + " 整文件缺失（引用自 " + v.sources.slice(0, 2).join(",") + "）"),
+      ];
+      ok("静态资源引用对账: 被引用的媒体目录/文件全部在包内",
+        refViolations.length === 0,
+        refViolations.slice(0, 5).join(" | ") || "被引用目录 " + [...audit.refDirs.keys()].sort().join(", "));
+    }
     // 11) Font Awesome webfonts 路径有效
     if (set.has(faCss)) {
       const txt = await z.file(faCss).async("string");
@@ -544,12 +770,17 @@ function verifyPackage(buffer, mode, includeProbe) {
   if (rev !== head) fail("来源 SHA 必须等于当前 HEAD (" + head + ")，得到 " + rev);
   console.log("[SHA] 来源校验通过，构建基线 HEAD = " + rev);
 
+  // 静态资源引用对账的源码树基线。刻意取**工作区**（含 untracked，见 collectSourceUniverse 注释）：
+  // 这样「新增图片但忘了 git add / 忘了进白名单」也会被抓到——成就图标事故发生时它们正是 untracked。
+  const SOURCE_UNIVERSE = collectSourceUniverse(REPO);
+  console.log("[ASSET-REF] 源码树基线文件数 = " + SOURCE_UNIVERSE.length + "（git ls-files + --others --exclude-standard）");
+
   fs.mkdirSync(OUTDIR, { recursive: true });
 
   // release 模式：先内部构建同名 selftest 包，供跨模式一致性校验（证明唯一差异=探针）
   if (MODE === "release") {
     const sBuild = await buildOnce(SOURCE_SHA, true);
-    const sVerify = await verifyPackage(sBuild.buffer, "selftest", true);
+    const sVerify = await verifyPackage(sBuild.buffer, "selftest", true, SOURCE_UNIVERSE);
     const sFailList = sVerify.filter((r) => !r.pass);
     if (sFailList.length) {
       console.error("selftest 内部构建校验失败:");
@@ -564,13 +795,13 @@ function verifyPackage(buffer, mode, includeProbe) {
 
   console.log("\n--- 第一次构建 ---");
   const b1 = await buildOnce(SOURCE_SHA, INCLUDE_PROBE);
-  const v1 = await verifyPackage(b1.buffer, MODE, INCLUDE_PROBE);
+  const v1 = await verifyPackage(b1.buffer, MODE, INCLUDE_PROBE, SOURCE_UNIVERSE);
   let allPass = true;
   for (const r of v1) { console.log((r.pass ? "PASS " : "FAIL ") + r.name + (r.detail ? "  [" + r.detail + "]" : "")); if (!r.pass) allPass = false; }
 
   console.log("\n--- 第二次构建（确定性复验）---");
   const b2 = await buildOnce(SOURCE_SHA, INCLUDE_PROBE);
-  const v2 = await verifyPackage(b2.buffer, MODE, INCLUDE_PROBE);
+  const v2 = await verifyPackage(b2.buffer, MODE, INCLUDE_PROBE, SOURCE_UNIVERSE);
   for (const r of v2) { console.log((r.pass ? "PASS " : "FAIL ") + r.name); if (!r.pass) allPass = false; }
 
   // 14) 两次构建一致
@@ -595,7 +826,7 @@ function verifyPackage(buffer, mode, includeProbe) {
     console.log("工作区包指纹 SHA-256: " + fingerprint);
     console.log("基线提交: " + SOURCE_SHA + " + 未提交工作区（仅供 TapTap 沙箱自测）");
   }
-  console.log("顶层结构: " + PKG_TOP + "/ (index.html + css/ + js/ + images/ + assets/vendor/taptap-h5/" + (INCLUDE_PROBE ? " + taptap-compat-probe.mjs" : "") + ")");
+  console.log("顶层结构: " + PKG_TOP + "/ (index.html + css/ + js/ + images/ + assets/achievements/ + assets/vendor/taptap-h5/ + demo-assets/" + (INCLUDE_PROBE ? " + taptap-compat-probe.mjs" : "") + ")");
 
   console.log("\n=== 结论: " + (allPass ? "全部校验通过 ✓" : "存在失败项 ✗") + " ===");
   process.exit(allPass ? 0 : 1);

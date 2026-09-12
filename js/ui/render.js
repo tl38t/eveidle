@@ -162,6 +162,14 @@ function renderSmeltingDisplay(display, areaEl, outEl) {
     efficiency.textContent = display.efficiency.toFixed(2);
     efficiency.title = getSmeltingEfficiencyBreakdown(display);
   }
+  const allianceRefining = document.getElementById("smelting-alliance-refining");
+  if (allianceRefining) {
+    const bonus = Number(display.allianceRefiningBonus) || 0;
+    allianceRefining.textContent = bonus > 0
+      ? "联合冶炼中枢 · 效率 +" + (bonus * 100).toFixed(0) + "%（已生效）"
+      : "联合冶炼中枢 · 未启用";
+    allianceRefining.classList.toggle("active", bonus > 0);
+  }
   const output = document.getElementById("smelting-output-qty"); if (output) output.textContent = display.output;
   const support = document.getElementById("smelting-ship-support"); if (support) support.textContent = display.shipBonus > 0 ? display.ship.name + " · 速度 +" + (display.shipBonus * 100).toFixed(0) + "%" : "未分配";
   // 外接大型精炼泵：状态行 + 供料开关（仅在冶炼舰已安装泵时显示该行）

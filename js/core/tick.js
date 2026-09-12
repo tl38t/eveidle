@@ -234,6 +234,7 @@ function gameTick() {
       const smeltConsumeList = getSmeltingConsumeList(recipe);
       const smeltOutputRefId = getSmeltingOutputRefId(recipe);
       const smeltingState = getSmeltingDisplayState(gameState, Date.now());
+      // getSmeltingDisplayState 已将联盟冶炼中枢纳入统一效率乘区，避免这里重复计算。
       const eff = smeltingState.efficiency; const actualTime = recipe.baseTime / eff;
       gameState.currentAction.refDuration = actualTime;
       const now = Date.now();
@@ -376,6 +377,11 @@ function gameTick() {
           const asmLevel = getEffectiveSkillLevel(gameState, "shipEngineering");
           if (asmLevel < asmQuote.levelGate) { stopOrSkip(); updateUI(); return; } // 等级不足：零副作用停止
           if (!hasEnoughShipAssemblyComponents(recipe)) { stopOrSkip(); updateUI(); return; }
+          // 部署物唯一性（2026-09-12 修复）：单件实体（MTU）已拥有则零副作用停止，
+          // 不再进入下一周期 —— 旧行为会持续扣料（每台 5400 三钛合金…）却只产 1 台，玩家报「多造只剩一个、材料被吞」。
+          if (recipe.productKind === "deployable" && typeof isDeployableOwned === "function" && isDeployableOwned(gameState, recipe.deployableId)) {
+            stopOrSkip(); updateUI(); return;
+          }
           gameState.currentAction.progress -= actualTime;
           deductShipAssemblyComponents(recipe);
           if (recipe.productKind === "deployable") {

@@ -929,6 +929,9 @@ function getStationAutoLineInfo(state, lineId) {
 function stopAutoLineInternal(state, lineId, reason, offline) {
   const s = state && state.station;
   if (!s || !s.autoLines) return;
+  // 防呆（2026-09-12）：lineId 必须是合法自动线 ID。上游若传错 lineId（含 undefined），
+  // 以前会静默写到另一条线上（副线停止误停主线）；现直接拒绝，保证「停线只停自己」。
+  if (AUTO_LINE_IDS.indexOf(lineId) === -1) return;
   const line = s.autoLines[lineId];
   if (!line) return;
   // 已停止且 stoppedReason 已设置则不再重复派发
@@ -995,7 +998,7 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
   if (line.targetQuantity && line.targetQuantity > 0) {
     const remainingQty = line.targetQuantity - (line.producedQty || 0);
     if (remainingQty <= 0) {
-      stopAutoLineInternal(state, "smelting", "target-reached", offline);
+      stopAutoLineInternal(state, lineId, "target-reached", offline);
       line.progress = remainingSec;
       return { cycles:0 };
     }
@@ -1004,7 +1007,7 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
   }
 
   if (cycles <= 0) {
-    stopAutoLineInternal(state, "smelting", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
@@ -1019,16 +1022,16 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
   state._dirty = true;
 
   emitStationEvent("station:autoLineCompleted", {
-    lineId:"smelting", targetId:recipe.name,
+    lineId:lineId, targetId:recipe.name,
     quantity:made, xp:xpGained, offline, cycles
   }, { offline });
 
   // 停止判定：达标（按产出件数）优先；否则材料不足则安全停止
   const targetDone = line.targetQuantity && line.targetQuantity > 0 && (line.producedQty || 0) >= line.targetQuantity;
   if (targetDone) {
-    stopAutoLineInternal(state, "smelting", "target-reached", offline);
+    stopAutoLineInternal(state, lineId, "target-reached", offline);
   } else if (cycles < cyclesByTime) {
-    stopAutoLineInternal(state, "smelting", "insufficient-materials", offline);
+    stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
   }
 
   line.progress = remainingSec;
@@ -1044,7 +1047,7 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
    ---------------------------------------------------------------- */
 function processEquipmentAutoLine(state, lineId, line, multiplier, offline) {
   const recipe = EQUIPMENT_ENGINEERING_RECIPES.find(r => r.id === line.startedTargetId);
-  if (!recipe) { stopAutoLineInternal(state, "equipment", "unknown-recipe", offline); return { cycles:0 }; }
+  if (!recipe) { stopAutoLineInternal(state, lineId, "unknown-recipe", offline); return { cycles:0 }; }
 
   // 精密配给剂（舰船/装备制造通用减料）报价：激活期间材料成本×0.9、配方等级门槛+N
   const eqQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, recipe) : { cost: recipe.cost, levelGate: recipe.level };
@@ -1058,7 +1061,7 @@ function processEquipmentAutoLine(state, lineId, line, multiplier, offline) {
 
   // 检查配方等级门槛（含配给剂激活期间的 +N 门槛）
   const eeLvl = getEffectiveSkillLevel(state, "equipmentEngineering");
-  if (eeLvl < eqQuote.levelGate) { stopAutoLineInternal(state, "equipment", "level-locked", offline); return { cycles:0 }; }
+  if (eeLvl < eqQuote.levelGate) { stopAutoLineInternal(state, lineId, "level-locked", offline); return { cycles:0 }; }
 
   // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过。
   // 探针类走限次抄本 BPC：要求剩余流程 > 0（见 manufacturingRecipeHasBlueprint）。
@@ -1206,11 +1209,11 @@ function processEquipmentAutoLine(state, lineId, line, multiplier, offline) {
    ---------------------------------------------------------------- */
 function processBoosterAutoLine(state, lineId, line, multiplier, offline) {
   const recipe = BOOSTER_RECIPES.find(r => r.id === line.startedTargetId);
-  if (!recipe) { stopAutoLineInternal(state, "booster", "unknown-recipe", offline); return { cycles:0 }; }
+  if (!recipe) { stopAutoLineInternal(state, lineId, "unknown-recipe", offline); return { cycles:0 }; }
 
   // 检查配方等级门槛
   const bLvl = getEffectiveSkillLevel(state, "boosterEngineering");
-  if (bLvl < recipe.level) { stopAutoLineInternal(state, "booster", "level-locked", offline); return { cycles:0 }; }
+  if (bLvl < recipe.level) { stopAutoLineInternal(state, lineId, "level-locked", offline); return { cycles:0 }; }
 
   // 蓝图门槛兜底：未持有蓝图则停止，防止非法存档 / 直接 dispatch 绕过
   if (recipe.requiresBlueprint === true && !hasBoosterBlueprintFromState(state, recipe.id)) {
@@ -2001,7 +2004,7 @@ function getStationPageDisplayState(state, now) {
   var alConfigs = AUTO_LINE_IDS.map(function(lineId) {
     var cfg = AUTO_LINE_CONFIG[lineId];
     var kd = AL_KIND_DEFS[cfg.kind];
-    return Object.assign({ lineId:lineId, buildingId:cfg.buildingId, unlockLevel:cfg.unlockLevel || 1 }, kd);
+    return Object.assign({ lineId:lineId, buildingId:cfg.buildingId, kind:cfg.kind, unlockLevel:cfg.unlockLevel || 1 }, kd);
   });
   // 自动线目标显示名解析：只认配方的正式中文名称字段（recipe.name）。
   // 查不到配方、或配方缺正式名称时一律返回"未知配方"——绝不用内部 recipeId 兜底，
@@ -2022,7 +2025,9 @@ function getStationPageDisplayState(state, now) {
     }
     // 冶炼自动线冶炼的是原矿/矿物，不是星带，去掉显示名末尾的"带"字。
     // 内部 targetId（selectedTargetId/startedTargetId）仍保留"带"字，旧存档与后端结算不受影响。
-    if (lineId === "smelting" && typeof nm === "string" && nm.charAt(nm.length - 1) === "带") {
+    // 2026-09-12 修复：按 kind 判定（旧代码硬编码 "smelting"，冶炼自动线 II 的显示名未去"带"字）。
+    var _alCfgForKind = AUTO_LINE_CONFIG[lineId];
+    if (_alCfgForKind && _alCfgForKind.kind === "smelting" && typeof nm === "string" && nm.charAt(nm.length - 1) === "带") {
       nm = nm.slice(0, nm.length - 1);
     }
     return nm;
@@ -2046,11 +2051,12 @@ function getStationPageDisplayState(state, now) {
       // option.value 用稳定内部 id；option 文本只用正式中文名称。
       // category 透传给 UI（按应用类聚成 <optgroup>），缺省回落到产线 category / lineId。
       var opt = { id:cfg.keyFn(r), name:autoLineTargetName(r, cfg.lineId), level:r.level||1, category:(r.category || cfg.category || cfg.lineId) };
-      // equipment / booster 线：透传蓝图状态，供 UI 灰显「需蓝图」选项
-      if (cfg.lineId === "equipment" || cfg.lineId === "booster") {
+      // equipment / booster 线（含副线 equipment_2 / booster_2，按 kind 判定）：透传蓝图状态，供 UI 灰显「需蓝图」选项
+      // 2026-09-12 修复：旧代码硬编码 "equipment"/"booster"，副线不灰显「需蓝图」且取错蓝图源。
+      if (cfg.kind === "equipment" || cfg.kind === "booster") {
         opt.requiresBlueprint = !!r.requiresBlueprint;
         opt.hasRequiredBlueprint = opt.requiresBlueprint
-          ? (cfg.lineId === "equipment" ? manufacturingRecipeHasBlueprint(state, r) : hasBoosterBlueprintFromState(state, r.id))
+          ? (cfg.kind === "equipment" ? manufacturingRecipeHasBlueprint(state, r) : hasBoosterBlueprintFromState(state, r.id))
           : true;
       }
       return opt;

@@ -847,7 +847,8 @@
   // installEquipmentAchievementConsumer(state)
   //   - 只消费三类事件：manufacturing:completed（普通/离线装备制造）、
   //     equipment:enhancementAttempted（装备强化）、
-  //     station:autoLineCompleted 且 payload.lineId==="equipment"（空间站装备自动线）。
+  //     station:autoLineCompleted 且 payload.lineId==="equipment"|"equipment_2"
+  //     （空间站装备自动线及其副线）。
   //   - 其余事件立即 return。
   //   - 注册后置 "*"（晚于 statistics 注册），读取更新后的权威统计。
   //   - 独立标志 _equipmentConsumerInstalled；幂等。
@@ -887,7 +888,8 @@
       }
       if (t === "station:autoLineCompleted") {
         const payload = event.payload;
-        if (payload && payload.lineId === "equipment") {
+        // 2026-09-12 修复：旧代码只认 "equipment"，装备自动线 II 的产出不触发装备成就求值。
+        if (payload && (payload.lineId === "equipment" || payload.lineId === "equipment_2")) {
           evaluateEquipmentAchievementRules(state, event.timestamp);
         }
         return;

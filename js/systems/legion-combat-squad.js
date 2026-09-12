@@ -621,12 +621,23 @@
     }
 
     // 2026-09-05：面板攻击力（单轮齐射基准伤害）
-    //   = Σ [combat.baseDamage × 模块强化倍率(m.multiplier) × 武器类型伤害倍率(技能/改装等 selDmgMult)] × NPC等级伤害倍率
+    //   = Σ [combat.baseDamage × 模块强化倍率(m.multiplier) × 武器类型伤害倍率(技能/改装等 selDmgMult) × 武器增强剂] × NPC等级伤害倍率
     // 与实弹 volley 同源取模块（getInstalledCombatWeapons + 同一 shipOpts，见 processLegionNpcVolley），杜绝公式双写。
     // 刻意不含：弹药 dmgMult / 克制倍率 / 命中-闪避系数 / 0.9~1.1 随机浮动 —— 均依赖目标或弹药池，面板口径排除。
     // 2026-09-09：面板明细（与玩家舰「实战属性」同构）——纯只读，不消耗任何资源、不改任何 state。
-    // 攻击逐件：基础伤害 × 模块强化倍率 × 武器类型倍率 × NPC 等级倍率（与 attackPower 同一循环，杜绝公式双写）。
+    // 攻击逐件：基础伤害 × 模块强化倍率 × 武器类型倍率 × 武器增强剂 × NPC 等级倍率（与 attackPower 同一循环，杜绝公式双写）。
+    // 2026-09-12 修复：补武器增强剂（攻击药）乘区 —— 实弹管线 boosterMult 早已计入（见 fireSingleNpcMember），
+    //   面板此前漏乘 ⇒ 玩家吃攻击药时 NPC 面板攻击力低于实弹实际输出（玩家报「面板不显示药剂加的攻击」）。
+    //   与玩家舰面板（selectors.js getCombatActualStatsFromState）逐项同构：同一 getBoosterEffectState 入口、
+    //   同一 weaponDamageMultiplier[weaponType] 取值、同一「缺失即 1」退化。
+    //   泰坦主武器走虚拟模块（不在 getInstalledCombatWeapons 结果内，其 booster 已单点并入 titanExtraMult），
+    //   本循环天然不重复乘算，无需额外排除。
     const levelMult = getLegionNpcDamageMultiplier(npc);
+    const boosterDmgMap = (function () {
+      const fn = getGlobalFn("getBoosterEffectState");
+      const st = fn ? fn(state) : null;
+      return (st && st.weaponDamageMultiplier) ? st.weaponDamageMultiplier : null;
+    })();
     const attackItems = [];
     let attackPower = 0;
     const volleyWeaponsFn = getCombatSelector("getInstalledCombatWeapons");
@@ -637,7 +648,8 @@
         if (!cb) continue;
         const typeMult = Number(selDmgMult(state, cb.weaponType, undefined, shipOpts)) || 1;
         const enhancement = Number(m.multiplier) || 1;
-        const raw = (Number(cb.baseDamage) || 0) * enhancement * typeMult;
+        const atkBooster = (boosterDmgMap && boosterDmgMap[cb.weaponType]) ? Number(boosterDmgMap[cb.weaponType]) || 1 : 1;
+        const raw = (Number(cb.baseDamage) || 0) * enhancement * typeMult * atkBooster;
         attackPower += raw;
         attackItems.push({
           name: (m.equipment && m.equipment.name) || cb.weaponType,
@@ -645,6 +657,7 @@
           base: Math.round(Number(cb.baseDamage) || 0),
           enhancement: enhancement,
           typeMult: typeMult,
+          atkBooster: atkBooster,
           levelMult: levelMult,
           value: Math.round(raw * levelMult)
         });
@@ -1389,6 +1402,20 @@
       titanDmgMult = dmgSelTitan ? dmgSelTitan(state, npcTitan.weapon.weaponType, undefined, shipOpts) : 1;
       if (TITAN_NPC_DAMAGE_SCALE !== 1) titanExtraMult *= TITAN_NPC_DAMAGE_SCALE;
     }
+    // 武器强化剂（攻击药）乘区：与玩家侧 combat.js 同口径（weaponDamageMultiplier[weaponType]）。
+    // 2026-09-12 修复：常规武器管线此前漏接此乘区（维修药有、攻击药无，玩家报「NPC 不吃攻击药」）。
+    // 泰坦虚拟模块已在 titanExtraMult 内含 titanBoosterMult，循环内必须排除它，避免重复乘算。
+    const npcWeaponBoosterMap = (function () {
+      const fn = getGlobalFn("getBoosterEffectState");
+      const st = fn ? fn(state) : null;
+      return (st && st.weaponDamageMultiplier) ? st.weaponDamageMultiplier : null;
+    })();
+    // 溅射（AOE）：2026-09-12 修复 —— NPC 常规武器此前完全不结算溅射（只有泰坦 L2 有），
+    // 导致带 aoe 的 NPC 武器（旗舰激光 30% / 导弹阵列 12% / 加农 15%）比同款玩家武器弱一大截。
+    // 口径与玩家侧 combat.js fireConventionalVolley 完全一致：主目标原始伤害 × aoe.multiplier。
+    // 泰坦虚拟模块走自身 L2（扫掠/贯穿），必须排除，否则重复结算。
+    const aoeFn = getGlobalFn("getCapitalAreaDamageTargets");
+    const aoeEnemyList = (ctx && Array.isArray(ctx.enemies) && ctx.enemies.length) ? ctx.enemies : null;
     let damage = 0;
     let titanMainDealt = null; // 供 L2 贯穿（layerPierce）定位起始层
     for (const m of modules) {
@@ -1402,14 +1429,25 @@
       const isTitanVirtual = (m === titanVirtualModule);
       const baseDmg = (isTitanVirtual && titanMainDamage != null ? titanMainDamage : combat.baseDamage) * (m.multiplier || 1);
       const titanMult = isTitanVirtual ? titanExtraMult : 1;
-      const dealt = applyLayers(enemy.hp, calcDamage(
+      const boosterMult = (isTitanVirtual || !npcWeaponBoosterMap) ? 1 : (npcWeaponBoosterMap[combat.weaponType] || 1);
+      const rawDamage = calcDamage(
         hit, enemy.dodge,
         baseDmg,
-        counterMult * dmgMult * stats.levelDamageMultiplier * ammo.dmgMult * auraDmgMult * vulnMult * titanMult,
+        counterMult * dmgMult * boosterMult * stats.levelDamageMultiplier * ammo.dmgMult * auraDmgMult * vulnMult * titanMult,
         useRng
-      ));
+      );
+      const dealt = applyLayers(enemy.hp, rawDamage);
       if (isTitanVirtual) titanMainDealt = dealt;
       damage += (dealt.shield || 0) + (dealt.armor || 0) + (dealt.structure || 0);
+      // 溅射：主目标之外的邻近/全体目标按同一发原始伤害 × 倍率吃伤（与玩家侧同式，含击毁判定）。
+      if (!isTitanVirtual && combat.aoe && aoeFn && aoeEnemyList) {
+        for (const areaTarget of aoeFn(aoeEnemyList, enemy, combat.aoe)) {
+          if (!areaTarget || !areaTarget.enemy || !areaTarget.enemy.hp) continue;
+          const areaDamage = Math.max(1, Math.round(rawDamage * areaTarget.multiplier));
+          const areaDealt = applyLayers(areaTarget.enemy.hp, areaDamage);
+          damage += (areaDealt.shield || 0) + (areaDealt.armor || 0) + (areaDealt.structure || 0);
+        }
+      }
     }
     // —— C3 L2：泰坦附加打击（扫掠 / 贯穿 / 暴击 / 破片回响）——
     // 与 combat.js:1443-1457 玩家侧逐项同口径：strike.damage × 易伤 × 武器强化剂 × 扫掠暴击 × 脑突触。

@@ -565,6 +565,12 @@ function getOfflineActionDescriptor() {
       apply(cycles, gains) {
         const q = getAsmQuote();
         if (asmLevel() < q.levelGate) return; // 等级不足：零副作用
+        // 部署物唯一性（2026-09-12 修复）：单件实体已拥有 → 零副作用跳过；未拥有 → 最多结算 1 台。
+        // 与在线 tick 同口径，杜绝「离线批量结算吞掉多份材料、却只入库 1 台」。
+        if (recipe.productKind === "deployable") {
+          if (typeof isDeployableOwned === "function" && isDeployableOwned(gameState, recipe.deployableId)) return;
+          if (cycles > 1) cycles = 1;
+        }
         deductShipAssemblyComponents(recipe, cycles);
         // 2026-09-06 修复：部署物（激光定向打捞单元等 productKind==="deployable"）离线完成
         // 必须与在线 tick.js:341 同口径入小队/召回库存。旧代码无此分支，一律

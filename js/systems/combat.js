@@ -21,12 +21,15 @@ function getInstalledCombatWeapons(state, options) {
   return getInstalledCombatModules(state, options).filter(module => module.equipment.combat.kind === "weapon");
 }
 
-function getInstalledCombatRepairers(state) {
-  return getInstalledCombatModules(state).filter(module => module.equipment.combat.kind === "repair");
+// ⚠️ 必须与 getInstalledCombatWeapons 一致地转发 options：
+// 军团 NPC 战斗小队传 { shipInstanceId, excludeImplants } 指定「NPC 绑定舰」，
+// 早先这两个函数未收 options ⇒ 被静默回退成玩家出战舰 ⇒ NPC 的损控/维修读数取玩家值。
+function getInstalledCombatRepairers(state, options) {
+  return getInstalledCombatModules(state, options).filter(module => module.equipment.combat.kind === "repair");
 }
 
-function getInstalledCombatDamageControls(state) {
-  return getInstalledCombatModules(state).filter(module => module.equipment && module.equipment.combat && module.equipment.combat.kind === "damageControl");
+function getInstalledCombatDamageControls(state, options) {
+  return getInstalledCombatModules(state, options).filter(module => module.equipment && module.equipment.combat && module.equipment.combat.kind === "damageControl");
 }
 
 function getCombatRecoveryRemaining(state, now) {
@@ -1518,7 +1521,9 @@ function advanceCombatRound(state, context) {
         const traitMultiplier = getCapitalWeaponTraitMultiplier(ship, combat.weaponType, c.hp, c.maxHp);
         const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
         const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
-        let damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult, rng);
+        const allianceDamageMult = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
+          ? 1 + AllianceBuildingConfig.effects(state.alliance.buildings).combatDamageBonus : 1;
+        let damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult * allianceDamageMult, rng);
         // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅作用于玩家→敌人伤害（敌人→玩家伤害不享受）。
         const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
         if (adbm && adbm !== 1) damage = Math.round(damage * adbm);
@@ -1571,7 +1576,8 @@ function advanceCombatRound(state, context) {
 
   // M6 阶段 1：玩家与 NPC 按统一顺序依次攻击（共享目标指针，目标死亡立即切换到下一个存活敌人）。
   // 保留全部既有规则：燃料/弹药/维修/欠薪/爆船跳过、击毁奖励幂等结算（resolveCombatEnemyDefeat）、敌人反击。
-  // 离线路径（offline-combat.js / simulateWave）仍调用 processLegionNpcAttack（同步集火），此处仅改在线。
+  // 离线路径（offline-combat.js M6 Phase 2）同样按攻击者顺序换目标（本地 nextLiving/advanceTarget），
+  // 与在线等价；processLegionNpcAttack 现仅作兼容别名（契约仍是「全体打 currentEnemy」），在线/离线均不再调用。
   const squadApi = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD) ? LEGION_COMBAT_SQUAD : null;
   const npcFireMembers = (squadApi && typeof squadApi.getEligibleSquadFireMembers === "function")
     ? squadApi.getEligibleSquadFireMembers(state, now)
