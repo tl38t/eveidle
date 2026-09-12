@@ -181,12 +181,12 @@
   function friendlyAllianceError(error) {
     var raw = error && error.message ? String(error.message) : String(error || "");
     var text = raw.toLowerCase();
-    if (text.indexOf("not enough alliance construction points") >= 0 || text.indexOf("construction points") >= 0 || text.indexOf("insufficient") >= 0 || text.indexOf("\u5efa\u8bbe\u70b9") >= 0 || text.indexOf("\u4e0d\u8db3") >= 0) return "联盟建设点不足，无法升级该建筑。";
-    if (text.indexOf("not enough alliance construction points") >= 0 || text.indexOf("construction points") >= 0) return "联盟建设点不足，无法升级该建筑。";
-    if (text.indexOf("only the alliance owner") >= 0 || text.indexOf("only owner") >= 0) return "只有盟主可以执行此操作。";
-    if (text.indexOf("building") >= 0 && text.indexOf("max") >= 0) return "该建筑已经达到最高等级。";
-    if (text.indexOf("database request failed") >= 0 || text.indexOf("http 400") >= 0 || text.indexOf("http 404") >= 0 || text.indexOf("http 409") >= 0) return "联盟服务暂时不可用，请稍后重试。";
+    if (text.indexOf("unknown alliance building") >= 0 || text.indexOf("未知联盟建筑") >= 0) return "未知联盟建筑，请更新游戏后重试。";
+    if (text.indexOf("only alliance owner") >= 0 || text.indexOf("only the alliance owner") >= 0 || text.indexOf("only owner") >= 0 || text.indexOf("只有联盟创建人") >= 0) return "只有盟主可以执行此操作。";
+    if (text.indexOf("not enough alliance construction points") >= 0 || text.indexOf("construction points") >= 0 || text.indexOf("insufficient") >= 0 || text.indexOf("建设点") >= 0 || text.indexOf("不足") >= 0) return "联盟建设点不足，无法升级该建筑。";
+    if (text.indexOf("max level") >= 0 || (text.indexOf("building") >= 0 && text.indexOf("max") >= 0) || text.indexOf("最高等级") >= 0) return "该建筑已经达到最高等级。";
     if (text.indexOf("network") >= 0 || text.indexOf("failed to fetch") >= 0) return "网络连接失败，请检查网络后重试。";
+    if (text.indexOf("database request failed") >= 0 || text.indexOf("http 400") >= 0 || text.indexOf("http 404") >= 0 || text.indexOf("http 409") >= 0) return "联盟服务暂时不可用，请稍后重试。";
     return raw || "联盟操作失败，请稍后重试。";
   }
 
