@@ -149,6 +149,12 @@
     // 避免 getAdBuffMultiplier 默认取 Date.now() 导致过去/未来时段判断错误。
     const adBuffRef = (nowRef && typeof nowRef.t === "number") ? nowRef.t : undefined;
     const adBuffMult = (typeof G("getAdBuffMultiplier") === "function") ? G("getAdBuffMultiplier")(state, adBuffRef) : 1;
+    // 2026-09-12（离线数值口径修复）：联盟「前线作战指挥部」战斗伤害加成。
+    // 在线 combat.js:1524-1525 已并入玩家齐射乘区；离线此前**完全没有接线**（本文件零
+    // alliance 引用）⇒ 离线玩家伤害恒低 2%~10%（按指挥部等级），与「离线开炮次数多但
+    // 击杀少」的现象一致。此处读一次，常规齐射与泰坦管线共用。
+    const allianceDamageMult = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
+      ? 1 + AllianceBuildingConfig.effects(state.alliance.buildings).combatDamageBonus : 1;
     // 泰坦离线接线（阶段 3 步骤 5）：type "titan" 时主武器/核心走泰坦管线。
     // D2=A（2026-09-11 用户拍板）后 tt_high 释放的高槽可挂常规副武器，inputs.weapons 不再恒为空，
     // 主武器与副武器分账结算（见 simulateWave 内 convFire / titanMainFire 双 gate）。
@@ -164,7 +170,7 @@
     const titanAuraApi = (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && typeof LEGION_COMBAT_SQUAD.getTitanSquadAura === "function") ? LEGION_COMBAT_SQUAD : null;
     const titanAura = titanAuraApi ? titanAuraApi.getTitanSquadAura(state)
       : ((titanCore && typeof G("getTitanCoreAura") === "function") ? G("getTitanCoreAura")(titanCore) : null);
-    return { ship, shipInstance, zone, faction, weapons, repairers, maxHp, playerDodge, boosterDmg, boosterRep, adBuffMult, isTitan, titanWeapon, titanCore, titanTrait, titanAura };
+    return { ship, shipInstance, zone, faction, weapons, repairers, maxHp, playerDodge, boosterDmg, boosterRep, adBuffMult, allianceDamageMult, isTitan, titanWeapon, titanCore, titanTrait, titanAura };
   }
 
   // ---- 虚拟弹药/燃料（会话级，跨段累计）----
@@ -317,11 +323,13 @@
     const selfAuraDmg = titanAura ? (1 + (titanAura.squadDamageBonus || 0)) : 1;
     const adbm = inputs.adBuffMult || 1;
     const wbm = (inputs.boosterDmg && inputs.boosterDmg[weapon.weaponType]) ? inputs.boosterDmg[weapon.weaponType] : 1;
+    // 2026-09-12：联盟战斗伤害加成（与在线 fireTitanVolley 同口径补齐）。
+    const adm = inputs.allianceDamageMult || 1;
     const critExp = G("rollTitanCritMultiplier")(weapon.crit, null); // 非函数 rng → 期望乘数
     // 全补（2026-09-10 用户拍板）：泰坦三层同吃 getCombatDamageMultiplierFromState（与在线同口径）
     const titanDmgMult = (typeof G("getCombatDamageMultiplierFromState") === "function")
       ? G("getCombatDamageMultiplierFromState")(state, weapon.weaponType) : 1;
-    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult * wbm * critExp * titanDmgMult;
+    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult * wbm * critExp * titanDmgMult * adm;
     if (adbm && adbm !== 1) mult *= adbm;
     // A1（2026-09-10 用户拍板）：命中走与常规武器同一条管线，基数用泰坦自带 baseHit
     //   （100/130/80 差异化保留），再叠 武器技能×4 + 目标锁定×3 + 船体 hitBonus + 光环 squadHitBonus。
@@ -341,7 +349,7 @@
     const strikes = G("resolveTitanWeaponStrikes")(scaled, weapon, enemies, target, TITAN_ZERO_RNG);
     const sweepCritExp = (weapon.crit && weapon.crit.appliesToSweep) ? critExp : 1;
     for (const strike of strikes) {
-      let strikeDmg = strike.damage * vulnMult * wbm * sweepCritExp * titanDmgMult;
+      let strikeDmg = strike.damage * vulnMult * wbm * sweepCritExp * titanDmgMult * adm;
       if (adbm && adbm !== 1) strikeDmg *= adbm;
       strikeDmg = Math.max(1, Math.round(strikeDmg));
       if (strike.kind === "layerPierce") {
@@ -446,7 +454,9 @@
             else if (weapon.counterType === "structure" && current.hp.shield <= 0 && current.hp.armor <= 0 && current.hp.structure > 0) counterMult = 1.25;
             const traitMult = G("getCapitalWeaponTraitMultiplier")(inputs.ship, cb.weaponType, c.hp, c.maxHp);
             const wbm = (inputs.boosterDmg && inputs.boosterDmg[cb.weaponType]) ? inputs.boosterDmg[cb.weaponType] : 1;
-            let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult, expectedRng);
+            // 2026-09-12：联盟加成并入乘区（与在线 combat.js:1524-1526 逐项同构）。
+            const adm = inputs.allianceDamageMult || 1;
+            let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult * adm, expectedRng);
             // 脑突触加速剂独立乘区（与在线 combat.js 同步）
             const adbm = inputs.adBuffMult || 1;
             if (adbm && adbm !== 1) dmg = Math.round(dmg * adbm);
@@ -1214,16 +1224,29 @@
 
       // ---- 资源一次性 apply（每种 resourceId 至多一次）----
       const RR = G("ResourceRegistry");
-      // 弹药/燃料：初始 - 当前虚拟 = 净消耗
-      for (const type in s.ammoInit) {
-        const used = s.ammoInit[type] - (s.ammo[type] || 0);
-        if (used > 0) { applyAmmoDelta(state, type, used); }
-      }
-      const fuelUsed = s.fuelInit - s.fuel;
-      if (fuelUsed > 0) { RR.spend(state, "consumable:fuel", fuelUsed); addResource(s, "consumable:fuel", -fuelUsed); }
+      // 2026-09-12（离线记账口径修复）：本段是「离线结算临界区」。
+      // 期间屏蔽 combat-log 的 fuel/ammo hook（isCombatLogContext 读 __combatLogOfflineFlush），
+      // 使离线扣费**只**由 combatLogMergeOffline 依据 payload 记一次 —— 否则燃料会被记两次
+      // （hook 一次 + merge 从 resourceNet 反推一次，实测 91000 vs 真实 45500）。
+      // try/finally 保证异常时也复位，避免标志泄漏污染后续在线记账。
+      const ammoSpent = {};
+      const _setOfflineFlush = (v) => { if (typeof globalThis !== "undefined") globalThis.__combatLogOfflineFlush = v; };
+      _setOfflineFlush(true);
+      try {
+        // 弹药/燃料：初始 - 当前虚拟 = 净消耗；弹药净消耗同时存入 payload.ammoSpent
+        // （弹药不走 ResourceRegistry，无法从 resourceNet 反推，只能显式带出）。
+        for (const type in s.ammoInit) {
+          const used = s.ammoInit[type] - (s.ammo[type] || 0);
+          if (used > 0) { ammoSpent[type] = used; applyAmmoDelta(state, type, used); }
+        }
+        const fuelUsed = s.fuelInit - s.fuel;
+        if (fuelUsed > 0) { RR.spend(state, "consumable:fuel", fuelUsed); addResource(s, "consumable:fuel", -fuelUsed); }
 
-      // ---- 掉落批量（确定性 RNG）----
-      applyBatchedDrops(state, s);
+        // ---- 掉落批量（确定性 RNG）----
+        applyBatchedDrops(state, s);
+      } finally {
+        _setOfflineFlush(false);
+      }
 
       // ISK / LP 入账
       if (s.iskDelta) { RR.add(state, "currency:isk", s.iskDelta); addResource(s, "currency:isk", s.iskDelta); }
@@ -1258,6 +1281,9 @@
         iskDelta: s.iskDelta,
         lpDelta: s.lpDelta,
         resourceNet: s.resourceNet,
+        // 2026-09-12：弹药净消耗按武器类型分账随 payload 带出，供战斗日志记账
+        // （弹药无 ResourceRegistry 出口，resourceNet 里没有它，不显式带出则离线恒记 0/0/0）。
+        ammoSpent: ammoSpent,
         lootGained: s.lootGained,
         runs: s.runs,
         runsDetail: s.runsDetail,

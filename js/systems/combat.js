@@ -1115,9 +1115,11 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
     if (c.queueWavesDone >= c.queueWavesTarget) {
       // 补发收尾波事件：原本队列终结前直接 return，会吞掉最后一波的 combat:waveCleared，
       // 导致依赖"第4波"的监听（如 C6 教程标记）永远收不到。finalize 前先发一次。
-      doEmit("combat:waveCleared", { zoneId: zone.id, wave: c.wave });
-      // 队列按波折算功勋（补发未走肃清分支的零头波次；已肃清部分不重复计）
-      grantQueueWaveLp(state, zone, mtuLpMult);
+      // 队列按波折算功勋（补发未走肃清分支的零头波次；已肃清部分不重复计）。
+      // 2026-09-12 修复①：折算出的功勋随本事件的 lp 字段带出，供战斗日志记账
+      // （本分支不发 combat:zoneCleared，两处 lp 读取互斥，不会双计）。
+      const qLp = grantQueueWaveLp(state, zone, mtuLpMult);
+      doEmit("combat:waveCleared", { zoneId: zone.id, wave: c.wave, lp: qLp });
       if (typeof finalizeCombatQueueItem === "function") finalizeCombatQueueItem(state, Date.now());
       return false; // 不走后续 spawn，战斗已结束
     }
@@ -1143,6 +1145,11 @@ function resolveCombatWaveVictory(zone, rng, emit, state) {
     normalizeCombatRunWeaponTypes(c, zone.id);
     normalizeCombatRunDamage(c);
     const clearedDamageTaken = c.runDamageTaken;
+    // 2026-09-12 修复⑤：整轮最后一波此前**不发** combat:waveCleared ⇒ 每清一轮战斗日志少记 1 波
+    // （战斗界面 20 波 / 日志 19 波）。离线侧一直是「每波都计」口径（simulateBelt 的
+    // bump(wavesByZone, …) 对第 maxWave 波同样 +1），在线补齐后两侧一致。
+    // lp 只挂在 zoneCleared 上（本事件不放 lp），两处读取互斥，不会双计。
+    doEmit("combat:waveCleared", { zoneId:zone.id, wave:c.wave });
     doEmit("combat:zoneCleared", { zoneId:zone.id, name:zone.name, lp, clearCount:c.zoneClears[zone.id], wave:c.wave, weaponTypes:c.runWeaponTypes.slice(), damageTaken:clearedDamageTaken });
     c.wave = 1;
     c.runEliteKills = 0;
@@ -1440,6 +1447,10 @@ function advanceCombatRound(state, context) {
     const titanBoosterState = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
     const weaponBoosterMult = (titanBoosterState && titanBoosterState[titanWeapon.weaponType]) ? titanBoosterState[titanWeapon.weaponType] : 1;
     const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
+    // 2026-09-12：联盟「前线作战指挥部」战斗伤害加成 —— 此前只接在常规齐射上，
+    // 泰坦主武器与扫掠/贯穿打击漏接（离线侧同步补齐，保持在线/离线同口径）。
+    const allianceDamageMult = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
+      ? 1 + AllianceBuildingConfig.effects(state.alliance.buildings).combatDamageBonus : 1;
     // A1（2026-09-10 用户拍板）：命中走与常规武器同一条管线，基数用泰坦自带 baseHit
     //   （100/130/80 差异化保留），再叠 武器技能×4 + 目标锁定×3 + 船体 hitBonus + 光环 squadHitBonus。
     //   修复前用固定 baseHit、不吃船体 +30 与光环 +15，后期 dodge=85 时命中系数只有走管线侧的 0.60。
@@ -1448,7 +1459,7 @@ function advanceCombatRound(state, context) {
       : (Number(titanWeapon.baseHit) || 100);
     const titanAuraHitBonus = (titanAura && Number(titanAura.squadHitBonus)) ? Number(titanAura.squadHitBonus) : 0;
     const titanHit = (titanHitBase + titanAuraHitBonus) * ammoProps.hitMult;
-    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult * weaponBoosterMult * titanDmgMult;
+    let mult = counterMult * overdriveMult * selfAuraDmg * vulnMult * ammoProps.dmgMult * weaponBoosterMult * titanDmgMult * allianceDamageMult;
     if (adbm && adbm !== 1) mult *= adbm;
     mult *= rollTitanCritMultiplier(titanWeapon.crit, rng);
     const damage = calcCombatDamage(titanHit, enemy.dodge, rd.mainDamage, mult, rng);
@@ -1461,7 +1472,7 @@ function advanceCombatRound(state, context) {
     for (const strike of strikes) {
       const sweepCrit = (strike.kind === "sweep" && titanWeapon.crit && titanWeapon.crit.appliesToSweep)
         ? rollTitanCritMultiplier(titanWeapon.crit, rng) : 1;
-      let strikeDmg = strike.damage * vulnMult * weaponBoosterMult * sweepCrit * titanDmgMult;
+      let strikeDmg = strike.damage * vulnMult * weaponBoosterMult * sweepCrit * titanDmgMult * allianceDamageMult;
       if (adbm && adbm !== 1) strikeDmg *= adbm;
       strikeDmg = Math.max(1, Math.round(strikeDmg));
       if (strike.kind === "layerPierce") {

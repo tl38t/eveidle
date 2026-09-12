@@ -126,8 +126,15 @@ function combatLogAddAmmoSpent(type, amount) {
 
 // 是否处于战斗上下文：在线出击中，或当前主动技能为战斗（含维修/恢复等中间态）。
 // 用 currentAction.active 一并判定，避免战斗暂停期间的非战斗扣费被误记。
+//
+// 2026-09-12（离线燃料双计修复）：**离线 flush 期间一律返回 false**。
+// 离线会话的燃料/弹药由 combatLogMergeOffline 依据 payload 一次性记账（离线侧唯一权威）；
+// 若此处再放行 hook，同一笔扣费会被记两次（hook 一次 + merge 从 resourceNet 反推一次），
+// 实测超计恰好 2×（91000 vs 真实 45500）。门控权在 offline-combat.js 的 flush，
+// 它用全局标志 globalThis.__combatLogOfflineFlush 圈出「离线结算临界区」。
 function isCombatLogContext(state) {
   if (!state) return false;
+  if (typeof globalThis !== "undefined" && globalThis.__combatLogOfflineFlush === true) return false;
   const c = state.combat;
   if (c && c.active === true) return true;
   return Boolean(state.currentAction && state.currentAction.active && state.currentAction.skill === "combat");
@@ -271,6 +278,24 @@ function combatLogMergeOffline(payload) {
     const net = Number(payload.resourceNet["consumable:fuel"]) || 0;
     if (net < 0) combatLogAddFuelSpent(-net);
   }
+  // 离线弹药消耗（2026-09-12 修复）：弹药**没有** ResourceRegistry 出口，不进 resourceNet，
+  // 且 flush 期间 hook 被屏蔽（见 isCombatLogContext），故必须由 payload.ammoSpent 显式带入。
+  // 修复前离线弹药恒为 0/0/0（实测真实扣 9910、日志记 0）。
+  if (payload.ammoSpent && typeof payload.ammoSpent === "object") {
+    for (const t of AMMO_LOG_TYPES) {
+      const v = Number(payload.ammoSpent[t]) || 0;
+      if (v > 0) combatLogAddAmmoSpent(t, v);
+    }
+  }
+  // 本场累计时间（2026-09-12 修复）：payload 一直带着模拟时长，但 merge 从不消费 ⇒
+  // getCombatLog() 的 elapsedMs = 末次活动 − rl.startedAt 恒 ≈ 0（实测 752ms vs 模拟 1199s）。
+  // 把模拟时长折算回 startedAt（向前平移），使「本场累计时间」把离线战斗时长累加进去；
+  // 在线时段仍按真实墙钟累计，二者相加即为整场战斗时长。
+  const simSec = Number(payload.simulatedSeconds) || 0;
+  if (simSec > 0) {
+    const base = (Number(rl.startedAt) > 0) ? Number(rl.startedAt) : Date.now();
+    rl.startedAt = base - Math.round(simSec * 1000);
+  }
   rl.lastActivityAt = (typeof Date !== "undefined") ? Date.now() : rl.lastActivityAt;
 }
 
@@ -376,8 +401,20 @@ if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.on === 
     if (p.lootGained && typeof p.lootGained === "object") combatLogMergeLoot(p.lootGained);
     if (typeof p.isk === "number" && p.isk > 0) combatLogAddIsk(p.isk);
   });
-  GameEvents.on("combat:waveCleared", function () { combatLogInc("waves", 1); });
-  GameEvents.on("combat:zoneCleared", function () { combatLogInc("zones", 1); });
+  // 2026-09-12 修复①：星带清区功勋此前**完全没进战斗日志**（货币层真实 +3、日志层记 0）。
+  // payload 本就带 lp（combat.js:1146），此处照 deathspace 路径（下方两处）同口径读取。
+  // 分工：整轮肃清只在 zoneCleared 上记 lp；队列收尾按波折算的零头功勋走 waveCleared 的
+  // lp 字段（combat.js grantQueueWaveLp 调用点）。两分支互斥，不会双计。
+  GameEvents.on("combat:waveCleared", function (e) {
+    combatLogInc("waves", 1);
+    const lp = e && e.payload && (typeof e.payload.lp === "number") ? e.payload.lp : 0;
+    if (lp > 0) combatLogAddLp(lp);
+  });
+  GameEvents.on("combat:zoneCleared", function (e) {
+    combatLogInc("zones", 1);
+    const lp = e && e.payload && (typeof e.payload.lp === "number") ? e.payload.lp : 0;
+    if (lp > 0) combatLogAddLp(lp);
+  });
   GameEvents.on("combat:deathspaceWaveCleared", function (e) {
     combatLogInc("dsWaves", 1);
     // 死亡空间每波 LP 走本事件的 lp 字段（禁止读 deathspaceCleared.payload.lp 以免双计）。

@@ -249,8 +249,12 @@
     var rows = list.map(function (a) {
       var cap = Math.max(10, Number(a.memberCap) || 10);
       var full = Number(a.memberCount) >= cap;
+      var buildings = Array.isArray(a.buildings) ? a.buildings : [];
+      var buildingNames = { frontier_hq: "总部", logistics_hub: "总部", mission_hall: "任务大厅", combat_command: "作战指挥部", refining_core: "冶炼中枢" };
+      var buildingText = buildings.map(function (b) { return (buildingNames[b.building_type] || b.building_type || "建筑") + " Lv." + (Number(b.level) || 0); }).join(" · ");
       return '<div class="alliance-member-row"><span>' + esc(a.name || a.code) + '</span>' +
         '<span class="text-muted">' + esc(a.memberCount) + '/' + esc(cap) + '</span>' +
+        '<span class="text-muted" style="flex:1;min-width:0;overflow-wrap:anywhere;">' + esc(buildingText || "建筑数据暂无") + '</span>' +
         '<button class="btn secondary alliance-join-btn" data-alliance-id="' + esc(a.id) + '"' + (full ? " disabled" : "") + ' style="margin-left:auto;">' + (full ? "已满" : "加入") + '</button></div>';
     }).join("");
     var listHtml = list.length

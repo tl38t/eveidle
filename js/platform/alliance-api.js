@@ -228,7 +228,14 @@
         members = members || [];
         var ids = members.map(function (member) { return member.player_id; }).filter(Boolean);
         if (!ids.length) return [];
-        return authed("/v1/rdb/rest/players?select=player_id,username&player_id=in.(" + ids.map(encodeURIComponent).join(",") + ")")
+        // Player IDs from TapTap may contain `/` and `=`. PostgREST's `in`
+        // operator requires each value to be quoted; encoding individual
+        // values is not sufficient because the gateway decodes them before
+        // parsing the filter.
+        var quotedIds = ids.map(function (id) {
+          return '"' + String(id).replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
+        }).join(",");
+        return authed("/v1/rdb/rest/players?select=player_id,username&player_id=" + encodeURIComponent("in.(" + quotedIds + ")"))
           .then(function (players) {
             var names = {};
             (players || []).forEach(function (player) { names[player.player_id] = player.username || ""; });
