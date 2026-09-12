@@ -65,3 +65,7 @@ $$;
 
 revoke all on function public.kick_alliance_member(bigint, varchar, varchar) from public;
 revoke all on function public.transfer_alliance_leader(bigint, varchar, varchar) from public;
+
+-- 修复历史数据：以实际成员记录为准重算人数。
+update public.alliances a
+   set member_count = (select count(*) from public.alliance_members m where m.alliance_id = a.id);
