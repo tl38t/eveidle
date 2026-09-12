@@ -20,10 +20,16 @@ function playerFromSession(event) {
     const actual = Buffer.from(parts[2]);
     if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) return "";
     const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
-    return payload.platform === "steam" && payload.sub && Number(payload.exp) > Math.floor(Date.now() / 1000) ? String(payload.sub) : "";
+    return (payload.platform === "steam" || payload.platform === "taptap") && payload.sub && Number(payload.exp) > Math.floor(Date.now() / 1000) ? String(payload.sub) : "";
   } catch (_) { return ""; }
 }
-function validId(value) { return typeof value === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(value); }
+// Steam IDs are numeric, while TapTap IDs are prefixed values whose decoded
+// openid can contain `/` and `=`. Keep the validation strict about type,
+// length, and header/body control characters without assuming one platform's
+// character set.
+function validId(value) {
+  return typeof value === "string" && value.length >= 1 && value.length <= 200 && !/[\u0000-\u001f\u007f]/.test(value);
+}
 async function db(path, options) {
   if (!API_BASE || !SERVER_API_KEY) throw new Error("admin function database configuration missing");
   const response = await fetch(API_BASE + path, { ...options, headers: { "content-type": "application/json", Authorization: "Bearer " + SERVER_API_KEY, ...(options && options.headers || {}) } });

@@ -157,7 +157,11 @@ async function ensureTasks(playerId, date, preview) {
   const expectedCount = await taskCountForPlayer(playerId);
   const existing = await readTasks(playerId, date);
   if (existing.length === expectedCount) return { tasks: existing, created: false };
-  const tasks = normalizeTasks(preview, expectedCount);
+  // Allow a cached 5-10 item client preview while the mission hall level
+  // changes. The next daily refresh will converge to the server count.
+  const previewCount = Array.isArray(preview) && preview.length >= 5 && preview.length <= 10
+    ? preview.length : expectedCount;
+  const tasks = normalizeTasks(preview, previewCount);
   const existingSlots = new Set(existing.map(task => Number(task.slot)));
   const rows = tasks.map(task => ({
     player_id: playerId, server_date: date, slot: task.slot,

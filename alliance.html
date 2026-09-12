@@ -19,7 +19,7 @@
 <section id="construction" class="panel" hidden><div class="list-title">联盟建设</div><div id="construction-body"></div></section>
 <section id="daily-tasks" class="panel"><div class="list-title">今日建设任务</div><div id="daily-task-list"><div class="empty">等待任务数据…</div></div></section>
 <section class="panel"><div class="list-title">公开联盟</div><div id="list"><div class="empty">正在读取联盟列表…</div></div></section>
-<section class="panel"><div class="list-title">建立联盟</div><div class="label">联盟代码�?�?位大写英文字母）</div><input id="code" maxlength="3" placeholder="例如 EVE" autocomplete="off"><div class="actions"><button class="primary" id="create">建立联盟</button><button id="diagnose">网络诊断</button></div><pre id="diagnostic" class="diagnostic" hidden></pre></section>
+<section class="panel"><div class="list-title">建立联盟</div><div class="label">联盟代码（1-3位大写英文字母）</div><input id="code" maxlength="3" placeholder="例如 EVE" autocomplete="off"><div class="actions"><button class="primary" id="create">建立联盟</button><button id="diagnose">网络诊断</button></div><pre id="diagnostic" class="diagnostic" hidden></pre></section>
 </main><script>
 // Repair nodes lost by legacy malformed markup before the application script
 // attaches handlers. This keeps old CloudBase webapp caches from blanking the page.
@@ -51,7 +51,7 @@ var playerKey="eve_idle_cloud_player_id",tokenKey="eve_idle_cloud_access_token",
 var status=document.getElementById("status"),currentEl=document.getElementById("current"),listEl=document.getElementById("list"),memberPanel=document.getElementById("members"),memberListEl=document.getElementById("member-list"),constructionPanel=document.getElementById("construction"),constructionBodyEl=document.getElementById("construction-body"),dailyTaskListEl=document.getElementById("daily-task-list"),codeEl=document.getElementById("code"),usernameEl=document.getElementById("username");
 var qs=new URLSearchParams(location.search),returnUrl=qs.get("returnUrl"),playerId=qs.get("playerId")||localStorage.getItem(playerKey);
 if(!playerId){playerId="player_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8)}localStorage.setItem(playerKey,playerId);
-var latestAlliance=null,latestMembers=[],latestConstruction=null,latestBuildings=[],latestBuildingLevel=0;
+var latestAlliance=null,latestMembers=[],latestConstruction=null,latestBuildings=[],latestTasks=[],latestBuildingLevel=0;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},opt.headers||{});return fetch(base+path,opt).then(function(r){return r.text().then(function(t){var b=t?JSON.parse(t):{};if(!r.ok){var e=new Error(b.message||b.error||("HTTP "+r.status));e.status=r.status;throw e}return b})})}
 function auth(force){if(force){token=null;localStorage.removeItem(tokenKey)}if(token)return Promise.resolve(token);token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);return request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);return token})}
@@ -64,7 +64,7 @@ function getNames(ids){ids=ids.filter(Boolean);if(!ids.length)return Promise.res
 function showError(e){status.textContent=e&&e.message||"request failed"}
 function modal(title,message,ok){var o=document.createElement("div");o.style.cssText="position:fixed;inset:0;background:rgba(4,8,14,.78);display:flex;align-items:center;justify-content:center;padding:16px;z-index:4000";o.innerHTML='<div style="width:min(420px,94vw);background:#101b2a;border:1px solid #385a78;border-radius:12px;padding:20px;color:#dceeff"><div style="font-size:18px;font-weight:700">'+esc(title)+'</div><div style="color:#a8bacb;line-height:1.6;margin-top:10px">'+esc(message)+'</div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px"><button data-cancel>ȡ��</button><button class="primary" data-ok>ȷ��</button></div></div>';document.body.appendChild(o);o.querySelector("[data-cancel]").onclick=function(){o.remove()};o.querySelector("[data-ok]").onclick=function(){o.remove();ok()};}
 function renderTasks(tasks,date){if(!dailyTaskListEl)return;tasks=Array.isArray(tasks)?tasks:[];var labels={mineral:"����ɼ�",gas:"����ɼ�",planetary:"������Դ",equipment:"װ������","ship-component":"�������"};if(!tasks.length){dailyTaskListEl.innerHTML='<div class="empty">���޽�������</div>';return}dailyTaskListEl.innerHTML=tasks.map(function(t){var id=t.id||t.task_id,amount=t.required_amount==null?t.requiredAmount:t.required_amount,name=t.material_name||t.materialName||t.material_id||t.materialId;return'<div class="task-row"><div class="task-slot">'+esc(t.slot)+'</div><div class="task-main"><div class="task-name">'+esc(labels[t.category]||t.category)+' �� '+esc(name)+'</div><div class="task-meta">���� '+esc(amount)+' �� ���� '+esc(t.reward_points==null?t.rewardPoints:t.reward_points)+' �����</div></div><div class="task-tier">'+esc(t.difficulty||"")+'</div>'+(id?'<button class="task-submit" data-id="'+esc(id)+'">�ύ</button>':"")+'</div>'}).join("")+'<div class="task-note">�������ڣ�'+esc(date||"����")+' �� �ƶ�������ͬ��</div>';Array.prototype.forEach.call(document.querySelectorAll(".task-submit"),function(b){b.onclick=function(){if(!returnUrl){status.textContent="�����Ϸ�ڴ�����ҳ��";return}var sep=returnUrl.indexOf("?")>=0?"&":"?";location.href=returnUrl+sep+"allianceTaskId="+encodeURIComponent(b.dataset.id)+"&allianceId="+encodeURIComponent(latestAlliance&&latestAlliance.id||"")}})}
-function loadTasks(){var date=qs.get("taskDate")||"",url="/v1/rdb/rest/alliance_daily_tasks?select=*&player_id=eq."+encodeURIComponent(playerId)+(date?"&server_date=eq."+encodeURIComponent(date):"")+"&order=slot.asc";api(url).then(function(rows){if(rows.length){renderTasks(rows,date);return}var raw=qs.get("taskPreview");if(!raw){renderTasks([],date);return}return fn(qs.get("taskFunctionUrl")||functionBase+"/alliance-daily-tasks",{playerId:playerId,taskPreview:JSON.parse(raw)}).then(function(x){renderTasks(x.tasks,x.serverDate)})}).catch(function(){renderTasks([],date)})}
+function loadTasks(){var date=qs.get("taskDate")||"",url="/v1/rdb/rest/alliance_daily_tasks?select=*&player_id=eq."+encodeURIComponent(playerId)+(date?"&server_date=eq."+encodeURIComponent(date):"")+"&order=slot.asc";return api(url).then(function(rows){if(rows.length){latestTasks=rows;renderTasks(rows,date);return rows}var raw=qs.get("taskPreview");if(!raw){latestTasks=[];renderTasks([],date);return []}return fn(qs.get("taskFunctionUrl")||functionBase+"/alliance-daily-tasks",{playerId:playerId,taskPreview:JSON.parse(raw)}).then(function(x){latestTasks=x.tasks||[];renderTasks(latestTasks,x.serverDate);return latestTasks})}).catch(function(){latestTasks=[];renderTasks([],date);return []})}
 function loadBuildings(a){if(!a){constructionPanel.hidden=true;return}var q="?alliance_id=eq."+encodeURIComponent(a.id);Promise.all([api("/v1/rdb/rest/alliance_construction?select=points_balance,total_points_earned"+q+"&limit=1"),api("/v1/rdb/rest/alliance_buildings?select=building_type,level,points_spent"+q)]).then(function(v){latestConstruction=v[0][0]||{};latestBuildings=v[1]||[];var hq=latestBuildings.find(function(x){return x.building_type==="frontier_hq"||x.building_type==="logistics_hub"})||{level:0};latestBuildingLevel=Number(hq.level)||0;var cap=[10,10,15,20,25,30][Math.max(0,Math.min(5,latestBuildingLevel))];var meta=currentEl.querySelector(".meta");if(meta)meta.innerHTML="��Ա��"+esc(a.member_count)+"/"+cap+"<br>���� ID��"+esc(a.id);constructionPanel.hidden=false;constructionBodyEl.innerHTML='<div class="meta">�������<b class="building-level">'+esc(latestConstruction.points_balance||0)+'</b></div><div class="building-note">�ܲ��ȼ� Lv.'+latestBuildingLevel+' �� ��ǰ��Ա���� '+cap+' ��</div>'}).catch(function(){constructionPanel.hidden=true})}
 function renderCurrent(a,list,names,members){latestAlliance=a;latestMembers=members||[];var owner=a&&names[a.owner_player_id]||a&&a.owner_player_id,isOwner=a&&String(a.owner_player_id)===String(playerId);currentEl.innerHTML=a?'<div class="label">��ǰ����</div><div class="alliance-code">'+esc(a.code)+'</div><div class="meta">������'+esc(owner)+'<br>��Ա��'+esc(a.member_count)+'/10<br>���� ID��'+esc(a.id)+'</div><div class="actions"><button id="leave-alliance">'+(isOwner?"��ɢ����":"�˳�����")+'</button></div>':'<div class="empty">�㻹û�м������ˡ�</div>';memberPanel.hidden=!a;memberListEl.innerHTML=a?(members||[]).map(function(m){return'<div class="row"><div class="row-main"><div class="row-name">'+esc(names[m.player_id]||m.player_id)+'</div></div><div class="row-meta">'+(String(m.player_id)===String(a.owner_player_id)?"����":"��Ա")+'</div></div>'}).join(""):"";if(a){document.getElementById("leave-alliance").onclick=function(){if(isOwner){showError(Error("��������ֱ���˳�������ת������"));return}modal("�˳�����","�˳����Ƴ�������˳�Ա�ʸ�",function(){api("/v1/rdb/rest/rpc/leave_alliance_member",{method:"POST",body:JSON.stringify({p_alliance_id:Number(a.id),p_player_id:playerId})}).then(refresh).catch(showError)})}}listEl.innerHTML=list.length?list.map(function(x){var full=Number(x.member_count)>=10;return'<div class="row"><div class="row-main"><div class="row-name">'+esc(x.name||x.code)+'</div><div class="row-meta">��Ա '+esc(x.member_count)+'/10</div></div>'+(a?"":full?'<span class="error">����</span>':'<button class="join" data-id="'+esc(x.id)+'">����</button>')+'</div>'}).join(""):'<div class="empty">���޹������ˡ�</div>';Array.prototype.forEach.call(document.querySelectorAll(".join"),function(b){b.onclick=function(){api("/v1/rdb/rest/alliance_members",{method:"POST",headers:{Prefer:"return=representation"},body:JSON.stringify({alliance_id:Number(b.dataset.id),player_id:playerId})}).then(refresh).catch(showError)}})}
 function refresh(){status.textContent="���ڶ�ȡ������Ϣ��";Promise.all([getCurrent(),getList()]).then(function(v){return Promise.all([Promise.resolve(v),v[0]?getMembers(v[0].id):Promise.resolve([])])}).then(function(v){var a=v[0][0],list=v[0][1],members=v[1],ids=list.map(function(x){return x.owner_player_id}).concat(members.map(function(x){return x.player_id}));if(a)ids.push(a.owner_player_id);return getNames(ids).then(function(n){renderCurrent(a,list,n,members);loadBuildings(a);status.textContent="������ CloudBase"})}).catch(showError)}
@@ -142,7 +142,7 @@ function decorateAllianceList(list){
 }
 function refresh(){
   status.textContent="正在读取联盟信息…";
-  Promise.all([getCurrent(),getList()]).then(function(v){return Promise.all([Promise.resolve(v),v[0]?getMembers(v[0].id):Promise.resolve([])]);}).then(function(v){
+  return Promise.all([getCurrent(),getList()]).then(function(v){return Promise.all([Promise.resolve(v),v[0]?getMembers(v[0].id):Promise.resolve([])]);}).then(function(v){
     var a=v[0][0],list=v[0][1],members=v[1],ids=list.map(function(x){return x.owner_player_id;}).concat(members.map(function(x){return x.player_id;}));
     if(a)ids.push(a.owner_player_id);
     return getNames(ids).then(function(n){renderCurrent(a,list,n,members);decorateAllianceList(list);return loadBuildings(a);}).then(function(){status.textContent="已连接 CloudBase";});
@@ -150,15 +150,44 @@ function refresh(){
 }
 document.getElementById("back").onclick=function(){
   if(!returnUrl){history.back();return;}
-  Promise.resolve(latestAlliance?loadBuildings(latestAlliance):null).catch(function(){return null;}).then(function(){
-    var sep=returnUrl.indexOf("?")>=0?"&":"?",a=latestAlliance;
-    location.href=returnUrl+sep+"allianceId="+encodeURIComponent(a&&a.id||"")+
-      "&allianceCode="+encodeURIComponent(a&&a.code||"")+
-      "&allianceOwner="+encodeURIComponent(a&&a.owner_player_id||"")+
-      "&allianceMembers="+encodeURIComponent(a&&a.member_count||"")+
-      "&allianceBuildingLevel="+encodeURIComponent(latestBuildingLevel)+
-      "&allianceSnapshot="+encodeURIComponent(JSON.stringify({id:a&&a.id||"",code:a&&a.code||"",memberCount:a&&a.member_count||0,construction:latestConstruction||{},buildings:latestBuildings||[],members:latestMembers||[]}));
-  });
+  Promise.all([Promise.resolve(latestAlliance?loadBuildings(latestAlliance):null).catch(function(){return null;}),loadTasks()]).then(function(){returnToGame({});});
 };
-refresh();loadTasks();
+function returnToGame(extra){
+  if(!returnUrl){history.back();return;}
+  var a=latestAlliance,params={
+    allianceId:a&&a.id||"",allianceCode:a&&a.code||"",allianceOwner:a&&a.owner_player_id||"",
+    allianceMembers:a&&a.member_count||"",allianceBuildingLevel:latestBuildingLevel,
+    allianceSnapshot:JSON.stringify({id:a&&a.id||"",code:a&&a.code||"",memberCount:a&&a.member_count||0,construction:latestConstruction||{},buildings:latestBuildings||[],members:latestMembers||[],tasks:latestTasks||[]})
+  };
+  Object.keys(extra||{}).forEach(function(k){params[k]=extra[k];});
+  var query=Object.keys(params).map(function(k){return encodeURIComponent(k)+"="+encodeURIComponent(params[k]);}).join("&");
+  location.href=returnUrl+(returnUrl.indexOf("?")>=0?"&":"?")+query;
+}
+function handleRelay(){
+  var action=qs.get("relayAction");
+  if(!action)return Promise.resolve();
+  if(!latestAlliance)throw Error("当前玩家尚未加入联盟");
+  if(action==="upgrade_building"){
+    status.textContent="正在升级联盟建筑…";
+    var buildingType=qs.get("buildingType")||"";
+    if(buildingType==="frontier_hq")buildingType="logistics_hub";
+    return fn(functionBase+"/alliance-daily-tasks",{action:"upgrade_building",playerId:playerId,allianceId:Number(qs.get("allianceId")||latestAlliance.id),buildingType:buildingType})
+      .then(function(){return loadBuildings(latestAlliance);}).then(function(){returnToGame({allianceRelayResult:"upgrade_success"});});
+  }
+  if(action==="submit_task"){
+    var taskId=Number(qs.get("taskId")),amount=Number(qs.get("taskAmount"));
+    if(!Number.isSafeInteger(taskId)||taskId<=0||!Number.isFinite(amount)||amount<=0)throw Error("任务提交参数无效");
+    status.textContent="正在提交联盟任务…";
+    return fn(functionBase+"/alliance-daily-tasks",{action:"submit",playerId:playerId,allianceId:Number(qs.get("allianceId")||latestAlliance.id),taskId:taskId,amount:amount})
+      .then(function(){return Promise.all([loadBuildings(latestAlliance),loadTasks()]);})
+      .then(function(){returnToGame({allianceTaskId:taskId,allianceTaskAmount:amount,allianceTaskCategory:qs.get("taskCategory")||"",allianceTaskMaterial:qs.get("taskMaterial")||"",allianceTaskSubmitted:"1"});});
+  }
+  throw Error("未知的联盟操作");
+}
+Promise.all([refresh(),loadTasks()]).then(handleRelay).catch(function(e){
+  showError(e);
+  if(!qs.get("relayAction"))return;
+  status.textContent="联盟操作失败："+((e&&e.message)||"未知错误")+"（2 秒后自动返回游戏）";
+  setTimeout(function(){returnToGame({allianceRelayError:(e&&e.message)||"unknown"});},2000);
+});
 })();</script></body></html>

@@ -9,8 +9,10 @@
   var TAPTAP_AUTH_URL = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/taptap-auth";
   var playerKey = "eve_idle_alliance_player_id";
   var tokenKey = "eve_idle_alliance_access_token";
+  var allianceSessionKey = "eve_idle_alliance_session_token";
   var steamSessionPromise = null;
   var steamPersonaName = "";
+  var allianceSessionToken = "";
 
   function getPlayerId() {
     var value = localStorage.getItem(playerKey);
@@ -71,6 +73,8 @@
           .then(function (response) { return response.text().then(function (text) { var body = parseResponseJson(text); if (!response.ok || !body || !body.ok || !body.openid) throw new Error(body && body.error || "TapTap 身份验证失败"); return body; }); })
           .then(function (body) {
             var id = "taptap_" + String(body.openid);
+            allianceSessionToken = body.sessionToken || "";
+            if (allianceSessionToken) sessionStorage.setItem(allianceSessionKey, allianceSessionToken);
             localStorage.setItem(playerKey, id);
             done(resolve, id);
           }).catch(function (error) { done(reject, error); });
@@ -330,6 +334,10 @@
     isOnline: function () { return true; },
     getPlayerId: getPlayerId,
     getPlayerName: function () { return steamPersonaName; },
+    getAllianceSessionToken: function () {
+      if (allianceSessionToken) return allianceSessionToken;
+      try { return sessionStorage.getItem(allianceSessionKey) || ""; } catch (_) { return ""; }
+    },
     initializeSteamIdentity: initializeSteamIdentity,
     getAlliance: getAlliance,
     listAlliances: listAlliances,

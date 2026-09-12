@@ -6,6 +6,7 @@
   var adminGateway = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/alliance-admin";
   var cloudTaskSyncStarted = false;
   var cloudTaskStatus = "local";
+  var activeCloudUrl = "";
 
   function esc(value) {
     return String(value == null ? "" : value).replace(/[&<>\"']/g, function (c) {
@@ -20,6 +21,21 @@
   function setCloudButtonVisible(visible) {
     var button = document.getElementById("btn-open-cloud-test");
     if (button) button.style.display = visible ? "" : "none";
+  }
+
+  function isTapTapRuntime() {
+    var tap = root.tap || (typeof globalThis !== "undefined" && globalThis.tap);
+    var playerId = root.AllianceApi && root.AllianceApi.getPlayerId ? root.AllianceApi.getPlayerId() : "";
+    return !!(tap && typeof tap.login === "function") || /^taptap_/.test(String(playerId));
+  }
+
+  function openCloudRelay(params) {
+    if (!activeCloudUrl) return false;
+    var suffix = Object.keys(params || {}).map(function (key) {
+      return encodeURIComponent(key) + "=" + encodeURIComponent(params[key] == null ? "" : params[key]);
+    }).join("&");
+    root.location.href = activeCloudUrl + (suffix ? "&" + suffix : "");
+    return true;
   }
 
   function ensureAllianceHelpButton() {
@@ -83,6 +99,10 @@
         return {};
       }
     });
+  }
+
+  function cloudBuildingType(type) {
+    return String(type || "") === "frontier_hq" ? "logistics_hub" : String(type || "");
   }
 
   function renderBuildingSummary(alliance) {
@@ -191,7 +211,9 @@
         showAllianceConfirm(action === "kick_member" ? "踢出联盟成员" : "转让盟主", confirmText, function () {
           button.disabled = true;
           var session = root.SteamAllianceSession;
-          var tokenPromise = session && typeof session.getToken === "function" ? Promise.resolve(session.getToken()) : Promise.resolve("");
+          var tokenPromise = root.AllianceApi && typeof root.AllianceApi.getAllianceSessionToken === "function"
+            ? Promise.resolve(root.AllianceApi.getAllianceSessionToken())
+            : session && typeof session.getToken === "function" ? Promise.resolve(session.getToken()) : Promise.resolve("");
           tokenPromise.then(function (token) {
           if (!token && session && typeof session.authenticate === "function") return session.authenticate().then(function (x) { return x.sessionToken; });
           return token;
@@ -220,12 +242,21 @@
     if (!alliance || String(alliance.ownerId) !== String(root.AllianceApi.getPlayerId())) return;
     Array.prototype.forEach.call(box.querySelectorAll('.alliance-upgrade-btn'), function (button) {
       button.onclick = function () {
+        var buildingType = cloudBuildingType(button.getAttribute('data-building-type'));
+        if (isTapTapRuntime() && openCloudRelay({
+          relayAction: 'upgrade_building',
+          allianceId: alliance.id,
+          buildingType: buildingType
+        })) {
+          if (msg) msg.textContent = '正在打开云端升级建筑…';
+          return;
+        }
         button.disabled = true;
         if (msg) msg.textContent = '正在升级建筑…';
         fetch(taskGateway, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'upgrade_building', playerId: root.AllianceApi.getPlayerId(), allianceId: alliance.id, buildingType: button.getAttribute('data-building-type') })
+          body: JSON.stringify({ action: 'upgrade_building', playerId: root.AllianceApi.getPlayerId(), allianceId: alliance.id, buildingType: buildingType })
         }).then(function (response) {
           return readResponseJson(response).then(function (data) {
             if (!response.ok || !data.ok) throw new Error(data.error || '建筑升级失败');
@@ -331,6 +362,11 @@
     }).catch(function () {
       box.innerHTML = ctx.fallbackHtml;
       setCloudButtonVisible(true);
+      if (ctx.hasCloudReturn) {
+        if (ctx.msg) ctx.msg.textContent = "云端联盟数据已回传";
+        if (ctx.bindFallbackActions) ctx.bindFallbackActions(box);
+        return;
+      }
       if (ctx.msg) ctx.msg.textContent = "云端未连接，请点击“打开云端联盟”获取联盟信息并同步建设点";
       var hint = document.createElement("div");
       hint.className = "alliance-task-hint";
@@ -422,12 +458,14 @@
         standardTimeSec: task.standardTimeSec, materialValue: task.materialValue,
         difficulty: task.difficulty,
         rewardPoints: task.rewardPoints,
-        tacticalTier: task.tacticalTier
+        tacticalTier: task.tacticalTier,
+        status: task.status || "open",
+        canSubmit: hasTaskMaterials(task)
       }; });
       if (taskPreview.length === taskCount && root.localStorage) root.localStorage.setItem(taskCacheKey, JSON.stringify(taskPreview));
     } catch (error) { taskPreview = []; }
     if (!identityReady || /^local_/.test(String(playerId))) cloudTaskStatus = "local";
-    if (identityReady && !/^local_/.test(String(playerId)) && !cloudTaskSyncStarted && taskPreview.length === taskCount) {
+    if (identityReady && !isTapTapRuntime() && !/^local_/.test(String(playerId)) && !cloudTaskSyncStarted && taskPreview.length === taskCount) {
       cloudTaskSyncStarted = true;
       cloudTaskStatus = "syncing";
       fetch(taskGateway, {
@@ -435,7 +473,7 @@
         body: JSON.stringify({ playerId: playerId, taskPreview: taskPreview })
       }).then(function (response) {
         return readResponseJson(response).then(function (data) {
-          if (!response.ok || !data || !data.ok || !Array.isArray(data.tasks) || data.tasks.length !== taskCount) throw new Error("云端任务返回无效");
+          if (!response.ok || !data || !data.ok || !Array.isArray(data.tasks) || data.tasks.length < 5 || data.tasks.length > 10) throw new Error("云端任务返回无效");
           return data.tasks;
         });
       }).then(function (rows) {
@@ -451,9 +489,11 @@
             standardTimeSec: Number(row.standard_time_sec == null ? row.standardTimeSec : row.standard_time_sec),
             materialValue: Number(row.material_value == null ? row.materialValue : row.material_value),
             difficulty: row.difficulty, rewardPoints: Number(row.reward_points == null ? row.rewardPoints : row.reward_points),
-            tacticalTier: row.tactical_tier == null ? row.tacticalTier : Number(row.tactical_tier)
+            tacticalTier: row.tactical_tier == null ? row.tacticalTier : Number(row.tactical_tier),
+            status: row.status || "open"
           };
         });
+        taskPreview = synced;
         if (root.localStorage) root.localStorage.setItem(taskCacheKey, JSON.stringify(synced));
         cloudTaskStatus = "cloud";
         load();
@@ -470,6 +510,7 @@
       "&returnUrl=" + encodeURIComponent(returnUrl) +
       "&taskDate=" + encodeURIComponent(taskDate || "") +
       "&taskPreview=" + encodeURIComponent(JSON.stringify(taskPreview));
+    activeCloudUrl = url;
 
     var cloudButton = document.getElementById("btn-open-cloud-test");
     if (cloudButton) cloudButton.onclick = function () {
@@ -495,17 +536,52 @@
     var returnedTaskAmount = Number(params.get("allianceTaskAmount"));
     var returnedTaskCategory = params.get("allianceTaskCategory") || "";
     var returnedTaskMaterial = params.get("allianceTaskMaterial") || "";
+    var returnedTaskSubmitted = params.get("allianceTaskSubmitted") === "1";
+    var returnedRelayResult = params.get("allianceRelayResult") || "";
+    var returnedRelayError = params.get("allianceRelayError") || "";
     var returnedSnapshot = null;
     try { returnedSnapshot = JSON.parse(params.get("allianceSnapshot") || "null"); } catch (error) { returnedSnapshot = null; }
     var returnedMemberList = [];
     try { returnedMemberList = JSON.parse(params.get("allianceMemberList") || "[]"); } catch (error) { returnedMemberList = []; }
     var returnedConstruction = returnedSnapshot && returnedSnapshot.construction ? returnedSnapshot.construction : null;
     var returnedBuildings = returnedSnapshot && Array.isArray(returnedSnapshot.buildings) ? returnedSnapshot.buildings : [];
+    var returnedTasks = returnedSnapshot && Array.isArray(returnedSnapshot.tasks) ? returnedSnapshot.tasks : [];
+    if (returnedTasks.length >= 5 && returnedTasks.length <= 10) {
+      taskPreview = returnedTasks.map(function (row, index) {
+        var materialId = row.material_id || row.materialId || "";
+        return {
+          taskKey: String(taskDate) + ":" + String(row.slot || index + 1) + ":" + materialId,
+          serverTaskId: row.id || row.task_id || row.serverTaskId || null,
+          slot: row.slot || index + 1, category: row.category, skill: row.skill,
+          materialId: materialId, materialName: row.material_name || row.materialName || materialId,
+          requiredAmount: Number(row.required_amount == null ? row.requiredAmount : row.required_amount),
+          requiredLevel: Number(row.required_level == null ? row.requiredLevel : row.required_level),
+          standardTimeSec: Number(row.standard_time_sec == null ? row.standardTimeSec : row.standard_time_sec),
+          materialValue: Number(row.material_value == null ? row.materialValue : row.material_value),
+          difficulty: row.difficulty,
+          rewardPoints: Number(row.reward_points == null ? row.rewardPoints : row.reward_points),
+          tacticalTier: row.tactical_tier == null ? row.tacticalTier : Number(row.tactical_tier),
+          status: row.status || "open"
+        };
+      });
+      taskCount = taskPreview.length;
+      cloudTaskStatus = "cloud";
+      if (root.localStorage) root.localStorage.setItem(taskCacheKey, JSON.stringify(taskPreview));
+    }
     var returnedBuildingNames = { logistics_hub: "边疆联合总部", frontier_hq: "边疆联合总部", mission_hall: "联合任务大厅", combat_command: "前线作战指挥部", refining_core: "联合冶炼中枢" };
     var returnedBuildingHtml = returnedBuildings.length
       ? '<div class="alliance-card-title" style="margin-top:12px;">联盟建设</div><div class="alliance-members">' + returnedBuildings.map(function (building) {
           var type = building.building_type || building.buildingType || "";
-          return '<div class="alliance-member-row" style="display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;"><span>' + esc(returnedBuildingNames[type] || type || "建筑") + '</span><span class="text-muted">Lv.' + esc(building.level || 0) + '</span></div>';
+          var level = Number(building.level) || 0;
+          var normalizedType = root.AllianceBuildingConfig && root.AllianceBuildingConfig.normalizeId
+            ? root.AllianceBuildingConfig.normalizeId(type) : type;
+          var buildingDef = root.AllianceBuildingConfig && root.AllianceBuildingConfig.BUILDINGS
+            ? root.AllianceBuildingConfig.BUILDINGS[normalizedType] : null;
+          var nextLevel = buildingDef && level < buildingDef.maxLevel ? buildingDef.levels[level] : null;
+          var nextCost = nextLevel ? ' · 下级 ' + nextLevel.cost + ' 建设点' : (level >= 5 ? ' · 已满级' : '');
+          var upgrade = String(returnedOwner) === String(playerId) && level < 5
+            ? '<button class="btn secondary alliance-returned-upgrade" data-building-type="' + esc(cloudBuildingType(type)) + '" style="padding:4px 8px;margin-left:8px;">升级</button>' : '';
+          return '<div class="alliance-member-row" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #1e354b;"><span>' + esc(returnedBuildingNames[type] || type || "建筑") + '</span><span class="text-muted" style="text-align:right;white-space:normal;">Lv.' + esc(level) + esc(nextCost) + upgrade + '</span></div>';
         }).join("") + '</div>'
       : '';
     var returnedConstructionHtml = returnedConstruction
@@ -554,6 +630,14 @@
       else deducted = ResourceRegistry.spend(state, resourceId, returnedTaskAmount);
       if (!deducted) { if (msg) msg.textContent = "任务材料扣除失败"; return; }
       if (root.SaveManager && root.SaveManager.save) root.SaveManager.save();
+      if (returnedTaskSubmitted) {
+        if (root.localStorage) root.localStorage.setItem(processedKey, "1");
+        var returnedTask = taskPreview.filter(function (task) { return String(task.serverTaskId) === String(returnedTaskId); })[0];
+        if (returnedTask && root.localStorage) root.localStorage.setItem("eve_idle_alliance_task_processed_" + returnedTask.taskKey, "1");
+        if (msg) msg.textContent = "任务已提交，联盟建设点已更新";
+        if (typeof root.updateUI === "function") root.updateUI();
+        return;
+      }
       fetch(taskGateway, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "submit", playerId: playerId, allianceId: returnedId, taskId: returnedTaskId, amount: returnedTaskAmount })
@@ -571,6 +655,8 @@
         });
     }
     settleReturnedTask();
+    if (returnedRelayError) { if (msg) msg.textContent = "联盟操作未完成：" + returnedRelayError; }
+    else if (returnedRelayResult === "upgrade_success") { if (msg) msg.textContent = "联盟建筑升级成功，建设点已扣除"; }
     var taskLabels = { mineral: "矿物采集", refining: "冶炼材料", gas: "气体采集", planetary: "行星材料", booster: "增强剂制造", equipment: "装备制造", "ship-component": "舰船组件" };
     function hasTaskMaterials(task) {
       var amount = Number(task.requiredAmount) || 0;
@@ -588,7 +674,7 @@
     }
     var taskHtml = '<div class="alliance-card alliance-task-card"><div class="alliance-card-title">今日建设任务（本地状态）</div>' + (taskPreview.length === taskCount ? taskPreview.map(function (task) {
       var key = task.taskKey || (String(taskDate) + ":" + String(task.slot) + ":" + String(task.materialId || ""));
-      var submitted = root.localStorage && root.localStorage.getItem("eve_idle_alliance_task_processed_" + key);
+      var submitted = task.status === "completed" || (root.localStorage && root.localStorage.getItem("eve_idle_alliance_task_processed_" + key));
       var status = submitted ? "已领取" : (hasTaskMaterials(task) ? "材料足够，可提交" : "材料不足");
       var statusClass = submitted ? "alliance-task-done" : (status === "材料足够，可提交" ? "alliance-task-ready" : "alliance-task-locked");
       return '<div class="alliance-task-row"><div><span class="alliance-task-slot">' + esc(task.slot) + '</span><strong>' + esc(task.materialName) + '</strong><div class="alliance-task-meta">' + esc(taskLabels[task.category] || task.category) + ' · 需求 ' + esc(task.requiredAmount) + ' · 奖励 ' + esc(task.rewardPoints) + ' 建设点</div></div><span class="' + statusClass + '">' + status + '</span></div>';
@@ -598,6 +684,18 @@
       var alliance = root.gameState && root.gameState.alliance;
       var allianceId = alliance && alliance.allianceId || returnedId;
       var amount = Number(task.requiredAmount) || 0;
+      if (isTapTapRuntime() && openCloudRelay({
+        relayAction: "submit_task",
+        allianceId: allianceId,
+        taskId: task.serverTaskId,
+        taskAmount: amount,
+        taskCategory: task.category || "",
+        taskMaterial: task.materialId || ""
+      })) {
+        button.disabled = true;
+        if (msg) msg.textContent = "正在通过云端提交任务…";
+        return;
+      }
       var equipmentId = String(task.materialId || "").replace(/^equipment:/, "");
       var inventory = root.gameState && root.gameState.equipment && root.gameState.equipment.inventory;
       var spent = task.category === "equipment"
@@ -653,7 +751,15 @@
       ? '<div class="alliance-card"><div class="alliance-card-title">当前联盟（云端回传）</div><div class="alliance-name">' + esc(returnedCode) + '</div><div class="alliance-meta">联盟创建人：' + esc(returnedOwnerName || returnedOwner || "-") + ' · 成员：' + esc(returnedMembers || "0") + '/' + esc(returnedCap) + '<br>联盟 ID：' + esc(returnedId || "-") + '</div>' + returnedConstructionHtml + returnedEffectHtml + returnedBuildingHtml + memberHtml + '</div>'
       : '<div class="alliance-empty"><div class="alliance-empty-title">联盟数据在云端页面管理</div><div class="alliance-empty-sub">点击“打开云端联盟”查看、创建或加入联盟。返回游戏后会显示云端回传的联盟摘要。</div><div class="alliance-id">当前玩家 ID：' + esc(playerId) + '</div></div>';
     content.innerHTML = '<div id="alliance-state">' + fallbackHtml + '</div>';
-    activeRender = { content: content, msg: msg, fallbackHtml: fallbackHtml, playerId: playerId };
+    function bindFallbackActions(box) {
+      Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-upgrade"), function (button) {
+        button.onclick = function () {
+          openCloudRelay({ relayAction: "upgrade_building", allianceId: returnedId, buildingType: cloudBuildingType(button.getAttribute("data-building-type")) });
+        };
+      });
+    }
+    activeRender = { content: content, msg: msg, fallbackHtml: fallbackHtml, playerId: playerId, hasCloudReturn: params.has("allianceSnapshot"), bindFallbackActions: bindFallbackActions };
+    bindFallbackActions(content);
     if (msg) msg.textContent = "正在连接云端联盟…";
     startCloudRefresh();
   }
