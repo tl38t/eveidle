@@ -29,7 +29,11 @@ async function db(path, options) {
   const response = await fetch(API_BASE + path, { ...options, headers: { "content-type": "application/json", Authorization: "Bearer " + SERVER_API_KEY, ...(options && options.headers || {}) } });
   const text = await response.text(); let data = {};
   try { data = text ? JSON.parse(text) : {}; } catch (_) { data = { raw: text }; }
-  if (!response.ok) throw new Error("database request failed: HTTP " + response.status);
+  if (!response.ok) {
+    const detail = data && (data.message || data.error || data.code || data.details || data.hint);
+    console.error("alliance-admin database rejected", { status: response.status, detail: detail || "unknown" });
+    throw new Error("database request failed: HTTP " + response.status + (detail ? " - " + String(detail).slice(0, 240) : ""));
+  }
   return data;
 }
 exports.main = async function main(event) {
