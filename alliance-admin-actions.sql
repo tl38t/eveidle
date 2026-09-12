@@ -15,8 +15,8 @@ begin
     raise exception '盟主不能踢出自己';
   end if;
   if not exists (
-    select 1 from public.alliances
-     where id = p_alliance_id and owner_player_id = p_owner_player_id
+    select 1 from public.alliances a
+     where a.id = p_alliance_id and a.owner_player_id = p_owner_player_id
   ) then
     raise exception '只有盟主可以管理成员';
   end if;
@@ -45,8 +45,8 @@ begin
     raise exception '不能转让给自己';
   end if;
   if not exists (
-    select 1 from public.alliances
-     where id = p_alliance_id and owner_player_id = p_owner_player_id
+    select 1 from public.alliances a
+     where a.id = p_alliance_id and a.owner_player_id = p_owner_player_id
   ) then
     raise exception '只有盟主可以转让联盟';
   end if;
@@ -56,9 +56,9 @@ begin
   ) then
     raise exception '只能转让给联盟成员';
   end if;
-  update public.alliances
+  update public.alliances a
      set owner_player_id = p_target_player_id
-   where id = p_alliance_id;
+   where a.id = p_alliance_id;
   return query select p_alliance_id, p_target_player_id, true;
 end;
 $$;
