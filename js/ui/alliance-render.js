@@ -42,7 +42,11 @@
   }
 
   function renderMemberCard(alliance, members) {
-    members = members || [];
+    members = (members || []).slice().sort(function (a, b) {
+      var aOwner = String(a.playerId) === String(alliance.ownerId) ? 0 : 1;
+      var bOwner = String(b.playerId) === String(alliance.ownerId) ? 0 : 1;
+      return aOwner - bOwner;
+    });
     var memberRows = members.map(function (member) {
       var isOwner = String(member.playerId) === String(alliance.ownerId);
       return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
