@@ -60,23 +60,37 @@
       (memberRows || '<div class="alliance-task-hint">暂无成员数据</div>') + '</div>';
   }
 
+  function showAllianceConfirm(title, message, onConfirm) {
+    var overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(4,8,14,.78);display:flex;align-items:center;justify-content:center;padding:16px;z-index:3000;";
+    overlay.innerHTML = '<div style="width:min(440px,94vw);background:#101b2a;border:1px solid #385a78;border-radius:12px;padding:20px;color:#dceeff;box-shadow:0 18px 60px rgba(0,0,0,.45);">' +
+      '<div style="font-size:18px;font-weight:700;margin-bottom:10px;">' + esc(title) + '</div><div style="color:#a8bacb;line-height:1.6;">' + esc(message) + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;"><button class="btn secondary" data-alliance-cancel>取消</button><button class="btn primary" data-alliance-confirm>确认</button></div></div>';
+    document.body.appendChild(overlay);
+    function close() { overlay.remove(); }
+    overlay.querySelector("[data-alliance-cancel]").onclick = close;
+    overlay.querySelector("[data-alliance-confirm]").onclick = function () { close(); onConfirm(); };
+    overlay.onclick = function (event) { if (event.target === overlay) close(); };
+  }
+
   function bindAdminActions(box, alliance, members, msg) {
     if (!alliance || String(alliance.ownerId) !== String(root.AllianceApi.getPlayerId())) return;
     function runAction(button, action, confirmText, successText) {
       button.onclick = function () {
         var target = button.getAttribute("data-target-player");
-        if (!confirm(confirmText)) return;
-        button.disabled = true;
-        var session = root.SteamAllianceSession;
-        var tokenPromise = session && typeof session.getToken === "function" ? Promise.resolve(session.getToken()) : Promise.resolve("");
-        tokenPromise.then(function (token) {
+        showAllianceConfirm(action === "kick_member" ? "踢出联盟成员" : "转让盟主", confirmText, function () {
+          button.disabled = true;
+          var session = root.SteamAllianceSession;
+          var tokenPromise = session && typeof session.getToken === "function" ? Promise.resolve(session.getToken()) : Promise.resolve("");
+          tokenPromise.then(function (token) {
           if (!token && session && typeof session.authenticate === "function") return session.authenticate().then(function (x) { return x.sessionToken; });
           return token;
-        }).then(function (token) {
+          }).then(function (token) {
           return fetch(adminGateway, { method: "POST", headers: { "Content-Type": "application/json", "x-alliance-session": token || "" }, body: JSON.stringify({ action: action, allianceId: alliance.id, targetPlayerId: target }) });
-        }).then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.ok) throw new Error(data.error || "踢出成员失败"); return data; }); })
+          }).then(function (response) { return response.json().then(function (data) { if (!response.ok || !data.ok) throw new Error(data.error || "管理员操作失败"); return data; }); })
           .then(function () { if (msg) msg.textContent = successText; startCloudRefresh(); })
           .catch(function (error) { button.disabled = false; if (msg) msg.textContent = error.message || successText + "失败"; });
+        });
       };
     }
     Array.prototype.forEach.call(box.querySelectorAll(".alliance-kick-btn"), function (button) {
