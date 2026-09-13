@@ -27,9 +27,9 @@
   <script type="module" src="./js/ui/ship3d.js?v=12"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=3"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=21"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=4"></script>
-  <script src="./js/i18n/translator.js?v=11"></script>
+  <script src="./js/i18n/catalog-en.js?v=22"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=5"></script>
+  <script src="./js/i18n/translator.js?v=14"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
     // source code, variables, HTML templates, starmap and achievements stay untouched.
@@ -1188,7 +1188,7 @@
         </button>
       </div>
       <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=43" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=46" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
         <section id="legion-starmap-trial-room" class="starmap-trial-room" hidden>
           <div class="starmap-trial-room-head"><div><h3 id="starmap-trial-title">星图试炼房间</h3><p id="starmap-trial-subtitle"></p></div><button type="button" class="btn secondary" id="starmap-trial-back">返回星图</button></div>
           <div class="starmap-trial-countdown" id="starmap-trial-countdown">剩余时间：180s</div>
@@ -1366,7 +1366,7 @@
         <div class="settings-section">
           <div class="settings-section-title">语言 / Language</div>
           <label class="setting-row" for="setting-language">
-            <span class="setting-copy"><strong>界面语言</strong><small>可手动选择；Steam 语言联动将在 Steamworks 接口接入后启用。</small></span>
+            <span class="setting-copy"><strong>界面语言</strong><small>默认跟随系统语言（Steam 版跟随客户端语言）；手动选择后将固定使用所选语言。</small></span>
             <select id="setting-language" class="setting-select" aria-label="Interface language">
               <option value="zh-CN">简体中文</option>
               <option value="zh-TW">繁體中文</option>
@@ -1680,7 +1680,7 @@
   <script defer src="./js/platform/platform-runtime.js?v=4"></script>
   <script defer src="./js/core/cloud-save-service.js?v=7"></script>
   <script defer src="./js/core/local-mirror-service.js?v=3"></script>
-   <script defer src="./js/data/platform-achievement-map.js?v=4"></script>
+   <script defer src="./js/data/platform-achievement-map.js?v=5"></script>
    <script defer src="./js/core/achievement-sync-service.js?v=4"></script>
   <script defer src="./js/core/leaderboard-sync-service.js?v=2"></script>
   <script defer src="./js/core/ad-service.js?v=5"></script>

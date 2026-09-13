@@ -9,13 +9,26 @@
     if (["english", "en", "en-us", "en-gb"].includes(code)) return "en-US";
     return value;
   }
+  // Steam 只发行简中/繁中/英文三种界面语言，而客户端语言代码有近三十种。
+  // 简中/繁中做精确映射，其余一律收敛到英文——非中文玩家看英文远比看中文可读。
+  // 不能沿用 normalizeLocale 的「未识别则原样返回」：那会让日语之类的代码一路落到
+  // 浏览器语言的兜底分支上（非 en、非 tw 即判为 zh-CN）。
+  function normalizeSteamLocale(value) {
+    var code = String(value || "").toLowerCase().replace(/_/g, "-");
+    if (!code) return "";
+    if (["schinese", "zh-cn", "zh-sg", "zh-hans"].includes(code)) return "zh-CN";
+    if (["tchinese", "zh-tw", "zh-hk", "zh-mo", "zh-hant"].includes(code)) return "zh-TW";
+    return "en-US";
+  }
   var queryLocale = normalizeLocale(new URLSearchParams(window.location.search).get("lang"));
-  var steamLocale = normalizeLocale(window.STEAM_LOCALE || window.steamLanguage);
+  var steamLocale = normalizeSteamLocale(window.STEAM_LOCALE || window.steamLanguage);
   var browserCode = String(navigator.language || "").toLowerCase();
   var browserLocale = browserCode.startsWith("en") ? "en-US" : (browserCode.includes("tw") ? "zh-TW" : "zh-CN");
   var storedLocale = "";
   try { storedLocale = normalizeLocale(localStorage.getItem(STORAGE_KEY) || ""); } catch (error) { /* sandboxed storage */ }
-  var locale = supported.includes(queryLocale) ? queryLocale : (supported.includes(steamLocale) ? steamLocale : (supported.includes(storedLocale) ? storedLocale : browserLocale));
+  // 定序：URL 显式指定 > 玩家在设置里的手动选择 > Steam 客户端语言 > 浏览器语言。
+  // 手动选择优先于 Steam：否则玩家在设置里切成英文，重启后又被客户端语言顶回中文。
+  var locale = supported.includes(queryLocale) ? queryLocale : (supported.includes(storedLocale) ? storedLocale : (supported.includes(steamLocale) ? steamLocale : browserLocale));
   var catalogs = { "en-US": window.I18N_CATALOG_EN || new Map(), "zh-TW": window.I18N_CATALOG_ZH_TW || new Map() };
   var catalog = new Map();
   var catalogSources = [];
@@ -23,10 +36,15 @@
   var IDEOGRAPH = /[\u3400-\u9FFF\uF900-\uFAFF]/;
   var ATTRIBUTES = ["title", "aria-label", "placeholder"];
   var translateCache = new Map();
+  var catalogUsesIdeographs = false;
 
   function setActiveCatalog() {
     catalog = catalogs[locale] || new Map();
     catalogSources = Array.from(catalog.keys()).filter(function (source) { return source.length >= 2 && !/[<>]/.test(source); }).sort(function (a, b) { return b.length - a.length; });
+    // 目标目录的译文是否本身就是汉字（如 zh-TW）。是的话，子串替换属于「字形/用词转换」，
+    // 不能按「中英混排」处理，否则会把合法的繁体输出回退成简体。
+    catalogUsesIdeographs = false;
+    catalog.forEach(function (value) { if (typeof value === "string" && IDEOGRAPH.test(value)) catalogUsesIdeographs = true; });
     translateCache.clear();
   }
   function skip(element) { return !element || /^(SCRIPT|STYLE|CODE|PRE)$/.test(element.tagName) || !!element.closest?.('#achievements-panel, [data-deferred-i18n]'); }
@@ -35,6 +53,10 @@
     if (translateCache.has(text)) return translateCache.get(text);
     var result = text;
     catalogSources.forEach(function (source) { if (result.includes(source)) result = result.split(source).join(catalog.get(source)); });
+    // 半截替换（替换后仍残留汉字）宁可整段不译，避免出现中英混排的句子。
+    // 仅对「译文不含汉字」的目录（如 en-US）生效：目录中不存在含汉字的英文译文，故不会误伤合法全译。
+    // 译文本身是汉字的目录（如 zh-TW）走的是字形转换，不适用此回退。
+    if (!catalogUsesIdeographs && result !== text && IDEOGRAPH.test(result)) result = text;
     translateCache.set(text, result);
     return result;
   }
@@ -78,12 +100,38 @@
     window.dispatchEvent(new CustomEvent("localechange", { detail: { locale: locale } }));
     var frame = document.getElementById("legion-starmap-frame"); if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "deep-space-idle/locale", locale: locale }, "*");
   }
+  // 桌面壳（Steam）正常会由 preload 同步注入 window.STEAM_LOCALE，此处兜底
+  // 「首帧拿不到语言」的情形：壳层的 Steam 初始化由游戏按需触发，可能晚于首帧，
+  // 所以退避重试几次，等初始化完成后把界面切过去。
+  function followPlatformLocale(attempt) {
+    if (steamLocale) return;
+    var bridge = window.SteamBridge;
+    if (!bridge || typeof bridge.getLanguage !== "function") return;
+    var tries = typeof attempt === "number" ? attempt : 0;
+    Promise.resolve(bridge.getLanguage()).then(function (result) {
+      var next = normalizeSteamLocale(result && result.language);
+      if (!next) {
+        // 空语言 = 壳层还没初始化完（或环境里根本没有 Steam）。有限次重试后放弃，
+        // 保持当前语言，绝不因为平台信号缺失而卡住或反复重绘。
+        if (tries < 4) window.setTimeout(function () { followPlatformLocale(tries + 1); }, 700);
+        return;
+      }
+      if (!supported.includes(next)) return;
+      steamLocale = next;
+      var explicit = "";
+      try { explicit = localStorage.getItem(STORAGE_KEY) || ""; } catch (error) { /* sandboxed storage */ }
+      // 玩家在设置里的手动选择和 URL 显式指定都优先于平台语言。
+      if (queryLocale || explicit || next === locale) return;
+      setLocale(next);
+    }).catch(function () { /* 壳层未提供语言时保持当前语言 */ });
+  }
   setActiveCatalog();
   window.I18N = { getLocale: function () { return locale; }, setLocale: setLocale, t: function (key) { return locale === "zh-CN" ? key : (catalog.get(key) || key); } };
   document.addEventListener("DOMContentLoaded", function () {
     applyNav();
     var control = document.getElementById("setting-language");
     if (control) { control.value = locale; control.addEventListener("change", function () { setLocale(control.value); }); }
+    followPlatformLocale();
     var observer = new MutationObserver(function (mutations) {
       mutations.forEach(function (mutation) {
         if (mutation.type === "characterData") translateText(mutation.target);
