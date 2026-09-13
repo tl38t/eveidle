@@ -6,7 +6,7 @@
 (function () {
   const BOOT_GRACE_MS = 60 * 1000; // TapTap 审核规范：首次启动 60 秒内不出现广告
   const bootTime = Date.now();
-  let wrapEl = null, statusEl = null, pauseBtn = null, injectBtn = null, updater = null, modalEl = null;
+  let wrapEl = null, statusEl = null, pauseBtn = null, injectBtn = null, updater = null, modalEl = null, modalTimer = null;
   let probeBadge = null, probePanel = null, probeTimer = null;
   let probeFaultMode = false;
 
@@ -27,11 +27,23 @@
     else console.log("[ad-buff]", msg);
   }
 
+  function isSteamPlatform() {
+    return !!(window.PlatformRuntime && typeof window.PlatformRuntime.getPlatform === "function" && window.PlatformRuntime.getPlatform() === "steam");
+  }
+
   function fmt(ms) {
     const s = Math.max(0, Math.ceil(ms / 1000));
     const m = Math.floor(s / 60);
     const r = s % 60;
     return `${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}`;
+  }
+
+  function fmtRecovery(ms) {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    return h + "小时" + String(m).padStart(2, "0") + "分" + String(sec).padStart(2, "0") + "秒";
   }
 
   function escapeHtml(s) {
@@ -133,6 +145,15 @@
   }
 
   function onPauseClick() {
+    if (isSteamPlatform()) {
+      const slot = (typeof getCerebralSlotStatus === "function") ? getCerebralSlotStatus(gameState) : { enabled: false, remainingMs: 0 };
+      if (typeof setCerebralSlotEnabled === "function") {
+        setCerebralSlotEnabled(gameState, !slot.enabled);
+        safeToast(slot.enabled ? "脑突触加速已暂停，槽位继续自然恢复" : "脑突触加速已启用");
+      }
+      update();
+      return;
+    }
     const st = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { active: false, paused: false };
     if (st.paused) {
       if (typeof resumeCerebralPlasma === "function") resumeCerebralPlasma(gameState);
@@ -154,6 +175,37 @@
     const isTaptap = mode === "taptap" || taptapAvail;
     // 非 TapTap 环境（无广告平台）→ 整块隐藏；
     // TapTap 环境 → 入口常驻可见，仅启动后 60 秒审核宽限内不可交互（符合「首次启动 60 秒内不出现广告」）。
+    if (isSteamPlatform()) {
+      if (wrapEl) wrapEl.style.display = "inline-flex";
+      hideProbeBadge();
+      const slot = (typeof getCerebralSlotStatus === "function") ? getCerebralSlotStatus(gameState) : { remainingMs: 0 };
+      const st = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { active: false, paused: false, remainingMs: 0 };
+      const activeText = st.active
+        ? " · ⚡ " + fmt(st.remainingMs)
+        : "";
+      statusEl.textContent = "🧠 脑突触槽 " + (slot.remainingMs / 3600000).toFixed(2) + "/48h" + activeText;
+      statusEl.style.color = st.active ? "#7fe3ff" : "#9fd0e8";
+      statusEl.style.cursor = "pointer";
+      if (st.active) {
+        pauseBtn.onclick = null;
+        pauseBtn.style.display = "";
+        pauseBtn.disabled = false;
+        pauseBtn.textContent = "⏸ 暂停";
+      } else if (slot.remainingMs > 0) {
+        pauseBtn.style.display = "";
+        pauseBtn.disabled = false;
+        pauseBtn.textContent = "▶ 启用";
+        pauseBtn.onclick = function () {
+          const enabled = (typeof setCerebralSlotEnabled === "function") && setCerebralSlotEnabled(gameState, true);
+          if (enabled) safeToast("已启用脑突触加速，时长将自然消耗");
+          update();
+        };
+      } else {
+        pauseBtn.onclick = null;
+        pauseBtn.style.display = "none";
+      }
+      return;
+    }
     if (!DEBUG && !isTaptap) { if (wrapEl) wrapEl.style.display = "none"; showProbeBadge(); return; }
     if (wrapEl) wrapEl.style.display = "inline-flex";
     // 入口显示时仍保留一个低调的小探针点，方便诊断广告加载失败。
@@ -364,7 +416,7 @@
     renderModalMain(box);
   }
 
-  function closeModal() { if (modalEl) { modalEl.remove(); modalEl = null; } }
+  function closeModal() { if (modalTimer) { clearInterval(modalTimer); modalTimer = null; } if (modalEl) { modalEl.remove(); modalEl = null; } }
 
   function buildHead(box, titleText) {
     const head = document.createElement("div");
@@ -386,25 +438,50 @@
   }
 
   function renderModalMain(box) {
+    if (modalTimer) { clearInterval(modalTimer); modalTimer = null; }
     box.innerHTML = "";
     buildHead(box, "脑突触加速");
 
+    const steam = isSteamPlatform();
     const intro = document.createElement("div");
     intro.style.cssText = "font-size:13px;color:#aebccb;line-height:1.7;margin-bottom:12px;";
-    intro.innerHTML = "看完<b>联盟泛银河娱乐广播</b>，或转化重复脑插，可获得<b>脑突触加速提取剂</b>。<br>注入后生效：<b>采矿 / 采气 / 冶炼效率、玩家战斗伤害、战斗技能经验 ×1.3</b>。<br>大型提取剂 30 分钟（收看广播获取），小型提取剂 5 分钟（重复脑插转化）。";
+    intro.innerHTML = "看完<b>联盟泛银河娱乐广播</b>可获得脑突触加速提取剂；重复获得的脑插会自动转化为脑突触加速时间。<br>注入后生效：<b>采矿 / 采气 / 冶炼效率、玩家战斗伤害、战斗技能经验 ×1.3</b>。<br>大型提取剂 30 分钟（收看广播获取），小型提取剂 5 分钟（重复脑插转化）。";
+    if (steam) intro.textContent = "脑突触槽容量 48 小时，按时间自然恢复。重复获得的脑插会自动转化为脑突触加速时间。启用后提供：采矿、采气、冶炼效率、玩家战斗伤害和战斗技能经验 ×1.3。";
     box.appendChild(intro);
 
     const st = (typeof getAdBuffStatus === "function") ? getAdBuffStatus(gameState) : { extractors: { large: 0, small: 0 }, canWatch: false, dailyCount: 0, dailyCap: 20 };
+    const slot = steam ? (st.cerebralSlot || { remainingMs: 0, maxMs: 48 * 60 * 60 * 1000, recoverToFullMs: 0 }) : null;
+    if (steam) {
+      const slotBox = document.createElement("div");
+      slotBox.style.cssText = "font-size:13px;color:#9fd0e8;margin-bottom:14px;padding:10px;border:1px solid #28506b;border-radius:8px;background:#0c1622;";
+      function renderSlot() {
+        const current = (typeof getCerebralSlotStatus === "function") ? getCerebralSlotStatus(gameState) : slot;
+        const slotHours = (current.remainingMs / 3600000).toFixed(4);
+        const fullEta = fmtRecovery(current.recoverToFullMs || 0);
+        slotBox.innerHTML = "当前脑突触加速余额：<b>" + slotHours + " / 48 小时</b><br><span style='color:#8a9aae'>自然恢复速度：每 6 小时恢复 1 小时。恢复满倒计时：<b>" + fullEta + "</b>。启用后按消耗时间提供加成。</span>";
+      }
+      renderSlot();
+      modalTimer = setInterval(renderSlot, 1000);
+      box.appendChild(slotBox);
+      const slotHint = document.createElement("div");
+      slotHint.style.cssText = "font-size:12px;color:#8a9aae;margin-bottom:14px;line-height:1.6;";
+      slotHint.textContent = slot.enabled
+        ? "脑突触加速正在消耗槽内时长，槽位会按时间自然恢复。"
+        : "槽位按时间自然恢复；点击顶栏“启用”后才会提供加速，不会一次性注入。";
+      box.appendChild(slotHint);
+    }
     const ex = st.extractors || { large: 0, small: 0 };
     const inv = document.createElement("div");
     inv.style.cssText = "font-size:13px;color:#9fd0e8;margin-bottom:14px;padding:8px 10px;border:1px solid #1d2c3c;border-radius:8px;background:#0c1622;";
     inv.textContent = "当前库存：大型 ×" + ex.large + "（30分） · 小型 ×" + ex.small + "（5分）";
     box.appendChild(inv);
+    if (steam) inv.style.display = "none";
 
     const sharedHint = document.createElement("div");
     sharedHint.style.cssText = "font-size:12px;color:#8a9aae;margin:-8px 0 14px;line-height:1.6;";
     sharedHint.textContent = "每日广播额度 " + st.dailyCount + "/" + st.dailyCap + " 次 —— 与「科研工时」共用同一个池，两边消耗的是同一份额度。";
     box.appendChild(sharedHint);
+    if (steam) sharedHint.style.display = "none";
 
     const total = (typeof getTotalExtractorDurationMs === "function") ? getTotalExtractorDurationMs(gameState) : 0;
     const hasAny = (ex.large + ex.small) > 0;
@@ -427,6 +504,7 @@
     if (canWatch) obtainBtn.addEventListener("click", function () { renderObtainConfirm(box); });
     else { obtainBtn.disabled = true; obtainBtn.style.opacity = ".4"; obtainBtn.style.pointerEvents = "none"; }
     box.appendChild(obtainBtn);
+    if (steam) obtainBtn.style.display = "none";
   }
 
   function renderInjectConfirm(box, ex, total) {

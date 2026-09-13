@@ -1005,7 +1005,7 @@
     line-height: 1.7;
   }
   .research-active:empty::before {
-    content: "当前没有进行中的研究";
+    content: var(--research-empty-text, "当前没有进行中的研究");
     color: #7d8899;
     font-style: italic;
   }

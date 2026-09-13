@@ -691,7 +691,10 @@
     const display = getBattleCombatDisplay(state, now, zone.id);
     if (!display || !display.player || !display.player.hasShip) return { ok:false, reason:"no-combat-ship" };
     if (display.recovery && display.recovery.active) return { ok:false, reason:"repairing", remaining:display.recovery.remaining };
-    if (!Array.isArray(display.weapons) || display.weapons.length === 0) return { ok:false, reason:"no-weapons" };
+    // 武器门禁：统一读 display.hasWeapon（getCombatDisplayState 产出的唯一权威）。
+    // 泰坦特例（高槽被末日武器占位、主武器随舰体自带）已收敛进该权威内；禁止在此重写
+    // weapons.length===0 判定，否则泰坦会被误拒、无法参与星图（含虫洞）战斗试炼。
+    if (!display.hasWeapon) return { ok:false, reason:"no-weapons" };
     return { ok:true, zone:zone, display:display };
   }
   function getBattleTrialFormationRoll(zone, node) {

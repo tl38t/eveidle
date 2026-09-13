@@ -285,7 +285,9 @@
       if (!rows || !rows[0]) throw new Error("联盟不存在");
       var cap = Number(rows[0].member_cap) || 10;
       if (Number(rows[0].member_count) >= cap) throw new Error("该联盟已满，最多只能有 " + cap + " 名成员");
-      return authed("/rpc/join_alliance_with_capacity", {
+      // ⚠️ 必须带 /v1/rdb/rest 前缀：走裸 /rpc/ 会命中网关照不存在的路由 → HTTP 404，
+      //    游戏内「加入联盟」会 100% 失败。本文件其余 11 处调用均带此前缀。
+      return authed("/v1/rdb/rest/rpc/join_alliance_with_capacity", {
         method: "POST",
         body: JSON.stringify({ p_alliance_id: Number(allianceId), p_player_id: getPlayerId() })
       });

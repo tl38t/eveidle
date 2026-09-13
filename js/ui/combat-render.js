@@ -71,7 +71,10 @@ function updateCombatRing(display) {
 function renderInstalledCombatControls(display) {
   const weaponRow = document.getElementById("combat-weapon-row");
   const repairRow = document.getElementById("combat-repair-row");
-  if (weaponRow) weaponRow.innerHTML = display.weapons.length ? display.weapons.map(module => `<span class="weapon-btn active installed"><span>${module.icon}</span>${module.name}</span>`).join("") : '<span class="combat-module-empty">未安装战斗武器</span>';
+  // 泰坦（2026-09-13）：高槽被末日武器占位 ⇒ display.weapons 恒空，但其主武器随舰体自带。
+  // 统一读 display.hasWeapon / display.builtinWeapon（getCombatDisplayState 产出的唯一权威），
+  // 禁止在此重写 weapons.length===0 判定，否则泰坦会误显「未安装战斗武器」。
+  if (weaponRow) weaponRow.innerHTML = display.weapons.length ? display.weapons.map(module => `<span class="weapon-btn active installed"><span>${module.icon}</span>${module.name}</span>`).join("") : (display.builtinWeapon ? `<span class="weapon-btn active installed"><span>${display.builtinWeapon.icon}</span>${display.builtinWeapon.name}</span>` : '<span class="combat-module-empty">未安装战斗武器</span>');
   if (repairRow) repairRow.innerHTML = display.repairers.length ? display.repairers.map(module => `<span class="repair-toggle on installed">${module.name} · 自动</span>`).join("") : '<span class="combat-module-empty">未安装维修装备</span>';
 }
 
@@ -148,7 +151,9 @@ function renderCombatSalvageToggle() {
 function renderCombatEquipmentRack(display) {
   const grid = document.getElementById("combat-equipment-grid"); if (!grid) return;
   const icons = { high:"⚡", mid:"◉", low:"◆", rig:"◇" };
-  grid.innerHTML = display.equipmentRack.length ? display.equipmentRack.map(item => `<div class="combat-equip-slot${item.empty ? " empty" : ""}" title="${item.attributes}"><span class="combat-equip-icon">${icons[item.slot] || "◇"}</span><span class="combat-equip-copy"><span class="combat-equip-name">${item.name}</span><span class="combat-equip-type">${item.slotName} ${item.index + 1}</span></span></div>`).join("") : '<div class="combat-equip-slot empty"><span class="combat-equip-icon">◇</span><span class="combat-equip-copy"><span class="combat-equip-name">暂无槽位</span><span class="combat-equip-type">舰体配置</span></span></div>';
+  // 泰坦末日武器占位格（2026-09-13）：数据层已给 item.doomsday / item.icon，这里只管样式与图标，
+  // 不再自行判定槽位占用（判据在 selectors.getDoomsdaySlotInfo）。
+  grid.innerHTML = display.equipmentRack.length ? display.equipmentRack.map(item => `<div class="combat-equip-slot${item.empty ? " empty" : ""}${item.doomsday ? " doomsday" : ""}" title="${item.attributes}"><span class="combat-equip-icon">${item.icon || icons[item.slot] || "◇"}</span><span class="combat-equip-copy"><span class="combat-equip-name">${item.name}</span><span class="combat-equip-type">${item.slotName} ${item.index + 1}</span></span></div>`).join("") : '<div class="combat-equip-slot empty"><span class="combat-equip-icon">◇</span><span class="combat-equip-copy"><span class="combat-equip-name">暂无槽位</span><span class="combat-equip-type">舰体配置</span></span></div>';
 }
 
 // 战斗补给状态（2026-09-03 玩家反馈「弹窗提示不够明显」）：
@@ -284,10 +289,14 @@ function buildActualStatsHtml(stats, opts) {
   if (!stats.attack.items.length) html.push('<div class="cas-empty">未安装武器</div>');
   else {
     for (const it of stats.attack.items) {
+      // 泰坦（2026-09-13）：舰体自带主武器 / 附带打击的乘区链与常规武器不同（无强化、含结构过载/核心光环/暴击期望），
+      // 由数据层直接给出 it.note 原样展示；常规武器仍走「基伤 × 强化 × 类型 × 增强剂」既有格式。
+      const expr = it.note ? squadEscape(it.note)
+        : casFmt(it.base) + " × 强化 " + casNum(it.enhancement) + " × 类型 " + casNum(it.typeMult) +
+          (it.atkBooster !== undefined && it.atkBooster !== 1 ? " × 增强剂 " + casNum(it.atkBooster) : "") +
+          (it.levelMult !== undefined ? " × 等级 " + casNum(it.levelMult) : "");
       html.push('<div class="cas-row"><span class="cas-name">' + squadEscape(it.name) + '</span>' +
-        '<span class="cas-expr">' + casFmt(it.base) + " × 强化 " + casNum(it.enhancement) + " × 类型 " + casNum(it.typeMult) +
-        (it.atkBooster !== undefined && it.atkBooster !== 1 ? " × 增强剂 " + casNum(it.atkBooster) : "") +
-        (it.levelMult !== undefined ? " × 等级 " + casNum(it.levelMult) : "") + '</span>' +
+        '<span class="cas-expr">' + expr + '</span>' +
         '<span class="cas-val">' + casFmt(it.value) + '</span></div>');
     }
     html.push('<div class="cas-total">合计 <b>' + casFmt(stats.attack.total) + '</b> / 轮</div>');
@@ -653,20 +662,43 @@ let combatConfigShipKey = "player";
 
 function getCombatConfigForShip(display, shipKey) {
   if (!shipKey || shipKey === "player" || typeof getInstalledCombatModulesFromState !== "function") {
-    return { weapons: display.weapons, repairers: display.repairers, equipmentRack: display.equipmentRack };
+    // 泰坦（2026-09-13）：hasWeapon / builtinWeapon 是 getCombatDisplayState 产出的**唯一权威**，
+    // 必须随 config 一并透传。此前这里只拷 weapons/repairers/equipmentRack，导致下游
+    // renderInstalledCombatControls 读到的 display.builtinWeapon 恒为 undefined，
+    // 泰坦武器行照旧落到「未安装战斗武器」——即在源头修好了、却在转发层被丢掉。
+    // 判据：本函数返回体缺 hasWeapon/builtinWeapon = 必错（任何新增消费者读它都会静默回退）。
+    return { weapons: display.weapons, repairers: display.repairers, equipmentRack: display.equipmentRack, hasWeapon: display.hasWeapon, builtinWeapon: display.builtinWeapon };
   }
   const crew = getCombatCrewSummary(display);
   const item = crew.items.find(function (entry) { return entry.key === shipKey; });
-  if (!item || !item.shipInstanceId) return { weapons: display.weapons, repairers: display.repairers, equipmentRack: display.equipmentRack };
+  // 选的舰已不在编队里 ⇒ 回落显示玩家自己的配置，同样必须带上泰坦权威字段（同上）。
+  if (!item || !item.shipInstanceId) return { weapons: display.weapons, repairers: display.repairers, equipmentRack: display.equipmentRack, hasWeapon: display.hasWeapon, builtinWeapon: display.builtinWeapon };
   const modules = getInstalledCombatModulesFromState(gameState, { shipInstanceId: item.shipInstanceId, excludeImplants: true });
   const slotNames = { high: "高槽", mid: "中槽", low: "低槽", rig: "改装" };
   const toModule = function (module) { return { ...module, icon: module.combat && module.combat.kind === "weapon" ? "⚡" : "◉" }; };
+  const npcWeapons = modules.filter(function (module) { return module.combat && module.combat.kind === "weapon"; });
+  // 泰坦特例（2026-09-13）：与玩家分支**同源**（getShipBuiltinWeapon / getDoomsdaySlotInfo / buildDoomsdayRackCell
+  // 均为 selectors 单一实现）。泰坦主武器随舰体自带、高槽出厂被末日武器占位，fitted 恒空 ⇒
+  // 此前 NPC 分支只统计 fitted 模块，泰坦绑给军团 NPC 时预览恒显「未安装战斗武器」+ 高槽全空。
+  const npcInstance = typeof getShipInstanceFromState === "function" ? getShipInstanceFromState(gameState, item.shipInstanceId) : null;
+  const npcConfig = npcInstance && typeof getShipConfigById === "function" ? getShipConfigById(npcInstance.shipId) : null;
+  const npcBuiltinWeapon = typeof getShipBuiltinWeapon === "function" ? getShipBuiltinWeapon(npcConfig) : null;
+  const npcDoomsdayCells = [];
+  const npcHigh = Number(npcConfig && npcConfig.slots && npcConfig.slots.high);
+  if (Number.isFinite(npcHigh) && typeof getDoomsdaySlotInfo === "function" && typeof buildDoomsdayRackCell === "function") {
+    for (let i = 0; i < npcHigh; i++) {
+      const dd = getDoomsdaySlotInfo(npcConfig, "high", i);
+      if (dd) npcDoomsdayCells.push(buildDoomsdayRackCell("high", slotNames.high, i, dd));
+    }
+  }
   return {
-    weapons: modules.filter(function (module) { return module.combat && module.combat.kind === "weapon"; }).map(toModule),
+    weapons: npcWeapons.map(toModule),
     repairers: modules.filter(function (module) { return module.combat && module.combat.kind === "repair"; }).map(toModule),
+    hasWeapon: npcWeapons.length > 0 || Boolean(npcBuiltinWeapon),
+    builtinWeapon: npcBuiltinWeapon,
     // 2026-09-05：补 slot 字段——此前漏拷，renderCombatEquipmentRack 的 icons[item.slot] 取到
     // undefined，模板字符串把字面量 "undefined" 画进图标圆位（用户截图：NPC 预备舰装备卡全显 undefined）。
-    equipmentRack: modules.map(function (module, index) { return { slot: module.slot, name: module.name, slotName: slotNames[module.slot] || module.slot, index: index, attributes: "NPC 舰船配置", empty: false }; })
+    equipmentRack: npcDoomsdayCells.concat(modules.map(function (module, index) { return { slot: module.slot, name: module.name, slotName: slotNames[module.slot] || module.slot, index: index, attributes: "NPC 舰船配置", empty: false }; }))
   };
 }
 

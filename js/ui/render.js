@@ -56,8 +56,19 @@ function renderSidebar(sidebarState) {
     const levelClass = "nav-lv " + s.levelClass + (s.boosted ? " nav-lv-boosted" : "");
     if (lvSpan.textContent !== levelText) lvSpan.textContent = levelText;
     if (lvSpan.className !== levelClass) lvSpan.className = levelClass;
-    const title = s.tooltip || ("经验：" + Math.floor(s.xp).toLocaleString() + " / " + s.xpNeeded.toLocaleString() + "\n────────\n" + (SKILL_DESC[skillKey] || "提升此技能等级") + (s.boosted ? "\n⚡ 增强剂临时 +" + (s.level - s.baseLevel) : ""));
+    // Steam/Electron 中等级徽标本身可能接收到 hover/click，不能只给外层 nav-item 写 title。
+    // 经验阈值跟随当前显示等级，避免残留初始 HTML 的 0 / 110。
+    const shownLevel = Math.max(1, Number(s.level) || Number(s.baseLevel) || 1);
+    const shownXpNeeded = (!s.tooltip && typeof xpForLevel === "function")
+      ? xpForLevel(shownLevel + 1)
+      : s.xpNeeded;
+    const title = s.tooltip || ("经验：" + Math.floor(s.xp).toLocaleString() + " / " + shownXpNeeded.toLocaleString() + "\n────────\n" + (SKILL_DESC[skillKey] || "提升此技能等级") + (s.boosted ? "\n⚡ 增强剂临时 +" + (s.level - s.baseLevel) : ""));
     if (el.title !== title) el.title = title;
+    if (lvSpan.title !== title) lvSpan.title = title;
+    if (lvSpan.getAttribute("data-xp-tooltip") !== title) lvSpan.setAttribute("data-xp-tooltip", title);
+    if (typeof _hoverInfoAnchor !== "undefined" && (_hoverInfoAnchor === el || _hoverInfoAnchor === lvSpan) && _hoverInfoPop) {
+      _hoverInfoPop.textContent = title;
+    }
   });
   if (typeof renderCombatSkillGroup === "function") renderCombatSkillGroup();
   // 军团 / 星图：入口常驻显示，未达成条件时灰化锁定（点击由 shell-render 的锁定守卫弹条件）。
@@ -137,7 +148,13 @@ function renderMiningDisplay(display, areaEl, outEl) {
     if (lm > 1) logText.textContent = "后勤 ×" + lm.toFixed(2) + "（+" + Math.round((lm - 1) * 100) + "%）";
     else logText.textContent = "后勤 ×1.00（" + (stationLog ? stationLog.text : (gameState.station && gameState.station.bodyLevel > 0 ? "燃料不足" : "未建立")) + "）";
   }
-  if (fleetSupport) fleetSupport.textContent = display.efficiency.fleetSupportBonus > 0 ? display.efficiency.fleetSupportShip.name + " · 最终速度 +" + (display.efficiency.fleetSupportBonus * 100).toFixed(0) + "%" : "未启用";
+  if (fleetSupport) {
+    const locale = window.I18N && typeof window.I18N.getLocale === "function" ? window.I18N.getLocale() : "zh-CN";
+    const speedLabel = locale === "en-US" ? " · Final speed +" : (locale === "zh-TW" ? " · 最終速度 +" : " · 最终速度 +");
+    fleetSupport.textContent = display.efficiency.fleetSupportBonus > 0
+      ? display.efficiency.fleetSupportShip.name + speedLabel + (display.efficiency.fleetSupportBonus * 100).toFixed(0) + "%"
+      : (locale === "en-US" ? "Disabled" : (locale === "zh-TW" ? "未啟用" : "未启用"));
+  }
   if (fleetSupportRow) fleetSupportRow.classList.toggle("active", display.efficiency.fleetSupportBonus > 0);
   drawSkillBar(document.getElementById("bar-mining"), display.progress.percent, "green");
   const eta = document.getElementById("mp-eta"); if (eta) eta.textContent = display.progress.etaText;
@@ -522,7 +539,10 @@ function toggleHoverInfoPop(target, anchor) {
 }
 function showHoverInfoPop(target, anchor) {
   if (!target) return;
-  const text = (typeof target.title === 'string') ? target.title : (target.getAttribute('title') || '');
+  const levelNode = target.querySelector ? target.querySelector('.nav-lv[data-xp-tooltip]') : null;
+  const text = levelNode
+    ? levelNode.getAttribute('data-xp-tooltip')
+    : ((typeof target.title === 'string') ? target.title : (target.getAttribute('title') || ''));
   if (!text) return;
   hideHoverInfoPop();
   const pop = document.createElement('div');

@@ -220,13 +220,21 @@
 
   // 判定舰船实例是否至少装有一件有效武器（combat.kind === "weapon"）
   function shipHasWeapon(state, ship) {
-    if (!ship || !ship.fitted) return false;
-    const high = Array.isArray(ship.fitted.high) ? ship.fitted.high : [];
+    if (!ship) return false;
+    const high = (ship.fitted && Array.isArray(ship.fitted.high)) ? ship.fitted.high : [];
     for (let i = 0; i < high.length; i++) {
       const ref = high[i];
       if (ref === null || ref === undefined || ref === "") continue;
       const def = resolveFittedDefinition(state, ref);
       if (def && def.combat && def.combat.kind === "weapon") return true;
+    }
+    // 泰坦特例（2026-09-13）：泰坦高槽出厂被末日武器占位（slots.highUsable=0 → fitted.high 无真实武器），
+    // 主武器为舰体自带（config.weapon，不在 fitting 表内）。与 combat.js / actions.js(CombatStateActions.start)
+    // / offline-combat.js 死亡空间链门禁同口径：主武器存在即视为有武器，否则泰坦无法加入军团战斗小队。
+    const isTitanFn = getGlobalFn("isTitanCombatShip");
+    if (typeof isTitanFn === "function" && ship.instanceId) {
+      const cfg = getShipConfigFor(state, ship.instanceId);
+      if (cfg && isTitanFn(cfg) && cfg.weapon) return true;
     }
     return false;
   }

@@ -165,7 +165,10 @@
     const gotoEl = el.querySelector("[data-titan-asm-goto]");
     if (!statusEl || !btn) return;
     const a = (typeof gameState !== "undefined" && gameState.currentAction) || {};
-    const running = a.active && a.shipSubAction === "titanAssembly";
+    // 判据必须同时锚 skill（2026-09-13 玩家反馈「装完后会一直显示装」修复）：
+    // 旧判据只查 shipSubAction，而该字段切到其他技能时曾无人清理 ⇒ 装备工程/采矿运行中
+    // 泰坦组装页也显示「总装进行中 x%」，且按钮变成「停止总装」会把玩家真正在做的事停掉。
+    const running = Boolean(a.active && a.skill === "shipEngineering" && a.shipSubAction === "titanAssembly");
     const gate = evaluateTitanGate();
     setHtml(costEl, titanCostHtml(gate.recipe));
     if (running) {
@@ -191,10 +194,30 @@
       setHtml(gotoEl, gotoHtml(gate)); // 幂等写：内容不变不触碰 DOM
     }
   }
+  // 武器类型显示名（激光/导弹/火炮）与弹药类型显示名。
+  // 弹药名优先读数据表 AMMO_TYPE_NAMES（ammo.js 顶层 const，跨脚本裸名可用）；未就绪时用同值兜底，不在 UI 侧另立真值。
+  const WEAPON_TYPE_NAMES = { laser: "激光", missile: "导弹", cannon: "火炮" };
+  const AMMO_NAME_FALLBACK = { laser: "激光晶体弹药", missile: "导弹", cannon: "炮台弹药" };
+  function ammoNameOf(weaponType) {
+    const table = (typeof AMMO_TYPE_NAMES !== "undefined" && AMMO_TYPE_NAMES) ? AMMO_TYPE_NAMES : AMMO_NAME_FALLBACK;
+    return table[weaponType] || "弹药";
+  }
+  // 舰体防御加成（用户 2026-09-13 反馈「要写明白」）：数据表 bonuses 带容量的防御类字段此前完全未渲染，
+  // 只有命中被显示。命中仍在下一行，本行只列容量/维修类，避免与命中重复。
+  const HULL_DEF_BONUS_LABELS = [
+    ["shieldCapacity", "护盾容量"], ["armorCapacity", "装甲容量"], ["structureCapacity", "结构容量"],
+    ["armorRepair", "装甲维修"], ["structureRepair", "结构维修"], ["structureEmergencyRepair", "结构紧急维修"]
+  ];
+  function hullDefenseBonusHtml(m) {
+    const b = (m && m.bonuses) || {};
+    const parts = HULL_DEF_BONUS_LABELS.filter(([k]) => Number(b[k]) > 0).map(([k, label]) => `${label} +${pct(b[k])}%`);
+    return parts.length ? `<div class="tfs-line">防御加成：${parts.join(" · ")}</div>` : "";
+  }
   function titanStatHtml(kind, m) {
     if (kind === "hull") {
       const t = m.capitalTrait || {};
       return `<div class="tfs-line">盾 ${fmtNum(m.hp.shield)} / 甲 ${fmtNum(m.hp.armor)} / 结 ${fmtNum(m.hp.structure)} · 总耐久 ${fmtNum(m.totalHp)}</div>`
+        + hullDefenseBonusHtml(m)
         + `<div class="tfs-line">命中 +${m.bonuses.hitBonus} · 闪避 ${m.dodge} · 速度 ${m.speed} · 电容 ${fmtNum(m.capacitor && m.capacitor.capacity)}</div>`
         + (t.name ? `<div class="tfs-dim">特性「${t.name}」：${t.description}</div>` : "");
     }
@@ -210,8 +233,9 @@
       if (e && e.kind === "layerPierce") mech.push(`${e.name}：目标下一层防御受 ${pct(e.damagePct)}%`);
       if (e && e.trigger === "chancePerRound") mech.push(`${e.name}：每轮 ${pct(e.chance)}% 几率再次齐射`);
       if (m.crit) mech.push(`${m.crit.name}：每发 ${pct(m.crit.chance)}% 几率 ×${m.crit.multiplier} 暴击${m.crit.appliesToSweep ? "（溅射同享）" : ""}`);
-      return `<div class="tfs-line">基伤 ${fmtNum(m.baseDamage)} · 命中 +${m.baseHit}</div>`
-        + `<div class="tfs-line">燃料 ${m.fuelCost}/轮 · 弹药 ${m.ammoCost}/轮</div>`
+      const wtName = WEAPON_TYPE_NAMES[m.weaponType] || m.weaponType || "—";
+      return `<div class="tfs-line">基伤 ${fmtNum(m.baseDamage)} · 命中 +${m.baseHit} · 武器类型 ${wtName}</div>`
+        + `<div class="tfs-line">燃料 ${m.fuelCost}/轮 · 弹药 ${ammoNameOf(m.weaponType)} ${m.ammoCost}/轮</div>`
         + (mech.length ? `<div class="tfs-dim">${mech.join("；")}</div>` : "");
     }
     // core：description 即一句话规格（数据表维护），补一行供能消耗

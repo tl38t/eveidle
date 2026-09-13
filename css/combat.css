@@ -1125,6 +1125,21 @@
   .combat-equip-copy { min-width: 0; display: flex; flex-direction: column; }
   .combat-equip-name { color: #b8c6d0; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .combat-equip-type { color: #566b7b; font-size: 9px; }
+  /* 末日武器出厂占用格（2026-09-13）：泰坦高槽 [highUsable, high) 被舰体自带主武器占位，不可更换。
+     必须与「空槽位」（.empty 半透明）在视觉上区分开，否则玩家会以为这里能装武器。
+     口径与装配页 getShipFittingDisplayState / selectors.getDoomsdaySlotInfo 一致。 */
+  .combat-equip-slot.doomsday {
+    opacity: 1;
+    border-color: rgba(212,168,67,0.46);
+    background: linear-gradient(145deg, rgba(46,36,16,0.92), rgba(14,12,7,0.94));
+  }
+  .combat-equip-slot.doomsday .combat-equip-icon {
+    background: rgba(212,168,67,0.16);
+    border-color: rgba(212,168,67,0.5);
+    color: #e8c877;
+  }
+  .combat-equip-slot.doomsday .combat-equip-name { color: #e0c070; }
+  .combat-equip-slot.doomsday .combat-equip-type { color: #8a7442; }
 
   .combat-rewards {
     padding: 7px 10px;

@@ -614,7 +614,10 @@ function getOfflineActionDescriptor() {
       key, duration: getShipEngineeringCycleDuration(gameState, tRecipe), // 唯一周期公式（与在线一致）
       maxCycles() {
         if (tLevel() < tRecipe.level) return 0;
-        return (typeof getTitanAssemblyMaxCycles === "function") ? getTitanAssemblyMaxCycles(gameState, tRecipe) : 0;
+        const cap = (typeof getTitanAssemblyMaxCycles === "function") ? getTitanAssemblyMaxCycles(gameState, tRecipe) : 0;
+        // 与在线 tick「完成即停」严格同口径（2026-09-13）：泰坦总装无批量/队列入口，
+        // 一次启动只造 1 艘。旧行为按材料上限批量结算 ⇒ 单次离线吞掉全部组件 + 锻星合金 + ISK。
+        return Math.min(cap, 1);
       },
       apply(cycles, gains) {
         if (tLevel() < tRecipe.level) return; // 等级不足：零副作用
@@ -629,6 +632,11 @@ function getOfflineActionDescriptor() {
         }
         addOfflineSkillXp(key, cycles * tRecipe.xp); gains[key] += cycles;
         emitOfflineGameEvent("manufacturing:completed", { branch:"titan", recipeId:tRecipe.id, shipId:tRecipe.shipId, quantity:cycles, time:tRecipe.time, cycles, xp:cycles * tRecipe.xp });
+        // 完成即停（与在线 tick 同口径，2026-09-13）：产出后立即收尾本轮总装。
+        // 兼顾「离线时间刚好够 1 周期」的边界——那条路径不会走 skipFailed 分支，
+        // 若不显式收尾会留下 active=true 的尾巴，玩家回来仍看到「总装进行中」。
+        gameState.currentAction.active = false;
+        gameState.currentAction.progress = 0;
       }
     };
   }

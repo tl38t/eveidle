@@ -1154,12 +1154,12 @@ function getActionConfirmationDisplayState(state, target, now) {
     const reqs = [];
     if (isDS) {
       reqs.push({ name:"战斗等级", quantity:display.deathspace.requiredCL || 1, stock:display.level, enough:display.deathspace.unlocked });
-      reqs.push({ name:"已装备武器", quantity:1, stock:display.weapons.length, enough:display.weapons.length > 0 });
+      reqs.push({ name:"已装备武器", quantity:1, stock:display.hasWeapon ? Math.max(display.weapons.length, 1) : 0, enough:display.hasWeapon });
       const ticketName = getResourceDisplayName("special:" + display.deathspace.ticketMaterial);
       reqs.push({ name:ticketName, quantity:1, stock:display.deathspace.ticketCount, enough:display.deathspace.ticketCount >= 1 });
     } else {
       reqs.push({ name:"战斗等级", quantity:display.zone.requiredCL || 1, stock:display.level, enough:display.zone.unlocked });
-      reqs.push({ name:"已装备武器", quantity:1, stock:display.weapons.length, enough:display.weapons.length > 0 });
+      reqs.push({ name:"已装备武器", quantity:1, stock:display.hasWeapon ? Math.max(display.weapons.length, 1) : 0, enough:display.hasWeapon });
     }
     result.requirements = reqs;
     result.maxCount = 99999;
@@ -1167,7 +1167,7 @@ function getActionConfirmationDisplayState(state, target, now) {
     let blockedText = "";
     if (!display.player.hasShip) blockedText = "请先在机库指派战斗舰";
     else if (display.recovery.remaining > 0) blockedText = "维修中 " + display.recovery.remaining + "s";
-    else if (display.weapons.length === 0) blockedText = "未安装武器";
+    else if (!display.hasWeapon) blockedText = "未安装武器";
     else if (isDS ? !display.deathspace.unlocked : !display.zone.unlocked) blockedText = "需要战斗等级 " + (isDS ? display.deathspace.requiredCL : display.zone.requiredCL);
     else if (isDS && display.deathspace.ticketCount < 1) blockedText = "缺少通行密钥";
     result.canOpen = !blockedText;
@@ -2560,6 +2560,93 @@ function getCombatActualStatsFromState(state, context) {
     });
   }
 
+  // ── 攻击（泰坦）：舰体自带主武器（2026-09-13 用户拍板「接泰坦口径，真数据」）──
+  // 泰坦高槽被末日武器占位（slots.highUsable=0）、主武器随舰体自带（config.weapon，不在 fitting 表）
+  // ⇒ 上面的 weapons 循环恒不命中，面板会显示「攻击 0 / 未安装武器」。这里按泰坦真实口径补算：
+  //   主命中   = getTitanWeaponRoundDamage × 类型乘区 × 结构过载 × 自身核心光环 × 武器增强剂 × 联盟 × 脑突触 × 暴击期望
+  //   附带打击 = getTitanExtraAttacks（破片回响按期望 chance×damage）× 类型 × 武器增强剂 × 联盟 × 脑突触 [× 扫掠暴击期望]
+  // 真值函数全部来自 js/data/titans.js 与 js/systems/capital-combat.js —— 与 combat.js fireTitanVolley /
+  // offline-combat.js fireTitanVolleyVirtual 同源，**禁止在本文件重写泰坦公式**。
+  // 刻意口径差（与常规武器面板一致）：不含「敌方类」乘区（克制 calcWeaponCounterMultiplier / 易伤 titanVuln）
+  // 与弹药档位 ammoProps —— 面板不假设目标与弹药状态；这两项由战斗飘字/战报体现。
+  const titanMainWeapon = (ship && typeof isTitanCombatShip === "function" && isTitanCombatShip(ship) && ship.weapon) ? ship.weapon : null;
+  let titanFuelVolley = 0;
+  if (titanMainWeapon) {
+    const tw = titanMainWeapon;
+    const overdriveMult = (typeof getTitanStructureOverdriveMultiplier === "function")
+      ? (Number(getTitanStructureOverdriveMultiplier(ship.capitalTrait || null,
+        (state && state.combat && state.combat.active) ? state.combat.hp : null,
+        (state && state.combat && state.combat.active) ? state.combat.maxHp : null)) || 1) : 1;
+    const ownCoreAura = (typeof getTitanCoreAura === "function") ? getTitanCoreAura(ship.core) : null;
+    const auraMult = ownCoreAura ? (1 + (Number(ownCoreAura.squadDamageBonus) || 0)) : 1;
+    const allianceMult = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
+      ? (1 + AllianceBuildingConfig.effects(state.alliance.buildings).combatDamageBonus) : 1;
+    const adBuffMult = (typeof getAdBuffMultiplier === "function") ? (Number(getAdBuffMultiplier(state)) || 1) : 1;
+    const critExpected = (typeof rollTitanCritMultiplier === "function")
+      ? (Number(rollTitanCritMultiplier(tw.crit, null)) || 1) : 1;   // rng 传 null = 期望乘数
+    const titanTypeMult = Number(getCombatDamageMultiplierFromState(state, tw.weaponType, cOpts)) || 1;
+    const titanBooster = (boosterDmg && boosterDmg[tw.weaponType]) ? (Number(boosterDmg[tw.weaponType]) || 1) : 1;
+    const rd = (typeof getTitanWeaponRoundDamage === "function")
+      ? getTitanWeaponRoundDamage(tw, { round: 1, targetHpRatio: 1 })
+      : { mainDamage: Number(tw.baseDamage) || 0 };
+    const mainBase = Math.max(0, Number(rd.mainDamage) || 0);
+    const mainChain = titanTypeMult * overdriveMult * auraMult * titanBooster * allianceMult * adBuffMult * critExpected;
+    const mainValue = Math.round(mainBase * mainChain);
+    const chainNote = [["类型", titanTypeMult], ["结构过载", overdriveMult], ["核心光环", auraMult],
+      ["增强剂", titanBooster], ["联盟", allianceMult], ["脑突触", adBuffMult], ["暴击期望", critExpected]]
+      .filter(pair => Math.abs(pair[1] - 1) > 1e-9).map(pair => pair[0] + " ×" + pair[1].toFixed(2)).join(" · ");
+    attackRaw += mainValue;
+    attackItems.push({
+      name: (tw.name || "舰载主武器") + "（舰体自带）",
+      weaponType: tw.weaponType,
+      base: Math.round(mainBase),
+      enhancement: 1,
+      typeMult: titanTypeMult,
+      atkBooster: titanBooster,
+      value: mainValue,
+      titanMain: true,
+      note: "基伤 " + Math.round(mainBase) + (chainNote ? " · " + chainNote : "")
+    });
+    // 附带打击：与离线期望值口径一致（破片回响 damage × chance 后再结算）
+    const strikeChain = titanTypeMult * titanBooster * allianceMult * adBuffMult;
+    const sweepCritExpected = (tw.crit && tw.crit.appliesToSweep) ? critExpected : 1;
+    const groupedStrikes = [];
+    const rawStrikes = (typeof getTitanExtraAttacks === "function") ? (getTitanExtraAttacks(tw, { round: 1, targetHpRatio: 1 }) || []) : [];
+    for (const st of rawStrikes) {
+      if (!st) continue;
+      const isRetrigger = st.kind === "retriggerSweep";
+      // ⚠️ retriggerSweep 在数据层是「单个带 count 的条目」（由 resolveTitanWeaponStrikes 展开成 count 次），
+      // 必须显式乘 count，否则破片回响期望被低估 count 倍；普通 sweep 已由数据层展开成 count 个条目，不能重复乘。
+      const amount = isRetrigger
+        ? (Number(st.damage) || 0) * (Number(st.chance) || 0) * (Number(st.count) || 1)
+        : (Number(st.damage) || 0);
+      const slot = groupedStrikes.find(g => g.kind === st.kind);
+      if (slot) { slot.raw += amount; slot.units += 1; }
+      else groupedStrikes.push({ kind: st.kind, raw: amount, units: 1, retrigger: isRetrigger });
+    }
+    const STRIKE_LABEL = { sweep: "扫掠打击", layerPierce: "透层贯穿", retriggerSweep: "破片回响", extra: "附加打击" };
+    for (const g of groupedStrikes) {
+      const critMult = (g.kind === "sweep") ? sweepCritExpected : 1;
+      const val = Math.round(g.raw * strikeChain * critMult);
+      attackRaw += val;
+      attackItems.push({
+        name: (STRIKE_LABEL[g.kind] || "附加打击") + (g.units > 1 ? " ×" + g.units : ""),
+        weaponType: tw.weaponType,
+        base: Math.round(g.raw),
+        value: val,
+        titanStrike: true,
+        note: "每轮 " + Math.round(g.raw) + (g.retrigger ? "（期望值 chance×damage）" : "") +
+          (critMult !== 1 ? " · 扫掠暴击同享 ×" + critMult.toFixed(2) : "")
+      });
+    }
+    // 每轮燃料 = 主武器齐射燃料 + 核心维持供能（与 combat.js titanVolleyFuel / titanCoreSustainFuel 同式）
+    const tFuelBase = Number(tw.fuelCost) || 0;
+    if (tFuelBase > 0) titanFuelVolley = Math.max(1, Math.round(tFuelBase * fuelMult));
+    const coreSustain = (ship.core && ship.core.consumption && ship.core.consumption.mode === "sustain")
+      ? Math.round(tFuelBase * (Number(ship.core.consumption.fuelPctOfVolley) || 0)) : 0;
+    if (coreSustain > 0) titanFuelVolley += Math.max(1, Math.round(coreSustain * fuelMult));
+  }
+
   // ── 维修：逐模块 回充量 × 强化倍率 × 维修乘区 × 增强剂（满结构基准）──
   const repairItems = [];
   let repairRaw = 0;
@@ -2600,6 +2687,8 @@ function getCombatActualStatsFromState(state, context) {
     if (!(fc > 0)) continue; // 不耗燃料武器不计入（与 computeVolleyFuel 同口径）
     fuelWeapon += Math.max(1, Math.round(fc * fuelMult));
   }
+  // 泰坦舰体自带主武器 + 核心维持供能（上文的 weapons 循环对泰坦恒空，2026-09-13）
+  fuelWeapon += titanFuelVolley;
   let fuelDamageControl = 0;
   for (const m of damageControls) fuelDamageControl += Math.max(1, Math.round((Number(m.combat.fuelCost) || 1) * fuelMult));
   let fuelRepair = 0;
@@ -2617,7 +2706,7 @@ function getCombatActualStatsFromState(state, context) {
   return {
     ok: Boolean(activeShip.instance),
     shipName: activeShip.instance && ship ? ship.name : "未装备战斗舰",
-    attack: { total: Math.round(attackRaw), count: weapons.length, items: attackItems },
+    attack: { total: Math.round(attackRaw), count: attackItems.length, items: attackItems },
     repair: { total: Math.round(repairRaw), count: repairers.length, items: repairItems, byTarget: repairByTarget },
     mitigation: {
       dcu: dcu,
@@ -2634,6 +2723,21 @@ function getCombatActualStatsFromState(state, context) {
       total: fuelWeapon + fuelDamageControl + fuelRepair,
       mult: fuelMult
     }
+  };
+}
+
+// 泰坦舰体自带主武器 → UI 展示条目（**唯一实现**）。
+// 泰坦高槽被末日武器占位、真实主武器在 config.weapon（不在 fitting 表）⇒ display.weapons 恒空，
+// 任何要显示「这艘泰坦有什么武器」的地方都必须走这里；非泰坦/无主武器返回 null。
+// 调用方：getCombatDisplayState（玩家配置）与 combat-render 的 getCombatConfigForShip（按编队舰预览）。
+function getShipBuiltinWeapon(config) {
+  if (!config || typeof isTitanCombatShip !== "function") return null;
+  if (!isTitanCombatShip(config) || !config.weapon) return null;
+  const w = config.weapon;
+  return {
+    name:w.name || "舰载主武器",
+    weaponType:w.weaponType || null,
+    icon:{ laser:"⚡", missile:"🚀", cannon:"💥" }[w.weaponType] || "◆"
   };
 }
 
@@ -2658,6 +2762,14 @@ function getCombatDisplayState(state, now) {
   const modules = getInstalledCombatModulesFromState(state);
   const weapons = modules.filter(module => module.combat.kind === "weapon");
   const repairers = modules.filter(module => module.combat.kind === "repair");
+  // 泰坦特例（2026-09-13）：泰坦高槽出厂被末日武器占位（slots.highUsable=0），fitted 表内无常规武器
+  // ⇒ weapons 恒空；但其主武器随舰体自带（config.weapon，见 js/data/titans.js buildTitanConfig）。
+  // 这里产出「是否具备可用武器」的**唯一权威** hasWeapon，供本文件全部消费方 + combat-render + actions
+  // 统一读取。此前 5 处消费方里只有 actions.js 写了泰坦特例，其余一律按 weapons.length===0 判定，
+  // 导致泰坦被 UI 误判为「未安装武器」（开战按钮禁用且文案错、需求行 0/1、武器行空白）。
+  // 口径与 combat.js / offline-combat.js / legion-* 一致：主武器存在即视为有武器。
+  const titanBuiltinWeapon = getShipBuiltinWeapon(ship);
+  const hasWeapon = weapons.length > 0 || Boolean(titanBuiltinWeapon);
   const level = getCombatLevelFromState(state);
   const zone = encounterMode === "deathspace"
     ? COMBAT_ZONES.find(item => item.id === encounterDeathspace.sourceZoneId) || COMBAT_ZONES[0]
@@ -2703,9 +2815,9 @@ function getCombatDisplayState(state, now) {
   const ticketCount = ResourceRegistry.get(state, "special:" + deathspace.ticketMaterial);
   // 无拥有战斗舰时（新存档/未指派），强制禁用开战并提示去机库指派，避免幽灵舰误导。
   const noShip = !hasShip;
-  const startDisabled = noShip || recoveryRemaining > 0 || weapons.length === 0 || !zoneUnlocked || (viewMode === "deathspace" && ticketCount < 1);
+  const startDisabled = noShip || recoveryRemaining > 0 || !hasWeapon || !zoneUnlocked || (viewMode === "deathspace" && ticketCount < 1);
   // 战斗并入队列：点击后弹出与采矿一致的确认弹窗，选择波数/入场次数、无限、加入队列或直接开始。
-  const startText = noShip ? "请先在机库指派战斗舰" : (recoveryRemaining > 0 ? "维修中 " + recoveryRemaining + "s" : !zoneUnlocked ? "需要战斗等级 " + requiredLevel : weapons.length === 0 ? "未安装武器" : viewMode === "deathspace" && ticketCount < 1 ? "缺少通行密钥" : (viewMode === "deathspace" ? "▶ 开始攻略" : "▶ 开始战斗"));
+  const startText = noShip ? "请先在机库指派战斗舰" : (recoveryRemaining > 0 ? "维修中 " + recoveryRemaining + "s" : !zoneUnlocked ? "需要战斗等级 " + requiredLevel : !hasWeapon ? "未安装武器" : viewMode === "deathspace" && ticketCount < 1 ? "缺少通行密钥" : (viewMode === "deathspace" ? "▶ 开始攻略" : "▶ 开始战斗"));
   const slotNames = { high:"高槽", mid:"中槽", low:"低槽", rig:"改装槽" };
   const equipmentRack = [];
   for (const slot of ["high", "mid", "low", "rig"]) {
@@ -2717,6 +2829,14 @@ function getCombatDisplayState(state, now) {
     const hasSlotDef = !!(ship && ship.slots && Number.isFinite(Number(ship.slots[slot])));
     const count = hasSlotDef ? Math.max(0, Number(ship.slots[slot]) || 0) : fitted.length;
     for (let index = 0; index < count; index++) {
+      // 泰坦末日武器占位格（2026-09-13）：高槽 [highUsable, high) 出厂被末日武器占用，**不是「空槽位」**。
+      // 装配页禁止写入（actions.setFittingSlot 拦截）、并由 getShipFittingDisplayState 显示为占用格；
+      // 战斗控制台此前按原始 slots 一律渲染「空槽位」，给玩家"这里能装"的错觉 —— 现同口径（getDoomsdaySlotInfo 单一判据）。
+      const dday = getDoomsdaySlotInfo(ship, slot, index);
+      if (dday) {
+        equipmentRack.push(buildDoomsdayRackCell(slot, slotNames[slot], index, dday));
+        continue;
+      }
       const ref = fitted[index] || null;
       const resolved = ref ? resolveEquipmentReference(state, ref) : null;
       const equipment = resolved ? resolved.definition : null;
@@ -2767,7 +2887,7 @@ function getCombatDisplayState(state, now) {
       sourceZoneName:(COMBAT_ZONES.find(item => item.id === site.sourceZoneId) || {}).name || site.sourceZoneId
     })),
     recovery:{ active:recoveryRemaining > 0, remaining:recoveryRemaining, until:recoveryUntil },
-    player:{ instanceId:hasShip ? activeShip.instance.instanceId : null, name:hasShip ? ship.name : "未装备战斗舰", image:hasShip ? (ship && ship.image ? ship.image : "") : "", hasShip, speed:ship ? (ship.speed || 0) : 0, dodge:hasShip ? getCombatPlayerDodgeFromState(state, { now, zoneId:zone.id }) : 0, hp, maxHp, derivedMaxHp, volleyDamage, weaponCount:weapons.length, actualStats:getCombatActualStatsFromState(state, { now, zoneId:zone.id }) },
+    player:{ instanceId:hasShip ? activeShip.instance.instanceId : null, name:hasShip ? ship.name : "未装备战斗舰", image:hasShip ? (ship && ship.image ? ship.image : "") : "", hasShip, speed:ship ? (ship.speed || 0) : 0, dodge:hasShip ? getCombatPlayerDodgeFromState(state, { now, zoneId:zone.id }) : 0, hp, maxHp, derivedMaxHp, volleyDamage, weaponCount:hasWeapon ? Math.max(weapons.length, 1) : 0, actualStats:getCombatActualStatsFromState(state, { now, zoneId:zone.id }) },
     wormholeBattle:isWormholeBattleContext(state),
     enemies:enemies.map((enemy, index) => {
       const currentHp = enemy.hp ? enemy.hp.shield + enemy.hp.armor + enemy.hp.structure : 0;
@@ -2785,6 +2905,10 @@ function getCombatDisplayState(state, now) {
     // 此前从未渲染到 UI，玩家武器哑火却看不到原因，故在此透出供战斗主界面常驻展示。
     supply:getCombatSupplyWarning(state, zone),
     lastStatus:(combat && typeof combat.lastStatus === "string" && combat.lastStatus) ? combat.lastStatus : null,
+    // 是否有可用武器（唯一权威；泰坦「舰体自带主武器」已计入，见函数顶部 hasWeapon）。
+    hasWeapon,
+    // 泰坦舰体自带主武器（仅用于 UI 展示：战斗页武器行）；常规舰为 null。
+    builtinWeapon:titanBuiltinWeapon,
     weapons:weapons.map(module => ({ ...module, icon:{ laser:"⚡", missile:"🚀", cannon:"💥" }[module.combat.weaponType] || "◆" })),
     repairers:repairers.map(module => ({ ...module })),
     equipmentRack,
@@ -4230,6 +4354,57 @@ function stackEquipmentCandidates(candidates) {
   });
 }
 
+// 泰坦高槽占用判据（**唯一实现**；装配页 getShipFittingDisplayState 与战斗控制台装备架 getCombatDisplayState 共用）。
+// highUsable = 玩家可自由使用的高槽数（泰坦现为 0 ⇒ 7 格全部被末日武器出厂占用）；
+// 未定义 highUsable 的普通舰船视为全部可用。未来研究线（tt_high）抬高 highUsable 后，
+// [highUsable, high) 段自动释放、无需改调用方。
+function getUsableHighSlots(config) {
+  const high = Number(config && config.slots && config.slots.high);
+  if (!Number.isFinite(high)) return Infinity;      // 无高槽定义 ⇒ 视为无占用
+  const usable = Number(config && config.slots && config.slots.highUsable);
+  return Number.isFinite(usable) ? Math.max(0, usable) : high;
+}
+
+// 该槽位是否被末日武器出厂占用。占用返回 { name, icon, coreName }，可自由装配返回 null。
+function getDoomsdaySlotInfo(config, slot, slotIndex) {
+  if (slot !== "high") return null;
+  const high = Number(config && config.slots && config.slots.high);
+  if (!Number.isFinite(high)) return null;
+  if (!(slotIndex >= getUsableHighSlots(config) && slotIndex < high)) return null;
+  return {
+    name:(config.weapon && config.weapon.name) || "末日武器",
+    icon:"☄",
+    coreName:(config.core && config.core.name) || ""
+  };
+}
+
+// 末日武器占用格 → 装备架单元格（**唯一实现**：玩家战斗控制台 与 NPC 预览装备架共用同一形状，
+// 禁止任一侧另写一份 cell 构造，否则「末日武器/☄/出厂占用」文案会各写各的、漂移）。
+function buildDoomsdayRackCell(slot, slotName, index, dday) {
+  return {
+    slot, slotName, index,
+    equipmentRef:null, equipmentId:null, enhancementLevel:0,
+    name:dday.name, icon:dday.icon, empty:false, doomsday:true,
+    attributes:slotName + " " + (index + 1) + "：末日武器出厂占用，不可更换" + (dday.coreName ? "（核心供能：" + dday.coreName + "）" : "")
+  };
+}
+
+// 泰坦内置装备（舰体自带，**不在 fitting 表内**）→ 「已装配装备」条目（**唯一实现**）。
+// 装配页 updateOrbitLibrary 与任何后续展示方共用；条目带 builtin:true ⇒ 消费方不得去查 EQUIPMENT_DB、
+// 不得显示「未强化」（内置件不参与强化系统）。占用格数由 highUsable 动态推导（tt_high 研究抬高后自动收缩）。
+function getShipBuiltinEquipment(config) {
+  if (!config) return [];
+  const list = [];
+  const high = Number(config.slots && config.slots.high);
+  const occupied = Number.isFinite(high) ? Math.max(0, high - getUsableHighSlots(config)) : 0;
+  if (occupied > 0) {
+    const dday = getDoomsdaySlotInfo(config, "high", getUsableHighSlots(config));
+    if (dday) list.push({ id:"builtin:doomsday", builtin:true, name:dday.name, icon:dday.icon, count:occupied, note:"末日武器 · 出厂占用" });
+  }
+  if (config.core && config.core.name) list.push({ id:"builtin:core", builtin:true, name:config.core.name, icon:"◈", count:1, note:"泰坦核心 · 出厂内置" });
+  return list;
+}
+
 function getShipFittingDisplayState(state, shipRef) {
   const instance = getShipInstanceFromState(state, shipRef);
   if (!instance) return null;
@@ -4238,12 +4413,10 @@ function getShipFittingDisplayState(state, shipRef) {
   const fitting = getFittingFromInstance(instance);
   const inventory = state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
   const slots = { high:config.slots.high || 0, mid:config.slots.mid || 0, low:config.slots.low || 0, rig:config.slots.rig || 0 };
-  // 泰坦：高槽出厂被末日武器占用。highUsable = 玩家可自由使用的高槽数（泰坦现为 0，即全占用）；
-  // 未定义 highUsable 的普通舰船视为全部可用。未来开放更多高槽时，[highUsable, high) 段自动对普通武器开放。
-  const usableHigh = Number.isFinite(Number(config.slots.highUsable)) ? Math.max(0, Number(config.slots.highUsable)) : slots.high;
+  // 泰坦：高槽出厂被末日武器占用。占用判据统一走文件上方的 getUsableHighSlots / getDoomsdaySlotInfo
+  // （唯一实现，战斗控制台装备架共用同一函数），禁止在此另写一份。
+  const usableHigh = getUsableHighSlots(config);
   if (config.slots.highUsable !== undefined) slots.highUsable = usableHigh;
-  const doomsdayName = (config.weapon && config.weapon.name) || "末日武器";
-  const doomsdayDesc = (config.core && config.core.name) ? ("核心供能：" + config.core.name) : "";
   const orbitSlots = [];
   const totalOrbitSlots = 24 + slots.rig; // 8高 + 8中 + 8低 + 本舰 rig 槽数（rig 索引从 24 起，随舰船动态；illuminator=28，starcrown=29）
   for (let index = 0; index < totalOrbitSlots; index++) {
@@ -4251,7 +4424,8 @@ function getShipFittingDisplayState(state, shipRef) {
     const start = type === "high" ? 0 : type === "mid" ? 8 : type === "low" ? 16 : 24;
     const slotIndex = index - start;
     // 末日武器占用格：[usableHigh, slots.high) 段——显示出来但不可更换（enabled=false 阻断选装面板）
-    const doomsday = type === "high" && slotIndex >= usableHigh && slotIndex < slots.high;
+    const ddayInfo = getDoomsdaySlotInfo(config, type, slotIndex);
+    const doomsday = Boolean(ddayInfo);
     let enabled = slotIndex < slots[type]; // rig 槽已随改装件系统解禁（超出舰船槽数的仍禁用）
     if (doomsday) enabled = false;
     const equipmentRef = enabled ? fitting[type][slotIndex] || null : null;
@@ -4264,11 +4438,11 @@ function getShipFittingDisplayState(state, shipRef) {
     orbitSlots.push({
       index, type, slotIndex, enabled, equipmentRef, equipmentId: resolved ? resolved.itemId : null,
       enhancementLevel: resolved ? resolved.enhancementLevel : 0,
-      name: doomsday ? doomsdayName : (equipment ? equipment.name : ""),
-      icon: doomsday ? "☄" : (equipment ? ITEM_ICONS[equipment.name] || "📦" : null),
+      name: doomsday ? ddayInfo.name : (equipment ? equipment.name : ""),
+      icon: doomsday ? ddayInfo.icon : (equipment ? ITEM_ICONS[equipment.name] || "📦" : null),
       installedInstanceId: resolved && resolved.instance ? resolved.instance.instanceId : null,
       lockedBy: lockedBy ? lockedBy.instanceId : null,
-      doomsday: doomsday ? { name:doomsdayName, desc:doomsdayDesc, locked:true } : null
+      doomsday: doomsday ? { name:ddayInfo.name, desc:(ddayInfo.coreName ? "核心供能：" + ddayInfo.coreName : ""), locked:true } : null
     });
   }
   const equippedIds = Object.values(fitting).flat().filter(Boolean);
@@ -4323,6 +4497,8 @@ function getShipFittingDisplayState(state, shipRef) {
         icon: equipment ? ITEM_ICONS[equipment.name] || "📦" : "📦"
       };
     }),
+    // 泰坦内置装备：常规 equipped 恒空（主武器/核心不在 fitting 表）⇒ 单列，供「已装配装备」展示。
+    builtinEquipment:getShipBuiltinEquipment(config),
     inventoryBySlot,
     inventoryStacksBySlot,
     rigCandidates,
@@ -4471,7 +4647,7 @@ function getCombatSupplyWarning(state, zone) {
 function getQueueDisplayState(state) {
   const queue = state.queue || { items:[], config:{}, status:{} };
   const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔" };
-  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", combat:"⚔战斗" };
+  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", boosterEngineering:"💉增强剂", archaeology:"🔍考古", combat:"⚔战斗" };
   const combat = state.combat || {};
   const queueRunning = Boolean(queue.status.isRunning) && queue.status.activeIndex >= 0;
   return {

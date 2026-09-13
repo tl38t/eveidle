@@ -1937,6 +1937,8 @@ function beginDeathspaceRun(state, options, context) {
   });
   state.currentAction.skill = "combat";
   state.currentAction.active = true;
+  // 跨行动串台防护（actions.js 单一实现）：进死亡空间同样清理舰船工程运行快照
+  if (typeof clearStaleShipEngineeringRunFields === "function") clearStaleShipEngineeringRunFields(state.currentAction, "combat");
   // M5：开战入口接线（死亡空间首轮 / 连刷续跑共用本原语；连刷续跑沿用既有小队，不重复开战）
   if (!opts.continuation && typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD &&
       typeof LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers === "function") {

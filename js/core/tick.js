@@ -436,6 +436,20 @@ function gameTick() {
             if (typeof advanceIntshipAfterManufacturingAction === "function") advanceIntshipAfterManufacturingAction(gameState, { now:Date.now(), offline:false });
             updateUI(); break;
           }
+          // 泰坦总装「完成即停」（2026-09-13 玩家反馈「装完也一直装，进程不停」修复）：
+          // 泰坦组装页只有 3 个下拉 + 1 个按钮，没有数量/批量入口，玩家点一次的心理预期是造 1 艘。
+          // 旧行为沿用普通总装的「无队列就继续下一周期」⇒ 一艘接一艘无限再造，每艘扣
+          // 3 组件 + 200 锻星合金 + 500 万 ISK，挂机/离线会把家底吞光。
+          // 队列驱动（count 有限）或仍有 batchRemaining 时按次数继续；只有「非队列的手动单次总装」才停。
+          const tQueue = gameState.queue;
+          const tQueueDriven = Boolean(tQueue && tQueue.status && tQueue.status.isRunning
+            && tQueue.status.activeIndex >= 0 && tQueue.status.activeIndex < tQueue.items.length);
+          if (!tQueueDriven && !(gameState.currentAction.batchRemaining > 0)) {
+            resetActionProgress();
+            gameState.currentAction.active = false;
+            updateUI();
+            break;
+          }
         }
         if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
         if (s.xp > 0) checkLevelUp("shipEngineering");

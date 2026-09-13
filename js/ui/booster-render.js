@@ -202,19 +202,21 @@ function renderActionBoosterSlots(actionKey, containerId) {
   slots.forEach(function(slot) {
     var entry = active[slot];
     var item = entry && typeof getBoosterItem === "function" ? getBoosterItem(entry.itemId) : null;
+    var locale = window.I18N && typeof window.I18N.getLocale === "function" ? window.I18N.getLocale() : "zh-CN";
+    var isEn = locale === "en-US", isTw = locale === "zh-TW";
     if (!item) {
       html += '<div class="equipeng-recipe-card action-booster-local-card action-booster-slot-empty" data-action-booster-slot="' + slot + '" title="Click to load a booster">' +
-        '<span class="equipeng-card-top"><span>\u589e\u5f3a\u5242\u69fd</span><span class="can-build">\u5f85\u88c5\u8f7d</span></span>' +
-        '<span class="equipeng-card-icon"><i class="fa-solid fa-flask-vial"></i></span><strong>\u88c5\u8f7d\u589e\u5f3a\u5242</strong>' +
-        '<span class="equipeng-card-attributes">\u70b9\u51fb\u4ece\u4ed3\u5e93\u9009\u62e9</span>' +
-      '<div class="action-booster-meta"><span class="action-booster-meta-text">\u7a7a\u69fd</span></div></div>';
+        '<span class="equipeng-card-top"><span>' + (isEn ? "Booster slot" : (isTw ? "增強劑槽" : "增强剂槽")) + '</span><span class="can-build">' + (isEn ? "Awaiting load" : (isTw ? "待裝載" : "待装载")) + '</span></span>' +
+        '<span class="equipeng-card-icon"><i class="fa-solid fa-flask-vial"></i></span><strong>' + (isEn ? "Load booster" : (isTw ? "裝載增強劑" : "装载增强剂")) + '</strong>' +
+        '<span class="equipeng-card-attributes">' + (isEn ? "Click to select from Cargo" : (isTw ? "點擊從倉庫選擇" : "点击从仓库选择")) + '</span>' +
+      '<div class="action-booster-meta"><span class="action-booster-meta-text">空槽</span></div></div>';
       return;
     }
     var remaining = Math.max(0, Number(entry.remainingMs) || 0);
     // 库存实际按裸 id 存储于 boosters.inventory；通过 ResourceRegistry 读取可兼容 booster: 前缀旧存档。
     var inventory = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, item.itemId) : 0;
     html += '<div class="equipeng-recipe-card action-booster-local-card" data-action-booster-slot="' + slot + '" title="Click to replace this booster">' +
-      '<span class="equipeng-card-top"><span>' + (item.qualityName || "\u589e\u5f3a\u5242") + ' · ' + item.name + '</span><span class="can-build">\u751f\u6548</span></span>' +
+      '<span class="equipeng-card-top"><span>' + (item.qualityName || (isEn ? "Booster" : "增强剂")) + ' · ' + item.name + '</span><span class="can-build">' + (isEn ? "Active" : "生效") + '</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span><strong>' + item.name + '</strong>' +
       '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, null, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span>' +
       // 剩余时间 / 库存 / 卸下独立成行：原实现塞在 .equipeng-card-bottom 内，

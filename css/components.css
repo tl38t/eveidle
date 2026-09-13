@@ -741,6 +741,10 @@
   .equip-library .el-title { font-size: 10px; color: #4a5a6a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
   .equip-library .el-items { display: flex; gap: 6px; flex-wrap: wrap; }
   .equip-library .el-item { font-size: 11px; color: #6a7a8e; background: rgba(0,0,0,0.2); padding: 2px 8px; border-radius: 3px; border: 1px solid rgba(26,37,53,0.1); }
+  /* 泰坦内置装备（末日武器/核心）：舰体出厂自带、不可拆装 ⇒ 金色调与普通装备区分。
+     口径与战斗控制台装备架的 .combat-equip-slot.doomsday 一致（同为 selectors 的末日武器判据）。 */
+  .equip-library .el-item.el-builtin { color: #e0c070; background: rgba(212,168,67,0.10); border-color: rgba(212,168,67,0.34); }
+  .equip-library .el-item.el-builtin .el-enhancement-level { color: #8a7442; }
 
   .ship-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 14px; padding: 10px 14px; background: rgba(0, 0, 0, 0.3); border-radius: 8px; border: 1px solid rgba(26,37,53,0.15); }
   .ship-stats .stat { text-align: center; }

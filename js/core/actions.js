@@ -576,6 +576,7 @@ const BoosterStateActions = {
       lastProgressUpdate:now,
       batchRemaining:0
     });
+    clearStaleShipEngineeringRunFields(state.currentAction, "boosterEngineering");
     state._dirty = true;
     return { changed:true, recipe };
   },
@@ -875,15 +876,10 @@ const CombatStateActions = {
     const display = getCombatDisplayState(state, now);
     if (display.recovery.active) return { changed:false, reason:"repairing", remaining:display.recovery.remaining };
     if (!display.zone.unlocked) return { changed:false, reason:"level-locked", requiredCL:display.zone.requiredCL || 1 };
-    // 泰坦特例（2026-09-09）：泰坦无常规装备武器（display.weapons 恒空），主武器在 ship.weapon，
-    // 走 combat.js 泰坦管线；仅要求主武器存在才放行，否则维持原 no-weapons 拒绝。
-    if (display.weapons.length === 0) {
-      const _active = getActiveCombatShipState(state);
-      const _isTitan = Boolean(_active && _active.config
-        && typeof isTitanCombatShip === "function" && isTitanCombatShip(_active.config)
-        && _active.config.weapon);
-      if (!_isTitan) return { changed:false, reason:"no-weapons" };
-    }
+    // 武器门禁：统一读 display.hasWeapon（getCombatDisplayState 产出的唯一权威，2026-09-13）。
+    // 泰坦特例（高槽被末日武器占位、主武器随舰体自带，走 combat.js 泰坦管线）原先在此另写一份判定，
+    // 已收敛进该权威内 —— 同语义逻辑只保留一处实现，避免再出现口径分裂。
+    if (!display.hasWeapon) return { changed:false, reason:"no-weapons" };
     const living = getCombatLivingEnemiesFromState(state.combat);
     if (living.length === 0) {
       if (!Array.isArray(enemies) || enemies.length === 0) return { changed:false, reason:"missing-formation" };
@@ -918,6 +914,7 @@ const CombatStateActions = {
     }
     state.currentAction.skill = "combat";
     state.currentAction.active = true;
+    clearStaleShipEngineeringRunFields(state.currentAction, "combat");
     state.combat.mode = "belt";
     state.combat.viewMode = "belt";
     state.combat.active = true;
@@ -1191,6 +1188,31 @@ const PlanetaryStateActions = {
   }
 };
 
+// ---- 舰船工程运行快照字段的单一清理入口（2026-09-13 玩家反馈修复）----
+// 背景（三条玩家反馈，沙箱均已复现）：
+//   shipSubAction / startedShipCompTarget / startedShipAsmTarget / startedTitanAsmCombo 只在
+//   「舰船工程各 start*」里被写入，切到其他技能（装备工程 / 采矿 / 战斗 / 考古 / 增强剂）时
+//   无人清理 ⇒ 残留 shipSubAction === "titanAssembly" 会让泰坦组装页
+//   （titan-forge-integration.js 的 running 判据当时只查 subAction）误判「总装进行中」，
+//   点「停止总装」还会把玩家真正在做的事停掉；更隐蔽的是泰坦总装被顶掉后玩家仍以为在装，
+//   离线按新行动结算 ⇒ 泰坦永远造不出来（「泰坦组装，然后离线，没法完成」）。
+// 规则：任何把 currentAction.skill 切到**非 shipEngineering**的入口都必须调用本函数。
+//   · skill 仍为 shipEngineering 时直接返回 —— 那是同技能内切换子活动，字段是权威快照。
+//   · 正在运行的泰坦总装被中断 → 立即提示玩家，避免「离线回来才发现没造出来」。
+//   · 提示通道沿用 core 层既有先例（tick.js stopOrSkip 同样直调全局 showToast）。
+function clearStaleShipEngineeringRunFields(action, nextSkill) {
+  if (!action || nextSkill === "shipEngineering") return { interruptedTitan:false };
+  const interruptedTitan = Boolean(action.active && action.shipSubAction === "titanAssembly");
+  delete action.shipSubAction;
+  action.startedShipCompTarget = "";
+  action.startedShipAsmTarget = "";
+  delete action.startedTitanAsmCombo;
+  if (interruptedTitan && typeof showToast === "function") {
+    try { showToast("⚠ 泰坦总装已中断：行动已切换，总装进度作废。需重新点击「总装泰坦」。"); } catch (_) {}
+  }
+  return { interruptedTitan };
+}
+
 function getQueueItemConfigForState(item) {
   const skill = item.skill === "ammunitionEngineering" ? "equipmentEngineering" : item.skill;
   const config = { skill, progress:0, active:true, batchRemaining:item.count || 1 };
@@ -1227,6 +1249,8 @@ function getQueueItemConfigForState(item) {
 function applyQueueConfigToState(state, config, now) {
   const action = state.currentAction;
   Object.assign(action, { skill:config.skill, active:true, progress:0, lastProgressUpdate:now, batchRemaining:config.batchRemaining });
+  // 跨行动串台防护：队列切到非舰船工程时清理舰船工程运行快照（含「泰坦总装被顶掉」提示）
+  clearStaleShipEngineeringRunFields(action, config.skill);
   if (config.area) {
     const area = ALL_MINING_AREAS.find(item => item.name === config.area || item.ore === config.area);
     action.area = config.area; action.startedArea = config.area;
@@ -2849,6 +2873,7 @@ const ArchaeologyStateActions = {
       skill:"archaeology", active:true, progress:0,
       lastProgressUpdate:now, startedSiteId:check.site.id, startedProbeId:check.probeId
     });
+    clearStaleShipEngineeringRunFields(state.currentAction, "archaeology");
     arch.startedSiteId = check.site.id;
     arch.startedProbeId = check.probeId;
     state.resumeAfterRepair = null; // 新开考古：清除待恢复标记

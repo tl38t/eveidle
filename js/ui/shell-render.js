@@ -2770,6 +2770,17 @@ function formatResearchHours(hours) {
 function formatResearchDuration(seconds) {
   const s = Math.max(0, Math.round(Number(seconds) || 0));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  const locale = window.I18N && typeof window.I18N.getLocale === "function" ? window.I18N.getLocale() : "zh-CN";
+  if (locale === "en-US") {
+    if (h > 0) return h + "h" + (m > 0 ? " " + m + "m" : "");
+    if (m > 0) return m + "m" + (sec > 0 ? " " + sec + "s" : "");
+    return sec + "s";
+  }
+  if (locale === "zh-TW") {
+    if (h > 0) return h + "小時" + (m > 0 ? m + "分" : "");
+    if (m > 0) return m + "分" + (sec > 0 ? sec + "秒" : "");
+    return sec + "秒";
+  }
   if (h > 0) return h + "小时" + (m > 0 ? m + "分" : "");
   if (m > 0) return m + "分" + (sec > 0 ? sec + "秒" : "");
   return sec + "秒";
@@ -2897,6 +2908,9 @@ function renderResearchActive(research, RS) {
   const el = document.getElementById("research-active");
   const fill = document.getElementById("research-progress-fill");
   if (!el) return;
+  const emptyResearchText = (window.I18N && typeof window.I18N.t === "function")
+    ? window.I18N.t("当前没有进行中的研究") : "当前没有进行中的研究";
+  el.style.setProperty("--research-empty-text", JSON.stringify(emptyResearchText));
   const ar = research.activeResearch;
   if (!ar || typeof ar !== "object" || Array.isArray(ar)) {
     el.innerHTML = "";
@@ -3685,6 +3699,9 @@ function renderResearchPage() {
   const RS = getResearchSystem();
   const bankEl = document.getElementById("research-bank");
   if (bankEl) bankEl.textContent = "科研工时余额：" + formatResearchHours((Number(research.researchHourBank) || 0) / 3600);
+  const researchAdSection = document.getElementById("research-ad-section");
+  const steamResearch = !!(window.PlatformRuntime && typeof window.PlatformRuntime.getPlatform === "function" && window.PlatformRuntime.getPlatform() === "steam");
+  if (researchAdSection) researchAdSection.style.display = steamResearch ? "none" : "";
   const adCounter = document.getElementById("research-ad-counter");
   if (adCounter && typeof ResearchAdSystem !== "undefined" && ResearchAdSystem) {
     // 共享额度池的权威存储是【顶层 state.adQuota】（见 js/systems/ad-buff.js getAdQuotaState）。
@@ -3854,6 +3871,7 @@ function onResearchAdClick(event) {
   if (!btn) return;
   const state = (typeof gameState !== "undefined" && gameState) ? gameState : null;
   if (!state) return;
+  if (window.PlatformRuntime && typeof window.PlatformRuntime.getPlatform === "function" && window.PlatformRuntime.getPlatform() === "steam") return;
   if (typeof ResearchAdSystem === "undefined" || !ResearchAdSystem) { showToast("广播模块未就绪"); return; }
   if (!ResearchAdSystem.canWatchResearchAd(state)) {
     const left = ResearchAdSystem.getDailyRemaining(state);
@@ -4968,13 +4986,18 @@ function openOrbitSelect(index) {
 function updateOrbitLibrary() {
   const display = getShipFittingDisplayState(gameState, orbitShipId); const container = document.getElementById("equipLibrary");
   if (!display || !container) return;
-  container.innerHTML = display.equipped.length ? display.equipped.map(item => {
+  const chips = (display.equipped || []).map(item => {
     const definition = EQUIPMENT_DB[item.id];
     const isRig = definition && definition.slot === "rig";
     const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
     const levelText = isRig ? "" : (level > 0 ? `· +${level}` : "· 未强化");
     return `<span class="el-item">${item.icon} ${item.name} <span class="el-enhancement-level">${levelText}</span></span>`;
-  }).join("") : '<span class="el-item" style="color:#4a5a6a;">暂无装备</span>';
+  });
+  // 泰坦内置装备（末日武器/核心）不在 fitting 表内 ⇒ equipmentRef 恒空、equipped 恒空，
+  // 必须单列，否则整块「已装配装备」误显「暂无装备」。条目形状见 selectors.getShipBuiltinEquipment
+  // （唯一实现），本处只负责套 .el-builtin 样式与「末日武器/核心」文案。
+  for (const item of (display.builtinEquipment || [])) chips.push('<span class="el-item el-builtin" title="' + item.note + '">' + item.icon + " " + item.name + ' <span class="el-enhancement-level">· ' + item.note + (item.count > 1 ? " ×" + item.count : "") + "</span></span>");
+  container.innerHTML = chips.length ? chips.join("") : '<span class="el-item" style="color:#4a5a6a;">暂无装备</span>';
 }
 
 function updateOrbitStats() {
@@ -5054,17 +5077,18 @@ function showRigResonanceModal(preview, def, onConfirm) {
 
 function renderQueuePanel() {
   const display = getQueueDisplayState(gameState);
+  const queueT = value => (window.I18N && typeof window.I18N.t === "function") ? window.I18N.t(String(value == null ? "" : value)) : String(value == null ? "" : value);
   const status = document.getElementById("queue-status-text"); if (status) status.textContent = display.statusText;
   const list = document.getElementById("queue-list"); if (!list) return display;
   list.innerHTML = display.items.length ? display.items.map(item => {
     let etaHtml;
     if (item.etaEndAt != null) {
-      etaHtml = `<span class="qi-eta${item.precise ? "" : " rough"}">${item.precise ? "预计 " : "预计≈ "}${escapeAchievementText(formatResearchDateTime(item.etaEndAt))}（${formatResearchDuration(item.etaRemainingSeconds)}后）</span>`;
+      etaHtml = `<span class="qi-eta${item.precise ? "" : " rough"}">${queueT((item.precise ? "预计 " : "预计≈ ") + formatResearchDateTime(item.etaEndAt) + "（" + formatResearchDuration(item.etaRemainingSeconds) + "后）")}</span>`;
     } else {
-      etaHtml = `<span class="qi-eta rough">${item.skill === "combat" && !item.active ? "取决于战斗" : "—"}</span>`;
+      etaHtml = `<span class="qi-eta rough">${queueT(item.skill === "combat" && !item.active ? "取决于战斗" : "—")}</span>`;
     }
-    return `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.isDirect ? "▶" : item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${item.skillLabel} · ${item.label}</span><span class="qi-detail">${item.countText}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${item.active ? "执行中" : "等待"}</span>${item.isDirect ? "" : `<div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div>`}</div>`;
-  }).join("") : '<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>';
+    return `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.isDirect ? "▶" : item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${queueT(item.skillLabel)} · ${queueT(item.label)}</span><span class="qi-detail">${queueT(item.countText)}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${queueT(item.active ? "执行中" : "等待")}</span>${item.isDirect ? "" : `<div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div>`}</div>`;
+  }).join("") : `<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">${queueT('队列为空，从技能面板点击"加入队列"添加任务')}</div>`;
   return display;
 }
 

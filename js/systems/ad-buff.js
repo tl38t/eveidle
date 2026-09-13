@@ -18,6 +18,7 @@ const AD_BUFF_MULTIPLIER = 1.3;                  // 独立乘区倍率
 const AD_BUFF_KEY = "cerebralPlasma";
 const AD_BUFF_EXTRACTOR_LARGE_MS = 30 * 60 * 1000;  // 大型提取剂：看广告获取，30 分钟
 const AD_BUFF_EXTRACTOR_SMALL_MS = 5 * 60 * 1000;   // 小型提取剂：重复脑插转化，5 分钟
+const CEREBRAL_SLOT_MAX_MS = 48 * 60 * 60 * 1000;
 
 // 取得/惰性初始化 gameState.adBuffs
 function getAdBuffState(state) {
@@ -27,9 +28,95 @@ function getAdBuffState(state) {
   return s.adBuffs;
 }
 
+function getCerebralSlotState(state) {
+  if (!isSteamRuntime()) return null;
+  const b = getAdBuffState(state);
+  if (!b) return null;
+  const today = getAdBuffDailyKey();
+  if (!b.cerebralSlot || typeof b.cerebralSlot !== "object" || Array.isArray(b.cerebralSlot)) {
+    b.cerebralSlot = { dailyDate: today, remainingMs: CEREBRAL_SLOT_MAX_MS };
+    if (typeof gameState !== "undefined" && gameState) gameState._dirty = true;
+  } else if (b.cerebralSlot.dailyDate !== today) {
+    b.cerebralSlot.dailyDate = today;
+    b.cerebralSlot.remainingMs = CEREBRAL_SLOT_MAX_MS;
+    if (typeof gameState !== "undefined" && gameState) gameState._dirty = true;
+  }
+  b.cerebralSlot.remainingMs = Math.max(0, Math.min(CEREBRAL_SLOT_MAX_MS, Number(b.cerebralSlot.remainingMs) || 0));
+  return b.cerebralSlot;
+}
+
+// Steam 脑突触槽按真实时间连续恢复：24 小时恢复 4 小时；启用时按真实时间消耗。
+function syncCerebralSlot(state) {
+  const slot = getCerebralSlotState(state);
+  if (!slot) return null;
+  const now = Date.now();
+  const storedLast = Number(slot.lastUpdatedAt);
+  if (!Number.isFinite(storedLast) || storedLast <= 0) {
+    slot.lastUpdatedAt = now;
+    if (typeof gameState !== "undefined" && gameState) gameState._dirty = true;
+    return slot;
+  }
+  const last = storedLast;
+  const elapsed = Math.max(0, now - last);
+  if (elapsed > 0) {
+    const recovered = elapsed / 6;
+    slot.remainingMs = Math.min(CEREBRAL_SLOT_MAX_MS, Math.max(0, Number(slot.remainingMs) || 0) + recovered);
+    if (slot.enabled) slot.remainingMs = Math.max(0, slot.remainingMs - elapsed);
+    if (slot.remainingMs <= 0) slot.enabled = false;
+    slot.lastUpdatedAt = now;
+    if (typeof gameState !== "undefined" && gameState) gameState._dirty = true;
+  }
+  return slot;
+}
+
+function isSteamRuntime() {
+  const g = (typeof globalThis !== "undefined") ? globalThis : null;
+  return !!(g && g.PlatformRuntime && typeof g.PlatformRuntime.getPlatform === "function" && g.PlatformRuntime.getPlatform() === "steam");
+}
+
+function getCerebralSlotStatus(state) {
+  const slot = syncCerebralSlot(state);
+  const remainingMs = slot ? slot.remainingMs : 0;
+  return {
+    maxMs: CEREBRAL_SLOT_MAX_MS,
+    remainingMs,
+    enabled: !!(slot && slot.enabled),
+    recoveryRate: 1 / 6,
+    recoverToFullMs: Math.ceil(Math.max(0, CEREBRAL_SLOT_MAX_MS - remainingMs) * 6),
+    dailyDate: slot ? slot.dailyDate : getAdBuffDailyKey()
+  };
+}
+
+function setCerebralSlotEnabled(state, enabled) {
+  const slot = syncCerebralSlot(state);
+  if (!slot) return false;
+  slot.enabled = !!enabled && slot.remainingMs > 0;
+  slot.lastUpdatedAt = Date.now();
+  if (typeof gameState !== "undefined" && gameState) gameState._dirty = true;
+  return slot.enabled;
+}
+
+function injectCerebralSlot(state, durationMs) {
+  const slot = getCerebralSlotState(state);
+  const amount = Math.max(0, Math.min(slot ? slot.remainingMs : 0, Number(durationMs) || 0));
+  if (!slot || amount <= 0) return 0;
+  const b = getAdBuffState(state);
+  const now = Date.now();
+  const end = Number(b[AD_BUFF_KEY]) || 0;
+  b[AD_BUFF_KEY] = (end > now ? end : now) + amount;
+  delete b.pausedAt;
+  slot.remainingMs -= amount;
+  if (typeof gameState !== "undefined" && gameState) gameState._dirty = true;
+  return amount;
+}
+
 // 当前独立乘区倍率（仅增益激活且未暂停期间为 1.3，否则 1.0）。
 // atTime 可选：离线结算传入虚拟时间戳，避免用 Date.now() 误判过去/未来是否生效。
 function getAdBuffMultiplier(state, atTime) {
+  if (isSteamRuntime()) {
+    const slot = syncCerebralSlot(state);
+    return slot && slot.enabled && slot.remainingMs > 0 ? AD_BUFF_MULTIPLIER : 1.0;
+  }
   const b = getAdBuffState(state);
   if (!b) return 1.0;
   const end = Number(b[AD_BUFF_KEY]) || 0;
@@ -229,6 +316,26 @@ function recordAdWatch(state) { consumeAdQuota(state); }
 
 // 状态快照（供 UI 显示）
 function getAdBuffStatus(state) {
+  if (isSteamRuntime()) {
+    const slot = getCerebralSlotStatus(state);
+    return {
+      multiplier: slot.enabled ? AD_BUFF_MULTIPLIER : 1.0,
+      active: slot.enabled,
+      paused: false,
+      remainingMs: slot.remainingMs,
+      extractors: { large: 0, small: 0 },
+      dailyCount: 0,
+      dailyCap: 0,
+      dailyRemaining: 0,
+      sharedQuota: false,
+      canWatch: false,
+      minIntervalMs: 0,
+      durationMs: 0,
+      extractorLargeMs: 0,
+      extractorSmallMs: 0,
+      cerebralSlot: slot
+    };
+  }
   const b = getAdBuffState(state);
   const active = !!b && (Number(b[AD_BUFF_KEY]) || 0) > Date.now() && !b.pausedAt;
   return {
@@ -245,7 +352,8 @@ function getAdBuffStatus(state) {
     minIntervalMs: AD_BUFF_MIN_INTERVAL_MS,
     durationMs: AD_BUFF_DURATION_MS,
     extractorLargeMs: AD_BUFF_EXTRACTOR_LARGE_MS,
-    extractorSmallMs: AD_BUFF_EXTRACTOR_SMALL_MS
+    extractorSmallMs: AD_BUFF_EXTRACTOR_SMALL_MS,
+    cerebralSlot: isSteamRuntime() ? getCerebralSlotStatus(state) : null
   };
 }
 
@@ -269,6 +377,10 @@ if (typeof window !== "undefined") {
   window.injectAllExtractors = injectAllExtractors;
   window.AD_BUFF_EXTRACTOR_LARGE_MS = AD_BUFF_EXTRACTOR_LARGE_MS;
   window.AD_BUFF_EXTRACTOR_SMALL_MS = AD_BUFF_EXTRACTOR_SMALL_MS;
+  window.CEREBRAL_SLOT_MAX_MS = CEREBRAL_SLOT_MAX_MS;
+  window.getCerebralSlotStatus = getCerebralSlotStatus;
+  window.setCerebralSlotEnabled = setCerebralSlotEnabled;
+  window.injectCerebralSlot = injectCerebralSlot;
   // ---- 广告每日共享额度池（脑突触加速 + 科研工时 共用）----
   window.getAdDailyUsed = getAdDailyUsed;
   window.getAdDailyRemaining = getAdDailyRemaining;
