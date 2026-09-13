@@ -1242,6 +1242,26 @@
         const fuelUsed = s.fuelInit - s.fuel;
         if (fuelUsed > 0) { RR.spend(state, "consumable:fuel", fuelUsed); addResource(s, "consumable:fuel", -fuelUsed); }
 
+        // 主动打捞同位素消耗（每击毁扣，开状态才记；flush 一次性 apply，与燃料同机制）
+        const isoUsed = (s.isoInit || 0) - (s.iso || 0);
+        if (isoUsed > 0) {
+          RR.spend(state, "planetary:同位素", isoUsed);
+          addResource(s, "planetary:同位素", -isoUsed);
+        }
+        // 打捞臂燃料消耗（装备即收，按总击毁数；开主动×3）；与同位素同机制 flush。
+        const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
+        if (salvageFuelPK > 0 && (s.kills || 0) > 0) {
+          const fuelAmt = salvageFuelPK * s.kills * (state.combat && state.combat.salvageArmActive ? 3 : 1);
+          if (fuelAmt > 0) { RR.spend(state, "consumable:fuel", fuelAmt); addResource(s, "consumable:fuel", -fuelAmt); }
+        }
+        // 激光定向打捞单元（MTU）燃料消耗：每击毁一艘扣一次（= Σ fuelPerKill × 战斗燃料倍率），按总击毁数 flush；
+        // 仅 active（flush 时燃料充足）才扣，与在线战斗一致。
+        const mtuFuelMod = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+        if (mtuFuelMod && mtuFuelMod.active && mtuFuelMod.fuelPerKill > 0 && (s.kills || 0) > 0) {
+          const mtuFuelAmt = Math.max(1, Math.round(mtuFuelMod.fuelPerKill)) * s.kills;
+          if (mtuFuelAmt > 0) { RR.spend(state, "consumable:fuel", mtuFuelAmt); addResource(s, "consumable:fuel", -mtuFuelAmt); }
+        }
+
         // ---- 掉落批量（确定性 RNG）----
         applyBatchedDrops(state, s);
       } finally {
@@ -1498,25 +1518,6 @@
           }
         }
       }
-    }
-    // 主动打捞同位素消耗（每击毁扣，开状态才记；flush 一次性 apply，与燃料同机制）
-    const isoUsed = (s.isoInit || 0) - (s.iso || 0);
-    if (isoUsed > 0) {
-      RR.spend(state, "planetary:同位素", isoUsed);
-      addResource(s, "planetary:同位素", -isoUsed);
-    }
-    // 打捞臂燃料消耗（装备即收，按总击毁数；开主动×3）；与同位素同机制 flush。
-    const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
-    if (salvageFuelPK > 0 && (s.kills || 0) > 0) {
-      const fuelAmt = salvageFuelPK * s.kills * (state.combat && state.combat.salvageArmActive ? 3 : 1);
-      if (fuelAmt > 0) { RR.spend(state, "consumable:fuel", fuelAmt); addResource(s, "consumable:fuel", -fuelAmt); }
-    }
-    // 激光定向打捞单元（MTU）燃料消耗：每击毁一艘扣一次（= Σ fuelPerKill × 战斗燃料倍率），按总击毁数 flush；
-    // 仅 active（flush 时燃料充足）才扣，与在线战斗一致。
-    const mtuFuelMod = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
-    if (mtuFuelMod && mtuFuelMod.active && mtuFuelMod.fuelPerKill > 0 && (s.kills || 0) > 0) {
-      const mtuFuelAmt = Math.max(1, Math.round(mtuFuelMod.fuelPerKill)) * s.kills;
-      if (mtuFuelAmt > 0) { RR.spend(state, "consumable:fuel", mtuFuelAmt); addResource(s, "consumable:fuel", -mtuFuelAmt); }
     }
     // 2) 区域特殊掉落
     for (const zoneId in da.zoneSpecial) {
