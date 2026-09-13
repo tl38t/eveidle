@@ -9,8 +9,8 @@
 
 window.GAME_CHANGELOG = [
   {
-    version: "0.9.1",
-    date: "2026-09-12",
+    version: "0.9.2",
+    date: "2026-09-13",
     sections: [
       {
         heading: "功能",

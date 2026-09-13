@@ -105,7 +105,7 @@
     return String(type || "") === "frontier_hq" ? "logistics_hub" : String(type || "");
   }
 
-  function renderBuildingSummary(alliance) {
+  function renderBuildingSummary(alliance, buttonClass) {
     var config = root.AllianceBuildingConfig;
     var buildings = alliance && Array.isArray(alliance.buildings) ? alliance.buildings : [];
     if (!config || !config.BUILDINGS) return "";
@@ -124,7 +124,7 @@
       var nextText = next ? " · 下级 " + next.cost + " 建设点" : " · 已满级";
       var canUpgrade = String(alliance.ownerId) === String(root.AllianceApi.getPlayerId()) && level < def.maxLevel;
       var upgradeButton = canUpgrade
-        ? '<button class="btn secondary alliance-upgrade-btn" data-building-type="' + esc(def.legacyId || id) + '" style="padding:4px 8px;margin-left:8px;">升级</button>'
+        ? '<button class="btn secondary ' + (buttonClass || "alliance-upgrade-btn") + '" data-building-type="' + esc(def.legacyId || id) + '" style="padding:4px 8px;margin-left:8px;">' + (level ? "升级" : "建造") + '</button>'
         : '';
       return '<div class="alliance-building-row" style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid #1e354b;">' +
         '<span>' + esc(def.name) + ' <span class="text-muted">Lv.' + esc(level) + '</span></span>' +
@@ -568,22 +568,7 @@
       cloudTaskStatus = "cloud";
       if (root.localStorage) root.localStorage.setItem(taskCacheKey, JSON.stringify(taskPreview));
     }
-    var returnedBuildingNames = { logistics_hub: "边疆联合总部", frontier_hq: "边疆联合总部", mission_hall: "联合任务大厅", combat_command: "前线作战指挥部", refining_core: "联合冶炼中枢" };
-    var returnedBuildingHtml = returnedBuildings.length
-      ? '<div class="alliance-card-title" style="margin-top:12px;">联盟建设</div><div class="alliance-members">' + returnedBuildings.map(function (building) {
-          var type = building.building_type || building.buildingType || "";
-          var level = Number(building.level) || 0;
-          var normalizedType = root.AllianceBuildingConfig && root.AllianceBuildingConfig.normalizeId
-            ? root.AllianceBuildingConfig.normalizeId(type) : type;
-          var buildingDef = root.AllianceBuildingConfig && root.AllianceBuildingConfig.BUILDINGS
-            ? root.AllianceBuildingConfig.BUILDINGS[normalizedType] : null;
-          var nextLevel = buildingDef && level < buildingDef.maxLevel ? buildingDef.levels[level] : null;
-          var nextCost = nextLevel ? ' · 下级 ' + nextLevel.cost + ' 建设点' : (level >= 5 ? ' · 已满级' : '');
-          var upgrade = String(returnedOwner) === String(playerId) && level < 5
-            ? '<button class="btn secondary alliance-returned-upgrade" data-building-type="' + esc(cloudBuildingType(type)) + '" style="padding:4px 8px;margin-left:8px;">升级</button>' : '';
-          return '<div class="alliance-member-row" style="display:flex;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-top:1px solid #1e354b;"><span>' + esc(returnedBuildingNames[type] || type || "建筑") + '</span><span class="text-muted" style="text-align:right;white-space:normal;">Lv.' + esc(level) + esc(nextCost) + upgrade + '</span></div>';
-        }).join("") + '</div>'
-      : '';
+    var returnedBuildingHtml = renderBuildingSummary({ buildings: returnedBuildings, ownerId: returnedOwner }, "alliance-returned-upgrade");
     var returnedConstructionHtml = returnedConstruction
       ? '<div class="alliance-meta">建设点：' + esc(returnedConstruction.points_balance || 0) + ' · 累计获得：' + esc(returnedConstruction.total_points_earned || 0) + '</div>'
       : '';

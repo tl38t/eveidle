@@ -4786,7 +4786,19 @@ function openEquipOrbit(shipRef) {
   const display = getShipFittingDisplayState(gameState, shipRef); if (!display) return;
   if (display.combatLocked) { showToast("战斗中不能调整当前舰船装备"); return; }
   orbitShipId = display.instanceId;
-  const title = document.getElementById("equipOrbitTitle"); if (title) title.textContent = display.name;
+  const title = document.getElementById("equipOrbitTitle");
+  const titleText = document.getElementById("equipOrbitTitleText");
+  if (titleText) titleText.textContent = display.name;
+  else if (title) title.textContent = display.name;
+  const fittingHelp = document.getElementById("equipFittingHelp");
+  if (fittingHelp && !fittingHelp.dataset.bound) {
+    fittingHelp.dataset.bound = "1";
+    fittingHelp.addEventListener("click", event => {
+      event.stopPropagation();
+      if (typeof showGameplayHelp === "function") showGameplayHelp("舰船装备配置", GAMEPLAY_HELP["舰船装备配置"]);
+    });
+  }
+  if (typeof initGameplayHelp === "function") initGameplayHelp();
   const subtitle = document.getElementById("equipOrbitSub"); if (subtitle) subtitle.textContent = display.tier + " · " + display.typeName;
   const modal = document.getElementById("equipOrbitModal"); if (modal) modal.classList.add("active");
   document.body.style.overflow = "hidden";

@@ -454,27 +454,25 @@ function initHoverInfo() {
 }
 
 const GAMEPLAY_HELP = {
-  '采矿': '1. 选择矿区并开始采集。\n\n2. 采集完成后领取产物，效率会受到技能、装备、增强剂和空间站后勤影响。\n\n3. 升级采矿技能和装备，可以提高产出与采集速度。',
-  '采气': '1. 选择气体区域并开始采集。\n\n2. 采集完成后领取气体，效率会受到技能、装备、增强剂和空间站后勤影响。\n\n3. 升级采气技能和装备，可以提高产出与采集速度。',
-  '冶炼': '1. 选择冶炼配方并准备材料。\n\n2. 开始冶炼后等待完成，产物会进入仓库。\n\n3. 冶炼效率会受到技能、装备、增强剂和联盟冶炼中枢加成影响。',
-  '行星开发': '1. 选择行星并部署生产线。\n\n2. 行星材料会随时间产出，完成后领取并重新部署。\n\n3. 合理安排行星与生产线，是稳定获取行星资源的关键。',
-  '动作队列': '1. 这里显示当前正在执行和等待执行的动作。\n\n2. 动作会按队列顺序完成，完成后可领取对应产物。\n\n3. 队列容量和执行效率会受到相关技能、装备与建筑加成影响。',
-  '舰船工程': '1. 选择舰船蓝图并准备所需材料。\n\n2. 开始制造后等待生产完成，成品会进入仓库。\n\n3. 升级舰船工程技能和相关加成，可以缩短制造时间。',
+  '采矿': '1. 选择矿区并开始采集。\n\n2. 在行动完成前可以查看进度；完成后领取矿物产物。\n\n3. 采矿效率和产出会受到技能、装备、增强剂以及空间站后勤加成影响。',
+  '气体采集': '1. 选择气体区域并开始采集。\n\n2. 在行动完成前可以查看进度；完成后领取气体产物。\n\n3. 采气效率和产出会受到技能、装备、增强剂以及空间站后勤加成影响。',
+  '冶炼': '1. 冶炼：选择配方并准备材料，完成后获得新的冶炼产物。\n\n2. 回收：选择可回收物品并投入材料，完成后按配方返还回收产物。\n\n3. 冶炼与回收的效率、产出会受到技能、装备、增强剂和联盟冶炼中枢影响；冶炼技能达到 50 级和 100 级时还会获得额外产出加成。',
+  '行星开发': '1. 选择行星并部署生产线，开始生产行星资源。\n\n2. 生产线运行到时间后，本轮生产结束；需要重新部署才能开始下一轮。\n\n3. 合理安排行星与生产线，可以稳定获取行星资源。',
+  '动作队列': '1. 这里显示当前正在执行和等待执行的动作。\n\n2. 动作会按队列顺序完成。',
+  '舰船工程': '1. 舰体制造：使用舰船蓝图和材料制造舰船主体。\n\n2. 舰船强化：消耗材料强化已拥有的舰船，提升舰船性能。\n\n3. 装备制造：制造舰船可使用的装备与组件；不同模块分别消耗对应材料并受相关技能和加成影响。',
   '装备工程': '1. 使用蓝图和材料制造装备、舰船组件及改装件。\n\n2. 制造完成的物品会进入仓库，可在船坞或装备界面使用。\n\n3. 高级配方通常需要更高技能等级和稀有材料。',
-  '增强剂制造': '1. 选择增强剂配方并准备材料。\n\n2. 制造完成后领取增强剂，在对应生产或行动界面装备使用。\n\n3. 增强剂提供限时效率加成，使用前请确认适用领域。',
+  '增强剂制造': '1. 选择配方并准备材料，制造增强剂。\n\n2. 将增强剂放入对应行动页面的增强剂槽内；只有进行该页面的行动时才会消耗。\n\n3. 不同增强剂可提供效率、经验、临时等级等不同加成，具体效果以槽位和配方说明为准。',
   '战斗行动': '1. 选择舰船和战斗区域后开始战斗。\n\n2. 战斗会消耗燃料并持续推进波次，击败敌人可获得材料和战利品。\n\n3. 舰船配置、装备、技能和联盟战斗加成都会影响战斗结果。',
   '考古行动': '1. 选择考古区域并装备探针。\n\n2. 开始扫描后等待行动完成，成功可获得材料、蓝图和稀有物品。\n\n3. 探针等级和考古加成会影响扫描效率与奖励质量。',
-  '船坞': '1. 查看已拥有的舰船并选择当前使用的舰船。\n\n2. 舰船可以装配装备、组件和改装件。\n\n3. 不同舰船适合不同的采集、制造和战斗场景。',
+  '船坞': '1. 查看已拥有的舰船并选择当前使用的舰船。\n\n2. 舰船可以装配、更换装备、组件和改装件，也可以进行舰船强化。\n\n3. 不同舰船适合不同的采集、制造和战斗场景。',
+  '舰船装备配置': '1. 点击环带上的槽位，查看该槽位可安装的装备、组件或改装件。\n\n2. 已安装的装备可以更换或卸下；改装件拆卸或替换时会被销毁，普通装备会返回仓库。\n\n3. 装备会影响舰船的攻击、防御、速度和岗位效率等属性；下方属性栏会显示当前配装后的结果。\n\n4. 完成调整后点击“完成”保存配装。战斗进行中不能调整当前出战舰船。',
   '商店': '1. 浏览并购买可用物品。\n\n2. 购买前确认价格、库存和适用范围。\n\n3. 商店内容会随游戏进度逐步开放。',
   '空间站管理': '1. 升级空间站设施，获得生产、仓储和后勤加成。\n\n2. 设施升级需要消耗对应资源或建设材料。\n\n3. 设施之间存在协同关系，优先升级当前主要玩法需要的项目。',
-  '军团': '1. 军团是跨玩家的长期成长系统。\n\n2. 通过军团研究、编队和相关玩法获得团队加成。\n\n3. 军团等级和成员贡献会影响可用功能。',
-  '星图': '1. 在星图上探索并解锁采集节点。\n\n2. 节点可提供持续资源或特殊奖励，部分区域需要满足条件后进入。\n\n3. 规划路线和节点分配，可以提高长期收益。',
-  '虫洞': '1. 选择虫洞入口并配置出击舰船。\n\n2. 虫洞行动包含探索、战斗和事件，完成后领取奖励。\n\n3. 注意燃料、舰船状态和当前阶段限制。',
-  '仓库': '1. 查看和整理矿物、装备、蓝图、材料与战利品。\n\n2. 物品可用于制造、装配、任务提交或出售。\n\n3. 定期清理无用物品，为重要材料预留空间。',
-  '存档管理': '1. 保存当前游戏进度，必要时可导出或导入存档。\n\n2. 进行重要操作前建议先保存。\n\n3. 导入存档会覆盖当前进度，请确认文件来源。',
-  '设置': '1. 调整音效、显示、语言和其他游戏选项。\n\n2. 设置会保存在本地，清理浏览器数据可能导致设置重置。\n\n3. 遇到显示或连接问题，可先使用网络诊断。',
-  '统计档案': '1. 查看采集、制造、战斗和资源等历史统计。\n\n2. 统计用于了解成长趋势，不会改变实际游戏状态。',
-  '成就': '1. 完成指定目标即可解锁成就。\n\n2. 成就记录会随进度保存，部分成就需要完成特定玩法或条件。\n\n3. 已解锁成就可在这里查看。',
+  '军团': '1. 通过军团研究、编队和相关玩法获得团队加成。\n\n2. 军团等级和成员贡献会影响可用功能。',
+  '星图': '1. 采集节点：在限定时间内完成采集目标，成功制压后获得对应的矿物、气体或其他资源。\n\n2. 战斗节点：在限定时间内完成战斗并制压节点，战斗难度和奖励会根据节点等级变化。\n\n3. 考古节点：在限定时间内完成扫描、分析或挖掘，达到要求后制压节点。\n\n4. 生产节点：根据节点要求提交指定物品或舰船。提交成功后会扣除对应库存，并立即完成节点；部分高级生产节点还会要求装备或舰船达到指定强化等级。\n\n制压节点后，会自动产出该节点对应的资源。不同节点的资源类型和产出数量不同。\n\n制压三个泰坦组件战斗节点后，分别解锁泰坦舰体、动力核心和功能系统组件的制造权限。\n\n制压中央的先驱文明核心后，解锁泰坦制造总权限、虫洞和虫洞商店。只有中央节点权限与三个泰坦组件权限全部具备后，才能完整制造泰坦。',
+  '虫洞': '1. 虫洞会随机生成，每天最多进入三次；可以使用裂隙重构增加或刷新机会。\n\n2. 虫洞节点玩法与星图相同，完成节点可获得虫洞代币和其他资源，但也可能遇到负面词条。\n\n3. 根据舰船状态、燃料和节点条件规划路线，谨慎处理虫洞事件。',
+  '仓库': '查看矿物、装备、蓝图、材料与战利品等物品，并可在这里强化舰船装备。',
+  '成就': '1. 完成指定目标即可解锁成就。\n\n2. 完成成就可以获得研究工时。\n\n3. 可将研究工时投入研究项目，加速研究进度；研究工时最多只能将研究时间缩短至原时间的一半。',
   '标准服技能排行榜': '1. 排行榜展示玩家的技能和成长数据。\n\n2. 数据更新可能存在延迟，以云端记录为准。\n\n3. 提升技能等级即可提高对应排名。',
   '研究': '1. 选择研究项目并投入研究资源。\n\n2. 研究完成后解锁新的配方、能力或玩法。\n\n3. 根据当前发展方向安排研究顺序。'
 };
@@ -500,7 +498,9 @@ function initGameplayHelp() {
     style.textContent = '.gameplay-help-btn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;margin-left:8px;padding:0;border:1px solid #5d9aca;border-radius:50%;background:#173752;color:#9fddff;font-size:14px;font-weight:800;vertical-align:middle;cursor:pointer}.gameplay-help-overlay{position:fixed;inset:0;z-index:10000;display:flex;align-items:center;justify-content:center;padding:18px;background:rgba(3,8,15,.78)}.gameplay-help-modal{width:min(520px,94vw);max-height:80vh;overflow:auto;padding:22px;border:1px solid #6ca6c9;border-radius:14px;background:#101b2a;color:#dceeff;box-shadow:0 16px 50px rgba(0,0,0,.55)}.gameplay-help-modal h3{margin:0 0 14px;color:#9fddff;font-size:20px}.gameplay-help-body{white-space:pre-line;color:#b8c9da;font-size:15px;line-height:1.75}.gameplay-help-close{display:block;margin:20px 0 0 auto;padding:8px 18px;border:1px solid #3d7552;border-radius:6px;background:#183523;color:#9be39e;font-weight:700;cursor:pointer}';
     document.head.appendChild(style);
   }
-  document.querySelectorAll('.panel-header > .panel-title').forEach(titleNode => {
+  // 不同页面的标题层级不完全一致：技能页有时不是 panel-header 的直接子节点。
+  // 统一扫描所有 panel-title，避免采矿、采气、冶炼和装备工程漏挂帮助按钮。
+  document.querySelectorAll('.panel-title').forEach(titleNode => {
     if (titleNode.querySelector('.gameplay-help-btn')) return;
     const title = titleNode.textContent.replace(/^[^\u4e00-\u9fffA-Za-z]+/, '').trim();
     if (title.indexOf('联盟大厅') >= 0) return;
@@ -628,7 +628,12 @@ function updateUI(now) {
   if (typeof renderStarmapTrialRoom === "function") renderStarmapTrialRoom(renderTime);
   const viewKey = currentView;
   const shell = getSkillShellDisplayState(gameState, viewKey);
-  const panelTitle = document.getElementById("skill-panel-title"); if (panelTitle) panelTitle.textContent = shell.icon + " " + shell.name;
+  const panelTitle = document.getElementById("skill-panel-title");
+  if (panelTitle) {
+    // 技能页标题会在每次渲染时重写 textContent，这会清掉标题旁已挂载的帮助按钮。
+    panelTitle.textContent = shell.icon + " " + shell.name;
+    initGameplayHelp();
+  }
   const panelStatus = document.getElementById("skill-panel-status"); if (panelStatus) panelStatus.textContent = shell.status;
   const nameEl = document.querySelector('.skill-current .skill-name'); if (nameEl) nameEl.textContent = shell.name;
   const activityEl = document.getElementById("current-activity");
