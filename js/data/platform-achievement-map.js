@@ -24,6 +24,15 @@
 
   // 已确认的 TapTap ID（Steam ID 由 achievements.js 的 steam 字段自动提供）。
   const OVERRIDES = Object.freeze({
+    // --- R1 batch: 用户后台已建 + 图标已传, 复用内部ID (A07 项目未定义, 跳过) ---
+    "A01": { taptap: "A01", steam: null },
+    "A02": { taptap: "A02", steam: null },
+    "A03": { taptap: "A03", steam: null },
+    "A04": { taptap: "A04", steam: null },
+    "A05": { taptap: "A05", steam: null },
+    "A06": { taptap: "A06", steam: null },
+    "A08": { taptap: "A08", steam: null },
+    // --- 后续批次候选 (provisional, 后台待建) ---
     // "G01": { taptap: "ach_colonize_lava", steam: null },
     // "G02": { taptap: "ach_colonize_gas",  steam: null },
     // "G03": { taptap: "ach_colonize_ice",  steam: null },
