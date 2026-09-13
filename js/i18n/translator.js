@@ -91,14 +91,21 @@
     elements.forEach(translateAttributes);
   }
   function applyNav() { apply(document.body); document.documentElement.lang = locale; document.title = locale === "en-US" ? "Deep Space Idle" : "深空放置"; }
-  function setLocale(next) {
+  function broadcastLocale() {
+    var frame = document.getElementById("legion-starmap-frame");
+    if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "deep-space-idle/locale", locale: locale }, "*");
+  }
+  // persist 仅在玩家于设置里主动选择时为真。平台（Steam）驱动与父页广播传入的
+  // locale 不能落盘：那不是玩家的选择，一旦写进本地存储就会在下次启动时压过
+  // Steam 语言，导致玩家改客户端语言后界面不再跟随。
+  function setLocale(next, persist) {
     if (!supported.includes(next)) return;
     locale = next; setActiveCatalog();
-    try { localStorage.setItem(STORAGE_KEY, next); } catch (error) { /* sandboxed storage */ }
+    if (persist !== false) { try { localStorage.setItem(STORAGE_KEY, next); } catch (error) { /* sandboxed storage */ } }
     applyNav();
     var control = document.getElementById("setting-language"); if (control) control.value = locale;
     window.dispatchEvent(new CustomEvent("localechange", { detail: { locale: locale } }));
-    var frame = document.getElementById("legion-starmap-frame"); if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "deep-space-idle/locale", locale: locale }, "*");
+    broadcastLocale();
   }
   // 桌面壳（Steam）正常会由 preload 同步注入 window.STEAM_LOCALE，此处兜底
   // 「首帧拿不到语言」的情形：壳层的 Steam 初始化由游戏按需触发，可能晚于首帧，
@@ -122,11 +129,23 @@
       try { explicit = localStorage.getItem(STORAGE_KEY) || ""; } catch (error) { /* sandboxed storage */ }
       // 玩家在设置里的手动选择和 URL 显式指定都优先于平台语言。
       if (queryLocale || explicit || next === locale) return;
-      setLocale(next);
+      setLocale(next, false);
     }).catch(function () { /* 壳层未提供语言时保持当前语言 */ });
   }
   setActiveCatalog();
-  window.I18N = { getLocale: function () { return locale; }, setLocale: setLocale, t: function (key) { return locale === "zh-CN" ? key : (catalog.get(key) || key); } };
+  // iframe 子页拿不到 preload 注入的 STEAM_LOCALE（preload 只注入主 frame，
+  // webPreferences 未开 nodeIntegrationInSubFrames），它按浏览器语言自算，
+  // 所以启动后主动向父页请求一次真实语言。
+  window.addEventListener("message", function (event) {
+    var data = event.data;
+    if (!data || data.type !== "deep-space-idle/locale-request") return;
+    broadcastLocale();
+  });
+  window.I18N = {
+    getLocale: function () { return locale; },
+    setLocale: function (next, options) { setLocale(next, options && options.persist); },
+    t: function (key) { return locale === "zh-CN" ? key : (catalog.get(key) || key); }
+  };
   document.addEventListener("DOMContentLoaded", function () {
     applyNav();
     var control = document.getElementById("setting-language");
