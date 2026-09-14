@@ -250,6 +250,40 @@
       });
   }
 
+  // 联盟成员统计：当日贡献 / 总贡献 / 最后上线 / 是否盟主。
+  // 云端与原生共用同一 RPC，保证两侧数据一致。
+  function getMemberStats(allianceId) {
+    var id = Number(allianceId);
+    if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(new Error("联盟 ID 无效"));
+    return authed("/v1/rdb/rest/rpc/get_alliance_member_stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p_alliance_id: id })
+    }).then(function (rows) {
+      return (rows || []).map(function (r) {
+        return {
+          playerId: r.player_id,
+          username: r.username || "",
+          isOwner: !!r.is_owner,
+          totalPoints: Number(r.total_points) || 0,
+          dailyPoints: Number(r.daily_points) || 0,
+          lastOnlineAt: r.last_online_at || null
+        };
+      });
+    });
+  }
+
+  // 心跳：玩家打开联盟面板时更新最后上线时间（失败不影响主流程）
+  function pingOnline() {
+    var pid = getPlayerId();
+    if (!pid) return Promise.resolve();
+    return authed("/v1/rdb/rest/rpc/touch_player_online", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ p_player_id: pid })
+    }).catch(function () { /* 心跳失败静默 */ });
+  }
+
   function createAlliance(value) {
     var check = root.AlliancePolicy.validate(value);
     if (!check.ok) return Promise.reject(new Error(check.reason));
@@ -372,6 +406,8 @@
     getAlliance: getAlliance,
     listAlliances: listAlliances,
     getMembers: getMembers,
+    getMemberStats: getMemberStats,
+    pingOnline: pingOnline,
     createAlliance: createAlliance,
     joinAlliance: joinAlliance,
     leaveAlliance: leaveAlliance,

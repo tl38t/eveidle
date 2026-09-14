@@ -2,7 +2,8 @@
 create table if not exists public.players (
   player_id varchar(100) primary key,
   username varchar(12) not null,
-  created_at timestamptz not null default now()
+  created_at timestamptz not null default now(),
+  last_online_at timestamptz
 );
 
 alter table public.players enable row level security;

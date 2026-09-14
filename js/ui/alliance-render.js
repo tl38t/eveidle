@@ -14,6 +14,26 @@
     });
   }
 
+  // 最后上线时间 → 相对时间（如「3 小时前」）。导出便于单测。
+  function formatRelativeTime(value) {
+    if (!value) return "从未上线";
+    var t = new Date(value).getTime();
+    if (isNaN(t)) return "从未上线";
+    var diff = Date.now() - t;
+    if (diff < 0) diff = 0;
+    var min = Math.floor(diff / 60000);
+    if (min < 1) return "刚刚";
+    if (min < 60) return min + " 分钟前";
+    var hr = Math.floor(min / 60);
+    if (hr < 24) return hr + " 小时前";
+    var day = Math.floor(hr / 24);
+    if (day < 30) return day + " 天前";
+    var mon = Math.floor(day / 30);
+    if (mon < 12) return mon + " 个月前";
+    return Math.floor(mon / 12) + " 年前";
+  }
+  root.AllianceRenderHelpers = { formatRelativeTime: formatRelativeTime };
+
   // In-game direct cloud read (desktop first). TapTap keeps working because any
   // network failure degrades to the cloud-page fallback below.
   var activeRender = null;
@@ -147,9 +167,10 @@
       return aOwner - bOwner;
     });
     var memberRows = members.map(function (member) {
-      var isOwner = String(member.playerId) === String(alliance.ownerId);
+      var isOwner = member.isOwner || String(member.playerId) === String(alliance.ownerId);
+      var stats = '<span class="text-muted" style="display:block;font-size:12px;margin-top:2px;">当日 ' + esc(member.dailyPoints) + ' · 总 ' + esc(member.totalPoints) + ' · ' + esc(formatRelativeTime(member.lastOnlineAt)) + '</span>';
       return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
-        '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "未设置昵称") + '</span>' +
+        '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "未设置昵称") + stats + '</span>' +
         '<span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap;">' +
         '<span class="text-muted">' + (isOwner ? "盟主" : "成员") + '</span>' +
         ((!isOwner && String(alliance.ownerId) === String(root.AllianceApi.getPlayerId()))
@@ -401,10 +422,12 @@
     }
     var box = document.getElementById("alliance-state");
     if (!box) return;
+    if (root.AllianceApi && typeof root.AllianceApi.pingOnline === "function") root.AllianceApi.pingOnline();
     withTimeout(root.AllianceApi.getAlliance(), 8000).then(function (alliance) {
       if (alliance) {
         rememberAlliance(alliance);
-        return root.AllianceApi.getMembers(alliance.id).then(function (members) {
+        return root.AllianceApi.getMemberStats(alliance.id).then(function (members) {
+          if (root.AllianceApi && typeof root.AllianceApi.pingOnline === "function") root.AllianceApi.pingOnline();
           box.innerHTML = renderMemberCard(alliance, members);
           bindAdminActions(box, alliance, members, ctx.msg);
           bindMembershipActions(box, alliance, ctx.msg);
@@ -566,7 +589,7 @@
     // Do not carry a previous alliance summary into the next round trip.
     // Otherwise URLSearchParams may read the old duplicate parameter first.
     var returnUrl = root.location.href.split("?")[0].split("#")[0];
-    var url = cloudOrigin + "/?embedded=1&v=4&playerId=" + encodeURIComponent(playerId) +
+    var url = cloudOrigin + "/?embedded=1&v=5&playerId=" + encodeURIComponent(playerId) +
       "&returnUrl=" + encodeURIComponent(returnUrl) +
       "&taskDate=" + encodeURIComponent(taskDate || "") +
       "&taskPreview=" + encodeURIComponent(JSON.stringify(taskPreview));
