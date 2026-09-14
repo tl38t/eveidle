@@ -39,6 +39,46 @@ function getShipConfigById(shipId) {
     || null;
 }
 
+// 舰船自定义名：基础客户端过滤（私有名，仅玩家自己可见，不触服务端审核）。
+// 在线 UGC 场景才需接天御 / 微信内容安全 API + 热更新词库。
+var SHIP_NAME_FORBIDDEN = [
+  "习近平", "毛主席", "习大大", "法轮", "台独", "港独", "疆独", "藏独", "反共",
+  "操你", "傻逼", "草泥", "鸡巴", "裸聊", "骚货",
+  "恐怖", "炸弹", "砍人", "枪支", "军火", "手枪",
+  "毒品", "冰毒", "大麻", "可卡因", "鸦片", "赌博", "博彩", "私彩",
+  "微信", "vx", "v信", "qq", "加我", "微信号", "qq号", "手机号", "http", "https", "www.",
+  "eve online", "ccp", "深空放置", "边疆纪元", "深空边疆"
+];
+function stripShipNameBadChars(s) {
+  var out = "";
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charCodeAt(i);
+    if (c < 32 || c === 127) continue;
+    if (c >= 0x200b && c <= 0x200f) continue;
+    if (c === 0xfeff) continue;
+    out += s[i];
+  }
+  return out;
+}
+function validateShipName(raw) {
+  var s = typeof raw === "string" ? raw : "";
+  try { s = s.normalize("NFKC"); } catch (e) {}
+  s = stripShipNameBadChars(s).trim();
+  if (s.length === 0) return { ok:true, name:"" };
+  if (Array.from(s).length > 24) return { ok:false, reason:"名称过长，最多 24 个字符" };
+  var low = s.toLowerCase();
+  for (var i = 0; i < SHIP_NAME_FORBIDDEN.length; i++) {
+    if (low.indexOf(SHIP_NAME_FORBIDDEN[i].toLowerCase()) !== -1) return { ok:false, reason:"名称包含不被允许的词汇" };
+  }
+  return { ok:true, name:s };
+}
+function getShipInstanceDisplayName(instance) {
+  if (!instance) return "";
+  if (instance.customName && String(instance.customName).trim()) return instance.customName;
+  var cfg = getShipConfigById(instance.shipId);
+  return cfg ? cfg.name : (instance.shipId || "");
+}
+
 // ---- 舰船工程 UI 重做（2026-08-04）：部件分类 / 总装技术线 常量与分类辅助 ----
 const SHIP_COMPONENT_CLASSES = [
   { id:"integrated", name:"护卫部件" },
@@ -4417,33 +4457,35 @@ function getShipFittingDisplayState(state, shipRef) {
   // （唯一实现，战斗控制台装备架共用同一函数），禁止在此另写一份。
   const usableHigh = getUsableHighSlots(config);
   if (config.slots.highUsable !== undefined) slots.highUsable = usableHigh;
+  // 轨道槽位按舰船真实槽位数量生成（含研究增量、改装件等），不再硬编码 8/8/8。
   const orbitSlots = [];
-  const totalOrbitSlots = 24 + slots.rig; // 8高 + 8中 + 8低 + 本舰 rig 槽数（rig 索引从 24 起，随舰船动态；illuminator=28，starcrown=29）
-  for (let index = 0; index < totalOrbitSlots; index++) {
-    const type = index < 8 ? "high" : index < 16 ? "mid" : index < 24 ? "low" : "rig";
-    const start = type === "high" ? 0 : type === "mid" ? 8 : type === "low" ? 16 : 24;
-    const slotIndex = index - start;
-    // 末日武器占用格：[usableHigh, slots.high) 段——显示出来但不可更换（enabled=false 阻断选装面板）
-    const ddayInfo = getDoomsdaySlotInfo(config, type, slotIndex);
-    const doomsday = Boolean(ddayInfo);
-    let enabled = slotIndex < slots[type]; // rig 槽已随改装件系统解禁（超出舰船槽数的仍禁用）
-    if (doomsday) enabled = false;
-    const equipmentRef = enabled ? fitting[type][slotIndex] || null : null;
-    const resolved = equipmentRef ? resolveEquipmentReference(state, equipmentRef) : null;
-    const equipment = resolved ? resolved.definition : null;
-    // 管路接口：本格为空但被某件已安装精炼泵的 reserves 锁定（fitted 值为 null）
-    const lockedBy = (enabled && !equipmentRef && Array.isArray(state.equipment && state.equipment.instances))
-      ? (state.equipment.instances.find(inst => inst && inst.installedOn === instance.instanceId && inst.reserves && inst.reserves[type] === slotIndex) || null)
-      : null;
-    orbitSlots.push({
-      index, type, slotIndex, enabled, equipmentRef, equipmentId: resolved ? resolved.itemId : null,
-      enhancementLevel: resolved ? resolved.enhancementLevel : 0,
-      name: doomsday ? ddayInfo.name : (equipment ? equipment.name : ""),
-      icon: doomsday ? ddayInfo.icon : (equipment ? ITEM_ICONS[equipment.name] || "📦" : null),
-      installedInstanceId: resolved && resolved.instance ? resolved.instance.instanceId : null,
-      lockedBy: lockedBy ? lockedBy.instanceId : null,
-      doomsday: doomsday ? { name:ddayInfo.name, desc:(ddayInfo.coreName ? "核心供能：" + ddayInfo.coreName : ""), locked:true } : null
-    });
+  let index = 0;
+  for (const type of ["high", "mid", "low", "rig"]) {
+    const count = slots[type] || 0;
+    for (let slotIndex = 0; slotIndex < count; slotIndex++) {
+      // 末日武器占用格：[usableHigh, slots.high) 段——显示出来但不可更换（enabled=false 阻断选装面板）
+      const ddayInfo = getDoomsdaySlotInfo(config, type, slotIndex);
+      const doomsday = Boolean(ddayInfo);
+      let enabled = slotIndex < slots[type]; // rig 槽已随改装件系统解禁（超出舰船槽数的仍禁用）
+      if (doomsday) enabled = false;
+      const equipmentRef = enabled ? fitting[type][slotIndex] || null : null;
+      const resolved = equipmentRef ? resolveEquipmentReference(state, equipmentRef) : null;
+      const equipment = resolved ? resolved.definition : null;
+      // 管路接口：本格为空但被某件已安装精炼泵的 reserves 锁定（fitted 值为 null）
+      const lockedBy = (enabled && !equipmentRef && Array.isArray(state.equipment && state.equipment.instances))
+        ? (state.equipment.instances.find(inst => inst && inst.installedOn === instance.instanceId && inst.reserves && inst.reserves[type] === slotIndex) || null)
+        : null;
+      orbitSlots.push({
+        index, type, slotIndex, enabled, equipmentRef, equipmentId: resolved ? resolved.itemId : null,
+        enhancementLevel: resolved ? resolved.enhancementLevel : 0,
+        name: doomsday ? ddayInfo.name : (equipment ? equipment.name : ""),
+        icon: doomsday ? ddayInfo.icon : (equipment ? ITEM_ICONS[equipment.name] || "📦" : null),
+        installedInstanceId: resolved && resolved.instance ? resolved.instance.instanceId : null,
+        lockedBy: lockedBy ? lockedBy.instanceId : null,
+        doomsday: doomsday ? { name:ddayInfo.name, desc:(ddayInfo.coreName ? "核心供能：" + ddayInfo.coreName : ""), locked:true } : null
+      });
+      index++;
+    }
   }
   const equippedIds = Object.values(fitting).flat().filter(Boolean);
   const enhancement = getShipEnhancementBonuses(config, instance.enhancementLevel);

@@ -760,7 +760,7 @@
   // 21 条规则（顺序即求值顺序）：
   //   F01 首次扫描（尝试 >=1）、F02–F16 各站点首次解析（成功 >=1）、
   //   F17 全部 5 档各成功 >=1、F18 首次出售、F19 累计出售 100、
-  //   F20 累计考古 LP 10000、F21 首次稀有掉落（unique）。
+  //   F20 累计考古 LP 10000、F21 首次稀有掉落（稀有发现池 archaeology:rareFound，不再依赖独特文物）。
   const ARCHAEOLOGY_RULES = Object.freeze([
     archaeologyTotalRule("F01", "archaeologyAttempts", 1),
     archaeologyTierSetRule("F17", ARCHAEOLOGY_TIER_KEYS, 1),

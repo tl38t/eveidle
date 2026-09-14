@@ -514,7 +514,11 @@
     const skill = getSkillById(npc.skillId);
     if (!skill || !skill.shipClass) return 1.0;      // 管理类：舰船倍率不参与（调用方改用建筑倍率）
     const compatible = (getShipRole(type) === skill.shipClass);
-    return compatible ? tierMult : tierMult * 0.5;   // 不相容 → 50% 惩罚
+    const base = compatible ? tierMult : tierMult * 0.5;   // 不相容 → 50% 惩罚
+    // 经验改装件（rig_skill_xp 的 skillXpBonus）计入本舰技能经验获取
+    const rigMods = (typeof getRigModifiers === "function") ? (getRigModifiers(state, ship) || {}) : {};
+    const skillXpBonus = Number(rigMods.skillXpBonus) || 0;
+    return base * (1 + skillXpBonus);
   }
 
   function getLegionNpcManagementXpMultiplier(state) {

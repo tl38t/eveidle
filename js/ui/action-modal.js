@@ -213,3 +213,14 @@ function queueActionConfirmation() {
     document.getElementById("action-batch-infinity").classList.add("selected");
   });
 })();
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 6 个顶层声明被 js/ui/archaeology-render.js、js/ui/booster-render.js、js/ui/combat-render.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.showActionConfirm = showActionConfirm;
+if (typeof window !== "undefined") window.refreshActionConfirmation = refreshActionConfirmation;
+if (typeof window !== "undefined") window.hideActionConfirm = hideActionConfirm;
+if (typeof window !== "undefined") window.showShipCompConfirm = showShipCompConfirm;
+if (typeof window !== "undefined") window.showShipAsmConfirm = showShipAsmConfirm;
+if (typeof window !== "undefined") window.queueActionConfirmation = queueActionConfirmation;
+if (typeof module !== "undefined" && module.exports) module.exports = { showActionConfirm: showActionConfirm, refreshActionConfirmation: refreshActionConfirmation, hideActionConfirm: hideActionConfirm, showShipCompConfirm: showShipCompConfirm, showShipAsmConfirm: showShipAsmConfirm, queueActionConfirmation: queueActionConfirmation };

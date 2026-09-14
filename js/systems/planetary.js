@@ -188,3 +188,11 @@ function planetaryTick(tickNow) {
   }
   return changed;
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 3 个顶层声明被 js/core/offline.js、js/core/tick.js 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.advancePlanetDeploymentTimeline = advancePlanetDeploymentTimeline;
+if (typeof window !== "undefined") window.tryRenewExpiredDeployment = tryRenewExpiredDeployment;
+if (typeof window !== "undefined") window.planetaryTick = planetaryTick;
+if (typeof module !== "undefined" && module.exports) module.exports = { advancePlanetDeploymentTimeline: advancePlanetDeploymentTimeline, tryRenewExpiredDeployment: tryRenewExpiredDeployment, planetaryTick: planetaryTick };

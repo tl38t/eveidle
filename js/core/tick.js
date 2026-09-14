@@ -585,3 +585,9 @@ function gameTick() {
   updateLiveUI();
   if (actionCompleted) refreshVisiblePanelAfterAction();
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 1 个顶层声明被 js/ui/error-boundary.js、js/ui/render.js 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.gameTick = gameTick;
+if (typeof module !== "undefined" && module.exports) module.exports = { gameTick: gameTick };

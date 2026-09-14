@@ -114,3 +114,20 @@ function advanceQueue() {
   }
   executeQueueItem(nextIndex); return true;
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 12 个顶层声明被 js/core/offline.js、js/core/tick.js、js/ui/action-modal.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.resetActionProgress = resetActionProgress;
+if (typeof window !== "undefined") window.completeQueuedActionCycle = completeQueuedActionCycle;
+if (typeof window !== "undefined") window.startQueue = startQueue;
+if (typeof window !== "undefined") window.moveQueueItem = moveQueueItem;
+if (typeof window !== "undefined") window.getQueueSkillLabel = getQueueSkillLabel;
+if (typeof window !== "undefined") window.addToQueue = addToQueue;
+if (typeof window !== "undefined") window.removeFromQueue = removeFromQueue;
+if (typeof window !== "undefined") window.clearQueue = clearQueue;
+if (typeof window !== "undefined") window.moveQueueItemToTop = moveQueueItemToTop;
+if (typeof window !== "undefined") window.onActionProgressReset = onActionProgressReset;
+if (typeof window !== "undefined") window.stopQueue = stopQueue;
+if (typeof window !== "undefined") window.advanceQueue = advanceQueue;
+if (typeof module !== "undefined" && module.exports) module.exports = { resetActionProgress: resetActionProgress, completeQueuedActionCycle: completeQueuedActionCycle, startQueue: startQueue, moveQueueItem: moveQueueItem, getQueueSkillLabel: getQueueSkillLabel, addToQueue: addToQueue, removeFromQueue: removeFromQueue, clearQueue: clearQueue, moveQueueItemToTop: moveQueueItemToTop, onActionProgressReset: onActionProgressReset, stopQueue: stopQueue, advanceQueue: advanceQueue };

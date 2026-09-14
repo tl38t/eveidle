@@ -770,9 +770,16 @@ function consumeStatisticsEvent(event) {
       }
       break;
     }
+    case "archaeology:rareFound": {
+      // 稀有掉落（F21 权威事实）：稀有发现池（蓝图/增幅剂/探针/凭证）首次出现即累计。
+      // 独特文物（category==="unique"）生产路径从未掷骰、不可达；玩家反馈 F21「开门？/首次稀有掉落」完成不了，
+      // 故改以实际可触发的稀有发现池（archaeology:rareFound）为准。
+      statistics.totals.archaeologyRareFinds += 1;
+      break;
+    }
     case "archaeology:artifactFound": {
-      // 稀有掉落（F21 权威事实）：仅 category==="unique" 累计；其余类别不入账（handled=false）。
-      // 实验室加成掉落同样经由本事件；station:archaeologyBonusTriggered 仅为附加信息，不消费以免双计数。
+      // 独特文物（category==="unique"）：生产路径未掷骰、art_*_unique_* 永不生成，无对应计数；非 unique 类别亦不计入。
+      // 保留分支仅作占位；rareFound 与 artifactFound 为不同事件，不会双计。
       if (payload.category === "unique") {
         statistics.totals.archaeologyRareFinds += 1;
       } else {

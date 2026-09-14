@@ -300,7 +300,8 @@ const ManufacturingStateActions = {
       shipSubAction:"component",
       startedShipCompTarget:recipe.id,
       progress:0,
-      lastProgressUpdate:now
+      lastProgressUpdate:now,
+      batchRemaining:1
     });
     state._dirty = true;
     return { changed:true, recipe };
@@ -326,7 +327,8 @@ const ManufacturingStateActions = {
       shipSubAction:"assembly",
       startedShipAsmTarget:recipe.id,
       progress:0,
-      lastProgressUpdate:now
+      lastProgressUpdate:now,
+      batchRemaining:1
     });
     state._dirty = true;
     return { changed:true, recipe };
@@ -375,7 +377,8 @@ const ManufacturingStateActions = {
       titanAsmCombo:{ hull:combo.hull, weapon:combo.weapon, core:combo.core },
       startedTitanAsmCombo:{ hull:combo.hull, weapon:combo.weapon, core:combo.core },
       progress:0,
-      lastProgressUpdate:now
+      lastProgressUpdate:now,
+      batchRemaining:1
     });
     state._dirty = true;
     return { changed:true, recipe };
@@ -1616,6 +1619,17 @@ const ShellStateActions = {
     return { changed:true, assigned:!removing, instance };
   },
 
+  renameShip(state, instanceId, rawName, now) {
+    const instance = getShipInstanceFromState(state, instanceId);
+    if (!instance) return { changed:false, reason:"unknown-ship" };
+    const res = validateShipName(rawName);
+    if (!res.ok) return { changed:false, reason:res.reason };
+    if ((instance.customName || "") === res.name) return { changed:false, reason:"same-name" };
+    instance.customName = res.name; // "" 表示清除命名
+    state._dirty = true;
+    return { changed:true, name:res.name };
+  },
+
   equipCombatShip(state, instanceId, now) {
     const instance = getShipInstanceFromState(state, instanceId);
     if (!instance) return { changed:false, reason:"unknown-ship" };
@@ -2717,6 +2731,7 @@ const StationStateActions = {
   if (action.type === "planetary/demolish") return PlanetaryStateActions.demolish(state, action.id);
   if (action.type === "shell/buyLPItem") return ShellStateActions.buyLPItem(state, action.equipmentId, actionTime);
   if (action.type === "hangar/toggleAssignment") return tutorialNote(state, action, ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime), actionTime);
+  if (action.type === "hangar/renameShip") return ShellStateActions.renameShip(state, action.instanceId, action.name, actionTime);
   if (action.type === "hangar/equipCombatShip") return tutorialNote(state, action, ShellStateActions.equipCombatShip(state, action.instanceId, actionTime), actionTime);
   if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue);
   if (action.type === "hangar/disassembleShip") return ShellStateActions.disassembleShip(state, action.instanceId, actionTime);

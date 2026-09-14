@@ -84,20 +84,79 @@
       (m[ev && ev.type] || []).forEach(function (fn) { try { fn(ev); } catch (e) { console.warn("[shim] listener error", e); } });
       return true;
     };
-    el.getContext = function () { return null; };
+    el.getContext = function (type, attrs) {
+      if (el._ctx) return el._ctx;
+      // 小游戏没有 DOM canvas；用 wx.createCanvas() 造真画布并把上下文交回，
+      // 使 canvas.getContext("2d") 这类 DOM 写法的语义成立（S1 会把绘制接到同一批画布上）。
+      try {
+        if (typeof wx !== "undefined" && typeof wx.createCanvas === "function") {
+          var c = wx.createCanvas();
+          if (c && typeof c.getContext === "function") {
+            el._canvas = c;
+            el._ctx = c.getContext(type || "2d", attrs);
+            return el._ctx;
+          }
+        }
+      } catch (e) {}
+      return null;
+    };
     el.toDataURL = function () { return ""; };
     return el;
   }
 
   // ---------- document ----------
-  if (typeof G.document === "undefined") {
+  // 🔴 判据必须锚「能力是否齐备」而不是「对象是否存在」：
+  //    微信小游戏（IDE 模拟器）**自带一份部分实现的 document** —— 有 createElement，
+  //    但没有 getElementById / querySelector（实测快照：doc=object, createElement=function,
+  //    getElementById=undefined）。旧判据 `typeof G.document === "undefined"` 因此为假，
+  //    整个桩被跳过 ⇒ 逻辑层里大量**顶层无保护**的 document.getElementById("x").addEventListener(…)
+  //    直接 TypeError ⇒ 整包起不来（现象：控制台一条无消息堆栈 + 纯黑屏）。
+  //    ⇒ 只**补齐缺失项**，不整体替换（保留宿主已有实现，如真实 createElement）。
+  // ⚠️ 而且必须取「逻辑层实际看到的那个 document」：优先**裸标识符**——
+  //    若宿主以模块参数注入 document，它与 globalThis.document 可能不是同一对象，
+  //    只补 globalThis 等于白补（实测：flag 已置位、getById 仍是 undefined）。
+  var WX_DOC = null;
+  try { WX_DOC = (typeof document !== "undefined" && document) ? document : null; } catch (e) {}
+  if (!WX_DOC) { try { WX_DOC = G.document || null; } catch (e) {} }
+  var needDocPatch = !WX_DOC ||
+    (typeof WX_DOC.getElementById !== "function") ||
+    (typeof WX_DOC.querySelector !== "function") ||
+    (typeof WX_DOC.createElement !== "function");
+  try { G.__WX_SHIM_DOC_STEP__ = "needPatch=" + needDocPatch + "|bareEqGlobal=" + (WX_DOC === G.document); } catch (e) {}
+  if (needDocPatch) {
     var docEl = makeElement("html");
     var headEl = makeElement("head");
     var bodyEl = makeElement("body");
     docEl.appendChild(headEl);
     docEl.appendChild(bodyEl);
 
-    var documentStub = {
+    // ⚠️ DOM 查询必须返回「桩元素」而不是 null：
+    //    逻辑/UI 层大量存在**顶层无保护**的 document.getElementById("x").addEventListener(…)
+    //    （如 action-modal.js:194 的 bindActionModal），在浏览器里这些元素由 index.html 提供，
+    //    返回 null 会在加载期直接 TypeError ⇒ 整包起不来。这里返回缓存桩元素以对齐浏览器事实，
+    //    并打印一次性告警——避免「静默降级」难以察觉。
+    var idCache = Object.create(null);
+    var warnedIds = Object.create(null);
+    function stubById(id) {
+      var k = String(id);
+      if (!idCache[k]) {
+        idCache[k] = makeElement("div");
+        idCache[k].id = k;
+      }
+      if (!warnedIds[k]) {
+        warnedIds[k] = true;
+        if (typeof console !== "undefined" && console.warn) console.warn('[shim] #' + k + " → 桩元素（DOM 层尚未接入，S1 由 Canvas 内核取代）");
+      }
+      return idCache[k];
+    }
+
+    // ⚠️ 绝不能写 G.document：浏览器/模拟器里 window.document 是 **getter-only**
+    //    （实测 TypeError: Cannot set property document of #<Window> which has only a getter）。
+    //    该文档对象本身可自由加属性（实测 assignable=yes）⇒ 只往它身上**补缺失方法**。
+    if (!WX_DOC) WX_DOC = {};
+    var D = WX_DOC;
+    if (G.document !== D) { try { G.document = D; } catch (e) {} }
+    var docDefaults = {
       nodeType: 9,
       documentElement: docEl,
       head: headEl,
@@ -106,22 +165,43 @@
       title: "",
       cookie: "",
       activeElement: bodyEl,
+    };
+    for (var dk in docDefaults) { try { if (!(dk in D) || D[dk] == null) D[dk] = docDefaults[dk]; } catch (e) {} }
+    var docMethods = {
       createElement: makeElement,
       createElementNS: function (_ns, tag) { return makeElement(tag); },
       createTextNode: function (t) { return { nodeType: 3, textContent: String(t) }; },
       createDocumentFragment: function () { return makeElement("fragment"); },
-      getElementById: function () { return null; },
+      getElementById: stubById,
       getElementsByClassName: function () { return []; },
       getElementsByTagName: function () { return []; },
-      querySelector: function () { return null; },
+      querySelector: function (sel) {
+        // 只对 #id 形式给桩（index.html 里确实有该元素）；其余按浏览器语义返回 null
+        var m = /^#([\w-]+)$/.exec(String(sel || "").trim());
+        return m ? stubById(m[1]) : null;
+      },
       querySelectorAll: function () { return []; },
       addEventListener: function (t, fn) {
-        var m = listeners.get(documentStub) || {}; (m[t] = m[t] || []).push(fn); listeners.set(documentStub, m);
+        var m = listeners.get(D) || {}; (m[t] = m[t] || []).push(fn); listeners.set(D, m);
       },
       removeEventListener: function () {},
       dispatchEvent: function () { return true; },
     };
-    G.document = documentStub;
+    // ⚠️ 必须用 Object.defineProperty 在**对象自身**定义，不能写 `D[mk] = fn`：
+    //    原型链上若存在同名 **getter-only** 访问器（实测 document 正是这种情况），
+    //    普通赋值会走 set 语义 → 找不到 setter → 在非严格模式下**静默失败**（不抛错、也不生效）。
+    //    自身 data property 不查原型 ⇒ 稳定生效。
+    var __docFailed = [];
+    for (var mk in docMethods) {
+      if (typeof D[mk] === "function") continue;
+      try {
+        Object.defineProperty(D, mk, { value: docMethods[mk], writable: true, configurable: true, enumerable: false });
+      } catch (e) {
+        try { D[mk] = docMethods[mk]; } catch (e2) {}
+      }
+      if (typeof D[mk] !== "function") __docFailed.push(mk);
+    }
+    try { G.__WX_SHIM_DOC_STEP__ += "|done|getById=" + typeof D.getElementById + "|failed=[" + __docFailed.join(",") + "]|thisDocHas=" + Object.prototype.hasOwnProperty.call(D, "getElementById"); } catch (e) {}
   }
 
   // ---------- location（translator.js:23 会读 window.location.search）----------
@@ -164,6 +244,94 @@
     G.getComputedStyle = function () { return { getPropertyValue: function () { return ""; }, width: "0px", height: "0px" }; };
   }
   if (typeof G.alert !== "function") { G.alert = function () {}; G.confirm = function () { return false; }; G.prompt = function () { return null; }; }
+
+  // ---------- 观察器（空实现）----------
+  // 逻辑层在顶层直接 new MutationObserver(…)（小游戏无此全局）。
+  // 它们是纯观察器、不产生副作用 ⇒ 空实现语义安全。
+  [["MutationObserver", "observe disconnect takeRecords"],
+   ["IntersectionObserver", "observe unobserve disconnect takeRecords"],
+   ["ResizeObserver", "observe unobserve disconnect"]].forEach(function (def) {
+    var name = def[0];
+    if (typeof G[name] === "function") return;
+    var Ctor = function (cb) { this._cb = cb; this._targets = []; };
+    def[1].split(" ").forEach(function (m) {
+      Ctor.prototype[m] = function () { return m === "takeRecords" ? [] : undefined; };
+    });
+    G[name] = Ctor;
+  });
+
+  // ---------- window 事件总线 ----------
+  // 逻辑层多处**在顶层无保护地**调用 window.addEventListener(…)
+  // （persistence.js:2896/3173、runtime.js:113/122、shell-render.js:13/754/2747、
+  //   translator.js:139、error-boundary.js:50 等）。小游戏全局对象上没有这套 API，
+  //   缺了会在加载期直接 TypeError ⇒ 整个逻辑层起不来。
+  if (typeof G.addEventListener !== "function") {
+    var gListeners = Object.create(null);
+    G.addEventListener = function (t, fn) { (gListeners[t] = gListeners[t] || []).push(fn); };
+    G.removeEventListener = function (t, fn) {
+      if (gListeners[t]) gListeners[t] = gListeners[t].filter(function (f) { return f !== fn; });
+    };
+    G.dispatchEvent = function (ev) {
+      var t = ev && ev.type;
+      (gListeners[t] || []).slice().forEach(function (fn) {
+        try { fn(ev); } catch (e) { console.warn("[shim] window listener error", e); }
+      });
+      if (t === "error" && typeof G.onerror === "function") { try { G.onerror(ev); } catch (e) {} }
+      return true;
+    };
+  }
+  if (typeof G.CustomEvent !== "function") {
+    G.CustomEvent = function (type, opts) {
+      this.type = String(type);
+      this.detail = opts && "detail" in opts ? opts.detail : null;
+      this.bubbles = !!(opts && opts.bubbles);
+      this.cancelable = !!(opts && opts.cancelable);
+      this.defaultPrevented = false;
+      this.target = null;
+    };
+    G.CustomEvent.prototype.preventDefault = function () {};
+    G.CustomEvent.prototype.stopPropagation = function () {};
+  }
+  if (typeof G.Event !== "function") {
+    G.Event = function (type, opts) {
+      this.type = String(type);
+      this.bubbles = !!(opts && opts.bubbles);
+      this.cancelable = !!(opts && opts.cancelable);
+      this.defaultPrevented = false;
+      this.target = null;
+    };
+    G.Event.prototype.preventDefault = function () {};
+    G.Event.prototype.stopPropagation = function () {};
+  }
+
+  // ---------- CanvasRenderingContext2D ----------
+  // js/ui/planetary-render.js:5 在顶层给 CanvasRenderingContext2D.prototype 打 roundRect 补丁；
+  // 小游戏没有这个全局。优先取小游戏真实 2D 上下文的原型构造器（这样补丁打在真对象上），
+  // 取不到才退回桩类（保证加载期不抛错）。
+  if (typeof G.CanvasRenderingContext2D !== "function") {
+    var CtxCtor = null;
+    try {
+      if (typeof wx !== "undefined" && typeof wx.createCanvas === "function") {
+        var _cv = wx.createCanvas();
+        var _ctx = _cv && _cv.getContext && _cv.getContext("2d");
+        if (_ctx) {
+          var _proto = Object.getPrototypeOf(_ctx);
+          if (_proto && typeof _proto.constructor === "function") CtxCtor = _proto.constructor;
+        }
+      }
+    } catch (e) {}
+    if (!CtxCtor) {
+      CtxCtor = function CanvasRenderingContext2D() {};
+      ("arc arcTo beginPath bezierCurveTo clearRect clip closePath drawImage ellipse fill fillRect fillText " +
+       "lineTo moveTo putImageData quadraticCurveTo rect restore rotate save scale setTransform stroke " +
+       "strokeRect strokeText translate createLinearGradient createRadialGradient createPattern " +
+       "getImageData createImageData setLineDash getLineDash").split(" ").forEach(function (m) {
+        CtxCtor.prototype[m] = function () { return m === "getLineDash" ? [] : undefined; };
+      });
+      CtxCtor.prototype.measureText = function () { return { width: 0, actualBoundingBoxAscent: 0, actualBoundingBoxDescent: 0 }; };
+    }
+    G.CanvasRenderingContext2D = CtxCtor;
+  }
 
   // ---------- localStorage：优先落到小游戏真实存储 ----------
   if (typeof G.localStorage === "undefined") {

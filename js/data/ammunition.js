@@ -89,3 +89,14 @@ function getEquipmentEngineeringRecipe(recipeId) {
   return EQUIPMENT_ENGINEERING_RECIPES.find(recipe => recipe.id === recipeId) ||
     EQUIPMENT_ENGINEERING_RECIPES[0];
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 6 个顶层声明被 js/core/actions.js、js/core/persistence.js、js/core/selectors.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.EQUIPMENT_ENGINEERING_RECIPES = EQUIPMENT_ENGINEERING_RECIPES;
+if (typeof window !== "undefined") window.getEquipmentEngineeringRecipe = getEquipmentEngineeringRecipe;
+if (typeof window !== "undefined") window.EQUIPMENT_ENGINEERING_CATEGORIES = EQUIPMENT_ENGINEERING_CATEGORIES;
+if (typeof window !== "undefined") window.RIG_ENGINEERING_SERIES = RIG_ENGINEERING_SERIES;
+if (typeof window !== "undefined") window.EQUIPMENT_ENGINEERING_SUBTABS = EQUIPMENT_ENGINEERING_SUBTABS;
+if (typeof window !== "undefined") window.AMMO_ENG_RECIPES = AMMO_ENG_RECIPES;
+if (typeof module !== "undefined" && module.exports) module.exports = { EQUIPMENT_ENGINEERING_RECIPES: EQUIPMENT_ENGINEERING_RECIPES, getEquipmentEngineeringRecipe: getEquipmentEngineeringRecipe, EQUIPMENT_ENGINEERING_CATEGORIES: EQUIPMENT_ENGINEERING_CATEGORIES, RIG_ENGINEERING_SERIES: RIG_ENGINEERING_SERIES, EQUIPMENT_ENGINEERING_SUBTABS: EQUIPMENT_ENGINEERING_SUBTABS, AMMO_ENG_RECIPES: AMMO_ENG_RECIPES };

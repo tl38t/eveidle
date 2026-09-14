@@ -865,6 +865,7 @@ function getArchaeologyDisplayState(state, now, options) {
   const assignedShip = instance ? {
     instanceId,
     name: config ? config.name : instance.shipId,
+    customName: instance.customName || null,
     type: config ? config.type : "",
     archaeology: isArchaeologyShip,
     hp: instanceId && !displayOptions.skipShipHp ? getArchaeologyShipHp(state, instanceId) : null,

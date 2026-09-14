@@ -90,14 +90,14 @@
       var isBound = s.instanceId === npc.boundShipInstanceId;
       var disabled = (boundOthers[s.instanceId] && !isBound) ? " disabled" : "";
       var sel = isBound ? " selected" : "";
-      var nameFn = (typeof LegionRender !== "undefined" && LegionRender.getShipDisplayName) ? LegionRender.getShipDisplayName : function (id) { return id; };
+      var nameFn = (typeof getShipInstanceDisplayName === "function") ? getShipInstanceDisplayName : function (inst) { if (!inst) return ""; if (typeof getShipConfigById === "function") { var c = getShipConfigById(inst.shipId); if (c) return c.name; } return inst.shipId || ""; };
       var roleLabel = { industrial: "工业舰", combat: "战斗舰", archaeology: "考古舰" }[role] || "—";
       var btnText = isBound ? '卸下' : (disabled ? '已占用' : '选择');
       var pickValue = isBound ? "" : s.instanceId;
       var enhanceLevel = Math.max(0, Math.floor(Number(s.enhancementLevel) || 0));
       var enhanceHtml = enhanceLevel > 0 ? '<span class="lc-ship-enhance">+' + enhanceLevel + '</span>' : '';
       return '<div class="lc-ship-row' + (disabled ? ' lc-ship-disabled' : '') + '">' +
-        '<span class="lc-ship-name">' + nameFn(s.shipId) + enhanceHtml + '</span>' +
+        '<span class="lc-ship-name">' + escapeHtml(nameFn(s)) + enhanceHtml + '</span>' +
         '<span class="lc-ship-tier">' + shipTierLabelLocal(type) + '</span>' +
         '<span class="lc-ship-role">适配：' + roleLabel + '</span>' +
         '<span class="' + (compat ? 'legion-ok' : 'legion-warn') + ' lc-ship-compat">' + (compat ? '适配' : '不适配') + '</span>' +

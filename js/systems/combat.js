@@ -853,6 +853,23 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const isk = Math.max(0, rawIsk);
   ResourceRegistry.add(state, "currency:isk", isk);
   addLoot("currency:isk", isk);
+  // 功勋(lp)：精英/Boss 逐杀也发放（2026-09-14 修复 —— 此前仅整带肃清/死亡空间发，逐杀 0 功勋）。
+  // 比例锚 zone.clearLp，带 Math.max 下限保证低安全级星带精英也有可见功勋；MTU 功勋 +10% 同口径。
+  // 与整带肃清的 clearLp 累计不冲突（此处是逐杀额外奖励，非替代）。
+  if (enemy.kind === "elite" || enemy.kind === "boss") {
+    const clearLp = (zone && Number(zone.clearLp) > 0) ? Number(zone.clearLp) : 0;
+    if (clearLp > 0) {
+      const mtuLpMult = (mtu && mtu.active && mtu.lpBonus > 0) ? (1 + mtu.lpBonus) : 1;
+      const ratio = enemy.kind === "boss" ? 0.5 : 0.1;
+      const floor = enemy.kind === "boss" ? 2 : 1;
+      const killLp = Math.max(floor, Math.round(clearLp * ratio * mtuLpMult));
+      if (killLp > 0) {
+        ResourceRegistry.add(state, "currency:lp", killLp);
+        addLoot("currency:lp", killLp);
+        c.lastLoot += " · " + getCombatCurrencyDisplayName("lp", "功勋") + " +" + killLp;
+      }
+    }
+  }
   enemy.defeated = true;
   enemy.rewarded = true;
   c.lastLoot = getCombatCurrencyDisplayName("isk", "星币") + " " + isk.toLocaleString();
@@ -1991,3 +2008,36 @@ function combatTick() {
   if (!c.active) return;
   advanceCombatRound(gameState, { now, offline:false, emit, playEffects:true });
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 28 个顶层声明被 js/core/actions.js、js/core/persistence.js、js/core/selectors.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.getDeathspaceById = getDeathspaceById;
+if (typeof window !== "undefined") window.buildDeathspaceWave = buildDeathspaceWave;
+if (typeof window !== "undefined") window.buildCombatWave = buildCombatWave;
+if (typeof window !== "undefined") window.updateCombatRecovery = updateCombatRecovery;
+if (typeof window !== "undefined") window.SHIP_TYPE_NAMES = SHIP_TYPE_NAMES;
+if (typeof window !== "undefined") window.getShipConfig = getShipConfig;
+if (typeof window !== "undefined") window.createCombatEnemy = createCombatEnemy;
+if (typeof window !== "undefined") window.nextCombatRandom = nextCombatRandom;
+if (typeof window !== "undefined") window.resetCombatRunState = resetCombatRunState;
+if (typeof window !== "undefined") window.getTacticalMaterialDropConfig = getTacticalMaterialDropConfig;
+if (typeof window !== "undefined") window.rollFactionEncryptedDataDrop = rollFactionEncryptedDataDrop;
+if (typeof window !== "undefined") window.rollCombatZoneSpecialDrops = rollCombatZoneSpecialDrops;
+if (typeof window !== "undefined") window.rollGearDrops = rollGearDrops;
+if (typeof window !== "undefined") window.rollStationCoreDrop = rollStationCoreDrop;
+if (typeof window !== "undefined") window.rollDeathspaceTicketDrop = rollDeathspaceTicketDrop;
+if (typeof window !== "undefined") window.rollTacticalMaterialDrop = rollTacticalMaterialDrop;
+if (typeof window !== "undefined") window.getInstalledCombatWeapons = getInstalledCombatWeapons;
+if (typeof window !== "undefined") window.getInstalledCombatDamageControls = getInstalledCombatDamageControls;
+if (typeof window !== "undefined") window.onCombatEvent = onCombatEvent;
+if (typeof window !== "undefined") window.computeVolleyFuel = computeVolleyFuel;
+if (typeof window !== "undefined") window.getEncryptedDataDropConfig = getEncryptedDataDropConfig;
+if (typeof window !== "undefined") window.getCombatZoneSpecialDropConfigs = getCombatZoneSpecialDropConfigs;
+if (typeof window !== "undefined") window.getDeathspaceTicketDropConfig = getDeathspaceTicketDropConfig;
+if (typeof window !== "undefined") window.getDeathspaceLeaderLootConfigs = getDeathspaceLeaderLootConfigs;
+if (typeof window !== "undefined") window.getGearDropConfigs = getGearDropConfigs;
+if (typeof window !== "undefined") window.getStationCoreDropConfigs = getStationCoreDropConfigs;
+if (typeof window !== "undefined") window.beginDeathspaceRun = beginDeathspaceRun;
+if (typeof window !== "undefined") window.combatTick = combatTick;
+if (typeof module !== "undefined" && module.exports) module.exports = { getDeathspaceById: getDeathspaceById, buildDeathspaceWave: buildDeathspaceWave, buildCombatWave: buildCombatWave, updateCombatRecovery: updateCombatRecovery, SHIP_TYPE_NAMES: SHIP_TYPE_NAMES, getShipConfig: getShipConfig, createCombatEnemy: createCombatEnemy, nextCombatRandom: nextCombatRandom, resetCombatRunState: resetCombatRunState, getTacticalMaterialDropConfig: getTacticalMaterialDropConfig, rollFactionEncryptedDataDrop: rollFactionEncryptedDataDrop, rollCombatZoneSpecialDrops: rollCombatZoneSpecialDrops, rollGearDrops: rollGearDrops, rollStationCoreDrop: rollStationCoreDrop, rollDeathspaceTicketDrop: rollDeathspaceTicketDrop, rollTacticalMaterialDrop: rollTacticalMaterialDrop, getInstalledCombatWeapons: getInstalledCombatWeapons, getInstalledCombatDamageControls: getInstalledCombatDamageControls, onCombatEvent: onCombatEvent, computeVolleyFuel: computeVolleyFuel, getEncryptedDataDropConfig: getEncryptedDataDropConfig, getCombatZoneSpecialDropConfigs: getCombatZoneSpecialDropConfigs, getDeathspaceTicketDropConfig: getDeathspaceTicketDropConfig, getDeathspaceLeaderLootConfigs: getDeathspaceLeaderLootConfigs, getGearDropConfigs: getGearDropConfigs, getStationCoreDropConfigs: getStationCoreDropConfigs, beginDeathspaceRun: beginDeathspaceRun, combatTick: combatTick };

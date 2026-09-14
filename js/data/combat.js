@@ -431,3 +431,24 @@ function getCurrentCombatIntensityZone(state) {
   }
   return COMBAT_ZONES.find(item => item.id === c.zone) || null;
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 16 个顶层声明被 js/core/actions.js、js/core/persistence.js、js/core/selectors.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.COMBAT_ZONES = COMBAT_ZONES;
+if (typeof window !== "undefined") window.DEATHSPACE_DATABASE = DEATHSPACE_DATABASE;
+if (typeof window !== "undefined") window.STARMAP_TITAN_MATERIALS = STARMAP_TITAN_MATERIALS;
+if (typeof window !== "undefined") window.WEAPON_CONFIG = WEAPON_CONFIG;
+if (typeof window !== "undefined") window.GEAR_DATA_MATERIALS = GEAR_DATA_MATERIALS;
+if (typeof window !== "undefined") window.COMBAT_FORMATION_POOLS = COMBAT_FORMATION_POOLS;
+if (typeof window !== "undefined") window.STAR_BELT_DATA_MATERIALS = STAR_BELT_DATA_MATERIALS;
+if (typeof window !== "undefined") window.getDeathspaceProbeDropConfig = getDeathspaceProbeDropConfig;
+if (typeof window !== "undefined") window.getZoneIntensityXpMultiplier = getZoneIntensityXpMultiplier;
+if (typeof window !== "undefined") window.getCurrentCombatIntensityZone = getCurrentCombatIntensityZone;
+if (typeof window !== "undefined") window.ENEMY_DATABASE = ENEMY_DATABASE;
+if (typeof window !== "undefined") window.COMBAT_SPECIAL_MATERIALS = COMBAT_SPECIAL_MATERIALS;
+if (typeof window !== "undefined") window.DEATHSPACE_TICKET_MATERIALS = DEATHSPACE_TICKET_MATERIALS;
+if (typeof window !== "undefined") window.DEATHSPACE_LOOT_MATERIALS = DEATHSPACE_LOOT_MATERIALS;
+if (typeof window !== "undefined") window.SUPERCAPITAL_DATA_MATERIALS = SUPERCAPITAL_DATA_MATERIALS;
+if (typeof window !== "undefined") window.FACTION_ENCRYPTED_DATA_DROPS = FACTION_ENCRYPTED_DATA_DROPS;
+if (typeof module !== "undefined" && module.exports) module.exports = { COMBAT_ZONES: COMBAT_ZONES, DEATHSPACE_DATABASE: DEATHSPACE_DATABASE, STARMAP_TITAN_MATERIALS: STARMAP_TITAN_MATERIALS, WEAPON_CONFIG: WEAPON_CONFIG, GEAR_DATA_MATERIALS: GEAR_DATA_MATERIALS, COMBAT_FORMATION_POOLS: COMBAT_FORMATION_POOLS, STAR_BELT_DATA_MATERIALS: STAR_BELT_DATA_MATERIALS, getDeathspaceProbeDropConfig: getDeathspaceProbeDropConfig, getZoneIntensityXpMultiplier: getZoneIntensityXpMultiplier, getCurrentCombatIntensityZone: getCurrentCombatIntensityZone, ENEMY_DATABASE: ENEMY_DATABASE, COMBAT_SPECIAL_MATERIALS: COMBAT_SPECIAL_MATERIALS, DEATHSPACE_TICKET_MATERIALS: DEATHSPACE_TICKET_MATERIALS, DEATHSPACE_LOOT_MATERIALS: DEATHSPACE_LOOT_MATERIALS, SUPERCAPITAL_DATA_MATERIALS: SUPERCAPITAL_DATA_MATERIALS, FACTION_ENCRYPTED_DATA_DROPS: FACTION_ENCRYPTED_DATA_DROPS };

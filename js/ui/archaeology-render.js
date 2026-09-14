@@ -81,7 +81,7 @@ function renderArchaeologyPage(now) {
   const shipSection = ship ? `
     <div class="archaeology-ship-info">
       <div class="archaeology-ship-header">
-        <span class="archaeology-ship-name">🛰️ ${ship.name} <span class="archaeology-ship-type">${ship.type}</span></span>
+        <span class="archaeology-ship-name">🛰️ ${ship.customName ? (typeof escapeAchievementText === "function" ? escapeAchievementText(ship.customName) : String(ship.customName).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; })) : ship.name} <span class="archaeology-ship-type">${ship.type}</span></span>
       </div>
       ${ship.hp && ship.maxHp ? `
         <div class="archaeology-hp-bars">
@@ -567,3 +567,9 @@ function bindArchaeologyEvents(body) {
   // 出售/兑换文物：已整合至仓库「交易品」标签（renderTradeTab 一键回收），此处不再绑定
 
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 1 个顶层声明被 js/ui/shell-render.js 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.renderArchaeologyPage = renderArchaeologyPage;
+if (typeof module !== "undefined" && module.exports) module.exports = { renderArchaeologyPage: renderArchaeologyPage };

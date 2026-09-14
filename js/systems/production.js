@@ -242,3 +242,31 @@ function canMineArea(area) {
 function getMiningRequirementText(area) {
   return getMiningRequirementState(gameState, area).text;
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 23 个顶层声明被 js/core/actions.js、js/core/offline.js、js/core/persistence.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.SMELTING_RECIPES = SMELTING_RECIPES;
+if (typeof window !== "undefined") window.addSkillXpToState = addSkillXpToState;
+if (typeof window !== "undefined") window.xpForLevel = xpForLevel;
+if (typeof window !== "undefined") window.ITEM_ICONS = ITEM_ICONS;
+if (typeof window !== "undefined") window.checkLevelUp = checkLevelUp;
+if (typeof window !== "undefined") window.GAS_AREAS = GAS_AREAS;
+if (typeof window !== "undefined") window.ITEM_CATEGORIES = ITEM_CATEGORIES;
+if (typeof window !== "undefined") window.getMiningEfficiency = getMiningEfficiency;
+if (typeof window !== "undefined") window.getGasEfficiency = getGasEfficiency;
+if (typeof window !== "undefined") window.rollRigRichBonus = rollRigRichBonus;
+if (typeof window !== "undefined") window.getMiningAreaByName = getMiningAreaByName;
+if (typeof window !== "undefined") window.getSmeltingConsumeList = getSmeltingConsumeList;
+if (typeof window !== "undefined") window.getSmeltingCyclesAvailable = getSmeltingCyclesAvailable;
+if (typeof window !== "undefined") window.canMineArea = canMineArea;
+if (typeof window !== "undefined") window.MINING_AREAS = MINING_AREAS;
+if (typeof window !== "undefined") window.ALL_MINING_AREAS = ALL_MINING_AREAS;
+if (typeof window !== "undefined") window.getRunningMiningArea = getRunningMiningArea;
+if (typeof window !== "undefined") window.getSmeltingOutputRefId = getSmeltingOutputRefId;
+if (typeof window !== "undefined") window.checkLevelUpFromState = checkLevelUpFromState;
+if (typeof window !== "undefined") window.MOON_MINING_AREAS = MOON_MINING_AREAS;
+if (typeof window !== "undefined") window.getMiningArea = getMiningArea;
+if (typeof window !== "undefined") window.getGasArea = getGasArea;
+if (typeof window !== "undefined") window.getSmeltingRecipe = getSmeltingRecipe;
+if (typeof module !== "undefined" && module.exports) module.exports = { SMELTING_RECIPES: SMELTING_RECIPES, addSkillXpToState: addSkillXpToState, xpForLevel: xpForLevel, ITEM_ICONS: ITEM_ICONS, checkLevelUp: checkLevelUp, GAS_AREAS: GAS_AREAS, ITEM_CATEGORIES: ITEM_CATEGORIES, getMiningEfficiency: getMiningEfficiency, getGasEfficiency: getGasEfficiency, rollRigRichBonus: rollRigRichBonus, getMiningAreaByName: getMiningAreaByName, getSmeltingConsumeList: getSmeltingConsumeList, getSmeltingCyclesAvailable: getSmeltingCyclesAvailable, canMineArea: canMineArea, MINING_AREAS: MINING_AREAS, ALL_MINING_AREAS: ALL_MINING_AREAS, getRunningMiningArea: getRunningMiningArea, getSmeltingOutputRefId: getSmeltingOutputRefId, checkLevelUpFromState: checkLevelUpFromState, MOON_MINING_AREAS: MOON_MINING_AREAS, getMiningArea: getMiningArea, getGasArea: getGasArea, getSmeltingRecipe: getSmeltingRecipe };

@@ -415,3 +415,47 @@ function getBoosterCategoryRecipes(categoryId, qualityFilter) {
     return true;
   });
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 39 个顶层声明被 js/core/actions.js、js/core/offline.js、js/core/selectors.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.getShipAssemblyComponentCost = getShipAssemblyComponentCost;
+if (typeof window !== "undefined") window.hasEnoughShipAssemblyComponents = hasEnoughShipAssemblyComponents;
+if (typeof window !== "undefined") window.isBoosterRecipeUnlocked = isBoosterRecipeUnlocked;
+if (typeof window !== "undefined") window.getDiscountedAssemblyRecipe = getDiscountedAssemblyRecipe;
+if (typeof window !== "undefined") window.deductShipAssemblyComponents = deductShipAssemblyComponents;
+if (typeof window !== "undefined") window.getEquipEngEfficiency = getEquipEngEfficiency;
+if (typeof window !== "undefined") window.hasEnoughBoosterInputs = hasEnoughBoosterInputs;
+if (typeof window !== "undefined") window.getRunningShipCompRecipe = getRunningShipCompRecipe;
+if (typeof window !== "undefined") window.getRunningShipAsmRecipe = getRunningShipAsmRecipe;
+if (typeof window !== "undefined") window.getEquipEngRecipe = getEquipEngRecipe;
+if (typeof window !== "undefined") window.getRunningEquipEngRecipe = getRunningEquipEngRecipe;
+if (typeof window !== "undefined") window.deductEquipEngInputs = deductEquipEngInputs;
+if (typeof window !== "undefined") window.getEquipEngTierLabel = getEquipEngTierLabel;
+if (typeof window !== "undefined") window.getEquipEngOutputText = getEquipEngOutputText;
+if (typeof window !== "undefined") window.applyEquipEngOutput = applyEquipEngOutput;
+if (typeof window !== "undefined") window.getBoosterEfficiency = getBoosterEfficiency;
+if (typeof window !== "undefined") window.getRunningBoosterRecipe = getRunningBoosterRecipe;
+if (typeof window !== "undefined") window.deductBoosterInputs = deductBoosterInputs;
+if (typeof window !== "undefined") window.applyBoosterOutput = applyBoosterOutput;
+if (typeof window !== "undefined") window.getBoosterCategoryRecipes = getBoosterCategoryRecipes;
+if (typeof window !== "undefined") window.getShipCompRecipe = getShipCompRecipe;
+if (typeof window !== "undefined") window.getShipAsmRecipe = getShipAsmRecipe;
+if (typeof window !== "undefined") window.getMaxShipAssemblyCycles = getMaxShipAssemblyCycles;
+if (typeof window !== "undefined") window.shipAssemblyRequiresBlueprint = shipAssemblyRequiresBlueprint;
+if (typeof window !== "undefined") window.getMaterialStock = getMaterialStock;
+if (typeof window !== "undefined") window.hasEnoughShipCompMats = hasEnoughShipCompMats;
+if (typeof window !== "undefined") window.deductShipCompMats = deductShipCompMats;
+if (typeof window !== "undefined") window.deductShipCompMatsMultiple = deductShipCompMatsMultiple;
+if (typeof window !== "undefined") window.buyBlueprint = buyBlueprint;
+if (typeof window !== "undefined") window.switchShipCompTarget = switchShipCompTarget;
+if (typeof window !== "undefined") window.switchShipAsmTarget = switchShipAsmTarget;
+if (typeof window !== "undefined") window.startShipAssembly = startShipAssembly;
+if (typeof window !== "undefined") window.getEquipEngCategoryDefinition = getEquipEngCategoryDefinition;
+if (typeof window !== "undefined") window.getEquipEngMaxCycles = getEquipEngMaxCycles;
+if (typeof window !== "undefined") window.hasEnoughEquipEngInputs = hasEnoughEquipEngInputs;
+if (typeof window !== "undefined") window.getEquipEngRecipeIcon = getEquipEngRecipeIcon;
+if (typeof window !== "undefined") window.switchEquipEngCategory = switchEquipEngCategory;
+if (typeof window !== "undefined") window.switchEquipEngTarget = switchEquipEngTarget;
+if (typeof window !== "undefined") window.getBoosterMaxCyclesFromState = getBoosterMaxCyclesFromState;
+if (typeof module !== "undefined" && module.exports) module.exports = { getShipAssemblyComponentCost: getShipAssemblyComponentCost, hasEnoughShipAssemblyComponents: hasEnoughShipAssemblyComponents, isBoosterRecipeUnlocked: isBoosterRecipeUnlocked, getDiscountedAssemblyRecipe: getDiscountedAssemblyRecipe, deductShipAssemblyComponents: deductShipAssemblyComponents, getEquipEngEfficiency: getEquipEngEfficiency, hasEnoughBoosterInputs: hasEnoughBoosterInputs, getRunningShipCompRecipe: getRunningShipCompRecipe, getRunningShipAsmRecipe: getRunningShipAsmRecipe, getEquipEngRecipe: getEquipEngRecipe, getRunningEquipEngRecipe: getRunningEquipEngRecipe, deductEquipEngInputs: deductEquipEngInputs, getEquipEngTierLabel: getEquipEngTierLabel, getEquipEngOutputText: getEquipEngOutputText, applyEquipEngOutput: applyEquipEngOutput, getBoosterEfficiency: getBoosterEfficiency, getRunningBoosterRecipe: getRunningBoosterRecipe, deductBoosterInputs: deductBoosterInputs, applyBoosterOutput: applyBoosterOutput, getBoosterCategoryRecipes: getBoosterCategoryRecipes, getShipCompRecipe: getShipCompRecipe, getShipAsmRecipe: getShipAsmRecipe, getMaxShipAssemblyCycles: getMaxShipAssemblyCycles, shipAssemblyRequiresBlueprint: shipAssemblyRequiresBlueprint, getMaterialStock: getMaterialStock, hasEnoughShipCompMats: hasEnoughShipCompMats, deductShipCompMats: deductShipCompMats, deductShipCompMatsMultiple: deductShipCompMatsMultiple, buyBlueprint: buyBlueprint, switchShipCompTarget: switchShipCompTarget, switchShipAsmTarget: switchShipAsmTarget, startShipAssembly: startShipAssembly, getEquipEngCategoryDefinition: getEquipEngCategoryDefinition, getEquipEngMaxCycles: getEquipEngMaxCycles, hasEnoughEquipEngInputs: hasEnoughEquipEngInputs, getEquipEngRecipeIcon: getEquipEngRecipeIcon, switchEquipEngCategory: switchEquipEngCategory, switchEquipEngTarget: switchEquipEngTarget, getBoosterMaxCyclesFromState: getBoosterMaxCyclesFromState };

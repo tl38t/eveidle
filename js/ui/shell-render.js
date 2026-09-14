@@ -4485,6 +4485,9 @@ function renderHangarPanel() {
   if (empty) empty.style.display = "none";
   grid.innerHTML = lineShips.map(ship => {
     if (ship.unknown) return "";
+    const rawInst = (typeof getShipInstanceFromState === "function") ? getShipInstanceFromState(gameState, ship.instanceId) : null;
+    const customName = (rawInst && rawInst.customName) ? rawInst.customName : "";
+    const shownName = (typeof getShipInstanceDisplayName === "function" && rawInst) ? getShipInstanceDisplayName(rawInst) : ship.name;
     const assignments = ship.assignments.map(item => `<button class="act-tag${item.active ? " on" : ""}${item.locked ? " unavailable" : ""}" data-ship-action="${item.actionKey}" data-sid="${ship.instanceId}" title="${item.lockedReason || (item.active ? "当前唯一任务，点击解除" : "分配至此任务")}" ${item.locked ? "disabled" : ""}>${item.name}</button>`).join("");
     const bonuses = getHangarBonusText(ship.bonuses);
     const enhancement = ship.enhancement;
@@ -4503,13 +4506,13 @@ function renderHangarPanel() {
       ? `<button class="btn danger hangar-dismantle-btn" data-dismantle-ship="${ship.instanceId}" ${dismantle.canDismantle ? "" : "disabled"} title="${escapeAchievementText((dismantle.blockedText || "当前无法拆解") + reclaimHint)}" style="margin-left:6px;">🗑 拆解</button>`
       : "";
     return `<div class="hangar-ship-card${ship.assignedActions.length ? " equipped" : ""}">${thumbHtml}
-      <div class="hangar-ship-header"><span class="hsh-icon">${ship.archaeology ? "🛰️" : ship.industrial ? "🏭" : "🚀"}</span><span class="hsh-name">${ship.name}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier === ship.typeName ? ship.tier : ship.tier + " " + ship.typeName}</span><span class="hsh-tier">${ship.archaeology ? "🛰️ 考古" : ship.industrial ? "🏭 工业" : ship.type === "titan" ? "✦ 泰坦" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
+      <div class="hangar-ship-header"><span class="hsh-icon">${ship.archaeology ? "🛰️" : ship.industrial ? "🏭" : "🚀"}</span>${customName ? '<span class="hsh-custom" title="自定义命名">✎</span>' : ''}<span class="hsh-name">${escapeAchievementText(shownName)}</span><span class="enhance-level${enhancement.milestone ? " milestone-next" : ""}">+${enhancement.level}</span><span class="hsh-tier">${ship.tier === ship.typeName ? ship.tier : ship.tier + " " + ship.typeName}</span><span class="hsh-tier">${ship.archaeology ? "🛰️ 考古" : ship.industrial ? "🏭 工业" : ship.type === "titan" ? "✦ 泰坦" : "⚔️ 战斗"}</span>${ship.assignedActions.length ? `<span class="hsh-equipped">📋 ${ship.assignedActions.map(key => display.actionNames[key]).join("+")}</span>` : ""}</div>
       <div class="hangar-ship-stats"><span class="hss-item"><span class="hss-label">护盾</span><span class="hss-val">${ship.hp.shield}</span></span><span class="hss-item"><span class="hss-label">装甲</span><span class="hss-val">${ship.hp.armor}</span></span><span class="hss-item"><span class="hss-label">结构</span><span class="hss-val">${ship.hp.structure}</span></span><span class="hss-item"><span class="hss-label">闪避</span><span class="hss-val">${ship.dodge}</span></span><span class="hss-item"><span class="hss-label">速度</span><span class="hss-val">${ship.speed}</span></span></div>
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
       ${ship.repairing ? `<div class="hangar-ship-repair" data-repair-ship="${ship.instanceId}">🔧 自动维修中 · 剩余 <span class="repair-remaining">${ship.repairRemaining}</span> 秒</div>` : ""}
       ${ship.boundNpc ? `<div class="hangar-ship-bound-npc" title="该舰船已绑定军团 NPC ${escapeAchievementText(ship.boundNpc.name)}，点击「移出小队」可在此卸下">🛡️ 已绑定军团 NPC：${escapeAchievementText(ship.boundNpc.name)}</div>` : ""}
       <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}${iskCostLine}</div><div class="enhance-roll"><span>成功率 <b>${enhancement.chancePercent}%</b></span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div></div>
-      <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button>${dismantleBtn}${ship.boundNpc ? `<button class="btn warning hangar-unbind-btn" data-unbind-npc-ship="${ship.boundNpc.npcId}" style="margin-left:6px;" title="将该舰船从军团 NPC 小队中卸下，归还机库">👤 移出小队</button>` : ""}</div></div>`;
+      <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button><button class="btn" data-rename-ship="${ship.instanceId}" style="margin-left:6px;">✎ 重命名</button>${dismantleBtn}${ship.boundNpc ? `<button class="btn warning hangar-unbind-btn" data-unbind-npc-ship="${ship.boundNpc.npcId}" style="margin-left:6px;" title="将该舰船从军团 NPC 小队中卸下，归还机库">👤 移出小队</button>` : ""}</div></div>`;
   }).join("");
   return display;
 }
@@ -4571,6 +4574,51 @@ function renderHangarDeployables(display) {
   grid.innerHTML = html;
 }
 
+function openRenameShipModal(instanceId) {
+  var inst = getShipInstanceFromState(gameState, instanceId);
+  if (!inst) return;
+  ensureRenameShipStyle();
+  var cur = inst.customName || "";
+  var cfgName = (typeof getShipConfigById === "function" && getShipConfigById(inst.shipId)) ? getShipConfigById(inst.shipId).name : inst.shipId;
+  var overlay = document.createElement("div");
+  overlay.className = "rename-ship-overlay";
+  overlay.innerHTML = '<div class="rename-ship-modal">' +
+    '<div class="rsm-title">重命名舰船</div>' +
+    '<div class="rsm-sub">舰型：' + escapeAchievementText(cfgName) + '</div>' +
+    '<input class="rsm-input" type="text" maxlength="24" placeholder="给这艘舰船起个名字（最多 24 字符，留空清除）" value="' + escapeAchievementText(cur) + '">' +
+    '<div class="rsm-err"></div>' +
+    '<div class="rsm-btns"><button class="btn rsm-cancel">取消</button><button class="btn primary rsm-ok">确定</button></div>' +
+    '</div>';
+  document.body.appendChild(overlay);
+  var input = overlay.querySelector(".rsm-input");
+  var err = overlay.querySelector(".rsm-err");
+  var close = function () { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); };
+  overlay.querySelector(".rsm-cancel").onclick = close;
+  overlay.addEventListener("click", function (e) { if (e.target === overlay) close(); });
+  var submit = function () {
+    var v = input.value;
+    var chk = (typeof validateShipName === "function") ? validateShipName(v) : { ok:true, name:String(v || "").slice(0, 24) };
+    if (!chk.ok) { err.textContent = chk.reason; return; }
+    var res = dispatchGameAction(gameState, { type:"hangar/renameShip", instanceId:instanceId, name:chk.name }, Date.now());
+    if (!res.changed) { err.textContent = (res.reason === "same-name") ? "名称未变化" : "无法重命名，请重试"; return; }
+    close();
+    renderHangarPanel();
+    if (typeof updateUI === "function") updateUI();
+    showToast(chk.name ? ("已重命名为「" + chk.name + "」") : "已清除舰船命名");
+  };
+  overlay.querySelector(".rsm-ok").onclick = submit;
+  input.addEventListener("keydown", function (e) { if (e.key === "Enter") submit(); });
+  input.focus(); input.select();
+}
+
+function ensureRenameShipStyle() {
+  if (document.getElementById("rename-ship-style")) return;
+  var st = document.createElement("style");
+  st.id = "rename-ship-style";
+  st.textContent = ".rename-ship-overlay{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999}.rename-ship-modal{background:#0e1726;border:1px solid #1e354b;border-radius:10px;padding:18px 20px;width:300px;max-width:90vw;box-shadow:0 8px 30px rgba(0,0,0,.5)}.rsm-title{font-size:16px;font-weight:700;color:#e8f1ff;margin-bottom:4px}.rsm-sub{font-size:12px;color:#8aa0bd;margin-bottom:12px}.rsm-input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #2a466a;border-radius:6px;background:#0a1320;color:#e8f1ff;font-size:14px;outline:none}.rsm-input:focus{border-color:#3d7bd6}.rsm-err{color:#ff9a9a;font-size:12px;min-height:16px;margin:8px 0}.rsm-btns{display:flex;justify-content:flex-end;gap:8px}";
+  document.head.appendChild(st);
+}
+
 // 船坞标签切换 + 部署物部署/取消部署（事件委托，一次性绑定防重复）
 function bindHangarUI() {
   const panel = document.getElementById("hangar-panel");
@@ -4584,6 +4632,8 @@ function bindHangarUI() {
       if (result.changed) renderHangarPanel();
       return;
     }
+    const renameBtn = event.target.closest("[data-rename-ship]");
+    if (renameBtn) { openRenameShipModal(renameBtn.dataset.renameShip); return; }
     const dBtn = event.target.closest("[data-deploy],[data-undeploy],[data-dismantle-deployable]");
     if (!dBtn || dBtn.disabled) return;
     let res = null;

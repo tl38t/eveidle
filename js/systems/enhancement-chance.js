@@ -37,3 +37,11 @@ function getEnhancementChanceBreakdown(engineeringLevel, requirementLevel, curre
 function getEnhancementChance(engineeringLevel, requirementLevel, currentLevel) {
   return getEnhancementChanceBreakdown(engineeringLevel, requirementLevel, currentLevel).final;
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件两个顶层函数被
+// equipment-enhancement.js 与 ship-enhancement.js 跨文件消费，在微信的模块包裹下
+// 不显式导出即不可见；浏览器侧是幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.getEnhancementChanceBreakdown = getEnhancementChanceBreakdown;
+if (typeof window !== "undefined") window.getEnhancementChance = getEnhancementChance;
+if (typeof module !== "undefined" && module.exports) module.exports = { getEnhancementChanceBreakdown: getEnhancementChanceBreakdown, getEnhancementChance: getEnhancementChance };

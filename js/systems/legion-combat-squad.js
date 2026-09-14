@@ -1225,6 +1225,15 @@
       for (const w of stats.weapons) {
         out[w.weaponType] = (out[w.weaponType] || 0) + (w.ammoCost || 1);
       }
+      // 泰坦内置主武器：类型在 config.weapon（不在 fitted 槽），stats.weapons 恒为空，
+      // 必须按武器模块定义的 weaponType 单独播种，否则离线虚拟池缺该类型 → 泰坦恒判 0 弹药静默停火。
+      // 与 combat.js:1424 玩家侧同口径：玩家泰坦也是 getSelectedCount(state, titanWeapon.weaponType)。
+      // 用 npc.boundShipInstanceId（与 fireSingleNpcMember 同源），保证「播种类型」=「开火类型」。
+      const lo = resolveNpcTitanLoadout(state, { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true });
+      if (lo && lo.weapon && (lo.weapon.ammoCost || 0) > 0) {
+        const t = lo.weapon.weaponType;
+        out[t] = (out[t] || 0) + (lo.weapon.ammoCost || 0);
+      }
     }
     return out;
   }

@@ -150,9 +150,9 @@
           ? LEGION_NPC.isShipClassCompatible(npc.skillId, role) : true;
         shipNote = "（" + tier + "·" + clsLabel + "）";
         if (compat) {
-          xpNote = "（绑定：" + getShipDisplayName(inst.shipId) + "·" + tier + "·" + clsLabel + "）";
+          xpNote = "（绑定：" + escapeDetailHtml(getShipInstanceDisplayName(inst)) + "·" + tier + "·" + clsLabel + "）";
         } else {
-          xpNote = "（绑定：" + getShipDisplayName(inst.shipId) + "·" + tier + "·" + clsLabel + "，不匹配 → 惩罚 ×0.5）";
+          xpNote = "（绑定：" + escapeDetailHtml(getShipInstanceDisplayName(inst)) + "·" + tier + "·" + clsLabel + "，不匹配 → 惩罚 ×0.5）";
         }
       }
     }
@@ -525,7 +525,7 @@
         var type = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getShipTypeDef) ? LEGION_NPC.getShipTypeDef(inst.shipId) : null;
         var role = shipRoleFromType(type);
         var compat = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.isShipClassCompatible) ? LEGION_NPC.isShipClassCompatible(npc.skillId, role) : true;
-        shipHtml = getShipDisplayName(inst.shipId) + '（' + shipTierLabel(type) + '）' +
+        shipHtml = escapeDetailHtml(getShipInstanceDisplayName(inst)) + '（' + shipTierLabel(type) + '）' +
           ' · <span class="' + (compat ? 'legion-ok' : 'legion-warn') + '">' + (compat ? '适配' : '不适配') + '</span>';
       } else {
         shipHtml = '（舰船不可用）';
@@ -643,7 +643,7 @@
           var cls = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getSkillShipClass) ? LEGION_NPC.getSkillShipClass(n.skillId) : null;
           var compat = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.isShipClassCompatible) ? LEGION_NPC.isShipClassCompatible(n.skillId, role) : true;
           compatHtml = ' · <span class="' + (compat ? 'legion-ok' : 'legion-warn') + '">' + (compat ? '适配' : '不适配') + '</span>';
-          shipHtml = getShipDisplayName(inst.shipId) + '（' + tier + '）';
+          shipHtml = escapeDetailHtml(getShipInstanceDisplayName(inst)) + '（' + tier + '）';
         } else {
           shipHtml = '（舰船不可用）';
         }

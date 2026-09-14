@@ -10,3 +10,9 @@ var PLANET_TYPES = [
   { id:"temperate", name:"温带行星",   icon:"🌍", output:"生物质",     level:60, interval:22, constructionCost:{ isk:1914000,  resources:{ "mineral:三钛合金":500  } }, maintenanceCostISK:638000,  maintenanceDuration:86400 },
   { id:"storm",     name:"风暴行星",   icon:"⛈️", output:"磁场聚合物", level:80, interval:30, constructionCost:{ isk:4899000,  resources:{ "mineral:三钛合金":1000 } }, maintenanceCostISK:1633000, maintenanceDuration:86400 }
 ];
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 1 个顶层声明被 js/core/actions.js、js/core/diagnostics.js、js/core/selectors.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.PLANET_TYPES = PLANET_TYPES;
+if (typeof module !== "undefined" && module.exports) module.exports = { PLANET_TYPES: PLANET_TYPES };

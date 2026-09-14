@@ -641,3 +641,10 @@ function getShipDisplayName(shipId) {
   }
   return shipId;
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 2 个顶层声明被 js/ui/render.js、js/ui/shell-render.js 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.renderStationPage = renderStationPage;
+if (typeof window !== "undefined") window.updateStationLiveUI = updateStationLiveUI;
+if (typeof module !== "undefined" && module.exports) module.exports = { renderStationPage: renderStationPage, updateStationLiveUI: updateStationLiveUI };

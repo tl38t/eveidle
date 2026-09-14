@@ -168,3 +168,21 @@ function migrateLegacyAmmunition(state) {
     state.ammoBootstrapped = true;
   }
 }
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 13 个顶层声明被 js/core/offline.js、js/core/persistence.js、js/core/selectors.js 等 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.getSelectedCount = getSelectedCount;
+if (typeof window !== "undefined") window.getAmmoTierProps = getAmmoTierProps;
+if (typeof window !== "undefined") window.addAmmo = addAmmo;
+if (typeof window !== "undefined") window.AMMO_TYPE_NAMES = AMMO_TYPE_NAMES;
+if (typeof window !== "undefined") window.getSelectedStacks = getSelectedStacks;
+if (typeof window !== "undefined") window.consumeAmmoForType = consumeAmmoForType;
+if (typeof window !== "undefined") window.ammoDisplayName = ammoDisplayName;
+if (typeof window !== "undefined") window.ammoTierRank = ammoTierRank;
+if (typeof window !== "undefined") window.hasSelectedAmmo = hasSelectedAmmo;
+if (typeof window !== "undefined") window.migrateLegacyAmmunition = migrateLegacyAmmunition;
+if (typeof window !== "undefined") window.getAmmoCount = getAmmoCount;
+if (typeof window !== "undefined") window.getSelectedTotal = getSelectedTotal;
+if (typeof window !== "undefined") window.applyAmmoDelta = applyAmmoDelta;
+if (typeof module !== "undefined" && module.exports) module.exports = { getSelectedCount: getSelectedCount, getAmmoTierProps: getAmmoTierProps, addAmmo: addAmmo, AMMO_TYPE_NAMES: AMMO_TYPE_NAMES, getSelectedStacks: getSelectedStacks, consumeAmmoForType: consumeAmmoForType, ammoDisplayName: ammoDisplayName, ammoTierRank: ammoTierRank, hasSelectedAmmo: hasSelectedAmmo, migrateLegacyAmmunition: migrateLegacyAmmunition, getAmmoCount: getAmmoCount, getSelectedTotal: getSelectedTotal, applyAmmoDelta: applyAmmoDelta };

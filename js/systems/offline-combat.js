@@ -804,6 +804,15 @@
       const lpMult = (mtuMod && mtuMod.active && mtuMod.lpBonus > 0) ? (1 + mtuMod.lpBonus) : 1;
       s.lpDelta += Math.round(enemy.lpDrop * (zone ? (zone.lpMulti || 1) : 1) * lpMult);
     }
+    // 功勋(lp)逐杀：精英/Boss 也发放（与在线 combat.js:resolveCombatEnemyDefeat 一致，2026-09-14 修复）。
+    // 比例锚 zone.clearLp，带下限保证低安全级星带精英也有可见功勋；MTU 功勋 +10% 同口径。
+    if ((enemy.kind === "elite" || enemy.kind === "boss") && zone && Number(zone.clearLp) > 0) {
+      const clearLp = Number(zone.clearLp);
+      const lpMult = (mtuMod && mtuMod.active && mtuMod.lpBonus > 0) ? (1 + mtuMod.lpBonus) : 1;
+      const ratio = enemy.kind === "boss" ? 0.5 : 0.1;
+      const floor = enemy.kind === "boss" ? 2 : 1;
+      s.lpDelta += Math.max(floor, Math.round(clearLp * ratio * lpMult));
+    }
     // 掉落累计（按 category 记录 N 与精英/Boss 细分）
     const da = s.dropAccum;
     if (isDeathspace && site) {

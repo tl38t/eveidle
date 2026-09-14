@@ -39,3 +39,9 @@ const INITIAL_SKILLS = {
   combat:                  { lvl: 1, xp: 0 }, // 旧存档兼容字段；界面战斗等级由六项战斗技能实时计算
   archaeology:             { lvl: 1, xp: 0 }  // 考古系统第二阶段：扫描遗迹、解析文物
 };
+
+// 双模式出口（微信小游戏 CommonJS 适配）：本文件 1 个顶层声明被 js/core/state.js 跨文件消费，
+// 在小游戏的模块包裹下不显式导出即不可见；浏览器侧为幂等赋值，行为零变化。
+// 写法与 js/data/ships.js 等已上线的同款出口一致。
+if (typeof window !== "undefined") window.INITIAL_SKILLS = INITIAL_SKILLS;
+if (typeof module !== "undefined" && module.exports) module.exports = { INITIAL_SKILLS: INITIAL_SKILLS };
