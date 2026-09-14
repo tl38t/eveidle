@@ -56,7 +56,7 @@
     button.style.cssText = "width:30px;height:30px;padding:0;border-radius:50%;font-weight:800;font-size:17px;margin-left:8px;vertical-align:middle;";
     title.appendChild(button);
     button.onclick = function () {
-      showAllianceMessage("联盟玩法说明", "1. 每日建设任务：任务大厅每天生成建设任务。\n\n2. 提交任务：收集所需材料后提交任务，获得联盟建设点。\n\n3. 建设点：建设点由全体成员共享，用于升级联盟建筑。\n\n4. 建筑效果：总部提高成员上限；任务大厅增加每日任务数量；作战指挥部提高战斗伤害；冶炼中枢提高冶炼效率。\n\n5. 管理权限：只有盟主可以升级建筑、踢出成员和转让盟主；盟主不能直接退出联盟。", "info");
+      showAllianceMessage("联盟玩法说明", "1. 每日建设任务：任务大厅每天生成建设任务。\n\n2. 提交任务：收集所需材料后提交任务，获得联盟建设点。\n\n3. 建设点：建设点由全体成员共享，用于升级联盟建筑。\n\n4. 建筑效果：总部提高成员上限；任务大厅增加每日任务数量；作战指挥部提高战斗伤害；冶炼中枢提高冶炼效率。\n\n5. 管理权限：只有盟主可以升级建筑、踢出成员、转让盟主和解散联盟；盟主不能直接退出，需先转让盟主或解散联盟。", "info");
     };
   }
 
@@ -136,7 +136,7 @@
   function renderAllianceGuide() {
     return '<details class="alliance-guide" style="margin-top:12px;border-top:1px solid #1e354b;padding-top:10px;">' +
       '<summary style="cursor:pointer;color:#9fddff;font-weight:700;">联盟玩法说明</summary>' +
-      '<div class="alliance-task-hint" style="white-space:pre-line;">1. 每日建设任务会根据任务大厅等级生成。\n2. 完成任务并提交材料，可获得联盟建设点。\n3. 联盟建设点由全体成员共享，用于升级联盟建筑。\n4. 总部提高成员上限；任务大厅增加每日任务；作战指挥部提高战斗伤害；冶炼中枢提高冶炼效率。\n5. 只有盟主可以升级建筑、踢出成员和转让盟主。盟主不能直接退出联盟。</div>' +
+      '<div class="alliance-task-hint" style="white-space:pre-line;">1. 每日建设任务会根据任务大厅等级生成。\n2. 完成任务并提交材料，可获得联盟建设点。\n3. 联盟建设点由全体成员共享，用于升级联盟建筑。\n4. 总部提高成员上限；任务大厅增加每日任务；作战指挥部提高战斗伤害；冶炼中枢提高冶炼效率。\n5. 只有盟主可以升级建筑、踢出成员、转让盟主和解散联盟。盟主不能直接退出，需先转让盟主或解散联盟。</div>' +
       '</details>';
   }
 
@@ -162,7 +162,24 @@
       renderBuildingSummary(alliance) +
       renderAllianceGuide() +
       '<div class="alliance-card-title" style="margin-top:12px;">联盟成员</div>' +
-      (memberRows || '<div class="alliance-task-hint">暂无成员数据</div>') + '</div>';
+      (memberRows || '<div class="alliance-task-hint">暂无成员数据</div>') +
+      renderMembershipActions(alliance) + '</div>';
+  }
+
+  // 离盟入口：盟主=解散联盟（全体同时退出），普通成员=退出联盟。
+  // 判据以服务端为准（disband_alliance 二次校验 owner），前端只决定按钮文案，不复制权限逻辑。
+  function renderMembershipActions(alliance) {
+    var isOwner = String(alliance.ownerId) === String(root.AllianceApi.getPlayerId());
+    var hint = isOwner
+      ? "你是盟主：解散后全体成员同时退出，联盟数据不可恢复。若只想自己离开，请先把盟主转让给其他成员。"
+      : "退出后你可以再加入其他联盟。";
+    return '<div style="margin-top:12px;border-top:1px solid #1e354b;padding-top:10px;">' +
+      '<div style="display:flex;justify-content:flex-end;">' +
+      (isOwner
+        ? '<button class="btn secondary alliance-disband-btn" style="border-color:#c96a6a;color:#ffc9c9;">解散联盟</button>'
+        : '<button class="btn secondary alliance-leave-btn">退出联盟</button>') +
+      '</div>' +
+      '<div class="alliance-task-hint" style="margin-top:6px;text-align:right;">' + esc(hint) + '</div></div>';
   }
 
   function showAllianceConfirm(title, message, onConfirm) {
@@ -236,6 +253,48 @@
     Array.prototype.forEach.call(box.querySelectorAll(".alliance-transfer-btn"), function (button) {
       runAction(button, "transfer_leader", "确定要把盟主转让给这名成员吗？转让后你将失去管理权限。", "盟主已转让");
     });
+  }
+
+  function bindMembershipActions(box, alliance, msg) {
+    if (!alliance || !root.AllianceApi) return;
+    var disbandBtn = box.querySelector(".alliance-disband-btn");
+    if (disbandBtn && typeof root.AllianceApi.disbandAlliance === "function") {
+      disbandBtn.onclick = function () {
+        showAllianceConfirm("解散联盟", "确定要解散这个联盟吗？全体成员将同时退出，该操作不可恢复。", function () {
+          disbandBtn.disabled = true;
+          if (msg) msg.textContent = "正在解散联盟…";
+          root.AllianceApi.disbandAlliance(alliance.id).then(function () {
+            if (msg) msg.textContent = "联盟已解散";
+            showAllianceMessage("联盟已解散", "联盟已解散，你已不再是任何联盟成员。", "success");
+            startCloudRefresh();
+          }).catch(function (error) {
+            disbandBtn.disabled = false;
+            var message = friendlyAllianceError(error);
+            if (msg) msg.textContent = message;
+            showAllianceMessage("解散失败", message, "error");
+          });
+        });
+      };
+    }
+    var leaveBtn = box.querySelector(".alliance-leave-btn");
+    if (leaveBtn && typeof root.AllianceApi.leaveAlliance === "function") {
+      leaveBtn.onclick = function () {
+        showAllianceConfirm("退出联盟", "确定要退出这个联盟吗？", function () {
+          leaveBtn.disabled = true;
+          if (msg) msg.textContent = "正在退出联盟…";
+          root.AllianceApi.leaveAlliance(alliance.id).then(function () {
+            if (msg) msg.textContent = "已退出联盟";
+            showAllianceMessage("已退出联盟", "你已退出联盟，可以加入其他联盟了。", "success");
+            startCloudRefresh();
+          }).catch(function (error) {
+            leaveBtn.disabled = false;
+            var message = friendlyAllianceError(error);
+            if (msg) msg.textContent = message;
+            showAllianceMessage("退出失败", message, "error");
+          });
+        });
+      };
+    }
   }
 
   function bindBuildingActions(box, alliance, msg) {
@@ -348,6 +407,7 @@
         return root.AllianceApi.getMembers(alliance.id).then(function (members) {
           box.innerHTML = renderMemberCard(alliance, members);
           bindAdminActions(box, alliance, members, ctx.msg);
+          bindMembershipActions(box, alliance, ctx.msg);
           bindBuildingActions(box, alliance, ctx.msg);
           setCloudButtonVisible(false);
           if (ctx.msg) ctx.msg.textContent = "已连接云端联盟";

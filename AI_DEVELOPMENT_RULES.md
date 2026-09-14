@@ -558,6 +558,38 @@ Why: this keeps Generators as pure geometry executors. The moment a Generator re
 
 ---
 
+# 20. Localization (single source of truth)
+# 20. 本地化（唯一真值源）
+
+All player-visible strings live in ONE wide table — `D:/EVE-IDLE/localization/localization-master.csv`
+(its own git repository, NOT inside this one). One row per source string, one column pair per language.
+
+所有玩家可见文案只存在于一张宽表 —— `D:/EVE-IDLE/localization/localization-master.csv`
+（独立的 git 仓库，**不在**本仓库内）。一行 = 一条原文，每种语言一对列。
+
+```bash
+node localization/localization-sync.mjs              # 查看源码新增文案 + 待办量（只读）
+node localization/localization-sync.mjs --write      # 收新文案进表（status=todo ⇒ 运行时零变化）
+node localization/build-runtime-catalog.mjs          # 表 → js/i18n/catalog-*.js  ★ 改完表必跑
+node localization/build-runtime-catalog.mjs --check  # 校验生成物与表一致（不一致 exit 1）
+```
+
+Rules / 规则：
+
+- MUST NOT create a second per-language catalog table, and MUST NOT hand-edit `js/i18n/catalog-*.js`.
+  禁止再产生任何「按语言拆分」的目录表，禁止手改 `js/i18n/catalog-*.js`。
+- MUST bump `?v=` on every page that loads the catalogs (`index.html`, `legion-starmap-pure.html`)
+  after regenerating them. Per-page script lists are independent — a missed bump silently serves a stale catalog.
+  重新生成后必须 bump 每个加载目录的页面的 `?v=`（`index.html`、`legion-starmap-pure.html`）。
+  各页加载清单互相独立 —— 漏 bump 会静默沿用旧目录。
+- Achievements / starmap do NOT go through the catalog (they use embedded locale tables); their entries are `deferred`.
+  成就 / 星图 不走 catalog（用内嵌多语表），其词条一律标 `deferred`。
+
+Full pipeline, status vocabulary, migration audit and known debt → `localization/README.md`.
+完整管线、状态词表、迁移审计与历史债务 → `localization/README.md`。
+
+---
+
 End of document.
 
 文档结束。

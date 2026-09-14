@@ -771,6 +771,22 @@
   // ---- 记录击杀（掉落累计 + 计数）----
   function recordKill(state, s, enemy, zone, isDeathspace, site) {
     s.kills++;
+    // 打捞臂燃料消耗（装备即生效，每击毁一艘扣基准燃料；开主动×3）：
+    // 与在线 combat.js（击杀处理末尾）**逐杀**同口径 —— 乘战斗燃料倍率 fuelMult 并 max(1, round())，
+    // 且从会话虚拟燃料池 s.fuel 逐杀扣除（而非 flush 按总击杀数一次性扣），
+    // 使「击杀瞬间扣油 → 影响后续能否开火」的语义与在线一致。
+    // ⚠️ 修复前：flush 里按 s.kills 总额扣且**漏乘 fuelMult**（还未 round）⇒ 高电容管理技能下
+    //    离线打捞臂油耗 = 在线的 1/fuelMult 倍（玩家实测报 3 倍，对应 fuelMult≈0.333）。
+    // 余额不足时不扣，与 ResourceRegistry.spend 的「不足则返回 false 不扣」语义一致。
+    const _salvageFuelPKFn = G("getSquadSalvageFuelPerKill");
+    const salvageFuelPK = (typeof _salvageFuelPKFn === "function") ? _salvageFuelPKFn(state) : 0;
+    if (salvageFuelPK > 0) {
+      const salvageBase = (state.combat && state.combat.salvageArmActive) ? salvageFuelPK * 3 : salvageFuelPK;
+      const _fuelMultFn = G("getCombatFuelMultiplierFromState");
+      const fuelMultiplier = (typeof _fuelMultFn === "function") ? _fuelMultFn(state, zone) : 1;
+      const salvageFuelAmt = Math.max(1, Math.round(salvageBase * fuelMultiplier));
+      if (s.fuel >= salvageFuelAmt) s.fuel = Math.max(0, s.fuel - salvageFuelAmt);
+    }
     bump(s.killsByKind, enemy.kind, 1);
     if (zone) {
       bump(s.killsByZone, zone.id, 1);
@@ -1248,12 +1264,9 @@
           RR.spend(state, "planetary:同位素", isoUsed);
           addResource(s, "planetary:同位素", -isoUsed);
         }
-        // 打捞臂燃料消耗（装备即收，按总击毁数；开主动×3）；与同位素同机制 flush。
-        const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
-        if (salvageFuelPK > 0 && (s.kills || 0) > 0) {
-          const fuelAmt = salvageFuelPK * s.kills * (state.combat && state.combat.salvageArmActive ? 3 : 1);
-          if (fuelAmt > 0) { RR.spend(state, "consumable:fuel", fuelAmt); addResource(s, "consumable:fuel", -fuelAmt); }
-        }
+        // 打捞臂燃料消耗已改为 recordKill 内**逐杀**从虚拟燃料池 s.fuel 扣除（与在线 combat.js 同口径：
+        // × 战斗燃料倍率 + max(1, round())），此处不再按总击杀数一次性补扣，
+        // 否则会漏乘 fuelMult 造成离线油耗虚高（= 在线的 1/fuelMult 倍）。
         // 激光定向打捞单元（MTU）燃料消耗：每击毁一艘扣一次（= Σ fuelPerKill × 战斗燃料倍率），按总击毁数 flush；
         // 仅 active（flush 时燃料充足）才扣，与在线战斗一致。
         const mtuFuelMod = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;

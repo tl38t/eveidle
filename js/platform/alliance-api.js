@@ -255,18 +255,23 @@
     if (!check.ok) return Promise.reject(new Error(check.reason));
     return getAlliance().then(function (existing) {
       if (existing) throw new Error("你已经建立了一个联盟");
-      return authed("/v1/rdb/rest/alliances", {
+      // ⚠️ 必须带 /v1/rdb/rest 前缀（裸 /rpc/ 会被网关 404）。
+      // 建盟走 RPC 而非「先插 alliances 再插成员」两步 REST：两步写法在「已在联盟者再建盟」时
+      // 第一步成功、第二步撞 alliance_members.UNIQUE(player_id) 失败 ⇒ 留下 0 成员孤儿联盟。
+      return authed("/v1/rdb/rest/rpc/create_alliance_with_owner", {
         method: "POST",
-        headers: { Prefer: "return=representation" },
-        body: JSON.stringify({ code: check.code, name: check.code, owner_player_id: getPlayerId() })
+        body: JSON.stringify({ p_code: check.code, p_name: check.code, p_player_id: getPlayerId() })
       });
     }).then(function (rows) {
-      var alliance = mapAlliance(rows && rows[0] ? rows[0] : rows);
-      return authed("/v1/rdb/rest/alliance_members", {
-        method: "POST",
-        headers: { Prefer: "return=representation" },
-        body: JSON.stringify({ alliance_id: alliance.id, player_id: getPlayerId() })
-      }).then(function () { return alliance; });
+      var row = rows && rows[0] ? rows[0] : rows;
+      if (!row || row.alliance_id == null) return null;
+      return mapAlliance({
+        id: row.alliance_id,
+        code: row.code,
+        name: row.name,
+        owner_player_id: row.owner_player_id,
+        member_count: row.member_count
+      });
     });
   }
 
@@ -293,6 +298,29 @@
       });
     }).then(function () {
       return getAlliance();
+    });
+  }
+
+  // 普通成员主动退出联盟。盟主会收到服务端拒绝（请先转让盟主或解散联盟）——
+  // 该规则由 DB 函数 leave_alliance_member 唯一实现，前端不复制判据。
+  function leaveAlliance(allianceId) {
+    var id = Number(allianceId);
+    if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(new Error("联盟 ID 无效"));
+    return authed("/v1/rdb/rest/rpc/leave_alliance_member", {
+      method: "POST",
+      body: JSON.stringify({ p_alliance_id: id, p_player_id: getPlayerId() })
+    }).then(function () { return null; });
+  }
+
+  // 解散联盟（仅盟主）。服务端 disband_alliance 会二次校验 owner，前端只做提示。
+  function disbandAlliance(allianceId) {
+    var id = Number(allianceId);
+    if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(new Error("联盟 ID 无效"));
+    return authed("/v1/rdb/rest/rpc/disband_alliance", {
+      method: "POST",
+      body: JSON.stringify({ p_alliance_id: id, p_owner_player_id: getPlayerId() })
+    }).then(function (rows) {
+      return (rows && rows[0]) || { disbanded_alliance_id: id, removed_members: 0 };
     });
   }
 
@@ -346,6 +374,8 @@
     getMembers: getMembers,
     createAlliance: createAlliance,
     joinAlliance: joinAlliance,
+    leaveAlliance: leaveAlliance,
+    disbandAlliance: disbandAlliance,
     diagnose: diagnose
   };
 })(typeof window !== "undefined" ? window : globalThis);
