@@ -875,7 +875,8 @@ const CombatStateActions = {
     return { changed:true, tier:selectedTier, site };
   },
 
-  start(state, enemies, formationId, now) {
+  start(state, enemies, formationId, now, options) {
+    const opts = options || {};
     const display = getCombatDisplayState(state, now);
     if (display.recovery.active) return { changed:false, reason:"repairing", remaining:display.recovery.remaining };
     if (!display.zone.unlocked) return { changed:false, reason:"level-locked", requiredCL:display.zone.requiredCL || 1 };
@@ -884,7 +885,18 @@ const CombatStateActions = {
     // 已收敛进该权威内 —— 同语义逻辑只保留一处实现，避免再出现口径分裂。
     if (!display.hasWeapon) return { changed:false, reason:"no-weapons" };
     const living = getCombatLivingEnemiesFromState(state.combat);
-    if (living.length === 0) {
+    // 2026-09-15（离线打完 + 手动再开，战斗日志延续）：
+    // 旧判据只看 living.length === 0，把「上一场已收尾但残留敌人还活着」误当成「同一场战斗中途恢复」。
+    // 离线把死亡空间打完 / 队列达标 / 离线结算收尾后，combat.enemies 里的敌人仍可能活着，
+    // 此时手动再开新战斗会走 else 分支只换 currentEnemy ⇒ 上一场累计被整场带进新战斗。
+    // 新判据：上一场不在途中（无活跃波、无连刷待续）且非「维修后自动续战」⇒ 视为全新一场，重建敌人并清零日志。
+    // 唯一要保留累计的非活跃场景是维修完成后的自动续战（resumeCombatAfterRepair，见 combat.js 续战入口，
+    // 那里语义上沿用同一场 run），故由调用方显式传 autoResume:true 区分。
+    // 另外：未传编队时一律退回旧行为（有存活敌人则续战），避免把可恢复的状态判成 missing-formation。
+    const _hasFormation = Array.isArray(enemies) && enemies.length > 0;
+    const _prevRunOpen = Boolean(state.combat.active || state.combat.deathspaceChainPending);
+    const _isNewRun = Boolean(!opts.autoResume && !_prevRunOpen && _hasFormation);
+    if (living.length === 0 || _isNewRun) {
       if (!Array.isArray(enemies) || enemies.length === 0) return { changed:false, reason:"missing-formation" };
       // Batch R 返修：新 run 严格顺序——先刷新 runToken + runSequence（+1）并将 enemyInstanceSeq 归零，
       // 再把「传入编队」的敌人 ID 重新盖戳为新 runToken，杜绝 UI 预生成的旧 token 敌人误入新 run；
@@ -935,8 +947,9 @@ const CombatStateActions = {
     return { changed:true, supplyWarning };
   },
 
-  enterDeathspace(state, deathspaceId, enemies, formationId, now) {
+  enterDeathspace(state, deathspaceId, enemies, formationId, now, options) {
     // Batch R：委托给共享原语 beginDeathspaceRun（校验/扣密钥/初始化/emit 统一收口）。
+    const opts = options || {};
     let waveEnemies = enemies;
     let waveFormation = formationId;
     if (!Array.isArray(waveEnemies) || waveEnemies.length === 0) {
@@ -950,7 +963,9 @@ const CombatStateActions = {
     const res = beginDeathspaceRun(state, {
       deathspaceId,
       enemies: waveEnemies,
-      formationId: waveFormation
+      formationId: waveFormation,
+      // 维修后自动续战：沿用同一场 run 的日志累计（与 combat/start 的 autoResume 同语义）。
+      autoResume: Boolean(opts.autoResume)
     }, {
       now: (typeof now === "number" ? now : (typeof Date !== "undefined" ? Date.now() : 0)),
       emit: (typeof window !== "undefined" && window.GameEvents ? window.GameEvents.emit : (typeof GameEvents !== "undefined" ? GameEvents.emit : function () {})),
@@ -2710,11 +2725,13 @@ const StationStateActions = {
   if (action.type === "combat/selectDeathspace") return CombatStateActions.selectDeathspace(state, action.deathspaceId);
   if (action.type === "combat/selectDeathspaceTier") return CombatStateActions.selectDeathspaceTier(state, action.tier);
   if (action.type === "combat/start") {
-    const res = CombatStateActions.start(state, action.enemies, action.formationId, actionTime);
+    // autoResume：仅由维修完成后的自动续战（resumeCombatAfterRepair）传入，表示沿用同一场 run
+    // 的战斗日志累计；玩家手动出击一律不传 ⇒ 全新一场、日志清零（2026-09-15）。
+    const res = CombatStateActions.start(state, action.enemies, action.formationId, actionTime, { autoResume: Boolean(action.autoResume) });
     if (res && res.changed) registerTutorialCombatStart(state, actionTime);
     return res;
   }
-  if (action.type === "combat/enterDeathspace") return CombatStateActions.enterDeathspace(state, action.deathspaceId, action.enemies, action.formationId, actionTime);
+  if (action.type === "combat/enterDeathspace") return CombatStateActions.enterDeathspace(state, action.deathspaceId, action.enemies, action.formationId, actionTime, { autoResume: Boolean(action.autoResume) });
   if (action.type === "combat/startDeathspaceChain") return CombatStateActions.startDeathspaceChain(state, action.count, actionTime);
   if (action.type === "combat/cancelDeathspaceChain") return CombatStateActions.cancelDeathspaceChain(state);
   if (action.type === "combat/stop") return tutorialNote(state, action, CombatStateActions.stop(state, actionTime), actionTime);
@@ -2735,8 +2752,8 @@ const StationStateActions = {
   if (action.type === "hangar/equipCombatShip") return tutorialNote(state, action, ShellStateActions.equipCombatShip(state, action.instanceId, actionTime), actionTime);
   if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue);
   if (action.type === "hangar/disassembleShip") return ShellStateActions.disassembleShip(state, action.instanceId, actionTime);
-  if (action.type === "hangar/setFittingSlot") return ShellStateActions.setFittingSlot(state, action.instanceId, action.slot, action.slotIndex, action.equipmentId);
-  if (action.type === "hangar/resetFitting") return ShellStateActions.resetFitting(state, action.instanceId);
+  if (action.type === "hangar/setFittingSlot") return tutorialNote(state, action, ShellStateActions.setFittingSlot(state, action.instanceId, action.slot, action.slotIndex, action.equipmentId), actionTime);
+  if (action.type === "hangar/resetFitting") return tutorialNote(state, action, ShellStateActions.resetFitting(state, action.instanceId), actionTime);
   if (action.type === "hangar/fitRig") return ShellStateActions.fitRig(state, action.instanceId, action.slotIndex, action.rigItemId);
   if (action.type === "hangar/destroyFittedRig") return ShellStateActions.destroyFittedRig(state, action.instanceId, action.slotIndex);
   if (action.type === "hangar/replaceFittedRig") return ShellStateActions.replaceFittedRig(state, action.instanceId, action.slotIndex, action.rigItemId);

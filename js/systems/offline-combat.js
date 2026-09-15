@@ -780,7 +780,10 @@
     // 余额不足时不扣，与 ResourceRegistry.spend 的「不足则返回 false 不扣」语义一致。
     const _salvageFuelPKFn = G("getSquadSalvageFuelPerKill");
     const salvageFuelPK = (typeof _salvageFuelPKFn === "function") ? _salvageFuelPKFn(state) : 0;
-    if (salvageFuelPK > 0) {
+    // ⚠️ 死亡空间免除（2026-09-15）：与在线 combat.js 同口径 —— 死亡空间无任何打捞臂收益
+    //   （本文件 862 / 874 行的同位素主动打捞与 MTU 组件产出同样带 !isDeathspace 门禁），
+    //   故此处不再从会话虚拟燃料池 s.fuel 扣打捞臂燃耗。MTU 燃耗在 flush 处（独立块）不在此列。
+    if (!isDeathspace && salvageFuelPK > 0) {
       const salvageBase = (state.combat && state.combat.salvageArmActive) ? salvageFuelPK * 3 : salvageFuelPK;
       const _fuelMultFn = G("getCombatFuelMultiplierFromState");
       const fuelMultiplier = (typeof _fuelMultFn === "function") ? _fuelMultFn(state, zone) : 1;

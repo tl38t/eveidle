@@ -135,6 +135,29 @@
     if (!ship) return "";
     return ship.tier === ship.typeName ? String(ship.tier) : (ship.tier + " " + ship.typeName);
   }
+  // 舰名显示：优先自定义命名（customName），与桌面 renderHangarPanel 同口径走
+  // getShipInstanceDisplayName。手机端原先直接用 ship.name（基础舰型名），导致在桌面改完名
+  // 手机端仍显示原名——改名功能在移动端等于不可见，故一并收敛到同一权威。
+  // 自定义名是玩家可控文本（stripShipNameBadChars 只剔控制字符，不剔 < > & "），
+  // 桌面端用 escapeAchievementText 转义；此处必须同口径转义，否则移动端成为注入面。
+  function tpEscName(s) {
+    var v = String(s == null ? "" : s);
+    if (typeof escapeAchievementText === "function") return escapeAchievementText(v);
+    return v.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+  function tpShipDisplayName(ship) {
+    var nm = (ship && ship.name) ? String(ship.name) : "";
+    try {
+      if (ship && window.getShipInstanceFromState && window.gameState) {
+        var inst = window.getShipInstanceFromState(window.gameState, ship.instanceId);
+        if (inst && typeof window.getShipInstanceDisplayName === "function") {
+          var d = window.getShipInstanceDisplayName(inst);
+          if (d) nm = String(d);
+        }
+      }
+    } catch (e) {}
+    return tpEscName(nm);
+  }
   function tpFilterShips(display, filter) {
     var list = display.ships.slice();
     // 泰坦自成一类：从「战斗」里剔除，避免同时出现在两个筛选下（与桌面船坞的独立分线同口径）。
@@ -153,15 +176,16 @@
     // 优先级：正式缩略图(getHangarThumb) → 角色化 fallback（图标+舰名+舰型+深蓝渐变+点击查看3D）。
     // 不创建第二套 WebGL renderer。
     var roleIco = ship.industrial ? "🏭" : ship.archaeology ? "🛰️" : "🚀";
+    var shownName = tpShipDisplayName(ship);
     var fb = '<div class="tp-3d-fallback" data-open-3d="' + ship.instanceId + '">'
       + '<span class="tp-3d-fb-ico">' + roleIco + '</span>'
-      + '<span class="tp-3d-fb-name">' + ship.name + '</span>'
+      + '<span class="tp-3d-fb-name">' + shownName + '</span>'
       + '<span class="tp-3d-fb-type">' + tpTierText(ship) + '</span>'
       + '<span class="tp-3d-fb-tip">点击查看 3D</span>'
       + '</div>';
     var u = null;
     try { u = window.getHangarThumb ? window.getHangarThumb(ship.shipId) : null; } catch (e) {}
-    var img = u ? '<img class="tp-hangar-3d-img" data-open-3d="' + ship.instanceId + '" src="' + u + '" alt="' + ship.name + '" title="点击查看 3D 模型" onerror="this.style.display=\'none\'">' : '';
+    var img = u ? '<img class="tp-hangar-3d-img" data-open-3d="' + ship.instanceId + '" src="' + u + '" alt="' + shownName + '" title="点击查看 3D 模型" onerror="this.style.display=\'none\'">' : '';
     return fb + img;
   }
   function tpShipMeta(display, ship) {
@@ -188,7 +212,7 @@
         + '<span class="tp-chip-ico">' + (s.industrial ? "🏭" : s.archaeology ? "🛰️" : "🚀") + '</span>'
         + (thumb ? '<img class="tp-chip-thumb" src="' + thumb + '" alt="" onerror="this.style.display=\'none\'">' : '')
         + '</span>';
-      return '<button class="tp-hangar-chip' + cur + '" data-ship-chip="' + s.instanceId + '">' + thumbHtml + '<span class="tp-chip-name">' + s.name + '</span><span class="tp-chip-lv">+' + s.enhancement.level + '</span>' + dot + assigned + bound + "</button>";
+      return '<button class="tp-hangar-chip' + cur + '" data-ship-chip="' + s.instanceId + '">' + thumbHtml + '<span class="tp-chip-name">' + tpShipDisplayName(s) + '</span><span class="tp-chip-lv">+' + s.enhancement.level + '</span>' + dot + assigned + bound + "</button>";
     }).join("");
     return '<div class="tp-hangar-selector">' + chips + "</div>";
   }
@@ -451,7 +475,7 @@
     root.innerHTML =
       tpFiltersHTML()
       + '<div class="tp-hangar-main">'
-        + '<div class="tp-hangar-main-head"><span class="tp-hangar-name">' + ship.name + '</span><span class="tp-hangar-tier">' + tpTierText(ship) + "</span></div>"
+        + '<div class="tp-hangar-main-head"><span class="tp-hangar-name">' + tpShipDisplayName(ship) + '</span><span class="tp-hangar-tier">' + tpTierText(ship) + '</span><button class="tp-rename-btn" data-rename-ship="' + ship.instanceId + '" title="重命名舰船（最多 24 字符，留空清除）">✎ 重命名</button></div>'
         + tpShipMeta(display, ship)
         + '<div class="tp-hangar-3d">' + tpHangarThumb(ship) + "</div>"
       + "</div>"
@@ -526,6 +550,18 @@
             var msgs = { "repairing": "舰船自动维修中，暂时不能更换战斗舰", "unsupported-mining": "该舰船没有采矿岗位", "unsupported-gas": "该舰船没有采气岗位", "unsupported-archaeology": "该舰船没有考古扫描能力", "unsupported-refining": "只有工业支援舰可以承担冶炼岗位", "unsupported-task": "该任务不需要分配舰船岗位", "ship-active": "舰船正在执行任务，停止当前任务后才能重新分配", "combat-active": "交战中无法更换战斗舰，请先停止战斗", "npc-bound": "该舰船已绑定军团 NPC，须先在军团面板卸下才能指派" };
             if (window.showToast) window.showToast(msgs[res.reason] || "分配失败");
           } else { window.renderHangarPanel(); if (window.renderCombatPanel) window.renderCombatPanel(); }
+          return;
+        }
+        var ren = t.closest("[data-rename-ship]");
+        if (ren) {
+          // 复用生产 openRenameShipModal（shell-render.js），改名后其内部的 renderHangarPanel()
+          // 会经由本文件包装过的 window.renderHangarPanel 落到移动端重绘，无需另写一份。
+          // stopPropagation：本 root 挂在 #hangar-panel 内，而生产 bindHangarUI 也在 #hangar-panel 上
+          // 委托同一个 data-rename-ship —— 若该面板曾在桌面宽度下渲染过（bindHangarUI 已绑定），
+          // 不拦冒泡会让弹窗被打开两次（叠两层 overlay）。此处显式只由移动端这一条路径处理。
+          if (e && typeof e.stopPropagation === "function") e.stopPropagation();
+          if (typeof window.openRenameShipModal === "function") window.openRenameShipModal(ren.getAttribute("data-rename-ship"));
+          else { console.error("[taptap-portrait] 入口缺失：window.openRenameShipModal 未定义"); if (window.showToast) window.showToast("重命名入口缺失，请刷新或更新客户端"); }
           return;
         }
         var fit = t.closest("[data-open-fitting]");

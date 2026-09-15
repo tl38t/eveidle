@@ -381,8 +381,16 @@
 
   .tp-hangar-main{ padding:2px 12px 8px; }
   .tp-hangar-main-head{ display:flex; align-items:baseline; gap:8px; }
-  .tp-hangar-name{ font-size:18px; font-weight:700; color:#fff; }
-  .tp-hangar-tier{ font-size:12px; color:#8aa0b4; }
+  /* 允许舰名/舰型收缩并省略：flex 子项默认 min-width:auto = min-content，
+     遇「不可断行的长串」（ASCII/无空格长名，最长 24 字符）时下限就是整串宽度
+     ⇒ 右侧「✎ 重命名」按钮被挤出视口（实测 390 视口下按钮落在 [393,467]，看不见）。
+     中文名逐字可断行、min-content 仅一字宽，本就不会溢出（实测旧样式同样在视口内）。
+     这里显式放开收缩 + 省略号，保证任何舰名下按钮都留在可视区。 */
+  .tp-hangar-name{ font-size:18px; font-weight:700; color:#fff; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .tp-hangar-tier{ font-size:12px; color:#8aa0b4; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  /* 重命名入口：与桌面船坞卡片的「✎ 重命名」同功能（移动端此前缺失） */
+  .tp-rename-btn{ margin-left:auto; align-self:center; flex:0 0 auto; padding:4px 10px; border-radius:12px; border:1px solid #2c4360; background:rgba(30,48,70,.75); color:#a9c8e4; font-size:12px; font-weight:600; line-height:1.4; cursor:pointer; -webkit-tap-highlight-color:transparent; }
+  .tp-rename-btn:active{ background:rgba(58,104,150,.9); color:#eaf4ff; border-color:#4a7fae; }
   .tp-hangar-meta{ display:flex; flex-wrap:wrap; gap:6px; margin:8px 0 4px; }
   .tp-htag{ font-size:11px; padding:2px 8px; border-radius:10px; background:rgba(40,55,75,.6); color:#cdd9e5; }
   .tp-htag.role-combat{ background:rgba(217,74,74,.18); color:#ff9a9a; }

@@ -897,13 +897,22 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const probeDrop = deathspace ? rollDeathspaceProbeDrop(deathspace, enemy.kind, roll(), state) : null;
   if (probeDrop) { c.lastLoot += " · " + probeDrop.material + " ×" + probeDrop.qty; addLoot(probeDrop.resourceId, probeDrop.qty); }
   // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。负消耗不进 lootGained。
-  const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
-  if (salvageFuelPK > 0) {
-    const salvageBase = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
-    const fuelMultiplier = (typeof getCombatFuelMultiplierFromState === "function")
-      ? getCombatFuelMultiplierFromState(state, zone) : 1;
-    const salvageFuelAmt = Math.max(1, Math.round(salvageBase * fuelMultiplier));
-    ResourceRegistry.spend(state, "consumable:fuel", salvageFuelAmt);
+  // ⚠️ 死亡空间免除（2026-09-15，玩家报「死亡空间打捞开始消耗燃料了」）：
+  //   打捞臂全部属性只有 salvageEfficiency，而它的三个消费点在本函数内**全部**带 !deathspace 门禁 ——
+  //   货柜掉落 rollCargoDrop（上方 cargoDrop）、同位素主动打捞（下方）、MTU 组件产出（下方）
+  //   ⇒ 死亡空间里打捞臂 100% 空转（死了还得付油 = 没产出的东西照收钱）。
+  //   故与收益侧同口径：同一判据 deathspace 为真则免除，不再收取打捞臂燃耗。
+  //   ⛔ MTU 不在此列：其 iskBonus / lpBonus / rareDropBonus 在死亡空间仍全额生效
+  //   （ships.js:150 明确「含死亡空间首领核心/协议」），只有 salvageEfficiency 空转 ⇒ 继续扣费。
+  if (!deathspace) {
+    const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
+    if (salvageFuelPK > 0) {
+      const salvageBase = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
+      const fuelMultiplier = (typeof getCombatFuelMultiplierFromState === "function")
+        ? getCombatFuelMultiplierFromState(state, zone) : 1;
+      const salvageFuelAmt = Math.max(1, Math.round(salvageBase * fuelMultiplier));
+      ResourceRegistry.spend(state, "consumable:fuel", salvageFuelAmt);
+    }
   }
   // 激光定向打捞单元（MTU）：每击毁一艘扣一次燃料（= Σ fuelPerKill × 战斗燃料倍率）；断料 active=false → 不扣。
   if (mtu && mtu.active && mtu.fuelPerKill > 0) {
@@ -1250,7 +1259,7 @@ function tryResumeCombatAfterRepair() {
     const site = getDeathspaceById(r.deathspaceId);
     if (site) {
       const wave = buildDeathspaceWave(site, 1, function () { return nextCombatRandom(c); }, c);
-      const res = dispatchGameAction(gameState, { type:"combat/enterDeathspace", deathspaceId:site.id, enemies:wave.enemies, formationId:wave.formationId }, now);
+      const res = dispatchGameAction(gameState, { type:"combat/enterDeathspace", deathspaceId:site.id, enemies:wave.enemies, formationId:wave.formationId, autoResume:true }, now);
       if (res && res.changed) {
         if (typeof setCombatQueueResume === "function") setCombatQueueResume(gameState);
         GameEvents.emit("combat:resumedAfterRepair", { zoneId:site.sourceZoneId, defeatedMode:"deathspace", deathspaceId:site.id }, { offline:false });
@@ -1277,8 +1286,9 @@ function tryResumeCombatAfterRepair() {
   c.runDamageTaken = 0;
   c.runWeaponTypesZone = r.returnZoneId;
   const wave = buildCombatWave(zone, 1);
-  // 经既有 combat/start Action 续跑：内部完整校验（维修中/等级/无武器）失败则不改状态、安全停止
-  const res = dispatchGameAction(gameState, { type:"combat/start", enemies:wave.enemies, formationId:wave.formationId }, now);
+  // 经既有 combat/start Action 续跑：内部完整校验（维修中/等级/无武器）失败则不改状态、安全停止。
+  // autoResume:true — 维修完成后的自动续战沿用同一场 run 的战斗日志累计（不因重建编队而清零）。
+  const res = dispatchGameAction(gameState, { type:"combat/start", enemies:wave.enemies, formationId:wave.formationId, autoResume:true }, now);
   if (res && res.changed) {
     if (typeof setCombatQueueResume === "function") setCombatQueueResume(gameState);
     GameEvents.emit("combat:resumedAfterRepair", { zoneId:r.returnZoneId, defeatedMode:r.defeatedMode, deathspaceId:r.deathspaceId || null }, { offline:false });
@@ -1925,11 +1935,23 @@ function beginDeathspaceRun(state, options, context) {
     // 而非被重入清零成 100。注意：玩家主动点「开始战斗」（actions.js:888 combat/start）走另一条
     // 路径、不传 options，仍恒清零，不受此处影响；此处仅作用于 beginDeathspaceRun 的非 continuation
     // 入场（玩家点击死亡空间开战 + 离线恢复重入），故玩家手动重开连刷链也会保留累计（符合「不清零」预期）。
+    //
+    // 2026-09-15 收紧（离线打完后再手动开战斗，日志仍延续）：
+    //   runToken 相等只说明「没被重置过」，离线结算从不重置 runToken，所以离线把战斗打完后
+    //   （active=false、无连刷待续）runToken 依然相等 ⇒ 手动再开新战斗被误判成同一场 run 续跑，
+    //   累计被整场带进新战斗（现象：日志延续）。
+    //   追加「上一场仍在途中」判据：combat.active 或 deathspaceChainPending 至少一个为真，
+    //   才认作同一场 run 的续跑；战斗已结束即视为新的一场 run，正常清零。
+    //   注意：合并离线收益发生在 offline:combatSettled（combatLogMergeOffline 纯累加），
+    //   与本处判据无关 ⇒ 「400 在线 + 100 离线 = 500」不受影响，仍是 500。
     const queueItemId = state.combat.queueItemId;
     const _rl = state.combat.runLog;
     const queueMatch = Boolean(queueItemId && _rl && _rl.queueItemId === queueItemId);
-    const chainResume = Boolean(!queueItemId && _rl && _rl.runToken && _rl.runToken === state.combat.runToken);
-    const preserveQueueLog = queueMatch || chainResume;
+    const _runStillOpen = Boolean(state.combat.active || state.combat.deathspaceChainPending);
+    const chainResume = Boolean(!queueItemId && _runStillOpen && _rl && _rl.runToken && _rl.runToken === state.combat.runToken);
+    // autoResume（维修完成后的自动续战）语义上沿用同一场 run，直接保留累计，
+    // 与 combat/start 的判据保持同一口径（两处都只在「非自动续战 + 上一场已收尾」时清零）。
+    const preserveQueueLog = queueMatch || chainResume || Boolean(opts.autoResume);
     resetCombatRunState(state.combat, { preserveQueueLog });
     if (queueItemId && state.combat.runLog) state.combat.runLog.queueItemId = queueItemId;
     // 新 run 开战前将玩家舰血量重置为满血：上一场残留受损 hp 不应带入新 run（惨胜残血会导致
