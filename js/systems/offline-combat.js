@@ -848,8 +848,10 @@
       if (enemy.kind === "elite" || enemy.kind === "boss") {
         (da.factionData[zone.id] = da.factionData[zone.id] || { elite: 0, boss: 0 });
         da.factionData[zone.id][enemy.kind]++;
-        const tcfg = G("getDeathspaceTicketDropConfig")(zone);
-        if (tcfg) {
+        const tcfgs = typeof G("getDeathspaceTicketDropConfigs") === "function"
+          ? G("getDeathspaceTicketDropConfigs")(zone)
+          : (G("getDeathspaceTicketDropConfig")(zone) ? [G("getDeathspaceTicketDropConfig")(zone)] : []);
+        if (tcfgs.length) {
           (da.ticket[zone.id] = da.ticket[zone.id] || { elite: 0, boss: 0 });
           da.ticket[zone.id][enemy.kind]++;
         }
@@ -1584,11 +1586,14 @@
     for (const zoneId in da.ticket) {
       const zone = COMBAT_ZONES.find(z => z.id === zoneId);
       if (!zone) continue;
-      const tcfg = G("getDeathspaceTicketDropConfig")(zone);
-      if (!tcfg) continue;
       const tk = da.ticket[zoneId];
-      if (tk.elite) { const n = batchCount(tk.elite, tcfg.eliteChance, rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
-      if (tk.boss) { const n = batchCount(tk.boss, tcfg.bossChance, rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
+      const tcfgs = typeof G("getDeathspaceTicketDropConfigs") === "function"
+        ? G("getDeathspaceTicketDropConfigs")(zone)
+        : (G("getDeathspaceTicketDropConfig")(zone) ? [G("getDeathspaceTicketDropConfig")(zone)] : []);
+      for (const tcfg of tcfgs) {
+        if (tk.elite) { const n = batchCount(tk.elite, tcfg.eliteChance, rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
+        if (tk.boss) { const n = batchCount(tk.boss, tcfg.bossChance, rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
+      }
     }
     // 4) 死亡空间首领战利品
     const dsCovered = {};

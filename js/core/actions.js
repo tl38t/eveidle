@@ -2352,13 +2352,14 @@ function enhanceEquipment(state, targetRef, randomValue) {
   }
   ResourceRegistry.spendCost(state, display.cost);
   if (display.extra.core) ResourceRegistry.spendCost(state, { [display.extra.core]:1 });
-  if (display.extra.protocol) ResourceRegistry.spendCost(state, { [display.extra.protocol]:1 });
 
   const fromLevel = targetInstance.enhancementLevel;
   const roll = Number.isFinite(Number(randomValue)) ? Math.max(0, Math.min(0.999999999, Number(randomValue))) : Math.random();
   const success = roll < display.success;
   const toLevel = success ? fromLevel + 1 : fromLevel; // 失败规则 C：等级不变，不回退、不降级
   targetInstance.enhancementLevel = toLevel;
+  // DED 监督者装备的协议是成功结算材料：失败保留协议，不重复惩罚玩家。
+  if (success && display.extra.protocol) ResourceRegistry.spendCost(state, { [display.extra.protocol]:1 });
   const xp = success ? display.successXp : 0; // 失败 XP = 0
   if (xp > 0) addSkillXpToState(state, "equipmentEngineering", xp, { source:"equipment-enhancement" });
   state._dirty = true;

@@ -610,7 +610,7 @@ function getDeathspaceTicketDropConfig(zone) {
 
 function getDeathspaceTicketDropConfigs(zone) {
   if (!zone) return [];
-  return DEATHSPACE_DATABASE.filter(site => site.sourceZoneId === zone.id).map(site => ({
+  return DEATHSPACE_DATABASE.filter(site => (site.ticketSourceZoneId || site.sourceZoneId) === zone.id).map(site => ({
     deathspaceId:site.id, deathspaceName:site.name, material:site.ticketMaterial,
     eliteChance:Number(site.ticketChances && site.ticketChances.elite) || 0,
     bossChance:Number(site.ticketChances && site.ticketChances.boss) || 0

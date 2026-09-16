@@ -4942,7 +4942,7 @@ function enhanceEquipmentFromWarehouse(targetRef, onDone) {
     const extraLines = [];
     if (preview.extra.sameTypeItemId) extraLines.push("同型号 +0 装备×1");
     if (preview.extra.core) extraLines.push(preview.extra.core + "×1");
-    if (preview.extra.protocol) extraLines.push(preview.extra.protocol + "×1");
+    if (preview.extra.protocol) extraLines.push("成功后消耗 " + preview.extra.protocol + "×1");
     const fullList = [materialLines, ...extraLines].filter(Boolean).join(" + ");
     const bodyHtml =
       '<p class="dlg-body">强化 ' + escapeAchievementText(definition.name) + '：+' + fromLevel + ' → +' + (fromLevel + 1) + '</p>' +

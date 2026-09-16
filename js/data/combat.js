@@ -344,7 +344,7 @@ const DEATHSPACE_DATABASE = [
   },
   {
     id:"angel_ded_8_10", name:"劫团8/10边疆堡垒", faction:"angel", sourceZoneId:"angel_warfront", requiredCL:80, dedTier:8,
-    ticketMaterial:"劫团边疆堡垒通行密钥", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
+    ticketMaterial:"劫团边疆堡垒通行密钥", ticketSourceZoneId:"angel_outer_reach", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
     coreMaterial:"劫团X型校准核心", protocolMaterial:"劫团X型改良协议", protocolChance:0.02,
     combatBalance:{hp:1.20,damage:1.05,finalHp:1.25,finalDamage:1.10},
     waves:[
@@ -358,7 +358,7 @@ const DEATHSPACE_DATABASE = [
   },
   {
     id:"blood_ded_8_10", name:"赤誓8/10深红圣所", faction:"blood", sourceZoneId:"blood_iron_basilica", requiredCL:80, dedTier:8,
-    ticketMaterial:"赤誓深红圣所通行密钥", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
+    ticketMaterial:"赤誓深红圣所通行密钥", ticketSourceZoneId:"blood_outer_reliquary", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
     coreMaterial:"赤誓X型校准核心", protocolMaterial:"赤誓X型改良协议", protocolChance:0.02,
     combatBalance:{hp:1.05,damage:1.20,finalHp:1.20,finalDamage:1.15},
     waves:[
@@ -372,7 +372,7 @@ const DEATHSPACE_DATABASE = [
   },
   {
     id:"sansha_ded_8_10", name:"静默8/10同化中枢", faction:"sansha", sourceZoneId:"sansha_command_matrix", requiredCL:80, dedTier:8,
-    ticketMaterial:"静默战争设施通行密钥", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
+    ticketMaterial:"静默战争设施通行密钥", ticketSourceZoneId:"sansha_outer_array", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
     coreMaterial:"静默X型校准核心", protocolMaterial:"静默X型改良协议", protocolChance:0.02,
     combatBalance:{hp:1.15,damage:1.10,finalHp:1.30,finalDamage:1.05},
     waves:[
