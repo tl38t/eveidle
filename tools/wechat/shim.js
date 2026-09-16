@@ -537,6 +537,24 @@
       __clsSet: null,
       __ds: null,
     };
+    /* ---------- 滚动：让 canvas DOM 支持 scrollTop/scrollLeft ----------
+     * 微信 canvas 渲染层没有原生滚动，本机 scrollTop 是哑属性（line 525-528）。
+     * 这里把 scrollTop/scrollLeft 变成可读写的存储属性，render 层据此卷动后代。 */
+    (function () {
+      var _st = 0, _sl = 0;
+      try {
+        Object.defineProperty(el, "scrollTop", {
+          configurable: true,
+          get: function () { return _st; },
+          set: function (v) { _st = Number(v) || 0; },
+        });
+        Object.defineProperty(el, "scrollLeft", {
+          configurable: true,
+          get: function () { return _sl; },
+          set: function (v) { _sl = Number(v) || 0; },
+        });
+      } catch (eScroll) {}
+    })();
     /* ⚠️ 带连字符的 CSS 属性名要转驼峰存取（`z-index` ⇄ `zIndex`）。
      *    踩过：cssText 里 `z-index:99999` 原样写进 `style["z-index"]`，
      *    于是 `style.zIndex` 读到 undefined ⇒ 以后样式一条都读不回来。
