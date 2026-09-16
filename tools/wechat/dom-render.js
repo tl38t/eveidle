@@ -73,6 +73,12 @@ var CONFIG = {
   useRuleIndex: true,
   /* 调试用正则串：非空时逐帧把匹配元素的样式与缓存命中情况写进诊断（默认空 = 零开销）。 */
   debugKey: "",
+  /* 滚动渲染的合并闸（拖拽手感）。一次全量重建 50~160ms，而 touchmove 可达 60Hz：
+     逐个 move 同步强渲 ⇒ 渲染永远追不上触摸事件、事件队列越积越长，玩家手感就是
+     「拖动卡顿很严重」（松手后画面还会继续追赶一大截）。实际间隔 = max(本值, 上次渲染耗时)，
+     保证「上一帧画完」才开始下一帧；期间模型（scrollTop）每次都立即更新，且最后一次
+     move 之后必有**收尾渲染**，所以不会丢位移。 */
+  scrollMinIntervalMs: 60,
   logOnce: true,
 };
 
@@ -357,6 +363,15 @@ function toKernel(n, parentEl) {
   if (!tag || SKIP_TAGS[tag]) { CONV.skipped++; return null; }
   var attrs = {};
   if (n._attrs) { for (var k in n._attrs) attrs[k] = n._attrs[k]; }
+  /* 🔴 `_attrs.style` 是 **innerHTML 解析当时的快照**（shim.js:410 写入），JS 之后改
+     `el.style.xxx` 不会回写它；而浏览器里 `getAttribute("style")` 是**活值**（shim.js:589
+     正是这么实现的）。不删掉这个陈旧键，它会覆盖紧随其后的活读（下面 `if (cssText)`），
+     于是「HTML 里写过 style="" 的元素」对 JS 的后续样式修改**永久免疫**。
+     实测后果：21 个受管面板在 index.html 里都是 `style="display:none;"`，游戏切页时把
+     当前面板设成 `display:""`，内核却始终读到陈旧的 "display:none;" ⇒ 当前页一片空白。
+     ⚠️ 它与「行内样式解析 bug（css-parse 的 `st[k]=d.value`）」互相补偿：后者曾让行内
+     样式整体失效，陈旧值因此看不出来；只修一个必然引入新症状，必须两个都修。 */
+  delete attrs.style;
   // 🔴 桥接：shim 里 `el.hidden = true`（IDL 属性赋值）不会反射进 `_attrs`，
   // 而 kernel 的 [hidden] 选择器 / [hidden]{display:none}（dom-kernel.js applyInlineAndUAStyles）只认 `attrs.hidden`。
   // 结果：所有用 `.hidden = true` 隐藏的元素在微信 canvas 里「隐藏免疫」——用户见的「黑块」即 #tutorial-widget。
@@ -842,6 +857,40 @@ function fire(el, type, x, y) {
 function bindTouch(w) {
   if (!w || typeof w.onTouchStart !== "function") { warn("宿主无 onTouchStart，触摸不可用"); return; }
   var T = S.touches;
+
+  /* ---------- 滚动渲染的合并闸（拖拽手感）----------
+   * 逐个 touchmove 做一次全量重建（实测 50~160ms）而 touchmove 可达 60Hz ⇒ 渲染永远
+   * 追不上输入、事件队列越积越长 ⇒ 玩家症状「拖动卡顿很严重」。
+   * 策略：模型（scrollTop）**每次 move 立即更新**（不丢位移），渲染**合并**到
+   * 「距上次渲染 ≥ max(scrollMinIntervalMs, 上次渲染耗时)」，并保证最后一次 move 后有
+   * **收尾渲染**（否则松手时画面停在中间某帧，尾巴还得等游戏空转帧才补上）。 */
+  function scrollInterval() { return Math.max(CONFIG.scrollMinIntervalMs, S.renderMs || 0); }
+  function doScrollRender() {
+    S.lastScrollRenderAt = Date.now();
+    try { render("scroll", true); } catch (eR) { err("scroll-render", eR); }
+    S.lastScrollRenderAt = Date.now();
+    S.scrollRenders = (S.scrollRenders || 0) + 1;
+  }
+  function requestScrollRender() {
+    var now = Date.now();
+    if (!S.lastScrollRenderAt || now - S.lastScrollRenderAt >= scrollInterval()) {
+      if (S.scrollTimer) { try { clearTimeout(S.scrollTimer); } catch (eC) {} S.scrollTimer = null; }
+      doScrollRender();
+      return;
+    }
+    if (S.scrollTimer) return;                       // 已有收尾渲染在排队，别叠加
+    var wait = Math.max(16, (S.lastScrollRenderAt || 0) + scrollInterval() - now);
+    if (typeof setTimeout !== "function") { doScrollRender(); return; }
+    S.scrollTimer = setTimeout(function () { S.scrollTimer = null; doScrollRender(); }, wait);
+  }
+  /* 松手：把在排队的收尾渲染立刻兑现，避免最后一帧延迟。 */
+  function flushScrollRender() {
+    if (!S.scrollTimer) return;
+    try { clearTimeout(S.scrollTimer); } catch (eC) {}
+    S.scrollTimer = null; doScrollRender();
+  }
+  S.scrollFlush = flushScrollRender;
+
   w.onTouchStart(function (e) {
     try {
       var p = pointOf(e);
@@ -873,7 +922,10 @@ function bindTouch(w) {
               if (sc.node) { sc.node.__scrollTop = nsTop; sc.node.__scrollLeft = nsLeft; }
             } catch (eS) {}
             T.moved = 1;
-            try { render("scroll", true); } catch (eR) { err("scroll-render", eR); }
+            /* ⚠️ 这里**不能**直接 `render("scroll", true)`：一次全量重建 50~160ms，
+               而 touchmove 可达 60Hz ⇒ 渲染追不上输入、队列越积越长（拖拽卡顿的真因）。
+               合并渲染 + 收尾渲染，见 bindTouch 顶部注释。 */
+            requestScrollRender();
             T.start = { x: p.x, y: p.y };   // 重置起点 ⇒ 连续拖动平滑
             return;                          // 卷动时不派发 touchmove（避免与游戏拖拽冲突）
           }
@@ -888,6 +940,9 @@ function bindTouch(w) {
       var st = T.start;
       var el = S.startEl;
       T.start = null; S.startEl = null; S.startNode = null;
+      /* 松手：把在排队的收尾渲染立刻兑现 —— 否则画面停在中间某帧，尾巴要等游戏空转帧才补。
+         （拖拽的位移**不丢**：scrollTop 每次都写进模型，这里只是把最后一帧画出来。） */
+      flushScrollRender();
       if (!st) return;
       /* 松手点重新命中：只有「按下与抬起在同一元素且位移小」才算点击（与浏览器一致）。
          位移大 = 滑动，不该触发按钮。 */

@@ -8,7 +8,7 @@
  *
  * 来源（**真值方向 = POC → 本文件**；要改内核请改 mini-dom-poc/*.mjs 后重跑本生成器，
  *   直接手改仓库内 dom-kernel.js 会被下一次生成覆盖，并用 --check 检测为漂移）：
- *   · css-parse.mjs     20449 B / 533 行
+ *   · css-parse.mjs     21020 B / 542 行
  *   · layout.mjs        41813 B / 913 行
  *   · paint.mjs         12966 B / 318 行
  *
@@ -505,9 +505,18 @@ function applyInlineAndUAStyles(root) {
       if (raw) {
         const d = parseDeclarations(raw);
         for (const k in d) {
+          const dv = d[k];
+          /* 🔴 曾经写成 `st[k] = d.value` —— d 是「属性名 → {value,important}」的映射表，
+             `d.value` 恒为 undefined（表里没有名为 value 的属性），于是**每一条行内样式都被
+             赋成 undefined** ⇒ 内核整体丢弃行内样式。后果不是「样式略偏」而是：
+             ① JS 用 `el.style.display="none"` 隐藏的面板全部不隐藏（21 个面板里 20 个同时可见，
+                首尾相连排成 ~24000px 长柱）⇒ 玩家症状「所有面板全部合在一起」；
+             ② index.html 里 `style="display:none;"` 的静态隐藏同样失效。
+             ⚠️ parseDeclarations 的返回结构是 `{prop: {value, important}}`（见 css-parse.mjs:50）。 */
+          if (!dv || dv.value === "") continue;
           const prev = wins[k];
           if (prev && prev.important) continue; // CSS 里的 !important 仍胜出
-          st[k] = d.value;
+          st[k] = dv.value;
         }
       }
       if (c.attrs && c.attrs.hidden !== undefined && st.display === undefined) st.display = "none";
