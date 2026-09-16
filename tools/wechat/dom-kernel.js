@@ -8,7 +8,7 @@
  *
  * 来源（**真值方向 = POC → 本文件**；要改内核请改 mini-dom-poc/*.mjs 后重跑本生成器，
  *   直接手改仓库内 dom-kernel.js 会被下一次生成覆盖，并用 --check 检测为漂移）：
- *   · css-parse.mjs     19384 B / 514 行
+ *   · css-parse.mjs     20449 B / 533 行
  *   · layout.mjs        41813 B / 913 行
  *   · paint.mjs         12966 B / 318 行
  *
@@ -126,6 +126,15 @@ function parseSelector(sel) {
   s = s.replace(/:root\b/g, "html");           // :root 当作 html 处理
   const nots = [];
   s = s.replace(/:not\(([^()]*)\)/g, (_m, inner) => { nots.push(inner.trim()); return ""; });
+  /* ⚠️ :empty 必须支持 —— 实测 CSS 里 5 处，其中 3 处是「容器的关闭态隐藏」：
+     `.research-detail:empty{display:none}`、`.tutorial-widget .tw-actions:empty{display:none}`、
+     `.setting-changelog:empty{display:none}`。最致命的是第一条：.research-detail 是
+     position:fixed;inset:0;z-index:2100 的**全屏层**，规则一旦被跳过，它**空着的时候照样算
+     全屏可见** ⇒ 吞掉顶层所有点击（实测 ☰ 按钮中心 (24,18) 命中 aside#research-detail，
+     而该节点 childNodes=0）⇒ 玩家症状「界面看着正常、但很多东西点不了」。
+     只支持出现在选择器**最右 compound** 的形式（覆盖全部实际用法），其余仍在下一行整条跳过。 */
+  let wantsEmpty = false;
+  s = s.replace(/:empty\b/g, () => { wantsEmpty = true; return ""; });
   if (/::?[a-zA-Z-]/.test(s)) return null;      // 其余伪类/伪元素 → 跳过
   s = s.replace(/\s*>\s*/g, " > ").replace(/\s*\+\s*/g, " > ").replace(/\s+/g, " ").trim();
   const raw = s.split(" ").filter(Boolean);
@@ -140,6 +149,7 @@ function parseSelector(sel) {
     const last = parts[parts.length - 1].compound;
     last.not = (last.not || []).concat(nots);
   }
+  if (wantsEmpty && parts.length) parts[parts.length - 1].compound.empty = true;
   return parts.length ? { parts } : null;
 }
 
@@ -167,6 +177,11 @@ function matchCompound(el, c) {
   if (c.id && el.attrs.id !== c.id) return false;
   for (const cl of c.classes) if (!el.classes.includes(cl)) return false;
   for (const a of c.attrs) if (!matchAttr(el, a)) return false;
+  if (c.empty) {
+    /* CSS :empty = **零子节点**（元素与文本都算内容）。内核节点 children 同时含元素与文本节点
+       ⇒ 直接看长度；只要有任一子节点就不匹配。 */
+    if (el.children && el.children.length) return false;
+  }
   if (c.not) {
     for (const n of c.not) {
       const np = parseCompound(n);
@@ -205,6 +220,10 @@ const specOf = (parts) => {
   for (const p of parts) {
     if (p.compound.id) a++;
     b += p.compound.classes.length + p.compound.attrs.length;
+    /* ⚠️ :empty 是伪类 ⇒ 按 CSS 规范计入 class 层级（b）。**必须加**：
+       `.research-detail:empty{display:none}` 出现在 `.research-detail{display:flex}` **之前**，
+       若不抬特异性，后者会凭「同特异性取后出现」把它盖掉 ⇒ 修了也不生效。 */
+    if (p.compound.empty) b++;
     if (p.compound.tag && p.compound.tag !== "*") c++;
   }
   return [a, b, c];

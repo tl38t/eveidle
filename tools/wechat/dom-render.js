@@ -107,6 +107,10 @@ var S = {
      就永久停止更新**（实测踩过：落盘内容永远停在启动帧，正好把最需要的信息弄瞎）。
      元素引用一律单独放这里，永不进诊断。 */
   startEl: null,
+  /* 按下点命中的**内核节点**。onTouchMove 要沿 parent 向上找可卷动祖先，
+     所以必须留内核节点（不是 shim 元素）。与 startEl 并列单独存，
+     同样不进 diagObj —— 内核节点带 parent/srcEl ⇒ 循环引用。 */
+  startNode: null,
   errors: [], warns: [],
   t0: Date.now(),
   lastPersistAt: 0,
@@ -766,12 +770,51 @@ function hitTest(x, y) {
   while (n) { chain.push({ tag: n.tag, id: (n.attrs && n.attrs.id) || "", cls: (n.attrs && n.attrs["class"]) || "", box: n.__box ? [Math.round(n.__box.x), Math.round(n.__box.y), Math.round(n.__box.w), Math.round(n.__box.h)] : null }); n = n.parent; }
   return { node: chain.length ? chain[0] : null, chain: chain.slice(0, 8) };
 }
-/* 返回命中点对应的 shim 元素（用于派发） */
-function hitEl(x, y) {
+/* 命中点对应的**内核节点**（最深的那个）。 */
+function hitNode(x, y) {
   if (!S.root) return null;
-  var n = hitWalk(S.root, x, y);
+  return hitWalk(S.root, x, y);
+}
+/* 返回命中点对应的 shim 元素（用于派发）：从内核节点上溯到第一个有 srcEl 的。 */
+function hitEl(x, y) {
+  var n = hitNode(x, y);
   while (n && !n.srcEl) n = n.parent;
   return n ? n.srcEl : null;
+}
+
+/* ⚠️ 触摸拖拽滚动 —— 这两个函数曾经**只有调用、没有定义**（2026-09-16 修）：
+   每次 touchmove 都抛 ReferenceError，被 catch 静默吞掉 ⇒ 真机上「页面完全拖不动」；
+   而 harness 的 tap() 只发 touchstart/touchend、**从不发 touchmove** ⇒ 判据照不出来。
+   教训：加调用必须同时加定义，且触摸三件套（start/move/end）必须成对进判据（见 harness 阶段 4b）。 */
+
+/* 从命中的内核节点向上找**最近的可卷动祖先**（与浏览器一致：滚动发生在最近祖先）。
+   ⚠️ 只认 overflow:auto|scroll —— overflow:hidden 的容器用户手势拖不动
+   （它的程序化 scrollTop 仍有效，那条路径由 layout 的 __scrollTop 同步负责）。
+   要求真的可滚（maxY/maxX > 4），否则 maxY≈1 的容器会白白吞掉手势。
+   返回 { node, srcEl, top, left, maxY, maxX }；找不到返回 null（把 touchmove 让给游戏）。 */
+function findScrollContainer(node) {
+  var n = node;
+  while (n) {
+    var st = n.style || {};
+    var ov = st.overflow || st["overflow-y"] || st["overflow-x"] || "";
+    if (/auto|scroll/.test(String(ov)) && n.srcEl) {
+      var b = n.__box || { w: 0, h: 0 };
+      var cH = (typeof n.__clientH === "number") ? n.__clientH : b.h;
+      var cW = (typeof n.__clientW === "number") ? n.__clientW : b.w;
+      var maxY = Math.max(0, (n.__scrollH || 0) - cH);
+      var maxX = Math.max(0, (n.__scrollW || 0) - cW);
+      if (maxY > 4 || maxX > 4) {
+        return { node: n, srcEl: n.srcEl, top: n.__scrollTop || 0, left: n.__scrollLeft || 0, maxY: maxY, maxX: maxX };
+      }
+    }
+    n = n.parent;
+  }
+  return null;
+}
+function clampScroll(v, max) {
+  if (!(max > 0)) return 0;
+  var x = Number(v) || 0;
+  return Math.max(0, Math.min(x, max));
 }
 
 function makeEvent(type, x, y) {
@@ -806,6 +849,7 @@ function bindTouch(w) {
       var el = hitEl(p.x, p.y);
       T.start = { x: p.x, y: p.y };      // 只存标量：进诊断的必须可序列化
       S.startEl = el;                    // 元素引用单独放，永不序列化
+      S.startNode = hitNode(p.x, p.y);   // 内核节点：onTouchMove 靠它向上找可卷动祖先
       T.moved = 0;
       if (el) { T.hits++; fire(el, "pointerdown", p.x, p.y); fire(el, "touchstart", p.x, p.y); }
       else T.misses++;
@@ -843,7 +887,7 @@ function bindTouch(w) {
       var p = pointOf(e) || { x: T.start ? T.start.x : 0, y: T.start ? T.start.y : 0 };
       var st = T.start;
       var el = S.startEl;
-      T.start = null; S.startEl = null;
+      T.start = null; S.startEl = null; S.startNode = null;
       if (!st) return;
       /* 松手点重新命中：只有「按下与抬起在同一元素且位移小」才算点击（与浏览器一致）。
          位移大 = 滑动，不该触发按钮。 */
