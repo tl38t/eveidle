@@ -477,6 +477,8 @@
         return { ok: true };
       case "hangar/toggleAssignment":
       case "hangar/equipCombatShip":
+      case "hangar/setFittingSlot":
+      case "hangar/resetFitting":
         if (changed) reconcileTutorialState(state, now);
         return { ok: true };
       default:

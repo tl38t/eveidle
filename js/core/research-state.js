@@ -39,6 +39,9 @@
       activeResearch: null,
       pendingQueue: [],
       researchHourBank: 0,
+      accumulatedResearchSeconds: 0,
+      cycleResearchLevels: {},
+      researchTimeMigrationVersion: 1,
       protocolSettings: {
         intship: { enabled: false },
         autoenh: { enabled: false, maxAttempts: 0 },
@@ -203,6 +206,41 @@
 
     if (typeof r.schemaVersion !== "number") r.schemaVersion = 1;
 
+    const accumulatedWasValid = typeof r.accumulatedResearchSeconds === "number" && isFinite(r.accumulatedResearchSeconds) && r.accumulatedResearchSeconds >= 0;
+    if (!accumulatedWasValid) r.accumulatedResearchSeconds = 0;
+    if (!r.cycleResearchLevels || typeof r.cycleResearchLevels !== "object" || Array.isArray(r.cycleResearchLevels)) {
+      r.cycleResearchLevels = {};
+    }
+    // 旧存档迁移：累计时长字段首次加入时，已完成研究没有被记录进该字段。
+    // 用固定节点时长回填一次；已有新字段且大于 0 的存档视为已开始新口径，不重复累加。
+    if (r.researchTimeMigrationVersion !== 1) {
+      let recovered = 0;
+      const completed = r.completedLevels;
+      if (RD && Array.isArray(RD.NODES) && completed && typeof completed === "object" && !Array.isArray(completed)) {
+        for (const node of RD.NODES) {
+          const level = Math.max(0, Math.min(node.maxLevel, Math.floor(Number(completed[node.id]) || 0)));
+          if (!level || !Array.isArray(node.durationByLevel)) continue;
+          for (let i = 0; i < level; i++) recovered += Number(node.durationByLevel[i]) || 0;
+        }
+      }
+      if (RD && Array.isArray(RD.CYCLE_RESEARCHES)) {
+        for (const item of RD.CYCLE_RESEARCHES) {
+          const level = Math.max(0, Math.floor(Number(r.cycleResearchLevels[item.id]) || 0));
+          for (let i = 1; i <= level; i++) {
+            recovered += typeof RD.getCycleResearchDuration === "function" ? (Number(RD.getCycleResearchDuration(item.id, i)) || 0) : 0;
+          }
+        }
+      }
+      const active = r.activeResearch;
+      if (active && typeof active === "object" && !Array.isArray(active)) {
+        const base = Number(active.baseDuration) || 0;
+        const remaining = Math.max(0, Number(active.remainingSeconds) || 0);
+        recovered += Math.max(0, base - Math.min(base, remaining));
+      }
+      if (!accumulatedWasValid || r.accumulatedResearchSeconds <= 0) r.accumulatedResearchSeconds = recovered;
+      r.researchTimeMigrationVersion = 1;
+    }
+
     if (!r.completedLevels || typeof r.completedLevels !== "object" || Array.isArray(r.completedLevels)) {
       r.completedLevels = {};
     }
@@ -219,7 +257,9 @@
       }
       const techId = r.activeResearch.techId;
       const validTech = RD && Array.isArray(RD.NODES) && RD.NODES.some((n) => n.id === techId);
-      if (!validTech) {
+      const validCycle = typeof techId === "string" && techId.indexOf("cycle:") === 0 &&
+        RD && Array.isArray(RD.CYCLE_RESEARCHES) && RD.CYCLE_RESEARCHES.some((n) => n.id === techId.slice(6));
+      if (!validTech && !validCycle) {
         r.activeResearch = null;
       }
     }
@@ -324,6 +364,10 @@
         total += lvl * n.bonus.perLevel;
       }
     }
+    const cycleLevels = state && state.research && state.research.cycleResearchLevels ? state.research.cycleResearchLevels : {};
+    for (const item of (RD && Array.isArray(RD.CYCLE_RESEARCHES) ? RD.CYCLE_RESEARCHES : [])) {
+      if (item.group === group) total += (Number(cycleLevels[item.id]) || 0) * (Number(item.perLevel) || 0);
+    }
     return total / 100; // 统一分数化
   }
 
@@ -346,6 +390,10 @@
       } else {
         total += lvl * n.bonus.perLevel;
       }
+    }
+    const cycleLevels = state && state.research && state.research.cycleResearchLevels ? state.research.cycleResearchLevels : {};
+    for (const item of (RD && Array.isArray(RD.CYCLE_RESEARCHES) ? RD.CYCLE_RESEARCHES : [])) {
+      if (item.group === group) total += (Number(cycleLevels[item.id]) || 0) * (Number(item.perLevel) || 0);
     }
     return total; // 原始整数/数值，不 ÷100
   }

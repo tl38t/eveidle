@@ -159,6 +159,14 @@
     return { xpNote: xpNote, shipNote: shipNote };
   }
 
+  // ETA 单位必须走 i18n：`5分30秒` 这类「数字+单字单位」的文本节点无法靠目录子串命中
+  // （English 目录的单字键只能整节点精确匹配，不会切开 `5分30秒`）。走 I18N.t("分") 后
+  // 英文得 `5m30s`，繁中/简中回落原文。
+  function etaTextOf(eta) {
+    var uMin = (typeof I18N !== "undefined" && I18N.t) ? I18N.t("分") : "分";
+    var uSec = (typeof I18N !== "undefined" && I18N.t) ? I18N.t("秒") : "秒";
+    return eta >= 60 ? Math.floor(eta / 60) + uMin + Math.floor(eta % 60) + uSec : Math.ceil(eta) + uSec;
+  }
   function npcXpLiveHtml(st, npc) {
     var rate = LEGION_NPC.calculateLegionNpcXpPerSecond
       ? LEGION_NPC.calculateLegionNpcXpPerSecond(st, npc) : 0;
@@ -169,7 +177,7 @@
     if (npc.salaryState !== "paid") return '<span class="legion-warn">经验暂停：工资未正常</span>';
     if (!(rate > 0)) return '<span class="legion-warn">经验暂停：当前无有效经验来源</span>';
     var eta = Math.max(0, (need - xp) / rate);
-    var etaText = eta >= 60 ? Math.floor(eta / 60) + "分" + Math.floor(eta % 60) + "秒" : Math.ceil(eta) + "秒";
+    var etaText = etaTextOf(eta);
     return '<span class="legion-ok">经验获取中 · +' + rate.toFixed(3) + ' XP/s · 预计升级 ' + etaText + '</span>';
   }
 
@@ -181,7 +189,7 @@
     if (npc.salaryState !== "paid") return '<span class="legion-warn">经验暂停：工资未正常</span>';
     if (!(rate > 0)) return '<span class="legion-warn">经验暂停：当前无有效经验来源</span>';
     var eta = Math.max(0, (need - xp) / rate);
-    var etaText = eta >= 60 ? Math.floor(eta / 60) + "分" + Math.floor(eta % 60) + "秒" : Math.ceil(eta) + "秒";
+    var etaText = etaTextOf(eta);
     return '<span class="legion-ok">经验获取中 · +' + rate.toFixed(3) + ' XP/s · 预计升级 ' + etaText + '</span>';
   }
 

@@ -981,6 +981,78 @@
   /* ===== 研究系统面板（Batch F） ===== */
   .research-panel .panel-body { padding: 12px; display: flex; flex-direction: column; gap: 14px; }
   .research-summary { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .research-subtabs { display:flex; gap:4px; margin:16px 0 12px; border-bottom:1px solid #26354d; }
+  .research-subtab { border:0; border-bottom:2px solid transparent; padding:9px 15px; color:#8395b4; background:transparent; cursor:pointer; font:inherit; }
+  .research-subtab.active { color:#c09cff; border-bottom-color:#a879ee; background:linear-gradient(180deg,transparent,rgba(168,121,238,.1)); }
+  .research-cycle-section { padding:2px 0 18px; }
+  .research-cycle-hero { display:grid; grid-template-columns:1.2fr .8fr; gap:12px; margin-bottom:14px; }
+  .research-cycle-intro, .research-cycle-active { padding:16px; border:1px solid #493d6d; border-radius:10px; background:linear-gradient(135deg,rgba(56,42,84,.66),rgba(18,27,43,.9)); }
+  .research-cycle-active { border-color:#315e73; background:linear-gradient(135deg,rgba(24,61,76,.62),rgba(18,27,43,.9)); }
+  .research-cycle-eyebrow { color:#bd94ff; font-size:11px; letter-spacing:1px; }
+  .research-cycle-title { margin-top:4px; font-size:17px; font-weight:700; }
+  .research-cycle-copy { margin-top:6px; color:#aab8cf; }
+  .research-cycle-meter { height:8px; margin-top:12px; border-radius:99px; background:#0b1220; overflow:hidden; }
+  .research-cycle-meter i { display:block; height:100%; border-radius:inherit; background:linear-gradient(90deg,#b891ff,#62b9ff); }
+  .research-cycle-meta { display:flex; justify-content:space-between; margin-top:6px; color:#8395b4; font-size:12px; }
+  .research-cycle-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .research-cycle-card { padding:14px; border:1px solid #2a3c5d; border-radius:10px; background:#162238; }
+  .research-cycle-card.is-active { border-color:#5575a5; box-shadow:inset 0 0 0 1px rgba(98,185,255,.12); }
+  .research-cycle-card h3 { margin:9px 0 4px; font-size:14px; }
+  .research-cycle-icon { float:right; color:#c09cff; font-size:20px; }
+  .research-cycle-effect { color:#60d2ae; }
+  .research-cycle-cost { margin-top:8px; color:#8395b4; font-size:12px; }
+  @media (max-width:760px) { .research-cycle-hero,.research-cycle-grid { grid-template-columns:1fr; } }
+
+  /* 循环研究：五节点轨道 + 无限核心。节点沿用正式科技树 .rt-node 卡片语言。 */
+  .research-cycle-ring-wrap {
+    position:relative; width:min(780px,100%); height:560px; margin:8px auto 14px;
+    overflow:hidden; border:1px solid rgba(91,126,171,.22); border-radius:16px;
+    background:radial-gradient(circle at center,rgba(54,91,132,.16),rgba(8,14,24,.16) 38%,transparent 70%);
+  }
+  .research-cycle-ring {
+    position:absolute; left:50%; top:50%; width:300px; height:300px; transform:translate(-50%,-50%);
+    border:1px solid rgba(106,208,255,.28); border-radius:50%;
+    box-shadow:0 0 0 18px rgba(106,208,255,.025),0 0 38px rgba(106,208,255,.12),inset 0 0 30px rgba(106,208,255,.08);
+  }
+  .research-cycle-ring::before,.research-cycle-ring::after { content:""; position:absolute; inset:22px; border:1px dashed rgba(191,148,255,.24); border-radius:50%; }
+  .research-cycle-ring::after { inset:-16px; border-style:solid; border-color:rgba(191,148,255,.1); border-left-color:transparent; border-right-color:transparent; animation:research-cycle-orbit 18s linear infinite; }
+  @keyframes research-cycle-orbit { to { transform:rotate(360deg); } }
+  .research-cycle-ring-nodes { position:absolute; inset:0; }
+  .research-cycle-ring .rt-node { pointer-events:none; }
+  .research-cycle-node { width:220px; height:88px; padding:12px 14px; z-index:4; }
+  .research-cycle-node.n1 { left:50%; top:22px; transform:translateX(-50%); }
+  .research-cycle-node.n2 { right:18px; top:188px; }
+  .research-cycle-node.n3 { right:76px; bottom:26px; }
+  .research-cycle-node.n4 { left:76px; bottom:26px; }
+  .research-cycle-node.n5 { left:18px; top:188px; }
+  .research-cycle-node:hover { transform:translateY(-2px); }
+  .research-cycle-node.n1:hover { transform:translate(-50%,-2px); }
+  .research-cycle-node.is-selected { box-shadow:0 0 0 2px rgba(191,148,255,.55),0 0 24px rgba(191,148,255,.22); z-index:8; }
+  .research-cycle-infinite-mark { display:block; width:auto; height:auto; border:0; color:#c8aaff; font:18px/1 Georgia,serif; text-shadow:0 0 8px rgba(191,148,255,.7); }
+  .research-cycle-core {
+    position:absolute; left:50%; top:50%; transform:translate(-50%,-50%); z-index:6;
+    width:154px; height:154px; padding:18px 8px; border:1px solid #9e7ddd; border-radius:50%;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer;
+    color:#e8ddff; background:radial-gradient(circle,#302658 0%,#171b35 56%,#101827 100%);
+    box-shadow:0 0 0 6px rgba(151,112,229,.08),0 0 34px rgba(151,112,229,.28),inset 0 0 24px rgba(106,208,255,.12);
+    transition:transform .18s,box-shadow .18s,border-color .18s;
+  }
+  .research-cycle-core:hover { transform:translate(-50%,-50%) scale(1.04); border-color:#cbb2ff; box-shadow:0 0 0 8px rgba(151,112,229,.12),0 0 46px rgba(151,112,229,.42),inset 0 0 28px rgba(106,208,255,.18); }
+  .research-cycle-infinity { font-family:Georgia,serif; font-size:62px; line-height:.78; font-weight:400; color:#d9c7ff; text-shadow:0 0 16px rgba(191,148,255,.8); }
+  .research-cycle-core > span:not(.research-cycle-infinity) { font-size:14px; font-weight:700; letter-spacing:2px; }
+  .research-cycle-core small { color:#91a5c3; font-size:9px; }
+  .research-cycle-detail { max-width:780px; margin:0 auto 16px; padding:16px 18px; border:1px solid #33465c; border-radius:10px; background:#121b2a; color:#9fb0c2; }
+  .research-cycle-detail-empty { color:#71829b; text-align:center; }
+  .research-cycle-detail .research-btn { margin-top:12px; }
+  @media (max-width:760px) {
+    .research-cycle-ring-wrap { height:620px; }
+    .research-cycle-node { width:190px; }
+    .research-cycle-node.n1 { top:18px; }
+    .research-cycle-node.n2 { right:8px; top:166px; }
+    .research-cycle-node.n3 { right:18px; bottom:34px; }
+    .research-cycle-node.n4 { left:18px; bottom:34px; }
+    .research-cycle-node.n5 { left:8px; top:166px; }
+  }
   .research-bank {
     font-family: var(--font-tech, sans-serif);
     font-size: 15px;

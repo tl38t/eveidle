@@ -52,6 +52,20 @@
     return RD.NODES.find((n) => n.id === techId) || null;
   }
 
+  function getCycleResearch(cycleId) {
+    if (!RD || !Array.isArray(RD.CYCLE_RESEARCHES)) return null;
+    return RD.CYCLE_RESEARCHES.find((item) => item.id === cycleId) || null;
+  }
+
+  function isCycleResearchUnlocked(state) {
+    const seconds = Number(state && state.research && state.research.accumulatedResearchSeconds) || 0;
+    return seconds >= (Number(RD && RD.CYCLE_RESEARCH_UNLOCK_HOURS) || 1800) * 3600;
+  }
+
+  function getCycleResearchDuration(cycleId, level) {
+    return RD && typeof RD.getCycleResearchDuration === "function" ? RD.getCycleResearchDuration(cycleId, level) : null;
+  }
+
   function getResearchDuration(techId, targetLevel) {
     const node = getResearchNode(techId);
     if (!node) return null;
@@ -180,6 +194,13 @@
     if (parts.length !== 2) return null; // 多余 @ 或缺 @
     const techId = parts[0];
     if (techId.length === 0) return null;
+    if (techId.indexOf("cycle:") === 0) {
+      const cycleId = techId.slice(6);
+      if (!getCycleResearch(cycleId) || !/^[0-9]+$/.test(parts[1])) return null;
+      const cycleLevel = Number(parts[1]);
+      return Number.isInteger(cycleLevel) && cycleLevel > 0
+        ? { techId, cycleId, targetLevel: cycleLevel, isCycle: true } : null;
+    }
     if (!getResearchNode(techId)) return null; // 非法 techId
     if (!/^[0-9]+$/.test(parts[1])) return null; // 严格数字串（拒绝空白/正负号/小数点/科学计数）
     const level = Number(parts[1]);
@@ -224,7 +245,7 @@
 
     // 合法 activeResearch 视为完成后的 targetLevel
     const ar = research.activeResearch;
-    if (ar && typeof ar === "object" && !Array.isArray(ar) && typeof ar.techId === "string") {
+    if (ar && typeof ar === "object" && !Array.isArray(ar) && typeof ar.techId === "string" && ar.techId.indexOf("cycle:") !== 0) {
       if (isStepValidAgainst(projected, ar.techId, ar.targetLevel)) {
         projected[ar.techId] = Math.max(Number(projected[ar.techId]) || 0, ar.targetLevel);
       }
@@ -234,6 +255,7 @@
     for (const key of queue) {
       const parsed = parseResearchStepKey(key);
       if (!parsed) continue;
+      if (parsed.isCycle) continue;
       if (!isStepValidAgainst(projected, parsed.techId, parsed.targetLevel)) continue; // 非法旧档项跳过
       projected[parsed.techId] = Math.max(Number(projected[parsed.techId]) || 0, parsed.targetLevel);
     }
@@ -298,6 +320,26 @@
     research.pendingQueue.push(key);
     markResearchDirty(state); // 成功入队 → 标记待保存
     return { ok: true, key };
+  }
+
+  function enqueueCycleResearch(state, cycleId, targetLevel) {
+    const research = state && state.research ? state.research : {};
+    const cycle = getCycleResearch(cycleId);
+    if (!cycle) return { ok:false, reason:"UNKNOWN_CYCLE" };
+    if (!isCycleResearchUnlocked(state)) return { ok:false, reason:"CYCLE_LOCKED" };
+    if (!Number.isInteger(targetLevel) || targetLevel < 1) return { ok:false, reason:"LEVEL_OUT_OF_RANGE" };
+    const current = Number(research.cycleResearchLevels && research.cycleResearchLevels[cycleId]) || 0;
+    const ar = research.activeResearch;
+    const projectedCurrent = ar && ar.techId === "cycle:" + cycleId ? Math.max(current, Number(ar.targetLevel) || 0) : current;
+    const key = "cycle:" + cycleId + "@" + targetLevel;
+    if (targetLevel !== projectedCurrent + 1) return { ok:false, reason:targetLevel <= projectedCurrent ? "ALREADY_COMPLETED" : "SKIP_LEVEL" };
+    if (ar && ar.techId === "cycle:" + cycleId && ar.targetLevel === targetLevel) return { ok:false, reason:"ALREADY_ACTIVE" };
+    if (Array.isArray(research.pendingQueue) && research.pendingQueue.includes(key)) return { ok:false, reason:"ALREADY_QUEUED" };
+    if (!Array.isArray(research.pendingQueue)) research.pendingQueue = [];
+    if (research.pendingQueue.length >= 20) return { ok:false, reason:"QUEUE_FULL" };
+    research.pendingQueue.push(key);
+    markResearchDirty(state);
+    return { ok:true, key };
   }
 
   // -------------------------------------------------------------------------
@@ -381,6 +423,19 @@
     if (research.activeResearch !== null && typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) {
       return { ok: false, reason: "ALREADY_ACTIVE" };
     }
+    if (techId.indexOf("cycle:") === 0) {
+      const cycleId = techId.slice(6);
+      const cycle = getCycleResearch(cycleId);
+      const current = Number(research.cycleResearchLevels && research.cycleResearchLevels[cycleId]) || 0;
+      if (!cycle) return { ok:false, reason:"UNKNOWN_CYCLE" };
+      if (!isCycleResearchUnlocked(state)) return { ok:false, reason:"CYCLE_LOCKED" };
+      if (targetLevel !== current + 1) return { ok:false, reason:"PREREQ_UNMET" };
+      const duration = getCycleResearchDuration(cycleId, targetLevel);
+      const startedAt = (typeof atMs === "number" && isFinite(atMs)) ? atMs : Date.now();
+      research.activeResearch = { techId, targetLevel, startedAt, baseDuration:duration, remainingSeconds:duration, appliedAchievementSeconds:0, isCycle:true, cycleId };
+      markResearchDirty(state);
+      return { ok:true, activeResearch:research.activeResearch };
+    }
     const node = getResearchNode(techId);
     if (!node) return { ok: false, reason: "UNKNOWN_TECH" };
     if (!Number.isInteger(targetLevel) || targetLevel < 1 || targetLevel > node.maxLevel) {
@@ -460,7 +515,9 @@
     if (!parsed) {
       return { ok: false, reason: "BAD_KEY" };
     }
-    const res = startResearch(state, parsed.techId, parsed.targetLevel, now);
+    const res = parsed.isCycle
+      ? beginResearchStep(state, parsed.techId, parsed.targetLevel, now)
+      : startResearch(state, parsed.techId, parsed.targetLevel, now);
     if (res && res.ok) {
       const idx = queue.indexOf(stepKey);
       if (idx >= 0) queue.splice(idx, 1);
@@ -496,6 +553,15 @@
       const key = queue[0];
       const parsed = parseResearchStepKey(key);
       if (!parsed) { queue.shift(); markResearchDirty(state); continue; } // 坏格式 → 移除并标记
+      if (parsed.isCycle) {
+        const cycleLevel = Number(research.cycleResearchLevels && research.cycleResearchLevels[parsed.cycleId]) || 0;
+        if (parsed.targetLevel === cycleLevel + 1 && isCycleResearchUnlocked(state)) {
+          const res = beginResearchStep(state, parsed.techId, parsed.targetLevel, atMs);
+          if (res.ok) { queue.shift(); return { ok:true, started:key }; }
+          return res;
+        }
+        queue.shift(); markResearchDirty(state); continue;
+      }
       if (isStepValidAgainst(completed, parsed.techId, parsed.targetLevel)) {
         const res = beginResearchStep(state, parsed.techId, parsed.targetLevel, atMs); // 私有原语，无时间结算
         if (res.ok) {
@@ -531,10 +597,15 @@
     const safeTs = (typeof atMs === "number" && isFinite(atMs))
       ? atMs
       : ((typeof Date !== "undefined" && Date.now) ? Date.now() : 0);
+    if (ar.isCycle || techId.indexOf("cycle:") === 0) {
+      const cycleId = ar.cycleId || techId.slice(6);
+      if (!research.cycleResearchLevels || typeof research.cycleResearchLevels !== "object" || Array.isArray(research.cycleResearchLevels)) research.cycleResearchLevels = {};
+      research.cycleResearchLevels[cycleId] = Math.max(Number(research.cycleResearchLevels[cycleId]) || 0, level);
+    }
     if (!research.completedLevels || typeof research.completedLevels !== "object" || Array.isArray(research.completedLevels)) {
       research.completedLevels = {};
     }
-    research.completedLevels[techId] = Math.max(Number(research.completedLevels[techId]) || 0, level);
+    if (!(ar.isCycle || techId.indexOf("cycle:") === 0)) research.completedLevels[techId] = Math.max(Number(research.completedLevels[techId]) || 0, level);
     if (!Array.isArray(research.history)) research.history = [];
     research.history.push({ techId, level, completedAt: safeTs }); // 虚拟游标 / 真实 now
     research.activeResearch = null;
@@ -603,6 +674,10 @@
     let elapsed = Math.min(rawElapsed, MAX_RESEARCH_OFFLINE_SECONDS) * _scale;
     let cursorAt = oldAnchor;
     let completedSteps = 0;
+    const addAccumulated = (seconds) => {
+      const n = Number(seconds) || 0;
+      if (n > 0) research.accumulatedResearchSeconds = Math.max(0, Number(research.accumulatedResearchSeconds) || 0) + n;
+    };
     let guard = 0;
     while (elapsed > 0 && research.activeResearch !== null &&
            typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) {
@@ -620,12 +695,14 @@
       if (elapsed >= stepLeft) {
         // 完成整步（含 exact boundary：elapsed === stepLeft 也完成）
         elapsed -= stepLeft;
+        addAccumulated(stepLeft);
         cursorAt += stepLeft * 1000; // 虚拟游标推进该步实际消耗（保留浮点精度）
         completeResearchStep(state, cursorAt);
         completedSteps += 1;
         startNextFromQueue(state, cursorAt); // 私有原语启动，下一步 startedAt = cursorAt
       } else {
         ar.remainingSeconds = stepLeft - elapsed; // 浮点，不整数化
+        addAccumulated(elapsed);
         cursorAt += elapsed * 1000;
         elapsed = 0;
         markResearchDirty(state); // 实际减少 remainingSeconds → 标记待保存
@@ -777,6 +854,7 @@
     research.researchHourBank = bank - usedSeconds;
     ar.remainingSeconds = remaining - usedSeconds;
     ar.appliedAchievementSeconds = applied + usedSeconds;
+    research.accumulatedResearchSeconds = Math.max(0, Number(research.accumulatedResearchSeconds) || 0) + usedSeconds;
     markResearchDirty(state);
 
     const finalRemaining = ar.remainingSeconds;
@@ -878,6 +956,8 @@
     const bankRaw = research.researchHourBank;
     const bank = (typeof bankRaw === "number" && isFinite(bankRaw) && bankRaw > 0) ? bankRaw : 0;
     research.researchHourBank = bank + refundedSeconds;
+    const consumedBeforeCancel = Math.max(0, Math.min(base, base - Math.max(0, Number(ar.remainingSeconds) || 0)));
+    research.accumulatedResearchSeconds = Math.max(0, (Number(research.accumulatedResearchSeconds) || 0) - consumedBeforeCancel);
 
     // ⑤ 进度作废：不写 completedLevels / history / research:stepCompleted
     research.activeResearch = null;
@@ -938,9 +1018,13 @@
     parseResearchStepKey,
     getResearchNode,
     getResearchDuration,
+    getCycleResearch,
+    getCycleResearchDuration,
+    isCycleResearchUnlocked,
     isStepValidAgainst,
     buildProjectedResearchLevels,
     enqueueResearch,
+    enqueueCycleResearch,
     enqueueResearchCascade,
     isLegionResearchUnlocked,
     getLegionResearchLockReason,

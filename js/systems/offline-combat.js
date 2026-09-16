@@ -426,6 +426,8 @@
       if (c.hp && Number(c.hp.structure) <= 0) {
         return { outcome: "defeated", rounds, kills };
       }
+      const effectDamage = G("tickDeathspaceWeaponEffects")(enemies);
+      if (effectDamage > 0) c.runDamageDealt = (Number(c.runDamageDealt) || 0) + effectDamage;
       const dcReduction = computeDcReduction(state, zone, s);
       // D2=A（2026-09-11 用户拍板）：泰坦主武器（舰体自带）与 tt_high 释放高槽的常规副武器分账结算——
       // 两条 gate 独立求值（副武器 gate 先算，主武器最后落定 s.ammoTier），任一开火即视为本轮开火；
@@ -456,13 +458,16 @@
             const wbm = (inputs.boosterDmg && inputs.boosterDmg[cb.weaponType]) ? inputs.boosterDmg[cb.weaponType] : 1;
             // 2026-09-12：联盟加成并入乘区（与在线 combat.js:1524-1526 逐项同构）。
             const adm = inputs.allianceDamageMult || 1;
-            let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult * adm, expectedRng);
+            const vulnMult = G("getDeathspaceWeaponDamageTakenMultiplier")(current);
+            let dmg = G("calcCombatDamage")(playerHit, current.dodge, cb.baseDamage * (m.multiplier || 1) * wbm, counterMult * dmgMult * traitMult * ammoProps.dmgMult * adm * vulnMult, expectedRng);
             // 脑突触加速剂独立乘区（与在线 combat.js 同步）
             const adbm = inputs.adBuffMult || 1;
             if (adbm && adbm !== 1) dmg = Math.round(dmg * adbm);
             const dealt = G("applyLayeredCombatDamage")(current.hp, dmg);
             const total = dealt.shield + dealt.armor + dealt.structure;
             roundDealt += total;
+            const xRepair = G("applyDeathspaceWeaponEffect")(current, cb, total);
+            if (xRepair > 0 && c.hp.armor < c.maxHp.armor) c.hp.armor = Math.min(c.maxHp.armor, c.hp.armor + xRepair);
             // AOE
             const targets = G("getCapitalAreaDamageTargets")(enemies, current, weapon.aoe);
             for (const t of targets) {
@@ -485,6 +490,7 @@
           grantXp(state, "capacitorManagement", volleyFuel * 0.3);
         }
       }
+      G("decayDeathspaceWeaponVulnerability")(enemies);
       // M6 Phase 2：离线也按攻击者顺序换目标。
       // 玩家是一名攻击者（整轮齐射），随后每名 NPC 各自开火；只有当前目标被击杀才推进。
       // 这里不调用 processLegionNpcAttack，因为该兼容接口的契约仍是“全体 NPC 打 currentEnemy”。
@@ -678,25 +684,24 @@
         const restored = Math.min(reactiveArmorRepair, c.maxHp.armor - c.hp.armor);
         c.hp.armor += restored;
       }
-      // 泰坦挂钩维修（与在线 combat.js 泰坦段同口径）：基础量 × calcRepairMult 通用乘区。
-      // calcRepairMult 已含舰体 bonuses[armorRepair/structureRepair] 与紧急维修(<70% 结构 +100%)，不重复应用。
+      // 泰坦挂钩维修（与在线 combat.js 同口径）：只吃泰坦舰体固有维修加成。
       if (inputs.isTitan && inputs.titanTrait) {
         const titanRepairRatio = c.maxHp.structure > 0 ? c.hp.structure / c.maxHp.structure : 1;
         if (inputs.titanTrait.id === "titan_deflection_shield" && titanDeflectionTriggers > 0 && c.hp.shield < c.maxHp.shield) {
           const base = G("getTitanSteadyRechargeRepair")(inputs.titanTrait, titanDeflectionTriggers, c.maxHp.shield);
-          const restored = Math.min(base * G("calcRepairMult")("shield", state, titanRepairRatio), c.maxHp.shield - c.hp.shield);
+          const restored = Math.min(base * G("getTitanTraitRepairMultiplierFromState")(state, "shield", titanRepairRatio), c.maxHp.shield - c.hp.shield);
           if (restored > 0) c.hp.shield += restored;
         }
         if (inputs.titanTrait.id === "titan_reactive_armor" && armorDamageTaken > 0 && c.hp.armor < c.maxHp.armor) {
           // 应激 min 内不含乘区（consumesRepairMultiplier）：基础 min 先算，乘区在 min 之后显式应用
           const base = G("getTitanReactiveArmorRepair")(inputs.titanTrait, armorDamageTaken, c.maxHp.armor);
-          const restored = Math.min(base * G("calcRepairMult")("armor", state, titanRepairRatio), c.maxHp.armor - c.hp.armor);
+          const restored = Math.min(base * G("getTitanTraitRepairMultiplierFromState")(state, "armor", titanRepairRatio), c.maxHp.armor - c.hp.armor);
           if (restored > 0) c.hp.armor += restored;
         }
         if (inputs.titanTrait.id === "titan_structure_overdrive" && structureDamageTaken > 0 && c.hp.structure < c.maxHp.structure) {
           const layers = Math.min(inputs.titanTrait.maxLayers, Math.floor(((1 - titanRepairRatio) + 1e-9) / (inputs.titanTrait.thresholdPct || 0.10)));
           const base = G("getTitanOverdriveSealRepair")(inputs.titanTrait, structureDamageTaken, layers);
-          const restored = Math.min(base * G("calcRepairMult")("structure", state, titanRepairRatio), c.maxHp.structure - c.hp.structure);
+          const restored = Math.min(base * G("getTitanTraitRepairMultiplierFromState")(state, "structure", titanRepairRatio), c.maxHp.structure - c.hp.structure);
           if (restored > 0) c.hp.structure += restored;
         }
       }
@@ -828,9 +833,12 @@
       }
       // 死亡空间无 faction data / ticket / zone special（与 roll* 一致）
       // 势力考古探针本体（死亡空间专属；小怪也掉，概率 = 首领 × 1/4，flush 时确定性重滚）
-      const pcfg = G("getDeathspaceProbeDropConfig")(site);
-      if (pcfg) {
-        const pv = (da.probe[site.id] = da.probe[site.id] || {
+      const pcfgs = typeof G("getDeathspaceProbeDropConfigs") === "function"
+        ? G("getDeathspaceProbeDropConfigs")(site)
+        : (G("getDeathspaceProbeDropConfig")(site) ? [G("getDeathspaceProbeDropConfig")(site)] : []);
+      for (const pcfg of pcfgs) {
+        const key = site.id + "::" + pcfg.resourceId;
+        const pv = (da.probe[key] = da.probe[key] || {
           resourceId: pcfg.resourceId, qty: pcfg.qty,
           normalChance: pcfg.normalChance, bossChance: pcfg.bossChance, normal: 0, boss: 0
         });

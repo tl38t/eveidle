@@ -799,7 +799,9 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
     //（与实弹 volley 同源取模块），口径不含弹药/克制/命中系数/随机浮动，tooltip 说明。
     const atkVal = Math.round(Number(npc.attackPower) || 0);
     if (atkVal > 0) {
-      badges.push('<span class="lcs-badge dmg" title="攻击力 ' + atkVal.toLocaleString() + '：单轮齐射面板伤害（含武器强化/增强剂/技能/等级倍率；未含弹药加成、克制、命中系数与随机浮动）">攻击 ' + atkVal.toLocaleString() + "</span>");
+      const auraPct = Math.round(((Number(npc.titanAuraDamageMultiplier) || 1) - 1) * 100);
+      const auraText = auraPct > 0 ? '；含泰坦团队伤害 +' + auraPct + '%' : '';
+      badges.push('<span class="lcs-badge dmg" title="攻击力 ' + atkVal.toLocaleString() + '：单轮齐射面板伤害（含武器强化/增强剂/技能/等级倍率' + auraText + '；未含弹药加成、克制、命中系数与随机浮动）">攻击 ' + atkVal.toLocaleString() + "</span>");
     }
     cls = npc.destroyedInBattle ? " destroyed" : (npc.inSquad && !npc.destroyedInBattle ? " active" : "");
     if (npc.hp && npc.maxHp) {
@@ -1143,9 +1145,11 @@ function renderCombatDropPreview(display) {
       rows.push(row("🧪", t.materialName + "（" + t.tier + "）", `普通 ${pct(t.normalChance)}×${t.normalQty} · 精英 100%×${t.eliteQtyMin}~${t.eliteQtyMax} · BOSS 100%×${t.bossQtyMin}~${t.bossQtyMax}`, "drop-tactical", "tactical"));
     }
     if (preview.probeDrop) {
-      const pb = preview.probeDrop;
-      rows.push(`<div class="drop-group-title">🔬 势力考古探针（小怪与 BOSS 均掉落）</div>`);
-      rows.push(row("🔬", getResourceDisplayName(pb.resourceId), `BOSS ${pct(pb.bossChance)} · 小怪 ${pct(pb.normalChance)}（每次 ×${pb.qty}）`, "drop-probe", pb.resourceId));
+      const probes = Array.isArray(preview.probeDrop) ? preview.probeDrop : [preview.probeDrop];
+      rows.push(`<div class="drop-group-title">🔬 考古探针（小怪与 BOSS 均掉落）</div>`);
+      for (const pb of probes) {
+        rows.push(row("🔬", getResourceDisplayName(pb.resourceId), `BOSS ${pct(pb.bossChance)} · 小怪 ${pct(pb.normalChance)}（每次 ×${pb.qty}）`, "drop-probe", pb.resourceId));
+      }
     }
     if (preview.implantDrop) {
       const imp = preview.implantDrop;
@@ -1166,10 +1170,8 @@ function renderCombatDropPreview(display) {
         rows.push(row("⭐", getResourceDisplayName(sd.resourceId), `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", sd.resourceId));
       }
     }
-    if (preview.ticketDrop) {
-      const t = preview.ticketDrop;
-      rows.push(row("🎫", getResourceDisplayName("special:" + t.material), `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket", "ticket"));
-    }
+    const ticketDrops = Array.isArray(preview.ticketDrops) && preview.ticketDrops.length ? preview.ticketDrops : (preview.ticketDrop ? [preview.ticketDrop] : []);
+    for (const t of ticketDrops) rows.push(row("🎫", getResourceDisplayName("special:" + t.material), `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket", "ticket"));
     if (Array.isArray(preview.gearDrops) && preview.gearDrops.length > 0) {
       rows.push(`<div class="drop-group-title">🔧 装备专用数据（精英/BOSS 掉落）</div>`);
       for (const gd of preview.gearDrops) {

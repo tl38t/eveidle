@@ -151,8 +151,13 @@ const ARCHAEOLOGY_RESTORED_PROBES = Object.freeze([
   { id:"restored_deep_probe_iii", name:"复原深空考古探针 III",    level:35, scanBonus:30 }
 ]);
 
+// 8/10 及后续 10/10 死亡空间掉落；不可制造，仅作为高阶遗迹探索的稀有消耗品。
+const ARCHAEOLOGY_DEEP_PROBES = Object.freeze([
+  { id:"deep_probe_iv", name:"深层先驱遗迹探针 IV", level:80, scanBonus:35, cycleReduction:0.20 }
+]);
+
 // 探针完整表（基础 + 复原）：运行时枚举用。
-const ARCHAEOLOGY_ALL_PROBES = Object.freeze(ARCHAEOLOGY_PROBES.concat(ARCHAEOLOGY_FACTION_PROBES).concat(ARCHAEOLOGY_RESTORED_PROBES));
+const ARCHAEOLOGY_ALL_PROBES = Object.freeze(ARCHAEOLOGY_PROBES.concat(ARCHAEOLOGY_FACTION_PROBES).concat(ARCHAEOLOGY_RESTORED_PROBES).concat(ARCHAEOLOGY_DEEP_PROBES));
 
 function getArchaeologyProbe(probeId) {
   return ARCHAEOLOGY_ALL_PROBES.find(probe => probe.id === probeId) || null;

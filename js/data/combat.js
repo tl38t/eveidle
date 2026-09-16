@@ -341,6 +341,48 @@ const DEATHSPACE_DATABASE = [
       { name:"核心设施统领", hpMult:1.15, damageMult:1.15, escortNormal:1, coreChance:0.22 },
       { name:"静默战争设施监督者", hpMult:1.25, damageMult:1.25, escortNormal:2, coreChance:0.35, final:true }
     ]
+  },
+  {
+    id:"angel_ded_8_10", name:"劫团8/10边疆堡垒", faction:"angel", sourceZoneId:"angel_warfront", requiredCL:80, dedTier:8,
+    ticketMaterial:"劫团边疆堡垒通行密钥", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
+    coreMaterial:"劫团X型校准核心", protocolMaterial:"劫团X型改良协议", protocolChance:0.02,
+    combatBalance:{hp:1.20,damage:1.05,finalHp:1.25,finalDamage:1.10},
+    waves:[
+      { name:"边疆堡垒外围警戒", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.15 },
+      { name:"边疆堡垒防御节点", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.18 },
+      { name:"边疆堡垒火力协调", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.21 },
+      { name:"边疆堡垒核心防卫", hpMult:1.12, damageMult:1.12, escortNormal:1, coreChance:0.24 },
+      { name:"边疆堡垒旗舰编队", hpMult:1.20, damageMult:1.20, escortNormal:2, coreChance:0.28 },
+      { name:"劫团边疆堡垒监督者", hpMult:1.30, damageMult:1.30, escortNormal:2, coreChance:0.40, final:true }
+    ]
+  },
+  {
+    id:"blood_ded_8_10", name:"赤誓8/10深红圣所", faction:"blood", sourceZoneId:"blood_iron_basilica", requiredCL:80, dedTier:8,
+    ticketMaterial:"赤誓深红圣所通行密钥", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
+    coreMaterial:"赤誓X型校准核心", protocolMaterial:"赤誓X型改良协议", protocolChance:0.02,
+    combatBalance:{hp:1.05,damage:1.20,finalHp:1.20,finalDamage:1.15},
+    waves:[
+      { name:"深红圣所外围侍从", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.15 },
+      { name:"深红圣所防卫主控", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.18 },
+      { name:"深红圣所献祭编队", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.21 },
+      { name:"深红圣所核心卫队", hpMult:1.12, damageMult:1.12, escortNormal:1, coreChance:0.24 },
+      { name:"深红圣所重装编队", hpMult:1.20, damageMult:1.20, escortNormal:2, coreChance:0.28 },
+      { name:"赤誓深红圣所监督者", hpMult:1.30, damageMult:1.30, escortNormal:2, coreChance:0.40, final:true }
+    ]
+  },
+  {
+    id:"sansha_ded_8_10", name:"静默8/10同化中枢", faction:"sansha", sourceZoneId:"sansha_command_matrix", requiredCL:80, dedTier:8,
+    ticketMaterial:"静默战争设施通行密钥", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:4, clearLpBonus:72,
+    coreMaterial:"静默X型校准核心", protocolMaterial:"静默X型改良协议", protocolChance:0.02,
+    combatBalance:{hp:1.15,damage:1.10,finalHp:1.30,finalDamage:1.05},
+    waves:[
+      { name:"同化中枢外围控制", hpMult:0.85, damageMult:0.85, escortNormal:1, coreChance:0.15 },
+      { name:"同化中枢防御矩阵", hpMult:0.95, damageMult:0.95, escortNormal:1, coreChance:0.18 },
+      { name:"同化中枢战争节点", hpMult:1.05, damageMult:1.05, escortNormal:1, coreChance:0.21 },
+      { name:"同化中枢核心设施", hpMult:1.12, damageMult:1.12, escortNormal:1, coreChance:0.24 },
+      { name:"同化中枢主力编队", hpMult:1.20, damageMult:1.20, escortNormal:2, coreChance:0.28 },
+      { name:"静默同化中枢监督者", hpMult:1.30, damageMult:1.30, escortNormal:2, coreChance:0.40, final:true }
+    ]
   }
 ];
 
@@ -379,6 +421,10 @@ const DEATHSPACE_PROBE_DROPS = {
   blood:  { resourceId:"probe:faction_probe_ii",  material:"赤誓教团考古探针·血誓型", byTier:{ 4:{boss:0.10,qty:2}, 6:{boss:0.13,qty:2} } },
   sansha: { resourceId:"probe:faction_probe_iii", material:"静默集群考古探针·同化型", byTier:{ 6:{boss:0.10,qty:2} } }
 };
+const DEATHSPACE_DEEP_PROBE_DROPS = {
+  resourceId:"probe:deep_probe_iv", material:"深层先驱遗迹探针 IV",
+  byTier:{ 8:{boss:0.12,qty:2}, 10:{boss:0.18,qty:3} }
+};
 // 取某副本的探针掉落配置（无配置 → null，表示该副本不掉探针）
 function getDeathspaceProbeDropConfig(site) {
   if (!site) return null;
@@ -393,6 +439,22 @@ function getDeathspaceProbeDropConfig(site) {
     bossChance: Number(tierCfg.boss) || 0,
     normalChance: (Number(tierCfg.boss) || 0) * DEATHSPACE_PROBE_NORMAL_RATIO
   };
+}
+
+function getDeathspaceProbeDropConfigs(site) {
+  if (!site) return [];
+  const configs = [];
+  const factionConfig = getDeathspaceProbeDropConfig(site);
+  if (factionConfig) configs.push(factionConfig);
+  const deepTier = DEATHSPACE_DEEP_PROBE_DROPS.byTier[site.dedTier];
+  if (deepTier) configs.push({
+    resourceId: DEATHSPACE_DEEP_PROBE_DROPS.resourceId,
+    material: DEATHSPACE_DEEP_PROBE_DROPS.material,
+    qty: Math.max(1, Number(deepTier.qty) || 1),
+    bossChance: Number(deepTier.boss) || 0,
+    normalChance: (Number(deepTier.boss) || 0) * DEATHSPACE_PROBE_NORMAL_RATIO
+  });
+  return configs;
 }
 
 // 势力装备只通过装备工程制造；战斗仅掉落对应加密数据。
@@ -442,7 +504,7 @@ if (typeof window !== "undefined") window.WEAPON_CONFIG = WEAPON_CONFIG;
 if (typeof window !== "undefined") window.GEAR_DATA_MATERIALS = GEAR_DATA_MATERIALS;
 if (typeof window !== "undefined") window.COMBAT_FORMATION_POOLS = COMBAT_FORMATION_POOLS;
 if (typeof window !== "undefined") window.STAR_BELT_DATA_MATERIALS = STAR_BELT_DATA_MATERIALS;
-if (typeof window !== "undefined") window.getDeathspaceProbeDropConfig = getDeathspaceProbeDropConfig;
+if (typeof window !== "undefined") { window.getDeathspaceProbeDropConfig = getDeathspaceProbeDropConfig; window.getDeathspaceProbeDropConfigs = getDeathspaceProbeDropConfigs; }
 if (typeof window !== "undefined") window.getZoneIntensityXpMultiplier = getZoneIntensityXpMultiplier;
 if (typeof window !== "undefined") window.getCurrentCombatIntensityZone = getCurrentCombatIntensityZone;
 if (typeof window !== "undefined") window.ENEMY_DATABASE = ENEMY_DATABASE;
@@ -451,4 +513,4 @@ if (typeof window !== "undefined") window.DEATHSPACE_TICKET_MATERIALS = DEATHSPA
 if (typeof window !== "undefined") window.DEATHSPACE_LOOT_MATERIALS = DEATHSPACE_LOOT_MATERIALS;
 if (typeof window !== "undefined") window.SUPERCAPITAL_DATA_MATERIALS = SUPERCAPITAL_DATA_MATERIALS;
 if (typeof window !== "undefined") window.FACTION_ENCRYPTED_DATA_DROPS = FACTION_ENCRYPTED_DATA_DROPS;
-if (typeof module !== "undefined" && module.exports) module.exports = { COMBAT_ZONES: COMBAT_ZONES, DEATHSPACE_DATABASE: DEATHSPACE_DATABASE, STARMAP_TITAN_MATERIALS: STARMAP_TITAN_MATERIALS, WEAPON_CONFIG: WEAPON_CONFIG, GEAR_DATA_MATERIALS: GEAR_DATA_MATERIALS, COMBAT_FORMATION_POOLS: COMBAT_FORMATION_POOLS, STAR_BELT_DATA_MATERIALS: STAR_BELT_DATA_MATERIALS, getDeathspaceProbeDropConfig: getDeathspaceProbeDropConfig, getZoneIntensityXpMultiplier: getZoneIntensityXpMultiplier, getCurrentCombatIntensityZone: getCurrentCombatIntensityZone, ENEMY_DATABASE: ENEMY_DATABASE, COMBAT_SPECIAL_MATERIALS: COMBAT_SPECIAL_MATERIALS, DEATHSPACE_TICKET_MATERIALS: DEATHSPACE_TICKET_MATERIALS, DEATHSPACE_LOOT_MATERIALS: DEATHSPACE_LOOT_MATERIALS, SUPERCAPITAL_DATA_MATERIALS: SUPERCAPITAL_DATA_MATERIALS, FACTION_ENCRYPTED_DATA_DROPS: FACTION_ENCRYPTED_DATA_DROPS };
+if (typeof module !== "undefined" && module.exports) module.exports = { COMBAT_ZONES: COMBAT_ZONES, DEATHSPACE_DATABASE: DEATHSPACE_DATABASE, STARMAP_TITAN_MATERIALS: STARMAP_TITAN_MATERIALS, WEAPON_CONFIG: WEAPON_CONFIG, GEAR_DATA_MATERIALS: GEAR_DATA_MATERIALS, COMBAT_FORMATION_POOLS: COMBAT_FORMATION_POOLS, STAR_BELT_DATA_MATERIALS: STAR_BELT_DATA_MATERIALS, getDeathspaceProbeDropConfig: getDeathspaceProbeDropConfig, getDeathspaceProbeDropConfigs: getDeathspaceProbeDropConfigs, getZoneIntensityXpMultiplier: getZoneIntensityXpMultiplier, getCurrentCombatIntensityZone: getCurrentCombatIntensityZone, ENEMY_DATABASE: ENEMY_DATABASE, COMBAT_SPECIAL_MATERIALS: COMBAT_SPECIAL_MATERIALS, DEATHSPACE_TICKET_MATERIALS: DEATHSPACE_TICKET_MATERIALS, DEATHSPACE_LOOT_MATERIALS: DEATHSPACE_LOOT_MATERIALS, SUPERCAPITAL_DATA_MATERIALS: SUPERCAPITAL_DATA_MATERIALS, FACTION_ENCRYPTED_DATA_DROPS: FACTION_ENCRYPTED_DATA_DROPS };

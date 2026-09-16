@@ -608,6 +608,32 @@ function getDeathspaceTicketDropConfig(zone) {
   };
 }
 
+function getDeathspaceTicketDropConfigs(zone) {
+  if (!zone) return [];
+  return DEATHSPACE_DATABASE.filter(site => site.sourceZoneId === zone.id).map(site => ({
+    deathspaceId:site.id, deathspaceName:site.name, material:site.ticketMaterial,
+    eliteChance:Number(site.ticketChances && site.ticketChances.elite) || 0,
+    bossChance:Number(site.ticketChances && site.ticketChances.boss) || 0
+  }));
+}
+
+function rollDeathspaceTicketDrops(zone, enemyKind, randomValues, state) {
+  state = state || gameState;
+  if (enemyKind !== "elite" && enemyKind !== "boss") return [];
+  const configs = getDeathspaceTicketDropConfigs(zone);
+  const values = Array.isArray(randomValues) ? randomValues : [randomValues];
+  const drops = [];
+  for (let i = 0; i < configs.length; i++) {
+    const cfg = configs[i];
+    const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
+    const value = values[i] !== undefined ? values[i] : Math.random();
+    if (!chance || value >= chance) continue;
+    ResourceRegistry.add(state, "special:" + cfg.material, 1);
+    drops.push({ material:cfg.material, qty:1, deathspaceId:cfg.deathspaceId });
+  }
+  return drops;
+}
+
 // 死亡空间首领战利品配置：每波 coreChance，最终波追加 protocolChance。
 function getDeathspaceLeaderLootConfigs(site) {
   if (!site || !Array.isArray(site.waves)) return [];
@@ -815,6 +841,23 @@ function rollDeathspaceProbeDrop(deathspace, enemyKind, randomValue, state) {
   return { resourceId: cfg.resourceId, material: cfg.material, qty: cfg.qty };
 }
 
+function rollDeathspaceProbeDrops(deathspace, enemyKind, randomValues, state) {
+  state = state || gameState;
+  if (!deathspace || typeof getDeathspaceProbeDropConfigs !== "function") return [];
+  const configs = getDeathspaceProbeDropConfigs(deathspace);
+  const values = Array.isArray(randomValues) ? randomValues : [randomValues];
+  const drops = [];
+  for (let i = 0; i < configs.length; i++) {
+    const cfg = configs[i];
+    const chance = enemyKind === "boss" ? cfg.bossChance : cfg.normalChance;
+    const value = values[i] === undefined ? Math.random() : values[i];
+    if (!chance || value >= chance * getLegionCombatDropMult(state)) continue;
+    ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
+    drops.push({ resourceId: cfg.resourceId, material: cfg.material, qty: cfg.qty });
+  }
+  return drops;
+}
+
 function applyLayeredCombatDamage(hp, amount) {
   let remaining = Math.max(0, amount);
   const dealt = { shield:0, armor:0, structure:0 };
@@ -826,6 +869,48 @@ function applyLayeredCombatDamage(hp, amount) {
     dealt[layer] += damage;
   }
   return dealt;
+}
+
+// 8/10 X 型武器小技能：只处理武器主目标，不改变既有 AOE 规则。
+function getDeathspaceWeaponDamageTakenMultiplier(enemy) {
+  const effect = enemy && enemy.deathspaceVulnerability;
+  return effect && effect.rounds > 0 ? 1 + Math.max(0, Number(effect.rate) || 0) : 1;
+}
+
+function applyDeathspaceWeaponEffect(target, combat, dealtTotal) {
+  const effect = combat && combat.xEffect;
+  if (!target || !effect || dealtTotal <= 0) return 0;
+  if (effect.kind === "lifesteal") return Math.max(0, Math.round(dealtTotal * (Number(effect.rate) || 0)));
+  if (effect.kind === "dot") {
+    target.deathspaceDot = { damage:Math.max(1, Math.round((combat.baseDamage || 0) * (Number(effect.rate) || 0))), rounds:Math.max(1, Number(effect.rounds) || 1) };
+  } else if (effect.kind === "vulnerability") {
+    target.deathspaceVulnerability = { rate:Math.max(0, Number(effect.rate) || 0), rounds:Math.max(1, Number(effect.rounds) || 1) };
+  }
+  return 0;
+}
+
+function tickDeathspaceWeaponEffects(enemies) {
+  let total = 0;
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    if (!enemy || !enemy.hp || enemy.hp.structure <= 0) continue;
+    const dot = enemy.deathspaceDot;
+    if (dot && dot.rounds > 0) {
+      const dealt = applyLayeredCombatDamage(enemy.hp, Math.max(1, Math.round(dot.damage || 1)));
+      total += dealt.shield + dealt.armor + dealt.structure;
+      dot.rounds -= 1;
+      if (dot.rounds <= 0) delete enemy.deathspaceDot;
+    }
+  }
+  return total;
+}
+
+function decayDeathspaceWeaponVulnerability(enemies) {
+  for (const enemy of Array.isArray(enemies) ? enemies : []) {
+    const vuln = enemy && enemy.deathspaceVulnerability;
+    if (!vuln) continue;
+    vuln.rounds -= 1;
+    if (vuln.rounds <= 0) delete enemy.deathspaceVulnerability;
+  }
 }
 
 function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
@@ -886,16 +971,22 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   for (const drop of gearDrops) { c.lastLoot += " · " + drop.material + " ×" + drop.qty; addLoot(drop.resourceId, drop.qty); }
   const coreDrop = deathspace ? null : rollStationCoreDrop(zone, enemy.kind, roll(), state);
   if (coreDrop) { c.lastLoot += " · " + coreDrop.material + " ×" + coreDrop.qty; addLoot(coreDrop.resourceId, coreDrop.qty); }
-  const ticketDrop = deathspace ? null : rollDeathspaceTicketDrop(zone, enemy.kind, roll(), state);
-  if (ticketDrop) { c.lastLoot += " · " + ticketDrop.material + " ×" + ticketDrop.qty; addLoot("special:" + ticketDrop.material, ticketDrop.qty); }
+  const ticketDrops = deathspace ? [] : rollDeathspaceTicketDrops(zone, enemy.kind, [roll(), roll()], state);
+  const ticketDrop = ticketDrops[0] || null;
+  for (const drop of ticketDrops) { c.lastLoot += " · " + drop.material + " ×" + drop.qty; addLoot("special:" + drop.material, drop.qty); }
   // 货柜系统：敌方船被击坠低概率掉货柜（死亡空间不掉落）；内容待玩家开箱揭晓。
   // 注意：货柜本身计入 lootGained，但箱内奖励发生在「开箱」动作里（cargo.js），不在此记录，
   // 故战斗中开箱收益不会污染战斗日志。
   const cargoDrop = deathspace ? null : (typeof rollCargoDrop === "function" ? rollCargoDrop(enemy, zone, roll, state) : null);
   if (cargoDrop) { c.lastLoot += " · 货柜" + cargoDrop.size + " ×1"; addLoot(cargoDrop.itemId || ("cargo:" + cargoDrop.size), 1); }
   // 势力考古探针本体：仅死亡空间掉落（星带不掉），给不花功勋的 farm 路径。
-  const probeDrop = deathspace ? rollDeathspaceProbeDrop(deathspace, enemy.kind, roll(), state) : null;
-  if (probeDrop) { c.lastLoot += " · " + probeDrop.material + " ×" + probeDrop.qty; addLoot(probeDrop.resourceId, probeDrop.qty); }
+  const probeDrops = deathspace && typeof getDeathspaceProbeDropConfigs === "function"
+    ? rollDeathspaceProbeDrops(deathspace, enemy.kind, getDeathspaceProbeDropConfigs(deathspace).map(() => roll()), state)
+    : [];
+  for (const probeDrop of probeDrops) {
+    c.lastLoot += " · " + probeDrop.material + " ×" + probeDrop.qty;
+    addLoot(probeDrop.resourceId, probeDrop.qty);
+  }
   // 打捞臂燃料消耗：装备即生效，每击毁一艘扣基准燃料；开主动×3。负消耗不进 lootGained。
   // ⚠️ 死亡空间免除（2026-09-15，玩家报「死亡空间打捞开始消耗燃料了」）：
   //   打捞臂全部属性只有 salvageEfficiency，而它的三个消费点在本函数内**全部**带 !deathspace 门禁 ——
@@ -989,13 +1080,13 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     c.lastLoot += " · " + tacticalDrop.materialId + " ×" + tacticalDrop.quantity;
   }
   const fmtDrop = d => ((d && d.materialId !== undefined ? d.materialId : (d && d.material)) + " ×" + (d && d.quantity !== undefined ? d.quantity : (d && d.qty)));
-  const specialDrops = [ticketDrop, ...zoneSpecialDrops, ...gearDrops, coreDrop, ...deathspaceDrops, tacticalDrop, cargoDrop].filter(Boolean);
+  const specialDrops = [...ticketDrops, ...zoneSpecialDrops, ...gearDrops, coreDrop, ...deathspaceDrops, tacticalDrop, cargoDrop].filter(Boolean);
   if (specialDrops.length > 0) c.lastSpecialLoot = specialDrops.map(fmtDrop).join(" · ");
   c.totalKills++;
   if (enemy.kind === "elite") c.runEliteKills = (c.runEliteKills || 0) + 1;
   syncCurrentCombatTarget(c, state);
-  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, lootGained, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop });
-  return { isk, lootGained, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop };
+  doEmit("combat:enemyDefeated", { zoneId:deathspace ? deathspace.id : zone.id, faction:zone.faction, enemyId:enemy.id, enemyKind:enemy.kind, isk, xp:enemy.xpDrop || 10, lootGained, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, ticketDrops, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop });
+  return { isk, lootGained, dataDrop, zoneSpecialDrops, gearDrops, coreDrop, ticketDrop, ticketDrops, deathspaceDrops, tacticalDrop: tacticalEvent, cargoDrop };
 }
 
 // 定点返修：战斗内货币显示统一入口（纯读，不写 gameState）。
@@ -1336,6 +1427,8 @@ function advanceCombatRound(state, context) {
   if (!zone) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-zone" };
   const faction = ENEMY_DATABASE[zone.faction];
   if (!faction) return { ok:true, advanced:false, active:false, pending:Boolean(c.deathspaceChainPending), recovering:false, reason:"no-faction" };
+  const effectDamage = tickDeathspaceWeaponEffects(c.enemies);
+  if (effectDamage > 0) c.runDamageDealt = (Number(c.runDamageDealt) || 0) + effectDamage;
   const ship = getActiveShip(state);
   const shipInstance = getActiveCombatShipInstance(state);
   // 防御：无拥有战斗舰（理论上 active 时必有舰，此处仅兜底，避免逻辑层凭空造舰导致崩溃）
@@ -1572,13 +1665,15 @@ function advanceCombatRound(state, context) {
         const weaponBoosterMult = (boosterDmg && boosterDmg[combat.weaponType]) ? boosterDmg[combat.weaponType] : 1;
         const allianceDamageMult = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
           ? 1 + AllianceBuildingConfig.effects(state.alliance.buildings).combatDamageBonus : 1;
-        let damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult * allianceDamageMult, rng);
+        let damage = calcCombatDamage(playerHit, enemy.dodge, combat.baseDamage * (module.multiplier || 1) * weaponBoosterMult, counterMult * dmgMult * traitMultiplier * ammoProps.dmgMult * allianceDamageMult * getDeathspaceWeaponDamageTakenMultiplier(enemy), rng);
         // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅作用于玩家→敌人伤害（敌人→玩家伤害不享受）。
         const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
         if (adbm && adbm !== 1) damage = Math.round(damage * adbm);
         const dealt = applyLayeredCombatDamage(enemy.hp, damage);
         const dealtTotal = dealt.shield + dealt.armor + dealt.structure;
         c.runDamageDealt = (typeof c.runDamageDealt === "number" ? c.runDamageDealt : 0) + dealtTotal;
+        const xRepair = applyDeathspaceWeaponEffect(enemy, combat, dealtTotal);
+        if (xRepair > 0 && c.hp.armor < c.maxHp.armor) c.hp.armor = Math.min(c.maxHp.armor, c.hp.armor + xRepair);
         for (const areaTarget of getCapitalAreaDamageTargets(c.enemies, enemy, combat.aoe)) {
           const areaDamage = Math.max(1, Math.round(damage * areaTarget.multiplier));
           const areaDealt = applyLayeredCombatDamage(areaTarget.enemy.hp, areaDamage);
@@ -1829,13 +1924,13 @@ function advanceCombatRound(state, context) {
     enemyVolley.armorRestored = restored;
   }
 
-  // —— 泰坦挂钩维修（阶段 3 步骤 4）：基础量 × calcRepairMult 通用乘区 ——
-  // calcRepairMult 已含舰体 bonuses[armorRepair/structureRepair] 与紧急维修(<70% 结构 +100%)（selectors.js:2316/2331），不重复应用。
+  // —— 泰坦挂钩维修：基础量 × 泰坦舰体固有维修倍率 ——
+  // 泰坦固有防御特性不吃玩家技能、装备、科研、脑插；只吃舰体自身加成。
   if (isTitanShip && titanTrait) {
     const titanRepairRatio = c.maxHp.structure > 0 ? c.hp.structure / c.maxHp.structure : 1;
     if (titanTrait.id === "titan_deflection_shield" && titanDeflectionTriggers > 0 && c.hp.shield < c.maxHp.shield) {
       const base = getTitanSteadyRechargeRepair(titanTrait, titanDeflectionTriggers, c.maxHp.shield);
-      const restored = Math.min(base * calcRepairMult("shield", state, titanRepairRatio), c.maxHp.shield - c.hp.shield);
+      const restored = Math.min(base * getTitanTraitRepairMultiplierFromState(state, "shield", titanRepairRatio), c.maxHp.shield - c.hp.shield);
       if (restored > 0) {
         c.hp.shield += restored;
         enemyVolley.armorRestored = (enemyVolley.armorRestored || 0) + restored;
@@ -1844,7 +1939,7 @@ function advanceCombatRound(state, context) {
     if (titanTrait.id === "titan_reactive_armor" && armorDamageTaken > 0 && c.hp.armor < c.maxHp.armor) {
       // 应激 min 内不含乘区（consumesRepairMultiplier）：基础 min 先算，乘区在 min 之后显式应用
       const base = getTitanReactiveArmorRepair(titanTrait, armorDamageTaken, c.maxHp.armor);
-      const restored = Math.min(base * calcRepairMult("armor", state, titanRepairRatio), c.maxHp.armor - c.hp.armor);
+      const restored = Math.min(base * getTitanTraitRepairMultiplierFromState(state, "armor", titanRepairRatio), c.maxHp.armor - c.hp.armor);
       if (restored > 0) {
         c.hp.armor += restored;
         enemyVolley.armorRestored = restored;
@@ -1853,7 +1948,7 @@ function advanceCombatRound(state, context) {
     if (titanTrait.id === "titan_structure_overdrive" && structureDamageTaken > 0 && c.hp.structure < c.maxHp.structure) {
       const layers = Math.min(titanTrait.maxLayers, Math.floor(((1 - titanRepairRatio) + 1e-9) / (titanTrait.thresholdPct || 0.10)));
       const base = getTitanOverdriveSealRepair(titanTrait, structureDamageTaken, layers);
-      const restored = Math.min(base * calcRepairMult("structure", state, titanRepairRatio), c.maxHp.structure - c.hp.structure);
+      const restored = Math.min(base * getTitanTraitRepairMultiplierFromState(state, "structure", titanRepairRatio), c.maxHp.structure - c.hp.structure);
       if (restored > 0) {
         c.hp.structure += restored;
         enemyVolley.armorRestored = (enemyVolley.armorRestored || 0) + restored;
@@ -1883,6 +1978,7 @@ function advanceCombatRound(state, context) {
   }
 
   resolveCombatWaveVictory(zone, rng, emit, state);
+  decayDeathspaceWeaponVulnerability(c.enemies);
   endLegionSquadBattleIfInactive(state); // M3 步骤 9：清波后若战斗已结束则清理小队（连刷续跑时保持启用）
   state._dirty = true;
   return { ok:true, advanced:true, active:Boolean(c.active), pending:Boolean(c.deathspaceChainPending), recovering:false, reason:c.active ? "ongoing" : "cleared" };
@@ -2054,9 +2150,15 @@ if (typeof window !== "undefined") window.getInstalledCombatWeapons = getInstall
 if (typeof window !== "undefined") window.getInstalledCombatDamageControls = getInstalledCombatDamageControls;
 if (typeof window !== "undefined") window.onCombatEvent = onCombatEvent;
 if (typeof window !== "undefined") window.computeVolleyFuel = computeVolleyFuel;
+if (typeof window !== "undefined") window.getDeathspaceWeaponDamageTakenMultiplier = getDeathspaceWeaponDamageTakenMultiplier;
+if (typeof window !== "undefined") window.applyDeathspaceWeaponEffect = applyDeathspaceWeaponEffect;
+if (typeof window !== "undefined") window.tickDeathspaceWeaponEffects = tickDeathspaceWeaponEffects;
+if (typeof window !== "undefined") window.decayDeathspaceWeaponVulnerability = decayDeathspaceWeaponVulnerability;
 if (typeof window !== "undefined") window.getEncryptedDataDropConfig = getEncryptedDataDropConfig;
 if (typeof window !== "undefined") window.getCombatZoneSpecialDropConfigs = getCombatZoneSpecialDropConfigs;
 if (typeof window !== "undefined") window.getDeathspaceTicketDropConfig = getDeathspaceTicketDropConfig;
+if (typeof window !== "undefined") window.getDeathspaceTicketDropConfigs = getDeathspaceTicketDropConfigs;
+if (typeof window !== "undefined") window.rollDeathspaceTicketDrops = rollDeathspaceTicketDrops;
 if (typeof window !== "undefined") window.getDeathspaceLeaderLootConfigs = getDeathspaceLeaderLootConfigs;
 if (typeof window !== "undefined") window.getGearDropConfigs = getGearDropConfigs;
 if (typeof window !== "undefined") window.getStationCoreDropConfigs = getStationCoreDropConfigs;

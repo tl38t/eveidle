@@ -59,7 +59,7 @@ const TITAN_HULLS = {
     bonuses: { structureCapacity: 0.35, structureRepair: 2.00, structureEmergencyRepair: 1.00, hitBonus: 30 },
     capitalTrait: {
       id: "titan_structure_overdrive", name: "泰坦结构过载",
-      description: "每损失10%结构，泰坦武器最终伤害提高6%，最多5层，战斗结束重置；每层过载使结构维修量提高15%",
+      description: "每损失10%结构，泰坦武器最终伤害提高6%，最多5层，战斗结束重置；过载密封：敌方阶段结束恢复本轮结构损失的12%，每层过载使该结构维修量提高15%",
       thresholdPct: 0.10, perLayer: 0.06, maxLayers: 5,
       hook: { id: "overdrive_seal", name: "过载密封", trigger: "onEnemyPhaseEnd", baseRestoreRate: 0.12, perLayerRepairBonus: 0.15 }
     }

@@ -1035,6 +1035,7 @@ function getArchaeologyDisplayState(state, now, options) {
 
   const probes = ARCHAEOLOGY_ALL_PROBES.map(probe => ({
     id: probe.id, name: probe.name, level: probe.level, scanBonus: probe.scanBonus,
+    cycleReduction: Number(probe.cycleReduction) || 0,
     stock: ResourceRegistry.get(state, "probe:" + probe.id),
     selected: effectiveProbeId === probe.id,
     levelLocked: getEffectiveSkillLevel(state, "archaeology") < probe.level,

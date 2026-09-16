@@ -636,6 +636,28 @@ const NODES = [
   },
 ];
 
+// 循环研究：独立于普通科技树，但使用同一研究槽位与队列。
+// baseDuration 为第 1 级耗时；后续等级按 1.1 倍递增。
+const CYCLE_RESEARCHES = [
+  { id:"cycle_weapon", name:"循环武器研究", group:"allWeapon", effect:"全武器伤害 +0.5% / 级", perLevel:0.5, baseDurationHours:12, icon:"⚡" },
+  { id:"cycle_defense", name:"循环防御研究", group:"tierHp", effect:"舰船生命 +0.5% / 级", perLevel:0.5, baseDurationHours:12, icon:"◈" },
+  { id:"cycle_industry", name:"循环工业研究", group:"allMfg", effect:"制造效率 +0.5% / 级", perLevel:0.5, baseDurationHours:12, icon:"⚙" },
+  { id:"cycle_exploration", name:"循环探索研究", group:"archEff", effect:"考古效率 +0.5% / 级", perLevel:0.5, baseDurationHours:12, icon:"⌁" },
+  { id:"cycle_logistics", name:"循环后勤研究", group:"fuel", effect:"燃料消耗 -0.5% / 级", perLevel:0.5, baseDurationHours:12, icon:"◌" }
+];
+const CYCLE_RESEARCH_UNLOCK_HOURS = 1800;
+const CYCLE_RESEARCH_GROWTH = 1.1;
+
+function getCycleResearch(id) {
+  return CYCLE_RESEARCHES.find(item => item.id === id) || null;
+}
+
+function getCycleResearchDuration(id, level) {
+  const item = getCycleResearch(id);
+  if (!item || !Number.isInteger(level) || level < 1) return null;
+  return item.baseDurationHours * 3600 * Math.pow(CYCLE_RESEARCH_GROWTH, level - 1);
+}
+
 // ---------------------------------------------------------------------------
 //  3. 统一公式推导（与冻结源一致，UNIT 由总目标时间反推）
 //      duration(step) = UNIT × WEIGHTS[level-1] × RANK_MULT[category]
@@ -945,6 +967,11 @@ const ResearchData = {
   buildSteps,
   STEP_COUNT,
   RESEARCH_BONUS_CONSUMERS,
+  CYCLE_RESEARCHES,
+  CYCLE_RESEARCH_UNLOCK_HOURS,
+  CYCLE_RESEARCH_GROWTH,
+  getCycleResearch,
+  getCycleResearchDuration,
 };
 
 if (typeof window !== "undefined") window.ResearchData = ResearchData;

@@ -2529,6 +2529,19 @@ function getCombatRepairMultiplierFromState(state, target, context, structureRat
   ], { ...(context || {}), actor:"player", layer:target });
 }
 
+// 泰坦固有防御特性专用维修倍率：只读取泰坦舰体自身的维修加成，
+// 不吃玩家防御技能、装备、科研或脑插；结构紧急维修仍属于舰体固有加成。
+function getTitanTraitRepairMultiplierFromState(state, target, structureRatio) {
+  const ship = getActiveCombatShipState(state || gameState).config;
+  if (!ship || ship.type !== "titan") return 1;
+  const roleBonus = ship.bonuses && target ? Number(ship.bonuses[target + "Repair"]) || 0 : 0;
+  let mult = 1 + roleBonus;
+  if (target === "structure" && typeof structureRatio === "number" && structureRatio < 0.7 && ship.bonuses && typeof ship.bonuses.structureEmergencyRepair === "number") {
+    mult += Number(ship.bonuses.structureEmergencyRepair) || 0;
+  }
+  return Math.max(0, mult);
+}
+
 function getCombatLivingEnemiesFromState(combat) {
   const enemies = combat && Array.isArray(combat.enemies) ? combat.enemies : [];
   if (enemies.length > 0) return enemies.filter(enemy => enemy && !enemy.defeated && enemy.hp && enemy.hp.structure > 0);
@@ -2786,8 +2799,8 @@ function getCombatDisplayState(state, now) {
   const storedMode = combat.mode === "deathspace" ? "deathspace" : "belt";
   const viewMode = combat.viewMode === "deathspace" ? "deathspace" : combat.viewMode === "belt" ? "belt" : storedMode;
   const encounterMode = combat.active ? storedMode : viewMode;
-  const requestedTier = [2,3,4,6].includes(Number(combat.viewDeathspaceTier)) ? Number(combat.viewDeathspaceTier) :
-    [2,3,4,6].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
+  const requestedTier = [2,3,4,6,8].includes(Number(combat.viewDeathspaceTier)) ? Number(combat.viewDeathspaceTier) :
+    [2,3,4,6,8].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
   const storedDeathspace = getDeathspaceById(combat.viewDeathspaceId || combat.deathspaceId);
   const deathspaceTier = requestedTier || (storedDeathspace && storedDeathspace.dedTier) || 2;
   const deathspace = storedDeathspace && storedDeathspace.dedTier === deathspaceTier
@@ -2913,7 +2926,7 @@ function getCombatDisplayState(state, now) {
     zone:{ ...zone, unlocked:zoneUnlocked },
     zones:COMBAT_ZONES.filter(item => !item.trialOnly).map(item => ({ ...item, selected:item.id === zone.id, unlocked:true, locked:Boolean(combat.active), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
     deathspace:{ ...deathspace, ticketCount, unlocked:true, clearCount:combat.deathspaceClears && combat.deathspaceClears[deathspace.id] || 0 },
-    deathspaceTiers:[2,3,4,6].map(tier => {
+    deathspaceTiers:[2,3,4,6,8].map(tier => {
       const sites = DEATHSPACE_DATABASE.filter(site => site.dedTier === tier);
       return { tier, label:tier + "/10", selected:tier === deathspaceTier, unlocked:true, requiredCL:sites[0] ? sites[0].requiredCL : 1 };
     }),
@@ -2992,7 +3005,8 @@ function getCombatDropPreview(state, options) {
       sourceZoneId: sourceZone.id, sourceZoneName: sourceZone.name,
       encryptedData: null, zoneSpecialDrops: null, ticketDrop: null, gearDrops: null, stationCoreDrops: null, cargoDrops: null,
       leaderLoot: getDeathspaceLeaderLootConfigs(site),
-      probeDrop: (typeof getDeathspaceProbeDropConfig === "function") ? getDeathspaceProbeDropConfig(site) : null,
+      probeDrop: (typeof getDeathspaceProbeDropConfigs === "function") ? getDeathspaceProbeDropConfigs(site)
+        : ((typeof getDeathspaceProbeDropConfig === "function") ? getDeathspaceProbeDropConfig(site) : null),
       tacticalMaterial: getTacticalMaterialDropConfig(sourceZone),
       implantDrop: implantDrop
     };
@@ -3009,6 +3023,7 @@ function getCombatDropPreview(state, options) {
     stationCoreDrops: getStationCoreDropConfigs(zone),
     cargoDrops: getCargoDropConfigs(zone),
     ticketDrop: getDeathspaceTicketDropConfig(zone),
+    ticketDrops: (typeof getDeathspaceTicketDropConfigs === "function") ? getDeathspaceTicketDropConfigs(zone) : [],
     tacticalMaterial: getTacticalMaterialDropConfig(zone)
   };
 }

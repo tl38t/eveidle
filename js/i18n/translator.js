@@ -34,13 +34,18 @@
   var catalogSources = [];
   var originals = new WeakMap();
   var IDEOGRAPH = /[\u3400-\u9FFF\uF900-\uFAFF]/;
+  function cjkCount(s) { var m = String(s || "").match(/[\u3400-\u9FFF\uF900-\uFAFF]/g); return m ? m.length : 0; }
   var ATTRIBUTES = ["title", "aria-label", "placeholder"];
   var translateCache = new Map();
   var catalogUsesIdeographs = false;
 
   function setActiveCatalog() {
     catalog = catalogs[locale] || new Map();
-    catalogSources = Array.from(catalog.keys()).filter(function (source) { return source.length >= 2 && !/[<>]/.test(source); }).sort(function (a, b) { return b.length - a.length; });
+    // 子串键应用顺序：汉字个数降序 → 字符长度降序。
+    // 只按字符长度降序会让「跨词边界的片段键」压过正常词：
+    //   "· 总"(3 字符/1 汉字) 先于 "总部"(2 字符/2 汉字) 被应用 ⇒ 总部 被切成 "total 部"。
+    // 汉字数优先可保证「完整词恒优于片段键」，从根上消除这类切词。
+    catalogSources = Array.from(catalog.keys()).filter(function (source) { return source.length >= 2 && !/[<>]/.test(source); }).sort(function (a, b) { return cjkCount(b) - cjkCount(a) || b.length - a.length; });
     // 目标目录的译文是否本身就是汉字（如 zh-TW）。是的话，子串替换属于「字形/用词转换」，
     // 不能按「中英混排」处理，否则会把合法的繁体输出回退成简体。
     catalogUsesIdeographs = false;

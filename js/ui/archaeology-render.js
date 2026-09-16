@@ -189,7 +189,7 @@ function renderArchaeologyPage(now) {
       data-probe-id="${probe.id}"
       ${probe.locked || arch.repairing || arch.active ? "disabled" : ""}>
       <span class="apc-name">${probe.name}</span>
-      <span class="apc-bonus">扫描 +${probe.scanBonus}</span>
+      <span class="apc-bonus">扫描 +${probe.scanBonus}${probe.cycleReduction > 0 ? ` · 周期 -${Math.round(probe.cycleReduction * 100)}%` : ""}</span>
       <span class="apc-stock">库存 ${probe.stock}</span>
       <span class="apc-level">需 Lv.${probe.level}</span>
     </button>

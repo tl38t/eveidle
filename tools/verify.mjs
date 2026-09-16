@@ -7529,11 +7529,11 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     return cr && cr.equipment[exp.weapon] === 1 && cr.equipment["t1_shield_booster"] === 1 &&
       resAmtN(cr, exp.ammo) === 100 && resAmtN(cr, RN.FUEL) === 300 &&
       s.res === 2 && s.eq === 2 && s.sh === 0 && s.bp === 0;
-  }), "C1 三方向奖励必须逐项精确：对应武器 + 护盾增效器 + 100 弹药 + 300 燃料");
+  }), "C1 三方向奖励必须逐项精确：对应武器 + 护盾回充器 + 100 弹药 + 300 燃料");
   const c2 = TD.byId.C2;
   okN(c2.progressType === "install" && c2.target.shipId === "rookie_corvette" && c2.target.weaponFromChoice === true &&
       c2.target.shieldBooster === "t1_shield_booster" && emptyRewardN(c2.reward),
-    "C2 只要求安装 C1 所选武器与护盾增效器到启程级，不要求玩家自造装备");
+    "C2 只要求安装 C1 所选武器与护盾回充器到启程级，不要求玩家自造装备");
   const c3 = TD.byId.C3;
   okN(c3.progressType === "assign_and_select_zone" && c3.target.shipId === "rookie_corvette" && c3.target.slot === "combat" &&
       c3.target.zoneLevel === 1 && c3.target.zoneType === "highsec" && c3.target.zones.length === 3 &&

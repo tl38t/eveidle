@@ -65,15 +65,25 @@ function renderActionConfirmation(display, opts) {
   } else {
     maxEl.textContent = display.unlimited ? "" : "最大：" + maxCount;
   }
-  // 缺料（maxCount=0 且非超量预排）时禁用确认/加入队列/无限/输入框（与 startShipAssembly 材料校验同源）。
+  // 真实材料上限：超量预排（noCap）以 materialHint（当前材料可产批数）为准，否则以 maxCount 为准。
+  // 直接开始（确认）要求至少能产 1 批，否则禁用确认按钮；超量预排仅放开「加入队列」路径（待料后运行期 skipOnFail 续跑）。
+  const realCap = noCap ? Math.max(0, Number(display.materialHint) || 0) : maxCount;
   const confirmBtn = document.getElementById("action-modal-confirm");
   const queueBtn = document.getElementById("action-modal-queue");
-  if (maxCount <= 0 && !noCap) {
+  if (!noCap && maxCount <= 0) {
+    // 非超量预排且材料/组件为 0：确认与加入队列均禁用（与 startShipAssembly 材料校验同源）。
     if (confirmBtn) confirmBtn.disabled = true;
     if (queueBtn) queueBtn.disabled = true;
     if (infinityBtn) infinityBtn.disabled = true;
     if (input) input.disabled = true;
     maxEl.textContent = "材料/组件不足，无法合成";
+  } else if (noCap && realCap <= 0) {
+    // 超量预排但当前材料为 0：禁止「直接开始」（必然空转），但「加入队列」仍允许（待料后运行期自动续产）。
+    if (confirmBtn) confirmBtn.disabled = true;
+    if (queueBtn) queueBtn.disabled = false;
+    if (infinityBtn) infinityBtn.disabled = false;
+    if (input) input.disabled = false;
+    maxEl.textContent = "材料不足，可直接加入队列待料（运行期自动续产）";
   } else {
     if (confirmBtn) confirmBtn.disabled = false;
     if (queueBtn) queueBtn.disabled = false;
@@ -154,8 +164,13 @@ function submitActionConfirmation(front) {
   const rawMax = Number(display.maxCount);
   const maxCount = rawMax > 0 ? rawMax : (display.unlimited ? 999999 : 0);
   const noCap = !!display.noCap; // 超量预排：材料不足也允许派发，由运行期 skipOnFail 切下一项
+  // 真实材料上限：超量预排以 materialHint 为准，否则以 maxCount 为准。
+  const realCap = noCap ? Math.max(0, Number(display.materialHint) || 0) : maxCount;
   // 非无限类且非超量预排且 maxCount<=0（材料/组件不足）：禁止派发、不隐藏、不 dispatch。
   if (!display.unlimited && !noCap && maxCount <= 0) return false;
+  // 直接开始（确认=插队首+startQueue）：必须当前材料足以产至少 1 批，否则必然空转（跑满周期→进度归零→队列静默停）。
+  // 与 research-protocols.js 协议路径 canAffordCost 门禁同口径（「绝不留下必然空转的动作」）；超量预排仅放开「加入队列」路径。
+  if (front && realCap <= 0) return false;
   const input = document.getElementById("action-batch-count");
   let count = parseInt((input && input.value) || "1");
   if (count === -1) {
@@ -163,6 +178,8 @@ function submitActionConfirmation(front) {
   } else {
     count = Math.max(1, count || 1);
     if (!noCap && count > maxCount) count = maxCount; // 非超量预排时数量不得超过 maxCount
+    // 直接开始时数量不得超过当前材料可产批数（避免直接开始却空转）；加入队列（非 front）保留超量预排。
+    if (front && count > realCap) count = Math.max(1, realCap);
   }
   hideActionConfirm();
   const queueItem = {

@@ -284,14 +284,22 @@ const DEATHSPACE_EQUIPMENT_TIERS = Object.freeze({
   2:{ level:10, effect:1.10, supEffect:2.05, coreRequired:2, materialMultiplier:1.0, time:30, xp:18 },
   3:{ level:40, effect:1.10, supEffect:2.05, coreRequired:4, materialMultiplier:1.5, time:50, xp:32 },
   4:{ level:60, effect:1.10, supEffect:1.30, coreRequired:6, materialMultiplier:2.0, time:80, xp:55 },
-  6:{ level:85, effect:1.10, supEffect:1.35, coreRequired:10, materialMultiplier:2.5, time:120, xp:90 }
+  6:{ level:85, effect:1.10, supEffect:1.35, coreRequired:10, materialMultiplier:2.5, time:120, xp:90 },
+  8:{ level:95, effect:1.20, supEffect:1.50, coreRequired:14, materialMultiplier:3.0, time:180, xp:140 }
 });
 
 const DEATHSPACE_EQUIPMENT_ROUTES = Object.freeze({
-  angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型"}, weapon:{2:"t1_small_laser",3:"t1_medium_laser",4:"t1_large_laser",6:"t1_capital_laser"}, repair:{2:"t1_shield_booster",3:"t1_medium_shield_booster",4:"t1_large_shield_booster",6:"t1_capital_shield_array"} },
-  blood:{ prefix:{2:"赤誓试制",3:"赤誓强化",4:"赤誓精锐",6:"赤誓A型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_heavy_missile_launcher",4:"t1_cruise_missile_launcher",6:"t1_capital_missile_array"}, repair:{2:"t1_armor_repairer",3:"t1_medium_armor_repairer",4:"t1_large_armor_repairer",6:"t1_capital_armor_array"} },
-  sansha:{ prefix:{2:"静默试制",3:"静默强化",4:"静默精锐",6:"静默A型"}, weapon:{2:"t1_small_cannon",3:"t1_medium_cannon",4:"t1_large_cannon",6:"t1_capital_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_medium_structure_repairer",4:"t1_large_structure_repairer",6:"t1_capital_structure_array"} }
+  angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型",8:"劫团X型"}, weapon:{2:"t1_small_laser",3:"t1_medium_laser",4:"t1_large_laser",6:"t1_capital_laser",8:"t1_capital_laser"}, repair:{2:"t1_shield_booster",3:"t1_medium_shield_booster",4:"t1_large_shield_booster",6:"t1_capital_shield_array",8:"t1_capital_shield_array"} },
+  blood:{ prefix:{2:"赤誓试制",3:"赤誓强化",4:"赤誓精锐",6:"赤誓A型",8:"赤誓X型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_heavy_missile_launcher",4:"t1_cruise_missile_launcher",6:"t1_capital_missile_array",8:"t1_capital_missile_array"}, repair:{2:"t1_armor_repairer",3:"t1_medium_armor_repairer",4:"t1_large_armor_repairer",6:"t1_capital_armor_array",8:"t1_capital_armor_array"} },
+  sansha:{ prefix:{2:"静默试制",3:"静默强化",4:"静默精锐",6:"静默A型",8:"静默X型"}, weapon:{2:"t1_small_cannon",3:"t1_medium_cannon",4:"t1_large_cannon",6:"t1_capital_cannon",8:"t1_capital_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_medium_structure_repairer",4:"t1_large_structure_repairer",6:"t1_capital_structure_array",8:"t1_capital_structure_array"} }
 });
+
+function getDeathspaceXWeaponEffect(faction, variant) {
+  if (faction === "angel") return { kind:"dot", rate:variant === "supervisor" ? 0.008 : 0.005, rounds:3, label:"灼蚀" };
+  if (faction === "blood") return { kind:"lifesteal", rate:variant === "supervisor" ? 0.008 : 0.005, target:"armor", label:"装甲回流" };
+  if (faction === "sansha") return { kind:"vulnerability", rate:variant === "supervisor" ? 0.035 : 0.025, rounds:2, label:"伤害加深" };
+  return null;
+}
 
 function scaleDeathspaceEquipmentCost(cost, multiplier) {
   return Object.fromEntries(Object.entries(cost || {}).map(([material, quantity]) => [material, Math.max(1, Math.ceil(quantity * multiplier))]));
@@ -313,8 +321,12 @@ function createDeathspaceEquipmentDefinition(site, role, baseItemId, tierConfig)
     deathspaceTier:site.dedTier, deathspaceVariant:"standard", sourceDeathspaceId:site.id, requiresBlueprint:true,
     inputEquipment:{ itemId:baseItemId, quantity:1 }
   };
+  if (site.dedTier === 8 && role === "weapon") standardCombat.xEffect = getDeathspaceXWeaponEffect(site.faction, "standard");
   // 继承基础件的船型门禁（旗舰级 base 限 capital/supercapital）
   if (Array.isArray(base.shipTypes) && base.shipTypes.length > 0) standard.shipTypes = [...base.shipTypes];
+  if (standard.shipTypes && standard.shipTypes.includes("capital") && !standard.shipTypes.includes("titan")) standard.shipTypes.push("titan");
+  if (site.dedTier === 8 && role === "weapon") standard.shipTypes = ["capital", "supercapital", "titan"];
+  if (site.dedTier === 8 && role === "repair") standard.shipTypes = ["capital", "supercapital", "titan"];
 
   const improvedId = "ded_" + site.faction + "_" + site.dedTier + "_" + role + "_supervisor";
   // 监督者型直接从基础件按 supEffect 缩放（而非在标准型上再乘），确保锚点数值精确
@@ -331,6 +343,7 @@ function createDeathspaceEquipmentDefinition(site, role, baseItemId, tierConfig)
     deathspaceTier:site.dedTier, deathspaceVariant:"supervisor", sourceDeathspaceId:site.id, requiresBlueprint:true,
     inputEquipment:{ itemId:standardId, quantity:1 }
   };
+  if (site.dedTier === 8 && role === "weapon") improvedCombat.xEffect = getDeathspaceXWeaponEffect(site.faction, "supervisor");
   if (standard.shipTypes) improved.shipTypes = [...standard.shipTypes];
   return [standard, improved];
 }
@@ -470,7 +483,8 @@ const BLUEPRINT_STORE_CATEGORIES = Object.freeze([
   { id:"deathspace-2", name:"深空清剿 2/10", icon:"fa-solid fa-dungeon" },
   { id:"deathspace-3", name:"深空清剿 3/10", icon:"fa-solid fa-dungeon" },
   { id:"deathspace-4", name:"深空清剿 4/10", icon:"fa-solid fa-dungeon" },
-  { id:"deathspace-6", name:"深空清剿 6/10", icon:"fa-solid fa-dungeon" }
+  { id:"deathspace-6", name:"深空清剿 6/10", icon:"fa-solid fa-dungeon" },
+  { id:"deathspace-8", name:"深空清剿 8/10", icon:"fa-solid fa-dungeon" }
 ]);
 
 function getEquipmentBlueprintOwnershipKey(equipmentId) {
@@ -785,6 +799,12 @@ function getEquipmentAttributeLines(equipmentRef, enhancementLevel) {
     lines.push("基础伤害：" + eq.combat.baseDamage + enhAdd(eq.combat.baseDamage));
     lines.push("每轮消耗：燃料 " + eq.combat.fuelCost + " / 弹药 " + eq.combat.ammoCost);
     if (eq.combat.aoe && eq.combat.aoe.description) lines.push(eq.combat.aoe.description);
+    if (eq.combat.xEffect) {
+      const x = eq.combat.xEffect;
+      if (x.kind === "dot") lines.push("灼蚀：每回合额外造成基础伤害的 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
+      if (x.kind === "lifesteal") lines.push("装甲回流：直接伤害的 " + (x.rate * 100) + "% 转化为装甲修复");
+      if (x.kind === "vulnerability") lines.push("伤害加深：目标受到的最终伤害提高 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
+    }
   } else if (eq.combat && eq.combat.kind === "repair") {
     const targetNames = { shield:"护盾", armor:"装甲", structure:"结构" };
     lines.push("自动维修：" + (targetNames[eq.combat.target] || eq.combat.target) + " +" + eq.combat.amount + enhAdd(eq.combat.amount));
@@ -819,7 +839,7 @@ function getShipTypesFlag(shipTypes) {
   const ind = shipTypes.includes("industrial_capital");
   if (!combat && !ind) return null;
   const parts = [];
-  if (combat) parts.push("战斗旗舰 / 超级旗舰");
+  if (combat) parts.push("战斗旗舰 / 超级旗舰 / 泰坦");
   if (ind) parts.push("工业旗舰");
   const kind = combat ? "combat" : "ind";
   return { kind, label: parts.join(" / ") };

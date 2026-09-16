@@ -330,6 +330,19 @@
   }
 
   // ---- 仅 ?qa= 时暴露 QA 句柄并自动运行（防止非 ?qa= 页面暴露 window.QA）----
+  // 循环研究手动实验种子：?cycle10=1 时仅修改当前本地存档，便于验收循环研究等级/时长；不参与 QA all。
+  if (/[?&]cycle10=1\b/.test(window.location && window.location.search || "")) {
+    (function seedCycleTen() {
+      if (!window.gameState || !window.gameState.research) { setTimeout(seedCycleTen, 50); return; }
+      var levels = window.gameState.research.cycleResearchLevels || (window.gameState.research.cycleResearchLevels = {});
+      levels.cycle_weapon = 10;
+      levels.cycle_defense = 10;
+      window.gameState._dirty = true;
+      if (window.SaveManager && typeof window.SaveManager.save === "function") window.SaveManager.save();
+      log("循环研究实验种子已写入：循环武器研究 Lv.10、循环防御研究 Lv.10");
+    })();
+  }
+
   if (qaActive()) {
     window.QA = { runScenario: runScenario, scenarios: SCENARIO_KEYS.slice(), blockSaving: blockSaving, available: true };
 

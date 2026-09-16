@@ -294,6 +294,12 @@ const ManufacturingStateActions = {
       const titanGate = isTitanComponentUnlocked(state, recipe.id);
       if (!titanGate.ok) return { changed:false, reason:titanGate.reason || "titan-node-locked" };
     }
+    // 材料门禁（fail-closed，与协议路径 research-protocols.js canAffordCost 同口径）：
+    // 直接开始制造时若当前材料不足以完成至少 1 批，拒绝启动，绝不留下必然空转的动作
+    // （与 tick.js:353 运行时 hasEnoughShipCompMats 校验一致，避免「点开始→跑满周期→进度归零→队列静默停」）。
+    if (shipBuildingQuote.cost && typeof hasEnoughShipCompMats === "function" && !hasEnoughShipCompMats(shipBuildingQuote.cost, recipe.id)) {
+      return { changed:false, reason:"insufficient-materials" };
+    }
     Object.assign(state.currentAction, {
       skill:"shipEngineering",
       active:true,
@@ -849,7 +855,7 @@ const CombatStateActions = {
 
   selectDeathspaceTier(state, tier) {
     const selectedTier = Number(tier);
-    if (![2,3,4,6].includes(selectedTier)) return { changed:false, reason:"unknown-deathspace-tier" };
+    if (![2,3,4,6,8].includes(selectedTier)) return { changed:false, reason:"unknown-deathspace-tier" };
     const currentSite = DEATHSPACE_DATABASE.find(site => site.id === (state.combat.viewDeathspaceId || state.combat.deathspaceId));
     const site = DEATHSPACE_DATABASE.find(item => item.dedTier === selectedTier && item.faction === (currentSite && currentSite.faction)) ||
       DEATHSPACE_DATABASE.find(item => item.dedTier === selectedTier);
@@ -2609,6 +2615,11 @@ const StationStateActions = {
       if (!RS || typeof RS.enqueueResearch !== "function") return { changed: false, reason: "not-available" };
       return researchActionResult(RS.enqueueResearch(state, techId, targetLevel, now));
     },
+    enqueueCycle(state, cycleId, targetLevel, now) {
+      const RS = getResearchSystemRef();
+      if (!RS || typeof RS.enqueueCycleResearch !== "function") return { changed:false, reason:"not-available" };
+      return researchActionResult(RS.enqueueCycleResearch(state, cycleId, targetLevel, now));
+    },
     enqueueCascade(state, techId,  targetLevel, now) {
       const RS = getResearchSystemRef();
       if (!RS || typeof RS.enqueueResearchCascade !== "function") return { changed: false, reason: "not-available" };
@@ -2793,6 +2804,7 @@ const StationStateActions = {
   // 研究系统 Batch F：所有操作经 ResearchSystem 公开 API，actionTime 透传
   if (action.type === "research/start") return ResearchStateActions.start(state, action.techId, action.targetLevel, actionTime);
   if (action.type === "research/enqueue") return ResearchStateActions.enqueue(state, action.techId, action.targetLevel, actionTime);
+  if (action.type === "research/enqueueCycle") return ResearchStateActions.enqueueCycle(state, action.cycleId, action.targetLevel, actionTime);
   if (action.type === "research/enqueueCascade") return ResearchStateActions.enqueueCascade(state, action.techId, action.targetLevel, actionTime);
   if (action.type === "research/cancel") return ResearchStateActions.cancel(state, actionTime);
   if (action.type === "research/applyHours") return ResearchStateActions.applyHours(state, action.hours, actionTime);

@@ -1690,6 +1690,12 @@ function openBlueprintProductModal(eq, blueprintName) {
   if (eq.combat && eq.combat.kind === "weapon") {
     combatLines.push("基础伤害 " + eq.combat.baseDamage + " / 命中 " + eq.combat.baseHit);
     if (eq.combat.aoe && eq.combat.aoe.description) combatLines.push(eq.combat.aoe.description);
+    if (eq.combat.xEffect) {
+      const x = eq.combat.xEffect;
+      if (x.kind === "dot") combatLines.push("灼蚀：每回合额外造成基础伤害的 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
+      if (x.kind === "lifesteal") combatLines.push("装甲回流：直接伤害的 " + (x.rate * 100) + "% 转化为装甲修复");
+      if (x.kind === "vulnerability") combatLines.push("伤害加深：目标受到的最终伤害提高 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
+    }
   } else if (eq.combat && eq.combat.kind === "repair") {
     combatLines.push("恢复 " + eq.combat.amount + " (" + ({ shield: "护盾", armor: "装甲", structure: "结构" }[eq.combat.target] || "HULL") + ")");
   }
@@ -2807,6 +2813,8 @@ function researchReasonText(reason) {
     SKIP_LEVEL: "必须按顺序逐级研究",
     LEVEL_OUT_OF_RANGE: "等级超出范围",
     UNKNOWN_TECH: "未知科技",
+    UNKNOWN_CYCLE: "未知循环研究",
+    CYCLE_LOCKED: "循环研究尚未解锁",
     // 深空开拓分支门禁（星图线 / 虫洞线条件不同，详情面板给完整文案）
     FRONTIER_LOCKED: "深空开拓分支未解锁",
     INVALID_HOURS: "投入工时无效",
@@ -2917,7 +2925,7 @@ function renderResearchActive(research, RS) {
     if (fill) fill.style.width = "0%";
     return;
   }
-  const node = RS && RS.getResearchNode ? RS.getResearchNode(ar.techId) : null;
+  const node = RS ? (ar.isCycle && RS.getCycleResearch ? RS.getCycleResearch(ar.cycleId) : (RS.getResearchNode ? RS.getResearchNode(ar.techId) : null)) : null;
   const name = node ? node.name : ar.techId;
   const progress = RS && RS.getResearchProgress ? RS.getResearchProgress(gameState) : null;
   const ratio = progress && typeof progress.ratio === "number" ? progress.ratio : 0;
@@ -3644,14 +3652,15 @@ function renderResearchQueue(research, RD, RS) {
     const parsed = RS && RS.parseResearchStepKey ? RS.parseResearchStepKey(key) : null;
     const techId = parsed ? parsed.techId : key;
     const level = parsed ? parsed.targetLevel : "?";
-    const node = RS && RS.getResearchNode ? RS.getResearchNode(techId) : null;
+    const isCycle = !!(parsed && parsed.isCycle);
+    const node = RS && (isCycle ? RS.getCycleResearch : RS.getResearchNode) ? (isCycle ? RS.getCycleResearch(parsed.cycleId) : RS.getResearchNode(techId)) : null;
     const name = node ? node.name : techId;
-    const dur = (node && RS && RS.getResearchDuration) ? RS.getResearchDuration(techId, level) : null;
+    const dur = (node && RS) ? (isCycle ? RS.getCycleResearchDuration(parsed.cycleId, level) : RS.getResearchDuration(techId, level)) : null;
     const durText = (dur != null && isFinite(dur)) ? formatResearchDuration(dur) : "—";
     // 已有活跃研究时禁用"立即开始"（startQueuedResearch 也会拒绝并保留队列）
     const startDisabled = (research.activeResearch && typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) ? " disabled" : "";
     return '<div class="research-queue-item">' +
-      '<div><span class="research-queue-index">#' + (idx + 1) + '</span><b>' + escapeAchievementText(name) + '</b> · Lv.' + level +
+      '<div><span class="research-queue-index">#' + (idx + 1) + '</span><b>' + escapeAchievementText(name) + '</b> · ' + (isCycle ? '循环 ' : 'Lv.') + level +
         '<div class="research-queue-meta">预计耗时 ' + escapeAchievementText(durText) + '</div></div>' +
       '<div class="research-queue-actions">' +
         '<button class="research-btn primary" data-start-key="' + escapeAchievementText(key) + '"' + startDisabled + '>立即开始</button>' +
@@ -3692,6 +3701,114 @@ function getResearchDisplayState(research, model) {
   };
 }
 
+function renderCycleResearchSection(research, RD, RS) {
+  const el = document.getElementById("research-cycle-section");
+  if (!el) return;
+  const list = RD && Array.isArray(RD.CYCLE_RESEARCHES) ? RD.CYCLE_RESEARCHES : [];
+  const unlocked = RS && typeof RS.isCycleResearchUnlocked === "function" ? RS.isCycleResearchUnlocked(gameState) : false;
+  const totalHours = (Number(research.accumulatedResearchSeconds) || 0) / 3600;
+  const gateHours = Number(RD && RD.CYCLE_RESEARCH_UNLOCK_HOURS) || 1800;
+  const active = research.activeResearch && research.activeResearch.isCycle ? research.activeResearch : null;
+  const cycleLevels = research.cycleResearchLevels || {};
+  const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+  const selected = _researchSelectedCycleId === "__core__" ? null : (list.find(item => item.id === _researchSelectedCycleId) || (active ? list.find(item => item.id === active.cycleId) : null) || list[0] || null);
+  const intro = '<div class="research-cycle-intro"><div class="research-cycle-eyebrow">ENDLESS RESEARCH PROTOCOL</div>' +
+    '<div class="research-cycle-title">循环研究系统</div><div class="research-cycle-copy">累计实际完成研究与实际抵扣科研工时达到 ' + gateHours + ' 小时后解锁。普通研究与循环研究共用一个研究槽位和队列。</div>' +
+    '<div class="research-cycle-meter"><i style="width:' + Math.min(100, Math.round(totalHours / gateHours * 100)) + '%"></i></div><div class="research-cycle-meta"><span>累计科研时长 ' + formatResearchHours(totalHours) + 'h</span><span>' + (unlocked ? '已解锁' : '还需 ' + formatResearchHours(Math.max(0, gateHours - totalHours)) + 'h') + '</span></div></div>';
+  const activeNode = active && RS && typeof RS.getCycleResearch === "function" ? (RS.getCycleResearch(active.cycleId) || {}) : {};
+  let activeHtml = '<div class="research-cycle-active"><div class="research-cycle-eyebrow">SHARED RESEARCH QUEUE</div><div class="research-cycle-title">' + (active ? '正在研究：' + escapeAchievementText(activeNode.name || active.cycleId) : '当前没有循环研究') + '</div>';
+  if (active) activeHtml += '<div class="research-cycle-copy">等级 ' + active.targetLevel + ' · 剩余 ' + escapeAchievementText(formatResearchDuration(active.remainingSeconds)) + '</div>';
+  else activeHtml += '<div class="research-cycle-copy">研究完成后自动衔接共享队列中的下一项。</div>';
+  activeHtml += '</div>';
+  let cards = '';
+  list.forEach((item, index) => {
+    const level = Number(cycleLevels[item.id]) || 0;
+    const next = level + 1;
+    const duration = RS && RS.getCycleResearchDuration ? RS.getCycleResearchDuration(item.id, next) : 0;
+    const key = 'cycle:' + item.id + '@' + next;
+    const isActive = !!(active && active.cycleId === item.id);
+    const isQueued = queue.includes(key);
+    const status = !unlocked ? 'locked' : (isActive ? 'active' : (isQueued ? 'queued' : (level > 0 ? 'completed' : 'available')));
+    const flag = isActive ? '<span class="rt-flag rt-flag--active">研究中</span>' : (isQueued ? '<span class="rt-flag rt-flag--queued">已排队</span>' : '');
+    cards += '<article class="rt-node rt-node--' + status + ' research-cycle-node n' + (index + 1) + (selected && selected.id === item.id ? ' is-selected' : '') + '" tabindex="0" role="button" data-cycle-detail="' + escapeAchievementText(item.id) + '">' + flag + '<span class="rt-node-name">' + escapeAchievementText(item.icon + ' ' + item.name) + '</span><span class="rt-node-sub">等级 ' + level + ' → ' + next + '</span><span class="rt-node-eff">' + escapeAchievementText(item.effect) + '</span><span class="rt-node-pips research-cycle-infinite-mark">∞</span></article>';
+  });
+  el.innerHTML = '<div class="research-cycle-hero">' + intro + activeHtml + '</div><div class="research-cycle-ring-wrap"><div class="research-cycle-ring" aria-hidden="true"></div><div class="research-cycle-ring-nodes">' + cards + '</div><button class="research-cycle-core" type="button" data-cycle-core aria-label="循环研究核心"><span class="research-cycle-infinity">∞</span><span>循环研究</span><small>共享队列 · 无限成长</small></button></div>';
+}
+
+function renderCycleResearchDetail(research, RD, RS) {
+  const el = document.getElementById("research-detail");
+  if (!el) return;
+  const list = RD && Array.isArray(RD.CYCLE_RESEARCHES) ? RD.CYCLE_RESEARCHES : [];
+  const unlocked = RS && typeof RS.isCycleResearchUnlocked === "function" ? RS.isCycleResearchUnlocked(gameState) : false;
+  const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+  const active = research.activeResearch && research.activeResearch.isCycle ? research.activeResearch : null;
+  let body = '';
+  if (_researchSelectedCycleId === "__core__") {
+    body = '<div class="rt-d-name">∞ 无限研究协议</div><div class="rt-d-meta">循环研究核心</div><div class="rt-d-tag rt-d-tag--protocol">共享研究系统</div><div class="rt-d-desc">五条循环研究分支共享普通研究的研究槽位与研究队列。</div><div class="rt-d-lab">系统状态</div><div class="rt-d-row">' + (unlocked ? '循环研究已解锁，可从环上的节点选择研究。' : '累计科研工时达到解锁门槛后开放。') + '</div>';
+  } else {
+    const item = list.find(row => row.id === _researchSelectedCycleId);
+    if (!item) { el.innerHTML = ''; return; }
+    const level = Number(research.cycleResearchLevels && research.cycleResearchLevels[item.id]) || 0;
+    const next = level + 1;
+    const duration = RS && RS.getCycleResearchDuration ? RS.getCycleResearchDuration(item.id, next) : 0;
+    const key = 'cycle:' + item.id + '@' + next;
+    const queued = queue.includes(key);
+    const isActive = !!(active && active.cycleId === item.id && active.targetLevel === next);
+    const startDisabled = (!unlocked || !!research.activeResearch || queued || isActive) ? ' disabled' : '';
+    const action = unlocked && !queued && !isActive
+      ? '<div class="rt-d-actions"><button class="research-btn primary" data-detail-action="start" data-tech-id="cycle:' + escapeAchievementText(item.id) + '" data-level="' + next + '"' + startDisabled + '>立即研究</button><button class="research-btn" data-cycle-enqueue="' + escapeAchievementText(item.id) + '">加入队列</button></div>'
+      : '';
+    body = '<div class="rt-d-name">' + escapeAchievementText(item.icon + ' ' + item.name) + '</div><div class="rt-d-meta">循环研究 · 无限等级</div><div class="rt-d-tag">状态：' + (isActive ? '研究中' : (queued ? '已排队' : (unlocked ? '可研究' : '未解锁'))) + ' ｜ 当前等级 ' + level + '</div><div class="rt-d-desc">' + escapeAchievementText(item.effect) + '</div><div class="rt-d-lab">下一等级</div><div class="rt-d-row">等级 ' + next + ' ｜ 研究时间 ' + escapeAchievementText(formatResearchDuration(duration)) + '</div>' + action + (queued ? '<div class="rt-d-hint">该等级已在共享研究队列中。</div>' : '') + (!unlocked ? '<div class="rt-d-hint">累计科研工时达到解锁门槛后可研究。</div>' : '');
+  }
+  el.innerHTML = '<div class="rt-modal-backdrop" data-detail-close></div><div class="rt-modal-box"><button class="rt-modal-close" type="button" data-detail-close aria-label="关闭">×</button>' + body + '</div>';
+}
+
+function onResearchSubtabClick(event) {
+  const btn = event.target.closest("[data-research-view]");
+  if (!btn) return;
+  const view = btn.dataset.researchView;
+  document.querySelectorAll("[data-research-view]").forEach(el => el.classList.toggle("active", el === btn));
+  const tree = document.querySelector(".research-tree-section");
+  const detail = document.getElementById("research-detail");
+  const cycle = document.getElementById("research-cycle-section");
+  const ordinary = view !== "cycle";
+  if (tree) tree.style.display = ordinary ? "" : "none";
+  if (detail) detail.style.display = ordinary ? "" : "none";
+  if (cycle) cycle.style.display = ordinary ? "none" : "";
+  if (ordinary && _researchSelectedCycleId) {
+    _researchSelectedCycleId = null;
+    if (detail) detail.innerHTML = '';
+  }
+}
+
+function onResearchCycleClick(event) {
+  const core = event.target.closest("[data-cycle-core]");
+  if (core) {
+    _researchSelectedCycleId = "__core__";
+    _researchSelectedTechId = null;
+    const detail = document.getElementById("research-detail");
+    if (detail) detail.style.display = "";
+    renderCycleResearchDetail(gameState.research, getResearchData(), getResearchSystem());
+    return;
+  }
+  const card = event.target.closest("[data-cycle-detail]");
+  if (card) {
+    _researchSelectedCycleId = card.dataset.cycleDetail || null;
+    _researchSelectedTechId = null;
+    const detail = document.getElementById("research-detail");
+    if (detail) detail.style.display = "";
+    renderCycleResearchDetail(gameState.research, getResearchData(), getResearchSystem());
+    return;
+  }
+  const btn = event.target.closest("[data-cycle-enqueue]");
+  if (!btn) return;
+  const id = btn.dataset.cycleEnqueue;
+  const level = (Number(gameState.research.cycleResearchLevels && gameState.research.cycleResearchLevels[id]) || 0) + 1;
+  const result = dispatchGameAction(gameState, { type:"research/enqueueCycle", cycleId:id, targetLevel:level }, Date.now());
+  if (!result.changed) showToast(researchReasonText(result.reason));
+  else { if (typeof SaveManager !== "undefined" && SaveManager && typeof SaveManager.save === "function") SaveManager.save(); renderResearchPage(); }
+}
+
 function renderResearchPage() {
   const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
   if (!research || typeof research !== "object" || Array.isArray(research)) return null;
@@ -3729,6 +3846,10 @@ function renderResearchPage() {
   renderResearchTree(model);
   renderResearchDetail(research, RD, RS, model);
   renderResearchQueue(research, RD, RS);
+  renderCycleResearchSection(research, RD, RS);
+  if (_researchSelectedCycleId && document.querySelector('[data-research-view="cycle"].active')) {
+    renderCycleResearchDetail(research, RD, RS);
+  }
   // 仅首次进入研究页或 activeResearch 目标变化时定位，绝不每次重绘抢夺玩家滚动位置
   autoScrollResearchTree(research, model);
   // 同步结构签名：用于 live updater 判断是否需要整页重渲染（不进 gameState/存档）。
@@ -3746,6 +3867,7 @@ var _researchSig = "";
 var _researchLastLive = 0;
 // Batch F 视觉返修：科技树视图态一律模块级，绝不进入 gameState / 存档。
 var _researchSelectedTechId = null;   // 详情区当前选中的科技
+var _researchSelectedCycleId = null;  // 循环研究环上的详情节点（纯视图状态）
 var _researchTreeModel = null;        // 最近一次渲染的纯读布局模型
 var _researchAutoScrollKey = null;    // 已完成自动定位的 activeResearch 标识
 var _researchDrag = null;             // 画布拖动状态
@@ -3793,7 +3915,7 @@ function liveUpdateResearchFields(now) {
   var pct = Math.round(ratio * 100);
   var fill = document.getElementById("research-progress-fill");
   if (fill) setLiveWidth(fill, pct + "%");
-  var node = (RS && RS.getResearchNode) ? RS.getResearchNode(ar.techId) : null;
+  var node = RS ? (ar.isCycle && RS.getCycleResearch ? RS.getCycleResearch(ar.cycleId) : (RS.getResearchNode ? RS.getResearchNode(ar.techId) : null)) : null;
   var name = node ? node.name : ar.techId;
   var nameEl = document.getElementById("research-active-name");
   if (nameEl) setLiveHTML(nameEl, "<b>" + escapeAchievementText(name) + "</b> · 目标等级 " + ar.targetLevel);
@@ -4001,6 +4123,7 @@ function clearResearchFocus() {
 function selectResearchNode(techId) {
   if (!techId) return;
   _researchSelectedTechId = techId;
+  _researchSelectedCycleId = null;
   const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
   if (!research) return;
   renderResearchDetail(research, getResearchData(), getResearchSystem(), _researchTreeModel);
@@ -4009,6 +4132,7 @@ function selectResearchNode(techId) {
 // 关闭详情弹窗：清空选中态并隐藏（纯视图，不写 gameState / 存档）
 function closeResearchDetail() {
   _researchSelectedTechId = null;
+  _researchSelectedCycleId = null;
   const research = (typeof gameState !== "undefined" && gameState && gameState.research) ? gameState.research : null;
   if (!research) return;
   renderResearchDetail(research, getResearchData(), getResearchSystem(), _researchTreeModel);
@@ -4071,6 +4195,16 @@ function onResearchTreePointerUp() {
 function onResearchDetailClick(event) {
   const closeEl = event.target && typeof event.target.closest === "function" ? event.target.closest("[data-detail-close]") : null;
   if (closeEl) { closeResearchDetail(); return; }
+  const cycleBtn = event.target && typeof event.target.closest === "function" ? event.target.closest("[data-cycle-enqueue]") : null;
+  if (cycleBtn) {
+    if (cycleBtn.disabled) return;
+    const cycleId = cycleBtn.dataset.cycleEnqueue;
+    const level = (Number(gameState.research.cycleResearchLevels && gameState.research.cycleResearchLevels[cycleId]) || 0) + 1;
+    const result = dispatchGameAction(gameState, { type:"research/enqueueCycle", cycleId, targetLevel:level }, Date.now());
+    if (!result.changed) showToast(researchReasonText(result.reason));
+    else { if (typeof SaveManager !== "undefined" && SaveManager && typeof SaveManager.save === "function") SaveManager.save(); renderResearchPage(); }
+    return;
+  }
   const btn = event.target && typeof event.target.closest === "function" ? event.target.closest("[data-detail-action]") : null;
   if (!btn || !btn.dataset) return;
   if (btn.disabled) return;
@@ -4096,6 +4230,7 @@ function onResearchDetailClick(event) {
   if (!type) return;
   const result = dispatchGameAction(gameState, { type, techId, targetLevel }, Date.now());
   if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
+  if (techId.indexOf("cycle:") === 0 && typeof SaveManager !== "undefined" && SaveManager && typeof SaveManager.save === "function") SaveManager.save();
   if (type === "research/enqueueCascade" && result.enqueued && result.enqueued.length) {
     let msg = "已加入队列（共 " + result.enqueued.length + " 项";
     if (result.skipped && result.skipped.length) msg += "，跳过 " + result.skipped.length + " 项已存在";
@@ -5895,6 +6030,8 @@ function installTutorialWidgetListeners() {
   const researchQueueEl = document.getElementById("research-queue"); if (researchQueueEl) researchQueueEl.addEventListener("click", onResearchQueueClick);
   const researchActiveEl = document.getElementById("research-active"); if (researchActiveEl) researchActiveEl.addEventListener("click", onResearchActiveClick);
   const researchSummaryEl = document.getElementById("research-summary"); if (researchSummaryEl) researchSummaryEl.addEventListener("click", onResearchAdClick);
+  const researchSubtabsEl = document.querySelector(".research-subtabs"); if (researchSubtabsEl) researchSubtabsEl.addEventListener("click", onResearchSubtabClick);
+  const researchCycleEl = document.getElementById("research-cycle-section"); if (researchCycleEl) researchCycleEl.addEventListener("click", onResearchCycleClick);
   const queueModalButton = document.getElementById("action-modal-queue"); if (queueModalButton) queueModalButton.addEventListener("click", queueActionConfirmation);
   const trialStart = document.getElementById("starmap-trial-start");
   if (trialStart) trialStart.addEventListener("click", function () {

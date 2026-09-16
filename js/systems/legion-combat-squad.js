@@ -671,7 +671,11 @@
         });
       }
     }
-    attackPower = Math.round(attackPower * levelMult);
+    // 面板与实战保持同口径：NPC 的攻击力显示包含统御矩阵当前生效的团队伤害加成。
+    const panelTitanAura = getTitanSquadAura(state);
+    const panelAuraDmgMult = (panelTitanAura && panelTitanAura.squadDamageBonus)
+      ? 1 + Number(panelTitanAura.squadDamageBonus) : 1;
+    attackPower = Math.round(attackPower * levelMult * panelAuraDmgMult);
 
     // 维修明细：与 repairLegionSquadNpcs 同源（collectNpcRepairUnits），面板按满结构基准估算
     const repairItems = [];
@@ -723,6 +727,8 @@
       fuelMultiplier: fuelMultiplier,
       weapons: weapons,
       attackPower: attackPower,
+      titanAuraDamageMultiplier: panelAuraDmgMult,
+      titanAuraHitBonus: panelTitanAura ? Number(panelTitanAura.squadHitBonus) || 0 : 0,
       attack: { total: attackPower, count: attackItems.length, items: attackItems },
       repair: {
         total: Math.round(repairRaw), count: repairItems.length, items: repairItems,
@@ -783,7 +789,7 @@
   // 在线（processLegionNpcAttack→fireSingleNpcMember）与离线（offline-combat.js 直调
   // fireSingleNpcMember）共用本函数 → 单点接线双路径自动统计等效。
   // 光环按配置静态生效（与核心安装绑定），不做供能联动（核心供能仅约束泰坦自身开火）。
-  // 面板口径（getLegionNpcCombatStats.attackPower）刻意不含光环——与该处排除弹药/克制/命中的既定口径一致。
+  // 面板口径（getLegionNpcCombatStats.attackPower）排除弹药/克制/命中，但包含当前有效的泰坦团队伤害光环。
   // ②-a（2026-09-10 用户拍板）：光环源 = 玩家出战舰 + 小队内每个在岗 NPC 的绑定舰，
   //   同类光环按配置 stacking="max" 取最高、不叠加。此前只读玩家出战舰，
   //   导致 NPC 泰坦的统御矩阵对全队（含玩家）零贡献。纯只读，不调用 ensureCombatSquadState。

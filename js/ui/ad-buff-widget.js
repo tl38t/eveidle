@@ -513,7 +513,9 @@
     const msg = document.createElement("div");
     msg.style.cssText = "font-size:14px;color:#cdd9e5;margin:6px 0 16px;line-height:1.7;";
     const min = Math.floor(total / 60000), sec = Math.floor((total % 60000) / 1000);
-    msg.innerHTML = "是否<b>注入全部</b>脑突触加速提取剂？<br>大型 ×" + ex.large + "（30分） + 小型 ×" + ex.small + "（5分） = <b>" + min + "分" + (sec ? (sec + "秒") : "") + "</b>";
+    // 「数字+单字单位」拼接无法被目录子串覆盖（子串键要求 length>=2），此处显式走 I18N.t。
+    const tu = (k) => (window.I18N && typeof window.I18N.t === "function") ? window.I18N.t(k) : k;
+    msg.innerHTML = "是否<b>注入全部</b>脑突触加速提取剂？<br>大型 ×" + ex.large + "（30分） + 小型 ×" + ex.small + "（5分） = <b>" + min + tu("分") + (sec ? (sec + tu("秒")) : "") + "</b>";
     box.appendChild(msg);
     const row = document.createElement("div");
     row.style.cssText = "display:flex;gap:10px;";

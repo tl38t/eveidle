@@ -338,6 +338,15 @@ function applyLockedEntry(id, lock, gotoPage) {
 // 大数紧凑格式（卡片内库存显示）：≥1e8 用亿、≥1e4 用万，其余原样；精确值走 title 悬浮。
 function fmtStockCompact(n) {
   n = Number(n) || 0;
+  // 英文下「万/亿」无对应量级词，改按 K/M/B/T 重新缩放（仅显示层，数值本身不变）。
+  var loc = (window.I18N && typeof window.I18N.getLocale === "function") ? window.I18N.getLocale() : "zh-CN";
+  if (loc === "en-US") {
+    if (n >= 1e12) return (n / 1e12).toFixed(1) + "T";
+    if (n >= 1e9) return (n / 1e9).toFixed(1) + "B";
+    if (n >= 1e6) return (n / 1e6).toFixed(1) + "M";
+    if (n >= 1e3) return (n / 1e3).toFixed(1) + "K";
+    return String(n);
+  }
   if (n >= 1e12) return (n / 1e12).toFixed(1) + "万亿";
   if (n >= 1e8) return (n / 1e8).toFixed(1) + "亿";
   if (n >= 1e4) return (n / 1e4).toFixed(1) + "万";

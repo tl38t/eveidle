@@ -955,7 +955,7 @@ function migrateDeathspaceState(combat, state) {
   if (combat.mode !== "deathspace") combat.mode = "belt";
   // 原始 deathspaceId 合法性（供 pending 规则使用，避免被下方的修复逻辑掩盖）
   const originalDeathspaceIdValid = DEATHSPACE_DATABASE.some(site => site.id === combat.deathspaceId);
-  const savedTier = [2,3,4,6].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
+  const savedTier = [2,3,4,6,8].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
   if (!originalDeathspaceIdValid) {
     combat.deathspaceId = (DEATHSPACE_DATABASE.find(site => site.dedTier === savedTier) || DEATHSPACE_DATABASE[0]).id;
   }

@@ -32,7 +32,35 @@
     if (mon < 12) return mon + " 个月前";
     return Math.floor(mon / 12) + " 年前";
   }
-  root.AllianceRenderHelpers = { formatRelativeTime: formatRelativeTime };
+  // 成员行字段归一化：唯一权威。云端 RPC / relay 回传载荷是 snake_case
+  // （daily_points / total_points / last_online_at），原生 AllianceApi 是 camelCase。
+  // 两条渲染路径（云端直读、云端回传）都必须先过这里，禁止在别处再写一份字段映射。
+  function normalizeMemberRows(rows) {
+    return (Array.isArray(rows) ? rows : []).map(function (row) {
+      row = row || {};
+      return {
+        playerId: row.playerId != null ? row.playerId : (row.player_id != null ? row.player_id : ""),
+        username: row.username || "",
+        isOwner: row.isOwner != null ? !!row.isOwner : !!row.is_owner,
+        totalPoints: Number(row.totalPoints != null ? row.totalPoints : row.total_points) || 0,
+        dailyPoints: Number(row.dailyPoints != null ? row.dailyPoints : row.daily_points) || 0,
+        lastOnlineAt: row.lastOnlineAt || row.last_online_at || null
+      };
+    });
+  }
+
+  // 成员行的「当日 X · 总 Y · Z前」统计行。两条渲染路径共用，避免出现第二种格式。
+  function renderMemberStatsLine(member) {
+    return '<span class="text-muted" style="display:block;font-size:12px;margin-top:2px;">当日 ' + esc(member.dailyPoints) + ' · 总 ' + esc(member.totalPoints) + ' · ' + esc(formatRelativeTime(member.lastOnlineAt)) + '</span>';
+  }
+
+  root.AllianceRenderHelpers = {
+    formatRelativeTime: formatRelativeTime,
+    normalizeMemberRows: normalizeMemberRows,
+    identityKindLabel: identityKindLabel,
+    shortIdentity: shortIdentity,
+    renderIdentityCardHtml: renderIdentityCardHtml
+  };
 
   // In-game direct cloud read (desktop first). TapTap keeps working because any
   // network failure degrades to the cloud-page fallback below.
@@ -161,14 +189,14 @@
   }
 
   function renderMemberCard(alliance, members) {
-    members = (members || []).slice().sort(function (a, b) {
+    members = normalizeMemberRows(members).sort(function (a, b) {
       var aOwner = String(a.playerId) === String(alliance.ownerId) ? 0 : 1;
       var bOwner = String(b.playerId) === String(alliance.ownerId) ? 0 : 1;
       return aOwner - bOwner;
     });
     var memberRows = members.map(function (member) {
       var isOwner = member.isOwner || String(member.playerId) === String(alliance.ownerId);
-      var stats = '<span class="text-muted" style="display:block;font-size:12px;margin-top:2px;">当日 ' + esc(member.dailyPoints) + ' · 总 ' + esc(member.totalPoints) + ' · ' + esc(formatRelativeTime(member.lastOnlineAt)) + '</span>';
+      var stats = renderMemberStatsLine(member);
       return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
         '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "未设置昵称") + stats + '</span>' +
         '<span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap;">' +
@@ -225,6 +253,15 @@
     if (text.indexOf("max level") >= 0 || (text.indexOf("building") >= 0 && text.indexOf("max") >= 0) || text.indexOf("最高等级") >= 0) return "该建筑已经达到最高等级。";
     if (text.indexOf("network") >= 0 || text.indexOf("failed to fetch") >= 0) return "网络连接失败，请检查网络后重试。";
     if (text.indexOf("database request failed") >= 0 || text.indexOf("http 400") >= 0 || text.indexOf("http 404") >= 0 || text.indexOf("http 409") >= 0) return "联盟服务暂时不可用，请稍后重试。";
+    // 身份相关错误：云端已返回可读中文，这里只补齐「玩家该做什么」。
+    if (text.indexOf("设备密钥") >= 0) return "本机身份凭证已失效（可能已在其他设备上完成身份转移）。如需继续管理身份，请联系盟主合并，或退出后重新加入联盟。";
+    if (text.indexOf("转移码不存在") >= 0) return "转移码不存在，请核对后重试。";
+    if (text.indexOf("转移码已过期") >= 0) return "转移码已过期，请在旧设备上重新生成。";
+    if (text.indexOf("转移码已被使用") >= 0) return "该转移码已经用过了，请在旧设备上重新生成。";
+    if (text.indexOf("不能认领自身身份") >= 0) return "这是本机自己生成的转移码，不需要使用。";
+    if (text.indexOf("不同联盟") >= 0) return "两个身份分属不同联盟，请先让其中一个退出联盟，再执行合并。";
+    if (text.indexOf("盟主") >= 0 && text.indexOf("合并") >= 0) return "只有盟主可以合并成员身份。";
+    if (text.indexOf("平台身份") >= 0) return "账号登录状态已失效，请关闭面板后重新打开。";
     return raw || "联盟操作失败，请稍后重试。";
   }
 
@@ -239,6 +276,164 @@
     function close() { overlay.remove(); }
     overlay.querySelector("[data-alliance-message-close]").onclick = close;
     overlay.onclick = function (event) { if (event.target === overlay) close(); };
+  }
+
+  // ---------------------------------------------------------------------------
+  // 身份与设备：把「联盟身份是设备级还是账号级」暴露给玩家，并提供换设备的认领入口。
+  // 前端只负责展示与发起，所有合并判据都在云端（SQL 函数 + alliance-identity 云函数），
+  // 此处不复制任何合并规则。
+  // ---------------------------------------------------------------------------
+  function overlayShell(title, bodyHtml, buttonsHtml) {
+    var overlay = document.createElement("div");
+    overlay.style.cssText = "position:fixed;inset:0;background:rgba(4,8,14,.78);display:flex;align-items:center;justify-content:center;padding:16px;z-index:3000;";
+    overlay.innerHTML = '<div style="width:min(460px,94vw);max-height:86vh;overflow:auto;background:#101b2a;border:1px solid #385a78;border-radius:12px;padding:20px;color:#dceeff;box-shadow:0 18px 60px rgba(0,0,0,.45);">' +
+      '<div style="font-size:18px;font-weight:700;margin-bottom:10px;">' + esc(title) + '</div>' + bodyHtml +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;">' + buttonsHtml + '</div></div>';
+    document.body.appendChild(overlay);
+    overlay.onclick = function (event) { if (event.target === overlay) overlay.remove(); };
+    return overlay;
+  }
+
+  // 身份类型展示名：只按前缀/形态判断，不猜平台细节。
+  function identityKindLabel(playerId) {
+    playerId = String(playerId || "");
+    if (/^taptap_/.test(playerId)) return "TapTap 账号";
+    if (/^steam_/.test(playerId) || /^[0-9]{5,20}$/.test(playerId)) return "Steam 账号";
+    if (/^dev_/.test(playerId)) return "设备身份";
+    if (/^local_/.test(playerId)) return "本机设备";
+    return "未知身份";
+  }
+
+  function shortIdentity(playerId) {
+    playerId = String(playerId || "");
+    if (playerId.length <= 20) return playerId;
+    return playerId.slice(0, 12) + "…" + playerId.slice(-6);
+  }
+
+  function renderIdentityCardHtml(isOwner) {
+    var api = root.AllianceApi;
+    if (!api || typeof api.createIdentityCode !== "function") return "";
+    var playerId = api.getPlayerId ? api.getPlayerId() : "";
+    if (!playerId) return "";
+    var isDevice = api.isDeviceIdentity ? api.isDeviceIdentity() : false;
+    var hint = isDevice
+      ? "当前是本机设备身份（未绑定平台账号）。换设备或清理浏览器数据都会产生新身份；在旧设备点「生成转移码」，再到新设备点「使用转移码」，两边就会合成同一个人。"
+      : "当前是平台账号身份，换设备后会自动识别为同一个人，无需转移码。";
+    return '<div class="alliance-card alliance-identity-card" id="alliance-identity-card" style="margin-top:12px;">' +
+      '<div class="alliance-card-title">身份与设备</div>' +
+      '<div class="alliance-meta">本机身份：' + esc(shortIdentity(playerId)) + ' · ' + esc(identityKindLabel(playerId)) + '</div>' +
+      '<div class="alliance-task-hint">' + esc(hint) + '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">' +
+      '<button class="btn secondary alliance-identity-create">生成转移码</button>' +
+      '<button class="btn secondary alliance-identity-redeem">使用转移码</button>' +
+      (isOwner ? '<button class="btn secondary alliance-identity-merge">合并成员身份</button>' : '') +
+      '</div>' +
+      '<div class="alliance-task-hint" id="alliance-identity-msg" style="min-height:18px;"></div></div>';
+  }
+
+  function showRedeemIdentityOverlay(onDone) {
+    var overlay = overlayShell("使用转移码",
+      '<div style="color:#a8bacb;line-height:1.6;margin-bottom:10px;">输入旧设备生成的 8 位转移码。确认后本机身份会并入该身份，联盟、建设点与任务进度都以该身份为准。</div>' +
+      '<input data-alliance-prompt-input maxlength="16" autocomplete="off" placeholder="例如 A7K2M9QP" style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:8px;border:1px solid #385a78;background:#0b1522;color:#eaf6ff;font-size:16px;letter-spacing:2px;text-transform:uppercase;">' +
+      '<div class="alliance-task-hint" data-alliance-prompt-hint style="min-height:18px;"></div>',
+      '<button class="btn secondary" data-alliance-cancel>取消</button><button class="btn primary" data-alliance-confirm>确认</button>');
+    var input = overlay.querySelector("[data-alliance-prompt-input]");
+    var hint = overlay.querySelector("[data-alliance-prompt-hint]");
+    var button = overlay.querySelector("[data-alliance-confirm]");
+    overlay.querySelector("[data-alliance-cancel]").onclick = function () { overlay.remove(); };
+    button.onclick = function () {
+      var code = String(input.value || "").trim().toUpperCase();
+      if (!code) { hint.textContent = "请输入转移码"; return; }
+      button.disabled = true;
+      hint.textContent = "正在合并身份…";
+      root.AllianceApi.redeemIdentityCode(code).then(function (result) {
+        overlay.remove();
+        showAllianceMessage("身份已合并", "本机身份已并入 " + shortIdentity(result && result.keeperPlayerId) + "。\n联盟、建设点与任务进度已跟随该身份。", "info");
+        if (typeof onDone === "function") onDone();
+      }).catch(function (error) {
+        button.disabled = false;
+        hint.textContent = friendlyAllianceError(error);
+      });
+    };
+    try { input.focus(); } catch (_) {}
+  }
+
+  function showMergeIdentityOverlay(allianceId, onDone) {
+    var overlay = overlayShell("合并成员身份",
+      '<div style="color:#a8bacb;line-height:1.6;margin-bottom:12px;">把「被合并」成员的数据（贡献、建设记录、盟主身份）并入「保留」成员，用于清理同一人在多台设备上产生的重复身份。此操作不可撤销。</div>' +
+      '<div data-alliance-merge-body class="text-muted">正在读取成员…</div>' +
+      '<div class="alliance-task-hint" data-alliance-prompt-hint style="min-height:18px;"></div>',
+      '<button class="btn secondary" data-alliance-cancel>取消</button><button class="btn primary" data-alliance-confirm disabled>合并</button>');
+    var body = overlay.querySelector("[data-alliance-merge-body]");
+    var hint = overlay.querySelector("[data-alliance-prompt-hint]");
+    var button = overlay.querySelector("[data-alliance-confirm]");
+    overlay.querySelector("[data-alliance-cancel]").onclick = function () { overlay.remove(); };
+    root.AllianceApi.getMemberStats(allianceId).then(function (rows) {
+      var members = normalizeMemberRows(rows);
+      if (members.length < 2) { body.textContent = "成员不足两人，无需合并。"; return; }
+      var options = members.map(function (member) {
+        return '<option value="' + esc(member.playerId) + '">' + esc(member.username || "未设置昵称") + ' · ' + esc(shortIdentity(member.playerId)) + '</option>';
+      }).join("");
+      var selectStyle = "width:100%;box-sizing:border-box;padding:8px 10px;border-radius:8px;border:1px solid #385a78;background:#0b1522;color:#eaf6ff;font-size:14px;";
+      body.innerHTML = '<div style="margin-bottom:8px;"><div class="text-muted" style="margin-bottom:4px;">被合并（该身份将消失）</div>' +
+        '<select data-alliance-merge-from style="' + selectStyle + '">' + options + '</select></div>' +
+        '<div><div class="text-muted" style="margin-bottom:4px;">保留（数据归并到这里）</div>' +
+        '<select data-alliance-merge-to style="' + selectStyle + '">' + options + '</select></div>';
+      var fromSelect = body.querySelector("[data-alliance-merge-from]");
+      var toSelect = body.querySelector("[data-alliance-merge-to]");
+      toSelect.value = members[0].playerId;
+      button.disabled = false;
+      button.onclick = function () {
+        var fromId = fromSelect.value;
+        var toId = toSelect.value;
+        if (!fromId || !toId || fromId === toId) { hint.textContent = "请选择两个不同的成员"; return; }
+        button.disabled = true;
+        hint.textContent = "正在合并…";
+        root.AllianceApi.adminMergeIdentity(allianceId, fromId, toId).then(function () {
+          overlay.remove();
+          showAllianceMessage("成员身份已合并", "已把该成员并入了保留身份，成员列表稍后刷新。", "info");
+          if (typeof onDone === "function") onDone();
+        }).catch(function (error) {
+          button.disabled = false;
+          hint.textContent = friendlyAllianceError(error);
+        });
+      };
+    }).catch(function (error) {
+      body.textContent = "成员列表读取失败：" + friendlyAllianceError(error);
+    });
+  }
+
+  function bindIdentityActions(box, allianceId, isOwner) {
+    var api = root.AllianceApi;
+    if (!api || typeof api.createIdentityCode !== "function") return;
+    var msg = box.querySelector("#alliance-identity-msg");
+    function setMsg(text, tone) {
+      if (!msg) return;
+      msg.textContent = text || "";
+      msg.style.color = tone === "error" ? "#e58b8b" : "#8ed9b6";
+    }
+    var createButton = box.querySelector(".alliance-identity-create");
+    if (createButton) createButton.onclick = function () {
+      createButton.disabled = true;
+      setMsg("正在生成转移码…");
+      api.createIdentityCode(900).then(function (result) {
+        setMsg("");
+        var expires = result && result.expiresAt ? String(result.expiresAt) : "";
+        showAllianceMessage("身份转移码",
+          "转移码：" + (result && result.code || "-") +
+          (expires ? "\n有效期至：" + expires : "") +
+          "\n\n在需要接管的设备上打开联盟面板 →「使用转移码」→ 输入这串码，那台设备就会并入本机身份。\n转移码 15 分钟内有效，且只能使用一次。", "info");
+      }).catch(function (error) { setMsg(friendlyAllianceError(error), "error"); })
+        .then(function () { createButton.disabled = false; });
+    };
+    var redeemButton = box.querySelector(".alliance-identity-redeem");
+    if (redeemButton) redeemButton.onclick = function () { showRedeemIdentityOverlay(load); };
+    var mergeButton = box.querySelector(".alliance-identity-merge");
+    if (mergeButton && isOwner && allianceId) {
+      mergeButton.onclick = function () { showMergeIdentityOverlay(allianceId, load); };
+    } else if (mergeButton) {
+      mergeButton.style.display = "none";
+    }
   }
 
   function bindAdminActions(box, alliance, members, msg) {
@@ -626,6 +821,14 @@
     try { returnedSnapshot = JSON.parse(params.get("allianceSnapshot") || "null"); } catch (error) { returnedSnapshot = null; }
     var returnedMemberList = [];
     try { returnedMemberList = JSON.parse(params.get("allianceMemberList") || "[]"); } catch (error) { returnedMemberList = []; }
+    // 回传成员的唯一权威 = relay 的 allianceSnapshot.members（内含 当日/总/最后上线/是否盟主）。
+    // allianceMemberList 是 2026-09-12 前的旧 relay 契约（现网 relay 已不再下发），仅作兜底。
+    // 这里若仍只读旧参数，回传视图会整块丢掉成员区 —— 正是「建设点没回传到游戏」的根因。
+    var returnedMemberRows = normalizeMemberRows(
+      returnedSnapshot && Array.isArray(returnedSnapshot.members) && returnedSnapshot.members.length
+        ? returnedSnapshot.members
+        : returnedMemberList
+    );
     var returnedConstruction = returnedSnapshot && returnedSnapshot.construction ? returnedSnapshot.construction : null;
     var returnedBuildings = returnedSnapshot && Array.isArray(returnedSnapshot.buildings) ? returnedSnapshot.buildings : [];
     var returnedTasks = returnedSnapshot && Array.isArray(returnedSnapshot.tasks) ? returnedSnapshot.tasks : [];
@@ -747,7 +950,13 @@
       var statusClass = submitted ? "alliance-task-done" : (status === "材料足够，可提交" ? "alliance-task-ready" : "alliance-task-locked");
       return '<div class="alliance-task-row"><div><span class="alliance-task-slot">' + esc(task.slot) + '</span><strong>' + esc(task.materialName) + '</strong><div class="alliance-task-meta">' + esc(taskLabels[task.category] || task.category) + ' · 需求 ' + esc(task.requiredAmount) + ' · 奖励 ' + esc(task.rewardPoints) + ' 建设点</div></div><span class="' + statusClass + '">' + status + '</span></div>';
     }).join("") : '<div class="alliance-task-hint">尚未生成任务，请先打开一次云端联盟页面。</div>') + '<div class="alliance-task-hint">当前阶段只显示本地材料状态，任务提交验证将在下一步接入。</div></div>';
-    var memberHtml = returnedMemberList.length ? '<div class="alliance-card-title">联盟成员</div><div class="alliance-members">' + returnedMemberList.map(function (member) { return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;"><span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + '</span></div>'; }).join("") + '</div>' : '';
+    var memberHtml = returnedMemberRows.length
+      ? '<div class="alliance-card-title">联盟成员</div><div class="alliance-members">' + returnedMemberRows.map(function (member) {
+          return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
+            '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + renderMemberStatsLine(member) + '</span>' +
+            '<span class="text-muted">' + ((member.isOwner || String(member.playerId) === String(returnedOwner)) ? "盟主" : "成员") + '</span></div>';
+        }).join("") + '</div>'
+      : '';
     function submitTaskFromCard(task, button) {
       var alliance = root.gameState && root.gameState.alliance;
       var allianceId = alliance && alliance.allianceId || returnedId;
@@ -778,6 +987,15 @@
     }
     setTimeout(function () {
       content.insertAdjacentHTML("beforeend", taskHtml);
+      // 身份卡片：作为 content 的兄弟节点挂在 #alliance-state 之外，
+      // 这样云端刷新（只替换 #alliance-state）不会把它冲掉；每次 load() 重建一次。
+      Array.prototype.forEach.call(content.querySelectorAll("#alliance-identity-card"), function (node) { node.remove(); });
+      var identityState = root.gameState && root.gameState.alliance ? root.gameState.alliance : null;
+      var identityOwnerId = (identityState && identityState.ownerPlayerId) || returnedOwner || "";
+      var identityIsOwner = !!identityOwnerId && String(identityOwnerId) === String(playerId);
+      var identityAllianceId = (identityState && identityState.allianceId) || returnedId || "";
+      content.insertAdjacentHTML("beforeend", renderIdentityCardHtml(identityIsOwner));
+      bindIdentityActions(content, identityAllianceId, identityIsOwner);
       var taskCard = content.querySelector(".alliance-task-card");
       if (taskCard) {
         var title = taskCard.querySelector(".alliance-card-title");

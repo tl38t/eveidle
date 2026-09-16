@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<html lang="zh-CN" data-page-node-id="7y6BWn55BQ8RPAdXUiS16p">
+<head data-page-node-id="UwSqw8KFXaRGAwZbTIe9nB">
+<meta charset="UTF-8" data-page-node-id="OIEtAvXh5P5Cqw6dzqJY9a">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="uAQiqQqhqYl5E8qCqLYgKS">
 <script>window.GAME_VERSION = "0.7.1";</script>
 <title>深空放置：边疆纪元</title>
-<link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css">
-<link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=20">
-  <link rel="stylesheet" href="./css/panels.css?v=73">
-  <link rel="stylesheet" href="./css/combat.css?v=27">
-<link rel="stylesheet" href="./css/components.css?v=45">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=26">
+<link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css" data-page-node-id="rNY42xoGSVqXocAE6kCwZL">
+<link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css" data-page-node-id="x1Kn0X0z3KY2fe5dhAl89Z">
+<link rel="stylesheet" href="./css/base.css?v=22" data-page-node-id="SZCSiZjw6vR2vnE4nCYHNK">
+  <link rel="stylesheet" href="./css/panels.css?v=73" data-page-node-id="MHTeCKe9l4LpAP6OcFAsNw">
+  <link rel="stylesheet" href="./css/combat.css?v=27" data-page-node-id="Av5fabLsn0PJIq5fmbaeHI">
+<link rel="stylesheet" href="./css/components.css?v=45" data-page-node-id="72EzVfthkxBSo0qnxE0VgM">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=27" data-page-node-id="ivV7rrCnjD4HFpIaUt4DAq">
 <style id="starmap-collection-room-style">
 .starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
 </style>
@@ -27,9 +27,9 @@
   <script type="module" src="./js/ui/ship3d.js?v=12"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=3"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=27"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=9"></script>
-  <script src="./js/i18n/translator.js?v=15"></script>
+  <script src="./js/i18n/catalog-en.js?v=36"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=14"></script>
+  <script src="./js/i18n/translator.js?v=16"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
     // source code, variables, HTML templates, starmap and achievements stay untouched.
@@ -301,423 +301,423 @@
 .boot-loading .main-container { display:none !important; }
 </style>
 </head>
-<body class="boot-loading">
+<body class="boot-loading" data-page-node-id="8jIEZHNjrTmTAAsuZbnNia">
 
 <!-- ===== 顶部状态栏 ===== -->
-<header class="topbar">
-  <span class="brand"><i class="fa-solid fa-anchor"></i> 深空放置 · 边疆纪元</span>
-  <span class="current-activity" id="current-activity">⛏ 采矿 Lv.86 · 进行中</span>
-  <div class="resources">
-    <div class="res-item">
-      <i class="fa-solid fa-coins res-icon isk-icon"></i>
-      <span class="res-label">星币</span>
-      <span class="res-value isk">12,500,000</span>
+<header class="topbar" data-page-node-id="Gz2Om6nfPPMA80E6vrlu3P">
+  <span class="brand" data-page-node-id="8r5jhVMrHoAlfPy47QhIFA"><i class="fa-solid fa-anchor" data-page-node-id="yBXd84ZB1eJBKZhEcBuR3V"></i> 深空放置 · 边疆纪元</span>
+  <span class="current-activity" id="current-activity" data-page-node-id="T8Vlcz2LBclsDvH9D020Y8">⛏ 采矿 Lv.86 · 进行中</span>
+  <div class="resources" data-page-node-id="Qp8wScsOH7AfVXI42e7ZCZ">
+    <div class="res-item" data-page-node-id="fSLyaMrRQcJPVdanQzzBks">
+      <i class="fa-solid fa-coins res-icon isk-icon" data-page-node-id="hFGhNfAv18a0XRvDtbIIYu"></i>
+      <span class="res-label" data-page-node-id="MsjSjhNU6Gzv8U3l2Ci6BJ">星币</span>
+      <span class="res-value isk" data-page-node-id="vWynA0sQEBxPpKoEXzGoWb">12,500,000</span>
     </div>
-    <div class="res-item">
-      <i class="fa-solid fa-medal res-icon lp-icon"></i>
-      <span class="res-label">功勋</span>
-      <span class="res-value lp">3,400</span>
+    <div class="res-item" data-page-node-id="ETNHjapym3IWptrYl0GFyt">
+      <i class="fa-solid fa-medal res-icon lp-icon" data-page-node-id="GpG846x7tHQJNjP0xPznSx"></i>
+      <span class="res-label" data-page-node-id="iWdnn4TVnlzNMoMamKnjIJ">功勋</span>
+      <span class="res-value lp" data-page-node-id="zCC2zPqmTSydiuN3ZWufkO">3,400</span>
     </div>
-    <div class="res-item cargo-item">
-      <i class="fa-solid fa-boxes-stacked res-icon cargo-icon"></i>
-      <span class="res-label">物资总量</span>
-      <span class="res-value" id="cargo-text">0</span>
+    <div class="res-item cargo-item" data-page-node-id="Kd4Jp0pqNkwmp457e5wKoW">
+      <i class="fa-solid fa-boxes-stacked res-icon cargo-icon" data-page-node-id="Uy0v1DhsRxsfhlzwKngzoT"></i>
+      <span class="res-label" data-page-node-id="iwAUdWCU1Cc2s9vJZ5fzFB">物资总量</span>
+      <span class="res-value" id="cargo-text" data-page-node-id="mzvBAANk5hS38h7UBcKICR">0</span>
     </div>
   </div>
 </header>
 
 <!-- ===== 主体 ===== -->
-<div class="main-container">
+<div class="main-container" data-page-node-id="XPQneCe2HABcbdwQWH6At6">
 
   <!-- ===== 侧边栏 ===== -->
-  <aside class="sidebar">
-    <div class="nav-item active">
-      <span class="nav-icon"><i class="fa-regular fa-compass"></i></span> 技能总览
+  <aside class="sidebar" data-page-node-id="STWyozj3kiToW9DsTEiSbs">
+    <div class="nav-item active" data-page-node-id="i535DResS4HmCWoBYM7aHP">
+      <span class="nav-icon" data-page-node-id="a4BVMWCsLIwQ7T5A7mlhCM"><i class="fa-regular fa-compass" data-page-node-id="brDKfmluKRd8aeLMUhOOjm"></i></span> 技能总览
     </div>
-    <div class="nav-item" data-page="blueprints">
-      <span class="nav-icon"><i class="fa-solid fa-scroll"></i></span> 商店
+    <div class="nav-item" data-page="blueprints" data-page-node-id="fXQibJn4Dq8FenavHszCUF">
+      <span class="nav-icon" data-page-node-id="aa5UYGIGhAP2tV00ahohDz"><i class="fa-solid fa-scroll" data-page-node-id="BbDjeUsX4hj8XpXJ7YWP4o"></i></span> 商店
     </div>
-    <div class="nav-item" data-page="cargo">
-      <span class="nav-icon"><i class="fa-solid fa-warehouse"></i></span> 仓库
+    <div class="nav-item" data-page="cargo" data-page-node-id="P9XQHHStz6YD47ONL45oqF">
+      <span class="nav-icon" data-page-node-id="TPZaegq4FzlZ9LSLIxKCw3"><i class="fa-solid fa-warehouse" data-page-node-id="4S1FnNYfcakGQ6eH4KTAOK"></i></span> 仓库
     </div>
-    <div class="nav-item" data-page="hangar">
-      <span class="nav-icon"><i class="fa-solid fa-ship"></i></span> 船坞
+    <div class="nav-item" data-page="hangar" data-page-node-id="fQV3OQJNCUFG61oOMHHT1M">
+      <span class="nav-icon" data-page-node-id="MKEwsAn98cHEtalfKqiil4"><i class="fa-solid fa-ship" data-page-node-id="2jTjNZvbttqqcX2QPAzeFW"></i></span> 船坞
     </div>
-    <div class="nav-item" data-page="station">
-      <span class="nav-icon"><i class="fa-regular fa-building"></i></span> 空间站
+    <div class="nav-item" data-page="station" data-page-node-id="axUS7ksY3rtmCPhQfKGeaA">
+      <span class="nav-icon" data-page-node-id="dQ7CCtRsjhgXe98NwzF2wZ"><i class="fa-regular fa-building" data-page-node-id="WtDSQfOaREyQBUpu0EIRw6"></i></span> 空间站
     </div>
-    <div class="nav-item" data-page="legion" id="nav-legion">
-      <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> 军团
-      <i class="fa-solid fa-lock ui-lock-icon" aria-hidden="true"></i>
+    <div class="nav-item" data-page="legion" id="nav-legion" data-page-node-id="20dQFiyqhW7S5GBiHPRbBB">
+      <span class="nav-icon" data-page-node-id="PoWZauIGafaAkiNPKRYvub"><i class="fa-solid fa-shield-halved" data-page-node-id="n20PctQqgCGYNLczKoKczo"></i></span> 军团
+      <i class="fa-solid fa-lock ui-lock-icon" aria-hidden="true" data-page-node-id="g73WoqxVjICsLNMpdNtEb6"></i>
     </div>
-    <div class="nav-item" data-page="starmap" id="nav-starmap">
-      <span class="nav-icon"><i class="fa-solid fa-star"></i></span> 星图
-      <i class="fa-solid fa-lock ui-lock-icon" aria-hidden="true"></i>
+    <div class="nav-item" data-page="starmap" id="nav-starmap" data-page-node-id="c0VDJEwGKGy7cbYu7wqHfI">
+      <span class="nav-icon" data-page-node-id="DBjCs9JFy8evl826TPpgwJ"><i class="fa-solid fa-star" data-page-node-id="nCbGKzF95bccITVC65oxh3"></i></span> 星图
+      <i class="fa-solid fa-lock ui-lock-icon" aria-hidden="true" data-page-node-id="qqSx6X2sz0Gw9h4Dm08SRC"></i>
     </div>
-    <div class="nav-item" data-page="alliance" id="nav-alliance">
-      <span class="nav-icon"><i class="fa-solid fa-people-group"></i></span> 联盟
+    <div class="nav-item" data-page="alliance" id="nav-alliance" data-page-node-id="VjzIHBhH9IQub7BO8cHYjn">
+      <span class="nav-icon" data-page-node-id="dMkmHputTUljFyOKQ32uGJ"><i class="fa-solid fa-people-group" data-page-node-id="Dg9pCsksVqFHKSOmNsPkU7"></i></span> 联盟
     </div>
-    <div class="nav-item" data-page="research">
-      <span class="nav-icon"><i class="fa-solid fa-flask-vial"></i></span> 研究
+    <div class="nav-item" data-page="research" data-page-node-id="SAwip9bwu7D2QCWve4JjqV">
+      <span class="nav-icon" data-page-node-id="WHpviRBfLfPrGxKyIj2QYi"><i class="fa-solid fa-flask-vial" data-page-node-id="ngivpo68xBr14OLShQNEV2"></i></span> 研究
     </div>
-    <div class="nav-item" data-page="queue">
-      <span class="nav-icon"><i class="fa-solid fa-list-check"></i></span> 动作队列
+    <div class="nav-item" data-page="queue" data-page-node-id="lJZF2q4XaCvHoBjrkKDEDL">
+      <span class="nav-icon" data-page-node-id="HWm8QPeycwh49dbaEOlnEt"><i class="fa-solid fa-list-check" data-page-node-id="cvHQHxJ2EbfzYgspFKfMoC"></i></span> 动作队列
     </div>
-    <div class="nav-item" data-page="statistics">
-      <span class="nav-icon"><i class="fa-solid fa-chart-column"></i></span> 统计档案
+    <div class="nav-item" data-page="statistics" data-page-node-id="IaGR6AN2hrzoTMpkq8ibDS">
+      <span class="nav-icon" data-page-node-id="9loWUQDbAu5UhuHv8AzCOo"><i class="fa-solid fa-chart-column" data-page-node-id="HYcfvd8IgG0bOONuzXQTyL"></i></span> 统计档案
     </div>
-    <div class="nav-item" data-page="achievements">
-      <span class="nav-icon"><i class="fa-solid fa-trophy"></i></span> 成就
+    <div class="nav-item" data-page="achievements" data-page-node-id="IZLelS7KMd2TEyDE2m0wVa">
+      <span class="nav-icon" data-page-node-id="pDX7uOmxkmDPNzpeAVU71a"><i class="fa-solid fa-trophy" data-page-node-id="S9Cz6Rw21o7b777PhOm3BJ"></i></span> 成就
     </div>
-    <div class="nav-item" data-page="leaderboard">
-      <span class="nav-icon"><i class="fa-solid fa-ranking-star"></i></span> 排行榜
+    <div class="nav-item" data-page="leaderboard" data-page-node-id="XjxXyWDhC9SnYyqAv4s1pP">
+      <span class="nav-icon" data-page-node-id="sWk5IJpOHeiVX8A310jGwk"><i class="fa-solid fa-ranking-star" data-page-node-id="PBA141QsqyiUylJGftRYPH"></i></span> 排行榜
     </div>
-    <div class="nav-divider"></div>
-    <div class="nav-item" data-skill="mining">
-      <span class="nav-icon"><i class="fa-solid fa-gem"></i></span> 采矿 <span class="nav-lv" data-lv="mining">Lv.86</span>
+    <div class="nav-divider" data-page-node-id="MLRDd4U2PXgiYHRXCl7ta9"></div>
+    <div class="nav-item" data-skill="mining" data-page-node-id="fNORlmca9I8tFHGilJn4rw">
+      <span class="nav-icon" data-page-node-id="ZhttmtNYG5J33ZsWa4r9fw"><i class="fa-solid fa-gem" data-page-node-id="vbepunRwatd5WVgrMSAAG9"></i></span> 采矿 <span class="nav-lv" data-lv="mining" data-page-node-id="91iYiA0fa8FmJgdlpqMenh">Lv.86</span>
     </div>
-    <div class="nav-item" data-skill="gasHarvesting">
-      <span class="nav-icon"><i class="fa-solid fa-wind"></i></span> 气体采集 <span class="nav-lv" data-lv="gasHarvesting">Lv.1</span>
+    <div class="nav-item" data-skill="gasHarvesting" data-page-node-id="Zvts8l5Frvzbide2764Usp">
+      <span class="nav-icon" data-page-node-id="wkSuvwgQHWWYqJqNR2sxsY"><i class="fa-solid fa-wind" data-page-node-id="Yhua1z2mxScolHl2KfAmVI"></i></span> 气体采集 <span class="nav-lv" data-lv="gasHarvesting" data-page-node-id="YzDtMHYthpSnqFaFA3FKBL">Lv.1</span>
     </div>
-    <div class="nav-item" data-page="planetary">
-      <span class="nav-icon"><i class="fa-solid fa-globe"></i></span> 行星开发 <span class="nav-lv" data-lv="planetaryIndustry">Lv.1</span>
+    <div class="nav-item" data-page="planetary" data-page-node-id="eOcNvrjYBI3o3fpaxpmzXa">
+      <span class="nav-icon" data-page-node-id="lheaUsmXdTZ7vdvQ87xClE"><i class="fa-solid fa-globe" data-page-node-id="7cB7WzoNtB3F9ejt1KKLa4"></i></span> 行星开发 <span class="nav-lv" data-lv="planetaryIndustry" data-page-node-id="RSnWjkGM7oJkjyMCwARFTQ">Lv.1</span>
     </div>
-    <div class="nav-item" data-page="archaeology">
-      <span class="nav-icon"><i class="fa-solid fa-satellite"></i></span> 考古 <span class="nav-lv" data-lv="archaeology">Lv.1</span>
+    <div class="nav-item" data-page="archaeology" data-page-node-id="fdbMEC3Nvlll4JAwyBocxi">
+      <span class="nav-icon" data-page-node-id="FCiEl7eQgA9E80wkkkJyG2"><i class="fa-solid fa-satellite" data-page-node-id="rpDMaTPP3uHnwsU6UvhV2j"></i></span> 考古 <span class="nav-lv" data-lv="archaeology" data-page-node-id="ZEyR7UOfFFL5A6pm2PZBZ6">Lv.1</span>
     </div>
-    <div class="nav-divider"></div>
-    <div class="nav-item" data-skill="refining">
-      <span class="nav-icon"><i class="fa-solid fa-fire"></i></span> 冶炼 <span class="nav-lv" data-lv="refining">Lv.1</span>
+    <div class="nav-divider" data-page-node-id="JGVnzVEoT1LFhqwG0rwmbo"></div>
+    <div class="nav-item" data-skill="refining" data-page-node-id="OGyrP4LjXp5KU6BRWqIAgw">
+      <span class="nav-icon" data-page-node-id="VkSiKzO9npfC4pfkwG5HGu"><i class="fa-solid fa-fire" data-page-node-id="cmlehM5Us0wCh6hMdOj5SC"></i></span> 冶炼 <span class="nav-lv" data-lv="refining" data-page-node-id="5ZZ0hMt3YhOp8RSlXzl6i7">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="shipEngineering">
-      <span class="nav-icon"><i class="fa-solid fa-screwdriver-wrench"></i></span> 舰船工程 <span class="nav-lv" data-lv="shipEngineering">Lv.1</span>
+    <div class="nav-item" data-skill="shipEngineering" data-page-node-id="wEOcALfx33EdqvMRzpuSDp">
+      <span class="nav-icon" data-page-node-id="rrMkGk2twRdhrbhfmzHcdE"><i class="fa-solid fa-screwdriver-wrench" data-page-node-id="QG4EXW99JVjsimPiBlJZAu"></i></span> 舰船工程 <span class="nav-lv" data-lv="shipEngineering" data-page-node-id="sTSaHLyf6YYXspSvSFa0Xz">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="equipmentEngineering">
-      <span class="nav-icon"><i class="fa-solid fa-microchip"></i></span> 装备工程 <span class="nav-lv" data-lv="equipmentEngineering">Lv.1</span>
+    <div class="nav-item" data-skill="equipmentEngineering" data-page-node-id="8naCL8hnriwBmFcbHVE6F7">
+      <span class="nav-icon" data-page-node-id="l7tSwwCZe5btbAlqdX6l0Z"><i class="fa-solid fa-microchip" data-page-node-id="g1J0UFDBv2wj2BQHSImdmL"></i></span> 装备工程 <span class="nav-lv" data-lv="equipmentEngineering" data-page-node-id="QhvE2FpeZGqcnv6EJMFq5D">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="boosterEngineering">
-      <span class="nav-icon"><i class="fa-solid fa-syringe"></i></span> 增强剂制造 <span class="nav-lv" data-lv="boosterEngineering">Lv.1</span>
+    <div class="nav-item" data-skill="boosterEngineering" data-page-node-id="kvAmXHPp5KMQSCzERtFfFz">
+      <span class="nav-icon" data-page-node-id="zs21ahBifXkX3sHHC3yrUq"><i class="fa-solid fa-syringe" data-page-node-id="NFmgU46LYaCyENJq38cgPK"></i></span> 增强剂制造 <span class="nav-lv" data-lv="boosterEngineering" data-page-node-id="ERToErBqm2ADOahBfcTPsq">Lv.1</span>
     </div>
-    <div class="nav-divider"></div>
-    <div class="nav-item combat-nav-toggle" data-skill="combat" data-combat-toggle aria-expanded="false">
-      <span class="nav-icon"><i class="fa-solid fa-crosshairs"></i></span> 战斗 <span class="nav-lv" data-lv="combat">Lv.1</span><span class="combat-nav-chevron"><i class="fa-solid fa-chevron-down"></i></span>
+    <div class="nav-divider" data-page-node-id="GNJHSmvMAOLp06ZiFdy7Bc"></div>
+    <div class="nav-item combat-nav-toggle" data-skill="combat" data-combat-toggle aria-expanded="false" data-page-node-id="VjpOw6zRsFOBiv9wFlTK87">
+      <span class="nav-icon" data-page-node-id="56ctMhVo28oNU391saogeH"><i class="fa-solid fa-crosshairs" data-page-node-id="AlD2QeUzABjTyjwJ88Pin1"></i></span> 战斗 <span class="nav-lv" data-lv="combat" data-page-node-id="1zqwdAdK8CC4kcX9wP8mPn">Lv.1</span><span class="combat-nav-chevron" data-page-node-id="FCcELb7burj22z9K3MsQCt"><i class="fa-solid fa-chevron-down" data-page-node-id="xEQWm1YII7Jv33yFrC6AF9"></i></span>
     </div>
-    <div class="combat-skill-group" id="combat-skill-group" aria-hidden="true">
-    <div class="nav-item" data-skill="combat" data-lv-skill="laserOps">
-      <span class="nav-icon"><i class="fa-solid fa-bolt"></i></span> 激光操作 <span class="nav-lv" data-lv="laserOps">Lv.1</span>
+    <div class="combat-skill-group" id="combat-skill-group" aria-hidden="true" data-page-node-id="sGA3KUJkswxvbLlXABWeZm">
+    <div class="nav-item" data-skill="combat" data-lv-skill="laserOps" data-page-node-id="D85Tqbzjj3omA3D0ZD4v6L">
+      <span class="nav-icon" data-page-node-id="OpBoObZ6lUA5xiYTUAE5q4"><i class="fa-solid fa-bolt" data-page-node-id="QpdXTeYGFQLLwCLoaEbxuO"></i></span> 激光操作 <span class="nav-lv" data-lv="laserOps" data-page-node-id="Mga4vOoGR1gvsdHev9FjnT">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="cannonOps">
-      <span class="nav-icon"><i class="fa-solid fa-gun"></i></span> 炮台操作 <span class="nav-lv" data-lv="cannonOps">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="cannonOps" data-page-node-id="UCYrx16snBuXlerh89tcQR">
+      <span class="nav-icon" data-page-node-id="pIH3HkEtljmeO9ftj7RPav"><i class="fa-solid fa-gun" data-page-node-id="6ybrstZeb53979xz6iJsvP"></i></span> 炮台操作 <span class="nav-lv" data-lv="cannonOps" data-page-node-id="5tlyWE7NSOGmAG7tBodp0x">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="missileOperations">
-      <span class="nav-icon"><i class="fa-solid fa-rocket"></i></span> 导弹操作 <span class="nav-lv" data-lv="missileOperations">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="missileOperations" data-page-node-id="tQqnwcN1FvCCNkO6qDUmRw">
+      <span class="nav-icon" data-page-node-id="kcMU48bFWCqKOnDcnQb9MW"><i class="fa-solid fa-rocket" data-page-node-id="OlryNwWzDBo0L3zNOi941u"></i></span> 导弹操作 <span class="nav-lv" data-lv="missileOperations" data-page-node-id="CpvZCJpVOqJtdSZLIFZmWC">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="targeting">
-      <span class="nav-icon"><i class="fa-solid fa-eye"></i></span> 锁定速度 <span class="nav-lv" data-lv="targeting">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="targeting" data-page-node-id="3nR8lsLxvvCnGReKNtv26f">
+      <span class="nav-icon" data-page-node-id="h4P1LXzZReLOxp4FfWGamt"><i class="fa-solid fa-eye" data-page-node-id="lUIDhRH0BMTHkXPfKDXMS0"></i></span> 锁定速度 <span class="nav-lv" data-lv="targeting" data-page-node-id="Hu4uBJggLfjfAMzUrgfdv9">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="shieldOperation">
-      <span class="nav-icon"><i class="fa-solid fa-shield-halved"></i></span> 护盾操作 <span class="nav-lv" data-lv="shieldOperation">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="shieldOperation" data-page-node-id="1YGLidNWEBJW9DWL6qwPG4">
+      <span class="nav-icon" data-page-node-id="BtiNaR9ckYIKSkOdLS3SgD"><i class="fa-solid fa-shield-halved" data-page-node-id="yxnSpoCicPbTS2D6OwDM0V"></i></span> 护盾操作 <span class="nav-lv" data-lv="shieldOperation" data-page-node-id="dAPsKhft5FsFRPs1RXLTea">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="armorReinforcement">
-      <span class="nav-icon"><i class="fa-solid fa-gear"></i></span> 装甲加固 <span class="nav-lv" data-lv="armorReinforcement">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="armorReinforcement" data-page-node-id="Qo0N1lraydvKjjnCBAlaXc">
+      <span class="nav-icon" data-page-node-id="Ih8mOwFjuHamBFij3SyQoc"><i class="fa-solid fa-gear" data-page-node-id="xBvGz4qYNMALHxkiAKS9vX"></i></span> 装甲加固 <span class="nav-lv" data-lv="armorReinforcement" data-page-node-id="PfJw91dMfNd6zZ5PlmXaIC">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="hullEngineering">
-      <span class="nav-icon"><i class="fa-solid fa-wrench"></i></span> 结构工程 <span class="nav-lv" data-lv="hullEngineering">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="hullEngineering" data-page-node-id="QgJeVHd5SirgooV12ma3Ap">
+      <span class="nav-icon" data-page-node-id="6cdHAB0zThBqKpoKsNpFk6"><i class="fa-solid fa-wrench" data-page-node-id="UJO5Xcwn9BtiLbWf6Cbnmy"></i></span> 结构工程 <span class="nav-lv" data-lv="hullEngineering" data-page-node-id="dta0HVz4eCs1Sd7VSZgrFC">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="piloting">
-      <span class="nav-icon"><i class="fa-solid fa-plane"></i></span> 操船 <span class="nav-lv" data-lv="piloting">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="piloting" data-page-node-id="VAoegLWfTSpZhbWgIgS337">
+      <span class="nav-icon" data-page-node-id="tM1cQv8r4dPWJKIghsAPO8"><i class="fa-solid fa-plane" data-page-node-id="AdDJwNMK3j7GuZyBGQ9GUO"></i></span> 操船 <span class="nav-lv" data-lv="piloting" data-page-node-id="nTl7xBDDKrMk8b2bs1BCkc">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="capacitorManagement">
-      <span class="nav-icon"><i class="fa-solid fa-bolt-lightning"></i></span> 电容管理 <span class="nav-lv" data-lv="capacitorManagement">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="capacitorManagement" data-page-node-id="GqeKtRPWgAgLIGne2UoGKe">
+      <span class="nav-icon" data-page-node-id="smDY9FP2i3NBMAaaDLOFPC"><i class="fa-solid fa-bolt-lightning" data-page-node-id="FhtjiW5jpDHzFc3D1Amzg3"></i></span> 电容管理 <span class="nav-lv" data-lv="capacitorManagement" data-page-node-id="e7wC6oC2Qu6wABqaRbGMEF">Lv.1</span>
     </div>
-    <div class="nav-item" data-skill="combat" data-lv-skill="defense">
-      <span class="nav-icon"><i class="fa-solid fa-hammer"></i></span> 防御 <span class="nav-lv" data-lv="defense">Lv.1</span>
+    <div class="nav-item" data-skill="combat" data-lv-skill="defense" data-page-node-id="0hqKEmCuj7xKQ6hivLdQMe">
+      <span class="nav-icon" data-page-node-id="bJ3SsL0uUQcd1F3UEbhvVE"><i class="fa-solid fa-hammer" data-page-node-id="nsbTqmCm7Tj2MqC7rxS6Yb"></i></span> 防御 <span class="nav-lv" data-lv="defense" data-page-node-id="2U3RkHxZ3BNFdwxoDNYKtf">Lv.1</span>
     </div>
     </div>
-    <div class="nav-divider"></div>
-    <div class="nav-item" data-page="save">
-      <span class="nav-icon"><i class="fa-solid fa-floppy-disk"></i></span> 存档管理
+    <div class="nav-divider" data-page-node-id="sqLxgkLJ3kfsA1FwInicY0"></div>
+    <div class="nav-item" data-page="save" data-page-node-id="EAc83ShGyn5cZRj1NGa0ND">
+      <span class="nav-icon" data-page-node-id="oaD3jmES10DCnHEZJWsGH8"><i class="fa-solid fa-floppy-disk" data-page-node-id="zQcWQmpcVhqWPRQINYowtp"></i></span> 存档管理
     </div>
-    <div class="nav-item" data-page="settings">
-      <span class="nav-icon"><i class="fa-solid fa-wrench"></i></span> 设置
+    <div class="nav-item" data-page="settings" data-page-node-id="ZRL0DcuNA2xkPmEj63Bsbx">
+      <span class="nav-icon" data-page-node-id="ERi1NDz86OATMMHvVHSgOu"><i class="fa-solid fa-wrench" data-page-node-id="NGAhQ9TR37d8Gb8FZhuQaz"></i></span> 设置
     </div>
   </aside>
 
   <!-- ===== 主内容区 ===== -->
-  <section class="content">
+  <section class="content" data-page-node-id="FjnRjVIwCJ2hJWPIsHB5Ik">
 
     <!-- 当前技能 -->
-    <div class="panel skill-current">
-      <div class="panel-header">
-        <span class="panel-title" id="skill-panel-title">⛏ 采矿</span>
-        <span class="panel-status-label" id="skill-panel-status">待命</span>
+    <div class="panel skill-current" data-page-node-id="54nK99C8YVdVOzOB7GDtqx">
+      <div class="panel-header" data-page-node-id="WBIiLUfqukgcXUlwVngyYO">
+        <span class="panel-title" id="skill-panel-title" data-page-node-id="rdmWtavY1MyD7BgjPnYZgV">⛏ 采矿</span>
+        <span class="panel-status-label" id="skill-panel-status" data-page-node-id="LDarJhWByuwCw93HH2PcMn">待命</span>
       </div>
-      <div class="panel-body">
-        <div class="skill-info">
-          <span class="skill-name">采矿</span>
-          <span class="skill-level">等级 <span class="lv-num">34</span></span>
-          <span class="skill-area">区域：诺瓦矿带</span>
-          <span class="skill-output">产出：诺瓦陶金 ×12 / 次</span>
+      <div class="panel-body" data-page-node-id="AU4ybJitD9JYRTxUu9ECJK">
+        <div class="skill-info" data-page-node-id="n0ZOHmxJ4CUCQFFhHy5gkK">
+          <span class="skill-name" data-page-node-id="QyXiLbKccVfAcTQNfhn2xI">采矿</span>
+          <span class="skill-level" data-page-node-id="Cy4mCvv3MuNaDkhOfRTwgJ">等级 <span class="lv-num" data-page-node-id="csLTUtXdOwph0D3y3lCUou">34</span></span>
+          <span class="skill-area" data-page-node-id="se9m9kgllDDV2isyCpXODR">区域：诺瓦矿带</span>
+          <span class="skill-output" data-page-node-id="Io6j3HEre2mrBrBeb3db8O">产出：诺瓦陶金 ×12 / 次</span>
         </div>
-        <div class="exp-row mt-4">
-          <span class="exp-label">经验</span>
-          <div class="progress-bar">
-            <div class="fill exp" style="width: 67%;"></div>
+        <div class="exp-row mt-4" data-page-node-id="vG5t9VZFCiktCPe32uLatz">
+          <span class="exp-label" data-page-node-id="0Cs8RI87lu26bSSixeXzEa">经验</span>
+          <div class="progress-bar" data-page-node-id="3GzSR4sKosGLhT4R9qvn2Z">
+            <div class="fill exp" style="width: 67%;" data-page-node-id="HavHgmsE3C458XO3kRuauw"></div>
           </div>
-          <span class="exp-value">12,340 / 18,400</span>
+          <span class="exp-value" data-page-node-id="nF6scgX7jQMqzjzeFxHzmr">12,340 / 18,400</span>
         </div>
         <!-- 采矿区域选择 -->
-        <div class="mining-area-select" id="mining-area-select" style="display:none;">
-          <div class="mining-mode-tabs" aria-label="采矿区域类型">
-            <button class="mining-mode-tab active" data-mode="normal"><i class="fa-solid fa-mountain"></i> 普通矿带</button>
-            <button class="mining-mode-tab" data-mode="moon"><i class="fa-solid fa-moon"></i> 月球矿带</button>
+        <div class="mining-area-select" id="mining-area-select" style="display:none;" data-page-node-id="ILBvITtsXfA3FXntq15DtX">
+          <div class="mining-mode-tabs" aria-label="采矿区域类型" data-page-node-id="Toep1bkQ3RJWdQKFsHwDP6">
+            <button class="mining-mode-tab active" data-mode="normal" data-page-node-id="GTPSJr3wdFnfXEN38mBHF4"><i class="fa-solid fa-mountain" data-page-node-id="ftWftlUCIvkBPbHioPfNxA"></i> 普通矿带</button>
+            <button class="mining-mode-tab" data-mode="moon" data-page-node-id="RWMK0EShXGuNiSCEYh2LZN"><i class="fa-solid fa-moon" data-page-node-id="12l3YmcnXl83HDQWqrzN0c"></i> 月球矿带</button>
           </div>
-          <div class="mining-target-scroll"><div class="mining-target-strip" id="mining-target-strip"></div></div>
-          <div class="mining-target-requirement" id="mining-target-requirement"></div>
+          <div class="mining-target-scroll" data-page-node-id="cRBf4JNyL92SOOccAx5IFx"><div class="mining-target-strip" id="mining-target-strip" data-page-node-id="pp0HQymYDIvBirSU2rrFT1"></div></div>
+          <div class="mining-target-requirement" id="mining-target-requirement" data-page-node-id="8wML3UVO8dBRVLqIy9MjRX"></div>
         </div>
         <!-- 采矿效率 + 进度 -->
-        <div class="mining-stats" id="mining-stats" style="display:none;">
-          <div class="mining-efficiency">
-            <span class="me-label">采集效率：</span>
-            <span class="me-value" id="me-value">2.72</span>
-            <span class="me-logistics" id="mining-logistics"></span>
+        <div class="mining-stats" id="mining-stats" style="display:none;" data-page-node-id="CNB78IjjoZhoK6DI3Bmtbs">
+          <div class="mining-efficiency" data-page-node-id="Rfqq1eSVcDbDQ7k6kXRiSI">
+            <span class="me-label" data-page-node-id="u2roMDbzbe8h0NMUU1RSQa">采集效率：</span>
+            <span class="me-value" id="me-value" data-page-node-id="YCc9HeNJhDFbEQAqPkUP1n">2.72</span>
+            <span class="me-logistics" id="mining-logistics" data-page-node-id="imJTf6Qie1xIgXO3z6SWWA"></span>
           </div>
-          <div class="industrial-support-row" id="mining-fleet-support-row">
-            <span>舰队协同</span>
-            <strong id="mining-fleet-support">未启用</strong>
+          <div class="industrial-support-row" id="mining-fleet-support-row" data-page-node-id="vmp5HpsrhtcOFSmvBGEXXR">
+            <span data-page-node-id="6fRRYTCGNqw8osLkIWMVyZ">舰队协同</span>
+            <strong id="mining-fleet-support" data-page-node-id="Il7AygUo4FW6fc3niQqeQG">未启用</strong>
           </div>
-          <div class="mining-progress-row">
-            <span class="mp-label">采集进度：</span>
-            <canvas class="skill-canvas-bar" id="bar-mining" width="560" height="24"></canvas>
-            <span class="mp-eta" id="mp-eta">~0.0s</span>
+          <div class="mining-progress-row" data-page-node-id="IXFiP4dv339bTEIovFellc">
+            <span class="mp-label" data-page-node-id="PggXpdzKmP7vQKBKyJgvV0">采集进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-mining" width="560" height="24" data-page-node-id="9sDtYRY8KheMMagNd7HRj9"></canvas>
+            <span class="mp-eta" id="mp-eta" data-page-node-id="uAQ5r6GZyl56KvWIYljbJ8">~0.0s</span>
           </div>
         </div>
         <!-- 冶炼 / 自动拆解 子模式切换（归在熔炼行动下） -->
-        <div class="mining-mode-tabs refining-submode-tabs" id="refining-submode-tabs" style="display:none; margin-bottom:10px;">
-          <button class="mining-mode-tab refining-submode-tab" data-submode="smelting">🔥 冶炼</button>
-          <button class="mining-mode-tab refining-submode-tab" data-submode="dismantle">♻ 自动拆解</button>
+        <div class="mining-mode-tabs refining-submode-tabs" id="refining-submode-tabs" style="display:none; margin-bottom:10px;" data-page-node-id="O8F2aFdS9WPegiCNXW6hDy">
+          <button class="mining-mode-tab refining-submode-tab" data-submode="smelting" data-page-node-id="iRLcrSINGN3z31sFO4O9gC">🔥 冶炼</button>
+          <button class="mining-mode-tab refining-submode-tab" data-submode="dismantle" data-page-node-id="akqvZwuDacnOWkkYyrvkmf">♻ 自动拆解</button>
         </div>
         <!-- 冶炼区域选择 -->
-        <div class="mining-area-select smelting-area-select" id="smelting-area-select" style="display:none;">
-          <span class="area-label">冶炼目标：</span>
-          <div class="mining-target-scroll"><div class="mining-target-strip" id="smelting-target-strip"></div></div>
+        <div class="mining-area-select smelting-area-select" id="smelting-area-select" style="display:none;" data-page-node-id="vrvF9DbKQU18QACBjFXFgO">
+          <span class="area-label" data-page-node-id="DN8u4bkfrufBThEooi68O8">冶炼目标：</span>
+          <div class="mining-target-scroll" data-page-node-id="vZtBrd8IyT7zZk03rd24DB"><div class="mining-target-strip" id="smelting-target-strip" data-page-node-id="mvhapoi4IQGVDLT0Mm8JF7"></div></div>
         </div>
         <!-- 冶炼效率 + 进度 -->
-        <div class="mining-stats smelting-stats" id="smelting-stats" style="display:none;">
-          <div class="mining-efficiency">
-            <span class="me-label">冶炼效率：</span>
-            <span class="me-value" id="smelting-eff-value">1.02</span>
+        <div class="mining-stats smelting-stats" id="smelting-stats" style="display:none;" data-page-node-id="xEk4lw56KN6Aia3H6lxxYM">
+          <div class="mining-efficiency" data-page-node-id="2wbQgciYB71lfd2wo1gunq">
+            <span class="me-label" data-page-node-id="mOFPcyxeTzRx4tTxG5HIrz">冶炼效率：</span>
+            <span class="me-value" id="smelting-eff-value" data-page-node-id="oeoOMQHKT8aeNawKGNO9bQ">1.02</span>
           </div>
-          <div class="smelting-info-row alliance-building-effect-row">
-            <span class="me-label">联盟加成：</span>
-            <strong id="smelting-alliance-refining">联盟冶炼中枢 · 未启用</strong>
+          <div class="smelting-info-row alliance-building-effect-row" data-page-node-id="RXHmnGMvcckt9kUud2xPCt">
+            <span class="me-label" data-page-node-id="GIrvwXpyqP0DJaV9e5m2Vd">联盟加成：</span>
+            <strong id="smelting-alliance-refining" data-page-node-id="d7L3KhQB3QyQzFQbfwbTfK">联盟冶炼中枢 · 未启用</strong>
           </div>
-          <div class="smelting-info-row">
-            <span class="me-label">每次产出：</span>
-            <span id="smelting-output-qty" style="color:#e8d8a0;font-weight:600;">1</span>
+          <div class="smelting-info-row" data-page-node-id="GNLRYjINDJLUm7BFlSxXdD">
+            <span class="me-label" data-page-node-id="4WfyxVsmcXMIeUbwxFwAV6">每次产出：</span>
+            <span id="smelting-output-qty" style="color:#e8d8a0;font-weight:600;" data-page-node-id="aFpGC8PzeTaNjof0IvLNk6">1</span>
           </div>
-          <div class="smelting-info-row">
-            <span class="me-label">冶炼舰：</span>
-            <span id="smelting-ship-support" style="color:#71c7ec;font-weight:600;">未分配</span>
+          <div class="smelting-info-row" data-page-node-id="TNLzCgU8yWU9jyBCqtDLGm">
+            <span class="me-label" data-page-node-id="95t16PWqZWWaZZtjPZ63E7">冶炼舰：</span>
+            <span id="smelting-ship-support" style="color:#71c7ec;font-weight:600;" data-page-node-id="Xy7q1ZZmWlePd2kIWGQSrd">未分配</span>
           </div>
-          <div class="smelting-info-row" id="smelting-pump-row" style="display:none;">
-            <span class="me-label">精炼泵：</span>
-            <span id="smelting-pump-state" style="color:#c4b5fd;font-weight:600;">未安装</span>
-            <button id="smelting-pump-toggle" class="pump-toggle-btn" title="关闭后泵不消耗等离子体、冶炼速度加成失效；只影响下一炉">开启中</button>
+          <div class="smelting-info-row" id="smelting-pump-row" style="display:none;" data-page-node-id="MMrKdgMVPoPTNQq5wcvX1q">
+            <span class="me-label" data-page-node-id="UynkCnUXBVnY5uwgDq44tc">精炼泵：</span>
+            <span id="smelting-pump-state" style="color:#c4b5fd;font-weight:600;" data-page-node-id="LOJJDcqwhHMUwTVDLDzztZ">未安装</span>
+            <button id="smelting-pump-toggle" class="pump-toggle-btn" title="关闭后泵不消耗等离子体、冶炼速度加成失效；只影响下一炉" data-page-node-id="eJ4898iXLiptJKjBImTpuO">开启中</button>
           </div>
-          <div class="smelting-info-row">
-            <span class="me-label">周期：</span>
-            <span id="smelting-cycle-times">20.0s → 20.0s</span>
+          <div class="smelting-info-row" data-page-node-id="rXADeJRWubF5g4NZgZrXtz">
+            <span class="me-label" data-page-node-id="pFb68ucyRvIuHAuyK3aoJS">周期：</span>
+            <span id="smelting-cycle-times" data-page-node-id="TY5WqD1kbox2upnDx7ieVC">20.0s → 20.0s</span>
           </div>
-          <div class="industrial-support-note" id="smelting-output-note">支援舰只缩短冶炼周期，不增加单次产量</div>
-          <div class="mining-progress-row">
-            <span class="mp-label">冶炼进度：</span>
-            <canvas class="skill-canvas-bar" id="bar-smelting" width="560" height="24"></canvas>
-            <span class="mp-eta" id="smelting-eta">~0.0s</span>
+          <div class="industrial-support-note" id="smelting-output-note" data-page-node-id="73DcRUBNGLrkHCQ1NDf3GO">支援舰只缩短冶炼周期，不增加单次产量</div>
+          <div class="mining-progress-row" data-page-node-id="IBtV60qgqvIKVHSfpPBgsQ">
+            <span class="mp-label" data-page-node-id="TiaDMW6j3NxL9hIYPDhU1o">冶炼进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-smelting" width="560" height="24" data-page-node-id="qbAH3z6SLPQrjBEryYkBjT"></canvas>
+            <span class="mp-eta" id="smelting-eta" data-page-node-id="6BFxRHHmOuGO0Pgjq6Nx3M">~0.0s</span>
           </div>
         </div>
         <!-- 自动拆解区（归在熔炼行动下的挂机子活动） -->
-        <div class="mining-stats auto-dismantle-stats" id="auto-dismantle-stats" style="display:none;">
-          <div class="ad-comp-select">
-            <span class="me-label">拆解组件：</span>
-            <div class="mining-target-scroll"><div class="mining-target-strip" id="auto-dismantle-strip"></div></div>
+        <div class="mining-stats auto-dismantle-stats" id="auto-dismantle-stats" style="display:none;" data-page-node-id="EFzDkrOhiKR0OCJ9gBHBLg">
+          <div class="ad-comp-select" data-page-node-id="m9V3H92QijuDGKLpOkRuDn">
+            <span class="me-label" data-page-node-id="DMcQz3Z3aQlMAhQT0tC9eP">拆解组件：</span>
+            <div class="mining-target-scroll" data-page-node-id="mMnml1GTzliQ8JGbLrjJ2E"><div class="mining-target-strip" id="auto-dismantle-strip" data-page-node-id="HSNmcrqVddpBtdGGyWpXAE"></div></div>
           </div>
-          <div class="ad-quote" id="auto-dismantle-quote"></div>
-          <div class="mining-efficiency">
-            <span class="me-label">拆解效率：</span>
-            <span class="me-value" id="ad-efficiency">1.00</span>
+          <div class="ad-quote" id="auto-dismantle-quote" data-page-node-id="9rccszfSzLvN0HxAQ7kVSR"></div>
+          <div class="mining-efficiency" data-page-node-id="yBrEB8rsz9CBjO5oRxz9l8">
+            <span class="me-label" data-page-node-id="FPCbeTwUi70BDmaVfEFKjS">拆解效率：</span>
+            <span class="me-value" id="ad-efficiency" data-page-node-id="4ddemG0q7z83ZuuextjBth">1.00</span>
           </div>
-          <div class="smelting-info-row">
-            <span class="me-label">回收率：</span><span id="ad-reclaim">50%</span>
+          <div class="smelting-info-row" data-page-node-id="SkEofkI6yVquZNQA8JxcXr">
+            <span class="me-label" data-page-node-id="paFgUgZZfZt9KYSBq5m0KF">回收率：</span><span id="ad-reclaim" data-page-node-id="4ZWl1CjdUPRHMpyBtYFcXU">50%</span>
           </div>
-          <div class="smelting-info-row">
-            <span class="me-label">舰船工程经验：</span><span class="ad-xp-ship" id="ad-xp-ship">+0</span>
+          <div class="smelting-info-row" data-page-node-id="EZGqzZUrdozMQtO9oo99pm">
+            <span class="me-label" data-page-node-id="1pYfZYStsDDOWWu83ESNQQ">舰船工程经验：</span><span class="ad-xp-ship" id="ad-xp-ship" data-page-node-id="ISb5zNgpdo1iB4A4jyvwvr">+0</span>
           </div>
-          <div class="smelting-info-row">
-            <span class="me-label">冶炼经验：</span><span class="ad-xp-refining" id="ad-xp-refining">+0</span>
+          <div class="smelting-info-row" data-page-node-id="4JAFFjhPnUD9B2geXg1zVp">
+            <span class="me-label" data-page-node-id="dO7DZzvKDefU2QPMylVcLU">冶炼经验：</span><span class="ad-xp-refining" id="ad-xp-refining" data-page-node-id="DEFB09wdNjXllGcdyIMeKy">+0</span>
           </div>
-          <div class="ad-xp-hint">两份经验来源不同：舰船工程按组件制造经验折算，冶炼按拆解周期折算。</div>
-          <div class="smelting-info-row">
-            <span class="me-label">周期：</span><span id="ad-cycle">—</span>
+          <div class="ad-xp-hint" data-page-node-id="zeoZAj5uxSw7BsI6SijmkG">两份经验来源不同：舰船工程按组件制造经验折算，冶炼按拆解周期折算。</div>
+          <div class="smelting-info-row" data-page-node-id="yOFeQF6vBtBICHFQKs7nmH">
+            <span class="me-label" data-page-node-id="QNapv3N3MUrT8JN2m3n8sF">周期：</span><span id="ad-cycle" data-page-node-id="gLFGBhZF7r3TYdTKaaRfdN">—</span>
           </div>
-          <div class="mining-progress-row">
-            <span class="mp-label">拆解进度：</span>
-            <canvas class="skill-canvas-bar" id="bar-auto-dismantle" width="560" height="24"></canvas>
-            <span class="mp-eta" id="auto-dismantle-eta">~0.0s</span>
+          <div class="mining-progress-row" data-page-node-id="IWvs8GnTHMxEk16PEjju6v">
+            <span class="mp-label" data-page-node-id="Pbn9C2X9IDgUAw9M5RsCCG">拆解进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-auto-dismantle" width="560" height="24" data-page-node-id="BYcMHrGibdCbaUqSFjhNdW"></canvas>
+            <span class="mp-eta" id="auto-dismantle-eta" data-page-node-id="LysXkXYu4THQDpvwDkiEzn">~0.0s</span>
           </div>
         </div>
         <!-- 气体采集区域选择 -->
-        <div class="mining-area-select gas-area-select" id="gas-area-select" style="display:none;">
-          <span class="area-label">气体目标：</span>
-          <div class="mining-target-scroll"><div class="mining-target-strip" id="gas-target-strip"></div></div>
+        <div class="mining-area-select gas-area-select" id="gas-area-select" style="display:none;" data-page-node-id="WDaZijd5y0kyvy31EehCtN">
+          <span class="area-label" data-page-node-id="C0bYuisDcGXGUp3HvHVgWn">气体目标：</span>
+          <div class="mining-target-scroll" data-page-node-id="TVi9ZH8yqKxOWGlyvpMYuC"><div class="mining-target-strip" id="gas-target-strip" data-page-node-id="IKfudey36681kKhMeaDdP7"></div></div>
         </div>
         <!-- 气体采集效率 + 进度 -->
-        <div class="mining-stats gas-stats" id="gas-stats" style="display:none;">
-          <div class="mining-efficiency">
-            <span class="me-label">采集效率：</span>
-            <span class="me-value" id="gas-eff-value">1.02</span>
-            <span class="me-logistics" id="gas-logistics"></span>
+        <div class="mining-stats gas-stats" id="gas-stats" style="display:none;" data-page-node-id="hX3lY4xfmpVIKDHp8ZC0hA">
+          <div class="mining-efficiency" data-page-node-id="4nMAwPU8iQ1YLLRyKfzadU">
+            <span class="me-label" data-page-node-id="eBtF91LHkGbjFiknVt3YWz">采集效率：</span>
+            <span class="me-value" id="gas-eff-value" data-page-node-id="bGBs7fmdTvsvHyT5ztCapu">1.02</span>
+            <span class="me-logistics" id="gas-logistics" data-page-node-id="ds7yiMadc3tXDn75iuSqqB"></span>
           </div>
-          <div class="mining-progress-row">
-            <span class="mp-label">采集进度：</span>
-            <canvas class="skill-canvas-bar" id="bar-gas" width="560" height="24"></canvas>
-            <span class="mp-eta" id="gas-eta">~0.0s</span>
+          <div class="mining-progress-row" data-page-node-id="RpEVYTaBVWUeAQItxdkrYN">
+            <span class="mp-label" data-page-node-id="L9ak0SJCELWfQK9F8Yppv1">采集进度：</span>
+            <canvas class="skill-canvas-bar" id="bar-gas" width="560" height="24" data-page-node-id="7UhAzoYdoO6FmClbCVcS9Q"></canvas>
+            <span class="mp-eta" id="gas-eta" data-page-node-id="HA4V96SAQb2aOhkEHYJhgu">~0.0s</span>
           </div>
         </div>
-        <div class="skill-actions mt-8">
-          <div id="action-booster-slots" class="action-booster-slots" aria-label="当前行动增强剂槽位"></div>
-          <button class="btn danger" id="btn-stop">停止</button>
-          <button class="btn" id="btn-switch-skill">切换技能</button>
-          <button class="btn primary" id="btn-start-mine" style="display:none;">▶ 开始采矿</button>
-          <button class="btn primary" id="btn-start-smelt" style="display:none;">▶ 开始冶炼</button>
-          <button class="btn primary" id="btn-start-gas" style="display:none;">▶ 开始气体采集</button>
+        <div class="skill-actions mt-8" data-page-node-id="tVyLbqsdwjMWiL6IG1oA3Z">
+          <div id="action-booster-slots" class="action-booster-slots" aria-label="当前行动增强剂槽位" data-page-node-id="co2HzM2WgksJmkU8BXK6ND"></div>
+          <button class="btn danger" id="btn-stop" data-page-node-id="IagqUBz3swlKXOmVP858KT">停止</button>
+          <button class="btn" id="btn-switch-skill" data-page-node-id="NB1z8sOPLNwJeZwO9hlAwJ">切换技能</button>
+          <button class="btn primary" id="btn-start-mine" style="display:none;" data-page-node-id="ZJLvsCjRibphs2QQMGyfEo">▶ 开始采矿</button>
+          <button class="btn primary" id="btn-start-smelt" style="display:none;" data-page-node-id="WUuCZpWAesZkLEC1wY2zZi">▶ 开始冶炼</button>
+          <button class="btn primary" id="btn-start-gas" style="display:none;" data-page-node-id="UHzIBiolGhFVHD5i1OoVCc">▶ 开始气体采集</button>
         </div>
       </div>
     </div>
 
     <!-- 行星面板 -->
-    <div class="panel planetary-panel" id="planetary-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">🪐 行星开发</span>
-        <span id="planetary-header-info">等级 1 · 槽位 0 / 1</span>
+    <div class="panel planetary-panel" id="planetary-panel" style="display:none;" data-page-node-id="wmP6pHvtGB2lQXzSAuPkMu">
+      <div class="panel-header" data-page-node-id="8I2L34BRHvHxm6qLXuXUK4">
+        <span class="panel-title" data-page-node-id="RTX4x3CnFGliAQhOgeByPw">🪐 行星开发</span>
+        <span id="planetary-header-info" data-page-node-id="0rGsDxLB6HT79yHTNC6Vtj">等级 1 · 槽位 0 / 1</span>
       </div>
-      <div class="panel-body">
-        <div class="exp-row" style="margin-bottom:10px;">
-          <span class="exp-label">行星开发</span>
-          <div class="progress-bar">
-            <div class="fill exp" id="planetary-exp-fill" style="width:0%;"></div>
+      <div class="panel-body" data-page-node-id="Y34E8uQpnWLd57hxpL4Ex4">
+        <div class="exp-row" style="margin-bottom:10px;" data-page-node-id="8Vi33UEN2WAKrSxHQ2LL6C">
+          <span class="exp-label" data-page-node-id="qFEQjiXcCx4UhhMKbDjGAu">行星开发</span>
+          <div class="progress-bar" data-page-node-id="UKggk3krL2lJmpExYS9Ajc">
+            <div class="fill exp" id="planetary-exp-fill" style="width:0%;" data-page-node-id="ICLEmHVccaqZ8FFXaOg4s6"></div>
           </div>
-          <span class="exp-value" id="planetary-exp-value">0 / 100</span>
+          <span class="exp-value" id="planetary-exp-value" data-page-node-id="MxBAIdyNOweqMJYRHpGhIp">0 / 100</span>
         </div>
-        <div style="margin-bottom:10px; display:flex; align-items:center; gap:12px;">
-          <button class="btn primary" id="btn-deploy-planet">🪐 部署新行星</button>
-          <span class="text-muted" style="font-size:12px;" id="planetary-slot-info">可用槽位：0 / 1</span>
-          <span class="me-logistics" id="planetary-logistics"></span>
+        <div style="margin-bottom:10px; display:flex; align-items:center; gap:12px;" data-page-node-id="3oJXT75gdp1UROxAaPsAVt">
+          <button class="btn primary" id="btn-deploy-planet" data-page-node-id="tfskLYpRAUZOqJV9D0jKGM">🪐 部署新行星</button>
+          <span class="text-muted" style="font-size:12px;" id="planetary-slot-info" data-page-node-id="TNBBg3sVHWZW62nT9TqbVW">可用槽位：0 / 1</span>
+          <span class="me-logistics" id="planetary-logistics" data-page-node-id="ukHRzbUJSGaIKhdPumWlkb"></span>
         </div>
-        <div class="planet-grid" id="planet-grid"></div>
-        <div id="planet-empty-msg" class="cargo-empty" style="display:none;">尚未部署任何行星，点击上方按钮部署</div>
+        <div class="planet-grid" id="planet-grid" data-page-node-id="2Gbl3KK6BUC8XpMis3VSoG"></div>
+        <div id="planet-empty-msg" class="cargo-empty" style="display:none;" data-page-node-id="F1UV9JLNDMHLchGGwyL53e">尚未部署任何行星，点击上方按钮部署</div>
       </div>
     </div>
 
     <!-- 动作队列面板 -->
-    <div class="panel" id="queue-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">📋 动作队列</span>
-        <span class="text-muted" id="queue-status-text">空闲</span>
+    <div class="panel" id="queue-panel" style="display:none;" data-page-node-id="dj9cThF63hBA1EslAWPTFb">
+      <div class="panel-header" data-page-node-id="HwazMteb1FNuOB8Acqm2gB">
+        <span class="panel-title" data-page-node-id="nppsTVqP4Fd2cdHvcji5Et">📋 动作队列</span>
+        <span class="text-muted" id="queue-status-text" data-page-node-id="GGbUsMyKZ1pUyINaZ9lBjK">空闲</span>
       </div>
-      <div class="panel-body">
-        <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;">
-          <button class="btn primary" id="btn-start-queue">▶ 开始队列</button>
-          <button class="btn" id="btn-stop-queue">⏹ 停止</button>
-          <button class="btn" id="btn-clear-queue">🗑 清空</button>
+      <div class="panel-body" data-page-node-id="YymHSfvQOK2HFz1oQbNJPS">
+        <div style="display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;" data-page-node-id="nmVMMaQKfm33D65j6zOdSF">
+          <button class="btn primary" id="btn-start-queue" data-page-node-id="heIXMyh6h89Sg8Eyf5P8ng">▶ 开始队列</button>
+          <button class="btn" id="btn-stop-queue" data-page-node-id="R0RiEF7VNxK7ExMQSz23GZ">⏹ 停止</button>
+          <button class="btn" id="btn-clear-queue" data-page-node-id="7z0YpAmrVOV4CCMBeGpIIZ">🗑 清空</button>
         </div>
-        <div id="queue-list" style="max-height:400px; overflow-y:auto;">
-          <div style="text-align:center; color:#4a5a6a; padding:20px; font-size:13px;">队列为空，从技能面板点击"加入队列"添加任务</div>
+        <div id="queue-list" style="max-height:400px; overflow-y:auto;" data-page-node-id="qgVAtktZoVzHU1VASIJ9rF">
+          <div style="text-align:center; color:#4a5a6a; padding:20px; font-size:13px;" data-page-node-id="4gljxMWIujSOLy0ugNF7Hs">队列为空，从技能面板点击"加入队列"添加任务</div>
         </div>
       </div>
     </div>
 
     <!-- 舰船工程面板 -->
-    <div class="panel" id="shipeng-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">🚀 舰船工程</span>
-        <span class="text-muted" id="shipeng-header-status">待命</span>
+    <div class="panel" id="shipeng-panel" style="display:none;" data-page-node-id="9JPmi1Y8MmUhLQCVKCZ6iH">
+      <div class="panel-header" data-page-node-id="WxqNp5AIAEXXZ0HDF1vVpV">
+        <span class="panel-title" data-page-node-id="FpN4D4o41uuCqgHXe6ND5k">🚀 舰船工程</span>
+        <span class="text-muted" id="shipeng-header-status" data-page-node-id="bxt73MVFw1weHqrv6wvjcC">待命</span>
       </div>
-      <div class="panel-body">
-        <div id="ship-action-booster-slots" class="action-booster-slots" aria-label="舰船工程增强剂槽位"></div>
+      <div class="panel-body" data-page-node-id="s75RZSHFEEYKcKcVelaiDz">
+        <div id="ship-action-booster-slots" class="action-booster-slots" aria-label="舰船工程增强剂槽位" data-page-node-id="qAeDabuJUV2khtJuXz2ZTv"></div>
         <!-- 效率 + 经验条 -->
-        <div class="exp-row" style="margin-bottom:10px;">
-          <span class="exp-label">舰船工程</span>
-          <div class="progress-bar">
-            <div class="fill exp" id="shipeng-exp-fill" style="width:0%;"></div>
+        <div class="exp-row" style="margin-bottom:10px;" data-page-node-id="sZu5ke7OZGEyCc8b2uuqeE">
+          <span class="exp-label" data-page-node-id="XOM8DQYxxi0FxUNsfXpHTh">舰船工程</span>
+          <div class="progress-bar" data-page-node-id="mtOzbM1NpDq3WzYzgKfulF">
+            <div class="fill exp" id="shipeng-exp-fill" style="width:0%;" data-page-node-id="7MPnKNEY4fXmRCoVWapsDe"></div>
           </div>
-          <span class="exp-value" id="shipeng-exp-value">0 / 100</span>
+          <span class="exp-value" id="shipeng-exp-value" data-page-node-id="C2JOoEz67hjy4LG53qhIRv">0 / 100</span>
         </div>
-        <div class="skill-info equipeng-info">
-          <span class="skill-name">舰船工程</span>
-          <span class="skill-level">等级 <span class="lv-num" id="shipeng-lv-num">1</span></span>
-          <span class="skill-output" id="shipeng-eff-display">效率：1.02x</span>
-          <span class="me-logistics" id="shipeng-speed-breakdown"></span>
+        <div class="skill-info equipeng-info" data-page-node-id="828spObhrFReB7x4GoqDGl">
+          <span class="skill-name" data-page-node-id="Vj1Zr4CT8dlrRCgZr9OIry">舰船工程</span>
+          <span class="skill-level" data-page-node-id="BUOF6O7lsALJaGpg5MPS7i">等级 <span class="lv-num" id="shipeng-lv-num" data-page-node-id="ZutrZ15g8ttOgoPT5YCyu4">1</span></span>
+          <span class="skill-output" id="shipeng-eff-display" data-page-node-id="R4oFDhUK61mdIILBEKTrjQ">效率：1.02x</span>
+          <span class="me-logistics" id="shipeng-speed-breakdown" data-page-node-id="kpQdWemzgFLDT5VZ8Pa2s9"></span>
         </div>
 
         <!-- 舰船工程 UI 重做（2026-08-04）：双一级 tab + 二级子标签 + 栅格 + 详情 + 分页 -->
-        <div class="shipeng-subview-tabs" id="shipeng-subview-tabs"></div>
+        <div class="shipeng-subview-tabs" id="shipeng-subview-tabs" data-page-node-id="eM96CFjK27tBP2CWBP6oWG"></div>
 
         <!-- 部件车间 -->
-        <div id="shipeng-comp-view" class="shipeng-split">
-          <div class="shipeng-split-left">
-            <div class="shipeng-class-tabs" id="shipeng-comp-class-tabs"></div>
-            <div class="shipeng-grid" id="shipeng-comp-grid"></div>
+        <div id="shipeng-comp-view" class="shipeng-split" data-page-node-id="WgQy6efThUFAtgeg5iCwxM">
+          <div class="shipeng-split-left" data-page-node-id="02qZXElttLl9fUFEwQXwQc">
+            <div class="shipeng-class-tabs" id="shipeng-comp-class-tabs" data-page-node-id="4ZCe8POhsi4cNBJBYmjgft"></div>
+            <div class="shipeng-grid" id="shipeng-comp-grid" data-page-node-id="y8t0zH4j6VOPAbqRtp8DR0"></div>
           </div>
-          <div class="shipeng-split-right">
-            <div class="shipeng-comp-detail" id="shipeng-comp-detail">
-              <div class="ship-cost-list" id="shipcomp-cost"></div>
+          <div class="shipeng-split-right" data-page-node-id="vQGWDZKiyEnUWXJgNxgKbV">
+            <div class="shipeng-comp-detail" id="shipeng-comp-detail" data-page-node-id="AFIhQqTqBz9x2e833pwrwf">
+              <div class="ship-cost-list" id="shipcomp-cost" data-page-node-id="xDOB3k1UF08QKSpqyLYEbR"></div>
               <!-- 组件库存：可折叠，标题栏提供折叠/展开切换 -->
-              <div class="shipcomp-inventory-section" id="shipcomp-inventory-section">
-                <button type="button" class="shipcomp-inv-toggle" id="shipcomp-inv-toggle" aria-expanded="true">
-                  <span class="shipcomp-inv-arrow">▾</span>
-                  <span class="shipcomp-inv-label">组件库存</span>
-                  <span class="shipcomp-inv-hint" id="shipcomp-inv-count">0 种</span>
+              <div class="shipcomp-inventory-section" id="shipcomp-inventory-section" data-page-node-id="rdnleaXtq07pjMqOg4AuG6">
+                <button type="button" class="shipcomp-inv-toggle" id="shipcomp-inv-toggle" aria-expanded="true" data-page-node-id="kMZ8s3nEMeDGuNEnzXV5JL">
+                  <span class="shipcomp-inv-arrow" data-page-node-id="iBD5iIASdOEEAvzHGnrAU2">▾</span>
+                  <span class="shipcomp-inv-label" data-page-node-id="uH9KleXvEeGpll8IGAp9iy">组件库存</span>
+                  <span class="shipcomp-inv-hint" id="shipcomp-inv-count" data-page-node-id="hAhUoD0ctDdlBPbjtpbXOJ">0 种</span>
                 </button>
-                <div class="ship-comp-grid" id="ship-comp-inventory"></div>
+                <div class="ship-comp-grid" id="ship-comp-inventory" data-page-node-id="lsmH5b8CWWfbQIfa73E4Gk"></div>
               </div>
             </div>
           </div>
           <!-- 制造操作栏：与装备制造页 equipeng-detail-actions 对齐，跨整宽钉在视口底部 -->
-          <div class="shipcomp-actions" id="shipcomp-actions">
-            <button class="btn primary build-btn" id="btn-start-shipcomp">⚙ 制造</button>
-            <div class="ship-progress-row" id="shipcomp-progress-row" style="display:none;">
-              <span class="sp-label">制造进度</span>
-              <canvas class="skill-canvas-bar" id="bar-shipcomp" width="560" height="24"></canvas>
-              <span class="mp-eta" id="shipcomp-eta">0s</span>
+          <div class="shipcomp-actions" id="shipcomp-actions" data-page-node-id="YZZwls0VHLANsptRlvDlBP">
+            <button class="btn primary build-btn" id="btn-start-shipcomp" data-page-node-id="UoGNlnuKDc3Np4rc3yF4D0">⚙ 制造</button>
+            <div class="ship-progress-row" id="shipcomp-progress-row" style="display:none;" data-page-node-id="teEnU8DtDJ2HEOyO7i6pmV">
+              <span class="sp-label" data-page-node-id="uY92X1LjwL6l4DIbmnQDNO">制造进度</span>
+              <canvas class="skill-canvas-bar" id="bar-shipcomp" width="560" height="24" data-page-node-id="LzW659KpG2IV6idb3mHbPq"></canvas>
+              <span class="mp-eta" id="shipcomp-eta" data-page-node-id="GBLYPO4jEF14VVd9SZVSYP">0s</span>
             </div>
           </div>
         </div>
 
         <!-- 舰船总装 -->
-        <div id="shipeng-asm-view" class="shipeng-split" style="display:none;">
-          <div class="shipeng-split-left">
-            <div class="shipeng-class-tabs" id="shipeng-asm-line-tabs"></div>
-            <div class="shipeng-grid" id="shipeng-asm-grid"></div>
-            <div class="shipeng-asm-pager" id="shipeng-asm-pager"></div>
+        <div id="shipeng-asm-view" class="shipeng-split" style="display:none;" data-page-node-id="udmeNzwH1AyEfI63xUkR5Z">
+          <div class="shipeng-split-left" data-page-node-id="MIGDOpAJHmPvkqSbcOHSvY">
+            <div class="shipeng-class-tabs" id="shipeng-asm-line-tabs" data-page-node-id="1i1pl0FNQPB53P74WOhaJM"></div>
+            <div class="shipeng-grid" id="shipeng-asm-grid" data-page-node-id="4AAz4YOPATAGxQnUs98s8a"></div>
+            <div class="shipeng-asm-pager" id="shipeng-asm-pager" data-page-node-id="tWmUBiR9X7sDtyso2MpYfI"></div>
           </div>
-          <div class="shipeng-split-right">
-            <div class="shipeng-asm-detail" id="shipeng-asm-detail">
-              <div class="shipeng-asm-head">
-                <div class="shipeng-asm-badges" id="shipeng-asm-badges"></div>
-                <p class="shipeng-asm-flavor" id="shipeng-asm-flavor"></p>
+          <div class="shipeng-split-right" data-page-node-id="xocZAnTYwgC9zRpjcDaFxS">
+            <div class="shipeng-asm-detail" id="shipeng-asm-detail" data-page-node-id="sreFwngoXV9if5BKGrAmEf">
+              <div class="shipeng-asm-head" data-page-node-id="uM1WbtSfYzWBH6ZLs10ffJ">
+                <div class="shipeng-asm-badges" id="shipeng-asm-badges" data-page-node-id="BMuY8fVywf8VP5HUFx2bsF"></div>
+                <p class="shipeng-asm-flavor" id="shipeng-asm-flavor" data-page-node-id="VUqgqwuzWQ4NQoHJknI3Pz"></p>
               </div>
-              <div id="ship-attr-display" style="margin-top:8px;"></div>
-              <canvas id="manufacturing-3d-canvas" class="ship3d-canvas"></canvas>
-              <div class="ship-cost-list" id="shipasm-cost"></div>
-              <button class="btn primary build-btn" id="btn-start-shipasm">⚓ 合成</button>
-              <div class="ship-progress-row" id="shipasm-progress-row" style="display:none;">
-                <span class="sp-label">合成进度</span>
-                <canvas class="skill-canvas-bar" id="bar-shipasm" width="560" height="24"></canvas>
-                <span class="mp-eta" id="shipasm-eta">0s</span>
+              <div id="ship-attr-display" style="margin-top:8px;" data-page-node-id="TV2oEvP8dNMQJPBeqBsHH9"></div>
+              <canvas id="manufacturing-3d-canvas" class="ship3d-canvas" data-page-node-id="V5uELKDkhvTrzmIOhEghUh"></canvas>
+              <div class="ship-cost-list" id="shipasm-cost" data-page-node-id="SPVucg8o0duAXGYZgvffyt"></div>
+              <button class="btn primary build-btn" id="btn-start-shipasm" data-page-node-id="i5ORSZEmdOpbEBLWjZ7Bxh">⚓ 合成</button>
+              <div class="ship-progress-row" id="shipasm-progress-row" style="display:none;" data-page-node-id="uZfSNU8NkVVAjfGvXC4oCp">
+                <span class="sp-label" data-page-node-id="Gz3fTxiYkvmHkFznb7q7AQ">合成进度</span>
+                <canvas class="skill-canvas-bar" id="bar-shipasm" width="560" height="24" data-page-node-id="t1XY5HDixCWuBBvsEzxJVh"></canvas>
+                <span class="mp-eta" id="shipasm-eta" data-page-node-id="Yt3LEERbLFXATMhLW3FoNP">0s</span>
               </div>
-              <div style="margin-top:8px; font-size:12px; color:#8899aa;">已有舰船：</div>
-              <div id="ship-inventory-list"></div>
+              <div style="margin-top:8px; font-size:12px; color:#8899aa;" data-page-node-id="bmE7Sk8ERTMKcfmHR8V7ns">已有舰船：</div>
+              <div id="ship-inventory-list" data-page-node-id="o5dqeEPoPY6IIxOf74VtU0"></div>
             </div>
           </div>
         </div>
@@ -725,845 +725,852 @@
     </div>
 
     <!-- 装备工程面板 -->
-    <div class="panel" id="equipeng-panel" style="display:none;">
-      <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位"></div>
-      <div class="panel-header">
-        <span class="panel-title">🔧 装备工程</span>
-        <span class="text-muted" id="equipeng-status-text">待命</span>
+    <div class="panel" id="equipeng-panel" style="display:none;" data-page-node-id="HMVc7Qn88zvr6iezznWiaI">
+      <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位" data-page-node-id="8PFY4GY6jdY0XNtBZXW6ce"></div>
+      <div class="panel-header" data-page-node-id="QkHQzqDZjb4HeR5UJvPct9">
+        <span class="panel-title" data-page-node-id="bHqe5LaVePikMxzjuxEFsw">🔧 装备工程</span>
+        <span class="text-muted" id="equipeng-status-text" data-page-node-id="cg6YrJYIL1XnPzJvn6rD1Y">待命</span>
       </div>
-      <div class="panel-body">
-        <div class="skill-info equipeng-info">
-          <span class="skill-name">装备工程</span>
-          <span class="skill-level">等级 <span class="lv-num" id="equipeng-lv-num">1</span></span>
-          <span class="skill-output" id="equipeng-eff-display">效率：1.00x</span>
-          <span class="me-logistics" id="equipeng-logistics"></span>
+      <div class="panel-body" data-page-node-id="xib1QnwnByJpHUzdbojN0v">
+        <div class="skill-info equipeng-info" data-page-node-id="EUuoEWHvctxkGAgDBA6MFv">
+          <span class="skill-name" data-page-node-id="41J3t573sv0CPuMiDGcl3S">装备工程</span>
+          <span class="skill-level" data-page-node-id="dQoCGpBYFrZNJKls8KMcls">等级 <span class="lv-num" id="equipeng-lv-num" data-page-node-id="gGwLi2shs7OlJn8bc9YwDw">1</span></span>
+          <span class="skill-output" id="equipeng-eff-display" data-page-node-id="sfDEyHDnVjwTD7A4zObmCs">效率：1.00x</span>
+          <span class="me-logistics" id="equipeng-logistics" data-page-node-id="xR0xlNG6wIQZIUGZsbl56Y"></span>
         </div>
-        <div class="exp-row mt-4">
-          <span class="exp-label">经验</span>
-          <div class="progress-bar"><div class="fill exp" id="equipeng-exp-fill" style="width:0%"></div></div>
-          <span class="exp-value" id="equipeng-exp-value">0 / 83</span>
+        <div class="exp-row mt-4" data-page-node-id="qIr4hLZVQw86ZcZaARD5e1">
+          <span class="exp-label" data-page-node-id="ACTOte2zznAnuztqWrEefa">经验</span>
+          <div class="progress-bar" data-page-node-id="XhDXHUI11oCQb4V4A3kWwj"><div class="fill exp" id="equipeng-exp-fill" style="width:0%" data-page-node-id="WU2fqCOrsJogkIOiPBTZD8"></div></div>
+          <span class="exp-value" id="equipeng-exp-value" data-page-node-id="qFyi4DlJD87gBLHrapRTEk">0 / 83</span>
         </div>
-        <div class="equipeng-queue-summary" id="equipeng-queue-summary">制造队列 0 / 20</div>
-        <div class="equipeng-category-tabs" id="equipeng-category-tabs" role="tablist" aria-label="装备工程分类"></div>
-        <div class="equipeng-rig-filters" id="equipeng-rig-filters" style="display:none;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;"></div>
-        <div class="equipeng-subtabs" id="equipeng-subtabs" style="display:none;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;"></div>
-        <div class="equipeng-workspace">
-          <section class="equipeng-catalog">
-            <div class="equipeng-catalog-header">
-              <div><strong id="equipeng-category-title">采矿装备</strong><span id="equipeng-category-count">0 个配方</span></div>
-              <label class="equipeng-search"><i class="fa-solid fa-magnifying-glass"></i><input id="equipeng-search-input" type="search" placeholder="搜索当前分类" autocomplete="off"></label>
+        <div class="equipeng-queue-summary" id="equipeng-queue-summary" data-page-node-id="ibSAwBzzjiAwVn7joJbJcv">制造队列 0 / 20</div>
+        <div class="equipeng-category-tabs" id="equipeng-category-tabs" role="tablist" aria-label="装备工程分类" data-page-node-id="3cg63ZHcfumSkF8AUaHekL"></div>
+        <div class="equipeng-rig-filters" id="equipeng-rig-filters" style="display:none;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;" data-page-node-id="sb51z5d8L8hPnkJ7PPGN9Z"></div>
+        <div class="equipeng-subtabs" id="equipeng-subtabs" style="display:none;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;" data-page-node-id="2udDzjtdjWlqT9lN9MXhiV"></div>
+        <div class="equipeng-workspace" data-page-node-id="2y1ErETVUmKhxJobH3DepP">
+          <section class="equipeng-catalog" data-page-node-id="yhqBdDOKA4N5kxmu0Gtuy9">
+            <div class="equipeng-catalog-header" data-page-node-id="NRBHM5nk0WGOJwfVhv8FQ0">
+              <div data-page-node-id="o5c5RvPuGjbTwvEHGjDuag"><strong id="equipeng-category-title" data-page-node-id="OGWDZcMDugHN83kGEdKSD3">采矿装备</strong><span id="equipeng-category-count" data-page-node-id="trrYubuj0xDNnVctLB3afo">0 个配方</span></div>
+              <label class="equipeng-search" data-page-node-id="7Rr0xR5ASVKdwbNCgJC0qh"><i class="fa-solid fa-magnifying-glass" data-page-node-id="h06erbKpMiOMYs51OP9T3R"></i><input id="equipeng-search-input" type="search" placeholder="搜索当前分类" autocomplete="off" data-page-node-id="G2Seu6AkwGaPMQD3nDC9rR"></label>
             </div>
-            <div class="equipeng-recipe-grid" id="equipeng-recipe-grid"></div>
+            <div class="equipeng-recipe-grid" id="equipeng-recipe-grid" data-page-node-id="qGv1vWWxK6NR3kXfEbHCIw"></div>
           </section>
-          <aside class="equipeng-detail">
-            <div class="equipeng-detail-header">
-              <strong id="equipeng-detail-title">T1采矿激光器</strong>
-              <span id="equipeng-detail-tier" class="equipeng-tier-badge">T1</span>
+          <aside class="equipeng-detail" data-page-node-id="ZlI31kh8tb6WWLnjvyGMs8">
+            <div class="equipeng-detail-header" data-page-node-id="giW0AcISymoFBR8pB990xw">
+              <strong id="equipeng-detail-title" data-page-node-id="0hcv9V4INZQtuUGSJLa1fN">T1采矿激光器</strong>
+              <span id="equipeng-detail-tier" class="equipeng-tier-badge" data-page-node-id="8ypRJAsVOagsZfoq6ACdUo">T1</span>
             </div>
-            <div class="equipeng-detail-body" id="equipeng-detail-body"></div>
-            <div class="ship-progress-row equipeng-detail-progress" id="equipeng-progress-row" style="display:none;">
-              <span class="sp-label">制造进度</span>
-              <canvas class="skill-canvas-bar" id="bar-equipeng" width="420" height="24"></canvas>
-              <span class="mp-eta" id="equipeng-eta">0s</span>
+            <div class="equipeng-detail-body" id="equipeng-detail-body" data-page-node-id="qQCVZbGjoTJF4gONmZfnf3"></div>
+            <div class="ship-progress-row equipeng-detail-progress" id="equipeng-progress-row" style="display:none;" data-page-node-id="gUqVTNE4xGO6aMjJsrHEON">
+              <span class="sp-label" data-page-node-id="WX0HSatUlixRDY3TCsiHva">制造进度</span>
+              <canvas class="skill-canvas-bar" id="bar-equipeng" width="420" height="24" data-page-node-id="t59VAY47DSpIFwKRp4trnb"></canvas>
+              <span class="mp-eta" id="equipeng-eta" data-page-node-id="eNwsdy1NMN1opAs07ZygfW">0s</span>
             </div>
           </aside>
-          <div class="equipeng-detail-actions">
-            <button class="btn danger" id="btn-stop-equipeng" style="display:none;">■ 停止制造</button>
-            <button class="btn primary" id="btn-start-equipeng">▶ 开始制造</button>
+          <div class="equipeng-detail-actions" data-page-node-id="fY6m9lxKuidbsSIOXE8ArP">
+            <button class="btn danger" id="btn-stop-equipeng" style="display:none;" data-page-node-id="HysqTrqzFMEHYrnHC31DM8">■ 停止制造</button>
+            <button class="btn primary" id="btn-start-equipeng" data-page-node-id="KaLLNB6dfjKh6WL9ClJonW">▶ 开始制造</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- 增强剂制造面板（Phase 2A：制造 + 库存；六槽装备/计时/效果为 Phase 2B） -->
-    <div class="panel" id="booster-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">💉 增强剂制造</span>
-        <span class="text-muted" id="booster-status-text">待命</span>
+    <div class="panel" id="booster-panel" style="display:none;" data-page-node-id="YNxAAje436E5bBspJxotYL">
+      <div class="panel-header" data-page-node-id="rz1ZFF40BtHEpegpIUl4VX">
+        <span class="panel-title" data-page-node-id="SloqXhHwqqxdEApbiG9vNg">💉 增强剂制造</span>
+        <span class="text-muted" id="booster-status-text" data-page-node-id="PKJqdtjcflgQNOlRgMUfNn">待命</span>
       </div>
-      <div class="panel-body">
-        <div class="skill-info equipeng-info">
-          <span class="skill-name">增强剂制造</span>
-          <span class="skill-level">等级 <span class="lv-num" id="booster-lv-num">1</span></span>
-          <span class="skill-output" id="booster-eff-display">效率：1.00x</span>
-          <span class="me-logistics" id="booster-logistics"></span>
+      <div class="panel-body" data-page-node-id="W0aeHmF4tX41ub9iZMGh95">
+        <div class="skill-info equipeng-info" data-page-node-id="PfDlfFAuMK1zAZFhRhUV0s">
+          <span class="skill-name" data-page-node-id="fUHfeJtx5KMyOThbezzDAo">增强剂制造</span>
+          <span class="skill-level" data-page-node-id="ZQE9LC2B7uJHEc7rRVbJ97">等级 <span class="lv-num" id="booster-lv-num" data-page-node-id="e1JT2jGj9z7Zm9Js3Pc2sT">1</span></span>
+          <span class="skill-output" id="booster-eff-display" data-page-node-id="3EdJFYUApuWevXQ8j3jmp8">效率：1.00x</span>
+          <span class="me-logistics" id="booster-logistics" data-page-node-id="mcec3aEjETMEVEC6ELYIJG"></span>
         </div>
-        <div class="exp-row mt-4">
-          <span class="exp-label">经验</span>
-          <div class="progress-bar"><div class="fill exp" id="booster-exp-fill" style="width:0%"></div></div>
-          <span class="exp-value" id="booster-exp-value">0 / 110</span>
+        <div class="exp-row mt-4" data-page-node-id="3QcNUCCIpSpZPCy5OQVkiJ">
+          <span class="exp-label" data-page-node-id="a70eHQbaIVqyKvdBAJV1py">经验</span>
+          <div class="progress-bar" data-page-node-id="qPM1NGXOWH4HXp7j1sDuU9"><div class="fill exp" id="booster-exp-fill" style="width:0%" data-page-node-id="SFiPJJmMGJ0EkJp84pPH07"></div></div>
+          <span class="exp-value" id="booster-exp-value" data-page-node-id="w3DcXEIzcBXb8CvlyccL4i">0 / 110</span>
         </div>
-        <div class="booster-phase-note" id="booster-phase-note" style="display:none;margin:8px 0;padding:6px 10px;border-radius:6px;font-size:12px;color:#f0c27b;background:rgba(240,194,123,.10);border:1px solid rgba(240,194,123,.25);">
-          <i class="fa-solid fa-circle-info"></i> 增强剂使用与自动补充将在下一阶段开放；当前可制造并囤积增强剂（每瓶持续 180 秒，暂不消耗）。
+        <div class="booster-phase-note" id="booster-phase-note" style="display:none;margin:8px 0;padding:6px 10px;border-radius:6px;font-size:12px;color:#f0c27b;background:rgba(240,194,123,.10);border:1px solid rgba(240,194,123,.25);" data-page-node-id="stpJ6NxCFFaLboOvkKd61S">
+          <i class="fa-solid fa-circle-info" data-page-node-id="njFXBjEYhHwhbb6sU1wd1F"></i> 增强剂使用与自动补充将在下一阶段开放；当前可制造并囤积增强剂（每瓶持续 180 秒，暂不消耗）。
         </div>
-        <div class="equipeng-category-tabs" id="booster-category-tabs" role="tablist" aria-label="增强剂分类"></div>
-        <div class="equipeng-rig-filters" id="booster-quality-filters" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;"></div>
-        <div class="equipeng-workspace">
-          <section class="equipeng-catalog">
-            <div class="equipeng-catalog-header">
-              <div><strong id="booster-category-title">采矿</strong><span id="booster-category-count">0 个配方</span></div>
+        <div class="equipeng-category-tabs" id="booster-category-tabs" role="tablist" aria-label="增强剂分类" data-page-node-id="QfUjVC0gU8M2OXx9fImplO"></div>
+        <div class="equipeng-rig-filters" id="booster-quality-filters" style="display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;padding:6px 2px;" data-page-node-id="N6zDpqYsVET2fuEutWE3n8"></div>
+        <div class="equipeng-workspace" data-page-node-id="kcdPQEwUUV9Xv7GCbTYEQu">
+          <section class="equipeng-catalog" data-page-node-id="qyGAHG41eM6SQBjv1Sqymt">
+            <div class="equipeng-catalog-header" data-page-node-id="UpfFpCL6yQMb7VZPaRfJ9Y">
+              <div data-page-node-id="vObPd546COXJM12VFZDReD"><strong id="booster-category-title" data-page-node-id="TcsR6xXX9OtLovvvgphyli">采矿</strong><span id="booster-category-count" data-page-node-id="rDtp1OC3RKo0oeq7H7RYLu">0 个配方</span></div>
             </div>
-            <div class="equipeng-recipe-grid" id="booster-recipe-grid"></div>
+            <div class="equipeng-recipe-grid" id="booster-recipe-grid" data-page-node-id="8gJFoPnmr73VnNrW1jyQhv"></div>
           </section>
-          <aside class="equipeng-detail">
-            <div class="equipeng-detail-header">
-              <strong id="booster-detail-title">纳米采掘润滑剂·普通</strong>
-              <span id="booster-detail-tier" class="equipeng-tier-badge">普通</span>
+          <aside class="equipeng-detail" data-page-node-id="8f8fmqvRo2AzsMz5dEOxdY">
+            <div class="equipeng-detail-header" data-page-node-id="t4tXpZVEiMNtU9w54Flg0L">
+              <strong id="booster-detail-title" data-page-node-id="jsT44GCCFNXsXFVRxRlb8T">纳米采掘润滑剂·普通</strong>
+              <span id="booster-detail-tier" class="equipeng-tier-badge" data-page-node-id="1laUXRiN3mjJvaxGlvjNNt">普通</span>
             </div>
-            <div class="equipeng-detail-body" id="booster-detail-body"></div>
-            <div class="ship-progress-row equipeng-detail-progress" id="booster-progress-row" style="display:none;">
-              <span class="sp-label">制造进度</span>
-              <canvas class="skill-canvas-bar" id="bar-booster" width="420" height="24"></canvas>
-              <span class="mp-eta" id="booster-eta">0s</span>
+            <div class="equipeng-detail-body" id="booster-detail-body" data-page-node-id="DYvNbALGWsRCc5HHEY0XHf"></div>
+            <div class="ship-progress-row equipeng-detail-progress" id="booster-progress-row" style="display:none;" data-page-node-id="sdAT4vEoWnCdRKn4c54cwZ">
+              <span class="sp-label" data-page-node-id="bpavYH2H0ejOVquFUeuDvh">制造进度</span>
+              <canvas class="skill-canvas-bar" id="bar-booster" width="420" height="24" data-page-node-id="U6qBug2LTAYvQ6knPyZDZk"></canvas>
+              <span class="mp-eta" id="booster-eta" data-page-node-id="EkQpNR5b8bgfeKSrFxqcB2">0s</span>
             </div>
           </aside>
-          <div class="equipeng-detail-actions">
-            <button class="btn danger" id="btn-stop-booster" style="display:none;">■ 停止制造</button>
-            <button class="btn primary" id="btn-start-booster">▶ 开始制造</button>
+          <div class="equipeng-detail-actions" data-page-node-id="WnNqlGiGv6pBXdAaxH4FPE">
+            <button class="btn danger" id="btn-stop-booster" style="display:none;" data-page-node-id="KSxYnLO2eHc5m42daaAzMK">■ 停止制造</button>
+            <button class="btn primary" id="btn-start-booster" data-page-node-id="HwJsG2i6VLzRcuI41lxH5p">▶ 开始制造</button>
           </div>
         </div>
-        <section class="booster-inventory" style="margin-top:14px;">
-          <div class="equipeng-catalog-header"><div><strong>增强剂库存</strong><span id="booster-inventory-count">0 种</span></div></div>
-          <div class="equipeng-recipe-grid" id="booster-inventory-grid"></div>
+        <section class="booster-inventory" style="margin-top:14px;" data-page-node-id="sFCQvgm8eiXkD5twBsYKhp">
+          <div class="equipeng-catalog-header" data-page-node-id="rcBHyUq7lbfd1NcMDZwGTF"><div data-page-node-id="MUov5WX3BA2AegCoWonKDh"><strong data-page-node-id="exWrqou8oaea2hdLX9TRep">增强剂库存</strong><span id="booster-inventory-count" data-page-node-id="AfBKVqt3rwRck8Q4MJiOb7">0 种</span></div></div>
+          <div class="equipeng-recipe-grid" id="booster-inventory-grid" data-page-node-id="AE1sSbDp1juzj2zlEIdGSC"></div>
         </section>
-        <section class="booster-equipped" style="margin-top:14px;border-top:1px solid #2a3a4a;padding-top:10px;">
-          <div class="equipeng-catalog-header"><div><strong>已装载增强剂</strong><span id="booster-equipped-count">0 槽</span></div></div>
-          <div id="booster-equipped-area"></div>
+        <section class="booster-equipped" style="margin-top:14px;border-top:1px solid #2a3a4a;padding-top:10px;" data-page-node-id="2Tp4k8o6Mhr8igcAdIJFsc">
+          <div class="equipeng-catalog-header" data-page-node-id="a4i5ABHtg59lNyn7Vi4rkJ"><div data-page-node-id="79phCH5tWz1rrEojOEtxcD"><strong data-page-node-id="agnDIlCz1CGGpW3tXIYLNe">已装载增强剂</strong><span id="booster-equipped-count" data-page-node-id="rcE9BXqY2g1lzZm7p8MX6B">0 槽</span></div></div>
+          <div id="booster-equipped-area" data-page-node-id="ZsOpra86ot33OYYdgnQiIG"></div>
         </section>
       </div>
     </div>
 
     <!-- 战斗面板 -->
-    <div class="panel combat-panel" id="combat-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">⚔ 战斗行动</span>
-        <span id="combat-header-info" class="text-muted">待命</span>
+    <div class="panel combat-panel" id="combat-panel" style="display:none;" data-page-node-id="tZdAtoJj2kvvlbmjOWxCpZ">
+      <div class="panel-header" data-page-node-id="ISmVR9o4EHsXWfFqS5aay5">
+        <span class="panel-title" data-page-node-id="pNbqNkrpQNuiL14vCdTHtL">⚔ 战斗行动</span>
+        <span id="combat-header-info" class="text-muted" data-page-node-id="derqHJFKSHiAcOSSIvjybM">待命</span>
       </div>
-      <div class="panel-body">
-        <div class="combat-mode-tabs" id="combat-mode-tabs">
-          <button class="combat-mode-tab active" data-combat-mode="belt"><i class="fa-solid fa-meteor"></i> 海盗星带</button>
-          <button class="combat-mode-tab" data-combat-mode="deathspace"><i class="fa-solid fa-dungeon"></i> 死亡空间</button>
+      <div class="panel-body" data-page-node-id="bTkL0oALM1Pu2TD6fEnqqV">
+        <div class="combat-mode-tabs" id="combat-mode-tabs" data-page-node-id="Jkx7KSNDX5amC0erLAFeTE">
+          <button class="combat-mode-tab active" data-combat-mode="belt" data-page-node-id="oJGqczi6wqDxTDblODbfml"><i class="fa-solid fa-meteor" data-page-node-id="nv1j0Lk2ENs76wJTkysDyS"></i> 海盗星带</button>
+          <button class="combat-mode-tab" data-combat-mode="deathspace" data-page-node-id="yCAmM03tdME5CjRXxxjKUA"><i class="fa-solid fa-dungeon" data-page-node-id="zKUdqcYb7j8XBA9OjD98W7"></i> 死亡空间</button>
         </div>
-        <div class="deathspace-selector-panel" id="deathspace-selector-panel" style="display:none;">
-          <div class="deathspace-intro"><strong>DED 6/10</strong><span id="deathspace-intro-text">进入即消耗1枚通行密钥；失败或主动撤离均不返还。</span></div>
-          <div class="deathspace-tier-tabs" id="deathspace-tier-tabs"></div>
-          <div class="deathspace-grid" id="deathspace-grid"></div>
+        <div class="deathspace-selector-panel" id="deathspace-selector-panel" style="display:none;" data-page-node-id="9wCry66omPLEvDBW5bVsdq">
+          <div class="deathspace-intro" data-page-node-id="lA33N5UNkUs00pw35CYnmR"><strong data-page-node-id="yrxQTbZJmuSZ8RMHzTIbJ3">DED 6/10</strong><span id="deathspace-intro-text" data-page-node-id="ur3CtWAvAotT4P0DOV15zj">进入即消耗1枚通行密钥；失败或主动撤离均不返还。</span></div>
+          <div class="deathspace-tier-tabs" id="deathspace-tier-tabs" data-page-node-id="FDwpcZtLx13eS3k8kcas9v"></div>
+          <div class="deathspace-grid" id="deathspace-grid" data-page-node-id="D7qN8DCd4sdiBXj3zD15qK"></div>
         </div>
-        <div class="combat-header-row">
-          <div class="combat-zone-selector" id="combat-zone-selector">
-            <span class="area-label">星带：</span>
-            <div class="area-dropdown" id="combat-zone-dropdown">
-              <button class="area-dropbtn" id="combat-zone-dropbtn">天使前哨站 ▾</button>
-              <div class="area-dropdown-content" id="combat-zone-dropdown-content"></div>
+        <div class="combat-header-row" data-page-node-id="cqxRyOPS8qSWB7ZTg6anQu">
+          <div class="combat-zone-selector" id="combat-zone-selector" data-page-node-id="4vXCHti5tve6Qzc1RLCi1v">
+            <span class="area-label" data-page-node-id="SlBdMzENIi9arP0zQiKoRu">星带：</span>
+            <div class="area-dropdown" id="combat-zone-dropdown" data-page-node-id="ABIG1nuzeBky0PCBlnP5s4">
+              <button class="area-dropbtn" id="combat-zone-dropbtn" data-page-node-id="jRkfzAGNPbnpdz27FEKcW8">天使前哨站 ▾</button>
+              <div class="area-dropdown-content" id="combat-zone-dropdown-content" data-page-node-id="dO9akB1KTYk7qEnQxBvyvQ"></div>
             </div>
-            <span class="zone-intensity" id="combat-zone-intensity"></span>
+            <span class="zone-intensity" id="combat-zone-intensity" data-page-node-id="5K61JLbx5Y3jIYwcPnEtk8"></span>
           </div>
-          <div class="capital-targeting-control" id="capital-targeting-control" style="display:none;">
-            <label for="capital-targeting-select"><i class="fa-solid fa-crosshairs"></i> 战术索敌</label>
-            <select id="capital-targeting-select" aria-label="旗舰战术索敌模式"></select>
-            <span id="capital-trait-summary" class="capital-trait-summary"></span>
+          <div class="capital-targeting-control" id="capital-targeting-control" style="display:none;" data-page-node-id="GsAr90VyKH2DkXgeqGT2jt">
+            <label for="capital-targeting-select" data-page-node-id="rjuFvOZYwGVgmwgXOKymEJ"><i class="fa-solid fa-crosshairs" data-page-node-id="gsRLtLKfFDb7Yjl5gwIKYK"></i> 战术索敌</label>
+            <select id="capital-targeting-select" aria-label="旗舰战术索敌模式" data-page-node-id="58twfOSQX7cC0faR0mb30x"></select>
+            <span id="capital-trait-summary" class="capital-trait-summary" data-page-node-id="1wJGOsGPTr1EB49NiXkyjp"></span>
           </div>
-          <div class="combat-engagement-group">
-            <span class="combat-wave">第 <span class="cw-num" id="combat-wave-num">1</span>/<span id="combat-wave-max">20</span> 波 · <span id="combat-clear-label">已肃清</span> <span id="combat-clear-count">0</span></span>
-            <button class="btn combat-log-btn" id="btn-combat-log" type="button">📜 战斗日志</button>
-            <div class="combat-queue-control" id="combat-queue-control">
-              <label for="combat-queue-count">战斗次数</label>
-              <input type="number" id="combat-queue-count" class="chain-input" min="1" max="99999" step="1" value="1" />
-              <span class="chain-unit" id="combat-queue-unit">波</span>
+          <div class="combat-engagement-group" data-page-node-id="5KOpYLDU3VyxDRGd23Ovuo">
+            <span class="combat-wave" data-page-node-id="xP5llExo84hRgQ1iZCDsfV">第 <span class="cw-num" id="combat-wave-num" data-page-node-id="VsWZ43nTfaDKIaH0njBqDI">1</span>/<span id="combat-wave-max" data-page-node-id="bVWaQT8VdAseLRi7BuqD8F">20</span> 波 · <span id="combat-clear-label" data-page-node-id="Lwx38f7JepVnzMijnDbuaF">已肃清</span> <span id="combat-clear-count" data-page-node-id="IzC0PV15ojQV8gzQqzCH4t">0</span></span>
+            <button class="btn combat-log-btn" id="btn-combat-log" type="button" data-page-node-id="ATzW7rnYIY2VkCCrqukJFu">📜 战斗日志</button>
+            <div class="combat-queue-control" id="combat-queue-control" data-page-node-id="Kq0sPAmCfbDnVhATWjLbXD">
+              <label for="combat-queue-count" data-page-node-id="hb5jNPlZP50mTbeZapy4ei">战斗次数</label>
+              <input type="number" id="combat-queue-count" class="chain-input" min="1" max="99999" step="1" value="1" data-page-node-id="OltvLEqBCGjU4zlw2XnHBc" />
+              <span class="chain-unit" id="combat-queue-unit" data-page-node-id="U76hVS2j1cNEEGkunEB5g7">波</span>
             </div>
-            <span class="combat-queue-progress" id="combat-queue-progress" style="display:none;"></span>
-            <button class="btn danger combat-engagement-btn" id="btn-stop-combat" style="display:none;">■ 停止战斗</button>
-            <button class="btn primary combat-engagement-btn" id="btn-start-combat">▶ 加入队列</button>
+            <span class="combat-queue-progress" id="combat-queue-progress" style="display:none;" data-page-node-id="7sqrYOQajYHtJU4kbAAVWA"></span>
+            <button class="btn danger combat-engagement-btn" id="btn-stop-combat" style="display:none;" data-page-node-id="49NlMGxURaxDOTvXgdrJf1">■ 停止战斗</button>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat" data-page-node-id="CEa2ftBnV7eES8R8syFxgF">▶ 加入队列</button>
           </div>
-          <div class="deathspace-chain-control" id="deathspace-chain-control" style="display:none;">
-            <span class="chain-label">入场</span>
-            <input type="number" id="deathspace-chain-count" class="chain-input" min="1" max="99" step="1" value="5" />
-            <span class="chain-unit">次</span>
-            <button class="btn primary combat-engagement-btn" id="btn-start-combat-chain">▶ 加入队列</button>
-            <span class="deathspace-chain-status" id="deathspace-chain-status"></span>
+          <div class="deathspace-chain-control" id="deathspace-chain-control" style="display:none;" data-page-node-id="YGSW2vxr6DW1QC3fSzeEQi">
+            <span class="chain-label" data-page-node-id="0eo6X8Qrd8l0KUDbIRKMvB">入场</span>
+            <input type="number" id="deathspace-chain-count" class="chain-input" min="1" max="99" step="1" value="5" data-page-node-id="4RdbdtYMdQiSlv0besMS7S" />
+            <span class="chain-unit" data-page-node-id="3utFDCLWAsT8mkA3NkVnDI">次</span>
+            <button class="btn primary combat-engagement-btn" id="btn-start-combat-chain" data-page-node-id="GiDAEopS4EvtkuYZkVJ5Du">▶ 加入队列</button>
+            <span class="deathspace-chain-status" id="deathspace-chain-status" data-page-node-id="ICizBEQlZ69Ymc2LD4kMxb"></span>
           </div>
         </div>
 
-        <details class="combat-drop-preview" id="combat-drop-preview-wrap" open>
-          <summary>🎁 掉落预览 <span class="drop-preview-zone" id="combat-drop-preview-zone"></span></summary>
-          <div class="combat-drop-preview-body" id="combat-drop-preview"></div>
+        <details class="combat-drop-preview" id="combat-drop-preview-wrap" open data-page-node-id="BCjPjO6xJ82lrTC9M1q1X1">
+          <summary data-page-node-id="uFtFG4214kQjcPlSG2BCBd">🎁 掉落预览 <span class="drop-preview-zone" id="combat-drop-preview-zone" data-page-node-id="fOLH70jSTeTWxLy1p0A39y"></span></summary>
+          <div class="combat-drop-preview-body" id="combat-drop-preview" data-page-node-id="0fdqJFhSQVEktgeRyOhtyd"></div>
         </details>
 
         <!-- 战术战场：左我 右敌，待命时敌方保持扫描占位 -->
-        <div class="combat-arena">
-          <div class="combat-player-side">
+        <div class="combat-arena" data-page-node-id="NxLpDba8uhr2T7vXB2tDCU">
+          <div class="combat-player-side" data-page-node-id="lmD15OpPcwAwg4LIWlnJIk">
             <!-- 军团 NPC 战斗小队（M5）：玩家槽左侧两个 NPC 方块 + 下拉选角 + 实时血条 -->
-            <div class="combat-squad-column" id="combat-squad-section"></div>
-            <div class="combat-player-main">
-              <div class="combat-side-kicker">PILOT VESSEL</div>
-              <div class="combat-side-name" id="combat-player-ship">星矛级</div>
-              <div class="health-bars health-bars-sm" id="combat-player-bars"></div>
-              <div class="combat-side-image" id="combat-player-image">
-                <div class="combat-ship-placeholder"><span>🚀</span></div>
+            <div class="combat-squad-column" id="combat-squad-section" data-page-node-id="hGafc3xWeLgBD3ik2LSAqG"></div>
+            <div class="combat-player-main" data-page-node-id="rSiY3SmtmSNT18tuqsChTA">
+              <div class="combat-side-kicker" data-page-node-id="ltXcXl5yqyFInq9CRGXcXD">PILOT VESSEL</div>
+              <div class="combat-side-name" id="combat-player-ship" data-page-node-id="ndhFpGOyRnCVAWhwrD4Dol">星矛级</div>
+              <div class="health-bars health-bars-sm" id="combat-player-bars" data-page-node-id="Z9Hp2xCKt1u45Fb3UoYXUm"></div>
+              <div class="combat-side-image" id="combat-player-image" data-page-node-id="i1s4NlRR4X3uBMvYSu03sK">
+                <div class="combat-ship-placeholder" data-page-node-id="0GtwyBO7QYB067DTM7d5Kp"><span data-page-node-id="ZnhqG4nLuiFJD0DEFLEiyO">🚀</span></div>
               </div>
-              <div class="combat-side-stats" id="combat-player-stats">武器伤害:— · 航速:—</div>
+              <div class="combat-side-stats" id="combat-player-stats" data-page-node-id="KxGbtHZacotbUI8qAliOvU">武器伤害:— · 航速:—</div>
             </div>
           </div>
 
-          <div class="combat-lock-column">
-            <div class="combat-lock-reticle"><span></span></div>
-            <div class="combat-lock-state" id="combat-lock-state">等待目标</div>
+          <div class="combat-lock-column" data-page-node-id="YailfrNUOWrUQDK8vcGrOw">
+            <div class="combat-lock-reticle" data-page-node-id="vRgqCdAbzVzPG05uG2RUiz"><span data-page-node-id="y6FQABC5XlV9Lfpi14OhUt"></span></div>
+            <div class="combat-lock-state" id="combat-lock-state" data-page-node-id="HMaZLenUFKRSGls0Ny164K">等待目标</div>
           </div>
 
-          <div class="combat-enemy-side" id="combat-enemy-section">
-            <div class="combat-enemy-main">
-              <div class="combat-target-caption" id="combat-target-caption">LOCKED TARGET</div>
-              <div class="combat-side-name cst-enemy" id="combat-enemy-name">—</div>
-              <div class="combat-side-type" id="combat-enemy-type"></div>
-              <div class="health-bars health-bars-sm" id="combat-enemy-bars"></div>
-              <div class="combat-side-image" id="combat-enemy-image">
-                <div class="combat-ship-placeholder"><span>👾</span></div>
+          <div class="combat-enemy-side" id="combat-enemy-section" data-page-node-id="bJAYXA8Y1WFJr4r15G2q4B">
+            <div class="combat-enemy-main" data-page-node-id="ChvXVNQIeybJi16lLjiQs7">
+              <div class="combat-target-caption" id="combat-target-caption" data-page-node-id="RgF301uG2Ata3yFdePABxC">LOCKED TARGET</div>
+              <div class="combat-side-name cst-enemy" id="combat-enemy-name" data-page-node-id="zHoahmRr0wfdJI7gXnC7E2">—</div>
+              <div class="combat-side-type" id="combat-enemy-type" data-page-node-id="HnhVbrXOPcW4kE8oC7sXgF"></div>
+              <div class="health-bars health-bars-sm" id="combat-enemy-bars" data-page-node-id="6nmzfIX1whBqYnfSGrl2nB"></div>
+              <div class="combat-side-image" id="combat-enemy-image" data-page-node-id="dvrK4KQmOKckTqQL3nPpBz">
+                <div class="combat-ship-placeholder" data-page-node-id="M7YRtuHU3wpAqoT9oTa1te"><span data-page-node-id="hBEOU9TlhwX4oWuo0NBGsU">👾</span></div>
               </div>
-              <div class="combat-side-stats" id="combat-enemy-stats">威胁等级:— · 基础伤害:—</div>
+              <div class="combat-side-stats" id="combat-enemy-stats" data-page-node-id="mWoJkVFvJi2V4dpefhiLjC">威胁等级:— · 基础伤害:—</div>
             </div>
-            <div class="combat-enemy-formation-column" id="combat-enemy-formation-column">
-              <div class="combat-side-kicker">HOSTILE FORMATION</div>
-              <div class="combat-enemy-formation" id="combat-enemy-formation"></div>
+            <div class="combat-enemy-formation-column" id="combat-enemy-formation-column" data-page-node-id="HSmMrz7lqwK8iukybkQaY3">
+              <div class="combat-side-kicker" data-page-node-id="4h80wNvXe4z7cXSYyHgBEm">HOSTILE FORMATION</div>
+              <div class="combat-enemy-formation" id="combat-enemy-formation" data-page-node-id="wWANFrJymNkOINAaCuT4ho"></div>
             </div>
           </div>
         </div>
 
-        <details class="combat-supply-panel" id="combat-supply-panel" open>
-          <summary>
-            <span class="csp-title">🎯 战斗补给</span>
-            <span class="csp-brief">
-              <span class="csp-item">⛽<b id="combat-fuel-val">0</b></span>
-              <span class="csp-item">🔫<b id="combat-ammo-laser">0</b></span>
-              <span class="csp-item">🚀<b id="combat-ammo-missile">0</b></span>
-              <span class="csp-item">💣<b id="combat-ammo-cannon">0</b></span>
+        <details class="combat-supply-panel" id="combat-supply-panel" open data-page-node-id="CD9mPyCO9FdfKE5RDSJlfS">
+          <summary data-page-node-id="nFXH9IkFhkBfAqaJYHCXHL">
+            <span class="csp-title" data-page-node-id="i7LEVp8uHgGhdHBQuZYysh">🎯 战斗补给</span>
+            <span class="csp-brief" data-page-node-id="6s0AprdGiBSU2osPz6hLPO">
+              <span class="csp-item" data-page-node-id="IlNlqFYIZD6NKiCY0DhTan">⛽<b id="combat-fuel-val" data-page-node-id="YjSCEpyJcwrYW3ITIvPiSD">0</b></span>
+              <span class="csp-item" data-page-node-id="lL11MPXJm4C50UpIixOtxD">🔫<b id="combat-ammo-laser" data-page-node-id="H8xZBsWxijdadki00CedHm">0</b></span>
+              <span class="csp-item" data-page-node-id="gfL1ATHkEqisY9iQujonQb">🚀<b id="combat-ammo-missile" data-page-node-id="TBYK3PL8axdA9XR6aheH4h">0</b></span>
+              <span class="csp-item" data-page-node-id="B3GsPxE9yeOfjrDsA3wlxT">💣<b id="combat-ammo-cannon" data-page-node-id="YBIAamIEMxfwI18lWIvSOd">0</b></span>
             </span>
           </summary>
-          <div class="csp-body">
-            <div class="combat-skill-row" id="combat-skill-row">
-              <span class="combat-telemetry-label">舰长数据</span>
-              战斗等级 <b id="combat-cl-val">0</b> · 激光 Lv.<span id="combat-laser-lv">1</span> · 炮台 Lv.<span id="combat-cannon-lv">1</span> · 导弹 Lv.<span id="combat-missile-lv">1</span> · 锁定 Lv.<span id="combat-target-lv">1</span>
+          <div class="csp-body" data-page-node-id="xsXsXfHFHDPpZXJXkU7FCf">
+            <div class="combat-skill-row" id="combat-skill-row" data-page-node-id="wPBVG7zzQq4Wa8N6TxGFEl">
+              <span class="combat-telemetry-label" data-page-node-id="QIx1LBGQwr5YyuMTCL0UEq">舰长数据</span>
+              战斗等级 <b id="combat-cl-val" data-page-node-id="ObGQYPsm96jsO9G7H7Gnme">0</b> · 激光 Lv.<span id="combat-laser-lv" data-page-node-id="Y6BGuVmTA5JkmLk4XBOFUs">1</span> · 炮台 Lv.<span id="combat-cannon-lv" data-page-node-id="UGTFQyU0LxPoWKpfLHy0xE">1</span> · 导弹 Lv.<span id="combat-missile-lv" data-page-node-id="97ycqLCPEVSLKrJeh3V3MZ">1</span> · 锁定 Lv.<span id="combat-target-lv" data-page-node-id="bPi1U8291EEy9mWDvdQNMl">1</span>
             </div>
-            <div class="combat-ammo-loadout" id="combat-ammo-loadout"></div>
+            <div class="combat-ammo-loadout" id="combat-ammo-loadout" data-page-node-id="D9w0Yc9J2pxGbmr2H3paNY"></div>
           </div>
         </details>
 
-        <div id="combat-action-booster-slots" class="action-booster-slots" aria-label="战斗增强剂槽位"></div>
+        <div id="combat-action-booster-slots" class="action-booster-slots" aria-label="战斗增强剂槽位" data-page-node-id="vGtJs925FKC3zTr9PsywhQ"></div>
 
         <!-- EVE 风格舰船控制台：左控制、中环带、右装备（可折叠） -->
-        <details class="combat-command-console" id="combat-command-console" open>
-          <summary class="ccc-summary" title="点击折叠/展开控制台">
-            <span class="ccc-title-text">战斗控制台</span>
-            <span class="ccc-summary-ship" id="ccc-ship-name">—</span>
-            <span class="ccc-summary-wave" id="ccc-wave-info">待命</span>
-            <div class="ccc-summary-ring-mini" id="ccc-ring-legend"></div>
+        <details class="combat-command-console" id="combat-command-console" open data-page-node-id="a90CFzflq7ibbIlgC1PKsM">
+          <summary class="ccc-summary" title="点击折叠/展开控制台" data-page-node-id="E0n3xJaG4tMrSkRBpvue3q">
+            <span class="ccc-title-text" data-page-node-id="pyuoUPtnZqhLd1unTFAP1C">战斗控制台</span>
+            <span class="ccc-summary-ship" id="ccc-ship-name" data-page-node-id="TScOUB8TxTw85twGYvkZ1A">—</span>
+            <span class="ccc-summary-wave" id="ccc-wave-info" data-page-node-id="b4nueviigMaPP4AqsT4FrX">待命</span>
+            <div class="ccc-summary-ring-mini" id="ccc-ring-legend" data-page-node-id="lVNkIA649X5R64YiGt8X20"></div>
           </summary>
-          <div class="ccc-body">
-          <div class="ccc-crew-status" id="ccc-crew-status"></div>
+          <div class="ccc-body" data-page-node-id="Yb9TMyBnxYNufIixsejA5O">
+          <div class="ccc-crew-status" id="ccc-crew-status" data-page-node-id="eVitO96Aix6ED0yQUXNX73"></div>
 
           <!-- 舰船实战属性（2026-09-08）：整宽行，默认折叠为四个 chip，展开看分项 -->
-          <details class="ccc-actual-stats" id="ccc-actual-stats">
-            <summary class="cas-summary">
-              <span class="cas-title">舰船实战属性</span>
-              <span class="cas-chips" id="cas-chips"></span>
+          <details class="ccc-actual-stats" id="ccc-actual-stats" data-page-node-id="kiJhyGqQxVzP5nNjgINUmG">
+            <summary class="cas-summary" data-page-node-id="UCEFvdmZROSITgFargORQJ">
+              <span class="cas-title" data-page-node-id="a22xQnLquQl6SA9tYVuJSm">舰船实战属性</span>
+              <span class="cas-chips" id="cas-chips" data-page-node-id="gJCsJ66ghM2x7uNspeO7Ns"></span>
             </summary>
-            <div class="cas-body" id="cas-body"></div>
+            <div class="cas-body" id="cas-body" data-page-node-id="jbVccEZF56VmM8Rc3gmsKD"></div>
           </details>
-          <div class="combat-control-bank">
-            <div class="combat-console-title">已安装武器</div>
-            <div class="combat-weapon-row" id="combat-weapon-row"></div>
-            <div class="combat-console-title repair-title">维修系统</div>
-            <div class="repair-row" id="combat-repair-row"></div>
-            <div class="combat-console-title salvage-title" id="combat-salvage-title" style="display:none;">同位素标记打捞臂</div>
-            <div class="salvage-arm-row" id="combat-salvage-arm-row" style="display:none;"></div>
+          <div class="combat-control-bank" data-page-node-id="cAtk32S1vrDE60PsmfHCvL">
+            <div class="combat-console-title" data-page-node-id="HnshaT3NgrT0Aybc3pUDot">已安装武器</div>
+            <div class="combat-weapon-row" id="combat-weapon-row" data-page-node-id="dE3OdzNS25rbEIljlWC14T"></div>
+            <div class="combat-console-title repair-title" data-page-node-id="QOHaUSANbnhtLPUZyT5Dp8">维修系统</div>
+            <div class="repair-row" id="combat-repair-row" data-page-node-id="WCUpqfQucKsQ2MmeLQJRvb"></div>
+            <div class="combat-console-title salvage-title" id="combat-salvage-title" style="display:none;" data-page-node-id="s9idA4DbArsu7VymN3ENdz">同位素标记打捞臂</div>
+            <div class="salvage-arm-row" id="combat-salvage-arm-row" style="display:none;" data-page-node-id="fPDZzPLqLKCkLBlG0pD4YE"></div>
           </div>
 
-          <div class="combat-ring-module">
-            <svg class="combat-health-ring" viewBox="0 0 180 180" aria-label="舰船环带生命值">
-              <circle class="ring-track" cx="90" cy="90" r="72"></circle>
-              <circle class="ring-value ring-shield" id="combat-ring-shield" cx="90" cy="90" r="72"></circle>
-              <circle class="ring-track" cx="90" cy="90" r="61"></circle>
-              <circle class="ring-value ring-armor" id="combat-ring-armor" cx="90" cy="90" r="61"></circle>
-              <circle class="ring-track" cx="90" cy="90" r="50"></circle>
-              <circle class="ring-value ring-structure" id="combat-ring-structure" cx="90" cy="90" r="50"></circle>
+          <div class="combat-ring-module" data-page-node-id="1i8A8BWBPNSJcBi36iz82N">
+            <svg class="combat-health-ring" viewBox="0 0 180 180" aria-label="舰船环带生命值" data-page-node-id="OHNKROBUbDhi1eDEHqgNEX">
+              <circle class="ring-track" cx="90" cy="90" r="72" data-page-node-id="XgIkXYAQG0riLqNUHZ5zSX"></circle>
+              <circle class="ring-value ring-shield" id="combat-ring-shield" cx="90" cy="90" r="72" data-page-node-id="7jEKzIGTXhsi2mhSLYFaPo"></circle>
+              <circle class="ring-track" cx="90" cy="90" r="61" data-page-node-id="wYb2Z0UeQhTNkAQn7Ykmer"></circle>
+              <circle class="ring-value ring-armor" id="combat-ring-armor" cx="90" cy="90" r="61" data-page-node-id="pCzBjGpg671Pd6Ue53H73b"></circle>
+              <circle class="ring-track" cx="90" cy="90" r="50" data-page-node-id="4K8ygEEhwDs9vdRJc0yeVp"></circle>
+              <circle class="ring-value ring-structure" id="combat-ring-structure" cx="90" cy="90" r="50" data-page-node-id="8FDOjxrbsPtYBhotSlMhDp"></circle>
             </svg>
-            <div class="combat-ring-core">
-              <span class="ring-ship-icon">◈</span>
-              <strong id="combat-ring-ship">星矛级</strong>
-              <span id="combat-ring-wave">待命</span>
+            <div class="combat-ring-core" data-page-node-id="q2k13oSkAtmA1rgMc8tMGc">
+              <span class="ring-ship-icon" data-page-node-id="ifA9O1PytnJlE2d0buwWBM">◈</span>
+              <strong id="combat-ring-ship" data-page-node-id="qYV1NDr4ydJ0kms0ffTz4M">星矛级</strong>
+              <span id="combat-ring-wave" data-page-node-id="NuKcKszciAZ9hTe8GtVHRA">待命</span>
             </div>
-            <div class="combat-ring-legend" id="combat-ring-legend"></div>
+            <div class="combat-ring-legend" id="combat-ring-legend" data-page-node-id="6P1iUcFaDMyL9KlSjoWYUf"></div>
           </div>
 
-          <div class="combat-equipment-rack">
-            <div class="combat-console-title">当前舰船装备</div>
-            <div class="combat-equipment-grid" id="combat-equipment-grid"></div>
+          <div class="combat-equipment-rack" data-page-node-id="6Sv7QOUMuVHD1g6LaJQAqa">
+            <div class="combat-console-title" data-page-node-id="WCAygXrXIHkRceSY9CWW7S">当前舰船装备</div>
+            <div class="combat-equipment-grid" id="combat-equipment-grid" data-page-node-id="Lwr4gWQcVQs72z5dh7wCbh"></div>
           </div>
           </div><!-- /.ccc-body -->
         </details>
 
-        <div class="combat-rewards" id="combat-rewards" style="display:none;"></div>
-        <div id="combat-fx-layer" style="position:absolute;inset:0;pointer-events:none;z-index:10;"></div>
+        <div class="combat-rewards" id="combat-rewards" style="display:none;" data-page-node-id="3RfCeRyhtJbjNXSbWRxMdE"></div>
+        <div id="combat-fx-layer" style="position:absolute;inset:0;pointer-events:none;z-index:10;" data-page-node-id="WSzLZ2pYwm7zFrRQiv4bF2"></div>
       </div>
     </div>
 
     <!-- 考古面板 -->
-    <div class="panel archaeology-panel" id="archaeology-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">🛰️ 考古行动</span>
-        <span class="text-muted" id="archaeology-header-status">待命</span>
-        <span class="me-logistics" id="archaeology-logistics"></span>
+    <div class="panel archaeology-panel" id="archaeology-panel" style="display:none;" data-page-node-id="n7pFeGIP8xaxrH9BVzWwHQ">
+      <div class="panel-header" data-page-node-id="IgGgYbogLQ0LoVw4WoNVIz">
+        <span class="panel-title" data-page-node-id="praGofOaDzdRXwKdV24iB5">🛰️ 考古行动</span>
+        <span class="text-muted" id="archaeology-header-status" data-page-node-id="CQs7yQX2JqhH2kHY8JWWbt">待命</span>
+        <span class="me-logistics" id="archaeology-logistics" data-page-node-id="115RXK2sDsrCPzFHY52jbZ"></span>
       </div>
-      <div class="panel-body" id="archaeology-body"></div>
+      <div class="panel-body" id="archaeology-body" data-page-node-id="dtp78EvZHWsUEAD6FOAAn7"></div>
     </div>
 
     <!-- 船坞面板 -->
-    <div class="panel hangar-panel" id="hangar-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">🚢 船坞</span>
-        <span id="hangar-header-info" class="text-muted">已拥有 0 艘舰船</span>
+    <div class="panel hangar-panel" id="hangar-panel" style="display:none;" data-page-node-id="hawzOoBv6WSEsVvE0iA1n4">
+      <div class="panel-header" data-page-node-id="B6lHK9YUBo1ee9OKSeb4U2">
+        <span class="panel-title" data-page-node-id="zGkeP2XxVbWzGCDrG2mCK6">🚢 船坞</span>
+        <span id="hangar-header-info" class="text-muted" data-page-node-id="WTvUPcvSWNAarpxkawFHsq">已拥有 0 艘舰船</span>
       </div>
-      <div class="hangar-tabs" id="hangar-tabs"></div>
-      <div class="panel-body">
-        <div class="hangar-ship-grid" id="hangar-ship-grid"></div>
-        <div class="hangar-empty" id="hangar-empty">船坞空空如也，制造舰船后在此装备</div>
+      <div class="hangar-tabs" id="hangar-tabs" data-page-node-id="FOmnWwX0T0Kve2owO4wx1u"></div>
+      <div class="panel-body" data-page-node-id="3vV9TctKD9fAXgTi6y93qV">
+        <div class="hangar-ship-grid" id="hangar-ship-grid" data-page-node-id="BWlWUznDfcEVkciAU23xoO"></div>
+        <div class="hangar-empty" id="hangar-empty" data-page-node-id="8IPgksBucAlSUbXulWt3nj">船坞空空如也，制造舰船后在此装备</div>
       </div>
     </div>
 
     <!-- 蓝图商店面板 -->
-    <div class="panel blueprintstore-panel" id="blueprintstore-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">🛒 商店</span>
-        <span class="text-muted" id="blueprintstore-balance">可用星币（SC）：0 · 功勋（MR）：0</span>
+    <div class="panel blueprintstore-panel" id="blueprintstore-panel" style="display:none;" data-page-node-id="GxJmGMc3BgO2refuP0pkAd">
+      <div class="panel-header" data-page-node-id="2wzCvdHtotH1LwfqyOPXD6">
+        <span class="panel-title" data-page-node-id="sgruK5yviEAO1xpjbjtekT">🛒 商店</span>
+        <span class="text-muted" id="blueprintstore-balance" data-page-node-id="M1ElBsnPktsN5LCypu43jq">可用星币（SC）：0 · 功勋（MR）：0</span>
       </div>
-      <div class="panel-body">
-        <div style="display:flex;gap:8px;margin-bottom:10px">
-          <button type="button" class="btn secondary bpshop-tab active" data-bpshop-tab="blueprint">蓝图</button>
-          <button type="button" class="btn secondary bpshop-tab" data-bpshop-tab="wormhole" id="bpshop-tab-wormhole">虫洞商店</button>
+      <div class="panel-body" data-page-node-id="jDUNoYzzmCcTAPungrq7Ei">
+        <div style="display:flex;gap:8px;margin-bottom:10px" data-page-node-id="98WIH3AqCZ2GYnCrFjL4j8">
+          <button type="button" class="btn secondary bpshop-tab active" data-bpshop-tab="blueprint" data-page-node-id="hbQElexzCSmMYZxhpJBtkC">蓝图</button>
+          <button type="button" class="btn secondary bpshop-tab" data-bpshop-tab="wormhole" id="bpshop-tab-wormhole" data-page-node-id="vEXQHQcg58A96KDvEa2QjC">虫洞商店</button>
         </div>
-        <div id="bpshop-page-blueprint">
-          <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
-          <div class="blueprintstore-tabs" id="blueprintstore-tabs"></div>
-          <div class="lpstore-grid" id="blueprintstore-grid"></div>
+        <div id="bpshop-page-blueprint" data-page-node-id="52SFwNLWNBv5nZUF5WMeQC">
+          <div class="lpstore-intro" data-page-node-id="w4oBnaVKByszgoNKv0Yd6R">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
+          <div class="blueprintstore-tabs" id="blueprintstore-tabs" data-page-node-id="B0Ak6tBdhHTyVU2CVKQQtX"></div>
+          <div class="lpstore-grid" id="blueprintstore-grid" data-page-node-id="GRe2XeZFLM1iUN8uir2HzE"></div>
         </div>
-        <div id="bpshop-page-wormhole" style="display:none;">
-          <div class="text-muted" id="bpshop-wh-balance" style="margin-bottom:8px"></div>
-          <div id="bpshop-wh-content"></div>
+        <div id="bpshop-page-wormhole" style="display:none;" data-page-node-id="uhSi4cXTIPLZRxBp6ZLxGa">
+          <div class="text-muted" id="bpshop-wh-balance" style="margin-bottom:8px" data-page-node-id="fBMlYQuEmicCMyc4Qg9Dqk"></div>
+          <div id="bpshop-wh-content" data-page-node-id="UCNwArc8cksSqFOiOPipUh"></div>
         </div>
       </div>
     </div>
 
     <!-- 空间站面板 -->
-    <div class="panel station-panel" id="station-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">🏢 空间站管理</span>
-        <span id="station-status" class="text-muted"></span>
+    <div class="panel station-panel" id="station-panel" style="display:none;" data-page-node-id="iUCeQtIG9ttqVyrFHLU3HP">
+      <div class="panel-header" data-page-node-id="KUoWefFmpfYvHr1MDLYfCT">
+        <span class="panel-title" data-page-node-id="GrciTbUk7N1PNZRHt5geN5">🏢 空间站管理</span>
+        <span id="station-status" class="text-muted" data-page-node-id="4nlANYpiJOZUTX6rro6nMD"></span>
       </div>
-      <div class="panel-body">
+      <div class="panel-body" data-page-node-id="o2EyEOXXbSrdYvdhkFGg5B">
         <!-- A + B 合并：空间站总览（可折叠） -->
-        <details class="station-ops-panel" id="station-ops-panel" open>
-          <summary>
-            <span class="sop-title">🏗️ 空间站总览</span>
-            <div class="sop-brief">
-              <span class="sop-tag" id="station-ops-status">运行中</span>
-              <span class="sop-brief-item" id="station-ops-build"></span>
-              <span class="sop-sep">|</span>
-              <span class="sop-brief-item">⛽<b id="station-ops-fuel">0</b></span>
+        <details class="station-ops-panel" id="station-ops-panel" open data-page-node-id="nfGgz6TilRDAY2bbGV8QzI">
+          <summary data-page-node-id="7WH9M4VOzvLIb2m90a48uv">
+            <span class="sop-title" data-page-node-id="SHiJmpjlgNYOtEwQAxasUC">🏗️ 空间站总览</span>
+            <div class="sop-brief" data-page-node-id="rm9prGMMSQWS6Gca7eXy4X">
+              <span class="sop-tag" id="station-ops-status" data-page-node-id="m74KPCMqWBHuqFxHlRV8dP">运行中</span>
+              <span class="sop-brief-item" id="station-ops-build" data-page-node-id="3H5Z0rUhpxrWZkBvJ0HiPU"></span>
+              <span class="sop-sep" data-page-node-id="SYclvGK7lNyvQCsxcs6POB">|</span>
+              <span class="sop-brief-item" data-page-node-id="oOUiYFoRFp3KSd3un1DSEt">⛽<b id="station-ops-fuel" data-page-node-id="6vGGKsQ2piXZBratWUTGqd">0</b></span>
             </div>
           </summary>
-          <div class="sop-body">
+          <div class="sop-body" data-page-node-id="vybJlP22EIKqNhdCatXEuZ">
           <!-- A. 总览 -->
-          <div class="station-section">
-            <div class="station-overview">
-              <span id="station-body-name">未建立</span>
-              <span id="station-body-level">Lv.0</span>
-              <span id="station-logistics-summary"></span>
+          <div class="station-section" data-page-node-id="Bufls8xUW2pr0ilEqO5XCw">
+            <div class="station-overview" data-page-node-id="gfUoNoW45JzRxuoyiwkxSK">
+              <span id="station-body-name" data-page-node-id="mPC1eNhiEW4O3H5978q6mE">未建立</span>
+              <span id="station-body-level" data-page-node-id="zxrUhL5odTYlaeDjh5ESq0">Lv.0</span>
+              <span id="station-logistics-summary" data-page-node-id="MoFH2iB94V3YJbkUFidhMr"></span>
             </div>
-            <div class="station-explain">
-              <b>这是你的永久基地。</b>升级本体可解锁更高的附属建筑等级，并提升「综合后勤」全局产出倍率；
-              本体需持续消耗<b>维护燃料</b>才能维持全部产出——断油后本体与七座建筑停效（舰船船坞例外）。
+            <div class="station-explain" data-page-node-id="c6Brz8kG6F6TQJOpoh04IM">
+              <b data-page-node-id="AFzyx7fvVmBsA3CScbw8nP">这是你的永久基地。</b>升级本体可解锁更高的附属建筑等级，并提升「综合后勤」全局产出倍率；
+              本体需持续消耗<b data-page-node-id="nbbc8JBvAvqgs7oUuAkOpp">维护燃料</b>才能维持全部产出——断油后本体与七座建筑停效（舰船船坞例外）。
             </div>
-            <div class="station-construction">
-              <div class="progress-bar"><div class="fill" id="station-construction-fill" style="width:0%"></div></div>
-              <span id="station-construction-text">就绪</span>
-              <div id="station-upgrade-cost" class="station-cost-rows"></div>
-              <div id="station-upgrade-note" class="station-upgrade-note"></div>
-              <button class="btn primary" id="btn-station-upgrade-body">升级</button>
+            <div class="station-construction" data-page-node-id="1Hi1jZKQtVILchiBxQW5Zz">
+              <div class="progress-bar" data-page-node-id="yuhuef00FK33OixaY8wCmz"><div class="fill" id="station-construction-fill" style="width:0%" data-page-node-id="vADYp0eujC38hT4UPjPqFI"></div></div>
+              <span id="station-construction-text" data-page-node-id="otznboVsSRx6Eu4aHX8qdl">就绪</span>
+              <div id="station-upgrade-cost" class="station-cost-rows" data-page-node-id="G3z5Uss3vo8L7DkLpCF4Yf"></div>
+              <div id="station-upgrade-note" class="station-upgrade-note" data-page-node-id="yzGAuxPa4TbxqDW5FOUgcD"></div>
+              <button class="btn primary" id="btn-station-upgrade-body" data-page-node-id="hlKJlfuEummH2ots5J3Bd1">升级</button>
             </div>
           </div>
           <!-- B. 维护 -->
-          <div class="station-section">
-            <h3>维护燃料</h3>
-            <div>维护点数：<span id="station-maintenance-points">0</span></div>
-            <div>燃料：<span id="station-fuel-remaining">0</span></div>
-            <div>预计剩余：<span id="station-fuel-remaining-ms">-</span></div>
-            <div class="station-explain">维护点数 = <b>本体等级 + 附属建筑等级之和</b>（舰船船坞、军团议事大厅不计入）。每点每周消耗 <b>1500 维护燃料</b>，按真实时间持续燃烧，燃料耗尽后本体与七座建筑全部停效（舰船船坞例外）。可在「仓库 › 消耗品 › 燃料单元」查看与制造燃料。</div>
-            <div class="station-fuel-rules">
-              <b>一键补给规则：</b>
-              <ul>
-                <li>仅当剩余燃料 <b>不足 24 小时</b>时开放补给（按钮置灰即表示燃料还够用，不是坏了）；</li>
-                <li>补给会一次性补到「刚好够烧一周」= 维护点数 × 1500；</li>
-                <li>所需燃料从<b>仓库的燃料单元</b>扣除，仓库不足则补不进去。</li>
+          <div class="station-section" data-page-node-id="WrE4DZXiqQWRkqTPg4ncXZ">
+            <h3 data-page-node-id="CmMobrVm9tGDD6Hd17EbM6">维护燃料</h3>
+            <div data-page-node-id="IiO8EhEni4YFbfMTu94FAP">维护点数：<span id="station-maintenance-points" data-page-node-id="oGerY9zYUCklmcwn1yOF9H">0</span></div>
+            <div data-page-node-id="xGtUCxfJV28bJ4Bw15IB8y">燃料：<span id="station-fuel-remaining" data-page-node-id="qT3IZBiZhzGjKblHL7Hv9g">0</span></div>
+            <div data-page-node-id="z4ovLzs3PwLFX1k1QhkU0a">预计剩余：<span id="station-fuel-remaining-ms" data-page-node-id="haqtVLbpESmEVtd9ylyoi0">-</span></div>
+            <div class="station-explain" data-page-node-id="DMZFyCYUBMA4bENn96KiXv">维护点数 = <b data-page-node-id="sFU5341NcpFe3EdgzlbCjY">本体等级 + 附属建筑等级之和</b>（舰船船坞、军团议事大厅不计入）。每点每周消耗 <b data-page-node-id="gsQyHGYjqx11WexfQlm71y">1500 维护燃料</b>，按真实时间持续燃烧，燃料耗尽后本体与七座建筑全部停效（舰船船坞例外）。可在「仓库 › 消耗品 › 燃料单元」查看与制造燃料。</div>
+            <div class="station-fuel-rules" data-page-node-id="9C8pmFSfM9ih5Fedq5Oqn5">
+              <b data-page-node-id="mOZED4VIn2TkLU0db1K11p">一键补给规则：</b>
+              <ul data-page-node-id="AtlHbBd46PFDGHJpKdJgZH">
+                <li data-page-node-id="041Bsukd3cXFRRKGw3XWVK">仅当剩余燃料 <b data-page-node-id="78E9oCYU6ocO7Km5jeG9AF">不足 24 小时</b>时开放补给（按钮置灰即表示燃料还够用，不是坏了）；</li>
+                <li data-page-node-id="I7EYS6iXxFETwAAHf7BD8q">补给会一次性补到「刚好够烧一周」= 维护点数 × 1500；</li>
+                <li data-page-node-id="zmDy4wU2PIjOwxeZfLEQDB">所需燃料从<b data-page-node-id="XHpTgz4TZNrOH0bcMlHSHR">仓库的燃料单元</b>扣除，仓库不足则补不进去。</li>
               </ul>
             </div>
-            <div class="station-refill-info" id="station-refill-info"></div>
-            <button class="btn primary" id="btn-station-refill">一键补给</button>
-            <div class="station-fuel-notes">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
+            <div class="station-refill-info" id="station-refill-info" data-page-node-id="D692UPSJOe4A0TriQKvlYl"></div>
+            <button class="btn primary" id="btn-station-refill" data-page-node-id="JhT2cfJz3Hi3DUKJs2ca2W">一键补给</button>
+            <div class="station-fuel-notes" data-page-node-id="UmdV8fgNxjeTcQAH6LKrw4">断油后本体与七座建筑停效。舰船船坞断油仍生效。</div>
           </div>
           </div><!-- /.sop-body -->
         </details>
         <!-- C. 建筑 -->
-        <details class="station-ops-panel" id="station-buildings-panel" open>
-          <summary>
-            <span class="sop-title">🏗 附属建筑</span>
+        <details class="station-ops-panel" id="station-buildings-panel" open data-page-node-id="5Qmm6hCUZR7uelDiVUKrOk">
+          <summary data-page-node-id="Yzz4kNBhBF1cBw5RCkjMM9">
+            <span class="sop-title" data-page-node-id="PAqovNFA87CJwpKgNTTsQI">🏗 附属建筑</span>
           </summary>
-          <div class="sop-body">
-            <div id="station-buildings-grid" class="station-buildings-grid"></div>
+          <div class="sop-body" data-page-node-id="bIRodlqEskg5HzCmnTSPeW">
+            <div id="station-buildings-grid" class="station-buildings-grid" data-page-node-id="vxi4AyIvD6qB0T5Jq42zMQ"></div>
           </div>
         </details>
         <!-- D. 自动线 -->
-        <details class="station-ops-panel" id="station-auto-lines-panel" open>
-          <summary>
-            <span class="sop-title">⚙ 自动生产线</span>
+        <details class="station-ops-panel" id="station-auto-lines-panel" open data-page-node-id="UKskqMlPmZFI7ufnguCnUE">
+          <summary data-page-node-id="qWkhyEL9XWZ2DoQQWZmBdm">
+            <span class="sop-title" data-page-node-id="609jG5hvp76mZpVR36rESO">⚙ 自动生产线</span>
           </summary>
-          <div class="sop-body">
-            <div class="station-explain">由对应建筑（冶炼精炼厂 / 装备制造厂 / 增强剂制造厂）提供倍率加成，可无人值守持续生产。选择产物后启动，按「建筑 × 后勤 × 综合」倍率加速产出。</div>
-            <div id="station-auto-lines"></div>
+          <div class="sop-body" data-page-node-id="GEPgt0Egi2jHalSiyXEJsc">
+            <div class="station-explain" data-page-node-id="xqNRL70c1zKcrvtVj51bXZ">由对应建筑（冶炼精炼厂 / 装备制造厂 / 增强剂制造厂）提供倍率加成，可无人值守持续生产。选择产物后启动，按「建筑 × 后勤 × 综合」倍率加速产出。</div>
+            <div id="station-auto-lines" data-page-node-id="VQ7R1HFOYyUEqQZXRUxuMY"></div>
           </div>
         </details>
         <!-- E. 效果 -->
-        <div class="station-section">
-          <h3>当前效果</h3>
-          <div id="station-effects-list"></div>
-          <div id="station-cores-list" class="station-cores"></div>
+        <div class="station-section" data-page-node-id="tygMCp9FPRyevf0s51EyaG">
+          <h3 data-page-node-id="RgkPEAg8YioUEKqCvWkk2n">当前效果</h3>
+          <div id="station-effects-list" data-page-node-id="embC8wUvVegEuQFj7sXYT4"></div>
+          <div id="station-cores-list" class="station-cores" data-page-node-id="TPcndMBcE3H82yEQm8Yxsw"></div>
         </div>
         <!-- F. 军团入口：始终渲染，由 LegionRender.renderLegionEntry 决定激活/锁定态；
              激活（本体≥Lv.2 且大厅已建）后点击进入军团页。此前 #legion-entry 元素缺失导致
              本体 Lv.2 建完大厅后系统已激活却无处进入（侧栏标签要 Lv.3），此卡为原设计补落地。 -->
-        <div class="station-section">
-          <div id="legion-entry" class="legion-entry"></div>
+        <div class="station-section" data-page-node-id="UqbHs06wsE6E83iMtkWhJY">
+          <div id="legion-entry" class="legion-entry" data-page-node-id="HonWcca7Fzm0IKOEON3ZIb"></div>
         </div>
       </div>
     </div>
 
     <!-- 军团面板（独立页：本体 Lv.2 且已建军团议事大厅后，侧边栏即显示入口；点击军团大厅入口卡也可进入） -->
-    <div class="panel legion-panel" id="legion-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">🛡️ 军团</span>
-        <span id="legion-panel-status" class="text-muted"></span>
+    <div class="panel legion-panel" id="legion-panel" style="display:none;" data-page-node-id="RJkDAReLcx0N7x1N6bVlgW">
+      <div class="panel-header" data-page-node-id="Aq76HkTF6IaVYFY81dEe29">
+        <span class="panel-title" data-page-node-id="sTJO3LgYEiGuMYvZM8AgY6">🛡️ 军团</span>
+        <span id="legion-panel-status" class="text-muted" data-page-node-id="aR1jPjA3DXHTQ3hPFqjU3v"></span>
       </div>
-      <div class="panel-body">
-        <div class="station-section" id="legion-section" style="display:none;">
-          <h3>军团大厅 <span id="legion-status-tag" class="text-muted"></span></h3>
-          <div id="legion-hall" class="legion-hall"></div>
-          <div id="legion-summary" class="legion-summary"></div>
-          <div id="legion-contribution" class="legion-contribution"></div>
-          <div class="legion-columns">
-            <div class="legion-col">
-              <h4><i class="fa-solid fa-user-plus" style="color:#7ab0d8"></i> 招募候选人
-                <button id="btn-legion-refresh" class="btn-mini" type="button">手动刷新</button>
-                <span id="legion-refresh-info" class="text-muted"></span>
+      <div class="panel-body" data-page-node-id="1c2ltEOw6dnRBOay4EBmuD">
+        <div class="station-section" id="legion-section" style="display:none;" data-page-node-id="JwiMEo7ogIPR4eZ0eUQHMC">
+          <h3 data-page-node-id="jmHnatKN2mXPgtWCHZVPhF">军团大厅 <span id="legion-status-tag" class="text-muted" data-page-node-id="dhA2zkLLaBfwXhLO98paPN"></span></h3>
+          <div id="legion-hall" class="legion-hall" data-page-node-id="dGBaNHPp9EXuqxjG1xEMZP"></div>
+          <div id="legion-summary" class="legion-summary" data-page-node-id="4hXmM6lleAZfR49Tbu5CT5"></div>
+          <div id="legion-contribution" class="legion-contribution" data-page-node-id="xv6LTQ3vVO41bbgVhL4BjF"></div>
+          <div class="legion-columns" data-page-node-id="XeLvuuTpGKXPrBzoYfHDJt">
+            <div class="legion-col" data-page-node-id="Tiu7leRY6ydLnBrZTRqzuQ">
+              <h4 data-page-node-id="pLdzOMXNln1dDmZFEHR9it"><i class="fa-solid fa-user-plus" style="color:#7ab0d8" data-page-node-id="KJQ2DpIbWz3hiLBXl8LKFn"></i> 招募候选人
+                <button id="btn-legion-refresh" class="btn-mini" type="button" data-page-node-id="0kXlK3tqgiB97RaR24Te9E">手动刷新</button>
+                <span id="legion-refresh-info" class="text-muted" data-page-node-id="4TZlVg8mGJd4Fu0tg03BOG"></span>
               </h4>
-              <div id="legion-candidates" class="legion-candidates"></div>
+              <div id="legion-candidates" class="legion-candidates" data-page-node-id="lpQs3a4W89a1Zs8XKkIDWJ"></div>
             </div>
-            <div class="legion-col">
-              <h4><i class="fa-solid fa-id-badge" style="color:#7ab0d8"></i> 已招募 NPC
-                <button id="btn-legion-xp-rule" class="btn-mini" type="button" style="margin-left:8px;">经验获取规则</button>
+            <div class="legion-col" data-page-node-id="0ltNJJRzyqrDVHiiRsut9R">
+              <h4 data-page-node-id="5MLeO6KKka6q7mcXbxXKok"><i class="fa-solid fa-id-badge" style="color:#7ab0d8" data-page-node-id="USPYjgeIBNGHH8ap8kEu6F"></i> 已招募 NPC
+                <button id="btn-legion-xp-rule" class="btn-mini" type="button" style="margin-left:8px;" data-page-node-id="OFFp9EiTTy3O3syYiOKkAJ">经验获取规则</button>
               </h4>
-              <div id="legion-npc-tabs" class="legion-npc-tabs"></div>
-              <div id="legion-npcs" class="legion-npcs"></div>
+              <div id="legion-npc-tabs" class="legion-npc-tabs" data-page-node-id="tQE97vOPYoSIQCeYA9Lr9e"></div>
+              <div id="legion-npcs" class="legion-npcs" data-page-node-id="K4RqsFpq4O4VDk3SdEPUYP"></div>
             </div>
           </div>
-          <div id="legion-msg" class="legion-msg"></div>
+          <div id="legion-msg" class="legion-msg" data-page-node-id="NLC1LBMRIRKrDn9CJsg61C"></div>
         </div>
       </div>
     </div>
 
-    <div class="panel starmap-panel" id="starmap-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title"><i class="fa-solid fa-star"></i> 星图</span>
-        <span class="text-muted">军团远征网络</span>
-        <button type="button" class="btn secondary" id="starmap-wormhole-return" style="display:none;margin-left:auto;" title="查看正在进行的虫洞远征">返回远征</button>
-        <button type="button" class="btn secondary" id="starmap-wormhole-entry" style="display:none;margin-left:auto;" title="星图主线通关后开启">
-          <i class="fa-solid fa-circle-notch"></i> 虫洞裂隙
+    <div class="panel starmap-panel" id="starmap-panel" style="display:none;" data-page-node-id="vyWSiTb7onhuUdvAt2I1af">
+      <div class="panel-header" data-page-node-id="s9d9FvMgTLbGsB87JQOBxt">
+        <span class="panel-title" data-page-node-id="m7AKPYGOR75PboMPaUkE3h"><i class="fa-solid fa-star" data-page-node-id="kjv9Eir64L6TK3mVEzEyq7"></i> 星图</span>
+        <span class="text-muted" data-page-node-id="dmC8bZqeaKplSk4ENsCQ5i">军团远征网络</span>
+        <button type="button" class="btn secondary" id="starmap-wormhole-return" style="display:none;margin-left:auto;" title="查看正在进行的虫洞远征" data-page-node-id="F1sqylWwCK598ieBqGE5BG">返回远征</button>
+        <button type="button" class="btn secondary" id="starmap-wormhole-entry" style="display:none;margin-left:auto;" title="星图主线通关后开启" data-page-node-id="QgOP3zH4Gr3RdyQGnfnHAO">
+          <i class="fa-solid fa-circle-notch" data-page-node-id="QxHNijMo9DtyVSGBCzCsUy"></i> 虫洞裂隙
         </button>
       </div>
-      <div class="panel-body" style="padding:0;">
-        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=47" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;"></iframe>
-        <section id="legion-starmap-trial-room" class="starmap-trial-room" hidden>
-          <div class="starmap-trial-room-head"><div><h3 id="starmap-trial-title">星图试炼房间</h3><p id="starmap-trial-subtitle"></p></div><button type="button" class="btn secondary" id="starmap-trial-back">返回星图</button></div>
-          <div class="starmap-trial-countdown" id="starmap-trial-countdown">剩余时间：180s</div>
-          <div id="starmap-battle-arena-slot" class="starmap-battle-arena-slot" hidden></div>
-          <div id="starmap-collection-room" class="starmap-collection-room" hidden>
-            <div class="starmap-collection-stage">
-              <div class="starmap-collection-ship"><canvas id="starmap-trial-ship-3d" class="ship3d-canvas" aria-label="Industrial ship"></canvas><span id="starmap-trial-ship-label" class="starmap-collection-label"></span></div>
-              <div id="starmap-trial-beams" class="starmap-collection-beams" aria-hidden="true"></div>
-              <div id="starmap-trial-resource-card" class="mining-target-card selected starmap-resource-card"></div>
+      <div class="panel-body" style="padding:0;" data-page-node-id="ciEA7Cy87ArTvZNiMbnmIj">
+        <iframe id="legion-starmap-frame" title="军团星图" src="./legion-starmap-pure.html?v=48" loading="lazy" style="display:block;width:100%;min-height:760px;border:0;background:#020711;" data-page-node-id="ya3d4pGsGJehCN9sZ6EBAG"></iframe>
+        <section id="legion-starmap-trial-room" class="starmap-trial-room" hidden data-page-node-id="by9z5AaDvo1mTP5H6ZlagK">
+          <div class="starmap-trial-room-head" data-page-node-id="ystbdHfZCBFTiQxRGcsXZE"><div data-page-node-id="Y7xIq9aboyqFxA0AOiWnMz"><h3 id="starmap-trial-title" data-page-node-id="jmip7nsBPBpRbfxSP0ORwr">星图试炼房间</h3><p id="starmap-trial-subtitle" data-page-node-id="AAuF483IwyCUZnaYEyjaVw"></p></div><button type="button" class="btn secondary" id="starmap-trial-back" data-page-node-id="n5DpotgQ8Vc6wLGVlsKFDK">返回星图</button></div>
+          <div class="starmap-trial-countdown" id="starmap-trial-countdown" data-page-node-id="veEb0ha2cOBzbwQr0kvV09">剩余时间：180s</div>
+          <div id="starmap-battle-arena-slot" class="starmap-battle-arena-slot" hidden data-page-node-id="Ig8poEtKV84ABroiOxSJqj"></div>
+          <div id="starmap-collection-room" class="starmap-collection-room" hidden data-page-node-id="2VYRmai8aj8mfqjeauaZ5z">
+            <div class="starmap-collection-stage" data-page-node-id="qGTrvCMi0Fgei0JKkXEyyQ">
+              <div class="starmap-collection-ship" data-page-node-id="0mgaYFt1q94XkHbhZFXHqv"><canvas id="starmap-trial-ship-3d" class="ship3d-canvas" aria-label="Industrial ship" data-page-node-id="8I9nV5Ln2WhSmlc2HqZBbm"></canvas><span id="starmap-trial-ship-label" class="starmap-collection-label" data-page-node-id="YzQFE72nzZZOCtA9MTVJwu"></span></div>
+              <div id="starmap-trial-beams" class="starmap-collection-beams" aria-hidden="true" data-page-node-id="Hx6cdNdKmGtU5bfMR1Cpke"></div>
+              <div id="starmap-trial-resource-card" class="mining-target-card selected starmap-resource-card" data-page-node-id="YUeFjcVIA9YK0Nwekf0Oh1"></div>
             </div>
-            <div class="starmap-collection-counter"><strong id="starmap-trial-remaining">100 / 100</strong><span id="starmap-trial-counter-label">待采集</span><span id="starmap-trial-efficiency" class="starmap-trial-efficiency">采集效率：—</span></div>
-            <div class="starmap-collection-progress"><canvas id="starmap-trial-mining-bar" class="skill-canvas-bar" width="560" height="24"></canvas><span id="starmap-trial-mining-eta" class="mp-eta"></span></div>
+            <div class="starmap-collection-counter" data-page-node-id="RiTaIScjcVmEMlJAf2XJ6X"><strong id="starmap-trial-remaining" data-page-node-id="pokpD04MGwXyxISxzITVZS">100 / 100</strong><span id="starmap-trial-counter-label" data-page-node-id="EMLVYAqS2E2jswD7sLmfJH">待采集</span><span id="starmap-trial-efficiency" class="starmap-trial-efficiency" data-page-node-id="RJETAgReY8rshfcy0csIJT">采集效率：—</span></div>
+            <div class="starmap-collection-progress" data-page-node-id="D26PzybfsUGyyYnmQdlDq0"><canvas id="starmap-trial-mining-bar" class="skill-canvas-bar" width="560" height="24" data-page-node-id="QvBfSLuWyexWLs8hnFi3kB"></canvas><span id="starmap-trial-mining-eta" class="mp-eta" data-page-node-id="9f843LoKPEJug5BHaEoqxE"></span></div>
           </div>
-          <div id="starmap-production-room" class="starmap-production-room" hidden>
-            <div class="starmap-production-kicker"><i class="fa-solid fa-fire-flame-curved"></i><span>生产节点认证</span></div>
-            <h4 id="starmap-production-heading">冶炼物资交付</h4>
-            <p class="starmap-production-intro">从真实仓库提交指定生产成品。库存充足时一次性交付并立即完成节点试炼。</p>
-            <div id="starmap-production-requirements" class="starmap-production-requirements"></div>
-            <button type="button" class="btn primary starmap-production-submit" id="starmap-production-submit">提交物资并完成试炼</button>
-            <div id="starmap-production-reward" class="starmap-production-reward">
-              <div class="starmap-production-reward-head"><span><i class="fa-solid fa-clock-rotate-left"></i> 节点驻留奖励</span><strong id="starmap-production-reward-daily">—</strong></div>
-              <div id="starmap-production-reward-current" class="starmap-production-reward-current">完成节点后开始累计，奖励需要手动收取。</div>
-              <div class="text-muted">采集、生产、考古的驻留奖励统一在星图侧栏“星图驻留奖励总览”中提取。</div>
+          <div id="starmap-production-room" class="starmap-production-room" hidden data-page-node-id="vYIt1aOB14ozlsVNuy5ezI">
+            <div class="starmap-production-kicker" data-page-node-id="A35DEx8cqFrIybyZEHA1Fk"><i class="fa-solid fa-fire-flame-curved" data-page-node-id="yTVO9oomNMlSqKu6oqhrQz"></i><span data-page-node-id="nUFH6psH1SvyDDzyXWIGCK">生产节点认证</span></div>
+            <h4 id="starmap-production-heading" data-page-node-id="NkfmwzkeB6I4u9X6pxrqeF">冶炼物资交付</h4>
+            <p class="starmap-production-intro" data-page-node-id="6WwS51iKFv6iGT9UNEPNDG">从真实仓库提交指定生产成品。库存充足时一次性交付并立即完成节点试炼。</p>
+            <div id="starmap-production-requirements" class="starmap-production-requirements" data-page-node-id="h0bOp7naXIbfxdwrNot2js"></div>
+            <button type="button" class="btn primary starmap-production-submit" id="starmap-production-submit" data-page-node-id="mZImc9ekWoOIK6hg43jLWi">提交物资并完成试炼</button>
+            <div id="starmap-production-reward" class="starmap-production-reward" data-page-node-id="F4UJF4ki4sxSEaq4FBBaYg">
+              <div class="starmap-production-reward-head" data-page-node-id="cuuFMkoDZDatKHJv9I15Qt"><span data-page-node-id="Ftxb5w3StudkixWZLmDMBl"><i class="fa-solid fa-clock-rotate-left" data-page-node-id="Xw0VSELrJdY3F59KbC9VFa"></i> 节点驻留奖励</span><strong id="starmap-production-reward-daily" data-page-node-id="n0TinMIsh6CurgJhr8KrnX">—</strong></div>
+              <div id="starmap-production-reward-current" class="starmap-production-reward-current" data-page-node-id="55db8p0H4UE77xhfdKnQhx">完成节点后开始累计，奖励需要手动收取。</div>
+              <div class="text-muted" data-page-node-id="WPlcjcqNP4a0NAPNIY8ok1">采集、生产、考古的驻留奖励统一在星图侧栏“星图驻留奖励总览”中提取。</div>
             </div>
           </div>
-          <div id="starmap-archaeology-room" class="starmap-archaeology-room" hidden>
-            <div class="starmap-archaeology-stage">
-              <div class="starmap-archaeology-ship-card">
-                <canvas id="starmap-archaeology-ship-3d" class="ship3d-canvas" aria-label="Archaeology ship"></canvas>
-                <span id="starmap-archaeology-ship-label" class="starmap-archaeology-ship-label">未指派考古舰</span>
-                <div class="starmap-archaeology-hp" id="starmap-archaeology-hp"></div>
+          <div id="starmap-archaeology-room" class="starmap-archaeology-room" hidden data-page-node-id="9eHoWyJIHTLMLlaN4AqAGd">
+            <div class="starmap-archaeology-stage" data-page-node-id="3jnnbvWdQscwCEENWyALKf">
+              <div class="starmap-archaeology-ship-card" data-page-node-id="DPcC13JH4sVGj2KPgrHlnB">
+                <canvas id="starmap-archaeology-ship-3d" class="ship3d-canvas" aria-label="Archaeology ship" data-page-node-id="d1QvZdAGvOn5FNjA92QBfA"></canvas>
+                <span id="starmap-archaeology-ship-label" class="starmap-archaeology-ship-label" data-page-node-id="cNpyZJdkuFb9gqqsCFwrbv">未指派考古舰</span>
+                <div class="starmap-archaeology-hp" id="starmap-archaeology-hp" data-page-node-id="kb4PwGJGgR8qaVJzByiqXF"></div>
               </div>
-              <div class="starmap-archaeology-console">
-                <div class="starmap-scan-visual" id="starmap-scan-visual"><i></i><i></i><i></i><span><i class="fa-solid fa-satellite-dish"></i></span></div>
-                <div class="starmap-archaeology-progress-copy"><strong id="starmap-archaeology-progress-value">0 / 14</strong><span id="starmap-archaeology-status">等待扫描</span></div>
-                <div class="starmap-archaeology-progress-track"><div id="starmap-archaeology-progress-fill"></div></div>
-                <div class="starmap-archaeology-cycle-copy"><span>本次扫描</span><strong id="starmap-archaeology-cycle-progress-text">等待开始</strong></div>
-                <div class="starmap-archaeology-cycle-track"><div id="starmap-archaeology-cycle-progress-fill"></div></div>
-                <div class="starmap-archaeology-stats">
-                  <div><span>扫描强度</span><strong id="starmap-archaeology-scan">—</strong></div>
-                  <div><span>成功率</span><strong id="starmap-archaeology-chance">—</strong></div>
-                  <div><span>扫描周期</span><strong id="starmap-archaeology-cycle">—</strong></div>
-                  <div><label for="starmap-archaeology-probe">选择探针</label><select id="starmap-archaeology-probe" aria-label="选择探针"></select></div>
+              <div class="starmap-archaeology-console" data-page-node-id="ACarLAj5XjoLBQcGW8z8Wg">
+                <div class="starmap-scan-visual" id="starmap-scan-visual" data-page-node-id="y8eEvWLosOFxNI4xe9Nuom"><i data-page-node-id="9oDAF6vnsZqHDb7aibMy69"></i><i data-page-node-id="5ZevDaQcWsLbOviWtpGmFi"></i><i data-page-node-id="qu8csIL7an8j7tq58ehLik"></i><span data-page-node-id="WfJoemBi9mmg9OsTC9v5QL"><i class="fa-solid fa-satellite-dish" data-page-node-id="zvLchMnx51gPub51MY5xKj"></i></span></div>
+                <div class="starmap-archaeology-progress-copy" data-page-node-id="bVClize8gwMkuja1INy6cN"><strong id="starmap-archaeology-progress-value" data-page-node-id="ccP0NqPqCA1YcAkHXh47E8">0 / 14</strong><span id="starmap-archaeology-status" data-page-node-id="rngGI2Jn850bNooen2PhkV">等待扫描</span></div>
+                <div class="starmap-archaeology-progress-track" data-page-node-id="v4r4QjXG2Y2f8Yy4KzwMGK"><div id="starmap-archaeology-progress-fill" data-page-node-id="kSQTY1Q0UiGEXSo4O1Pqim"></div></div>
+                <div class="starmap-archaeology-cycle-copy" data-page-node-id="ZNu2F3hYRsNnlaqQKEuySx"><span data-page-node-id="2yB5hn8duJS7YKF4MfzXkm">本次扫描</span><strong id="starmap-archaeology-cycle-progress-text" data-page-node-id="dPuidA79jZe20tzMsOdSom">等待开始</strong></div>
+                <div class="starmap-archaeology-cycle-track" data-page-node-id="gW9htTGFWfvKVr311JygAJ"><div id="starmap-archaeology-cycle-progress-fill" data-page-node-id="HmH4BFHDNqsSTEdinHk0cZ"></div></div>
+                <div class="starmap-archaeology-stats" data-page-node-id="Ax797iCV8g7VLJ4Z0RYqmE">
+                  <div data-page-node-id="9T4QNP08i45b6SZT7A3Agv"><span data-page-node-id="I4ex5L3pCFnYRwKCOKJW26">扫描强度</span><strong id="starmap-archaeology-scan" data-page-node-id="SXYgxEHQ44Ggx3XD552Pwt">—</strong></div>
+                  <div data-page-node-id="yHTzFnHGYkP2qLQtbEbSqI"><span data-page-node-id="8UI5tYQpuvkHujcwcn7Dqm">成功率</span><strong id="starmap-archaeology-chance" data-page-node-id="4jAGRkXCE2QXtopGWjrrHm">—</strong></div>
+                  <div data-page-node-id="ZsHCbLhAhYFPYah23CswEJ"><span data-page-node-id="DXy3osiKA05ne6MtRmgdcU">扫描周期</span><strong id="starmap-archaeology-cycle" data-page-node-id="bjtTSN5jtEz6LV2CZ3KtXf">—</strong></div>
+                  <div data-page-node-id="1qPg8gd5tJi7cL1zq0rIXc"><label for="starmap-archaeology-probe" data-page-node-id="Pz1OSfSCpvOGnu9tTl6qhq">选择探针</label><select id="starmap-archaeology-probe" aria-label="选择探针" data-page-node-id="UOdHY98xiDW0KdGc0pAjqE"></select></div>
                 </div>
               </div>
             </div>
-            <div id="starmap-archaeology-log" class="starmap-archaeology-log"><span>扫描记录将在试炼开始后显示。</span></div>
+            <div id="starmap-archaeology-log" class="starmap-archaeology-log" data-page-node-id="j45F5qGP5vEqyKYd3FVXZ4"><span data-page-node-id="f8JeRCJWiSkU3uBKcw5mSm">扫描记录将在试炼开始后显示。</span></div>
           </div>
-          <div class="starmap-trial-room-actions"><button type="button" class="btn primary" id="starmap-trial-start">开始试炼</button><button type="button" class="btn danger" id="starmap-trial-stop" hidden>停止试炼</button><label class="starmap-trial-replay-toggle"><input type="checkbox" id="starmap-trial-replay-toggle"> 测试：允许重复挑战</label></div>
-          <div id="starmap-trial-result" class="text-muted"></div>
+          <div class="starmap-trial-room-actions" data-page-node-id="SSmOr5TZTzGRvkH8N8fFDH"><button type="button" class="btn primary" id="starmap-trial-start" data-page-node-id="xoFzHtBJTrWIG4vuDNAgWR">开始试炼</button><button type="button" class="btn danger" id="starmap-trial-stop" hidden data-page-node-id="zKjk5tsWhnNpLdulaTTMke">停止试炼</button><label class="starmap-trial-replay-toggle" data-page-node-id="R8JsijE8Qo07jWG9iTYnu0"><input type="checkbox" id="starmap-trial-replay-toggle" data-page-node-id="I49oh4j25avDjPlBksseEN"> 测试：允许重复挑战</label></div>
+          <div id="starmap-trial-result" class="text-muted" data-page-node-id="L6dFgy5hVRBaFoTFK6KEWD"></div>
         </section>
       </div>
     </div>
 
     <!-- 仓库面板 -->
-    <div class="panel wormhole-panel" id="wormhole-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title"><i class="fa-solid fa-circle-notch"></i> 虫洞</span>
-        <span class="text-muted" id="wh-token-balance"></span>
+    <div class="panel wormhole-panel" id="wormhole-panel" style="display:none;" data-page-node-id="Ms1RBSQ9iwgvhGESLGSC9K">
+      <div class="panel-header" data-page-node-id="Pgr90FZhDbfbAxEmFG4AQn">
+        <span class="panel-title" data-page-node-id="9tvmpMUTCNbGrCiVIdVY0K"><i class="fa-solid fa-circle-notch" data-page-node-id="B5jByEBiD49rxHVtyNYxqe"></i> 虫洞</span>
+        <span class="text-muted" id="wh-token-balance" data-page-node-id="NGDscvLktEguBaNWEtJHJS"></span>
       </div>
-      <div class="panel-body">
-        <div style="display:flex;gap:8px;margin-bottom:12px">
-          <button type="button" class="btn secondary wh-tab active" data-wh-tab="runs">虫洞</button>
-          <button type="button" class="btn secondary wh-tab" data-wh-tab="shop">印记商店</button>
+      <div class="panel-body" data-page-node-id="8SL6Z1EfdTmIK3jhhifxjZ">
+        <div style="display:flex;gap:8px;margin-bottom:12px" data-page-node-id="qc1CD1yCFE9vhFl6F9dCy1">
+          <button type="button" class="btn secondary wh-tab active" data-wh-tab="runs" data-page-node-id="dDu0oHni7z5h0r0RU4DZTp">虫洞</button>
+          <button type="button" class="btn secondary wh-tab" data-wh-tab="shop" data-page-node-id="VdQqmgRfa1gD2QMjoDXoaC">印记商店</button>
         </div>
-        <div id="wh-page-runs">
-          <div id="wh-map-wrap" style="display:none;margin-bottom:12px">
-            <canvas id="wh-map" width="1000" height="700" style="width:100%;height:auto;border-radius:10px;background:#050a12"></canvas>
-            <div style="color:#6f88a6;font-size:11.5px;margin-top:5px">未制压 = 黑　·　已制压 = 白　·　跳过 = 暗红　·　当前节点 = 琥珀（外圈为进度）</div>
+        <div id="wh-page-runs" data-page-node-id="D4icA4CyA1osBXXJ3TzhV0">
+          <div id="wh-map-wrap" style="display:none;margin-bottom:12px" data-page-node-id="PEYeCsD9ZCxN3nOfwrw1gy">
+            <canvas id="wh-map" width="1000" height="700" style="width:100%;height:auto;border-radius:10px;background:#050a12" data-page-node-id="VSewImXeFGo1zwCCrd7229"></canvas>
+            <div style="color:#6f88a6;font-size:11.5px;margin-top:5px" data-page-node-id="bwARIBvEFjZyG0rZ5Pl6YP">未制压 = 黑　·　已制压 = 白　·　跳过 = 暗红　·　当前节点 = 琥珀（外圈为进度）</div>
           </div>
-          <div id="wh-run-card"></div>
-          <div id="wh-manual-hint" style="display:none;margin-bottom:8px;padding:8px 12px;border:1px solid #7fd8c066;border-radius:8px;background:#0c1a18;color:#7fd8c0;font-size:12px"></div>
-          <section id="wormhole-node-room" class="starmap-trial-room" hidden>
-            <div class="starmap-trial-room-head">
-              <div><h3 id="wormhole-room-title">节点试炼房间</h3><p id="wormhole-room-subtitle"></p></div>
-              <button type="button" class="btn secondary" id="wormhole-room-back">关闭房间</button>
+          <div id="wh-run-card" data-page-node-id="ZwcHqbBdS0Brksy9erEspr"></div>
+          <div id="wh-manual-hint" style="display:none;margin-bottom:8px;padding:8px 12px;border:1px solid #7fd8c066;border-radius:8px;background:#0c1a18;color:#7fd8c0;font-size:12px" data-page-node-id="NbnzAvHIYaOz6qzB8G9nk5"></div>
+          <section id="wormhole-node-room" class="starmap-trial-room" hidden data-page-node-id="EMg0AZ6i0HHubOtkPBt1MD">
+            <div class="starmap-trial-room-head" data-page-node-id="eGasPnuN5i0ZB2iebtbC1O">
+              <div data-page-node-id="5rmz2eXnveT60vYgARBwAH"><h3 id="wormhole-room-title" data-page-node-id="SnIpsQBZAZCrHrREty808O">节点试炼房间</h3><p id="wormhole-room-subtitle" data-page-node-id="mCyVnC5QbEHIzCc6DzUnji"></p></div>
+              <button type="button" class="btn secondary" id="wormhole-room-back" data-page-node-id="nCypYzoGGMYlc5wsnZEOeX">关闭房间</button>
             </div>
-            <div class="starmap-trial-countdown" id="wormhole-room-countdown">—</div>
-            <div id="wormhole-room-body"></div>
-            <div class="starmap-trial-room-actions"><button type="button" class="btn primary" id="wormhole-room-action" data-wh-goto="" disabled>开始试炼</button></div>
-            <div id="wormhole-room-result" class="text-muted"></div>
+            <div class="starmap-trial-countdown" id="wormhole-room-countdown" data-page-node-id="PCl8iEjVNDdpmsAqoqxeyv">—</div>
+            <div id="wormhole-room-body" data-page-node-id="LkLAw4b1QRhaRMn16HCyAA"></div>
+            <div class="starmap-trial-room-actions" data-page-node-id="fS8WUlroihA6cbmKA4v20X"><button type="button" class="btn primary" id="wormhole-room-action" data-wh-goto="" disabled data-page-node-id="GuKwPzxvRAhbFBZTGzi0Nz">开始试炼</button></div>
+            <div id="wormhole-room-result" class="text-muted" data-page-node-id="t0jlV4RqcfHxkbZXGX2c2C"></div>
           </section>
-          <div id="wh-dailies"></div>
-          <div id="wh-history"></div>
+          <div id="wh-dailies" data-page-node-id="OOuFHqaQBdKedEfnMBgYNS"></div>
+          <div id="wh-history" data-page-node-id="yarFifvgcj4YaoHLvRty94"></div>
         </div>
-        <div id="wh-page-shop" style="display:none;">
-          <div id="wh-shop"></div>
+        <div id="wh-page-shop" style="display:none;" data-page-node-id="QLcsG3FKJp4liFXPjnWSb8">
+          <div id="wh-shop" data-page-node-id="CmXU2WMgTKU5G4hpBMPA3h"></div>
         </div>
       </div>
     </div>
-    <div class="panel alliance-panel" id="alliance-panel" style="display:none;">
-      <div class="panel-header"><span class="panel-title"><i class="fa-solid fa-people-group"></i> 联盟大厅</span><span><button class="btn secondary" id="btn-open-cloud-test">打开云端联盟</button> <button class="btn secondary" id="btn-alliance-diagnose">网络诊断</button> <span id="alliance-msg" class="text-muted">未连接</span></span></div>
-      <div class="panel-body"><div id="alliance-content"></div></div>
+    <div class="panel alliance-panel" id="alliance-panel" style="display:none;" data-page-node-id="tuAMzCRgJcPIciJXPjgQHm">
+      <div class="panel-header" data-page-node-id="bAsJGKathIqGE2A2cbMDEp"><span class="panel-title" data-page-node-id="QI5Uh2sIGfL2vlgOZUFns8"><i class="fa-solid fa-people-group" data-page-node-id="jSsB1pBIxhWTXtzkMDSeGJ"></i> 联盟大厅</span><span data-page-node-id="r6mdM13GRkGDBW5UCcz2MQ"><button class="btn secondary" id="btn-open-cloud-test" data-page-node-id="uArYN3c0vzWdJDW5tJVux3">打开云端联盟</button> <button class="btn secondary" id="btn-alliance-diagnose" data-page-node-id="zTuoHjNwcoCA4C9tD3NjzP">网络诊断</button> <span id="alliance-msg" class="text-muted" data-page-node-id="qTuSUucKrfMiCX3sML2Oh0">未连接</span></span></div>
+      <div class="panel-body" data-page-node-id="EyJmer5QwZeErvy0H9Aetb"><div id="alliance-content" data-page-node-id="5fg6PUyQRpCYQOLHjYIVrg"></div></div>
     </div>
-    <div class="alliance-cloud-modal" id="alliance-cloud-modal" aria-hidden="true">
-      <div class="alliance-cloud-dialog" role="dialog" aria-label="云端联盟">
-        <div class="alliance-cloud-toolbar"><span>云端联盟</span><button class="btn secondary" id="btn-close-cloud-alliance">关闭</button></div>
-        <iframe id="alliance-cloud-frame" title="云端联盟页面" loading="lazy"></iframe>
+    <div class="alliance-cloud-modal" id="alliance-cloud-modal" aria-hidden="true" data-page-node-id="xfdpLyC8vZwOXHoG20PVV1">
+      <div class="alliance-cloud-dialog" role="dialog" aria-label="云端联盟" data-page-node-id="2vkQM5tqXNqcwQfWK6PI9N">
+        <div class="alliance-cloud-toolbar" data-page-node-id="vHnpsLTJrBSVzuDUVnE8xY"><span data-page-node-id="EEJ81rfDaDeuFZ9fpQSYTf">云端联盟</span><button class="btn secondary" id="btn-close-cloud-alliance" data-page-node-id="ZzGnABmxIdkwTckCSwVFTJ">关闭</button></div>
+        <iframe id="alliance-cloud-frame" title="云端联盟页面" loading="lazy" data-page-node-id="us1DaKnnxgPUVHStlXk0dT"></iframe>
       </div>
     </div>
 
-    <div class="panel cargo-panel" id="cargo-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">📦 仓库</span>
-        <span id="cargo-capacity-text">物资总量计算中...</span>
+    <div class="panel cargo-panel" id="cargo-panel" style="display:none;" data-page-node-id="Ezu0RhG0xWN2jL4ovV1evA">
+      <div class="panel-header" data-page-node-id="wuhMFyFmHPc8FslbFiXmcL">
+        <span class="panel-title" data-page-node-id="dSqKdmXjk5OCqkmSA78NNE">📦 仓库</span>
+        <span id="cargo-capacity-text" data-page-node-id="T5d71v7xbQvW9oQ6FWlG5S">物资总量计算中...</span>
       </div>
-      <div class="panel-body">
-        <div class="cargo-tabs" id="cargo-tabs">
-          <span class="cargo-tab active" data-filter="all">全部</span>
-          <span class="cargo-tab" data-filter="ore">矿石</span>
-          <span class="cargo-tab" data-filter="mineral">矿物</span>
-          <span class="cargo-tab" data-filter="planetary">行星产物</span>
-          <span class="cargo-tab" data-filter="gases">气体</span>
-          <span class="cargo-tab" data-filter="moon">月矿</span>
-          <span class="cargo-tab" data-filter="special">特殊物资</span>
-          <span class="cargo-tab" data-filter="consumable">消耗品</span>
-          <span class="cargo-tab" data-filter="equipment">舰船装备</span>
-          <span class="cargo-tab" data-filter="component">舰船组件</span>
-          <span class="cargo-tab" data-filter="implant">脑插</span>
-          <span class="cargo-tab" data-filter="trade">交易品</span>
+      <div class="panel-body" data-page-node-id="j5Q4L89JwqRFg4KdkFFthL">
+        <div class="cargo-tabs" id="cargo-tabs" data-page-node-id="EX4MjaY5QVCk1thW17rUtx">
+          <span class="cargo-tab active" data-filter="all" data-page-node-id="EaZ2PRP6qzc3YabWu20fXk">全部</span>
+          <span class="cargo-tab" data-filter="ore" data-page-node-id="uahQIAL22toDjWhyo8WFCV">矿石</span>
+          <span class="cargo-tab" data-filter="mineral" data-page-node-id="DlCocP8V7Kiv5gTP6Lr0iL">矿物</span>
+          <span class="cargo-tab" data-filter="planetary" data-page-node-id="bfk4VMZevPH4cm40ESZVid">行星产物</span>
+          <span class="cargo-tab" data-filter="gases" data-page-node-id="U37mtKtOxXjNHH3tJgBY3V">气体</span>
+          <span class="cargo-tab" data-filter="moon" data-page-node-id="eplJNiMH4XDK7Y0ipyGc2q">月矿</span>
+          <span class="cargo-tab" data-filter="special" data-page-node-id="7QBL45zggP59PgEtA7FQ5y">特殊物资</span>
+          <span class="cargo-tab" data-filter="consumable" data-page-node-id="XwWEQr6pTTbnsOr1GrU67J">消耗品</span>
+          <span class="cargo-tab" data-filter="equipment" data-page-node-id="dg51b7QB93GpKqiamxr7R3">舰船装备</span>
+          <span class="cargo-tab" data-filter="component" data-page-node-id="BmKSFCCtBaAvwUlmoLsr38">舰船组件</span>
+          <span class="cargo-tab" data-filter="implant" data-page-node-id="c98fMawPfY0QIPNtjMsdDD">脑插</span>
+          <span class="cargo-tab" data-filter="trade" data-page-node-id="oy3XisBnR4fin6mW2sJDNy">交易品</span>
         </div>
-        <div class="cargo-subtabs" id="cargo-subtabs" style="display:none;"></div>
-        <div class="cargo-list" id="cargo-list">    </div>
-        <div class="equipment-enhancement-list" id="equipment-enhancement-list" style="display:none;"></div>
+        <div class="cargo-subtabs" id="cargo-subtabs" style="display:none;" data-page-node-id="H6U8ykr6Pn28AgIVaR2Ylc"></div>
+        <div class="cargo-list" id="cargo-list" data-page-node-id="XKjDNEnCCLvijfTnbNbcti">    </div>
+        <div class="equipment-enhancement-list" id="equipment-enhancement-list" style="display:none;" data-page-node-id="whs6RbGQvCHYAATSusqizT"></div>
   </div>
 </div>
 
     <!-- 存档管理面板 -->
-    <div class="panel save-panel" id="save-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title">💾 存档管理</span>
-        <span id="save-status" class="text-muted">就绪</span>
+    <div class="panel save-panel" id="save-panel" style="display:none;" data-page-node-id="fP3lGbtyA4rjdlVDoiZEsY">
+      <div class="panel-header" data-page-node-id="VrehZn532MlsD5UJrFB0pd">
+        <span class="panel-title" data-page-node-id="HHaa013hVsY1aoZOoTArRE">💾 存档管理</span>
+        <span id="save-status" class="text-muted" data-page-node-id="MU7pKqRJ99wxplvEHTFx5J">就绪</span>
       </div>
-      <div class="panel-body">
-        <div class="save-actions">
-          <button class="btn" id="btn-save-game">💾 保存游戏</button>
-          <button class="btn" id="btn-export-save">📥 导出存档</button>
-          <button class="btn" id="btn-import-save">📤 导入存档</button>
-          <button class="btn btn-danger" id="btn-delete-save" title="清空并删除本地存档（不可恢复）">🗑 删除存档</button>
-    <input type="file" id="import-file-input" accept=".json" style="display:none;">
-    <button class="btn" id="btn-copy-save-code">📋 复制进度码</button>
-    <button class="btn" id="btn-paste-save-code">📎 粘贴进度码</button>
-    <button class="btn btn-warn" id="btn-rescue-raw-save">🆘 抢救原始存档</button>
+      <div class="panel-body" data-page-node-id="7EcBtLRHtkkm5hgCqO6pVh">
+        <div class="save-actions" data-page-node-id="LmQMrZo7dV8wqGjaA7sypM">
+          <button class="btn" id="btn-save-game" data-page-node-id="INRx7xBN6H8HSG5F6nKnib">💾 保存游戏</button>
+          <button class="btn" id="btn-export-save" data-page-node-id="c0dri8pLBzNswrz7xRX9Rz">📥 导出存档</button>
+          <button class="btn" id="btn-import-save" data-page-node-id="GVmH71cXtUmcLOn7tjIcZC">📤 导入存档</button>
+          <button class="btn btn-danger" id="btn-delete-save" title="清空并删除本地存档（不可恢复）" data-page-node-id="N0GXCxnW4bB4DUBp7kfNM1">🗑 删除存档</button>
+    <input type="file" id="import-file-input" accept=".json" style="display:none;" data-page-node-id="FSQBtcjWvsO1iMjwvk5QYv">
+    <button class="btn" id="btn-copy-save-code" data-page-node-id="itkID4Gmuz0Xgfk768a15h">📋 复制进度码</button>
+    <button class="btn" id="btn-paste-save-code" data-page-node-id="uJHIRDl4zdjGjlQ42gpqPE">📎 粘贴进度码</button>
+    <button class="btn btn-warn" id="btn-rescue-raw-save" data-page-node-id="9MgQNpDoj1r3rTT2caLRbB">🆘 抢救原始存档</button>
         </div>
-        <div class="save-info" id="save-info" style="margin-top:12px;font-size:12px;color:#6a7a8e;"></div>
+        <div class="save-info" id="save-info" style="margin-top:12px;font-size:12px;color:#6a7a8e;" data-page-node-id="m2eHPbUa5o9nUUurGARazY"></div>
         <!-- P1-3：云存档管理（状态 / 时间戳 / 同步操作 / 删除） -->
-        <div class="cloud-save-mgmt" id="cloud-save-mgmt" style="margin-top:14px;border-top:1px solid #243044;padding-top:12px;">
-          <div class="cloud-sync-row" style="font-size:12px;color:#8aa0b6;line-height:1.9;">
-            <div>云同步状态：<span id="cloud-sync-status" class="text-muted">未初始化</span> <span id="cloud-sync-failed-flag" style="color:#ff6b6b;display:none;">（同步失败）</span></div>
-            <div>本地存档时间：<span id="local-save-time" class="text-muted">—</span></div>
-            <div>设备备份状态：<span id="device-backup-status" class="text-muted">未初始化</span></div>
-            <div>设备备份时间：<span id="device-backup-time" class="text-muted">—</span></div>
-            <div>云端存档时间：<span id="cloud-save-time" class="text-muted">—</span></div>
-            <div>最近同步时间：<span id="last-sync-time" class="text-muted">—</span></div>
+        <div class="cloud-save-mgmt" id="cloud-save-mgmt" style="margin-top:14px;border-top:1px solid #243044;padding-top:12px;" data-page-node-id="KnLfvOuKhcwnhOss6VGXwB">
+          <div class="cloud-sync-row" style="font-size:12px;color:#8aa0b6;line-height:1.9;" data-page-node-id="4W5uux84rr5qjN4URwUTLm">
+            <div data-page-node-id="zYf9nuSQ68tsgC5E4ZHw2n">云同步状态：<span id="cloud-sync-status" class="text-muted" data-page-node-id="4BJOOL2XfwyZ13em6iJZO1">未初始化</span> <span id="cloud-sync-failed-flag" style="color:#ff6b6b;display:none;" data-page-node-id="X9p4lEfTeJIg2xQygrWz6X">（同步失败）</span></div>
+            <div data-page-node-id="6X4DTmVq9ErHueyuCrUJ3v">本地存档时间：<span id="local-save-time" class="text-muted" data-page-node-id="8VAwKtD2NhHjBhKqgHa114">—</span></div>
+            <div data-page-node-id="m5kxFPQwY58HEQwf7oUmmB">设备备份状态：<span id="device-backup-status" class="text-muted" data-page-node-id="ycO93B6gvbOGIZcwaW8N56">未初始化</span></div>
+            <div data-page-node-id="FJzVnbRDPiMk84FaAmNNhR">设备备份时间：<span id="device-backup-time" class="text-muted" data-page-node-id="viELHBltmnSdJ2YpPsSppp">—</span></div>
+            <div data-page-node-id="qBILJHTBUKqdRvjkOWhhNs">云端存档时间：<span id="cloud-save-time" class="text-muted" data-page-node-id="UYClGQyJChgVFnNvhjz6zD">—</span></div>
+            <div data-page-node-id="6SCkHkxu0gRPIzqCsdC9rW">最近同步时间：<span id="last-sync-time" class="text-muted" data-page-node-id="ZMbFZe2mbRmqY28YTBauPT">—</span></div>
           </div>
-          <div class="cloud-sync-actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;">
-            <button class="btn" id="btn-sync-now">☁ 立即同步</button>
-            <button class="btn" id="btn-backup-device">💾 立即设备备份</button>
-            <button class="btn" id="btn-check-cloud">🔍 检查云端</button>
-            <button class="btn" id="btn-cloud-diag" title="导出可复制的存档/云同步诊断报告（无需控制台，遇到进度异常时请复制发回）">🩺 云存档诊断</button>
-            <button class="btn btn-danger" id="btn-delete-local" title="删除 localStorage 与设备备份，保留云端">🗑 仅删本地</button>
-            <button class="btn btn-danger" id="btn-permanent-delete" title="永久删除：先删云端再删本地（不可恢复）">⚠ 永久删除</button>
+          <div class="cloud-sync-actions" style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap;" data-page-node-id="TlAzHgDKFfH4UvfRbHa445">
+            <button class="btn" id="btn-sync-now" data-page-node-id="Vi2RiWJBHwJquB2DZGYgJ4">☁ 立即同步</button>
+            <button class="btn" id="btn-backup-device" data-page-node-id="YWiZHjAzigrZxGT0SatV66">💾 立即设备备份</button>
+            <button class="btn" id="btn-check-cloud" data-page-node-id="zWCNgD96qvOploxiCrzqz7">🔍 检查云端</button>
+            <button class="btn" id="btn-cloud-diag" title="导出可复制的存档/云同步诊断报告（无需控制台，遇到进度异常时请复制发回）" data-page-node-id="lgxrjmlCiAawzSVsZA4KRg">🩺 云存档诊断</button>
+            <button class="btn btn-danger" id="btn-delete-local" title="删除 localStorage 与设备备份，保留云端" data-page-node-id="c7NwkqRYJknQO6TzVSDqCg">🗑 仅删本地</button>
+            <button class="btn btn-danger" id="btn-permanent-delete" title="永久删除：先删云端再删本地（不可恢复）" data-page-node-id="a4lYgAcNF1R8dGqZTazwHw">⚠ 永久删除</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- ===== 设置面板 ===== -->
-    <div class="panel settings-panel" id="settings-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title"><i class="fa-solid fa-wrench"></i> 设置</span>
-        <span id="setting-enhancement-status" class="text-muted">已开启</span>
+    <div class="panel settings-panel" id="settings-panel" style="display:none;" data-page-node-id="YfjblfnE5SPcdlyBo6HBiT">
+      <div class="panel-header" data-page-node-id="8HBtjlTCwtMXbUYR1tilAy">
+        <span class="panel-title" data-page-node-id="k6pIgHin7TFfr4t1NsdWJy"><i class="fa-solid fa-wrench" data-page-node-id="bMoyEBreU2aBMQMEiAgSEi"></i> 设置</span>
+        <span id="setting-enhancement-status" class="text-muted" data-page-node-id="kBgLaRTkD83m9U5NBx9Bnw">已开启</span>
       </div>
-      <div class="panel-body">
-        <div class="settings-section">
-          <div class="settings-section-title">语言 / Language</div>
-          <label class="setting-row" for="setting-language">
-            <span class="setting-copy"><strong>界面语言</strong><small>默认跟随系统语言（Steam 版跟随客户端语言）；手动选择后将固定使用所选语言。</small></span>
-            <select id="setting-language" class="setting-select" aria-label="Interface language">
-              <option value="zh-CN">简体中文</option>
-              <option value="zh-TW">繁體中文</option>
-              <option value="en-US">English</option>
+      <div class="panel-body" data-page-node-id="c1ES40D14EQuB3XlE1WHFx">
+        <div class="settings-section" data-page-node-id="Ve37qKHGyZxkwnl9XmSKQN">
+          <div class="settings-section-title" data-page-node-id="jadIgs8yFn7fripZ0ldPJb">语言 / Language</div>
+          <label class="setting-row" for="setting-language" data-page-node-id="jEqbc2BwrlBqKOb7n8DNsR">
+            <span class="setting-copy" data-page-node-id="InTlFvAdTNwKwWydn3WKUH"><strong data-page-node-id="hBBktQia2uklvko1rs4GYy">界面语言</strong><small data-page-node-id="qH87QEIYQsBYBr6GypcEVH">默认跟随系统语言（Steam 版跟随客户端语言）；手动选择后将固定使用所选语言。</small></span>
+            <select id="setting-language" class="setting-select" aria-label="Interface language" data-page-node-id="kDnHYkj9KeAUlFioGLsEcB">
+              <option value="zh-CN" data-page-node-id="QUCSlp8TDduQVBqC513HH7">简体中文</option>
+              <option value="zh-TW" data-page-node-id="TnaMxmovyXq6EL2vpFp7t5">繁體中文</option>
+              <option value="en-US" data-page-node-id="MbBwfaDdkKkpPxbTlcGNCl">English</option>
             </select>
           </label>
-          <div class="settings-section-title">操作确认</div>
-          <label class="setting-row" for="setting-enhancement-confirm">
-            <span class="setting-copy"><strong>强化操作确认提示</strong><small>开启时，执行舰船或装备强化前显示成功率、失败规则与材料消耗；关闭后点击强化将直接执行。</small></span>
-            <span class="setting-switch"><input type="checkbox" id="setting-enhancement-confirm" checked><span class="setting-switch-track"></span></span>
+          <div class="settings-section-title" data-page-node-id="6kFbC0oXeYTJP9p80JxQ4D">操作确认</div>
+          <label class="setting-row" for="setting-enhancement-confirm" data-page-node-id="D0ILTnE6mLcjX9BxyfPJra">
+            <span class="setting-copy" data-page-node-id="H2VMWz7Yy4uCfr9ZQYJ69y"><strong data-page-node-id="G5uPjFXFMMv9RNEvQ0EqT5">强化操作确认提示</strong><small data-page-node-id="07csbWOkmV8XJZ4o4Ecy90">开启时，执行舰船或装备强化前显示成功率、失败规则与材料消耗；关闭后点击强化将直接执行。</small></span>
+            <span class="setting-switch" data-page-node-id="xXvar2Cp0aJdgxUkDQ8zMe"><input type="checkbox" id="setting-enhancement-confirm" checked data-page-node-id="TH4uKb5kX9UeLWDe0CgEDC"><span class="setting-switch-track" data-page-node-id="ecvl9lrL2Oh9THRFuKDpYM"></span></span>
           </label>
-          <label class="setting-row" for="setting-discard-confirm">
-            <span class="setting-copy"><strong>物品丢弃确认提示</strong><small>开启时，丢弃装备前弹出确认框；关闭后直接丢弃，装备将永久消失不可恢复。</small></span>
-            <span class="setting-switch"><input type="checkbox" id="setting-discard-confirm" checked><span class="setting-switch-track"></span></span>
+          <label class="setting-row" for="setting-discard-confirm" data-page-node-id="jRDqseRyCZMES9ev3lXsuX">
+            <span class="setting-copy" data-page-node-id="id6hpxOBzzSM8vqKdvBMlN"><strong data-page-node-id="iF9dAdqdDTeBJaQZYkjEC1">物品丢弃确认提示</strong><small data-page-node-id="axzgNRPTWe4B4UhAWsJ4hF">开启时，丢弃装备前弹出确认框；关闭后直接丢弃，装备将永久消失不可恢复。</small></span>
+            <span class="setting-switch" data-page-node-id="udeOqNnGe3p3BFejcA0Jkd"><input type="checkbox" id="setting-discard-confirm" checked data-page-node-id="aT5ptJqoix7h4qwewSzmAc"><span class="setting-switch-track" data-page-node-id="2PwLToMAA8XRU0eq6s0Knc"></span></span>
           </label>
-          <label class="setting-row" for="setting-dismantle-confirm">
-            <span class="setting-copy"><strong>装备拆解确认提示</strong><small>开启时，拆解装备前弹出返还预览确认框；关闭后直接拆解。</small></span>
-            <span class="setting-switch"><input type="checkbox" id="setting-dismantle-confirm" checked><span class="setting-switch-track"></span></span>
+          <label class="setting-row" for="setting-dismantle-confirm" data-page-node-id="7hj8PMeegRXzfKwFocYMKf">
+            <span class="setting-copy" data-page-node-id="FwSUHunx9BQzMpJ86EGsSm"><strong data-page-node-id="2qHrSTKQTyT5iayIvsJvkx">装备拆解确认提示</strong><small data-page-node-id="z8etyFw2WFcYISJOspDBJZ">开启时，拆解装备前弹出返还预览确认框；关闭后直接拆解。</small></span>
+            <span class="setting-switch" data-page-node-id="R5X0jc9IF3VtNKyA2pW7zf"><input type="checkbox" id="setting-dismantle-confirm" checked data-page-node-id="iLRhdUDRXaMMmv8JLSouHu"><span class="setting-switch-track" data-page-node-id="6mMQuftX88hsZXAMv2FBPX"></span></span>
           </label>
         </div>
-        <div class="settings-section">
-          <div class="settings-section-title">关于</div>
-          <div class="setting-row">
-            <span class="setting-copy"><strong>当前版本</strong></span>
-            <span class="setting-value" id="setting-game-version">V0.7.1</span>
+        <div class="settings-section" data-page-node-id="C85p6oarH0QBTtBn97OBbk">
+          <div class="settings-section-title" data-page-node-id="CtLJVHzqOPHkkFJm9xfP1n">关于</div>
+          <div class="setting-row" data-page-node-id="suLFJhWaYzndoEEeHxB03v">
+            <span class="setting-copy" data-page-node-id="qeOKM8xDPIfUTuJY3rJeOr"><strong data-page-node-id="STIzFwny8hG0Xf2fLi4Bik">当前版本</strong></span>
+            <span class="setting-value" id="setting-game-version" data-page-node-id="zwqsFntOch35PkuUhbEMjc">V0.7.1</span>
           </div>
-          <div class="setting-changelog" id="setting-changelog"></div>
+          <div class="setting-changelog" id="setting-changelog" data-page-node-id="d7uEkTZrZQy4FTxf0sGiNs"></div>
         </div>
       </div>
     </div>
 
     <!-- ===== 统计档案 ===== -->
-    <div class="panel statistics-panel" id="statistics-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title"><i class="fa-solid fa-chart-column"></i> 统计档案</span>
-        <span class="text-muted">只读 · 从统计系统启用后累计</span>
+    <div class="panel statistics-panel" id="statistics-panel" style="display:none;" data-page-node-id="eG5e4ZS0lLAWFjHeZJ9cTr">
+      <div class="panel-header" data-page-node-id="jQauYiQnH084LhvxBYenCE">
+        <span class="panel-title" data-page-node-id="h6c1cQlJE6PiuMHcFmOrSF"><i class="fa-solid fa-chart-column" data-page-node-id="qk41PkYYIqbml1wLqwVGcy"></i> 统计档案</span>
+        <span class="text-muted" data-page-node-id="b1cGsXEvI3VJbWqnBhBWfr">只读 · 从统计系统启用后累计</span>
       </div>
-      <div class="panel-body" id="statistics-content"></div>
+      <div class="panel-body" id="statistics-content" data-page-node-id="l1AgbAQtEFJHrXAL05uNVR"></div>
     </div>
 
     <!-- ===== 成就（成就系统 Batch D）===== -->
-    <div class="panel achievements-panel" id="achievements-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title"><i class="fa-solid fa-trophy"></i> 成就</span>
-        <span class="text-muted">Steam 收藏 · 里程碑 · 科研工时奖励</span>
+    <div class="panel achievements-panel" id="achievements-panel" style="display:none;" data-page-node-id="Q3dGIZ0gAMcEhchpvlW2Pk">
+      <div class="panel-header" data-page-node-id="TwP8EPj2wNJ7Y1KtPjz8v3">
+        <span class="panel-title" data-page-node-id="xuTqsJFGEJu2IgCO3NEwM3"><i class="fa-solid fa-trophy" data-page-node-id="AIu3Hzx88cfu9WVhJFEFWO"></i> 成就</span>
+        <span class="text-muted" data-page-node-id="Ud4YQUregQacGDG9BsNPZA">Steam 收藏 · 里程碑 · 科研工时奖励</span>
       </div>
-      <div class="panel-body">
-        <section class="achievements-summary">
-          <div class="ach-summary-head">
-            <span class="ach-summary-count" id="achievements-summary-count">0 / 116</span>
-            <span class="ach-summary-percent" id="achievements-summary-percent">0.0%</span>
+      <div class="panel-body" data-page-node-id="CjXMlqVDEAAj7Jzfs9z2b2">
+        <section class="achievements-summary" data-page-node-id="cmZ55zXnSnOpNEEZ6EafzJ">
+          <div class="ach-summary-head" data-page-node-id="e4PuWbttORsLzyEMowjqXP">
+            <span class="ach-summary-count" id="achievements-summary-count" data-page-node-id="RZD1ACehjD39eFLob4UT63">0 / 116</span>
+            <span class="ach-summary-percent" id="achievements-summary-percent" data-page-node-id="eOOU1rgCAQG6nOWsak3ouQ">0.0%</span>
           </div>
-          <div class="ach-progress-track"><div class="ach-progress-fill" id="achievements-progress-fill" style="width:0%;"></div></div>
-          <div class="ach-tier-counts" id="achievements-tier-counts"></div>
-          <div class="ach-research-bank" id="achievements-research-bank">科研工时余额：0 小时</div>
+          <div class="ach-progress-track" data-page-node-id="gKU4j7lxEBWB2fe2v5zTAX"><div class="ach-progress-fill" id="achievements-progress-fill" style="width:0%;" data-page-node-id="JYH1NpB7cmqN2uXSgtdXao"></div></div>
+          <div class="ach-tier-counts" id="achievements-tier-counts" data-page-node-id="YpFnWQG6cUa1xfJvHKTAfJ"></div>
+          <div class="ach-research-bank" id="achievements-research-bank" data-page-node-id="kBzqdxxEwhtaSuiO8tAhjP">科研工时余额：0 小时</div>
         </section>
-        <section class="achievements-filters">
-          <div class="ach-filter-row" id="achievements-category-tabs"></div>
-          <div class="ach-filter-row" id="achievements-status-tabs"></div>
+        <section class="achievements-filters" data-page-node-id="dcL0A4UTv2V7hNzgDXBljZ">
+          <div class="ach-filter-row" id="achievements-category-tabs" data-page-node-id="ShdUJP5TxUBuuFPlmPlEyY"></div>
+          <div class="ach-filter-row" id="achievements-status-tabs" data-page-node-id="CZlDly9wktuQQA1UrT4epV"></div>
         </section>
-        <div class="achievements-grid" id="achievements-grid"></div>
+        <div class="achievements-grid" id="achievements-grid" data-page-node-id="LqHzlkMthTkQ7MMl9VnnsB"></div>
       </div>
     </div>
 
     <!-- ===== 标准服技能排行榜（第二阶段：本地 UI + 本地快照）===== -->
-    <div class="panel leaderboard-panel" id="leaderboard-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title"><i class="fa-solid fa-ranking-star"></i> 标准服技能排行榜</span>
-        <span class="text-muted">本地预览 · 未连接平台</span>
+    <div class="panel leaderboard-panel" id="leaderboard-panel" style="display:none;" data-page-node-id="ZUgKGx9PuR85ryztejCB35">
+      <div class="panel-header" data-page-node-id="t0UOpLzA2vzLA1FJrzE1Oa">
+        <span class="panel-title" data-page-node-id="QM94pPoYe6ULV2wjTrwbZt"><i class="fa-solid fa-ranking-star" data-page-node-id="Xq3FTC80jrwd35cHhvoKFB"></i> 标准服技能排行榜</span>
+        <span class="text-muted" data-page-node-id="UoR3zJiRbDt7KaSGuQFhFv">本地预览 · 未连接平台</span>
       </div>
-      <div class="panel-body">
-        <div class="lb-layout">
-          <aside class="lb-sidebar" id="lb-board-list" aria-label="榜单列表"></aside>
-          <section class="lb-content" id="lb-board-content" aria-label="榜单内容"></section>
+      <div class="panel-body" data-page-node-id="LXQrtm2MDKq87PNaLpKRNn">
+        <div class="lb-layout" data-page-node-id="QvSRYEgghRuGiDD49MbA66">
+          <aside class="lb-sidebar" id="lb-board-list" aria-label="榜单列表" data-page-node-id="ygpHX3ElGWTg1iugKpUMQK"></aside>
+          <section class="lb-content" id="lb-board-content" aria-label="榜单内容" data-page-node-id="UBg2dzC5JvCbfdwnBmnHaQ"></section>
         </div>
       </div>
     </div>
 
-    <div class="panel research-panel" id="research-panel" style="display:none;">
-      <div class="panel-header">
-        <span class="panel-title"><i class="fa-solid fa-flask-vial"></i> 研究</span>
-        <span class="text-muted">科技树 · 在线操作 · 成就工时</span>
+    <div class="panel research-panel" id="research-panel" style="display:none;" data-page-node-id="qxFdQxYvcyaQCUxasC6Bib">
+      <div class="panel-header" data-page-node-id="yVwiwg5cw85RukzDXAtHxp">
+        <span class="panel-title" data-page-node-id="63w2Y3z0YdTeAobyN2LuQW"><i class="fa-solid fa-flask-vial" data-page-node-id="Reamff6OOVjjTxKV4mKMT7"></i> 研究</span>
+        <span class="text-muted" data-page-node-id="BcDEXHyU9FGFfXfx26SZPM">科技树 · 在线操作 · 成就工时</span>
       </div>
-      <div class="panel-body">
-        <section class="research-summary" id="research-summary">
-          <div class="research-bank" id="research-bank">科研工时余额：0 小时</div>
-          <div id="research-ad-section">
-            <button class="research-btn primary" id="research-ad-btn" data-ad-action="research-hours">观看泛银河娱乐广播获取科研工时</button>
-            <span class="research-ad-counter" id="research-ad-counter"></span>
+      <div class="panel-body" data-page-node-id="DSSX5yeBMDbyqOYsNqU6A5">
+        <section class="research-summary" id="research-summary" data-page-node-id="MVJDHJSY5snhK28kp79sDd">
+          <div class="research-bank" id="research-bank" data-page-node-id="hwWxpgGxNkHLXkT3UjtcgC">科研工时余额：0 小时</div>
+          <div id="research-ad-section" data-page-node-id="Fhg45KaAma7PNB1umMYGWb">
+            <button class="research-btn primary" id="research-ad-btn" data-ad-action="research-hours" data-page-node-id="FIXGLG4byysUVA2Y34fuQx">观看泛银河娱乐广播获取科研工时</button>
+            <span class="research-ad-counter" id="research-ad-counter" data-page-node-id="PADoEMydQ8bdKR90Vd7Zb1"></span>
           </div>
         </section>
-        <section class="research-active-section">
-          <div class="research-active" id="research-active"></div>
-          <div class="research-progress-track"><div class="research-progress-fill" id="research-progress-fill" style="width:0%;"></div></div>
+        <section class="research-active-section" data-page-node-id="VWdNnrC8w48hbkaRXndnAC">
+          <div class="research-active" id="research-active" data-page-node-id="dGCl2R6K5mTPfJggMWwiyP"></div>
+          <div class="research-progress-track" data-page-node-id="czSZP5f0RdwLcJaBWqJMWW"><div class="research-progress-fill" id="research-progress-fill" style="width:0%;" data-page-node-id="HsCgD3dDkgXrOVYsi7Kh1c"></div></div>
         </section>
-        <section class="research-tree-section">
-          <h3 class="section-title">科技树</h3>
-          <div class="research-tree-layout">
-            <div class="research-tree" id="research-tree"></div>
-            <aside class="research-detail" id="research-detail"></aside>
+        <nav class="research-subtabs" aria-label="研究分类">
+          <button type="button" class="research-subtab active" data-research-view="tree">普通研究</button>
+          <button type="button" class="research-subtab" data-research-view="cycle">循环研究 ∞</button>
+        </nav>
+        <section class="research-tree-section" data-page-node-id="WW7qe40zDcpoHMGKZsHA6A">
+          <h3 class="section-title" data-page-node-id="XHnhUWAnBA5BXjQOnCt82F">科技树</h3>
+          <div class="research-tree-layout" data-page-node-id="OKkTFiU9JDh7inK6JDjGVW">
+            <div class="research-tree" id="research-tree" data-page-node-id="hq8m0RhTVgXSQn72Qt2j4B"></div>
           </div>
         </section>
-        <section class="research-queue-section">
-          <h3 class="section-title">研究队列</h3>
-          <div class="research-queue" id="research-queue"></div>
+        <section class="research-cycle-section" id="research-cycle-section" style="display:none;"></section>
+        <section class="research-queue-section" data-page-node-id="pC09q95PqMSbvYF0wF7oxe">
+          <h3 class="section-title" data-page-node-id="HshoyrqYUIDCPYZ6IUSpEa">研究队列</h3>
+          <div class="research-queue" id="research-queue" data-page-node-id="0dTOGfifX443FwXMDuolEz"></div>
         </section>
       </div>
     </div>
 
   
 <!-- ===== 舰船装备环带弹窗 ===== -->
-<div class="equip-modal-overlay" id="equipOrbitModal">
-  <div class="equip-ship-modal">
-    <button class="equip-modal-close" id="equipOrbitClose">✕</button>
-    <div class="modal-title" id="equipOrbitTitle"><span id="equipOrbitTitleText">星矛级</span><button type="button" class="gameplay-help-btn equip-fitting-help-btn" id="equipFittingHelp" title="查看舰船装备说明" aria-label="舰船装备配置说明">?</button></div>
-    <div class="modal-sub" id="equipOrbitSub">T1 护卫舰</div>
-    <div class="orbit-wrapper" id="equipOrbitWrapper">
-      <svg viewBox="0 0 500 500" id="equipOrbitSvg"></svg>
-      <div class="equip-select-panel" id="equipSelectPanel">
-        <div class="esp-title-row">
-          <span class="esp-title" id="equipSelectTitle">高槽 · 选择装备</span>
-          <button class="esp-close" id="equipSelectClose" aria-label="返回">✕</button>
+<div class="equip-modal-overlay" id="equipOrbitModal" data-page-node-id="jzJ5Vaj4ddvLfo7iBBdr8B">
+  <div class="equip-ship-modal" data-page-node-id="AtnCyzwWgx59DVep56vLkm">
+    <button class="equip-modal-close" id="equipOrbitClose" data-page-node-id="jAYCgwhiSUkphW0POU1fP9">✕</button>
+    <div class="modal-title" id="equipOrbitTitle" data-page-node-id="H4tFEM1z6QYDEmH9JG1q2R"><span id="equipOrbitTitleText" data-page-node-id="IQtfdfe8niSdOUxMLcmsiG">星矛级</span><button type="button" class="gameplay-help-btn equip-fitting-help-btn" id="equipFittingHelp" title="查看舰船装备说明" aria-label="舰船装备配置说明" data-page-node-id="BCI3VD9uQvGB5w1z84fs3r">?</button></div>
+    <div class="modal-sub" id="equipOrbitSub" data-page-node-id="bBiGWgfZiaTU4b4wXMi6eH">T1 护卫舰</div>
+    <div class="orbit-wrapper" id="equipOrbitWrapper" data-page-node-id="EiCEcPIXm02fVhlMkBJmGk">
+      <svg viewBox="0 0 500 500" id="equipOrbitSvg" data-page-node-id="DkEwf1IgqDmOPXVGAOcwGz"></svg>
+      <div class="equip-select-panel" id="equipSelectPanel" data-page-node-id="shsEIdBZTRihLKl9iBvxst">
+        <div class="esp-title-row" data-page-node-id="ZJEJAOxtlRjYKE3UzjPUlG">
+          <span class="esp-title" id="equipSelectTitle" data-page-node-id="HCDCJkCzf9dpHGnpVjJoYr">高槽 · 选择装备</span>
+          <button class="esp-close" id="equipSelectClose" aria-label="返回" data-page-node-id="fUADkF0r85iVrZ8mdAo6yw">✕</button>
         </div>
-        <div id="equipSelectOptions"></div>
+        <div id="equipSelectOptions" data-page-node-id="Z7sekbDi428hlYmkX4sCoI"></div>
       </div>
     </div>
-    <div class="equip-library">
-      <div class="el-title">📦 已装配装备</div>
-      <div class="el-items" id="equipLibrary"></div>
+    <div class="equip-library" data-page-node-id="VIH2Gx95kWnDraIhgRnjWC">
+      <div class="el-title" data-page-node-id="NEDC8q8Iw16lXQlEYB2mmC">📦 已装配装备</div>
+      <div class="el-items" id="equipLibrary" data-page-node-id="AEkyK4BhzjAnJXOPKo9C1s"></div>
     </div>
-    <div class="ship-stats" id="equipOrbitStats">
-      <div class="stat"><div class="stat-label">护盾</div><div class="stat-value shield" id="orbitStatShield">—</div></div>
-      <div class="stat"><div class="stat-label">装甲</div><div class="stat-value armor" id="orbitStatArmor">—</div></div>
-      <div class="stat"><div class="stat-label">结构</div><div class="stat-value hull" id="orbitStatHull">—</div></div>
-      <div class="stat"><div class="stat-label">速度</div><div class="stat-value speed" id="orbitStatSpeed">—</div></div>
+    <div class="ship-stats" id="equipOrbitStats" data-page-node-id="TnxkCHAoa1H32nvmmNDCsp">
+      <div class="stat" data-page-node-id="DN3tU5CgmRjkqFpCffRqpJ"><div class="stat-label" data-page-node-id="NOkFRe9EnQIHhm6WESv3Zc">护盾</div><div class="stat-value shield" id="orbitStatShield" data-page-node-id="QmHmr58Et73MzhZROfbyl8">—</div></div>
+      <div class="stat" data-page-node-id="ehk7agFUaZDxm5loxNXzjQ"><div class="stat-label" data-page-node-id="oqlsJJVFDG4YxOHA0bEjzp">装甲</div><div class="stat-value armor" id="orbitStatArmor" data-page-node-id="7WK7jcuRVBpic7BXWz8FmK">—</div></div>
+      <div class="stat" data-page-node-id="0tqAjFAsynQhhFj13ujenD"><div class="stat-label" data-page-node-id="xS1GmUyINCryiVAb6FGnVV">结构</div><div class="stat-value hull" id="orbitStatHull" data-page-node-id="i7E4T86GFeLqy7kAZceEcc">—</div></div>
+      <div class="stat" data-page-node-id="HLLzjrR2Q0y6QESn1GIvWw"><div class="stat-label" data-page-node-id="tRbbqgDNekJlcCN32cNzOs">速度</div><div class="stat-value speed" id="orbitStatSpeed" data-page-node-id="Kc4UgBC3yDLtUfiuXQQJ3a">—</div></div>
     </div>
-    <div class="modal-actions">
-      <button class="btn primary" id="equipResetBtn">🗑 清空全部</button>
-      <button class="btn" id="equipDoneBtn">✓ 完成</button>
+    <div class="modal-actions" data-page-node-id="9rn6dI6CGpyKYJdLuNQeQu">
+      <button class="btn primary" id="equipResetBtn" data-page-node-id="7Wzq1OuVjTFvRWTZuc684N">🗑 清空全部</button>
+      <button class="btn" id="equipDoneBtn" data-page-node-id="YTMNUTKS64y2qZo8MEmkU9">✓ 完成</button>
     </div>
   </div>
-</div>
+ </div>
 </section>
 </div>
 
+<!-- 研究详情弹窗移到主容器外，避免被 main-container 的 overflow:hidden 裁掉顶部关闭按钮。 -->
+<aside class="research-detail" id="research-detail" data-page-node-id="ZgMt6JBoHUKjQwtAapetHJ"></aside>
+
 <!-- ===== 底部状态栏 ===== -->
-<footer class="footer-bar">
-  <span>高安区域 · 离线安全无限制</span>
-  <span>最后存档：2026-07-04 14:30:00</span>
+<footer class="footer-bar" data-page-node-id="SaiipdV0GEvP1GwYE1bNUS">
+  <span data-page-node-id="cLeIwHbJHqQoCoLsAFtopq">高安区域 · 离线安全无限制</span>
+  <span data-page-node-id="2MXILq2QP28CcT5NCnvNFD">最后存档：2026-07-04 14:30:00</span>
 </footer>
 
 <!-- ===== 部署行星弹窗 ===== -->
-<div class="modal-overlay hidden" id="deploy-modal">
-  <div class="modal-box">
-    <h3>🪐 部署行星 <span class="modal-close" id="modal-close">✕</span></h3>
-    <div id="deploy-options"></div>
-    <div style="margin-top:8px;font-size:11px;color:#4a5a6a;">
+<div class="modal-overlay hidden" id="deploy-modal" data-page-node-id="pzuDuQueKXub2kSwTJQj4N">
+  <div class="modal-box" data-page-node-id="FhZofByl2Q95kGlFxEooFK">
+    <h3 data-page-node-id="9nKbcHBa7rf1a9nlnod5q3">🪐 部署行星 <span class="modal-close" id="modal-close" data-page-node-id="Fi9H9FdY9WVrXavqzBx9D1">✕</span></h3>
+    <div id="deploy-options" data-page-node-id="MdqPeFVCsrWYtFx7TtnEQV"></div>
+    <div style="margin-top:8px;font-size:11px;color:#4a5a6a;" data-page-node-id="MNxWhZB3qg9kGXpsZ0ZDYR">
       首次建设消耗星币 + 标准钛材；维护期统一 24 小时。到期后停产，可支付星币续期（续期不再消耗标准钛材）；主动拆除不返还任何资源。
     </div>
   </div>
 </div>
 
 <!-- ===== 执行确认弹窗 ===== -->
-<div class="modal-overlay hidden" id="action-modal">
-  <div class="modal-box">
-    <h3 id="action-modal-title">开始执行 <span class="modal-close" id="action-modal-close">✕</span></h3>
-    <div class="action-info" id="action-modal-info"></div>
-    <div class="action-resources" id="action-modal-resources"></div>
-    <div class="action-warn" id="action-modal-warn"></div>
-    <div class="action-input-row">
-      <label for="action-batch-count">执行</label>
-      <input type="number" id="action-batch-count" value="1" min="1" max="1">
-      <span id="action-batch-unit">次</span>
-      <button class="btn" id="action-batch-infinity" style="font-size:13px; padding:4px 10px;">∞ 无限</button>
-      <span class="ai-max" id="action-batch-max"></span>
+<div class="modal-overlay hidden" id="action-modal" data-page-node-id="qrMpQXHPHjyM0LBw52YuD5">
+  <div class="modal-box" data-page-node-id="zez74TmX6gdfPJpln5QHdn">
+    <h3 id="action-modal-title" data-page-node-id="qerpjGCTxOvkqD8QtFALtQ">开始执行 <span class="modal-close" id="action-modal-close" data-page-node-id="b1mZAQW1zmX985LFVVFydv">✕</span></h3>
+    <div class="action-info" id="action-modal-info" data-page-node-id="O8fhvmA56EPufqUu1BCNfl"></div>
+    <div class="action-resources" id="action-modal-resources" data-page-node-id="EBDVsv3wELXcHCt22oZbgf"></div>
+    <div class="action-warn" id="action-modal-warn" data-page-node-id="W1D7FuQuVQ7WwzMRybixP2"></div>
+    <div class="action-input-row" data-page-node-id="37mrfC2ndP9ad5mLdU8G1X">
+      <label for="action-batch-count" data-page-node-id="eeCPvxjgQIOraTVVvsD2tM">执行</label>
+      <input type="number" id="action-batch-count" value="1" min="1" max="1" data-page-node-id="VSSE6UpdbcUVneoA6HoTPk">
+      <span id="action-batch-unit" data-page-node-id="9Yz03oTeM9ShsezWRbOia9">次</span>
+      <button class="btn" id="action-batch-infinity" style="font-size:13px; padding:4px 10px;" data-page-node-id="tPASzkPXTR4QBwyAsvvZgE">∞ 无限</button>
+      <span class="ai-max" id="action-batch-max" data-page-node-id="rr4XlXu563IuOokaHB6QPT"></span>
     </div>
-    <div class="action-summary" id="action-modal-summary"></div>
-    <div class="modal-actions">
-      <button class="btn" id="action-modal-cancel">取消</button>
-      <button class="btn" id="action-modal-queue">📋 加入队列</button>
-      <button class="btn primary" id="action-modal-confirm">确认</button>
+    <div class="action-summary" id="action-modal-summary" data-page-node-id="jAfhan9RDQFDwMbZTOIHu2"></div>
+    <div class="modal-actions" data-page-node-id="QuqmIUQCZFjflKIspqPAJe">
+      <button class="btn" id="action-modal-cancel" data-page-node-id="KJWSHDAHfM9GCWw7BPLi50">取消</button>
+      <button class="btn" id="action-modal-queue" data-page-node-id="d3pAlP6fewZ1FHFbrHqNhy">📋 加入队列</button>
+      <button class="btn primary" id="action-modal-confirm" data-page-node-id="GfnW1k8dzTy1r2kyfHiBbU">确认</button>
     </div>
   </div>
 </div>
 
 <!-- ===== 新手引导常驻小部件（Batch P：右上角 / 移动端底栏）===== -->
-<aside id="tutorial-widget" class="tutorial-widget" aria-live="polite" aria-label="新手引导任务">
-  <div id="tutorial-widget-header" class="tw-header">
-    <span class="tw-brand">新手引导<span class="tw-collapsed-label" id="tutorial-widget-mini"></span></span>
-    <button type="button" id="tutorial-widget-toggle" class="tw-toggle" aria-expanded="true" aria-controls="tutorial-widget">收起</button>
+<aside id="tutorial-widget" class="tutorial-widget" aria-live="polite" aria-label="新手引导任务" data-page-node-id="QXMXhPQLLJWtfSewfN9o1H">
+  <div id="tutorial-widget-header" class="tw-header" data-page-node-id="r9weLvGxskn0BC175AuV2N">
+    <span class="tw-brand" data-page-node-id="gpnxGtoECZTrJvid83w4QC">新手引导<span class="tw-collapsed-label" id="tutorial-widget-mini" data-page-node-id="vx8rCnd9jkfo0L6Jrc6tSX"></span></span>
+    <button type="button" id="tutorial-widget-toggle" class="tw-toggle" aria-expanded="true" aria-controls="tutorial-widget" data-page-node-id="OBlHED2oIDu5zX5K8W968h">收起</button>
   </div>
-  <div id="tutorial-widget-progress" class="tw-progress"></div>
-  <div class="tw-body">
-    <div id="tutorial-widget-branch-tabs" class="tw-tabs" role="tablist" aria-label="任务支线"></div>
-    <div id="tutorial-widget-dialogue" class="tw-dialogue"></div>
-    <div id="tutorial-widget-objective" class="tw-objective"></div>
-    <div id="tutorial-widget-actions" class="tw-actions"></div>
+  <div id="tutorial-widget-progress" class="tw-progress" data-page-node-id="tBratZJ184ZGMG1iPbGCf4"></div>
+  <div class="tw-body" data-page-node-id="zDtMaztoDsPmtEg8A54b09">
+    <div id="tutorial-widget-branch-tabs" class="tw-tabs" role="tablist" aria-label="任务支线" data-page-node-id="AfMfIzpU6PqWPQPojkUI5h"></div>
+    <div id="tutorial-widget-dialogue" class="tw-dialogue" data-page-node-id="n7A1Uqo62zAiaWW9vSkuMH"></div>
+    <div id="tutorial-widget-objective" class="tw-objective" data-page-node-id="uUo3AmrfrM9BrfptkGF0Xg"></div>
+    <div id="tutorial-widget-actions" class="tw-actions" data-page-node-id="BnX3iwLozMOXsL7jsKeJ1d"></div>
   </div>
 </aside>
 
@@ -1578,39 +1585,39 @@
   <script defer src="./js/data/boosters.js?v=11"></script>
   <script defer src="./js/systems/boosters.js?v=11"></script>
   <script defer src="./js/systems/recycling.js?v=4"></script>
-  <script defer src="./js/data/combat.js?v=36"></script>
+  <script defer src="./js/data/combat.js?v=39"></script>
   <script defer src="./js/data/cargo.js?v=10"></script>
   <script defer src="./js/data/implants.js?v=10"></script>
-  <script defer src="./js/data/equipment.js?v=33"></script>
+  <script defer src="./js/data/equipment.js?v=34"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=8"></script>
   <script defer src="./js/data/ammunition.js?v=6"></script>
-  <script defer src="./js/data/archaeology.js?v=6"></script>
-  <script defer src="./js/data/research.js?v=10"></script>
-  <script defer src="./js/core/research-state.js?v=5"></script>
+  <script defer src="./js/data/archaeology.js?v=7"></script>
+  <script defer src="./js/data/research.js?v=11"></script>
+  <script defer src="./js/core/research-state.js?v=8"></script>
   <script defer src="./js/data/achievements.js?v=8"></script>
   <script defer src="./js/data/achievement-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-locales-tw.js?v=1"></script>
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=7"></script>
-  <script defer src="./js/data/tutorial.js?v=6"></script>
-  <script defer src="./js/data/changelog.js?v=13"></script>
+  <script defer src="./js/data/tutorial.js?v=7"></script>
+  <script defer src="./js/data/changelog.js?v=15"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=13"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
-  <script defer src="./js/systems/research.js?v=10"></script>
+  <script defer src="./js/systems/research.js?v=11"></script>
   <script defer src="./js/systems/research-ad.js?v=2"></script>
   <script defer src="./js/core/statistics.js?v=6"></script>
   <script defer src="./js/systems/achievements.js?v=5"></script>
   <script defer src="./js/systems/production.js?v=15"></script>
   <script defer src="./js/core/resources.js?v=5"></script>
-  <script defer src="./js/systems/tutorial.js?v=8"></script>
+  <script defer src="./js/systems/tutorial.js?v=9"></script>
   <script defer src="./js/systems/manufacturing.js?v=7"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=3"></script>
   <script defer src="./js/systems/rigs.js?v=5"></script>
-  <script defer src="./js/systems/archaeology.js?v=22"></script>
+  <script defer src="./js/systems/archaeology.js?v=23"></script>
   <script defer src="./js/systems/planetary.js?v=5"></script>
   <script defer src="./js/systems/station.js?v=24"></script>
   <script defer src="./js/data/legion/npc-names.js?v=2"></script>
@@ -1618,42 +1625,42 @@
   <script defer src="./js/data/legion/npc-skills.js?v=2"></script>
   <script defer src="./js/data/legion/npc-dialogue.js?v=2"></script>
   <script defer src="./js/data/wormhole.js?v=15"></script>
-  <script defer src="./js/data/titans.js?v=10"></script>
-  <script defer src="./js/systems/legion-npc.js?v=15"></script>
-  <script defer src="./js/systems/legion-combat-squad.js?v=26"></script>
-  <script defer src="./js/ui/action-modal.js?v=12"></script>
+  <script defer src="./js/data/titans.js?v=11"></script>
+  <script defer src="./js/systems/legion-npc.js?v=16"></script>
+  <script defer src="./js/systems/legion-combat-squad.js?v=27"></script>
+  <script defer src="./js/ui/action-modal.js?v=13"></script>
   <script defer src="./js/core/queue.js?v=6"></script>
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
-  <script defer src="./js/systems/combat.js?v=45"></script>
+  <script defer src="./js/systems/combat.js?v=50"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=106"></script>
-  <script defer src="./js/core/actions.js?v=57"></script>
+  <script defer src="./js/core/selectors.js?v=108"></script>
+  <script defer src="./js/core/actions.js?v=61"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=54"></script>
   <script defer src="./js/systems/wormhole.js?v=40"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=5"></script>
-  <script defer src="./js/ui/shell-render.js?v=134"></script>
+  <script defer src="./js/ui/shell-render.js?v=138"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=26"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=13"></script>
-   <script defer src="./js/ui/combat-render.js?v=67"></script>
+   <script defer src="./js/ui/combat-render.js?v=68"></script>
   <script defer src="./js/ui/planetary-render.js?v=3"></script>
-  <script defer src="./js/ui/archaeology-render.js?v=15"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=16"></script>
   <script defer src="./js/ui/booster-render.js?v=17"></script>
   <script defer src="./js/ui/station-render.js?v=16"></script>
-  <script defer src="./js/ui/legion-render.js?v=25"></script>
+  <script defer src="./js/ui/legion-render.js?v=26"></script>
   <script defer src="./js/ui/legion-events.js?v=16"></script>
   <script defer src="./js/ui/wormhole-render.js?v=33"></script>
   <script defer src="./js/ui/wormhole-rifts.js?v=4"></script>
   <script defer src="./js/ui/wormhole-map.js?v=29"></script>
    <script defer src="./js/data/alliance-building-config.js?v=2"></script>
-   <script defer src="./js/platform/alliance-api.js?v=11"></script>
+   <script defer src="./js/platform/alliance-api.js?v=12"></script>
    <script defer src="./js/platform/alliance-policy.js?v=2"></script>
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
-  <script defer src="./js/ui/alliance-render.js?v=34"></script>
+  <script defer src="./js/ui/alliance-render.js?v=36"></script>
   <script defer src="./js/core/tick.js?v=25"></script>
   <script defer src="./js/core/offline.js?v=30"></script>
-  <script defer src="./js/systems/offline-combat.js?v=31"></script>
+  <script defer src="./js/systems/offline-combat.js?v=34"></script>
   <script defer src="./js/systems/combat-log.js?v=6"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=3"></script>
@@ -1685,40 +1692,40 @@
   <script defer src="./js/core/leaderboard-sync-service.js?v=2"></script>
   <script defer src="./js/core/ad-service.js?v=5"></script>
   <script defer src="./js/systems/ad-buff.js?v=6"></script>
-  <script defer src="./js/ui/ad-buff-widget.js?v=22"></script>
-  <script defer src="./js/core/persistence.js?v=33"></script>
+  <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
+  <script defer src="./js/core/persistence.js?v=34"></script>
   <script defer src="./js/ui/changelog-popup.js?v=2"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=9"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>
-<script defer src="./js/ui/render.js?v=35"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=23"></script>
-  <script defer src="./js/qa-seed.js?v=3"></script>
-  <div id="hangar-3d-popup">
-    <div class="popup-box">
-      <span class="popup-close" id="hangar-3d-popup-close">×</span>
-      <div class="popup-name" id="hangar-3d-popup-name"></div>
-      <canvas id="hangar-3d-popup-canvas" class="ship3d-canvas"></canvas>
+<script defer src="./js/ui/render.js?v=37"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=24"></script>
+  <script defer src="./js/qa-seed.js?v=4"></script>
+  <div id="hangar-3d-popup" data-page-node-id="jFzSYB1LHM2BsZc591lWex">
+    <div class="popup-box" data-page-node-id="3nerO1xduGzrfLApLn6vzd">
+      <span class="popup-close" id="hangar-3d-popup-close" data-page-node-id="yhDXXkcKANQjpAv2kaskt2">×</span>
+      <div class="popup-name" id="hangar-3d-popup-name" data-page-node-id="CSuE5bGcJkwXnQS53840Kr"></div>
+      <canvas id="hangar-3d-popup-canvas" class="ship3d-canvas" data-page-node-id="vGuC219tWPtavrxlrbUe7C"></canvas>
     </div>
   </div>
 
-  <div id="combat-3d-popup">
-    <div class="popup-box">
-      <span class="popup-close" id="combat-3d-popup-close">×</span>
-      <div class="popup-name" id="combat-3d-popup-name"></div>
-      <canvas id="combat-3d-popup-canvas" class="ship3d-canvas"></canvas>
-      <div class="popup-attrs" id="combat-3d-popup-attrs"></div>
+  <div id="combat-3d-popup" data-page-node-id="hDT6CXk4m69hI5dXM6Wnh8">
+    <div class="popup-box" data-page-node-id="fpOhz9MsZezVGWm68et5kz">
+      <span class="popup-close" id="combat-3d-popup-close" data-page-node-id="Htic4jnPIvJGsaxWVu6erl">×</span>
+      <div class="popup-name" id="combat-3d-popup-name" data-page-node-id="9xUUmvBV29vksxG6cHy3XL"></div>
+      <canvas id="combat-3d-popup-canvas" class="ship3d-canvas" data-page-node-id="z7ZtT4qwtpWJ7HrkP4d5AT"></canvas>
+      <div class="popup-attrs" id="combat-3d-popup-attrs" data-page-node-id="WRbrYLvvFvvbMluXrmarRT"></div>
     </div>
   </div>
 
   <!-- 舰船实战属性弹窗（2026-09-09）：小队 NPC 槽「实战属性」入口，与控制台整宽行同构 -->
-  <div id="combat-stats-modal" class="csm" hidden style="display:none;">
-    <div class="csm-box">
-      <div class="csm-head">
-        <span class="csm-title" id="csm-title">舰船实战属性</span>
-        <span class="csm-subtitle" id="csm-subtitle"></span>
-        <button type="button" class="csm-close" data-csm-close aria-label="关闭">×</button>
+  <div id="combat-stats-modal" class="csm" hidden style="display:none;" data-page-node-id="Bl196TxggyuW8YwpYUA5Hp">
+    <div class="csm-box" data-page-node-id="XbjnNUsPro83zrqFMonPfB">
+      <div class="csm-head" data-page-node-id="6DoQzt83RCLossuqaVsUHw">
+        <span class="csm-title" id="csm-title" data-page-node-id="ro7jnAyKERWaGZdDwsMXRj">舰船实战属性</span>
+        <span class="csm-subtitle" id="csm-subtitle" data-page-node-id="bLCyrL5Zd8lAF6EBSQ8faT"></span>
+        <button type="button" class="csm-close" data-csm-close aria-label="关闭" data-page-node-id="XzmeHoX5RzwmFFF4PbhiiQ">×</button>
       </div>
-      <div class="csm-body" id="csm-body"></div>
+      <div class="csm-body" id="csm-body" data-page-node-id="JiOhJqkgF2GKolisphG9pQ"></div>
     </div>
   </div>
 </body>

@@ -489,7 +489,14 @@
     return idx;
   })();
 
-  function getShipTypeDef(shipId) { return SHIP_BY_ID[shipId] || null; }
+  function getShipTypeDef(shipId) {
+    // 泰坦 shipId 为运行时注册表键（titan__<hull>__<weapon>__<core>，见 titans.js:353 / selectors.js:3987），
+    // 不在静态 SHIP_DATA 三集合（STARTER/INDUSTRIAL/ARCHAEOLOGY）内 → SHIP_BY_ID 查不到，必须显式兜底，否则：
+    // ① 参战资格 canLegionNpcJoinCombat 走 !shipType → ship-not-combat，NPC 永远不能上泰坦；
+    // ② 兼容性显示恒「不适配」；③ 经验阶层倍率回落 0.5（应为 5.0）。与战斗层 resolveNpcTitanLoadout 同口径。
+    if (shipId && String(shipId).indexOf("titan") === 0) return "titan";
+    return SHIP_BY_ID[shipId] || null;
+  }
   // 舰船角色（industrial / combat / archaeology）：type 前缀判定
   function getShipRole(type) {
     if (!type) return null;

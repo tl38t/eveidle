@@ -7,20 +7,112 @@
   var PUBLISHABLE_KEY = "eyJhbGciOiJSUzI1NiIsImtpZCI6ImJlYThhN2MzLWVmMTAtNDZlYS1hNDMwLWZkZTE0MzcyOWU0ZiJ9.eyJpc3MiOiJodHRwczovL2RlZXBzcGFjZS1kNGdvdng0aWtjMmU5MzdjNS5hcC1zaGFuZ2hhaS50Y2ItYXBpLnRlbmNlbnRjbG91ZGFwaS5jb20iLCJzdWIiOiJhbm9uIiwiYXVkIjoiZGVlcHNwYWNlLWQ0Z292eDRpa2MyZTkzN2M1IiwiZXhwIjo0MDkxNzQ5NDY2LCJpYXQiOjE3ODgwNjYyNjYsIm5vbmNlIjoiODUzWVZEWGJRSkNOWUk4Vl9RNDRSQSIsImF0X2hhc2giOiI4NTNZVkRYYlFKQ05ZSThWX1E0NFJBIiwibmFtZSI6IkFub255bW91cyIsInNjb3BlIjoiYW5vbnltb3VzIiwicHJvamVjdF9pZCI6ImRlZXBzcGFjZS1kNGdvdng0aWtjMmU5MzdjNSIsIm1ldGEiOnsicGxhdGZvcm0iOiJQdWJsaXNoYWJsZUtleSJ9LCJyb2xlIjoiYW5vbiIsImlzX2Fub255bW91cyI6dHJ1ZSwiYXBwX21ldGFkYXRhIjp7InByb3ZpZGVyIjoiYW5vbnltb3VzIiwicHJvdmlkZXJzIjpbImFub255bW91cyJdfSwidXNlcl9tZXRhZGF0YSI6eyJuYW1lIjoiQW5vbnltb3VzIn0sInVzZXJfdHlwZSI6IiIsImNsaWVudF90eXBlIjoiY2xpZW50X3VzZXIiLCJpc19zeXN0ZW1fYWRtaW4iOmZhbHNlfQ.wAynz2miz35rasq0LGGFu0raNSfBLfPoOoC2pjXMssCFPdJgXHnAcR1ocABxPUgpPWwU-WdEOo7RYx8EftYCEoOXsN8YKChMkS6tWlGDtY6y4-d7DAeRm16sH4d4ceg5ZN7PBefLereV1AFJIwEVz3TNhpUiX9MZQBb1dt2K8h1uKa5j6lLMqDTGCoSdnTQHw6-FMqgvGbN6WstAQTI2bJ1jUDLX10_p-Yw_2883QpU7rhsKkLU76GjUwNEVb_5DIoIYeNEP7GehCXL5M_o4ZnwTcvKQGmTpalyjZCkjK6T8IX4mN0oKqW7ErvLDsLAezJ0yxSYnTCq8XOOba2K-fg";
   var BASE_URL = "https://" + ENV_ID + ".api.tcloudbasegateway.com";
   var TAPTAP_AUTH_URL = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/taptap-auth";
+  var IDENTITY_GATEWAY = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/alliance-identity";
   var playerKey = "eve_idle_alliance_player_id";
+  var deviceSecretKey = "eve_idle_alliance_device_secret";
   var tokenKey = "eve_idle_alliance_access_token";
   var allianceSessionKey = "eve_idle_alliance_session_token";
   var steamSessionPromise = null;
   var steamPersonaName = "";
   var allianceSessionToken = "";
 
+  // 设备密钥：128bit 随机十六进制，只存本机、只走云函数转发（绝不进 URL）。
+  // 它是设备身份的唯一凭证：签发转移码、兑换转移码、被并入平台身份都要用它自证。
+  function randomHex(byteLength) {
+    var out = "";
+    try {
+      var buffer = new Uint8Array(byteLength);
+      var webCrypto = root.crypto || root.msCrypto;
+      webCrypto.getRandomValues(buffer);
+      for (var i = 0; i < buffer.length; i++) out += ("0" + buffer[i].toString(16)).slice(-2);
+      return out;
+    } catch (_) {
+      out = "";
+      for (var j = 0; j < byteLength * 2; j++) out += Math.floor(Math.random() * 16).toString(16);
+      return out;
+    }
+  }
+
+  function getDeviceSecret() {
+    var value = "";
+    try { value = localStorage.getItem(deviceSecretKey) || ""; } catch (_) { value = ""; }
+    if (!/^[0-9a-f]{32,64}$/.test(value)) {
+      value = randomHex(16);
+      try { localStorage.setItem(deviceSecretKey, value); } catch (_) {}
+    }
+    return value;
+  }
+
+  function isDeviceIdentity(value) {
+    return /^local_/.test(String(value || "")) || /^dev_/.test(String(value || ""));
+  }
+
+  // 设备身份 id 由密钥前 12 位派生（local_<12hex>）。服务端能用密钥复算出 id，
+  // 所以「知道 id」不等于「持有密钥」，无法抢注他人身份。
+  // 注意：已存在的老 id（local_<ts36>_<rand6>）一律原样保留，不做迁移。
   function getPlayerId() {
     var value = localStorage.getItem(playerKey);
     if (!value) {
-      value = "local_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 8);
+      value = "local_" + getDeviceSecret().slice(0, 12);
       localStorage.setItem(playerKey, value);
     }
     return value;
+  }
+
+  function getAllianceSessionToken() {
+    if (allianceSessionToken) return allianceSessionToken;
+    try { return sessionStorage.getItem(allianceSessionKey) || ""; } catch (_) { return ""; }
+  }
+
+  // 身份类动作的唯一入口：全部经 alliance-identity 云函数转发
+  // （对应 RPC 在库里已 revoke all from public，anon 拿不到）。
+  function identityRequest(action, payload) {
+    var headers = { "Content-Type": "application/json" };
+    var token = getAllianceSessionToken();
+    if (token) headers["x-alliance-session"] = token;
+    return fetch(IDENTITY_GATEWAY, {
+      method: "POST",
+      headers: headers,
+      body: JSON.stringify(Object.assign({ action: action }, payload || {}))
+    }).then(function (response) {
+      return response.text().then(function (text) {
+        var parsed = parseResponseJson(text);
+        if (!response.ok || !parsed || !parsed.ok) {
+          throw new Error(parsed && parsed.error || "身份服务请求失败（" + response.status + "）");
+        }
+        return parsed;
+      });
+    });
+  }
+
+  function rememberPlayerId(id) {
+    try { localStorage.setItem(playerKey, id); } catch (_) {}
+    // 匿名访问令牌是按旧身份领的，切换身份后必须重新领取。
+    try { localStorage.removeItem(tokenKey); } catch (_) {}
+    return id;
+  }
+
+  // 平台身份就绪时的切换动作：若此前已固化设备身份，先把它并入平台身份再切换，
+  // 否则同一人在云端会变成两条成员记录（这正是「换设备多一个 id」的成因）。
+  // 归并不成功（例如两个身份各自已在不同联盟）时不静默丢弃设备身份。
+  function adoptPlatformIdentity(platformId) {
+    var previous = "";
+    try { previous = localStorage.getItem(playerKey) || ""; } catch (_) { previous = ""; }
+    if (!previous || previous === platformId || !isDeviceIdentity(previous)) {
+      return Promise.resolve(rememberPlayerId(platformId));
+    }
+    return identityRequest("merge_local", {
+      devicePlayerId: previous,
+      secret: getDeviceSecret(),
+      platformPlayerId: platformId
+    }).then(function () {
+      return rememberPlayerId(platformId);
+    }).catch(function (error) {
+      if (typeof console !== "undefined" && console.warn) {
+        console.warn("Alliance identity merge skipped:", error && error.message || error);
+      }
+      return previous;
+    });
   }
 
   function initializeSteamIdentity() {
@@ -37,11 +129,13 @@
     steamSessionPromise = session.authenticate().then(function (result) {
       if (!result || !result.ok || !result.steamId) throw new Error("Steam 联盟认证失败");
       var steamId = String(result.steamId);
-      localStorage.setItem(playerKey, steamId);
+      // SteamID64 本来就是账号级；若本机此前已固化设备身份，先并入再切换。
+      return adoptPlatformIdentity(steamId).then(function (activeId) {
         return (typeof session.getIdentity === "function" ? session.getIdentity() : Promise.resolve(null)).then(function (identity) {
-        steamPersonaName = identity && identity.personaName ? String(identity.personaName).trim() : "";
-        if (!steamPersonaName) return steamId;
-        return upsertPlayerName(steamPersonaName).catch(function () { return null; }).then(function () { return steamId; });
+          steamPersonaName = identity && identity.personaName ? String(identity.personaName).trim() : "";
+          if (!steamPersonaName) return activeId;
+          return upsertPlayerName(steamPersonaName).catch(function () { return null; }).then(function () { return activeId; });
+        });
       });
     }).catch(function (error) {
       steamSessionPromise = null;
@@ -75,8 +169,8 @@
             var id = "taptap_" + String(body.openid);
             allianceSessionToken = body.sessionToken || "";
             if (allianceSessionToken) sessionStorage.setItem(allianceSessionKey, allianceSessionToken);
-            localStorage.setItem(playerKey, id);
-            done(resolve, id);
+            // 账号级身份就绪：把此前固化的设备身份并入它，而不是丢掉。
+            return adoptPlatformIdentity(id).then(function (activeId) { done(resolve, activeId); });
           }).catch(function (error) { done(reject, error); });
       }
       try {
@@ -371,6 +465,48 @@
     };
   }
 
+  // 把本机设备身份登记到云端（幂等）。只有登记过密钥的身份才能签发转移码 / 被并入。
+  function registerDeviceIdentity() {
+    var playerId = getPlayerId();
+    if (!isDeviceIdentity(playerId)) return Promise.resolve(true);
+    return identityRequest("register", { playerId: playerId, secret: getDeviceSecret() })
+      .then(function (result) { return !!result.registered; });
+  }
+
+  // 旧设备签发转移码：码绑定「本机身份」（被保留方），拿到码的新设备把自己的身份并进来。
+  function createIdentityCode(ttlSeconds) {
+    return registerDeviceIdentity().then(function () {
+      return identityRequest("create_code", {
+        playerId: getPlayerId(),
+        secret: getDeviceSecret(),
+        ttlSeconds: Number(ttlSeconds) || undefined
+      });
+    });
+  }
+
+  // 新设备兑换转移码：成功后本机身份并入码绑定的保留方，本机 playerId 切换为保留方。
+  function redeemIdentityCode(code) {
+    return registerDeviceIdentity().then(function () {
+      return identityRequest("redeem_code", {
+        playerId: getPlayerId(),
+        secret: getDeviceSecret(),
+        code: String(code || "").trim().toUpperCase()
+      });
+    }).then(function (result) {
+      if (result && result.keeperPlayerId) rememberPlayerId(result.keeperPlayerId);
+      return result;
+    });
+  }
+
+  // 盟主合并成员身份（清理库里的重复设备身份）；权限由服务端与 DB 双重校验。
+  function adminMergeIdentity(allianceId, fromPlayerId, toPlayerId) {
+    return identityRequest("admin_merge", {
+      allianceId: Number(allianceId),
+      fromPlayerId: fromPlayerId,
+      toPlayerId: toPlayerId
+    });
+  }
+
   function diagnose() {
     var report = {
       protocol: root.location && root.location.protocol || "unknown",
@@ -398,11 +534,13 @@
     isOnline: function () { return true; },
     getPlayerId: getPlayerId,
     getPlayerName: function () { return steamPersonaName; },
-    getAllianceSessionToken: function () {
-      if (allianceSessionToken) return allianceSessionToken;
-      try { return sessionStorage.getItem(allianceSessionKey) || ""; } catch (_) { return ""; }
-    },
+    isDeviceIdentity: function () { return isDeviceIdentity(getPlayerId()); },
+    getAllianceSessionToken: getAllianceSessionToken,
     initializeSteamIdentity: initializeSteamIdentity,
+    registerDeviceIdentity: registerDeviceIdentity,
+    createIdentityCode: createIdentityCode,
+    redeemIdentityCode: redeemIdentityCode,
+    adminMergeIdentity: adminMergeIdentity,
     getAlliance: getAlliance,
     listAlliances: listAlliances,
     getMembers: getMembers,
