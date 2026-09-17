@@ -173,6 +173,9 @@ function isWhitelisted(rel) {
     if (base === "ship-lab.css" || base === "three-demo.css") return false;
     return true;
   }
+  // de / ru 目录仅随 Steam（Electron）包发布，不进 TapTap H5 包（避免体积膨胀）。
+  // index.html 也只在检测到 Steam 运行时才注入对应 <script>，此处再拦一道，双保险。
+  if (rel === "js/i18n/catalog-de.js" || rel === "js/i18n/catalog-ru.js") return false;
   if (/^js\/.*\.js$/.test(rel)) {
     if (rel.includes("three-demo") || rel.includes("ship-lab")) return false;
     return true;
@@ -207,6 +210,11 @@ function localizeIndexHtml(html, includeProbe) {
   // 移除 Steam 适配器引用（合同预留、未签约；js/platform/steam/** 被构建硬排除严禁进 TapTap 包，
   // 与 qa-seed 同模式在本地化阶段摘除 index.html 引用，使 selftest"引用可在包内找到"通过且不向 TapTap 泄露 Steam 代码）
   out = out.replace(/<script[^>]*src=["'][^"']*js\/platform\/steam\/[^"']*["'][^>]*>\s*<\/script>\s*/g, "");
+  // 移除 Steam 专属 i18n（de / ru）注入块。该块本就在运行时判定 isSteam 才注入（TapTap 恒 false），
+  // 但 document.write 的参数字符串里含 `src="./js/i18n/catalog-de.js?v=1"` 字面量，会被 collectRefs
+  // 当作本地引用，导致「本地静态引用均可在包内找到」断言失败（这两个文件已被 isWhitelisted 排除）。
+  // 故按 marker 整块剥离，与 qa-seed / steam 引用同模式。
+  out = out.replace(/<!--\s*steam-i18n-de-ru:start\s*-->[\s\S]*?<!--\s*steam-i18n-de-ru:end\s*-->\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com">\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com" crossorigin>\s*/g, "");
   out = out.replace(/<link href="https:\/\/fonts\.googleapis\.com\/css2\?family=Orbitron:[^"]*" rel="stylesheet">\s*/g, "");

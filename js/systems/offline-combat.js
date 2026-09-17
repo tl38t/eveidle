@@ -776,6 +776,19 @@
   // ---- 记录击杀（掉落累计 + 计数）----
   function recordKill(state, s, enemy, zone, isDeathspace, site) {
     s.kills++;
+    // 离线战斗不逐艘发出 combat:enemyDefeated，因此在统一的击杀记录点结算连续声望。
+    if (typeof applyReputationKill === "function" && zone && zone.faction) {
+      applyReputationKill(state, zone.faction, zone.id, typeof getReputationShipClass === "function" ? getReputationShipClass(zone) : null);
+    }
+    // ⚠️ 离线打捞时序修复（2026-09-17）：flush（applyBatchedDrops）在全部战斗段结束后才跑一次，
+    // 而战斗结束 endLegionSquadBattle 会清空 state.combat.squad.members（legion-combat-squad.js:511）。
+    // 若 flush 时 members 已空，getSquadSalvageEfficiency(state) 的 npc 项为 0 ⇒ 离线打捞只算玩家量
+    // （与「在线正常、离线不行」现象吻合：在线逐杀实时算、members 恒满）。
+    // 故在此（战斗进行中、members 满时）捕获快照，并取全会话最大值以覆盖多段战斗 / 续波。
+    if (typeof getSquadSalvageEfficiency === "function") {
+      const _eff = getSquadSalvageEfficiency(state);
+      s.salvageSquadTotal = Math.max(typeof s.salvageSquadTotal === "number" ? s.salvageSquadTotal : 0, _eff);
+    }
     // 打捞臂燃料消耗（装备即生效，每击毁一艘扣基准燃料；开主动×3）：
     // 与在线 combat.js（击杀处理末尾）**逐杀**同口径 —— 乘战斗燃料倍率 fuelMult 并 max(1, round())，
     // 且从会话虚拟燃料池 s.fuel 逐杀扣除（而非 flush 按总击杀数一次性扣），
@@ -1020,8 +1033,7 @@
         nowRef.t += ROUND_SECONDS * 1000; advanceBoosterTime(state, ROUND_SECONDS * 1000, nowRef.t); budgetMs -= ROUND_SECONDS * 1000;
         s.simulatedSeconds += ROUND_SECONDS;
         if (c.deathspaceChainRemaining <= 0) { c.deathspaceChainPending = false; break; }
-        // 校验（等级/武器/维修/密钥）
-        if (G("getCombatLevelFromState")(state) < site.requiredCL) { c.deathspaceChainPending = false; c.deathspaceChainRemaining = 0; s.stopReason = "level-locked"; break; }
+        // 校验（武器/密钥）—— 等级门槛已在 combat.js:2007 在线端移除，离线续入需与在线同口径，故此处不再查 requiredCL
         // 泰坦主武器为舰体自带（不在 fitting 表内）：以「泰坦主武器存在」等价放行（与常规舰武器校验同语义）
         const _chainShip = G("getActiveShip")(state);
         const _chainTitanOk = _chainShip && typeof G("isTitanCombatShip") === "function" && G("isTitanCombatShip")(_chainShip) && Boolean(_chainShip.weapon);
@@ -1425,6 +1437,11 @@
     const c = state.combat;
     const rng = detRng(c);
     const da = s.dropAccum;
+    // ⚠️ 离线打捞时序修复（2026-09-17）：优先用战斗进行中捕获的快照 s.salvageSquadTotal
+    // （members 满、含 NPC+MTU 贡献），避免 flush 时 members 已被 endLegionSquadBattle 清空导致 npc 漏算。
+    // 无快照时回退实时 getSquadSalvageEfficiency（兜底，兼容旧档 / 非战斗态）。
+    const squadSalvageEff = (typeof s.salvageSquadTotal === "number") ? s.salvageSquadTotal
+      : ((typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0);
     // 军团 NPC 稀有掉落加成（与在线 roll* 系列同一倍率，只放大精英/Boss 稀有掉落）：
     // 离线结算同样生效，在线/离线口径一致。概率封顶 1 —— 在线每击毁 1 敌最多掉 1 份，
     // 离线批量重滚不得算出多于击杀数的份数（倍率 > 1 时 batchCount 会溢出）。
@@ -1487,7 +1504,7 @@
           const n = kindCounts[kind] || 0;
           if (!n) continue;
           // 同位素标记打捞臂：被动提升货柜掉率（与在线 rollCargoDrop 同公式 min(base*(1+b),0.5)）
-          const salvageBonus = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
+          const salvageBonus = squadSalvageEff;
           const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
           const chance = Math.min(baseChance * (1 + salvageBonus), 0.5);
           const drops = batchCount(n, chance, rng);
@@ -1509,7 +1526,7 @@
       if (n > 0) { RR.add(state, pv.resourceId, pv.qty * n); addResource(s, pv.resourceId, pv.qty * n); }
     }
     // 1.8) 同位素标记打捞臂：主动打捞舰船组件（按敌舰等级档位，确定性重滚；同位素消耗已在 recordKill 按会话虚拟余额门控）
-    const salvageBonus2 = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
+    const salvageBonus2 = squadSalvageEff;
     const sb = s.salvageByTier;
     if (sb) {
       for (const tier in sb) {
@@ -1531,10 +1548,10 @@
         }
       }
     }
-    // 1.82) 激光定向打捞单元（MTU）独立产出舰船组件（确定性重滚；不消耗同位素；flush 时仍按当前 getSalvageEfficiency 含 MTU 2.10 放大）
+    // 1.82) 激光定向打捞单元（MTU）独立产出舰船组件（确定性重滚；不消耗同位素；flush 时仍按快照 squadSalvageEff 含 MTU 2.10 放大）
     const mb = s.mtuSalvageByTier;
     if (mb) {
-      const mtuSalvageBonus = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
+      const mtuSalvageBonus = squadSalvageEff;
       for (const tier in mb) {
         const ids = (typeof SALVAGE_COMPONENT_IDS !== "undefined" && SALVAGE_COMPONENT_IDS[tier]) || null;
         if (!ids) continue;

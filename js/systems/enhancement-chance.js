@@ -6,7 +6,7 @@
 
    skillBonus = 技能溢出收益，最高 0.30
    levelPenalty = 强化等级递增惩罚
-   final = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)
+   final = clamp(0.50 + skillBonus − levelPenalty, dynamic floor, dynamic cap)
    ================================================================ */
 
 function getEnhancementChanceBreakdown(engineeringLevel, requirementLevel, currentLevel) {
@@ -29,9 +29,13 @@ function getEnhancementChanceBreakdown(engineeringLevel, requirementLevel, curre
     0.05 * Math.min(Math.max(L - 10, 0), 5) +
     0.08 * Math.max(L - 15, 0);
 
+  const skillGap = Math.max(0, eng - req);
+  const boundSteps = Math.floor(skillGap / 5);
+  const minChance = Math.min(0.15, 0.05 + boundSteps * 0.01);
+  const maxChance = Math.min(0.90, 0.80 + boundSteps * 0.01);
   const raw = 0.50 + skillBonus - levelPenalty;
-  const final = Math.max(0.05, Math.min(0.80, raw));
-  return { base: 0.50, skillBonus, levelPenalty, final };
+  const final = Math.max(minChance, Math.min(maxChance, raw));
+  return { base: 0.50, skillBonus, levelPenalty, minChance, maxChance, final };
 }
 
 function getEnhancementChance(engineeringLevel, requirementLevel, currentLevel) {

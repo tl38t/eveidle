@@ -104,6 +104,9 @@ const extraJs = allJs.filter((f) => !ordered.includes(f)).sort();
 const WX_EXCLUDE = new Set([
   "js/i18n/catalog-en.js",
   "js/i18n/catalog-zh-TW.js",
+  // de / ru 目录仅随 Steam 包发布；微信本就不走 i18n catalog（简中兜底），显式排除避免误入。
+  "js/i18n/catalog-de.js",
+  "js/i18n/catalog-ru.js",
   "js/qa-seed.js",
 ]);
 const bootOrderAll = [...ordered, ...extraJs];

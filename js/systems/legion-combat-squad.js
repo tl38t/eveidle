@@ -671,6 +671,53 @@
         });
       }
     }
+    // ── 攻击（泰坦）：舰体自带主武器（2026-09-17，玩家报「NPC 泰坦不显示攻击」）──
+    // 泰坦高槽被末日武器占位（highUsable=0）、主武器随舰体自带（config.weapon，不在 fitting 表）
+    // ⇒ 上面 getInstalledCombatWeapons 循环恒不命中，NPC 绑定泰坦面板恒显「攻击 0 / 未安装武器」。
+    // 与 fireSingleNpcMember 泰坦虚拟模块实弹链同口径：类型乘区(selDmgMult) × 武器增强剂 × 结构过载 ×
+    // 脑突触 × 暴击期望 × 等级倍率；统御矩阵团队光环经 total 的 panelAuraDmgMult 已计入（stacking=max，
+    // 含 NPC 泰坦自身核心，见 getTitanSquadAura ②-a），条目内不重复乘。
+    // 面板惯例排除：弹药档/克制/易伤/命中-闪避/±10% 随机浮动；联盟加成 NPC 实弹链本身不含，故不乘。
+    let titanPanelFuel = 0;
+    const npcTitanLoadout = resolveNpcTitanLoadout(state, shipOpts);
+    if (npcTitanLoadout && npcTitanLoadout.weapon) {
+      const tw = npcTitanLoadout.weapon;
+      const rdFn = getGlobalFn("getTitanWeaponRoundDamage");
+      const critFn = getGlobalFn("rollTitanCritMultiplier");
+      const adbmFn = getGlobalFn("getAdBuffMultiplier");
+      const odFn = getGlobalFn("getTitanStructureOverdriveMultiplier");
+      const rd = rdFn ? rdFn(tw, { round: 1, targetHpRatio: 1 }) : null;
+      const mainBase = Math.max(0, Number((rd && rd.mainDamage != null) ? rd.mainDamage : tw.baseDamage) || 0);
+      const titanTypeMult = Number(selDmgMult(state, tw.weaponType, undefined, shipOpts)) || 1;
+      const titanBooster = (boosterDmgMap && boosterDmgMap[tw.weaponType]) ? Number(boosterDmgMap[tw.weaponType]) || 1 : 1;
+      const adBuffMult = adbmFn ? (Number(adbmFn(state)) || 1) : 1;
+      const critExpected = critFn ? (Number(critFn(tw.crit, null)) || 1) : 1;   // rng 传 null = 期望乘数
+      // 结构过载：与实弹同输入（npc.combatHp / stats.maxHp），缺战斗态时退化为 1（与 fireSingleNpcMember 同退化）
+      let overdriveMult = 1;
+      if (odFn && npcTitanLoadout.trait && npc.combatHp && maxHp) {
+        overdriveMult = Number(odFn(npcTitanLoadout.trait, npc.combatHp, maxHp)) || 1;
+      }
+      const raw = mainBase * titanTypeMult * titanBooster * overdriveMult * adBuffMult * critExpected;
+      attackPower += raw;
+      const chainNote = [["类型", titanTypeMult], ["结构过载", overdriveMult], ["增强剂", titanBooster],
+        ["脑突触", adBuffMult], ["暴击期望", critExpected]]
+        .filter(pair => Math.abs(pair[1] - 1) > 1e-9).map(pair => pair[0] + " ×" + pair[1].toFixed(2)).join(" · ");
+      attackItems.push({
+        name: (tw.name || "舰载主武器") + "（舰体自带）",
+        weaponType: tw.weaponType,
+        base: Math.round(mainBase),
+        enhancement: 1,
+        typeMult: titanTypeMult,
+        atkBooster: titanBooster,
+        levelMult: levelMult,
+        value: Math.round(raw * levelMult),
+        titanMain: true,
+        note: "基伤 " + Math.round(mainBase) + (chainNote ? " · " + chainNote : "")
+      });
+      // 泰坦主武器齐射燃料（含核心维持供能）：直接复用 fireSingleNpcMember 同一实现，禁公式双写
+      const tFuel = computeTitanVolleyFuel(state, opts.zone, shipOpts, npcTitanLoadout.weapon, npcTitanLoadout.core);
+      if (tFuel > 0) titanPanelFuel = tFuel;
+    }
     // 面板与实战保持同口径：NPC 的攻击力显示包含统御矩阵当前生效的团队伤害加成。
     const panelTitanAura = getTitanSquadAura(state);
     const panelAuraDmgMult = (panelTitanAura && panelTitanAura.squadDamageBonus)
@@ -706,8 +753,8 @@
     const deflector = isDeflector ? (Number(trait.reduction) || 0) : 0;
     const deflectorHits = isDeflector ? (Number(trait.shieldHits) || 0) : 0;
 
-    // 燃料明细：武器齐射 / 损伤控制 / 维修 三项分列
-    let fuelWeapon = 0;
+    // 燃料明细：武器齐射 / 损伤控制 / 维修 三项分列（泰坦主武器齐射燃料已并入 titanPanelFuel）
+    let fuelWeapon = titanPanelFuel;
     for (const w of weapons) {
       const fc = Number(w.fuelCost);
       if (!(fc > 0)) continue;

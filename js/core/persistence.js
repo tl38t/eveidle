@@ -49,6 +49,47 @@ function mirrorDesktopSave(data) {
   try { DesktopSaveMirror.write(JSON.stringify(data)); } catch (_) {}
 }
 
+// 本地存档 DSI2：轻量混淆 + 完整性摘要。仅用于阻止误改/随手改，不等同于服务端防作弊签名。
+const LOCAL_SAVE_PREFIX = "DSI2.";
+const LOCAL_SAVE_MASK = "deep-space-idle-local-v2";
+function localSaveBytesToBase64(bytes) {
+  let raw = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) raw += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(raw).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+function localSaveBase64ToBytes(value) {
+  let s = String(value || "").replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  const raw = atob(s), bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+function localSaveDigest(text) {
+  let hash = 2166136261;
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+function encodeLocalSave(data) {
+  const text = JSON.stringify(data);
+  const bytes = new TextEncoder().encode(text);
+  for (let i = 0; i < bytes.length; i++) bytes[i] ^= LOCAL_SAVE_MASK.charCodeAt(i % LOCAL_SAVE_MASK.length) ^ (i & 0xff);
+  return LOCAL_SAVE_PREFIX + localSaveDigest(text) + "." + localSaveBytesToBase64(bytes);
+}
+function decodeLocalSave(value) {
+  const text = String(value || "").trim();
+  if (text.indexOf(LOCAL_SAVE_PREFIX) !== 0) return JSON.parse(text); // 兼容旧版明文存档
+  const parts = text.split(".");
+  if (parts.length !== 3 || parts[1].length !== 8) throw new Error("本地存档格式无效");
+  const bytes = localSaveBase64ToBytes(parts[2]);
+  for (let i = 0; i < bytes.length; i++) bytes[i] ^= LOCAL_SAVE_MASK.charCodeAt(i % LOCAL_SAVE_MASK.length) ^ (i & 0xff);
+  const payloadText = new TextDecoder().decode(bytes);
+  if (localSaveDigest(payloadText) !== parts[1]) throw new Error("本地存档校验失败（可能已被修改或损坏）");
+  return JSON.parse(payloadText);
+}
+
 const LocalStorageAdapter = {
   _key: "eve_idle_save",
   // 定点返修（云存档死局 P0-7）：原实现在 catch 内吞掉异常并返回 false，
@@ -74,8 +115,22 @@ const LocalStorageAdapter = {
     }
   },
   load() { const result = this.readCandidate(); return result.status === "ok" ? result.payload : null; },
-  export(data) { return JSON.stringify(data, null, 2); },
-  import(jsonString) { return JSON.parse(jsonString); },
+  save(data) { try { localStorage.setItem(this._key, encodeLocalSave(data)); this._lastError = null; return true; } catch (e) { this._lastError = e; console.warn("本地存档保存失败", e); return false; } },
+  readCandidate() {
+    let raw;
+    try { raw = localStorage.getItem(this._key); } catch (e) { return { status: "error", error: e }; }
+    if (raw === null || raw === undefined || raw === "") return { status: "none" };
+    try {
+      const payload = decodeLocalSave(raw);
+      if (!payload || typeof payload !== "object" || Array.isArray(payload) || !payload.skills) throw new Error("本地存档结构无效");
+      return { status: "ok", payload: payload };
+    } catch (e) {
+      console.warn("本地存档读取失败", e);
+      return { status: "error", error: e, rawLength: String(raw).length };
+    }
+  },
+  export(data) { return encodeLocalSave(data); },
+  import(jsonString) { return decodeLocalSave(jsonString); },
   removeItem() { try { localStorage.removeItem(this._key); return true; } catch (e) { console.warn("删除存档失败：", e); return false; } }
 };
 

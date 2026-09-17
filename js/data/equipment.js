@@ -801,9 +801,10 @@ function getEquipmentAttributeLines(equipmentRef, enhancementLevel) {
     if (eq.combat.aoe && eq.combat.aoe.description) lines.push(eq.combat.aoe.description);
     if (eq.combat.xEffect) {
       const x = eq.combat.xEffect;
-      if (x.kind === "dot") lines.push("灼蚀：每回合额外造成基础伤害的 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
-      if (x.kind === "lifesteal") lines.push("装甲回流：直接伤害的 " + (x.rate * 100) + "% 转化为装甲修复");
-      if (x.kind === "vulnerability") lines.push("伤害加深：目标受到的最终伤害提高 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
+      const ratePct = Number((x.rate * 100).toFixed(4));
+      if (x.kind === "dot") lines.push("灼蚀：每回合额外造成基础伤害的 " + ratePct + "%，持续 " + x.rounds + " 回合");
+      if (x.kind === "lifesteal") lines.push("装甲回流：直接伤害的 " + ratePct + "% 转化为装甲修复");
+      if (x.kind === "vulnerability") lines.push("伤害加深：目标受到的最终伤害提高 " + ratePct + "%，持续 " + x.rounds + " 回合");
     }
   } else if (eq.combat && eq.combat.kind === "repair") {
     const targetNames = { shield:"护盾", armor:"装甲", structure:"结构" };

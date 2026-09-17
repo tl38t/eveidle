@@ -6,7 +6,7 @@
    严格遵循最终锁定规则：
      · 失败规则 C：消耗全部材料，等级不变，不回退、不降级
      · 失败 XP = 0（仅成功给 baseXp·(1+0.2L)）
-     · 成功率 = clamp(0.50 + skillBonus − levelPenalty, 0.05, 0.80)  [2026-07-23 新公式]
+     · 成功率 = clamp(0.50 + skillBonus − levelPenalty, 动态下限, 动态上限)
        skillBonus = 技能溢出递减（最高 +30%）
        levelPenalty = 强化等级递增惩罚
      · 每次尝试消耗精炼矿物，倍率 = 0.5 + 0.10·L + 0.5·⌊L/5⌋
@@ -53,7 +53,7 @@ function getEquipmentEnhancementSuccessChance(equipmentEngineeringLevel, equipme
 }
 
 /** 返回 { base:0.50, skillBonus:number, levelPenalty:number, final:number }
- *  final = clamp(0.50 + skillBonus - levelPenalty, 0.05, 0.80) */
+ *  动态下限 5%~15%，动态上限 80%~90%，由制造等级相对门槛决定。 */
 function getEquipmentEnhancementSuccessBreakdown(equipmentEngineeringLevel, equipmentLevel, currentLevel) {
   return getEnhancementChanceBreakdown(equipmentEngineeringLevel, equipmentLevel, currentLevel);
 }
@@ -64,10 +64,10 @@ function getEquipmentEnhancementCostMultiplier(targetLevel) {
   return 0.5 + 0.10 * L + 0.5 * Math.floor(L / 5);
 }
 
-/* ---- XP：成功 = round(baseXp · (1 + 0.2·currentLevel))；失败 = 0 ---- */
+/* ---- XP：成功 = round(baseXp · (1 + 0.2·currentLevel) · 2)；失败 = 0 ---- */
 function getEquipmentEnhancementSuccessXp(equipment, currentLevel) {
   const L = Math.max(0, Math.floor(Number(currentLevel) || 0));
-  return Math.round((Number(equipment && equipment.xp) || 0) * (1 + 0.2 * L));
+  return Math.round((Number(equipment && equipment.xp) || 0) * (1 + 0.2 * L) * 2);
 }
 function getEquipmentEnhancementFailureXp() { return 0; }
 

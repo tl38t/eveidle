@@ -141,7 +141,7 @@ function getShipEnhancementSuccessBreakdown(shipEngineeringLevel, manufacturingL
 
 function getShipEnhancementSuccessXp(shipConfig, currentLevel) {
   const baseXp = getShipEnhancementBaseXp(shipConfig);
-  return Math.round(baseXp * (1 + 0.2 * normalizeShipEnhancementLevel(currentLevel)));
+  return Math.round(baseXp * (1 + 0.2 * normalizeShipEnhancementLevel(currentLevel)) * 2);
 }
 
 function getShipEnhancementFailureXp(shipConfig) {

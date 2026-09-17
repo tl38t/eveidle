@@ -2046,7 +2046,15 @@ function getBoosterManufacturingDisplayState(state, now) {
 }
 
 function getCombatSkillLevelFromState(state, key) {
-  return Number(state && state.skills && state.skills[key] && state.skills[key].lvl) || 1;
+  let level = Number(state && state.skills && state.skills[key] && state.skills[key].lvl) || 1;
+  // 友善声望提供对应武器的额外战斗等级；声望本身不写回技能等级，避免跨档重置或污染技能经验。
+  const factionBySkill = { cannonOps:"angel", laserOps:"blood", missileOperations:"sansha" };
+  const faction = factionBySkill[key];
+  if (faction && typeof getFactionReputation === "function") {
+    const reputation = getFactionReputation(faction, state);
+    if (reputation && reputation.score > 0) level += 1;
+  }
+  return level;
 }
 
 function getActiveCombatShipState(state, options) {
@@ -4880,7 +4888,7 @@ function getStatisticsDisplayState(state) {
 }
 
 function getNavigationDisplayState(page, view) {
-  const standalonePages = { cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel", alliance:"alliance-panel", wormhole:"wormhole-panel" };
+  const standalonePages = { "skill-overview":"skill-overview-panel", cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel", alliance:"alliance-panel", wormhole:"wormhole-panel" };
   const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", combat:"combat-panel" };
   const selectedPage = page || "skill";
   const selectedView = view || "mining";

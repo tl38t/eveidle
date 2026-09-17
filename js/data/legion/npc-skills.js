@@ -37,6 +37,14 @@
     C: { base: 0.7, per: 0.12 },
     D: { base: 0.5, per: 0.10 }
   };
+  // 薪资统筹专用高数值组：沿用同类 NPC 递减与 100% 工资减免上限。
+  // A/B/C/D 在岗 Lv.70 分别约为 20.5% / 16.75% / 13.5% / 10.25%。
+  const WAGE_HIGH = {
+    A: { base: 10.0, per: 1.50 },
+    B: { base: 8.0, per: 1.25 },
+    C: { base: 6.5, per: 1.00 },
+    D: { base: 5.0, per: 0.75 }
+  };
 
   const SKILLS = [
     // ===== 采集与生产 =====
@@ -66,7 +74,7 @@
     { id: "autolineSpeed",         type: "自动线速度",             name: "产线调度", category: "management", shipClass: null, grades: LOW,  effect: "提升自动线速度" },
     { id: "shipComponentCostReduce", type: "舰船组件制造消耗降低", name: "舰材回收", category: "management", shipClass: null, grades: LOW,  effect: "降低舰船组件制造消耗" },
     { id: "xpGain",                type: "玩家与 NPC 经验获取",    name: "训练教范", category: "management", shipClass: null, grades: LOW,  effect: "提升玩家与 NPC 经验获取" },
-    { id: "wageReduce",            type: "NPC 工资降低",           name: "薪资统筹", category: "management", shipClass: null, grades: HIGH, effect: "降低 NPC 工资" }
+    { id: "wageReduce",            type: "NPC 工资降低",           name: "薪资统筹", category: "management", shipClass: null, grades: WAGE_HIGH, effect: "降低 NPC 工资" }
   ];
 
   // 等级权重（已确定）：A 5 / B 15 / C 30 / D 50

@@ -138,7 +138,13 @@
   function parseCompound(s, sel) {
     var comp = { tag: null, id: null, cls: [], attrs: [], nots: [], scope: false };
     var i = 0;
-    if (s.charAt(0) === "*") { i = 1; }
+    /* `*` = 通配 tag（合法复合选择器）。必须记 comp.tag = "*"：
+       ① 否则落进下方「空复合选择器」校验被整条拒绝；
+       ② 生产代码真用 `querySelectorAll("*")`（js/i18n/translator.js:94 翻译器主循环
+          `apply()` 遍历全部元素）—— 曾因这里抛「空复合选择器」⇒ listener 回调中断
+          ⇒ 启动链路断在翻译步 ⇒ autoLoad → switchPage 永不执行 ⇒ 21 个面板全可见
+          连成 ~16000px 长柱（用户症状「所有面板合在一起」的真根因，2026-09-17）。 */
+    if (s.charAt(0) === "*") { i = 1; comp.tag = "*"; }
     else if (WORD_START_RE.test(s.charAt(0))) {
       var j0 = i;
       while (j0 < s.length && WORD_RE.test(s.charAt(j0))) j0++;
@@ -179,7 +185,7 @@
         throw selErr(sel, "位置 " + i + " 出现意外字符 " + JSON.stringify(c));
       }
     }
-    if (!comp.tag && !comp.id && !comp.cls.length && !comp.attrs.length && !comp.nots.length && !comp.scope) {
+    if (comp.tag !== "*" && !comp.tag && !comp.id && !comp.cls.length && !comp.attrs.length && !comp.nots.length && !comp.scope) {
       throw selErr(sel, "空复合选择器");
     }
     return comp;
@@ -284,7 +290,7 @@
 
   function matchesCompound(el, comp, scope) {
     if (!el || el.nodeType !== 1) return false;
-    if (comp.tag && el.tagName !== comp.tag) return false;
+    if (comp.tag && comp.tag !== "*" && el.tagName !== comp.tag) return false;
     if (comp.scope && el !== scope) return false;
     if (comp.id && el.id !== comp.id) return false;
     var k;
@@ -414,6 +420,15 @@
     if ("value" in el._attrs) el.value = el._attrs.value;
     if ("type" in el._attrs) el.type = el._attrs.type;
     if ("title" in el._attrs) el.title = el._attrs.title;
+    /* ⚠️ 解析期行内样式必须同步进 `el.style` 活对象（浏览器语义：解析出的行内样式就在
+     * el.style 里）。曾经只写 `_attrs.style` 快照 ⇒ getAttribute("style")（活值口，
+     * shim.js:589）返回 null ⇒ toKernel 的活读拿不到 display:none ⇒ HTML 里自带
+     * `style="display:none"` 的元素（如 #combat-stats-modal「舰船实战属性」弹窗，
+     * `.csm{display:flex;position:fixed;inset:0;z-index:1200}` 默认可见）裸奔显示，
+     * 压在启动画面顶部（2026-09-17 第三根因）。cssText setter 会做分号拆解+驼峰转换。 */
+    if ("style" in el._attrs && el.style && typeof el.style.cssText === "string") {
+      try { el.style.cssText = el._attrs.style; } catch (eStyleAttr) {}
+    }
     for (var bn in BOOL_ATTRS) if (bn in el._attrs) el[bn === "readonly" ? "readOnly" : bn] = true;
   }
 
@@ -603,6 +618,8 @@
       else if (name === "value") el.value = el._attrs[name];
       else if (name === "type") el.type = el._attrs[name];
       else if (name === "title") el.title = el._attrs[name];
+      /* style 走活对象（同 parseAttrsInto 的注释；cssText setter 内含清旧值语义） */
+      else if (name === "style") { if (el.style && typeof el.style.cssText === "string") { try { el.style.cssText = el._attrs[name]; } catch (eStyleSet) {} } }
       else if (BOOL_ATTRS[name]) el[name === "readonly" ? "readOnly" : name] = true;
     };
     el.removeAttribute = function (k) {
@@ -611,6 +628,7 @@
       el.__ds = null;
       if (name === "id") el.id = "";
       else if (name === "class") el.className = "";
+      else if (name === "style") { if (el.style) { var ks = styleKeys(el); for (var iRm = 0; iRm < ks.length; iRm++) delete el.style[ks[iRm]]; } }
       else if (BOOL_ATTRS[name]) el[name === "readonly" ? "readOnly" : name] = false;
     };
 

@@ -929,13 +929,24 @@
     if (returnedRelayError) { if (msg) msg.textContent = "联盟操作未完成：" + returnedRelayError; }
     else if (returnedRelayResult === "upgrade_success") { if (msg) msg.textContent = "联盟建筑升级成功，建设点已扣除"; }
     var taskLabels = { mineral: "矿物采集", refining: "冶炼材料", gas: "气体采集", planetary: "行星材料", booster: "增强剂制造", equipment: "装备制造", "ship-component": "舰船组件" };
+    // 任务用料 id 规范化：云端可能回传裸名（如"锻星合金"）或命名空间前缀（如"special:锻星合金"）。
+    // 裸名需经 ResourceRegistry 的 idsByName 解析为规范 id，否则 get/spend/add 一律查不到导致永远"材料不足/提交失败"。
+    function resolveTaskMaterialId(materialId) {
+      if (typeof materialId !== "string") return materialId;
+      if (typeof ResourceRegistry !== "undefined" && ResourceRegistry.parseId && ResourceRegistry.parseId(materialId)) return materialId;
+      if (typeof ResourceRegistry !== "undefined" && ResourceRegistry.resolveMaterialIds) {
+        var ids = ResourceRegistry.resolveMaterialIds(materialId);
+        if (ids && ids.length) return ids[0];
+      }
+      return materialId;
+    }
     function hasTaskMaterials(task) {
       var amount = Number(task.requiredAmount) || 0;
       if (task.category === "equipment") {
         var inventory = root.gameState && root.gameState.equipment && Array.isArray(root.gameState.equipment.inventory) ? root.gameState.equipment.inventory : [];
         return inventory.indexOf(String(task.materialId || "").replace(/^equipment:/, "")) >= 0;
       }
-      return typeof ResourceRegistry !== "undefined" && ResourceRegistry.get(root.gameState, task.materialId) >= amount;
+      return typeof ResourceRegistry !== "undefined" && ResourceRegistry.getByRef(root.gameState, task.materialId) >= amount;
     }
     if (!document.getElementById("alliance-task-polish")) {
       var taskStyle = document.createElement("style");
@@ -977,13 +988,13 @@
       var inventory = root.gameState && root.gameState.equipment && root.gameState.equipment.inventory;
       var spent = task.category === "equipment"
         ? Array.isArray(inventory) && inventory.indexOf(equipmentId) >= 0 && (inventory.splice(inventory.indexOf(equipmentId), 1), true)
-        : typeof ResourceRegistry !== "undefined" && ResourceRegistry.spend(root.gameState, task.materialId, amount);
+        : typeof ResourceRegistry !== "undefined" && ResourceRegistry.spendByRef(root.gameState, task.materialId, amount);
       if (!spent) { button.disabled = false; if (msg) msg.textContent = "材料不足"; return; }
       button.disabled = true;
       fetch(taskGateway, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "submit", playerId: playerId, allianceId: allianceId, taskId: task.serverTaskId, amount: amount }) })
         .then(function (response) { return readResponseJson(response).then(function (data) { if (!response.ok || !data.ok) throw new Error(data.error || "任务提交失败"); return data; }); })
         .then(function (data) { localStorage.setItem("eve_idle_alliance_task_processed_" + task.taskKey, "1"); if (root.SaveManager && root.SaveManager.save) root.SaveManager.save(); if (msg) msg.textContent = "任务提交成功，联盟建设点 +" + data.pointsEarned; load(); })
-        .catch(function (error) { if (task.category === "equipment") inventory.push(equipmentId); else ResourceRegistry.add(root.gameState, task.materialId, amount); if (root.SaveManager && root.SaveManager.save) root.SaveManager.save(); button.disabled = false; if (msg) msg.textContent = error.message || "任务提交失败"; });
+        .catch(function (error) { if (task.category === "equipment") inventory.push(equipmentId); else ResourceRegistry.add(root.gameState, resolveTaskMaterialId(task.materialId), amount); if (root.SaveManager && root.SaveManager.save) root.SaveManager.save(); button.disabled = false; if (msg) msg.textContent = error.message || "任务提交失败"; });
     }
     setTimeout(function () {
       content.insertAdjacentHTML("beforeend", taskHtml);

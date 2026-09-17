@@ -1,7 +1,12 @@
 (function () {
   "use strict";
   var STORAGE_KEY = "deep-space-idle.locale";
-  var supported = ["zh-CN", "zh-TW", "en-US"];
+  // de / ru 目录**仅 Steam（Electron）端**随包发布并由 index.html 条件注入。
+  // 非 Steam 端（微信 / TapTap）不会加载这两个 <script>，全局不存在 ⇒ 不加入 supported，
+  // 语言下拉也不出现，玩家无法选到，体积不受影响。
+  var hasDe = !!window.I18N_CATALOG_DE;
+  var hasRu = !!window.I18N_CATALOG_RU;
+  var supported = ["zh-CN", "zh-TW", "en-US"].concat(hasDe ? ["de"] : []).concat(hasRu ? ["ru"] : []);
   function normalizeLocale(value) {
     var code = String(value || "").toLowerCase().replace(/_/g, "-");
     if (["tchinese", "zh-tw", "zh-hk", "zh-mo", "zh-hant"].includes(code)) return "zh-TW";
@@ -9,15 +14,19 @@
     if (["english", "en", "en-us", "en-gb"].includes(code)) return "en-US";
     return value;
   }
-  // Steam 只发行简中/繁中/英文三种界面语言，而客户端语言代码有近三十种。
-  // 简中/繁中做精确映射，其余一律收敛到英文——非中文玩家看英文远比看中文可读。
+  // Steam 界面语言已发行 5 种：简中 / 繁中 / 英文 / 德语 / 俄语，而客户端语言代码有近三十种。
+  // 这 5 种做精确映射，其余（日、法、西……）一律收敛到英文——非中文玩家看英文远比看中文可读。
   // 不能沿用 normalizeLocale 的「未识别则原样返回」：那会让日语之类的代码一路落到
   // 浏览器语言的兜底分支上（非 en、非 tw 即判为 zh-CN）。
+  // 德语 / 俄语目录只在 Steam 端随包发布；非 Steam 端 hasDe / hasRu 为假，
+  // 这两个 code 不在 supported 里，会被下面的 supported.includes 挡掉并回落浏览器语言。
   function normalizeSteamLocale(value) {
     var code = String(value || "").toLowerCase().replace(/_/g, "-");
     if (!code) return "";
     if (["schinese", "zh-cn", "zh-sg", "zh-hans"].includes(code)) return "zh-CN";
     if (["tchinese", "zh-tw", "zh-hk", "zh-mo", "zh-hant"].includes(code)) return "zh-TW";
+    if (["german", "de", "de-de", "de-at", "de-ch"].includes(code)) return "de";
+    if (["russian", "ru", "ru-ru"].includes(code)) return "ru";
     return "en-US";
   }
   var queryLocale = normalizeLocale(new URLSearchParams(window.location.search).get("lang"));
@@ -30,6 +39,8 @@
   // 手动选择优先于 Steam：否则玩家在设置里切成英文，重启后又被客户端语言顶回中文。
   var locale = supported.includes(queryLocale) ? queryLocale : (supported.includes(storedLocale) ? storedLocale : (supported.includes(steamLocale) ? steamLocale : browserLocale));
   var catalogs = { "en-US": window.I18N_CATALOG_EN || new Map(), "zh-TW": window.I18N_CATALOG_ZH_TW || new Map() };
+  if (hasDe) catalogs["de"] = window.I18N_CATALOG_DE;
+  if (hasRu) catalogs["ru"] = window.I18N_CATALOG_RU;
   var catalog = new Map();
   var catalogSources = [];
   var originals = new WeakMap();
@@ -95,7 +106,16 @@
     elements.forEach(function (element) { if (skip(element)) return; Array.from(element.childNodes).forEach(function (node) { if (node.nodeType === 3) translateText(node); }); });
     elements.forEach(translateAttributes);
   }
-  function applyNav() { apply(document.body); document.documentElement.lang = locale; document.title = locale === "en-US" ? "Deep Space Idle" : "深空放置"; }
+  // 窗口 / 标签页标题：中文两个 locale 用「深空放置」，英文用品牌英文名；
+  // de / ru 取本语言目录里与游戏内顶栏左上角品牌名同源的那条键（保证「窗口标题 == 顶栏标题」），
+  // 取不到时回落英文品牌名。document.documentElement.lang 直接写 locale 值，
+  // "de" / "ru" / "en-US" / "zh-TW" 都是合法 BCP47 代码。
+  var WINDOW_TITLES = { "zh-CN": "深空放置", "zh-TW": "深空放置", "en-US": "Deep Space Idle" };
+  function applyNav() {
+    apply(document.body);
+    document.documentElement.lang = locale;
+    document.title = WINDOW_TITLES[locale] || catalog.get("深空放置 · 边疆纪元") || "Deep Space Idle";
+  }
   function broadcastLocale() {
     var frame = document.getElementById("legion-starmap-frame");
     if (frame && frame.contentWindow) frame.contentWindow.postMessage({ type: "deep-space-idle/locale", locale: locale }, "*");
@@ -154,7 +174,13 @@
   document.addEventListener("DOMContentLoaded", function () {
     applyNav();
     var control = document.getElementById("setting-language");
-    if (control) { control.value = locale; control.addEventListener("change", function () { setLocale(control.value); }); }
+    if (control) {
+      control.value = locale;
+      // 仅当对应目录全局存在（即 Steam 端）才向语言下拉追加 de / ru 选项。
+      if (window.I18N_CATALOG_DE) { var od = document.createElement("option"); od.value = "de"; od.textContent = "Deutsch"; control.appendChild(od); }
+      if (window.I18N_CATALOG_RU) { var or = document.createElement("option"); or.value = "ru"; or.textContent = "Русский"; control.appendChild(or); }
+      control.addEventListener("change", function () { setLocale(control.value); });
+    }
     followPlatformLocale();
     var observer = new MutationObserver(function (mutations) {
       mutations.forEach(function (mutation) {

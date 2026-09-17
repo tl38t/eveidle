@@ -302,7 +302,18 @@ function getCombatFormation(zone, wave, randomFn) {
   if (wave >= maxWave) {
     return { id:"boss", normal:zone.bossEscortCount || 0, elite:0, boss:1 };
   }
-  const formations = COMBAT_FORMATION_POOLS[zone.formationPool] || COMBAT_FORMATION_POOLS.highsec;
+  let formations = COMBAT_FORMATION_POOLS[zone.formationPool] || COMBAT_FORMATION_POOLS.highsec;
+  // 负声望提高对应势力的精英编队概率；通过重分配编队权重实现，不改变Boss波。
+  const eliteBonus = typeof getFactionEliteChanceBonus === "function" ? getFactionEliteChanceBonus(zone.faction, window.gameState) : 0;
+  if (eliteBonus > 0) {
+    const baseEliteChance = formations.reduce((sum, item) => sum + (item.elite ? Number(item.chance) || 0 : 0), 0);
+    const wantedEliteChance = Math.min(1, baseEliteChance + eliteBonus);
+    if (baseEliteChance > 0 && baseEliteChance < 1) {
+      const eliteScale = wantedEliteChance / baseEliteChance;
+      const normalScale = (1 - wantedEliteChance) / (1 - baseEliteChance);
+      formations = formations.map(item => ({ ...item, chance: (Number(item.chance) || 0) * (item.elite ? eliteScale : normalScale) }));
+    }
+  }
   const roll = typeof randomFn === "function" ? randomFn : Math.random;
   const value = roll();
   let cumulative = 0;

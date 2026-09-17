@@ -527,8 +527,18 @@
     const result = document.getElementById("wormhole-room-result");
     if (result) {
       const log = run.log || [];
+      // 战报 reason 形如「启动失败:insufficient-probe」（wormhole.js:1089，半角冒号）→ 翻成玩家可读文案
+      const logText = function (e) {
+        if (!e) return "失败";
+        if (e.ok) return "制压";
+        if (e.reason === "skip") return "跳过";
+        const raw = String(e.reason || "");
+        const at = raw.indexOf("启动失败");
+        if (at >= 0) return "启动失败：" + whReasonText(raw.slice(at + 4).replace(/^[\s:：]+/, ""));
+        return whReasonText(raw);
+      };
       result.innerHTML = log.length
-        ? '<div style="margin-top:8px;font-size:12px;color:#8fa8c3">最近战报：' + log.slice(-8).map(e => (e.ok ? "制压" : (e.reason === "skip" ? "跳过" : (String(e.reason || "").indexOf("启动失败") >= 0 ? String(e.reason) : "失败")))).join(" · ") + '</div>'
+        ? '<div style="margin-top:8px;font-size:12px;color:#8fa8c3">最近战报：' + log.slice(-8).map(logText).join(" · ") + '</div>'
         : '<div style="margin-top:8px;font-size:12px;color:#6f88a6">暂无战报。</div>';
     }
     return true;
@@ -592,6 +602,13 @@
         '<div><span>扫描周期</span><strong id="wh-a-cycle">' + D.cycle + 's</strong></div>' +
         '<div><span>干扰</span><strong>' + D.interf + 's</strong></div>' +
         '<div><span>产出</span><strong>校准基体 ' + D.tier + ' 型 ×1（' + D.tierChance + '%）</strong></div>' +
+        '</div>' +
+        '<div class="wormhole-room-supply" id="wh-a-supply">' +
+        '<div class="wormhole-room-row"><span>消耗 · 探针</span><strong id="wh-a-probe-stock">—</strong></div>' +
+        '<div class="wormhole-room-row"><span>消耗 · 燃料</span><strong id="wh-a-fuel-stock">—</strong></div>' +
+        '<div class="wormhole-room-row"><span>切换探针</span><select id="wh-arch-probe" class="wh-probe-select" aria-label="选择探针"></select></div>' +
+        '<div class="wh-supply-warn" id="wh-a-warn" hidden></div>' +
+        '</div>' +
         '</div></div></div></div>';
     }
     return '<div class="starmap-production-intro">—</div>';
@@ -636,6 +653,15 @@
         }).join("");
       }
       mountRoomShip3d("wh-arch-ship-3d", assigned);
+      // 房间内直接切换激活探针：走与考古页同一 action（archaeology/selectProbe），不另写第二套校验。
+      const probeSel = document.getElementById("wh-arch-probe");
+      if (probeSel && !probeSel.dataset.whBound) {
+        probeSel.dataset.whBound = "1";
+        probeSel.addEventListener("change", function () {
+          if (typeof dispatchGameAction !== "function") return;
+          try { dispatchGameAction(gameState, { type: "archaeology/selectProbe", probeId: probeSel.value }, Date.now()); } catch (_) {}
+        });
+      }
     }
   }
 
@@ -647,6 +673,72 @@
       const viewer = window.Ship3D.ensureViewer(cv, { orbit: false, autoSpin: false, background: 0x07111b });
       window.Ship3D.setShips(viewer, [{ spec: window.Ship3D.buildSpecForShip(assigned.shipId), position: [0, 0, 0], scale: 1, rotation: [0, 0, 0], sway: true }]);
     } catch (_) {}
+  }
+
+  // —— 试炼启动失败原因 → 玩家可读文案（与 selectors.js:1142 blockedText 同口径） ——
+  const WH_REASON_TEXT = {
+    "insufficient-probe": "探针不足",
+    "insufficient-fuel": "燃料不足",
+    "no-archaeology-ship": "未指派考古舰",
+    "no-combat-ship": "未指派出战舰",
+    "no-weapons": "未装备武器",
+    "no-collection-efficiency": "采集效率为 0",
+    "insufficient-production-materials": "材料不足",
+    "starmap-trial-running": "已有试炼进行中",
+    "starmap-trial-completed": "该节点已完成",
+    "player-action-running": "正在执行其他行动",
+    "repairing": "舰船维修中",
+    "skip": "已跳过"
+  };
+  function whReasonText(reason) {
+    const r = String(reason == null ? "" : reason);
+    if (!r) return "失败";
+    if (WH_REASON_TEXT[r]) return WH_REASON_TEXT[r];
+    if (r.indexOf("invalid-") === 0) return "节点配置异常";
+    return r;
+  }
+
+  // —— 考古战备读数：与 canStartArchaeologyTrial 同字段构造（只读取展示，不参与判定） ——
+  // site / ship 的构造必须与 legion-starmap-trial.js:1547-1557 一致，否则读数与真实校验会漂移。
+  function whArchSite(node) {
+    if (!node || node.type !== "archaeology" || !node.archaeologySiteId || typeof getArchaeologySite !== "function") return null;
+    const base = getArchaeologySite(node.archaeologySiteId);
+    if (!base) return null;
+    return Object.assign({}, base, {
+      difficulty: Number(node.archaeologyDifficulty) || Number(base.difficulty) || 121,
+      time: Number(node.archaeologyBaseCycleSeconds) || 10
+    });
+  }
+  function whArchShip(state) {
+    const id = state && state.shipAssignments && state.shipAssignments.archaeology;
+    if (!id || typeof getShipInstanceFromState !== "function") return null;
+    try { return getShipInstanceFromState(state, id); } catch (_) { return null; }
+  }
+  function whArchConsumables(state, node, now) {
+    const probeId = (state && state.archaeology && state.archaeology.activeProbeId) || "core_probe_i";
+    const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : window.ResourceRegistry;
+    const have = (key) => (RR && typeof RR.get === "function") ? (Number(RR.get(state, key)) || 0) : 0;
+    const def = (typeof getArchaeologyProbe === "function") ? getArchaeologyProbe(probeId) : null;
+    const site = whArchSite(node);
+    const ship = whArchShip(state);
+    let fuelNeed = 0;
+    if (site && ship && typeof getArchaeologyFuelCostState === "function") {
+      try { fuelNeed = Number(getArchaeologyFuelCostState(state, site, ship).chargedFuel) || 0; } catch (_) { fuelNeed = 0; }
+    }
+    let rows = [];
+    try {
+      const d = (typeof getArchaeologyDisplayState === "function") ? getArchaeologyDisplayState(state, now, { skipShipHp: true }) : null;
+      rows = (d && Array.isArray(d.probes)) ? d.probes : [];
+    } catch (_) { rows = []; }
+    return {
+      probeId: probeId,
+      probeName: (def && def.name) || probeId,
+      probeStock: have("probe:" + probeId),
+      fuelHave: have("consumable:fuel"),
+      fuelNeed: fuelNeed,
+      shipOk: !!ship,
+      rows: rows
+    };
   }
 
   // 实时值：全部读引擎试炼状态（不再用假插值）
@@ -696,12 +788,67 @@
       if (scan) scan.classList.toggle("is-running", !!live);
       if (live && Number(live.successChance) > 0) setText("wh-a-chance", Math.round(Number(live.successChance) * 100) + "%");
       if (live && Number(live.cycleSeconds) > 0) setText("wh-a-cycle", Math.round(Number(live.cycleSeconds) * 10) / 10 + "s");
+      updateRoomSupply(n, state, t, !!live);
     } else if (n.type === "battle") {
       const enemy = Number((live && live.enemyCount) || (D && D.enemyCount) || n.battleTrialEnemyCount) || 0;
       const kills = live ? Math.min(enemy, Number(live.kills) || 0) : (done ? enemy : 0);
       setText("wh-b-kills", kills + " / " + enemy);
     }
   }
+  // 考古房间的消耗品读数 + 探针选择 + 缺料提示：
+  // 数据全部来自 whArchConsumables（与 canStartArchaeologyTrial 同字段），只展示、不重建判定。
+  function updateRoomSupply(n, state, t, running) {
+    if (!n || n.type !== "archaeology") return;
+    const setTxt = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const C = whArchConsumables(state, n, t);
+    const stock = Math.floor(Number(C.probeStock) || 0);
+    const need = Math.ceil(Number(C.fuelNeed) || 0);
+    const have = Math.floor(Number(C.fuelHave) || 0);
+    setTxt("wh-a-probe-stock", esc(C.probeName) + " ×" + stock);
+    // 未指派考古舰时算不出燃料需求（与 canStartArchaeologyTrial「先判船、再查燃料」同序），显示「—」避免误导成 0
+    setTxt("wh-a-fuel-stock", have + " / " + (C.shipOk ? String(need) : "—"));
+
+    const sel = document.getElementById("wh-arch-probe");
+    if (sel) {
+      const options = C.rows.map(function (row) {
+        const locked = !!row.levelLocked;
+        const empty = !(Number(row.stock) > 0);
+        return {
+          value: row.id,
+          label: String(row.name || row.id) + " ×" + Math.floor(Number(row.stock) || 0) + (locked ? " · 等级不足" : (empty ? " · 无库存" : "")),
+          disabled: locked
+        };
+      });
+      // 签名比对：库存/激活项没变就不重建 option，避免打断用户正在展开的下拉
+      const sig = JSON.stringify(options) + "|" + String(C.probeId) + "|" + (running ? "1" : "0");
+      if (sel.dataset.sig !== sig) {
+        sel.dataset.sig = sig;
+        sel.replaceChildren();
+        options.forEach(function (o) {
+          const opt = document.createElement("option");
+          opt.value = o.value; opt.textContent = o.label; opt.disabled = o.disabled;
+          sel.appendChild(opt);
+        });
+        sel.value = String(C.probeId);
+      }
+      sel.disabled = !!running;   // 试炼进行中锁定，与考古页同口径
+    }
+
+    const warn = document.getElementById("wh-a-warn");
+    if (warn) {
+      const msgs = [];
+      if (!C.shipOk) msgs.push("未指派考古舰：请在舰队岗位指派一艘考古舰。");
+      if (!(stock > 0)) msgs.push("当前激活探针「" + esc(C.probeName) + "」库存为 0：请补充库存，或用上方「切换探针」改用其他探针。");
+      if (need > 0 && have < need) msgs.push("燃料不足：本次需要 " + need + "，当前 " + have + "。");
+      const sig = msgs.join("|");
+      if (warn.dataset.sig !== sig) {
+        warn.dataset.sig = sig;
+        warn.innerHTML = msgs.length ? msgs.map(function (m) { return "<div>" + m + "</div>"; }).join("") : "";
+      }
+      warn.hidden = msgs.length === 0;
+    }
+  }
+
   function D0_required_num(n, state) {
     const base = Number(n.collectionBaseSecondsPerUnit) || (n.ring === "inner" ? 630 : 81);
     const eff = (n.subtype === "gas" ? (typeof getGasEfficiency === "function" ? Number(getGasEfficiency(state)) || 1 : 1) : (typeof getMiningEfficiency === "function" ? Number(getMiningEfficiency(state)) || 1 : 1));

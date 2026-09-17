@@ -21,7 +21,7 @@
         overlay = document.createElement("div");
         overlay.id = "boot-fatal-error";
         overlay.setAttribute("role", "alert");
-        overlay.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(8,10,18,.96);color:#e8ecf4;" +
+        overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;background:rgba(8,10,18,.96);color:#e8ecf4;" +
           "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
           "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center;";
         var h = document.createElement("h1");
@@ -221,7 +221,7 @@
     try {
       const box = document.createElement("div");
       box.id = "boot-conflict-overwrite-cloud";
-      box.style.cssText = "position:fixed;inset:0;z-index:99999;background:rgba(8,10,18,.98);color:#e8ecf4;" +
+      box.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:99999;background:rgba(8,10,18,.98);color:#e8ecf4;" +
         "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;" +
         "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center;";
       const h = document.createElement("div");
@@ -256,8 +256,15 @@
       overlay.id = "boot-conflict-choice";
       overlay.setAttribute("role", "alertdialog");
       overlay.setAttribute("aria-modal", "true");
-      overlay.style.cssText = "position:fixed;inset:0;z-index:99998;background:rgba(8,10,18,.96);color:#e8ecf4;" +
-        "display:flex;flex-direction:column;align-items:center;justify-content:center;" +
+      /* 2026-09-17 手机端底部按钮点不到修复：
+       * ① `inset:0` 是简写，微信 canvas DOM shim 不展开它 ⇒ top/right/bottom/left 全丢失
+       *    ⇒ fixed 层高度=内容自然高度（超过屏幕）⇒ overflow:auto 的 scrollH==clientH
+       *    ⇒ maxY=0 不被识别为可卷容器 ⇒ 拖不动、屏幕外的「复制/使用存档」按钮永远点不到。
+       *    改显式 top/left/width/height（对 fixed 元素与 inset:0 完全等价，全平台通用）。
+       * ② `justify-content:center` 在内容高于视口时顶部会被裁掉且滚不到（flex 经典坑），
+       *    本弹窗内容很高 ⇒ 改 flex-start 顶对齐，超出部分向下滚动即可达。 */
+      overlay.style.cssText = "position:fixed;top:0;left:0;width:100%;height:100%;z-index:99998;background:rgba(8,10,18,.96);color:#e8ecf4;" +
+        "display:flex;flex-direction:column;align-items:center;justify-content:flex-start;" +
         "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center;overflow:auto;";
       // 2026-09-11 登录转圈修复：冲突现在可能发生在「游戏已进入之后」（后台对账才发现），
       // 而非只在启动前。两种时机必须用不同文案，否则玩家会以为游戏没启动成功。
@@ -391,7 +398,7 @@
       s.id = "boot-overlay-style";
       s.textContent = "@keyframes boot-spin{to{transform:rotate(360deg);}}" +
         ".boot-spinner{width:42px;height:42px;border:4px solid rgba(255,255,255,.15);border-top-color:#7fe3ff;border-radius:50%;animation:boot-spin .9s linear infinite;}" +
-        ".boot-overlay{position:fixed;inset:0;z-index:99990;background:rgba(8,10,18,.97);color:#e8ecf4;" +
+        ".boot-overlay{position:fixed;top:0;left:0;width:100%;height:100%;z-index:99990;background:rgba(8,10,18,.97);color:#e8ecf4;" +
         "display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;" +
         "font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;padding:24px;text-align:center;}";
       if (document.head) document.head.appendChild(s);
@@ -459,7 +466,19 @@
     if (st === "loading") showBootLoading();
     else if (st === "awaiting-choice") showConflictChoice();
     else if (st === "awaiting-cloud") { hideBootLoading(); showAwaitingCloud(); }
-    else if (st === "ready" || st === "local-only" || st === "error") { hideConflictChoice(); hideAwaitingCloud(); hideBootLoading(); if (document.body) document.body.classList.remove("boot-loading"); }
+    else if (st === "ready" || st === "local-only" || st === "error") {
+      hideConflictChoice(); hideAwaitingCloud(); hideBootLoading();
+      if (document.body) document.body.classList.remove("boot-loading");
+      // 启动落定后归位一次面板显隐（2026-09-17 微信端「所有面板合在一起」根因修复）：
+      // index.html 的 .content 里 21 个 .panel 是裸态（无 display:none），历史上首次显隐
+      // 全靠玩家第一次点导航触发 switchPage → renderCurrentNavigation —— 启动链从初始
+      // 提交起就没有任何调用。桌面宽屏无人滚动内容区故从未暴露；微信竖屏下滑内容区
+      // 即见全部面板连排 ~16000px 长柱。此处启动即归位，与玩家手点导航完全同路径。
+      // 仅 ready/local-only 归位：error 走 showFatalBootError 错误页，不渲染主界面。
+      if (st !== "error" && typeof switchPage === "function") {
+        try { switchPage("skill"); } catch (eNav) { console.warn("启动归位 switchPage 失败：", eNav); }
+      }
+    }
   }
 
   function launch() {

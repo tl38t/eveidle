@@ -2,7 +2,7 @@
    应用外壳适配器：导航、仓库、LP商店、船坞与动作队列
    ================================================================ */
 
-let currentPage = "skill";
+let currentPage = "skill-overview";
 let currentView = "mining";
 let cargoFilter = "all";
 let cargoSubFilter = null; // 仓库三级导航：当前二级分类下的小类筛选（null=不过滤）
@@ -780,12 +780,12 @@ window.addEventListener("message", function (event) {
 });
 
 function getManagedPanels() {
-  const ids = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
+  const ids = ["skill-overview-panel", "cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  const managedIds = ["cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
+  const managedIds = ["skill-overview-panel", "cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
   const notChain = managedIds.map(id => `:not(#${id})`).join("");
   return [...document.querySelectorAll('.content > .panel' + notChain)];
 }
@@ -831,6 +831,7 @@ function renderCurrentNavigation() {
     updateUI();
     if (battleTrialView) renderStarmapBattleTrialCombat(Date.now(), { renderBase:false });
   }
+  else if (navigation.page === "skill-overview") { if (typeof window.renderSkillOverviewPage === "function") window.renderSkillOverviewPage(); }
   else if (navigation.page === "cargo") renderCargoPage(cargoFilter);
   else if (navigation.page === "save") SaveManager._updateStatus("就绪");
   else if (navigation.page === "settings") renderSettingsPage();
@@ -1692,9 +1693,10 @@ function openBlueprintProductModal(eq, blueprintName) {
     if (eq.combat.aoe && eq.combat.aoe.description) combatLines.push(eq.combat.aoe.description);
     if (eq.combat.xEffect) {
       const x = eq.combat.xEffect;
-      if (x.kind === "dot") combatLines.push("灼蚀：每回合额外造成基础伤害的 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
-      if (x.kind === "lifesteal") combatLines.push("装甲回流：直接伤害的 " + (x.rate * 100) + "% 转化为装甲修复");
-      if (x.kind === "vulnerability") combatLines.push("伤害加深：目标受到的最终伤害提高 " + (x.rate * 100) + "%，持续 " + x.rounds + " 回合");
+      const ratePct = Number((x.rate * 100).toFixed(4));
+      if (x.kind === "dot") combatLines.push("灼蚀：每回合额外造成基础伤害的 " + ratePct + "%，持续 " + x.rounds + " 回合");
+      if (x.kind === "lifesteal") combatLines.push("装甲回流：直接伤害的 " + ratePct + "% 转化为装甲修复");
+      if (x.kind === "vulnerability") combatLines.push("伤害加深：目标受到的最终伤害提高 " + ratePct + "%，持续 " + x.rounds + " 回合");
     }
   } else if (eq.combat && eq.combat.kind === "repair") {
     combatLines.push("恢复 " + eq.combat.amount + " (" + ({ shield: "护盾", armor: "装甲", structure: "结构" }[eq.combat.target] || "HULL") + ")");
@@ -3556,6 +3558,34 @@ function renderResearchDetail(research, RD, RS, model) {
       ? RS.getFrontierResearchLockReason(gameState, node) : "");
   const effects = Array.isArray(node.effects) ? node.effects : [];
 
+  // 队列续排（§4.5 投影口径）：下一「可排队」等级 = max(已完成, 进行中, 已排队) + 1。
+  //   「立即研究」仍只能指向 completed+1（后端 beginResearchStep 用真实等级校验，跳级必拒）；
+  //   「加入队列」指向 queueTarget —— 这正是后端 enqueueResearch 投影校验必然接受的等级，
+  //   从而允许「Lv.Ⅰ 排队中 / 研究中」时继续排 Lv.Ⅱ（此前 UI 这两个分支没有入口）。
+  const queuedLevels = [];
+  if (Array.isArray(research.pendingQueue) && RS && typeof RS.parseResearchStepKey === "function") {
+    for (const key of research.pendingQueue) {
+      const parsed = RS.parseResearchStepKey(key);
+      if (!parsed || parsed.isCycle || parsed.techId !== node.id) continue;
+      if (queuedLevels.indexOf(parsed.targetLevel) < 0) queuedLevels.push(parsed.targetLevel);
+    }
+    queuedLevels.sort((a, b) => a - b);
+  }
+  const projectedLevel = Math.max(completed, activeLevel, queuedLevels.length ? queuedLevels[queuedLevels.length - 1] : 0);
+  const queueTarget = projectedLevel + 1;
+  // 可续排：非协议节点、未完成、未越界（queueTarget 必不在队列中，由投影定义保证）
+  const canQueueNext = !isProtocol && status !== "completed" && status !== "branch-locked"
+    && Number.isInteger(queueTarget) && queueTarget <= node.maxLevel;
+  // 文案：「将 II 加入队列」。罗马数字由 toRoman() 产出 ASCII 形态（I/II/III/IV/V）。
+  //   ⚠️ 为什么要走「整节点词条」：i18n 是先整节点精确查表（translator.js:87 catalog.get(trimmed)）
+  //      再子串替换；而单字「将」被 catalogSources 的 length>=2 过滤挡在子串替换之外，
+  //      于是常规子串路径下必然残留汉字 → 命中「整段回退不译」（translator.js:72-75），
+  //      英/德/俄都会整条显示中文。故这 5 条以**整条**形式落在宽表（L09080–L09084，
+  //      en/zh-TW/ru/de 四语齐备），由精确查表命中。
+  //   ⚠️ 联动：若改 toRoman 的输出形态、或某节点 maxLevel 超过 5，须同步补宽表词条。
+  const enqueueButtonHtml = '<button class="research-btn" data-detail-action="enqueue" data-tech-id="' +
+    escapeAchievementText(node.id) + '" data-level="' + queueTarget + '">将 ' + toRoman(queueTarget) + ' 加入队列</button>';
+
   const effectRows = effects.map((text, i) => {
     const level = i + 1;
     let rowCls = "rt-d-eff-row";
@@ -3595,14 +3625,18 @@ function renderResearchDetail(research, RD, RS, model) {
   } else if (status === "completed") {
     actionsHtml = '<div class="rt-d-row">该科技已全部完成</div>';
   } else if (status === "active") {
-    actionsHtml = '<div class="rt-d-row">研究中</div>';
+    // 研究中：仍允许把「下一个等级」排进队列（此前该分支零按钮 ⇒ 无法续排同级）
+    actionsHtml = '<div class="rt-d-row">研究中</div>' +
+      (canQueueNext ? '<div class="rt-d-actions">' + enqueueButtonHtml + '</div>' : '');
   } else if (status === "queued") {
-    const queuedKey = node.id + "@" + nextTarget;
     const startDisabled = (research.activeResearch && typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) ? " disabled" : "";
+    // 已排队等级可能不止一级（续排后）：全部列出，避免只显示队首造成误判
+    const queuedLabel = queuedLevels.length ? queuedLevels.map(toRoman).join("、") : toRoman(nextTarget);
     actionsHtml =
-      '<div class="rt-d-row">已加入队列（' + toRoman(nextTarget) + '）</div>' +
+      '<div class="rt-d-row">已加入队列（' + queuedLabel + '）</div>' +
       '<div class="rt-d-actions">' +
         '<button class="research-btn primary" data-detail-action="startQueued" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + startDisabled + '>立即开始</button>' +
+        (canQueueNext ? enqueueButtonHtml : '') +
       '</div>';
   } else {
     if (status === "branch-locked") {
@@ -3621,7 +3655,7 @@ function renderResearchDetail(research, RD, RS, model) {
       actionsHtml =
         '<div class="rt-d-actions">' +
           '<button class="research-btn primary" data-detail-action="start" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '"' + startDisabled + '>立即研究 ' + toRoman(nextTarget) + '</button>' +
-          '<button class="research-btn" data-detail-action="enqueue" data-tech-id="' + escapeAchievementText(node.id) + '" data-level="' + nextTarget + '">加入队列</button>' +
+          enqueueButtonHtml +
         '</div>' +
         (status === "locked" ? '<div class="rt-d-hint">将自动补齐前置：' + escapeAchievementText(unmet.join("、") || "—") + '</div>' : "");
     }
@@ -5212,7 +5246,7 @@ function showRigResonanceModal(preview, def, onConfirm) {
     document.body.appendChild(modal);
     const style = document.createElement("style");
     style.textContent =
-      ".rig-resonance-overlay{position:fixed;inset:0;z-index:9999;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);}" +
+      ".rig-resonance-overlay{position:fixed;inset:0;z-index:12000;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.6);}" +
       ".rig-resonance-overlay.active{display:flex;}" +
       ".rig-resonance-box{width:min(420px,90vw);background:#16202c;border:1px solid #2a3a4a;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.5);overflow:hidden;}" +
       ".rig-resonance-box h3{margin:0;padding:14px 18px;font-size:15px;background:linear-gradient(90deg,#1d2a38,#16202c);border-bottom:1px solid #2a3a4a;color:#ffd27d;}" +

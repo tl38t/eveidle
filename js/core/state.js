@@ -40,6 +40,9 @@ const gameState = {
 
   skills: JSON.parse(JSON.stringify(INITIAL_SKILLS)),
 
+  // 三方势力连续声望：保存各势力按舰级折算后的被击毁积分，界面声望由三方相对值推导。
+  reputation: { weightedKills: { angel: 0, blood: 0, sansha: 0 } },
+
   currentAction: {
     skill: "mining",
     area: "凡晶石带",
