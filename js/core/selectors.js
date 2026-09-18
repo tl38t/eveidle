@@ -1070,7 +1070,14 @@ function getActionConfirmationDisplayState(state, target, now) {
     result.materialHint = Math.max(0, getEquipmentMaxCyclesFromState(state, recipe));
     if (recipe.output.type === "equipment") result.outputText = recipe.name + "×" + recipe.output.qty;
     else if (recipe.output.type === "fuel") result.outputText = "燃料单元×" + recipe.output.qty;
-    else result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
+    else if (recipe.output.type === "probe") {
+      // 考古探针（type:"probe"）：产出名走统一显示层（与 getEquipEngOutputText / 卡片详情同源），回退 recipe.name；
+      // 不得落进下方弹药兜底，否则探针被显示成「弹药」（进度码/仓库则正常，故为纯显示漂移）。
+      const _pn = (typeof getResourceDisplayName === "function" && recipe.output.itemId) ? getResourceDisplayName("probe:" + recipe.output.itemId) : "";
+      result.outputText = ((_pn && _pn !== recipe.output.itemId) ? _pn : recipe.name) + "×" + recipe.output.qty;
+    }
+    else if (recipe.output.type === "ammo") result.outputText = ({ laser:"激光晶体弹药", missile:"导弹", cannon:"炮台弹药" }[recipe.output.weapon] || "弹药") + "×" + recipe.output.qty;
+    else result.outputText = recipe.name + "×" + recipe.output.qty;
     result.canOpen = display.level >= recipe.level && display.detail.hasRequiredBlueprint;
     const blueprintLocked = display.detail.requiresBlueprint && !display.detail.hasRequiredBlueprint;
     result.blockedText = result.canOpen ? "" : blueprintLocked
@@ -1828,7 +1835,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
             ? equipment.effectSummary
             : getEquipmentAttributeLines(equipment).slice(1, 3).join(" · "))
         : (probe || getEquipEngOutputText(recipe).replace("产出：", ""));
-      const slot = equipment ? (EQUIPMENT_SLOT_NAMES[equipment.slot] || "装备") : recipe.output.type === "fuel" ? "消耗品" : "弹药";
+      const slot = equipment ? (EQUIPMENT_SLOT_NAMES[equipment.slot] || "装备") : recipe.output.type === "fuel" ? "消耗品" : recipe.output.type === "probe" ? "探针" : "弹药";
       return {
         id:recipe.id,
         name:recipe.name,
@@ -2109,7 +2116,7 @@ function getInstalledCombatModulesFromState(state, options) {
 
 // 同位素标记打捞臂：汇总已装备打捞臂的 salvageEfficiency 总和（被动放大器，装备即生效，与开关无关）。
 // 默认读取出战战斗舰；考古等其它岗位可传入对应舰船实例（该实例直接含 .fitting）。
-// 主动打捞（消耗同位素 + 打捞舰船组件）由 combat.js 在 state.combat.salvageArmActive 开启时触发。
+// 主动打捞（消耗同位素 + 打捞舰船组件）由 combat.js 在 state.settings.salvageArmActive 开启时触发。
 function getSalvageEfficiency(state, shipInstance, options) {
   if (!state) return 0;
   const ship = shipInstance || getActiveCombatShipState(state);
@@ -2135,7 +2142,7 @@ function getSalvageEfficiency(state, shipInstance, options) {
 
 // 当前出战舰是否装备了打捞臂（用于战斗界面开关显隐）。
 // 打捞臂燃料消耗（每击毁一艘）：汇总已装备打捞臂的 salvageFuelPerKill 总和（装备即生效，与开关无关）。
-// 主动打捞（state.combat.salvageArmActive）时该基准 ×3，由 combat.js / offline-combat.js 在击毁处应用。
+// 主动打捞（state.settings.salvageArmActive）时该基准 ×3，由 combat.js / offline-combat.js 在击毁处应用。
 function getSalvageFuelPerKill(state, shipInstance) {
   if (!state) return 0;
   const ship = shipInstance || getActiveCombatShipState(state);
@@ -2154,8 +2161,17 @@ function getSalvageFuelPerKill(state, shipInstance) {
   return total;
 }
 
+// ⚠️ 只看「真实装备的打捞臂」，必须排除 MTU（2026-09-18 修复）：
+//   旧实现是 return getSquadSalvageEfficiency(state) > 0，而该函数会把**已部署 MTU 的 2.10 打捞效率**
+//   平加进来（见上方 includeMtu 分支）⇒ 没装打捞臂、只部署了打捞单元的玩家：
+//     ① UI：战斗界面照样出现标题为「同位素标记打捞臂」的「主动打捞」开关（combat-render.js 用它判显隐）；
+//     ② 逻辑：combat.js / offline-combat.js 的主动打捞门禁同源放行 ⇒ 开关打开后每杀白扣同位素，
+//        而开关文案承诺的「消耗被动三倍燃料」在该情形下是 0（getSquadSalvageFuelPerKill=0），文案与行为不符。
+//   getSquadSalvageBreakdown 的 player / npc 两项本就 includeMtu:false，天然排除打捞单元；
+//   MTU 自身产组件走的是独立分支（combat.js / offline-combat.js 里不依赖本函数、不依赖开关），不受此处影响。
 function hasSalvageArmEquipped(state) {
-  return getSquadSalvageEfficiency(state) > 0;
+  const bd = getSquadSalvageBreakdown(state);
+  return (bd.player + bd.npc) > 0;
 }
 
 // 小队打捞能力：玩家出战舰 + 当前参战 NPC 绑定舰。
@@ -3711,7 +3727,7 @@ function getEquipmentEnhancementListDisplayState(state) {
   const buildExtraRows = (display, itemId) => {
     const rows = [];
     if (display.extra.sameTypeItemId) {
-      const have = getEquipmentInventoryCount(state, itemId);
+      const have = getEquipmentDonorCount(state, itemId);
       rows.push({ label:"同型号 +0 装备", need:1, have, enough:have >= 1 });
     }
     if (display.extra.core) {
@@ -3732,7 +3748,7 @@ function getEquipmentEnhancementListDisplayState(state) {
     if (!ResourceRegistry.canAffordCost(state, display.cost)) return false;
     const needDonor = Boolean(display.extra.sameTypeItemId);
     const requiredInventory = (isInstance ? 0 : 1) + (needDonor ? 1 : 0);
-    if (getEquipmentInventoryCount(state, eq.id) < requiredInventory) return false;
+    if (getEquipmentDonorCount(state, eq.id, isInstance ? targetRef : null) < requiredInventory) return false;
     if (display.extra.core && ResourceRegistry.getMaterialStock(state, display.extra.core) < 1) return false;
     if (display.extra.protocol && ResourceRegistry.getMaterialStock(state, display.extra.protocol) < 1) return false;
     return true;

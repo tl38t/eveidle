@@ -107,7 +107,7 @@
   const COMBAT_TRANSIENT = [
     "enemies", "currentEnemy", "wave", "active", "lastLoot", "lastEnemyVolley",
     "queueWavesDone", "queueEntriesDone", "queueWavesTarget", "queueEntriesTarget",
-    "runToken", "runSequence", "enemyInstanceSeq", "randomState", "salvageArmActive",
+    "runToken", "runSequence", "enemyInstanceSeq", "randomState",
     "repairUntil", "destroyedShip", "lastStatus"
   ];
 

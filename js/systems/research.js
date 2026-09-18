@@ -44,6 +44,10 @@
     (typeof window !== "undefined" && window.ResearchData) ||
     null;
 
+  // 待研究队列容量上限（唯一真值）。UI 的「已排队 n / 上限」读数直接读这个常量，
+  // 严禁在别处再写一份字面量 20 —— 否则 UI 读数与后端拒绝阈值会悄悄漂移。
+  const RESEARCH_QUEUE_MAX = 20;
+
   // -------------------------------------------------------------------------
   // 节点 / 时长访问
   // -------------------------------------------------------------------------
@@ -308,10 +312,10 @@
         return { ok: false, reason: "PREREQ_UNMET" };
       }
     }
-    // 容量上限严格 20
+    // 容量上限严格 RESEARCH_QUEUE_MAX（= 20）
     const queue = research.pendingQueue;
     if (!Array.isArray(queue)) research.pendingQueue = [];
-    if (research.pendingQueue.length >= 20) {
+    if (research.pendingQueue.length >= RESEARCH_QUEUE_MAX) {
       return { ok: false, reason: "QUEUE_FULL" };
     }
     if (research.pendingQueue.includes(key)) {
@@ -336,7 +340,7 @@
     if (ar && ar.techId === "cycle:" + cycleId && ar.targetLevel === targetLevel) return { ok:false, reason:"ALREADY_ACTIVE" };
     if (Array.isArray(research.pendingQueue) && research.pendingQueue.includes(key)) return { ok:false, reason:"ALREADY_QUEUED" };
     if (!Array.isArray(research.pendingQueue)) research.pendingQueue = [];
-    if (research.pendingQueue.length >= 20) return { ok:false, reason:"QUEUE_FULL" };
+    if (research.pendingQueue.length >= RESEARCH_QUEUE_MAX) return { ok:false, reason:"QUEUE_FULL" };
     research.pendingQueue.push(key);
     markResearchDirty(state);
     return { ok:true, key };
@@ -1015,6 +1019,7 @@
   // 暴露
   // -------------------------------------------------------------------------
   const ResearchSystem = {
+    RESEARCH_QUEUE_MAX,
     parseResearchStepKey,
     getResearchNode,
     getResearchDuration,

@@ -113,8 +113,12 @@ function renderSquadSalvageReadout() {
     `</div>`;
 }
 
-// 同位素标记打捞臂：战斗界面开关（仅已装备打捞臂时显示）。
+// 同位素标记打捞臂：战斗界面开关（仅已装备打捞臂时显示；打捞单元 MTU 不计入）。
 // 开=消耗被动三倍燃料+同位素+掉落同级舰船组件；关=仅被动：消耗基础燃料提高货柜掉落。
+// 2026-09-18（玩家报「打捞器无论开关都出组件」）：
+//   判据由「getSquadSalvageEfficiency > 0」收紧为 hasSalvageArmEquipped（后者已排除 MTU 的 2.10 平加值）。
+//   旧判据下只部署打捞单元的玩家也会看到这个开关，打开后每杀白扣同位素（被动燃料却是 0）。
+//   无臂但已部署打捞单元时仍保留小队打捞读数，否则玩家看不到「打捞单元 +2.10」的增益来源。
 function renderCombatSalvageToggle() {
   const title = document.getElementById("combat-salvage-title");
   const row = document.getElementById("combat-salvage-arm-row");
@@ -122,14 +126,18 @@ function renderCombatSalvageToggle() {
   const equipped = (typeof hasSalvageArmEquipped === "function") ? hasSalvageArmEquipped(gameState) : false;
   if (!equipped) {
     if (title) title.style.display = "none";
-    row.style.display = "none";
-    row.innerHTML = "";
+    const readout = renderSquadSalvageReadout();
+    if (readout) { row.style.display = ""; row.innerHTML = readout; }
+    else { row.style.display = "none"; row.innerHTML = ""; }
     return;
   }
   if (title) title.style.display = "";
   row.style.display = "";
-  const active = gameState.combat.salvageArmActive === true;
+  const active = gameState.settings.salvageArmActive === true;
   const isoHave = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, "planetary:同位素") : 0;
+  // 已部署打捞单元时补一句边界说明：它独立产组件，与这个开关无关（这正是玩家误判「开关失灵」的来源）。
+  const bd = (typeof getSquadSalvageBreakdown === "function") ? getSquadSalvageBreakdown(gameState) : null;
+  const mtuActive = Boolean(bd && bd.mtu > 0);
   const label = active
     ? "主动打捞：开（消耗被动三倍燃料及同位素，几率获得同级舰船组件）"
     : "主动打捞：关（仅被动：消耗基础燃料提高货柜掉落）";
@@ -138,11 +146,12 @@ function renderCombatSalvageToggle() {
     ";color:" + (active ? "#8ff0b5" : "#9fb3c8") + ";";
   row.innerHTML = `<button id="btn-salvage-arm-toggle" style="${btnStyle}">${active ? "⦿" : "○"} ${label}</button>` +
     (active && isoHave <= 0 ? '<span style="color:#ffb454;font-size:11px;margin-left:6px;">⚠ 同位素不足，无法打捞</span>' : '') +
+    (mtuActive ? '<div style="color:#6d8296;font-size:11px;margin-top:4px;">打捞单元独立产出舰船组件，不受此开关影响</div>' : '') +
     renderSquadSalvageReadout();
   const btn = document.getElementById("btn-salvage-arm-toggle");
   if (btn) {
     btn.onclick = () => {
-      gameState.combat.salvageArmActive = !(gameState.combat.salvageArmActive === true);
+      gameState.settings.salvageArmActive = !(gameState.settings.salvageArmActive === true);
       if (typeof renderCombatPanel === "function") renderCombatPanel();
     };
   }

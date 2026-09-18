@@ -362,7 +362,7 @@
           ? StationSystem.getStationConstructionDurationMs(st, plan) : 0;
         html += '<div class="legion-upgrade-body"><div>';
         html += '<div class="lu-cost-title">升级消耗</div>';
-        html += '<div class="lu-currency"><span>ISK <b>' + fmtInt(plan.isk) + '</b></span>' +
+        html += '<div class="lu-currency"><span>星币 <b>' + fmtInt(plan.isk) + '</b></span>' +
           '<span>功勋 <b>' + fmtInt(plan.lp || 0) + '</b></span></div>';
         if (plan.materials) {
           html += '<div class="legion-mat-list">';

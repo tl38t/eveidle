@@ -3677,25 +3677,74 @@ function renderResearchDetail(research, RD, RS, model) {
     '</div>';
 }
 
+// 队列折叠态：默认收起（只留一行摘要），否则长队列会把下方科技树整块推走。
+// 纯视图状态、模块级 —— 队列任何变化都会整页重渲染（computeResearchSig 含队列 keys），
+// 状态若存在 DOM 上会被重渲染重置；不进 gameState / 存档。
+var _researchQueueExpanded = false;
+
+// 队列步进键 → 展示信息（普通研究与循环研究共用一套解析）
+function describeResearchQueueStep(key, RS) {
+  const parsed = (RS && RS.parseResearchStepKey) ? RS.parseResearchStepKey(key) : null;
+  const techId = parsed ? parsed.techId : key;
+  const level = parsed ? parsed.targetLevel : "?";
+  const isCycle = !!(parsed && parsed.isCycle);
+  let node = null;
+  if (parsed && RS) {
+    node = isCycle
+      ? (RS.getCycleResearch ? RS.getCycleResearch(parsed.cycleId) : null)
+      : (RS.getResearchNode ? RS.getResearchNode(techId) : null);
+  }
+  const dur = (node && RS)
+    ? (isCycle ? RS.getCycleResearchDuration(parsed.cycleId, level) : RS.getResearchDuration(techId, level))
+    : null;
+  return {
+    name: node ? node.name : techId,
+    levelText: (isCycle ? "循环 " : "Lv.") + level,
+    durText: (dur != null && isFinite(dur)) ? formatResearchDuration(dur) : "—"
+  };
+}
+
+// 折叠态唯一的写入点：类名与 aria 同步在同一处，避免两处各切一半
+function setResearchQueueExpanded(expanded) {
+  _researchQueueExpanded = expanded === true;
+  const section = document.getElementById("research-queue-section");
+  if (section && section.classList) section.classList.toggle("is-collapsed", !_researchQueueExpanded);
+  const toggle = document.getElementById("research-queue-toggle");
+  if (toggle && toggle.setAttribute) toggle.setAttribute("aria-expanded", _researchQueueExpanded ? "true" : "false");
+}
+
 function renderResearchQueue(research, RD, RS) {
   const el = document.getElementById("research-queue");
   if (!el) return;
   const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
+  const max = (RS && Number(RS.RESEARCH_QUEUE_MAX)) || 20;
+
+  // 摘要行 + 折叠态：整页重渲染后仍保持玩家选择的展开态
+  setResearchQueueExpanded(_researchQueueExpanded);
+  const summaryEl = document.getElementById("research-queue-summary");
+  if (summaryEl) {
+    const countCls = "rq-count" + (queue.length >= max ? " is-full" : "");
+    const countHtml = '<span class="' + countCls + '">' + queue.length + " / " + max + '</span>';
+    if (!queue.length) {
+      summaryEl.innerHTML = countHtml + '<span class="rq-next">队列为空</span>';
+    } else {
+      const head = describeResearchQueueStep(queue[0], RS);
+      // 拆成两个文本节点：队首与耗时各自独立成句，避免拼出「· 预计耗时」这种
+      // 只在本句成立的复合串（那会往宽表里塞一个和「预计耗时」重复的新条目）。
+      summaryEl.innerHTML = countHtml +
+        '<span class="rq-next">下一项：<b>' + escapeAchievementText(head.name) + '</b> ' + head.levelText + '</span>' +
+        '<span class="rq-meta">预计耗时 ' + escapeAchievementText(head.durText) + '</span>';
+    }
+  }
+
   if (!queue.length) { el.innerHTML = ""; return; }
   const html = queue.map((key, idx) => {
-    const parsed = RS && RS.parseResearchStepKey ? RS.parseResearchStepKey(key) : null;
-    const techId = parsed ? parsed.techId : key;
-    const level = parsed ? parsed.targetLevel : "?";
-    const isCycle = !!(parsed && parsed.isCycle);
-    const node = RS && (isCycle ? RS.getCycleResearch : RS.getResearchNode) ? (isCycle ? RS.getCycleResearch(parsed.cycleId) : RS.getResearchNode(techId)) : null;
-    const name = node ? node.name : techId;
-    const dur = (node && RS) ? (isCycle ? RS.getCycleResearchDuration(parsed.cycleId, level) : RS.getResearchDuration(techId, level)) : null;
-    const durText = (dur != null && isFinite(dur)) ? formatResearchDuration(dur) : "—";
+    const info = describeResearchQueueStep(key, RS);
     // 已有活跃研究时禁用"立即开始"（startQueuedResearch 也会拒绝并保留队列）
     const startDisabled = (research.activeResearch && typeof research.activeResearch === "object" && !Array.isArray(research.activeResearch)) ? " disabled" : "";
     return '<div class="research-queue-item">' +
-      '<div><span class="research-queue-index">#' + (idx + 1) + '</span><b>' + escapeAchievementText(name) + '</b> · ' + (isCycle ? '循环 ' : 'Lv.') + level +
-        '<div class="research-queue-meta">预计耗时 ' + escapeAchievementText(durText) + '</div></div>' +
+      '<div><span class="research-queue-index">#' + (idx + 1) + '</span><b>' + escapeAchievementText(info.name) + '</b> · ' + info.levelText +
+        '<div class="research-queue-meta">预计耗时 ' + escapeAchievementText(info.durText) + '</div></div>' +
       '<div class="research-queue-actions">' +
         '<button class="research-btn primary" data-start-key="' + escapeAchievementText(key) + '"' + startDisabled + '>立即开始</button>' +
         '<button class="research-btn danger" data-remove-key="' + escapeAchievementText(key) + '">移除</button>' +
@@ -3746,9 +3795,12 @@ function renderCycleResearchSection(research, RD, RS) {
   const cycleLevels = research.cycleResearchLevels || {};
   const queue = Array.isArray(research.pendingQueue) ? research.pendingQueue : [];
   const selected = _researchSelectedCycleId === "__core__" ? null : (list.find(item => item.id === _researchSelectedCycleId) || (active ? list.find(item => item.id === active.cycleId) : null) || list[0] || null);
+  // formatResearchHours 已自带单位（"0 小时"），原先调用点再拼一个 'h' 会显示成
+  // 「累计科研时长 0 小时h」/「还需 0 小时h」——中文重复单位，英文经片段键后
+  // 成 "0 Hourh"。单位统一由 formatResearchHours 提供，调用点不再追加。
   const intro = '<div class="research-cycle-intro"><div class="research-cycle-eyebrow">ENDLESS RESEARCH PROTOCOL</div>' +
     '<div class="research-cycle-title">循环研究系统</div><div class="research-cycle-copy">累计实际完成研究与实际抵扣科研工时达到 ' + gateHours + ' 小时后解锁。普通研究与循环研究共用一个研究槽位和队列。</div>' +
-    '<div class="research-cycle-meter"><i style="width:' + Math.min(100, Math.round(totalHours / gateHours * 100)) + '%"></i></div><div class="research-cycle-meta"><span>累计科研时长 ' + formatResearchHours(totalHours) + 'h</span><span>' + (unlocked ? '已解锁' : '还需 ' + formatResearchHours(Math.max(0, gateHours - totalHours)) + 'h') + '</span></div></div>';
+    '<div class="research-cycle-meter"><i style="width:' + Math.min(100, Math.round(totalHours / gateHours * 100)) + '%"></i></div><div class="research-cycle-meta"><span>累计科研时长 ' + formatResearchHours(totalHours) + '</span><span>' + (unlocked ? '已解锁' : '还需 ' + formatResearchHours(Math.max(0, gateHours - totalHours))) + '</span></div></div>';
   const activeNode = active && RS && typeof RS.getCycleResearch === "function" ? (RS.getCycleResearch(active.cycleId) || {}) : {};
   let activeHtml = '<div class="research-cycle-active"><div class="research-cycle-eyebrow">SHARED RESEARCH QUEUE</div><div class="research-cycle-title">' + (active ? '正在研究：' + escapeAchievementText(activeNode.name || active.cycleId) : '当前没有循环研究') + '</div>';
   if (active) activeHtml += '<div class="research-cycle-copy">等级 ' + active.targetLevel + ' · 剩余 ' + escapeAchievementText(formatResearchDuration(active.remainingSeconds)) + '</div>';
@@ -3988,6 +4040,12 @@ function onResearchQueueClick(event) {
   const result = dispatchGameAction(gameState, { type: "research/removeQueued", stepKey: key }, Date.now());
   if (!result.changed) { showToast(researchReasonText(result.reason)); return; }
   renderResearchPage();
+}
+// 队列标题行：只切换折叠态，不动 gameState、不重渲染整页（列表 DOM 已存在，靠类收起）
+function onResearchQueueToggleClick(event) {
+  const toggle = event.target.closest ? event.target.closest("#research-queue-toggle") : null;
+  if (!toggle) return;
+  setResearchQueueExpanded(!_researchQueueExpanded);
 }
 function onResearchActiveClick(event) {
   const btn = event.target.closest("[data-active-action]");
@@ -4460,16 +4518,19 @@ function confirmProbeBlueprintPurchase() {
   showToast("已购买：" + result.blueprint.name + " ×" + result.runs + " 流程");
   renderBlueprintStore(); updateUI();
 }
-function updateProbeBlueprintTotal() {
+function updateProbeBlueprintTotal(opts) {
   const input = document.getElementById("probe-bp-runs-input");
   const totalEl = document.getElementById("probe-bp-total");
   const priceEl = document.getElementById("probe-bp-unit-price");
   if (!input || !totalEl || !priceEl) return;
   const unitPrice = Number(priceEl.dataset.price) || 0;
   const max = Number(input.max) || 999;
-  let runs = Math.max(1, Math.floor(Number(input.value) || 1));
-  if (runs > max) runs = max;
-  input.value = runs;
+  let runs = Math.floor(Number(input.value));
+  if (!Number.isFinite(runs) || runs < 1) runs = 1;
+  if (opts && opts.clamp) {
+    if (runs > max) runs = max;
+    input.value = runs;
+  }
   totalEl.textContent = (unitPrice * runs).toLocaleString();
 }
 function openProbeBlueprintPurchaseModal(itemId) {
@@ -4508,10 +4569,10 @@ function openProbeBlueprintPurchaseModal(itemId) {
   backdrop.style.display = "flex";
   const input = document.getElementById("probe-bp-runs-input");
   if (input) {
-    input.addEventListener("input", updateProbeBlueprintTotal);
-    input.addEventListener("change", updateProbeBlueprintTotal);
+    input.addEventListener("input", () => updateProbeBlueprintTotal());
+    input.addEventListener("change", () => updateProbeBlueprintTotal({ clamp: true }));
   }
-  updateProbeBlueprintTotal();
+  updateProbeBlueprintTotal({ clamp: true });
 }
 
 function getHangarBonusText(bonuses) {
@@ -6045,6 +6106,16 @@ function installTutorialWidgetListeners() {
     researchEvents.on("research:hoursApplied", redrawResearch);
     researchEvents.on("research:cancelled", redrawResearch);
     researchEvents.on("achievement:researchHoursGranted", redrawResearch);
+    // 泰坦槽位研究（tt_high/mid/low/rig）完成：completeResearchStep 已就地重算注册表内泰坦配置的 slots，
+    // 但 research:stepCompleted 默认只重绘研究页。若玩家正看机库或开着装备轨道，必须同步刷新，
+    // 否则高槽可用数仍显示 0（船数据不变），直到重新进入页面。仅当完成节点确为泰坦槽位时触发。
+    const TITAN_SLOT_NODES = { tt_high: 1, tt_mid: 1, tt_low: 1, tt_rig: 1 };
+    researchEvents.on("research:stepCompleted", (event) => {
+      const techId = event && event.payload ? event.payload.techId : null;
+      if (!techId || !TITAN_SLOT_NODES[techId]) return;
+      if (currentPage === "hangar") renderHangarPanel();
+      if (orbitShipId) { buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); }
+    });
   }
   // 科技树画布：全部事件委托到容器，只注册一次；38 个节点不做逐个永久绑定。
   const researchTreeEl = document.getElementById("research-tree");
@@ -6062,6 +6133,7 @@ function installTutorialWidgetListeners() {
   }
   const researchDetailEl = document.getElementById("research-detail"); if (researchDetailEl) { researchDetailEl.addEventListener("click", onResearchDetailClick); researchDetailEl.addEventListener("keydown", onResearchDetailKey); }
   const researchQueueEl = document.getElementById("research-queue"); if (researchQueueEl) researchQueueEl.addEventListener("click", onResearchQueueClick);
+  const researchQueueSectionEl = document.getElementById("research-queue-section"); if (researchQueueSectionEl) researchQueueSectionEl.addEventListener("click", onResearchQueueToggleClick);
   const researchActiveEl = document.getElementById("research-active"); if (researchActiveEl) researchActiveEl.addEventListener("click", onResearchActiveClick);
   const researchSummaryEl = document.getElementById("research-summary"); if (researchSummaryEl) researchSummaryEl.addEventListener("click", onResearchAdClick);
   const researchSubtabsEl = document.querySelector(".research-subtabs"); if (researchSubtabsEl) researchSubtabsEl.addEventListener("click", onResearchSubtabClick);

@@ -1387,13 +1387,43 @@
   .research-btn.danger { border-color: #7a3a3a; color: #e6a0a0; }
   .research-btn.danger:hover { background: #3a1d1d; border-color: #d65a5a; }
 
+  /* 研究队列：默认折叠成一行摘要（含计数与队首预览），展开态才铺开列表。
+     折叠纯靠 .is-collapsed 这个类，JS 侧只切类，不依赖 DOM 顺序。 */
   .research-queue { display: flex; flex-direction: column; gap: 8px; }
-  .research-queue:empty::before {
-    content: "队列为空";
-    color: #7d8899;
-    font-style: italic;
-    font-size: 13px;
+  .research-queue-section { display: flex; flex-direction: column; gap: 10px; }
+  .research-queue-head {
+    display: flex; align-items: center; gap: 8px;
+    width: 100%; padding: 0; border: 0; background: transparent;
+    color: inherit; font: inherit; text-align: left; cursor: pointer;
   }
+  .research-queue-head:focus-visible { outline: 1px solid #4a8ed6; outline-offset: 2px; border-radius: 4px; }
+  .research-queue-head .research-queue-title { margin-bottom: 0; flex: 0 0 auto; }
+  .research-queue-caret {
+    width: 0; height: 0; flex: 0 0 auto;
+    border-left: 4px solid transparent; border-right: 4px solid transparent;
+    border-top: 5px solid #8899aa;
+    transition: transform 0.15s;
+  }
+  .research-queue-section:not(.is-collapsed) .research-queue-caret { transform: rotate(180deg); }
+  .research-queue-summary {
+    display: flex; align-items: center; gap: 8px;
+    min-width: 0; color: #9fb0c2; font-size: 12px;
+  }
+  .research-queue-summary .rq-count {
+    flex: 0 0 auto;
+    font-family: var(--font-tech, sans-serif); font-size: 11px; line-height: 1.5;
+    padding: 1px 7px; border: 1px solid #3a4a5a; border-radius: 99px; color: #c2a8ff;
+  }
+  .research-queue-summary .rq-count.is-full { border-color: #7a5fb0; color: #e0d0ff; }
+  .research-queue-summary .rq-next {
+    flex: 0 1 auto;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .research-queue-summary .rq-next b { color: #c8d6e6; font-weight: 500; }
+  /* 分隔符走 CSS 生成内容：纯标点、无需翻译，也避免拼进 i18n 词条 */
+  .research-queue-summary .rq-meta { flex: 0 0 auto; }
+  .research-queue-summary .rq-meta::before { content: "· "; }
+  .research-queue-section.is-collapsed .research-queue { display: none; }
   .research-queue-item {
     display: flex;
     align-items: center;

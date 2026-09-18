@@ -1446,6 +1446,14 @@ function applyOfflineGains(rawSeconds, context) {
     ? context.runId
     : "offline_" + Math.round(Date.now() - seconds * 1000).toString(36) + "_" + Date.now().toString(36) + "_" + (++_offlineBatchSeq).toString(36);
   _offlineEventBatch = { runId, sequence:0 };
+  // ⚠️ 性能红线（2026-09-18 实测）：离线结算期间置「结算中」标志，供逐击杀/逐事件触发的
+  // 整页重渲染（如 reputation.js 的 applyReputationKill → renderSkillOverviewPage）自检跳过。
+  // 8h 离线战斗实测 25,380 次击杀 ⇒ 25,380 次技能总览整页重渲染，登录阻塞 29~38s
+  // （真实 Chrome file:// 实测，占比 83.0%~89.4%）。修复后同一路径 29,284ms → 1,758ms（−94.0%，渲染次数 25,380 → 0）。
+  // 结算结束后页面自会刷新，中途 2.5 万次纯属浪费。
+  // 与 combat-log 的 __combatLogOfflineFlush 同一机制；保存旧值 + try/finally 复位，防嵌套调用串味。
+  const _previousOfflineSettling = (typeof globalThis !== "undefined") ? globalThis.__offlineSettling : undefined;
+  if (typeof globalThis !== "undefined") globalThis.__offlineSettling = true;
   const subsystemErrors = [];
   let combatSummary = null;
   try {
@@ -1499,6 +1507,11 @@ function applyOfflineGains(rawSeconds, context) {
   } finally {
     _offlineEventBatch = previousBatch;
     delete gameState._archVirtualNowMs;
+    // 复位「结算中」标志（保存旧值以支持嵌套调用；undefined 时整个删除，避免残留真值）
+    if (typeof globalThis !== "undefined") {
+      if (typeof _previousOfflineSettling === "undefined") { try { delete globalThis.__offlineSettling; } catch (_) {} }
+      else globalThis.__offlineSettling = _previousOfflineSettling;
+    }
   }
   // 同步 boosters.lastTick，防止首次在线 gameTick 追扣旧离线时间
   if (gameState.boosters) {

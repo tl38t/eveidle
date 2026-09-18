@@ -7,7 +7,7 @@
 <title>深空放置：边疆纪元</title>
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">
-<link rel="stylesheet" href="./css/base.css?v=22">
+<link rel="stylesheet" href="./css/base.css?v=23">
   <link rel="stylesheet" href="./css/panels.css?v=74">
   <link rel="stylesheet" href="./css/combat.css?v=27">
 <link rel="stylesheet" href="./css/components.css?v=45">
@@ -27,8 +27,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=12"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=3"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=47"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=25"></script>
+  <script src="./js/i18n/catalog-en.js?v=49"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=27"></script>
   <!-- steam-i18n-de-ru:start -->
   <!-- de / ru 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这两个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -40,13 +40,13 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=12"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=14"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=14"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=16"><\/script>');
       }
     })();
   </script>
   <!-- steam-i18n-de-ru:end -->
-  <script src="./js/i18n/translator.js?v=20"></script>
+  <script src="./js/i18n/translator.js?v=21"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
     // source code, variables, HTML templates, starmap and achievements stay untouched.
@@ -1482,6 +1482,16 @@
           <div class="research-active" id="research-active"></div>
           <div class="research-progress-track"><div class="research-progress-fill" id="research-progress-fill" style="width:0%;"></div></div>
         </section>
+        <!-- 研究队列：默认折叠为一行摘要，避免长队列把下方科技树推走。
+             展开态由 shell-render.js 的模块级 _researchQueueExpanded 持有（纯视图，不进存档）。 -->
+        <section class="research-queue-section is-collapsed" id="research-queue-section">
+          <button type="button" class="research-queue-head" id="research-queue-toggle" aria-expanded="false" aria-controls="research-queue">
+            <span class="research-queue-caret" aria-hidden="true"></span>
+            <span class="section-title research-queue-title">研究队列</span>
+            <span class="research-queue-summary" id="research-queue-summary"></span>
+          </button>
+          <div class="research-queue" id="research-queue"></div>
+        </section>
         <nav class="research-subtabs" aria-label="研究分类">
           <button type="button" class="research-subtab active" data-research-view="tree">普通研究</button>
           <button type="button" class="research-subtab" data-research-view="cycle">循环研究 ∞</button>
@@ -1493,10 +1503,6 @@
           </div>
         </section>
         <section class="research-cycle-section" id="research-cycle-section" style="display:none;"></section>
-        <section class="research-queue-section">
-          <h3 class="section-title">研究队列</h3>
-          <div class="research-queue" id="research-queue"></div>
-        </section>
       </div>
     </div>
 
@@ -1615,18 +1621,18 @@
   <script defer src="./js/data/research.js?v=11"></script>
   <script defer src="./js/core/research-state.js?v=8"></script>
   <script defer src="./js/data/achievements.js?v=8"></script>
-  <script defer src="./js/data/achievement-locales.js?v=1"></script>
+  <script defer src="./js/data/achievement-locales.js?v=2"></script>
   <script defer src="./js/data/achievement-locales-tw.js?v=1"></script>
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=7"></script>
   <script defer src="./js/data/tutorial.js?v=7"></script>
-  <script defer src="./js/data/changelog.js?v=17"></script>
+  <script defer src="./js/data/changelog.js?v=20"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
-  <script defer src="./js/core/state.js?v=14"></script>
-  <script defer src="./js/systems/reputation.js?v=2"></script>
+  <script defer src="./js/core/state.js?v=15"></script>
+  <script defer src="./js/systems/reputation.js?v=3"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
-  <script defer src="./js/systems/research.js?v=11"></script>
+  <script defer src="./js/systems/research.js?v=12"></script>
   <script defer src="./js/systems/research-ad.js?v=2"></script>
   <script defer src="./js/core/statistics.js?v=6"></script>
   <script defer src="./js/systems/achievements.js?v=5"></script>
@@ -1636,7 +1642,7 @@
   <script defer src="./js/systems/manufacturing.js?v=7"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
-  <script defer src="./js/systems/equipment-enhancement.js?v=4"></script>
+  <script defer src="./js/systems/equipment-enhancement.js?v=5"></script>
   <script defer src="./js/systems/rigs.js?v=5"></script>
   <script defer src="./js/systems/archaeology.js?v=23"></script>
   <script defer src="./js/systems/planetary.js?v=5"></script>
@@ -1652,24 +1658,24 @@
   <script defer src="./js/ui/action-modal.js?v=13"></script>
   <script defer src="./js/core/queue.js?v=6"></script>
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
-  <script defer src="./js/systems/combat.js?v=52"></script>
+  <script defer src="./js/systems/combat.js?v=53"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=109"></script>
-  <script defer src="./js/core/actions.js?v=62"></script>
+  <script defer src="./js/core/selectors.js?v=111"></script>
+  <script defer src="./js/core/actions.js?v=63"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=54"></script>
-  <script defer src="./js/systems/wormhole.js?v=40"></script>
+  <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=5"></script>
-   <script defer src="./js/ui/shell-render.js?v=143"></script>
-  <script defer src="./js/ui/skill-overview.js?v=8"></script>
-  <script defer src="./js/ui/manufacturing-render.js?v=26"></script>
+   <script defer src="./js/ui/shell-render.js?v=146"></script>
+  <script defer src="./js/ui/skill-overview.js?v=9"></script>
+  <script defer src="./js/ui/manufacturing-render.js?v=27"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=13"></script>
-   <script defer src="./js/ui/combat-render.js?v=68"></script>
+   <script defer src="./js/ui/combat-render.js?v=70"></script>
   <script defer src="./js/ui/planetary-render.js?v=3"></script>
   <script defer src="./js/ui/archaeology-render.js?v=16"></script>
   <script defer src="./js/ui/booster-render.js?v=17"></script>
   <script defer src="./js/ui/station-render.js?v=16"></script>
-  <script defer src="./js/ui/legion-render.js?v=26"></script>
+  <script defer src="./js/ui/legion-render.js?v=27"></script>
   <script defer src="./js/ui/legion-events.js?v=16"></script>
   <script defer src="./js/ui/wormhole-render.js?v=33"></script>
   <script defer src="./js/ui/wormhole-rifts.js?v=4"></script>
@@ -1681,8 +1687,8 @@
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
   <script defer src="./js/ui/alliance-render.js?v=38"></script>
   <script defer src="./js/core/tick.js?v=25"></script>
-  <script defer src="./js/core/offline.js?v=30"></script>
-  <script defer src="./js/systems/offline-combat.js?v=38"></script>
+  <script defer src="./js/core/offline.js?v=31"></script>
+  <script defer src="./js/systems/offline-combat.js?v=40"></script>
   <script defer src="./js/systems/combat-log.js?v=6"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=3"></script>
@@ -1692,7 +1698,7 @@
   <script defer src="./js/platform/ad-provider-contract.js?v=2"></script>
   <script defer src="./js/platform/local-mirror-contract.js?v=3"></script>
   <script defer src="./js/core/save-envelope.js?v=4"></script>
-  <script defer src="./js/core/save-codec.js?v=5"></script>
+  <script defer src="./js/core/save-codec.js?v=6"></script>
   <script defer src="./js/platform/providers/noop-cloud-provider.js?v=3"></script>
   <script defer src="./js/platform/providers/noop-achievement-provider.js?v=3"></script>
   <script defer src="./js/platform/providers/noop-local-mirror-provider.js?v=3"></script>

@@ -253,7 +253,6 @@ const gameState = {
     lastSpecialLoot: "",
     lastEnemyVolley: null,
     active: false,
-    salvageArmActive:  false, // 同位素标记打捞臂主动打捞开关：装备后可在战斗界面切换；开=消耗被动三倍燃料+同位素+掉落同级舰船组件，关=仅被动：消耗基础燃料提高货柜掉落
     repairUntil: 0,        // 旧字段：仅存档迁移兼容占位，迁移后即清零，绝不作为权威判断（见 persistence.migrateCombatEquipmentState）
     destroyedShip: null,   // 旧字段：同上，权威维修状态见 repairs[instanceId]
     repairs: {},           // 问题2 权威：per-ship 维修截止时间戳 combat.repairs[instanceId] = untilTs
@@ -294,7 +293,8 @@ const gameState = {
     confirmShipEnhancement: true,
     confirmDiscard: true,
     confirmDismantle: true,
-    combatSkillsExpanded: false
+    combatSkillsExpanded: false,
+    salvageArmActive: false // 同位素标记打捞臂主动打捞开关（持久偏好）：装备打捞臂后可在战斗界面切换；开=消耗被动三倍燃料+同位素+掉落同级舰船组件，关=仅被动：消耗基础燃料提高货柜掉落
   },
 
   migrations: {},
@@ -324,6 +324,15 @@ function ensureUserSettingsState(state) {
   else state.settings.confirmDiscard = Boolean(state.settings.confirmDiscard);
   if (state.settings.confirmDismantle === undefined) state.settings.confirmDismantle = true;
   else state.settings.confirmDismantle = Boolean(state.settings.confirmDismantle);
+  // 2026-09-18：主动打捞开关从瞬态 state.combat.salvageArmActive 迁移到持久 state.settings.salvageArmActive
+  // （旧位置在进度码 COMBAT_TRANSIENT 剔除之列，重导入进度码会丢失 ⇒ 用户报「打完就显示未生效」）。
+  if (typeof state.settings.salvageArmActive !== "boolean") {
+    const legacy = (state.combat && typeof state.combat.salvageArmActive === "boolean") ? state.combat.salvageArmActive : false;
+    state.settings.salvageArmActive = legacy;
+    if (state.combat) delete state.combat.salvageArmActive;
+  } else {
+    state.settings.salvageArmActive = Boolean(state.settings.salvageArmActive);
+  }
   // 外接大型精炼泵供料开关（全局，作用于冶炼舰上全部泵件；默认开启。开关只影响下一炉）
   if (state.settings.refineryPumpEnabled === undefined) state.settings.refineryPumpEnabled = true;
   else state.settings.refineryPumpEnabled = Boolean(state.settings.refineryPumpEnabled);

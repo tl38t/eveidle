@@ -1009,7 +1009,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   if (!deathspace) {
     const salvageFuelPK = (typeof getSquadSalvageFuelPerKill === "function") ? getSquadSalvageFuelPerKill(state) : 0;
     if (salvageFuelPK > 0) {
-      const salvageBase = state.combat.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
+      const salvageBase = state.settings.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
       const fuelMultiplier = (typeof getCombatFuelMultiplierFromState === "function")
         ? getCombatFuelMultiplierFromState(state, zone) : 1;
       const salvageFuelAmt = Math.max(1, Math.round(salvageBase * fuelMultiplier));
@@ -1022,7 +1022,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     ResourceRegistry.spend(state, "consumable:fuel", mtuFuelAmt);
   }
   // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才触发；死亡空间不触发，与货柜一致）
-  if (!deathspace && state.combat.salvageArmActive && typeof hasSalvageArmEquipped === "function" && hasSalvageArmEquipped(state)) {
+  if (!deathspace && state.settings.salvageArmActive && typeof hasSalvageArmEquipped === "function" && hasSalvageArmEquipped(state)) {
     const isoCost = getSalvageComponentQty(enemy.kind); // 1/2/3，与组件数量一致
     const isoHave = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(state, "planetary:同位素") : 0;
     if (isoHave >= isoCost) {

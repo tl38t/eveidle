@@ -652,12 +652,18 @@ function showEquipEngInputPicker(recipe) {
     const outLevel = Math.floor(selectedLevel / 3);
     summaryEl.innerHTML = '<span class="ai-label">将消耗：</span>' + twEsc(itemName) + ' +' + selectedLevel + ' ×' + (quantity * cycles) + ' → 产出 +' + outLevel + ' ×' + cycles;
   }
+  function previewSummary() {
+    const outLevel = Math.floor(selectedLevel / 3);
+    summaryEl.innerHTML = '<span class="ai-label">将消耗：</span>' + twEsc(itemName) + ' +' + selectedLevel + ' ×' + (quantity * cycles) + ' → 产出 +' + outLevel + ' ×' + cycles;
+  }
   countEl.addEventListener("input", () => {
-    let v = parseInt(countEl.value || "1");
-    const max = Math.floor(groups[selectedLevel] / quantity);
+    let v = parseInt(countEl.value || "1", 10);
     if (!Number.isFinite(v) || v < 1) v = 1;
-    if (v > max) v = max;
-    cycles = v; countEl.value = String(v); updateMax();
+    cycles = v;
+    previewSummary();   // 所见即所得：输入过程不钳制、不回写 value
+  });
+  countEl.addEventListener("change", () => {
+    updateMax();        // 失焦 / 回车时再钳到 [1, max] 并回写
   });
 
   function close() { if (overlay.parentNode) overlay.parentNode.removeChild(overlay); }

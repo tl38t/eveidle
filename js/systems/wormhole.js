@@ -491,6 +491,8 @@
         n.ring = ringNames[0];
       }
     });
+    // 采集节点随机标定矿/气（50:50）：气体房产出赫利昂冷凝气并套用采气工业舰与采气效率加成
+    nodes.forEach(n => { if (n.kind === "trial" && n.type === "collection") n.subtype = rng() < 0.5 ? "gas" : "ore"; });
     // 环带分配：目标占比由中/内环填充（外环为默认）
     if (mix.inner > 0 || mix.middle > 0) {
       const nInner = Math.round(trialSlots.length * mix.inner);

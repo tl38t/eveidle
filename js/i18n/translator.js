@@ -49,6 +49,51 @@
   var ATTRIBUTES = ["title", "aria-label", "placeholder"];
   var translateCache = new Map();
   var catalogUsesIdeographs = false;
+  // 模板键：source 里含 {0} {1} … 占位符的键。
+  // 用于「源码把变量拼进句子中间」的场景（如 '累计科研时长 ' + X + ' 小时'）：
+  //   整句带变量 ⇒ 精确查表永不命中；而片段键又会被变量里的数字/单位切断，
+  //   替换后残留孤儿汉字 ⇒ 触发整段回退 ⇒ 整句显示中文。
+  //   故在「精确查表之后、片段替换之前」插一层模板匹配：把 {n} 编译成
+  //   「不含汉字」的捕获组并整段锚定（^…$）。必须锚定：不锚定就无法处理
+  //   匹配区间之外残留的文本（那部分仍是中文）。
+  var templateRules = [];
+  var templateCache = new Map();
+  var RE_ESCAPE = /[.*+?^${}()|[\]\\]/g;
+  function escapeRegExpSource(value) { return String(value).replace(RE_ESCAPE, "\\$&"); }
+  // 单个「全角/CJK 标点」也能作为子串键：`：` `，` 等在中英混排里是纯装饰字符，
+  // 换成 ASCII 后既不会残留汉字（不触发整段回退），又能消除「Standard pump：Disabled」
+  // 这类半翻译中间态。其它单字符键（`的` `位` …）一律仍被拒绝，避免过度替换。
+  var SINGLE_PUNCT = /^[\u3000-\u303F\uFF01-\uFF65\u00B7\u2018\u2019\u201C\u201D]$/;
+  function isSubstringSource(source) {
+    if (typeof source !== "string" || !source || /[<>]/.test(source)) return false;
+    return source.length >= 2 || SINGLE_PUNCT.test(source);
+  }
+  // 出口标点归一化：仅对「译文不含汉字」的目录（en / de / ru）生效，且只在**本段确实
+  // 发生了翻译**（translated !== source）时才套用——否则整段仍是中文原文，单把标点换成
+  // 半角只会得到「中文句子配英文标点」的新怪相。
+  //
+  // 中文标点漏进英文界面有两条路径，都不是单一词条能覆盖的：
+  //   ① 源码胶水：`'… · 已关闭（每次冶炼不消耗' + fuel + '，库存' + n + '）'`
+  //      —— 片段键能译出 'Closed（No refining cost per cycle'，但结尾 '）' 无键可查；
+  //   ② 词条译文本身沿用全角括号 / 冒号（宽表里的机器草稿常见形态）。
+  // 英德俄界面里这些都是恒定的缺陷，故在出口统一收敛为 ASCII，并顺手修掉映射自身
+  // 引入的空格粘连（` （` → ` (`, `Bonux： ` → `Bonus: `, `…cycle(` 保持不动）。
+  var PUNCT_RE = /[\u3000\u3001\u3002\uFF01\uFF08\uFF09\uFF0C\uFF1A\uFF1B\uFF1F\uFF5E\uFF0E\uFF5B\uFF5D\u3010\u3011\u300A\u300B\u3008\u3009\u300C\u300D\u300E\u300F]/g;
+  var PUNCT_MAP = {
+    "\u3000": " ", "\u3001": ", ", "\u3002": ". ", "\uFF01": "!", "\uFF08": " (",
+    "\uFF09": ")", "\uFF0C": ", ", "\uFF1A": ":", "\uFF1B": "; ", "\uFF1F": "?",
+    "\uFF5E": "~", "\uFF0E": ".", "\uFF5B": "{", "\uFF5D": "}",
+    "\u3010": "[", "\u3011": "]", "\u300A": "<", "\u300B": ">", "\u3008": "<", "\u3009": ">",
+    "\u300C": "\"", "\u300D": "\"", "\u300E": "'", "\u300F": "'"
+  };
+  function normalizePunctuation(value) {
+    var out = String(value).replace(PUNCT_RE, function (ch) { return PUNCT_MAP[ch] || ch; });
+    // 空格修整：只在单行内折叠连续空格，避免破坏含换行的说明文本缩进。
+    if (out.indexOf("\n") === -1) out = out.replace(/[ \t]{2,}/g, " ");
+    out = out.replace(/\s+([,.;:!?)\]])/g, "$1");
+    out = out.replace(/([(\[])[ \t]+/g, "$1");
+    return out;
+  }
 
   function setActiveCatalog() {
     catalog = catalogs[locale] || new Map();
@@ -56,19 +101,109 @@
     // 只按字符长度降序会让「跨词边界的片段键」压过正常词：
     //   "· 总"(3 字符/1 汉字) 先于 "总部"(2 字符/2 汉字) 被应用 ⇒ 总部 被切成 "total 部"。
     // 汉字数优先可保证「完整词恒优于片段键」，从根上消除这类切词。
-    catalogSources = Array.from(catalog.keys()).filter(function (source) { return source.length >= 2 && !/[<>]/.test(source); }).sort(function (a, b) { return cjkCount(b) - cjkCount(a) || b.length - a.length; });
+    catalogSources = Array.from(catalog.keys()).filter(function (source) { return isSubstringSource(source) && source.indexOf("{") === -1; }).sort(function (a, b) { return cjkCount(b) - cjkCount(a) || b.length - a.length; });
     // 目标目录的译文是否本身就是汉字（如 zh-TW）。是的话，子串替换属于「字形/用词转换」，
     // 不能按「中英混排」处理，否则会把合法的繁体输出回退成简体。
     catalogUsesIdeographs = false;
     catalog.forEach(function (value) { if (typeof value === "string" && IDEOGRAPH.test(value)) catalogUsesIdeographs = true; });
+    // 模板键仅对「译文不含汉字」的目录建立（en / de / ru）。
+    // zh-TW 的译文本身就是汉字，模板替换属于字形转换、不含变量语义，故跳过。
+    templateRules = [];
+    if (!catalogUsesIdeographs) {
+      catalog.forEach(function (value, source) {
+        if (typeof value !== "string" || !value) return;
+        if (source.indexOf("{") === -1) return;
+        // 调用方一律用 trim() 后的文本做查表/匹配（见 translateText），所以模板键的
+        // **首尾空白永远匹配不到**；而译文里那些空白恰恰是用来与前后文拼接的。
+        // 处理：把源键首尾空白剥掉，并按同样的「剥掉几个字符」从译文两端各剥同样多，
+        // 于是「源键的空白」与「译文的空白」成对抵消，拼接结果与原文空格数完全一致。
+        var lead = source.length - source.trimStart().length;
+        var tail = source.length - source.trimEnd().length;
+        var core = source.trim();
+        var text = value;
+        if (lead + tail > 0) {
+          if (value.length <= lead + tail) return;
+          text = value.slice(lead, value.length - tail);
+        }
+        var pattern = "^" + escapeRegExpSource(core).replace(/\\\{(\d+)\\\}/g, "([^\u3400-\u9FFF\uF900-\uFAFF]{0,200}?)") + "$";
+        try { templateRules.push({ re: new RegExp(pattern), value: text }); } catch (error) { /* 非法模板一律丢弃，绝不影响常规翻译 */ }
+      });
+      // 长模板优先：同一句话可能同时命中「带尾缀」与「不带尾缀」两条模板。
+      templateRules.sort(function (a, b) { return b.re.source.length - a.re.source.length; });
+    }
     translateCache.clear();
+    templateCache.clear();
   }
-  function skip(element) { return !element || /^(SCRIPT|STYLE|CODE|PRE)$/.test(element.tagName) || !!element.closest?.('#achievements-panel, [data-deferred-i18n]'); }
+  /** 整段锚定匹配模板键；未命中返回 null。 */
+  function translateFromTemplate(text) {
+    if (templateCache.has(text)) return templateCache.get(text);
+    var hit = null;
+    for (var i = 0; i < templateRules.length; i += 1) {
+      var rule = templateRules[i];
+      var m = text.match(rule.re);
+      if (!m) continue;
+      hit = rule.value.replace(/\{(\d+)\}/g, function (whole, index) {
+        var captured = m[Number(index) + 1];
+        return captured === undefined ? whole : captured;
+      });
+      break;
+    }
+    templateCache.set(text, hit);
+    return hit;
+  }
+  // 语言名称是「自名（endonym）」：无论界面语言为何，这一项都必须显示该语言自身的写法
+  // （简体中文 / 繁體中文 / English / Deutsch / Русский）。它一旦被 catalog 当作普通文案
+  // 翻译，俄语界面下的选项就会变成「Упрощенный китайский / Традиционный китайский」，
+  // 玩家在下拉里认不出自己要选的语言 —— 语言选择器是唯一不能本地化的控件。
+  // `[data-i18n-skip]` 是同类的显式标记（如「语言 / Language」双语标头）。
+  function skip(element) {
+    if (!element) return true;
+    if (/^(SCRIPT|STYLE|CODE|PRE)$/.test(element.tagName)) return true;
+    if (element.tagName === "OPTION" && element.closest && element.closest("#setting-language")) return true;
+    return !!element.closest?.('#achievements-panel, [data-deferred-i18n], [data-i18n-skip]');
+  }
+  var LANGUAGE_LABELS = { "zh-CN": "简体中文", "zh-TW": "繁體中文", "en-US": "English", "de": "Deutsch", "ru": "Русский" };
+  // 按 value 强制回写标签。skip() 已保证新值不会被再翻译；这里额外做一次值级校正，
+  // 使「语言名永不被本地化」不依赖 skip 判据本身（并顺手纠正任何历史被译值），且幂等。
+  function syncLanguageOptions() {
+    var control = document.getElementById("setting-language");
+    if (!control || !control.options) return;
+    Array.prototype.forEach.call(control.options, function (option) {
+      var label = LANGUAGE_LABELS[option.value];
+      if (label && option.textContent !== label) option.textContent = label;
+    });
+  }
+  // 接缝补空格。中文没有词间空格、英德俄有 —— 这正是片段替换的**系统性**缺陷：
+  //   源码 `'…' + 名称 + '蓝图'` 两段各自译对（`Star Spear-class` / `blueprint`），
+  //   但拼接处两个字母直接相邻 ⇒ `Star Spear-classblueprint`；
+  //   同理出现 TitanComponents / Miningindustry / Equipment EngineeringXP+8 /
+  //   Если он принадлежит, то конвертируется вBrain… / cycleplasma。
+  // 中文侧不留空格是**正确**的，所以只能在出口按目标语言补，不能靠改词条
+  // （词条侧要么枚举几十个舰级名、要么把所有片段键预先加上尾随空格，都会随新增
+  //   内容持续回归）。判据只看「字母↔字母」边界，数字、百分号、括号、汉字一律不动。
+  // 仅对「译文不含汉字」的目录生效：zh-TW 的输出必须保持逐字节不变。
+  var SEAM_LETTER = /[A-Za-z\u00C0-\u024F\u0370-\u03FF\u0400-\u04FF]/;
   function translateFromCatalog(text) {
     if (!IDEOGRAPH.test(text)) return text;
     if (translateCache.has(text)) return translateCache.get(text);
     var result = text;
-    catalogSources.forEach(function (source) { if (result.includes(source)) result = result.split(source).join(catalog.get(source)); });
+    for (var s = 0; s < catalogSources.length; s += 1) {
+      var source = catalogSources[s];
+      var idx = result.indexOf(source);
+      if (idx === -1) continue;
+      var value = catalog.get(source);
+      if (typeof value !== "string") continue;
+      while (idx !== -1) {
+        var padLeft = !catalogUsesIdeographs && idx > 0 && SEAM_LETTER.test(result.charAt(idx - 1)) && SEAM_LETTER.test(value.charAt(0)) ? " " : "";
+        result = result.slice(0, idx) + padLeft + value + result.slice(idx + source.length);
+        var end = idx + padLeft.length + value.length;
+        if (!catalogUsesIdeographs && SEAM_LETTER.test(value.charAt(value.length - 1)) && SEAM_LETTER.test(result.charAt(end))) {
+          result = result.slice(0, end) + " " + result.slice(end);
+          end += 1;
+        }
+        idx = result.indexOf(source, end);
+      }
+    }
     // 半截替换（替换后仍残留汉字）宁可整段不译，避免出现中英混排的句子。
     // 仅对「译文不含汉字」的目录（如 en-US）生效：目录中不存在含汉字的英文译文，故不会误伤合法全译。
     // 译文本身是汉字的目录（如 zh-TW）走的是字形转换，不适用此回退。
@@ -84,7 +219,8 @@
     var trimmed = sourceRaw.trim();
     if (!trimmed || !IDEOGRAPH.test(trimmed)) return;
     if (!originals.has(node)) originals.set(node, sourceRaw);
-    var translated = catalog.get(trimmed) || translateFromCatalog(trimmed);
+    var translated = catalog.get(trimmed) || translateFromTemplate(trimmed) || translateFromCatalog(trimmed);
+    if (!catalogUsesIdeographs && translated !== trimmed) translated = normalizePunctuation(translated);
     var start = sourceRaw.indexOf(trimmed);
     var value = sourceRaw.slice(0, start) + translated + sourceRaw.slice(start + trimmed.length);
     if (value !== raw) node.nodeValue = value;
@@ -95,7 +231,9 @@
       var value = element.getAttribute(attribute); if (!value) return;
       var saved = originals.has(element) ? originals.get(element) : {};
       var sourceValue = saved[attribute] || value;
-      var translated = locale === "zh-CN" ? sourceValue : (catalog.get(sourceValue.trim()) || translateFromCatalog(sourceValue));
+      var trimmedValue = String(sourceValue).trim();
+      var translated = locale === "zh-CN" ? sourceValue : (catalog.get(trimmedValue) || translateFromTemplate(trimmedValue) || translateFromCatalog(sourceValue));
+      if (!catalogUsesIdeographs && translated !== sourceValue) translated = normalizePunctuation(translated);
       if (locale !== "zh-CN" && translated !== value) { saved[attribute] = sourceValue; originals.set(element, saved); }
       if (translated !== value) element.setAttribute(attribute, translated);
     });
@@ -113,6 +251,7 @@
   var WINDOW_TITLES = { "zh-CN": "深空放置", "zh-TW": "深空放置", "en-US": "Deep Space Idle" };
   function applyNav() {
     apply(document.body);
+    syncLanguageOptions();
     document.documentElement.lang = locale;
     document.title = WINDOW_TITLES[locale] || catalog.get("深空放置 · 边疆纪元") || "Deep Space Idle";
   }
@@ -169,7 +308,14 @@
   window.I18N = {
     getLocale: function () { return locale; },
     setLocale: function (next, options) { setLocale(next, options && options.persist); },
-    t: function (key) { return locale === "zh-CN" ? key : (catalog.get(key) || key); }
+    // 精确查表（不参与片段替换）：调用方给的已是整句键。命中后同样过一遍标点归一化，
+    // 保证「同一句话在 DOM 路径与 I18N.t 路径下渲染结果一致」。
+    t: function (key) {
+      if (locale === "zh-CN") return key;
+      var hit = catalog.get(key);
+      if (hit === undefined) return key;
+      return (!catalogUsesIdeographs && hit !== key) ? normalizePunctuation(hit) : hit;
+    }
   };
   document.addEventListener("DOMContentLoaded", function () {
     applyNav();
@@ -177,8 +323,9 @@
     if (control) {
       control.value = locale;
       // 仅当对应目录全局存在（即 Steam 端）才向语言下拉追加 de / ru 选项。
-      if (window.I18N_CATALOG_DE) { var od = document.createElement("option"); od.value = "de"; od.textContent = "Deutsch"; control.appendChild(od); }
-      if (window.I18N_CATALOG_RU) { var or = document.createElement("option"); or.value = "ru"; or.textContent = "Русский"; control.appendChild(or); }
+      if (window.I18N_CATALOG_DE) { var od = document.createElement("option"); od.value = "de"; od.textContent = LANGUAGE_LABELS.de; control.appendChild(od); }
+      if (window.I18N_CATALOG_RU) { var or = document.createElement("option"); or.value = "ru"; or.textContent = LANGUAGE_LABELS.ru; control.appendChild(or); }
+      syncLanguageOptions();
       control.addEventListener("change", function () { setLocale(control.value); });
     }
     followPlatformLocale();

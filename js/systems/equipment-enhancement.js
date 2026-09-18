@@ -169,6 +169,41 @@ function getEquipmentInventoryCount(state, itemId) {
   return inventory.filter(id => id === itemId).length;
 }
 
+/* ---- donor（同型号 +0 装备）可用计数：双池合并，排除目标自身实例 ----
+   inventory 字符串池中的 +0 字符串 + instances 池中 enhancementLevel=0 且未安装的实例。
+   旧 getEquipmentInventoryCount 仅统计 inventory 字符串，导致已实例化的 +0 装备无法作为 donor，
+   里程碑强化被误判「缺少同型号 +0 装备」。 */
+function getEquipmentDonorCount(state, itemId, excludeInstanceId) {
+  const inventory = state && state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
+  let count = inventory.filter(id => id === itemId).length;
+  const excludeStr = String(excludeInstanceId || "");
+  const instances = getEquipmentInstanceList(state).filter(inst =>
+    inst.itemId === itemId &&
+    !inst.installedOn &&
+    Math.max(0, Math.floor(Number(inst.enhancementLevel) || 0)) === 0 &&
+    String(inst.instanceId) !== excludeStr
+  );
+  return count + instances.length;
+}
+
+/* ---- donor 查找：优先 inventory 字符串，其次 instances 池中的 +0 未安装实例 ----
+   返回 { kind:"inventory", index } 或 { kind:"instance", instanceId } 或 null。 */
+function findDonorReference(state, itemId, excludeInstanceId) {
+  const inventory = state && state.equipment && Array.isArray(state.equipment.inventory) ? state.equipment.inventory : [];
+  for (let index = 0; index < inventory.length; index++) {
+    if (inventory[index] === itemId) return { kind: "inventory", index };
+  }
+  const excludeStr = String(excludeInstanceId || "");
+  const instance = getEquipmentInstanceList(state).find(inst =>
+    inst.itemId === itemId &&
+    !inst.installedOn &&
+    Math.max(0, Math.floor(Number(inst.enhancementLevel) || 0)) === 0 &&
+    String(inst.instanceId) !== excludeStr
+  );
+  if (instance) return { kind: "instance", instanceId: instance.instanceId };
+  return null;
+}
+
 function getEquipmentInstanceList(state) {
   return state && state.equipment && Array.isArray(state.equipment.instances) ? state.equipment.instances : [];
 }
@@ -270,11 +305,13 @@ window.EquipmentEnhancement = Object.freeze({
   resolveEquipmentReference,
   getEquipmentEnhancementDisplayState,
   getEquipmentInventoryCount,
+  getEquipmentDonorCount,
   getEquipmentInstanceList,
   getEquipmentInstanceById,
   getUninstalledEquipmentInstances,
   getEquipmentOwnedCount,
   findDonorInventoryIndex,
+  findDonorReference,
   getGroupedInputEquipmentCandidates,
   getEquipEngInputLevelFromState,
   getEquipEngInputInheritance

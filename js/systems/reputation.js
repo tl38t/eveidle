@@ -61,6 +61,29 @@
     return getFactionReputation(faction, state).band.eliteBonus;
   }
 
+  // ⚠️ 性能红线（2026-09-18 实测）：applyReputationKill 是**逐击杀**调用（在线走
+  // combat:enemyDefeated 事件、离线由 offline-combat.js recordKill 直接调用），而技能总览页
+  // 是整页 innerHTML 重渲染。8h 离线战斗实测 25,380 次击杀 ⇒ 25,380 次全页重渲染，
+  // 登录结算阻塞 29~38s（两次实测 29,284ms / 38,3xx ms；占比 83.0%~89.4%），**同期采矿离线 8h 仅 3~4ms**。
+  // ⚠️ 引入版本 = a426ad2（0.9.6，2026-09-17，声望系统新增）—— 故「战斗离线上线后才卡、采矿不卡」。
+  // 故重渲染必须先问「现在真的需要刷吗」：
+  //   ① 离线结算临界区内一律不刷（结算结束后页面自会刷新，中途刷 2.5 万次纯属浪费）；
+  //      标志由 js/core/offline.js 的 applyOfflineGains 置位/复位（与 combat-log 的
+  //      __combatLogOfflineFlush 同一机制，try/finally 保证复位）。
+  //   ② 当前不在技能总览页（面板 display:none）不刷 —— 玩家看不见，重绘毫无意义。
+  // 取状态异常时按「需要刷新」处理：宁可多刷一次，不可漏刷。
+  function shouldRefreshSkillOverview() {
+    try {
+      if (typeof globalThis !== "undefined" && globalThis.__offlineSettling === true) return false;
+      const doc = (typeof document !== "undefined") ? document : null;
+      if (doc && typeof doc.getElementById === "function") {
+        const panel = doc.getElementById("skill-overview-panel");
+        if (panel && panel.style && panel.style.display === "none") return false;
+      }
+    } catch (err) { /* 忽略：按需刷新 */ }
+    return true;
+  }
+
   function applyReputationKill(state, faction, zoneId, enemyClass) {
     if (!FACTIONS[faction]) return;
     const zone = typeof COMBAT_ZONES !== "undefined" ? COMBAT_ZONES.find(item => item.id === zoneId) : null;
@@ -69,7 +92,7 @@
     const rep = ensureState(state || window.gameState);
     rep.weightedKills[faction] += points;
     if (state || window.gameState) (state || window.gameState)._dirty = true;
-    if (typeof renderSkillOverviewPage === "function") renderSkillOverviewPage();
+    if (typeof renderSkillOverviewPage === "function" && shouldRefreshSkillOverview()) renderSkillOverviewPage();
   }
 
   function onEnemyDefeated(event) {

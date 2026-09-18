@@ -802,7 +802,7 @@
     //   （本文件 862 / 874 行的同位素主动打捞与 MTU 组件产出同样带 !isDeathspace 门禁），
     //   故此处不再从会话虚拟燃料池 s.fuel 扣打捞臂燃耗。MTU 燃耗在 flush 处（独立块）不在此列。
     if (!isDeathspace && salvageFuelPK > 0) {
-      const salvageBase = (state.combat && state.combat.salvageArmActive) ? salvageFuelPK * 3 : salvageFuelPK;
+      const salvageBase = state.settings.salvageArmActive ? salvageFuelPK * 3 : salvageFuelPK;
       const _fuelMultFn = G("getCombatFuelMultiplierFromState");
       const fuelMultiplier = (typeof _fuelMultFn === "function") ? _fuelMultFn(state, zone) : 1;
       const salvageFuelAmt = Math.max(1, Math.round(salvageBase * fuelMultiplier));
@@ -885,7 +885,10 @@
       cargoClsMap[enemy.kind]++;
     }
     // 同位素标记打捞臂：主动打捞（开关开启 + 已装备打捞臂 + 有同位素才记录；死亡空间不触发，与货柜一致）
-    if (!isDeathspace && state.combat.salvageArmActive && (typeof getSquadSalvageEfficiency === "function" ? getSquadSalvageEfficiency(state) : 0) > 0) {
+    // 2026-09-18：门禁统一走 hasSalvageArmEquipped（= 只看真实装备的打捞臂，排除 MTU）。
+    //   旧写在线的 combat.js 用 hasSalvageArmEquipped、离线这里却内联 getSquadSalvageEfficiency > 0（含 MTU 2.10）
+    //   ⇒ 口径不一致：无臂玩家离线开开关会白扣同位素，且离线/在线行为分叉。
+    if (!isDeathspace && state.settings.salvageArmActive && (typeof hasSalvageArmEquipped === "function") && hasSalvageArmEquipped(state)) {
       const isoCost = (typeof getSalvageComponentQty === "function") ? getSalvageComponentQty(enemy.kind) : 1; // 1/2/3
       if ((s.iso || 0) >= isoCost) {
         s.iso -= isoCost;

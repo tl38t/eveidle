@@ -81,6 +81,10 @@ if (MODE !== "selftest" && MODE !== "release") {
 }
 const INCLUDE_PROBE = MODE === "selftest";
 const WORKTREE_SELFTEST = process.argv.includes("--worktree-selftest");
+const SKIP_CLOUD_CHECK = process.argv.includes("--skip-cloud-check");
+if (SKIP_CLOUD_CHECK && MODE !== "selftest") {
+  throw new Error("--skip-cloud-check 仅允许用于 selftest 包");
+}
 if (WORKTREE_SELFTEST && MODE !== "selftest") {
   throw new Error("--worktree-selftest is restricted to --mode selftest");
 }
@@ -454,6 +458,19 @@ async function buildOnce(SOURCE_SHA, includeProbe) {
     map.set(ADBUFF_REL, Buffer.from(c, "utf8"));
   }
 
+  // 云存档跳过自测：仅注入 selftest 包，正式 release 永远不包含此分支。
+  // 保留本地/设备镜像读取；有本地候选就直接使用，没有则直接进入新档。
+  if (SKIP_CLOUD_CHECK) {
+    const rel = "js/core/persistence.js";
+    if (!map.has(rel)) fail("自测包缺少 " + rel);
+    let c = map.get(rel).toString("utf8");
+    const marker = "  _runCloudStartup() {\n    const self = this;\n    const cs = this._cloudSave;\n    const device = this._deviceCandidate;";
+    const injected = marker + "\n    // SELFTEST_ONLY: skip cloud archive probing.\n    if (true) {\n      if (device) {\n        this._applySelectedEnvelope(device.envelope, device.source);\n        return this._commitFinal(\"local-only\", { persist: device.source !== \"local\", upload: \"none\", ensureMirror: true });\n      }\n      this._prepareFreshState();\n      return this._commitFinal(\"local-only\", { persist: true, upload: \"none\", ensureMirror: true });\n    }";
+    if (!c.includes(marker)) fail("无法定位云存档启动入口，拒绝生成跳过检查自测包");
+    c = c.replace(marker, injected);
+    map.set(rel, Buffer.from(c, "utf8"));
+  }
+
   // 本地化 index.html
   if (!map.has("index.html")) fail("包内缺少 index.html");
   map.set("index.html", Buffer.from(localizeIndexHtml(map.get("index.html").toString("utf8"), includeProbe), "utf8"));
@@ -753,9 +770,11 @@ function verifyPackage(buffer, mode, includeProbe, sourceUniverse) {
 
   ZIP_NAME = MODE === "release"
     ? "deep-space-idle-taptap-rc" + CURRENT_RC + ".zip"
-    : WORKTREE_SELFTEST
-      ? "deep-space-idle-taptap-rc" + CURRENT_RC + "-worktree-selftest.zip"
-      : "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip";
+    : SKIP_CLOUD_CHECK
+      ? "deep-space-idle-taptap-rc" + CURRENT_RC + "-skip-cloud-selftest.zip"
+      : WORKTREE_SELFTEST
+        ? "deep-space-idle-taptap-rc" + CURRENT_RC + "-worktree-selftest.zip"
+        : "deep-space-idle-taptap-rc" + CURRENT_RC + "-selftest.zip";
 
   console.log("=== TapTap H5 构建（RC" + CURRENT_RC + "）===");
   console.log("模式: " + MODE + (INCLUDE_PROBE ? "（保留探针）" : "（正式候选包 RC" + CURRENT_RC + "，无探针）"));

@@ -2328,7 +2328,7 @@ function enhanceEquipment(state, targetRef, randomValue) {
 
   // 校验里程碑额外材料（donor / core / protocol）是否充足
   const requiredInventory = needDonor ? (isInstance ? 1 : 2) : (isInstance ? 0 : 1);
-  if (getEquipmentInventoryCount(state, targetItemId) < requiredInventory) {
+  if (getEquipmentDonorCount(state, targetItemId, targetInstance ? targetInstance.instanceId : null) < requiredInventory) {
     if (needDonor) return { changed:false, reason:"missing-donor" };
     return { changed:false, reason:"unknown-equipment" };
   }
@@ -2345,10 +2345,15 @@ function enhanceEquipment(state, targetRef, randomValue) {
     state.equipment.inventory.splice(targetInventoryIndex, 1);
   }
   if (needDonor) {
-    // donor 必须来自 inventory（不得来自 instances、已安装或正在强化的装备）
+    // donor 来自 inventory 字符串池或 instances 池中 +0 未安装件（不得来自已安装或目标自身）
     // 每次里程碑强化尝试只消耗恰好一件 donor
-    const donorIndex = findDonorInventoryIndex(state, targetItemId, -1);
-    if (donorIndex >= 0) state.equipment.inventory.splice(donorIndex, 1);
+    const donor = findDonorReference(state, targetItemId, targetInstance ? targetInstance.instanceId : null);
+    if (donor && donor.kind === "inventory") {
+      state.equipment.inventory.splice(donor.index, 1);
+    } else if (donor && donor.kind === "instance") {
+      const di = state.equipment.instances.findIndex(entry => String(entry.instanceId) === String(donor.instanceId));
+      if (di >= 0) state.equipment.instances.splice(di, 1);
+    }
   }
   ResourceRegistry.spendCost(state, display.cost);
   if (display.extra.core) ResourceRegistry.spendCost(state, { [display.extra.core]:1 });
