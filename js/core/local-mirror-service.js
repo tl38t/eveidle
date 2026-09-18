@@ -44,12 +44,26 @@
     };
   };
 
-  LocalMirrorService.prototype.readBest = function () {
+  // 整体读取超时：设备本地镜像读取依赖平台文件系统回调式 API，
+  // 个别 TapTap/H5 环境下 readFile 可能既不回调 success/fail 也不返回
+  // thenable，导致 Promise 永久 pending、启动链冻结在“正在加载存档…”。
+  // 这里用 Promise.race 兜底：超时即降级为 error，由上层回退到普通
+  // 本地存档或云端，绝不阻塞进游戏。
+  LocalMirrorService.prototype.readBest = function (opts) {
     const self = this;
     if (!this._available || !this.provider) {
       return Promise.resolve(this._initError ? { status: "error", error: this._initError } : { status: "unavailable" });
     }
-    return Promise.resolve(this.provider.readSlots()).then(function (slots) {
+    const ms = (opts && opts.readTimeout) || 3000;
+    const timeoutGuard = new Promise(function (resolve) {
+      setTimeout(function () {
+        const err = new Error("LocalMirror readBest 超时(" + ms + "ms)，降级为普通本地存档");
+        self._lastError = err;
+        try { console.warn("[LocalMirror] " + err.message, { platform: self.provider && self.provider.platform }); } catch (e) {}
+        resolve({ status: "error", error: err, timedOut: true });
+      }, ms);
+    });
+    const core = Promise.resolve(this.provider.readSlots()).then(function (slots) {
       const valid = [];
       const errors = [];
       let noneCount = 0;
@@ -74,6 +88,7 @@
       self._lastError = err;
       return { status: "error", error: err };
     });
+    return Promise.race([core, timeoutGuard]);
   };
 
   LocalMirrorService.prototype.scheduleWrite = function (envelope) {
