@@ -1,0 +1,14 @@
+{
+  "envId": "deepspace-d4govx4ikc2e937c5",
+  "functions": [
+    {
+      "name": "alliance-identity",
+      "type": "HTTP",
+      "handler": "index.main",
+      "public": true,
+      "gatewayPath": "/alliance-identity",
+      "timeout": 15,
+      "memorySize": 256
+    }
+  ]
+}

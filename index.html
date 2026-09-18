@@ -27,8 +27,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=12"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=3"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=39"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=17"></script>
+  <script src="./js/i18n/catalog-en.js?v=47"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=25"></script>
   <!-- steam-i18n-de-ru:start -->
   <!-- de / ru 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这两个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -40,13 +40,13 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=4"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=6"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=12"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=14"><\/script>');
       }
     })();
   </script>
   <!-- steam-i18n-de-ru:end -->
-  <script src="./js/i18n/translator.js?v=18"></script>
+  <script src="./js/i18n/translator.js?v=20"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
     // source code, variables, HTML templates, starmap and achievements stay untouched.
@@ -1384,7 +1384,7 @@
       </div>
       <div class="panel-body">
         <div class="settings-section">
-          <div class="settings-section-title">语言 / Language</div>
+          <div class="settings-section-title" data-i18n-skip>语言 / Language</div>
           <label class="setting-row" for="setting-language">
             <span class="setting-copy"><strong>界面语言</strong><small>默认跟随系统语言（Steam 版跟随客户端语言）；手动选择后将固定使用所选语言。</small></span>
             <select id="setting-language" class="setting-select" aria-label="Interface language">
@@ -1660,8 +1660,8 @@
   <script defer src="./js/systems/wormhole.js?v=40"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=5"></script>
-   <script defer src="./js/ui/shell-render.js?v=142"></script>
-  <script defer src="./js/ui/skill-overview.js?v=7"></script>
+   <script defer src="./js/ui/shell-render.js?v=143"></script>
+  <script defer src="./js/ui/skill-overview.js?v=8"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=26"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=13"></script>
    <script defer src="./js/ui/combat-render.js?v=68"></script>
@@ -1675,11 +1675,11 @@
   <script defer src="./js/ui/wormhole-rifts.js?v=4"></script>
   <script defer src="./js/ui/wormhole-map.js?v=30"></script>
    <script defer src="./js/data/alliance-building-config.js?v=2"></script>
-   <script defer src="./js/platform/alliance-api.js?v=12"></script>
+   <script defer src="./js/platform/alliance-api.js?v=14"></script>
    <script defer src="./js/platform/alliance-policy.js?v=2"></script>
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
-  <script defer src="./js/ui/alliance-render.js?v=37"></script>
+  <script defer src="./js/ui/alliance-render.js?v=38"></script>
   <script defer src="./js/core/tick.js?v=25"></script>
   <script defer src="./js/core/offline.js?v=30"></script>
   <script defer src="./js/systems/offline-combat.js?v=38"></script>
@@ -1717,7 +1717,7 @@
   <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
   <script defer src="./js/core/persistence.js?v=34"></script>
   <script defer src="./js/ui/changelog-popup.js?v=2"></script>
-  <script defer src="./js/core/bootstrap-launch.js?v=11"></script>
+  <script defer src="./js/core/bootstrap-launch.js?v=13"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>
 <script defer src="./js/ui/render.js?v=37"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=24"></script>

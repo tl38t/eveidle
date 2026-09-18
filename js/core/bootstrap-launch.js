@@ -502,6 +502,30 @@
     if (bootPromise && typeof bootPromise.catch === "function") {
       bootPromise.catch(function (err) { console.error("BOOT FATAL", err); showFatalBootError(err); });
     }
+    // 平台身份预热：排在首帧之后执行，不占用启动关键路径。
+    setTimeout(warmUpPlatformIdentity, 0);
+  }
+
+  // 平台身份预热（2026-09-18）：身份获取此前全项目只有「打开联盟页」一个触发点
+  // （alliance-render.js load()），从不打开联盟页的玩家会永久停留在 local_ 设备身份，
+  // 并在联盟页看到 local_xxx。此处启动后异步尝试一次，短窗口 2s（10×200ms）：
+  // 成功则此后各界面身份已就绪；失败静默放弃，由联盟页保留的 8s 长重试兜底
+  // （两处共享 AllianceApi 内部的同一单例 promise，不会重复取 code）。
+  // 纪律：绝不阻塞启动、绝不弹窗、绝不因身份失败影响进游戏。
+  function warmUpPlatformIdentity() {
+    try {
+      var api = (typeof window !== "undefined") ? window.AllianceApi : null;
+      if (!api || typeof api.initializeSteamIdentity !== "function") return;
+      var attempts = api.IDENTITY_WARMUP_ATTEMPTS;
+      var attempt = api.initializeSteamIdentity(
+        typeof attempts === "number" && attempts > 0 ? { maxAttempts: attempts } : undefined
+      );
+      if (!attempt || typeof attempt.then !== "function") return;
+      attempt.then(function () { /* 身份已就绪，联盟页将直接复用该结果 */ },
+        function () { /* 非平台容器环境：保持 local_，无需提示 */ });
+    } catch (error) {
+      if (typeof console !== "undefined" && console.warn) console.warn("平台身份预热失败（忽略）：", error);
+    }
   }
 
   // 第4条 fail-safe：若 30s 内任何原因未解除 boot-loading（极端分支漏发状态），强制揭开主界面，避免永久空屏。

@@ -568,7 +568,7 @@
       : '<div class="alliance-task-hint">还没有联盟，创建第一个吧。</div>';
     return '<div class="alliance-card"><div class="alliance-card-title">创建联盟</div>' +
       '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
-      '<input id="alliance-new-code" maxlength="3" placeholder="例如 EVE" autocomplete="off" style="flex:1;min-width:0;text-transform:uppercase;padding:6px 8px;background:#0a1420;border:1px solid #24405c;border-radius:6px;color:#d8e2ee;">' +
+      '<input id="alliance-new-code" maxlength="3" placeholder="例如 ABC" autocomplete="off" style="flex:1;min-width:0;text-transform:uppercase;padding:6px 8px;background:#0a1420;border:1px solid #24405c;border-radius:6px;color:#d8e2ee;">' +
       '<button class="btn primary" id="alliance-create-btn">建立联盟</button></div>' +
       '<div class="alliance-task-hint">代码为 1～3 位大写英文字母。</div></div>' +
       '<div class="alliance-card">' + listHtml + '</div>';
@@ -681,6 +681,40 @@
     }).catch(function (error) {
       body.textContent = "诊断执行失败：" + (error && error.message || error);
     });
+  }
+
+  // 平台身份归并失败提示（2026-09-18）：归并失败此前只在 console.warn 里出现，
+  // 玩家会永久停在 local_ 设备身份且毫无察觉。此处给出明确提示 + 重试入口。
+  // 与身份卡片同策略：挂在 #alliance-state 之外，每次 load() 重建一次（幂等），
+  // 云端刷新（只替换 #alliance-state）不会把它冲掉。
+  function renderIdentityMergeWarning(content, playerId) {
+    if (!content) return;
+    Array.prototype.forEach.call(content.querySelectorAll("#alliance-merge-warning"), function (node) { node.remove(); });
+    var issue = root.AllianceApi && root.AllianceApi.getIdentityIssue ? root.AllianceApi.getIdentityIssue() : null;
+    if (!issue) return;
+    content.insertAdjacentHTML("beforeend",
+      '<div class="alliance-card" id="alliance-merge-warning">' +
+        '<div class="alliance-card-title">平台身份未绑定成功</div>' +
+        '<div class="alliance-task-hint">本机正在使用设备身份 ' + esc(playerId) + '，与平台账号合并时失败：' + esc(issue.message) + '</div>' +
+        '<div class="alliance-task-hint">不影响存档与游戏进度，仅联盟成员记录会挂在设备身份下。可稍后重试。</div>' +
+        '<div style="margin-top:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' +
+          '<button class="btn secondary" id="alliance-retry-identity">重新绑定平台身份</button>' +
+          '<span class="alliance-task-hint" id="alliance-retry-identity-msg"></span>' +
+        '</div>' +
+      '</div>');
+    var button = document.getElementById("alliance-retry-identity");
+    if (!button) return;
+    button.onclick = function () {
+      var tip = document.getElementById("alliance-retry-identity-msg");
+      button.disabled = true;
+      if (tip) tip.textContent = "正在重试……";
+      root.AllianceApi.retryPlatformIdentity().then(function () {
+        load();
+      }).catch(function (error) {
+        button.disabled = false;
+        if (tip) tip.textContent = "仍然失败：" + ((error && error.message) || error);
+      });
+    };
   }
 
   function load() {
@@ -1007,6 +1041,7 @@
       var identityAllianceId = (identityState && identityState.allianceId) || returnedId || "";
       content.insertAdjacentHTML("beforeend", renderIdentityCardHtml(identityIsOwner));
       bindIdentityActions(content, identityAllianceId, identityIsOwner);
+      renderIdentityMergeWarning(content, playerId);
       var taskCard = content.querySelector(".alliance-task-card");
       if (taskCard) {
         var title = taskCard.querySelector(".alliance-card-title");

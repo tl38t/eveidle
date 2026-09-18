@@ -15,6 +15,13 @@
   var steamSessionPromise = null;
   var steamPersonaName = "";
   var allianceSessionToken = "";
+  // 平台身份归并失败的留痕（2026-09-18）：归并失败此前只在 console.warn 里出现，
+  // 玩家会永久停在 local_ 设备身份且毫无察觉。此处保留最近一次失败供 UI 展示与重试。
+  var identityMergeIssue = null;
+  var lastPlatformId = "";
+  // 身份等待窗口：联盟页走完整 8s（40×200ms）；启动预热用短窗口 2s（10×200ms）。
+  var IDENTITY_WAIT_ATTEMPTS = 40;
+  var IDENTITY_WARMUP_ATTEMPTS = 10;
 
   // 设备密钥：128bit 随机十六进制，只存本机、只走云函数转发（绝不进 URL）。
   // 它是设备身份的唯一凭证：签发转移码、兑换转移码、被并入平台身份都要用它自证。
@@ -99,24 +106,46 @@
     var previous = "";
     try { previous = localStorage.getItem(playerKey) || ""; } catch (_) { previous = ""; }
     if (!previous || previous === platformId || !isDeviceIdentity(previous)) {
+      identityMergeIssue = null;
       return Promise.resolve(rememberPlayerId(platformId));
     }
+    lastPlatformId = platformId;
     return identityRequest("merge_local", {
       devicePlayerId: previous,
       secret: getDeviceSecret(),
       platformPlayerId: platformId
     }).then(function () {
+      identityMergeIssue = null;
       return rememberPlayerId(platformId);
     }).catch(function (error) {
-      if (typeof console !== "undefined" && console.warn) {
-        console.warn("Alliance identity merge skipped:", error && error.message || error);
+      // 静默吞掉 = 玩家永久卡在 local_ 且不知情（原先只 console.warn 后保持设备身份）。
+      // 现在留痕 + 报错，并由联盟页提供「重新绑定平台身份」入口重试。
+      var message = (error && error.message) || String(error || "未知错误");
+      identityMergeIssue = { message: message, platformId: platformId, at: Date.now() };
+      if (typeof console !== "undefined" && console.error) {
+        console.error("Alliance identity merge failed:", message);
       }
       return previous;
     });
   }
 
-  function initializeSteamIdentity() {
+  // 归并失败后的重试入口：仍以设备密钥自证，云端条件改善（例如两个身份已在同一联盟）即可并入。
+  function retryPlatformIdentity() {
+    if (!lastPlatformId) return Promise.reject(new Error("没有待重试的平台身份"));
+    return adoptPlatformIdentity(lastPlatformId);
+  }
+
+  function getIdentityIssue() {
+    return identityMergeIssue;
+  }
+
+  // options.maxAttempts：等待 window.tap 注入的轮询次数（每次 200ms）。
+  // 不传 = 40 次（8s，联盟页长等待）；启动预热传 10（2s 短窗口，失败即静默放弃）。
+  function initializeSteamIdentity(options) {
     if (steamSessionPromise) return steamSessionPromise;
+    var maxAttempts = options && typeof options.maxAttempts === "number" && options.maxAttempts > 0
+      ? options.maxAttempts
+      : IDENTITY_WAIT_ATTEMPTS;
     var tap = root.tap || (typeof globalThis !== "undefined" && globalThis.tap);
     if (tap && typeof tap.login === "function") return initializeTapTapIdentity(tap);
     var session = root.SteamAllianceSession;
@@ -124,7 +153,13 @@
     // loaded. Do not immediately fall back to a local ID: that would open the
     // cloud alliance with local_xxx and taptap-auth would never be called.
     if (!session || typeof session.authenticate !== "function") {
-      return waitForTapTapIdentity(0);
+      // 登记单例：启动预热与联盟页共享同一次 tap.login（避免并发重复取 code）。
+      // 拒绝时清空，使后续调用（联盟页长窗口重试）能完整重新尝试。
+      steamSessionPromise = waitForTapTapIdentity(0, maxAttempts).catch(function (error) {
+        steamSessionPromise = null;
+        throw error;
+      });
+      return steamSessionPromise;
     }
     steamSessionPromise = session.authenticate().then(function (result) {
       if (!result || !result.ok || !result.steamId) throw new Error("Steam 联盟认证失败");
@@ -144,12 +179,13 @@
     return steamSessionPromise;
   }
 
-  function waitForTapTapIdentity(attempt) {
+  function waitForTapTapIdentity(attempt, maxAttempts) {
+    var limit = typeof maxAttempts === "number" && maxAttempts > 0 ? maxAttempts : IDENTITY_WAIT_ATTEMPTS;
     var tap = root.tap || (typeof globalThis !== "undefined" && globalThis.tap);
     if (tap && typeof tap.login === "function") return initializeTapTapIdentity(tap);
-    if (attempt >= 40) return Promise.reject(new Error("TapTap SDK 未就绪，无法获取玩家身份"));
+    if (attempt >= limit) return Promise.reject(new Error("TapTap SDK 未就绪，无法获取玩家身份"));
     return new Promise(function (resolve) { setTimeout(resolve, 200); }).then(function () {
-      return waitForTapTapIdentity(attempt + 1);
+      return waitForTapTapIdentity(attempt + 1, limit);
     });
   }
 
@@ -537,6 +573,9 @@
     isDeviceIdentity: function () { return isDeviceIdentity(getPlayerId()); },
     getAllianceSessionToken: getAllianceSessionToken,
     initializeSteamIdentity: initializeSteamIdentity,
+    retryPlatformIdentity: retryPlatformIdentity,
+    getIdentityIssue: getIdentityIssue,
+    IDENTITY_WARMUP_ATTEMPTS: IDENTITY_WARMUP_ATTEMPTS,
     registerDeviceIdentity: registerDeviceIdentity,
     createIdentityCode: createIdentityCode,
     redeemIdentityCode: redeemIdentityCode,
