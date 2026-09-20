@@ -579,6 +579,14 @@
     return null;
   }
 
+  function offlineModuleCache(context) {
+    const v = context && context.virtual;
+    // 仅虚拟资源池代表离线结算；在线路径不带 virtual，保持原逻辑。
+    if (!v || typeof v !== "object") return null;
+    if (!v._offlineSquadModuleCache) v._offlineSquadModuleCache = Object.create(null);
+    return v._offlineSquadModuleCache;
+  }
+
   // NPC 战斗属性快照（纯只读；不修改玩家舰船、不写入任何 state）。
   // 返回 { ok, reason?, npcId, name, level, shipInstanceId, shipId,
   //        maxHp{shield,armor,structure}, dodge, fuelMultiplier,
@@ -604,6 +612,7 @@
 
     // 统一显式参数：按绑定实例计算 + 排除脑插；绝不回退到玩家当前出战舰。
     const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
+    if (opts._offlineModuleCache) shipOpts._offlineModuleCache = opts._offlineModuleCache;
 
     const maxHp = selMaxHp(state, undefined, shipOpts);
     const dodge = selDodge(state, undefined, shipOpts);
@@ -1392,13 +1401,15 @@
       return null;
     }
     const zone = context.zone || (getGlobalFn("getCombatEncounterZone") ? getGlobalFn("getCombatEncounterZone")(c) : null);
-    const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone });
+    const moduleCache = offlineModuleCache(ctx);
+    const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone, _offlineModuleCache: moduleCache });
     if (!stats.ok) { if (perNpcArr) perNpcArr.push({ npcId: member.npcId, skipped: "stats-unavailable" }); return null; }
     // 统御矩阵光环：伤害 ×(1+squadDamageBonus)、命中 +squadHitBonus（仅光环核心非 null）
     const titanAura = getTitanSquadAura(state);
     const auraDmgMult = (titanAura && titanAura.squadDamageBonus) ? (1 + Number(titanAura.squadDamageBonus)) : 1;
     const auraHitBonus = (titanAura && titanAura.squadHitBonus) ? Number(titanAura.squadHitBonus) : 0;
     const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
+    if (moduleCache) shipOpts._offlineModuleCache = moduleCache;
     const modules = (weaponsFn(state, shipOpts) || []).filter(m => m && m.equipment && m.equipment.combat);
     // C3：泰坦主武器以虚拟模块并入清单（push 而非替换——末日武器小型化后须与实装武器并存）
     const npcTitan = resolveNpcTitanLoadout(state, shipOpts);
@@ -1729,17 +1740,20 @@
       if (Number.isFinite(until) && until > now) continue; // 修复中：不参与本场（与攻击一致）
       const hp = ensureNpcCombatHp(state, npc, now);
       if (!hp) continue;
-      const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone });
+      const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone, _offlineModuleCache: offlineModuleCache(ctx) });
       if (!stats.ok || !stats.maxHp) continue;
       const maxHp = stats.maxHp;
       // 与战斗页面板明细同源（collectNpcRepairUnits）：同一套模块清单与燃料单价，此处额外扣费。
-      const npcReps = collectNpcRepairUnits(state, npc, zone);
+      const npcReps = collectNpcRepairUnits(state, npc, zone, offlineModuleCache(ctx));
       if (!npcReps.length) continue;
       for (const rep of npcReps) {
         if (hp[rep.target] >= maxHp[rep.target]) continue;
         if (!fuelAvailable(ctx, state, rep.fuel)) continue;
         const repMult = (boosterRep && boosterRep[rep.target]) ? boosterRep[rep.target] : 1;
-        const healAmount = Math.round(rep.amount * rep.multiplier * repairMultFn(rep.target, state, hp.structure / maxHp.structure) * repMult);
+        // 保持原有维修倍率语义：calcRepairMult 读取当前出战舰；这里只注入离线会话缓存。
+        const moduleCache = offlineModuleCache(ctx);
+        const repairOpts = moduleCache ? { _offlineModuleCache: moduleCache } : {};
+        const healAmount = Math.round(rep.amount * rep.multiplier * repairMultFn(rep.target, state, hp.structure / maxHp.structure, repairOpts) * repMult);
         if (healAmount <= 0) continue;
         const before = hp[rep.target];
         hp[rep.target] = Math.min(maxHp[rep.target], hp[rep.target] + healAmount);
@@ -1823,7 +1837,7 @@
         return { kind: "player", npcId: null, dealt: dealt, applied: true, targetCount: target.targetCount,
           hits: [{ kind: "player", npcId: null, damage: dmg, dealt: dealt }] };
       }
-      const res = applyLegionNpcDamage(state, target.npcId, dmg, { now: context.now, rng: rng });
+      const res = applyLegionNpcDamage(state, target.npcId, dmg, { now: context.now, rng: rng, roundSeq: context.roundSeq });
       grantPlayerDefenseXpFromNpcDamage(state, res.dealt);
       return { kind: "npc", npcId: target.npcId, dealt: res.dealt, applied: res.applied,
         destroyed: Boolean(res.destroyed), targetCount: target.targetCount, reason: res.reason,
@@ -1847,7 +1861,7 @@
     if (target.kind !== "npc") {
       return { kind: "player", npcId: null, dealt: applyLayers(c.hp, dmg), applied: true, targetCount: target.targetCount, hits: [{ kind: "player", npcId: null, damage: dmg }] };
     }
-    const res = applyLegionNpcDamage(state, target.npcId, dmg, { now: context.now, rng: rng });
+    const res = applyLegionNpcDamage(state, target.npcId, dmg, { now: context.now, rng: rng, roundSeq: context.roundSeq });
     grantPlayerDefenseXpFromNpcDamage(state, res.dealt);
     return {
       kind: "npc", npcId: target.npcId, dealt: res.dealt, applied: res.applied,
@@ -1872,21 +1886,50 @@
     if (target.kind === "npc") {
       const npc = findNpc(state, target.npcId);
       if (!npc) return { kind: "npc", npcId: target.npcId, damage: 0, dealt: empty };
-      const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone });
+      const stats = getLegionNpcCombatStats(state, npc.npcId, { zone: zone, _offlineModuleCache: offlineModuleCache(context) });
       if (!stats.ok) return { kind: "npc", npcId: target.npcId, damage: 0, dealt: empty };
+      const hp0 = ensureNpcCombatHp(state, npc, context.now) || npc.combatHp;
       const shipCfg = getShipConfigFor(state, npc.boundShipInstanceId);
+      const isTitan = Boolean(shipCfg && shipCfg.type === "titan");
+      const titanShieldMitFn = getGlobalFn("applyTitanShieldMitigation");
+      const titanTraitFn = getGlobalFn("getTitanCombatTrait");
       // NPC 自身闪避（排除脑插的显式实例口径）
       raw = calcDamage(attacker.hit || 0, stats.dodge, attacker.baseDamage || 1, 1.0, context.randomFn || function () { return 0.5; });
-      // NPC 自身资本舰护盾缓解（D3）
-      if (mitigationFn && shipCfg) {
-        const mit = mitigationFn(shipCfg, raw, 0, (npc.combatHp && npc.combatHp.shield) || 0);
-        raw = Math.max(0, Number(mit.damage) || 0);
+      // NPC 自身护盾缓解：泰坦走泰坦偏导（带触发计数供稳态回充），超旗走原路径（D3）
+      if (shipCfg) {
+        if (isTitan && titanShieldMitFn && titanTraitFn) {
+          const tt = titanTraitFn(shipCfg);
+          if (tt) {
+            const curShield = (hp0 && hp0.shield) || 0;
+            if (hp0 && context.roundSeq !== undefined && hp0._titanRoundSeq !== context.roundSeq) {
+              hp0._titanRoundSeq = context.roundSeq;
+              hp0._titanShieldHitsUsed = 0;
+              hp0._titanDeflectTriggers = 0;
+              hp0._titanArmorDmg = 0;
+              hp0._titanStructDmg = 0;
+            }
+            const used = (hp0 && Number(hp0._titanShieldHitsUsed)) || 0;
+            const mit = titanShieldMitFn(tt, raw, used, curShield);
+            raw = Math.max(0, Number(mit.damage) || 0);
+            if (hp0) {
+              if (curShield > 0) hp0._titanShieldHitsUsed = used + 1;
+              if (mit.triggered) hp0._titanDeflectTriggers = (Number(hp0._titanDeflectTriggers) || 0) + 1;
+            }
+          }
+        } else if (mitigationFn) {
+          const mit = mitigationFn(shipCfg, raw, 0, (hp0 && hp0.shield) || 0);
+          raw = Math.max(0, Number(mit.damage) || 0);
+        }
       }
       // NPC 自身损伤控制单元减伤（D3：读 NPC 绑定舰的 DCU 模块，燃料同样走虚拟/真注入）
       const dcRed = computeNpcDcReduction(state, npc, zone, context);
       if (dcRed > 0) raw = Math.max(0, Math.round(raw * (1 - dcRed)));
       const finalDamage = Math.max(0, Math.round(raw * share));
-      const res = applyLegionNpcDamage(state, npc.npcId, finalDamage, { now: context.now, rng: context.rng });
+      const res = applyLegionNpcDamage(state, npc.npcId, finalDamage, { now: context.now, rng: context.rng, npcDefenseApplied: true });
+      if (res && res.dealt && hp0) {
+        hp0._titanArmorDmg = (Number(hp0._titanArmorDmg) || 0) + (res.dealt.armor || 0);
+        hp0._titanStructDmg = (Number(hp0._titanStructDmg) || 0) + (res.dealt.structure || 0);
+      }
       return { kind: "npc", npcId: npc.npcId, damage: finalDamage, dealt: res.dealt || empty, destroyed: Boolean(res.destroyed) };
     }
     // 玩家：闪避/资本舰缓解/DCU 由调用方（在线 combat.js / 离线 offline-combat.js）按既有口径算好后传入
@@ -1907,7 +1950,7 @@
   function computeNpcDcReduction(state, npc, zone, ctx) {
     // 采集与扣费分离：清单（含每件减伤与燃料单价）由 collectNpcDamageControlUnits 统一给出，
     // 此处只负责「燃料够不够 → 计入并扣费」的战斗语义，面板口径复用同一清单而不扣费。
-    const units = collectNpcDamageControlUnits(state, npc, zone);
+    const units = collectNpcDamageControlUnits(state, npc, zone, offlineModuleCache(ctx));
     if (units.length === 0) return 0;
     let dc = 0;
     for (const u of units) {
@@ -1940,11 +1983,12 @@
   // 二者均为纯只读：不扣燃料、不改 state；是否扣燃料由调用方决定。
   // 口径：显式绑定实例 + 排除脑插（与 getLegionNpcCombatStats 完全一致）。
   // ================================================================
-  function collectNpcRepairUnits(state, npc, zone) {
+  function collectNpcRepairUnits(state, npc, zone, moduleCache) {
     const modulesFn = getGlobalFn("getInstalledCombatModulesFromState");
     const fuelMultFn = getGlobalFn("calcFuelMult");
     if (!modulesFn || !npc || !npc.boundShipInstanceId) return [];
     const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
+    if (moduleCache) shipOpts._offlineModuleCache = moduleCache;
     const mult = fuelMultFn ? fuelMultFn(zone, state) : 1;
     return (modulesFn(state, shipOpts) || [])
       .filter(m => m && m.combat && m.combat.kind === "repair" && m.combat.target)
@@ -1957,11 +2001,12 @@
       }));
   }
 
-  function collectNpcDamageControlUnits(state, npc, zone) {
+  function collectNpcDamageControlUnits(state, npc, zone, moduleCache) {
     const dcsFn = getGlobalFn("getInstalledCombatDamageControls");
     const fuelMultFn = getGlobalFn("calcFuelMult");
     if (!dcsFn || !npc || !npc.boundShipInstanceId) return [];
     const shipOpts = { shipInstanceId: npc.boundShipInstanceId, excludeImplants: true };
+    if (moduleCache) shipOpts._offlineModuleCache = moduleCache;
     const mult = fuelMultFn ? fuelMultFn(zone, state, shipOpts) : 1;
     const out = [];
     for (const m of (dcsFn(state, shipOpts) || [])) {
@@ -1989,7 +2034,36 @@
     if (!applyLayers) return { applied: false, reason: "combat-api-unavailable", dealt: empty, destroyed: false };
     const hp = ensureNpcCombatHp(state, npc, now);
     if (!hp) return { applied: false, reason: "stats-unavailable", dealt: empty, destroyed: false };
-    const dealt = applyLayers(hp, Math.max(0, Math.round(Number(damage) || 0)));
+    let dmg = Math.max(0, Math.round(Number(damage) || 0));
+    const shipCfg = getShipConfigFor(state, npc.boundShipInstanceId);
+    const isTitanNpc = Boolean(shipCfg && shipCfg.type === "titan");
+    // 在线逐次路径：NPC 自身护盾缓解在此统一结算（与离线 resolveTargetDamage 同口径）；
+    // 离线已结算则 context.npcDefenseApplied=true 跳过，避免双免。仅泰坦走偏导（超旗在线沿用原行为不变）。
+    if (!context.npcDefenseApplied && isTitanNpc) {
+      const titanShieldMitFn = getGlobalFn("applyTitanShieldMitigation");
+      const titanTraitFn = getGlobalFn("getTitanCombatTrait");
+      const tt = titanTraitFn ? titanTraitFn(shipCfg) : (shipCfg.capitalTrait || null);
+      if (tt && titanShieldMitFn) {
+        if (hp._titanRoundSeq !== context.roundSeq) {
+          hp._titanRoundSeq = context.roundSeq;
+          hp._titanShieldHitsUsed = 0;
+          hp._titanDeflectTriggers = 0;
+          hp._titanArmorDmg = 0;
+          hp._titanStructDmg = 0;
+        }
+        const used = Number(hp._titanShieldHitsUsed) || 0;
+        const mit = titanShieldMitFn(tt, dmg, used, (hp.shield) || 0);
+        dmg = Math.max(0, Number(mit.damage) || 0);
+        if (hp.shield > 0) hp._titanShieldHitsUsed = used + 1;
+        if (mit.triggered) hp._titanDeflectTriggers = (Number(hp._titanDeflectTriggers) || 0) + 1;
+      }
+    }
+    const dealt = applyLayers(hp, dmg);
+    // 累计甲/构损供回合末泰坦应激/过载密封维修（离线 resolveTargetDamage 已累计则跳过，避免双计）
+    if (!context.npcDefenseApplied && isTitanNpc) {
+      hp._titanArmorDmg = (Number(hp._titanArmorDmg) || 0) + (dealt.armor || 0);
+      hp._titanStructDmg = (Number(hp._titanStructDmg) || 0) + (dealt.structure || 0);
+    }
     let destroyed = false;
     if (hp.structure <= 0) {
       const res = handleLegionNpcDestroyed(state, npcId, now);
@@ -1997,6 +2071,74 @@
     }
     markDirty(state);
     return { applied: true, dealt: dealt, destroyed: destroyed, npcId: npcId, structure: hp.structure };
+  }
+
+  // 泰坦舰体固有维修倍率（NPC 版，使用绑定泰坦 config 而非玩家出战舰）；
+  // 镜像 selectors.js getTitanTraitRepairMultiplierFromState，但入参为 NPC 的 shipCfg。
+  function getTitanRepairMult(shipCfg, target, structureRatio) {
+    if (!shipCfg || shipCfg.type !== "titan") return 1;
+    const roleBonus = shipCfg.bonuses && target ? Number(shipCfg.bonuses[target + "Repair"]) || 0 : 0;
+    let mult = 1 + roleBonus;
+    if (target === "structure" && typeof structureRatio === "number" && structureRatio < 0.7 && shipCfg.bonuses && typeof shipCfg.bonuses.structureEmergencyRepair === "number") {
+      mult += Number(shipCfg.bonuses.structureEmergencyRepair) || 0;
+    }
+    return Math.max(0, mult);
+  }
+
+  // 回合末：对处于战斗中的 NPC 绑定泰坦应用舰体固有维修（偏导稳态回充 / 强化应激装甲 / 泰坦结构过载密封），
+  // 与玩家出战泰坦（combat.js / offline-combat.js 同位置）完全同口径；只吃泰坦舰体自身维修加成。
+  // 累加量由 resolveTargetDamage（离线）与 applyLegionNpcDamage（在线）在每轮承伤时写入 npc.combatHp，
+  // 此处按 roundSeq 跨轮累计、调用即清零（下一轮重新累计）。非小队模式直接返回。
+  function repairLegionNpcTitanTraits(state, now) {
+    const squad = ensureCombatSquadState(state);
+    if (!squad || squad.enabled !== true) return { repaired: 0 };
+    const targets = getLegionCombatTargets(state, { now: now });
+    let applied = 0;
+    for (const t of targets) {
+      if (t.kind !== "npc") continue;
+      const npc = findNpc(state, t.npcId);
+      if (!npc || !npc.combatHp) continue;
+      ensureLegionNpcCombatFields(npc);
+      const shipCfg = getShipConfigFor(state, npc.boundShipInstanceId);
+      if (!shipCfg || shipCfg.type !== "titan") continue;
+      const traitFn = getGlobalFn("getTitanCombatTrait");
+      const steadyFn = getGlobalFn("getTitanSteadyRechargeRepair");
+      const reactiveFn = getGlobalFn("getTitanReactiveArmorRepair");
+      const overdriveFn = getGlobalFn("getTitanOverdriveSealRepair");
+      const tt = traitFn ? traitFn(shipCfg) : (shipCfg.capitalTrait || null);
+      if (!tt || !steadyFn || !reactiveFn || !overdriveFn) continue;
+      const hp = npc.combatHp;
+      const stats = getLegionNpcCombatStats(state, npc.npcId, {});
+      if (!stats.ok || !stats.maxHp) continue;
+      const maxShield = stats.maxHp.shield, maxArmor = stats.maxHp.armor, maxStructure = stats.maxHp.structure;
+      const ratio = maxStructure > 0 ? (hp.structure / maxStructure) : 1;
+      // 偏导稳态回充
+      const trig = Number(hp._titanDeflectTriggers) || 0;
+      if (tt.id === "titan_deflection_shield" && trig > 0 && hp.shield < maxShield) {
+        const base = steadyFn(tt, trig, maxShield);
+        const restored = Math.min(base * getTitanRepairMult(shipCfg, "shield", ratio), maxShield - hp.shield);
+        if (restored > 0) { hp.shield += restored; applied++; }
+      }
+      // 强化应激装甲
+      const armorDmg = Number(hp._titanArmorDmg) || 0;
+      if (tt.id === "titan_reactive_armor" && armorDmg > 0 && hp.armor < maxArmor) {
+        const base = reactiveFn(tt, armorDmg, maxArmor);
+        const restored = Math.min(base * getTitanRepairMult(shipCfg, "armor", ratio), maxArmor - hp.armor);
+        if (restored > 0) { hp.armor += restored; applied++; }
+      }
+      // 泰坦结构过载密封
+      const structDmg = Number(hp._titanStructDmg) || 0;
+      if (tt.id === "titan_structure_overdrive" && structDmg > 0 && hp.structure < maxStructure) {
+        const layers = Math.min(tt.maxLayers, Math.floor(((1 - ratio) + 1e-9) / (tt.thresholdPct || 0.10)));
+        const base = overdriveFn(tt, structDmg, layers);
+        const restored = Math.min(base * getTitanRepairMult(shipCfg, "structure", ratio), maxStructure - hp.structure);
+        if (restored > 0) { hp.structure += restored; applied++; }
+      }
+      // 清零本轮累计（下一轮重计）
+      hp._titanDeflectTriggers = 0; hp._titanArmorDmg = 0; hp._titanStructDmg = 0;
+    }
+    if (applied > 0) markDirty(state);
+    return { repaired: applied };
   }
 
   // —— 爆船处理（180s 修复 + 退出当前战斗）——
@@ -2150,6 +2292,7 @@
     repairLegionSquadNpcs: repairLegionSquadNpcs,
     processLegionEnemyAttack: processLegionEnemyAttack,
     applyLegionNpcDamage: applyLegionNpcDamage,
+    repairLegionNpcTitanTraits: repairLegionNpcTitanTraits,
     handleLegionNpcDestroyed: handleLegionNpcDestroyed,
     startLegionNpcRepair: startLegionNpcRepair,
     completeLegionNpcRepair: completeLegionNpcRepair,

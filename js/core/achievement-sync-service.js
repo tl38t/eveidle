@@ -81,14 +81,30 @@
     this._unsub = EVENT_BUS.on("achievement:unlocked", function (event) {
       try {
         const payload = (event && event.payload) || {};
-        self.handleUnlock(payload.achievementId, payload.unlockedAt);
-        self._pushAllProgress();
+        if (!(root && root.__offlineSettling === true)) {
+          self.handleUnlock(payload.achievementId, payload.unlockedAt);
+          self._pushAllProgress();
+        }
       } catch (e) { /* 监听回调不得影响游戏 */ }
     });
     // statistics.js is registered before the persistence-created sync service,
     // so wildcard listeners observe the authoritative post-event statistics.
-    this._unsubProgress = EVENT_BUS.on("*", function () {
-      try { self._pushAllProgress(); } catch (e) { /* progress is non-critical */ }
+    this._unsubProgress = EVENT_BUS.on("*", function (event) {
+      try {
+        if (root && root.__offlineSettling === true) {
+          if (event && event.type === "offline:settlementCompleted") {
+            Promise.resolve().then(function () {
+              if (root && root.__offlineSettling === true) return;
+              const state = root && root.gameState;
+              const unlocked = state && state.achievements && state.achievements.unlockedAtById;
+              self.reconcileAll(unlocked);
+              self._pushAllProgress();
+            });
+          }
+          return;
+        }
+        self._pushAllProgress();
+      } catch (e) { /* progress is non-critical */ }
     });
     this._subscribed = true;
   };

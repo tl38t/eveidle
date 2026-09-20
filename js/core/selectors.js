@@ -2082,8 +2082,35 @@ function getActiveCombatShipState(state, options) {
   return { instance, config, fitting:getFittingFromInstance(instance) };
 }
 
+/* ---- 离线结算会话级只读缓存槽（性能优化·2026-09-20） ----
+   背景：离线小队战斗单次结算会对同一批装备引用重复解析数万次
+   （getInstalledCombatModulesFromState 每件装备 → resolveEquipmentReference，
+   后者内含 instances.some + instances.find 两次 O(n) 线性扫描）。
+   装备在离线会话内恒定：offline-combat / offline / legion-combat-squad / combat
+   四个文件对 equipment.instances 与 enhancementLevel 的写操作均为 0 处（已证）。
+   边界：默认 null ⇒ 在线路径完全不受影响；由 offline-combat 的 settle 只包住仿真段挂载，
+   finally 复位（保存/恢复，支持嵌套与异常路径）；**禁跨会话复用**
+   （玩家可能在两次离线之间强化 / 更换装备）。
+   形态：{ modules:{ key→模块数组 }, refs:WeakMap(state→Map(ref→解析结果)) } */
+var __offlinePerfCache = null;
+function getOfflinePerfCache() { return __offlinePerfCache; }
+function setOfflinePerfCache(cache) { __offlinePerfCache = cache || null; return __offlinePerfCache; }
+
 function getInstalledCombatModulesFromState(state, options) {
   // M3：options.shipInstanceId → 按指定实例（NPC 绑定舰）读装配；缺省保持当前出战舰行为
+  // 离线小队路径在一次结算会话内不会更换装备；允许调用方提供短生命周期缓存，
+  // 不写入 state，也不影响在线路径。
+  // 性能优化（2026-09-20）：调用方未显式传缓存时，回退到当前离线会话槽。
+  // ⚠️ offlineCache 现在可能非空而 options 为 undefined ⇒ 取 key 前必须判 options。
+  let offlineCache = options && options._offlineModuleCache;
+  let perfSlot = null;
+  if (!offlineCache && __offlinePerfCache) { offlineCache = __offlinePerfCache.modules; perfSlot = __offlinePerfCache; }
+  const offlineKey = offlineCache && ((options && options.shipInstanceId || "__active__") + "|" + ((options && options.excludeImplants) ? "1" : "0"));
+  if (offlineCache && Object.prototype.hasOwnProperty.call(offlineCache, offlineKey)) {
+    if (perfSlot) perfSlot.modHit++;
+    return offlineCache[offlineKey];
+  }
+  if (perfSlot) perfSlot.modMiss++;
   const activeShip = getActiveCombatShipState(state, options);
   const modules = [];
   // 边界校断（2026-09-12）：只认前 slots[slot] 格。正常装配入口 setFittingSlot 有 slotIndex 守卫，
@@ -2111,6 +2138,7 @@ function getInstalledCombatModulesFromState(state, options) {
       });
     }
   }
+  if (offlineCache) offlineCache[offlineKey] = modules;
   return modules;
 }
 
@@ -2514,15 +2542,15 @@ function getCombatFuelMultiplierFromState(state, zone, context, options) {
   ], { ...(context || {}), actor:"player", zoneId:selectedZone && selectedZone.id });
 }
 
-function getCombatRepairMultiplierFromState(state, target, context, structureRatio) {
-  const ship = getActiveCombatShipState(state).config;
+function getCombatRepairMultiplierFromState(state, target, context, structureRatio, options) {
+  const ship = getActiveCombatShipState(state, options).config;
   if (!ship) return 1;
   const roleBonus = ship.bonuses && target ? (ship.bonuses[target + "Repair"] || 0) : 0;
   let shipRepairMult = 1 + roleBonus;
   // 装备层维修量加成：遍历已装 fitting 装备的 bonuses[target+"Repair"]（损伤控制单元中槽的 shieldRepair/armorRepair/structureRepair），
   // 与舰船层同属乘区内加法项（装备 DCU 的维修量加成此前未被消费，此处补全）
   if (target) {
-    const mods = getInstalledCombatModulesFromState(state);
+    const mods = getInstalledCombatModulesFromState(state, options);
     let equipRepairBonus = 0;
     for (const m of mods) {
       if (m.bonuses && typeof m.bonuses[target + "Repair"] === "number") {

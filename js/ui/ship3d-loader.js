@@ -8,7 +8,11 @@
 
   function loadShip3D() {
     if (window.Ship3D) return;
-    import("./ship3d.js?v=12").catch(function (error) {
+    try { if (window.__PERF) window.__PERF.begin("ship3d:import"); } catch (_) {}
+    import("./ship3d.js?v=12").then(function () {
+      try { if (window.__PERF) window.__PERF.end("ship3d:import"); } catch (_) {}
+    }).catch(function (error) {
+      try { if (window.__PERF) window.__PERF.end("ship3d:import"); } catch (_) {}
       console.error("[ship3d] module load failed", error);
     });
   }

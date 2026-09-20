@@ -37,6 +37,7 @@ function emitOfflineGameEvent(type, payload, meta) {
 // 库存快照 diff 出的「最终净获得物品」（无则回退纯文字信息，兼容旧调用方）。
 // 删除自动关闭计时：仅显式关闭按钮 / 点击背景 / Escape 可关闭。
 function showOfflineToast(seconds, gains, items, combatSummary, consumed, settlementErrors) {
+  try { if (window.__PERF) window.__PERF.begin("offline:toast"); } catch (_) {}
   const min = Math.floor(seconds / 60); const sec = Math.floor(seconds % 60);
   const timeStr = min > 0 ? `${min} 分 ${sec} 秒` : `${sec} 秒`;
   const labels = {
@@ -93,6 +94,7 @@ function showOfflineToast(seconds, gains, items, combatSummary, consumed, settle
   const toast = document.createElement("div"); toast.className = "offline-toast";
   toast.textContent = `⏳ 离线 ${timeStr}，已自动结算${detail ? "：" + detail : ""}`;
   document.body.appendChild(toast);
+  try { if (window.__PERF) window.__PERF.end("offline:toast"); } catch (_) {}
 }
 
 /* ---- Batch R（B 项）：canonical 库存快照 + 净获得 diff（只读，不改状态） ---- */
@@ -1198,6 +1200,17 @@ function settleOfflineActions(seconds, gains) {
     gameState.currentAction.progress = Math.min(remaining, descriptor.duration);
     remaining = 0;
   }
+  // 离线诊断（2026-09-19）：内层行动循环迭代次数（guard 上限 10000）。若某次调用接近 10000
+  // ⇒ 该行动在「部分周期推进」上空转，是 offline:timeline 耗时的主要来源。
+  try {
+    if (guard > 1) {
+      globalThis.__offlineActionIters = (globalThis.__offlineActionIters || 0) + guard;
+      if (guard > (globalThis.__offlineActionMaxIter || 0)) {
+        globalThis.__offlineActionMaxIter = guard;
+        globalThis.__offlineActionMaxSkill = gameState.currentAction ? gameState.currentAction.skill : "?";
+      }
+    }
+  } catch (_) {}
   return seconds - remaining;
 }
 
@@ -1284,8 +1297,17 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
   // 「新点数」重新推算耗尽点，而非沿用离线开始时的旧点数。
   let currentTime = offlineStart;
   let guard = 0;
+  // 离线时间轴诊断（2026-09-19）：定位「登录/回台离线结算卡数秒」（实测 apply 4.8~18s，
+  // 且 elapsed=7s 也要 4.8s ⇒ 与离线时长无关的固定量级开销 = 时间轴循环空转）。
+  let diagMicro = 0, diagEnd = 0, diagFuel = 0, diagConst = 0, diagWh = 0, microStreak = 0;
+  // 2026-09-19 性能诊断（第二轮）：分子系统耗时累计，定位「offline:timeline 6386ms」究竟卡在哪一步。
+  const _pn = (typeof performance !== "undefined" && performance && typeof performance.now === "function")
+    ? function () { return performance.now(); } : function () { return Date.now(); };
+  const _T = { bnd: 0, actions: 0, combat: 0, planets: 0, autoLines: 0, legion: 0, wormhole: 0, station: 0 };
+  try { globalThis.__offlineActionIters = 0; globalThis.__offlineActionMaxIter = 0; } catch (_) {}
   while (currentTime < offlineEnd) {
     if (++guard > 100000) break; // 安全网：防意外死循环
+    const _tBnd = _pn();
 
     // ---- 每段开始动态重算 ----
     // 1) 当前维护点数  2) 当前燃烧率  3) 当前燃料覆盖时长  4) 当前燃料耗尽时刻
@@ -1298,8 +1320,16 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
       const fuelRem = Number(s.maintenance.fuelRemaining) || 0;
       if (burnRate > 0 && fuelRem > 0) {
         const fuelCoverageMs = fuelRem / burnRate;
-        const exhaustAt = currentTime + fuelCoverageMs;
-        if (exhaustAt > currentTime) fuelExhaustAt = exhaustAt;
+        // ⭐ 2026-09-19 性能修复：覆盖不足 1ms 视为「本段内已耗尽」，燃料直接归零，
+        // 绝不作为切分边界。否则会切出 <1ms 的微段，而下方微段分支只推进时间指针、
+        // 不消费燃料边界 ⇒ nextBoundary 原地不动、time-line 空转跑满 guard=100000
+        // （实测真实 Chrome 端 apply 4.8~18.2s，登录卡数秒；沙箱复现循环恰好 100000 次）。
+        if (fuelCoverageMs > 1) {
+          const exhaustAt = currentTime + fuelCoverageMs;
+          if (exhaustAt > currentTime) fuelExhaustAt = exhaustAt;
+        } else {
+          s.maintenance.fuelRemaining = 0;
+        }
       }
     }
     // 5) 当前施工完成时刻
@@ -1314,18 +1344,42 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
     if (constructionAt > currentTime && constructionAt < nextBoundary) nextBoundary = constructionAt;
 
     // 7) 虫洞 run 事件 / 熔核过期（spec §5.5 / §13.8）：把段精确切在状态变化点
+    let whBoundary = Infinity;
     if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.getNextBoundaryMs === "function") {
-      const whBoundary = WORMHOLE.getNextBoundaryMs(gameState);
+      whBoundary = WORMHOLE.getNextBoundaryMs(gameState);
       if (whBoundary > currentTime && whBoundary < nextBoundary) nextBoundary = whBoundary;
     }
     const segEnd = Math.min(nextBoundary, offlineEnd);
     const segMs = segEnd - currentTime;
     if (segMs <= 0.001) {
-      // 边界重合的极短段：仅推进时间指针，防止死循环
+      // 边界重合的极短段：先尝试「消费」该边界（扣燃料 / 推进虫洞），否则边界原地不动
+      // ⇒ 循环空转（历史 bug：跑满 guard=100000，登录卡数秒）。
+      diagMicro++;
+      _T.bnd += _pn() - _tBnd;
+      try {
+        if (typeof settleStationMaintenance === "function" && s && s.maintenance) {
+          settleStationMaintenance(gameState, segEnd, true);
+        }
+        if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.tickWormhole === "function") {
+          WORMHOLE.tickWormhole(gameState, segEnd);
+        }
+      } catch (_) { /* 消费失败不阻塞时间轴 */ }
       currentTime = segEnd > currentTime ? segEnd : currentTime + 1;
+      if (++microStreak > 100) {
+        // 反复重合 ⇒ 该边界不可推进（多为已耗尽燃料的浮点残值）：归零消除，彻底防死循环。
+        if (s && s.maintenance) s.maintenance.fuelRemaining = 0;
+        microStreak = 0;
+      }
       continue;
     }
+    microStreak = 0;
+    // 边界来源（诊断）
+    if (segEnd === fuelExhaustAt) diagFuel++;
+    else if (segEnd === constructionAt) diagConst++;
+    else if (segEnd === whBoundary) diagWh++;
+    else diagEnd++;
     const segSec = segMs / 1000;
+    _T.bnd += _pn() - _tBnd;
 
     // 当前段是否 operational（在扣除该段燃料之前判断）
     const segOperational = typeof isStationOperational === "function"
@@ -1333,12 +1387,15 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
 
     // 1) 玩家行动始终完整进行（采矿/采气/制造/考古不受燃料影响）
     const timeBySkill = {};
+    let _t1 = _pn();
     settleOfflineActions(segSec, gains, undefined, timeBySkill);
+    _T.actions += _pn() - _t1;
     gameState._auditTimeBySkill = timeBySkill;
 
     // Batch S：统计等效离线战斗结算（每段累积；聚合事件在 applyOfflineGains 末尾 flush 一次）。
     // 返回段内未被战斗消耗的剩余秒数，避免在「战斗终结→下一项为生产」时浪费剩余离线时间。
     let combatLeftover = 0;
+    _t1 = _pn();
     if (typeof OfflineCombatSystem !== "undefined") {
       const left = OfflineCombatSystem.settle(gameState, segSec, {
         runId: context && context.runId,
@@ -1347,25 +1404,33 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
       });
       combatLeftover = (typeof left === "number" && left > 0) ? left : 0;
     }
+    _T.combat += _pn() - _t1;
     // 战斗终结后启动了生产项（combat.active=false 但 currentAction.active=true）：
     // 用剩余段内时间继续结算生产，避免浪费剩余离线时间（等价于接续到下一分段，但无需切段）。
     if (combatLeftover > 0 && gameState.currentAction.active && !gameState.combat.active) {
+      _t1 = _pn();
       settleOfflineActions(combatLeftover, gains, undefined, timeBySkill);
+      _T.actions += _pn() - _t1;
       gameState._auditTimeBySkill = timeBySkill;
     }
 
     // 2) 行星：按段结束时间结算（segmentEnd 使 deployment.lastTick 正确推进）
+    _t1 = _pn();
     settleOfflinePlanets(segSec, gains, segEnd);
+    _T.planets += _pn() - _t1;
 
     // 3) 自动线：始终调用。无油段由 processAutoLines 内部燃料闸门负责——
     //    不产出/不扣料/不加XP，但推进 line.lastTick=segEnd，防止补油后
     //    首个在线 tick 追算整段断油时间。
+    _t1 = _pn();
     if (typeof processAutoLines === "function") {
       processAutoLines(gameState, segEnd, true);
     }
+    _T.autoLines += _pn() - _t1;
 
     // 3.5) 军团 NPC 系统（军团 DLC）：离线同样走统一 tickLegionNpc 结算（候选刷新/工资/经验），
     // 按 segEnd 时间戳推进，与在线共用同一边界，绝不重复扣薪/重复生成候选。
+    _t1 = _pn();
     if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.tickLegionNpc === "function") {
       LEGION_NPC.tickLegionNpc(gameState, { now: segEnd });
     }
@@ -1380,11 +1445,15 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
         typeof LEGION_STARMAP_TRIAL.tickLegionStarmapTrial === "function") {
       LEGION_STARMAP_TRIAL.tickLegionStarmapTrial(gameState, segEnd);
     }
+    _T.legion += _pn() - _t1;
+    _t1 = _pn();
     if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.tickWormhole === "function") {
       WORMHOLE.tickWormhole(gameState, segEnd);
     }
+    _T.wormhole += _pn() - _t1;
 
     // 4) 扣除该段燃料（仅 operational 段真实消耗）
+    _t1 = _pn();
     if (segOperational && typeof settleStationMaintenance === "function") {
       settleStationMaintenance(gameState, segEnd, true);
     } else if (s && s.maintenance) {
@@ -1400,12 +1469,31 @@ function settleOfflineTimeline(totalSeconds, gains, context) {
         completeStationConstruction(gameState, { offline: true });
       }
     }
+    _T.station += _pn() - _t1;
 
     currentTime = segEnd;
+  }
+  // 离线时间轴诊断：循环次数异常（>20）时打印一行，用于定位「登录结算卡数秒」。
+  // 正常离线（含 24h）分段数应为个位数~几十；若远超则说明存在微段空转/边界爆炸。
+  const _tot = _T.bnd + _T.actions + _T.combat + _T.planets + _T.autoLines + _T.legion + _T.wormhole + _T.station;
+  if (guard > 20 || _tot > 50) {
+    const _fuel = (s && s.maintenance) ? Number(s.maintenance.fuelRemaining) : NaN;
+    const _f2 = (v) => (Math.round(v * 10) / 10);
+    console.log("[离线诊断] 段数=" + guard + " 微段=" + diagMicro +
+      " 出段[offlineEnd=" + diagEnd + ",fuel=" + diagFuel + ",construction=" + diagConst + ",wormhole=" + diagWh + "]" +
+      " 燃料剩余=" + (Number.isFinite(_fuel) ? _fuel.toExponential(3) : "n/a") +
+      " | 时间轴总耗时=" + _f2(_tot) + "ms 明细{bnd=" + _f2(_T.bnd) + ",actions=" + _f2(_T.actions) +
+      ",combat=" + _f2(_T.combat) + ",planets=" + _f2(_T.planets) + ",autoLines=" + _f2(_T.autoLines) +
+      ",legion=" + _f2(_T.legion) + ",wormhole=" + _f2(_T.wormhole) + ",station=" + _f2(_T.station) + "}" +
+      " 行动内层迭代=" + (globalThis.__offlineActionIters || 0) +
+      "(单次max=" + (globalThis.__offlineActionMaxIter || 0) +
+      ",skill=" + (globalThis.__offlineActionMaxSkill || "?") + ")" +
+      (guard > 100000 ? " ⚠guardBreak" : ""));
   }
 }
 
 function applyOfflineGains(rawSeconds, context) {
+  try { if (window.__PERF) window.__PERF.begin("offline:apply"); } catch (_) {}
   // 每次结算前清空资源调度加成收集（避免上一次结算残留污染本次展示）
   _settlementDispatchBonus = [];
   // Batch C-9 定点返修：rawSeconds 严格归一化（唯一归一点）。
@@ -1459,13 +1547,18 @@ function applyOfflineGains(rawSeconds, context) {
   try {
     // 子系统 A：生产时间轴（采矿/冶炼/气体/工程/行星/科研离线）
     const _gainsBeforeTimeline = Object.assign({}, gains);
+    try { if (window.__PERF) window.__PERF.begin("offline:snapshotTimeline"); } catch (_) {}
     const _snapBeforeTimeline = createSerializableGameStateSnapshot(gameState);
+    try { if (window.__PERF) window.__PERF.end("offline:snapshotTimeline"); } catch (_) {}
     try {
+      try { if (window.__PERF) window.__PERF.begin("offline:timeline"); } catch (_) {}
       // 唯一协调入口：按燃料/施工分段时间轴
       // Batch S：把本离线会话唯一 runId 一并传入时间轴，使 OfflineCombatSystem.settle
       // 与末尾 flush 用同一 runId 寻址同一会话聚合器（否则会话错配 → 不发射聚合事件）。
       settleOfflineTimeline(seconds, gains, Object.assign({}, context, { runId: runId }));
+      try { if (window.__PERF) window.__PERF.end("offline:timeline"); } catch (_) {}
     } catch (e) {
+      try { if (window.__PERF) window.__PERF.end("offline:timeline"); } catch (_) {}
       // 仅回滚本子系统：还原到进入时间轴前的快照，不影响战斗子系统后续入账
       try { restoreSerializableGameStateSnapshot(gameState, _snapBeforeTimeline); } catch (_) {}
       Object.assign(gains, _gainsBeforeTimeline);
@@ -1476,12 +1569,17 @@ function applyOfflineGains(rawSeconds, context) {
 
     // 子系统 B：离线战斗 flush（必须早于 settlementCompleted，全离线恰一次）
     const _gainsBeforeCombat = Object.assign({}, gains);
+    try { if (window.__PERF) window.__PERF.begin("offline:snapshotCombat"); } catch (_) {}
     const _snapBeforeCombat = createSerializableGameStateSnapshot(gameState);
+    try { if (window.__PERF) window.__PERF.end("offline:snapshotCombat"); } catch (_) {}
     try {
       if (typeof OfflineCombatSystem !== "undefined") {
+        try { if (window.__PERF) window.__PERF.begin("offline:combatFlush"); } catch (_) {}
         combatSummary = OfflineCombatSystem.flush(gameState, { runId, gains, offlineEnd: Date.now() });
+        try { if (window.__PERF) window.__PERF.end("offline:combatFlush"); } catch (_) {}
       }
     } catch (e) {
+      try { if (window.__PERF) window.__PERF.end("offline:combatFlush"); } catch (_) {}
       // 仅回滚本子系统：还原到进入战斗前的快照（含已成功的生产），不影响生产入账
       try { restoreSerializableGameStateSnapshot(gameState, _snapBeforeCombat); } catch (_) {}
       Object.assign(gains, _gainsBeforeCombat);
@@ -1517,10 +1615,12 @@ function applyOfflineGains(rawSeconds, context) {
   if (gameState.boosters) {
     gameState.boosters.lastTick = Date.now();
   }
+  try { if (window.__PERF) window.__PERF.end("offline:apply"); } catch (_) {}
   return gains;
 }
 
 function calculateOfflineGains(options) {
+  try { if (window.__PERF) window.__PERF.begin("offline:calculate"); } catch (_) {}
   // options.silent（2026-09-08 · 后台节流守卫配套）：tick.js 的节流守卫会把被节流的
   // 大间隔 tick 转交本函数（最短约 1 分钟一次）。此类「挂后台」短结算若每次都弹
   // 离线收益 toast 会在回台瞬间刷屏，故静默吞掉展示、保留结算与存盘。
@@ -1565,7 +1665,10 @@ function calculateOfflineGains(options) {
   const totalGains = Object.values(gains).reduce((sum, value) => sum + value, 0);
   if (!_silent && (totalGains > 0 || netItems.length > 0 || consumedItems.length > 0)) showOfflineToast(elapsed, gains, netItems, offlineCtx.combatSummary, consumedItems, offlineCtx.settlementErrors);
   gameState._dirty = true;
+  try { if (window.__PERF) window.__PERF.begin("offline:save"); } catch (_) {}
   SaveManager.save();
+  try { if (window.__PERF) window.__PERF.end("offline:save"); } catch (_) {}
+  try { if (window.__PERF) window.__PERF.end("offline:calculate"); } catch (_) {}
 }
 
 function forceOfflineTest(seconds) {

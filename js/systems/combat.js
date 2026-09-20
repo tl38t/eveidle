@@ -14,7 +14,8 @@ const COMBAT_RECOVERY_MS = 180000;
 
 // M3：options = { shipInstanceId, excludeImplants }（军团 NPC 战斗小队）；缺省行为不变。
 function getInstalledCombatModules(state, options) {
-  return getInstalledCombatModulesFromState(state || gameState, options).map(module => ({ id:module.id, itemId:module.itemId, instance:module.instance, enhancementLevel:module.enhancementLevel, multiplier:module.multiplier, equipment:EQUIPMENT_DB[module.itemId], slot:module.slot }));
+  const modules = getInstalledCombatModulesFromState(state || gameState, options);
+  return modules.map(module => ({ id:module.id, itemId:module.itemId, instance:module.instance, enhancementLevel:module.enhancementLevel, multiplier:module.multiplier, equipment:EQUIPMENT_DB[module.itemId], slot:module.slot }));
 }
 
 function getInstalledCombatWeapons(state, options) {
@@ -261,8 +262,8 @@ function computeVolleyFuel(state, zone, options) {
   return volleyFuel;
 }
 
-function calcRepairMult(target, state, structureRatio) {
-  const mult = getCombatRepairMultiplierFromState(state || gameState, target, undefined, structureRatio);
+function calcRepairMult(target, state, structureRatio, options) {
+  const mult = getCombatRepairMultiplierFromState(state || gameState, target, undefined, structureRatio, options);
   // 量子干扰（2026-09-05 最终 BOSS）：存活 BOSS 带 repairSuppr 时压制玩家方回复（离线经 G() 同源继承）。
   const c = state && state.combat;
   if (mult > 0 && c && Array.isArray(c.enemies)) {
@@ -1882,7 +1883,7 @@ function advanceCombatRound(state, context) {
     const reducedDmg = dcReduction > 0 ? Math.max(0, Math.round(enemyDmg * (1 - dcReduction))) : enemyDmg;
     // M3 步骤 4/5：敌人每次攻击单独选目标（玩家 + 存活 NPC 等概率）。
     // squadHit 为 null 表示非小队模式 → 完全沿用原有玩家受伤路径（行为不变）。
-    const squadHit = processLegionEnemyAttack(state, { damage: reducedDmg, now: now, rng: rng, emit: emit });
+    const squadHit = processLegionEnemyAttack(state, { damage: reducedDmg, now: now, rng: rng, emit: emit, roundSeq: c.roundSeq });
     const damageTaken = squadHit ? squadHit.dealt : applyLayeredCombatDamage(c.hp, reducedDmg);
     const hitNpc = Boolean(squadHit && squadHit.kind === "npc");
     if (!hitNpc) { armorDamageTaken += damageTaken.armor; structureDamageTaken += damageTaken.structure; }
@@ -1965,6 +1966,11 @@ function advanceCombatRound(state, context) {
         enemyVolley.armorRestored = (enemyVolley.armorRestored || 0) + restored;
       }
     }
+  }
+
+  // 军团 NPC 绑定泰坦舰体固有维修（偏导回盾 / 强化应激装甲 / 泰坦结构过载密封），与玩家出战泰坦同口径
+  if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD && state.combat.squad && state.combat.squad.enabled) {
+    LEGION_COMBAT_SQUAD.repairLegionNpcTitanTraits(state, now);
   }
 
   // --- 维修：只读取舰船实际安装的维修装备 ---

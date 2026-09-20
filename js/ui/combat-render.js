@@ -492,8 +492,9 @@ function escHtml(s) {
    战斗 3D（左右晃动体现战斗）
    ================================================================ */
 function mountCombat3D(display) {
+  try { if (window.__PERF) window.__PERF.begin("ui:mountCombat3D"); } catch (_) {}
   const S3D = window.Ship3D;
-  if (!S3D) return; // 模块尚未就绪时静默跳过，后续 tick 会补上
+  if (!S3D) { try { if (window.__PERF) window.__PERF.end("ui:mountCombat3D"); } catch (_) {} return; } // 模块尚未就绪时静默跳过，后续 tick 会补上
 
   // 玩家舰：当前出战舰（combat.activeShip → 实例 → 蓝图 id）
   // 修复：无拥有战斗舰时不渲染幽灵模型，保留/恢复占位符（🚀），与机库保持一致。
@@ -535,24 +536,23 @@ function mountCombat3D(display) {
     }
   } catch (err) { console.error("[combat] 玩家 3D 渲染失败", err); }
 
-  // 敌人舰：由星带 faction + 威胁等级推导的泛用海盗舰
-  // 缓存 key = faction|level|wave|index|nonce：index 区分同波不同敌兵、nonce 区分每场新战斗，
-  // 任一项变化才重建 buildShip（每帧不重建，无性能负担）。
+  // 敌人舰：由星带 faction + 威胁等级推导的泛用海盗舰。
+  // 稳定缓存 key = faction|level|nonce：不再含 wave / 目标序号（这二者每回合都在变，旧实现每回合都
+  // 触发「重打 Math.random seed → setShips 内容变化 → 真建模 ≈4-6ms」，是交战每秒 3D 开销的卡顿源）。
+  // 同 (faction,level,会话) 恒同外观、跨回合稳定 → setShips 命中内容缓存短路；nonce 保证每场新战斗重新随机轮廓。
   try {
     const zoneFaction = display.zone && display.zone.faction;
     const enemyLevel = display.target && display.target.level ? display.target.level : 1;
-    const enemyWave = display.wave || 1;
-    // 当前敌兵序号：让「每一艘不同的敌兵」都换轮廓（同艘反复切回仍稳定，不跳动）
-    const enemyIdx = display.target && display.target.index != null ? display.target.index : -1;
     // 战斗会话 nonce：每开始一场新战斗自增（见 startCombatEncounter），使每场战斗都重新随机外观，
     // 避免跨场战斗复用首场随机结果（否则同区域同等级敌人每次都长一个样）。
     const combatNonce = mountCombat3D._combatNonce || 0;
-    const enemyKey = (zoneFaction || "?") + "|" + enemyLevel + "|" + enemyWave + "|" + enemyIdx + "|" + combatNonce;
+    const enemyKey = (zoneFaction || "?") + "|" + enemyLevel + "|" + combatNonce;
     if (!mountCombat3D._enemyKey || mountCombat3D._enemyKey !== enemyKey) {
       mountCombat3D._enemyKey = enemyKey;
       const baseSpec = S3D.buildEnemySpec(zoneFaction, enemyLevel);
-      // 每波用不同随机 seed，产生不同外观（同波内 key 不变 → 复用，不重建）
-      baseSpec.seed = "enemy-rnd-" + enemyWave + "-" + Date.now() + "-" + Math.floor(Math.random() * 99999);
+      // 确定性 seed（由 faction|level|会话 派生，不再用 Math.random）：同敌兵群恒同外观、反复切回不跳动，
+      // 且 setShips 内容稳定 → 命中短路、不再每回合真建模。
+      baseSpec.seed = "enemy-rnd-" + combatNonce + "-" + (zoneFaction || "?") + "-" + enemyLevel;
       mountCombat3D._enemySpec = baseSpec;
     }
     const eImg = document.getElementById("combat-enemy-image");
@@ -572,6 +572,7 @@ function mountCombat3D(display) {
       S3D.setShips(viewer, [{ spec: mountCombat3D._enemySpec, position: [0, 0, 0], scale: 1, sway: true, rotation: [0, Math.PI, 0], shieldColor: 0xff3a3a }]);
     }
   } catch (err) { console.error("[combat] 敌人 3D 渲染失败", err); }
+  try { if (window.__PERF) window.__PERF.end("ui:mountCombat3D"); } catch (_) {}
 }
 
 // ================================================================

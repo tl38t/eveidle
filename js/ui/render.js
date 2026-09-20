@@ -653,6 +653,7 @@ function renderGlobalDisplay(display) {
 }
 
 function updateUI(now) {
+  try { if (window.__PERF) window.__PERF.begin("ui:updateUI"); } catch (_) {}
   const renderTime = Number(now) || Date.now();
   if (typeof renderStarmapTrialRoom === "function") renderStarmapTrialRoom(renderTime);
   const viewKey = currentView;
@@ -718,6 +719,7 @@ function updateUI(now) {
   renderSidebar(getSidebarDisplayState(gameState));
   // 已打开的确认弹窗随状态变化（装/卸增强剂、船坞升级完成等）实时刷新消耗/耗时
   if (typeof refreshActionConfirmation === "function") refreshActionConfirmation();
+  try { if (window.__PERF) window.__PERF.end("ui:updateUI"); } catch (_) {}
 }
 
 function setLiveText(element, value) {

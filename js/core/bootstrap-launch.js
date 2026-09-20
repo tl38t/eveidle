@@ -13,6 +13,23 @@
 (function () {
   "use strict";
 
+  // PERF_PROBE 性能探针（2026-09-19）：**仅在 URL 带 ?perf=1 时创建**。
+  // 生产默认不建 window.__PERF ⇒ 全仓 48 处 `if (window.__PERF) …` 调用点自动失效，
+  // 玩家控制台零计时输出、零 "Timer ... already exists" 噪声（封包铁律：埋点须自带门控）。
+  // 诊断用法：index.html?perf=1
+  try {
+    var __perfEnabled = /(?:^|[?&])perf=1(?:&|$)/.test(
+      (typeof location !== "undefined" && location && location.search) ? location.search : ""
+    );
+    if (__perfEnabled) {
+      window.__PERF = window.__PERF || {
+        begin: function(label){ console.time(label); },
+        end: function(label){ console.timeEnd(label); }
+      };
+      window.__PERF.begin("boot:total");
+    }
+  } catch (_) { /* 无 location 的宿主（沙箱/Worker）静默跳过 */ }
+
   function showFatalBootError(err) {
     try {
       var msg = (err && err.message) ? err.message : String(err);
@@ -466,9 +483,11 @@
     if (st === "loading") showBootLoading();
     else if (st === "awaiting-choice") showConflictChoice();
     else if (st === "awaiting-cloud") { hideBootLoading(); showAwaitingCloud(); }
-    else if (st === "ready" || st === "local-only" || st === "error") {
+    else     if (st === "ready" || st === "local-only" || st === "error") {
       hideConflictChoice(); hideAwaitingCloud(); hideBootLoading();
       if (document.body) document.body.classList.remove("boot-loading");
+      // PERF_PROBE：启动总时间到此落定
+      try { if (window.__PERF) window.__PERF.end("boot:total"); } catch (_) {}
       // 启动落定后归位一次面板显隐（2026-09-17 微信端「所有面板合在一起」根因修复）：
       // index.html 的 .content 里 21 个 .panel 是裸态（无 display:none），历史上首次显隐
       // 全靠玩家第一次点导航触发 switchPage → renderCurrentNavigation —— 启动链从初始

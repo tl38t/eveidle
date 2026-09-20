@@ -122,8 +122,8 @@ function isEquipmentInstanceId(state, ref) {
   return state.equipment.instances.some(instance => String(instance.instanceId) === refStr);
 }
 
-function resolveEquipmentReference(state, ref) {
-  if (!state || !state.equipment) return null;
+/* 原实现（逻辑逐字节保留；仅可经 resolveEquipmentReference 到达） */
+function __resolveEquipmentReferenceUncached(state, ref) {
   const instance = isEquipmentInstanceId(state, ref)
     ? state.equipment.instances.find(entry => String(entry.instanceId) === String(ref))
     : null;
@@ -138,6 +138,23 @@ function resolveEquipmentReference(state, ref) {
     enhancementLevel,
     multiplier: getEquipmentEnhancementEffectMultiplier(enhancementLevel)
   };
+}
+
+function resolveEquipmentReference(state, ref) {
+  if (!state || !state.equipment) return null;
+  // 性能优化（2026-09-20）：离线结算仿真期间按 (state, ref) 记忆化。
+  // 宿主 = selectors.js 的会话槽 __offlinePerfCache；槽为 null（在线）⇒ 直走原实现，零影响。
+  // 返回同一对象引用安全：全部调用点均只读（已 grep 证：无 resolved.* 赋值 / 原地修改）。
+  const cache = (typeof getOfflinePerfCache === "function") ? getOfflinePerfCache() : null;
+  if (!cache) return __resolveEquipmentReferenceUncached(state, ref);
+  let perState = cache.refs.get(state);
+  if (!perState) { perState = new Map(); cache.refs.set(state, perState); }
+  const key = String(ref);
+  if (perState.has(key)) { cache.refHit++; return perState.get(key); }
+  cache.refMiss++;
+  const value = __resolveEquipmentReferenceUncached(state, ref);
+  perState.set(key, value);
+  return value;
 }
 
 /* ---- 强化预览展示态 ---- */

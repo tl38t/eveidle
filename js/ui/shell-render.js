@@ -803,6 +803,7 @@ function renderCombatSkillGroup() {
 }
 
 function renderCurrentNavigation() {
+  try { if (window.__PERF) window.__PERF.begin("ui:renderCurrentNavigation"); } catch (_) {}
   if (currentPage === "starmap" && (!gameState || typeof LegionRender === "undefined" || !LegionRender.isLegionTabVisible || !LegionRender.isLegionTabVisible(gameState))) currentPage = "skill";
   const battleTrialView = isStarmapBattleTrialViewActive();
   const navigation = getNavigationDisplayState(currentPage, currentView);
@@ -828,7 +829,7 @@ function renderCurrentNavigation() {
   const active = document.querySelector(activeSelector); if (active) active.classList.add("active");
 
   if (navigation.page === "skill") {
-    updateUI();
+    if (typeof updateUI === "function") updateUI();
     if (battleTrialView) renderStarmapBattleTrialCombat(Date.now(), { renderBase:false });
   }
   else if (navigation.page === "skill-overview") { if (typeof window.renderSkillOverviewPage === "function") window.renderSkillOverviewPage(); }
@@ -880,6 +881,7 @@ function renderStarmapPage() {
   const panel = frame.closest(".panel");
   if (panel) panel.style.display = active ? "" : "none";
   syncStarmapCompletedNodes(frame);
+  try { if (window.__PERF) window.__PERF.end("ui:renderCurrentNavigation"); } catch (_) {}
 }
 
 function renderLegionPage() {
@@ -891,6 +893,7 @@ function renderLegionPage() {
 }
 
 function switchPage(page) {
+  try { if (window.__PERF) window.__PERF.begin("ui:switchPage"); } catch (_) {}
   // 修复（TapTap 竖屏战斗入口）：战斗不是独立页，而是技能视图。
   // 旧逻辑 switchPage("combat") 会把 currentPage 设成非标准值 "combat"，
   // 而 updateLiveUI 的实循环门禁只认 currentPage==="skill" && currentView==="combat"，
@@ -907,6 +910,7 @@ function switchPage(page) {
   }
   currentPage = page === "skill" ? "skill" : page;
   renderCurrentNavigation();
+  try { if (window.__PERF) window.__PERF.end("ui:switchPage"); } catch (_) {}
 }
 
 function switchSkill(skillKey) {

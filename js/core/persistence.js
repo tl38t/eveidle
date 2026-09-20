@@ -1719,6 +1719,7 @@ function applyLegacyStartupFieldMigrations() {
 // 单一迁移/对账管线（startup 与 import 共用）。不含离线结算与最终化，
 // 这两步由 activateRestoredState 在迁移之后执行，保证“离线结算恰好一次”且早于最终化。
 function normalizeAndMigratePayload(ctx) {
+  try { if (window.__PERF) window.__PERF.begin("boot:migrate"); } catch (_) {}
   ctx = ctx || {};
   const isLegacy = ctx.isLegacy === true;
   const now = ctx.now || Date.now();
@@ -1768,11 +1769,13 @@ function normalizeAndMigratePayload(ctx) {
   if (typeof TutorialSystem !== "undefined" && TutorialSystem && typeof TutorialSystem.bootstrap === "function") {
     TutorialSystem.bootstrap(gameState, { isLegacy: isLegacy, now: now });
   }
+  try { if (window.__PERF) window.__PERF.end("boot:migrate"); } catch (_) {}
 }
 
 // 激活已恢复状态：离线结算（至多一次）+ 用户/统计状态补齐 + 军团/空间站迁移 + 行星最终化。
 // 顺序与旧 autoLoad 完全一致：离线结算 → ensure → station/corp 迁移 → 最终化。
 function activateRestoredState(ctx) {
+  try { if (window.__PERF) window.__PERF.begin("boot:activate"); } catch (_) {}
   ctx = ctx || {};
   if (ctx.settleOffline) {
     if (typeof calculateOfflineGains === "function") calculateOfflineGains();
@@ -1781,6 +1784,7 @@ function activateRestoredState(ctx) {
   ensureStatisticsState(gameState);
   migrateStationCorporationState();
   normalizePlanetaryState(gameState, { finalizeExpiry: true });
+  try { if (window.__PERF) window.__PERF.end("boot:activate"); } catch (_) {}
 }
 
 const SaveManager = {
@@ -2229,6 +2233,7 @@ const SaveManager = {
     } catch (e) { /* 同上 */ }
   },
   bootstrap() {
+    try { if (window.__PERF) window.__PERF.begin("boot:bootstrap"); } catch (_) {}
     if (this._bootStarted) return this._bootPromise || Promise.resolve();
     this._bootStarted = true;
     this._bootState = "loading";
@@ -2275,6 +2280,7 @@ const SaveManager = {
         }
         throw err;
       });
+    try { if (window.__PERF) window.__PERF.end("boot:bootstrap"); } catch (_) {}
     return this._bootPromise;
   },
   _readLocalCandidate() {
@@ -2727,9 +2733,12 @@ const SaveManager = {
     if (this._offlineSettled) return;
     this._offlineSettled = true;
     try {
+      if (window.__PERF) window.__PERF.begin("boot:offlineSettle");
       if (typeof calculateOfflineGains === "function") calculateOfflineGains();
       else console.warn("[离线] calculateOfflineGains 未定义，启动结算被跳过（脚本加载顺序/离线模块缺失？）");
+      if (window.__PERF) window.__PERF.end("boot:offlineSettle");
     } catch (e) {
+      try { if (window.__PERF) window.__PERF.end("boot:offlineSettle"); } catch (_) {}
       // 离线结算失败不致命，但 guard 已置位避免重复执行。
       // 定点返修·离线诊断：原先静默吞掉，导致「完全没离线」却无任何报错。改为明确告警并打印 elapsed/栈，便于定位。
       try {
@@ -2740,6 +2749,7 @@ const SaveManager = {
     }
   },
   _commitFinal(finalState, opts) {
+    try { if (window.__PERF) window.__PERF.begin("boot:commitFinal"); } catch (_) {}
     // P0-3/4：启动事务的唯一权威落定入口。顺序：①只结算一次 ②受控落盘 ③云上传策略 ④设最终态 ⑤成就对账。
     opts = opts || {};
     this._committing = true;
@@ -2776,6 +2786,7 @@ const SaveManager = {
       this._bootState = finalState;
       this._emitBootState();
       this._reconcileAchievements();
+      try { if (window.__PERF) window.__PERF.end("boot:commitFinal"); } catch (_) {}
       return Promise.resolve(true);
     } finally {
       this._committing = false;
