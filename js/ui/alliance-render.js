@@ -86,6 +86,31 @@
     return true;
   }
 
+  // alliance_daily_tasks 表没有 required_level 列：云函数 normalizeTasks 会校验该字段，
+  // 但建表/写入都不落库，所以云端回传的行必然缺它。旧代码把 Number(undefined) 直接写进
+  // 本地缓存（JSON 序列化后是 null），下次整份 preview 上行时服务端判「技能门槛无效」
+  // ⇒ 整次同步失败、面板退回本地预览（表现就是「连不上/没有提交按钮」）。
+  // 这里按「云端值 → 本次已上行值 → 本地任务目录(按 materialId) → 1」补齐，使往返无损。
+  function coerceRequiredLevel() {
+    for (var i = 0; i < arguments.length; i++) {
+      var value = Number(arguments[i]);
+      if (Number.isInteger(value) && value >= 1 && value <= 100) return value;
+    }
+    return 1;
+  }
+
+  function buildRequiredLevelMap(env) {
+    var map = {};
+    try {
+      var catalog = env && env.AllianceTaskCatalog && env.AllianceTaskCatalog.buildRuntimeCatalog
+        ? env.AllianceTaskCatalog.buildRuntimeCatalog(env) : [];
+      (catalog || []).forEach(function (item) {
+        if (item && item.materialId) map[String(item.materialId)] = coerceRequiredLevel(item.requiredLevel);
+      });
+    } catch (ignore) { /* 目录不可用时回落到 1，保证上行值合法 */ }
+    return map;
+  }
+
   function ensureAllianceHelpButton() {
     var title = document.querySelector(".panel-title");
     var existing = document.getElementById("btn-alliance-help");
@@ -749,13 +774,29 @@
       ? root.AllianceBuildingConfig.dailyTaskCount(root.gameState.alliance.buildings || []) : 5;
     var taskDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
     var taskCacheKey = "eve_idle_alliance_tasks_v4_" + playerId + "_" + taskDate;
+    // 按需构建（缓存/云端行都缺 required_level 时才建一次），避免每次都跑目录构建。
+    var requiredLevelMap = null;
+    function catalogRequiredLevel(materialId) {
+      if (requiredLevelMap === null) requiredLevelMap = buildRequiredLevelMap(root);
+      return requiredLevelMap[String(materialId || "")];
+    }
     try {
       var taskState = root.gameState || {};
       var cached = root.localStorage && root.localStorage.getItem(taskCacheKey);
       if (cached) {
         try { taskPreview = JSON.parse(cached); } catch (ignore) { taskPreview = []; }
       }
-      if (!Array.isArray(taskPreview) || taskPreview.length !== taskCount) {
+      // 云端同步过的任务（每项都带 serverTaskId）以服务端条数为权威。本地 taskCount
+      // 是按 gameState.alliance.buildings 估算的，而建筑数据要等云端刷新（本函数末尾
+      // getAlliance）才到位 ⇒ 首轮渲染时可能滞后（大厅 L2 只算成 5）。一旦与服务端
+      // 条数不符，旧逻辑会用本地预览覆盖云端任务、丢掉 serverTaskId，导致「云端状态」
+      // 下提交按钮不生成（并随后被写回缓存，持续复现）。故此处直接采纳云端条数。
+      var cloudTaskCount = Array.isArray(taskPreview) && taskPreview.length > 0 &&
+        taskPreview.every(function (item) { return item && item.serverTaskId; })
+        ? taskPreview.length : 0;
+      if (cloudTaskCount) {
+        taskCount = cloudTaskCount;
+      } else if (!Array.isArray(taskPreview) || taskPreview.length !== taskCount) {
         var taskCatalog = root.AllianceTaskCatalog && root.AllianceTaskCatalog.buildRuntimeCatalog
           ? root.AllianceTaskCatalog.buildRuntimeCatalog(root) : [];
         taskPreview = root.AllianceTaskModel && root.AllianceTaskModel.generateFive
@@ -766,7 +807,7 @@
         serverTaskId: task.serverTaskId || task.id || null,
         slot: task.slot, category: task.category, skill: task.skill,
         materialId: task.materialId, materialName: task.materialName,
-        requiredAmount: task.requiredAmount, requiredLevel: task.requiredLevel,
+        requiredAmount: task.requiredAmount, requiredLevel: coerceRequiredLevel(task.requiredLevel, catalogRequiredLevel(task.materialId)),
         standardTimeSec: task.standardTimeSec, materialValue: task.materialValue,
         difficulty: task.difficulty,
         rewardPoints: task.rewardPoints,
@@ -789,15 +830,22 @@
           return data.tasks;
         });
       }).then(function (rows) {
+        // 云端行没有 required_level（表里无此列）。优先用本次上行同一 slot 的值补齐，
+        // 其次查本地目录，最后 1 —— 保证写回缓存的值合法，下次往返不再被服务端拒绝。
+        var sentLevelBySlot = {};
+        (Array.isArray(taskPreview) ? taskPreview : []).forEach(function (item) {
+          if (item) sentLevelBySlot[Number(item.slot)] = item.requiredLevel;
+        });
         var synced = rows.map(function (row, index) {
           var materialId = row.material_id || row.materialId || "";
+          var slot = Number(row.slot) || index + 1;
           return {
-            taskKey: String(taskDate) + ":" + String(row.slot || index + 1) + ":" + materialId,
+            taskKey: String(taskDate) + ":" + String(slot) + ":" + materialId,
             serverTaskId: row.id || row.task_id || null,
-            slot: row.slot || index + 1, category: row.category, skill: row.skill,
+            slot: slot, category: row.category, skill: row.skill,
             materialId: materialId, materialName: row.material_name || row.materialName || materialId,
             requiredAmount: Number(row.required_amount == null ? row.requiredAmount : row.required_amount),
-            requiredLevel: Number(row.required_level == null ? row.requiredLevel : row.required_level),
+            requiredLevel: coerceRequiredLevel(row.required_level == null ? row.requiredLevel : row.required_level, sentLevelBySlot[slot], catalogRequiredLevel(materialId)),
             standardTimeSec: Number(row.standard_time_sec == null ? row.standardTimeSec : row.standard_time_sec),
             materialValue: Number(row.material_value == null ? row.materialValue : row.material_value),
             difficulty: row.difficulty, rewardPoints: Number(row.reward_points == null ? row.rewardPoints : row.reward_points),
@@ -1006,6 +1054,14 @@
       var alliance = root.gameState && root.gameState.alliance;
       var allianceId = alliance && alliance.allianceId || returnedId;
       var amount = Number(task.requiredAmount) || 0;
+      // 联盟 ID 只有 getAlliance()/云端回传之后才可用。过早提交会发 undefined，
+      // 服务端 Number(undefined)=NaN ⇒ 400「联盟 ID 无效」，材料已扣但任务没提交。
+      if (!Number.isSafeInteger(Number(allianceId)) || Number(allianceId) <= 0) {
+        if (msg) msg.textContent = "正在获取联盟信息，请稍候再点提交。";
+        // 只重拉一次联盟信息（不整页重绘，避免把这条提示又冲掉）。
+        startCloudRefresh();
+        return;
+      }
       if (isTapTapRuntime() && openCloudRelay({
         relayAction: "submit_task",
         allianceId: allianceId,
@@ -1031,6 +1087,11 @@
         .catch(function (error) { if (task.category === "equipment") inventory.push(equipmentId); else ResourceRegistry.add(root.gameState, resolveTaskMaterialId(task.materialId), amount); if (root.SaveManager && root.SaveManager.save) root.SaveManager.save(); button.disabled = false; if (msg) msg.textContent = error.message || "任务提交失败"; });
     }
     setTimeout(function () {
+      // 云端同步成功后会再调一次 load()，而任务卡是 append 的：上一轮的 setTimeout 会
+      // 在新的 innerHTML 重置之后才落地 ⇒ 面板并排堆出两张任务卡，其中旧的那张没有
+      // 提交按钮（按 slot 匹配也可能落空），看上去就是「显示云端状态但点不了」。
+      // 与身份卡同样处理：先移除上一轮的任务卡，保证面板只有一张。
+      Array.prototype.forEach.call(content.querySelectorAll(".alliance-task-card"), function (node) { node.remove(); });
       content.insertAdjacentHTML("beforeend", taskHtml);
       // 身份卡片：作为 content 的兄弟节点挂在 #alliance-state 之外，
       // 这样云端刷新（只替换 #alliance-state）不会把它冲掉；每次 load() 重建一次。
