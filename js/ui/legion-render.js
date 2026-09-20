@@ -457,15 +457,27 @@
     return rows ? '<div class="lc-grade-table">' + rows + '</div>' : '';
   }
   // 详情弹窗内容（候选 / 已招募共用骨架），由 legion-events 调 openModal 呈现。
-  function skillSectionHtml(skillId, currentGrade, currentLevel) {
+  function skillSectionHtml(skillId, currentGrade, currentLevel, npc) {
     var skill = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getSkillById) ? LEGION_NPC.getSkillById(skillId) : null;
     if (!skill) return '';
-    return '<div class="lc-detail-section"><div class="lc-detail-label">技能 · ' + escapeDetailHtml(skill.name) +
+    var html = '<div class="lc-detail-section"><div class="lc-detail-label">技能 · ' + escapeDetailHtml(skill.name) +
       '（' + skillCategoryName(skill.category) + ' · ' + escapeDetailHtml(skill.type || "") + '）</div>' +
       (skill.effect ? '<div class="lc-detail-line">' + escapeDetailHtml(skill.effect) + '</div>' : '') +
       (typeof currentLevel === "number" && LEGION_NPC.getLegionNpcSkillRawValue
         ? '<div class="lc-detail-line">当前等级效果：+' + LEGION_NPC.getLegionNpcSkillRawValue({ skillId:skillId, skillGrade:currentGrade, level:currentLevel }) + '%</div>' : '') +
       skillGradeRowsHtml(skill, currentGrade) + '</div>';
+    // 副技能（玩家 NPC 约定：随机 B 级）：显示其名称/档位/当前等级效果
+    if (npc && npc.secondarySkillId) {
+      var ssk = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getSkillById) ? LEGION_NPC.getSkillById(npc.secondarySkillId) : null;
+      if (ssk) {
+        html += '<div class="lc-detail-section"><div class="lc-detail-label">副技能 · ' + escapeDetailHtml(ssk.name) +
+          '（' + skillCategoryName(ssk.category) + ' · ' + escapeDetailHtml(ssk.type || "") + ' · 随机 B 级）</div>' +
+          (typeof currentLevel === "number" && LEGION_NPC.getLegionNpcSkillRawValue
+            ? '<div class="lc-detail-line">当前等级效果：+' + LEGION_NPC.getLegionNpcSkillRawValue({ skillId: npc.secondarySkillId, skillGrade: npc.secondarySkillGrade, level: currentLevel }) + '%</div>' : '') +
+          '<div class="lc-detail-line">招募即得 · 与主技能并列计入贡献</div></div>';
+      }
+    }
+    return html;
   }
   function escapeDetailHtml(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
@@ -484,7 +496,7 @@
       ' ' + gradeTagHtml(grade) + '</div>' +
       '<div class="legion-modal-body">' +
       '<div class="lc-detail-line">' + escapeDetailHtml(legionPersonalityName(cand.personalityId)) + '</div>' +
-      skillSectionHtml(cand.skillId, grade) +
+      skillSectionHtml(cand.skillId, grade, undefined, cand) +
       '<div class="lc-detail-section"><div class="lc-detail-label">招募条件</div>' +
       '<div class="lc-detail-line">招募费：' + cost.isk.toLocaleString() + ' 星币 + ' + cost.lp + ' 功勋</div>' +
       '<div class="lc-detail-line">每 4h 工资：' + wage.toLocaleString() + ' 星币</div></div></div>';
@@ -546,7 +558,7 @@
       '<div class="lc-detail-progress"><div class="progress-bar"><div class="fill" style="width:' + xpPct.toFixed(0) + '%"></div></div>' +
       '<span>XP ' + Math.floor(xp).toLocaleString() + ' / ' + need.toLocaleString() + ' · 经验倍率 ×' + (xpMult != null ? xpMult.toFixed(2) : "0.50") + '<span class="lc-xp-note">' + note.xpNote + '</span></span></div>' +
       '<div class="lc-detail-line">' + npcXpLiveHtml(st, npc) + '</div>' +
-      skillSectionHtml(npc.skillId, grade, npc.level) +
+      skillSectionHtml(npc.skillId, grade, npc.level, npc) +
       '<div class="lc-detail-section"><div class="lc-detail-label">当前贡献</div>' +
       '<div class="lc-detail-line">技能贡献：' + escapeDetailHtml(legionSkillName(npc.skillId)) + contribLine + '</div></div>' +
       '<div class="lc-detail-section"><div class="lc-detail-label">舰船与工资</div>' +
@@ -571,7 +583,7 @@
         '<span class="lc-detail-hint" data-legion-cand-detail="' + c.npcId + '" title="点击查看详情">详情</span>' +
         '<div class="lc-name">' + c.name + ' ' + gradeTagHtml(grade) + '</div>' +
         '<div class="lc-meta">' + legionPersonalityName(c.personalityId) + '</div>' +
-        '<div class="lc-meta">技能：' + skillLabel + '（' + catLabel + '）</div>' +
+        '<div class="lc-meta">技能：' + skillLabel + '（' + catLabel + '）' + (c.secondarySkillId ? ' · <span class="lc-sub">副：' + escapeDetailHtml((LEGION_NPC.getSkillById(c.secondarySkillId) || {}).name || c.secondarySkillId) + ' B</span>' : '') + '</div>' +
         '<div class="lc-meta">招募：' + cost.isk.toLocaleString() + ' 星币 / ' + cost.lp + ' 功勋 · 每 4h 工资 ' + (LEGION_NPC.WAGE[grade] || 0).toLocaleString() + ' 星币</div>' +
         '<div class="lc-actions"><button class="btn-mini" data-legion-recruit="' + c.npcId + '">招募</button></div>' +
         '</div>';

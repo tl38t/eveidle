@@ -19,13 +19,15 @@
         names: require("./../data/legion/npc-names.js"),
         personalities: require("./../data/legion/npc-personalities.js"),
         skillsMod: require("./../data/legion/npc-skills.js"),
-        dialogue: require("./../data/legion/npc-dialogue.js")
+        dialogue: require("./../data/legion/npc-dialogue.js"),
+        selfBuilt: require("./../data/legion/self-built-npcs.js")
       }
     : {
         names: root.LEGION_NPC_NAMES,
         personalities: root.LEGION_NPC_PERSONALITIES,
         skillsMod: root.LEGION_NPC_SKILLS,
-        dialogue: root.LEGION_NPC_DIALOGUE
+        dialogue: root.LEGION_NPC_DIALOGUE,
+        selfBuilt: root.LEGION_NPC_SELF_BUILT
       };
   const mod = factory(deps);
   if (typeof module !== "undefined" && module.exports) module.exports = mod;
@@ -39,6 +41,9 @@
   const SKILLS = deps.skillsMod.SKILLS;           // {id,type,name,category,shipClass,grades,effect}[]
   const GRADE_WEIGHTS = deps.skillsMod.GRADE_WEIGHTS; // {A,B,C,D}
   const DIALOGUE = deps.dialogue;                 // {generic, personality, skillCategory}
+  // 自建 NPC（来自模板 / 玩家提交）：仅提供专属台词与固定技能/性格，绝不改动内置随机角色库。
+  const SELF_BUILT = (deps.selfBuilt && Array.isArray(deps.selfBuilt.SELF_BUILT_NPCS))
+    ? deps.selfBuilt.SELF_BUILT_NPCS : [];
 
   // 12 种触发事件（与需求一致）
   const EVENTS = [
@@ -90,11 +95,17 @@
       personalityId: partial.personalityId != null ? partial.personalityId : null,
       skillId: partial.skillId != null ? partial.skillId : null,
       skillGrade: partial.skillGrade != null ? partial.skillGrade : null,
+      // 副技能（玩家 NPC 约定：随机 B 级）：与主技能并列计入对应类别递减，参与数值贡献。
+      secondarySkillId: partial.secondarySkillId != null ? partial.secondarySkillId : null,
+      secondarySkillGrade: partial.secondarySkillGrade != null ? partial.secondarySkillGrade : null,
       level: partial.level != null ? partial.level : 1,
       xp: partial.xp != null ? partial.xp : 0,
       boundShipInstanceId: partial.boundShipInstanceId != null ? partial.boundShipInstanceId : null,
       salaryState: partial.salaryState != null ? partial.salaryState : "paid",
       dialogueHistory: Array.isArray(partial.dialogueHistory) ? partial.dialogueHistory.slice() : [],
+      // 自建 NPC 专属台词：{ eventType: [line1, line2, ...] }，来自模板/玩家提交。
+      // 仅 getNpcDialogue 读取，绝不回写 DIALOGUE 内置库；缺场景时回退内置三级。
+      customDialogue: partial.customDialogue != null ? partial.customDialogue : null,
       // —— 战斗小队持久化字段（M1，2026-08-29）——
       // 修复状态权威来源在本体：destroyed / repairUntil / combatHp 不随战斗结束清理。
       // 新招募 NPC 恒为默认值；旧档 NPC 由 ensureLegionState 幂等补齐。
@@ -235,18 +246,25 @@
     const personalityId = npc.personalityId;
     const skillId = npc.skillId;
 
-    // 1) 候选池（按优先级）
+    // 0) 自建 NPC 专属台词（最高优先级，来自模板/玩家提交）
+    //    仅读取 npc.customDialogue，绝不回写 DIALOGUE 内置库；内置随机角色台词库零污染。
     let pool = [];
-    const pLine = DIALOGUE.personality[personalityId] && DIALOGUE.personality[personalityId][eventType];
-    if (Array.isArray(pLine) && pLine.length) pool = pLine;
-    else {
-      const skill = getSkillById(skillId);
-      const cat = skill ? skill.category : null;
-      const cLine = cat && DIALOGUE.skillCategory[cat] && DIALOGUE.skillCategory[cat][eventType];
-      if (Array.isArray(cLine) && cLine.length) pool = cLine;
+    const custom = npc.customDialogue && npc.customDialogue[eventType];
+    if (Array.isArray(custom) && custom.length) {
+      pool = custom;
+    } else {
+      // 1) 候选池（按优先级）：性格文案 > 技能类别文案 > 通用兜底
+      const pLine = DIALOGUE.personality[personalityId] && DIALOGUE.personality[personalityId][eventType];
+      if (Array.isArray(pLine) && pLine.length) pool = pLine;
       else {
-        const gLine = DIALOGUE.generic[eventType];
-        if (Array.isArray(gLine) && gLine.length) pool = gLine;
+        const skill = getSkillById(skillId);
+        const cat = skill ? skill.category : null;
+        const cLine = cat && DIALOGUE.skillCategory[cat] && DIALOGUE.skillCategory[cat][eventType];
+        if (Array.isArray(cLine) && cLine.length) pool = cLine;
+        else {
+          const gLine = DIALOGUE.generic[eventType];
+          if (Array.isArray(gLine) && gLine.length) pool = gLine;
+        }
       }
     }
     // 2) 兜底：若三级皆空（理论上不会发生），返回空串占位
@@ -308,7 +326,7 @@
   const MANUAL_REFRESH_MAX_MULT = 16;
 
   // 舰船尺寸阶级 → 经验倍率（按 type 后缀判定）
-  // support = 工业支援舰（驮星级 industrial_support，全游戏唯一）；尺寸定位对齐
+  // support = 工业支援舰（驮星级 / 云津级 industrial_support，当前同类两艘）；尺寸定位对齐
   // render3d/ShipContext.js 的「support ≈ cruiser（巡洋尺寸）」既有约定 → 取巡洋档 1.6。
   // 缺此档时兜底 0.5 会与「未绑定」同值，曾导致"UI 显示适配生效、经验实际不动"。
   const SHIP_TIER_MULT = {
@@ -352,6 +370,23 @@
     return true;
   }
 
+  // 自建 NPC 注入招募池（幂等）：未招募且未解雇的，按 npcId 去重补进 L.candidates。
+  // 自然/手动刷新会整批覆盖 L.candidates，故两个刷新函数末尾也要调用本函数，避免自建 NPC 被冲掉。
+  function injectSelfBuiltIntoCandidates(L) {
+    if (!L || !Array.isArray(L.candidates)) L.candidates = [];
+    if (!Array.isArray(SELF_BUILT) || !SELF_BUILT.length) return;
+    if (!Array.isArray(L.dismissedSelfBuilt)) L.dismissedSelfBuilt = [];
+    const inNpcs = new Set((L.npcs || []).map(function (n) { return n && n.npcId; }));
+    const inCands = new Set(L.candidates.map(function (c) { return c && c.npcId; }));
+    SELF_BUILT.forEach(function (def) {
+      if (!def || !def.npcId) return;
+      if (inNpcs.has(def.npcId)) return;                 // 已招募
+      if (L.dismissedSelfBuilt.indexOf(def.npcId) >= 0) return; // 已解雇，不复活
+      if (inCands.has(def.npcId)) return;                // 已在池中
+      L.candidates.push(createNpc(def));
+    });
+  }
+
   // —— 状态与激活 ——
   function ensureLegionState(state) {
     if (!state) return null;
@@ -379,6 +414,11 @@
       ensureNpcCombatFields(n);
       if (typeof n.mustered !== "boolean") n.mustered = false;
     });
+    // 自建 NPC（来自模板 / 玩家提交）走招募池，不预招募：
+    //   ensureLegionState 仅保证「池里出现」，实际进池在刷新后由 injectSelfBuiltIntoCandidates 幂等补齐；
+    //   已招募（在 npcs）/ 已解雇（记 dismissedSelfBuilt）则不再出现。
+    //   内置随机角色台词库不受影响——仅通过 npc.customDialogue 提供专属台词。
+    injectSelfBuiltIntoCandidates(L);
     return L;
   }
 
@@ -561,13 +601,18 @@
     return cap;
   }
   // NPC 技能原始值（含里程碑强化）：base + floor(level/10) * per
-  function getLegionNpcSkillRawValue(npc) {
-    const skill = getSkillById(npc && npc.skillId);
+  // 通用版本：直接吃 skillId/grade/level，供主技能与副技能共用。
+  function npcSkillRawValue(skillId, grade, level) {
+    const skill = getSkillById(skillId);
     if (!skill) return 0;
-    const g = skill.grades && skill.grades[npc.skillGrade];
+    const g = skill.grades && skill.grades[grade];
     if (!g) return 0;
-    const milestones = Math.floor((npc.level || 1) / 10);
+    const milestones = Math.floor((level || 1) / 10);
     return g.base + milestones * g.per;
+  }
+  // 主技能原始值（含里程碑强化）；副技能请用 npcSkillRawValue(npc.secondarySkillId, npc.secondarySkillGrade, npc.level)。
+  function getLegionNpcSkillRawValue(npc) {
+    return npcSkillRawValue(npc && npc.skillId, npc && npc.skillGrade, npc && npc.level);
   }
   function applyLegionNpcXp(npc, gained, cap) {
     if (!(npc.xp >= 0)) npc.xp = 0;
@@ -604,6 +649,7 @@
     const rng = resolveRng(opts.rng);
     const batch = generateLegionNpcCandidates(state, CANDIDATE_BATCH_SIZE, { rng: rng });
     L.candidates = batch;
+    injectSelfBuiltIntoCandidates(L); // 自建 NPC 不被整批刷新冲掉
     const now = (typeof opts.now === "number") ? opts.now : Date.now();
     L.candidateRefreshAt = now + CANDIDATE_REFRESH_MS; // 重新计算下次自然刷新
     L.manualRefreshCount = 0;                          // 自然刷新清零手动次数
@@ -623,6 +669,7 @@
     spendCurrency(state, "currency:lp", cost.lp);
     const rng = resolveRng(opts.rng);
     L.candidates = generateLegionNpcCandidates(state, CANDIDATE_BATCH_SIZE, { rng: rng });
+    injectSelfBuiltIntoCandidates(L); // 自建 NPC 不被整批刷新冲掉
     L.manualRefreshCount += 1;                         // 手动次数 +1
     // 不改变 candidateRefreshAt（自然计时器不受影响）
     return { changed: true, cost: cost, candidates: L.candidates };
@@ -650,6 +697,9 @@
       personalityId: candidate.personalityId,
       skillId: candidate.skillId,
       skillGrade: candidate.skillGrade,
+      secondarySkillId: candidate.secondarySkillId != null ? candidate.secondarySkillId : null,
+      secondarySkillGrade: candidate.secondarySkillGrade != null ? candidate.secondarySkillGrade : null,
+      customDialogue: candidate.customDialogue != null ? candidate.customDialogue : null,
       level: 1, xp: 0, boundShipInstanceId: null, salaryState: "paid", mustered: false, dialogueHistory: []
     });
     L.npcs.push(npc);
@@ -693,6 +743,11 @@
     if (isLegionNpcCombatLocked(npc)) return { changed: false, reason: "npc-combat-locked" };
     // 解雇仅移除 NPC，绑定舰船归还机库，不再销毁
     L.npcs.splice(idx, 1); // 立即释放人数位置；不返还任何资源
+    // 自建 NPC 被解雇后永久不再自动复活（与随机候选不同，它是固定角色）
+    if (Array.isArray(SELF_BUILT) && SELF_BUILT.some(function (d) { return d && d.npcId === npcId; })) {
+      if (!Array.isArray(L.dismissedSelfBuilt)) L.dismissedSelfBuilt = [];
+      if (L.dismissedSelfBuilt.indexOf(npcId) < 0) L.dismissedSelfBuilt.push(npcId);
+    }
     return { changed: true, npc: npc };
   }
 
@@ -851,18 +906,22 @@
     const categories = { production: 0, combat: 0, archaeology: 0, management: 0 };
     const contributions = [];
     const byCat = { production: [], combat: [], archaeology: [], management: [] };
+    function pushSkillEntry(n, sid, grade, isSecondary) {
+      const sk = getSkillById(sid);
+      if (sk && byCat[sk.category]) byCat[sk.category].push({ n: n, sid: sid, grade: grade, isSecondary: isSecondary });
+    }
     (L.npcs || []).forEach(function (n) {
       if (!isNpcWorking(n)) return; // 集结中 / 欠薪不计入
-      const sk = getSkillById(n.skillId);
-      if (sk && byCat[sk.category]) byCat[sk.category].push(n);
+      pushSkillEntry(n, n.skillId, n.skillGrade, false);
+      if (n.secondarySkillId) pushSkillEntry(n, n.secondarySkillId, n.secondarySkillGrade, true);
     });
     Object.keys(byCat).forEach(function (cat) {
-      byCat[cat].forEach(function (n, idx) {
+      byCat[cat].forEach(function (entry, idx) {
         const rank = idx + 1;
-        const raw = getLegionNpcSkillRawValue(n);
+        const raw = npcSkillRawValue(entry.sid, entry.grade, entry.n.level);
         const factor = sameCategoryDiminishingFactor(rank);
         categories[cat] += raw * factor;
-        contributions.push({ npcId: n.npcId, skillId: n.skillId, category: cat, rawValue: raw, factor: factor, effective: raw * factor, counted: true });
+        contributions.push({ npcId: entry.n.npcId, skillId: entry.sid, category: cat, rawValue: raw, factor: factor, effective: raw * factor, counted: true, isSecondary: entry.isSecondary });
       });
     });
     // 集结中 / 欠薪 NPC 也记录（counted:false）
@@ -870,6 +929,10 @@
       if (isNpcWorking(n)) return;
       const sk = getSkillById(n.skillId);
       if (sk) contributions.push({ npcId: n.npcId, skillId: n.skillId, category: sk.category, rawValue: getLegionNpcSkillRawValue(n), factor: 0, effective: 0, counted: false });
+      if (n.secondarySkillId) {
+        const ssk = getSkillById(n.secondarySkillId);
+        if (ssk) contributions.push({ npcId: n.npcId, skillId: n.secondarySkillId, category: ssk.category, rawValue: npcSkillRawValue(n.secondarySkillId, n.secondarySkillGrade, n.level), factor: 0, effective: 0, counted: false, isSecondary: true });
+      }
     });
     return { categories: categories, contributions: contributions };
   }
@@ -921,7 +984,7 @@
       (L.technologyLevel || 0),
       (L.npcs || []).map(function (n) {
         // 集结状态必须进签名：否则切换集结后快照命中缓存，被集结 NPC 的加成会继续生效。
-        return [n.npcId, n.salaryState, n.level, n.skillGrade, n.skillId, n.boundShipInstanceId, n.mustered ? "M" : "-"].join(":");
+        return [n.npcId, n.salaryState, n.level, n.skillGrade, n.skillId, n.secondarySkillGrade, n.secondarySkillId, n.boundShipInstanceId, n.mustered ? "M" : "-"].join(":");
       }).join("|"),
       MANAGEMENT_BUILDING_IDS.map(function (id) { return b[id] || 0; }).join(",")
     ].join("#");
@@ -967,18 +1030,22 @@
     };
 
     const byCat = { production: [], combat: [], archaeology: [], management: [] };
+    function pushSnapEntry(n, sid, grade) {
+      const sk = getSkillById(sid);
+      if (sk && byCat[sk.category]) byCat[sk.category].push({ n: n, sid: sid, grade: grade });
+    }
     (L.npcs || []).forEach(function (n) {
       if (!isNpcWorking(n)) return; // 集结中 / 欠薪不计入
-      const sk = getSkillById(n.skillId);
-      if (sk && byCat[sk.category]) byCat[sk.category].push(n);
+      pushSnapEntry(n, n.skillId, n.skillGrade);
+      if (n.secondarySkillId) pushSnapEntry(n, n.secondarySkillId, n.secondarySkillGrade);
     });
 
     Object.keys(byCat).forEach(function (cat) {
-      byCat[cat].forEach(function (n, idx) {
+      byCat[cat].forEach(function (entry, idx) {
         const rank = idx + 1;
-        const raw = getLegionNpcSkillRawValue(n);
+        const raw = npcSkillRawValue(entry.sid, entry.grade, entry.n.level);
         const factor = sameCategoryDiminishingFactor(rank);
-        const field = SKILL_FIELD[n.skillId];
+        const field = SKILL_FIELD[entry.sid];
         if (field) eff[field] += raw * factor;
       });
     });

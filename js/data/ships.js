@@ -120,6 +120,7 @@ const SHIP_ASSEMBLY_RECIPES = [
   { id:"dawnbreaker", name:"破晓级", shipId:"dawnbreaker", level:60, time:120, xp:200, componentCost:{battleship_integrated_hull:6,battleship_power_core:5,battleship_functional_system:5}, materialCost:{"钷":20,"铷":16,"天使高级加密数据":30} },
   { id:"crimson_bastion", name:"赤垒级", shipId:"crimson_bastion", level:60, time:120, xp:200, componentCost:{battleship_integrated_hull:6,battleship_power_core:5,battleship_functional_system:5}, materialCost:{"钷":20,"铷":16,"血袭者高级加密数据":30} },
   { id:"spectre_frame", name:"幽构级", shipId:"spectre_frame", level:60, time:120, xp:200, componentCost:{battleship_integrated_hull:6,battleship_power_core:5,battleship_functional_system:5}, materialCost:{"钷":20,"铷":16,"萨沙高级加密数据":30} },
+  { id:"yunjin", name:"云津级", shipId:"yunjin", level:65, time:200, xp:280, requiresBlueprint:false, componentCost:{battleship_integrated_hull:7,battleship_power_core:6,battleship_functional_system:7} },
   { id:"firmament", name:"天穹级", shipId:"firmament", level:80, time:300, xp:450, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:8} },
   { id:"heavy_bastion", name:"重垒级", shipId:"heavy_bastion", level:80, time:300, xp:450, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:8} },
   { id:"riftbreaker", name:"裂界级", shipId:"riftbreaker", level:80, time:300, xp:450, requiresBlueprint:false, componentCost:{capital_integrated_hull:10,capital_power_core:8,capital_functional_system:8} },
@@ -604,6 +605,18 @@ const INDUSTRIAL_SHIPS = {
     slots: { high: 4, mid: 3, low: 2, rig: 3 },
     bonuses: { gasLaserEfficiency: 1.4 },
     unlock: { type: "shipEngineering", level: 55 }
+  },
+  yunjin: {
+    id: "yunjin", name: "云津级", tier: "T1", type: "industrial_support",
+    flavor: "工业支援舰；在船坞中协调采矿编队并加速冶炼，自身不挂载采矿装备，定位介于驮星级与山海级之间",
+    hp: { shield: 1650, armor: 850, structure: 583 }, totalHp: 3083,
+    dodge: 9, speed: 120, targeting: 95,
+    capacitor: { capacity: 260 },
+    fuelEfficiency: 0.83,
+    slots: { high: 3, mid: 3, low: 2, rig: 2 },
+    bonuses: { fleetMiningSpeed: 0.17, smeltingSpeed: 0.28 },
+    fleetMiningExcludesSelf: true,
+    unlock: { type: "shipEngineering", level: 65 }
   },
   orca: {
     id: "orca", name: "山海级", tier: "旗舰", type: "industrial_capital",
