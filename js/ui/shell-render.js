@@ -780,12 +780,12 @@ window.addEventListener("message", function (event) {
 });
 
 function getManagedPanels() {
-  const ids = ["skill-overview-panel", "cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
+  const ids = ["skill-overview-panel", "cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel", "blueprint-lab-panel"];
   return ids.map(id => document.getElementById(id)).filter(Boolean);
 }
 
 function getGenericSkillPanels() {
-  const managedIds = ["skill-overview-panel", "cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel"];
+  const managedIds = ["skill-overview-panel", "cargo-panel", "save-panel", "settings-panel", "statistics-panel", "achievements-panel", "planetary-panel", "archaeology-panel", "shipeng-panel", "equipeng-panel", "booster-panel", "queue-panel", "combat-panel", "hangar-panel", "station-panel", "blueprintstore-panel", "research-panel", "leaderboard-panel", "legion-panel", "starmap-panel", "alliance-panel", "wormhole-panel", "blueprint-lab-panel"];
   const notChain = managedIds.map(id => `:not(#${id})`).join("");
   return [...document.querySelectorAll('.content > .panel' + notChain)];
 }
@@ -6119,6 +6119,9 @@ function installTutorialWidgetListeners() {
       if (!techId || !TITAN_SLOT_NODES[techId]) return;
       if (currentPage === "hangar") renderHangarPanel();
       if (orbitShipId) { buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); }
+      // 边缘双保险：玩家正停在战斗页看泰坦末日武器架时，研究完成瞬间显式刷新一次
+      // （战斗页虽实时重绘，但补全可消除「完成那一帧」的陈旧显示）。
+      if (currentPage === "combat") renderCombatPanel(Date.now());
     });
   }
   // 科技树画布：全部事件委托到容器，只注册一次；38 个节点不做逐个永久绑定。

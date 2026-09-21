@@ -6,8 +6,10 @@
  *
  * 这个函数只负责两件事：用上海时区的服务器日期固定当天任务，并把任务写入
  * alliance_daily_tasks。客户端传来的任务只作为“游戏侧任务预览”输入，服务端
- * 会重新检查字段、难度和奖励范围；正式上线前仍应把任务目录随函数一起固化，
- * 不应长期信任客户端传来的 materialValue/standardTimeSec。
+ * 会重新检查字段、难度和奖励范围；**任务条数由服务端按任务大厅等级封顶**
+ * （不再采信客户端 preview 的长度），并在响应里回报 expectedCount / hallLevel。
+ * 正式上线前仍应把任务目录随函数一起固化，不应长期信任客户端传来的
+ * materialValue/standardTimeSec —— 在那之前，条数已经不由客户端决定。
  */
 
 const API_BASE = String(process.env.CLOUDBASE_API_BASE || "").replace(/\/$/, "");
@@ -85,7 +87,11 @@ function rewardPoints(tier, materialValue, standardTimeSec, category) {
 
 function normalizeTasks(input, expectedCount) {
   const count = Math.max(5, Math.min(10, Number(expectedCount) || 5));
-  if (!Array.isArray(input) || input.length !== count) throw new Error("每日任务数量与任务大厅等级不匹配");
+  // 旧写法是 `input.length !== count`，而调用方恒传 count = input.length（previewCount
+  // 就是 preview.length）⇒ 左右永远相等，这条校验等于不存在，送 10 条也不会被拒。
+  // 改成上界校验后它才真的能拦「超过任务大厅授权条数」的输入（封顶在调用点完成，
+  // 这里是最后一道断言）。
+  if (!Array.isArray(input) || input.length < 5 || input.length > count) throw new Error("每日任务数量与任务大厅等级不匹配");
   return input.map((task, index) => {
     if (!task || Number(task.slot) !== index + 1) throw new Error("任务槽位无效");
     if (!CATEGORIES.has(task.category) || !TIERS[task.difficulty] || task.skill !== CATEGORY_SKILLS[task.category]) throw new Error("任务类别、技能或难度无效");
@@ -145,28 +151,45 @@ async function readTasks(playerId, date) {
     "&server_date=eq." + encodeURIComponent(date) + "&order=slot.asc", { method: "GET" });
 }
 
+// 返回 { count, hallLevel, resolved }。
+// resolved=false 表示查不到成员关系或任务大厅行 —— 此时 count 只是兜底值，
+// 调用方**不得**用它去封顶客户端条数（否则会把合法玩家的任务砍掉）。
 async function taskCountForPlayer(playerId) {
   const memberships = await db("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=eq." + encodeURIComponent(playerId) + "&limit=1", { method: "GET" });
-  if (!memberships || !memberships[0]) return 5;
+  if (!memberships || !memberships[0]) return { count: 5, hallLevel: 0, resolved: false };
   const buildings = await db("/v1/rdb/rest/alliance_buildings?select=building_type,level&alliance_id=eq." + encodeURIComponent(memberships[0].alliance_id) + "&building_type=in.(mission_hall)&limit=1", { method: "GET" });
-  const level = Math.max(0, Math.min(5, Number(buildings && buildings[0] && buildings[0].level) || 0));
-  return [5, 6, 7, 8, 10][Math.max(0, level - 1)] || 5;
+  const hall = buildings && buildings[0];
+  if (!hall) return { count: 5, hallLevel: 0, resolved: false };
+  const level = Math.max(0, Math.min(5, Number(hall.level) || 0));
+  return { count: [5, 6, 7, 8, 10][Math.max(0, level - 1)] || 5, hallLevel: level, resolved: true };
 }
 
 async function ensureTasks(playerId, date, preview) {
-  const expectedCount = await taskCountForPlayer(playerId);
+  const hall = await taskCountForPlayer(playerId);
+  const expectedCount = hall.count;
   const existing = await readTasks(playerId, date);
-  if (existing.length === expectedCount) return { tasks: existing, created: false };
-  // Allow a cached 5-10 item client preview while the mission hall level
-  // changes. The next daily refresh will converge to the server count.
-  const previewCount = Array.isArray(preview) && preview.length >= 5 && preview.length <= 10
-    ? preview.length : expectedCount;
-  const tasks = normalizeTasks(preview, previewCount);
+  if (existing.length === expectedCount) {
+    return { tasks: existing, created: false, expectedCount, hallLevel: hall.hallLevel };
+  }
+  // 客户端 preview 只是「材料清单」输入，条数上限由任务大厅等级决定。
+  // 旧行为是 previewCount = preview.length —— 等于把条数权威让给客户端，服务端自己
+  // 算出的 expectedCount 被直接丢弃（客户端只送 5 条，服务端就只建 5 行，且
+  // existing(5) !== expected(6) 天天成立却一个槽位都不补 ⇒ 全天卡 5 条）。
+  // 现在：只在确实解析出大厅等级（hall.resolved）时封顶，解析不到时保持旧行为，
+  // 避免误伤合法玩家。注意这里是**封顶而不是报错** —— 报错会让客户端退回本地预览，
+  // 玩家感知成「连不上」。
+  const offered = Array.isArray(preview) && preview.length >= 5 && preview.length <= 10 ? preview : null;
+  const accepted = offered ? (hall.resolved ? Math.min(offered.length, expectedCount) : offered.length) : 0;
+  const tasks = normalizeTasks(
+    offered && accepted > 0 ? offered.slice(0, accepted) : offered,
+    accepted > 0 ? accepted : expectedCount
+  );
   const existingSlots = new Set(existing.map(task => Number(task.slot)));
   const rows = tasks.map(task => ({
     player_id: playerId, server_date: date, slot: task.slot,
     category: task.category, skill: task.skill, material_id: task.materialId,
     material_name: task.materialName, required_amount: task.requiredAmount,
+    required_level: task.requiredLevel,
     submitted_amount: 0, difficulty: task.difficulty, reward_points: task.rewardPoints,
     material_value: task.materialValue, standard_time_sec: task.standardTimeSec,
     tactical_tier: task.tacticalTier, status: "open"
@@ -178,7 +201,7 @@ async function ensureTasks(playerId, date, preview) {
       body: JSON.stringify(rows)
     });
   }
-  return { tasks: await readTasks(playerId, date), created: true };
+  return { tasks: await readTasks(playerId, date), created: true, expectedCount, hallLevel: hall.hallLevel };
 }
 
 async function submitTask(body) {
@@ -239,7 +262,8 @@ exports.main = async function main(event) {
     }
     const date = serverDate();
     const result = await ensureTasks(body.playerId, date, body.taskPreview);
-    return reply(200, { ok: true, serverDate: date, created: result.created, tasks: result.tasks });
+    return reply(200, { ok: true, serverDate: date, created: result.created,
+      expectedCount: result.expectedCount, hallLevel: result.hallLevel, tasks: result.tasks });
   } catch (error) {
     console.error("alliance-daily-tasks", error);
     return reply(400, { ok: false, error: error.message || "daily_task_failed" });

@@ -1062,6 +1062,14 @@ function migrateDeathspaceState(combat, state) {
 // ================================================================
 function migrateBoosterState() {
   if (!gameState.skills || typeof gameState.skills !== "object") gameState.skills = {};
+  // 蓝图发明技能与增强剂制造同属工业技能，随旧存档读取时补齐。
+  if (!gameState.skills.blueprintInvention || typeof gameState.skills.blueprintInvention !== "object") {
+    gameState.skills.blueprintInvention = { lvl: 1, xp: 0 };
+  } else {
+    const blueprintSkill = gameState.skills.blueprintInvention;
+    if (!Number.isFinite(Number(blueprintSkill.lvl)) || Number(blueprintSkill.lvl) < 1) blueprintSkill.lvl = 1;
+    if (!Number.isFinite(Number(blueprintSkill.xp)) || Number(blueprintSkill.xp) < 0) blueprintSkill.xp = 0;
+  }
   if (!gameState.skills.boosterEngineering || typeof gameState.skills.boosterEngineering !== "object") {
     gameState.skills.boosterEngineering = { lvl: 1, xp: 0 };
   } else {
@@ -1744,6 +1752,12 @@ function normalizeAndMigratePayload(ctx) {
   if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
     ResearchState.migrateResearchState(gameState);
   }
+  // 泰坦注册表在上方（1729 行 registerTitanShipsFromState）按「研究迁移前」的 gameState 计算过一次槽位。
+  // 研究迁移（含旧档 completedLevels 兜底）完成后，必须用最终研究状态重算泰坦配置槽位，
+  // 否则已研究的 tt_high/mid/low/rig 释放的高槽/中槽/低槽/改装槽在启动后不生效——
+  // 表现为「已研究槽位时有时无」，直到下一次研究结算（completeResearchStep）触发刷新才补上。
+  // 此处兜底幂等、零副作用；titans.js 未加载时静默跳过。
+  if (typeof refreshTitanSlotResearch === "function") refreshTitanSlotResearch(gameState);
   if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
     AchievementState.migrateAchievementState(gameState);
   }

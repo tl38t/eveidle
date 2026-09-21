@@ -4,8 +4,23 @@
   var cloudOrigin = "https://alliance-deepspace-d4govx4ikc2e937c5.webapps.tcloudbase.com";
   var taskGateway = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/alliance-daily-tasks";
   var adminGateway = "https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com/alliance-admin";
-  var cloudTaskSyncStarted = false;
   var cloudTaskStatus = "local";
+  // 任务条数收敛用状态（2026-09-20）。
+  // 任务大厅等级是任务条数的权威来源，但它来自 alliance_buildings，只有 getAlliance() 之后
+  // 才到位；而任务同步 fetch 在 getAlliance() 之前就发出去了 ⇒ 首轮只能按本地旧的建筑数据
+  // 估算（常常退化成 5）。服务端 ensureTasks 又是按「客户端 preview 长度」建行的 ⇒ 两边互相
+  // 等对方先变成 6，全天卡在 5 条（实测 2026-09-20：大厅 L2 应为 6，DB 当天只有 slot 1-5，
+  // 而 09-12 / 09-18 都是 6 行）。所以：
+  //   renderedTaskCount   = 上一次真正渲染出的任务行数，建筑数据到位后据此判断要不要补条数；
+  //   reloadedHallCount    = 已经为哪个大厅条数触发过一次收敛重绘（防 load() 死循环）；
+  //   cloudTaskSyncDone    = 本次进页面后是否已经发过同步（保持原 cloudTaskSyncStarted 的
+  //                          「一次性」语义；收敛时显式复位，一次进页面最多补一次）；
+  //   cloudTaskSyncAttempts = 已发出的同步次数，多次都补不上就退回服务端条数（见下方兜底）。
+  var cloudTaskSyncDone = false;
+  var cloudTaskSyncAttempts = 0;
+  var cloudTaskAttemptDate = "";
+  var renderedTaskCount = 0;
+  var reloadedHallCount = -1;
   var activeCloudUrl = "";
 
   function esc(value) {
@@ -633,6 +648,25 @@
     });
   }
 
+  // 建筑数据（含任务大厅等级）到位后调用：若大厅等级给出的每日任务条数**大于**当前已渲染
+  // 的行数，说明首轮任务同步是在建筑数据到位之前发的（很可能只送了 5 条）⇒ 补一次收敛。
+  // 三条护栏：① 只在「变多」时动手（变少不裁剪，避免把服务端已建好的行丢掉）；
+  // ② 同一个目标条数只触发一次（reloadedHallCount），防 load() ⇄ startCloudRefresh 互触发；
+  // ③ 延到本轮渲染链结束再 load()，否则会把外层还没写完的 box.innerHTML 写到已被替换的旧节点上。
+  function convergeTaskCountWithBuildings(buildings) {
+    if (!root.AllianceBuildingConfig || typeof root.AllianceBuildingConfig.dailyTaskCount !== "function") return;
+    var hallCount = root.AllianceBuildingConfig.dailyTaskCount(buildings || []);
+    if (!(hallCount > renderedTaskCount)) return;
+    if (hallCount === reloadedHallCount) return;
+    reloadedHallCount = hallCount;
+    // 复位一次性闸门，让这一轮 load() 能把缺失的槽位补出来（服务端 ensureTasks 是按客户端
+    // preview 长度建行的：只有客户端先按大厅条数送 6 条，服务端才会建出 slot 6）。
+    cloudTaskSyncDone = false;
+    setTimeout(function () {
+      if (typeof load === "function") load();
+    }, 0);
+  }
+
   function startCloudRefresh() {
     var ctx = activeRender;
     if (!ctx) return;
@@ -643,9 +677,13 @@
     var box = document.getElementById("alliance-state");
     if (!box) return;
     if (root.AllianceApi && typeof root.AllianceApi.pingOnline === "function") root.AllianceApi.pingOnline();
+    // getAlliance() 拿回来的 alliance_buildings 就是服务端 taskCountForPlayer() 用的同一份数据
+    // ⇒ 一旦它到位，客户端算出的条数与服务端口径一致。这里先留存，等整条刷新链跑完再用于收敛。
+    var convergedBuildings = null;
     withTimeout(root.AllianceApi.getAlliance(), 8000).then(function (alliance) {
       if (alliance) {
         rememberAlliance(alliance);
+        convergedBuildings = alliance.buildings;
         return root.AllianceApi.getMemberStats(alliance.id).then(function (members) {
           if (root.AllianceApi && typeof root.AllianceApi.pingOnline === "function") root.AllianceApi.pingOnline();
           box.innerHTML = renderMemberCard(alliance, members);
@@ -676,6 +714,10 @@
       hint.style.cssText = "margin-top:10px;color:#f2c879;";
       hint.textContent = "云端未连接：请点击上方“打开云端联盟”获取联盟信息；提交建设任务后，建设点会回传云端。";
       box.appendChild(hint);
+    }).then(function () {
+      // 必须放在整条链的最后：任务条数收敛会重新 load()（整块 content.innerHTML 重建），
+      // 若在 getMemberStats 之前触发，成员卡的 box.innerHTML 会写到已被替换掉的旧节点上。
+      if (convergedBuildings) convergeTaskCountWithBuildings(convergedBuildings);
     });
   }
 
@@ -770,8 +812,12 @@
       ? root.AllianceApi.getPlayerId()
       : "";
     var taskPreview = [];
-    var taskCount = root.AllianceBuildingConfig && root.gameState && root.gameState.alliance
+    // 任务大厅等级是任务条数的权威来源，但它来自 alliance_buildings，只有 getAlliance()
+    // 之后才到位（见 startCloudRefresh）⇒ 首次 load() 必然拿不到，先按已保存的建筑数据
+    // 估算、拿不到就兜底 5；建筑数据刷新到位后由 convergeTaskCountWithBuildings() 收敛。
+    var hallTaskCount = root.AllianceBuildingConfig && root.gameState && root.gameState.alliance
       ? root.AllianceBuildingConfig.dailyTaskCount(root.gameState.alliance.buildings || []) : 5;
+    var taskCount = hallTaskCount;
     var taskDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
     var taskCacheKey = "eve_idle_alliance_tasks_v4_" + playerId + "_" + taskDate;
     // 按需构建（缓存/云端行都缺 required_level 时才建一次），避免每次都跑目录构建。
@@ -786,17 +832,22 @@
       if (cached) {
         try { taskPreview = JSON.parse(cached); } catch (ignore) { taskPreview = []; }
       }
-      // 云端同步过的任务（每项都带 serverTaskId）以服务端条数为权威。本地 taskCount
-      // 是按 gameState.alliance.buildings 估算的，而建筑数据要等云端刷新（本函数末尾
-      // getAlliance）才到位 ⇒ 首轮渲染时可能滞后（大厅 L2 只算成 5）。一旦与服务端
-      // 条数不符，旧逻辑会用本地预览覆盖云端任务、丢掉 serverTaskId，导致「云端状态」
-      // 下提交按钮不生成（并随后被写回缓存，持续复现）。故此处直接采纳云端条数。
+      // 云端同步过的任务（每项都带 serverTaskId）代表服务端已有的条数。这里**只增不减**：
+      // 服务端条数更少说明它的槽位还没补齐 —— 云函数 ensureTasks 是按「客户端 preview 的
+      // 长度」建行的，客户端只送 5 条，服务端就永远只有 5 行（实测 2026-09-20：大厅 L2
+      // 应为 6，DB 里当天只有 slot 1-5，且因为 existing(5) !== expected(6)，每次同步都走
+      // previewCount=5 分支，一个槽位都不补 ⇒ 全天卡在 5 条）。所以必须把 preview 拉到大池
+      // 等级，下一次同步才会把缺的槽位建出来；同时保住已同步行的 serverTaskId（第 3 轮
+      // 旧逻辑用本地预览整体覆盖云端行、丢掉 id ⇒「有云端状态但点不了提交」）。
       var cloudTaskCount = Array.isArray(taskPreview) && taskPreview.length > 0 &&
         taskPreview.every(function (item) { return item && item.serverTaskId; })
         ? taskPreview.length : 0;
-      if (cloudTaskCount) {
-        taskCount = cloudTaskCount;
-      } else if (!Array.isArray(taskPreview) || taskPreview.length !== taskCount) {
+      if (cloudTaskCount) taskCount = Math.max(taskCount, cloudTaskCount);
+      // 兜底：已经发过 2 次同步（首轮 + 收敛各一次）而服务端始终只回更少的行，说明它算出的
+      // 大厅条数就是更小（例如本地建筑数据比服务端新）⇒ 退回服务端条数，宁可按已有行渲染
+      // （每行都有 serverTaskId、能提交），也不显示本地生成的无 id 行。
+      if (cloudTaskSyncAttempts >= 2 && cloudTaskCount > 0 && cloudTaskCount < taskCount) taskCount = cloudTaskCount;
+      if (!Array.isArray(taskPreview) || taskPreview.length !== taskCount) {
         var taskCatalog = root.AllianceTaskCatalog && root.AllianceTaskCatalog.buildRuntimeCatalog
           ? root.AllianceTaskCatalog.buildRuntimeCatalog(root) : [];
         taskPreview = root.AllianceTaskModel && root.AllianceTaskModel.generateFive
@@ -818,8 +869,15 @@
       if (taskPreview.length === taskCount && root.localStorage) root.localStorage.setItem(taskCacheKey, JSON.stringify(taskPreview));
     } catch (error) { taskPreview = []; }
     if (!identityReady || /^local_/.test(String(playerId))) cloudTaskStatus = "local";
-    if (identityReady && !isTapTapRuntime() && !/^local_/.test(String(playerId)) && !cloudTaskSyncStarted && taskPreview.length === taskCount) {
-      cloudTaskSyncStarted = true;
+    // 本次真正渲染出的行数 —— 建筑数据到位后 convergeTaskCountWithBuildings() 拿它做对照。
+    renderedTaskCount = taskPreview.length;
+    // 按天重置计数：跨天后重新允许「把条数补齐」的尝试。
+    if (cloudTaskAttemptDate !== taskDate) { cloudTaskAttemptDate = taskDate; cloudTaskSyncAttempts = 0; }
+    var canSyncTasks = identityReady && !isTapTapRuntime() && !/^local_/.test(String(playerId)) &&
+      !cloudTaskSyncDone && taskPreview.length === taskCount;
+    if (canSyncTasks) {
+      cloudTaskSyncDone = true;
+      cloudTaskSyncAttempts += 1;
       cloudTaskStatus = "syncing";
       fetch(taskGateway, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -854,6 +912,9 @@
           };
         });
         taskPreview = synced;
+        // 服务端回的行数达到我们要的条数 ⇒ 这一轮补齐成功，把尝试计数清零（说明它认这个条数）；
+        // 回得更少 ⇒ 它按客户端 preview 长度建行、而这次没补上，计数留着给下面的兜底用。
+        if (synced.length >= taskCount) cloudTaskSyncAttempts = 0;
         if (root.localStorage) root.localStorage.setItem(taskCacheKey, JSON.stringify(synced));
         cloudTaskStatus = "cloud";
         load();
@@ -942,6 +1003,11 @@
       : '';
     if (root.gameState && params.has("allianceId")) {
       if (returnedId && returnedCode) {
+        // relay 的 allianceSnapshot 不保证带 buildings。旧逻辑在缺失时直接写 []，会把本地已知的
+        // 任务大厅等级清成 0 ⇒ dailyTaskCount 退化成 5 ⇒ 当天任务被锁在 5 条（服务端按客户端
+        // preview 长度建行，少送的槽位一整天都不会补）。缺失时保留本地已有的建筑数据。
+        var previousBuildings = root.gameState.alliance && Array.isArray(root.gameState.alliance.buildings)
+          ? root.gameState.alliance.buildings : [];
         root.gameState.alliance = {
           isMember: true,
           allianceId: returnedId,
@@ -953,7 +1019,8 @@
           buildingLevel: Math.max(0, Math.min(5, Number.isFinite(returnedBuildingLevel) ? returnedBuildingLevel : 0)),
           memberList: returnedSnapshot && Array.isArray(returnedSnapshot.members) ? returnedSnapshot.members : returnedMemberList,
           construction: returnedSnapshot && returnedSnapshot.construction ? returnedSnapshot.construction : null,
-          buildings: returnedSnapshot && Array.isArray(returnedSnapshot.buildings) ? returnedSnapshot.buildings : []
+          buildings: returnedSnapshot && Array.isArray(returnedSnapshot.buildings) && returnedSnapshot.buildings.length
+            ? returnedSnapshot.buildings : previousBuildings
         };
       } else {
         root.gameState.alliance = null;
@@ -1134,7 +1201,14 @@
       var level = Math.max(0, Number(building.level) || 0);
       if (!level) return "";
       if (type === "frontier_hq" || type === "logistics_hub") return "总部：成员上限 " + returnedCap + " 人";
-      if (type === "mission_hall") return "任务大厅：每日任务 " + level + " 个";
+      // 这里要显示的是「每日任务条数」，不是建筑等级 —— 旧写法直接把 level 当条数印出来，
+      // 任务大厅 L2 会显示成「每日任务 2 个」（真实值是 6 个）。
+      if (type === "mission_hall") {
+        var hallLevels = root.AllianceBuildingConfig && root.AllianceBuildingConfig.BUILDINGS &&
+          root.AllianceBuildingConfig.BUILDINGS.mission_hall && root.AllianceBuildingConfig.BUILDINGS.mission_hall.levels;
+        var hallRow = hallLevels && hallLevels[Math.max(0, Math.min(5, level) - 1)];
+        return "任务大厅：每日任务 " + (hallRow ? hallRow.dailyTasks : level) + " 个";
+      }
       if (type === "combat_command") return "战斗指挥部：战斗伤害 +" + (level * 2) + "%";
       if (type === "refining_core") return "冶炼中枢：冶炼效率 +" + (level * 5) + "%";
       return "";

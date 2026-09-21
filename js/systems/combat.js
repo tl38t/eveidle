@@ -1410,12 +1410,19 @@ function tryResumeCombatAfterRepair() {
 //   返回 { ok, advanced, active, pending, recovering, reason }。
 // ============================================================================
 // M6 阶段 1：给定当前目标，返回数组顺序中下一个「存活（structure>0 且未 defeated）」的敌人。
-// 线性向后扫描（不回绕）；无则 null（攻击者停止）。仅依赖 c.enemies 顺序，不触碰任何状态。
+// 先线性向后扫描（idx+1..末尾）；到达数组末尾仍未命中则回绕到数组头继续扫描（0..idx），
+// 保证指针左侧的存活敌人也可达（修复「精英位于高下标时其左侧小怪永不可达 → NPC 打空气」）。
+// 正常前向命中时行为与修复前完全一致。无存活敌人则 null（攻击者停止）。仅依赖 c.enemies 顺序，不触碰任何状态。
 function getNextLivingEnemy(c, fromEnemy) {
   const enemies = (c && c.enemies) ? c.enemies : [];
   const startIdx = fromEnemy ? enemies.indexOf(fromEnemy) : -1;
   const start = startIdx >= 0 ? startIdx + 1 : 0;
   for (let i = start; i < enemies.length; i++) {
+    const e = enemies[i];
+    if (e && !e.defeated && e.hp && e.hp.structure > 0) return e;
+  }
+  // 回绕：从数组头扫描到起点之前的位置（含起点之前的下标），确保左侧存活敌人可达
+  for (let i = 0; i < start; i++) {
     const e = enemies[i];
     if (e && !e.defeated && e.hp && e.hp.structure > 0) return e;
   }

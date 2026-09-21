@@ -1572,6 +1572,12 @@
             const candidate = enemies[i];
             if (candidate && candidate.hp && candidate.hp.structure > 0 && !candidate.defeated) return candidate;
           }
+          // 回绕：从数组头扫描到起点之前的位置，保证指针左侧存活敌人也可达（与在线 getNextLivingEnemy 同构）。
+          // 离线 current 恒从数组头起步且只前移，正常流程永不触发本回绕，故离线结算结果与修复前逐字节一致。
+          for (let i = 0; i < Math.max(0, start); i++) {
+            const candidate = enemies[i];
+            if (candidate && candidate.hp && candidate.hp.structure > 0 && !candidate.defeated) return candidate;
+          }
           return null;
         };
         const advanceTarget = () => {

@@ -303,6 +303,8 @@ function buildActualStatsHtml(stats, opts) {
       const expr = it.note ? squadEscape(it.note)
         : casFmt(it.base) + " × 强化 " + casNum(it.enhancement) + " × 类型 " + casNum(it.typeMult) +
           (it.atkBooster !== undefined && it.atkBooster !== 1 ? " × 增强剂 " + casNum(it.atkBooster) : "") +
+          (it.allianceMult !== undefined && it.allianceMult !== 1 ? " × 联盟 " + casNum(it.allianceMult) : "") +
+          (it.adBuffMult !== undefined && it.adBuffMult !== 1 ? " × 脑突触 " + casNum(it.adBuffMult) : "") +
           (it.levelMult !== undefined ? " × 等级 " + casNum(it.levelMult) : "");
       html.push('<div class="cas-row"><span class="cas-name">' + squadEscape(it.name) + '</span>' +
         '<span class="cas-expr">' + expr + '</span>' +
@@ -356,7 +358,7 @@ function buildActualStatsHtml(stats, opts) {
   if (allianceCombatBonus > 0) notes.push("联盟战斗加成：前线作战指挥部 +" + casPct(allianceCombatBonus) + "，已计入实时玩家伤害。");
   if (opts.levelMult !== undefined && opts.levelMult !== null) notes.push("等级伤害倍率 ×" + casNum(opts.levelMult) + "（LV1 30% → LV70 100%）已计入上方攻击。");
   if (opts.excludeImplants) notes.push("NPC 绑定舰按独立口径计算（排除玩家脑插加成）。");
-  notes.push("面板口径：含装备强化、武器/维修增强剂与技能/船体/科研乘区；不含弹药加成、克制倍率、命中-闪避系数与 ±10% 随机浮动。维修按满结构基准估算，不含低血应急加成。");
+  notes.push("面板口径：含装备强化、武器/维修增强剂、联盟/脑突触加成与技能/船体/科研乘区；不含弹药加成、克制倍率、命中-闪避系数与 ±10% 随机浮动。维修按满结构基准估算，不含低血应急加成。");
   html.push('<div class="cas-note">' + notes.join("<br>") + '</div>');
 
   return html.join("");

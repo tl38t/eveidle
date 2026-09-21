@@ -22,6 +22,7 @@ const INITIAL_SKILLS = {
   shipEngineering:         { lvl: 1, xp: 0 },
   equipmentEngineering:    { lvl: 1, xp: 0 },
   boosterEngineering:      { lvl: 1, xp: 0 }, // 增强剂系统 Phase 2A：增强剂制造独立技能，默认 Lv.1
+  blueprintInvention:      { lvl: 1, xp: 0 }, // 蓝图发明：研究已有蓝图并解锁发明强化，默认 Lv.1
   // 战斗攻击技能（三系独立）
   laserOps:                { lvl: 1, xp: 0 },
   cannonOps:               { lvl: 1, xp: 0 },

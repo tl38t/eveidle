@@ -108,7 +108,7 @@ const HANGAR_ASSEMBLY_LINES = (function () {
   return lines;
 })();
 const SHIP_ASSEMBLY_PAGE_SIZE = 20;
-const SHIP_INDUSTRIAL_IDS = new Set(["miner_frigate","gas_frigate","miner_destroyer","gas_destroyer","miner_cruiser","gas_cruiser","miner_battleship","gas_battleship","dolphin","orca"]);
+const SHIP_INDUSTRIAL_IDS = new Set(["miner_frigate","gas_frigate","miner_destroyer","gas_destroyer","miner_cruiser","gas_cruiser","miner_battleship","gas_battleship","dolphin","orca","yunjin"]);
 const SHIP_ARCHAEOLOGY_IDS = new Set(["heron","tracer","starmap","farscope","illuminator"]);
 const SHIP_HYBRID_IDS = new Set(["gale","bloodthorn","umbra","thunder","crimson","nether","dawnbreaker","crimson_bastion","spectre_frame"]);
 
@@ -152,6 +152,7 @@ function getShipRoleName(shipIdOrRecipe) {
   if (shipId.startsWith("gas_")) return "气体采集工业舰";
   if (shipId === "dolphin") return "工业支援巡洋舰";
   if (shipId === "orca") return "工业旗舰";
+  if (shipId === "yunjin") return "工业支援舰";
   const cfg = getShipConfigById(shipId);
   const type = cfg && cfg.type;
   const TYPE_MAP = { frigate:"护卫舰", destroyer:"驱逐舰", cruiser:"巡洋舰", battleship:"战列舰", capital:"旗舰", supercapital:"超级旗舰" };
@@ -308,7 +309,7 @@ function getSidebarDisplayState(state) {
 }
 
 function getSkillShellDisplayState(state, viewKey) {
-  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔", archaeology:"🛰️" };
+  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", boosterEngineering:"💉", blueprintInvention:"🧬", combat:"⚔", archaeology:"🛰️" };
   const skill = state.skills[viewKey] || { lvl:1, xp:0 };
   const baseLevel = Number(skill.lvl) || 1;
   const level = (typeof getEffectiveSkillLevel === "function") ? (getEffectiveSkillLevel(state, viewKey) || baseLevel) : baseLevel;
@@ -334,7 +335,7 @@ function getSkillShellDisplayState(state, viewKey) {
 function getCurrentActivityDisplayState(state, now) {
   const action = state.currentAction;
   if (!action.active) return { active:false, text:"待命", progressPercent:0, progressActive:false };
-  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔", archaeology:"🛰️" };
+  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", boosterEngineering:"💉", blueprintInvention:"🧬", combat:"⚔", archaeology:"🛰️" };
   const key = action.skill;
   const skill = state.skills[key] || { lvl:1 };
   let detail = "";
@@ -2646,13 +2647,21 @@ function getCombatActualStatsFromState(state, context) {
   // 2026-09-10 修复：补显示武器增强剂乘区（combat.js L1503 实弹 baseDamage×强化×weaponBoosterMult，
   // 面板此前漏乘 → 有战斗增强剂时面板攻击低于实弹；与维修行「× 增强剂」同口径）
   const boosterDmg = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(state).weaponDamageMultiplier : null;
+  // 玩家侧全局乘区（联盟「前线作战指挥部」+ 脑突触加速剂）：在线常规管线 combat.js:1680-1683、
+  // 离线 offline-combat.js:1529-1535 均已乘，泰坦主炮/附带打击面板也含；此前常规武器面板漏乘
+  // ⇒ 面板攻击低估（例：联盟×1.10·脑突触×1.30 时面板只有实战的 1/1.43）。此处对齐三端口径。
+  const combatAllianceMult = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
+    ? (1 + AllianceBuildingConfig.effects(state.alliance.buildings).combatDamageBonus) : 1;
+  const combatAdBuffMult = (typeof getAdBuffMultiplier === "function") ? (Number(getAdBuffMultiplier(state)) || 1) : 1;
   const attackItems = [];
   let attackRaw = 0;
   for (const m of weapons) {
     const typeMult = Number(getCombatDamageMultiplierFromState(state, m.combat.weaponType, cOpts)) || 1;
     const enhancement = Number(m.multiplier) || 1;
     const atkBooster = (boosterDmg && boosterDmg[m.combat.weaponType]) ? Number(boosterDmg[m.combat.weaponType]) || 1 : 1;
-    const value = (Number(m.combat.baseDamage) || 0) * enhancement * typeMult * atkBooster;
+    // 2026-09-21：补乘 联盟 × 脑突触（与在线 combat.js / 离线 offline-combat.js 常规管线同口径），
+    // 并把两个乘区带给渲染层展示（NPC 快照无此两字段 ⇒ 不受影响）。
+    const value = (Number(m.combat.baseDamage) || 0) * enhancement * typeMult * atkBooster * combatAllianceMult * combatAdBuffMult;
     attackRaw += value;
     attackItems.push({
       name: m.name || m.combat.weaponType,
@@ -2661,6 +2670,8 @@ function getCombatActualStatsFromState(state, context) {
       enhancement: enhancement,
       typeMult: typeMult,
       atkBooster: atkBooster,
+      allianceMult: combatAllianceMult,
+      adBuffMult: combatAdBuffMult,
       value: Math.round(value)
     });
   }
@@ -2684,9 +2695,9 @@ function getCombatActualStatsFromState(state, context) {
         (state && state.combat && state.combat.active) ? state.combat.maxHp : null)) || 1) : 1;
     const ownCoreAura = (typeof getTitanCoreAura === "function") ? getTitanCoreAura(ship.core) : null;
     const auraMult = ownCoreAura ? (1 + (Number(ownCoreAura.squadDamageBonus) || 0)) : 1;
-    const allianceMult = (typeof AllianceBuildingConfig !== "undefined" && state.alliance && state.alliance.buildings)
-      ? (1 + AllianceBuildingConfig.effects(state.alliance.buildings).combatDamageBonus) : 1;
-    const adBuffMult = (typeof getAdBuffMultiplier === "function") ? (Number(getAdBuffMultiplier(state)) || 1) : 1;
+    // 与常规武器共用同一份全局乘区（上方 combatAllianceMult / combatAdBuffMult），保证面板内各武器同源。
+    const allianceMult = combatAllianceMult;
+    const adBuffMult = combatAdBuffMult;
     const critExpected = (typeof rollTitanCritMultiplier === "function")
       ? (Number(rollTitanCritMultiplier(tw.crit, null)) || 1) : 1;   // rng 传 null = 期望乘数
     const titanTypeMult = Number(getCombatDamageMultiplierFromState(state, tw.weaponType, cOpts)) || 1;
@@ -2733,6 +2744,11 @@ function getCombatActualStatsFromState(state, context) {
     for (const g of groupedStrikes) {
       const critMult = (g.kind === "sweep") ? sweepCritExpected : 1;
       const val = Math.round(g.raw * strikeChain * critMult);
+      // note 补展示联盟/脑突触（strikeChain 数值早已含二者，此前只差显示）。
+      const globalNote = [
+        (allianceMult !== 1 ? "联盟 ×" + allianceMult.toFixed(2) : ""),
+        (adBuffMult !== 1 ? "脑突触 ×" + adBuffMult.toFixed(2) : "")
+      ].filter(Boolean).join(" · ");
       attackRaw += val;
       attackItems.push({
         name: (STRIKE_LABEL[g.kind] || "附加打击") + (g.units > 1 ? " ×" + g.units : ""),
@@ -2741,7 +2757,8 @@ function getCombatActualStatsFromState(state, context) {
         value: val,
         titanStrike: true,
         note: "每轮 " + Math.round(g.raw) + (g.retrigger ? "（期望值 chance×damage）" : "") +
-          (critMult !== 1 ? " · 扫掠暴击同享 ×" + critMult.toFixed(2) : "")
+          (critMult !== 1 ? " · 扫掠暴击同享 ×" + critMult.toFixed(2) : "") +
+          (globalNote ? " · " + globalNote : "")
       });
     }
     // 每轮燃料 = 主武器齐射燃料 + 核心维持供能（与 combat.js titanVolleyFuel / titanCoreSustainFuel 同式）
@@ -4756,7 +4773,7 @@ function getCombatSupplyWarning(state, zone) {
 function getQueueDisplayState(state) {
   const queue = state.queue || { items:[], config:{}, status:{} };
   const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔" };
-  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", boosterEngineering:"💉增强剂", archaeology:"🔍考古", combat:"⚔战斗" };
+  const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", boosterEngineering:"💉增强剂", blueprintInvention:"🧬蓝图发明", archaeology:"🔍考古", combat:"⚔战斗" };
   const combat = state.combat || {};
   const queueRunning = Boolean(queue.status.isRunning) && queue.status.activeIndex >= 0;
   return {
@@ -4932,8 +4949,8 @@ function getStatisticsDisplayState(state) {
 }
 
 function getNavigationDisplayState(page, view) {
-  const standalonePages = { "skill-overview":"skill-overview-panel", cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel", alliance:"alliance-panel", wormhole:"wormhole-panel" };
-  const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", combat:"combat-panel" };
+  const standalonePages = { "skill-overview":"skill-overview-panel", cargo:"cargo-panel", save:"save-panel", settings:"settings-panel", statistics:"statistics-panel", planetary:"planetary-panel", queue:"queue-panel", combat:"combat-panel", hangar:"hangar-panel", archaeology:"archaeology-panel", station:"station-panel", blueprints:"blueprintstore-panel", lpstore:"blueprintstore-panel", legion:"legion-panel", alliance:"alliance-panel", wormhole:"wormhole-panel", blueprintLab:"blueprint-lab-panel" };
+  const skillPanels = { shipEngineering:"shipeng-panel", equipmentEngineering:"equipeng-panel", boosterEngineering:"booster-panel", blueprintInvention:"blueprint-lab-panel", combat:"combat-panel" };
   const selectedPage = page || "skill";
   const selectedView = view || "mining";
   return {

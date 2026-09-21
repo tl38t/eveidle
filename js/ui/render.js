@@ -22,7 +22,8 @@ const SKILL_DESC = {
   archaeology: "扫描遗迹信号并解析其中的文物",
   drones: "（占位）无人机伤害加成",
   equipmentEngineering: "制造舰船装备、燃料与各类弹药",
-  boosterEngineering: "制造采矿、考古与战斗增强剂"
+  boosterEngineering: "制造采矿、考古与战斗增强剂",
+  blueprintInvention: "研究已有蓝图，降低制造材料与时间消耗，并进行改装件发明"
 };
 
 const PAGE_DESC = {

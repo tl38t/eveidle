@@ -463,6 +463,7 @@ const SKILL_LABEL = {
   mining: "采矿", refining: "冶炼", gasHarvesting: "气体采集",
   shipEngineering: "舰船工程", equipmentEngineering: "装备工程",
   boosterEngineering: "增强剂制造",
+  blueprintInvention: "蓝图发明",
   archaeology: "考古",
   combat: "战斗"
 };
