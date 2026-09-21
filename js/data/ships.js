@@ -614,7 +614,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 260 },
     fuelEfficiency: 0.83,
     slots: { high: 3, mid: 3, low: 2, rig: 2 },
-    bonuses: { fleetMiningSpeed: 0.17, smeltingSpeed: 0.28 },
+    bonuses: { fleetMiningSpeed: 0.17, smeltingSpeed: 0.28, pumpEfficiency: 0.30 },
     fleetMiningExcludesSelf: true,
     unlock: { type: "shipEngineering", level: 65 }
   },
@@ -626,7 +626,7 @@ const INDUSTRIAL_SHIPS = {
     capacitor: { capacity: 300 },
     fuelEfficiency: 0.80,
     slots: { high: 4, mid: 4, low: 2, rig: 3 },
-    bonuses: { miningLaserEfficiency: 1.8, gasLaserEfficiency: 1.8, fleetMiningSpeed: 0.20, smeltingSpeed: 0.30 },
+    bonuses: { miningLaserEfficiency: 1.8, gasLaserEfficiency: 1.8, fleetMiningSpeed: 0.20, smeltingSpeed: 0.30, pumpEfficiency: 0.50 },
     unlock: { type: "shipEngineering", level: 80 }
   }
 };

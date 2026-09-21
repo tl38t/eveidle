@@ -1735,6 +1735,16 @@ function normalizeAndMigratePayload(ctx) {
   migrateMoonMiningState();
   // 泰坦注册表必须在幽灵船清理之前填充：否则 shipId 未注册的泰坦会被 shipIdKnownInShipData 判为幽灵船删除。
   if (typeof registerTitanShipsFromState === "function") registerTitanShipsFromState(gameState);
+  // 注册后立刻按当前研究状态重算泰坦槽位 —— 必须早于下面任何装备规范化/裁剪。
+  // 原因：泰坦 cfg.slots 的 mid/low/rig = 舰体基础 + 研究增量（tt_mid/tt_low/tt_rig），是**派生量**；
+  // 而 registerTitanConfig 对「已注册组合」走早返回、不刷新槽位。boot 早期若已有路径取过泰坦配置
+  // （制造列表 / 机库 / getShipConfigById / 船坞缩略图等，此时存档尚未加载 ⇒ 研究读作 0），
+  // 该组合会被按**基础槽位**注册并固化；此后启动注册命中早返回，槽位就一直是偏小的基础值。
+  // 不在此处修正，下游 finalizeEquipmentStateAfterLegacyMigrations（→ migrateShipAndEquipmentState →
+  // ensureShipInstances → reclaimOverflowFitting）就会用偏小的槽位把玩家用「研究释放槽位」装的
+  // 装备/改装件判为越界、移出装配位并退回仓库 —— 表现为「上线后装备、改件少了」，
+  // 以及「研究出来的高槽/中槽/低槽/改装槽时有时无」。幂等、零副作用；titans.js 缺载时静默跳过。
+  if (typeof refreshTitanSlotResearch === "function") refreshTitanSlotResearch(gameState);
   migrateGhostDeployableShips();
   migrateLegacyPromethiumOre(gameState);
   migrateStationCoreConsistency(gameState);
@@ -1752,11 +1762,9 @@ function normalizeAndMigratePayload(ctx) {
   if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.migrateResearchState === "function") {
     ResearchState.migrateResearchState(gameState);
   }
-  // 泰坦注册表在上方（1729 行 registerTitanShipsFromState）按「研究迁移前」的 gameState 计算过一次槽位。
-  // 研究迁移（含旧档 completedLevels 兜底）完成后，必须用最终研究状态重算泰坦配置槽位，
-  // 否则已研究的 tt_high/mid/low/rig 释放的高槽/中槽/低槽/改装槽在启动后不生效——
-  // 表现为「已研究槽位时有时无」，直到下一次研究结算（completeResearchStep）触发刷新才补上。
-  // 此处兜底幂等、零副作用；titans.js 未加载时静默跳过。
+  // 第二道保险：上方 registerTitanShipsFromState 之后已按当前研究状态重算过一次槽位；
+  // 此处再刷一次，覆盖「研究迁移（migrateResearchState）修正 completedLevels」的旧档场景。
+  // 幂等、零副作用；titans.js 未加载时静默跳过。
   if (typeof refreshTitanSlotResearch === "function") refreshTitanSlotResearch(gameState);
   if (typeof AchievementState !== "undefined" && AchievementState && typeof AchievementState.migrateAchievementState === "function") {
     AchievementState.migrateAchievementState(gameState);

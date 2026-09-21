@@ -711,6 +711,9 @@ function getSmeltingEfficiencyForState(state) {
   const level = getEffectiveSkillLevel(state, "refining");
   const assigned = getAssignedShipState(state, "refining");
   const shipBonus = assigned.config && assigned.config.bonuses ? (assigned.config.bonuses.smeltingSpeed || 0) : 0;
+  // 精炼泵效率（2026-09-20 新增）：工业支援舰专属加成，只放大「外接大型精炼泵/暗流体精炼泵」的贡献，
+  // 不放大船体基础冶炼速度；无泵/泵断料时 pumpBonus=0，该乘区自然失效。
+  const pumpEfficiency = assigned.config && assigned.config.bonuses ? (assigned.config.bonuses.pumpEfficiency || 0) : 0;
   // 改装件冶炼速度加成（rig smeltingSpeed，加法并入船体加成）
   const rigMods = (assigned.instance && typeof getRigModifiers === "function")
     ? getRigModifiers(state, assigned.instance) : {};
@@ -739,12 +742,14 @@ function getSmeltingEfficiencyForState(state) {
   // 舰船强化（工业乘数 industryMultiplier）对冶炼仅享受 50% 幅度（与采矿/采气全幅区分）
   const shipEnhanceSmelt = (assigned.config && typeof getShipEnhancementSmeltMultiplier === "function")
     ? getShipEnhancementSmeltMultiplier(assigned.config, assigned.instance ? assigned.instance.enhancementLevel : 0) : 1;
-  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus + pumpBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * wormholeSmeltBuff * shipEnhanceSmelt * legionRefine * (1 + allianceRefiningBonus);
+  const effectivePumpBonus = pumpBonus * (1 + pumpEfficiency);
+  let efficiency = skillEfficiency * (1 + shipBonus + rigBonus + effectivePumpBonus) * stationLogisticsMultiplier * researchMultiplier * implantRefineEff * boosterSmeltSpeed * wormholeSmeltBuff * shipEnhanceSmelt * legionRefine * (1 + allianceRefiningBonus);
   // 脑突触加速剂（广告激励增益）：独立乘区 ×1.3，仅增益激活时生效（冶炼速度/产出均经此 efficiency）。
   const adbm = (typeof getAdBuffMultiplier === "function") ? getAdBuffMultiplier(state) : 1;
   if (adbm && adbm !== 1) efficiency = efficiency * adbm;
   return {
     efficiency, level, assigned, skillEfficiency, shipBonus, rigBonus, rigMods, pumpMods,
+    pumpEfficiency, effectivePumpBonus,
     stationLogisticsMultiplier, researchMultiplier, implantRefineEff, boosterSmeltSpeed,
     legionRefine, shipEnhanceSmelt, allianceRefiningBonus, adBuffMult: adbm
   };
@@ -794,6 +799,7 @@ function getSmeltingDisplayState(state, now) {
     stationLogisticsBonusRate: stationLogisticsMultiplier - 1,
     ship:assigned.config ? { id:assigned.config.id, name:assigned.config.name } : null,
     shipBonus,
+    pumpEfficiency: eff.pumpEfficiency,
     rigBonus,
     pump: pumpMods,
     shipEnhanceSmelt,
@@ -838,6 +844,7 @@ function getDismantleDisplayState(state, now) {
     } : null;
     const breakdownDisplay = {
       level: eff.level, skillEfficiency: eff.skillEfficiency, shipBonus: eff.shipBonus, rigBonus: eff.rigBonus, pump: pumpDisplay,
+      pumpEfficiency: eff.pumpEfficiency, effectivePumpBonus: eff.effectivePumpBonus,
       stationLogisticsMultiplier: eff.stationLogisticsMultiplier, stationLogistics: stationLog,
       researchMultiplier: eff.researchMultiplier, shipEnhanceSmelt: eff.shipEnhanceSmelt,
       implantRefineEff: eff.implantRefineEff, boosterSmeltSpeed: eff.boosterSmeltSpeed,
@@ -1634,16 +1641,19 @@ function formatEfficiencyBreakdown(entries, finalValue) {
 // 冶炼效率明细（补全：改装件 / 科研 / 脑插·冶炼 / 增强剂·冶炼速度 / 舰船强化 / 脑突触）
 function getSmeltingEfficiencyBreakdown(display) {
   const pump = display.pump || null;
+  // 舰船精炼泵效率：只放大精炼泵贡献（pumpEfficiency 由 getSmeltingEfficiencyForState 透传，无泵/断料时为 0）。
+  const pumpEffMult = Number(display.pumpEfficiency) || 0;
+  const pumpShownBonus = pump ? pump.bonus * (1 + pumpEffMult) : 0;
   // 库存/可供炉数（2026-09-03 用户反馈）：与冶炼面板泵行同口径，Y = floor(stock / fuelPerCycle)。
   const pumpStock = pump ? (Number(pump.stock) || 0) : 0;
   const pumpCycles = (pump && pump.fuelPerCycle > 0) ? Math.floor(pumpStock / pump.fuelPerCycle) : 0;
   const pumpText = (pump && pump.count > 0)
     ? (pump.active
-        ? "外接大型精炼泵 ×" + pump.count + " · +" + (pump.bonus * 100).toFixed(0) + "%（每炉扣 " + pump.resourceId.replace("planetary:", "") + " ×" + pump.fuelPerCycle + "，库存 " + pumpStock.toLocaleString() + " 可供 " + pumpCycles.toLocaleString() + " 炉）"
+        ? "外接大型精炼泵 ×" + pump.count + " · +" + (pumpShownBonus * 100).toFixed(1) + "%" + (pumpEffMult > 0 ? "（含舰船精炼泵效率 +" + (pumpEffMult * 100).toFixed(0) + "%）" : "") + "（每炉扣 " + pump.resourceId.replace("planetary:", "") + " ×" + pump.fuelPerCycle + "，库存 " + pumpStock.toLocaleString() + " 可供 " + pumpCycles.toLocaleString() + " 炉）"
         : (pump.enabled ? "外接大型精炼泵 ×" + pump.count + " · 断料失效（需 " + pump.resourceId.replace("planetary:", "") + " ≥" + pump.fuelPerCycle + "，库存 " + pumpStock.toLocaleString() + "）" : "外接大型精炼泵 ×" + pump.count + " · 已关闭"))
     : null;
   const ship = (display.shipBonus > 0 || display.rigBonus > 0 || (pump && pump.bonus > 0))
-    ? "舰船 +" + (display.shipBonus * 100).toFixed(0) + "%" + (display.rigBonus > 0 ? " · 改装件 +" + (display.rigBonus * 100).toFixed(0) + "%" : "") + (pump && pump.bonus > 0 ? " · 精炼泵 +" + (pump.bonus * 100).toFixed(0) + "%" : "")
+    ? "舰船 +" + (display.shipBonus * 100).toFixed(0) + "%" + (display.rigBonus > 0 ? " · 改装件 +" + (display.rigBonus * 100).toFixed(0) + "%" : "") + (pump && pump.bonus > 0 ? " · 精炼泵 +" + (pumpShownBonus * 100).toFixed(1) + "%" + (pumpEffMult > 0 ? "（含舰船精炼泵效率 +" + (pumpEffMult * 100).toFixed(0) + "%）" : "") : "")
     : "无";
   const entries = [
     { label: "技能速度", detail: "1 × (1 + Lv." + display.level + " × 0.02) = " + display.skillEfficiency.toFixed(2) + "x" },

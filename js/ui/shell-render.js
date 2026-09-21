@@ -4580,7 +4580,7 @@ function openProbeBlueprintPurchaseModal(itemId) {
 }
 
 function getHangarBonusText(bonuses) {
-  const names = { shieldCapacity:"+护盾", armorCapacity:"+装甲", structureCapacity:"+结构", laserDamage:"+激光伤", missileDamage:"+导弹伤", cannonDamage:"+炮台伤", targetingSpeed:"+锁定", speed:"+速度", miningLaserEfficiency:"+采矿器效能", gasLaserEfficiency:"+采气器效能", salvageEfficiency:"+打捞效率", fleetMiningSpeed:"+舰队采矿速度", smeltingSpeed:"+冶炼速度", miningEfficiency:"+采矿效率", gasEfficiency:"+采气效率", armorRepair:"装甲维修", structureRepair:"结构维修" };
+  const names = { shieldCapacity:"+护盾", armorCapacity:"+装甲", structureCapacity:"+结构", laserDamage:"+激光伤", missileDamage:"+导弹伤", cannonDamage:"+炮台伤", targetingSpeed:"+锁定", speed:"+速度", miningLaserEfficiency:"+采矿器效能", gasLaserEfficiency:"+采气器效能", salvageEfficiency:"+打捞效率", fleetMiningSpeed:"+舰队采矿速度", smeltingSpeed:"+冶炼速度", pumpEfficiency:"+精炼泵效率", miningEfficiency:"+采矿效率", gasEfficiency:"+采气效率", armorRepair:"装甲维修", structureRepair:"结构维修" };
   return Object.entries(bonuses || {}).filter(([key]) => key !== "structureEmergencyRepair").map(([key, value]) => {
     // 考古船加成为绝对数值 / 固定减免，不能按百分比乘 100 显示。
     if (key === "archaeologyScanStrength") return "扫描强度 " + value;
