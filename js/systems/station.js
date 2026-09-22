@@ -1233,10 +1233,16 @@ function processBoosterAutoLine(state, lineId, line, multiplier, offline) {
     return { cycles:0 };
   }
 
-  // 材料约束
+  // 材料约束（叠加蓝图发明 ME 减免）
+  const cost = (function() {
+    if (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.applyMeReduction === "function") {
+      return window.INVENTION.applyMeReduction(state, recipe, recipe.cost);
+    }
+    return recipe.cost || {};
+  })();
   const maxFromCost = (function() {
     let cycles = Infinity;
-    for (const [ref, qty] of Object.entries(recipe.cost || {})) {
+    for (const [ref, qty] of Object.entries(cost)) {
       cycles = Math.min(cycles, Math.floor(ResourceRegistry.getByRef(state, ref) / Math.max(1, qty)));
     }
     return Number.isFinite(cycles) ? Math.max(0, cycles) : 0;
@@ -1263,12 +1269,12 @@ function processBoosterAutoLine(state, lineId, line, multiplier, offline) {
   }
 
   // 原子执行：扣料 + 产出 + XP + 事件
-  if (!ResourceRegistry.canAffordCost(state, recipe.cost, cycles)) {
+  if (!ResourceRegistry.canAffordCost(state, cost, cycles)) {
     stopAutoLineInternal(state, lineId, "insufficient-materials", offline);
     line.progress = remainingSec;
     return { cycles:0 };
   }
-  ResourceRegistry.spendCost(state, recipe.cost, cycles);
+  ResourceRegistry.spendCost(state, cost, cycles);
   const made = cycles * recipe.output.qty;
   ResourceRegistry.add(state, recipe.output.itemId, made);
   line.producedQty = (line.producedQty || 0) + made;

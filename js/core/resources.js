@@ -17,6 +17,8 @@ const RESOURCE_NAMESPACE_CONFIG = Object.freeze({
   probe:{ kind:"pool", pool:"probes" },
   artifact:{ kind:"pool", pool:"artifacts" },
   calibration:{ kind:"pool", pool:"calibrations", material:true },
+  // 蓝图发明：解析矩阵（通用池，ME / TE 研究共用；唯一条目 analysis_matrix）
+  matrix:{ kind:"pool", pool:"matrix", material:true },
   consumable:{ kind:"scalar" },
   // 增强剂系统 Phase 2A：booster 库存不属于 state.resources，而是 state.boosters.inventory（见 getPoolContainer 特判）。
   booster:{ kind:"pool", pool:"boosterInventory", material:false }
@@ -332,6 +334,9 @@ if (typeof ARCHAEOLOGY_ARTIFACTS !== "undefined") {
     ResourceRegistry.register({ namespace, key:artifact.id, name:artifact.name, category:artifact.category === "calibration" ? "calibration" : "artifact" });
   }
 }
+
+// 蓝图发明：解析矩阵登记（单条目池）。key 用 ASCII 稳定键，显示名走 i18n/显示层转换。
+ResourceRegistry.register({ namespace:"matrix", key:"analysis_matrix", name:"解析矩阵", category:"matrix" });
 
 // 增强剂系统 Phase 2A：30 件增强剂登记（booster.js 已先于本文件加载）。
 // booster 命名空间为 pool 型，容器特判为 state.boosters.inventory；material:false 表示不参与配方材料名称聚合。

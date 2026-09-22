@@ -162,7 +162,7 @@ function getRunningEquipEngRecipe() {
   return getEquipmentEngineeringRecipe(gameState.currentAction.startedEquipEngTarget || gameState.currentAction.equipEngTarget || "t1_mining_laser");
 }
 
-function getEquipEngEfficiency() {
+function getEquipEngEfficiency(recipe) {
   const skillMult = 1 + getEffectiveSkillLevel(gameState, "equipmentEngineering") * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState, "equipEng")) : 1;
   // 研究批次 G：与 selectors.getEquipmentEngineeringDisplayState 共用同一科研 API，保证显示/在线/离线三处一致
@@ -174,6 +174,10 @@ function getEquipEngEfficiency() {
   if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
     total *= LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.equipment;
   }
+  // TE 减免（蓝图发明·效率研究）：缩短装备工程制造耗时；per-recipe，无蓝图则无减免。
+  const teR = (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.teReductionForRecipe === "function")
+    ? window.INVENTION.teReductionForRecipe(gameState, recipe || getEquipEngRecipe()) : 0;
+  if (teR) total *= (1 - teR);
   return total;
 }
 
@@ -338,7 +342,7 @@ function applyEquipEngOutput(recipe, cycles, chosenLevel) {
    仅制造与库存；不实装六槽装备、计时消耗与效果。
    ================================================================ */
 
-function getBoosterEfficiency() {
+function getBoosterEfficiency(recipe) {
   const lvl = getEffectiveSkillLevel(gameState, "boosterEngineering");
   const skillMult = 1 + lvl * 0.02;
   const stationMult = (typeof getStationLogisticsMultiplier === "function") ? Math.max(0.001, getStationLogisticsMultiplier(gameState, "booster")) : 1;
@@ -353,6 +357,10 @@ function getBoosterEfficiency() {
   if (typeof LEGION_NPC !== "undefined" && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
     total *= LEGION_NPC.getLegionContributionSnapshot(gameState).multipliers.booster;
   }
+  // TE 减免（蓝图发明·效率研究）：缩短增强剂制造耗时；per-recipe，无蓝图则无减免。
+  const teR = (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.teReductionForRecipe === "function")
+    ? window.INVENTION.teReductionForRecipe(gameState, recipe || getSelectedBoosterRecipe()) : 0;
+  if (teR) total *= (1 - teR);
   return total;
 }
 
@@ -374,11 +382,20 @@ function isBoosterRecipeUnlocked(recipe) {
     : true;
 }
 
+// ME 减免后的增强剂配方成本（叠加蓝图发明里程碑减免）；无减免则原样返回 recipe.cost。
+function meDiscountedBoosterCost(state, recipe) {
+  if (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.applyMeReduction === "function") {
+    return window.INVENTION.applyMeReduction(state, recipe, recipe.cost);
+  }
+  return recipe.cost || {};
+}
+
 // 单一材料约束下的最大可制造瓶数（不占货舱：产物入 boosters.inventory）。
 function getBoosterMaxCyclesFromState(state, recipe) {
   if (!recipe || !recipe.cost) return 0;
+  const cost = meDiscountedBoosterCost(state, recipe);
   let cycles = Infinity;
-  for (const [reference, qty] of Object.entries(recipe.cost)) {
+  for (const [reference, qty] of Object.entries(cost)) {
     const need = Math.max(1, Number(qty) || 1);
     cycles = Math.min(cycles, Math.floor(ResourceRegistry.getMaterialStock(state, reference) / need));
   }
@@ -391,13 +408,15 @@ function getBoosterMaxCycles(recipe) {
 
 function hasEnoughBoosterInputs(recipe, cycles) {
   const count = Math.max(1, Number(cycles) || 1);
-  return ResourceRegistry.canAffordCost(gameState, recipe.cost, count);
+  const cost = meDiscountedBoosterCost(gameState, recipe);
+  return ResourceRegistry.canAffordCost(gameState, cost, count);
 }
 
 function deductBoosterInputs(recipe, cycles) {
   const count = Math.max(1, Number(cycles) || 1);
-  if (!hasEnoughBoosterInputs(recipe, count)) return false;
-  return ResourceRegistry.spendCost(gameState, recipe.cost, count);
+  const cost = meDiscountedBoosterCost(gameState, recipe);
+  if (!ResourceRegistry.canAffordCost(gameState, cost, count)) return false;
+  return ResourceRegistry.spendCost(gameState, cost, count);
 }
 
 function applyBoosterOutput(recipe, cycles) {

@@ -1731,7 +1731,6 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "equip"]) : 1;
   // 装备总装协调剂（equipmentSpeed）：激活期间缩短装备制造耗时，与舰船 shipSpeed 同一乘区模型。
   const equipmentBoosterSpeed = (typeof getBoosterEffectState === "function") ? (getBoosterEffectState(state).equipmentSpeedMultiplier || 1) : 1;
-  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state, "equipEng") * researchMultiplier * equipmentBoosterSpeed;
   const requestedRecipe = getEquipmentEngineeringRecipe(action.equipEngTarget || "t1_mining_laser");
   const savedCategory = EQUIPMENT_ENGINEERING_CATEGORIES.find(category => category.id === action.equipEngCategory);
   const category = savedCategory || getEquipEngCategoryDefinition(requestedRecipe.category);
@@ -1774,9 +1773,13 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
     selectionPool.find(recipe => level >= recipe.level) || selectionPool[0] || categoryRecipes[0] || requestedRecipe;
   const active = Boolean(action.active && action.skill === "equipmentEngineering");
   const runningRecipe = getEquipmentEngineeringRecipe(action.startedEquipEngTarget || action.equipEngTarget || "t1_mining_laser");
+  // 显示/在线/离线三处统一取数：真值函数 getEquipEngEfficiency(recipe) 涵盖 技能·船坞·科研·协调剂·军团·TE 减免；
+  // 根治「装备制造耗时显示 ≠ 实际 tick/离线结算」。selected 用于面板/详情耗时，running 用于进度条（per-recipe 可不同）。
+  const efficiency = (typeof getEquipEngEfficiency === "function") ? getEquipEngEfficiency(selectedRecipe) : 1;
+  const runningEfficiency = (typeof getEquipEngEfficiency === "function") ? getEquipEngEfficiency(runningRecipe) : efficiency;
   const progress = active
-    ? getProgressDisplayState(action, "equipmentEngineering", runningRecipe.time / efficiency, now)
-    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningRecipe.time / efficiency };
+    ? getProgressDisplayState(action, "equipmentEngineering", runningRecipe.time / runningEfficiency, now)
+    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:runningRecipe.time / runningEfficiency };
   const selectedEquipment = selectedRecipe.output.type === "equipment" ? EQUIPMENT_DB[selectedRecipe.output.itemId] : null;
   const selectedHasRequiredBlueprint = equipmentRecipeHasRequiredBlueprint(state, selectedRecipe);
   // 精密配给剂（舰船/装备制造通用减料）报价：激活期间按当前品质折扣计算、配方等级门槛+N
@@ -1860,7 +1863,7 @@ function getEquipmentEngineeringDisplayState(state, now, searchTerm) {
         hasRequiredBlueprint:equipmentRecipeHasRequiredBlueprint(state, recipe),
         unlocked:level >= recipe.level + activeGate && equipmentRecipeHasRequiredBlueprint(state, recipe),
         selected:recipe.id === selectedRecipe.id,
-        actualTime:recipe.time / efficiency,
+        actualTime:recipe.time / ((typeof getEquipEngEfficiency === "function") ? getEquipEngEfficiency(recipe) : efficiency),
         ownedCount:getEquipmentOwnedCountFromState(state, recipe),
         inputEquipment:recipe.inputEquipment ? {
           itemId:recipe.inputEquipment.itemId,
@@ -1921,7 +1924,6 @@ function getBoosterManufacturingDisplayState(state, now) {
   // 研究批次 G：增强剂制造科研唯一乘子 = 1 + (allMfg + booster)；与 tick/离线的 getBoosterEfficiency 同一 API、同一结果
   const researchMultiplier = (typeof ResearchState !== "undefined")
     ? ResearchState.getResearchMultiplier(state, ["allMfg", "booster"]) : 1;
-  const efficiency = (1 + level * 0.02) * getStationLogisticsMultiplier(state, "booster") * researchMultiplier;
 
   // 分类与品质筛选（用户选择；运行中切换不改变正在制造的产物）。
   const categoryId = (BOOSTER_CATEGORY_META.find(c => c.id === action.boosterCategory) || BOOSTER_CATEGORY_META[0]).id;
@@ -1930,9 +1932,13 @@ function getBoosterManufacturingDisplayState(state, now) {
   const isRunning = Boolean(action.active && action.skill === "boosterEngineering");
   const selectedRecipe = getBoosterRecipe(action.boosterRecipeTarget) || BOOSTER_RECIPES[0];
   const runningRecipe = getBoosterRecipe(action.startedBoosterRecipeTarget || action.boosterRecipeTarget) || selectedRecipe;
+  // 显示/在线/离线三处统一取数：真值函数 getBoosterEfficiency(recipe) 涵盖 技能·船坞·科研·脑插·协调剂·军团·TE 减免；
+  // 根治「增强剂制造耗时显示 ≠ 实际 tick/离线结算」。per-recipe TE 减免下，进度条用 running、卡片用各自 recipe。
+  const efficiency = (typeof getBoosterEfficiency === "function") ? getBoosterEfficiency(selectedRecipe) : 1;
+  const runningEfficiency = (typeof getBoosterEfficiency === "function") ? getBoosterEfficiency(runningRecipe) : efficiency;
   const progress = isRunning
-    ? getProgressDisplayState(action, "boosterEngineering", runningRecipe.time / efficiency, now)
-    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:selectedRecipe.time / efficiency };
+    ? getProgressDisplayState(action, "boosterEngineering", runningRecipe.time / runningEfficiency, now)
+    : { active:false, elapsed:0, percent:0, etaSeconds:null, etaText:"0s", duration:selectedRecipe.time / runningEfficiency };
 
   const inventory = (state.boosters && state.boosters.inventory) || {};
 
@@ -1954,7 +1960,8 @@ function getBoosterManufacturingDisplayState(state, now) {
       (typeof hasBoosterBlueprintFromState === "function" ? hasBoosterBlueprintFromState(state, recipe.id) : true);
     const levelUnlocked = level >= recipe.level;
     const isUnlocked = levelUnlocked && hasRequiredBlueprint;
-    const materialRows = Object.entries(recipe.cost || {}).map(([reference, quantity]) => {
+    const boosterQuote = (typeof getBoosterBuildingQuote === "function") ? getBoosterBuildingQuote(state, recipe) : { cost: recipe.cost || {} };
+    const materialRows = Object.entries(boosterQuote.cost || {}).map(([reference, quantity]) => {
       const required = Math.max(1, Number(quantity) || 1);
       const stock = ResourceRegistry.getMaterialStock(state, reference);
       return { reference, displayName:getResourceDisplayName(reference), required, stock, enough:stock >= required };
@@ -1976,7 +1983,7 @@ function getBoosterManufacturingDisplayState(state, now) {
       level:recipe.level,
       xp:recipe.xp,
       time:recipe.time,
-      effectiveTime:recipe.time / efficiency,
+      effectiveTime:recipe.time / ((typeof getBoosterEfficiency === "function") ? getBoosterEfficiency(recipe) : efficiency),
       durationSeconds:Math.round((recipe.durationMs || BOOSTER_DURATION_MS) / 1000),
        effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(recipe.effect.type, recipe.effect.value, recipe.effect.repairTarget, recipe.levelGateBonus) : "",
        levelGateBonus:Math.max(0, Number(recipe.levelGateBonus) || 0),

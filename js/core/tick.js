@@ -109,6 +109,13 @@ function gameTick() {
     ResearchSystem.processResearchUntil(gameState, Date.now(), { scale: (typeof getGameSpeed === "function") ? getGameSpeed() : 1 });
   }
 
+  // 蓝图发明 · 效率研究（ME / TE）：在线作业槽推进。
+  // 与科研同位置（所有提前 return 业务分支之前）、同 scale，确保主行动暂停/资源不足时仍推进。
+  if (typeof INVENTION !== "undefined" && INVENTION &&
+      typeof INVENTION.processUntil === "function") {
+    INVENTION.processUntil(gameState, Date.now(), { scale: (typeof getGameSpeed === "function") ? getGameSpeed() : 1 });
+  }
+
   updateCombatRecovery();
   // 星图试炼是唯一主动行动。必须在任何 currentAction 分支结算前清除残留行动/运行队列，
   // 防止刷新恢复或旧存档同时推进冶炼、采矿等普通行动。

@@ -337,6 +337,13 @@ function renderArchaeologyPage(now) {
         Number(drops.calibration.ratePct).toFixed(2) + "%", "calib-row"
       ));
     }
+    if (drops.matrix && drops.matrix.item) {
+      calibRows.push(dropRow(
+        "解析矩阵",
+        drops.matrix.item.name + " <span style='color:#7e91a3'>· 每次成功 +" + drops.matrix.amount + " 个</span>",
+        "100%", "matrix-row"
+      ));
+    }
 
     const regularSection = `
       <section class="arch-drop-preview">

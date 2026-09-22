@@ -767,6 +767,19 @@ function migrateArchaeologyState() {
   gameState._dirty = true;
 }
 
+// 蓝图发明状态迁移（幂等）：确保 state.invention / lab / 解析矩阵资源池齐全。
+// 旧档缺失时不补发任何研究进度、不白给时间锚点（锚点取 now，elapsed 为 0）。
+// 实现委托给 js/systems/invention.js 的 ensureState（单一真值，避免两处结构漂移）；
+// 该文件未加载时（理论不可达：index.html 已声明）跳过，绝不抛错阻断读档。
+function migrateInventionState() {
+  if (!gameState.resources || typeof gameState.resources !== "object") gameState.resources = {};
+  if (!gameState.resources.matrix || typeof gameState.resources.matrix !== "object") gameState.resources.matrix = {};
+  if (typeof INVENTION !== "undefined" && INVENTION && typeof INVENTION.ensureState === "function") {
+    INVENTION.ensureState(gameState, Date.now());
+  }
+  gameState._dirty = true;
+}
+
 // 共享收尾：在所有旧版迁移完成后，执行装备实例迁移与规范化。
 // 调用顺序必须为：migrateShipAndEquipmentState → migrateShipComponentState → migrateCombatEquipmentState →
 //                migrateEquipmentInstancesV1 → normalizeEquipmentState → migrateArchaeologyState
@@ -778,6 +791,7 @@ function finalizeEquipmentStateAfterLegacyMigrations(state) {
   migrateEquipmentInstancesV1(state);
   normalizeEquipmentState(state);
   migrateArchaeologyState();
+  migrateInventionState();
   migrateDeadSkillFields();
   migrateImplants();
   migratePhantomTopLevelIsk(state);

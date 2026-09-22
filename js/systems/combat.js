@@ -2087,7 +2087,7 @@ function beginDeathspaceRun(state, options, context) {
   if (!Array.isArray(enemies) || enemies.length === 0) return { changed:false, reason:"missing-formation" };
   ResourceRegistry.spend(state, "special:" + site.ticketMaterial, 1); // 校验通过后才扣密钥
   Object.assign(state.combat, {
-    mode:"deathspace", viewMode:"deathspace", deathspaceId:site.id, zone:site.sourceZoneId,
+    mode:"deathspace", viewMode:"deathspace", deathspaceId:site.id,
     deathspaceTier:site.dedTier, viewDeathspaceId:site.id, viewDeathspaceTier:site.dedTier,
     active:true, enemies, currentEnemy:enemies[0] || null, wave:1,
     totalKills:0, runEliteKills:0, currentFormation:formationId,

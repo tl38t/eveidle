@@ -844,7 +844,6 @@ const CombatStateActions = {
       deathspaceTier:site.dedTier,
       viewDeathspaceId:site.id,
       viewDeathspaceTier:site.dedTier,
-      zone:site.sourceZoneId,
       enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0,
       currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null,
       runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0
@@ -872,7 +871,6 @@ const CombatStateActions = {
       mode:"deathspace", viewMode:"deathspace",
       deathspaceTier:selectedTier, deathspaceId:site.id,
       viewDeathspaceTier:selectedTier, viewDeathspaceId:site.id,
-      zone:site.sourceZoneId,
       enemies:[], currentEnemy:null, wave:1, totalKills:0, runEliteKills:0,
       currentFormation:"", lastLoot:"", lastSpecialLoot:"", lastStatus:"", lastEnemyVolley:null,
       runWeaponTypes:[], runWeaponTypesZone:site.sourceZoneId, runDamageDealt:0, runDamageTaken:0

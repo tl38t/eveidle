@@ -721,7 +721,25 @@ function getEquipEngBuildingQuote(state, recipe) {
   // 门槛仅受装备槽精密配给剂的 equipMaterialLevelGate 影响（舰船槽不抬升装备门槛）。
   var gateBonus = eff ? (eff.equipMaterialLevelGate || 0) : 0;
   var levelGate = (Number(recipe.level) || 0) + gateBonus;
-  return { cost: cost, levelGate: levelGate, discounted: active };
+  // 叠加蓝图发明 ME 减免（在装备工程槽折扣之后再叠）；无对应蓝图则原样。
+  var meCost = cost;
+  if (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.applyMeReduction === "function") {
+    meCost = window.INVENTION.applyMeReduction(state, recipe, cost);
+  }
+  return { cost: meCost, levelGate: levelGate, discounted: active || meCost !== cost };
+}
+
+// 增强剂制造报价：仅叠加蓝图发明 ME 减免（增强剂不受装备槽精密配给剂影响）。
+// 与 getEquipEngBuildingQuote 同形状 {cost, levelGate, discounted}，供 selectors 显示层统一取数，根治「增强剂成本显示 ≠ 实际扣费」。
+function getBoosterBuildingQuote(state, recipe) {
+  if (!recipe) return { cost: {}, levelGate: 0, discounted: false };
+  var baseCost = recipe.cost || {};
+  var levelGate = Number(recipe.level) || 0;
+  var meCost = baseCost;
+  if (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.applyMeReduction === "function") {
+    meCost = window.INVENTION.applyMeReduction(state, recipe, baseCost);
+  }
+  return { cost: meCost, levelGate: levelGate, discounted: meCost !== baseCost };
 }
 
 /* ----------------------------------------------------------------
@@ -874,6 +892,7 @@ window.getBoosterArchaeologyEffectiveUniqueRate = getBoosterArchaeologyEffective
 window.getShipMaterialDiscountMultiplier = getShipMaterialDiscountMultiplier;
 window.getShipBuildingQuote = getShipBuildingQuote;
 window.getEquipEngBuildingQuote = getEquipEngBuildingQuote;
+window.getBoosterBuildingQuote = getBoosterBuildingQuote;
 window.discountCost = discountCost;
 window.getBoosterDisplayState = getBoosterDisplayState;
 window.getBoosterSlotStatus = getBoosterSlotStatus;

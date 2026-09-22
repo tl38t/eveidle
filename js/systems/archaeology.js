@@ -393,6 +393,16 @@ function resolveArchaeologyCalibration(state, site, tier, rng) {
   return null;
 }
 
+// ---- 解析矩阵（蓝图发明 ME/TE 研究的唯一耗材；每次解析成功稳定掉落，与发明消耗 matrix 1×tier 对称） ----
+// 与 resolveArchaeologyCalibration 同源思路：成功路径内确定性发放，不占稀有池、不受焦点影响。
+// 数量与发明侧 INVENTION_MATRIX_PER_TIER × tier 对称，保证「考古产得出、发明用得掉」。
+const ARCHAEOLOGY_MATRIX_PER_TIER = 1; // 调参常量：提高即加速 ME/TE 研究供给
+function resolveArchaeologyMatrix(state, site, tier) {
+  const amount = ARCHAEOLOGY_MATRIX_PER_TIER * Math.max(1, Number(tier && tier.tier) || 1);
+  if (amount > 0) ResourceRegistry.add(state, "matrix:analysis_matrix", amount);
+  return amount;
+}
+
 // ---- 脑插能力探测（已移除，2026-08-28） ----
 // 旧 tryGetArchaeologyImplantDrop / 稀有池「脑插」类别已整体删除：考古脑插改为
 // archaeology:success 事件监听独立掉落（见 js/data/implants.js），不占稀有池、不再恒折星币补偿。
@@ -499,7 +509,8 @@ function resolveArchaeologyDrops(state, site, tier, fitted, rng, isOffline) {
   const regular = resolveArchaeologyRegularYield(state, site, location, focus, fitted, rng, isOffline);
   const calibration = resolveArchaeologyCalibration(state, site, tier, rng);
   const rare = location ? resolveArchaeologyRare(state, site, location, tier, fitted, rng, isOffline) : null;
-  return { regular, calibration, rare };
+  const matrix = resolveArchaeologyMatrix(state, site, tier);
+  return { regular, calibration, rare, matrix };
 }
 
 // ---- 燃料成本 + 确定性节省累计器（唯一计算层，见 RIG_SYSTEM_IMPLEMENTATION_PLAN 3.6） ----
@@ -711,7 +722,7 @@ function resolveArchaeologyCycle(state, now, randomValue, eventMeta, options) {
     if (drops.rare) {
       GameEvents.emit("archaeology:rareFound", Object.assign({}, drops.rare, { siteId:site.id, tier:site.tier }), evtMeta);
     }
-    GameEvents.emit("archaeology:success", { siteId:site.id, tier:site.tier, xp:grantedXp }, evtMeta);
+    GameEvents.emit("archaeology:success", { siteId:site.id, tier:site.tier, xp:grantedXp, matrix }, evtMeta);
     // 研究批次 I · autosell / autoconv：文物真实入库之后，每个成功周期最多调用一次统一协议入口。
     // 在线与离线共用同一入口；分类严格（ISK/唯一 → autosell，LP → autoconv，校准物永不自动处理）。
     const protocols = (typeof applyArchaeologyArtifactProtocols === "function")
@@ -998,7 +1009,8 @@ function getArchaeologyDisplayState(state, now, options) {
         common: { items:commonArts, weights:cw.map(w=>Math.round(w*100)), text:commonNames },
         unique: { items:uniqueArts, ratePct:Number(uniqueRatePct), boostedPct:Number(boostedUniquePct), text:uniqueNames },
         lp: { item:lpArt, ratePct:Number(lpChancePct) },
-        calibration: { item:calibArt, ratePct:Number(calibRatePct), amount:calibAmount }
+        calibration: { item:calibArt, ratePct:Number(calibRatePct), amount:calibAmount },
+        matrix: { item:{ name:"解析矩阵" }, amount:Number(tier.tier) || 1 }
       },
       preview: {
         decoderPct: Number(decoderPct),
@@ -1093,6 +1105,7 @@ window.computeArchaeologySuccessChance = computeArchaeologySuccessChance;
 window.getArchaeologyFittedBonuses = getArchaeologyFittedBonuses;
 window.resolveArchaeologyCycle = resolveArchaeologyCycle;
 window.resolveArchaeologyDrops = resolveArchaeologyDrops;
+window.resolveArchaeologyMatrix = resolveArchaeologyMatrix;
 window.resolveArchaeologyRare = resolveArchaeologyRare;
 window.resolveArchaeologyRegularYield = resolveArchaeologyRegularYield;
 window.resolveArchaeologyCalibration = resolveArchaeologyCalibration;

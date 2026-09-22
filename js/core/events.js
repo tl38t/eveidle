@@ -61,7 +61,7 @@ const GameEventContracts = (() => {
     "action:progressReset": { required:["skill"] },
     "combat:event": { required:["type"] },
     "archaeology:attemptCompleted": { required:["siteId", "tier", "success", "successChance"], numbers:["successChance"] },
-    "archaeology:success": { required:["siteId", "tier", "xp"], numbers:["xp"] },
+    "archaeology:success": { required:["siteId", "tier", "xp"], numbers:["xp", "matrix"] },
     "archaeology:failure": { required:["siteId", "tier", "backlashDamage"], numbers:["backlashDamage"] },
     "archaeology:artifactFound": { required:["artifactId", "category", "tier"], numbers:["iskValue", "lpValue"] },
     "archaeology:shipDisabled": { required:["instanceId", "repairSeconds"], numbers:["repairSeconds"] },

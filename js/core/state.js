@@ -386,12 +386,44 @@ function normalizeFitting(fitted) {
 // 语义：溢出件退回 gameState.equipment.inventory，绝不销毁玩家资产；强化过的件保留实例形态
 // （installedOn 清空），未强化的件退回 itemId。与 detachEquipmentRefFromFitting 同源，不另写一套归还逻辑。
 // 幂等：裁剪后数组长度 == 槽数，再次调用无溢出、不会重复 push。
+// 取证（2026-09-22）：「重启丢装备」的回收看门狗。
+// 单份诊断报告只能看到「当前装配件数」，无法区分「旧构建留下的旧伤」与「仍在回收」——
+// 故在真的裁掉泰坦装备时，往 localStorage 独立键追加一条证据（不进存档、不碰配额敏感路径），
+// 记录「裁剪时刻的槽位上限」。下次报告即可回答：这次启动裁没裁？裁时槽位含不含研究加成？
+//   · 记录的 cap 中/低/改装 == 含研究值 ⇒ 属正常越界回收（装备确实超容量）
+//   · 记录的 cap 仍是舰体基础值     ⇒ 槽位被按过期（研究未生效）值裁剪，即真 bug 复发。
+const TITAN_RECLAIM_LOG_KEY = "deep_space_idle_titan_reclaim_log_v1";
+function recordTitanReclaimEvidence(ship, slots, cut, total) {
+  try {
+    if (typeof localStorage === "undefined" || !localStorage) return;
+    const shipId = String((ship && ship.shipId) || "");
+    if (shipId.indexOf("titan") < 0) return; // 只记泰坦（本类问题范围）
+    const cap = {
+      high: Math.max(0, Number(slots && slots.high) || 0),
+      highUsable: Math.max(0, Number(slots && slots.highUsable) || 0),
+      mid: Math.max(0, Number(slots && slots.mid) || 0),
+      low: Math.max(0, Number(slots && slots.low) || 0),
+      rig: Math.max(0, Number(slots && slots.rig) || 0)
+    };
+    let arr = [];
+    try {
+      const raw = localStorage.getItem(TITAN_RECLAIM_LOG_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch (e) { arr = []; }
+    arr.unshift({ t: Date.now(), ship: shipId, cap: cap, cut: cut, n: total });
+    if (arr.length > 20) arr.length = 20;
+    localStorage.setItem(TITAN_RECLAIM_LOG_KEY, JSON.stringify(arr));
+  } catch (e) { /* 取证失败绝不阻断回收主流程 */ }
+}
+
 function reclaimOverflowFitting(state, ship) {
   if (!ship || !ship.fitted) return 0;
   const slots = getShipSlotCounts(ship.shipId);
   if (!slots) return 0; // 查不到槽数定义 ⇒ 无法判定越界，原样保留（宁可不动，不可误裁）
   const detach = (typeof detachEquipmentRefFromFitting === "function") ? detachEquipmentRefFromFitting : null;
   let reclaimed = 0;
+  const cutBySlot = { high: 0, mid: 0, low: 0, rig: 0 };
   for (const slot of ["high", "mid", "low", "rig"]) {
     const arr = ship.fitted[slot];
     if (!Array.isArray(arr)) continue;
@@ -403,9 +435,13 @@ function reclaimOverflowFitting(state, ship) {
       if (detach) detach(state, ref);
       else if (state && state.equipment && Array.isArray(state.equipment.inventory)) state.equipment.inventory.push(ref);
       reclaimed++;
+      cutBySlot[slot]++;
     }
   }
-  if (reclaimed > 0 && state) state._dirty = true;
+  if (reclaimed > 0) {
+    if (state) state._dirty = true;
+    recordTitanReclaimEvidence(ship, slots, cutBySlot, reclaimed);
+  }
   return reclaimed;
 }
 
@@ -420,9 +456,39 @@ function createShipInstance(shipId, builtAt) {
   };
 }
 
+// 加固（2026-09-22）：任何裁剪点执行前，先确保泰坦注册表槽位已按「当前存档研究」重算。
+//
+// 根因（0532d43 之后的残留缝）：SHIP_DATA.titan 是按需注册的懒注册表，registerTitanConfig
+// 对「已注册组合」走早返回、不重算槽位。若 boot 早期任一取配置路径（机库 / 制造列表 /
+// getShipConfigById / 船坞缩略图）在存档研究灌入 gameState 之前把组合注册并固化为基础槽位，
+// 之后所有裁剪都会按偏小的基础槽位执行，把研究释放的 mid/low/rig 装备判越界、退回仓库。
+// 0532d43 只在启动管线里补了两道刷新，覆盖面取决于「注册是否晚于这两道」；本函数把刷新
+// 下沉到裁剪函数自身，单点覆盖所有调用站点（启动迁移、旧档字段迁移、运行时规范化），
+// 无论谁先谁后都不再误裁。
+//
+// 幂等：refreshTitanSlotResearch 原地重算、只在数值变化时换新对象。守卫只认「库存里确实有泰坦船」
+// （titanCombo 真值 或 shipId 前缀），故未持有泰坦的玩家（即便制造列表/机库枚举过泰坦配方、
+// 注册表非空）也零开销；刷新失败静默跳过，绝不阻断装配规范化。
+function ensureTitanSlotsUpToDate() {
+  if (typeof refreshTitanSlotResearch !== "function") return;
+  const ships = gameState.inventory && gameState.inventory.ships;
+  if (!Array.isArray(ships) || ships.length === 0) return;
+  const prefix = (typeof window !== "undefined" && window.TITAN_SHIP_ID_PREFIX) || "titan__";
+  let hasTitan = false;
+  for (const s of ships) {
+    if (!s) continue;
+    if (s.titanCombo) { hasTitan = true; break; }
+    if (typeof s.shipId === "string" && s.shipId.indexOf(prefix) === 0) { hasTitan = true; break; }
+  }
+  if (!hasTitan) return; // 无泰坦船 ⇒ 注册表槽位与本次裁剪无关，直接跳过
+  try { refreshTitanSlotResearch(gameState); } catch (e) { /* 槽位刷新失败不得影响装配规范化 */ }
+}
+
 function ensureShipInstances() {
   if (!gameState.inventory) gameState.inventory = { ships: [], equipment: [], rigs: [] };
   if (!Array.isArray(gameState.inventory.ships)) gameState.inventory.ships = [];
+  // 先对齐泰坦槽位，再做「补齐 → 裁剪」，避免按过期（基础）槽位误裁研究释放的装备。
+  ensureTitanSlotsUpToDate();
   const usedIds = new Set();
   gameState.inventory.ships.forEach((ship, index) => {
     let instanceId = ship.instanceId || "ship_" + (ship.builtAt || Date.now()) + "_" + index;

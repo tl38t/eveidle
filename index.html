@@ -747,72 +747,639 @@
       </div>
     </div>
 
-    <!-- 装备工程面板 -->
+    <!-- 蓝图发明 · 效率研究(ME/TE) / 改装件强化(双词条) · 预览版 -->
     <style id="blueprint-lab-preview-style">
-      #blueprint-lab-panel{background:radial-gradient(circle at 12% 0,#183253 0,#0b1119 42%);}
-      .bl-preview-note{margin:0 0 12px;padding:9px 11px;border:1px solid #614c28;border-radius:7px;background:#2a2113;color:#e2c37b;font-size:12px}
-      .bl-preview-tabs{display:flex;gap:6px;margin:0 0 14px;padding:4px;background:#0d1622;border:1px solid #1d2c3c;border-radius:9px}
-      .bl-preview-tab{flex:1;padding:9px 12px;border:0;border-radius:6px;background:transparent;color:#8a9aae;font:600 13px inherit}
-      .bl-preview-tab.active{background:linear-gradient(90deg,#1f6fb0,#2e9fe0);color:#fff}
-      /* 每个标签只显示一组内容，单列满宽避免隐藏另一张卡片后留下半边空白 */
-      .bl-preview-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:12px}
-      .bl-preview-card{padding:14px;border:1px solid #203548;border-radius:8px;background:#0b1520}
-      .bl-preview-card h3{margin:0 0 9px;color:#e5f3fc;font-size:14px}.bl-preview-card p{margin:0 0 10px;color:#8299ad;font-size:12px;line-height:1.6}
-      .bl-preview-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #1d2c3c;color:#9bb4c6;font-size:12px}.bl-preview-row:last-child{border-bottom:0}.bl-preview-row b{color:#d7eaf5}.bl-preview-pill{display:inline-block;padding:3px 7px;border-radius:12px;background:#152e47;color:#7dd3fc;font-size:11px}
-      .bl-demo-label{display:block;margin:9px 0;color:#8299ad;font-size:12px}.bl-demo-label select{display:block;width:100%;margin-top:5px;padding:8px;border:1px solid #29435e;border-radius:6px;background:#101e2b;color:#9bb4c6}.bl-demo-seg,.bl-demo-actions{display:flex;gap:7px;margin:10px 0}.bl-demo-button,.bl-demo-actions button{flex:1;padding:8px 10px;border:1px solid #29435e;border-radius:6px;background:#14283d;color:#9bb4c6;font:12px inherit}.bl-demo-button.active{border-color:#3b9be5;background:#1d4e78;color:#dff3ff}.bl-demo-progress{height:7px;margin:5px 0 10px;border-radius:8px;background:#08121e;overflow:hidden}.bl-demo-progress i{display:block;height:100%;background:#42b5df}.bl-demo-slots{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:11px 0}.bl-demo-slots span{padding:10px 7px;border:1px dashed #41627f;border-radius:6px;color:#8299ad;text-align:center;font-size:11px}.bl-demo-controls{margin-top:12px}.bl-demo-actions button:disabled,.bl-demo-button:disabled,.bl-demo-label select:disabled{opacity:.72;cursor:not-allowed}
-      @media(max-width:700px){.bl-preview-grid{grid-template-columns:1fr}}.bl-tab-hidden{display:none!important}
+      /* 所有选择器都必须限定在 #blueprint-lab-panel 内：
+         全局已存在 .stat(18) / .cost(108) / .seg(10) / .slot(159) / .slots(285) / .tier(140) / .tab 等同名类，
+         不加前缀会污染其它面板。变量名(--line/--gold/...)也只在面板内声明，避免落进 :root。 */
+      #blueprint-lab-panel {
+        --bg:#0d131c; --bg2:#111820; --card:#131c28; --line:#1e2a38; --line2:#33465c;
+        --gold:#d4a843; --gold-lt:#e8d8a0; --cyan:#3fd0c0;
+        --blue:#5da8d4; --blue-dk:#2a4a6a; --blue-bg:#12233a;
+        --green:#4ac87a; --green-bg:#0f2a1c;
+        --txt:#cdd6e1; --txt2:#9fb0c2; --mut:#8395b4; --dim:#5d6d80;
+        background:radial-gradient(circle at 12% 0, #183253 0, #0b1119 42%);
+      }
+      #blueprint-lab-panel .panel-sub{font:600 11px var(--font-ui);color:var(--dim);padding:3px 9px;border:1px solid var(--line2);border-radius:11px}
+      #blueprint-lab-panel .bl-note{margin:0 0 14px;padding:10px 12px;border:1px solid #614c28;border-radius:7px;background:#2a2113;color:#e2c37b;font-size:12px;line-height:1.7}
+      #blueprint-lab-panel .bl-note b{color:#ffd98a}
+      #blueprint-lab-panel .bl-tabs{display:flex;gap:6px;margin:0 0 15px;padding:4px;background:#0d1622;border:1px solid var(--line);border-radius:9px}
+      #blueprint-lab-panel .bl-tab{flex:1;padding:10px 12px;border:1px solid transparent;border-radius:6px;background:transparent;color:var(--mut);font:600 13px var(--font-ui);cursor:pointer;transition:.15s}
+      #blueprint-lab-panel .bl-tab:hover{color:var(--txt2);background:#0f1a28}
+      #blueprint-lab-panel .bl-tab.active{background:#17314a;border-color:#4a8ed6;color:#dff3ff}
+      #blueprint-lab-panel .bl-statusbar{display:grid;grid-template-columns:minmax(0,1.7fr) minmax(0,1fr) minmax(0,1fr);gap:10px;margin-bottom:15px}
+      #blueprint-lab-panel .bl-stat{padding:11px 13px;border:1px solid var(--line);border-radius:8px;background:var(--card)}
+      #blueprint-lab-panel .bl-stat-lab{font:600 11px var(--font-ui);color:var(--mut);letter-spacing:.6px;margin-bottom:7px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+      #blueprint-lab-panel .bl-stat-lab i{font-style:normal;color:var(--dim);font-size:10px}
+      #blueprint-lab-panel .bl-stat-lab em{font-style:normal;padding:2px 6px;border:1px solid var(--line2);border-radius:9px;color:var(--dim);font-size:10px;white-space:nowrap}
+      #blueprint-lab-panel .bl-lvline{display:flex;align-items:baseline;gap:9px;margin-bottom:6px;flex-wrap:wrap}
+      #blueprint-lab-panel .bl-lv{font:700 21px var(--font-tech);color:var(--gold);line-height:1}
+      #blueprint-lab-panel .bl-lvsub{font-size:11px;color:var(--mut)}
+      #blueprint-lab-panel .bl-exprow{display:flex;align-items:center;gap:9px}
+      #blueprint-lab-panel .bl-exprow .progress-bar{flex:1;margin-top:0}
+      #blueprint-lab-panel .bl-expval{font:600 11px var(--font-tech);color:var(--txt2);white-space:nowrap}
+      #blueprint-lab-panel .bl-bigval{font:700 19px var(--font-tech);line-height:1.15}
+      #blueprint-lab-panel .bl-bigval.cy{color:var(--cyan)}
+      #blueprint-lab-panel .bl-bigval.bl{color:var(--blue)}
+      #blueprint-lab-panel .bl-bigval small{font:600 11px var(--font-ui);color:var(--mut);margin-left:3px}
+      #blueprint-lab-panel .bl-sec-title{display:flex;align-items:center;gap:9px;margin:0 0 10px;font:700 13px var(--font-tech);color:var(--gold-lt);letter-spacing:.5px}
+      #blueprint-lab-panel .bl-sec-title::before{content:'';width:3px;height:14px;background:var(--gold);border-radius:2px}
+      #blueprint-lab-panel .bl-sec-title span{font:600 11px var(--font-ui);color:var(--dim);letter-spacing:0}
+      #blueprint-lab-panel .bl-ladder{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin-bottom:6px}
+      #blueprint-lab-panel .bl-tier{position:relative;padding:11px 11px 12px;border:1px solid var(--line);border-radius:8px;background:#101720;cursor:pointer;transition:.15s;overflow:hidden}
+      #blueprint-lab-panel .bl-tier:hover{border-color:var(--line2)}
+      #blueprint-lab-panel .bl-tier .tt{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:7px}
+      #blueprint-lab-panel .bl-tier .tname{font:700 14px var(--font-tech);color:var(--dim)}
+      #blueprint-lab-panel .bl-tier .tstate{font:600 10px var(--font-ui);padding:2px 7px;border-radius:9px;background:#161f2c;color:var(--dim);white-space:nowrap}
+      #blueprint-lab-panel .bl-tier .tgate{font:600 11px var(--font-ui);color:var(--mut);margin-bottom:3px}
+      #blueprint-lab-panel .bl-tier .tinfo{font-size:11px;color:var(--dim);line-height:1.5}
+      #blueprint-lab-panel .bl-tier .tbar{height:4px;border-radius:3px;background:#0a1119;margin-top:8px;overflow:hidden}
+      #blueprint-lab-panel .bl-tier .tbar i{display:block;height:100%;width:0;background:var(--gold);border-radius:3px}
+      #blueprint-lab-panel .bl-tier.unlocked{border-color:var(--blue-dk);background:var(--blue-bg)}
+      #blueprint-lab-panel .bl-tier.unlocked .tname{color:var(--blue)}
+      #blueprint-lab-panel .bl-tier.unlocked .tstate{background:#16324f;color:#8ccdf5}
+      #blueprint-lab-panel .bl-tier.current{border-color:var(--green);background:var(--green-bg);box-shadow:inset 0 0 0 1px rgba(74,200,122,.25)}
+      #blueprint-lab-panel .bl-tier.current .tname{color:var(--green)}
+      #blueprint-lab-panel .bl-tier.current .tstate{background:#14452a;color:#7fe0a0}
+      #blueprint-lab-panel .bl-tier.current .tbar i{background:var(--green)}
+      #blueprint-lab-panel .bl-tier.sel{border-color:var(--gold);background:#1c2029}
+      #blueprint-lab-panel .bl-tier.sel::after{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--gold)}
+      #blueprint-lab-panel .bl-tier.locked{opacity:.72}
+      #blueprint-lab-panel .bl-tier.locked .tbar{display:none}
+      #blueprint-lab-panel .bl-ladder-note{font-size:12px;color:var(--mut);line-height:1.7;margin:0 0 16px;padding-left:2px}
+      #blueprint-lab-panel .bl-ladder-note b{color:var(--gold-lt)}
+      #blueprint-lab-panel .bl-workbench{display:grid;grid-template-columns:minmax(0,0.95fr) minmax(0,1.15fr);gap:11px}
+      #blueprint-lab-panel .bl-card{padding:13px;border:1px solid var(--line);border-radius:8px;background:var(--card);min-width:0}
+      #blueprint-lab-panel .bl-card-h{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px}
+      #blueprint-lab-panel .bl-card-t{font:700 13px var(--font-ui);color:var(--gold-lt)}
+      #blueprint-lab-panel .bl-card-t small{font:600 11px var(--font-ui);color:var(--dim);margin-left:6px}
+      #blueprint-lab-panel .bl-filter{display:flex;gap:5px}
+      #blueprint-lab-panel .bl-chipbtn{padding:3px 9px;border:1px solid var(--line2);border-radius:11px;background:#101a26;color:var(--mut);font:600 11px var(--font-ui);cursor:pointer}
+      #blueprint-lab-panel .bl-chipbtn.on{border-color:var(--gold);background:#2a2113;color:var(--gold-lt)}
+      #blueprint-lab-panel .bl-list{max-height:328px;overflow-y:auto;padding-right:4px;display:flex;flex-direction:column;gap:5px}
+      #blueprint-lab-panel .bl-list::-webkit-scrollbar{width:7px}
+      #blueprint-lab-panel .bl-list::-webkit-scrollbar-thumb{background:var(--line2);border-radius:4px}
+      #blueprint-lab-panel .bl-item{display:flex;align-items:center;gap:9px;padding:9px 10px;border:1px solid transparent;border-radius:6px;background:#0f1720;cursor:pointer;transition:.12s}
+      #blueprint-lab-panel .bl-item:hover{background:#131f2e}
+      #blueprint-lab-panel .bl-item.on{border-color:var(--gold);background:#1c2029}
+      #blueprint-lab-panel .bl-item .tierbadge{font:700 10px var(--font-tech);padding:3px 6px;border-radius:4px;background:#16324f;color:#8ccdf5;flex:0 0 auto}
+      #blueprint-lab-panel .bl-item .nm{flex:1;min-width:0}
+      #blueprint-lab-panel .bl-item .nm b{display:block;font:600 12.5px var(--font-ui);color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #blueprint-lab-panel .bl-item .nm i{font-style:normal;font-size:10.5px;color:var(--dim)}
+      #blueprint-lab-panel .bl-item .xpv{font:600 11px var(--font-tech);color:var(--gold);flex:0 0 auto}
+      #blueprint-lab-panel .bl-lockmsg{padding:22px 12px;text-align:center;color:var(--dim);font-size:12px;line-height:1.7}
+      #blueprint-lab-panel .bl-seg{display:flex;gap:6px;margin:0 0 11px}
+      #blueprint-lab-panel .bl-seg button{flex:1;padding:9px;border:1px solid var(--line2);border-radius:6px;background:#101a26;color:var(--mut);font:600 12.5px var(--font-ui);cursor:pointer}
+      #blueprint-lab-panel .bl-seg button.on{border-color:#3b9be5;background:#1d4e78;color:#dff3ff}
+      #blueprint-lab-panel .bl-kv{display:flex;justify-content:space-between;gap:10px;padding:7px 0;border-bottom:1px solid var(--line);font-size:12px}
+      #blueprint-lab-panel .bl-kv:last-child{border-bottom:0}
+      #blueprint-lab-panel .bl-kv > span{color:var(--mut);flex:0 0 auto}
+      #blueprint-lab-panel .bl-kv > b{color:var(--txt);font-weight:600;text-align:right;min-width:0;overflow-wrap:anywhere}
+      #blueprint-lab-panel .bl-kv > b.mat{font-weight:500;color:var(--txt2);font-size:11.5px}
+      #blueprint-lab-panel .bl-mile{margin:12px 0 4px}
+      #blueprint-lab-panel .bl-mile-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:7px}
+      #blueprint-lab-panel .bl-mile-h .ml{font:600 11.5px var(--font-ui);color:var(--mut)}
+      #blueprint-lab-panel .bl-mile-h .mr{font:700 13px var(--font-tech);color:var(--gold-lt);white-space:nowrap}
+      #blueprint-lab-panel .bl-mile-h .mr em{font-style:normal;color:var(--mut);font-weight:600;font-size:11px}
+      #blueprint-lab-panel .bl-mtrack{position:relative;height:12px;border-radius:6px;background:#0a1119;box-shadow:inset 0 1px 3px rgba(0,0,0,.35);overflow:hidden}
+      #blueprint-lab-panel .bl-mtrack .mfill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:6px;background:linear-gradient(90deg,#b8912f,#e8d8a0,#b8912f);background-size:200% 100%;animation:gradientMove 3s ease-in-out infinite;transition:width .35s cubic-bezier(.3,.9,.4,1)}
+      #blueprint-lab-panel .bl-mtrack .mmark{position:absolute;top:-2px;width:2px;height:16px;background:#fff;opacity:0;z-index:3;border-radius:1px;transition:left .35s cubic-bezier(.3,.9,.4,1),opacity .2s}
+      #blueprint-lab-panel .bl-mticks{display:grid;grid-template-columns:repeat(5,1fr);margin-top:6px}
+      #blueprint-lab-panel .bl-mticks div{text-align:center;font:600 10px var(--font-tech);color:var(--dim)}
+      #blueprint-lab-panel .bl-mticks div.hit{color:var(--gold)}
+      #blueprint-lab-panel .bl-mticks div b{display:block;font:600 10px var(--font-ui);color:var(--dim);margin-top:2px}
+      #blueprint-lab-panel .bl-mticks div.hit b{color:var(--gold-lt)}
+      #blueprint-lab-panel .bl-scale-row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:11px;color:var(--dim);flex-wrap:wrap}
+      #blueprint-lab-panel .bl-scale-row .bl-chipbtn{font-size:10.5px;padding:2px 8px}
+      #blueprint-lab-panel .bl-scale-row em{font-style:normal;color:var(--mut)}
+      #blueprint-lab-panel .bl-costs{display:flex;flex-wrap:wrap;gap:7px;margin:12px 0}
+      #blueprint-lab-panel .bl-cost{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1px solid var(--line2);border-radius:6px;background:#101a26;font-size:12px}
+      #blueprint-lab-panel .bl-cost i{font-style:normal;font-size:13px}
+      #blueprint-lab-panel .bl-cost span{color:var(--mut)}
+      #blueprint-lab-panel .bl-cost b{font:700 12.5px var(--font-tech)}
+      #blueprint-lab-panel .bl-cost.isk b{color:var(--blue)}
+      #blueprint-lab-panel .bl-cost.mat b{color:var(--cyan)}
+      #blueprint-lab-panel .bl-cost.gain b{color:var(--gold)}
+      #blueprint-lab-panel .bl-acts{display:flex;gap:7px;margin-top:3px;flex-wrap:wrap}
+      #blueprint-lab-panel .bl-acts button{flex:1;min-width:88px;padding:10px;border:1px solid #3b9be5;border-radius:6px;background:linear-gradient(180deg,#1d4e78,#173f60);color:#dff3ff;font:700 12.5px var(--font-ui);cursor:pointer;transition:.12s}
+      #blueprint-lab-panel .bl-acts button:hover{background:linear-gradient(180deg,#2a6b9e,#1d4e78)}
+      #blueprint-lab-panel .bl-acts button.ghost{border-color:var(--line2);background:#101a26;color:var(--mut);font-weight:600}
+      #blueprint-lab-panel .bl-acts button.ghost:hover{background:#16222f;color:var(--txt2)}
+      #blueprint-lab-panel .bl-toast{margin-top:10px;padding:8px 11px;border:1px solid #2a5f3d;border-radius:6px;background:#0f2a1c;color:#7fe0a0;font-size:12px;opacity:0;transition:.2s;min-height:0}
+      #blueprint-lab-panel .bl-toast.on{opacity:1}
+      #blueprint-lab-panel .bl-toast.warn{border-color:#614c28;background:#2a2113;color:#e2c37b}
+      #blueprint-lab-panel .bl-encgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:11px}
+      #blueprint-lab-panel .bl-slots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:11px 0}
+      #blueprint-lab-panel .bl-slot{padding:14px 9px;border:1px dashed #41627f;border-radius:7px;text-align:center;font-size:11.5px;color:var(--dim);line-height:1.6}
+      #blueprint-lab-panel .bl-slot.on{border-style:solid;border-color:var(--gold);background:#1c2029;color:var(--gold-lt)}
+      #blueprint-lab-panel .bl-slot b{display:block;font:700 12.5px var(--font-ui);color:var(--gold-lt);margin-bottom:3px}
+      #blueprint-lab-panel select{width:100%;padding:9px;border:1px solid var(--line2);border-radius:6px;background:#0f1720;color:var(--txt2);font:12.5px var(--font-ui)}
+      #blueprint-lab-panel .bl-fld{margin-bottom:9px}
+      #blueprint-lab-panel .bl-fld label{display:block;margin-bottom:5px;font-size:11.5px;color:var(--mut)}
+      #blueprint-lab-panel .bl-hidden{display:none !important}
+      @media(max-width:880px){
+        #blueprint-lab-panel .bl-statusbar{grid-template-columns:1fr 1fr}
+        #blueprint-lab-panel .bl-statusbar .bl-stat.wide{grid-column:1/-1}
+        #blueprint-lab-panel .bl-workbench,#blueprint-lab-panel .bl-encgrid{grid-template-columns:1fr}
+        #blueprint-lab-panel .bl-ladder{grid-template-columns:repeat(3,minmax(0,1fr))}
+      }
+      @media(max-width:560px){
+        #blueprint-lab-panel .bl-ladder{grid-template-columns:repeat(2,minmax(0,1fr))}
+        #blueprint-lab-panel .bl-mticks div{font-size:9px}
+      }
+      #blueprint-lab-panel .bl-lab{display:flex;flex-direction:column;gap:7px;margin-top:4px}
+      #blueprint-lab-panel .bl-job{padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:#101720}
+      #blueprint-lab-panel .bl-job-active{border-color:var(--green);background:var(--green-bg)}
+      #blueprint-lab-panel .bl-job-head{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+      #blueprint-lab-panel .bl-job-name{font:600 12.5px var(--font-ui);color:var(--txt);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #blueprint-lab-panel .bl-job-meta{font:600 11px var(--font-tech);color:var(--txt2);white-space:nowrap}
+      #blueprint-lab-panel .bl-job-bar{height:10px;border-radius:5px;background:#0a1119;overflow:hidden;box-shadow:inset 0 1px 3px rgba(0,0,0,.35)}
+      #blueprint-lab-panel .bl-job-bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3b9be5,#7fd0ff);border-radius:5px;transition:width .3s linear}
+      #blueprint-lab-panel .bl-job-cancel{padding:3px 10px;border:1px solid var(--line2);border-radius:6px;background:#101a26;color:var(--mut);font:600 11px var(--font-ui);cursor:pointer}
+      #blueprint-lab-panel .bl-job-cancel:hover{background:#16222f;color:var(--txt2)}
+      #blueprint-lab-panel .bl-job-empty{color:var(--dim);font-size:11.5px;text-align:center;border-style:dashed}
+      #blueprint-lab-panel .bl-job-slot{opacity:.92}
+      #blueprint-lab-panel .bl-pause{display:block;margin-top:6px;font-size:11px;color:#e2c37b}
     </style>
     <div class="panel" id="blueprint-lab-panel" style="display:none;">
-      <div class="panel-header"><span class="panel-title">🧬 蓝图实验室</span><span class="text-muted">预览版</span></div>
+      <div class="panel-header"><span class="panel-title">🧬 蓝图发明</span><span class="panel-sub">研究预览版</span></div>
       <div class="panel-body">
-        <div class="bl-preview-note">当前仅接入界面预览，研究、强化、星币、数据核心和校准基体暂不会实际消耗。</div>
-        <div class="bl-preview-tabs" role="tablist" aria-label="蓝图实验室预览标签">
-          <button class="bl-preview-tab active" type="button" data-bl-tab="efficiency">效率研究 · ME / TE</button>
-          <button class="bl-preview-tab" type="button" data-bl-tab="enchant">改装件强化 · 双词条</button>
+        <div class="bl-note">
+          <b>效率研究</b>　研究消耗<b>真实星币</b>与<b>解析矩阵</b>，进度写入存档。采用<b>实验室作业槽</b>：同一时刻只能推一张蓝图的一条线，可排 3 个待研究，<b>离线自动推进</b>。累计研究达到里程碑（10 / 50 / 250 / 1250 / 5000 次）即永久降低该蓝图的制造材料与时间。
         </div>
-        <div class="bl-preview-grid">
-          <section class="bl-preview-card"><h3>蓝图效率研究</h3><p>从已有 BPO 开始，分别积累 ME 与 TE 研究次数。达到里程碑后减少材料消耗或制造时间。</p>
-            <div class="bl-preview-row"><span>当前蓝图</span><b>强化燃料单元</b></div><div class="bl-preview-row"><span>研究进度</span><b>0 / 20 次</b></div><div class="bl-preview-row"><span>当前效果</span><b>ME 0% · TE 0%</b></div><div class="bl-preview-row"><span>数据规则</span><span class="bl-preview-pill">小数节省保留</span></div>
-          </section>
-          <section class="bl-preview-card"><h3>改装件双重强化</h3><p>每次只强化一次，使用同级校准基体。系统从同等级改装件词条池随机生成，焦点只提高概率。</p>
-            <div class="bl-preview-row"><span>目标</span><b>采矿速度改装件 V</b></div><div class="bl-preview-row"><span>附魔槽</span><b>槽位 1 / 2</b></div><div class="bl-preview-row"><span>词条来源</span><b>系统自动随机</b></div><div class="bl-preview-row"><span>谐振规则</span><span class="bl-preview-pill">词条不吃谐振</span></div>
-          </section>
+
+        <div class="bl-tabs" role="tablist" aria-label="蓝图发明标签">
+          <button class="bl-tab active" type="button" data-bl-tab="eff" role="tab">效率研究 · ME / TE</button>
+          <button class="bl-tab" type="button" data-bl-tab="enc" role="tab">改装件强化 · 双词条</button>
         </div>
-        <div class="bl-preview-grid bl-demo-controls">
-          <section class="bl-preview-card"><h3>效率研究台（只读预览）</h3>
-            <label class="bl-demo-label">研究对象<select disabled><option>强化燃料单元</option><option>中型激光弹药</option><option>采矿速度改装件 V</option></select></label>
-            <div class="bl-demo-seg"><button disabled class="bl-demo-button active">材料效率 ME</button><button disabled class="bl-demo-button">时间效率 TE</button></div>
-            <div class="bl-preview-row"><span>累计研究</span><b>0 / 20 次</b></div><div class="bl-demo-progress"><i style="width:0%"></i></div>
-            <div class="bl-preview-row"><span>下一次成本</span><b>4,000 ISK · 数据核心 ×2</b></div>
-            <div class="bl-demo-actions"><button disabled>开始研究</button><button disabled>×20</button><button disabled>×100</button></div>
-          </section>
-          <section class="bl-preview-card"><h3>改装件强化台（只读预览）</h3>
-            <label class="bl-demo-label">基础改装件<select disabled><option>采矿速度改装件 V</option><option>扫描强度改装件 V</option><option>护盾容量改装件 V</option></select></label>
-            <label class="bl-demo-label">强化焦点<select disabled><option>采矿速度词条 · 原始属性</option><option>采气速度词条</option><option>扫描强度词条</option></select></label>
-            <div class="bl-preview-row"><span>发明等级</span><b>III · 预计成功率 55%</b></div><div class="bl-preview-row"><span>本次投入</span><b>校准基体 V ×1 · 数据核心 ×2</b></div>
-            <div class="bl-demo-slots"><span>槽位 1 · 未强化</span><span>槽位 2 · 未强化</span></div><div class="bl-demo-actions"><button disabled>执行一次强化</button><button disabled>清空选择</button></div>
-          </section>
+
+        <!-- ============ 效率研究 ============ -->
+        <div id="bl-view-eff">
+          <div class="bl-statusbar">
+            <div class="bl-stat wide">
+              <div class="bl-stat-lab"><span>蓝图发明</span><i id="bl-xp-need"></i></div>
+              <div class="bl-lvline">
+                <span class="bl-lv">Lv.<span id="bl-lv-num">1</span></span>
+                <span class="bl-lvsub">解锁至 <b id="bl-lv-unlock" style="color:var(--green)">T1</b> · 累计研究 <b id="bl-lv-disc" style="color:var(--gold-lt)">0</b> 次</span>
+              </div>
+              <div class="bl-exprow">
+                <div class="progress-bar"><div class="fill exp" id="bl-xp-fill" style="width:0%"></div></div>
+                <span class="bl-expval" id="bl-xp-val">0 / 0</span>
+              </div>
+            </div>
+            <div class="bl-stat">
+              <div class="bl-stat-lab"><span>解析矩阵</span></div>
+              <div class="bl-bigval cy" id="bl-res-mat">0<small>个</small></div>
+            </div>
+            <div class="bl-stat">
+              <div class="bl-stat-lab"><span>星币</span></div>
+              <div class="bl-bigval bl" id="bl-res-isk">0<small>ISK</small></div>
+            </div>
+          </div>
+
+          <div class="bl-sec-title">批次解锁阶梯 <span>T1–T5 由「蓝图发明」等级门控 · 门槛取该批蓝图的最低制造需求等级 E</span></div>
+          <div class="bl-ladder" id="bl-ladder"></div>
+          <div class="bl-ladder-note" id="bl-ladder-note"></div>
+
+          <div class="bl-workbench">
+            <div class="bl-card">
+              <div class="bl-card-h">
+                <div class="bl-card-t" id="bl-list-title">可研究蓝图 <small>0 张</small></div>
+                <div class="bl-filter">
+                  <button class="bl-chipbtn" type="button" data-sort="tier">按批次</button>
+                  <button class="bl-chipbtn on" type="button" data-sort="xp">按经验</button>
+                </div>
+              </div>
+              <div class="bl-list" id="bl-list"></div>
+            </div>
+
+            <div class="bl-card">
+              <div class="bl-card-h">
+                <div class="bl-card-t">效率研究台</div>
+                <div class="bl-card-t"><small id="bl-sel-meta">—</small></div>
+              </div>
+
+              <div class="bl-seg">
+                <button class="on" type="button" data-dir="me">材料效率 ME</button>
+                <button type="button" data-dir="te">时间效率 TE</button>
+              </div>
+
+              <div class="bl-kv"><span>制造需求等级 E</span><b id="bl-kv-e">—</b></div>
+              <div class="bl-kv"><span>基础材料成本</span><b class="mat" id="bl-kv-mat">—</b></div>
+
+              <div class="bl-mile">
+                <div class="bl-mile-h">
+                  <span class="ml">里程碑进度 <em id="bl-mile-mode">（对数刻度）</em></span>
+                  <span class="mr"><span id="bl-mile-cnt">0</span> 次 <em id="bl-mile-next">→ I</em></span>
+                </div>
+                <div class="bl-mtrack" id="bl-mtrack">
+                  <div class="mfill" id="bl-mfill"></div>
+                  <div class="mmark" id="bl-mmark"></div>
+                </div>
+                <div class="bl-mticks" id="bl-mticks"></div>
+                <div class="bl-scale-row">
+                  <span>刻度：</span>
+                  <button class="bl-chipbtn on" type="button" data-scale="log">对数（推荐）</button>
+                  <button class="bl-chipbtn" type="button" data-scale="lin">线性</button>
+                  <em id="bl-scale-hint"></em>
+                </div>
+              </div>
+
+              <div class="bl-kv"><span>当前效果</span><b id="bl-kv-eff">ME 0% · TE 0%</b></div>
+
+              <div class="bl-costs">
+                <div class="bl-cost isk"><i>💰</i><span>星币/次</span><b id="bl-c-isk">—</b></div>
+                <div class="bl-cost mat"><i>◈</i><span>矩阵/次</span><b id="bl-c-mat">—</b></div>
+                <div class="bl-cost gain"><i>⚡</i><span>经验/次</span><b id="bl-c-xp">—</b></div>
+              </div>
+
+              <div class="bl-acts">
+                <button id="bl-btn1" type="button">加入队列 ×1</button>
+                <button class="ghost" id="bl-btn10" type="button">×10</button>
+                <button class="ghost" id="bl-btn50" type="button">×50</button>
+              </div>
+              <div class="bl-toast" id="bl-toast"></div>
+            </div>
+          </div>
+
+          <div class="bl-sec-title">实验室作业队列 <span>单作业槽 · 最多 3 个待研究 · 离线自动推进</span></div>
+          <div class="bl-lab" id="bl-lab"></div>
         </div>
+
+        <!-- ============ 改装件强化 ============ -->
+        <div id="bl-view-enc" class="bl-hidden">
+          <div class="bl-statusbar" style="grid-template-columns:minmax(0,1fr) minmax(0,1fr)">
+            <div class="bl-stat">
+              <div class="bl-stat-lab"><span>蓝图发明等级（决定成功率）</span></div>
+              <div class="bl-bigval" style="color:var(--green)">Lv.<span id="bl-enc-lv">1</span></div>
+            </div>
+            <div class="bl-stat">
+              <div class="bl-stat-lab"><span>预计成功率</span><em>预览公式</em></div>
+              <div class="bl-bigval" style="color:var(--green)" id="bl-enc-rate">—</div>
+            </div>
+          </div>
+
+          <div class="bl-sec-title">改装件双重强化 <span>与蓝图无关 · 独立机制 · 每件最多 2 个词条槽</span></div>
+
+          <div class="bl-encgrid">
+            <div class="bl-card">
+              <div class="bl-card-h"><div class="bl-card-t">目标改装件</div></div>
+              <div class="bl-fld">
+                <label>基础改装件（仅未安装、未强化）</label>
+                <select id="bl-enc-rig">
+                  <option>采矿速度改装件 V · 采集类</option>
+                  <option>扫描强度改装件 V · 考古类</option>
+                  <option>护盾容量改装件 V · 防御类</option>
+                  <option>武器伤害改装件 V · 战斗类</option>
+                </select>
+              </div>
+              <div class="bl-fld">
+                <label>强化焦点（只提高命中概率，不保证结果）</label>
+                <select id="bl-enc-focus">
+                  <option>采矿速度词条 · 原始属性</option>
+                  <option>采气速度词条</option>
+                  <option>冶炼效率词条</option>
+                </select>
+              </div>
+              <div class="bl-kv"><span>词条来源池</span><b>同等级 · 同类别系列</b></div>
+              <div class="bl-kv"><span>谐振规则</span><b>词条不吃谐振惩罚</b></div>
+            </div>
+
+            <div class="bl-card">
+              <div class="bl-card-h"><div class="bl-card-t">强化台</div><div class="bl-card-t"><small>预览</small></div></div>
+              <div class="bl-slots">
+                <div class="bl-slot on"><b>采矿速度 +9%</b>槽位 1 · 已强化</div>
+                <div class="bl-slot">槽位 2 · 未强化</div>
+              </div>
+              <div class="bl-kv"><span>本次投入 · 校准基体</span><b>同级 ×1</b></div>
+              <div class="bl-kv"><span>本次投入 · 解析矩阵</span><b style="color:var(--cyan)">×2</b></div>
+              <div class="bl-kv"><span>本次投入 · 星币</span><b style="color:var(--blue)">18,000</b></div>
+              <div class="bl-costs">
+                <div class="bl-cost gain"><i>🎯</i><span>结果</span><b>必定填入空槽</b></div>
+              </div>
+              <div class="bl-acts">
+                <button type="button" disabled style="opacity:.55;cursor:not-allowed">执行一次强化</button>
+                <button class="ghost" type="button" disabled style="opacity:.55;cursor:not-allowed">清空选择</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
-    <script>
+        <script>
       (() => {
-        const lab = document.getElementById("blueprint-lab-panel");
-        if (!lab) return;
-        const grids = lab.querySelectorAll(".bl-preview-grid");
-        const efficiency = [grids[0]?.children[0], grids[1]?.children[0]].filter(Boolean);
-        const enchant = [grids[0]?.children[1], grids[1]?.children[1]].filter(Boolean);
-        lab.querySelectorAll("select").forEach(select => { select.disabled = false; });
-        const show = tab => {
-          const isEnchant = tab === "enchant";
-          efficiency.forEach(node => node.classList.toggle("bl-tab-hidden", isEnchant));
-          enchant.forEach(node => node.classList.toggle("bl-tab-hidden", !isEnchant));
-          lab.querySelectorAll("[data-bl-tab]").forEach(button => button.classList.toggle("active", button.dataset.blTab === tab));
-        };
-        lab.querySelectorAll("[data-bl-tab]").forEach(button => button.addEventListener("click", () => show(button.dataset.blTab)));
-        show("efficiency");
-      })();
+  const lab = document.getElementById("blueprint-lab-panel");
+  if (!lab) return;
+  const $ = id => lab.querySelector("#" + id);
+  const INV = (typeof window !== "undefined" && window.INVENTION) ? window.INVENTION : null;
+  const BP = INV ? INV.blueprints : [];
+
+  const MILE  = [10, 50, 250, 1250, 5000];
+  const RED   = [5, 10, 15, 20, 25];
+  const ROMAN = ["I", "II", "III", "IV", "V"];
+  const GATE  = { 1: 1, 2: 20, 3: 40, 4: 60, 5: 80 };
+  const xpForLevel = lv => Math.floor(100 * Math.pow(1.1, lv - 1));
+
+  const S = { dir: "me", tier: 1, sel: null, sort: "xp", scale: "log" };
+  const fmt = n => Math.round(n).toLocaleString("en-US");
+  const bpByKey = k => BP.find(b => b.key === k) || null;
+
+  const gs = () => (typeof window !== "undefined" ? window.gameState : null);
+  function skillLv() {
+    let lvl = 1;
+    try {
+      const sk = gs() && gs().skills && gs().skills.blueprintInvention;
+      if (sk && Number.isFinite(sk.lvl) && sk.lvl > 0) lvl = Math.floor(sk.lvl);
+    } catch (_) {}
+    return lvl;
+  }
+  function skillXp() {
+    let xp = 0;
+    try {
+      const sk = gs() && gs().skills && gs().skills.blueprintInvention;
+      if (sk && Number.isFinite(sk.xp) && sk.xp > 0) xp = Math.floor(sk.xp);
+    } catch (_) {}
+    return xp;
+  }
+  function resCount(id) {
+    const g = gs();
+    if (typeof ResourceRegistry !== "undefined" && g) {
+      try { return Math.max(0, Number(ResourceRegistry.get(g, id)) || 0); } catch (_) {}
+    }
+    return 0;
+  }
+  function researchCount(key, dir) {
+    const g = gs();
+    return (INV && g) ? INV.researchCount(g, key, dir) : 0;
+  }
+  function totalResearch() {
+    let n = 0;
+    for (const b of BP) n += researchCount(b.key, "me") + researchCount(b.key, "te");
+    return n;
+  }
+
+  const mileFrac = (cnt, logMode) => {
+    if (cnt <= 0) return 0;
+    if (!logMode) return Math.min(1, cnt / MILE[4]);
+    const lg = Math.log10;
+    if (cnt >= MILE[4]) return 1;
+    for (let i = 0; i < 5; i++) {
+      const a = i === 0 ? 1 : MILE[i - 1], b = MILE[i];
+      if (cnt <= b) return (i + (lg(cnt) - lg(a)) / (lg(b) - lg(a))) / 5;
+    }
+    return 1;
+  };
+  const levelOf = cnt => { let n = 0; for (let i = 0; i < 5; i++) if (cnt >= MILE[i]) n = i + 1; return n; };
+  const unlockedMax = () => Math.max(1, ...Object.keys(GATE).filter(t => skillLv() >= GATE[t]).map(Number));
+
+  function renderStatus() {
+    const lvl = skillLv(), xp = skillXp(), need = xpForLevel(lvl + 1);
+    if ($("bl-lv-num")) $("bl-lv-num").textContent = lvl;
+    if ($("bl-xp-need")) $("bl-xp-need").textContent = "距下一级 " + fmt(need) + " XP";
+    if ($("bl-xp-val")) $("bl-xp-val").textContent = fmt(xp) + " / " + fmt(need);
+    if ($("bl-xp-fill")) $("bl-xp-fill").style.width = (need > 0 ? Math.min(100, xp / need * 100) : 0) + "%";
+    if ($("bl-lv-unlock")) $("bl-lv-unlock").textContent = "T" + unlockedMax();
+    if ($("bl-lv-disc")) $("bl-lv-disc").textContent = fmt(totalResearch());
+    if ($("bl-res-mat")) $("bl-res-mat").innerHTML = fmt(resCount(INV ? INV.MATRIX_ID : "matrix:analysis_matrix")) + "<small>个</small>";
+    if ($("bl-res-isk")) $("bl-res-isk").innerHTML = fmt(resCount(INV ? INV.ISK_ID : "currency:isk")) + "<small>ISK</small>";
+  }
+
+  function renderLadder() {
+    const host = $("bl-ladder");
+    if (!host) return;
+    const um = unlockedMax();
+    host.innerHTML = "";
+    for (let t = 1; t <= 5; t++) {
+      const list = BP.filter(b => b.tier === t);
+      const eMin = Math.min(...list.map(b => b.E)), eMax = Math.max(...list.map(b => b.E));
+      const state = skillLv() < GATE[t] ? "locked" : (t === um ? "current" : "unlocked");
+      const label = { locked: "未解锁", current: "当前批次", unlocked: "已解锁" }[state];
+      const sum = list.reduce((s, b) => s + researchCount(b.key, "me") + researchCount(b.key, "te"), 0);
+      const cap = list.length * MILE[4] * 2;
+      const pct = Math.min(100, sum / cap * 100);
+      const el = document.createElement("div");
+      el.className = "bl-tier " + state + (S.tier === t ? " sel" : "");
+      el.innerHTML =
+        '<div class="tt"><span class="tname">T' + t + '</span><span class="tstate">' + label + '</span></div>' +
+        '<div class="tgate">解锁 Lv' + GATE[t] + ' · ' + list.length + ' 张</div>' +
+        '<div class="tinfo">E ' + eMin + '–' + eMax + '</div>' +
+        '<div class="tbar"><i style="width:' + (state === "locked" ? 0 : pct) + '%"></i></div>';
+      el.addEventListener("click", () => {
+        S.tier = t; renderLadder(); renderList();
+        if (skillLv() < GATE[t]) toast("T" + t + " 需要「蓝图发明」Lv" + GATE[t] + "，当前 Lv" + skillLv(), true);
+      });
+      host.appendChild(el);
+    }
+    const nx = [2, 3, 4, 5].find(t => skillLv() < GATE[t]);
+    if ($("bl-ladder-note")) $("bl-ladder-note").innerHTML = nx
+      ? '当前 <b>Lv' + skillLv() + '</b> → 已解锁 <b>T' + um + '</b>；下一批 <b>T' + nx + '</b> 需 Lv' + GATE[nx] + '（还差 <b>' + (GATE[nx] - skillLv()) + '</b> 级）。设计约束：解锁下一批所需等级<b>远低于</b>「研满上一批」能到的等级，不卡墙。'
+      : '当前 <b>Lv' + skillLv() + '</b> → 全部批次 <b>T1–T5</b> 已解锁。';
+  }
+
+  function renderList() {
+    const host = $("bl-list");
+    if (!host) return;
+    const t = S.tier, tUnlocked = skillLv() >= GATE[t];
+    const all = BP.filter(b => b.tier === t);
+    if ($("bl-list-title")) $("bl-list-title").innerHTML = "T" + t + " 蓝图 <small>" + all.length + " 张" + (tUnlocked ? "" : " · 未解锁") + "</small>";
+    if (!tUnlocked) {
+      host.innerHTML = '<div class="bl-lockmsg">T' + t + ' 尚未解锁<br>需要「蓝图发明」<b style="color:var(--gold-lt)">Lv' + GATE[t] + '</b>，当前 Lv' + skillLv() + '<br>提升等级后这一批会自动出现在这里。</div>';
+      return;
+    }
+    const list = all.slice().sort((a, b) => S.sort === "xp" ? b.xp - a.xp : a.E - b.E);
+    host.innerHTML = "";
+    for (const b of list) {
+      const cnt = researchCount(b.key, S.dir);
+      const lv = levelOf(cnt);
+      const el = document.createElement("div");
+      el.className = "bl-item" + (S.sel === b.key ? " on" : "");
+      el.innerHTML =
+        '<span class="tierbadge">T' + b.tier + '</span>' +
+        '<span class="nm"><b>' + b.name + '</b><i>' + b.cat + ' · E' + b.E + ' · ' + b.skill + ' · ' + b.time + 's</i></span>' +
+        '<span class="xpv">' + b.xp + ' XP' + (lv ? ' <span style="color:var(--cyan)">' + ROMAN[lv - 1] + '</span>' : '') + '</span>';
+      el.addEventListener("click", () => { S.sel = b.key; renderList(); renderConsole(); });
+      host.appendChild(el);
+    }
+    if (!S.sel || !BP.find(x => x.key === S.sel && x.tier === t)) S.sel = list[0] ? list[0].key : null;
+    renderConsole();
+  }
+
+  function renderConsole() {
+    const b = bpByKey(S.sel);
+    if (!b) return;
+    const pme = researchCount(b.key, "me"), pte = researchCount(b.key, "te");
+    const cnt = S.dir === "me" ? pme : pte;
+    if ($("bl-sel-meta")) $("bl-sel-meta").textContent = "T" + b.tier + " · E" + b.E;
+    if ($("bl-kv-e")) $("bl-kv-e").textContent = b.E;
+    if ($("bl-kv-mat")) $("bl-kv-mat").textContent = b.baseCost;
+    if ($("bl-kv-eff")) {
+      const dm = levelOf(pme), dt = levelOf(pte);
+      $("bl-kv-eff").textContent = (dm || dt)
+        ? "ME " + (dm ? RED[dm - 1] : 0) + "% · TE " + (dt ? RED[dt - 1] : 0) + "%"
+        : "ME 0% · TE 0%";
+    }
+    if ($("bl-c-isk")) $("bl-c-isk").textContent = fmt(b.perIsk);
+    if ($("bl-c-mat")) $("bl-c-mat").textContent = fmt(b.perCore);
+    if ($("bl-c-xp")) $("bl-c-xp").textContent = b.xp;
+    const logMode = S.scale === "log";
+    const frac = mileFrac(cnt, logMode);
+    if ($("bl-mfill")) $("bl-mfill").style.width = (frac * 100) + "%";
+    const mk = $("bl-mmark");
+    if (mk) { mk.style.left = (frac * 100) + "%"; mk.style.opacity = cnt > 0 ? 1 : 0; }
+    if ($("bl-mile-cnt")) $("bl-mile-cnt").textContent = fmt(cnt);
+    const nextIdx = MILE.findIndex(m => cnt < m);
+    if ($("bl-mile-next")) $("bl-mile-next").textContent = nextIdx < 0 ? "已研满 V" : "→ " + ROMAN[nextIdx] + "（" + fmt(MILE[nextIdx] - cnt) + " 次）";
+    if ($("bl-mile-mode")) $("bl-mile-mode").textContent = logMode ? "（对数刻度）" : "（线性刻度）";
+    const ticks = $("bl-mticks");
+    if (ticks && !ticks.dataset.built) {
+      ticks.innerHTML = MILE.map((m, i) => '<div data-i="' + i + '">' + ROMAN[i] + '<b>' + fmt(m) + '</b></div>').join("");
+      ticks.dataset.built = "1";
+    }
+    if (ticks) ticks.querySelectorAll("div").forEach(d => d.classList.toggle("hit", levelOf(cnt) > +d.dataset.i));
+    if ($("bl-scale-hint")) $("bl-scale-hint").textContent = logMode
+      ? "五档 10→5000（跨度 500×）均匀铺开，1 次前进也看得见"
+      : "线性刻度下前 3 档挤在左侧 5% 内，进度会「看着不动」";
+  }
+
+  function fmtDur(s) {
+    s = Math.max(0, Math.ceil(s));
+    if (s < 60) return s + "s";
+    if (s < 3600) return Math.floor(s / 60) + "m" + (s % 60 ? (s % 60) + "s" : "");
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    return h + "h" + (m ? m + "m" : "");
+  }
+
+  function renderLab() {
+    const host = $("bl-lab");
+    if (!host) return;
+    if (!INV) { host.innerHTML = '<div class="bl-lockmsg">实验室模块未加载</div>'; return; }
+    const g = gs();
+    const st = INV.getLabState(g || { invention: { lab: null } });
+    let html = "";
+    if (st.activeJob) {
+      const b = bpByKey(st.activeJob.key);
+      const nm = b ? b.name : st.activeJob.key;
+      const dir = st.activeJob.dir === "te" ? "TE" : "ME";
+      const pct = Math.round((st.activeJob.ratio || 0) * 100);
+      const pause = st.pausedReason === "NO_RESOURCE"
+        ? '<span class="bl-pause">⏸ 资源不足，已暂停（补足后自动继续）</span>' : "";
+      html +=
+        '<div class="bl-job bl-job-active">' +
+          '<div class="bl-job-head"><span class="bl-job-name">' + nm + ' · ' + dir + '</span>' +
+            '<span class="bl-job-meta">' + st.activeJob.done + ' / ' + st.activeJob.times + '　剩余 ' + fmtDur(st.activeJob.remainingSeconds) + '</span>' +
+            '<button class="bl-job-cancel" type="button" data-act="cancel-active">取消</button></div>' +
+          '<div class="bl-job-bar"><i style="width:' + pct + '%"></i></div>' + pause +
+        '</div>';
+    } else {
+      html += '<div class="bl-job bl-job-empty">当前无进行中的研究' +
+        (st.pausedReason ? '（' + (st.pausedReason === "NO_RESOURCE" ? "资源不足" : st.pausedReason) + '）' : '') + '</div>';
+    }
+    for (let i = 0; i < 3; i++) {
+      const q = st.queue[i];
+      if (q) {
+        const b = bpByKey(q.key);
+        const nm = b ? b.name : q.key;
+        const dir = q.dir === "te" ? "TE" : "ME";
+        html +=
+          '<div class="bl-job bl-job-slot">' +
+            '<div class="bl-job-head"><span class="bl-job-name">⏳ ' + nm + ' · ' + dir + ' ×' + q.times + '</span>' +
+              '<button class="bl-job-cancel" type="button" data-act="cancel-queue" data-i="' + i + '">移除</button></div>' +
+          '</div>';
+      } else {
+        html += '<div class="bl-job bl-job-slot bl-job-empty">队列空位 ' + (i + 1) + '</div>';
+      }
+    }
+    host.innerHTML = html;
+  }
+
+  let toastTimer = null;
+  function toast(msg, warn) {
+    const el = $("bl-toast");
+    if (!el) return;
+    el.textContent = msg;
+    el.className = "bl-toast on" + (warn ? " warn" : "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("on"), 2600);
+  }
+
+  function enqueue(n) {
+    const b = bpByKey(S.sel);
+    if (!b) { toast("请先在左侧选择一张蓝图", true); return; }
+    if (!INV) { toast("实验室模块未加载", true); return; }
+    const r = INV.enqueueJob(gs(), b.key, S.dir, n, Date.now());
+    if (r.ok) toast("已加入队列：" + b.name + " " + (S.dir === "me" ? "ME" : "TE") + " ×" + r.queued);
+    else if (r.reason === "LOCKED") toast("T" + b.tier + " 尚未解锁 — 需「蓝图发明」Lv" + r.gate, true);
+    else if (r.reason === "QUEUE_FULL") toast("队列已满（最多 3 个待研究）", true);
+    else if (r.reason === "UNKNOWN_BLUEPRINT") toast("未知蓝图", true);
+    else toast("加入队列失败：" + (r.reason || "?"), true);
+    renderAll();
+  }
+
+  lab.querySelectorAll(".bl-tab").forEach(btn => btn.addEventListener("click", () => {
+    lab.querySelectorAll(".bl-tab").forEach(x => x.classList.toggle("active", x === btn));
+    if ($("bl-view-eff")) $("bl-view-eff").classList.toggle("bl-hidden", btn.dataset.blTab !== "eff");
+    if ($("bl-view-enc")) $("bl-view-enc").classList.toggle("bl-hidden", btn.dataset.blTab !== "enc");
+    if (btn.dataset.blTab === "enc") renderEnc();
+  }));
+  lab.querySelectorAll(".bl-seg button").forEach(btn => btn.addEventListener("click", () => {
+    S.dir = btn.dataset.dir;
+    lab.querySelectorAll(".bl-seg button").forEach(x => x.classList.toggle("on", x === btn));
+    renderList();
+  }));
+  lab.querySelectorAll("[data-sort]").forEach(btn => btn.addEventListener("click", () => {
+    S.sort = btn.dataset.sort;
+    lab.querySelectorAll("[data-sort]").forEach(x => x.classList.toggle("on", x === btn));
+    renderList();
+  }));
+  lab.querySelectorAll("[data-scale]").forEach(btn => btn.addEventListener("click", () => {
+    S.scale = btn.dataset.scale;
+    lab.querySelectorAll("[data-scale]").forEach(x => x.classList.toggle("on", x === btn));
+    renderConsole();
+  }));
+  if ($("bl-btn1")) $("bl-btn1").addEventListener("click", () => enqueue(1));
+  if ($("bl-btn10")) $("bl-btn10").addEventListener("click", () => enqueue(10));
+  if ($("bl-btn50")) $("bl-btn50").addEventListener("click", () => enqueue(50));
+  const labHost = $("bl-lab");
+  if (labHost) labHost.addEventListener("click", e => {
+    const btn = (e && e.target && e.target.closest) ? e.target.closest("[data-act]") : null;
+    if (!btn || !INV) return;
+    if (btn.dataset.act === "cancel-active") { INV.cancelJob(gs(), Date.now()); toast("已取消当前研究"); }
+    else if (btn.dataset.act === "cancel-queue") { INV.cancelQueueItem(gs(), Number(btn.dataset.i), Date.now()); toast("已移除队列项"); }
+    renderAll();
+  });
+
+  function renderEnc() {
+    const lvl = skillLv();
+    if ($("bl-enc-lv")) $("bl-enc-lv").textContent = lvl;
+    const raw = 0.30 + 0.03 * (lvl - 1);
+    const rate = Math.min(0.95, Math.max(0.30, raw));
+    if ($("bl-enc-rate")) $("bl-enc-rate").textContent = Math.round(rate * 100) + "%";
+  }
+
+  function renderAll() { renderStatus(); renderLadder(); renderList(); renderConsole(); renderLab(); renderEnc(); }
+
+  renderAll();
+  try {
+    let timer = null;
+    const startTimer = () => {
+      if (timer) return;
+      timer = setInterval(() => {
+        if (lab.style.display !== "none") {
+          if (INV) INV.processUntil(gs(), Date.now());
+          renderStatus(); renderLab();
+        }
+      }, 500);
+    };
+    new MutationObserver(() => {
+      if (lab.style.display !== "none") { renderAll(); startTimer(); }
+      else if (timer) { clearInterval(timer); timer = null; }
+    }).observe(lab, { attributes: true, attributeFilter: ["style"] });
+  } catch (_) {}
+})();
     </script>
+    <!-- 装备工程面板 -->
     <div class="panel" id="equipeng-panel" style="display:none;">
       <div id="equipeng-action-booster-slots" class="action-booster-slots" aria-label="装备工程增强剂槽位"></div>
       <div class="panel-header">
@@ -1669,7 +2236,7 @@
 </aside>
 
   <script defer src="./js/core/runtime.js?v=3"></script>
-  <script defer src="./js/core/events.js?v=5"></script>
+  <script defer src="./js/core/events.js?v=6"></script>
   <script defer src="./js/ui/error-boundary.js?v=3"></script>
   <script defer src="./js/data/base.js?v=5"></script>
   <script defer src="./js/data/ammo.js?v=7"></script>
@@ -1677,7 +2244,7 @@
   <script defer src="./js/data/planets.js?v=5"></script>
   <script defer src="./js/data/ships.js?v=15"></script>
   <script defer src="./js/data/boosters.js?v=11"></script>
-  <script defer src="./js/systems/boosters.js?v=11"></script>
+  <script defer src="./js/systems/boosters.js?v=13"></script>
   <script defer src="./js/systems/recycling.js?v=4"></script>
   <script defer src="./js/data/combat.js?v=40"></script>
   <script defer src="./js/data/cargo.js?v=10"></script>
@@ -1694,10 +2261,10 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=7"></script>
   <script defer src="./js/data/tutorial.js?v=7"></script>
-  <script defer src="./js/data/changelog.js?v=21"></script>
+  <script defer src="./js/data/changelog.js?v=24"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
-  <script defer src="./js/core/state.js?v=16"></script>
+  <script defer src="./js/core/state.js?v=17"></script>
   <script defer src="./js/systems/reputation.js?v=3"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
   <script defer src="./js/systems/research.js?v=12"></script>
@@ -1705,16 +2272,17 @@
   <script defer src="./js/core/statistics.js?v=6"></script>
   <script defer src="./js/systems/achievements.js?v=5"></script>
   <script defer src="./js/systems/production.js?v=15"></script>
-  <script defer src="./js/core/resources.js?v=5"></script>
+  <script defer src="./js/core/resources.js?v=6"></script>
   <script defer src="./js/systems/tutorial.js?v=9"></script>
-  <script defer src="./js/systems/manufacturing.js?v=7"></script>
+  <script defer src="./js/systems/manufacturing.js?v=9"></script>
+  <script defer src="./js/systems/invention.js?v=2"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=6"></script>
   <script defer src="./js/systems/rigs.js?v=5"></script>
-  <script defer src="./js/systems/archaeology.js?v=23"></script>
+  <script defer src="./js/systems/archaeology.js?v=24"></script>
   <script defer src="./js/systems/planetary.js?v=5"></script>
-  <script defer src="./js/systems/station.js?v=24"></script>
+  <script defer src="./js/systems/station.js?v=25"></script>
   <script defer src="./js/data/legion/npc-names.js?v=2"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=2"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=2"></script>
@@ -1727,21 +2295,21 @@
   <script defer src="./js/ui/action-modal.js?v=13"></script>
   <script defer src="./js/core/queue.js?v=6"></script>
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
-  <script defer src="./js/systems/combat.js?v=57"></script>
+  <script defer src="./js/systems/combat.js?v=58"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=117"></script>
-  <script defer src="./js/core/actions.js?v=63"></script>
+  <script defer src="./js/core/selectors.js?v=118"></script>
+  <script defer src="./js/core/actions.js?v=64"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=54"></script>
   <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
-  <script defer src="./js/core/diagnostics.js?v=5"></script>
+  <script defer src="./js/core/diagnostics.js?v=6"></script>
    <script defer src="./js/ui/shell-render.js?v=150"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=13"></script>
    <script defer src="./js/ui/combat-render.js?v=73"></script>
   <script defer src="./js/ui/planetary-render.js?v=3"></script>
-  <script defer src="./js/ui/archaeology-render.js?v=16"></script>
+  <script defer src="./js/ui/archaeology-render.js?v=17"></script>
   <script defer src="./js/ui/booster-render.js?v=17"></script>
   <script defer src="./js/ui/station-render.js?v=16"></script>
   <script defer src="./js/ui/legion-render.js?v=28"></script>
@@ -1755,8 +2323,8 @@
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
   <script defer src="./js/ui/alliance-render.js?v=42"></script>
-  <script defer src="./js/core/tick.js?v=25"></script>
-  <script defer src="./js/core/offline.js?v=35"></script>
+  <script defer src="./js/core/tick.js?v=26"></script>
+  <script defer src="./js/core/offline.js?v=36"></script>
   <script defer src="./js/systems/offline-combat.js?v=60"></script>
   <script defer src="./js/systems/combat-log.js?v=6"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
@@ -1790,7 +2358,7 @@
   <script defer src="./js/core/ad-service.js?v=5"></script>
   <script defer src="./js/systems/ad-buff.js?v=6"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
-  <script defer src="./js/core/persistence.js?v=37"></script>
+  <script defer src="./js/core/persistence.js?v=38"></script>
   <script defer src="./js/ui/changelog-popup.js?v=2"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=14"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>

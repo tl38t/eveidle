@@ -1641,6 +1641,12 @@ function calculateOfflineGains(options) {
       typeof ResearchSystem.processResearchUntil === "function") {
     ResearchSystem.processResearchUntil(gameState, now);
   }
+  // 蓝图发明 · 效率研究（ME / TE）：离线作业槽推进。
+  // 复用本函数同一 now、不传 elapsed（真实封顶在 processUntil 内统一处理）。
+  if (typeof INVENTION !== "undefined" && INVENTION &&
+      typeof INVENTION.processUntil === "function") {
+    INVENTION.processUntil(gameState, now);
+  }
   const lastActive = gameState.lastActiveTime || now;
   const elapsed = Math.floor((now - lastActive) / 1000);
   if (elapsed <= 5) return;

@@ -284,6 +284,249 @@
     };
   }
 
+  // ================= 泰坦装配摘要（「重启丢装备」类问题的核心判据） =================
+  // 目标：用极短文本回答四问 ——
+  //   ① 槽位研究（tt_high/tt_mid/tt_low/tt_rig）在本次启动读到了吗（值 = 0 还是正常）；
+  //   ② 注册表里该组合的 slots 是否已含研究加成（还是停在舰体基础值）；
+  //   ③ 各槽装配件数 vs 槽位数（缺口 = 被 reclaim 回收的件数）；
+  //   ④ 那些装配引用在装备实例池里还在不在（不在 = 真的没了，而非只是显示异常）。
+  // 隐私：只输出游戏内 id（组合 id / 舰船 id）与计数，不含玩家 ID / Token / 存档内容。
+  const TITAN_PREFIX = "titan__";
+  const TITAN_SLOT_KEYS = ["high", "mid", "low", "rig"];
+  const TT_NODES = ["tt_high", "tt_mid", "tt_low", "tt_rig"];
+
+  function parseTitanIdOf(shipId) {
+    if (typeof shipId !== "string" || shipId.indexOf(TITAN_PREFIX) !== 0) return null;
+    const parts = shipId.slice(TITAN_PREFIX.length).split("__");
+    if (parts.length !== 3) return null;
+    return { hullId: parts[0], weaponId: parts[1], coreId: parts[2] };
+  }
+  function isTitanShip(ship) {
+    if (!ship || typeof ship !== "object") return false;
+    if (ship.titanCombo) return true;
+    return typeof ship.shipId === "string" && ship.shipId.indexOf(TITAN_PREFIX) === 0;
+  }
+  function titanInstancePool() {
+    const pool = {};
+    let total = 0, titanTagged = 0;
+    try {
+      const list = (typeof gameState !== "undefined" && gameState && gameState.equipment && Array.isArray(gameState.equipment.instances))
+        ? gameState.equipment.instances : [];
+      total = list.length;
+      list.forEach(function (x) {
+        if (!x) return;
+        if (x.instanceId) pool[x.instanceId] = true;
+        if (typeof x.itemId === "string" && x.itemId.indexOf("titan") >= 0) titanTagged += 1;
+      });
+    } catch (e) {}
+    return { pool: pool, total: total, titanTagged: titanTagged };
+  }
+  // 逐槽统计「已引用件数」与「引用在实例池中找不到的件数」。
+  function countFitted(ship, pool) {
+    const out = { high: 0, mid: 0, low: 0, rig: 0, missing: 0, nulls: 0 };
+    const f = (ship && ship.fitted) || null;
+    if (!f) return out;
+    for (let s = 0; s < TITAN_SLOT_KEYS.length; s++) {
+      const slot = TITAN_SLOT_KEYS[s];
+      const arr = Array.isArray(f[slot]) ? f[slot] : [];
+      for (let i = 0; i < arr.length; i++) {
+        const ref = arr[i];
+        if (ref == null) { out.nulls += 1; continue; }
+        out[slot] += 1;
+        if (typeof ref === "string" && !pool[ref]) out.missing += 1;
+      }
+    }
+    return out;
+  }
+
+  // ---- 取证（2026-09-22）：「重启丢装备」跨重启自证 ----
+  // ① 回收看门狗：state.js reclaimOverflowFitting 在真的裁掉泰坦装备时会往下面这个键追加一条
+  //    证据（含「裁剪时刻的槽位上限」）。报告据此判定那次裁剪用的是含研究加成的正确槽位，
+  //    还是研究未生效的过期（基础）槽位 —— 后者即真 bug。
+  // ② 跨重启快照：每次生成报告记录各泰坦装配件数与存档字符数，下次报告自动给差值，
+  //    把「重启前后两份报告人工对比」自动化。
+  const TITAN_RECLAIM_LOG_KEY = "deep_space_idle_titan_reclaim_log_v1";
+  const TITAN_SNAP_KEY = "deep_space_idle_titan_snap_v1";
+  function readTitanReclaimLog() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return [];
+      const raw = localStorage.getItem(TITAN_RECLAIM_LOG_KEY);
+      const p = raw ? JSON.parse(raw) : null;
+      return Array.isArray(p) ? p : [];
+    } catch (e) { return []; }
+  }
+  function readTitanSnap() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return null;
+      const raw = localStorage.getItem(TITAN_SNAP_KEY);
+      const p = raw ? JSON.parse(raw) : null;
+      return (p && typeof p === "object") ? p : null;
+    } catch (e) { return null; }
+  }
+  function writeTitanSnap(snap) {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return;
+      localStorage.setItem(TITAN_SNAP_KEY, JSON.stringify(snap));
+    } catch (e) { /* 取证失败不影响报告生成 */ }
+  }
+  function titanSaveChars() {
+    try {
+      if (typeof localStorage === "undefined" || !localStorage) return -1;
+      const v = localStorage.getItem("eve_idle_save");
+      return (typeof v === "string") ? v.length : -1;
+    } catch (e) { return -1; }
+  }
+  function fmtClock(ms) {
+    const n = num(ms);
+    if (!n) return "?";
+    try {
+      const d = new Date(n);
+      const p2 = function (x) { return (x < 10 ? "0" : "") + x; };
+      return (d.getMonth() + 1) + "/" + d.getDate() + " " + p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds());
+    } catch (e) { return "?"; }
+  }
+
+  function summarizeTitan() {
+    const rep = {
+      available: false, reason: "",
+      nodes: {}, nodesHit: 0,
+      hullsBase: {},
+      registryCount: 0, configs: [],
+      shipCount: 0, ships: [],
+      poolTotal: 0, poolTitanTagged: 0,
+      reclaimLog: [], reclaimTotal: 0, reclaimStaleCount: 0,
+      prevSnap: null, snapNow: null, snapDeltas: [],
+      verdict: ""
+    };
+    const state = (typeof gameState !== "undefined" && gameState) ? gameState : null;
+    if (!state) { rep.reason = "无 gameState（未进入游戏或启动未完成）"; return rep; }
+    rep.available = true;
+
+    // ① 槽位研究等级
+    const cl = (state.research && state.research.completedLevels && typeof state.research.completedLevels === "object")
+      ? state.research.completedLevels : null;
+    for (let i = 0; i < TT_NODES.length; i++) {
+      const id = TT_NODES[i];
+      const present = !!(cl && Object.prototype.hasOwnProperty.call(cl, id));
+      const v = present ? Number(cl[id]) : 0;
+      rep.nodes[id] = present ? (isFinite(v) ? v : String(cl[id])) : "缺失";
+      if (present && isFinite(v) && v > 0) rep.nodesHit += 1;
+    }
+
+    // ② 舰体基础槽位真值 + 注册表当前槽位
+    const hulls = (typeof window !== "undefined" && window.TITAN_HULLS) ? window.TITAN_HULLS : null;
+    if (hulls) for (const h in hulls) { if (Object.prototype.hasOwnProperty.call(hulls, h) && hulls[h] && hulls[h].slots) rep.hullsBase[h] = hulls[h].slots; }
+    const reg = (typeof window !== "undefined" && window.SHIP_DATA && window.SHIP_DATA.titan) ? window.SHIP_DATA.titan : null;
+    if (reg) {
+      for (const shipId in reg) {
+        if (!Object.prototype.hasOwnProperty.call(reg, shipId)) continue;
+        const cfg = reg[shipId];
+        if (!cfg || cfg.type !== "titan") continue;
+        rep.registryCount += 1;
+        if (rep.configs.length < 8) {
+          rep.configs.push({
+            id: shipId, hullId: cfg.hullId || "?",
+            slots: cfg.slots || null,
+            base: (cfg.hullId && hulls && hulls[cfg.hullId] && hulls[cfg.hullId].slots) ? hulls[cfg.hullId].slots : null
+          });
+        }
+      }
+    }
+
+    // ③ 存档内的泰坦舰船 + 装配
+    let ships = [];
+    try {
+      if (state.inventory && Array.isArray(state.inventory.ships)) ships = state.inventory.ships;
+    } catch (e) {}
+    const ip = titanInstancePool();
+    rep.poolTotal = ip.total; rep.poolTitanTagged = ip.titanTagged;
+    for (let i = 0; i < ships.length; i++) {
+      const ship = ships[i];
+      if (!isTitanShip(ship)) continue;
+      rep.shipCount += 1;
+      if (rep.ships.length < 8) {
+        const cnt = countFitted(ship, ip.pool);
+        const cfg = reg && ship.shipId ? reg[ship.shipId] : null;
+        rep.ships.push({
+          id: String(ship.id || ship.instanceId || ("#" + i)),
+          shipId: String(ship.shipId || "?"),
+          hasCombo: !!ship.titanCombo,
+          fitted: { high: cnt.high, mid: cnt.mid, low: cnt.low, rig: cnt.rig },
+          nulls: cnt.nulls, missing: cnt.missing,
+          slots: (cfg && cfg.slots) ? cfg.slots : null
+        });
+      }
+    }
+
+    // ⑤ 跨重启自证（2026-09-22）：快照对比 + 回收看门狗判定
+    const snapNow = {
+      t: Date.now(),
+      saveChars: titanSaveChars(),
+      ships: rep.ships.map(function (s) {
+        return { id: s.id, fitted: { high: s.fitted.high, mid: s.fitted.mid, low: s.fitted.low, rig: s.fitted.rig } };
+      })
+    };
+    const prevSnap = readTitanSnap();
+    rep.prevSnap = prevSnap;
+    if (prevSnap && Array.isArray(prevSnap.ships)) {
+      rep.ships.forEach(function (s) {
+        let pv = null;
+        for (let i = 0; i < prevSnap.ships.length; i++) {
+          if (prevSnap.ships[i] && prevSnap.ships[i].id === s.id) { pv = prevSnap.ships[i]; break; }
+        }
+        if (!pv || !pv.fitted) return;
+        const from = { high: num(pv.fitted.high), mid: num(pv.fitted.mid), low: num(pv.fitted.low), rig: num(pv.fitted.rig) };
+        const to = { high: s.fitted.high, mid: s.fitted.mid, low: s.fitted.low, rig: s.fitted.rig };
+        rep.snapDeltas.push({
+          id: s.id, from: from, to: to,
+          changed: (from.high !== to.high) || (from.mid !== to.mid) || (from.low !== to.low) || (from.rig !== to.rig)
+        });
+      });
+    }
+    rep.snapNow = snapNow;
+    writeTitanSnap(snapNow);
+
+    // 回收看门狗：逐条判定「裁剪时槽位是否已含研究加成」（低于当前研究槽位 ⇒ 过期槽位裁剪 = 真 bug）
+    function curSlotsFor(shipId) {
+      for (let i = 0; i < rep.ships.length; i++) { if (rep.ships[i].shipId === shipId && rep.ships[i].slots) return rep.ships[i].slots; }
+      for (let i = 0; i < rep.configs.length; i++) { if (rep.configs[i].id === shipId && rep.configs[i].slots) return rep.configs[i].slots; }
+      return null;
+    }
+    const rlog = readTitanReclaimLog();
+    rep.reclaimTotal = rlog.length;
+    rep.reclaimLog = rlog.slice(0, 5);
+    rep.reclaimStaleCount = 0;
+    rep.reclaimLog.forEach(function (e) {
+      const c = (e && e.cap) || {};
+      const cur = curSlotsFor(String((e && e.ship) || ""));
+      let stale = false;
+      if (cur) {
+        if (num(c.mid) < num(cur.mid) || num(c.low) < num(cur.low) || num(c.rig) < num(cur.rig)) stale = true;
+      }
+      e.__stale = stale;
+      if (stale) rep.reclaimStaleCount += 1;
+    });
+
+    // ④ 一句话结论
+    const v = [];
+    if (rep.nodesHit === 0) v.push("槽位研究 4 节点全部读作 0/缺失");
+    if (!rep.registryCount) v.push("注册表为空（泰坦组合未被注册）");
+    if (!rep.shipCount) v.push("存档 inventory.ships 内无泰坦舰船");
+    rep.configs.forEach(function (c) {
+      if (c.base && c.slots) {
+        const dBonus = (num(c.slots.mid) - num(c.base.mid)) + (num(c.slots.low) - num(c.base.low)) + (num(c.slots.rig) - num(c.base.rig));
+        if (dBonus === 0 && rep.nodesHit > 0) v.push(c.hullId + " 注册表槽位未含研究加成（中/低/改装仍为基础值）");
+      }
+    });
+    rep.ships.forEach(function (s) {
+      if (s.missing > 0) v.push(s.id + " 有 " + s.missing + " 个装配引用在实例池中找不到");
+    });
+    // 注意：空槽（已装件数 < 槽位容量）是玩家正常状态，绝不能当异常判据。
+    // 「是否丢装」只能靠重启前后两份报告对比 fitted 件数，故此处不下缺口结论。
+    rep.verdict = v.length ? v.join("；") : "槽位含研究加成、装配引用完整（「重启丢装备」需用重启前后两份报告对比）";
+    return rep;
+  }
+
   // 本游戏的键前缀。同一 origin 上可能还有其他小游戏的数据（TapTap 把小游戏托管在
   // 同一域名下按路径分发，而 localStorage 按 origin 隔离、不看路径）——必须把「不是
   // 我们的占用」单独算出来，否则会把平台/其他游戏的空间算到本作头上，误导排查。
@@ -382,6 +625,9 @@
     rep.storage = scanStorage();
     const saveEntry = rep.storage.entries.filter(function (e) { return e.key === "eve_idle_save"; })[0];
     rep.local.saveKeyChars = saveEntry ? saveEntry.chars : -1;
+
+    // ---- 泰坦装配摘要（重启丢装备类问题的判据；采集异常不得影响其余诊断）----
+    try { rep.titan = summarizeTitan(); } catch (e) { rep.titan = { available: false, reason: "采集异常：" + describeErr(e) }; }
 
     const se = SM && SM._lastStorageError;
     rep.storageError = se ? { name: se.name || "Error", code: (se.code !== undefined && se.code !== null) ? String(se.code) : "", message: se.message || String(se) } : null;
@@ -592,6 +838,41 @@
       }
     }
 
+    // 8. 泰坦装配（「重启丢装备」类问题的判据；高槽计数恒为 7 不会溢出，故只看中/低/改装）
+    const ttv = rep.titan;
+    if (ttv && ttv.available) {
+      if (ttv.shipCount === 0) {
+        push("INFO", "泰坦装配：存档内未发现泰坦舰船" + (ttv.registryCount ? "（注册表已有 " + ttv.registryCount + " 个组合）" : ""));
+      } else {
+        let bad = false;
+        if (ttv.nodesHit === 0) {
+          push("FAIL", "泰坦装配：槽位研究 tt_high/tt_mid/tt_low/tt_rig 全部读作 0/缺失 —— 槽位不会含研究加成，越界装备启动即被回收");
+          bad = true;
+        }
+        ttv.configs.forEach(function (c) {
+          if (!c.base || !c.slots) return;
+          const dBonus = (num(c.slots.mid) - num(c.base.mid)) + (num(c.slots.low) - num(c.base.low)) + (num(c.slots.rig) - num(c.base.rig));
+          if (dBonus === 0 && ttv.nodesHit > 0) {
+            push("FAIL", "泰坦装配：" + c.hullId + " 注册表槽位仍为舰体基础值（未叠加研究加成），越界装备会被回收");
+            bad = true;
+          }
+        });
+        ttv.ships.forEach(function (s) {
+          const cap = s.slots ? ("中" + num(s.slots.mid) + "/低" + num(s.slots.low) + "/改" + num(s.slots.rig) + "/高" + num(s.slots.high)) : "未知";
+          push("INFO", "泰坦装配数据：舰船 " + s.id + " 已装 中" + s.fitted.mid + "/低" + s.fitted.low + "/改" + s.fitted.rig + " 件 ｜ 该组合槽位容量 " + cap + "（空槽属正常，不必等于容量；本报告后段会自动给出跨重启对比与启动回收记录）");
+          if (s.missing > 0) { push("FAIL", "泰坦装配：舰船 " + s.id + " 有 " + s.missing + " 个装配引用在装备实例池中找不到（装备数据已丢失）"); bad = true; }
+        });
+        if (ttv.reclaimStaleCount > 0) {
+          push("FAIL", "泰坦装配：历史上有 " + ttv.reclaimStaleCount + " 次启动使用了「未含研究加成」的过期槽位裁剪装备 —— 真 bug 复发（详见【启动回收记录】）");
+          bad = true;
+        }
+        if (ttv.prevSnap && (ttv.snapDeltas || []).some(function (d) { return d.changed; })) {
+          push("WARN", "泰坦装配：与上次生成报告相比装配件数发生变化（见【跨重启对比】）—— 若非你本人装卸，即为启动在回收装备");
+        }
+        if (!bad) push("OK", "泰坦装配：槽位研究已生效，装配引用完整（启动回收记录与跨重启对比见报告后段）");
+      }
+    }
+
     const fails = v.filter(function (x) { return x.level === "FAIL"; }).length;
     const warns = v.filter(function (x) { return x.level === "WARN"; }).length;
     rep.verdictSummary = "FAIL " + fails + " ｜ WARN " + warns + " ｜ 其余正常";
@@ -635,6 +916,50 @@
     if ((st.entries || []).length > 8) L.push("  ... 另有 " + (st.entries.length - 8) + " 个键");
     L.push("");
     L.push("【设备文件备份】" + (rep.mirror && rep.mirror.present ? (rep.mirror.available ? (rep.mirror.syncFailed ? "可用但上次写入失败" : "正常") : "不可用") + " ｜ 上次写入：" + rep.mirror.lastWriteAtText + (rep.mirror.error ? " ｜ 错误：op=" + rep.mirror.error.op + (rep.mirror.error.code ? " code=" + rep.mirror.error.code : "") + " " + rep.mirror.error.message + (rep.mirror.error.file ? " file=" + rep.mirror.error.file : "") : "") : "未挂载"));
+    L.push("");
+    const tt = rep.titan;
+    if (tt && tt.available) {
+      L.push("【泰坦装配】" + tt.verdict);
+      L.push("  槽位研究：" + TT_NODES.map(function (id) { return id + "=" + tt.nodes[id]; }).join(" ") + "（命中 " + tt.nodesHit + "/4）");
+      L.push("  注册表组合数：" + tt.registryCount);
+      tt.configs.forEach(function (c) {
+        L.push("    · " + c.id);
+        L.push("        当前 slots=" + JSON.stringify(c.slots) + " ｜ 舰体基础=" + JSON.stringify(c.base));
+      });
+      L.push("  泰坦舰船：" + tt.shipCount + " 艘 ｜ 装备实例池 " + tt.poolTotal + " 件（titan 前缀 " + tt.poolTitanTagged + " 件）");
+      tt.ships.forEach(function (s) {
+        L.push("    · " + s.id + " shipId=" + s.shipId + " combo=" + (s.hasCombo ? "有" : "无"));
+        L.push("        装配=" + JSON.stringify(s.fitted) + " ｜ 该组合槽位=" + JSON.stringify(s.slots) +
+          (s.nulls ? " ｜ 空位 " + s.nulls : "") + (s.missing ? " ｜ 实例池缺失 " + s.missing : ""));
+      });
+      L.push("  （本报告已自动记录【启动回收记录】与【跨重启对比】，见下方两段，无需人工比对）");
+      L.push("");
+      L.push("【泰坦装配·启动回收记录】" + (tt.reclaimTotal
+        ? "共 " + tt.reclaimTotal + " 条" + (tt.reclaimStaleCount ? "，其中 " + tt.reclaimStaleCount + " 条用了未含研究的过期槽位 ⚠ 真 bug" : "，全部用含研究槽位（属正常越界回收）")
+        : "无"));
+      if (!tt.reclaimTotal) {
+        L.push("  未记录到任何回收事件 —— 历史与本次启动都没有裁过泰坦装备。");
+        L.push("  若装配仍有空槽，那是此前版本留下的旧伤（装备已退回仓库，重新装上即可）或本就没装，不是当前版本在裁。");
+      } else {
+        (tt.reclaimLog || []).forEach(function (e) {
+          const c = e.cap || {}, cu = e.cut || {};
+          L.push("  · " + fmtClock(e.t) + " ｜ 裁 " + num(e.n) + " 件（中" + num(cu.mid) + "/低" + num(cu.low) + "/改" + num(cu.rig) + "）｜ 裁剪时槽位 中" + num(c.mid) + "/低" + num(c.low) + "/改" + num(c.rig) + (e.__stale ? " ⚠ 低于当前研究槽位" : ""));
+        });
+      }
+      L.push("");
+      L.push("【泰坦装配·跨重启对比】");
+      if (!tt.prevSnap) {
+        L.push("  首次记录，暂无基线。重启后再生成一次即可自动给出差值。");
+      } else {
+        L.push("  上次报告：" + fmtClock(tt.prevSnap.t) + " ｜ 当时存档 " + (num(tt.prevSnap.saveChars) >= 0 ? num(tt.prevSnap.saveChars).toLocaleString("zh-CN") + " 字符" : "未知"));
+        if (!tt.snapDeltas || !tt.snapDeltas.length) L.push("  未找到可比对的泰坦舰船");
+        (tt.snapDeltas || []).forEach(function (d) {
+          L.push("  · " + d.id + " 装配 中" + d.from.mid + "/低" + d.from.low + "/改" + d.from.rig + " → 中" + d.to.mid + "/低" + d.to.low + "/改" + d.to.rig + (d.changed ? "  ⚠ 件数变化（非你本人装卸即为启动回收）" : "（无变化）"));
+        });
+      }
+    } else if (tt) {
+      L.push("【泰坦装配】未采集：" + (tt.reason || "?"));
+    }
     L.push("");
     if (!cloud.present) {
       L.push("【云端】未找到云同步服务实例");
