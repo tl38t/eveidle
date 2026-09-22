@@ -722,7 +722,9 @@ function resolveArchaeologyCycle(state, now, randomValue, eventMeta, options) {
     if (drops.rare) {
       GameEvents.emit("archaeology:rareFound", Object.assign({}, drops.rare, { siteId:site.id, tier:site.tier }), evtMeta);
     }
-    GameEvents.emit("archaeology:success", { siteId:site.id, tier:site.tier, xp:grantedXp, matrix }, evtMeta);
+    // 🔴 matrix 必须从 drops 取（本作用域内没有名为 matrix 的变量；曾误写成裸 shorthand
+    //   ⇒ 每次解析成功都抛 ReferenceError，emit 之后的 return / 自动出售协议 / 脑插掉落监听全部丢失）。
+    GameEvents.emit("archaeology:success", { siteId:site.id, tier:site.tier, xp:grantedXp, matrix:Number(drops.matrix) || 0 }, evtMeta);
     // 研究批次 I · autosell / autoconv：文物真实入库之后，每个成功周期最多调用一次统一协议入口。
     // 在线与离线共用同一入口；分类严格（ISK/唯一 → autosell，LP → autoconv，校准物永不自动处理）。
     const protocols = (typeof applyArchaeologyArtifactProtocols === "function")
