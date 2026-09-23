@@ -3156,6 +3156,7 @@ function getCombatDropPreview(state, options) {
       signatureDrop: isT10 ? {
         chance: (typeof T10_SIGNATURE_DROP_CHANCE !== "undefined") ? T10_SIGNATURE_DROP_CHANCE : 0.02,
         count: signatureIds.length,
+        ids: signatureIds,
         names: signatureIds.map(id => ((typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[id]) ? EQUIPMENT_DB[id].name : id))
       } : null,
       probeDrop: (typeof getDeathspaceProbeDropConfigs === "function") ? getDeathspaceProbeDropConfigs(site)

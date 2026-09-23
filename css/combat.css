@@ -1218,6 +1218,10 @@
   .drop-row.drop-cargo .drop-name { color: #ffbf5c; }
   .drop-row.drop-gear .drop-name { color: #86e19a; }
   .drop-row.drop-implant .drop-name { color: #9fd0ff; }
+  .drop-signature-pool { color: #9fb3c8; font-size: 0.86em; line-height: 1.55; padding: 3px 0 7px 2px; border-bottom: 1px dashed rgba(127,212,168,0.18); }
+  .drop-signature-pool b { color: #ff9ed6; font-weight: 600; }
+  .drop-equip-link { cursor: pointer; text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px; }
+  .drop-equip-link:hover { color: #ffc8e8; }
 
   /* ---- 弹药装载面板 ---- */
   .combat-ammo-loadout {

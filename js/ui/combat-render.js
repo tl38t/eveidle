@@ -950,7 +950,7 @@ function renderCombatPanel(now) {
       // 先驱核心（2026-09-23 起在站内掉落）：概率从站点配置动态取 —— 旧写法硬编码 "2%" 其实是签名装概率，属误标。
       const coreCfgs = (typeof getStationCoreDropConfigs === "function") ? getStationCoreDropConfigs(site) : [];
       const coreBest = coreCfgs.reduce((m, c) => Math.max(m, c.eliteChance || 0, c.bossChance || 0), 0);
-      rareLine = `👑 先驱签名装 ×${sigCount}${coreBest > 0 ? " · 🌟 先驱核心 " + Math.round(coreBest * 100) + "%" : ""}`;
+      rareLine = `👑 先驱装备 ×${sigCount}${coreBest > 0 ? " · 🌟 先驱核心 " + Math.round(coreBest * 100) + "%" : ""}`;
     } else {
       rareLine = `💠 ${getResourceDisplayName(site.coreMaterial)} · 📜 ${getResourceDisplayName(site.protocolMaterial)} 2%`;
     }
@@ -1038,7 +1038,8 @@ function combatDropToItem(dropId) {
       "空间站冶炼核心": "【冶炼制造线】效率 +10%（系数 B）",
       "空间站船坞核心": "【舰船船坞·部件制造】材料消耗额外降低 2%（仅部件车间生效，与船坞等级节省加算）",
       "空间站装备制造核心": "【装备制造线】效率 +10%（系数 B）",
-      "空间站增强剂制造核心": "【增强剂制造线】效率 +10%（系数 B）"
+      "空间站增强剂制造核心": "【增强剂制造线】效率 +10%（系数 B）",
+      "空间站先驱核心": "【空间站后勤】全局后勤 +30%（不绑单条产线，与四核心 / 联盟后勤加算）"
     }[coreKey] || "【对应制造线】效率 +10%（系数 B）";
     return {
       id: dropId,
@@ -1104,6 +1105,52 @@ function combatDropToItem(dropId) {
   };
 }
 
+// 先驱装备（10/10 掉落池）属性弹窗：点击掉落预览里的装备名打开，展示该装备的属性行与获取方式。
+// 复用 openItemDetailModal 同款 .equip-enh-modal 视觉类（全局 CSS），不触碰共享函数。
+function openEquipAttrModal(equipId) {
+  const eq = (typeof EQUIPMENT_DB !== "undefined") ? EQUIPMENT_DB[equipId] : null;
+  if (!eq) return;
+  const lines = (typeof getEquipmentAttributeLines === "function") ? getEquipmentAttributeLines(equipId, 0) : [];
+  const icon = eq.icon || (eq.slot === "rig" ? "🔧" : "⚙️");
+  const variant = eq.deathspaceVariant === "supervisor" ? "·Θ 改进型" : "标准型";
+  const dropNote = eq.deathspaceVariant === "supervisor"
+    ? "改进型「·Θ」：用 1 件标准型 + 材料制造（不掉落）。强化倍率放大自带属性。"
+    : "标准型：BOSS 直接掉落（每次 1 件随机）· 不可制造 · 全游戏唯一掉落池。";
+  let backdrop = document.getElementById("equip-attr-modal");
+  if (!backdrop) {
+    backdrop = document.createElement("div");
+    backdrop.id = "equip-attr-modal";
+    backdrop.className = "equip-enh-modal-backdrop";
+    document.body.appendChild(backdrop);
+    backdrop.addEventListener("click", e => { if (e.target === backdrop) backdrop.style.display = "none"; });
+    backdrop._esc = e => { if (e.key === "Escape" && backdrop.style.display === "flex") backdrop.style.display = "none"; };
+    document.addEventListener("keydown", backdrop._esc);
+  }
+  const esc = (typeof escapeAchievementText === "function") ? escapeAchievementText : (s => String(s == null ? "" : s));
+  backdrop.innerHTML = `
+    <div class="equip-enh-modal" role="dialog" aria-modal="true">
+      <div class="eem-head">
+        <span class="eem-icon">${esc(icon)}</span>
+        <div class="eem-title-wrap">
+          <div class="eem-title">${esc(eq.name)}</div>
+          <div class="eem-sub">先驱装备 · ${esc(variant)}</div>
+        </div>
+        <button class="eem-close" data-eam-close aria-label="关闭">✕</button>
+      </div>
+      <div class="eem-body">
+        <div class="eem-section"><h3 class="eem-sec-title">装备属性</h3>
+          <div class="eem-desc">${lines.length ? lines.map(l => esc(l)).join("<br>") : "（无额外属性）"}</div>
+        </div>
+        <div class="eem-section"><h3 class="eem-sec-title">获取方式</h3>
+          <div class="eem-desc">${esc(dropNote)}</div>
+        </div>
+      </div>
+    </div>`;
+  backdrop.style.display = "flex";
+  const closeBtn = backdrop.querySelector("[data-eam-close]");
+  if (closeBtn) closeBtn.addEventListener("click", () => { backdrop.style.display = "none"; });
+}
+
 function renderCombatDropPreview(display) {
   const wrap = document.getElementById("combat-drop-preview-wrap");
   const body = document.getElementById("combat-drop-preview");
@@ -1126,9 +1173,13 @@ function renderCombatDropPreview(display) {
     body._cargoDropBound = true;
     body.addEventListener("click", e => {
       const r = e.target.closest(".drop-row[data-drop-id]");
-      if (!r) return;
-      const item = combatDropToItem(r.dataset.dropId);
-      if (item) openItemDetailModal(item);
+      if (r) {
+        const item = combatDropToItem(r.dataset.dropId);
+        if (item) openItemDetailModal(item);
+        return;
+      }
+      const eq = e.target.closest("[data-equip-id]");
+      if (eq) openEquipAttrModal(eq.dataset.equipId);
     });
   }
   _combatDropMeta = {};
@@ -1150,6 +1201,13 @@ function renderCombatDropPreview(display) {
   if (zoneLabel) zoneLabel.textContent = "· " + (preview.name || "");
   const pct = x => (Number(x) * 100).toFixed(x * 100 % 1 === 0 ? 0 : 2) + "%";
   const rows = [];
+  // 核心掉落概率文案：死亡空间站内无 elite 单位（仅 BOSS 通道）。任一通道概率为 0 时不渲染该「X 0%」误导项。
+  const coreChanceText = sc => {
+    const parts = [];
+    if (sc.eliteChance > 0) parts.push(`精英 ${pct(sc.eliteChance)}`);
+    if (sc.bossChance > 0) parts.push(`BOSS ${pct(sc.bossChance)}`);
+    return parts.join(" · ") + `（每枚 ×${sc.qty}）· 全游戏唯一`;
+  };
   const row = (icon, name, detail, extraClass, dropId) => {
     if (dropId) _combatDropMeta[dropId] = { name, icon };
     return `<div class="drop-row${extraClass ? " " + extraClass : ""}"${dropId ? ` data-drop-id="${dropId}"` : ""}><span class="drop-name">${icon} ${name}</span><span class="drop-detail">${detail}</span></div>`;
@@ -1168,13 +1226,21 @@ function renderCombatDropPreview(display) {
     }
     if (preview.signatureDrop) {
       const sd = preview.signatureDrop;
-      rows.push(`<div class="drop-group-title">👑 先驱签名装（BOSS 直接掉落 · 每次 1 件随机 · 泰坦专属 · 不可制造）</div>`);
-      rows.push(row("👑", `先驱签名装 共 ${sd.count} 件（单件概率 ${pct(sd.chance)}）`, "掉落池：" + sd.names.join(" / "), "drop-signature", "signature"));
+      rows.push(`<div class="drop-group-title">👑 先驱装备（BOSS 直接掉落 · 每次 1 件随机 · 泰坦专属）</div>`);
+      rows.push(row("👑", `先驱装备 共 ${sd.count} 件（单件基础概率 ${pct(sd.chance)}）`, "标准型仅 BOSS 掉落（不可制造）；改进型「·Θ」用 1 件标准型 + 材料制造 · 点名下装备可看属性", "drop-signature", "signature"));
+      if (sd.names && sd.names.length) {
+        const ids = (sd.ids && sd.ids.length === sd.names.length) ? sd.ids : [];
+        const parts = sd.names.map((n, i) => {
+          const id = ids[i];
+          return id ? `<b class="drop-equip-link" data-equip-id="${id}">${n}</b>` : `<b>${n}</b>`;
+        });
+        rows.push(`<div class="drop-signature-pool">掉落池（${sd.count} 件 · 点名称看属性）：` + parts.join(" / ") + `</div>`);
+      }
     }
     if (Array.isArray(preview.stationCoreDrops) && preview.stationCoreDrops.length > 0) {
       rows.push(`<div class="drop-group-title">🌟 空间站核心（唯一掉落）</div>`);
       for (const sc of preview.stationCoreDrops) {
-        rows.push(row("🌟", getResourceDisplayName(sc.resourceId), `精英 ${pct(sc.eliteChance)} · BOSS ${pct(sc.bossChance)}（每枚 ×${sc.qty}）· 全游戏唯一`, "drop-core", sc.resourceId));
+        rows.push(row("🌟", getResourceDisplayName(sc.resourceId), coreChanceText(sc), "drop-core", sc.resourceId));
       }
     }
     if (preview.tacticalMaterial) {
@@ -1219,7 +1285,7 @@ function renderCombatDropPreview(display) {
     if (Array.isArray(preview.stationCoreDrops) && preview.stationCoreDrops.length > 0) {
       rows.push(`<div class="drop-group-title">🌟 空间站核心（唯一掉落）</div>`);
       for (const sc of preview.stationCoreDrops) {
-        rows.push(row("🌟", getResourceDisplayName(sc.resourceId), `精英 ${pct(sc.eliteChance)} · BOSS ${pct(sc.bossChance)}（每枚 ×${sc.qty}）· 全游戏唯一`, "drop-core", sc.resourceId));
+        rows.push(row("🌟", getResourceDisplayName(sc.resourceId), coreChanceText(sc), "drop-core", sc.resourceId));
       }
     }
     if (preview.tacticalMaterial) {

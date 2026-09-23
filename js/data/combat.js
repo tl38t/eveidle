@@ -393,12 +393,13 @@ const DEATHSPACE_DATABASE = [
   // 决赛波 boss 生效值 = 模板 6,000,000（combatBalance 全 1.0 + 决赛波 hpMult/damageMult 1.0），前 5 波递减，不高于决赛波。
   , {
     id:"precursor_ded_10_10", name:"先驱10/10深渊回响", faction:"precursor", sourceZoneId:"precursor_abyss_echo", requiredCL:90, dedTier:10,
-    ticketMaterial:"先驱深渊回响通行密钥", ticketSourceZoneId:"precursor_abyss_echo", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:6, clearLpBonus:120,
+    // sourceZoneId 仅作剧情/来源标识（指向 dedSourceOnly 源战区，不可进入）；通行密钥实际发放点由 ticketSourceZoneId 数组指定（三个可进入的 90 星带，2026-09-23）。
+    ticketMaterial:"先驱深渊回响通行密钥", ticketSourceZoneId:["angel_deep_domain","blood_deep_reliquary","sansha_deep_nexus"], ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:6, clearLpBonus:120,
     // 先驱核心（空间站第 5 核心，后勤 +0.30）：2026-09-23 起从源战区挪到**站内**掉落。
     // 站内无 elite 单位（buildDeathspaceWave 只造 normal 护卫 + 1 boss）⇒ 只配 boss 通道；
-    // 一轮 6 波 = 6 次 BOSS 掷骰，P(≥1) = 1 − 0.9^6 = 46.86%。概率沿用原源战区口径 0.10（未擅自改数值）。
+    // 一轮 6 波 = 6 次 BOSS 掷骰，单波 1% ⇒ P(≥1) = 1 − 0.99^6 ≈ 5.85%（2026-09-23 由 10% 下调至 1%）。
     // 保底 getStationCorePityChance 读 combat.zoneClears[site.id]，死亡空间全通不计入 zoneClears ⇒ 恒定基础率（有意的）。
-    stationCoreDrops:[{coreId:"precursor", resourceId:"special:空间站先驱核心", qty:1, chances:{boss:0.10}}],
+    stationCoreDrops:[{coreId:"precursor", resourceId:"special:空间站先驱核心", qty:1, chances:{boss:0.01}}],
     combatBalance:{hp:1,damage:1,finalHp:1,finalDamage:1},
     waves:[
       { name:"深渊回响·回响前哨", hpMult:0.06, damageMult:0.06, escortNormal:1, coreChance:0.15 },

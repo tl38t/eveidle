@@ -311,7 +311,7 @@ const DEATHSPACE_BASE_SUFFIX = Object.freeze({
 
 // 🔴 10/10 先驱签名装 = **独立命名**，禁止用「前缀 + 制式底子名」拼装
 // （旧写法 `先驱Ω型 + 旗舰级聚焦激光炮 I + ·统御签名` 属制式装备名，已废）。
-// 标准型 = 独立名；改进型 = 独立名 + "·西塔"（希腊字母 Θ theta，2026-09-23 替换旧「监督者」）。仅 dedTier===10 走此表；
+// 标准型 = 独立名；改进型 = 独立名 + "·Θ"（希腊字母 Θ theta 符号本身，非中文音译「西塔」，2026-09-23 替换旧「监督者」）。仅 dedTier===10 走此表；
 // 表内缺失的底子回落到 standardName（保证新增底子不会崩，但应补齐本表）。
 const DEATHSPACE_T10_SIGNATURE_NAMES = Object.freeze({
   t1_capital_laser:"先驱·噬光棱镜",
@@ -322,22 +322,35 @@ const DEATHSPACE_T10_SIGNATURE_NAMES = Object.freeze({
   t1_capital_structure_array:"先驱·永寂骨架"
 });
 
-// 先驱签名装自带「电容回充系数」：每件 −1% 燃料消耗（bonuses.capacitorRecharge）。
+// 先驱签名装自带「电容回充」：每件 +1% 电容回充（等价 −1% 燃料消耗，bonuses.capacitorRecharge）。
 // 消费点在 selectors.getCombatFuelMultiplierFromState —— 并入与改装件/泰坦科研**同一个
 // 「加算折扣」桶**（不新增乘区），故在线/离线/军团 NPC 三条路径自动同源。
 const DEATHSPACE_T10_CAPACITOR_RECHARGE = 0.01;
+// 10/10 终局签名装主战斗值统一倍率：武器伤害(baseDamage) / 维修量(amount) 各 ×1.2。
+// 用户 2026-09-23 拍板：覆盖全部 12 件（武器3×标准/西塔 + 维修3×标准/西塔）。仅 dedTier===10 分支生效。
+const DEATHSPACE_T10_DAMAGE_MULT = 1.2;
+// 10/10 掉落池：仅 6 件标配（西塔改进型只造不掉，见 createDeathspaceEquipmentDefinition）。
+// 在线/离线掉落与 UI 掉落预览共用此池；西塔经 EQUIPMENT_RECIPES 制造获得。
 function getTier10SignatureIds(faction) {
   if (faction !== "precursor") return [];
   return [
-    "ded_precursor_10_weapon_laser", "ded_precursor_10_weapon_laser_supervisor",
-    "ded_precursor_10_weapon_missile", "ded_precursor_10_weapon_missile_supervisor",
-    "ded_precursor_10_weapon_cannon", "ded_precursor_10_weapon_cannon_supervisor",
-    "ded_precursor_10_repair_shield", "ded_precursor_10_repair_shield_supervisor",
-    "ded_precursor_10_repair_armor", "ded_precursor_10_repair_armor_supervisor",
-    "ded_precursor_10_repair_structure", "ded_precursor_10_repair_structure_supervisor"
+    "ded_precursor_10_weapon_laser",
+    "ded_precursor_10_weapon_missile",
+    "ded_precursor_10_weapon_cannon",
+    "ded_precursor_10_repair_shield",
+    "ded_precursor_10_repair_armor",
+    "ded_precursor_10_repair_structure"
   ];
 }
-if (typeof window !== "undefined") window.getTier10SignatureIds = getTier10SignatureIds;
+// 10/10 可制造池：6 件西塔（改进型），各吃 1 件标配 + 泰坦精炼材料作原料。
+function getTier10SignatureCraftableIds(faction) {
+  if (faction !== "precursor") return [];
+  return getTier10SignatureIds(faction).map(id => id + "_supervisor");
+}
+if (typeof window !== "undefined") {
+  window.getTier10SignatureIds = getTier10SignatureIds;
+  window.getTier10SignatureCraftableIds = getTier10SignatureCraftableIds;
+}
 
 function getDeathspaceXWeaponEffect(faction, variant, baseItemId) {
   if (faction === "angel") return { kind:"dot", rate:variant === "supervisor" ? 0.008 : 0.005, rounds:3, label:"灼蚀" };
@@ -404,17 +417,26 @@ function createDeathspaceEquipmentDefinition(site, role, baseItemId, tierConfig)
     improved.requiresBlueprint = false;
     standard.signature = true;
     improved.signature = true;
-    // 10/10 签名装：不再掉落制造材料，改为 boss 直接掉实例，故从可制造配方表剔除（droppableOnly）。
+    // 10/10 标配：仍老板直接掉实例，droppableOnly 从可制造配方表剔除。
     standard.droppableOnly = true;
-    improved.droppableOnly = true;
-    // 独立命名（非「前缀+制式底子名」拼装）：标准型 = 表内独立名，西塔型 = 独立名 + "·西塔"。
-    // 后缀「西塔」= 希腊字母 Θ(theta) 的中文读音（用户 2026-09-23 拍板，替换旧「监督者」）。
+    // 西塔（改进型）：只造不掉 —— 用 1 件标配 + 材料制造（与 tier-8 监督者型同构）。
+    // 故西塔不设 droppableOnly，进入 EQUIPMENT_RECIPES；成本 = 通用旗舰材料(×0.75) + 泰坦精炼材料门禁。
+    // 泰坦精炼材料走 special: 命名空间（resources.js 仅按 id 注册，裸名 idsByName 查不到 ⇒ 必须带前缀）。
+    improvedCost["special:锻星合金"] = 25;
+    improvedCost["special:熔虚晶体"] = 25;
+    // 独立命名（非「前缀+制式底子名」拼装）：标准型 = 表内独立名，西塔型（改进型）显示名 = 独立名 + "·Θ"。
+    // 后缀直接用希腊字母 Θ(theta) 符号本身（非中文音译「西塔」），用户 2026-09-23 拍板，替换旧「监督者」。
     const signatureName = DEATHSPACE_T10_SIGNATURE_NAMES[baseItemId] || standardName;
     standard.name = signatureName;
-    improved.name = signatureName + "·西塔";
-    // 自带电容回充系数：−1% 燃料消耗（标准/监督者同值；强化同口径放大，见消费点注释）。
+    improved.name = signatureName + "·Θ";
+    // 自带电容回充：+1% 电容回充（等价 −1% 燃料消耗；标准/Θ 同值；强化同口径放大，见消费点注释）。
     standard.bonuses = Object.assign({}, standard.bonuses || {}, { capacitorRecharge: DEATHSPACE_T10_CAPACITOR_RECHARGE });
     improved.bonuses = Object.assign({}, improved.bonuses || {}, { capacitorRecharge: DEATHSPACE_T10_CAPACITOR_RECHARGE });
+    // 主战斗值 ×1.2（用户 2026-09-23 拍板）：武器=伤害(baseDamage)、维修=维修量(amount)；标准型与西塔型同乘。
+    if (standardCombat.kind === "weapon") standardCombat.baseDamage = Math.round(standardCombat.baseDamage * DEATHSPACE_T10_DAMAGE_MULT);
+    else standardCombat.amount = Math.round(standardCombat.amount * DEATHSPACE_T10_DAMAGE_MULT);
+    if (improvedCombat.kind === "weapon") improvedCombat.baseDamage = Math.round(improvedCombat.baseDamage * DEATHSPACE_T10_DAMAGE_MULT);
+    else improvedCombat.amount = Math.round(improvedCombat.amount * DEATHSPACE_T10_DAMAGE_MULT);
   }
   return [standard, improved];
 }
@@ -814,9 +836,11 @@ const EQUIPMENT_BONUS_NAMES = {
 };
 // rig 百分比减免类：以正数存储，展示为 -X%
 const RIG_REDUCTION_BONUS_KEYS = ["archaeologyInterferenceReduction", "archaeologyCycleReductionPercent"];
-// 装备自带减耗类（先驱签名装电容回充）：以正数存储，展示为 -X% 燃料消耗
-const EQUIPMENT_FUEL_REDUCTION_BONUS_KEYS = ["capacitorRecharge"];
-const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","structureCapacityPercent","smeltingSpeed","archaeologyScanPercent","archaeologyFuelEfficiency","miningRichChance","gasRichChance"];
+// 百分比增益类：以正数存储，展示为 +X%。
+// ⚠️ capacitorRecharge（10/10 先驱装备自带）与 archaeologyFuelEfficiency（电容回充改装件）语义同为「电容回充」，
+//    全游戏口径统一为 **+X% 回充**（等价 −X% 燃料消耗）：研究 tt_cap「全船电容回充 +10%（燃料消耗 -10%）」、
+//    考古面板 / 竖屏「电容回充 X%」。故必须走正号分支；早前误归入减耗类 ⇒ 属性卡错显「电容回充 -1%」（2026-09-23 修正）。
+const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","structureCapacityPercent","smeltingSpeed","archaeologyScanPercent","archaeologyFuelEfficiency","capacitorRecharge","miningRichChance","gasRichChance"];
 
 const ARCHAEOLOGY_REDUCTION_BONUS_KEYS = ["archaeologyStabilizer", "archaeologyCycleReduction"];
 const ARCHAEOLOGY_PERCENT_BONUS_KEYS = ["archaeologyDecoder", "archaeologyNonFatalAvoid", "archaeologyCopyChance"];
@@ -826,7 +850,7 @@ function formatEquipmentBonusValue(key, value) {
   if (["miningEfficiency","gasEfficiency","miningBonus","gasBonus","miningLaserEfficiency","gasLaserEfficiency","salvageEfficiency"].includes(key)) {
     return "+" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
-  if (RIG_REDUCTION_BONUS_KEYS.includes(key) || ARCHAEOLOGY_REDUCTION_BONUS_KEYS.includes(key) || EQUIPMENT_FUEL_REDUCTION_BONUS_KEYS.includes(key)) {
+  if (RIG_REDUCTION_BONUS_KEYS.includes(key) || ARCHAEOLOGY_REDUCTION_BONUS_KEYS.includes(key)) {
     return "-" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
   if (RIG_PERCENT_BONUS_KEYS.includes(key) || ARCHAEOLOGY_PERCENT_BONUS_KEYS.includes(key)) {

@@ -606,23 +606,23 @@ function getCombatZoneSpecialDropConfigs(zone) {
   }));
 }
 
-// 通行密钥掉落配置：按 zone 反查来源死亡空间，仅精英/Boss。
+// 通行密钥掉落配置（单条）：按 zone 反查来源死亡空间，仅精英/Boss。
+// 语义与复数版 getDeathspaceTicketDropConfigs 一致（ticketSourceZoneId 可为字符串或数组）：
+// 单数版 = 复数版首项，供只需一条配置的调用点使用（军团星图试炼 legion-starmap-trial.js、
+// UI 预览 selectors.js 的 ticketDrop 字段）。⚠️ 2026-09-23 修：此前按 getDeathspaceForSourceZone
+// （仅 sourceZoneId）匹配 ⇒ 10/10 钥匙改挂三个 90 星带后单数版恒 null（军团试炼掉不到钥匙）。
 function getDeathspaceTicketDropConfig(zone) {
   if (!zone) return null;
-  const site = getDeathspaceForSourceZone(zone.id);
-  if (!site) return null;
-  return {
-    deathspaceId: site.id,
-    deathspaceName: site.name,
-    material: site.ticketMaterial,
-    eliteChance: Number(site.ticketChances.elite) || 0,
-    bossChance: Number(site.ticketChances.boss) || 0
-  };
+  const list = getDeathspaceTicketDropConfigs(zone);
+  return list.length ? list[0] : null;
 }
 
 function getDeathspaceTicketDropConfigs(zone) {
   if (!zone) return [];
-  return DEATHSPACE_DATABASE.filter(site => (site.ticketSourceZoneId || site.sourceZoneId) === zone.id).map(site => ({
+  return DEATHSPACE_DATABASE.filter(site => {
+    const id = site.ticketSourceZoneId || site.sourceZoneId;
+    return Array.isArray(id) ? id.indexOf(zone.id) !== -1 : id === zone.id;
+  }).map(site => ({
     deathspaceId:site.id, deathspaceName:site.name, material:site.ticketMaterial,
     eliteChance:Number(site.ticketChances && site.ticketChances.elite) || 0,
     bossChance:Number(site.ticketChances && site.ticketChances.boss) || 0
