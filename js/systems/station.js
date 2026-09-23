@@ -1895,6 +1895,7 @@ const STATION_CORE_RESOURCE = {
   shipEng: "special:空间站船坞核心",
   equipEng:"special:空间站装备制造核心",
   booster: "special:空间站增强剂制造核心",
+  precursor:"special:空间站先驱核心",
 };
 // coreTag → 自动线 lineId 映射：决定系数 B 接入哪条自动线。
 // 冶炼/装备制造/增强剂三条自动线走 getStationLogisticsMultiplier；船坞(shipyard)的的核心加成不在此映射，
@@ -1927,6 +1928,13 @@ function getStationLogisticsBaseMultiplier(state, coreTag) {
       ? Number(ResourceRegistry.get(state, STATION_CORE_RESOURCE[coreTag])) || 0
       : 0;
     if (obtained[coreTag] && held > 0) mult += 0.10;
+  }
+  // 先驱核心（10/10 死亡空间专属掉落）：全局后勤 +0.30，不绑单条产线，与四核心/联盟后勤加算。
+  if ((state.stationCoresObtained || {}).precursor) {
+    const heldPrecursor = (typeof ResourceRegistry !== "undefined")
+      ? Number(ResourceRegistry.get(state, STATION_CORE_RESOURCE.precursor)) || 0
+      : 0;
+    if (heldPrecursor > 0) mult += 0.30;
   }
   // 联盟后勤：只读取游戏从云端回传并落入存档的联盟摘要；成员人数档位为
   // 1–4 人 +0.10、5–9 人 +0.20、10 人 +0.30，和空间站本体/核心加算。
@@ -2162,7 +2170,8 @@ function getStationPageDisplayState(state, now) {
     { coreTag:"smelt",   label:"冶炼核心",   effectText:"自动线 +10%" },
     { coreTag:"shipEng", label:"船坞核心",   effectText:"部件制造材料 -2%" },
     { coreTag:"equipEng",label:"装备制造核心", effectText:"自动线 +10%" },
-    { coreTag:"booster", label:"增强剂核心", effectText:"自动线 +10%" }
+    { coreTag:"booster", label:"增强剂核心", effectText:"自动线 +10%" },
+    { coreTag:"precursor", label:"先驱核心", effectText:"全局后勤 +30%" }
   ];
   var obtainedMap = state.stationCoresObtained || {};
   var coreEffects = coreEffectDefs.map(function(c) {

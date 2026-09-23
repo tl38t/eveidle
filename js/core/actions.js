@@ -854,7 +854,7 @@ const CombatStateActions = {
 
   selectDeathspaceTier(state, tier) {
     const selectedTier = Number(tier);
-    if (![2,3,4,6,8].includes(selectedTier)) return { changed:false, reason:"unknown-deathspace-tier" };
+    if (![2,3,4,6,8,10].includes(selectedTier)) return { changed:false, reason:"unknown-deathspace-tier" };
     const currentSite = DEATHSPACE_DATABASE.find(site => site.id === (state.combat.viewDeathspaceId || state.combat.deathspaceId));
     const site = DEATHSPACE_DATABASE.find(item => item.dedTier === selectedTier && item.faction === (currentSite && currentSite.faction)) ||
       DEATHSPACE_DATABASE.find(item => item.dedTier === selectedTier);
@@ -1264,6 +1264,11 @@ function getQueueItemConfigForState(item) {
     config.archaeologyTarget = item.target;
   } else if (skill === "boosterEngineering") {
     config.boosterTarget = item.target;
+  } else if (skill === "blueprintInvention") {
+    // 蓝图发明（2026-09-22 接主队列）：target = 蓝图 key；研究方向 ME/TE 由 item.subAction 承载
+    // （与熔炼/拆解的 subAction 用法同构，保证同一蓝图的 ME 与 TE 不会在 queueAdd 里被误合并）。
+    config.inventionTarget = item.target;
+    config.inventionDir = item.subAction === "te" ? "te" : "me";
   }
   return config;
 }
@@ -1304,6 +1309,14 @@ function applyQueueConfigToState(state, config, now) {
     action.boosterTarget = config.boosterTarget;
     action.startedBoosterRecipeTarget = config.boosterTarget;
     action.boosterRecipeTarget = config.boosterTarget;
+  }
+  if (config.inventionTarget) {
+    const dir = config.inventionDir === "te" ? "te" : "me";
+    action.inventionTarget = config.inventionTarget;
+    action.inventionDir = dir;
+    // 运行中锁定：与 startedArea / startedSmeltingArea 同款，防止运行期间面板改选导致中途换目标。
+    action.startedInventionTarget = config.inventionTarget;
+    action.startedInventionDir = dir;
   }
 }
 
@@ -1385,6 +1398,27 @@ function executeQueueItemForState(state, item, now) {
     }
     state._dirty = true;
     return { changed:true, skill:"boosterEngineering" };
+  }
+
+  // 蓝图发明（2026-09-22 接主队列）：与考古/增强剂同款 fail-closed 校验。
+  // 蓝图未知或未解锁 → 记失败、跳过该项，绝不带非法目标进入运行态（否则 tick 每帧空转）。
+  // 校验通过则不 return，继续走下方通用尾部（战斗收尾 + applyQueueConfigToState）。
+  if (skill === "blueprintInvention") {
+    const invBp = (typeof INVENTION !== "undefined" && INVENTION && typeof INVENTION.blueprintByKey === "function")
+      ? INVENTION.blueprintByKey(item.target) : null;
+    const invUnlocked = Boolean(invBp) && (typeof INVENTION.isUnlocked !== "function" || INVENTION.isUnlocked(state, invBp));
+    if (!invUnlocked) {
+      queue.status.failCount = (Number(queue.status.failCount) || 0) + 1;
+      queue.items.splice(queue.status.activeIndex, 1);
+      if (queue.items.length) {
+        queue.status.activeIndex = Math.min(queue.status.activeIndex, queue.items.length - 1);
+        return executeQueueItemForState(state, queue.items[queue.status.activeIndex], now);
+      }
+      queue.status.isRunning = false; queue.status.activeIndex = -1; queue.status.completedCount = 0;
+      state.currentAction.active = false; state.currentAction.batchRemaining = 0;
+      state._dirty = true;
+      return { changed:false, reason:invBp ? "locked" : "unknown-blueprint" };
+    }
   }
 
   // 常规技能：采矿/冶炼/采气/制造等。
@@ -2095,6 +2129,15 @@ const ShellStateActions = {
     if (item.skill === "equipmentEngineering") {
       const recipe = EQUIPMENT_ENGINEERING_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target);
       if (recipe && !equipmentRecipeHasRequiredBlueprint(state, recipe)) return { changed:false, reason:"blueprint-locked" };
+    }
+    // 蓝图发明（接主队列）：入队即校验，蓝图未知 / 未解锁一律拒绝。
+    // 研究方向走 item.subAction（me/te），下方通用逻辑已透传并纳入合并判定，
+    // 因此同一蓝图的 ME 与 TE 不会被误合并成一项。
+    if (item.skill === "blueprintInvention") {
+      const invBp = (typeof INVENTION !== "undefined" && INVENTION && typeof INVENTION.blueprintByKey === "function")
+        ? INVENTION.blueprintByKey(item.target) : null;
+      if (!invBp) return { changed:false, reason:"unknown-blueprint" };
+      if (typeof INVENTION.isUnlocked === "function" && !INVENTION.isUnlocked(state, invBp)) return { changed:false, reason:"blueprint-locked" };
     }
     if (queue.items.length >= queue.config.maxSize) return { changed:false, reason:"queue-full" };
     const count = item.count === -1 ? -1 : Math.max(1, Number(item.count) || 1);

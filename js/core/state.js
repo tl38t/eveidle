@@ -89,7 +89,15 @@ const gameState = {
     boosterRecipeTarget: "mining_lubricant_n",
     boosterCategory: "mining",
     boosterQualityFilter: "all",
-    startedBoosterRecipeTarget: ""
+    startedBoosterRecipeTarget: "",
+    // 蓝图发明（2026-09-22 接主队列）：发明作业作为普通队列项参与主动作。
+    //   inventionTarget/inventionDir              = 面板当前选中（视图态，与 smeltingArea 同款）
+    //   startedInventionTarget/startedInventionDir = 运行中锁定（applyQueueConfigToState 写入，
+    //                                               tick/离线/队列一致性判定都以它为准）
+    inventionTarget: "",
+    inventionDir: "me",
+    startedInventionTarget: "",
+    startedInventionDir: "me"
   },
 
   planetary: {

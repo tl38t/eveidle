@@ -30,6 +30,44 @@ function stopOrSkip() {
     }
 }
 
+// ===== 蓝图发明 · 效率研究（ME / TE）在线推进 =====
+// 2026-09-22「接主队列」：发明不再是独立的实验台槽位，而是主动作队列里的普通一项，
+// 与采矿/冶炼逐条同构 —— 周期取 INVENTION.cycleSeconds（与离线 descriptor 同源，禁第二套），
+// 进度按墙钟 delta 累加，逐周期走 settleOneCycle 原子结算，资源不足一律零副作用 stopOrSkip。
+// 返回本 tick 是否至少完成了一次循环（供 actionCompleted → refreshVisiblePanelAfterAction）。
+function tickBlueprintInvention() {
+  const action = gameState.currentAction;
+  const MOD = (typeof INVENTION !== "undefined") ? INVENTION : null;
+  if (!MOD || typeof MOD.settleOneCycle !== "function") { stopOrSkip(); updateUI(); return false; }
+  const bpKey = action.startedInventionTarget || action.inventionTarget;
+  const dir = (action.startedInventionDir === "te") ? "te" : "me";
+  const bp = (typeof MOD.blueprintByKey === "function") ? MOD.blueprintByKey(bpKey) : null;
+  // 蓝图未知：非法运行态，零副作用停止（绝不空转）
+  if (!bp) { stopOrSkip(); updateUI(); return false; }
+  // 运行时重校验门槛：超载催化剂等增强剂可能中途失效导致等级回落
+  if (typeof MOD.isUnlocked === "function" && !MOD.isUnlocked(gameState, bp)) { stopOrSkip(); updateUI(); return false; }
+  // 资源闸门：星币 / 解析矩阵不足 → 零副作用 stopOrSkip（与其它技能口径一致，没有「暂停空转」第三态）
+  if (!MOD.canPayOneCycle(gameState, { key: bp.key, dir: dir })) { stopOrSkip(); updateUI(); return false; }
+
+  const actualTime = Math.max(0.001, Number(MOD.cycleSeconds(gameState, bp)) || 1);
+  action.refDuration = actualTime;
+  const now = Date.now();
+  const delta = gameDeltaSec(Math.min(5, (now - action.lastProgressUpdate) / 1000));
+  action.progress += delta; action.lastProgressUpdate = now;
+
+  let completedAny = false;
+  while (action.progress >= actualTime) {
+    if (!MOD.canPayOneCycle(gameState, { key: bp.key, dir: dir })) { stopOrSkip(); updateUI(); return completedAny; }
+    action.progress -= actualTime;
+    MOD.settleOneCycle(gameState, bp.key, dir, now, { offline: false });
+    completedAny = true;
+    if (completeQueuedActionCycle()) { updateUI(); break; }
+  }
+  if (action.progress < 0.01 && action.active) action.progress = 0;
+  if (typeof checkLevelUpFromState === "function") checkLevelUpFromState(gameState, "blueprintInvention");
+  return completedAny;
+}
+
 // ===== Batch C-14A：在线会话时长的唯一入口 =====
 // 模块运行期私有锚点：只活在当前页面生命周期的闭包变量里，绝不写入 gameState、绝不进存档。
 // 页面重载 / 导入存档都会让锚点重建（下一 tick 只建锚不累计），因此不会把关闭浏览器的时间
@@ -109,13 +147,6 @@ function gameTick() {
     ResearchSystem.processResearchUntil(gameState, Date.now(), { scale: (typeof getGameSpeed === "function") ? getGameSpeed() : 1 });
   }
 
-  // 蓝图发明 · 效率研究（ME / TE）：在线作业槽推进。
-  // 与科研同位置（所有提前 return 业务分支之前）、同 scale，确保主行动暂停/资源不足时仍推进。
-  if (typeof INVENTION !== "undefined" && INVENTION &&
-      typeof INVENTION.processUntil === "function") {
-    INVENTION.processUntil(gameState, Date.now(), { scale: (typeof getGameSpeed === "function") ? getGameSpeed() : 1 });
-  }
-
   updateCombatRecovery();
   // 星图试炼是唯一主动行动。必须在任何 currentAction 分支结算前清除残留行动/运行队列，
   // 防止刷新恢复或旧存档同时推进冶炼、采矿等普通行动。
@@ -139,6 +170,8 @@ function gameTick() {
     // 增强剂效果聚合（考古重制 Phase B）：所有主动技能分支共用，含四类生产增强剂乘区。
     const boosterEff = (typeof getBoosterEffectState === "function") ? getBoosterEffectState(gameState) : null;
     if (key === "combat") { combatTick(); }
+    // 蓝图发明（2026-09-22 接主队列）：与 combat 同款独立分支，不与下方 mining 链共用状态。
+    if (key === "blueprintInvention") { if (tickBlueprintInvention()) actionCompleted = true; }
     if (key === "mining") {
       const area = getRunningMiningArea(); if (!area) return;
       if (!canMineArea(area)) { stopOrSkip(); updateUI(); return; }

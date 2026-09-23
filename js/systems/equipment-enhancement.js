@@ -96,8 +96,10 @@ function getDeathspaceMaterials(equipment) {
 function getEquipmentEnhancementExtraCost(equipment, targetLevel) {
   const L = Math.max(1, Math.floor(Number(targetLevel) || 1));
   if (L % 5 !== 0) return {};
-  const category = getEquipmentEnhancementCategory(equipment);
   const out = {};
+  // 10/10 签名装：材料已不再掉落，里程碑强化只耗同名 +0 装备（从掉落获取），不再要协议/核心。
+  if (equipment && equipment.signature) { out.sameTypeItemId = equipment.id; return out; }
+  const category = getEquipmentEnhancementCategory(equipment);
   if (category === "faction" || category === "alliance" ||
       category === "deathspace-standard" || category === "deathspace-supervisor") {
     out.sameTypeItemId = equipment.id; // 消耗 inventory 中同型号 +0 装备（string）

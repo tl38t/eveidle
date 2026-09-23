@@ -44,6 +44,7 @@ function showOfflineToast(seconds, gains, items, combatSummary, consumed, settle
     mining: "⛏ 采矿", refining: "🔥 冶炼", gasHarvesting: "☁️ 气体",
     equipmentEngineering: "🔧 装备工程", boosterEngineering: "💉 增强剂制造",
     shipEngineering: "🚀 舰船工程", planetaryIndustry: "🪐 行星",
+    blueprintInvention: "🧬 蓝图发明",
     combat: "⚔️ 战斗"
   };
   const detail = Object.entries(labels)
@@ -695,6 +696,47 @@ function getOfflineActionDescriptor() {
     };
   }
 
+  if (key === "blueprintInvention") {
+    // 蓝图发明（2026-09-22 接主队列）：与在线 tickBlueprintInvention 逐条同口径 ——
+    // 周期取 INVENTION.cycleSeconds（唯一公式），逐周期走 settleOneCycle 原子结算。
+    // maxCycles 同时受「蓝图解锁」与「星币/矩阵可支付次数」约束：
+    //   蓝图锁定 → 0（由 skipFailedOfflineQueueItem 跳过该项，与在线 stopOrSkip 同效）
+    //   资源不足 → 可支付次数（结算多少扣多少，绝不虚扣队列计数）
+    const invMod = (typeof INVENTION !== "undefined") ? INVENTION : null;
+    if (!invMod || typeof invMod.settleOneCycle !== "function") return null;
+    const bpKey = action.startedInventionTarget || action.inventionTarget;
+    const dir = (action.startedInventionDir === "te") ? "te" : "me";
+    const bp = (typeof invMod.blueprintByKey === "function") ? invMod.blueprintByKey(bpKey) : null;
+    if (!bp) return null;
+    return {
+      key, duration: Math.max(0.001, Number(invMod.cycleSeconds(gameState, bp)) || 1),
+      maxCycles() {
+        if (typeof invMod.isUnlocked === "function" && !invMod.isUnlocked(gameState, bp)) return 0;
+        const perIsk = Math.max(1, Number(invMod.iskPerCycle(bp)) || 1);
+        const perMat = Math.max(1, Number(invMod.matrixPerCycle(bp)) || 1);
+        const isk = Number(ResourceRegistry.get(gameState, invMod.ISK_ID)) || 0;
+        const mat = Number(ResourceRegistry.get(gameState, invMod.MATRIX_ID)) || 0;
+        return Math.max(0, Math.min(Math.floor(isk / perIsk), Math.floor(mat / perMat)));
+      },
+      apply(cycles, gains) {
+        let done = 0;
+        for (let i = 0; i < cycles; i++) {
+          if (!invMod.settleOneCycle(gameState, bp.key, dir, Date.now(), { offline:true, emitEvent:false })) break;
+          done++;
+        }
+        if (done <= 0) return;
+        gains[key] = (gains[key] || 0) + done;
+        // 逐周期静默结算 + 一次汇总事件（与其它生产技能的离线批量事件同款，避免上万条事件）
+        emitOfflineGameEvent("invention:cycleCompleted", {
+          key:bp.key, dir:dir, cycles:done,
+          meCount:invMod.researchCount(gameState, bp.key, "me"),
+          teCount:invMod.researchCount(gameState, bp.key, "te"),
+          xp:done * invMod.xpForBlueprint(bp)
+        });
+      }
+    };
+  }
+
   if (key === "archaeology") {
     const arch = gameState.archaeology;
     const site = getArchaeologySite(arch.startedSiteId || arch.activeSiteId);
@@ -974,6 +1016,8 @@ function queueItemTargetMatchesAction(state, item, action) {
   if (skill === "shipEngineering") return Boolean(action.shipSubAction) && (Boolean(action.shipCompTarget || action.shipAsmTarget) || action.shipSubAction === "titanAssembly");
   if (skill === "equipmentEngineering") return action.equipEngTarget === item.target;
   if (skill === "boosterEngineering") return action.boosterTarget === item.target;
+  // 蓝图发明（接主队列）：运行中锁定目标优先，回退到面板选择；方向不入 target（同蓝图 ME/TE 共享 target）。
+  if (skill === "blueprintInvention") return (action.startedInventionTarget || action.inventionTarget) === item.target;
   return true; // 其他（如 combat 由自身逻辑维护）不强制 target
 }
 
@@ -1640,12 +1684,6 @@ function calculateOfflineGains(options) {
   if (typeof ResearchSystem !== "undefined" && ResearchSystem &&
       typeof ResearchSystem.processResearchUntil === "function") {
     ResearchSystem.processResearchUntil(gameState, now);
-  }
-  // 蓝图发明 · 效率研究（ME / TE）：离线作业槽推进。
-  // 复用本函数同一 now、不传 elapsed（真实封顶在 processUntil 内统一处理）。
-  if (typeof INVENTION !== "undefined" && INVENTION &&
-      typeof INVENTION.processUntil === "function") {
-    INVENTION.processUntil(gameState, now);
   }
   const lastActive = gameState.lastActiveTime || now;
   const elapsed = Math.floor((now - lastActive) / 1000);

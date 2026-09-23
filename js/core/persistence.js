@@ -771,11 +771,17 @@ function migrateArchaeologyState() {
 // 旧档缺失时不补发任何研究进度、不白给时间锚点（锚点取 now，elapsed 为 0）。
 // 实现委托给 js/systems/invention.js 的 ensureState（单一真值，避免两处结构漂移）；
 // 该文件未加载时（理论不可达：index.html 已声明）跳过，绝不抛错阻断读档。
+// 2026-09-22「接主队列」：ensureState 之后必须执行 migrateLabToQueue，
+//   把 rc94/rc95 的 lab 自有作业槽（lab.activeJob + lab.queue）折算进 state.queue.items。
+//   不迁移的后果 = 老玩家升级后「正在跑的研究 + 已排的待研究」全部凭空消失（进度真值换轨）。
+//   前置依赖：normalizeQueueState 已在本函数之前执行（load / importData / importProfileData
+//   三条路径都是先 normalizeQueueState 再 normalizeAndMigratePayload），故 state.queue.items 必定就绪。
 function migrateInventionState() {
   if (!gameState.resources || typeof gameState.resources !== "object") gameState.resources = {};
   if (!gameState.resources.matrix || typeof gameState.resources.matrix !== "object") gameState.resources.matrix = {};
   if (typeof INVENTION !== "undefined" && INVENTION && typeof INVENTION.ensureState === "function") {
     INVENTION.ensureState(gameState, Date.now());
+    if (typeof INVENTION.migrateLabToQueue === "function") INVENTION.migrateLabToQueue(gameState);
   }
   gameState._dirty = true;
 }
@@ -1024,7 +1030,7 @@ function migrateDeathspaceState(combat, state) {
   if (combat.mode !== "deathspace") combat.mode = "belt";
   // 原始 deathspaceId 合法性（供 pending 规则使用，避免被下方的修复逻辑掩盖）
   const originalDeathspaceIdValid = DEATHSPACE_DATABASE.some(site => site.id === combat.deathspaceId);
-  const savedTier = [2,3,4,6,8].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
+  const savedTier = [2,3,4,6,8,10].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
   if (!originalDeathspaceIdValid) {
     combat.deathspaceId = (DEATHSPACE_DATABASE.find(site => site.dedTier === savedTier) || DEATHSPACE_DATABASE[0]).id;
   }

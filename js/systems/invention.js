@@ -2,17 +2,19 @@
    蓝图发明 · 效率研究（ME / TE）
 
    规格：docs/INVENTION_LAB_JOB_SPEC_v0.1.md
-   时间模型：逐条镜像 js/systems/research.js 的 processResearchUntil
-             （唯一锚点 / 24h 封顶 / 虚拟游标 / 私有 startNextFromQueue
-              不回调推进函数 / 锚点恒定收口 / 时钟倒退校准）。
+   时间模型（2026-09-22 接主队列）：作业作为普通项进入 state.queue，
+             周期由 tick.js / offline.js 的通用进度模型驱动
+             （currentAction.progress + 墙钟 delta），与采矿/冶炼完全同构。
+             本模块只提供：规则查询 / 速度乘区 / 队列项周期 cycleSeconds /
+             单次循环原子结算 settleOneCycle。
 
    数据真值：78 张消耗品蓝图（63 增强剂 + 15 弹药/燃料/探针），
              由脚本从面板数据抽取注入（禁人工转录）。
 
    纪律：
-   - 推进函数 processUntil 是唯一时间结算入口，在线（tick）与离线共用。
-   - startNextFromQueue 绝不回调 processUntil（否则递归）。
+   - settleOneCycle 是唯一的循环结算入口，在线（tick）与离线共用。
    - 本模块不碰 DOM、不在加载期读 gameState。
+   - 已退役的 lab 自有作业槽引擎（processUntil / enqueueJob / …）见文件中部警示段。
    ================================================================ */
 
 (function () {
@@ -151,6 +153,106 @@
     return inv;
   }
 
+  /* ---------------------------------------------------------------
+     旧存档迁移（2026-09-22「接主队列」，幂等）
+     ---------------------------------------------------------------
+     rc94 / rc95 的蓝图发明跑在 lab 自有作业槽上（lab.activeJob + lab.queue），
+     与主队列并行。本版起发明并入**主动作队列**，故必须把旧槽位折算成普通队列项，
+     否则老玩家「正在跑的研究 / 已排的 3 个待研究」会在升级后凭空消失。
+
+     折算口径：
+       - 运行中作业 → 剩余次数 = times − done（已完成的不重复计入）
+       - 待研究队列 → 按原顺序逐项 times 次
+       - 队列项只承载「剩余次数」，故至多丢失不足 1 个未完成周期（剩余秒数 < perSeconds），
+         不做小数周期补偿（新模型进度真值在 currentAction.progress，无法回填历史游标）。
+       - 与 queueAdd 同款末项合并（同蓝图 + 同 subAction 方向），避免 ME/TE 串台。
+       - 队列已满时**允许临时溢出**：绝不为了守卫 maxSize 丢玩家进度；队列排空后自然回落。
+
+     自动续跑：旧 lab 是「自动运行」语义。仅当迁移前主队列「空闲且为空」时，
+     迁移后自动接上开始跑（等价于旧行为），否则只入队等待，绝不打断玩家正在跑的主行动。
+
+     幂等：无论折算结果如何，都先把 lab.activeJob / lab.queue 清空 ⇒ 重复调用是 no-op。
+     --------------------------------------------------------------- */
+
+  function migrateLabToQueue(state) {
+    if (!state || !state.invention || !state.invention.lab) return 0;
+    const lab = state.invention.lab;
+    const job = (lab.activeJob && typeof lab.activeJob === "object") ? lab.activeJob : null;
+    const list = Array.isArray(lab.queue) ? lab.queue.slice() : [];
+    if (!job && list.length === 0) return 0;
+
+    // 先清空 lab 引擎：即使下面折算全部失效，也不会被重复迁移一次
+    lab.activeJob = null;
+    lab.queue = [];
+    lab.pausedReason = null;
+    lab.migratedToQueue = true;
+
+    const q = state.queue;
+    if (!q || !Array.isArray(q.items)) return 0;
+
+    const pending = [];
+    if (job) {
+      const bp = BP_BY_KEY[job.key];
+      if (bp) {
+        const times = Math.max(1, Math.floor(Number(job.times) || 1));
+        const done = Math.max(0, Math.floor(Number(job.done) || 0));
+        const left = Math.max(0, times - done);
+        if (left > 0) pending.push({ key: job.key, dir: job.dir === "te" ? "te" : "me", count: left });
+      }
+    }
+    for (const item of list) {
+      if (!item || !BP_BY_KEY[item.key]) continue;   // 脏数据：与 startNextFromQueue 同款跳过
+      pending.push({
+        key: item.key,
+        dir: item.dir === "te" ? "te" : "me",
+        count: Math.max(1, Math.floor(Number(item.times) || 1))
+      });
+    }
+    if (pending.length === 0) return 0;
+
+    const wasEmpty = q.items.length === 0;
+    const wasRunning = Boolean(q.status && q.status.isRunning);
+
+    const stamp = (typeof Date !== "undefined" && Date.now) ? Date.now() : 0;
+    let added = 0;
+    for (const p of pending) {
+      const bp = BP_BY_KEY[p.key];
+      const last = q.items.length ? q.items[q.items.length - 1] : null;
+      if (last && last.skill === SKILL_KEY && last.target === p.key && (last.subAction || null) === p.dir) {
+        last.count = last.count === -1 ? -1 : (Number(last.count) || 1) + p.count;
+        added += 1;
+        continue;
+      }
+      q.items.push({
+        id: "q_mig_" + stamp + "_" + q.items.length,
+        skill: SKILL_KEY,
+        target: p.key,
+        label: bp.name + " · " + (p.dir === "te" ? "TE" : "ME"),
+        count: p.count,
+        subAction: p.dir
+      });
+      added += 1;
+    }
+    state._dirty = true;
+
+    if (!wasRunning && wasEmpty && typeof executeQueueItemForState === "function") {
+      try {
+        if (!q.status || typeof q.status !== "object") q.status = {};
+        q.status.isRunning = true;
+        q.status.activeIndex = 0;
+        q.status.completedCount = 0;
+        q.status.failCount = 0;
+        executeQueueItemForState(state, q.items[0], stamp);
+      } catch (e) {
+        // 自动续跑失败：退回「仅入队」，绝不留下半启动的脏运行态
+        q.status.isRunning = false;
+        q.status.activeIndex = -1;
+        if (state.currentAction) state.currentAction.active = false;
+      }
+    }
+    return added;
+  }
+
   // 取（或建）单张蓝图的研究记录；不传 create 则只读、绝不创建
   function blueprintState(state, key, create) {
     const inv = state && state.invention ? state.invention : null;
@@ -256,6 +358,49 @@
     ResourceRegistry.spend(state, MATRIX_ID, matrixPerCycle(bp));
     return true;
   }
+
+  /* ---------------------------------------------------------------
+     单次循环结算（2026-09-22 接主队列后的权威入口）
+     ---------------------------------------------------------------
+     蓝图发明已并入**主动作队列**（与采矿/冶炼同队、同确认弹窗、同离线管线）：
+     周期由 tick.js / offline.js 的通用进度模型驱动（currentAction.progress + 墙钟 delta），
+     本函数只负责「完成 1 次研究」的原子结算 —— 扣费 / 计数 / XP / 事件。
+     调用方必须先 canPayOneCycle 过关，否则本函数返回 false 且零副作用。
+     `opts.offline` 仅影响事件信封，不改结算口径（在线/离线逐值一致）。
+     --------------------------------------------------------------- */
+
+  function settleOneCycle(state, key, dir, atMs, opts) {
+    const bp = BP_BY_KEY[key];
+    if (!bp) return false;
+    const d = dir === "te" ? "te" : "me";
+    if (!payOneCycle(state, { key: key, dir: d })) return false;   // 资源不足：不完成、零副作用
+    const entry = blueprintState(state, key, true);
+    if (entry) {
+      if (d === "te") entry.teCount = Math.max(0, Number(entry.teCount) || 0) + 1;
+      else entry.meCount = Math.max(0, Number(entry.meCount) || 0) + 1;
+    }
+    const offline = !!(opts && opts.offline);
+    if (typeof addSkillXpToState === "function") {
+      addSkillXpToState(state, SKILL_KEY, xpForBlueprint(bp), { job: SKILL_KEY, offline: offline, source: offline ? "offline-settlement" : "invention-cycle" });
+    }
+    if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.emit === "function"
+        && !(opts && opts.emitEvent === false)) {
+      GameEvents.emit("invention:cycleCompleted", {
+        key: key, dir: d,
+        meCount: entry ? entry.meCount : 0,
+        teCount: entry ? entry.teCount : 0,
+        isk: iskPerCycle(bp), matrix: matrixPerCycle(bp), xp: xpForBlueprint(bp)
+      }, { offline: offline });
+    }
+    state._dirty = true;
+    return true;
+  }
+
+  /* ---------------------------------------------------------------
+     ⚠️ 已退役（2026-09-22 接主队列）：以下 lab 自有作业槽引擎不再被 tick / offline / 面板驱动。
+     保留仅为兼容旧存档结构（ensureState / lab 字段）与历史探针；**新代码一律不得调用**，
+     进度真值改由 state.queue.items + state.currentAction.progress 承载。
+     --------------------------------------------------------------- */
 
   /* ---------------------------------------------------------------
      推进：唯一时间结算入口
@@ -521,8 +666,12 @@
     xpForBlueprint, iskPerCycle, matrixPerCycle,
     labSpeed, cycleSeconds, isUnlocked,
     ensureState, blueprintState, researchCount, meReduction, teReduction,
+    migrateLabToQueue,
     recipeKeyForRecipe, applyMeReduction, meReductionForRecipe, teReductionForRecipe,
-    canPayOneCycle, processUntil, enqueueJob, cancelJob, cancelQueueItem,
+    canPayOneCycle, settleOneCycle,
+    // ⚠️ 以下为已退役的 lab 自有槽位引擎（接主队列后不再被驱动）：保留兼容旧存档与历史探针，
+    //    新代码禁止调用；蓝图发明的进度真值现在是 state.queue.items + currentAction.progress。
+    processUntil, enqueueJob, cancelJob, cancelQueueItem,
     applyResearchHours, getLabState
   };
 

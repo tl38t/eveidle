@@ -393,12 +393,17 @@ function resolveArchaeologyCalibration(state, site, tier, rng) {
   return null;
 }
 
-// ---- 解析矩阵（蓝图发明 ME/TE 研究的唯一耗材；每次解析成功稳定掉落，与发明消耗 matrix 1×tier 对称） ----
-// 与 resolveArchaeologyCalibration 同源思路：成功路径内确定性发放，不占稀有池、不受焦点影响。
-// 数量与发明侧 INVENTION_MATRIX_PER_TIER × tier 对称，保证「考古产得出、发明用得掉」。
-const ARCHAEOLOGY_MATRIX_PER_TIER = 1; // 调参常量：提高即加速 ME/TE 研究供给
+// ---- 解析矩阵（蓝图发明 ME/TE 研究的唯一耗材；每次解析成功稳定掉落） ----
+// 产出按「数字档位」走三角数序列：I→1、II→3、III→6、IV→10、V→15（= n(n+1)/2）。
+// 与发明侧 matrixPerCycle(bp)=1×tier（按蓝图「数字档位」直线放大）口径不同：
+// 考古采用更陡的三角增长，使高阶遗迹单位成功产出显著领先低阶，契合「越难越值」的刷取动机。
+const ARCHAEOLOGY_MATRIX_ROMAN_TO_N = Object.freeze({ i:1, ii:2, iii:3, iv:4, v:5 });
+function archaeologyMatrixTierNum(tierKey) {
+  return ARCHAEOLOGY_MATRIX_ROMAN_TO_N[String(tierKey == null ? "" : tierKey).toLowerCase()] || 1;
+}
 function resolveArchaeologyMatrix(state, site, tier) {
-  const amount = ARCHAEOLOGY_MATRIX_PER_TIER * Math.max(1, Number(tier && tier.tier) || 1);
+  const n = archaeologyMatrixTierNum(site && site.tier);
+  const amount = Math.max(1, (n * (n + 1)) / 2);
   if (amount > 0) ResourceRegistry.add(state, "matrix:analysis_matrix", amount);
   return amount;
 }

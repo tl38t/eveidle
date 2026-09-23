@@ -20,7 +20,7 @@ const UI_EXCLUDE = new Set([
   "js/ui/error-boundary.js", "js/ui/action-modal.js", "js/ui/shell-render.js",
   "js/ui/manufacturing-render.js", "js/ui/combat-render.js", "js/ui/planetary-render.js",
   "js/ui/archaeology-render.js", "js/ui/booster-render.js", "js/ui/render.js", "js/core/runtime.js",
-  "js/ui/taptap-portrait.js", "js/ui/ad-buff-widget.js", "js/ui/ship3d-loader.js"
+  "js/ui/taptap-portrait.js", "js/ui/ad-buff-widget.js", "js/ui/ship3d-loader.js", "js/ui/skill-overview.js"
 ]);
 const logicSources = scriptSources.filter((s) => !UI_EXCLUDE.has(s));
 
@@ -95,10 +95,18 @@ for (const src of logicSources) {
 console.log("脚本 " + logicSources.length + " 个，加载错误 " + loadErrors.length + (loadErrors.length ? "：" + loadErrors.slice(0,6).join(" | ") : ""));
 console.log("archaeology 源 = " + (OVERRIDE ? OVERRIDE : "(工作树 " + ARCH_REL + ")"));
 
+// 确定性化：强制成功率=1，避免依赖 scanStrength/state 偶发 0 成功率导致探针抖动（成功分支才是本探针要守的回归点）。
+if (typeof sandbox.getArchaeologyFinalSuccessChance === "function") {
+  sandbox.getArchaeologyFinalSuccessChance = () => 1;
+}
+
 // ── 构造最小考古场景 ──
 const GS = sandbox.gameState;
 const RR = sandbox.ResourceRegistry;
 const SITES = sandbox.ARCHAEOLOGY_SITES;
+// 三角数按档位：I→1、II→3、III→6、IV→10、V→15（= n(n+1)/2）
+const ROMAN2N = { i:1, ii:2, iii:3, iv:4, v:5 };
+const triByTier = (tierKey) => { const n = ROMAN2N[String(tierKey == null ? "" : tierKey).toLowerCase()] || 1; return Math.max(1, (n * (n + 1)) / 2); };
 const SITE = SITES[0];
 console.log("站点 = " + SITE.id + " tier=" + SITE.tier + " level=" + SITE.level);
 
@@ -148,15 +156,35 @@ t("真实事件总线收到 archaeology:success", !!evt, "收到 " + seen.length
 if (evt) {
   const payload = evt.payload || evt;
   const mv = payload.matrix;
-  const expect = Math.max(1, Number(SITE.tier) || 1);
+  const expect = triByTier(SITE.tier);
   console.log("  payload = " + JSON.stringify({ siteId:payload.siteId, tier:payload.tier, xp:payload.xp, matrix:payload.matrix }));
   t("payload.matrix 为有限数字（非 undefined）", Number.isFinite(mv), "值=" + mv);
-  t("payload.matrix 等于 tier 数（1×tier 对称）", mv === expect, "实得 " + mv + " / 期望 " + expect);
+  t("payload.matrix 按数字档位三角数（n(n+1)/2）", mv === expect, "实得 " + mv + " / 期望 " + expect + " [" + SITE.tier + "]");
 }
 
 // 资源侧：矩阵是否真的入库（resolveArchaeologyDrops 内已发放）
 const got = Number(RR.get(GS, "matrix:analysis_matrix"));
-t("解析矩阵已入库（数量 = tier）", got === Math.max(1, Number(SITE.tier) || 1), "库存=" + got);
+t("解析矩阵已入库（数量 = 档位三角数）", got === triByTier(SITE.tier), "库存=" + got);
+
+// ── 跨档位缩放对拍：每个遗迹单次成功的矩阵产出 = 数字档位三角数 n(n+1)/2 ──
+console.log("\n--- 跨档位产出缩放（resolveArchaeologyMatrix 直接调用） ---");
+if (typeof sandbox.resolveArchaeologyMatrix === "function") {
+  const probeState = { resources: { matrix: {} } };
+  let allOk = true, detail = [];
+  for (const s of SITES) {
+    RR.set(probeState, "matrix:analysis_matrix", 0);
+    const gotAmt = sandbox.resolveArchaeologyMatrix(probeState, s, null);
+    const stored = Number(RR.get(probeState, "matrix:analysis_matrix")) || 0;
+    const expectAmt = triByTier(s.tier);
+    const ok = gotAmt === expectAmt && stored === expectAmt;
+    if (!ok) allOk = false;
+    detail.push(s.tier + ":" + gotAmt + "(t=" + s.time + "s)");
+  }
+  console.log("  " + detail.join("  "));
+  t("全部档位产出 = 三角数 n(n+1)/2 且真实入库", allOk, allOk ? "OK" : "不符");
+} else {
+  t("全部档位产出 = 三角数 n(n+1)/2 且真实入库", false, "resolveArchaeologyMatrix 未暴露");
+}
 
 // ── 离线臂：randomValue === "offline"（玩家报错的 offline:timeline 正是这条入口形态） ──
 let offlineThrew = 0, offlineSuccess = 0, offlineErr = null;
