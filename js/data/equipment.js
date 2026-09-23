@@ -456,6 +456,48 @@ for (const site of DEATHSPACE_DATABASE) {
   }
 }
 
+// 🔴🔴 旧 → 新 死亡空间装备 ID 兼容映射（2026-09-24 线上事故修复，rc96 回归）
+// 事故：rc95→rc96 为 10/10 引入「多底子」支持时，把装备 ID 规则从
+//   ded_<faction>_<tier>_<role>                 → ded_<faction>_<tier>_<role>_<baseSuffix>
+//   ded_<faction>_<tier>_<role>_supervisor      → ded_<faction>_<tier>_<role>_<baseSuffix>_supervisor
+// 违反「内部稳定键永不改名」铁律 ⇒ 老存档里已装装备、已购蓝图、强化实例的 ID 全部失配。
+//   现象1：装备还在舰上，但所有界面「匹配不到数据」（EQUIPMENT_DB[旧ID] === undefined）。
+//   现象2：功勋商店里此前买过的深空清剿蓝图显示未拥有（所有权键 "equipment:旧ID" 查不到）。
+// 结论：内部稳定键必须**永久兼容**旧值。映射按当前数据自动推导（不是硬编码清单），
+//      以免日后修 data 时映射漂移；只覆盖「单底子档」（多底子先驱档是 rc96 新增，无旧 ID）。
+const DEATHSPACE_LEGACY_ID_MAP = (function buildDeathspaceLegacyIdMap() {
+  const map = {};
+  for (const site of DEATHSPACE_DATABASE) {
+    const route = DEATHSPACE_EQUIPMENT_ROUTES[site.faction];
+    const tierConfig = DEATHSPACE_EQUIPMENT_TIERS[site.dedTier];
+    if (!route || !tierConfig) continue;
+    for (const role of ["weapon", "repair"]) {
+      const baseItemId = route[role] && route[role][site.dedTier];
+      // 数组档（先驱 10/10 多底子）= rc96 首次上线，旧存档不可能持有 ⇒ 无旧 ID 可映射
+      if (!baseItemId || Array.isArray(baseItemId)) continue;
+      const baseSuffix = DEATHSPACE_BASE_SUFFIX[baseItemId] || String(baseItemId).replace(/^t1_/, "").replace(/_array$/, "");
+      const legacy = "ded_" + site.faction + "_" + site.dedTier + "_" + role;
+      map[legacy] = legacy + "_" + baseSuffix;
+      map[legacy + "_supervisor"] = legacy + "_" + baseSuffix + "_supervisor";
+    }
+  }
+  return Object.freeze(map);
+})();
+
+// 别名注册（兜底层）：EQUIPMENT_DB[旧ID] 直接查找即可命中同一份定义，
+// 战斗结算 / 装配解析 / 强化 / 拆解 / UI 全部零改动自动兼容。
+// ⚠️ 必须用 **非枚举** 注册：EQUIPMENT_RECIPES 由 Object.values(EQUIPMENT_DB) 派生，
+//    若别名可枚举，商店/制造/掉落池会凭空多出重复条目（= 二次事故）。
+for (const legacyId of Object.keys(DEATHSPACE_LEGACY_ID_MAP)) {
+  const def = EQUIPMENT_DB[DEATHSPACE_LEGACY_ID_MAP[legacyId]];
+  if (def && !(legacyId in EQUIPMENT_DB)) {
+    Object.defineProperty(EQUIPMENT_DB, legacyId, { value: def, enumerable: false, writable: true, configurable: true });
+  }
+}
+
+if (typeof window !== "undefined") window.DEATHSPACE_LEGACY_ID_MAP = DEATHSPACE_LEGACY_ID_MAP;
+if (typeof globalThis !== "undefined") globalThis.DEATHSPACE_LEGACY_ID_MAP = DEATHSPACE_LEGACY_ID_MAP;
+
 const LP_STORE_BLUEPRINTS = [
   {
     id:"alliance_mining_laser_blueprint",

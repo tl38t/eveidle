@@ -786,6 +786,69 @@ function migrateInventionState() {
   gameState._dirty = true;
 }
 
+// 🔴 死亡空间装备 ID 迁移（幂等）：rc95→rc96 改了 ID 规则（ded_f_t_r → ded_f_t_r_<suffix>），
+// 老存档落盘的旧 ID 必须就地改写为新 ID，否则：
+//   ① 舰上已装装备 → EQUIPMENT_DB 查不到 ⇒ 全界面「匹配不到数据」；
+//   ② 已购深空蓝图所有权键 "equipment:旧ID" ⇒ 商店判定未拥有（玩家误以为蓝图被清空）；
+//   ③ 强化实例 / 队列作业 / 当前行动目标同样失配。
+// 只做「精确命中映射表」的改写：instanceId（数字串）等非旧 ID 恒不变 ⇒ 零副作用、可重复执行。
+function migrateDeathspaceEquipmentIds(state) {
+  const map = (typeof window !== "undefined" && window.DEATHSPACE_LEGACY_ID_MAP)
+    || (typeof DEATHSPACE_LEGACY_ID_MAP !== "undefined" ? DEATHSPACE_LEGACY_ID_MAP : null);
+  if (!map || !state || typeof state !== "object") return;
+  const remap = id => (typeof id === "string" && Object.prototype.hasOwnProperty.call(map, id)) ? map[id] : id;
+  const remapRef = ref => {
+    if (typeof ref === "string") return remap(ref);                                   // 旧 string = itemId（instanceId 为数字串，不在映射表中 ⇒ 不变）
+    if (ref && typeof ref === "object" && typeof ref.itemId === "string") ref.itemId = remap(ref.itemId);
+    return ref;
+  };
+
+  // 1) 蓝图所有权：state.ownedBlueprints 存 "equipment:<itemId>"
+  if (Array.isArray(state.ownedBlueprints)) {
+    for (let i = 0; i < state.ownedBlueprints.length; i++) {
+      const key = state.ownedBlueprints[i];
+      if (typeof key === "string" && key.indexOf("equipment:") === 0) {
+        state.ownedBlueprints[i] = "equipment:" + remap(key.slice("equipment:".length));
+      }
+    }
+  }
+  // 2) 装备仓库（主池 + 旧池）：string itemId 或 { itemId } 引用
+  for (const pool of [state.equipment && state.equipment.inventory, state.inventory && state.inventory.equipment]) {
+    if (!Array.isArray(pool)) continue;
+    for (let i = 0; i < pool.length; i++) pool[i] = remapRef(pool[i]);
+  }
+  // 3) 装备实例（强化等级/装配都挂在这一层）
+  if (state.equipment && Array.isArray(state.equipment.instances)) {
+    for (const instance of state.equipment.instances) {
+      if (instance && typeof instance.itemId === "string") instance.itemId = remap(instance.itemId);
+    }
+  }
+  // 4) 舰船装配（含军团 NPC 绑定舰，均在 inventory.ships）：fitted[slot] 存 instanceId / itemId / { itemId }
+  const ships = (state.inventory && Array.isArray(state.inventory.ships)) ? state.inventory.ships : [];
+  for (const ship of ships) {
+    const fitted = ship && ship.fitted;
+    if (!fitted) continue;
+    for (const slot of ["high", "mid", "low", "rig"]) {
+      const arr = fitted[slot];
+      if (!Array.isArray(arr)) continue;
+      for (let i = 0; i < arr.length; i++) arr[i] = remapRef(arr[i]);
+    }
+  }
+  // 5) 共享队列项 target（装备制造/工程作业）
+  if (state.queue && Array.isArray(state.queue.items)) {
+    for (const item of state.queue.items) {
+      if (item && typeof item.target === "string") item.target = remap(item.target);
+    }
+  }
+  // 6) 当前行动：装备工程目标（切换/进行中的培育目标）
+  const action = state.currentAction;
+  if (action) {
+    if (typeof action.equipEngTarget === "string") action.equipEngTarget = remap(action.equipEngTarget);
+    if (typeof action.startedEquipEngTarget === "string") action.startedEquipEngTarget = remap(action.startedEquipEngTarget);
+  }
+}
+if (typeof window !== "undefined") window.migrateDeathspaceEquipmentIds = migrateDeathspaceEquipmentIds;
+
 // 共享收尾：在所有旧版迁移完成后，执行装备实例迁移与规范化。
 // 调用顺序必须为：migrateShipAndEquipmentState → migrateShipComponentState → migrateCombatEquipmentState →
 //                migrateEquipmentInstancesV1 → normalizeEquipmentState → migrateArchaeologyState
@@ -796,6 +859,9 @@ function finalizeEquipmentStateAfterLegacyMigrations(state) {
   migrateCombatEquipmentState();
   migrateEquipmentInstancesV1(state);
   normalizeEquipmentState(state);
+  // 🔴 必须在实例迁移之后：fitted / inventory 此时已是最终形态（instance 或 itemId），
+  //                      再改写死亡空间旧 ID 才不会与前面「退回 inventory」语义打架。
+  migrateDeathspaceEquipmentIds(state);
   migrateArchaeologyState();
   migrateInventionState();
   migrateDeadSkillFields();
