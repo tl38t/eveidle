@@ -285,19 +285,68 @@ const DEATHSPACE_EQUIPMENT_TIERS = Object.freeze({
   3:{ level:40, effect:1.10, supEffect:2.05, coreRequired:4, materialMultiplier:1.5, time:50, xp:32 },
   4:{ level:60, effect:1.10, supEffect:1.30, coreRequired:6, materialMultiplier:2.0, time:80, xp:55 },
   6:{ level:85, effect:1.10, supEffect:1.35, coreRequired:10, materialMultiplier:2.5, time:120, xp:90 },
-  8:{ level:95, effect:1.20, supEffect:1.50, coreRequired:14, materialMultiplier:3.0, time:180, xp:140 }
+  8:{ level:95, effect:1.20, supEffect:1.50, coreRequired:14, materialMultiplier:3.0, time:180, xp:140 },
+  // 10/10 死亡空间「深渊回响」终局档（2026-09-22 落地）：数值取 tier8 之上，装备设计细节待用户讨论细化
+  // level=110（标准型）/ 115（监督者型）作为强化门槛（制造等级），见下方 createDeathspaceEquipmentDefinition。
+  10:{ level:110, effect:1.30, supEffect:1.65, coreRequired:18, materialMultiplier:4.0, time:240, xp:200 }
 });
 
 const DEATHSPACE_EQUIPMENT_ROUTES = Object.freeze({
-  angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型",8:"劫团X型"}, weapon:{2:"t1_small_laser",3:"t1_medium_laser",4:"t1_large_laser",6:"t1_capital_laser",8:"t1_capital_laser"}, repair:{2:"t1_shield_booster",3:"t1_medium_shield_booster",4:"t1_large_shield_booster",6:"t1_capital_shield_array",8:"t1_capital_shield_array"} },
-  blood:{ prefix:{2:"赤誓试制",3:"赤誓强化",4:"赤誓精锐",6:"赤誓A型",8:"赤誓X型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_heavy_missile_launcher",4:"t1_cruise_missile_launcher",6:"t1_capital_missile_array",8:"t1_capital_missile_array"}, repair:{2:"t1_armor_repairer",3:"t1_medium_armor_repairer",4:"t1_large_armor_repairer",6:"t1_capital_armor_array",8:"t1_capital_armor_array"} },
-  sansha:{ prefix:{2:"静默试制",3:"静默强化",4:"静默精锐",6:"静默A型",8:"静默X型"}, weapon:{2:"t1_small_cannon",3:"t1_medium_cannon",4:"t1_large_cannon",6:"t1_capital_cannon",8:"t1_capital_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_medium_structure_repairer",4:"t1_large_structure_repairer",6:"t1_capital_structure_array",8:"t1_capital_structure_array"} }
+  angel:{ prefix:{2:"劫团试制",3:"劫团强化",4:"劫团精锐",6:"劫团A型",8:"劫团X型",10:"劫团Ω型"}, weapon:{2:"t1_small_laser",3:"t1_medium_laser",4:"t1_large_laser",6:"t1_capital_laser",8:"t1_capital_laser",10:"t1_capital_laser"}, repair:{2:"t1_shield_booster",3:"t1_medium_shield_booster",4:"t1_large_shield_booster",6:"t1_capital_shield_array",8:"t1_capital_shield_array",10:"t1_capital_shield_array"} },
+  blood:{ prefix:{2:"赤誓试制",3:"赤誓强化",4:"赤誓精锐",6:"赤誓A型",8:"赤誓X型",10:"赤誓Ω型"}, weapon:{2:"t1_light_missile_launcher",3:"t1_heavy_missile_launcher",4:"t1_cruise_missile_launcher",6:"t1_capital_missile_array",8:"t1_capital_missile_array",10:"t1_capital_missile_array"}, repair:{2:"t1_armor_repairer",3:"t1_medium_armor_repairer",4:"t1_large_armor_repairer",6:"t1_capital_armor_array",8:"t1_capital_armor_array",10:"t1_capital_armor_array"} },
+  sansha:{ prefix:{2:"静默试制",3:"静默强化",4:"静默精锐",6:"静默A型",8:"静默X型",10:"静默Ω型"}, weapon:{2:"t1_small_cannon",3:"t1_medium_cannon",4:"t1_large_cannon",6:"t1_capital_cannon",8:"t1_capital_cannon",10:"t1_capital_cannon"}, repair:{2:"t1_structure_repairer",3:"t1_medium_structure_repairer",4:"t1_large_structure_repairer",6:"t1_capital_structure_array",8:"t1_capital_structure_array",10:"t1_capital_structure_array"} },
+  // 10/10「深渊回响」= 单一先驱终局死亡空间（不分三势力）；掉落涵盖全部三种武器底子 + 三种维修底子。
+  // weapon[10]/repair[10] 为数组：每个底子各生成标准型 + 监督者型，共 12 件先驱签名装。
+  // ⚠️ prefix[10] 对先驱档**只是兜底**：实际显示名走 DEATHSPACE_T10_SIGNATURE_NAMES（独立命名）。
+  precursor:{ prefix:{10:"先驱Ω型"}, weapon:{10:["t1_capital_laser","t1_capital_missile_array","t1_capital_cannon"]}, repair:{10:["t1_capital_shield_array","t1_capital_armor_array","t1_capital_structure_array"]} }
 });
 
-function getDeathspaceXWeaponEffect(faction, variant) {
+// 10/10「深渊回响」= 单一先驱终局死亡空间，签名装 12 件：
+// 武器（激光/导弹/火炮）× 标准/西塔 + 维修（护盾/装甲/结构）× 标准/西塔。
+// id 命名与 createDeathspaceEquipmentDefinition 的 dedTier===10 分支完全一致（含底子后缀）。
+const DEATHSPACE_BASE_SUFFIX = Object.freeze({
+  t1_capital_laser:"laser", t1_capital_missile_array:"missile", t1_capital_cannon:"cannon",
+  t1_capital_shield_array:"shield", t1_capital_armor_array:"armor", t1_capital_structure_array:"structure"
+});
+
+// 🔴 10/10 先驱签名装 = **独立命名**，禁止用「前缀 + 制式底子名」拼装
+// （旧写法 `先驱Ω型 + 旗舰级聚焦激光炮 I + ·统御签名` 属制式装备名，已废）。
+// 标准型 = 独立名；改进型 = 独立名 + "·西塔"（希腊字母 Θ theta，2026-09-23 替换旧「监督者」）。仅 dedTier===10 走此表；
+// 表内缺失的底子回落到 standardName（保证新增底子不会崩，但应补齐本表）。
+const DEATHSPACE_T10_SIGNATURE_NAMES = Object.freeze({
+  t1_capital_laser:"先驱·噬光棱镜",
+  t1_capital_missile_array:"先驱·亡魂蜂群",
+  t1_capital_cannon:"先驱·墓界重锤",
+  t1_capital_shield_array:"先驱·回响穹壁",
+  t1_capital_armor_array:"先驱·不朽亡骸",
+  t1_capital_structure_array:"先驱·永寂骨架"
+});
+
+// 先驱签名装自带「电容回充系数」：每件 −1% 燃料消耗（bonuses.capacitorRecharge）。
+// 消费点在 selectors.getCombatFuelMultiplierFromState —— 并入与改装件/泰坦科研**同一个
+// 「加算折扣」桶**（不新增乘区），故在线/离线/军团 NPC 三条路径自动同源。
+const DEATHSPACE_T10_CAPACITOR_RECHARGE = 0.01;
+function getTier10SignatureIds(faction) {
+  if (faction !== "precursor") return [];
+  return [
+    "ded_precursor_10_weapon_laser", "ded_precursor_10_weapon_laser_supervisor",
+    "ded_precursor_10_weapon_missile", "ded_precursor_10_weapon_missile_supervisor",
+    "ded_precursor_10_weapon_cannon", "ded_precursor_10_weapon_cannon_supervisor",
+    "ded_precursor_10_repair_shield", "ded_precursor_10_repair_shield_supervisor",
+    "ded_precursor_10_repair_armor", "ded_precursor_10_repair_armor_supervisor",
+    "ded_precursor_10_repair_structure", "ded_precursor_10_repair_structure_supervisor"
+  ];
+}
+if (typeof window !== "undefined") window.getTier10SignatureIds = getTier10SignatureIds;
+
+function getDeathspaceXWeaponEffect(faction, variant, baseItemId) {
   if (faction === "angel") return { kind:"dot", rate:variant === "supervisor" ? 0.008 : 0.005, rounds:3, label:"灼蚀" };
   if (faction === "blood") return { kind:"lifesteal", rate:variant === "supervisor" ? 0.008 : 0.005, target:"armor", label:"装甲回流" };
   if (faction === "sansha") return { kind:"vulnerability", rate:variant === "supervisor" ? 0.035 : 0.025, rounds:2, label:"伤害加深" };
+  // precursor（10/10 单一先驱）：特效按武器底子决定，三种武器各保留同款词条。
+  if (baseItemId === "t1_capital_cannon") return { kind:"vulnerability", rate:variant === "supervisor" ? 0.035 : 0.025, rounds:2, label:"伤害加深" };
+  if (baseItemId === "t1_capital_missile_array") return { kind:"lifesteal", rate:variant === "supervisor" ? 0.008 : 0.005, target:"armor", label:"装甲回流" };
+  if (baseItemId === "t1_capital_laser") return { kind:"dot", rate:variant === "supervisor" ? 0.008 : 0.005, rounds:3, label:"灼蚀" };
   return null;
 }
 
@@ -308,51 +357,80 @@ function scaleDeathspaceEquipmentCost(cost, multiplier) {
 function createDeathspaceEquipmentDefinition(site, role, baseItemId, tierConfig) {
   const base = EQUIPMENT_DB[baseItemId];
   const route = DEATHSPACE_EQUIPMENT_ROUTES[site.faction];
-  const standardId = "ded_" + site.faction + "_" + site.dedTier + "_" + role;
+  const baseSuffix = DEATHSPACE_BASE_SUFFIX[baseItemId] || String(baseItemId).replace(/^t1_/, "").replace(/_array$/, "");
+  const standardId = "ded_" + site.faction + "_" + site.dedTier + "_" + role + "_" + baseSuffix;
   const standardName = route.prefix[site.dedTier] + base.name.replace(/ I$/, "");
   const standardCombat = { ...base.combat };
   if (standardCombat.kind === "weapon") standardCombat.baseDamage = Math.round(standardCombat.baseDamage * tierConfig.effect);
   else standardCombat.amount = Math.round(standardCombat.amount * tierConfig.effect);
   const standardCost = scaleDeathspaceEquipmentCost(base.cost, tierConfig.materialMultiplier);
-  standardCost[site.coreMaterial] = tierConfig.coreRequired;
+  if (site.coreMaterial) standardCost[site.coreMaterial] = tierConfig.coreRequired;
   const standard = {
     id:standardId, name:standardName, slot:base.slot, level:tierConfig.level, time:tierConfig.time, xp:tierConfig.xp,
     cost:standardCost, bonuses:{ ...(base.bonuses || {}) }, combat:standardCombat, faction:site.faction,
     deathspaceTier:site.dedTier, deathspaceVariant:"standard", sourceDeathspaceId:site.id, requiresBlueprint:true,
     inputEquipment:{ itemId:baseItemId, quantity:1 }
   };
-  if (site.dedTier === 8 && role === "weapon") standardCombat.xEffect = getDeathspaceXWeaponEffect(site.faction, "standard");
+  if (site.dedTier >= 8 && role === "weapon") standardCombat.xEffect = getDeathspaceXWeaponEffect(site.faction, "standard", baseItemId);
   // 继承基础件的船型门禁（旗舰级 base 限 capital/supercapital）
   if (Array.isArray(base.shipTypes) && base.shipTypes.length > 0) standard.shipTypes = [...base.shipTypes];
   if (standard.shipTypes && standard.shipTypes.includes("capital") && !standard.shipTypes.includes("titan")) standard.shipTypes.push("titan");
-  if (site.dedTier === 8 && role === "weapon") standard.shipTypes = ["capital", "supercapital", "titan"];
-  if (site.dedTier === 8 && role === "repair") standard.shipTypes = ["capital", "supercapital", "titan"];
+  if (site.dedTier >= 8 && role === "weapon") standard.shipTypes = ["capital", "supercapital", "titan"];
+  if (site.dedTier >= 8 && role === "repair") standard.shipTypes = ["capital", "supercapital", "titan"];
 
-  const improvedId = "ded_" + site.faction + "_" + site.dedTier + "_" + role + "_supervisor";
+  const improvedId = standardId + "_supervisor";
   // 监督者型直接从基础件按 supEffect 缩放（而非在标准型上再乘），确保锚点数值精确
   const improvedCombat = { ...base.combat };
   if (improvedCombat.kind === "weapon") improvedCombat.baseDamage = Math.round(improvedCombat.baseDamage * (tierConfig.supEffect || 1.10));
   else improvedCombat.amount = Math.round(improvedCombat.amount * (tierConfig.supEffect || 1.10));
   const improvedCost = scaleDeathspaceEquipmentCost(base.cost, Math.max(1, tierConfig.materialMultiplier * 0.75));
-  improvedCost[site.coreMaterial] = Math.max(1, Math.ceil(tierConfig.coreRequired / 2));
-  improvedCost[site.protocolMaterial] = 1;
+  if (site.coreMaterial) improvedCost[site.coreMaterial] = Math.max(1, Math.ceil(tierConfig.coreRequired / 2));
+  if (site.protocolMaterial) improvedCost[site.protocolMaterial] = 1;
   const improved = {
-    id:improvedId, name:standardName + "·监督者改良型", slot:base.slot, level:Math.min(99, tierConfig.level + 5),
+    id:improvedId, name:standardName + "·监督者改良型", slot:base.slot, level:(site.dedTier === 10 ? tierConfig.level + 5 : Math.min(99, tierConfig.level + 5)),
     time:Math.round(tierConfig.time * 1.4), xp:Math.round(tierConfig.xp * 1.5), cost:improvedCost,
     bonuses:{ ...(base.bonuses || {}) }, combat:improvedCombat, faction:site.faction,
     deathspaceTier:site.dedTier, deathspaceVariant:"supervisor", sourceDeathspaceId:site.id, requiresBlueprint:true,
     inputEquipment:{ itemId:standardId, quantity:1 }
   };
-  if (site.dedTier === 8 && role === "weapon") improvedCombat.xEffect = getDeathspaceXWeaponEffect(site.faction, "supervisor");
+  if (site.dedTier >= 8 && role === "weapon") improvedCombat.xEffect = getDeathspaceXWeaponEffect(site.faction, "supervisor", baseItemId);
   if (standard.shipTypes) improved.shipTypes = [...standard.shipTypes];
+  // 10/10「深渊回响」终局签名装（2026-09-22）：不做通用 T10，改泰坦专属签名装。
+  // titan-only 独占 + 材料门控（需 10/10 独占材料，免考古蓝图 RNG）+ 唯一命名。
+  if (site.dedTier === 10) {
+    standard.shipTypes = ["titan"];
+    improved.shipTypes = ["titan"];
+    standard.requiresBlueprint = false;
+    improved.requiresBlueprint = false;
+    standard.signature = true;
+    improved.signature = true;
+    // 10/10 签名装：不再掉落制造材料，改为 boss 直接掉实例，故从可制造配方表剔除（droppableOnly）。
+    standard.droppableOnly = true;
+    improved.droppableOnly = true;
+    // 独立命名（非「前缀+制式底子名」拼装）：标准型 = 表内独立名，西塔型 = 独立名 + "·西塔"。
+    // 后缀「西塔」= 希腊字母 Θ(theta) 的中文读音（用户 2026-09-23 拍板，替换旧「监督者」）。
+    const signatureName = DEATHSPACE_T10_SIGNATURE_NAMES[baseItemId] || standardName;
+    standard.name = signatureName;
+    improved.name = signatureName + "·西塔";
+    // 自带电容回充系数：−1% 燃料消耗（标准/监督者同值；强化同口径放大，见消费点注释）。
+    standard.bonuses = Object.assign({}, standard.bonuses || {}, { capacitorRecharge: DEATHSPACE_T10_CAPACITOR_RECHARGE });
+    improved.bonuses = Object.assign({}, improved.bonuses || {}, { capacitorRecharge: DEATHSPACE_T10_CAPACITOR_RECHARGE });
+  }
   return [standard, improved];
 }
 
 for (const site of DEATHSPACE_DATABASE) {
   const tierConfig = DEATHSPACE_EQUIPMENT_TIERS[site.dedTier];
   const route = DEATHSPACE_EQUIPMENT_ROUTES[site.faction];
+  if (!route || !tierConfig) continue;
   for (const role of ["weapon", "repair"]) {
-    for (const equipment of createDeathspaceEquipmentDefinition(site, role, route[role][site.dedTier], tierConfig)) EQUIPMENT_DB[equipment.id] = equipment;
+    // 势力档：route[role][tier] 为单个底子；先驱档：为数组（多底子各生成一件）。
+    const bases = route[role] && route[role][site.dedTier];
+    const baseList = Array.isArray(bases) ? bases : (bases ? [bases] : []);
+    for (const baseItemId of baseList) {
+      if (!baseItemId || !EQUIPMENT_DB[baseItemId]) continue;
+      for (const equipment of createDeathspaceEquipmentDefinition(site, role, baseItemId, tierConfig)) EQUIPMENT_DB[equipment.id] = equipment;
+    }
   }
 }
 
@@ -693,7 +771,7 @@ function getEquipmentBlueprintSourceHint(recipe) {
   return "获取蓝图";
 }
 
-var EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly).map(eq => ({
+var EQUIPMENT_RECIPES = Object.values(EQUIPMENT_DB).filter(eq => !eq.storeOnly && !eq.droppableOnly).map(eq => ({
   id:eq.id, name:eq.name, level:eq.level, time:eq.time, xp:eq.xp,
   cost:eq.cost, slot:eq.slot, faction:eq.faction || "", requiresBlueprint:Boolean(eq.requiresBlueprint),
   inputEquipment:eq.inputEquipment ? { ...eq.inputEquipment } : null,
@@ -725,6 +803,7 @@ const EQUIPMENT_BONUS_NAMES = {
   archaeologyNonFatalAvoid:"非致命免伤",
   archaeologyCopyChance:"货柜额外掉落",
   archaeologyFuelEfficiency:"电容回充",
+  capacitorRecharge:"电容回充",
   archaeologyInterferenceReduction:"考古干扰缩短",
   miningRichChance:"伴生富集触发",
   gasRichChance:"伴生富集触发",
@@ -735,6 +814,8 @@ const EQUIPMENT_BONUS_NAMES = {
 };
 // rig 百分比减免类：以正数存储，展示为 -X%
 const RIG_REDUCTION_BONUS_KEYS = ["archaeologyInterferenceReduction", "archaeologyCycleReductionPercent"];
+// 装备自带减耗类（先驱签名装电容回充）：以正数存储，展示为 -X% 燃料消耗
+const EQUIPMENT_FUEL_REDUCTION_BONUS_KEYS = ["capacitorRecharge"];
 const RIG_PERCENT_BONUS_KEYS = ["shieldCapacityPercent","armorCapacityPercent","structureCapacityPercent","smeltingSpeed","archaeologyScanPercent","archaeologyFuelEfficiency","miningRichChance","gasRichChance"];
 
 const ARCHAEOLOGY_REDUCTION_BONUS_KEYS = ["archaeologyStabilizer", "archaeologyCycleReduction"];
@@ -745,7 +826,7 @@ function formatEquipmentBonusValue(key, value) {
   if (["miningEfficiency","gasEfficiency","miningBonus","gasBonus","miningLaserEfficiency","gasLaserEfficiency","salvageEfficiency"].includes(key)) {
     return "+" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
-  if (RIG_REDUCTION_BONUS_KEYS.includes(key) || ARCHAEOLOGY_REDUCTION_BONUS_KEYS.includes(key)) {
+  if (RIG_REDUCTION_BONUS_KEYS.includes(key) || ARCHAEOLOGY_REDUCTION_BONUS_KEYS.includes(key) || EQUIPMENT_FUEL_REDUCTION_BONUS_KEYS.includes(key)) {
     return "-" + (value * 100).toFixed(value * 100 % 1 === 0 ? 0 : 1) + "%";
   }
   if (RIG_PERCENT_BONUS_KEYS.includes(key) || ARCHAEOLOGY_PERCENT_BONUS_KEYS.includes(key)) {

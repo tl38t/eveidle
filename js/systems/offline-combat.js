@@ -1785,6 +1785,18 @@
       // 离线逐轮落定（每轮承伤累计的触发/损管量在此一次性结算并清零，下一轮重计）。
       if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD) {
         LEGION_COMBAT_SQUAD.repairLegionNpcTitanTraits(state, nowRef.t);
+        // 2026-09-23 修复（离线 NPC 修复倒计时冻结）：在线 tick.js 每 tick 无条件推进 NPC 维修倒计时，
+        // 而离线此前的两个推进点（波内开火块 1617 / handleDefeat 2496）都在 `squad.enabled` 门内 ⇒
+        // 玩家爆船退场后整段离线无人推进，被打爆的 NPC 一直停在 destroyed=true 直到段末（offline.js 段末
+        // 那次才解冻），表现为「NPC 整段消失」。现改为逐轮推进（与在线对称）；仅确有爆船 NPC 时调用（条件化）。
+        if (legionHasDestroyedNpc(state)) {
+          const tickRes = LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(state, nowRef.t);
+          // 事件化重建：NPC 刚修好那一刻重试一次组队（避免逐轮重试的空转开销）
+          if (tickRes && tickRes.repaired > 0) resumeLegionSquadIfNeeded(state, nowRef.t);
+        }
+        // 低频兜底（每 60 轮 ≈ 60 虚拟秒）：覆盖「小队缺席但无爆船 NPC」的残余形态；
+        // 小队在队时首行即短路，正常战斗零额外开销。
+        if ((rounds + 1) % 60 === 0) resumeLegionSquadIfNeeded(state, nowRef.t);
       }
       // 维修（仅读真实维修装备；满血层不扣维修燃料，与在线一致）
       const boosterRep = inputs.boosterRep;
@@ -1989,10 +2001,12 @@
         const cfgs = G("getDeathspaceLeaderLootConfigs")(site);
         const wc = cfgs[Math.max(0, (enemy.deathspaceWave || 1) - 1)];
         if (wc) {
-          (da.leader[site.id] = da.leader[site.id] || []).push({ wave: wc.wave, isFinal: wc.isFinal, core: true, proto: wc.isFinal });
+          const isT10 = site.dedTier === 10;
+          // 10/10「深渊回响」：不再掉装备材料，改为 boss 直接掉签名装实例（signature=true，flush 时按低概率发放）。
+          (da.leader[site.id] = da.leader[site.id] || []).push({ wave: wc.wave, isFinal: wc.isFinal, core: !isT10, proto: (!isT10 && wc.isFinal), signature: isT10, faction: site.faction });
         }
       }
-      // 死亡空间无 faction data / ticket / zone special（与 roll* 一致）
+      // 死亡空间无 faction data / ticket / zone special（与 roll* 一致）；核心自 2026-09-23 起在站内掉落（见下）。
       // 势力考古探针本体（死亡空间专属；小怪也掉，概率 = 首领 × 1/4，flush 时确定性重滚）
       const pcfgs = typeof G("getDeathspaceProbeDropConfigs") === "function"
         ? G("getDeathspaceProbeDropConfigs")(site)
@@ -2004,6 +2018,12 @@
           normalChance: pcfg.normalChance, bossChance: pcfg.bossChance, normal: 0, boss: 0
         });
         pv[enemy.deathspaceLeader ? "boss" : "normal"]++;
+      }
+      // 空间站核心（先驱核心，2026-09-23 从源战区挪到站内）：按 site.id 记账，flush 时确定性重滚。
+      // 站内无 elite 单位（只 normal 护卫 + 1 boss）⇒ 只可能命中 boss 通道；与在线 rollStationCoreDrop(deathspace||zone,…) 同口径。
+      const coreCfgsDs = G("getStationCoreDropConfigs")(site);
+      if (coreCfgsDs.length && enemy.deathspaceLeader) {
+        (da.stationCore[site.id] = da.stationCore[site.id] || { elite: 0, boss: 0 }).boss++;
       }
     } else if (zone) {
       if (enemy.kind === "elite" || enemy.kind === "boss") {
@@ -2163,6 +2183,10 @@
         const pcfgs = (typeof _pFn === "function") ? (_pFn(site) || [])
           : ((typeof _p1 === "function" && _p1(site)) ? [_p1(site)] : []);
         _ent.probeKeys = pcfgs.map((p) => site.id + "::" + p.resourceId);
+        // 空间站核心（2026-09-23 起站内掉先驱核心）：与 recordKill 内门禁**逐字同口径**
+        // （`getStationCoreDropConfigs(site).length && 首领` ⇒ 记 boss 通道）。账本不完整 ⇒ M6a 验收必 FAIL。
+        const _scFnDs = G("getStationCoreDropConfigs");
+        if (typeof _scFnDs === "function" && (_scFnDs(site) || []).length && k.deathspaceLeader) _ent.stationCoreKind = "boss";
       } else if (zone) {
         if (k.kind === "elite" || k.kind === "boss") {
           const _tkFn = G("getDeathspaceTicketDropConfigs");
@@ -2474,6 +2498,33 @@
     return budgetMs / 1000;
   }
 
+  // 是否存在「已爆船」的军团 NPC（用于条件化推进修复倒计时；N ≤ 小队容量，开销恒定）
+  // 2026-09-23：离线 NPC 修复倒计时冻结修复的一部分 —— 无爆船 NPC 时跳过 tick，零行为变化。
+  function legionHasDestroyedNpc(state) {
+    const npcs = state && state.legion && state.legion.npcs;
+    if (!Array.isArray(npcs)) return false;
+    for (let i = 0; i < npcs.length; i++) {
+      const n = npcs[i];
+      if (n && n.destroyed) return true;
+    }
+    return false;
+  }
+
+  // 离线续战对齐在线（2026-09-23 修复「玩家爆船后小队退场且永不重建」）：
+  //   在线续战走 combat.js 的 dispatchGameAction("combat/start", autoResume) → actions.js 会按
+  //   squad.pendingNpcIds 重建小队；离线此前只是把 c.active 置回 true，小队永不回来 ⇒
+  //   剩余整段离线（以及回线后）全程单舰，玩家承伤由 1/N 变为 100%（实测 6h 单段爆船 30 次
+  //   vs 对齐在线 6 次）。此处按同一 pendingNpcIds 重建一次；资格校验失败（NPC 维修中 /
+  //   无战斗技能 / 欠薪）时静默降级为单舰，与在线同口径，不改任何数值口径。
+  function resumeLegionSquadIfNeeded(state, atNow) {
+    if (typeof LEGION_COMBAT_SQUAD === "undefined" || !LEGION_COMBAT_SQUAD) return false;
+    const squad = state && state.combat ? state.combat.squad : null;
+    if (squad && squad.enabled === true) return false; // 已在队 ⇒ 零开销短路
+    if (typeof LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers !== "function") return false;
+    const res = LEGION_COMBAT_SQUAD.startLegionSquadBattleWithMembers(state, { now: atNow });
+    return Boolean(res && res.changed);
+  }
+
   function handleDefeat(state, s, nowRef, zone, fromMode) {
     const c = state.combat;
     // 战败：repairUntil = 虚拟战败时刻 + 180000
@@ -2509,6 +2560,16 @@
         c.deathspaceChainPending = false; c.deathspaceChainRemaining = 0;
       } else {
         c.wave = 1; c.active = true;
+      }
+      // 2026-09-23 修复：续战点对齐在线 —— 先推进一次 NPC 修复（战败时可能同时打爆了 NPC，
+      // 其 180s 倒计时此刻可能刚好到点；不推进会被资格校验以 npc-destroyed 拒绝），
+      // 再按 pendingNpcIds 重建小队。失败则本段余下时间仍为单舰，波内每轮「NPC 修好」事件会重试。
+      if (c.active) {
+        if (typeof LEGION_COMBAT_SQUAD !== "undefined" && LEGION_COMBAT_SQUAD
+            && legionHasDestroyedNpc(state)) {
+          LEGION_COMBAT_SQUAD.tickLegionSquadRepairs(state, defeatNow + REPAIR_MS);
+        }
+        resumeLegionSquadIfNeeded(state, defeatNow + REPAIR_MS);
       }
     }
     // 否则保持维修中（active=false），登录后继续剩余维修
@@ -2977,7 +3038,10 @@
     const obtainedCores = state.stationCoresObtained = state.stationCoresObtained || {};
     const _pityFn = (typeof G === "function") ? G("getStationCorePityChance") : null;
     for (const zoneId in da.stationCore) {
-      const zone = COMBAT_ZONES.find(z => z.id === zoneId);
+      // 2026-09-23：核心来源扩到死亡空间站点（先驱核心）⇒ 按 id 先在星带表找，再在死亡空间表找。
+      const zone = COMBAT_ZONES.find(z => z.id === zoneId)
+        || ((typeof DEATHSPACE_DATABASE !== "undefined" && Array.isArray(DEATHSPACE_DATABASE))
+          ? DEATHSPACE_DATABASE.find(d => d.id === zoneId) : null);
       if (!zone) continue;
       const coreConfigs = G("getStationCoreDropConfigs")(zone);
       if (!coreConfigs.length) continue;
@@ -3121,6 +3185,21 @@
       if (!site) continue;
       const cfgs = G("getDeathspaceLeaderLootConfigs")(site);
       for (const entry of da.leader[siteId]) {
+        // 10/10「深渊回响」：boss 直接掉签名装实例（离线结算路径，与在线 resolveCombatEnemyDefeat 同口径）。
+        if (entry.signature) {
+          const n = batchCount(1, T10_SIGNATURE_DROP_CHANCE, rng);
+          if (n > 0) {
+            const ids = (typeof G("getTier10SignatureIds") === "function") ? G("getTier10SignatureIds")(entry.faction) : [];
+            if (ids.length) {
+              const picked = ids[Math.floor(rng() * ids.length)];
+              if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+              if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
+              const instId = allocateEquipmentInstanceId(state);
+              state.equipment.instances.push({ instanceId: instId, itemId: picked, enhancementLevel: 0, installedOn: null });
+            }
+          }
+          continue;
+        }
         const wc = cfgs[Math.max(0, entry.wave - 1)];
         if (!wc) continue;
         if (entry.core) { const n = batchCount(1, wc.coreChance, rng); if (n > 0) { RR.add(state, "special:" + site.coreMaterial, n); addResource(s, "special:" + site.coreMaterial, n); } }

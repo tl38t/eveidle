@@ -26,6 +26,8 @@ const ENEMY_DATABASE = {
       , precursor_warden:{ name:"先驱守望者", level:95, kind:"boss", icon:"👁", hp:{shield:200000,armor:120000,structure:80000}, hit:450,dodge:90,baseDamage:3600
         , bossHealPct:0.04, bossHealEvery:5, enrageMul:1.5, enrageAt:0.3, repairSuppr:0.4, iskDrop:80000,xpDrop:4000 }
       , deep_domain_overlord:{ name:"苍穹劫团深域战争领主", level:99, kind:"boss", icon:"👺", hp:{shield:210600,armor:9450,structure:4050}, hit:480,dodge:95,baseDamage:9000, iskDrop:64000,xpDrop:2880 }
+      , deathspace_10_overlord:{ name:"亡灵统御者", level:110, kind:"boss", icon:"💀", hp:{shield:2400000,armor:1800000,structure:1800000}, hit:480,dodge:95,baseDamage:45000
+        , bossHealPct:0.04, bossHealEvery:5, enrageMul:1.5, enrageAt:0.3, repairSuppr:0.4, iskDrop:200000,xpDrop:12000 }
     }
   },
   blood: {
@@ -170,6 +172,9 @@ const COMBAT_ZONES = [
   , { id:"precursor_core", name:"先驱文明核心", faction:"angel", secLevel:"最终", level:95, requiredCL:90, icon:"👁", trialOnly:true
   , enemyPool:{normal:["abyssal_supercapital"],elite:["abyssal_commander"],boss:["precursor_warden"]}, formationPool:"starmap_final"
   , allowTrialBoss:true, enemyBalance:{hp:1,damage:2.35,boss:{hp:1,damage:1}} }
+  // —— 10/10 死亡空间「深渊回响」专用来源战区（dedSourceOnly：仅作 DED 来源，不进普通星图列表）——
+  // 先驱核心已挪到 10/10 站内（precursor_ded_10_10.stationCoreDrops），本源战区不再产核心（2026-09-23）。
+  , { id:"precursor_abyss_echo", name:"先驱深渊回响·源战区", faction:"angel", secLevel:"0.0深渊", level:110, requiredCL:90, icon:"💀", dedSourceOnly:true, enemyPool:{normal:["abyssal_supercapital"],elite:["abyssal_commander"],boss:["deathspace_10_overlord"]}, formationPool:"deepnull", bossEscortCount:2, maxWave:20, clearLp:40, iskMulti:5.0, fuelMult:1.8, encryptedDataDisabled:true }
 ];
 
 
@@ -384,17 +389,38 @@ const DEATHSPACE_DATABASE = [
       { name:"静默同化中枢监督者", hpMult:1.30, damageMult:1.30, escortNormal:2, coreChance:0.40, final:true }
     ]
   }
+  // —— 10/10 死亡空间「深渊回响」：终局 boss = 3 泰坦才能过（2T 必败 / 3T 稳赢，真引擎认证）——
+  // 决赛波 boss 生效值 = 模板 6,000,000（combatBalance 全 1.0 + 决赛波 hpMult/damageMult 1.0），前 5 波递减，不高于决赛波。
+  , {
+    id:"precursor_ded_10_10", name:"先驱10/10深渊回响", faction:"precursor", sourceZoneId:"precursor_abyss_echo", requiredCL:90, dedTier:10,
+    ticketMaterial:"先驱深渊回响通行密钥", ticketSourceZoneId:"precursor_abyss_echo", ticketChances:{elite:0.05,boss:0.05}, maxWave:6, waveLp:6, clearLpBonus:120,
+    // 先驱核心（空间站第 5 核心，后勤 +0.30）：2026-09-23 起从源战区挪到**站内**掉落。
+    // 站内无 elite 单位（buildDeathspaceWave 只造 normal 护卫 + 1 boss）⇒ 只配 boss 通道；
+    // 一轮 6 波 = 6 次 BOSS 掷骰，P(≥1) = 1 − 0.9^6 = 46.86%。概率沿用原源战区口径 0.10（未擅自改数值）。
+    // 保底 getStationCorePityChance 读 combat.zoneClears[site.id]，死亡空间全通不计入 zoneClears ⇒ 恒定基础率（有意的）。
+    stationCoreDrops:[{coreId:"precursor", resourceId:"special:空间站先驱核心", qty:1, chances:{boss:0.10}}],
+    combatBalance:{hp:1,damage:1,finalHp:1,finalDamage:1},
+    waves:[
+      { name:"深渊回响·回响前哨", hpMult:0.06, damageMult:0.06, escortNormal:1, coreChance:0.15 },
+      { name:"深渊回响·亡灵游猎", hpMult:0.12, damageMult:0.12, escortNormal:1, coreChance:0.18 },
+      { name:"深渊回响·统御哨戒", hpMult:0.20, damageMult:0.20, escortNormal:2, coreChance:0.21 },
+      { name:"深渊回响·亡灵编队", hpMult:0.35, damageMult:0.35, escortNormal:2, coreChance:0.24 },
+      { name:"深渊回响·战争领主前卫", hpMult:0.55, damageMult:0.55, escortNormal:2, coreChance:0.28 },
+      { name:"深渊回响·亡灵统御者", hpMult:1.00, damageMult:1.00, escortNormal:2, coreChance:0.45, final:true }
+    ]
+  }
 ];
 
 const DEATHSPACE_TICKET_MATERIALS = DEATHSPACE_DATABASE.map(site => site.ticketMaterial);
-const DEATHSPACE_LOOT_MATERIALS = DEATHSPACE_DATABASE.flatMap(site => [site.coreMaterial, site.protocolMaterial]);
+// 10/10 先驱站点不再掉材料（无 coreMaterial/protocolMaterial），须 filter(Boolean) 否则下游 ITEM_ICONS 遍历 undefined 崩。
+const DEATHSPACE_LOOT_MATERIALS = DEATHSPACE_DATABASE.flatMap(site => [site.coreMaterial, site.protocolMaterial]).filter(Boolean);
 const SUPERCAPITAL_DATA_MATERIALS = ["天穹深层舰船数据", "重垒深层舰船数据", "裂界深层舰船数据"];
 // 军团星图采集节点的四种泰坦专属材料。复用 special 资源池，避免再造第二套库存。
 const STARMAP_TITAN_MATERIALS = ["星骸钛晶", "赫利昂冷凝气", "相位铱核", "虚境裂流"];
 // Tier2 加密数据拆分：4 件势力装备的专属制造料（bare name 即 cost 键；掉落用 "special:"+名）。
 const GEAR_DATA_MATERIALS = ["苍穹劫团装备生产许可D", "苍穹劫团装备生产许可C", "苍穹劫团装备生产许可B", "苍穹劫团装备生产许可A", "苍穹劫团装备生产许可S", "赤誓教团装备生产许可D", "赤誓教团装备生产许可C", "赤誓教团装备生产许可B", "赤誓教团装备生产许可A", "赤誓教团装备生产许可S", "静默集群装备生产许可D", "静默集群装备生产许可C", "静默集群装备生产许可B", "静默集群装备生产许可A", "静默集群装备生产许可S"];
 // Tier3 空间站四核心：特殊物资（非装备），建站+持有才生效，唯一产出。
-const STATION_CORE_MATERIALS = ["空间站冶炼核心", "空间站船坞核心", "空间站装备制造核心", "空间站增强剂制造核心"];
+const STATION_CORE_MATERIALS = ["空间站冶炼核心", "空间站船坞核心", "空间站装备制造核心", "空间站增强剂制造核心", "空间站先驱核心"];
 // 货柜系统：4 尺寸货柜物品 + 4 种神经植入体（脑插，T4头奖；完整装备系统延后，当前仅收藏物品）。
 const CARGO_CONTAINER_MATERIALS = ["货柜S", "货柜M", "货柜L", "货柜XL"];
 const NEURAL_IMPLANT_MATERIALS = ["神经植入体·攻击", "神经植入体·防御", "神经植入体·工程", "神经植入体·指挥"];

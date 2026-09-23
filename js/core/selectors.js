@@ -373,6 +373,14 @@ function getCurrentActivityDisplayState(state, now) {
     const recipe = getEquipmentEngineeringRecipe(action.startedEquipEngTarget || action.equipEngTarget);
     detail = "制造" + recipe.name;
   } else if (key === "combat") detail = "交战中 波次" + (state.combat.wave || 1);
+  else if (key === "blueprintInvention") {
+    // 蓝图发明（接主队列）：运行中锁定目标优先（面板改选不影响正在跑的研究）
+    const invMod = (typeof INVENTION !== "undefined") ? INVENTION : (typeof window !== "undefined" ? window.INVENTION : null);
+    const invKey = action.startedInventionTarget || action.inventionTarget;
+    const invBp = (invMod && typeof invMod.blueprintByKey === "function") ? invMod.blueprintByKey(invKey) : null;
+    const invDir = (action.startedInventionDir === "te") ? "TE" : "ME";
+    detail = "研究" + (invBp ? invBp.name : "") + " · " + invDir;
+  }
   // 顶部状态条小进度条：用 tick 实时更新的 refDuration 作为周期。
   const renderNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   const duration = key === "combat" ? 0 : (Number(action.refDuration) || 0);
@@ -1233,6 +1241,44 @@ function getActionConfirmationDisplayState(state, target, now) {
     // 队列战斗项：开战前补给预检（非阻断，展示在确认弹窗按钮上方）。
     const _swZone = isDS ? (COMBAT_ZONES.find(item => item.id === display.deathspace.sourceZoneId) || COMBAT_ZONES[0]) : display.zone;
     result.supplyWarn = getCombatSupplyWarning(state, _swZone);
+  } else if (target === "blueprintInvention") {
+    // 蓝图发明（2026-09-22 接主队列）：与其它页面【完全同款】的数量 / 上限 / 需求预检 / 确认口径。
+    // 目标（哪张蓝图 + ME/TE）来自 currentAction 的视图态（inventionTarget / inventionDir），
+    // 由面板在打开本弹窗前写入；refreshActionConfirmation 重算时读的是同一处，故刷新不会丢目标。
+    const invMod = (typeof INVENTION !== "undefined") ? INVENTION : (typeof window !== "undefined" ? window.INVENTION : null);
+    const invKey = (state.currentAction && state.currentAction.inventionTarget) ? state.currentAction.inventionTarget : "";
+    const invDir = (state.currentAction && state.currentAction.inventionDir === "te") ? "te" : "me";
+    const invBp = (invMod && typeof invMod.blueprintByKey === "function") ? invMod.blueprintByKey(invKey) : null;
+    result.title = "🧬 " + (SKILL_LABEL.blueprintInvention || "蓝图发明") + (invBp ? " · " + invBp.name : "");
+    if (!invBp || !invMod) {
+      result.canOpen = false;
+      result.unlimited = false;
+      result.maxCount = 0;
+      result.blockedText = "请先在左侧选择一张蓝图";
+      result.queue = null;
+      return result;
+    }
+    const invDirLabel = invDir === "te" ? "TE" : "ME";
+    result.duration = Math.max(0.001, Number(invMod.cycleSeconds(state, invBp)) || 1);
+    const invPerIsk = Math.max(1, Number(invMod.iskPerCycle(invBp)) || 1);
+    const invPerMat = Math.max(1, Number(invMod.matrixPerCycle(invBp)) || 1);
+    const invIsk = Number(ResourceRegistry.get(state, invMod.ISK_ID)) || 0;
+    const invMat = Number(ResourceRegistry.get(state, invMod.MATRIX_ID)) || 0;
+    result.requirements = [
+      { resourceId:invMod.ISK_ID, name:"星币", displayName:"星币", quantity:invPerIsk, stock:invIsk, enough:invIsk >= invPerIsk },
+      { resourceId:invMod.MATRIX_ID, name:"解析矩阵", displayName:"解析矩阵", quantity:invPerMat, stock:invMat, enough:invMat >= invPerMat }
+    ];
+    result.outputText = invBp.name + " · " + invDirLabel + " 研究 +1（+" + invMod.xpForBlueprint(invBp) + " XP）";
+    // 超量预排：与冶炼/装备工程/船坞等一致 —— 放开「按当前材料算上限」的硬限制，
+    // 运行期资源不足由队列 skipOnFail 切下一项（当前项保留、剩余数量续跑）。
+    result.maxCount = 99999999;
+    result.unlimited = true;
+    result.noCap = true;
+    result.materialHint = Math.max(0, Math.min(Math.floor(invIsk / invPerIsk), Math.floor(invMat / invPerMat)));
+    const invUnlocked = (typeof invMod.isUnlocked !== "function") || invMod.isUnlocked(state, invBp);
+    result.canOpen = invUnlocked;
+    result.blockedText = invUnlocked ? "" : "需要「蓝图发明」Lv." + invMod.tierGate(invBp.tier) + "（T" + invBp.tier + " 批次门槛）";
+    result.queue = { skill:"blueprintInvention", target:invBp.key, label:invBp.name + " · " + invDirLabel, subAction:invDir };
   } else {
     result.canOpen = false;
     result.blockedText = "未知行动";
@@ -2546,7 +2592,18 @@ function getCombatFuelMultiplierFromState(state, zone, context, options) {
   if (ship.type === "titan" && typeof TITAN_RESEARCH !== "undefined" && TITAN_RESEARCH && typeof TITAN_RESEARCH.getTitanFuelConsumptionBonus === "function") {
     rigFuelSaving += Number(TITAN_RESEARCH.getTitanFuelConsumptionBonus(state)) || 0;
   }
-  const combinedShipMultiplier = Math.max(0, shipMultiplier - rigFuelSaving);
+  // 装备自带电容回充系数（10/10 先驱签名装，每件 −1% 燃料消耗）：并入**同一个「加算折扣」桶**，
+  // 不新增乘区（同语义第二份实现 = 必错）。与其它装备百分比加成同口径：按强化倍率放大。
+  // ⚠️ 只在此处消费；offline-combat.js:1954 / legion-combat-squad.js:608 均调本函数 ⇒ 三条路径自动同源。
+  let equipmentFuelSaving = 0;
+  if (typeof getInstalledCombatModulesFromState === "function") {
+    const mods = getInstalledCombatModulesFromState(state, options) || [];
+    for (const m of mods) {
+      const v = m && m.bonuses ? m.bonuses.capacitorRecharge : null;
+      if (typeof v === "number" && v > 0) equipmentFuelSaving += v * (Number(m.multiplier) || 1);
+    }
+  }
+  const combinedShipMultiplier = Math.max(0, shipMultiplier - rigFuelSaving - equipmentFuelSaving);
   // 军团 NPC 电容管理(capacitorManagement)加成：与考古路径 multiplier.fuelSave 一致，进一步降低燃料消耗。
   const legion = (typeof LEGION_NPC !== "undefined" && LEGION_NPC.getLegionContributionSnapshot)
     ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers : null;
@@ -2885,8 +2942,8 @@ function getCombatDisplayState(state, now) {
   const storedMode = combat.mode === "deathspace" ? "deathspace" : "belt";
   const viewMode = combat.viewMode === "deathspace" ? "deathspace" : combat.viewMode === "belt" ? "belt" : storedMode;
   const encounterMode = combat.active ? storedMode : viewMode;
-  const requestedTier = [2,3,4,6,8].includes(Number(combat.viewDeathspaceTier)) ? Number(combat.viewDeathspaceTier) :
-    [2,3,4,6,8].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
+  const requestedTier = [2,3,4,6,8,10].includes(Number(combat.viewDeathspaceTier)) ? Number(combat.viewDeathspaceTier) :
+    [2,3,4,6,8,10].includes(Number(combat.deathspaceTier)) ? Number(combat.deathspaceTier) : null;
   const storedDeathspace = getDeathspaceById(combat.viewDeathspaceId || combat.deathspaceId);
   const deathspaceTier = requestedTier || (storedDeathspace && storedDeathspace.dedTier) || 2;
   const deathspace = storedDeathspace && storedDeathspace.dedTier === deathspaceTier
@@ -3010,9 +3067,9 @@ function getCombatDisplayState(state, now) {
       trait:ship ? (ship.capitalTrait ? { ...ship.capitalTrait } : null) : null
     },
     zone:{ ...zone, unlocked:zoneUnlocked },
-    zones:COMBAT_ZONES.filter(item => !item.trialOnly).map(item => ({ ...item, selected:item.id === zone.id, unlocked:true, locked:Boolean(combat.active), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
+    zones:COMBAT_ZONES.filter(item => !item.trialOnly && !item.dedSourceOnly).map(item => ({ ...item, selected:item.id === zone.id, unlocked:true, locked:Boolean(combat.active), clears:combat.zoneClears && combat.zoneClears[item.id] || 0 })),
     deathspace:{ ...deathspace, ticketCount, unlocked:true, clearCount:combat.deathspaceClears && combat.deathspaceClears[deathspace.id] || 0 },
-    deathspaceTiers:[2,3,4,6,8].map(tier => {
+    deathspaceTiers:[2,3,4,6,8,10].map(tier => {
       const sites = DEATHSPACE_DATABASE.filter(site => site.dedTier === tier);
       return { tier, label:tier + "/10", selected:tier === deathspaceTier, unlocked:true, requiredCL:sites[0] ? sites[0].requiredCL : 1 };
     }),
@@ -3085,12 +3142,22 @@ function getCombatDropPreview(state, options) {
         chance: (typeof IMPLANT_SHIP_MFG_DROP_CHANCE !== "undefined") ? IMPLANT_SHIP_MFG_DROP_CHANCE : 0.05
       };
     }
+    const isT10 = site.dedTier === 10;
+    const signatureIds = (isT10 && typeof getTier10SignatureIds === "function") ? getTier10SignatureIds(site.faction) : [];
     return {
       mode: "deathspace", valid: true,
       deathspaceId: site.id, name: site.name, faction: site.faction,
       sourceZoneId: sourceZone.id, sourceZoneName: sourceZone.name,
-      encryptedData: null, zoneSpecialDrops: null, ticketDrop: null, gearDrops: null, stationCoreDrops: null, cargoDrops: null,
-      leaderLoot: getDeathspaceLeaderLootConfigs(site),
+      encryptedData: null, zoneSpecialDrops: null, ticketDrop: null, gearDrops: null, cargoDrops: null,
+      // 10/10 先驱站点：不再掉校准核心/改良协议（leaderLoot 置空），改掉签名装实例。
+      // 先驱核心（2026-09-23）已从源战区挪到**站内** ⇒ 取 site 的配置，不再取 sourceZone。
+      stationCoreDrops: (isT10 && typeof getStationCoreDropConfigs === "function") ? getStationCoreDropConfigs(site) : null,
+      leaderLoot: isT10 ? [] : getDeathspaceLeaderLootConfigs(site),
+      signatureDrop: isT10 ? {
+        chance: (typeof T10_SIGNATURE_DROP_CHANCE !== "undefined") ? T10_SIGNATURE_DROP_CHANCE : 0.02,
+        count: signatureIds.length,
+        names: signatureIds.map(id => ((typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[id]) ? EQUIPMENT_DB[id].name : id))
+      } : null,
       probeDrop: (typeof getDeathspaceProbeDropConfigs === "function") ? getDeathspaceProbeDropConfigs(site)
         : ((typeof getDeathspaceProbeDropConfig === "function") ? getDeathspaceProbeDropConfig(site) : null),
       tacticalMaterial: getTacticalMaterialDropConfig(sourceZone),
@@ -4721,6 +4788,15 @@ function estimateQueueItemCycleSeconds(state, item) {
       if (!site) return null;
       return (typeof getArchaeologyCycleSeconds === "function") ? getArchaeologyCycleSeconds(state, site) : (site.time || 1);
     }
+    if (skill === "blueprintInvention") {
+      // 蓝图发明（接主队列）：周期唯一公式 = INVENTION.cycleSeconds（含等级/空间站后勤/科研/军团乘区），
+      // 与在线 tick、离线 descriptor 同源，绝不在此另算一套。
+      const invMod = (typeof INVENTION !== "undefined") ? INVENTION : (typeof window !== "undefined" ? window.INVENTION : null);
+      if (!invMod || typeof invMod.blueprintByKey !== "function") return null;
+      const bp = invMod.blueprintByKey(target);
+      if (!bp || typeof invMod.cycleSeconds !== "function") return null;
+      return Math.max(0.001, Number(invMod.cycleSeconds(state, bp)) || 1);
+    }
     if (skill === "combat") {
       return null; // 战斗：只显示剩余波数/入场数，不伪造固定秒数 ETA
     }
@@ -4789,7 +4865,7 @@ function getCombatSupplyWarning(state, zone) {
 
 function getQueueDisplayState(state) {
   const queue = state.queue || { items:[], config:{}, status:{} };
-  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", combat:"⚔" };
+  const icons = { mining:"⛏", refining:"🔥", gasHarvesting:"☁️", shipEngineering:"🚀", equipmentEngineering:"🔧", blueprintInvention:"🧬", combat:"⚔" };
   const labels = { mining:"⛏采矿", refining:"🔥冶炼", gasHarvesting:"☁️气体", shipEngineering:"🚀舰船", equipmentEngineering:"🔧装备工程", boosterEngineering:"💉增强剂", blueprintInvention:"🧬蓝图发明", archaeology:"🔍考古", combat:"⚔战斗" };
   const combat = state.combat || {};
   const queueRunning = Boolean(queue.status.isRunning) && queue.status.activeIndex >= 0;

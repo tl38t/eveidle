@@ -844,8 +844,8 @@
       #blueprint-lab-panel .bl-mtrack{position:relative;height:12px;border-radius:6px;background:#0a1119;box-shadow:inset 0 1px 3px rgba(0,0,0,.35);overflow:hidden}
       #blueprint-lab-panel .bl-mtrack .mfill{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:6px;background:linear-gradient(90deg,#b8912f,#e8d8a0,#b8912f);background-size:200% 100%;animation:gradientMove 3s ease-in-out infinite;transition:width .35s cubic-bezier(.3,.9,.4,1)}
       #blueprint-lab-panel .bl-mtrack .mmark{position:absolute;top:-2px;width:2px;height:16px;background:#fff;opacity:0;z-index:3;border-radius:1px;transition:left .35s cubic-bezier(.3,.9,.4,1),opacity .2s}
-      #blueprint-lab-panel .bl-mticks{display:grid;grid-template-columns:repeat(5,1fr);margin-top:6px}
-      #blueprint-lab-panel .bl-mticks div{text-align:center;font:600 10px var(--font-tech);color:var(--dim)}
+      #blueprint-lab-panel .bl-mticks{position:relative;height:30px;margin-top:6px}
+      #blueprint-lab-panel .bl-mticks div{position:absolute;top:0;transform:translateX(-50%);text-align:center;white-space:nowrap;font:600 10px var(--font-tech);color:var(--dim);transition:left .35s cubic-bezier(.3,.9,.4,1)}
       #blueprint-lab-panel .bl-mticks div.hit{color:var(--gold)}
       #blueprint-lab-panel .bl-mticks div b{display:block;font:600 10px var(--font-ui);color:var(--dim);margin-top:2px}
       #blueprint-lab-panel .bl-mticks div.hit b{color:var(--gold-lt)}
@@ -905,7 +905,7 @@
       <div class="panel-header"><span class="panel-title">🧬 蓝图发明</span><span class="panel-sub">研究预览版</span></div>
       <div class="panel-body">
         <div class="bl-note">
-          <b>效率研究</b>　研究消耗<b>真实星币</b>与<b>解析矩阵</b>，进度写入存档。采用<b>实验室作业槽</b>：同一时刻只能推一张蓝图的一条线，可排 3 个待研究，<b>离线自动推进</b>。累计研究达到里程碑（10 / 50 / 250 / 1250 / 5000 次）即永久降低该蓝图的制造材料与时间。
+          <b>效率研究</b>　研究消耗<b>真实星币</b>与<b>解析矩阵</b>，进度写入存档。<b>发明作业已并入主行动队列</b>：与采矿 / 冶炼 / 装备工程同款 —— 选好蓝图后点「开始研究」或「加入队列」，数量与上限在确认弹窗里填，<b>离线自动推进</b>。累计研究达到里程碑（10 / 50 / 250 / 1250 / 5000 次）即永久降低该蓝图的制造材料与时间。
         </div>
 
         <div class="bl-tabs" role="tablist" aria-label="蓝图发明标签">
@@ -994,15 +994,13 @@
               </div>
 
               <div class="bl-acts">
-                <button id="bl-btn1" type="button">加入队列 ×1</button>
-                <button class="ghost" id="bl-btn10" type="button">×10</button>
-                <button class="ghost" id="bl-btn50" type="button">×50</button>
+                <button id="bl-btn-start" type="button">开始研究 / 加入队列</button>
               </div>
               <div class="bl-toast" id="bl-toast"></div>
             </div>
           </div>
 
-          <div class="bl-sec-title">实验室作业队列 <span>单作业槽 · 最多 3 个待研究 · 离线自动推进</span></div>
+          <div class="bl-sec-title">本页在主队列中的研究项 <span>发明作业走主行动队列（数量 / 排序 / 移除请在「队列」页操作）</span></div>
           <div class="bl-lab" id="bl-lab"></div>
         </div>
 
@@ -1072,8 +1070,18 @@
   const lab = document.getElementById("blueprint-lab-panel");
   if (!lab) return;
   const $ = id => lab.querySelector("#" + id);
-  const INV = (typeof window !== "undefined" && window.INVENTION) ? window.INVENTION : null;
-  const BP = INV ? INV.blueprints : [];
+  // 🔴 惰性读取，勿改回「加载期一次性抓取」：
+  //   本内联 <script> 位于文档中部，其执行时刻**早于** defer 的 invention.js（index.html:2278）——
+  //   defer 脚本要等文档解析完成后才按序执行，而内联脚本在解析到它的那一刻立即执行。
+  //   ⇒ 若在加载期 const INV = window.INVENTION，会永远锁定 null（闭包常量不可恢复），
+  //     面板表现为「一张蓝图都选不到 / T1 蓝图 0 张 / 实验室模块未加载」。
+  //   注意：把本脚本挪到 body 末尾也**无效**（内联脚本仍早于 defer），必须惰性刷新。
+  let INV = null, BP = [];
+  function syncModules() {
+    INV = (typeof window !== "undefined" && window.INVENTION) ? window.INVENTION : null;
+    BP = INV ? INV.blueprints : [];
+  }
+  syncModules();
 
   const MILE  = [10, 50, 250, 1250, 5000];
   const RED   = [5, 10, 15, 20, 25];
@@ -1198,11 +1206,29 @@
         '<span class="tierbadge">T' + b.tier + '</span>' +
         '<span class="nm"><b>' + b.name + '</b><i>' + b.cat + ' · E' + b.E + ' · ' + b.skill + ' · ' + b.time + 's</i></span>' +
         '<span class="xpv">' + b.xp + ' XP' + (lv ? ' <span style="color:var(--cyan)">' + ROMAN[lv - 1] + '</span>' : '') + '</span>';
-      el.addEventListener("click", () => { S.sel = b.key; renderList(); renderConsole(); });
+      el.addEventListener("click", () => { S.sel = b.key; renderList(); });
       host.appendChild(el);
     }
     if (!S.sel || !BP.find(x => x.key === S.sel && x.tier === t)) S.sel = list[0] ? list[0].key : null;
     renderConsole();
+    syncViewTarget();
+  }
+
+  // 把「当前选中蓝图 + 方向」同步进 currentAction 视图态（inventionTarget / inventionDir）。
+  // 目的：确认弹窗（getActionConfirmationDisplayState）按视图态解析目标，改选蓝图 / 切方向 /
+  // 切批次（renderList 会自动改选首项）后必须同步，否则会出现「看着新蓝图、入队旧蓝图」。
+  // 运行中的作业读的是 currentAction.startedInventionTarget（运行中锁定），不受此影响。
+  // 弹窗开着时顺带刷新其内容（数量 / 需求 / 标题）。
+  function syncViewTarget() {
+    const g0 = gs();
+    if (g0) {
+      if (!g0.currentAction) g0.currentAction = {};
+      g0.currentAction.inventionTarget = S.sel || "";
+      g0.currentAction.inventionDir = S.dir;
+    }
+    if (typeof window !== "undefined" && typeof window.refreshActionConfirmation === "function") {
+      window.refreshActionConfirmation();
+    }
   }
 
   function renderConsole() {
@@ -1232,66 +1258,59 @@
     if ($("bl-mile-next")) $("bl-mile-next").textContent = nextIdx < 0 ? "已研满 V" : "→ " + ROMAN[nextIdx] + "（" + fmt(MILE[nextIdx] - cnt) + " 次）";
     if ($("bl-mile-mode")) $("bl-mile-mode").textContent = logMode ? "（对数刻度）" : "（线性刻度）";
     const ticks = $("bl-mticks");
-    if (ticks && !ticks.dataset.built) {
-      ticks.innerHTML = MILE.map((m, i) => '<div data-i="' + i + '">' + ROMAN[i] + '<b>' + fmt(m) + '</b></div>').join("");
-      ticks.dataset.built = "1";
+    if (ticks) {
+      if (!ticks.dataset.built) {
+        ticks.innerHTML = MILE.map((m, i) => '<div data-i="' + i + '">' + ROMAN[i] + '<b>' + fmt(m) + '</b></div>').join("");
+        ticks.dataset.built = "1";
+      }
+      // 刻度标签位置随所选制式重排（真值 = mileFrac，与进度条填充 / 游标同源）：
+      //   对数制五档均匀铺开；线性制前 3 档挤在左侧 5% 内 —— 正是切换按钮右侧提示语所述。
+      // 旧版为固定 grid 5 等分且只构建一次 ⇒ 切「对数 / 线性」时标签纹丝不动，观感上「点了没区别」。
+      // 两端用 clamp 式 transform 防止 0% / 100% 处标签溢出面板。
+      const lv = levelOf(cnt);
+      ticks.querySelectorAll("div").forEach(d => {
+        const i = +d.dataset.i;
+        const pos = mileFrac(MILE[i], logMode) * 100;
+        d.style.left = pos.toFixed(3) + "%";
+        d.style.transform = pos <= 3 ? "translateX(0)" : (pos >= 97 ? "translateX(-100%)" : "translateX(-50%)");
+        d.classList.toggle("hit", lv > i);
+      });
     }
-    if (ticks) ticks.querySelectorAll("div").forEach(d => d.classList.toggle("hit", levelOf(cnt) > +d.dataset.i));
     if ($("bl-scale-hint")) $("bl-scale-hint").textContent = logMode
       ? "五档 10→5000（跨度 500×）均匀铺开，1 次前进也看得见"
       : "线性刻度下前 3 档挤在左侧 5% 内，进度会「看着不动」";
   }
 
-  function fmtDur(s) {
-    s = Math.max(0, Math.ceil(s));
-    if (s < 60) return s + "s";
-    if (s < 3600) return Math.floor(s / 60) + "m" + (s % 60 ? (s % 60) + "s" : "");
-    const h = Math.floor(s / 3600);
-    const m = Math.floor((s % 3600) / 60);
-    return h + "h" + (m ? m + "m" : "");
-  }
-
+  // 本页在主队列中的研究项（只读视图）。
+  // 2026-09-22「接主队列」后，发明作业没有任何面板自有作业槽：进度真值 = state.queue.items +
+  // currentAction.progress。此段只做回显，排序 / 数量修改 / 移除一律去「队列」页操作，
+  // 避免出现「两处都能改」的真值漂移（旧 lab 槽位引擎已退役）。
   function renderLab() {
     const host = $("bl-lab");
     if (!host) return;
-    if (!INV) { host.innerHTML = '<div class="bl-lockmsg">实验室模块未加载</div>'; return; }
     const g = gs();
-    const st = INV.getLabState(g || { invention: { lab: null } });
-    let html = "";
-    if (st.activeJob) {
-      const b = bpByKey(st.activeJob.key);
-      const nm = b ? b.name : st.activeJob.key;
-      const dir = st.activeJob.dir === "te" ? "TE" : "ME";
-      const pct = Math.round((st.activeJob.ratio || 0) * 100);
-      const pause = st.pausedReason === "NO_RESOURCE"
-        ? '<span class="bl-pause">⏸ 资源不足，已暂停（补足后自动继续）</span>' : "";
-      html +=
-        '<div class="bl-job bl-job-active">' +
-          '<div class="bl-job-head"><span class="bl-job-name">' + nm + ' · ' + dir + '</span>' +
-            '<span class="bl-job-meta">' + st.activeJob.done + ' / ' + st.activeJob.times + '　剩余 ' + fmtDur(st.activeJob.remainingSeconds) + '</span>' +
-            '<button class="bl-job-cancel" type="button" data-act="cancel-active">取消</button></div>' +
-          '<div class="bl-job-bar"><i style="width:' + pct + '%"></i></div>' + pause +
-        '</div>';
-    } else {
-      html += '<div class="bl-job bl-job-empty">当前无进行中的研究' +
-        (st.pausedReason ? '（' + (st.pausedReason === "NO_RESOURCE" ? "资源不足" : st.pausedReason) + '）' : '') + '</div>';
+    const queue = g && g.queue;
+    const items = (queue && Array.isArray(queue.items)) ? queue.items : [];
+    const status = (queue && queue.status) || {};
+    const rows = [];
+    for (let i = 0; i < items.length; i++) {
+      const it = items[i];
+      if (!it || it.skill !== "blueprintInvention") continue;
+      const b = bpByKey(it.target);
+      const dir = it.subAction === "te" ? "TE" : "ME";
+      const active = Boolean(status.isRunning && status.activeIndex === i);
+      const cntText = it.count === -1 ? "无限" : "剩余 ×" + (Number(it.count) || 1) + " 次";
+      const label = String(it.label || ((b ? b.name : it.target) + " · " + dir)).replace(/[<>&]/g, "");
+      rows.push(
+        '<div class="bl-job bl-job-slot' + (active ? ' bl-job-active' : '') + '">' +
+          '<div class="bl-job-head"><span class="bl-job-name">' + (active ? "▶ " : "⏳ ") + label + '</span>' +
+            '<span class="bl-job-meta">第 ' + (i + 1) + ' 位　' + cntText + '</span></div>' +
+        '</div>'
+      );
     }
-    for (let i = 0; i < 3; i++) {
-      const q = st.queue[i];
-      if (q) {
-        const b = bpByKey(q.key);
-        const nm = b ? b.name : q.key;
-        const dir = q.dir === "te" ? "TE" : "ME";
-        html +=
-          '<div class="bl-job bl-job-slot">' +
-            '<div class="bl-job-head"><span class="bl-job-name">⏳ ' + nm + ' · ' + dir + ' ×' + q.times + '</span>' +
-              '<button class="bl-job-cancel" type="button" data-act="cancel-queue" data-i="' + i + '">移除</button></div>' +
-          '</div>';
-      } else {
-        html += '<div class="bl-job bl-job-slot bl-job-empty">队列空位 ' + (i + 1) + '</div>';
-      }
-    }
-    host.innerHTML = html;
+    host.innerHTML = rows.length
+      ? rows.join("")
+      : '<div class="bl-job bl-job-empty">主队列中暂无发明作业 —— 选好蓝图后点上方按钮即可入队</div>';
   }
 
   let toastTimer = null;
@@ -1304,17 +1323,26 @@
     toastTimer = setTimeout(() => el.classList.remove("on"), 2600);
   }
 
-  function enqueue(n) {
+  // 打开标准「执行确认」弹窗 —— 与采矿 / 冶炼 / 装备工程 / 增强剂【完全同款】。
+  // 目标（蓝图 key + ME/TE 方向）先写入 currentAction 视图态（inventionTarget / inventionDir），
+  // 弹窗按它解析；数量选择、材料上限、需求预检、「开始研究」(=确认)、「加入队列」、∞ 无限
+  // 全部由 js/ui/action-modal.js 统一提供，本面板不再自带 ×1 / ×10 / ×50 快捷键。
+  function openInventionConfirm() {
     const b = bpByKey(S.sel);
     if (!b) { toast("请先在左侧选择一张蓝图", true); return; }
     if (!INV) { toast("实验室模块未加载", true); return; }
-    const r = INV.enqueueJob(gs(), b.key, S.dir, n, Date.now());
-    if (r.ok) toast("已加入队列：" + b.name + " " + (S.dir === "me" ? "ME" : "TE") + " ×" + r.queued);
-    else if (r.reason === "LOCKED") toast("T" + b.tier + " 尚未解锁 — 需「蓝图发明」Lv" + r.gate, true);
-    else if (r.reason === "QUEUE_FULL") toast("队列已满（最多 3 个待研究）", true);
-    else if (r.reason === "UNKNOWN_BLUEPRINT") toast("未知蓝图", true);
-    else toast("加入队列失败：" + (r.reason || "?"), true);
-    renderAll();
+    const g = gs();
+    if (!g) { toast("游戏状态未就绪", true); return; }
+    const gate = GATE[b.tier] || 1;
+    if (skillLv() < gate) { toast("T" + b.tier + " 尚未解锁 — 需「蓝图发明」Lv" + gate, true); return; }
+    if (!g.currentAction) g.currentAction = {};
+    g.currentAction.inventionTarget = b.key;
+    g.currentAction.inventionDir = S.dir;
+    if (typeof window !== "undefined" && typeof window.showActionConfirm === "function") {
+      window.showActionConfirm("blueprintInvention");
+    } else {
+      toast("确认弹窗未就绪，请稍后重试", true);
+    }
   }
 
   lab.querySelectorAll(".bl-tab").forEach(btn => btn.addEventListener("click", () => {
@@ -1326,7 +1354,7 @@
   lab.querySelectorAll(".bl-seg button").forEach(btn => btn.addEventListener("click", () => {
     S.dir = btn.dataset.dir;
     lab.querySelectorAll(".bl-seg button").forEach(x => x.classList.toggle("on", x === btn));
-    renderList();
+    renderList();   // 内含 renderConsole + syncViewTarget（同步 currentAction 视图态并刷新弹窗）
   }));
   lab.querySelectorAll("[data-sort]").forEach(btn => btn.addEventListener("click", () => {
     S.sort = btn.dataset.sort;
@@ -1338,17 +1366,7 @@
     lab.querySelectorAll("[data-scale]").forEach(x => x.classList.toggle("on", x === btn));
     renderConsole();
   }));
-  if ($("bl-btn1")) $("bl-btn1").addEventListener("click", () => enqueue(1));
-  if ($("bl-btn10")) $("bl-btn10").addEventListener("click", () => enqueue(10));
-  if ($("bl-btn50")) $("bl-btn50").addEventListener("click", () => enqueue(50));
-  const labHost = $("bl-lab");
-  if (labHost) labHost.addEventListener("click", e => {
-    const btn = (e && e.target && e.target.closest) ? e.target.closest("[data-act]") : null;
-    if (!btn || !INV) return;
-    if (btn.dataset.act === "cancel-active") { INV.cancelJob(gs(), Date.now()); toast("已取消当前研究"); }
-    else if (btn.dataset.act === "cancel-queue") { INV.cancelQueueItem(gs(), Number(btn.dataset.i), Date.now()); toast("已移除队列项"); }
-    renderAll();
-  });
+  if ($("bl-btn-start")) $("bl-btn-start").addEventListener("click", openInventionConfirm);
 
   function renderEnc() {
     const lvl = skillLv();
@@ -1358,7 +1376,8 @@
     if ($("bl-enc-rate")) $("bl-enc-rate").textContent = Math.round(rate * 100) + "%";
   }
 
-  function renderAll() { renderStatus(); renderLadder(); renderList(); renderConsole(); renderLab(); renderEnc(); }
+  // 每次渲染前刷新模块引用（面板显示时 MutationObserver 会触发），确保 defer 加载完成后能自愈。
+  function renderAll() { syncModules(); renderStatus(); renderLadder(); renderList(); renderConsole(); renderLab(); renderEnc(); }
 
   renderAll();
   try {
@@ -1367,7 +1386,8 @@
       if (timer) return;
       timer = setInterval(() => {
         if (lab.style.display !== "none") {
-          if (INV) INV.processUntil(gs(), Date.now());
+          // 进度由主循环（tick.js → tickBlueprintInvention）驱动，面板只做只读回显。
+          // 旧版此处调用 INV.processUntil —— lab 槽位引擎已退役，绝不可再调（会与主队列双推进）。
           renderStatus(); renderLab();
         }
       }, 500);
@@ -2246,10 +2266,10 @@
   <script defer src="./js/data/boosters.js?v=11"></script>
   <script defer src="./js/systems/boosters.js?v=13"></script>
   <script defer src="./js/systems/recycling.js?v=4"></script>
-  <script defer src="./js/data/combat.js?v=40"></script>
+  <script defer src="./js/data/combat.js?v=45"></script>
   <script defer src="./js/data/cargo.js?v=10"></script>
   <script defer src="./js/data/implants.js?v=10"></script>
-  <script defer src="./js/data/equipment.js?v=34"></script>
+  <script defer src="./js/data/equipment.js?v=41"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=8"></script>
   <script defer src="./js/data/ammunition.js?v=6"></script>
   <script defer src="./js/data/archaeology.js?v=7"></script>
@@ -2259,12 +2279,12 @@
   <script defer src="./js/data/achievement-locales.js?v=2"></script>
   <script defer src="./js/data/achievement-locales-tw.js?v=1"></script>
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
-  <script defer src="./js/data/achievement-rules.js?v=7"></script>
+  <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=7"></script>
   <script defer src="./js/data/changelog.js?v=24"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
-  <script defer src="./js/core/state.js?v=17"></script>
+  <script defer src="./js/core/state.js?v=18"></script>
   <script defer src="./js/systems/reputation.js?v=3"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
   <script defer src="./js/systems/research.js?v=12"></script>
@@ -2275,14 +2295,14 @@
   <script defer src="./js/core/resources.js?v=6"></script>
   <script defer src="./js/systems/tutorial.js?v=9"></script>
   <script defer src="./js/systems/manufacturing.js?v=9"></script>
-  <script defer src="./js/systems/invention.js?v=2"></script>
+  <script defer src="./js/systems/invention.js?v=3"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
-  <script defer src="./js/systems/equipment-enhancement.js?v=6"></script>
+  <script defer src="./js/systems/equipment-enhancement.js?v=7"></script>
   <script defer src="./js/systems/rigs.js?v=5"></script>
-  <script defer src="./js/systems/archaeology.js?v=25"></script>
+  <script defer src="./js/systems/archaeology.js?v=26"></script>
   <script defer src="./js/systems/planetary.js?v=5"></script>
-  <script defer src="./js/systems/station.js?v=25"></script>
+  <script defer src="./js/systems/station.js?v=26"></script>
   <script defer src="./js/data/legion/npc-names.js?v=2"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=2"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=2"></script>
@@ -2293,12 +2313,12 @@
   <script defer src="./js/systems/legion-npc.js?v=19"></script>
   <script defer src="./js/systems/legion-combat-squad.js?v=31"></script>
   <script defer src="./js/ui/action-modal.js?v=13"></script>
-  <script defer src="./js/core/queue.js?v=6"></script>
+  <script defer src="./js/core/queue.js?v=7"></script>
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
-  <script defer src="./js/systems/combat.js?v=58"></script>
+  <script defer src="./js/systems/combat.js?v=61"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=118"></script>
-  <script defer src="./js/core/actions.js?v=64"></script>
+  <script defer src="./js/core/selectors.js?v=123"></script>
+  <script defer src="./js/core/actions.js?v=66"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=54"></script>
   <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
@@ -2307,7 +2327,7 @@
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=13"></script>
-   <script defer src="./js/ui/combat-render.js?v=73"></script>
+   <script defer src="./js/ui/combat-render.js?v=75"></script>
   <script defer src="./js/ui/planetary-render.js?v=3"></script>
   <script defer src="./js/ui/archaeology-render.js?v=17"></script>
   <script defer src="./js/ui/booster-render.js?v=17"></script>
@@ -2323,9 +2343,9 @@
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
   <script defer src="./js/ui/alliance-render.js?v=42"></script>
-  <script defer src="./js/core/tick.js?v=26"></script>
-  <script defer src="./js/core/offline.js?v=36"></script>
-  <script defer src="./js/systems/offline-combat.js?v=60"></script>
+  <script defer src="./js/core/tick.js?v=27"></script>
+  <script defer src="./js/core/offline.js?v=37"></script>
+  <script defer src="./js/systems/offline-combat.js?v=63"></script>
   <script defer src="./js/systems/combat-log.js?v=6"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=3"></script>
@@ -2358,7 +2378,7 @@
   <script defer src="./js/core/ad-service.js?v=5"></script>
   <script defer src="./js/systems/ad-buff.js?v=6"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
-  <script defer src="./js/core/persistence.js?v=38"></script>
+  <script defer src="./js/core/persistence.js?v=40"></script>
   <script defer src="./js/ui/changelog-popup.js?v=2"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=14"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>

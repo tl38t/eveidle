@@ -785,8 +785,35 @@ function rollDeathspaceTicketDrop(zone, enemyKind, randomValue, state) {
   return { material: cfg.material, qty: 1, deathspaceId: cfg.deathspaceId };
 }
 
+function rollDeathspaceSignatureDrops(site, rng) {
+  if (!site || site.dedTier !== 10) return [];
+  const rngFn = (typeof rng === "function") ? rng : Math.random;
+  const SC = (typeof T10_SIGNATURE_DROP_CHANCE !== "undefined") ? T10_SIGNATURE_DROP_CHANCE : 0.02;
+  const ids = (typeof getTier10SignatureIds === "function") ? getTier10SignatureIds(site.faction) : [];
+  const out = [];
+  for (const id of ids) {
+    if (EQUIPMENT_DB[id] && rngFn() < SC) out.push(id);
+  }
+  return out;
+}
+
+// 10/10「深渊回响」签名装直接掉率：低于 8/10 协议掉率(0.03)，凸显终局稀有度（用户拍板：按概率掉）。
+var T10_SIGNATURE_DROP_CHANCE = 0.02;
+
+// 直接向 state 装备实例池塞一件装备（用于 10/10 签名装 boss 直接掉落）。
+// 复用 persistence.js 的确定性 ID 分配（allocateEquipmentInstanceId），保证存档往返一致。
+function grantEquipmentInstanceToState(state, equipmentId, enhancementLevel) {
+  if (!state || !state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
+  if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
+  const instanceId = allocateEquipmentInstanceId(state);
+  state.equipment.instances.push({ instanceId, itemId:equipmentId, enhancementLevel:Number(enhancementLevel) || 0, installedOn:null });
+  return instanceId;
+}
+
 function rollDeathspaceLeaderLoot(site, wave, coreRandomValue, protocolRandomValue, state) {
   state = state || gameState;
+  // 10/10「深渊回响」：不再掉装备材料，改为 boss 直接掉签名装实例（见下方 resolveCombatEnemyDefeat）。
+  if (site && site.dedTier === 10) return [];
   const configs = getDeathspaceLeaderLootConfigs(site);
   const waveConfig = configs[Math.max(0, wave - 1)];
   if (!waveConfig) return [];
@@ -981,7 +1008,10 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const gearValues = gearConfigs.map(() => roll());
   const gearDrops = deathspace ? [] : rollGearDrops(zone, enemy.kind, gearValues, state);
   for (const drop of gearDrops) { c.lastLoot += " · " + drop.material + " ×" + drop.qty; addLoot(drop.resourceId, drop.qty); }
-  const coreDrop = deathspace ? null : rollStationCoreDrop(zone, enemy.kind, roll(), state);
+  // 空间站核心：2026-09-23 起先驱核心改到**站内**掉落，故死亡空间用站点自身（deathspace）作核心来源；
+  // 普通星带仍用 zone。⚠️ 死亡空间此前在这行不消耗 roll（coreDrop 恒 null），改造后多消耗一枚随机数
+  // ⇒ 死亡空间内后续掷骰（考古探针等）RNG 序列整体位移一位（均匀随机，不影响正确性）。
+  const coreDrop = rollStationCoreDrop(deathspace || zone, enemy.kind, roll(), state);
   if (coreDrop) { c.lastLoot += " · " + coreDrop.material + " ×" + coreDrop.qty; addLoot(coreDrop.resourceId, coreDrop.qty); }
   const ticketDrops = deathspace ? [] : rollDeathspaceTicketDrops(zone, enemy.kind, [roll(), roll()], state);
   const ticketDrop = ticketDrops[0] || null;
@@ -1070,6 +1100,17 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
   const protoRoll = roll();
   const deathspaceDrops = deathspace && enemy.deathspaceLeader ? rollDeathspaceLeaderLoot(deathspace, enemy.deathspaceWave, coreRoll, protoRoll, state) : [];
   for (const drop of deathspaceDrops) { c.lastLoot += " · " + drop.material + " ×" + drop.qty; addLoot("special:" + drop.material, drop.qty); }
+  // 10/10「深渊回响」：boss 直接掉签名装实例（装备材料已停掉）。每首领按低概率掉落 1 件随机签名装。
+  if (deathspace && enemy.deathspaceLeader && deathspace.dedTier === 10) {
+    const sigIds = (typeof getTier10SignatureIds === "function") ? getTier10SignatureIds(deathspace.faction) : [];
+    if (sigIds.length && roll() < T10_SIGNATURE_DROP_CHANCE) {
+      const picked = sigIds[Math.floor(roll() * sigIds.length)];
+      grantEquipmentInstanceToState(state, picked, 0);
+      const def = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[picked]) || null;
+      c.lastLoot += " · " + (def ? def.name : picked) + " ×1";
+      addLoot("equipment:" + picked, 1);
+    }
+  }
   // 增强剂系统 Phase 2A：战术材料掉落（星带与死亡空间同规则，对所有 kind 开放）。
   // 纯函数 rollTacticalMaterialDrop 仅计算；此处负责发奖、事件与展示。
   const tacticalDrop = rollTacticalMaterialDrop(zone, enemy.kind, roll);
@@ -2186,6 +2227,11 @@ if (typeof window !== "undefined") window.rollDeathspaceTicketDrops = rollDeaths
 if (typeof window !== "undefined") window.getDeathspaceLeaderLootConfigs = getDeathspaceLeaderLootConfigs;
 if (typeof window !== "undefined") window.getGearDropConfigs = getGearDropConfigs;
 if (typeof window !== "undefined") window.getStationCoreDropConfigs = getStationCoreDropConfigs;
+// 🔴 2026-09-23 修复：getStationCorePityChance 此前**未挂全局**，而离线 flush（applyBatchedDrops 1.6 段）
+//   用 `G("getStationCorePityChance")` 取它 ⇒ 取到 undefined ⇒ 离线核心掉落**完全不吃隐藏保底**
+//   （在线 rollStationCoreDrop 直接调用同文件函数、吃保底）⇒ 在线/离线口径分叉：
+//   「PITY_MAX 次肃清必出」在离线路径从未生效。挂上后与在线同源。
+if (typeof window !== "undefined") window.getStationCorePityChance = getStationCorePityChance;
 if (typeof window !== "undefined") window.beginDeathspaceRun = beginDeathspaceRun;
 if (typeof window !== "undefined") window.combatTick = combatTick;
 if (typeof module !== "undefined" && module.exports) module.exports = { getDeathspaceById: getDeathspaceById, buildDeathspaceWave: buildDeathspaceWave, buildCombatWave: buildCombatWave, updateCombatRecovery: updateCombatRecovery, SHIP_TYPE_NAMES: SHIP_TYPE_NAMES, getShipConfig: getShipConfig, createCombatEnemy: createCombatEnemy, nextCombatRandom: nextCombatRandom, resetCombatRunState: resetCombatRunState, getTacticalMaterialDropConfig: getTacticalMaterialDropConfig, rollFactionEncryptedDataDrop: rollFactionEncryptedDataDrop, rollCombatZoneSpecialDrops: rollCombatZoneSpecialDrops, rollGearDrops: rollGearDrops, rollStationCoreDrop: rollStationCoreDrop, rollDeathspaceTicketDrop: rollDeathspaceTicketDrop, rollTacticalMaterialDrop: rollTacticalMaterialDrop, getInstalledCombatWeapons: getInstalledCombatWeapons, getInstalledCombatDamageControls: getInstalledCombatDamageControls, onCombatEvent: onCombatEvent, computeVolleyFuel: computeVolleyFuel, getEncryptedDataDropConfig: getEncryptedDataDropConfig, getCombatZoneSpecialDropConfigs: getCombatZoneSpecialDropConfigs, getDeathspaceTicketDropConfig: getDeathspaceTicketDropConfig, getDeathspaceLeaderLootConfigs: getDeathspaceLeaderLootConfigs, getGearDropConfigs: getGearDropConfigs, getStationCoreDropConfigs: getStationCoreDropConfigs, beginDeathspaceRun: beginDeathspaceRun, combatTick: combatTick };

@@ -940,7 +940,22 @@ function renderCombatPanel(now) {
   const deathspaceTierTabs = document.getElementById("deathspace-tier-tabs");
   if (deathspaceTierTabs) deathspaceTierTabs.innerHTML = display.deathspaceTiers.map(item => `<button class="deathspace-tier-tab${item.selected ? " active" : ""}${item.unlocked ? "" : " locked"}" data-deathspace-tier="${item.tier}">${item.label}<small>推荐战斗等级 ${item.requiredCL}</small></button>`).join("");
   const deathspaceGrid = document.getElementById("deathspace-grid");
-  if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${getResourceDisplayName(site.ticketMaterial)} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} ${DisplayNames.getCurrencyName("lp")} · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} ${DisplayNames.getCurrencyName("lp")} · 已全通 ${site.clears}</small><small class="deathspace-rare">💠 ${getResourceDisplayName(site.coreMaterial)} · 📜 ${getResourceDisplayName(site.protocolMaterial)} 2%</small></button>`).join("");
+  if (deathspaceGrid) deathspaceGrid.innerHTML = display.deathspaces.map(site => {
+    // 10/10 先驱站点（site.faction === "precursor"）已停发校准核心/改良协议：
+    // site 上不再有 coreMaterial/protocolMaterial，直接取值会渲染成 "undefined"。
+    // 故 tier 10 单独走「先驱签名装 + 先驱核心」摘要行；其余档位保持原「核心 · 协议」行。
+    let rareLine;
+    if (site.dedTier === 10) {
+      const sigCount = (typeof getTier10SignatureIds === "function") ? getTier10SignatureIds(site.faction).length : 0;
+      // 先驱核心（2026-09-23 起在站内掉落）：概率从站点配置动态取 —— 旧写法硬编码 "2%" 其实是签名装概率，属误标。
+      const coreCfgs = (typeof getStationCoreDropConfigs === "function") ? getStationCoreDropConfigs(site) : [];
+      const coreBest = coreCfgs.reduce((m, c) => Math.max(m, c.eliteChance || 0, c.bossChance || 0), 0);
+      rareLine = `👑 先驱签名装 ×${sigCount}${coreBest > 0 ? " · 🌟 先驱核心 " + Math.round(coreBest * 100) + "%" : ""}`;
+    } else {
+      rareLine = `💠 ${getResourceDisplayName(site.coreMaterial)} · 📜 ${getResourceDisplayName(site.protocolMaterial)} 2%`;
+    }
+    return `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${getResourceDisplayName(site.ticketMaterial)} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} ${DisplayNames.getCurrencyName("lp")} · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} ${DisplayNames.getCurrencyName("lp")} · 已全通 ${site.clears}</small><small class="deathspace-rare">${rareLine}</small></button>`;
+  }).join("");
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
   const intensityEl = document.getElementById("combat-zone-intensity");
   if (intensityEl) {
@@ -1149,6 +1164,17 @@ function renderCombatDropPreview(display) {
         if (loot.isFinal && loot.protocolMaterial) {
           rows.push(row("📜", getResourceDisplayName(loot.protocolMaterial), `最终层「${loot.name}」协议 ${pct(loot.protocolChance)}（极稀有）`, "drop-leader", "special:" + loot.protocolMaterial));
         }
+      }
+    }
+    if (preview.signatureDrop) {
+      const sd = preview.signatureDrop;
+      rows.push(`<div class="drop-group-title">👑 先驱签名装（BOSS 直接掉落 · 每次 1 件随机 · 泰坦专属 · 不可制造）</div>`);
+      rows.push(row("👑", `先驱签名装 共 ${sd.count} 件（单件概率 ${pct(sd.chance)}）`, "掉落池：" + sd.names.join(" / "), "drop-signature", "signature"));
+    }
+    if (Array.isArray(preview.stationCoreDrops) && preview.stationCoreDrops.length > 0) {
+      rows.push(`<div class="drop-group-title">🌟 空间站核心（唯一掉落）</div>`);
+      for (const sc of preview.stationCoreDrops) {
+        rows.push(row("🌟", getResourceDisplayName(sc.resourceId), `精英 ${pct(sc.eliteChance)} · BOSS ${pct(sc.bossChance)}（每枚 ×${sc.qty}）· 全游戏唯一`, "drop-core", sc.resourceId));
       }
     }
     if (preview.tacticalMaterial) {

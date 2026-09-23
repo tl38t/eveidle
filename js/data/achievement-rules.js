@@ -292,12 +292,15 @@
     combatDeathspaceClearAnyRule("E27", 1),
   ]);
 
-  // Batch C-12：死亡空间 ID 冻结数组（硬编码，与 DEATHSPACE_DATABASE 12 项双向一致）
+  // Batch C-12：死亡空间 ID 冻结数组（硬编码）。10/10 已由三势力三站点统一为单一先驱站点 precursor_ded_10_10。
+  // 注意：本数组只覆盖 2/3/4/6 + 10 档（历史遗留，未含 8 档 *_ded_8_10）；当前仅导出、无运行时消费点，
+  // 如需用于「全通」类成就口径，须先补齐 8 档并与 DEATHSPACE_DATABASE 双向核对。
   const DEATHSPACE_IDS_FOR_ACHIEVEMENTS = Object.freeze([
     "angel_ded_2_10","blood_ded_2_10","sansha_ded_2_10",
     "angel_ded_3_10","blood_ded_3_10","sansha_ded_3_10",
     "angel_ded_4_10","blood_ded_4_10","sansha_ded_4_10",
     "angel_ded_6_10","blood_ded_6_10","sansha_ded_6_10",
+    "precursor_ded_10_10",
   ]);
 
   const COMBAT_RULES_BY_ID = {};
