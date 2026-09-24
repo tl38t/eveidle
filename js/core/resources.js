@@ -216,6 +216,16 @@ const ResourceRegistry = (() => {
         }
       }
       if (defName) return defName;
+      // 装备 / 探针：数据库中无 ResourceRegistry 定义（equipment 未注册；probe 可能漏注册），
+      // 在此兜底解析，避免把 equipment:<id> / probe:<id> 这类内部键泄漏到战斗日志、结算弹窗。
+      if (parsed.namespace === "equipment" && typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) {
+        const eq = EQUIPMENT_DB[parsed.key];
+        if (eq && eq.name) return eq.name;
+      }
+      if (parsed.namespace === "probe" && typeof getArchaeologyProbe === "function") {
+        const probe = getArchaeologyProbe(parsed.key);
+        if (probe && probe.name) return probe.name;
+      }
       return id;
     }
     // 非 namespace:key 形式（如直接中文名"三钛合金"）：查 DisplayNames 裸键映射，否则原样

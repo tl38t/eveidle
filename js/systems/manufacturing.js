@@ -177,7 +177,9 @@ function getEquipEngEfficiency(recipe) {
   // TE 减免（蓝图发明·效率研究）：缩短装备工程制造耗时；per-recipe，无蓝图则无减免。
   const teR = (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.teReductionForRecipe === "function")
     ? window.INVENTION.teReductionForRecipe(gameState, recipe || getEquipEngRecipe()) : 0;
-  if (teR) total *= (1 - teR);
+  // 修正（2026-09-24）：TE 减免的是「耗时」，故速度乘子应除以 (1 - teR)；
+  // 此前写成 total *= (1 - teR) 会反向缩小乘子、使单次耗时反而更高。
+  if (teR) total /= (1 - teR);
   return total;
 }
 
@@ -360,7 +362,9 @@ function getBoosterEfficiency(recipe) {
   // TE 减免（蓝图发明·效率研究）：缩短增强剂制造耗时；per-recipe，无蓝图则无减免。
   const teR = (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.teReductionForRecipe === "function")
     ? window.INVENTION.teReductionForRecipe(gameState, recipe || getSelectedBoosterRecipe()) : 0;
-  if (teR) total *= (1 - teR);
+  // 修正（2026-09-24）：TE 减免的是「耗时」，故速度乘子应除以 (1 - teR)；
+  // 此前写成 total *= (1 - teR) 会反向缩小乘子、使单次耗时反而更高。
+  if (teR) total /= (1 - teR);
   return total;
 }
 
