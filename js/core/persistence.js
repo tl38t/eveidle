@@ -849,6 +849,46 @@ function migrateDeathspaceEquipmentIds(state) {
 }
 if (typeof window !== "undefined") window.migrateDeathspaceEquipmentIds = migrateDeathspaceEquipmentIds;
 
+// 🔴 一次性补偿迁移（rc96 数据丢失补救，2026-09-24）：
+// rc96 把旧 DED 装备从 inventory / instances / fitted 物理删除（normalizeEquipmentState 三处硬删除），
+// 仅靠别名+迁移无法恢复已丢失数据。此处基于「幸存的蓝图所有权键」做一次性补偿：
+//  ① 非 10/10 的 DED 蓝图（ownedBlueprints 的 "equipment:<id>"）：每持有 1 张补发 10 件对应装备进仓库；
+//  ② 全部 DED 协议材料 / 核心材料：各 +25（rc96 未改材料键，此项为安抚性补发，与装备补偿同源一次性）。
+// 门禁 state.migrations.deathspaceLossCompensated：只跑一次，未来新开蓝图不再触发（满足"只补这一次"）。
+function compensateDeathspaceLoss(state) {
+  if (!state || typeof state !== "object") return;
+  if (state.migrations && state.migrations.deathspaceLossCompensated) return;
+  const legacyMap = (typeof DEATHSPACE_LEGACY_ID_MAP !== "undefined") ? DEATHSPACE_LEGACY_ID_MAP : null;
+  const EQ_DB = (typeof EQUIPMENT_DB !== "undefined") ? EQUIPMENT_DB : null;
+
+  // ① 装备：遍历蓝图所有权键
+  if (Array.isArray(state.ownedBlueprints)) {
+    if (!state.equipment) state.equipment = { inventory: [], instances: [], nextInstanceId: 1 };
+    if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
+    for (const key of state.ownedBlueprints) {
+      if (typeof key !== "string" || key.indexOf("equipment:") !== 0) continue;
+      const raw = key.slice("equipment:".length);
+      const modernId = (legacyMap && Object.prototype.hasOwnProperty.call(legacyMap, raw)) ? legacyMap[raw] : raw;
+      if (typeof modernId !== "string" || modernId.indexOf("ded_") !== 0) continue;   // 仅 DED 装备
+      if (/^ded_(?:precursor_)?10_/.test(modernId)) continue;                          // 10/10 不补
+      if (!EQ_DB || !EQ_DB[modernId]) continue;
+      for (let i = 0; i < 10; i++) state.equipment.inventory.push(modernId);
+    }
+  }
+  // ② 材料：全部 DED 协议 / 核心材料各 +25
+  const mats = (typeof DEATHSPACE_LOOT_MATERIALS !== "undefined" && Array.isArray(DEATHSPACE_LOOT_MATERIALS)) ? DEATHSPACE_LOOT_MATERIALS : [];
+  if (mats.length && state.resources && typeof state.resources === "object") {
+    for (const name of mats) {
+      const rk = "special:" + name;
+      state.resources[rk] = (Number(state.resources[rk]) || 0) + 25;
+    }
+  }
+  state.migrations = state.migrations || {};
+  state.migrations.deathspaceLossCompensated = true;
+  state._dirty = true;
+}
+if (typeof window !== "undefined") window.compensateDeathspaceLoss = compensateDeathspaceLoss;
+
 // 共享收尾：在所有旧版迁移完成后，执行装备实例迁移与规范化。
 // 调用顺序必须为：migrateShipAndEquipmentState → migrateShipComponentState → migrateCombatEquipmentState →
 //                migrateEquipmentInstancesV1 → normalizeEquipmentState → migrateArchaeologyState
@@ -862,6 +902,7 @@ function finalizeEquipmentStateAfterLegacyMigrations(state) {
   // 🔴 必须在实例迁移之后：fitted / inventory 此时已是最终形态（instance 或 itemId），
   //                      再改写死亡空间旧 ID 才不会与前面「退回 inventory」语义打架。
   migrateDeathspaceEquipmentIds(state);
+  compensateDeathspaceLoss(state);   // 🔴 rc96 数据丢失一次性补偿（装备 + 协议/核心材料）
   migrateArchaeologyState();
   migrateInventionState();
   migrateDeadSkillFields();
