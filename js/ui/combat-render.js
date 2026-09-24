@@ -545,16 +545,19 @@ function mountCombat3D(display) {
   try {
     const zoneFaction = display.zone && display.zone.faction;
     const enemyLevel = display.target && display.target.level ? display.target.level : 1;
+    // 死亡空间 10/10「深渊回响」：敌人整体换泰坦深绿死灵模型（2026-09-24）。
+    const isNecron = !!(display.deathspace && display.deathspace.dedTier === 10);
+    const necronVisual = isNecron ? { defense: "necro", weapon: "laser", core: "green" } : null;
     // 战斗会话 nonce：每开始一场新战斗自增（见 startCombatEncounter），使每场战斗都重新随机外观，
     // 避免跨场战斗复用首场随机结果（否则同区域同等级敌人每次都长一个样）。
     const combatNonce = mountCombat3D._combatNonce || 0;
-    const enemyKey = (zoneFaction || "?") + "|" + enemyLevel + "|" + combatNonce;
+    const enemyKey = (zoneFaction || "?") + "|" + enemyLevel + "|" + combatNonce + (isNecron ? "|N" : "");
     if (!mountCombat3D._enemyKey || mountCombat3D._enemyKey !== enemyKey) {
       mountCombat3D._enemyKey = enemyKey;
-      const baseSpec = S3D.buildEnemySpec(zoneFaction, enemyLevel);
+      const baseSpec = S3D.buildEnemySpec(zoneFaction, enemyLevel, necronVisual);
       // 确定性 seed（由 faction|level|会话 派生，不再用 Math.random）：同敌兵群恒同外观、反复切回不跳动，
       // 且 setShips 内容稳定 → 命中短路、不再每回合真建模。
-      baseSpec.seed = "enemy-rnd-" + combatNonce + "-" + (zoneFaction || "?") + "-" + enemyLevel;
+      baseSpec.seed = "enemy-rnd-" + combatNonce + "-" + (zoneFaction || "?") + "-" + enemyLevel + (isNecron ? "-N" : "");
       mountCombat3D._enemySpec = baseSpec;
     }
     const eImg = document.getElementById("combat-enemy-image");
@@ -564,14 +567,14 @@ function mountCombat3D(display) {
         canvas = document.createElement("canvas");
         canvas.id = "combat-enemy-3d";
         canvas.className = "ship3d-canvas";
-        canvas.style.cssText = "height:100%;width:100%;border-radius:8px;background:#1a0808;display:block;";
+        canvas.style.cssText = "height:100%;width:100%;border-radius:8px;background:" + (isNecron ? "#07140d" : "#1a0808") + ";display:block;";
         eImg.innerHTML = "";
         eImg.appendChild(canvas);
       }
-      // background：敌方暗红背景（覆盖 createViewer 默认的蓝黑清屏色）
-      // shieldColor：敌方护盾泡染红（覆盖 ShipFactory2 写死的青蓝 SHIELD_COLOR）
-      const viewer = S3D.ensureViewer(canvas, { orbit: false, autoSpin: false, background: 0x1a0808 });
-      S3D.setShips(viewer, [{ spec: mountCombat3D._enemySpec, position: [0, 0, 0], scale: 1, sway: true, rotation: [0, Math.PI, 0], shieldColor: 0xff3a3a }]);
+      // background：敌方暗红背景（覆盖 createViewer 默认的蓝黑清屏色）；10/10 亡灵统御者改深绿。
+      // shieldColor：敌方护盾泡染红（覆盖 ShipFactory2 写死的青蓝 SHIELD_COLOR）；10/10 改深绿。
+      const viewer = S3D.ensureViewer(canvas, { orbit: false, autoSpin: false, background: isNecron ? 0x07140d : 0x1a0808 });
+      S3D.setShips(viewer, [{ spec: mountCombat3D._enemySpec, position: [0, 0, 0], scale: 1, sway: true, rotation: [0, Math.PI, 0], shieldColor: isNecron ? 0x39ff7a : 0xff3a3a }]);
     }
   } catch (err) { console.error("[combat] 敌人 3D 渲染失败", err); }
   try { if (window.__PERF) window.__PERF.end("ui:mountCombat3D"); } catch (_) {}
@@ -1690,9 +1693,9 @@ function openCombat3DPopup(which) {
     // 复用侧栏当前渲染的敌方 spec，保证大图与侧栏轮廓一致
     spec = mountCombat3D._enemySpec
       ? JSON.parse(JSON.stringify(mountCombat3D._enemySpec))
-      : S3D.buildEnemySpec(display.zone && display.zone.faction, target.level || 1);
+      : S3D.buildEnemySpec(display.zone && display.zone.faction, target.level || 1, (display.deathspace && display.deathspace.dedTier === 10) ? { defense: "necro", weapon: "laser", core: "green" } : null);
     rotation = [0, Math.PI, 0];
-    shieldColor = 0xff3a3a;
+    shieldColor = (display.deathspace && display.deathspace.dedTier === 10) ? 0x39ff7a : 0xff3a3a;
     title = target.name;
     attrsHTML =
       '<div class="c3d-attr-title">' + target.name + '</div>' +
@@ -1727,7 +1730,7 @@ function openCombat3DPopup(which) {
 
   const item = { spec, position: [0, 0, 0], scale: 1, sway: false, rotation, shieldColor };
   // 我方蓝黑 / 敌方暗红：每次打开都按当前对象设定背景（复用同一 viewer，避免看完我方再看敌方时背景残留）。
-  const bg = which === "enemy" ? 0x1a0808 : 0x0a121e;
+  const bg = which === "enemy" ? (display.deathspace && display.deathspace.dedTier === 10 ? 0x07140d : 0x1a0808) : 0x0a121e;
   if (!_combatPopupViewer) {
     // 首次打开：等弹窗从 display:none→flex 完成布局（拿到真实尺寸）后再创建 viewer，避免基于 0 尺寸取景。
     // 之后该 viewer 常驻复用，关闭不销毁（不调 forceContextLoss），彻底规避第二次创建上下文失败/白屏。

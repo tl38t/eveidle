@@ -5,10 +5,12 @@ import * as THREE from "three";
 const DEFENSE = {
   shield: { shell: 0x7d929e, seam: 0x26333b, trim: 0x5dbce5 },
   armor: { shell: 0x81786b, seam: 0x2a2723, trim: 0xb08c62 },
-  structure: { shell: 0x647171, seam: 0x172020, trim: 0x8ca7a4 }
+  structure: { shell: 0x647171, seam: 0x172020, trim: 0x8ca7a4 },
+  // 死亡空间 10/10「深渊回响」亡灵统御者：深绿太空死灵配色（2026-09-24）。
+  necro: { shell: 0x143528, seam: 0x07140e, trim: 0x39ff7a }
 };
 const WEAPONS = { laser: 0x6adfff, missile: 0xf0a45c, cannon: 0xffcf8a };
-const coreHue = kind => kind === "red" ? 0xff553b : kind === "violet" ? 0xc16cff : 0x38c8ff;
+const coreHue = kind => kind === "red" ? 0xff553b : kind === "violet" ? 0xc16cff : kind === "green" ? 0x39ff7a : 0x38c8ff;
 const mat = (c, metal = .82, rough = .3) => new THREE.MeshStandardMaterial({ color: c, metalness: metal, roughness: rough, emissive: c, emissiveIntensity: .12 });
 const glow = c => new THREE.MeshStandardMaterial({ color: 0x11151a, metalness: .15, roughness: .18, emissive: c, emissiveIntensity: 4 });
 const flameMat = (c, opacity) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });

@@ -12,7 +12,7 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { buildShip } from "../render3d/shipfactory2/ShipFactory2.js";
 // 泰坦模型工厂（与 titan-forge-3d.js 用同一 URL，避免模块被加载两次）
-import { buildTitan } from "../render3d/titan/TitanFactory.js?v=1";
+import { buildTitan } from "../render3d/titan/TitanFactory.js?v=2";
 
 /* ================================================================
    可复用场景工具（移植自 three-demo.js，统一观感）
@@ -238,7 +238,11 @@ const ENEMY_ANCHORS = ["Spear", "Needle", "Blade", "Hammer", "Organic", "Broken"
 
 // 战斗敌人 spec：由星带 faction + 威胁等级推导（敌人是泛用海盗，无专属蓝图）。
 // anchor 与 seed 均随机，使每一波敌人轮廓/细节都不同；实际只在切波时 buildShip 一次，无性能负担。
-export function buildEnemySpec(zoneFaction, level) {
+// 第三个参数 titanVisual：{ defense, weapon, core } 时，敌人整体走泰坦模型（死亡空间 10/10 深绿死灵）。
+export function buildEnemySpec(zoneFaction, level, titanVisual) {
+  if (titanVisual) {
+    return { id: "enemy-titan", titan: titanVisual, seed: "enemy-titan-" + (titanVisual.core || "x") };
+  }
   const faction = enemyFactionFromZone(zoneFaction);
   const hull = hullTierFromLevel(level);
   const anchor = ENEMY_ANCHORS[Math.floor(Math.random() * ENEMY_ANCHORS.length)];
