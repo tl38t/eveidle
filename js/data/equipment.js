@@ -213,7 +213,9 @@ const RIG_SERIES = [
   { stackGroup:"rig_archaeology_speed",        label:"遗迹速掘",     rigCategory:"archaeology", bonusKey:"archaeologyCycleReductionPercent", values:[0.08, 0.11, 0.14, 0.17, 0.20] },
   // 技能训练（神经训练改装件）：提升本舰被指派工作（采矿/采气/冶炼/考古/战斗）的技能经验获取；
   // 仅作用于该舰指派的工作，不外溢（见 systems/production.js addSkillXpToState 的 job 判定）。
-  { stackGroup:"rig_skill_xp", label:"神经训练改装件", rigCategory:"training", bonusKey:"skillXpBonus", values:[0.05, 0.07, 0.09, 0.12, 0.15],
+  // 2026-09-26：label 必须是纯词根——最终显示名由下方第 249 行统一拼成 label + "改装件 " + roman，
+  // 再自带后缀会导致「神经训练改装件改装件 I」这类重复。此前只有本条违反约定，已修正为纯词根。
+  { stackGroup:"rig_skill_xp", label:"神经训练", rigCategory:"training", bonusKey:"skillXpBonus", values:[0.05, 0.07, 0.09, 0.12, 0.15],
     desc:"装备于改装件槽，使本舰被指派工作（采矿/采气/冶炼/考古/战斗）的技能经验获取 +{chance}。同系列可重复装配，受谐振惩罚。" }
 ];
 // 5 档：等级门槛、耗时、经验、校准材料需求、精炼矿物成本（材料来源见 PLAN 5.2）。

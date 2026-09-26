@@ -19,7 +19,7 @@ const GameEventContracts = (() => {
     "planetary:renewed": { required:["deploymentId", "planetType", "maintenanceISK", "expiresAt"], numbers:["maintenanceISK", "expiresAt"] },
     "planetary:expired": { required:["deploymentId", "planetType", "expiredAt"], numbers:["expiredAt"] },
     "planetary:collected": { required:["deploymentId", "planetType", "resourceId", "quantity"], numbers:["quantity"] },
-    "planetary:demolished": { required:["deploymentId", "planetType", "refundedISK", "refundedResources"], numbers:["refundedISK"] },
+    "planetary:demolished": { required:["deploymentId", "planetType", "refundedISK", "refundedResources"], numbers:["refundedISK", "lostStorage"] },
     "manufacturing:completed": { required:["branch", "recipeId", "quantity", "cycles", "xp"], numbers:["quantity", "cycles", "xp"] },
     "combat:enemyDefeated": { required:["zoneId", "faction", "enemyId", "enemyKind", "isk", "xp"], numbers:["isk", "xp"] },
     "combat:waveCleared": { required:["zoneId", "wave"], numbers:["wave"] },
@@ -57,6 +57,11 @@ const GameEventContracts = (() => {
     "rig:fitted": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
     "rig:destroyed": { required:["rigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
     "rig:replaced": { required:["oldRigId", "newRigId", "shipInstanceId", "stackGroup", "slotIndex"], numbers:["slotIndex"] },
+    // 改装件强化（invention.js enhanceRig，即时结算不走队列）：成败两条都携带本次消耗与掷骰成功率。
+    // ⚠ calibrationRef（校准基体资源 ref，字符串）与 calibrationQty（消耗数量，数字）必须分开——
+    // 早期版本把 ref 塞进 calibration 字段，契约按 numbers 校验时会拿到非数字。
+    "invention:rigEnhanced": { required:["itemId", "tier", "instanceId", "affix", "affixes", "chance", "isk", "matrix", "calibrationRef", "calibrationQty"], numbers:["tier", "chance", "isk", "matrix", "calibrationQty"] },
+    "invention:rigEnhanceFailed": { required:["itemId", "tier", "chance", "isk", "matrix", "calibrationRef", "calibrationQty"], numbers:["tier", "chance", "isk", "matrix", "calibrationQty"] },
     "skill:levelUp": { required:["skill", "previousLevel", "level"], numbers:["previousLevel", "level"] },
     "action:progressReset": { required:["skill"] },
     "combat:event": { required:["type"] },

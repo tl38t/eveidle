@@ -58,8 +58,9 @@ function renderPlanetaryCard(card) {
   const renewBtn = card.showRenew
     ? `<button class="btn-redeploy planet-renew-btn" data-action="renew" data-id="${card.id}" ${card.canRenew ? "" : 'disabled style="opacity:.4;"'} title="支付星币续期 24 小时">🔄 续期 (星币 ${formatCompact(card.renewCost)})</button>`
     : `<button class="btn-redeploy planet-renew-btn" data-action="renew" data-id="${card.id}" disabled style="opacity:.4;" title="运行中无需续期（续期费星币 ${formatCompact(card.renewCost)}）">🔄 续期</button>`;
-  // 拆除按钮：storage≠0 时禁用（禁止静默销毁库存）
-  const demolishBtn = `<button class="btn-remove-planet planet-remove-btn" data-action="demolish" data-id="${card.id}" ${card.canDemolish ? "" : 'disabled style="opacity:.4;" title="请先收取行星库存再拆除"'}>✕ 拆除</button>`;
+  // 拆除按钮：恒可点（2026-09-26 放宽）。库存不为 0 时不再禁用，热点在确认弹窗里明示
+  // 「库存 N 个产物将一并销毁且不予返还」，避免玩家在看不见的库存上被卡住。
+  const demolishBtn = `<button class="btn-remove-planet planet-remove-btn" data-action="demolish" data-id="${card.id}" title="拆除后该行星永久消失，建设投入不返还；若库存未收取，产物将一并销毁">✕ 拆除</button>`;
   return `<div class="planet-card${card.expired ? " expired" : ""}" id="planet-card-${card.id}" data-expired="${card.expired ? 1 : 0}">
     <div class="planet-header"><canvas class="planet-canvas" id="pcanvas-${card.id}" width="60" height="60"></canvas><span class="planet-name">${card.name}</span><span class="planet-status ${card.statusClass}" id="planet-status-${card.id}">${card.statusText}</span></div>
     <div class="planet-output"><span>产物：</span><span class="po-icon">${card.outputIcon}</span><span class="po-name">${card.output}</span></div>
@@ -116,7 +117,9 @@ function updatePlanetaryLiveUI(now) {
     const timeValue = document.getElementById("planet-time-value-" + card.id); if (timeValue) timeValue.textContent = card.timeLeftText;
     const collect = element.querySelector('[data-action="collect"]'); if (collect) { collect.disabled = !card.canCollect; collect.style.opacity = card.canCollect ? "" : "0.4"; }
     const renew = element.querySelector('[data-action="renew"]'); if (renew && card.showRenew) { renew.disabled = !card.canRenew; renew.style.opacity = card.canRenew ? "" : "0.4"; }
-    const demolish = element.querySelector('[data-action="demolish"]'); if (demolish) { demolish.disabled = !card.canDemolish; demolish.style.opacity = card.canDemolish ? "" : "0.4"; }
+    // 拆除恒可点（canDemolish 恒为 true）：只刷新 tooltip 里的库存提示，不禁用按钮。
+    const demolish = element.querySelector('[data-action="demolish"]');
+    if (demolish && card.storage > 0) demolish.title = `拆除后该行星永久消失，建设投入不返还；未收取的 ${card.storage} 个产物将一并销毁且不予返还`;
   }
   return display;
 }
@@ -159,11 +162,13 @@ function renewPlanet(id) {
 function demolishPlanet(id) {
   const deployment = gameState.planetary.deployments.find(item => item.id === id);
   if (!deployment) return false;
-  if ((deployment.storage || 0) > 0) { alert("请先收取行星库存，再拆除该行星。"); return false; }
+  const storage = Number(deployment.storage) || 0;
   const config = PLANET_TYPES.find(planet => planet.id === deployment.planetType);
-  showDangerConfirm("⚠ 永久拆除行星",
-    "<p class=\"dlg-body\">确定永久拆除" + (config ? config.name : "该行星") + "吗？<br><br>· 建设投入（星币 + 标准钛材）不会返还<br>· 已到期停产的行星拆除同样不返还<br>· 若日后重建，需再次支付全额建设费用</p>",
-    "确认拆除",
+  let body = "<p class=\"dlg-body\">确定永久拆除" + (config ? config.name : "该行星") + "吗？<br><br>· 建设投入（星币 + 标准钛材）不会返还<br>· 已到期停产的行星拆除同样不返还<br>· 若日后重建，需再次支付全额建设费用";
+  // 2026-09-26：库存不为 0 时不再拦截，改为在确认弹窗里把「产物会一并销毁」讲清楚（可先点「收取」再拆）。
+  if (storage > 0) body += "<br>· ⚠ 尚未收取的 " + storage + " 个" + (config ? config.output : "产物") + "将一并销毁，不予返还（可先收取再拆除）";
+  body += "</p>";
+  showDangerConfirm("⚠ 永久拆除行星", body, "确认拆除",
     () => {
       const result = dispatchGameAction(gameState, { type:"planetary/demolish", id }, Date.now());
       if (result.changed) { planetVisualOffsets.delete(id); renderPlanetaryPage(); }

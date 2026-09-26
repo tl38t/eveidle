@@ -495,6 +495,13 @@
   .eem-badge.stock { color: #6fb86f; border-color: #2a4a2a; }
   .eem-badge.installed { color: #d4a843; border-color: #4a3f2a; }
   .eem-badge.milestone { color: #e57a7a; border-color: #5a2a2a; }
+  .eem-badge.rig-enh { color: #79d0e8; border-color: #2a4a55; }
+  .eec-affixes { display: flex; flex-wrap: wrap; gap: 4px; }
+  .eem-affix-chip { font-size: 10px; border-radius: 3px; padding: 1px 5px; border: 1px solid #2a4a55; color: #9fe0f0; background: #0c1820; }
+  .eem-affix-chip.q-普通 { color: #9fb0c4; border-color: #2a3a4a; }
+  .eem-affix-chip.q-优良 { color: #9fe0f0; border-color: #2a4a55; }
+  .eem-affix-chip.q-卓越 { color: #e8c25a; border-color: #4a3f2a; }
+  .eem-rig-affixes { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
   .eec-count { color: #9fb0c4; font-size: 11px; }
   .equipment-enhancement-list .cargo-empty { color: #6a7a8e; padding: 24px; text-align: center; }
 
@@ -729,6 +736,13 @@
   .equip-select-panel .equip-current .ec-main { display: block; font-size: 13px; color: #e8eef5; line-height: 1.4; }
   .equip-select-panel .equip-current .ec-sub { display: block; min-height: 18px; margin-top: 4px; font-size: 11px; color: #8aa0b8; line-height: 1.35; }
   .equip-select-panel .equip-current.is-empty .ec-main { color: #6b7c8f; }
+  /* 2026-09-26 改装件强化词条行（强化改装件在船坞装配页的可视化） */
+  .equip-select-panel .equip-option.duo .eq-row3 { display: flex; flex-wrap: wrap; align-items: center; margin-top: 3px; padding-left: 38px; font-size: 11px; color: #8aa0b8; line-height: 1.35; }
+  .equip-select-panel .equip-option.duo .eq-row3 b { color: #d7b356; font-weight: 600; }
+  .equip-select-panel .equip-option.duo .eq-row3 i { font-style: normal; color: #7f8fa3; margin-left: 3px; }
+  .equip-select-panel .equip-current .ec-affixes { display: block; min-height: 16px; margin-top: 3px; font-size: 11px; color: #8aa0b8; line-height: 1.35; }
+  .equip-select-panel .equip-current .ec-affixes b { color: #d7b356; font-weight: 600; }
+  .equip-select-panel .equip-current .ec-affixes i { font-style: normal; color: #7f8fa3; margin-left: 3px; }
   .equip-select-panel .equip-option-hint { padding: 7px 10px; margin-bottom: 8px; border-radius: 6px; font-size: 11px; line-height: 1.45; color: #c4a35a; background: rgba(80,65,30,0.2); border: 1px solid rgba(140,110,50,0.25); }
   .equip-select-panel .equip-option-hint.empty-hint { color: #6a7a8e; background: rgba(20,28,38,0.4); border-color: rgba(40,55,75,0.35); }
   .equip-select-panel .rig-destroy-btn { color: #e0887e; background: rgba(90,40,40,0.25); border-color: rgba(180,80,80,0.4); }

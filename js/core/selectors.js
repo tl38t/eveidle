@@ -673,7 +673,11 @@ function getPumpModifiers(state, instance) {
   // 完全没读各泵实例的 enhancementLevel。现逐台泵按自身强化等级应用效果倍率。
   const enhanceMult = (typeof getEquipmentEnhancementEffectMultiplier === "function")
     ? getEquipmentEnhancementEffectMultiplier : (l => 1);
-  const settings = (typeof ensureUserSettingsState === "function") ? ensureUserSettingsState(state) : null;
+  // 只读读取用户设置：此处绝不可调用 ensureUserSettingsState —— 它是归一化/写函数，会就地补写
+  // state.settings 上的默认字段。本函数语义上是纯读选择器（被 getHangarDisplayState 等只读链路消费），
+  // 一旦写 state 就等于污染调用方传入的 state，触发「外壳 View State 修改了输入状态」类回归。
+  // 归一化后 refineryPumpEnabled 的默认值恰为 true，与下面的 undefined 兜底等价，故行为不变。
+  const settings = (state.settings && typeof state.settings === "object") ? state.settings : null;
   const defs = ["refinery_pump", "refinery_pump_dark"]
     .map(itemId => ({ itemId, def:EQUIPMENT_DB[itemId] }))
     .filter(entry => entry.def && entry.def.pump);
@@ -3315,8 +3319,10 @@ function getPlanetDeploymentDisplayState(state, deployment, now) {
     showRenew:expired,
     canRenew:expired && enoughIskForRenew,
     canCollect:storage > 0,
-    canDemolish:storage === 0,
-    canRemove:storage === 0
+    // 2026-09-26：拆除不再要求「先收取库存」。玩家离线久了库存会堆满，强制先收取才能拆会让
+    // 想直接拆基地的玩家多一步无收益操作；改为允许直接拆，损失在确认弹窗里明示（UI/Action 同口径）。
+    canDemolish:true,
+    canRemove:true
   };
 }
 
@@ -3905,18 +3911,57 @@ function getEquipmentEnhancementListDisplayState(state) {
   for (const [itemId, group] of groups) {
     const eq = EQUIPMENT_DB[itemId];
     if (!eq) continue;
-    // 改装件(rig)纳入强化列表展示，但标记 isRig 且 canEnhance=false（安装即生效、无 enhancementLevel），归入「未强化」筛选；其强化相关字段置默认。
     // 分组维度对齐仓库「全部」小分类：装备功能组（武器/维修/采矿/采气/打捞/考古/改装件/其他）
     const groupLabel = getEquipmentFunctionGroup(eq);
     const groupRank = EQUIP_FUNCTION_ORDER[groupLabel] != null ? EQUIP_FUNCTION_ORDER[groupLabel] : 99;
-
+    // 改装件强化（2026-09-26 v2，用户反馈）：每件已强化实例单独一张卡（词条各自独立展示），
+    // 未强化的剩余件仍按 itemId 聚合为一张「未强化 ×N」卡。cellInstanceId 供卡片/弹窗唯一定位。
+    const isRigItem = eq.slot === "rig";
+    const rigEnhancedInstances = isRigItem
+      ? group.instances.filter(inst => Array.isArray(inst.affixes) && inst.affixes.length > 0)
+      : [];
+    const rigEnhancedIds = new Set(rigEnhancedInstances.map(inst => inst.instanceId));
+    for (const inst of rigEnhancedInstances) {
+      const instLevel = Math.max(0, Number(inst.enhancementLevel) || 0);
+      entries.push({
+        itemId,
+        name: eq.name,
+        icon: ITEM_ICONS[eq.name] || "📦",
+        slot: eq.slot,
+        isRig: true,
+        cellInstanceId: inst.instanceId,
+        rigEnhancedCount: 1,
+        rigAffixList: (inst.affixes || []).map(a => ({ series: a.series, label: a.label, quality: a.quality, value: a.value, bonusKey: a.bonusKey })),
+        isRigEnhanced: true,
+        category: "rig",
+        categoryLabel: "改装件",
+        groupLabel,
+        groupRank,
+        level: instLevel,
+        isUnenhanced: instLevel === 0,
+        stockCount: inst.installedOn ? 0 : 1,
+        installedCount: inst.installedOn ? 1 : 0,
+        totalCount: 1,
+        multiplier: 1, bonusPercent: 0, previewMultiplier: 1, previewBonusPercent: 0,
+        successPercent: 0, successBreakdown: null, isMilestone: false,
+        costRows: [], extraRows: [], canEnhance: false, targetRef: null,
+        installedShips: inst.installedOn ? (() => {
+          const ship = getShipInstanceFromState(state, inst.installedOn);
+          return [ship ? (getShipConfigById(ship.shipId) ? getShipConfigById(ship.shipId).name : inst.installedOn) : inst.installedOn];
+        })() : []
+      });
+    }
+    // 改装件(rig)纳入强化列表展示，但标记 isRig 且 canEnhance=false（安装即生效、无 enhancementLevel），归入「未强化」筛选；其强化相关字段置默认。
     // 按等级分桶（未安装 / 已安装）
     const byLevel = new Map();
     const bucket = (level, inst) => {
       if (!byLevel.has(level)) byLevel.set(level, { uninstalled:[], installed:[] });
       (inst.installedOn ? byLevel.get(level).installed : byLevel.get(level).uninstalled).push(inst);
     };
-    for (const inst of group.instances) bucket(Math.max(0, Number(inst.enhancementLevel) || 0), inst);
+    for (const inst of group.instances) {
+      if (isRigItem && rigEnhancedIds.has(inst.instanceId)) continue; // 已强化件已单独出卡
+      bucket(Math.max(0, Number(inst.enhancementLevel) || 0), inst);
+    }
 
     // 涉及的等级：库存 +0 始终出格；加上所有实例等级
     const levels = new Set([0]);
@@ -3958,6 +4003,10 @@ function getEquipmentEnhancementListDisplayState(state) {
         icon: ITEM_ICONS[eq.name] || "📦",
         slot: eq.slot,
         isRig,
+        cellInstanceId: null,
+        rigEnhancedCount: 0,
+        rigAffixList: [],
+        isRigEnhanced: false,
         category: isRig ? "rig" : getEquipmentEnhancementCategory(eq),
         categoryLabel: isRig ? "改装件" : (CATEGORY_LABEL[getEquipmentEnhancementCategory(eq)] || "其它"),
         groupLabel,
@@ -4556,7 +4605,9 @@ function stackEquipmentCandidates(candidates) {
   for (const item of candidates) {
     const itemId = item.itemId || item.id;
     const level = Number(item.enhancementLevel) || 0;
-    const key = itemId + "|" + level;
+    // 2026-09-26：强化改装件（带词条实例）与其裸件 itemId 相同，必须分开堆叠，
+    // 否则 count 会虚增、且 UI 取 ids[0] 可能装到裸件而非玩家点的强化件。
+    const key = itemId + "|" + level + (item.isInstance ? "|inst" : "");
     const group = groups.get(key);
     if (group) {
       group.count += 1;
@@ -4564,12 +4615,16 @@ function stackEquipmentCandidates(candidates) {
     } else {
       groups.set(key, {
         itemId, name:item.name, icon:item.icon, enhancementLevel:level,
-        count:1, ids:[item.id], isInstance:Boolean(item.isInstance)
+        count:1, ids:[item.id], isInstance:Boolean(item.isInstance),
+        // 2026-09-26 改装件强化：带词条实例在装配页要能显示词条，故把 affixes 带到堆叠层
+        affixes:Array.isArray(item.affixes) ? item.affixes.slice() : null,
+        affixCount:item.affixCount || 0
       });
     }
   }
   return Array.from(groups.values()).sort((a, b) => {
     if (a.name !== b.name) return String(a.name).localeCompare(String(b.name));
+    if (Boolean(a.isInstance) !== Boolean(b.isInstance)) return a.isInstance ? -1 : 1;
     return a.enhancementLevel - b.enhancementLevel;
   });
 }
@@ -4694,11 +4749,43 @@ function getShipFittingDisplayState(state, shipRef) {
   const inventoryStacksBySlot = Object.fromEntries(["high", "mid", "low"].map(slot => [slot, stackEquipmentCandidates(inventoryBySlot[slot] || [])]));
   // rig 候选按槽位计算：excludeSlotIndex 排除当前槽（替换场景旧件将被销毁），
   // 其他槽存在同 stackGroup 时仍拒绝。UI 打开某 rig 槽时消费 rigCandidates[slotIndex]。
-  const rigCandidates = Array.from({ length:slots.rig }, (unusedValue, slotIndex) => inventory.filter(id => {
-    const eq = EQUIPMENT_DB[id];
+  // 2026-09-26：候选池 = 仓库裸改装件 + **游离强化改装件实例**（installedOn===null 且 itemId 以 rig_ 开头，
+  // 即蓝图发明「改装件强化」产出的带词条件）。实例候选的 id 用 instanceId，以便 Action 层精确取件。
+  const rigPool = inventory.slice();
+  const freeRigInstances = (state.equipment && Array.isArray(state.equipment.instances))
+    ? state.equipment.instances.filter(inst => inst && inst.installedOn === null && String(inst.itemId || "").startsWith("rig_"))
+    : [];
+  // ⚠️ 关键：同一个 itemId 可以同时存在「仓库裸件」与「强化过的游离实例」两份（例：仓库 1 件裸的 + 强化出 1 件带词条）。
+  // 因此候选必须按「条目身份」组装，绝不能用 itemId 去反查实例——否则裸件会被误标成实例、id 被覆写成 instanceId，
+  // 玩家点裸件装上去的却是强化件（或反之），且裸件会从候选里消失。
+  const rigEntries = [];
+  const seenBare = new Set();
+  const seenInst = new Set();
+  for (const id of rigPool) {
+    if (seenBare.has(id)) continue;
+    seenBare.add(id);
+    rigEntries.push({ itemId:id, inst:null });
+  }
+  for (const inst of freeRigInstances) {
+    if (seenInst.has(inst.instanceId)) continue;
+    seenInst.add(inst.instanceId);
+    rigEntries.push({ itemId:inst.itemId, inst });
+  }
+  const rigCandidates = Array.from({ length:slots.rig }, (unusedValue, slotIndex) => rigEntries.filter(entry => {
+    const eq = EQUIPMENT_DB[entry.itemId];
     if (!eq || eq.slot !== "rig" || !canFitEquipmentOnShip(eq, config)) return false;
-    return typeof canFitRig !== "function" || canFitRig(state, instance, id, slotIndex).ok;
-  }).map(id => ({ id, itemId:id, name:EQUIPMENT_DB[id].name, icon:ITEM_ICONS[EQUIPMENT_DB[id].name] || "📦" })));
+    return typeof canFitRig !== "function" || canFitRig(state, instance, entry.itemId, slotIndex).ok;
+  }).map(entry => {
+    const eq = EQUIPMENT_DB[entry.itemId];
+    const base = { id:entry.itemId, itemId:entry.itemId, name:eq.name, icon:ITEM_ICONS[eq.name] || "📦", isInstance:false };
+    if (!entry.inst) return base;
+    return Object.assign({}, base, {
+      id:entry.inst.instanceId,
+      isInstance:true,
+      affixes:Array.isArray(entry.inst.affixes) ? entry.inst.affixes.slice() : [],
+      affixCount:Array.isArray(entry.inst.affixes) ? entry.inst.affixes.length : 0
+    });
+  }));
   const rigStackCandidates = rigCandidates.map(list => stackEquipmentCandidates(list));
   return {
     instanceId:instance.instanceId,
@@ -4712,11 +4799,16 @@ function getShipFittingDisplayState(state, shipRef) {
     equipped:equippedIds.map(id => {
       const resolved = resolveEquipmentReference(state, id);
       const equipment = resolved ? resolved.definition : null;
+      // 2026-09-26 改装件强化：把词条透传出来，供「当前装备条」显示（避免 UI 层反查 state）
+      const inst = resolved && resolved.instance;
+      const affixes = inst && Array.isArray(inst.affixes) ? inst.affixes.slice() : null;
       return {
         ref:id, id: resolved ? resolved.itemId : id,
         enhancementLevel: resolved ? resolved.enhancementLevel : 0,
         name: equipment ? equipment.name : id,
-        icon: equipment ? ITEM_ICONS[equipment.name] || "📦" : "📦"
+        icon: equipment ? ITEM_ICONS[equipment.name] || "📦" : "📦",
+        affixes:affixes,
+        affixCount: affixes ? affixes.length : 0
       };
     }),
     // 泰坦内置装备：常规 equipped 恒空（主武器/核心不在 fitting 表）⇒ 单列，供「已装配装备」展示。

@@ -713,7 +713,14 @@ function openStarmapTrialRoom(node, event) {
   if (isStarmapBattleTrialNode(starmapTrialRoomNode)) {
     starmapTrialRoomVisible = true;
     starmapBattleTrialViewVisible = true;
-    if (gameState && gameState.combat) gameState.combat.zone = starmapTrialRoomNode.battleTrialZoneId;
+    // 2026-09-26：原实现对全局 combat 星带字段的直写属 UI 层直改全局状态（verify.mjs 的
+    // UI 直写扫描会拦），且绕过了 dispatchGameAction 的全部前置校验——交战中输入战斗试炼房间
+    // 也能把星带改走。改为与 combat-render.js 星带切换同源的派发；战斗中派发会被
+    // combat/selectZone 的 combat-active 正确挡下，星带锁定交给试炼自身维护。
+    // ⚠ 本文件任何注释都不得出现全局状态赋值形式的字面量，否则会被同一扫描误判。
+    if (typeof dispatchGameAction === "function" && gameState && gameState.combat && starmapTrialRoomNode.battleTrialZoneId) {
+      dispatchGameAction(gameState, { type:"combat/selectZone", zoneId:starmapTrialRoomNode.battleTrialZoneId }, Date.now());
+    }
     currentPage = "starmap";
     setStarmapTrialRoomRefresh(true);
     renderCurrentNavigation();
@@ -726,9 +733,9 @@ function openStarmapTrialRoom(node, event) {
     return;
     // 战斗试炼的“房间”就是正式战斗页本身：切换到同一个 combat-panel，
     // 只把星图节点对应的星带锁定，不再显示任何第二套战斗 DOM。
+    // ⚠ 以下分支在上一行 return 之后，属不可达死代码（2026-09-26 标注，保留结构待定）。
     starmapTrialRoomVisible = false;
     starmapBattleTrialViewVisible = true;
-    if (gameState && gameState.combat) gameState.combat.zone = starmapTrialRoomNode.battleTrialZoneId;
     currentPage = "skill";
     currentView = "combat";
     setStarmapTrialRoomRefresh(true);
@@ -1245,15 +1252,28 @@ function renderEquipEnhanceGrid() {
 }
 
 function equipCellHtml(e) {
-  const levelLabel = e.isUnenhanced ? "未强化" : `+${e.level}`;
+  const isRigInst = e.isRigEnhanced && e.cellInstanceId; // 单件已强化改装件卡
+  const levelLabel = isRigInst ? "已强化" : (e.isUnenhanced ? "未强化" : `+${e.level}`);
   const badges = [];
   if (e.stockCount > 0) badges.push(`<span class="eem-badge stock">库存 ${e.stockCount}</span>`);
   if (e.installedCount > 0) badges.push(`<span class="eem-badge installed">已装 ${e.installedCount}</span>`);
   if (e.isMilestone) badges.push(`<span class="eem-badge milestone">里程碑</span>`);
-  const lockCls = e.stockCount === 0 ? " locked" : ((!e.isRig && !e.canEnhance) ? " nores" : "");
+  if (isRigInst) badges.push(`<span class="eem-badge rig-enh">已强化</span>`);
+  const lockCls = isRigInst ? "" : (e.stockCount === 0 ? " locked" : ((!e.isRig && !e.canEnhance) ? " nores" : ""));
   const flagBadge = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[e.itemId])
     ? getShipTypesFlagBadge(EQUIPMENT_DB[e.itemId].shipTypes, "ee") : "";
-  return `<div class="equip-enh-cell${lockCls}" data-equip-cell="${encodeURIComponent(e.itemId)}|${e.level}" title="点击查看强化详情">
+  let rigAffixHtml = "";
+  if (e.isRigEnhanced && e.rigAffixList && e.rigAffixList.length) {
+    rigAffixHtml = `<div class="eec-affixes">` + e.rigAffixList.map(a => {
+      const pct = (Number(a.value) * 100).toFixed(2);
+      const q = (a.quality || "").replace(/[^\u4e00-\u9fa5A-Za-z]/g, "");
+      return `<span class="eem-affix-chip q-${q}">${escapeAchievementText(a.label || a.series || "")} · ${escapeAchievementText(a.quality || "")} +${pct}%</span>`;
+    }).join("") + `</div>`;
+  }
+  // 卡片定位键：普通/聚合卡 = itemId|level；单件已强化改装件卡追加 |inst_<instanceId>
+  const cellKey = encodeURIComponent(e.itemId) + "|" + e.level + (e.cellInstanceId ? "|inst_" + e.cellInstanceId : "");
+  const countLabel = isRigInst ? "已强化" : `${levelLabel} ×${e.totalCount}`;
+  return `<div class="equip-enh-cell${lockCls}" data-equip-cell="${cellKey}" title="点击查看强化详情">
     ${flagBadge}
     <div class="eec-icon">${e.icon}</div>
     <div class="eec-info">
@@ -1261,21 +1281,28 @@ function equipCellHtml(e) {
       <div class="eec-level">${levelLabel}</div>
     </div>
     <div class="eec-badges">${badges.join("")}</div>
-    <div class="eec-count">${levelLabel} ×${e.totalCount}</div>
+    ${rigAffixHtml}
+    <div class="eec-count">${countLabel}</div>
   </div>`;
 }
 
-function openEquipEnhanceModal(itemId, level) {
+function openEquipEnhanceModal(itemId, level, instanceId) {
   const display = getEquipmentEnhancementListDisplayState(gameState);
-  let cell = display.entries.find(e => e.itemId === itemId && e.level === level);
+  // 单件已强化改装件卡按 cellInstanceId 精确定位；普通/聚合卡优先匹配无 cellInstanceId 的条目
+  let cell = instanceId
+    ? display.entries.find(e => e.itemId === itemId && e.cellInstanceId === instanceId)
+    : (display.entries.find(e => e.itemId === itemId && e.level === level && !e.cellInstanceId)
+       || display.entries.find(e => e.itemId === itemId && e.level === level));
   if (!cell) {
     // 改装件不在强化列表：造一个虚拟 cell 让弹窗能正常渲染（强化区块走 isRig 分支隐藏）
     const eqEnt = EQUIPMENT_DB[itemId];
     if (!eqEnt || eqEnt.slot !== "rig") { closeEquipEnhanceModal(); return; }
     const inventory = gameState.equipment && Array.isArray(gameState.equipment.inventory) ? gameState.equipment.inventory : [];
     const instances = gameState.equipment && Array.isArray(gameState.equipment.instances) ? gameState.equipment.instances : [];
-    const stockCount = inventory.filter(ref => ref === itemId).length;
-    const installedCount = instances.filter(inst => inst && inst.itemId === itemId && !inst.destroyed).length;
+    // 兜底卡对齐新模型：只统计未强化件（已强化件各自有独立卡），不合并词条
+    const stockCount = inventory.filter(ref => ref === itemId).length
+      + instances.filter(inst => inst && inst.itemId === itemId && !inst.destroyed && !(Array.isArray(inst.affixes) && inst.affixes.length)).length;
+    const installedCount = 0;
     cell = {
       itemId, level: 0, isUnenhanced: true,
       name: eqEnt.name,
@@ -1285,7 +1312,8 @@ function openEquipEnhanceModal(itemId, level) {
       costRows: [], extraRows: [], isMilestone: false,
       canEnhance: false, targetRef: null,
       stockCount, installedCount, totalCount: stockCount + installedCount,
-      installedShips: []
+      installedShips: [],
+      rigEnhancedCount: 0, rigAffixList: [], isRigEnhanced: false
     };
   }
   equipEnhanceModal = { itemId, level };
@@ -1353,6 +1381,12 @@ function openEquipEnhanceModal(itemId, level) {
       <div class="eem-body">
         <div class="eem-section"><h3 class="eem-sec-title">物品介绍</h3><div class="eem-desc">${escapeAchievementText(descText)}</div></div>
         <div class="eem-status">${stockHtml}${installedHtml}</div>
+        ${isRig && cell.isRigEnhanced ? `<div class="eem-section"><h3 class="eem-sec-title">已强化词条</h3><div class="eem-rig-affixes">` +
+          (cell.rigAffixList || []).map(a => {
+            const pct = (Number(a.value) * 100).toFixed(2);
+            const q = (a.quality || "").replace(/[^\u4e00-\u9fa5A-Za-z]/g, "");
+            return `<span class="eem-affix-chip q-${q}">${escapeAchievementText(a.label || a.series || "")} · ${escapeAchievementText(a.quality || "")} +${pct}%</span>`;
+          }).join("") + `</div></div>` : ""}
         ${upgradeHtml}
         <div class="eem-section"><h3 class="eem-sec-title">出产位置</h3>
           <div class="eem-source"><span class="eem-src-icon"><i class="${src.icon}"></i></span>
@@ -5163,7 +5197,24 @@ function equipmentStatSummary(eq) {
   if (eq.combat && eq.combat.kind === "weapon") return "伤害 " + (Number(eq.combat.baseDamage) || 0);
   if (eq.combat && eq.combat.kind === "repair") return "恢复 " + (Number(eq.combat.amount) || 0);
   if (eq.bonuses) {
-    const labels = { miningEfficiency: "采矿效率", gasEfficiency: "气云效率", miningLaserEfficiency: "采矿激光效率", gasLaserEfficiency: "气云激光效率", shieldCapacity: "护盾容量" };
+    // 2026-09-26 补全：此前 13 个 rig bonusKey 只覆盖 3 个，其余裸出内部键名（如 shieldCapacityPercent）。
+    // 全量取自 EQUIPMENT_DB 的 slot==="rig" 键集合，新增键仍走 labels[k] || k 兜底。
+    const labels = {
+      miningEfficiency: "采矿效率", gasEfficiency: "气云效率",
+      miningLaserEfficiency: "采矿激光效率", gasLaserEfficiency: "气云激光效率",
+      shieldCapacity: "护盾容量", shieldCapacityPercent: "护盾容量",
+      armorCapacityPercent: "装甲容量", structureCapacityPercent: "结构容量",
+      miningRichChance: "采矿富集概率", gasRichChance: "气云富集概率",
+      archaeologyScanPercent: "考古扫描效率", archaeologyCycleReductionPercent: "考古周期缩减",
+      archaeologyFuelEfficiency: "考古燃料效率", archaeologyInterferenceReduction: "考古干扰削减",
+      skillXpBonus: "技能经验增益", smeltingSpeed: "冶炼速度",
+      salvageEfficiency: "打捞效率", capacitorRecharge: "电容回充",
+      armorRepair: "装甲维修", shieldRepair: "护盾维修",
+      globalDamageReduction: "全局伤害削减",
+      archaeologyScan: "考古扫描", archaeologyCopyChance: "考古复制概率",
+      archaeologyDecoder: "考古解码器", archaeologyStabilizer: "考古稳定器",
+      archaeologyNonFatalAvoid: "考古非致命规避", archaeologyCycleReduction: "考古周期缩减"
+    };
     for (const k in eq.bonuses) {
       const v = Number(eq.bonuses[k]) || 0;
       if (v) return (labels[k] || k) + " +" + Math.round(v * 100) + "%";
@@ -5212,9 +5263,22 @@ function renderEquipCurrentBar(display, slot) {
   if (summary) parts.push(summary);
   parts.push(levelHtml);
   const row2 = parts.join(' <span class="eq-sep">·</span> ');
+  // 2026-09-26 改装件强化：已装的带词条改装件要在当前装备条里显示词条
+  const affixRow = renderEquipAffixRow(equippedItem);
   return '<div class="equip-current"><span class="ec-label">' + label + idx + ' · 当前</span>' +
     '<span class="ec-main">' + (curEq.icon || "") + " " + curEq.name + '</span>' +
-    '<span class="ec-sub">' + row2 + "</span></div>";
+    '<span class="ec-sub">' + row2 + "</span>" + affixRow + "</div>";
+}
+
+// 把一条已装装备（display.equipped 条目）的词条渲染成一行（无词条返回 ""）。
+// 词条由 selectors 的 resolveEquipmentReference 透传，UI 层不反查 state，避免加载期依赖。
+function renderEquipAffixRow(equippedItem) {
+  const affixes = Array.isArray(equippedItem && equippedItem.affixes) ? equippedItem.affixes : null;
+  if (!affixes || !affixes.length) return "";
+  return '<span class="ec-affixes">' + affixes.map(a =>
+    "<b>" + String(a && (a.label || a.series) || "词条").replace(/改装件\s*$/, "") + " +"
+    + Math.round((Number(a && a.value) || 0) * 100) + "%</b>"
+    + (a && a.quality ? "<i>" + a.quality + "</i>" : "")).join(' <span class="eq-sep">·</span> ') + "</span>";
 }
 // 两行布局选项：行1 图标+名称+状态徽章+数量；行2 核心数值·档位·改造
 function renderEquipOptionDuo(item, curEq, isRig) {
@@ -5237,9 +5301,17 @@ function renderEquipOptionDuo(item, curEq, isRig) {
   parts.push(levelHtml);
 
   const row2 = parts.join(' <span class="eq-sep">·</span> ');
+  // 2026-09-26 改装件强化：带词条的强化件在候选/当前条里直出词条（如「采矿速度 +8% 卓越」）
+  const affixes = Array.isArray(item.affixes) ? item.affixes : null;
+  const affixRow = (affixes && affixes.length)
+    ? '<span class="eq-row3">' + affixes.map(a =>
+        "<b>" + String(a && (a.label || a.series) || "词条").replace(/改装件\s*$/, "") + " +"
+        + Math.round((Number(a && a.value) || 0) * 100) + "%</b>"
+        + (a && a.quality ? '<i>' + a.quality + '</i>' : "")).join(' <span class="eq-sep">·</span> ') + "</span>"
+    : "";
   return '<button class="equip-option duo' + (fitted ? " is-fitted" : "") + '" data-equip="' + item.ids[0] + '">' +
     '<span class="eq-row1"><span class="eq-icon">' + item.icon + '</span><span class="eq-name">' + item.name + "</span>" + badge + countHtml + "</span>" +
-    '<span class="eq-row2">' + row2 + "</span>" +
+    '<span class="eq-row2">' + row2 + "</span>" + affixRow +
     "</button>";
 }
 
@@ -5977,8 +6049,9 @@ function installTutorialWidgetListeners() {
       }
       const cell = event.target.closest("[data-equip-cell]");
       if (cell) {
-        const [itemId, level] = decodeURIComponent(cell.dataset.equipCell).split("|");
-        openEquipEnhanceModal(itemId, Number(level));
+        const parts = decodeURIComponent(cell.dataset.equipCell).split("|");
+        const instId = parts[2] && parts[2].startsWith("inst_") ? parts[2].slice(5) : undefined;
+        openEquipEnhanceModal(parts[0], Number(parts[1]), instId);
       }
     });
     enhPanel.addEventListener("input", event => {
@@ -6002,18 +6075,23 @@ function installTutorialWidgetListeners() {
           () => { handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/destroyFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex }, Date.now())); finishRigOp(); });
         return;
       } else if (slot.equipmentId) {
-        const newName = (EQUIPMENT_DB[option.dataset.equip] || {}).name || option.dataset.equip;
+        // 候选 id 可能是「强化改装件」的 instanceId（data-equip 直接透传 ids[0]），需解析出真实定义再显示。
+        const newRigRef = option.dataset.equip;
+        const newResolved = (typeof resolveEquipmentReference === "function") ? resolveEquipmentReference(gameState, newRigRef) : null;
+        const newDefRef = newResolved && newResolved.definition ? newResolved.definition : EQUIPMENT_DB[newRigRef];
+        const newName = (newDefRef && newDefRef.name) || newRigRef;
         showDangerConfirm("⚠ 替换改装件",
           "<p class=\"dlg-body\">确定用「" + newName + "」替换「" + (slot.name || "当前改装件") + "」吗？<br><br>⚠ 被替换的旧改装件将被销毁，不会返还仓库，此操作不可撤销！</p>",
           "确认替换",
-          () => { handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/replaceFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:option.dataset.equip }, Date.now())); finishRigOp(); });
+          () => { handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/replaceFittedRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:newRigRef }, Date.now())); finishRigOp(); });
         return;
       } else {
         // 新安装：同系列已装配则弹谐振提示（显示实际效果量），确认后再装
         const newRigId = option.dataset.equip;
-        const newDef = EQUIPMENT_DB[newRigId];
+        const newResolved = (typeof resolveEquipmentReference === "function") ? resolveEquipmentReference(gameState, newRigId) : null;
+        const newDef = (newResolved && newResolved.definition) || EQUIPMENT_DB[newRigId];
         const inst = getShipInstanceFromState(gameState, orbitShipId);
-        const preview = (newDef && newDef.slot === "rig" && inst) ? getRigResonancePreview(gameState, inst, newRigId) : null;
+        const preview = (newDef && newDef.slot === "rig" && inst) ? getRigResonancePreview(gameState, inst, (newResolved && newResolved.itemId) || newRigId) : null;
         const doInstall = () => { handleRigFitResult(dispatchGameAction(gameState, { type:"hangar/fitRig", instanceId:orbitShipId, slotIndex:slot.slotIndex, rigItemId:newRigId }, Date.now())); finishRigOp(); };
         if (preview && preview.existingCount > 0) {
           showRigResonanceModal(preview, newDef, doInstall);

@@ -15,7 +15,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(match => match[1]).filter(source =>
+// src 路径带 ?v= 查询串（cache-buster），取文件时必须先剥掉，否则 readFileSync 会去开 "xxx.js?v=3" 这个不存在的文件。
+// 与 tools/verify.mjs:11 的解析保持一致。
+const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map(match => match[1].replace(/\?.*$/, "")).filter(source =>
   !source.includes("/ui/") && !["actions.js", "tick.js", "offline.js", "persistence.js"].some(file => source.endsWith("/" + file))
 );
 
@@ -228,15 +230,22 @@ region("N", "renew 到期只扣 ISK 保留库存", () => {
   assert(ev && ev.payload.maintenanceISK === 46000, "planetary:renewed 负载异常");
 });
 
-// ================= O：demolish 非空拒绝 =================
-region("O", "demolish 非空原子拒绝", () => {
+// ================= O：demolish 带库存拆除 =================
+// 2026-09-26 变更：此前「storage !== 0 ⇒ 原子拒绝 storage-not-empty」，玩家离线堆满库存的基地拆不掉。
+// 改为允许带库存拆除，损失量经 lostStorage 回报（事件契约同），静默销毁的口子由 UI 确认弹窗兜住。
+region("O", "demolish 带库存拆除 + lostStorage 上报", () => {
   const state = freshState({ isk:500000, trit:100 });
   dispatch(state, { type:"planetary/deploy", planetType:"lava" }, NOW);
   const dep = state.planetary.deployments[0];
   dep.storage = 1;
+  const iskBefore = state.resources.isk, tritBefore = state.resources.minerals["三钛合金"];
+  let ev = null; const un = sandbox.GameEvents.on("planetary:demolished", e => { ev = e; });
   const res = dispatch(state, { type:"planetary/demolish", id:dep.id }, NOW);
-  assert(!res.changed && res.reason === "storage-not-empty", "非空拆除应返回 storage-not-empty");
-  assert(state.planetary.deployments.length === 1, "非空拆除不得删除部署");
+  un();
+  assert(res.changed && res.lostStorage === 1, "带库存拆除应成功并回报 lostStorage");
+  assert(state.planetary.deployments.length === 0, "带库存拆除应删除部署");
+  assert(state.resources.isk === iskBefore && state.resources.minerals["三钛合金"] === tritBefore, "带库存拆除不得返还任何资源");
+  assert(ev && ev.payload.lostStorage === 1, "planetary:demolished 负载应带 lostStorage");
 });
 
 // ================= P：demolish 空仓删除不返还 =================
@@ -264,7 +273,12 @@ region("Q", "事件契约注册与校验", () => {
   assert(contracts.validate("planetary:expired", { deploymentId:"d", planetType:"lava", expiredAt:NOW }).valid, "expired 合法负载应通过");
   assert(contracts.validate("planetary:collected", { deploymentId:"d", planetType:"lava", resourceId:"planetary:重金属", quantity:3 }).valid, "collected 合法负载应通过");
   assert(!contracts.validate("planetary:collected", { deploymentId:"d", planetType:"lava" }).valid, "collected 缺字段应失败");
-  assert(contracts.validate("planetary:demolished", { deploymentId:"d", planetType:"lava", refundedISK:0, refundedResources:{} }).valid, "demolished 合法负载应通过");
+  // numbers 字段（refundedISK / lostStorage）语义上必填：validate 对 undefined 取 Number() 得 NaN 会被判为非负数失败。
+  // 因此 2026-09-26 起 lostStorage 进入 numbers 后，所有发布方（目前仅 actions.demolish）必须带该字段。
+  assert(contracts.validate("planetary:demolished", { deploymentId:"d", planetType:"lava", refundedISK:0, refundedResources:{}, lostStorage:0 }).valid, "demolished 合法负载应通过");
+  assert(!contracts.validate("planetary:demolished", { deploymentId:"d", planetType:"lava", refundedISK:0, refundedResources:{} }).valid, "demolished 缺 lostStorage 应失败");
+  assert(contracts.validate("planetary:demolished", { deploymentId:"d", planetType:"lava", refundedISK:0, refundedResources:{}, lostStorage:7 }).valid, "demolished 带 lostStorage 应通过");
+  assert(!contracts.validate("planetary:demolished", { deploymentId:"d", planetType:"lava", refundedISK:0, refundedResources:{}, lostStorage:-1 }).valid, "demolished 的 lostStorage 不得为负数");
 });
 
 // ================= R：在线 tick active=false 不生产 =================

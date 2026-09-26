@@ -576,7 +576,12 @@ function normalizeEquipmentState(state) {
     if (!EQUIPMENT_DB[inst.itemId]) continue; // 非法 itemId 的实例才允许移除（边界：无法恢复的非法对象）
     // 改装件防复制：rig 实例只应在被 fitted 引用时存在。未被引用的游离 rig 实例（拆卸即销毁的语义下不应产生，
     // 仅可能来自损坏/篡改存档）一律丢弃——不归还、不保留，杜绝免费再装配的复制漏洞。
-    if (EQUIPMENT_DB[inst.itemId].slot === "rig" && !referencedInstanceIds.has(inst.instanceId)) continue;
+    // 2026-09-26 强化例外：带词条（affixes 非空）的 rig 实例是「改装件强化」的产物，产出的新实例本就是游离态
+    // （旧目标已销毁、待玩家装配）。若命中上面的规则会被静默丢弃，玩家下次读档词条凭空消失且不报错。
+    // 故仅当「无词条」时才按防复制规则丢弃；已强化实例无论是否装配都必须保留。
+    if (EQUIPMENT_DB[inst.itemId].slot === "rig"
+      && !referencedInstanceIds.has(inst.instanceId)
+      && !(Array.isArray(inst.affixes) && inst.affixes.length > 0)) continue;
 
     let finalId = inst.instanceId;
 
@@ -646,10 +651,13 @@ function normalizeEquipmentState(state) {
   }
 
   // 迁移旧档/修复：未安装的 +0 白板实例转回 inventory（制造只读 inventory；强化过的实例保留）。
-  // 注意 rig 实例已在上面被过滤掉，不会进入此处。
+  // 判据必须排除带词条的强化实例：它们 enhancementLevel 恒为 0（词条不是强化等级），
+  // 若只看等级会被当成白板降格成一条裸件字符串、词条信息当场丢失，玩家强化的成果凭空蒸发。
+  // 注意：裸 rig 实例已在上面被防复制规则过滤掉，不会进入此处；有词条的强化实例会进入。
   const remainingInstances = [];
   for (const inst of state.equipment.instances) {
-    if (!inst.installedOn && (inst.enhancementLevel || 0) === 0) {
+    const isEnhanced = Array.isArray(inst.affixes) && inst.affixes.length > 0;
+    if (!inst.installedOn && (inst.enhancementLevel || 0) === 0 && !isEnhanced) {
       state.equipment.inventory.push(inst.itemId);
     } else {
       remainingInstances.push(inst);

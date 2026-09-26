@@ -144,10 +144,30 @@
     return s;
   }
 
-  function isRunning(state) { return !!(state && ensure(state).collectionTrial.status === "running"); }
-  function isArchaeologyRunning(state) { return !!(state && ensure(state).archaeologyTrial.status === "running"); }
-  function isBattleRunning(state) { return !!(state && ensure(state).battleTrial.status === "running"); }
-  function isAnyTrialRunning(state) { return isRunning(state) || isArchaeologyRunning(state) || isBattleRunning(state); }
+  // 🔴 只读窥视：仅当 starmap 已存在时返回它，**绝不创建或补全任何字段**。
+  // 2026-09-26 根因修复：actionLock 走的是 isAnyTrialRunning → ensure()，而 ensure 会在
+  // `state.legion.starmap` 缺失时凭空写出 `state.legion` + 整套试炼字段。于是 dispatchGameAction 外壳
+  // 在**动作被拒绝的失败路径上也会改状态**，使得「失败必须原子不改状态」这类整份快照断言（verify.mjs
+  // 区战斗/外壳、audit-planetary 区 I/J）结构上永远无法通过——即便业务代码一行都没写。
+  // 布尔判定只依赖既存字段：starmap 缺失时 ensure 补出来的也全是 idle，结论与只读判定完全一致，
+  // 唯一差别是没有副作用。故此处加 readOnly 分支，默认（不传）行为与原先逐字一致。
+  function peek(state) {
+    if (!state || !state.legion || !state.legion.starmap || typeof state.legion.starmap !== "object" || Array.isArray(state.legion.starmap)) return null;
+    return state.legion.starmap;
+  }
+  function isRunning(state, readOnly) {
+    const s = readOnly ? peek(state) : ensure(state);
+    return !!(s && s.collectionTrial && s.collectionTrial.status === "running");
+  }
+  function isArchaeologyRunning(state, readOnly) {
+    const s = readOnly ? peek(state) : ensure(state);
+    return !!(s && s.archaeologyTrial && s.archaeologyTrial.status === "running");
+  }
+  function isBattleRunning(state, readOnly) {
+    const s = readOnly ? peek(state) : ensure(state);
+    return !!(s && s.battleTrial && s.battleTrial.status === "running");
+  }
+  function isAnyTrialRunning(state, readOnly) { return isRunning(state, readOnly) || isArchaeologyRunning(state, readOnly) || isBattleRunning(state, readOnly); }
   function hasNormalAction(state) { return !!(state && state.currentAction && state.currentAction.active); }
   function hasNormalActivity(state) {
     return hasNormalAction(state) || !!(state && state.queue && state.queue.status && state.queue.status.isRunning);
@@ -1791,11 +1811,13 @@
     if (isBattleRunning(state)) return tickBattleTrial(state, now);
     return tickCollection(state, now);
   }
+  // 🔴 全部走只读判定（readOnly=true）：本函数是 dispatchGameAction 外壳的**守卫**，运行在业务动作
+  // 之前；它若在拒绝路径上写状态（旧行为走 ensure()），任何「失败原子不改状态」的断言都会误判。
   function actionLock(state, action) {
-    if (!isAnyTrialRunning(state) || !action || typeof action.type !== "string") return null;
+    if (!isAnyTrialRunning(state, true) || !action || typeof action.type !== "string") return null;
     if (/^legion-starmap\//.test(action.type)) return null;
-    if (isArchaeologyRunning(state) && (action.type === "archaeology/selectProbe" || action.type === "hangar/toggleAssignment")) return { changed:false, reason:"starmap-trial-running" };
-    if (isBattleRunning(state) && /^combat\/(?:select|enter|start)/.test(action.type)) return { changed:false, reason:"starmap-trial-running" };
+    if (isArchaeologyRunning(state, true) && (action.type === "archaeology/selectProbe" || action.type === "hangar/toggleAssignment")) return { changed:false, reason:"starmap-trial-running" };
+    if (isBattleRunning(state, true) && /^combat\/(?:select|enter|start)/.test(action.type)) return { changed:false, reason:"starmap-trial-running" };
     // 试炼占用舰队：只拦舰队侧新动作（战斗/考古开局）。
     // 旧的一刀切 /(\/start|\/enter|\/begin)/ 误伤基地侧动作——station/startAutoLine（自动线）、
     // station/startBuildingConstruction（建筑升级）、queue/start、research/start、manufacturing/* 等
@@ -1819,7 +1841,9 @@
   API.enforceExclusiveActionState = enforceExclusiveActionState;
   API.getLockedNode = function (state) {
     if (!state) return null;
-    const starmap = ensure(state);
+    // 只读：starmap 不存在 ⇒ 不可能有锁定节点，返回 null。与原先 ensure() 的结论一致但不写状态。
+    const starmap = peek(state);
+    if (!starmap) return null;
     if (starmap.collectionTrial.status === "running" && starmap.collectionTrial.lockedNode) return { ...starmap.collectionTrial.lockedNode };
     if (starmap.archaeologyTrial.status === "running" && starmap.archaeologyTrial.lockedNode) return { ...starmap.archaeologyTrial.lockedNode };
     if (starmap.battleTrial.status === "running" && starmap.battleTrial.lockedNode) return { ...starmap.battleTrial.lockedNode };

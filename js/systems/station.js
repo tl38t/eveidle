@@ -894,6 +894,25 @@ const AUTO_LINE_CONFIG = Object.freeze({
   booster_2:  { buildingId:"booster_factory",    name:"增强剂自动线 II", kind:"booster",  unlockLevel:5 }
 });
 
+// 自动线「配方池」权威定义（kind → 配方池 / 寻址函数 / 技能键 / 展示类别）。
+// ⚠ 作用域：这两个符号必须在 IIFE 顶层——processAutoLines（结算）与 getStationPageDisplayState（UI）
+// 都要用；早期版本把 AL_KIND_DEFS 写在 getStationPageDisplayState 函数体内，导致结算侧
+// ReferenceError: AL_KIND_DEFS is not defined（var 只在该函数作用域提升，救不了跨函数引用）。
+// 配方池是全局量（SMELTING_RECIPES / EQUIPMENT_ENGINEERING_RECIPES / BOOSTER_RECIPES），
+// 故用 typeof 守卫，late-require 场景下退化为 [] 与原行为一致。
+const AL_KIND_DEFS = {
+  smelting:   { recipePool:typeof SMELTING_RECIPES!="undefined"?SMELTING_RECIPES:[], keyFn:function(r){return r.name;}, skillKey:"refining", category:"smelting" },
+  equipment:  { recipePool:typeof EQUIPMENT_ENGINEERING_RECIPES!="undefined"?EQUIPMENT_ENGINEERING_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"equipmentEngineering", excludeShip:true, allowedCategories:EQUIPMENT_AUTO_LINE_CATEGORIES },
+  booster:    { recipePool:typeof BOOSTER_RECIPES!="undefined"?BOOSTER_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"boosterEngineering" }
+};
+
+// 按产线配置 + 目标 id 反查配方。cfg 需含 recipePool / keyFn，即 AL_KIND_DEFS 派生的 alConfigs 形态
+// （AUTO_LINE_CONFIG 本身只有 buildingId/kind/unlockLevel/name，没有配方池，不能直接传）。
+function findAutoLineRecipe(cfg, targetId) {
+  if (!targetId || !cfg || !cfg.recipePool || !cfg.keyFn) return null;
+  return cfg.recipePool.find(function(r) { return cfg.keyFn(r) === targetId; }) || null;
+}
+
 function getStationAutoLineInfo(state, lineId) {
   const cfg = AUTO_LINE_CONFIG[lineId];
   if (!cfg) return null;
@@ -1041,8 +1060,9 @@ function processSmeltingAutoLine(state, lineId, line, multiplier, offline) {
 /* ----------------------------------------------------------------
    装备自动线处理核心
    使用真实 EQUIPMENT_ENGINEERING_RECIPES。
-   效率 = recipe.time × multiplier（不乘 equipmentEngineering 等级速度）。
-   仍检查配方等级门槛。
+   效率 = recipe.time × multiplier；multiplier 已含蓝图 TE（1/(1-teR)，与手动制造同式）。
+   仍检查配方等级门槛。注意不乘 equipmentEngineering 等级速度——技能在自动线里只作门槛。
+   材料侧已叠蓝图 ME 减免（见下方 applyMeReduction）。
    禁止舰船部件（shipComponents/shipAssembly 类配方）。
    ---------------------------------------------------------------- */
 function processEquipmentAutoLine(state, lineId, line, multiplier, offline) {
@@ -1051,6 +1071,11 @@ function processEquipmentAutoLine(state, lineId, line, multiplier, offline) {
 
   // 精密配给剂（舰船/装备制造通用减料）报价：激活期间材料成本×0.9、配方等级门槛+N
   const eqQuote = (typeof getEquipEngBuildingQuote === "function") ? getEquipEngBuildingQuote(state, recipe) : { cost: recipe.cost, levelGate: recipe.level };
+
+  // 蓝图发明 · ME（材料效率研究）接入：装备自动线的材料成本**已经**由 getEquipEngBuildingQuote
+  // （boosters.js，在其内部「精密配给剂折扣之后再叠」）给出，此处【不得】再叠一次 applyMeReduction。
+  // ⚠ 曾在此重复叠加，ME V 的单价被 floor(floor(3×0.75)×0.75)=1 打穿（应为 2），
+  // 自动线耗料比手动制造便宜一半；值级探针（单位周期耗料比）抓到的就是这个回归。
 
   // 产线白名单兜底：装备自动线仅允许消耗品类（燃料/弹药/探针），
   // 防止旧存档 / 非法 dispatch 让可装配装备目标继续生产
@@ -1070,7 +1095,9 @@ function processEquipmentAutoLine(state, lineId, line, multiplier, offline) {
     return { cycles:0 };
   }
 
-  // 自动线不乘技能速度：cycleTime = recipe.time / multiplier
+  // 周期 = recipe.time / multiplier，multiplier 由 processAutoLines 统一算出并已含
+  // 建筑等级 × 后勤核心 × 研究 autoline × 军团自动线 × 蓝图 TE（1/(1-teR)）。此处不再自行乘任何东西。
+  // 技能速度仍不参与：equipmentEngineering 只作配方等级门槛，不加速自动线。
   // 装备总装协调剂（equipmentSpeed）仅作用于「手动装备制造」（manufacturing.js / selectors.js），自动线不消费增强剂。
   const cycleTimeSec = recipe.time / Math.max(0.001, multiplier);
 
@@ -1221,7 +1248,7 @@ function processBoosterAutoLine(state, lineId, line, multiplier, offline) {
     return { cycles:0 };
   }
 
-  // 自动线不乘技能速度：cycleTime = recipe.time / multiplier
+  // 周期 = recipe.time / multiplier，multiplier 同 processEquipmentAutoLine：已含建筑 × 后勤 × 研究 autoline × 军团 × 蓝图 TE。
   const cycleTimeSec = recipe.time / Math.max(0.001, multiplier);
 
   let remainingSec = line.progress || 0;
@@ -1373,7 +1400,18 @@ function processAutoLines(state, now, offline) {
     // 研究批次 G · autoline 组：自动化协议提速（只加速周期，材料消耗与单周期产量完全不变）
     let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
     if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
-    const multiplier = buildingMultiplier * stationLogisticsMult * autoLineResearchMult * getLegionAutoLineMultiplier(state);
+    // 蓝图发明 · TE（效率研究）接入：与本线当前配方绑定的蓝图 TE 减免「耗时」，
+    // 速度乘子取 1/(1-teR)（与手动制造 manufacturing.js 同式）。冶炼线配方不在发明蓝图体系，teR 恒 0，无影响。
+    // ⚠ 配方池来自 AL_KIND_DEFS[cfg.kind]——AUTO_LINE_CONFIG 只有 buildingId/kind/unlockLevel/name，
+    // 不带 recipePool/keyFn，直接拿它会查不到配方（曾导致 teR 恒 0、实跑周期数与 UI 周期漂移）。
+    const alKindCfg = Object.assign({ kind: cfg.kind }, AL_KIND_DEFS[cfg.kind] || {});
+    const autoLineRecipe = findAutoLineRecipe(alKindCfg, line.startedTargetId || line.selectedTargetId);
+    let autoLineTeMult = 1;
+    if (autoLineRecipe && typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.teReductionForRecipe === "function") {
+      const teR = Number(window.INVENTION.teReductionForRecipe(state, autoLineRecipe));
+      if (Number.isFinite(teR) && teR > 0 && teR < 1) autoLineTeMult = 1 / (1 - teR);
+    }
+    const multiplier = buildingMultiplier * stationLogisticsMult * autoLineResearchMult * getLegionAutoLineMultiplier(state) * autoLineTeMult;
     line.progress = (line.progress || 0) + cappedMs / 1000;
     line.lastTick = now;
 
@@ -1415,7 +1453,14 @@ function getStationAutoLineCycleDuration(state, lineId, recipe) {
   // 研究批次 G · autoline 组：与 processAutoLines 完全同式，UI 显示周期 = 实际结算周期
   let autoLineResearchMult = (typeof ResearchState !== "undefined") ? Number(ResearchState.getResearchMultiplier(state, ["autoline"])) : 1;
   if (!Number.isFinite(autoLineResearchMult) || autoLineResearchMult <= 0) autoLineResearchMult = 1;
-  const mult = Math.max(0.001, buildingMult * logisticsMult * autoLineResearchMult * getLegionAutoLineMultiplier(state));
+  // 蓝图发明 · TE（效率研究）接入周期：与 processAutoLines 完全同式，UI 显示周期 = 实际结算周期。
+  // 冶炼线（无发明蓝图 key）teR 恒 0，对该分支无影响；舰船/rig 分支下方各自再乘。
+  let autoLineTeMult = 1;
+  if (typeof window !== "undefined" && window.INVENTION && typeof window.INVENTION.teReductionForRecipe === "function") {
+    const teR = Number(window.INVENTION.teReductionForRecipe(state, recipe));
+    if (Number.isFinite(teR) && teR > 0 && teR < 1) autoLineTeMult = 1 / (1 - teR);
+  }
+  const mult = Math.max(0.001, buildingMult * logisticsMult * autoLineResearchMult * getLegionAutoLineMultiplier(state) * autoLineTeMult);
   const cfgCD = AUTO_LINE_CONFIG[lineId];
   if (cfgCD && cfgCD.kind === "smelting") {
     const assigned = (typeof getAssignedShipState === "function") ? getAssignedShipState(state, "refining") : { config:null, instance:null };
@@ -2009,12 +2054,8 @@ function getStationPageDisplayState(state, now) {
 
   // Generate auto-line display from real recipe pools
   // 由 AUTO_LINE_CONFIG 派生：主/副线共享 kind 的配方池；副线（unlockLevel>=2）未达建筑等级时 locked。
+  // ⚠ AL_KIND_DEFS / findAutoLineRecipe 已提到 IIFE 顶层（结算侧 processAutoLines 同样需要），此处仅为派生展示配置。
   var autoLines = [];
-  var AL_KIND_DEFS = {
-    smelting:   { recipePool:typeof SMELTING_RECIPES!="undefined"?SMELTING_RECIPES:[], keyFn:function(r){return r.name;}, skillKey:"refining", category:"smelting" },
-    equipment:  { recipePool:typeof EQUIPMENT_ENGINEERING_RECIPES!="undefined"?EQUIPMENT_ENGINEERING_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"equipmentEngineering", excludeShip:true, allowedCategories:EQUIPMENT_AUTO_LINE_CATEGORIES },
-    booster:    { recipePool:typeof BOOSTER_RECIPES!="undefined"?BOOSTER_RECIPES:[], keyFn:function(r){return r.id;}, skillKey:"boosterEngineering" }
-  };
   var alConfigs = AUTO_LINE_IDS.map(function(lineId) {
     var cfg = AUTO_LINE_CONFIG[lineId];
     var kd = AL_KIND_DEFS[cfg.kind];
@@ -2023,11 +2064,8 @@ function getStationPageDisplayState(state, now) {
   // 自动线目标显示名解析：只认配方的正式中文名称字段（recipe.name）。
   // 查不到配方、或配方缺正式名称时一律返回"未知配方"——绝不用内部 recipeId 兜底，
   // 避免 mining_lubricant_n 这类内部 ID 泄漏到界面。id 只作稳定 option.value 与调试用。
+  // findAutoLineRecipe 已在 IIFE 顶层定义（与结算侧共用），此处不重复声明。
   var UNKNOWN_RECIPE_NAME = "未知配方";
-  function findAutoLineRecipe(cfg, targetId) {
-    if (!targetId) return null;
-    return cfg.recipePool.find(function(r) { return cfg.keyFn(r) === targetId; }) || null;
-  }
   function autoLineTargetName(recipe, lineId) {
     var nm = recipe && typeof recipe.name === "string" ? recipe.name.trim() : "";
     if (!nm) return UNKNOWN_RECIPE_NAME;

@@ -1195,18 +1195,22 @@ const PlanetaryStateActions = {
     return { changed:true, deployment, config };
   },
 
-  // 主动拆除：storage 必须为 0（原子拒绝），删除 deployment 且不返还任何资源。
+  // 主动拆除：删除 deployment 且不返还任何资源。
+  // 2026-09-26 放宽：此前要求 storage === 0（否则原子拒绝），导致离线堆满库存的基地拆不掉。
+  // 现在允许带库存拆除，被一并销毁的产物数量写入事件 lostStorage（供诊断/成就/成就提示用），
+  // 玩家侧提示由 UI 的 danger confirm 弹窗明示，不会静默吞掉库存。
   demolish(state, id) {
     const deployments = state.planetary && state.planetary.deployments;
     const index = Array.isArray(deployments) ? deployments.findIndex(item => item.id === id) : -1;
     if (index < 0) return { changed:false, reason:"unknown-deployment" };
-    if ((Number(deployments[index].storage) || 0) !== 0) return { changed:false, reason:"storage-not-empty" };
+    const lostStorage = Number(deployments[index].storage) || 0;
     const removed = deployments.splice(index, 1)[0];
     state._dirty = true;
     if (typeof GameEvents !== "undefined") GameEvents.emit("planetary:demolished", {
-      deploymentId:removed.id, planetType:removed.planetType, refundedISK:0, refundedResources:{}
+      deploymentId:removed.id, planetType:removed.planetType, refundedISK:0, refundedResources:{},
+      lostStorage:lostStorage
     });
-    return { changed:true, removed };
+    return { changed:true, removed, lostStorage };
   }
 };
 
@@ -1569,6 +1573,16 @@ function finalizeCombatQueueItem(state, now) {
   }
   state._dirty = true;
   return { changed:true };
+}
+
+// 改装件 ref 归一化（2026-09-26）：
+// 「改装件强化」（蓝图发明）产出的带词条改装件是游离实例，装配时 UI 直接传 instanceId；仓库裸改装件传 itemId。
+// ⚠ 本函数**只用于查定义**（getRigDefinition 只认 itemId）。真正装配时必须把**原始 ref** 透传给 setFittingSlot：
+//   传入 itemId 会让 setFittingSlot 在 inventory 里找不到对应裸件（强化件已从背包扣除）而误报 equipment-unavailable。
+function resolveRigRef(state, ref) {
+  if (!ref) return ref;
+  const resolved = (typeof resolveEquipmentReference === "function") ? resolveEquipmentReference(state, ref) : null;
+  return (resolved && resolved.instance) ? resolved.itemId : ref;
 }
 
 const ShellStateActions = {
@@ -1957,6 +1971,11 @@ const ShellStateActions = {
     return { changed:true, enabled:Boolean(enabled) };
   },
 
+  // 2026-09-26：改装件强化（蓝图发明）产出的带词条改装件是「游离实例」，
+  // 装配 ref 可能直接传 instanceId。统一先解析出真实 itemId，使 getRigDefinition / setFittingSlot
+  // 对「仓库裸件字符串」与「强化实例 id」两条路径行为一致。
+  resolveRigRef(state, ref) { return resolveRigRef(state, ref); },
+
   setFittingSlot(state, instanceId, slot, slotIndex, equipmentRef) {
     const instance = getShipInstanceFromState(state, instanceId);
     const config = instance ? getShipConfigById(instance.shipId) : null;
@@ -2071,16 +2090,19 @@ const ShellStateActions = {
     const instance = getShipInstanceFromState(state, instanceId);
     const config = instance ? getShipConfigById(instance.shipId) : null;
     if (!instance || !config) return { changed:false, reason:"unknown-ship" };
-    const def = getRigDefinition(rigItemId);
+    // 兼容带词条的强化改装件（ref 可为 instanceId）：归一化成 itemId 后再查定义。
+    const rigRef = resolveRigRef(state, rigItemId);
+    const def = getRigDefinition(rigRef);
     if (!def) return { changed:false, reason:"not-rig" };
     if (slotIndex < 0 || slotIndex >= (config.slots.rig || 0)) return { changed:false, reason:"invalid-slot" };
     const rigSlots = (instance.fitted && instance.fitted.rig) || [];
     if (rigSlots[slotIndex]) return { changed:false, reason:"slot-occupied" };
+    // 装配层必须收到原始 ref（instanceId 或 itemId），由它自行决定扣 inventory 还是直接用游离实例。
     const result = ShellStateActions.setFittingSlot(state, instanceId, "rig", slotIndex, rigItemId);
     if (!result.changed) return result;
-    GameEvents.emit("rig:fitted", { rigId:rigItemId, shipInstanceId:instanceId, stackGroup:def.stackGroup || "", slotIndex },
+    GameEvents.emit("rig:fitted", { rigId:rigRef, shipInstanceId:instanceId, stackGroup:def.stackGroup || "", slotIndex },
       { offline:false, source:"rig-fit" });
-    return { changed:true, rigId:rigItemId, slotIndex, stackGroup:def.stackGroup || "" };
+    return { changed:true, rigId:rigRef, slotIndex, stackGroup:def.stackGroup || "" };
   },
 
   // 拆卸即销毁：目标槽的改装件实例被彻底删除，不归还 inventory。
@@ -2105,22 +2127,24 @@ const ShellStateActions = {
   // 替换=旧件销毁+新件安装（原子）。setFittingSlot 先校验新件可用与 stackGroup（排除当前槽），
   // 全部通过后才销毁旧件、装新件——失败时状态不变。
   replaceFittedRig(state, instanceId, slotIndex, rigItemId) {
+    const _rigRef = resolveRigRef(state, rigItemId);
     const instance = getShipInstanceFromState(state, instanceId);
     const config = instance ? getShipConfigById(instance.shipId) : null;
     if (!instance || !config) return { changed:false, reason:"unknown-ship" };
     if (slotIndex < 0 || slotIndex >= (config.slots.rig || 0)) return { changed:false, reason:"invalid-slot" };
-    const newDef = getRigDefinition(rigItemId);
+    const newDef = getRigDefinition(_rigRef);
     if (!newDef) return { changed:false, reason:"not-rig" };
     const rigSlots = (instance.fitted && instance.fitted.rig) || [];
     const oldRef = rigSlots[slotIndex];
     if (!oldRef) return { changed:false, reason:"empty-slot" };
     const oldResolved = resolveEquipmentReference(state, oldRef);
     const oldRigId = oldResolved ? oldResolved.itemId : null;
+    // 同上：装配层收原始 ref，_rigRef 仅用于 def 查询。
     const result = ShellStateActions.setFittingSlot(state, instanceId, "rig", slotIndex, rigItemId);
     if (!result.changed) return result;
-    GameEvents.emit("rig:replaced", { oldRigId, newRigId:rigItemId, shipInstanceId:instanceId, stackGroup:newDef.stackGroup || "", slotIndex },
+    GameEvents.emit("rig:replaced", { oldRigId, newRigId:_rigRef, shipInstanceId:instanceId, stackGroup:newDef.stackGroup || "", slotIndex },
       { offline:false, source:"rig-replace" });
-    return { changed:true, oldRigId, newRigId:rigItemId, slotIndex, stackGroup:newDef.stackGroup || "" };
+    return { changed:true, oldRigId, newRigId:_rigRef, slotIndex, stackGroup:newDef.stackGroup || "" };
   },
 
   queueAdd(state, item, now, front) {
