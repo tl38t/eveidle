@@ -640,6 +640,15 @@ function getOfflineActionDescriptor() {
         // 若不显式收尾会留下 active=true 的尾巴，玩家回来仍看到「总装进行中」。
         gameState.currentAction.active = false;
         gameState.currentAction.progress = 0;
+      },
+      // 与在线 tick「资源不足挂起保进度」同口径（tick.js:466-471，2026-09-26）：
+      // 星币 / 三组件 / 锻星合金在中途被别的活动（自动产线、维修、制造）花光时，
+      // 离线结算**不得取消行动** —— 旧行为走主循环 cycles<=0 ⇒ active=false，
+      // 玩家「看个广告 / 切后台回来」就看到总装没了、按钮复位，观感即「重新开始」。
+      // 新行为：进度原地冻结、active 保持 true，资源补齐后下一 tick 自动续跑。
+      // 等级不足不在此列（等级只升不降；在线侧同样是 stopOrSkip 停止，不挂起）。
+      shouldHoldOnZeroCycles() {
+        return !(tLevel() < tRecipe.level);
       }
     };
   }
@@ -1197,6 +1206,9 @@ function settleOfflineActions(seconds, gains) {
 
       if (cycles <= 0) {
         if (skipFailedOfflineQueueItem()) continue;
+        // 泰坦总装专属：资源不足 ⇒ 挂起保进度（与在线 tick 同口径），不取消行动。
+        // 其余行动（采矿 / 冶炼 / 制造 / 考古 …）保持原口径：资源不足即停止。
+        if (descriptor.shouldHoldOnZeroCycles && descriptor.shouldHoldOnZeroCycles()) break;
         gameState.currentAction.active = false;
         break;
       }

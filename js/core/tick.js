@@ -461,8 +461,14 @@ function gameTick() {
         while (gameState.currentAction.progress >= tActual) {
           if (getEffectiveSkillLevel(gameState, "shipEngineering") < tRecipe.level) { stopOrSkip(); updateUI(); return; }
           // ISK 权威校验/扣除走 ResourceRegistry（顶层 gameState.isk 不存在：读之恒 0 恒跳过、写之造幽灵字段免费造）——2026-09-10 修复
-          if (ResourceRegistry.get(gameState, "currency:isk") < tRecipe.isk) { stopOrSkip(); updateUI(); return; }
-          if (!hasEnoughShipAssemblyComponents(tRecipe)) { stopOrSkip(); updateUI(); return; }
+          // 资源不足改「挂起保进度」（2026-09-26 玩家反馈「去干别的 → 重新读条」）：
+          // 旧行为 stopOrSkip() 会清空已累计读条 ⇒ 星币/组件被中途花光时玩家损失全部进度。
+          // 新行为：回滚本 tick 刚累加的 delta，进度原地冻结（与离线「不足一周期冻结」同口径），
+          // active 保持 true，资源补齐后下一 tick 自动续跑。等级门槛不在此列（等级只升不降）。
+          if (ResourceRegistry.get(gameState, "currency:isk") < tRecipe.isk || !hasEnoughShipAssemblyComponents(tRecipe)) {
+            gameState.currentAction.progress = Math.max(0, gameState.currentAction.progress - tDelta);
+            updateUI(); return;
+          }
           gameState.currentAction.progress -= tActual;
           deductShipAssemblyComponents(tRecipe);
           ResourceRegistry.spend(gameState, "currency:isk", tRecipe.isk);

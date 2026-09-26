@@ -8,6 +8,39 @@
    ② 视图显隐兜底（与渲染器同口径读 state.currentAction.shipEngSubView，幂等）。
    禁止在此重新自建 tab 或私管显隐——双状态源打架正是弹回总装的根源。 */
 (function () {
+  /* 2026-09-24 手机端修复：原来 new MutationObserver(render).observe(document.body) +
+     render() 内直接 setText/setHtml 会自触发 observer，形成无限循环，导致下方 summary 卡片
+     每帧重建 → 文字「慢慢往下滑」。改为：① observer 只监听 #shipeng-panel；② render 用
+     requestAnimationFrame 合并；③ 写 DOM 时 disconnect observer，写完 reconnect。 */
+  let _titanObserver = null;
+  let _titanRenderLock = false;
+  let _titanPausedDepth = 0;
+  let _titanPendingRender = false;
+
+  function scheduleRender() {
+    if (_titanRenderLock) { _titanPendingRender = true; return; }
+    _titanRenderLock = true;
+    _titanPendingRender = false;
+    requestAnimationFrame(() => {
+      try { renderCore(); } finally {
+        _titanRenderLock = false;
+        if (_titanPendingRender) scheduleRender();
+      }
+    });
+  }
+  function withObserverPaused(fn) {
+    if (!_titanObserver || _titanPausedDepth > 0) return fn();
+    _titanObserver.disconnect();
+    _titanPausedDepth++;
+    try { return fn(); } finally {
+      _titanPausedDepth--;
+      if (_titanPausedDepth === 0 && _titanObserver) {
+        const root = document.getElementById("shipeng-panel") || document.body;
+        _titanObserver.observe(root, { childList: true, subtree: true });
+      }
+    }
+  }
+
   const OPTIONS = {
     hull: [{ id:"shield", name:"天穹壁垒", note:"高护盾 · 偏导防护" }, { id:"structure", name:"裂骨方舟", note:"高结构 · 过载火力" }, { id:"armor", name:"铁幕堡垒", note:"高装甲 · 阵地承伤" }],
     weapon: [{ id:"laser", name:"曙光长矛", note:"持续聚焦光束" }, { id:"missile", name:"天火齐射", note:"多轮导弹压制" }, { id:"cannon", name:"震荡王座", note:"重型动能齐射" }],
@@ -174,10 +207,17 @@
     if (running) {
       const dur = gfn("getShipEngineeringCycleDuration") ? gfn("getShipEngineeringCycleDuration")(gameState, gate.recipe) : (gate.recipe ? gate.recipe.time : 1);
       const prog = Math.max(0, Math.min(1, (Number(a.progress) || 0) / (dur || 1)));
+      // 挂起态提示（2026-09-26）：星币/组件被中途花光时 tick 侧只冻结进度不再清零，
+      // 这里把「看起来卡住不动的读条」解释清楚：进度保留，补齐后自动继续。
+      const hasAsm = gfn("hasEnoughShipAssemblyComponents");
+      const blocked = Boolean(gate.recipe) && (
+        ((typeof ResourceRegistry !== "undefined") && ResourceRegistry.get(gameState, "currency:isk") < gate.recipe.isk)
+        || (typeof hasAsm === "function" && !hasAsm(gate.recipe))
+      );
       setText(btn, "⏹ 停止总装（" + Math.floor(prog * 100) + "%）");
       setDisabled(btn, false);
       btn.dataset.titanMode = "stop";
-      setText(statusEl, "总装进行中：" + (gate.recipe ? gate.recipe.name : "泰坦") + " · " + Math.floor(prog * 100) + "%");
+      setText(statusEl, (blocked ? "总装挂起（星币/组件不足，进度已保留 " + Math.floor(prog * 100) + "%，补齐后自动继续）：" : "总装进行中：") + (gate.recipe ? gate.recipe.name : "泰坦") + " · " + Math.floor(prog * 100) + "%");
       setHtml(gotoEl, "");
       return;
     }
@@ -261,44 +301,48 @@
     const want = isTitanSubView() ? "" : "none";
     if (titan.style.display !== want) titan.style.display = want; // 幂等写，避免无谓 mutation 回环
   }
-  function render() {
+  function renderCore() {
     const host = document.getElementById("shipeng-panel"); if (!host) return;
-    const tabs = document.getElementById("shipeng-subview-tabs"); if (!tabs) return;
-    const boosters = document.getElementById("ship-action-booster-slots");
-    // 2026-09-08 卡死修复：#ship-action-booster-slots 与 #shipeng-subview-tabs 同在 .panel-body 内，
-    // tabs.after(boosters) 后 parentElement 不变，原条件恒真 → 每次都真实移动节点 →
-    // 自身 MutationObserver(:46) 无限自触发 → 主线程微任务死循环（开屏即"页面无响应"）。
-    // 修复：已紧跟在 tabs 之后则不再移动（幂等）。
-    if (boosters && boosters.parentElement === document.querySelector("#shipeng-panel .panel-body") && boosters.previousElementSibling !== tabs) tabs.after(boosters);
     ensureView();
     const view = document.getElementById("shipeng-titan-view");
     hydrateSelectionFromState(view); // 一次性回填存档组合（幂等；gameState 晚就绪时由后续渲染 pass 补上）
     applyTitanViewVisibility();
-    // 运行中进度/门禁随时间与库存变化：随渲染 pass 幂等刷新（内容不变则不写 DOM）
-    if (view && isTitanSubView()) refreshAssemblyUi(view);
+    // 运行中进度/门禁随时间与库存变化：写 DOM 前暂停 observer，防止自触发
+    if (view && isTitanSubView()) withObserverPaused(() => refreshAssemblyUi(view));
   }
   function ensureView() {
     const panel = document.getElementById("shipeng-panel"); if (!panel || document.getElementById("shipeng-titan-view")) return;
+    // 2026-09-08 卡死修复：把 #ship-action-booster-slots 移到 #shipeng-subview-tabs 之后，只执行一次。
+    const tabs = document.getElementById("shipeng-subview-tabs");
+    const boosters = document.getElementById("ship-action-booster-slots");
+    if (tabs && boosters && boosters.parentElement === document.querySelector("#shipeng-panel .panel-body") && boosters.previousElementSibling !== tabs) tabs.after(boosters);
+
     const el = document.createElement("div"); el.id = "shipeng-titan-view"; el.className = "titan-forge-fresh";
     el.style.display = isTitanSubView() ? "" : "none"; // 懒创建竞态兜底：按 state 设初值，不等下一次渲染 pass
-    el.innerHTML = `<div class="titan-forge-fresh-grid"><div class="titan-forge-fresh-controls"><div class="titan-forge-kicker">TITAN ASSEMBLY</div><h2>泰坦组装</h2><p>从部件车间取得舰体、武器和核心，组合成一架泰坦。</p>${["hull","weapon","core"].map((k,i)=>`<label class="titan-fresh-slot"><span>${String(i+1).padStart(2,"0")} · ${k === "hull" ? "防御舰体" : k === "weapon" ? "攻击模块" : "核心模块"}</span><select class="u-select" data-titan-fresh="${k}">${optionHtml(k)}</select><small data-titan-note="${k}">${find(k, selection[k]).note}</small></label>`).join("")}<button class="btn primary" type="button" data-titan-fresh-build>⚓ 总装泰坦</button><div class="titan-fresh-status" data-titan-fresh-status>已选 3 / 3 个组件</div><div class="titan-asm-cost" data-titan-asm-cost></div><div class="titan-asm-goto" data-titan-asm-goto></div></div><div class="titan-forge-fresh-preview"><div class="titan-preview"><span class="titan-preview-label">LIVE TITAN ASSEMBLY</span></div><div class="titan-fresh-summary" data-titan-summary></div></div></div>`;
+    // 中间 3D 预览区加兜底占位，避免模块加载失败/执行抛错时完全空白。
+    const previewPlaceholder = '<div class="titan-preview-placeholder"><span>3D 预览加载中…</span></div>';
+    el.innerHTML = `<div class="titan-forge-fresh-grid"><div class="titan-forge-fresh-controls"><div class="titan-forge-kicker">TITAN ASSEMBLY</div><h2>泰坦组装</h2><p>从部件车间取得舰体、武器和核心，组合成一架泰坦。</p>${["hull","weapon","core"].map((k,i)=>`<label class="titan-fresh-slot"><span>${String(i+1).padStart(2,"0")} · ${k === "hull" ? "防御舰体" : k === "weapon" ? "攻击模块" : "核心模块"}</span><select class="u-select" data-titan-fresh="${k}">${optionHtml(k)}</select><small data-titan-note="${k}">${find(k, selection[k]).note}</small></label>`).join("")}<button class="btn primary" type="button" data-titan-fresh-build>⚓ 总装泰坦</button><div class="titan-fresh-status" data-titan-fresh-status>已选 3 / 3 个组件</div><div class="titan-asm-cost" data-titan-asm-cost></div><div class="titan-asm-goto" data-titan-asm-goto></div></div><div class="titan-forge-fresh-preview"><div class="titan-preview">${previewPlaceholder}<span class="titan-preview-label">LIVE TITAN ASSEMBLY</span></div><div class="titan-fresh-summary" data-titan-summary></div></div></div>`;
     panel.appendChild(el);
     el.addEventListener("change", e => {
       const s = e.target.closest("[data-titan-fresh]"); if (!s) return;
       selection[s.dataset.titanFresh] = s.value;
       const n = el.querySelector(`[data-titan-note="${s.dataset.titanFresh}"]`); if (n) setText(n, find(s.dataset.titanFresh, s.value).note);
-      updateSummary(el);
-      // 回写 state（真值单一来源），再刷新门禁/成本（改选后立即反映该组合的材料缺口）
-      if (typeof dispatchGameAction === "function") dispatchGameAction(gameState, { type:"manufacturing/selectTitanCombo", combo:comboOf() }, Date.now());
-      refreshAssemblyUi(el);
+      // 2026-09-24 写 DOM 前暂停 observer，避免自触发无限循环。
+      withObserverPaused(() => {
+        updateSummary(el);
+        if (typeof dispatchGameAction === "function") dispatchGameAction(gameState, { type:"manufacturing/selectTitanCombo", combo:comboOf() }, Date.now());
+        refreshAssemblyUi(el);
+      });
     });
     el.querySelector("[data-titan-fresh-build]").addEventListener("click", () => {
-      if (btnMode(el) === "stop") { dispatchGameAction(gameState, { type:"manufacturing/stop" }, Date.now()); refreshAssemblyUi(el); return; }
-      const res = dispatchGameAction(gameState, { type:"manufacturing/startTitanAssembly", combo:comboOf() }, Date.now());
-      if (res && res.changed) { refreshAssemblyUi(el); return; }
-      const statusEl = el.querySelector("[data-titan-fresh-status]");
-      const label = FAIL_TEXT[res && res.reason] || ((res && (res.text || res.reason)) || "无法开始总装");
-      setText(statusEl, "无法开始：" + label);
+      withObserverPaused(() => {
+        if (btnMode(el) === "stop") { dispatchGameAction(gameState, { type:"manufacturing/stop" }, Date.now()); refreshAssemblyUi(el); return; }
+        const res = dispatchGameAction(gameState, { type:"manufacturing/startTitanAssembly", combo:comboOf() }, Date.now());
+        if (res && res.changed) { refreshAssemblyUi(el); return; }
+        const statusEl = el.querySelector("[data-titan-fresh-status]");
+        const label = FAIL_TEXT[res && res.reason] || ((res && (res.text || res.reason)) || "无法开始总装");
+        setText(statusEl, "无法开始：" + label);
+      });
     });
     el.addEventListener("click", e => {
       const g = e.target.closest("[data-titan-goto]");
@@ -309,14 +353,17 @@
         return;
       }
     });
-    updateSummary(el);
-    refreshAssemblyUi(el);
+    withObserverPaused(() => { updateSummary(el); refreshAssemblyUi(el); });
+    // 主动触发 3D 预览挂载（titan-forge-3d.js 暴露 window.__scanTitanPreview）
+    if (typeof window !== "undefined" && typeof window.__scanTitanPreview === "function") window.__scanTitanPreview();
   }
   // 幂等写：内容不变不重建节点（本文件由 MutationObserver 驱动 render，裸 innerHTML 赋值会回环）
   function updateSummary(el) {
     const host = el.querySelector("[data-titan-summary]"); if (!host) return;
     setHtml(host, ["hull","weapon","core"].map(summaryCardHtml).join(""));
   }
-  new MutationObserver(render).observe(document.body, { childList:true, subtree:true });
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", render); else render();
+  _titanObserver = new MutationObserver(scheduleRender);
+  const _titanObserveRoot = document.getElementById("shipeng-panel") || document.body;
+  _titanObserver.observe(_titanObserveRoot, { childList:true, subtree:true });
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scheduleRender); else scheduleRender();
 })();

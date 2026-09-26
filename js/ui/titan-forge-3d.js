@@ -8,13 +8,14 @@ const mounted = new WeakSet();
 function mountPreview(el) {
   if (!el || mounted.has(el)) return;
   mounted.add(el);
-  el.innerHTML = "";
-  el.dataset.renderer = "three-titan-factory";
-  const canvas = document.createElement("canvas");
-  canvas.className = "titan-forge-canvas";
-  el.appendChild(canvas);
+  try {
+    el.innerHTML = "";
+    el.dataset.renderer = "three-titan-factory";
+    const canvas = document.createElement("canvas");
+    canvas.className = "titan-forge-canvas";
+    el.appendChild(canvas);
 
-  const scene = new THREE.Scene();
+    const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x091522);
   scene.fog = new THREE.FogExp2(0x091522, 0.003);
   const camera = new THREE.PerspectiveCamera(30, 1, 0.1, 500);
@@ -90,7 +91,8 @@ function mountPreview(el) {
     if (!document.documentElement.contains(el)) return;
     requestAnimationFrame(frame);
     const t = clock.getElapsedTime();
-    rebuild();
+    // rebuild 不再每帧调用：初始已 rebuild，select change 事件会触发；
+    // 每帧只负责动画与渲染，避免不必要的 DOM 查询和模型重建。
     if (ship) { ship.rotation.y += 0.00045; ship.rotation.z = Math.sin(t * .24) * .012; }
     if (glow) glow.intensity = 24 + Math.sin(t * 2.2) * 5;
     const missileCycle = t % 9;
@@ -148,8 +150,16 @@ function mountPreview(el) {
     renderer.render(scene, camera);
   }
   frame();
+  } catch (err) {
+    // 2026-09-24：手机/H5 上模块加载/执行失败时不应留下完全空白的预览区。
+    el.dataset.renderer = "three-titan-factory-error";
+    el.innerHTML = '<div class="titan-preview-error"><span>3D 预览加载失败</span><small>' + (err && err.message ? String(err.message).slice(0, 120) : "未知错误") + '</small></div>';
+    console.warn("[titan-forge-3d] mountPreview failed:", err);
+  }
 }
 
 function scan() { document.querySelectorAll("#shipeng-titan-view .titan-preview").forEach(mountPreview); }
+// 2026-09-24：让 titan-forge-integration.js 懒创建视图后能主动触发扫描，避免中间空白。
+if (typeof window !== "undefined") window.__scanTitanPreview = scan;
 new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
 if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scan); else scan();

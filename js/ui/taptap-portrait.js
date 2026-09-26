@@ -58,6 +58,33 @@
     _tpActEta = strip.querySelector(".tp-act-eta");
     _tpActBar = strip.querySelector(".tp-act-bar");
     _tpActFill = strip.querySelector(".tp-act-fill");
+    // 点击活动条：跳转到当前行动对应页面（战斗/技能等），避免顶部长条只是装饰
+    strip.addEventListener("click", function () {
+      if (!window.gameState) return;
+      try {
+        var act = window.getCurrentActivityDisplayState(window.gameState, Date.now());
+        if (!act || !act.key) return;
+        var pageMap = {
+          combat: "combat",
+          mining: "skill",
+          refining: "skill",
+          gasHarvesting: "skill",
+          planetaryIndustry: "skill",
+          archaeology: "skill",
+          shipEngineering: "skill",
+          equipmentEngineering: "skill",
+          boosterEngineering: "skill",
+          blueprintInvention: "skill",
+          station: "station"
+        };
+        var targetPage = pageMap[act.key];
+        if (!targetPage) return;
+        if (targetPage === "skill") {
+          if (typeof switchSkill === "function") switchSkill(act.key);
+        }
+        if (typeof switchPage === "function") switchPage(targetPage);
+      } catch (e) {}
+    });
 
     /* 抽屉遮罩：与 .sidebar 同处于 .main-container stacking context，
        content(0) < overlay(1300) < sidebar(1400)，sidebar 因此绘制在遮罩之上、

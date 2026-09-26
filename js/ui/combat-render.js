@@ -391,6 +391,41 @@ function bindCombatStatsModal() {
     if (event.target === modal || (event.target.closest && event.target.closest("[data-csm-close]"))) closeCombatStatsModal();
   });
   document.addEventListener("keydown", function (event) { if (event.key === "Escape") closeCombatStatsModal(); });
+  // 手机端：下滑 sheet 关闭
+  const box = modal.querySelector(".csm-box");
+  if (box && !box._csmSwipeBound) {
+    box._csmSwipeBound = true;
+    let startY = 0, startX = 0, dragging = false;
+    box.addEventListener("touchstart", function (e) {
+      if (e.touches && e.touches[0]) {
+        startY = e.touches[0].clientY;
+        startX = e.touches[0].clientX;
+        dragging = true;
+      }
+    }, { passive: true });
+    box.addEventListener("touchmove", function (e) {
+      if (!dragging || !e.touches || !e.touches[0]) return;
+      const dy = e.touches[0].clientY - startY;
+      const dx = e.touches[0].clientX - startX;
+      // 仅垂直下滑且 box 已滚到顶部时才跟随
+      if (Math.abs(dy) > Math.abs(dx) && dy > 0 && box.scrollTop <= 0) {
+        box.style.transform = "translateY(" + Math.min(dy * 0.5, 120) + "px)";
+        box.style.transition = "none";
+      }
+    }, { passive: true });
+    box.addEventListener("touchend", function (e) {
+      if (!dragging) return;
+      dragging = false;
+      const dy = (e.changedTouches && e.changedTouches[0]) ? e.changedTouches[0].clientY - startY : 0;
+      box.style.transition = "transform .15s ease";
+      if (dy > 80) {
+        box.style.transform = "translateY(100%)";
+        setTimeout(closeCombatStatsModal, 150);
+      } else {
+        box.style.transform = "";
+      }
+    }, { passive: true });
+  }
 }
 // 打开某个 NPC 小队成员的实战属性弹窗（数据直取军团小队系统，UI 不复制任何公式）
 function openNpcCombatStatsModal(npcId, npcName) {

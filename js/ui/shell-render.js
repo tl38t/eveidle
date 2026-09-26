@@ -1165,10 +1165,28 @@ function renderEquipmentEnhancementList(visible) {
     panel.innerHTML = `<div class="cargo-empty">暂无可强化装备（制造或获取装备后将显示于此）</div>`;
     return;
   }
-  // 保存滚动位置：行动完成/周期刷新会经 renderCargoPanel 重进这里，整块 innerHTML 重建会把列表拉回顶部
-  const _oldEnhGrid = document.getElementById("equip-enh-grid");
-  const _savedEnhScrollTop = _oldEnhGrid ? _oldEnhGrid.scrollTop : 0;
   const filters = [["all","全部"],["enhanceable","可强化"],["installed","已装载"],["unenhanced","未强化"]];
+
+  // 🔴 焦点保护：战斗/产线刷新会驱动 renderCargoPanel → 这里，如果每次都 innerHTML 重建
+  //    整个 toolbar，搜索框的 input 元素会被销毁，手机上刚弹起的输入法就会因焦点元素
+  //    消失而自动关闭。因此：toolbar 已存在时只同步状态并刷新 grid，不重建搜索框。
+  const _oldEnhGrid = document.getElementById("equip-enh-grid");
+  const _oldSearch = panel.querySelector("[data-equip-search]");
+  if (_oldEnhGrid && _oldSearch) {
+    // 同步搜索值（外部逻辑可能已清空了 equipEnhanceSearch）
+    if (_oldSearch.value !== (equipEnhanceSearch || "")) _oldSearch.value = equipEnhanceSearch || "";
+    // 同步筛选按钮 active 状态（filter 按钮点击事件本身会更新，这里做防御性兜底）
+    panel.querySelectorAll("[data-equip-filter]").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.equipFilter === equipEnhanceFilter);
+    });
+    const _savedEnhScrollTop = _oldEnhGrid.scrollTop;
+    renderEquipEnhanceGrid();
+    _oldEnhGrid.scrollTop = _savedEnhScrollTop;
+    return;
+  }
+
+  // 首次进入 / 从空状态恢复：完整重建 toolbar + grid
+  const _savedEnhScrollTop = _oldEnhGrid ? _oldEnhGrid.scrollTop : 0;
   panel.innerHTML =
     `<div class="eem-toolbar">
        <input class="u-select eem-search" type="text" placeholder="搜索装备名 / 分类…" data-equip-search value="${escapeAchievementText(equipEnhanceSearch)}" />

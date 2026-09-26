@@ -9,9 +9,9 @@
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css">
 <link rel="stylesheet" href="./css/base.css?v=23">
   <link rel="stylesheet" href="./css/panels.css?v=75">
-  <link rel="stylesheet" href="./css/combat.css?v=29">
+  <link rel="stylesheet" href="./css/combat.css?v=30">
 <link rel="stylesheet" href="./css/components.css?v=45">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=27">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=28">
 <style id="starmap-collection-room-style">
 .starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
 </style>
@@ -25,7 +25,7 @@
 </script>
   <script defer src="./js/ui/ship3d-loader.js?v=6"></script>
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
-  <script type="module" src="./js/ui/titan-forge-3d.js?v=3"></script>
+  <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
   <script src="./js/i18n/catalog-en.js?v=49"></script>
   <script src="./js/i18n/catalog-zh-TW.js?v=27"></script>
@@ -140,6 +140,10 @@
 .titan-fresh-preview .titan-preview { min-height:390px; position:relative; overflow:hidden; border:1px solid #294761; border-radius:8px; background:#091522; }
 .titan-forge-canvas { display:block; width:100%; height:100%; min-height:390px; }
 .titan-preview-label { position:absolute; left:12px; top:10px; z-index:1; color:#9fb4c5; font-size:11px; }
+/* 3D 预览加载前/失败时的兜底占位 */
+.titan-preview-placeholder,.titan-preview-error { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:#7a93a8; font-size:13px; padding:20px; }
+.titan-preview-placeholder span,.titan-preview-error span { display:block; margin-bottom:6px; color:#a3bdd1; }
+.titan-preview-error small { display:block; color:#8a6f6f; font-size:11px; max-width:100%; word-break:break-all; }
 .titan-fresh-summary { display:flex; gap:8px; margin-top:9px; align-items:stretch; }
 .titan-fresh-summary > div { flex:1; padding:8px 10px; border:1px solid #203548; border-radius:5px; color:#9bb4c6; font-size:12px; line-height:1.55; }
 .titan-fresh-summary b { display:block; color:#d7eaf5; margin-bottom:3px; }
@@ -1202,9 +1206,18 @@
       const lv = levelOf(cnt);
       const el = document.createElement("div");
       el.className = "bl-item" + (S.sel === b.key ? " on" : "");
+      // 🔴 这里必须显示「发明周期」真值，不能用 b.time：
+      //    b.time 抽自配方表（炮台弹药 = ammunition.js 的 time:10），语义是**制造耗时**——
+      //    同一份数据也决定「装备工程」页制造它要 10s；发明引擎（tick / offline /
+      //    确认弹窗 / 队列周期）四处全部走 cycleSeconds，从来没有用过 b.time。
+      //    继续显示 b.time 就会出现「清单 10s / 弹窗 19.5s」的时间对不上。
+      //    唯一周期真值 = INVENTION.cycleSeconds = 30 × 档 ÷ 实验室速度。
+      let cyc = null;
+      try { const _g = gs(); cyc = (INV && _g) ? INV.cycleSeconds(_g, b) : null; } catch (_) { cyc = null; }
+      const cycTxt = (typeof cyc === "number" && Number.isFinite(cyc) && cyc > 0) ? cyc.toFixed(1) + "s" : "—";
       el.innerHTML =
         '<span class="tierbadge">T' + b.tier + '</span>' +
-        '<span class="nm"><b>' + b.name + '</b><i>' + b.cat + ' · E' + b.E + ' · ' + b.skill + ' · ' + b.time + 's</i></span>' +
+        '<span class="nm" title="单次发明周期 ' + cycTxt + '（受实验室速度影响，随机动加成实时变化） · 在本页制造耗时 ' + b.time + 's"><b>' + b.name + '</b><i>' + b.cat + ' · E' + b.E + ' · ' + b.skill + ' · 发明 ' + cycTxt + '</i></span>' +
         '<span class="xpv">' + b.xp + ' XP' + (lv ? ' <span style="color:var(--cyan)">' + ROMAN[lv - 1] + '</span>' : '') + '</span>';
       el.addEventListener("click", () => { S.sel = b.key; renderList(); });
       host.appendChild(el);
@@ -2317,17 +2330,17 @@
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
   <script defer src="./js/systems/combat.js?v=63"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=124"></script>
+  <script defer src="./js/core/selectors.js?v=126"></script>
   <script defer src="./js/core/actions.js?v=67"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=54"></script>
   <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=150"></script>
+   <script defer src="./js/ui/shell-render.js?v=151"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
-  <script defer src="./js/ui/titan-forge-integration.js?v=13"></script>
-   <script defer src="./js/ui/combat-render.js?v=79"></script>
+  <script defer src="./js/ui/titan-forge-integration.js?v=15"></script>
+   <script defer src="./js/ui/combat-render.js?v=80"></script>
   <script defer src="./js/ui/planetary-render.js?v=3"></script>
   <script defer src="./js/ui/archaeology-render.js?v=17"></script>
   <script defer src="./js/ui/booster-render.js?v=17"></script>
@@ -2343,8 +2356,8 @@
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
   <script defer src="./js/ui/alliance-render.js?v=42"></script>
-  <script defer src="./js/core/tick.js?v=28"></script>
-  <script defer src="./js/core/offline.js?v=38"></script>
+  <script defer src="./js/core/tick.js?v=29"></script>
+  <script defer src="./js/core/offline.js?v=39"></script>
   <script defer src="./js/systems/offline-combat.js?v=63"></script>
   <script defer src="./js/systems/combat-log.js?v=6"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
@@ -2383,7 +2396,7 @@
   <script defer src="./js/core/bootstrap-launch.js?v=14"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>
 <script defer src="./js/ui/render.js?v=39"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=24"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=25"></script>
   <script defer src="./js/qa-seed.js?v=4"></script>
   <div id="hangar-3d-popup">
     <div class="popup-box">

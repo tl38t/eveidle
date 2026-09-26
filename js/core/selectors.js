@@ -385,7 +385,18 @@ function getCurrentActivityDisplayState(state, now) {
   const renderNow = Number.isFinite(Number(now)) ? Number(now) : Date.now();
   const duration = key === "combat" ? 0 : (Number(action.refDuration) || 0);
   const progress = getProgressDisplayState(action, key, duration, renderNow);
-  const effLevel = (typeof getEffectiveSkillLevel === "function") ? getEffectiveSkillLevel(state, key) : (Number(skill.lvl) || 1);
+  // 2026-09-24：战斗等级恒显示 Lv.1 的修复。
+  //   state.skills 不存在 "combat" 主键——战斗经验落在 10 个子技能上（见
+  //   COMBAT_SKILL_WHITELIST），getEffectiveSkillLevel(state,"combat") 只能回落到
+  //   skills.combat.lvl（旧存档由迁移补成 1，新存档无键）⇒ 恒为 1。
+  //   战斗等级改走官方口径 ⌊(最高攻击技能 + 最高防御技能) ÷ 2⌋
+  //   （getCombatLevelBreakdownFromState，与侧栏、星带门槛同源），会随战斗经验真实变化。
+  let effLevel = (typeof getEffectiveSkillLevel === "function") ? getEffectiveSkillLevel(state, key) : (Number(skill.lvl) || 1);
+  if (key === "combat" && typeof getCombatLevelBreakdownFromState === "function") {
+    const cl = getCombatLevelBreakdownFromState(state);
+    const clLevel = Number(cl && cl.level);
+    if (Number.isFinite(clLevel) && clLevel > 0) effLevel = clLevel;
+  }
   return {
     active:true,
     key,
@@ -2659,7 +2670,7 @@ function getCombatRepairMultiplierFromState(state, target, context, structureRat
 // 泰坦固有防御特性专用维修倍率：只读取泰坦舰体自身的维修加成，
 // 不吃玩家防御技能、装备、科研或脑插；结构紧急维修仍属于舰体固有加成。
 function getTitanTraitRepairMultiplierFromState(state, target, structureRatio) {
-  const ship = getActiveCombatShipState(state || gameState).config;
+  const ship = getActiveCombatShipState(state).config;
   if (!ship || ship.type !== "titan") return 1;
   const roleBonus = ship.bonuses && target ? Number(ship.bonuses[target + "Repair"]) || 0 : 0;
   let mult = 1 + roleBonus;

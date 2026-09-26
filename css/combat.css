@@ -851,7 +851,8 @@
     align-items: center;
     flex-wrap: wrap;
     gap: 6px 8px;
-    padding: 7px 10px;
+    padding: 9px 12px;
+    min-height: 40px;
   }
   .ccc-actual-stats > .cas-summary::-webkit-details-marker { display: none; }
   .ccc-actual-stats > .cas-summary::before {
@@ -861,6 +862,16 @@
     flex-shrink: 0;
   }
   .ccc-actual-stats[open] > .cas-summary::before { content: "▾"; }
+  @media (max-width: 560px) {
+    .ccc-actual-stats > .cas-summary {
+      padding: 11px 12px;
+      min-height: 44px;
+    }
+    .ccc-actual-stats > .cas-summary::before {
+      font-size: 14px;
+      padding: 4px 6px;
+    }
+  }
   .cas-title {
     font-family: 'Orbitron', sans-serif;
     font-size: 9px;
@@ -962,16 +973,75 @@
   .csm-subtitle { font-size: 11px; color: #8093a4; }
   .csm-close {
     margin-left: auto;
-    padding: 0 6px;
-    font-size: 16px;
+    padding: 8px 10px;
+    font-size: 18px;
     line-height: 1;
     color: #8093a4;
     background: transparent;
     border: none;
+    border-radius: 4px;
     cursor: pointer;
+    min-width: 34px;
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  .csm-close:hover { color: #cfe6f7; }
+  .csm-close:hover, .csm-close:active { color: #cfe6f7; background: rgba(84,188,232,0.12); }
   .csm-body { min-width: 0; }
+  /* 手机端：实战属性弹窗改为底部上滑 sheet，头部固定、body 可滚，关闭按钮放大并支持点击外部/下滑关闭 */
+  @media (max-width: 560px) {
+    .csm {
+      align-items: flex-end;
+      padding: 0;
+      background: rgba(4,8,12,0.78);
+    }
+    .csm-box {
+      width: 100%;
+      max-height: 88vh;
+      border-radius: 10px 10px 0 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+    }
+    .csm-head {
+      position: sticky;
+      top: 0;
+      flex: 0 0 auto;
+      align-items: center;
+      margin: 0;
+      padding: 10px 12px;
+      background: linear-gradient(180deg, rgba(13,22,31,0.98), rgba(10,16,24,0.98));
+      border-bottom: 1px solid rgba(48,66,84,0.6);
+      z-index: 2;
+    }
+    .csm-head::before {
+      content: "";
+      position: absolute;
+      top: 6px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 36px;
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(128,147,164,0.35);
+    }
+    .csm-title { font-size: 14px; }
+    .csm-subtitle { font-size: 11px; }
+    .csm-close {
+      margin-left: auto;
+      padding: 10px;
+      font-size: 20px;
+      min-width: 40px;
+      min-height: 40px;
+    }
+    .csm-body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      padding: 12px 14px 18px;
+      -webkit-overflow-scrolling: touch;
+    }
+  }
   .ccc-summary-ring-mini {
     display: flex;
     gap: 8px;
