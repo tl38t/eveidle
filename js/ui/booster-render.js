@@ -169,7 +169,7 @@ function renderActionBoosterSlots(actionKey, containerId) {
       return;
     }
     var remaining = Math.max(0, Number(entry.remainingMs) || 0);
-    html += '<div class="action-booster-slot" data-action-booster-slot="' + slot + '"><strong>' + (labels[slot] || slot) + ' · ' + item.name + '</strong><span>' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, null, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span><small>剩余 ' + Math.ceil(remaining / 1000) + 's · 点击更换</small></div>';
+    html += '<div class="action-booster-slot" data-action-booster-slot="' + slot + '"><strong>' + (labels[slot] || slot) + ' · ' + item.name + '</strong><span>' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, item.levelGate, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span><small>剩余 ' + Math.ceil(remaining / 1000) + 's · 点击更换</small></div>';
   });
   area.innerHTML = html + '</div>';
 }
@@ -218,7 +218,7 @@ function renderActionBoosterSlots(actionKey, containerId) {
     html += '<div class="equipeng-recipe-card action-booster-local-card" data-action-booster-slot="' + slot + '" title="Click to replace this booster">' +
       '<span class="equipeng-card-top"><span>' + (item.qualityName || (isEn ? "Booster" : "增强剂")) + ' · ' + item.name + '</span><span class="can-build">' + (isEn ? "Active" : "生效") + '</span></span>' +
       '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span><strong>' + item.name + '</strong>' +
-      '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, null, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span>' +
+      '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, item.levelGate, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span>' +
       // 剩余时间 / 库存 / 卸下独立成行：原实现塞在 .equipeng-card-bottom 内，
       // 受 .action-booster-local-card 的 max-height:72px + overflow:hidden 裁切，
       // 手机端卸下按钮整颗被裁掉、剩余秒数被 ellipsis 截断（2026-09-01 修复）。
@@ -513,7 +513,7 @@ function getCompatibleBoosterItems(slot) {
           && existingItem.effectType === item.effectType) { conflict = true; break; }
     }
     if (conflict) continue;
-    result.push({ id:item.itemId, name:item.name, quality:item.quality, qualityName:item.qualityName, effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget) : "", inv:qty });
+    result.push({ id:item.itemId, name:item.name, quality:item.quality, qualityName:item.qualityName, effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, item.levelGate) : "", inv:qty });
   }
   result.sort(function(a, b) { return (a.name || "").localeCompare(b.name || "", "zh-Hans-CN"); });
   return result;

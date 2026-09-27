@@ -57,12 +57,14 @@ function renderSidebar(sidebarState) {
     const levelClass = "nav-lv " + s.levelClass + (s.boosted ? " nav-lv-boosted" : "");
     if (lvSpan.textContent !== levelText) lvSpan.textContent = levelText;
     if (lvSpan.className !== levelClass) lvSpan.className = levelClass;
-    // Steam/Electron 中等级徽标本身可能接收到 hover/click，不能只给外层 nav-item 写 title。
-    // 经验阈值跟随当前显示等级，避免残留初始 HTML 的 0 / 110。
-    const shownLevel = Math.max(1, Number(s.level) || Number(s.baseLevel) || 1);
-    const shownXpNeeded = (!s.tooltip && typeof xpForLevel === "function")
-      ? xpForLevel(shownLevel + 1)
-      : s.xpNeeded;
+    // 经验阈值严格按基础等级：xpNeeded 由 getSidebarDisplayState 以 xpForLevel(base+1) 给出；
+    // 兜底计算也必须用 baseLevel —— 旧实现用显示等级（含增强剂临时 +N）算 xpForLevel(level+1)，
+    // 导致临时加成把「升级所需经验」一起抬高（如舰船工程 115 → 122(+7) 时分母 5,756,503 → 11,217,797）。
+    const shownXpNeeded = (Number(s.xpNeeded) > 0)
+      ? s.xpNeeded
+      : ((typeof xpForLevel === "function" && !s.tooltip)
+        ? xpForLevel(Math.max(1, Number(s.baseLevel) || 1) + 1)
+        : null);
     const title = s.tooltip || ("经验：" + Math.floor(s.xp).toLocaleString() + " / " + shownXpNeeded.toLocaleString() + "\n────────\n" + (SKILL_DESC[skillKey] || "提升此技能等级") + (s.boosted ? "\n⚡ 增强剂临时 +" + (s.level - s.baseLevel) : ""));
     if (el.title !== title) el.title = title;
     if (lvSpan.title !== title) lvSpan.title = title;

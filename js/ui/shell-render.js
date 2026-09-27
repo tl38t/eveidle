@@ -1801,7 +1801,7 @@ function openBoosterProductModal(recipe, blueprintName) {
     ? BOOSTER_CATEGORY_META.find(m => m.id === recipe.category) : null;
   const catLabel = catMeta ? catMeta.name : "增强剂";
   const itemInfo = (typeof getBoosterItem === "function") ? getBoosterItem(recipe.id) : null;
-  const effectText = (itemInfo && itemInfo.description) || (recipe.effect && typeof describeBoosterEffect === "function" ? describeBoosterEffect(recipe.effect.type, recipe.effect.value, recipe.effect.repairTarget, 0) : "");
+  const effectText = (itemInfo && itemInfo.description) || (recipe.effect && typeof describeBoosterEffect === "function" ? describeBoosterEffect(recipe.effect.type, recipe.effect.value, recipe.effect.repairTarget, recipe.levelGateBonus) : "");
   const costLines = [];
   if (recipe.cost) for (const m in recipe.cost) costLines.push((typeof getResourceDisplayName === "function" ? getResourceDisplayName(m) : m) + " ×" + recipe.cost[m]);
   const sections = [];
@@ -3405,8 +3405,14 @@ function renderResearchProtocolPanelHtml(display) {
     // 讲清自动续期的两条判定与「设 0 即无底线」。纯文本、无 hover 依赖，手机端直接可见。
     parts.push('<div class="rt-d-hint research-protocol-planauto-rule">到期判定：基地到期那一刻，星币 ≥ 续期费 <b>且</b> 扣费后剩余 ≥ 最低储备，两条都满足才续；任一不满足只停该基地，不动你的星币。<b>最低储备设 0 = 只要付得起就续。</b></div>');
     if (!active) {
+      // ⚠ FV-A：科技名只从 ResearchData 取，渲染层不得内联第二份静态科技清单
+      //   （改名 / 删节点后此提示会静默说错名字，tools/verify.mjs 的 FV-A 判据会拦）。
+      const _planAutoRs = (typeof getResearchSystem === "function") ? getResearchSystem() : null;
+      const _planAutoNode = (_planAutoRs && typeof _planAutoRs.getResearchNode === "function")
+        ? _planAutoRs.getResearchNode("planauto") : null;
+      const _planAutoName = (_planAutoNode && _planAutoNode.name) ? _planAutoNode.name : "对应科技";
       const why = !display.unlocked
-        ? "需先在研究树点亮「行星维护自动化」"
+        ? "需先在研究树点亮「" + _planAutoName + "」"
         : "需先开启上方「协议总开关 ｜ 启用协议」";
       parts.push('<div class="rt-d-hint research-protocol-gate">自动续期暂未生效：' + escapeAchievementText(why) + "。开启后下方按钮才可配置。</div>");
     }
@@ -5206,7 +5212,9 @@ function equipmentStatSummary(eq) {
       armorCapacityPercent: "装甲容量", structureCapacityPercent: "结构容量",
       miningRichChance: "采矿富集概率", gasRichChance: "气云富集概率",
       archaeologyScanPercent: "考古扫描效率", archaeologyCycleReductionPercent: "考古周期缩减",
-      archaeologyFuelEfficiency: "考古燃料效率", archaeologyInterferenceReduction: "考古干扰削减",
+      // 2026-09-27（客户反馈）：全游戏口径 =「电容回充 +X%」（等价燃料消耗 −X%，见 equipment.js RIG_PERCENT_BONUS_KEYS 注），
+      // 物品介绍/研究 tt_cap/考古面板均用「电容回充」；此表曾写「考古燃料效率」⇒ 装配弹窗候选卡口径脱队。
+      archaeologyFuelEfficiency: "电容回充", archaeologyInterferenceReduction: "考古干扰削减",
       skillXpBonus: "技能经验增益", smeltingSpeed: "冶炼速度",
       salvageEfficiency: "打捞效率", capacitorRecharge: "电容回充",
       armorRepair: "装甲维修", shieldRepair: "护盾维修",
@@ -5257,7 +5265,10 @@ function renderEquipCurrentBar(display, slot) {
   }
   const equippedItem = (display.equipped || []).find(it => it.id === slot.equipmentId) || null;
   const level = Math.max(0, Math.floor(Number(equippedItem && equippedItem.enhancementLevel) || 0));
-  const levelHtml = '<span class="' + (level > 0 ? "eq-up" : "") + '">' + (level > 0 ? "强化 +" + level : "未强化") + "</span>";
+  // 2026-09-27：带词条改装件实例的 enhancementLevel 恒 0，旧写法恒显「未强化」；对齐候选卡按词条数标「已强化×N」
+  const curAffixCount = Array.isArray(equippedItem && equippedItem.affixes) ? equippedItem.affixes.length : 0;
+  const levelHtml = '<span class="' + (level > 0 || curAffixCount > 0 ? "eq-up" : "") + '">'
+    + (curAffixCount > 0 ? "已强化×" + curAffixCount : (level > 0 ? "强化 +" + level : "未强化")) + "</span>";
   const summary = equipmentStatSummary(curEq);
   const parts = [];
   if (summary) parts.push(summary);
@@ -5277,14 +5288,18 @@ function renderEquipAffixRow(equippedItem) {
   if (!affixes || !affixes.length) return "";
   return '<span class="ec-affixes">' + affixes.map(a =>
     "<b>" + String(a && (a.label || a.series) || "词条").replace(/改装件\s*$/, "") + " +"
-    + Math.round((Number(a && a.value) || 0) * 100) + "%</b>"
+    + ((Number(a && a.value) || 0) * 100).toFixed(2) + "%</b>"
     + (a && a.quality ? "<i>" + a.quality + "</i>" : "")).join(' <span class="eq-sep">·</span> ') + "</span>";
 }
 // 两行布局选项：行1 图标+名称+状态徽章+数量；行2 核心数值·档位·改造
 function renderEquipOptionDuo(item, curEq, isRig) {
   const eq = EQUIPMENT_DB[item.ids[0]] || null;
   const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
-  const levelHtml = '<span class="' + (level > 0 ? "eq-up" : "") + '">' + (level > 0 ? "强化 +" + level : "未强化") + "</span>";
+  const affixCount = Array.isArray(item.affixes) ? item.affixes.length : 0;
+  // 2026-09-27：带词条改装件实例的 enhancementLevel 恒 0，旧写法恒显「未强化」；
+  // 改为按词条数标「已强化×N」
+  const levelHtml = '<span class="' + (level > 0 || affixCount > 0 ? "eq-up" : "") + '">'
+    + (affixCount > 0 ? "已强化×" + affixCount : (level > 0 ? "强化 +" + level : "未强化")) + "</span>";
   const summary = equipmentStatSummary(eq);
   const delta = equipmentStatDelta(eq, curEq);
   const deltaHtml = (delta == null || delta === 0) ? ""
@@ -5306,7 +5321,7 @@ function renderEquipOptionDuo(item, curEq, isRig) {
   const affixRow = (affixes && affixes.length)
     ? '<span class="eq-row3">' + affixes.map(a =>
         "<b>" + String(a && (a.label || a.series) || "词条").replace(/改装件\s*$/, "") + " +"
-        + Math.round((Number(a && a.value) || 0) * 100) + "%</b>"
+        + ((Number(a && a.value) || 0) * 100).toFixed(2) + "%</b>"
         + (a && a.quality ? '<i>' + a.quality + '</i>' : "")).join(' <span class="eq-sep">·</span> ') + "</span>"
     : "";
   return '<button class="equip-option duo' + (fitted ? " is-fitted" : "") + '" data-equip="' + item.ids[0] + '">' +
@@ -5340,8 +5355,10 @@ function openOrbitSelect(index) {
         : '<div class="equip-option-hint empty-hint">仓库中没有可安装的改装件</div>');
     } else if (slot.enabled && !slot.equipmentId && slot.lockedBy) {
       // 外接大型精炼泵管路接口：只读说明（fitted 值为 null，由泵实例 reserves 锁定）
-      const pumpInst = (state.equipment && Array.isArray(state.equipment.instances))
-        ? state.equipment.instances.find(inst => inst && inst.instanceId === slot.lockedBy) : null;
+      // ⚠ 本文件无全局 state（曾在此裸用 ⇒ 点击管路接口即 ReferenceError「state is not defined」），
+      //   与同函数上方 getShipFittingDisplayState(gameState, …) 一致，取模块级 gameState。
+      const pumpInst = (gameState && gameState.equipment && Array.isArray(gameState.equipment.instances))
+        ? gameState.equipment.instances.find(inst => inst && inst.instanceId === slot.lockedBy) : null;
       const pumpName = (pumpInst && EQUIPMENT_DB[pumpInst.itemId] && EQUIPMENT_DB[pumpInst.itemId].name) || "外接大型精炼泵";
       options.innerHTML = currentBar +
         '<div class="pump-locked-hint">🔗 本格为<b>管路接口</b>，被 ' + pumpName + "（" + slot.lockedBy + "）锁定。<br>卸下对应精炼泵后自动释放，fitted 值保持 null。</div>";
@@ -5364,8 +5381,18 @@ function updateOrbitLibrary() {
     const definition = EQUIPMENT_DB[item.id];
     const isRig = definition && definition.slot === "rig";
     const level = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
-    const levelText = isRig ? "" : (level > 0 ? `· +${level}` : "· 未强化");
-    return `<span class="el-item">${item.icon} ${item.name} <span class="el-enhancement-level">${levelText}</span></span>`;
+    // 2026-09-27：已装的强化改装件必须与裸件有区分——selectors equipped[] 已透传
+    // affixes/affixCount（UI 禁反查 state），词条明细放 title（桌面 hover / 拆卸前可查）。
+    const affixes = Array.isArray(item.affixes) ? item.affixes : null;
+    const affixCount = affixes ? affixes.length : 0;
+    const pct2 = v => ((Number(v) || 0) * 100).toFixed(2) + "%";
+    const affixTitle = affixCount
+      ? " 词条：" + affixes.map(a => String(a && (a.label || a.series) || "词条").replace(/改装件\s*$/, "") + " " + (a.quality || "") + " +" + pct2(a.value)).join("；")
+      : "";
+    const levelText = isRig
+      ? (affixCount ? `· 已强化×${affixCount}` : "")
+      : (level > 0 ? `· +${level}` : "· 未强化");
+    return `<span class="el-item${affixCount ? " el-rig-enhanced" : ""}"${affixTitle ? ` title="${affixTitle}"` : ""}>${item.icon} ${item.name} <span class="el-enhancement-level${affixCount ? " eq-up" : ""}">${levelText}</span></span>`;
   });
   // 泰坦内置装备（末日武器/核心）不在 fitting 表内 ⇒ equipmentRef 恒空、equipped 恒空，
   // 必须单列，否则整块「已装配装备」误显「暂无装备」。条目形状见 selectors.getShipBuiltinEquipment

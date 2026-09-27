@@ -157,6 +157,15 @@
     if (typeof rigEnh.attempts !== "number" || !isFinite(rigEnh.attempts) || rigEnh.attempts < 0) rigEnh.attempts = 0;
     if (typeof rigEnh.success !== "number" || !isFinite(rigEnh.success) || rigEnh.success < 0) rigEnh.success = 0;
     if (rigEnh.success > rigEnh.attempts) rigEnh.success = rigEnh.attempts;
+    // 覆写/放入待定词条（两段式：尝试成功 → 玩家选「覆盖词条1/2 · 放入空槽 · 放弃」）。
+    // 旧档防御式补齐；存引擎而非 UI 变量，刷新/重登不丢。
+    if (!("pending" in rigEnh) || rigEnh.pending === undefined) rigEnh.pending = null;
+    if (rigEnh.pending !== null && (typeof rigEnh.pending !== "object" || Array.isArray(rigEnh.pending))) rigEnh.pending = null;
+    if (rigEnh.pending) {
+      const p = rigEnh.pending;
+      if (!p.itemId || !p.affix || (p.targetKind !== "instance" && p.targetKind !== "inventory")) rigEnh.pending = null;
+      else if (p.targetKind === "instance" && !p.instanceId) rigEnh.pending = null;
+    }
     // 资源池（matrix）由 persistence 的池迁移负责；这里只保证读取安全
     return inv;
   }
@@ -564,10 +573,14 @@
     const tier = rigTierOf(itemId);
     if (tier < 1) return { ok: false, reason: "NOT_RIG" };
 
-    // 已有词条数（实例携带；裸件恒为 0）
+    // 两段式：上一次尝试的待定词条必须先处置（覆盖/放入/放弃），才能开下一次尝试
+    const inv0 = ensureState(state);
+    if (inv0 && inv0.rigEnhance && inv0.rigEnhance.pending) return { ok: false, reason: "PENDING_EXISTS" };
+
+    // 已有词条数（实例携带；裸件恒为 0）。满槽不再拒绝 —— 满槽件走「覆写」语义：
+    // 尝试成功后由玩家选覆盖哪个槽位（或放弃），旧 AFFIX_FULL 硬拒已移除（2026-09-26 用户定案）。
     const existing = target.kind === "instance" && Array.isArray(target.instance.affixes)
       ? target.instance.affixes.slice() : [];
-    if (existing.length >= RIG_AFFIX_MAX) return { ok: false, reason: "AFFIX_FULL" };
 
     // 门槛：与制造同口径（造不出来的档位不能强化）
     const gate = RIG_TIER_GATES[tier - 1];
@@ -577,10 +590,11 @@
     if (typeof ResourceRegistry === "undefined" || !ResourceRegistry || typeof ResourceRegistry.get !== "function") {
       return { ok: false, reason: "NO_RESISTRY" };
     }
-    if (Number(ResourceRegistry.get(state, ISK_ID)) < cost.isk) return { ok: false, reason: "NO_ISK", need: cost.isk };
-    if (Number(ResourceRegistry.get(state, MATRIX_ID)) < cost.matrix) return { ok: false, reason: "NO_MATRIX", need: cost.matrix };
+    // 资源不足的 fail 返回也带 cost：面板在禁用态仍能回显「需要多少 / 还差多少」（纯增量字段，无行为变更）
+    if (Number(ResourceRegistry.get(state, ISK_ID)) < cost.isk) return { ok: false, reason: "NO_ISK", need: cost.isk, cost: cost };
+    if (Number(ResourceRegistry.get(state, MATRIX_ID)) < cost.matrix) return { ok: false, reason: "NO_MATRIX", need: cost.matrix, cost: cost };
     if (Number(ResourceRegistry.get(state, cost.calibrationRef)) < cost.calibrationQty) {
-      return { ok: false, reason: "NO_CALIBRATION", need: cost.calibrationQty };
+      return { ok: false, reason: "NO_CALIBRATION", need: cost.calibrationQty, cost: cost };
     }
     return {
       ok: true, target: target, itemId: itemId, tier: tier,
@@ -597,7 +611,7 @@
   function enhanceRig(state, opts) {
     const o = opts || {};
     const check = checkRigEnhance(state, o);
-    if (!check.ok) return { ok: false, reason: check.reason, gate: check.gate, need: check.need, success: false, affixes: [] };
+    if (!check.ok) return { ok: false, reason: check.reason, gate: check.gate, need: check.need, cost: check.cost, success: false, affixes: [] };
     const { target, itemId, tier, existing, cost } = check;
 
     // ① 扣费（先于掷骰）
@@ -651,9 +665,13 @@
       picked = seriesDef[Math.max(0, Math.min(seriesDef.length - 1, idx))].series;
     }
     const def = seriesDef.find(item => item.series === picked) || seriesDef[0];
-    // 词条强度：优良 = 基础改装件值 × 1/3（用户指定），普通/卓越按原 3:5:8 比例取 1/5、8/15；
-    // 基准取「被强化改装件自身的 bonuses 首值」，故高档改装件天然给出更大的词条（修复低档 ROI 反超高档）。
-    // 旧固定值 [0.03,0.05,0.08] 仅作兜底（rig 模板缺失时）。
+    // 词条强度（2026-09-27 用户定案口径）：普通/优良/卓越 = 3% / 5% / 8%（RIG_ENHANCE_AFFIX_VALUES），
+    // 以「载体系列自己的 T5 基础值」归一：affixValue = baseBonus × (DESIGN[q] / seriesMax)。
+    // ⇒ 每个系列的 T5 载体精确产出 3/5/8；低档载体按 baseBonus/seriesMax 递减（保留档位梯度、防低档 ROI 反超）。
+    // 战斗/工业/神经训练系列 seriesMax=0.15 ⇒ 分数与旧 [1/5,1/3,8/15] 完全一致（零变动）。
+    // 修复：考古 3 系列（seriesMax=0.20）旧公式卓越 10.67%（超设计 ×1.33）；电容回充（0.10）卓越 5.33%（偏弱）。
+    // 同时消灭载体套利：同一词条系列在任意 T5 载体上恒 3/5/8（旧实现速掘词条从速掘 V 出 10.67%、
+    // 从神经训练 V 出 8.00%，玩家可挑载体刷词条）。
     const rigDef = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) ? EQUIPMENT_DB[itemId] : null;
     // 品质概率（2026-09-26 用户定案）：初始 50/30/20，装工 Lv0→100 线性偏移至 30/40/30
     // （优良+卓越随装工上升、普通下降，Lv100 达满偏移；总和恒为 1）。
@@ -664,9 +682,11 @@
     const qRoll = draw();
     const valueIdx = qRoll < qCommon ? 0 : (qRoll < qCommon + qFine ? 1 : 2);
     const baseBonus = (rigDef && rigDef.bonuses) ? Number(Object.values(rigDef.bonuses)[0]) : null;
-    const AFFIX_FRACTIONS = [1 / 5, 1 / 3, 8 / 15]; // 普通 / 优良 / 卓越（保持 3:5:8）
-    const frac = AFFIX_FRACTIONS[valueIdx] != null ? AFFIX_FRACTIONS[valueIdx] : 1 / 3;
-    const affixValue = baseBonus != null ? baseBonus * frac : RIG_ENHANCE_AFFIX_VALUES[valueIdx];
+    const seriesT5Def = (rigDef && rigDef.stackGroup && EQUIPMENT_DB && EQUIPMENT_DB[rigDef.stackGroup + "_v"]) || null;
+    const seriesMax = (seriesT5Def && seriesT5Def.bonuses) ? Number(Object.values(seriesT5Def.bonuses)[0]) : null;
+    const affixValue = (baseBonus != null && seriesMax > 0)
+      ? baseBonus * (RIG_ENHANCE_AFFIX_VALUES[valueIdx] / seriesMax)
+      : RIG_ENHANCE_AFFIX_VALUES[valueIdx];
     const affix = {
       series: def.series,
       label: def.label,
@@ -676,41 +696,100 @@
     };
     const affixes = existing.concat([affix]);
 
-    // ④ 建新实例（目标销毁；与装备强化的「强化后新增实例」同形态）
-    if (typeof allocateEquipmentInstanceId === "function") {
-      newInstanceId = allocateEquipmentInstanceId(state);
-    } else {
-      const poolSize = ((state.equipment && state.equipment.instances) ? state.equipment.instances.length : 0) + 1;
-      newInstanceId = "inst_" + poolSize + "_" + Date.now();
-    }
-    const newInstance = { instanceId: newInstanceId, itemId: itemId, enhancementLevel: 0, installedOn: null, affixes: affixes };
-    if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
-    state.equipment.instances.push(newInstance);
+    // ④ 两段式（2026-09-26 用户定案）：成功后【不】立即建实例/销毁目标，而是把新词条暂存为
+    //    待定（pending），由玩家选择「覆盖词条1 / 覆盖词条2 / 放入空槽 / 放弃」后再落地。
+    //    目标件在落地前保持原样（裸件留在仓库、实例保持原词条），失败与放弃都不损件。
+    invStat.rigEnhance.pending = {
+      targetKind: target.kind,                    // "instance" | "inventory"
+      instanceId: target.kind === "instance" ? String(target.instance.instanceId) : null,
+      itemId: itemId, tier: tier, affix: affix,
+      chance: check.chance, cost: cost
+    };
 
-    if (target.kind === "inventory") {
-      state.equipment.inventory.splice(target.index, 1);
-    } else {
-      const pos = state.equipment.instances.indexOf(target.instance);
-      if (pos >= 0) state.equipment.instances.splice(pos, 1);
-    }
-
-    // ⑤ 成功给发明经验（与 ME/TE 同源公式，强度随档位门槛走）
+    // ⑤ 成功给发明经验（与 ME/TE 同源公式，强度随档位门槛走）—— 尝试成功即给，与落地无关
     if (typeof addSkillXpToState === "function") {
       addSkillXpToState(state, SKILL_KEY, Math.ceil(0.4 * Math.pow(1.1, RIG_TIER_GATES[tier - 1])),
         { job: SKILL_KEY, offline: false, source: "rig-enhance" });
     }
     state._dirty = true;
+    return {
+      ok: true, success: true, pending: true, affixes: affixes, affix: affix,
+      itemId: itemId, instanceId: null, cost: cost, roll: roll
+    };
+  }
+
+  /* 待定词条读取（防御式拷贝；无 pending 返回 null） */
+  function getPendingRigEnhance(state) {
+    const inv = ensureState(state);
+    const p = (inv && inv.rigEnhance) ? inv.rigEnhance.pending : null;
+    return p ? JSON.parse(JSON.stringify(p)) : null;
+  }
+
+  /* 待定词条落地：slot = 0|1 覆盖对应词条槽；"append" 放入空槽；null/"discard" 放弃（新词条丢弃，资源不退）。
+     真正建新实例/销毁旧目标/发 invention:rigEnhanced 事件都在这里（尝试时只扣费与暂存）。 */
+  function placeRigEnhance(state, slot) {
+    const inv = ensureState(state);
+    const pending = (inv && inv.rigEnhance) ? inv.rigEnhance.pending : null;
+    if (!pending) return { ok: false, reason: "NO_PENDING", success: false, affixes: [] };
+
+    // 放弃：清 pending 即可，目标件原样保留
+    if (slot === null || slot === "discard") {
+      inv.rigEnhance.pending = null;
+      state._dirty = true;
+      return { ok: true, placed: false, discarded: true, itemId: pending.itemId };
+    }
+
+    // 解析目标件（裸件须仍在仓库；实例须仍游离）
+    let existing = null;
+    if (pending.targetKind === "inventory") {
+      const idx = Array.isArray(state.equipment.inventory) ? state.equipment.inventory.indexOf(pending.itemId) : -1;
+      if (idx < 0) return { ok: false, reason: "NOT_OWNED", success: false, affixes: [] };
+      existing = [];
+    } else {
+      const inst = (Array.isArray(state.equipment.instances) ? state.equipment.instances : [])
+        .find(item => item && String(item.instanceId) === String(pending.instanceId));
+      if (!inst) return { ok: false, reason: "INSTANCE_NOT_FOUND", success: false, affixes: [] };
+      if (inst.installedOn) return { ok: false, reason: "INSTANCE_INSTALLED", success: false, affixes: [] };
+      existing = Array.isArray(inst.affixes) ? inst.affixes.slice() : [];
+    }
+
+    // 组装最终词条
+    let finalAffixes = null;
+    if (slot === "append") {
+      if (existing.length >= RIG_AFFIX_MAX) return { ok: false, reason: "AFFIX_FULL", success: false, affixes: existing };
+      finalAffixes = existing.concat([pending.affix]);
+    } else {
+      const s = Math.floor(Number(slot));
+      if (!(s === 0 || s === 1) || existing.length < s + 1) return { ok: false, reason: "BAD_SLOT", success: false, affixes: existing };
+      finalAffixes = existing.slice();
+      finalAffixes[s] = pending.affix;
+    }
+
+    // 建新实例 + 销毁旧目标（与既有「强化后新增实例」同形态）
+    let newInstanceId = (typeof allocateEquipmentInstanceId === "function")
+      ? allocateEquipmentInstanceId(state)
+      : "inst_" + (((state.equipment && state.equipment.instances) ? state.equipment.instances.length : 0) + 1) + "_" + Date.now();
+    const newInstance = { instanceId: newInstanceId, itemId: pending.itemId, enhancementLevel: 0, installedOn: null, affixes: finalAffixes };
+    if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
+    state.equipment.instances.push(newInstance);
+    if (pending.targetKind === "inventory") {
+      const idx = state.equipment.inventory.indexOf(pending.itemId);
+      if (idx >= 0) state.equipment.inventory.splice(idx, 1);
+    } else {
+      const pos = state.equipment.instances.findIndex(item => item && String(item.instanceId) === String(pending.instanceId));
+      if (pos >= 0) state.equipment.instances.splice(pos, 1);
+    }
+    inv.rigEnhance.pending = null;
+    state._dirty = true;
     if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.emit === "function") {
+      const cost = pending.cost || {};
       GameEvents.emit("invention:rigEnhanced", {
-        itemId: itemId, tier: tier, instanceId: newInstanceId,
-        affix: affix, affixes: affixes, chance: check.chance,
+        itemId: pending.itemId, tier: pending.tier, instanceId: newInstanceId,
+        affix: pending.affix, affixes: finalAffixes, chance: pending.chance,
         isk: cost.isk, matrix: cost.matrix, calibrationRef: cost.calibrationRef, calibrationQty: cost.calibrationQty
       }, { offline: false });
     }
-    return {
-      ok: true, success: true, affixes: affixes, affix: affix,
-      itemId: itemId, instanceId: newInstanceId, cost: cost, roll: roll
-    };
+    return { ok: true, placed: true, slot: slot, instanceId: newInstanceId, affixes: finalAffixes, affix: pending.affix, itemId: pending.itemId };
   }
 
   /* ---------------------------------------------------------------
@@ -992,6 +1071,8 @@
     rigEnhanceSuccessChance, rigEnhanceFocusChance, rigEnhanceCost, rigEnhanceStats,
     rigEnhanceQualityWeights,
     checkRigEnhance, enhanceRig,
+    // 两段式覆写：尝试成功 → getPendingRigEnhance 预览 → placeRigEnhance(0|1|"append"|null) 落地
+    getPendingRigEnhance, placeRigEnhance,
     // ⚠️ 以下为已退役的 lab 自有槽位引擎（接主队列后不再被驱动）：保留兼容旧存档与历史探针，
     //    新代码禁止调用；蓝图发明的进度真值现在是 state.queue.items + currentAction.progress。
     processUntil, enqueueJob, cancelJob, cancelQueueItem,

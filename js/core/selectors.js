@@ -2078,8 +2078,8 @@ function getBoosterManufacturingDisplayState(state, now) {
         category:item.category,
         quantity:qty,
         durationSeconds:Math.round((item.durationMs || BOOSTER_DURATION_MS) / 1000),
-         effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, item.levelGateBonus) : "",
-         levelGateBonus:Math.max(0, Number(item.levelGateBonus) || 0)
+         effectText:(typeof describeBoosterEffect === "function") ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, item.levelGate) : "",
+         levelGateBonus:Math.max(0, Number(item.levelGate) || 0)
       };
     })
     .filter(Boolean)
@@ -3944,7 +3944,10 @@ function getEquipmentEnhancementListDisplayState(state) {
         totalCount: 1,
         multiplier: 1, bonusPercent: 0, previewMultiplier: 1, previewBonusPercent: 0,
         successPercent: 0, successBreakdown: null, isMilestone: false,
-        costRows: [], extraRows: [], canEnhance: false, targetRef: null,
+        costRows: [], extraRows: [], canEnhance: false,
+        // 2026-09-27：拆解/丢弃按钮依赖 targetRef 定位（弹窗 data-dismantle-target），
+        // 写死 null 会让强化改装件拆解报「装备不存在」；指向实例引用，动作层已支持。
+        targetRef: inst.instanceId,
         installedShips: inst.installedOn ? (() => {
           const ship = getShipInstanceFromState(state, inst.installedOn);
           return [ship ? (getShipConfigById(ship.shipId) ? getShipConfigById(ship.shipId).name : inst.installedOn) : inst.installedOn];
@@ -4607,7 +4610,12 @@ function stackEquipmentCandidates(candidates) {
     const level = Number(item.enhancementLevel) || 0;
     // 2026-09-26：强化改装件（带词条实例）与其裸件 itemId 相同，必须分开堆叠，
     // 否则 count 会虚增、且 UI 取 ids[0] 可能装到裸件而非玩家点的强化件。
-    const key = itemId + "|" + level + (item.isInstance ? "|inst" : "");
+    // 2026-09-27：带词条实例【每件单独一卡】（key 掺 instanceId）——所有词条实例的
+    // enhancementLevel 恒 0，旧 key 下同 itemId 的多个不同词条实例会被并成一张卡
+    // （count 虚增、affixes 只剩第一件的、ids[0] 只能装到第一件）。对齐改装件仓库 v2 约定。
+    // 无词条实例与裸件仍按 itemId 聚合。普通（非 rig）实例无 affixes 字段 ⇒ 行为零变化。
+    const key = itemId + "|" + level + (item.isInstance ? "|inst" : "")
+      + (item.isInstance && (item.affixCount || 0) > 0 ? "|" + item.id : "");
     const group = groups.get(key);
     if (group) {
       group.count += 1;

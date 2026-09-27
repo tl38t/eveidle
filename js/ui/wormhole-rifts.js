@@ -115,7 +115,11 @@
     const ov = parts.doc.createElement("canvas");
     ov.id = "wh-rift-overlay";
     ov.width = 1000; ov.height = 700;
-    ov.style.cssText = "position:absolute;left:0;top:0;pointer-events:none;z-index:1";
+    // 2026-09-27（客户反馈「虫洞怎么跑着去了」）：叠加层必须与星图画布同尺寸显示。
+    // 星图 .map 是 width:100% 缩放显示（窄窗口 ≈0.45×），叠加层若不写 CSS 宽高，
+    // 会按属性 1000×700 的 1:1 CSS 像素渲染 ⇒ 裂隙被画到距银河中心 ~2.2 倍远（落到银河盘外），
+    // 且点击命中（按星图坐标映射）随之错位。width/height:100% 与 .map 同矩（vp 恰好包裹 map）。
+    ov.style.cssText = "position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none;z-index:1";
     parts.vp.appendChild(ov);
     ctxRef = { doc: parts.doc, win: parts.win, cv: parts.cv, vp: parts.vp, ov: ov, o: ov.getContext("2d") };
 

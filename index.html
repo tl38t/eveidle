@@ -869,6 +869,7 @@
       #blueprint-lab-panel .bl-acts button:hover{background:linear-gradient(180deg,#2a6b9e,#1d4e78)}
       #blueprint-lab-panel .bl-acts button.ghost{border-color:var(--line2);background:#101a26;color:var(--mut);font-weight:600}
       #blueprint-lab-panel .bl-acts button.ghost:hover{background:#16222f;color:var(--txt2)}
+      #blueprint-lab-panel .bl-acts button:disabled{opacity:.4;cursor:not-allowed}
       #blueprint-lab-panel .bl-toast{margin-top:10px;padding:8px 11px;border:1px solid #2a5f3d;border-radius:6px;background:#0f2a1c;color:#7fe0a0;font-size:12px;opacity:0;transition:.2s;min-height:0}
       #blueprint-lab-panel .bl-toast.on{opacity:1}
       #blueprint-lab-panel .bl-toast.warn{border-color:#614c28;background:#2a2113;color:#e2c37b}
@@ -1059,6 +1060,7 @@
                 <button id="bl-enc-go" type="button">执行一次强化</button>
                 <button class="ghost" type="button" id="bl-enc-clear">清空选择</button>
               </div>
+              <div id="bl-enc-pending"></div>
               <div class="bl-toast" id="bl-enc-result"></div>
               <div class="bl-note">强化即时结算，离线期间不进行强化</div>
             </div>
@@ -1402,6 +1404,58 @@
   }
   // 词条名 = 系列名（如「采矿速度改装件」）。显示时剥掉尾部「改装件」，避免出现「采矿速度改装件 +8%」的重复读感。
   const encAffixName = raw => String(raw || "").replace(/改装件\s*$/, "").trim() || String(raw || "");
+  // 词条百分比唯一出口：保留两位小数。此前 7 处各自 Math.round(v*100) 取整，
+  // 同一词条在弹窗头部(+1.67%)与「新词条」行(+2%)显示不一致（2026-09-26 线上反馈）。
+  const encPct = v => ((Math.round((Number(v) || 0) * 10000) / 100).toFixed(2)) + "%";
+  // 两段式覆写（2026-09-26 用户定案）：尝试成功 → 预览新词条 → 玩家选「覆盖词条1 / 覆盖词条2 / 放入空槽 / 放弃」。
+  // 真正建实例/销毁旧目标都在引擎 placeRigEnhance；这里只透传选择，绝不手写 mock 路径。
+  function encPlace(slotRaw) {
+    const g = gs();
+    if (!INV || !g) return;
+    const slot = slotRaw === "append" ? "append" : (slotRaw === "discard" ? "discard" : Number(slotRaw));
+    const r = INV.placeRigEnhance(g, slot);
+    const box = $("bl-enc-result");
+    // .bl-toast 默认 opacity:0，必须加 .on 才可见（此前落地反馈「已放入空槽…」同样隐形）
+    const say = (text, bad) => { if (box) { box.textContent = text; box.className = "bl-toast on" + (bad ? " warn" : ""); box.style.color = bad ? "var(--red)" : "var(--green)"; } };
+    if (!r || !r.ok) {
+      const msg = { NO_PENDING: "无待处理词条", NOT_OWNED: "该改装件已不在仓库", INSTANCE_NOT_FOUND: "该改装件已不存在",
+        INSTANCE_INSTALLED: "该件已安装，先卸下再覆写", AFFIX_FULL: "词条槽已满", BAD_SLOT: "无效词条槽" }[r && r.reason] || "无法落地";
+      say("✖ " + msg, true); toast(msg, true); renderEnc(); return;
+    }
+    const modal = document.getElementById("enc-result-modal");
+    if (modal) modal.style.display = "none";
+    if (r.discarded) {
+      say("已放弃本次词条（资源不退，原件原词条保留）", true); toast("已放弃本次词条", true);
+    } else {
+      const a = r.affix || {};
+      const verb = r.slot === "append" ? "已放入空槽" : "已覆盖词条" + (Number(r.slot) + 1);
+      say("✅ " + verb + "：" + encAffixName(a.label || a.series) + " · " + (a.quality || "") + " +" + encPct(a.value), false);
+      toast("改装件词条" + (r.slot === "append" ? "已入槽" : "已覆盖"));
+      if (r.instanceId) ENC.sel = "inst:" + r.instanceId;
+    }
+    renderEnc();
+  }
+  // 待定词条控件（预览新词条 + 去处按钮）；existing 来自目标件当前词条（落地前原样保留）
+  function encPendingHtml(pending) {
+    const a = pending.affix || {};
+    const t = encTargets().find(x => (pending.targetKind === "instance"
+      ? x.key === "inst:" + pending.instanceId : x.key === "inv:" + pending.itemId));
+    const exist = (t && t.affixes) || [];
+    const chip = encAffixName(a.label || a.series) + " · " + (a.quality || "")
+      + " +" + encPct(a.value);
+    let btns = "";
+    exist.forEach((x, i) => {
+      btns += '<button class="btn" type="button" data-enc-place="' + i + '" style="margin:4px">覆盖词条' + (i + 1)
+        + "（" + encAffixName(x.label || x.series) + " +" + encPct(x.value) + "）</button>";
+    });
+    if (exist.length < RIG_AFFIX_MAX_LOCAL) {
+      btns += '<button class="btn btn-primary" type="button" data-enc-place="append" style="margin:4px">放入空槽（词条' + (exist.length + 1) + "）</button>";
+    }
+    btns += '<button class="btn" type="button" data-enc-place="discard" style="margin:4px">放弃本次（资源不退）</button>';
+    return '<div style="margin:6px 0 2px">本次强化成功，新词条：<b>' + chip + "</b></div>"
+      + '<div style="color:#8fa0b4;font-size:12px;margin-bottom:4px">请选择新词条去处（原件在落地前保持原样）：</div>'
+      + '<div style="display:flex;flex-wrap:wrap">' + btns + "</div>";
+  }
   // 可选目标 = 仓库裸改装件 + 未安装且未满词条槽的强化实例
   function encTargets() {
     const g = gs();
@@ -1450,12 +1504,28 @@
       ["bl-enc-focusrate", "bl-enc-gate", "bl-enc-owned", "bl-enc-tier", "bl-enc-stat", "bl-enc-quality"].forEach(id => { const el = $(id); if (el) el.textContent = "—"; });
       ["bl-enc-slots", "bl-enc-costs"].forEach(id => { const el = $(id); if (el) el.innerHTML = ""; });
       ["bl-enc-cost-calib", "bl-enc-cost-matrix", "bl-enc-cost-isk", "bl-enc-rate"].forEach(id => { const el = $(id); if (el) el.textContent = "—"; });
-      if ($("bl-enc-result")) $("bl-enc-result").textContent = "";
+      if ($("bl-enc-result")) { $("bl-enc-result").textContent = ""; $("bl-enc-result").className = "bl-toast"; }
+      if ($("bl-enc-pending")) $("bl-enc-pending").innerHTML = "";
       return;
     }
     // S9：bl-enc-focus 必须一并启用——内联脚本先于 defer 模块执行，首帧 renderEnc 必然 !ready
     // 而把焦点下拉 disable；此后若不在 ready 分支解禁，焦点下拉将永久不可选（线上 bug：无法选择强化焦点）。
     ["bl-enc-rig", "bl-enc-focus", "bl-enc-go", "bl-enc-clear"].forEach(id => { const el = $(id); if (el) el.disabled = false; });
+
+    // 两段式覆写：有待定词条时展示去处选择，并阻断新尝试（引擎侧 PENDING_EXISTS 双保险）。
+    // 🔴 修复（2026-09-27）：待定条此前写进 .bl-toast#bl-enc-result——该类默认 opacity:0、
+    // 只有 .on 才可见，而全代码无人给它加 .on ⇒ 待定条永久隐形 ⇒ PENDING_EXISTS 死锁
+    // （按钮禁用 + 「先处置上方待定词条」但上方什么都不显示，点哪都没反应）。
+    // 改渲染进专用常显容器 bl-enc-pending。
+    const pendingP = (INV.getPendingRigEnhance) ? INV.getPendingRigEnhance(g) : null;
+    const boxPending = $("bl-enc-pending");
+    if (boxPending) {
+      boxPending.innerHTML = pendingP ? encPendingHtml(pendingP) : "";
+      if (pendingP) boxPending.style.color = "";
+    }
+    if (pendingP) {
+      const goP = $("bl-enc-go"); if (goP) goP.disabled = true;
+    }
 
     // 文本/HTML 辅助（必须在首次使用（下方统计行）之前声明，避免 const TDZ 导致 renderEnc 抛错、下拉无法填充）
     const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
@@ -1513,9 +1583,9 @@
         for (const t of groups[tier]) {
           const gate = ENC_GATE[tier - 1];
           const lock = eng < gate ? " · 需装备工程Lv" + gate : "";
-          const full = t.full ? " · 已满槽" : "";
+          const full = t.full ? " · 已满槽（可覆写）" : "";
           const aff = t.affixes.length
-            ? " · 已强化×" + t.affixes.length + "(" + t.affixes.map(a => (a.quality || "") + " " + Math.round((Number(a.value) || 0) * 100) + "%").join("、") + ")" + full
+            ? " · 已强化×" + t.affixes.length + "(" + t.affixes.map(a => (a.quality || "") + " " + encPct(a.value)).join("、") + ")" + full
             : "";
           html += '<option value="' + t.key + '"' + (t.key === ENC.sel ? " selected" : "") + ">"
             + encEqName(t.kind === "instance" ? t.refId : t.id) + " · T" + tier + aff + lock + "</option>";
@@ -1544,7 +1614,7 @@
     for (let i = 0; i < 2; i++) {
       const a = cur.affixes[i];
       slots += a
-        ? '<div class="bl-slot on"><b>' + encAffixName(a.label || a.series) + " +" + Math.round((Number(a.value) || 0) * 100) + "%</b>"
+        ? '<div class="bl-slot on"><b>' + encAffixName(a.label || a.series) + " +" + encPct(a.value) + "</b>"
           + (a.quality ? a.quality + " · " : "") + "槽位 " + (i + 1) + " · 已强化</div>"
         : '<div class="bl-slot">槽位 ' + (i + 1) + " · 未强化</div>";
     }
@@ -1558,13 +1628,30 @@
         : { itemId: cur.id, focus: ENC.focus });
     } catch (_) {}
     const go = $("bl-enc-go");
-    if (go) go.disabled = !check || !check.ok;
+    // 按钮「可点但点了给 toast 反馈」：引擎侧拒绝（资源不足等）不再静默禁用——
+    // 禁用态无视觉差异，玩家点击零反馈误以为面板坏了（2026-09-26 线上反馈）。
+    // 仅在「无 check 结果」或「有待定词条未处置」时禁用（前者无处可点，后者已在结果框给出处置入口）。
+    if (go) go.disabled = !check || Boolean(pendingP);
     if (!check || !check.ok) {
-      setText("bl-enc-cost-calib", "—"); setText("bl-enc-cost-matrix", "—"); setText("bl-enc-cost-isk", "—");
+      setText("bl-enc-cost-calib", check && check.cost ? "T" + cur.tier + " ×" + check.cost.calibrationQty : "—");
+      setText("bl-enc-cost-matrix", check && check.cost ? "×" + check.cost.matrix : "—");
+      setText("bl-enc-cost-isk", check && check.cost ? fmt(check.cost.isk) + " ISK" : "—");
       setText("bl-enc-rate", { NOT_OWNED: "未持有该改装件", NOT_RIG: "非改装件", AFFIX_FULL: "词条槽已满",
         LEVEL_GATE: "装备工程等级不足", NO_ISK: "星币不足", NO_MATRIX: "解析矩阵不足",
-        NO_CALIBRATION: "校准基体不足", INSTANCE_INSTALLED: "该件已安装" }[check && check.reason] || "不可用");
-      setHTML("bl-enc-costs", "");
+        NO_CALIBRATION: "校准基体不足", INSTANCE_INSTALLED: "该件已安装",
+        PENDING_EXISTS: "先处置上方待定词条" }[check && check.reason] || "不可用");
+      // 资源不足也要把缺口摆出来：⚠ 标记哪一项没够，玩家不再只能盯成功率行的小字
+      if (check && check.cost) {
+        setHTML("bl-enc-costs", [
+          { id: check.cost.calibrationRef, need: check.cost.calibrationQty, have: resCount(check.cost.calibrationRef), label: "校准基体", cls: "mat" },
+          { id: INV.MATRIX_ID, need: check.cost.matrix, have: resCount(INV.MATRIX_ID), label: "解析矩阵", cls: "mat" },
+          { id: INV.ISK_ID, need: check.cost.isk, have: resCount(INV.ISK_ID), label: "星币", cls: "isk" }
+        ].map(f =>
+          '<div class="bl-cost ' + f.cls + '"><i>' + (Number(f.have) < f.need ? "⚠" : "✅") + "</i><span>" + f.label + "</span><b>"
+          + fmt(f.have) + " / " + fmt(f.need) + "</b></div>").join(""));
+      } else {
+        setHTML("bl-enc-costs", "");
+      }
       return;
     }
     setText("bl-enc-cost-calib", "T" + cur.tier + " ×" + check.cost.calibrationQty);
@@ -1597,17 +1684,17 @@
     let body = "";
     if (res.ok) {
       const a = res.affix || {};
+      const pend = (INV && INV.getPendingRigEnhance) ? INV.getPendingRigEnhance(gs()) : null;
       body = '<div class="eem-body">'
         + '<div style="font-size:15px">' + encAffixName(a.label || a.series)
         + ' · <b style="color:' + qColor(a.quality) + '">' + (a.quality || "—") + "</b> · <b style=\"color:var(--green,#9be8a8)\">+"
-        + Math.round((Number(a.value) || 0) * 100 * 100) / 100 + "%</b></div>"
-        + '<div style="color:#8fa0b4;font-size:12px">词条槽 ' + res.slot + " / " + RIG_AFFIX_MAX_LOCAL
-        + (res.full ? " —— 该件词条已满，到舰船装配页安装后生效" : " —— 可继续强化第二词条") + "</div>"
+        + encPct(a.value) + "</b></div>"
+        + (pend ? encPendingHtml(pend) : '<div style="color:#8fa0b4;font-size:12px">待处理词条已失效，请关闭弹窗后重试</div>')
         + "</div>";
     } else {
       const affList = (res.affixes || []).map(a =>
         '<span class="eem-affix-chip q-' + (a.quality || "") + '">' + encAffixName(a.label || a.series) + " · " + (a.quality || "")
-        + " +" + Math.round((Number(a.value) || 0) * 100) + "%</span>").join(" ");
+        + " +" + encPct(a.value) + "</span>").join(" ");
       body = '<div class="eem-body">'
         + '<div style="color:#e0887e;font-size:14px">本次强化未成功，资源已扣除</div>'
         + '<div style="color:#8fa0b4;font-size:12px">已有词条与进度保留，可继续尝试</div>'
@@ -1623,6 +1710,8 @@
       + "</div>";
     backdrop.style.display = "flex";
     backdrop.querySelectorAll("[data-enc-close]").forEach(b => b.addEventListener("click", () => { backdrop.style.display = "none"; }));
+    // 弹窗内的去处按钮（覆盖词条1/2 · 放入空槽 · 放弃）与结果框共用 encPlace
+    backdrop.querySelectorAll("[data-enc-place]").forEach(b => b.addEventListener("click", () => encPlace(b.getAttribute("data-enc-place"))));
   }
 
   function encDo() {
@@ -1634,13 +1723,14 @@
       ? { instanceId: sel.id, focus: ENC.focus }
       : { itemId: sel.id, focus: ENC.focus });
     const box = $("bl-enc-result");
-    function say(text, bad) { if (box) { box.textContent = text; box.style.color = bad ? "var(--red)" : "var(--green)"; } }
+    function say(text, bad) { if (box) { box.textContent = text; box.className = "bl-toast on" + (bad ? " warn" : ""); box.style.color = bad ? "var(--red)" : "var(--green)"; } }
     if (!r || !r.ok) {
       // i18n：基础文案为完整词条；动态数值只做后缀拼接。
       // en/de/ru 用模板键「…：需 Lv{0}」整段锚定翻译；zh-TW 走片段键（字形目录无模板、允许半译）。
       const msg = { NOT_OWNED: "资源不足或该改装件已不可用", NOT_RIG: "非改装件", AFFIX_FULL: "词条槽已满",
         LEVEL_GATE: "装备工程等级不足", NO_ISK: "星币不足",
-        NO_MATRIX: "解析矩阵不足", NO_CALIBRATION: "校准基体不足" }[r && r.reason] || "无法强化";
+        NO_MATRIX: "解析矩阵不足", NO_CALIBRATION: "校准基体不足",
+        PENDING_EXISTS: "先处置上一次的待定词条" }[r && r.reason] || "无法强化";
       const detail = r && r.reason === "LEVEL_GATE" ? "：需 Lv" + r.gate
         : r && r.reason === "NO_ISK" ? "：需 " + fmt(r.need) : "";
       const full = msg + detail;
@@ -1652,28 +1742,30 @@
       encResultModal({ ok: false, affixes: sel.affixes });
     } else {
       const a = r.affix || {};
-      const slotNo = sel.affixes.length + 1;
-      say("✅ 强化成功：" + encAffixName(a.label || a.series) + " +" + Math.round((Number(a.value) || 0) * 100) + "%（" + (a.quality || "") + "） · 已入背包 / 装配页可查看", false);
+      say("✅ 强化成功：请在下方选择新词条去处（覆盖词条1 / 覆盖词条2 / 放入空槽 / 放弃）", false);
       toast("改装件强化成功");
-      encResultModal({ ok: true, affix: a, slot: slotNo, full: slotNo >= RIG_AFFIX_MAX_LOCAL });
-      // S9：成功后跟随新实例（裸件已被消耗、实例带词条）——面板留在该件属性台上，
-      // 满槽件也保留在目标列表（full 标记），不会因自动重选跳走或清空。
-      if (r.instanceId !== null && r.instanceId !== undefined) ENC.sel = "inst:" + r.instanceId;
+      // 两段式：弹窗展示新词条 + 去处按钮；原件在落地前保持原样，刷新后待定词条不丢（存 state）
+      encResultModal({ ok: true, affix: a, pendingSlotCount: sel.affixes.length });
     }
     renderEnc();
   }
 
   if ($("bl-enc-go")) $("bl-enc-go").addEventListener("click", encDo);
+  // 待定词条去处按钮（renderEnc 把控件渲染进结果框）：委托在结果框上，随 innerHTML 重建不失效
+  if ($("bl-enc-pending")) $("bl-enc-pending").addEventListener("click", e => {
+    const btn = e.target.closest("[data-enc-place]");
+    if (btn) encPlace(btn.getAttribute("data-enc-place"));
+  });
   if ($("bl-enc-clear")) $("bl-enc-clear").addEventListener("click", () => {
     ENC.sel = null; ENC.focus = "";
-    const b = $("bl-enc-result"); if (b) b.textContent = "";
+    const b = $("bl-enc-result"); if (b) { b.textContent = ""; b.className = "bl-toast"; }
     renderEnc();
   });
   const encSelEl = () => $("bl-enc-rig");
   if (encSelEl()) encSelEl().addEventListener("change", () => {
     const v = encSelEl().value;
     ENC.sel = v && v.indexOf("inst:") === 0 ? v : (v.indexOf("inv:") === 0 ? v : null);
-    const b = $("bl-enc-result"); if (b) b.textContent = "";
+    const b = $("bl-enc-result"); if (b) { b.textContent = ""; b.className = "bl-toast"; }
     renderEnc();
   });
   if ($("bl-enc-focus")) $("bl-enc-focus").addEventListener("change", () => {
@@ -2587,7 +2679,7 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=7"></script>
-  <script defer src="./js/data/changelog.js?v=31"></script>
+  <script defer src="./js/data/changelog.js?v=32"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=19"></script>
@@ -2601,7 +2693,7 @@
   <script defer src="./js/core/resources.js?v=7"></script>
   <script defer src="./js/systems/tutorial.js?v=9"></script>
   <script defer src="./js/systems/manufacturing.js?v=10"></script>
-  <script defer src="./js/systems/invention.js?v=8"></script>
+  <script defer src="./js/systems/invention.js?v=11"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=8"></script>
@@ -2623,25 +2715,25 @@
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
   <script defer src="./js/systems/combat.js?v=63"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=130"></script>
+  <script defer src="./js/core/selectors.js?v=133"></script>
   <script defer src="./js/core/actions.js?v=68"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=55"></script>
   <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=156"></script>
+   <script defer src="./js/ui/shell-render.js?v=161"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=15"></script>
    <script defer src="./js/ui/combat-render.js?v=80"></script>
   <script defer src="./js/ui/planetary-render.js?v=4"></script>
   <script defer src="./js/ui/archaeology-render.js?v=17"></script>
-  <script defer src="./js/ui/booster-render.js?v=17"></script>
+  <script defer src="./js/ui/booster-render.js?v=18"></script>
   <script defer src="./js/ui/station-render.js?v=16"></script>
   <script defer src="./js/ui/legion-render.js?v=28"></script>
   <script defer src="./js/ui/legion-events.js?v=16"></script>
   <script defer src="./js/ui/wormhole-render.js?v=33"></script>
-  <script defer src="./js/ui/wormhole-rifts.js?v=4"></script>
+  <script defer src="./js/ui/wormhole-rifts.js?v=5"></script>
   <script defer src="./js/ui/wormhole-map.js?v=30"></script>
    <script defer src="./js/data/alliance-building-config.js?v=2"></script>
    <script defer src="./js/platform/alliance-api.js?v=14"></script>
@@ -2688,7 +2780,7 @@
   <script defer src="./js/ui/changelog-popup.js?v=2"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=14"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>
-<script defer src="./js/ui/render.js?v=39"></script>
+<script defer src="./js/ui/render.js?v=40"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=25"></script>
   <script defer src="./js/qa-seed.js?v=4"></script>
   <div id="hangar-3d-popup">
