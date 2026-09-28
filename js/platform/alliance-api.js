@@ -19,9 +19,24 @@
   // 玩家会永久停在 local_ 设备身份且毫无察觉。此处保留最近一次失败供 UI 展示与重试。
   var identityMergeIssue = null;
   var lastPlatformId = "";
-  // 身份等待窗口：联盟页走完整 8s（40×200ms）；启动预热用短窗口 2s（10×200ms）。
+  // 身份等待窗口：联盟页走完整 8s（40×200ms）。
   var IDENTITY_WAIT_ATTEMPTS = 40;
-  var IDENTITY_WARMUP_ATTEMPTS = 10;
+  // 身份失败冷却（2026-09-28）。taptap-auth 在缺少 ALLIANCE_SESSION_SECRET 时会
+  // 100% 返回 401；失败路径会把 steamSessionPromise 清空，联盟页 initializeWithRetry
+  // 随即以 600ms 间隔重试 3 次，多个并发会话再叠加 ⇒ 单次会话能打出一串同类请求。
+  // 加冷却后「必然失败」只吃掉最少的调用次数。只在失败侧生效，成功不受影响。
+  var IDENTITY_FAILURE_COOLDOWN_MS = 20000;
+  var lastIdentityFailureAt = 0;
+  // 匿名登录并发合并：多个 authed() 同时发现无缓存 token 时，原本会各自发一次
+  // /auth/v1/signin/anonymously（当日 17,098 次匿名登录的主要成因之一）。
+  var tokenRequestPromise = null;
+  // 联盟列表缓存（2026-09-28）。listAlliances() 一次调用 = 1 次列表 + 每个联盟 2 次
+  // （建筑 + 建设点），无缓存时进一次联盟页就要打 165 条数据库请求，而加入 / 退出 /
+  // 升建筑之后 startCloudRefresh 都会整条重跑。加 TTL 缓存后重复调用直接命中，
+  // 不改 limit、不动排序：截断条数和排序属于产品可见行为（2026-09-28 教训）。
+  var ALLIANCE_LIST_LIMIT = 100;
+  var ALLIANCE_LIST_TTL_MS = 30000;
+  var allianceListCache = { at: 0, list: null };
 
   // 设备密钥：128bit 随机十六进制，只存本机、只走云函数转发（绝不进 URL）。
   // 它是设备身份的唯一凭证：签发转移码、兑换转移码、被并入平台身份都要用它自证。
@@ -139,13 +154,13 @@
     return identityMergeIssue;
   }
 
-  // options.maxAttempts：等待 window.tap 注入的轮询次数（每次 200ms）。
-  // 不传 = 40 次（8s，联盟页长等待）；启动预热传 10（2s 短窗口，失败即静默放弃）。
-  function initializeSteamIdentity(options) {
+  // 等待 window.tap 注入的轮询次数（每次 200ms），恒为 40 次（8s 长等待）。
+  // 触发点现在只有联盟页 load()（alliance-render.js:820）—— 2026-09-18 曾加过
+  // 「启动预热」，把触发面摊到每次游戏启动，结果 taptap-auth 日调用量从 0.5 万级
+  // 涨到 2 万级、连带匿名登录放大 74 倍，已于同日移除（见 bootstrap-launch.js launch()）。
+  function initializeSteamIdentity() {
     if (steamSessionPromise) return steamSessionPromise;
-    var maxAttempts = options && typeof options.maxAttempts === "number" && options.maxAttempts > 0
-      ? options.maxAttempts
-      : IDENTITY_WAIT_ATTEMPTS;
+    var maxAttempts = IDENTITY_WAIT_ATTEMPTS;
     var tap = root.tap || (typeof globalThis !== "undefined" && globalThis.tap);
     if (tap && typeof tap.login === "function") return initializeTapTapIdentity(tap);
     var session = root.SteamAllianceSession;
@@ -193,6 +208,14 @@
   // 客户端不保存 secret/session_key。联盟 player_id 使用 taptap_<openid>，
   // 与 SteamID / 本地设备 ID 隔离，云端回传后不会误显示为 Steam 玩家。
   function initializeTapTapIdentity(tap) {
+    // 单例守卫（2026-09-28）：此前这里无条件 new Promise + 调 tap.login()，
+    // 于是 waitForTapTapIdentity 每轮轮询、每个并发会话都会各自取一次 code。
+    // 同一个 tap.login 必须只发生一次，结果由 steamSessionPromise 共享。
+    if (steamSessionPromise) return steamSessionPromise;
+    // 失败冷却：上次整条链路失败后先静默拒绝，别再打服务端。
+    if (Date.now() - lastIdentityFailureAt < IDENTITY_FAILURE_COOLDOWN_MS) {
+      return Promise.reject(new Error("TapTap 身份验证失败，请稍后重试"));
+    }
     steamSessionPromise = new Promise(function (resolve, reject) {
       var settled = false;
       function done(fn, value) { if (settled) return; settled = true; fn(value); }
@@ -213,7 +236,7 @@
         var returned = tap.login({ success: success, fail: function (error) { done(reject, new Error(error && (error.errMsg || error.message) || "TapTap 登录失败")); } });
         if (returned && typeof returned.then === "function") returned.then(success).catch(function (error) { done(reject, error); });
       } catch (error) { done(reject, error); }
-    }).catch(function (error) { steamSessionPromise = null; throw error; });
+    }).catch(function (error) { steamSessionPromise = null; lastIdentityFailureAt = Date.now(); throw error; });
     return steamSessionPromise;
   }
 
@@ -271,11 +294,17 @@
     return {};
   }
 
+  // 匿名登录：整条链路里唯一会写「玩家 state 之外」的请求，也是当日 17,098 次调用的最大来源。
+  // 2026-09-28 起并发合并——同一时刻只允许一个登录请求在飞，其余调用共享其结果。
   function getAccessToken(forceRefresh) {
-    if (forceRefresh) localStorage.removeItem(tokenKey);
+    if (forceRefresh) {
+      localStorage.removeItem(tokenKey);
+      tokenRequestPromise = null;
+    }
+    if (tokenRequestPromise) return tokenRequestPromise;
     var cached = localStorage.getItem(tokenKey);
     if (cached) return Promise.resolve(cached);
-    return request("/auth/v1/signin/anonymously", {
+    var pending = request("/auth/v1/signin/anonymously", {
       method: "POST",
       headers: { "x-device-id": getPlayerId() },
       body: "{}"
@@ -284,6 +313,11 @@
       if (!token) throw new Error("联盟登录未返回访问令牌");
       localStorage.setItem(tokenKey, token);
       return token;
+    });
+    tokenRequestPromise = pending;
+    return pending.then(function (token) { return token; }, function (error) {
+      tokenRequestPromise = null;
+      throw error;
     });
   }
 
@@ -326,8 +360,16 @@
       });
   }
 
+  // 联盟列表：limit 100 → 20，并加 30s 内存缓存（2026-09-28）。
+  // limit 保持 100（线上共 82 个联盟，从不截断）。本函数唯一的优化是 30s TTL 缓存：
+  // 命中时直接返回，不产生任何数据库请求；副作用是连续操作时最多 30s 看到旧建筑等级，
+  // 四个写操作已各自调 invalidateAllianceList() 兜住。返回值只读，调用方
+  // （renderListView）不会改写结构。不要为了省请求把 limit 调小 —— 那会让玩家看不到
+  // 有空位的老联盟，而列表页没有搜索功能。
   function listAlliances() {
-    return authed("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&order=created_at.desc&limit=100")
+    var cached = allianceListCache.list;
+    if (cached && (Date.now() - allianceListCache.at) < ALLIANCE_LIST_TTL_MS) return Promise.resolve(cached);
+    return authed("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&order=created_at.desc&limit=" + ALLIANCE_LIST_LIMIT)
       .then(function (rows) {
         var alliances = (rows || []).map(mapAlliance);
         return Promise.all(alliances.map(function (alliance) {
@@ -341,7 +383,16 @@
             });
           });
         }));
+      })
+      .then(function (list) {
+        allianceListCache = { at: Date.now(), list: list };
+        return list;
       });
+  }
+
+  // 供 UI 主动失效列表缓存（建盟 / 加入 / 退出 / 解散之后必须调用，否则最长 30s 看到旧列表）。
+  function invalidateAllianceList() {
+    allianceListCache = { at: 0, list: null };
   }
 
   function getBuildings(allianceId) {
@@ -436,7 +487,7 @@
         owner_player_id: row.owner_player_id,
         member_count: row.member_count
       });
-    });
+    }).then(function (alliance) { invalidateAllianceList(); return alliance; });
   }
 
   function joinAlliance(allianceId) {
@@ -461,6 +512,7 @@
         body: JSON.stringify({ p_alliance_id: Number(allianceId), p_player_id: getPlayerId() })
       });
     }).then(function () {
+      invalidateAllianceList();
       return getAlliance();
     });
   }
@@ -473,7 +525,7 @@
     return authed("/v1/rdb/rest/rpc/leave_alliance_member", {
       method: "POST",
       body: JSON.stringify({ p_alliance_id: id, p_player_id: getPlayerId() })
-    }).then(function () { return null; });
+    }).then(function () { invalidateAllianceList(); return null; });
   }
 
   // 解散联盟（仅盟主）。服务端 disband_alliance 会二次校验 owner，前端只做提示。
@@ -484,6 +536,7 @@
       method: "POST",
       body: JSON.stringify({ p_alliance_id: id, p_owner_player_id: getPlayerId() })
     }).then(function (rows) {
+      invalidateAllianceList();
       return (rows && rows[0]) || { disbanded_alliance_id: id, removed_members: 0 };
     });
   }
@@ -575,13 +628,13 @@
     initializeSteamIdentity: initializeSteamIdentity,
     retryPlatformIdentity: retryPlatformIdentity,
     getIdentityIssue: getIdentityIssue,
-    IDENTITY_WARMUP_ATTEMPTS: IDENTITY_WARMUP_ATTEMPTS,
     registerDeviceIdentity: registerDeviceIdentity,
     createIdentityCode: createIdentityCode,
     redeemIdentityCode: redeemIdentityCode,
     adminMergeIdentity: adminMergeIdentity,
     getAlliance: getAlliance,
     listAlliances: listAlliances,
+    invalidateAllianceList: invalidateAllianceList,
     getMembers: getMembers,
     getMemberStats: getMemberStats,
     pingOnline: pingOnline,
