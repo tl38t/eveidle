@@ -350,7 +350,11 @@
     return playerId.slice(0, 12) + "…" + playerId.slice(-6);
   }
 
-  function renderIdentityCardHtml(isOwner) {
+  // 身份卡。allianceOwnerId 非空且不等于本机身份 ⇒ 身份跑偏（盟主身份挂在别的
+  // playerId 上）。此前这种状态下管理按钮与「合并成员身份」都因 isOwner 判据被
+  // 静默隐藏，玩家既看不到原因也够不到恢复入口，看上去就像「没有踢人功能」。
+  // 本函数只补可见性与引导，不放宽任何权限（云端仍以 owner_player_id 为准）。
+  function renderIdentityCardHtml(isOwner, allianceOwnerId, allianceId) {
     var api = root.AllianceApi;
     if (!api || typeof api.createIdentityCode !== "function") return "";
     var playerId = api.getPlayerId ? api.getPlayerId() : "";
@@ -359,11 +363,21 @@
     var hint = isDevice
       ? "当前是本机设备身份（未绑定平台账号）。换设备或清理浏览器数据都会产生新身份；在旧设备点「生成转移码」，再到新设备点「使用转移码」，两边就会合成同一个人。"
       : "当前是平台账号身份，换设备后会自动识别为同一个人，无需转移码。";
+    var ownerId = allianceOwnerId || "";
+    var ownerMismatch = !!ownerId && String(ownerId) !== String(playerId);
+    var diagnostics = ownerMismatch
+      ? '<div class="alliance-task-hint" style="color:#e8c07a;">联盟盟主：' + esc(shortIdentity(ownerId)) + ' · ' + esc(identityKindLabel(ownerId)) +
+        ' —— 你的身份与盟主不一致，升级建筑 / 踢出成员 / 转让盟主 / 解散联盟均不可用。</div>'
+      : "";
     return '<div class="alliance-card alliance-identity-card" id="alliance-identity-card" style="margin-top:12px;">' +
       '<div class="alliance-card-title">身份与设备</div>' +
       '<div class="alliance-meta">本机身份：' + esc(shortIdentity(playerId)) + ' · ' + esc(identityKindLabel(playerId)) + '</div>' +
       '<div class="alliance-task-hint">' + esc(hint) + '</div>' +
+      diagnostics +
       '<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;">' +
+      (ownerMismatch && allianceId
+        ? '<button class="btn secondary alliance-identity-adopt" title="在盟主身份所在的那台设备上点「生成转移码」，再把码输入这里。合并成功后你的身份即成为盟主身份，管理按钮随之出现。">并入盟主身份</button>'
+        : '') +
       '<button class="btn secondary alliance-identity-create">生成转移码</button>' +
       '<button class="btn secondary alliance-identity-redeem">使用转移码</button>' +
       (isOwner ? '<button class="btn secondary alliance-identity-merge">合并成员身份</button>' : '') +
@@ -468,6 +482,18 @@
     };
     var redeemButton = box.querySelector(".alliance-identity-redeem");
     if (redeemButton) redeemButton.onclick = function () { showRedeemIdentityOverlay(load); };
+    // 身份跑偏时的恢复入口：把本机身份并入盟主身份（走云端 transfer/redeem 通道，
+    // 合并成功后 owner_player_id 归到本机，管理按钮自动出现）。
+    var adoptButton = box.querySelector(".alliance-identity-adopt");
+    if (adoptButton) {
+      adoptButton.onclick = function () {
+        showAllianceMessage("并入盟主身份",
+          "请在「盟主身份」所在的那台设备上打开联盟面板 →「生成转移码」→ 把码填到这里点「使用转移码」。\n" +
+          "合并后本机会并入该身份，你即可执行踢出成员、转让盟主、升建筑、解散联盟。\n" +
+          "注意：此操作会把你当前身份的贡献记录并入盟主身份，且不可撤销。", "info");
+        showRedeemIdentityOverlay(load);
+      };
+    }
     var mergeButton = box.querySelector(".alliance-identity-merge");
     if (mergeButton && isOwner && allianceId) {
       mergeButton.onclick = function () { showMergeIdentityOverlay(allianceId, load); };
@@ -1167,7 +1193,7 @@
       var identityOwnerId = (identityState && identityState.ownerPlayerId) || returnedOwner || "";
       var identityIsOwner = !!identityOwnerId && String(identityOwnerId) === String(playerId);
       var identityAllianceId = (identityState && identityState.allianceId) || returnedId || "";
-      content.insertAdjacentHTML("beforeend", renderIdentityCardHtml(identityIsOwner));
+      content.insertAdjacentHTML("beforeend", renderIdentityCardHtml(identityIsOwner, identityOwnerId, identityAllianceId));
       bindIdentityActions(content, identityAllianceId, identityIsOwner);
       renderIdentityMergeWarning(content, playerId);
       var taskCard = content.querySelector(".alliance-task-card");

@@ -86,39 +86,55 @@
   function matrixPerCycle(bp) { return INVENTION_MATRIX_PER_TIER * Math.max(1, Math.floor(Number(bp && bp.tier) || 1)); }
 
   /* ---------------------------------------------------------------
-     实验室速度乘区链
+     实验室速度乘区链 —— 唯一真值源 = labSpeedParts()
      🔴 必须用 getStationLogisticsBaseMultiplier（不含 getGameSpeed）：
-        在线 tick 已用 processUntil(..., {scale:getGameSpeed()}) 缩放 elapsed，
-        再用带速度的版本会双倍加速。
+        在线 tick 推进进度用的是 gameDeltaSec（= 真实秒 × getGameSpeed），
+        此处若再乘一次就会双倍加速。
+     🔴 脑突触（广告 buff ×1.30）2026-09-28 纳入：cycleSeconds 是在线 / 离线 / 队列三处
+        共用的唯一周期公式，故在乘区链里加一项即三处同时生效，结算侧无需改动。
      --------------------------------------------------------------- */
 
-  function labSpeed(state) {
+  function labSpeedParts(state) {
+    const parts = [];
     let mult = 1;
+    // skipWhenOne：纯可选乘区（脑插 / 增强剂 / 军团 / 脑突触）值为 1 时不登记，避免明细里堆 ×1.00 噪音行。
+    const push = (label, raw, note, skipWhenOne) => {
+      const v = Math.max(0.001, Number(raw) || 1);
+      if (skipWhenOne && Math.abs(v - 1) < 1e-9) return;
+      mult *= v;
+      parts.push({ label: label, value: v, note: note || "" });
+    };
     let lvl = 1;
     if (typeof getEffectiveSkillLevel === "function") lvl = getEffectiveSkillLevel(state, SKILL_KEY);
     else if (state && state.skills && state.skills[SKILL_KEY]) lvl = Number(state.skills[SKILL_KEY].lvl) || 1;
-    mult *= 1 + Math.max(0, Number(lvl) || 0) * 0.02;
+    push("技能", 1 + Math.max(0, Number(lvl) || 0) * 0.02, "Lv." + Math.floor(lvl));
 
     if (typeof getStationLogisticsBaseMultiplier === "function") {
-      mult *= Math.max(0.001, Number(getStationLogisticsBaseMultiplier(state, "invention")) || 1);
+      push("空间站后勤", getStationLogisticsBaseMultiplier(state, "invention"), null, false);
     }
     if (typeof ResearchState !== "undefined" && ResearchState && typeof ResearchState.getResearchMultiplier === "function") {
-      mult *= Math.max(0.001, Number(ResearchState.getResearchMultiplier(state, ["invention"])) || 1);
+      push("科研加成", ResearchState.getResearchMultiplier(state, ["invention"]), null, false);
     }
     if (typeof getImplantBonuses === "function") {
       const b = getImplantBonuses(state);
-      if (b && Number(b.inventionEff) > 0) mult *= Number(b.inventionEff);
+      if (b && Number(b.inventionEff) > 0) push("脑插·发明效率", b.inventionEff, null, true);
     }
     if (typeof getBoosterEffectState === "function") {
       const e = getBoosterEffectState(state);
-      if (e && Number(e.inventionSpeedMultiplier) > 0) mult *= Number(e.inventionSpeedMultiplier);
+      if (e && Number(e.inventionSpeedMultiplier) > 0) push("增强剂·发明速度", e.inventionSpeedMultiplier, null, true);
     }
     if (typeof LEGION_NPC !== "undefined" && LEGION_NPC && typeof LEGION_NPC.getLegionContributionSnapshot === "function") {
       const m = LEGION_NPC.getLegionContributionSnapshot(state).multipliers;
-      if (m && Number(m.invention) > 0) mult *= Number(m.invention);
+      if (m && Number(m.invention) > 0) push("军团·发明贡献", m.invention, null, true);
     }
-    return mult > 0 ? mult : 1;
+    if (typeof getAdBuffMultiplier === "function") {
+      const adbm = Number(getAdBuffMultiplier(state)) || 1;
+      if (adbm > 1) push("脑突触·加速", adbm, "广告 buff · 30 分钟", true);
+    }
+    return { total: mult > 0 ? mult : 1, parts: parts };
   }
+
+  function labSpeed(state) { return labSpeedParts(state).total; }
 
   // 单次循环秒数：30 × 档 ÷ 实验室速度
   function cycleSeconds(state, bp) {
@@ -1060,7 +1076,7 @@
     blueprints: INVENTION_BLUEPRINTS,
     blueprintByKey, listBlueprints, tierGate, milestoneLevel, reductionFor,
     xpForBlueprint, iskPerCycle, matrixPerCycle,
-    labSpeed, cycleSeconds, isUnlocked,
+    labSpeed, labSpeedParts, cycleSeconds, isUnlocked,
     ensureState, blueprintState, researchCount, meReduction, teReduction,
     migrateLabToQueue,
     recipeKeyForRecipe, applyMeReduction, meReductionForRecipe, teReductionForRecipe,

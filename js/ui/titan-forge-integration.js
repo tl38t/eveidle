@@ -179,7 +179,10 @@
     "shipyard-level-locked":"船坞等级不足",
     "level-locked":"舰船工程等级不足",
     "insufficient-isk":"星币不足",
-    "insufficient-components":"组件或材料不足"
+    "insufficient-components":"组件或材料不足",
+    // 真入队（2026-09-28）：入队入口新增的失败原因
+    "queue-full":"队列已满",
+    "missing-queue":"队列不可用"
   };
   // 门禁 → 跳转页（2026-09-10）：只给「玩家该去哪做」的门禁配按钮，缺料缺钱不给（刷材料不是跳转能解决的）
   const GATE_GOTO = { "titan-synthesis-locked":"starmap", "titan-node-locked":"starmap" };
@@ -189,12 +192,48 @@
     if (!page) return "";
     return '<button type="button" class="btn titan-goto" data-titan-goto="' + page + '">' + (GOTO_LABEL[page] || "前往") + '</button>';
   }
+  // ---- 真入队（2026-09-28）：泰坦与常规装船完全同管线 ----
+  // 队列条目模型 {skill,target,count,subAction} 装不下「三组件组合」，故条目额外带 titanAsmCombo；
+  // target 只是哨兵（actions.js TITAN_QUEUE_TARGET），配方由 combo 现算。
+  // 「总装泰坦」= 插队首 + 立即开始队列（等价于装船确认弹窗的「确认」，action-modal.js:192-199）；
+  // 「加入队列」= 排队等待（等价于弹窗的「加入队列」）。两者都走唯一入队入口 queue/add。
+  function titanQueueItem() {
+    const recipe = gfn("getTitanAssemblyRecipe") ? gfn("getTitanAssemblyRecipe")(comboOf()) : null;
+    return {
+      skill:"shipEngineering",
+      target:(typeof window !== "undefined" && window.TITAN_QUEUE_TARGET) ? window.TITAN_QUEUE_TARGET : "titan_assembly",
+      subAction:(typeof window !== "undefined" && window.TITAN_QUEUE_SUBACTION) ? window.TITAN_QUEUE_SUBACTION : "titan",
+      titanAsmCombo:comboOf(),
+      count:1, // 一艘一口：与 2026-09-13「完成即停」防吞家底同口径，UI 不暴露连造
+      label:(recipe && recipe.name) || "泰坦总装"
+    };
+  }
+  function submitTitanAssembly(el, front) {
+    const recipe = gfn("getTitanAssemblyRecipe") ? gfn("getTitanAssemblyRecipe")(comboOf()) : null;
+    const name = (recipe && recipe.name) || "泰坦总装";
+    const res = dispatchGameAction(gameState, { type:"queue/add", item:titanQueueItem(), front:Boolean(front) }, Date.now());
+    if (res && res.changed) {
+      // 与 action-modal「确认」严格同序：先入队（front 插到首位），再 startQueue 让首位立即开跑。
+      if (front && typeof startQueue === "function") startQueue();
+      if (typeof showToast === "function") {
+        try {
+          showToast((res.merged ? "已累加到队列末项：" : (front ? "已开始总装：" : "已加入队列：")) + name);
+        } catch (_) {}
+      }
+      refreshAssemblyUi(el);
+      return;
+    }
+    const statusEl = el.querySelector("[data-titan-fresh-status]");
+    const label = FAIL_TEXT[res && res.reason] || ((res && (res.text || res.reason)) || "无法入队");
+    setText(statusEl, "无法加入队列：" + label);
+  }
   const btnMode = el => (el.querySelector("[data-titan-fresh-build]") || {}).dataset
     ? (el.querySelector("[data-titan-fresh-build]").dataset.titanMode || "start") : "start";
   function refreshAssemblyUi(el) {
     const statusEl = el.querySelector("[data-titan-fresh-status]");
     const costEl = el.querySelector("[data-titan-asm-cost]");
     const btn = el.querySelector("[data-titan-fresh-build]");
+    const enqBtn = el.querySelector("[data-titan-fresh-enqueue]");
     const gotoEl = el.querySelector("[data-titan-asm-goto]");
     if (!statusEl || !btn) return;
     const a = (typeof gameState !== "undefined" && gameState.currentAction) || {};
@@ -219,9 +258,12 @@
       btn.dataset.titanMode = "stop";
       setText(statusEl, (blocked ? "总装挂起（星币/组件不足，进度已保留 " + Math.floor(prog * 100) + "%，补齐后自动继续）：" : "总装进行中：") + (gate.recipe ? gate.recipe.name : "泰坦") + " · " + Math.floor(prog * 100) + "%");
       setHtml(gotoEl, "");
+      // 运行中仍可再排一艘（与常规制造的「运行中继续加入队列」一致）
+      if (enqBtn) { setText(enqBtn, "⬇ 加入队列"); setDisabled(enqBtn, false); }
       return;
     }
     btn.dataset.titanMode = "start";
+    if (enqBtn) { setText(enqBtn, "⬇ 加入队列"); setDisabled(enqBtn, !gate.ok); }
     if (gate.ok) {
       setText(btn, "⚓ 总装泰坦");
       setDisabled(btn, false);
@@ -321,7 +363,7 @@
     el.style.display = isTitanSubView() ? "" : "none"; // 懒创建竞态兜底：按 state 设初值，不等下一次渲染 pass
     // 中间 3D 预览区加兜底占位，避免模块加载失败/执行抛错时完全空白。
     const previewPlaceholder = '<div class="titan-preview-placeholder"><span>3D 预览加载中…</span></div>';
-    el.innerHTML = `<div class="titan-forge-fresh-grid"><div class="titan-forge-fresh-controls"><div class="titan-forge-kicker">TITAN ASSEMBLY</div><h2>泰坦组装</h2><p>从部件车间取得舰体、武器和核心，组合成一架泰坦。</p>${["hull","weapon","core"].map((k,i)=>`<label class="titan-fresh-slot"><span>${String(i+1).padStart(2,"0")} · ${k === "hull" ? "防御舰体" : k === "weapon" ? "攻击模块" : "核心模块"}</span><select class="u-select" data-titan-fresh="${k}">${optionHtml(k)}</select><small data-titan-note="${k}">${find(k, selection[k]).note}</small></label>`).join("")}<button class="btn primary" type="button" data-titan-fresh-build>⚓ 总装泰坦</button><div class="titan-fresh-status" data-titan-fresh-status>已选 3 / 3 个组件</div><div class="titan-asm-cost" data-titan-asm-cost></div><div class="titan-asm-goto" data-titan-asm-goto></div></div><div class="titan-forge-fresh-preview"><div class="titan-preview">${previewPlaceholder}<span class="titan-preview-label">LIVE TITAN ASSEMBLY</span></div><div class="titan-fresh-summary" data-titan-summary></div></div></div>`;
+    el.innerHTML = `<div class="titan-forge-fresh-grid"><div class="titan-forge-fresh-controls"><div class="titan-forge-kicker">TITAN ASSEMBLY</div><h2>泰坦组装</h2><p>从部件车间取得舰体、武器和核心，组合成一架泰坦。</p>${["hull","weapon","core"].map((k,i)=>`<label class="titan-fresh-slot"><span>${String(i+1).padStart(2,"0")} · ${k === "hull" ? "防御舰体" : k === "weapon" ? "攻击模块" : "核心模块"}</span><select class="u-select" data-titan-fresh="${k}">${optionHtml(k)}</select><small data-titan-note="${k}">${find(k, selection[k]).note}</small></label>`).join("")}<div class="titan-fresh-actions"><button class="btn primary" type="button" data-titan-fresh-build>⚓ 总装泰坦</button><button class="btn" type="button" data-titan-fresh-enqueue>⬇ 加入队列</button></div><div class="titan-fresh-status" data-titan-fresh-status>已选 3 / 3 个组件</div><div class="titan-asm-cost" data-titan-asm-cost></div><div class="titan-asm-goto" data-titan-asm-goto></div></div><div class="titan-forge-fresh-preview"><div class="titan-preview">${previewPlaceholder}<span class="titan-preview-label">LIVE TITAN ASSEMBLY</span></div><div class="titan-fresh-summary" data-titan-summary></div></div></div>`;
     panel.appendChild(el);
     el.addEventListener("change", e => {
       const s = e.target.closest("[data-titan-fresh]"); if (!s) return;
@@ -337,12 +379,11 @@
     el.querySelector("[data-titan-fresh-build]").addEventListener("click", () => {
       withObserverPaused(() => {
         if (btnMode(el) === "stop") { dispatchGameAction(gameState, { type:"manufacturing/stop" }, Date.now()); refreshAssemblyUi(el); return; }
-        const res = dispatchGameAction(gameState, { type:"manufacturing/startTitanAssembly", combo:comboOf() }, Date.now());
-        if (res && res.changed) { refreshAssemblyUi(el); return; }
-        const statusEl = el.querySelector("[data-titan-fresh-status]");
-        const label = FAIL_TEXT[res && res.reason] || ((res && (res.text || res.reason)) || "无法开始总装");
-        setText(statusEl, "无法开始：" + label);
+        submitTitanAssembly(el, true); // 插队首 + 立即开始（= 装船「确认」）
       });
+    });
+    el.querySelector("[data-titan-fresh-enqueue]").addEventListener("click", () => {
+      withObserverPaused(() => { submitTitanAssembly(el, false); }); // 排队等待（= 装船「加入队列」）
     });
     el.addEventListener("click", e => {
       const g = e.target.closest("[data-titan-goto]");

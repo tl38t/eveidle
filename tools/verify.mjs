@@ -12,7 +12,11 @@ const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/s
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const localSources = [...styleSources, ...scriptSources];
 
-if (scriptSources.length !== 131) throw new Error(`预期 131 个脚本，实际 ${scriptSources.length}`); // 131 = 当前工作树实测（RC64 后新增 泰坦数据/技能概览/军团/虫洞/蓝图实验室 等 11 个 defer 脚本）
+// 135 = 当前工作树实测。131 → 135 的 +4 是 2026-09-28 随 ja/de/ru/fr 四语上线的
+//   js/data/achievement-locales-{ja,de,ru,fr}.js（成就名 + 达成条件的多语词条，各 ~16 KB）。
+// ⚠️ 这 4 个文件是**普通 defer**，不走 index.html 里的 Steam 条件注入块（见 steam-i18n-locales），
+//    所以 TapTap / 微信包也会带上它们——这是既有行为（ja/de/ru 时就是如此），不是回归。
+if (scriptSources.length !== 135) throw new Error(`预期 135 个脚本，实际 ${scriptSources.length}`);
 
 // 平台/云存档/成就/设备镜像生产脚本必须全部被 index.html 引用，且全部排在 persistence.js 之前。
 {
@@ -271,7 +275,9 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // bl-enc-eng / bl-enc-go / bl-enc-result / bl-enc-clear / bl-enc-focusrate / bl-enc-costs /
 // bl-enc-cost-calib / bl-enc-cost-matrix / bl-enc-cost-isk。差集已用脚本逐 id 核对，无删除项。
 // 后续新增静态 DOM ID 时按 +1 递增维护本数字。
-const EXPECTED_DOM_IDS = 554;
+// 2026-09-28 554 → 556（+2，纯新增零删除）：① HEAD 提交 e53de44 的改装件强化加了 #bl-enc-pending（曾漏同步基线，
+//   工作树实测已隐含 +1）；② 本轮蓝图发明页「效率研究台」新增 #bl-eff-display（研究速度 / 效率因子）。
+const EXPECTED_DOM_IDS = 556;
 if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
@@ -313,6 +319,14 @@ MockCanvasContext.prototype.createRadialGradient = () => ({ addColorStop: noop }
 MockCanvasContext.prototype.getImageData = (x, y, width, height) => ({ data: new Uint8ClampedArray(width * height * 4), width, height });
 
 const classList = { add: noop, remove: noop, toggle: noop, contains: () => false };
+// ⚠ 样式桩必须支持自定义属性（CSS 变量）：renderResearchActive 用
+//   el.style.setProperty("--research-empty-text", …) 把空态文案交给 CSS 内容渲染。
+//   2026-09-26 之前 style 只是 {}，生产代码一用 setProperty 就 TypeError。
+const makeStyle = () => ({
+  setProperty(name, value) { this[name] = String(value); },
+  getPropertyValue(name) { return this[name] === undefined ? "" : String(this[name]); },
+  removeProperty(name) { delete this[name]; },
+});
 const makeElement = () => ({
   addEventListener: noop,
   appendChild: noop,
@@ -333,7 +347,7 @@ const makeElement = () => ({
   removeAttribute: noop,
   getAttribute: () => null,
   select: noop,
-  style: {},
+  style: makeStyle(),
   textContent: "",
   value: "1"
 });
@@ -3908,7 +3922,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     }
   }
 
-  console.log("Batch C-14B 元成就校验通过：J10 49/50 边界、J11 99/100 边界、J12 目录完整性、元成就不自我计数、旧档追溯保时间、事件重入保护、规则 193/未映射 0");
+  console.log("Batch C-14B 元成就校验通过：J07 49/50 边界、J08 99/100 边界、J09 目录完整性、元成就不自我计数、旧档追溯保时间、事件重入保护、规则 " +
+    (Array.isArray(sandbox.AchievementRuleData.ACHIEVEMENT_RULES) ? sandbox.AchievementRuleData.ACHIEVEMENT_RULES.length : "?") + "/未映射 0");
 }
 
 // ==========================================================================
@@ -3961,18 +3976,22 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       throw new Error("成就卡片数与 total 不一致：display.total=" + display.total +
         " cards=" + display.cards.length + " / DOM " + countCards() + "（目录 " + TOTAL + "）");
     }
-    // ⚠ 隐藏成就不渲染卡片，故按「可见项」与目录顺序逐一比对（旧写法把隐藏项也算进下标，必然错位）
-    let _vi = 0;
-    for (let i = 0; i < TOTAL; i += 1) {
-      if (AD.ACHIEVEMENTS[i].hidden) continue;
-      if (display.cards[_vi].id !== AD.ACHIEVEMENTS[i].id) {
-        throw new Error("成就卡片未按 AchievementData.ACHIEVEMENTS 原目录顺序渲染（目录第 " + (i + 1) +
-          " 项 " + AD.ACHIEVEMENTS[i].id + " vs 卡片 " + display.cards[_vi].id + "）");
-      }
-      _vi += 1;
+    // ⚠ 渲染层用「过滤后」的目录（display.total=116 < 目录 118），按下标一一对应必然错位。
+    // 正确判据：卡片必须是 AchievementData 原目录顺序的**子序列**（允许跳过未渲染项，不许乱序/缺项）。
+    let _j = 0;
+    for (const card of display.cards) {
+      while (_j < TOTAL && AD.ACHIEVEMENTS[_j].id !== card.id) _j += 1;
+      if (_j >= TOTAL) throw new Error("成就卡片 " + card.id + " 不在 AchievementData 目录中");
+      _j += 1;
     }
-    const placeholder = AD.ACHIEVEMENTS.find(a => a.nameStatus === "placeholder" && !a.hidden);
-    if (!achEls["achievements-grid"].innerHTML.includes(placeholder.name)) throw new Error("placeholder 成就名称未原样显示");
+    // ⚠ 旧基线点名 nameStatus==="placeholder"（目录精简后已不存在，现仅 confirmed/provisional 两种）。
+    // 等价意图：改判「名称未被确认（provisional）的成就，名称也必须原样上屏」。
+    const placeholder = AD.ACHIEVEMENTS.find(a => !a.hidden && a.nameStatus === "provisional") ||
+                        AD.ACHIEVEMENTS.find(a => !a.hidden);
+    if (!placeholder) throw new Error("目录中没有可用于名称原样显示的未隐藏成就");
+    if (!achEls["achievements-grid"].innerHTML.includes(placeholder.name)) {
+      throw new Error("未确认名称的成就（" + placeholder.id + "）名称未原样显示：" + placeholder.name);
+    }
     if (display.unlocked !== 0 || display.percentText !== "0.0%") throw new Error("零解锁时汇总或百分比不正确");
 
     // 4) 未解锁的隐藏成就必须遮蔽名称与条件
@@ -3993,9 +4012,13 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     const expectedUnlocked = unlockedIds.length + 1;
     display = sandbox.renderAchievementsPage("all", "all");
     if (display.unlocked !== expectedUnlocked) throw new Error("汇总已解锁数量与 unlockedAtById 不一致");
-    if (achEls["achievements-summary-count"].textContent !== expectedUnlocked + " / " + TOTAL) throw new Error("汇总文本不为 已解锁/193");
-    if (display.percentText !== ((expectedUnlocked / TOTAL) * 100).toFixed(1) + "%") throw new Error("完成百分比计算错误");
-    if (achEls["achievements-progress-fill"].style.width !== ((expectedUnlocked / TOTAL) * 100).toFixed(2) + "%") throw new Error("完成度进度条宽度未跟随解锁比例");
+    // ⚠ 汇总/百分比一律以 display.total（过滤后口径 116）为分母，旧基线误用目录总数 118/193
+    const DISP_TOTAL = display.total;
+    if (achEls["achievements-summary-count"].textContent !== expectedUnlocked + " / " + DISP_TOTAL) {
+      throw new Error("汇总文本不为 已解锁/" + DISP_TOTAL + "，实际 " + achEls["achievements-summary-count"].textContent);
+    }
+    if (display.percentText !== ((expectedUnlocked / DISP_TOTAL) * 100).toFixed(1) + "%") throw new Error("完成百分比计算错误");
+    if (achEls["achievements-progress-fill"].style.width !== ((expectedUnlocked / DISP_TOTAL) * 100).toFixed(2) + "%") throw new Error("完成度进度条宽度未跟随解锁比例");
     map["ZZ99"] = T;
     if (sandbox.renderAchievementsPage("all", "all").unlocked !== expectedUnlocked) throw new Error("目录外幽灵成就被计入汇总");
     delete map["ZZ99"];
@@ -4003,8 +4026,14 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     // 6) 铜/银/金/传奇分级汇总
     display = sandbox.renderAchievementsPage("all", "all");
     if (display.tiers.map(t => t.label).join(",") !== "铜,银,金,传奇") throw new Error("分级汇总不是 铜/银/金/传奇 四档");
+    // ⚠ 分级总数须按「实际渲染出的卡片」统计（display.tiers.total 是过滤后口径），
+    // 旧写法对全目录计数，会把未渲染项也算进去 ⇒ 必然不一致。
     const tierTotals = {};
-    for (const a of AD.ACHIEVEMENTS) tierTotals[a.tier] = (tierTotals[a.tier] || 0) + 1;
+    const renderedIds = new Set(display.cards.map(c => c.id));
+    for (const a of AD.ACHIEVEMENTS) {
+      if (!renderedIds.has(a.id)) continue;
+      tierTotals[a.tier] = (tierTotals[a.tier] || 0) + 1;
+    }
     for (const tier of display.tiers) {
       if (tier.total !== (tierTotals[tier.code] || 0)) throw new Error("分级总数与目录不一致：" + tier.code);
     }
@@ -4016,8 +4045,11 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       throw new Error("已解锁筛选结果错误");
     }
     const lockedView = sandbox.renderAchievementsPage("all", "locked");
-    if (lockedView.cards.length !== TOTAL - expectedUnlocked || lockedView.cards.some(c => c.unlocked) || countCards() !== TOTAL - expectedUnlocked) {
-      throw new Error("未解锁筛选结果错误");
+    // ⚠ 旧写法用目录总数 TOTAL（118）扣，实际渲染口径是过滤后的 lockedView.total（116）
+    const lockedExpect = lockedView.total - expectedUnlocked;
+    if (lockedView.total !== display.total) throw new Error("锁定视图与总视图的口径不一致");
+    if (lockedView.cards.length !== lockedExpect || lockedView.cards.some(c => c.unlocked) || countCards() !== lockedExpect) {
+      throw new Error("未解锁筛选结果错误（期望 " + lockedExpect + "，实际 " + lockedView.cards.length + " / DOM " + countCards() + "）");
     }
 
     // 8) 分类筛选：全部 + AchievementData.CATEGORIES 真实分类
@@ -4045,7 +4077,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     sandbox.gameState.achievements.unlockedAtById = achievementsUnlockedBefore;
     sandbox.document.getElementById = originalAchGetElementById;
   }
-  console.log("Batch D 成就页面校验通过：导航/panel 显隐、193 张目录序卡片、汇总与 unlockedAtById 一致、铜银金传奇分级、状态与分类筛选、隐藏成就遮蔽与解锁揭示");
+  console.log("Batch D 成就页面校验通过：导航/panel 显隐、目录序卡片（118 项目录 / 116 张可见卡片）、汇总与 unlockedAtById 一致、铜银金传奇分级、状态与分类筛选、隐藏成就遮蔽与解锁揭示");
 }
 
 // ==========================================================================
@@ -4073,7 +4105,9 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     if (typeof RS[fn] !== "function") throw new Error("ResearchSystem 缺少 Batch E API：" + fn);
   }
 
-  // ---- E-1 目录奖励数据：四档确定性 + 总计 262 小时 + 研究类必须 null ----
+  // ---- E-1 目录奖励数据：四档确定性 + 总计 162.5 小时 + 研究类必须 null ----
+  // ⚠ 「研究」分类在 2026-09-26 目录精简（193 → 118）后已不存在（当前 10 个分类全为带奖励项），
+  //    null 分支仅作未来回归护栏保留。
   {
     const tierCount = { bronze: 0, silver: 0, gold: 0, legendary: 0 };
     let totalHours = 0;
@@ -4091,10 +4125,12 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       tierCount[a.tier] += 1;
       totalHours += r.hours;
     }
-    if (tierCount.bronze !== 44 || tierCount.silver !== 80 || tierCount.gold !== 61 || tierCount.legendary !== 8) {
-      throw new Error("四档奖励数量不是 44/80/61/8：" + JSON.stringify(tierCount));
+    // ⚠ 旧基线 44/80/61/8（目录 193 项时，合计 256h）；目录精简为 118 项后为 23/51/38/6，
+    //    合计 23×0.5 + 51×1 + 38×2 + 6×4 = 162.5h。再漂 FAIL = 目录又动了，确认无回归后更新此处。
+    if (tierCount.bronze !== 23 || tierCount.silver !== 51 || tierCount.gold !== 38 || tierCount.legendary !== 6) {
+      throw new Error("四档奖励数量不是 23/51/38/6（目录 118 项口径）：" + JSON.stringify(tierCount));
     }
-    if (Math.abs(totalHours - 256) > 1e-9) throw new Error("奖励总工时不是 256，实际 " + totalHours);
+    if (Math.abs(totalHours - 162.5) > 1e-9) throw new Error("奖励总工时不是 162.5，实际 " + totalHours);
     if (AS.getAchievementResearchRewardHours("ZZ99") !== null) throw new Error("未知 ID 的奖励工时必须为 null");
     const probe = AD.ACHIEVEMENTS[0];
     if (AS.getAchievementResearchRewardHours(probe.id) !== TIER_HOURS[probe.tier]) {
@@ -4423,24 +4459,33 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     sandbox.document.getElementById = (id) => els[id] || makeElement();
     sandbox.gameState.achievements.unlockedAtById = {};
     try {
-      sandbox.gameState.research.researchHourBank = 262 * HOUR;
+      // ⚠ 旧基线 262h（目录 193 项时）；目录精简为 118 项后全目录奖励合计 162.5h。
+      // ⚠ 文案无空格：zh 词条 researchBank="科研工时余额：" + researchHours="小时"（shell-render.js:2575）。
+      const BANK = "科研工时余额：";
+      sandbox.gameState.research.researchHourBank = 162.5 * HOUR;
       let display = sandbox.renderAchievementsPage("all", "all");
-      if (display.researchBankText !== "科研工时余额：262 小时") throw new Error("科研工时余额文案错误：" + display.researchBankText);
-      if (els["achievements-research-bank"].textContent !== "科研工时余额：262 小时") throw new Error("achievements-research-bank 未渲染余额");
+      if (display.researchBankText !== BANK + "162.5小时") throw new Error("科研工时余额文案错误：" + display.researchBankText);
+      if (els["achievements-research-bank"].textContent !== BANK + "162.5小时") throw new Error("achievements-research-bank 未渲染余额");
 
       sandbox.gameState.research.researchHourBank = 1800;
       sandbox.renderAchievementsPage("all", "all");
-      if (els["achievements-research-bank"].textContent !== "科研工时余额：0.5 小时") {
+      if (els["achievements-research-bank"].textContent !== BANK + "0.5小时") {
         throw new Error("半小时余额渲染错误：" + els["achievements-research-bank"].textContent);
       }
       sandbox.gameState.research.researchHourBank = -5; // UI 纯读兜底，不修改 state
       display = sandbox.renderAchievementsPage("all", "all");
-      if (els["achievements-research-bank"].textContent !== "科研工时余额：0 小时") throw new Error("非法余额未兜底为 0 小时");
+      if (els["achievements-research-bank"].textContent !== BANK + "0小时") throw new Error("非法余额未兜底为 0 小时");
       if (sandbox.gameState.research.researchHourBank !== -5) throw new Error("UI 渲染必须纯只读，不得修改 researchHourBank");
 
       // 每张卡的奖励文字必须与冻结目录 reward 一致（隐藏成就同样显示奖励）
       const rewardTextOf = (hours) => "科研工时 +" + (hours === 0.5 ? "0.5" : String(hours)) + "h";
-      if (display.cards.length !== AD.ACHIEVEMENTS.length) throw new Error("UI 用例应渲染全量卡片");
+      // ⚠ 旧基线「全量 118」；渲染层只出「已接入平台的 116 项」（shell-render.js 按 steam.enabled 过滤，
+      //   隐藏成就不出卡 ⇒ display.cards 恒 < 目录长度）。期望值由目录本身推导 + 116 做哨兵。
+      const enabledIds = new Set(AD.ACHIEVEMENTS.filter(a => a.steam && a.steam.enabled === true).map(a => a.id));
+      if (enabledIds.size !== 116) throw new Error("已接入平台的成就数不为 116，实际 " + enabledIds.size);
+      if (display.cards.length !== enabledIds.size) {
+        throw new Error("UI 用例应渲染 " + enabledIds.size + " 张可见卡片，实际 " + display.cards.length);
+      }
       for (const card of display.cards) {
         const def = AD.ACHIEVEMENTS_BY_ID[card.id];
         const expected = def.reward === null ? "无科研工时奖励" : rewardTextOf(def.reward.hours);
@@ -4468,12 +4513,12 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     }
   }
 
-  console.log("Batch E 校验通过：四档奖励 44/82/63/8 合计 262 小时、schema v2 账本迁移清洗与幂等、在线首发/防重/旧档对账/无事件总线仍到账、researchHourBank 与 appliedAchievementSeconds 50% 夹紧、applyResearchHours 截断与完成衔接、cancelResearch 全额退款与队列衔接、三条事件契约、成就页余额与卡片奖励文字");
+  console.log("Batch E 校验通过：四档奖励 23/51/38/6 合计 162.5 小时、schema v2 账本迁移清洗与幂等、在线首发/防重/旧档对账/无事件总线仍到账、researchHourBank 与 appliedAchievementSeconds 50% 夹紧、applyResearchHours 截断与完成衔接、cancelResearch 全额退款与队列衔接、三条事件契约、成就页余额与卡片奖励文字");
 }
 
 // ==========================================================================
 // Batch F：研究页面 + 在线操作闭环
-// 覆盖：导航与面板显隐、8 个研究页 DOM、38 节点冻结序渲染、五种节点状态、
+// 覆盖：导航与面板显隐、8 个研究页 DOM、71 节点冻结序渲染、五种节点状态、
 //       dispatchGameAction 启动/排队/投入/取消/移除、协议节点只读、
 //       50% 上限截断、退款与队列衔接、渲染纯读、既有基线不放宽。
 // 操作用例使用独立 state；触碰真实 gameState / document 的部分 finally 恢复。
@@ -4486,9 +4531,14 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   const TF = 1752000000000;
 
   // ---- F-12 既有基线不得放宽（脚本 / 样式 / DOM ID / Batch D·E 关键 DOM） ----
-  if (scriptSources.length !== 102) throw new Error("Batch F 起 JS 基线为 102（101 + 限次蓝图抄本(BPC)原语/blueprint-runs），实际 " + scriptSources.length);
+  // ⚠ 这三条是「既有基线不得放宽」哨兵。数字历史上漂过多次（JS 102→131、DOM ID 337/370→554），
+  //   失败即说明有人加了脚本 / DOM ID 却没同步这里；确认是预期新增后把新值写进来，不要直接删判据。
+  // ⚠ 131 → 135 的 +4 = 2026-09-28 随 ja/de/ru/fr 四语上线的 achievement-locales-{ja,de,ru,fr}.js
+  //   （见文件头部同款注释；两处必须同一数字，改一处不改另一处会让闸门自己打自己）。
+  if (scriptSources.length !== 135) throw new Error("Batch F 起 JS 基线为 135，实际 " + scriptSources.length);
   if (styleSources.length !== 5) throw new Error("Batch F 不得改变 5 CSS 基线，实际 " + styleSources.length);
-  if (htmlIds.size !== 370) throw new Error("Batch F DOM ID 基线应为 337（313 + 势力重做/弹药实例/仓库增强网格/脑插子标签等未提交特性新增 DOM ID），实际 " + htmlIds.size);
+  // 2026-09-28：554 → 556（+2 纯新增，口径同上方的 EXPECTED_DOM_IDS：e53de44 的 #bl-enc-pending + 本轮 #bl-eff-display）。
+  if (htmlIds.size !== 556) throw new Error("Batch F DOM ID 基线应为 556，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
@@ -4509,7 +4559,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   }
 
   const nodes = RD.NODES;
-  if (nodes.length !== 38) throw new Error("研究目录不为 38 节点，实际 " + nodes.length);
+  // ⚠ 旧基线 38（研究树扩版后为 71，与 L-11 同源）
+  if (nodes.length !== 71) throw new Error("研究目录不为 71 节点，实际 " + nodes.length);
   const nodeById = {};
   for (const n of nodes) nodeById[n.id] = n;
   const MATSCI_BASE = nodeById.matsci.durationByLevel[0];
@@ -4627,8 +4678,13 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     const shellIdx = scriptSources.findIndex(src => src.includes("shell-render"));
     if (shellIdx < 0) throw new Error("未找到 js/ui/shell-render.js");
     const shellSrc = scripts[shellIdx];
+    // ⚠ 判据先剥离注释再匹配：注释里提到科技名不构成「第二份静态清单」，
+    //   否则 shell-render.js 第 54 行说明「驻留自动领取协议」开关的注释会长期误报。
+    const stripComments = (src) => src.replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:"'`])\/\/[^\n]*/g, "$1");
+    const shellSrcNoComment = stripComments(shellSrc);
     for (const n of nodes) {
-      if (shellSrc.includes(n.name)) throw new Error("shell-render.js 内联了科技名称（第二份静态清单）：" + n.name);
+      if (shellSrcNoComment.includes(n.name)) throw new Error("shell-render.js 内联了科技名称（第二份静态清单）：" + n.name);
       if (html.includes(n.name)) throw new Error("index.html 内联了科技名称（第二份静态清单）：" + n.name);
     }
     if (/\bconst\s+EDGES\s*=|\bvar\s+EDGES\s*=/.test(shellSrc)) throw new Error("不得复制原型的静态 EDGES 连线表");
@@ -4666,9 +4722,18 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     // 正式目录派生的期望值（全部现算，不写死）
     const expectedEdgeKeys = [];
     const expectedEraCounts = [0, 0, 0, 0, 0];
+    const dataPackById = {};
+    for (const n of nodes) dataPackById[n.id] = n.contentPack || "main";
     for (const n of nodes) {
-      expectedEraCounts[Number(n.era) || 0] += 1;
-      for (const p of (n.prerequisites || [])) expectedEdgeKeys.push(p.id + ">" + n.id + "@" + p.level);
+      // ⚠ 主树 era 段只统计主目录：军团 / 深空开拓节点各自成区（buildResearchTreeModel 的
+      //   layoutBranch），不进主树的 era 段，否则「DOM=4 vs 数据=8」。
+      if (!(n.contentPack)) expectedEraCounts[Number(n.era) || 0] += 1;
+      // ⚠ 连线「仅同区内部」（shell-render.js:3202-3213）：跨 pack 的前置不画边，
+      //   期望边数必须同步排除，否则会拿全目录 107 去比实际 99。
+      for (const p of (n.prerequisites || [])) {
+        if (dataPackById[p.id] !== dataPackById[n.id]) continue;
+        expectedEdgeKeys.push(p.id + ">" + n.id + "@" + p.level);
+      }
     }
     const expectedEdgeCount = expectedEdgeKeys.length;
     let fanInId = nodes[0].id; let fanInMax = 0;
@@ -4711,9 +4776,9 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       if (snapshotBefore !== snapshotAfter) throw new Error("renderResearchPage 修改了 state.research，渲染必须纯读");
       const treeHtml = els["research-tree"].innerHTML;
 
-      // F-3 38 个节点严格按冻结目录顺序渲染
-      if (!display || display.nodeCount !== 38 || display.nodes.length !== 38) {
-        throw new Error("研究树未渲染 38 个节点，实际 " + (display ? display.nodes.length : "null"));
+      // F-3 节点数严格按冻结目录顺序渲染（⚠ 旧基线 38；研究树扩版后 71）
+      if (!display || display.nodeCount !== 71 || display.nodes.length !== 71) {
+        throw new Error("研究树未渲染 71 个节点，实际 " + (display ? display.nodes.length : "null"));
       }
       for (let i = 0; i < 38; i += 1) {
         if (display.nodes[i].id !== nodes[i].id) throw new Error("研究树未按 ResearchData.NODES 冻结顺序渲染，第 " + i + " 项");
@@ -4726,9 +4791,10 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       if (eraHeads.join(" → ") !== eraHeadExpect) throw new Error("五时代标题顺序/名称不符：" + eraHeads.join(" → "));
       if (eraHeads.some(h => /^时代 [IV]+/.test(h))) throw new Error("时代头部仍残留“时代几”字样：" + eraHeads.join(" → "));
 
-      // FV-2 / FV-3 38 个节点各渲染一次；data-tech-id / data-era / data-status 与正式数据一致
+      // FV-2 / FV-3 节点各渲染一次；data-tech-id / data-era / data-status 与正式数据一致
+      // （⚠ 旧基线 38；研究树扩版后 71，与 F-3 / L-11 同源）
       const nodeTags = [...treeHtml.matchAll(/<div class="(rt-node[^"]*)" style="[^"]*" data-tech-id="([^"]+)" data-era="(\d+)" data-status="([^"]+)"/g)];
-      if (nodeTags.length !== 38) throw new Error("科技树 DOM 节点数不为 38，实际 " + nodeTags.length);
+      if (nodeTags.length !== 71) throw new Error("科技树 DOM 节点数不为 71，实际 " + nodeTags.length);
       const domNodeById = {};
       for (const [, cls, id, era, status] of nodeTags) {
         if (domNodeById[id]) throw new Error("节点被重复渲染：" + id);
@@ -4760,9 +4826,24 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         const fromData = nodes.filter(n => (Number(n.era) || 0) === era).map(n => n.id).join(",");
         const fromView = display.nodes.filter(v => v.era === era).map(v => v.id).join(",");
         if (fromData !== fromView) throw new Error("时代 " + era + " 内节点顺序未保持目录原始顺序");
-        const rows = display.nodes.filter(v => v.era === era).map(v => v.row).join(",");
-        const expectRows = display.nodes.filter(v => v.era === era).map((_, i) => i).join(",");
-        if (rows !== expectRows) throw new Error("时代 " + era + " 行号未连续递增：" + rows);
+        // ⚠ row 语义：每个 (contentPack, era) 组内从 0 连续递增。军团 / 深空开拓分支各用独立
+        //   branchRowCursor（layoutBranch），y 由 originY 下移，所以「整 era 一段去看」时分支行号
+        //   会回绕（0,0,1,2）——那是设计不是缺陷。旧判据把整 era 当一段，扩版后必然红。
+        //   ⚠ display.nodes 是投影视图（shell-render.js:3825 只带 id/name/type/category/era/row，
+        //     没有 contentPack），分组键必须回数据侧取。
+        const rowsByPack = new Map();
+        for (const v of display.nodes.filter(v => v.era === era)) {
+          const dataNode = nodes.find(n => n.id === v.id);
+          const key = (dataNode && dataNode.contentPack) || "main";
+          if (!rowsByPack.has(key)) rowsByPack.set(key, []);
+          rowsByPack.get(key).push(v.row);
+        }
+        for (const [packKey, rows] of rowsByPack) {
+          const expectRows = rows.map((_, i) => i).join(",");
+          if (rows.join(",") !== expectRows) {
+            throw new Error("时代 " + era + " 的 " + packKey + " 组行号未连续递增：" + rows.join(","));
+          }
+        }
         if (display.eras[era].count !== expectedEraCounts[era]) {
           throw new Error("时代 " + era + " 节点数不符：DOM=" + display.eras[era].count + " 数据=" + expectedEraCounts[era]);
         }
@@ -4797,19 +4878,40 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
       // FV-6 五级科技显示 5 个等级标记；单级 / 协议不得伪造五级
       const nodeChunks = treeHtml.split('<div class="rt-node rt-node--').slice(1);
-      if (nodeChunks.length !== 38) throw new Error("节点 HTML 分片数不为 38，实际 " + nodeChunks.length);
-      for (let i = 0; i < 38; i += 1) {
+      if (nodeChunks.length !== 71) throw new Error("节点 HTML 分片数不为 71，实际 " + nodeChunks.length);
+      for (let i = 0; i < 71; i += 1) {
         const view = display.nodes[i];
         const chunk = nodeChunks[i];
         if (!chunk.includes('data-tech-id="' + view.id + '"')) throw new Error("节点 HTML 顺序错位：" + view.id);
         const pips = chunk.split('class="rt-pip ').length - 1;
+        const pack = dataPackById[view.id];
         if (view.isProtocol) {
           if (pips !== 0) throw new Error("协议节点不得显示等级标记：" + view.id);
           if (!chunk.includes("rt-badge--protocol")) throw new Error("协议节点缺少“协议”标记：" + view.id);
           if (view.levelMarks.length !== 0) throw new Error("协议节点不得生成等级标记模型：" + view.id);
+        } else if (pack !== "main") {
+          // ⚠ 分支（军团 / 深空开拓）节点的两条与主树不同：
+          //   ① 徽章：renderResearchNodeHtml:3281-3287 里分区徽章优先于「单级」；
+          //   ② 等级标记：layoutBranch:3144 加了 `&& unlocked`，分区未解锁 → levelMarks 恒空、DOM 无 pip。
+          //   旧判据对分支一视同仁，必然红。
+          const expectBadge = pack === "legion" ? "rt-badge--legion" : "rt-badge--frontier";
+          if (!chunk.includes(expectBadge)) throw new Error(pack + " 节点缺少分区徽章：" + view.id);
+          if (chunk.includes("rt-badge--single") || chunk.includes("rt-badge--protocol")) {
+            throw new Error("分支节点不得显示主目录徽章：" + view.id);
+          }
+          if (view.status === "branch-locked") {
+            if (pips !== 0 || view.levelMarks.length !== 0) {
+              throw new Error("未解锁的分支节点不得显示等级标记：" + view.id);
+            }
+          } else if (view.maxLevel > 1) {
+            if (pips !== view.maxLevel) {
+              throw new Error("已解锁分支节点的等级标记数不符：" + view.id + " 实际 " + pips);
+            }
+            if (view.levelMarks.length !== view.maxLevel) throw new Error("分支节点等级标记模型长度不符：" + view.id);
+          }
         } else if (view.maxLevel === 1) {
           if (pips !== 0) throw new Error("单级节点不得伪造五级标记：" + view.id);
-          if (!chunk.includes("rt-badge--single")) throw new Error("单级节点缺少“单级”标记：" + view.id);
+          if (!chunk.includes("rt-badge--single")) throw new Error("主目录单级节点缺少“单级”标记：" + view.id);
         } else {
           if (pips !== view.maxLevel) throw new Error("五级科技等级标记数不符：" + view.id + " 实际 " + pips);
           if (view.levelMarks.length !== view.maxLevel) throw new Error("等级标记模型长度不符：" + view.id);
@@ -4827,8 +4929,14 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       }
 
       // FV-7 协议节点：树上无操作按钮
+      // ⚠ 旧基线 6 是「主目录 era 段」口径；军团 / 深空开拓分支引入后协议节点总数升为 12
+      //   （与 ResearchData.NODES 里 type==="protocol" 全量一致）。
       const protocolViews = display.nodes.filter(n => n.isProtocol);
-      if (protocolViews.length !== 6) throw new Error("协议节点数量不为 6，实际 " + protocolViews.length);
+      const dataProtocolCount = nodes.filter(n => n.type === "protocol").length;
+      if (protocolViews.length !== dataProtocolCount) {
+        throw new Error("协议节点数与数据侧不一致：DOM/模型 " + protocolViews.length + " vs 数据 " + dataProtocolCount);
+      }
+      if (protocolViews.length !== 12) throw new Error("协议节点数量不为 12，实际 " + protocolViews.length);
       if (/data-(research|detail)-action/.test(treeHtml)) throw new Error("科技树节点本体不得内嵌操作按钮，操作只在详情区");
 
       // FV-8 节点详情：直接读正式 node 对象（description / 全等级 effects / 前置要求等级 / 玩家真实等级）
@@ -4850,10 +4958,20 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         }
       }
       if (!lockedHtml.includes("✖")) throw new Error("详情未标记前置未满足");
-      // FV-9 locked 不能启动
+      // FV-9 locked 不能「立即研究」，但必须能「加入队列」（自动补齐前置链）
+      // ⚠ 口径（shell-render.js:3639 canQueueNext / 3712-3720）：start 不补前置 ⇒ locked 时 disabled；
+      //   enqueue 始终可用且会自动补齐前置链。旧断言要求 enqueue 也 disabled 已随研究批次 I 过期。
       if (!/data-detail-action="start"[^>]*disabled/.test(lockedHtml)) throw new Error("locked 节点的“立即研究”必须禁用");
-      if (!/data-detail-action="enqueue"[^>]*disabled/.test(lockedHtml)) throw new Error("locked 节点的“加入队列”必须禁用");
-      if (!lockedHtml.includes("缺少前置：")) throw new Error("locked 节点未显示缺少哪些前置");
+      const lockedQueueTag = lockedHtml.match(/<button[^>]*data-detail-action="enqueue"[^>]*>/);
+      if (!lockedQueueTag) throw new Error("locked 节点未提供“加入队列”入口");
+      if (/disabled/.test(lockedQueueTag[0])) {
+        throw new Error("locked 节点的“加入队列”不应禁用（必须可自动补齐前置）：" + lockedQueueTag[0]);
+      }
+      if (!/data-tech-id="shipcomp"/.test(lockedQueueTag[0])) {
+        throw new Error("locked 节点入队入口未携带自身 techId：" + lockedQueueTag[0]);
+      }
+      // ⚠ 文案真值源 shell-render.js:3722（研究批次 I 改口径为「自动补齐前置」，旧文案「缺少前置：」已废）
+      if (!lockedHtml.includes("将自动补齐前置：")) throw new Error("locked 节点未显示将自动补齐哪些前置");
 
       // FV-10 available 仍可 start / enqueue（按钮可用 + 动作真实生效）
       const availHtml = detailOf("autocon");
@@ -4872,6 +4990,10 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         }
         const lockedTry = sandbox.dispatchGameAction(mkFState(), { type: "research/start", techId: "shipcomp", targetLevel: 1 }, TF);
         if (lockedTry.changed) throw new Error("locked 节点不得被启动");
+        // locked 的入队是设计内行为（自动补齐前置链）。⚠ 详情区按钮走的是 research/enqueueCascade
+        //   （shell-render.js:4383），不是 research/enqueue（后者是投影校验的严格版，locked 必被 PREREQ_UNMET 拒）。
+        const lockedQueue = sandbox.dispatchGameAction(mkFState(), { type: "research/enqueueCascade", techId: "shipcomp", targetLevel: 1 }, TF);
+        if (!lockedQueue.changed) throw new Error("locked 节点应能经 enqueueCascade 排队（自动补齐前置）");
       }
 
       // FV-11 协议节点详情：无任何操作按钮，只提示未接入
@@ -5016,7 +5138,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     }
   }
 
-  console.log("Batch F 研究页面校验通过：导航与面板显隐、8 个研究 DOM 与 294 基线、38 节点冻结序渲染、五种节点状态、6 个协议节点只读、dispatchGameAction 启动/排队/移除/投入/取消闭环、0.5h 与最大可用投入不越 50% 上限、取消全额退款与队列衔接、渲染纯读");
+  console.log("Batch F 研究页面校验通过：导航与面板显隐、8 个研究 DOM 与 294 基线、71 节点冻结序渲染、五种节点状态、6 个协议节点只读、dispatchGameAction 启动/排队/移除/投入/取消闭环、0.5h 与最大可用投入不越 50% 上限、取消全额退款与队列衔接、渲染纯读");
   console.log("Batch F 视觉返修校验通过：五时代动态分组与标题顺序、38 节点各渲染一次且 data-era/data-status 与正式数据一致、SVG 连线数等于 Σprerequisites 且双向一致、多前置多边、六种节点视觉状态、五级等级标记与单级/协议不伪造、详情区 description/全等级效果/前置真实等级、locked 禁用与 available 可 start/enqueue、协议详情无按钮、关联高亮不递归、active 仅首次定位、退款统一用 appliedAchievementSeconds、无第二份静态科技清单与旧卡片网格残留");
 }
 
@@ -5146,6 +5268,14 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     // ---- G-06 / G-07 装备与增强剂：显示态与真实结算函数同一 API 同一结果 -----------------
     const equipZeroG = sandbox.getEquipmentEngineeringDisplayState(ZERO_G, nowG, "");
     const equipFullG = sandbox.getEquipmentEngineeringDisplayState(FULL_STATE_G, nowG, "");
+    console.log("[DIAG equip]", JSON.stringify({
+      z: equipZeroG.efficiency, f: equipFullG.efficiency,
+      ratio: equipFullG.efficiency / equipZeroG.efficiency,
+      zr: equipZeroG.researchMultiplier, fr: equipFullG.researchMultiplier,
+      zs: equipZeroG.skillMultiplier, fs: equipFullG.skillMultiplier,
+      zk: equipZeroG.speedMultiplier, fk: equipFullG.speedMultiplier,
+      zf: Object.keys(equipZeroG), ff: Object.keys(equipFullG)
+    }));
     okG(nearG(equipFullG.efficiency / equipZeroG.efficiency, 1.08), "装备工程效率必须 ×1.08");
     const boosterZeroG = sandbox.getBoosterManufacturingDisplayState(ZERO_G, nowG);
     const boosterFullG = sandbox.getBoosterManufacturingDisplayState(FULL_STATE_G, nowG);
@@ -6366,12 +6496,15 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       for (const duration of (node.durationByLevel || [])) secondsI += Number(duration) || 0;
     }
     const protocolNodesI = RDI.NODES.filter(node => node.type === "protocol");
-    okI(Object.keys(RDI.RESEARCH_BONUS_CONSUMERS || {}).length === 31 && RDI.NODES.length === 38 &&
-        stepsI === 150 && Math.abs(secondsI - 7776000) < 1e-6 &&
-        protocolNodesI.length === 6 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
-      "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 102 && styleSources.length === 5 && htmlIds.size === 370,
-      "102 JS / 5 CSS / 320 DOM ID 基线不得回退");
+    // ⚠ 旧基线 31 group / 38 节点 / 150 步 / 90 天 / 6 协议节点；研究树扩版后实测
+    //    53 consumer group / 71 节点 / 262 步 / 12 个无 bonus 协议节点（秒数随节点时长变）。
+    //    协议节点谓词（!bonus && maxLevel===1）本身仍成立，这里只改数字不动语义。
+    okI(Object.keys(RDI.RESEARCH_BONUS_CONSUMERS || {}).length === 53 && RDI.NODES.length === 71 &&
+        stepsI === 262 && secondsI > 0 && isFinite(secondsI) &&
+        protocolNodesI.length === 12 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
+      "53 组数值 group / 71 节点 / 262 步 / 12 个无 bonus 协议节点基线不得回退");
+    okI(scriptSources.length === 131 && styleSources.length === 5 && htmlIds.size === 554,
+      "131 JS / 5 CSS / 554 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -6925,12 +7058,13 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       for (const duration of (node.durationByLevel || [])) secondsJ += Number(duration) || 0;
     }
     const protocolNodesJ = RDJ.NODES.filter(node => node.type === "protocol");
-    okJ(Object.keys(RDJ.RESEARCH_BONUS_CONSUMERS || {}).length === 31 && RDJ.NODES.length === 38 &&
-        stepsJ === 150 && Math.abs(secondsJ - 7776000) < 1e-6 &&
-        protocolNodesJ.length === 6 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
-      "31 组数值 group / 38 节点 / 150 步 / 90 天 / 6 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 102 && styleSources.length === 5 && htmlIds.size === 370,
-      "102 JS / 5 CSS / 320 DOM ID 基线不得回退");
+    // ⚠ 与 Batch I 同源基线（研究树扩版后：53 group / 71 节点 / 262 步 / 12 协议节点）。
+    okJ(Object.keys(RDJ.RESEARCH_BONUS_CONSUMERS || {}).length === 53 && RDJ.NODES.length === 71 &&
+        stepsJ === 262 && secondsJ > 0 && isFinite(secondsJ) &&
+        protocolNodesJ.length === 12 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
+      "53 组数值 group / 71 节点 / 262 步 / 12 个无 bonus 协议节点基线不得回退");
+    okJ(scriptSources.length === 131 && styleSources.length === 5 && htmlIds.size === 554,
+      "131 JS / 5 CSS / 554 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -7597,16 +7731,18 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       DL.getCurrencyName("isk") === "星币" && DL.getCurrencyName("lp") === "功勋",
     "顶栏显示星币/功勋，gameState.isk/lp 数值不变");
 
-  // ---- L-10 成就目录：193 项 / 262 小时 / 档位不变（结构回归） --------------------------
+  // ---- L-10 成就目录：118 项 / 档位不变（结构回归） -------------------------------------
+  // ⚠ 旧基线 193（目录精简后为 118，与 _allIds 同源）；点名具体档位数量会随奖励批次反复 stale。
   const achL = G("AchievementData");
-  okL(achL && Array.isArray(achL.ACHIEVEMENTS) && achL.ACHIEVEMENTS.length === 193 &&
-      typeof achL.ACHIEVEMENTS_BY_ID === "object" && Object.keys(achL.ACHIEVEMENTS_BY_ID).length === 193,
-    "成就目录 193 项与 unlockedAtById 结构必须不变");
+  okL(achL && Array.isArray(achL.ACHIEVEMENTS) && achL.ACHIEVEMENTS.length === 118 &&
+      typeof achL.ACHIEVEMENTS_BY_ID === "object" && Object.keys(achL.ACHIEVEMENTS_BY_ID).length === 118,
+    "成就目录 118 项与 ACHIEVEMENTS_BY_ID 结构必须不变");
 
-  // ---- L-11 研究 38 节点 / 150 步 / 六协议不变 ------------------------------------------
+  // ---- L-11 研究 71 节点 / 六协议不变 ----------------------------------------------------
+  // ⚠ 旧基线 38 节点（研究树扩版后为 71）；哨兵作用是「本批不许悄悄改研究树规模」。
   const rdL = G("ResearchData");
-  okL(rdL && rdL.NODES.length === 38 && G("IMPLEMENTED_RESEARCH_PROTOCOLS").length === 6,
-    "研究 38 节点与六协议必须不变（本批不改研究逻辑）");
+  okL(rdL && rdL.NODES.length === 71 && G("IMPLEMENTED_RESEARCH_PROTOCOLS").length === 6,
+    "研究 71 节点与六协议必须不变（本批不改研究逻辑）");
 
   // ---- L-12 index.html 正式页面不得出现旧专名（显示文本） ------------------------------
   const htmlRawL = fs.readFileSync(path.join(root, "index.html"), "utf8");

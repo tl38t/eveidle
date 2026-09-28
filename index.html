@@ -29,24 +29,28 @@
   <script defer src="./js/core/speed-config.js?v=3"></script>
   <script src="./js/i18n/catalog-en.js?v=53"></script>
   <script src="./js/i18n/catalog-zh-TW.js?v=29"></script>
-  <!-- steam-i18n-de-ru:start -->
-  <!-- de / ru 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这两个文件，
+  <!-- steam-i18n-locales:start -->
+  <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
        非 Steam 端不加载 ⇒ 不下载、不建入、下拉不出现，体积零影响。
        ⚠️ 整个 start~end 区块会在 TapTap 本地化阶段被剥离（见 tools/build-taptap-h5.mjs
        localizeIndexHtml）：否则 collectRefs 会把 document.write 里的 src 字面量当作本地引用，
-       令「本地静态引用均可在包内找到」断言失败。改本块务必同步该剥离规则。 -->
+       令「本地静态引用均可在包内找到」断言失败。改本块务必同步该剥离规则。
+       🔴 catalog-ja.js?v 与 translator.js?v 必须同步递增（cache-buster 铁律）：
+          ja 客户端语言自 2026-09-28 起随包发布，版本落后会让 Steam 日文客户端继续吃旧的不带 ja 的包。 -->
   <script>
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
         document.write('<script src="./js/i18n/catalog-de.js?v=16"><\/script>');
         document.write('<script src="./js/i18n/catalog-ru.js?v=18"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ja.js?v=1"><\/script>');
+        document.write('<script src="./js/i18n/catalog-fr.js?v=1"><\/script>');
       }
     })();
   </script>
-  <!-- steam-i18n-de-ru:end -->
-  <script src="./js/i18n/translator.js?v=21"></script>
+  <!-- steam-i18n-locales:end -->
+  <script src="./js/i18n/translator.js?v=23"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
     // source code, variables, HTML templates, starmap and achievements stay untouched.
@@ -131,17 +135,21 @@
 .titan-fresh-slot .u-select { width:100%; box-sizing:border-box; background:#1a3345; color:#b0d0e8; border:1px solid #2a4a5e; border-radius:4px; padding:6px 8px; font:13px 'Rajdhani','Microsoft YaHei',sans-serif; }
 .titan-fresh-slot .u-select:focus { border-color:#5da8d4; box-shadow:0 0 0 2px rgba(93,168,212,.18); outline:none; }
 .titan-fresh-slot option { background:#10202d; color:#d7eaf5; }
+/* 2026-09-28 真入队：「总装泰坦」+「加入队列」并排。默认 inline-block 在窄屏会挤出容器，
+   故用 flex-wrap + 等宽弹性项；窄屏自动换行成两行，不产生横向溢出。 */
+.titan-fresh-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.titan-fresh-actions .btn { flex:1 1 auto; min-width:0; white-space:nowrap; }
 .titan-fresh-status { margin-top:10px; padding:8px; border:1px solid #24553e; border-radius:6px; color:#77d5a4; background:#10251d; font-size:12px; }
 .titan-asm-cost { margin-top:6px; padding:8px; border:1px solid #203548; border-radius:6px; color:#9bb4c6; background:#0d1822; font-size:12px; line-height:1.6; }
 .titan-asm-cost .enough { color:#77d5a4; } .titan-asm-cost .short { color:#ff8f6b; }
 .titan-asm-goto:empty { display:none; }
 .titan-asm-goto { margin-top:6px; }
 .titan-asm-goto .titan-goto { padding:4px 12px; font-size:12px; }
-.titan-fresh-preview .titan-preview { min-height:390px; position:relative; overflow:hidden; border:1px solid #294761; border-radius:8px; background:#091522; }
+.titan-forge-fresh-preview .titan-preview { min-height:390px; position:relative; overflow:hidden; border:1px solid #294761; border-radius:8px; background:#091522; }
 .titan-forge-canvas { display:block; width:100%; height:100%; min-height:390px; }
 .titan-preview-label { position:absolute; left:12px; top:10px; z-index:1; color:#9fb4c5; font-size:11px; }
 /* 3D 预览加载前/失败时的兜底占位 */
-.titan-preview-placeholder,.titan-preview-error { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:#7a93a8; font-size:13px; padding:20px; }
+.titan-preview-placeholder,.titan-preview-error { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; color:#7a93a8; font-size:13px; padding:20px; pointer-events:none; }
 .titan-preview-placeholder span,.titan-preview-error span { display:block; margin-bottom:6px; color:#a3bdd1; }
 .titan-preview-error small { display:block; color:#8a6f6f; font-size:11px; max-width:100%; word-break:break-all; }
 .titan-fresh-summary { display:flex; gap:8px; margin-top:9px; align-items:stretch; }
@@ -992,6 +1000,8 @@
               </div>
 
               <div class="bl-kv"><span>当前效果</span><b id="bl-kv-eff">ME 0% · TE 0%</b></div>
+              <!-- 研究速度 = INVENTION.labSpeedParts 的 total；点数字弹「效率因子明细」（与舰船/装备/增强剂页同款交互） -->
+              <div class="bl-kv"><span>研究速度</span><b class="eff-clickable" id="bl-eff-display">效率：1.00x</b></div>
 
               <div class="bl-costs">
                 <div class="bl-cost isk"><i>💰</i><span>星币/次</span><b id="bl-c-isk">—</b></div>
@@ -1257,6 +1267,18 @@
       $("bl-kv-eff").textContent = (dm || dt)
         ? "ME " + (dm ? RED[dm - 1] : 0) + "% · TE " + (dt ? RED[dt - 1] : 0) + "%"
         : "ME 0% · TE 0%";
+    }
+    // 研究速度（效率因子）：真值源 = INVENTION.labSpeedParts，明细由 selectors 层拼装。
+    // 惰性取全局函数——本内联脚本早于 defer 的 selectors.js / invention.js，加载期抓取会锁死 undefined。
+    const blEffEl = $("bl-eff-display");
+    if (blEffEl) {
+      const g1 = gs();
+      const effV = (typeof window !== "undefined" && typeof window.getBlueprintInventionEfficiency === "function")
+        ? window.getBlueprintInventionEfficiency(g1) : 1;
+      blEffEl.textContent = "效率：" + (Number(effV) || 1).toFixed(2) + "x";
+      if (typeof window !== "undefined" && typeof window.getBlueprintInventionEfficiencyBreakdown === "function") {
+        blEffEl.title = window.getBlueprintInventionEfficiencyBreakdown(g1);
+      }
     }
     if ($("bl-c-isk")) $("bl-c-isk").textContent = fmt(b.perIsk);
     if ($("bl-c-mat")) $("bl-c-mat").textContent = fmt(b.perCore);
@@ -2676,10 +2698,14 @@
   <script defer src="./js/data/achievements.js?v=8"></script>
   <script defer src="./js/data/achievement-locales.js?v=2"></script>
   <script defer src="./js/data/achievement-locales-tw.js?v=1"></script>
+  <script defer src="./js/data/achievement-locales-ja.js?v=1"></script>
+  <script defer src="./js/data/achievement-locales-de.js?v=1"></script>
+  <script defer src="./js/data/achievement-locales-ru.js?v=1"></script>
+  <script defer src="./js/data/achievement-locales-fr.js?v=1"></script>
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=7"></script>
-  <script defer src="./js/data/changelog.js?v=32"></script>
+  <script defer src="./js/data/changelog.js?v=167"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=19"></script>
@@ -2693,7 +2719,7 @@
   <script defer src="./js/core/resources.js?v=7"></script>
   <script defer src="./js/systems/tutorial.js?v=9"></script>
   <script defer src="./js/systems/manufacturing.js?v=10"></script>
-  <script defer src="./js/systems/invention.js?v=11"></script>
+  <script defer src="./js/systems/invention.js?v=12"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=8"></script>
@@ -2715,16 +2741,16 @@
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
   <script defer src="./js/systems/combat.js?v=63"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=133"></script>
-  <script defer src="./js/core/actions.js?v=68"></script>
+  <script defer src="./js/core/selectors.js?v=134"></script>
+  <script defer src="./js/core/actions.js?v=70"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=55"></script>
   <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=161"></script>
+   <script defer src="./js/ui/shell-render.js?v=163"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
-  <script defer src="./js/ui/titan-forge-integration.js?v=15"></script>
+  <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
    <script defer src="./js/ui/combat-render.js?v=80"></script>
   <script defer src="./js/ui/planetary-render.js?v=4"></script>
   <script defer src="./js/ui/archaeology-render.js?v=17"></script>
@@ -2740,9 +2766,9 @@
    <script defer src="./js/platform/alliance-policy.js?v=2"></script>
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
-  <script defer src="./js/ui/alliance-render.js?v=42"></script>
-  <script defer src="./js/core/tick.js?v=29"></script>
-  <script defer src="./js/core/offline.js?v=39"></script>
+  <script defer src="./js/ui/alliance-render.js?v=164"></script>
+  <script defer src="./js/core/tick.js?v=31"></script>
+  <script defer src="./js/core/offline.js?v=41"></script>
   <script defer src="./js/systems/offline-combat.js?v=63"></script>
   <script defer src="./js/systems/combat-log.js?v=6"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
@@ -2780,7 +2806,7 @@
   <script defer src="./js/ui/changelog-popup.js?v=2"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=14"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>
-<script defer src="./js/ui/render.js?v=40"></script>
+<script defer src="./js/ui/render.js?v=41"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=25"></script>
   <script defer src="./js/qa-seed.js?v=4"></script>
   <div id="hangar-3d-popup">

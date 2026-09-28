@@ -177,9 +177,18 @@ function isWhitelisted(rel) {
     if (base === "ship-lab.css" || base === "three-demo.css") return false;
     return true;
   }
-  // de / ru 目录仅随 Steam（Electron）包发布，不进 TapTap H5 包（避免体积膨胀）。
+  // de / ru / ja 目录仅随 Steam（Electron）包发布，不进 TapTap H5 包（避免体积膨胀）。
   // index.html 也只在检测到 Steam 运行时才注入对应 <script>，此处再拦一道，双保险。
-  if (rel === "js/i18n/catalog-de.js" || rel === "js/i18n/catalog-ru.js") return false;
+  //   · ja 是 2026-09-28 随「日语客户端」一起加的，同 de/ru 处理：只进 Steam 包。
+  //   · fr 是 2026-09-28 随「法语客户端」一起加的，同样只进 Steam 包（668 KB，不能进 H5）。
+  if (rel === "js/i18n/catalog-de.js" || rel === "js/i18n/catalog-ru.js"
+      || rel === "js/i18n/catalog-ja.js" || rel === "js/i18n/catalog-fr.js") return false;
+  // 成就词条多语种（2026-09-28 随 ja / fr 客户端新增）。TapTap 端 supported 不含这些语种
+  // （上一条已排除 catalog-* ⇒ hasXx 恒 false ⇒ 下拉没有这些选项），词条文件恒读不到；
+  // js/ui/shell-render.js:getLocalizedAchievementText() 缺失即回落中文原名，功能不坏。
+  // ⚠️ 若将来 TapTap 要上 ja / fr，本行必须同步去掉对应项，否则改动静默不生效。
+  if (rel === "js/data/achievement-locales-ja.js" || rel === "js/data/achievement-locales-de.js"
+      || rel === "js/data/achievement-locales-ru.js" || rel === "js/data/achievement-locales-fr.js") return false;
   if (/^js\/.*\.js$/.test(rel)) {
     if (rel.includes("three-demo") || rel.includes("ship-lab")) return false;
     return true;
@@ -218,7 +227,7 @@ function localizeIndexHtml(html, includeProbe) {
   // 但 document.write 的参数字符串里含 `src="./js/i18n/catalog-de.js?v=1"` 字面量，会被 collectRefs
   // 当作本地引用，导致「本地静态引用均可在包内找到」断言失败（这两个文件已被 isWhitelisted 排除）。
   // 故按 marker 整块剥离，与 qa-seed / steam 引用同模式。
-  out = out.replace(/<!--\s*steam-i18n-de-ru:start\s*-->[\s\S]*?<!--\s*steam-i18n-de-ru:end\s*-->\s*/g, "");
+  out = out.replace(/<!--\s*steam-i18n-locales:start\s*-->[\s\S]*?<!--\s*steam-i18n-locales:end\s*-->\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com">\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com" crossorigin>\s*/g, "");
   out = out.replace(/<link href="https:\/\/fonts\.googleapis\.com\/css2\?family=Orbitron:[^"]*" rel="stylesheet">\s*/g, "");

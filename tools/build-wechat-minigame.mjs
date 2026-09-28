@@ -104,9 +104,25 @@ const extraJs = allJs.filter((f) => !ordered.includes(f)).sort();
 const WX_EXCLUDE = new Set([
   "js/i18n/catalog-en.js",
   "js/i18n/catalog-zh-TW.js",
-  // de / ru 目录仅随 Steam 包发布；微信本就不走 i18n catalog（简中兜底），显式排除避免误入。
+  // de / ru / ja 目录仅随 Steam 包发布；微信本就不走 i18n catalog（简中兜底），显式排除避免误入。
   "js/i18n/catalog-de.js",
   "js/i18n/catalog-ru.js",
+  "js/i18n/catalog-ja.js",
+  "js/i18n/catalog-ko.js",
+  "js/i18n/catalog-fr.js",
+  // 成就词条多语种（2026-09-28 随 ja / fr 客户端新增，同 catalog 系列处理）。
+  //   排除依据：微信端 supported 不含 ja / de / ru / fr（catalog 系列已被排除 ⇒ hasXx 恒 false
+  //   ⇒ 语言下拉根本没有这些选项）⇒ js/i18n/translator.js 恒 "zh-CN" / "zh-TW"。
+  //   而 js/ui/shell-render.js:getAchievementLocaleCode() 只会返回 ACHIEVEMENT_PAGE_COPY 里有的键，
+  //   getLocalizedAchievementText() 又是 `locales && locales[code] ? ... : null` 后回落
+  //   `{ name: definition.name, ... }` ⇒ 词条文件缺失即优雅回落到中文原名，**功能不坏**。
+  // ⚠️ 副作用（已接受）：微信端设备语言若被改成 ja / fr，成就名/条件会显示中文原文。与上面
+  //   排除 catalog-en 时的取舍同向（catalog-en 也是「缺失即回落原文」），非缺陷。
+  // ⚠️ 若将来微信小游戏要上 ja / fr，本清单必须同步删掉对应行，否则改动静默不生效。
+  "js/data/achievement-locales-ja.js",
+  "js/data/achievement-locales-de.js",
+  "js/data/achievement-locales-ru.js",
+  "js/data/achievement-locales-fr.js",
   "js/qa-seed.js",
 ]);
 const bootOrderAll = [...ordered, ...extraJs];

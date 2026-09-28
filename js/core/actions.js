@@ -376,6 +376,23 @@ const ManufacturingStateActions = {
     if (typeof hasEnoughShipAssemblyComponents === "function" && !hasEnoughShipAssemblyComponents(recipe)) {
       return { changed:false, reason:"insufficient-components" };
     }
+    // 泰坦总装是独占手动行动（不入制造队列）。若制造队列正在跑，先停队列（items 保留）：
+    // ① 否则 tick 完成一艘后 completeQueuedActionCycle 走队列分支——泰坦没入队，扣的是队列
+    //    当前项的 count（白吃无关项产量），且 batchRemaining 被污染成该 count ⇒「完成一艘
+    //    不停、自动开第二轮」（2026-09-27 玩家实测）；count 扣尽还会 executeQueueItem 把
+    //    泰坦行动整个顶掉；
+    // ② 离线 syncQueueCurrentAction 会以队列项权威覆盖泰坦行动 ⇒ 泰坦离线永远造不出来
+    //    （玩家实测「泰坦还是没办法离线制造」；9-10 的 targetMatches 放行只解决 target 一项，
+    //    skill/batch 不一致照样覆盖）。
+    // 不能调 ShellStateActions.queueStop：它连带给 currentAction 复位并清战斗续战态，此处越权。
+    const tq = state.queue;
+    if (tq && tq.status && tq.status.isRunning) {
+      tq.status.isRunning = false;
+      tq.status.activeIndex = -1;
+      if (typeof showToast === "function") {
+        try { showToast("⚠ 制造队列已暂停：泰坦总装为独占行动，完成后可回队列页重新开始。"); } catch (_) {}
+      }
+    }
     Object.assign(state.currentAction, {
       skill:"shipEngineering",
       active:true,
@@ -1239,6 +1256,53 @@ function clearStaleShipEngineeringRunFields(action, nextSkill) {
   return { interruptedTitan };
 }
 
+// ---- 泰坦总装队列条目（2026-09-28 真入队）----
+// 队列条目模型 {skill, target, count, subAction} 装不下「三组件组合」：泰坦配方由 combo 现算
+// （data/titans.js getTitanAssemblyRecipe），target 只是哨兵、在 SHIP_COMPONENT/ASSEMBLY_RECIPES
+// 里查不到。故给条目加**增量字段** titanAsmCombo（纯增量：老存档条目无此字段 ⇒ 全部既有路径零影响，
+// 不需要任何存档迁移）。
+const TITAN_QUEUE_TARGET = "titan_assembly";
+const TITAN_QUEUE_SUBACTION = "titan";
+
+function normalizeTitanQueueCombo(combo) {
+  if (!combo || typeof combo !== "object") return null;
+  const hull = combo.hull, weapon = combo.weapon, core = combo.core;
+  if (typeof hull !== "string" || !hull) return null;
+  if (typeof weapon !== "string" || !weapon) return null;
+  if (typeof core !== "string" || !core) return null;
+  return { hull, weapon, core };
+}
+// 序列化键：仅用于「同 combo 合并 count / 队列项与 currentAction 是否同一艘」的比较。
+function titanQueueComboKey(combo) {
+  const c = normalizeTitanQueueCombo(combo);
+  return c ? c.hull + "|" + c.weapon + "|" + c.core : "";
+}
+function isTitanQueueItem(item) {
+  return Boolean(item) && item.skill === "shipEngineering"
+    && item.subAction === TITAN_QUEUE_SUBACTION
+    && Boolean(normalizeTitanQueueCombo(item.titanAsmCombo));
+}
+// 入队门禁（纯校验、零副作用）：与 startTitanAssembly:360-378 阻塞优先级逐条一致，
+// 但**只验解锁/船坞/等级**——星币与组件照抄常规装船，在启动/完成时校验（资源中途被别的活动
+// 花光时在线挂起保进度、离线冻结，不取消行动），避免入队即失败导致玩家看不见原因。
+function titanAssemblyGateError(state, combo) {
+  const c = normalizeTitanQueueCombo(combo);
+  if (!c) return { reason:"invalid-combo" };
+  const recipe = (typeof getTitanAssemblyRecipe === "function") ? getTitanAssemblyRecipe(c) : null;
+  if (!recipe) return { reason:"invalid-combo" };
+  if (typeof isTitanComponentUnlocked === "function") {
+    for (const cid of Object.keys(recipe.componentCost)) {
+      const gate = isTitanComponentUnlocked(state, cid);
+      if (gate && gate.ok === false) return { reason:gate.reason || "titan-node-locked", text:gate.text };
+    }
+  }
+  if (typeof getShipyardLevel === "function" && getShipyardLevel(state) < recipe.shipyardLevel) {
+    return { reason:"shipyard-level-locked" };
+  }
+  if (getEffectiveSkillLevel(state, "shipEngineering") < recipe.level) return { reason:"level-locked" };
+  return null;
+}
+
 function getQueueItemConfigForState(item) {
   const skill = item.skill === "ammunitionEngineering" ? "equipmentEngineering" : item.skill;
   const config = { skill, progress:0, active:true, batchRemaining:item.count || 1 };
@@ -1256,11 +1320,17 @@ function getQueueItemConfigForState(item) {
   }
   else if (skill === "gasHarvesting") config.gasArea = item.target;
   else if (skill === "shipEngineering") {
-    const component = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target);
-    const assembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target);
-    if (component) { config.shipSubAction = "component"; config.shipCompTarget = component.id; }
-    else if (assembly) { config.shipSubAction = "assembly"; config.shipAsmTarget = assembly.id; }
-    else { config.shipSubAction = "component"; config.shipCompTarget = "integrated_hull"; }
+    // 泰坦总装（2026-09-28 真入队）：**必须最先判定**。target 是哨兵 "titan_assembly"，
+    // 在 SHIP_COMPONENT/ASSEMBLY_RECIPES 里查不到，落进下方兜底会被解释成造 integrated_hull。
+    const titanCombo = isTitanQueueItem(item) ? normalizeTitanQueueCombo(item.titanAsmCombo) : null;
+    if (titanCombo) { config.shipSubAction = "titanAssembly"; config.titanAsmCombo = titanCombo; }
+    else {
+      const component = SHIP_COMPONENT_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target);
+      const assembly = SHIP_ASSEMBLY_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target);
+      if (component) { config.shipSubAction = "component"; config.shipCompTarget = component.id; }
+      else if (assembly) { config.shipSubAction = "assembly"; config.shipAsmTarget = assembly.id; }
+      else { config.shipSubAction = "component"; config.shipCompTarget = "integrated_hull"; }
+    }
   } else if (skill === "equipmentEngineering") {
     config.equipEngTarget = EQUIPMENT_ENGINEERING_RECIPES.find(recipe => recipe.id === item.target || recipe.name === item.target)?.id || "t1_mining_laser";
     if (item.equipEngInputLevel !== undefined) config.equipEngInputLevel = item.equipEngInputLevel;
@@ -1298,6 +1368,12 @@ function applyQueueConfigToState(state, config, now) {
   if (config.dismantleTarget) { action.dismantleTarget = config.dismantleTarget; action.startedDismantleTarget = config.dismantleTarget; }
   if (config.gasArea) { action.gasArea = config.gasArea; action.startedGasArea = config.gasArea; }
   if (config.shipSubAction) action.shipSubAction = config.shipSubAction;
+  // 泰坦总装（2026-09-28 真入队）：combo 由队列项透传，started 快照同步写入（tick/offline 读快照，
+  // 与常规总装 startedShipAsmTarget 同口径）。非泰坦队列项不带 config.titanAsmCombo ⇒ 零影响。
+  if (config.titanAsmCombo) {
+    action.titanAsmCombo = { hull:config.titanAsmCombo.hull, weapon:config.titanAsmCombo.weapon, core:config.titanAsmCombo.core };
+    action.startedTitanAsmCombo = { hull:config.titanAsmCombo.hull, weapon:config.titanAsmCombo.weapon, core:config.titanAsmCombo.core };
+  }
   if (config.shipCompTarget) { action.shipCompTarget = config.shipCompTarget; action.startedShipCompTarget = config.shipCompTarget; }
   if (config.shipAsmTarget) { action.shipAsmTarget = config.shipAsmTarget; action.startedShipAsmTarget = config.shipAsmTarget; }
   if (config.equipEngTarget) { action.equipEngTarget = config.equipEngTarget; action.startedEquipEngTarget = config.equipEngTarget; }
@@ -2163,13 +2239,27 @@ const ShellStateActions = {
       if (!invBp) return { changed:false, reason:"unknown-blueprint" };
       if (typeof INVENTION.isUnlocked === "function" && !INVENTION.isUnlocked(state, invBp)) return { changed:false, reason:"blueprint-locked" };
     }
+    // 泰坦总装（2026-09-28 真入队）：入队即校验 —— combo 完整 / 组件解锁 / 船坞 Lv3 / 舰船工程 Lv100。
+    // 与装备工程「蓝图未解锁拒绝入队」同口径。星币与组件不在入队验（照抄常规装船：资源在启动/
+    // 完成时校验，中途耗尽走「挂起保进度」而不是入队失败）。
+    if (item.skill === "shipEngineering" && item.subAction === TITAN_QUEUE_SUBACTION) {
+      const gate = titanAssemblyGateError(state, item.titanAsmCombo);
+      if (gate) return { changed:false, reason:gate.reason, text:gate.text };
+    }
     if (queue.items.length >= queue.config.maxSize) return { changed:false, reason:"queue-full" };
-    const count = item.count === -1 ? -1 : Math.max(1, Number(item.count) || 1);
+    let count = item.count === -1 ? -1 : Math.max(1, Number(item.count) || 1);
+    // 泰坦总装：count = -1（无限连造）一律降级为 1。每艘吞 3 组件 + 200 锻星合金 + 500 万 ISK，
+    // 无限连造会把家底抽干（2026-09-13「完成即停」修复的同一口径）。UI 侧也只发 1。
+    if (item.skill === "shipEngineering" && item.subAction === TITAN_QUEUE_SUBACTION && count === -1) count = 1;
     const last = !front ? queue.items[queue.items.length - 1] : null;
     // 2026-09-04 修复：熔炼(refining)下存在「冶炼 / 自动拆解」两个子活动，由 item.subAction 区分；
     // 合并判定必须同时比较 subAction，否则「冶炼」与「拆解」会因 target 不同/相同被错误合并或拆分。
     // 用 (x || null) 归一 undefined，确保缺省（冶炼）与显式 dismantle 不会跨子活动合并。
-    if (last && last.skill === item.skill && last.target === item.target && (last.subAction || null) === (item.subAction || null) && (last.equipEngInputLevel || 0) === (item.equipEngInputLevel || 0)) {
+    // 泰坦总装（2026-09-28 真入队）：target 是哨兵、对全部泰坦项相同 ⇒ 合并判定必须再比 combo，
+    // 否则「A 组合」与「B 组合」会被并成一项、按同一 count 连造（造出玩家没选的泰坦）。
+    // 非泰坦项两侧 titanAsmCombo 均为 undefined ⇒ key 同为空串、比较恒等 ⇒ 既有行为零影响。
+    if (last && last.skill === item.skill && last.target === item.target && (last.subAction || null) === (item.subAction || null) && (last.equipEngInputLevel || 0) === (item.equipEngInputLevel || 0)
+        && titanQueueComboKey(last.titanAsmCombo) === titanQueueComboKey(item.titanAsmCombo)) {
       last.count = last.count === -1 || count === -1 ? -1 : (Number(last.count) || 1) + count;
       if (queue.status.isRunning && queue.status.activeIndex === queue.items.length - 1) state.currentAction.batchRemaining = last.count;
       state._dirty = true;
@@ -2180,6 +2270,10 @@ const ShellStateActions = {
     // 2026-09-04 修复：必须透传 subAction，否则自动拆解(dismantle) 入队后 subAction 丢失，
     // getQueueItemConfigForState 退化为默认「冶炼」，且 target=组件id 不是合法冶炼配方 → 回落到 SMELTING_RECIPES[0]（炼钛）。
     if (item.subAction !== undefined) queueItem.subAction = item.subAction;
+    // 泰坦总装（2026-09-28 真入队）：必须透传 combo，否则 getQueueItemConfigForState 认不出该条目，
+    // target 哨兵会兜底成造 integrated_hull。
+    const titanCombo = normalizeTitanQueueCombo(item.titanAsmCombo);
+    if (titanCombo) queueItem.titanAsmCombo = titanCombo;
     if (front) queue.items.unshift(queueItem); else queue.items.push(queueItem);
     if (front && queue.status.isRunning && queue.status.activeIndex >= 0) queue.status.activeIndex++;
     state._dirty = true;
@@ -3021,6 +3115,18 @@ const ArchaeologyStateActions = {
 
 window.canStartArchaeology = canStartArchaeology;
 window.executeQueueItemForState = executeQueueItemForState;
+// 泰坦总装真入队（2026-09-28）：combo 归一化 / 序列化 / 条目判定 / 门禁校验。
+// 显式挂 window + globalThis：offline.js 与沙箱探针在隔离环境里靠全局名解析（同 finalizeCombatQueueItem）。
+window.TITAN_QUEUE_TARGET = TITAN_QUEUE_TARGET;
+window.TITAN_QUEUE_SUBACTION = TITAN_QUEUE_SUBACTION;
+window.normalizeTitanQueueCombo = normalizeTitanQueueCombo;
+globalThis.normalizeTitanQueueCombo = normalizeTitanQueueCombo;
+window.titanQueueComboKey = titanQueueComboKey;
+globalThis.titanQueueComboKey = titanQueueComboKey;
+window.isTitanQueueItem = isTitanQueueItem;
+globalThis.isTitanQueueItem = isTitanQueueItem;
+window.titanAssemblyGateError = titanAssemblyGateError;
+globalThis.titanAssemblyGateError = titanAssemblyGateError;
 // 离线战斗队列终结 / 续战标记：显式导出，供 offline-combat.js 的 G() 在 TapTap/脚本隔离环境中解析到
 // （此前未导出导致 G("finalizeCombatQueueItem") 为 undefined，离线战斗达标后无法推进队列项）。
 window.finalizeCombatQueueItem = finalizeCombatQueueItem;

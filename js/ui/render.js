@@ -461,7 +461,7 @@ function initHoverInfo() {
   });
   // 2) 效率数值：采矿/采气/冶炼/装备制造/增强剂/舰船工程 六处
   //    —— 数字本体即为点击目标（全平台），点击弹出因子明细弹窗（不再用独立 ⓘ）
-  ['me-value', 'gas-eff-value', 'smelting-eff-value', 'equipeng-eff-display', 'booster-eff-display', 'shipeng-eff-display', 'ad-efficiency'].forEach(function (id) {
+  ['me-value', 'gas-eff-value', 'smelting-eff-value', 'equipeng-eff-display', 'booster-eff-display', 'shipeng-eff-display', 'ad-efficiency', 'bl-eff-display'].forEach(function (id) {
     const el = document.getElementById(id);
     if (!el || el._effClickBound) return;
     el._effClickBound = true;

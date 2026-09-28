@@ -1771,6 +1771,28 @@ function getShipEngineeringEfficiencyBreakdown(display) {
   return formatEfficiencyBreakdown(entries, display.efficiency);
 }
 
+// 蓝图发明研究速度明细（2026-09-28，与舰船/装备/增强剂同款）：
+//   乘区真值源 = INVENTION.labSpeedParts，UI 与结算共用同一函数，禁止在此重算。
+function getBlueprintInventionEfficiencyBreakdown(state) {
+  const invMod = (typeof INVENTION !== "undefined") ? INVENTION : (typeof window !== "undefined" ? window.INVENTION : null);
+  if (!invMod || typeof invMod.labSpeedParts !== "function") return "效率因子不可用（蓝图发明模块未加载）";
+  let bd = null;
+  try { bd = invMod.labSpeedParts(state); } catch (_) { return "效率因子不可用（读取失败）"; }
+  if (!bd || !Array.isArray(bd.parts)) return "效率因子不可用（读取失败）";
+  const entries = bd.parts.map(p => ({
+    label: p.label,
+    detail: "×" + (Number(p.value) || 1).toFixed(2) + (p.note ? "（" + p.note + "）" : "")
+  }));
+  return formatEfficiencyBreakdown(entries, (bd && typeof bd.total === "number") ? bd.total : 1);
+}
+
+// 蓝图发明研究速度（数值口径同上，UI 直接显示用）。
+function getBlueprintInventionEfficiency(state) {
+  const invMod = (typeof INVENTION !== "undefined") ? INVENTION : (typeof window !== "undefined" ? window.INVENTION : null);
+  if (!invMod || typeof invMod.labSpeedParts !== "function") return 1;
+  try { return Number(invMod.labSpeedParts(state).total) || 1; } catch (_) { return 1; }
+}
+
 // 考古探针在装备制造页的简述/详述（数据来自 js/data/archaeology.js）。
 function getProbeAttributeSummary(probeId, compact) {
   const probe = (typeof getArchaeologyProbe === "function") ? getArchaeologyProbe(probeId) : null;
@@ -4890,6 +4912,13 @@ function estimateQueueItemCycleSeconds(state, item) {
       return recipe.time / (eff || 1);
     }
     if (skill === "shipEngineering") {
+      // 泰坦总装（2026-09-28 真入队）：target 是哨兵，在组件/总装表里查不到 ⇒ 配方由 combo 现算。
+      // 不改这里队列页泰坦项的周期估算恒为 null ⇒ ETA 恒显示「—」。
+      const titanCombo = (typeof normalizeTitanQueueCombo === "function") ? normalizeTitanQueueCombo(item.titanAsmCombo) : null;
+      if (titanCombo && typeof getTitanAssemblyRecipe === "function") {
+        const tRecipe = getTitanAssemblyRecipe(titanCombo);
+        if (tRecipe) return (typeof getShipEngineeringCycleDuration === "function") ? getShipEngineeringCycleDuration(state, tRecipe) : (tRecipe.time || 1);
+      }
       const recipe = ((typeof SHIP_COMPONENT_RECIPES !== "undefined") && SHIP_COMPONENT_RECIPES.find(r => r.name === target))
         || ((typeof SHIP_ASSEMBLY_RECIPES !== "undefined") && SHIP_ASSEMBLY_RECIPES.find(r => r.name === target)) || null;
       if (!recipe) return null;
@@ -4997,12 +5026,16 @@ function getQueueDisplayState(state) {
           if (combat.queueWavesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueWavesTarget - (combat.queueWavesDone || 0)) + " 波";
           else if (combat.queueEntriesTarget > 0) countText = "剩余 ×" + Math.max(0, combat.queueEntriesTarget - (combat.queueEntriesDone || 0)) + " 入场";
         }
+        // 泰坦总装（2026-09-28 真入队）：条目带 titanAsmCombo，与普通舰船条目区分图标/技能名，
+        // 否则队列页只显示「舰船 · 泰坦总装·XXX」且图标与造护卫舰相同，玩家分不清。
+        const isTitanItem = item.skill === "shipEngineering" && item.subAction === "titan"
+          && Boolean((typeof normalizeTitanQueueCombo === "function") ? normalizeTitanQueueCombo(item.titanAsmCombo) : null);
         return {
           ...item,
           index,
           active,
-          icon:icons[item.skill] || "▶",
-          skillLabel:labels[item.skill] || item.skill,
+          icon:isTitanItem ? "⚓" : (icons[item.skill] || "▶"),
+          skillLabel:isTitanItem ? "⚓泰坦总装" : (labels[item.skill] || item.skill),
           label:transformDisplayText(item.label),
           countText,
           cycleSeconds:estimateQueueItemCycleSeconds(state, item),

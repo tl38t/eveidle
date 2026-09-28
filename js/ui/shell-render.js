@@ -2594,6 +2594,50 @@ const ACHIEVEMENT_PAGE_COPY = Object.freeze({
     unlocked:"已解鎖", locked:"未解鎖", achievedAlt:"成就圖示", hiddenAlt:"隱藏成就圖示",
     researchBank:"科研工時餘額：", researchHours:"小時", reward:"科研工時 +", noReward:"無科研工時獎勵",
     notAchieved:"尚未達成", empty:"目前篩選條件下沒有成就"
+  }),
+  // ⚠️ 新增语种只需往这里补一份，并在 getAchievementLocaleCode() 里可命中即可。
+  //    categories 的 key 是**中文类别名**（渲染层按中文名匹配成就定义），各语种共用同一套 key。
+  //    ⚠️ 文案禁出现 < > 之外的需要转义的字符无所谓，但 escapeAchievementText 是纯文本转义，
+  //        所以这里只能放纯文本，不能放 HTML 标签。
+  "ja": Object.freeze({
+    title:"実績", subtitle:"Steam コレクション · マイルストーン · 研究時間報酬", all:"すべて",
+    statuses:Object.freeze({ all:"すべて", unlocked:"解除済み", locked:"未解除" }),
+    tiers:Object.freeze({ bronze:"銅", silver:"銀", gold:"金", legendary:"伝説" }),
+    categories:Object.freeze({ "技能":"技能", "采矿工业":"採掘・工業", "舰船工程":"艦船工学", "装备/增强剂":"装備 / ブースター", "战斗":"戦闘", "考古":"考古学", "行星":"惑星", "空间站":"空間ステーション", "经济":"経済", "综合":"全般" }),
+    hiddenName:"隠された実績", hiddenCondition:"達成条件は公開されていません",
+    unlocked:"解除済み", locked:"未解除", achievedAlt:"実績アイコン", hiddenAlt:"隠された実績アイコン",
+    researchBank:"研究時間残高：", researchHours:"時間", reward:"研究時間 +", noReward:"研究時間の報酬はありません",
+    notAchieved:"まだ達成していません", empty:"現在の絞り込み条件に一致する実績はありません"
+  }),
+  "de": Object.freeze({
+    title:"Errungenschaften", subtitle:"Steam-Sammlung · Meilensteine · Forschungszeit-Belohnungen", all:"Alle",
+    statuses:Object.freeze({ all:"Alle", unlocked:"Freigeschaltet", locked:"Verschlossen" }),
+    tiers:Object.freeze({ bronze:"Bronze", silver:"Silber", gold:"Gold", legendary:"Legendär" }),
+    categories:Object.freeze({ "技能":"Fertigkeiten", "采矿工业":"Bergbau & Industrie", "舰船工程":"Schiffstechnik", "装备/增强剂":"Ausrüstung / Booster", "战斗":"Kampf", "考古":"Archäologie", "行星":"Planetar", "空间站":"Station", "经济":"Wirtschaft", "综合":"Allgemein" }),
+    hiddenName:"Verborgene Errungenschaft", hiddenCondition:"Die Zusatzbedingungen sind verborgen",
+    unlocked:"Freigeschaltet", locked:"Verschlossen", achievedAlt:"Errungenschafts-Symbol", hiddenAlt:"Symbol der verborgenen Errungenschaft",
+    researchBank:"Forschungszeit-Guthaben: ", researchHours:" Stunden", reward:"Forschungszeit +", noReward:"Keine Forschungszeit-Belohnung",
+    notAchieved:"Noch nicht erreicht", empty:"Keine Errungenschaft entspricht dem aktuellen Filter"
+  }),
+  "ru": Object.freeze({
+    title:"Достижения", subtitle:"Коллекция Steam · Вехи · Награды временем исследований", all:"Все",
+    statuses:Object.freeze({ all:"Все", unlocked:"Разблокировано", locked:"Заблокировано" }),
+    tiers:Object.freeze({ bronze:"Бронза", silver:"Серебро", gold:"Золото", legendary:"Легендарный" }),
+    categories:Object.freeze({ "技能":"Навыки", "采矿工业":"Добыча & производство", "舰船工程":"Кораблестроение", "装备/增强剂":"Оборудование / Бустеры", "战斗":"Бой", "考古":"Археология", "行星":"Планетарные", "空间站":"Станция", "经济":"Экономика", "综合":"Общее" }),
+    hiddenName:"Скрытое достижение", hiddenCondition:"Условия достижения скрыты",
+    unlocked:"Разблокировано", locked:"Заблокировано", achievedAlt:"значок достижения", hiddenAlt:"значок скрытого достижения",
+    researchBank:"Баланс времени исследований: ", researchHours:" часов", reward:"Время исследований +", noReward:"Без награды временем исследований",
+    notAchieved:"Ещё не достигнуто", empty:"Ни одно достижение не подходит под текущие фильтры"
+  }),
+  "fr": Object.freeze({
+    title:"Succès", subtitle:"Collection Steam · Jalons · Récompenses en temps de recherche", all:"Tous",
+    statuses:Object.freeze({ all:"Tous", unlocked:"Débloqués", locked:"Verrouillés" }),
+    tiers:Object.freeze({ bronze:"Bronze", silver:"Argent", gold:"Or", legendary:"Légendaire" }),
+    categories:Object.freeze({ "技能":"Compétences", "采矿工业":"Exploitation minière & industrie", "舰船工程":"Ingénierie de navire", "装备/增强剂":"Équipement / Boosteurs", "战斗":"Combat", "考古":"Archéologie", "行星":"Planétaire", "空间站":"Station", "经济":"Économie", "综合":"Général" }),
+    hiddenName:"Succès caché", hiddenCondition:"Les conditions sont masquées",
+    unlocked:"Débloqué", locked:"Verrouillé", achievedAlt:"icône de succès", hiddenAlt:"icône du succès caché",
+    researchBank:"Solde de temps de recherche : ", researchHours:" heures", reward:"Temps de recherche +", noReward:"Aucune récompense en temps de recherche",
+    notAchieved:"Pas encore atteint", empty:"Aucun succès ne correspond aux filtres actuels"
   })
 });
 let achievementCategoryFilter = "all";
@@ -2609,10 +2653,14 @@ function getAchievementIconPath(achievementId, unlocked) {
   return "./assets/achievements/" + (unlocked ? "achieved/" : "unachieved/") + safeId + ".png";
 }
 
+// 🔴 必须只返回 ACHIEVEMENT_PAGE_COPY 里**真的存在**的语种：
+//    这里早先用白名单 `locale === "en-US" || locale === "zh-TW"`，导致加 ja / de / ru / fr 后
+//    语种切换了但成就页仍显示中文（静默回落，最难查的那类 bug）。
+//    ⇒ 改为「表里查得到就用，查不到回落 zh-CN」，加语种只需改 ACHIEVEMENT_PAGE_COPY。
 function getAchievementLocaleCode() {
   const locale = typeof window !== "undefined" && window.I18N && typeof window.I18N.getLocale === "function"
     ? window.I18N.getLocale() : "zh-CN";
-  return locale === "en-US" || locale === "zh-TW" ? locale : "zh-CN";
+  return ACHIEVEMENT_PAGE_COPY[locale] ? locale : "zh-CN";
 }
 
 function getAchievementPageCopy() {
@@ -5263,7 +5311,12 @@ function renderEquipCurrentBar(display, slot) {
   if (!curEq) {
     return '<div class="equip-current is-empty"><span class="ec-label">' + label + idx + ' · 当前</span><span class="ec-main">空槽 · 未安装</span></div>';
   }
-  const equippedItem = (display.equipped || []).find(it => it.id === slot.equipmentId) || null;
+  // 2026-09-27：同种装备可装多件（尤其带词条改装件实例），旧写法按 itemId find 恒命中
+  // equipped 首条 ⇒ 各槽弹窗显示同一件的词条（玩家实测：改装件 2/3 同显一件的「已强化×2 优良」）。
+  // 改按槽位原始 ref 精确对位（实例装配 ref=instanceId、裸件 ref=itemId，与 equipped[].ref 同源）；
+  // ref 未命中再退回 itemId 兜底（裸件多件时命中哪条都等价：无实例差异）。
+  const equippedItem = (display.equipped || []).find(it => it.ref === slot.equipmentRef)
+    || (display.equipped || []).find(it => it.id === slot.equipmentId) || null;
   const level = Math.max(0, Math.floor(Number(equippedItem && equippedItem.enhancementLevel) || 0));
   // 2026-09-27：带词条改装件实例的 enhancementLevel 恒 0，旧写法恒显「未强化」；对齐候选卡按词条数标「已强化×N」
   const curAffixCount = Array.isArray(equippedItem && equippedItem.affixes) ? equippedItem.affixes.length : 0;

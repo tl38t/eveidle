@@ -618,9 +618,11 @@ function getOfflineActionDescriptor() {
       maxCycles() {
         if (tLevel() < tRecipe.level) return 0;
         const cap = (typeof getTitanAssemblyMaxCycles === "function") ? getTitanAssemblyMaxCycles(gameState, tRecipe) : 0;
-        // 与在线 tick「完成即停」严格同口径（2026-09-13）：泰坦总装无批量/队列入口，
-        // 一次启动只造 1 艘。旧行为按材料上限批量结算 ⇒ 单次离线吞掉全部组件 + 锻星合金 + ISK。
-        return Math.min(cap, 1);
+        // 真入队（2026-09-28）：队列驱动时按队列项剩余 count 结算（与常规制造同口径）；
+        // 非队列（老存档手动直启）保持 2026-09-13「完成即停」：一次启动只造 1 艘，
+        // 避免按材料上限批量结算把组件 + 锻星合金 + ISK 一次吞光。
+        const qCount = titanQueueRemainingCount(tCombo);
+        return Math.min(cap, qCount > 0 ? qCount : 1);
       },
       apply(cycles, gains) {
         if (tLevel() < tRecipe.level) return; // 等级不足：零副作用
@@ -635,11 +637,16 @@ function getOfflineActionDescriptor() {
         }
         addOfflineSkillXp(key, cycles * tRecipe.xp); gains[key] += cycles;
         emitOfflineGameEvent("manufacturing:completed", { branch:"titan", recipeId:tRecipe.id, shipId:tRecipe.shipId, quantity:cycles, time:tRecipe.time, cycles, xp:cycles * tRecipe.xp });
-        // 完成即停（与在线 tick 同口径，2026-09-13）：产出后立即收尾本轮总装。
+        // 完成收尾（2026-09-13「完成即停」 + 2026-09-28 真入队）：
         // 兼顾「离线时间刚好够 1 周期」的边界——那条路径不会走 skipFailed 分支，
         // 若不显式收尾会留下 active=true 的尾巴，玩家回来仍看到「总装进行中」。
-        gameState.currentAction.active = false;
-        gameState.currentAction.progress = 0;
+        // 队列驱动且本项仍有剩余 count 时不收尾，交给主循环 completeOfflineQueueCycles
+        // 扣 count 并推进下一项（与常规制造同口径）；非队列 / count 已耗尽才结束本轮。
+        const tRemaining = titanQueueRemainingCount(tCombo) - cycles;
+        if (tRemaining <= 0) {
+          gameState.currentAction.active = false;
+          gameState.currentAction.progress = 0;
+        }
       },
       // 与在线 tick「资源不足挂起保进度」同口径（tick.js:466-471，2026-09-26）：
       // 星币 / 三组件 / 锻星合金在中途被别的活动（自动产线、维修、制造）花光时，
@@ -1022,12 +1029,36 @@ function queueItemTargetMatchesAction(state, item, action) {
   if (skill === "refining") return action.smeltingArea === item.target;
   if (skill === "gasHarvesting") return action.gasArea === item.target;
   // 泰坦总装没有 shipAsmTarget（目标由 titanAsmCombo 承载），须单独放行，否则离线追算判定为无效行动。
-  if (skill === "shipEngineering") return Boolean(action.shipSubAction) && (Boolean(action.shipCompTarget || action.shipAsmTarget) || action.shipSubAction === "titanAssembly");
+  // 真入队（2026-09-28）：队列项带 titanAsmCombo 时必须再比 combo —— 若队列项是本艘泰坦才放行，
+  // 否则不同组合/非泰坦项会被误判为匹配，syncQueueCurrentAction 就不会修正错位。
+  if (skill === "shipEngineering") {
+    const itemCombo = (typeof normalizeTitanQueueCombo === "function") ? normalizeTitanQueueCombo(item.titanAsmCombo) : null;
+    if (itemCombo) {
+      const runCombo = action.startedTitanAsmCombo || action.titanAsmCombo;
+      return action.shipSubAction === "titanAssembly"
+        && (typeof titanQueueComboKey === "function") && titanQueueComboKey(itemCombo) === titanQueueComboKey(runCombo);
+    }
+    return Boolean(action.shipSubAction) && (Boolean(action.shipCompTarget || action.shipAsmTarget) || action.shipSubAction === "titanAssembly");
+  }
   if (skill === "equipmentEngineering") return action.equipEngTarget === item.target;
   if (skill === "boosterEngineering") return action.boosterTarget === item.target;
   // 蓝图发明（接主队列）：运行中锁定目标优先，回退到面板选择；方向不入 target（同蓝图 ME/TE 共享 target）。
   if (skill === "blueprintInvention") return (action.startedInventionTarget || action.inventionTarget) === item.target;
   return true; // 其他（如 combat 由自身逻辑维护）不强制 target
+}
+
+// 泰坦总装真入队（2026-09-28）：读取「队列当前项是不是这艘泰坦」的剩余 count。
+// 返回 0 = 非队列驱动（老存档手动直启）或队列里没有本 combo 的泰坦项。
+// 依赖 actions.js 导出的 isTitanQueueItem / titanQueueComboKey（隔离环境下走 window/globalThis）。
+function titanQueueRemainingCount(combo) {
+  const q = gameState.queue;
+  if (!q || !q.status || !q.status.isRunning || q.status.activeIndex < 0 || q.status.activeIndex >= q.items.length) return 0;
+  const item = q.items[q.status.activeIndex];
+  if (!item || typeof isTitanQueueItem !== "function" || !isTitanQueueItem(item)) return 0;
+  if (typeof titanQueueComboKey !== "function" || titanQueueComboKey(item.titanAsmCombo) !== titanQueueComboKey(combo)) return 0;
+  const c = Number(item.count);
+  if (!Number.isFinite(c) || c === -1 || c <= 0) return 0;
+  return c;
 }
 
 // 进入 settleOfflineActions 时的队列一致性修复（需求 3）：
@@ -1049,6 +1080,26 @@ function syncQueueCurrentAction(state) {
   const action = state.currentAction;
   if (!action.active) return; // 下方 executeQueueItemForState 兜底启动
   if (item.skill === "combat") return; // 战斗由自身逻辑维护一致性
+  // 泰坦总装（2026-09-27 玩家反馈「泰坦还是没办法离线制造」）：泰坦不入制造队列
+  // （startTitanAssembly 只写 currentAction），「队列 isRunning + currentAction=泰坦组装」
+  // 必为错位脏态。若落进下方通用判定，泰坦行动（skill/batch 几乎必然与队列项不同）会被
+  // applyQueueConfigToState 用队列项覆盖 ⇒ 离线时间全部结算给队列项、泰坦永远造不出来。
+  // 归一化：停队列（items 保留），泰坦行动原样保留进入离线结算（本文件 titanAssembly 分支）。
+  if (action.shipSubAction === "titanAssembly") {
+    // 真入队（2026-09-28）：队列当前项若就是本艘泰坦 ⇒ 正常队列驱动，落进下方通用判定
+    // （targetMatches 已认 combo，不会被覆盖），离线照常按队列结算。
+    // 只有「队列在跑但当前项不是这艘泰坦」才是错位脏态（2026-09-27 老存档残留：
+    // startTitanAssembly 直写 currentAction、不入队列）⇒ 停队列保泰坦行动原样结算。
+    const runCombo = action.startedTitanAsmCombo || action.titanAsmCombo;
+    const isThisTitan = Boolean(item && typeof isTitanQueueItem === "function" && isTitanQueueItem(item)
+      && typeof titanQueueComboKey === "function" && titanQueueComboKey(item.titanAsmCombo) === titanQueueComboKey(runCombo));
+    if (!isThisTitan) {
+      queue.status.isRunning = false;
+      queue.status.activeIndex = -1;
+      state._dirty = true;
+      return;
+    }
+  }
   const expectedSkill = item.skill === "ammunitionEngineering" ? "equipmentEngineering" : item.skill;
   const expectedBatch = (item.count === -1) ? -1 : (Number(item.count) || 1);
   const targetMatches = queueItemTargetMatchesAction(state, item, action);

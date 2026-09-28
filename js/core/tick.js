@@ -449,6 +449,24 @@ function gameTick() {
         if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
         if (s.xp > 0) checkLevelUp("shipEngineering");
       } else if (sub === "titanAssembly") {
+        // 队列驱动判定（2026-09-28 真入队）：队列当前项带 titanAsmCombo 且与本轮 combo 一致
+        // ⇒ 这就是由队列启动的泰坦，队列必须继续跑（completeQueuedActionCycle 才能扣 count、
+        // 决定续批/切下一项）。**只有**「队列在跑但当前项不是这艘泰坦」才是脏态：
+        // ① 2026-09-27 修复前留下的残留（startTitanAssembly 直写 currentAction、不入队列），
+        //    老存档升级后仍可能命中 ⇒ completeQueuedActionCycle 会按无关队列项扣 count、
+        //    吃掉该项产量并把泰坦顶掉；② combo 不匹配的错位条目。
+        // 二者一律归一化停队列（items 保留），泰坦行动原样收尾，恢复「完成即停」。
+        const tq = gameState.queue;
+        const tRunCombo = gameState.currentAction.startedTitanAsmCombo || gameState.currentAction.titanAsmCombo;
+        const tqItem = (tq && tq.status && tq.status.isRunning && tq.status.activeIndex >= 0 && tq.status.activeIndex < tq.items.length)
+          ? tq.items[tq.status.activeIndex] : null;
+        const tqIsThisTitan = Boolean(tqItem && typeof isTitanQueueItem === "function" && isTitanQueueItem(tqItem)
+          && typeof titanQueueComboKey === "function" && titanQueueComboKey(tqItem.titanAsmCombo) === titanQueueComboKey(tRunCombo));
+        if (tq && tq.status && tq.status.isRunning && !tqIsThisTitan) {
+          tq.status.isRunning = false;
+          tq.status.activeIndex = -1;
+          gameState._dirty = true;
+        }
         // 泰坦总装（P0-b）：配方由 combo 现算，材料/ISK 在**完成时**扣（与常规总装同口径）。
         const tCombo = gameState.currentAction.startedTitanAsmCombo || gameState.currentAction.titanAsmCombo;
         const tRecipe = (typeof getTitanAssemblyRecipe === "function") ? getTitanAssemblyRecipe(tCombo) : null;
