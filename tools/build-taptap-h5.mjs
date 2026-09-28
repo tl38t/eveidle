@@ -227,6 +227,12 @@ function localizeIndexHtml(html, includeProbe) {
   // 但 document.write 的参数字符串里含 `src="./js/i18n/catalog-de.js?v=1"` 字面量，会被 collectRefs
   // 当作本地引用，导致「本地静态引用均可在包内找到」断言失败（这两个文件已被 isWhitelisted 排除）。
   // 故按 marker 整块剥离，与 qa-seed / steam 引用同模式。
+  // 移除成就词条多语种引用（ja / de / ru / fr）。这四个文件已被 isWhitelisted 排除、不进 TapTap 包，
+  // 但 index.html 里的 <script> 字面量会被 collectRefs 当作本地引用，导致「本地静态引用均可在包内找到」
+  // 断言失败。与 qa-seed / steam 引用同模式在本地化阶段摘除。
+  // ⚠️ 只摘多语种四份：achievement-locales.js（基准）与 -tw.js 仍随包发布，不能误伤。
+  //   ⚠️ 从左边界用 `-(ja|de|ru|fr)\.` 精确匹配，避免把 achievement-locales-tw.js 之类吞进来。
+  out = out.replace(/<script[^>]*src=["'][^"']*js\/data\/achievement-locales-(?:ja|de|ru|fr)\.js[^"']*["'][^>]*>\s*<\/script>\s*/g, "");
   out = out.replace(/<!--\s*steam-i18n-locales:start\s*-->[\s\S]*?<!--\s*steam-i18n-locales:end\s*-->\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.googleapis\.com">\s*/g, "");
   out = out.replace(/<link rel="preconnect" href="https:\/\/fonts\.gstatic\.com" crossorigin>\s*/g, "");
