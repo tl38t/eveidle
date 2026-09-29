@@ -1,18 +1,20 @@
 (function () {
   "use strict";
   var STORAGE_KEY = "deep-space-idle.locale";
-  // de / ru / ja / fr 目录**仅 Steam（Electron）端**随包发布并由 index.html 条件注入。
+  // de / ru / ja / fr / ko 目录**仅 Steam（Electron）端**随包发布并由 index.html 条件注入。
   // 非 Steam 端（微信 / TapTap）不会加载这些 <script>，全局不存在 ⇒ 不加入 supported，
   // 语言下拉也不出现，玩家无法选到，体积不受影响。
   var hasDe = !!window.I18N_CATALOG_DE;
   var hasRu = !!window.I18N_CATALOG_RU;
   var hasJa = !!window.I18N_CATALOG_JA;
   var hasFr = !!window.I18N_CATALOG_FR;
+  var hasKo = !!window.I18N_CATALOG_KO;
   var supported = ["zh-CN", "zh-TW", "en-US"]
     .concat(hasDe ? ["de"] : [])
     .concat(hasRu ? ["ru"] : [])
     .concat(hasJa ? ["ja"] : [])
-    .concat(hasFr ? ["fr"] : []);
+    .concat(hasFr ? ["fr"] : [])
+    .concat(hasKo ? ["ko"] : []);
   function normalizeLocale(value) {
     var code = String(value || "").toLowerCase().replace(/_/g, "-");
     if (["tchinese", "zh-tw", "zh-hk", "zh-mo", "zh-hant"].includes(code)) return "zh-TW";
@@ -24,7 +26,7 @@
   // 这 5 种做精确映射，其余（日、法、西……）一律收敛到英文——非中文玩家看英文远比看中文可读。
   // 不能沿用 normalizeLocale 的「未识别则原样返回」：那会让日语之类的代码一路落到
   // 浏览器语言的兜底分支上（非 en、非 tw 即判为 zh-CN）。
-  // 德语 / 俄语 / 日语 / 法语目录只在 Steam 端随包发布；非 Steam 端 hasDe / hasRu / hasJa / hasFr 为假，
+  // 德语 / 俄语 / 日语 / 法语 / 韩语目录只在 Steam 端随包发布；非 Steam 端 hasDe / hasRu / hasJa / hasFr / hasKo 为假，
   // 这些 code 不在 supported 里，会被下面的 supported.includes 挡掉并回落浏览器语言。
   function normalizeSteamLocale(value) {
     var code = String(value || "").toLowerCase().replace(/_/g, "-");
@@ -38,6 +40,8 @@
     if (["japanese", "ja", "ja-jp"].includes(code)) return "ja";
     // 法语同款：Steam 给 "french" / "fr" / "fr-fr" 都可能出现，别只认 "fr"。
     if (["french", "fr", "fr-fr", "fr-be", "fr-ch", "fr-ca"].includes(code)) return "fr";
+    // 韩语：Steam 给 "korean" / "ko" / "ko-kr" 都可能出现。
+    if (["korean", "ko", "ko-kr"].includes(code)) return "ko";
     return "en-US";
   }
   var queryLocale = normalizeLocale(new URLSearchParams(window.location.search).get("lang"));
@@ -54,6 +58,7 @@
   if (hasRu) catalogs["ru"] = window.I18N_CATALOG_RU;
   if (hasJa) catalogs["ja"] = window.I18N_CATALOG_JA;
   if (hasFr) catalogs["fr"] = window.I18N_CATALOG_FR;
+  if (hasKo) catalogs["ko"] = window.I18N_CATALOG_KO;
   var catalog = new Map();
   var catalogSources = [];
   var originals = new WeakMap();
@@ -175,7 +180,7 @@
     if (element.tagName === "OPTION" && element.closest && element.closest("#setting-language")) return true;
     return !!element.closest?.('#achievements-panel, [data-deferred-i18n], [data-i18n-skip]');
   }
-  var LANGUAGE_LABELS = { "zh-CN": "简体中文", "zh-TW": "繁體中文", "en-US": "English", "de": "Deutsch", "ru": "Русский", "ja": "日本語", "fr": "Français" };
+  var LANGUAGE_LABELS = { "zh-CN": "简体中文", "zh-TW": "繁體中文", "en-US": "English", "de": "Deutsch", "ru": "Русский", "ja": "日本語", "fr": "Français", "ko": "한국어" };
   // 按 value 强制回写标签。skip() 已保证新值不会被再翻译；这里额外做一次值级校正，
   // 使「语言名永不被本地化」不依赖 skip 判据本身（并顺手纠正任何历史被译值），且幂等。
   function syncLanguageOptions() {
@@ -335,11 +340,12 @@
     var control = document.getElementById("setting-language");
     if (control) {
       control.value = locale;
-      // 仅当对应目录全局存在（即 Steam 端）才向语言下拉追加 de / ru / ja 选项。
+      // 仅当对应目录全局存在（即 Steam 端）才向语言下拉追加 de / ru / ja / fr / ko 选项。
       if (window.I18N_CATALOG_DE) { var od = document.createElement("option"); od.value = "de"; od.textContent = LANGUAGE_LABELS.de; control.appendChild(od); }
       if (window.I18N_CATALOG_RU) { var or = document.createElement("option"); or.value = "ru"; or.textContent = LANGUAGE_LABELS.ru; control.appendChild(or); }
       if (window.I18N_CATALOG_JA) { var oja = document.createElement("option"); oja.value = "ja"; oja.textContent = LANGUAGE_LABELS.ja; control.appendChild(oja); }
       if (window.I18N_CATALOG_FR) { var ofr = document.createElement("option"); ofr.value = "fr"; ofr.textContent = LANGUAGE_LABELS.fr; control.appendChild(ofr); }
+      if (window.I18N_CATALOG_KO) { var oko = document.createElement("option"); oko.value = "ko"; oko.textContent = LANGUAGE_LABELS.ko; control.appendChild(oko); }
       syncLanguageOptions();
       control.addEventListener("change", function () { setLocale(control.value); });
     }
