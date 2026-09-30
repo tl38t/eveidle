@@ -1472,8 +1472,11 @@
         titanExtraMult *= titanOverdriveMult;
       }
       // 泰坦自身核心光环（与玩家侧 selfAuraDmg 同口径：统御矩阵 kind="aura" 给全队 +10% 伤害）
+      // ⚠️ getTitanCoreAura 对非光环核心（doomTarget/aoeErosion）返回 null，必须空安全读取
+      //   （V1.0.3 回归：直接 .squadDamageBonus 导致 NPC 泰坦带非 aura 核心时 gameTick/离线崩溃）
       const auraFn2 = getGlobalFn("getTitanCoreAura");
-      titanOwnAuraMult = (auraFn2 && npcTitan.core) ? (1 + (Number(auraFn2(npcTitan.core).squadDamageBonus) || 0)) : 1;
+      const ownAura = auraFn2 ? auraFn2(npcTitan.core) : null;
+      titanOwnAuraMult = (ownAura && Number(ownAura.squadDamageBonus)) ? (1 + Number(ownAura.squadDamageBonus)) : 1;
       // 武器强化剂：按主武器 weaponType 查表（玩家出资，与玩家管线同口径）
       const boosterFn = getGlobalFn("getBoosterEffectState");
       const boosterState = boosterFn ? boosterFn(state).weaponDamageMultiplier : null;

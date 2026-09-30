@@ -36,7 +36,7 @@ alter table public.alliance_daily_tasks
 create table if not exists public.alliance_task_submissions (
   id bigint generated always as identity primary key,
   task_id bigint not null references public.alliance_daily_tasks(id),
-  alliance_id bigint not null references public.alliances(id),
+  alliance_id bigint not null references public.alliances(id) on delete cascade,
   player_id varchar(100) not null,
   amount numeric(18,3) not null check (amount > 0),
   points integer not null check (points > 0),

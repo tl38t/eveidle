@@ -292,7 +292,7 @@
     if (text.indexOf("not enough alliance construction points") >= 0 || text.indexOf("construction points") >= 0 || text.indexOf("insufficient") >= 0 || text.indexOf("建设点") >= 0 || text.indexOf("不足") >= 0) return "联盟建设点不足，无法升级该建筑。";
     if (text.indexOf("max level") >= 0 || (text.indexOf("building") >= 0 && text.indexOf("max") >= 0) || text.indexOf("最高等级") >= 0) return "该建筑已经达到最高等级。";
     if (text.indexOf("network") >= 0 || text.indexOf("failed to fetch") >= 0) return "网络连接失败，请检查网络后重试。";
-    if (text.indexOf("database request failed") >= 0 || text.indexOf("http 400") >= 0 || text.indexOf("http 404") >= 0 || text.indexOf("http 409") >= 0) return "联盟服务暂时不可用，请稍后重试。";
+    if (text.indexOf("foreign key") >= 0 || text.indexOf("violates constraint") >= 0 || text.indexOf("database request failed") >= 0 || text.indexOf("http 400") >= 0 || text.indexOf("http 404") >= 0 || text.indexOf("http 409") >= 0) return "联盟服务暂时不可用，请稍后重试。";
     // 身份相关错误：云端已返回可读中文，这里只补齐「玩家该做什么」。
     if (text.indexOf("设备密钥") >= 0) return "本机身份凭证已失效（可能已在其他设备上完成身份转移）。如需继续管理身份，请联系盟主合并，或退出后重新加入联盟。";
     if (text.indexOf("转移码不存在") >= 0) return "转移码不存在，请核对后重试。";
