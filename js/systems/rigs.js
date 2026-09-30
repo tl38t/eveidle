@@ -87,6 +87,57 @@ function getRigModifiers(state, instance) {
   return mods;
 }
 
+// 采集效率展示专用：返回 instance 上每件已安装改装件对指定 bonusKey 集的有效贡献明细，
+// 口径与 getRigModifiers 完全一致（同 stackGroup 按数值降序施加 EVE 谐振惩罚；词条在谐振外直加），
+// 保证「采集效率面板显示」与「真实产出（getProductionEfficiencyState.total）」同源。
+// 返回数组每项：{ name, stackGroup, primary, secondary, amplifier }，
+// 其中 primary/secondary/amplifier 是该件在对应 bonusKey 上的有效值（无则该键为 0）。
+// 调用点：selectors.js getProductionEfficiencyState 的 rig 槽（修复此前手搓循环直接读裸值导致的
+// 「全吃无衰减 / 强化词条不生效」）。
+function getRigPerRigContribution(state, instance, primaryKey, secondaryKey, amplifierKey) {
+  const fitting = getFittingFromInstance(instance);
+  const rigSlots = (fitting && fitting.rig) || [];
+  const wanted = [primaryKey, secondaryKey, amplifierKey].filter(Boolean);
+  if (!wanted.length) return [];
+  const entries = []; // { ref, sg, bk, base, seq, affixes } —— 仅收集与采集相关的 bonusKey
+  for (const ref of rigSlots) {
+    if (!ref) continue;
+    const r = resolveEquipmentReference(state, ref);
+    if (!r || !r.definition || r.definition.slot !== "rig") continue;
+    const def = r.definition;
+    const sg = def.stackGroup || def.id;
+    const affixes = (r.instance && Array.isArray(r.instance.affixes)) ? r.instance.affixes : null;
+    for (const bk of wanted) {
+      const base = Number(def.bonuses && def.bonuses[bk]) || 0;
+      const hasAffix = affixes && affixes.some(a => a && a.bonusKey === bk && Number(a.value) !== 0);
+      if (base === 0 && !hasAffix) continue;
+      entries.push({ ref, sg, bk, base, seq: Number(r.instance && r.instance.rigSeq) || 0, affixes });
+    }
+  }
+  // 按 stackGroup 分组（与 getRigModifiers 一致），组内按基础值降序排位施加谐振惩罚
+  const groups = {};
+  for (const e of entries) (groups[e.sg] = groups[e.sg] || []).push(e);
+  for (const list of Object.values(groups)) list.sort((a, b) => b.base - a.base || a.seq - b.seq);
+  const penaltyOf = new Map();
+  for (const list of Object.values(groups)) list.forEach((e, idx) => penaltyOf.set(e, getRigStackPenalty(idx)));
+  const perRig = new Map();
+  for (const ref of rigSlots) {
+    const r = resolveEquipmentReference(state, ref);
+    if (!r || !r.definition || r.definition.slot !== "rig") continue;
+    perRig.set(ref, { name: r.definition.name, stackGroup: r.definition.stackGroup || r.definition.id, primary: 0, secondary: 0, amplifier: 0 });
+  }
+  for (const e of entries) {
+    const target = perRig.get(e.ref);
+    if (!target) continue;
+    let eff = e.base * penaltyOf.get(e);
+    if (e.affixes) for (const a of e.affixes) if (a && a.bonusKey === e.bk) { const v = Number(a.value); if (Number.isFinite(v)) eff += v; }
+    if (e.bk === primaryKey) target.primary += eff;
+    else if (e.bk === secondaryKey) target.secondary += eff;
+    else if (e.bk === amplifierKey) target.amplifier += eff;
+  }
+  return [...perRig.values()];
+}
+
 // 安装合法性检查（slot 类型 + 是否为 rig）。
 // 同 stackGroup（同系列）允许重复装配（谐振惩罚在聚合层处理），故此处不再排重。
 // level / slotIndex 边界 / combat-lock 等由 Action 层负责，此处只判定 rig 相关规则。
@@ -196,6 +247,7 @@ window.getRigDefinition = getRigDefinition;
 window.isRigDefinition = isRigDefinition;
 window.getFittedRigDefinitions = getFittedRigDefinitions;
 window.getRigModifiers = getRigModifiers;
+window.getRigPerRigContribution = getRigPerRigContribution;
 window.canFitRig = canFitRig;
 window.getRigDisplayState = getRigDisplayState;
 window.getRigStackPenalty = getRigStackPenalty;

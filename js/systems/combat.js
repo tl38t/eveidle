@@ -1663,7 +1663,9 @@ function advanceCombatRound(state, context) {
     for (const strike of strikes) {
       const sweepCrit = (strike.kind === "sweep" && titanWeapon.crit && titanWeapon.crit.appliesToSweep)
         ? rollTitanCritMultiplier(titanWeapon.crit, rng) : 1;
-      let strikeDmg = strike.damage * vulnMult * weaponBoosterMult * sweepCrit * titanDmgMult * allianceDamageMult;
+      // 2026-09-30 修复：附带打击此前漏接 结构过载(overdriveMult) 与 自身核心光环(selfAuraDmg)，
+      // 与设计文档「主命中与扫掠/贯穿同口径」及面板口径冲突（克制/弹药档仍刻意排除：面板不假设目标与弹药状态）。
+      let strikeDmg = strike.damage * vulnMult * overdriveMult * selfAuraDmg * weaponBoosterMult * sweepCrit * titanDmgMult * allianceDamageMult;
       if (adbm && adbm !== 1) strikeDmg *= adbm;
       strikeDmg = Math.max(1, Math.round(strikeDmg));
       if (strike.kind === "layerPierce") {

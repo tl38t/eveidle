@@ -434,13 +434,23 @@ function getProductionEfficiencyState(state, actionKey) {
   let primaryBonus = 0;
   let secondaryBonus = 0;
 
-  for (const slot of ["high", "mid", "low", "rig"]) {
+  // 改装件（rig）的有效贡献：统一走权威聚合 getRigModifiers 口径（EVE 谐振衰减 + 强化词条直加），
+  // 与战斗/工业/考古/空间站/燃料/干扰等所有系统一致；修复此前手搓循环直接读裸值导致的
+  // 「全吃无衰减 / 强化不生效」。rig 槽在下方两个循环里均跳过，改为按 rigPerRig 注入。
+  const rigPerRig = (assigned.instance && typeof getRigPerRigContribution === "function")
+    ? getRigPerRigContribution(state, assigned.instance, primaryKey, secondaryKey, amplifierKey)
+    : [];
+
+  // 高/中/低槽放大器贡献（rig 槽已在 rigPerRig 中处理，跳过避免重复/错算）
+  for (const slot of ["high", "mid", "low"]) {
     for (const ref of fitting[slot]) {
       const resolved = resolveEquipmentReference(state, ref);
       const item = resolved && resolved.definition;
       if (item && item.bonuses) equipmentAmplifier += (item.bonuses[amplifierKey] || 0) * resolved.multiplier;
     }
   }
+  // rig 放大器贡献（谐振/词条口径，当前数据 rig 无放大器键故恒为 0；保留以与权威聚合同源）
+  for (const r of rigPerRig) if (r.amplifier) equipmentAmplifier += r.amplifier;
   const amplifier = shipAmplifier + equipmentAmplifier;
   // 研究批次 G：采集科研唯一乘子（allMining 根加成 + mining/gas 专精，先加法汇总再生成单一乘子）。
   // 采矿走 ["allMining","mining"]，采气走 ["allMining","gas"]；零科研时恒为 1，结果与接入前严格一致。
@@ -455,7 +465,7 @@ function getProductionEfficiencyState(state, actionKey) {
   let highTotal = 0;        // 高槽采集装备效果（已乘放大器）合计
   let droneRigBase = 0;     // 中槽无人机链 / 改装件基础效率，作为独立乘数
   let flatPrimary = 0;      // 带放大器的中槽/低槽件基础效率，保持平加
-  for (const slot of ["high", "mid", "low", "rig"]) {
+  for (const slot of ["high", "mid", "low"]) {
     for (const ref of fitting[slot]) {
       const resolved = resolveEquipmentReference(state, ref);
       const item = resolved && resolved.definition;
@@ -479,6 +489,13 @@ function getProductionEfficiencyState(state, actionKey) {
         droneRig: (slot === "mid" || slot === "rig") && amplifierBonus <= 0 });
       if (secondary) secondaryBonus += secondary;
     }
+  }
+  // 改装件（rig）贡献注入：primary 作独立乘数喂 droneRigBase，secondary 平加；展示列表同口径（谐振+词条）。
+  // 与 getRigModifiers 聚合完全一致，保证采气/采矿效率的「面板显示」与「真实产出」同源。
+  for (const r of rigPerRig) {
+    if (r.primary) droneRigBase += r.primary;
+    if (r.secondary) secondaryBonus += r.secondary;
+    equipment.push({ name: r.name, slot: "rig", rawPrimary: r.primary, adjustedPrimary: r.primary, secondary: r.secondary, amplifierBonus: r.amplifier, droneRig: true });
   }
   const droneRigMultiplier = 1 + droneRigBase;
   primaryBonus = highTotal * droneRigMultiplier + flatPrimary;
@@ -2835,7 +2852,7 @@ function getCombatActualStatsFromState(state, context) {
       note: "基伤 " + Math.round(mainBase) + (chainNote ? " · " + chainNote : "")
     });
     // 附带打击：与离线期望值口径一致（破片回响 damage × chance 后再结算）
-    const strikeChain = titanTypeMult * titanBooster * allianceMult * adBuffMult;
+    const strikeChain = titanTypeMult * overdriveMult * auraMult * titanBooster * allianceMult * adBuffMult;
     const sweepCritExpected = (tw.crit && tw.crit.appliesToSweep) ? critExpected : 1;
     const groupedStrikes = [];
     const rawStrikes = (typeof getTitanExtraAttacks === "function") ? (getTitanExtraAttacks(tw, { round: 1, targetHpRatio: 1 }) || []) : [];
@@ -2855,11 +2872,15 @@ function getCombatActualStatsFromState(state, context) {
     for (const g of groupedStrikes) {
       const critMult = (g.kind === "sweep") ? sweepCritExpected : 1;
       const val = Math.round(g.raw * strikeChain * critMult);
-      // note 补展示联盟/脑突触（strikeChain 数值早已含二者，此前只差显示）。
-      const globalNote = [
-        (allianceMult !== 1 ? "联盟 ×" + allianceMult.toFixed(2) : ""),
-        (adBuffMult !== 1 ? "脑突触 ×" + adBuffMult.toFixed(2) : "")
-      ].filter(Boolean).join(" · ");
+      // note 补展示 结构过载/核心光环/联盟/脑突触（strikeChain 数值已含全部，此前只差显示）。
+      const strikeNoteParts = [];
+      strikeNoteParts.push("每轮 " + Math.round(g.raw) + (g.retrigger ? "（期望值 chance×damage）" : ""));
+      if (critMult !== 1) strikeNoteParts.push("扫掠暴击同享 ×" + critMult.toFixed(2));
+      if (overdriveMult !== 1) strikeNoteParts.push("结构过载 ×" + overdriveMult.toFixed(2));
+      if (auraMult !== 1) strikeNoteParts.push("核心光环 ×" + auraMult.toFixed(2));
+      if (allianceMult !== 1) strikeNoteParts.push("联盟 ×" + allianceMult.toFixed(2));
+      if (adBuffMult !== 1) strikeNoteParts.push("脑突触 ×" + adBuffMult.toFixed(2));
+      const globalNote = strikeNoteParts.join(" · ");
       attackRaw += val;
       attackItems.push({
         name: (STRIKE_LABEL[g.kind] || "附加打击") + (g.units > 1 ? " ×" + g.units : ""),
@@ -2867,9 +2888,7 @@ function getCombatActualStatsFromState(state, context) {
         base: Math.round(g.raw),
         value: val,
         titanStrike: true,
-        note: "每轮 " + Math.round(g.raw) + (g.retrigger ? "（期望值 chance×damage）" : "") +
-          (critMult !== 1 ? " · 扫掠暴击同享 ×" + critMult.toFixed(2) : "") +
-          (globalNote ? " · " + globalNote : "")
+        note: globalNote
       });
     }
     // 每轮燃料 = 主武器齐射燃料 + 核心维持供能（与 combat.js titanVolleyFuel / titanCoreSustainFuel 同式）

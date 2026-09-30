@@ -1454,6 +1454,9 @@
     // L1 主命中已由下方普通武器管线的 dmgMult 自动吃到，故此处**只供 L2/L3 使用**，
     // 绝不可并入 titanExtraMult（否则 L1 会被乘两次）。
     let titanDmgMult = 1;
+    // 2026-09-30：结构过载 + 自身核心光环 提升到函数级作用域，供下方 L2 附带打击（第二个 titanVirtualModule 块）复用
+    let titanOverdriveMult = 1;
+    let titanOwnAuraMult = 1;
     if (titanVirtualModule) {
       const rdFn = getGlobalFn("getTitanWeaponRoundDamage");
       const targetTotal = (enemy.hp.shield || 0) + (enemy.hp.armor || 0) + (enemy.hp.structure || 0);
@@ -1463,9 +1466,14 @@
       if (rd) titanMainDamage = rd.mainDamage;
       // 结构过载（B 案）：按 NPC 当前 HP 比例；combatHp/maxHp 缺失时退化为 1（不施加）
       const odFn = getGlobalFn("getTitanStructureOverdriveMultiplier");
+      titanOverdriveMult = 1;
       if (odFn && npcTitan.trait && npc.combatHp && stats.maxHp) {
-        titanExtraMult *= odFn(npcTitan.trait, npc.combatHp, stats.maxHp);
+        titanOverdriveMult = odFn(npcTitan.trait, npc.combatHp, stats.maxHp);
+        titanExtraMult *= titanOverdriveMult;
       }
+      // 泰坦自身核心光环（与玩家侧 selfAuraDmg 同口径：统御矩阵 kind="aura" 给全队 +10% 伤害）
+      const auraFn2 = getGlobalFn("getTitanCoreAura");
+      titanOwnAuraMult = (auraFn2 && npcTitan.core) ? (1 + (Number(auraFn2(npcTitan.core).squadDamageBonus) || 0)) : 1;
       // 武器强化剂：按主武器 weaponType 查表（玩家出资，与玩家管线同口径）
       const boosterFn = getGlobalFn("getBoosterEffectState");
       const boosterState = boosterFn ? boosterFn(state).weaponDamageMultiplier : null;
@@ -1532,10 +1540,12 @@
     }
     // —— C3 L2：泰坦附加打击（扫掠 / 贯穿 / 暴击 / 破片回响）——
     // 与 combat.js:1443-1457 玩家侧逐项同口径：strike.damage × 易伤 × 武器强化剂 × 扫掠暴击 × 脑突触。
-    // 注意：玩家侧 L2 **不吃**克制/结构过载/光环/弹药档/等级系数（只吃上面这四项），此处同样不吃，保持一致。
-    // 敌人数组由调用方经 context.enemies 传入（在线 c.enemies / 离线波内 enemies）；缺失时退化为单目标
-    // （living 为空 ⇒ 仅 layerPierce 与打主目标的 extra 生效），不会崩，也不会产生双路径差异。
-    if (titanVirtualModule) {
+      // 注意：玩家侧 L2 仍**不吃**克制/弹药档（面板不假设目标与弹药状态），此处同样不吃，保持一致；
+      // 但 2026-09-30 修复已将 结构过载(titanOverdriveMult) + 自身核心光环(titanOwnAuraMult) 补进双方 L2，
+      // 对齐玩家侧主命中口径与面板展示（此前 L2 漏接这两项 ⇒ 泰坦附带打击偏弱且面板与实际不符）。
+      // 敌人数组由调用方经 context.enemies 传入（在线 c.enemies / 离线波内 enemies）；缺失时退化为单目标
+      // （living 为空 ⇒ 仅 layerPierce 与打主目标的 extra 生效），不会崩，也不会产生双路径差异。
+      if (titanVirtualModule) {
       // 敌人数组：L2 附加打击与 L3 末日核心共用（在线 c.enemies / 离线波内 enemies）
       const enemyList = (ctx && Array.isArray(ctx.enemies) && ctx.enemies.length) ? ctx.enemies : [enemy];
       const extraFn = getGlobalFn("getTitanExtraAttacks");
@@ -1546,7 +1556,7 @@
       for (const strike of strikes) {
         const sweepCrit = (strike.kind === "sweep" && npcTitan.weapon.crit && npcTitan.weapon.crit.appliesToSweep && titanCritFn)
           ? titanCritFn(npcTitan.weapon.crit, useRng) : 1;
-        let strikeDmg = (Number(strike.damage) || 0) * vulnMult * titanBoosterMult * sweepCrit * titanDmgMult;
+        let strikeDmg = (Number(strike.damage) || 0) * vulnMult * titanOverdriveMult * titanOwnAuraMult * titanBoosterMult * sweepCrit * titanDmgMult;
         if (titanAdbm && titanAdbm !== 1) strikeDmg *= titanAdbm;
         if (TITAN_NPC_DAMAGE_SCALE !== 1) strikeDmg *= TITAN_NPC_DAMAGE_SCALE;
         strikeDmg = Math.max(1, Math.round(strikeDmg));

@@ -1146,7 +1146,9 @@
     const strikes = G("resolveTitanWeaponStrikes")(scaled, weapon, enemies, target, TITAN_ZERO_RNG);
     const sweepCritExp = (weapon.crit && weapon.crit.appliesToSweep) ? critExp : 1;
     for (const strike of strikes) {
-      let strikeDmg = strike.damage * vulnMult * wbm * sweepCritExp * titanDmgMult * adm;
+      // 2026-09-30 修复：附带打击补接 结构过载(overdriveMult) 与 自身核心光环(selfAuraDmg)，与在线主命中同口径
+      // （克制/弹药档沿用主命中的既有排除：面板不假设目标与弹药状态）。
+      let strikeDmg = strike.damage * vulnMult * overdriveMult * selfAuraDmg * wbm * sweepCritExp * titanDmgMult * adm;
       if (adbm && adbm !== 1) strikeDmg *= adbm;
       strikeDmg = Math.max(1, Math.round(strikeDmg));
       if (strike.kind === "layerPierce") {
