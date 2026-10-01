@@ -1,0 +1,14 @@
+{
+  "envId": "deepspace-d4govx4ikc2e937c5",
+  "functions": [
+    {
+      "name": "chat-service",
+      "type": "HTTP",
+      "handler": "index.main",
+      "public": true,
+      "gatewayPath": "/chat-service",
+      "timeout": 15,
+      "memorySize": 256
+    }
+  ]
+}

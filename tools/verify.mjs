@@ -5,18 +5,27 @@ import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
+
+// 归一化：剥掉「页面 / 设计工具」注入的 data-page-node-id 标注。
+//
+// 🔴 2026-10-01 事故：外部工具对 index.html 做了一次整文件标注（实测一次性注入 1026 处），
+//   该属性**不属于游戏标记**，但会从两个方向打坏本闸门：
+//     ① DOM ID 采集用 /\bid="([^"]+)"/g —— \b 在 `data-page-node-id="` 的 `-`|`i` 之间成立
+//        ⇒ 1026 个随机 node-id 被当成 DOM ID 数进去（562 → 1881）；
+//     ② 属性追加在标签末尾 ⇒ 打破「标签形状」正则（如 `id="x" style="display:none;">`）。
+//   封包链同样会剥离该属性，故闸门在此集中归一化：只校验真实标记。
+const stripPageNodeIds = (source) => source.replace(/\s+data-page-node-id="[^"]*"/g, "");
+const html = stripPageNodeIds(fs.readFileSync(path.join(root, "index.html"), "utf8"));
 
 // 归一化：去掉 ?v= 缓存串（UI 脚本用 ?v=2 破缓存），否则本地文件读取 ENOENT
 const scriptSources = [...html.matchAll(/<script\s+defer\s+src="([^"]+)"\s*><\/script>/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const styleSources = [...html.matchAll(/<link\s+rel="stylesheet"\s+href="(\.\/css\/[^"]+)"/g)].map((match) => match[1].replace(/\?.*$/, ""));
 const localSources = [...styleSources, ...scriptSources];
 
-// 135 = 当前工作树实测。131 → 135 的 +4 是 2026-09-28 随 ja/de/ru/fr 四语上线的
-//   js/data/achievement-locales-{ja,de,ru,fr}.js（成就名 + 达成条件的多语词条，各 ~16 KB）。
-// ⚠️ 这 4 个文件是**普通 defer**，不走 index.html 里的 Steam 条件注入块（见 steam-i18n-locales），
-//    所以 TapTap / 微信包也会带上它们——这是既有行为（ja/de/ru 时就是如此），不是回归。
-if (scriptSources.length !== 135) throw new Error(`预期 135 个脚本，实际 ${scriptSources.length}`);
+// 135 = 2026-09-28 实测（131 → 135 的 +4 是随 ja/de/ru/fr 四语上线的
+//   js/data/achievement-locales-{ja,de,ru,fr}.js，各 ~16 KB）。
+// 2026-10-01：135 → 137（+2 = 聊天系统 chat-api.js / chat-render.js，CHAT_SYSTEM_SPEC v0.2 §12）。
+if (scriptSources.length !== 137) throw new Error(`预期 137 个脚本，实际 ${scriptSources.length}`);
 
 // 平台/云存档/成就/设备镜像生产脚本必须全部被 index.html 引用，且全部排在 persistence.js 之前。
 {
@@ -52,7 +61,7 @@ if (scriptSources.length !== 135) throw new Error(`预期 135 个脚本，实际
     }
   }
 }
-if (styleSources.length !== 5) throw new Error(`预期 5 个样式，实际 ${styleSources.length}`); // 5 = 4 + TapTap 竖屏迁移 css/taptap-portrait.css（用户指令确认新增者确为 taptap-portrait.css，不得盲改：base/panels/combat/components + taptap-portrait）
+if (styleSources.length !== 6) throw new Error(`预期 6 个样式，实际 ${styleSources.length}`); // 6 = 5 + 聊天 css/chat.css（2026-10-01，CHAT_SYSTEM_SPEC v0.2 §12 预期新增；base/panels/combat/components/taptap-portrait/chat）
 
 // 断言：production.js 必须早于 equipment-enhancement.js（REFINED_MINERALS 依赖 SMELTING_RECIPES）
 {
@@ -145,7 +154,9 @@ if (!/#hangar-panel\s*>\s*\.panel-body\s*\{[^}]*overflow-y:\s*auto/s.test(compon
   throw new Error("#hangar-panel > .panel-body 缺少 overflow-y:auto，船坞列表内部滚动可能丢失");
 }
 
-const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((match) => match[1]));
+// 采集真·id 属性：用 (?<![-\w]) 而非 \b —— \b 会命中 `data-page-node-id="` / `data-tech-id="`
+// 这类「以 -id 结尾的自定义属性」（- 是非词字符 ⇒ \b 成立），把它们的值当成 DOM ID。
+const htmlIds = new Set([...html.matchAll(/(?<![-\w])id="([^"]+)"/g)].map((match) => match[1]));
 const literalIdReferences = new Set(
   scripts.flatMap((script) => [...script.matchAll(/getElementById\(["']([^"']+)["']\)/g)].map((match) => match[1]))
 );
@@ -227,6 +238,10 @@ const optionalIds = new Set([
   // alliance-state / alliance-diag-overlay：js/ui/alliance-render.js 动态渲染（联盟状态与诊断浮层）
   "alliance-state",
   "alliance-diag-overlay",
+  // chat-msg-list / chat-input：js/ui/chat-render.js 动态渲染（聊天消息列表与输入框，由
+  // window.syncChatDock 展开停靠条后写入静态容器 #chat-content；2026-10-01 聊天系统 CHAT_SYSTEM_SPEC v0.3）
+  "chat-msg-list",
+  "chat-input",
   // smelting-pump-stock：js/ui/render.js 暗流体精炼泵库存（动态渲染）
   "smelting-pump-stock",
   // 历史累积未落地静态 ID（由先前未提交特性动态创建/引用，待统一收敛时补 HTML 或删引用）
@@ -277,7 +292,7 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // 后续新增静态 DOM ID 时按 +1 递增维护本数字。
 // 2026-09-28 554 → 556（+2，纯新增零删除）：① HEAD 提交 e53de44 的改装件强化加了 #bl-enc-pending（曾漏同步基线，
 //   工作树实测已隐含 +1）；② 本轮蓝图发明页「效率研究台」新增 #bl-eff-display（研究速度 / 效率因子）。
-const EXPECTED_DOM_IDS = 556;
+const EXPECTED_DOM_IDS = 562;
 if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
@@ -4535,10 +4550,15 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   //   失败即说明有人加了脚本 / DOM ID 却没同步这里；确认是预期新增后把新值写进来，不要直接删判据。
   // ⚠ 131 → 135 的 +4 = 2026-09-28 随 ja/de/ru/fr 四语上线的 achievement-locales-{ja,de,ru,fr}.js
   //   （见文件头部同款注释；两处必须同一数字，改一处不改另一处会让闸门自己打自己）。
-  if (scriptSources.length !== 135) throw new Error("Batch F 起 JS 基线为 135，实际 " + scriptSources.length);
-  if (styleSources.length !== 5) throw new Error("Batch F 不得改变 5 CSS 基线，实际 " + styleSources.length);
-  // 2026-09-28：554 → 556（+2 纯新增，口径同上方的 EXPECTED_DOM_IDS：e53de44 的 #bl-enc-pending + 本轮 #bl-eff-display）。
-  if (htmlIds.size !== 556) throw new Error("Batch F DOM ID 基线应为 556，实际 " + htmlIds.size);
+  // 2026-10-01：135 → 137（+2 = 聊天系统 chat-api.js / chat-render.js）；5 → 6（+1 = css/chat.css）。
+  //   两处脚本计数必须同一数字（文件头注释与这里），改一处不改另一处会让闸门自己打自己。
+  if (scriptSources.length !== 137) throw new Error("Batch F 起 JS 基线为 137，实际 " + scriptSources.length);
+  if (styleSources.length !== 6) throw new Error("Batch F 不得改变 6 CSS 基线，实际 " + styleSources.length);
+  // 2026-10-01：557 → 561（+4 = 聊天系统静态元素 #chat-panel / #chat-status /
+  //   #chat-content / #nav-chat）；同日 v0.3 改「底部停靠条」：删独立导航入口 #nav-chat（−1），
+  //   新增停靠条容器 #chat-dock 与标题栏 #chat-dock-toggle（+2）⇒ 净 +1 = 562。
+  //   均为 index.html 静态元素，非回归。
+  if (htmlIds.size !== 562) throw new Error("Batch F DOM ID 基线应为 562，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
@@ -7745,7 +7765,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     "研究 71 节点与六协议必须不变（本批不改研究逻辑）");
 
   // ---- L-12 index.html 正式页面不得出现旧专名（显示文本） ------------------------------
-  const htmlRawL = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const htmlRawL = stripPageNodeIds(fs.readFileSync(path.join(root, "index.html"), "utf8"));
   okL(["EVE放置", "新伊甸", "ISK", "LP", "天使集团", "血袭者", "萨沙", "凡晶石", "三钛合金",
       "裂谷级", "茶隼级", "冲锋者级", "勘探者级", "逆戟鲸级", "苍鹭级"].every(word => !htmlRawL.includes(word)),
     "index.html 正式页面不得出现旧专名");
@@ -7803,7 +7823,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     "getResourceDisplayName 回退链：有映射用新名；未映射回退已注册 definition.name；完全未知才回退原始 ID（ammo 为实例系统，显示名经 AMMO_TYPE_NAMES，不走 ResourceRegistry）");
 
   // 2) index.html 四处旧占位必须消失（仅显示文字）
-  const htmlL19 = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const htmlL19 = stripPageNodeIds(fs.readFileSync(path.join(root, "index.html"), "utf8"));
   okL(!htmlL19.includes("灼烧岩") && !htmlL19.includes("类银超金属") &&
       !htmlL19.includes("干焦岩带") && !htmlL19.includes("超新星诺克石") &&
       htmlL19.includes("赤镍矿 × 1,050") && htmlL19.includes("银镍合金 × 890") &&
@@ -8954,7 +8974,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   sandbox.document.getElementById = (id) => { if (!cachedEls[id]) cachedEls[id] = makeWidgetEl(id); return cachedEls[id]; };
   const twHtml = (id) => (cachedEls[id] ? cachedEls[id].innerHTML : "");
 
-  const indexHtml = fs.readFileSync(path.join(root, "index.html"), "utf8");
+  const indexHtml = stripPageNodeIds(fs.readFileSync(path.join(root, "index.html"), "utf8"));
   const baseCss = fs.readFileSync(path.join(root, "css", "base.css"), "utf8");
   const shellRenderSource = fs.readFileSync(path.join(root, "js/ui/shell-render.js"), "utf8");
   const tutorialSource = fs.readFileSync(path.join(root, "js/systems/tutorial.js"), "utf8");

@@ -1,0 +1,210 @@
+/* =====================================================================
+   聊天停靠条样式（CHAT_SYSTEM_SPEC.md v0.3：底部停靠可折叠，替代独立页）。
+   独立文件：避免触碰 css/components.css（SHA256 baseline 强制执行中）。
+   配色贴现有主题：底 #0b1018 系 / 边框 #1a2535 系 / 文字 #bcc5d0 系。
+   层级 z-index:1400 —— 低于既有弹窗（1500+ ），高于普通面板内容。
+   ===================================================================== */
+
+.chat-dock {
+  position: fixed;
+  left: 216px;              /* 左侧栏 200px + 16px 间距（css/base.css .sidebar） */
+  right: 0;
+  bottom: 0;
+  z-index: 1400;
+  font-size: 13px;
+  pointer-events: auto;
+}
+
+.chat-dock-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px;
+  background: rgba(11, 16, 24, 0.96);
+  border-top: 1px solid #1a2535;
+  color: #8899aa;
+  cursor: pointer;
+  user-select: none;
+}
+
+.chat-dock-bar:hover { background: rgba(17, 24, 36, 0.98); color: #c8d0d8; }
+.chat-dock-bar:focus-visible { outline: 1px solid #2f81a8; outline-offset: -1px; }
+
+.chat-dock-title { display: inline-flex; align-items: center; gap: 6px; color: #bcc5d0; white-space: nowrap; }
+.chat-dock-status { flex: 1; min-width: 0; font-size: 12px; color: #5a6b7d; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-dock-caret { display: inline-flex; align-items: center; color: #6a7a8e; }
+.chat-dock-caret i { transition: transform 0.15s ease; }
+.chat-dock.is-open .chat-dock-caret i { transform: rotate(180deg); }
+
+.chat-dock-body {
+  display: none;
+  border-top: 1px solid #1a2535;
+  background: rgba(8, 11, 16, 0.97);
+  padding: 10px 12px 12px;
+  max-height: 62vh;
+  overflow-y: auto;
+}
+
+#chat-panel .chat-channel-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: #8899aa;
+}
+
+#chat-panel .chat-msg-list {
+  height: 240px;            /* 停靠条内的固定高度（v0.2 独立页时是 46vh，改为底部停靠后收紧） */
+  min-height: 0;
+  overflow-y: auto;
+  border: 1px solid #1a2535;
+  border-radius: 6px;
+  background: rgba(10, 14, 22, 0.72);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#chat-panel .chat-msg {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: rgba(26, 37, 53, 0.35);
+}
+
+#chat-panel .chat-msg.self {
+  background: rgba(38, 70, 83, 0.45);
+  border-left: 2px solid #2f81a8;
+}
+
+#chat-panel .chat-msg .chat-msg-name {
+  color: #6fb3d2;
+  font-weight: 600;
+  margin-right: 6px;
+}
+
+#chat-panel .chat-msg.self .chat-msg-name { color: #8fd0e8; }
+
+#chat-panel .chat-msg .chat-msg-time {
+  color: #5a6b7d;
+  font-size: 11px;
+  margin-left: 6px;
+  white-space: nowrap;
+}
+
+#chat-panel .chat-msg .chat-msg-text {
+  color: #bcc5d0;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+#chat-panel .chat-msg-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: 8px;
+}
+
+#chat-panel .chat-msg-actions button,
+#chat-panel .chat-report-reasons button,
+#chat-panel .chat-admin-actions button {
+  font-size: 11px;
+  padding: 1px 6px;
+  background: transparent;
+  border: 1px solid #2a3a50;
+  border-radius: 3px;
+  color: #7d92a8;
+  cursor: pointer;
+}
+
+#chat-panel .chat-msg-actions button:hover,
+#chat-panel .chat-report-reasons button:hover,
+#chat-panel .chat-admin-actions button:hover {
+  color: #c8d0d8;
+  border-color: #3d5a70;
+}
+
+#chat-panel .chat-report-reasons {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: 8px;
+  font-size: 11px;
+  color: #8899aa;
+}
+
+#chat-panel .chat-blocked-line {
+  font-size: 12px;
+  color: #5a6b7d;
+  padding: 2px 8px;
+}
+
+#chat-panel .chat-more-row { text-align: center; margin: 6px 0; }
+#chat-panel .chat-more-row button {
+  font-size: 12px;
+  padding: 2px 12px;
+  background: transparent;
+  border: 1px solid #2a3a50;
+  border-radius: 3px;
+  color: #7d92a8;
+  cursor: pointer;
+}
+
+#chat-panel .chat-input-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+#chat-panel .chat-input-row input {
+  flex: 1;
+  background: rgba(10, 14, 22, 0.85);
+  border: 1px solid #1a2535;
+  border-radius: 4px;
+  color: #bcc5d0;
+  padding: 6px 10px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+}
+
+#chat-panel .chat-input-row input:focus { outline: none; border-color: #2f81a8; }
+#chat-panel .chat-input-row input:disabled { opacity: 0.5; }
+
+#chat-panel .chat-status-line {
+  min-height: 18px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: #8899aa;
+}
+#chat-panel .chat-status-line.error { color: #d26a5c; }
+
+#chat-panel .chat-admin-section {
+  margin-top: 14px;
+  border-top: 1px solid #1a2535;
+  padding-top: 10px;
+}
+
+#chat-panel .chat-admin-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #c8d0d8;
+}
+
+#chat-panel .chat-admin-report {
+  font-size: 12px;
+  color: #8899aa;
+  padding: 6px 8px;
+  border: 1px solid #1a2535;
+  border-radius: 4px;
+  margin-top: 6px;
+  background: rgba(10, 14, 22, 0.5);
+}
+
+#chat-panel .chat-admin-report .chat-admin-actions { display: inline-flex; gap: 6px; margin-left: 8px; }
+#chat-panel .chat-admin-empty { font-size: 12px; color: #5a6b7d; margin-top: 6px; }

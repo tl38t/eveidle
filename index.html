@@ -11,6 +11,7 @@
   <link rel="stylesheet" href="./css/panels.css?v=75">
   <link rel="stylesheet" href="./css/combat.css?v=30">
 <link rel="stylesheet" href="./css/components.css?v=47">
+<link rel="stylesheet" href="./css/chat.css?v=1">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=28">
 <style id="starmap-collection-room-style">
 .starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
@@ -2469,6 +2470,18 @@
               <option value="en-US">English</option>
             </select>
           </label>
+          <div class="settings-section-title">界面</div>
+          <label class="setting-row" for="setting-ui-scale">
+            <span class="setting-copy"><strong>界面缩放</strong><small>4K / 高分屏下可调大 UI 与文字；修改后立即生效并保存到存档。75% ~ 150%。</small></span>
+            <select id="setting-ui-scale" class="setting-select" aria-label="UI scale">
+              <option value="0.75">75%</option>
+              <option value="0.85">85%</option>
+              <option value="1">100%（默认）</option>
+              <option value="1.1">110%</option>
+              <option value="1.25">125%</option>
+              <option value="1.5">150%</option>
+            </select>
+          </label>
           <div class="settings-section-title">操作确认</div>
           <label class="setting-row" for="setting-enhancement-confirm">
             <span class="setting-copy"><strong>强化操作确认提示</strong><small>开启时，执行舰船或装备强化前显示成功率、失败规则与材料消耗；关闭后点击强化将直接执行。</small></span>
@@ -2676,6 +2689,16 @@
   </div>
 </aside>
 
+<!-- ===== 公会聊天停靠条（v0.3：底部可折叠，仅 Steam 平台显示；开合状态记 localStorage）===== -->
+<div id="chat-dock" class="chat-dock" style="display:none;">
+  <div class="chat-dock-bar" id="chat-dock-toggle" role="button" tabindex="0" aria-expanded="false" aria-controls="chat-panel">
+    <span class="chat-dock-title"><i class="fa-solid fa-comments"></i> 公会聊天</span>
+    <span class="chat-dock-status" id="chat-status"></span>
+    <span class="chat-dock-caret"><i class="fa-solid fa-chevron-up"></i></span>
+  </div>
+  <div class="chat-dock-body" id="chat-panel" style="display:none;"><div id="chat-content"></div></div>
+</div>
+
   <script defer src="./js/core/runtime.js?v=3"></script>
   <script defer src="./js/core/events.js?v=7"></script>
   <script defer src="./js/ui/error-boundary.js?v=3"></script>
@@ -2706,10 +2729,10 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=7"></script>
-  <script defer src="./js/data/changelog.js?v=169"></script>
+  <script defer src="./js/data/changelog.js?v=171"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
-  <script defer src="./js/core/state.js?v=19"></script>
+  <script defer src="./js/core/state.js?v=20"></script>
   <script defer src="./js/systems/reputation.js?v=3"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
   <script defer src="./js/systems/research.js?v=12"></script>
@@ -2742,13 +2765,13 @@
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
   <script defer src="./js/systems/combat.js?v=64"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=136"></script>
-  <script defer src="./js/core/actions.js?v=70"></script>
+  <script defer src="./js/core/selectors.js?v=137"></script>
+  <script defer src="./js/core/actions.js?v=71"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=55"></script>
   <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=163"></script>
+   <script defer src="./js/ui/shell-render.js?v=166"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
@@ -2768,6 +2791,8 @@
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
   <script defer src="./js/ui/alliance-render.js?v=165"></script>
+  <script defer src="./js/platform/chat-api.js?v=1"></script>
+  <script defer src="./js/ui/chat-render.js?v=2"></script>
   <script defer src="./js/core/tick.js?v=31"></script>
   <script defer src="./js/core/offline.js?v=41"></script>
   <script defer src="./js/systems/offline-combat.js?v=64"></script>

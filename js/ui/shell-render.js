@@ -815,6 +815,12 @@ function renderCurrentNavigation() {
   const battleTrialView = isStarmapBattleTrialViewActive();
   const navigation = getNavigationDisplayState(currentPage, currentView);
   document.body.dataset.currentPage = navigation.page;
+  // 聊天停靠条 Steam-only 门控（§11.2）：默认 display:none，仅 steam 平台显示。
+  // 平台判定与事件绑定都在 chat-render.js 的 syncChatDock() 内完成（platform-runtime.js
+  // 晚于本脚本加载，故此处只负责「能调就调」，成功门控后用一次性 flag 短路）。
+  if (!renderCurrentNavigation._chatDockGated && typeof window.syncChatDock === "function") {
+    if (window.syncChatDock()) renderCurrentNavigation._chatDockGated = true;
+  }
   renderCombatSkillGroup();
   getManagedPanels().forEach(panel => { panel.style.display = "none"; });
   getGenericSkillPanels().forEach(panel => { panel.style.display = navigation.page === "skill" ? "" : "none"; });
@@ -879,6 +885,8 @@ function renderCurrentNavigation() {
   }
   // Batch P：每次页面切换（含 skill 页经 updateUI）都刷新引导小部件
   renderTutorialWidget();
+  // 界面缩放：每次导航都确保 body zoom 与存档同步（首屏即生效，且缩放后切换页面不丢失）。
+  applyUiScale();
 }
 
 function renderStarmapPage() {
@@ -2501,8 +2509,17 @@ function renderBlueprintStore() {
 
 function renderLPStore() { return renderBlueprintStore(); }
 
+function applyUiScale() {
+  try {
+    const display = getSettingsDisplayState(gameState);
+    const scale = (display && Number.isFinite(Number(display.uiScale))) ? Number(display.uiScale) : 1;
+    document.body.style.zoom = String(scale);
+  } catch (_) { /* 无 DOM 宿主（沙箱）静默跳过 */ }
+}
+
 function renderSettingsPage() {
   const display = getSettingsDisplayState(gameState);
+  applyUiScale();
   const checkbox = document.getElementById("setting-enhancement-confirm");
   const status = document.getElementById("setting-enhancement-status");
   if (checkbox) checkbox.checked = display.confirmShipEnhancement;
@@ -2511,6 +2528,8 @@ function renderSettingsPage() {
   if (discardCb) discardCb.checked = display.confirmDiscard;
   const dismantleCb = document.getElementById("setting-dismantle-confirm");
   if (dismantleCb) dismantleCb.checked = display.confirmDismantle;
+  const uiScaleSel = document.getElementById("setting-ui-scale");
+  if (uiScaleSel) uiScaleSel.value = String(display.uiScale);
   // 关于：展示构建版本号（由构建脚本注入 window.GAME_VERSION；未构建时回退基线）
   const verEl = document.getElementById("setting-game-version");
   if (verEl) verEl.textContent = "V" + (typeof window.GAME_VERSION === "string" && window.GAME_VERSION ? window.GAME_VERSION : "0.7.1");
@@ -6251,6 +6270,12 @@ function installTutorialWidgetListeners() {
   const dismantleConfirm = document.getElementById("setting-dismantle-confirm"); if (dismantleConfirm) dismantleConfirm.addEventListener("change", () => {
     const result = dispatchGameAction(gameState, { type:"settings/setDismantleConfirmation", enabled:dismantleConfirm.checked }, Date.now());
     if (result.changed) showToast(result.enabled ? "装备拆解确认已开启" : "装备拆解确认已关闭");
+  });
+  const uiScaleSelect = document.getElementById("setting-ui-scale"); if (uiScaleSelect) uiScaleSelect.addEventListener("change", () => {
+    const scale = Number(uiScaleSelect.value);
+    const result = dispatchGameAction(gameState, { type:"settings/setUiScale", scale }, Date.now());
+    if (result.changed) { applyUiScale(); showToast("界面缩放：" + Math.round(scale * 100) + "%"); }
+    else { uiScaleSelect.value = String(getSettingsDisplayState(gameState).uiScale); }
   });
   const achievementCategoryTabs = document.getElementById("achievements-category-tabs"); if (achievementCategoryTabs) achievementCategoryTabs.addEventListener("click", event => {
     const button = event.target.closest("[data-ach-category]"); if (!button) return;

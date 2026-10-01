@@ -2047,6 +2047,15 @@ const ShellStateActions = {
     return { changed:true, enabled:Boolean(enabled) };
   },
 
+  // 界面缩放：合法区间 [0.5, 2.0]，超出或非法一律拒绝（不写档）。
+  setUiScale(state, scale) {
+    const s = Number(scale);
+    if (!Number.isFinite(s) || s < 0.5 || s > 2) return { changed:false, reason:"invalid-scale" };
+    ensureUserSettingsState(state).uiScale = s;
+    state._dirty = true;
+    return { changed:true, scale:s };
+  },
+
   // 2026-09-26：改装件强化（蓝图发明）产出的带词条改装件是「游离实例」，
   // 装配 ref 可能直接传 instanceId。统一先解析出真实 itemId，使 getRigDefinition / setFittingSlot
   // 对「仓库裸件字符串」与「强化实例 id」两条路径行为一致。
@@ -2943,6 +2952,7 @@ const StationStateActions = {
   if (action.type === "settings/setDismantleConfirmation") return ShellStateActions.setDismantleConfirmation(state, action.enabled);
   if (action.type === "settings/setRefineryPumpEnabled") return ShellStateActions.setRefineryPumpEnabled(state, action.enabled);
   if (action.type === "settings/setDarkRefineryPumpEnabled") return ShellStateActions.setDarkRefineryPumpEnabled(state, action.enabled);
+  if (action.type === "settings/setUiScale") return ShellStateActions.setUiScale(state, action.scale);
   if (action.type === "settings/toggleCombatSkills") return ShellStateActions.toggleCombatSkills(state);
   if (action.type === "queue/add") return ShellStateActions.queueAdd(state, action.item, actionTime, action.front);
   if (action.type === "queue/remove") return ShellStateActions.queueRemove(state, action.index, actionTime);

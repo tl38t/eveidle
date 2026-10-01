@@ -344,6 +344,13 @@ function ensureUserSettingsState(state) {
   // 外接大型精炼泵供料开关（全局，作用于冶炼舰上全部泵件；默认开启。开关只影响下一炉）
   if (state.settings.refineryPumpEnabled === undefined) state.settings.refineryPumpEnabled = true;
   else state.settings.refineryPumpEnabled = Boolean(state.settings.refineryPumpEnabled);
+  // 界面缩放：作用于 <body> 的 CSS zoom，覆盖 4K 高分屏下文字过小的问题。
+  // 合法区间 [0.5, 2.0]，非法/缺失一律回落 1（100%）。
+  if (!Number.isFinite(Number(state.settings.uiScale)) || Number(state.settings.uiScale) < 0.5 || Number(state.settings.uiScale) > 2) {
+    state.settings.uiScale = 1;
+  } else {
+    state.settings.uiScale = Number(state.settings.uiScale);
+  }
   return state.settings;
 }
 

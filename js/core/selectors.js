@@ -5109,12 +5109,15 @@ function getQueueDisplayState(state) {
 }
 
 function getSettingsDisplayState(state) {
+  const uiScale = (state && state.settings && Number.isFinite(Number(state.settings.uiScale)) && Number(state.settings.uiScale) >= 0.5 && Number(state.settings.uiScale) <= 2)
+    ? Number(state.settings.uiScale) : 1;
   return {
     kind:"settings",
     confirmShipEnhancement:!state.settings || state.settings.confirmShipEnhancement !== false,
     confirmDiscard:!state.settings || state.settings.confirmDiscard !== false,
     confirmDismantle:!state.settings || state.settings.confirmDismantle !== false,
-    combatSkillsExpanded:Boolean(state.settings && state.settings.combatSkillsExpanded)
+    combatSkillsExpanded:Boolean(state.settings && state.settings.combatSkillsExpanded),
+    uiScale
   };
 }
 
