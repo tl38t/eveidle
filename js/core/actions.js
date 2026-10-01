@@ -1352,6 +1352,10 @@ function applyQueueConfigToState(state, config, now) {
   Object.assign(action, { skill:config.skill, active:true, progress:0, lastProgressUpdate:now, batchRemaining:config.batchRemaining });
   // 跨行动串台防护：队列切到非舰船工程时清理舰船工程运行快照（含「泰坦总装被顶掉」提示）
   clearStaleShipEngineeringRunFields(action, config.skill);
+  // 跨子模式清理：切到非精炼技能时清掉精炼子模式残留（dismantle/smelting）。
+  // 否则从「拆解」接管切换走后 action.refiningSubAction 仍残留 'dismantle'，虽顶栏按 skill 显示不受影响，
+  // 但精炼面板的子模式高亮/结算会读到旧值串台（如采气→冶炼时仍亮「拆解」）。
+  if (config.skill !== "refining") { delete action.refiningSubAction; delete action.refiningView; }
   if (config.area) {
     const area = ALL_MINING_AREAS.find(item => item.name === config.area || item.ore === config.area);
     action.area = config.area; action.startedArea = config.area;

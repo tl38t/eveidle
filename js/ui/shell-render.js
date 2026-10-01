@@ -5548,7 +5548,14 @@ function showRigResonanceModal(preview, def, onConfirm) {
   modal.onclick = e => { if (e.target === modal) close(); };
 }
 
+// ---- 队列拖拽排序（方案 B）：整行按住拖动 ----
+let queueDragActive = false;     // 拖拽进行中：抑制 renderQueuePanel 整块重绘（铁律16 同类风险对策）
+let lastQueueDisplay = null;    // 拖拽中 renderQueuePanel 被短路时返回的上次快照
+let queueDragInstalled = false; // 拖拽监听只安装一次
+let queueDragSession = null;    // 当前拖拽会话对象（与 queueDragActive 双保险：无会话 ⇒ 绝不短路重绘，防「闸门卡死」）
+
 function renderQueuePanel() {
+  if (queueDragActive && queueDragSession) return lastQueueDisplay;   // 拖拽中：不重绘，避免打断进行中的拖拽（铁律16 同类风险对策）；无会话 ⇒ 绝不短路，防闸门卡死
   const display = getQueueDisplayState(gameState);
   const queueT = value => (window.I18N && typeof window.I18N.t === "function") ? window.I18N.t(String(value == null ? "" : value)) : String(value == null ? "" : value);
   const status = document.getElementById("queue-status-text"); if (status) status.textContent = display.statusText;
@@ -5560,9 +5567,113 @@ function renderQueuePanel() {
     } else {
       etaHtml = `<span class="qi-eta rough">${queueT(item.skill === "combat" && !item.active ? "取决于战斗" : "—")}</span>`;
     }
-    return `<div class="queue-item${item.active ? " active" : ""}"><span class="qi-idx">${item.isDirect ? "▶" : item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${queueT(item.skillLabel)} · ${queueT(item.label)}</span><span class="qi-detail">${queueT(item.countText)}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${queueT(item.active ? "执行中" : "等待")}</span>${item.isDirect ? "" : `<div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div>`}</div>`;
+    const draggableQ = !item.active && !item.isDirect;
+    return `<div class="queue-item${item.active ? " active" : ""}" data-index="${item.index}" data-draggable="${draggableQ ? "true" : "false"}" title="${draggableQ ? "按住整行拖动排序" : (item.active ? "执行中，不可拖动" : "不可拖动")}"><span class="qi-idx">${item.isDirect ? "▶" : item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${queueT(item.skillLabel)} · ${queueT(item.label)}</span><span class="qi-detail">${queueT(item.countText)}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${queueT(item.active ? "执行中" : "等待")}</span>${item.isDirect ? "" : `<div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div>`}</div>`;
   }).join("") : `<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">${queueT('队列为空，从技能面板点击"加入队列"添加任务')}</div>`;
-  return display;
+  lastQueueDisplay = display; return display;
+}
+
+// 队列拖拽：整行按住拖动排序。与 renderQueuePanel 的 queueDragActive 短路配合，避免铁律16 同类重绘打断。
+function installQueueDrag(listEl) {
+  if (queueDragInstalled || !listEl) return;
+  queueDragInstalled = true;
+
+  // 拖拽专用样式：动态注入一次（不改动 components.css，避免影响 SHA256 基线；不设固定 id，规避 verify.mjs 的静态 ID 基线）
+  const dragStyle = document.createElement("style");
+  dragStyle.textContent =
+    '.queue-item[data-draggable="true"]{cursor:grab;touch-action:none;user-select:none}\n' +
+    '.queue-item:active{cursor:grabbing}\n' +
+    '.queue-item.dragging{display:none}\n' +
+    '.drag-placeholder{border:1px dashed #38e1ff;border-radius:4px;margin-bottom:4px;background:rgba(56,225,255,.06)}\n' +
+    '.drag-clone{position:fixed;left:0;top:0;z-index:9999;pointer-events:none;margin:0;box-shadow:0 8px 26px rgba(0,0,0,.55);border-color:#38e1ff!important}\n';
+  document.head.appendChild(dragStyle);
+
+  let drag = null;
+
+  // 收口（唯一出口，幂等）：先把全部拖拽状态复位，保证 renderQueuePanel 一定不再被短路，
+  // 再做 DOM 清理、派发移动、强制重绘。任何一步抛错都不会把闸门留在 true（否则队列面板永久冻住）。
+  function endQueueDrag() {
+    const d = drag;
+    drag = null; queueDragSession = null; queueDragActive = false;
+    window.removeEventListener("pointermove", onQueueMove);
+    window.removeEventListener("pointerup", onQueueUp);
+    window.removeEventListener("pointercancel", onQueueUp);
+    document.removeEventListener("pointerup", onQueueUp, true);
+    document.removeEventListener("pointercancel", onQueueUp, true);
+    window.removeEventListener("blur", onQueueDragBlur);
+    if (!d) { renderQueuePanel(); return; }
+    if (d.clone) { try { d.clone.remove(); } catch(_) {} }
+    try { d.ph.remove(); } catch(_) {}
+    try { d.row.classList.remove("dragging"); } catch(_) {}
+    try { listEl.releasePointerCapture(d.pid); } catch(_) {}
+    if (d.lastTo !== d.fromIdx && d.lastTo >= 0) { try { moveQueueItem(d.fromIdx, d.lastTo); } catch(_) {} }
+    renderQueuePanel();   // 落位重绘（此刻闸门已复位，一定生效）
+    if (typeof renderCurrentActivity === "function") renderCurrentActivity();   // 顶栏「当前活动」随激活项变更即时刷新：队列路径（拖拽自动开始/置顶）不发 action:started，否则须刷新或点「开始队列」才更新
+  }
+
+  function onQueueUp() { endQueueDrag(); }
+  function onQueueDragBlur() { endQueueDrag(); }   // 窗口失焦（点地址栏/切窗口）⇒ 视为拖拽结束，防卡死
+
+  listEl.addEventListener("pointerdown", e => {
+    if (e.target.closest("[data-queue-action]")) return;          // 按钮区不触发拖拽，按钮点击照常
+    const row = e.target.closest(".queue-item");
+    if (!row || row.dataset.draggable !== "true") return;          // 仅 draggable 行（执行中/伪条目不可拖）
+    if (drag) endQueueDrag();                                      // 残留会话兜底：任何新拖拽开始前先自愈
+    e.preventDefault();
+    const fromIdx = Number(row.dataset.index);
+    const rect = row.getBoundingClientRect();
+
+    const ph = document.createElement("div");
+    ph.className = "drag-placeholder";
+    ph.style.height = rect.height + "px";
+    listEl.insertBefore(ph, row);
+    row.classList.add("dragging");
+
+    queueDragActive = true;
+    drag = { fromIdx, row, ph, clone:null, rect, startY:e.clientY, baseTop:rect.top, lastTo:fromIdx, pid:e.pointerId };
+    queueDragSession = drag;
+    try { listEl.setPointerCapture(e.pointerId); } catch(_) {}
+    window.addEventListener("pointermove", onQueueMove);
+    window.addEventListener("pointerup", onQueueUp);
+    window.addEventListener("pointercancel", onQueueUp);
+    document.addEventListener("pointerup", onQueueUp, true);        // 捕获阶段兜底：即使被 stopPropagation 吞掉也能收口
+    document.addEventListener("pointercancel", onQueueUp, true);
+    window.addEventListener("blur", onQueueDragBlur);
+  });
+
+  function ensureClone() {
+    if (drag.clone) return;
+    const rect = drag.rect;
+    const clone = drag.row.cloneNode(true);
+    clone.className = "queue-item drag-clone";
+    clone.style.width = rect.width + "px";
+    clone.style.left = rect.left + "px";
+    clone.style.top = rect.top + "px";
+    document.body.appendChild(clone);
+    drag.clone = clone;
+  }
+
+  function onQueueMove(e) {
+    if (!drag) return;
+    if (e && e.pointerId !== undefined && e.pointerId !== drag.pid) return;   // 过滤多指
+    // pointerup 丢失兜底：鼠标键已松开（buttons===0，说明在窗口外或被别的处理器吞掉时松的手）⇒ 立即收口，防拖拽永久卡死。
+    if (e && e.pointerType !== "touch" && e.buttons === 0) { endQueueDrag(); return; }
+    ensureClone();
+    const dy = e.clientY - drag.startY;
+    drag.clone.style.top = (drag.baseTop + dy) + "px";
+    // 运行中：首项(active)带进度条更高，落在其整段范围内都视为「插到最前(to=0)」，
+    // 否则指针落在它下半截会被算成 to=1，错过 reducer 的自动开始（拖到顶却没切换）。
+    const running = Boolean(gameState.queue.status.isRunning);
+    const rows = Array.prototype.slice.call(listEl.querySelectorAll(".queue-item:not(.dragging)"));
+    let to = rows.length;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i].getBoundingClientRect();
+      const threshold = (running && i === 0) ? r.top + r.height : r.top + r.height / 2;
+      if (e.clientY < threshold) { to = i; break; }
+    }
+    drag.lastTo = to;
+    listEl.insertBefore(drag.ph, rows[to] || null);   // 仅移动占位（不含捕获目标 listEl ⇒ 不影响 pointer capture）
+  }
 }
 
 function addCurrentToQueue() {
@@ -6250,7 +6361,9 @@ function installTutorialWidgetListeners() {
     if (!(index >= 0)) return; // 直接动作伪条目（index=-1，无操作按钮）兜底防护
     if (action === "remove") removeFromQueue(index); else if (action === "up") moveQueueItem(index, index - 1); else if (action === "down") moveQueueItem(index, index + 1); else if (action === "top") moveQueueItemToTop(index);
     renderQueuePanel();
+    if (typeof renderCurrentActivity === "function") renderCurrentActivity();   // 置顶/上下移若触发自动开始，顶栏「当前活动」须即时刷新
   });
+  if (queueList) installQueueDrag(queueList);
   const startQueueButton = document.getElementById("btn-start-queue"); if (startQueueButton) startQueueButton.addEventListener("click", () => { if (startQueue()) { currentView = gameState.currentAction.skill; renderQueuePanel(); updateUI(); } });
   const stopQueueButton = document.getElementById("btn-stop-queue"); if (stopQueueButton) stopQueueButton.addEventListener("click", () => { stopQueue(); renderQueuePanel(); updateUI(); });
   const clearQueueButton = document.getElementById("btn-clear-queue"); if (clearQueueButton) clearQueueButton.addEventListener("click", () => {

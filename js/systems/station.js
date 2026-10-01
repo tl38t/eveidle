@@ -19,9 +19,9 @@ const STATION_BODY_PLANS = Object.freeze({
     level: 1,
     name: "空间站",
     durationMs: 3600000,          // 1h
-    isk: 500000,
+    isk: 50000,
     materials: Object.freeze({
-      "mineral:三钛合金": 1800,   // 标准钛材：16000 → 1800（降低入门门槛，目标「12h 内自动冶炼」）
+      "mineral:三钛合金": 100,    // 标准钛材：1800 → 100（降低入门门槛）
       "mineral:类银超金属": 60    // 银镍合金：750 → 60
     })
   }),
@@ -429,12 +429,11 @@ const STATION_BUILDING_LEVEL_PLANS = Object.freeze({
     durationMs: 900000, // 15min
     isk: 50000,
     materials: Object.freeze({
-      "mineral:三钛合金": 2500,
+      "mineral:三钛合金": 250,
       "mineral:类银超金属": 94,
       "moon:镓": 125,
       "gas:稳定富勒烯": 150,
-      "planetary:同位素": 38,
-      "planetary:生物质": 25
+      "planetary:同位素": 38
     })
   }),
   2: Object.freeze({
@@ -512,7 +511,7 @@ const STATION_SMELTING_REFINERY_LV1_PLAN = Object.freeze({
   durationMs: 900000,          // 15min（与共享 Lv.1 施工时间一致）
   isk: 50000,
   materials: Object.freeze({
-    "mineral:三钛合金": 400,    // 标准钛材：2500 → 400
+    "mineral:三钛合金": 125,    // 标准钛材：2500 → 400 → 125
     "mineral:类银超金属": 20    // 银镍合金：94 → 20
   })
 });

@@ -196,7 +196,15 @@ function submitActionConfirmation(front) {
   const countText = count === -1 ? "（无限）" : " ×" + count;
   const positionText = front ? "队列首位" : "队列";
   showToast(`已加入${positionText}${countText}：${getQueueSkillLabel(queueItem.skill)} · ${queueItem.label}`);
-  if (front) startQueue();
+  if (front) {
+    startQueue();
+    // 事件驱动：动作真正开始后通知 UI 重建顶部「当前活动」迷你进度条。
+    // 该元素为条件渲染（仅 progressActive 为真才拼入 DOM），启动路径原先不重绘，
+    // 导致迷你进度条要切页才出现；渲染循环只改已存在元素宽度、不创建元素。
+    if (typeof GameEvents !== "undefined" && typeof GameEvents.emit === "function") {
+      GameEvents.emit("action:started", { skill: queueItem.skill, target: queueItem.target, label: queueItem.label });
+    }
+  }
   return true;
 }
 

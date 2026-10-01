@@ -725,6 +725,33 @@ function updateUI(now) {
   try { if (window.__PERF) window.__PERF.end("ui:updateUI"); } catch (_) {}
 }
 
+// 顶部「当前活动」迷你进度条：动作启动后为条件渲染（仅 progressActive 为真才拼入 DOM）。
+// 启动路径原先不重绘该区域，导致迷你进度条要切页才出现；渲染循环只改已存在元素宽度、不创建元素。
+// 此处抽出独立函数，由「action:started」事件驱动刷新，避免每帧全量 updateUI。
+function renderCurrentActivity() {
+  const activityEl = document.getElementById("current-activity");
+  if (!activityEl) return;
+  const activity = getCurrentActivityDisplayState(gameState, Date.now());
+  const bar = activity.progressActive
+    ? `<span class="activity-mini-progress" aria-label="进度 ${activity.progressPercent}%" title="${activity.progressPercent}%"><span class="fill" style="width:${activity.progressPercent}%"></span></span>`
+    : "";
+  const safeText = String(activity.text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  activityEl.innerHTML = safeText + bar;
+}
+
+// 事件驱动：动作真正开始（startQueue 已同步置 currentAction.active=true）后，立即重建顶部当前活动条；
+// 考古页运行面板内的 canvas 进度条同为条件渲染，启动路径未重绘，此处一并补齐。
+function onActionStarted(event) {
+  renderCurrentActivity();
+  if (currentPage === "archaeology" && typeof renderArchaeologyPage === "function") {
+    try { renderArchaeologyPage(Date.now()); } catch (_) {}
+  }
+}
+
+if (typeof GameEvents !== "undefined" && typeof GameEvents.on === "function") {
+  GameEvents.on("action:started", onActionStarted);
+}
+
 function setLiveText(element, value) {
   if (element && element.textContent !== value) element.textContent = value;
 }
@@ -790,7 +817,7 @@ function refreshVisiblePanelAfterAction() {
   if (currentPage === "skill") updateUI();
   else if (currentPage === "cargo") renderCargoPage();
   else if (currentPage === "hangar") renderHangarPanel();
-  else if (currentPage === "queue") renderQueuePanel();
+  else if (currentPage === "queue") { renderQueuePanel(); if (typeof renderCurrentActivity === "function") renderCurrentActivity(); }   // 队列项自然完成→下一项目自动开始，顶栏「当前活动」须同步刷新（否则滞留旧项，须整页刷新/点「开始队列」才更新）
   else if (currentPage === "station" && typeof renderStationPage === "function") renderStationPage(Date.now());
 }
 

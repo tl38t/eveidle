@@ -3400,7 +3400,13 @@ function getAchievementSyncService() {
 document.addEventListener("visibilitychange", () => {
   if (SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return;
   if (!document.hidden) {
-    try { calculateOfflineGains(); }
+    try {
+      // 切回标签/窗口时：短离开（<10 分钟，等同 tick.js 后台节流守卫阈值）静默结算离线进度、
+      // 不弹「离线收益」总结窗，避免随手切标签就弹窗；长离开（≥10 分钟，真·挂机）才弹。
+      // 离线进度始终照常结算（lastActiveTime 在 applyOfflineGains 内刷新），不丢隐藏期收益。
+      const _awayMs = Date.now() - (gameState.lastActiveTime || Date.now());
+      calculateOfflineGains({ silent: _awayMs < 10 * 60 * 1000 });
+    }
     catch (e) { console.error("[离线·标签页恢复结算异常] 本次后台时长未被结算。错误：", e && (e.stack || e.message || e)); }
   }
 });
