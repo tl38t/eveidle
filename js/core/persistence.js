@@ -2451,20 +2451,43 @@ const SaveManager = {
     const self = this;
     if (!DesktopSaveMirror.isAvailable()) return Promise.resolve(false);
     const local = this._localReadResult || this._readLocalCandidate();
-    if (!local || local.status !== "none") return Promise.resolve(false);
     return DesktopSaveMirror.read().then(function (result) {
       if (!result || result.status !== "ok" || !result.raw) return false;
+      let payload;
       try {
-        const payload = self.adapter.import(result.raw);
+        payload = self.adapter.import(result.raw);
         if (!validateImportedSavePayload(payload) || !payload.skills) return false;
-        localStorage.setItem(self.adapter._key, result.raw);
-        self._localReadResult = { status: "ok", payload: payload };
-        self._hasLocalCandidate = true;
-        return true;
       } catch (error) {
         console.warn("[Desktop save mirror] invalid save ignored", error);
         return false;
       }
+      // Steam Auto-Cloud 会在游戏启动前把云端存档（另一台设备的进度）覆盖到镜像文件，
+      // 这里借该文件实现 Steam 端跨设备同步：镜像只在 localStorage 落盘成功后由本机写入，
+      // 因此镜像比本地「新」只可能来自 Steam Cloud 下载，用 lastSaveTime 新者赢判定。
+      const mirrorTime = Number(payload.lastSaveTime) || 0;
+      const localTime = Number(local && local.status === "ok" && local.payload && local.payload.lastSaveTime) || 0;
+      // 本地为空（新装 / 清档）：直接收编镜像（原有兜底路径）。
+      if (!local || local.status === "none") {
+        localStorage.setItem(self.adapter._key, result.raw);
+        self._localReadResult = { status: "ok", payload: payload };
+        self._hasLocalCandidate = true;
+        return true;
+      }
+      // 本地有档：镜像更新才收编，本地不落后时保持本地（绝不用旧档覆盖新档）。
+      if (local.status !== "ok" || mirrorTime <= localTime) return false;
+      try {
+        localStorage.setItem(self.adapter._key, result.raw);
+      } catch (error) {
+        console.warn("[Desktop save mirror] newer save adopt failed", error);
+        return false;
+      }
+      self._localReadResult = { status: "ok", payload: payload };
+      self._hasLocalCandidate = true;
+      try {
+        console.info("[Desktop save mirror] adopted newer desktop/cloud save",
+          { mirrorTime: new Date(mirrorTime).toISOString(), localTime: new Date(localTime).toISOString() });
+      } catch (_) {}
+      return true;
     });
   },
   _initProviderWithTimeout(provider, ms) {
@@ -3278,6 +3301,22 @@ function getAchievementSyncService() {
     const file = err.path ? basenameOf(err.path) : "";
     return "op=" + (op || "?") + (code !== "" ? " code=" + code : "") + " msg=" + msg + (file ? " file=" + file : "");
   }
+  // 平台门控：TapTap 云存档状态（云同步状态 / 云端存档时间 / 最近同步时间 / 立即同步 / 检查云端 /
+  // 云存档诊断 / 仅删本地 / 永久删除）只在 TapTap 平台显示。Steam、web 走 NoopCloudProvider
+  // （Steam 存档由 Steam Cloud 壳层负责，web 无云），显示这套 TapTap 云 UI 只会让玩家误会。
+  // 设备备份（DesktopFileMirrorProvider / 本地文件镜像）与「云端」无关，保留。
+  SaveManager._applyCloudPanelVisibility = function () {
+    const isTapTap = !!(typeof PlatformRuntime !== "undefined" && PlatformRuntime.getPlatform && PlatformRuntime.getPlatform() === "taptap");
+    const rowOf = function (id) { const el = document.getElementById(id); return el ? el.parentElement : null; };
+    [rowOf("cloud-sync-status"), rowOf("cloud-save-time"), rowOf("last-sync-time")].forEach(function (row) {
+      if (row) row.style.display = isTapTap ? "" : "none";
+    });
+    ["btn-sync-now", "btn-check-cloud", "btn-cloud-diag", "btn-delete-local", "btn-permanent-delete"].forEach(function (id) {
+      const el = document.getElementById(id);
+      if (el) el.style.display = isTapTap ? "" : "none";
+    });
+  };
+
   SaveManager._refreshCloudSaveStatus = function () {
     const cs = this._cloudSave;
     const statusEl = document.getElementById("cloud-sync-status");
@@ -3394,6 +3433,9 @@ function getAchievementSyncService() {
 
   // 启动态变化 / 可见性恢复时刷新云同步状态显示。
   try { window.addEventListener("bootstatechange", () => SaveManager._refreshCloudSaveStatus()); } catch (e) {}
+  // 平台门控：非 TapTap 平台隐藏 TapTap 云存档状态行与云操作按钮（见 _applyCloudPanelVisibility）。
+  try { window.addEventListener("bootstatechange", () => SaveManager._applyCloudPanelVisibility()); } catch (e) {}
+  SaveManager._applyCloudPanelVisibility();
   SaveManager._refreshCloudSaveStatus();
 })();
 

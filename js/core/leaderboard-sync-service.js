@@ -205,17 +205,36 @@
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 
   // ---- Provider 自动选择（优先级）----
-  //   1) TapTap 可用且已登录 -> TapTap Provider
-  //   2) TapTap 不可用 -> Noop/Local Provider
-  //   3) Steam 永远不参与自动选择，只保留占位接口（由调用方显式 new）。
-  // 该函数只读探测 window.tap / window.LeaderboardPlatformConfig，不调用 SDK、
-  // 不修改状态、不抛未处理异常。返回 { provider, platform }。
+  //   1) Steam 桌面端（window.SteamBridge 就绪）-> Steam Provider（自动启用）
+  //   2) TapTap 可用且已登录 -> TapTap Provider
+  //   3) 均不可用 -> Noop/Local Provider
+  // 该函数只读探测 window.SteamBridge / window.tap / window.LeaderboardPlatformConfig，
+  // 不调用 SDK、不修改状态、不抛未处理异常。返回 { provider, platform }。
+  // 注意：Steam 与 TapTap 互斥（同一运行环境只会有其一），故优先级顺序不影响正确结果。
   LeaderboardSyncService.selectProvider = function (opts) {
     opts = opts || {};
     try {
+      const Steam = (typeof window !== "undefined" && window.SteamLeaderboardProvider) || null;
       const Tap = (typeof window !== "undefined" && window.TaptapLeaderboardProvider) || null;
       const Noop = (typeof window !== "undefined" && window.NoopLeaderboardProvider) || null;
       const Config = (typeof window !== "undefined" && window.LeaderboardPlatformConfig) || null;
+
+      // 探测 Steam 桌面端是否具备接入条件（SteamBridge 通道 + 原生层就绪）。
+      // 仅代表环境具备接入条件；真实「已初始化 / 原生已构建」由首次上报/拉取确认。
+      let steamUsable = false;
+      if (Steam && Config && typeof Config.detectSteamAvailable === "function") {
+        steamUsable = Config.detectSteamAvailable();
+      } else if (Steam) {
+        try {
+          const sb = window.SteamBridge;
+          steamUsable = !!(sb && typeof sb.submitLeaderboard === "function" && typeof sb.fetchLeaderboard === "function");
+        } catch (e) { steamUsable = false; }
+      }
+
+      if (steamUsable && Steam) {
+        const provider = new Steam(opts);
+        return { provider: provider, platform: "steam" };
+      }
 
       // 探测 TapTap 环境是否具备接入条件（tap 全局对象 + 管理器可取）
       let tapUsable = false;

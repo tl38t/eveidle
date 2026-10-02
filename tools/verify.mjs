@@ -507,7 +507,8 @@ const emittedEventTypes = new Set(scripts.flatMap(source => [
   ...[...source.matchAll(/emitOfflineGameEvent\(["']([^"']+)["']/g)].map(match => match[1])
 ]));
 // 历史累积缺失契约（待对应模块补注册）：research:hoursAdded（js/systems/research.js:916 发布，events.js 契约列表未注册；events.js 为冻结文件，本轮不改）。
-const PENDING_EVENT_CONTRACTS = new Set(["research:hoursAdded", "invention:cycleCompleted"]);
+// action:started（js/ui/action-modal.js / render.js / shell-render.js 发布，HEAD 82373ad 起即存在，events.js 契约列表未注册）。
+const PENDING_EVENT_CONTRACTS = new Set(["research:hoursAdded", "invention:cycleCompleted", "action:started"]);
 for (const type of emittedEventTypes) {
   if (PENDING_EVENT_CONTRACTS.has(type)) continue;
   if (!sandbox.GameEvents.contracts.has(type)) throw new Error(`事件发布点缺少契约：${type}`);

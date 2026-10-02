@@ -109,6 +109,60 @@
     return typeof leaderboardId === "string" && leaderboardId.indexOf(TAPTAP_PLACEHOLDER_PREFIX) === 0;
   }
 
+  // ---- Steam 排行榜名称映射（只读本地 boardId -> Steam 排行榜名）----
+  // Steam 排行榜以「名称」标识（ISteamUserStats->FindLeaderboard(name)），与
+  // TapTap 的 leaderboardId 不同。名称必须是开发商在 Steamworks 后台
+  // 「社区 -> 统计与排行榜」中预先创建的字符串（完全一致，含大小写）。
+  // 以下为确定性命名槽位，需运营在后台逐个创建对应排行榜。
+  // 命名约定：eveidle_ 前缀 + 分类/技能标识（全小写、下划线分隔）。
+  const STEAM_AGGREGATE_NAMES = Object.freeze({
+    "total": "eveidle_total",
+    "combat.total": "eveidle_combat_total",
+    "production.total": "eveidle_production_total",
+    "gathering.total": "eveidle_gathering_total",
+    "research.total": "eveidle_research_total",
+  });
+  const STEAM_SKILL_PREFIX = "eveidle_skill_";
+  // 占位符：若某 boardId 解析为 __STEAM_ 前缀，说明命名尚未决定，视为配置缺失。
+  const STEAM_PLACEHOLDER_PREFIX = "__STEAM_";
+
+  // 给定本地 boardId，返回 Steam 排行榜名（聚合走表，单项按前缀拼）。
+  // 返回 null 表示该 boardId 不应上报（如 drones / unknown）。
+  function resolveSteamLeaderboardName(boardId) {
+    if (!boardId || typeof boardId !== "string") return null;
+    if (STEAM_AGGREGATE_NAMES[boardId]) return STEAM_AGGREGATE_NAMES[boardId];
+    if (boardId.indexOf("skill:") === 0) {
+      const skillId = boardId.slice("skill:".length);
+      if (!skillId || skillId === "drones") return null; // 绝不报 drones
+      if (categoryOf(skillId) === "uncategorized") return null;
+      const up = String(skillId).toLowerCase().replace(/[^a-z0-9_]/g, "_");
+      return STEAM_SKILL_PREFIX + up;
+    }
+    return null;
+  }
+
+  // 占位符检测：若 Steam 排行榜名仍为 "__STEAM_..." 占位，说明命名尚未决定，
+  // provider 必须返回配置缺失，不得伪造成功。
+  function isPlaceholderLeaderboardName(name) {
+    return typeof name === "string" && name.indexOf(STEAM_PLACEHOLDER_PREFIX) === 0;
+  }
+
+  // 平台能力探测（只读，不调用 SDK）：
+  //  - 浏览器存在 window.SteamBridge 且暴露 submitLeaderboard / fetchLeaderboard
+  //    -> 可能可用（原生层就绪）
+  //  - 否则不可用（local-only 回退）
+  function detectSteamAvailable() {
+    try {
+      const sb = (typeof window !== "undefined") ? window.SteamBridge : null;
+      if (!sb) return false;
+      if (typeof sb.submitLeaderboard !== "function") return false;
+      if (typeof sb.fetchLeaderboard !== "function") return false;
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   // 平台能力探测（只读，不调用 SDK）：
   //  - 浏览器存在 window.tap 且暴露 getLeaderboardManager 函数 -> 可能可用
   //  - 否则不可用（local-only 回退）
@@ -138,11 +192,17 @@
     TAPTAP_SKILL_ID_PREFIX,
     TAPTAP_SKILL_ID_SUFFIX,
     TAPTAP_PLACEHOLDER_PREFIX,
+    STEAM_AGGREGATE_NAMES,
+    STEAM_SKILL_PREFIX,
+    STEAM_PLACEHOLDER_PREFIX,
     categoryOf,
     resolveTapTapLeaderboardId,
     isBoardReportable,
     isPlaceholderLeaderboardId,
     detectTapTapAvailable,
+    resolveSteamLeaderboardName,
+    isPlaceholderLeaderboardName,
+    detectSteamAvailable,
     sanitizeScore,
   };
 

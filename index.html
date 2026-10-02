@@ -7,7 +7,7 @@
 <title>深空放置：边疆纪元</title>
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css" data-page-node-id="3fiApn1SGVFxJUWdXpWh5W">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css" data-page-node-id="P4Io4ysW7RgjBSkBb3L0Yx">
-<link rel="stylesheet" href="./css/base.css?v=23" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
+<link rel="stylesheet" href="./css/base.css?v=24" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
   <link rel="stylesheet" href="./css/panels.css?v=75" data-page-node-id="EO0cvpdOJNMFJG5gNM6nea">
   <link rel="stylesheet" href="./css/combat.css?v=30" data-page-node-id="4tyvBwYTecWVPpekSSWQWZ">
 <link rel="stylesheet" href="./css/components.css?v=47" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
@@ -28,8 +28,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=53"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=29"></script>
+  <script src="./js/i18n/catalog-en.js?v=56"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=32"></script>
   <!-- steam-i18n-locales:start -->
   <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -43,11 +43,11 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=16"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=18"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ja.js?v=1"><\/script>');
-        document.write('<script src="./js/i18n/catalog-fr.js?v=1"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ko.js?v=1"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=19"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=21"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ja.js?v=4"><\/script>');
+        document.write('<script src="./js/i18n/catalog-fr.js?v=4"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ko.js?v=4"><\/script>');
       }
     })();
   </script>
@@ -75,7 +75,7 @@
         ["目标矿带：", "Target Belt: "], ["经验奖励：", "XP Reward: "], ["技能总览", "Skill Overview"],
         ["蓝图商店", "Blueprint Store"], ["动作队列", "Action Queue"], ["增强剂槽", "Booster Slot"],
         ["装载增强剂", "Load Booster"], ["待装载", "Ready to Load"], ["后勤", "Logistics"],
-        ["未建立", "Not Built"], ["需要", "Requires"], ["极星矿带", "Pole Star Mineral Belt"],
+        ["未建立", "Not built"], ["需要", "Requires"], ["极星矿带", "Pole Star Mineral Belt"],
         ["序章·登记", "Prologue · Registration"], ["已完成", "Completed"], ["暂无可用任务", "No available tasks"],
         ["星币", "Starcoin"], ["采矿", "Mining"], ["联盟", "Alliance"], ["采集铁硅原矿", "Harvest Iron-Silicon Ore"],
         ["进行中", "In Progress"], ["运行中", "Running"], ["采集", "Harvesting"], ["每次", "per cycle"],
@@ -2728,8 +2728,8 @@
   <script defer src="./js/data/achievement-locales-fr.js?v=1"></script>
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
-  <script defer src="./js/data/tutorial.js?v=7"></script>
-  <script defer src="./js/data/changelog.js?v=174"></script>
+  <script defer src="./js/data/tutorial.js?v=8"></script>
+  <script defer src="./js/data/changelog.js?v=175"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=20"></script>
@@ -2750,7 +2750,7 @@
   <script defer src="./js/systems/rigs.js?v=7"></script>
   <script defer src="./js/systems/archaeology.js?v=27"></script>
   <script defer src="./js/systems/planetary.js?v=5"></script>
-  <script defer src="./js/systems/station.js?v=30"></script>
+  <script defer src="./js/systems/station.js?v=31"></script>
   <script defer src="./js/data/legion/npc-names.js?v=2"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=2"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=2"></script>
@@ -2771,7 +2771,7 @@
   <script defer src="./js/systems/wormhole.js?v=41"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=171"></script>
+   <script defer src="./js/ui/shell-render.js?v=176"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
@@ -2799,7 +2799,7 @@
   <script defer src="./js/systems/combat-log.js?v=6"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=3"></script>
-  <script defer src="./js/platform/leaderboard-platform-config.js?v=6"></script>
+  <script defer src="./js/platform/leaderboard-platform-config.js?v=7"></script>
   <script defer src="./js/platform/ad-platform-config.js?v=3"></script>
   <script defer src="./js/platform/leaderboard-provider-contract.js?v=2"></script>
   <script defer src="./js/platform/ad-provider-contract.js?v=2"></script>
@@ -2813,7 +2813,7 @@
   <script defer src="./js/platform/providers/noop-ad-provider.js?v=2"></script>
   <script defer src="./js/platform/providers/taptap-leaderboard-provider.js?v=4"></script>
   <script defer src="./js/platform/providers/taptap-ad-provider.js?v=5"></script>
-  <script defer src="./js/platform/providers/steam-leaderboard-provider.js?v=2"></script>
+  <script defer src="./js/platform/providers/steam-leaderboard-provider.js?v=4"></script>
   <script defer src="./js/platform/taptap/taptap-cloud-provider.js?v=3"></script>
    <script defer src="./js/platform/taptap/taptap-achievement-provider.js?v=4"></script>
    <script defer src="./js/platform/steam/steam-achievement-provider.js?v=2"></script>
@@ -2824,15 +2824,15 @@
   <script defer src="./js/core/local-mirror-service.js?v=3"></script>
    <script defer src="./js/data/platform-achievement-map.js?v=5"></script>
    <script defer src="./js/core/achievement-sync-service.js?v=5"></script>
-  <script defer src="./js/core/leaderboard-sync-service.js?v=2"></script>
+  <script defer src="./js/core/leaderboard-sync-service.js?v=3"></script>
   <script defer src="./js/core/ad-service.js?v=5"></script>
   <script defer src="./js/systems/ad-buff.js?v=6"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
-  <script defer src="./js/core/persistence.js?v=45"></script>
+  <script defer src="./js/core/persistence.js?v=47"></script>
   <script defer src="./js/ui/changelog-popup.js?v=2"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=15"></script>
-  <script type="module" src="./js/ui/leaderboard-render.js?v=8"></script>
-<script defer src="./js/ui/render.js?v=43"></script>
+  <script type="module" src="./js/ui/leaderboard-render.js?v=9"></script>
+<script defer src="./js/ui/render.js?v=44"></script>
   <script defer src="./js/ui/taptap-portrait.js?v=25"></script>
   <script defer src="./js/qa-seed.js?v=4"></script>
   <div id="hangar-3d-popup" data-page-node-id="y6HiRqbCV8OfCwEJXtXILE">

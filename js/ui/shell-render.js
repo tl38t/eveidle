@@ -809,6 +809,95 @@ function renderCombatSkillGroup() {
   return display.combatSkillsExpanded;
 }
 
+// 导航红点提示：空间站未建造 / 研究未开始 时，在对应 tab 显示红点。
+// 纯 JS 注入 span，不改动 index.html 标记（规避外部设计工具重写风险）。
+function ensureNavNudgeBadge(page) {
+  const item = document.querySelector('.sidebar .nav-item[data-page="' + page + '"]');
+  if (!item) return null;
+  let badge = item.querySelector('.nav-nudge-dot');
+  if (!badge) {
+    badge = document.createElement('span');
+    badge.className = 'nav-nudge-dot';
+    badge.style.cssText = 'position:absolute;top:8px;right:12px;width:9px;height:9px;border-radius:50%;background:#e23b3b;box-shadow:0 0 0 2px rgba(226,59,59,.3);pointer-events:none;display:none;';
+    if (!item.style.position) item.style.position = 'relative';
+    item.appendChild(badge);
+  }
+  return badge;
+}
+
+function updateNavNudges(state) {
+  if (!state) return;
+  const st = state.station;
+  const bodyLevel = st ? (Math.floor(Number(st.bodyLevel)) || 0) : 0;
+  const stationBadge = ensureNavNudgeBadge('station');
+  if (stationBadge) stationBadge.style.display = bodyLevel < 1 ? '' : 'none';
+
+  const research = state.research;
+  const activeResearch = (research && research.activeResearch && typeof research.activeResearch === 'object' && !Array.isArray(research.activeResearch)) ? research.activeResearch : null;
+  // 研究红点：与 nav 状态文本同口径——只要当前没有进行中的研究就标红（空闲即红，不看过往完成记录）。
+  const researchBadge = ensureNavNudgeBadge('research');
+  if (researchBadge) researchBadge.style.display = !activeResearch ? '' : 'none';
+  // 导航状态文本：未开始 → 「未进行研究」；进行中 → 剩余时间。
+  updateResearchNavStatus(activeResearch);
+  // 空间站导航状态文本：未建立 → 「未建立」；施工/升级中 → 「升级中」+ 剩余时间。
+  updateStationNavStatus(state);
+}
+
+// 研究 nav 的常驻状态文本（纯 JS 注入，不碰 index.html 标记）。
+// 文本只在变化时写入，避免每帧 DOM 抖动；中文原文走 I18N.t 精确查表（词条「未进行研究」七语已入宽表）。
+let __researchNavStatusLast = null;
+function updateResearchNavStatus(activeResearch) {
+  const item = document.querySelector('.sidebar .nav-item[data-page="research"]');
+  if (!item) return;
+  let el = item.querySelector('.nav-research-status');
+  if (!el) {
+    el = document.createElement('span');
+    el.className = 'nav-research-status';
+    el.style.cssText = 'display:block;font-size:11px;line-height:1.3;opacity:.7;margin:1px 0 0 33px;pointer-events:none;white-space:nowrap;';
+    item.appendChild(el);
+  }
+  const text = activeResearch
+    ? formatResearchDuration(activeResearch.remainingSeconds)
+    : (window.I18N && typeof window.I18N.t === 'function' ? window.I18N.t('未进行研究') : '未进行研究');
+  if (text === __researchNavStatusLast) return;
+  __researchNavStatusLast = text;
+  el.textContent = text;
+}
+
+// 空间站 nav 的常驻状态文本（纯 JS 注入，不碰 index.html 标记，与研究的实现对齐）。
+// 未建立（bodyLevel<1 且无施工）→ 「未建立」；施工/升级中（任意 construction）→ 「升级中」+ 剩余时间。
+// 文本仅在「状态类别或倒计时整秒/整分」变化时写入，避免每帧 DOM 抖动。
+let __stationNavStatusLast = null;
+function updateStationNavStatus(state) {
+  const item = document.querySelector('.sidebar .nav-item[data-page="station"]');
+  if (!item) return;
+  let el = item.querySelector('.nav-station-status');
+  if (!el) {
+    el = document.createElement('span');
+    el.className = 'nav-station-status';
+    el.style.cssText = 'display:block;font-size:11px;line-height:1.3;opacity:.7;margin:1px 0 0 33px;pointer-events:none;white-space:nowrap;';
+    item.appendChild(el);
+  }
+  const st = (state && state.station && typeof state.station === 'object') ? state.station : null;
+  const bodyLevel = st ? (Math.floor(Number(st.bodyLevel)) || 0) : 0;
+  const c = (st && st.construction) ? st.construction : null;
+  let text;
+  if (c) {
+    const nowMs = Date.now();
+    const completesAt = Number(c.completesAt) || 0;
+    const remainingSeconds = Math.max(0, Math.ceil((completesAt - nowMs) / 1000));
+    const label = (window.I18N && typeof window.I18N.t === 'function') ? window.I18N.t('升级中') : '升级中';
+    text = label + ' ' + formatResearchDuration(remainingSeconds);
+  } else if (bodyLevel < 1) {
+    text = (window.I18N && typeof window.I18N.t === 'function') ? window.I18N.t('未建立') : '未建立';
+  } else {
+    text = '';
+  }
+  if (text === __stationNavStatusLast) return;
+  __stationNavStatusLast = text;
+  el.textContent = text;
+}
+
 function renderCurrentNavigation() {
   try { if (window.__PERF) window.__PERF.begin("ui:renderCurrentNavigation"); } catch (_) {}
   if (currentPage === "starmap" && (!gameState || typeof LegionRender === "undefined" || !LegionRender.isLegionTabVisible || !LegionRender.isLegionTabVisible(gameState))) currentPage = "skill";
@@ -840,6 +929,7 @@ function renderCurrentNavigation() {
   document.querySelectorAll(".sidebar .nav-item").forEach(item => item.classList.remove("active"));
   const activeSelector = navigation.activeNav.type === "skill" ? `.sidebar .nav-item[data-skill="${navigation.activeNav.value}"]` : `.sidebar .nav-item[data-page="${navigation.activeNav.value}"]`;
   const active = document.querySelector(activeSelector); if (active) active.classList.add("active");
+  if (typeof updateNavNudges === "function") updateNavNudges(gameState);
 
   if (navigation.page === "skill") {
     if (typeof updateUI === "function") updateUI();
@@ -5548,7 +5638,7 @@ function showRigResonanceModal(preview, def, onConfirm) {
   modal.onclick = e => { if (e.target === modal) close(); };
 }
 
-// ---- 队列拖拽排序（方案 B）：整行按住拖动 ----
+// ---- 队列拖拽排序（方案 B）：桌面整行按住拖动 / 触屏按住左侧把手拖动 ----
 let queueDragActive = false;     // 拖拽进行中：抑制 renderQueuePanel 整块重绘（铁律16 同类风险对策）
 let lastQueueDisplay = null;    // 拖拽中 renderQueuePanel 被短路时返回的上次快照
 let queueDragInstalled = false; // 拖拽监听只安装一次
@@ -5568,12 +5658,12 @@ function renderQueuePanel() {
       etaHtml = `<span class="qi-eta rough">${queueT(item.skill === "combat" && !item.active ? "取决于战斗" : "—")}</span>`;
     }
     const draggableQ = !item.active && !item.isDirect;
-    return `<div class="queue-item${item.active ? " active" : ""}" data-index="${item.index}" data-draggable="${draggableQ ? "true" : "false"}" title="${draggableQ ? "按住整行拖动排序" : (item.active ? "执行中，不可拖动" : "不可拖动")}"><span class="qi-idx">${item.isDirect ? "▶" : item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${queueT(item.skillLabel)} · ${queueT(item.label)}</span><span class="qi-detail">${queueT(item.countText)}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${queueT(item.active ? "执行中" : "等待")}</span>${item.isDirect ? "" : `<div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div>`}</div>`;
+    return `<div class="queue-item${item.active ? " active" : ""}" data-index="${item.index}" data-draggable="${draggableQ ? "true" : "false"}" title="${draggableQ ? "按住整行拖动排序（手机按左侧把手）" : (item.active ? "执行中，不可拖动" : "不可拖动")}">${draggableQ ? '<span class="qi-grip" data-qi-grip="1" aria-hidden="true">⋮⋮</span>' : ""}<span class="qi-idx">${item.isDirect ? "▶" : item.index + 1}</span><span class="qi-icon">${item.icon}</span><div class="qi-info"><span class="qi-name">${queueT(item.skillLabel)} · ${queueT(item.label)}</span><span class="qi-detail">${queueT(item.countText)}</span>${etaHtml}</div><span class="qi-status ${item.active ? "running" : "waiting"}">${queueT(item.active ? "执行中" : "等待")}</span>${item.isDirect ? "" : `<div class="qi-actions">${item.canMoveTop ? `<button class="qi-btn top-btn" data-queue-action="top" data-index="${item.index}" title="一键置顶"><i class="fa-solid fa-angles-up"></i></button>` : ""}${item.canMoveUp ? `<button class="qi-btn" data-queue-action="up" data-index="${item.index}" title="上移一位"><i class="fa-solid fa-arrow-up"></i></button>` : ""}${item.canMoveDown ? `<button class="qi-btn" data-queue-action="down" data-index="${item.index}" title="下移一位"><i class="fa-solid fa-arrow-down"></i></button>` : ""}<button class="qi-btn" data-queue-action="remove" data-index="${item.index}" title="移除"><i class="fa-solid fa-xmark"></i></button></div>`}</div>`;
   }).join("") : `<div style="text-align:center;color:#4a5a6a;padding:20px;font-size:13px;">${queueT('队列为空，从技能面板点击"加入队列"添加任务')}</div>`;
   lastQueueDisplay = display; return display;
 }
 
-// 队列拖拽：整行按住拖动排序。与 renderQueuePanel 的 queueDragActive 短路配合，避免铁律16 同类重绘打断。
+// 队列拖拽：桌面整行按住拖动、触屏按住左侧把手拖动（行体让给原生滚动）。与 renderQueuePanel 的 queueDragActive 短路配合，避免铁律16 同类重绘打断。
 function installQueueDrag(listEl) {
   if (queueDragInstalled || !listEl) return;
   queueDragInstalled = true;
@@ -5581,8 +5671,12 @@ function installQueueDrag(listEl) {
   // 拖拽专用样式：动态注入一次（不改动 components.css，避免影响 SHA256 基线；不设固定 id，规避 verify.mjs 的静态 ID 基线）
   const dragStyle = document.createElement("style");
   dragStyle.textContent =
-    '.queue-item[data-draggable="true"]{cursor:grab;touch-action:none;user-select:none}\n' +
+    '.queue-item[data-draggable="true"]{cursor:grab;user-select:none}\n' +
     '.queue-item:active{cursor:grabbing}\n' +
+    // 手机端：左侧把手承载 touch-action:none（仅 22px 宽），行体不再禁用触摸 ⇒ #queue-list 可正常指滑滚动。
+    // 桌面（hover:hover）把手 display:none，维持整行可拖的既有体验。
+    '.queue-item .qi-grip{display:none}\n' +
+    '@media (hover:none){.queue-item .qi-grip{display:inline-flex;align-items:center;justify-content:center;width:22px;min-width:22px;margin-left:-2px;color:#4a5a6a;font-size:13px;line-height:1;letter-spacing:-2px;touch-action:none;user-select:none;-webkit-user-select:none}}\n' +
     '.queue-item.dragging{display:none}\n' +
     '.drag-placeholder{border:1px dashed #38e1ff;border-radius:4px;margin-bottom:4px;background:rgba(56,225,255,.06)}\n' +
     '.drag-clone{position:fixed;left:0;top:0;z-index:9999;pointer-events:none;margin:0;box-shadow:0 8px 26px rgba(0,0,0,.55);border-color:#38e1ff!important}\n';
@@ -5618,6 +5712,8 @@ function installQueueDrag(listEl) {
     if (e.target.closest("[data-queue-action]")) return;          // 按钮区不触发拖拽，按钮点击照常
     const row = e.target.closest(".queue-item");
     if (!row || row.dataset.draggable !== "true") return;          // 仅 draggable 行（执行中/伪条目不可拖）
+    // 触屏：只认左侧把手起拖，行体留给原生滚动（#queue-list 可指滑）；鼠标/触控板：整行可拖。
+    if (e.pointerType === "touch" && !e.target.closest("[data-qi-grip]")) return;
     if (drag) endQueueDrag();                                      // 残留会话兜底：任何新拖拽开始前先自愈
     e.preventDefault();
     const fromIdx = Number(row.dataset.index);

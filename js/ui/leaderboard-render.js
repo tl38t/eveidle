@@ -405,9 +405,12 @@ function renderBoardContent(container, state, vm) {
   const _pf = (ps && ps.platformName) || "local";
   const _pm = (ps && ps.mode) || "local-only";
   const _conn = !!(ps && ps.connected);
-  html += `<div class="lb-local-banner"><i class="fa-solid fa-circle-info"></i> ${escHtml((_pf === "TapTap" && _pm === "taptap" && _conn) ? "已连接平台排行榜（数据来自真实榜单）" : (_pf === "TapTap") ? "平台环境存在但未登录，当前为本地预览" : (_pf === "Steam") ? "排行榜尚未接入（暂未支持）" : "当前为本地预览，尚未连接平台排行榜")}</div>`;
-  html += `<div class="lb-provider-status ${ (_pf === "TapTap" && _pm === "taptap" && _conn) ? "lb-ps-connected" : (_pf === "Steam") ? "lb-ps-disabled" : "lb-ps-local" }">`;
-  html += `<span class="lb-ps-dot"></span><span class="lb-ps-text">${escHtml((_pf === "TapTap" && _pm === "taptap" && _conn) ? "平台在线" : (_pf === "TapTap") ? "本地预览 · 平台未连接" : (_pf === "Steam") ? "平台暂未接入" : "本地预览 · 未连接平台")}</span>`;
+  const _steamOk = (_pf === "Steam" && _pm === "steam" && _conn);
+  const _steamReady = (_pf === "Steam" && _pm === "steam" && !_conn);
+  const _tptOk = (_pf === "TapTap" && _pm === "taptap" && _conn);
+  html += `<div class="lb-local-banner"><i class="fa-solid fa-circle-info"></i> ${escHtml(_steamOk ? "已连接 Steam 排行榜（数据来自真实榜单）" : _steamReady ? "Steam 已就绪，等待首次上报确认" : (_pf === "Steam") ? "Steam 原生模块未构建 / 未初始化，当前为本地预览" : _tptOk ? "已连接平台排行榜（数据来自真实榜单）" : (_pf === "TapTap") ? "平台环境存在但未登录，当前为本地预览" : "当前为本地预览，尚未连接平台排行榜")}</div>`;
+  html += `<div class="lb-provider-status ${ _steamOk || _tptOk ? "lb-ps-connected" : (_pf === "Steam") ? "lb-ps-disabled" : "lb-ps-local" }">`;
+  html += `<span class="lb-ps-dot"></span><span class="lb-ps-text">${escHtml(_steamOk ? "Steam 在线" : _steamReady ? "Steam 已就绪（待上报）" : (_pf === "Steam") ? "Steam 未连接 · 本地预览" : _tptOk ? "平台在线" : (_pf === "TapTap") ? "本地预览 · 平台未连接" : "本地预览 · 未连接平台")}</span>`;
   if (ps && ps.lastError) html += `<span class="lb-ps-err">（${escHtml(String(ps.lastError))}）</span>`;
   if (lbPlatformDiag) {
     html += `<div class="lb-ps-diag">本地榜单：${escHtml(lbPlatformDiag.boardId || "-")} · API ID：${escHtml(lbPlatformDiag.taptapLeaderboardId || "-")} · 读取：${lbPlatformDiag.ok ? "成功" : "失败"} · 返回条数：${Number(lbPlatformDiag.count) || 0}${lbPlatformDiag.code ? " · code=" + escHtml(lbPlatformDiag.code) : ""}</div>`;
@@ -423,7 +426,7 @@ function renderBoardContent(container, state, vm) {
   const b = data.board;
   html += `<div class="lb-board-head">`;
   html += `<div class="lb-board-name">${escHtml(b.name)}</div>`;
-  html += `<div class="lb-board-meta">平台组：${escHtml(b.platformGroup || "standard")} · 更新时间：${fmtTs(b.updatedAt)} · ${data.isLocalPreview ? "本地预览数据" : "TapTap 实时数据"}</div>`;
+  html += `<div class="lb-board-meta">平台组：${escHtml(b.platformGroup || "standard")} · 更新时间：${fmtTs(b.updatedAt)} · ${(!data.isLocalPreview && _pf === "Steam") ? "Steam 实时数据" : (!data.isLocalPreview && _pf === "TapTap") ? "TapTap 实时数据" : "本地预览数据"}</div>`;
   html += `</div>`;
 
   // 数据表（排名 / 玩家 / 等级 / 经验 / 更新时间）

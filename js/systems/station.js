@@ -18,7 +18,7 @@ const STATION_BODY_PLANS = Object.freeze({
   1: Object.freeze({
     level: 1,
     name: "空间站",
-    durationMs: 3600000,          // 1h
+    durationMs: 900000,           // 15min（新手首建：降低等待劝退）
     isk: 50000,
     materials: Object.freeze({
       "mineral:三钛合金": 100,    // 标准钛材：1800 → 100（降低入门门槛）

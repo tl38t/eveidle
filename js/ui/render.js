@@ -773,6 +773,7 @@ function setLiveHTML(element, value) {
 // 统一接收显式 now：整条刷新链路只取一次时间，避免显示态时间不一致。
 function updateLiveUI(nowArg) {
   const now = Number(nowArg) || Date.now();
+  if (typeof updateNavNudges === "function") updateNavNudges(gameState);
   if (typeof renderStarmapTrialRoom === "function") renderStarmapTrialRoom(now);
   const globalDisplay = getGlobalDisplayState(gameState);
   const iskEl = document.querySelector('.res-value.isk');
