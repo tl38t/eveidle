@@ -7820,5 +7820,20 @@
   ["%，补齐后自动继续）：", "%, reprend automatiquement une fois rechargé) :"],
   ["3D 预览加载中…", "Chargement de l'aperçu 3D..."],
   ["未进行研究", "Aucune recherche en cours"],
-  ["升级中", "Amélioration en cours"]
+  ["升级中", "Amélioration en cours"],
+  ["一、排行榜", "1. Classement"],
+  ["二、云存档", "2. Sauvegarde dans le cloud"],
+  ["三、空间站", "3. Station spatiale"],
+  ["四、新手引导", "4. Tutoriel"],
+  ["五、界面", "5. Interface"],
+  ["新增 Steam 全球排行榜：涵盖全部技能、采集 / 生产 / 战斗分线总榜与综合经验共 22 个榜单，可在排行榜页上传成绩并查看全球排名。", "Ajout des classements mondiaux Steam : 22 tableaux au total — chaque compétence, les classements généraux de collecte / production / combat et l’expérience globale. Depuis la page Classement, envoyez vos scores et consultez le classement mondial."],
+  ["修复排行榜上报一直停在「等待上报确认」或误报「上报失败」的问题。", "Corrigé : l’envoi restait bloqué sur « En attente de confirmation d’envoi » ou indiquait à tort « Échec de l’envoi »."],
+  ["排行榜连接与读取状态提示更明确，失败时会显示具体原因。", "Les états de connexion et de lecture du classement sont plus clairs ; en cas d’échec, la cause précise est affichée."],
+  ["修复云存档同步冲突：多设备进度不一致时自动采用较新的一份进度，不再出现旧进度覆盖新进度。", "Correction des conflits de synchronisation de la sauvegarde dans le cloud : en cas de progrès différents entre appareils, le plus récent est adopté automatiquement ; une sauvegarde plus ancienne n’écrase plus une plus récente."],
+  ["空间站本体 1 级建造时间由 1 小时缩短至 15 分钟。", "Le temps de construction de la station spatiale (niveau 1) est réduit de 1 heure à 15 minutes."],
+  ["重写新手教程：改为登记官叙事线，任务目标与完成提示更清晰。", "Tutoriel réécrit : le fil narratif du registraire vous guide désormais, avec des objectifs et des indications d’achèvement plus clairs."],
+  ["教程简报支持多段换行显示。", "Les briefings du tutoriel en plusieurs paragraphes s’affichent désormais avec des retours à la ligne corrects."],
+  ["侧栏新增红点提醒：空间站未建造、研究未开始时，对应入口亮起红点。", "Nouveaux points rouges dans la barre latérale : l’entrée Station spatiale ou Recherche s’allume lorsque la station n’est pas construite ou qu’aucune recherche n’a commencé."],
+  ["手机端行动队列新增拖拽把手：按住条目左侧把手即可上下拖动排序，条目区域恢复正常滑动滚动。", "La file d’actions sur mobile dispose désormais d’une poignée de glissement : maintenez la poignée à gauche d’une entrée pour la faire glisser et la réordonner ; la zone des entrées défile à nouveau normalement."],
+  ["更新说明", "Notes de mise à jour"]
 ]); })();

@@ -7439,5 +7439,20 @@
   ["打捞单元独立产出舰船组件，不受此开关影响", "Die Bergungseinheit erzeugt eigenständig Schiffskomponenten und ist von diesem Schalter nicht betroffen"],
   ["下一项：", "Nächstes:"],
   ["未进行研究", "Keine Forschung aktiv"],
-  ["升级中", "Wird aufgerüstet"]
+  ["升级中", "Wird aufgerüstet"],
+  ["一、排行榜", "1. Leaderboards"],
+  ["二、云存档", "2. Cloud-Speicherstand"],
+  ["三、空间站", "3. Raumstation"],
+  ["四、新手引导", "4. Tutorial"],
+  ["五、界面", "5. Oberfläche"],
+  ["新增 Steam 全球排行榜：涵盖全部技能、采集 / 生产 / 战斗分线总榜与综合经验共 22 个榜单，可在排行榜页上传成绩并查看全球排名。", "Neu: globale Steam-Leaderboards — 22 Boards insgesamt: jede Fertigkeit, die Gesamtboards für Sammeln / Produktion / Kampf sowie die Gesamterfahrung. Ergebnisse lassen sich auf der Leaderboard-Seite hochladen und Weltränge einsehen."],
+  ["修复排行榜上报一直停在「等待上报确认」或误报「上报失败」的问题。", "Behoben: Der Upload blieb dauerhaft auf „Warte auf Upload-Bestätigung“ stehen oder meldete fälschlich „Upload fehlgeschlagen“."],
+  ["排行榜连接与读取状态提示更明确，失败时会显示具体原因。", "Verbindung und Lesestatus des Leaderboards werden jetzt klarer angezeigt; bei einem Fehler wird die konkrete Ursache angezeigt."],
+  ["修复云存档同步冲突：多设备进度不一致时自动采用较新的一份进度，不再出现旧进度覆盖新进度。", "Synchronisationskonflikte des Cloud-Speicherstands behoben: Bei unterschiedlichen Fortschritten auf mehreren Geräten wird automatisch der neuere Stand übernommen; ein älterer Stand überschreibt den neueren nicht mehr."],
+  ["空间站本体 1 级建造时间由 1 小时缩短至 15 分钟。", "Die Bauzeit der Raumstation (Stufe 1) wurde von 1 Stunde auf 15 Minuten verkürzt."],
+  ["重写新手教程：改为登记官叙事线，任务目标与完成提示更清晰。", "Tutorial überarbeitet: Die Erzählung des Registrars führt nun durch die Einführung, mit klareren Zielen und Abschluss-Hinweisen."],
+  ["教程简报支持多段换行显示。", "Mehrabsätzige Tutorial-Briefings werden jetzt mit korrekten Zeilenumbrüchen angezeigt."],
+  ["侧栏新增红点提醒：空间站未建造、研究未开始时，对应入口亮起红点。", "Neue rote Punkte in der Seitenleiste: Der Eintrag für Raumstation bzw. Forschung leuchtet auf, solange die Station nicht gebaut bzw. keine Forschung gestartet wurde."],
+  ["手机端行动队列新增拖拽把手：按住条目左侧把手即可上下拖动排序，条目区域恢复正常滑动滚动。", "Die Aktionswarteschlange auf Mobilgeräten hat jetzt einen Anfassgriff: Halte den Griff links eines Eintrags gedrückt, um per Ziehen neu zu sortieren; der Eintragsbereich scrollt wieder normal."],
+  ["更新说明", "Update-Hinweise"]
 ]); })();

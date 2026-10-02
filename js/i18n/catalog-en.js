@@ -8096,5 +8096,20 @@
   ["%，补齐后自动继续）：", "%, resumes automatically once topped up):"],
   ["3D 预览加载中…", "Loading 3D preview..."],
   ["未进行研究", "No research in progress"],
-  ["升级中", "Upgrading"]
+  ["升级中", "Upgrading"],
+  ["一、排行榜", "1. Leaderboards"],
+  ["二、云存档", "2. Cloud Saves"],
+  ["三、空间站", "3. Space Station"],
+  ["四、新手引导", "4. Tutorial"],
+  ["五、界面", "5. Interface"],
+  ["新增 Steam 全球排行榜：涵盖全部技能、采集 / 生产 / 战斗分线总榜与综合经验共 22 个榜单，可在排行榜页上传成绩并查看全球排名。", "Added Steam global leaderboards: 22 boards in total — every skill, the Harvesting / Production / Combat overall boards, and Total Experience. Upload your scores and view global rankings on the Leaderboard page."],
+  ["修复排行榜上报一直停在「等待上报确认」或误报「上报失败」的问题。", "Fixed an issue where leaderboard uploads stayed on \"Waiting for upload confirmation\" or falsely reported \"Upload failed\"."],
+  ["排行榜连接与读取状态提示更明确，失败时会显示具体原因。", "Leaderboard connection and read status messages are clearer, and failures now show the specific reason."],
+  ["修复云存档同步冲突：多设备进度不一致时自动采用较新的一份进度，不再出现旧进度覆盖新进度。", "Fixed cloud save sync conflicts: when devices have different progress, the newer save is adopted automatically; an older save no longer overwrites a newer one."],
+  ["空间站本体 1 级建造时间由 1 小时缩短至 15 分钟。", "Space Station level 1 build time reduced from 1 hour to 15 minutes."],
+  ["重写新手教程：改为登记官叙事线，任务目标与完成提示更清晰。", "Rewritten tutorial: the registrar storyline now guides you, with clearer objectives and completion hints."],
+  ["教程简报支持多段换行显示。", "Multi-paragraph tutorial briefings now display with proper line breaks."],
+  ["侧栏新增红点提醒：空间站未建造、研究未开始时，对应入口亮起红点。", "New red-dot indicators in the sidebar: the Space Station and Research entries light up when the station has not been built or no research has started."],
+  ["手机端行动队列新增拖拽把手：按住条目左侧把手即可上下拖动排序，条目区域恢复正常滑动滚动。", "Mobile action queue now has a drag handle: hold the handle on the left of an entry to drag and reorder; the entry area scrolls normally again."],
+  ["更新说明", "Update Notes"]
 ]); })();

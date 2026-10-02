@@ -28,8 +28,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=56"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=32"></script>
+  <script src="./js/i18n/catalog-en.js?v=57"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=33"></script>
   <!-- steam-i18n-locales:start -->
   <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -43,11 +43,11 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=19"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=21"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ja.js?v=4"><\/script>');
-        document.write('<script src="./js/i18n/catalog-fr.js?v=4"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ko.js?v=4"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=20"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=22"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ja.js?v=5"><\/script>');
+        document.write('<script src="./js/i18n/catalog-fr.js?v=5"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ko.js?v=5"><\/script>');
       }
     })();
   </script>
