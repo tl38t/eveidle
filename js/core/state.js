@@ -302,7 +302,8 @@ const gameState = {
     confirmDiscard: true,
     confirmDismantle: true,
     combatSkillsExpanded: false,
-    salvageArmActive: false // 同位素标记打捞臂主动打捞开关（持久偏好）：装备打捞臂后可在战斗界面切换；开=消耗被动三倍燃料+同位素+掉落同级舰船组件，关=仅被动：消耗基础燃料提高货柜掉落
+    salvageArmActive: false, // 同位素标记打捞臂主动打捞开关（持久偏好）：装备打捞臂后可在战斗界面切换；开=消耗被动三倍燃料+同位素+掉落同级舰船组件，关=仅被动：消耗基础燃料提高货柜掉落
+    dispatchBonusToast: true // 资源调度中心·在线额外产出飘字开关（持久偏好）：关=不弹飘字，仅照常入账
   },
 
   migrations: {},
@@ -344,6 +345,9 @@ function ensureUserSettingsState(state) {
   // 外接大型精炼泵供料开关（全局，作用于冶炼舰上全部泵件；默认开启。开关只影响下一炉）
   if (state.settings.refineryPumpEnabled === undefined) state.settings.refineryPumpEnabled = true;
   else state.settings.refineryPumpEnabled = Boolean(state.settings.refineryPumpEnabled);
+  // 资源调度中心·在线额外产出飘字开关（默认开启；关闭后仍照常入账，只是不弹飘字）
+  if (state.settings.dispatchBonusToast === undefined) state.settings.dispatchBonusToast = true;
+  else state.settings.dispatchBonusToast = Boolean(state.settings.dispatchBonusToast);
   // 界面缩放：作用于 <body> 的 CSS zoom，覆盖 4K 高分屏下文字过小的问题。
   // 合法区间 [0.5, 2.0]，非法/缺失一律回落 1（100%）。
   if (!Number.isFinite(Number(state.settings.uiScale)) || Number(state.settings.uiScale) < 0.5 || Number(state.settings.uiScale) > 2) {

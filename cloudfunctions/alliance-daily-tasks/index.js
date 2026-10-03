@@ -86,7 +86,7 @@ function rewardPoints(tier, materialValue, standardTimeSec, category) {
 }
 
 function normalizeTasks(input, expectedCount) {
-  const count = Math.max(5, Math.min(10, Number(expectedCount) || 5));
+  const count = Math.max(5, Math.min(12, Number(expectedCount) || 5));
   // 旧写法是 `input.length !== count`，而调用方恒传 count = input.length（previewCount
   // 就是 preview.length）⇒ 左右永远相等，这条校验等于不存在，送 10 条也不会被拒。
   // 改成上界校验后它才真的能拦「超过任务大厅授权条数」的输入（封顶在调用点完成，
@@ -160,8 +160,8 @@ async function taskCountForPlayer(playerId) {
   const buildings = await db("/v1/rdb/rest/alliance_buildings?select=building_type,level&alliance_id=eq." + encodeURIComponent(memberships[0].alliance_id) + "&building_type=in.(mission_hall)&limit=1", { method: "GET" });
   const hall = buildings && buildings[0];
   if (!hall) return { count: 5, hallLevel: 0, resolved: false };
-  const level = Math.max(0, Math.min(5, Number(hall.level) || 0));
-  return { count: [5, 6, 7, 8, 10][Math.max(0, level - 1)] || 5, hallLevel: level, resolved: true };
+  const level = Math.max(0, Math.min(7, Number(hall.level) || 0));
+  return { count: [5, 6, 7, 8, 10, 11, 12][Math.max(0, level - 1)] || 5, hallLevel: level, resolved: true };
 }
 
 async function ensureTasks(playerId, date, preview) {
@@ -178,7 +178,7 @@ async function ensureTasks(playerId, date, preview) {
   // 现在：只在确实解析出大厅等级（hall.resolved）时封顶，解析不到时保持旧行为，
   // 避免误伤合法玩家。注意这里是**封顶而不是报错** —— 报错会让客户端退回本地预览，
   // 玩家感知成「连不上」。
-  const offered = Array.isArray(preview) && preview.length >= 5 && preview.length <= 10 ? preview : null;
+  const offered = Array.isArray(preview) && preview.length >= 5 && preview.length <= 12 ? preview : null;
   const accepted = offered ? (hall.resolved ? Math.min(offered.length, expectedCount) : offered.length) : 0;
   const tasks = normalizeTasks(
     offered && accepted > 0 ? offered.slice(0, accepted) : offered,

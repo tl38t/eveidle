@@ -2622,6 +2622,8 @@ function renderSettingsPage() {
   if (discardCb) discardCb.checked = display.confirmDiscard;
   const dismantleCb = document.getElementById("setting-dismantle-confirm");
   if (dismantleCb) dismantleCb.checked = display.confirmDismantle;
+  const dispatchBonusToastCb = document.getElementById("setting-dispatch-bonus-toast");
+  if (dispatchBonusToastCb) dispatchBonusToastCb.checked = display.dispatchBonusToast;
   const uiScaleSel = document.getElementById("setting-ui-scale");
   if (uiScaleSel) uiScaleSel.value = String(display.uiScale);
   // 关于：展示构建版本号（由构建脚本注入 window.GAME_VERSION；未构建时回退基线）
@@ -6326,6 +6328,7 @@ function installTutorialWidgetListeners() {
     }
     GameEvents.on("station:dispatchBonus", function (event) {
       if (!event || !event.meta || event.meta.offline) return; // 仅在线弹
+      if (typeof getSettingsDisplayState === "function" && !getSettingsDisplayState(gameState).dispatchBonusToast) return; // 设置开关：关闭则不弹飘字（产出仍照常入账）
       showDispatchBonus(event.payload);
     });
   })();
@@ -6513,6 +6516,10 @@ function installTutorialWidgetListeners() {
   const dismantleConfirm = document.getElementById("setting-dismantle-confirm"); if (dismantleConfirm) dismantleConfirm.addEventListener("change", () => {
     const result = dispatchGameAction(gameState, { type:"settings/setDismantleConfirmation", enabled:dismantleConfirm.checked }, Date.now());
     if (result.changed) showToast(result.enabled ? "装备拆解确认已开启" : "装备拆解确认已关闭");
+  });
+  const dispatchBonusToastCb = document.getElementById("setting-dispatch-bonus-toast"); if (dispatchBonusToastCb) dispatchBonusToastCb.addEventListener("change", () => {
+    const result = dispatchGameAction(gameState, { type:"settings/setDispatchBonusToast", enabled:dispatchBonusToastCb.checked }, Date.now());
+    if (result.changed) showToast(result.enabled ? "资源调度产出飘字已开启" : "资源调度产出飘字已关闭");
   });
   const uiScaleSelect = document.getElementById("setting-ui-scale"); if (uiScaleSelect) uiScaleSelect.addEventListener("change", () => {
     const scale = Number(uiScaleSelect.value);

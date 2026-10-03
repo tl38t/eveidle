@@ -5145,6 +5145,7 @@ function getSettingsDisplayState(state) {
     confirmShipEnhancement:!state.settings || state.settings.confirmShipEnhancement !== false,
     confirmDiscard:!state.settings || state.settings.confirmDiscard !== false,
     confirmDismantle:!state.settings || state.settings.confirmDismantle !== false,
+    dispatchBonusToast:!state.settings || state.settings.dispatchBonusToast !== false,
     combatSkillsExpanded:Boolean(state.settings && state.settings.combatSkillsExpanded),
     uiScale
   };

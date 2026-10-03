@@ -27,8 +27,8 @@ begin
     from public.alliance_buildings b
    where b.alliance_id = p_alliance_id and b.building_type = canonical_type;
   current_level := coalesce(current_level, 0);
-  if current_level >= 7 then raise exception 'building is already max level'; end if;
-  next_cost := case current_level when 0 then 100 when 1 then 250 when 2 then 500 when 3 then 1000 when 4 then 2000 when 5 then 4000 else 8000 end;
+  if current_level >= 5 then raise exception 'building is already max level'; end if;
+  next_cost := case current_level when 0 then 100 when 1 then 250 when 2 then 500 when 3 then 1000 else 2000 end;
   if coalesce(balance, 0) < next_cost then raise exception 'not enough alliance construction points'; end if;
   update public.alliance_construction c set points_balance = c.points_balance - next_cost, updated_at = now()
    where c.alliance_id = p_alliance_id;

@@ -8,36 +8,38 @@
     frontier_hq: {
       id: "frontier_hq", legacyId: "logistics_hub", name: "边疆联合总部",
       desc: "提升联盟成员上限，解锁更高规模的协同作战。",
-      maxLevel: 5, levels: [
+      maxLevel: 7, levels: [
         { level: 1, cost: 100, memberCap: 10 },
         { level: 2, cost: 250, memberCap: 15 },
         { level: 3, cost: 500, memberCap: 20 },
         { level: 4, cost: 1000, memberCap: 25 },
-        { level: 5, cost: 2000, memberCap: 30 }
+        { level: 5, cost: 2000, memberCap: 30 },
+        { level: 6, cost: 4000, memberCap: 35 },
+        { level: 7, cost: 8000, memberCap: 40 }
       ]
     },
     mission_hall: {
       id: "mission_hall", name: "联合任务大厅",
       desc: "增加每日联盟任务数量，提升建设点获取速度。",
-      maxLevel: 5,
-      levels: [1, 2, 3, 4, 5].map(function (level) {
-        return { level: level, cost: [100, 250, 500, 1000, 2000][level - 1], dailyTasks: [5, 6, 7, 8, 10][level - 1] };
+      maxLevel: 7,
+      levels: [1, 2, 3, 4, 5, 6, 7].map(function (level) {
+        return { level: level, cost: [100, 250, 500, 1000, 2000, 4000, 8000][level - 1], dailyTasks: [5, 6, 7, 8, 10, 11, 12][level - 1] };
       })
     },
     combat_command: {
       id: "combat_command", name: "前线作战指挥部",
       desc: "每级提升全队战斗伤害 +2%。",
-      maxLevel: 5,
-      levels: [1, 2, 3, 4, 5].map(function (level) {
-        return { level: level, cost: [100, 250, 500, 1000, 2000][level - 1], combatDamageBonus: level * 0.02 };
+      maxLevel: 7,
+      levels: [1, 2, 3, 4, 5, 6, 7].map(function (level) {
+        return { level: level, cost: [100, 250, 500, 1000, 2000, 4000, 8000][level - 1], combatDamageBonus: level * 0.02 };
       })
     },
     refining_core: {
       id: "refining_core", name: "联合冶炼中枢",
       desc: "每级提升冶炼效率 +5%。",
-      maxLevel: 5,
-      levels: [1, 2, 3, 4, 5].map(function (level) {
-        return { level: level, cost: [100, 250, 500, 1000, 2000][level - 1], refiningEfficiencyBonus: level * 0.05 };
+      maxLevel: 7,
+      levels: [1, 2, 3, 4, 5, 6, 7].map(function (level) {
+        return { level: level, cost: [100, 250, 500, 1000, 2000, 4000, 8000][level - 1], refiningEfficiencyBonus: level * 0.05 };
       })
     }
   };
@@ -46,7 +48,9 @@
   function levelOf(buildingRows, id) {
     var wanted = normalizeId(id);
     var row = (buildingRows || []).find(function (item) { return normalizeId(item.building_type) === wanted; });
-    return Math.max(0, Math.min(5, Number(row && row.level) || 0));
+    var def = BUILDINGS[wanted];
+    var cap = def ? def.maxLevel : 5;
+    return Math.max(0, Math.min(cap, Number(row && row.level) || 0));
   }
   function memberCap(buildingRows) {
     var level = levelOf(buildingRows, "frontier_hq");

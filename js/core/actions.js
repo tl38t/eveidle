@@ -2038,6 +2038,12 @@ const ShellStateActions = {
     return { changed:true, enabled:Boolean(enabled) };
   },
 
+  setDispatchBonusToast(state, enabled) {
+    ensureUserSettingsState(state).dispatchBonusToast = Boolean(enabled);
+    state._dirty = true;
+    return { changed:true, enabled:Boolean(enabled) };
+  },
+
   /* ---- 外接大型精炼泵供料开关：全局设置，作用于冶炼舰上全部泵件；只影响下一炉 ---- */
   setRefineryPumpEnabled(state, enabled) {
     ensureUserSettingsState(state).refineryPumpEnabled = Boolean(enabled);
@@ -2954,6 +2960,7 @@ const StationStateActions = {
   if (action.type === "settings/setShipEnhancementConfirmation") return ShellStateActions.setShipEnhancementConfirmation(state, action.enabled);
   if (action.type === "settings/setDiscardConfirmation") return ShellStateActions.setDiscardConfirmation(state, action.enabled);
   if (action.type === "settings/setDismantleConfirmation") return ShellStateActions.setDismantleConfirmation(state, action.enabled);
+  if (action.type === "settings/setDispatchBonusToast") return ShellStateActions.setDispatchBonusToast(state, action.enabled);
   if (action.type === "settings/setRefineryPumpEnabled") return ShellStateActions.setRefineryPumpEnabled(state, action.enabled);
   if (action.type === "settings/setDarkRefineryPumpEnabled") return ShellStateActions.setDarkRefineryPumpEnabled(state, action.enabled);
   if (action.type === "settings/setUiScale") return ShellStateActions.setUiScale(state, action.scale);
