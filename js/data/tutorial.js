@@ -3,7 +3,7 @@
 //   1. 本文件只负责「数据与文案冻结」，不含任何进度推进/奖励发放/UI 渲染逻辑。
 //   2. reward / target 中一律存内部真实 ID（如 "mineral:三钛合金" / "miner_frigate" / "site_i_a"），
 //      展示时统一走 DisplayNames 转换（如 三钛合金 → 标准钛材，凡晶石 → 铁硅原矿）。
-//   3. 文案为原创，叙述人统一为「边疆调度员」（序章 / 工业线）与「引航员」（考古线 / 作战线）。
+//   3. 文案为原创，叙述人：序章为「边疆调度员」，工业线为「潮歌」（空间站船坞女装配师），考古线 / 作战线为「引航员」。
 //   4. 奖励舰语义：仅 I7（空配捕云级）、A6（空配觅迹级）、C6（按训练方向发空配星矛级/铁卫级/闪刃级）
 //      三处由系统赠予空配成品舰；玩家自造的启程级(P5)与拓岩级(I7目标)一律写成建造目标，不得写为赠予。
 //   5. 资源奖励统一走 ResourceRegistry 命名空间引用（resourceAmounts），运行时不再猜测容器。
@@ -23,7 +23,7 @@
   // ---- 章节定义 ----
   const CHAPTERS = [
     { id: "prologue",    name: "序章·登记",   order: 1, speaker: "边疆调度员", summary: "从一包原料开始，造出属于自己的第一艘船，并完成登记。" },
-    { id: "industrial",  name: "工业线·产能", order: 2, speaker: "边疆调度员", summary: "把矿石变成产能，把产能变成舰队。" },
+    { id: "industrial",  name: "工业线·产能", order: 2, speaker: "潮歌", summary: "把矿石变成产能，把产能变成舰队。" },
     { id: "archaeology", name: "考古线·测绘", order: 3, speaker: "引航员",     summary: "在无人认领的遗迹里，找出还能用的东西。" },
     { id: "combat",      name: "作战线·武装", order: 4, speaker: "引航员",     summary: "边疆不保护任何人，只保护还能开火的人。" }
   ];
@@ -182,10 +182,10 @@
     {
       id: "I1", chapter: "industrial", order: 1,
       title: "工业开工",
-      speaker: "边疆调度员",
-      briefing: "工业线不看资历，只看你能不能把矿变成产能。调度中心先垫一台基础采矿器给你，装上进启程级的采矿位，第一炉产能就有了着落。",
+      speaker: "潮歌",
+      briefing: "这玩意在中央星区甚至丢给收破烂的都没有人要！你瞪大了眼睛看着工人正打算安装在你船舰上的激光采矿器。「你要不要吧？」在这个空间站船坞负责装备装配的女人瞥了你一眼，冷淡地回应着你的愤怒。「就没有……更好一点的。」你还想继续挣扎一下。「更好一点的？」女人轻蔑地指了指身后的柜台，「那边，边疆开拓公社的蓝图商店，想要什么蓝图都能买到，只要你买得起。」你无奈地表示囊中羞涩，尝试性地询问能有什么自己负担得起的，原以为会迎来嘲笑——你已经习惯了边疆星区的刁民。没想到女人却露出了若有所思的表情。「倒确实有个适合你的路子……这样，你先去一趟附近的小行星带。」",
       objectiveText: "领取基础采矿器，将其安装到启程级，并把启程级编入采矿位。",
-      completionText: "基础采矿器在启程级上亮起指示灯，采矿位正式开工。",
+      completionText: "基础采矿器装配完成，准备前往小行星带开工吧。",
       progressType: "claim_install_assign",
       target: { equipmentId: "t1_mining_laser", shipId: "rookie_corvette", slot: "mining" },
       reward: withEquipment(rewardResource({ [R.FUEL]: 200 }), { "t1_mining_laser": 1 }),
@@ -197,12 +197,12 @@
     {
       id: "I2", chapter: "industrial", order: 2,
       title: "铁硅原矿带",
-      speaker: "边疆调度员",
-      briefing: "装上模块，铁硅原矿带离登记站最近，矿脉浅、竞争少，正适合把手感磨出来。这一趟只练个短平快——采满 50 单位入账就行。",
-      objectiveText: "任务激活后，在铁硅原矿带新采集铁硅原矿 50 单位。",
-      completionText: "货舱被铁硅原矿塞了 50 单位，第一笔矿料库存归了你。",
+      speaker: "潮歌",
+      briefing: "你驾驶着船只行驶在小行星带中，想着之前女人的要求，让你采集20单位的铁硅原矿。这应该花不了多少时间。",
+      objectiveText: "任务激活后，在铁硅原矿带新采集铁硅原矿 20 单位。",
+      completionText: "采集完成，该回去找她了。",
       progressType: "mine",
-      target: { resourceId: "ore:凡晶石", count: 50, sinceActivation: true },
+      target: { resourceId: "ore:凡晶石", count: 20, sinceActivation: true },
       reward: rewardResource(null),
       rewardTiming: "none",
       completionMode: "automatic",
@@ -212,13 +212,13 @@
     {
       id: "I3", chapter: "industrial", order: 3,
       title: "标准钛材产线",
-      speaker: "边疆调度员",
-      briefing: "原矿不值钱，提纯出来的标准钛材才值钱。把精炼跑成常态，这一批的量按新标准走，后面造组件才不用现等。炼满 50 单位后去调度台领取工业补给——调度中心将补给 314 单位标准钛材和 26 单位银镍合金，用于部署行星产线并生产首艘工业舰。",
-      objectiveText: "任务激活后，新冶炼标准钛材 50 单位。",
-      completionText: "标准钛材堆满仓位，去调度台领下那批补给，组件产线就有着落了。",
+      speaker: "潮歌",
+      briefing: "你带着一船的铁硅原矿回到空间站，却在女人的指挥下马不停蹄地来到了空间站的冶炼设施。按照她的说法，等你完成这一批标准钛材的冶炼，她就能替你申请某个星区的拓殖资格。而边疆开拓公社将补给你344 单位标准钛材和 26 单位银镍合金，用于部署行星产线并生产首艘工业舰。",
+      objectiveText: "任务激活后，新冶炼标准钛材 20 单位。",
+      completionText: "带着你的材料出发吧，前往你的应许之地。",
       progressType: "refine",
-      target: { outputId: "mineral:三钛合金", count: 50, sinceActivation: true },
-      reward: rewardResource({ [R.TI]: 314, [R.AG]: 26 }),
+      target: { outputId: "mineral:三钛合金", count: 20, sinceActivation: true },
+      reward: rewardResource({ [R.TI]: 344, [R.AG]: 26 }),
       rewardTiming: "afterObjective",
       completionMode: "claim",
       unlocks: [],
@@ -227,10 +227,10 @@
     {
       id: "I4", chapter: "industrial", order: 4,
       title: "双星部署",
-      speaker: "边疆调度员",
-      briefing: "自己挖，产能永远卡在手速上。行星设施把产出交给地面，昼夜不停——前期投入不小，但这笔钱调度中心按原额补给你。熔岩行星与气体行星各耗 100 标准钛材，合计 200，从你库存里扣除。",
-      objectiveText: "部署 1 颗熔岩行星与 1 颗气态行星。",
-      completionText: "两颗行星先后上线，重金属与稀有气体开始自动流进仓库。",
+      speaker: "潮歌",
+      briefing: "边疆星区有着大量饱含资源的，且未经开发的处女行星。它们是你的生命之火，你的欲念之光，你的原罪，你的灵魂……在资源富集的星球上建设采集基地，当地资源会自动发送到环绕轨道上的海关中。",
+      objectiveText: "在行星开发中部署 1 颗熔岩行星与 1 颗气态行星。",
+      completionText: "重金属与稀有气体会自动流进仓库。",
       progressType: "planetDeploy",
       target: { planetTypes: ["lava", "gas"], count: 1 },
       reward: withEquipment(rewardResource({ [R.ISK]: 276000 }), {}),
@@ -242,9 +242,9 @@
     {
       id: "I5", chapter: "industrial", order: 5,
       title: "行星收成",
-      speaker: "边疆调度员",
-      briefing: "行星仓储有上限，堆满了设施就白转。养成定期回收的习惯——这一趟先各提 18 单位，把回收链路跑通。",
-      objectiveText: "从行星设施真实提取重金属 18 单位与稀有气体 18 单位。",
+      speaker: "潮歌",
+      briefing: "行星资源是自动采集的，你可以先去其他地方做些别的，等采集完成后再回来收取资源。但要注意，待海关仓储存满后，自动采集会暂停，且每过一段时间都需要为这些采集基地续费。",
+      objectiveText: "提取重金属 18 单位与稀有气体 18 单位。",
       completionText: "第一批行星产出入库，产线终于跑成了闭环。",
       progressType: "planetExtract",
       target: { resources: { [R.HEAVY]: 18, [R.RARE]: 18 } },
@@ -257,10 +257,10 @@
     {
       id: "I6", chapter: "industrial", order: 6,
       title: "组件量产",
-      speaker: "边疆调度员",
-      briefing: "启程级用料省，正式产线得翻倍备料。三样通用组件各造两件，组件库存厚了，后面的船才造得顺。",
+      speaker: "潮歌",
+      briefing: "一段时间后，当你正在边疆区努力讨生活的时候，又接到了那个女人的电话——现在你知道她的名字叫「潮歌」了。「你的星球开拓奖励申请下来了，有空过来一趟吧。对了，我给你列个单子，你把这些资源一起带过来，有用。」你本想仔细问问，潮歌却嬉笑着挂断了电话。等你赶到她所在的空间站，她又让你先带着资源去了造船厂……",
       objectiveText: "任务激活后，新制造综合舰体组件、动力控制核心、舰船功能组件各 2 件。",
-      completionText: "六件组件整齐码放，装配架随时能接大活。",
+      completionText: "到底要干什么？",
       progressType: "manufacture_components",
       target: { components: { integrated_hull: 2, power_core: 2, functional_system: 2 }, sinceActivation: true },
       reward: withBlueprints(rewardResource(null), { "miner_frigate": 1 }),
@@ -272,10 +272,10 @@
     {
       id: "I7", chapter: "industrial", order: 7,
       title: "拓岩级总装",
-      speaker: "边疆调度员",
-      briefing: "启程级是训练艇，撑不起真正的产能。拓岩级是边疆最普及的采矿护卫舰，用你刚攒下的组件自己总装一艘——造完，调度中心补你一笔安家费，再白送一艘空配捕云级当备份运力。",
+      speaker: "潮歌",
+      briefing: "「如何，这可是长须鲸工业最新锐的小型工业舰，拓岩级的蓝图。」潮歌给你发送了一张蓝图，满意地看到你脸上露出了惊讶的表情。「怎么，这就满意了？」她恶作剧得逞一般小声笑了起来，又指着旁边的另一艘工业舰说道，「还有这艘捕云级，现在也是你的了——不过别去乱打听它前任主人去哪儿了。」",
       objectiveText: "新总装 1 艘拓岩级。",
-      completionText: "拓岩级接过了启程级的矿镐，空配捕云级也划到了你名下。",
+      completionText: "工业线结束。",
       progressType: "assemble_ship",
       target: { shipId: "miner_frigate", count: 1 },
       reward: withShips(rewardResource({ [R.ISK]: 50000 }), { "gas_frigate": { count: 1, fitting: "empty" } }),

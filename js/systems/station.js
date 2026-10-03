@@ -28,62 +28,62 @@ const STATION_BODY_PLANS = Object.freeze({
   2: Object.freeze({
     level: 2,
     name: "星堡",
-    durationMs: 7200000,          // 2h
-    isk: 2000000,
+    durationMs: 3600000,          // 2h → 1h（-50%）
+    isk: 1000000,                 // 2,000,000 → 1,000,000（-50%）
     materials: Object.freeze({
-      "mineral:三钛合金": 32000,
-      "mineral:类晶体胶矿": 3200,
-      "mineral:同位聚合体": 800
+      "mineral:三钛合金": 16000,   // 32000 → 16000（-50%）
+      "mineral:类晶体胶矿": 1600,  // 3200 → 1600
+      "mineral:同位聚合体": 400    // 800 → 400
     })
   }),
   3: Object.freeze({
     level: 3,
     name: "星城",
-    durationMs: 14400000,         // 4h
-    isk: 8000000,
+    durationMs: 7200000,          // 4h → 2h（-50%）
+    isk: 4000000,                 // 8,000,000 → 4,000,000（-50%）
     materials: Object.freeze({
-      "mineral:三钛合金": 55000,
-      "mineral:类晶体胶矿": 4000,
-      "mineral:同位聚合体": 2500,
-      "mineral:超新星诺克石": 2000,
-      "planetary:同位素": 300      // 策划 6.2 本体 Lv.3 行星材料 300（冰行星产出=同位素）
+      "mineral:三钛合金": 27500,   // 55000 → 27500
+      "mineral:类晶体胶矿": 2000,  // 4000 → 2000
+      "mineral:同位聚合体": 1250,  // 2500 → 1250
+      "mineral:超新星诺克石": 1000,// 2000 → 1000
+      "planetary:同位素": 150      // 300 → 150
     })
   }),
   4: Object.freeze({
     level: 4,
     name: "深空要塞",
-    durationMs: 28800000,         // 8h
-    isk: 30000000,                // 星币 30M
+    durationMs: 14400000,         // 8h → 4h（-50%）
+    isk: 15000000,                // 30,000,000 → 15,000,000（-50%）
     materials: Object.freeze({
-      "mineral:三钛合金": 120000,
-      "mineral:类晶体胶矿": 12000,
-      "mineral:同位聚合体": 7000,
-      "mineral:超新星诺克石": 4000,
-      "mineral:基腹断岩": 500,
-      "mineral:超噬矿": 180,
-      "moon:铪": 1000,
-      "moon:铷": 50,
-      "gas:高纯富勒烯": 600,
-      "planetary:磁场聚合物": 100
+      "mineral:三钛合金": 60000,
+      "mineral:类晶体胶矿": 6000,
+      "mineral:同位聚合体": 3500,
+      "mineral:超新星诺克石": 2000,
+      "mineral:基腹断岩": 250,
+      "mineral:超噬矿": 90,
+      "moon:铪": 500,
+      "moon:铷": 25,
+      "gas:高纯富勒烯": 300,
+      "planetary:磁场聚合物": 50
     }),
     desc: "升至深空要塞后将解锁建造「军团议事大厅」的资格（需对应内容授权）。"
   }),
   5: Object.freeze({
     level: 5,
     name: "星域枢纽",
-    durationMs: 57600000,         // 16h
-    isk: 100000000,               // 星币 100M
+    durationMs: 28800000,         // 16h → 8h（-50%）
+    isk: 50000000,                // 100,000,000 → 50,000,000（-50%）
     materials: Object.freeze({
-      "mineral:三钛合金": 250000,
-      "mineral:类晶体胶矿": 25000,
-      "mineral:同位聚合体": 15000,
-      "mineral:超新星诺克石": 9000,
-      "mineral:基腹断岩": 1200,
-      "mineral:超噬矿": 500,
-      "moon:铷": 150,
-      "mineral:莫尔石": 25,
-      "gas:超纯聚合气体": 30,
-      "planetary:磁场聚合物": 300
+      "mineral:三钛合金": 125000,
+      "mineral:类晶体胶矿": 12500,
+      "mineral:同位聚合体": 7500,
+      "mineral:超新星诺克石": 4500,
+      "mineral:基腹断岩": 600,
+      "mineral:超噬矿": 250,
+      "moon:铷": 75,
+      "mineral:莫尔石": 12,        // 25 → 12（奇数减半取整，玩家侧偏优）
+      "gas:超纯聚合气体": 15,
+      "planetary:磁场聚合物": 150
     }),
     desc: "升至星域枢纽后军团议事大厅可升至满级（需对应内容授权）。"
   })

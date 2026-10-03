@@ -201,22 +201,24 @@
     var rows = ids.map(function (id) {
       var def = config.BUILDINGS[id];
       var level = config.levelOf(buildings, id);
+      var curEffect = level ? config.effectText(def, level) : "";
+      var preview = level === 0 ? ("建造（Lv1）→ " + config.effectText(def, 1))
+        : (level < def.maxLevel ? ("升级至 Lv." + (level + 1) + " → " + config.effectText(def, level + 1)) : "已满级");
       var next = level < def.maxLevel ? def.levels[level] : null;
-      var effect = id === "frontier_hq"
-        ? (level ? "成员上限 " + def.levels[level - 1].memberCap + " 人" : "未建造")
-        : id === "mission_hall"
-          ? (level ? "每日任务 " + def.levels[level - 1].dailyTasks + " 个" : "未建造")
-          : id === "combat_command"
-            ? (level ? "战斗伤害 +" + Math.round(def.levels[level - 1].combatDamageBonus * 100) + "%" : "未建造")
-            : (level ? "冶炼效率 +" + Math.round(def.levels[level - 1].refiningEfficiencyBonus * 100) + "%" : "未建造");
       var nextText = next ? " · 下级 " + next.cost + " 建设点" : " · 已满级";
+      var curve = [];
+      for (var i = 1; i <= def.maxLevel; i += 1) curve.push("Lv." + i + " " + config.effectText(def, i));
       var canUpgrade = String(alliance.ownerId) === String(root.AllianceApi.getPlayerId()) && level < def.maxLevel;
       var upgradeButton = canUpgrade
         ? '<button class="btn secondary ' + (buttonClass || "alliance-upgrade-btn") + '" data-building-type="' + esc(def.legacyId || id) + '" style="padding:4px 8px;margin-left:8px;">' + (level ? "升级" : "建造") + '</button>'
         : '';
-      return '<div class="alliance-building-row" style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid #1e354b;">' +
-        '<span>' + esc(def.name) + ' <span class="text-muted">Lv.' + esc(level) + '</span></span>' +
-        '<span class="text-muted" style="text-align:right;">' + esc(effect + nextText) + upgradeButton + '</span></div>';
+      return '<div class="alliance-building-row" title="' + esc(curve.join(" · ")) + '" style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid #1e354b;">' +
+        '<span>' + esc(def.name) + ' <span class="text-muted">Lv.' + esc(level) + '</span>' +
+          (config.getDesc(id) ? '<br><span class="text-muted" style="font-size:12px;line-height:1.4;">' + esc(config.getDesc(id)) + '</span>' : '') + '</span>' +
+        '<span class="text-muted" style="text-align:right;">' +
+          (curEffect ? esc(curEffect) + "（当前）<br>" : '') +
+          '<span style="color:#9fddff;">' + esc(preview) + '</span>' + nextText + upgradeButton +
+        '</span></div>';
     }).join("");
     return '<div class="alliance-card-title" style="margin-top:12px;">联盟建设</div>' + rows;
   }

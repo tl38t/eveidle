@@ -1049,8 +1049,10 @@
 .arch-repair-title { color:#e0998f; font-weight:700; font-size:12px; }
 .arch-repair-detail { color:#a07c78; font-size:10px; line-height:1.5; margin:5px 0 8px; }
 
-/* ===== 考古工作台响应式（对齐 demo 断点 1180 / 760） ===== */
-@media (max-width:1180px) {
+/* ===== 考古工作台响应式（对齐 demo 断点 760；三栏断点实测上调 1180→1300：
+   游戏内三栏最小宽 = 侧栏 216 + content 留白 32 + 260/430/320 三栏 1010 ≈ 1260px，
+   CDP 实证 1181~1290 区间 loot 栏被窗口右缘裁切 ⇒ 断点须 ≥1300） ===== */
+@media (max-width:1300px) {
   .arch-workbench { grid-template-columns:230px minmax(420px,1fr); }
   .arch-col-loot { grid-column:1 / -1; border-left:0!important; border-top:1px solid #1a2533; }
   .arch-col-loot .arch-reward-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }

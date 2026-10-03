@@ -3418,6 +3418,34 @@ const CARGO_SOURCE = {
   component: { pageId:"shipEngineering",       pageLabel:"舰船工程", icon:"fa-solid fa-rocket" }
 };
 
+/* 出产位置「命名空间例外」表（2026-10-02 新增，单一真值）。
+   某些资源内部键落在某个命名空间里，但真实产地与该命名空间的默认页面**不一致**：
+   暗质晶核（权威 ID `mineral:莫尔石`，显示名由 js/data/display-names.js 映射为「暗质晶核」）
+   就在 mineral 命名空间，可它**没有冶炼配方**，只由外环侵袭区的精英/首领掉落。
+   ⇒ 任何「按命名空间推导产地」的逻辑都会把它错指到「冶炼」页（点进去是空页）。
+   两条消费路径必须读同一张表，否则口径分裂：
+     ① 仓库卡片 → 下方 warehouseItem.source（CARGO_SOURCE 分类推导）；
+     ② 制造 / 装备工程 / 增强剂页的材料名链接 → shell-render.js `getMaterialSourceInfo`
+        （MATERIAL_SOURCE + ResourceRegistry 命名空间推导）。
+   新条目写法：键用**权威资源 ID**（不要用显示名，显示名会随语言变）。 */
+const MATERIAL_SOURCE_OVERRIDES = {
+  "mineral:莫尔石": { pageId:"combat", pageLabel:"外环侵袭区", icon:"fa-solid fa-crosshairs", emoji:"💠" }
+};
+/** 按 ref（`namespace:key` 或纯中文名）查产地例外；未命中返回 null。返回副本，避免调用方改到表内对象。 */
+function getMaterialSourceOverride(ref) {
+  if (typeof ref !== "string" || !ref) return null;
+  if (MATERIAL_SOURCE_OVERRIDES[ref]) return Object.assign({}, MATERIAL_SOURCE_OVERRIDES[ref]);
+  const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : null;
+  if (RR && typeof RR.resolveMaterialIds === "function") {
+    try {
+      // 纯中文名（如配方 cost 里的「莫尔石」）→ 权威 ID，与命名空间路径共用同一判定
+      const ids = RR.resolveMaterialIds(ref) || [];
+      for (const id of ids) if (MATERIAL_SOURCE_OVERRIDES[id]) return Object.assign({}, MATERIAL_SOURCE_OVERRIDES[id]);
+    } catch (e) { /* 解析异常按未命中处理，交由调用方按命名空间推导 */ }
+  }
+  return null;
+}
+
 /* 仓库物品「文字介绍」：无独立描述字段，按分类给一句准确说明（装备用真实属性文本） */
 const CARGO_DESC = {
   ore:       "基础矿石。通过采矿激光器从小行星带剥离获取，是精炼矿物与合金的原料。",
@@ -3759,9 +3787,10 @@ function getCargoDisplayState(state, filter, subFilter) {
       });
       const warehouseItem = items[items.length - 1];
       // 暗质晶核：内部仍是 mineral:莫尔石，但仓库显示为高级战略材料，来源是外环侵袭区。
+      // source 走 MATERIAL_SOURCE_OVERRIDES 单一真值（与制造页材料弹窗共用），不再就地硬编码。
       if (itemId === "mineral:莫尔石") {
         warehouseItem.categoryLabel = "高级战略材料";
-        warehouseItem.source = { pageId:"combat", pageLabel:"外环侵袭区", icon:"fa-solid fa-crosshairs" };
+        warehouseItem.source = getMaterialSourceOverride(itemId) || warehouseItem.source;
         warehouseItem.description = "高级战略材料。由外环侵袭区的精英与首领敌人掉落，用于高级舰船构件与势力装备制造。";
       }
       if (itemId && itemId.indexOf("special:voucher_") === 0) {

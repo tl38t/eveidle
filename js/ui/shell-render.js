@@ -1712,6 +1712,10 @@ const SOURCE_BY_NAMESPACE = {
 function getMaterialSourceInfo(key) {
   if (typeof key !== "string") return MATERIAL_SOURCE.mineral;
   const materialName = key.indexOf(":") >= 0 ? key.slice(key.indexOf(":") + 1) : key;
+  // 命名空间例外优先（2026-10-02）：暗质晶核 mineral:莫尔石 虽在 mineral 命名空间却没有冶炼配方，
+  // 真实产地是外环侵袭区。表在 core/selectors.js（仓库卡片同源），加载顺序 selectors → shell-render。
+  const override = (typeof getMaterialSourceOverride === "function") ? getMaterialSourceOverride(key) : null;
+  if (override) return override;
   if (typeof STARMAP_TITAN_MATERIALS !== "undefined" && Array.isArray(STARMAP_TITAN_MATERIALS) && STARMAP_TITAN_MATERIALS.includes(materialName)) return MATERIAL_SOURCE.starmap;
   // 优先使用权威资源定义：resolveMaterialIds 同时覆盖 namespace:itemId 与纯中文名（跨命名空间按名聚合），
   // 再取 getDefinition 的 namespace 映射到来源分类。镓/铂/铪/铷（月矿）→ 采矿，行星材料 → 行星开发，气体 → 气体采集。
@@ -5252,11 +5256,11 @@ function enhanceEquipmentFromWarehouse(targetRef, onDone) {
   };
   const confirmationEnabled = getSettingsDisplayState(gameState).confirmShipEnhancement;
   if (confirmationEnabled) {
-    const materialLines = Object.entries(preview.cost).map(([mineral, qty]) => `${mineral}×${qty}`).join("、");
+    const materialLines = Object.entries(preview.cost).map(([mineral, qty]) => `${getResourceDisplayName(mineral)}×${qty}`).join("、");
     const extraLines = [];
     if (preview.extra.sameTypeItemId) extraLines.push("同型号 +0 装备×1");
-    if (preview.extra.core) extraLines.push(preview.extra.core + "×1");
-    if (preview.extra.protocol) extraLines.push("成功后消耗 " + preview.extra.protocol + "×1");
+    if (preview.extra.core) extraLines.push(getResourceDisplayName(preview.extra.core) + "×1");
+    if (preview.extra.protocol) extraLines.push("成功后消耗 " + getResourceDisplayName(preview.extra.protocol) + "×1");
     const fullList = [materialLines, ...extraLines].filter(Boolean).join(" + ");
     const bodyHtml =
       '<p class="dlg-body">强化 ' + escapeAchievementText(definition.name) + '：+' + fromLevel + ' → +' + (fromLevel + 1) + '</p>' +
@@ -6296,6 +6300,36 @@ function installTutorialWidgetListeners() {
 
 (function bindShellUI() {
   installLockedEntryGuard(); // 锁定入口统一拦截（捕获阶段，先于下方业务监听）
+
+  // 资源调度中心·在线额外产出飘字（离线走结算窗，不在此弹）
+  (function installDispatchBonusToast() {
+    if (typeof GameEvents === "undefined" || !GameEvents.on) return;
+    var toastEl = null, hideTimer = null;
+    function showDispatchBonus(payload) {
+      if (!payload || !payload.resourceId) return;
+      var def = (window.ResourceRegistry && window.ResourceRegistry.getDefinition(payload.resourceId)) || {};
+      var name = def.name || payload.resourceId;
+      var amount = Number(payload.quantity) || 0;
+      var label = (window.I18N && window.I18N.t) ? window.I18N.t("资源调度中心 · 额外产出") : "资源调度中心 · 额外产出";
+      if (!toastEl) {
+        toastEl = document.createElement("div");
+        toastEl.className = "dispatch-bonus-toast";
+        toastEl.setAttribute("data-i18n-skip", "");
+        document.body.appendChild(toastEl);
+      }
+      toastEl.textContent = label + " +" + amount.toLocaleString() + " " + name;
+      toastEl.classList.remove("show");
+      void toastEl.offsetWidth; // 强制回流重启动画
+      toastEl.classList.add("show");
+      if (hideTimer) clearTimeout(hideTimer);
+      hideTimer = window.setTimeout(function () { if (toastEl) toastEl.classList.remove("show"); }, 3000);
+    }
+    GameEvents.on("station:dispatchBonus", function (event) {
+      if (!event || !event.meta || event.meta.offline) return; // 仅在线弹
+      showDispatchBonus(event.payload);
+    });
+  })();
+
   document.querySelectorAll(".sidebar .nav-item[data-skill], .sidebar .nav-item[data-page]").forEach(item => item.addEventListener("click", () => {
     if (item.dataset.combatToggle !== undefined) {
       dispatchGameAction(gameState, { type:"settings/toggleCombatSkills" }, Date.now());
