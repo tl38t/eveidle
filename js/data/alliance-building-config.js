@@ -41,6 +41,22 @@
       levels: [1, 2, 3, 4, 5, 6, 7].map(function (level) {
         return { level: level, cost: [100, 250, 500, 1000, 2000, 4000, 8000][level - 1], refiningEfficiencyBonus: level * 0.05 };
       })
+    },
+    wormhole_resonance: {
+      id: "wormhole_resonance", name: "虫洞谐振信标",
+      desc: "每级提升虫洞试炼与宝藏节点额外掉落代币的概率 +3%。",
+      maxLevel: 7,
+      levels: [1, 2, 3, 4, 5, 6, 7].map(function (level) {
+        return { level: level, cost: [100, 250, 500, 1000, 2000, 4000, 8000][level - 1], tokenChanceBonus: level * 0.03 };
+      })
+    },
+    research_council: {
+      id: "research_council", name: "科研议会",
+      desc: "每级为联盟成员每日提供额外科研工时 +0.5 小时（Lv7 每日 +3.5 小时）。领取后存入科研工时银行，离线也能累积投入。",
+      maxLevel: 7,
+      levels: [1, 2, 3, 4, 5, 6, 7].map(function (level) {
+        return { level: level, cost: [100, 250, 500, 1000, 2000, 4000, 8000][level - 1], dailyResearchHours: level * 0.5 };
+      })
     }
   };
 
@@ -63,9 +79,13 @@
   function effects(buildingRows) {
     var combatLevel = levelOf(buildingRows, "combat_command");
     var refiningLevel = levelOf(buildingRows, "refining_core");
+    var tokenLevel = levelOf(buildingRows, "wormhole_resonance");
+    var researchLevel = levelOf(buildingRows, "research_council");
     return {
       combatDamageBonus: combatLevel ? BUILDINGS.combat_command.levels[combatLevel - 1].combatDamageBonus : 0,
-      refiningEfficiencyBonus: refiningLevel ? BUILDINGS.refining_core.levels[refiningLevel - 1].refiningEfficiencyBonus : 0
+      refiningEfficiencyBonus: refiningLevel ? BUILDINGS.refining_core.levels[refiningLevel - 1].refiningEfficiencyBonus : 0,
+      tokenChanceBonus: tokenLevel ? BUILDINGS.wormhole_resonance.levels[tokenLevel - 1].tokenChanceBonus : 0,
+      dailyResearchHours: researchLevel ? BUILDINGS.research_council.levels[researchLevel - 1].dailyResearchHours : 0
     };
   }
   // 单级效果文案（level: 1-based；0 或越界返回 ""）。供「建造/升级预览」复用，保证与
@@ -77,6 +97,8 @@
     if (def.id === "mission_hall") return "每日任务 " + lv.dailyTasks + " 个";
     if (def.id === "combat_command") return "全队战斗伤害 +" + Math.round(lv.combatDamageBonus * 100) + "%";
     if (def.id === "refining_core") return "冶炼效率 +" + Math.round(lv.refiningEfficiencyBonus * 100) + "%";
+    if (def.id === "wormhole_resonance") return "虫洞代币概率 +" + Math.round(lv.tokenChanceBonus * 100) + "%";
+    if (def.id === "research_council") return "每日科研工时 +" + lv.dailyResearchHours + " 小时";
     return "";
   }
   function getDesc(id) {

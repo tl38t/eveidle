@@ -39,6 +39,7 @@
       activeResearch: null,
       pendingQueue: [],
       researchHourBank: 0,
+      allianceResearchHoursClaimedDay: "",
       accumulatedResearchSeconds: 0,
       cycleResearchLevels: {},
       researchTimeMigrationVersion: 1,

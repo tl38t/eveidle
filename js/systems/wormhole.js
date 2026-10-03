@@ -226,7 +226,9 @@
   }
   function tokenChance(state, W) {
     const implants = (state && state.implants) || {};
-    return Math.min(0.6, 0.05 * runUpg(W, "tokenChance")) + (implants.implant_void_token ? 0.10 : 0);
+    const allianceBonus = (state && state.alliance && state.alliance.buildings && typeof AllianceBuildingConfig !== "undefined")
+      ? (AllianceBuildingConfig.effects(state.alliance.buildings).tokenChanceBonus || 0) : 0;
+    return Math.min(0.6, 0.05 * runUpg(W, "tokenChance")) + (implants.implant_void_token ? 0.10 : 0) + allianceBonus;
   }
   function dailyHoleCount(W) { return CFG.DAILY_COUNT + upg(W, "dailyCount"); }
   function archSuccessBonus(W) { return 0.015 * runUpg(W, "archSuccess"); }

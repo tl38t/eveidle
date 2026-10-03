@@ -118,6 +118,15 @@
       if (!(count >= 0) || !Number.isInteger(count)) return { ok: false, reason: REASON.BLUEPRINT_UNAVAILABLE };
       if (!isValidBlueprintId(id)) return { ok: false, reason: REASON.BLUEPRINT_UNAVAILABLE };
     }
+    // 增强剂：booster 库存键为「系列_品质」（如 laser_coolant_n），须经 BOOSTER_DB 实证存在
+    const bo = reward.boosters || {};
+    for (const id of Object.keys(bo)) {
+      const count = Number(bo[id]);
+      if (!(count >= 0) || !Number.isInteger(count)) return { ok: false, reason: REASON.REWARD_UNAVAILABLE };
+      const defined = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.getDefinition("booster:" + id))
+        || (typeof getBoosterItem === "function" && getBoosterItem(id));
+      if (!defined) return { ok: false, reason: REASON.REWARD_UNAVAILABLE };
+    }
     return { ok: true };
   }
 
@@ -187,6 +196,14 @@
               { timestamp: now, source: "blueprint-store", offline: false });
           }
         }
+      }
+    }
+    // 增强剂：booster: 命名空间 pool 型 → state.boosters.inventory（与增强剂制造产出同通道）
+    const bo = reward.boosters || {};
+    if (typeof ResourceRegistry !== "undefined") {
+      for (const id of Object.keys(bo)) {
+        const count = Number(bo[id]) || 0;
+        if (count > 0) ResourceRegistry.add(state, "booster:" + id, count);
       }
     }
     if (ctx && ctx.ledgerKey) state.tutorial.rewardLedger[ctx.ledgerKey] = now;
@@ -755,6 +772,14 @@
       const name = shipDisplayName(id);
       items.push({ kind: "blueprint", id, name, amount, text: name + "蓝图 ×" + formatCount(amount) });
     }
+    const bo = reward.boosters || {};
+    for (const id of Object.keys(bo)) {
+      const amount = Number(bo[id]) || 0;
+      if (amount <= 0) continue;
+      const item = (typeof getBoosterItem === "function") ? getBoosterItem(id) : null;
+      const name = (item && item.name) ? item.name : String(id);
+      items.push({ kind: "booster", id, name, amount, text: name + " ×" + formatCount(amount) });
+    }
     return items;
   }
 
@@ -909,6 +934,7 @@
       chapters: [],
       chapterById: {},
       currentTaskId: null,
+      currentSpotlight: null,
       tasks: [],
       taskById: {}
     };
@@ -974,6 +1000,7 @@
         completionMode: task.completionMode,
         rewardTiming: task.rewardTiming,
         progressType: task.progressType,
+        spotlight: task.spotlight || null,
         status,
         isLocked: status === "locked",
         isActive,
@@ -1005,6 +1032,12 @@
       }
       if (isCompleted) out.completedCount += 1;
       else if (!out.currentTaskId && (isActive || isClaimable)) out.currentTaskId = task.id;
+    }
+
+    // 当前任务的聚光选择器（供 js/ui/tutorial-spotlight.js 消费）：跟随 currentTaskId，
+    // 当前任务无 spotlight（等待型 / 部件内按钮型）时为 null ⇒ 环自动隐藏。
+    if (out.currentTaskId && out.taskById[out.currentTaskId]) {
+      out.currentSpotlight = out.taskById[out.currentTaskId].spotlight || null;
     }
 
     const prologue = out.chapterById.prologue;

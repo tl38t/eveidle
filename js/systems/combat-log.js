@@ -34,7 +34,7 @@ const COMBAT_LOG_SKILL_NAME = {
   laserOps: "激光操作", cannonOps: "炮台操作", missileOperations: "导弹操作",
   targeting: "瞄准术", defense: "防御", shieldOperation: "护盾操作",
   armorReinforcement: "装甲强化", hullEngineering: "舰船结构工程",
-  piloting: "驾驶", capacitorManagement: "电容管理", combat: "战斗"
+  piloting: "操船", capacitorManagement: "电容管理", combat: "战斗"
 };
 
 function getCombatLogSkillIcon(key) {

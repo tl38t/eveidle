@@ -63,7 +63,7 @@ const SKILL_DISPLAY_NAME = Object.freeze({
   shieldOperation: "护盾操作",
   armorReinforcement: "装甲强化",
   hullEngineering: "舰船结构工程",
-  piloting: "驾驶",
+  piloting: "操船",
   capacitorManagement: "电容管理",
   drones: "无人机",
 });

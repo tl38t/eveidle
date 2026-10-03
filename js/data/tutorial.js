@@ -43,7 +43,7 @@
   };
 
   function rewardResource(map) {
-    const out = { resourceAmounts: {}, equipment: {}, ships: {}, blueprints: {} };
+    const out = { resourceAmounts: {}, equipment: {}, ships: {}, blueprints: {}, boosters: {} };
     if (map) {
       for (const key of Object.keys(map)) {
         const v = Number(map[key]);
@@ -55,6 +55,10 @@
   }
   function withEquipment(reward, equip) {
     if (equip) for (const id of Object.keys(equip)) reward.equipment[id] = equip[id];
+    return reward;
+  }
+  function withBoosters(reward, boosters) {
+    if (boosters) for (const id of Object.keys(boosters)) reward.boosters[id] = boosters[id];
     return reward;
   }
   function withShips(reward, ships) {
@@ -383,18 +387,18 @@
       id: "C1", chapter: "combat", order: 1,
       title: "武装方向",
       speaker: "引航员",
-      briefing: "边疆不替你选打法，只发一次性的训练方向补贴。激光稳、导弹准、火炮狠，三条路只能选一条，选了就不能改——先把方向定下来。方向定了，配套的武器和护盾回充器会一并下发；这两件要装到启程级上，再把启程级指派进战斗位，你才算真有能开火的船。",
+      briefing: "边疆不替你选打法，只发一次性的训练方向补贴。激光稳、导弹准、火炮狠，三条路只能选一条，选了就不能改——先把方向定下来。方向定了，配套的武器、护盾回充器，外加一瓶战斗强化剂（伤害增强剂 + 护盾回充液）会一并下发；武器和护盾回充器要装到启程级上，强化剂则留到战斗页，装进动作的两个增强剂槽——激活后 180 秒内火力与维修都会明显上涨，正好用来啃下第四波。把启程级指派进战斗位，你才算真有能开火的船。",
       objectiveText: "在激光 / 导弹 / 火炮中选择一个训练方向（仅可一次）。",
-      completionText: "训练方向已锁定，对应的武器与护盾回充器发了下来。",
+      completionText: "训练方向已锁定，对应的武器、护盾回充器与战斗强化剂（伤害增强剂 + 护盾回充液）一并发了下来。",
       progressType: "choose_combat_training",
       target: { tracks: ["laser", "missile", "cannon"], once: true },
       reward: rewardResource(null),
       rewardTiming: "none",
       completionMode: "choice",
       choiceRewards: {
-        laser:   withEquipment(rewardResource({ [R.FUEL]: 300, [R.AMMO_LASER]: 100 }), { "t1_small_laser": 1, "t1_shield_booster": 1 }),
-        missile: withEquipment(rewardResource({ [R.FUEL]: 300, [R.AMMO_MISSILE]: 100 }), { "t1_light_missile_launcher": 1, "t1_shield_booster": 1 }),
-        cannon:  withEquipment(rewardResource({ [R.FUEL]: 300, [R.AMMO_CANNON]: 100 }), { "t1_small_cannon": 1, "t1_shield_booster": 1 })
+        laser:   withBoosters(withEquipment(rewardResource({ [R.FUEL]: 300, [R.AMMO_LASER]: 100 }), { "t1_small_laser": 1, "t1_shield_booster": 1 }), { "laser_coolant_n": 1, "shield_recharge_n": 1 }),
+        missile: withBoosters(withEquipment(rewardResource({ [R.FUEL]: 300, [R.AMMO_MISSILE]: 100 }), { "t1_light_missile_launcher": 1, "t1_shield_booster": 1 }), { "missile_catalyst_n": 1, "shield_recharge_n": 1 }),
+        cannon:  withBoosters(withEquipment(rewardResource({ [R.FUEL]: 300, [R.AMMO_CANNON]: 100 }), { "t1_small_cannon": 1, "t1_shield_booster": 1 }), { "cannon_booster_n": 1, "shield_recharge_n": 1 })
       },
       unlocks: [],
       navigationTarget: null
@@ -485,6 +489,31 @@
   for (let i = 0; i < TASKS.length; i++) BY_ID[TASKS[i].id] = TASKS[i];
 
   const CHAPTER_ORDER = ["prologue", "industrial", "archaeology", "combat"];
+
+  // ---- 脉冲聚光目标：当前任务在目标页上要打环的「具体控件」CSS 选择器（缺省=该任务不打环）----
+  // 消费方：js/ui/tutorial-spotlight.js（按当前任务选择器定位控件 → 画脉冲环）。
+  // 收录标准：只收「玩家下一步要点的那一个控件」明确、选择器稳定、且该控件在目标页「默认视图下即可见
+  // （无需先切子标签）」的任务。
+  // 纯等待型（C4/C5/C6 自动战斗、A4 等遗物）、按钮已在右上角部件里的（C1 三选一 / 各领取确认）、
+  // 多步流程型（I1 领+装+指派、C2 装备弹窗、I6 三种组件、I5 提取、A5 兑现）本轮一律不打环。
+  // ⚠️ P5/I7（总装启程级/拓岩级）本轮**故意不打环**：它们藏在「部件车间 → 舰船总装（拓岩级再退到工业系 class 标签）」
+  // 的嵌套子视图后面，默认视图下控件不可见 ⇒ 静态单选择器环够不到（会「看着像没生效」）。
+  // 正确解法是给这类任务加「子视图自动导航」（navigationSubtab 指向 舰船总装 / 工业系），属后续独立改动。
+  const TASK_SPOTLIGHT = {
+    P2: '.shipeng-comp-card[data-comp="integrated_hull"]',
+    P3: '.shipeng-comp-card[data-comp="power_core"]',
+    P4: '.shipeng-comp-card[data-comp="functional_system"]',
+    I2: "#btn-start-mine",
+    I3: "#btn-start-smelt",
+    I4: "#btn-deploy-planet",
+    A2: '.act-tag[data-ship-action="archaeology"]',
+    A3: "#archaeology-btn-start",
+    C3: '.act-tag[data-ship-action="combat"]'
+  };
+  for (let i = 0; i < TASKS.length; i++) {
+    const sel = TASK_SPOTLIGHT[TASKS[i].id];
+    if (sel) TASKS[i].spotlight = sel;
+  }
 
   const TutorialData = {
     version: 1,

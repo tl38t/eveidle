@@ -193,11 +193,18 @@
     return String(type || "") === "frontier_hq" ? "logistics_hub" : String(type || "");
   }
 
+  // 与 wormhole.js dayKey 同口径（UTC 天），用于科研议会每日领取防重领。
+  function todayKey(now) {
+    var d = new Date(now || Date.now());
+    function pad2(n) { return String(n).padStart(2, "0"); }
+    return d.getUTCFullYear() + "-" + pad2(d.getUTCMonth() + 1) + "-" + pad2(d.getUTCDate());
+  }
+
   function renderBuildingSummary(alliance, buttonClass) {
     var config = root.AllianceBuildingConfig;
     var buildings = alliance && Array.isArray(alliance.buildings) ? alliance.buildings : [];
     if (!config || !config.BUILDINGS) return "";
-    var ids = ["frontier_hq", "mission_hall", "combat_command", "refining_core"];
+    var ids = ["frontier_hq", "mission_hall", "combat_command", "refining_core", "wormhole_resonance", "research_council"];
     var rows = ids.map(function (id) {
       var def = config.BUILDINGS[id];
       var level = config.levelOf(buildings, id);
@@ -212,12 +219,22 @@
       var upgradeButton = canUpgrade
         ? '<button class="btn secondary ' + (buttonClass || "alliance-upgrade-btn") + '" data-building-type="' + esc(def.legacyId || id) + '" style="padding:4px 8px;margin-left:8px;">' + (level ? "升级" : "建造") + '</button>'
         : '';
+      // 科研议会：每日科研工时领取（所有成员可领，与盟主升级按钮相互独立）。
+      var claimButton = '';
+      if (def.id === "research_council" && level > 0) {
+        var rhHours = def.levels[level - 1].dailyResearchHours;
+        var rhClaimed = window.gameState && window.gameState.research
+          && String(window.gameState.research.allianceResearchHoursClaimedDay) === todayKey();
+        claimButton = rhClaimed
+          ? '<button class="btn secondary alliance-research-claim-btn" disabled style="padding:4px 8px;margin-left:8px;opacity:.6;">今日已领取</button>'
+          : '<button class="btn primary alliance-research-claim-btn" data-research-hours="' + rhHours + '" style="padding:4px 8px;margin-left:8px;">领取 ' + rhHours + 'h 工时</button>';
+      }
       return '<div class="alliance-building-row" title="' + esc(curve.join(" · ")) + '" style="display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-top:1px solid #1e354b;">' +
         '<span>' + esc(def.name) + ' <span class="text-muted">Lv.' + esc(level) + '</span>' +
           (config.getDesc(id) ? '<br><span class="text-muted" style="font-size:12px;line-height:1.4;">' + esc(config.getDesc(id)) + '</span>' : '') + '</span>' +
         '<span class="text-muted" style="text-align:right;">' +
           (curEffect ? esc(curEffect) + "（当前）<br>" : '') +
-          '<span style="color:#9fddff;">' + esc(preview) + '</span>' + nextText + upgradeButton +
+          '<span style="color:#9fddff;">' + esc(preview) + '</span>' + nextText + upgradeButton + claimButton +
         '</span></div>';
     }).join("");
     return '<div class="alliance-card-title" style="margin-top:12px;">联盟建设</div>' + rows;
@@ -226,7 +243,7 @@
   function renderAllianceGuide() {
     return '<details class="alliance-guide" style="margin-top:12px;border-top:1px solid #1e354b;padding-top:10px;">' +
       '<summary style="cursor:pointer;color:#9fddff;font-weight:700;">联盟玩法说明</summary>' +
-      '<div class="alliance-task-hint" style="white-space:pre-line;">1. 每日建设任务会根据任务大厅等级生成。\n2. 完成任务并提交材料，可获得联盟建设点。\n3. 联盟建设点由全体成员共享，用于升级联盟建筑。\n4. 总部提高成员上限；任务大厅增加每日任务；作战指挥部提高战斗伤害；冶炼中枢提高冶炼效率。\n5. 只有盟主可以升级建筑、踢出成员、转让盟主和解散联盟。盟主不能直接退出，需先转让盟主或解散联盟。</div>' +
+      '<div class="alliance-task-hint" style="white-space:pre-line;">1. 每日建设任务会根据任务大厅等级生成。\n2. 完成任务并提交材料，可获得联盟建设点。\n3. 联盟建设点由全体成员共享，用于升级联盟建筑。\n4. 总部提高成员上限；任务大厅增加每日任务；作战指挥部提高战斗伤害；冶炼中枢提高冶炼效率；谐振信标提升虫洞代币概率；科研议会为成员每日提供额外科研工时（在「联盟建设」里点击领取，存入科研工时银行）。\n5. 只有盟主可以升级建筑、踢出成员、转让盟主和解散联盟。盟主不能直接退出，需先转让盟主或解散联盟。</div>' +
       '</details>';
   }
 
@@ -619,12 +636,45 @@
     });
   }
 
+  // 科研议会每日工时领取：纯本地动作（写入 window.gameState.research.researchHourBank），
+  // 经 window.ResearchSystem.addResearchHours（与研究/广告/虫洞商店/成就同源），不触云端，
+  // 因此 TapTap 与 Steam 双端走同一套本地逻辑，无需云端中转页兜底。
+  function bindResearchCouncilClaim(box, alliance, msg) {
+    Array.prototype.forEach.call(box.querySelectorAll('.alliance-research-claim-btn'), function (button) {
+      if (button.disabled) return;
+      button.onclick = function () {
+        var hours = Number(button.getAttribute('data-research-hours')) || 0;
+        if (hours <= 0) return;
+        var gs = window.gameState;
+        if (!gs || !gs.research) { if (msg) msg.textContent = "科研系统未就绪"; return; }
+        var today = todayKey();
+        if (String(gs.research.allianceResearchHoursClaimedDay) === today) {
+          button.disabled = true;
+          button.textContent = "今日已领取";
+          if (msg) msg.textContent = "今日科研工时已领取";
+          return;
+        }
+        var RS = window.ResearchSystem;
+        if (!RS || typeof RS.addResearchHours !== "function") { if (msg) msg.textContent = "科研系统不可用"; return; }
+        var res = RS.addResearchHours(gs, Math.round(hours * 3600));
+        if (!res || !res.ok) { if (msg) msg.textContent = "领取失败：" + (res && res.reason || "未知"); return; }
+        gs.research.allianceResearchHoursClaimedDay = today;
+        gs._dirty = true;
+        if (root.SaveManager && typeof root.SaveManager.save === "function") root.SaveManager.save();
+        button.disabled = true;
+        button.textContent = "今日已领取";
+        if (msg) msg.textContent = "领取成功：+" + hours + " 小时科研工时";
+        showAllianceMessage('科研工时已领取', '已向科研工时银行存入 ' + hours + ' 小时（' + Math.round(hours * 3600) + ' 秒）。可前往科研面板一键投入当前研究，离线也会持续累积。', 'success');
+      };
+    });
+  }
+
   function renderListView(list) {
     var rows = list.map(function (a) {
       var cap = Math.max(10, Number(a.memberCap) || 10);
       var full = Number(a.memberCount) >= cap;
       var buildings = Array.isArray(a.buildings) ? a.buildings : [];
-      var buildingNames = { frontier_hq: "总部", logistics_hub: "总部", mission_hall: "任务大厅", combat_command: "作战指挥部", refining_core: "冶炼中枢" };
+      var buildingNames = { frontier_hq: "总部", logistics_hub: "总部", mission_hall: "任务大厅", combat_command: "作战指挥部", refining_core: "冶炼中枢", wormhole_resonance: "谐振信标", research_council: "科研议会" };
       var buildingText = buildings.map(function (b) { return (buildingNames[b.building_type] || b.building_type || "建筑") + " Lv." + (Number(b.level) || 0); }).join(" · ");
       return '<div class="alliance-member-row"><span>' + esc(a.name || a.code) + '</span>' +
         '<span class="text-muted">' + esc(a.memberCount) + '/' + esc(cap) + '</span>' +
@@ -718,6 +768,7 @@
           bindAdminActions(box, alliance, members, ctx.msg);
           bindMembershipActions(box, alliance, ctx.msg);
           bindBuildingActions(box, alliance, ctx.msg);
+          bindResearchCouncilClaim(box, alliance, ctx.msg);
           setCloudButtonVisible(false);
           if (ctx.msg) ctx.msg.textContent = "已连接云端联盟";
         });

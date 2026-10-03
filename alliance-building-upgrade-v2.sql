@@ -1,4 +1,5 @@
 -- Alliance building upgrade rules v2. Execute once in CloudBase SQL console.
+-- 覆盖 6 种建筑：frontier_hq(logistics_hub) / mission_hall / combat_command / refining_core / wormhole_resonance / research_council。
 create or replace function public.upgrade_alliance_building(
   p_alliance_id bigint,
   p_player_id varchar(100),
@@ -15,7 +16,7 @@ declare
   balance integer;
 begin
   canonical_type := case when requested_type = 'frontier_hq' then 'logistics_hub' else requested_type end;
-  if canonical_type not in ('logistics_hub', 'mission_hall', 'combat_command', 'refining_core') then
+  if canonical_type not in ('logistics_hub', 'mission_hall', 'combat_command', 'refining_core', 'wormhole_resonance', 'research_council') then
     raise exception 'unknown alliance building';
   end if;
   if not exists (select 1 from public.alliances a where a.id = p_alliance_id and a.owner_player_id = p_player_id) then
