@@ -226,6 +226,24 @@
 .chat-panel .chat-input-row input:focus { outline: none; border-color: #2f81a8; }
 .chat-panel .chat-input-row input:disabled { opacity: 0.5; }
 
+/* 发送按钮：此前无样式，浏览器默认白底方块与深色输入框完全不搭（用户实机截图）。 */
+.chat-panel .chat-input-row button {
+  flex: 0 0 auto;
+  padding: 6px 18px;
+  font-size: 13px;
+  font-family: var(--font-ui);
+  color: #cfe9f5;
+  background: rgba(47, 129, 168, 0.28);
+  border: 1px solid #2f81a8;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.chat-panel .chat-input-row button:hover:not(:disabled) { background: rgba(47, 129, 168, 0.45); }
+.chat-panel .chat-input-row button:disabled { opacity: 0.5; cursor: not-allowed; }
+.chat-panel .chat-input-row button:focus-visible { outline: 1px solid #2f81a8; outline-offset: 1px; }
+
 .chat-panel .chat-status-line {
   min-height: 18px;
   margin-top: 6px;
@@ -239,6 +257,23 @@
   border-top: 1px solid #1a2535;
   padding-top: 10px;
 }
+
+/* 审核区入口按钮：此前落在 .chat-admin-actions 之外，无任何样式（浏览器默认白底方块）。 */
+.chat-panel .chat-admin-section > button {
+  padding: 4px 14px;
+  margin-top: 6px;
+  font-size: 12px;
+  font-family: var(--font-ui);
+  color: #7d92a8;
+  background: rgba(26, 37, 53, 0.5);
+  border: 1px solid #2a3a50;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.chat-panel .chat-admin-section > button:hover { color: #c8d0d8; border-color: #3d5a70; }
+.chat-panel .chat-admin-section > button:focus-visible { outline: 1px solid #2f81a8; outline-offset: 1px; }
 
 .chat-panel .chat-admin-head {
   display: flex;
