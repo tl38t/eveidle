@@ -25,7 +25,11 @@ const localSources = [...styleSources, ...scriptSources];
 // 135 = 2026-09-28 实测（131 → 135 的 +4 是随 ja/de/ru/fr 四语上线的
 //   js/data/achievement-locales-{ja,de,ru,fr}.js，各 ~16 KB）。
 // 2026-10-01：135 → 137（+2 = 聊天系统 chat-api.js / chat-render.js，CHAT_SYSTEM_SPEC v0.2 §12）。
-if (scriptSources.length !== 137) throw new Error(`预期 137 个脚本，实际 ${scriptSources.length}`);
+// 2026-10-04：137 → 138（+1 = js/ui/tutorial-spotlight.js 教程聚光模块，
+//   由 f471dd3「联盟建筑扩充与教程增强」引入；1.0.6 发布点 f466cdb 当时仍是 137。
+//   ⚠️ 本基准自 1.0.4 之后就没再更新过，滞后了两个版本 —— 每次新增 defer 脚本
+//   都要同步这里，否则闸门会以「预期 137 实际 138」拦下正常发版）。
+if (scriptSources.length !== 138) throw new Error(`预期 138 个脚本，实际 ${scriptSources.length}`);
 
 // 平台/云存档/成就/设备镜像生产脚本必须全部被 index.html 引用，且全部排在 persistence.js 之前。
 {
@@ -256,7 +260,15 @@ const optionalIds = new Set([
   "changelog-popup",
   "changelog-popup-ok",
   "changelog-popup-close",
-  "gameplay-help-style"
+  "gameplay-help-style",
+  // 2026-10-04：联盟面板「联盟 / 聊天」双 tab（alliance-render.js 的 load() 内联生成）。
+  // 这 5 个 ID 是**运行时动态创建**的（content.innerHTML 字符串），index.html 里没有静态
+  // 声明 ⇒ 与 legion-entry 同性质，登记为可选以免闸门误判「HTML 缺少脚本引用的 ID」。
+  "alliance-pane-main",
+  "alliance-pane-chat",
+  "alliance-tab-main",
+  "alliance-tab-chat",
+  "alliance-chat"
   // 注：legion-entry（军团入口卡）已补落地为 index.html 静态元素（空间站页底部，2026-09-01）。
   // 它同时保留在本可选列表中无害；DOM ID 基线数字与实际（HEAD=391 / 工作树=392）长期脱节，
   // 属既有阻塞，待统一收敛时一并校正（届时需把下方 370 系基线 +1 计入本元素）。
@@ -292,7 +304,11 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // 后续新增静态 DOM ID 时按 +1 递增维护本数字。
 // 2026-09-28 554 → 556（+2，纯新增零删除）：① HEAD 提交 e53de44 的改装件强化加了 #bl-enc-pending（曾漏同步基线，
 //   工作树实测已隐含 +1）；② 本轮蓝图发明页「效率研究台」新增 #bl-eff-display（研究速度 / 效率因子）。
-const EXPECTED_DOM_IDS = 562;
+// 2026-10-04：562 → 563（+1 = setting-dispatch-bonus-toast，资源调度中心额外产出飘字，
+//   与 1.0.6 日志「资源调度中心产生额外产出时屏幕下方弹出飘字」对应，由 b42e597 引入；
+//   1.0.6 发布点 f466cdb 当时仍是 562）。
+// ⚠️ 本基准同样自 1.0.6 之后未更新，与上方 defer 脚本计数（137→138）属同一类滞后。
+const EXPECTED_DOM_IDS = 563;
 if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
@@ -4553,13 +4569,16 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   //   （见文件头部同款注释；两处必须同一数字，改一处不改另一处会让闸门自己打自己）。
   // 2026-10-01：135 → 137（+2 = 聊天系统 chat-api.js / chat-render.js）；5 → 6（+1 = css/chat.css）。
   //   两处脚本计数必须同一数字（文件头注释与这里），改一处不改另一处会让闸门自己打自己。
-  if (scriptSources.length !== 137) throw new Error("Batch F 起 JS 基线为 137，实际 " + scriptSources.length);
+  // 2026-10-04：137 → 138（+1 = js/ui/tutorial-spotlight.js 教程聚光模块，f471dd3 引入）。
+  //   CSS 仍是 6（chat.css 本轮只改 ?v= 未增删）。
+  if (scriptSources.length !== 138) throw new Error("Batch F 起 JS 基线为 138，实际 " + scriptSources.length);
   if (styleSources.length !== 6) throw new Error("Batch F 不得改变 6 CSS 基线，实际 " + styleSources.length);
   // 2026-10-01：557 → 561（+4 = 聊天系统静态元素 #chat-panel / #chat-status /
   //   #chat-content / #nav-chat）；同日 v0.3 改「底部停靠条」：删独立导航入口 #nav-chat（−1），
   //   新增停靠条容器 #chat-dock 与标题栏 #chat-dock-toggle（+2）⇒ 净 +1 = 562。
   //   均为 index.html 静态元素，非回归。
-  if (htmlIds.size !== 562) throw new Error("Batch F DOM ID 基线应为 562，实际 " + htmlIds.size);
+  // 2026-10-04：562 → 563（+1 = setting-dispatch-bonus-toast 资源调度飘字，b42e597 引入）。
+  if (htmlIds.size !== 563) throw new Error("Batch F DOM ID 基线应为 563，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
