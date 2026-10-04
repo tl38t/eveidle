@@ -19,20 +19,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
-import { spawnSync as _spawnSyncRaw } from "node:child_process";
+import { spawnSync } from "./safe-spawn.mjs";
 
-// ---- 子进程包装：绕开本机 spawnSync 的 EBUSY（2026-10-04 根因修复）----
-// 与 tools/build-taptap-h5.mjs 里的同名包装是**同一个病根**（两处独立实现，
-// 抽公共模块前务必同步改，否则 release 封包会在 gitArchiveBuffer 二次崩）。
-//
-// 根因：本机 libuv 在 spawnSync **同时创建 stdin+stdout+stderr 三条匿名管道**时失败
-//   （errno -4082 / EBUSY）。实测 `cmd.exe`、`node.exe` 自身同样失败 ⇒ 与程序无关；
-//   异步 spawn 正常 ⇒ 不是策略拦截。把 stdin 改 ignore、保留 stdout/stderr 管道即可。
-function spawnSync(cmd, args, options) {
-  const opts = options || {};
-  if (opts.stdio === undefined) opts.stdio = ["ignore", "pipe", "pipe"];
-  return _spawnSyncRaw(cmd, args, opts);
-}
 
 // 明确文本扩展名白名单：这些文件在入包前统一 CRLF / 孤立 CR -> LF。
 // 二进制文件（PNG / 字体 / WASM 等）不在白名单内，保持原字节。

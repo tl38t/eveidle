@@ -79,7 +79,7 @@ import os from "node:os";
 import path from "node:path";
 import vm from "node:vm";
 import crypto from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawnSync } from "./lib/safe-spawn.mjs";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));

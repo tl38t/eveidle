@@ -31,7 +31,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { spawnSync } from "node:child_process";
+import { spawnSync } from "./lib/safe-spawn.mjs";
 import { createRequire } from "node:module";
 import { maskCode, findOps, downlevelSource } from "./wechat/es5-downlevel.mjs";
 
