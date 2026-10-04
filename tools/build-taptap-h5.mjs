@@ -36,8 +36,32 @@
 
 import fs from "node:fs";
 import path from "node:path";
-import { spawnSync } from "node:child_process";
+import { spawnSync as _spawnSyncRaw } from "node:child_process";
 import { createRequire } from "node:module";
+// ---- 子进程包装：绕开本机 spawnSync 的 EBUSY（2026-10-04 根因修复）----
+//
+// 现象：`spawnSync("git", [...], { encoding:"utf8" })` 一律返回
+//   `Error: spawnSync git EBUSY`（errno -4082），`.stdout` 为 undefined，
+//   紧接着 `.trim()` 抛 "Cannot read properties of undefined"。
+//   ⇒ 表现为 checkRepoState 崩在第一行，看起来像"脚本坏了"。
+//
+// 根因（实测四种组合定位）：**不是 git 被拦、也不是沙箱策略**。
+//   - 异步 `spawn("git")` 正常返回（git version 2.55.0）；
+//   - `spawnSync` 传 `stdio:"ignore"` / `"inherit"` /
+//     `["ignore","pipe","ignore"]` **全部成功**，只有默认 `pipe` 失败；
+//   - `cmd.exe`、`node.exe` 自身同样失败 ⇒ 与具体程序无关。
+//   结论：本机 libuv 在 `spawnSync` **同时创建 stdin+stdout+stderr 三条匿名管道**
+//   时失败（Windows 侧句柄/Job Object 限制）。把 **stdin 改为 ignore**、
+//   保留 stdout 管道即可正常拿到输出。
+//
+// 做法：统一在这里注入 stdio 默认值；调用点若显式给了 stdio 则尊重调用点。
+// 若未来本机修复该限制，本包装可原样保留（不改变语义）。
+function spawnSync(cmd, args, options) {
+  const opts = options || {};
+  if (opts.stdio === undefined) opts.stdio = ["ignore", "pipe", "pipe"];
+  return _spawnSyncRaw(cmd, args, opts);
+}
+
 import {
   sha256,
   normalizeTextBytes,
