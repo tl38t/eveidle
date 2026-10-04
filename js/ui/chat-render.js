@@ -16,29 +16,51 @@
    */
 
   var POLL_MS = 3000;              // 轮询间隔（§9 决策 ④：2~3s，取 3s）
+  var BG_POLL_MS = 12000;          // 非当前频道的未读探测间隔（折叠/切 tab 时降频，成本可控）
   var ALLIANCE_TTL_MS = 120000;    // 盟信息缓存（聊天只需要 id / owner_player_id）
   var BLOCK_KEY = "eve_idle_chat_blocks";
   var DOCK_KEY = "eve_idle_chat_dock_open";   // 停靠条开合状态（本机偏好，非存档数据）
   var REPORT_REASONS = [["spam", "广告刷屏"], ["harass", "骚扰辱骂"], ["hate", "仇恨言论"], ["other", "其他"]];
 
+  var WORLD_CHANNEL = "world";
+  var ALLIANCE_TAB = "alliance";
+
+  /*
+   * 频道桶：每个频道一份独立的消息/游标/未读数。
+   * 🔴 为什么按桶存而不是共用一份 messages：切 tab 时若共用，切回来会看到
+   *   另一个频道的消息（id 游标与 channel 混用 ⇒ mergeMessages 按 id 去重会
+   *   把「同 id 不同频道」误判为重复而丢消息）。分桶后各频道历史互不污染。
+   */
+  function newBucket() {
+    return { messages: [], oldestId: null, newestId: 0, hasMore: false, unread: 0, primed: false };
+  }
+
   var state = {
     timer: null,
+    bgTimer: null,
     alliance: null,
     allianceAt: 0,
-    channel: "",
-    messages: [],        // 正序（服务端倒序返回后 reverse）
-    oldestId: null,      // 已加载的最小 id（加载更早的游标）
-    newestId: 0,
-    hasMore: false,
+    activeTab: ALLIANCE_TAB,  // 停靠条当前选中的频道 tab（世界 / 公会）
+    buckets: { world: newBucket(), alliance: newBucket() },
     blocked: [],
     reportTarget: null,  // 正在选举报原因的消息 id
     adminOpen: false,
     reports: [],
     sending: false,
     dockOpen: false,     // 底部停靠条是否展开
+    mountEl: null,       // 聊天挂载目标（联盟面板「聊天」tab 容器；null=停靠条 #chat-content）
     error: "",
     notice: ""
   };
+
+  // 当前生效的消息桶。联盟面板 tab 恒为公会频道（mountMode 语义），不跟停靠条串台。
+  function curBucket() {
+    return state.buckets[state.mountEl ? ALLIANCE_TAB : state.activeTab] || state.buckets[ALLIANCE_TAB];
+  }
+
+  function bucketOf(tab) {
+    return state.buckets[tab] || state.buckets[ALLIANCE_TAB];
+  }
 
   function esc(value) {
     return String(value == null ? "" : value).replace(/[&<>\"']/g, function (c) {
@@ -85,6 +107,11 @@
 
   function api() { return root.ChatAPI || null; }
 
+  // 渲染挂载点：联盟面板 tab 把容器注入 state.mountEl；否则回退停靠条 #chat-content。
+  function contentEl() {
+    return state.mountEl || document.getElementById("chat-content");
+  }
+
   // 盟信息（id + owner）缓存读取；TTL 过期或未取过时拉取。无盟返回 null。
   function ensureAlliance() {
     var A = root.AllianceApi;
@@ -93,32 +120,70 @@
     return A.getAlliance().then(function (alliance) {
       state.alliance = alliance || null;
       state.allianceAt = Date.now();
-      state.channel = alliance && alliance.id ? "alliance:" + alliance.id : "";
+      // 公会频道 id 随联盟信息派生；无盟则为空（公会 tab 随之不可用）。
+      bucketOf(ALLIANCE_TAB).channel = state.alliance && state.alliance.id ? "alliance:" + state.alliance.id : "";
+      // 当前停在公会 tab 但已无盟 ⇒ 退回世界频道，避免面板卡在空频道。
+      if (!state.mountEl && state.activeTab === ALLIANCE_TAB && !bucketOf(ALLIANCE_TAB).channel) {
+        state.activeTab = WORLD_CHANNEL;
+      }
       return state.alliance;
     }).catch(function () { return state.alliance || null; });
   }
 
-  function mergeMessages(rows) {
+  // 某 tab 对应的实际频道 id；空串表示该 tab 当前不可用（无盟 / 未登录）。
+  function channelOf(tab) {
+    if (tab === WORLD_CHANNEL) return WORLD_CHANNEL;   // 世界频道无需联盟
+    return bucketOf(ALLIANCE_TAB).channel;
+  }
+
+  // 频道展示名（tab 栏与频道线共用）。
+  function channelLabel(tab) {
+    if (tab === WORLD_CHANNEL) return "世界频道";
+    var a = state.alliance || {};
+    return (a.name || "联盟") + " · 频道 #" + (a.id || "");
+  }
+
+  // 当前渲染目标对应的 tab（联盟面板挂载时恒为公会）。
+  function currentTab() {
+    return state.mountEl ? ALLIANCE_TAB : state.activeTab;
+  }
+
+  // 合并新消息到**指定桶**。countOnly=true 时只累计未读、不写入消息列表
+  //（后台探测非当前频道用：只要知道"有几条新的"，不把消息拉进内存）。
+  function mergeMessages(rows, bucket, countOnly) {
+    bucket = bucket || curBucket();
     var known = {};
-    state.messages.forEach(function (m) { known[m.id] = true; });
+    if (!countOnly) bucket.messages.forEach(function (m) { known[m.id] = true; });
     var added = 0;
     (Array.isArray(rows) ? rows : []).forEach(function (row) {
-      if (!row || known[row.id]) return;
+      if (!row) return;
+      if (!countOnly && known[row.id]) return;
+      if (countOnly) {
+        // 已读水位线：不高于 newestId 的都是自己已渲染过的
+        if (bucket.primed && row.id <= bucket.newestId) return;
+        added++;
+        if (row.id > bucket.newestId) bucket.newestId = row.id;
+        return;
+      }
       known[row.id] = true;
-      state.messages.push(row);
-      if (row.id > state.newestId) state.newestId = row.id;
+      bucket.messages.push(row);
+      if (row.id > bucket.newestId) bucket.newestId = row.id;
       added++;
     });
-    if (added) state.messages.sort(function (a, b) { return a.id - b.id; });
+    if (added && !countOnly) bucket.messages.sort(function (a, b) { return a.id - b.id; });
     return added;
   }
 
   function loadLatest() {
-    if (!state.channel || !api()) return Promise.resolve();
-    return api().list(state.channel).then(function (res) {
-      mergeMessages(res && res.messages);
-      state.hasMore = (res && res.messages ? res.messages.length : 0) >= 30;
-      if (state.messages.length) state.oldestId = state.messages[0].id;
+    var bucket = curBucket();
+    var channel = channelOf(currentTab());
+    if (!channel || !api()) return Promise.resolve();
+    return api().list(channel).then(function (res) {
+      mergeMessages(res && res.messages, bucket, false);
+      bucket.hasMore = (res && res.messages ? res.messages.length : 0) >= 30;
+      if (bucket.messages.length) bucket.oldestId = bucket.messages[0].id;
+      bucket.unread = 0;
+      bucket.primed = true;
       state.error = "";
       render();
     }).catch(function (error) {
@@ -128,12 +193,14 @@
   }
 
   function loadMore() {
-    if (!state.channel || !state.oldestId || !api()) return;
-    return api().list(state.channel, state.oldestId).then(function (res) {
+    var bucket = curBucket();
+    var channel = channelOf(currentTab());
+    if (!channel || !bucket.oldestId || !api()) return;
+    return api().list(channel, bucket.oldestId).then(function (res) {
       var rows = res && res.messages || [];
-      mergeMessages(rows);
-      state.hasMore = rows.length >= 30;
-      if (state.messages.length) state.oldestId = state.messages[0].id;
+      mergeMessages(rows, bucket, false);
+      bucket.hasMore = rows.length >= 30;
+      if (bucket.messages.length) bucket.oldestId = bucket.messages[0].id;
       render();
     }).catch(function (error) {
       state.error = error && error.message || "加载更早消息失败";
@@ -141,14 +208,36 @@
     });
   }
 
+  // 切频道：清空当前桶的临时态（错误/举报选单/审核面板），载入目标频道。
+  // 未读数随 loadLatest 成功而归零。
+  function switchChannel(tab) {
+    if (tab !== WORLD_CHANNEL && tab !== ALLIANCE_TAB) return;
+    if (tab === state.activeTab) return;
+    if (tab === ALLIANCE_TAB && !channelOf(ALLIANCE_TAB)) {
+      state.notice = "加入联盟后才能使用公会频道";
+      render();
+      return;
+    }
+    state.activeTab = tab;
+    state.error = "";
+    state.notice = "";
+    state.reportTarget = null;
+    state.adminOpen = false;
+    state.reports = [];
+    render();
+    loadLatest();
+  }
+
   function sendMessage(text) {
-    if (state.sending || !state.channel || !api()) return;
+    var bucket = curBucket();
+    var channel = channelOf(currentTab());
+    if (state.sending || !channel || !api()) return;
     state.sending = true;
     state.error = "";
     render();
-    api().send(state.channel, text).then(function (res) {
+    api().send(channel, text).then(function (res) {
       state.sending = false;
-      if (res && res.message) mergeMessages([res.message]);  // 乐观上屏，轮询按 id 去重
+      if (res && res.message) mergeMessages([res.message], bucket, false);  // 乐观上屏，轮询按 id 去重
       // 清空输入框必须发生在 render() **之前**：render() 以 live DOM 值为真值来源，
       // 否则刚发出去的内容会被 restoreComposer 原样恢复回输入框。
       var live = document.getElementById("chat-input");
@@ -167,7 +256,10 @@
     if (!api()) return;
     api().report(messageId, reason).then(function () {
       state.reportTarget = null;
-      state.notice = "举报已提交，盟主将在审核面板处理";
+      // 世界频道无盟主处置通道（审核后置），文案如实说明只进留档。
+      state.notice = currentTab() === WORLD_CHANNEL
+        ? "举报已提交，平台会尽快核查处理"
+        : "举报已提交，盟主将在审核面板处理";
       render();
     }).catch(function (error) {
       state.error = error && error.message || "举报失败";
@@ -204,13 +296,27 @@
   function startPolling() {
     if (state.timer) return;
     state.timer = root.setInterval(pollTick, POLL_MS);
+    startBgPolling();
   }
 
   function stopPolling() {
     if (state.timer) { root.clearInterval(state.timer); state.timer = null; }
+    stopBgPolling();
+  }
+
+  // 后台未读探测：只对**非当前**频道拉最近 1 条（limit=1），用来点亮 tab 角标。
+  // 🔴 成本控制：12s 一次、limit=1、且仅在停靠条展开时跑；不写入消息列表。
+  function startBgPolling() {
+    if (state.bgTimer) return;
+    state.bgTimer = root.setInterval(bgPollTick, BG_POLL_MS);
+  }
+
+  function stopBgPolling() {
+    if (state.bgTimer) { root.clearInterval(state.bgTimer); state.bgTimer = null; }
   }
 
   function panelVisible() {
+    if (state.mountEl) return !!state.mountEl.offsetParent;  // 联盟 tab：容器在 DOM 且可见才轮询
     var panel = document.getElementById("chat-panel");
     return !!panel && panel.style.display !== "none";
   }
@@ -220,8 +326,30 @@
     if (!panelVisible()) { stopPolling(); return; }
     // 标签页后台：跳过本次拉取但保留定时器（回来即可续）。
     if (root.document && root.document.hidden) return;
-    if (!state.channel) return;
+    var channel = channelOf(currentTab());
+    if (!channel) return;
     loadLatest();
+  }
+
+  // 联盟面板 tab 内不探测未读（那里只有一个频道，tab 栏也不显示）。
+  function bgPollTick() {
+    if (state.mountEl) return;
+    if (!panelVisible()) return;
+    if (root.document && root.document.hidden) return;
+    if (!api()) return;
+    var other = state.activeTab === WORLD_CHANNEL ? ALLIANCE_TAB : WORLD_CHANNEL;
+    var channel = channelOf(other);
+    if (!channel) return;
+    var bucket = bucketOf(other);
+    api().list(channel, null, 1).then(function (res) {
+      var rows = res && res.messages || [];
+      if (!rows.length) return;
+      var added = mergeMessages(rows, bucket, true);
+      if (added) {
+        bucket.unread += added;
+        renderTabBar();     // 只刷 tab 栏，不动消息区（避免打断正在输入的玩家）
+      }
+    }).catch(function () { /* 后台探测失败静默：不打扰玩家 */ });
   }
 
   // ------------------------------------------------------------ 渲染 ----
@@ -254,6 +382,9 @@
   }
 
   function renderAdminSection(selfUid) {
+    // 🔴 盟主审核只对公会频道成立：世界频道无联盟归属，chat_admin_handle_report
+    //   会因 chat_alliance_id_of('world')=null 直接 raise ⇒ 这里显示按钮也是死的。
+    if (currentTab() !== ALLIANCE_TAB) return "";
     var alliance = state.alliance;
     var isOwner = !!(alliance && String(alliance.owner_player_id) === String(selfUid));
     if (!isOwner) return "";
@@ -287,7 +418,7 @@
   //   ⚠️ 由此确立一条约定：**render() 一律以「渲染那一刻的 live DOM 值」为真值来源**，
   //   任何「想清空输入框」的代码必须**在调用 render() 之前**清（见 sendMessage 成功分支）。
   function captureComposer() {
-    var el = document.getElementById("chat-input");
+    var el = contentEl() && contentEl().querySelector("#chat-input");
     if (!el) return null;
     return {
       value: el.value,
@@ -299,7 +430,7 @@
 
   function restoreComposer(snap) {
     if (!snap) return;
-    var el = document.getElementById("chat-input");
+    var el = contentEl() && contentEl().querySelector("#chat-input");
     if (!el) return;
     el.value = snap.value;
     if (!snap.focused) return;          // 焦点不在输入框时不抢焦点（例如玩家刚点了「屏蔽」）
@@ -307,14 +438,46 @@
     try { el.setSelectionRange(snap.start, snap.end); } catch (_) {}
   }
 
+  // 频道 tab 栏（仅停靠条形态；联盟面板 tab 内不显示——那里只有公会一个频道）。
+  // 形制参考同类游戏的频道切换条：横向 tab + 未读角标。
+  function tabBarHtml() {
+    if (state.mountEl) return "";
+    var tabs = [
+      { key: WORLD_CHANNEL, label: "世界", enabled: true },
+      { key: ALLIANCE_TAB, label: "公会", enabled: !!channelOf(ALLIANCE_TAB) }
+    ];
+    return '<div class="chat-tabs">' + tabs.map(function (t) {
+      var b = bucketOf(t.key);
+      var active = state.activeTab === t.key;
+      var cls = "chat-tab" + (active ? " active" : "") + (t.enabled ? "" : " disabled");
+      var badge = (!active && b.unread > 0) ? '<span class="chat-tab-badge">' + (b.unread > 99 ? "99+" : b.unread) + '</span>' : "";
+      return '<button class="' + cls + '" data-chat-tab="' + t.key + '"' + (t.enabled ? "" : " disabled") + '>'
+        + esc(t.label) + badge + '</button>';
+    }).join("") + '</div>';
+  }
+
+  // 只重画 tab 栏（后台未读探测用），不碰消息区与输入框。
+  function renderTabBar() {
+    if (state.mountEl) return;
+    var bar = document.querySelector("#chat-content .chat-tabs");
+    if (!bar) { render(); return; }
+    var content = contentEl();
+    var composerSnap = captureComposer();
+    bar.outerHTML = tabBarHtml();
+    restoreComposer(composerSnap);
+    if (content) bindChatEvents(content);
+  }
+
   function render() {
-    var content = document.getElementById("chat-content");
+    var content = contentEl();
     if (!content) return;
     var C = api();
     var selfUid = C ? C.getPlayerId() : "";
+    var bucket = curBucket();
+    var tab = currentTab();
 
     if (!C || !C.isAvailable()) {
-      content.innerHTML = '<div class="chat-blocked-line">聊天暂不可用：需要 Steam 登录状态（且已接入联盟服务）。</div>';
+      content.innerHTML = '<div class="chat-blocked-line">聊天暂不可用：需要登录状态（且已接入联盟服务）。</div>';
       stopPolling();
       return;
     }
@@ -327,21 +490,23 @@
       wasNearBottom = listEl.scrollHeight - listEl.scrollTop - listEl.clientHeight < 60;
     }
 
-    if (!state.channel) {
-      content.innerHTML = '<div class="chat-blocked-line">正在获取联盟信息…</div>';
+    if (!channelOf(tab)) {
+      content.innerHTML = tabBarHtml()
+        + '<div class="chat-blocked-line">' + (tab === WORLD_CHANNEL ? "世界频道暂不可用。" : "加入联盟后开放公会聊天。") + '</div>';
       return;
     }
 
-    var self = state.alliance || {};
-    var visible = state.messages.filter(function (m) { return !isBlocked(m.sender_uid) || String(m.sender_uid) === String(selfUid); });
-    var blockedCount = state.messages.length - visible.length;
+    var visible = bucket.messages.filter(function (m) { return !isBlocked(m.sender_uid) || String(m.sender_uid) === String(selfUid); });
+    var blockedCount = bucket.messages.length - visible.length;
 
-    var html = '<div class="chat-channel-line"><span>'
-      + esc(self.name || "联盟") + ' · 频道 #' + esc(self.id || "")
+    var html = tabBarHtml();
+
+    html += '<div class="chat-channel-line"><span>'
+      + esc(channelLabel(tab))
       + '</span><span>' + (state.sending ? "发送中…" : "") + '</span></div>';
 
     html += '<div class="chat-msg-list" id="chat-msg-list">';
-    if (state.hasMore) html += '<div class="chat-more-row"><button data-chat-more="1">加载更早的消息</button></div>';
+    if (bucket.hasMore) html += '<div class="chat-more-row"><button data-chat-more="1">加载更早的消息</button></div>';
     if (blockedCount > 0) html += '<div class="chat-blocked-line">已屏蔽 ' + blockedCount + ' 条被屏蔽玩家的消息（本机设置）</div>';
     html += visible.length
       ? visible.map(function (m) { return msgRow(m, selfUid); }).join("")
@@ -382,12 +547,13 @@
       var target = event.target.closest("button");
       if (!target) return;
 
-      var input = document.getElementById("chat-input");
+      var input = content.querySelector("#chat-input");
       if (target.id === "chat-send") {
         // 清空交给 sendMessage（必须在 render 之前清）；此处只负责取值。
         if (input && input.value.trim()) sendMessage(input.value.trim());
         return;
       }
+      if (target.dataset.chatTab) { switchChannel(target.dataset.chatTab); return; }
       if (target.dataset.chatMore) { loadMore(); return; }
       if (target.dataset.chatReport) { state.reportTarget = Number(target.dataset.chatReport); state.notice = ""; render(); return; }
       if (target.dataset.chatReason) { submitReport(Number(target.dataset.chatReasonTarget), target.dataset.chatReason); return; }
@@ -404,7 +570,7 @@
 
     content.addEventListener("keydown", function (event) {
       if (event.key !== "Enter") return;
-      var input = document.getElementById("chat-input");
+      var input = content.querySelector("#chat-input");
       if (input && event.target === input && input.value.trim()) {
         sendMessage(input.value.trim());   // 同上：清空由 sendMessage 负责
       }
@@ -473,17 +639,51 @@
     startPolling();
     ensureAlliance().then(function (alliance) {
       if (!state.dockOpen) return;          // 期间被收起：放弃本次渲染
-      if (!alliance) {
-        state.error = "";
-        render();
-        var content = document.getElementById("chat-content");
-        if (content) content.innerHTML = '<div class="chat-blocked-line">加入联盟后开放聊天。</div>';
-        return;
-      }
-      if (!state.messages.length) loadLatest();
+      // 无盟也能聊：ensureAlliance 已把 activeTab 退回世界频道，这里只需载入即可。
+      // （有盟时默认停在公会频道，行为与改动前一致。）
+      if (!channelOf(currentTab())) { state.error = ""; render(); return; }
+      if (!curBucket().messages.length) loadLatest();
       else { render(); loadLatest(); }
     });
   }
 
+  // ------------------------------------------------------------ 联盟面板 tab 挂载 ----
+  // 公会聊天作为「联盟」面板的「聊天」tab 嵌入（跨平台：Steam / TapTap 均可）。
+  // 与停靠条共用同一套 state / 轮询 / 渲染逻辑，只是渲染目标换成传入的容器。
+  function mountChatTab(container) {
+    if (!container) return;
+    state.mountEl = container;
+    var C = api();
+    if (!C || !C.isAvailable()) { render(); return; }
+    startPolling();
+    ensureAlliance().then(function (alliance) {
+      if (!state.mountEl || state.mountEl !== container) return;  // 期间已切走/卸载
+      // 联盟面板的「聊天」tab 语义上就是公会频道 ⇒ 无盟时如实提示，不回退世界频道。
+      if (!alliance || !channelOf(ALLIANCE_TAB)) {
+        render();
+        return;
+      }
+      if (!bucketOf(ALLIANCE_TAB).messages.length) loadLatest();
+      else { render(); loadLatest(); }
+    });
+  }
+
+  function unmountChatTab() {
+    state.mountEl = null;
+    stopPolling();
+    // Steam 端：停靠条仍可能开着，卸载 tab 后恢复停靠条轮询与渲染。
+    var P = root.PlatformRuntime;
+    if (P && typeof P.getPlatform === "function" && P.getPlatform() === "steam") {
+      var dock = document.getElementById("chat-dock");
+      if (dock && dock.classList.contains("is-open")) {
+        startPolling();
+        if (!curBucket().messages.length) ensureAlliance().then(function () { if (channelOf(currentTab())) loadLatest(); });
+        else { render(); loadLatest(); }
+      }
+    }
+  }
+
   root.syncChatDock = syncChatDock;
+  root.mountChatTab = mountChatTab;
+  root.unmountChatTab = unmountChatTab;
 })(typeof window !== "undefined" ? window : globalThis);

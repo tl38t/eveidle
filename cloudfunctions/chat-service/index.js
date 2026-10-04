@@ -63,6 +63,8 @@ function playerFromSession(event) {
 }
 
 function validChannel(value) {
+  // 世界频道（world）：公开匿名，Steam 首发。平台收口在前端 chat-api.js，此处不做平台判断。
+  if (value === "world") return true;
   return typeof value === "string" && /^alliance:[0-9]+$/.test(value);
 }
 

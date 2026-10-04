@@ -1233,23 +1233,24 @@
         .catch(function (error) { if (task.category === "equipment") inventory.push(equipmentId); else ResourceRegistry.add(root.gameState, resolveTaskMaterialId(task.materialId), amount); if (root.SaveManager && root.SaveManager.save) root.SaveManager.save(); button.disabled = false; if (msg) msg.textContent = error.message || "任务提交失败"; });
     }
     setTimeout(function () {
+      var mainPane = document.getElementById("alliance-pane-main") || content;
       // 云端同步成功后会再调一次 load()，而任务卡是 append 的：上一轮的 setTimeout 会
       // 在新的 innerHTML 重置之后才落地 ⇒ 面板并排堆出两张任务卡，其中旧的那张没有
       // 提交按钮（按 slot 匹配也可能落空），看上去就是「显示云端状态但点不了」。
       // 与身份卡同样处理：先移除上一轮的任务卡，保证面板只有一张。
-      Array.prototype.forEach.call(content.querySelectorAll(".alliance-task-card"), function (node) { node.remove(); });
-      content.insertAdjacentHTML("beforeend", taskHtml);
-      // 身份卡片：作为 content 的兄弟节点挂在 #alliance-state 之外，
+      Array.prototype.forEach.call(mainPane.querySelectorAll(".alliance-task-card"), function (node) { node.remove(); });
+      mainPane.insertAdjacentHTML("beforeend", taskHtml);
+      // 身份卡片：挂在 #alliance-pane-main 内（#alliance-state 之外），
       // 这样云端刷新（只替换 #alliance-state）不会把它冲掉；每次 load() 重建一次。
-      Array.prototype.forEach.call(content.querySelectorAll("#alliance-identity-card"), function (node) { node.remove(); });
+      Array.prototype.forEach.call(mainPane.querySelectorAll("#alliance-identity-card"), function (node) { node.remove(); });
       var identityState = root.gameState && root.gameState.alliance ? root.gameState.alliance : null;
       var identityOwnerId = (identityState && identityState.ownerPlayerId) || returnedOwner || "";
       var identityIsOwner = !!identityOwnerId && String(identityOwnerId) === String(playerId);
       var identityAllianceId = (identityState && identityState.allianceId) || returnedId || "";
-      content.insertAdjacentHTML("beforeend", renderIdentityCardHtml(identityIsOwner, identityOwnerId, identityAllianceId));
-      bindIdentityActions(content, identityAllianceId, identityIsOwner);
-      renderIdentityMergeWarning(content, playerId);
-      var taskCard = content.querySelector(".alliance-task-card");
+      mainPane.insertAdjacentHTML("beforeend", renderIdentityCardHtml(identityIsOwner, identityOwnerId, identityAllianceId));
+      bindIdentityActions(mainPane, identityAllianceId, identityIsOwner);
+      renderIdentityMergeWarning(mainPane, playerId);
+      var taskCard = mainPane.querySelector(".alliance-task-card");
       if (taskCard) {
         var title = taskCard.querySelector(".alliance-card-title");
         var hints = taskCard.querySelectorAll(".alliance-task-hint");
@@ -1296,7 +1297,15 @@
     var fallbackHtml = returnedCode
       ? '<div class="alliance-card"><div class="alliance-card-title">当前联盟（云端回传）</div><div class="alliance-name">' + esc(returnedCode) + '</div><div class="alliance-meta">联盟创建人：' + esc(returnedOwnerName || returnedOwner || "-") + ' · 成员：' + esc(returnedMembers || "0") + '/' + esc(returnedCap) + '<br>联盟 ID：' + esc(returnedId || "-") + '</div>' + returnedConstructionHtml + returnedEffectHtml + returnedBuildingHtml + memberHtml + '</div>'
       : '<div class="alliance-empty"><div class="alliance-empty-title">联盟数据在云端页面管理</div><div class="alliance-empty-sub">点击“打开云端联盟”查看、创建或加入联盟。返回游戏后会显示云端回传的联盟摘要。</div><div class="alliance-id">当前玩家 ID：' + esc(playerId) + '</div></div>';
-    content.innerHTML = '<div id="alliance-state">' + fallbackHtml + '</div>';
+    var chatOn = chatPlatformSupported();
+    content.innerHTML =
+      (chatOn ? '<div class="alliance-tabs" id="alliance-tabs" style="display:flex;gap:8px;margin:2px 0 12px;border-bottom:1px solid #1e354b;padding-bottom:8px;">'
+        + '<button class="alliance-tab" data-tab="main" id="alliance-tab-main" style="flex:0 0 auto;padding:6px 14px;background:rgba(47,129,168,.22);border:1px solid #2f81a8;color:#cfe9f5;border-radius:6px;cursor:pointer;font-size:13px;">联盟</button>'
+        + '<button class="alliance-tab" data-tab="chat" id="alliance-tab-chat" style="flex:0 0 auto;padding:6px 14px;background:transparent;border:1px solid #2a3a50;color:#7d92a8;border-radius:6px;cursor:pointer;font-size:13px;">聊天</button>'
+        + '</div>' : '')
+      + '<div class="alliance-tab-pane" id="alliance-pane-main"><div id="alliance-state">' + fallbackHtml + '</div></div>'
+      + (chatOn ? '<div class="alliance-tab-pane" id="alliance-pane-chat" style="display:none;"><div id="alliance-chat" class="chat-panel"></div></div>' : '');
+    if (chatOn) { bindAllianceTabs(content); if (root.unmountChatTab) root.unmountChatTab(); }
     function bindFallbackActions(box) {
       Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-upgrade"), function (button) {
         button.onclick = function () {
@@ -1308,6 +1317,40 @@
     bindFallbackActions(content);
     if (msg) msg.textContent = "正在连接云端联盟…";
     startCloudRefresh();
+  }
+
+  // 公会聊天 tab（跨平台：Steam / TapTap）。仅平台支持时显示「聊天」tab；
+  // 具体是否可用（已登录/已加联盟）由 ChatAPI + chat-render 在挂载时判定。
+  function chatPlatformSupported() {
+    var P = root.PlatformRuntime;
+    return !!(P && typeof P.getPlatform === "function") && (P.getPlatform() === "steam" || P.getPlatform() === "taptap");
+  }
+
+  function bindAllianceTabs(content) {
+    Array.prototype.forEach.call(content.querySelectorAll(".alliance-tab"), function (tab) {
+      tab.onclick = function () { switchAllianceTab(tab.getAttribute("data-tab"), content); };
+    });
+  }
+
+  function switchAllianceTab(name, content) {
+    var mainPane = document.getElementById("alliance-pane-main");
+    var chatPane = document.getElementById("alliance-pane-chat");
+    var tabMain = document.getElementById("alliance-tab-main");
+    var tabChat = document.getElementById("alliance-tab-chat");
+    var activeStyle = { background: "rgba(47,129,168,.22)", borderColor: "#2f81a8", color: "#cfe9f5" };
+    var idleStyle = { background: "transparent", borderColor: "#2a3a50", color: "#7d92a8" };
+    function apply(tab, st) { if (!tab) return; tab.style.background = st.background; tab.style.borderColor = st.borderColor; tab.style.color = st.color; }
+    if (name === "chat") {
+      if (mainPane) mainPane.style.display = "none";
+      if (chatPane) chatPane.style.display = "";
+      apply(tabMain, idleStyle); apply(tabChat, activeStyle);
+      if (root.mountChatTab) { var c = document.getElementById("alliance-chat"); if (c) root.mountChatTab(c); }
+    } else {
+      if (mainPane) mainPane.style.display = "";
+      if (chatPane) chatPane.style.display = "none";
+      apply(tabMain, activeStyle); apply(tabChat, idleStyle);
+      if (root.unmountChatTab) root.unmountChatTab();
+    }
   }
 
   root.renderAlliancePage = load;

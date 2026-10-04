@@ -48,10 +48,13 @@
     } catch (_) { return ""; }
   }
 
-  // 聊天可用性：仅 Steam 端 + 已有联盟会话令牌。
+  // 聊天可用性：Steam / TapTap 双端均可 + 已有联盟会话令牌。
+  // 公会聊天是成员制 + 盟主可处置（举报/禁言/删消息），非匿名公开频道，
+  // 因此国区口径下可接受（区别于世界聊天）。
   // 注意轮询/UI 层必须在 isAvailable()=false 时不启动任何定时器。
   function isAvailable() {
-    return platformName() === "steam" && !!sessionToken();
+    var p = platformName();
+    return (p === "steam" || p === "taptap") && !!sessionToken();
   }
 
   function unavailable() {

@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="./css/panels.css?v=76" data-page-node-id="EO0cvpdOJNMFJG5gNM6nea">
   <link rel="stylesheet" href="./css/combat.css?v=30" data-page-node-id="4tyvBwYTecWVPpekSSWQWZ">
 <link rel="stylesheet" href="./css/components.css?v=48" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
-<link rel="stylesheet" href="./css/chat.css?v=1" data-page-node-id="yegpT4axdagveBVNN2Jthl">
+<link rel="stylesheet" href="./css/chat.css?v=3" data-page-node-id="yegpT4axdagveBVNN2Jthl">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=28" data-page-node-id="Hg2oYi1jGpwcCdUfrpD2LM">
 <style id="starmap-collection-room-style">
 .starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
@@ -28,8 +28,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=61"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=37"></script>
+  <script src="./js/i18n/catalog-en.js?v=62"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=38"></script>
   <!-- steam-i18n-locales:start -->
   <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -43,11 +43,11 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=24"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=26"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ja.js?v=9"><\/script>');
-        document.write('<script src="./js/i18n/catalog-fr.js?v=9"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ko.js?v=9"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=25"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=27"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ja.js?v=10"><\/script>');
+        document.write('<script src="./js/i18n/catalog-fr.js?v=10"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ko.js?v=10"><\/script>');
       }
     })();
   </script>
@@ -2732,7 +2732,7 @@
   <script defer src="./js/data/achievement-locales-fr.js?v=1"></script>
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
-  <script defer src="./js/data/tutorial.js?v=13"></script>
+  <script defer src="./js/data/tutorial.js?v=22"></script>
   <script defer src="./js/data/changelog.js?v=176"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
@@ -2745,8 +2745,8 @@
   <script defer src="./js/systems/achievements.js?v=5"></script>
   <script defer src="./js/systems/production.js?v=15"></script>
   <script defer src="./js/core/resources.js?v=7"></script>
-  <script defer src="./js/systems/tutorial.js?v=11"></script>
-  <script defer src="./js/ui/tutorial-spotlight.js?v=1"></script>
+  <script defer src="./js/systems/tutorial.js?v=13"></script>
+  <script defer src="./js/ui/tutorial-spotlight.js?v=6"></script>
   <script defer src="./js/systems/manufacturing.js?v=10"></script>
   <script defer src="./js/systems/invention.js?v=12"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
@@ -2776,7 +2776,7 @@
   <script defer src="./js/systems/wormhole.js?v=42"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=180"></script>
+   <script defer src="./js/ui/shell-render.js?v=182"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
@@ -2795,9 +2795,9 @@
    <script defer src="./js/platform/alliance-policy.js?v=2"></script>
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
-  <script defer src="./js/ui/alliance-render.js?v=170"></script>
-  <script defer src="./js/platform/chat-api.js?v=1"></script>
-  <script defer src="./js/ui/chat-render.js?v=2"></script>
+  <script defer src="./js/ui/alliance-render.js?v=171"></script>
+  <script defer src="./js/platform/chat-api.js?v=2"></script>
+  <script defer src="./js/ui/chat-render.js?v=4"></script>
   <script defer src="./js/core/tick.js?v=31"></script>
   <script defer src="./js/core/offline.js?v=41"></script>
   <script defer src="./js/systems/offline-combat.js?v=64"></script>
