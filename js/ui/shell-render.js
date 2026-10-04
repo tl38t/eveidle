@@ -2636,15 +2636,26 @@ function renderSettingsPage() {
     if (!log.length) { clEl.style.display = "none"; }
     else {
       const latest = log[0];
-      let html = '<div class="changelog-head">本次更新内容 · V' + escapeAchievementText(latest.version) + '（' + escapeAchievementText(latest.date || "") + '）</div>';
-      (latest.sections || []).forEach(function (sec) {
-        html += '<div class="changelog-sec">';
-        html += '<div class="changelog-sec-title">' + escapeAchievementText(sec.heading || "") + '</div>';
-        html += '<ul class="changelog-list">';
-        (sec.items || []).forEach(function (it) { html += '<li>' + escapeAchievementText(it) + '</li>'; });
-        html += '</ul></div>';
-      });
-      clEl.innerHTML = html;
+      // 平台差异化：走 changelog.js 提供的过滤函数（与更新弹窗共用同一份逻辑）。
+      // 缺 platforms 的条目 = 全平台显示；整节被过滤空时自动隐藏。
+      const visibleSections = (typeof window.GAME_CHANGELOG_VISIBLE === "function")
+        ? window.GAME_CHANGELOG_VISIBLE(latest)
+        : (latest.sections || []).map(function (sec) {
+            return { heading: sec.heading || "", items: (sec.items || []).map(function (it) {
+              return typeof it === "string" ? it : String(it.text || ""); }) };
+          });
+      if (!visibleSections.length) { clEl.style.display = "none"; }
+      else {
+        let html = '<div class="changelog-head">本次更新内容 · V' + escapeAchievementText(latest.version) + '（' + escapeAchievementText(latest.date || "") + '）</div>';
+        visibleSections.forEach(function (sec) {
+          html += '<div class="changelog-sec">';
+          html += '<div class="changelog-sec-title">' + escapeAchievementText(sec.heading || "") + '</div>';
+          html += '<ul class="changelog-list">';
+          (sec.items || []).forEach(function (it) { html += '<li>' + escapeAchievementText(it) + '</li>'; });
+          html += '</ul></div>';
+        });
+        clEl.innerHTML = html;
+      }
     }
   }
   return display;
@@ -4943,7 +4954,7 @@ function renderHangarPanel() {
     const rawInst = (typeof getShipInstanceFromState === "function") ? getShipInstanceFromState(gameState, ship.instanceId) : null;
     const customName = (rawInst && rawInst.customName) ? rawInst.customName : "";
     const shownName = (typeof getShipInstanceDisplayName === "function" && rawInst) ? getShipInstanceDisplayName(rawInst) : ship.name;
-    const assignments = ship.assignments.map(item => `<button class="act-tag${item.active ? " on" : ""}${item.locked ? " unavailable" : ""}" data-ship-action="${item.actionKey}" data-sid="${ship.instanceId}" title="${item.lockedReason || (item.active ? "当前唯一任务，点击解除" : "分配至此任务")}" ${item.locked ? "disabled" : ""}>${item.name}</button>`).join("");
+    const assignments = ship.assignments.map(item => `<button class="act-tag${item.active ? " on" : ""}${item.locked ? " unavailable" : ""}" data-ship-action="${item.actionKey}" data-ship-id="${ship.shipId || ""}" data-sid="${ship.instanceId}" title="${item.lockedReason || (item.active ? "当前唯一任务，点击解除" : "分配至此任务")}" ${item.locked ? "disabled" : ""}>${item.name}</button>`).join("");
     const bonuses = getHangarBonusText(ship.bonuses);
     const enhancement = ship.enhancement;
     const materials = enhancement.materials.map(item => `<span class="enhance-material${item.enough ? "" : " short"}">${item.name} ${item.stock}/${item.quantity}</span>`).join("");
@@ -6309,8 +6320,15 @@ function installTutorialWidgetListeners() {
     var toastEl = null, hideTimer = null;
     function showDispatchBonus(payload) {
       if (!payload || !payload.resourceId) return;
-      var def = (window.ResourceRegistry && window.ResourceRegistry.getDefinition(payload.resourceId)) || {};
-      var name = def.name || payload.resourceId;
+      // 显示名必须走 getResourceDisplayName（内部经 DisplayNames 做 IP 去相似化，如 凡晶石 → 铁硅原矿）。
+      // 直接取 ResourceRegistry definition.name 会把内部 ID 原文漏到 UI 上（IP 泄漏 + 与全站文案不一致）。
+      var name = (typeof getResourceDisplayName === "function")
+        ? getResourceDisplayName(payload.resourceId)
+        : "";
+      if (!name) {
+        var def = (window.ResourceRegistry && window.ResourceRegistry.getDefinition(payload.resourceId)) || {};
+        name = def.name || payload.resourceId;
+      }
       var amount = Number(payload.quantity) || 0;
       var label = (window.I18N && window.I18N.t) ? window.I18N.t("资源调度中心 · 额外产出") : "资源调度中心 · 额外产出";
       if (!toastEl) {

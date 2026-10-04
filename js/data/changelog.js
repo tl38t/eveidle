@@ -5,9 +5,126 @@
      设置面板「关于」区域（当前版本下方）。
    - 新增版本时，在数组头部追加一项即可；标题版本号以本文件为准，
      不依赖 window.GAME_VERSION，避免构建注入滞后导致展示错位。
+
+   平台差异化条目（2026-10-04 起）：
+   - items 里每一条可以是**字符串**（全平台显示），也可以是
+     **{ platforms: ["steam"], text: "…" }**（仅列出的平台显示）。
+     缺 platforms 视为全平台 ⇒ 历史条目零改动，向后兼容。
+   - section 同样支持 platforms：整节都不匹配时该节不渲染；
+     节内若过滤后没有条目，整节一并隐藏（避免出现只有标题的空节）。
+   - 🔴 判定用 window.PlatformRuntime.getPlatform()（"steam" / "taptap"）；
+     取不到时按"全平台显示"处理，绝不因判定失败让玩家看到空日志。
    ================================================================ */
 
+(function (root) {
+  "use strict";
+
+  // 归一化 + 平台过滤。供 shell-render.js / changelog-popup.js 共用，
+  // 避免两处各写一份过滤逻辑导致行为分叉。
+  //
+  // 🔴 三条兜底纪律（缺任一条都会让玩家看到不完整 / 空的更新说明）：
+  //   1. 平台名统一转小写 —— "Steam"/"STEAM" 与 "steam" 视为同一个，
+  //      否则大小写差异会让整节被误判为"不适用"而整节消失；
+  //   2. 取不到平台（缺 PlatformRuntime / 抛错 / 空串）⇒ 平台记为 ""，
+  //      下面的可见性判定把 "" 当作"未知 ⇒ 不过滤"；
+  //   3. 平台**不在已知集合内**（如将来新增渠道、或 getPlatform 返回别的值）
+  //      同样按"未知 ⇒ 不过滤"处理。**兜底必须覆盖"未知值"而非只覆盖"空值"** ——
+  //      漏掉这一条，新增渠道的玩家会整节看不到更新说明。
+  //
+  // ⚠️ 白名单**故意只含 steam / taptap**：微信包实测完全不含聊天文件
+  //   （`_wx_mainjs_list.json` 里 `chat` 零命中）⇒ 微信端确实没有聊天功能，
+  //   它隐藏「一、聊天」是**正确行为**，不是兜底失效。
+  //   若将来给微信端接上聊天，把 "wechat" 加进这里并给对应条目标注 platforms。
+  var KNOWN_PLATFORMS = ["steam", "taptap"];
+
+  function normalizePlatform(v) {
+    return String(v == null ? "" : v).trim().toLowerCase();
+  }
+
+  // 归一化后的平台名；**不在已知集合内则返回 ""（视作未知 ⇒ 不过滤）**。
+  function currentPlatform() {
+    var p = "";
+    try {
+      var P = root.PlatformRuntime;
+      if (P && typeof P.getPlatform === "function") p = normalizePlatform(P.getPlatform());
+    } catch (e) { /* 忽略 */ }
+    return KNOWN_PLATFORMS.indexOf(p) >= 0 ? p : "";
+  }
+
+  function itemMatches(entry, platform) {
+    if (!entry) return false;
+    if (typeof entry === "string") return true;            // 旧格式：全平台
+    if (!entry.platforms || !entry.platforms.length) return true;  // 未标注：全平台
+    if (!platform) return true;                            // 平台未知 ⇒ 不过滤（兜底优先于精准）
+    return entry.platforms.map(normalizePlatform).indexOf(platform) >= 0;
+  }
+
+  // 返回可直接渲染的 [{ heading, items:[string] }]；已过滤掉空节。
+  function visibleSections(entry, platform) {
+    // 显式传入时也走同一套归一化 + 白名单，避免"调用方传了个未知平台名"就把节整节隐藏。
+    if (platform == null) platform = currentPlatform();
+    else {
+      platform = normalizePlatform(platform);
+      if (KNOWN_PLATFORMS.indexOf(platform) < 0) platform = "";
+    }
+    var out = [];
+    if (!entry || !entry.sections) return out;
+    entry.sections.forEach(function (sec) {
+      if (!sec) return;
+      if (sec.platforms && sec.platforms.length && platform
+          && sec.platforms.map(normalizePlatform).indexOf(platform) < 0) return;
+      var items = [];
+      (sec.items || []).forEach(function (it) {
+        if (itemMatches(it, platform)) items.push(typeof it === "string" ? it : String(it.text || ""));
+      });
+      if (items.length) out.push({ heading: sec.heading || "", items: items });
+    });
+    return out;
+  }
+
+  root.GAME_CHANGELOG_PLATFORM = currentPlatform();
+  root.GAME_CHANGELOG_VISIBLE = visibleSections;
+})(typeof window !== "undefined" ? window : globalThis);
+
 window.GAME_CHANGELOG = [
+  {
+    version: "1.0.7",
+    date: "2026-10-04",
+    sections: [
+      {
+        heading: "一、聊天",
+        items: [
+          {
+            platforms: ["steam"],
+            text: "新增世界频道：聊天面板顶部可切换频道，查看全服玩家的发言。"
+          },
+          {
+            platforms: ["steam"],
+            text: "聊天频道界面美化：频道切换改为下划线页签，发言人昵称与发言内容之间加入冒号分隔，举报与屏蔽按钮改为鼠标悬停时在该行显示，聊天面板标题改为「聊天」。"
+          },
+          {
+            platforms: ["taptap"],
+            text: "新增公会聊天：在「联盟大厅」页面顶部的「联盟 / 聊天」页签中切换到「聊天」即可查看与发送公会消息，无需再返回电脑端。"
+          }
+        ]
+      },
+      {
+        heading: "二、联盟",
+        items: [
+          "新增两种联盟建筑：虫洞谐振信标提升虫洞试炼与宝藏节点的额外掉落代币概率，每级 +3%；科研议会为联盟成员每日提供额外科研工时，每级 +0.5 小时，7 级时每日 +3.5 小时，领取后存入科研工时银行，离线也能累积投入。",
+          "联盟建筑最高等级由 5 级提高到 7 级，现有建筑可以继续向上升级。"
+        ]
+      },
+      {
+        heading: "三、新手引导",
+        items: [
+          "战斗训练任务现在会赠送战斗强化剂（伤害增强剂与护盾回充液），装配后 180 秒内火力与维修明显提升。",
+          "游戏界面中增加了高亮指引：装配、领取、编入战斗、装配增强剂、收取产物等此前没有高亮指向的步骤，现在会明确标出点击目标。",
+          "「建造并编入战斗」这类需要分两步完成的任务，高亮会随进度自动从建造台切换到目标舰船的「战斗」标记，不再停在已经完成的步骤上。"
+        ]
+      }
+    ]
+  },
   {
     version: "1.0.6",
     date: "2026-10-03",

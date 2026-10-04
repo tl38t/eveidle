@@ -1000,7 +1000,12 @@
         completionMode: task.completionMode,
         rewardTiming: task.rewardTiming,
         progressType: task.progressType,
+        // 冻结 target 透出：聚光动态选择器（task.spotlight 为函数时）需要读「各要几个」，
+        // 才能挑「下一个还没造够」的目标控件打环（I6 组件量产）。纯附加字段，零行为变更。
+        target: task.target || {},
         spotlight: task.spotlight || null,
+        // 辅助高亮选择器（I7「工业系也高亮」）：主环打船卡时给工业系线标签同步金光。
+        spotlightAux: task.spotlightAux || null,
         status,
         isLocked: status === "locked",
         isActive,

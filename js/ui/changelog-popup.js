@@ -60,7 +60,15 @@
   function buildBody(latest) {
     var html = '<div class="changelog-head">本次更新内容 · V' +
       esc(latest.version) + "（" + esc(latest.date || "") + "）</div>";
-    (latest.sections || []).forEach(function (sec) {
+    // 平台差异化：统一走 changelog.js 提供的过滤函数（缺 platforms = 全平台），
+    // 与设置页共用同一份逻辑，避免两处渲染出不同的日志内容。
+    var visible = (typeof window.GAME_CHANGELOG_VISIBLE === "function")
+      ? window.GAME_CHANGELOG_VISIBLE(latest)
+      : (latest.sections || []).map(function (sec) {
+          return { heading: sec.heading || "", items: (sec.items || []).map(function (it) {
+            return typeof it === "string" ? it : String(it.text || ""); }) };
+        });
+    visible.forEach(function (sec) {
       html += '<div class="changelog-sec">';
       html += '<div class="changelog-sec-title">' + esc(sec.heading || "") + "</div>";
       html += '<ul class="changelog-list">';

@@ -25,7 +25,7 @@
     { id: "prologue",    name: "序章·登记",   order: 1, speaker: "边疆调度员", summary: "从一包原料开始，造出属于自己的第一艘船，并完成登记。" },
     { id: "industrial",  name: "工业线·产能", order: 2, speaker: "潮歌", summary: "把矿石变成产能，把产能变成舰队。" },
     { id: "archaeology", name: "考古线·测绘", order: 3, speaker: "引航员",     summary: "在无人认领的遗迹里，找出还能用的东西。" },
-    { id: "combat",      name: "作战线·武装", order: 4, speaker: "引航员",     summary: "边疆不保护任何人，只保护还能开火的人。" }
+    { id: "combat",      name: "作战线·武装", order: 4, speaker: "武备官",     summary: "边疆不保护任何人，只保护还能开火的人。" }
   ];
 
   // 资源键常量（与 ResourceRegistry 命名空间严格对应）
@@ -282,7 +282,10 @@
       completionText: "工业线结束。",
       progressType: "assemble_ship",
       target: { shipId: "miner_frigate", count: 1 },
-      reward: withShips(rewardResource({ [R.ISK]: 50000 }), { "gas_frigate": { count: 1, fitting: "empty" } }),
+      reward: withBoosters(
+        withShips(rewardResource({ [R.ISK]: 50000 }), { "gas_frigate": { count: 1, fitting: "empty" } }),
+        { "high_temp_flux_n": 10, "mining_lubricant_n": 10 }
+      ),
       rewardTiming: "afterObjective",
       completionMode: "claim",
       unlocks: [],
@@ -386,10 +389,10 @@
     {
       id: "C1", chapter: "combat", order: 1,
       title: "武装方向",
-      speaker: "引航员",
-      briefing: "边疆不替你选打法，只发一次性的训练方向补贴。激光稳、导弹准、火炮狠，三条路只能选一条，选了就不能改——先把方向定下来。方向定了，配套的武器、护盾回充器，外加一瓶战斗强化剂（伤害增强剂 + 护盾回充液）会一并下发；武器和护盾回充器要装到启程级上，强化剂则留到战斗页，装进动作的两个增强剂槽——激活后 180 秒内火力与维修都会明显上涨，正好用来啃下第四波。把启程级指派进战斗位，你才算真有能开火的船。",
-      objectiveText: "在激光 / 导弹 / 火炮中选择一个训练方向（仅可一次）。",
-      completionText: "训练方向已锁定，对应的武器、护盾回充器与战斗强化剂（伤害增强剂 + 护盾回充液）一并发了下来。",
+      speaker: "武备官",
+      briefing: "「你要借钱干嘛？」\n「借钱买些舰载武器。」\n「那你打海盗赚赏金啊！」\n「我得先有武器才能打海盗吧？」\n「那就先花钱买啊！」\n「我没钱！」\n「那就先去打海盗赚赏金啊……行了，不开玩笑了，边疆区还是很支持这种自发清剿海盗的行为的，来填个表吧，看看你喜欢哪个。」\n边疆区武备官向你展示了一个列表，其中包括激光+护盾/导弹+装甲/火炮+结构三个方向的基础装备，以及一些增强剂。\n「喏，边疆区提供的装备，自己选选吧。」",
+      objectiveText: "在激光 / 导弹 / 火炮中选择一个方向（仅可一次）。（按方向发武器+护盾回充器+燃料300+弹药100）",
+      completionText: "训练方向已锁定。",
       progressType: "choose_combat_training",
       target: { tracks: ["laser", "missile", "cannon"], once: true },
       reward: rewardResource(null),
@@ -406,7 +409,7 @@
     {
       id: "C2", chapter: "combat", order: 2,
       title: "武器与护盾",
-      speaker: "引航员",
+      speaker: "武备官",
       briefing: "选了方向，就得把家伙装上船。去机库打开启程级的装备面板，把 C1 领到的那件武器和一台护盾回充器都装上去——护盾不能省，启程级总共只有四百点冗余。",
       objectiveText: "将 C1 选中的武器与 1 台 T1 护盾回充器安装到启程级。",
       completionText: "启程级不再是一艘只能挨打的空壳。",
@@ -421,8 +424,8 @@
     {
       id: "C3", chapter: "combat", order: 3,
       title: "首战编队",
-      speaker: "引航员",
-      briefing: "离登记站最近的几处一级普通星带，外围都是火力最弱的一批打手。在机库点启程级卡片上的战斗标签，把这艘船指派进战斗位，再挑一处这样的星带——第一仗就从这里打起。",
+      speaker: "武备官",
+      briefing: "「菜鸟！」武备官的声音在通讯器里响起，「第一次上阵吧？别紧张！这附近的海盗都是和你一样的弱鸡！」\n他自以为幽默地笑了两声。\n「摁住开火按钮，其他的交给火控计算机！别忘记装配增强剂！」",
       objectiveText: "将启程级编入战斗位，并选择任意一处真实的一级普通星带。",
       completionText: "启程级进入战斗位，作战序列第一次亮起红灯。",
       progressType: "assign_and_select_zone",
@@ -436,7 +439,7 @@
     {
       id: "C4", chapter: "combat", order: 4,
       title: "首杀",
-      speaker: "引航员",
+      speaker: "武备官",
       briefing: "打得响不算本事，打得出结果才算。这一趟不求多，先把一个目标切实击毁——开火链路通了，后面的波次才有得打。",
       objectiveText: "任务激活后，真实击毁敌人 1 个。",
       completionText: "第一个战果记上战绩表，你的船真的能开火了。",
@@ -451,7 +454,7 @@
     {
       id: "C5", chapter: "combat", order: 5,
       title: "首波清场",
-      speaker: "引航员",
+      speaker: "武备官",
       briefing: "星带里的散兵最弱也最磨人。先清掉任意一波，确认你的配装能稳定输出，战斗线就有第一份交代。",
       objectiveText: "真实战斗中清除任意一波敌人。",
       completionText: "一波清场，作战线有了第一份干净的交代。",
@@ -466,7 +469,7 @@
     {
       id: "C6", chapter: "combat", order: 6,
       title: "晋升战舰",
-      speaker: "引航员",
+      speaker: "武备官",
       briefing: "能连续清到第四波，说明这套配装已经站住了。在同一趟出击中咬住第四波——清掉它，调度中心按你的训练方向补一艘空配的正战舰，作战线就此结业。要是卡在第四波久攻不下，也别死磕：启程级高槽留有两格，再造一件同种武器装上，双炮齐射能更稳地啃下这最后一波。",
       objectiveText: "在同一次一级普通星带出击中，真实清除第 4 波（无需手动撤离，无需停止挂机）。",
       completionText: "第四波在火光里散开，一艘为战斗而生的空配战舰划归你名下。",
@@ -492,27 +495,92 @@
 
   // ---- 脉冲聚光目标：当前任务在目标页上要打环的「具体控件」CSS 选择器（缺省=该任务不打环）----
   // 消费方：js/ui/tutorial-spotlight.js（按当前任务选择器定位控件 → 画脉冲环）。
-  // 收录标准：只收「玩家下一步要点的那一个控件」明确、选择器稳定、且该控件在目标页「默认视图下即可见
-  // （无需先切子标签）」的任务。
-  // 纯等待型（C4/C5/C6 自动战斗、A4 等遗物）、按钮已在右上角部件里的（C1 三选一 / 各领取确认）、
-  // 多步流程型（I1 领+装+指派、C2 装备弹窗、I6 三种组件、I5 提取、A5 兑现）本轮一律不打环。
-  // ⚠️ P5/I7（总装启程级/拓岩级）本轮**故意不打环**：它们藏在「部件车间 → 舰船总装（拓岩级再退到工业系 class 标签）」
-  // 的嵌套子视图后面，默认视图下控件不可见 ⇒ 静态单选择器环够不到（会「看着像没生效」）。
-  // 正确解法是给这类任务加「子视图自动导航」（navigationSubtab 指向 舰船总装 / 工业系），属后续独立改动。
+  // 收录标准：只收「玩家下一步要点的那一个控件」明确、选择器稳定、且该控件可达的任务。
+  // 纯等待型（C4/C5/C6 自动战斗、A4 等遗物）、多步流程型（I1 领+装+指派、C2 装备弹窗、I5 提取、
+  // A5 兑现）本轮不打环。
+  // 关于「嵌套子视图」：环的页面门控是「目标元素存在且可见」——目标藏在子视图后时环自动隐藏（不指错），
+  // 玩家切到该子视图后环自动出现。所以只要玩家为完成任务必然会走到那个子视图，就仍然收录。
+  // ✅ P5 启程级入列（两段目标：造船 + 编入战斗位）：spotlight 给**数组** = 多个候选控件，
+  //    聚光按数组顺序取「第一个当前可见的」打环。玩家在总装页 → 环套造船卡；造完船进机库点战斗标签
+  //    → 战斗 act-tag 可见 → 环自动跟到战斗标签（combatWire 同款选择器）。数组非空 ⇒ 战斗标签在，
+  //    环就会出现（这正是「指派去战斗没有高亮」的修法）。
+  // ⚠️ I7 总装拓岩级：本轮**不打环**——拓岩级在「工业系」class 标签下（比 P5 多一层），玩家在总装默认
+  // 「护盾激光系」视图看不到它，环几乎不会触发，易误判为功能失效。要做需先给工业系加子视图自动导航。
+  //
+  // 【指派类任务的系统性修法（用户："考古这里也没有，检查下整个新手任务流程"）】
+  //  玩家实测发现所有「把启程级编入某个位」的任务，机库里的指派标签都没高亮。三个根因：
+  //   ① 指派选择器用的是 `.act-tag[data-ship-action="X"]`，**没有限定船**——机库有多条船时 querySelector
+  //      会命中**第一条**匹配的标签（可能是台剪级等别的船），玩家在启程级上根本看不到环。
+  //      ⇒ 已在 shell-render.js 的 act-tag 上补 `data-ship-id`（附加属性，零行为变更），
+  //        选择器统一写成 `.act-tag[data-ship-id="rookie_corvette"][data-ship-action="X"]` 精确锁定启程级。
+  //   ② 锁定标签（disabled / .unavailable，如无采矿激光的启程级点采矿）也被打了环——环指向一个点不动的
+  //      按钮，纯误导。⇒ spotlight.js 的可见性判定新增「排除 disabled 与 .unavailable/.locked」。
+  //   ③ 指派动作本身是「两段目标」的一部分（先装设备/造船，再指派），单点选择器覆盖不全。
+  //      ⇒ 统一用**数组多候选**，按序取第一个「可见且可点」的控件打环。
   const TASK_SPOTLIGHT = {
+    // —— 制造/总装（部件车间 · 舰船总装）——
     P2: '.shipeng-comp-card[data-comp="integrated_hull"]',
     P3: '.shipeng-comp-card[data-comp="power_core"]',
     P4: '.shipeng-comp-card[data-comp="functional_system"]',
+    P5: ['.act-tag[data-ship-id="rookie_corvette"][data-ship-action="combat"]',
+         '.shipeng-asm-card[data-ship="rookie_corvette"]'],
+    // I6 组件量产（综合舰体/动力控制/舰船功能 各 2 件）：**动态**选择器 ——
+    //   静态单选择器会死钉第一张卡，造完船体组件后环不跟着跳，玩家以为功能坏了。
+    //   这里按 target.components 的声明顺序，找**第一个还没造够**的组件打环；
+    //   三种都造够 ⇒ 返回 [] ⇒ 环自动隐藏（此时任务已可领奖，不需要再指引控件）。
+    //   progress 读数来自 TutorialSystem 显示态的 task.progress（= tsd.progress，逐组件 id 计）。
+    I6: function (task, progress) {
+      const comps = (task && task.target && task.target.components) || {};
+      const p = progress || {};
+      for (const id of Object.keys(comps)) {
+        const need = Number(comps[id]) || 0;
+        if (need <= 0) continue;
+        if ((Number(p[id]) || 0) < need) return '.shipeng-comp-card[data-comp="' + id + '"]';
+      }
+      return "";
+    },
+    // —— 采集 / 冶炼 / 行星 ——
     I2: "#btn-start-mine",
     I3: "#btn-start-smelt",
     I4: "#btn-deploy-planet",
-    A2: '.act-tag[data-ship-action="archaeology"]',
-    A3: "#archaeology-btn-start",
-    C3: '.act-tag[data-ship-action="combat"]'
+    // —— 指派类（机库 act-tag，全部锁定到启程级 rookie_corvette）——
+    I1: ['.act-tag[data-ship-id="rookie_corvette"][data-ship-action="mining"]'],
+    A2: ['.act-tag[data-ship-id="rookie_corvette"][data-ship-action="archaeology"]'],
+    C3: ['.act-tag[data-ship-id="rookie_corvette"][data-ship-action="combat"]', '#combat-action-booster-slots .action-booster-slot-empty'],
+    // —— 考古页 ——
+    A3: ["#archaeology-btn-start"],
+    // I7 拓岩级总装：**三段式动态**指引（玩家要先切页签、再切分类线，才看得见船卡）。
+    //   ① 子视图不在「舰船总装」⇒ 打「⚓ 舰船总装」页签；
+    //   ② 已在总装但技术线不在「工业系」（默认护盾激光系）⇒ 打「工业系」线标签；
+    //   ③ 两层都对 ⇒ 打拓岩级总装卡。
+    //   读 state.currentAction.{shipEngSubView, shipAsmLine}（selectors.js:1486-1488 同口径）。
+    //   三层任一控件不在渲染树上（子视图/分类被别的系统改掉）时往下顺延，取仍存在的那一层。
+    I7: function () {
+      const ca = (typeof gameState !== "undefined" && gameState && gameState.currentAction) || null;
+      if (ca && ca.shipEngSubView !== "assembly") return '.shipeng-subview-tab[data-subview="assembly"]';
+      if (ca && ca.shipAsmLine !== "industrial") return '.shipeng-class-tab[data-asmline="industrial"]';
+      return '.shipeng-asm-card[data-ship="miner_frigate"]';
+    }
+  };
+  // 辅助高亮（spotlightAux）：主环之外的**同步呼吸金光**，跟着环一起出现在次要导航控件上。
+  //   背景（用户实测反馈）：I7 第②段只在「不在工业系线」时出现——玩家一旦已在工业系线上，
+  //   主环直达船卡，「工业系」线标签永远得不到任何高亮，用户要求「工业系也高亮」。
+  //   ⇒ 主环打船卡时，给工业系标签挂 .tutorial-spotlight-aux 常驻金光（纯视觉，不拦点击）。
+  //   仅当主环落在第③段（船卡）时返回选择器；第①②段由主环本身负责，无需叠加。
+  const TASK_SPOTLIGHT_AUX = {
+    I7: function () {
+      const ca = (typeof gameState !== "undefined" && gameState && gameState.currentAction) || null;
+      if (ca && ca.shipEngSubView === "assembly" && ca.shipAsmLine === "industrial") {
+        return '.shipeng-class-tab[data-asmline="industrial"]';
+      }
+      return "";
+    }
   };
   for (let i = 0; i < TASKS.length; i++) {
     const sel = TASK_SPOTLIGHT[TASKS[i].id];
     if (sel) TASKS[i].spotlight = sel;
+    const aux = TASK_SPOTLIGHT_AUX[TASKS[i].id];
+    if (aux) TASKS[i].spotlightAux = aux;
   }
 
   const TutorialData = {
