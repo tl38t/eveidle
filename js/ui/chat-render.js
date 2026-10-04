@@ -40,6 +40,17 @@
     bgTimer: null,
     alliance: null,
     allianceAt: 0,
+    // 🔴 2026-10-04（TapTap 公会聊天卡在"加入联盟后开放"的根因）：
+    // AllianceApi.getAlliance() 是**四步串行**请求（成员 → 联盟 → 建筑 → 建设），
+    // 任一步失败即整体 reject。旧代码在 catch 里 `return state.alliance || null`
+    // —— 该值本来就是 null，等于**把真实失败原因静默吞掉**，于是：
+    //   state.alliance 恒为 null → 公会频道 id 派生不出 → 频道恒空
+    //   → 每 3s 轮询重试一次、每次都被吞 ⇒ 面板永久卡在"加入联盟后开放公会聊天"，
+    //   而同时联盟页（走**另一条"云端回传"链路**）能正常显示 LEA ⇒ 两处自相矛盾。
+    // 现在显式区分三种状态并把原因透出，避免"看起来是没加盟，实际是拉取失败"。
+    allianceFetchState: "idle",   // idle | ok | none | failed
+    allianceError: "",            // failed 时的可读原因（渲染到面板上，便于自助排查）
+    allianceRetryAt: 0,           // failed 后的退避重试时间戳（避免 3s 空转打服务端）
     activeTab: ALLIANCE_TAB,  // 停靠条当前选中的频道 tab（世界 / 公会）
     buckets: { world: newBucket(), alliance: newBucket() },
     blocked: [],
@@ -112,14 +123,26 @@
     return state.mountEl || document.getElementById("chat-content");
   }
 
+  // 拉取失败后的退避重试间隔（渐进，避免 3s 轮询把服务端打满）。
+  var ALLIANCE_RETRY_BACKOFF_MS = [4000, 8000, 15000, 30000];
+
   // 盟信息（id + owner）缓存读取；TTL 过期或未取过时拉取。无盟返回 null。
   function ensureAlliance() {
     var A = root.AllianceApi;
     if (!A || typeof A.getAlliance !== "function") return Promise.resolve(null);
     if (state.alliance && (Date.now() - state.allianceAt) < ALLIANCE_TTL_MS) return Promise.resolve(state.alliance);
+    // 🔴 退避：失败后不要立刻重试（此前 3s 轮询会连续打服务端且每次都被静默吞）。
+    if (state.allianceFetchState === "failed" && Date.now() < state.allianceRetryAt) {
+      return Promise.resolve(state.alliance || null);
+    }
     return A.getAlliance().then(function (alliance) {
-      state.alliance = alliance || null;
+      state.alliance = alliance || fallbackAllianceFromGameState() || null;
       state.allianceAt = Date.now();
+      // "确实没加盟"与"拉取失败"必须分开：前者是稳定事实（不该反复重试），
+      // 后者是瞬时故障（该退避重试）。旧代码把两者都归一成 alliance=null。
+      state.allianceFetchState = state.alliance ? "ok" : "none";
+      state.allianceError = "";
+      state.allianceErrorRetryCount = 0;
       // 公会频道 id 随联盟信息派生；无盟则为空（公会 tab 随之不可用）。
       bucketOf(ALLIANCE_TAB).channel = state.alliance && state.alliance.id ? "alliance:" + state.alliance.id : "";
       // 当前停在公会 tab 但已无盟 ⇒ 退回世界频道，避免面板卡在空频道。
@@ -127,7 +150,38 @@
         state.activeTab = WORLD_CHANNEL;
       }
       return state.alliance;
-    }).catch(function () { return state.alliance || null; });
+    }).catch(function (error) {
+      // 🔴 旧实现在此 `return state.alliance || null`（恒为 null）⇒ 失败被完全吞掉，
+      //   面板永远停在"加入联盟后开放"，玩家无从判断是没加盟还是网络失败。
+      // 现在：记录可读原因 + 退避，并让 render() 把原因显示出来。
+      state.allianceFetchState = "failed";
+      var msg = (error && (error.message || error.errMsg)) || String(error || "未知错误");
+      state.allianceError = String(msg).slice(0, 120);
+      var n = state.allianceErrorRetryCount || 0;
+      state.allianceErrorRetryCount = Math.min(n + 1, ALLIANCE_RETRY_BACKOFF_MS.length);
+      state.allianceRetryAt = Date.now() + ALLIANCE_RETRY_BACKOFF_MS[state.allianceErrorRetryCount - 1];
+      // 🔴 关键：即使直读失败，只要本地已有「云端回传」的联盟 id（TapTap 走云端网页
+      //   创建/加入后用 ?allianceId= 回传，alliance-render.js 已写入 gameState.alliance），
+      //   就仍然能派生频道 id ⇒ 公会聊天可用。只有两条路都拿不到才算真的不可用。
+      var fallback = fallbackAllianceFromGameState();
+      if (fallback) {
+        state.alliance = fallback;
+        bucketOf(ALLIANCE_TAB).channel = "alliance:" + fallback.id;
+      }
+      return state.alliance || null;
+    });
+  }
+
+  // 从 gameState.alliance 派生联盟信息（TapTap「云端回传」链路的共享出口）。
+  // AllianceApi.getAlliance() 走 PostgREST 直读 alliance_members；在 TapTap 端
+  // 该直读可能拿不到数据（会话 token / 网络 / 权限任一环节失败），
+  // 但联盟页此时已从 URL 回传参数写好了 gameState.alliance.allianceId
+  // （alliance-render.js:1090）。聊天只需 id + 名称，不重复请求。
+  function fallbackAllianceFromGameState() {
+    var a = root.gameState && root.gameState.alliance;
+    var id = a && (a.allianceId != null ? a.allianceId : a.id);
+    if (!id || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) return null;
+    return { id: Number(id), name: a.name || a.code || "联盟", owner_player_id: a.ownerPlayerId || "" };
   }
 
   // 某 tab 对应的实际频道 id；空串表示该 tab 当前不可用（无盟 / 未登录）。
@@ -141,6 +195,22 @@
     if (tab === WORLD_CHANNEL) return "世界频道";
     var a = state.alliance || {};
     return (a.name || "联盟") + " · 频道 #" + (a.id || "");
+  }
+
+  // 🔴 频道不可用时的提示文案（2026-10-04）。
+  // 旧实现只按"有没有盟"给一句「加入联盟后开放公会聊天。」，于是**拉取失败与
+  // 真的没加盟显示同一句话**——TapTap 玩家已加入 LEA 却看到该提示，无从判断真因。
+  // 现在按 allianceFetchState 区分，并附上重试中的说明与真实错误（供自助排查 / 反馈）。
+  function unavailableText(tab) {
+    if (tab === WORLD_CHANNEL) return "世界频道暂不可用。";
+    if (state.allianceFetchState === "failed") {
+      var retryIn = Math.max(0, Math.ceil((state.allianceRetryAt - Date.now()) / 1000));
+      return "公会聊天加载失败，正在重试"
+        + (retryIn > 0 ? "（" + retryIn + " 秒后）" : "…")
+        + "。若持续失败，请检查网络后重新进入联盟页。";
+    }
+    if (state.allianceFetchState === "idle") return "正在读取联盟信息…";
+    return "加入联盟后开放公会聊天。";
   }
 
   // 当前渲染目标对应的 tab（联盟面板挂载时恒为公会）。
@@ -492,7 +562,7 @@
 
     if (!channelOf(tab)) {
       content.innerHTML = tabBarHtml()
-        + '<div class="chat-blocked-line">' + (tab === WORLD_CHANNEL ? "世界频道暂不可用。" : "加入联盟后开放公会聊天。") + '</div>';
+        + '<div class="chat-blocked-line">' + unavailableText(tab) + '</div>';
       return;
     }
 
@@ -659,6 +729,8 @@
     ensureAlliance().then(function (alliance) {
       if (!state.mountEl || state.mountEl !== container) return;  // 期间已切走/卸载
       // 联盟面板的「聊天」tab 语义上就是公会频道 ⇒ 无盟时如实提示，不回退世界频道。
+      // 🔴 无论成功失败都要 render()：失败时把真实原因显示出来（见 unavailableText），
+      //   旧实现只 render 成功路径，导致失败后一直停在旧文案「加入联盟后开放」。
       if (!alliance || !channelOf(ALLIANCE_TAB)) {
         render();
         return;
