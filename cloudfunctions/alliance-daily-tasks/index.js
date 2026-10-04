@@ -230,7 +230,9 @@ async function upgradeBuilding(body) {
   const allianceId = Number(body.allianceId);
   if (!Number.isSafeInteger(allianceId) || allianceId <= 0) throw new Error("联盟 ID 无效");
   const buildingType = String(body.buildingType || "").trim().toLowerCase();
-  const allowedBuildingTypes = ["logistics_hub", "frontier_hq", "mission_hall", "combat_command", "refining_core"];
+  // 与 SQL RPC upgrade_alliance_building 的白名单保持一致（6 种）。
+  // 新增联盟建筑时此处必须同步，否则云端会先于 SQL 抛出「未知联盟建筑」。
+  const allowedBuildingTypes = ["logistics_hub", "frontier_hq", "mission_hall", "combat_command", "refining_core", "wormhole_resonance", "research_council"];
   if (allowedBuildingTypes.indexOf(buildingType) < 0) throw new Error("未知联盟建筑");
   const rows = await db("/v1/rdb/rest/rpc/upgrade_alliance_building", {
     method: "POST",
