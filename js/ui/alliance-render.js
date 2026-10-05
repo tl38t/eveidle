@@ -306,6 +306,18 @@
     overlay.onclick = function (event) { if (event.target === overlay) close(); };
   }
 
+  // 防「幽灵点击」：从云端页「返回游戏」导航回本页、或面板整块重绘后，浏览器可能把
+  // 上一次触摸的合成 click 投递到刚渲染到同一坐标的按钮上。升级/踢出/转让盟主都会
+  // 真正改动云端数据（转让甚至会立刻改变联盟归属），误触后果严重，因此统一加时间守卫：
+  // 按钮绑定（渲染）后 ADMIN_CLICK_GUARD_MS 内到达的 click 一律忽略。误吞一次点击只是
+  // 需要用户再点一下（按钮刚出现、人也没法立刻精准点中），而漏放一次误触可能转让盟主。
+  var ADMIN_CLICK_GUARD_MS = 700;
+  function markButtonBound(button) { if (button) button.__allianceBoundAt = Date.now(); }
+  function isGhostClick(button) {
+    var boundAt = Number(button && button.__allianceBoundAt) || 0;
+    return !!boundAt && (Date.now() - boundAt) < ADMIN_CLICK_GUARD_MS;
+  }
+
   function friendlyAllianceError(error) {
     var raw = error && error.message ? String(error.message) : String(error || "");
     var text = raw.toLowerCase();
@@ -527,7 +539,9 @@
   function bindAdminActions(box, alliance, members, msg) {
     if (!alliance || String(alliance.ownerId) !== String(root.AllianceApi.getPlayerId())) return;
     function runAction(button, action, confirmText, successText) {
+      markButtonBound(button);
       button.onclick = function () {
+        if (isGhostClick(button)) return;
         var target = button.getAttribute("data-target-player");
         showAllianceConfirm(action === "kick_member" ? "踢出联盟成员" : "转让盟主", confirmText, function () {
           button.disabled = true;
@@ -1349,7 +1363,9 @@
     }
     function bindFallbackActions(box) {
       Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-upgrade"), function (button) {
+        markButtonBound(button);
         button.onclick = function () {
+          if (isGhostClick(button)) return;
           openCloudRelay({ relayAction: "upgrade_building", allianceId: returnedId, buildingType: cloudBuildingType(button.getAttribute("data-building-type")) });
         };
       });
@@ -1357,8 +1373,11 @@
       // 走 adminGateway + x-alliance-session 会话令牌。TapTap 端该令牌已由 taptap-auth
       // 写入 sessionStorage（alliance-api.js:230），无需打开云端页即可执行管理操作。
       function relayAdminAction(button, action, confirmText, successText) {
+        markButtonBound(button);
         var target = button.getAttribute("data-target-player");
-        showAllianceConfirm(action === "kick_member" ? "踢出联盟成员" : "转让盟主", confirmText, function () {
+        button.onclick = function () {
+          if (isGhostClick(button)) return;
+          showAllianceConfirm(action === "kick_member" ? "踢出联盟成员" : "转让盟主", confirmText, function () {
           button.disabled = true;
           var tokenPromise = root.AllianceApi && typeof root.AllianceApi.getAllianceSessionToken === "function"
             ? Promise.resolve(root.AllianceApi.getAllianceSessionToken())
@@ -1387,7 +1406,8 @@
               if (msg) msg.textContent = message;
               showAllianceMessage("联盟操作失败", message, "error");
             });
-        });
+          });
+        }
       }
       Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-kick-btn"), function (button) {
         relayAdminAction(button, "kick_member", "确定要踢出这名成员吗？", "成员已踢出");
