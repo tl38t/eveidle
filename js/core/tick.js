@@ -182,37 +182,47 @@ function gameTick() {
       const now = Date.now();
       const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
+      // 方案 C（2026-10-05）：高 eff 下 actualTime→0，原「逐周期 emit mining:completed」每 tick 扇出上万次
+      // （下游 achievements 逐次求值 + implants 掷骰 + station:dispatchBonus 直发 DOM 飘字）致主线程卡顿。
+      // 改为：循环内保留逐周期独立随机与进度结转（保证掉落分布与离线一致、零债务螺旋），
+      // 把 ResourceRegistry.add 与所有 emit 外提为「每 tick 一次」，与 offline.js 批量口径同源。
+      const resourceId = (area.mode === "moon" ? "moon:" : "ore:") + area.ore;
+      let _mCycles = 0, _mOre = 0, _mRich = 0;
       while (gameState.currentAction.progress >= actualTime) {
         gameState.currentAction.progress -= actualTime;
-        const resourceId = (area.mode === "moon" ? "moon:" : "ore:") + area.ore;
-        // 计算本次产量：基础 1 + 双倍矿物概率翻倍
+        // 计算本次产量：基础 1 + 双倍矿物概率翻倍（逐周期独立掷骰，与离线一致）
         var quantity = 1;
         if (boosterEff && boosterEff.doubleMineralChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleMineralChance)) {
           quantity = 2;
         }
-        // 资源调度中心：勘探指令额外产出（不增 XP）
-        let dispatchBonus = 0;
-        if (typeof recordStationDispatchAction === "function") {
-          dispatchBonus = recordStationDispatchAction(gameState, "mining", 1);
-          if (dispatchBonus > 0) quantity += dispatchBonus;
-        }
         // 脑插·采矿双生：4% 概率本次产出×2（双倍矿物/调度加成之后）
         if (Math.random() < getImplantDoubleOutputChance(gameState, "mining")) quantity *= 2;
-        ResourceRegistry.add(gameState, resourceId, quantity);
+        _mOre += quantity;
         // 伴生富集改装件：概率额外获得铁硅原矿（独立奖励，不参与双倍/脑插/调度，不给 XP）
         if (typeof rollRigRichBonus === "function") {
           const richQty = rollRigRichBonus(gameState, "mining", area);
-          if (richQty > 0 && typeof GameEvents !== "undefined") {
-            GameEvents.emit("mining:richBonus", { area:area.name, resourceId, ore:area.ore, quantity:richQty }, { offline:false });
-          }
+          if (richQty > 0) _mRich += richQty;
         }
         // XP 始终只加一次（双倍不影响 XP）
         addSkillXpToState(gameState, "mining", area.baseXP, { job:"mining" }); actionCompleted = true;
-        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId, quantity:quantity, cycles:1, xp:area.baseXP }, { offline:false });
+        _mCycles++;
+        if (completeQueuedActionCycle()) { updateUI(); break; }
+      }
+      if (_mCycles > 0) {
+        // 资源调度中心·勘探指令：一次性累计采矿次数并达阈值额外产出（与离线一致，cycles 原子扣减阈值）
+        let dispatchBonus = 0;
+        if (typeof recordStationDispatchAction === "function") {
+          dispatchBonus = recordStationDispatchAction(gameState, "mining", _mCycles);
+          if (dispatchBonus > 0) _mOre += dispatchBonus;
+        }
+        ResourceRegistry.add(gameState, resourceId, _mOre);
+        if (_mRich > 0 && typeof GameEvents !== "undefined") {
+          GameEvents.emit("mining:richBonus", { area:area.name, resourceId, ore:area.ore, quantity:_mRich }, { offline:false });
+        }
+        GameEvents.emit("mining:completed", { area:area.name, mode:area.mode, resourceId, quantity:_mOre, cycles:_mCycles, xp:area.baseXP * _mCycles }, { offline:false });
         if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
           GameEvents.emit("station:dispatchBonus", { kind:"mining", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.miningCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });
         }
-        if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
       if (s.xp > 0) checkLevelUp("mining");
@@ -319,33 +329,42 @@ function gameTick() {
       const now = Date.now();
       const delta = gameDeltaSec(Math.min(5, (now - gameState.currentAction.lastProgressUpdate) / 1000));
       gameState.currentAction.progress += delta; gameState.currentAction.lastProgressUpdate = now;
+      // 方案 C（2026-10-05）：与 mining 同款——循环内保留逐周期独立随机与进度结转，
+      // 把 ResourceRegistry.add 与所有 emit 外提为每 tick 一次，根治高 eff 下的事件扇出卡顿。
+      const resourceId = "gas:" + area.gas;
+      let _gCycles = 0, _gQty = 0, _gRich = 0;
       while (gameState.currentAction.progress >= actualTime) {
         gameState.currentAction.progress -= actualTime;
-        const resourceId = "gas:" + area.gas;
         let quantity = 1;
-        let dispatchBonus = 0;
-        if (typeof recordStationDispatchAction === "function") {
-          dispatchBonus = recordStationDispatchAction(gameState, "gas", 1);
-          if (dispatchBonus > 0) quantity += dispatchBonus;
-        }
         // 脑插·采气双生：4% 概率本次产出×2（调度加成之后）
         if (Math.random() < getImplantDoubleOutputChance(gameState, "gas")) quantity *= 2;
         // 增强剂·采气产量翻倍（考古重制 Phase B · 考古蓝图产出）：chance 概率本次额外产出 +1（与离线 add 模型一致）
         if (boosterEff && boosterEff.doubleGasChance > 0 && (typeof rollDoubleMineral === "function") && rollDoubleMineral(boosterEff.doubleGasChance)) quantity += 1;
-        ResourceRegistry.add(gameState, resourceId, quantity);
+        _gQty += quantity;
         // 伴生富集改装件：概率额外获得粗制富勒烯（独立奖励，不参与双倍/脑插/调度，不给 XP）
         if (typeof rollRigRichBonus === "function") {
           const richQty = rollRigRichBonus(gameState, "gasHarvesting", area);
-          if (richQty > 0 && typeof GameEvents !== "undefined") {
-            GameEvents.emit("gas:richBonus", { area:area.name, resourceId, gas:area.gas, quantity:richQty }, { offline:false });
-          }
+          if (richQty > 0) _gRich += richQty;
         }
         addSkillXpToState(gameState, "gasHarvesting", area.baseXP, { job:"gasHarvesting" }); actionCompleted = true;
-        GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:quantity, cycles:1, xp:area.baseXP }, { offline:false });
+        _gCycles++;
+        if (completeQueuedActionCycle()) { updateUI(); break; }
+      }
+      if (_gCycles > 0) {
+        // 资源调度中心·勘探指令（采气）：一次性累计采气次数并达阈值额外产出（与离线一致）
+        let dispatchBonus = 0;
+        if (typeof recordStationDispatchAction === "function") {
+          dispatchBonus = recordStationDispatchAction(gameState, "gas", _gCycles);
+          if (dispatchBonus > 0) _gQty += dispatchBonus;
+        }
+        ResourceRegistry.add(gameState, resourceId, _gQty);
+        if (_gRich > 0 && typeof GameEvents !== "undefined") {
+          GameEvents.emit("gas:richBonus", { area:area.name, resourceId, gas:area.gas, quantity:_gRich }, { offline:false });
+        }
+        GameEvents.emit("gas:completed", { area:area.name, resourceId, quantity:_gQty, cycles:_gCycles, xp:area.baseXP * _gCycles }, { offline:false });
         if (dispatchBonus > 0 && typeof GameEvents !== "undefined") {
           GameEvents.emit("station:dispatchBonus", { kind:"gas", resourceId, quantity:dispatchBonus, counter:(gameState.station.dispatch ? gameState.station.dispatch.gasCount : 0), threshold:(typeof getStationDispatchThreshold === "function" ? getStationDispatchThreshold(gameState) : 0) }, { offline:false });
         }
-        if (completeQueuedActionCycle()) { updateUI(); break; }
       }
       if (gameState.currentAction.progress < 0.01 && gameState.currentAction.active) gameState.currentAction.progress = 0;
       if (s.xp > 0) checkLevelUp("gasHarvesting");
