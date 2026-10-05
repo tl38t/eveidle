@@ -1192,11 +1192,22 @@
       var statusClass = submitted ? "alliance-task-done" : (status === "材料足够，可提交" ? "alliance-task-ready" : "alliance-task-locked");
       return '<div class="alliance-task-row"><div><span class="alliance-task-slot">' + esc(task.slot) + '</span><strong>' + esc(task.materialName) + '</strong><div class="alliance-task-meta">' + esc(taskLabels[task.category] || task.category) + ' · 需求 ' + esc(task.requiredAmount) + ' · 奖励 ' + esc(task.rewardPoints) + ' 建设点</div></div><span class="' + statusClass + '">' + status + '</span></div>';
     }).join("") : '<div class="alliance-task-hint">尚未生成任务，请先打开一次云端联盟页面。</div>') + '<div class="alliance-task-hint">当前阶段只显示本地材料状态，任务提交验证将在下一步接入。</div></div>';
+    // 云端回传视图此前只渲染「盟主/成员」标签，漏掉了管理按钮 —— 导致盟主在
+    // TapTap（getAlliance() 直读失败、退回回传视图）看得到升级建筑、却找不到踢人/转让。
+    // 这里与实时卡 renderMemberCard 对齐：当前玩家即盟主时，给其他成员追加管理按钮。
+    var allianceIsOwner = !!returnedOwner && String(returnedOwner) === String(playerId);
     var memberHtml = returnedMemberRows.length
       ? '<div class="alliance-card-title">联盟成员</div><div class="alliance-members">' + returnedMemberRows.map(function (member) {
+          var isOwner = member.isOwner || String(member.playerId) === String(returnedOwner);
+          var actions = (!isOwner && allianceIsOwner)
+            ? '<button class="btn secondary alliance-returned-kick-btn" data-target-player="' + esc(member.playerId) + '" style="padding:4px 8px;margin-left:8px;">踢出</button>'
+              + '<button class="btn secondary alliance-returned-transfer-btn" data-target-player="' + esc(member.playerId) + '" style="padding:4px 8px;margin-left:8px;">转让</button>'
+            : '';
           return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
             '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + renderMemberStatsLine(member) + '</span>' +
-            '<span class="text-muted">' + ((member.isOwner || String(member.playerId) === String(returnedOwner)) ? "盟主" : "成员") + '</span></div>';
+            '<span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap;">' +
+              '<span class="text-muted">' + (isOwner ? "盟主" : "成员") + '</span>' + actions +
+            '</span></div>';
         }).join("") + '</div>'
       : '';
     function submitTaskFromCard(task, button) {
@@ -1315,11 +1326,74 @@
       // 避免云端收敛 / 切回联盟页触发的 load() 把聊天清空且不再回来。
       if (activeAllianceTab === "chat") switchAllianceTab("chat", content);
     }
+    // 重建云端回传视图的成员列表（踢人/转让成功后做乐观更新，避免「操作成功却还在列表里」的二次困惑）。
+    // 读取 load() 作用域内的 returnedMemberRows / returnedOwner / playerId，重新生成 .alliance-members 并重新绑定。
+    function rebuildReturnedMemberList(box) {
+      var container = box && box.querySelector(".alliance-members");
+      if (!container) return;
+      var ownerNow = returnedOwner;
+      var ownerIsYou = !!ownerNow && String(ownerNow) === String(playerId);
+      container.innerHTML = returnedMemberRows.map(function (member) {
+        var isOwner = member.isOwner || String(member.playerId) === String(ownerNow);
+        var actions = (!isOwner && ownerIsYou)
+          ? '<button class="btn secondary alliance-returned-kick-btn" data-target-player="' + esc(member.playerId) + '" style="padding:4px 8px;margin-left:8px;">踢出</button>'
+            + '<button class="btn secondary alliance-returned-transfer-btn" data-target-player="' + esc(member.playerId) + '" style="padding:4px 8px;margin-left:8px;">转让</button>'
+          : '';
+        return '<div class="alliance-member-row" style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 0;border-top:1px solid #1e354b;">' +
+          '<span style="min-width:0;overflow-wrap:anywhere;">' + esc(member.username || "Steam 玩家") + renderMemberStatsLine(member) + '</span>' +
+          '<span style="display:flex;align-items:center;gap:8px;flex:0 0 auto;white-space:nowrap;">' +
+            '<span class="text-muted">' + (isOwner ? "盟主" : "成员") + '</span>' + actions +
+          '</span></div>';
+      }).join("");
+      bindFallbackActions(box);
+    }
     function bindFallbackActions(box) {
       Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-upgrade"), function (button) {
         button.onclick = function () {
           openCloudRelay({ relayAction: "upgrade_building", allianceId: returnedId, buildingType: cloudBuildingType(button.getAttribute("data-building-type")) });
         };
+      });
+      // 云端回传视图的成员管理按钮（踢人/转让）：与实时卡 bindAdminActions 同机制，
+      // 走 adminGateway + x-alliance-session 会话令牌。TapTap 端该令牌已由 taptap-auth
+      // 写入 sessionStorage（alliance-api.js:230），无需打开云端页即可执行管理操作。
+      function relayAdminAction(button, action, confirmText, successText) {
+        var target = button.getAttribute("data-target-player");
+        showAllianceConfirm(action === "kick_member" ? "踢出联盟成员" : "转让盟主", confirmText, function () {
+          button.disabled = true;
+          var tokenPromise = root.AllianceApi && typeof root.AllianceApi.getAllianceSessionToken === "function"
+            ? Promise.resolve(root.AllianceApi.getAllianceSessionToken())
+            : (root.SteamAllianceSession && typeof root.SteamAllianceSession.getToken === "function" ? Promise.resolve(root.SteamAllianceSession.getToken()) : Promise.resolve(""));
+          tokenPromise.then(function (token) {
+            if (!token && root.SteamAllianceSession && typeof root.SteamAllianceSession.authenticate === "function") return root.SteamAllianceSession.authenticate().then(function (x) { return x.sessionToken; });
+            return token;
+          }).then(function (token) {
+            return fetch(adminGateway, {
+              method: "POST",
+              headers: { "Content-Type": "application/json", "x-alliance-session": token || "" },
+              body: JSON.stringify({ action: action, allianceId: returnedId, targetPlayerId: target })
+            });
+          }).then(function (response) { return readResponseJson(response).then(function (data) { if (!response.ok || !data.ok) throw new Error(data.error || "管理员操作失败"); return data; }); })
+            .then(function () {
+              if (msg) msg.textContent = successText;
+              // 乐观更新：踢人 ⇒ 从本地成员表移除；转让 ⇒ 把盟主标给目标（当前玩家失去管理按钮）。
+              if (action === "kick_member") returnedMemberRows = returnedMemberRows.filter(function (m) { return String(m.playerId) !== String(target); });
+              else if (action === "transfer_leader") returnedOwner = target;
+              rebuildReturnedMemberList(box);
+              startCloudRefresh();
+            })
+            .catch(function (error) {
+              button.disabled = false;
+              var message = friendlyAllianceError(error);
+              if (msg) msg.textContent = message;
+              showAllianceMessage("联盟操作失败", message, "error");
+            });
+        });
+      }
+      Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-kick-btn"), function (button) {
+        relayAdminAction(button, "kick_member", "确定要踢出这名成员吗？", "成员已踢出");
+      });
+      Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-transfer-btn"), function (button) {
+        relayAdminAction(button, "transfer_leader", "确定要把盟主转让给这名成员吗？转让后你将失去管理权限。", "盟主已转让");
       });
     }
     activeRender = { content: content, msg: msg, fallbackHtml: fallbackHtml, playerId: playerId, hasCloudReturn: params.has("allianceSnapshot"), bindFallbackActions: bindFallbackActions };
