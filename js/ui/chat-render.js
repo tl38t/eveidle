@@ -136,7 +136,7 @@
       return Promise.resolve(state.alliance || null);
     }
     return A.getAlliance().then(function (alliance) {
-      state.alliance = alliance || fallbackAllianceFromGameState() || null;
+      state.alliance = alliance || fallbackAlliance() || null;
       state.allianceAt = Date.now();
       // "确实没加盟"与"拉取失败"必须分开：前者是稳定事实（不该反复重试），
       // 后者是瞬时故障（该退避重试）。旧代码把两者都归一成 alliance=null。
@@ -163,7 +163,7 @@
       // 🔴 关键：即使直读失败，只要本地已有「云端回传」的联盟 id（TapTap 走云端网页
       //   创建/加入后用 ?allianceId= 回传，alliance-render.js 已写入 gameState.alliance），
       //   就仍然能派生频道 id ⇒ 公会聊天可用。只有两条路都拿不到才算真的不可用。
-      var fallback = fallbackAllianceFromGameState();
+      var fallback = fallbackAlliance();
       if (fallback) {
         state.alliance = fallback;
         bucketOf(ALLIANCE_TAB).channel = "alliance:" + fallback.id;
@@ -182,6 +182,22 @@
     var id = a && (a.allianceId != null ? a.allianceId : a.id);
     if (!id || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) return null;
     return { id: Number(id), name: a.name || a.code || "联盟", owner_player_id: a.ownerPlayerId || "" };
+  }
+
+  // TapTap 云端页回传时联盟 ID 也写在 URL 参数里（?allianceId=45&allianceCode=LEA）。
+  // gameState.alliance 的回写依赖 loadAfterIdentity 异步链路，可能晚于聊天挂载；
+  // URL 参数在页面加载瞬间即可读，作为第二兜底避免频道 ID 恒空。
+  function fallbackAllianceFromUrl() {
+    try {
+      var params = new URLSearchParams(root.location && root.location.search || "");
+      var id = params.get("allianceId");
+      if (!id || !Number.isSafeInteger(Number(id)) || Number(id) <= 0) return null;
+      return { id: Number(id), name: params.get("allianceCode") || "联盟", owner_player_id: params.get("allianceOwner") || "" };
+    } catch (_) { return null; }
+  }
+
+  function fallbackAlliance() {
+    return fallbackAllianceFromGameState() || fallbackAllianceFromUrl();
   }
 
   // 某 tab 对应的实际频道 id；空串表示该 tab 当前不可用（无盟 / 未登录）。

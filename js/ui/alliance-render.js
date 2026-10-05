@@ -22,6 +22,9 @@
   var renderedTaskCount = 0;
   var reloadedHallCount = -1;
   var activeCloudUrl = "";
+  // 联盟面板当前激活的子 tab（"main" / "chat"）。load() 每次整块重建 content.innerHTML 会清空聊天容器，
+  // 记录此状态可在重建后还原，避免云端收敛 / 切回联盟页触发的 load() 把聊天清空且不再回来。
+  var activeAllianceTab = "main";
 
   function esc(value) {
     return String(value == null ? "" : value).replace(/[&<>\"']/g, function (c) {
@@ -1305,7 +1308,13 @@
         + '</div>' : '')
       + '<div class="alliance-tab-pane" id="alliance-pane-main"><div id="alliance-state">' + fallbackHtml + '</div></div>'
       + (chatOn ? '<div class="alliance-tab-pane" id="alliance-pane-chat" style="display:none;"><div id="alliance-chat" class="chat-panel"></div></div>' : '');
-    if (chatOn) { bindAllianceTabs(content); if (root.unmountChatTab) root.unmountChatTab(); }
+    if (chatOn) {
+      bindAllianceTabs(content);
+      if (root.unmountChatTab) root.unmountChatTab();
+      // 整块重建后还原此前激活的子 tab：若停在「聊天」tab，自动重新挂载聊天并回填内容，
+      // 避免云端收敛 / 切回联盟页触发的 load() 把聊天清空且不再回来。
+      if (activeAllianceTab === "chat") switchAllianceTab("chat", content);
+    }
     function bindFallbackActions(box) {
       Array.prototype.forEach.call(box.querySelectorAll(".alliance-returned-upgrade"), function (button) {
         button.onclick = function () {
@@ -1333,6 +1342,7 @@
   }
 
   function switchAllianceTab(name, content) {
+    activeAllianceTab = name === "chat" ? "chat" : "main";
     var mainPane = document.getElementById("alliance-pane-main");
     var chatPane = document.getElementById("alliance-pane-chat");
     var tabMain = document.getElementById("alliance-tab-main");
