@@ -1384,7 +1384,7 @@ function equipCellHtml(e) {
   </div>`;
 }
 
-function openEquipEnhanceModal(itemId, level, instanceId) {
+function openEquipEnhanceModal(itemId, level, instanceId, shipyardCtx) {
   const display = getEquipmentEnhancementListDisplayState(gameState);
   // 单件已强化改装件卡按 cellInstanceId 精确定位；普通/聚合卡优先匹配无 cellInstanceId 的条目
   let cell = instanceId
@@ -1414,7 +1414,7 @@ function openEquipEnhanceModal(itemId, level, instanceId) {
       rigEnhancedCount: 0, rigAffixList: [], isRigEnhanced: false
     };
   }
-  equipEnhanceModal = { itemId, level };
+  equipEnhanceModal = { itemId, level, shipyardCtx: shipyardCtx || null };
   const eqEnt = EQUIPMENT_DB[cell.itemId];
   // 改装件不参与装备强化（安装即消耗、无 enhancementLevel）：隐藏升级段与强化按钮，只展示物品介绍与库存/出产信息
   const isRig = eqEnt && eqEnt.slot === "rig";
@@ -1464,6 +1464,13 @@ function openEquipEnhanceModal(itemId, level, instanceId) {
           <div class="eem-costs">${costHtml}${extraHtml}</div>
         </div>`;
   const enhanceBtnHtml = isRig ? "" : `<button class="btn primary eem-enhance" data-enhance-target="${targetRefAttr}" ${btnDisabled}>${btnLabel}</button>`;
+  // 2026-10-06 船坞装备管理：仅当从船坞「候选装备详情」打开（shipyardCtx 存在）时，额外显示「安装到当前槽位」。
+  // 目标槽取打开弹窗那一刻的 orbitSelectedIndex（openShipyardEquipDetail 捕获），点击后复用 hangar/setFittingSlot
+  // ——与直接点候选卡安装走同一 action、同一套失败原因提示，口径完全一致。
+  // 改装件不显示此按钮：改装件安装需走 fitRig/replaceFittedRig + 谐振确认，由候选卡点击负责，不在弹窗里复制。
+  const shipyardInstallHtml = (shipyardCtx && shipyardCtx.allowInstall && !isRig && cell.targetRef)
+    ? `<button class="btn eem-shipyard-install" data-eem-shipyard-install="1">📥 安装到当前槽位</button>`
+    : "";
 
   backdrop.innerHTML = `
     <div class="equip-enh-modal" role="dialog" aria-modal="true">
@@ -1494,6 +1501,7 @@ function openEquipEnhanceModal(itemId, level, instanceId) {
       </div>
       <div class="eem-foot">
         ${btnWarn}
+        ${shipyardInstallHtml}
         <div class="eem-foot-actions">
           <button class="btn eem-discard" data-discard-target="${targetRefAttr}" ${lockAttr}>丢弃</button>
           <button class="btn eem-dismantle" data-dismantle-target="${targetRefAttr}" ${lockAttr}>拆解</button>
@@ -1529,6 +1537,31 @@ function openEquipEnhanceModal(itemId, level, instanceId) {
   if (dismantleBtn) dismantleBtn.addEventListener("click", () => {
     const ref = decodeURIComponent(dismantleBtn.dataset.dismantleTarget);
     dismantleEquipmentFromModal(ref);
+  });
+  // 2026-10-06 船坞装备管理：弹窗内「安装到当前槽位」。用 openShipyardEquipDetail 捕获的目标槽上下文
+  // （shipyardCtx）与候选 ref（cell.targetRef）走 hangar/setFittingSlot，与点候选卡安装完全同源。
+  const shipyardInstallBtn = backdrop.querySelector("[data-eem-shipyard-install]");
+  if (shipyardInstallBtn) shipyardInstallBtn.addEventListener("click", () => {
+    const ctx = equipEnhanceModal && equipEnhanceModal.shipyardCtx;
+    if (!ctx || !ctx.allowInstall) return;
+    const ref = cell.targetRef;
+    if (!ref) { showToast("该装备已不在仓库，无法安装"); return; }
+    const result = dispatchGameAction(gameState, { type:"hangar/setFittingSlot", instanceId:ctx.shipId, slot:ctx.slotType, slotIndex:ctx.slotIndex, equipmentId:ref }, Date.now());
+    if (!result.changed && result.reason === "combat-active") showToast("战斗中不能调整当前舰船装备");
+    else if (!result.changed && result.reason === "incompatible-equipment") showToast("该装备只能安装在旗舰或超级旗舰上");
+    else if (!result.changed && result.reason === "equipment-unavailable") showToast("该装备不存在或已被使用");
+    else if (!result.changed && result.reason === "equipment-installed") showToast("该装备已安装在其他舰船上");
+    else if (!result.changed && result.reason === "npc-bound") showToast("该舰船已绑定军团 NPC，须先在军团面板卸下才能改装");
+    else if (!result.changed && result.reason === "titan-high-locked") showToast("该高槽为末日武器出厂占用，不可更换");
+    else if (!result.changed && result.reason === "slot-reserved") showToast("该槽位是精炼泵的管路接口，卸下对应精炼泵后方可使用");
+    else if (!result.changed && result.reason === "no-pipe-slot") showToast("安装失败：另两类槽需各有 1 个空闲格作为精炼泵管路接口");
+    else if (!result.changed && result.reason) showToast("操作失败：" + result.reason);
+    // 安装成功才关闭弹窗 + 关闭选装面板并整体刷新（失败时保持打开，让玩家看到原因）
+    if (result.changed) {
+      closeEquipEnhanceModal();
+      const panel = document.getElementById("equipSelectPanel"); if (panel) panel.classList.remove("active");
+      buildOrbit(); updateOrbitLibrary(); updateOrbitStats(); renderHangarPanel();
+    }
   });
 }
 
@@ -5429,6 +5462,39 @@ function equipmentTierText(eq) {
   return m ? "T" + m[1] : "";
 }
 // 当前槽对照条（列表顶部固定，始终可见）
+// 解析「打开强化弹窗」所需参数：普通装备按 itemId+level 聚合展示（必须传 instanceId=undefined），
+// 只有「已强化改装件实例」在强化列表里有每件一张卡的 cellInstanceId 定位。口径与 openEquipEnhanceModal 严格一致。
+function resolveEquipModalArgs(ref) {
+  const resolved = (typeof resolveEquipmentReference === "function") ? resolveEquipmentReference(gameState, ref) : null;
+  if (!resolved || !resolved.definition) return null;
+  const isRig = resolved.definition.slot === "rig";
+  const isEnhancedRigInstance = isRig && resolved.instance && Array.isArray(resolved.instance.affixes) && resolved.instance.affixes.length > 0;
+  return {
+    itemId: resolved.itemId,
+    level: Math.max(0, Number(resolved.enhancementLevel) || 0),
+    instanceId: isEnhancedRigInstance ? resolved.instance.instanceId : undefined,
+    isRig: isRig
+  };
+}
+
+// 船坞装备「详情」入口（2026-10-06）：打开仓库同款强化/拆解/丢弃弹窗。
+// 候选装备额外允许「安装到当前槽位」（复用 hangar/setFittingSlot，与点卡片安装同源同校验）。
+function openShipyardEquipDetail(detailBtn) {
+  if (orbitSelectedIndex === null) return;
+  const ref = decodeURIComponent(detailBtn.dataset.equipDetail || "");
+  if (!ref) return;
+  const args = resolveEquipModalArgs(ref);
+  if (!args) { showToast("无法读取该装备信息"); return; }
+  const display = getShipFittingDisplayState(gameState, orbitShipId);
+  const slot = display && display.orbitSlots.find(item => item.index === orbitSelectedIndex);
+  const from = detailBtn.dataset.detailFrom;
+  // 只有「候选 + 非改装件」才给安装按钮：改装件安装走 fitRig/replaceFittedRig 谐振流程，由卡片点击负责，不在弹窗里复制。
+  const shipyardCtx = (from === "candidate" && slot && !args.isRig)
+    ? { shipId: orbitShipId, slotType: slot.type, slotIndex: slot.slotIndex, allowInstall: true }
+    : null;
+  openEquipEnhanceModal(args.itemId, args.level, args.instanceId, shipyardCtx);
+}
+
 function renderEquipCurrentBar(display, slot) {
   const labelMap = { high: "高槽", mid: "中槽", low: "低槽", rig: "改装件" };
   const label = labelMap[slot.type] || "装备";
@@ -5455,7 +5521,11 @@ function renderEquipCurrentBar(display, slot) {
   const row2 = parts.join(' <span class="eq-sep">·</span> ');
   // 2026-09-26 改装件强化：已装的带词条改装件要在当前装备条里显示词条
   const affixRow = renderEquipAffixRow(equippedItem);
-  return '<div class="equip-current"><span class="ec-label">' + label + idx + ' · 当前</span>' +
+  // 2026-10-06 船坞装备管理：已装装备条加「详情」入口，复用仓库强化/拆解/丢弃弹窗。
+  // 已装载件的强化/拆解/丢弃在弹窗内自动置灰（stockCount===0 口径，见 openEquipEnhanceModal），
+  // 并显示「需先到船坞卸载」提示 ⇒ 规则不变，只是不用再离开船坞去仓库翻这件装备。
+  const detailBtn = '<button class="ec-detail-btn" data-equip-detail="' + encodeURIComponent(slot.equipmentRef || slot.equipmentId || "") + '" data-detail-from="installed" title="查看详情 / 强化 / 拆解">详情</button>';
+  return '<div class="equip-current"><span class="ec-head"><span class="ec-label">' + label + idx + ' · 当前</span>' + detailBtn + "</span>" +
     '<span class="ec-main">' + (curEq.icon || "") + " " + curEq.name + '</span>' +
     '<span class="ec-sub">' + row2 + "</span>" + affixRow + "</div>";
 }
@@ -5503,10 +5573,16 @@ function renderEquipOptionDuo(item, curEq, isRig) {
         + ((Number(a && a.value) || 0) * 100).toFixed(2) + "%</b>"
         + (a && a.quality ? '<i>' + a.quality + '</i>' : "")).join(' <span class="eq-sep">·</span> ') + "</span>"
     : "";
-  return '<button class="equip-option duo' + (fitted ? " is-fitted" : "") + '" data-equip="' + item.ids[0] + '">' +
+  // 2026-10-06 船坞装备管理：候选卡加「详情」入口，复用仓库强化/拆解/丢弃弹窗（可在船坞直接强化/拆解候选件）。
+  // 整块候选卡本身是 <button data-equip>（点击即安装），HTML 不允许嵌套 button ⇒ 详情按钮作为兄弟节点外套一层 flex 容器。
+  // 详情按钮的数据口径与已装条一致：data-equip-detail 透传候选 ref（裸件=itemId，强化改装件=instanceId），
+  // 由 openShipyardEquipDetail → resolveEquipModalArgs 解析出弹窗需要的 (itemId, level, cellInstanceId)。
+  const detailBtn = '<button class="eq-detail-btn" data-equip-detail="' + encodeURIComponent(item.ids[0]) + '" data-detail-from="candidate" title="查看详情 / 强化 / 拆解">详情</button>';
+  return '<div class="equip-option-wrap">' +
+    '<button class="equip-option duo' + (fitted ? " is-fitted" : "") + '" data-equip="' + item.ids[0] + '">' +
     '<span class="eq-row1"><span class="eq-icon">' + item.icon + '</span><span class="eq-name">' + item.name + "</span>" + badge + countHtml + "</span>" +
     '<span class="eq-row2">' + row2 + "</span>" + affixRow +
-    "</button>";
+    "</button>" + detailBtn + "</div>";
 }
 
 function openOrbitSelect(index) {
@@ -6420,6 +6496,10 @@ function installTutorialWidgetListeners() {
     });
   }
   const fittingOptions = document.getElementById("equipSelectOptions"); if (fittingOptions) fittingOptions.addEventListener("click", event => {
+    // 2026-10-06 船坞装备管理：「详情」分支必须前置——详情按钮是候选卡 <button data-equip> 的兄弟节点，
+    // 但已装条（equip-current）整体不在 [data-equip] 内，统一在此拦下并打开仓库同款强化/拆解/丢弃弹窗。
+    const detailBtn = event.target.closest("[data-equip-detail]");
+    if (detailBtn) { openShipyardEquipDetail(detailBtn); return; }
     const option = event.target.closest("[data-equip],[data-rig-destroy]"); if (!option || orbitSelectedIndex === null) return;
     const display = getShipFittingDisplayState(gameState, orbitShipId); const slot = display && display.orbitSlots.find(item => item.index === orbitSelectedIndex); if (!slot) return;
     let result;

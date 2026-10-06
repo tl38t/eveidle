@@ -366,10 +366,31 @@
   // 四个写操作已各自调 invalidateAllianceList() 兜住。返回值只读，调用方
   // （renderListView）不会改写结构。不要为了省请求把 limit 调小 —— 那会让玩家看不到
   // 有空位的老联盟，而列表页没有搜索功能。
-  function listAlliances() {
-    var cached = allianceListCache.list;
-    if (cached && (Date.now() - allianceListCache.at) < ALLIANCE_LIST_TTL_MS) return Promise.resolve(cached);
-    return authed("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&order=created_at.desc&limit=" + ALLIANCE_LIST_LIMIT)
+  // 分页支持（2026-10-06）：联盟加入列表此前写死 limit=ALLIANCE_LIST_LIMIT 且按 created_at.desc
+  // 截断，早期创建的大联盟落在 100 名外、玩家在加入列表里永远翻不到。offset>0 走翻页（绕过整
+  // 列表 TTL 缓存、直接请求），offset=0 仍走缓存保持原语义。
+  // 分页 / 排序 / 搜索（2026-10-06）。order 白名单：created_at.desc（最新，默认）|
+  // member_count.desc（人数，服务端排）；building_level（总建筑等级）服务端无该列，由前端对
+  // 已加载集合排序。search 走服务端 or(name.ilike.*q*,code.ilike.*q*)。仅「首页 + 默认排序 +
+  // 无搜索」命中整列表 TTL 缓存；排序 / 搜索变化必须绕过缓存重查。
+  function listAlliances(opts) {
+    opts = opts || {};
+    var offset = Number(opts.offset) || 0;
+    var limit = Number(opts.limit) || ALLIANCE_LIST_LIMIT;
+    var order = (opts.order === "member_count.desc") ? "member_count.desc" : "created_at.desc";
+    var search = (opts.search || "").toString().trim();
+    var cacheable = (offset === 0 && !search && order === "created_at.desc");
+    if (cacheable) {
+      var cached = allianceListCache.list;
+      if (cached && (Date.now() - allianceListCache.at) < ALLIANCE_LIST_TTL_MS) return Promise.resolve(cached);
+    }
+    var url = "/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&order=" + order + "&limit=" + limit + "&offset=" + offset;
+    if (search) {
+      // 转义 PostgREST/ilike 通配符（% _ *），避免搜索词破坏 filter 语法或被当模糊通配。
+      var q = search.replace(/[%_*]/g, "\\$&");
+      url += "&or=(name.ilike.*" + encodeURIComponent(q) + "*,code.ilike.*" + encodeURIComponent(q) + "*)";
+    }
+    return authed(url)
       .then(function (rows) {
         var alliances = (rows || []).map(mapAlliance);
         return Promise.all(alliances.map(function (alliance) {
@@ -385,7 +406,7 @@
         }));
       })
       .then(function (list) {
-        allianceListCache = { at: Date.now(), list: list };
+        if (cacheable) allianceListCache = { at: Date.now(), list: list };
         return list;
       });
   }

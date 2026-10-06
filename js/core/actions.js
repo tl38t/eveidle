@@ -2277,8 +2277,13 @@ const ShellStateActions = {
     // 泰坦总装（2026-09-28 真入队）：target 是哨兵、对全部泰坦项相同 ⇒ 合并判定必须再比 combo，
     // 否则「A 组合」与「B 组合」会被并成一项、按同一 count 连造（造出玩家没选的泰坦）。
     // 非泰坦项两侧 titanAsmCombo 均为 undefined ⇒ key 同为空串、比较恒等 ⇒ 既有行为零影响。
+    // 2026-10-06 修复（队列第4项）：无限(-1)与有限(>0)的同 target 项不再合并。
+    // 否则「无限富勒烯」后追加「500 富勒烯」会被并入无限项、视觉上等于没创建，
+    // 或反向把有限项拖成无限。合并仅允许「都无限」或「都有限」。
+    // last 可能为 null（队首插入 / 空队列），需先判空再读 count。
+    const sameInfiniteness = last ? ((last.count === -1) === (count === -1)) : false;
     if (last && last.skill === item.skill && last.target === item.target && (last.subAction || null) === (item.subAction || null) && (last.equipEngInputLevel || 0) === (item.equipEngInputLevel || 0)
-        && titanQueueComboKey(last.titanAsmCombo) === titanQueueComboKey(item.titanAsmCombo)) {
+        && titanQueueComboKey(last.titanAsmCombo) === titanQueueComboKey(item.titanAsmCombo) && sameInfiniteness) {
       last.count = last.count === -1 || count === -1 ? -1 : (Number(last.count) || 1) + count;
       if (queue.status.isRunning && queue.status.activeIndex === queue.items.length - 1) state.currentAction.batchRemaining = last.count;
       state._dirty = true;

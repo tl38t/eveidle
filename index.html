@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="./css/base.css?v=24" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
   <link rel="stylesheet" href="./css/panels.css?v=76" data-page-node-id="EO0cvpdOJNMFJG5gNM6nea">
   <link rel="stylesheet" href="./css/combat.css?v=30" data-page-node-id="4tyvBwYTecWVPpekSSWQWZ">
-<link rel="stylesheet" href="./css/components.css?v=48" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
+<link rel="stylesheet" href="./css/components.css?v=50" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
 <link rel="stylesheet" href="./css/chat.css?v=5" data-page-node-id="yegpT4axdagveBVNN2Jthl">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=28" data-page-node-id="Hg2oYi1jGpwcCdUfrpD2LM">
 <style id="starmap-collection-room-style">
@@ -28,8 +28,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=62"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=38"></script>
+  <script src="./js/i18n/catalog-en.js?v=63"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=39"></script>
   <!-- steam-i18n-locales:start -->
   <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -44,7 +44,7 @@
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
         document.write('<script src="./js/i18n/catalog-de.js?v=25"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=32"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=33"><\/script>');
         document.write('<script src="./js/i18n/catalog-ja.js?v=10"><\/script>');
         document.write('<script src="./js/i18n/catalog-fr.js?v=10"><\/script>');
         document.write('<script src="./js/i18n/catalog-ko.js?v=10"><\/script>');
@@ -2733,7 +2733,7 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=22"></script>
-  <script defer src="./js/data/changelog.js?v=179"></script>
+  <script defer src="./js/data/changelog.js?v=180"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=21"></script>
@@ -2771,12 +2771,12 @@
   <script defer src="./js/systems/combat.js?v=64"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
   <script defer src="./js/core/selectors.js?v=139"></script>
-  <script defer src="./js/core/actions.js?v=73"></script>
+  <script defer src="./js/core/actions.js?v=74"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=55"></script>
   <script defer src="./js/systems/wormhole.js?v=42"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=183"></script>
+   <script defer src="./js/ui/shell-render.js?v=184"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
@@ -2791,14 +2791,14 @@
   <script defer src="./js/ui/wormhole-rifts.js?v=5"></script>
   <script defer src="./js/ui/wormhole-map.js?v=30"></script>
    <script defer src="./js/data/alliance-building-config.js?v=6"></script>
-   <script defer src="./js/platform/alliance-api.js?v=16"></script>
+   <script defer src="./js/platform/alliance-api.js?v=17"></script>
    <script defer src="./js/platform/alliance-policy.js?v=2"></script>
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=3"></script>
-  <script defer src="./js/ui/alliance-render.js?v=174"></script>
+  <script defer src="./js/ui/alliance-render.js?v=176"></script>
   <script defer src="./js/platform/chat-api.js?v=2"></script>
   <script defer src="./js/ui/chat-render.js?v=6"></script>
-  <script defer src="./js/core/tick.js?v=31"></script>
+  <script defer src="./js/core/tick.js?v=32"></script>
   <script defer src="./js/core/offline.js?v=41"></script>
   <script defer src="./js/systems/offline-combat.js?v=64"></script>
   <script defer src="./js/systems/combat-log.js?v=7"></script>

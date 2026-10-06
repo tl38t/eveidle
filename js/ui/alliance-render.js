@@ -686,27 +686,215 @@
     });
   }
 
-  function renderListView(list) {
-    var rows = list.map(function (a) {
+  // 联盟加入列表分页状态（2026-10-06）：列表此前 limit=100 截断，早期创建的大联盟排在 100 名外
+  // 不可见。改为「首页一次拉 + 加载更多翻页累积」，offset/limit 透传给 AllianceApi.listAlliances()。
+  // done 由「本页返回条数 < 页大小」判定。注意：页大小须与 alliance-api.js 的 ALLIANCE_LIST_LIMIT
+  // 保持一致（当前均为 100），否则 done 误判导致漏翻或空翻。
+  // 联盟加入列表分页 / 排序 / 搜索状态（2026-10-06）。
+  //  - 翻页：limit=100 截断导致早期大联盟不可见，改为「首页一次拉 + 加载更多累积」。
+  //  - 排序：created_at.desc（最新，服务端）/ member_count.desc（人数，服务端）/ building_level
+  //    （总建筑等级，服务端无该列 ⇒ 前端对「已加载集合」按 sum(level) 重排；点加载更多拉全后最准）。
+  //  - 搜索：服务端 or(name.ilike,code.ilike)；搜索 / 非默认排序绕过整列表 TTL 缓存。
+  // 注意：页大小须与 alliance-api.js 的 ALLIANCE_LIST_LIMIT 一致（均为 100），否则 done 误判。
+  var allianceListState = { items: [], offset: 0, loading: false, done: false, order: "created_at.desc", search: "" };
+  var ALLIANCE_PAGE_SIZE = 100;
+
+  function resetAllianceListState() {
+    // 仅清分页/累积数据；order / search 由调用方显式设置，切换时不丢。
+    allianceListState.items = [];
+    allianceListState.offset = 0;
+    allianceListState.loading = false;
+    allianceListState.done = false;
+  }
+
+  function debounce(fn, ms) {
+    var t = null;
+    return function () {
+      var args = arguments, self = this;
+      if (t) clearTimeout(t);
+      t = setTimeout(function () { fn.apply(self, args); }, ms);
+    };
+  }
+
+  // 仅 building_level 需要前端排序（服务端无总建筑等级列）。按 sum(building.level) desc。
+  function sortListByBuildingLevel(list) {
+    return (list || []).slice().sort(function (a, b) {
+      var sum = function (x) { return (x.buildings || []).reduce(function (s, b2) { return s + (Number(b2.level) || 0); }, 0); };
+      return sum(b) - sum(a);
+    });
+  }
+
+  // 联盟列表样式（方案 B 双行卡片，2026-10-06 美化）：以 <style> 注入，避免改动全局 components.css。
+  // 分段排序控件 / 进度条 / 建筑 chips / 卡片行。id 唯一，重复注入无害。
+  var ALLIANCE_LIST_STYLE = '<style id="alliance-list-style">' +
+    '.toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}' +
+    '.search-wrap{position:relative;flex:1;min-width:160px;}' +
+    '.search-input{width:100%;padding:8px 10px;background:#0a1420;border:1px solid #24405c;border-radius:8px;color:#d8e2ee;font-size:13px;outline:none;font-family:inherit;}' +
+    '.search-input:focus{border-color:#1c5d8f;box-shadow:0 0 0 2px rgba(77,184,255,.12);}' +
+    '.search-input::placeholder{color:#5d7590;}' +
+    '.seg-label{color:#8fa8c4;font-size:12px;white-space:nowrap;margin-left:2px;}' +
+    '.seg{display:inline-flex;background:#0a1420;border:1px solid #24405c;border-radius:8px;padding:3px;gap:2px;}' +
+    '.seg-btn{border:none;background:transparent;color:#8fa8c4;padding:6px 14px;border-radius:6px;cursor:pointer;font-size:12.5px;font-family:inherit;display:inline-flex;align-items:center;gap:5px;white-space:nowrap;}' +
+    '.seg-btn:hover:not(.active){color:#d8e2ee;background:rgba(77,184,255,.08);}' +
+    '.seg-btn.active{background:#1c5d8f;color:#eaf6ff;font-weight:bold;box-shadow:inset 0 0 0 1px rgba(77,184,255,.45);}' +
+    '.seg-btn.active::after{content:"";width:0;height:0;border-left:4px solid transparent;border-right:4px solid transparent;border-top:5px solid currentColor;margin-left:1px;opacity:.9;}' +
+    '.rowB{border:1px solid #16304a;border-radius:9px;padding:10px 14px;background:rgba(10,20,32,.6);}' +
+    '.rowB+.rowB{margin-top:8px;}' +
+    '.rowB.full{opacity:.55;}' +
+    '.rowB-top{display:flex;align-items:center;gap:12px;}' +
+    '.a-name{display:flex;align-items:center;gap:8px;min-width:0;flex:1;}' +
+    '.a-name .nm{font-weight:bold;color:#d8e2ee;font-size:13.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
+    '.a-code{font-size:10.5px;color:#5d7590;border:1px solid #24405c;padding:1px 6px;border-radius:4px;letter-spacing:1px;flex-shrink:0;}' +
+    '.cap-wrap{display:flex;align-items:center;gap:8px;width:210px;flex-shrink:0;}' +
+    '.cap-num{font-size:11.5px;color:#8fa8c4;font-variant-numeric:tabular-nums;white-space:nowrap;}' +
+    '.cap-num b{color:#d8e2ee;font-weight:bold;}' +
+    '.cap-num.full-txt b{color:#ff6b6b;}' +
+    '.cap-num.near-full-txt b{color:#ffb84d;}' +
+    '.cap-bar{height:4px;background:#10233a;border-radius:2px;overflow:hidden;flex:1;}' +
+    '.cap-fill{height:100%;border-radius:2px;background:#1c5d8f;}' +
+    '.cap-fill.near{background:#ffb84d;}' +
+    '.cap-fill.full{background:#ff6b6b;}' +
+    '.rowB-bld{margin-top:8px;padding-top:8px;border-top:1px dashed #16304a;display:flex;gap:5px;flex-wrap:wrap;align-items:center;}' +
+    '.bld-sum{font-size:11px;color:#4db8ff;background:rgba(77,184,255,.1);border:1px solid rgba(77,184,255,.25);padding:2px 8px;border-radius:10px;font-weight:bold;white-space:nowrap;flex-shrink:0;}' +
+    '.bld-chip{font-size:11px;color:#8fa8c4;background:#0a1420;border:1px solid #16304a;padding:2px 7px;border-radius:10px;white-space:nowrap;}' +
+    '.bld-chip b{color:#d8e2ee;font-weight:normal;}' +
+    '.bld-more{font-size:11px;color:#5d7590;white-space:nowrap;}' +
+    '.join-btn{padding:7px 0;border-radius:7px;border:1px solid #1c5d8f;background:linear-gradient(180deg,#1d6aa8,#174f7e);color:#eaf6ff;font-size:12.5px;font-weight:bold;cursor:pointer;width:76px;font-family:inherit;letter-spacing:2px;flex-shrink:0;}' +
+    '.join-btn:hover{filter:brightness(1.15);}' +
+    '.join-btn:disabled{background:#0a1420;border-color:#24405c;color:#5d7590;cursor:default;letter-spacing:1px;}' +
+    '@media (max-width:520px){.rowB-top{flex-wrap:wrap;}.cap-wrap{width:100%;order:3;}.join-btn{width:64px;}.a-name{flex:1 1 60%;}}' +
+    '</style>';
+
+  function renderToolbar() {
+    return '<div class="alliance-card"><div class="toolbar">' +
+      '<div class="search-wrap"><input id="alliance-search-input" class="search-input" placeholder="搜索联盟名 / 代码" autocomplete="off"></div>' +
+      '<span class="seg-label">排序</span>' +
+      '<div class="seg">' +
+      '<button class="seg-btn alliance-sort-btn" data-order="created_at.desc" title="按创建时间（最新在前）">最新</button>' +
+      '<button class="seg-btn alliance-sort-btn" data-order="member_count.desc" title="按成员总数（最多在前）">人数</button>' +
+      '<button class="seg-btn alliance-sort-btn" data-order="building_level" title="按总建筑等级排序（基于已加载联盟，点“加载更多”纳入更多）">建筑等级</button>' +
+      '</div></div></div>';
+  }
+
+  function updateSortButtons(box) {
+    Array.prototype.forEach.call(box.querySelectorAll(".alliance-sort-btn"), function (b) {
+      var active = b.getAttribute("data-order") === allianceListState.order;
+      b.classList.toggle("active", active);
+      b.disabled = active;
+    });
+  }
+
+  // 排序 / 搜索切换：重置分页、重新拉首页、仅重渲「列表区」（不动 toolbar，保留搜索框焦点）。
+  function reloadListContent(box, msg) {
+    if (allianceListState.loading) return;
+    allianceListState.loading = true;
+    var btn = box.querySelector("#alliance-load-more");
+    if (btn) { btn.disabled = true; btn.textContent = "加载中…"; }
+    resetAllianceListState();
+    withTimeout(root.AllianceApi.listAlliances({ offset: 0, order: allianceListState.order, search: allianceListState.search }), 8000).then(function (list) {
+      list = list || [];
+      if (allianceListState.order === "building_level") list = sortListByBuildingLevel(list);
+      allianceListState.items = list;
+      allianceListState.offset = list.length;
+      allianceListState.loading = false;
+      allianceListState.done = list.length < ALLIANCE_PAGE_SIZE;
+      var membersEl = box.querySelector("#alliance-members-list");
+      if (membersEl) membersEl.innerHTML = renderListRows(list);
+      var titleEl = box.querySelector("#alliance-list-count");
+      if (titleEl) titleEl.textContent = "联盟列表（" + list.length + "）";
+      updateLoadMoreButton(box);
+      bindListActions(box, msg);
+      if (msg) msg.textContent = "已加载 " + list.length + " 个联盟";
+    }).catch(function (error) {
+      allianceListState.loading = false;
+      if (btn) { btn.disabled = false; btn.textContent = "加载失败，重试"; }
+      if (msg) msg.textContent = "加载失败：" + (error && error.message || error);
+    });
+  }
+
+  function renderListRows(list) {
+    var buildingNames = { frontier_hq: "总部", logistics_hub: "总部", mission_hall: "任务大厅", combat_command: "作战指挥部", refining_core: "冶炼中枢", wormhole_resonance: "谐振信标", research_council: "科研议会" };
+    return (list || []).map(function (a) {
       var cap = Math.max(10, Number(a.memberCap) || 10);
-      var full = Number(a.memberCount) >= cap;
+      var mc = Number(a.memberCount) || 0;
+      var full = mc >= cap;
+      var ratio = cap > 0 ? Math.min(100, Math.round(mc / cap * 100)) : 0;
+      var capCls = full ? "full" : (ratio >= 85 ? "near" : "");
+      var capNumCls = full ? "full-txt" : (ratio >= 85 ? "near-full-txt" : "");
       var buildings = Array.isArray(a.buildings) ? a.buildings : [];
-      var buildingNames = { frontier_hq: "总部", logistics_hub: "总部", mission_hall: "任务大厅", combat_command: "作战指挥部", refining_core: "冶炼中枢", wormhole_resonance: "谐振信标", research_council: "科研议会" };
-      var buildingText = buildings.map(function (b) { return (buildingNames[b.building_type] || b.building_type || "建筑") + " Lv." + (Number(b.level) || 0); }).join(" · ");
-      return '<div class="alliance-member-row"><span>' + esc(a.name || a.code) + '</span>' +
-        '<span class="text-muted">' + esc(a.memberCount) + '/' + esc(cap) + '</span>' +
-        '<span class="text-muted" style="flex:1;min-width:0;overflow-wrap:anywhere;">' + esc(buildingText || "建筑数据暂无") + '</span>' +
-        '<button class="btn secondary alliance-join-btn" data-alliance-id="' + esc(a.id) + '"' + (full ? " disabled" : "") + ' style="margin-left:auto;">' + (full ? "已满" : "加入") + '</button></div>';
+      var totalLv = buildings.reduce(function (s, b) { return s + (Number(b.level) || 0); }, 0);
+      var chips = buildings.map(function (b) {
+        var nm = buildingNames[b.building_type] || b.building_type || "建筑";
+        return '<span class="bld-chip">' + esc(nm) + ' <b>' + (Number(b.level) || 0) + '</b></span>';
+      }).join("");
+      if (!buildings.length) chips = '<span class="bld-more">建筑数据暂无</span>';
+      return '<div class="rowB' + (full ? " full" : "") + '">' +
+        '<div class="rowB-top">' +
+        '<div class="a-name"><span class="nm">' + esc(a.name || a.code) + '</span><span class="a-code">' + esc(a.code) + '</span></div>' +
+        '<div class="cap-wrap"><span class="cap-num ' + capNumCls + '"><b>' + mc + '</b>/' + cap + (full ? " 已满" : "") + '</span>' +
+        '<div class="cap-bar"><div class="cap-fill ' + capCls + '" style="width:' + ratio + '%"></div></div></div>' +
+        '<button class="join-btn alliance-join-btn" data-alliance-id="' + esc(a.id) + '"' + (full ? " disabled" : "") + '>' + (full ? "已满" : "加入") + '</button>' +
+        '</div>' +
+        '<div class="rowB-bld"><span class="bld-sum"><span>总 Lv.</span>' + totalLv + '</span>' + chips + '</div>' +
+        '</div>';
     }).join("");
-    var listHtml = list.length
-      ? '<div class="alliance-card-title">联盟列表（' + list.length + '）</div><div class="alliance-members">' + rows + '</div>'
-      : '<div class="alliance-task-hint">还没有联盟，创建第一个吧。</div>';
+  }
+
+  function renderCreateCard() {
     return '<div class="alliance-card"><div class="alliance-card-title">创建联盟</div>' +
       '<div style="display:flex;gap:8px;margin-bottom:8px;">' +
       '<input id="alliance-new-code" maxlength="3" placeholder="例如 ABC" autocomplete="off" style="flex:1;min-width:0;text-transform:uppercase;padding:6px 8px;background:#0a1420;border:1px solid #24405c;border-radius:6px;color:#d8e2ee;">' +
       '<button class="btn primary" id="alliance-create-btn">建立联盟</button></div>' +
-      '<div class="alliance-task-hint">代码为 1～3 位大写英文字母。</div></div>' +
-      '<div class="alliance-card">' + listHtml + '</div>';
+      '<div class="alliance-task-hint">代码为 1～3 位大写英文字母。</div></div>';
+  }
+
+  function renderListCard(list, done) {
+    var rows = renderListRows(list);
+    var cardBody = (list && list.length)
+      ? '<div class="alliance-card-title" id="alliance-list-count">联盟列表（' + list.length + '）</div>' +
+        '<div class="alliance-members" id="alliance-members-list">' + rows + '</div>' +
+        '<div style="margin-top:8px;text-align:center;"><button class="btn secondary" id="alliance-load-more"' + (done ? " disabled" : "") + '>' + (done ? "已显示全部" : "加载更多") + '</button></div>'
+      : '<div class="alliance-task-hint">还没有联盟，创建第一个吧。</div>';
+    return '<div class="alliance-card">' + cardBody + '</div>';
+  }
+
+  function updateLoadMoreButton(box) {
+    var btn = box && box.querySelector ? box.querySelector("#alliance-load-more") : null;
+    if (!btn) return;
+    if (allianceListState.done) { btn.textContent = "已显示全部"; btn.disabled = true; }
+    else { btn.textContent = "加载更多"; btn.disabled = false; }
+  }
+
+  // 加载更多：拉下一页、追加到现有列表容器（不重建创建卡、不丢输入），重绑 join / 自身按钮。
+  function loadMoreAlliances(box, msg) {
+    if (allianceListState.loading || allianceListState.done) return;
+    allianceListState.loading = true;
+    var btn = box.querySelector("#alliance-load-more");
+    if (btn) { btn.disabled = true; btn.textContent = "加载中…"; }
+    withTimeout(root.AllianceApi.listAlliances({ offset: allianceListState.offset, order: allianceListState.order, search: allianceListState.search }), 8000).then(function (page) {
+      page = page || [];
+      allianceListState.items = allianceListState.items.concat(page);
+      // building_level 排序需对「累积集合」整体重排（新页插入会破坏序）；其余排序服务端已排定，直接追加。
+      if (allianceListState.order === "building_level") allianceListState.items = sortListByBuildingLevel(allianceListState.items);
+      allianceListState.offset += page.length;
+      allianceListState.loading = false;
+      allianceListState.done = page.length < ALLIANCE_PAGE_SIZE;
+      var membersEl = box.querySelector("#alliance-members-list");
+      if (membersEl) membersEl.innerHTML = renderListRows(allianceListState.items);
+      var titleEl = box.querySelector("#alliance-list-count");
+      if (titleEl) titleEl.textContent = "联盟列表（" + allianceListState.items.length + "）";
+      updateLoadMoreButton(box);
+      bindListActions(box, msg);
+      if (msg) msg.textContent = "已加载 " + allianceListState.items.length + " 个联盟";
+    }).catch(function (error) {
+      allianceListState.loading = false;
+      if (btn) { btn.disabled = false; btn.textContent = "加载失败，重试"; }
+      if (msg) msg.textContent = "加载更多失败：" + (error && error.message || error);
+    });
+  }
+
+  function renderListView(list) {
+    return ALLIANCE_LIST_STYLE + renderCreateCard() + renderToolbar() + renderListCard(list || [], allianceListState.done);
   }
 
   function bindListActions(box, msg) {
@@ -741,6 +929,26 @@
         });
       };
     });
+    var loadMoreBtn = box.querySelector("#alliance-load-more");
+    if (loadMoreBtn) loadMoreBtn.onclick = function () { loadMoreAlliances(box, msg); };
+    var searchInput = box.querySelector("#alliance-search-input");
+    if (searchInput) {
+      searchInput.value = allianceListState.search;
+      searchInput.oninput = debounce(function () {
+        allianceListState.search = searchInput.value.trim();
+        reloadListContent(box, msg);
+      }, 300);
+    }
+    Array.prototype.forEach.call(box.querySelectorAll(".alliance-sort-btn"), function (b) {
+      b.onclick = function () {
+        var o = b.getAttribute("data-order");
+        if (o === allianceListState.order) return;
+        allianceListState.order = o;
+        updateSortButtons(box);
+        reloadListContent(box, msg);
+      };
+    });
+    updateSortButtons(box);
   }
 
   // 建筑数据（含任务大厅等级）到位后调用：若大厅等级给出的每日任务条数**大于**当前已渲染
@@ -790,8 +998,13 @@
           if (ctx.msg) ctx.msg.textContent = "已连接云端联盟";
         });
       }
-      return withTimeout(root.AllianceApi.listAlliances(), 8000).then(function (list) {
-        box.innerHTML = renderListView(list || []);
+      resetAllianceListState();
+      return withTimeout(root.AllianceApi.listAlliances({ offset: 0, order: allianceListState.order, search: allianceListState.search }), 8000).then(function (list) {
+        list = list || [];
+        allianceListState.items = list;
+        allianceListState.offset = list.length;
+        allianceListState.done = list.length < ALLIANCE_PAGE_SIZE;
+        box.innerHTML = renderListView(list);
         bindListActions(box, ctx.msg);
         setCloudButtonVisible(true);
         if (ctx.msg) ctx.msg.textContent = "已连接云端（未加入联盟）";

@@ -554,7 +554,11 @@
   /* ---- 强化弹窗 ---- */
   .equip-enh-modal-backdrop {
     position: fixed; inset: 0; background: rgba(4,8,14,0.62);
-    display: none; align-items: center; justify-content: center; z-index: 2200; padding: 16px;
+    /* 2026-10-06：2200 → 11500。本弹窗可从船坞装备大弹窗（#equipOrbitModal/.equip-modal-overlay,
+       position:fixed + z-index:10000）内打开，而该 overlay 是 stacking context：
+       子树 10000 整体盖过 body 下的兄弟节点，2200 会被整块压住、弹窗「被遮挡」。
+       11500 高于所有常规模态层（10000），低于 rig-resonance(12000)/错误边界(20000)，保持既有层级序。 */
+    display: none; align-items: center; justify-content: center; z-index: 11500; padding: 16px;
   }
   .equip-enh-modal {
     width: 440px; max-width: 94vw; max-height: 86vh; overflow-y: auto;
@@ -594,6 +598,9 @@
   .eem-foot { padding: 12px 16px; border-top: 1px solid #1c2632; display: flex; flex-direction: column; gap: 8px; }
   .eem-warn { color: #e0887e; font-size: 11px; }
   .eem-enhance { width: 100%; justify-content: center; }
+  /* 2026-10-06 船坞装备管理：弹窗内「安装到当前槽位」（仅从船坞候选件打开时出现） */
+  .eem-shipyard-install { width: 100%; justify-content: center; background: rgba(212,168,67,0.14); border: 1px solid rgba(212,168,67,0.45); color: #d4a843; }
+  .eem-shipyard-install:hover { background: rgba(212,168,67,0.24); border-color: rgba(212,168,67,0.7); }
   .eem-section { display: flex; flex-direction: column; gap: 8px; }
   .eem-sec-title { margin: 0; font-size: 11px; color: #6a7a8e; text-transform: uppercase; letter-spacing: .5px; font-weight: 600; }
   .eem-desc { font-size: 12.5px; line-height: 1.7; color: #b8c4d2; white-space: pre-line; word-break: break-word; }
@@ -751,6 +758,17 @@
   .equip-select-panel .unequip-btn:hover { background: rgba(40,55,75,0.75); }
   .equip-select-panel .eq-up { color: #6ee07a; }
   .equip-select-panel .eq-down { color: #e8645a; }
+  /* 2026-10-06 船坞装备管理：候选卡「详情」按钮的兄弟容器（整卡是 <button data-equip>，不能嵌套 button） */
+  .equip-select-panel .equip-option-wrap { display: flex; align-items: stretch; gap: 6px; margin-bottom: 6px; }
+  .equip-select-panel .equip-option-wrap .equip-option { flex: 1; min-width: 0; margin-bottom: 0; }
+  .equip-select-panel .eq-detail-btn { flex: 0 0 auto; align-self: stretch; padding: 0 10px; font-size: 11px; color: #d4a843; background: rgba(212,168,67,0.12); border: 1px solid rgba(212,168,67,0.4); border-radius: 6px; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+  .equip-select-panel .eq-detail-btn:hover { background: rgba(212,168,67,0.24); border-color: rgba(212,168,67,0.7); }
+  .equip-select-panel .eq-detail-btn:active { background: rgba(212,168,67,0.32); }
+  /* 已装装备条：标签行改为 flex，右侧放「详情」 */
+  .equip-select-panel .equip-current .ec-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .equip-select-panel .equip-current .ec-detail-btn { flex: 0 0 auto; padding: 2px 9px; font-size: 11px; color: #d4a843; background: rgba(212,168,67,0.12); border: 1px solid rgba(212,168,67,0.4); border-radius: 5px; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+  .equip-select-panel .equip-current .ec-detail-btn:hover { background: rgba(212,168,67,0.24); border-color: rgba(212,168,67,0.7); }
+  .equip-select-panel .equip-current .ec-detail-btn:active { background: rgba(212,168,67,0.32); }
   .equip-library { margin-top: 12px; padding: 10px 12px; background: rgba(0,0,0,0.2); border-radius: 6px; border: 1px solid rgba(26,37,53,0.1); }
   .equip-library .el-title { font-size: 10px; color: #4a5a6a; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 4px; }
   .equip-library .el-items { display: flex; gap: 6px; flex-wrap: wrap; }
