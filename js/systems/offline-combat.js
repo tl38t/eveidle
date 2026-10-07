@@ -2592,6 +2592,17 @@
       // 一次 settle 内这些量不会变化，故每段刷新一次即可，成本可忽略。
       if (s._l1a) s._l1a.epoch = -1;
       _stateRef = state;
+      // 虫洞战斗试炼冻结门修复（2026-10-06）：虫洞试炼经 LEGION_STARMAP_TRIAL.startBattleTrial 复用
+      // 与普通星带相同的 combat 会话并置 currentAction.skill="combat"，使下方冻结门误判为普通战斗而不冻结；
+      // 离线 simulateBelt 改写 combat.hp 会破坏 WORMHOLE.pollEngineNode 的「冻结血量指纹」判定，
+      // 导致 predictTrialWave 早收口失效、节点只能烧满 trial.endsAt(180s) → 离线虫洞耗时 ~30 分钟。
+      // 虫洞试炼由 WORMHOLE 引擎(pollEngineNode)按预判结算、奖励走 grantNodeRewards，离线不应再模拟 belt 战斗。
+      // 仅针对「虫洞 run 进行中且战斗试炼激活」精确冻结；普通星带/星图试炼仍依赖离线战斗模拟推进，不受影响。
+      const _LST_G = G("LEGION_STARMAP_TRIAL");
+      const _wormholeTrialActive = !!(
+        state.wormhole && state.wormhole.run && state.wormhole.run.state === "running"
+        && _LST_G && typeof _LST_G.isBattleTrialRunning === "function" && _LST_G.isBattleTrialRunning(state) === true
+      );
       if (s.startedAt === null) {
         s.startedAt = (typeof context.now === "number") ? context.now : (G("Date") ? G("Date").now() : 0);
         s.endedAtRef = { t: s.startedAt };
@@ -2605,7 +2616,7 @@
         const actKey = (state.currentAction && state.currentAction.skill) || null;
         const actActive = Boolean(state.currentAction && state.currentAction.active);
         const dsPendingOffline = actKey === "combat" && Boolean(c.deathspaceChainPending);
-        const actionDrivesCombat = (actKey === "combat" && actActive) || dsPendingOffline;
+        const actionDrivesCombat = ((actKey === "combat" && actActive) || dsPendingOffline) && !_wormholeTrialActive;
         s.activeAtStart = (Boolean(c.active) || Boolean(c.deathspaceChainPending)) && actionDrivesCombat;
         s.mode = c.mode || (c.deathspaceChainPending ? "deathspace" : "belt");
         if (c.active || c.deathspaceChainPending) {
@@ -2619,6 +2630,9 @@
         }
       }
       if (!s.activeAtStart) { s.stopReason = "inactive"; return 0; } // 离线前无有效战斗，跳过；段内时间已由生产结算接管
+      // 虫洞战斗试炼进行中：每段冗余冻结（覆盖试炼在离线中途开始的情形；首段由 s.activeAtStart 已冻结）。
+      // 冻结即不跑 simulateBelt，保持 combat.hp 与 pollEngineNode 预判指纹一致，节点得以按 battlePred 早收口。
+      if (_wormholeTrialActive) { s.stopReason = "trial-frozen"; if (typeof context.now === "number") s.endedAt = context.now; return 0; }
       const nowRef = s.endedAtRef;
       // M6a：注入权威虚拟时钟引用（`nowRef.t` 在模拟中按波推进）。纯引用赋值，不改任何状态。
       if (m6aEnabled()) _m6aNowRef = nowRef;

@@ -591,17 +591,17 @@ function gameTick() {
           if (a && typeof a.id === "string" && a.id) return a.id;
           return "未知文物";
         });
-        arch.log.push({ time:now, site:site.name, success:true, artifacts:_names });
+        pushArchLog(arch, { time:now, site:site.name, success:true, artifacts:_names });
       } else {
         if (result.destroyed) {
-          arch.log.push({ time:now, site:site.name, success:false, destroyed:true, backlash:result.backlash });
+          pushArchLog(arch, { time:now, site:site.name, success:false, destroyed:true, backlash:result.backlash });
           // 维修态已写入 arch.repairsByInstanceId[instanceId]（resolveArchaeologyCycle 内）；不再使用全局 resumeAfterRepair。
           gameState.resumeAfterRepair = null;
         } else {
           const rigMods = (typeof getRigModifiers === "function" && instance) ? (getRigModifiers(gameState, instance) || {}) : {};
           const interferenceSeconds = getArchaeologyInterferenceSeconds(site, rigMods.archaeologyInterferenceReduction);
           arch.interferenceUntil = now + interferenceSeconds * 1000;
-          arch.log.push({ time:now, site:site.name, success:false, backlash:result.backlash });
+          pushArchLog(arch, { time:now, site:site.name, success:false, backlash:result.backlash });
         }
       }
       gameState._dirty = true;

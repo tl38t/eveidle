@@ -1086,6 +1086,8 @@ function getArchaeologyDisplayState(state, now, options) {
       repairRemaining: repairing ? Math.ceil((repairEntry.until - nowMs) / 1000) : 0,
       interference,
       interferenceRemaining: interference ? Math.ceil((arch.interferenceUntil - nowMs) / 1000) : 0,
+      // 只回显最近 12 条（由 archaeology-render.js:432 渲染「最近行动」）。
+      // 存储侧上限为 ARCH_LOG_LIMIT = 20（pushArchLog 封顶），故此处 slice(-12) 恒不丢玩家可见信息。
       log: (arch.log || []).slice(-12).reverse(),
       // 燃料累计器（UI 直观展示）
       fuelRemainder,
@@ -1106,7 +1108,30 @@ function getArchaeologyDisplayState(state, now, options) {
   };
 }
 
+// ---- 考古行动日志：存储侧容量治理（2026-10-07） ----
+// state.archaeology.log 历史上只有写入（tick.js 在线周期结算）没有上限，
+// 1000 条就占约 100 KB JSON，且本地存档为 XOR+base64 明文（persistence.js:75），
+// 实际落地 ×4/3；长期在线挂机会持续膨胀直至撞 localStorage 配额导致静默丢档。
+// 治理口径：
+//   ① 存储上限 ARCH_LOG_LIMIT = 20 条（丢弃最旧的）
+//   ② UI 渲染窗口为最近 12 条（getArchaeologyDisplayState 内 slice(-12)），
+//      20 > 12 ⇒ 本次封顶对玩家零可见影响
+//   ③ 老存档在 persistence.js 读档归一化处一次性截断（幂等），无需迁移脚本
+const ARCH_LOG_LIMIT = 20;
+
+// 唯一的 log 写入通道。所有写 gameState.archaeology.log 的地方都必须走这里。
+// 幂等、缺字段自愈：arch.log 非数组时重建，绝不抛错（写日志不得中断游戏结算）。
+function pushArchLog(arch, entry) {
+  if (!arch || typeof arch !== "object") return entry;
+  if (!Array.isArray(arch.log)) arch.log = [];
+  arch.log.push(entry);
+  if (arch.log.length > ARCH_LOG_LIMIT) arch.log.splice(0, arch.log.length - ARCH_LOG_LIMIT);
+  return entry;
+}
+
 window.getArchaeologyDisplayState = getArchaeologyDisplayState;
+window.pushArchLog = pushArchLog;
+window.ARCH_LOG_LIMIT = ARCH_LOG_LIMIT;
 window.computeArchaeologyScanStrength = computeArchaeologyScanStrength;
 window.computeArchaeologySuccessChance = computeArchaeologySuccessChance;
 window.getArchaeologyFittedBonuses = getArchaeologyFittedBonuses;

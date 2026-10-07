@@ -696,6 +696,15 @@ function migrateArchaeologyState() {
   arch.repairUntil = Number(arch.repairUntil) || 0;
   arch.repairInstanceId = arch.repairInstanceId || null;
   arch.log = Array.isArray(arch.log) ? arch.log : [];
+  // 考古行动日志容量治理（2026-10-07）：历史版本 log 只有写入没有上限，
+  // 长期在线挂机可累积至上万条（1000 条 ≈ 100 KB JSON，本地存档明文膨胀 ×4/3），
+  // 终点是撞 localStorage 配额导致静默丢档。此处读档即截断到当前上限（幂等），
+  // 老存档无需迁移脚本；写入侧的封顶由 pushArchLog（js/systems/archaeology.js）保证。
+  // UI 只渲染最近 12 条，故截断到 20 条对玩家零可见影响。
+  {
+    const _limit = (typeof window !== "undefined" && Number(window.ARCH_LOG_LIMIT)) || 20;
+    if (arch.log.length > _limit) arch.log = arch.log.slice(-_limit);
+  }
   arch.interferenceUntil = Number(arch.interferenceUntil) || 0;
   // 燃料节省累计器：旧存档回填 0；恒有限并归一化到 [0,1)（幂等）。
   // 仅在完整重置游戏时清零；停止行动/切遗迹/切船/装卸改装件都不清零，故放在 currentAction 复位块之外。
