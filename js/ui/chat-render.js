@@ -15,8 +15,8 @@
    * 屏蔽（§9 决策 ③）：本地 localStorage，仅影响自己的渲染，不通知对方。
    */
 
-  var POLL_MS = 3000;              // 轮询间隔（§9 决策 ④：2~3s，取 3s）
-  var BG_POLL_MS = 12000;          // 非当前频道的未读探测间隔（折叠/切 tab 时降频，成本可控）
+  var POLL_MS = 15000;             // 轮询间隔（10-08 调优：3s→15s，单玩家在线4h由约4800次安全调用降至约960次）
+  var BG_POLL_MS = 15000;          // 非当前频道的未读探测间隔（与前台统一 15s，降频且逻辑一致）
   var ALLIANCE_TTL_MS = 120000;    // 盟信息缓存（聊天只需要 id / owner_player_id）
   var BLOCK_KEY = "eve_idle_chat_blocks";
   var DOCK_KEY = "eve_idle_chat_dock_open";   // 停靠条开合状态（本机偏好，非存档数据）
