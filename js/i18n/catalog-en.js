@@ -8164,4 +8164,8 @@
   ["查看详情 / 强化 / 拆解", "View details / Enhance / Dismantle"],
   ["谐振信标", "Resonance Beacon"],
   ["科研议会", "Research Council"]
+,
+  ["新增 · 难度选择", "New · Difficulty Selection"],
+  ["战斗面板新增难度切换：可在「普通 / 精英」之间选择（「地狱」难度入口已就位，暂未开放）。切换后即时生效，战斗面板的掉落预览会直接显示当前难度下的实际掉落概率。", "The battle panel now has a difficulty toggle: choose between Normal and Elite (the Inferno difficulty entry is in place but not yet available). Changes take effect immediately, and the battle panel's drop preview shows the actual drop rates for the current difficulty."],
+  ["精英难度下，星带与死亡空间的敌人更具威胁、挑战更高，对应区域的燃料消耗与战斗经验也会相应提高——更高风险对应更高回报。", "In Elite difficulty, enemies in asteroid belts and deathspace are more threatening and challenging, and the fuel cost and combat XP for the corresponding zones scale up accordingly — higher risk brings higher reward."]
 ]); })();

@@ -49,6 +49,8 @@ for (const material of SUPERCAPITAL_DATA_MATERIALS) ITEM_ICONS[material] = "🧬
 for (const material of STARMAP_TITAN_MATERIALS) ITEM_ICONS[material] = "⚛️";
 // 校准基体（考古产出的 calibration: 命名空间资源）给统一图标，避免仓库卡退化为 📦
 for (const calibName of ["校准基体 I 型","校准基体 II 型","校准基体 III 型","校准基体 IV 型","校准基体 V 型"]) ITEM_ICONS[calibName] = "⚗️";
+// 精英难度独占掉落图标（2026-10-08）：未知的潜能芯片
+ITEM_ICONS["未知的潜能芯片"] = "🧩";
 SHIP_COMPONENT_RECIPES.forEach(recipe => {
   if (recipe.id.includes("integrated_hull")) ITEM_ICONS[recipe.name] = "🏗️";
   else if (recipe.id.includes("power_core")) ITEM_ICONS[recipe.name] = "⚙️";

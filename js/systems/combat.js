@@ -346,18 +346,29 @@ function createCombatEnemy(zone, kind, randomFn, combatState) {
   combat.enemyInstanceSeq = seq + 1;
   const balance = zone.enemyBalance || {};
   const kindBalance = balance[kind] || {};
-  const hpScale = (Number(balance.hp) || 1) * (Number(kindBalance.hp) || 1);
-  const damageScale = (Number(balance.damage) || 1) * (Number(kindBalance.damage) || 1);
+  // 精英难度（eliteTier>=2 → 银河奶牛 T2 档）：HP/伤害 ×1.5、闪避 ×1.3。
+  // 技能经验烈度由 fuelMult×1.5 驱动（见 selectors.js/getCombatFuelMultiplierFromState + station.js/addStationModifiedCombatXp），
+  // 敌人 HP×1.5 让战斗多打 ~1.5× volley ⇒ 经验与燃料同幅 ×2.25 ⇒ 每燃料经验中性（≈1.0）。
+  // 此处 eliteXpMult 仅作用于排行榜指标 enemy.xpDrop（每敌人一次性，不走 volley），对齐烈度 ×1.5（不再用 MW 的 ×2.0）。
+  // 读 combatState 的 eliteTier（在线/离线共用 createCombatEnemy ⇒ 倍率天然 parity）。
+  const _eliteTier = Number(combat.eliteTier) || 0;
+  const ELITE_T2 = 2;
+  const eliteHpMult    = _eliteTier >= ELITE_T2 ? 1.5 : 1;
+  const eliteDmgMult   = _eliteTier >= ELITE_T2 ? 1.5 : 1;
+  const eliteDodgeMult = _eliteTier >= ELITE_T2 ? 1.3 : 1;
+  const eliteXpMult    = _eliteTier >= ELITE_T2 ? 1.5 : 1;
+  const hpScale = (Number(balance.hp) || 1) * (Number(kindBalance.hp) || 1) * eliteHpMult;
+  const damageScale = (Number(balance.damage) || 1) * (Number(kindBalance.damage) || 1) * eliteDmgMult;
   const scaledHp = Object.fromEntries(Object.entries(tpl.hp).map(([layer, value]) => [layer, Math.max(1, Math.round(value * hpScale))]));
   return {
     id: token + "_e" + seq,
     type:enemyKey, kind:tpl.kind || kind, name:tpl.name, icon:tpl.icon,
     hp:{...scaledHp}, maxHp:{...scaledHp},
-    level:tpl.level, hit:tpl.hit, dodge:tpl.dodge, baseDamage:Math.max(1, Math.round((tpl.baseDamage || 1) * damageScale)),
+    level:tpl.level, hit:tpl.hit, dodge:Math.max(0, Math.round((Number(tpl.dodge) || 0) * eliteDodgeMult)), baseDamage:Math.max(1, Math.round((tpl.baseDamage || 1) * damageScale)),
     auraDamage:tpl.auraDamage || 0,
     bossHealPct:tpl.bossHealPct || 0, bossHealEvery:tpl.bossHealEvery || 5,
     enrageMul:tpl.enrageMul || 0, enrageAt:tpl.enrageAt || 0.3, repairSuppr:tpl.repairSuppr || 0,
-    iskDrop:tpl.iskDrop, xpDrop:tpl.xpDrop, image:tpl.image,
+    iskDrop:tpl.iskDrop, xpDrop:Math.round((Number(tpl.xpDrop) || 0) * eliteXpMult), image:tpl.image,
     defeated:false, rewarded:false
   };
 }
@@ -562,6 +573,15 @@ function getLegionCombatDropMult(state) {
   return mult;
 }
 
+// 精英难度（T2 = 银河奶牛 T2 档）普通掉落率倍率：MW 公式 (1.0 + 0.1×tier)，tier=2 ⇒ ×1.2。
+// 仅作用于「普通掉落」（加密数据 / 区域特殊 / 装备料 / 战术材料 / 探针本体 / 星币 / 功勋）；
+// 稀缺独占项（站点核心 / 先驱核心 / 协议 / 通行密钥 / 货柜）保持豁免（对应 MW「宝箱恒定」规则）。
+// 在线各 roll* 函数与离线路径共用本函数，保证在线/离线 parity。eliteTier<2（含地狱未开放回退）一律 ×1。
+function getEliteDropMult(state) {
+  state = state || gameState;
+  return (Number(state && state.combat && state.combat.eliteTier) || 0) >= 2 ? 1.2 : 1;
+}
+
 // 战术材料掉落配置：层级由 zone.formationPool 映射（死亡空间复用 sourceZone 的 formationPool）。
 //   普通怪 70% × 1；精英 100% × 2~3；Boss 100% × 6~10。
 function getTacticalMaterialDropConfig(zone) {
@@ -639,7 +659,7 @@ function rollDeathspaceTicketDrops(zone, enemyKind, randomValues, state) {
     const cfg = configs[i];
     const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
     const value = values[i] !== undefined ? values[i] : Math.random();
-    if (!chance || value >= chance) continue;
+    if (!chance || value >= chance * getEliteDropMult(state)) continue;
     ResourceRegistry.add(state, "special:" + cfg.material, 1);
     drops.push({ material:cfg.material, qty:1, deathspaceId:cfg.deathspaceId });
   }
@@ -668,7 +688,7 @@ function rollFactionEncryptedDataDrop(factionId, enemyKind, randomValue, zone, s
   const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
   if (!chance) return null;
   const roll = randomValue === undefined ? Math.random() : randomValue;
-  if (roll >= chance * getLegionCombatDropMult(state)) return null;
+  if (roll >= chance * getLegionCombatDropMult(state) * getEliteDropMult(state)) return null;
   ResourceRegistry.add(state, "special:" + cfg.material, cfg.qty);
   return { material: cfg.material, qty: cfg.qty };
 }
@@ -685,7 +705,7 @@ function rollCombatZoneSpecialDrops(zone, enemyKind, randomValues, state) {
     const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
     const roll = values[index] !== undefined ? values[index] :
       typeof randomValues === "number" ? randomValues : Math.random();
-    if (!cfg.resourceId || roll >= chance * getLegionCombatDropMult(state)) continue;
+    if (!cfg.resourceId || roll >= chance * getLegionCombatDropMult(state) * getEliteDropMult(state)) continue;
     ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
     drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty,  rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
   }
@@ -716,7 +736,7 @@ function rollGearDrops(zone, enemyKind, randomValues, state) {
     const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
     const roll = values[index] !== undefined ? values[index] :
       typeof randomValues === "number" ? randomValues : Math.random();
-    if (!cfg.resourceId || roll >= chance * getLegionCombatDropMult(state)) continue;
+    if (!cfg.resourceId || roll >= chance * getLegionCombatDropMult(state) * getEliteDropMult(state)) continue;
     ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
     drops.push({ material: cfg.material, resourceId: cfg.resourceId, qty: cfg.qty, rarity: enemyKind === "boss" ? "guaranteedBoss" : "rare" });
   }
@@ -762,9 +782,10 @@ function rollStationCoreDrop(zone, enemyKind, randomValue, state) {
   if (!cfg) return null; // 该带核心已获得且持有实物 → 不再掉落
   const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
   if (!chance) return null;
-  const mult = getLegionCombatDropMult(state);
+  const legionMult = getLegionCombatDropMult(state);
+  const eliteMult = getEliteDropMult(state);
   // 隐藏保底：基础率随星带肃清次数线性爬升，PITY_MAX 次肃清时必出（见 getStationCorePityChance）
-  const effChance = getStationCorePityChance(zone, chance * mult, state);
+  const effChance = getStationCorePityChance(zone, chance * legionMult * eliteMult, state);
   const roll = randomValue === undefined ? Math.random() : randomValue;
   if (roll >= effChance) return null;
   ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
@@ -780,7 +801,7 @@ function rollDeathspaceTicketDrop(zone, enemyKind, randomValue, state) {
   const chance = enemyKind === "elite" ? cfg.eliteChance : cfg.bossChance;
   if (!chance) return null;
   const roll = randomValue === undefined ? Math.random() : randomValue;
-  if (roll >= chance) return null;
+  if (roll >= chance * getEliteDropMult(state)) return null;
   ResourceRegistry.add(state, "special:" + cfg.material, 1);
   return { material: cfg.material, qty: 1, deathspaceId: cfg.deathspaceId };
 }
@@ -821,13 +842,13 @@ function rollDeathspaceLeaderLoot(site, wave, coreRandomValue, protocolRandomVal
   // 2026-09-02：核心/协议接入稀有掉率总乘子（军团 lootSearch + MTU rareDropBonus，用户拍板）
   const rareMult = getLegionCombatDropMult(state);
   const coreRoll = coreRandomValue === undefined ? Math.random() : coreRandomValue;
-  if (coreRoll < waveConfig.coreChance * rareMult) {
+  if (coreRoll < waveConfig.coreChance * rareMult * getEliteDropMult(state)) {
     ResourceRegistry.add(state, "special:" + site.coreMaterial, 1);
     drops.push({ material: site.coreMaterial, qty: 1, rarity: "rare" });
   }
   if (waveConfig.isFinal) {
     const protocolRoll = protocolRandomValue === undefined ? Math.random() : protocolRandomValue;
-    if (protocolRoll < waveConfig.protocolChance * rareMult) {
+    if (protocolRoll < waveConfig.protocolChance * rareMult * getEliteDropMult(state)) {
       ResourceRegistry.add(state, "special:" + site.protocolMaterial, 1);
       drops.push({ material: site.protocolMaterial, qty: 1, rarity: "veryRare" });
     }
@@ -844,13 +865,17 @@ function rollTacticalMaterialDrop(zone, enemyKind, randomFn) {
   const cfg = getTacticalMaterialDropConfig(zone);
   if (!cfg) return null;
   const rng = typeof randomFn === "function" ? randomFn : Math.random;
+  // 精英难度（T2）：普通掉落率 ×1.2（与 MW 同口径）。数量型掉落按期望值缩放：
+  // 普通怪 70% → 84%；精英 2~3 → ×1.2 取整（期望 3.0）；Boss 6~10 → ×1.2 取整（期望 9.6）；
+  // 离线 applyBatchedDrops 用期望公式同乘，保证在线/离线 parity。
+  const em = getEliteDropMult();
   let qty = 0;
   if (enemyKind === "boss") {
-    qty = 6 + Math.floor(rng() * 5);          // 6..10
+    qty = Math.round((6 + Math.floor(rng() * 5)) * em);          // 6..10 → 期望 ×1.2
   } else if (enemyKind === "elite") {
-    qty = 2 + Math.floor(rng() * 2);          // 2..3
+    qty = Math.round((2 + Math.floor(rng() * 2)) * em);          // 2..3 → 期望 ×1.2
   } else {
-    qty = rng() < 0.70 ? 1 : 0;               // 普通怪 70% × 1
+    qty = rng() < 0.70 * em ? 1 : 0;                            // 普通怪 70% ×1.2 = 84%
   }
   if (qty <= 0) return null;
   const meta = (typeof TACTICAL_MATERIALS !== "undefined") ? TACTICAL_MATERIALS.find(m => m.id === cfg.materialId) : null;
@@ -875,7 +900,7 @@ function rollDeathspaceProbeDrop(deathspace, enemyKind, randomValue, state) {
   const chance = enemyKind === "boss" ? cfg.bossChance : cfg.normalChance;
   if (!chance) return null;
   const roll = randomValue === undefined ? Math.random() : randomValue;
-  if (roll >= chance * getLegionCombatDropMult(state)) return null;
+  if (roll >= chance * getLegionCombatDropMult(state) * getEliteDropMult(state)) return null;
   ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
   return { resourceId: cfg.resourceId, material: cfg.material, qty: cfg.qty };
 }
@@ -890,7 +915,7 @@ function rollDeathspaceProbeDrops(deathspace, enemyKind, randomValues, state) {
     const cfg = configs[i];
     const chance = enemyKind === "boss" ? cfg.bossChance : cfg.normalChance;
     const value = values[i] === undefined ? Math.random() : values[i];
-    if (!chance || value >= chance * getLegionCombatDropMult(state)) continue;
+    if (!chance || value >= chance * getLegionCombatDropMult(state) * getEliteDropMult(state)) continue;
     ResourceRegistry.add(state, cfg.resourceId, cfg.qty);
     drops.push({ resourceId: cfg.resourceId, material: cfg.material, qty: cfg.qty });
   }
@@ -966,13 +991,14 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     const q = Number(quantity) || 0;
     if (resourceId && q > 0) lootGained[resourceId] = (lootGained[resourceId] || 0) + q;
   };
-  // 星币：MTU +10%（断料不放大，iskBonus 已为 0）
+  // 星币：MTU +10%（断料不放大，iskBonus 已为 0）；精英难度（T2）普通掉落率 ×1.2（MW 同口径）。
   // 防御式：任一因子为 undefined/NaN/负数时不再产生 NaN 或负值（与离线路径 offline-combat.js 对齐），
   // 否则会触发事件契约 isk 必须是非负数的校验，甚至污染玩家星币为 NaN。
   const rawIsk = Math.round(
     (Number(enemy.iskDrop) || 0) *
     (Number(zone && zone.iskMulti) || 1) *
-    (1 + (mtu && Number(mtu.iskBonus) ? mtu.iskBonus : 0))
+    (1 + (mtu && Number(mtu.iskBonus) ? mtu.iskBonus : 0)) *
+    getEliteDropMult(state)
   );
   const isk = Math.max(0, rawIsk);
   ResourceRegistry.add(state, "currency:isk", isk);
@@ -986,7 +1012,8 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
       const mtuLpMult = (mtu && mtu.active && mtu.lpBonus > 0) ? (1 + mtu.lpBonus) : 1;
       const ratio = enemy.kind === "boss" ? 0.5 : 0.1;
       const floor = enemy.kind === "boss" ? 2 : 1;
-      const killLp = Math.max(floor, Math.round(clearLp * ratio * mtuLpMult));
+      // 精英难度（T2）：功勋逐杀也 ×1.2（MW 普通掉落率同口径）。
+      const killLp = Math.max(floor, Math.round(clearLp * ratio * mtuLpMult * getEliteDropMult(state)));
       if (killLp > 0) {
         ResourceRegistry.add(state, "currency:lp", killLp);
         addLoot("currency:lp", killLp);
@@ -1131,6 +1158,17 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
     };
     doEmit("combat:tacticalMaterialDropped", tacticalEvent);
     c.lastLoot += " · " + tacticalDrop.materialId + " ×" + tacticalDrop.quantity;
+  }
+  // 精英难度独占掉落（eliteTier>=2）：未知的潜能芯片，精英怪 3% / 首领·leader 20%。
+  // 在线路径；离线路径在 offline-combat.js 的 recordKill + applyBatchedDrops 同口径重滚（parity）。
+  if ((Number(c.eliteTier) || 0) >= 2) {
+    const isLeader = Boolean(enemy.deathspaceLeader) || enemy.kind === "boss";
+    const chipChance = isLeader ? 0.20 : 0.03;
+    if (roll() < chipChance) {
+      ResourceRegistry.add(state, "special:未知的潜能芯片", 1);
+      addLoot("special:未知的潜能芯片", 1);
+      c.lastLoot += " · 未知的潜能芯片 ×1";
+    }
   }
   const fmtDrop = d => ((d && d.materialId !== undefined ? d.materialId : (d && d.material)) + " ×" + (d && d.quantity !== undefined ? d.quantity : (d && d.qty)));
   const specialDrops = [...ticketDrops, ...zoneSpecialDrops, ...gearDrops, coreDrop, ...deathspaceDrops, tacticalDrop, cargoDrop].filter(Boolean);

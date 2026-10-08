@@ -7,10 +7,10 @@
 <title>深空放置：边疆纪元</title>
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css" data-page-node-id="3fiApn1SGVFxJUWdXpWh5W">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css" data-page-node-id="P4Io4ysW7RgjBSkBb3L0Yx">
-<link rel="stylesheet" href="./css/base.css?v=24" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
+<link rel="stylesheet" href="./css/base.css?v=25" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
   <link rel="stylesheet" href="./css/panels.css?v=76" data-page-node-id="EO0cvpdOJNMFJG5gNM6nea">
   <link rel="stylesheet" href="./css/combat.css?v=30" data-page-node-id="4tyvBwYTecWVPpekSSWQWZ">
-<link rel="stylesheet" href="./css/components.css?v=50" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
+<link rel="stylesheet" href="./css/components.css?v=51" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
 <link rel="stylesheet" href="./css/chat.css?v=5" data-page-node-id="yegpT4axdagveBVNN2Jthl">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=28" data-page-node-id="Hg2oYi1jGpwcCdUfrpD2LM">
 <style id="starmap-collection-room-style">
@@ -28,8 +28,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=63"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=39"></script>
+  <script src="./js/i18n/catalog-en.js?v=64"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=40"></script>
   <!-- steam-i18n-locales:start -->
   <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -43,16 +43,16 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=25"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=33"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ja.js?v=10"><\/script>');
-        document.write('<script src="./js/i18n/catalog-fr.js?v=10"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ko.js?v=10"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=26"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=34"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ja.js?v=11"><\/script>');
+        document.write('<script src="./js/i18n/catalog-fr.js?v=11"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ko.js?v=11"><\/script>');
       }
     })();
   </script>
   <!-- steam-i18n-locales:end -->
-  <script src="./js/i18n/translator.js?v=24"></script>
+  <script src="./js/i18n/translator.js?v=25"></script>
   <script>
     // Screenshot-safe DOM fallback. It translates only rendered text nodes;
     // source code, variables, HTML templates, starmap and achievements stay untouched.
@@ -1941,6 +1941,15 @@
           <button class="combat-mode-tab active" data-combat-mode="belt" data-page-node-id="vZmL1VFOHrnQ1G0LLwIu87"><i class="fa-solid fa-meteor" data-page-node-id="J5En9YHtHARIGkWGq9PNeb"></i> 海盗星带</button>
           <button class="combat-mode-tab" data-combat-mode="deathspace" data-page-node-id="XA3vmhNjKIcUGth2XlFymd"><i class="fa-solid fa-dungeon" data-page-node-id="0L7PEZ2ZdsM0XbQ0B2vWlL"></i> 死亡空间</button>
         </div>
+        <div class="combat-elite-row" id="combat-elite-row">
+          <label class="elite-select-label" for="elite-difficulty-select">战斗难度：</label>
+          <select class="elite-difficulty-select" id="elite-difficulty-select">
+            <option value="0">普通</option>
+            <option value="2">精英</option>
+            <option value="3" disabled title="敬请期待">地狱（暂未开放）</option>
+          </select>
+          <span class="elite-preview" id="elite-preview"></span>
+        </div>
         <div class="deathspace-selector-panel" id="deathspace-selector-panel" style="display:none;" data-page-node-id="fAtL2dhBVmNZZLMKjWF7LM">
           <div class="deathspace-intro" data-page-node-id="rirCKwLTMpsH0y9x6D1X5O"><strong data-page-node-id="T6mjKlwmGCVZjMGWMEFmMQ">DED 6/10</strong><span id="deathspace-intro-text" data-page-node-id="hU2o0PUsGHAQXAeFxTHSUz">进入即消耗1枚通行密钥；失败或主动撤离均不返还。</span></div>
           <div class="deathspace-tier-tabs" id="deathspace-tier-tabs" data-page-node-id="FFuhwiF1UJEmMmIctlc5UC"></div>
@@ -2715,7 +2724,7 @@
   <script defer src="./js/systems/boosters.js?v=13"></script>
   <script defer src="./js/systems/recycling.js?v=4"></script>
   <script defer src="./js/data/combat.js?v=47"></script>
-  <script defer src="./js/data/cargo.js?v=10"></script>
+  <script defer src="./js/data/cargo.js?v=11"></script>
   <script defer src="./js/data/implants.js?v=10"></script>
   <script defer src="./js/data/equipment.js?v=47"></script>
   <script defer src="./js/systems/combat-drop-craft.js?v=8"></script>
@@ -2733,18 +2742,18 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=22"></script>
-  <script defer src="./js/data/changelog.js?v=181"></script>
+  <script defer src="./js/data/changelog.js?v=182"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
-  <script defer src="./js/core/state.js?v=21"></script>
+  <script defer src="./js/core/state.js?v=22"></script>
   <script defer src="./js/systems/reputation.js?v=3"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
   <script defer src="./js/systems/research.js?v=12"></script>
   <script defer src="./js/systems/research-ad.js?v=2"></script>
   <script defer src="./js/core/statistics.js?v=6"></script>
   <script defer src="./js/systems/achievements.js?v=5"></script>
-  <script defer src="./js/systems/production.js?v=15"></script>
-  <script defer src="./js/core/resources.js?v=7"></script>
+  <script defer src="./js/systems/production.js?v=16"></script>
+  <script defer src="./js/core/resources.js?v=8"></script>
   <script defer src="./js/systems/tutorial.js?v=13"></script>
   <script defer src="./js/ui/tutorial-spotlight.js?v=6"></script>
   <script defer src="./js/systems/manufacturing.js?v=10"></script>
@@ -2755,7 +2764,7 @@
   <script defer src="./js/systems/rigs.js?v=7"></script>
   <script defer src="./js/systems/archaeology.js?v=28"></script>
   <script defer src="./js/systems/planetary.js?v=5"></script>
-  <script defer src="./js/systems/station.js?v=32"></script>
+  <script defer src="./js/systems/station.js?v=33"></script>
   <script defer src="./js/data/legion/npc-names.js?v=2"></script>
   <script defer src="./js/data/legion/npc-personalities.js?v=2"></script>
   <script defer src="./js/data/legion/npc-skills.js?v=2"></script>
@@ -2768,19 +2777,19 @@
   <script defer src="./js/ui/action-modal.js?v=14"></script>
   <script defer src="./js/core/queue.js?v=8"></script>
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
-  <script defer src="./js/systems/combat.js?v=64"></script>
+  <script defer src="./js/systems/combat.js?v=65"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=139"></script>
+  <script defer src="./js/core/selectors.js?v=141"></script>
   <script defer src="./js/core/actions.js?v=74"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=55"></script>
   <script defer src="./js/systems/wormhole.js?v=42"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=184"></script>
+   <script defer src="./js/ui/shell-render.js?v=185"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
-   <script defer src="./js/ui/combat-render.js?v=80"></script>
+   <script defer src="./js/ui/combat-render.js?v=83"></script>
   <script defer src="./js/ui/planetary-render.js?v=4"></script>
   <script defer src="./js/ui/archaeology-render.js?v=17"></script>
   <script defer src="./js/ui/booster-render.js?v=18"></script>
@@ -2800,7 +2809,7 @@
   <script defer src="./js/ui/chat-render.js?v=7"></script>
   <script defer src="./js/core/tick.js?v=33"></script>
   <script defer src="./js/core/offline.js?v=41"></script>
-  <script defer src="./js/systems/offline-combat.js?v=65"></script>
+  <script defer src="./js/systems/offline-combat.js?v=66"></script>
   <script defer src="./js/systems/combat-log.js?v=7"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=3"></script>
@@ -2834,7 +2843,7 @@
   <script defer src="./js/systems/ad-buff.js?v=6"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
   <script defer src="./js/core/persistence.js?v=48"></script>
-  <script defer src="./js/ui/changelog-popup.js?v=3"></script>
+  <script defer src="./js/ui/changelog-popup.js?v=4"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=15"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=9"></script>
 <script defer src="./js/ui/render.js?v=44"></script>

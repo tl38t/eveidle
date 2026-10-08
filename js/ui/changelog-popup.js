@@ -34,6 +34,11 @@
       .replace(/"/g, "&quot;");
   }
 
+  // 安全翻译查表：未命中（如旧版日志/未收录串）回退原文，避免空白。
+  function t(s) {
+    return (window.I18N && typeof window.I18N.t === "function") ? window.I18N.t(s) : s;
+  }
+
   function getLatest() {
     var log = (typeof window.GAME_CHANGELOG !== "undefined" && window.GAME_CHANGELOG) || [];
     return log.length ? log[0] : null;
@@ -58,7 +63,7 @@
   }
 
   function buildBody(latest) {
-    var html = '<div class="changelog-head">本次更新内容 · V' +
+    var html = '<div class="changelog-head">' + t("本次更新内容") + " · V" +
       esc(latest.version) + "（" + esc(latest.date || "") + "）</div>";
     // 平台差异化：统一走 changelog.js 提供的过滤函数（缺 platforms = 全平台），
     // 与设置页共用同一份逻辑，避免两处渲染出不同的日志内容。
@@ -70,10 +75,10 @@
         });
     visible.forEach(function (sec) {
       html += '<div class="changelog-sec">';
-      html += '<div class="changelog-sec-title">' + esc(sec.heading || "") + "</div>";
+      html += '<div class="changelog-sec-title">' + esc(t(sec.heading || "")) + "</div>";
       html += '<ul class="changelog-list">';
       (sec.items || []).forEach(function (it) {
-        html += "<li>" + esc(it) + "</li>";
+        html += "<li>" + esc(t(it)) + "</li>";
       });
       html += "</ul></div>";
     });
@@ -105,10 +110,10 @@
     overlay.className = "modal-overlay";
     overlay.innerHTML =
       '<div class="modal-box" role="dialog" aria-modal="true">' +
-        '<h3>更新说明 · V' + esc(latest.version) +
+        '<h3>' + t("更新说明") + " · V" + esc(latest.version) +
           '<button class="modal-close" id="changelog-popup-close" aria-label="关闭">×</button></h3>' +
         '<div class="changelog-popup-body">' + buildBody(latest) + "</div>" +
-        '<div class="modal-actions"><button class="btn primary" id="changelog-popup-ok">知道了</button></div>' +
+        '<div class="modal-actions"><button class="btn primary" id="changelog-popup-ok">' + t("知道了") + '</button></div>' +
       "</div>";
 
     document.body.appendChild(overlay);

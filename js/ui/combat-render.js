@@ -995,6 +995,7 @@ function renderCombatPanel(now) {
     return `<button class="deathspace-card${site.selected ? " selected" : ""}${site.locked ? " locked" : ""}" data-deathspace="${site.id}" ${site.locked ? "disabled" : ""}><strong>${site.name}</strong><span>🎫 ${getResourceDisplayName(site.ticketMaterial)} ×${site.ticketCount}</span><small>来源：${site.sourceZoneName}精英/BOSS · 5%</small><small>${site.maxWave}层 · 每层${site.waveLp} ${DisplayNames.getCurrencyName("lp")} · 全通共${site.waveLp * site.maxWave + site.clearLpBonus} ${DisplayNames.getCurrencyName("lp")} · 已全通 ${site.clears}</small><small class="deathspace-rare">${rareLine}</small></button>`;
   }).join("");
   const dropButton = document.getElementById("combat-zone-dropbtn"); if (dropButton) dropButton.textContent = display.zone.name + " ▾";
+  syncEliteToggle();
   const intensityEl = document.getElementById("combat-zone-intensity");
   if (intensityEl) {
     // 与经验发放同源（死亡空间继承来源星带烈度），保证显示倍率 === 实得倍率；保留原解析作为兜底。
@@ -1002,8 +1003,10 @@ function renderCombatPanel(now) {
       || COMBAT_ZONES.find(z => z.id === (gameState.combat && gameState.combat.zone)) || display.zone || null;
     const it = curZone ? zoneIntensityLabel(curZone.fuelMult) : null;
     if (it) {
-      const fm = Number(curZone.fuelMult) || 1;
-      const xpMult = (typeof getZoneIntensityXpMultiplier === "function") ? getZoneIntensityXpMultiplier(curZone) : fm;
+      // 精英难度（eliteTier>=2 → 银河奶牛 T2 烈度）：燃料/经验烈度均 ×1.5，与 selectors.js / station.js 同源。
+      const _eliteInt = (gameState && gameState.combat && Number(gameState.combat.eliteTier) >= 2) ? 1.5 : 1;
+      const fm = (Number(curZone.fuelMult) || 1) * _eliteInt;
+      const xpMult = ((typeof getZoneIntensityXpMultiplier === "function") ? getZoneIntensityXpMultiplier(curZone) : (Number(curZone.fuelMult) || 1)) * _eliteInt;
       intensityEl.textContent = `战区烈度：${it.label}（燃料消耗×${fm} · 战斗经验×${xpMult}）`;
       intensityEl.className = "zone-intensity " + it.cls;
     }
@@ -1347,6 +1350,11 @@ function renderCombatDropPreview(display) {
           "drop-cargo", "cargo:" + s));
       }
     }
+  }
+  // 精英难度独占掉落说明（eliteTier>=2 时显示）
+  if ((Number(gameState.combat.eliteTier) || 0) >= 2) {
+    rows.push(`<div class="drop-group-title">🧩 精英独占（当前已开启）</div>`);
+    rows.push(row("🧩", "未知的潜能芯片", `精英怪 ${pct(0.03)} · 首领/BOSS ${pct(0.20)}（每枚 ×1）· 暂未开放功能`, "drop-chip", "special:未知的潜能芯片"));
   }
   body.innerHTML = rows.join("");
 }
@@ -1871,4 +1879,30 @@ function closeCombat3DPopup() {
   });
   // 军团 NPC 战斗小队（M5）：小队区域选择事件（渲染由 renderCombatPanel 驱动）
   bindCombatSquadUI();
+  // 精英难度下拉（2026-10-08）：普通(0) / 精英(2) / 地狱(3,暂未开放-disabled)。
+  // 已开放档位只认 0 与 2；若存档为未来档(>=3)回退到普通，避免地狱未开放却被勾上。
+  const eliteSel = document.getElementById("elite-difficulty-select");
+  if (eliteSel) {
+    let saved = Number(gameState.combat.eliteTier) || 0;
+    eliteSel.value = (saved === 0 || saved === 2) ? String(saved) : "0";
+    eliteSel.addEventListener("change", function () {
+      const combat = gameState.combat;
+      combat.eliteTier = Number(eliteSel.value) || 0;
+      syncEliteToggle();
+      renderCombatPanel(Date.now());
+      if (typeof updateUI === "function") updateUI();
+    });
+  }
 })();
+
+// 精英难度下拉视图同步：选中项 + 倍率预览文案
+function syncEliteToggle() {
+  const sel = document.getElementById("elite-difficulty-select");
+  const preview = document.getElementById("elite-preview");
+  const tier = Number(gameState.combat.eliteTier) || 0;
+  if (sel) sel.value = (tier === 0 || tier === 2) ? String(tier) : "0";
+  // 不枚举倍率（HP/伤害/闪避/燃料/掉落率等）；精英独占掉落与提升后的掉率直接在「掉落预览」里体现。
+  if (preview) {
+    preview.textContent = tier >= 2 ? "⚔ 精英难度已开启" : "";
+  }
+}

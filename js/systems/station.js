@@ -1771,8 +1771,13 @@ function addStationModifiedCombatXp(state, skillId, baseXp, job) {
   // 战区烈度（第三个独立乘区，2026-09-04）：与科研、空间站指挥中心彼此独立相乘。
   // 烈度口径 = zone.fuelMult（1 / 1.1 / 1.2 / 1.35 / 1.6 / 1.8）；死亡空间继承来源星带烈度。
   // 无战区上下文（补给预检等非战斗路径）时回退 1，行为与改动前逐值一致。
-  const zoneIntensityMultiplier = (typeof getZoneIntensityXpMultiplier === "function" && typeof getCurrentCombatIntensityZone === "function")
+  const zoneIntensityBase = (typeof getZoneIntensityXpMultiplier === "function" && typeof getCurrentCombatIntensityZone === "function")
     ? getZoneIntensityXpMultiplier(getCurrentCombatIntensityZone(state)) : 1;
+  // 精英难度（eliteTier>=2 → 银河奶牛 T2 烈度）：技能经验烈度 ×1.5，与燃料烈度同源（selectors.js 同口径）。
+  // 技能经验按 volley/hit 发放，敌人 HP×1.5 已让战斗多打 ~1.5× volley（自然 ×1.5），叠此显式 ×1.5 ⇒ 经验总 ×2.25，
+  // 与燃料总 ×2.25（显式 ×1.5 + 自然 ×1.5）同幅 ⇒ 每燃料经验维持中性（≈1.0），符合设计锚。
+  const eliteIntensityMult = (state && state.combat && Number(state.combat.eliteTier) >= 2) ? 1.5 : 1;
+  const zoneIntensityMultiplier = zoneIntensityBase * eliteIntensityMult;
   const zoneAdjustedBase = researchAdjustedBase * zoneIntensityMultiplier;
   const mult = getStationCombatXpMultiplier(state);
   const totalXp = zoneAdjustedBase * mult;

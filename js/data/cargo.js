@@ -533,7 +533,9 @@ function getCargoDropInfo(size, state) {
 function rollCargoDrop(enemy, zone, rng, state) {
   if (!enemy || !zone) return null;
   // 同位素标记打捞臂：被动提升货柜掉率（装备即生效，与开关无关）；上限 50% 防爆
-  const baseChance = CARGO_DROP_CHANCE[enemy.kind] || 0;
+  // 精英难度（T2）：货柜掉率也 ×1.2（与 MW 同口径的普通掉落率缩放；货柜作为容器，其内容另算）
+  const em = (typeof getEliteDropMult === "function") ? getEliteDropMult(state) : 1;
+  const baseChance = (CARGO_DROP_CHANCE[enemy.kind] || 0) * em;
   const salvageBonus = (typeof getSquadSalvageEfficiency === "function") ? getSquadSalvageEfficiency(state) : 0;
   const chance = Math.min(baseChance * (1 + salvageBonus), 0.5);
   const roll = (typeof rng === "function" ? rng() : Math.random());

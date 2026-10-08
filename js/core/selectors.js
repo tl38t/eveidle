@@ -2663,9 +2663,13 @@ function getCombatFuelMultiplierFromState(state, zone, context, options) {
     ? LEGION_NPC.getLegionContributionSnapshot(state).multipliers : null;
   const legionFuelSave = legion ? legion.fuelSave : 1;
   // 电容管理技能(capacitorManagement)对所有燃料路径统一生效（考古见 getArchaeologyFuelCostState）。
+  // 精英难度（eliteTier>=2 → 银河奶牛 T2 烈度）：燃料消耗 ×1.5。与技能经验烈度同源同一口径，
+  // 离线/offline-combat.js:1954、军团/legion-combat-squad.js:608 均调本函数 ⇒ 三条路径自动同源，零 parity 缺口。
+  const eliteFuelMult = Number((state.combat && state.combat.eliteTier) || 0) >= 2 ? 1.5 : 1;
   return calculateCombatStatFromState(state, "fuelMultiplier", 1, [
     { operation:"multiply", value:combinedShipMultiplier, priority:10, source:"ship" },
     { operation:"multiply", value:zoneMultiplier, priority:20, source:"zone" },
+    { operation:"multiply", value:eliteFuelMult, priority:25, source:"elite" },
     { operation:"multiply", value:1 / (1 + getCombatSkillLevelFromState(state, "capacitorManagement") * 0.02), priority:30, source:"skill" },
     { operation:"multiply", value:legionFuelSave, priority:40, source:"legion" }
   ], { ...(context || {}), actor:"player", zoneId:selectedZone && selectedZone.id });
@@ -3178,6 +3182,11 @@ function getCombatDisplayState(state, now) {
 function getCombatDropPreview(state, options) {
   const opts = options || {};
   const mode = opts.mode === "deathspace" ? "deathspace" : "belt";
+  // 精英难度（T2）普通掉落率 ×1.2：全部普通掉落（含货柜/站点核心/通行密钥/首领战利品）均乘 em，
+  // 掉落预览直接反映实得概率（与在线/离线 roll* 同源 getEliteDropMult）。
+  const em = (typeof getEliteDropMult === "function") ? getEliteDropMult(state) : 1;
+  const scaleChance = (v) => Math.min(1, (Number(v) || 0) * em);
+  const scaleQty = (v) => Math.max(Number(v) || 0, Math.round((Number(v) || 0) * em));
 
   if (mode === "deathspace") {
     const site = getDeathspaceById(opts.deathspaceId);
@@ -3200,6 +3209,27 @@ function getCombatDropPreview(state, options) {
     }
     const isT10 = site.dedTier === 10;
     const signatureIds = (isT10 && typeof getTier10SignatureIds === "function") ? getTier10SignatureIds(site.faction) : [];
+    // 死亡空间预览：考古探针、战术材料、站内核心、领袖战利品(核心/协议) 均乘 em；
+    // 签名装(10/10 固定 0.02)与脑插(固定 5%)保持基准。
+    let probeDrop = (typeof getDeathspaceProbeDropConfigs === "function") ? getDeathspaceProbeDropConfigs(site)
+      : ((typeof getDeathspaceProbeDropConfig === "function") ? getDeathspaceProbeDropConfig(site) : null);
+    if (Array.isArray(probeDrop)) { for (const p of probeDrop) { p.normalChance = scaleChance(p.normalChance); p.bossChance = scaleChance(p.bossChance); } }
+    else if (probeDrop) { probeDrop.normalChance = scaleChance(probeDrop.normalChance); probeDrop.bossChance = scaleChance(probeDrop.bossChance); }
+    let tacticalMaterial = getTacticalMaterialDropConfig(sourceZone);
+    if (tacticalMaterial) {
+      tacticalMaterial.normalChance = scaleChance(tacticalMaterial.normalChance);
+      if (em > 1) {
+        tacticalMaterial.eliteQtyMin = scaleQty(tacticalMaterial.eliteQtyMin);
+        tacticalMaterial.eliteQtyMax = scaleQty(tacticalMaterial.eliteQtyMax);
+        tacticalMaterial.bossQtyMin = scaleQty(tacticalMaterial.bossQtyMin);
+        tacticalMaterial.bossQtyMax = scaleQty(tacticalMaterial.bossQtyMax);
+      }
+    }
+    // 站内核心（先驱核心）/ 领袖战利品（核心·协议）：精英难度乘 em（与在线 rollStationCoreDrop / rollDeathspaceLeaderLoot 同源 getEliteDropMult）
+    const stationCoreDropCfgs = (isT10 && typeof getStationCoreDropConfigs === "function") ? getStationCoreDropConfigs(site) : null;
+    if (stationCoreDropCfgs) for (const sc of stationCoreDropCfgs) { sc.eliteChance = scaleChance(sc.eliteChance); sc.bossChance = scaleChance(sc.bossChance); }
+    const leaderLootCfgs = isT10 ? [] : getDeathspaceLeaderLootConfigs(site);
+    for (const lc of leaderLootCfgs) { lc.coreChance = scaleChance(lc.coreChance); lc.protocolChance = scaleChance(lc.protocolChance); }
     return {
       mode: "deathspace", valid: true,
       deathspaceId: site.id, name: site.name, faction: site.faction,
@@ -3207,34 +3237,63 @@ function getCombatDropPreview(state, options) {
       encryptedData: null, zoneSpecialDrops: null, ticketDrop: null, gearDrops: null, cargoDrops: null,
       // 10/10 先驱站点：不再掉校准核心/改良协议（leaderLoot 置空），改掉签名装实例。
       // 先驱核心（2026-09-23）已从源战区挪到**站内** ⇒ 取 site 的配置，不再取 sourceZone。
-      stationCoreDrops: (isT10 && typeof getStationCoreDropConfigs === "function") ? getStationCoreDropConfigs(site) : null,
-      leaderLoot: isT10 ? [] : getDeathspaceLeaderLootConfigs(site),
+      stationCoreDrops: (isT10 && stationCoreDropCfgs) ? stationCoreDropCfgs : null,
+      leaderLoot: leaderLootCfgs,
       signatureDrop: isT10 ? {
         chance: (typeof T10_SIGNATURE_DROP_CHANCE !== "undefined") ? T10_SIGNATURE_DROP_CHANCE : 0.02,
         count: signatureIds.length,
         ids: signatureIds,
         names: signatureIds.map(id => ((typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[id]) ? EQUIPMENT_DB[id].name : id))
       } : null,
-      probeDrop: (typeof getDeathspaceProbeDropConfigs === "function") ? getDeathspaceProbeDropConfigs(site)
-        : ((typeof getDeathspaceProbeDropConfig === "function") ? getDeathspaceProbeDropConfig(site) : null),
-      tacticalMaterial: getTacticalMaterialDropConfig(sourceZone),
+      probeDrop: probeDrop,
+      tacticalMaterial: tacticalMaterial,
       implantDrop: implantDrop
     };
   }
 
   const zone = COMBAT_ZONES.find(item => item.id === opts.zoneId);
   if (!zone) return { mode: "belt", valid: false, reason: "unknown-zone" };
+  const encryptedData = getEncryptedDataDropConfig(zone);
+  if (encryptedData) { encryptedData.eliteChance = scaleChance(encryptedData.eliteChance); encryptedData.bossChance = scaleChance(encryptedData.bossChance); }
+  const zoneSpecialDrops = getCombatZoneSpecialDropConfigs(zone);
+  for (const sd of zoneSpecialDrops) { sd.eliteChance = scaleChance(sd.eliteChance); sd.bossChance = scaleChance(sd.bossChance); }
+  const gearDrops = getGearDropConfigs(zone);
+  for (const gd of gearDrops) { gd.eliteChance = scaleChance(gd.eliteChance); gd.bossChance = scaleChance(gd.bossChance); }
+  const tacticalMaterial = getTacticalMaterialDropConfig(zone);
+  if (tacticalMaterial) {
+    tacticalMaterial.normalChance = scaleChance(tacticalMaterial.normalChance);
+    if (em > 1) {
+      tacticalMaterial.eliteQtyMin = scaleQty(tacticalMaterial.eliteQtyMin);
+      tacticalMaterial.eliteQtyMax = scaleQty(tacticalMaterial.eliteQtyMax);
+      tacticalMaterial.bossQtyMin = scaleQty(tacticalMaterial.bossQtyMin);
+      tacticalMaterial.bossQtyMax = scaleQty(tacticalMaterial.bossQtyMax);
+    }
+  }
+  // 精英难度（T2）：货柜/站点核心/通行密钥 同样乘 em（与在线 rollCargoDrop / rollStationCoreDrop / rollDeathspaceTicketDrop 同源 getEliteDropMult）
+  const beltStationCore = getStationCoreDropConfigs(zone);
+  for (const sc of beltStationCore) { sc.eliteChance = scaleChance(sc.eliteChance); sc.bossChance = scaleChance(sc.bossChance); }
+  // 货柜：dropChance 指向共享常量 CARGO_DROP_CHANCE，必须克隆后再缩放，避免污染全局
+  const beltCargo = getCargoDropConfigs(zone);
+  if (beltCargo && beltCargo.dropChance) {
+    beltCargo.dropChance = {
+      normal: scaleChance(beltCargo.dropChance.normal),
+      elite: scaleChance(beltCargo.dropChance.elite),
+      boss: scaleChance(beltCargo.dropChance.boss)
+    };
+  }
+  const beltTicketDrop = getDeathspaceTicketDropConfig(zone);
+  if (beltTicketDrop) { beltTicketDrop.eliteChance = scaleChance(beltTicketDrop.eliteChance); beltTicketDrop.bossChance = scaleChance(beltTicketDrop.bossChance); }
+  const beltTicketDrops = (typeof getDeathspaceTicketDropConfigs === "function") ? getDeathspaceTicketDropConfigs(zone) : [];
+  for (const td of beltTicketDrops) { td.eliteChance = scaleChance(td.eliteChance); td.bossChance = scaleChance(td.bossChance); }
   return {
     mode: "belt", valid: true,
     zoneId: zone.id, name: zone.name, faction: zone.faction,
-      encryptedData: getEncryptedDataDropConfig(zone),
-    zoneSpecialDrops: getCombatZoneSpecialDropConfigs(zone),
-    gearDrops: getGearDropConfigs(zone),
-    stationCoreDrops: getStationCoreDropConfigs(zone),
-    cargoDrops: getCargoDropConfigs(zone),
-    ticketDrop: getDeathspaceTicketDropConfig(zone),
-    ticketDrops: (typeof getDeathspaceTicketDropConfigs === "function") ? getDeathspaceTicketDropConfigs(zone) : [],
-    tacticalMaterial: getTacticalMaterialDropConfig(zone)
+    encryptedData, zoneSpecialDrops, gearDrops,
+    stationCoreDrops: beltStationCore,
+    cargoDrops: beltCargo,
+    ticketDrop: beltTicketDrop,
+    ticketDrops: beltTicketDrops,
+    tacticalMaterial
   };
 }
 

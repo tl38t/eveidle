@@ -313,6 +313,8 @@ for (const _tm of [
 ]) {
   ResourceRegistry.register({ namespace:"special", key:_tm, name:_tm, category:"special" });
 }
+// 精英难度独占掉落（2026-10-08）：未知的潜能芯片，暂挂特殊物品类、无任何消耗/制造功能
+ResourceRegistry.register({ namespace:"special", key:"未知的潜能芯片", name:"未知的潜能芯片", category:"special" });
 
 ResourceRegistry.register({ namespace:"currency", key:"isk", name:"ISK", scalarKey:"isk", category:"currency" });
 ResourceRegistry.register({ namespace:"currency", key:"lp", name:"LP", scalarKey:"lp", category:"currency" });

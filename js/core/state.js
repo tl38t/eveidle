@@ -255,6 +255,7 @@ const gameState = {
     wave: 1,
     zoneClears: {},
     runEliteKills: 0,
+    eliteTier: 0,            // 精英难度档位：0=关（×1.0，零改动）；>=2=开启 T2 精英（银河奶牛 T2 倍率）
     currentFormation: "",
     totalKills: 0,
     lastLoot: "",

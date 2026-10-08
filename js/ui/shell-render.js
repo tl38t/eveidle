@@ -2665,6 +2665,7 @@ function renderSettingsPage() {
   // 更新日志：在「当前版本」下方展示最新版本更新内容（数据来自 js/data/changelog.js）
   const clEl = document.getElementById("setting-changelog");
   if (clEl) {
+    const t = (s) => (window.I18N && typeof window.I18N.t === "function") ? window.I18N.t(s) : s;
     const log = (typeof window.GAME_CHANGELOG !== "undefined" && window.GAME_CHANGELOG) || [];
     if (!log.length) { clEl.style.display = "none"; }
     else {
@@ -2679,12 +2680,12 @@ function renderSettingsPage() {
           });
       if (!visibleSections.length) { clEl.style.display = "none"; }
       else {
-        let html = '<div class="changelog-head">本次更新内容 · V' + escapeAchievementText(latest.version) + '（' + escapeAchievementText(latest.date || "") + '）</div>';
+        let html = '<div class="changelog-head">' + t("本次更新内容") + ' · V' + escapeAchievementText(latest.version) + '（' + escapeAchievementText(latest.date || "") + '）</div>';
         visibleSections.forEach(function (sec) {
           html += '<div class="changelog-sec">';
-          html += '<div class="changelog-sec-title">' + escapeAchievementText(sec.heading || "") + '</div>';
+          html += '<div class="changelog-sec-title">' + escapeAchievementText(t(sec.heading || "")) + '</div>';
           html += '<ul class="changelog-list">';
-          (sec.items || []).forEach(function (it) { html += '<li>' + escapeAchievementText(it) + '</li>'; });
+          (sec.items || []).forEach(function (it) { html += '<li>' + escapeAchievementText(t(it)) + '</li>'; });
           html += '</ul></div>';
         });
         clEl.innerHTML = html;

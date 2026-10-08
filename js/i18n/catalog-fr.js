@@ -7842,4 +7842,8 @@
   ["每级提升全队战斗伤害 +2%。", "Chaque niveau augmente les dégâts de combat de l'équipe de +2 %."],
   ["每级提升冶炼效率 +5%。", "Chaque niveau augmente l'efficacité de raffinage de +5 %."],
   ["资源调度中心 · 额外产出", "Centre de répartition des ressources · Production supplémentaire"]
+,
+  ["新增 · 难度选择", "Nouveau · Sélection de la difficulté"],
+  ["战斗面板新增难度切换：可在「普通 / 精英」之间选择（「地狱」难度入口已就位，暂未开放）。切换后即时生效，战斗面板的掉落预览会直接显示当前难度下的实际掉落概率。", "Le panneau de combat dispose désormais d'un sélecteur de difficulté : choisissez entre Normal et Élite (l'entrée de difficulté « Enfer » est en place mais pas encore disponible). Le changement prend effet immédiatement, et l'aperçu des drops du panneau de combat affiche directement les taux de drop réels pour la difficulté actuelle."],
+  ["精英难度下，星带与死亡空间的敌人更具威胁、挑战更高，对应区域的燃料消耗与战斗经验也会相应提高——更高风险对应更高回报。", "En difficulté Élite, les ennemis des ceintures d'astéroïdes et de l'espace de la mort sont plus menaçants et difficiles, et la consommation de carburant ainsi que l'XP de combat des zones correspondantes augmentent en conséquence — un risque plus élevé rapporte une récompense plus élevée."]
 ]); })();

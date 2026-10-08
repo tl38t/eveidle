@@ -7461,4 +7461,8 @@
   ["每级提升全队战斗伤害 +2%。", "Jede Stufe erhöht den Kampfschaden des gesamten Teams um +2%."],
   ["每级提升冶炼效率 +5%。", "Jede Stufe erhöht die Raffinationseffizienz um +5%."],
   ["资源调度中心 · 额外产出", "Ressourcenversandzentrum · Zusätzliche Ausbeute"]
+,
+  ["新增 · 难度选择", "Neu · Schwierigkeitsgrad"],
+  ["战斗面板新增难度切换：可在「普通 / 精英」之间选择（「地狱」难度入口已就位，暂未开放）。切换后即时生效，战斗面板的掉落预览会直接显示当前难度下的实际掉落概率。", "Das Kampfpanel hat jetzt einen Schwierigkeitsgrad-Umschalter: Wähle zwischen Normal und Elite (der Eingang für die Höllen-Schwierigkeit ist vorhanden, aber noch nicht verfügbar). Änderungen werden sofort wirksam, und die Tropfen-Vorschau des Kampfpanels zeigt die tatsächlichen Tropferraten für den aktuellen Schwierigkeitsgrad an."],
+  ["精英难度下，星带与死亡空间的敌人更具威胁、挑战更高，对应区域的燃料消耗与战斗经验也会相应提高——更高风险对应更高回报。", "Im Elite-Schwierigkeitsgrad sind die Gegner in Asteroidengürteln und Todesraum bedrohlicher und herausfordernder, und der Treibstoffverbrauch sowie die Kampferfahrung der entsprechenden Zonen steigen entsprechend an — höheres Risiko bringt höhere Belohnung."]
 ]); })();

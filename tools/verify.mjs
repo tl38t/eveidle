@@ -308,7 +308,9 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 //   与 1.0.6 日志「资源调度中心产生额外产出时屏幕下方弹出飘字」对应，由 b42e597 引入；
 //   1.0.6 发布点 f466cdb 当时仍是 562）。
 // ⚠️ 本基准同样自 1.0.6 之后未更新，与上方 defer 脚本计数（137→138）属同一类滞后。
-const EXPECTED_DOM_IDS = 563;
+// 2026-10-08：563 → 566（+3，纯新增零删除）：精英难度选择 UI 静态 DOM（combat-elite-row /
+//   elite-difficulty-select / elite-preview），由 1.0.11 精英难度特性引入，index.html 战斗面板内。
+const EXPECTED_DOM_IDS = 566;
 if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
@@ -4578,7 +4580,9 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   //   新增停靠条容器 #chat-dock 与标题栏 #chat-dock-toggle（+2）⇒ 净 +1 = 562。
   //   均为 index.html 静态元素，非回归。
   // 2026-10-04：562 → 563（+1 = setting-dispatch-bonus-toast 资源调度飘字，b42e597 引入）。
-  if (htmlIds.size !== 563) throw new Error("Batch F DOM ID 基线应为 563，实际 " + htmlIds.size);
+  // 2026-10-08：563 → 566（+3，纯新增零删除）：精英难度选择 UI 静态 DOM（combat-elite-row /
+  //   elite-difficulty-select / elite-preview），1.0.11 精英难度特性引入。
+  if (htmlIds.size !== 566) throw new Error("Batch F DOM ID 基线应为 566，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }

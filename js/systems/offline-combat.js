@@ -1977,10 +1977,11 @@
       const fk = s.killsByFactionKind[zone.faction] = s.killsByFactionKind[zone.faction] || { normal: 0, elite: 0, boss: 0 };
       bump(fk, enemy.kind, 1);
     }
-    // ISK（确定性：iskDrop*iskMulti）；MTU +10%（断料不放大，iskBonus 已为 0）
+    // ISK（确定性：iskDrop*iskMulti）；MTU +10%（断料不放大，iskBonus 已为 0）；精英难度（T2）普通掉落率 ×1.2（与在线同口径）
     const mtuMod = (typeof getMtuModifiers === "function") ? getMtuModifiers(state) : null;
+    const eliteMult = (Number(state.combat.eliteTier) || 0) >= 2 ? 1.2 : 1;
     const iskMult = (mtuMod && mtuMod.active && mtuMod.iskBonus > 0) ? (1 + mtuMod.iskBonus) : 1;
-    const isk = Math.round((enemy.iskDrop || 0) * (zone ? zone.iskMulti : 1) * iskMult);
+    const isk = Math.round((enemy.iskDrop || 0) * (zone ? zone.iskMulti : 1) * iskMult * eliteMult);
     s.iskDelta += isk;
     // LP（若有）；MTU +10%（断料不放大）
     if (typeof enemy.lpDrop === "number") {
@@ -1994,7 +1995,8 @@
       const lpMult = (mtuMod && mtuMod.active && mtuMod.lpBonus > 0) ? (1 + mtuMod.lpBonus) : 1;
       const ratio = enemy.kind === "boss" ? 0.5 : 0.1;
       const floor = enemy.kind === "boss" ? 2 : 1;
-      s.lpDelta += Math.max(floor, Math.round(clearLp * ratio * lpMult));
+      // 精英难度（T2）：功勋逐杀 ×1.2（与在线同口径）。
+      s.lpDelta += Math.max(floor, Math.round(clearLp * ratio * lpMult * eliteMult));
     }
     // 掉落累计（按 category 记录 N 与精英/Boss 细分）
     const da = s.dropAccum;
@@ -2080,6 +2082,11 @@
     if (enemy.kind === "elite") da.tactical.elite++;
     else if (enemy.kind === "boss") da.tactical.boss++;
     else da.tactical.normal++;
+    // 精英难度独占掉落：未知的潜能芯片（eliteTier>=2 时累计精英/Boss 击杀，flush 时确定性重滚）
+    if ((state.combat.eliteTier || 0) >= 2 && (enemy.kind === "elite" || enemy.kind === "boss")) {
+      const _chip = (da.chip = da.chip || { elite: 0, boss: 0 });
+      _chip[enemy.kind]++;
+    }
     // ---- M6a 事件账本（只记录，零行为改动；关闭时此块不执行）----
     // 位置：本条全部既有账目之后 ⇒ 记录的是「本次击杀的最终事实」，
     // 不参与任何计算、不写任何状态，因此对 A/B 逐字节对拍零影响。
@@ -3027,6 +3034,11 @@
     const legionDropFn = G("getLegionCombatDropMult");
     const legionMult = (typeof legionDropFn === "function") ? legionDropFn(state) : 1;
     const legionChance = p => Math.min((Number(p) || 0) * legionMult, 1);
+    // 精英难度（T2）普通掉落率 ×1.2（银河奶牛 T2 = 1+0.1×2）。作用于全部普通掉落：
+    // 加密数据/区域特殊/装备料/战术材料/死亡空间探针/星币/功勋 + 货柜/站点核心/通行密钥/首领战利品（本次扩围）。
+    // dropChance 在军团倍率基础上再乘精英倍率，封顶 1。在线各 roll* 用 getEliteDropMult 同口径，保证 parity。
+    const eliteMult = (Number(c.eliteTier) || 0) >= 2 ? 1.2 : 1;
+    const dropChance = p => Math.min((Number(p) || 0) * legionMult * eliteMult, 1);
     // 1) 势力加密数据
     for (const zoneId in da.factionData) {
       const zone = COMBAT_ZONES.find(z => z.id === zoneId);
@@ -3034,8 +3046,8 @@
       const cfg = G("getEncryptedDataDropConfig")(zone);
       if (!cfg) continue;
       const fd = da.factionData[zoneId];
-      if (fd.elite) { const n = batchCount(fd.elite, legionChance(cfg.eliteChance), rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
-      if (fd.boss) { const n = batchCount(fd.boss, legionChance(cfg.bossChance), rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
+      if (fd.elite) { const n = batchCount(fd.elite, dropChance(cfg.eliteChance), rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
+      if (fd.boss) { const n = batchCount(fd.boss, dropChance(cfg.bossChance), rng); if (n > 0) { RR.add(state, "special:" + cfg.material, cfg.qty * n); addResource(s, "special:" + cfg.material, cfg.qty * n); } }
     }
     // 1.5) 装备专用料（Tier2，zone-bound；死亡空间不计入，复用 elite/boss 计数）
     for (const zoneId in da.factionData) {
@@ -3045,8 +3057,8 @@
       if (!gearConfigs.length) continue;
       const fd = da.factionData[zoneId];
       for (const cfg of gearConfigs) {
-        if (fd.elite) { const n = batchCount(fd.elite, legionChance(cfg.eliteChance), rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
-        if (fd.boss) { const n = batchCount(fd.boss, legionChance(cfg.bossChance), rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
+        if (fd.elite) { const n = batchCount(fd.elite, dropChance(cfg.eliteChance), rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
+        if (fd.boss) { const n = batchCount(fd.boss, dropChance(cfg.bossChance), rng); if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty * n); addResource(s, cfg.resourceId, cfg.qty * n); } }
       }
     }
     // 1.6) 空间站四核心（Tier3，唯一产出；死亡空间不计入，复用 elite/boss 计数）
@@ -3067,8 +3079,9 @@
         const held = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get)
           ? (ResourceRegistry.get(state, cfg.resourceId) || 0) : 0;
         if (obtainedCores[cfg.coreId] && held >= 1) continue;
-        const pElite = _pityFn ? _pityFn(zone, legionChance(cfg.eliteChance), state) : legionChance(cfg.eliteChance);
-        const pBoss = _pityFn ? _pityFn(zone, legionChance(cfg.bossChance), state) : legionChance(cfg.bossChance);
+        const pChance = p => Math.min((Number(p) || 0) * legionMult * eliteMult, 1);
+        const pElite = _pityFn ? _pityFn(zone, pChance(cfg.eliteChance), state) : pChance(cfg.eliteChance);
+        const pBoss = _pityFn ? _pityFn(zone, pChance(cfg.bossChance), state) : pChance(cfg.bossChance);
         const n = (cc.elite ? batchCount(cc.elite, pElite, rng) : 0) + (cc.boss ? batchCount(cc.boss, pBoss, rng) : 0);
         if (n > 0) { RR.add(state, cfg.resourceId, cfg.qty); addResource(s, cfg.resourceId, cfg.qty); obtainedCores[cfg.coreId] = true; break; }
       }
@@ -3087,7 +3100,7 @@
           if (!n) continue;
           // 同位素标记打捞臂：被动提升货柜掉率（与在线 rollCargoDrop 同公式 min(base*(1+b),0.5)）
           const salvageBonus = squadSalvageEff;
-          const baseChance = (typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0;
+          const baseChance = ((typeof CARGO_DROP_CHANCE !== "undefined" && CARGO_DROP_CHANCE[kind]) || 0) * eliteMult;
           const chance = Math.min(baseChance * (1 + salvageBonus), 0.5);
           const drops = batchCount(n, chance, rng);
           for (let d = 0; d < drops; d++) {
@@ -3103,8 +3116,8 @@
     for (const siteId in da.probe) {
       const pv = da.probe[siteId];
       if (!pv) continue;
-      const n = (pv.normal ? batchCount(pv.normal, legionChance(pv.normalChance), rng) : 0)
-              + (pv.boss ? batchCount(pv.boss, legionChance(pv.bossChance), rng) : 0);
+      const n = (pv.normal ? batchCount(pv.normal, dropChance(pv.normalChance), rng) : 0)
+              + (pv.boss ? batchCount(pv.boss, dropChance(pv.bossChance), rng) : 0);
       if (n > 0) { RR.add(state, pv.resourceId, pv.qty * n); addResource(s, pv.resourceId, pv.qty * n); }
     }
     // 1.8) 同位素标记打捞臂：主动打捞舰船组件（按敌舰等级档位，确定性重滚；同位素消耗已在 recordKill 按会话虚拟余额门控）
@@ -3169,7 +3182,7 @@
       for (const e of entries) {
         const cfg = configs.find(cc => cc.resourceId === e.resourceId);
         if (!cfg) continue;
-        const chance = e.kind === "boss" ? legionChance(cfg.bossChance) : (e.kind === "elite" ? legionChance(cfg.eliteChance) : 0);
+        const chance = e.kind === "boss" ? dropChance(cfg.bossChance) : (e.kind === "elite" ? dropChance(cfg.eliteChance) : 0);
         if (!chance) continue;
         const key = e.resourceId + "|" + e.kind;
         byRes[key] = byRes[key] || { resourceId: e.resourceId, qty: cfg.qty, n: 0, chance };
@@ -3190,8 +3203,8 @@
         ? G("getDeathspaceTicketDropConfigs")(zone)
         : (G("getDeathspaceTicketDropConfig")(zone) ? [G("getDeathspaceTicketDropConfig")(zone)] : []);
       for (const tcfg of tcfgs) {
-        if (tk.elite) { const n = batchCount(tk.elite, tcfg.eliteChance, rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
-        if (tk.boss) { const n = batchCount(tk.boss, tcfg.bossChance, rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
+        if (tk.elite) { const n = batchCount(tk.elite, Math.min(tcfg.eliteChance * eliteMult, 1), rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
+        if (tk.boss) { const n = batchCount(tk.boss, Math.min(tcfg.bossChance * eliteMult, 1), rng); if (n > 0) { RR.add(state, "special:" + tcfg.material, n); addResource(s, "special:" + tcfg.material, n); } }
       }
     }
     // 4) 死亡空间首领战利品
@@ -3218,8 +3231,8 @@
         }
         const wc = cfgs[Math.max(0, entry.wave - 1)];
         if (!wc) continue;
-        if (entry.core) { const n = batchCount(1, wc.coreChance, rng); if (n > 0) { RR.add(state, "special:" + site.coreMaterial, n); addResource(s, "special:" + site.coreMaterial, n); } }
-        if (entry.proto && wc.isFinal) { const n = batchCount(1, wc.protocolChance, rng); if (n > 0) { RR.add(state, "special:" + site.protocolMaterial, n); addResource(s, "special:" + site.protocolMaterial, n); } }
+        if (entry.core) { const n = batchCount(1, Math.min(wc.coreChance * eliteMult, 1), rng); if (n > 0) { RR.add(state, "special:" + site.coreMaterial, n); addResource(s, "special:" + site.coreMaterial, n); } }
+        if (entry.proto && wc.isFinal) { const n = batchCount(1, Math.min(wc.protocolChance * eliteMult, 1), rng); if (n > 0) { RR.add(state, "special:" + site.protocolMaterial, n); addResource(s, "special:" + site.protocolMaterial, n); } }
       }
       dsCovered[siteId] = true;
     }
@@ -3230,13 +3243,21 @@
       const anyZone = (s.killsByZone && Object.keys(s.killsByZone)[0]) ? COMBAT_ZONES.find(z => z.id === Object.keys(s.killsByZone)[0]) : null;
       const tzc = anyZone ? G("getTacticalMaterialDropConfig")(anyZone) : null;
       if (tzc) {
-        // 期望数量：普通 0.7×1，精英 2.5，Boss 8（与 rollTacticalMaterialDrop 同口径）
-        let expectedQty = tc.normal * 0.7 * 1 + tc.elite * 1 * 2.5 + tc.boss * 1 * 8;
+        // 期望数量：普通 0.7，精英 2.5，Boss 8（与 rollTacticalMaterialDrop 同口径）；精英难度（T2）普通掉落率 ×1.2
+        let expectedQty = (tc.normal * 0.7 + tc.elite * 2.5 + tc.boss * 8) * eliteMult;
         const base = Math.floor(expectedQty);
         const frac = expectedQty - base;
         const n = base + (rng() < frac ? 1 : 0);
         if (n > 0) { RR.add(state, "special:" + tzc.materialId, n); addResource(s, "special:" + tzc.materialId, n); }
       }
+    }
+    // 6) 精英难度独占掉落：未知的潜能芯片（eliteTier>=2 时 recordKill 才累计，故此处仅在开启时有计数）
+    if (da.chip && (da.chip.elite || da.chip.boss)) {
+      const CHIP_ELITE_CHANCE = 0.03, CHIP_BOSS_CHANCE = 0.20;
+      const ne = da.chip.elite ? batchCount(da.chip.elite, CHIP_ELITE_CHANCE, rng) : 0;
+      const nb = da.chip.boss ? batchCount(da.chip.boss, CHIP_BOSS_CHANCE, rng) : 0;
+      const total = ne + nb;
+      if (total > 0) { RR.add(state, "special:未知的潜能芯片", total); addResource(s, "special:未知的潜能芯片", total); }
     }
   }
 
