@@ -25,9 +25,11 @@ const CATEGORY_SKILLS = {
   equipment: "equipmentEngineering",
   "ship-component": "shipEngineering"
 };
+// refining 允许 mineral:（普通冶炼）与 special:（泰坦冶炼 outputPool:"special"，如锻星合金）两种前缀，
+// 否则客户端发来 special: 前缀的泰坦材料任务会被「任务材料无效」直接拒绝。
 const CATEGORY_MATERIAL_PREFIX = {
   mineral: "ore:",
-  refining: "mineral:",
+  refining: ["mineral:", "special:"],
   gas: "gas:",
   planetary: "planetary:",
   booster: "booster:",
@@ -106,7 +108,11 @@ function normalizeTasks(input, expectedCount) {
     if (!Number.isFinite(value) || value < 0 || value > 100) throw new Error("材料价值无效");
     if (task.category === "booster" && (!Number.isInteger(tacticalTier) || tacticalTier < 1 || tacticalTier > 5 || amount < 5 || amount % 5 !== 0)) throw new Error("增强剂协议参数无效");
     const materialId = String(task.materialId || "").trim();
-    if (!materialId || !String(task.materialName || materialId).trim() || !materialId.startsWith(CATEGORY_MATERIAL_PREFIX[task.category])) throw new Error("任务材料无效");
+    const expectedPrefix = CATEGORY_MATERIAL_PREFIX[task.category];
+    const prefixOk = Array.isArray(expectedPrefix)
+      ? expectedPrefix.some(function (p) { return materialId.startsWith(p); })
+      : materialId.startsWith(expectedPrefix);
+    if (!materialId || !String(task.materialName || materialId).trim() || !prefixOk) throw new Error("任务材料无效");
     const reward = task.category === "booster" ? tacticalTier * (amount / 5) : rewardPoints(task.difficulty, value, time, task.category);
     if (Number(task.rewardPoints) !== reward) throw new Error("任务奖励校验失败");
     return {

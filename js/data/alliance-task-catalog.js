@@ -23,7 +23,10 @@
     });
     (env.SMELTING_RECIPES || []).forEach(function (recipe) {
       if (!recipe || !recipe.outputMineral) return;
-      catalog.push(make("refining", "refining", { id: "mineral:" + recipe.outputMineral, name: recipe.outputMineral, level: recipe.level }, 50, recipe.baseTime));
+      // 与 production.js:getSmeltingOutputRefId 完全一致：带命名空间的产出 id，
+      // 泰坦冶炼配方 outputPool:"special" ⇒ special:锻星合金；普通冶炼无 outputPool ⇒ mineral:。
+      // 旧写法写死 "mineral:" 前缀，导致泰坦材料任务永远查不到库存（材料其实在 special 池）。
+      catalog.push(make("refining", "refining", { id: (recipe.outputPool || "mineral") + ":" + recipe.outputMineral, name: recipe.outputMineral, level: recipe.level }, 50, recipe.baseTime));
     });
     (env.GAS_AREAS || []).forEach(function (area) {
       catalog.push(make("gas", "gasHarvesting", { id: "gas:" + area.gas, name: area.gas, level: area.level }, 20, area.baseTime));
