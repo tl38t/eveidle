@@ -212,7 +212,12 @@ const ResourceRegistry = (() => {
           // 也可能是 moon/gas/planetary 这类「裸键即最终显示名、且无专门 IP 映射」的命名空间。
           // 后者直接在显示层采用裸键，避免把 "moon:镓" 这类带命名空间前缀的 id 泄漏到界面。
           const BARE_KEY_NAMESPACES = ["moon", "gas", "planetary", "special"];
-          if (BARE_KEY_NAMESPACES.includes(parsed.namespace)) return renamed;
+          if (BARE_KEY_NAMESPACES.includes(parsed.namespace)) {
+            // 若注册了与 key 不同的显示名（如新增的「潜能芯片 · 采矿」技能模块，key 为 ASCII 的
+            // 潜能芯片_mining），优先用注册名，避免内部键泄漏到界面；未注册别名时仍用裸键。
+            if (defName) return defName;
+            return renamed;
+          }
         }
       }
       if (defName) return defName;
@@ -315,6 +320,42 @@ for (const _tm of [
 }
 // 精英难度独占掉落（2026-10-08）：未知的潜能芯片，暂挂特殊物品类、无任何消耗/制造功能
 ResourceRegistry.register({ namespace:"special", key:"未知的潜能芯片", name:"未知的潜能芯片", category:"special" });
+
+// 潜能芯片解码系统（2026-10-09）：解码「未知的潜能芯片」抽出的 20 个奖池道具。
+// 18 种技能潜能模块（每技能 1 个，指定技能 +5 级 / 10 分钟）+ 强化催化芯片 + 高级词条芯片（大奖）。
+// 命名空间复用 special（与「未知的潜能芯片」同池，货柜 special 类可见）；key 后缀技能键便于追溯。
+const POTENTIAL_CHIP_DECODE_ITEM_NAMES = {
+  mining:"潜能芯片 · 采矿", planetaryIndustry:"潜能芯片 · 行星工业", refining:"潜能芯片 · 冶炼",
+  gasHarvesting:"潜能芯片 · 气体采集", shipEngineering:"潜能芯片 · 舰船工程", equipmentEngineering:"潜能芯片 · 装备工程",
+  boosterEngineering:"潜能芯片 · 增效剂工程", laserOps:"潜能芯片 · 激光操作", cannonOps:"潜能芯片 · 炮台操作",
+  missileOperations:"潜能芯片 · 导弹操作", defense:"潜能芯片 · 防御", shieldOperation:"潜能芯片 · 护盾操作",
+  armorReinforcement:"潜能芯片 · 装甲强化", hullEngineering:"潜能芯片 · 舰体工程", targeting:"潜能芯片 · 索敌",
+  piloting:"潜能芯片 · 驾驶", capacitorManagement:"潜能芯片 · 电容管理", archaeology:"潜能芯片 · 考古"
+};
+for (const _sk of Object.keys(POTENTIAL_CHIP_DECODE_ITEM_NAMES)) {
+  ResourceRegistry.register({ namespace:"special", key:"潜能芯片_" + _sk, name:POTENTIAL_CHIP_DECODE_ITEM_NAMES[_sk], category:"special" });
+}
+ResourceRegistry.register({ namespace:"special", key:"强化催化芯片", name:"强化催化芯片", category:"special" });
+// 高级词条芯片（2026-10-10 重构）：每种改装件词条系列 = 一个独立物品 `special:affixchip_<stackGroup>`，
+// 各自一张仓库卡 + 各自数量；不再用单张堆叠「高级词条芯片」+ 平行数组 affixChipRolls。
+// 资源 id / 中文名在此一次性注册（equipment.js 已先于本文件加载，RIG_SERIES 取数无依赖）。
+const AFFIX_CHIP_PREFIX = "special:affixchip_";
+window.AFFIX_CHIP_PREFIX = AFFIX_CHIP_PREFIX;
+if (typeof RIG_SERIES !== "undefined" && Array.isArray(RIG_SERIES)) {
+  const _seen = Object.create(null);
+  for (const _s of RIG_SERIES) {
+    if (!_s || !_s.stackGroup || _seen[_s.stackGroup]) continue;
+    if (_s.slot && _s.slot !== "rig") continue;   // 仅 rig 系列（RIG_SERIES 现全为 rig，前瞻兜底）
+    _seen[_s.stackGroup] = true;
+    const _lab = String(_s.label || _s.stackGroup).replace(/\s*[IV]+\s*$/, "");
+    ResourceRegistry.register({ namespace:"special", key:AFFIX_CHIP_PREFIX.slice("special:".length) + _s.stackGroup, name:_lab + "词条芯片", category:"special" });
+  }
+}
+
+// 潜能芯片解码系统（2026-10-09）：三类奖池道具的跨文件引用主键。
+// 用 window 全局暴露（而非各文件重复 const 声明）避免经典脚本顶层 const 重名冲突；运行时必然已加载。
+window.POTENTIAL_CHIP_CATALYST_ID = "special:强化催化芯片";   // 强化催化芯片
+window.POTENTIAL_CHIP_SKILL_PREFIX = "special:潜能芯片_";      // 技能模块前缀（后缀接技能键）
 
 ResourceRegistry.register({ namespace:"currency", key:"isk", name:"ISK", scalarKey:"isk", category:"currency" });
 ResourceRegistry.register({ namespace:"currency", key:"lp", name:"LP", scalarKey:"lp", category:"currency" });

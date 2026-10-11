@@ -800,6 +800,23 @@ function migrateInventionState() {
     INVENTION.ensureState(gameState, Date.now());
     if (typeof INVENTION.migrateLabToQueue === "function") INVENTION.migrateLabToQueue(gameState);
   }
+  // 2026-10-10：高级词条芯片重构 —— 旧模型（单张堆叠 special:高级词条芯片 + 平行数组 affixChipRolls）
+  // 迁移为「每种词条一个独立物品 special:affixchip_<series>」。按 affixChipRolls 逐条拆出对应系列物品，
+  // 再清空旧数组与旧资源，保证数量守恒、零丢片。幂等（老档=空档均安全）。
+  if (typeof ResourceRegistry !== "undefined" && ResourceRegistry) {
+    const _rolls = (gameState.affixChipRolls && Array.isArray(gameState.affixChipRolls)) ? gameState.affixChipRolls : [];
+    const _prefix = (typeof window !== "undefined" && window.AFFIX_CHIP_PREFIX) || "special:affixchip_";
+    if (_rolls.length) {
+      for (const _r of _rolls) {
+        const _series = (_r && _r.series) || "";
+        if (!_series) continue;
+        if (typeof ResourceRegistry.add === "function") ResourceRegistry.add(gameState, _prefix + _series, 1);
+      }
+    }
+    gameState.affixChipRolls = [];
+    if (typeof ResourceRegistry.set === "function") ResourceRegistry.set(gameState, "special:高级词条芯片", 0);
+    else if (typeof ResourceRegistry.spend === "function") { const _old = ResourceRegistry.get(gameState, "special:高级词条芯片"); if (_old > 0) ResourceRegistry.spend(gameState, "special:高级词条芯片", _old); }
+  }
   gameState._dirty = true;
 }
 

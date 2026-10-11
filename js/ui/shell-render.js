@@ -1260,6 +1260,9 @@ let rewardCardBound = false;
 let equipEnhanceFilter = "all";     // all | enhanceable | installed | unenhanced
 let equipEnhanceSearch = "";
 let equipEnhanceModal = null;        // { itemId, level } 或 null
+let equipEnhanceUseCatalyst = false; // 潜能芯片 · 强化催化芯片：+10% 成功率（成功才消耗）
+// 舰船强化：潜能芯片 · 强化催化芯片开关（按舰船实例记录；船坞同时可见多张卡片，故逐船独立）
+const hangarCatalystOn = new Set();
 
 function renderEquipmentEnhancementList(visible) {
   const panel = document.getElementById("equipment-enhancement-list"); if (!panel) return;
@@ -1431,6 +1434,19 @@ function openEquipEnhanceModal(itemId, level, instanceId, shipyardCtx) {
     document.addEventListener("keydown", backdrop._esc);
   }
   const rateColor = cell.successPercent >= 75 ? "#9be8a8" : cell.successPercent >= 60 ? "#d4a843" : "#e0887e";
+  // 潜能芯片 · 强化催化芯片：+10% 成功率（成功才消耗）；装备强化界面勾选启用
+  const catCount = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? (Number(ResourceRegistry.get(gameState, "special:强化催化芯片")) || 0) : 0;
+  const catOn = !isRig && catCount > 0 && equipEnhanceUseCatalyst;
+  const boostedSuccess = (catOn && typeof applyEnhanceCatalyst === "function")
+    ? applyEnhanceCatalyst(cell.successPercent / 100, true, gameState) * 100
+    : cell.successPercent;
+  const shownSuccess = Math.round(boostedSuccess * 10) / 10;
+  const shownRateColor = shownSuccess >= 75 ? "#9be8a8" : shownSuccess >= 60 ? "#d4a843" : "#e0887e";
+  const catToggleHtml = (!isRig && catCount > 0) ? `
+        <div class="eem-row eem-cat-row">
+          <span>强化催化芯片（成功率 +10%，成功才消耗）</span>
+          <button type="button" class="eem-cat-toggle${catOn ? " on" : ""}" data-eem-cat-toggle="1">${catOn ? "已启用（持有 " + catCount + "）" : "未启用（持有 " + catCount + "）"}</button>
+        </div>` : "";
   const levelLabel = cell.isUnenhanced ? "未强化" : `+${cell.level}`;
   const levelCode = cell.isUnenhanced ? "+0" : `+${cell.level}`;
   const nextLabel = cell.isUnenhanced ? "+1" : `+${cell.level + 1}`;
@@ -1459,9 +1475,10 @@ function openEquipEnhanceModal(itemId, level, instanceId, shipyardCtx) {
           <div class="eem-upgrade-title">升级 ${levelCode} → ${nextLabel}</div>
           <div class="eem-row"><span>当前加成</span><b>+${cell.bonusPercent}%</b></div>
           <div class="eem-row"><span>升级后加成</span><b>+${cell.previewBonusPercent}%</b></div>
-          <div class="eem-row"><span>成功率</span><b style="color:${rateColor}">${cell.successPercent}%</b></div>
+          <div class="eem-row"><span>成功率</span><b style="color:${shownRateColor}">${shownSuccess}%</b>${catOn ? '<small class="eem-cat-badge">催化 +10%</small>' : ''}</div>
           <div class="eem-costs-label">消耗材料</div>
           <div class="eem-costs">${costHtml}${extraHtml}</div>
+          ${catToggleHtml}
         </div>`;
   const enhanceBtnHtml = isRig ? "" : `<button class="btn primary eem-enhance" data-enhance-target="${targetRefAttr}" ${btnDisabled}>${btnLabel}</button>`;
   // 2026-10-06 船坞装备管理：仅当从船坞「候选装备详情」打开（shipyardCtx 存在）时，额外显示「安装到当前槽位」。
@@ -1513,6 +1530,11 @@ function openEquipEnhanceModal(itemId, level, instanceId, shipyardCtx) {
 
   const closeBtn = backdrop.querySelector("[data-eem-close]");
   if (closeBtn) closeBtn.addEventListener("click", closeEquipEnhanceModal);
+  const catToggleBtn = backdrop.querySelector("[data-eem-cat-toggle]");
+  if (catToggleBtn) catToggleBtn.addEventListener("click", () => {
+    equipEnhanceUseCatalyst = !equipEnhanceUseCatalyst;
+    openEquipEnhanceModal(itemId, level); // 重绘以刷新成功率与按钮态
+  });
   const enhBtn = backdrop.querySelector(".eem-enhance");
   if (enhBtn && !enhBtn.disabled) {
     enhBtn.addEventListener("click", () => {
@@ -4997,6 +5019,18 @@ function renderHangarPanel() {
       : "";
     const enhanceDisabled = enhancement.canEnhance ? "" : "disabled";
     const enhanceLabel = enhancement.busy ? "执行任务中" : enhancement.available ? "强化至 +" + (enhancement.level + 1) : "暂不可强化";
+    // 潜能芯片 · 强化催化芯片：逐船独立开关（船坞同时可见多张卡片）；持有 > 0 才显示入口。
+    // 勾选后本次成功率 +10%（与装备强化同源 applyEnhanceCatalyst，仅成功时消耗 1 张）。
+    const catId = (typeof window !== "undefined" && window.POTENTIAL_CHIP_CATALYST_ID) || "special:强化催化芯片";
+    const catCount = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? (Number(ResourceRegistry.get(gameState, catId)) || 0) : 0;
+    const catOn = catCount > 0 && hangarCatalystOn.has(ship.instanceId);
+    const boostedChance = (catOn && typeof applyEnhanceCatalyst === "function")
+      ? applyEnhanceCatalyst(enhancement.chance, true, gameState)
+      : enhancement.chance;
+    const chancePercentText = (Math.round(boostedChance * 1000) / 10).toFixed(1);
+    const catToggleHtml = (catCount > 0 && enhancement.available)
+      ? `<div class="enhance-cat-row"><button type="button" class="enhance-cat-toggle${catOn ? " on" : ""}" data-hangar-catalyst="${ship.instanceId}" title="本次强化消耗 1 张强化催化芯片，成功率 +10%（仅成功时消耗）">🧪 强化催化芯片 +10%${catOn ? "（已启用 · 持有 " + catCount + "）" : "（未启用 · 持有 " + catCount + "）"}</button></div>`
+      : "";
     const thumbUrl = getHangarThumb(ship.shipId);
     const thumbHtml = thumbUrl ? `<img class="hangar-ship-thumb" data-open-3d="${ship.instanceId}" src="${thumbUrl}" alt="${ship.name}" title="点击查看 3D 模型">` : "";
     // Batch R（E 项·舰船拆解）：危险样式按钮；不可拆解时禁用并悬停提示阻塞原因
@@ -5011,7 +5045,7 @@ function renderHangarPanel() {
       ${bonuses ? `<div class="hangar-ship-bonuses">舰船加成：${bonuses}</div>` : ""}
       ${ship.repairing ? `<div class="hangar-ship-repair" data-repair-ship="${ship.instanceId}">🔧 自动维修中 · 剩余 <span class="repair-remaining">${ship.repairRemaining}</span> 秒</div>` : ""}
       ${ship.boundNpc ? `<div class="hangar-ship-bound-npc" title="该舰船已绑定军团 NPC ${escapeAchievementText(ship.boundNpc.name)}，点击「移出小队」可在此卸下">🛡️ 已绑定军团 NPC：${escapeAchievementText(ship.boundNpc.name)}</div>` : ""}
-      <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}${iskCostLine}</div><div class="enhance-roll"><span>成功率 <b>${enhancement.chancePercent}%</b></span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div></div>
+      <div class="hangar-enhancement${enhancement.milestone ? " milestone" : ""}"><div class="enhance-summary"><strong>强化 +${enhancement.level}</strong><span>${getEnhancementBonusText(enhancement)}</span></div><div class="enhance-next">${enhancement.milestone ? "★ 里程碑 · " : ""}${getEnhancementNextText(enhancement)}</div><div class="enhance-materials">${materials}${iskCostLine}</div><div class="enhance-roll"><span>成功率 <b>${chancePercentText}%</b>${catOn ? '<small class="enhance-cat-badge">催化 +10%</small>' : ""}</span><span>成功 ${enhancement.successXp} XP · 失败 ${enhancement.failureXp} XP并清零</span><button class="btn enhance-btn" data-enhance-ship="${ship.instanceId}" ${enhanceDisabled}>${enhanceLabel}</button></div>${catToggleHtml}</div>
       <div class="hangar-ship-actions">${assignments}<button class="btn" data-open-fitting="${ship.instanceId}" style="margin-left:6px;">🔧 装备</button><button class="btn" data-rename-ship="${ship.instanceId}" style="margin-left:6px;">✎ 重命名</button>${dismantleBtn}${ship.boundNpc ? `<button class="btn warning hangar-unbind-btn" data-unbind-npc-ship="${ship.boundNpc.npcId}" style="margin-left:6px;" title="将该舰船从军团 NPC 小队中卸下，归还机库">👤 移出小队</button>` : ""}</div></div>`;
   }).join("");
   return display;
@@ -5155,17 +5189,26 @@ function enhanceShipFromHangar(instanceId) {
   const display = getHangarDisplayState(gameState, Date.now());
   const ship = display.ships.find(item => item.instanceId === instanceId);
   if (!ship || !ship.enhancement || !ship.enhancement.available) return false;
-  console.log("[ship-op][enhance] open", { instanceId: instanceId, name: ship.name, level: ship.enhancement.level });
+  // 潜能芯片 · 强化催化芯片：读取本船开关（仅当持有 > 0 才可能生效；不足则自动失效，不报错）
+  const catId = (typeof window !== "undefined" && window.POTENTIAL_CHIP_CATALYST_ID) || "special:强化催化芯片";
+  const catCount = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get) ? (Number(ResourceRegistry.get(gameState, catId)) || 0) : 0;
+  const useCatalyst = catCount > 0 && hangarCatalystOn.has(instanceId);
+  const effChance = (useCatalyst && typeof applyEnhanceCatalyst === "function")
+    ? applyEnhanceCatalyst(ship.enhancement.chance, true, gameState)
+    : ship.enhancement.chance;
+  const effPercent = (Math.round(effChance * 1000) / 10).toFixed(1);
+  console.log("[ship-op][enhance] open", { instanceId: instanceId, name: ship.name, level: ship.enhancement.level, useCatalyst: useCatalyst });
   const doEnhance = () => {
     console.log("[ship-op][enhance] confirm", { instanceId: instanceId });
-    const result = dispatchGameAction(gameState, { type:"hangar/enhanceShip", instanceId }, Date.now());
+    const result = dispatchGameAction(gameState, { type:"hangar/enhanceShip", instanceId, useCatalyst }, Date.now());
     if (!result.changed) {
       const messages = { "insufficient-components":"强化部件不足", "insufficient-materials":"泰坦精炼材料不足", "insufficient-isk":"星币不足", "ship-active":"舰船执行任务时不能强化", "enhancement-unavailable":"该舰船暂无对应强化部件" };
       showToast(messages[result.reason] || "强化失败");
       return false;
     }
+    const catNote = result.catalystUsed ? "，消耗强化催化芯片 ×1" : "";
     showToast(result.success
-      ? result.config.name + " 强化成功：+" + result.fromLevel + " → +" + result.toLevel + "，获得 " + result.xp + " 经验"
+      ? result.config.name + " 强化成功：+" + result.fromLevel + " → +" + result.toLevel + "，获得 " + result.xp + " 经验" + catNote
       : result.config.name + " 强化失败，等级保持 +" + result.fromLevel + "，本次部件已消耗");
     renderHangarPanel();
     renderCombatPanel();
@@ -5178,8 +5221,8 @@ function enhanceShipFromHangar(instanceId) {
     const iskLine = ship.enhancement.iskCost > 0 ? ("<br>消耗星币：" + ship.enhancement.iskCost.toLocaleString()) : "";
     const bodyHtml =
       '<p class="dlg-body">强化 ' + escapeAchievementText(ship.name) + '：+' + ship.enhancement.level + ' → +' + (ship.enhancement.level + 1) + '</p>' +
-      '<p class="dlg-body">成功率：' + ship.enhancement.chancePercent + '%</p>' +
-      '<p class="dlg-body">消耗部件：' + escapeAchievementText(costLines) + iskLine + '</p>' +
+      '<p class="dlg-body">成功率：' + effPercent + '%' + (useCatalyst ? '（含催化芯片 +10%）' : '') + '</p>' +
+      '<p class="dlg-body">消耗部件：' + escapeAchievementText(costLines) + iskLine + (useCatalyst ? '<br>消耗强化催化芯片 ×1（仅成功时扣除）' : '') + '</p>' +
       '<p class="dlg-body dlg-warn">失败将消耗部件，等级保持 +' + ship.enhancement.level + '、0 XP。</p>';
     showDangerConfirm("⚠ 强化舰船", bodyHtml, "确认强化", doEnhance, () => {
       console.log("[ship-op][enhance] cancel", { instanceId: instanceId });
@@ -5279,7 +5322,7 @@ function enhanceEquipmentFromWarehouse(targetRef, onDone) {
   const engLevel = getEffectiveSkillLevel(gameState, "equipmentEngineering");
   const preview = getEquipmentEnhancementDisplayState(definition, fromLevel, engLevel);
   const doEnhance = () => {
-    const result = dispatchGameAction(gameState, { type:"equipment/enhance", targetRef }, Date.now());
+    const result = dispatchGameAction(gameState, { type:"equipment/enhance", targetRef, useCatalyst: equipEnhanceUseCatalyst }, Date.now());
     if (!result.changed) {
       const messages = {
         "insufficient-minerals":"精炼矿物不足",
@@ -6457,6 +6500,13 @@ function installTutorialWidgetListeners() {
     if (dismantleBtn) { dismantleShipFromHangar(dismantleBtn.dataset.dismantleShip); return; }
     const unbindBtn = event.target.closest("[data-unbind-npc-ship]");
     if (unbindBtn) { unbindNpcShipFromHangar(unbindBtn.dataset.unbindNpcShip); return; }
+    const catToggle = event.target.closest("[data-hangar-catalyst]");
+    if (catToggle) {
+      const sid = catToggle.dataset.hangarCatalyst;
+      if (hangarCatalystOn.has(sid)) hangarCatalystOn.delete(sid); else hangarCatalystOn.add(sid);
+      renderHangarPanel();
+      return;
+    }
     const enhance = event.target.closest("[data-enhance-ship]");
     if (enhance) { enhanceShipFromHangar(enhance.dataset.enhanceShip); return; }
     const assignment = event.target.closest("[data-ship-action]");

@@ -534,14 +534,15 @@
     return { common: common, fine: fine, superb: 1 - common - fine };
   }
 
-  // 单次强化的资源报价（成败都扣）
-  function rigEnhanceCost(tier) {
+  // 单次强化的资源报价（成败都扣）。useAffixChip 时抵扣校准基体（芯片顶替），仍扣 ISK + 解析矩阵。
+  function rigEnhanceCost(tier, opts) {
     const t = clampRigTier(tier);
+    const useAffixChip = Boolean(opts && opts.useAffixChip);
     return {
       isk: RIG_ENHANCE_ISK_PER_TIER * t,
       matrix: RIG_ENHANCE_MATRIX_PER_TIER * (1 + t),
       calibrationRef: "calibration:art_" + RIG_TIER_ROMAN[t] + "_calib",
-      calibrationQty: 1
+      calibrationQty: useAffixChip ? 0 : 1
     };
   }
 
@@ -602,7 +603,12 @@
     const gate = RIG_TIER_GATES[tier - 1];
     if (skillLevel(state, RIG_ENHANCE_MATERIAL_SKILL) < gate) return { ok: false, reason: "LEVEL_GATE", gate: gate };
 
-    const cost = rigEnhanceCost(tier);
+    // 高级词条芯片可用判定（与 enhanceRig 同口径）：勾选了使用、且指定系列在仓库里确实有货。
+    const _affixSeries = (opts && opts.affixChipSeries) || "";
+    const useAffixChip = Boolean(opts && opts.useAffixChip)
+      && Boolean(_affixSeries)
+      && (typeof ResourceRegistry !== "undefined" && ResourceRegistry && typeof ResourceRegistry.get === "function" && Number(ResourceRegistry.get(state, AFFIX_CHIP_PREFIX + _affixSeries)) > 0);
+    const cost = rigEnhanceCost(tier, { useAffixChip: useAffixChip });
     if (typeof ResourceRegistry === "undefined" || !ResourceRegistry || typeof ResourceRegistry.get !== "function") {
       return { ok: false, reason: "NO_RESISTRY" };
     }
@@ -621,22 +627,41 @@
   }
 
   /* 原子入口：执行一次强化尝试。
-     opts = { itemId | instanceId, focus?, rng? }
-     返回 { ok, reason?, success, affixes, affix?, itemId, instanceId, cost }
-     🔴 扣费在掷骰**之前**完成（成败都扣），故调用方不得自行重复扣费。 */
+     opts = { itemId | instanceId, focus?, rng?, useCatalyst?, useAffixChip?, affixChipSeries? }
+     返回 { ok, reason?, success, affixes, affix?, itemId, instanceId, cost, catalystUsed?, affixUsed? }
+     🔴 affixChipSeries = 玩家在改装件强化界面自选的词条系列（rigAffixSeries 的 series 值）；
+        对应独立物品 special:affixchip_<series>，消耗 1 张、必中、品质恒卓越。
+     🔴 扣费在掷骰**之前**完成（成败都扣），故调用方不得自行重复扣费。
+     潜能芯片分支：useCatalyst 在（非芯片路径的）成功率上 +10%（成功才扣片）；
+     useAffixChip 必中 + 用解码预 roll 的系列 + 强制卓越，并抵扣校准基体（仍扣 ISK + 解析矩阵）。 */
   function enhanceRig(state, opts) {
     const o = opts || {};
     const check = checkRigEnhance(state, o);
     if (!check.ok) return { ok: false, reason: check.reason, gate: check.gate, need: check.need, cost: check.cost, success: false, affixes: [] };
     const { target, itemId, tier, existing, cost } = check;
 
+    // 潜能芯片分支判定（与 checkRigEnhance 同口径）
+    const catAvail = (typeof ResourceRegistry !== "undefined" && ResourceRegistry && typeof ResourceRegistry.get === "function")
+      && Number(ResourceRegistry.get(state, POTENTIAL_CHIP_CATALYST)) > 0;
+    const useCatalyst = Boolean(o.useCatalyst) && catAvail;
+    const _affixSeries = (o && o.affixChipSeries) || "";
+    const affixAvail = (typeof ResourceRegistry !== "undefined" && ResourceRegistry && typeof ResourceRegistry.get === "function")
+      && Boolean(_affixSeries)
+      && Number(ResourceRegistry.get(state, AFFIX_CHIP_PREFIX + _affixSeries)) > 0;
+    const useAffixChip = Boolean(o.useAffixChip) && affixAvail;
+    // 高级词条芯片路径本身是必中，催化无意义（避免双加成），故催化仅在非芯片路径生效。
+    const effectiveUseCatalyst = useCatalyst && !useAffixChip;
+
     // ① 扣费（先于掷骰）
-    if (typeof ResourceRegistry.spend === "function") {
-      ResourceRegistry.spend(state, ISK_ID, cost.isk);
-      ResourceRegistry.spend(state, MATRIX_ID, cost.matrix);
-      ResourceRegistry.spend(state, cost.calibrationRef, cost.calibrationQty);
-    } else {
+    if (typeof ResourceRegistry.spend !== "function") {
       return { ok: false, reason: "NO_RESISTRY", success: false, affixes: [] };
+    }
+    ResourceRegistry.spend(state, ISK_ID, cost.isk);
+    ResourceRegistry.spend(state, MATRIX_ID, cost.matrix);
+    if (!useAffixChip) ResourceRegistry.spend(state, cost.calibrationRef, cost.calibrationQty);
+    // 高级词条芯片：扣 1 张玩家自选系列的独立物品（special:affixchip_<series>）；品质恒卓越、系列即玩家所选，不二次随机。
+    if (useAffixChip) {
+      ResourceRegistry.spend(state, AFFIX_CHIP_PREFIX + _affixSeries, 1);
     }
 
     // ② 掷骰：本条链所有随机（成功率 / 焦点 / 系列 / 强度）统一走同一个 rng，
@@ -644,7 +669,12 @@
     let draw = Math.random;
     if (typeof o.rng === "function") draw = o.rng;
     const roll = draw();
-    const success = roll < check.chance;
+    // 催化剂：在基础成功率上 +10%（装备强化与改装件附魔共用 applyEnhanceCatalyst）。
+    const effectiveChance = (typeof applyEnhanceCatalyst === "function")
+      ? applyEnhanceCatalyst(check.chance, effectiveUseCatalyst, state)
+      : check.chance;
+    // 高级词条芯片 = 必中；否则按（可能经催化放大的）成功率判定。
+    const success = useAffixChip ? true : (roll < effectiveChance);
 
     // ②.5 统计计数（成败都算一次尝试；即时结算语义 ⇒ 离线管线不会走到这里，计数天然不含离线）
     const invStat = ensureState(state);
@@ -652,6 +682,8 @@
       invStat.rigEnhance.attempts += 1;
       if (success) invStat.rigEnhance.success += 1;
     }
+    // 强化催化芯片：仅当本次确实享受了 +10%（勾选且有片、且非芯片必中路径）并在成功时消耗 1 片。
+    if (success && effectiveUseCatalyst) ResourceRegistry.spend(state, POTENTIAL_CHIP_CATALYST, 1);
 
     // ③ 产出（失败零产出，资源已扣）
     let newInstanceId = null;
@@ -668,17 +700,32 @@
       return { ok: true, success: false, affixes: existing, itemId: itemId, instanceId: null, cost: cost, roll: roll };
     }
 
-    // 词条系列：命中焦点则取玩家选的，否则全池随机
+    // 词条系列与品质
     const pool = rigAffixSeries();
     const seriesDef = pool.length
       ? pool : [{ series: "", label: "", bonusKey: "", category: "" }];
-    let picked = null;
-    if (isFocusValid(o.focus)) {
-      if (draw() < check.focusChance) picked = o.focus;
-    }
-    if (!picked) {
-      const idx = Math.floor(draw() * seriesDef.length);
-      picked = seriesDef[Math.max(0, Math.min(seriesDef.length - 1, idx))].series;
+    let picked, valueIdx;
+    if (useAffixChip) {
+      // 高级词条芯片：直接用玩家自选的系列 + 强制卓越（valueIdx=2），不二次随机。
+      picked = _affixSeries || "";
+      valueIdx = 2;
+    } else {
+      picked = null;
+      if (isFocusValid(o.focus)) {
+        if (draw() < check.focusChance) picked = o.focus;
+      }
+      if (!picked) {
+        const idx = Math.floor(draw() * seriesDef.length);
+        picked = seriesDef[Math.max(0, Math.min(seriesDef.length - 1, idx))].series;
+      }
+      // 品质概率（2026-09-26 用户定案）：初始 50/30/20，装工 Lv0→100 线性偏移至 30/40/30
+      // （优良+卓越随装工上升、普通下降，Lv100 达满偏移；总和恒为 1）。
+      const qEngLvl = skillLevel(state, RIG_ENHANCE_MATERIAL_SKILL);
+      const qw = Math.max(0, Math.min(100, Number(qEngLvl) || 0)) / 100;
+      const qCommon = 0.50 - 0.20 * qw;
+      const qFine = 0.30 + 0.10 * qw;
+      const qRoll = draw();
+      valueIdx = qRoll < qCommon ? 0 : (qRoll < qCommon + qFine ? 1 : 2);
     }
     const def = seriesDef.find(item => item.series === picked) || seriesDef[0];
     // 词条强度（2026-09-27 用户定案口径）：普通/优良/卓越 = 3% / 5% / 8%（RIG_ENHANCE_AFFIX_VALUES），
@@ -689,14 +736,6 @@
     // 同时消灭载体套利：同一词条系列在任意 T5 载体上恒 3/5/8（旧实现速掘词条从速掘 V 出 10.67%、
     // 从神经训练 V 出 8.00%，玩家可挑载体刷词条）。
     const rigDef = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB) ? EQUIPMENT_DB[itemId] : null;
-    // 品质概率（2026-09-26 用户定案）：初始 50/30/20，装工 Lv0→100 线性偏移至 30/40/30
-    // （优良+卓越随装工上升、普通下降，Lv100 达满偏移；总和恒为 1）。
-    const qEngLvl = skillLevel(state, RIG_ENHANCE_MATERIAL_SKILL);
-    const qw = Math.max(0, Math.min(100, Number(qEngLvl) || 0)) / 100;
-    const qCommon = 0.50 - 0.20 * qw;
-    const qFine = 0.30 + 0.10 * qw;
-    const qRoll = draw();
-    const valueIdx = qRoll < qCommon ? 0 : (qRoll < qCommon + qFine ? 1 : 2);
     const baseBonus = (rigDef && rigDef.bonuses) ? Number(Object.values(rigDef.bonuses)[0]) : null;
     const seriesT5Def = (rigDef && rigDef.stackGroup && EQUIPMENT_DB && EQUIPMENT_DB[rigDef.stackGroup + "_v"]) || null;
     const seriesMax = (seriesT5Def && seriesT5Def.bonuses) ? Number(Object.values(seriesT5Def.bonuses)[0]) : null;
@@ -730,7 +769,9 @@
     state._dirty = true;
     return {
       ok: true, success: true, pending: true, affixes: affixes, affix: affix,
-      itemId: itemId, instanceId: null, cost: cost, roll: roll
+      itemId: itemId, instanceId: null, cost: cost, roll: roll,
+      catalystUsed: Boolean(success && effectiveUseCatalyst),
+      affixUsed: Boolean(useAffixChip)
     };
   }
 
@@ -1060,6 +1101,106 @@
   }
 
   /* ---------------------------------------------------------------
+     潜能芯片解码（2026-10-09，2026-10-10 重构）：解码「未知的潜能芯片」→ 加权随机抽 1 个奖池道具。
+     奖池 = 18 技能模块（各 6）+ 强化催化芯片（15）+ 高级词条芯片（5），权重和 128。
+     中奖牌时当场随机抽一个改装件词条系列，直接发放对应的独立物品 special:affixchip_<series>（品质恒卓越）；
+     每种词条在仓库里各自成物、各自计数，应用芯片到改装件时由玩家在强化界面自选系列（见强化 UI）。
+     --------------------------------------------------------------- */
+  const POTENTIAL_CHIP_SOURCE = "special:未知的潜能芯片";
+  const POTENTIAL_CHIP_POOL = Object.freeze([
+    { id:"special:潜能芯片_mining", type:"skill", weight:6 },
+    { id:"special:潜能芯片_planetaryIndustry", type:"skill", weight:6 },
+    { id:"special:潜能芯片_refining", type:"skill", weight:6 },
+    { id:"special:潜能芯片_gasHarvesting", type:"skill", weight:6 },
+    { id:"special:潜能芯片_shipEngineering", type:"skill", weight:6 },
+    { id:"special:潜能芯片_equipmentEngineering", type:"skill", weight:6 },
+    { id:"special:潜能芯片_boosterEngineering", type:"skill", weight:6 },
+    { id:"special:潜能芯片_laserOps", type:"skill", weight:6 },
+    { id:"special:潜能芯片_cannonOps", type:"skill", weight:6 },
+    { id:"special:潜能芯片_missileOperations", type:"skill", weight:6 },
+    { id:"special:潜能芯片_defense", type:"skill", weight:6 },
+    { id:"special:潜能芯片_shieldOperation", type:"skill", weight:6 },
+    { id:"special:潜能芯片_armorReinforcement", type:"skill", weight:6 },
+    { id:"special:潜能芯片_hullEngineering", type:"skill", weight:6 },
+    { id:"special:潜能芯片_targeting", type:"skill", weight:6 },
+    { id:"special:潜能芯片_piloting", type:"skill", weight:6 },
+    { id:"special:潜能芯片_capacitorManagement", type:"skill", weight:6 },
+    { id:"special:潜能芯片_archaeology", type:"skill", weight:6 },
+    { id:"special:强化催化芯片", type:"catalyst", weight:15 },
+    { id:"special:高级词条芯片", type:"affix", weight:5 }
+  ]);
+
+  // 解码奖池三类道具的内部主键（与 resources.js 的 window.POTENTIAL_CHIP_*_ID 同值；此处为 IIFE 内本地常量，避免跨文件顶层 const 重名）。
+  const POTENTIAL_CHIP_CATALYST = "special:强化催化芯片";
+  // 高级词条芯片（2026-10-10 重构）：每种改装件词条系列 = 一个独立物品 special:affixchip_<series>，
+  // 各自计数、各自成物；强化时按玩家自选的 series 精确消耗 1 张，不再用单张堆叠 + 平行数组。
+  const AFFIX_CHIP_PREFIX = (typeof window !== "undefined" && window.AFFIX_CHIP_PREFIX) || "special:affixchip_";
+  const POTENTIAL_CHIP_SKILL_PREFIX_LOCAL = "special:潜能芯片_";
+  const SKILL_BUFF_AMOUNT = 5;                 // 技能模块临时 +5
+  const SKILL_BUFF_DURATION_MS = 10 * 60 * 1000; // 10 分钟（真实时间，绝对时间戳）
+  // 18 个技能模块的技能键（与 POTENTIAL_CHIP_POOL 中 type==="skill" 的条目一一对应），供 UI 遍历激活。
+  const POTENTIAL_CHIP_SKILL_KEYS = Object.freeze(
+    POTENTIAL_CHIP_POOL.filter(p => p.type === "skill")
+      .map(p => p.id.slice(POTENTIAL_CHIP_SKILL_PREFIX_LOCAL.length))
+  );
+
+  function potentialChipWeightedPick(rng) {
+    const total = POTENTIAL_CHIP_POOL.reduce((s, p) => s + p.weight, 0);
+    let roll = ((typeof rng === "function" ? rng() : Math.random())) * total;
+    for (const p of POTENTIAL_CHIP_POOL) {
+      roll -= p.weight;
+      if (roll < 0) return p;
+    }
+    return POTENTIAL_CHIP_POOL[POTENTIAL_CHIP_POOL.length - 1];
+  }
+
+  // opts.rng 可注入（探针复现）；默认 Math.random。返回 { ok, prizeId, prizeType, affixRoll? }
+  function decodePotentialChip(state, opts) {
+    if (!state) return { ok:false, reason:"NO_STATE" };
+    if (typeof ResourceRegistry === "undefined" || !ResourceRegistry) return { ok:false, reason:"NO_RESISTRY" };
+    if (Number(ResourceRegistry.get(state, POTENTIAL_CHIP_SOURCE)) < 1) return { ok:false, reason:"NO_CHIP" };
+    const rng = (opts && typeof opts.rng === "function") ? opts.rng : Math.random;
+    const pick = potentialChipWeightedPick(rng);
+    ResourceRegistry.spend(state, POTENTIAL_CHIP_SOURCE, 1);
+    let affixRoll = null;
+    if (pick.type === "affix") {
+      // 中奖牌 → 随机抽一个改装件词条系列，直接发放对应的独立物品 special:affixchip_<series>（品质恒卓越）。
+      // 不再写入平行数组 affixChipRolls；每种词条在仓库里各自成物、各自计数。
+      const seriesList = rigAffixSeries();
+      const chosen = (seriesList && seriesList.length) ? (seriesList[Math.floor(rng() * seriesList.length)] || seriesList[0]) : null;
+      const series = chosen ? chosen.series : "";
+      if (series) ResourceRegistry.add(state, AFFIX_CHIP_PREFIX + series, 1);
+      // 显示名取芯片物品注册名（special:affixchip_<series> 的 name，如「采矿速度词条芯片」），
+      // 与仓库卡片、改装件强化下拉/预览完全一致；不再用改装件本体名（采矿速度改装件）。
+      const _chipDef = (ResourceRegistry.getDefinition) ? ResourceRegistry.getDefinition(AFFIX_CHIP_PREFIX + series) : null;
+      const _chipName = (_chipDef && _chipDef.name) ? _chipDef.name : (chosen ? chosen.label : series);
+      affixRoll = chosen ? { series: series, label: _chipName, quality: 2 } : null;
+    } else {
+      ResourceRegistry.add(state, pick.id, 1);
+    }
+    if (typeof state.potentialChipDecodes === "number") state.potentialChipDecodes += 1;
+    state._dirty = true;
+    return { ok:true, prizeId: pick.id, prizeType: pick.type, affixRoll: affixRoll };
+  }
+
+  /* 激活技能模块：消耗 1 个「潜能芯片_<skillKey>」→ 给该技能加 +5 临时等级，持续 10min（绝对时间戳）。
+     不叠时长：再激活同技能仅刷新 endAt（拉满 10min），不累加 +10。
+     返回 { ok, endAt?, remaining?, reason? } */
+  function activateSkillBuff(state, skillKey, durationMs) {
+    if (!state) return { ok:false, reason:"NO_STATE" };
+    if (typeof ResourceRegistry === "undefined" || !ResourceRegistry || typeof ResourceRegistry.get !== "function") return { ok:false, reason:"NO_REGISTRY" };
+    const id = POTENTIAL_CHIP_SKILL_PREFIX_LOCAL + skillKey;
+    if (Number(ResourceRegistry.get(state, id)) < 1) return { ok:false, reason:"NO_CHIP" };
+    ResourceRegistry.spend(state, id, 1);
+    if (!state.skillTempBuffs || typeof state.skillTempBuffs !== "object" || Array.isArray(state.skillTempBuffs)) state.skillTempBuffs = {};
+    const dur = Number(durationMs) > 0 ? Number(durationMs) : SKILL_BUFF_DURATION_MS;
+    const endAt = Date.now() + dur;
+    state.skillTempBuffs[skillKey] = { endAt: endAt, amount: SKILL_BUFF_AMOUNT };
+    state._dirty = true;
+    return { ok:true, endAt: endAt, remaining: dur, amount: SKILL_BUFF_AMOUNT };
+  }
+
+  /* ---------------------------------------------------------------
      暴露
      --------------------------------------------------------------- */
 
@@ -1089,6 +1230,12 @@
     checkRigEnhance, enhanceRig,
     // 两段式覆写：尝试成功 → getPendingRigEnhance 预览 → placeRigEnhance(0|1|"append"|null) 落地
     getPendingRigEnhance, placeRigEnhance,
+    // 潜能芯片解码（2026-10-09）：解码「未知的潜能芯片」→ 加权随机抽 1 个奖池道具
+    POTENTIAL_CHIP_SOURCE, POTENTIAL_CHIP_POOL, decodePotentialChip,
+    // 潜能芯片技能模块：消耗 1 片 → 给指定技能 +5 临时等级（10min）。返回 { ok, endAt?, remaining?, reason? }
+    activateSkillBuff,
+    POTENTIAL_CHIP_CATALYST, AFFIX_CHIP_PREFIX, POTENTIAL_CHIP_SKILL_PREFIX_LOCAL,
+    POTENTIAL_CHIP_SKILL_KEYS,
     // ⚠️ 以下为已退役的 lab 自有槽位引擎（接主队列后不再被驱动）：保留兼容旧存档与历史探针，
     //    新代码禁止调用；蓝图发明的进度真值现在是 state.queue.items + currentAction.progress。
     processUntil, enqueueJob, cancelJob, cancelQueueItem,

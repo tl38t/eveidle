@@ -316,6 +316,15 @@ const gameState = {
     status: { activeIndex: -1, isRunning: false, completedCount: 0, failCount: 0 }
   },
 
+  // 潜能芯片解码（2026-10-09）：解码「未知的潜能芯片」抽中大奖时预 roll 的改装件词条 FIFO（series+label+quality），
+  // 应用芯片到改装件时按序弹出；与背包数量解耦，保证「解码即明牌」的词条与后续附魔一致。
+  affixChipRolls: [],
+  // 解码次数计数（面板展示用）。
+  potentialChipDecodes: 0,
+  // 技能临时增益（潜能芯片技能模块激活后写入）：{ [skillKey]: { endAt, amount } }。
+  // endAt 为绝对时间戳（真实时间），离线结算按结束点判定，不破在线/离线 parity。
+  skillTempBuffs: {},
+
   _dirty: false,
   lastActiveTime: Date.now(),
   lastSaveTime: Date.now()
@@ -323,6 +332,18 @@ const gameState = {
 
 // 挂到 window 供存档系统使用
 window.gameState = gameState;
+
+// 潜能芯片技能模块：读取某技能当前生效的临时增益量（默认 0）。
+// 单一实现点，combat.js 的 getSkillLvl 与 boosters.js 的 getEffectiveSkillLevel 都走这里，避免逻辑漂移。
+// 离线/在线共用：endAt 为绝对时间戳，离线结算函数按「当前真实时间」判定 endAt > now 即可。
+function getSkillTempBuffAmount(state, key) {
+  const g = (state && state.skillTempBuffs) ? state : (typeof gameState !== "undefined" ? gameState : null);
+  if (!g || !g.skillTempBuffs || !key) return 0;
+  const b = g.skillTempBuffs[key];
+  if (b && Number(b.endAt) > Date.now()) return Number(b.amount) || 0;
+  return 0;
+}
+if (typeof window !== "undefined") window.getSkillTempBuffAmount = getSkillTempBuffAmount;
 
 function ensureUserSettingsState(state) {
   if (!state.settings || typeof state.settings !== "object") state.settings = {};
@@ -356,6 +377,11 @@ function ensureUserSettingsState(state) {
   } else {
     state.settings.uiScale = Number(state.settings.uiScale);
   }
+  // 潜能芯片解码（2026-10-09）：老存档兜底，确保字段存在且类型正确。
+  if (!Array.isArray(state.affixChipRolls)) state.affixChipRolls = [];
+  if (typeof state.potentialChipDecodes !== "number" || !Number.isFinite(state.potentialChipDecodes)) state.potentialChipDecodes = 0;
+  // 技能临时增益（2026-10-09）：老存档兜底为 {}。
+  if (!state.skillTempBuffs || typeof state.skillTempBuffs !== "object" || Array.isArray(state.skillTempBuffs)) state.skillTempBuffs = {};
   return state.settings;
 }
 

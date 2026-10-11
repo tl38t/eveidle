@@ -328,6 +328,9 @@
   .cargo-card[data-cat="月球"] { border-left: 3px solid #d4a87a; }
   .cargo-card[data-cat="组件"] { border-left: 3px solid #a0a8b8; }
   .cargo-card[data-cat="消耗品"] { border-left: 3px solid #e8d8a0; }
+  /* 高级词条芯片：仓库卡片内直接列出每张芯片携带的具体词条 */
+  .cargo-card .cc-affix-wrap { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; padding-top:6px; border-top:1px dashed rgba(231,195,90,.25); }
+  .cargo-card .cc-affix { display:inline-block; padding:2px 7px; border-radius:7px; font-size:11px; font-weight:600; color:#e7c35a; background:rgba(231,195,90,.14); border:1px solid rgba(231,195,90,.45); }
   .action-booster-slots { margin-top: 12px; padding: 8px 0; }
   .action-booster-title { display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; color:#d6c786; font-size:13px; }
   .action-booster-title span:last-child { color:#71839a; font-size:11px; }
@@ -603,6 +606,10 @@
   .eem-cost { font-size: 11px; color: #8aa0b8; background: #0f1822; border: 1px solid #1f2b3a; border-radius: 3px; padding: 2px 6px; }
   .eem-cost small { color: #6a7a8e; }
   .eem-cost.insufficient { color: #e57a7a; border-color: #5a2a2a; }
+  .eem-cat-row { align-items: center; }
+  .eem-cat-toggle { padding: 4px 10px; border: 1px solid #2a4258; border-radius: 6px; background: #0f1822; color: #8aa0b8; font: 600 11.5px var(--font-ui, system-ui); cursor: pointer; }
+  .eem-cat-toggle.on { border-color: var(--gold, #e7c35a); background: #2a2113; color: var(--gold-lt, #e7c35a); }
+  .eem-cat-badge { color: var(--gold, #e7c35a); font-size: 10px; margin-left: 6px; }
   .eem-extra { margin-top: 2px; }
   .eem-tag.milestone { color: #e57a7a; font-size: 10px; border: 1px solid #5a2a2a; background: #2a1515; border-radius: 3px; padding: 1px 5px; }
   .eem-foot { padding: 12px 16px; border-top: 1px solid #1c2632; display: flex; flex-direction: column; gap: 8px; }
@@ -1083,6 +1090,12 @@
   .enhance-roll b { color: #e8d8a0; }
   .enhance-btn { margin-left: auto; border-color: #477e9f; color: #8fd5ff; }
   .enhance-btn:disabled { border-color: #283440; color: #53606d; }
+  /* 潜能芯片 · 强化催化芯片开关（舰船强化）：点击切换，本次成功率 +10%（仅成功时消耗） */
+  .enhance-cat-row { margin-top: 7px; }
+  .enhance-cat-toggle { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid #3a4a5c; border-radius: 4px; background: rgba(30,44,58,.6); color: #9fb2c4; font-size: 10px; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+  .enhance-cat-toggle:hover { border-color: #4d6a86; color: #c3d6e6; }
+  .enhance-cat-toggle.on { border-color: #6fb0d8; color: #bfe6ff; background: rgba(48,96,132,.35); box-shadow: inset 0 0 0 1px rgba(111,176,216,.25); }
+  .enhance-cat-badge { margin-left: 6px; color: #8fd5ff; font-size: 10px; }
   .hangar-ship-actions { margin-top: 9px; }
   .hangar-ship-repair { margin-top: 8px; padding: 5px 8px; border: 1px solid #6a5a2a; border-radius: 4px; background: rgba(212,168,67,0.08); color: #e0b94a; font-size: 12px; }
   .hangar-ship-repair .repair-remaining { font-weight: bold; }

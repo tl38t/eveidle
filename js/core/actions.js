@@ -1815,7 +1815,7 @@ const ShellStateActions = {
     return { changed:true, instance, config };
   },
 
-  enhanceShip(state, instanceId, randomValue) {
+  enhanceShip(state, instanceId, randomValue, useCatalyst) {
     const instance = getShipInstanceFromState(state, instanceId);
     const config = instance ? getShipConfigById(instance.shipId) : null;
     const tier = config ? getShipEnhancementTier(config) : null;
@@ -1848,12 +1848,22 @@ const ShellStateActions = {
 
     const fromLevel = normalizeShipEnhancementLevel(instance.enhancementLevel);
     const skillLevel = getEffectiveSkillLevel(state, "shipEngineering");
-    const chance = getShipEnhancementSuccessChance(skillLevel, tier.level, fromLevel);
+    const baseChance = getShipEnhancementSuccessChance(skillLevel, tier.level, fromLevel);
+    // 潜能芯片·强化催化芯片：勾选且持有则在成功率上 +10%（成功才消耗，见下方成功分支扣片）。
+    // 与装备强化共用 applyEnhanceCatalyst（唯一真值源 = 资源持有量），不足则自动失效、不报错。
+    const useCatalystChip = Boolean(useCatalyst);
+    const chance = (typeof applyEnhanceCatalyst === "function")
+      ? applyEnhanceCatalyst(baseChance, useCatalystChip, state)
+      : baseChance;
     const roll = Number.isFinite(Number(randomValue)) ? Math.max(0, Math.min(0.999999999, Number(randomValue))) : Math.random();
     const success = roll < chance;
     const toLevel = success ? fromLevel + 1 : fromLevel; // 2026-07-24：失败不掉级（与装备强化一致）
     const xp = success ? getShipEnhancementSuccessXp(config, fromLevel) : 0; // 2026-07-24：失败 0 XP
     instance.enhancementLevel = toLevel;
+    // 潜能芯片·强化催化芯片：仅当本次确实享受了 +10%（勾选且有片）并在成功时消耗 1 片。
+    const catalystId = (typeof window !== "undefined" && window.POTENTIAL_CHIP_CATALYST_ID) || "special:强化催化芯片";
+    const catalystUsed = Boolean(success && useCatalystChip && typeof ResourceRegistry !== "undefined" && ResourceRegistry.get && Number(ResourceRegistry.get(state, catalystId)) > 0);
+    if (catalystUsed) ResourceRegistry.spend(state, catalystId, 1);
     addSkillXpToState(state, "shipEngineering", xp, { source:"ship-enhancement" });
     state._dirty = true;
 
@@ -1870,7 +1880,7 @@ const ShellStateActions = {
       componentsSpent:Object.values(cost).reduce((sum, quantity) => sum + quantity, 0),
       iskSpent:iskCost
     }, { offline:false, source:"ship-enhancement" });
-    return { changed:true, instance, config, fromLevel, toLevel, chance, roll, success, xp, cost, iskCost };
+    return { changed:true, instance, config, fromLevel, toLevel, chance, roll, success, xp, cost, iskCost, catalystUsed };
   },
 
   // Batch R（E 项·舰船拆解）：只读报价已由 selector 展示；此处执行拆解。
@@ -2478,7 +2488,7 @@ function destroyRigRefFromFitting(state, ref) {  if (!state.equipment) state.equ
 
 // 全装备强化 Action（原子）。targetRef 可为实例 instanceId 或 inventory 中的 +0 装备字符串。
 // 拒绝统一返回 { changed:false, reason }，绝不抛异常。
-function enhanceEquipment(state, targetRef, randomValue) {
+function enhanceEquipment(state, targetRef, randomValue, opts) {
   if (!state.equipment) state.equipment = { inventory:[], instances:[], nextInstanceId:1 };
   if (!Array.isArray(state.equipment.inventory)) state.equipment.inventory = [];
   if (!Array.isArray(state.equipment.instances)) state.equipment.instances = [];
@@ -2505,6 +2515,13 @@ function enhanceEquipment(state, targetRef, randomValue) {
   const currentLevel = targetInstance ? Math.max(0, Number(targetInstance.enhancementLevel) || 0) : 0;
   const display = getEquipmentEnhancementDisplayState(eq, currentLevel, engLevel);
   const needDonor = Boolean(display.extra.sameTypeItemId);
+
+  // 潜能芯片·强化催化芯片：在展示成功率上 +10%（仅当玩家勾选且确有持有）。成功才消耗（下方成功分支处理）。
+  const o = opts || {};
+  const useCatalyst = Boolean(o.useCatalyst);
+  const successChance = (typeof applyEnhanceCatalyst === "function")
+    ? applyEnhanceCatalyst(display.success, useCatalyst, state)
+    : display.success;
 
   // ── 前置校验：全部通过后才允许任何状态修改（原子性） ──
   if (!ResourceRegistry.canAffordCost(state, display.cost)) return { changed:false, reason:"insufficient-minerals" };
@@ -2543,11 +2560,15 @@ function enhanceEquipment(state, targetRef, randomValue) {
 
   const fromLevel = targetInstance.enhancementLevel;
   const roll = Number.isFinite(Number(randomValue)) ? Math.max(0, Math.min(0.999999999, Number(randomValue))) : Math.random();
-  const success = roll < display.success;
+  const success = roll < successChance;
   const toLevel = success ? fromLevel + 1 : fromLevel; // 失败规则 C：等级不变，不回退、不降级
   targetInstance.enhancementLevel = toLevel;
   // DED 监督者装备的协议是成功结算材料：失败保留协议，不重复惩罚玩家。
   if (success && display.extra.protocol) ResourceRegistry.spendCost(state, { [display.extra.protocol]:1 });
+  // 潜能芯片·强化催化芯片：仅当本次确实享受了 +10%（勾选且有片）并在成功时消耗 1 片。
+  const catalystId = (typeof window !== "undefined" && window.POTENTIAL_CHIP_CATALYST_ID) || "special:强化催化芯片";
+  const catalystUsed = Boolean(success && useCatalyst && typeof ResourceRegistry !== "undefined" && ResourceRegistry.get && Number(ResourceRegistry.get(state, catalystId)) > 0);
+  if (catalystUsed) ResourceRegistry.spend(state, catalystId, 1);
   const xp = success ? display.successXp : 0; // 失败 XP = 0
   if (xp > 0) addSkillXpToState(state, "equipmentEngineering", xp, { source:"equipment-enhancement" });
   state._dirty = true;
@@ -2566,7 +2587,7 @@ function enhanceEquipment(state, targetRef, randomValue) {
     offline:false
   }, { offline:false, source:"equipment-enhancement" });
 
-  return { changed:true, instanceId:targetInstance.instanceId, itemId:targetItemId, fromLevel, toLevel, success, xp, cost:display.cost, extra:display.extra, isMilestone:display.isMilestone };
+  return { changed:true, instanceId:targetInstance.instanceId, itemId:targetItemId, fromLevel, toLevel, success, xp, cost:display.cost, extra:display.extra, isMilestone:display.isMilestone, catalystUsed };
 }
 
 /* ================================================================
@@ -2950,14 +2971,14 @@ const StationStateActions = {
   if (action.type === "hangar/toggleAssignment") return tutorialNote(state, action, ShellStateActions.toggleShipAssignment(state, action.instanceId, action.actionKey, actionTime), actionTime);
   if (action.type === "hangar/renameShip") return ShellStateActions.renameShip(state, action.instanceId, action.name, actionTime);
   if (action.type === "hangar/equipCombatShip") return tutorialNote(state, action, ShellStateActions.equipCombatShip(state, action.instanceId, actionTime), actionTime);
-  if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue);
+  if (action.type === "hangar/enhanceShip") return ShellStateActions.enhanceShip(state, action.instanceId, action.randomValue, action.useCatalyst);
   if (action.type === "hangar/disassembleShip") return ShellStateActions.disassembleShip(state, action.instanceId, actionTime);
   if (action.type === "hangar/setFittingSlot") return tutorialNote(state, action, ShellStateActions.setFittingSlot(state, action.instanceId, action.slot, action.slotIndex, action.equipmentId), actionTime);
   if (action.type === "hangar/resetFitting") return tutorialNote(state, action, ShellStateActions.resetFitting(state, action.instanceId), actionTime);
   if (action.type === "hangar/fitRig") return ShellStateActions.fitRig(state, action.instanceId, action.slotIndex, action.rigItemId);
   if (action.type === "hangar/destroyFittedRig") return ShellStateActions.destroyFittedRig(state, action.instanceId, action.slotIndex);
   if (action.type === "hangar/replaceFittedRig") return ShellStateActions.replaceFittedRig(state, action.instanceId, action.slotIndex, action.rigItemId);
-  if (action.type === "equipment/enhance") return enhanceEquipment(state, action.targetRef, action.randomValue);
+  if (action.type === "equipment/enhance") return enhanceEquipment(state, action.targetRef, action.randomValue, action);
   if (action.type === "equipment/discard") return ShellStateActions.discardEquipment(state, action.targetRef, actionTime);
   if (action.type === "equipment/dismantle") return ShellStateActions.dismantleEquipment(state, action.targetRef, actionTime);
   if (action.type === "component/dismantle") return ShellStateActions.dismantleComponent(state, action.componentId, actionTime);

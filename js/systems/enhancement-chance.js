@@ -42,10 +42,22 @@ function getEnhancementChance(engineeringLevel, requirementLevel, currentLevel) 
   return getEnhancementChanceBreakdown(engineeringLevel, requirementLevel, currentLevel).final;
 }
 
+// 潜能芯片·强化催化芯片：在已有成功率上 +10%（一次性，成功才消耗）。
+// 单一真相源 = 资源持有量（special:强化催化芯片）；不另设独立计数器，避免双记账漂移。
+// 装备强化与改装件附魔共用此函数。夹取上限 1.0（下限本就是 final，无需再夹）。
+function applyEnhanceCatalyst(finalChance, useChip, state) {
+  if (!useChip) return finalChance;
+  const id = (typeof window !== "undefined" && window.POTENTIAL_CHIP_CATALYST_ID) || "special:强化催化芯片";
+  if (typeof ResourceRegistry === "undefined" || !ResourceRegistry || typeof ResourceRegistry.get !== "function") return finalChance;
+  if (Number(ResourceRegistry.get(state, id)) < 1) return finalChance;
+  return Math.min(1.0, finalChance + 0.10);
+}
+
 // 双模式出口（微信小游戏 CommonJS 适配）：本文件两个顶层函数被
 // equipment-enhancement.js 与 ship-enhancement.js 跨文件消费，在微信的模块包裹下
 // 不显式导出即不可见；浏览器侧是幂等赋值，行为零变化。
 // 写法与 js/data/ships.js 等已上线的同款出口一致。
 if (typeof window !== "undefined") window.getEnhancementChanceBreakdown = getEnhancementChanceBreakdown;
 if (typeof window !== "undefined") window.getEnhancementChance = getEnhancementChance;
-if (typeof module !== "undefined" && module.exports) module.exports = { getEnhancementChanceBreakdown: getEnhancementChanceBreakdown, getEnhancementChance: getEnhancementChance };
+if (typeof window !== "undefined") window.applyEnhanceCatalyst = applyEnhanceCatalyst;
+if (typeof module !== "undefined" && module.exports) module.exports = { getEnhancementChanceBreakdown: getEnhancementChanceBreakdown, getEnhancementChance: getEnhancementChance, applyEnhanceCatalyst: applyEnhanceCatalyst };

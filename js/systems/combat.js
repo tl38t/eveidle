@@ -170,7 +170,13 @@ function calcCombatDamage(attackerHit, targetDodge, baseDps, counterMultiplier, 
 }
 
 // ---- 战斗技能加成计算 ----
-function getSkillLvl(key, state) { const g = (state && state.skills) ? state : gameState; return (g.skills[key] && g.skills[key].lvl) || 1; }
+function getSkillLvl(key, state) {
+  const g = (state && state.skills) ? state : gameState;
+  const base = (g.skills[key] && g.skills[key].lvl) || 1;
+  // 潜能芯片技能模块：临时 +5（10 分钟真实时间）。战斗技能也吃（用户 2026-10-09 拍板）。
+  const buff = (typeof getSkillTempBuffAmount === "function") ? getSkillTempBuffAmount(g, key) : 0;
+  return base + buff;
+}
 
 function calcPlayerHit(weapon, equipment, state) {
   return getCombatWeaponHitFromState(state || gameState, weapon, equipment && equipment.combat);

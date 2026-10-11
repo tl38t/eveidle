@@ -430,6 +430,8 @@ function getEffectiveSkillLevel(state, key) {
     var eff = getBoosterEffectState(g);
     bonus = Number(eff.skillLevelBySkill && eff.skillLevelBySkill[key]) || 0;
   }
+  // 潜能芯片技能模块：临时 +5（10 分钟真实时间），与增强剂临时等级加性叠加（不冲突）。
+  if (typeof getSkillTempBuffAmount === "function") bonus += getSkillTempBuffAmount(g, key);
   return base + bonus;
 }
 

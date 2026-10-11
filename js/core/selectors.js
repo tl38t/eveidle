@@ -3561,6 +3561,16 @@ const EQUIP_FUNCTION_ORDER = { "武器":0,"维修":1,"采矿":2,"采气":3,"打�
 /* 增强剂制造五档战术材料名→T1..T5 档位序（仓库「战术材料」小分类内按档排序；boosters.js 的 TACTICAL_MATERIALS 在 selectors.js 前加载） */
 const TACTICAL_MATERIAL_ORDER = (typeof TACTICAL_MATERIALS !== "undefined")
   ? Object.fromEntries(TACTICAL_MATERIALS.map((m, i) => [m.name, i])) : {};
+/* 潜能芯片族（2026-10-10）：解码系统 20 项奖池道具（18 技能模块 + 强化催化芯片 + 高级词条芯片）
+   与源芯片「未知的潜能芯片」。仓库视图按需求把它们从「特殊物资」改挂到「消耗品」，并单独成
+   二级小类「潜能芯片」；内部 id 不变（仍是 special: 命名空间），故解码 / 强化 / 存档逻辑零影响。 */
+const POTENTIAL_CHIP_ITEM_EXACT_IDS = ["special:未知的潜能芯片", "special:强化催化芯片"];
+const POTENTIAL_CHIP_ITEM_ID_PREFIX = "special:潜能芯片_";
+function isPotentialChipItemId(id){
+  if (typeof id !== "string" || !id) return false;
+  if (id.indexOf(POTENTIAL_CHIP_ITEM_ID_PREFIX) === 0) return true;
+  return POTENTIAL_CHIP_ITEM_EXACT_IDS.indexOf(id) !== -1;
+}
 /* 计算单个仓库物品的分层排序元数据；componentLevelByName 为 舰船组件名→等级 映射 */
 function computeCargoSortMeta(item, componentLevelByName){
   const topRank = CARGO_TOP_RANK[item.category] != null ? CARGO_TOP_RANK[item.category] : 99;
@@ -3592,7 +3602,11 @@ function computeCargoSortMeta(item, componentLevelByName){
     // 玩家要求：仓库-消耗品页面把「弹药」小标签摆在第一个。
     // 增强剂/探针 id 带显式命名空间，名字里可能含「弹」字（如导弹燃烧催化剂），须排除，避免误归弹药。
     const explicitNs = id && (id.indexOf("booster:") === 0 || id.indexOf("probe:") === 0);
-    if((item.ammoTier != null || /弹/.test(nm)) && !explicitNs){
+    if(isPotentialChipItemId(id)){
+      // 潜能芯片族必须先判：技能模块名含「弹」字（如「潜能芯片 · 导弹操作」）会被下方弹药分支误吞。
+      subRank = 15; subLabel = "潜能芯片"; primary = 0; secondary = nm;
+    }
+    else if((item.ammoTier != null || /弹/.test(nm)) && !explicitNs){
       const tierRaw = item.ammoTier || (nm.match(/T(\d+)/) || [,"1"])[1];
       const tier = String(tierRaw).replace(/^T/i, "") || "1";
       subRank = Number(tier) - 1; subLabel = "弹药 T" + tier; secondary = nm.replace(/\s*T\d+.*$/,"");
@@ -3710,7 +3724,7 @@ function getCargoDisplayState(state, filter, subFilter) {
     moon:Object.fromEntries(ResourceRegistry.listStateEntries(state, "moon").map(entry => [getResourceDisplayName(entry.definition.id), entry.quantity])),
     special:Object.fromEntries(
       [
-        ...specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") !== 0),  // 货柜改由 consumable 收纳
+        ...specialEntries.filter(entry => (entry.definition.id || "").indexOf("special:货柜") !== 0 && !isPotentialChipItemId(entry.definition.id)),  // 货柜 / 潜能芯片族改由 consumable 收纳
         ...(darkMatterCoreEntry ? [darkMatterCoreEntry] : []),
         ...calibrationEntries
       ].map(entry => {
@@ -3768,6 +3782,20 @@ function getCargoDisplayState(state, filter, subFilter) {
           out[nm] = { qty: q, id: entry.definition.id };
         }
         return out;
+      })(),
+      // 潜能芯片族（解码奖池 20 项 + 源芯片「未知的潜能芯片」）：按需求从「特殊物资」改挂「消耗品」展示，
+      // 二级小类「潜能芯片」；id 保留 special: 命名空间，故解码 / 强化 / 存档逻辑零影响。
+      (function () {
+        const out = {};
+        for (const entry of specialEntries) {
+          const id = entry.definition && entry.definition.id;
+          if (!isPotentialChipItemId(id)) continue;
+          const q = Number(entry.quantity) || 0;
+          if (q <= 0) continue;
+          const nm = getResourceDisplayName(id) || entry.definition.name;
+          out[nm] = { qty: q, id };
+        }
+        return out;
       })()
     ),
     equipment:equipmentSource
@@ -3793,7 +3821,7 @@ function getCargoDisplayState(state, filter, subFilter) {
       const itemId = (rawEntry && typeof rawEntry === "object" && rawEntry.id) || null;
       // 弹药档位（由弹药实例 s.tier 带出，名字无可识别档位时不靠名字猜）
       const ammoTier = (rawEntry && typeof rawEntry === "object" && rawEntry.ammoTier) || null;
-      const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : (itemId && itemId.indexOf("booster:") === 0 ? "💉" : itemId && itemId.indexOf("probe:") === 0 ? "🔭" : "📦");
+      const fallbackIcon = equipment ? (equipment.slot === "mid" ? "🤖" : equipment.slot === "low" ? "⬆️" : "📦") : (itemId && itemId.indexOf("booster:") === 0 ? "💉" : itemId && itemId.indexOf("probe:") === 0 ? "🔭" : isPotentialChipItemId(itemId) ? "🧩" : "📦");
       let source = isEquip
         ? { pageId:"equipmentEngineering", pageLabel:"装备工程", icon:"fa-solid fa-gears" }
         : isComponent
@@ -3824,6 +3852,22 @@ function getCargoDisplayState(state, filter, subFilter) {
       if (itemId && itemId.indexOf("probe:") === 0) {
         source = { pageId:"archaeology", pageLabel:"考古", icon:"fa-solid fa-digging" };
         description = "考古探针。在考古界面装备后提升扫描强度，单次考古作业消耗 1 枚；基础探针可在装备工程制造，复原探针由考古稀有掉落获取。";
+      }
+      // 潜能芯片族归入「消耗品」标签，来源/说明按三类分别纠正：源芯片=战斗掉落，其余=解码抽取。
+      if (isPotentialChipItemId(itemId)) {
+        if (itemId === "special:未知的潜能芯片") {
+          source = { pageId:"combat", pageLabel:"战斗", icon:"fa-solid fa-crosshairs" };
+          description = "解码原料。由精英难度（非地狱）敌人掉落，可在「蓝图发明 › 潜能芯片解码」中消耗 1 枚，随机抽取 20 项奖池之一。";
+        } else if (itemId === "special:强化催化芯片") {
+          source = { pageId:"blueprintInvention", pageLabel:"蓝图发明", icon:"fa-solid fa-dna" };
+          description = "解码奖励。装备 / 改装件强化时勾选「使用强化催化芯片」即可使成功率 +10%（仅在强化成功时消耗 1 枚）。";
+        } else if (itemId === "special:高级词条芯片") {
+          source = { pageId:"blueprintInvention", pageLabel:"蓝图发明", icon:"fa-solid fa-dna" };
+          description = "解码大奖。改装件强化时可代替校准基体，必定成功并产出卓越品质词条；词条系列在解码时即已明牌。";
+        } else {
+          source = { pageId:"blueprintInvention", pageLabel:"蓝图发明", icon:"fa-solid fa-dna" };
+          description = "解码奖励。在「蓝图发明 › 潜能芯片解码」标签中激活，对应技能临时 +5 级、持续 10 分钟真实时间。";
+        }
       }
       if (itemId && itemId.indexOf("special:") === 0 && typeof STARMAP_TITAN_MATERIALS !== "undefined" && Array.isArray(STARMAP_TITAN_MATERIALS) && STARMAP_TITAN_MATERIALS.includes(itemId.slice("special:".length))) {
         source = { pageId:"starmap", pageLabel:"星图采集", icon:"fa-solid fa-star" };
@@ -3866,7 +3910,7 @@ function getCargoDisplayState(state, filter, subFilter) {
         warehouseItem.source = { pageId:"starmap", pageLabel:"星图采集", icon:"fa-solid fa-star" };
         warehouseItem.description = "泰坦专属材料。来自星图采集节点；首次完成试炼立即获得一批，之后按首次奖励的96%/24小时累计，并按小时手动领取。";
       }
-      if (itemId && itemId.indexOf("special:") === 0 && itemId.indexOf("special:voucher_") !== 0 && typeof getMaterialCraftables === "function") {
+      if (itemId && itemId.indexOf("special:") === 0 && itemId.indexOf("special:voucher_") !== 0 && !isPotentialChipItemId(itemId) && typeof getMaterialCraftables === "function") {
         warehouseItem.craftables = getMaterialCraftables(itemId, state);
       }
     }

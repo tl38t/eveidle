@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="./css/base.css?v=25" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
   <link rel="stylesheet" href="./css/panels.css?v=76" data-page-node-id="EO0cvpdOJNMFJG5gNM6nea">
   <link rel="stylesheet" href="./css/combat.css?v=30" data-page-node-id="4tyvBwYTecWVPpekSSWQWZ">
-<link rel="stylesheet" href="./css/components.css?v=51" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
+<link rel="stylesheet" href="./css/components.css?v=54" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
 <link rel="stylesheet" href="./css/chat.css?v=5" data-page-node-id="yegpT4axdagveBVNN2Jthl">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=28" data-page-node-id="Hg2oYi1jGpwcCdUfrpD2LM">
 <style id="starmap-collection-room-style">
@@ -28,8 +28,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=64"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=40"></script>
+  <script src="./js/i18n/catalog-en.js?v=65"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=41"></script>
   <!-- steam-i18n-locales:start -->
   <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -43,11 +43,11 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=26"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=34"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ja.js?v=11"><\/script>');
-        document.write('<script src="./js/i18n/catalog-fr.js?v=11"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ko.js?v=11"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=27"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=35"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ja.js?v=12"><\/script>');
+        document.write('<script src="./js/i18n/catalog-fr.js?v=12"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ko.js?v=12"><\/script>');
       }
     })();
   </script>
@@ -916,6 +916,36 @@
       #blueprint-lab-panel .bl-job-empty{color:var(--dim);font-size:11.5px;text-align:center;border-style:dashed}
       #blueprint-lab-panel .bl-job-slot{opacity:.92}
       #blueprint-lab-panel .bl-pause{display:block;margin-top:6px;font-size:11px;color:#e2c37b}
+      /* —— 已解码芯片仓库（2026-10-09） —— */
+      #blueprint-lab-panel #bl-chip-inv{display:flex;flex-direction:column;gap:11px;margin-top:2px}
+      #blueprint-lab-panel .bl-chip-group{border:1px solid var(--line);border-radius:8px;background:#0e1620;padding:11px 13px}
+      #blueprint-lab-panel .bl-chip-group-h{font:700 12px var(--font-ui);color:var(--gold-lt);margin-bottom:9px;line-height:1.5}
+      #blueprint-lab-panel .bl-chip-row{display:flex;align-items:center;gap:10px;padding:7px 0;border-top:1px solid #18222e}
+      #blueprint-lab-panel .bl-chip-group .bl-chip-row:first-of-type{border-top:none}
+      #blueprint-lab-panel .bl-chip-name{flex:1;min-width:0;font:600 12.5px var(--font-ui);color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      #blueprint-lab-panel .bl-chip-cnt{font:600 11.5px var(--font-tech);color:var(--txt2);white-space:nowrap}
+      #blueprint-lab-panel .bl-chip-act{padding:4px 11px;border:1px solid var(--gold);border-radius:6px;background:#1c2029;color:var(--gold-lt);font:600 11.5px var(--font-ui);cursor:pointer}
+      #blueprint-lab-panel .bl-chip-act:hover{background:#2a2113}
+      #blueprint-lab-panel .bl-chip-act:disabled{opacity:.4;cursor:not-allowed;border-color:var(--line2);color:var(--mut);background:#101720}
+      #blueprint-lab-panel .bl-chip-timer{font:600 11.5px var(--font-tech);color:var(--green);white-space:nowrap;padding:4px 11px;border:1px solid var(--green);border-radius:6px;background:var(--green-bg,#0f2a1c)}
+      #blueprint-lab-panel .bl-chip-note{flex:1;min-width:0;font-size:11px;color:var(--dim);text-align:right;line-height:1.5}
+      #blueprint-lab-panel .bl-chip-note b{color:var(--gold-lt)}
+      #blueprint-lab-panel .bl-chip-empty{font-size:11.5px;color:var(--dim);text-align:center;border:1px dashed var(--line2);border-radius:6px;padding:9px}
+      /* —— 改装件附魔界面的潜能芯片开关（2026-10-09） —— */
+      #blueprint-lab-panel .bl-enc-chips{display:flex;flex-direction:column;gap:8px;margin:10px 0 2px;border-top:1px solid var(--line);padding-top:10px}
+      #blueprint-lab-panel .bl-enc-chip-row{display:flex;align-items:center;gap:10px}
+      #blueprint-lab-panel .bl-enc-chip-label{flex:1;min-width:0;font:600 12px var(--font-ui);color:var(--txt2)}
+      #blueprint-lab-panel .bl-enc-chip-toggle{padding:4px 11px;border:1px solid #2a4258;border-radius:6px;background:#0f1822;color:#8aa0b8;font:600 11.5px var(--font-ui);cursor:pointer;white-space:nowrap}
+      #blueprint-lab-panel .bl-enc-chip-toggle.on{border-color:var(--gold,#e7c35a);background:#2a2113;color:var(--gold-lt,#e7c35a)}
+      #blueprint-lab-panel .bl-enc-chip-toggle:disabled{opacity:.45;cursor:not-allowed}
+      #blueprint-lab-panel .bl-enc-chip-preview{font-size:11px;color:var(--dim);line-height:1.5}
+      #blueprint-lab-panel .bl-enc-chip-preview b{color:var(--gold-lt,#e7c35a)}
+      /* 高级词条芯片：自选具体词条的下拉 */
+      #blueprint-lab-panel .bl-enc-affix-sel{display:block;width:100%;margin:8px 0 2px;padding:6px 8px;border:1px solid #2a4258;border-radius:6px;background:#0f1822;color:#dde4ea;font:600 12px var(--font-ui)}
+      #blueprint-lab-panel .bl-enc-affix-sel:disabled{opacity:.45;cursor:not-allowed}
+      /* 已解码芯片仓库：高级词条芯片标签列表 */
+      #blueprint-lab-panel .bl-affix-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+      #blueprint-lab-panel .bl-affix-tag{display:inline-block;padding:2px 8px;border-radius:7px;font-size:11px;font-weight:600;color:#e7c35a;background:rgba(231,195,90,.14);border:1px solid rgba(231,195,90,.45)}
     </style>
     <div class="panel" id="blueprint-lab-panel" style="display:none;" data-page-node-id="3bnCB1TVNrCsKSCPwzEpV4">
       <div class="panel-header" data-page-node-id="vKt8eFVm55mu2KaHFzXoUt"><span class="panel-title" data-page-node-id="M0b9IrMwKQQGTPhac5otK3">🧬 蓝图发明</span><span class="panel-sub" data-page-node-id="SWSy8StUJ0k2PVWVrUNs1p">研究预览版</span></div>
@@ -927,6 +957,7 @@
         <div class="bl-tabs" role="tablist" aria-label="蓝图发明标签" data-page-node-id="AHe8sUMM4sfyqRme9N9w9A">
           <button class="bl-tab active" type="button" data-bl-tab="eff" role="tab" data-page-node-id="R4DXI751Pff7wvufSIxk70">效率研究 · ME / TE</button>
           <button class="bl-tab" type="button" data-bl-tab="enc" role="tab" data-page-node-id="CsnZ6kXbHcdeX1OfbOIIAb">改装件强化 · 双词条</button>
+          <button class="bl-tab" type="button" data-bl-tab="decode" role="tab">潜能芯片解码</button>
         </div>
 
         <!-- ============ 效率研究 ============ -->
@@ -1068,6 +1099,20 @@
               <div class="bl-kv" data-page-node-id="8GICp7rTNGI10CAoXezjwM"><span data-page-node-id="sHooXykcMI04yDcWCIYQ9S">词条品质概率</span><b id="bl-enc-quality" data-page-node-id="FOu40viAqFiHxjebPyitNh">—</b></div>
               <div class="bl-kv" data-page-node-id="46OA9XjzqU3iHTWMfNXU8x"><span data-page-node-id="RwWx59tQcLtsfDKNf8PeY1">累计强化 / 成功</span><b id="bl-enc-stat" data-page-node-id="l2A0IJIQJrpKXmyB66zFYk">—</b></div>
               <div class="bl-costs" id="bl-enc-costs" data-page-node-id="RR9PsRVYU8cMMkIbI17doF"></div>
+              <div class="bl-enc-chips" id="bl-enc-chips">
+                <div class="bl-enc-chip-row">
+                  <span class="bl-enc-chip-label">强化催化芯片（成功率 +10%，成功才消耗）</span>
+                  <button type="button" class="bl-enc-chip-toggle" id="bl-enc-cat" data-enc-cat="1">未启用</button>
+                </div>
+                <div class="bl-enc-chip-row">
+                  <span class="bl-enc-chip-label">高级词条芯片（代替校准基体 · 必中 + 卓越）</span>
+                  <button type="button" class="bl-enc-chip-toggle" id="bl-enc-affix" data-enc-affix="1">未启用</button>
+                </div>
+                <select id="bl-enc-affix-sel" class="bl-enc-affix-sel" disabled>
+                  <option value="">（启用后可选具体词条）</option>
+                </select>
+                <div class="bl-enc-chip-preview" id="bl-enc-affix-preview"></div>
+              </div>
               <div class="bl-acts" data-page-node-id="EIuNIz2hMzqfimkcLIHATh">
                 <button id="bl-enc-go" type="button" data-page-node-id="OfcdKQA3RinEoLrpEG3xNb">执行一次强化</button>
                 <button class="ghost" type="button" id="bl-enc-clear" data-page-node-id="2h93g0TOXshCAkcR6X7Qqz">清空选择</button>
@@ -1077,6 +1122,36 @@
               <div class="bl-note" data-page-node-id="INcWWLRxu9147gfaHgdSib">强化即时结算，离线期间不进行强化</div>
             </div>
           </div>
+        </div>
+
+        <!-- ============ 潜能芯片解码（即时结算，走 invention.js） ============ -->
+        <div id="bl-view-decode" class="bl-hidden">
+          <div class="bl-statusbar" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+            <div class="bl-stat">
+              <div class="bl-stat-lab"><span>未知的潜能芯片</span><em>解码原料 · 每次消耗 1 枚</em></div>
+              <div class="bl-bigval" id="bl-dec-chip">0<small>枚</small></div>
+            </div>
+            <div class="bl-stat">
+              <div class="bl-stat-lab"><span>累计解码</span><em>明牌抽取次数</em></div>
+              <div class="bl-bigval" id="bl-dec-cnt">0<small>次</small></div>
+            </div>
+          </div>
+
+          <div class="bl-sec-title">潜能芯片解码 <span>消耗 1 枚「未知的潜能芯片」→ 立即明牌抽取 20 项奖池之一（18 技能模块 / 强化催化芯片 / 高级词条芯片）</span></div>
+
+          <div class="bl-encgrid">
+            <div class="bl-card">
+              <div class="bl-card-h"><div class="bl-card-t">解码台</div></div>
+              <div class="bl-note">解码即<b>明牌</b>：抽取的奖品（含高级词条芯片的词条系列与品质）在解码瞬间确定并直接显示，绝不会「抽到却不告诉你是什么」。技能模块为对应技能 <b>+5 级（10 分钟临时增益）</b> 的芯片；强化催化芯片为 <b>强化成功率 +10%</b> 的一次性道具（装备强化与改装件强化均生效）；高级词条芯片可<b>代替校准基体</b>为改装件附魔（词条系列随机、品质固定卓越）。</div>
+              <div class="bl-acts">
+                <button id="bl-dec-go" type="button">解码一次（消耗 1 枚潜能芯片）</button>
+              </div>
+              <div id="bl-dec-result" class="bl-toast"></div>
+            </div>
+          </div>
+
+          <div class="bl-sec-title">已解码芯片仓库 <span>在这里激活技能模块 / 查看强化催化芯片与高级词条芯片（后两者在对应强化界面勾选使用）</span></div>
+          <div id="bl-chip-inv"></div>
         </div>
 
       </div>
@@ -1386,7 +1461,9 @@
     lab.querySelectorAll(".bl-tab").forEach(x => x.classList.toggle("active", x === btn));
     if ($("bl-view-eff")) $("bl-view-eff").classList.toggle("bl-hidden", btn.dataset.blTab !== "eff");
     if ($("bl-view-enc")) $("bl-view-enc").classList.toggle("bl-hidden", btn.dataset.blTab !== "enc");
+    if ($("bl-view-decode")) $("bl-view-decode").classList.toggle("bl-hidden", btn.dataset.blTab !== "decode");
     if (btn.dataset.blTab === "enc") renderEnc();
+    if (btn.dataset.blTab === "decode") renderDecode();
   }));
   lab.querySelectorAll(".bl-seg button").forEach(btn => btn.addEventListener("click", () => {
     S.dir = btn.dataset.dir;
@@ -1409,7 +1486,7 @@
      引擎真值在 invention.js（INV.enhanceRig / checkRigEnhance），本段只做：
      选目标 → 报价与成功率预览 → 点击即时掷骰 → 结果回显。面板**不**持有任何游戏规则。
      🔴 与 ME/TE 的差别：强化是「点一次算一次」，不走主队列、不进离线管线。 */
-  const ENC = { sel: null, focus: "" };
+  const ENC = { sel: null, focus: "", useCatalyst: false, useAffixChip: false, affixChipSeries: "" };
   const ENC_GATE = [1, 15, 35, 55, 80];
   const RIG_AFFIX_MAX_LOCAL = 2;   // 每件改装件最多 2 个词条槽（与 INV.RIG_AFFIX_MAX 同口径；内联脚本加载期读不到 INV，先落常量）
   const ROMAN_T = ["", "I", "II", "III", "IV", "V"];
@@ -1518,6 +1595,9 @@
   }
 
   function renderEnc() {
+    syncModules(); // 自刷新模块引用：内联脚本早于 defer 的 invention.js 执行，INV 初始为 null；
+                   // 任何直接调用 renderEnc 的路径（含委托里 toggle 后）都必须先确保 INV 已同步，
+                   // 否则会在 ready 检查处早退，导致 affix/cat 开关、自选下拉、预览全部不更新。
     const lv = skillLv(), eng = encSkillLv("equipmentEngineering");
     if ($("bl-enc-lv")) $("bl-enc-lv").textContent = lv;
     if ($("bl-enc-eng")) $("bl-enc-eng").textContent = eng;
@@ -1535,6 +1615,66 @@
     // S9：bl-enc-focus 必须一并启用——内联脚本先于 defer 模块执行，首帧 renderEnc 必然 !ready
     // 而把焦点下拉 disable；此后若不在 ready 分支解禁，焦点下拉将永久不可选（线上 bug：无法选择强化焦点）。
     ["bl-enc-rig", "bl-enc-focus", "bl-enc-go", "bl-enc-clear"].forEach(id => { const el = $(id); if (el) el.disabled = false; });
+
+    // 潜能芯片：强化催化芯片 / 高级词条芯片 的开关与预览（挂在强侧卡底部 bl-enc-chips）
+    const encCatCount = (INV && typeof ResourceRegistry !== "undefined" && ResourceRegistry.get)
+      ? (Number(ResourceRegistry.get(g, INV.POTENTIAL_CHIP_CATALYST)) || 0) : 0;
+    // 高级词条芯片（2026-10-10 重构）：每种词条 = 一个独立物品 special:affixchip_<series>，各自计数。
+    const _affixPrefix = (typeof window !== "undefined" && window.AFFIX_CHIP_PREFIX) || "special:affixchip_";
+    const _affixOwned = (INV && typeof INV.rigAffixSeries === "function")
+      ? INV.rigAffixSeries().filter(function (s) { return ResourceRegistry.get(g, _affixPrefix + s.series) > 0; })
+      : [];
+    const _affixTotal = _affixOwned.reduce(function (a, s) { return a + ResourceRegistry.get(g, _affixPrefix + s.series); }, 0);
+    // 高级词条芯片（必中）路径下催化无意义，互斥：开启芯片时强制关催化
+    if (ENC.useAffixChip && ENC.useCatalyst) ENC.useCatalyst = false;
+    // 若开启后已无可用词条芯片，自动回退关闭（避免空勾选）
+    if (ENC.useAffixChip && _affixOwned.length < 1) ENC.useAffixChip = false;
+    const catBtn = $("bl-enc-cat");
+    if (catBtn) {
+      const dis = encCatCount < 1 || ENC.useAffixChip;
+      catBtn.disabled = dis;
+      catBtn.className = "bl-enc-chip-toggle" + (ENC.useCatalyst ? " on" : "");
+      catBtn.textContent = ENC.useCatalyst ? "已启用（持有 " + encCatCount + "）"
+        : (ENC.useAffixChip ? "芯片必中路径无需催化" : "未启用（持有 " + encCatCount + "）");
+    }
+    const affixBtn = $("bl-enc-affix");
+    const affixSel = $("bl-enc-affix-sel");
+    if (affixBtn) {
+      affixBtn.disabled = _affixOwned.length < 1;
+      affixBtn.className = "bl-enc-chip-toggle" + (ENC.useAffixChip ? " on" : "");
+      affixBtn.textContent = ENC.useAffixChip ? "已启用（持有 " + _affixTotal + "）"
+        : "未启用（持有 " + _affixTotal + "）";
+    }
+    // 自选：把玩家持有的每种词条芯片（各自独立物品）列出来供挑选
+    if (affixSel) {
+      if (!ENC.affixChipSeries || ResourceRegistry.get(g, _affixPrefix + ENC.affixChipSeries) < 1) {
+        ENC.affixChipSeries = _affixOwned.length ? _affixOwned[0].series : "";
+      }
+      const optsHtml = _affixOwned.map(function (s) {
+        const cnt = ResourceRegistry.get(g, _affixPrefix + s.series);
+        // 显示名统一取芯片物品注册名（与仓库卡片一致），不用改装件本体名
+        const _nm = (ResourceRegistry.getDefinition ? (ResourceRegistry.getDefinition(_affixPrefix + s.series) || {}).name : null) || s.label;
+        return '<option value="' + String(s.series).replace(/[<>&"]/g, "") + '">' + String(_nm).replace(/[<>&]/g, "") + " · 持有 " + cnt + "</option>";
+      }).join("");
+      if (affixSel.dataset.sig !== optsHtml) {
+        affixSel.dataset.sig = optsHtml;
+        affixSel.innerHTML = (_affixOwned.length ? "" : '<option value="">（暂无可用的词条芯片）</option>') + optsHtml;
+      }
+      affixSel.value = ENC.affixChipSeries || "";
+      affixSel.disabled = !ENC.useAffixChip || _affixOwned.length < 1;
+    }
+    const affixPrev = $("bl-enc-affix-preview");
+    if (affixPrev) {
+      if (ENC.useAffixChip && ENC.affixChipSeries) {
+        // 显示名统一取芯片物品注册名（与仓库卡片一致），不用改装件本体名
+        const _nm = (ResourceRegistry.getDefinition ? (ResourceRegistry.getDefinition(_affixPrefix + ENC.affixChipSeries) || {}).name : null) || ENC.affixChipSeries;
+        affixPrev.innerHTML = "本次将应用：<b>" + String(_nm).replace(/[<>&]/g, "") + " · 卓越</b>（自选，非随机）";
+      } else if (_affixOwned.length) {
+        affixPrev.innerHTML = "启用后可自选具体词条（当前共 " + _affixTotal + " 张可用芯片，分 " + _affixOwned.length + " 种词条）";
+      } else {
+        affixPrev.innerHTML = _affixTotal > 0 ? "" : "（需在潜能芯片解码中抽中「高级词条芯片」）";
+      }
+    }
 
     // 两段式覆写：有待定词条时展示去处选择，并阻断新尝试（引擎侧 PENDING_EXISTS 双保险）。
     // 🔴 修复（2026-09-27）：待定条此前写进 .bl-toast#bl-enc-result——该类默认 opacity:0、
@@ -1648,8 +1788,8 @@
     let check = null;
     try {
       check = INV.checkRigEnhance(g, cur.kind === "instance"
-        ? { instanceId: cur.id, focus: ENC.focus }
-        : { itemId: cur.id, focus: ENC.focus });
+        ? { instanceId: cur.id, focus: ENC.focus, useAffixChip: ENC.useAffixChip, affixChipSeries: ENC.affixChipSeries }
+        : { itemId: cur.id, focus: ENC.focus, useAffixChip: ENC.useAffixChip, affixChipSeries: ENC.affixChipSeries });
     } catch (_) {}
     const go = $("bl-enc-go");
     // 按钮「可点但点了给 toast 反馈」：引擎侧拒绝（资源不足等）不再静默禁用——
@@ -1681,7 +1821,15 @@
     setText("bl-enc-cost-calib", "T" + cur.tier + " ×" + check.cost.calibrationQty);
     setText("bl-enc-cost-matrix", "×" + check.cost.matrix);
     setText("bl-enc-cost-isk", fmt(check.cost.isk) + " ISK");
-    setText("bl-enc-rate", Math.round(check.chance * 100) + "% / " + Math.round(check.focusChance * 100) + "%");
+    // 成功率显示随开关变化：高级词条芯片＝必中（100%）；催化＝基础 +10%（且芯片路径下催化被引擎忽略）
+    let shownChance = check.chance;
+    if (ENC.useCatalyst && encCatCount > 0 && !ENC.useAffixChip && typeof applyEnhanceCatalyst === "function") {
+      shownChance = applyEnhanceCatalyst(check.chance, true, g);
+    }
+    setText("bl-enc-rate", ENC.useAffixChip
+      ? "100%（芯片必中）"
+      : Math.round(shownChance * 100) + "% / " + Math.round(check.focusChance * 100) + "%"
+        + (ENC.useCatalyst ? "（催化 +10%）" : ""));
     const flags = [
       { id: check.cost.calibrationRef, need: check.cost.calibrationQty, have: resCount(check.cost.calibrationRef), label: "校准基体", cls: "mat" },
       { id: INV.MATRIX_ID, need: check.cost.matrix, have: resCount(INV.MATRIX_ID), label: "解析矩阵", cls: "mat" },
@@ -1744,8 +1892,8 @@
     const sel = encTargets().find(t => t.key === ENC.sel);
     if (!sel) { toast("该目标已不可用（可能被占用或已强化）", true); renderEnc(); return; }
     const r = INV.enhanceRig(g, sel.kind === "instance"
-      ? { instanceId: sel.id, focus: ENC.focus }
-      : { itemId: sel.id, focus: ENC.focus });
+      ? { instanceId: sel.id, focus: ENC.focus, useCatalyst: ENC.useCatalyst, useAffixChip: ENC.useAffixChip, affixChipSeries: ENC.affixChipSeries }
+      : { itemId: sel.id, focus: ENC.focus, useCatalyst: ENC.useCatalyst, useAffixChip: ENC.useAffixChip, affixChipSeries: ENC.affixChipSeries });
     const box = $("bl-enc-result");
     function say(text, bad) { if (box) { box.textContent = text; box.className = "bl-toast on" + (bad ? " warn" : ""); box.style.color = bad ? "var(--red)" : "var(--green)"; } }
     if (!r || !r.ok) {
@@ -1774,28 +1922,200 @@
     renderEnc();
   }
 
-  if ($("bl-enc-go")) $("bl-enc-go").addEventListener("click", encDo);
-  // 待定词条去处按钮（renderEnc 把控件渲染进结果框）：委托在结果框上，随 innerHTML 重建不失效
-  if ($("bl-enc-pending")) $("bl-enc-pending").addEventListener("click", e => {
-    const btn = e.target.closest("[data-enc-place]");
-    if (btn) encPlace(btn.getAttribute("data-enc-place"));
-  });
-  if ($("bl-enc-clear")) $("bl-enc-clear").addEventListener("click", () => {
-    ENC.sel = null; ENC.focus = "";
-    const b = $("bl-enc-result"); if (b) { b.textContent = ""; b.className = "bl-toast"; }
-    renderEnc();
-  });
-  const encSelEl = () => $("bl-enc-rig");
-  if (encSelEl()) encSelEl().addEventListener("change", () => {
-    const v = encSelEl().value;
-    ENC.sel = v && v.indexOf("inst:") === 0 ? v : (v.indexOf("inv:") === 0 ? v : null);
-    const b = $("bl-enc-result"); if (b) { b.textContent = ""; b.className = "bl-toast"; }
-    renderEnc();
-  });
-  if ($("bl-enc-focus")) $("bl-enc-focus").addEventListener("change", () => {
-    ENC.focus = $("bl-enc-focus").value || "";
-    renderEnc();
-  });
+  // 蓝图实验室面板：按钮/下拉监听改为事件委托挂在稳定的 #blueprint-lab-panel 上，
+  // 避免面板内容被任何机制替换/重建后直挂监听失效（pending 去处按钮早已用此模式）。
+  // 覆盖范围：bl-enc-go / bl-enc-clear / bl-enc-cat / bl-enc-affix 点击；bl-enc-rig / bl-enc-focus / bl-enc-affix-sel 变更；[data-enc-place] 去处按钮。
+  if (lab) {
+    lab.addEventListener("click", e => {
+      const t = e.target.closest("[id]");
+      if (!t) return;
+      const id = t.id;
+      if (id === "bl-enc-go") { encDo(); return; }
+      if (id === "bl-enc-clear") {
+        ENC.sel = null; ENC.focus = "";
+        const b = $("bl-enc-result"); if (b) { b.textContent = ""; b.className = "bl-toast"; }
+        renderEnc(); return;
+      }
+      if (id === "bl-enc-cat") { ENC.useCatalyst = !ENC.useCatalyst; renderEnc(); return; }
+      if (id === "bl-enc-affix") { ENC.useAffixChip = !ENC.useAffixChip; renderEnc(); return; }
+      const placeBtn = t.closest("[data-enc-place]");
+      if (placeBtn) encPlace(placeBtn.getAttribute("data-enc-place"));
+    });
+    lab.addEventListener("change", e => {
+      const t = e.target;
+      if (t.id === "bl-enc-rig") {
+        const v = t.value;
+        ENC.sel = v && v.indexOf("inst:") === 0 ? v : (v.indexOf("inv:") === 0 ? v : null);
+        const b = $("bl-enc-result"); if (b) { b.textContent = ""; b.className = "bl-toast"; }
+        renderEnc(); return;
+      }
+      if (t.id === "bl-enc-focus") { ENC.focus = t.value || ""; renderEnc(); return; }
+      if (t.id === "bl-enc-affix-sel") {
+        ENC.affixChipSeries = t.value || "";
+        renderEnc(); return;
+      }
+    });
+  }
+
+  /* ============ 潜能芯片解码（即时结算，2026-10-09 真接线） ============
+     引擎真值在 invention.js（INV.decodePotentialChip / activateSkillBuff / POTENTIAL_CHIP_*）；
+     本段只做：解码按钮可用性回显 → 点击即时解码 → 明牌结果回显 → 已解码芯片仓库渲染。
+     面板**不**持有任何游戏规则。解码为「点一次算一次」，不走主队列、不进离线管线、不占行动条。 */
+  function renderDecode() {
+    if (!INV) { toast("实验室模块未加载", true); return; }
+    const g = gs();
+    if (!g) { toast("游戏状态未就绪", true); return; }
+    const chip = resCount(INV.POTENTIAL_CHIP_SOURCE);
+    const go = $("bl-dec-go");
+    if (go) go.disabled = chip < 1;
+    // 顶部两个大数字（原料持有量 / 累计解码次数）必须在此实时回显——
+    // 旧版只更新按钮禁用态，导致这两格永远是静态 0（不随仓库/解码变化）。
+    const chipEl = $("bl-dec-chip");
+    if (chipEl) chipEl.innerHTML = fmt(chip) + "<small>枚</small>";
+    const cntEl = $("bl-dec-cnt");
+    if (cntEl) cntEl.innerHTML = fmt(Number(g.potentialChipDecodes) || 0) + "<small>次</small>";
+    renderChipInventory();
+  }
+
+  // 已解码芯片仓库：技能模块（可激活 + 倒计时）/ 强化催化芯片 / 高级词条芯片（预roll 预览）。
+  function renderChipInventory() {
+    const host = $("bl-chip-inv");
+    if (!host) return;
+    const g = gs();
+    if (!g) return;
+    const now = Date.now();
+    const html = [];
+
+    // —— 技能模块（18 项）——
+    const keys = (INV && INV.POTENTIAL_CHIP_SKILL_KEYS) || [];
+    const skillRows = [];
+    for (const key of keys) {
+      const id = (INV.POTENTIAL_CHIP_SKILL_PREFIX_LOCAL) + key;
+      const name = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.getResourceDisplayName)
+        ? ResourceRegistry.getResourceDisplayName(id) : id;
+      const cnt = resCount(id);
+      const buff = (g.skillTempBuffs && g.skillTempBuffs[key]) || null;
+      const active = buff && Number(buff.endAt) > now;
+      let right;
+      if (active) {
+        const remainMs = Number(buff.endAt) - now;
+        const mm = Math.floor(remainMs / 60000), ss = Math.floor((remainMs % 60000) / 1000);
+        right = '<span class="bl-chip-timer">生效中 ' + mm + ':' + (ss < 10 ? "0" : "") + ss + '</span>';
+      } else {
+        right = '<button class="bl-chip-act" type="button" data-skill="' + key + '"' + (cnt < 1 ? " disabled" : "") + '>激活（+5 / 10min）</button>';
+      }
+      skillRows.push(
+        '<div class="bl-chip-row' + (active ? " bl-chip-on" : "") + '">' +
+          '<span class="bl-chip-name">' + String(name).replace(/[<>&]/g, "") + '</span>' +
+          '<span class="bl-chip-cnt">持有 ' + fmt(cnt) + '</span>' +
+          right +
+        '</div>'
+      );
+    }
+    html.push(
+      '<div class="bl-chip-group"><div class="bl-chip-group-h">技能模块（激活后对应技能 +5 级，持续 10 分钟真实时间）</div>' +
+      (skillRows.length ? skillRows.join("") : '<div class="bl-chip-empty">暂无已解码的技能模块</div>') +
+      '</div>'
+    );
+
+    // —— 强化催化芯片 ——
+    const catCnt = resCount(INV.POTENTIAL_CHIP_CATALYST);
+    html.push(
+      '<div class="bl-chip-group"><div class="bl-chip-group-h">强化催化芯片（一次性；在装备强化 / 改装件附魔界面勾选「使用催化芯片」即 +10% 成功率，成功才消耗）</div>' +
+      '<div class="bl-chip-row"><span class="bl-chip-name">强化催化芯片</span><span class="bl-chip-cnt">持有 ' + fmt(catCnt) + '</span>' +
+      '<span class="bl-chip-note">' + (catCnt > 0 ? "可在强化界面启用" : "需先解码获得") + '</span></div>' +
+      '</div>'
+    );
+
+    // —— 高级词条芯片（2026-10-10 重构：每种词条各自成物，可在改装件强化界面逐张自选应用）——
+    const _affixPrefix2 = (typeof window !== "undefined" && window.AFFIX_CHIP_PREFIX) || "special:affixchip_";
+    const _affixSeries = (INV && typeof INV.rigAffixSeries === "function") ? INV.rigAffixSeries() : [];
+    const _affixOwned = _affixSeries.map(function (s) { return { s: s, cnt: ResourceRegistry.get(g, _affixPrefix2 + s.series) }; }).filter(function (o) { return o.cnt > 0; });
+    let affixBody;
+    if (!_affixOwned.length) {
+      affixBody = '<div class="bl-chip-row"><span class="bl-chip-name">高级词条芯片</span><span class="bl-chip-cnt">持有 0</span>' +
+        '<span class="bl-chip-note">需在潜能芯片解码中抽中（每种词条各自成物）</span></div>';
+    } else {
+      const tags = _affixOwned.map(function (o) {
+        const _nm = (ResourceRegistry.getDefinition ? (ResourceRegistry.getDefinition(_affixPrefix2 + o.s.series) || {}).name : null) || o.s.label;
+        return '<span class="bl-affix-tag">' + String(_nm).replace(/[<>&]/g, "") + " ×" + fmt(o.cnt) + "</span>";
+      });
+      affixBody = '<div class="bl-affix-list">' + tags.join("") + '</div>';
+    }
+    html.push(
+      '<div class="bl-chip-group"><div class="bl-chip-group-h">高级词条芯片（代替校准基体为改装件附魔；必中 + 卓越；每种词条各自成物，可在改装件强化界面逐张自选应用）</div>' +
+      affixBody +
+      '</div>'
+    );
+
+    host.innerHTML = html.join("");
+  }
+
+  function decPrizeName(prizeId) {
+    try {
+      if (typeof ResourceRegistry !== "undefined" && ResourceRegistry.getResourceDisplayName) {
+        const n = ResourceRegistry.getResourceDisplayName(prizeId);
+        if (n && n !== prizeId) return n;
+      }
+    } catch (_) {}
+    return prizeId || "—";
+  }
+
+  function doDecode() {
+    const g = gs();
+    if (!INV || !g) { toast("实验室模块未加载", true); return; }
+    const box = $("bl-dec-result");
+    function say(html, bad) {
+      if (box) { box.innerHTML = html; box.className = "bl-toast on" + (bad ? " warn" : ""); box.style.color = bad ? "var(--red)" : "var(--green)"; }
+    }
+    const r = INV.decodePotentialChip(g, { rng: Math.random });
+    if (!r || !r.ok) {
+      const msg = { NO_CHIP: "未持有「未知的潜能芯片」—— 该芯片由精英难度（非地狱）敌人掉落" }[r && r.reason] || "无法解码";
+      say("✖ " + msg, true);
+      toast(msg, true);
+      renderDecode();
+      return;
+    }
+    let reveal;
+    if (r.prizeType === "affix" && r.affixRoll) {
+      const seriesLabel = r.affixRoll.label || r.affixRoll.series || "未知系列";
+      const q = r.affixRoll.quality === 2 ? "卓越" : (r.affixRoll.quality === 1 ? "优良" : "普通");
+      reveal = '<span style="display:inline-block;padding:2px 8px;border-radius:8px;background:rgba(231,195,90,.15);border:1px solid #e7c35a;color:#e7c35a;font-weight:600">' + seriesLabel + ' · ' + q + '</span>'
+        + '<div style="color:#8fa0b4;font-size:12px;margin-top:6px">解码即明牌：该词条系列作为独立物品入库，可在改装件强化界面逐张自选应用（代替校准基体，仍消耗星币 + 解析矩阵）。</div>';
+    } else {
+      const nm = decPrizeName(r.prizeId);
+      reveal = '<span style="display:inline-block;padding:2px 8px;border-radius:8px;background:rgba(99,199,193,.15);border:1px solid #63c7c1;color:#63c7c1;font-weight:600">' + nm + '</span>'
+        + '<div style="color:#8fa0b4;font-size:12px;margin-top:6px">'
+        + (r.prizeType === "catalyst" ? "强化成功率 +10% 的一次性道具（装备强化与改装件强化均生效）。" : "对应技能 +5 级（10 分钟临时增益）芯片，可在技能页或对应作业中使用。")
+        + '</div>';
+    }
+    say('🎁 解码获得：' + reveal, false);
+    toast("解码成功：" + (r.prizeType === "affix" && r.affixRoll ? r.affixRoll.label : decPrizeName(r.prizeId)));
+    renderDecode();
+  }
+
+  if ($("bl-dec-go")) $("bl-dec-go").addEventListener("click", doDecode);
+
+  // 技能模块激活（事件委托，避免每帧重绑）
+  (function wireChipInv() {
+    const host = $("bl-chip-inv");
+    if (!host) return;
+    host.addEventListener("click", (e) => {
+      const btn = e.target.closest ? e.target.closest("button[data-skill]") : null;
+      if (!btn || btn.disabled) return;
+      const key = btn.getAttribute("data-skill");
+      const g = gs();
+      if (!INV || !g) { toast("实验室模块未加载", true); return; }
+      const r = INV.activateSkillBuff(g, key, 0);
+      if (!r || !r.ok) {
+        const msg = { NO_CHIP: "该技能模块不足", NO_STATE: "状态未就绪", NO_REGISTRY: "资源系统未就绪" }[r && r.reason] || "激活失败";
+        toast(msg, true);
+        return;
+      }
+      toast("已激活：" + key + " +5 级（10 分钟）");
+      renderDecode();
+    });
+  })();
 
   // 每次渲染前刷新模块引用（面板显示时 MutationObserver 会触发），确保 defer 加载完成后能自愈。
   function renderAll() { syncModules(); renderStatus(); renderLadder(); renderList(); renderConsole(); renderLab(); renderEnc(); }
@@ -1810,7 +2130,10 @@
           // 进度由主循环（tick.js → tickBlueprintInvention）驱动，面板只做只读回显。
           // 旧版此处调用 INV.processUntil —— lab 槽位引擎已退役，绝不可再调（会与主队列双推进）。
           // S9：renderEnc 加入心跳——下拉有 dataset.sig 防抖不会打断交互，且报价/成功率/禁用态随资源实时自愈。
+          // 解码标签：仅当其可见时刷新持有量 / 次数 / 共享队列（解码按钮禁用态也随芯片数自愈）。
           renderStatus(); renderLab(); renderEnc();
+          const decView = $("bl-view-decode");
+          if (decView && !decView.classList.contains("bl-hidden")) renderDecode();
         }
       }, 500);
     };
@@ -2721,7 +3044,7 @@
   <script defer src="./js/data/planets.js?v=5"></script>
   <script defer src="./js/data/ships.js?v=15"></script>
   <script defer src="./js/data/boosters.js?v=11"></script>
-  <script defer src="./js/systems/boosters.js?v=13"></script>
+  <script defer src="./js/systems/boosters.js?v=14"></script>
   <script defer src="./js/systems/recycling.js?v=4"></script>
   <script defer src="./js/data/combat.js?v=47"></script>
   <script defer src="./js/data/cargo.js?v=11"></script>
@@ -2742,10 +3065,10 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=22"></script>
-  <script defer src="./js/data/changelog.js?v=182"></script>
+  <script defer src="./js/data/changelog.js?v=183"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
-  <script defer src="./js/core/state.js?v=22"></script>
+  <script defer src="./js/core/state.js?v=23"></script>
   <script defer src="./js/systems/reputation.js?v=3"></script>
   <script defer src="./js/core/blueprint-runs.js?v=2"></script>
   <script defer src="./js/systems/research.js?v=12"></script>
@@ -2753,12 +3076,12 @@
   <script defer src="./js/core/statistics.js?v=6"></script>
   <script defer src="./js/systems/achievements.js?v=5"></script>
   <script defer src="./js/systems/production.js?v=16"></script>
-  <script defer src="./js/core/resources.js?v=8"></script>
+  <script defer src="./js/core/resources.js?v=11"></script>
   <script defer src="./js/systems/tutorial.js?v=13"></script>
   <script defer src="./js/ui/tutorial-spotlight.js?v=6"></script>
   <script defer src="./js/systems/manufacturing.js?v=10"></script>
-  <script defer src="./js/systems/invention.js?v=12"></script>
-  <script defer src="./js/systems/enhancement-chance.js?v=4"></script>
+  <script defer src="./js/systems/invention.js?v=15"></script>
+  <script defer src="./js/systems/enhancement-chance.js?v=5"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=8"></script>
   <script defer src="./js/systems/rigs.js?v=7"></script>
@@ -2777,15 +3100,15 @@
   <script defer src="./js/ui/action-modal.js?v=14"></script>
   <script defer src="./js/core/queue.js?v=8"></script>
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
-  <script defer src="./js/systems/combat.js?v=65"></script>
+  <script defer src="./js/systems/combat.js?v=66"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
-  <script defer src="./js/core/selectors.js?v=141"></script>
-  <script defer src="./js/core/actions.js?v=74"></script>
+  <script defer src="./js/core/selectors.js?v=142"></script>
+  <script defer src="./js/core/actions.js?v=76"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=55"></script>
   <script defer src="./js/systems/wormhole.js?v=42"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=185"></script>
+   <script defer src="./js/ui/shell-render.js?v=190"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
@@ -2842,7 +3165,7 @@
   <script defer src="./js/core/ad-service.js?v=5"></script>
   <script defer src="./js/systems/ad-buff.js?v=6"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
-  <script defer src="./js/core/persistence.js?v=48"></script>
+  <script defer src="./js/core/persistence.js?v=49"></script>
   <script defer src="./js/ui/changelog-popup.js?v=4"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=15"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=9"></script>

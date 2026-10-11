@@ -8167,5 +8167,10 @@
 ,
   ["新增 · 难度选择", "New · Difficulty Selection"],
   ["战斗面板新增难度切换：可在「普通 / 精英」之间选择（「地狱」难度入口已就位，暂未开放）。切换后即时生效，战斗面板的掉落预览会直接显示当前难度下的实际掉落概率。", "The battle panel now has a difficulty toggle: choose between Normal and Elite (the Inferno difficulty entry is in place but not yet available). Changes take effect immediately, and the battle panel's drop preview shows the actual drop rates for the current difficulty."],
-  ["精英难度下，星带与死亡空间的敌人更具威胁、挑战更高，对应区域的燃料消耗与战斗经验也会相应提高——更高风险对应更高回报。", "In Elite difficulty, enemies in asteroid belts and deathspace are more threatening and challenging, and the fuel cost and combat XP for the corresponding zones scale up accordingly — higher risk brings higher reward."]
+  ["精英难度下，星带与死亡空间的敌人更具威胁、挑战更高，对应区域的燃料消耗与战斗经验也会相应提高——更高风险对应更高回报。", "In Elite difficulty, enemies in asteroid belts and deathspace are more threatening and challenging, and the fuel cost and combat XP for the corresponding zones scale up accordingly — higher risk brings higher reward."],
+  ["新增 · 潜能芯片解码","New · Potential Chip Decoding"],
+  ["蓝图实验室新增「潜能芯片解码」：可对「未知的潜能芯片」进行解码。解码可获得三类芯片：强化催化芯片、技能模块芯片、改装件词条芯片。","The Blueprint Lab adds a new \"Potential Chip Decoding\" feature: you can now decode \"Unknown Potential Chips\". Decoding yields three types of chips: Enhancement Catalyst Chips, Skill Module Chips, and Rig Affix Chips."],
+  ["强化催化芯片：舰船强化与装备强化界面新增「使用强化催化芯片」开关，勾选后本次强化成功率 +10%。芯片仅在强化成功时消耗 1 片，失败不消耗，可放心勾选。","Enhancement Catalyst Chip: a \"Use Enhancement Catalyst Chip\" toggle is added to the ship and equipment enhancement panels. When enabled, this attempt's success rate increases by 10%. The chip is consumed only on a successful enhancement (never on failure), so it is safe to enable."],
+  ["技能模块芯片：激活后指定技能临时 +5 级，持续 10 分钟（真实时间）。效果在离线期间同样生效（按结束时间点判定），不影响在线/离线平衡。","Skill Module Chip: when activated, the chosen skill gains +5 levels temporarily for 10 minutes (real time). The effect also applies during offline time (judged by its end timestamp) and does not affect online/offline balance."],
+  ["改装件词条芯片：改装件附魔时可在界面选择词条芯片，必定成功。","Rig Affix Chip: when enhancing a rig, you can select an affix chip directly in the interface, and the enhancement always succeeds."],
 ]); })();
