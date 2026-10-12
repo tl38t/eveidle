@@ -1936,6 +1936,12 @@
   // 覆盖范围：bl-enc-go / bl-enc-clear / bl-enc-cat / bl-enc-affix 点击；bl-enc-rig / bl-enc-focus / bl-enc-affix-sel 变更；[data-enc-place] 去处按钮。
   if (lab) {
     lab.addEventListener("click", e => {
+      // 🔴 修复（2026-10-12）：去处按钮（覆盖词条1/2 · 放入空槽 · 放弃）只带 data-enc-place、无独立 id，
+      // 它们渲染进常显容器 #bl-enc-pending（该容器本身带 id）。旧逻辑先取「带 id 祖先」t 再从 t 向上找
+      // [data-enc-place]，会把 bl-enc-pending 当锚点、永远找不到作为子节点的按钮 ⇒ 点击零反应。
+      // 改法：去处按钮直接从事件源 e.target 向上找自身；其余带 id 按钮（bl-enc-go 等）再按原逻辑处理。
+      const placeBtn = e.target.closest("[data-enc-place]");
+      if (placeBtn) { encPlace(placeBtn.getAttribute("data-enc-place")); return; }
       const t = e.target.closest("[id]");
       if (!t) return;
       const id = t.id;
@@ -1947,8 +1953,6 @@
       }
       if (id === "bl-enc-cat") { ENC.useCatalyst = !ENC.useCatalyst; renderEnc(); return; }
       if (id === "bl-enc-affix") { ENC.useAffixChip = !ENC.useAffixChip; renderEnc(); return; }
-      const placeBtn = t.closest("[data-enc-place]");
-      if (placeBtn) encPlace(placeBtn.getAttribute("data-enc-place"));
     });
     lab.addEventListener("change", e => {
       const t = e.target;
