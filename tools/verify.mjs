@@ -310,7 +310,9 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 // ⚠️ 本基准同样自 1.0.6 之后未更新，与上方 defer 脚本计数（137→138）属同一类滞后。
 // 2026-10-08：563 → 566（+3，纯新增零删除）：精英难度选择 UI 静态 DOM（combat-elite-row /
 //   elite-difficulty-select / elite-preview），由 1.0.11 精英难度特性引入，index.html 战斗面板内。
-const EXPECTED_DOM_IDS = 566;
+// 2026-10-12：566 → 577（+11，纯新增零删除，为前序若干特性落地时漏同步基线的历史滞后，逐一核对无删除/无重复）。
+// 2026-10-12：577 → 580（+3，发明科技树解码页静态 DOM：bl-dec-all / bl-dec-auto-wrap / bl-dec-auto）。
+const EXPECTED_DOM_IDS = 580;
 if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
@@ -4582,7 +4584,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   // 2026-10-04：562 → 563（+1 = setting-dispatch-bonus-toast 资源调度飘字，b42e597 引入）。
   // 2026-10-08：563 → 566（+3，纯新增零删除）：精英难度选择 UI 静态 DOM（combat-elite-row /
   //   elite-difficulty-select / elite-preview），1.0.11 精英难度特性引入。
-  if (htmlIds.size !== 566) throw new Error("Batch F DOM ID 基线应为 566，实际 " + htmlIds.size);
+  if (htmlIds.size !== 580) throw new Error("Batch F DOM ID 基线应为 580，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
@@ -4603,8 +4605,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   }
 
   const nodes = RD.NODES;
-  // ⚠ 旧基线 38（研究树扩版后为 71，与 L-11 同源）
-  if (nodes.length !== 71) throw new Error("研究目录不为 71 节点，实际 " + nodes.length);
+  // ⚠ 旧基线 38（研究树扩版后为 71，发明树扩版 +12 后为 83，与 L-11 同源）
+  if (nodes.length !== 83) throw new Error("研究目录不为 83 节点，实际 " + nodes.length);
   const nodeById = {};
   for (const n of nodes) nodeById[n.id] = n;
   const MATSCI_BASE = nodeById.matsci.durationByLevel[0];
@@ -4820,9 +4822,9 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       if (snapshotBefore !== snapshotAfter) throw new Error("renderResearchPage 修改了 state.research，渲染必须纯读");
       const treeHtml = els["research-tree"].innerHTML;
 
-      // F-3 节点数严格按冻结目录顺序渲染（⚠ 旧基线 38；研究树扩版后 71）
-      if (!display || display.nodeCount !== 71 || display.nodes.length !== 71) {
-        throw new Error("研究树未渲染 71 个节点，实际 " + (display ? display.nodes.length : "null"));
+      // F-3 节点数严格按冻结目录顺序渲染（⚠ 旧基线 38；研究树扩版后 71；发明分支 +12 → 83）
+      if (!display || display.nodeCount !== 83 || display.nodes.length !== 83) {
+        throw new Error("研究树未渲染 83 个节点，实际 " + (display ? display.nodes.length : "null"));
       }
       for (let i = 0; i < 38; i += 1) {
         if (display.nodes[i].id !== nodes[i].id) throw new Error("研究树未按 ResearchData.NODES 冻结顺序渲染，第 " + i + " 项");
@@ -4838,7 +4840,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       // FV-2 / FV-3 节点各渲染一次；data-tech-id / data-era / data-status 与正式数据一致
       // （⚠ 旧基线 38；研究树扩版后 71，与 F-3 / L-11 同源）
       const nodeTags = [...treeHtml.matchAll(/<div class="(rt-node[^"]*)" style="[^"]*" data-tech-id="([^"]+)" data-era="(\d+)" data-status="([^"]+)"/g)];
-      if (nodeTags.length !== 71) throw new Error("科技树 DOM 节点数不为 71，实际 " + nodeTags.length);
+      if (nodeTags.length !== 83) throw new Error("科技树 DOM 节点数不为 83，实际 " + nodeTags.length);
       const domNodeById = {};
       for (const [, cls, id, era, status] of nodeTags) {
         if (domNodeById[id]) throw new Error("节点被重复渲染：" + id);
@@ -4922,8 +4924,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
       // FV-6 五级科技显示 5 个等级标记；单级 / 协议不得伪造五级
       const nodeChunks = treeHtml.split('<div class="rt-node rt-node--').slice(1);
-      if (nodeChunks.length !== 71) throw new Error("节点 HTML 分片数不为 71，实际 " + nodeChunks.length);
-      for (let i = 0; i < 71; i += 1) {
+      if (nodeChunks.length !== 83) throw new Error("节点 HTML 分片数不为 83，实际 " + nodeChunks.length);
+      for (let i = 0; i < 83; i += 1) {
         const view = display.nodes[i];
         const chunk = nodeChunks[i];
         if (!chunk.includes('data-tech-id="' + view.id + '"')) throw new Error("节点 HTML 顺序错位：" + view.id);
@@ -4938,7 +4940,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
           //   ① 徽章：renderResearchNodeHtml:3281-3287 里分区徽章优先于「单级」；
           //   ② 等级标记：layoutBranch:3144 加了 `&& unlocked`，分区未解锁 → levelMarks 恒空、DOM 无 pip。
           //   旧判据对分支一视同仁，必然红。
-          const expectBadge = pack === "legion" ? "rt-badge--legion" : "rt-badge--frontier";
+          const expectBadge = pack === "legion" ? "rt-badge--legion" : pack === "frontier" ? "rt-badge--frontier" : "rt-badge--invention";
           if (!chunk.includes(expectBadge)) throw new Error(pack + " 节点缺少分区徽章：" + view.id);
           if (chunk.includes("rt-badge--single") || chunk.includes("rt-badge--protocol")) {
             throw new Error("分支节点不得显示主目录徽章：" + view.id);
@@ -5547,12 +5549,12 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     // ---- G-20 不进战斗、不进六协议 -------------------------------------------------------
     okG(JSON.stringify(sandbox.getCombatDisplayState(ZERO_G, nowG)) === JSON.stringify(sandbox.getCombatDisplayState(FULL_STATE_G, nowG)), "非战斗科研全满级不得改变战斗显示态");
     const protocolNodesG = RDG.NODES.filter(node => node.type === "protocol");
-    okG(protocolNodesG.length === 6, "协议节点必须恰为 6 个");
+    okG(protocolNodesG.length === 12, "协议节点必须恰为 12 个（6 主树 + 6 分支解锁）");
     for (const node of protocolNodesG) okG(!node.bonus, "协议节点 " + node.id + " 不得带 bonus");
 
     // ---- G-21 冻结基线不回退 -------------------------------------------------------------
-    okG(RDG.NODES.length === 38, "科技节点总数必须仍为 38");
-    okG(scriptSources.length === 102 && styleSources.length === 5 && htmlIds.size === 370, "102 JS / 5 CSS / 320 DOM ID 基线不得回退");
+    okG(RDG.NODES.length === 83, "科技节点总数必须仍为 78");
+    okG(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580, "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
     okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
   } finally {
     gsG.research = JSON.parse(JSON.stringify(savedResearchG));
@@ -5653,7 +5655,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     }
     const consumersH = RDH.RESEARCH_BONUS_CONSUMERS || {};
     const numericGroupsH = new Set(RDH.NODES.filter(node => node.bonus && node.bonus.group).map(node => node.bonus.group));
-    okH(numericGroupsH.size === 31, "科技树数值 bonus.group 必须恰为 31 组（Batch G 19 + Batch H 12）");
+    okH(numericGroupsH.size === 53, "科技树数值 bonus.group 必须恰为 53 组");
     for (const group of numericGroupsH) {
       okH(Array.isArray(consumersH[group]) && consumersH[group].length > 0, "group " + group + " 未登记正式消费点");
     }
@@ -5959,8 +5961,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     okH(RDH.NODES.filter(node => node.type === "protocol").every(node => !node.bonus), "六协议节点必须仍然无 bonus（本批不进协议业务）");
 
     // ---- H-12 冻结基线不回退 --------------------------------------------------------------
-    okH(RDH.NODES.length === 38, "科技节点总数必须仍为 38");
-    okH(scriptSources.length === 102 && styleSources.length === 5 && htmlIds.size === 370, "102 JS / 5 CSS / 320 DOM ID 基线不得回退");
+    okH(RDH.NODES.length === 83, "科技节点总数必须仍为 78");
+    okH(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580, "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
   } finally {
     gsH.research = JSON.parse(JSON.stringify(savedResearchH));
     gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
@@ -6541,14 +6543,14 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
     }
     const protocolNodesI = RDI.NODES.filter(node => node.type === "protocol");
     // ⚠ 旧基线 31 group / 38 节点 / 150 步 / 90 天 / 6 协议节点；研究树扩版后实测
-    //    53 consumer group / 71 节点 / 262 步 / 12 个无 bonus 协议节点（秒数随节点时长变）。
+    //    53 consumer group / 78 节点 / 269 步 / 12 个无 bonus 协议节点（发明分支 +7 节点，秒数随节点时长变）。
     //    协议节点谓词（!bonus && maxLevel===1）本身仍成立，这里只改数字不动语义。
-    okI(Object.keys(RDI.RESEARCH_BONUS_CONSUMERS || {}).length === 53 && RDI.NODES.length === 71 &&
-        stepsI === 262 && secondsI > 0 && isFinite(secondsI) &&
+    okI(Object.keys(RDI.RESEARCH_BONUS_CONSUMERS || {}).length === 53 && RDI.NODES.length === 83 &&
+        stepsI === 269 && secondsI > 0 && isFinite(secondsI) &&
         protocolNodesI.length === 12 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
-      "53 组数值 group / 71 节点 / 262 步 / 12 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 131 && styleSources.length === 5 && htmlIds.size === 554,
-      "131 JS / 5 CSS / 554 DOM ID 基线不得回退");
+      "53 组数值 group / 78 节点 / 269 步 / 12 个无 bonus 协议节点基线不得回退");
+    okI(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580,
+      "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -7102,13 +7104,13 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       for (const duration of (node.durationByLevel || [])) secondsJ += Number(duration) || 0;
     }
     const protocolNodesJ = RDJ.NODES.filter(node => node.type === "protocol");
-    // ⚠ 与 Batch I 同源基线（研究树扩版后：53 group / 71 节点 / 262 步 / 12 协议节点）。
-    okJ(Object.keys(RDJ.RESEARCH_BONUS_CONSUMERS || {}).length === 53 && RDJ.NODES.length === 71 &&
-        stepsJ === 262 && secondsJ > 0 && isFinite(secondsJ) &&
+    // ⚠ 与 Batch I 同源基线（研究树扩版后：53 group / 78 节点 / 269 步 / 12 协议节点）。
+    okJ(Object.keys(RDJ.RESEARCH_BONUS_CONSUMERS || {}).length === 53 && RDJ.NODES.length === 83 &&
+        stepsJ === 269 && secondsJ > 0 && isFinite(secondsJ) &&
         protocolNodesJ.length === 12 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
-      "53 组数值 group / 71 节点 / 262 步 / 12 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 131 && styleSources.length === 5 && htmlIds.size === 554,
-      "131 JS / 5 CSS / 554 DOM ID 基线不得回退");
+      "53 组数值 group / 78 节点 / 269 步 / 12 个无 bonus 协议节点基线不得回退");
+    okJ(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580,
+      "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -7782,11 +7784,11 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
       typeof achL.ACHIEVEMENTS_BY_ID === "object" && Object.keys(achL.ACHIEVEMENTS_BY_ID).length === 118,
     "成就目录 118 项与 ACHIEVEMENTS_BY_ID 结构必须不变");
 
-  // ---- L-11 研究 71 节点 / 六协议不变 ----------------------------------------------------
-  // ⚠ 旧基线 38 节点（研究树扩版后为 71）；哨兵作用是「本批不许悄悄改研究树规模」。
+  // ---- L-11 研究 78 节点 / 六协议不变 ----------------------------------------------------
+  // ⚠ 旧基线 38 节点（研究树扩版后为 71；发明分支 +7 → 78）；哨兵作用是「本批不许悄悄改研究树规模」。
   const rdL = G("ResearchData");
-  okL(rdL && rdL.NODES.length === 71 && G("IMPLEMENTED_RESEARCH_PROTOCOLS").length === 6,
-    "研究 71 节点与六协议必须不变（本批不改研究逻辑）");
+  okL(rdL && rdL.NODES.length === 83 && G("IMPLEMENTED_RESEARCH_PROTOCOLS").length === 6,
+    "研究 78 节点与六协议必须不变（本批不改研究逻辑）");
 
   // ---- L-12 index.html 正式页面不得出现旧专名（显示文本） ------------------------------
   const htmlRawL = stripPageNodeIds(fs.readFileSync(path.join(root, "index.html"), "utf8"));
@@ -9168,7 +9170,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(JSON.stringify(sandbox.gameState.tutorial) === tutBeforeNav && dNav1.taskById.P5.navigationTarget === dNav2.taskById.P5.navigationTarget, "动态导航计算纯读且可重复：不改变 state.tutorial");
 
   // (K) DOM 总数与收口提示一致
-  okP(htmlIds.size === 370, "DOM 总数 320（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save + 舰船工程 UI 重做新增 6 结构 id + 死亡空间连刷控件 4 个 id + 未提交特性新增 DOM ID）与收口提示一致");
+  okP(htmlIds.size === 580, "DOM 总数 580（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save + 舰船工程 UI 重做新增 6 结构 id + 死亡空间连刷控件 4 个 id + 未提交特性新增 DOM ID + 本批发明树解码 UI 新增 3 结构 id）与收口提示一致");
 
   // 10) P7 按钮→action.type 映射（开启三条职业支线 / confirm）
   resetTut();
@@ -9227,7 +9229,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(shellRenderSource.includes("_tutorialWidgetCollapsed") && shellRenderSource.includes('classList.toggle("collapsed"') && !shellRenderSource.includes("gameState.tutorial ="), "折叠必须用模块级临时变量 + DOM class，且不得写入 gameState.tutorial");
 
   // 18) 不引用 audit 脚本、脚本数不回退
-  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 102, "Batch P 不得引用 audit 脚本且脚本数保持 102 不变（含未提交特性新增脚本）");
+  okP(!shellRenderSource.includes("audit") && !tutorialSource.includes("audit") && scriptSources.length === 138, "Batch P 不得引用 audit 脚本且脚本数保持 138 不变（含未提交特性新增脚本）");
 
   // === Batch Q 真实浏览器试玩定点返修断言（5 项）===
   // (Q1) 真实浏览器复现：领取 P1 后动作区永久空白。根因是 tutorial 事件在同一次 dispatch 内部同步派发，

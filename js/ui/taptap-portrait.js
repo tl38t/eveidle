@@ -297,11 +297,21 @@
     var insufficientNote = (e.iskCost > 0 && !e.iskEnough)
       ? '<div class="tp-enh-insufficient">⚠ 星币不足，无法强化（需 ' + e.iskCost.toLocaleString() + "）</div>"
       : "";
+    // 潜能芯片 · 强化催化芯片：手机端此前缺失的开关（桌面 hangar 卡片有，移动端未渲染）。
+    // 持有 > 0 且可强化才显示入口；勾选后本次成功率 +10%（与装备强化同源 applyEnhanceCatalyst，仅成功时消耗 1 张）。
+    var catId = (typeof window !== "undefined" && window.POTENTIAL_CHIP_CATALYST_ID) || "special:强化催化芯片";
+    var catCount = (typeof ResourceRegistry !== "undefined" && ResourceRegistry.get && window.gameState)
+      ? (Number(ResourceRegistry.get(window.gameState, catId)) || 0) : 0;
+    var catOn = catCount > 0 && window.hangarCatalystOn && window.hangarCatalystOn.has(ship.instanceId);
+    var catToggleHtml = (catCount > 0 && e.available)
+      ? '<button type="button" class="tp-enh-cat-toggle' + (catOn ? " on" : "") + '" data-tp-hangar-catalyst="' + ship.instanceId + '" title="本次强化消耗 1 张强化催化芯片，成功率 +10%（仅成功时消耗）">🧪 强化催化芯片 +10%' + (catOn ? "（已启用 · 持有 " + catCount + "）" : "（未启用 · 持有 " + catCount + "）") + "</button>"
+      : "";
     return '<div class="tp-enh-card">'
       + '<div class="tp-enh-top"><span class="tp-enh-lv">强化 +' + e.level + '</span><span class="tp-enh-next">' + (e.milestone ? "★ 里程碑 · " : "") + next + "</span></div>"
       + (bonus ? '<div class="tp-enh-bonus">' + bonus + "</div>" : "")
-      + '<div class="tp-enh-meta"><span>成功率 <b>' + e.chancePercent + "%</b></span><span>成功 " + e.successXp + " XP · 失败 " + e.failureXp + " XP 并清零</span></div>"
+      + '<div class="tp-enh-meta"><span>成功率 <b>' + e.chancePercent + "%</b>" + (catOn ? '<small class="tp-enh-cat-badge">催化 +10%</small>' : "") + "</span><span>成功 " + e.successXp + " XP · 失败 " + e.failureXp + " XP 并清零</span></div>"
       + '<div class="tp-enh-mats">' + mats + iskLine + "</div>"
+      + catToggleHtml
       + insufficientNote
       + '<button class="tp-enh-btn btn" data-enhance-ship="' + ship.instanceId + '" ' + dis + ">" + label + "</button></div>";
   }
@@ -540,6 +550,16 @@
         if (enh) {
           if (typeof window.enhanceShipFromHangar === "function") window.enhanceShipFromHangar(enh.getAttribute("data-enhance-ship"));
           else { console.error("[taptap-portrait] 入口缺失：window.enhanceShipFromHangar 未定义"); if (window.showToast) window.showToast("强化入口缺失，请刷新或更新客户端"); }
+          return;
+        }
+        var cat = t.closest("[data-tp-hangar-catalyst]");
+        if (cat) {
+          var sid = cat.getAttribute("data-tp-hangar-catalyst");
+          if (window.hangarCatalystOn) {
+            if (window.hangarCatalystOn.has(sid)) window.hangarCatalystOn.delete(sid);
+            else window.hangarCatalystOn.add(sid);
+          }
+          mobileRenderHangarPanel();
           return;
         }
         var dism = t.closest("[data-dismantle-ship]");

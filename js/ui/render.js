@@ -868,11 +868,12 @@ function refreshVisiblePanelAfterAction() {
 })();
 
 dispatchGameAction(gameState, { type:"production/ensureMiningArea" }, Date.now());
-// 定点返修 P1-D：后台计时安全。页面隐藏（document.hidden）时跳过 gameTick 且不更新 lastActiveTime，
-// 避免移动端后台降频期间空转少结算；可见时正常推进。可见性恢复后的离线追算由 persistence.js
-// 的 visibilitychange 处理。单一计时器、不在 render.js 额外注册 visibilitychange。
+// 后台计时：1s 节拍始终运行，切窗口/切标签不停工（挂机游戏大忌，Steam 评测实锤「切窗口就停工」）。
+// 隐藏页的 setInterval 会被浏览器节流（通常 ≥1 次/秒，长时间后台可能降到 1 次/分钟），
+// 该间隔由 tick.js:111 节流守卫捕获并改走离线结算管线，按墙钟全额补足，不产生重复结算——
+// 每次 tick 末尾 lastActiveTime=Date.now() 持续刷新，可见性恢复时 calculateOfflineGains 只补 ~0。
+// 恢复补算仍由 persistence.js 的 visibilitychange 兜底，render.js 不额外注册。
 function runScheduledGameTick() {
-  if (document.hidden) return;
   if (typeof SaveManager !== "undefined" && SaveManager.isBootBlocked && SaveManager.isBootBlocked()) return;
   RuntimeGuard.runCritical("gameTick", gameTick);
 }

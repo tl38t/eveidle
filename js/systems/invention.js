@@ -131,6 +131,9 @@
       const adbm = Number(getAdBuffMultiplier(state)) || 1;
       if (adbm > 1) push("脑突触·加速", adbm, "广告 buff · 30 分钟", true);
     }
+    // 研究加速（inv_lab_speed）：每级实验室速度 +5%（满 5 级 +25%）。
+    const speedLv = researchLevel(state, "inv_lab_speed");
+    if (speedLv > 0) push("发明研究·研究加速", 1 + 0.05 * speedLv, "Lv." + speedLv, true);
     return { total: mult > 0 ? mult : 1, parts: parts };
   }
 
@@ -182,6 +185,11 @@
       if (!p.itemId || !p.affix || (p.targetKind !== "instance" && p.targetKind !== "inventory")) rigEnh.pending = null;
       else if (p.targetKind === "instance" && !p.instanceId) rigEnh.pending = null;
     }
+    // 自动解码协议开关（inv_dec_auto 解锁后由玩家在解码页切换；默认关，避免无意识消耗潜能芯片）
+    if (!inv.decodeAuto || typeof inv.decodeAuto !== "object" || Array.isArray(inv.decodeAuto)) {
+      inv.decodeAuto = { enabled: false };
+    }
+    if (typeof inv.decodeAuto.enabled !== "boolean") inv.decodeAuto.enabled = false;
     // 资源池（matrix）由 persistence 的池迁移负责；这里只保证读取安全
     return inv;
   }
@@ -375,7 +383,8 @@
   function canPayOneCycle(state, job) {
     const bp = BP_BY_KEY[job && job.key];
     if (!bp) return false;
-    const isk = iskPerCycle(bp);
+    // 减免扩容（inv_lab_reduce）：每级 −400 星币/循环（满 3 级 −1200，下限 0）；门禁按减免后计。
+    const isk = Math.max(0, iskPerCycle(bp) - 400 * researchLevel(state, "inv_lab_reduce"));
     const mat = matrixPerCycle(bp);
     if (typeof ResourceRegistry === "undefined") return false;
     if (Number(ResourceRegistry.get(state, ISK_ID)) < isk) return false;
@@ -387,8 +396,14 @@
     const bp = BP_BY_KEY[job && job.key];
     if (!bp) return false;
     if (!canPayOneCycle(state, job)) return false;
-    ResourceRegistry.spend(state, ISK_ID, iskPerCycle(bp));
-    ResourceRegistry.spend(state, MATRIX_ID, matrixPerCycle(bp));
+    // 减免扩容（inv_lab_reduce）：每级 −400 星币/循环（满 3 级 −1200，下限 0）。
+    const iskQty = Math.max(0, iskPerCycle(bp) - 400 * researchLevel(state, "inv_lab_reduce"));
+    ResourceRegistry.spend(state, ISK_ID, iskQty);
+    // 矩阵循环（inv_lab_matrix）：每级 5% 几率不消耗「解析矩阵」（满 5 级 25%）；星币与循环数照常。
+    let matQty = matrixPerCycle(bp);
+    const matLv = researchLevel(state, "inv_lab_matrix");
+    if (matLv > 0 && Math.random() < 0.05 * matLv) matQty = 0;
+    if (matQty > 0) ResourceRegistry.spend(state, MATRIX_ID, matQty);
     return true;
   }
 
@@ -413,8 +428,10 @@
       else entry.meCount = Math.max(0, Number(entry.meCount) || 0) + 1;
     }
     const offline = !!(opts && opts.offline);
+    // 研习精进（inv_lab_xp）：每个蓝图循环经验 ×1.25。
+    const invXp = isResearchNodeDone(state, "inv_lab_xp") ? Math.ceil(xpForBlueprint(bp) * 1.25) : xpForBlueprint(bp);
     if (typeof addSkillXpToState === "function") {
-      addSkillXpToState(state, SKILL_KEY, xpForBlueprint(bp), { job: SKILL_KEY, offline: offline, source: offline ? "offline-settlement" : "invention-cycle" });
+      addSkillXpToState(state, SKILL_KEY, invXp, { job: SKILL_KEY, offline: offline, source: offline ? "offline-settlement" : "invention-cycle" });
     }
     if (typeof GameEvents !== "undefined" && GameEvents && typeof GameEvents.emit === "function"
         && !(opts && opts.emitEvent === false)) {
@@ -422,7 +439,7 @@
         key: key, dir: d,
         meCount: entry ? entry.meCount : 0,
         teCount: entry ? entry.teCount : 0,
-        isk: iskPerCycle(bp), matrix: matrixPerCycle(bp), xp: xpForBlueprint(bp)
+        isk: iskPerCycle(bp), matrix: matrixPerCycle(bp), xp: invXp
       }, { offline: offline });
     }
     state._dirty = true;
@@ -511,27 +528,54 @@
     return 1;
   }
 
+  // 发明研究分支节点是否已完成（唯一事实来源 = state.research.completedLevels[id] >= 1，与 planauto/autosell 等同口径）。
+  // 旧档缺字段时安全回退 false（未解锁），不影响任何现有逻辑。
+  function isResearchNodeDone(state, id) {
+    const cl = state && state.research && state.research.completedLevels;
+    return !!(cl && typeof cl === "object" && !Array.isArray(cl) && Number(cl[id]) >= 1);
+  }
+
+  // 发明研究分支节点的已完成等级（0 = 未解锁 / 未完成）；UI 与效果钩子按等级取值。
+  // 与 isResearchNodeDone 同口径：state.research.completedLevels[id]（缺字段安全回退 0）。
+  function researchLevel(state, id) {
+    const cl = state && state.research && state.research.completedLevels;
+    return (cl && typeof cl === "object" && !Array.isArray(cl)) ? (Number(cl[id]) || 0) : 0;
+  }
+
   // 成功率（0.05..0.90）
   function rigEnhanceSuccessChance(state, tier) {
     const t = clampRigTier(tier);
     const raw = 0.25 + 0.006 * skillLevel(state, SKILL_KEY)
       + 0.003 * skillLevel(state, RIG_ENHANCE_MATERIAL_SKILL)
       - 0.06 * (t - 1);
+    // 强化工艺论（inv_rig_theory）：每级 +2%（满 5 级 +10%）。
+    const theory = researchLevel(state, "inv_rig_theory");
+    if (theory > 0) raw += 0.02 * theory;
     return Math.max(0.05, Math.min(0.90, raw));
   }
 
   // 焦点命中率（0.40..0.85）：发明等级越高，越容易出玩家选的系列
   function rigEnhanceFocusChance(state) {
     const raw = 0.40 + 0.005 * skillLevel(state, SKILL_KEY);
+    // 焦点锁定（inv_rig_focus）：每级 +2%（满 5 级 +10%）。
+    const focus = researchLevel(state, "inv_rig_focus");
+    if (focus > 0) raw += 0.02 * focus;
     return Math.max(0.40, Math.min(0.85, raw));
   }
 
   // 词条品质概率（面板展示用，与 enhanceRig 内部加权同式）：初始 50/30/20，装工 Lv0→100 线性偏移至 30/40/30
   function rigEnhanceQualityWeights(state) {
     const qw = Math.max(0, Math.min(100, Number(skillLevel(state, RIG_ENHANCE_MATERIAL_SKILL)) || 0)) / 100;
-    const common = 0.50 - 0.20 * qw;
+    let common = 0.50 - 0.20 * qw;
     const fine = 0.30 + 0.10 * qw;
-    return { common: common, fine: fine, superb: 1 - common - fine };
+    let superb = 1 - common - fine;
+    // 强化品质精炼（inv_rig_quality）：卓越概率 +10 个百分点（从普通里平移，三项总和恒为 1）
+    if (isResearchNodeDone(state, "inv_rig_quality")) {
+      const shift = 0.10;
+      common = Math.max(0, common - shift);
+      superb = superb + shift;
+    }
+    return { common: common, fine: fine, superb: superb };
   }
 
   // 单次强化的资源报价（成败都扣）。useAffixChip 时抵扣校准基体（芯片顶替），仍扣 ISK + 解析矩阵。
@@ -656,22 +700,30 @@
     if (typeof ResourceRegistry.spend !== "function") {
       return { ok: false, reason: "NO_RESISTRY", success: false, affixes: [] };
     }
+    // 统一 rng：成功率 / 焦点 / 系列 / 强度 / 校准基体免耗 共用，保证注入 rng 时全流程可复现。
+    let draw = Math.random;
+    if (typeof o.rng === "function") draw = o.rng;
     ResourceRegistry.spend(state, ISK_ID, cost.isk);
     ResourceRegistry.spend(state, MATRIX_ID, cost.matrix);
-    if (!useAffixChip) ResourceRegistry.spend(state, cost.calibrationRef, cost.calibrationQty);
+    // 催化增效（inv_rig_catalyst）：每级 3% 概率不消耗「校准基体」（满 5 级 15%）；ISK 与解析矩阵照扣。
+    let calibQty = cost.calibrationQty;
+    if (!useAffixChip && calibQty > 0) {
+      const freeLv = researchLevel(state, "inv_rig_catalyst");
+      if (freeLv > 0 && draw() < 0.03 * freeLv) calibQty = 0;
+      if (calibQty > 0) ResourceRegistry.spend(state, cost.calibrationRef, calibQty);
+    }
     // 高级词条芯片：扣 1 张玩家自选系列的独立物品（special:affixchip_<series>）；品质恒卓越、系列即玩家所选，不二次随机。
     if (useAffixChip) {
       ResourceRegistry.spend(state, AFFIX_CHIP_PREFIX + _affixSeries, 1);
     }
 
-    // ② 掷骰：本条链所有随机（成功率 / 焦点 / 系列 / 强度）统一走同一个 rng，
-    //    保证注入 rng 时全流程可复现（探针与离线结算都依赖这一点）。
-    let draw = Math.random;
-    if (typeof o.rng === "function") draw = o.rng;
+    // ② 掷骰：本条链所有随机（成功率 / 焦点 / 系列 / 强度）统一走同一个 rng（已在上文扣费前解析）。
     const roll = draw();
-    // 催化剂：在基础成功率上 +10%（装备强化与改装件附魔共用 applyEnhanceCatalyst）。
-    const effectiveChance = (typeof applyEnhanceCatalyst === "function")
-      ? applyEnhanceCatalyst(check.chance, effectiveUseCatalyst, state)
+    // 催化剂：在基础成功率上 +10%（装备强化与改装件附魔共用 applyEnhanceCatalyst 的口径）。
+    // 注：「催化增效」节点（inv_rig_catalyst）现改为「几率免耗校准基体」，不再影响催化芯片加成，故此处固定 +10%。
+    const catBonus = 0.10;
+    const effectiveChance = effectiveUseCatalyst
+      ? Math.min(1.0, check.chance + catBonus)
       : check.chance;
     // 高级词条芯片 = 必中；否则按（可能经催化放大的）成功率判定。
     const success = useAffixChip ? true : (roll < effectiveChance);
@@ -718,14 +770,11 @@
         const idx = Math.floor(draw() * seriesDef.length);
         picked = seriesDef[Math.max(0, Math.min(seriesDef.length - 1, idx))].series;
       }
-      // 品质概率（2026-09-26 用户定案）：初始 50/30/20，装工 Lv0→100 线性偏移至 30/40/30
-      // （优良+卓越随装工上升、普通下降，Lv100 达满偏移；总和恒为 1）。
-      const qEngLvl = skillLevel(state, RIG_ENHANCE_MATERIAL_SKILL);
-      const qw = Math.max(0, Math.min(100, Number(qEngLvl) || 0)) / 100;
-      const qCommon = 0.50 - 0.20 * qw;
-      const qFine = 0.30 + 0.10 * qw;
+      // 品质概率（2026-09-26 用户定案）：初始 50/30/20，装工 Lv0→100 线性偏移至 30/40/30。
+      // 与面板展示 rigEnhanceQualityWeights 同式（含 inv_rig_quality 的卓越 +10pp 偏移），保证展示即实际。
+      const qw = rigEnhanceQualityWeights(state);
       const qRoll = draw();
-      valueIdx = qRoll < qCommon ? 0 : (qRoll < qCommon + qFine ? 1 : 2);
+      valueIdx = qRoll < qw.common ? 0 : (qRoll < qw.common + qw.fine ? 1 : 2);
     }
     const def = seriesDef.find(item => item.series === picked) || seriesDef[0];
     // 词条强度（2026-09-27 用户定案口径）：普通/优良/卓越 = 3% / 5% / 8%（RIG_ENHANCE_AFFIX_VALUES），
@@ -739,7 +788,7 @@
     const baseBonus = (rigDef && rigDef.bonuses) ? Number(Object.values(rigDef.bonuses)[0]) : null;
     const seriesT5Def = (rigDef && rigDef.stackGroup && EQUIPMENT_DB && EQUIPMENT_DB[rigDef.stackGroup + "_v"]) || null;
     const seriesMax = (seriesT5Def && seriesT5Def.bonuses) ? Number(Object.values(seriesT5Def.bonuses)[0]) : null;
-    const affixValue = (baseBonus != null && seriesMax > 0)
+    let affixValue = (baseBonus != null && seriesMax > 0)
       ? baseBonus * (RIG_ENHANCE_AFFIX_VALUES[valueIdx] / seriesMax)
       : RIG_ENHANCE_AFFIX_VALUES[valueIdx];
     const affix = {
@@ -1144,24 +1193,28 @@
       .map(p => p.id.slice(POTENTIAL_CHIP_SKILL_PREFIX_LOCAL.length))
   );
 
-  function potentialChipWeightedPick(rng) {
-    const total = POTENTIAL_CHIP_POOL.reduce((s, p) => s + p.weight, 0);
+  function potentialChipWeightedPick(rng, state) {
+    // 精密解码（inv_dec_focus）：技能模块 +40%、高级词条芯片 +40%、强化催化芯片 -25%（仅权重偏移，不引入新随机）。
+    // 偏置把解码结果引向更有用的技能模块/词条，稀释催化芯片（催化通常存量充裕）。
+    const focus = isResearchNodeDone(state, "inv_dec_focus");
+    const adj = (p) => {
+      if (!focus) return p.weight;
+      if (p.type === "skill" || p.type === "affix") return p.weight * 1.40;
+      if (p.type === "catalyst") return p.weight * 0.75;
+      return p.weight;
+    };
+    const total = POTENTIAL_CHIP_POOL.reduce((s, p) => s + adj(p), 0);
     let roll = ((typeof rng === "function" ? rng() : Math.random())) * total;
     for (const p of POTENTIAL_CHIP_POOL) {
-      roll -= p.weight;
+      roll -= adj(p);
       if (roll < 0) return p;
     }
     return POTENTIAL_CHIP_POOL[POTENTIAL_CHIP_POOL.length - 1];
   }
 
-  // opts.rng 可注入（探针复现）；默认 Math.random。返回 { ok, prizeId, prizeType, affixRoll? }
-  function decodePotentialChip(state, opts) {
-    if (!state) return { ok:false, reason:"NO_STATE" };
-    if (typeof ResourceRegistry === "undefined" || !ResourceRegistry) return { ok:false, reason:"NO_RESISTRY" };
-    if (Number(ResourceRegistry.get(state, POTENTIAL_CHIP_SOURCE)) < 1) return { ok:false, reason:"NO_CHIP" };
-    const rng = (opts && typeof opts.rng === "function") ? opts.rng : Math.random;
-    const pick = potentialChipWeightedPick(rng);
-    ResourceRegistry.spend(state, POTENTIAL_CHIP_SOURCE, 1);
+  // 发放单个奖池道具（不校验/不扣「潜能芯片」本身，由 decodePotentialChip 统一扣片与计数）。
+  // 返回 { prizeId, prizeType, affixRoll? }（与 decodePotentialChip 的奖品位同形）。
+  function awardPotentialChipPrize(pick, rng, state) {
     let affixRoll = null;
     if (pick.type === "affix") {
       // 中奖牌 → 随机抽一个改装件词条系列，直接发放对应的独立物品 special:affixchip_<series>（品质恒卓越）。
@@ -1178,9 +1231,50 @@
     } else {
       ResourceRegistry.add(state, pick.id, 1);
     }
-    if (typeof state.potentialChipDecodes === "number") state.potentialChipDecodes += 1;
+    return { prizeId: pick.id, prizeType: pick.type, affixRoll: affixRoll };
+  }
+
+  // opts.rng 可注入（探针复现）；默认 Math.random。返回 { ok, prizeId, prizeType, affixRoll?, second? }
+  function decodePotentialChip(state, opts) {
+    if (!state) return { ok:false, reason:"NO_STATE" };
+    if (typeof ResourceRegistry === "undefined" || !ResourceRegistry) return { ok:false, reason:"NO_RESISTRY" };
+    if (Number(ResourceRegistry.get(state, POTENTIAL_CHIP_SOURCE)) < 1) return { ok:false, reason:"NO_CHIP" };
+    const rng = (opts && typeof opts.rng === "function") ? opts.rng : Math.random;
+    ResourceRegistry.spend(state, POTENTIAL_CHIP_SOURCE, 1);
+    const first = awardPotentialChipPrize(potentialChipWeightedPick(rng, state), rng, state);
+    // 双生解码（inv_dec_double）：每级 +1% 概率额外再抽 1 个（满 5 级 5%；消耗第 2 片，存量不足则跳过，绝不凭空造片）。
+    let second = null;
+    const doubleLv = researchLevel(state, "inv_dec_double");
+    if (doubleLv > 0
+        && Number(ResourceRegistry.get(state, POTENTIAL_CHIP_SOURCE)) >= 1
+        && rng() < 0.01 * doubleLv) {
+      ResourceRegistry.spend(state, POTENTIAL_CHIP_SOURCE, 1);
+      second = awardPotentialChipPrize(potentialChipWeightedPick(rng, state), rng, state);
+    }
+    if (typeof state.potentialChipDecodes === "number") state.potentialChipDecodes += (second ? 2 : 1);
     state._dirty = true;
-    return { ok:true, prizeId: pick.id, prizeType: pick.type, affixRoll: affixRoll };
+    return { ok:true, prizeId: first.prizeId, prizeType: first.prizeType, affixRoll: first.affixRoll, second: second };
+  }
+
+  // 批量解码（inv_dec_bulk 解锁后，解码页「全部解码」按钮调用）：把库存的「未知的潜能芯片」一次性解完。
+  // 守卫上限 5000 次，避免极端档卡死；每片消耗与单次解码同口径（含双生解码等已解锁加成）。
+  // 返回 { ok, decoded }（decoded = 实际消耗的芯片数）。
+  function decodeAllPotentialChips(state, opts) {
+    if (!state) return { ok:false, reason:"NO_STATE" };
+    if (typeof ResourceRegistry === "undefined" || !ResourceRegistry) return { ok:false, reason:"NO_RESISTRY" };
+    const rng = (opts && typeof opts.rng === "function") ? opts.rng : Math.random;
+    // 单次批量上限（芯片数）：手动「全部解码」按 inv_dec_bulk 等级（×5/×10/×25）；离线自动解码按本次掉落数。
+    // 未传 limit 时退化为旧行为（无上限，仍受 5000 守卫）。
+    const cap = (opts && Number(opts.limit) >= 0) ? Number(opts.limit) : Infinity;
+    const LIMIT = 5000;
+    let decoded = 0, chips = 0;
+    while (decoded < LIMIT && chips < cap && Number(ResourceRegistry.get(state, POTENTIAL_CHIP_SOURCE)) >= 1) {
+      const r = decodePotentialChip(state, { rng: rng });
+      if (!r.ok) break;
+      decoded += 1;
+      chips += (r.second ? 2 : 1);
+    }
+    return { ok:true, decoded: decoded, chips: chips, capped: cap !== Infinity };
   }
 
   /* 激活技能模块：消耗 1 个「潜能芯片_<skillKey>」→ 给该技能加 +5 临时等级，持续 10min（绝对时间戳）。
@@ -1198,6 +1292,23 @@
     state.skillTempBuffs[skillKey] = { endAt: endAt, amount: SKILL_BUFF_AMOUNT };
     state._dirty = true;
     return { ok:true, endAt: endAt, remaining: dur, amount: SKILL_BUFF_AMOUNT };
+  }
+
+  // 自动解码协议（inv_dec_auto）解锁判定：研究节点完成即视为解锁。
+  function isDecodeAutoUnlocked(state) { return isResearchNodeDone(state, "inv_dec_auto"); }
+  // 自动解码是否生效：必须节点已解锁 且 玩家已开启开关（默认关）。
+  function isDecodeAutoEnabled(state) {
+    return isDecodeAutoUnlocked(state)
+      && !!(state && state.invention && state.invention.decodeAuto && state.invention.decodeAuto.enabled);
+  }
+  // 切换自动解码开关；返回切换后的值（防御初始化 state.invention.decodeAuto）。
+  function setDecodeAutoEnabled(state, on) {
+    const inv = ensureState(state);
+    if (!inv) return false;
+    inv.decodeAuto = inv.decodeAuto || { enabled: false };
+    inv.decodeAuto.enabled = Boolean(on);
+    state._dirty = true;
+    return inv.decodeAuto.enabled;
   }
 
   /* ---------------------------------------------------------------
@@ -1231,7 +1342,13 @@
     // 两段式覆写：尝试成功 → getPendingRigEnhance 预览 → placeRigEnhance(0|1|"append"|null) 落地
     getPendingRigEnhance, placeRigEnhance,
     // 潜能芯片解码（2026-10-09）：解码「未知的潜能芯片」→ 加权随机抽 1 个奖池道具
-    POTENTIAL_CHIP_SOURCE, POTENTIAL_CHIP_POOL, decodePotentialChip,
+    POTENTIAL_CHIP_SOURCE, POTENTIAL_CHIP_POOL, decodePotentialChip, decodeAllPotentialChips,
+    // 自动解码协议（inv_dec_auto）：解锁判定 / 生效判定 / 开关（默认关）
+    isDecodeAutoUnlocked, isDecodeAutoEnabled, setDecodeAutoEnabled,
+    // 发明研究分支节点是否已完成（UI 门禁用；inv_dec_bulk / inv_dec_auto 等的统一查询入口）
+    isInventionNodeDone: isResearchNodeDone,
+    // 发明研究分支节点的已完成等级（UI 计算批量上限用）：inv_dec_bulk 等级 → ×5/×10/×25。
+    inventionNodeLevel: researchLevel,
     // 潜能芯片技能模块：消耗 1 片 → 给指定技能 +5 临时等级（10min）。返回 { ok, endAt?, remaining?, reason? }
     activateSkillBuff,
     POTENTIAL_CHIP_CATALYST, AFFIX_CHIP_PREFIX, POTENTIAL_CHIP_SKILL_PREFIX_LOCAL,

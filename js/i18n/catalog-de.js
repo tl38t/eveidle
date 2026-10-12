@@ -7470,4 +7470,12 @@
   ["强化催化芯片：舰船强化与装备强化界面新增「使用强化催化芯片」开关，勾选后本次强化成功率 +10%。芯片仅在强化成功时消耗 1 片，失败不消耗，可放心勾选。","Verstärkungs-Katalysator-Chip: Ein \"Verstärkungs-Katalysator-Chip verwenden\"-Schalter wird in den Panels für Schiffs- und Ausrüstungsverbesserung hinzugefügt. Bei Aktivierung steigt die Erfolgschance dieses Versuchs um 10 %. Der Chip wird nur bei erfolgreicher Verbesserung verbraucht (nie bei Misserfolg), daher kannst du ihn bedenkenlos aktivieren."],
   ["技能模块芯片：激活后指定技能临时 +5 级，持续 10 分钟（真实时间）。效果在离线期间同样生效（按结束时间点判定），不影响在线/离线平衡。","Skill-Modul-Chip: Bei Aktivierung erhält die gewählte Fertigkeit temporär +5 Stufen für 10 Minuten (Echtzeit). Der Effekt gilt auch in der Offline-Zeit (beurteilt nach dem Endzeitpunkt) und beeinflusst das Online/Offline-Gleichgewicht nicht."],
   ["改装件词条芯片：改装件附魔时可在界面选择词条芯片，必定成功。","Rig-Affix-Chip: Beim Verstärken eines Rigs kannst du im Interface direkt einen Affix-Chip auswählen, und die Verstärkung gelingt immer."],
+  ["新增 · 发明研究分支","Neu · Erfindungsforschung-Zweig"],
+  ["研究页新增「发明研究」支线：发明学基础解锁后分三大支柱，共 12 项研究。","Die Forschungsseite erhält einen neuen Zweig \"Erfindungsforschung\": Nach dem Freischalten von \"Erfindungsgrundlagen\" teilt er sich in drei Säulen mit insgesamt 12 Forschungen."],
+  ["修复切换窗口或后台运行时游戏停工的问题：隐藏期间动作照常推进，回到前台时长自动结算，不再凭空丢进度。","Behoben: Das Spiel stand still, während das Fenster im Hintergrund war. Aktionen laufen jetzt weiter, solange es verborgen ist, und die verstrichene Zeit wird bei der Rückkehr automatisch abgerechnet – kein stiller Fortschrittsverlust mehr."],
+  ["修复队列空闲时点「加入队列」没有反应、必须再按一次「确定」的问题：现在任务入队后立即自动开始。","Behoben: \"Zur Warteschlange hinzufügen\" reagierte nicht, wenn die Warteschlange leer war, und erforderte ein zusätzliches Drücken von \"Bestätigen\". Aufgaben starten jetzt automatisch sofort nach dem Einreihen."],
+  ["修复页面滚轮往下滚之后卡在偏下位置、回不到顶部的问题。","Behoben: Die Seite blieb nach dem Herunterscrollen mit dem Mausrad leicht unter dem oberen Rand hängen und ließ sich nicht wieder nach oben scrollen."],
+  ["修复潜能芯片自动解码会一次性解空整个库存的问题：自动解码现在只处理战斗与离线新掉落的芯片，存量请用「全部解码」手动清。","Behoben: Die automatische Decodierung von Potential-Chips leerte den gesamten Vorrat auf einmal. Sie verarbeitet jetzt nur neu erbeutete Chips aus Kampf und Offline-Sitzungen; den Vorrat kannst du mit \"Alle decodieren\" manuell leeren."],
+  ["优化 · 联盟","Verbesserungen · Allianzen"],
+  ["优化联盟列表加载：一次请求即可取得全部联盟数据，打开联盟页更快、更省流量。","Optimiertes Laden der Allianzliste: Alle Allianzdaten kommen jetzt in einer einzigen Anfrage – die Allianzseite öffnet schneller und verbraucht weniger Traffic."],
 ]); })();

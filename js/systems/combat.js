@@ -1174,6 +1174,13 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
       ResourceRegistry.add(state, "special:未知的潜能芯片", 1);
       addLoot("special:未知的潜能芯片", 1);
       c.lastLoot += " · 未知的潜能芯片 ×1";
+      // 自动解码协议（inv_dec_auto）：玩家开启后，掉落的潜能芯片当场自动解码（等价于手动点击，分布不变）。
+      // 用独立 Math.random，不消耗战斗 rng（避免扰动后续掉落序列、破坏在线/离线 parity）。
+      const _INV = (typeof window !== "undefined" && window.INVENTION) || (typeof INVENTION !== "undefined" ? INVENTION : null);
+      if (_INV && typeof _INV.isDecodeAutoEnabled === "function" && _INV.isDecodeAutoEnabled(state)
+          && typeof _INV.decodePotentialChip === "function") {
+        _INV.decodePotentialChip(state, { rng: Math.random });
+      }
     }
   }
   const fmtDrop = d => ((d && d.materialId !== undefined ? d.materialId : (d && d.material)) + " ×" + (d && d.quantity !== undefined ? d.quantity : (d && d.qty)));

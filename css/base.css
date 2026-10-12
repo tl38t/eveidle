@@ -324,6 +324,7 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
+    overflow-anchor: none;        /* 关闭滚动锚定：页面每秒重建 DOM 时不再与用户手动滚动对抗，修复「滚下去后回不到顶」(Steam 评测 10-09 实锤) */
     padding: 12px 16px;
     gap: 10px;
   }
@@ -1314,6 +1315,25 @@
     background: linear-gradient(90deg, rgba(46, 143, 122, 0.22), rgba(46, 143, 122, 0.06));
     border: 1px solid rgba(95, 216, 180, 0.4); border-bottom: none;
     font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #e0fff5;
+  }
+
+  /* 发明分支（contentPack==="invention"）：金橙描边，与军团紫 / 深空开拓青绿明显区分 */
+  .rt-badge--invention { background: #b8761f; color: #fff3e0; }
+  .rt-node--invention { border-color: #b8761f; }
+  .rt-node--invention.rt-node--completed { background: #2e2412; border-color: #e0a64a; color: #ffe9c8; }
+  .rt-node--invention.rt-node--active { background: #2c2110; border-color: #f0b85a; color: #ffe9c8; }
+  .rt-node--invention.rt-node--queued { background: #29200f; border-color: #c89a4a; color: #f0dcb8; }
+  .rt-node--invention.rt-node--available { background: #211a10; border-color: #b8863a; color: #e8d0a8; }
+  .rt-node--invention.rt-node--locked { background: #181410; border-color: #4a3a20; color: #b0a080; }
+  .rt-node--invention .rt-node-eff { color: #d6a96a; }
+  /* 发明分支区头（与军团 / 深空开拓区头同构，换金橙配色） */
+  .rt-invention-head {
+    position: absolute; z-index: 3;
+    display: flex; align-items: center; gap: 12px;
+    padding: 8px 12px; border-radius: 8px;
+    background: linear-gradient(90deg, rgba(184, 118, 31, 0.22), rgba(184, 118, 31, 0.06));
+    border: 1px solid rgba(224, 166, 74, 0.4); border-bottom: none;
+    font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #ffe9c8;
   }
 
   .rt-node--faded { opacity: 0.32; }

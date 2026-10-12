@@ -297,13 +297,17 @@
   // 匿名登录：整条链路里唯一会写「玩家 state 之外」的请求，也是当日 17,098 次调用的最大来源。
   // 2026-09-28 起并发合并——同一时刻只允许一个登录请求在飞，其余调用共享其结果。
   function getAccessToken(forceRefresh) {
+    // 🔴 single-flight（2026-10-12）：登录在途时共享同一 pending，forceRefresh 亦然——
+    //   在途登录本身就是一次全新登录，共享它即可拿到新令牌。
+    //   此前 forceRefresh 先把 tokenRequestPromise 置 null 再重登：401 风暴时（如联盟列表
+    //   N+1 的 164 个并发请求全部 401）每个请求各自重新 signin ⇒ 3.1 万次/日匿名登录，
+    //   是 CloudBase 资源耗尽主因之一。
+    if (tokenRequestPromise) return tokenRequestPromise;
     if (forceRefresh) {
       localStorage.removeItem(tokenKey);
-      tokenRequestPromise = null;
     }
-    if (tokenRequestPromise) return tokenRequestPromise;
     var cached = localStorage.getItem(tokenKey);
-    if (cached) return Promise.resolve(cached);
+    if (cached && !forceRefresh) return Promise.resolve(cached);
     var pending = request("/auth/v1/signin/anonymously", {
       method: "POST",
       headers: { "x-device-id": getPlayerId() },
@@ -384,6 +388,42 @@
       var cached = allianceListCache.list;
       if (cached && (Date.now() - allianceListCache.at) < ALLIANCE_LIST_TTL_MS) return Promise.resolve(cached);
     }
+    // 🔴 云资源优化（2026-10-12）：首页列表（offset=0）改走聚合 RPC get_alliance_list_summary，
+    //   一次请求替代 1 + N×2（线上 82 个联盟 ≈ 165 次/次渲染，日耗 12 万+ API 调用的主因）。
+    //   返回结构与旧路径逐字段一致（buildings 数组 + construction 两字段 + memberCap）；
+    //   RPC 异常时回退旧逐联盟路径，行为不变。offset>0（翻页）仍走旧路径（调用量小）。
+    if (offset === 0) {
+      var rpcSearch = search ? search.replace(/[%_\\]/g, "\\$&") : "";
+      return authed("/v1/rdb/rest/rpc/get_alliance_list_summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ p_limit: limit, p_offset: 0, p_order: order, p_search: rpcSearch })
+      }).then(function (rows) {
+        var list = (rows || []).map(mapAllianceSummary);
+        if (cacheable) allianceListCache = { at: Date.now(), list: list };
+        return list;
+      }).catch(function () {
+        return listAlliancesLegacy(offset, limit, order, search, cacheable);
+      });
+    }
+    return listAlliancesLegacy(offset, limit, order, search, cacheable);
+  }
+
+  // 聚合 RPC 行 → 与旧路径完全一致的对象结构（mapAlliance + buildings + memberCap + construction）。
+  function mapAllianceSummary(row) {
+    var alliance = mapAlliance(row);
+    alliance.buildings = (row && row.buildings) || [];
+    alliance.memberCap = root.AllianceBuildingConfig
+      ? root.AllianceBuildingConfig.memberCap(alliance.buildings) : 10;
+    alliance.construction = {
+      points_balance: Number(row && row.points_balance) || 0,
+      total_points_earned: Number(row && row.total_points_earned) || 0
+    };
+    return alliance;
+  }
+
+  // 旧路径：1 次列表 + 每联盟 2 次子请求（建筑 + 建设点）。保留作 RPC 异常降级与翻页路径。
+  function listAlliancesLegacy(offset, limit, order, search, cacheable) {
     var url = "/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&order=" + order + "&limit=" + limit + "&offset=" + offset;
     if (search) {
       // 转义 PostgREST/ilike 通配符（% _ *），避免搜索词破坏 filter 语法或被当模糊通配。

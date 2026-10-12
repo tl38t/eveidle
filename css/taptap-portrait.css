@@ -474,6 +474,10 @@
   .tp-enh-btn{ width:100%; margin-top:6px; padding:11px; border-radius:8px; background:#4a90d9; color:#fff; font-weight:700; font-size:14px; border:none; }
   .tp-enh-btn:disabled{ background:#2a3744; color:#6a7a8e; }
   .tp-enh-insufficient{ margin-top:8px; padding:8px 10px; border-radius:8px; background:rgba(217,74,74,.18); color:#ff9a9a; font-size:12px; font-weight:600; border:1px solid rgba(217,74,74,.4); }
+  /* 强化催化芯片开关（手机端此前缺失，与桌面 hangar 卡片同口径） */
+  .tp-enh-cat-toggle{ width:100%; margin-top:8px; padding:9px 10px; border-radius:8px; background:rgba(40,55,75,.6); border:1px solid #2a3b4d; color:#9fb4c8; font-size:12.5px; font-weight:600; text-align:left; }
+  .tp-enh-cat-toggle.on{ background:rgba(231,198,90,.15); border:1px solid #e7c66a; color:#ffe9b0; }
+  .tp-enh-cat-badge{ margin-left:6px; padding:1px 6px; border-radius:6px; background:rgba(231,198,90,.18); color:#e7c66a; font-size:11px; font-weight:700; }
 
   /* 竖屏舰船拆解（危险操作） */
   .tp-dismantle-card{ background:rgba(0,0,0,.25); border:1px solid #3a1f23; border-radius:10px; padding:12px; margin-top:4px; }

@@ -634,6 +634,115 @@ const NODES = [
     bonus: null,
     description: "逆向先驱科技的电容回充结构：所有舰船的战斗与考古燃料消耗降低 10%，与「电容回充」改装件同口径加算。",
   },
+
+  // ===== 发明研究分支（contentPack="invention"）=====
+  //   三支柱：① 潜能芯片解码（吞吐 / 自动化）② 改装件强化（工艺 / 品质）③ 蓝图效率研究（速度 / 减免 / 经验）。
+  //   全部挂在 inv_root 下，主树下方单独成区；成本由研究引擎按字面量 rank 推导（研发点 + 时间），不引入新币种。
+  //   解锁写 state.research.completedLevels；分支节点 bonus:null（不触发 RESEARCH_BONUS_CONSUMERS 审计）。
+  //   设计要点（玩家 2026-10-11 拍板）：
+  //     · 删「精密解码」（奖池回归固定分布）。
+  //     · 批量解码改为 3 级成长曲线（×5 / ×10 / ×25），满 3 级才解锁自动解码协议；两者正交——批量只清存量，自动只解新掉落。
+  //     · 强化工艺论 / 焦点锁定：+2% / 级（满 +10%）；催化增效：每级 3% 几率免耗校准基体（满 15%）。
+  //     · 研究加速：+5% / 级（满 +25%）；矩阵循环：每级 5% 几率免耗解析矩阵（满 25%）。
+  {
+    id: "inv_root", name: "发明学基础", category: "invention", era: 0, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 1, rank: 0.6, prerequisites: [],
+    effects: ["解锁发明研究分支（解码 / 强化 / 蓝图三支柱）"],
+    bonus: null,
+    description: "建立蓝图发明的理论框架，解锁发明研究分支：潜能芯片解码、改装件强化、蓝图效率研究三大支柱。",
+  },
+  // —— 支柱一：潜能芯片解码 ——
+  {
+    id: "inv_dec_double", name: "双生解码", category: "invention", era: 1, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 5, rank: 0.15, prerequisites: [{ id: "inv_root", level: 1 }],
+    effects: ["解码额外产出概率 +1%", "解码额外产出概率 +2%", "解码额外产出概率 +3%", "解码额外产出概率 +4%", "解码额外产出概率 +5%"],
+    bonus: null,
+    description: "每级解码时 +1% 概率触发双生效应，额外再抽 1 片「未知的潜能芯片」一起解（满 5 级 5%；触发时消耗 2 片，得 2 份奖励）。",
+  },
+  {
+    id: "inv_dec_bulk", name: "批量解码", category: "invention", era: 1, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 3, rank: 0.4, prerequisites: [{ id: "inv_root", level: 1 }],
+    effects: ["批量上限 ×5", "批量上限 ×10", "批量上限 ×25（解锁自动解码协议）"],
+    bonus: null,
+    description: "解锁「全部解码」按钮，一次性清空当前持有的「未知的潜能芯片」库存；每级提升单次批量上限：Lv1 ×5 → Lv2 ×10 → Lv3 ×25。满 3 级解锁「自动解码协议」。",
+  },
+  {
+    id: "inv_dec_auto", name: "自动解码协议", category: "invention", era: 2, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 1, rank: 2.5, prerequisites: [{ id: "inv_dec_bulk", level: 3 }],
+    effects: ["解锁自动解码开关（默认关）"],
+    bonus: null,
+    description: "解锁自动解码开关（默认关）：战斗 / 离线掉落的「未知的潜能芯片」当场自动解码——只解新掉落，不动存量。开关在潜能芯片解码页。",
+  },
+  // —— 支柱二：改装件强化（双词条）——
+  {
+    id: "inv_rig_quality", name: "品质精炼", category: "invention", era: 1, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 1, rank: 1.0, prerequisites: [{ id: "inv_root", level: 1 }],
+    effects: ["卓越品质概率 +10%"],
+    bonus: null,
+    description: "精炼改装件强化工艺，使产出「卓越」品质的概率 +10%（从普通品质平移过来，优良不变）。",
+  },
+  {
+    id: "inv_rig_theory", name: "强化工艺论", category: "invention", era: 2, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 5, rank: 0.15, prerequisites: [{ id: "inv_rig_quality", level: 1 }],
+    effects: ["强化成功率 +2%", "强化成功率 +4%", "强化成功率 +6%", "强化成功率 +8%", "强化成功率 +10%"],
+    bonus: null,
+    description: "每级提升改装件强化基础成功率 +2%（满 5 级 +10%）。",
+  },
+  {
+    id: "inv_rig_focus", name: "焦点锁定", category: "invention", era: 3, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 5, rank: 0.15, prerequisites: [{ id: "inv_rig_theory", level: 3 }],
+    effects: ["焦点命中 +2%", "焦点命中 +4%", "焦点命中 +6%", "焦点命中 +8%", "焦点命中 +10%"],
+    bonus: null,
+    description: "每级提升改装件强化焦点命中率 +2%（满 5 级 +10%），更易命中玩家指定的词条系列。",
+  },
+  {
+    id: "inv_rig_catalyst", name: "催化增效", category: "invention", era: 4, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 5, rank: 0.15, prerequisites: [{ id: "inv_rig_focus", level: 3 }],
+    effects: ["3% 几率免耗校准基体", "6% 几率免耗校准基体", "9% 几率免耗校准基体", "12% 几率免耗校准基体", "15% 几率免耗校准基体"],
+    bonus: null,
+    description: "每级强化有 3% 概率不消耗「校准基体」（满 5 级 15%）；星币与解析矩阵仍照常扣除。",
+  },
+  // —— 支柱三：蓝图效率研究（ME/TE）——
+  {
+    id: "inv_lab_speed", name: "研究加速", category: "invention", era: 1, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 5, rank: 0.15, prerequisites: [{ id: "inv_root", level: 1 }],
+    effects: ["实验室速度 +5%", "实验室速度 +10%", "实验室速度 +15%", "实验室速度 +20%", "实验室速度 +25%"],
+    bonus: null,
+    description: "每级提升蓝图实验室速度 +5%（满 5 级 +25%），单循环耗时相应下降。",
+  },
+  {
+    id: "inv_lab_matrix", name: "矩阵循环", category: "invention", era: 2, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 5, rank: 0.15, prerequisites: [{ id: "inv_lab_speed", level: 3 }],
+    effects: ["5% 几率免耗解析矩阵", "10% 几率免耗解析矩阵", "15% 几率免耗解析矩阵", "20% 几率免耗解析矩阵", "25% 几率免耗解析矩阵"],
+    bonus: null,
+    description: "每级蓝图循环有 5% 概率不消耗「解析矩阵」（满 5 级 25%）。",
+  },
+  {
+    id: "inv_lab_reduce", name: "减免扩容", category: "invention", era: 2, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 3, rank: 0.4, prerequisites: [{ id: "inv_lab_speed", level: 3 }],
+    effects: ["星币/循环 −400", "星币/循环 −800", "星币/循环 −1200"],
+    bonus: null,
+    description: "每级降低蓝图循环消耗的星币 −400（满 3 级 −1200，下限 0）。",
+  },
+  {
+    id: "inv_lab_xp", name: "研习精进", category: "invention", era: 3, type: "foundation",
+    contentPack: "invention",
+    maxLevel: 1, rank: 2.5, prerequisites: [{ id: "inv_lab_matrix", level: 3 }, { id: "inv_lab_reduce", level: 3 }],
+    effects: ["蓝图经验 ×1.25"],
+    bonus: null,
+    description: "每个蓝图循环获得的发明经验 ×1.25；发明等级随之上升，反哺改装件强化的成功率与焦点命中（跨支柱协同）。",
+  },
 ];
 
 // 循环研究：独立于普通科技树，但使用同一研究槽位与队列。
@@ -665,8 +774,8 @@ function getCycleResearchDuration(id, level) {
 function baseWeight() {
   let w = 0;
   for (const n of NODES) {
-    // 军团 / 深空开拓分支不计入基础权重（不压缩主树各节点时长）
-    if (n.contentPack === "legion" || n.contentPack === "frontier") continue;
+    // 军团 / 深空开拓 / 发明 分支不计入基础权重（不压缩主树各节点时长）
+    if (n.contentPack === "legion" || n.contentPack === "frontier" || n.contentPack === "invention") continue;
     const rank = (typeof n.rank === "number") ? n.rank : (RANK_MULT[n.category] || 0);
     if (!rank) throw new Error("未知 category: " + n.category + " @ " + n.id);
     for (let lvl = 1; lvl <= n.maxLevel; lvl++) {
@@ -703,6 +812,14 @@ let FRONTIER_ADDITIONAL_SECONDS = 0;
 for (const n of NODES) {
   if (n.contentPack !== "frontier") continue;
   for (const d of n.durationByLevel) FRONTIER_ADDITIONAL_SECONDS += d;
+}
+
+// 发明分支追加的总研究时间（秒，与 LEGION / FRONTIER_ADDITIONAL_SECONDS 同构）。
+// 全部为单级特征节点，时长由 rank 推导，不压缩主树。
+let INVENTION_ADDITIONAL_SECONDS = 0;
+for (const n of NODES) {
+  if (n.contentPack !== "invention") continue;
+  for (const d of n.durationByLevel) INVENTION_ADDITIONAL_SECONDS += d;
 }
 
 // ---------------------------------------------------------------------------

@@ -3257,7 +3257,17 @@
       const ne = da.chip.elite ? batchCount(da.chip.elite, CHIP_ELITE_CHANCE, rng) : 0;
       const nb = da.chip.boss ? batchCount(da.chip.boss, CHIP_BOSS_CHANCE, rng) : 0;
       const total = ne + nb;
-      if (total > 0) { RR.add(state, "special:未知的潜能芯片", total); addResource(s, "special:未知的潜能芯片", total); }
+      if (total > 0) {
+        RR.add(state, "special:未知的潜能芯片", total); addResource(s, "special:未知的潜能芯片", total);
+        // 自动解码协议（inv_dec_auto）：开启后离线掉落的潜能芯片在结算时自动解码——
+        // 只解本次掉落的 total 枚（drops-only，不动离线前的既有存量），等价于手动点击、分布不变。
+        // 用独立 Math.random，不消耗离线 rng（避免扰动其他掉落序列、破坏在线/离线 parity）。
+        const _INV = (typeof window !== "undefined" && window.INVENTION) || (typeof INVENTION !== "undefined" ? INVENTION : null);
+        if (_INV && typeof _INV.isDecodeAutoEnabled === "function" && _INV.isDecodeAutoEnabled(state)
+            && typeof _INV.decodeAllPotentialChips === "function") {
+          _INV.decodeAllPotentialChips(state, { rng: Math.random, limit: total });
+        }
+      }
     }
   }
 

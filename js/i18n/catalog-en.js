@@ -8173,4 +8173,12 @@
   ["强化催化芯片：舰船强化与装备强化界面新增「使用强化催化芯片」开关，勾选后本次强化成功率 +10%。芯片仅在强化成功时消耗 1 片，失败不消耗，可放心勾选。","Enhancement Catalyst Chip: a \"Use Enhancement Catalyst Chip\" toggle is added to the ship and equipment enhancement panels. When enabled, this attempt's success rate increases by 10%. The chip is consumed only on a successful enhancement (never on failure), so it is safe to enable."],
   ["技能模块芯片：激活后指定技能临时 +5 级，持续 10 分钟（真实时间）。效果在离线期间同样生效（按结束时间点判定），不影响在线/离线平衡。","Skill Module Chip: when activated, the chosen skill gains +5 levels temporarily for 10 minutes (real time). The effect also applies during offline time (judged by its end timestamp) and does not affect online/offline balance."],
   ["改装件词条芯片：改装件附魔时可在界面选择词条芯片，必定成功。","Rig Affix Chip: when enhancing a rig, you can select an affix chip directly in the interface, and the enhancement always succeeds."],
+  ["新增 · 发明研究分支","New · Invention Research Branch"],
+  ["研究页新增「发明研究」支线：发明学基础解锁后分三大支柱，共 12 项研究。","The Research page adds a new \"Invention Research\" branch: once Invention Fundamentals is unlocked, it splits into three pillars with 12 studies in total."],
+  ["修复切换窗口或后台运行时游戏停工的问题：隐藏期间动作照常推进，回到前台时长自动结算，不再凭空丢进度。","Fixed the game idling while the window was in the background: actions now keep progressing while hidden, and the elapsed time is settled automatically when you return — no more silently lost progress."],
+  ["修复队列空闲时点「加入队列」没有反应、必须再按一次「确定」的问题：现在任务入队后立即自动开始。","Fixed \"Join Queue\" doing nothing when the queue was idle and requiring an extra press of \"Confirm\": queued tasks now start automatically right away."],
+  ["修复页面滚轮往下滚之后卡在偏下位置、回不到顶部的问题。","Fixed the page getting stuck slightly below the top after scrolling down with the mouse wheel, unable to scroll back up."],
+  ["修复潜能芯片自动解码会一次性解空整个库存的问题：自动解码现在只处理战斗与离线新掉落的芯片，存量请用「全部解码」手动清。","Fixed Potential Chip auto-decoding emptying the entire stock at once: auto-decoding now only processes chips newly dropped in combat and offline sessions; use \"Decode All\" manually to clear your stock."],
+  ["优化 · 联盟","Improvements · Alliances"],
+  ["优化联盟列表加载：一次请求即可取得全部联盟数据，打开联盟页更快、更省流量。","Optimized alliance list loading: all alliance data now arrives in a single request, so the alliance page opens faster and uses less traffic."],
 ]); })();

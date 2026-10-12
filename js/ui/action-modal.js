@@ -196,7 +196,11 @@ function submitActionConfirmation(front) {
   const countText = count === -1 ? "（无限）" : " ×" + count;
   const positionText = front ? "队列首位" : "队列";
   showToast(`已加入${positionText}${countText}：${getQueueSkillLabel(queueItem.skill)} · ${queueItem.label}`);
-  if (front) {
+  // 启动队列：①「确认」(front) 始终启动；②「加入队列」(非 front) 在队列空闲时自动启动，
+  // 否则任务只入队不运行，体感上「加入队列无效、必须再按一次确认」(Steam 评测 10-09 实锤)。
+  // 队列已在运行时绝不再调用 startQueue —— queueStart(actions.js:2379) 会重置 activeIndex 从头执行，误重启进行中的动作。
+  const queueIdle = !(gameState.queue && gameState.queue.status && gameState.queue.status.isRunning);
+  if (front || queueIdle) {
     startQueue();
     // 事件驱动：动作真正开始后通知 UI 重建顶部「当前活动」迷你进度条。
     // 该元素为条件渲染（仅 progressActive 为真才拼入 DOM），启动路径原先不重绘，

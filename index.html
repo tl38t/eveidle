@@ -7,12 +7,12 @@
 <title>深空放置：边疆纪元</title>
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fonts/fonts.css" data-page-node-id="3fiApn1SGVFxJUWdXpWh5W">
 <link rel="stylesheet" href="./assets/vendor/taptap-h5/fontawesome/css/all.min.css" data-page-node-id="P4Io4ysW7RgjBSkBb3L0Yx">
-<link rel="stylesheet" href="./css/base.css?v=25" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
+<link rel="stylesheet" href="./css/base.css?v=27" data-page-node-id="zYPq2vrK77PB6VQE8Oqcob">
   <link rel="stylesheet" href="./css/panels.css?v=76" data-page-node-id="EO0cvpdOJNMFJG5gNM6nea">
   <link rel="stylesheet" href="./css/combat.css?v=30" data-page-node-id="4tyvBwYTecWVPpekSSWQWZ">
 <link rel="stylesheet" href="./css/components.css?v=54" data-page-node-id="HTXep82DjSUoKpK4FQGPKy">
 <link rel="stylesheet" href="./css/chat.css?v=5" data-page-node-id="yegpT4axdagveBVNN2Jthl">
-<link rel="stylesheet" href="./css/taptap-portrait.css?v=28" data-page-node-id="Hg2oYi1jGpwcCdUfrpD2LM">
+<link rel="stylesheet" href="./css/taptap-portrait.css?v=29" data-page-node-id="Hg2oYi1jGpwcCdUfrpD2LM">
 <style id="starmap-collection-room-style">
 .starmap-collection-room{margin:12px 0 18px;padding:14px;border:1px solid #29435e;border-radius:10px;background:linear-gradient(135deg,#07111b,#0a1826);color:#dbeaff}.starmap-collection-stage{position:relative;min-height:260px;display:grid;grid-template-columns:minmax(0,1fr) minmax(180px,260px);gap:18px;align-items:center}.starmap-collection-ship{position:relative;height:240px;border:1px solid #1d344a;border-radius:8px;background:#040b13;overflow:hidden}.starmap-collection-ship canvas{width:100%;height:100%;display:block}.starmap-collection-label{position:absolute;left:10px;bottom:8px;padding:3px 8px;border-radius:4px;background:#06101bcc;color:#9cc8ef;font-size:12px}.starmap-resource-card{min-height:170px;pointer-events:none;cursor:default}.starmap-collection-beams{position:absolute;left:42%;right:34%;top:50%;height:72px;transform:translateY(-50%);pointer-events:none}.starmap-collection-beams i{position:absolute;left:0;width:100%;height:2px;top:calc(50% + (var(--beam-index) - ((var(--beam-count) - 1) / 2)) * 16px);background:linear-gradient(90deg,#65d9ff00,#65d9ffcc 35%,#b8f3ff 70%,#65d9ff00);box-shadow:0 0 8px #65d9ff;opacity:.8}.starmap-collection-counter{display:flex;align-items:baseline;gap:10px;margin:12px 0 8px;color:#9cc8ef}.starmap-collection-counter strong{font-size:22px;color:#f4fbff}.starmap-collection-progress{position:relative}.starmap-collection-progress .skill-canvas-bar{width:100%;height:24px;display:block}.starmap-collection-progress .mp-eta{position:absolute;right:8px;top:3px;color:#dbeaff;font-size:12px;text-shadow:0 1px 2px #000}@media (max-width:700px){.starmap-collection-stage{grid-template-columns:1fr;min-height:0}.starmap-collection-ship{height:200px}.starmap-collection-beams{left:38%;right:38%;top:50%;transform:translateY(-50%) rotate(90deg)}}
 </style>
@@ -28,8 +28,8 @@
   <script type="module" src="./js/ui/ship3d.js?v=13"></script>
   <script type="module" src="./js/ui/titan-forge-3d.js?v=4"></script>
   <script defer src="./js/core/speed-config.js?v=3"></script>
-  <script src="./js/i18n/catalog-en.js?v=65"></script>
-  <script src="./js/i18n/catalog-zh-TW.js?v=41"></script>
+  <script src="./js/i18n/catalog-en.js?v=66"></script>
+  <script src="./js/i18n/catalog-zh-TW.js?v=42"></script>
   <!-- steam-i18n-locales:start -->
   <!-- de / ru / ja 目录仅 Steam（Electron）端随包发布。微信 / TapTap 打包脚本显式排除这三个文件，
        此处也只在检测到 Steam 运行时才用 document.write 注入（解析期同步执行，先于下方 translator.js）。
@@ -43,11 +43,11 @@
     (function () {
       var isSteam = !!(window.STEAM_LOCALE || window.SteamBridge) || /Electron/i.test(navigator.userAgent || "");
       if (isSteam) {
-        document.write('<script src="./js/i18n/catalog-de.js?v=27"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ru.js?v=35"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ja.js?v=12"><\/script>');
-        document.write('<script src="./js/i18n/catalog-fr.js?v=12"><\/script>');
-        document.write('<script src="./js/i18n/catalog-ko.js?v=12"><\/script>');
+        document.write('<script src="./js/i18n/catalog-de.js?v=28"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ru.js?v=36"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ja.js?v=13"><\/script>');
+        document.write('<script src="./js/i18n/catalog-fr.js?v=13"><\/script>');
+        document.write('<script src="./js/i18n/catalog-ko.js?v=13"><\/script>');
       }
     })();
   </script>
@@ -883,6 +883,10 @@
       #blueprint-lab-panel .bl-toast{margin-top:10px;padding:8px 11px;border:1px solid #2a5f3d;border-radius:6px;background:#0f2a1c;color:#7fe0a0;font-size:12px;opacity:0;transition:.2s;min-height:0}
       #blueprint-lab-panel .bl-toast.on{opacity:1}
       #blueprint-lab-panel .bl-toast.warn{border-color:#614c28;background:#2a2113;color:#e2c37b}
+      #blueprint-lab-panel .bl-dec-auto{margin-top:10px;padding:10px 12px;border:1px solid #b8761f;border-radius:7px;background:rgba(184,118,31,.10)}
+      #blueprint-lab-panel .bl-dec-auto .bl-switch{display:flex;align-items:center;gap:9px;font:600 13px var(--font-ui);color:#ffe9c8;cursor:pointer}
+      #blueprint-lab-panel .bl-dec-auto .bl-switch input{width:17px;height:17px;accent-color:#e0a64a;cursor:pointer}
+      #blueprint-lab-panel .bl-dec-auto .bl-note{margin-top:7px;text-align:left;color:#d6a96a}
       #blueprint-lab-panel .bl-note{margin-top:8px;font-size:11px;color:var(--muted,#8a94a6);text-align:right}
       #blueprint-lab-panel .bl-encgrid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.1fr);gap:11px}
       #blueprint-lab-panel .bl-slots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:11px 0}
@@ -1145,8 +1149,13 @@
               <div class="bl-note">解码即<b>明牌</b>：抽取的奖品（含高级词条芯片的词条系列与品质）在解码瞬间确定并直接显示，绝不会「抽到却不告诉你是什么」。技能模块为对应技能 <b>+5 级（10 分钟临时增益）</b> 的芯片；强化催化芯片为 <b>强化成功率 +10%</b> 的一次性道具（装备强化与改装件强化均生效）；高级词条芯片可<b>代替校准基体</b>为改装件附魔（词条系列随机、品质固定卓越）。</div>
               <div class="bl-acts">
                 <button id="bl-dec-go" type="button">解码一次（消耗 1 枚潜能芯片）</button>
+                <button id="bl-dec-all" type="button" style="display:none">全部解码（单次上限，可重复点）</button>
               </div>
               <div id="bl-dec-result" class="bl-toast"></div>
+              <div class="bl-dec-auto" id="bl-dec-auto-wrap" style="display:none">
+                <label class="bl-switch"><input type="checkbox" id="bl-dec-auto" /> 自动解码（掉落自动解，开关默认关）</label>
+                <div class="bl-note">开启后：战斗 / 离线掉落的「未知的潜能芯片」立即自动解码，不再需要手动逐一点击。关闭不影响已解码结果。需先在研发科技树（发明分支）解锁对应的自动解码能力（inv_dec_auto）。</div>
+              </div>
             </div>
           </div>
 
@@ -1968,6 +1977,26 @@
     const chip = resCount(INV.POTENTIAL_CHIP_SOURCE);
     const go = $("bl-dec-go");
     if (go) go.disabled = chip < 1;
+    // 一键解码全部（inv_dec_bulk）与自动解码（inv_dec_auto）的门禁：节点未完成则整块隐藏。
+    const allBtn = $("bl-dec-all");
+    if (allBtn) {
+      const bulkUnlocked = INV.isInventionNodeDone ? INV.isInventionNodeDone(g, "inv_dec_bulk") : false;
+      allBtn.style.display = bulkUnlocked ? "" : "none";
+      if (bulkUnlocked) {
+        const bulkLv = INV.inventionNodeLevel ? INV.inventionNodeLevel(g, "inv_dec_bulk") : 0;
+        const CAPS = [0, 5, 10, 25];
+        const cap = CAPS[Math.min(bulkLv, 3)] || 0;
+        allBtn.textContent = "全部解码（单次上限 ×" + cap + "，可重复点）";
+        allBtn.disabled = chip < 1;
+      }
+    }
+    const autoWrap = $("bl-dec-auto-wrap");
+    if (autoWrap) {
+      const autoUnlocked = INV.isInventionNodeDone ? INV.isInventionNodeDone(g, "inv_dec_auto") : false;
+      autoWrap.style.display = autoUnlocked ? "" : "none";
+      const autoChk = $("bl-dec-auto");
+      if (autoChk) autoChk.checked = !!(INV.isDecodeAutoEnabled && INV.isDecodeAutoEnabled(g));
+    }
     // 顶部两个大数字（原料持有量 / 累计解码次数）必须在此实时回显——
     // 旧版只更新按钮禁用态，导致这两格永远是静态 0（不随仓库/解码变化）。
     const chipEl = $("bl-dec-chip");
@@ -2095,6 +2124,40 @@
   }
 
   if ($("bl-dec-go")) $("bl-dec-go").addEventListener("click", doDecode);
+
+  // 一键解码全部（inv_dec_bulk）：按当前等级的单次批量上限（×5/×10/×25）清空库存，可重复点击。
+  function doDecodeAll() {
+    const g = gs();
+    if (!INV || !g) { toast("实验室模块未加载", true); return; }
+    const box = $("bl-dec-result");
+    function say(html, bad) {
+      if (box) { box.innerHTML = html; box.className = "bl-toast on" + (bad ? " warn" : ""); box.style.color = bad ? "var(--red)" : "var(--green)"; }
+    }
+    // inv_dec_bulk 等级 → 单次上限：Lv1 ×5，Lv2 ×10，Lv3 ×25（满级解锁 inv_dec_auto）。
+    const bulkLv = INV.inventionNodeLevel ? INV.inventionNodeLevel(g, "inv_dec_bulk") : 0;
+    const CAPS = [0, 5, 10, 25];
+    const cap = CAPS[Math.min(bulkLv, 3)] || 0;
+    const r = INV.decodeAllPotentialChips(g, { rng: Math.random, limit: cap });
+    if (!r || !r.ok) { say("✖ 无法一键解码全部", true); renderDecode(); return; }
+    say('🎁 一键解码完成：本次消耗 ' + (r.chips || 0) + ' 枚潜能芯片（上限 ×' + cap + '，含已解锁的双生加成）', false);
+    toast("一键解码：" + (r.chips || 0) + " 枚");
+    renderDecode();
+  }
+  if ($("bl-dec-all")) $("bl-dec-all").addEventListener("click", doDecodeAll);
+
+  // 自动解码开关（inv_dec_auto）：默认关；开启后只对新掉落的「未知的潜能芯片」自动解码，不动存量。
+  // 与手动「全部解码」正交——批量只清存量，自动只解新掉落（combat.js / offline-combat.js 已实现为 drops-only）。
+  (function wireAutoDecode() {
+    const chk = $("bl-dec-auto");
+    if (!chk) return;
+    chk.addEventListener("change", () => {
+      const g = gs();
+      if (!INV || !g) { toast("实验室模块未加载", true); return; }
+      const on = INV.setDecodeAutoEnabled(g, chk.checked);
+      toast(on ? "已开启自动解码（仅新掉落自动解）" : "已关闭自动解码");
+      renderDecode();
+    });
+  })();
 
   // 技能模块激活（事件委托，避免每帧重绑）
   (function wireChipInv() {
@@ -3053,7 +3116,7 @@
   <script defer src="./js/systems/combat-drop-craft.js?v=8"></script>
   <script defer src="./js/data/ammunition.js?v=6"></script>
   <script defer src="./js/data/archaeology.js?v=7"></script>
-  <script defer src="./js/data/research.js?v=11"></script>
+  <script defer src="./js/data/research.js?v=12"></script>
   <script defer src="./js/core/research-state.js?v=9"></script>
   <script defer src="./js/data/achievements.js?v=8"></script>
   <script defer src="./js/data/achievement-locales.js?v=2"></script>
@@ -3065,7 +3128,7 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=22"></script>
-  <script defer src="./js/data/changelog.js?v=183"></script>
+  <script defer src="./js/data/changelog.js?v=184"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=23"></script>
@@ -3080,7 +3143,7 @@
   <script defer src="./js/systems/tutorial.js?v=13"></script>
   <script defer src="./js/ui/tutorial-spotlight.js?v=6"></script>
   <script defer src="./js/systems/manufacturing.js?v=10"></script>
-  <script defer src="./js/systems/invention.js?v=15"></script>
+  <script defer src="./js/systems/invention.js?v=16"></script>
   <script defer src="./js/systems/enhancement-chance.js?v=5"></script>
   <script defer src="./js/systems/ship-enhancement.js?v=9"></script>
   <script defer src="./js/systems/equipment-enhancement.js?v=8"></script>
@@ -3097,10 +3160,10 @@
   <script defer src="./js/data/titans.js?v=11"></script>
   <script defer src="./js/systems/legion-npc.js?v=19"></script>
   <script defer src="./js/systems/legion-combat-squad.js?v=33"></script>
-  <script defer src="./js/ui/action-modal.js?v=14"></script>
+  <script defer src="./js/ui/action-modal.js?v=15"></script>
   <script defer src="./js/core/queue.js?v=8"></script>
   <script defer src="./js/systems/capital-combat.js?v=6"></script>
-  <script defer src="./js/systems/combat.js?v=66"></script>
+  <script defer src="./js/systems/combat.js?v=67"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
   <script defer src="./js/core/selectors.js?v=142"></script>
   <script defer src="./js/core/actions.js?v=76"></script>
@@ -3108,7 +3171,7 @@
   <script defer src="./js/systems/wormhole.js?v=42"></script>
   <script defer src="./js/systems/research-protocols.js?v=7"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=190"></script>
+   <script defer src="./js/ui/shell-render.js?v=191"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
@@ -3123,7 +3186,7 @@
   <script defer src="./js/ui/wormhole-rifts.js?v=5"></script>
   <script defer src="./js/ui/wormhole-map.js?v=30"></script>
    <script defer src="./js/data/alliance-building-config.js?v=6"></script>
-   <script defer src="./js/platform/alliance-api.js?v=17"></script>
+   <script defer src="./js/platform/alliance-api.js?v=18"></script>
    <script defer src="./js/platform/alliance-policy.js?v=2"></script>
    <script defer src="./js/data/alliance-task-model.js?v=4"></script>
    <script defer src="./js/data/alliance-task-catalog.js?v=4"></script>
@@ -3132,7 +3195,7 @@
   <script defer src="./js/ui/chat-render.js?v=7"></script>
   <script defer src="./js/core/tick.js?v=33"></script>
   <script defer src="./js/core/offline.js?v=41"></script>
-  <script defer src="./js/systems/offline-combat.js?v=66"></script>
+  <script defer src="./js/systems/offline-combat.js?v=67"></script>
   <script defer src="./js/systems/combat-log.js?v=7"></script>
   <script defer src="./js/platform/cloud-save-contract.js?v=3"></script>
   <script defer src="./js/platform/achievement-provider-contract.js?v=3"></script>
@@ -3169,8 +3232,8 @@
   <script defer src="./js/ui/changelog-popup.js?v=4"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=15"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=9"></script>
-<script defer src="./js/ui/render.js?v=44"></script>
-  <script defer src="./js/ui/taptap-portrait.js?v=25"></script>
+<script defer src="./js/ui/render.js?v=45"></script>
+  <script defer src="./js/ui/taptap-portrait.js?v=26"></script>
   <script defer src="./js/qa-seed.js?v=4"></script>
   <div id="hangar-3d-popup" data-page-node-id="y6HiRqbCV8OfCwEJXtXILE">
     <div class="popup-box" data-page-node-id="FdGupYLwnNMwDztg6CpHvs">

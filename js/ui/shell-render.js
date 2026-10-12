@@ -1261,8 +1261,9 @@ let equipEnhanceFilter = "all";     // all | enhanceable | installed | unenhance
 let equipEnhanceSearch = "";
 let equipEnhanceModal = null;        // { itemId, level } 或 null
 let equipEnhanceUseCatalyst = false; // 潜能芯片 · 强化催化芯片：+10% 成功率（成功才消耗）
-// 舰船强化：潜能芯片 · 强化催化芯片开关（按舰船实例记录；船坞同时可见多张卡片，故逐船独立）
-const hangarCatalystOn = new Set();
+// 舰船强化：潜能芯片 · 强化催化芯片开关（按舰船实例记录；船坞同时可见多张卡片，故逐船独立）。
+// 暴露到 window，使手机端（taptap-portrait.js）能共享同一份「逐船开关」状态（否则两端开关不同步）。
+const hangarCatalystOn = (typeof window !== "undefined") ? (window.hangarCatalystOn || (window.hangarCatalystOn = new Set())) : new Set();
 
 function renderEquipmentEnhancementList(visible) {
   const panel = document.getElementById("equipment-enhancement-list"); if (!panel) return;
@@ -3260,6 +3261,7 @@ const RESEARCH_CATEGORY_LABEL = {
   protocol: "协议", foundation: "基础", industry: "工业", combat: "战斗",
   archaeology: "考古", manufacturing: "制造", logistics: "后勤", planetary: "行星", ship: "舰船",
   legion: "军团",
+  invention: "发明",
   // 深空开拓分支（contentPack="frontier"）
   starmap: "星图", wormhole: "虫洞", titan: "泰坦"
 };
@@ -3278,13 +3280,15 @@ function buildResearchTreeModel(research, RD, RS) {
   const legionLockReason = (RS && typeof RS.getLegionResearchLockReason === "function")
     ? RS.getLegionResearchLockReason(gameState) : "";
 
-  // 拆分主树 / 军团分支 / 深空开拓分支（保持各自在原 NODES 中的相对顺序）
+  // 拆分主树 / 军团分支 / 深空开拓分支 / 发明分支（保持各自在原 NODES 中的相对顺序）
   const mainCatalog = [];
   const legionCatalog = [];
   const frontierCatalog = [];
+  const inventionCatalog = [];
   for (const node of catalog) {
     if (node.contentPack === "legion") legionCatalog.push(node);
     else if (node.contentPack === "frontier") frontierCatalog.push(node);
+    else if (node.contentPack === "invention") inventionCatalog.push(node);
     else mainCatalog.push(node);
   }
   // 深空开拓的两条子线门禁不同（星图线 / 虫洞线），按节点逐个判定
@@ -3429,13 +3433,21 @@ function buildResearchTreeModel(research, RD, RS) {
     ? (frontierOriginY + frontierLayout.maxRows * L.ROW_H + L.PAD_B)
     : legionHeight;
 
-  // ===== 连线：仅同区内部连线，跨区（主↔军团↔深空开拓）不画边，详情区以文字呈现前置 =====
+  // 发明区紧接深空开拓区下方（深空开拓节点为空时贴着军团区）；始终解锁，不跨区连线
+  const inventionOriginY = frontierHeight + BRANCH_GAP + BRANCH_HEADER_H;
+  const inventionLayout = layoutBranch(inventionCatalog, inventionOriginY, () => true);
+  for (const view of inventionLayout.views) { viewById[view.id] = view; nodes.push(view); }
+  const inventionHeight = inventionCatalog.length
+    ? (inventionOriginY + inventionLayout.maxRows * L.ROW_H + L.PAD_B)
+    : frontierHeight;
+
+  // ===== 连线：仅同区内部连线，跨区（主↔军团↔深空开拓↔发明）不画边，详情区以文字呈现前置 =====
   //   注意：三条 branch 区之间也不连线。frontier 内部存在跨子线前置
   //   （wh_root 需要 sm_limit③ / sm_collect③），这属于同区内部，正常绘制。
-  const packOf = (view) => (view && (view.contentPack === "legion" || view.contentPack === "frontier")) ? view.contentPack : "main";
+  const packOf = (view) => (view && (view.contentPack === "legion" || view.contentPack === "frontier" || view.contentPack === "invention")) ? view.contentPack : "main";
   const edges = [];
   for (const node of catalog) {
-    const nodePack = (node.contentPack === "legion" || node.contentPack === "frontier") ? node.contentPack : "main";
+    const nodePack = (node.contentPack === "legion" || node.contentPack === "frontier" || node.contentPack === "invention") ? node.contentPack : "main";
     for (const prereq of (node.prerequisites || [])) {
       const from = viewById[prereq.id];
       const to = viewById[node.id];
@@ -3473,7 +3485,7 @@ function buildResearchTreeModel(research, RD, RS) {
     eras,
     maxRows,
     width: L.COL_X0 * 2 + RESEARCH_ERA_META.length * L.COL_W,
-    height: frontierHeight,
+    height: inventionHeight,
     mainHeight,
     legionRegion: {
       top: legionOriginY - BRANCH_HEADER_H,
@@ -3489,6 +3501,13 @@ function buildResearchTreeModel(research, RD, RS) {
       // 区头只反映「星图线」门禁；虫洞线另有「通关星图主线」条件，见节点自身状态与详情面板
       unlocked: frontierCatalog.length ? isFrontierNodeUnlocked(frontierCatalog[0]) : false,
       lockReason: frontierCatalog.length ? (frontierNodeLockReason(frontierCatalog[0]) || "") : ""
+    },
+    inventionRegion: {
+      top: inventionOriginY - BRANCH_HEADER_H,
+      headerHeight: BRANCH_HEADER_H,
+      count: inventionCatalog.length,
+      unlocked: true,
+      lockReason: ""
     }
   };
 }
@@ -3506,10 +3525,12 @@ function renderResearchNodeHtml(view) {
   if (view.isProtocol) cls += " rt-node--protocol";
   if (view.contentPack === "legion") cls += " rt-node--legion";
   if (view.contentPack === "frontier") cls += " rt-node--frontier";
+  if (view.contentPack === "invention") cls += " rt-node--invention";
   if (view.status === "branch-locked") cls += " rt-node--branch-locked";
   let badge = "";
   if (view.isProtocol) badge = '<span class="rt-badge rt-badge--protocol">协议</span>';
   else if (view.contentPack === "legion") badge = '<span class="rt-badge rt-badge--legion">军团</span>';
+  else if (view.contentPack === "invention") badge = '<span class="rt-badge rt-badge--invention">发明</span>';
   else if (view.contentPack === "frontier") {
     badge = '<span class="rt-badge rt-badge--frontier">' +
       escapeAchievementText(view.category === "wormhole" ? "虫洞" : (view.category === "titan" ? "泰坦" : "星图")) + '</span>';
@@ -3590,6 +3611,15 @@ function renderResearchTree(model) {
           : '<span class="rt-legion-head-state rt-legion-head-state--locked">未解锁：' + escapeAchievementText(frontierRegion.lockReason || "需先解锁军团研究分支") + '</span>') +
       '</div>'
     : "";
+  // 发明分支独立区域头部（位于深空开拓区下方；始终解锁）
+  const inventionRegion = model.inventionRegion;
+  const inventionHead = (inventionRegion && inventionRegion.count > 0)
+    ? '<div class="rt-invention-head" style="left:' + L.COL_X0 + 'px;top:' + inventionRegion.top + 'px;width:' + (model.width - L.COL_X0 * 2) + 'px;">' +
+        '<span class="rt-legion-head-title">发明研究分支</span>' +
+        '<span class="rt-legion-head-sub" style="font-size:11px;font-weight:500;opacity:.8;">解码 · 改装件</span>' +
+        '<span class="rt-legion-head-state rt-legion-head-state--open">已解锁</span>' +
+      '</div>'
+    : "";
   el.innerHTML =
     '<div class="rt-stage" style="width:' + model.width + 'px;height:' + model.height + 'px;">' +
       bands +
@@ -3599,6 +3629,7 @@ function renderResearchTree(model) {
       heads +
       legionHead +
       frontierHead +
+      inventionHead +
       model.nodes.map(renderResearchNodeHtml).join("") +
     '</div>';
 }
