@@ -612,6 +612,9 @@
     if (!(ar.isCycle || techId.indexOf("cycle:") === 0)) research.completedLevels[techId] = Math.max(Number(research.completedLevels[techId]) || 0, level);
     if (!Array.isArray(research.history)) research.history = [];
     research.history.push({ techId, level, completedAt: safeTs }); // 虚拟游标 / 真实 now
+    // 2026-10-13 运行时硬上限（与 research-state.js 迁移裁短同值 200）：
+    // 该数组只写不读，超过即裁到最近 200 条，永久防存档膨胀。
+    if (research.history.length > 200) research.history = research.history.slice(-200);
     research.activeResearch = null;
     markResearchDirty(state); // 成功状态变更 → 标记待保存（沿用现有自动保存）
     // 泰坦研究线槽位节点（tt_high/mid/low/rig）完成后，立即按研究等级重算注册表内泰坦配置的槽位，

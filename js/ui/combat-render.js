@@ -814,11 +814,18 @@ function renderSquadSlot(entry, idx, allNpcs, selection, ui, prefix) {
   // NPC→MTU 同槽互换是等量替换（数据层 setLegionSquadSelection 整组 REPLACE），永远允许，玩家看见 disabled 才奇怪。
   const capacityWouldOverflow = !depSelected && kind === "empty" && usedSlotsNow >= capacity;
   const depDisabled = !depSelected && (depElsewhereSelected || capacityWouldOverflow || !ownsMtu);
+  // 2026-10-13：参战资格反馈（Fix A）—— 不可参战的 NPC 在下拉里直接灰掉并标注原因，
+  // 不再静默显示为可选。原因取自候选 statusText（引擎已算好的中文说明，如「该 NPC 未绑定舰船」）。
+  // 当前槽已选中的项不灰（否则无法改派/取消）；已在别处选中的仍灰（otherSelected）。
   const npcOptions = allNpcs.map(function (c) {
     const otherSelected = selection.indexOf(c.npcId) >= 0 && selfValue !== c.npcId;
     const selected = kind === "npc" && entry.id === c.npcId;
-    return '<option value="' + squadEscape(c.npcId) + '"' + (selected ? " selected" : "") + (otherSelected ? " disabled" : "") + ">" +
-      squadEscape(c.name) + " Lv." + Number(c.level || 1) + " · " + squadEscape(c.skillName || "") + (c.shipName ? " · " + squadEscape(c.shipName) : "") + "</option>";
+    const ineligible = c.eligible === false && !selected;
+    const reasonSuffix = (ineligible && c.statusText) ? "（" + squadEscape(c.statusText) + "）" : "";
+    return '<option value="' + squadEscape(c.npcId) + '"' + (selected ? " selected" : "") +
+      ((otherSelected || ineligible) ? " disabled" : "") + ">" +
+      squadEscape(c.name) + " Lv." + Number(c.level || 1) + " · " + squadEscape(c.skillName || "") +
+      (c.shipName ? " · " + squadEscape(c.shipName) : "") + reasonSuffix + "</option>";
   }).join("");
   const deployableOption = '<option value="' + squadEscape(depValue) + '"' + (depSelected ? " selected" : "") + (depDisabled ? " disabled" : "") + ">🛰️ " + squadEscape("激光定向打捞单元") + " · 部署物</option>";
   const options = ['<option value="">— 选择 NPC —</option>', deployableOption].concat(npcOptions).join("");
@@ -933,11 +940,17 @@ function bindCombatSquadUI() {
       if (v && next.indexOf(v) < 0) next.push(v);
     });
     const res = api.setLegionSquadSelection(gameState, next, { now: Date.now() });
-    if (res.changed === false && res.reason) {
+    // 2026-10-13：拒绝反馈（Fix B）—— 被拒的 NPC 进 res.skipped[]（changed 仍为 true），
+    // 原逻辑只处理 changed===false 故静默失败。这里读 skipped 的 reason → JOIN_REASONS 文案 → toast。
+    // 同时清结构签名强制重建，消掉下拉「假选中」（浏览器显示值已改、真实 selection 却为空）。
+    if (res && Array.isArray(res.skipped) && res.skipped.length) {
       if (typeof showToast === "function") {
-        const reason = api.JOIN_REASONS && api.JOIN_REASONS[res.reason] ? api.JOIN_REASONS[res.reason] : res.reason;
-        showToast("⚠ " + reason);
+        const reasons = res.skipped
+          .map(function (s) { return (api.JOIN_REASONS && api.JOIN_REASONS[s.reason]) || s.reason || "无法编入"; })
+          .filter(function (v, i, a) { return a.indexOf(v) === i; });
+        showToast("⚠ " + reasons.join("；"));
       }
+      host._squadStructSig = null; // 强制下次重建，避免浏览器下拉显示值与实际 selection 不一致
     }
     renderCombatSquadSection(Date.now());
   });

@@ -326,6 +326,14 @@
     if (!Array.isArray(r.history)) r.history = [];
     if (!Array.isArray(r.notifications)) r.notifications = [];
 
+    // 2026-10-13 根因修复：research.history 曾无上限累积（每次研究完成，含离线 24h 结算
+    // 批量补 push，都追加一条），重度挂机玩家数月可累积数万条，使存档序列化超 5MB 配额，
+    // 触发 QuotaExceededError 写盘失败（进度只活内存、刷新即丢）。该数组全代码只写不读
+    // （无逻辑/UI 消费），此处一次性迁移裁短到最近 200 条；运行时 cap 见 research.js（同值）。
+    if (r.history.length > 200) {
+      r.history = r.history.slice(-200);
+    }
+
     // 删除遗留多锚点字段（研究系统只认 lastProcessedAt，防多锚点重复推进）
     if (Object.prototype.hasOwnProperty.call(r, "lastResearchUpdate")) {
       delete r.lastResearchUpdate;
