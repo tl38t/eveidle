@@ -545,7 +545,7 @@
   // 成功率（0.05..0.90）
   function rigEnhanceSuccessChance(state, tier) {
     const t = clampRigTier(tier);
-    const raw = 0.25 + 0.006 * skillLevel(state, SKILL_KEY)
+    let raw = 0.25 + 0.006 * skillLevel(state, SKILL_KEY)
       + 0.003 * skillLevel(state, RIG_ENHANCE_MATERIAL_SKILL)
       - 0.06 * (t - 1);
     // 强化工艺论（inv_rig_theory）：每级 +2%（满 5 级 +10%）。
@@ -556,7 +556,7 @@
 
   // 焦点命中率（0.40..0.85）：发明等级越高，越容易出玩家选的系列
   function rigEnhanceFocusChance(state) {
-    const raw = 0.40 + 0.005 * skillLevel(state, SKILL_KEY);
+    let raw = 0.40 + 0.005 * skillLevel(state, SKILL_KEY);
     // 焦点锁定（inv_rig_focus）：每级 +2%（满 5 级 +10%）。
     const focus = researchLevel(state, "inv_rig_focus");
     if (focus > 0) raw += 0.02 * focus;
