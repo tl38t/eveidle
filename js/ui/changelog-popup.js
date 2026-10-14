@@ -70,15 +70,25 @@
     var visible = (typeof window.GAME_CHANGELOG_VISIBLE === "function")
       ? window.GAME_CHANGELOG_VISIBLE(latest)
       : (latest.sections || []).map(function (sec) {
-          return { heading: sec.heading || "", items: (sec.items || []).map(function (it) {
-            return typeof it === "string" ? it : String(it.text || ""); }) };
+          return {
+            heading: sec.heading || "",
+            headingEn: (typeof sec.headingEn === "string" && sec.headingEn) ? sec.headingEn : null,
+            items: (sec.items || []).map(function (it) {
+              if (typeof it === "string") return { zh: it, en: null };
+              if (it && typeof it === "object") return { zh: String(it.text != null ? it.text : ""), en: (typeof it.en === "string" && it.en) ? it.en : null };
+              return { zh: String(it == null ? "" : it), en: null };
+            })
+          };
         });
     visible.forEach(function (sec) {
       html += '<div class="changelog-sec">';
-      html += '<div class="changelog-sec-title">' + esc(t(sec.heading || "")) + "</div>";
+      html += '<div class="changelog-sec-title">' + esc(t(sec.heading || ""));
+      if (sec.headingEn) html += ' <span class="changelog-en-title">' + esc(sec.headingEn) + "</span>";
+      html += "</div>";
       html += '<ul class="changelog-list">';
       (sec.items || []).forEach(function (it) {
-        html += "<li>" + esc(t(it)) + "</li>";
+        html += "<li>" + esc(it.zh || "") + "</li>";
+        if (it.en) html += '<li class="changelog-en">' + esc(it.en) + "</li>";
       });
       html += "</ul></div>";
     });

@@ -59,7 +59,20 @@
     return entry.platforms.map(normalizePlatform).indexOf(platform) >= 0;
   }
 
-  // 返回可直接渲染的 [{ heading, items:[string] }]；已过滤掉空节。
+  // 单条条目归一化为 { zh, en }，供中英双语渲染。
+  //   - 旧格式（纯字符串）⇒ { zh: 原文, en: null }（只显示中文，向后兼容）；
+  //   - 新格式 { text, en, platforms? } ⇒ { zh: text, en: en || null }。
+  function resolveItem(it) {
+    if (typeof it === "string") return { zh: it, en: null };
+    if (it && typeof it === "object") {
+      var en = (typeof it.en === "string" && it.en) ? it.en : null;
+      return { zh: String(it.text != null ? it.text : ""), en: en };
+    }
+    return { zh: String(it == null ? "" : it), en: null };
+  }
+
+  // 返回可直接渲染的 [{ heading, headingEn, items:[{zh,en}] }]；已过滤掉空节。
+  // 2026-10-14 双语扩展：items 由「字符串」升级为「{zh,en}」，缺 en 的条目只显示中文。
   function visibleSections(entry, platform) {
     // 显式传入时也走同一套归一化 + 白名单，避免"调用方传了个未知平台名"就把节整节隐藏。
     if (platform == null) platform = currentPlatform();
@@ -75,9 +88,12 @@
           && sec.platforms.map(normalizePlatform).indexOf(platform) < 0) return;
       var items = [];
       (sec.items || []).forEach(function (it) {
-        if (itemMatches(it, platform)) items.push(typeof it === "string" ? it : String(it.text || ""));
+        if (itemMatches(it, platform)) items.push(resolveItem(it));
       });
-      if (items.length) out.push({ heading: sec.heading || "", items: items });
+      if (items.length) {
+        var headingEn = (typeof sec.headingEn === "string" && sec.headingEn) ? sec.headingEn : null;
+        out.push({ heading: sec.heading || "", headingEn: headingEn, items: items });
+      }
     });
     return out;
   }
@@ -93,9 +109,10 @@ window.GAME_CHANGELOG = [
     sections: [
       {
         heading: "军团",
+        headingEn: "Legion",
         items: [
-          "投稿角色（玩家自创 NPC）改为随招募池随机刷新登场：不再固定常驻，每次刷新有机会出现，没被招募就本轮消失、过几轮又可能随机冒出来，重复招募更有惊喜感。",
-          "已招募的投稿角色不会再出现在招募池中；解雇后会在后续刷新中重新登场，可以再次招募。"
+          { text: "投稿角色（玩家自创 NPC）改为随招募池随机刷新登场：不再固定常驻，每次刷新有机会出现，没被招募就本轮消失、过几轮又可能随机冒出来，重复招募更有惊喜感。", en: "Submitted characters (player-created NPCs) now appear randomly in the recruitment pool: they are no longer permanently pinned. Each refresh may surface them; if not recruited they vanish for that round, but may randomly reappear in later refreshes — making repeated recruitment more surprising." },
+          { text: "已招募的投稿角色不会再出现在招募池中；解雇后会在后续刷新中重新登场，可以再次招募。", en: "Recruited submissions will no longer appear in the recruitment pool. After being dismissed, they return in later refreshes and can be recruited again." }
         ]
       }
     ]

@@ -2698,17 +2698,29 @@ function renderSettingsPage() {
       const visibleSections = (typeof window.GAME_CHANGELOG_VISIBLE === "function")
         ? window.GAME_CHANGELOG_VISIBLE(latest)
         : (latest.sections || []).map(function (sec) {
-            return { heading: sec.heading || "", items: (sec.items || []).map(function (it) {
-              return typeof it === "string" ? it : String(it.text || ""); }) };
+            return {
+              heading: sec.heading || "",
+              headingEn: (typeof sec.headingEn === "string" && sec.headingEn) ? sec.headingEn : null,
+              items: (sec.items || []).map(function (it) {
+                if (typeof it === "string") return { zh: it, en: null };
+                if (it && typeof it === "object") return { zh: String(it.text != null ? it.text : ""), en: (typeof it.en === "string" && it.en) ? it.en : null };
+                return { zh: String(it == null ? "" : it), en: null };
+              })
+            };
           });
       if (!visibleSections.length) { clEl.style.display = "none"; }
       else {
         let html = '<div class="changelog-head">' + t("本次更新内容") + ' · V' + escapeAchievementText(latest.version) + '（' + escapeAchievementText(latest.date || "") + '）</div>';
         visibleSections.forEach(function (sec) {
           html += '<div class="changelog-sec">';
-          html += '<div class="changelog-sec-title">' + escapeAchievementText(t(sec.heading || "")) + '</div>';
+          html += '<div class="changelog-sec-title">' + escapeAchievementText(t(sec.heading || ""));
+          if (sec.headingEn) html += ' <span class="changelog-en-title">' + escapeAchievementText(sec.headingEn) + '</span>';
+          html += '</div>';
           html += '<ul class="changelog-list">';
-          (sec.items || []).forEach(function (it) { html += '<li>' + escapeAchievementText(t(it)) + '</li>'; });
+          (sec.items || []).forEach(function (it) {
+            html += '<li>' + escapeAchievementText(it.zh || "") + '</li>';
+            if (it.en) html += '<li class="changelog-en">' + escapeAchievementText(it.en) + '</li>';
+          });
           html += '</ul></div>';
         });
         clEl.innerHTML = html;
