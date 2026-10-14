@@ -10,8 +10,8 @@
   - 技能品质    -> skillGrade (A/B/C/D，缺省 A)  ← 主技能档位（玩家 NPC 约定默认 A）
   - 副技能      -> 随机抽一个 ≠ 主技能的技能，固定 B 级（招募即得，参与数值贡献）
 导出 js/data/legion/self-built-npcs.js（双环境：window.LEGION_NPC_SELF_BUILT / module.exports）。
-注意：生成的 NPC 经 legion-npc.js 的 injectSelfBuiltIntoCandidates 注入「招募池」（不预招募），
-      玩家花 ISK/LP 招募后才进军团；已解雇则记 dismissedSelfBuilt 不再复活。
+注意：生成的 NPC 经 legion-npc.js 的 generateLegionNpcCandidates 并入「随机刷新池」（不预招募、不钉死），
+      每次刷新各自以概率随机登场；玩家花 ISK/LP 招募后才进军团；不招募则本轮消失、后续刷新可再次随机出现（可再次招募）。
 
 用法：
   python tools/import-legion-npcs.py <模板.xlsx> <输出.js> [--repo D:/EVE-IDLE/EVEIDLE-WORKBUDDY-FRESH]

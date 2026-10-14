@@ -83,6 +83,24 @@
     return keys[keys.length - 1];
   }
 
+  // Fisher–Yates 原地洗牌（复用注入的 rng）
+  function shuffleInPlace(arr, rng) {
+    const r = resolveRng(rng);
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(r() * (i + 1));
+      const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+    }
+    return arr;
+  }
+  // 可用的自建 NPC（未被招募进 npcs 的）——它们随刷新随机登场，不钉死。
+  function getAvailableSelfBuilt(L) {
+    if (!Array.isArray(SELF_BUILT) || !SELF_BUILT.length) return [];
+    const inNpcs = new Set((L && L.npcs || []).map(function (n) { return n && n.npcId; }));
+    return SELF_BUILT.filter(function (def) {
+      return def && def.npcId && !inNpcs.has(def.npcId);
+    });
+  }
+
   // —— NPC 数据结构工厂（单一事实来源）——
   // 字段：npcId, name, personalityId, skillId, skillGrade,
   //       level(1), xp(0), boundShipInstanceId(null), salaryState("paid"),
@@ -199,18 +217,30 @@
   }
 
   // —— 生成一批候选人（默认 3 名，批内不重名）——
+  // 自建 NPC（来自模板 / 玩家提交）并入随机池：每次刷新各自以 SELF_BUILT_APPEAR_CHANCE 概率
+  // 随机「登场」，未登场则本轮不出现（制造惊喜感、不钉死）；已招募（在 npcs）永不再登场；
+  // 未招募的自建 NPC 在后续刷新仍有概率重新出现，因此可再次招募。剩余名额由随机 NPC 补齐。
+  const SELF_BUILT_APPEAR_CHANCE = 0.4;
   function generateLegionNpcCandidates(state, count, opts) {
     count = count || 3;
     opts = opts || {};
     const rng = resolveRng(opts.rng);
+    const L = (state && state.legion) ? state.legion : { npcs: [] };
+    const selfAvailable = shuffleInPlace(getAvailableSelfBuilt(L).slice(), rng);
+    const chosen = [];
+    for (let i = 0; i < selfAvailable.length && chosen.length < count; i++) {
+      if (rng() < SELF_BUILT_APPEAR_CHANCE) chosen.push(selfAvailable[i]);
+    }
     const batch = [];
     const exclude = new Set(opts.excludeNames || []);
-    for (let i = 0; i < count; i++) {
+    chosen.forEach(function (d) { if (d.name) exclude.add(d.name); batch.push(createNpc(d)); });
+    const remaining = count - batch.length;
+    for (let i = 0; i < remaining; i++) {
       const c = generateLegionNpcCandidate(state, { rng: rng, excludeNames: exclude, gradeWeights: opts.gradeWeights });
       exclude.add(c.name);
       batch.push(c);
     }
-    return batch;
+    return shuffleInPlace(batch, rng);
   }
 
   // —— 查表辅助 ——
@@ -370,23 +400,6 @@
     return true;
   }
 
-  // 自建 NPC 注入招募池（幂等）：未招募且未解雇的，按 npcId 去重补进 L.candidates。
-  // 自然/手动刷新会整批覆盖 L.candidates，故两个刷新函数末尾也要调用本函数，避免自建 NPC 被冲掉。
-  function injectSelfBuiltIntoCandidates(L) {
-    if (!L || !Array.isArray(L.candidates)) L.candidates = [];
-    if (!Array.isArray(SELF_BUILT) || !SELF_BUILT.length) return;
-    if (!Array.isArray(L.dismissedSelfBuilt)) L.dismissedSelfBuilt = [];
-    const inNpcs = new Set((L.npcs || []).map(function (n) { return n && n.npcId; }));
-    const inCands = new Set(L.candidates.map(function (c) { return c && c.npcId; }));
-    SELF_BUILT.forEach(function (def) {
-      if (!def || !def.npcId) return;
-      if (inNpcs.has(def.npcId)) return;                 // 已招募
-      if (L.dismissedSelfBuilt.indexOf(def.npcId) >= 0) return; // 已解雇，不复活
-      if (inCands.has(def.npcId)) return;                // 已在池中
-      L.candidates.push(createNpc(def));
-    });
-  }
-
   // —— 状态与激活 ——
   function ensureLegionState(state) {
     if (!state) return null;
@@ -414,11 +427,10 @@
       ensureNpcCombatFields(n);
       if (typeof n.mustered !== "boolean") n.mustered = false;
     });
-    // 自建 NPC（来自模板 / 玩家提交）走招募池，不预招募：
-    //   ensureLegionState 仅保证「池里出现」，实际进池在刷新后由 injectSelfBuiltIntoCandidates 幂等补齐；
-    //   已招募（在 npcs）/ 已解雇（记 dismissedSelfBuilt）则不再出现。
+    // 自建 NPC（来自模板 / 玩家提交）不再钉死在招募池：
+    //   它们经 generateLegionNpcCandidates 随机登场（每次刷新各自概率出现），不招募则本轮消失、
+    //   后续刷新可再次随机出现（即可再次招募）；已招募（在 npcs）则不再登场。
     //   内置随机角色台词库不受影响——仅通过 npc.customDialogue 提供专属台词。
-    injectSelfBuiltIntoCandidates(L);
     return L;
   }
 
@@ -648,8 +660,7 @@
     const L = ensureLegionState(state);
     const rng = resolveRng(opts.rng);
     const batch = generateLegionNpcCandidates(state, CANDIDATE_BATCH_SIZE, { rng: rng });
-    L.candidates = batch;
-    injectSelfBuiltIntoCandidates(L); // 自建 NPC 不被整批刷新冲掉
+    L.candidates = batch; // 自建 NPC 已由 generateLegionNpcCandidates 随机纳入，不再单独注入
     const now = (typeof opts.now === "number") ? opts.now : Date.now();
     L.candidateRefreshAt = now + CANDIDATE_REFRESH_MS; // 重新计算下次自然刷新
     L.manualRefreshCount = 0;                          // 自然刷新清零手动次数
@@ -668,8 +679,7 @@
     spendCurrency(state, "currency:isk", cost.isk);
     spendCurrency(state, "currency:lp", cost.lp);
     const rng = resolveRng(opts.rng);
-    L.candidates = generateLegionNpcCandidates(state, CANDIDATE_BATCH_SIZE, { rng: rng });
-    injectSelfBuiltIntoCandidates(L); // 自建 NPC 不被整批刷新冲掉
+    L.candidates = generateLegionNpcCandidates(state, CANDIDATE_BATCH_SIZE, { rng: rng }); // 自建 NPC 随机纳入
     L.manualRefreshCount += 1;                         // 手动次数 +1
     // 不改变 candidateRefreshAt（自然计时器不受影响）
     return { changed: true, cost: cost, candidates: L.candidates };
@@ -743,11 +753,7 @@
     if (isLegionNpcCombatLocked(npc)) return { changed: false, reason: "npc-combat-locked" };
     // 解雇仅移除 NPC，绑定舰船归还机库，不再销毁
     L.npcs.splice(idx, 1); // 立即释放人数位置；不返还任何资源
-    // 自建 NPC 被解雇后永久不再自动复活（与随机候选不同，它是固定角色）
-    if (Array.isArray(SELF_BUILT) && SELF_BUILT.some(function (d) { return d && d.npcId === npcId; })) {
-      if (!Array.isArray(L.dismissedSelfBuilt)) L.dismissedSelfBuilt = [];
-      if (L.dismissedSelfBuilt.indexOf(npcId) < 0) L.dismissedSelfBuilt.push(npcId);
-    }
+    // 自建 NPC 解雇后无需任何黑名单：下次刷新会经 generateLegionNpcCandidates 重新随机登场，可再次招募。
     return { changed: true, npc: npc };
   }
 
