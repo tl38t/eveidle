@@ -1284,7 +1284,7 @@
     var returnedConstruction = returnedSnapshot && returnedSnapshot.construction ? returnedSnapshot.construction : null;
     var returnedBuildings = returnedSnapshot && Array.isArray(returnedSnapshot.buildings) ? returnedSnapshot.buildings : [];
     var returnedTasks = returnedSnapshot && Array.isArray(returnedSnapshot.tasks) ? returnedSnapshot.tasks : [];
-    if (returnedTasks.length >= 5 && returnedTasks.length <= 10) {
+    if (returnedTasks.length >= 5 && returnedTasks.length <= 12) {
       taskPreview = returnedTasks.map(function (row, index) {
         var materialId = row.material_id || row.materialId || "";
         return {
