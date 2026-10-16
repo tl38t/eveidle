@@ -1193,7 +1193,7 @@
         body: JSON.stringify({ playerId: playerId, taskPreview: taskPreview })
       }).then(function (response) {
         return readResponseJson(response).then(function (data) {
-          if (!response.ok || !data || !data.ok || !Array.isArray(data.tasks) || data.tasks.length < 5 || data.tasks.length > 10) throw new Error("云端任务返回无效");
+          if (!response.ok || !data || !data.ok || !Array.isArray(data.tasks) || data.tasks.length < 5 || data.tasks.length > 12) throw new Error("云端任务返回无效");
           return data.tasks;
         });
       }).then(function (rows) {
@@ -1412,7 +1412,7 @@
       taskStyle.textContent = ".alliance-task-card{padding:18px 20px}.alliance-task-card .alliance-card-title{font-size:18px;margin-bottom:12px}.alliance-task-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-top:1px solid #20364d}.alliance-task-row>div:first-child{display:grid;grid-template-columns:30px minmax(0,1fr);column-gap:10px;align-items:center;flex:1;min-width:0}.alliance-task-slot{grid-row:1 / span 2;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#173b59;color:#8ed9ff;font-size:12px;font-weight:700}.alliance-task-row strong{display:block;color:#eaf6ff;font-size:14px;margin-bottom:4px;min-width:0;overflow-wrap:anywhere}.alliance-task-meta{color:#8ba6bd;font-size:12px;line-height:1.5;min-width:0;overflow-wrap:anywhere}.alliance-task-ready,.alliance-task-done,.alliance-task-locked{padding:4px 8px;border-radius:999px;font-size:12px;white-space:nowrap;flex:0 0 auto}.alliance-task-ready{color:#8df0bd;background:rgba(51,181,119,.14);border:1px solid rgba(92,210,150,.35)}.alliance-task-done{color:#9fc8e2;background:rgba(100,145,180,.14);border:1px solid rgba(120,165,200,.3)}.alliance-task-locked{color:#a1afbd;background:rgba(120,140,160,.1);border:1px solid rgba(120,140,160,.22)}.alliance-task-hint{margin-top:12px;padding-top:10px;border-top:1px solid #20364d;color:#8ba6bd;font-size:12px}@media(max-width:560px){.alliance-task-row{align-items:flex-start}.alliance-task-row>span:last-child{margin-left:40px;margin-top:4px}}";
       document.head.appendChild(taskStyle);
     }
-    var taskHtml = '<div class="alliance-card alliance-task-card"><div class="alliance-card-title">今日建设任务（本地状态）</div>' + (taskPreview.length === taskCount ? taskPreview.map(function (task) {
+    var taskHtml = '<div class="alliance-card alliance-task-card"><div class="alliance-card-title">今日建设任务（本地状态）</div>' + (taskPreview.length >= taskCount && taskPreview.length > 0 ? taskPreview.map(function (task) {
       var key = task.taskKey || (String(taskDate) + ":" + String(task.slot) + ":" + String(task.materialId || ""));
       var submitted = task.status === "completed" || (root.localStorage && root.localStorage.getItem("eve_idle_alliance_task_processed_" + key));
       var status = submitted ? "已领取" : (hasTaskMaterials(task) ? "材料足够，可提交" : "材料不足");

@@ -74,7 +74,7 @@
     var pool = (catalog || []).filter(function (item) { return eligible(item, state); });
     if (!pool.length) return [];
     var tasks = [], available = pool.slice(), categoryCounts = {};
-    var count = Math.max(5, Math.min(10, Number(requestedCount) || 5));
+    var count = Math.max(5, Math.min(12, Number(requestedCount) || 5));
     for (var i = 0; i < count; i++) {
       // 材料池够用时不重复派发；低等级导致候选不足时才允许回填重复。
       if (!available.length) available = pool.slice();
