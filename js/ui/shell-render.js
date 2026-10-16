@@ -3750,10 +3750,12 @@ function renderResearchProtocolPanelHtml(display) {
             escapeAchievementText(String(Number(display.maxAttempts) || 0)) + '" data-protocol-max>' +
         '</label>' +
         '<button class="research-btn" type="button" data-detail-action="autoenh-set-max">保存次数</button>' +
+        // ⚠ 本面板控件一律不加 disabled：与同面板「保存次数」一致，协议未启用时也允许预先配置。
+        //   （disabledAttr 是 planauto 分支 .map() 回调内的局部变量，本分支不可见，勿跨分支复用。）
         '<label class="research-protocol-reserve-label research-protocol-catalyst-label" title="开启后，自动强化每次尝试自动使用 1 张强化催化芯片（成功率 +10%，仅成功时消耗；芯片耗尽自动失效）。当前持有：' + Number(display.catalystCount || 0) + ' 张">' +
-          '<input class="research-protocol-catalyst" type="checkbox" data-protocol-catalyst' + (display.useCatalyst ? " checked" : "") + disabledAttr + '>' +
+          '<input class="research-protocol-catalyst" type="checkbox" data-protocol-catalyst' + (display.useCatalyst ? " checked" : "") + '>' +
           ' 自动使用强化催化芯片（+10% 成功率，成功时消耗）</label>' +
-        '<button class="research-btn" type="button" data-detail-action="autoenh-set-catalyst"' + disabledAttr + '>保存芯片设置</button>' +
+        '<button class="research-btn" type="button" data-detail-action="autoenh-set-catalyst">保存芯片设置</button>' +
       '</div>'
     );
     const ships = Array.isArray(display.ships) ? display.ships : [];

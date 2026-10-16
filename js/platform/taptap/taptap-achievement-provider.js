@@ -115,8 +115,11 @@
     if (!this._available || !this._manager) return Promise.resolve(false);
     if (!platformAchievementId) return Promise.resolve(false);
     return new Promise(function (resolve, reject) {
+      // entry 必须声明在 try 之外：下方 catch 需要访问它做清理，
+      // 声明在 try 块内时 catch 不可见（ReferenceError），会吞掉原始错误。
+      let entry = null;
       try {
-        const entry = { resolve: resolve, reject: reject, timer: null };
+        entry = { resolve: resolve, reject: reject, timer: null };
         self._pending[platformAchievementId] = entry;
         entry.timer = setTimeout(function () {
           if (self._pending[platformAchievementId] === entry) {
@@ -126,10 +129,10 @@
         }, self._timeoutMs);
         self._manager.unlockAchievement({ achievementId: platformAchievementId });
       } catch (e) {
-        if (self._pending[platformAchievementId] === entry) {
+        if (entry && self._pending[platformAchievementId] === entry) {
           delete self._pending[platformAchievementId];
         }
-        if (entry.timer) { try { clearTimeout(entry.timer); } catch (er) {} }
+        if (entry && entry.timer) { try { clearTimeout(entry.timer); } catch (er) {} }
         reject(normError(e, "unlockAchievement"));
       }
     });

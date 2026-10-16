@@ -498,7 +498,7 @@ function renderBoardContent(container, state, vm) {
           if (typeof showToast === "function") showToast("已记录本地排行榜数据");
         });
       } else {
-        done(res && res.ok !== false ? { ok: true } : { ok: false });
+        done(r && r.ok !== false ? { ok: true } : { ok: false });
       }
     } else {
       // 降级：直接写本地快照

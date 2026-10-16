@@ -104,6 +104,20 @@
 
 window.GAME_CHANGELOG = [
   {
+    version: "1.0.15",
+    date: "2026-10-16",
+    sections: [
+      {
+        heading: "问题修复",
+        headingEn: "Fixes",
+        items: [
+          { text: "修复研究页「自动强化协议」面板打开即报「运行异常」的问题（上一版本引入）；现在面板可正常打开，自动强化与催化芯片设置恢复正常使用。", en: "Fixed the Research page 'Auto-Enhancement protocol' panel failing with a runtime error when opened (introduced in the previous version). The panel and its catalyst-chip settings now open and work correctly." },
+          { text: "修复若干潜在崩溃隐患：TapTap 成就解锁抛错时的清理逻辑、排行榜手动上传的兜底分支。", en: "Fixed several potential crash risks: cleanup logic when a TapTap achievement unlock throws, and a fallback branch of the manual leaderboard upload." }
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0.14",
     date: "2026-10-14",
     sections: [
