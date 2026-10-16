@@ -187,6 +187,29 @@ function setAutoEnhancementMaxAttempts(state, maxAttempts) {
   return { changed:true, maxAttempts };
 }
 
+// ---------------------------------------------------------------
+// 设置：autoenh 自动强化是否自动使用强化催化芯片
+//   开启后，自动强化循环的每次尝试都会尝试使用 1 张「强化催化芯片」（成功率 +10%，仅成功时消耗）。
+//   芯片耗尽时自动失效（与手动强化同源 applyEnhanceCatalyst 的软失败口径），不报错、不中断循环。
+//   仅 autoenh 协议；不要求已研究/已启用（配置可先行于解锁）。
+// ---------------------------------------------------------------
+function setAutoEnhancementUseCatalyst(state, enabled) {
+  if (!isValidProtocolStateShape(state)) return { changed:false, reason:RESEARCH_PROTOCOL_REASONS.INVALID_STATE };
+  const useCat = Boolean(enabled);
+  const settings = state.research && state.research.protocolSettings;
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    return { changed:false, reason:RESEARCH_PROTOCOL_REASONS.INVALID_STATE };
+  }
+  const entry = settings.autoenh;
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+    return { changed:false, reason:RESEARCH_PROTOCOL_REASONS.INVALID_STATE };
+  }
+  if (Boolean(entry.useCatalyst) === useCat) return { changed:false, reason:RESEARCH_PROTOCOL_REASONS.ALREADY_SET };
+  entry.useCatalyst = useCat;
+  state._dirty = true;
+  return { changed:true, useCatalyst:useCat };
+}
+
 // 底层 enhanceShip 既有的拒绝性 reason → 协议层稳定 reason（失败不得伪装成材料不足）
 function mapEnhanceUnderlyingReason(underlying) {
   const R = AUTO_ENHANCE_REASONS;
@@ -230,6 +253,8 @@ function runAutoEnhancement(state, instanceId, context) {
   }
   const settings = (state.research && state.research.protocolSettings && state.research.protocolSettings.autoenh) || { maxAttempts:0 };
   const maxAttempts = Number(settings.maxAttempts) || 0;
+  // 自动强化：开启后用催化芯片（成功才消耗，耗尽自动失效，与手动强化同源口径）
+  const useCatalyst = Boolean(settings.useCatalyst);
   const randomValue = (context && typeof context.randomValue !== "undefined") ? context.randomValue : undefined;
 
   let attempts = 0, successes = 0, failures = 0, componentsSpent = 0;
@@ -240,7 +265,7 @@ function runAutoEnhancement(state, instanceId, context) {
   for (let guard = 0; guard < GUARD; guard++) {
     if (maxAttempts > 0 && attempts >= maxAttempts) { stopReason = AUTO_ENHANCE_REASONS.MAX_ATTEMPTS_REACHED; break; }
     const res = (typeof ShellStateActions !== "undefined" && typeof ShellStateActions.enhanceShip === "function")
-      ? ShellStateActions.enhanceShip(state, instanceId, randomValue)
+      ? ShellStateActions.enhanceShip(state, instanceId, randomValue, useCatalyst)
       : { changed:false, reason:"unknown-ship" };
     // 拒绝性返回（未消耗材料）：仅算停止信号，不计 attempt
     if (!res || !res.changed) {
@@ -353,8 +378,11 @@ function getResearchProtocolDisplayState(state, protocolId) {
     base.scopeText = "自动对单艘舰船反复强化；0 = 持续到强化部件不足为止";
     const settings = (state.research && state.research.protocolSettings && state.research.protocolSettings.autoenh) || {};
     base.maxAttempts = Number(settings.maxAttempts) || 0;
-    const ships = (state.inventory && Array.isArray(state.inventory.ships)) ? state.inventory.ships : [];
+    base.useCatalyst = Boolean(settings.useCatalyst);
+    const catalystId = (typeof window !== "undefined" && window.POTENTIAL_CHIP_CATALYST_ID) || "special:强化催化芯片";
     const RRI = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : null;
+    base.catalystCount = (RRI && RRI.get) ? (Number(RRI.get(state, catalystId)) || 0) : 0;
+    const ships = (state.inventory && Array.isArray(state.inventory.ships)) ? state.inventory.ships : [];
     base.ships = ships.map(inst => {
       const cfg = inst ? getShipConfigById(inst.shipId) : null;
       const tier = cfg ? getShipEnhancementTier(cfg) : null;
@@ -1272,6 +1300,7 @@ window.getResearchProtocolDisplayState = getResearchProtocolDisplayState;
 window.tryPlanetAutoRenew = tryPlanetAutoRenew;
 window.applyArchaeologyArtifactProtocols = applyArchaeologyArtifactProtocols;
 window.setAutoEnhancementMaxAttempts = setAutoEnhancementMaxAttempts;
+window.setAutoEnhancementUseCatalyst = setAutoEnhancementUseCatalyst;
 window.runAutoEnhancement = runAutoEnhancement;
 // Batch K · intship 公开 API
 window.INTSHIP_REASONS = INTSHIP_REASONS;

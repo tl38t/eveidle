@@ -114,6 +114,20 @@ window.GAME_CHANGELOG = [
           { text: "投稿角色（玩家自创 NPC）改为随招募池随机刷新登场：不再固定常驻，每次刷新有机会出现，没被招募就本轮消失、过几轮又可能随机冒出来，重复招募更有惊喜感。", en: "Submitted characters (player-created NPCs) now appear randomly in the recruitment pool: they are no longer permanently pinned. Each refresh may surface them; if not recruited they vanish for that round, but may randomly reappear in later refreshes — making repeated recruitment more surprising." },
           { text: "已招募的投稿角色不会再出现在招募池中；解雇后会在后续刷新中重新登场，可以再次招募。", en: "Recruited submissions will no longer appear in the recruitment pool. After being dismissed, they return in later refreshes and can be recruited again." }
         ]
+      },
+      {
+        heading: "潜能芯片 · 自动强化",
+        headingEn: "Catalyst Chips · Auto-Enhancement",
+        items: [
+          { text: "自动强化：研究页与设置页新增「自动强化时使用强化催化芯片」开关。开启后自动强化循环会自动消耗强化催化芯片（本次成功率 +10%，仅成功时扣 1 片、失败不消耗）；两处开关状态共享、实时联动，在研究页或设置页任一处修改即刻同步。", en: "Auto-enhancement: Added a 'Use enhancement catalyst chips during auto-enhancement' toggle on both the Research page and the Settings page. When enabled, the auto-enhancement loop automatically consumes enhancement catalyst chips (+10% success rate this round; only consumed on success — none consumed on failure). The two toggles share state and stay in sync in real time — change either one and it applies immediately." }
+        ]
+      },
+      {
+        heading: "体验优化 · 问题修复",
+        headingEn: "UX Improvements · Fixes",
+        items: [
+          { text: "修复仓库「装备强化」弹窗在手机端顶部被遮挡、需要上滑一下才能看到弹窗头部的问题；现在弹窗内容过高时自动贴顶并可在弹窗内滚动查看，不再被屏幕顶部裁掉。", en: "Fixed the inventory 'equipment enhancement' popup being clipped at the top on mobile — you no longer need to scroll up to see the header. When the popup is taller than the screen it now anchors to the top and scrolls within itself instead of being cut off." }
+        ]
       }
     ]
   },

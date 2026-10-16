@@ -10,7 +10,7 @@
 <link rel="stylesheet" href="./css/base.css?v=27">
   <link rel="stylesheet" href="./css/panels.css?v=76">
   <link rel="stylesheet" href="./css/combat.css?v=30">
-<link rel="stylesheet" href="./css/components.css?v=55">
+<link rel="stylesheet" href="./css/components.css?v=56">
 <link rel="stylesheet" href="./css/chat.css?v=5">
 <link rel="stylesheet" href="./css/taptap-portrait.css?v=29">
 <style id="starmap-collection-room-style">
@@ -2898,6 +2898,11 @@
             <span class="setting-copy"><strong>装备拆解确认提示</strong><small>开启时，拆解装备前弹出返还预览确认框；关闭后直接拆解。</small></span>
             <span class="setting-switch"><input type="checkbox" id="setting-dismantle-confirm" checked><span class="setting-switch-track"></span></span>
           </label>
+          <div class="settings-section-title">自动强化</div>
+          <label class="setting-row" for="setting-autoenh-catalyst">
+            <span class="setting-copy"><strong>自动强化使用催化芯片</strong><small>开启后，自动强化每次尝试自动使用 1 张强化催化芯片（成功率 +10%，仅成功时消耗；芯片耗尽自动失效）。与研究页「自动强化设置」中的开关同步。</small></span>
+            <span class="setting-switch"><input type="checkbox" id="setting-autoenh-catalyst" checked><span class="setting-switch-track"></span></span>
+          </label>
         </div>
         <div class="settings-section">
           <div class="settings-section-title">关于</div>
@@ -3121,7 +3126,7 @@
   <script defer src="./js/data/ammunition.js?v=6"></script>
   <script defer src="./js/data/archaeology.js?v=7"></script>
   <script defer src="./js/data/research.js?v=12"></script>
-  <script defer src="./js/core/research-state.js?v=10"></script>
+  <script defer src="./js/core/research-state.js?v=11"></script>
   <script defer src="./js/data/achievements.js?v=8"></script>
   <script defer src="./js/data/achievement-locales.js?v=2"></script>
   <script defer src="./js/data/achievement-locales-tw.js?v=1"></script>
@@ -3132,7 +3137,7 @@
   <script defer src="./js/data/gameplay-help-locales.js?v=1"></script>
   <script defer src="./js/data/achievement-rules.js?v=9"></script>
   <script defer src="./js/data/tutorial.js?v=22"></script>
-  <script defer src="./js/data/changelog.js?v=186"></script>
+  <script defer src="./js/data/changelog.js?v=187"></script>
   <script defer src="./js/core/tutorial-state.js?v=4"></script>
   <script defer src="./js/core/achievement-state.js?v=3"></script>
   <script defer src="./js/core/state.js?v=23"></script>
@@ -3170,12 +3175,12 @@
   <script defer src="./js/systems/combat.js?v=67"></script>
   <script defer src="./js/core/combat-modifiers.js?v=4"></script>
   <script defer src="./js/core/selectors.js?v=142"></script>
-  <script defer src="./js/core/actions.js?v=76"></script>
+  <script defer src="./js/core/actions.js?v=77"></script>
   <script defer src="./js/systems/legion-starmap-trial.js?v=55"></script>
   <script defer src="./js/systems/wormhole.js?v=42"></script>
-  <script defer src="./js/systems/research-protocols.js?v=7"></script>
+  <script defer src="./js/systems/research-protocols.js?v=8"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-   <script defer src="./js/ui/shell-render.js?v=192"></script>
+   <script defer src="./js/ui/shell-render.js?v=193"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=28"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>

@@ -2680,6 +2680,11 @@ function renderSettingsPage() {
   if (dismantleCb) dismantleCb.checked = display.confirmDismantle;
   const dispatchBonusToastCb = document.getElementById("setting-dispatch-bonus-toast");
   if (dispatchBonusToastCb) dispatchBonusToastCb.checked = display.dispatchBonusToast;
+  const autoenhCatalystCb = document.getElementById("setting-autoenh-catalyst");
+  if (autoenhCatalystCb) {
+    const autoenhState = (gameState.research && gameState.research.protocolSettings && gameState.research.protocolSettings.autoenh) || {};
+    autoenhCatalystCb.checked = Boolean(autoenhState.useCatalyst);
+  }
   const uiScaleSel = document.getElementById("setting-ui-scale");
   if (uiScaleSel) uiScaleSel.value = String(display.uiScale);
   // 关于：展示构建版本号（由构建脚本注入 window.GAME_VERSION；未构建时回退基线）
@@ -3745,6 +3750,10 @@ function renderResearchProtocolPanelHtml(display) {
             escapeAchievementText(String(Number(display.maxAttempts) || 0)) + '" data-protocol-max>' +
         '</label>' +
         '<button class="research-btn" type="button" data-detail-action="autoenh-set-max">保存次数</button>' +
+        '<label class="research-protocol-reserve-label research-protocol-catalyst-label" title="开启后，自动强化每次尝试自动使用 1 张强化催化芯片（成功率 +10%，仅成功时消耗；芯片耗尽自动失效）。当前持有：' + Number(display.catalystCount || 0) + ' 张">' +
+          '<input class="research-protocol-catalyst" type="checkbox" data-protocol-catalyst' + (display.useCatalyst ? " checked" : "") + disabledAttr + '>' +
+          ' 自动使用强化催化芯片（+10% 成功率，成功时消耗）</label>' +
+        '<button class="research-btn" type="button" data-detail-action="autoenh-set-catalyst"' + disabledAttr + '>保存芯片设置</button>' +
       '</div>'
     );
     const ships = Array.isArray(display.ships) ? display.ships : [];
@@ -4638,7 +4647,7 @@ function onResearchDetailClick(event) {
   const action = btn.dataset.detailAction;
   // 研究批次 I / J / K：协议配置一律经 dispatchGameAction 派发（UI 不直接改 state、不复制业务判断）
   if (action === "protocol-toggle" || action === "planauto-toggle" || action === "planauto-reserve" ||
-      action === "planauto-diagnose" || action === "autoenh-set-max" || action === "autoenh-run" ||
+      action === "planauto-diagnose" || action === "autoenh-set-max" || action === "autoenh-set-catalyst" || action === "autoenh-run" ||
       action === "intship-start" || action === "intship-continue" || action === "intship-cancel") {
     onResearchProtocolAction(action, btn);
     return;
@@ -4700,6 +4709,17 @@ function onResearchProtocolAction(action, btn) {
     if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
     showToast("已保存最大尝试次数：" + maxAttempts);
     renderResearchPage();
+    return;
+  }
+  if (action === "autoenh-set-catalyst") {
+    const panel = (typeof btn.closest === "function") ? btn.closest("[data-autoenh-panel]") : null;
+    const input = panel ? panel.querySelector("[data-protocol-catalyst]") : null;
+    const enabled = Boolean(input && input.checked);
+    const result = dispatchGameAction(gameState, { type:"research/setAutoEnhancementUseCatalyst", enabled }, Date.now());
+    if (!result || !result.changed) { showToast(researchReasonText(result && result.reason)); return; }
+    showToast(enabled ? "已开启自动使用催化芯片" : "已关闭自动使用催化芯片");
+    renderResearchPage();
+    renderSettingsPage();
     return;
   }
   if (action === "autoenh-run") {
@@ -6712,6 +6732,12 @@ function installTutorialWidgetListeners() {
   const dispatchBonusToastCb = document.getElementById("setting-dispatch-bonus-toast"); if (dispatchBonusToastCb) dispatchBonusToastCb.addEventListener("change", () => {
     const result = dispatchGameAction(gameState, { type:"settings/setDispatchBonusToast", enabled:dispatchBonusToastCb.checked }, Date.now());
     if (result.changed) showToast(result.enabled ? "资源调度产出飘字已开启" : "资源调度产出飘字已关闭");
+  });
+  const autoenhCatalystCb = document.getElementById("setting-autoenh-catalyst"); if (autoenhCatalystCb) autoenhCatalystCb.addEventListener("change", () => {
+    const result = dispatchGameAction(gameState, { type:"research/setAutoEnhancementUseCatalyst", enabled:autoenhCatalystCb.checked }, Date.now());
+    if (result.changed) { showToast(autoenhCatalystCb.checked ? "已开启自动强化使用催化芯片" : "已关闭自动强化使用催化芯片"); renderSettingsPage(); renderResearchPage(); }
+    else if (result && result.reason === "ALREADY_SET") { /* 状态未变，无需提示 */ }
+    else { autoenhCatalystCb.checked = Boolean((gameState.research && gameState.research.protocolSettings && gameState.research.protocolSettings.autoenh || {}).useCatalyst); }
   });
   const uiScaleSelect = document.getElementById("setting-ui-scale"); if (uiScaleSelect) uiScaleSelect.addEventListener("change", () => {
     const scale = Number(uiScaleSelect.value);

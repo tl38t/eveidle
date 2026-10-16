@@ -45,7 +45,7 @@
       researchTimeMigrationVersion: 1,
       protocolSettings: {
         intship: { enabled: false },
-        autoenh: { enabled: false, maxAttempts: 0 },
+        autoenh: { enabled: false, maxAttempts: 0, useCatalyst: false },
         planauto: { enabled: false },
         autosell: { enabled: false },
         autoconv: { enabled: false },

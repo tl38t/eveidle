@@ -3039,6 +3039,11 @@ const StationStateActions = {
       ? setAutoEnhancementMaxAttempts(state, action.maxAttempts)
       : { changed:false, reason:"INVALID_STATE" };
   }
+  if (action.type === "research/setAutoEnhancementUseCatalyst") {
+    return (typeof setAutoEnhancementUseCatalyst === "function")
+      ? setAutoEnhancementUseCatalyst(state, action.enabled)
+      : { changed:false, reason:"INVALID_STATE" };
+  }
   if (action.type === "research/runAutoEnhancement") {
     return (typeof runAutoEnhancement === "function")
       ? runAutoEnhancement(state, action.instanceId, action.context)
