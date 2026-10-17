@@ -1236,7 +1236,7 @@
     // Do not carry a previous alliance summary into the next round trip.
     // Otherwise URLSearchParams may read the old duplicate parameter first.
     var returnUrl = root.location.href.split("?")[0].split("#")[0];
-    var url = cloudOrigin + "/?embedded=1&v=5&playerId=" + encodeURIComponent(playerId) +
+    var url = cloudOrigin + "/?embedded=1&v=6&playerId=" + encodeURIComponent(playerId) +
       "&returnUrl=" + encodeURIComponent(returnUrl) +
       "&taskDate=" + encodeURIComponent(taskDate || "") +
       "&taskPreview=" + encodeURIComponent(JSON.stringify(taskPreview));
