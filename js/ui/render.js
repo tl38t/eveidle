@@ -131,10 +131,18 @@ function renderMiningDisplay(display, areaEl, outEl) {
   document.querySelectorAll(".mining-mode-tab").forEach(tab => tab.classList.toggle("active", tab.dataset.mode === display.mode));
   const strip = document.getElementById("mining-target-strip");
   if (strip) {
-    strip.innerHTML = display.targets.map(area => `<button class="mining-target-card${area.selected ? " selected" : ""}${area.locked ? " locked" : ""}${area.running ? " running" : ""}" data-area="${area.name}" style="--ore-color:${area.color}" ${area.locked ? "disabled" : ""}>
-      <span class="mining-target-name">${area.displayName}</span><span class="mining-target-visual"><i class="fa-solid fa-gem"></i></span>
+    strip.innerHTML = display.targets.map(area => {
+      const oreDisplayName = area.mode === "moon" ? area.ore : DisplayNames.ORE_NAMES[area.ore];
+      const oreAsset = area.mode === "moon" ? MOON_ICON_ASSETS[oreDisplayName] : ORE_ICON_ASSETS[oreDisplayName];
+      const oreAssetDir = area.mode === "moon" ? "moon-ores" : "ores";
+      const oreVisual = oreAsset
+        ? `<img class="mining-target-ore-image" src="./assets/icons/${oreAssetDir}/${oreAsset}?v=${area.mode === "moon" ? 1 : 2}" alt="" aria-hidden="true" loading="lazy" decoding="async">`
+        : `<i class="fa-solid fa-gem"></i>`;
+      return `<button class="mining-target-card${area.selected ? " selected" : ""}${area.locked ? " locked" : ""}${area.running ? " running" : ""}" data-area="${area.name}" style="--ore-color:${area.color}" ${area.locked ? "disabled" : ""}>
+      <span class="mining-target-name">${area.displayName}</span><span class="mining-target-visual">${oreVisual}</span>
       <span class="mining-target-meta">Lv.${area.level} · ${area.baseTime}s · ${area.baseXP} XP</span>
-      <span class="mining-target-state">${area.locked ? `需要 Lv.${area.level}` : area.running ? "正在采集" : area.selected ? "已选择" : "可采集"}</span></button>`).join("");
+      <span class="mining-target-state">${area.locked ? `需要 Lv.${area.level}` : area.running ? "正在采集" : area.selected ? "已选择" : "可采集"}</span></button>`;
+    }).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchMiningArea(card.dataset.area)));
   }
   const requirement = document.getElementById("mining-target-requirement");
@@ -415,7 +423,13 @@ function renderGasDisplay(display, areaEl, outEl) {
   const stats = document.getElementById("gas-stats"); if (stats) stats.style.display = "block";
   const strip = document.getElementById("gas-target-strip");
   if (strip) {
-    strip.innerHTML = display.options.map(area => '<button class="mining-target-card'+(area.selected?" selected":"")+(area.locked?" locked":"")+'" data-area="'+area.name+'" style="--ore-color:#5fd0e6" '+(area.locked?"disabled":"")+'">'+'<span class="mining-target-name">'+area.name+'</span><span class="mining-target-visual"><i class="fa-solid fa-wind"></i></span><span class="mining-target-meta">Lv.'+area.level+' · '+area.baseTime+'s · '+area.baseXP+' XP</span><span class="mining-target-state">'+(area.locked?('需要 Lv.'+area.level):(area.selected?"已选择":"可采集"))+'</span></button>').join("");
+    strip.innerHTML = display.options.map(area => {
+      const gasIcon = ITEM_ICONS[area.gas] || '<i class="fa-solid fa-wind"></i>';
+      return `<button class="mining-target-card${area.selected ? " selected" : ""}${area.locked ? " locked" : ""}" data-area="${area.name}" style="--ore-color:#5fd0e6" ${area.locked ? "disabled" : ""}>
+        <span class="mining-target-name">${area.name}</span><span class="mining-target-visual">${gasIcon}</span>
+        <span class="mining-target-meta">Lv.${area.level} · ${area.baseTime}s · ${area.baseXP} XP</span>
+        <span class="mining-target-state">${area.locked ? `需要 Lv.${area.level}` : (area.selected ? "已选择" : "可采集")}</span></button>`;
+    }).join("");
     strip.querySelectorAll(".mining-target-card:not([disabled])").forEach(card => card.addEventListener("click", () => switchGasArea(card.dataset.area)));
   }
   const efficiency = document.getElementById("gas-eff-value");

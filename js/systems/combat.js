@@ -11,6 +11,17 @@ function getActiveCombatShipInstance(state) {
 }
 
 const COMBAT_RECOVERY_MS = 180000;
+const MAX_SALVAGE_COMPONENT_HISTORY = 200;
+
+function appendLastSalvageComponent(combat, componentText) {
+  if (!combat.lastSalvage || typeof combat.lastSalvage !== "object" || Array.isArray(combat.lastSalvage)) {
+    combat.lastSalvage = { attempts:0, hits:0, isoSpent:0, components:[] };
+  }
+  if (!Array.isArray(combat.lastSalvage.components)) combat.lastSalvage.components = [];
+  combat.lastSalvage.components.push(componentText);
+  const excess = combat.lastSalvage.components.length - MAX_SALVAGE_COMPONENT_HISTORY;
+  if (excess > 0) combat.lastSalvage.components.splice(0, excess);
+}
 
 // M3：options = { shipInstanceId, excludeImplants }（军团 NPC 战斗小队）；缺省行为不变。
 function getInstalledCombatModules(state, options) {
@@ -1105,7 +1116,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
         const qty = isoCost;
         ResourceRegistry.add(state, "component:" + compId, qty);
         addLoot("component:" + compId, qty); // 主动打捞组件计入战斗日志
-        c.lastSalvage.components.push(compId + "×" + qty);
+        appendLastSalvageComponent(c, compId + "×" + qty);
         c.lastLoot += " · 残骸组件 " + compId + " ×" + qty;
       }
     }
@@ -1125,7 +1136,7 @@ function resolveCombatEnemyDefeat(enemy, zone, rng, emit, state) {
       const qty = getSalvageComponentQty(enemy.kind);
       ResourceRegistry.add(state, "component:" + compId, qty);
       addLoot("component:" + compId, qty);
-      c.lastSalvage.components.push(compId + "×" + qty);
+      appendLastSalvageComponent(c, compId + "×" + qty);
       c.lastLoot += " · 残骸组件 " + compId + " ×" + qty;
     }
   }

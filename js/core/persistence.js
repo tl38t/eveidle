@@ -1887,6 +1887,58 @@ function applyLegacyStartupFieldMigrations() {
 
 // 单一迁移/对账管线（startup 与 import 共用）。不含离线结算与最终化，
 // 这两步由 activateRestoredState 在迁移之后执行，保证“离线结算恰好一次”且早于最终化。
+const PERSISTENCE_MAX_SALVAGE_COMPONENT_HISTORY = 200;
+function migrateCombatSaveGrowth(state) {
+  const combat = state && state.combat;
+  if (!combat || typeof combat !== "object" || Array.isArray(combat)) return false;
+  let touched = false;
+
+  // 眩晕递减只依赖当前战斗中仍存活敌人的 ID。旧版把每个被击败敌人的计数永久留在
+  // combat.titanStunCounts；在不活跃战斗或进度码未携带敌人对象时，这些计数全部是过期项。
+  const livingEnemyIds = new Set();
+  if (combat.active) {
+    const enemies = Array.isArray(combat.enemies) ? combat.enemies.slice() : [];
+    if (combat.currentEnemy && !enemies.includes(combat.currentEnemy)) enemies.push(combat.currentEnemy);
+    for (const enemy of enemies) {
+      if (!enemy || enemy.defeated || !enemy.hp || !(Number(enemy.hp.structure) > 0)) continue;
+      livingEnemyIds.add(String(enemy.id));
+    }
+  }
+  const pruneCounts = (owner) => {
+    if (!owner || typeof owner !== "object" || !Object.prototype.hasOwnProperty.call(owner, "titanStunCounts")) return;
+    const counts = owner.titanStunCounts;
+    if (!counts || typeof counts !== "object" || Array.isArray(counts)) {
+      owner.titanStunCounts = {};
+      touched = true;
+      return;
+    }
+    for (const id of Object.keys(counts)) {
+      if (!livingEnemyIds.has(id)) {
+        delete counts[id];
+        touched = true;
+      }
+    }
+  };
+  pruneCounts(combat);
+  if (combat.squad && Array.isArray(combat.squad.members)) {
+    for (const member of combat.squad.members) pruneCounts(member);
+  }
+
+  const salvage = combat.lastSalvage;
+  if (salvage && typeof salvage === "object" && !Array.isArray(salvage)) {
+    if (!Array.isArray(salvage.components)) {
+      salvage.components = [];
+      touched = true;
+    } else if (salvage.components.length > PERSISTENCE_MAX_SALVAGE_COMPONENT_HISTORY) {
+      salvage.components = salvage.components.slice(-PERSISTENCE_MAX_SALVAGE_COMPONENT_HISTORY);
+      touched = true;
+    }
+  }
+
+  if (touched) state._dirty = true;
+  return touched;
+}
+
 function normalizeAndMigratePayload(ctx) {
   try { if (window.__PERF) window.__PERF.begin("boot:migrate"); } catch (_) {}
   ctx = ctx || {};
@@ -1916,6 +1968,7 @@ function normalizeAndMigratePayload(ctx) {
   migrateUnlimitedInventoryState();
   normalizePlanetaryState(gameState);
   normalizeLegionState(gameState);
+  migrateCombatSaveGrowth(gameState);
   if (typeof WORMHOLE !== "undefined" && WORMHOLE && typeof WORMHOLE.normalizeWormholeState === "function") {
     WORMHOLE.normalizeWormholeState(gameState);
   }

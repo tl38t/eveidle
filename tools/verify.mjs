@@ -312,7 +312,7 @@ if (missingIds.length) throw new Error(`HTML 缺少脚本引用的 ID：${missin
 //   elite-difficulty-select / elite-preview），由 1.0.11 精英难度特性引入，index.html 战斗面板内。
 // 2026-10-12：566 → 577（+11，纯新增零删除，为前序若干特性落地时漏同步基线的历史滞后，逐一核对无删除/无重复）。
 // 2026-10-12：577 → 580（+3，发明科技树解码页静态 DOM：bl-dec-all / bl-dec-auto-wrap / bl-dec-auto）。
-const EXPECTED_DOM_IDS = 580;
+const EXPECTED_DOM_IDS = 581; // 580→581：bacb325（10-16 自动强化催化芯片开关）新增 setting-autoenh-catalyst，基线未同步
 if (htmlIds.size !== EXPECTED_DOM_IDS) throw new Error(`预期 ${EXPECTED_DOM_IDS} 个 DOM ID，实际 ${htmlIds.size}`);
 const BATCH_F_IDS = [
   "research-panel", "research-summary", "research-bank", "research-active",
@@ -3271,7 +3271,7 @@ for (const archTotalKey of ["archaeologyAttempts", "artifactsSold", "archaeology
   }
 }
 
-const mime = { ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".png": "image/png" };
+const mime = { ".css": "text/css", ".html": "text/html", ".js": "text/javascript", ".png": "image/png", ".webp": "image/webp" };
 const server = http.createServer((request, response) => {
   const pathname = decodeURIComponent(new URL(request.url, "http://127.0.0.1").pathname);
   const relative = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
@@ -4584,7 +4584,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   // 2026-10-04：562 → 563（+1 = setting-dispatch-bonus-toast 资源调度飘字，b42e597 引入）。
   // 2026-10-08：563 → 566（+3，纯新增零删除）：精英难度选择 UI 静态 DOM（combat-elite-row /
   //   elite-difficulty-select / elite-preview），1.0.11 精英难度特性引入。
-  if (htmlIds.size !== 580) throw new Error("Batch F DOM ID 基线应为 580，实际 " + htmlIds.size);
+  if (htmlIds.size !== 581) throw new Error("Batch F DOM ID 基线应为 581，实际 " + htmlIds.size);
   for (const id of ["achievements-panel", "achievements-grid", "achievements-research-bank"]) {
     if (!htmlIds.has(id)) throw new Error("Batch F 不得移除 Batch D/E 成就页 DOM：" + id);
   }
@@ -5554,7 +5554,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- G-21 冻结基线不回退 -------------------------------------------------------------
     okG(RDG.NODES.length === 83, "科技节点总数必须仍为 78");
-    okG(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580, "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
+    okG(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 581, "138 JS / 6 CSS / 581 DOM ID 基线不得回退");
     okG(Object.prototype.hasOwnProperty.call(gsG.archaeology, "probeSavingRemainder"), "默认状态必须包含探针累计器字段");
   } finally {
     gsG.research = JSON.parse(JSON.stringify(savedResearchG));
@@ -5962,7 +5962,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
 
     // ---- H-12 冻结基线不回退 --------------------------------------------------------------
     okH(RDH.NODES.length === 83, "科技节点总数必须仍为 78");
-    okH(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580, "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
+    okH(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 581, "138 JS / 6 CSS / 581 DOM ID 基线不得回退");
   } finally {
     gsH.research = JSON.parse(JSON.stringify(savedResearchH));
     gsH.combat = JSON.parse(JSON.stringify(savedCombatH));
@@ -6549,8 +6549,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsI === 269 && secondsI > 0 && isFinite(secondsI) &&
         protocolNodesI.length === 12 && protocolNodesI.every(node => !node.bonus && node.maxLevel === 1),
       "53 组数值 group / 78 节点 / 269 步 / 12 个无 bonus 协议节点基线不得回退");
-    okI(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580,
-      "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
+    okI(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 581,
+      "138 JS / 6 CSS / 581 DOM ID 基线不得回退");
   } finally {
     gsI.research = JSON.parse(JSON.stringify(savedResearchI));
     gsI.planetary = JSON.parse(JSON.stringify(savedPlanetaryI));
@@ -7109,8 +7109,8 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
         stepsJ === 269 && secondsJ > 0 && isFinite(secondsJ) &&
         protocolNodesJ.length === 12 && protocolNodesJ.every(node => !node.bonus && node.maxLevel === 1),
       "53 组数值 group / 78 节点 / 269 步 / 12 个无 bonus 协议节点基线不得回退");
-    okJ(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 580,
-      "138 JS / 6 CSS / 580 DOM ID 基线不得回退");
+    okJ(scriptSources.length === 138 && styleSources.length === 6 && htmlIds.size === 581,
+      "138 JS / 6 CSS / 581 DOM ID 基线不得回退");
   } finally {
     gsJ.research = JSON.parse(JSON.stringify(savedResearchJ));
     gsJ.inventory = JSON.parse(JSON.stringify(savedInventoryJ));
@@ -9170,7 +9170,7 @@ if (typeof _cb.factionBossKills !== "object" || _cb.factionBossKills === null ||
   okP(JSON.stringify(sandbox.gameState.tutorial) === tutBeforeNav && dNav1.taskById.P5.navigationTarget === dNav2.taskById.P5.navigationTarget, "动态导航计算纯读且可重复：不改变 state.tutorial");
 
   // (K) DOM 总数与收口提示一致
-  okP(htmlIds.size === 580, "DOM 总数 580（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save + 舰船工程 UI 重做新增 6 结构 id + 死亡空间连刷控件 4 个 id + 未提交特性新增 DOM ID + 本批发明树解码 UI 新增 3 结构 id）与收口提示一致");
+  okP(htmlIds.size === 581, "DOM 总数 580（294 原 + 8 教程组件 + 1 删除存档按钮 btn-delete-save + 舰船工程 UI 重做新增 6 结构 id + 死亡空间连刷控件 4 个 id + 未提交特性新增 DOM ID + 本批发明树解码 UI 新增 3 结构 id）与收口提示一致");
 
   // 10) P7 按钮→action.type 映射（开启三条职业支线 / confirm）
   resetTut();

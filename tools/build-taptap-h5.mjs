@@ -4,8 +4,8 @@
 //  - 必须从固定提交导出，而非复制当前脏工作区：
 //      git -c core.autocrlf=false -c core.eol=lf archive <SOURCE_SHA>
 //  - 只产出游戏运行必需内容；排除 demo/lab/candidates/capital 原型页/audit/tools/docs 等。
-//    例外（2026-09-12）：`assets/achievements/**` 与 `demo-assets/**` 是生产 JS 字符串拼接引用的
-//    运行期图片（成就图标、虫洞地图背景），必须随包；详见 isWhitelisted()。
+//    例外（2026-09-12）：`assets/achievements/**`、`assets/icons/**` 与 `demo-assets/**` 是生产 JS
+//    字符串拼接引用的运行期图片，必须随包；详见 isWhitelisted()。
 //  - 静态资源漏打双闸 + 对账（2026-09-12 加固）：① isWhitelisted() 按「目录 + 图片后缀」放行；
 //    ② worktree 目录清单（两把独立的锁）③ verifyPackage 的包内完整性断言；④ **静态资源引用对账**
 //    （见 collectSourceUniverse / auditAssetRefCoverage）——遍历包内 JS/CSS 文本里的字符串字面量，
@@ -202,9 +202,11 @@ function isWhitelisted(rel) {
   // 避免以后加图时再静默漏打），并在 verifyPackage 里加包内完整性断言兜底。
   //   - js/ui/shell-render.js:getAchievementIconPath → "./assets/achievements/<achieved|unachieved>/<ID>.png"
   //   - js/ui/wormhole-map.js:34                → "./demo-assets/wormhole-map-bg.png"
+  //   - js/systems/production.js, js/ui/render.js → "./assets/icons/<category>/<display-name>.webp"
   //   `..` 一律拒绝（与 verifyPackage 的「无 .. 穿越」断言同向；`.+` 会放过 "../.." 这种段）。
   if (!rel.includes("..")) {
     if (/^assets\/achievements\/.+\.(png|webp|jpg|jpeg|gif|svg)$/i.test(rel)) return true;
+    if (/^assets\/icons\/.+\.webp$/i.test(rel)) return true;
     if (/^demo-assets\/.+\.(png|webp|jpg|jpeg|gif|svg)$/i.test(rel)) return true;
   }
   return false;
@@ -420,7 +422,7 @@ async function buildOnce(SOURCE_SHA, includeProbe) {
     // 游戏运行文件（index.html/css/js/images + 两份字符串拼接引用的静态资源目录）从工作区读取 + 换行规范化。
     // ⚠️ 此清单与 isWhitelisted() 是**两把独立的锁**：目录不列进来，白名单放行也没用（2026-09-12 事故两侧都漏）。
     const wt = loadWorktreeFiles(REPO, [
-      "index.html", "css", "js", "images", "assets/achievements", "demo-assets",
+      "index.html", "css", "js", "images", "assets/achievements", "assets/icons", "demo-assets",
       "legion-starmap-pure.html", "legion-starmap-content.js",
       "legion-starmap-pure-content.js", "legion-starmap-pure-events.js",
     ], {
@@ -869,7 +871,7 @@ function verifyPackage(buffer, mode, includeProbe, sourceUniverse) {
     console.log("工作区包指纹 SHA-256: " + fingerprint);
     console.log("基线提交: " + SOURCE_SHA + " + 未提交工作区（仅供 TapTap 沙箱自测）");
   }
-  console.log("顶层结构: " + PKG_TOP + "/ (index.html + css/ + js/ + images/ + assets/achievements/ + assets/vendor/taptap-h5/ + demo-assets/" + (INCLUDE_PROBE ? " + taptap-compat-probe.mjs" : "") + ")");
+  console.log("顶层结构: " + PKG_TOP + "/ (index.html + css/ + js/ + images/ + assets/achievements/ + assets/icons/ + assets/vendor/taptap-h5/ + demo-assets/" + (INCLUDE_PROBE ? " + taptap-compat-probe.mjs" : "") + ")");
 
   console.log("\n=== 结论: " + (allPass ? "全部校验通过 ✓" : "存在失败项 ✗") + " ===");
   process.exit(allPass ? 0 : 1);

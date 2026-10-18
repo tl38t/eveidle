@@ -40,6 +40,83 @@ const ITEM_ICONS = {
   "船体骨架":"🏗️","推进系统":"⚙️","核心系统":"🔮","护盾发生器":"🛡️","装甲镀层":"🔩","武器挂架":"🔧","外置货舱":"📦","工业挂架":"🏗️","T1采矿激光器":"🔴","T1气云采集器":"🟢","T1无人机控制单元":"🤖","小型护盾扩展":"🛡️","T1采矿提升器":"⬆️","T1采气提升器":"⬆️",
   "小型激光炮 I":"⚡","轻型导弹发射器 I":"🚀","小型射弹炮 I":"💥","小型护盾回充器 I":"🛡️","小型装甲维修器 I":"🔧","小型结构修理器 I":"⚒️"
 };
+// 原矿图标以显示名映射；内部库存键和玩家可见名都指向同一张图。
+const ORE_ICON_ASSETS = Object.freeze({
+  "铁硅原矿":"铁硅原矿-iron-silicate-ore.webp",
+  "赤镍矿":"赤镍矿-red-nickel-ore.webp",
+  "蓝硼晶":"蓝硼晶-blue-boron-crystal.webp",
+  "同位晶簇":"同位晶簇-isotope-crystal-cluster.webp",
+  "诺瓦矿":"诺瓦矿-nova-ore.webp",
+  "重锆岩":"重锆岩-heavy-zircon-rock.webp",
+  "极星矿":"极星矿-polar-star-ore.webp"
+});
+for (const [internalName, displayName] of Object.entries(DisplayNames.ORE_NAMES)) {
+  const asset = ORE_ICON_ASSETS[displayName];
+  if (!asset) continue;
+  const iconMarkup = `<img class="item-icon-image" src="./assets/icons/ores/${asset}?v=2" alt="" loading="lazy" decoding="async">`;
+  ITEM_ICONS[displayName] = iconMarkup;
+  ITEM_ICONS[internalName] = iconMarkup;
+}
+// 月矿图标按矿种显示名映射；已制作的图标同时用于仓库物品卡和月矿带卡片。
+const MOON_ICON_ASSETS = Object.freeze({
+  "镓":"镓-gallium-moon-ore.webp",
+  "铂":"铂-platinum-moon-ore.webp",
+  "铪":"铪-hafnium-moon-ore.webp",
+  "锇":"锇-osmium-moon-ore.webp",
+  "钷":"钷-promethium-moon-ore.webp",
+  "铷":"铷-rubidium-moon-ore.webp"
+});
+for (const [moonOre, asset] of Object.entries(MOON_ICON_ASSETS)) {
+  const iconMarkup = `<img class="item-icon-image" src="./assets/icons/moon-ores/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+  ITEM_ICONS[moonOre] = iconMarkup;
+  ITEM_ICONS[`moon:${moonOre}`] = iconMarkup;
+}
+// 精炼矿物图标按显示名映射，文件名也使用中英双语。
+const MINERAL_ICON_ASSETS = Object.freeze({
+  "标准钛材":"标准钛材-standard-titanium.webp",
+  "银镍合金":"银镍合金-silver-nickel-alloy.webp",
+  "晶格聚合物":"晶格聚合物-lattice-polymer.webp",
+  "同位复材":"同位复材-isotope-composite.webp",
+  "诺瓦陶金":"诺瓦陶金-nova-cerametal.webp",
+  "重锆晶材":"重锆晶材-heavy-zircon-material.webp",
+  "奇点合金":"奇点合金-singularity-alloy.webp",
+  "暗质晶核":"暗质晶核-dark-matter-core.webp"
+});
+for (const [internalName, displayName] of Object.entries(DisplayNames.MINERAL_NAMES)) {
+  const asset = MINERAL_ICON_ASSETS[displayName];
+  const iconMarkup = asset
+    ? `<img class="item-icon-image" src="./assets/icons/minerals/${asset}?v=1" alt="" loading="lazy" decoding="async">`
+    : ITEM_ICONS[internalName];
+  if (!iconMarkup) continue;
+  ITEM_ICONS[displayName] = iconMarkup;
+  ITEM_ICONS[internalName] = iconMarkup;
+}
+// 行星资源按仓库显示名映射，图像保持透明底并沿用统一的 160px WebP 规格。
+const PLANETARY_ICON_ASSETS = Object.freeze({
+  "重金属":"重金属-heavy-metals.webp",
+  "稀有气体":"稀有气体-noble-gases.webp",
+  "同位素":"同位素-isotopes.webp",
+  "行星内核产物":"行星内核产物-planetary-core-products.webp",
+  "等离子体":"等离子体-plasma.webp",
+  "生物质":"生物质-biomass.webp",
+  "磁场聚合物":"磁场聚合物-magnetic-polymers.webp"
+});
+for (const [displayName, asset] of Object.entries(PLANETARY_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/planetary/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
+// 气体资源同样直接按显示名匹配，避免同类物品回退到通用云朵符号。
+const GAS_ICON_ASSETS = Object.freeze({
+  "粗制富勒烯":"粗制富勒烯-crude-fullerene.webp",
+  "氦同位素":"氦同位素-helium-isotopes.webp",
+  "稳定富勒烯":"稳定富勒烯-stable-fullerene.webp",
+  "氢同位素":"氢同位素-hydrogen-isotopes.webp",
+  "高纯富勒烯":"高纯富勒烯-high-purity-fullerene.webp",
+  "聚合气体":"聚合气体-polymerized-gas.webp",
+  "超纯聚合气体":"超纯聚合气体-ultra-pure-polymerized-gas.webp"
+});
+for (const [displayName, asset] of Object.entries(GAS_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/gases/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
 for (const material of STAR_BELT_DATA_MATERIALS) {
   ITEM_ICONS[material] = material.startsWith("天使") ? "🟠" : material.startsWith("血袭者") ? "🔴" : "🟢";
 }

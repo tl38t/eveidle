@@ -296,6 +296,27 @@ function getTitanDamageTakenMultiplier(enemy, currentRound) {
   return 1 + vuln.pct;
 }
 
+// 眩晕递减计数只对当前仍存活的敌人有效；已击败敌人的唯一 ID 不会复用。
+// 每次解析核心攻击时清掉旧目标，避免长时间战斗把此表永久写进存档并持续膨胀。
+function pruneTitanStunCounts(stunCounts, enemies) {
+  if (!stunCounts || typeof stunCounts !== "object" || Array.isArray(stunCounts)) return false;
+  const livingIds = new Set();
+  if (Array.isArray(enemies)) {
+    for (const enemy of enemies) {
+      if (!enemy || enemy.defeated || !enemy.hp || !(Number(enemy.hp.structure) > 0)) continue;
+      livingIds.add(String(enemy.id));
+    }
+  }
+  let changed = false;
+  for (const id of Object.keys(stunCounts)) {
+    if (!livingIds.has(id)) {
+      delete stunCounts[id];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 // 核心打击解析：把数据层 getTitanCoreStrikes 的待执行打击落到具体目标上。
 //   doomStrike → 点名最高 baseDamage 存活敌 + 掷眩晕递减（成功则 stunCounts[id]+1）。
 //   coreAoe   → 主目标 mainDamagePct + 其余存活敌 othersDamagePct，全部受击敌打易伤标记。
@@ -304,7 +325,8 @@ function getTitanDamageTakenMultiplier(enemy, currentRound) {
 function resolveTitanCoreStrikes(coreStrikes, core, enemies, primaryEnemy, stunCounts, currentRound, rng) {
   const out = { strikes: [], skipped: false };
   if (!Array.isArray(coreStrikes) || coreStrikes.length === 0) { out.skipped = true; return out; }
-  const counts = stunCounts || {};
+  const counts = (stunCounts && typeof stunCounts === "object" && !Array.isArray(stunCounts)) ? stunCounts : {};
+  pruneTitanStunCounts(counts, enemies);
   for (const strike of coreStrikes) {
     if (!strike || !(Number(strike.damage) > 0)) continue;
     if (strike.kind === "doomStrike") {
