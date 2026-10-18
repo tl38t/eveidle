@@ -330,6 +330,7 @@
     height: 66px; display: grid; place-items: center; color: #60c7ef;
     font-size: 38px; text-shadow: 0 0 22px rgba(72,181,228,.2);
   }
+  .equipeng-card-icon img.item-icon-image { width: 62px; height: 62px; object-fit: contain; filter: drop-shadow(0 3px 7px rgba(0,0,0,.38)); }
   .equipeng-recipe-card.selected .equipeng-card-icon { color: #e9b341; text-shadow: 0 0 22px rgba(212,168,67,.25); }
   .equipeng-recipe-card > strong {
     padding: 0 12px; color: #d6dce3; font-size: 13px; text-align: center;
@@ -464,6 +465,7 @@
       min-height: 142px; max-height: none;
     }
     .equipeng-card-icon { height: 40px; font-size: 24px; }
+    .equipeng-card-icon img.item-icon-image { width: 38px; height: 38px; }
     .equipeng-recipe-card > strong { min-height: 30px; padding: 2px 6px; font-size: 11px; line-height: 1.3; white-space: normal; overflow: visible; text-overflow: clip; }
     .equipeng-card-attributes { height: auto; min-height: 42px; padding: 2px 6px 4px; font-size: 9px; line-height: 1.35; overflow: visible; }
     .equipeng-card-top, .equipeng-card-bottom { padding: 3px 6px; font-size: 8px; }
@@ -989,7 +991,7 @@
 
 .arch-probe-row { display:grid; grid-template-columns:repeat(3,1fr); gap:6px; margin:8px 0 12px; }
 .archaeology-probe-card {
-  min-height:58px; padding:8px; display:flex; flex-direction:column; gap:3px;
+  min-height:72px; padding:8px; display:flex; align-items:center; gap:9px;
   background:#111a24; border:1px solid #293a4a; border-radius:4px;
   color:#7d8d9d; text-align:left; cursor:pointer; transition:all .2s; font-family:inherit;
 }
@@ -997,10 +999,17 @@
 .archaeology-probe-card.selected { border-color:#8a7135; background:#211d14; }
 .archaeology-probe-card.selected .apc-name { color:#e8d8a0; }
 .archaeology-probe-card.locked { opacity:.4; cursor:default; }
-.archaeology-probe-card .apc-name { display:block; font-weight:700; font-size:12px; color:#c8d8e8; }
-.archaeology-probe-card .apc-bonus { font-size:11px; color:#4ac87a; }
-.archaeology-probe-card .apc-stock { font-size:10px; color:#6a7a8e; display:block; }
-.archaeology-probe-card .apc-level { font-size:9px; color:#4a5a6a; display:block; }
+.archaeology-probe-card .apc-icon { width:50px; height:50px; flex:0 0 50px; display:grid; place-items:center; color:#71bca0; }
+.archaeology-probe-card .apc-icon img.item-icon-image { width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 2px 5px rgba(0,0,0,.42)); }
+.archaeology-probe-card .apc-copy { min-width:0; display:flex; flex:1; flex-direction:column; gap:3px; }
+.archaeology-probe-card .apc-name { display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-weight:700; font-size:12px; line-height:1.25; color:#c8d8e8; }
+.archaeology-probe-card .apc-bonus { font-size:11px; color:#4ac87a; white-space:nowrap; }
+.archaeology-probe-card .apc-meta { display:flex; align-items:center; justify-content:space-between; gap:5px; }
+.archaeology-probe-card .apc-stock { font-size:10px; color:#6a7a8e; }
+.archaeology-probe-card .apc-level { font-size:9px; color:#4a5a6a; white-space:nowrap; }
+
+.shipeng-comp-card .shipcomp-icon { height:58px; display:grid; place-items:center; color:#82bed2; }
+.shipeng-comp-card .shipcomp-icon img.item-icon-image { width:54px; height:54px; object-fit:contain; filter:drop-shadow(0 3px 7px rgba(0,0,0,.42)); }
 
 .archaeology-controls { display:flex; gap:8px; margin:10px 0; }
 .archaeology-progress { margin:10px 0; }

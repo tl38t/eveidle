@@ -124,6 +124,18 @@ for (const material of DEATHSPACE_TICKET_MATERIALS) ITEM_ICONS[material] = "🎫
 for (const material of DEATHSPACE_LOOT_MATERIALS) ITEM_ICONS[material] = material.includes("协议") ? "📜" : "💠";
 for (const material of SUPERCAPITAL_DATA_MATERIALS) ITEM_ICONS[material] = "🧬";
 for (const material of STARMAP_TITAN_MATERIALS) ITEM_ICONS[material] = "⚛️";
+// 泰坦材料统一采用暗绿古代金属主题；覆盖星图材料的通用符号，也用于精炼产物。
+const TITAN_MATERIAL_ICON_ASSETS = Object.freeze({
+  "星骸钛晶":"星骸钛晶-starward-titanium-crystal.webp",
+  "赫利昂冷凝气":"赫利昂冷凝气-helion-condensate.webp",
+  "相位铱核":"相位铱核-phase-iridium-core.webp",
+  "虚境裂流":"虚境裂流-voidrift-flux.webp",
+  "锻星合金":"锻星合金-forgestar-alloy.webp",
+  "熔虚晶体":"熔虚晶体-meltvoid-crystal.webp"
+});
+for (const [displayName, asset] of Object.entries(TITAN_MATERIAL_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/titan-materials/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
 // 校准基体（考古产出的 calibration: 命名空间资源）给统一图标，避免仓库卡退化为 📦
 for (const calibName of ["校准基体 I 型","校准基体 II 型","校准基体 III 型","校准基体 IV 型","校准基体 V 型"]) ITEM_ICONS[calibName] = "⚗️";
 // 精英难度独占掉落图标（2026-10-08）：未知的潜能芯片
@@ -133,6 +145,94 @@ SHIP_COMPONENT_RECIPES.forEach(recipe => {
   else if (recipe.id.includes("power_core")) ITEM_ICONS[recipe.name] = "⚙️";
   else ITEM_ICONS[recipe.name] = "🔧";
 });
+// 舰船工程组件按舰级与部件显示名映射，仓库和部件车间复用同一组图标。
+const SHIP_COMPONENT_ICON_ASSETS = Object.freeze({
+  "综合舰体组件":"综合舰体组件-integrated-hull-component.webp",
+  "驱逐舰综合舰体组件":"驱逐舰综合舰体组件-destroyer-integrated-hull-component.webp",
+  "巡洋舰综合舰体组件":"巡洋舰综合舰体组件-cruiser-integrated-hull-component.webp",
+  "战列舰综合舰体组件":"战列舰综合舰体组件-battleship-integrated-hull-component.webp",
+  "旗舰综合舰体组件":"旗舰综合舰体组件-capital-integrated-hull-component.webp",
+  "超级旗舰综合舰体组件":"超级旗舰综合舰体组件-supercapital-integrated-hull-component.webp",
+  "动力控制核心":"动力控制核心-power-control-core.webp",
+  "驱逐舰动力控制核心":"驱逐舰动力控制核心-destroyer-power-control-core.webp",
+  "巡洋舰动力控制核心":"巡洋舰动力控制核心-cruiser-power-control-core.webp",
+  "战列舰动力控制核心":"战列舰动力控制核心-battleship-power-control-core.webp",
+  "旗舰动力控制核心":"旗舰动力控制核心-capital-power-control-core.webp",
+  "超级旗舰动力控制核心":"超级旗舰动力控制核心-supercapital-power-control-core.webp",
+  "舰船功能组件":"舰船功能组件-ship-functional-system-component.webp",
+  "驱逐舰舰船功能组件":"驱逐舰舰船功能组件-destroyer-functional-system-component.webp",
+  "巡洋舰舰船功能组件":"巡洋舰舰船功能组件-cruiser-functional-system-component.webp",
+  "战列舰舰船功能组件":"战列舰舰船功能组件-battleship-functional-system-component.webp",
+  "旗舰舰船功能组件":"旗舰舰船功能组件-capital-functional-system-component.webp",
+  "超级旗舰舰船功能组件":"超级旗舰舰船功能组件-supercapital-functional-system-component.webp"
+});
+for (const [displayName, asset] of Object.entries(SHIP_COMPONENT_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/ship-components/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
+// 弹药与考古探针图标按玩家可见的 displayName 映射，仓库、制造和考古卡片共用。
+const AMMUNITION_ICON_ASSETS = Object.freeze({
+  "激光晶体弹药":"激光晶体弹药-laser-crystal-ammunition.webp",
+  "导弹":"导弹-missile.webp",
+  "炮台弹药":"炮台弹药-turret-ammunition.webp",
+  "聚焦相位激光弹":"聚焦相位激光弹-focused-phase-laser-ammo.webp",
+  "高爆制导导弹":"高爆制导导弹-high-explosive-guided-missile.webp",
+  "重型轨道弹药":"重型轨道弹药-heavy-orbital-ammunition.webp"
+});
+for (const [displayName, asset] of Object.entries(AMMUNITION_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/ammunition/${asset}?v=2" alt="" loading="lazy" decoding="async">`;
+}
+const ARCHAEOLOGY_PROBE_ICON_ASSETS = Object.freeze({
+  "标准考古探针 I":"标准考古探针-I-standard-archaeological-probe-i.webp",
+  "强化考古探针 II":"强化考古探针-II-enhanced-archaeological-probe-ii.webp",
+  "深空考古探针 III":"深空考古探针-III-deep-space-archaeological-probe-iii.webp",
+  "苍穹劫团考古探针·掠空型":"苍穹劫团考古探针-掠空型-skybreak-marauders-sky-skimming-probe.webp",
+  "赤誓教团考古探针·血誓型":"赤誓教团考古探针-血誓型-crimson-covenant-blood-oath-probe.webp",
+  "静默集群考古探针·同化型":"静默集群考古探针-同化型-silent-assembly-assimilation-probe.webp",
+  "复原强化考古探针 II":"复原强化考古探针-II-restored-enhanced-archaeological-probe-ii.webp",
+  "复原深空考古探针 III":"复原深空考古探针-III-restored-deep-space-archaeological-probe-iii.webp",
+  "深层先驱遗迹探针 IV":"深层先驱遗迹探针-IV-deep-layer-pioneer-ruins-probe-iv.webp"
+});
+for (const [displayName, asset] of Object.entries(ARCHAEOLOGY_PROBE_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/probes/${asset}?v=2" alt="" loading="lazy" decoding="async">`;
+}
+// 采矿与气云采集设备按装备 displayName 映射，供仓库和装备制造界面共用。
+const MINING_EQUIPMENT_ICON_ASSETS = Object.freeze({
+  "T1采矿激光器":"T1采矿激光器-t1-mining-laser.webp",
+  "中型采矿激光器":"中型采矿激光器-medium-mining-laser.webp",
+  "银河联盟采矿激光器":"银河联盟采矿激光器-alliance-mining-laser.webp",
+  "苍穹劫团联合采矿激光器":"苍穹劫团联合采矿激光器-angel-cartel-mining-laser.webp",
+  "重型采矿激光器":"重型采矿激光器-heavy-mining-laser.webp",
+  "大型采矿激光器":"大型采矿激光器-large-mining-laser.webp",
+  "旗舰采矿激光器":"旗舰采矿激光器-capital-mining-laser.webp",
+  "T1气云采集器":"T1气云采集器-t1-gas-harvester.webp",
+  "中型气云采集器":"中型气云采集器-medium-gas-harvester.webp",
+  "银河联盟气云采集器":"银河联盟气云采集器-alliance-gas-harvester.webp",
+  "苍穹劫团联合气云采集器":"苍穹劫团联合气云采集器-angel-cartel-gas-harvester.webp",
+  "重型气云采集器":"重型气云采集器-heavy-gas-harvester.webp",
+  "大型气云采集器":"大型气云采集器-large-gas-harvester.webp",
+  "旗舰气云采集器":"旗舰气云采集器-capital-gas-harvester.webp"
+});
+for (const [displayName, asset] of Object.entries(MINING_EQUIPMENT_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/mining-equipment/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
+// 舰载武器依 displayName 映射；仓库、装备制造和战斗配装复用同一图标。
+const SHIP_WEAPON_ICON_ASSETS = Object.freeze({
+  "小型激光炮 I":"小型激光炮 I-small-laser-cannon-i.webp",
+  "中型激光炮 I":"中型激光炮 I-medium-laser-cannon-i.webp",
+  "大型激光炮 I":"大型激光炮 I-large-laser-cannon-i.webp",
+  "旗舰级聚焦激光炮 I":"旗舰级聚焦激光炮 I-capital-focused-laser-cannon-i.webp",
+  "轻型导弹发射器 I":"轻型导弹发射器 I-light-missile-launcher-i.webp",
+  "重型导弹发射器 I":"重型导弹发射器 I-heavy-missile-launcher-i.webp",
+  "巡航导弹发射器 I":"巡航导弹发射器 I-cruise-missile-launcher-i.webp",
+  "旗舰级巡航导弹阵列 I":"旗舰级巡航导弹阵列 I-capital-cruise-missile-array-i.webp",
+  "小型射弹炮 I":"小型射弹炮 I-small-projectile-cannon-i.webp",
+  "中型射弹炮 I":"中型射弹炮 I-medium-projectile-cannon-i.webp",
+  "大型射弹炮 I":"大型射弹炮 I-large-projectile-cannon-i.webp",
+  "旗舰级攻城射弹炮 I":"旗舰级攻城射弹炮 I-capital-siege-projectile-cannon-i.webp"
+});
+for (const [displayName, asset] of Object.entries(SHIP_WEAPON_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/ship-weapons/${asset}?v=2" alt="" loading="lazy" decoding="async">`;
+}
 
 function xpForLevel(lv) { return Math.floor(100 * Math.pow(1.1, lv - 1)); }
 

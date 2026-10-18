@@ -191,7 +191,10 @@
     font-size:54px; text-shadow:0 0 18px color-mix(in srgb,var(--ore-color) 42%,transparent);
   }
   .mining-target-visual .item-icon-image { display:block; width:100%; height:100%; object-fit:contain; filter:drop-shadow(0 4px 7px rgba(0,0,0,.42)); }
-  .mining-target-ore-image { display:block; width:74px; height:74px; object-fit:contain; filter:drop-shadow(0 4px 7px rgba(0,0,0,.42)); }
+  /* 原矿图标必须跟随 .mining-target-visual 收缩：桌面视觉框 78px（图标封顶 74px），
+     <=720px 视觉框降到 44px，写死 74px 会横向/纵向各溢出 15px，压住下面的
+     meta 文字（Lv.x · xs · XP）并被卡片 overflow:hidden 裁边，看起来"图是歪的"。 */
+  .mining-target-ore-image { display:block; width:100%; height:100%; max-width:74px; max-height:74px; object-fit:contain; filter:drop-shadow(0 4px 7px rgba(0,0,0,.42)); }
   .mining-target-visual i { transform:rotate(-8deg); }
   .mining-target-meta {
     color:#b7c7d5; font-family:'Rajdhani', 'Bahnschrift', sans-serif; font-size:14px; font-weight:600;

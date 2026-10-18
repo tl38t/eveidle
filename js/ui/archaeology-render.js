@@ -184,16 +184,21 @@ function renderArchaeologyPage(now) {
     </div>
   `;
 
-  const probeSection = display.probes.map(probe => `
-    <button class="archaeology-probe-card${probe.selected ? " selected" : ""}${probe.locked ? " locked" : ""}"
-      data-probe-id="${probe.id}"
-      ${probe.locked || arch.repairing || arch.active ? "disabled" : ""}>
-      <span class="apc-name">${probe.name}</span>
-      <span class="apc-bonus">扫描 +${probe.scanBonus}${probe.cycleReduction > 0 ? ` · 周期 -${Math.round(probe.cycleReduction * 100)}%` : ""}</span>
-      <span class="apc-stock">库存 ${probe.stock}</span>
-      <span class="apc-level">需 Lv.${probe.level}</span>
-    </button>
-  `).join("");
+  const probeSection = display.probes.map(probe => {
+    const icon = (typeof ITEM_ICONS !== "undefined" && ITEM_ICONS[probe.name]) || '<i class="fa-solid fa-crosshairs"></i>';
+    return `
+      <button class="archaeology-probe-card${probe.selected ? " selected" : ""}${probe.locked ? " locked" : ""}"
+        data-probe-id="${probe.id}"
+        ${probe.locked || arch.repairing || arch.active ? "disabled" : ""}>
+        <span class="apc-icon">${icon}</span>
+        <span class="apc-copy">
+          <span class="apc-name">${probe.name}</span>
+          <span class="apc-bonus">扫描 +${probe.scanBonus}${probe.cycleReduction > 0 ? ` · 周期 -${Math.round(probe.cycleReduction * 100)}%` : ""}</span>
+          <span class="apc-meta"><span class="apc-stock">库存 ${probe.stock}</span><span class="apc-level">需 Lv.${probe.level}</span></span>
+        </span>
+      </button>
+    `;
+  }).join("");
 
   const runStats = selectedSite ? `
     <div class="arch-run-stats">

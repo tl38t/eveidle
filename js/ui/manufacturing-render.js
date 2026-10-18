@@ -30,13 +30,17 @@ function renderShipCompClassTabs(display) {
 function renderShipCompGrid(display) {
   const el = document.getElementById("shipeng-comp-grid"); if (!el) return;
   if (!display.componentGrid.length) { el.innerHTML = '<div class="shipeng-empty">该分类暂无部件</div>'; return; }
-  el.innerHTML = display.componentGrid.map(recipe => `
-    <button class="shipeng-comp-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-comp="${recipe.id}">
-      <span class="sec-top"><span>${recipe.requiredLevel} 级</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : (recipe.gateText || ("Lv." + recipe.requiredLevel + " 解锁"))}</span></span>
-      <strong>${recipe.name}</strong>
-      <span class="sec-cost">${recipe.cost.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`).join(" ")}</span>
-      <span class="sec-bottom"><span>${recipe.time}s · ${recipe.xp} XP</span><span>库存 ${recipe.owned}</span></span>
-    </button>`).join("");
+  el.innerHTML = display.componentGrid.map(recipe => {
+    const icon = (typeof ITEM_ICONS !== "undefined" && ITEM_ICONS[recipe.name]) || '<i class="fa-solid fa-cubes-stacked"></i>';
+    return `
+      <button class="shipeng-comp-card${recipe.selected ? " selected" : ""}${recipe.unlocked ? "" : " locked"}" data-comp="${recipe.id}">
+        <span class="sec-top"><span>${recipe.requiredLevel} 级</span><span class="${recipe.unlocked ? "can-build" : "level-locked"}">${recipe.unlocked ? "可制造" : (recipe.gateText || ("Lv." + recipe.requiredLevel + " 解锁"))}</span></span>
+        <span class="shipcomp-icon">${icon}</span>
+        <strong>${recipe.name}</strong>
+        <span class="sec-cost">${recipe.cost.map(item => `<span class="${item.enough ? "enough" : "short"}">${getResourceDisplayName(item.material)}×${item.quantity}</span>`).join(" ")}</span>
+        <span class="sec-bottom"><span>${recipe.time}s · ${recipe.xp} XP</span><span>库存 ${recipe.owned}</span></span>
+      </button>`;
+  }).join("");
 }
 
 function renderShipCompDetail(display) {
@@ -349,6 +353,8 @@ function renderEquipEngRecipeGrid(display) {
     const statusTxt = recipe.unlocked ? "可制造" : ("🔒 " + (blueprintLocked ? "需蓝图" : "Lv." + recipe.level + " 解锁"));
     const flagBadge = (typeof EQUIPMENT_DB !== "undefined" && EQUIPMENT_DB[recipe.id])
       ? getShipTypesFlagBadge(EQUIPMENT_DB[recipe.id].shipTypes, "ee") : "";
+    const recipeIcon = (typeof ITEM_ICONS !== "undefined" && ITEM_ICONS[recipe.name])
+      ? ITEM_ICONS[recipe.name] : `<i class="${recipe.icon}"></i>`;
     // 母本装备（inputEquipment）：像详情页“制造材料”一样直接列在卡片里，
     // 让玩家在列表层就能看出需先持有对应前置装备。
     const inputRow = recipe.inputEquipment
@@ -361,7 +367,7 @@ function renderEquipEngRecipeGrid(display) {
     ${locked ? '<span class="lock-badge">🔒</span>' : ""}
     ${flagBadge}
     <span class="equipeng-card-top"><span>${recipe.tier} · ${recipe.slot}</span><span class="${statusCls}">${statusTxt}</span></span>
-    <span class="equipeng-card-icon"><i class="${recipe.icon}"></i></span><strong>${recipe.name}</strong><span class="equipeng-card-attributes">${recipe.attributes}</span>
+    <span class="equipeng-card-icon">${recipeIcon}</span><strong>${recipe.name}</strong><span class="equipeng-card-attributes">${recipe.attributes}</span>
     ${inputRow}
     <span class="equipeng-card-bottom"><span>${recipe.actualTime.toFixed(1)}s · ${recipe.xp} XP</span><span>库存 ${recipe.ownedCount.toLocaleString()}</span></span></button>`;
   }).join("");
