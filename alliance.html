@@ -60,7 +60,11 @@ var injected=qs.get("token");if(injected){token=injected;try{localStorage.setIte
 if(authPromise)return authPromise;token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);authPromise=request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);return token});return authPromise}
 function api(path,opt){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)}).catch(function(e){if(e.status===401)return auth(true).then(function(){return api(path,opt)});throw e})}
 function fn(url,body){return auth().then(function(t){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify(body||{})})}).then(function(r){return r.json().then(function(x){if(!r.ok||x.ok===false)throw Error(x.error||("HTTP "+r.status));return x})})}
-function getCurrent(){return api("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=eq."+encodeURIComponent(playerId)+"&limit=1").then(function(x){return x[0]?api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&id=eq."+x[0].alliance_id+"&limit=1").then(function(a){return a[0]||null}):null})}
+// 🔴 2026-10-19 修复：当前联盟必须「按 id 精确拉取」，绝不能走 getList 过滤。
+// 联盟列表 limit=100 按 created_at.desc 排序，线上共 206 个联盟只有最近 100 个在列表里，
+// 老联盟（id 靠前）过滤不到 → 误报「未加入联盟」。这里恢复直接 alliances?id=eq.<aid> 抓取，
+// 并带上 buildings/construction 嵌入，既精确又保留去 N+1（loadBuildings 不再逐联盟补拉）。
+function getCurrent(){return api("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=eq."+encodeURIComponent(playerId)+"&limit=1").then(function(x){if(!x||!x[0])return null;return api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at,buildings:alliance_buildings(building_type,level),construction:alliance_construction(points_balance,total_points_earned)&id=eq."+encodeURIComponent(x[0].alliance_id)+"&limit=1").then(function(a){var r=a&&a[0]||null;if(r){r._buildings=r.buildings||[];r._construction=r.construction||[]}return r})})}
 function getList(){return api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at,buildings:alliance_buildings(building_type,level),construction:alliance_construction(points_balance,total_points_earned)&order=created_at.desc&limit=100").then(function(rows){(rows||[]).forEach(function(a){a._buildings=a.buildings||[];a._construction=a.construction||[]});return rows||[]})}
 function getMembers(id){return api("/v1/rdb/rest/alliance_members?select=player_id&alliance_id=eq."+encodeURIComponent(id)+"&limit=100")}
 var memberStatsCache={id:0,at:0,list:null};function getMemberStats(id){var n=Number(id);if(memberStatsCache.id===n&&memberStatsCache.list&&(Date.now()-memberStatsCache.at)<30000)return Promise.resolve(memberStatsCache.list);return api("/v1/rdb/rest/rpc/get_alliance_member_stats",{method:"POST",body:JSON.stringify({p_alliance_id:n})}).then(function(r){memberStatsCache={id:n,at:Date.now(),list:r||[]};return r||[]})}
@@ -151,26 +155,20 @@ function decorateAllianceList(list){
 function refresh(){
   status.textContent="正在读取联盟信息…";
   api("/v1/rdb/rest/rpc/touch_player_online",{method:"POST",body:JSON.stringify({p_player_id:playerId})}).catch(function(){});
-  // 🔴 去 N+1（2026-10-19）：只调一次 getList（已含 buildings+construction），再用一次
-  // alliance_members?select=alliance_id 定位本玩家所属联盟；不再调 getCurrent 的
-  // alliance_members+alliances?id 双请求，也不在 loadBuildings 重复拉建筑。
-  return getList().then(function(list){
-    var pid=encodeURIComponent("eq."+playerId);
-    return api("/v1/rdb/rest/alliance_members?select=alliance_id&player_id="+pid+"&limit=1").then(function(members){
-      var aid=members&&members[0]?members[0].alliance_id:null;
-      var a=(list||[]).filter(function(x){return String(x.id)===String(aid);})[0]||null;
-      latestAlliance=a;
-      var stats=a?getMemberStats(a.id):Promise.resolve([]);
-      var ids=(list||[]).map(function(x){return x.owner_player_id;});
-      if(a)ids.push(a.owner_player_id);
-      return getNames(ids).then(function(n){
-        return stats.then(function(memberStats){
-          renderCurrent(a,list,n,memberStats);decorateAllianceList(list);
-          status.textContent="已连接 CloudBase";
-          return loadBuildings(a);
-        });
-      });
-    });
+  // 🔴 2026-10-19 修复：当前联盟用 getCurrent() 直接按 id 拉取（精确，不受列表 limit=100 截断影响）；
+  // 浏览列表用 getList()（已含 buildings+construction 嵌入，去 N+1）。两者并行，互不依赖。
+  return Promise.all([getCurrent(),getList()]).then(function(v){
+    return Promise.all([Promise.resolve(v), v[0]?getMemberStats(v[0].id):Promise.resolve([])]);
+  }).then(function(v){
+    var a=v[0][0],list=v[0][1],members=v[1];
+    latestAlliance=a;
+    var ids=list.map(function(x){return x.owner_player_id;}).concat(members.map(function(x){return x.player_id;}));
+    if(a)ids.push(a.owner_player_id);
+    return getNames(ids).then(function(n){
+      renderCurrent(a,list,n,members);
+      decorateAllianceList(list);
+      return loadBuildings(a);
+    }).then(function(){status.textContent="已连接 CloudBase";});
   }).catch(showError);
 }
 document.getElementById("back").onclick=function(){

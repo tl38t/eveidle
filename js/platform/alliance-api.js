@@ -357,17 +357,25 @@
   // 单联盟详情：复用聚合列表（30s 缓存，已含 buildings + construction + memberCap），
   // 不再逐联盟发 alliance_buildings / alliance_construction / alliances?id REST（N+1 主因，日耗数千次）。
   // 仅补一次 alliance_members 取本玩家所属联盟 id，以及 getMembers 取成员名。
+  // 🔴 2026-10-19 修复：当前联盟必须「按 id 精确拉取」，绝不能走 listAlliances({offset:0}).filter(id)。
+  // 联盟列表 limit=100 按 created_at.desc 排序，线上共 206 个联盟只有最近 100 个在列表里，
+  // 老联盟（id 靠前）过滤不到 → 误报「未加入联盟」。这里恢复直接 alliances?id=eq.<aid> 抓取。
   function getAlliance() {
     var player = encodeURIComponent("eq." + getPlayerId());
     return authed("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=" + player + "&limit=1")
       .then(function (members) {
         if (!members || !members[0]) return null;
-        var aid = Number(members[0].alliance_id);
-        return listAlliances({ offset: 0 }).then(function (list) {
-          var alliance = (list || []).filter(function (x) { return Number(x.id) === aid; })[0] || null;
-          if (!alliance) return null;
-          return getMembers(alliance.id).then(function (memberList) {
-            alliance.members = memberList;
+        return authed("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&id=eq." + encodeURIComponent(members[0].alliance_id) + "&limit=1");
+      })
+      .then(function (rows) {
+        if (!rows || !rows[0]) return null;
+        var alliance = mapAlliance(rows[0]);
+        return getBuildings(alliance.id).then(function (buildings) {
+          alliance.buildings = buildings;
+          alliance.memberCap = root.AllianceBuildingConfig
+            ? root.AllianceBuildingConfig.memberCap(buildings) : 10;
+          return getConstruction(alliance.id).then(function (construction) {
+            alliance.construction = construction;
             return alliance;
           });
         });
