@@ -1018,8 +1018,10 @@ function renderCombatPanel(now) {
     if (it) {
       // 精英难度（eliteTier>=2 → 银河奶牛 T2 烈度）：燃料/经验烈度均 ×1.5，与 selectors.js / station.js 同源。
       const _eliteInt = (gameState && gameState.combat && Number(gameState.combat.eliteTier) >= 2) ? 1.5 : 1;
-      const fm = (Number(curZone.fuelMult) || 1) * _eliteInt;
-      const xpMult = ((typeof getZoneIntensityXpMultiplier === "function") ? getZoneIntensityXpMultiplier(curZone) : (Number(curZone.fuelMult) || 1)) * _eliteInt;
+      // 显示用：剔除 IEEE-754 浮点误差（如 1.6×1.5=2.4000000000000004），最多保留 3 位小数后去尾零。
+      const fmtMult = v => Number(Number(v).toFixed(3)).toString();
+      const fm = fmtMult((Number(curZone.fuelMult) || 1) * _eliteInt);
+      const xpMult = fmtMult(((typeof getZoneIntensityXpMultiplier === "function") ? getZoneIntensityXpMultiplier(curZone) : (Number(curZone.fuelMult) || 1)) * _eliteInt);
       intensityEl.textContent = `战区烈度：${it.label}（燃料消耗×${fm} · 战斗经验×${xpMult}）`;
       intensityEl.className = "zone-intensity " + it.cls;
     }

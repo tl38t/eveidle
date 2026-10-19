@@ -1236,7 +1236,11 @@
     // Do not carry a previous alliance summary into the next round trip.
     // Otherwise URLSearchParams may read the old duplicate parameter first.
     var returnUrl = root.location.href.split("?")[0].split("#")[0];
-    var url = cloudOrigin + "/?embedded=1&v=6&playerId=" + encodeURIComponent(playerId) +
+    // 🔴 复用游戏侧已登录令牌注入 relay（2026-10-19）：relay 打开时通过 ?token= 收到，
+    // 直接复用、不再独立匿名登录（signin 风暴主因之一）。v=6→v=7 强制浏览器刷新 relay 缓存。
+    var cloudToken = (root.AllianceApi && typeof root.AllianceApi.getAllianceAccessToken === "function") ? root.AllianceApi.getAllianceAccessToken() : "";
+    var url = cloudOrigin + "/?embedded=1&v=7&playerId=" + encodeURIComponent(playerId) +
+      "&token=" + encodeURIComponent(cloudToken || "") +
       "&returnUrl=" + encodeURIComponent(returnUrl) +
       "&taskDate=" + encodeURIComponent(taskDate || "") +
       "&taskPreview=" + encodeURIComponent(JSON.stringify(taskPreview));

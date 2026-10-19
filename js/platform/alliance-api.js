@@ -296,6 +296,15 @@
 
   // 匿名登录：整条链路里唯一会写「玩家 state 之外」的请求，也是当日 17,098 次调用的最大来源。
   // 2026-09-28 起并发合并——同一时刻只允许一个登录请求在飞，其余调用共享其结果。
+  // 🔴 内存粘性令牌（2026-10-19）：localStorage 在 TapTap WebView 上不跨上下文留存，
+  //   导致每次新上下文都取不到缓存令牌 → 反复匿名登录（signin 风暴主因之一）。
+  //   加一层模块级内存缓存：同一 JS 上下文内（即一次游戏会话）最多只登录 1 次。
+  //   relay 侧的独立登录由 alliance.html 复用游戏注入的令牌解决，与此处互补。
+  var cachedToken = null;
+  function getAllianceAccessToken() {
+    if (cachedToken) return cachedToken;
+    try { return localStorage.getItem(tokenKey) || null; } catch (_) { return null; }
+  }
   function getAccessToken(forceRefresh) {
     // 🔴 single-flight（2026-10-12）：登录在途时共享同一 pending，forceRefresh 亦然——
     //   在途登录本身就是一次全新登录，共享它即可拿到新令牌。
@@ -305,8 +314,10 @@
     if (tokenRequestPromise) return tokenRequestPromise;
     if (forceRefresh) {
       localStorage.removeItem(tokenKey);
+      cachedToken = null;
     }
-    var cached = localStorage.getItem(tokenKey);
+    var cached = cachedToken;
+    if (!cached) { try { cached = localStorage.getItem(tokenKey); } catch (_) { cached = null; } }
     if (cached && !forceRefresh) return Promise.resolve(cached);
     var pending = request("/auth/v1/signin/anonymously", {
       method: "POST",
@@ -315,6 +326,7 @@
     }).then(function (body) {
       var token = body && (body.access_token || body.token);
       if (!token) throw new Error("联盟登录未返回访问令牌");
+      cachedToken = token;
       localStorage.setItem(tokenKey, token);
       return token;
     });
@@ -342,22 +354,20 @@
     });
   }
 
+  // 单联盟详情：复用聚合列表（30s 缓存，已含 buildings + construction + memberCap），
+  // 不再逐联盟发 alliance_buildings / alliance_construction / alliances?id REST（N+1 主因，日耗数千次）。
+  // 仅补一次 alliance_members 取本玩家所属联盟 id，以及 getMembers 取成员名。
   function getAlliance() {
     var player = encodeURIComponent("eq." + getPlayerId());
     return authed("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=" + player + "&limit=1")
       .then(function (members) {
         if (!members || !members[0]) return null;
-        return authed("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&id=eq." + encodeURIComponent(members[0].alliance_id) + "&limit=1");
-      })
-      .then(function (rows) {
-        if (!rows || !rows[0]) return null;
-        var alliance = mapAlliance(rows[0]);
-        return getBuildings(alliance.id).then(function (buildings) {
-          alliance.buildings = buildings;
-          alliance.memberCap = root.AllianceBuildingConfig
-            ? root.AllianceBuildingConfig.memberCap(buildings) : 10;
-          return getConstruction(alliance.id).then(function (construction) {
-            alliance.construction = construction;
+        var aid = Number(members[0].alliance_id);
+        return listAlliances({ offset: 0 }).then(function (list) {
+          var alliance = (list || []).filter(function (x) { return Number(x.id) === aid; })[0] || null;
+          if (!alliance) return null;
+          return getMembers(alliance.id).then(function (memberList) {
+            alliance.members = memberList;
             return alliance;
           });
         });
@@ -494,9 +504,16 @@
 
   // 联盟成员统计：当日贡献 / 总贡献 / 最后上线 / 是否盟主。
   // 云端与原生共用同一 RPC，保证两侧数据一致。
+  // 30s 内存缓存（2026-10-19）：面板停留期间统计变化极小，避免每次重渲染都打 RPC
+  // （Steam 端 get_alliance_member_stats 日调用 ~1.5k 的主因）。
+  var memberStatsCache = { id: 0, at: 0, list: null };
+  var MEMBER_STATS_TTL_MS = 30000;
   function getMemberStats(allianceId) {
     var id = Number(allianceId);
     if (!Number.isSafeInteger(id) || id <= 0) return Promise.reject(new Error("联盟 ID 无效"));
+    if (memberStatsCache.id === id && memberStatsCache.list && (Date.now() - memberStatsCache.at) < MEMBER_STATS_TTL_MS) {
+      return Promise.resolve(memberStatsCache.list);
+    }
     return authed("/v1/rdb/rest/rpc/get_alliance_member_stats", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -512,6 +529,9 @@
           lastOnlineAt: r.last_online_at || null
         };
       });
+    }).then(function (list) {
+      memberStatsCache = { id: id, at: Date.now(), list: list };
+      return list;
     });
   }
 
@@ -686,6 +706,7 @@
     getPlayerName: function () { return steamPersonaName; },
     isDeviceIdentity: function () { return isDeviceIdentity(getPlayerId()); },
     getAllianceSessionToken: getAllianceSessionToken,
+    getAllianceAccessToken: getAllianceAccessToken,
     initializeSteamIdentity: initializeSteamIdentity,
     retryPlatformIdentity: retryPlatformIdentity,
     getIdentityIssue: getIdentityIssue,

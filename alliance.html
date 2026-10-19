@@ -54,13 +54,16 @@ if(!playerId){playerId="player_"+Date.now().toString(36)+"_"+Math.random().toStr
 var latestAlliance=null,latestMembers=[],latestConstruction=null,latestBuildings=[],latestTasks=[],latestBuildingLevel=0;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
 function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},opt.headers||{});return fetch(base+path,opt).then(function(r){return r.text().then(function(t){var b=t?JSON.parse(t):{};if(!r.ok){var e=new Error(b.message||b.error||("HTTP "+r.status));e.status=r.status;throw e}return b})})}
-var authPromise=null;function auth(force){if(force){token=null;localStorage.removeItem(tokenKey);authPromise=null}if(token)return Promise.resolve(token);if(authPromise)return authPromise;token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);authPromise=request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);return token});return authPromise}
+var authPromise=null;function auth(force){if(force){token=null;localStorage.removeItem(tokenKey);authPromise=null}if(token)return Promise.resolve(token);
+// 🔴 复用游戏侧注入的令牌：游戏打开 relay 时通过 ?token= 传入，避免 relay 独立匿名登录（signin 风暴主因之一）
+var injected=qs.get("token");if(injected){token=injected;try{localStorage.setItem(tokenKey,injected)}catch(_){}return Promise.resolve(token)}
+if(authPromise)return authPromise;token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);authPromise=request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);return token});return authPromise}
 function api(path,opt){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)}).catch(function(e){if(e.status===401)return auth(true).then(function(){return api(path,opt)});throw e})}
 function fn(url,body){return auth().then(function(t){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify(body||{})})}).then(function(r){return r.json().then(function(x){if(!r.ok||x.ok===false)throw Error(x.error||("HTTP "+r.status));return x})})}
 function getCurrent(){return api("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=eq."+encodeURIComponent(playerId)+"&limit=1").then(function(x){return x[0]?api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&id=eq."+x[0].alliance_id+"&limit=1").then(function(a){return a[0]||null}):null})}
-function getList(){return api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at,buildings:alliance_buildings(building_type,level)&order=created_at.desc&limit=100").then(function(rows){(rows||[]).forEach(function(a){a._buildings=a.buildings||[]});return rows||[]})}
+function getList(){return api("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at,buildings:alliance_buildings(building_type,level),construction:alliance_construction(points_balance,total_points_earned)&order=created_at.desc&limit=100").then(function(rows){(rows||[]).forEach(function(a){a._buildings=a.buildings||[];a._construction=a.construction||[]});return rows||[]})}
 function getMembers(id){return api("/v1/rdb/rest/alliance_members?select=player_id&alliance_id=eq."+encodeURIComponent(id)+"&limit=100")}
-function getMemberStats(id){return api("/v1/rdb/rest/rpc/get_alliance_member_stats",{method:"POST",body:JSON.stringify({p_alliance_id:Number(id)})})}
+var memberStatsCache={id:0,at:0,list:null};function getMemberStats(id){var n=Number(id);if(memberStatsCache.id===n&&memberStatsCache.list&&(Date.now()-memberStatsCache.at)<30000)return Promise.resolve(memberStatsCache.list);return api("/v1/rdb/rest/rpc/get_alliance_member_stats",{method:"POST",body:JSON.stringify({p_alliance_id:n})}).then(function(r){memberStatsCache={id:n,at:Date.now(),list:r||[]};return r||[]})}
 function getNames(ids){ids=ids.filter(Boolean);if(!ids.length)return Promise.resolve({});var quoted=ids.map(function(id){return '"'+String(id).replace(/\\/g,"\\\\").replace(/"/g,'\\"')+'"'}).join(",");return api("/v1/rdb/rest/players?select=player_id,username&player_id="+encodeURIComponent("in.("+quoted+")")).then(function(rows){var out={};rows.forEach(function(x){out[x.player_id]=x.username});return out})}
 function fmtOnline(v){if(!v)return "从未上线";var t=new Date(v).getTime();if(isNaN(t))return "从未上线";var d=Date.now()-t;if(d<0)d=0;var m=Math.floor(d/60000);if(m<1)return "刚刚";if(m<60)return m+" 分钟前";var h=Math.floor(m/60);if(h<24)return h+" 小时前";var day=Math.floor(h/24);if(day<30)return day+" 天前";var mon=Math.floor(day/30);if(mon<12)return mon+" 个月前";return Math.floor(mon/12)+" 年前"}
 // 成员上限的唯一实现。表与 db 侧 alliance-membership-cap.sql、js/data/alliance-building-config.js 保持一致：
@@ -107,19 +110,20 @@ function renderTasks(tasks,date){
 }
 function loadBuildings(a){
   if(!a){constructionPanel.hidden=true;return Promise.resolve([]);}
-  var q="&alliance_id=eq."+encodeURIComponent(a.id);
-  return Promise.all([
-    api("/v1/rdb/rest/alliance_construction?select=points_balance,total_points_earned"+q+"&limit=1"),
-    api("/v1/rdb/rest/alliance_buildings?select=building_type,level,points_spent"+q)
-  ]).then(function(v){
-    latestConstruction=v[0][0]||{};latestBuildings=v[1]||[];
-    latestBuildingLevel=hqLevelOf(latestBuildings);
-    var cap=memberCapOf(latestBuildings);
+  // 🔴 去 N+1（2026-10-19）：建筑来自 getList 嵌入的 a._buildings，不再单独拉 alliance_buildings；
+  // 建设点优先用 getList 嵌入的 a._construction，极少数缺失时兜底单拉（不影响主流程）。
+  var buildings=a._buildings||[];
+  var embedded=(a._construction&&a._construction.length)?a._construction[0]:(a._construction||{});
+  var constructionPromise=(embedded&&embedded.points_balance!=null)?Promise.resolve(embedded):api("/v1/rdb/rest/alliance_construction?select=points_balance,total_points_earned&alliance_id=eq."+encodeURIComponent(a.id)+"&limit=1").then(function(v){return v&&v[0]?v[0]:{};});
+  return constructionPromise.then(function(c){
+    latestConstruction=c||{};latestBuildings=buildings;
+    latestBuildingLevel=hqLevelOf(buildings);
+    var cap=memberCapOf(buildings);
     var meta=currentEl.querySelector(".meta");
     if(meta)meta.innerHTML="玩家 ID："+esc(playerId)+"<br>成员："+esc(a.member_count)+"/"+cap+"<br>联盟 ID："+esc(a.id);
     constructionPanel.hidden=false;
     constructionBodyEl.innerHTML='<div class="meta">建设点：<b class="building-level">'+esc(latestConstruction.points_balance||0)+'</b></div><div class="building-note">总部等级 Lv.'+latestBuildingLevel+' · 当前成员上限 '+cap+' 人</div>';
-    return latestBuildings;
+    return buildings;
   }).catch(function(e){constructionPanel.hidden=true;throw e;});
 }
 function renderCurrent(a,list,names,members){
@@ -147,10 +151,26 @@ function decorateAllianceList(list){
 function refresh(){
   status.textContent="正在读取联盟信息…";
   api("/v1/rdb/rest/rpc/touch_player_online",{method:"POST",body:JSON.stringify({p_player_id:playerId})}).catch(function(){});
-  return Promise.all([getCurrent(),getList()]).then(function(v){return Promise.all([Promise.resolve(v),v[0]?getMemberStats(v[0].id):Promise.resolve([])]);}).then(function(v){
-    var a=v[0][0],list=v[0][1],members=v[1],ids=list.map(function(x){return x.owner_player_id;}).concat(members.map(function(x){return x.player_id;}));
-    if(a)ids.push(a.owner_player_id);
-    return getNames(ids).then(function(n){renderCurrent(a,list,n,members);decorateAllianceList(list);return loadBuildings(a);}).then(function(){status.textContent="已连接 CloudBase";});
+  // 🔴 去 N+1（2026-10-19）：只调一次 getList（已含 buildings+construction），再用一次
+  // alliance_members?select=alliance_id 定位本玩家所属联盟；不再调 getCurrent 的
+  // alliance_members+alliances?id 双请求，也不在 loadBuildings 重复拉建筑。
+  return getList().then(function(list){
+    var pid=encodeURIComponent("eq."+playerId);
+    return api("/v1/rdb/rest/alliance_members?select=alliance_id&player_id="+pid+"&limit=1").then(function(members){
+      var aid=members&&members[0]?members[0].alliance_id:null;
+      var a=(list||[]).filter(function(x){return String(x.id)===String(aid);})[0]||null;
+      latestAlliance=a;
+      var stats=a?getMemberStats(a.id):Promise.resolve([]);
+      var ids=(list||[]).map(function(x){return x.owner_player_id;});
+      if(a)ids.push(a.owner_player_id);
+      return getNames(ids).then(function(n){
+        return stats.then(function(memberStats){
+          renderCurrent(a,list,n,memberStats);decorateAllianceList(list);
+          status.textContent="已连接 CloudBase";
+          return loadBuildings(a);
+        });
+      });
+    });
   }).catch(showError);
 }
 document.getElementById("back").onclick=function(){
