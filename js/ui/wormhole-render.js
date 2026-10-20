@@ -318,7 +318,7 @@
     whBound = true;
 
     document.addEventListener("click", (e) => {
-      const target = e.target.closest("[data-wh-tab],[data-wh-start],[data-wh-abandon],[data-wh-buy-upgrade],[data-wh-buy-item],[data-wh-buy-goods],[data-wh-buy-license],[data-wh-buy-choice],[data-wh-dismiss],[data-wh-control],[data-wh-goto],[data-wh-action],[data-bpshop-tab],[data-wh-pick-control],[data-wh-use-reroll]");
+      const target = e.target.closest("[data-wh-tab],[data-wh-start],[data-wh-abandon],[data-wh-buy-upgrade],[data-wh-buy-item],[data-wh-buy-goods],[data-wh-buy-license],[data-wh-buy-choice],[data-wh-dismiss],[data-wh-control],[data-wh-goto],[data-wh-action],[data-bpshop-tab],[data-wh-pick-control],[data-wh-use-reroll],[data-exchange-core]");
       if (!target) return;
       const panel = el("wormhole-panel");      // 出发/放弃分支需要面板内取模式与重试输入
       const dispatch = (type, payload) => {
@@ -349,11 +349,34 @@
         renderWormholePage();                 // updateUI 不认识虫洞页，必须自己重渲
       };
       if (target.dataset.bpshopTab) {
+        const tab = target.dataset.bpshopTab;
         document.querySelectorAll(".bpshop-tab").forEach(b => b.classList.toggle("active", b === target));
-        const bp = document.getElementById("bpshop-page-blueprint"), wh = document.getElementById("bpshop-page-wormhole");
-        if (bp) bp.style.display = target.dataset.bpshopTab === "blueprint" ? "" : "none";
-        if (wh) wh.style.display = target.dataset.bpshopTab === "wormhole" ? "" : "none";
-        if (target.dataset.bpshopTab === "wormhole") renderWormholeShopPanel();
+        document.querySelectorAll(".bpshop-page").forEach(p => { p.style.display = (p.dataset.bpshopPage === tab) ? "" : "none"; });
+        if (tab === "wormhole") { try { renderWormholeShopPanel(); } catch (_) {} }
+        if (tab === "exchange") { try { if (typeof window.renderMaterialExchangePanel === "function") window.renderMaterialExchangePanel(); } catch (_) {} }
+        return;
+      }
+      if (target.dataset.exchangeCore) {
+        const core = target.dataset.exchangeCore;
+        const card = target.closest(".exchange-pair");
+        const input = card ? card.querySelector('input[data-exchange-input]') : null;
+        const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : (window.ResourceRegistry || null);
+        const have = RR ? RR.get(gameState, "special:" + core) : 0;
+        const maxN = Math.floor(have / 100);
+        let amount = input ? Math.floor(Number(input.value) || 0) : 0;
+        if (amount < 1) amount = 1;
+        if (amount > maxN) amount = maxN;
+        const result = dispatchGameAction(gameState, { type: "manufacturing/exchangeDedMaterials", coreId: core, amount: amount }, Date.now());
+        if (typeof showToast === "function") {
+          if (!result || !result.changed) {
+            const reasons = { "insufficient-core": "核心不足（每 100 核心兑换 1 协议）", "unknown-pair": "该核心无对应协议", "invalid-core": "核心参数无效", "data-unavailable": "兑换数据暂不可用" };
+            showToast("兑换失败：" + (reasons[result && result.reason] || (result && result.reason) || "无法兑换"));
+          } else {
+            showToast("兑换成功：获得 " + result.amount + " 个「" + result.protocolId + "」");
+          }
+        }
+        if (typeof updateUI === "function") updateUI();
+        if (typeof window.renderMaterialExchangePanel === "function") { try { window.renderMaterialExchangePanel(); } catch (_) {} }
         return;
       }
       if (target.dataset.whTab) {

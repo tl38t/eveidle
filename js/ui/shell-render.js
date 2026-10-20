@@ -2653,11 +2653,47 @@ function renderBlueprintStore() {
     const whLock = getWormholeEntryLockState();
     applyLockedEntry("bpshop-tab-wormhole", whLock, whLock.gotoPage);
   }
-  if (typeof window.renderWormholeShopPanel === "function") { try { window.renderWormholeShopPanel(); } catch (_) {} }
-  return display;
-}
+    if (typeof window.renderWormholeShopPanel === "function") { try { window.renderWormholeShopPanel(); } catch (_) {} }
+    if (typeof window.renderMaterialExchangePanel === "function") { try { window.renderMaterialExchangePanel(); } catch (_) {} }
+    return display;
+  }
 
-function renderLPStore() { return renderBlueprintStore(); }
+  function renderLPStore() { return renderBlueprintStore(); }
+
+  function renderMaterialExchangePanel() {
+    const pageEl = document.getElementById("bpshop-page-exchange");
+    if (!pageEl || pageEl.style.display === "none") return;
+    const box = document.getElementById("bpshop-exchange-content");
+    if (!box) return;
+    if (typeof gameState === "undefined" || !gameState) return;
+    const state = gameState;
+    const RR = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry : null;
+    if (!RR) { box.innerHTML = ""; return; }
+    if (typeof DEATHSPACE_DATABASE === "undefined") { box.innerHTML = '<div class="text-muted" style="padding:10px 0">兑换数据暂不可用。</div>'; return; }
+    // 保护正在编辑的输入框：与虫洞面板一致，聚焦输入框时不重渲
+    if (document.activeElement && document.activeElement.matches && document.activeElement.matches("#bpshop-exchange-content input")) return;
+    const pairs = DEATHSPACE_DATABASE.filter(s => s.coreMaterial && s.protocolMaterial);
+    box.innerHTML = pairs.map(site => {
+      const core = site.coreMaterial, proto = site.protocolMaterial;
+      const have = RR.get(state, "special:" + core);
+      const maxN = Math.floor(have / 100);
+      const disabled = maxN < 1 ? "disabled" : "";
+      const safeCore = String(core).replace(/"/g, "&quot;");
+      return '<div class="lpstore-card exchange-pair">'
+        + '<div class="lpstore-card-info">'
+        + '<strong>' + (site.name || core) + '</strong>'
+        + '<div class="blueprint-product"><span>持有核心</span><b>' + have.toLocaleString() + ' · ' + core + '</b></div>'
+        + '<div class="blueprint-product"><span>兑换率</span><b>100 核心 → 1 协议</b></div>'
+        + '<div class="blueprint-product"><span>目标协议</span><b>' + proto + '</b></div>'
+        + '</div>'
+        + '<div class="exchange-controls" style="display:flex;gap:8px;align-items:center;margin-top:8px">'
+        + '<input type="number" min="1" max="' + maxN + '" value="' + Math.min(1, maxN) + '" data-exchange-input="' + safeCore + '" ' + disabled + ' style="width:72px" />'
+        + '<button type="button" class="btn primary" data-exchange-core="' + safeCore + '" ' + disabled + '>兑换</button>'
+        + '</div>'
+        + '</div>';
+    }).join("");
+  }
+  window.renderMaterialExchangePanel = renderMaterialExchangePanel;
 
 function applyUiScale() {
   try {

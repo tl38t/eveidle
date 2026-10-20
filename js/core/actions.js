@@ -208,6 +208,27 @@ const ManufacturingStateActions = {
     return { changed:true, blueprint };
   },
 
+  // 商店「材料兑换」：死亡空间核心 → 对应势力协议（单向 100:1，精确配对）
+  exchangeDedMaterials(state, coreId, amount, now) {
+    if (typeof DEATHSPACE_DATABASE === "undefined") return { changed:false, reason:"data-unavailable" };
+    if (typeof coreId !== "string" || !coreId) return { changed:false, reason:"invalid-core" };
+    const site = DEATHSPACE_DATABASE.find(s => s.coreMaterial === coreId && s.protocolMaterial);
+    if (!site) return { changed:false, reason:"unknown-pair" };
+    const n = Math.max(1, Math.floor(Number(amount) || 1));
+    const coreKey = "special:" + coreId;
+    const protoKey = "special:" + site.protocolMaterial;
+    const have = ResourceRegistry.get(state, coreKey);
+    if (have < n * 100) return { changed:false, reason:"insufficient-core" };
+    ResourceRegistry.spend(state, coreKey, n * 100);
+    ResourceRegistry.add(state, protoKey, n);
+    state._dirty = true;
+    if (typeof GameEvents !== "undefined") {
+      const ts = (typeof now === "number" && Number.isFinite(now) && now >= 0) ? now : Date.now();
+      GameEvents.emit("material:exchanged", { coreId, protocolId: site.protocolMaterial, amount:n }, { timestamp: ts, source:"lp-store", offline:false });
+    }
+    return { changed:true, coreId, protocolId: site.protocolMaterial, amount:n };
+  },
+
   selectShipComponent(state, componentId) {
     const recipe = SHIP_COMPONENT_RECIPES.find(item => item.id === componentId);
     if (!recipe) return { changed:false, reason:"unknown-component" };
@@ -2932,6 +2953,7 @@ const StationStateActions = {
   if (action.type === "manufacturing/selectEquipEngRigFilter") return ManufacturingStateActions.selectEquipEngRigFilter(state, action);
   if (action.type === "manufacturing/selectEquipEngSubTab") return ManufacturingStateActions.selectEquipEngSubTab(state, action);
   if (action.type === "manufacturing/stop") return ManufacturingStateActions.stop(state, actionTime);
+  if (action.type === "manufacturing/exchangeDedMaterials") return ManufacturingStateActions.exchangeDedMaterials(state, action.coreId, action.amount, actionTime);
   if (action.type === "booster/selectCategory") return BoosterStateActions.selectCategory(state, action.categoryId);
   if (action.type === "booster/selectQualityFilter") return BoosterStateActions.selectQualityFilter(state, action.quality);
   if (action.type === "booster/selectRecipe") return BoosterStateActions.selectRecipe(state, action.recipeId);

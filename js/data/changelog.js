@@ -104,6 +104,28 @@
 
 window.GAME_CHANGELOG = [
   {
+    version: "1.0.16",
+    date: "2026-10-20",
+    sections: [
+      {
+        heading: "图标与美术",
+        headingEn: "Icons and Art",
+        items: [
+          { text: "装备图标补全：考古装备、防御维修装备、舰船改装件系列新增专属 WebP 图标，视觉风格与既有弹药 / 矿物 / 采矿设备图标统一；并补充各系列装备总览图。",
+            en: "Equipment icons completed: Archaeology equipment, Defense and Repair equipment, and Ship Rigs now have their own WebP icons matching the existing ammunition / mineral / mining-equipment art; equipment overview images added too." }
+        ]
+      },
+      {
+        heading: "虫洞商店",
+        headingEn: "Wormhole Shop",
+        items: [
+          { text: "新增「材料兑换」：可将死亡空间核心按 100:1 单向兑换为对应势力的协议材料，用于制造对应死亡空间监督者改良型 DED 装备。",
+            en: "Added 'Material Exchange' in the wormhole shop: convert Dead Space Cores into the matching faction's protocol materials at a one-way 100:1 rate, for crafting the corresponding Dead Space Supervisor improved DED gear." }
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0.15",
     date: "2026-10-16",
     sections: [

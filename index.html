@@ -2532,18 +2532,23 @@
         <span class="text-muted" id="blueprintstore-balance">可用星币（SC）：0 · 功勋（MR）：0</span>
       </div>
       <div class="panel-body">
-        <div style="display:flex;gap:8px;margin-bottom:10px">
+        <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap">
           <button type="button" class="btn secondary bpshop-tab active" data-bpshop-tab="blueprint">蓝图</button>
           <button type="button" class="btn secondary bpshop-tab" data-bpshop-tab="wormhole" id="bpshop-tab-wormhole">虫洞商店</button>
+          <button type="button" class="btn secondary bpshop-tab" data-bpshop-tab="exchange" id="bpshop-tab-exchange">材料兑换</button>
         </div>
-        <div id="bpshop-page-blueprint">
+        <div id="bpshop-page-blueprint" class="bpshop-page" data-bpshop-page="blueprint">
           <div class="lpstore-intro">购买永久制造蓝图；蓝图只解锁配方，舰船与装备仍需在对应工程页面投入材料制造。</div>
           <div class="blueprintstore-tabs" id="blueprintstore-tabs"></div>
           <div class="lpstore-grid" id="blueprintstore-grid"></div>
         </div>
-        <div id="bpshop-page-wormhole" style="display:none;">
+        <div id="bpshop-page-wormhole" class="bpshop-page" data-bpshop-page="wormhole" style="display:none;">
           <div class="text-muted" id="bpshop-wh-balance" style="margin-bottom:8px"></div>
           <div id="bpshop-wh-content"></div>
+        </div>
+        <div id="bpshop-page-exchange" class="bpshop-page" data-bpshop-page="exchange" style="display:none;">
+          <div class="text-muted" style="margin-bottom:8px">将多余的死亡空间「核心」按 100:1 单向兑换为对应势力的「协议」（协议不可反向兑换）。</div>
+          <div id="bpshop-exchange-content"></div>
         </div>
       </div>
     </div>

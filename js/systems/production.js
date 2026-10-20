@@ -195,6 +195,34 @@ const ARCHAEOLOGY_PROBE_ICON_ASSETS = Object.freeze({
 for (const [displayName, asset] of Object.entries(ARCHAEOLOGY_PROBE_ICON_ASSETS)) {
   ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/probes/${asset}?v=2" alt="" loading="lazy" decoding="async">`;
 }
+// 考古装备模块按仓库显示名映射；分析仪、稳定器、译码器共用独立装备图标。
+const ARCHAEOLOGY_EQUIPMENT_ICON_ASSETS = Object.freeze({
+  "遗迹分析仪 I":"遗迹分析仪-I-ruins-analyzer-i.webp",
+  "遗迹分析仪 II":"遗迹分析仪-II-ruins-analyzer-ii.webp",
+  "遗迹分析仪 III":"遗迹分析仪-III-ruins-analyzer-iii.webp",
+  "遗迹分析仪 IV":"遗迹分析仪-IV-ruins-analyzer-iv.webp",
+  "遗迹分析仪 V":"遗迹分析仪-V-ruins-analyzer-v.webp",
+  "信号稳定器 I":"信号稳定器-I-signal-stabilizer-i.webp",
+  "信号稳定器 II":"信号稳定器-II-signal-stabilizer-ii.webp",
+  "信号稳定器 III":"信号稳定器-III-signal-stabilizer-iii.webp",
+  "信号稳定器 IV":"信号稳定器-IV-signal-stabilizer-iv.webp",
+  "信号稳定器 V":"信号稳定器-V-signal-stabilizer-v.webp",
+  "文物译码器 I":"文物译码器-I-artifact-decoder-i.webp",
+  "文物译码器 II":"文物译码器-II-artifact-decoder-ii.webp",
+  "文物译码器 III":"文物译码器-III-artifact-decoder-iii.webp",
+  "文物译码器 IV":"文物译码器-IV-artifact-decoder-iv.webp",
+  "文物译码器 V":"文物译码器-V-artifact-decoder-v.webp",
+  "边疆遗迹分析仪 I":"边疆遗迹分析仪-I-frontier-relic-analyzer-i.webp",
+  "禁区遗迹分析仪 IV":"禁区遗迹分析仪-IV-forbidden-zone-relic-analyzer-iv.webp",
+  "先驱遗迹分析仪 V":"先驱遗迹分析仪-V-pioneer-relic-analyzer-v.webp",
+  "环站信号稳定器 II":"环站信号稳定器-II-station-signal-stabilizer-ii.webp",
+  "先驱信号稳定器 V":"先驱信号稳定器-V-pioneer-signal-stabilizer-v.webp",
+  "舰墓文物译码器 III":"舰墓文物译码器-III-fleet-wreck-artifact-decoder-iii.webp",
+  "先驱文物译码器 V":"先驱文物译码器-V-pioneer-artifact-decoder-v.webp"
+});
+for (const [displayName, asset] of Object.entries(ARCHAEOLOGY_EQUIPMENT_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/archaeology-equipment/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
 // 采矿与气云采集设备按装备 displayName 映射，供仓库和装备制造界面共用。
 const MINING_EQUIPMENT_ICON_ASSETS = Object.freeze({
   "T1采矿激光器":"T1采矿激光器-t1-mining-laser.webp",
@@ -232,6 +260,83 @@ const SHIP_WEAPON_ICON_ASSETS = Object.freeze({
 });
 for (const [displayName, asset] of Object.entries(SHIP_WEAPON_ICON_ASSETS)) {
   ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/ship-weapons/${asset}?v=2" alt="" loading="lazy" decoding="async">`;
+}
+// 防御与维修装备按仓库 displayName 映射；仓库、制造与配装界面共用。
+const DEFENSE_REPAIR_ICON_ASSETS = Object.freeze({
+  "小型护盾扩展":"小型护盾扩展-small-shield-extender.webp",
+  "小型护盾回充器 I":"小型护盾回充器-I-small-shield-booster-i.webp",
+  "中型护盾回充器 I":"中型护盾回充器-I-medium-shield-booster-i.webp",
+  "大型护盾回充器 I":"大型护盾回充器-I-large-shield-booster-i.webp",
+  "旗舰级护盾回充阵列 I":"旗舰级护盾回充阵列-I-capital-shield-booster-array-i.webp",
+  "小型装甲维修器 I":"小型装甲维修器-I-small-armor-repairer-i.webp",
+  "中型装甲维修器 I":"中型装甲维修器-I-medium-armor-repairer-i.webp",
+  "大型装甲维修器 I":"大型装甲维修器-I-large-armor-repairer-i.webp",
+  "旗舰级装甲维修阵列 I":"旗舰级装甲维修阵列-I-capital-armor-repair-array-i.webp",
+  "小型结构修理器 I":"小型结构修理器-I-small-structure-repairer-i.webp",
+  "中型结构修理器 I":"中型结构修理器-I-medium-structure-repairer-i.webp",
+  "大型结构修理器 I":"大型结构修理器-I-large-structure-repairer-i.webp",
+  "旗舰级结构修复阵列 I":"旗舰级结构修复阵列-I-capital-structure-repair-array-i.webp",
+  "小型损伤控制单元 I":"小型损伤控制单元-I-small-damage-control-unit-i.webp",
+  "中型损伤控制单元 I":"中型损伤控制单元-I-medium-damage-control-unit-i.webp",
+  "大型损伤控制单元 I":"大型损伤控制单元-I-large-damage-control-unit-i.webp",
+  "旗舰级损伤控制阵列 I":"旗舰级损伤控制阵列-I-capital-damage-control-array-i.webp",
+  "苍穹劫团损伤控制单元":"苍穹劫团损伤控制单元-angel-cartel-damage-control-unit.webp",
+  "赤誓教团损伤控制单元":"赤誓教团损伤控制单元-crimson-covenant-damage-control-unit.webp"
+});
+for (const [displayName, asset] of Object.entries(DEFENSE_REPAIR_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/defense-repair/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
+// 战斗型舰船改装件：按 displayName 映射，I–V 档使用逐级扩展的独立图标。
+const COMBAT_RIG_ICON_ASSETS = Object.freeze({
+  "护盾容量改装件 I":"护盾容量改装件-I-shield-capacity-rig-i.webp",
+  "护盾容量改装件 II":"护盾容量改装件-II-shield-capacity-rig-ii.webp",
+  "护盾容量改装件 III":"护盾容量改装件-III-shield-capacity-rig-iii.webp",
+  "护盾容量改装件 IV":"护盾容量改装件-IV-shield-capacity-rig-iv.webp",
+  "护盾容量改装件 V":"护盾容量改装件-V-shield-capacity-rig-v.webp",
+  "装甲容量改装件 I":"装甲容量改装件-I-armor-capacity-rig-i.webp",
+  "装甲容量改装件 II":"装甲容量改装件-II-armor-capacity-rig-ii.webp",
+  "装甲容量改装件 III":"装甲容量改装件-III-armor-capacity-rig-iii.webp",
+  "装甲容量改装件 IV":"装甲容量改装件-IV-armor-capacity-rig-iv.webp",
+  "装甲容量改装件 V":"装甲容量改装件-V-armor-capacity-rig-v.webp",
+  "结构容量改装件 I":"结构容量改装件-I-structure-capacity-rig-i.webp",
+  "结构容量改装件 II":"结构容量改装件-II-structure-capacity-rig-ii.webp",
+  "结构容量改装件 III":"结构容量改装件-III-structure-capacity-rig-iii.webp",
+  "结构容量改装件 IV":"结构容量改装件-IV-structure-capacity-rig-iv.webp",
+  "结构容量改装件 V":"结构容量改装件-V-structure-capacity-rig-v.webp"
+});
+for (const [displayName, asset] of Object.entries(COMBAT_RIG_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/ship-rigs/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
+}
+// 工业型舰船改装件：效率、伴生矿物与伴生气云系列各自使用独立轮廓。
+const INDUSTRIAL_RIG_ICON_ASSETS = Object.freeze({
+  "采矿速度改装件 I":"采矿速度改装件-I-mining-speed-rig-i.webp",
+  "采矿速度改装件 II":"采矿速度改装件-II-mining-speed-rig-ii.webp",
+  "采矿速度改装件 III":"采矿速度改装件-III-mining-speed-rig-iii.webp",
+  "采矿速度改装件 IV":"采矿速度改装件-IV-mining-speed-rig-iv.webp",
+  "采矿速度改装件 V":"采矿速度改装件-V-mining-speed-rig-v.webp",
+  "采气速度改装件 I":"采气速度改装件-I-gas-speed-rig-i.webp",
+  "采气速度改装件 II":"采气速度改装件-II-gas-speed-rig-ii.webp",
+  "采气速度改装件 III":"采气速度改装件-III-gas-speed-rig-iii.webp",
+  "采气速度改装件 IV":"采气速度改装件-IV-gas-speed-rig-iv.webp",
+  "采气速度改装件 V":"采气速度改装件-V-gas-speed-rig-v.webp",
+  "冶炼速度改装件 I":"冶炼速度改装件-I-smelting-speed-rig-i.webp",
+  "冶炼速度改装件 II":"冶炼速度改装件-II-smelting-speed-rig-ii.webp",
+  "冶炼速度改装件 III":"冶炼速度改装件-III-smelting-speed-rig-iii.webp",
+  "冶炼速度改装件 IV":"冶炼速度改装件-IV-smelting-speed-rig-iv.webp",
+  "冶炼速度改装件 V":"冶炼速度改装件-V-smelting-speed-rig-v.webp",
+  "伴生矿物采集改装件 I":"伴生矿物采集改装件-I-mineral-yield-rig-i.webp",
+  "伴生矿物采集改装件 II":"伴生矿物采集改装件-II-mineral-yield-rig-ii.webp",
+  "伴生矿物采集改装件 III":"伴生矿物采集改装件-III-mineral-yield-rig-iii.webp",
+  "伴生矿物采集改装件 IV":"伴生矿物采集改装件-IV-mineral-yield-rig-iv.webp",
+  "伴生矿物采集改装件 V":"伴生矿物采集改装件-V-mineral-yield-rig-v.webp",
+  "伴生气云采集改装件 I":"伴生气云采集改装件-I-gas-yield-rig-i.webp",
+  "伴生气云采集改装件 II":"伴生气云采集改装件-II-gas-yield-rig-ii.webp",
+  "伴生气云采集改装件 III":"伴生气云采集改装件-III-gas-yield-rig-iii.webp",
+  "伴生气云采集改装件 IV":"伴生气云采集改装件-IV-gas-yield-rig-iv.webp",
+  "伴生气云采集改装件 V":"伴生气云采集改装件-V-gas-yield-rig-v.webp"
+});
+for (const [displayName, asset] of Object.entries(INDUSTRIAL_RIG_ICON_ASSETS)) {
+  ITEM_ICONS[displayName] = `<img class="item-icon-image" src="./assets/icons/ship-rigs/${asset}?v=1" alt="" loading="lazy" decoding="async">`;
 }
 
 function xpForLevel(lv) { return Math.floor(100 * Math.pow(1.1, lv - 1)); }
