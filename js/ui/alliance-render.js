@@ -970,6 +970,9 @@
     }, 0);
   }
 
+  // 🔴 重入守卫（2026-10-22）：load() ⇄ startCloudRefresh 互相触发时，若不加锁会叠加多轮
+  // 整条刷新链。即便 getAlliance 已加 30s 缓存让每轮成本归零，硬锁仍可彻底杜绝失控重入。
+  var cloudRefreshInFlight = false;
   function startCloudRefresh() {
     var ctx = activeRender;
     if (!ctx) return;
@@ -979,6 +982,8 @@
     }
     var box = document.getElementById("alliance-state");
     if (!box) return;
+    if (cloudRefreshInFlight) return;
+    cloudRefreshInFlight = true;
     if (root.AllianceApi && typeof root.AllianceApi.pingOnline === "function") root.AllianceApi.pingOnline();
     // getAlliance() 拿回来的 alliance_buildings 就是服务端 taskCountForPlayer() 用的同一份数据
     // ⇒ 一旦它到位，客户端算出的条数与服务端口径一致。这里先留存，等整条刷新链跑完再用于收敛。
@@ -1027,7 +1032,7 @@
       // 必须放在整条链的最后：任务条数收敛会重新 load()（整块 content.innerHTML 重建），
       // 若在 getMemberStats 之前触发，成员卡的 box.innerHTML 会写到已被替换掉的旧节点上。
       if (convergedBuildings) convergeTaskCountWithBuildings(convergedBuildings);
-    });
+    }).then(function () { cloudRefreshInFlight = false; }, function () { cloudRefreshInFlight = false; });
   }
 
   function showDiagnoseOverlay() {
@@ -1239,7 +1244,7 @@
     // 🔴 复用游戏侧已登录令牌注入 relay（2026-10-19）：relay 打开时通过 ?token= 收到，
     // 直接复用、不再独立匿名登录（signin 风暴主因之一）。v=6→v=7 强制浏览器刷新 relay 缓存。
     var cloudToken = (root.AllianceApi && typeof root.AllianceApi.getAllianceAccessToken === "function") ? root.AllianceApi.getAllianceAccessToken() : "";
-    var url = cloudOrigin + "/?embedded=1&v=7&playerId=" + encodeURIComponent(playerId) +
+    var url = cloudOrigin + "/?embedded=1&v=8&playerId=" + encodeURIComponent(playerId) +
       "&token=" + encodeURIComponent(cloudToken || "") +
       "&returnUrl=" + encodeURIComponent(returnUrl) +
       "&taskDate=" + encodeURIComponent(taskDate || "") +

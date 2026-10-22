@@ -2582,6 +2582,30 @@
       }
     }
     // 否则保持维修中（active=false），登录后继续剩余维修
+    // 🔧 2026-10-19：离线爆船须写 resumeAfterRepair 续战标记（与在线 actions.js:1080 对齐）。
+    // 否则登录后 updateCombatRecovery（combat.js:101）检测不到标记 → 维修到点也不续战 →
+    // 队列永久停「待命」，只能手动点出击（玩家「关游戏后队列变待命」根因）。
+    // 仅在队列驱动的战斗写标记（与在线一致：手动出击不应自动续战）。
+    // 注意：离线胜利同步代码（2317/2466）直接写 c.queueWavesDone/queueEntriesDone 不加 +1，
+    // 故此处沿用离线自身累计（不加 +1），避免与在线 +1 语义重复导致重复计数。
+    if (c.queueItemId) {
+      const dsSite = (fromMode === "deathspace") ? G("getDeathspaceById")(c.deathspaceId) : null;
+      state.currentAction.active = false;
+      state.resumeAfterRepair = {
+        type: "combat",
+        returnZoneId: (fromMode === "deathspace")
+          ? (dsSite ? dsSite.sourceZoneId : (zone ? zone.id : null))
+          : (c.zone || (zone ? zone.id : null)),
+        defeatedMode: (fromMode === "deathspace") ? "deathspace" : "belt",
+        deathspaceId: (fromMode === "deathspace") ? (c.deathspaceId || null) : null,
+        shipInstanceId: inst,
+        queueItemId: c.queueItemId,
+        queueWavesTarget: c.queueWavesTarget || 0,
+        queueWavesDone: c.queueWavesDone || 0,
+        queueEntriesTarget: c.queueEntriesTarget || 0,
+        queueEntriesDone: c.queueEntriesDone || 0
+      };
+    }
   }
 
   // =================== 公共入口 ===================

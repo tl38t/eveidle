@@ -37,6 +37,12 @@
   var ALLIANCE_LIST_LIMIT = 100;
   var ALLIANCE_LIST_TTL_MS = 30000;
   var allianceListCache = { at: 0, list: null };
+  // 单联盟详情缓存（2026-10-22）：getAlliance() 每次渲染 + 每次联盟操作都要重跑整条
+  // N+1 链（members + alliances + buildings + construction + memberStats ≈ 5 次云请求），
+  // 此前无缓存，是 alliance_* 集群（日耗数千次）的主因。加 30s TTL，命中直接返回 0 云请求；
+  // 写操作统一经 invalidateAllianceList() 兜底失效，不影响升级 / 加入 / 退出的即时可见性。
+  var ALLIANCE_DETAIL_TTL_MS = 30000;
+  var allianceDetailCache = { at: 0, data: null };
 
   // 设备密钥：128bit 随机十六进制，只存本机、只走云函数转发（绝不进 URL）。
   // 它是设备身份的唯一凭证：签发转移码、兑换转移码、被并入平台身份都要用它自证。
@@ -301,9 +307,28 @@
   //   加一层模块级内存缓存：同一 JS 上下文内（即一次游戏会话）最多只登录 1 次。
   //   relay 侧的独立登录由 alliance.html 复用游戏注入的令牌解决，与此处互补。
   var cachedToken = null;
+  // 🔴 令牌 cookie 兜底（2026-10-22）：TapTap WebView 的 localStorage 不跨上下文留存，
+  //   导致每次页面重载 / 上下文切换都取不到缓存令牌 → 反复匿名登录（signin 风暴主因）。
+  //   cookie 在 WebView 内能跨上下文留存，作为 localStorage 之后的第二来源；
+  //   登录成功后同步写 cookie，页面重载后仍能复用，直接消除每次重载的 1 次 signin。
+  function readTokenCookie() {
+    try {
+      var name = tokenKey.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      var m = String(document.cookie || "").match(new RegExp("(?:^|; )" + name + "=([^;]*)"));
+      return m ? decodeURIComponent(m[1]) : null;
+    } catch (_) { return null; }
+  }
+  function writeTokenCookie(token) {
+    try {
+      document.cookie = tokenKey + "=" + encodeURIComponent(token) +
+        ";path=/;max-age=" + (86400 * 30) + ";expires=" + new Date(Date.now() + 86400000 * 30).toUTCString() +
+        ";SameSite=Lax";
+    } catch (_) {}
+  }
   function getAllianceAccessToken() {
     if (cachedToken) return cachedToken;
-    try { return localStorage.getItem(tokenKey) || null; } catch (_) { return null; }
+    try { var ls = localStorage.getItem(tokenKey); if (ls) return ls; } catch (_) {}
+    return readTokenCookie();
   }
   function getAccessToken(forceRefresh) {
     // 🔴 single-flight（2026-10-12）：登录在途时共享同一 pending，forceRefresh 亦然——
@@ -318,6 +343,7 @@
     }
     var cached = cachedToken;
     if (!cached) { try { cached = localStorage.getItem(tokenKey); } catch (_) { cached = null; } }
+    if (!cached) cached = readTokenCookie();
     if (cached && !forceRefresh) return Promise.resolve(cached);
     var pending = request("/auth/v1/signin/anonymously", {
       method: "POST",
@@ -327,7 +353,8 @@
       var token = body && (body.access_token || body.token);
       if (!token) throw new Error("联盟登录未返回访问令牌");
       cachedToken = token;
-      localStorage.setItem(tokenKey, token);
+      try { localStorage.setItem(tokenKey, token); } catch (_) {}
+      writeTokenCookie(token);
       return token;
     });
     tokenRequestPromise = pending;
@@ -361,14 +388,17 @@
   // 联盟列表 limit=100 按 created_at.desc 排序，线上共 206 个联盟只有最近 100 个在列表里，
   // 老联盟（id 靠前）过滤不到 → 误报「未加入联盟」。这里恢复直接 alliances?id=eq.<aid> 抓取。
   function getAlliance() {
+    if (allianceDetailCache.data && (Date.now() - allianceDetailCache.at) < ALLIANCE_DETAIL_TTL_MS) {
+      return Promise.resolve(allianceDetailCache.data);
+    }
     var player = encodeURIComponent("eq." + getPlayerId());
     return authed("/v1/rdb/rest/alliance_members?select=alliance_id&player_id=" + player + "&limit=1")
       .then(function (members) {
-        if (!members || !members[0]) return null;
+        if (!members || !members[0]) { allianceDetailCache = { at: Date.now(), data: null }; return null; }
         return authed("/v1/rdb/rest/alliances?select=id,code,name,owner_player_id,member_count,created_at&id=eq." + encodeURIComponent(members[0].alliance_id) + "&limit=1");
       })
       .then(function (rows) {
-        if (!rows || !rows[0]) return null;
+        if (!rows || !rows[0]) { allianceDetailCache = { at: Date.now(), data: null }; return null; }
         var alliance = mapAlliance(rows[0]);
         return getBuildings(alliance.id).then(function (buildings) {
           alliance.buildings = buildings;
@@ -376,6 +406,7 @@
             ? root.AllianceBuildingConfig.memberCap(buildings) : 10;
           return getConstruction(alliance.id).then(function (construction) {
             alliance.construction = construction;
+            allianceDetailCache = { at: Date.now(), data: alliance };
             return alliance;
           });
         });
@@ -472,6 +503,7 @@
   // 供 UI 主动失效列表缓存（建盟 / 加入 / 退出 / 解散之后必须调用，否则最长 30s 看到旧列表）。
   function invalidateAllianceList() {
     allianceListCache = { at: 0, list: null };
+    allianceDetailCache = { at: 0, data: null };
   }
 
   function getBuildings(allianceId) {

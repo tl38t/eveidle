@@ -57,7 +57,11 @@ function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type"
 var authPromise=null;function auth(force){if(force){token=null;localStorage.removeItem(tokenKey);authPromise=null}if(token)return Promise.resolve(token);
 // 🔴 复用游戏侧注入的令牌：游戏打开 relay 时通过 ?token= 传入，避免 relay 独立匿名登录（signin 风暴主因之一）
 var injected=qs.get("token");if(injected){token=injected;try{localStorage.setItem(tokenKey,injected)}catch(_){}return Promise.resolve(token)}
-if(authPromise)return authPromise;token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);authPromise=request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);return token});return authPromise}
+if(authPromise)return authPromise;token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);
+// 🔴 cookie 兜底（2026-10-22）：relay 独立打开 / 标签页重载时 localStorage 可能读不到，
+//   cookie 在 WebView 内能跨上下文留存，作为第二来源，避免无谓的匿名登录。
+try{var _ck=document.cookie.match(new RegExp("(?:^|; )"+tokenKey.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"=([^;]*)"));if(_ck){token=decodeURIComponent(_ck[1]);return Promise.resolve(token)}}catch(_){}
+authPromise=request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);try{document.cookie=tokenKey+"="+encodeURIComponent(token)+";path=/;max-age="+(86400*30)+";expires="+new Date(Date.now()+86400000*30).toUTCString()+";SameSite=Lax"}catch(_){}return token});return authPromise}
 function api(path,opt){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)}).catch(function(e){if(e.status===401)return auth(true).then(function(){return api(path,opt)});throw e})}
 function fn(url,body){return auth().then(function(t){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify(body||{})})}).then(function(r){return r.json().then(function(x){if(!r.ok||x.ok===false)throw Error(x.error||("HTTP "+r.status));return x})})}
 // 🔴 2026-10-19 修复：当前联盟必须「按 id 精确拉取」，绝不能走 getList 过滤。
