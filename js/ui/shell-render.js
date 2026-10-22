@@ -1201,7 +1201,7 @@ function renderTradeTab(display) {
   });
 }
 
-/* ---- 仓库脑插子标签：展示全部 22 枚（已激活高亮 / 未获得灰显），不占仓库格、账号全局被动 ---- */
+/* ---- 仓库脑插子标签：展示全部脑插（已激活高亮 / 未获得锁定），不占仓库格、账号全局被动 ---- */
 function renderImplantTab(display) {
   const list = document.getElementById("cargo-list"); if (!list) return;
   list.style.display = "";
@@ -1210,7 +1210,7 @@ function renderImplantTab(display) {
     const cls = item.owned ? " owned" : " locked";
     const status = item.owned ? "已激活" : ("未获得" + (item.source && item.source.pageLabel ? "（" + item.source.pageLabel + "）" : ""));
     return `<div class="implant-card${cls}" data-implant="${item.id}" role="button" tabindex="0" title="点击查看如何获得">\n` +
-      `      <div class="ic-icon">${item.owned ? item.icon : "🔒"}</div>\n` +
+      `      <div class="ic-icon">${item.icon}${item.owned ? "" : '<span class="ic-lock" aria-label="未获得">🔒</span>'}</div>\n` +
       `      <div class="ic-body">\n` +
       `        <div class="ic-name">${escapeAchievementText(item.name)}</div>\n` +
       `        <div class="ic-bonus">${escapeAchievementText(item.desc)}</div>\n` +
@@ -2061,7 +2061,7 @@ function openImplantDetailModal(id) {
   openItemDetailModal({
     id: "implant:" + id,
     name: imp.name,
-    icon: imp.icon,
+    icon: (typeof getImplantIconMarkup === "function") ? getImplantIconMarkup(imp.id) : imp.icon,
     categoryLabel: "脑插",
     description: imp.desc,
     howToGet: how,
@@ -2645,7 +2645,10 @@ function renderBlueprintStore() {
   grid.innerHTML = display.items.map(item => {
     const noteText = item.owned ? "永久蓝图已拥有"
       : (item.kind === "probeBlueprint" ? "限次抄本 · " + item.priceText : "蓝图价格 · " + item.priceText);
-    return `<div class="lpstore-card blueprint-preview-card${item.owned ? " owned" : ""}"><div class="lpstore-card-icon"><i class="${item.icon}"></i></div><div class="lpstore-card-info"><strong>${item.name}</strong><div class="blueprint-product"><span>可制造</span><b>${item.productName}</b></div><div class="blueprint-preview-lines">${item.previewLines.map(line => `<div><span>${line.label}</span><p>${line.value}</p></div>`).join("")}</div><small>${noteText}</small></div><button class="btn primary lpstore-buy" data-blueprint-item="${item.id}" data-blueprint-kind="${item.kind}" ${item.canBuy ? "" : "disabled"}>${item.purchaseText}</button></div>`;
+    const blueprintItemIcon = (item.kind === "shipBlueprint" || item.kind === "equipmentBlueprint") && typeof ITEM_ICONS !== "undefined" ? ITEM_ICONS[item.name] : null;
+    const iconMarkup = blueprintItemIcon || `<i class="${item.icon}"></i>`;
+    const iconClass = blueprintItemIcon ? " has-item-icon" : "";
+    return `<div class="lpstore-card blueprint-preview-card${item.owned ? " owned" : ""}"><div class="lpstore-card-icon${iconClass}">${iconMarkup}</div><div class="lpstore-card-info"><strong>${item.name}</strong><div class="blueprint-product"><span>可制造</span><b>${item.productName}</b></div><div class="blueprint-preview-lines">${item.previewLines.map(line => `<div><span>${line.label}</span><p>${line.value}</p></div>`).join("")}</div><small>${noteText}</small></div><button class="btn primary lpstore-buy" data-blueprint-item="${item.id}" data-blueprint-kind="${item.kind}" ${item.canBuy ? "" : "disabled"}>${item.purchaseText}</button></div>`;
   }).join("");
   // 商店页「虫洞商店」子标签：可见性随主线门禁；内容每次刷新（双入口之二）
   const whTabBtn = document.getElementById("bpshop-tab-wormhole");

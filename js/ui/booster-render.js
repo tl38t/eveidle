@@ -17,6 +17,11 @@ function showBoosterToast(msg, isError) {
   setTimeout(function() { if (toast.parentNode) toast.remove(); }, 3500);
 }
 
+function getBoosterIconMarkup(name, fallbackClass) {
+  var iconMarkup = (typeof ITEM_ICONS !== "undefined" && ITEM_ICONS[name]) || "";
+  return iconMarkup || '<i class="fa-solid ' + (fallbackClass || "fa-flask") + '"></i>';
+}
+
 /* ---- 制造 UI ---- */
 function renderBoosterCategoryTabs(display) {
   var tabs = document.getElementById("booster-category-tabs");
@@ -51,6 +56,7 @@ function renderBoosterRecipeGrid(display) {
   }
   grid.innerHTML = display.recipes.map(function(recipe) {
     var locked = !recipe.isUnlocked;
+    var iconMarkup = getBoosterIconMarkup(recipe.displayName, "fa-syringe");
     var statusLabel = recipe.isUnlocked
       ? (recipe.hasMaterials ? "可制造" : "材料不足")
       : ("🔒 " + (recipe.requiresBlueprint && !recipe.hasRequiredBlueprint ? "需蓝图" : ("Lv." + recipe.level + " 解锁")));
@@ -58,7 +64,7 @@ function renderBoosterRecipeGrid(display) {
     return '<button class="equipeng-recipe-card' + (recipe.selected ? " selected" : "") + (locked ? " locked" : "") + '" data-booster-recipe="' + recipe.id + '">' +
       (locked ? '<span class="lock-badge">🔒</span>' : "") +
       '<span class="equipeng-card-top"><span>' + recipe.qualityName + " · " + recipe.seriesName + '</span><span class="' + statusClass + '">' + statusLabel + '</span></span>' +
-      '<span class="equipeng-card-icon"><i class="fa-solid fa-syringe"></i></span><strong>' + recipe.displayName + '</strong>' +
+      '<span class="equipeng-card-icon">' + iconMarkup + '</span><strong>' + recipe.displayName + '</strong>' +
       '<span class="equipeng-card-attributes"><span class="booster-gate">增强剂制造 Lv.' + recipe.level + (recipe.levelGateBonus ? ' · 舰船/装备配方激活时门槛各 +' + recipe.levelGateBonus : '') + '</span><br>' + recipe.effectText + ' · 持续 ' + recipe.durationSeconds + 's</span>' +
       '<span class="equipeng-card-bottom"><span>' + recipe.effectiveTime.toFixed(1) + 's · ' + recipe.xp + ' XP</span><span>库存 ' + recipe.owned.toLocaleString() + '</span></span></button>';
   }).join("");
@@ -136,9 +142,10 @@ function renderBoosterEquippedArea(display, actionKey) {
       } else {
         var statusClass = slot.status === "active" ? "can-build" : "level-locked";
         var statusLabel = slot.statusText || (slot.remainingMs > 0 ? "生效中" : "已耗尽");
+        var iconMarkup = getBoosterIconMarkup(slot.name, "fa-flask");
         slotCards += '<div class="equipeng-recipe-card" data-booster-slot="' + slot.slot + '" style="cursor:default;">' +
           '<span class="equipeng-card-top"><span>' + slot.qualityName + " · " + slot.name + '</span><span class="' + statusClass + '">' + statusLabel + '</span></span>' +
-          '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span>' +
+          '<span class="equipeng-card-icon">' + iconMarkup + '</span>' +
           '<strong>' + slot.name + '</strong>' +
           '<span class="equipeng-card-attributes">' + slot.effectText + ' · 剩余 ' + slot.remainingText + '</span>' +
           '<span class="equipeng-card-bottom"><span style="font-size:11px;">备用库存 ' + (slot.inventory || 0).toLocaleString() + ' · 当前瓶 1</span><button class="booster-unequip-btn" data-booster-slot="' + slot.slot + '" style="margin-left:6px;padding:2px 8px;border-radius:3px;border:1px solid #8a3a3a;background:#3a1a1a;color:#f0857b;font-size:11px;cursor:pointer;">卸下</button></span></div>';
@@ -215,9 +222,10 @@ function renderActionBoosterSlots(actionKey, containerId) {
     var remaining = Math.max(0, Number(entry.remainingMs) || 0);
     // 库存实际按裸 id 存储于 boosters.inventory；通过 ResourceRegistry 读取可兼容 booster: 前缀旧存档。
     var inventory = (typeof ResourceRegistry !== "undefined") ? ResourceRegistry.get(gameState, item.itemId) : 0;
+    var iconMarkup = getBoosterIconMarkup(item.name, "fa-flask");
     html += '<div class="equipeng-recipe-card action-booster-local-card" data-action-booster-slot="' + slot + '" title="Click to replace this booster">' +
       '<span class="equipeng-card-top"><span>' + (item.qualityName || (isEn ? "Booster" : "增强剂")) + ' · ' + item.name + '</span><span class="can-build">' + (isEn ? "Active" : "生效") + '</span></span>' +
-      '<span class="equipeng-card-icon"><i class="fa-solid fa-flask"></i></span><strong>' + item.name + '</strong>' +
+      '<span class="equipeng-card-icon">' + iconMarkup + '</span><strong>' + item.name + '</strong>' +
       '<span class="equipeng-card-attributes">' + (typeof describeBoosterEffect === "function" ? describeBoosterEffect(item.effectType, item.effectValue, item.repairTarget, item.levelGate, (typeof getSkillLabelForSlot === "function" ? getSkillLabelForSlot(slot) : null)) : "") + '</span>' +
       // 剩余时间 / 库存 / 卸下独立成行：原实现塞在 .equipeng-card-bottom 内，
       // 受 .action-booster-local-card 的 max-height:72px + overflow:hidden 裁切，
@@ -301,9 +309,10 @@ function renderBoosterInventory(display) {
   grid.innerHTML = display.inventoryCards.map(function(card) {
     var slotName = itemSlots[card.itemId] || itemSlots[card.id] || "";
     var isUniversal = itemUniversal[card.itemId] || itemUniversal[card.id] || false;
+    var iconMarkup = getBoosterIconMarkup(card.displayName, "fa-flask-vial");
     return '<div class="equipeng-recipe-card" data-booster-item="' + (card.itemId || card.id) + '" data-booster-slot="' + slotName + '"' + (isUniversal ? ' data-booster-universal="1"' : '') + ' style="cursor:pointer;" title="' + (isUniversal ? "点击选择槽位装载" : "点击装载到对应槽位") + '">' +
       '<span class="equipeng-card-top"><span>' + card.qualityName + " · " + card.seriesName + '</span><span class="can-build">×' + card.quantity.toLocaleString() + '</span></span>' +
-      '<span class="equipeng-card-icon"><i class="fa-solid fa-flask-vial"></i></span><strong>' + card.displayName + '</strong>' +
+      '<span class="equipeng-card-icon">' + iconMarkup + '</span><strong>' + card.displayName + '</strong>' +
       '<span class="equipeng-card-attributes">' + card.effectText + ' · 持续 ' + card.durationSeconds + 's</span>' +
       '<span class="equipeng-card-bottom"><span>点击装载</span></span></div>';
   }).join("");

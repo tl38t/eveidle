@@ -210,6 +210,19 @@
     opacity: 0.25;
     pointer-events: none;
   }
+  .combat-ship-placeholder.has-asset {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.96;
+  }
+  .combat-ship-placeholder.has-asset img {
+    width: 88%;
+    height: 88%;
+    object-fit: contain;
+  }
 
   /* ---- 侧边属性 ---- */
   .combat-side-stats {
@@ -480,7 +493,8 @@
   .combat-enemy-card.boss { border-color: rgba(225,70,48,0.9); background: linear-gradient(180deg, rgba(82,21,17,0.92), rgba(28,7,8,0.96)); }
   .combat-enemy-card.defeated { opacity: 0.28; filter: grayscale(1); }
   .combat-enemy-card-head { display: flex; align-items: center; gap: 5px; min-width: 0; margin-bottom: 4px; }
-  .combat-enemy-card-icon { flex: 0 0 auto; font-size: 14px; }
+  .combat-enemy-card-icon { flex: 0 0 24px; width: 24px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+  .combat-enemy-card-icon img { display: block; width: 24px; height: 20px; object-fit: contain; }
   .combat-enemy-card-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; }
   .combat-enemy-card-kind { margin-left: auto; flex: 0 0 auto; font-size: 9px; color: #80645f; }
   .combat-enemy-card.elite .combat-enemy-card-kind { color: #c796e2; }

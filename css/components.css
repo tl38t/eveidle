@@ -450,11 +450,15 @@
     border-left: 3px solid #6a7a8e; cursor: pointer;
   }
   .implant-card.owned { border-left-color: #7ad4b0; background: #0f1714; }
-  .implant-card.locked { opacity: 0.5; filter: grayscale(0.6); }
+  .implant-card.locked { opacity: 0.78; filter: none; }
   .implant-card:hover { transform: translateY(-2px); box-shadow: 0 4px 14px rgba(122,212,176,0.12); }
   .implant-card .ic-icon { width: 36px; height: 36px; flex-shrink: 0; border-radius: 6px;
-    display: flex; align-items: center; justify-content: center; font-size: 20px;
+    position: relative; display: flex; align-items: center; justify-content: center; font-size: 20px;
     background: #0a0e14; border: 1px solid #1a2535; }
+  .implant-card .ic-icon img.implant-icon-image { display: block; width: 34px; height: 34px; object-fit: contain; }
+  .implant-card .implant-icon-fallback { font-size: 20px; line-height: 1; }
+  .implant-card .ic-lock { position: absolute; right: -3px; bottom: -4px; width: 15px; height: 15px;
+    display: grid; place-items: center; border-radius: 50%; background: #111722; border: 1px solid #394455; font-size: 9px; line-height: 1; }
   .implant-card.owned .ic-icon { border-color: #2c4a3e; background: #0c1a14; }
   .implant-card .ic-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
   .implant-card .ic-name { font-size: 11px; font-weight: 700; line-height: 1.25; color: #dde4ea; word-break: break-all; overflow-wrap: anywhere; }

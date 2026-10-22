@@ -23,6 +23,41 @@ function renderEnemyMiniBars(hp, maxHp) {
   }).join("") + '</div>';
 }
 
+const COMBAT_ENEMY_ICON_ASSETS = Object.freeze({
+  angel: {
+    normal: "苍穹劫团侦察兵-skybreak-marauder-scout.webp",
+    elite: "苍穹劫团战斗巡洋舰-skybreak-marauder-war-cruiser.webp",
+    boss: "苍穹劫团战争主宰-skybreak-marauder-war-master.webp"
+  },
+  blood: {
+    normal: "赤誓教团侍僧-crimson-covenant-acolyte.webp",
+    elite: "赤誓教团圣礼巡洋舰-crimson-covenant-sacrament-cruiser.webp",
+    boss: "赤誓教团鲜血君王-crimson-covenant-blood-sovereign.webp"
+  },
+  sansha: {
+    normal: "静默集群无人机-silent-assembly-scout-drone.webp",
+    elite: "静默集群支配巡洋舰-silent-assembly-dominion-cruiser.webp",
+    boss: "静默集群矩阵领主-silent-assembly-matrix-overlord.webp"
+  }
+});
+const COMBAT_SPECIAL_ENEMY_ICON_ASSETS = Object.freeze({
+  "先驱守望者": "先驱守望者-precursor-warden.webp",
+  "亡灵统御者": "亡灵统御者-undead-overlord.webp"
+});
+
+function getCombatEnemyIconMarkup(enemy) {
+  if (!enemy) return "👾";
+  const name = String(enemy.name || "");
+  const specialAsset = COMBAT_SPECIAL_ENEMY_ICON_ASSETS[name];
+  if (specialAsset) return `<img src="./assets/icons/combat-enemies/${specialAsset}?v=1" alt="" loading="lazy" decoding="async">`;
+  const faction = name.startsWith("苍穹劫团") ? "angel" : name.startsWith("赤誓教团") ? "blood" : name.startsWith("静默集群") ? "sansha" : null;
+  const rank = enemy.kind === "boss" ? "boss" : enemy.kind === "elite" ? "elite" : "normal";
+  const asset = faction && COMBAT_ENEMY_ICON_ASSETS[faction][rank];
+  return asset
+    ? `<img src="./assets/icons/combat-enemies/${asset}?v=1" alt="" loading="lazy" decoding="async">`
+    : (enemy.icon || "👾");
+}
+
 function renderCombatEnemyPanel(display) {
   const enemySection = document.getElementById("combat-enemy-section");
   const formation = document.getElementById("combat-enemy-formation");
@@ -32,7 +67,7 @@ function renderCombatEnemyPanel(display) {
   const stats = document.getElementById("combat-enemy-stats");
   const image = document.getElementById("combat-enemy-image");
   const caption = document.getElementById("combat-target-caption");
-  if (formation) formation.innerHTML = display.enemies.map(enemy => `<div class="combat-enemy-card ${enemy.kind || "normal"}${enemy.current ? " target" : ""}${enemy.defeated ? " defeated" : ""}"><div class="combat-enemy-card-head"><span class="combat-enemy-card-icon">${enemy.icon || "◆"}</span><span class="combat-enemy-card-name">${enemy.name}</span><span class="combat-enemy-card-kind">${enemy.kind === "boss" ? "BOSS" : enemy.kind === "elite" ? "精英" : "普通"}</span></div>${renderEnemyMiniBars(enemy.hp, enemy.maxHp)}</div>`).join("");
+  if (formation) formation.innerHTML = display.enemies.map(enemy => `<div class="combat-enemy-card ${enemy.kind || "normal"}${enemy.current ? " target" : ""}${enemy.defeated ? " defeated" : ""}"><div class="combat-enemy-card-head"><span class="combat-enemy-card-icon">${getCombatEnemyIconMarkup(enemy)}</span><span class="combat-enemy-card-name">${enemy.name}</span><span class="combat-enemy-card-kind">${enemy.kind === "boss" ? "BOSS" : enemy.kind === "elite" ? "精英" : "普通"}</span></div>${renderEnemyMiniBars(enemy.hp, enemy.maxHp)}</div>`).join("");
   const target = display.target;
   if (target) {
     if (enemySection) { enemySection.style.display = ""; enemySection.classList.remove("is-scanning"); }
@@ -41,7 +76,11 @@ function renderCombatEnemyPanel(display) {
     if (type) type.textContent = target.kindLabel + " · " + target.defenseLabel;
     if (bars) bars.innerHTML = renderHPBars(target.hp, target.maxHp);
     if (stats) stats.textContent = "威胁等级:" + (target.level || 1) + " · 攻击力:" + (target.baseDamage || 1) + " · 编队存活:" + display.enemies.filter(enemy => !enemy.defeated).length;
-    if (image && !image.querySelector("#combat-enemy-3d")) image.innerHTML = target.image ? `<img src="${target.image}" alt="${target.name}">` : `<div class="combat-ship-placeholder"><span>${target.icon || "👾"}</span></div>`;
+    if (image && !image.querySelector("#combat-enemy-3d")) {
+      const targetIcon = getCombatEnemyIconMarkup(target);
+      const isAssetIcon = targetIcon.startsWith("<img");
+      image.innerHTML = target.image ? `<img src="${target.image}" alt="${target.name}">` : `<div class="combat-ship-placeholder${isAssetIcon ? " has-asset" : ""}">${targetIcon}</div>`;
+    }
   } else {
     if (enemySection) { enemySection.style.display = ""; enemySection.classList.add("is-scanning"); }
     if (caption) caption.textContent = "NO TARGET";
@@ -1080,7 +1119,7 @@ function combatDropToItem(dropId) {
     return {
       id: dropId,
       name: imp.name,
-      icon: imp.icon || "🧠",
+      icon: (typeof getImplantIconMarkup === "function") ? getImplantIconMarkup(imp.id) : (imp.icon || "🧠"),
       description: (imp.desc || "") + (imp.sourceName ? "（来源：" + imp.sourceName + "）" : "") + "；在线与离线清场均有概率掉落。",
       source: { pageId: imp.source === "deathspace" ? "combat" : (imp.source || "combat"), pageLabel: "脑插", icon: "🧠" }
     };
@@ -1268,15 +1307,19 @@ function renderCombatDropPreview(display) {
     if (dropId) _combatDropMeta[dropId] = { name, icon };
     return `<div class="drop-row${extraClass ? " " + extraClass : ""}"${dropId ? ` data-drop-id="${dropId}"` : ""}><span class="drop-name">${icon} ${name}</span><span class="drop-detail">${detail}</span></div>`;
   };
+  const materialIcon = (material, fallback) => {
+    if (typeof ITEM_ICONS === "undefined") return fallback;
+    return ITEM_ICONS[material] || ITEM_ICONS["special:" + material] || fallback;
+  };
 
   if (preview.mode === "deathspace") {
     rows.push(`<div class="drop-mode-tag deathspace">死亡空间 · 不掉落势力密钥 / 特殊掉落 / 通行密钥</div>`);
     if (Array.isArray(preview.leaderLoot) && preview.leaderLoot.length > 0) {
       rows.push(`<div class="drop-group-title">💠 首领战利品（每波 BOSS 击破时结算）</div>`);
       for (const loot of preview.leaderLoot) {
-        rows.push(row("🟣", getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）`, "drop-leader", "special:" + loot.coreMaterial));
+        rows.push(row(materialIcon(loot.coreMaterial, "🟣"), getResourceDisplayName(loot.coreMaterial), `第 ${loot.wave} 层「${loot.name}」核心 ${pct(loot.coreChance)}（稀有）`, "drop-leader", "special:" + loot.coreMaterial));
         if (loot.isFinal && loot.protocolMaterial) {
-          rows.push(row("📜", getResourceDisplayName(loot.protocolMaterial), `最终层「${loot.name}」协议 ${pct(loot.protocolChance)}（极稀有）`, "drop-leader", "special:" + loot.protocolMaterial));
+          rows.push(row(materialIcon(loot.protocolMaterial, "📜"), getResourceDisplayName(loot.protocolMaterial), `最终层「${loot.name}」协议 ${pct(loot.protocolChance)}（极稀有）`, "drop-leader", "special:" + loot.protocolMaterial));
         }
       }
     }
@@ -1296,7 +1339,7 @@ function renderCombatDropPreview(display) {
     if (Array.isArray(preview.stationCoreDrops) && preview.stationCoreDrops.length > 0) {
       rows.push(`<div class="drop-group-title">🌟 空间站核心（唯一掉落）</div>`);
       for (const sc of preview.stationCoreDrops) {
-        rows.push(row("🌟", getResourceDisplayName(sc.resourceId), coreChanceText(sc), "drop-core", sc.resourceId));
+        rows.push(row(materialIcon(sc.resourceId, "🌟"), getResourceDisplayName(sc.resourceId), coreChanceText(sc), "drop-core", sc.resourceId));
       }
     }
     if (preview.tacticalMaterial) {
@@ -1320,22 +1363,23 @@ function renderCombatDropPreview(display) {
     rows.push(`<div class="drop-mode-tag belt">海盗星带</div>`);
     if (preview.encryptedData) {
       const e = preview.encryptedData;
-      rows.push(row("🔐", getResourceDisplayName("special:" + e.material), `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data", "special:" + e.material));
+      rows.push(row(materialIcon(e.material, "🔐"), getResourceDisplayName("special:" + e.material), `精英 ${pct(e.eliteChance)} · BOSS ${pct(e.bossChance)}（每枚 ×${e.qty}）`, "drop-data", "special:" + e.material));
     } else {
       rows.push(row("🔐", "势力密钥", "本星带禁用掉落", "drop-none"));
     }
     if (Array.isArray(preview.zoneSpecialDrops) && preview.zoneSpecialDrops.length > 0) {
       rows.push(`<div class="drop-group-title">⭐ 特殊掉落（outer/deep 独有）</div>`);
       for (const sd of preview.zoneSpecialDrops) {
-        rows.push(row("⭐", getResourceDisplayName(sd.resourceId), `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", sd.resourceId));
+        const material = String(sd.resourceId || "").replace(/^special:/, "");
+        rows.push(row(materialIcon(material, "⭐"), getResourceDisplayName(sd.resourceId), `精英 ${pct(sd.eliteChance)} · BOSS ${pct(sd.bossChance)}（每枚 ×${sd.qty}）`, "drop-special", sd.resourceId));
       }
     }
     const ticketDrops = Array.isArray(preview.ticketDrops) && preview.ticketDrops.length ? preview.ticketDrops : (preview.ticketDrop ? [preview.ticketDrop] : []);
-    for (const t of ticketDrops) rows.push(row("🎫", getResourceDisplayName("special:" + t.material), `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket", "ticket"));
+    for (const t of ticketDrops) rows.push(row(materialIcon(t.material, "🎫"), getResourceDisplayName("special:" + t.material), `击破本星带精英/BOSS 有概率掉落（精英 ${pct(t.eliteChance)} · BOSS ${pct(t.bossChance)}）· 来源 ${t.deathspaceName}`, "drop-ticket", "special:" + t.material));
     if (Array.isArray(preview.gearDrops) && preview.gearDrops.length > 0) {
       rows.push(`<div class="drop-group-title">🔧 装备专用数据（精英/BOSS 掉落）</div>`);
       for (const gd of preview.gearDrops) {
-        rows.push(row("🔧", getResourceDisplayName("special:" + gd.material), `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear", "gear:" + gd.material));
+        rows.push(row(materialIcon(gd.material, "🔧"), getResourceDisplayName("special:" + gd.material), `精英 ${pct(gd.eliteChance)} · BOSS ${pct(gd.bossChance)}（每枚 ×${gd.qty}）`, "drop-gear", "gear:" + gd.material));
       }
     }
     if (Array.isArray(preview.stationCoreDrops) && preview.stationCoreDrops.length > 0) {
@@ -1369,7 +1413,7 @@ function renderCombatDropPreview(display) {
   // 精英难度独占掉落说明（eliteTier>=2 时显示）
   if ((Number(gameState.combat.eliteTier) || 0) >= 2) {
     rows.push(`<div class="drop-group-title">🧩 精英独占（当前已开启）</div>`);
-    rows.push(row("🧩", "未知的潜能芯片", `精英怪 ${pct(0.03)} · 首领/BOSS ${pct(0.20)}（每枚 ×1）· 暂未开放功能`, "drop-chip", "special:未知的潜能芯片"));
+    rows.push(row(materialIcon("未知的潜能芯片", "🧩"), "未知的潜能芯片", `精英怪 ${pct(0.03)} · 首领/BOSS ${pct(0.20)}（每枚 ×1）· 暂未开放功能`, "drop-chip", "special:未知的潜能芯片"));
   }
   body.innerHTML = rows.join("");
 }

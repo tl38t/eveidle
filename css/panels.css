@@ -494,6 +494,8 @@
   .lpstore-card-info small { color: #5da8d4; }
   .blueprint-preview-card { align-items: start; }
   .blueprint-preview-card .lpstore-card-icon { margin-top: 3px; }
+  .blueprint-preview-card .lpstore-card-icon.has-item-icon { width: 68px; height: 68px; margin: -2px 0 0 -5px; background: transparent; border: 0; border-radius: 0; }
+  .blueprint-preview-card .lpstore-card-icon.has-item-icon img.item-icon-image { width: 68px; height: 68px; object-fit: contain; filter: drop-shadow(0 3px 7px rgba(0,0,0,.4)); }
   .blueprint-product { display: flex; align-items: center; gap: 8px; margin: 2px 0 5px; }
   .blueprint-product span { padding: 2px 6px; color: #68b9e5; background: rgba(56,140,190,.13); border: 1px solid rgba(80,165,215,.22); border-radius: 3px; font-size: 9px; }
   .blueprint-product b { color: #d8e1e9; font-size: 12px; }

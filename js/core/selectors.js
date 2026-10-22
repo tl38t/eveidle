@@ -3199,7 +3199,7 @@ function getCombatDropPreview(state, options) {
       implantDrop = {
         id: _impId,
         name: _impDef ? _impDef.name : "舰构·精通植入体",
-        icon: _impDef ? (_impDef.icon || "🚢") : "🚢",
+        icon: _impDef ? ((typeof getImplantIconMarkup === "function" && getImplantIconMarkup(_impId)) || _impDef.icon || "🚢") : "🚢",
         desc: _impDef ? _impDef.desc : "舰船制造效率 +6%",
         sourceName: _impDef ? _impDef.sourceName : "死亡空间 6/10",
         chance: (typeof IMPLANT_SHIP_MFG_DROP_CHANCE !== "undefined") ? IMPLANT_SHIP_MFG_DROP_CHANCE : 0.05
@@ -3643,7 +3643,7 @@ function getCargoDisplayState(state, filter, subFilter) {
     const items = Object.values(IMPLANT_DB).map(imp => ({
       id: imp.id,
       name: imp.name,
-      icon: imp.icon,
+      icon: (typeof getImplantIconMarkup === "function") ? getImplantIconMarkup(imp.id) : imp.icon,
       desc: imp.desc,
       owned: !!owned[imp.id],
       category: "implant",

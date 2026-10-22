@@ -332,6 +332,46 @@ const IMPLANT_DB = {
   }
 };
 
+// 脑插专用图标资产（透明 WebP）；显示名保留在仓库卡片和详情中。
+const IMPLANT_ICON_ASSETS = {
+  implant_laser: "破岩-激光植入体-fracture-laser-neural-implant.webp",
+  implant_cannon: "熔铸-炮弹植入体-forge-cannon-neural-implant.webp",
+  implant_missile: "舰构-导弹植入体-shipwright-missile-neural-implant.webp",
+  implant_shield: "精密-护盾植入体-precision-shield-neural-implant.webp",
+  implant_armor: "催化-装甲植入体-catalyst-armor-neural-implant.webp",
+  implant_structure: "气云-结构植入体-gas-cloud-structure-neural-implant.webp",
+  implant_repair_alpha: "维修增强植入体-阿尔法-repair-augmentation-alpha-neural-implant.webp",
+  implant_repair_beta: "维修增强植入体-贝塔-repair-augmentation-beta-neural-implant.webp",
+  implant_arch_scan: "工造-扫描植入体-artificer-scan-neural-implant.webp",
+  implant_arch_speed: "舰构-解析植入体-shipwright-analysis-neural-implant.webp",
+  implant_arch_unique: "萃炼-独特植入体-refinement-unique-neural-implant.webp",
+  implant_collect_mining: "采集-采矿增效植入体-mining-efficiency-neural-implant.webp",
+  implant_collect_gas: "采集-采气增效植入体-gas-harvesting-efficiency-neural-implant.webp",
+  implant_double_mining: "采集-采矿双生植入体-mining-double-yield-neural-implant.webp",
+  implant_double_gas: "采集-采气双生植入体-gas-double-yield-neural-implant.webp",
+  implant_planet_speed: "行星-加速植入体-planetary-acceleration-neural-implant.webp",
+  implant_planet_slot: "行星-扩展植入体-planetary-slot-neural-implant.webp",
+  implant_refine_eff: "冶炼-增效植入体-refining-efficiency-neural-implant.webp",
+  implant_double_refine: "冶炼-双生植入体-refining-double-yield-neural-implant.webp",
+  implant_booster_eff: "增强剂-增效植入体-booster-efficiency-neural-implant.webp",
+  implant_double_booster: "增强剂-双生植入体-booster-double-yield-neural-implant.webp",
+  implant_ship_mfg: "舰构-精通植入体-shipbuilding-mastery-neural-implant.webp",
+  implant_void_travel: "裂隙-折跃植入体-rift-warp-neural-implant.webp",
+  implant_void_affix: "裂隙-屏蔽植入体-rift-affix-ward-neural-implant.webp",
+  implant_void_token: "裂隙-谐振植入体-rift-resonance-neural-implant.webp",
+  implant_void_collect: "虚空-丰饶植入体-void-harvest-neural-implant.webp",
+  implant_void_refine: "虚空-熔炉植入体-void-forge-neural-implant.webp",
+  implant_void_ship: "虚空-舰构植入体-void-shipwright-neural-implant.webp",
+  implant_void_scan: "虚空-深瞳植入体-void-deep-eye-neural-implant.webp"
+};
+
+function getImplantIconMarkup(id) {
+  const asset = IMPLANT_ICON_ASSETS[id];
+  if (!asset) return (IMPLANT_DB[id] && IMPLANT_DB[id].icon) || "🧠";
+  const fallback = (IMPLANT_DB[id] && IMPLANT_DB[id].icon) || "🧠";
+  return '<img class="item-icon-image implant-icon-image" src="./assets/icons/implants/' + asset + '?v=1" alt="" loading="lazy" decoding="async" onerror="this.style.display=\'none\';this.nextElementSibling.style.display=\'inline\'"><span class="implant-icon-fallback" style="display:none">' + fallback + "</span>";
+}
+
 // 脑插「如何获得」导航目标（供仓库详情弹窗与展示态共用）：返回合法的 sidebar 跳转目标。
 function implantSourceNav(imp) {
   if (imp.sourceSkill) return { pageId: imp.sourceSkill, pageLabel: imp.sourceSkillName + " Lv.99" };
