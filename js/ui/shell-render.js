@@ -5538,7 +5538,29 @@ function buildOrbit() {
     const isDoomsday = !!(slot.doomsday && slot.doomsday.locked);
     const group = document.createElementNS(namespace, "g"); group.setAttribute("class", "slot-segment " + slot.type + (slot.enabled ? (isLinked ? " linked" : "") : (isDoomsday ? " doomsday" : " disabled")));
     const marker = document.createElementNS(namespace, "circle"); marker.setAttribute("cx", center + radius * Math.cos(angle)); marker.setAttribute("cy", center + radius * Math.sin(angle)); marker.setAttribute("r", 22); marker.setAttribute("class", slot.equipmentId ? "slot-bg-active" : ((isLinked || isDoomsday) ? "slot-bg-locked" : "slot-bg")); group.appendChild(marker);
-    const label = document.createElementNS(namespace, "text"); label.setAttribute("x", center + radius * Math.cos(angle)); label.setAttribute("y", center + radius * Math.sin(angle) + 5); label.setAttribute("text-anchor", "middle"); label.setAttribute("class", "slot-icon"); label.textContent = isLinked ? "🔗" : (isDoomsday ? "☄" : (slot.icon || ORBIT_TYPE_ICONS[slot.type])); group.appendChild(label);
+    // 2026-10-22 修复：slot.icon 现为 ITEM_ICONS 的 <img> HTML 标记（考古装备等已有独立图标），
+    // 旧实现把整段标记塞进 SVG <text> 的 textContent ⇒ 原始标记被当文本显示（遗迹分析仪/稳定器/译码器等）。
+    // 现改为：能提取到 src 就用 SVG <image> 渲染真实图标，否则回退纯文本字形（📦 / 槽位类型图标）。
+    const cx = center + radius * Math.cos(angle), cy = center + radius * Math.sin(angle);
+    const rawIcon = (!isLinked && !isDoomsday && typeof slot.icon === "string") ? slot.icon : "";
+    const iconSrcMatch = rawIcon.match(/<img[^>]*\ssrc="([^"]+)"/i);
+    if (iconSrcMatch) {
+      const size = 30;
+      const image = document.createElementNS(namespace, "image");
+      image.setAttribute("href", iconSrcMatch[1]);
+      image.setAttribute("x", cx - size / 2); image.setAttribute("y", cy - size / 2);
+      image.setAttribute("width", size); image.setAttribute("height", size);
+      image.setAttribute("preserveAspectRatio", "xMidYMid meet");
+      image.setAttribute("class", "slot-icon-image");
+      group.appendChild(image);
+    } else {
+      const label = document.createElementNS(namespace, "text");
+      label.setAttribute("x", cx); label.setAttribute("y", cy + 5); label.setAttribute("text-anchor", "middle");
+      label.setAttribute("class", "slot-icon");
+      const glyph = isLinked ? "🔗" : (isDoomsday ? "☄" : ((typeof slot.icon === "string" && slot.icon.indexOf("<") === -1) ? slot.icon : ORBIT_TYPE_ICONS[slot.type]));
+      label.textContent = glyph;
+      group.appendChild(label);
+    }
     if (slot.enabled) group.addEventListener("click", event => { event.stopPropagation(); openOrbitSelect(slot.index); });
     else if (isDoomsday) group.addEventListener("click", event => {
       event.stopPropagation();
