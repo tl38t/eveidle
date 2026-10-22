@@ -670,13 +670,11 @@ function getMiningDisplayState(state, now) {
   };
 }
 
-// 精炼产出份数：与精炼效率（冶炼速度）解耦，改为按等级阶梯跳变。
-// LV<50 → 1 份；LV50~99 → 2 份；LV≥100 → 3 份（封顶）。
+// 精炼产出份数：与精炼效率（冶炼速度）解耦，按等级阶梯跳变，每 50 级 +1 份，无封顶。
+// LV<50 → 1 份；LV50~99 → 2 份；LV100~149 → 3 份；LV150~199 → 4 份；LV200+ → 5 份…（以此类推）。
 function getRefiningOutputMultiplier(level) {
   const lv = Number(level) || 0;
-  if (lv >= 100) return 3;
-  if (lv >= 50)  return 2;
-  return 1;
+  return 1 + Math.floor(lv / 50);
 }
 
 // ---- 外接大型精炼泵（slot:"any" 多槽占用件）公共结算 ----
