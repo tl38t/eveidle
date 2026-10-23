@@ -576,9 +576,16 @@
   }
 
   // 心跳：玩家打开联盟面板时更新最后上线时间（失败不影响主流程）
+  // 2026-10-23 节流：startCloudRefresh 每次渲染都会触发心跳（此前同一流程里还连调两次，
+  // 已修）。再加 5 分钟节流，避免频繁切 tab / 重渲染把 touch_player_online 打成日耗第一。
+  var PING_ONLINE_TTL_MS = 5 * 60 * 1000;
+  var lastPingOnlineAt = 0;
   function pingOnline() {
     var pid = getPlayerId();
     if (!pid) return Promise.resolve();
+    var nowMs = Date.now();
+    if (nowMs - lastPingOnlineAt < PING_ONLINE_TTL_MS) return Promise.resolve();
+    lastPingOnlineAt = nowMs;
     return authed("/v1/rdb/rest/rpc/touch_player_online", {
       method: "POST",
       headers: { "Content-Type": "application/json" },

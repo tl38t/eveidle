@@ -993,7 +993,6 @@
         rememberAlliance(alliance);
         convergedBuildings = alliance.buildings;
         return root.AllianceApi.getMemberStats(alliance.id).then(function (members) {
-          if (root.AllianceApi && typeof root.AllianceApi.pingOnline === "function") root.AllianceApi.pingOnline();
           box.innerHTML = renderMemberCard(alliance, members);
           bindAdminActions(box, alliance, members, ctx.msg);
           bindMembershipActions(box, alliance, ctx.msg);
@@ -1244,7 +1243,7 @@
     // 🔴 复用游戏侧已登录令牌注入 relay（2026-10-19）：relay 打开时通过 ?token= 收到，
     // 直接复用、不再独立匿名登录（signin 风暴主因之一）。v=6→v=7 强制浏览器刷新 relay 缓存。
     var cloudToken = (root.AllianceApi && typeof root.AllianceApi.getAllianceAccessToken === "function") ? root.AllianceApi.getAllianceAccessToken() : "";
-    var url = cloudOrigin + "/?embedded=1&v=8&playerId=" + encodeURIComponent(playerId) +
+    var url = cloudOrigin + "/?embedded=1&v=9&playerId=" + encodeURIComponent(playerId) +
       "&token=" + encodeURIComponent(cloudToken || "") +
       "&returnUrl=" + encodeURIComponent(returnUrl) +
       "&taskDate=" + encodeURIComponent(taskDate || "") +

@@ -158,7 +158,8 @@ function decorateAllianceList(list){
 }
 function refresh(){
   status.textContent="正在读取联盟信息…";
-  api("/v1/rdb/rest/rpc/touch_player_online",{method:"POST",body:JSON.stringify({p_player_id:playerId})}).catch(function(){});
+  // 2026-10-23 心跳节流：5 分钟内同机不重复上报（relay 每次打开都会走 refresh）
+  try{var _now=Date.now(),_lp=Number(localStorage.getItem("eve_idle_last_ping")||0);if(_now-_lp>300000){localStorage.setItem("eve_idle_last_ping",String(_now));api("/v1/rdb/rest/rpc/touch_player_online",{method:"POST",body:JSON.stringify({p_player_id:playerId})}).catch(function(){});}}catch(_err){api("/v1/rdb/rest/rpc/touch_player_online",{method:"POST",body:JSON.stringify({p_player_id:playerId})}).catch(function(){});}
   // 🔴 2026-10-19 修复：当前联盟用 getCurrent() 直接按 id 拉取（精确，不受列表 limit=100 截断影响）；
   // 浏览列表用 getList()（已含 buildings+construction 嵌入，去 N+1）。两者并行，互不依赖。
   return Promise.all([getCurrent(),getList()]).then(function(v){
