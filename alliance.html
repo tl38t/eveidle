@@ -73,7 +73,19 @@ function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type"
 // 于是每次 401 都用同一个坏 token 重发，api() 的 catch 再递归调用自己 ⇒ 无限递归、promise 永不 settle。
 // 现象：状态永久停在「正在读取联盟信息…」，且微任务风暴占满主线程 ⇒ 页面完全卡死无法返回。
 // 修法①：force 重登后本次页面生命周期内作废注入 token（injectedDead），回落到匿名登录。
-var authPromise=null,injectedDead=false;function auth(force){if(force){token=null;try{localStorage.removeItem(tokenKey)}catch(_){}authPromise=null;injectedDead=true}if(token)return Promise.resolve(token);
+// 🔴🔴 2026-10-24 二次修复：force 重登必须**连 cookie 一起作废**。
+// 旧实现只清 localStorage，而本函数末尾的 cookie 兜底会把同一个过期 token 又取回来
+// ⇒ 401 重试必然再次失败，玩家看到「Access token has expired」且无法自愈。
+// token 有三个来源：?token= 注入 / localStorage / cookie —— 三者必须同时清掉，才能回落到匿名登录。
+var authPromise=null,injectedDead=false;
+function auth(force){
+  if(force){
+    token=null;
+    try{localStorage.removeItem(tokenKey)}catch(_){}
+    try{document.cookie=tokenKey+"=;path=/;max-age=0;expires=Thu, 01 Jan 1970 00:00:00 GMT"}catch(_){}
+    authPromise=null;injectedDead=true;
+  }
+  if(token)return Promise.resolve(token);
 // 🔴 复用游戏侧注入的令牌：游戏打开 relay 时通过 ?token= 传入，避免 relay 独立匿名登录（signin 风暴主因之一）
 var injected=injectedDead?"":qs.get("token");if(injected){token=injected;try{localStorage.setItem(tokenKey,injected)}catch(_){}return Promise.resolve(token)}
 if(authPromise)return authPromise;token=lsGet(tokenKey);if(token)return Promise.resolve(token);
@@ -99,7 +111,7 @@ function fmtOnline(v){if(!v)return "从未上线";var t=new Date(v).getTime();if
 // Lv.0/1=10, Lv.2=15, Lv.3=20, Lv.4=25, Lv.5=30。禁止再在本页另写一份。
 function hqLevelOf(buildings){var hq=(buildings||[]).filter(function(b){return b&&(b.building_type==="frontier_hq"||b.building_type==="logistics_hub")})[0]||{level:0};return Number(hq.level)||0}
 function memberCapOf(buildings){return [10,10,15,20,25,30][Math.max(0,Math.min(5,hqLevelOf(buildings)))]}
-function friendlyCloudError(m){m=String(m||"");var t=m.toLowerCase();if(t.indexOf("unknown alliance building")>=0)return "未知联盟建筑，请更新游戏后重试";if(t.indexOf("only alliance owner")>=0)return "只有盟主可以升级建筑";if(t.indexOf("not enough alliance construction points")>=0)return "联盟建设点不足";if(t.indexOf("building is already max level")>=0)return "建筑已达到最高等级";if(t.indexOf("failed to fetch")>=0||t.indexOf("networkerror")>=0||t.indexOf("load failed")>=0||t.indexOf("network request failed")>=0)return "网络连接失败：请点右上角「返回游戏」重试";return m||"请求失败"}
+function friendlyCloudError(m){m=String(m||"");var t=m.toLowerCase();if(t.indexOf("unknown alliance building")>=0)return "未知联盟建筑，请更新游戏后重试";if(t.indexOf("only alliance owner")>=0)return "只有盟主可以升级建筑";if(t.indexOf("not enough alliance construction points")>=0)return "联盟建设点不足";if(t.indexOf("building is already max level")>=0)return "建筑已达到最高等级";if(t.indexOf("failed to fetch")>=0||t.indexOf("networkerror")>=0||t.indexOf("load failed")>=0||t.indexOf("network request failed")>=0)return "网络连接失败：请点右上角「返回游戏」重试";if(t.indexOf("access token has expired")>=0||t.indexOf("access_token_expired")>=0)return "登录凭证已过期：请点右上角「返回游戏」后重新进入联盟（会自动重新登录）";return m||"请求失败"}
 function showError(e){status.textContent=friendlyCloudError(e&&e.message)}
 function modal(title,message,ok){var o=document.createElement("div");o.style.cssText="position:fixed;inset:0;background:rgba(4,8,14,.78);display:flex;align-items:center;justify-content:center;padding:16px;z-index:4000";o.innerHTML='<div style="width:min(420px,94vw);background:#101b2a;border:1px solid #385a78;border-radius:12px;padding:20px;color:#dceeff"><div style="font-size:18px;font-weight:700">'+esc(title)+'</div><div style="color:#a8bacb;line-height:1.6;margin-top:10px">'+esc(message)+'</div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px"><button data-cancel>取消</button><button class="primary" data-ok>确认</button></div></div>';document.body.appendChild(o);o.querySelector("[data-cancel]").onclick=function(){o.remove()};o.querySelector("[data-ok]").onclick=function(){o.remove();ok()};}
 // 2026-09-13: 此处原有 renderTasks/loadBuildings/renderCurrent/refresh/back 的旧副本，

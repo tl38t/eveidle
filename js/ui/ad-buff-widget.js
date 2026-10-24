@@ -89,8 +89,53 @@
   }
 
   // ---- 顶部状态区 ----
+  const MOBILE_MQ = (typeof window !== "undefined" && window.matchMedia)
+    ? window.matchMedia("(max-width: 820px)") : null;
+  const ADB_CSS_BASE = "display:flex;align-items:center;gap:8px;font:12px/1.4 system-ui,-apple-system,'Microsoft YaHei',sans-serif;";
+  const ADB_CSS_IN_STRIP = ADB_CSS_BASE + "padding:6px 14px;border-bottom:1px solid rgba(30,42,56,0.6);background:linear-gradient(180deg,rgba(16,24,36,0.97),rgba(10,15,22,0.97));";
+  const ADB_CSS_IN_TOPBAR = ADB_CSS_BASE + "margin:4px 0 0 0;";
   let ensureAttempts = 0;
+  let breakpointBound = false;
+  let resizeTimer = null;
   const MAX_ENSURE_ATTEMPTS = 40; // 最多等约 4 秒（taptap-portrait.js 通常 <100ms 就创建）
+
+  function isNarrow() { return !!(MOBILE_MQ && MOBILE_MQ.matches); }
+
+  // 挂载目标：窄屏进 #tp-activity-strip（竖屏活动条，ResizeObserver 会把它算进主内容偏移），
+  // 桌面进 .topbar（base.css 里 [data-adb-wrap] 独占一整行）。
+  // 🔴 判据必须是 isNarrow() 而不是「活动条存在与否」：taptap-portrait.js 在桌面也**无条件**
+  // 创建 #tp-activity-strip，只是被 .tp-activity-strip{display:none} 隐藏；若只判存在就会把
+  // 状态条塞进隐藏容器 ⇒ 桌面端永远看不见。
+  function resolveHost() {
+    const actStrip = document.getElementById("tp-activity-strip");
+    if (isNarrow() && actStrip) return actStrip;
+    return document.querySelector(".topbar");
+  }
+
+  function mountInto(host) {
+    if (!wrapEl || !host) return;
+    const inStrip = host.id === "tp-activity-strip";
+    wrapEl.style.cssText = inStrip ? ADB_CSS_IN_STRIP : ADB_CSS_IN_TOPBAR;
+    if (inStrip) {
+      host.insertBefore(wrapEl, host.firstChild);
+      // 立即同步一次高度，避免 ResizeObserver 触发前主内容没下移
+      try { if (window.__tpSyncActivityOffset) window.__tpSyncActivityOffset(); } catch (e) {}
+    } else {
+      host.appendChild(wrapEl);
+    }
+  }
+
+  // 窗口跨过 820px（最大化 / 还原 / F11 / 拖拽边缘）时迁移挂载点。
+  // 不迁移的后果：窄屏启动 → 最大化后状态条留在 display:none 的活动条里，
+  // 表现为「脑突触启动按钮不见了」（2026-10-24 用户反馈）。
+  function remount() {
+    if (!wrapEl) return;
+    const host = resolveHost();
+    if (!host || host === wrapEl.parentNode) return;
+    mountInto(host);
+    update();
+  }
+
   function ensureDom() {
     if (wrapEl) return;
     const topbar = document.querySelector(".topbar");
@@ -99,9 +144,7 @@
     // 竖屏模式：#tp-activity-strip 由 taptap-portrait.js 运行时创建。
     // ad-buff-widget.js 在 index.html 中排在它前面，初始化时可能还没创建，
     // 必须轮询等待，不能立刻 fallback 到 .topbar，否则状态条会压住主内容区。
-    const isMobile = (typeof window !== "undefined" && window.matchMedia && window.matchMedia("(max-width: 820px)").matches);
-    const actStrip = document.getElementById("tp-activity-strip");
-    if (isMobile && !actStrip) {
+    if (isNarrow() && !document.getElementById("tp-activity-strip")) {
       ensureAttempts++;
       if (ensureAttempts <= MAX_ENSURE_ATTEMPTS) {
         setTimeout(ensureDom, 100);
@@ -112,7 +155,7 @@
 
     wrapEl = document.createElement("div");
     wrapEl.setAttribute("data-adb-wrap", "1");
-    wrapEl.style.cssText = "display:flex;align-items:center;gap:8px;font:12px/1.4 system-ui,-apple-system,'Microsoft YaHei',sans-serif;";
+    wrapEl.style.cssText = ADB_CSS_BASE;
 
     statusEl = document.createElement("span");
     statusEl.setAttribute("data-adb-status", "1");
@@ -130,18 +173,26 @@
     wrapEl.appendChild(statusEl);
     wrapEl.appendChild(pauseBtn);
 
-    if (actStrip) {
-      // 竖屏模式：把状态条放进活动条里，ResizeObserver 会自动把它的真实高度
-      // 算进 --tp-activity-h，主内容区（动作条）自然下移，不会重叠。
-      wrapEl.style.cssText += ";padding:6px 14px;border-bottom:1px solid rgba(30,42,56,0.6);background:linear-gradient(180deg,rgba(16,24,36,0.97),rgba(10,15,22,0.97));";
-      actStrip.insertBefore(wrapEl, actStrip.firstChild);
-      // 立即同步一次高度，避免 ResizeObserver 触发前主内容没下移
-      try { if (window.__tpSyncActivityOffset) window.__tpSyncActivityOffset(); } catch (e) {}
-    } else {
-      // 桌面模式：直接塞进顶栏末尾（顶栏高度随内容撑开，内容区位于顶栏下方，不会重叠）
-      wrapEl.style.cssText += ";margin:4px 0 0 0;";
-      topbar.appendChild(wrapEl);
+    mountInto(resolveHost());
+
+    // 挂载完成后注册一次断点监听，用于最大化 / 还原时迁移挂载点。
+    // 双通道：matchMedia change（语义准确）+ window resize（兜底，部分环境 change 不触发）。
+    if (!breakpointBound) {
+      breakpointBound = true;
+      try {
+        if (MOBILE_MQ) {
+          if (typeof MOBILE_MQ.addEventListener === "function") MOBILE_MQ.addEventListener("change", remount);
+          else if (typeof MOBILE_MQ.addListener === "function") MOBILE_MQ.addListener(remount);
+        }
+        window.addEventListener("resize", onViewportMaybeChanged);
+        window.addEventListener("orientationchange", onViewportMaybeChanged);
+      } catch (e) {}
     }
+  }
+
+  function onViewportMaybeChanged() {
+    if (resizeTimer) clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { resizeTimer = null; remount(); }, 150);
   }
 
   function onPauseClick() {
