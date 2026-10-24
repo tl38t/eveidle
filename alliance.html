@@ -49,20 +49,41 @@ var base="https://deepspace-d4govx4ikc2e937c5.api.tcloudbasegateway.com";
 var functionBase="https://deepspace-d4govx4ikc2e937c5-1477691191.ap-shanghai.app.tcloudbase.com";
 var playerKey="eve_idle_cloud_player_id",tokenKey="eve_idle_cloud_access_token",token=null;
 var status=document.getElementById("status"),currentEl=document.getElementById("current"),listEl=document.getElementById("list"),memberPanel=document.getElementById("members"),memberListEl=document.getElementById("member-list"),constructionPanel=document.getElementById("construction"),constructionBodyEl=document.getElementById("construction-body"),dailyTaskListEl=document.getElementById("daily-task-list"),codeEl=document.getElementById("code"),usernameEl=document.getElementById("username");
-var qs=new URLSearchParams(location.search),returnUrl=qs.get("returnUrl"),playerId=qs.get("playerId")||localStorage.getItem(playerKey);
-if(!playerId){playerId="player_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8)}localStorage.setItem(playerKey,playerId);
+// 🔴 2026-10-24：localStorage 在部分 WebView / 隐私模式下会抛 SecurityError。
+// 旧代码在最顶层裸调 setItem，一旦抛错整个 IIFE 中断 ⇒ 后面所有按钮的 onclick 都没绑定
+// （玩家现象：「点任何按钮都没反应」）。统一改走安全包装。
+function lsGet(k){try{return localStorage.getItem(k)}catch(_){return null}}
+function lsSet(k,v){try{localStorage.setItem(k,v)}catch(_){}}
+var qs=new URLSearchParams(location.search),returnUrl=qs.get("returnUrl"),playerId=qs.get("playerId")||lsGet(playerKey);
+if(!playerId){playerId="player_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8)}lsSet(playerKey,playerId);
 var latestAlliance=null,latestMembers=[],latestConstruction=null,latestBuildings=[],latestTasks=[],latestBuildingLevel=0;
 function esc(v){return String(v==null?"":v).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
-function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},opt.headers||{});return fetch(base+path,opt).then(function(r){return r.text().then(function(t){var b=t?JSON.parse(t):{};if(!r.ok){var e=new Error(b.message||b.error||("HTTP "+r.status));e.status=r.status;throw e}return b})})}
-var authPromise=null;function auth(force){if(force){token=null;localStorage.removeItem(tokenKey);authPromise=null}if(token)return Promise.resolve(token);
+// 🔴 2026-10-24 修复「进联盟页永久卡死」：fetch 没有内建超时。移动 WebView 下请求可能一直悬挂
+// 不返回 ⇒ refresh() 永不 settle、状态永远停在「正在读取联盟信息…」，而返回键又没兜底 ⇒ 玩家永久卡死。
+// 统一加 15s 超时，超时转成可读错误，走既有的 showError 通道。
+var REQ_TIMEOUT_MS=15000;
+function request(path,opt){opt=opt||{};opt.headers=Object.assign({"Content-Type":"application/json"},opt.headers||{});
+  var ctrl=null;try{if(typeof AbortController==="function"){ctrl=new AbortController();opt.signal=ctrl.signal}}catch(_){ctrl=null}
+  var timer=ctrl?setTimeout(function(){try{ctrl.abort()}catch(_){}},REQ_TIMEOUT_MS):null;
+  function done(){if(timer){clearTimeout(timer);timer=null}}
+  return fetch(base+path,opt).then(function(r){done();return r.text().then(function(t){var b=t?JSON.parse(t):{};if(!r.ok){var e=new Error(b.message||b.error||("HTTP "+r.status));e.status=r.status;throw e}return b})})
+    .catch(function(e){done();if(e&&(e.name==="AbortError"||e.timeout)){var te=new Error("连接超时，请点右上角「返回游戏」重试");te.timeout=true;throw te}throw e})}
+// 🔴🔴 2026-10-24 根因修复：`?token=` 注入（commit 5f6f05c 引入）与老代码 api() 的 401 递归重试
+// 组合成死循环 —— auth(true) 清掉 token 后，紧接着 `if(injected)` 又把同一个失效 token 塞回来，
+// 于是每次 401 都用同一个坏 token 重发，api() 的 catch 再递归调用自己 ⇒ 无限递归、promise 永不 settle。
+// 现象：状态永久停在「正在读取联盟信息…」，且微任务风暴占满主线程 ⇒ 页面完全卡死无法返回。
+// 修法①：force 重登后本次页面生命周期内作废注入 token（injectedDead），回落到匿名登录。
+var authPromise=null,injectedDead=false;function auth(force){if(force){token=null;try{localStorage.removeItem(tokenKey)}catch(_){}authPromise=null;injectedDead=true}if(token)return Promise.resolve(token);
 // 🔴 复用游戏侧注入的令牌：游戏打开 relay 时通过 ?token= 传入，避免 relay 独立匿名登录（signin 风暴主因之一）
-var injected=qs.get("token");if(injected){token=injected;try{localStorage.setItem(tokenKey,injected)}catch(_){}return Promise.resolve(token)}
-if(authPromise)return authPromise;token=localStorage.getItem(tokenKey);if(token)return Promise.resolve(token);
+var injected=injectedDead?"":qs.get("token");if(injected){token=injected;try{localStorage.setItem(tokenKey,injected)}catch(_){}return Promise.resolve(token)}
+if(authPromise)return authPromise;token=lsGet(tokenKey);if(token)return Promise.resolve(token);
 // 🔴 cookie 兜底（2026-10-22）：relay 独立打开 / 标签页重载时 localStorage 可能读不到，
 //   cookie 在 WebView 内能跨上下文留存，作为第二来源，避免无谓的匿名登录。
 try{var _ck=document.cookie.match(new RegExp("(?:^|; )"+tokenKey.replace(/[.*+?^${}()|[\]\\]/g,"\\$&")+"=([^;]*)"));if(_ck){token=decodeURIComponent(_ck[1]);return Promise.resolve(token)}}catch(_){}
-authPromise=request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");localStorage.setItem(tokenKey,token);try{document.cookie=tokenKey+"="+encodeURIComponent(token)+";path=/;max-age="+(86400*30)+";expires="+new Date(Date.now()+86400000*30).toUTCString()+";SameSite=Lax"}catch(_){}return token});return authPromise}
-function api(path,opt){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)}).catch(function(e){if(e.status===401)return auth(true).then(function(){return api(path,opt)});throw e})}
+authPromise=request("/auth/v1/signin/anonymously",{method:"POST",headers:{"x-device-id":playerId},body:"{}"}).then(function(x){token=x.access_token;if(!token)throw Error("anonymous auth failed");lsSet(tokenKey,token);try{document.cookie=tokenKey+"="+encodeURIComponent(token)+";path=/;max-age="+(86400*30)+";expires="+new Date(Date.now()+86400000*30).toUTCString()+";SameSite=Lax"}catch(_){}return token}).catch(function(e){authPromise=null;throw e});return authPromise}
+// 修法②：401 只允许「强制重登 + 重发」一次，禁止递归重试。重试后仍 401 就抛出 → 走 showError 出提示。
+function api(path,opt){return apiAttempt(path,opt,0)}
+function apiAttempt(path,opt,depth){return auth().then(function(t){opt=opt||{};opt.headers=Object.assign({Authorization:"Bearer "+t},opt.headers||{});return request(path,opt)}).catch(function(e){if(e.status===401&&depth<1)return auth(true).then(function(){return apiAttempt(path,opt,depth+1)});throw e})}
 function fn(url,body){return auth().then(function(t){return fetch(url,{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+t},body:JSON.stringify(body||{})})}).then(function(r){return r.json().then(function(x){if(!r.ok||x.ok===false)throw Error(x.error||("HTTP "+r.status));return x})})}
 // 🔴 2026-10-19 修复：当前联盟必须「按 id 精确拉取」，绝不能走 getList 过滤。
 // 联盟列表 limit=100 按 created_at.desc 排序，线上共 206 个联盟只有最近 100 个在列表里，
@@ -78,15 +99,16 @@ function fmtOnline(v){if(!v)return "从未上线";var t=new Date(v).getTime();if
 // Lv.0/1=10, Lv.2=15, Lv.3=20, Lv.4=25, Lv.5=30。禁止再在本页另写一份。
 function hqLevelOf(buildings){var hq=(buildings||[]).filter(function(b){return b&&(b.building_type==="frontier_hq"||b.building_type==="logistics_hub")})[0]||{level:0};return Number(hq.level)||0}
 function memberCapOf(buildings){return [10,10,15,20,25,30][Math.max(0,Math.min(5,hqLevelOf(buildings)))]}
-function friendlyCloudError(m){m=String(m||"");var t=m.toLowerCase();if(t.indexOf("unknown alliance building")>=0)return "未知联盟建筑，请更新游戏后重试";if(t.indexOf("only alliance owner")>=0)return "只有盟主可以升级建筑";if(t.indexOf("not enough alliance construction points")>=0)return "联盟建设点不足";if(t.indexOf("building is already max level")>=0)return "建筑已达到最高等级";return m||"请求失败"}
+function friendlyCloudError(m){m=String(m||"");var t=m.toLowerCase();if(t.indexOf("unknown alliance building")>=0)return "未知联盟建筑，请更新游戏后重试";if(t.indexOf("only alliance owner")>=0)return "只有盟主可以升级建筑";if(t.indexOf("not enough alliance construction points")>=0)return "联盟建设点不足";if(t.indexOf("building is already max level")>=0)return "建筑已达到最高等级";if(t.indexOf("failed to fetch")>=0||t.indexOf("networkerror")>=0||t.indexOf("load failed")>=0||t.indexOf("network request failed")>=0)return "网络连接失败：请点右上角「返回游戏」重试";return m||"请求失败"}
 function showError(e){status.textContent=friendlyCloudError(e&&e.message)}
 function modal(title,message,ok){var o=document.createElement("div");o.style.cssText="position:fixed;inset:0;background:rgba(4,8,14,.78);display:flex;align-items:center;justify-content:center;padding:16px;z-index:4000";o.innerHTML='<div style="width:min(420px,94vw);background:#101b2a;border:1px solid #385a78;border-radius:12px;padding:20px;color:#dceeff"><div style="font-size:18px;font-weight:700">'+esc(title)+'</div><div style="color:#a8bacb;line-height:1.6;margin-top:10px">'+esc(message)+'</div><div style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px"><button data-cancel>取消</button><button class="primary" data-ok>确认</button></div></div>';document.body.appendChild(o);o.querySelector("[data-cancel]").onclick=function(){o.remove()};o.querySelector("[data-ok]").onclick=function(){o.remove();ok()};}
 // 2026-09-13: 此处原有 renderTasks/loadBuildings/renderCurrent/refresh/back 的旧副本，
 //   其字符串被历史误写毁成 U+FFFD（乱码）。同一 IIFE 作用域内后声明的同名函数会覆盖
 //   先声明者，这些旧副本从未生效 —— 已删除，权威实现见下方 "Compatibility overrides" 区块。
 function loadTasks(){var date=qs.get("taskDate")||"",url="/v1/rdb/rest/alliance_daily_tasks?select=*&player_id=eq."+encodeURIComponent(playerId)+(date?"&server_date=eq."+encodeURIComponent(date):"")+"&order=slot.asc";return api(url).then(function(rows){if(rows.length){latestTasks=rows;renderTasks(rows,date);return rows}var raw=qs.get("taskPreview");if(!raw){latestTasks=[];renderTasks([],date);return []}return fn(qs.get("taskFunctionUrl")||functionBase+"/alliance-daily-tasks",{playerId:playerId,taskPreview:JSON.parse(raw)}).then(function(x){latestTasks=x.tasks||[];renderTasks(latestTasks,x.serverDate);return latestTasks})}).catch(function(){latestTasks=[];renderTasks([],date);return []})}
-document.getElementById("save-username").onclick=function(){var v=usernameEl.value.trim();if(!/^[\u4e00-\u9fffA-Za-z0-9_]{2,12}$/.test(v)){showError(Error("用户名需为 2-12 位中文、英文、数字或下划线"));return}api("/v1/rdb/rest/players",{method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify({player_id:playerId,username:v})}).then(function(){localStorage.setItem("eve_idle_cloud_username",v);status.textContent="用户名已保存"}).catch(showError)};
-usernameEl.value=localStorage.getItem("eve_idle_cloud_username")||"";
+document.getElementById("save-username").onclick=function(){var v=usernameEl.value.trim();if(!/^[\u4e00-\u9fffA-Za-z0-9_]{2,12}$/.test(v)){showError(Error("用户名需为 2-12 位中文、英文、数字或下划线"));return}api("/v1/rdb/rest/players",{method:"POST",headers:{Prefer:"resolution=merge-duplicates,return=representation"},body:JSON.stringify({player_id:playerId,username:v})}).then(function(){lsSet("eve_idle_cloud_username",v);status.textContent="用户名已保存"}).catch(showError)};
+// 2026-10-24：历史脏数据（编码损坏）会在输入框显示成乱码（玩家截图「үүүү…」）。非法值直接丢弃，不预填。
+var _savedName=lsGet("eve_idle_cloud_username")||"";usernameEl.value=/^[\u4e00-\u9fffA-Za-z0-9_]{2,12}$/.test(_savedName)?_savedName:"";
 document.getElementById("create").onclick=function(){var v=codeEl.value.trim().toUpperCase();if(!/^[A-Z]{1,3}$/.test(v)){showError(Error("联盟代码需为 1-3 位大写英文字母"));return}api("/v1/rdb/rest/rpc/create_alliance_with_owner",{method:"POST",body:JSON.stringify({p_code:v,p_name:v,p_player_id:playerId})}).then(refresh).catch(showError)};
 document.getElementById("diagnose").onclick=function(){var o=document.getElementById("diagnostic");o.hidden=false;o.textContent="playerId: "+playerId+"\nbase: "+base+"\n";getList().then(function(x){o.textContent+="alliances: "+x.length+"\n"}).catch(function(e){o.textContent+="error: "+e.message})};
 // Compatibility overrides: keep the cloud page authoritative when returning
@@ -212,6 +234,21 @@ function handleRelay(){
   }
   throw Error("未知的联盟操作");
 }
+// 🔴 2026-10-24：安卓硬件返回键兜底。relay 在部分 WebView 里是「就地跳转」（window.open 被拦时
+// 游戏侧退化成 location.href），没有可退历史 ⇒ 玩家报「返回键失效、永久卡死在该界面」。
+// 这里 pushState 造一条可退历史，popstate 触发即走 returnToGame()，与右上角按钮同一出口。
+try{
+  if(returnUrl){
+    history.pushState({relayEntry:1},"",location.href);
+    window.addEventListener("popstate",function(){returnToGame({});});
+  }
+}catch(_){}
+// 超时兜底提示：所有请求 15s 超时后若状态仍停在「正在…」，明确告诉玩家怎么退出，避免"看起来卡死"。
+setTimeout(function(){
+  if(!status)return;
+  var t=status.textContent||"";
+  if(t.indexOf("正在")===0){status.textContent="连接超时：点右上角「返回游戏」或按手机返回键即可退出";}
+},26000);
 Promise.all([refresh(),loadTasks()]).then(handleRelay).catch(function(e){
   showError(e);
   if(!qs.get("relayAction"))return;
