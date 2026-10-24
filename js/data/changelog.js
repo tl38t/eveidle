@@ -104,6 +104,35 @@
 
 window.GAME_CHANGELOG = [
   {
+    version: "1.0.20",
+    date: "2026-10-24",
+    sections: [
+      {
+        heading: "桌面伴侣模式",
+        headingEn: "Desktop Companion Mode",
+        items: [
+          { platforms: ["steam"],
+            text: "新增「侧边伴侣」：点击顶栏按钮或将窗口拖窄，游戏会吸附到屏幕边缘成为常驻竖条并自动置顶；鼠标离开后自动缩至屏幕边缘、仅留一条细把手，悬停把手即可展开。窗口始终可见，挂机收益与在线机制持续结算，绝不进入离线模式。",
+            en: "New 'Side Companion': click the top-bar button or drag the window narrow to snap it to a screen edge as an always-on-top vertical strip; it auto-folds to a thin edge handle when you move the cursor away and expands on hover. The window stays visible, so idle income and online mechanics keep running — it never drops into offline mode." },
+          { platforms: ["steam"],
+            text: "新增「底部仪表盘」：点击顶栏按钮，窗口收缩为底部横条，实时显示星币 / 功勋 / 物资总量、当前行动进度与剩余时间，以及星币每秒产出速率。",
+            en: "New 'Bottom Dashboard': click the top-bar button to shrink the window into a bottom bar showing live ISK / Loyalty Points / total cargo, current action progress with time remaining, and ISK-per-second rate." },
+          { platforms: ["steam"],
+            text: "系统托盘：关闭或最小化窗口后游戏转入托盘后台继续运行；右键托盘图标可切换形态、开关置顶、打开存档目录或退出。",
+            en: "System tray: closing or minimizing the window sends the game to the tray and keeps it running in the background; right-click the tray icon to switch mode, toggle always-on-top, open the save folder, or quit." }
+        ]
+      },
+      {
+        heading: "背景音乐",
+        headingEn: "Background Music",
+        items: [
+          { text: "新增背景音乐（BGM）：设置页新增「音乐」分区，可调节音量（0–100）并切换静音，挂机时也能享受氛围配乐。",
+            en: "New background music (BGM): the Settings page now has a 'Music' section where you can adjust volume (0–100) and toggle mute, so you can enjoy ambient music while idle." }
+        ]
+      }
+    ]
+  },
+  {
     version: "1.0.16",
     date: "2026-10-20",
     sections: [

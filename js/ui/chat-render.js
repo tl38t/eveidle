@@ -15,8 +15,14 @@
    * 屏蔽（§9 决策 ③）：本地 localStorage，仅影响自己的渲染，不通知对方。
    */
 
-  var POLL_MS = 15000;             // 轮询间隔（10-08 调优：3s→15s，单玩家在线4h由约4800次安全调用降至约960次）
-  var BG_POLL_MS = 15000;          // 非当前频道的未读探测间隔（与前台统一 15s，降频且逻辑一致）
+  // 轮询间隔（10-08：3s→15s；10-24 二次降频：15s→30s）。
+  // 🔴 每次 poll = 2 次云调用（chat-service 云函数 + chat_list_messages RPC）。
+  // 旧值 15s 前台 + 15s 后台探测 = 满开 480 次/小时 ≈ 11,520 次/天，单人即可吃掉大量额度
+  // （10-24 实测：一个 1.0.15 Steam 客户端 7.9h 打了 1,229 次 chat-service）。
+  // 现 30s + 60s = 180 次/小时 ≈ 4,320 次/天上限，降 62.5%。
+  // 不影响自身体验：sendMessage 乐观上屏、切 tab 立即 loadLatest()，只有他人消息延迟变大。
+  var POLL_MS = 30000;             // 当前频道拉取间隔
+  var BG_POLL_MS = 60000;          // 非当前频道的未读探测间隔（只点亮 tab 角标，不需要快）
   var ALLIANCE_TTL_MS = 120000;    // 盟信息缓存（聊天只需要 id / owner_player_id）
   var BLOCK_KEY = "eve_idle_chat_blocks";
   var DOCK_KEY = "eve_idle_chat_dock_open";   // 停靠条开合状态（本机偏好，非存档数据）

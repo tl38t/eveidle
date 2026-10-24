@@ -2857,6 +2857,18 @@
       </div>
     </div>
 
+    <!-- BGM 设置页控件样式（音量滑条 / 数值 / 静音开关复用 .setting-switch）——2026-10-24 背景音乐特性 -->
+    <style id="bgm-settings-style">
+      .setting-volume { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+      .setting-slider { -webkit-appearance: none; appearance: none; width: 140px; height: 4px; border-radius: 2px; background: #223243; outline: none; cursor: pointer; }
+      .setting-slider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 14px; height: 14px; border: 0; border-radius: 50%; background: #78cdf8; box-shadow: 0 0 7px rgba(120, 205, 248, .45); cursor: pointer; }
+      .setting-slider::-moz-range-track { height: 4px; border-radius: 2px; background: #223243; }
+      .setting-slider::-moz-range-thumb { width: 14px; height: 14px; border: 0; border-radius: 50%; background: #78cdf8; box-shadow: 0 0 7px rgba(120, 205, 248, .45); cursor: pointer; }
+      .setting-slider:focus-visible { outline: 2px solid #d4a843; outline-offset: 2px; }
+      .setting-volume-value { min-width: 34px; color: #78cdf8; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; text-align: right; }
+      @media (max-width: 520px) { .setting-volume { flex-basis: 150px; min-width: 150px; } .setting-slider { width: 96px; } }
+    </style>
+
     <!-- ===== 设置面板 ===== -->
     <div class="panel settings-panel" id="settings-panel" style="display:none;">
       <div class="panel-header">
@@ -2889,6 +2901,18 @@
           <label class="setting-row" for="setting-dispatch-bonus-toast">
             <span class="setting-copy"><strong>资源调度产出飘字</strong><small>开启时，资源调度中心在线额外产出会在界面弹出飘字提示；关闭后产出照常入账，仅不再弹飘字（后期产出频繁时可关闭）。</small></span>
             <span class="setting-switch"><input type="checkbox" id="setting-dispatch-bonus-toast" checked><span class="setting-switch-track"></span></span>
+          </label>
+          <div class="settings-section-title">音乐</div>
+          <label class="setting-row" for="setting-bgm-volume">
+            <span class="setting-copy"><strong>背景音乐音量</strong><small>调节背景音乐声量（0-100），修改即时生效并保存到存档；拖动到 0 等同于静音。</small></span>
+            <span class="setting-volume">
+              <input type="range" id="setting-bgm-volume" class="setting-slider" min="0" max="100" step="1" value="60" aria-label="背景音乐音量">
+              <span class="setting-volume-value" id="setting-bgm-volume-value">60</span>
+            </span>
+          </label>
+          <label class="setting-row" for="setting-bgm-mute">
+            <span class="setting-copy"><strong>静音</strong><small>一键关闭背景音乐；音量设置会保留，取消静音后按原声量继续播放。</small></span>
+            <span class="setting-switch"><input type="checkbox" id="setting-bgm-mute"><span class="setting-switch-track"></span></span>
           </label>
           <div class="settings-section-title">操作确认</div>
           <label class="setting-row" for="setting-enhancement-confirm">
@@ -3185,7 +3209,7 @@
   <script defer src="./js/systems/wormhole.js?v=42"></script>
   <script defer src="./js/systems/research-protocols.js?v=8"></script>
   <script defer src="./js/core/diagnostics.js?v=6"></script>
-  <script defer src="./js/ui/shell-render.js?v=197"></script>
+  <script defer src="./js/ui/shell-render.js?v=198"></script>
   <script defer src="./js/ui/skill-overview.js?v=10"></script>
   <script defer src="./js/ui/manufacturing-render.js?v=30"></script>
   <script defer src="./js/ui/titan-forge-integration.js?v=16"></script>
@@ -3206,7 +3230,7 @@
    <script defer src="./js/data/alliance-task-catalog.js?v=4"></script>
   <script defer src="./js/ui/alliance-render.js?v=180"></script>
   <script defer src="./js/platform/chat-api.js?v=2"></script>
-  <script defer src="./js/ui/chat-render.js?v=7"></script>
+  <script defer src="./js/ui/chat-render.js?v=8"></script>
   <script defer src="./js/core/tick.js?v=33"></script>
   <script defer src="./js/core/offline.js?v=41"></script>
   <script defer src="./js/systems/offline-combat.js?v=67"></script>
@@ -3243,6 +3267,7 @@
   <script defer src="./js/systems/ad-buff.js?v=6"></script>
   <script defer src="./js/ui/ad-buff-widget.js?v=23"></script>
   <script defer src="./js/core/persistence.js?v=50"></script>
+  <script defer src="./js/core/audio.js?v=1"></script>
   <script defer src="./js/ui/changelog-popup.js?v=5"></script>
   <script defer src="./js/core/bootstrap-launch.js?v=15"></script>
   <script type="module" src="./js/ui/leaderboard-render.js?v=10"></script>

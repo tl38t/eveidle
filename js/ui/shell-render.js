@@ -2726,6 +2726,17 @@ function renderSettingsPage() {
   }
   const uiScaleSel = document.getElementById("setting-ui-scale");
   if (uiScaleSel) uiScaleSel.value = String(display.uiScale);
+  // 音乐：背景音乐音量滑条 / 数值 / 静音开关。状态由 window.GameAudio 归一化读取
+  // （未写入过时回落默认值），本页只反射不改状态；写入口在 bindShellUI 的事件绑定里。
+  const bgmVolumeInput = document.getElementById("setting-bgm-volume");
+  const bgmVolumeValue = document.getElementById("setting-bgm-volume-value");
+  const bgmMuteCb = document.getElementById("setting-bgm-mute");
+  if (window.GameAudio && typeof window.GameAudio.getSettings === "function") {
+    const bgm = window.GameAudio.getSettings();
+    if (bgmVolumeInput) bgmVolumeInput.value = String(bgm.volume);
+    if (bgmVolumeValue) bgmVolumeValue.textContent = String(bgm.volume);
+    if (bgmMuteCb) bgmMuteCb.checked = bgm.muted;
+  }
   // 关于：展示构建版本号（由构建脚本注入 window.GAME_VERSION；未构建时回退基线）
   const verEl = document.getElementById("setting-game-version");
   if (verEl) verEl.textContent = "V" + (typeof window.GAME_VERSION === "string" && window.GAME_VERSION ? window.GAME_VERSION : "0.7.1");
@@ -6807,6 +6818,22 @@ function installTutorialWidgetListeners() {
     const result = dispatchGameAction(gameState, { type:"settings/setUiScale", scale }, Date.now());
     if (result.changed) { applyUiScale(); showToast("界面缩放：" + Math.round(scale * 100) + "%"); }
     else { uiScaleSelect.value = String(getSettingsDisplayState(gameState).uiScale); }
+  });
+  // 音乐：音量滑条用 input（拖动全程实时生效），静音开关用 change；两者都直接走
+  // window.GameAudio（内部写 gameState.settings + _dirty，语义同 ShellStateActions）。
+  const bgmVolumeInput = document.getElementById("setting-bgm-volume"); if (bgmVolumeInput) bgmVolumeInput.addEventListener("input", () => {
+    const raw = Number(bgmVolumeInput.value);
+    const volume = (window.GameAudio && typeof window.GameAudio.setVolume === "function")
+      ? window.GameAudio.setVolume(raw)
+      : Math.max(0, Math.min(100, Math.round(isFinite(raw) ? raw : 0)));
+    const valueEl = document.getElementById("setting-bgm-volume-value");
+    if (valueEl) valueEl.textContent = String(volume);
+  });
+  const bgmMuteCb = document.getElementById("setting-bgm-mute"); if (bgmMuteCb) bgmMuteCb.addEventListener("change", () => {
+    const muted = (window.GameAudio && typeof window.GameAudio.setMuted === "function")
+      ? window.GameAudio.setMuted(bgmMuteCb.checked)
+      : Boolean(bgmMuteCb.checked);
+    showToast(muted ? "背景音乐已静音" : "背景音乐已恢复");
   });
   const achievementCategoryTabs = document.getElementById("achievements-category-tabs"); if (achievementCategoryTabs) achievementCategoryTabs.addEventListener("click", event => {
     const button = event.target.closest("[data-ach-category]"); if (!button) return;
